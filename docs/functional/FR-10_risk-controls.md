@@ -3,15 +3,15 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-09-05
+updated: 2026-09-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
-adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, planning#292]
+adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, planning#292]
 -->
 
 
@@ -755,8 +755,44 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | 建玉解消も失敗した | Critical 通知で**人手対応**を求める（黙って残さない） | `ProtectiveStopCoverageLost`（Remediation=None） |
 
 逆指値レグ・手仕舞いレグの約定は発注執行の約定追跡ポーリング経由で取引台帳へ届き、建玉・枠回復・
-報告書は既存経路のまま動く（決済の観測経路を増やさない）。逆指値の受理可否（SIMULATE・銘柄・時間帯）の
+報告書は既存経路のまま動く（決済の観測経路を増やさない）。逆指値の受理可否（銘柄・時間帯）の
 実測は PoC（#342）待ちであり、受理されない環境では設計どおり建玉が作られない（安全側）。
+
+### 口座種別の軸 — moomoo SIMULATE では損切りの実行機構を選べる（#819）
+
+**moomoo のペーパー口座（SIMULATE）は逆指値（Stop 注文）を受け付けない**（#809 の実測: 新規買いは受理されるが、
+保護逆指値が全件拒否され、上表どおり全件取消になる）。判定の軸は「銘柄・時間帯」に加えて**口座種別**を持ち、
+**SIMULATE に限り**損切りの実行機構を次から選べる。**実弾口座（moomoo REAL）では上表が一文字も緩まずに効く。**
+
+| 手法 | 挙動 | 実装の状態 |
+| --- | --- | --- |
+| **S0** ブローカー側逆指値（**既定**） | 上表のとおり。SIMULATE では逆指値が拒否されるため建玉を持たない | 実装済み |
+| S1 ソフトウェア逆指値 | 損切り到達の検知を購読して成行で決済する | **未実装**。選ばれていても **S0 と同じ扱い**で発注し、警告ログを残す |
+| **S2** 逆指値なしの建玉を許容 | 保護逆指値を発注せず建玉を保持する。**監査台帳（`ProtectiveStopWaived`）と Discord 通知（Warning）に「ペーパーで免除」を明示する** | 実装済み |
+| S3 他のブローカー側注文種別 | StopLimit / TrailingStop を試し、拒否理由を記録する | **未実装**。S1 と同じく S0 と同じ扱い |
+
+- **選択の設定点**: `PUT /risk-controls/settings/stop-loss-method`（本文 `{ "method": 0〜3, "reason": "…" }`）。
+  **利用者のみ**（`trading-owner`。生成 AI・サービス間呼び出しは変更できない）・**理由必須**・前後値つきで設定の変更履歴に
+  残る（種別 `StopLossMethodChanged`）。現在値は `GET /risk-controls/settings` と `GET /risk-controls/status` の
+  `stopLossMethod`（数値）。既定は S0 で、項目を持たない旧い設定行も S0 として読む（読めない値も S0）。
+- **実弾での拒否（設定側・2 方向）**: 発注先が moomoo REAL の間は S0 以外を選べない（400）。S0 以外が有効なまま
+  moomoo REAL へは、確認操作（同意と「REAL」）が揃っていても切り替えられない（400）。
+- **承認への搭載**: 取引判断の承認（`OrderApproved`）は**審査時点で有効な手法**を運ぶ。発注執行は承認が運んだ値で
+  保護レグを扱う（走行中の設定変更と承認が競合しない）。手法を持たない旧いメッセージは S0 として読まれる。
+- **発注執行の解決順**（新規建てにのみ適用。手仕舞いは手法に関わらず発注する）:
+  1. S0 → 上表のとおり（発注先を問わない）
+  2. 発注先が moomoo SIMULATE ではない（moomoo REAL・内蔵 paper）→ **発注せず見送る**
+     （`OrderDispatchForgone` の理由 `StopLossMethodNotPermitted`。Error ログ）
+  3. **空売りのエントリー → S0**（損失に上限の無い取引には最も厳しい統制を残す。上表と空売り専用統制の規則 2 がそのまま効く）
+  4. S2 → 保護逆指値を発注せず、エントリーが生きていれば（受付・一部約定・約定）免除の事実を発行する
+  5. S1 / S3 / 未知の値 → S0 と同じ扱い（緩い側へ倒さない）
+- **常駐ガードとの関係**: S2 の建玉は保護逆指値の記録を作らないため、失効検知の巡回対象に入らない
+  （失効扱いで手仕舞われることが構造的に無い）。S0 の建玉に対するガードの挙動は変わらない。
+- **起動時の停止**: 発注執行は手法を起動時に知らない（設定はリスク管理が持ち、承認ごとに届く）。実弾の発注先は
+  起動時の閂が別に止めている。したがって「実弾で S0 以外が有効」は設定側の 2 方向の拒否と、承認ごとの見送りで塞ぐ。
+- **注意（S2 の読み方）**: S2 の建玉が損切りラインへ到達すると市場監視は従来どおり到達を通知するが、
+  **システムもブローカーも決済しない**。通知文の「決済はブローカー側の逆指値が実行します」は S2 の建玉には当たらない
+  （免除の通知がその旨を明示する）。
 
 owner の手仕舞いには**過剰決済ガード**がある。取引台帳は約定でしか動かないため、決済要求から約定が届くまでの間は
 建玉数量が減らない。多重投入で在庫を超える決済（意図しないショート化）を作らせないため、

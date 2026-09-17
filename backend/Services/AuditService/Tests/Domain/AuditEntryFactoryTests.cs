@@ -822,4 +822,24 @@ public class AuditEntryFactoryTests
         entry.EventType.Should().Be(nameof(ProtectiveStopCoverageLost));
         entry.Summary.Should().Contain("人手対応");
     }
+
+    // FR-10, FR-11, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 免除は保護喪失と別の EventType で残り、
+    // 要約から「手法 S2・ペーパーで免除・逆指値なしの建玉を保持」が読める。
+    [Fact]
+    public void 保護逆指値の免除は保護喪失と別の種別で手法と免除が読める()
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopWaived(entryDecisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                10, 950m, StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopWaived));
+        entry.EventType.Should().NotBe(nameof(ProtectiveStopCoverageLost));
+        entry.CorrelationId.Should().Be(entryDecisionId, "エントリーと 1 本で辿る");
+        entry.Symbol.Should().Be("AAPL");
+        entry.OccurredAt.Should().Be(StopT0);
+        entry.Summary.Should().Contain("S2").And.Contain("ペーパーで免除").And.Contain("逆指値なしの建玉を保持")
+            .And.Contain("MoomooSimulate").And.Contain("950");
+    }
 }

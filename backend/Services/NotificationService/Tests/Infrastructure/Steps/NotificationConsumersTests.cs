@@ -250,6 +250,25 @@ public class NotificationConsumersTests
         await host.StopAsync();
     }
 
+    // FR-10, FR-09, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 免除は Warning で Discord へ届く。
+    [Fact]
+    public async Task 保護逆指値の免除はペーパーで免除としてWarningに通知する()
+    {
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new ProtectiveStopWaived(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+            StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, DateTimeOffset.UtcNow));
+        session.Executed.MessagesOf<ProtectiveStopWaived>().Should().NotBeEmpty();
+
+        sender.Sent.Should().ContainSingle(m =>
+            m.Severity == NotificationSeverity.Warning
+            && m.Title.Contains("ペーパーで免除"));
+
+        await host.StopAsync();
+    }
+
     // FR-09, FR-19, UC-06, #341, ADR-0025, ADR-0028 決定3, IADR-0241:
     // GFV 違反の計上は Critical で通知される。**発注前ガードのすり抜けが現に起きたこと**を知らせる唯一の経路であり、
     // 停止の解除窓口が Discord だけである以上、通知が無ければ利用者は解除が要ることに気付けない。

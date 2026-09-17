@@ -256,10 +256,14 @@ public class BrokerProviderSettingsTests
     // T-108（**否定形**）: 新しい拒否コードを作っていないこと。#434 は「既存の `UnknownProvider` の
     // 意味に揃える／新しい拒否コードを追加しない」と定めており、列挙子が増えると拒否理由の分類が
     // 二重化する（画面・Discord・監査の写像先がすべてずれる）。
+    // ［2026-09-17 追記 / #819］`StopLossMethodNotBrokerStop` は**未知の発注先とは別の理由**（ADR-0040 決定1:
+    // S0 以外の損切り実行機構のまま実弾へ切り替えない）であり、#434 の禁じた二重化に当たらない（IADR-0342 決定2）。
+    // 未知の発注先を表す列挙子は引き続き `UnknownProvider` の 1 つだけであることを固定する。
     [Fact]
     public void 拒否理由の列挙子を増やしていない()
     {
         Enum.GetNames<BrokerProviderChangeRejection>().Should().BeEquivalentTo(
-            ["ReasonRequired", "LiveAcknowledgementMissing", "LivePhraseMismatch", "UnknownProvider"]);
+            ["ReasonRequired", "LiveAcknowledgementMissing", "LivePhraseMismatch", "UnknownProvider",
+                "StopLossMethodNotBrokerStop"]);
     }
 }

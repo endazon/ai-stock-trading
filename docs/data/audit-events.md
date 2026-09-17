@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-08-21
+updated: 2026-09-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-04, FR-08, FR-10, FR-11, FR-19, UC-07]
-adrs: [ADR-0001, ADR-0003]
-iadrs: [IADR-0015, IADR-0019]
-specs: [20260710_audit-log]
-issues: [#17, #18]
+ids: [FR-04, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
+adrs: [ADR-0001, ADR-0003, ADR-0040]
+iadrs: [IADR-0015, IADR-0019, IADR-0342]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection]
+issues: [#17, #18, #819]
 -->
 
 
@@ -60,6 +60,10 @@ issues: [#17, #18]
   決済発行は廃止）。決済はエントリーと同時に発注済みの保護逆指値がブローカー側で行い、
   保護レグの記録（`ProtectiveStopPlaced` / `ProtectiveStopCoverageLost`）はエントリーの `DecisionId` を
   `CorrelationId` に採るため、エントリーから保護・解消までを同一相関で辿れる。
+- moomoo SIMULATE で損切りの実行機構 S2（逆指値なしの建玉を許容）が選ばれていた新規建ては、保護逆指値を発注せず
+  **免除の事実（`ProtectiveStopWaived`）**を記録する（#819）。種別は保護喪失（`ProtectiveStopCoverageLost`）と**別**であり、
+  相関は同じくエントリーの `DecisionId` である。要約に手法（S2）・発注先・損切りラインと「逆指値なしの建玉を保持する
+  （システムは決済しない）」を書く——「建玉あり ⇒ 有効な逆指値あり（または解消済み）」の読みの例外を台帳上で明示するため。
 
 ## 永続化方針
 

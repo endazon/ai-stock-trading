@@ -268,6 +268,10 @@ public class AuditCycleCompletenessTests
                 decisionId, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
                 ProtectiveStopRemediation.PositionClosed, 10, Guid.NewGuid(), Intent(), t),
             new ProtectiveStopPlaced(decisionId, Guid.NewGuid(), "STOP-1", Intent(), 950m, 1, t),
+            // FR-10, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の免除。
+            new ProtectiveStopWaived(
+                decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+                StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, t),
             new ReportConfirmed("2026-08-28", "Daily", "endazon", 3, t),
             new ReportDraftPresented("2026-08-28", "Daily", "2026-08-28（日報）", "本日の方針", 1, t),
             new ScreeningContextReduced(

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
@@ -17,13 +19,21 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // **同時発注**し、逆指値を張れない Open では建玉を持たない（見送り／取消／成行手仕舞い＝fail-closed）。
 // FR-05, #331, IADR-0211: OpenD へ確実に届いていない発注（BrokerUnavailableException）は Rejected へ丸めず、
 // 予約を解放して「見送り」（OrderDispatchForgone）で正常終了する（キューイングしない）。
+//
+// FR-10, FR-12, ADR-0040 決定1, #819, IADR-0342: 損切りの実行機構は承認が運ぶ（既定 S0）。解釈は
+// StopLossMethodPolicy だけが行う。**S2（moomoo SIMULATE の新規買いに限る）では保護逆指値を発注せず建玉を保持し、
+// 免除の事実（ProtectiveStopWaived）を発行する**——「逆指値なしの建玉を持たない」の例外はこの 1 分岐だけである。
+// S0 以外が SIMULATE 以外へ届いたら発注しない（実弾を無防備にしない）。S1/S3 は未実装のため S0 と同じ扱い。
 public sealed class OrderExecutionAppService(
     IBrokerAdapter broker,
     IExecutedOrderStore store,
     IOrderReservationStore reservations,
     IClock clock,
-    IProtectiveStopOrderStore? protectiveStops = null)
+    IProtectiveStopOrderStore? protectiveStops = null,
+    ILogger<OrderExecutionAppService>? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger<OrderExecutionAppService>.Instance;
+
     public async Task<OrderDispatchResult> ExecuteAsync(OrderApproved approved, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(approved);
@@ -50,6 +60,16 @@ public sealed class OrderExecutionAppService(
         }
 
         var intent = approved.Intent;
+
+        // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 承認が運ぶ手法を解決する（Open にのみ効く）。
+        // S0 は常に S0 であり、以降の分岐は 1 バイトも変わらない。
+        var disposition = intent.PositionEffect == PositionEffect.Open
+            ? ResolveStopLossMethod(approved)
+            : StopLossMethodDisposition.BrokerStopOrder;
+        if (disposition == StopLossMethodDisposition.Refused)
+        {
+            return Forgone(approved, OrderDispatchForgoneReason.StopLossMethodNotPermitted);
+        }
 
         // FR-10, #331, IADR-0210 決定1: 逆指値を張れない Open は**発注せず**見送る（建玉を作らない側へ倒す）。
         // 予約の前に判定する（発注に着手しないため予約は要らない）。
@@ -139,6 +159,18 @@ public sealed class OrderExecutionAppService(
         // 終端失敗（Rejected / Cancelled / Expired）は建玉が生じないため保護レグ自体が不要である。
         var entryAlive = brokerOrder.Status
             is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled;
+        if (intent.PositionEffect == PositionEffect.Open && entryAlive
+            && disposition == StopLossMethodDisposition.ProtectiveStopWaived)
+        {
+            // FR-10, FR-12, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値を発注せず建玉を保持する。
+            // 取消・手仕舞いも行わない。逆指値レグの記録（protective_stop_orders）を作らないため、
+            // ProtectiveStopGuard の巡回対象に入らない（失効扱いで手仕舞われることが構造的に無い）。
+            var waived = new ProtectiveStopWaived(
+                approved.DecisionId, intent.Symbol, intent.Market, intent.Side, intent.ProductType,
+                intent.Quantity, intent.StopLossPrice, approved.StopLossMethod, broker.Provider, now);
+            return OrderDispatchResult.FromExecuted(executed, stopWaived: waived);
+        }
+
         if (intent.PositionEffect == PositionEffect.Open && entryAlive)
         {
             var (stopPlaced, coverageLost) = await PlaceProtectiveStopAsync(approved, brokerOrder, cancellationToken)
@@ -147,6 +179,30 @@ public sealed class OrderExecutionAppService(
         }
 
         return OrderDispatchResult.FromExecuted(executed);
+    }
+
+    // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4・決定7: 解決とログ。拒否は Error（実弾で S0 以外が
+    // 有効＝設定側の関門が 2 方向とも破られた状態であり、放置してはならない）、未実装は Warning。
+    private StopLossMethodDisposition ResolveStopLossMethod(OrderApproved approved)
+    {
+        var disposition = StopLossMethodPolicy.Resolve(approved.StopLossMethod, approved.Intent, broker.Provider);
+        switch (disposition)
+        {
+            case StopLossMethodDisposition.Refused:
+                _logger.LogError(
+                    "損切りの実行機構 {Method} は moomoo SIMULATE でしか選べませんが、発注先は {Provider} です。"
+                    + "発注しません（DecisionId={DecisionId}・ADR-0040 決定1）。利用者の設定で S0 へ戻してください。",
+                    approved.StopLossMethod, broker.Provider, approved.DecisionId);
+                break;
+            case StopLossMethodDisposition.NotImplementedFallbackToBrokerStop:
+                _logger.LogWarning(
+                    "損切りの実行機構 {Method} は未実装のため S0（ブローカー側逆指値）と同じ扱いで発注します"
+                    + "（DecisionId={DecisionId}・S1=#820 / S3=#821）。",
+                    approved.StopLossMethod, approved.DecisionId);
+                break;
+        }
+
+        return disposition;
     }
 
     private OrderDispatchResult Forgone(OrderApproved approved, OrderDispatchForgoneReason reason) =>

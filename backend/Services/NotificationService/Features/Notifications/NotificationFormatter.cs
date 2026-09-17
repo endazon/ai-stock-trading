@@ -61,11 +61,39 @@ public static class NotificationFormatter
             },
         NotificationSeverity.Critical);
 
+    // FR-10, FR-12, FR-11, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の**免除**（ペーパーで免除）。
+    // 🔴 **Warning であって Critical ではない。** 利用者が moomoo SIMULATE で選んだ手法どおりの結果であり、
+    // 統制が破れた事象（保護喪失の Critical）と同じ重みにすると、本当に破れたときの通知が埋もれる。
+    // ただし Info にもしない——**逆指値なしの建玉が実在する**ことは読み落とされてはならない。
+    // 🔴 本文に「損切りライン到達でもシステムは決済しない」を書く。書かないと、損切り到達の通知
+    // （決済はブローカー側の逆指値が実行します）を読んだ利用者が「逆指値で切られる」と誤解する。
+    public static NotificationMessage From(ProtectiveStopWaived e) => new(
+        "リスク統制: 保護逆指値をペーパーで免除（" + StopLossMethodLabel(e.Method) + "）",
+        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.Quantity}: 損切りの実行機構 {StopLossMethodLabel(e.Method)}"
+            + $"（逆指値なしの建玉を許容）が選ばれているため、{e.Provider} で保護逆指値を発注せず建玉を保持します。"
+            + $"損切りライン {(e.StopLossPrice is { } price ? price.ToString(CultureInfo.InvariantCulture) : "なし")}"
+            + " に到達しても**システムもブローカーも決済しません**（実弾口座では選べない手法です・"
+            + $"EntryDecisionId={e.EntryDecisionId}）。",
+        NotificationSeverity.Warning);
+
+    // #819, IADR-0342: 計画の手法 ID（S0〜S3）。enum 名だけでは計画の表と突き合わせにくい。
+    private static string StopLossMethodLabel(StopLossExecutionMethod method) => method switch
+    {
+        StopLossExecutionMethod.BrokerStopOrder => "S0",
+        StopLossExecutionMethod.SoftwareStop => "S1",
+        StopLossExecutionMethod.NoProtectiveStop => "S2",
+        StopLossExecutionMethod.AlternativeBrokerOrderType => "S3",
+        _ => method.ToString(),
+    };
+
     private static string ReasonLabel(OrderDispatchForgoneReason reason) => reason switch
     {
         OrderDispatchForgoneReason.BrokerUnavailable => "ブローカー（OpenD）へ接続できません",
         OrderDispatchForgoneReason.StopLossPriceMissing => "損切り価格がなく保護逆指値を張れません",
         OrderDispatchForgoneReason.StopOrderUnsupported => "ブローカーが逆指値に対応していません",
+        // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 対処は「設定を S0 へ戻す」であり、他の 3 つと違う。
+        OrderDispatchForgoneReason.StopLossMethodNotPermitted =>
+            "損切りの実行機構が moomoo SIMULATE 以外では選べない手法です（設定を S0 へ戻してください）",
         _ => reason.ToString(),
     };
 

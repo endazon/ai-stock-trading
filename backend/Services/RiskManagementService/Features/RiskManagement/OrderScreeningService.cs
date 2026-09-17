@@ -81,10 +81,13 @@ public sealed class OrderScreeningService(
 
         // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を判断から発注執行へ**そのまま**中継する
         // （統制の判定には一切使わない・審査時刻で上書きしない）。上書きすると審査より前の区間が消える。
+        // FR-10, ADR-0040 決定1・決定3, #819, IADR-0342 決定3: **承認時点で有効な損切りの実行機構**を載せる。
+        // 発注執行は承認が運ぶ値で保護レグを扱う（走行中の設定変更と承認の競合を避ける）。解釈（SIMULATE 限定・
+        // 空売りの除外）は発注執行が行い、ここでは設定値をそのまま運ぶ——承認は「どの設定で承認したか」の記録でもある。
         return ScreeningOutcome.Approve(
             new OrderApproved(
                 decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow,
-                decision.CycleTrigger, decision.CycleStartedAt),
+                decision.CycleTrigger, decision.CycleStartedAt, settings.StopLossMethod),
             observation);
     }
 

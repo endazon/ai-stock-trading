@@ -290,6 +290,19 @@ public class NotificationTemplateGoldenTests
                 "AAPL/UnitedStates Sell 数量10 トリガー 950（試行 1・StopOrderId=stop-1）。",
                 NotificationSeverity.Info)),
 
+        // FR-10, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の免除（ペーパーで免除）。Warning。
+        ["ProtectiveStopWaived"] = (
+            new ProtectiveStopWaived(
+                Id, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+                StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, T),
+            new NotificationMessage(
+                "リスク統制: 保護逆指値をペーパーで免除（S2）",
+                "AAPL/UnitedStates Buy 数量10: 損切りの実行機構 S2（逆指値なしの建玉を許容）が選ばれているため、"
+                    + "MoomooSimulate で保護逆指値を発注せず建玉を保持します。損切りライン 950 に到達しても"
+                    + "**システムもブローカーも決済しません**（実弾口座では選べない手法です・"
+                    + "EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
+                NotificationSeverity.Warning)),
+
         // 🔴 同じイベント型でも**対処の結末で本文が変わる**（FxRateStale と同じ扱いで分岐ごとに 1 行）。
         // 手仕舞いに成功した側。
         ["ProtectiveStopCoverageLost/建玉を手仕舞い"] = (

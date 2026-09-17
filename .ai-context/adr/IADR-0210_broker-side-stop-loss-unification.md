@@ -2,14 +2,15 @@
 title: IADR-0210 損切りはブローカー側逆指値へ一本化し、発注執行が保護レグの同時発注・建玉解消・失効ガードまで持つ
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118]
+related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, ADR-0040, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118, IADR-0342]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-17
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md (決定2(b))
+  - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (実測1・決定1)
 ---
 
 # IADR-0210: 損切りはブローカー側逆指値へ一本化し、発注執行が保護レグの同時発注・建玉解消・失効ガードまで持つ
@@ -27,6 +28,18 @@ plan_refs:
 - 関連 IADR: [IADR-0015](IADR-0015_stop-loss-mechanical-close.md)（旧機構。本 IADR が Supersede）、
   [IADR-0057](IADR-0057_order-dispatch-idempotency.md)（発注 3 相）、[IADR-0113](IADR-0113_moomoo-fill-polling.md)（約定追跡）、
   [IADR-0117](IADR-0117_owner-position-close-path.md)（owner 決済）、[IADR-0118](IADR-0118_broker-position-reconciliation.md)（建玉突合）
+
+> **［2026-09-17 追記 / #819］引用した拘束元の是正（挙動は不変）。**
+> 上の「関連する計画書 ID」は拘束元を「ADR-0016 決定 2(b)（同時発注必須・方向を問わない）」と書いているが、**誤りである**。
+> 計画 ADR-0040 実測 1 が示したとおり、本 IADR が実装した挙動（建玉と同時にブローカー側逆指値・システムは決済注文を
+> 発行しない・逆指値が未受理/失効なら建玉を持たない）を**方向を問わず**拘束しているのは **FR-10 の 3 文**であり、
+> その根拠は**利用者裁定 2026-07-31（planning#88・損切りの実行機構）**である。**ADR-0016 決定 2(b) は空売りに重ねた
+> 方向限定の統制**（見出し「損失上限が無いことへの対処」）であり、現物買い・信用買いを射程に含まない。
+> **本 IADR の決定・実装はいずれも変わらない**（S0 として存置）。FR-10 の 3 文は 2026-09-17 に「口座種別」の軸を得て、
+> moomoo SIMULATE に限り損切りの実行機構を選択式にした（ADR-0040 決定 1・2）。その選択機構・実弾での拒否・S2 は
+> [IADR-0342](IADR-0342_simulate-stop-loss-method-selection.md) が実装する。本 IADR の決定 1 の fail-closed（逆指値を張れない
+> Open は発注しない）は **S0 の規律として**そのまま効き、S2 の免除は IADR-0342 決定 6 の 1 分岐だけが例外である。
+> 残余リスク 2 項目めの「SIMULATE が `OrderType_Stop` を受理しない可能性」は #809 で**成立を実測**した（全件拒否）。
 
 ## コンテキストと課題
 

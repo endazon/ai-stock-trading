@@ -33,4 +33,9 @@ public enum SettingsChangeType
     // 裁定は「下げた事実が記録に残ることを担保する」と定めており、**履歴に残ること自体が要求である**。
     // **末尾へ追加する**（序数 8）。BrokerProviderChanged と同じ規律（IADR-0134 決定2）。
     Stage1MinimumTradeCountChanged,
+
+    // FR-10, FR-12, SC-02, ADR-0040 決定1・決定3, #819, IADR-0342 決定2: 損切りの実行機構（S0〜S3）の変更。
+    // 計画は「どの手法を選んでいるかを監査ログに出す」と定める（どの手法で走ったかが読めなければ観測結果を解釈できない）。
+    // **末尾へ追加する**（序数 9）。BrokerProviderChanged と同じ規律（IADR-0134 決定2）。
+    StopLossMethodChanged,
 }

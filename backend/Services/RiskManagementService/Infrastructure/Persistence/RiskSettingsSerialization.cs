@@ -32,7 +32,8 @@ public static class RiskSettingsSerialization
             new StageDto(settings.Stage.Stage, settings.Stage.Mode, settings.Stage.CapitalCapRatio),
             settings.ShortSell,
             settings.BrokerProvider,
-            settings.Stage1MinimumTradeCount);
+            settings.Stage1MinimumTradeCount,
+            settings.StopLossMethod);
         return JsonSerializer.Serialize(dto, Options);
     }
 
@@ -74,6 +75,10 @@ public static class RiskSettingsSerialization
             // そちらは「外部へ発注しない値」へ倒す）。読めない行が「少ない件数」へ倒れると、
             // 擬似的に合格へ近づく＝統制が緩む側であり、しかも画面には正常な設定として現れる。
             Stage1MinimumTradeCount = Stage1TradeCountBounds.Resolve(dto.Stage1MinimumTradeCount),
+            // FR-10, ADR-0040 決定1, #819, IADR-0342 決定2: 損切りの実行機構は **allow-list で S0 へ落として読む**。
+            // 本項目を持たない旧行（null）も未知の序数も S0 である。**倒す先は「逆指値を置く」側**——
+            // 読めない行が S2（免除）へ倒れると、利用者が選んでいない無防備な建玉が黙って生まれる。
+            StopLossMethod = StopLossMethodChange.Resolve(dto.StopLossMethod),
         };
     }
 
@@ -92,7 +97,13 @@ public static class RiskSettingsSerialization
         // FR-20, FR-13, SC-02, #423: Stage 1 の最小取引件数。nullable＝本プロパティの追加前に書かれた行
         // （旧行はキーを持たないため null のまま入り、`Stage1TradeCountBounds.Resolve` が既定 100 を与える）。
         // **マイグレーションで既存行を書き換えない**（BrokerProvider と同じ規律・IADR-0161 決定2）。
-        int? Stage1MinimumTradeCount = null);
+        int? Stage1MinimumTradeCount = null,
+        // FR-10, ADR-0040 決定1, #819: 損切りの実行機構。nullable＝本プロパティの追加前に書かれた行
+        // （旧行はキーを持たないため null のまま入り、`StopLossMethodChange.Resolve` が S0 を与える）。
+        // **マイグレーションで既存行を書き換えない**（BrokerProvider と同じ規律・IADR-0161 決定2）。
+        // 🔴 文字列トークン等の不正な型は標準の enum 変換が JsonException を投げ設定行全体が読めなくなるが、
+        // 本項目は API（数値 enum）だけが書くため BrokerProvider 用の寛容な変換器は付けない（IADR-0342 決定2）。
+        StopLossExecutionMethod? StopLossMethod = null);
 
     private sealed record GuardDto(
         List<ProductType> EnabledProductTypes,

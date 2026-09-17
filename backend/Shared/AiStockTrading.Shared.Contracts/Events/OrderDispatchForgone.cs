@@ -26,4 +26,11 @@ public enum OrderDispatchForgoneReason
 
     /// <summary>ブローカーが逆指値の発注能力（IProtectiveOrderBroker）を持たない。同上（fail-closed）。</summary>
     StopOrderUnsupported,
+
+    /// <summary>
+    /// FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 承認が S0 以外の損切り実行機構を運んでいるのに、
+    /// 発注先が moomoo SIMULATE ではない（実弾・内蔵 paper）。<b>S0 以外は SIMULATE でしか選べない</b>ため、
+    /// 読み替えずに発注しない（fail-closed）。<b>末尾へ追加する</b>（序数 3。メトリクスのタグ・監査 payload の整数が往来する）。
+    /// </summary>
+    StopLossMethodNotPermitted,
 }
