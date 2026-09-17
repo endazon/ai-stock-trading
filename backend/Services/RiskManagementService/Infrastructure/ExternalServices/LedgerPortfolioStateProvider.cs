@@ -11,24 +11,35 @@ namespace RiskManagementService.Infrastructure.ExternalServices;
 // 含み 0・DD 0 のまま＝現行挙動を保つ（Worker 側の MarketData:EnableMarkToMarket が既定 false のため既定は未注入）。
 // #257, IADR-0108: 基準資金は注入できるようにする（既定＝TradingDefaults.InitialCapital＝現行等価）。
 // SIMULATE 限定プロファイル（Risk:SimulatorProfile:Enabled）有効時のみ、ホストがシミュレータ残高相当を渡す。
+//
+// FR-10, #829, IADR-0346 決定3: 承認済みで生きている新規建て注文（IWorkingEntryOrderSource）を射影へ渡し、
+// 日次発注累計・段階資金・保有建玉数へ算入させる。**必須依存である**（IADR-0163 決定2——省略可能にすると
+// 配線を削ってもコンパイルが通り、未約定の算入だけが静かに外れて #829 の穴が戻る）。
 public sealed class LedgerPortfolioStateProvider(
     IPortfolioLedgerStore ledger,
+    IWorkingEntryOrderSource workingEntryOrders,
     IClock clock,
     ICurrentPriceSource? currentPrices = null,
     decimal? initialCapital = null)
     : IPortfolioStateProvider
 {
+    // IADR-0346 決定2: 注文源の走査の下限。当日の判定は Project が市場の現地取引日で行うため、下限は
+    // 「どの市場の当日も取りこぼさない」幅であればよい（走査量の上限にすぎない）。
+    private static readonly TimeSpan WorkingEntryLookback = TimeSpan.FromDays(2);
+
     private readonly decimal _initialCapital = initialCapital ?? TradingDefaults.InitialCapital;
 
     public PortfolioState GetCurrent()
     {
+        var now = clock.UtcNow;
         var fills = ledger.GetFills();
+        var working = workingEntryOrders.GetWorkingEntryOrders(now - WorkingEntryLookback);
 
         if (currentPrices is null)
-            return PortfolioProjection.Project(fills, clock.UtcNow, _initialCapital);
+            return PortfolioProjection.Project(fills, now, _initialCapital, workingEntries: working);
 
         var prices = currentPrices.GetCurrentPrices(PortfolioProjection.ProjectOpenPositions(fills));
-        var state = PortfolioProjection.Project(fills, clock.UtcNow, _initialCapital, prices);
+        var state = PortfolioProjection.Project(fills, now, _initialCapital, prices, workingEntries: working);
 
         // 現在エクイティ＝当日開始基準（初期資金＋当日より前の実現）＋当日実現＋含み（Project の定義と同一）。
         // ピークは台帳から再計算し（IADR-0066）、DD だけを差し替える（Project をもう一度走らせない）。

@@ -25,12 +25,40 @@ public class LedgerPortfolioStateProviderTests
 
         appended.Should().BeTrue();
 
-        var provider = new LedgerPortfolioStateProvider(store, new FixedClock());
+        var provider = new LedgerPortfolioStateProvider(store, NoWorkingEntries(), new FixedClock());
         var state = provider.GetCurrent();
 
         state.OpenPositionCount.Should().Be(1);
         state.InvestedCapital.Should().Be(10_000m);
         state.Capital.Should().Be(TradingDefaults.InitialCapital);
+    }
+
+    // IADR-0163 決定2 / IADR-0346 決定3: 注文源は必須依存。テストの既定は「未約定の注文なし」。
+    private static InMemoryWorkingEntryOrderSource NoWorkingEntries() =>
+        new(new InMemoryPortfolioLedgerStore(), new InMemoryOrderActivityStore());
+
+    // FR-10, #829, IADR-0346 決定3: プロバイダは注文源の未終端新規建てを射影へ渡す（時価評価の有無の両分岐）。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void 未約定の承認済み新規建ては当日発注累計に算入される(bool markToMarket)
+    {
+        var clock = new FixedClock();
+        var store = new InMemoryPortfolioLedgerStore();
+        var activity = new InMemoryOrderActivityStore();
+        var decisionId = Guid.NewGuid();
+        store.AppendApproval(decisionId, BuyIntent(10, 1_000m), clock.UtcNow.AddMinutes(-5));
+        activity.RecordPlacement(decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, 10, clock.UtcNow.AddMinutes(-5));
+        var working = new InMemoryWorkingEntryOrderSource(store, activity);
+
+        var provider = markToMarket
+            ? new LedgerPortfolioStateProvider(store, working, clock, new FakeCurrentPriceSource([]))
+            : new LedgerPortfolioStateProvider(store, working, clock);
+        var state = provider.GetCurrent();
+
+        state.DailyOrderedAmount.Should().Be(10_000m);
+        state.InvestedCapital.Should().Be(10_000m);
+        state.OpenPositionCount.Should().Be(1);
     }
 
     [Fact]
@@ -98,7 +126,7 @@ public class LedgerPortfolioStateProviderTests
     [Fact]
     public void 現在値ソース未注入なら含み損益とドローダウンは0のまま()
     {
-        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), new FixedClock());
+        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), NoWorkingEntries(), new FixedClock());
 
         var state = provider.GetCurrent();
 
@@ -111,7 +139,7 @@ public class LedgerPortfolioStateProviderTests
     {
         // 建玉 10 @1,000 が 1,100 → 含み +1,000。
         var prices = new FakeCurrentPriceSource(new() { [("AAPL", Market.UnitedStates)] = 1_100m });
-        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), new FixedClock(), prices);
+        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), NoWorkingEntries(), new FixedClock(), prices);
 
         provider.GetCurrent().UnrealizedPnl.Should().Be(1_000m);
     }
@@ -121,7 +149,7 @@ public class LedgerPortfolioStateProviderTests
     {
         // ピーク = 初期資金 + 2,000（実現）。建玉 10 @1,000 が 900 → 含み −1,000 → 現在 = ピーク − 1,000。
         var prices = new FakeCurrentPriceSource(new() { [("AAPL", Market.UnitedStates)] = 900m });
-        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), new FixedClock(), prices);
+        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), NoWorkingEntries(), new FixedClock(), prices);
 
         var state = provider.GetCurrent();
         var peak = TradingDefaults.InitialCapital + 2_000m;
@@ -134,7 +162,7 @@ public class LedgerPortfolioStateProviderTests
     public void 含み益で最高値を更新している間はドローダウンは0()
     {
         var prices = new FakeCurrentPriceSource(new() { [("AAPL", Market.UnitedStates)] = 1_100m });
-        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), new FixedClock(), prices);
+        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), NoWorkingEntries(), new FixedClock(), prices);
 
         provider.GetCurrent().DrawdownRatio.Should().Be(0m);
     }
@@ -143,7 +171,7 @@ public class LedgerPortfolioStateProviderTests
     public void 現在値が取得できない建玉は含み0として扱いドローダウンも出さない()
     {
         // ソースは注入されているが値が空（市況断・TTL 超過）→ 含み 0。実現ベースのピーク＝現在エクイティで DD 0。
-        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), new FixedClock(), new FakeCurrentPriceSource([]));
+        var provider = new LedgerPortfolioStateProvider(LedgerWithOpenPosition(), NoWorkingEntries(), new FixedClock(), new FakeCurrentPriceSource([]));
 
         var state = provider.GetCurrent();
 

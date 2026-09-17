@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-17
+updated: 2026-09-18
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027, ADR-0040]
-iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819]
+iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_829_count-working-entry-orders]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #829]
 -->
 
 
@@ -194,6 +194,17 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-126 | ショートエントリー（Side=Sell の Open）にも金額系上限が効く | `ショートエントリーにも段階資金上限と金額上限が適用される`（`RiskEvaluatorTests`） |
 | T-10-127 | **1 注文上限（25%）の直下に刻んだ分割発注で枠を積み上げる**（1 件ずつ上限内なら通る経路）。日次枠が累計で効くため上限いっぱいでも 1 日 6 件で尽き、刻みを細かくしても緩まない | `分割発注しても日次発注枠は累計で効く`（`EquityRatioRiskLimitsTests`。#329 第 3 段階） |
 | T-10-128 | **決済に見せかけた新規建てで日次枠を逃れる**。在庫を超えて反転した分は投入額（段階資金上限）と保有建玉数へ計上され、露出が統制の視界から消えない。建玉効果の付与自体も上流が保有建玉から決める（AI の申告に依存しない） | `決済に見せかけて在庫を超えた約定でも残る建玉は投入額と建玉数に計上される`（`PortfolioProjectionTests`。#329 第 3 段階）／ `保有なしの売りは見送る`・`建玉が不明なら売りを見送る`（`PositionEffectResolverTests`） |
+
+**約定前の新規建て注文の算入（2026-09-18）** — 指値が溜まっている間に上限を超えて承認し続けられる経路を塞ぐ:
+
+| ID | 塞ぎ残しが無いこと | テストメソッド（クラス） |
+| --- | --- | --- |
+| T-10-333 | **未約定の承認済み新規建てが日次枠を消費し、上限を超える次の注文は日次枠超過で拒否される**（約定を待たない）。注文源を渡さない純関数の既定は従来どおり | `未約定の承認済み新規建てが日次枠を消費し上限を超える3件目は拒否される`（`MoomooFillControlRegressionTests`）／ `未約定の承認済み新規建ては承認価格で当日発注累計と段階資金と保有建玉数に算入する`・`注文源を渡さなければ約定だけを数える_回帰`（`PortfolioProjectionTests`）／ `未約定の承認済み新規建ては当日発注累計に算入される`（`LedgerPortfolioStateProviderTests`） |
+| T-10-334 | **部分約定・全量約定で「約定分＋残数量」を二重に数えない**（別の注文の約定を取り違えない） | `部分約定の注文は約定分と残数量を一度ずつ数える`・`別の注文の約定は残数量を減らさない`（`PortfolioProjectionTests`）／ `部分約定でも約定分と残数量の合計は発注代金のまま変わらない`・`未約定の間も発注代金が枠を消費し約定が届いても二重に数えず同日再エントリーは約定後に拒否する`（`MoomooFillControlRegressionTests`） |
+| T-10-335 | **取消した発注で枠を消費しない**／**終端が届かない注文を翌取引日へ持ち越さない**（市場の現地取引日で判定） | `約定ゼロで取り消された新規建ては枠を返す`（`MoomooFillControlRegressionTests`）／ `承認時刻の市場の現地取引日が当日の未終端注文だけを算入する`（`PortfolioProjectionTests`・米国 / 日本） |
+| T-10-336 | 非基準通貨の注文は承認時レートで基準通貨へ換算して算入する | `外貨建ての未約定注文は承認時レートで基準通貨へ換算する`（`PortfolioProjectionTests`） |
+| T-10-337 | 保有建玉数は建玉の無い銘柄の未約定だけ増える（建て増し・同一銘柄の複数注文で水増ししない） | `未約定の新規建ては建玉の無い銘柄だけ保有建玉数を増やす`（`PortfolioProjectionTests`） |
+| T-10-338 | **注文源は新規建て・未終端・下限以降だけを返し（決済は算入しない）、2 実装が一致する**。**見送り（発注されていない承認）は終端になり枠を返す**（承認より先に届いても・既に終端なら変えない） | `EF実装は新規建てかつ未終端で下限以降の承認だけを返す`・`InMemory実装もEF実装と同じ注文を返す`・`見送りは生きている注文を拒否として終端にする`・`見送りが承認より先に届いても終端の行が残る`・`既に終端の注文は見送りで変えない`（`WorkingEntryOrderSourceTests`）／ `見送られた新規建ては枠を返す`（`MoomooFillControlRegressionTests`） |
 
 **空売り専用統制（#329 第 2 段階）** — 何の迂回を塞いだかを明記する:
 
@@ -647,7 +658,7 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-301 | 逆指値・建玉の照会が不能 | 同上 | **据え置く**（不明を「無い」と取り違えない。取消・再発注のどちらも行わない） | fail-safe | 自動（否定形） |
 | T-10-302 | OpenD へ接続できない（接続確立の失敗＝確実に未発注） | 承認済み注文を執行する | **キューイングせず見送り＋通知**。例外を投げず（再試行キューへ入らず）、見送りイベントのみ発行。予約は解放され、注文記録は残らない | 切断時の見送り | 自動 |
 | T-10-303 | 同上 | ブローカーアダプタの分類 | 接続確立の失敗は**「拒否」へ丸めない**（拒否＝証券会社が受理しなかった状態。送信後の分類不能な失敗のみ従来どおり拒否へ倒す） | 別状態・別集計 | 自動（否定形） |
-| T-10-304 | 証券会社拒否・見送りのイベントを扱うハンドラ群 | 依存の構造を検査する | **統制違反観測ストアへ依存しない**（事前拒否の経路だけが依存する＝正の対照つき）。見送りをリスク管理が購読して再発注する経路も無い | 別集計（統制違反件数へ混入しない） | 自動（構造・否定形） |
+| T-10-304 | 証券会社拒否・見送りのイベントを扱うハンドラ群 | 依存の構造を検査する | **統制違反観測ストアへ依存しない**（事前拒否の経路だけが依存する＝正の対照つき）。見送りをリスク管理が購読して再発注する経路も無い（2026-09-18 改定: リスク管理の購読は注文アクティビティを終端にする 1 ハンドラだけで、依存は注文アクティビティのストアに限る。未約定の新規建ての算入から枠を返すため。T-10-338） | 別集計（統制違反件数へ混入しない） | 自動（構造・否定形） |
 | T-10-305 | 逆指値レグ・手仕舞いレグの通知・監査 | 各イベントを整形・記録する | 監査の種別が**約定・事前拒否・見送りで相互に異なる**。見送り通知は「再試行されない」を明記（Warning）。保護喪失は Critical・不成立（None）は「直ちに確認」を明記 | 記録・通知 | 自動 |
 | T-10-327 | moomoo SIMULATE・損切りの実行機構 S2・新規買い（現物/信用買い × 受付/一部約定/約定） | 承認済み注文を執行する | **保護逆指値を発注せず**、取消・手仕舞いもしない。免除の事実（`ProtectiveStopWaived`）を発行し、保護逆指値の記録を作らない（常駐ガードの巡回対象外）。エントリーが生きていなければ免除の事実は出ない | S2 は建玉を保持する | 自動（境界値） |
 | T-10-328 | 発注先が SIMULATE 以外（moomoo REAL・内蔵 paper）・S0 以外の手法 | 同上 | **発注せず見送る**（理由 `StopLossMethodNotPermitted`・予約も取らない）。空売りでも同じ | 実弾を無防備にしない | 自動（否定形） |

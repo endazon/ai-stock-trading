@@ -53,11 +53,20 @@ public class RejectionSeparationTests
     }
 
     [Fact]
-    public void 見送りはリスク管理では購読しない_発注経路を作らない()
+    public void 見送りのリスク管理での購読は注文アクティビティの終端化だけで_発注経路を作らない()
     {
         // 見送り（キューイングしない）を購読して再発注する経路がリスク管理側に生えると、
         // 「見送りは破棄・再発注は次の取引判断からのみ」（IADR-0211 決定3）が破れる。
-        HandlersOf(typeof(OrderDispatchForgone)).Should().BeEmpty(
-            "見送りの記録は監査サービス・通知は通知サービスが担う（リスク管理は関与しない）");
+        // FR-10, #829, IADR-0346 決定5: 見送った承認が未終端の新規建てとして当日の発注枠を食い続けないよう、
+        // 注文アクティビティを終端にする購読**だけ**を許す。依存は IOrderActivityStore の 1 つに限る
+        // （発行・台帳・審査・統制違反観測へ届く依存を持たせない＝再発注・混入の経路が構造的に無い）。
+        var handlers = HandlersOf(typeof(OrderDispatchForgone)).ToList();
+
+        handlers.Should().ContainSingle().Which.Should().Be(typeof(OrderDispatchForgoneActivityHandler),
+            "見送りの記録は監査サービス・通知は通知サービスが担う（リスク管理は枠の返却のための終端化だけ）");
+        handlers.Single().GetConstructors()
+            .SelectMany(c => c.GetParameters())
+            .Select(p => p.ParameterType)
+            .Should().Equal(typeof(IOrderActivityStore));
     }
 }

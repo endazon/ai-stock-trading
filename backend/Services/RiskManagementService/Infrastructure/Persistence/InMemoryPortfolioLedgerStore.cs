@@ -107,6 +107,10 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         return total;
     }
 
+    // FR-10, #829, IADR-0346 決定1: 承認の一覧（InMemoryWorkingEntryOrderSource が未終端の新規建てを切り出す）。
+    internal IReadOnlyList<(Guid DecisionId, OrderIntent Intent, DateTimeOffset ApprovedAt)> SnapshotApprovals() =>
+        _approvals.Select(a => (a.Key, a.Value.Intent, a.Value.ApprovedAt)).ToList();
+
     private sealed record ApprovalRecord(OrderIntent Intent, DateTimeOffset ApprovedAt, decimal? FxRateBaseToDisplay = null);
 
     private sealed record FillRecord(
