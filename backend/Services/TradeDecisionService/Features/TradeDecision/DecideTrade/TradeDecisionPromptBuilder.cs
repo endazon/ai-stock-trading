@@ -27,6 +27,16 @@ public static class TradeDecisionPromptBuilder
     private const string ShortSellNewsCrashRule = "ニュース由来の急落に対する即時の空売りは保留します。";
     private const string ShortSellLongForHeadroomRule = "空売りの余力（証拠金枠）を作る目的でロング建玉を取得することは禁止します。";
 
+    // FR-04, FR-10, ADR-0040 決定5, #822, IADR-0343 決定1: 数量はシステムが統制値から決める（根拠文は数量を拘束しない）。
+    // 実測（2026-09-16〜17）: 根拠文が「1株単位の新規買い」と書き、サイジングは 849 株を発注した —— 計画の
+    // 「米国株（1株単位）」は売買単位の記述であり、LLM はそれを数量の指示と読んだ。本判断（Build）のリスク制約節にだけ置く
+    // （一次スクリーニングは根拠文が記録へ載らず、リスク制約節も持たない）。テストがこの const を直接参照する。
+    public const string QuantityIsSystemDecidedRule =
+        "発注数量はこの判断の後にシステムが上記の統制値から算出します（あなたは数量を決めません）。rationale では株数に言及しないでください。";
+
+    public const string TradingUnitIsNotCapRule =
+        "方針にある「1株単位」等の表記は売買単位（1株刻みで売買できること）であり、数量の上限ではありません。";
+
     // retrieved は #18（IADR-0069）の RAG 取得結果（IADR-0072）。null/空は現行動作（参考情報節なし）。
     // FR-17, IADR-0076 決定5: includeProfitability=false（既定）なら採算節・expectedProfitPerShare を出さない＝
     // 採算ゲート無効時（既定）はプロンプト文言も現行動作と完全に一致させる（LLM の判断傾向も変えない）。有効時のみ注入する。
@@ -87,6 +97,9 @@ public static class TradeDecisionPromptBuilder
                 $"- 上記のリスク制約は{baseUnit}建てです。価格・損切り幅・想定利益は{priceUnit.Trim()}建てで回答します（{baseUnit}換算はシステムが行います）。");
         }
 
+        // FR-04, FR-10, ADR-0040 決定5, #822, IADR-0343 決定1: 数量はシステムが決める。散文の「1株単位」は上限ではない。
+        sb.AppendLine($"- {QuantityIsSystemDecidedRule}");
+        sb.AppendLine($"- {TradingUnitIsNotCapRule}");
         sb.AppendLine();
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件。空売りの有効・無効に
         // かかわらず常に出す（このメソッドは空売り可否のフラグを受け取らない）。誘因の構造（なぜ危険か）

@@ -302,9 +302,16 @@ public sealed class Stage0DecisionRecorder(
 
         return (new Stage0DecisionRecord(
             symbol, market, input.AsOf, fingerprint, options.Model ?? string.Empty, options.VoteCount,
-            raws, ToRecordAction(aggregated.Decision.Action), aggregated.Decision.Rationale,
+            raws, ToRecordAction(aggregated.Decision.Action), MajorityRationale(aggregated.Decision, signedQuantity),
             signedQuantity, cost, inputTokens, outputTokens), calls, cost);
     }
+
+    // FR-04, FR-11, ADR-0040 決定5, #822, IADR-0343 決定3: 記録の多数決根拠も本番の発行と同じ突合を掛ける
+    // （記録した数量と食い違う株数言及に注記）。Hold は数量を持たないため対象外。生の判断（各票）は出力そのままで残す。
+    private static string MajorityRationale(LlmDecision decision, int signedQuantity) =>
+        decision.Action == TradeAction.Hold
+            ? decision.Rationale
+            : RationaleQuantityReconciler.Reconcile(decision.Rationale, Math.Abs(signedQuantity)).Rationale;
 
     // FR-10, IADR-0003/0107: サイジングは本番と同じ `PositionSizer` を使う（複製しない）。
     //
