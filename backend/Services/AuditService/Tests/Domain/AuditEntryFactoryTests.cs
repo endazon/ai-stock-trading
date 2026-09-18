@@ -868,6 +868,8 @@ public class AuditEntryFactoryTests
     [InlineData(SoftwareStopOutcome.EntryMissing, "決済を出さずに閉じた")]
     // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 据え置きが猶予を過ぎた（再試行は続いている）。
     [InlineData(SoftwareStopOutcome.CloseStalled, "猶予を過ぎても決済できていない")]
+    // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による減少の確定（決済は出していない）。
+    [InlineData(SoftwareStopOutcome.ProtectionReduced, "外部要因で建玉が減ったぶんを保護記録の主張から差し引いた")]
     public void ソフトウェア逆指値の発動結果は結末が読める(SoftwareStopOutcome outcome, string expected)
     {
         var entryDecisionId = Guid.NewGuid();

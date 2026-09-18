@@ -49,4 +49,10 @@ public sealed class ProtectiveStopOrderRow
     public int? RemainingProtected { get; set; }
 
     public DateTimeOffset? StalledNotifiedAt { get; set; }
+
+    // FR-10, #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因で削ったが**まだ確定していない**株数と、その連続観測回数。
+    // 建玉照会が 1 巡回だけ過少に見えただけで行を失わないための門（確定するまで完了させない・S0 の逆指値も取り消さない）。
+    public int PendingExternalReduction { get; set; }
+
+    public int ExternalReductionObservations { get; set; }
 }

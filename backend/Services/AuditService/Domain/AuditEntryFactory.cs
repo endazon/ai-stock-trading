@@ -435,6 +435,9 @@ public static class AuditEntryFactory
                     "——**エントリーの発注記録が猶予を過ぎても見つからず、決済を出さずに閉じた（要人手対応）**",
                 SoftwareStopOutcome.CloseStalled =>
                     "——**到達したのに猶予を過ぎても決済できていない（据え置きが継続・再試行中・要人手対応）**",
+                // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による減少の確定。決済は出していない。
+                SoftwareStopOutcome.ProtectionReduced =>
+                    "——外部要因で建玉が減ったぶんを保護記録の主張から差し引いた（決済は出していない）",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

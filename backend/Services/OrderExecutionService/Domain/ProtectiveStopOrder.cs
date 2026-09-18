@@ -37,7 +37,9 @@ public record ProtectiveStopOrder(
     DateTimeOffset? TriggeredAt = null,
     decimal? TriggeredPrice = null,
     int? RemainingProtected = null,
-    DateTimeOffset? StalledNotifiedAt = null)
+    DateTimeOffset? StalledNotifiedAt = null,
+    int PendingExternalReduction = 0,
+    int ExternalReductionObservations = 0)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;
@@ -56,6 +58,17 @@ public record ProtectiveStopOrder(
     /// </para>
     /// </summary>
     public int ProtectedQuantity => RemainingProtected ?? (IsSoftwareStop ? 0 : Quantity);
+
+    /// <summary>
+    /// FR-10, #820 の 5 巡目監査, IADR-0344 追記(5): <b>外部要因による減少がまだ確定していない</b>か。
+    /// <para>
+    /// 建玉照会が<b>1 巡回だけ過少に見えた</b>だけで行を失わないための門である（照会は銘柄単位の純額でしかなく、
+    /// 一時的に小さく返り得る）。減算そのものは観測した巡回で直ちに行う（遅らせると同じ巡回の別の行が
+    /// 古い建玉を再び主張して<b>売り過ぎ</b>へ倒れる）が、<b>確定するまでは行を完了させず、S0 の逆指値も取り消さない</b>。
+    /// 次の観測で超過が続いていれば確定（通知を 1 回出す）、建玉が戻って余剰が出れば<b>削った分を復元する</b>。
+    /// </para>
+    /// </summary>
+    public bool HasUnconfirmedExternalReduction => PendingExternalReduction > 0;
 
     /// <summary>決済方向（エントリーの反対売買）。ロング（Buy 建て）は Sell、ショート（Sell 建て）は Buy。</summary>
     public TradeSide CloseSide => EntrySide == TradeSide.Buy ? TradeSide.Sell : TradeSide.Buy;

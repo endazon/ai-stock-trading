@@ -383,6 +383,8 @@ public class NotificationFormatterTests
     [InlineData(SoftwareStopOutcome.EntryMissing, NotificationSeverity.Critical, "決済は出していません")]
     // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 据え置きが猶予を過ぎた（無音の失敗を残さない）。
     [InlineData(SoftwareStopOutcome.CloseStalled, NotificationSeverity.Critical, "猶予を過ぎても成行の決済を発注できていません")]
+    // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因で保護対象を減らした（無音にしない・決済は出していない）。
+    [InlineData(SoftwareStopOutcome.ProtectionReduced, NotificationSeverity.Warning, "保護記録が守る株数をその分だけ減らしました")]
     public void ソフトウェア逆指値の発動結果は結末ごとの重みと文言になる(
         SoftwareStopOutcome outcome, NotificationSeverity severity, string expected)
     {

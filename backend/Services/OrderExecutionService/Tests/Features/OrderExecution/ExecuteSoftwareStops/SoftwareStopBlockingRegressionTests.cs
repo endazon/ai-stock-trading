@@ -3,6 +3,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -147,16 +148,24 @@ public class SoftwareStopBlockingRegressionTests
 
     // ---- BLK-1: 自分の建玉を失った S1 行が、生きている S0 の逆指値を取り消させる ----
 
-    // T-10-373（受け入れ基準 27）: 同じ銘柄に「建玉を失った S1 の行（古い）」と「別エントリーの生きた S0 逆指値（新しい）」が
-    // 併存する。作り直し前は S1 行が方向の純額だけを見て**不死化**し、S0 側は S1 の主張ぶんを引いて残 0 と誤認するため、
+    // T-10-373（受け入れ基準 27・33）: 同じ銘柄に「建玉を失った S1 の行」と「別エントリーの生きた S0 逆指値」が併存する。
+    // 作り直し前は S1 行が方向の純額だけを見て**不死化**し、S0 側は S1 の主張ぶんを引いて残 0 と誤認するため、
     // **毎巡回・恒久的に生きた逆指値を黙って取り消していた**。
-    // 残保護数量方式では、減った建玉を**古い行から一度だけ**割り当てるので、S1 行が 0 になって完了し、S0 は無傷で残る。
-    [Fact]
-    public async Task 建玉を失ったS1の行は完了し生きているS0の逆指値を取り消させない()
+    //
+    // 🔴 **作成順を入れ替えても成り立たなければならない**（#820 の 5 巡目監査）。割り当て順が作成時刻だけだと、
+    // 古い方がたまたま S0 のときに**ブローカーに実在する生きた逆指値が 0 にされて取り消される**（無音・不可逆）。
+    // 5 巡目の監査は本テストの作成時刻を入れ替えただけで同症状を再現した——あの形は不変条件ではなく
+    // 「幽霊が古い」という偶然を固定していた。**帳簿だけの行（S1）を先に削る**ことで、両方の順序で成り立つ。
+    [Theory]
+    [InlineData(true)]   // 幽霊（S1）が古い
+    [InlineData(false)]  // 生きた S0 が古い（5 巡目監査が再現した配置）
+    public async Task 建玉を失ったS1の行は完了し生きているS0の逆指値を取り消させない(bool ghostIsOlder)
     {
         var f = NewFixture();
-        var ghost = SoftwareStop(Now.AddHours(-3), quantity: 10); // 建玉は手動決済で消えている
-        var alive = BrokerStop(Now.AddHours(-1), quantity: 5);    // 別エントリーの生きた S0 逆指値
+        var ghostCreatedAt = ghostIsOlder ? Now.AddHours(-3) : Now.AddHours(-1);
+        var aliveCreatedAt = ghostIsOlder ? Now.AddHours(-1) : Now.AddHours(-3);
+        var ghost = SoftwareStop(ghostCreatedAt, quantity: 10); // 建玉は手動決済で消えている
+        var alive = BrokerStop(aliveCreatedAt, quantity: 5);    // 別エントリーの生きた S0 逆指値
         f.Stops.Save(ghost);
         f.Stops.Save(alive);
         Entry(f, ghost, OrderStatus.Filled, 10);
@@ -165,12 +174,21 @@ public class SoftwareStopBlockingRegressionTests
                 BrokerProvider.MoomooSimulate, 5, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
         f.Broker.Positions = [Long(5)]; // 残っているのは S0 の 5 株だけ
 
+        // 1 巡目: 超過 10 株は**帳簿だけの行**（幽霊）から削る。まだ確定していないので行は閉じない。
         await f.Guard.RunOnceAsync(10);
 
         f.Broker.Cancelled.Should().BeEmpty("生きている S0 の逆指値を取り消してはならない（建玉 5 株を守っている）");
+        f.Stops.Find(ghost.EntryDecisionId)!.RemainingProtected.Should().Be(0, "幽霊の主張から削る");
+        f.Stops.Find(ghost.EntryDecisionId)!.State.Should().Be(
+            ProtectiveStopState.Active, "1 回の観測では閉じない（建玉照会は 1 巡回だけ過少に返り得る）");
+
+        // 2 巡目: 超過が続いたので確定し、幽霊だけが役目を終える。
+        await f.Guard.RunOnceAsync(10);
+
+        f.Broker.Cancelled.Should().BeEmpty();
         f.Stops.Find(alive.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
         f.Stops.Find(ghost.EntryDecisionId)!.State.Should().Be(
-            ProtectiveStopState.Completed, "建玉を失った行は不死化せず、一度の割り当てで役目を終える");
+            ProtectiveStopState.Completed, "建玉を失った行は不死化せず、確定した割り当てで役目を終える");
 
         // 次の巡回でも取り消さない（作り直し前は毎巡回・恒久的に取り消していた）。
         await f.Guard.RunOnceAsync(10);
@@ -232,5 +250,127 @@ public class SoftwareStopBlockingRegressionTests
         f.Broker.MarketCloses[0].DecisionId.Should().Be(
             ProtectiveStopIds.SoftwareCloseDecisionId(reached.EntryDecisionId, 1));
         f.Stops.Find(reached.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // ---- 5 巡目監査①: 外部要因の割り当ては「帳簿だけの行」から ----
+
+    // T-10-379（受け入れ基準 33）: S0 と S1 が**同数**を主張し、建玉が S0 の分しか無い。境界は同数にある（3 巡目監査 B3 と同じ教訓）。
+    // 作成時刻だけで順序を決めると、古い S0 の主張が丸ごと削られ**生きた逆指値が取り消される**。
+    // 帳簿だけの行（S1）が超過を丸ごと吸収するため、実注文を持つ行は無傷で残る。
+    [Fact]
+    public async Task 超過はまず帳簿だけの行から削られ生きたS0は無傷で残る()
+    {
+        var f = NewFixture();
+        var alive = BrokerStop(Now.AddHours(-3), quantity: 10); // 生きた S0（古い）
+        var software = SoftwareStop(Now.AddHours(-1), quantity: 10);
+        f.Stops.Save(alive);
+        f.Stops.Save(software);
+        Entry(f, software, OrderStatus.Filled, 10);
+        f.Broker.Orders["stop-s0"] = new BrokerOrder(
+            "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 10, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
+        f.Broker.Positions = [Long(10)]; // 残っているのは S0 の 10 株だけ
+
+        await f.Guard.RunOnceAsync(10);
+        await f.Guard.RunOnceAsync(10);
+
+        f.Broker.Cancelled.Should().BeEmpty("実注文を持つ行は最後に回す（照会が Pending＝その建玉はまだ在る証拠）");
+        f.Stops.Find(alive.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        f.Stops.Find(alive.EntryDecisionId)!.ProtectedQuantity.Should().Be(10, "S0 の主張は削らない");
+        f.Stops.Find(software.EntryDecisionId)!.State.Should().Be(
+            ProtectiveStopState.Completed, "帳簿だけの行が超過を吸収して役目を終える");
+    }
+
+    // ---- 5 巡目監査②: 1 巡回だけ過少に見えた建玉照会で行を失わない ----
+
+    // T-10-380（受け入れ基準 34）: 建玉 20 株・行 2 件に対し、**1 巡回だけ**照会が 10 株を返す。
+    // 作り直し（`cf573a58` の次）では超過を削るだけで復元経路が無く、その巡回で 0 になった行が `Completed` になり、
+    // **次の巡回で建玉が回復しても戻らなかった**（監査の実測: 10 株が永久に無保護・しかも無音）。
+    // 削りは 2 巡回連続で観測してから確定し、建玉が戻れば**未確定の削りを復元する**。
+    [Fact]
+    public async Task 建玉照会が一巡回だけ過少でも行は失われず次の巡回で復元する()
+    {
+        var f = NewFixture();
+        var first = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        var second = SoftwareStop(Now.AddHours(-1), quantity: 10);
+        f.Stops.Save(first);
+        f.Stops.Save(second);
+        Entry(f, first, OrderStatus.Filled, 10);
+        Entry(f, second, OrderStatus.Filled, 10);
+
+        // 巡回 1: 照会が過少に返る（実際の建玉は 20 株）。
+        f.Broker.Positions = [Long(10)];
+        await f.Guard.RunOnceAsync(10);
+
+        f.Stops.Find(first.EntryDecisionId)!.State.Should().Be(
+            ProtectiveStopState.Active, "1 回の観測で行を閉じない（閉じると回復しても戻せない）");
+
+        // 巡回 2: 照会が回復する。削った分を返す。
+        f.Broker.Positions = [Long(20)];
+        await f.Guard.RunOnceAsync(10);
+
+        var restored = f.Stops.Find(first.EntryDecisionId)!;
+        restored.State.Should().Be(ProtectiveStopState.Active);
+        restored.RemainingProtected.Should().Be(10, "一時的なズレを恒久的なズレにしない");
+        f.Stops.Find(second.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+        f.Broker.MarketCloses.Should().BeEmpty("未到達の行は決済しない");
+    }
+
+    // T-10-381（受け入れ基準 35）: S1 が吸収しきれない超過は S0 も削るが、**確定するまで逆指値を取り消さない**。
+    // 生きた注文の取消は無音かつ不可逆であり、1 巡回だけ過少に見えた照会でそれを行ってはならない。
+    [Fact]
+    public async Task 未確定の外部要因があるあいだは生きたS0の逆指値を取り消さない()
+    {
+        var f = NewFixture();
+        var alive = BrokerStop(Now.AddHours(-3), quantity: 10);
+        var software = SoftwareStop(Now.AddHours(-1), quantity: 5);
+        f.Stops.Save(alive);
+        f.Stops.Save(software);
+        Entry(f, software, OrderStatus.Filled, 5);
+        f.Broker.Orders["stop-s0"] = new BrokerOrder(
+            "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 10, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
+        f.Broker.Positions = []; // 建玉が丸ごと消えて見える
+
+        await f.Guard.RunOnceAsync(10);
+
+        f.Broker.Cancelled.Should().BeEmpty("未確定の観測 1 回で生きた逆指値を取り消さない");
+        f.Stops.Find(alive.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+
+        // 2 巡目で確定し、はじめて取り消す（#826 項目 3 は保たれる）。
+        await f.Guard.RunOnceAsync(10);
+
+        f.Broker.Cancelled.Should().ContainSingle().Which.Should().Be("stop-s0");
+        f.Stops.Find(alive.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        f.Stops.Find(software.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // T-10-382（受け入れ基準 36）: 外部要因で保護対象を減らしたことを**必ず 1 回**残す。
+    // 作り直し後は削るのが完全に無音で、S0 の行を 0 にして逆指値を取り消す場合ですらイベントも Critical も出なかった。
+    [Fact]
+    public async Task 外部要因で保護対象を減らしたら一度だけ通知する()
+    {
+        var f = NewFixture();
+        var first = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        var second = SoftwareStop(Now.AddHours(-1), quantity: 10);
+        f.Stops.Save(first);
+        f.Stops.Save(second);
+        Entry(f, first, OrderStatus.Filled, 10);
+        Entry(f, second, OrderStatus.Filled, 10);
+        f.Broker.Positions = [Long(10)]; // 10 株が外部で消えたまま戻らない
+
+        var cycle1 = await f.Guard.RunOnceAsync(10);
+        cycle1.Events.OfType<SoftwareStopExecuted>().Should().BeEmpty("確定前に通知しない");
+
+        var cycle2 = await f.Guard.RunOnceAsync(10);
+
+        var notified = cycle2.Events.OfType<SoftwareStopExecuted>().Should().ContainSingle().Which;
+        ((int)notified.Outcome).Should().Be(5, "SoftwareStopOutcome.ProtectionReduced（末尾へ追加した序数）");
+        notified.EntryDecisionId.Should().Be(first.EntryDecisionId);
+        notified.Quantity.Should().Be(10, "削った株数を残す");
+        notified.CloseDecisionId.Should().BeNull("決済は出していない");
+
+        var cycle3 = await f.Guard.RunOnceAsync(10);
+        cycle3.Events.OfType<SoftwareStopExecuted>().Should().BeEmpty("同じ削りを二度通知しない");
     }
 }

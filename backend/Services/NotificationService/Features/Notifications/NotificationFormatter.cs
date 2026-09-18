@@ -121,6 +121,14 @@ public static class NotificationFormatter
                 + "**建玉が無保護で残っている可能性があります。直ちに確認し、必要なら手動で決済してください**"
                 + $"（再試行は続けます・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Critical),
+        // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因で保護対象を減らした（決済は出していない）。
+        SoftwareStopOutcome.ProtectionReduced => new(
+            "リスク統制: 外部要因により保護対象を減らしました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 建玉が外部要因（手動決済・強制決済・ブローカー側逆指値の約定など）で"
+                + "減ったため、保護記録が守る株数をその分だけ減らしました（**決済は出していません**）。"
+                + "ブローカー側の逆指値を持つ記録が 0 になった場合は、その逆指値を取り消します。"
+                + $"建玉と保護の対応をご確認ください（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"

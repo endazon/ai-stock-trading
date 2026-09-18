@@ -211,6 +211,17 @@ public sealed class SoftwareStopExecutor(
         }
 
         var quantity = current.RemainingProtected.Value;
+        if (quantity <= 0 && current.HasUnconfirmedExternalReduction)
+        {
+            // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): 主張が 0 になった理由が**まだ確定していない外部要因**。
+            // 建玉照会は 1 巡回だけ過少に返り得るため、1 回の観測で行を閉じない（確定すればガードが完了させる）。
+            _logger.LogWarning(
+                "ソフトウェア逆指値の決済を据え置きます（外部要因で主張が 0 になりましたが、まだ確定していません）。"
+                    + "EntryDecisionId={EntryDecisionId} 未確定={Pending}",
+                current.EntryDecisionId, current.PendingExternalReduction);
+            return SoftwareStopCloseOutcome.Deferred;
+        }
+
         if (quantity <= 0)
         {
             // 残保護数量が 0 ＝この記録が守る建玉はもう無い（外部要因の割り当てで削られた・手動決済済み）。
@@ -290,6 +301,9 @@ public sealed class SoftwareStopExecutor(
             {
                 RemainingProtected = remaining,
                 State = remaining == 0 ? ProtectiveStopState.Completed : ProtectiveStopState.Active,
+                // 完了した行に未確定の削りを残さない（IADR-0344 追記(5)）。
+                PendingExternalReduction = remaining == 0 ? 0 : stop.PendingExternalReduction,
+                ExternalReductionObservations = remaining == 0 ? 0 : stop.ExternalReductionObservations,
                 Attempt = attempt,
                 UpdatedAt = now,
             });
@@ -431,6 +445,9 @@ public sealed class SoftwareStopExecutor(
         {
             State = ProtectiveStopState.Completed,
             RemainingProtected = 0,
+            // 完了した行に未確定の削りを残さない（復元すべき主張が無くなったため。IADR-0344 追記(5)）。
+            PendingExternalReduction = 0,
+            ExternalReductionObservations = 0,
             UpdatedAt = clock.UtcNow,
         });
 

@@ -35,9 +35,6 @@ public sealed class ProtectiveStopGuard(
     IClock clock,
     OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null)
 {
-    // 持ち分の確定・割り当て（IADR-0344 追記(4)）で参照する Active 行の上限（SoftwareStopExecutor と同値）。
-    private const int NettingScanLimit = 500;
-
     public async Task<ProtectiveStopGuardResult> RunOnceAsync(int batchSize, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -57,20 +54,25 @@ public sealed class ProtectiveStopGuard(
         if (snapshot is null)
             return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, active.Count, 0, []);
 
+        var events = new List<object>();
+
         // 🔴 #820 の 4 巡目監査, IADR-0344 追記(4) 決定4: 外部要因（人手決済・強制決済・S0 の逆指値の約定）による減少を
         // **この巡回で一度だけ**割り当てて保存する。S0 の取消判定より前に行う——判定は「割り当て後の主張」を見るべきで、
         // 割り当て前の（消えた建玉をまだ主張している）値で判定すると、生きている逆指値を取り消してしまう（BLK-1）。
+        //
+        // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): **ここだけが「観測」である**（群につき 1 巡回 1 回）。
+        // 削りの確定（2 巡回連続）・建玉が戻ったときの復元・確定時の通知をこの呼び出しが受け持つ。
         foreach (var (symbol, market, entrySide) in active
             .Select(s => (s.Symbol, s.Market, s.EntrySide))
             .Distinct())
         {
             ProtectiveStopNetting.ReconcileShares(
-                symbol, market, entrySide, snapshot, active, stops, store, clock.UtcNow);
+                symbol, market, entrySide, snapshot, active, stops, store, clock.UtcNow,
+                observing: true, events: events);
         }
 
         active = stops.FindActive(batchSize);
 
-        var events = new List<object>();
         var stillActive = 0;
         var completed = 0;
         var replaced = 0;
@@ -141,14 +143,16 @@ public sealed class ProtectiveStopGuard(
         // 🔴 #820 の 4 巡目監査, IADR-0344 追記(4): **残保護数量が 0 になったときだけ**保護を外す。
         // 純額や他手法の主張で外すと、建玉が残っているのに保護がゼロになる（3 巡目監査 B3）か、
         // 自分の建玉を失った行が不死化して生きている S0 の逆指値を毎巡回取り消す（4 巡目監査 BLK-1）。
-        // 減った建玉の割り当ては ReconcileShares が**一度だけ**行い、保存する（次の巡回で引き直さない）。
-        var group = ProtectiveStopNetting.ReconcileShares(
-            stop.Symbol, stop.Market, stop.EntrySide, snapshot,
-            stops.FindActive(NettingScanLimit), stops, store, clock.UtcNow);
-        var current = group.FirstOrDefault(s => s.EntryDecisionId == stop.EntryDecisionId) ?? stop;
+        // 減った建玉の割り当て（と確定・復元）は巡回の先頭の ReconcileShares が**一度だけ**行って保存済みである。
+        var current = stops.Find(stop.EntryDecisionId) ?? stop;
 
         // 未確定（エントリーの発注記録が無い・まだ終端でない）＝これから約定し得る。建玉が 0 でも完了しない。
         if (current.RemainingProtected is not { } remaining)
+            return Outcome.StillActive;
+
+        // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因の削りが**まだ確定していない**あいだは完了させない。
+        // 建玉照会は 1 巡回だけ過少に返り得る——1 回の観測で行を閉じると、次の巡回で建玉が戻っても復元できない。
+        if (current.HasUnconfirmedExternalReduction)
             return Outcome.StillActive;
 
         if (remaining <= 0)
@@ -183,6 +187,12 @@ public sealed class ProtectiveStopGuard(
             if (remaining > 0)
                 return Outcome.StillActive; // 正常: 建玉あり・逆指値滞留中。
 
+            // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): 主張が 0 になった理由が**まだ確定していない外部要因**なら据え置く。
+            // 建玉照会は 1 巡回だけ過少に返り得る——その 1 回で**ブローカーに実在する生きた逆指値を取り消す**のは
+            // 無音かつ不可逆な破壊である。確定（2 巡回連続の観測）を待ってから取り消す。
+            if (stop.HasUnconfirmedExternalReduction)
+                return Outcome.Unknown;
+
             // 建玉消滅（owner 手仕舞い・自動縮小・強制買戻し等）: 残存逆指値を取り消す。
             // 決済済み建玉に残る注文が発火すると**反対方向の建玉を生む**（業務フロー 02 補足の二重決済問題）。
             await broker.CancelOrderAsync(stop.StopOrderId, cancellationToken).ConfigureAwait(false);
@@ -201,6 +211,10 @@ public sealed class ProtectiveStopGuard(
         // 失効（Cancelled / Rejected / Expired）。
         if (remaining <= 0)
         {
+            // 主張が 0 の理由が未確定の外部要因なら据え置く（次の巡回で建玉が戻れば復元して再発注へ回る。追記(5)）。
+            if (stop.HasUnconfirmedExternalReduction)
+                return Outcome.Unknown;
+
             MarkCompleted(stop); // 建玉も無い: 保護対象が消えている。
             return Outcome.Completed;
         }

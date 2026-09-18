@@ -333,8 +333,10 @@ public class SoftwareStopExecutorTests
         f.Broker.MarketCloses.Should().ContainSingle();
     }
 
+    // #820 の 5 巡目監査, IADR-0344 追記(5): 主張は**その場で**削る（削らないと同じ建玉を別の行が主張して売り過ぎる）が、
+    // **行を閉じるのは削りが確定してから**である（建玉照会は 1 巡回だけ過少に返り得る）。確定はガードの巡回が行う。
     [Fact]
-    public async Task 建玉が既に無ければ決済せず完了する()
+    public async Task 建玉が既に無ければ決済せず主張を削って据え置く()
     {
         var f = NewFixture();
         var stop = SoftwareStop();
@@ -345,7 +347,10 @@ public class SoftwareStopExecutorTests
         var result = await f.Executor.OnTriggeredAsync(Trigger());
 
         f.Broker.MarketCloses.Should().BeEmpty("決済を出すと反対建玉（空売り）を作る");
-        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        var saved = f.Stops.Find(stop.EntryDecisionId)!;
+        saved.RemainingProtected.Should().Be(0, "主張は即座に削る（売り過ぎを作らない）");
+        saved.State.Should().Be(ProtectiveStopState.Active, "確定するまで閉じない（建玉が戻れば復元できる）");
+        result.Deferred.Should().Be(1);
         result.Events.Should().BeEmpty();
     }
 
@@ -619,10 +624,10 @@ public class SoftwareStopExecutorTests
     }
 
     [Fact]
-    public async Task 建玉の減少を割り当てられて残保護数量が0になった行は完了する()
+    public async Task 建玉の減少を割り当てられた行は主張が0になるが確定するまで完了しない()
     {
-        // T-10-352: 10 株のエントリー 2 件に対し建玉は 10 株。減った 10 株は**古い行から**一度だけ削られ、
-        // 古い行は残保護数量 0 で完了する（毎巡回引き直さないので、次の巡回でこの割り当てが揺り戻らない）。
+        // T-10-352: 10 株のエントリー 2 件に対し建玉は 10 株。減った 10 株は**古い行から**一度だけ削られる。
+        // #820 の 5 巡目監査, IADR-0344 追記(5): **削りは即座だが、行を閉じるのは確定してから**（ガードの巡回が確定する）。
         // 新しい行は 10 株を保持し、決済もその 10 株だけを出す（合計が保有を超えない）。
         var f = NewFixture();
         var first = SoftwareStop(createdAt: Now.AddHours(-2));
@@ -637,8 +642,9 @@ public class SoftwareStopExecutorTests
 
         f.Broker.MarketCloses.Should().HaveCount(1);
         f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(10);
-        f.Stops.Find(first.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
         f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(0);
+        f.Stops.Find(first.EntryDecisionId)!.State.Should().Be(
+            ProtectiveStopState.Active, "削りが確定するまで閉じない（建玉が戻れば復元する）");
         f.Stops.Find(second.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed, "10 株を決済し切った");
     }
 
