@@ -9,8 +9,9 @@ namespace NotificationService.Domain;
 // 補ったりしない。**候補に出すのは `BotCommandParser` が受け付ける値域のものだけ**である
 // ——受け付けない値を候補に出すと、選んだ結果が `Unknown` へ倒れて何も起きない。
 //
-// 判断（絞り込み・並び・上限）を Discord.Net に依存しない純関数へ置き、Gateway 側は変換に徹する
-//（IADR-0062 決定3 と同じ分け方）。
+// 判断（絞り込み・並び・上限）を Gateway ライブラリ（Discord 連携のクライアント実装）に依存しない純関数へ
+// 置き、Gateway 側は変換に徹する（IADR-0062 決定3 / IADR-0128 決定6 と同じ分け方。**Domain は外部ライブラリの
+// 名前空間を完全修飾でも書かない**——`DomainSourceDependencyTests` の検査 (c) が本文を走査して止める）。
 public static class ReportPeriodSuggestions
 {
     /// <summary>Discord の入力補完が 1 回に返せる候補数の上限（Discord API の制約）。</summary>
