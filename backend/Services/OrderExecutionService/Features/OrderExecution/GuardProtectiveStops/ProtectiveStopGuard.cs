@@ -39,6 +39,11 @@ public sealed class ProtectiveStopGuard(
 
         // 建玉は 1 巡回につき 1 回照会する。null（照会不能）なら巡回ごと据え置く——建玉不明のまま
         // 「消滅した」と誤認して逆指値を取り消すと、直後の失効側の保護が消える。
+        //
+        // 🔴 #820 の監査（B2）: **照会の前**に時刻を採り、ソフトウェア逆指値の配分へ渡す。1 巡回で 1 回しか
+        // 照会しないため、巡回中に約定した決済はこの値に映らない。取得時刻が無いと「映っていない決済」を
+        // 見分けられず、先の行の決済が即時約定した後に後の行が同じ建玉を再配分されて売り過ぎる。
+        var snapshotTakenAt = clock.UtcNow;
         var snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
             return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, active.Count, 0, []);
@@ -57,7 +62,7 @@ public sealed class ProtectiveStopGuard(
             try
             {
                 var outcome = stop.IsSoftwareStop
-                    ? await EvaluateSoftwareStopAsync(stop, snapshot, active, events, cancellationToken).ConfigureAwait(false)
+                    ? await EvaluateSoftwareStopAsync(stop, snapshot, snapshotTakenAt, active, events, cancellationToken).ConfigureAwait(false)
                     : await EvaluateAsync(stop, snapshot, active, events, cancellationToken).ConfigureAwait(false);
                 switch (outcome)
                 {
@@ -81,6 +86,7 @@ public sealed class ProtectiveStopGuard(
     private async Task<Outcome> EvaluateSoftwareStopAsync(
         ProtectiveStopOrder stop,
         IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        DateTimeOffset snapshotTakenAt,
         IReadOnlyList<ProtectiveStopOrder> active,
         List<object> events,
         CancellationToken cancellationToken)
@@ -91,7 +97,9 @@ public sealed class ProtectiveStopGuard(
             if (softwareStops is null)
                 return Outcome.Unknown;
 
-            var outcome = await softwareStops.TryCloseAsync(stop, snapshot, cancellationToken).ConfigureAwait(false);
+            var outcome = await softwareStops
+                .TryCloseAsync(stop, snapshot, snapshotTakenAt, cancellationToken)
+                .ConfigureAwait(false);
             if (outcome.Event is not null)
                 events.Add(outcome.Event);
             return outcome.Kind switch

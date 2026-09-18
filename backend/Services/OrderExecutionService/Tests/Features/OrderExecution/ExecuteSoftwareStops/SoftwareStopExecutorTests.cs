@@ -107,14 +107,32 @@ public class SoftwareStopExecutorTests
     }
 
     // エントリーの発注結果（約定追跡が更新する記録）を置く。
-    private static void Entry(Fixture f, ProtectiveStopOrder stop, OrderStatus status, int filled)
+    private static void Entry(
+        Fixture f, ProtectiveStopOrder stop, OrderStatus status, int filled, string orderId = "entry-1")
     {
         f.Store.Save(new ExecutionRecord(
-            stop.EntryDecisionId, "entry-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            stop.EntryDecisionId, orderId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
             PositionEffect.Open, stop.Quantity, 1_000m, filled, filled > 0 ? 1_000m : 0m, status, 0m, Now.AddHours(-1)));
-        f.Broker.Orders["entry-1"] = new BrokerOrder(
-            "entry-1", new OrderIntent("", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+        f.Broker.Orders[orderId] = new BrokerOrder(
+            orderId, new OrderIntent("", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
                 BrokerProvider.MoomooSimulate, 0, 0m), status, filled, 1_000m, Now.AddHours(-1), null);
+    }
+
+    // S0（ブローカー側逆指値）の行と、**本番が必ず書く逆指値レグの発注記録**（PositionEffect=Close・Accepted）を置く。
+    // 記録を置かない配置は本番に存在しない（#820 の監査 B1）。
+    private static ProtectiveStopOrder BrokerStop(Fixture f, int quantity, decimal line = 900m)
+    {
+        var entryId = Guid.NewGuid();
+        var stopDecisionId = ProtectiveStopIds.StopDecisionId(entryId, 1);
+        var row = new ProtectiveStopOrder(
+            entryId, stopDecisionId, "stop-s0", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, quantity, line, 1m, 1, ProtectiveStopState.Active,
+            Now.AddHours(-2), Now.AddHours(-2));
+        f.Stops.Save(row);
+        f.Store.Save(new ExecutionRecord(
+            stopDecisionId, "stop-s0", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, quantity, line, 0, 0m, OrderStatus.Accepted, 0m, Now.AddHours(-2)));
+        return row;
     }
 
     private static StopLossTriggered Trigger(decimal price = 940m, DateTimeOffset? detectedAt = null) =>
@@ -451,16 +469,79 @@ public class SoftwareStopExecutorTests
         var stop = SoftwareStop();
         f.Stops.Save(stop);
         Entry(f, stop, OrderStatus.Filled, 10);
-        var s0EntryId = Guid.NewGuid();
-        f.Stops.Save(new ProtectiveStopOrder(
-            s0EntryId, ProtectiveStopIds.StopDecisionId(s0EntryId, 1), "stop-s0", "AAPL", Market.UnitedStates,
-            TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 5, 900m, 1m, 1, ProtectiveStopState.Active,
-            Now.AddHours(-2), Now.AddHours(-2)));
+        BrokerStop(f, quantity: 5);
         f.Broker.Positions = [Long(12)]; // S1 の 10 のうち 3 を手動決済済み、S0 の 5 は保持
 
         await f.Executor.OnTriggeredAsync(Trigger());
 
         f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(7, "純額 12 − S0 の 5");
+    }
+
+    // T-10-357: #820 の監査（B1）。S0 の逆指値レグは PositionEffect=Close の記録としても残る。
+    // 行の数量と記録の両方で差し引くと二重に削られ、S0 と S1 が同数なら決済が 1 株も出ない
+    //（損切りが黙って効かなくなる。Critical も出ない）。
+    [Fact]
+    public async Task S0とS1が同数でもS1の決済は出る_S0のレグ記録で二重に差し引かない()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        BrokerStop(f, quantity: 10);
+        f.Broker.Positions = [Long(20)]; // S0 の 10 ＋ S1 の 10
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().ContainSingle()
+            .Which.Intent.Quantity.Should().Be(10, "S1 の持ち分は 20 − S0 の 10");
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // T-10-358: #820 の監査（B2）。ガードは 1 巡回に 1 回しか建玉を照会しない。先の行の決済が**即時約定**で返ると、
+    // その約定は（古い）建玉にも未約定一覧にも現れず、後の行が同じ建玉を再配分されて売り過ぎる
+    //（実測: 保有 15 株に対し 10＋10＝20 株の決済＝反対建玉）。照会時刻より後に動いた決済は未反映として差し引く。
+    [Fact]
+    public async Task ガード巡回で先の行の決済が即時約定しても合計が建玉を超えない()
+    {
+        var f = NewFixture();
+        var first = SoftwareStop(quantity: 10, createdAt: Now.AddHours(-3));
+        var second = SoftwareStop(quantity: 10, createdAt: Now.AddHours(-2));
+        f.Stops.Save(first with { TriggeredAt = Now, TriggeredPrice = 940m });
+        f.Stops.Save(second with { TriggeredAt = Now, TriggeredPrice = 940m });
+        Entry(f, first, OrderStatus.Filled, 10, orderId: "entry-first");
+        Entry(f, second, OrderStatus.Filled, 10, orderId: "entry-second");
+
+        // 決済は即座に約定して返る（moomoo が FilledAll を返す経路。MapState が Filled へ写す）。
+        f.Broker.CloseStatus = OrderStatus.Filled;
+
+        // 1 巡回ぶん: 同じ建玉（15 株）・同じ照会時刻を両方の行へ渡す。手動決済で 5 株減っている状態。
+        var snapshot = new[] { Long(15) };
+        await f.Executor.TryCloseAsync(f.Stops.Find(first.EntryDecisionId)!, snapshot, Now);
+        await f.Executor.TryCloseAsync(f.Stops.Find(second.EntryDecisionId)!, snapshot, Now);
+
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity)
+            .Should().Be(15, "巡回の合計が保有数量を超えない（超えると反対建玉＝空売りになる）");
+    }
+
+    // T-10-359: 差し引きは「照会がまだ映していない決済」に限る。**建玉へ反映済みの古い決済まで差し引くと**、
+    // 持ち分が永久に足りず S1 が損切りできなくなる（B2 の是正が逆側へ倒れていないことを固定する）。
+    [Fact]
+    public async Task 建玉へ反映済みの古い決済は差し引かない()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop(quantity: 10);
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        // 30 分前に約定した別の決済（建玉 10 株は既にこの約定を織り込んだ後の値）。
+        f.Store.Save(new ExecutionRecord(
+            Guid.NewGuid(), "close-old", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, 5, 1_000m, 5, 1_000m, OrderStatus.Filled, 0m, Now.AddMinutes(-30)));
+        f.Broker.Positions = [Long(10)];
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().ContainSingle()
+            .Which.Intent.Quantity.Should().Be(10, "反映済みの決済は持ち分を削らない");
     }
 
     [Fact]

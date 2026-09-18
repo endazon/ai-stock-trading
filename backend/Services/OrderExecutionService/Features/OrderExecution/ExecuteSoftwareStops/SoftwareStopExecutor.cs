@@ -42,8 +42,15 @@ public sealed class SoftwareStopExecutor(
     // 手法混在の按分（IADR-0344 決定5-2・決定6）で参照する Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
     private const int NettingScanLimit = 500;
 
-    // 未約定の決済を数える窓（当日有効の注文しか出さないため 1 日で足りる。IADR-0344 決定5-2）。
-    private static readonly TimeSpan PendingCloseWindow = TimeSpan.FromDays(1);
+    // 決済の記録を数える窓（当日有効の注文しか出さないため 1 日で足りる。IADR-0344 決定5-2）。
+    private static readonly TimeSpan CloseRecordWindow = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// #820 の監査（B2）, IADR-0344 決定5-2: 建玉照会が約定を映すまでの遅れとして見込む余裕。
+    /// この分だけ「未反映」と見なす範囲を広げる。広げ過ぎても<b>持ち分を過小に見るだけ</b>で、行は据え置かれ
+    /// 次の巡回で新しい建玉を見て決済する（売り過ぎ＝反対建玉より安全な倒れ方を選ぶ）。
+    /// </summary>
+    private static readonly TimeSpan SnapshotLagAllowance = TimeSpan.FromSeconds(30);
 
     private readonly ILogger _logger = logger ?? NullLogger<SoftwareStopExecutor>.Instance;
 
@@ -87,7 +94,7 @@ public sealed class SoftwareStopExecutor(
                     armed.EntryDecisionId, armed.Symbol, armed.TriggerPrice, triggered.Price);
             }
 
-            var outcome = await TryCloseAsync(armed, snapshot: null, cancellationToken).ConfigureAwait(false);
+            var outcome = await TryCloseAsync(armed, snapshot: null, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (outcome.Event is not null)
                 events.Add(outcome.Event);
             if (outcome.Kind == SoftwareStopCloseKind.Deferred)
@@ -104,6 +111,7 @@ public sealed class SoftwareStopExecutor(
     public async Task<SoftwareStopCloseOutcome> TryCloseAsync(
         ProtectiveStopOrder stop,
         IReadOnlyList<BrokerPositionSnapshot>? snapshot,
+        DateTimeOffset? snapshotTakenAt = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stop);
@@ -155,7 +163,13 @@ public sealed class SoftwareStopExecutor(
         }
 
         // 3. 建玉残（手法の異なる Active 行の数量・発注済みで未約定の決済を差し引く）。null＝不明は据え置き。
-        snapshot ??= await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            // 🔴 照会の**前**に時刻を採る。照会の後に採ると、照会中に約定した決済を「反映済み」と誤認する。
+            snapshotTakenAt = clock.UtcNow;
+            snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (snapshot is null)
         {
             _logger.LogWarning(
@@ -166,9 +180,10 @@ public sealed class SoftwareStopExecutor(
 
         // 🔴 #820 の監査: 行ごとに建玉残を上限にすると、同じ銘柄の S1 行が同じ建玉を二重に主張して売り過ぎる
         //（反対建玉＝空売りになる）。同じ銘柄・方向の S1 行へ決定的に配分し、自分の持ち分だけを決済する。
+        var activeStops = stops.FindActive(NettingScanLimit);
         var allocation = ProtectiveStopNetting.AllocateSoftwareStops(
-            stop.Symbol, stop.Market, stop.EntrySide, snapshot, stops.FindActive(NettingScanLimit), store,
-            PendingCloseQuantity(stop));
+            stop.Symbol, stop.Market, stop.EntrySide, snapshot, activeStops, store,
+            UnreflectedCloseQuantity(stop, activeStops, snapshotTakenAt ?? clock.UtcNow));
         var allowance = allocation.TryGetValue(stop.EntryDecisionId, out var share) ? share : 0;
         var quantity = Math.Min(entry.FilledQuantity, allowance);
         if (quantity <= 0)
@@ -324,15 +339,57 @@ public sealed class SoftwareStopExecutor(
         return new EntryFill(filled, Deferred: false, CancelledByUs: current.Status != OrderStatus.Filled);
     }
 
-    // 🔴 #820 の監査: 発注済みで未約定の決済数量（同じ銘柄・同じ決済方向）。建玉照会は決済が約定するまで減らないため、
-    // これを差し引かないと同じ建玉を別の行へ二重に配分する。終端になった決済は建玉に反映されるので数えない。
-    private int PendingCloseQuantity(ProtectiveStopOrder stop) =>
-        store.FindPendingSince(clock.UtcNow - PendingCloseWindow, NettingScanLimit)
+    // 🔴 #820 の監査（B1・B2）, IADR-0344 決定5-2: **建玉照会がまだ映していない決済**の数量（同じ銘柄・同じ決済方向）。
+    //
+    // 映していないものは 2 種類ある。
+    //   ① 板に残っている未約定の決済 —— 約定するまで建玉は減らない。
+    //   ② **建玉を照会した後に約定した決済** —— 照会した瞬間の値には入っていない。
+    //      ガードは 1 巡回に 1 回しか照会しないため、先の行の決済が即時約定で返ると②になる
+    //      （監査で実測: 保有 15 株に対し 10 株＋10 株＝20 株の決済＝反対建玉）。
+    //      約定から建玉へ反映されるまでの遅れを見込んで SnapshotLagAllowance だけ手前から数える。
+    //
+    // 🔴 **S0（ブローカー側逆指値）のレグは除く。** S0 のレグも PositionEffect=Close の記録として残るが、
+    // その数量は配分側が「手法の異なる Active 行の数量」として既に差し引いている。ここで数えると二重に削られ、
+    // S0 と S1 が同数なら **S1 の決済が 1 株も出ない**（監査で実測）。
+    private int UnreflectedCloseQuantity(
+        ProtectiveStopOrder stop,
+        IReadOnlyList<ProtectiveStopOrder> activeStops,
+        DateTimeOffset snapshotTakenAt)
+    {
+        var brokerStopLegs = activeStops
+            .Where(other => other.State == ProtectiveStopState.Active
+                && !other.IsSoftwareStop
+                && other.Symbol == stop.Symbol
+                && other.Market == stop.Market
+                && other.EntrySide == stop.EntrySide)
+            .Select(other => other.StopDecisionId)
+            .ToHashSet();
+
+        var unreflectedSince = snapshotTakenAt - SnapshotLagAllowance;
+
+        return store.FindClosesSince(clock.UtcNow - CloseRecordWindow, NettingScanLimit)
             .Where(r => r.Symbol == stop.Symbol
                 && r.Market == stop.Market
                 && r.PositionEffect == PositionEffect.Close
-                && r.Side == stop.CloseSide)
-            .Sum(r => Math.Max(0, r.Quantity - r.FilledQuantity));
+                && r.Side == stop.CloseSide
+                && !brokerStopLegs.Contains(r.DecisionId))
+            .Sum(r => UnreflectedQuantityOf(r, r.ExecutedAt >= unreflectedSince));
+    }
+
+    // 1 件の決済記録のうち「建玉照会がまだ映していない数量」。**倒れ方は過大側**（差し引き過ぎ）に寄せる
+    // ——過大なら行が据え置かれて次の巡回でやり直すだけだが、過小なら反対建玉（空売り）を作る。
+    private static int UnreflectedQuantityOf(ExecutionRecord record, bool touchedAfterSnapshot) =>
+        record.Status switch
+        {
+            // 🔴 拒否はそもそも市場へ届いていない。差し引くと、拒否のたびに持ち分が消えて**再試行できなくなる**。
+            OrderStatus.Rejected => 0,
+            // 照会の後に置かれた・動いた決済は丸ごと未反映とみなす（部分約定の内訳を当てにしない）。
+            _ when touchedAfterSnapshot => Math.Max(0, record.Quantity),
+            // それ以前の終端は建玉へ反映済み。
+            _ when OrderStatusLifecycle.IsTerminal(record.Status) => 0,
+            // 板に残っている未約定分は、これから建玉を減らし得る。
+            _ => Math.Max(0, record.Quantity - record.FilledQuantity),
+        };
 
     // 🔴 #820 の監査, IADR-0344 決定5-7: エントリーの発注記録が無い孤立行。**決済は出さない。**
     // 予約のリコンサイルが記録を補える窓のあいだは据え置き、猶予を過ぎたら Critical を出して行を閉じる

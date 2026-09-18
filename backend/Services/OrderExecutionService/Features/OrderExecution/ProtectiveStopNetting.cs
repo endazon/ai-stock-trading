@@ -63,9 +63,10 @@ public static class ProtectiveStopNetting
     /// （監査で実測: 10 株の S1 行 2 件＋手動売却 5 株 → 20 株の決済 vs 保有 15 株。反対建玉＝空売りになる）。
     /// </para>
     /// <para>
-    /// 配分は<b>決定的</b>である——到達時刻（未到達なら記録の作成時刻）→作成時刻→EntryDecisionId の順に古い行から
-    /// 「その行のエントリー約定数量」を上限として割り当て、残りを次の行へ回す。ハンドラとガードのどちらから
-    /// 呼んでも同じ配分になる（並行実行でも合計が建玉を超えない）。S0 が主張する数量は先に差し引く。
+    /// 配分は<b>決定的</b>である——<b>記録の作成時刻 → EntryDecisionId</b> の順に古い行から「その行のエントリー約定数量」を
+    /// 上限として割り当て、残りを次の行へ回す（到達時刻は混ぜない。混ぜると処理中に順序が変わる）。
+    /// ハンドラとガードのどちらから呼んでも同じ配分になる（並行実行でも合計が建玉を超えない）。
+    /// S0 が主張する数量と、<paramref name="unreflectedCloseQuantity"/>（建玉照会がまだ映していない決済）は先に差し引く。
     /// </para>
     /// </summary>
     public static IReadOnlyDictionary<Guid, int> AllocateSoftwareStops(
@@ -75,7 +76,7 @@ public static class ProtectiveStopNetting
         IReadOnlyList<BrokerPositionSnapshot> snapshot,
         IEnumerable<ProtectiveStopOrder> activeStops,
         IExecutedOrderStore store,
-        int pendingCloseQuantity = 0)
+        int unreflectedCloseQuantity = 0)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(activeStops);
@@ -87,13 +88,15 @@ public static class ProtectiveStopNetting
             .ToList();
 
         // S0（ブローカー側逆指値）が覆っている数量は S1 の持ち分ではない（従来の RemainingPositionFor と同じ向き）。
-        // 🔴 さらに、**発注済みで未約定の決済**も差し引く。建玉照会は決済が約定するまで減らないため、差し引かないと
-        // 同じ建玉を次の行へもう一度配分してしまう（実測: 建玉 15 株に対し 10 株＋10 株＝20 株の決済になった）。
+        // 🔴 さらに、**建玉照会がまだ映していない決済**も差し引く（板に残っている未約定の決済と、照会の後に
+        // 約定した決済）。差し引かないと同じ建玉を次の行へもう一度配分する（実測: 建玉 15 株に対し
+        // 10 株＋10 株＝20 株の決済になった）。**S0 のレグは呼び出し側がこの値から除いている**——
+        // ここで行の数量として既に引いており、二重に引くと S1 の決済が出なくなる（#820 の監査 B1）。
         var budget = Math.Max(
             0,
             DirectionalNet(symbol, market, entrySide, snapshot)
                 - group.Where(s => !s.IsSoftwareStop).Sum(s => s.Quantity)
-                - Math.Max(0, pendingCloseQuantity));
+                - Math.Max(0, unreflectedCloseQuantity));
 
         var allocation = new Dictionary<Guid, int>();
         // 🔴 順序は**記録の作成時刻**（＝エントリーの発注順）で決める。到達時刻を混ぜると、1 回の到達を処理する途中で
