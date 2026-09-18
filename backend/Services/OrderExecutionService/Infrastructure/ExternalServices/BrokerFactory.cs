@@ -11,10 +11,12 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // 実弾（live 階層）は LiveTradingGate（閂 0）が本メソッドの入口で停止させる＝アダプタを生成しない。
 public static class BrokerFactory
 {
+    // FR-10, #821, IADR-0347: alternativeStop は S3（代替注文種別）の設定。null はアダプタ既定（StopLimit・1%）。
     public static IBrokerAdapter Create(
         BrokerSelection selection,
         IMoomooTradeClient? moomooClient = null,
-        ILogger<MoomooBrokerAdapter>? moomooLogger = null)
+        ILogger<MoomooBrokerAdapter>? moomooLogger = null,
+        MoomooAlternativeStopSettings? alternativeStop = null)
     {
         // 閂 0: 実弾は未解禁。アダプタを生成する前に停止する（IADR-0111）。
         LiveTradingGate.Ensure(selection);
@@ -25,7 +27,8 @@ public static class BrokerFactory
             // FR-20, #386, IADR-0149 決定1: 実際に発注する先（構成の解決結果）をアダプタへ渡す。
             // この値が OrderExecuted に載り、Stage 1 の取引件数に算入されるかを決める。
             BrokerVendor.Moomoo => moomooClient is not null
-                ? new MoomooBrokerAdapter(moomooClient, selection.ToBrokerProvider(), logger: moomooLogger)
+                ? new MoomooBrokerAdapter(
+                    moomooClient, selection.ToBrokerProvider(), logger: moomooLogger, alternativeStop: alternativeStop)
                 : throw new InvalidOperationException(
                     $"{BrokerSelection.ProviderKey}={BrokerSelection.MoomooProvider} には OpenD 接続"
                     + "（IMoomooTradeClient）が必要です。OpenD の常駐と接続構成（Broker:Moomoo:OpenD:Host/Port）を"

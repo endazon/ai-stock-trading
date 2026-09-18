@@ -57,9 +57,13 @@ public class StopLossMethodPolicyTests
             return StopLossMethodDisposition.BrokerStopOrder;
         }
 
-        return method == StopLossExecutionMethod.NoProtectiveStop
-            ? StopLossMethodDisposition.ProtectiveStopWaived
-            : StopLossMethodDisposition.NotImplementedFallbackToBrokerStop;
+        // #821, IADR-0347: S3 は代替注文種別の扱いへ分かれた（未実装の fallback に残るのは S1 と未知だけ）。
+        return method switch
+        {
+            StopLossExecutionMethod.NoProtectiveStop => StopLossMethodDisposition.ProtectiveStopWaived,
+            StopLossExecutionMethod.AlternativeBrokerOrderType => StopLossMethodDisposition.AlternativeBrokerOrderType,
+            _ => StopLossMethodDisposition.NotImplementedFallbackToBrokerStop,
+        };
     }
 
     [Theory]
@@ -86,6 +90,25 @@ public class StopLossMethodPolicyTests
     {
         StopLossMethodPolicy.Resolve(
                 StopLossExecutionMethod.NoProtectiveStop, Entry(ProductType.ShortSell, TradeSide.Sell),
+                BrokerProvider.MoomooSimulate)
+            .Should().Be(StopLossMethodDisposition.BrokerStopOrder);
+    }
+
+    // #821, IADR-0347: S3 は SIMULATE の買いにだけ届く（実弾・空売りは従来の統制のまま）。
+    [Fact]
+    public void 実弾ではS3は代替注文種別にならない()
+    {
+        StopLossMethodPolicy.Resolve(
+                StopLossExecutionMethod.AlternativeBrokerOrderType, Entry(ProductType.Cash, TradeSide.Buy),
+                BrokerProvider.MoomooReal)
+            .Should().Be(StopLossMethodDisposition.Refused);
+    }
+
+    [Fact]
+    public void 空売りはSIMULATEのS3でも代替注文種別にならない()
+    {
+        StopLossMethodPolicy.Resolve(
+                StopLossExecutionMethod.AlternativeBrokerOrderType, Entry(ProductType.ShortSell, TradeSide.Sell),
                 BrokerProvider.MoomooSimulate)
             .Should().Be(StopLossMethodDisposition.BrokerStopOrder);
     }

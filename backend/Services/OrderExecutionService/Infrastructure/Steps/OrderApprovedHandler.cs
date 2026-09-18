@@ -69,6 +69,19 @@ public sealed class OrderApprovedHandler(
         // FR-11, ADR-0016 決定15, #633, IADR-0300: 約定の経費を記録する（段 1 では常に「取得できない」）。
         await RecordTradeExpensesAsync(executed, bus, cancellationToken).ConfigureAwait(false);
 
+        // FR-10, FR-11, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: S3 の試行の記録（注文種別と拒否理由）。
+        // **Placed / CoverageLost より先に出す**——「何で試したか」は結果の手前の事実であり、監査台帳を
+        // 時系列で読んだときに結果の直前へ並ぶ方が辿りやすい。受理・拒否のどちらでも 1 件出る。
+        if (result.StopAttempted is { } attempted)
+        {
+            logger.LogWarning(
+                "S3 代替注文種別で保護レグを試行: EntryDecisionId={EntryDecisionId} 種別={OrderType} 状態={Status}"
+                + " retType={RetType} retMsg={RetMsg}",
+                attempted.EntryDecisionId, attempted.OrderType, attempted.Status,
+                attempted.RejectReasonCode, attempted.RejectReasonMessage);
+            await bus.PublishAsync(attempted).ConfigureAwait(false);
+        }
+
         // FR-10, #331, IADR-0210: 保護逆指値の結果。Placed はリスク管理が台帳の承認行へ結線し、
         // CoverageLost は監査・Critical 通知（および手仕舞いレグの台帳結線）へ流れる。
         if (result.StopPlaced is { } stopPlaced)

@@ -86,6 +86,40 @@ public class ProtectiveStopEventPayloadTests
         restored.CloseIntent!.Quantity.Should().Be(10);
     }
 
+    // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由が往復で欠落しないこと**。
+    // この payload が監査台帳に残る「なぜ S3 が使えないのか」の唯一の一次証跡である。
+    [Fact]
+    public void 代替注文種別の試行は往復しても注文種別と拒否理由を保つ()
+    {
+        var evt = new AlternativeProtectiveStopAttempted(
+            Guid.NewGuid(), Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            AlternativeProtectiveOrderType.StopLimit, OrderStatus.Rejected, "alt-1",
+            1, "Paper trading does not support StopLimit order",
+            StopLossExecutionMethod.AlternativeBrokerOrderType, BrokerProvider.MoomooSimulate, T0);
+
+        var restored = RoundTrip(evt);
+
+        restored.Should().Be(evt);
+        restored.RejectReasonCode.Should().Be(1);
+        restored.RejectReasonMessage.Should().Be("Paper trading does not support StopLimit order");
+    }
+
+    // 受理された試行は理由を持たない（null が「断られていない」という積極的な意味を持つ）。
+    [Fact]
+    public void 受理された代替注文種別の試行は理由なしのまま往復する()
+    {
+        var evt = new AlternativeProtectiveStopAttempted(
+            Guid.NewGuid(), Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            AlternativeProtectiveOrderType.TrailingStop, OrderStatus.Accepted, "alt-2",
+            null, null, StopLossExecutionMethod.AlternativeBrokerOrderType, BrokerProvider.MoomooSimulate, T0);
+
+        var restored = RoundTrip(evt);
+
+        restored.Should().Be(evt);
+        restored.RejectReasonCode.Should().BeNull();
+        restored.RejectReasonMessage.Should().BeNull();
+    }
+
     [Fact]
     public void 接続不可の分類は原因例外を保つ()
     {

@@ -66,7 +66,13 @@ builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 {
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
     var moomooClient = sp.GetService<IMoomooTradeClient>(); // moomoo 時のみ登録済み
-    return BrokerFactory.Create(brokerSelection, moomooClient, loggerFactory.CreateLogger<MoomooBrokerAdapter>());
+    // FR-10, #821, IADR-0347: S3（代替注文種別）の設定もアダプタへ渡す。
+    // **moomoo のときだけ構成を読む**——paper 構成で moomoo の構成検証（TrdEnv 等）を走らせない。
+    var alternativeStop = brokerSelection.IsMoomoo
+        ? MoomooBrokerOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()).AlternativeStop
+        : null;
+    return BrokerFactory.Create(
+        brokerSelection, moomooClient, loggerFactory.CreateLogger<MoomooBrokerAdapter>(), alternativeStop);
 });
 
 builder.Services.AddSingleton<IClock, SystemClock>();

@@ -112,6 +112,13 @@ moomoo:
     # ⚠️ マウント先コンテナの実行 uid と一致していること（現行の Worker イメージは root 実行）。
     #    非 root 化する場合は fsGroup と 0440 を用いる（chart README 参照）。
     rsaSecretDefaultMode: 0400
+  # #821: 損切りの実行機構 S3（他のブローカー側注文種別）で試す注文種別。空=アダプタ既定（stoplimit）。
+  # 'stoplimit' / 'trailingstop' 以外は order-execution が起動時に停止する（既定へ黙って倒さない）。
+  # ⚠️ **手法（S0〜S3）そのものの選択はここではない** —— リスク管理の利用者専用 API で選ぶ（統制値と同じ経路）。
+  alternativeStopOrderType: ""
+  # #821: ストップリミットの指値を発火価格から不利側へずらす比率。空=アダプタ既定（0.01＝1%）。
+  # 0〜0.1 の範囲外は起動時に停止する。0 にすると急落時に約定せず保護レグの体を成さない。
+  stopLimitOffsetRatio: ""
 
 # #132, IADR-0060 決定 1: 常駐 OpenD（moomoo ゲートウェイ）の**本番配備**の経路。
 # 既定 disabled = fail-safe（何も描画しない）。dev の現行経路は deploy/opend/k8s の生 manifest（そちらは残す）。

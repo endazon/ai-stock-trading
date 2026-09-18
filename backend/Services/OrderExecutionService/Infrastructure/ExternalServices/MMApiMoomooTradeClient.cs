@@ -112,10 +112,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
 
         // FR-10, #331, IADR-0210: 注文種別の写像。Limit=指値（従来）／Stop=逆指値（発火価格は AuxPrice）／
         // Market=成行。Stop・Market には Price を載せない（発火後成行・板成行の意味を保つ）。
+        // FR-10, #821, IADR-0347: S3 の代替種別。StopLimit=発火価格（AuxPrice）＋**指値**（Price）、
+        // TrailingStop=トレール幅の絶対額（TrailType_Amount・TrailValue。発火後は成行のため TrailSpread=0）。
         var orderType = request.Kind switch
         {
             MoomooOrderKind.Stop => TrdCommon.OrderType.OrderType_Stop,
             MoomooOrderKind.Market => TrdCommon.OrderType.OrderType_Market,
+            MoomooOrderKind.StopLimit => TrdCommon.OrderType.OrderType_StopLimit,
+            MoomooOrderKind.TrailingStop => TrdCommon.OrderType.OrderType_TrailingStop,
             _ => TrdCommon.OrderType.OrderType_Normal,
         };
         var c2sBuilder = TrdPlaceOrder.C2S.CreateBuilder()
@@ -126,10 +130,17 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             .SetCode(request.Symbol)
             .SetQty(request.Quantity)
             .SetSecMarket(secMarket);
-        if (request.Kind == MoomooOrderKind.Limit)
+        if (request.Kind is MoomooOrderKind.Limit or MoomooOrderKind.StopLimit)
             c2sBuilder.SetPrice((double)request.Price);
-        if (request.Kind == MoomooOrderKind.Stop && request.TriggerPrice is { } trigger)
+        if (request.Kind is MoomooOrderKind.Stop or MoomooOrderKind.StopLimit && request.TriggerPrice is { } trigger)
             c2sBuilder.SetAuxPrice((double)trigger);
+        // #821, IADR-0347: トレーリングストップは「幅」で指定する（発火価格を持たない）。
+        if (request.Kind == MoomooOrderKind.TrailingStop && request.TrailValue is { } trail)
+        {
+            c2sBuilder.SetTrailType((int)TrdCommon.TrailType.TrailType_Amount);
+            c2sBuilder.SetTrailValue((double)trail);
+            c2sBuilder.SetTrailSpread(0d); // 発火後は成行（TrailingStopLimit ではない）ため価差は置かない。
+        }
         // #141, IADR-0092: DecisionId を remark（client order id相当）として紐づける。滞留 Reserved を後から
         // DecisionId で照合し、実照会リコンサイルで発注済みを終端化・未発注を解放できるようにする。
         if (!string.IsNullOrEmpty(request.Remark))
@@ -667,11 +678,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         }
     }
 
+    // #821, IADR-0347: 非成功は **retType / retMsg を保つ例外**で投げる（従来のメッセージ文字列は不変。
+    // MoomooTradeRequestException は InvalidOperationException 派生であり、既存の捕捉は 1 行も変わらない）。
+    // S3（代替注文種別）は「拒否理由を監査台帳へ残すこと」自体が目的であり、文字列へ畳むと取り出せない。
     private static void EnsureSucceeded(int retType, string retMsg, string op)
     {
         if (retType != 0) // RetType_Succeed=0
         {
-            throw new InvalidOperationException($"moomoo {op} が失敗しました（retType={retType}）: {retMsg}");
+            throw new MoomooTradeRequestException(op, retType, retMsg);
         }
     }
 
