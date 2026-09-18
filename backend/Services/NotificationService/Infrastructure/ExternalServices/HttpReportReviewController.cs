@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using NotificationService.Features.Notifications;
@@ -119,14 +120,79 @@ public sealed class HttpReportReviewController(
         }
     }
 
+    // FR-14, UC-03〜05, #834: 会話キーの一覧（新しい順）。入力補完の候補にだけ使う。
+    //
+    // **fail-safe**: 失敗はすべて空で返す（契約は IReportReviewController）。呼び出し側のキャンセルだけは
+    // 伝播させる（他メソッドと同じ `Handled`）。
+    //
+    // 射影するのは `periodKey` と並び替えに使う `periodStart` だけである。**本文・要約は読まない**
+    //（IADR-0240 決定4）。**状態 enum も読まない**（同 決定5。数値/文字列いずれの JSON 表現にも結合しない）
+    // ——一覧に載る報告書はレビュー待ちも確定済みも等しくレビュー操作の対象であり、絞り込みに状態は要らない。
+    //
+    // `periodStart` は**文字列として受けてから**日付として解釈を試みる。解釈できない値で一覧ごと落とさない
+    //（解釈できなければ末尾へ倒し、会話キーの降順で並ぶ）。
+    public async Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient
+                .GetAsync("/reports", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("報告書一覧の照会に失敗しました（{Status}）。補完の候補なしで続行します。",
+                    (int)response.StatusCode);
+                return [];
+            }
+
+            var reports = await response.Content
+                .ReadFromJsonAsync<List<ReportListItem>>(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (reports is null)
+            {
+                logger.LogWarning("報告書一覧の応答を解釈できませんでした。補完の候補なしで続行します。");
+                return [];
+            }
+
+            return [.. reports
+                .Where(r => !string.IsNullOrWhiteSpace(r.PeriodKey))
+                .OrderByDescending(r => StartOf(r.PeriodStart))
+                .ThenByDescending(r => r.PeriodKey, StringComparer.Ordinal)
+                .Select(r => r.PeriodKey!)];
+        }
+        catch (Exception ex) when (Handled(ex, cancellationToken))
+        {
+            logger.LogWarning(ex, "報告書一覧の照会で例外が発生しました。補完の候補なしで続行します。");
+            return [];
+        }
+    }
+
     private string FailureMessage(string operation, HttpStatusCode status)
     {
+        // FR-14, #834: 404 は「呼び出しの失敗」ではなく**その会話キーの報告書が無い**ことを意味する。
+        // 状態番号だけを返すと、利用者は何が悪いのか・正しい形が何かを知る術が無い（日付だけを入れて
+        // 4 回続けて 404 になった実測がある）。**正しい形の例を添える。**
+        if (status == HttpStatusCode.NotFound)
+        {
+            logger.LogWarning("{Operation}の対象が見つかりませんでした（404）。", operation);
+            return "その会話キーの報告書が見つかりません（例: `daily-2026-09-18`）";
+        }
+
         var hint = status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
             ? "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）"
             : string.Empty;
         logger.LogWarning("{Operation}に失敗しました（{Status}）。{Hint}", operation, (int)status, hint);
         return $"{operation}に失敗しました（HTTP {(int)status}）{hint}";
     }
+
+    // 対象期間の開始日。解釈できない・欠落している値は最小値へ倒す（一覧ごと落とさない）。
+    private static DateTime StartOf(string? periodStart) =>
+        DateTime.TryParse(
+            periodStart, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? parsed
+            : DateTime.MinValue;
 
     private string ExceptionMessage(string operation, Exception ex, CancellationToken cancellationToken)
     {
@@ -152,4 +218,8 @@ public sealed class HttpReportReviewController(
     private sealed record ConfirmRequest(int ExpectedVersion);
 
     private sealed record ReviewCommandRequest(int ExpectedVersion);
+
+    // #834: 一覧応答の必要部分だけを受ける射影。**本文（body）・要約（policySummary）・状態（state）は
+    // 受けない**（IADR-0240 決定4/5）。periodStart は表現に結合しないため文字列で受ける。
+    private sealed record ReportListItem(string? PeriodKey, string? PeriodStart);
 }

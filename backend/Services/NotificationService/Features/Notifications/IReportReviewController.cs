@@ -25,6 +25,18 @@ public interface IReportReviewController
     // 差し戻し（修正指示）。PendingApproval → ChangesRequested。版番号付き楽観排他。
     Task<ReportReviewResult> RequestChangesAsync(
         string periodKey, int expectedVersion, CancellationToken cancellationToken = default);
+
+    // FR-14, UC-03〜05, #834: 会話キーの一覧（新しい順）。`/report` の period の入力補完に使う。
+    //
+    // 🔴 **失敗しても素通しする（fail-safe）。** HTTP エラー・タイムアウト・解釈不能はすべて**空**で返し、
+    // 例外を投げない（呼び出し側のキャンセルだけは伝播する）。補完は入力の補助であって統制ではなく、
+    // 一覧が引けないことを理由に `/report` 自体を壊さない（#834 の射程）。
+    // 失敗を成功に見せないという他 3 メソッドの方針と矛盾しない——**候補が無いことは「報告書が無い」と
+    // 主張しない**。実在しない会話キーは従来どおり報告書サービスが 404 で返す。
+    //
+    // **射影するのは会話キーだけである**（本文・要約は取りに行かない＝IADR-0240 決定4、
+    // 状態 enum は読まない＝同 決定5）。
+    Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default);
 }
 
 // FR-14, UC-03〜05: レビュー照会・差し戻しの結果。Message は利用者へ表示する整形済みテキスト。

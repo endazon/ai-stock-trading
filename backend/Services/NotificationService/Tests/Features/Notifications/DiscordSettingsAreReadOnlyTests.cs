@@ -228,6 +228,13 @@ public class DiscordSettingsAreReadOnlyTests
                 owner.Record();
                 return Task.FromResult(new ReportReviewResult(true, 1, "差し戻し"));
             }
+
+            // #834: 入力補完の一覧照会も「コントローラを呼んだ」として数える（設定変更系では呼ばれない）。
+            public Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
+            {
+                owner.Record();
+                return Task.FromResult<IReadOnlyList<string>>([]);
+            }
         }
     }
 }

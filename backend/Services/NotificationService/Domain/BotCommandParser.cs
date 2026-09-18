@@ -31,6 +31,11 @@ public static class BotCommandParser
     // 版番号は 1 以上（報告書サービスの版番号は 1 起点。0 以下・数値でないものは Unknown へ倒す）。
     private const int MinVersion = 1;
 
+    // FR-07, #834: 会話キーとして受け付けられる値か（入力補完の候補側と共用する）。
+    // **受け付けない値を候補に出すと、選んだ結果が `Unknown` へ倒れる**ため、値域の判定を 1 箇所に保つ。
+    public static bool IsPeriodKey(string? value) =>
+        !string.IsNullOrEmpty(value) && PeriodKeyPattern.IsMatch(value);
+
     public static BotCommand Parse(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -77,7 +82,7 @@ public static class BotCommandParser
 
         // #835: 会話キーだけは**原文の大小文字のまま**採る（副コマンドの分岐は小文字側で行う）。
         var periodKey = rawTokens[2];
-        if (!PeriodKeyPattern.IsMatch(periodKey))
+        if (!IsPeriodKey(periodKey))
             return BotCommand.Unknown;
 
         // 版番号は approve（実行）と request-changes で必須、show では書かせない。

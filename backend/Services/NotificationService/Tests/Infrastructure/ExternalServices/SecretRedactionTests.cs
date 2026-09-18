@@ -252,6 +252,9 @@ public class SecretRedactionTests
         public Task<ReportReviewResult> RequestChangesAsync(
             string periodKey, int expectedVersion, CancellationToken cancellationToken = default) =>
             Task.FromResult(new ReportReviewResult(true, 1, "差し戻し"));
+
+        public Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     // ログ出力（メッセージ本文・スコープ・例外メッセージ）を文字列として捕捉する ILogger テストダブル。
