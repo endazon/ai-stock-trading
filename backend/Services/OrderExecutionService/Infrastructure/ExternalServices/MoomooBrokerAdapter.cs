@@ -78,13 +78,15 @@ public sealed class MoomooBrokerAdapter(
         ArgumentNullException.ThrowIfNull(closeIntent);
         var orderType = _alternativeStop.OrderType;
         var (kind, price, trailValue) = BuildAlternativeParameters(closeIntent, triggerPrice, entryReferencePrice);
+        // #844: 発火価格（AuxPrice）も刻みへ丸めて送る。指値だけ丸めても、こちらが刻みを外れていれば同じ拒否になる。
+        var roundedTrigger = MoomooPriceRounding.RoundTrigger(closeIntent.Market, closeIntent.Side, triggerPrice);
 
         var placement = await PlaceWithRejectionDetailAsync(
                 closeIntent with { Price = price },
                 MoomooClientOrderId.From(decisionId),
                 cancellationToken,
                 kind,
-                kind == MoomooOrderKind.StopLimit ? triggerPrice : null,
+                kind == MoomooOrderKind.StopLimit ? roundedTrigger : null,
                 trailValue)
             .ConfigureAwait(false);
 
@@ -99,14 +101,25 @@ public sealed class MoomooBrokerAdapter(
     private (MoomooOrderKind Kind, decimal Price, decimal? TrailValue) BuildAlternativeParameters(
         OrderIntent closeIntent, decimal triggerPrice, decimal entryReferencePrice)
     {
+        // 🔴 #844: ブローカーは価格の刻みを検査する。丸めずに送ると
+        // `retType=-1 The precision of Price in Place Order does not meet the specification.` で拒否される
+        //（稼働環境で実測。332.35 × 0.99 = 329.0265 の 4 桁が原因だった）。
         if (_alternativeStop.OrderType == AlternativeProtectiveOrderType.TrailingStop)
         {
-            return (MoomooOrderKind.TrailingStop, closeIntent.Price,
-                Math.Abs(entryReferencePrice - triggerPrice));
+            return (MoomooOrderKind.TrailingStop,
+                MoomooPriceRounding.RoundLimit(
+                    closeIntent.Market, closeIntent.Side, closeIntent.Price, triggerPrice),
+                MoomooPriceRounding.RoundTrail(
+                    closeIntent.Market, triggerPrice, Math.Abs(entryReferencePrice - triggerPrice)));
         }
 
         var offset = triggerPrice * _alternativeStop.StopLimitOffsetRatio;
-        var limitPrice = closeIntent.Side == TradeSide.Sell ? triggerPrice - offset : triggerPrice + offset;
+        var raw = closeIntent.Side == TradeSide.Sell ? triggerPrice - offset : triggerPrice + offset;
+        var limitPrice = MoomooPriceRounding.EnsureBeyondTrigger(
+            closeIntent.Market,
+            closeIntent.Side,
+            MoomooPriceRounding.RoundLimit(closeIntent.Market, closeIntent.Side, raw, triggerPrice),
+            MoomooPriceRounding.RoundTrigger(closeIntent.Market, closeIntent.Side, triggerPrice));
         return (MoomooOrderKind.StopLimit, limitPrice, null);
     }
 
