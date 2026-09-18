@@ -130,7 +130,9 @@ P4 S0(OrderType_Stop): Kind=Stop Price=332.3512 Trigger=332.3512
 P5 entry(Limit):       Kind=Limit Price=329.0265
 ```
 
-🔴 **S0 は SIMULATE 限定ではなく実弾でも使う経路である。** 損切りラインは `参照価格 ∓ StopLossDistancePerShare` で
+🔴 **S0 は S3 と違い、実弾が解禁された後もそのまま使う経路である**（現状のクライアントは
+`TrdEnv_Simulate` にピン留めされており〔`MMApiMoomooTradeClient` の SIMULATE 固定〕、今この瞬間に実弾が
+流れるわけではない。当初「実弾でも使う経路」と書いたのは強すぎた——#850 の監査の指摘）。 損切りラインは `参照価格 ∓ StopLossDistancePerShare` で
 作られ、`StopLossDistancePerShare` は **LLM の JSON をそのまま読む値**（`TradeDecisionParser.ReadDecimal`。
 桁の制約はプロンプトにもパーサにも無い）。エントリーの指値も、現在値が取れない日は
 `currentPrice ?? decision.ReferencePrice` で **LLM の値がそのまま指値になる**。つまり
