@@ -8,7 +8,7 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // `retType=-1 The precision of Price in Place Order does not meet the specification.` で拒否された。
 // 指値を「発火価格 × (1 − 比率)」で作るため 332.35 × 0.99 = 329.0265 のように小数 4 桁になっていた。
 // 事故当日は S0 の発火価格もエントリーの指値もたまたま 2 桁だったため、代替レグだけが露呈した
-// ——**上流に丸めは無い**（下の「残る制約」を見ること）。
+// ——**上流に丸めは無い**（下の #846 の段を見ること）。
 //
 // 丸めの向きは**保護が緩む側へ倒さない**。決済が売り（ロングの保護）なら切り下げ、買い戻し（ショートの保護）なら
 // 切り上げ——どちらも「約定しやすい側」である。発火価格そのものは逆で、**早く発火する側**へ倒す。
@@ -16,14 +16,21 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // 🔴 **桁は「銘柄の基準価格」で一度だけ決め、指値にも同じ桁を使う**（`referencePrice`）。値ごとに $1 と比べると、
 // 1 ドル近傍で指値 4 桁・発火価格 2 桁のように**桁が混ざる**。ブローカーの判定が銘柄価格で決まるなら同じ拒否が再発する。
 //
+// FR-05, FR-10, ADR-0016, #846, IADR-0210（2026-09-19 追記）: **S0 の発火価格とエントリーの指値もここを通る**
+// （`MoomooBrokerAdapter.PlaceCoreAsync`）。#845 の時点では S3 だけが丸めを通っていたが、S0 は**実弾でも使う経路**で、
+// 監査プローブが `Trigger=332.3512` / `entry Price=329.0265` を実測した。上流に丸めは無い。
+//
+// 🔴 **エントリーの指値だけは向きが逆である**（`RoundEntryLimit`）。保護レグの指値は「約定しないと保護にならない」ので
+// 約定しやすい側へ倒すが、**エントリーは約定しなくても損をしない**。意図より悪い価格で建つと
+// 「エントリー − 損切りライン」の実幅が広がり、サイジングが前提にした 1 株あたりリスクを超える。
+//
 // 残る制約:
 // - 東証の呼値は価格帯で刻みが変わる（1 円・5 円・10 円…）。ここでは**小数桁だけ**を揃えるため、
 //   高価格帯の日本株では刻みの倍数にならないことがある。S3 は SIMULATE 限定であり、実測でき次第見直す。
 // - **日本株の低位株（数円）では、丸めたずらし幅が相対的に大きくなる**（30 円で 1 円＝3.3%）。1 円株では
 //   指値が 0 になり、既存の発注前検証が送信を止める（fail-closed）。
-// - 🔴 **S0（`OrderType_Stop`）の発火価格と、エントリーの指値は、この丸めを通らない。** 上流に丸めは無く
-//   （損切り幅は LLM の値をそのまま使う）、事故当日にたまたま 2 桁だっただけである。**同じ拒否が実弾の
-//   S0 でも起き得る**（#846 で扱う）。
+// - **台帳には丸める前の値が残る**（`ExecutionRecord` / `ProtectiveStopOrder` は呼び出し側の値を保存する）。
+//   「記録した価格」と「送った価格」の間に最大 1 刻みの差が残る（#846 の射程外）。
 public static class MoomooPriceRounding
 {
     /// <summary>1 ドル未満の米国株は小数 4 桁まで刻める（サブペニー）。それ以上は 2 桁。</summary>
@@ -54,6 +61,22 @@ public static class MoomooPriceRounding
     {
         var decimals = DecimalsFor(market, referencePrice);
         return side == TradeSide.Sell ? Floor(price, decimals) : Ceiling(price, decimals);
+    }
+
+    /// <summary>
+    /// #846: エントリーの指値は**不利にならない側**へ丸める（買いは切り下げ・売りは切り上げ）。
+    /// <para>
+    /// 🔴 <see cref="RoundLimit"/>（保護レグ用＝約定しやすい側）と**向きが逆**である。取り違えないよう別メソッドにしてある。
+    /// 保護レグは約定しなければ保護にならないが、**エントリーは約定しなくても損をしない**（見送りは可逆）。
+    /// 一方、意図より悪い価格で建つと「エントリー − 損切りライン」の実幅が広がり、サイジングが前提にした
+    /// 1 株あたりリスク（FR-10）を超える——こちらは不可逆である。
+    /// </para>
+    /// <para>桁は**エントリーの指値そのもの**（＝銘柄の基準価格）で決める。他に基準となる価格を持たない。</para>
+    /// </summary>
+    public static decimal RoundEntryLimit(Market market, TradeSide side, decimal price)
+    {
+        var decimals = DecimalsFor(market, price);
+        return side == TradeSide.Buy ? Floor(price, decimals) : Ceiling(price, decimals);
     }
 
     /// <summary>早く発火する側へ丸める（ロングの保護＝売りの発火は切り上げ・ショートの保護は切り下げ）。</summary>
