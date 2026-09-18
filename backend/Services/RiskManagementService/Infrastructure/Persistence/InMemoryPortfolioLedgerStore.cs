@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
 using AiStockTrading.Shared.Contracts.Trading;
 
@@ -77,6 +78,26 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         return result;
     }
 
+    // FR-10, UC-06, #848, IADR-0117: 承認が終端になったことを記録する（EfPortfolioLedgerStore と同一の意味論）。
+    public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
+    {
+        // 終端を捏造しない（Accepted / PartiallyFilled は「まだ動く」）。
+        if (!OrderStatusLifecycle.IsTerminal(terminalStatus))
+            return;
+
+        // 相関する承認が無ければ**書かない**（AddOrUpdate は無い鍵を作ってしまうので使わない）。
+        // 単調・冪等: 既に終端なら動かさない（最初の終端が真）。
+        while (_approvals.TryGetValue(decisionId, out var current))
+        {
+            if (current.TerminalAt is not null)
+                return;
+
+            var updated = current with { TerminalAt = terminalAt, TerminalStatus = terminalStatus };
+            if (_approvals.TryUpdate(decisionId, updated, current))
+                return;
+        }
+    }
+
     // #292, IADR-0117: 処理中の決済数量（EfPortfolioLedgerStore と同一の意味論）。
     public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter)
     {
@@ -95,7 +116,10 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
             if (intent.PositionEffect != PositionEffect.Close
                 || intent.Symbol != symbol
                 || intent.Market != market
-                || approval.ApprovedAt < approvedAtOrAfter)
+                || approval.ApprovedAt < approvedAtOrAfter
+                // #848: 終端になったと**確認できた**承認は数えない（残りは二度と約定しない）。
+                // null＝未確認は従来どおり処理中として数える（fail-safe。除外し過ぎるとショート化する）。
+                || approval.TerminalAt is not null)
             {
                 continue;
             }
@@ -111,7 +135,14 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
     internal IReadOnlyList<(Guid DecisionId, OrderIntent Intent, DateTimeOffset ApprovedAt)> SnapshotApprovals() =>
         _approvals.Select(a => (a.Key, a.Value.Intent, a.Value.ApprovedAt)).ToList();
 
-    private sealed record ApprovalRecord(OrderIntent Intent, DateTimeOffset ApprovedAt, decimal? FxRateBaseToDisplay = null);
+    private sealed record ApprovalRecord(OrderIntent Intent, DateTimeOffset ApprovedAt, decimal? FxRateBaseToDisplay = null)
+    {
+        // #848, IADR-0117: 終端になったと確認できた時刻と状態（ApprovedOrderRow と同じ意味論）。
+        // null＝未確認。判定に使うのは TerminalAt だけで、TerminalStatus は診断用である。
+        public DateTimeOffset? TerminalAt { get; init; }
+
+        public OrderStatus? TerminalStatus { get; init; }
+    }
 
     private sealed record FillRecord(
         Guid DecisionId,

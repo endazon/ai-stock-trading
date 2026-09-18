@@ -80,6 +80,32 @@ public interface IPortfolioLedgerStore
     ///
     /// <paramref name="approvedAtOrAfter"/> で古い承認を除外するのは、永久に約定しない滞留承認が決済を恒久的に
     /// ブロックするのを防ぐため（#270 破損期のような状況で建玉を落とせなくなる）。
+    ///
+    /// <para>
+    /// #848, IADR-0117（2026-09-19 追記）: <b>終端になったと確認できた承認（<see cref="MarkTerminal"/> 済み）は
+    /// 数えない。</b> 終端の未約定残は二度と約定しないため、在庫から引く理由が無い。
+    /// 🔴 <b>終端が確認できていない承認は従来どおり全量を処理中として数える</b>（不明は安全側）。
+    /// 除外し過ぎると二重決済で意図しないショート化を作る。
+    /// </para>
     /// </summary>
     int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter);
+
+    /// <summary>
+    /// FR-10, UC-06, #848, IADR-0117（2026-09-19 追記）: 承認済み注文が<b>終端になった</b>ことを台帳へ記録する。
+    /// <para>
+    /// 取消・失効・拒否・全量約定は「残りの数量が二度と約定しない」ことを意味する。これを記録しないと、
+    /// 取り消された手仕舞いが <see cref="GetInFlightCloseQuantity"/> の窓（既定 30 分）のあいだ建玉をロックし続け、
+    /// <b>下落局面で手仕舞えない</b>（#848 の実害）。
+    /// </para>
+    /// <para>
+    /// 意味論（いずれも fail-safe の向き）:
+    /// <list type="bullet">
+    /// <item>非終端の <paramref name="terminalStatus"/>（<c>Accepted</c> / <c>PartiallyFilled</c>）は<b>無視する</b>
+    /// ——終端を捏造しない。</item>
+    /// <item>相関する承認が無ければ<b>何もしない</b>（<c>AppendFill</c> と同じ。知らない注文の終端は書けない）。</item>
+    /// <item>既に終端が記録されていれば<b>何もしない</b>（単調・冪等。再送・順序前後で時刻が動かない）。</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);
 }

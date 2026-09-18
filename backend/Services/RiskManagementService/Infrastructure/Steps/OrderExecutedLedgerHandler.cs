@@ -25,6 +25,14 @@ public sealed class OrderExecutedLedgerHandler(
     {
         ArgumentNullException.ThrowIfNull(message);
 
+        // 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記）: **終端の記録は約定の有無より先に行う。**
+        // 約定追跡（OrderFillPoller）はブローカー側の取消・失効・拒否を観測して本イベントを再発行するが、
+        // その多くは FilledQuantity == 0 である。下の早期 return より後ろに置くと、まさに #848 の事象
+        //（利用者が moomoo アプリで取り消した手仕舞い）が丸ごと捨てられ、取り消した注文が
+        // 「処理中の決済」として 30 分間建玉をロックし続ける（下落局面で手仕舞えない）。
+        // 非終端の状態・未知の DecisionId・二重の終端は MarkTerminal 側が無視する（fail-safe・冪等）。
+        ledger.MarkTerminal(message.DecisionId, message.Status, message.ExecutedAt);
+
         // 約定していない結果（受付・失注・約定 0 の取消・拒否）は台帳に載せない。
         if (message.FilledQuantity <= 0)
             return;

@@ -29,6 +29,7 @@ public class ShortSellingStatusServiceTests
         public PositionEffect? FindApprovedPositionEffect(Guid decisionId) => null;
         public OrderIntent? FindApprovedIntent(Guid decisionId) => null;
         public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter) => 0;
+        public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) { }
     }
 
     private sealed class FixedSnapshotSource(MaintenanceMarginSnapshot? snapshot) : IMaintenanceMarginSnapshotSource

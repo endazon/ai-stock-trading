@@ -123,6 +123,28 @@ public sealed class ApprovedOrderRow
     public decimal? FxRateBaseToDisplay { get; set; }
 
     public DateTimeOffset ApprovedAt { get; set; }
+
+    /// <summary>
+    /// FR-10, UC-06, #848, IADR-0117: この承認が<b>終端になったと確認できた時刻</b>（取消・失効・拒否・全量約定）。
+    /// <para>
+    /// 🔴 <b><c>null</c> ＝終端だと確認できていない</b>（列追加前の行・終端がまだ届いていない行）。
+    /// 「終端でない」ではない。処理中の決済の集計は <c>null</c> を<b>処理中として数える</b>（fail-safe。
+    /// 除外し過ぎると二重決済でショート化する）。
+    /// </para>
+    /// <para>
+    /// <b>単調</b>——一度立ったら消さず、後着の終端で上書きもしない。判定に使うのは<b>本列だけ</b>であり、
+    /// <see cref="TerminalStatus"/> は使わない（遅着の非終端イベントで状態は巻き戻り得るが、本列は戻らない。
+    /// <c>EfWorkingEntryOrderSource</c> と同じ規約）。
+    /// </para>
+    /// </summary>
+    public DateTimeOffset? TerminalAt { get; set; }
+
+    /// <summary>
+    /// FR-10, UC-06, #848: 終端になったときの注文状態（<b>診断用</b>）。取消か・失効か・拒否か・全量約定かが
+    /// DB から読めること自体に価値がある（#848 は「取り消したのに在庫が戻らない」の切り分けに 30 分を要した）。
+    /// <b>判定には使わない</b>（<see cref="TerminalAt"/> を見る）。<c>null</c> ＝未確認。
+    /// </summary>
+    public AiStockTrading.Shared.Contracts.Trading.OrderStatus? TerminalStatus { get; set; }
 }
 
 // FR-10, FR-05, IADR-0018: 約定（OrderExecuted）を OrderId で保持する追記専用行（取引台帳の一部）。

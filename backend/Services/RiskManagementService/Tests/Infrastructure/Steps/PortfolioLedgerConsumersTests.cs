@@ -20,6 +20,11 @@ public class PortfolioLedgerConsumersTests
     private static OrderIntent BuyIntent(int qty, decimal price) =>
         new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, price);
 
+    // #848: 手仕舞い（Close）の承認 Intent。処理中の決済の集計対象になる。
+    private static OrderIntent CloseIntent(int qty, decimal price) =>
+        new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper, qty, price,
+            PositionEffect.Close);
+
     // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
     // （テストの対象範囲を旧テストと同一に保つ）。実ブローカへは接続しない。
@@ -32,7 +37,9 @@ public class PortfolioLedgerConsumersTests
                 opts.Services.AddSingleton<IRecognitionFxRateResolver>(new StubRecognitionFxRateResolver(recognitionRate));
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<OrderApprovedLedgerHandler>()
-                    .IncludeType<OrderExecutedLedgerHandler>();
+                    .IncludeType<OrderExecutedLedgerHandler>()
+                    // #848, IADR-0117: 明示的な取消も台帳へ終端として届ける（新しいキューは増えない）。
+                    .IncludeType<OrderCancelledLedgerHandler>();
                 opts.StubAllExternalTransports();
             })
             .StartAsync();
@@ -189,6 +196,82 @@ public class PortfolioLedgerConsumersTests
         fills.Should().ContainSingle();
         fills[0].Quantity.Should().Be(1_000);
         fills[0].Price.Should().Be(340.8m);
+
+        await host.StopAsync();
+    }
+
+    // --- #848: 終端を台帳へ届ける（既に届いているイベントを捨てない） ---
+
+    private static readonly DateTimeOffset Approved = new(2026, 9, 18, 14, 13, 0, TimeSpan.Zero);
+
+    // 🔴 T-10-404, #848: **約定 0 の取消でも終端が記録される。**
+    // 約定追跡（OrderFillPoller）が 30 秒周期で引き直して再発行する OrderExecuted は、
+    // ブローカー側で取り消された注文について FilledQuantity == 0 で届く。台帳ハンドラの
+    // 「約定していない結果は載せない」早期 return より**前**に終端を記録しないと、
+    // 取り消された手仕舞いが 30 分間ずっと処理中として建玉をロックする（#848 の実害）。
+    [Fact]
+    public async Task 約定ゼロの取消でも終端が台帳へ記録され処理中から外れる()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var decisionId = Guid.NewGuid();
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(decisionId, CloseIntent(3_381, 334.09m), 3_381, Approved));
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(3_381);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(
+            decisionId, "1149564921959476304", OrderStatus.Cancelled, 0, 0m, Approved.AddMinutes(8),
+            BrokerProvider.MoomooSimulate));
+        session.Executed.MessagesOf<OrderExecuted>().Should().NotBeEmpty();
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(0);
+        ledger.GetFills().Should().BeEmpty("約定 0 の取消は約定として台帳に載らない（従来どおり）");
+
+        await host.StopAsync();
+    }
+
+    // T-10-404, #848: 明示的な取消（OrderCancelled）でも終端が記録される。
+    // 発注執行が自ら取り消す経路（OrderAmendmentDispatcher）はこちらしか出さない。
+    [Fact]
+    public async Task 明示的な取消でも終端が台帳へ記録される()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var decisionId = Guid.NewGuid();
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(decisionId, CloseIntent(100, 334.09m), 100, Approved));
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderCancelled(decisionId, "ORD-1", "利用者による取消", Approved.AddMinutes(3)));
+        session.Executed.MessagesOf<OrderCancelled>().Should().NotBeEmpty();
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(0);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-402, #848（否定形）: **非終端の状態は終端にしない。**
+    // 受付・部分約定は「まだ板にある」であり、ここで処理中から外すと同じ建玉を 2 回売れてしまう。
+    [Theory]
+    [InlineData(OrderStatus.Accepted)]
+    [InlineData(OrderStatus.PartiallyFilled)]
+    public async Task 非終端の結果では処理中から外れない(OrderStatus pending)
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var decisionId = Guid.NewGuid();
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(decisionId, CloseIntent(100, 334.09m), 100, Approved));
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(
+            decisionId, "ORD-1", pending, pending == OrderStatus.PartiallyFilled ? 30 : 0, 334m,
+            Approved.AddMinutes(1), BrokerProvider.MoomooSimulate));
+
+        var expected = pending == OrderStatus.PartiallyFilled ? 70 : 100;
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(expected);
 
         await host.StopAsync();
     }

@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-18
+updated: 2026-09-19
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027, ADR-0040]
-iadrs: [IADR-0107, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346, IADR-0347]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #821, #829, #844]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346, IADR-0347]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_848_terminal-close-approvals-release-inventory]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #821, #829, #844, #848]
 -->
 
 
@@ -35,6 +35,7 @@ issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374,
 - [統制状態参照画面の強制買戻し発生回数の供給（#470。当月が観測の届いた取引日で覆われているときに限り供給する）](#統制状態参照画面の強制買戻し発生回数の供給470当月が観測の届いた取引日で覆われているときに限り供給する)
 - [損切りのブローカー側逆指値への一本化（#331。保護逆指値の同時発注・建玉解消・失効ガード・見送り）](#損切りのブローカー側逆指値への一本化331保護逆指値の同時発注建玉解消失効ガード見送り)
 - [情報収集の縮退による新規建て停止の耐久化（#564。供給が途切れたら止める側へ倒す）](#情報収集の縮退による新規建て停止の耐久化564供給が途切れたら止める側へ倒す)
+- [手仕舞いの過剰決済ガードから終端になった承認を除く（#848。取り消した注文が建玉をロックしない）](#手仕舞いの過剰決済ガードから終端になった承認を除く848取り消した注文が建玉をロックしない)
 - [未カバー・実施予定](#未カバー実施予定)
 - [関連仕様](#関連仕様)
 - [未決事項](#未決事項)
@@ -723,6 +724,38 @@ row30: FR-10, ADR-0016, ADR-0040
   **S3（他のブローカー側注文種別）は #821 で実装し、T-10-360〜367 を追加した** —— ただし**模擬取引が代替注文種別を受理するかは実環境依存**であり、本書の写像は fake client で分岐と送信パラメータを固定するに留まる。受理・拒否のいずれであっても**種別と拒否理由が監査台帳に残る**ことが受け入れ基準である。
 - 従前の「損切りの機械執行」（到達イベントからの決済発行）の写像は**廃止した**——実装そのものが
   計画の逆指値一本化で撤去されたため（旧写像は再実装前のテスト仕様書 T-10-16 に史実として残る）。
+
+## 手仕舞いの過剰決済ガードから終端になった承認を除く（#848。取り消した注文が建玉をロックしない）
+
+`PortfolioLedgerInFlightCloseTests`（19 ケース）／`EfPortfolioLedgerInFlightCloseTests`（20 ケース）／
+`PositionCloseServiceTests` / `PortfolioLedgerConsumersTests`。
+
+**稼働環境で実測した実害の写像である。** 利用者が板に残った手仕舞いを証券会社のアプリで取り消した**後**も、
+指値を変えた再要求が在庫超過（422）で拒否され続けた。処理中の決済を「承認数量 − 約定累計」だけで数えており、
+**取消・失効・拒否を見ていなかった**ためである。実測時は無保護の建玉 3,381 株・含み損 −5,133 USD を抱えており、
+**損切りが必要な下落局面で手仕舞えない**という最悪の形で露呈した。
+
+**主眼は 2 つで、向きが逆である。**「**終端だと確認できたものは在庫へ返す**」（肯定形）と、
+🔴「**確認できていないものは処理中のまま押さえる**」（否定形）。後者を緩めると同じ建玉を 2 回売り、
+**二重決済で意図しないショート**になる。写像はこの 2 つを必ず対で持つ。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-400** | 手仕舞いの承認が処理中・その後ブローカー側で取り消された（約定 0）ことを確認した | 手仕舞いを再要求する | 🔴 **時間窓（30 分）を待たずに数量が在庫へ戻り、指値を変えた再要求が通る**。本 issue の主目的。終端は永続化され、別コンテキストで読み直しても戻ったまま | 取り消された手仕舞いの数量が窓を待たずに在庫へ戻る | 自動 |
+| T-10-401 | 終端の 3 値（取消・失効・拒否）／部分約定のまま取り消された承認 | 処理中の決済を数える | 状態を問わず**数えない**。部分約定のまま終端になった承認は**丸ごと**除く（残りは二度と約定せず、約定した分は建玉数量へ既に反映済み＝二重に引かない） | 同上 | 自動（境界値 3 値） |
+| **T-10-402** | 終端が一度も届いていない承認／非終端の状態（受付・部分約定）だけが届いた承認 | 同上 | 🔴 **従来どおり全量を処理中として数える**。「終端が届いていない」を「終端になった」と読まない（**不明は安全側**） | 状態が不明な承認は処理中として扱う | 自動（**否定形・最重要**） |
+| **T-10-403** | 手仕舞いを 1 本承認したが約定も終端も届いていない | 同量の手仕舞いをもう一度要求する | 🔴 **拒否**（在庫超過）。押さえを外すと同じ建玉を 2 回売り、**二重決済でショート**になる。終端になっても**建玉数量そのものは増えない**（在庫を超える決済は作れない） | 二重決済でショート化しない | 自動（**否定形・最重要**） |
+| T-10-404 | 約定 0 の取消が結果イベントで届く／明示的な取消イベントが届く | 台帳のハンドラが処理する | **どちらでも終端が記録され、処理中から外れる**。約定 0 の取消は従来どおり約定としては台帳に載らない（記録の順序が「約定していない結果は載せない」早期 return より**前**であることの固定） | 終端がリスク管理へ届く | 自動（対の肯定形） |
+| T-10-405 | 終端の後に非終端が遅れて届く／同じ終端が再送される／**承認より先に**終端が届く | 同上 | **単調・冪等**（一度立った終端は戻らず、再送で時刻も動かない）。相関する承認が無い終端は**書かない**——後から届いた承認は終端未確認＝処理中として数える（安全側へ倒れる） | 冪等・到着順序に依存しない | 自動（否定形・境界値） |
+
+**対照実験（実走した実測）**:
+
+| 壊した箇所 | 赤くなったテスト |
+| --- | --- |
+| 集計から終端の除外を外し、終端の記録を「約定していない結果は載せない」早期 return より後ろへ戻す（＝修正前のコード） | **18 件**（T-10-400 / T-10-401 / T-10-404 の全ケース。T-10-402 / T-10-403 の否定形 59 件は**緑のまま**） |
+
+> **否定形が緑のままであること自体が情報である。** 修正前後で変わってはいけないのは fail-safe の向きであり、
+> 「不明は処理中」「二重決済でショート化しない」が両方の状態で成り立つことを対照実験が示している。
 
 ## 未カバー・実施予定
 

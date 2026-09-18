@@ -2,10 +2,10 @@
 title: IADR-0117 建玉の手仕舞いは利用者専用の同期経路で受け、統制を通さず既存の注文パスへ載せる
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-02, UC-06, ADR-0003]
+related_ids: [FR-05, FR-10, FR-11, FR-19, UC-02, UC-06, ADR-0003, ADR-0013, IADR-0018, IADR-0067, IADR-0113, IADR-0129, IADR-0210, IADR-0346]
 author: endazon (with Claude Code)
 created: 2026-07-30
-updated: 2026-07-30
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -90,6 +90,47 @@ plan_refs:
 建玉を**恒久的にロック**し、手仕舞い手段を作ったのに手仕舞えないという最悪の状態になる。窓は構成キーにしない
 （運用で触る値ではなく、広げれば二重決済の窓が広がるだけである）。
 
+［2026-09-19 追記 / [#848](https://github.com/endazon/ai-stock-trading/issues/848)］
+**本決定は「終端になった承認」を除いていなかった。** 稼働環境（2026-09-18 23:2x JST）で、利用者が板に残った
+手仕舞いを moomoo アプリで取り消した**後**も、指値を変えた再要求が `ExceedsAvailable`（422）で拒否され続けた。
+発注執行の台帳は取消を正しく検知していた（`OrderId=1149564921959476304 Quantity=3381 Filled=0 Status=4(Cancelled)`）
+のに、上式が承認数量 − 約定累計だけで数えていたため、**取り消された注文が 30 分間ずっと建玉をロックした**。
+無保護の建玉 3,381 株・含み損 −5,133 USD を抱えた状態であり、**損切りが必要な下落局面で手仕舞えない**という
+最悪の形で露呈した。上式を次のとおり改める（作業仕様書 `20260919_848_terminal-close-approvals-release-inventory`）。
+
+```
+利用可能数量 = 建玉数量 − Σ max(0, 決済承認数量 − 当該 DecisionId の約定累計)
+               （窓内の承認のうち、終端になったと**確認できていない**ものだけ）
+```
+
+- **改定 1（台帳が終端を持つ）**: `approved_orders` に `TerminalAt`（終端になったと確認できた時刻）と
+  `TerminalStatus`（診断用）を足す。**判定に使うのは `TerminalAt` だけ**で、一度立ったら消さず後着でも
+  上書きしない（単調。`EfWorkingEntryOrderSource` と同じ規約——状態は遅着イベントで巻き戻り得るが時刻は戻らない）。
+  🔴 **本 ADR の「Migration 無し」は本追記で覆る**（下の「影響・追随」の該当行を参照）。
+- **改定 2（不明は処理中のまま）**: `TerminalAt` が `null` ＝**終端だと確認できていない**であり、「終端でない」
+  ではない。従来どおり全量を処理中として数える。**除外し過ぎると二重決済で意図しないショート化を作る**——
+  本 ADR 決定 3 が塞いだ穴そのものであり、fail-safe の向きは変えない。
+- **改定 3（届け方は「既に届いているイベント」）**: 新しいイベントも同期照会も作らない。`OrderExecuted` は
+  `Status` を**既に運んでおり**、約定追跡（`OrderFillPoller`・30 秒周期）は終端化したときも再発行する。
+  リスク管理は既にこれを購読していたが、`OrderExecutedLedgerHandler` の `FilledQuantity <= 0` 早期 return が
+  **約定 0 の取消を丸ごと捨てていた**。終端の記録をこの return より**前**へ置く。明示的な取消
+  （`OrderCancelled`。既に購読済み・キューは既存）は `OrderCancelledLedgerHandler` で同じく記録する。
+  **新しいキューは 1 本も増えない。**
+  - 同期照会（発注執行へ `executed_orders.Status` を s2s で引く）を採らないのは、手仕舞い判定のホットパスへ
+    他サービスの可用性を持ち込むからである（IADR-0018 / IADR-0067 が繰り返し「同期契約は Risk 専有 DB への
+    射影で供給する」と決めている）。新イベントを作らないのは、同じ事実を 2 契約で運ぶと片方だけ届く事故の面が
+    増えるからで、本 ADR が「決済専用の経路を作らない」と決めたのと同型の理由である。
+- **改定 4（`order_activity` は読まない）**: `order_activity`（IADR-0067）は既に `TerminalAt` を持ち、
+  IADR-0346 決定 1 は `approved_orders` へ左結合して終端を除いている。同じ結合なら migration 無しで直せるが、
+  **母集合が違う**——保護レグの決済 Intent は `OrderApproved` を流さず台帳へ直接承認行を足すため
+  （IADR-0210 決定 2/3。流すと発注執行が二重発注する）、`order_activity` に**行が無い**。保護レグも
+  `PositionEffect.Close` であり本集計の対象に入るので、同じ不具合が残ってしまう。
+  **台帳が数える承認の終端は台帳が持つ。**
+- **窓は残す**（改定しない）。終端が**届かない**注文（照会不能・イベント欠落）は依然あり得るため、恒久ロックを
+  防ぐ最後の受け皿として本決定の時間窓が要る。
+- 残余リスク: 訂正（`OrderModified`）による減量は反映しない（終端ではないため承認数量のまま数える＝多めに
+  押さえる安全側）。#847（成行での手仕舞い・取消の口）は本追記の射程外。
+
 ### 決定 4: 監査イベントを 1 つ足し、承認より先に発行する
 
 `PositionCloseRequested`（`DecisionId` / 銘柄 / 市場 / 方向 / 数量 / 価格 / **Actor** / **Reason** / 時刻）を新設し、
@@ -126,6 +167,10 @@ Helm / values / compose / `.env.example` は不変で、本番描画はバイト
 - **実弾ゲート（閂 0〜4）に差分ゼロ。** ブローカ呼び出しは 1 つも増えない（既存の発注パスを通るだけ）。
   SIMULATE 限定・実弾 OFF は不変。
 - DB スキーマ変更なし（既存 `approved_orders` × `trade_fills` の読み取りのみ・Migration 無し）。
+  🔴 **［2026-09-19 追記 / #848］この行は覆った。** 決定 3 の改定 1 により `approved_orders` へ
+  `TerminalAt` / `TerminalStatus` の 2 列（いずれも nullable）を足す Migration
+  `AddApprovedOrderTerminalState` が入る。既存行は `null`＝終端未確認として従来どおり処理中に数える
+  （後方互換・安全側）。
 - 現在値が取得できず `limitPrice` も指定されない場合は 422 で拒否する（価格 0 の注文を投げない）。
   現在値の供給は市況フィード（IADR-0068）に依存するため、供給が無い環境では `limitPrice` 必須になる。
 - 決済注文の**訂正・取消の口は作らない**（moomoo 経路に訂正・取消を配線しない既存方針を維持）。

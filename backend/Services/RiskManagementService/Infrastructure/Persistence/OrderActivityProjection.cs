@@ -8,6 +8,8 @@ public static class OrderActivityProjection
 {
     // 終端状態（生存終了）。約定なし取消の生存時間・板演出の同時生存本数の判定に用いる（IADR-0040）。
     // PartiallyFilled・Accepted は非終端で、まだ生存中として扱う。
-    public static bool IsTerminal(OrderStatus status) =>
-        status is OrderStatus.Filled or OrderStatus.Rejected or OrderStatus.Cancelled or OrderStatus.Expired;
+    //
+    // #848: 定義そのものは Domain.OrderStatusLifecycle が持つ（取引台帳の終端判定と同一でなければならない）。
+    // ここは従来からの呼び出し面を保つための委譲であり、振る舞いは変わっていない。
+    public static bool IsTerminal(OrderStatus status) => Domain.OrderStatusLifecycle.IsTerminal(status);
 }

@@ -3,15 +3,15 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-09-18
+updated: 2026-09-19
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
 iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_829_count-working-entry-orders]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #829, planning#292]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_829_count-working-entry-orders, 20260919_848_terminal-close-approvals-release-inventory]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #829, #848, planning#292]
 -->
 
 
@@ -290,7 +290,7 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
 | --- | --- | --- |
 | 台帳の空売り数量 | `PortfolioProjection.ProjectOpenPositions(ledger.GetFills())` | **自らの約定履歴**の畳み込み。自分で手仕舞い・損切りをすれば台帳側も減る |
 | ブローカの空売り数量 | `BrokerPositionsObserved`（発注執行サービスの定期照会） | 実際に残っている建玉。**応答に現れない銘柄は 0＝全量消失**として扱う |
-| 処理中の決済数量 | `IPortfolioLedgerStore.GetInFlightCloseQuantity`（遡り窓 30 分） | **承認済みだが約定が台帳へ届いていない決済**＝自らの決済指示そのもの |
+| 処理中の決済数量 | `IPortfolioLedgerStore.GetInFlightCloseQuantity`（遡り窓 30 分） | **承認済みだが約定が台帳へ届いていない決済**＝自らの決済指示そのもの。**終端になったと確認できた承認は含めない**（取り消された決済は「自らの決済指示」ではなく、消失を説明しない） |
 
 **この式が、正常な手仕舞い・損切りと強制買戻しを区別する唯一の手段である。** 自分で決済したなら、その数量は
 約定（台帳）か承認（処理中）のどちらかに必ず現れ、右辺で相殺されて 0 になる。処理中の決済を引かないと、
@@ -826,11 +826,20 @@ owner の手仕舞いには**過剰決済ガード**がある。取引台帳は�
 建玉数量が減らない。多重投入で在庫を超える決済（意図しないショート化）を作らせないため、
 
 ```
-利用可能数量 = 建玉数量 − Σ max(0, 決済承認数量 − 当該 DecisionId の約定累計)   （直近 30 分に承認されたもののみ）
+利用可能数量 = 建玉数量 − Σ max(0, 決済承認数量 − 当該 DecisionId の約定累計)
+               （直近 30 分に承認され、かつ**終端になったと確認できていない**もののみ）
 ```
 
 を在庫とし、数量省略（全量指定）もこの利用可能数量と解釈する。時間窓で切るのは、永久に約定しない滞留承認が
 建玉を恒久的にロックし「手仕舞い手段があるのに手仕舞えない」状態を作らないため。
+
+**終端（取消・失効・拒否・全量約定）になったと確認できた承認は、窓の満了を待たずに在庫へ返す。** 終端の未約定残は
+二度と約定しないため押さえる理由が無い。これが無いと、証券会社のアプリで手仕舞いを取り消したあと
+**30 分間ずっと手仕舞えない**（稼働環境で実測した実害。損切りが必要な下落局面でこそ効かないという最悪の形になる）。
+終端は注文の結果イベントと取消イベントで届き、台帳が承認ごとに**単調に**（一度立ったら戻さず）記録する。
+
+🔴 **向きは逆にしない。** 終端だと**確認できていない**承認は、従来どおり全量を処理中として押さえる。
+「取消が届いていない」を「取り消された」と読むと、同じ建玉を 2 回売って**意図しないショート**になる。
 
 決済の要求は `PositionCloseRequested`（アクター・理由つき）として `OrderApproved` より先に発行され、監査台帳に残る
 （`OrderApproved` はアクターも理由も持たないため）。約定以降は通常の注文経路（台帳・枠回復・通知）に載る。
