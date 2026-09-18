@@ -19,11 +19,14 @@ public static class BotCommandParser
     private const int MinStage = 0;
     private const int MaxStage = 3;
 
-    // FR-07, IADR-0240 決定6: 報告書の会話キー（例 `daily-2026-07-07`）。**そのまま URL パスへ載る**ため、
-    // 英小文字・数字・ハイフンのみに限定する（パス・トラバーサル／クエリ注入の余地を parser の段階で消す）。
-    // 書式外は Unknown へ倒す（推測で補正しない）。
+    // FR-07, IADR-0240 決定6, #835: 報告書の会話キー（例 `daily-2026-07-07` / `weekly-2026-W38`）。
+    // **そのまま URL パスへ載る**ため、英数字・ハイフンのみに限定する（パス・トラバーサル／クエリ注入の余地を
+    // parser の段階で消す）。書式外は Unknown へ倒す（推測で補正しない）。
+    //
+    // 🔴 **大文字英字を許す。** 週報の会話キーは ISO 週の `W` が大文字（`weekly-2026-W38`）であり、
+    // 英小文字だけに限ると週報を一度も確定できない（#835 で実測。値域制限の目的＝記号の遮断は損なわれない）。
     private static readonly Regex PeriodKeyPattern =
-        new("^[a-z0-9-]{1,32}$", RegexOptions.CultureInvariant);
+        new("^[A-Za-z0-9-]{1,32}$", RegexOptions.CultureInvariant);
 
     // 版番号は 1 以上（報告書サービスの版番号は 1 起点。0 以下・数値でないものは Unknown へ倒す）。
     private const int MinVersion = 1;
@@ -34,9 +37,14 @@ public static class BotCommandParser
             return BotCommand.Unknown;
 
         // 前後空白と大小文字のみ吸収する。それ以外は厳密に扱う（曖昧一致で誤起動させない）。
-        var tokens = raw.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (tokens.Length == 0)
+        //
+        // 🔴 #835: 小文字化するのは**比較に使う側だけ**である。会話キーは大小文字が意味を持ち
+        // （`weekly-2026-W38`）、潰すと報告書サービスの自然キーに一致しない。原文トークンも併せて持つ。
+        var rawTokens = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (rawTokens.Length == 0)
             return BotCommand.Unknown;
+
+        var tokens = Array.ConvertAll(rawTokens, token => token.ToLowerInvariant());
 
         return tokens[0] switch
         {
@@ -51,7 +59,7 @@ public static class BotCommandParser
             "/gfv" or "gfv" when tokens.Length == 2 && tokens[1] == "clear" =>
                 new BotCommand(BotCommandKind.GoodFaithViolationClear),
             // FR-07, FR-14, UC-03〜05, IADR-0240: 報告書レビュー。
-            "/report" or "report" => ParseReport(tokens),
+            "/report" or "report" => ParseReport(tokens, rawTokens),
             _ => BotCommand.Unknown,
         };
     }
@@ -62,12 +70,13 @@ public static class BotCommandParser
     //   /report approve <periodKey> <version>        … 確定の実行（版番号付き＝詳細設計07 の必須要件）
     //   /report request-changes <periodKey> [<version>]… 差し戻し（修正指示。版番号を省くとハンドラが照会する）
     // 余分な引数・書式外の periodKey・不正な版番号はすべて Unknown へ倒す（誤起動させない）。
-    private static BotCommand ParseReport(string[] tokens)
+    private static BotCommand ParseReport(string[] tokens, string[] rawTokens)
     {
         if (tokens.Length is < 3 or > 4)
             return BotCommand.Unknown;
 
-        var periodKey = tokens[2];
+        // #835: 会話キーだけは**原文の大小文字のまま**採る（副コマンドの分岐は小文字側で行う）。
+        var periodKey = rawTokens[2];
         if (!PeriodKeyPattern.IsMatch(periodKey))
             return BotCommand.Unknown;
 
