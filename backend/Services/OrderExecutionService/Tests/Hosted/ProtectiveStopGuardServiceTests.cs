@@ -107,6 +107,11 @@ public class ProtectiveStopGuardServiceTests
         // #820, IADR-0344: S1 の突き合わせ（本テストは S0 の巡回だけを観測する）。
         public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
             inner.FindActiveSoftwareStops(symbol, market, entrySide);
+
+        // #820 の 6 巡目監査, IADR-0344 追記(6): 復元の門が読む完了済みの S1。
+        public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
+            string symbol, Market market, TradeSide entrySide, int limit) =>
+            inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);
     }
 
     // 巡回の最中に停止要求が伝播した状況（キャンセル）を再現するストア。
@@ -127,6 +132,9 @@ public class ProtectiveStopGuardServiceTests
         public ProtectiveStopOrder? Find(Guid entryDecisionId) => null;
 
         public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) => [];
+
+        public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
+            string symbol, Market market, TradeSide entrySide, int limit) => [];
     }
 
     // ログを記録するロガー。常駐（BackgroundService）の ExecuteAsync は StartAsync とは別のタスクで

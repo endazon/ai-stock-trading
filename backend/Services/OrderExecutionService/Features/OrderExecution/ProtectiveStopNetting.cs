@@ -21,6 +21,13 @@ namespace OrderExecutionService.Features.OrderExecution;
 //      削りは **2 巡回連続で観測してから確定**し、確定時に 1 回だけ通知する（建玉照会は 1 巡回だけ過少に返り得る）。
 //
 // 自分が出した決済による減算は SoftwareStopExecutor が行う（決定的な SoftwareCloseDecisionId の試行と 1:1）。
+//
+// 🔴 **不変条件（#820 の 6 巡目監査・IADR-0344 追記(6)）**:
+//   **Active 行の主張の合計 ＋ 送信済みで建玉照会に未反映の決済 ≦ 方向の純額**
+// これを保つのは Reduce（超過は必ず削る）と、Restore の門（AlreadyHandledShares）である。
+// 追記(5) までの言い方（「主張の合計は純額を超えないので反対建玉は作らない」）は**Active 行の主張しか
+// 数えておらず、送信済みの注文を数えていなかった**ため成り立っていなかった——決済を送って完了した行は
+// FindActive から消えるが、その決済が受理・未約定のあいだ建玉照会はまだ減っていない。
 public static class ProtectiveStopNetting
 {
     /// <summary>
@@ -28,6 +35,12 @@ public static class ProtectiveStopNetting
     /// 建玉照会は銘柄単位の純額でしかなく、<b>1 巡回だけ過少に返り得る</b>——1 回の観測で行を失わせない。
     /// </summary>
     public const int ExternalReductionConfirmations = 2;
+
+    /// <summary>
+    /// #820 の 6 巡目監査, IADR-0344 追記(6): <b>復元してよいかの判定</b>で走査する完了済み S1 行の上限。
+    /// 更新が新しい順に引くため、直前の巡回で決済を送って完了した行（＝未反映の決済を抱える行）が先に入る。
+    /// </summary>
+    public const int RestoreScanLimit = 50;
 
     /// <summary>
     /// FR-10, #820, IADR-0344 決定6・追記(4) 決定10: <b>S0（ブローカー側逆指値）の行から見た建玉残</b>。
@@ -113,6 +126,13 @@ public static class ProtectiveStopNetting
     /// <see cref="SoftwareStopExecuted"/>（<see cref="SoftwareStopOutcome.ProtectionReduced"/>）を<b>1 回だけ</b>
     /// <paramref name="events"/> へ積む——無音の不可逆動作を残さない。
     /// </para>
+    /// <para>
+    /// 🔴 <b>復元は「純額 &gt; 主張の合計」だけを根拠にしない</b>（#820 の 6 巡目監査・IADR-0344 追記(6)）。
+    /// <b>送信済みで建玉照会に未反映の決済</b>と<b>確定前の新規エントリーの建玉</b>を差し引いてから判定する
+    /// （<see cref="AlreadyHandledShares"/>）。差し引かずに復元すると、受理・未約定の決済が「戻ってきた建玉」に見え、
+    /// <b>同じ建玉を二度売って反対建玉（空売り）を作る</b>。守る不変条件は
+    /// <b>「Active 行の主張の合計 ＋ 送信済みで未反映の決済 ≦ 方向の純額」</b>である。
+    /// </para>
     /// </summary>
     /// <param name="observing">
     /// この呼び出しを<b>1 回の観測</b>として数えるか。ガードの巡回の先頭（群につき 1 巡回 1 回）だけが <c>true</c> で、
@@ -154,9 +174,18 @@ public static class ProtectiveStopNetting
         var excess = group.Sum(s => s.ProtectedQuantity) - DirectionalNet(symbol, market, entrySide, snapshot);
 
         if (excess > 0)
+        {
             Reduce(group, excess, stops, now);
+        }
         else if (observing && excess < 0)
-            Restore(group, -excess, stops, now);
+        {
+            // 🔴 #820 の 6 巡目監査, IADR-0344 追記(6): **純額が主張を上回ることは「建玉が戻った」証拠ではない**。
+            // 既に手当て済みの株数（送信済みで未反映の決済・確定前の新規エントリーの建玉）を差し引いて、
+            // それでもなお上回るぶんだけ復元する。迷ったら復元しない側へ倒す。
+            var surplus = -excess - AlreadyHandledShares(symbol, market, entrySide, group, stops, store);
+            if (surplus > 0)
+                Restore(group, surplus, stops, now);
+        }
 
         return observing ? Confirm(group, stops, events, now) : group;
     }
@@ -184,11 +213,68 @@ public static class ProtectiveStopNetting
             {
                 RemainingProtected = row.ProtectedQuantity - take,
                 PendingExternalReduction = row.PendingExternalReduction + take,
+                // 🔴 #820 の 6 巡目監査: **増分が入ったら観測を数え直す**。既に未確定の削りを抱えた行へ
+                // 積み増すと、その増分は 1 回しか観測していないのに、行の観測回数が閾値に達して
+                // まとめて確定してしまう（「2 巡回連続で観測してから確定する」が増分について破れる）。
+                // 初回の削りでは元から 0 なので挙動は変わらない。
+                ExternalReductionObservations = 0,
                 UpdatedAt = now,
             };
             Replace(group, reduced, stops);
             excess -= take;
         }
+    }
+
+    /// <summary>
+    /// 🔴 #820 の 6 巡目監査, IADR-0344 追記(6): <b>保護対象として既に手当て済みの株数</b>。
+    /// 純額がこれを賄っているあいだは「建玉が戻った」のではないため、<b>復元してはならない</b>。
+    /// <para>
+    /// (1) <b>送信済みで建玉照会にまだ反映されていない決済</b>。決済レグの DecisionId は
+    /// <see cref="ProtectiveStopIds.SoftwareCloseDecisionId"/> から決定的に導けるので、S1 の行
+    /// （群の Active ＋ 同じ銘柄・方向の完了済み）の試行 1..<c>Attempt</c> を引き当て、非終端のレグの
+    /// 未約定数量を合計する。<b>残保護数量が 0 になった行はその巡回で完了する</b>ため、完了済みも見なければ
+    /// 受理・未約定の決済がまるごと見えなくなり、同じ建玉を二度売る（反対建玉）。
+    /// </para>
+    /// <para>
+    /// (2) <b>確定前の新規エントリーの建玉</b>（<c>RemainingProtected</c> が null の S1 行）。まだ主張になっていない
+    /// 建玉であり、承認数量＝取り得る上限で見積もる（多めに引く側＝復元しない側へ倒す）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>S0 の逆指値レグは数えない。</b> 滞留中の逆指値は「送信済みの決済」ではなく<b>まだ約定していない保護注文</b>で、
+    /// その株数は S0 行の主張が既に覆っている（数えると二重に引いて正当な復元まで止まる）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>追記(4) で撤去した「毎巡回の引き直し」を復活させるものではない。</b> 持ち分（残保護数量）の計算には
+    /// 発注記録を一切使わない——この集計は<b>復元してよいかの門</b>にだけ使う。
+    /// </para>
+    /// </summary>
+    private static int AlreadyHandledShares(
+        string symbol,
+        Market market,
+        TradeSide entrySide,
+        List<ProtectiveStopOrder> group,
+        IProtectiveStopOrderStore stops,
+        IExecutedOrderStore store)
+    {
+        var sent = 0;
+        foreach (var row in group
+            .Where(s => s.IsSoftwareStop)
+            .Concat(stops.FindCompletedSoftwareStops(symbol, market, entrySide, RestoreScanLimit)))
+        {
+            for (var attempt = 1; attempt <= row.Attempt; attempt++)
+            {
+                var leg = store.FindByDecisionId(
+                    ProtectiveStopIds.SoftwareCloseDecisionId(row.EntryDecisionId, attempt));
+                if (leg is not null && OrderStatusLifecycle.IsPending(leg.Status))
+                    sent += Math.Max(0, leg.Quantity - leg.FilledQuantity);
+            }
+        }
+
+        var unconfirmedEntries = group
+            .Where(s => s.IsSoftwareStop && s.RemainingProtected is null)
+            .Sum(s => s.Quantity);
+
+        return sent + unconfirmedEntries;
     }
 
     // 建玉が戻った（照会が 1 巡回だけ過少に見えていた）。**未確定の削りだけ**を新しい行から返す。
@@ -225,6 +311,12 @@ public static class ProtectiveStopNetting
     }
 
     // 観測を 1 回数え、規定回数に達した未確定の削りを確定して**1 回だけ**通知する。
+    //
+    // 🔴 **ここで「超過が今も続いているか」は再検証しない**（#820 の 6 巡目監査で文言と実装のずれとして挙がった点。
+    // 文言の側を実装に合わせた）。数量の減算は観測した巡回で即時に行うため（追記(5) 決定2）、確定の時点では
+    // 「超過」という状態そのものが残っていない。再検証にあたる働きは**復元経路（Restore）が担う**——建玉が戻れば
+    // 未確定の削りを返す。同じ判断を 2 箇所に持つと、復元の門（AlreadyHandledShares）と食い違ったときに
+    // どちらが正かが決まらない。
     private static IReadOnlyList<ProtectiveStopOrder> Confirm(
         List<ProtectiveStopOrder> group, IProtectiveStopOrderStore stops, ICollection<object>? events, DateTimeOffset now)
     {

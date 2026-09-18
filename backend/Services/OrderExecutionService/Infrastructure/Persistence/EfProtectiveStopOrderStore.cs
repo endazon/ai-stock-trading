@@ -71,6 +71,21 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
             .Select(ToDomain)
             .ToList();
 
+    // #820 の 6 巡目監査, IADR-0344 追記(6): 復元の門が読む「完了済みの S1」（更新が新しい順・上限つき）。
+    public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
+        string symbol, Market market, TradeSide entrySide, int limit) =>
+        db.ProtectiveStopOrders
+            .Where(r => r.State == ProtectiveStopState.Completed
+                && r.Mechanism == StopLossExecutionMethod.SoftwareStop
+                && r.Symbol == symbol
+                && r.Market == market
+                && r.EntrySide == entrySide)
+            .OrderByDescending(r => r.UpdatedAt)
+            .Take(limit)
+            .ToList()
+            .Select(ToDomain)
+            .ToList();
+
     private static ProtectiveStopOrder ToDomain(ProtectiveStopOrderRow r) =>
         new(r.EntryDecisionId, r.StopDecisionId, r.StopOrderId, r.Symbol, r.Market, r.EntrySide,
             r.ProductType, r.Mode, r.Quantity, r.TriggerPrice, r.FxRateToBase, r.Attempt, r.State,
