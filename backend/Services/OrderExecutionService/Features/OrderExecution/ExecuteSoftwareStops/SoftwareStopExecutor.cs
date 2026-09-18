@@ -356,13 +356,21 @@ public sealed class SoftwareStopExecutor(
         IReadOnlyList<ProtectiveStopOrder> activeStops,
         DateTimeOffset snapshotTakenAt)
     {
+        // 🔴 #820 の 3 巡目監査（B4）: 除外するのは**行の現在のレグだけでは足りない**。ガードが失効した逆指値を
+        // 再発注すると、行の StopDecisionId は新しい試行へ進むが、**前試行のレグ記録は Accepted のまま残る**
+        // （取り消した注文が当日一覧から消えるブローカーでは、約定追跡が終端化できず残り続ける）。
+        // その記録を差し引くと S0 の数量を再び二重に引き、S1 の決済が 1 株も出なくなる（B1 の再来）。
+        // レグの DecisionId はエントリー ID と試行番号から決定的に導けるので、**その行の全試行**を除く。
         var brokerStopLegs = activeStops
             .Where(other => other.State == ProtectiveStopState.Active
                 && !other.IsSoftwareStop
                 && other.Symbol == stop.Symbol
                 && other.Market == stop.Market
                 && other.EntrySide == stop.EntrySide)
-            .Select(other => other.StopDecisionId)
+            .SelectMany(other => Enumerable
+                .Range(1, Math.Max(1, other.Attempt))
+                .Select(attempt => ProtectiveStopIds.StopDecisionId(other.EntryDecisionId, attempt))
+                .Append(other.StopDecisionId))
             .ToHashSet();
 
         var unreflectedSince = snapshotTakenAt - SnapshotLagAllowance;

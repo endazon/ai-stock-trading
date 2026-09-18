@@ -215,6 +215,54 @@ public class ProtectiveStopGuardSoftwareStopTests
         f.Stops.Find(s1.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active, "S1 の建玉は残っている");
     }
 
+    // T-10-368: #820 の 3 巡目監査（B3）。手法間の差し引きは**対称**なので、S0 行と S1 行が同数を主張すると
+    // どちらから見ても残 0 になる。S0 の逆指値が約定して建玉が S1 の分だけ残った巡回がまさにその形で、
+    // ここで S1 行まで完了させると**建玉が残っているのに保護がゼロ**になる（イベントも Critical も出ない）。
+    [Fact]
+    public async Task S0の逆指値が約定した巡回でもS1の行は建玉が残る限り完了しない()
+    {
+        var f = NewFixture();
+        var s0 = BrokerStop(quantity: 10);
+        var s1 = SoftwareStop();
+        f.Stops.Save(s0);
+        f.Stops.Save(s1);
+        EntryRecord(f, s1, OrderStatus.Filled, 10);
+        // S0 の逆指値が正常に発動して約定（S0 の標準的な終わり方）。建玉は 20 → 10（残りは S1 の分）。
+        f.Broker.Orders["stop-s0"] = new BrokerOrder(
+            "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 10, 900m, PositionEffect.Close), OrderStatus.Filled, 10, 900m, Now, Now);
+        f.Broker.Positions = [Long(10)];
+
+        await f.Guard.RunOnceAsync(10);
+
+        f.Stops.Find(s0.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed, "S0 は約定で役目を終える");
+        f.Stops.Find(s1.EntryDecisionId)!.State.Should().Be(
+            ProtectiveStopState.Active, "10 株の建玉が残っている以上、S1 の保護を外してはならない");
+    }
+
+    // T-10-369: 同上（B3）。S0 の建玉を手で決済した巡回では、S0 の逆指値は取り消される（#826 項目 3・正しい）が、
+    // **同じ巡回で S1 まで完了すると保護ゼロの建玉が残る**。片方が外れても、もう片方は建玉を覆い続ける。
+    [Fact]
+    public async Task S0分を手仕舞った巡回でもS1の行は完了しない()
+    {
+        var f = NewFixture();
+        var s0 = BrokerStop(quantity: 10);
+        var s1 = SoftwareStop();
+        f.Stops.Save(s0);
+        f.Stops.Save(s1);
+        EntryRecord(f, s1, OrderStatus.Filled, 10);
+        f.Broker.Orders["stop-s0"] = new BrokerOrder(
+            "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 10, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
+        f.Broker.Positions = [Long(10)]; // S0 の 10 は手仕舞い済み、残りは S1 の 10
+
+        await f.Guard.RunOnceAsync(10);
+
+        f.Broker.Cancelled.Should().ContainSingle().Which.Should().Be("stop-s0");
+        f.Stops.Find(s1.EntryDecisionId)!.State.Should().Be(
+            ProtectiveStopState.Active, "S1 の建玉は残っている（保護を外さない）");
+    }
+
     [Fact]
     public async Task S1が無ければS0の建玉残の判定は従来と同一()
     {

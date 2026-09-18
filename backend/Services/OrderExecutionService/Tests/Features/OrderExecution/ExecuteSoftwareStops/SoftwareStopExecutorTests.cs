@@ -497,6 +497,40 @@ public class SoftwareStopExecutorTests
         f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
     }
 
+    // T-10-370: #820 の 3 巡目監査（B4・B1 の再来）。ガードが失効した逆指値を再発注すると、行の StopDecisionId は
+    // 新しい試行へ進むが、**前試行のレグ記録は Accepted のまま残る**（取り消した注文が当日一覧から消えるブローカーでは
+    // 約定追跡が終端化できない）。現在の試行だけを除外していると、その古い記録で S0 の数量を二重に引き、
+    // S1 の決済が 1 株も出ないまま黙って据え置かれる。
+    [Fact]
+    public async Task 再発注済みS0の古いレグ記録があってもS1の持ち分は二重に削られない()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        // S0 は試行 2 へ再発注済み（行の StopDecisionId は試行 2）。試行 1 の記録が Accepted のまま残っている。
+        var s0EntryId = Guid.NewGuid();
+        f.Stops.Save(new ProtectiveStopOrder(
+            s0EntryId, ProtectiveStopIds.StopDecisionId(s0EntryId, 2), "stop-s0-2", "AAPL", Market.UnitedStates,
+            TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 900m, 1m, 2,
+            ProtectiveStopState.Active, Now.AddHours(-2), Now.AddHours(-2)));
+        foreach (var (attempt, orderId) in new[] { (1, "stop-s0-1"), (2, "stop-s0-2") })
+        {
+            f.Store.Save(new ExecutionRecord(
+                ProtectiveStopIds.StopDecisionId(s0EntryId, attempt), orderId, "AAPL", Market.UnitedStates,
+                TradeSide.Sell, ProductType.Cash, PositionEffect.Close, 10, 900m, 0, 0m, OrderStatus.Accepted, 0m,
+                Now.AddHours(-2)));
+        }
+
+        f.Broker.Positions = [Long(20)]; // S0 の 10 ＋ S1 の 10
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().ContainSingle()
+            .Which.Intent.Quantity.Should().Be(10, "S1 の持ち分は 20 − S0 の 10（古いレグ記録で二度引かない）");
+    }
+
     // T-10-358: #820 の監査（B2）。ガードは 1 巡回に 1 回しか建玉を照会しない。先の行の決済が**即時約定**で返ると、
     // その約定は（古い）建玉にも未約定一覧にも現れず、後の行が同じ建玉を再配分されて売り過ぎる
     //（実測: 保有 15 株に対し 10＋10＝20 株の決済＝反対建玉）。照会時刻より後に動いた決済は未反映として差し引く。

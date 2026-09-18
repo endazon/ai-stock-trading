@@ -115,7 +115,14 @@ public sealed class ProtectiveStopGuard(
         if (entry is null || OrderStatusLifecycle.IsPending(entry.Status))
             return Outcome.StillActive; // エントリーの結果が未確定（これから約定し得る）。建玉が 0 でも完了しない。
 
-        if (entry.FilledQuantity <= 0 || ProtectiveStopNetting.RemainingPositionFor(stop, snapshot, active, store) <= 0)
+        // 🔴 #820 の 3 巡目監査（B3）: **S1 の保護を外す判定に手法間の差し引きを使わない。**
+        // 差し引きは対称であり、S0 行と S1 行が同数を主張すると（例: 純額 10 に対し双方 10）**どちらから見ても残 0**
+        // になる。S0 側は「自分の建玉が消えた」として逆指値を取り消す（#826 項目 3。決済済み建玉に残る逆指値は
+        // 反対建玉を生むため正しい）。そこで S1 側まで同じ理由で完了すると、**建玉が残っているのに保護がゼロ**になる
+        // ——しかもイベントも Critical も出ない。**どちらか一方が外れても、もう一方が建玉を覆い続ける**ように、
+        // S1 は方向の純額が残っているあいだ Active のままにする。
+        // 差し引きは「いくつ決済してよいか」（数量の上限）にだけ使う——過小なら据え置き、過大なら反対建玉になる。
+        if (entry.FilledQuantity <= 0 || ProtectiveStopNetting.DirectionalNet(stop, snapshot) <= 0)
         {
             // 建玉が生じなかった、または手動決済等で消えた。保護の役目を終える（ブローカーに取り消す注文は無い）。
             MarkCompleted(stop);
