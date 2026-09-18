@@ -73,6 +73,8 @@ public sealed record MoomooPositionRow(
 // FR-10, #331, IADR-0210: Kind=Stop は保護逆指値（TriggerPrice=発火価格・OrderType_Stop＋AuxPrice）、
 // Kind=Market は成行（逆指値が成立しない場合の建玉解消）。Stop/Market では Price を注文へ載せない
 // （Stop は発火後成行・Market は板成行であり、指値を送ると意味が変わる）。
+// FR-10, #821, IADR-0347: Kind=StopLimit は S3 のストップリミット（TriggerPrice=発火価格＝AuxPrice・Price=指値）、
+// Kind=TrailingStop は S3 のトレーリングストップ（TrailValue=トレール幅の絶対額・TrailType_Amount）。
 public sealed record MoomooOrderRequest(
     string Symbol,
     MoomooMarket Market,
@@ -81,10 +83,32 @@ public sealed record MoomooOrderRequest(
     decimal Price,
     string? Remark = null,
     MoomooOrderKind Kind = MoomooOrderKind.Limit,
-    decimal? TriggerPrice = null);
+    decimal? TriggerPrice = null,
+    decimal? TrailValue = null);
 
 // FR-10, #331, IADR-0210: 注文種別（SDK 非依存）。Limit=OrderType_Normal / Stop=OrderType_Stop / Market=OrderType_Market。
-public enum MoomooOrderKind { Limit, Stop, Market }
+// FR-10, #821, IADR-0347: S3 の代替種別を末尾へ足す。StopLimit=OrderType_StopLimit / TrailingStop=OrderType_TrailingStop。
+public enum MoomooOrderKind { Limit, Stop, Market, StopLimit, TrailingStop }
+
+// FR-10, FR-11, #821, IADR-0347: OpenD が非成功（retType != 0）を返したことを表す。
+//
+// 🔴 **retType / retMsg を構造として保つことが本型の存在理由である。** 従来は文字列へ畳んだ
+// InvalidOperationException であり、拒否理由はログにしか残らなかった。S3（#821）は「拒否理由を監査台帳へ残すこと」
+// 自体が目的であるため、アダプタが理由を取り出して戻り値へ載せられる必要がある。
+// **InvalidOperationException 派生のまま**にしてあるのは、既存の捕捉・表明（アダプタの fail-safe・テスト）を
+// 1 行も変えずに済ませるためである（メッセージ文字列も従来と同一）。
+public sealed class MoomooTradeRequestException(string operation, int retType, string retMsg)
+    : InvalidOperationException($"moomoo {operation} が失敗しました（retType={retType}）: {retMsg}")
+{
+    /// <summary>失敗した OpenD 操作の名（PlaceOrder / CancelOrder 等）。</summary>
+    public string Operation { get; } = operation;
+
+    /// <summary>moomoo の retType（RetType_Succeed=0 以外）。</summary>
+    public int RetType { get; } = retType;
+
+    /// <summary>moomoo の retMsg（ブローカーが返した拒否理由の原文）。</summary>
+    public string RetMsg { get; } = retMsg;
+}
 
 public enum MoomooMarket { Japan, UnitedStates }
 

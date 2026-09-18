@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Configuration;
 
 namespace OrderExecutionService.Infrastructure.ExternalServices;
@@ -27,6 +28,10 @@ public sealed record MoomooBrokerOptions(string OpenDHost, ushort OpenDPort, str
     // 取引環境。常に "simulate"（FromConfiguration が他の値を拒否する）。
     public string TrdEnv { get; init; } = SimulateTrdEnv;
 
+    // FR-10, #821, IADR-0347: 損切りの実行機構 S3（他のブローカー側注文種別）で試す設定。
+    // **手法そのもの（S0〜S3）の選択ではない**——それは利用者の設定（risk-management）である（IADR-0342 決定2）。
+    public MoomooAlternativeStopSettings AlternativeStop { get; init; } = new();
+
     public static MoomooBrokerOptions FromConfiguration(IConfiguration config)
     {
         var host = config["Broker:Moomoo:OpenD:Host"];
@@ -39,7 +44,48 @@ public sealed record MoomooBrokerOptions(string OpenDHost, ushort OpenDPort, str
         {
             ReplyTimeout = ParseReplyTimeout(config["Broker:Moomoo:OpenD:ReplyTimeoutSeconds"]),
             TrdEnv = EnsureSimulate(config["Broker:Moomoo:TrdEnv"]),
+            AlternativeStop = new MoomooAlternativeStopSettings(
+                ParseAlternativeStopOrderType(config["Broker:Moomoo:AlternativeStopOrderType"]),
+                ParseStopLimitOffsetRatio(config["Broker:Moomoo:StopLimitOffsetRatio"])),
         };
+    }
+
+    // #821, IADR-0347: S3 で試す注文種別。未設定は StopLimit（計画 ADR-0040 決定1 が先に挙げた種別）。
+    // **未知の値を既定へ黙って倒さない**——「TrailingStop を選んだつもりで StopLimit が飛ぶ」を作らない。
+    private static AlternativeProtectiveOrderType ParseAlternativeStopOrderType(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return AlternativeProtectiveOrderType.StopLimit;
+        }
+        return configured.Trim().ToLowerInvariant() switch
+        {
+            "stoplimit" => AlternativeProtectiveOrderType.StopLimit,
+            "trailingstop" => AlternativeProtectiveOrderType.TrailingStop,
+            _ => throw new InvalidOperationException(
+                $"Broker:Moomoo:AlternativeStopOrderType '{configured}' は受理しません。"
+                + "'stoplimit'（既定）または 'trailingstop' を指定してください"
+                + "（損切りの実行機構 S3 で試すブローカー側注文種別。#821）。"),
+        };
+    }
+
+    // #821, IADR-0347: StopLimit の指値を発火価格から**不利側**へずらす比率。0 にすると急落時に約定せず
+    // 保護にならないため既定を 1% に置く。0〜10% の範囲外は起動時に停止する（10% を超える指値は保護の体を成さない）。
+    private static decimal ParseStopLimitOffsetRatio(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return MoomooAlternativeStopSettings.DefaultStopLimitOffsetRatio;
+        }
+        if (!decimal.TryParse(configured, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var ratio)
+            || ratio < 0m || ratio > 0.1m)
+        {
+            throw new InvalidOperationException(
+                $"Broker:Moomoo:StopLimitOffsetRatio '{configured}' が不正です。0〜0.1（＝0〜10%）の小数を"
+                + $"指定してください（未設定なら既定 {MoomooAlternativeStopSettings.DefaultStopLimitOffsetRatio}）。");
+        }
+        return ratio;
     }
 
     private static TimeSpan ParseReplyTimeout(string? configured)
@@ -76,6 +122,17 @@ public sealed record MoomooBrokerOptions(string OpenDHost, ushort OpenDPort, str
         }
         return SimulateTrdEnv;
     }
+}
+
+// FR-10, #821, IADR-0347: 損切りの実行機構 S3（他のブローカー側注文種別）の設定。
+// OrderType: 試す注文種別（既定 StopLimit）。StopLimitOffsetRatio: StopLimit の指値を発火価格から不利側へ
+// ずらす比率（既定 1%。0 だと急落時に約定せず保護にならない）。TrailingStop はトレール幅を
+// 「エントリーの判断価格 − 発火価格」の絶対額で送るため、本設定を使わない。
+public sealed record MoomooAlternativeStopSettings(
+    AlternativeProtectiveOrderType OrderType = AlternativeProtectiveOrderType.StopLimit,
+    decimal StopLimitOffsetRatio = MoomooAlternativeStopSettings.DefaultStopLimitOffsetRatio)
+{
+    public const decimal DefaultStopLimitOffsetRatio = 0.01m;
 }
 
 // #132, IADR-0060 決定 5: moomoo 発注経路の起動時 preflight。本番切替で踏みやすい構成ミスを、

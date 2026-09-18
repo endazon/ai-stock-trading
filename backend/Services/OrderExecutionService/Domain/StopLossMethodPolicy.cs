@@ -15,7 +15,10 @@ namespace OrderExecutionService.Domain;
 ///   <item>空売りのエントリー → <see cref="StopLossMethodDisposition.BrokerStopOrder"/>
 ///     （本決定は空売り建玉に及ばない。ADR-0016 決定2(b) が独立に効く）</item>
 ///   <item>S2 → <see cref="StopLossMethodDisposition.ProtectiveStopWaived"/></item>
-///   <item>S1 / S3 / 未知の値 → <see cref="StopLossMethodDisposition.NotImplementedFallbackToBrokerStop"/>
+///   <item>S3 → <see cref="StopLossMethodDisposition.AlternativeBrokerOrderType"/>
+///     （#821・IADR-0347。代替注文種別で保護レグを発注し、種別と拒否理由を監査へ残す。
+///     <b>拒否・受理いずれの扱いも S0 と同じ</b>）</item>
+///   <item>S1 / 未知の値 → <see cref="StopLossMethodDisposition.NotImplementedFallbackToBrokerStop"/>
 ///     （未実装。<b>緩い側へ倒さず S0 と同じ扱い</b>にする）</item>
 /// </list>
 /// <para>
@@ -45,9 +48,12 @@ public static class StopLossMethodPolicy
             return StopLossMethodDisposition.BrokerStopOrder;
         }
 
-        return method == StopLossExecutionMethod.NoProtectiveStop
-            ? StopLossMethodDisposition.ProtectiveStopWaived
-            : StopLossMethodDisposition.NotImplementedFallbackToBrokerStop;
+        return method switch
+        {
+            StopLossExecutionMethod.NoProtectiveStop => StopLossMethodDisposition.ProtectiveStopWaived,
+            StopLossExecutionMethod.AlternativeBrokerOrderType => StopLossMethodDisposition.AlternativeBrokerOrderType,
+            _ => StopLossMethodDisposition.NotImplementedFallbackToBrokerStop,
+        };
     }
 }
 
@@ -63,6 +69,12 @@ public enum StopLossMethodDisposition
     /// <summary>S2: 保護逆指値を発注せず建玉を保持し、免除の事実を発行する。</summary>
     ProtectiveStopWaived,
 
-    /// <summary>S1 / S3 / 未知: 未実装のため S0 と同じ扱い（警告ログ）。</summary>
+    /// <summary>S1 / 未知: 未実装のため S0 と同じ扱い（警告ログ）。</summary>
     NotImplementedFallbackToBrokerStop,
+
+    /// <summary>
+    /// S3: 保護レグを代替のブローカー側注文種別（StopLimit / TrailingStop）で発注し、種別と拒否理由を監査へ残す
+    /// （#821・IADR-0347）。<b>結果の扱いは S0 と同じ</b>（受理＝保護レグ／拒否＝建玉を持たない）。
+    /// </summary>
+    AlternativeBrokerOrderType,
 }

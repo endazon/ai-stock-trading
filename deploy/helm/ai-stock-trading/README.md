@@ -562,6 +562,13 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 **アダプタが per-order `Rejected` に倒す**（fail-safe）。
 実結合は #13 で実 OpenD の SIMULATE 口座に対し live 検証済み（IADR-0056）。
 
+損切りの実行機構 S3（他のブローカー側注文種別）で試す種別は `moomoo.alternativeStopOrderType`
+（`stoplimit` 既定 / `trailingstop`）、ストップリミットの指値を発火価格から不利側へずらす比率は
+`moomoo.stopLimitOffsetRatio`（既定 `0.01`＝1%・0〜0.1）で与える（#821）。いずれも**空ならアダプタ既定**で
+env を注入せず、**未知の値・範囲外は `order-execution` が起動時に停止する**（既定へ黙って倒さない）。
+⚠️ **手法（S0〜S3）そのものの選択は chart ではない** —— リスク管理の利用者専用 API
+（`PUT /risk-controls/settings/stop-loss-method`）で選ぶ。本 chart 値はその下位の探索パラメータである。
+
 > **実弾（`TrdEnv_Real`）は撃たない。** `broker.tier=moomoo-sim` にしても取引環境は `TrdEnv_Simulate` 固定である
 > （IADR-0016 / IADR-0056）。実弾は多重に塞いである: `broker.tier=moomoo-live` は**描画時に `fail`**（IADR-0111）、
 > 環境変数で `Broker__Environment=live` を直接与えても `LiveTradingGate`（閂 0）が**起動時に停止**、

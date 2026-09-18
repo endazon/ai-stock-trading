@@ -34,6 +34,10 @@ public enum StopLossExecutionMethod
     /// </summary>
     NoProtectiveStop = 2,
 
-    /// <summary><b>S3</b>: 他のブローカー側注文種別（StopLimit / TrailingStop）を試す。<b>未実装</b>（#821）——現状は S0 と同じ扱い。</summary>
+    /// <summary>
+    /// <b>S3</b>: 他のブローカー側注文種別（<c>OrderType_StopLimit</c> / <c>OrderType_TrailingStop</c>。構成で選ぶ）を試す
+    /// （#821・IADR-0347）。種別と拒否理由（retType / retMsg）を監査へ残し、**拒否時の扱いは S0 と同じ**
+    /// （建玉を持たない）。受理された場合も S0 と同じ保護レグとして扱う。
+    /// </summary>
     AlternativeBrokerOrderType = 3,
 }

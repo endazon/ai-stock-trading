@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-17
+updated: 2026-09-18
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0342]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection]
-issues: [#17, #18, #819]
+iadrs: [IADR-0015, IADR-0019, IADR-0342, IADR-0347]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types]
+issues: [#17, #18, #809, #819, #821]
 -->
 
 
@@ -64,6 +64,13 @@ issues: [#17, #18, #819]
   **免除の事実（`ProtectiveStopWaived`）**を記録する（#819）。種別は保護喪失（`ProtectiveStopCoverageLost`）と**別**であり、
   相関は同じくエントリーの `DecisionId` である。要約に手法（S2）・発注先・損切りラインと「逆指値なしの建玉を保持する
   （システムは決済しない）」を書く——「建玉あり ⇒ 有効な逆指値あり（または解消済み）」の読みの例外を台帳上で明示するため。
+- moomoo SIMULATE で損切りの実行機構 S3（他のブローカー側注文種別）が選ばれていた新規建ては、保護レグを
+  ストップリミット（または設定でトレーリングストップ）で発注し、**試行の事実（`AlternativeProtectiveStopAttempted`）**を
+  **受理・拒否のどちらでも 1 件**記録する（#821）。🔴 **要約と payload に注文種別と拒否理由（`retType` / `retMsg`）を残すことが
+  本記録の目的そのものである** —— 模擬取引は公式に「指値・成行のみ」とされており、断られた理由がここに無いと
+  「なぜその種別が使えないのか」を後から誰も説明できない。相関はエントリーの `DecisionId`。
+  結果の扱いは逆指値（既定の手法）と同一であり、試行の記録は `ProtectiveStopPlaced` / `ProtectiveStopCoverageLost` と
+  **排他ではなく重ねて**残る。
 
 ## 永続化方針
 

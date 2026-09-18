@@ -411,6 +411,18 @@ public static class AuditEntryFactory
             + "——**逆指値なしの建玉を保持する（システムは決済しない）**"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-10, FR-11, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: S3（他のブローカー側注文種別）で保護レグを
+    // **試した**記録。🔴 **拒否理由（retType / retMsg）を台帳へ残すことが本記録の目的そのものである**
+    // ——公式は模擬取引を「指値・成行のみ」としており、断られた理由がここに無ければ
+    // 「なぜ S3 が使えないのか」を後から誰も説明できない。受理された場合も種別を残す（実測の一次証跡）。
+    public static AuditEntry From(AlternativeProtectiveStopAttempted e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(AlternativeProtectiveStopAttempted), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 保護レグを代替注文種別 {e.OrderType} で試行（損切りの実行機構 {MethodLabel(e.Method)}"
+            + $"・発注先 {e.Provider}）→ {e.Status}"
+            + (e.RejectReasonCode is { } code ? $" retType={code}" : string.Empty)
+            + (string.IsNullOrWhiteSpace(e.RejectReasonMessage) ? string.Empty : $" 理由: {e.RejectReasonMessage}")),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // #819, IADR-0342: 計画の手法 ID（S0〜S3）で表示する。enum 名だけでは計画の表と突き合わせにくい。
     private static string MethodLabel(StopLossExecutionMethod method) => method switch
     {
