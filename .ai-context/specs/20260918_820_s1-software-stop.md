@@ -100,3 +100,91 @@ plan_refs:
 | 22 | 建玉へ反映済みの古い決済は持ち分を削らない（B2 の是正が逆側へ倒れない） | `SoftwareStopExecutorTests.建玉へ反映済みの古い決済は差し引かない`（T-10-359） |
 | 23 | **S0 の逆指値が約定・取消された巡回でも、建玉が残る限り S1 の行を完了させない**（3 巡目監査 B3） | `ProtectiveStopGuardSoftwareStopTests.S0の逆指値が約定した巡回でもS1の行は建玉が残る限り完了しない`（T-10-368）／`同.S0分を手仕舞った巡回でもS1の行は完了しない`（T-10-369） |
 | 24 | **再発注済み S0 の前試行のレグ記録で数量を二重に引かない**（3 巡目監査 B4） | `SoftwareStopExecutorTests.再発注済みS0の古いレグ記録があってもS1の持ち分は二重に削られない`（T-10-370） |
+
+## ［2026-09-18 追記 / #820 の 4 巡目監査］持ち分の決め方を作り直す（配分 → 残保護数量）
+
+4 巡目の監査がブロッキング 4 件（BLK-1〜4）を出した。**4 巡連続で「是正のたびに別の欠陥が出て」おり、
+個々のバグではなく設計の問題である**ため、持ち分の決め方ごと作り直す。
+
+### 何が根本原因か
+
+ブローカーの建玉照会は**銘柄単位の純額**であり、どの建玉がどの保護記録のものかを区別しない。
+それを**毎巡回ゼロから計算し直して**持ち分を決めていたため、規則をどう変えても
+「売り過ぎ（反対建玉）」か「損切りが黙って出ない」のどちらかへ倒れた。
+
+| 巡 | 是正 | その是正が作った欠陥 |
+| --- | --- | --- |
+| 1 | 行ごとの「建玉残」上限をやめ、行へ配分する | B1（S0 のレグ記録で二重差し引き → S0 と同数なら決済が 1 株も出ない）・B2（即時約定した決済を取りこぼして売り過ぎ） |
+| 2 | 差し引きを「建玉照会が映していない決済」へ | B3（差し引きが対称で、S0 と S1 が同数だと双方から見て残 0 → 建玉が残ったまま保護が外れる）・B4（再発注済み S0 の前試行レグが除外漏れ） |
+| 3 | 保護を外す判定を方向の純額だけに | BLK-1（自分の建玉を失った S1 行が不死化し、同銘柄の別エントリーの生きた S0 逆指値を毎巡回・恒久的に黙って取り消す） |
+
+### 作り直しの設計（**保護記録が「自分の残保護数量」を状態として持つ**）
+
+1. **列を足す**: `protective_stop_orders` に `RemainingProtected`（int?・null＝未確定）と
+   `StalledNotifiedAt`（DateTimeOffset?）を足す（migration `AddProtectiveStopRemainingProtected`。
+   **既存行の初期値は `Quantity`**）。派生プロパティ `ProtectedQuantity` は
+   **S0 は `RemainingProtected ?? Quantity`**（ブローカーに実在する逆指値が覆う数量）、
+   **S1 は `RemainingProtected ?? 0`**（確定するまで 1 株も主張しない）。
+2. **確定**: エントリーの発注記録が**終端**になった時点で、その行の残保護数量＝**エントリーの約定数量**。
+   未終端・記録なしの行は**未確定のまま**（主張 0・後述 4 の割り当て対象にもしない）。
+3. **自分の決済で減らす**: 受理された決済の数量だけ減らす。決済レグの `SoftwareCloseDecisionId`
+   （エントリー ＋ 試行番号から決定的）で突き合わせ、**試行番号を進める保存と同じ 1 回**で減算する
+   （再入では別の試行番号になるため二重に減らない）。
+4. **外部要因の減少を一度だけ確定的に割り当てる**: 銘柄・市場・方向ごとに
+   **S1 の予算＝方向の純額 − Active な S0 行の `ProtectedQuantity`** を求め、
+   **確定済み S1 行の残保護数量の合計が予算を超えている分**を、**作成時刻 → EntryDecisionId** の順に
+   **古い行から**削って**保存する**（＝削ったことの記録。次の巡回で引き直さない）。
+   **S0 行は削らない**——S0 の主張はブローカーに実在する逆指値の数量であり、帳簿を削っても注文は縮まないため、
+   削ると S0 の逆指値が建玉より大きくなって反対建玉を生む。
+5. **決済数量は残保護数量そのもの**。配分（`ProtectiveStopNetting.AllocateSoftwareStops`）と
+   「建玉照会がまだ映していない決済」の差し引き（`UnreflectedCloseQuantity` /
+   `IExecutedOrderStore.FindClosesSince` / `SnapshotLagAllowance`）は**撤去する**。
+6. **行を完了させるのは残保護数量が 0 になったときだけ**（純額・他手法の主張では完了させない）。
+7. **部分的にしか決済できないときは完了させない**——受理された決済の数量が残保護数量に満たなければ
+   行は Active のまま（`TriggeredAt` も残す）で、残りを次の巡回・次の到達で決済する。
+8. **ガードは S0 行 → 到達済み S1 行 → 未到達 S1 行の順**に評価する。
+   S0 を先に評価するのは、S1 の予算が「**この巡回の後も生きている S0**」の数量を引くべきだからである
+   （約定・取消で役目を終えた S0 の数量を引くと、B3 と同じく S1 の保護が消える）。
+   到達済みを未到達より先にするのは BLK-4（未到達の行が先に持ち分を取る）の再発防止である。
+9. **到達済みなのに決済できない行は、猶予（`DefaultSettlementGrace`＝15 分）を過ぎたら Critical**
+   （`SoftwareStopOutcome.CloseStalled=4`）を**1 行につき 1 回**出す（`StalledNotifiedAt` で記録）。
+   行は Active のまま再試行を続ける（無音の失敗を残さない）。
+10. **S0 側は S1 の残保護数量を差し引く**（`ProtectiveStopNetting.RemainingPositionFor`）。
+    発注記録の照会をやめたため、完了済み S0 行の取消済みレグ記録で S1 の持ち分が食われる問題（BLK-2）は
+    構造的に消える。**S1 行が無い構成では差し引く量が 0 で、S0 の挙動は従来と 1 バイトも変わらない。**
+
+### 母集合（作り直しの走査・2026-09-18・`git grep -n`）
+
+| 検索語 | 扱い |
+| --- | --- |
+| `AllocateSoftwareStops` | 本体（`ProtectiveStopNetting`）・呼び出し 1 箇所（`SoftwareStopExecutor`）・テスト。**撤去** |
+| `FindClosesSince` | `IExecutedOrderStore`・EF 実装・インメモリ実装・`SoftwareStopExecutor`・テスト。**撤去**（本 PR で新設したもので、外部利用は無い） |
+| `RemainingPositionFor` | `ProtectiveStopNetting`（S0 の建玉残）・`ProtectiveStopGuard`（S0 経路と静的ヘルパ）・テスト。**引数から `IExecutedOrderStore` を外す** |
+| `snapshotTakenAt` / `SnapshotLagAllowance` | `ProtectiveStopGuard`・`SoftwareStopExecutor`・テスト。**撤去**（照会時刻に依存しない） |
+| `SoftwareStopOutcome` | 契約・監査 `AuditEntryFactory`・通知 `NotificationFormatter`・リスク管理 `ProtectiveStopLedgerHandlers`（`ClosePlaced` だけを見るため変更なし）・テスト。**`CloseStalled=4` を末尾へ追加**（序数は動かさない） |
+| `ProtectiveStopOrder(` の生成箇所 | `OrderExecutionAppService`（S1 の新規行・S0 の同時発注）・`ProtectiveStopGuard`（S0 の再発注）・各テスト。**位置引数を末尾に足すため既存の生成箇所は無改修** |
+| `protective_stop_orders` | migration・DbContext・`ProtectiveStopOrderRow`・EF ストア・cutover manifest（テーブル単位のため無改修） |
+
+**除外とその理由**
+
+- `.ai-context/specs/` の他の仕様書・`.ai-context/adr/` の凍結記録: 当時の記述であり書き換えない（IADR-0344 には日付つき追記で残す）。
+- フロントエンド・`docs/api/openapi.yaml`: HTTP 応答の形を変えない。
+- `docs/operations/`・`tech/`: 機構の説明を持たないため変更なし。
+
+### 受け入れ基準の変更・追加
+
+**変更**: 受け入れ基準 14〜24 のうち配分方式を前提にした文言は、残保護数量方式へ読み替える
+（T-10-351〜359・368〜370 は新しい意味で固定し直す。配分順で持ち分が決まる主張は、
+「**古い行から削る**」という一度きりの割り当てへ置き換わる）。
+
+| # | 受け入れ基準 | テスト |
+| --- | --- | --- |
+| 25 | **残保護数量はエントリーの約定確定で決まり、決済で減り、0 になったときだけ行が完了する** | `SoftwareStopExecutorTests.残保護数量は約定確定で決まり決済で減り0で完了する`（T-10-371） |
+| — | 既存 T-10-352 の読み替え（配分で持ち分 0 → **割り当てで残保護数量 0 になった行は完了する**） | `SoftwareStopExecutorTests.建玉の減少を割り当てられて残保護数量が0になった行は完了する`（T-10-352） |
+| 26 | **部分的にしか決済できなければ行を完了させず、残りを次の巡回で決済する**（BLK-3） | `SoftwareStopBlockingRegressionTests.部分的にしか決済できない行は完了させず残りを次の巡回で決済する`（T-10-372） |
+| 27 | **自分の建玉を失った S1 行は一度だけ確定的に削られて完了し、同じ銘柄の生きた S0 逆指値を取り消させない**（BLK-1） | `SoftwareStopBlockingRegressionTests.建玉を失ったS1の行は完了し生きているS0の逆指値を取り消させない`（T-10-373） |
+| 28 | **完了済み S0 行の取消済みレグ記録があっても S1 の持ち分は削られない**（BLK-2） | `SoftwareStopBlockingRegressionTests.完了済みS0の取消済みレグ記録があってもS1の持ち分は削られない`（T-10-374） |
+| 29 | **到達済みの行を未到達の行より先に処理する**（BLK-4） | `SoftwareStopBlockingRegressionTests.到達済みの行を未到達の行より先に処理する`（T-10-375） |
+| 30 | **到達済みなのに決済できない状態が猶予を過ぎたら Critical を 1 回出し、行は再試行を続ける** | `SoftwareStopExecutorTests.到達済みで決済できない状態が猶予を過ぎたらCriticalを一度だけ出す`（T-10-376） |
+| 31 | **外部要因の減少は一度だけ割り当てて記録し、次の巡回で引き直さない**（持ち分が巡回ごとに揺れない） | `SoftwareStopExecutorTests.外部要因の減少は一度だけ割り当てて記録し次の巡回で揺れない`（T-10-377） |
+| 32 | **永続化の往復（残保護数量・据え置き通知の記録）** | `EfProtectiveStopOrderStoreTests.残保護数量と据え置き通知の記録が往復する`（T-10-378） |

@@ -531,9 +531,10 @@ public class SoftwareStopExecutorTests
             .Which.Intent.Quantity.Should().Be(10, "S1 の持ち分は 20 − S0 の 10（古いレグ記録で二度引かない）");
     }
 
-    // T-10-358: #820 の監査（B2）。ガードは 1 巡回に 1 回しか建玉を照会しない。先の行の決済が**即時約定**で返ると、
-    // その約定は（古い）建玉にも未約定一覧にも現れず、後の行が同じ建玉を再配分されて売り過ぎる
-    //（実測: 保有 15 株に対し 10＋10＝20 株の決済＝反対建玉）。照会時刻より後に動いた決済は未反映として差し引く。
+    // T-10-358: #820 の監査（B2）。ガードは 1 巡回に 1 回しか建玉を照会しない。先の行の決済が**即時約定**で返っても、
+    // 古い建玉を両方の行へ渡すと売り過ぎる（実測: 保有 15 株に対し 10＋10＝20 株の決済＝反対建玉）。
+    // 4 巡目の作り直しでは、**残保護数量が状態であり自分の決済で減って行が完了する**ため、
+    // 2 件目の巡回では 1 件目の主張が残っておらず、古い建玉のままでも合計が保有を超えない。
     [Fact]
     public async Task ガード巡回で先の行の決済が即時約定しても合計が建玉を超えない()
     {
@@ -548,10 +549,10 @@ public class SoftwareStopExecutorTests
         // 決済は即座に約定して返る（moomoo が FilledAll を返す経路。MapState が Filled へ写す）。
         f.Broker.CloseStatus = OrderStatus.Filled;
 
-        // 1 巡回ぶん: 同じ建玉（15 株）・同じ照会時刻を両方の行へ渡す。手動決済で 5 株減っている状態。
+        // 1 巡回ぶん: 同じ建玉（15 株）を両方の行へ渡す。手動決済で 5 株減っている状態。
         var snapshot = new[] { Long(15) };
-        await f.Executor.TryCloseAsync(f.Stops.Find(first.EntryDecisionId)!, snapshot, Now);
-        await f.Executor.TryCloseAsync(f.Stops.Find(second.EntryDecisionId)!, snapshot, Now);
+        await f.Executor.TryCloseAsync(f.Stops.Find(first.EntryDecisionId)!, snapshot);
+        await f.Executor.TryCloseAsync(f.Stops.Find(second.EntryDecisionId)!, snapshot);
 
         f.Broker.MarketCloses.Sum(c => c.Intent.Quantity)
             .Should().Be(15, "巡回の合計が保有数量を超えない（超えると反対建玉＝空売りになる）");
@@ -600,6 +601,7 @@ public class SoftwareStopExecutorTests
     {
         // T-10-351: 10 株のエントリー 2 件（計 20 株）のうち 5 株が手動決済され、建玉は 15 株。
         // 行ごとに「建玉残」を上限にすると 10+10=20 株を売って空売りになる（監査の実測）。
+        // 4 巡目の作り直し（IADR-0344 追記(4)）では、超過 5 株を**古い行から**一度だけ削る。
         var f = NewFixture();
         var first = SoftwareStop(createdAt: Now.AddHours(-2));
         var second = SoftwareStop(createdAt: Now.AddHours(-1));
@@ -612,14 +614,16 @@ public class SoftwareStopExecutorTests
         await f.Executor.OnTriggeredAsync(Trigger());
 
         f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(15, "合計が保有数量を超えない");
-        f.Broker.MarketCloses.Select(c => c.Intent.Quantity).Should().BeEquivalentTo(new[] { 10, 5 },
-            "古い行（先に建てたエントリー）へ先に配分する");
+        f.Broker.MarketCloses.Select(c => c.Intent.Quantity).Should().BeEquivalentTo(new[] { 5, 10 },
+            "減った 5 株は古い行（先に建てたエントリー）から削る");
     }
 
     [Fact]
-    public async Task 持ち分が無い行は建玉が残っていても完了させず据え置く()
+    public async Task 建玉の減少を割り当てられて残保護数量が0になった行は完了する()
     {
-        // T-10-352: 先の行へ全量を配分した後の行。完了させると保護のない建玉が残るため据え置く。
+        // T-10-352: 10 株のエントリー 2 件に対し建玉は 10 株。減った 10 株は**古い行から**一度だけ削られ、
+        // 古い行は残保護数量 0 で完了する（毎巡回引き直さないので、次の巡回でこの割り当てが揺り戻らない）。
+        // 新しい行は 10 株を保持し、決済もその 10 株だけを出す（合計が保有を超えない）。
         var f = NewFixture();
         var first = SoftwareStop(createdAt: Now.AddHours(-2));
         var second = SoftwareStop(createdAt: Now.AddHours(-1));
@@ -633,14 +637,15 @@ public class SoftwareStopExecutorTests
 
         f.Broker.MarketCloses.Should().HaveCount(1);
         f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(10);
-        f.Stops.Find(second.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
-        f.Stops.Find(second.EntryDecisionId)!.TriggeredAt.Should().NotBeNull();
+        f.Stops.Find(first.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(0);
+        f.Stops.Find(second.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed, "10 株を決済し切った");
     }
 
     [Fact]
-    public async Task 配分は到達時刻と作成時刻で決まりハンドラとガードで同じになる()
+    public async Task 持ち分の決定はハンドラとガードで同じで呼ぶ順に依らない()
     {
-        // T-10-353: ガード（TryCloseAsync 直接）でも同じ配分になる（並行しても合計が保有を超えない）。
+        // T-10-353: ガード（TryCloseAsync 直接）でも同じ持ち分になる（並行しても合計が保有を超えない）。
         var f = NewFixture();
         var first = SoftwareStop(createdAt: Now.AddHours(-2));
         var second = SoftwareStop(createdAt: Now.AddHours(-1));
@@ -650,7 +655,8 @@ public class SoftwareStopExecutorTests
         Entry(f, second, OrderStatus.Filled, 10);
         f.Broker.Positions = [Long(12)];
 
-        // 呼ぶ順に関わらず配分は同じ（古い行へ 10 株、後の行へ残り 2 株）。合計は保有 12 株を超えない。
+        // 呼ぶ順に関わらず持ち分は同じ（超過 8 株は古い行から削るので、古い行 2 株・後の行 10 株）。
+        // 合計は保有 12 株を超えない。
         var later = await f.Executor.TryCloseAsync(f.Stops.Find(second.EntryDecisionId)!, snapshot: null);
         var earlier = await f.Executor.TryCloseAsync(f.Stops.Find(first.EntryDecisionId)!, snapshot: null);
 
@@ -712,5 +718,82 @@ public class SoftwareStopExecutorTests
 
         f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(10);
         f.Stops.Find(orphan.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // ---- #820 の 4 巡目監査（作り直し）: T-10-371・T-10-376・T-10-377 ----
+
+    // T-10-371（受け入れ基準 25）: 残保護数量は「確定 → 自分の決済で減算 → 0 で完了」だけで動く。
+    // 建玉の純額から毎回引き直さないことが、4 巡続いた「売り過ぎ／黙って出ない」の振れ幅を無くす鍵である。
+    [Fact]
+    public async Task 残保護数量は約定確定で決まり決済で減り0で完了する()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop(quantity: 10);
+        f.Stops.Save(stop);
+        f.Stops.Find(stop.EntryDecisionId)!.RemainingProtected.Should().BeNull("発注時点では約定が未確定");
+
+        // エントリーは 7 株だけ約定して終端（承認数量 10 ではなく**約定数量**が残保護数量になる）。
+        Entry(f, stop, OrderStatus.Cancelled, 7);
+        f.Broker.Positions = [Long(7)];
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(7);
+        var saved = f.Stops.Find(stop.EntryDecisionId)!;
+        saved.RemainingProtected.Should().Be(0, "自分の決済ぶんだけ減る");
+        saved.State.Should().Be(ProtectiveStopState.Completed, "0 になったときだけ完了する");
+    }
+
+    // T-10-376（受け入れ基準 30）: 到達したのに決済できない状態が続くのは正しい fail-safe だが、
+    // **無音で続くと「損切りが出ていない」ことに誰も気づかない**。猶予を過ぎたら Critical を 1 回だけ出す。
+    [Fact]
+    public async Task 到達済みで決済できない状態が猶予を過ぎたらCriticalを一度だけ出す()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop();
+        f.Stops.Save(stop with { TriggeredAt = Now.AddMinutes(-20), TriggeredPrice = 940m });
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.Positions = null; // 建玉を照会できない（据え置きが続く）
+
+        var first = await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
+
+        first.Kind.Should().Be(SoftwareStopCloseKind.Deferred, "据え置きは続ける（再試行する）");
+        first.Event!.Outcome.Should().Be(SoftwareStopOutcome.CloseStalled);
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        f.Stops.Find(stop.EntryDecisionId)!.StalledNotifiedAt.Should().Be(Now);
+
+        var second = await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
+        second.Event.Should().BeNull("毎巡回 Critical を出すと本当に見るべき通知が埋もれる");
+    }
+
+    // T-10-377（受け入れ基準 31）: 外部要因の減少は**観測した時点で一度だけ**割り当てて記録する。
+    // 次の巡回で引き直さないので、建玉照会の値が変わっても持ち分が揺れない（4 巡の事故の根本原因）。
+    [Fact]
+    public async Task 外部要因の減少は一度だけ割り当てて記録し次の巡回で揺れない()
+    {
+        var f = NewFixture();
+        var first = SoftwareStop(createdAt: Now.AddHours(-2));
+        var second = SoftwareStop(createdAt: Now.AddHours(-1));
+        f.Stops.Save(first);
+        f.Stops.Save(second);
+        Entry(f, first, OrderStatus.Filled, 10, orderId: "entry-first");
+        Entry(f, second, OrderStatus.Filled, 10, orderId: "entry-second");
+
+        // 1 巡目: 20 株のうち 5 株が外部で消えた（建玉 15 株）。超過 5 株は古い行から削る。
+        ProtectiveStopNetting.ReconcileShares(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, [Long(15)], f.Stops.FindActive(100), f.Stops, f.Store, Now);
+        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(5);
+        f.Stops.Find(second.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+
+        // 2 巡目: 同じ建玉をもう一度観測しても、同じ減少を二度割り当てない（合計 15 のまま）。
+        ProtectiveStopNetting.ReconcileShares(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, [Long(15)], f.Stops.FindActive(100), f.Stops, f.Store, Now);
+        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(5);
+        f.Stops.Find(second.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+
+        // 建玉照会が一時的に大きく見えても、持ち分は戻らない（揺れない）。
+        ProtectiveStopNetting.ReconcileShares(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, [Long(20)], f.Stops.FindActive(100), f.Stops, f.Store, Now);
+        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(5);
     }
 }

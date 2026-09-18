@@ -156,4 +156,52 @@ public class EfProtectiveStopOrderStoreTests
         new EfProtectiveStopOrderStore(db2).FindActiveSoftwareStops("AAPL", Market.UnitedStates, TradeSide.Buy)
             .Select(s => s.EntryDecisionId).Should().Equal(older, newer);
     }
+
+    // T-10-378（受け入れ基準 32）: #820 の 4 巡目監査, IADR-0344 追記(4)。
+    // 残保護数量は**状態**であり、毎巡回引き直さないことが設計の要である。永続化されなければ成立しない。
+    [Fact]
+    public void 残保護数量と据え置き通知の記録が往復する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 1,
+            ProtectiveStopState.Active, Now, Now, StopLossExecutionMethod.SoftwareStop, Now.AddMinutes(1), 940m,
+            RemainingProtected: 4, StalledNotifiedAt: Now.AddMinutes(20));
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Should().Be(stop);
+        found.RemainingProtected.Should().Be(4);
+        found.IsEntryFillConfirmed.Should().BeTrue();
+        found.ProtectedQuantity.Should().Be(4);
+        found.StalledNotifiedAt.Should().Be(Now.AddMinutes(20));
+    }
+
+    // 未確定（null）の S1 行は 1 株も主張しない。S0 の旧い行（列が無かった時代）は Quantity を主張する。
+    [Fact]
+    public void 残保護数量が未設定なら_S1は0を_S0はQuantityを主張する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var s1 = Guid.NewGuid();
+        var s0 = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfProtectiveStopOrderStore(db);
+            store.Save(Stop(s1) with { Mechanism = StopLossExecutionMethod.SoftwareStop });
+            store.Save(Stop(s0));
+        }
+
+        using var db2 = NewContext(dbName);
+        var store2 = new EfProtectiveStopOrderStore(db2);
+        store2.Find(s1)!.ProtectedQuantity.Should().Be(0, "約定が確定するまで建玉を主張しない");
+        store2.Find(s1)!.IsEntryFillConfirmed.Should().BeFalse();
+        store2.Find(s0)!.ProtectedQuantity.Should().Be(10, "S0 はブローカーに実在する逆指値が覆う数量を主張する");
+    }
 }

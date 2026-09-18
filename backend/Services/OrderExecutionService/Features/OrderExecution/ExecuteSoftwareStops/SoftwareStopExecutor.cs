@@ -9,17 +9,22 @@ using AiStockTrading.Shared.Contracts.Trading;
 namespace OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 
 // FR-10, FR-12, UC-02, ADR-0040 決定1（S1）, #820, IADR-0344 決定4・決定5: ソフトウェア逆指値の発動。
-// 市場監視の損切りライン到達（StopLossTriggered）を受けて、到達したソフトウェア逆指値を**成行で 1 回だけ**決済する。
+// 市場監視の損切りライン到達（StopLossTriggered）を受けて、到達したソフトウェア逆指値を**成行で**決済する。
 // 同じ決済処理（TryCloseAsync）を常駐ガード（ProtectiveStopGuard）が到達済みの行の再試行に使う。
+//
+// 🔴 **決済数量は「その行の残保護数量」そのものである**（IADR-0344 追記(4)）。建玉の純額から毎回持ち分を計算し直すのを
+// やめ、記録が自分の残保護数量を状態として持つ（確定 → 自分の決済で減算 → 外部要因の減少を一度だけ割り当て）。
+// 割り当てと確定は ProtectiveStopNetting.ReconcileShares が行い、**保存して記録する**ため巡回ごとに揺れない。
 //
 // 🔴 **二重決済を作らない**（ADR-0040 §結果「S1 は二重決済の経路を SIMULATE に戻す」）:
 //   (i)   決済レグの DecisionId は (エントリー, 試行番号) から決定的に導出し、同じ DecisionId の発注記録があれば再送しない。
 //   (ii)  送る前に予約表（IADR-0057 の一意制約）で DecisionId を確保し、確保できなければ送らない（ハンドラとガードの並行・再配送）。
-//   (iii) 受理で行を Completed にし、以後は突き合わせの候補に入らない（市場監視は価格が戻るまで毎巡回再発火する）。
+//   (iii) 受理した数量だけ残保護数量を減らし、**0 になった行だけ Completed にする**（以後は突き合わせの候補に入らない）。
 //
 // fail-safe（据え置き＝イベントなし・到達の記録は残す）:
 //   - 建玉照会の null（不明）・接続断・取消した未約定エントリーがまだ終端でない → 次回（ガードの巡回 or 次の到達）で再試行する。
 //   - 「不明」を「建玉なし」と取り違えて行を完了させない（IADR-0118 と同じ規律）。
+//   - **据え置きが続く行は猶予を過ぎたら Critical を 1 回出す**（無音の失敗を残さない。IADR-0344 追記(4) 決定9）。
 public sealed class SoftwareStopExecutor(
     IBrokerAdapter broker,
     IBrokerPositionSource? positions,
@@ -28,7 +33,8 @@ public sealed class SoftwareStopExecutor(
     IOrderReservationStore reservations,
     IClock clock,
     ILogger<SoftwareStopExecutor>? logger = null,
-    TimeSpan? orphanGrace = null)
+    TimeSpan? orphanGrace = null,
+    TimeSpan? settlementGrace = null)
 {
     /// <summary>到達 1 回あたりの決済の試行上限（拒否が続いたら打ち切って Critical を出す。IADR-0344 決定5-6）。</summary>
     public const int MaxCloseAttemptsPerTrigger = 3;
@@ -39,22 +45,20 @@ public sealed class SoftwareStopExecutor(
     /// </summary>
     public static readonly TimeSpan DefaultOrphanGrace = TimeSpan.FromMinutes(15);
 
-    // 手法混在の按分（IADR-0344 決定5-2・決定6）で参照する Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
-    private const int NettingScanLimit = 500;
-
-    // 決済の記録を数える窓（当日有効の注文しか出さないため 1 日で足りる。IADR-0344 決定5-2）。
-    private static readonly TimeSpan CloseRecordWindow = TimeSpan.FromDays(1);
-
     /// <summary>
-    /// #820 の監査（B2）, IADR-0344 決定5-2: 建玉照会が約定を映すまでの遅れとして見込む余裕。
-    /// この分だけ「未反映」と見なす範囲を広げる。広げ過ぎても<b>持ち分を過小に見るだけ</b>で、行は据え置かれ
-    /// 次の巡回で新しい建玉を見て決済する（売り過ぎ＝反対建玉より安全な倒れ方を選ぶ）。
+    /// #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: <b>到達済みなのに決済できない</b>状態を Critical で知らせるまでの猶予。
+    /// 据え置き自体は正しい fail-safe だが、無期限に黙って続くと「損切りが出ていない」ことに誰も気づかない。
     /// </summary>
-    private static readonly TimeSpan SnapshotLagAllowance = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan DefaultSettlementGrace = TimeSpan.FromMinutes(15);
+
+    // 持ち分の確定・割り当て（IADR-0344 追記(4)）で参照する Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
+    private const int NettingScanLimit = 500;
 
     private readonly ILogger _logger = logger ?? NullLogger<SoftwareStopExecutor>.Instance;
 
     private readonly TimeSpan _orphanGrace = orphanGrace ?? DefaultOrphanGrace;
+
+    private readonly TimeSpan _settlementGrace = settlementGrace ?? DefaultSettlementGrace;
 
     /// <summary>
     /// 損切りライン到達を受けて、該当するソフトウェア逆指値を決済する。発行すべきイベントを返す（発行は呼び出し側）。
@@ -111,10 +115,19 @@ public sealed class SoftwareStopExecutor(
     public async Task<SoftwareStopCloseOutcome> TryCloseAsync(
         ProtectiveStopOrder stop,
         IReadOnlyList<BrokerPositionSnapshot>? snapshot,
-        DateTimeOffset? snapshotTakenAt = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stop);
+
+        var outcome = await TryCloseCoreAsync(stop, snapshot, cancellationToken).ConfigureAwait(false);
+        return outcome.Kind == SoftwareStopCloseKind.Deferred ? NotifyIfStalled(stop, outcome) : outcome;
+    }
+
+    private async Task<SoftwareStopCloseOutcome> TryCloseCoreAsync(
+        ProtectiveStopOrder stop,
+        IReadOnlyList<BrokerPositionSnapshot>? snapshot,
+        CancellationToken cancellationToken)
+    {
         if (!stop.IsSoftwareStop || stop.State != ProtectiveStopState.Active || stop.TriggeredAt is null)
             return SoftwareStopCloseOutcome.NotApplicable;
 
@@ -148,69 +161,71 @@ public sealed class SoftwareStopExecutor(
         }
 
         // 2. すでに同じ試行の決済を送って記録まで済んでいる場合（送信後に行の更新だけが失われたクラッシュ窓）は、
-        // 建玉照会も配分も要らない。**新しい注文は出さず**記録の結果で行を確定する（再送しない）。
-        var attempt = stop.Attempt + 1;
-        var closeDecisionId = ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, attempt);
-        var referencePrice = stop.TriggeredPrice ?? stop.TriggerPrice;
+        // 建玉照会も割り当ても要らない。**新しい注文は出さず**記録の結果で行を確定する（再送しない）。
+        // 🔴 記録済みの決済は割り当てより先に確定する（IADR-0344 追記(1) 3。建玉を照会できない状況でも確定できる）。
+        // 🔴 確定は**保存する**（次の割り当て・次の巡回・S0 の建玉残の判定がこの値を読む）。ここで保存しないと、
+        // 発注記録がまだ終端になっていない（取消の結果を照会で知った）場合に割り当てが確定値を見落とす。
+        var confirmed = stop;
+        if (!stop.IsEntryFillConfirmed)
+        {
+            confirmed = stop with { RemainingProtected = entry.FilledQuantity, UpdatedAt = clock.UtcNow };
+            stops.Save(confirmed);
+        }
+
+        var attempt = confirmed.Attempt + 1;
+        var closeDecisionId = ProtectiveStopIds.SoftwareCloseDecisionId(confirmed.EntryDecisionId, attempt);
+        var referencePrice = confirmed.TriggeredPrice ?? confirmed.TriggerPrice;
         var alreadyPlaced = store.FindByDecisionId(closeDecisionId);
         if (alreadyPlaced is not null)
         {
             return Settle(
-                stop, attempt, closeDecisionId, alreadyPlaced.OrderId, alreadyPlaced.Status,
+                confirmed, attempt, closeDecisionId, alreadyPlaced.OrderId, alreadyPlaced.Status,
                 new OrderIntent(
-                    stop.Symbol, stop.Market, stop.CloseSide, stop.ProductType, stop.Mode, alreadyPlaced.Quantity,
-                    referencePrice, PositionEffect.Close, StopLossPrice: null, stop.FxRateToBase));
+                    confirmed.Symbol, confirmed.Market, confirmed.CloseSide, confirmed.ProductType, confirmed.Mode,
+                    alreadyPlaced.Quantity, referencePrice, PositionEffect.Close, StopLossPrice: null, confirmed.FxRateToBase));
         }
 
-        // 3. 建玉残（手法の異なる Active 行の数量・発注済みで未約定の決済を差し引く）。null＝不明は据え置き。
-        if (snapshot is null)
-        {
-            // 🔴 照会の**前**に時刻を採る。照会の後に採ると、照会中に約定した決済を「反映済み」と誤認する。
-            snapshotTakenAt = clock.UtcNow;
-            snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
-        }
-
+        // 3. 建玉を照会する（null＝不明は据え置き。「不明」を「建玉なし」と取り違えない）。
+        snapshot ??= await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
         {
             _logger.LogWarning(
                 "ソフトウェア逆指値の決済を据え置きます（建玉を照会できません）。EntryDecisionId={EntryDecisionId}",
-                stop.EntryDecisionId);
+                confirmed.EntryDecisionId);
             return SoftwareStopCloseOutcome.Deferred;
         }
 
-        // 🔴 #820 の監査: 行ごとに建玉残を上限にすると、同じ銘柄の S1 行が同じ建玉を二重に主張して売り過ぎる
-        //（反対建玉＝空売りになる）。同じ銘柄・方向の S1 行へ決定的に配分し、自分の持ち分だけを決済する。
-        var activeStops = stops.FindActive(NettingScanLimit);
-        var allocation = ProtectiveStopNetting.AllocateSoftwareStops(
-            stop.Symbol, stop.Market, stop.EntrySide, snapshot, activeStops, store,
-            UnreflectedCloseQuantity(stop, activeStops, snapshotTakenAt ?? clock.UtcNow));
-        var allowance = allocation.TryGetValue(stop.EntryDecisionId, out var share) ? share : 0;
-        var quantity = Math.Min(entry.FilledQuantity, allowance);
+        // 4. 残保護数量の確定と、外部要因（人手決済・強制決済・S0 の逆指値の約定）による減少の**一度きりの割り当て**。
+        // 割り当ては保存されるため、次の巡回で引き直さない（持ち分が巡回ごとに揺れない。IADR-0344 追記(4)）。
+        var group = ProtectiveStopNetting.ReconcileShares(
+            confirmed.Symbol, confirmed.Market, confirmed.EntrySide, snapshot,
+            stops.FindActive(NettingScanLimit), stops, store, clock.UtcNow);
+        var current = group.FirstOrDefault(s => s.EntryDecisionId == confirmed.EntryDecisionId) ?? confirmed;
+        if (current.RemainingProtected is null)
+        {
+            // 確定できていない（エントリーの記録がまだ終端でない）。据え置く。
+            _logger.LogWarning(
+                "ソフトウェア逆指値の決済を据え置きます（エントリーの約定数量が確定していません）。EntryDecisionId={EntryDecisionId}",
+                current.EntryDecisionId);
+            return SoftwareStopCloseOutcome.Deferred;
+        }
+
+        var quantity = current.RemainingProtected.Value;
         if (quantity <= 0)
         {
-            if (ProtectiveStopNetting.DirectionalNet(stop, snapshot) <= 0)
-            {
-                // 手動決済等で建玉が既に無い。決済を出すと反対建玉を作る。
-                _logger.LogInformation(
-                    "ソフトウェア逆指値を完了します（建玉が残っていないため決済しません）。EntryDecisionId={EntryDecisionId}",
-                    stop.EntryDecisionId);
-                Complete(stop);
-                return SoftwareStopCloseOutcome.Completed;
-            }
-
-            // 建玉はあるが他の S1 行へ配分済み（自分の持ち分が無い）。**完了させない**——他行が決済して建玉が減れば
-            // 次の巡回で自分の持ち分が生まれる。ここで完了させると保護のない建玉が残る。
-            _logger.LogWarning(
-                "ソフトウェア逆指値の決済を据え置きます（同じ銘柄の他の記録へ建玉を配分済みで持ち分がありません）。"
-                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
-                stop.EntryDecisionId, stop.Symbol);
-            return SoftwareStopCloseOutcome.Deferred;
+            // 残保護数量が 0 ＝この記録が守る建玉はもう無い（外部要因の割り当てで削られた・手動決済済み）。
+            // **行を完了させるのは残保護数量が 0 のときだけ**である（純額や他手法の主張では完了させない。BLK-1・B3）。
+            _logger.LogInformation(
+                "ソフトウェア逆指値を完了します（残保護数量が 0 のため決済しません）。EntryDecisionId={EntryDecisionId}",
+                current.EntryDecisionId);
+            Complete(current);
+            return SoftwareStopCloseOutcome.Completed;
         }
 
-        // 4. 固定 DecisionId の成行決済（予約が取れなければ送らない）。
+        // 5. 固定 DecisionId の成行決済（予約が取れなければ送らない）。
         var closeIntent = new OrderIntent(
-            stop.Symbol, stop.Market, stop.CloseSide, stop.ProductType, stop.Mode, quantity, referencePrice,
-            PositionEffect.Close, StopLossPrice: null, stop.FxRateToBase);
+            current.Symbol, current.Market, current.CloseSide, current.ProductType, current.Mode, quantity, referencePrice,
+            PositionEffect.Close, StopLossPrice: null, current.FxRateToBase);
 
         var now = clock.UtcNow;
         if (!reservations.TryReserve(closeDecisionId, now))
@@ -218,7 +233,7 @@ public sealed class SoftwareStopExecutor(
             // 予約済みで記録が無い＝並行処理が送信中か、送信の成否が不明。重ねて送らない（IADR-0057）。
             _logger.LogWarning(
                 "ソフトウェア逆指値の決済は発注に着手済みです（予約あり・記録なし）。重ねて発注しません。EntryDecisionId={EntryDecisionId} CloseDecisionId={CloseDecisionId}",
-                stop.EntryDecisionId, closeDecisionId);
+                current.EntryDecisionId, closeDecisionId);
             return SoftwareStopCloseOutcome.Deferred;
         }
 
@@ -234,7 +249,7 @@ public sealed class SoftwareStopExecutor(
             reservations.Release(closeDecisionId);
             _logger.LogWarning(
                 "ソフトウェア逆指値の決済を据え置きます（OpenD へ接続できません）。EntryDecisionId={EntryDecisionId}",
-                stop.EntryDecisionId);
+                current.EntryDecisionId);
             return SoftwareStopCloseOutcome.Deferred;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -242,21 +257,25 @@ public sealed class SoftwareStopExecutor(
             // 届いたか不明。予約を残し（同じ DecisionId では再送しない）、滞留予約はリコンサイルの領分とする。
             _logger.LogError(ex,
                 "ソフトウェア逆指値の決済の送信結果が不明です（予約を残します・人手で確認してください）。EntryDecisionId={EntryDecisionId} CloseDecisionId={CloseDecisionId}",
-                stop.EntryDecisionId, closeDecisionId);
+                current.EntryDecisionId, closeDecisionId);
             return SoftwareStopCloseOutcome.Deferred;
         }
 
         var placedAt = clock.UtcNow;
         store.Save(new ExecutionRecord(
-            closeDecisionId, closeOrder.OrderId, stop.Symbol, stop.Market, stop.CloseSide, stop.ProductType,
+            closeDecisionId, closeOrder.OrderId, current.Symbol, current.Market, current.CloseSide, current.ProductType,
             PositionEffect.Close, quantity, referencePrice, closeOrder.FilledQuantity, closeOrder.AveragePrice,
-            closeOrder.Status, SlippageCalculator.Compute(referencePrice, closeOrder.AveragePrice, stop.CloseSide), placedAt));
+            closeOrder.Status, SlippageCalculator.Compute(referencePrice, closeOrder.AveragePrice, current.CloseSide), placedAt));
         reservations.MarkCompleted(closeDecisionId, closeOrder.OrderId, placedAt);
 
-        return Settle(stop, attempt, closeDecisionId, closeOrder.OrderId, closeOrder.Status, closeIntent);
+        return Settle(current, attempt, closeDecisionId, closeOrder.OrderId, closeOrder.Status, closeIntent);
     }
 
-    // 決済注文の状態から行を確定する。受理＝完了、拒否＝試行を進め、上限で到達の記録を外して Critical。
+    // 決済注文の状態から行を確定する。
+    // 🔴 受理＝**受理された数量だけ残保護数量を減らす**。0 になったときだけ Completed にする（IADR-0344 追記(4) 決定6・7）。
+    // 部分的にしか決済できていない行を完了させると、残りが無保護のまま黙って残る（#820 の 4 巡目監査 BLK-3）。
+    // 減算は「試行番号を進める保存」と同じ 1 回で行うため、再入しても同じ試行では二度減らない
+    //（再入時の試行番号は 1 つ進んでおり、その DecisionId の記録はまだ無い）。
     private SoftwareStopCloseOutcome Settle(
         ProtectiveStopOrder stop, int attempt, Guid closeDecisionId, string closeOrderId, OrderStatus status, OrderIntent closeIntent)
     {
@@ -265,13 +284,24 @@ public sealed class SoftwareStopExecutor(
 
         if (status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
         {
-            stops.Save(stop with { State = ProtectiveStopState.Completed, Attempt = attempt, UpdatedAt = now });
+            var before = stop.RemainingProtected ?? closeIntent.Quantity;
+            var remaining = Math.Max(0, before - closeIntent.Quantity);
+            stops.Save(stop with
+            {
+                RemainingProtected = remaining,
+                State = remaining == 0 ? ProtectiveStopState.Completed : ProtectiveStopState.Active,
+                Attempt = attempt,
+                UpdatedAt = now,
+            });
             _logger.LogWarning(
-                "ソフトウェア逆指値で成行決済を発注: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity} CloseDecisionId={CloseDecisionId} OrderId={OrderId} 状態={Status}",
-                stop.EntryDecisionId, stop.Symbol, closeIntent.Quantity, closeDecisionId, closeOrderId, status);
-            return SoftwareStopCloseOutcome.CompletedWith(new SoftwareStopExecuted(
+                "ソフトウェア逆指値で成行決済を発注: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity} 残保護数量={Remaining} CloseDecisionId={CloseDecisionId} OrderId={OrderId} 状態={Status}",
+                stop.EntryDecisionId, stop.Symbol, closeIntent.Quantity, remaining, closeDecisionId, closeOrderId, status);
+            var placed = new SoftwareStopExecuted(
                 stop.EntryDecisionId, stop.Symbol, stop.Market, SoftwareStopOutcome.ClosePlaced, closeIntent.Quantity,
-                stop.TriggerPrice, triggeredPrice, attempt, closeDecisionId, closeOrderId, closeIntent, now));
+                stop.TriggerPrice, triggeredPrice, attempt, closeDecisionId, closeOrderId, closeIntent, now);
+            return remaining == 0
+                ? SoftwareStopCloseOutcome.CompletedWith(placed)
+                : new SoftwareStopCloseOutcome(SoftwareStopCloseKind.PartiallyClosed, placed);
         }
 
         var exhausted = attempt % MaxCloseAttemptsPerTrigger == 0;
@@ -339,66 +369,6 @@ public sealed class SoftwareStopExecutor(
         return new EntryFill(filled, Deferred: false, CancelledByUs: current.Status != OrderStatus.Filled);
     }
 
-    // 🔴 #820 の監査（B1・B2）, IADR-0344 決定5-2: **建玉照会がまだ映していない決済**の数量（同じ銘柄・同じ決済方向）。
-    //
-    // 映していないものは 2 種類ある。
-    //   ① 板に残っている未約定の決済 —— 約定するまで建玉は減らない。
-    //   ② **建玉を照会した後に約定した決済** —— 照会した瞬間の値には入っていない。
-    //      ガードは 1 巡回に 1 回しか照会しないため、先の行の決済が即時約定で返ると②になる
-    //      （監査で実測: 保有 15 株に対し 10 株＋10 株＝20 株の決済＝反対建玉）。
-    //      約定から建玉へ反映されるまでの遅れを見込んで SnapshotLagAllowance だけ手前から数える。
-    //
-    // 🔴 **S0（ブローカー側逆指値）のレグは除く。** S0 のレグも PositionEffect=Close の記録として残るが、
-    // その数量は配分側が「手法の異なる Active 行の数量」として既に差し引いている。ここで数えると二重に削られ、
-    // S0 と S1 が同数なら **S1 の決済が 1 株も出ない**（監査で実測）。
-    private int UnreflectedCloseQuantity(
-        ProtectiveStopOrder stop,
-        IReadOnlyList<ProtectiveStopOrder> activeStops,
-        DateTimeOffset snapshotTakenAt)
-    {
-        // 🔴 #820 の 3 巡目監査（B4）: 除外するのは**行の現在のレグだけでは足りない**。ガードが失効した逆指値を
-        // 再発注すると、行の StopDecisionId は新しい試行へ進むが、**前試行のレグ記録は Accepted のまま残る**
-        // （取り消した注文が当日一覧から消えるブローカーでは、約定追跡が終端化できず残り続ける）。
-        // その記録を差し引くと S0 の数量を再び二重に引き、S1 の決済が 1 株も出なくなる（B1 の再来）。
-        // レグの DecisionId はエントリー ID と試行番号から決定的に導けるので、**その行の全試行**を除く。
-        var brokerStopLegs = activeStops
-            .Where(other => other.State == ProtectiveStopState.Active
-                && !other.IsSoftwareStop
-                && other.Symbol == stop.Symbol
-                && other.Market == stop.Market
-                && other.EntrySide == stop.EntrySide)
-            .SelectMany(other => Enumerable
-                .Range(1, Math.Max(1, other.Attempt))
-                .Select(attempt => ProtectiveStopIds.StopDecisionId(other.EntryDecisionId, attempt))
-                .Append(other.StopDecisionId))
-            .ToHashSet();
-
-        var unreflectedSince = snapshotTakenAt - SnapshotLagAllowance;
-
-        return store.FindClosesSince(clock.UtcNow - CloseRecordWindow, NettingScanLimit)
-            .Where(r => r.Symbol == stop.Symbol
-                && r.Market == stop.Market
-                && r.PositionEffect == PositionEffect.Close
-                && r.Side == stop.CloseSide
-                && !brokerStopLegs.Contains(r.DecisionId))
-            .Sum(r => UnreflectedQuantityOf(r, r.ExecutedAt >= unreflectedSince));
-    }
-
-    // 1 件の決済記録のうち「建玉照会がまだ映していない数量」。**倒れ方は過大側**（差し引き過ぎ）に寄せる
-    // ——過大なら行が据え置かれて次の巡回でやり直すだけだが、過小なら反対建玉（空売り）を作る。
-    private static int UnreflectedQuantityOf(ExecutionRecord record, bool touchedAfterSnapshot) =>
-        record.Status switch
-        {
-            // 🔴 拒否はそもそも市場へ届いていない。差し引くと、拒否のたびに持ち分が消えて**再試行できなくなる**。
-            OrderStatus.Rejected => 0,
-            // 照会の後に置かれた・動いた決済は丸ごと未反映とみなす（部分約定の内訳を当てにしない）。
-            _ when touchedAfterSnapshot => Math.Max(0, record.Quantity),
-            // それ以前の終端は建玉へ反映済み。
-            _ when OrderStatusLifecycle.IsTerminal(record.Status) => 0,
-            // 板に残っている未約定分は、これから建玉を減らし得る。
-            _ => Math.Max(0, record.Quantity - record.FilledQuantity),
-        };
-
     // 🔴 #820 の監査, IADR-0344 決定5-7: エントリーの発注記録が無い孤立行。**決済は出さない。**
     // 予約のリコンサイルが記録を補える窓のあいだは据え置き、猶予を過ぎたら Critical を出して行を閉じる
     //（閉じないと毎巡回この行を引き当てて決済を試み続ける。閉じる前に必ず人手へ知らせる）。
@@ -426,8 +396,43 @@ public sealed class SoftwareStopExecutor(
             CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
     }
 
+    // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: **到達済みなのに決済できない**状態が猶予を過ぎたら Critical を出す。
+    // 行は Active のまま再試行を続ける（据え置きは正しい fail-safe である）。**1 行につき 1 回**しか出さない
+    //（StalledNotifiedAt に記録する）——毎巡回 Critical を出すと、本当に見るべき通知が埋もれる。
+    private SoftwareStopCloseOutcome NotifyIfStalled(ProtectiveStopOrder stop, SoftwareStopCloseOutcome deferred)
+    {
+        var current = stops.Find(stop.EntryDecisionId) ?? stop;
+        if (current.State != ProtectiveStopState.Active
+            || current.TriggeredAt is not { } triggeredAt
+            || current.StalledNotifiedAt is not null)
+        {
+            return deferred;
+        }
+
+        var now = clock.UtcNow;
+        if (now - triggeredAt < _settlementGrace)
+            return deferred;
+
+        stops.Save(current with { StalledNotifiedAt = now, UpdatedAt = now });
+        _logger.LogError(
+            "ソフトウェア逆指値が到達から {Grace} を過ぎても決済できていません（建玉が無保護で残っている可能性があります・"
+                + "再試行は続けます）。EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+            _settlementGrace, current.EntryDecisionId, current.Symbol);
+
+        return new SoftwareStopCloseOutcome(SoftwareStopCloseKind.Deferred, new SoftwareStopExecuted(
+            current.EntryDecisionId, current.Symbol, current.Market, SoftwareStopOutcome.CloseStalled,
+            current.RemainingProtected ?? current.Quantity, current.TriggerPrice,
+            current.TriggeredPrice ?? current.TriggerPrice, current.Attempt,
+            CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+    }
+
     private void Complete(ProtectiveStopOrder stop) =>
-        stops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });
+        stops.Save(stop with
+        {
+            State = ProtectiveStopState.Completed,
+            RemainingProtected = 0,
+            UpdatedAt = clock.UtcNow,
+        });
 
     // 検知時の価格が行自身の損切りラインに達しているか（買い建て: 以下 / 売り建て: 以上。市場監視の判定と同じ向き）。
     private static bool Reached(ProtectiveStopOrder stop, decimal price) =>
@@ -442,7 +447,7 @@ public enum SoftwareStopCloseKind
     /// <summary>対象外（S1 でない・Active でない・未到達）。</summary>
     NotApplicable,
 
-    /// <summary>行を完了した（決済を受理・建玉なし・未約定のエントリーを取消）。</summary>
+    /// <summary>行を完了した（残保護数量が 0 になった・建玉なし・未約定のエントリーを取消）。</summary>
     Completed,
 
     /// <summary>今は決められない（接続断・建玉不明・取消待ち・送信中）。到達の記録を残して再試行する。</summary>
@@ -450,6 +455,12 @@ public enum SoftwareStopCloseKind
 
     /// <summary>決済注文が受理されなかった。</summary>
     Rejected,
+
+    /// <summary>
+    /// #820 の 4 巡目監査, IADR-0344 追記(4) 決定7: 決済を発注したが<b>残保護数量が残っている</b>（部分的な決済）。
+    /// 行は Active のままで、残りを次の巡回・次の到達で決済する。
+    /// </summary>
+    PartiallyClosed,
 }
 
 /// <summary>#820, IADR-0344: 決済試行の結果と、発行すべきイベント（無ければ null）。</summary>

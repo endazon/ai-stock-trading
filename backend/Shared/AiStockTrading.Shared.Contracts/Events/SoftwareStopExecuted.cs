@@ -10,6 +10,8 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // - Outcome=EntryCancelled: 到達時にエントリーが未約定のまま取り消された（建玉は生じていない）。Quantity=0。
 // - Outcome=CloseRejected: 決済注文が到達 1 回あたりの試行上限まで拒否された。**建玉が無保護で残っている**（人手対応・Critical）。
 //   次の到達で再試行する。
+// - Outcome=CloseStalled: 到達したのに猶予を過ぎても決済できていない（据え置きが続いている）。再試行は続くが、
+//   無音のまま損切りが出ない状態を残さないため 1 件につき 1 回だけ知らせる（人手対応・Critical）。
 //
 // StopLossPrice はソフトウェア逆指値の損切りライン、TriggeredPrice は到達を検知した時点の価格、Attempt は決済の試行番号。
 public record SoftwareStopExecuted(
@@ -44,4 +46,12 @@ public enum SoftwareStopOutcome
     /// （監査で実測: 孤立行 1 件＋実在の 10 株で 20 株の決済になった）。人手での確認が要る。
     /// </summary>
     EntryMissing = 3,
+
+    /// <summary>
+    /// #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 損切りラインへ到達したのに、猶予を過ぎても決済できていない
+    /// （接続断・建玉照会不能・エントリーの取消待ち・送信結果不明が続いている）。
+    /// <b>据え置き自体は正しい fail-safe だが、無期限に黙って続くと「損切りが出ていない」ことに誰も気づかない。</b>
+    /// 再試行は続いている。1 件の記録につき 1 回だけ発行する。
+    /// </summary>
+    CloseStalled = 4,
 }

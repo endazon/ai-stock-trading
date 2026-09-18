@@ -57,16 +57,6 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             .Select(r => ToRecord(r))];
     }
 
-    // #820 の監査, IADR-0344 決定5-2: since 以降の決済（Close）を新しい順に返す（終端・非終端を問わない）。
-    public IReadOnlyList<ExecutionRecord> FindClosesSince(DateTimeOffset since, int batchSize)
-    {
-        return [.. db.ExecutedOrders
-            .Where(r => r.PositionEffect == PositionEffect.Close && r.ExecutedAt >= since)
-            .OrderByDescending(r => r.ExecutedAt)
-            .Take(batchSize)
-            .Select(r => ToRecord(r))];
-    }
-
     // #270, IADR-0113: 観測した最新のブローカ状態を既存行へ反映する。行が無ければ何もしない
     // （新規に作らない＝DecisionId 1:1 の不変を壊さない）。
     public bool UpdateOutcome(

@@ -380,6 +380,9 @@ public class NotificationFormatterTests
     [InlineData(SoftwareStopOutcome.ClosePlaced, NotificationSeverity.Warning, "成行の決済注文を発注しました")]
     [InlineData(SoftwareStopOutcome.EntryCancelled, NotificationSeverity.Warning, "建玉は生じていません")]
     [InlineData(SoftwareStopOutcome.CloseRejected, NotificationSeverity.Critical, "建玉が無保護で残っています")]
+    [InlineData(SoftwareStopOutcome.EntryMissing, NotificationSeverity.Critical, "決済は出していません")]
+    // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 据え置きが猶予を過ぎた（無音の失敗を残さない）。
+    [InlineData(SoftwareStopOutcome.CloseStalled, NotificationSeverity.Critical, "猶予を過ぎても成行の決済を発注できていません")]
     public void ソフトウェア逆指値の発動結果は結末ごとの重みと文言になる(
         SoftwareStopOutcome outcome, NotificationSeverity severity, string expected)
     {

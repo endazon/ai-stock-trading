@@ -433,6 +433,8 @@ public static class AuditEntryFactory
                 SoftwareStopOutcome.EntryCancelled => "——未約定のエントリーを取消（建玉なし）",
                 SoftwareStopOutcome.EntryMissing =>
                     "——**エントリーの発注記録が猶予を過ぎても見つからず、決済を出さずに閉じた（要人手対応）**",
+                SoftwareStopOutcome.CloseStalled =>
+                    "——**到達したのに猶予を過ぎても決済できていない（据え置きが継続・再試行中・要人手対応）**",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

@@ -21,17 +21,9 @@ public interface IExecutedOrderStore
     /// </summary>
     IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize);
 
-    /// <summary>
-    /// #820 の監査（売り過ぎの防止）, IADR-0344 決定5-2: <paramref name="since"/> 以降の<b>決済（Close）</b>の記録を
-    /// 新しい順に最大 <paramref name="batchSize"/> 件返す（終端・非終端を問わない）。
-    /// <para>
-    /// ソフトウェア逆指値の配分は「ブローカーの建玉照会がまだ映していない決済」を差し引く必要がある。
-    /// 未約定の決済（板に残っている分）だけでなく、<b>建玉を照会した後に約定した決済</b>も映っていない。
-    /// 非終端だけを返す <see cref="FindPendingSince"/> では後者を拾えない。
-    /// </para>
-    /// <para>新しい順に切るのは、打ち切りが起きたときに<b>直近の決済</b>を落とさないためである（落とすと売り過ぎ側へ倒れる）。</para>
-    /// </summary>
-    IReadOnlyList<ExecutionRecord> FindClosesSince(DateTimeOffset since, int batchSize);
+    // #820 の 4 巡目監査, IADR-0344 追記(4): FindClosesSince（建玉照会がまだ映していない決済の走査）は撤去した。
+    // 持ち分を毎巡回引き直す方式そのものをやめ、保護記録が残保護数量を状態として持つ形へ作り直したため、
+    // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。
 
     /// <summary>
     /// #270, IADR-0113: 追跡で観測した最新のブローカ状態を既存記録へ反映する（<paramref name="orderId"/> で特定）。

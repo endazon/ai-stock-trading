@@ -97,6 +97,9 @@ public class StopLossMethodContractTests
         ((int)SoftwareStopOutcome.ClosePlaced).Should().Be(0);
         ((int)SoftwareStopOutcome.EntryCancelled).Should().Be(1);
         ((int)SoftwareStopOutcome.CloseRejected).Should().Be(2);
+        ((int)SoftwareStopOutcome.EntryMissing).Should().Be(3);
+        // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 末尾へ追加した（既存の序数を動かさない）。
+        ((int)SoftwareStopOutcome.CloseStalled).Should().Be(4);
     }
 
     // 見送りの理由は末尾追加であり、既存 3 値の序数を動かさない（メトリクスのタグ・監査 payload の整数）。

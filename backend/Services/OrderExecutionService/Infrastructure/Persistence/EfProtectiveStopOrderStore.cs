@@ -36,6 +36,8 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
         row.Mechanism = stop.Mechanism;
         row.TriggeredAt = stop.TriggeredAt;
         row.TriggeredPrice = stop.TriggeredPrice;
+        row.RemainingProtected = stop.RemainingProtected;
+        row.StalledNotifiedAt = stop.StalledNotifiedAt;
         db.SaveChanges();
     }
 
@@ -70,5 +72,6 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
     private static ProtectiveStopOrder ToDomain(ProtectiveStopOrderRow r) =>
         new(r.EntryDecisionId, r.StopDecisionId, r.StopOrderId, r.Symbol, r.Market, r.EntrySide,
             r.ProductType, r.Mode, r.Quantity, r.TriggerPrice, r.FxRateToBase, r.Attempt, r.State,
-            r.CreatedAt, r.UpdatedAt, r.Mechanism, r.TriggeredAt, r.TriggeredPrice);
+            r.CreatedAt, r.UpdatedAt, r.Mechanism, r.TriggeredAt, r.TriggeredPrice,
+            r.RemainingProtected, r.StalledNotifiedAt);
 }

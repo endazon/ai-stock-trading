@@ -43,4 +43,10 @@ public sealed class ProtectiveStopOrderRow
     public DateTimeOffset? TriggeredAt { get; set; }
 
     public decimal? TriggeredPrice { get; set; }
+
+    // FR-10, #820 の 4 巡目監査, IADR-0344 追記(4): 残保護数量（null＝エントリーの約定が未確定）と、
+    // 到達済みなのに決済できない状態を Critical で知らせた時刻（1 行 1 回）。
+    public int? RemainingProtected { get; set; }
+
+    public DateTimeOffset? StalledNotifiedAt { get; set; }
 }

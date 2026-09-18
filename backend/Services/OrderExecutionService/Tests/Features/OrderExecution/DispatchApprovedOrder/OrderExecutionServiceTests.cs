@@ -133,9 +133,6 @@ public class OrderExecutionServiceTests
         public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize)
             => _inner.FindPendingSince(since, batchSize);
 
-        public IReadOnlyList<ExecutionRecord> FindClosesSince(DateTimeOffset since, int batchSize)
-            => _inner.FindClosesSince(since, batchSize);
-
         public bool UpdateOutcome(
             string orderId, OrderStatus status, int filledQuantity, decimal averagePrice,
             decimal slippageRatio, DateTimeOffset executedAt)

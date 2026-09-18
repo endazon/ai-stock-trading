@@ -11,6 +11,12 @@ namespace OrderExecutionService.Domain;
 // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: Mechanism で保護の機構を区別する（既定 S0＝ブローカー側逆指値）。
 // S1（ソフトウェア逆指値）の行は StopOrderId が空（ブローカーに注文が無い）、TriggerPrice が損切りライン、
 // Attempt が「送った決済の試行数」（0 始まり）、TriggeredAt / TriggeredPrice が損切りライン到達の記録（未到達は null）。
+//
+// FR-10, #820 の 4 巡目監査, IADR-0344 追記(4) 決定5-2': 🔴 **RemainingProtected（残保護数量）は「この記録が今も守っている株数」の
+// 状態である**。ブローカーの建玉照会は銘柄単位の純額でしかなく、どの建玉がどの記録のものかを区別しない。
+// 持ち分を毎巡回ゼロから計算し直すと、規則をどう変えても「売り過ぎ」か「損切りが黙って出ない」のどちらかへ倒れる
+// （#820 で 4 巡連続して実測された）。**確定（エントリーの約定）→ 自分の決済で減算 → 外部要因の減少を一度だけ割り当て**
+// の 3 つだけが値を動かし、巡回のたびに揺れることが構造的に無い。null＝未確定（エントリーの約定がまだ終端でない）。
 public record ProtectiveStopOrder(
     Guid EntryDecisionId,
     Guid StopDecisionId,
@@ -29,10 +35,27 @@ public record ProtectiveStopOrder(
     DateTimeOffset UpdatedAt,
     StopLossExecutionMethod Mechanism = StopLossExecutionMethod.BrokerStopOrder,
     DateTimeOffset? TriggeredAt = null,
-    decimal? TriggeredPrice = null)
+    decimal? TriggeredPrice = null,
+    int? RemainingProtected = null,
+    DateTimeOffset? StalledNotifiedAt = null)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;
+
+    /// <summary>
+    /// #820 の 4 巡目監査, IADR-0344 追記(4): エントリーの約定数量が確定しているか（＝残保護数量が決まっているか）。
+    /// </summary>
+    public bool IsEntryFillConfirmed => RemainingProtected is not null;
+
+    /// <summary>
+    /// #820 の 4 巡目監査, IADR-0344 追記(4): この記録が<b>今も主張している株数</b>。
+    /// <para>
+    /// <b>S0</b> は未設定なら <see cref="Quantity"/>（ブローカーに実在する逆指値が覆う数量。帳簿を削っても注文は縮まないため、
+    /// 外部要因の割り当てでは削らない）。<b>S1</b> は未設定なら <b>0</b>——確定するまで 1 株も主張しない
+    /// （記録の数量で主張すると、同じ銘柄の別のエントリーの建玉を売る。#820 の監査で実測）。
+    /// </para>
+    /// </summary>
+    public int ProtectedQuantity => RemainingProtected ?? (IsSoftwareStop ? 0 : Quantity);
 
     /// <summary>決済方向（エントリーの反対売買）。ロング（Buy 建て）は Sell、ショート（Sell 建て）は Buy。</summary>
     public TradeSide CloseSide => EntrySide == TradeSide.Buy ? TradeSide.Sell : TradeSide.Buy;

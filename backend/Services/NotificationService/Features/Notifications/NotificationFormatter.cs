@@ -113,6 +113,14 @@ public static class NotificationFormatter
                 + "**決済は出していません。建玉が残っているかを確認し、必要なら手動で決済してください**"
                 + $"（EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Critical),
+        // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 到達したのに決済できない状態が猶予を過ぎた。再試行は続いている。
+        SoftwareStopOutcome.CloseStalled => new(
+            "リスク統制: ソフトウェア逆指値が到達後も決済できていません",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達（検知 {Invariant(e.TriggeredPrice)}）しましたが、"
+                + "猶予を過ぎても成行の決済を発注できていません（接続断・建玉照会不能・エントリーの取消待ちなど）。"
+                + "**建玉が無保護で残っている可能性があります。直ちに確認し、必要なら手動で決済してください**"
+                + $"（再試行は続けます・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
