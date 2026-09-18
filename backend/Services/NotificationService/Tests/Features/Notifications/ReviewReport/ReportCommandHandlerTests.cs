@@ -40,6 +40,9 @@ public class ReportCommandHandlerTests
 
         public int? LastConfirmedVersion { get; private set; }
 
+        // #835: 報告書サービスへ渡った会話キー（大小文字を含めて確認する）。
+        public string? LastPeriodKey { get; private set; }
+
         // 呼び出し自体の失敗（HTTP エラー・タイムアウト）を模す。
         public bool ConfirmFails { get; set; }
 
@@ -52,6 +55,7 @@ public class ReportCommandHandlerTests
             string periodKey, CancellationToken cancellationToken = default)
         {
             ReviewCalls++;
+            LastPeriodKey = periodKey;
             return Task.FromResult(ReviewFails
                 ? new ReportReviewResult(false, 0, "レビュー局面の照会に失敗しました（HTTP 503）")
                 : new ReportReviewResult(true, Version, $"報告書 {periodKey}: 版 {Version}"));
@@ -62,6 +66,7 @@ public class ReportCommandHandlerTests
         {
             ConfirmCalls++;
             LastConfirmedVersion = expectedVersion;
+            LastPeriodKey = periodKey;
 
             if (ConfirmFails)
                 return Task.FromResult(new ReportConfirmResult(false, false, "報告書の確定に失敗しました（HTTP 503）"));
@@ -116,6 +121,26 @@ public class ReportCommandHandlerTests
         result.ConfirmedNow.Should().BeTrue();
         controller.ConfirmCalls.Should().Be(1);
         controller.LastConfirmedVersion.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task 週報の会話キーは大文字のまま報告書サービスへ渡る()
+    {
+        // FR-07, #835: 週報の自然キーは ISO 週の W が大文字（weekly-2026-W38）。小文字化すると
+        // 報告書サービスの完全一致検索に掛からず 404 になり、**週報を一度も確定できない**（稼働環境で実測）。
+        // 確認ボタン（CustomId 経由）も同じ文字列を組み立てて本ハンドラを通るため、この 1 点で両経路が決まる。
+        const string weeklyKey = "weekly-2026-W38";
+        var controller = new FakeReportReviewController();
+        var handler = Handler(controller, FullyConfigured());
+
+        var show = await handler.HandleAsync(Context($"/report show {weeklyKey}"));
+        controller.LastPeriodKey.Should().Be(weeklyKey);
+        show.WasExecuted.Should().BeTrue();
+
+        var approve = await handler.HandleAsync(Context($"/report approve {weeklyKey} 2"));
+        approve.ConfirmedNow.Should().BeTrue();
+        controller.ConfirmCalls.Should().Be(1);
+        controller.LastPeriodKey.Should().Be(weeklyKey, "確定 API にも大文字のまま渡る");
     }
 
     [Fact]

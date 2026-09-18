@@ -574,7 +574,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     }
 
     // FR-07, FR-14, UC-03〜05, IADR-0240: 確定の確認ボタンの押下 → 版番号付きの確定を実行する。
-    // CustomId 末尾の "-<version>" を切り出し、残りを periodKey とする（periodKey は英小文字・数字・ハイフンのみで
+    // CustomId 末尾の "-<version>" を切り出し、残りを periodKey とする（periodKey は英数字・ハイフンのみで
     // パーサが値域を保証する。**版番号は最後のハイフン以降**＝periodKey 自体がハイフンを含んでも曖昧にならない）。
     //
     // **二重押下は 2 段で吸収する**: ①押下後にボタンを取り除く（再押下できない）②ハンドラの版番号ガードが

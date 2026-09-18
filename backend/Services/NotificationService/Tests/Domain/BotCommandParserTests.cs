@@ -103,13 +103,23 @@ public class BotCommandParserTests
 
     [Theory]
     [InlineData("/report show daily-2026-08-28", BotCommandKind.ReportShow, "daily-2026-08-28", null)]
-    [InlineData("report show weekly-2026-w35", BotCommandKind.ReportShow, "weekly-2026-w35", null)]
+    // 🔴 #835: 週報の会話キーは ISO 週の W が大文字（`weekly-2026-W38`）。**大小文字を潰さない**。
+    // 潰すと報告書サービスの自然キーに一致せず、週報を一度も確定できない（稼働環境で実測）。
+    [InlineData("/report show weekly-2026-W38", BotCommandKind.ReportShow, "weekly-2026-W38", null)]
+    [InlineData("report show weekly-2026-W35", BotCommandKind.ReportShow, "weekly-2026-W35", null)]
+    [InlineData("/report approve weekly-2026-W38 3", BotCommandKind.ReportApprove, "weekly-2026-W38", 3)]
+    [InlineData(
+        "/report request-changes weekly-2026-W38 3", BotCommandKind.ReportRequestChanges, "weekly-2026-W38", 3)]
     // 版番号なしの approve は「確認ボタンを出す前段」。実行可否はハンドラが版番号の有無で判断する。
     [InlineData("/report approve daily-2026-08-28", BotCommandKind.ReportApprove, "daily-2026-08-28", null)]
     [InlineData("/report approve daily-2026-08-28 2", BotCommandKind.ReportApprove, "daily-2026-08-28", 2)]
     [InlineData("/report request-changes daily-2026-08-28", BotCommandKind.ReportRequestChanges, "daily-2026-08-28", null)]
     [InlineData("/report request-changes daily-2026-08-28 3", BotCommandKind.ReportRequestChanges, "daily-2026-08-28", 3)]
-    [InlineData("  /REPORT  Approve  DAILY-2026-08-28  4 ", BotCommandKind.ReportApprove, "daily-2026-08-28", 4)]
+    // 動詞・副コマンドの大小文字は従来どおり吸収する（会話キーだけが原文のまま渡る。#835）。
+    [InlineData("  /REPORT  Approve  daily-2026-08-28  4 ", BotCommandKind.ReportApprove, "daily-2026-08-28", 4)]
+    [InlineData("  /REPORT  Show  weekly-2026-W38 ", BotCommandKind.ReportShow, "weekly-2026-W38", null)]
+    // 会話キーは照合せず**そのまま**渡す（推測で補正しない）。実在しないキーは報告書サービスが 404 で返す。
+    [InlineData("/report show DAILY-2026-08-28", BotCommandKind.ReportShow, "DAILY-2026-08-28", null)]
     public void report_は会話キーと版番号つきで解析される(
         string raw, BotCommandKind expectedKind, string expectedPeriodKey, int? expectedVersion)
     {
@@ -132,7 +142,8 @@ public class BotCommandParserTests
     [InlineData("/report approve daily-2026-08-28 0")]
     [InlineData("/report approve daily-2026-08-28 -1")]
     [InlineData("/report approve daily-2026-08-28 v2")]
-    // 🔴 IADR-0240 決定6: periodKey はそのまま URL パスへ載る。英小文字・数字・ハイフン以外は解析しない。
+    // 🔴 IADR-0240 決定6, #835: periodKey はそのまま URL パスへ載る。英数字・ハイフン以外は解析しない
+    // （大文字英字は週報キーのため許すが、記号は従来どおり一切許さない）。
     [InlineData("/report approve ../../secrets 1")]
     [InlineData("/report approve daily_2026 1")]
     [InlineData("/report approve daily/2026 1")]
