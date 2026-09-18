@@ -105,7 +105,10 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
     public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
     {
         // 終端を捏造しない（Accepted / PartiallyFilled は「まだ動く」）。
-        if (!OrderStatusLifecycle.IsTerminal(terminalStatus))
+        // #848 改定 2: 門は AbandonsUnfilledRemainder（取消・失効・拒否）であって IsTerminal ではない。
+        // **全量約定（Filled）は書かない**——集計が自然に 0 にするので得が無く、約定の記録より先に
+        // commit されると建玉が丸ごと空いて見える区間を作る（同じ株数を二度売れる）。
+        if (!OrderStatusLifecycle.AbandonsUnfilledRemainder(terminalStatus))
             return;
 
         // 相関する承認が無ければ書かない（AppendFill と同じ。知らない注文の終端は台帳の語彙に無い）。

@@ -82,7 +82,9 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
     public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
     {
         // 終端を捏造しない（Accepted / PartiallyFilled は「まだ動く」）。
-        if (!OrderStatusLifecycle.IsTerminal(terminalStatus))
+        // #848 改定 2: 門は AbandonsUnfilledRemainder（取消・失効・拒否）であって IsTerminal ではない。
+        // **全量約定（Filled）は書かない**（EfPortfolioLedgerStore と同一の意味論）。
+        if (!OrderStatusLifecycle.AbandonsUnfilledRemainder(terminalStatus))
             return;
 
         // 相関する承認が無ければ**書かない**（AddOrUpdate は無い鍵を作ってしまうので使わない）。

@@ -239,6 +239,22 @@ public class MoomooBrokerAdapterTests
         MoomooBrokerAdapter.MapState(MoomooOrderState.FilledAll).Should().Be(OrderStatus.Filled);
         MoomooBrokerAdapter.MapState(MoomooOrderState.Cancelled).Should().Be(OrderStatus.Cancelled);
         MoomooBrokerAdapter.MapState(MoomooOrderState.Failed).Should().Be(OrderStatus.Rejected);
+        // 🔴 T-10-407, #848: **不明は拒否へ畳まない**（非終端＝まだ動くものとして押さえを残す）。
+        MoomooBrokerAdapter.MapState(MoomooOrderState.Unknown).Should().Be(OrderStatus.Accepted);
+    }
+
+    // 🔴 T-10-407, #848: 不明な注文は**終端化しない**ので CompletedAt が立たず、約定追跡が引き直し続ける。
+    // Rejected へ畳むと終端になり、二度と引き直されないまま建玉の押さえだけが解ける。
+    [Fact]
+    public async Task 不明な状態の照会結果は終端にしない()
+    {
+        var client = new FakeClient { QueryResult = new("mo-unknown", MoomooOrderState.Unknown, 0, 0m) };
+
+        var found = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetOrderAsync("mo-unknown");
+
+        found!.Status.Should().Be(OrderStatus.Accepted);
+        found.Status.Should().NotBe(OrderStatus.Rejected);
+        found.CompletedAt.Should().BeNull();
     }
 
     [Fact]

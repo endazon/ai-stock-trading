@@ -312,16 +312,27 @@ public sealed class MoomooBrokerAdapter(
         _ => throw new ArgumentOutOfRangeException(nameof(side), side, "未対応の売買方向です。"),
     };
 
-    // moomoo 注文状態 → OrderStatus（安全側: 不明/失敗は Rejected）。
+    // moomoo 注文状態 → OrderStatus。
+    //
+    // 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 3）: **安全側は「不明を終端にしないこと」である。**
+    // 旧コメントは「安全側: 不明/失敗は Rejected」と書いていたが、これは事実と食い違っていた ——
+    // リスク管理の取引台帳が Rejected を**在庫解放の引き金**にした時点で、不明を Rejected へ畳むことは
+    // 「状態が分からないまま建玉の押さえを解く」（＝二重決済で意図しないショート化）になった。
+    // 確認できた失敗（Failed）だけを Rejected とし、不明（Unknown）と**名前を付けられない状態（既定）**は
+    // 非終端（Accepted）へ倒す。約定追跡（OrderFillPoller）が非終端を引き直し続け、本当の状態へ解決する。
     public static OrderStatus MapState(MoomooOrderState state) => state switch
     {
         MoomooOrderState.Submitting or MoomooOrderState.Submitted => OrderStatus.Accepted,
         MoomooOrderState.Filling or MoomooOrderState.FilledPart => OrderStatus.PartiallyFilled,
         MoomooOrderState.FilledAll => OrderStatus.Filled,
         MoomooOrderState.Cancelled => OrderStatus.Cancelled,
-        _ => OrderStatus.Rejected,
+        // 証券会社が受理しなかったことが**分かっている**状態。在庫解放の対象のままにする
+        //（発注拒否で押さえが解けるのは #848 の射程内であり、外すと 2 つ目の恒久ロックを作る）。
+        MoomooOrderState.Failed => OrderStatus.Rejected,
+        _ => OrderStatus.Accepted,
     };
 
+    // #848: Unknown は**終端に入れない**（CompletedAt を立てない・約定追跡が引き直す）。
     private static bool IsTerminal(MoomooOrderState state) =>
         state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed;
 

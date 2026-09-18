@@ -182,3 +182,143 @@ EF 実装と InMemory 実装の両方へ同じ観点を写像する（既存の
 - **訂正（`OrderModified`）による減量は反映しない。** 訂正は終端ではないため、承認数量のまま処理中に数える
   （多めに押さえる＝安全側）。
 - `TerminalStatus` は診断専用で、判定には使わない。使いたくなったら**巻き戻りの検討が先**である。
+
+---
+
+## ［2026-09-19 追記 / #848］監査ブロッキング 2 件の是正（PR #851 の初版に対する指摘）
+
+フェーズ末監査が本 PR の初版（head `0a68c0bf`）に**ブロッキング 2 件**を出した。どちらも
+**fail-safe の向きが反転していた**箇所であり、本追記でその是正を決める。**上の決定 2・決定 4 を
+部分的に改める**（改めた箇所は各項に明記する）。
+
+### B1: 終端の記録が約定の記録より**前**にあり、その間だけ建玉が丸ごと空いて見える
+
+**指摘（実測）**: 全量約定した決済（`OrderExecuted(Status=Filled, FilledQuantity=100)`）の処理中、
+`MarkTerminal` が commit 済みで `AppendFill` が未 commit の区間で「建玉 − 処理中」が **100（建玉全量）**になる。
+
+```
+[AppendFill 直前] 建玉=100 処理中=0 利用可能=100
+対照（約定を先に書く順序） 利用可能=0
+```
+
+その瞬間に手仕舞い要求が入ると**同じ 100 株をもう一度売れる**（＝本仕様書が塞いだはずのショート化）。
+`EfPortfolioLedgerStore` では `MarkTerminal` と `AppendFill` が**別々の `SaveChanges`** であるため、
+この区間は実在する。さらに**非レース版**も再現する —— 矛盾したイベント（`Status=Filled, FilledQuantity=0`）
+では `TerminalAt` だけが立ち、**恒久的に**在庫が丸ごと戻る。
+
+**原因の核**: 在庫解放に使う終端へ `Filled` を入れたこと。**`Filled` を終端に含める必要がそもそも無い** ——
+全量約定した承認は `max(0, 承認数量 − 約定累計) = 0` で**自然に 0 になる**（決定 3 の式そのもの）。
+得るものが無いまま窓を作っていた。
+
+**是正（決定 2 の改定・両方を行う）**:
+
+1. **在庫解放に使う終端から `Filled` を外す。** 終端判定の単一情報源（`Domain.OrderStatusLifecycle`）へ
+   **第 2 の述語 `AbandonsUnfilledRemainder`（`Cancelled` / `Rejected` / `Expired`）** を足し、
+   `MarkTerminal` はこれで門を張る。`IsTerminal`（`Filled` を含む）は**書き換えない** ——
+   `OrderActivityProjection`（IADR-0067・相場操縦検知の生存区間）は `Filled` を終端として必要とするためであり、
+   **共有関数ではなく呼び出し側で絞る**。
+2. **`MarkTerminal` を `AppendFill` の後へ移す**（`OrderExecutedLedgerHandler`）。
+   決定 4 が「`FilledQuantity <= 0` の早期 return より**前**へ置く」としていた形は**採らない**。
+   代わりに**早期 return そのものを畳み**、「約定があるときだけ `AppendFill` → そのあと必ず `MarkTerminal`」
+   の順にする。約定 0 の取消（#848 の事象）が捨てられないことは変わらず、
+   **約定が台帳に載る前に在庫が解放される区間が消える**。
+
+> 🔴 **1 だけでも 2 だけでも塞がらない。** 1 だけなら `Cancelled` と部分約定が同じイベントで届いたときに
+> 同じ区間が残り、2 だけなら矛盾イベント（`Filled` かつ約定 0）の恒久的な誤解放が残る。**両方行う。**
+
+### B2: 「状態が不明」が `Rejected` に畳まれ、不明のまま在庫が解放される
+
+**指摘（実測）**: #848 の受け入れ基準 2・本仕様書・PR 本文はいずれも「**終端だと確認できたものだけ除く／
+不明は処理中のまま**」と書いているが、**上流の写像が不明を `Rejected` に倒しているため成立していなかった**。
+
+```
+OpenD=-1 → Failed → Rejected → 終端=True   ← NONE（不明）
+OpenD=4  → Failed → Rejected → 終端=True   ← TIMEOUT（OpenD 定義上「結果未知」）
+OpenD=99 → Failed → Rejected → 終端=True   ← 将来の新コード
+```
+
+この写像（`MMApiMoomooTradeClient.MapState` の `_ => Failed`・`MoomooBrokerAdapter.MapState` の
+`_ => Rejected`）は**本 PR 以前は無害**だった —— 台帳に約定を載せないだけだったからである。
+**`Rejected` が在庫解放の引き金になった瞬間に、この既定の向きが fail-safe から fail-open へ反転した。**
+`MoomooBrokerAdapter` のコメント「安全側: 不明/失敗は Rejected」は、この時点で事実と食い違っていた。
+
+**是正（決定 2 の補い・写像の側で直す）**:
+
+- **`MoomooOrderState` に `Unknown` を足す**（発注執行サービス内の正規化列挙であり、サービス間契約ではない）。
+  `MMApiMoomooTradeClient.MapState(int)` を **`3` / `21` / `22` / `23` → `Failed`**（確認できた失敗）、
+  **`-1`（NONE） / `4`（TIMEOUT） / それ以外の未知コード → `Unknown`** へ分ける。
+- `MoomooBrokerAdapter.MapState` は **`Unknown` → `OrderStatus.Accepted`**（＝非終端・まだ動く）とする。
+  既定（`_`）も `Accepted` へ倒す —— **名前を付けられない状態で在庫を解放しない**。
+  `Failed` → `Rejected` は**変えない**（**`Rejected` 自体は在庫解放の対象のままである**。
+  発注拒否での解放は #848 の射程内であり、ここを外すと取り消しに続く 2 つ目の恒久ロックを作る）。
+- **`12` / `13`（取消進行中）を非終端（`Submitted`）へ倒している既存の配慮は壊さない**（回帰として固定する）。
+- 副次的に**正しい方向へ揃う**: `OrderFillPoller` は非終端の記録を引き直し続けるため、
+  「不明」は次の巡回で**本当の状態に解決される**。`Rejected` へ畳むと終端化して二度と引き直されなかった。
+
+**`OrderStatus` へ `Unknown` を足す案は採らない。** サービス間契約（`OrderStatus`）の値を増やすと、
+通知の文面・監査・射影・ペーパーアダプタまで面が広がる。**不明を落とさない**という目的は、
+発注執行サービス内の正規化列挙（`MoomooOrderState`）で分けるだけで達せられる。
+
+### 追加する受け入れ基準
+
+6. **約定が台帳に載る前に在庫が解放されない。** 全量約定の処理中、`AppendFill` の**直前**に観測しても
+   処理中の決済は承認数量のままである（B1。`Filled` は在庫解放の終端ではない）。
+7. **不明な状態では在庫が解放されない。** OpenD の `-1` / `4` / 未知コードは `Rejected` にならず、
+   在庫解放の引き金にならない。`3` / `21` / `22` / `23`（確認できた失敗）は従来どおり `Rejected` であり、
+   `12` / `13`（取消進行中）は従来どおり非終端である（B2）。
+
+### 追加するテスト（`T-10-406` から採番。405 以下は本 PR で使用済み）
+
+| ID | 固定すること |
+| --- | --- |
+| **T-10-406** | 🔴 **約定が台帳に載る前に在庫が解放されない**。`AppendFill` の直前に観測した処理中の決済が承認数量のままであること／`MarkTerminal(Filled)` は無視されること／矛盾イベント（`Filled` かつ約定 0）で在庫が戻らないこと |
+| **T-10-407** | 🔴 **不明な状態では在庫が解放されない**。OpenD `-1` / `4` / `99` は `Unknown` → `Accepted`（非終端）であり `Rejected` にならない／`3` / `21` / `22` / `23` は `Rejected` のまま／`12` / `13` は非終端のまま |
+| T-10-404（追加ケース） | 保護レグ（`ProtectiveStopPlaced` 由来の承認）でも終端が記録され、処理中から外れる（`order_activity` に行が無い母集合。決定「`order_activity` は読まない」の実測） |
+
+### 非ブロッキングの受け止め
+
+- **保護レグ経路のテスト**を T-10-404 に足した（上表）。監査は自作プローブで「実際には動く」ことを確認済みで、
+  欠けていたのは**固定**である。
+- **`TerminalAt` という同名列が `order_activity` と `approved_orders` の 2 か所にでき、意味論が違う。**
+  新しい方（`approved_orders`）は**単調**（一度立ったら動かさない）、既存の方（`order_activity`）は
+  `EfOrderActivityStore.RecordCancellation` が**無条件に上書き**する。**同じ名前で違う規約**であることを
+  IADR-0117 の追記へ明記した（どちらかへ寄せる改修は本追記の射程外。射影の意味論を変えると
+  相場操縦検知の入力が動く）。
+
+### 母集合（本追記の是正のために引き直したもの）
+
+走査（2026-09-19・`git rev-parse --is-shallow-repository` ＝ `false`）:
+
+- 軸 1: `grep -rn "IsTerminal" backend --include=*.cs`（終端述語の全呼び出し）
+- 軸 2: `grep -rn "MarkTerminal" backend docs .ai-context`（新設 API の全参照・文書含む）
+- 軸 3: `grep -rn "早期 return" backend docs .ai-context`（**誤りの側の文字列**。決定 4 が定めた順序を
+  そのまま書き写した箇所を、順序を変える前に全部引く）
+- 軸 4: `grep -rn "OrderStatusLifecycle\|MapState" backend --include=*.cs`
+
+| 箇所 | 扱い |
+| --- | --- |
+| `Domain/OrderStatusLifecycle.cs` | **変更**（`AbandonsUnfilledRemainder` を追加。`IsTerminal` は不変） |
+| `Infrastructure/Persistence/EfPortfolioLedgerStore.cs` / `InMemoryPortfolioLedgerStore.cs` | **変更**（`MarkTerminal` の門を差し替え） |
+| `Features/RiskManagement/IPortfolioLedgerStore.cs` | **変更**（`MarkTerminal` の契約 doc） |
+| `Infrastructure/Steps/OrderExecutedLedgerHandler.cs` | **変更**（順序を入れ替え・コメントを是正） |
+| `Infrastructure/Persistence/OrderActivityProjection.cs` | 変更なし —— `IsTerminal` へ委譲したまま（`Filled` は射影側の終端） |
+| `Infrastructure/ExternalServices/IMoomooTradeClient.cs` | **変更**（`MoomooOrderState.Unknown`） |
+| `Infrastructure/ExternalServices/MMApiMoomooTradeClient.cs` | **変更**（OpenD コードの写像を「確認できた失敗」と「不明」に分ける） |
+| `Infrastructure/ExternalServices/MoomooBrokerAdapter.cs` | **変更**（`Unknown` → `Accepted`・既定を反転・誤ったコメントの是正） |
+| `Tests/.../MMApiMoomooTradeClientMappingTests.cs` / `MoomooBrokerAdapterTests.cs` | **変更**（`4` / `-1` を `Failed` と固定していた既存の主張を是正し T-10-407 を足す） |
+| `Tests/.../PortfolioLedgerInFlightCloseTests.cs` / `EfPortfolioLedgerInFlightCloseTests.cs` / `PortfolioLedgerConsumersTests.cs` | **変更**（T-10-406・T-10-404 の保護レグ） |
+| `docs/tests/FR-10_risk-controls-tests.md` | **変更**（T-10-406 / T-10-407 と T-10-404 の記述の是正） |
+| `.ai-context/adr/IADR-0117_*.md` ＋ `.ai-context/adr/README.md` | **変更**（追記・索引行） |
+
+除外した理由:
+
+- `Shared.Infrastructure/.../PaperBrokerAdapter.cs` の終端述語は**内蔵 paper の自前定義**であり、
+  ブローカー照会の「不明」という概念を持たない（擬似約定は必ず確定する）。本件の母集合に入らない。
+- `OrderExecutionService/Domain/OrderStatusLifecycle.cs` は**発注執行側の同名の純関数**であり、
+  約定追跡の「引き直しを止めてよいか」を判定する。`Filled` はそこでは正しく終端である（引き直す意味が無い）。
+  在庫解放とは別の問い。
+- 変更に含めた（当初「変更不要」と判断しかけたが、軸 3 の走査で捕まえた）: `docs/functional/FR-10_risk-controls.md`
+  の**式そのものは変わらない**（「終端になったと確認できていない承認だけを数える」）が、その下の散文が
+  終端を「**取消・失効・拒否・全量約定**」と列挙しており、改定 2 で**誤りになった**。是正した。
+  🔴 **これが規則 10（是正のたびに「この変更で新たに誤りになる自分の記述」を引き直す）の実例である** ——
+  「終端の定義を変える」という変更は、**変更前の語（「全量約定」）で引かないと捕まらない**。

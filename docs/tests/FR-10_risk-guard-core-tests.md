@@ -145,7 +145,7 @@ issues: [#11, #12, #25, #257, #26, #27, #270, #28, #29, #292, #30, #32, #364, #8
 | T-10-84 | **kill switch 起動中・一時停止中でも手仕舞いできる**（リスク統制の本文） | `kill_switch_起動中でも手仕舞いできる`／`一時停止中でも手仕舞いできる`／`決済サービスは統制ストアに依存しない`（`PositionCloseEndpointTests`） | 自動 |
 | T-10-85 | 決済操作は利用者のみ（サービストークンには開かない） | `未認証は401`／`サービスロールでは403`（同上） | 自動 |
 | T-10-86 | 「誰が・なぜ」決済したかが監査へ残る | `要求イベントに操作者と理由と数量が載る`／`要求イベントは承認と同一のDecisionIdで相関する`（`PositionCloseServiceTests`）／`PositionCloseRequested_は操作者と理由を残し注文と同一相関になる`（`AuditEntryFactoryTests`） | 自動 |
-| T-10-87 | 処理中決済の集計が EF / InMemory の両実装で同一意味論 | `PortfolioLedgerInFlightCloseTests`（19 ケース）／`EfPortfolioLedgerInFlightCloseTests`（20 ケース） | 自動 |
+| T-10-87 | 処理中決済の集計が EF / InMemory の両実装で同一意味論 | `PortfolioLedgerInFlightCloseTests`（21 ケース）／`EfPortfolioLedgerInFlightCloseTests`（22 ケース） | 自動 |
 
 ### 判断由来の決済＝AI の出口（取引判断との接点）
 

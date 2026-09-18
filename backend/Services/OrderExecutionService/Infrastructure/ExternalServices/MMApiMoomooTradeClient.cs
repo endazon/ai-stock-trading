@@ -639,6 +639,12 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     };
 
     // OpenD OrderStatus（TrdCommon.OrderStatus）を moomoo アダプタの状態へ写像する（SDK 非依存・単体テスト対象）。
+    //
+    // 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 3）: **「確認できた失敗」と「不明」を分ける。**
+    // 従来は既定（`_`）が Failed であり、NONE（-1）・TIMEOUT（4。OpenD 定義上「結果未知」）・本実装が知らない
+    // 新コードまで Failed → OrderStatus.Rejected（終端）へ畳んでいた。拒否がリスク管理の**在庫解放の引き金**に
+    // なった時点で、この既定は fail-safe から fail-open へ反転した（状態が分からないまま建玉の押さえを解く＝
+    // 二重決済で意図しないショート化）。**知らないコードは Unknown へ倒す。**
     public static MoomooOrderState MapState(int openDStatus) => openDStatus switch
     {
         0 or 1 or 2 => MoomooOrderState.Submitting,      // Unsubmitted / WaitingSubmit / Submitting
@@ -647,7 +653,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         11 => MoomooOrderState.FilledAll,                // Filled_All
         12 or 13 => MoomooOrderState.Submitted,          // Cancelling_*（取消進行中・まだ有効）
         14 or 15 or 24 => MoomooOrderState.Cancelled,    // Cancelled_Part / Cancelled_All / FillCancelled
-        _ => MoomooOrderState.Failed,                    // SubmitFailed / TimeOut / Failed / Disabled / Deleted / Unknown
+        3 or 21 or 22 or 23 => MoomooOrderState.Failed,  // SubmitFailed / Failed / Disabled / Deleted（**確認できた失敗**）
+        _ => MoomooOrderState.Unknown,                   // NONE(-1) / TimeOut(4) / 未知の新コード（**結果が分からない**）
     };
 
     // ---- 応答相関 ----

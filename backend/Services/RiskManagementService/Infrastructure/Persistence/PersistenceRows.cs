@@ -125,7 +125,12 @@ public sealed class ApprovedOrderRow
     public DateTimeOffset ApprovedAt { get; set; }
 
     /// <summary>
-    /// FR-10, UC-06, #848, IADR-0117: この承認が<b>終端になったと確認できた時刻</b>（取消・失効・拒否・全量約定）。
+    /// FR-10, UC-06, #848, IADR-0117: この承認の<b>未約定残が二度と約定しないと確認できた時刻</b>
+    /// （取消・失効・拒否）。
+    /// <para>
+    /// 🔴 <b>全量約定は含めない</b>（改定 2）——差し引きが自然に 0 にするので含める得が無く、
+    /// 約定の記録より先に commit されると建玉が丸ごと空いて見える区間ができる。
+    /// </para>
     /// <para>
     /// 🔴 <b><c>null</c> ＝終端だと確認できていない</b>（列追加前の行・終端がまだ届いていない行）。
     /// 「終端でない」ではない。処理中の決済の集計は <c>null</c> を<b>処理中として数える</b>（fail-safe。
@@ -140,7 +145,7 @@ public sealed class ApprovedOrderRow
     public DateTimeOffset? TerminalAt { get; set; }
 
     /// <summary>
-    /// FR-10, UC-06, #848: 終端になったときの注文状態（<b>診断用</b>）。取消か・失効か・拒否か・全量約定かが
+    /// FR-10, UC-06, #848: 終端になったときの注文状態（<b>診断用</b>）。取消か・失効か・拒否かが
     /// DB から読めること自体に価値がある（#848 は「取り消したのに在庫が戻らない」の切り分けに 30 分を要した）。
     /// <b>判定には使わない</b>（<see cref="TerminalAt"/> を見る）。<c>null</c> ＝未確認。
     /// </summary>

@@ -91,10 +91,11 @@ public interface IPortfolioLedgerStore
     int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter);
 
     /// <summary>
-    /// FR-10, UC-06, #848, IADR-0117（2026-09-19 追記）: 承認済み注文が<b>終端になった</b>ことを台帳へ記録する。
+    /// FR-10, UC-06, #848, IADR-0117（2026-09-19 追記）: 承認済み注文の<b>未約定残が二度と約定しなくなった</b>
+    /// ことを台帳へ記録する。
     /// <para>
-    /// 取消・失効・拒否・全量約定は「残りの数量が二度と約定しない」ことを意味する。これを記録しないと、
-    /// 取り消された手仕舞いが <see cref="GetInFlightCloseQuantity"/> の窓（既定 30 分）のあいだ建玉をロックし続け、
+    /// 取消・失効・拒否はいずれもそれを意味する。これを記録しないと、取り消された手仕舞いが
+    /// <see cref="GetInFlightCloseQuantity"/> の窓（既定 30 分）のあいだ建玉をロックし続け、
     /// <b>下落局面で手仕舞えない</b>（#848 の実害）。
     /// </para>
     /// <para>
@@ -102,9 +103,18 @@ public interface IPortfolioLedgerStore
     /// <list type="bullet">
     /// <item>非終端の <paramref name="terminalStatus"/>（<c>Accepted</c> / <c>PartiallyFilled</c>）は<b>無視する</b>
     /// ——終端を捏造しない。</item>
+    /// <item>🔴 <b>全量約定（<c>Filled</c>）も無視する</b>（改定 2）。全量約定した承認は
+    /// <c>max(0, 承認数量 − 約定累計)</c> が<b>自然に 0 にする</b>ので記録する得が無い一方、
+    /// <b>約定の記録より先に commit されると建玉が丸ごと空いて見える区間</b>ができ、その瞬間に同じ株数を
+    /// もう一度売れてしまう。判定に使う述語は <c>OrderStatusLifecycle.AbandonsUnfilledRemainder</c> であり、
+    /// 射影の <c>IsTerminal</c>（<c>Filled</c> を含む）ではない。</item>
     /// <item>相関する承認が無ければ<b>何もしない</b>（<c>AppendFill</c> と同じ。知らない注文の終端は書けない）。</item>
     /// <item>既に終端が記録されていれば<b>何もしない</b>（単調・冪等。再送・順序前後で時刻が動かない）。</item>
     /// </list>
+    /// </para>
+    /// <para>
+    /// 🔴 <b>呼び出し側の順序</b>: 同じイベントが約定も運ぶ場合は<b>先に <see cref="AppendFill"/> を済ませてから</b>
+    /// 呼ぶ。逆順にすると、在庫を返してから約定を建玉へ反映するまでの区間で二重決済の窓が開く。
     /// </para>
     /// </summary>
     void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);

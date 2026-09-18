@@ -242,6 +242,39 @@ public class EfPortfolioLedgerInFlightCloseTests
             .GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
     }
 
+    // 🔴 T-10-406, #848（監査ブロッキング B1・否定形）: **全量約定は在庫解放の終端ではない**
+    //（InMemory 実装の同名テストと同一の観点）。EF 実装では MarkTerminal と AppendFill が別々の
+    // SaveChanges であるため、Filled を終端に入れると建玉が丸ごと空いて見える区間が実在する。
+    [Fact]
+    public void 全量約定の終端は記録せず処理中のままにする()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        store.MarkTerminal(id, OrderStatus.Filled, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+
+        // 約定が載れば自然に 0 になる（＝Filled を終端に入れる必要がそもそも無い）。
+        store.AppendFill(id, "ORD-1", 60, 21m, Now.AddMinutes(-1));
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-406, #848: 全量約定を無視しても門を閉じ切らない —— そのあとに本物の終端（取消）が来れば記録する。
+    [Fact]
+    public void 全量約定を無視した後でも本物の終端は記録する()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        store.MarkTerminal(id, OrderStatus.Filled, Now.AddMinutes(-2));
+        store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
     [Fact]
     public void 別コンテキストで読み直しても同じ結果になる()
     {

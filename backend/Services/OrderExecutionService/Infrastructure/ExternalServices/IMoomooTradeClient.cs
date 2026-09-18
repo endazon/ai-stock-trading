@@ -146,5 +146,23 @@ public enum MoomooOrderState
     FilledPart,
     FilledAll,
     Cancelled,
+
+    /// <summary>
+    /// <b>確認できた失敗</b>（OpenD の SubmitFailed / Failed / Disabled / Deleted）。証券会社が受理しなかった
+    /// ことが分かっている状態であり、<c>OrderStatus.Rejected</c> へ写る。
+    /// </summary>
     Failed,
+
+    /// <summary>
+    /// 🔴 FR-05, FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 3）: <b>状態が不明</b>
+    /// （OpenD の NONE〈-1〉・TIMEOUT〈4〉・本実装が知らない新コード）。<b><c>Failed</c> と混ぜない。</b>
+    /// <para>
+    /// 混ぜると <c>OrderStatus.Rejected</c>（＝終端）へ畳まれ、リスク管理の取引台帳が
+    /// <b>状態が不明なまま建玉の押さえを解く</b>（二重決済で意図しないショート化）。#848 以前は
+    /// 「台帳に約定を載せないだけ」で無害だったが、拒否が在庫解放の引き金になった時点で
+    /// <b>fail-safe の向きが反転した</b>。不明は非終端（<c>OrderStatus.Accepted</c>）へ写し、
+    /// 約定追跡（<c>OrderFillPoller</c>）に引き直させて本当の状態へ解決させる。
+    /// </para>
+    /// </summary>
+    Unknown,
 }

@@ -216,4 +216,35 @@ public class PortfolioLedgerInFlightCloseTests
 
         ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
     }
+
+    // 🔴 T-10-406, #848（監査ブロッキング B1・否定形）: **全量約定は在庫解放の終端ではない。**
+    // 入れても得が無く（未約定残は自然に 0 になる）、約定の記録より先に commit されると建玉が
+    // 丸ごと空いて見える区間ができる。矛盾したイベント（Filled かつ約定 0）では恒久的に戻ってしまう。
+    [Fact]
+    public void 全量約定の終端は記録せず処理中のままにする()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        ledger.MarkTerminal(id, OrderStatus.Filled, Now.AddMinutes(-1));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+
+        // 約定が載れば自然に 0 になる（＝Filled を終端に入れる必要がそもそも無い）。
+        ledger.AppendFill(id, "order-1", 60, 21m, Now.AddMinutes(-1));
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-406, #848: 全量約定を無視しても門を閉じ切らない —— そのあとに本物の終端（取消）が来れば記録する。
+    [Fact]
+    public void 全量約定を無視した後でも本物の終端は記録する()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        ledger.MarkTerminal(id, OrderStatus.Filled, Now.AddMinutes(-2));
+        ledger.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
 }
