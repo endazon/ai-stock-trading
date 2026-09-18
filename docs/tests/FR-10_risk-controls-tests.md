@@ -10,8 +10,8 @@ author: endazon (with Claude Code)
 ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027, ADR-0040]
 iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346, IADR-0347]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_848_terminal-close-approvals-release-inventory]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #821, #829, #844, #848]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_848_terminal-close-approvals-release-inventory, 20260919_846_entry-and-stop-price-precision]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #821, #829, #844, #846, #848]
 -->
 
 
@@ -683,6 +683,12 @@ T-10-123）・空売り統制（T-10-170）・3 統制（T-10-176）は**別々�
 | T-10-395 | 発火価格 332.35・ずらし 1%（稼働環境の実測値） | 代替の保護レグを発注する | 指値 329.02 を送る（丸めないと価格の刻みで拒否される） | 単体 | 自動 |
 | T-10-396 | 発火価格が刻みを外れている | 同上 | 発火価格も丸めて送る（指値だけ直しても同じ拒否になる） | 単体 | 自動 |
 | T-10-397 | 1 ドル近傍の銘柄 | 送信前に刻みへ丸める | 桁は基準価格で一度だけ決め、指値にも同じ桁を使う（桁が混ざると同じ拒否が再発する） | 単体 | 自動 |
+| T-10-420 | エントリーの指値 | 送信前に刻みへ丸める | **不利にならない側**へ丸める（買いは切り下げ・売りは切り上げ）。保護レグの指値（約定しやすい側）とは向きが逆 | 単体 | 自動（対の否定形） |
+| T-10-421 | 同上（市場・価格帯・向きの組み合わせ） | 同上 | 桁は市場と価格帯で決まる（米国 2 桁・1 ドル未満 4 桁・日本 0 桁）。1 ドルちょうど・刻み未満・極端に大きい価格も固定 | 単体 | 自動（境界値） |
+| T-10-422 | **実弾でも使う経路**の発火価格（補助価格）が刻みを外れている | 既定の保護逆指値を発注する | 発火価格を**早く発火する側**へ丸めて送る（売りの保護は切り上げ・買戻しの保護は切り下げ） | 単体 | 自動 |
+| T-10-423 | エントリーの指値が刻みを外れている（実測 329.0265） | 承認済みの新規建てを発注する | 指値を不利にならない側へ丸めて送る（買い 329.02・売り 329.03） | 単体 | 自動 |
+| T-10-424 | 市場・価格帯の境界と極端な価格（売り／買い） | 同上 | 送信値が市場の刻みに収まる（米国 2 桁・1 ドル未満 4 桁・日本 0 桁） | 単体 | 自動（境界値） |
+| T-10-425 | 丸めると 0 になる指値・発火価格 | 発注する | **送信せず終端拒否**（丸めた後の値を既存の発注前検証に掛ける。1 刻みを足して 0 を避けない） | 単体 | 自動（否定形） |
 
 <!-- trace-table:
 row1: FR-10, FR-05, UC-02

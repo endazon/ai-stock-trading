@@ -43,6 +43,7 @@ public sealed class MoomooBrokerAdapter(
     // fail-safe で握りつぶす例外も障害切り分けのためログする（既定 NullLogger でテスト時は無害）。
     private readonly ILogger<MoomooBrokerAdapter> _logger = logger ?? NullLogger<MoomooBrokerAdapter>.Instance;
 
+    // #846: 指値は送信前に市場の刻みへ丸める（`PlaceCoreAsync`）。向きは**不利にならない側**（買いは切り下げ）。
     public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken cancellationToken = default) =>
         PlaceCoreAsync(intent, remark: null, cancellationToken);
 
@@ -52,6 +53,7 @@ public sealed class MoomooBrokerAdapter(
         PlaceCoreAsync(intent, remark: MoomooClientOrderId.From(decisionId), cancellationToken);
 
     // FR-10, #331, IADR-0210: 保護逆指値（OrderType_Stop・AuxPrice=発火価格）。DecisionId を remark へ伝播する。
+    // #846: 発火価格は送信前に市場の刻みへ丸める（`PlaceCoreAsync`。**実弾でも使う経路**）。
     public Task<BrokerOrder> PlaceStopOrderAsync(
         OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken cancellationToken = default) =>
         PlaceCoreAsync(closeIntent, MoomooClientOrderId.From(decisionId), cancellationToken,
@@ -123,14 +125,32 @@ public sealed class MoomooBrokerAdapter(
         return (MoomooOrderKind.StopLimit, limitPrice, null);
     }
 
+    // FR-05, FR-10, ADR-0016, #846, IADR-0210: **送る値を市場の刻みへ丸める唯一の点**（S0・エントリー・成行）。
+    // S3 は `PlaceAlternativeStopOrderAsync` が自前で丸めてから `PlaceWithRejectionDetailAsync` を直接呼ぶため
+    // ここは通らない——二重に丸めて #845 が決めた S3 の向きを壊すことがない。
+    //
+    // 🔴 丸めた**後**の値を発注前検証へ渡す。刻みに満たない価格は 0 になり、従来どおり送信せず Rejected になる
+    //（1 刻みを足して 0 を避けない。決定が求めていない価格を捏造しない＝#845 のトレール幅と同じ規律）。
+    // 成行（Market）は価格も発火価格も注文へ載せないため、丸める値が無い。
     private async Task<BrokerOrder> PlaceCoreAsync(
         OrderIntent intent,
         string? remark,
         CancellationToken cancellationToken,
         MoomooOrderKind kind = MoomooOrderKind.Limit,
-        decimal? triggerPrice = null) =>
-        (await PlaceWithRejectionDetailAsync(intent, remark, cancellationToken, kind, triggerPrice)
+        decimal? triggerPrice = null)
+    {
+        // エントリー（および指値の決済）は**不利にならない側**＝買いは切り下げ・売りは切り上げ。
+        var sentIntent = kind == MoomooOrderKind.Limit && intent.Price > 0m
+            ? intent with { Price = MoomooPriceRounding.RoundEntryLimit(intent.Market, intent.Side, intent.Price) }
+            : intent;
+        // S0 の発火価格（AuxPrice）は**早く発火する側**＝保護が緩む側へ倒さない（#845 の S3 と同じ向き）。
+        var sentTrigger = kind == MoomooOrderKind.Stop && triggerPrice is { } trigger and > 0m
+            ? MoomooPriceRounding.RoundTrigger(intent.Market, intent.Side, trigger)
+            : triggerPrice;
+
+        return (await PlaceWithRejectionDetailAsync(sentIntent, remark, cancellationToken, kind, sentTrigger)
             .ConfigureAwait(false)).Order;
+    }
 
     // #821, IADR-0347: 発注 1 回と、拒否だったときの理由。理由は S3（代替注文種別）だけが読み出す
     // ——従来経路（PlaceCoreAsync）は Order だけを取り出すため、挙動は 1 バイトも変わらない。
