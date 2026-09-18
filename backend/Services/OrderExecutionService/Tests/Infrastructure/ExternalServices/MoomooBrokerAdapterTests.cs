@@ -196,6 +196,94 @@ public class MoomooBrokerAdapterTests
         order.Status.Should().Be(OrderStatus.Filled);
     }
 
+    // --- FR-05, FR-10, ADR-0016, #846, IADR-0210: 送信価格を市場の刻みへ丸める（S0・エントリー） ---
+    //
+    // #845 は代替レグ（S3）だけを丸めた。**S0 の発火価格とエントリーの指値は丸めを通らない**経路として残っており、
+    // #846 の監査プローブが稼働環境で次を実測した（プローブは削除済み）。
+    //   P4 S0(OrderType_Stop): Kind=Stop Price=332.3512 Trigger=332.3512
+    //   P5 entry(Limit):       Kind=Limit Price=329.0265
+    // 損切り幅は LLM の JSON をそのまま読む値（桁の制約はプロンプトにもパーサにも無い）であり、
+    // 同じ `retType=-1 The precision of Price…` を**実弾の経路でも**踏み得る。
+
+    // T-10-422: S0 の発火価格は**早く発火する側**へ丸めて送る（#845 と同じ規律＝保護が緩む側へ倒さない）。
+    [Theory]
+    [InlineData(TradeSide.Sell, 332.3512, 332.36)] // ロングの保護（決済＝売り）は切り上げ
+    [InlineData(TradeSide.Buy, 332.3512, 332.35)]  // ショートの保護（決済＝買戻し）は切り下げ
+    public async Task S0の発火価格は市場の刻みへ丸めて送る(TradeSide closeSide, decimal trigger, decimal expected)
+    {
+        var client = new FakeClient { Result = new("mo-stop", MoomooOrderState.Submitted, 0, 0m) };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        await adapter.PlaceStopOrderAsync(
+            Intent(side: closeSide) with { PositionEffect = PositionEffect.Close }, trigger, Guid.NewGuid());
+
+        client.LastRequest!.Kind.Should().Be(MoomooOrderKind.Stop);
+        client.LastRequest.TriggerPrice.Should().Be(expected);
+    }
+
+    // T-10-423: エントリーの指値は**不利にならない側**へ丸めて送る（買いは切り下げ・売りは切り上げ）。
+    // 🔴 保護レグ（S3 の指値＝約定しやすい側）とは**向きが逆**である。保護レグは約定しなければ保護にならないが、
+    // エントリーは約定しなくても損をしない。一方、意図より悪い価格で建つと
+    // 「エントリー − 損切りライン」の実幅が広がり、サイジングが前提にした 1 株あたりリスクを超える。
+    [Theory]
+    [InlineData(TradeSide.Buy, 329.0265, 329.02)]
+    [InlineData(TradeSide.Sell, 329.0265, 329.03)]
+    public async Task エントリーの指値は市場の刻みへ丸めて送る(TradeSide side, decimal price, decimal expected)
+    {
+        var client = new FakeClient();
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        await adapter.PlaceOrderAsync(Intent(price: price, side: side), Guid.NewGuid());
+
+        client.LastRequest!.Kind.Should().Be(MoomooOrderKind.Limit);
+        client.LastRequest.Price.Should().Be(expected);
+    }
+
+    // T-10-424: 市場と価格帯の境界（米国 2 桁・1 ドル未満は 4 桁・日本は円単位）と極端な価格。
+    // **実弾に当たる経路**のため、向き（売り／買い）も含めてここで固定する。
+    [Theory]
+    [InlineData(Market.UnitedStates, TradeSide.Buy, 0.98765, 0.9876)]        // 1 ドル未満＝サブペニー（4 桁）
+    [InlineData(Market.UnitedStates, TradeSide.Sell, 0.98765, 0.9877)]
+    [InlineData(Market.UnitedStates, TradeSide.Buy, 1.005, 1.00)]            // 1 ドルちょうど以上は 2 桁（境界）
+    [InlineData(Market.Japan, TradeSide.Buy, 1234.56, 1234)]                 // 日本株は円単位
+    [InlineData(Market.Japan, TradeSide.Sell, 1234.56, 1235)]
+    [InlineData(Market.UnitedStates, TradeSide.Buy, 999999.999, 999999.99)]  // 極端に大きい価格
+    [InlineData(Market.UnitedStates, TradeSide.Sell, 0.00005, 0.0001)]       // 極端に小さい価格（刻みの半分）
+    public async Task 刻みの境界と極端な価格でも送信値は刻みに収まる(
+        Market market, TradeSide side, decimal price, decimal expected)
+    {
+        var client = new FakeClient();
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        await adapter.PlaceOrderAsync(Intent(price: price, market: market, side: side), Guid.NewGuid());
+
+        client.LastRequest!.Price.Should().Be(expected);
+    }
+
+    // T-10-425: 丸めた**後**の値を既存の発注前検証へ渡す。刻みに満たない価格は 0 になり、従来どおり送信せず Rejected。
+    // 🔴 ここで 1 刻みを足して 0 を避けない——決定が求めていない価格を捏造することになる
+    //（#845 のトレール幅と同じ規律。fail-closed は既存の検証が担う）。
+    [Fact]
+    public async Task 丸めて0になる価格は送信せず_Rejected()
+    {
+        var client = new FakeClient();
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        // 日本株の 1 円未満の買い（不利にならない側＝切り下げ → 0）。
+        var entry = await adapter.PlaceOrderAsync(Intent(price: 0.4m, market: Market.Japan), Guid.NewGuid());
+
+        entry.Status.Should().Be(OrderStatus.Rejected);
+        client.LastRequest.Should().BeNull("丸めた結果を検証に掛けるので送信しない（発注前検証を無効化しない）");
+
+        // ショートの保護（決済＝買戻し）の発火価格は早く発火する側＝切り下げ → 0。
+        var stop = await adapter.PlaceStopOrderAsync(
+            Intent(market: Market.Japan, side: TradeSide.Buy) with { PositionEffect = PositionEffect.Close },
+            triggerPrice: 0.4m, Guid.NewGuid());
+
+        stop.Status.Should().Be(OrderStatus.Rejected);
+        client.LastRequest.Should().BeNull();
+    }
+
     // 🔴 FR-10, #331: 保護逆指値ガードは**照会不能（null）を「無い」と取り違えない**ことを前提に据え置く。
     // ここで例外が漏れると、ガードの 1 件が失敗として落ち、逆に Rejected を捏造すると
     // 「失効した」と誤認して不要な再発注・手仕舞いが走る。どちらも実弾で実損になる。
