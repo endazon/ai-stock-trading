@@ -12,23 +12,36 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // 丸めの向きは**保護が緩む側へ倒さない**。決済が売り（ロングの保護）なら切り下げ、買い戻し（ショートの保護）なら
 // 切り上げ——どちらも「約定しやすい側」である。発火価格そのものは逆で、**早く発火する側**へ倒す。
 //
-// 残る制約: 東証の呼値は価格帯で刻みが変わる（1 円・5 円・10 円…）。ここでは**小数桁だけ**を揃えるため、
-// 高価格帯の日本株では刻みの倍数にならないことがある。S3 は SIMULATE 限定であり、実測でき次第見直す。
+// 🔴 **桁は「銘柄の基準価格」で一度だけ決め、指値にも同じ桁を使う**（`referencePrice`）。値ごとに $1 と比べると、
+// 1 ドル近傍で指値 4 桁・発火価格 2 桁のように**桁が混ざる**。ブローカーの判定が銘柄価格で決まるなら同じ拒否が再発する。
+//
+// 残る制約:
+// - 東証の呼値は価格帯で刻みが変わる（1 円・5 円・10 円…）。ここでは**小数桁だけ**を揃えるため、
+//   高価格帯の日本株では刻みの倍数にならないことがある。S3 は SIMULATE 限定であり、実測でき次第見直す。
+// - **日本株の低位株（数円）では、丸めたずらし幅が相対的に大きくなる**（30 円で 1 円＝3.3%）。1 円株では
+//   指値が 0 になり、既存の発注前検証が送信を止める（fail-closed）。
+// - 🔴 **S0（`OrderType_Stop`）の発火価格と、エントリーの指値は、この丸めを通らない。** 上流に丸めは無く
+//   （損切り幅は LLM の値をそのまま使う）、事故当日にたまたま 2 桁だっただけである。**同じ拒否が実弾の
+//   S0 でも起き得る**（#846 で扱う）。
 public static class MoomooPriceRounding
 {
     /// <summary>1 ドル未満の米国株は小数 4 桁まで刻める（サブペニー）。それ以上は 2 桁。</summary>
     private const decimal SubDollarThreshold = 1m;
 
-    public static int DecimalsFor(Market market, decimal price) => market switch
+    /// <param name="referencePrice">
+    /// 銘柄の基準価格（保護レグでは発火価格）。**丸める値そのものではなく、これで桁を決める**
+    /// ——値ごとに判定すると 1 ドル近傍で桁が混ざる。
+    /// </param>
+    public static int DecimalsFor(Market market, decimal referencePrice) => market switch
     {
         // 日本株は円単位（小数を持たない）。
         Market.Japan => 0,
-        _ => price < SubDollarThreshold ? 4 : 2,
+        _ => referencePrice < SubDollarThreshold ? 4 : 2,
     };
 
-    public static decimal TickFor(Market market, decimal price)
+    public static decimal TickFor(Market market, decimal referencePrice)
     {
-        var decimals = DecimalsFor(market, price);
+        var decimals = DecimalsFor(market, referencePrice);
         decimal tick = 1m;
         for (var i = 0; i < decimals; i++)
             tick /= 10m;
@@ -36,15 +49,16 @@ public static class MoomooPriceRounding
     }
 
     /// <summary>約定しやすい側へ丸める（売りは切り下げ・買いは切り上げ）。</summary>
-    public static decimal RoundLimit(Market market, TradeSide side, decimal price)
+    public static decimal RoundLimit(Market market, TradeSide side, decimal price, decimal referencePrice)
     {
-        var decimals = DecimalsFor(market, price);
+        var decimals = DecimalsFor(market, referencePrice);
         return side == TradeSide.Sell ? Floor(price, decimals) : Ceiling(price, decimals);
     }
 
     /// <summary>早く発火する側へ丸める（ロングの保護＝売りの発火は切り上げ・ショートの保護は切り下げ）。</summary>
     public static decimal RoundTrigger(Market market, TradeSide closeSide, decimal price)
     {
+        // 発火価格そのものが基準価格である。
         var decimals = DecimalsFor(market, price);
         return closeSide == TradeSide.Sell ? Ceiling(price, decimals) : Floor(price, decimals);
     }
@@ -54,8 +68,8 @@ public static class MoomooPriceRounding
     /// 🔴 刻みに満たない幅は **0 のまま返す**——ここで 1 刻みを勝手に足すと、
     /// 「幅 0 は送らずに理由を残す」という発注前検証を無効化し、**決定が求めていない保護距離を捏造する**。
     /// </summary>
-    public static decimal RoundTrail(Market market, decimal price, decimal trailValue) =>
-        Floor(trailValue, DecimalsFor(market, price));
+    public static decimal RoundTrail(Market market, decimal referencePrice, decimal trailValue) =>
+        Floor(trailValue, DecimalsFor(market, referencePrice));
 
     /// <summary>
     /// 指値が発火価格と同値以上に寄ってしまった場合に、**1 刻みだけ不利側へ離す**。

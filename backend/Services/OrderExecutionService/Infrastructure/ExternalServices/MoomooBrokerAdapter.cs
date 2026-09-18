@@ -107,7 +107,8 @@ public sealed class MoomooBrokerAdapter(
         if (_alternativeStop.OrderType == AlternativeProtectiveOrderType.TrailingStop)
         {
             return (MoomooOrderKind.TrailingStop,
-                MoomooPriceRounding.RoundLimit(closeIntent.Market, closeIntent.Side, closeIntent.Price),
+                MoomooPriceRounding.RoundLimit(
+                    closeIntent.Market, closeIntent.Side, closeIntent.Price, triggerPrice),
                 MoomooPriceRounding.RoundTrail(
                     closeIntent.Market, triggerPrice, Math.Abs(entryReferencePrice - triggerPrice)));
         }
@@ -117,7 +118,7 @@ public sealed class MoomooBrokerAdapter(
         var limitPrice = MoomooPriceRounding.EnsureBeyondTrigger(
             closeIntent.Market,
             closeIntent.Side,
-            MoomooPriceRounding.RoundLimit(closeIntent.Market, closeIntent.Side, raw),
+            MoomooPriceRounding.RoundLimit(closeIntent.Market, closeIntent.Side, raw, triggerPrice),
             MoomooPriceRounding.RoundTrigger(closeIntent.Market, closeIntent.Side, triggerPrice));
         return (MoomooOrderKind.StopLimit, limitPrice, null);
     }

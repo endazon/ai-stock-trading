@@ -25,7 +25,8 @@ public class MoomooPriceRoundingTests
     [InlineData(TradeSide.Sell, 329.02, 329.02)]
     [InlineData(TradeSide.Buy, 329.02, 329.02)]
     public void 指値は約定しやすい側へ丸める(TradeSide side, decimal raw, decimal expected) =>
-        MoomooPriceRounding.RoundLimit(Market.UnitedStates, side, raw).Should().Be(expected);
+        MoomooPriceRounding.RoundLimit(Market.UnitedStates, side, raw, referencePrice: 332.35m)
+            .Should().Be(expected);
 
     // T-10-392: 発火価格は**早く発火する側**へ丸める（ロングの保護＝売りは切り上げ、ショートの保護は切り下げ）。
     [Theory]
@@ -48,6 +49,20 @@ public class MoomooPriceRoundingTests
         // 既に離れていれば動かさない。
         MoomooPriceRounding.EnsureBeyondTrigger(Market.UnitedStates, TradeSide.Sell, 329.02m, 332.35m)
             .Should().Be(329.02m);
+    }
+
+    // T-10-397: #845 の監査。桁は**銘柄の基準価格（発火価格）で一度だけ**決める。
+    // 値ごとに 1 ドルと比べると、1 ドル近傍で指値 4 桁・発火価格 2 桁のように桁が混ざり、
+    // ブローカーの判定が銘柄価格で決まるなら同じ拒否が再発する。
+    [Fact]
+    public void 桁は基準価格で一度だけ決める()
+    {
+        // 基準 1.004 ドル（＝2 桁の銘柄）。指値が 1 ドルを割っても 2 桁のまま。
+        MoomooPriceRounding.RoundLimit(Market.UnitedStates, TradeSide.Sell, 0.99396m, referencePrice: 1.004m)
+            .Should().Be(0.99m);
+        // 基準が 1 ドル未満ならサブペニー（4 桁）。
+        MoomooPriceRounding.RoundLimit(Market.UnitedStates, TradeSide.Sell, 0.987654m, referencePrice: 0.98m)
+            .Should().Be(0.9876m);
     }
 
     // T-10-394: トレール幅は**狭い側**（早く発火する側）へ丸める。

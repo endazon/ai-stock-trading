@@ -7,7 +7,7 @@ author: endazon (with Claude Code)
 created: 2026-09-18
 updated: 2026-09-18
 plan_refs:
-  - planning:projects/ai-stock-trading/07_adr/ADR-0040.md (決定1 S3「他のブローカー側注文種別を SIMULATE で試す」)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1 S3「他のブローカー側注文種別を SIMULATE で試す」)
 ---
 
 # 仕様書: 代替の保護レグの価格を刻みへ丸める（#844）
@@ -29,8 +29,12 @@ retMsg=The precision of Price in Place Order does not meet the specification.
 ## 原因
 
 `MoomooBrokerAdapter.BuildAlternativeParameters` が指値を `発火価格 ± 発火価格 × 比率` で作り、**丸めていない**。
-既定の 1% では `332.35 × 0.99 = 329.0265` と小数 4 桁になる。エントリーの指値は上流で刻みに収まっているため、
-**代替レグだけがこれを踏む**。
+既定の 1% では `332.35 × 0.99 = 329.0265` と小数 4 桁になる。
+
+🔴 **「エントリーの指値は上流で刻みに収まるから代替レグだけが踏む」は誤りである**（#845 の監査が実測で否定した）。
+上流に丸めは無く、事故当日の `335.86` / `332.35` がたまたま 2 桁だっただけである。損切りラインは
+`基準価格 ∓ StopLossDistancePerShare` で作られ、`StopLossDistancePerShare` は **LLM の JSON をそのまま読む値**で、
+プロンプトにもパーサにも桁の制約が無い。**S0 の発火価格とエントリーの指値も同じ拒否を踏み得る**（#846）。
 
 **この拒否は「模擬取引が StopLimit に非対応」を意味しない。** #821 の問い（模擬取引が代替種別を受理するか）は
 この不具合のせいでまだ答えが出ていない。
@@ -58,7 +62,14 @@ retMsg=The precision of Price in Place Order does not meet the specification.
 - 東証の呼値は価格帯で刻みが変わる（1 円・5 円・10 円…）。本決定は**小数桁だけ**を揃えるため、高価格帯の
   日本株では刻みの倍数にならないことがある。S3 は SIMULATE 限定であり、実測できしだい見直す。
 - 米国株は 1 ドル未満をサブペニー（4 桁）とみなす。これは慣行に基づく前提で、ブローカーの仕様書と
-  突き合わせた実測ではない。
+  突き合わせた実測ではない。桁は**銘柄の基準価格（発火価格）で一度だけ**決め、指値にも同じ桁を使う
+  ——値ごとに判定すると 1 ドル近傍で桁が混ざり、同じ拒否が再発し得る。
+- 🔴 **S0 の発火価格とエントリーの指値は、この丸めを通らない**（#846）。**実弾でも使う経路**であり、
+  LLM の損切り幅が 3〜4 桁になった日に同じ拒否を踏む。本 PR の射程外として分離した。
+- 日本株の低位株では、丸めたずらし幅が相対的に大きくなる（30 円で 1 円＝3.3%）。1 円株では指値が 0 になり、
+  既存の発注前検証が送信を止める（fail-closed）。
+- 丸めた値は wire では double へ変換される（`MMApiMoomooTradeClient`）。329.02 は double で厳密に表現できないが、
+  同じ事故のログでエントリーの 335.86 が受理されているため新たなリスクではない。**最終確認は再実測でしか取れない。**
 
 ## 受け入れ基準
 
@@ -72,3 +83,4 @@ retMsg=The precision of Price in Place Order does not meet the specification.
 | 6 | 実測値（332.35・1%）で 329.02 が送られる | `MoomooBrokerAdapterAlternativeStopTests.StopLimitの指値は市場の刻みへ丸めて送る`（T-10-395） |
 | 7 | 発火価格が刻みを外れていれば丸めて送る | 同 `StopLimitの発火価格も刻みへ丸めて送る`（T-10-396） |
 | 8 | 幅 0 のトレールは従来どおり送らず理由を残す | 既存 `トレール幅が0なら送信せず棄却の理由を返す` |
+| 9 | 桁は基準価格（発火価格）で一度だけ決め、指値にも同じ桁を使う | `MoomooPriceRoundingTests.桁は基準価格で一度だけ決める`（T-10-397） |
