@@ -84,6 +84,17 @@ public class ReportCommandHandlerTests
             return Task.FromResult(new ReportReviewResult(
                 true, expectedVersion, $"報告書 {periodKey}（版 {expectedVersion}）を差し戻しました。"));
         }
+
+        // #834: 入力補完の候補（新しい順に並んだ会話キー）。アダプタの契約どおり、失敗は空で返す。
+        public List<string> PeriodKeys { get; } = [];
+
+        public int ListCalls { get; private set; }
+
+        public Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
+        {
+            ListCalls++;
+            return Task.FromResult<IReadOnlyList<string>>(PeriodKeys);
+        }
     }
 
     private static DiscordBotOptions FullyConfigured()
@@ -390,5 +401,78 @@ public class ReportCommandHandlerTests
 
         result.WasExecuted.Should().BeFalse();
         controller.RequestChangesCalls.Should().Be(0);
+    }
+
+    // ---- ④ 入力補完（#834。候補は補助であって統制ではない） ----
+
+    [Fact]
+    public async Task 入力補完は会話キーの候補を新しい順のまま返す()
+    {
+        // FR-14, #834: 利用者は会話キーを覚えていられず、日付だけを入れて 404 になった（実測）。
+        // 並びは一覧（報告書サービス）が決めた順のまま返す（窓口で並べ替え直さない）。
+        var controller = new FakeReportReviewController();
+        controller.PeriodKeys.AddRange(["daily-2026-09-18", "weekly-2026-W38", "daily-2026-09-17"]);
+
+        var suggestions = await Handler(controller, FullyConfigured())
+            .SuggestPeriodsAsync(Context("/report autocomplete"), input: null);
+
+        suggestions.Should().Equal("daily-2026-09-18", "weekly-2026-W38", "daily-2026-09-17");
+    }
+
+    [Fact]
+    public async Task 入力補完は利用者の入力で絞り込む()
+    {
+        // #834 決定5: 推測補正はしない。打った文字で絞るだけである。
+        var controller = new FakeReportReviewController();
+        controller.PeriodKeys.AddRange(["daily-2026-09-18", "weekly-2026-W38", "monthly-2026-09"]);
+
+        var suggestions = await Handler(controller, FullyConfigured())
+            .SuggestPeriodsAsync(Context("/report autocomplete"), "weekly");
+
+        suggestions.Should().Equal("weekly-2026-W38");
+    }
+
+    [Fact]
+    public async Task 許可外の利用者には候補を返さない()
+    {
+        // 否定形（受け入れ基準）: 補完は「どの会話キーが存在するか」を漏らす経路であり、
+        // 窓口の認可水準（kill switch と同水準）を下げない。**一覧 API も呼ばない。**
+        var controller = new FakeReportReviewController();
+        controller.PeriodKeys.Add("daily-2026-09-18");
+
+        var suggestions = await Handler(controller, FullyConfigured())
+            .SuggestPeriodsAsync(Context("/report autocomplete", user: "intruder"), input: null);
+
+        suggestions.Should().BeEmpty();
+        controller.ListCalls.Should().Be(0, "許可外の着信では報告書サービスを呼ばない");
+    }
+
+    [Fact]
+    public async Task DM_からの補完要求にも候補を返さない()
+    {
+        // 否定形: 多層認証の層1（DM は無条件拒否）は補完でも効く。
+        var controller = new FakeReportReviewController();
+        controller.PeriodKeys.Add("daily-2026-09-18");
+
+        var suggestions = await Handler(controller, FullyConfigured())
+            .SuggestPeriodsAsync(Context("/report autocomplete", isDm: true), input: null);
+
+        suggestions.Should().BeEmpty();
+        controller.ListCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task 候補が空でも_report_は従来どおり動く()
+    {
+        // 否定形（fail-safe）: 一覧の取得に失敗するとアダプタは空を返す（例外を投げない）。
+        // **補完が引けないことを理由に `/report` 自体を壊さない。**
+        var controller = new FakeReportReviewController();
+        var handler = Handler(controller, FullyConfigured());
+
+        var suggestions = await handler.SuggestPeriodsAsync(Context("/report autocomplete"), input: null);
+        var show = await handler.HandleAsync(Context($"/report show {PeriodKey}"));
+
+        suggestions.Should().BeEmpty();
+        show.WasExecuted.Should().BeTrue("補完の失敗は照会に影響しない");
     }
 }

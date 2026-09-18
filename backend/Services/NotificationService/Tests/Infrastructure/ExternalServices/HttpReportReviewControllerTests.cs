@@ -195,6 +195,133 @@ public class HttpReportReviewControllerTests
         result.Succeeded.Should().BeTrue();
     }
 
+    // ---- 一覧（入力補完の候補・#834） ----
+
+    [Fact]
+    public async Task 一覧は_reports_へ_GET_し会話キーを新しい順に返す()
+    {
+        // FR-14, #834: 並びは対象期間の開始日の降順（同日は会話キーの降順）。
+        var handler = new FakeHandler(HttpStatusCode.OK, """
+            [
+              {"periodKey":"daily-2026-09-15","kind":0,"periodStart":"2026-09-15","state":0,"body":"本文"},
+              {"periodKey":"weekly-2026-W38","kind":1,"periodStart":"2026-09-14","state":1,"body":"本文"},
+              {"periodKey":"daily-2026-09-18","kind":0,"periodStart":"2026-09-18","state":0,"body":"本文"}
+            ]
+            """);
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        handler.RequestUri.Should().Be("http://report-service/reports");
+        handler.Method.Should().Be(HttpMethod.Get);
+        keys.Should().Equal("daily-2026-09-18", "daily-2026-09-15", "weekly-2026-W38");
+    }
+
+    [Fact]
+    public async Task 一覧は状態の表現にも本文の有無にも依存しない()
+    {
+        // IADR-0240 決定4/決定5: 本文・要約は取りに行かず、状態 enum も読まない（数値でも文字列でも来得る）。
+        // 射影するのは会話キーと並び替えに使う開始日だけである。
+        var handler = new FakeHandler(HttpStatusCode.OK, """
+            [
+              {"periodKey":"daily-2026-09-18","state":"Confirmed","periodStart":"2026-09-18"},
+              {"periodKey":"daily-2026-09-17","state":0}
+            ]
+            """);
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        keys.Should().Equal("daily-2026-09-18", "daily-2026-09-17");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task 一覧の取得に失敗したら候補なしで素通しする(HttpStatusCode status)
+    {
+        // 否定形（fail-safe・#834）: 補完は入力の補助であって統制ではない。**例外を投げず空で返す**
+        //（投げると Discord.Net の補完ハンドラを通じて Bot の動作に響く）。
+        var handler = new FakeHandler(status, "{}");
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        keys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 一覧の例外も候補なしに倒れる()
+    {
+        var handler = new FakeHandler(new HttpRequestException("接続できません"));
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        keys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 一覧の解釈できない応答も候補なしに倒れる()
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, "null");
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        keys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 一覧の開始日が欠けていても落ちない()
+    {
+        // 解釈できない/欠落した開始日は末尾へ倒す（一覧ごと落とさない）。同順位は会話キーの降順。
+        var handler = new FakeHandler(HttpStatusCode.OK, """
+            [
+              {"periodKey":"daily-2026-09-17"},
+              {"periodKey":"daily-2026-09-18","periodStart":"2026-09-18"},
+              {"periodKey":"monthly-2026-09","periodStart":"不明"}
+            ]
+            """);
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        keys.Should().Equal("daily-2026-09-18", "monthly-2026-09", "daily-2026-09-17");
+    }
+
+    // ---- 見つからないときの案内（#834） ----
+
+    [Fact]
+    public async Task 見つからない会話キーには形式の例を添えて案内する()
+    {
+        // FR-14, #834: 日付だけを入れて 404 になり、応答が「HTTP 404」だけだったため利用者が回復できなかった
+        //（実測・4 回連続）。**何が悪いのか・正しい形が何かを伝える。**
+        var handler = new FakeHandler(HttpStatusCode.NotFound, "{}");
+
+        var result = await Controller(handler).GetReviewAsync("2026-09-15");
+
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("見つかりません").And.Contain("daily-2026-09-18");
+        result.Message.Should().NotContain("HTTP 404", "状態番号だけの文言にしない");
+    }
+
+    [Fact]
+    public async Task 確定と差し戻しの_404_にも同じ案内を返す()
+    {
+        var confirm = await Controller(new FakeHandler(HttpStatusCode.NotFound, "{}")).ConfirmAsync("nope", 1);
+        var changes = await Controller(new FakeHandler(HttpStatusCode.NotFound, "{}")).RequestChangesAsync("nope", 1);
+
+        confirm.Message.Should().Contain("daily-2026-09-18");
+        changes.Message.Should().Contain("daily-2026-09-18");
+    }
+
+    [Fact]
+    public async Task _404_以外の失敗の文言は従来どおり()
+    {
+        // 否定形: 変えたのは 404 だけである（500 は操作名と状態番号を返す）。
+        var handler = new FakeHandler(HttpStatusCode.InternalServerError, "{}");
+
+        var result = await Controller(handler).GetReviewAsync(PeriodKey);
+
+        result.Message.Should().Contain("レビュー局面の照会").And.Contain("HTTP 500");
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _status;
