@@ -12,9 +12,11 @@ namespace OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 // 市場監視の損切りライン到達（StopLossTriggered）を受けて、到達したソフトウェア逆指値を**成行で**決済する。
 // 同じ決済処理（TryCloseAsync）を常駐ガード（ProtectiveStopGuard）が到達済みの行の再試行に使う。
 //
-// 🔴 **決済数量は「その行の残保護数量」そのものである**（IADR-0344 追記(4)）。建玉の純額から毎回持ち分を計算し直すのを
-// やめ、記録が自分の残保護数量を状態として持つ（確定 → 自分の決済で減算 → 外部要因の減少を一度だけ割り当て）。
-// 割り当てと確定は ProtectiveStopNetting.ReconcileShares が行い、**保存して記録する**ため巡回ごとに揺れない。
+// 🔴 **決済数量は「その行が今この巡回で動かしてよい株数」である**（IADR-0344 追記(4)・追記(7)）。建玉の純額から毎回
+// 持ち分を計算し直すのをやめ、記録が自分の残保護数量を状態として持つ（確定 → 自分の決済で減算 → 外部要因の減少は
+// 2 巡回連続の観測を経てから確定）。観測と確定は ProtectiveStopNetting.ReconcileShares が行う。
+// **未確定の観測は帳簿を書き換えず、その巡回の上限（EffectiveProtectedQuantity）だけを縮める**——
+// 帳簿を書かないので戻す操作（復元）が要らず、「戻った建玉」と「他人の建玉」を取り違えようがない。
 //
 // 🔴 **二重決済を作らない**（ADR-0040 §結果「S1 は二重決済の経路を SIMULATE に戻す」）:
 //   (i)   決済レグの DecisionId は (エントリー, 試行番号) から決定的に導出し、同じ DecisionId の発注記録があれば再送しない。
@@ -210,11 +212,13 @@ public sealed class SoftwareStopExecutor(
             return SoftwareStopCloseOutcome.Deferred;
         }
 
-        var quantity = current.RemainingProtected.Value;
+        // 🔴 #820 の 7 巡目監査, IADR-0344 追記(7): 決済数量の上限は「**観測された建玉に見合う量**」＝
+        // 帳簿からまだ確定していない観測分を引いた値である（一時的な計算であり、帳簿は確定まで書き換えない）。
+        var quantity = current.EffectiveProtectedQuantity;
         if (quantity <= 0 && current.HasUnconfirmedExternalReduction)
         {
-            // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): 主張が 0 になった理由が**まだ確定していない外部要因**。
-            // 建玉照会は 1 巡回だけ過少に返り得るため、1 回の観測で行を閉じない（確定すればガードが完了させる）。
+            // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5)・追記(7): 動かせる株数が 0 になった理由が
+            // **まだ確定していない外部要因**。建玉照会は 1 巡回だけ過少に返り得るため、1 回の観測で行を閉じない。
             _logger.LogWarning(
                 "ソフトウェア逆指値の決済を据え置きます（外部要因で主張が 0 になりましたが、まだ確定していません）。"
                     + "EntryDecisionId={EntryDecisionId} 未確定={Pending}",
@@ -295,13 +299,17 @@ public sealed class SoftwareStopExecutor(
 
         if (status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
         {
-            var before = stop.RemainingProtected ?? closeIntent.Quantity;
+            // 🔴 #820 の 7 巡目監査, IADR-0344 追記(7): 判定の基準は「この巡回で動かしてよい株数」である。
+            // **それを売り切った行は役目を終える**（実際に行動した＝観測を確定させたのと同じ）。
+            // 部分的にしか決済できていない行は Active のまま残し、未確定の観測もそのまま持ち越す（BLK-3）。
+            var books = stop.RemainingProtected ?? closeIntent.Quantity;
+            var before = stop.IsEntryFillConfirmed ? stop.EffectiveProtectedQuantity : closeIntent.Quantity;
             var remaining = Math.Max(0, before - closeIntent.Quantity);
             stops.Save(stop with
             {
-                RemainingProtected = remaining,
+                RemainingProtected = remaining == 0 ? 0 : Math.Max(0, books - closeIntent.Quantity),
                 State = remaining == 0 ? ProtectiveStopState.Completed : ProtectiveStopState.Active,
-                // 完了した行に未確定の削りを残さない（IADR-0344 追記(5)）。
+                // 完了した行に未確定の観測を残さない（IADR-0344 追記(5)）。
                 PendingExternalReduction = remaining == 0 ? 0 : stop.PendingExternalReduction,
                 ExternalReductionObservations = remaining == 0 ? 0 : stop.ExternalReductionObservations,
                 Attempt = attempt,
@@ -445,7 +453,7 @@ public sealed class SoftwareStopExecutor(
         {
             State = ProtectiveStopState.Completed,
             RemainingProtected = 0,
-            // 完了した行に未確定の削りを残さない（復元すべき主張が無くなったため。IADR-0344 追記(5)）。
+            // 完了した行に未確定の観測を残さない（守る主張が無くなったため。IADR-0344 追記(5)・追記(7)）。
             PendingExternalReduction = 0,
             ExternalReductionObservations = 0,
             UpdatedAt = clock.UtcNow,

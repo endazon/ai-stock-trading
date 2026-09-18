@@ -333,10 +333,11 @@ public class SoftwareStopExecutorTests
         f.Broker.MarketCloses.Should().ContainSingle();
     }
 
-    // #820 の 5 巡目監査, IADR-0344 追記(5): 主張は**その場で**削る（削らないと同じ建玉を別の行が主張して売り過ぎる）が、
-    // **行を閉じるのは削りが確定してから**である（建玉照会は 1 巡回だけ過少に返り得る）。確定はガードの巡回が行う。
+    // #820 の 5 巡目監査・7 巡目監査, IADR-0344 追記(5)・追記(7): 超過は**その場で観測として記録する**
+    //（記録しないと同じ建玉を別の行が主張して売り過ぎる）が、**帳簿（残保護数量）は確定するまで書き換えない**
+    //（建玉照会は 1 巡回だけ過少に返り得る）。確定はガードの巡回が行う。
     [Fact]
-    public async Task 建玉が既に無ければ決済せず主張を削って据え置く()
+    public async Task 建玉が既に無ければ決済せず観測を記録して据え置く()
     {
         var f = NewFixture();
         var stop = SoftwareStop();
@@ -348,8 +349,9 @@ public class SoftwareStopExecutorTests
 
         f.Broker.MarketCloses.Should().BeEmpty("決済を出すと反対建玉（空売り）を作る");
         var saved = f.Stops.Find(stop.EntryDecisionId)!;
-        saved.RemainingProtected.Should().Be(0, "主張は即座に削る（売り過ぎを作らない）");
-        saved.State.Should().Be(ProtectiveStopState.Active, "確定するまで閉じない（建玉が戻れば復元できる）");
+        saved.PendingExternalReduction.Should().Be(10, "その巡回で動かせる株数は 0 になる（売り過ぎを作らない）");
+        saved.RemainingProtected.Should().Be(10, "帳簿は確定するまで書き換えない（戻す操作を持たないための要）");
+        saved.State.Should().Be(ProtectiveStopState.Active, "確定するまで閉じない");
         result.Deferred.Should().Be(1);
         result.Events.Should().BeEmpty();
     }
@@ -624,10 +626,11 @@ public class SoftwareStopExecutorTests
     }
 
     [Fact]
-    public async Task 建玉の減少を割り当てられた行は主張が0になるが確定するまで完了しない()
+    public async Task 建玉の減少を観測された行は決済せず確定するまで完了しない()
     {
-        // T-10-352: 10 株のエントリー 2 件に対し建玉は 10 株。減った 10 株は**古い行から**一度だけ削られる。
-        // #820 の 5 巡目監査, IADR-0344 追記(5): **削りは即座だが、行を閉じるのは確定してから**（ガードの巡回が確定する）。
+        // T-10-352: 10 株のエントリー 2 件に対し建玉は 10 株。減った 10 株は**古い行へ**一度だけ観測として記録される。
+        // #820 の 5 巡目監査・7 巡目監査, IADR-0344 追記(5)・追記(7):
+        // **その巡回で動かせる株数は即座に 0 になるが、帳簿（残保護数量）は確定するまで書き換えない**。
         // 新しい行は 10 株を保持し、決済もその 10 株だけを出す（合計が保有を超えない）。
         var f = NewFixture();
         var first = SoftwareStop(createdAt: Now.AddHours(-2));
@@ -642,9 +645,12 @@ public class SoftwareStopExecutorTests
 
         f.Broker.MarketCloses.Should().HaveCount(1);
         f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(10);
-        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(0);
+        f.Stops.Find(first.EntryDecisionId)!.PendingExternalReduction.Should().Be(
+            10, "その巡回で動かせる株数は 0（だから 1 株も決済しない）");
+        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(
+            10, "帳簿は確定するまで書き換えない");
         f.Stops.Find(first.EntryDecisionId)!.State.Should().Be(
-            ProtectiveStopState.Active, "削りが確定するまで閉じない（建玉が戻れば復元する）");
+            ProtectiveStopState.Active, "観測が確定するまで閉じない");
         f.Stops.Find(second.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed, "10 株を決済し切った");
     }
 
@@ -774,6 +780,9 @@ public class SoftwareStopExecutorTests
 
     // T-10-377（受け入れ基準 31）: 外部要因の減少は**観測した時点で一度だけ**割り当てて記録する。
     // 次の巡回で引き直さないので、建玉照会の値が変わっても持ち分が揺れない（4 巡の事故の根本原因）。
+    // #820 の 7 巡目監査, IADR-0344 追記(7): 記録先は**観測値**（PendingExternalReduction）であり、
+    // 帳簿（RemainingProtected）は確定するまで動かない。観測は**増える方向にしか動かない**ので、
+    // 照会が一時的に大きく見えても持ち分は戻らない（＝復元という操作が無い）。
     [Fact]
     public async Task 外部要因の減少は一度だけ割り当てて記録し次の巡回で揺れない()
     {
@@ -785,21 +794,23 @@ public class SoftwareStopExecutorTests
         Entry(f, first, OrderStatus.Filled, 10, orderId: "entry-first");
         Entry(f, second, OrderStatus.Filled, 10, orderId: "entry-second");
 
-        // 1 巡目: 20 株のうち 5 株が外部で消えた（建玉 15 株）。超過 5 株は古い行から削る。
+        // 1 巡目: 20 株のうち 5 株が外部で消えた（建玉 15 株）。超過 5 株は古い行の観測として記録する。
         ProtectiveStopNetting.ReconcileShares(
             "AAPL", Market.UnitedStates, TradeSide.Buy, [Long(15)], f.Stops.FindActive(100), f.Stops, f.Store, Now);
-        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(5);
+        f.Stops.Find(first.EntryDecisionId)!.PendingExternalReduction.Should().Be(5, "動かせるのは 5 株");
+        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(10, "帳簿は確定するまで動かさない");
         f.Stops.Find(second.EntryDecisionId)!.RemainingProtected.Should().Be(10);
 
         // 2 巡目: 同じ建玉をもう一度観測しても、同じ減少を二度割り当てない（合計 15 のまま）。
         ProtectiveStopNetting.ReconcileShares(
             "AAPL", Market.UnitedStates, TradeSide.Buy, [Long(15)], f.Stops.FindActive(100), f.Stops, f.Store, Now);
-        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(5);
-        f.Stops.Find(second.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+        f.Stops.Find(first.EntryDecisionId)!.PendingExternalReduction.Should().Be(5);
+        f.Stops.Find(second.EntryDecisionId)!.PendingExternalReduction.Should().Be(0);
 
-        // 建玉照会が一時的に大きく見えても、持ち分は戻らない（揺れない）。
+        // 建玉照会が一時的に大きく見えても、観測は戻らない（＝書き戻す＝復元という操作が無い）。
         ProtectiveStopNetting.ReconcileShares(
             "AAPL", Market.UnitedStates, TradeSide.Buy, [Long(20)], f.Stops.FindActive(100), f.Stops, f.Store, Now);
-        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(5);
+        f.Stops.Find(first.EntryDecisionId)!.PendingExternalReduction.Should().Be(5);
+        f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(10);
     }
 }

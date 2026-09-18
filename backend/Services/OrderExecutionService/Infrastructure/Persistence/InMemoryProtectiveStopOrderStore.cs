@@ -37,7 +37,8 @@ public sealed class InMemoryProtectiveStopOrderStore : IProtectiveStopOrderStore
             .OrderBy(s => s.CreatedAt)
             .ToList();
 
-    // #820 の 6 巡目監査, IADR-0344 追記(6): 復元の門が読む「完了済みの S1」（更新が新しい順）。
+    // #820 の 6 巡目監査・7 巡目監査, IADR-0344 追記(6)・追記(7): 観測を数え続けてよいかの門が読む
+    // 「完了済みの S1」（更新が新しい順）。
     public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
         string symbol, Market market, TradeSide entrySide, int limit) =>
         _stops.Values

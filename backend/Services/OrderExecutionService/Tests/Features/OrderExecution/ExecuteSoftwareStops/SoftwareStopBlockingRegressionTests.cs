@@ -174,11 +174,11 @@ public class SoftwareStopBlockingRegressionTests
                 BrokerProvider.MoomooSimulate, 5, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
         f.Broker.Positions = [Long(5)]; // 残っているのは S0 の 5 株だけ
 
-        // 1 巡目: 超過 10 株は**帳簿だけの行**（幽霊）から削る。まだ確定していないので行は閉じない。
+        // 1 巡目: 超過 10 株は**帳簿だけの行**（幽霊）へ観測として記録する。まだ確定していないので帳簿も State も動かない。
         await f.Guard.RunOnceAsync(10);
 
         f.Broker.Cancelled.Should().BeEmpty("生きている S0 の逆指値を取り消してはならない（建玉 5 株を守っている）");
-        f.Stops.Find(ghost.EntryDecisionId)!.RemainingProtected.Should().Be(0, "幽霊の主張から削る");
+        f.Stops.Find(ghost.EntryDecisionId)!.PendingExternalReduction.Should().Be(10, "幽霊の主張から削る");
         f.Stops.Find(ghost.EntryDecisionId)!.State.Should().Be(
             ProtectiveStopState.Active, "1 回の観測では閉じない（建玉照会は 1 巡回だけ過少に返り得る）");
 
@@ -283,12 +283,14 @@ public class SoftwareStopBlockingRegressionTests
 
     // ---- 5 巡目監査②: 1 巡回だけ過少に見えた建玉照会で行を失わない ----
 
-    // T-10-380（受け入れ基準 34）: 建玉 20 株・行 2 件に対し、**1 巡回だけ**照会が 10 株を返す。
+    // T-10-380（受け入れ基準 34。#820 の 7 巡目監査 / IADR-0344 追記(7) で言い方を訂正）:
+    // 建玉 20 株・行 2 件に対し、**1 巡回だけ**照会が 10 株を返す。
     // 作り直し（`cf573a58` の次）では超過を削るだけで復元経路が無く、その巡回で 0 になった行が `Completed` になり、
     // **次の巡回で建玉が回復しても戻らなかった**（監査の実測: 10 株が永久に無保護・しかも無音）。
-    // 削りは 2 巡回連続で観測してから確定し、建玉が戻れば**未確定の削りを復元する**。
+    // 追記(7) では**帳簿を確定まで書き換えない**ので、戻す（復元する）ものがそもそも無い——
+    // 行も残保護数量もそのまま残り、超過が消えた巡回は観測の連続回数が 0 へ戻るだけである。
     [Fact]
-    public async Task 建玉照会が一巡回だけ過少でも行は失われず次の巡回で復元する()
+    public async Task 建玉照会が一巡回だけ過少でも行も主張も失われない()
     {
         var f = NewFixture();
         var first = SoftwareStop(Now.AddHours(-2), quantity: 10);
@@ -305,13 +307,14 @@ public class SoftwareStopBlockingRegressionTests
         f.Stops.Find(first.EntryDecisionId)!.State.Should().Be(
             ProtectiveStopState.Active, "1 回の観測で行を閉じない（閉じると回復しても戻せない）");
 
-        // 巡回 2: 照会が回復する。削った分を返す。
+        // 巡回 2: 照会が回復する。確定していないので帳簿は一度も動いておらず、戻すものが無い。
         f.Broker.Positions = [Long(20)];
         await f.Guard.RunOnceAsync(10);
 
-        var restored = f.Stops.Find(first.EntryDecisionId)!;
-        restored.State.Should().Be(ProtectiveStopState.Active);
-        restored.RemainingProtected.Should().Be(10, "一時的なズレを恒久的なズレにしない");
+        var kept = f.Stops.Find(first.EntryDecisionId)!;
+        kept.State.Should().Be(ProtectiveStopState.Active);
+        kept.RemainingProtected.Should().Be(10, "一時的なズレを恒久的なズレにしない");
+        kept.ExternalReductionObservations.Should().Be(0, "超過が消えたら観測の連続回数を 0 へ戻すだけでよい");
         f.Stops.Find(second.EntryDecisionId)!.RemainingProtected.Should().Be(10);
         f.Broker.MarketCloses.Should().BeEmpty("未到達の行は決済しない");
     }
@@ -374,7 +377,7 @@ public class SoftwareStopBlockingRegressionTests
         cycle3.Events.OfType<SoftwareStopExecuted>().Should().BeEmpty("同じ削りを二度通知しない");
     }
 
-    // ---- 6 巡目監査: 復元が売り過ぎ（反対建玉）を再導入していた ----
+    // ---- 6 巡目監査: 復元が売り過ぎ（反対建玉）を再導入していた（7 巡目で復元そのものを撤去した） ----
 
     // T-10-384（受け入れ基準 38）: 同一銘柄・同方向の**到達済み S1 行 2 件**に対し、外部要因で建玉が半分になる。
     // 是正前の連鎖:
@@ -383,7 +386,8 @@ public class SoftwareStopBlockingRegressionTests
     //   巡回 2: 建玉照会は**まだ 10 株を返す**（受理済み・未約定なので当然）。Active 行の主張の合計は 0 なので
     //           `excess = -10` となり、**Restore が A へ 10 株を返す** → 到達済みの A がさらに 10 株を決済する。
     // 合計 20 株（保有 10 株）＝**10 株の空売り**という不可逆な事故になる。
-    // 復元の門は「送信済みで建玉照会に未反映の決済」を差し引くため、この巡回では復元しない。
+    // 🔴 追記(7): 復元という操作そのものを撤去した。この巡回で見るのは「観測を数え続けてよいか」であり、
+    // 「送信済みで建玉照会に未反映の決済」が超過の消失を説明するので、観測は続いて 2 巡回目で確定する。
     [Fact]
     public async Task 送信済みで未約定の決済がある銘柄では復元せず同じ建玉を二度売らない()
     {
@@ -403,14 +407,14 @@ public class SoftwareStopBlockingRegressionTests
         f.Stops.Find(newer.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
 
         // 巡回 2: 決済は受理済み・未約定なので、建玉照会はまだ 10 株を返す。
-        // **これは「建玉が戻った」ではない。** 復元すると同じ 10 株をもう一度売ることになる。
+        // **これは「建玉が戻った」ではない。** ここで幽霊行が主張を取り戻すと同じ 10 株をもう一度売ることになる。
         await f.Guard.RunOnceAsync(10);
 
         var total = f.Broker.MarketCloses.Sum(c => c.Intent.Quantity);
         total.Should().BeLessThanOrEqualTo(10,
             "建玉は 10 株。1 巡目 10 株、累計 20 株を売ると反対建玉（空売り）になる");
         f.Stops.Find(older.EntryDecisionId)!.RemainingProtected.Should().Be(
-            0, "送信済みで未反映の決済は「戻ってきた建玉」ではない");
+            0, "送信済みで未反映の決済は「戻ってきた建玉」ではない（観測が確定して帳簿が 0 になる）");
         f.Stops.Find(older.EntryDecisionId)!.State.Should().Be(
             ProtectiveStopState.Completed, "2 巡回目の観測で削りが確定し、役目を終える");
     }
@@ -419,6 +423,7 @@ public class SoftwareStopBlockingRegressionTests
     // **新しいエントリーが約定**する。その発注記録がまだ終端でないと行の主張は 0（`RemainingProtected` が null）なので、
     // 是正前は `excess < 0` になって **Restore が幽霊行を復活させ**、新しい建玉を
     // **その行の損切りラインとは無関係に成行決済**していた（到達していない建玉を売る）。
+    // 🔴 追記(7): 復元を撤去したうえで、新規エントリーの**約定済み**株数が超過の消失を説明するため観測は確定する。
     [Fact]
     public async Task 確定前の新規エントリーの建玉で幽霊行を復活させない()
     {
@@ -428,11 +433,12 @@ public class SoftwareStopBlockingRegressionTests
         Entry(f, ghost, OrderStatus.Filled, 10);
         f.Broker.Positions = []; // 建玉は外部で消えている
 
-        // 巡回 1: 主張 10 株を削る（未確定なので、まだ完了させない・決済も出さない）。
+        // 巡回 1: 主張 10 株ぶんの超過を観測する（未確定なので帳簿は動かさず、完了もさせない・決済も出さない）。
         await f.Guard.RunOnceAsync(10);
 
         f.Broker.MarketCloses.Should().BeEmpty("建玉が無いので決済しない");
-        f.Stops.Find(ghost.EntryDecisionId)!.RemainingProtected.Should().Be(0);
+        f.Stops.Find(ghost.EntryDecisionId)!.PendingExternalReduction.Should().Be(10);
+        f.Stops.Find(ghost.EntryDecisionId)!.RemainingProtected.Should().Be(10, "帳簿は確定するまで書き換えない");
 
         // 新しいエントリーが約定したが、発注記録はまだ終端でない（＝主張 0 のまま）。建玉照会は 10 株を返す。
         var fresh = SoftwareStop(Now, quantity: 10);
@@ -484,5 +490,83 @@ public class SoftwareStopBlockingRegressionTests
         var notified = cycle3.Events.OfType<SoftwareStopExecuted>().Should().ContainSingle().Which;
         ((int)notified.Outcome).Should().Be(5, "SoftwareStopOutcome.ProtectionReduced");
         notified.Quantity.Should().Be(8);
+    }
+
+    // ---- 7 巡目監査: 復元という操作そのものを撤去する（IADR-0344 追記(7)）----
+
+    // T-10-410（受け入れ基準 41 / BLK-7-1）: **確定前の新規エントリーが同じ銘柄に 1 件あるだけで**、
+    // 「1 巡回だけ過少に照会された行が次の巡回で戻る」が効かなくなっていた。
+    // 6 巡目の是正（`AlreadyHandledShares`）が、**1 株も約定していない新規エントリーの承認数量**を
+    // そのまま復元の予算から差し引いていたためである（監査の用量反応: 承認数量 0 → 主張 10・Active、
+    // 承認数量 10 → 主張 0・Completed ＝**建玉 10 株が無保護**）。
+    //
+    // 🔴 追記(7) では**そもそも帳簿を確定まで書き換えない**ので、戻す（復元する）予算という概念が無い。
+    // 超過が消えた巡回は観測の連続回数が 0 へ戻るだけであり、承認数量に依存しようがない。
+    [Theory]
+    [InlineData(0)]   // 対照（6 巡目のコードでも通っていた配置）
+    [InlineData(10)]  // 監査が実測した配置（6 巡目のコードでは建玉が無保護になる）
+    public async Task 確定前の新規エントリーがあっても一巡回だけ過少な照会で行は失われない(int newEntryQuantity)
+    {
+        var f = NewFixture();
+        var covered = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        f.Stops.Save(covered);
+        Entry(f, covered, OrderStatus.Filled, 10);
+
+        if (newEntryQuantity > 0)
+        {
+            // 承認されたが**まだ 1 株も約定していない**新規エントリー（発注記録は未終端・約定 0 ＝ 主張も 0）。
+            var fresh = SoftwareStop(Now, quantity: newEntryQuantity);
+            f.Stops.Save(fresh);
+            Entry(f, fresh, OrderStatus.Accepted, 0);
+        }
+
+        // 巡回 1: 建玉照会が 1 巡回だけ過少に返る（実在する 10 株が 0 に見える）。
+        f.Broker.Positions = [];
+        await f.Guard.RunOnceAsync(10);
+
+        // 巡回 2: 照会が回復する。**新規エントリーの承認数量に関係なく**行も主張も失われない。
+        f.Broker.Positions = [Long(10)];
+        await f.Guard.RunOnceAsync(10);
+
+        var kept = f.Stops.Find(covered.EntryDecisionId)!;
+        kept.RemainingProtected.Should().Be(
+            10, "建玉 10 株が実在する行の帳簿を、確定前の新規エントリーの承認数量で消してはならない");
+        kept.State.Should().Be(ProtectiveStopState.Active, "建玉が実在する行を完了させると無保護になる");
+        f.Broker.MarketCloses.Should().BeEmpty("未到達の行は決済しない");
+    }
+
+    // T-10-411（受け入れ基準 42 / BLK-7-2）: **S1 の記録を持たない建玉**（S2 の建玉・S0 の発注窓・人手で建てた建玉）が
+    // 同じ銘柄・同方向に現れると、6 巡目の `Restore` はそれを「戻ってきた自分の建玉」と読んで幽霊行を復活させ、
+    // 到達済みならその建玉を**無関係な損切りラインで成行決済**していた
+    //（監査の実測: `Expected f.Broker.MarketCloses to be empty …, but found { Quantity = 10, Side = Sell, Price = 940 }`）。
+    // S2 は保護記録を作らないため、**稼働中の S2 から S1 へ切り替える**この PR の反映手順で現実に起こり得る。
+    //
+    // 🔴 追記(7): 一度観測した超過は**書き戻さない**（確定か行の完了でしか消えない）。
+    // 幽霊行の「この巡回で動かしてよい株数」は 0 のままであり、他人の建玉を売りようがない。
+    [Fact]
+    public async Task S1の記録を持たない建玉が現れても幽霊行は主張を取り戻さない()
+    {
+        var f = NewFixture();
+        var ghost = SoftwareStop(Now.AddHours(-3), quantity: 10, triggeredAt: Now);
+        f.Stops.Save(ghost);
+        Entry(f, ghost, OrderStatus.Filled, 10);
+        f.Broker.Positions = []; // 幽霊行の建玉は外部（人手決済・強制決済）で消えている
+
+        // 巡回 1: 超過 10 株を観測する（帳簿は書かない・決済も出さない）。
+        await f.Guard.RunOnceAsync(10);
+
+        f.Broker.MarketCloses.Should().BeEmpty("建玉が無いので決済しない");
+
+        // 🔴 **S1 の記録を一切持たない建玉**が同じ銘柄・同方向に現れる（S2 の建玉を模す）。
+        // 純額は「幽霊行の建玉が戻った」ときとまったく同じに見えるが、**戻ったのではない**。
+        f.Broker.Positions = [Long(10)];
+
+        await f.Guard.RunOnceAsync(10);
+        await f.Guard.RunOnceAsync(10);
+
+        f.Broker.MarketCloses.Should().BeEmpty(
+            "S1 の記録を持たない建玉を、幽霊行の損切りラインで成行決済してはならない（反対建玉になる）");
+        f.Stops.Find(ghost.EntryDecisionId)!.PendingExternalReduction.Should().Be(
+            10, "一度観測した超過は書き戻さない（復元という操作を持たない）");
     }
 }

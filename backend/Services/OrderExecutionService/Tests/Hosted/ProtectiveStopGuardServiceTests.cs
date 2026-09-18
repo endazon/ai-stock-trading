@@ -108,7 +108,7 @@ public class ProtectiveStopGuardServiceTests
         public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
             inner.FindActiveSoftwareStops(symbol, market, entrySide);
 
-        // #820 の 6 巡目監査, IADR-0344 追記(6): 復元の門が読む完了済みの S1。
+        // #820 の 6 巡目監査・7 巡目監査, IADR-0344 追記(6)・追記(7): 観測を数え続けてよいかの門が読む完了済みの S1。
         public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
             string symbol, Market market, TradeSide entrySide, int limit) =>
             inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);

@@ -60,8 +60,9 @@ public sealed class ProtectiveStopGuard(
         // **この巡回で一度だけ**割り当てて保存する。S0 の取消判定より前に行う——判定は「割り当て後の主張」を見るべきで、
         // 割り当て前の（消えた建玉をまだ主張している）値で判定すると、生きている逆指値を取り消してしまう（BLK-1）。
         //
-        // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): **ここだけが「観測」である**（群につき 1 巡回 1 回）。
-        // 削りの確定（2 巡回連続）・建玉が戻ったときの復元・確定時の通知をこの呼び出しが受け持つ。
+        // 🔴 #820 の 5 巡目監査・7 巡目監査, IADR-0344 追記(5)・追記(7): **ここだけが「観測」である**（群につき 1 巡回 1 回）。
+        // 観測の連続回数を数え、確定（2 巡回連続）したぶんだけ帳簿を減らして通知するのがこの呼び出しである。
+        // **未確定のあいだ帳簿は動かない**ため、建玉が戻ったときに書き戻す（復元する）経路は存在しない。
         foreach (var (symbol, market, entrySide) in active
             .Select(s => (s.Symbol, s.Market, s.EntrySide))
             .Distinct())
@@ -143,15 +144,15 @@ public sealed class ProtectiveStopGuard(
         // 🔴 #820 の 4 巡目監査, IADR-0344 追記(4): **残保護数量が 0 になったときだけ**保護を外す。
         // 純額や他手法の主張で外すと、建玉が残っているのに保護がゼロになる（3 巡目監査 B3）か、
         // 自分の建玉を失った行が不死化して生きている S0 の逆指値を毎巡回取り消す（4 巡目監査 BLK-1）。
-        // 減った建玉の割り当て（と確定・復元）は巡回の先頭の ReconcileShares が**一度だけ**行って保存済みである。
+        // 減った建玉の観測と確定は巡回の先頭の ReconcileShares が済ませており、保存済みである。
         var current = stops.Find(stop.EntryDecisionId) ?? stop;
 
         // 未確定（エントリーの発注記録が無い・まだ終端でない）＝これから約定し得る。建玉が 0 でも完了しない。
         if (current.RemainingProtected is not { } remaining)
             return Outcome.StillActive;
 
-        // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因の削りが**まだ確定していない**あいだは完了させない。
-        // 建玉照会は 1 巡回だけ過少に返り得る——1 回の観測で行を閉じると、次の巡回で建玉が戻っても復元できない。
+        // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5)・追記(7): 外部要因の減少が**まだ確定していない**あいだは完了させない。
+        // 建玉照会は 1 巡回だけ過少に返り得る——1 回の観測で行を閉じると、次の巡回で建玉が戻っても取り返せない。
         if (current.HasUnconfirmedExternalReduction)
             return Outcome.StillActive;
 
@@ -187,7 +188,7 @@ public sealed class ProtectiveStopGuard(
             if (remaining > 0)
                 return Outcome.StillActive; // 正常: 建玉あり・逆指値滞留中。
 
-            // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5): 主張が 0 になった理由が**まだ確定していない外部要因**なら据え置く。
+            // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5)・追記(7): 建玉残が 0 になった理由が**まだ確定していない外部要因**なら据え置く。
             // 建玉照会は 1 巡回だけ過少に返り得る——その 1 回で**ブローカーに実在する生きた逆指値を取り消す**のは
             // 無音かつ不可逆な破壊である。確定（2 巡回連続の観測）を待ってから取り消す。
             if (stop.HasUnconfirmedExternalReduction)
@@ -211,7 +212,7 @@ public sealed class ProtectiveStopGuard(
         // 失効（Cancelled / Rejected / Expired）。
         if (remaining <= 0)
         {
-            // 主張が 0 の理由が未確定の外部要因なら据え置く（次の巡回で建玉が戻れば復元して再発注へ回る。追記(5)）。
+            // 建玉残が 0 の理由が未確定の外部要因なら据え置く（確定しなければ主張は減らないまま再発注へ回る。追記(7)）。
             if (stop.HasUnconfirmedExternalReduction)
                 return Outcome.Unknown;
 
