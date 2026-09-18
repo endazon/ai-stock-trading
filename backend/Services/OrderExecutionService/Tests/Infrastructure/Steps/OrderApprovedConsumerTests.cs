@@ -141,6 +141,56 @@ public class OrderApprovedConsumerTests
             _inner.CancelOrderAsync(orderId, ct);
     }
 
+    // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: S3 の能力を持つ SIMULATE 相当のフェイク。
+    // 代替注文種別は拒否される（公式は模擬取引を指値・成行のみとしている）。拒否理由つきで返す。
+    private sealed class AlternativeStopRejectingSimulateBroker
+        : IBrokerAdapter, IProtectiveOrderBroker, IAlternativeProtectiveOrderBroker
+    {
+        private readonly PaperBrokerAdapter _inner = new();
+
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
+        public AlternativeProtectiveOrderType AlternativeProtectiveOrderType =>
+            AlternativeProtectiveOrderType.StopLimit;
+
+        public int StopPlaceCount { get; private set; }
+
+        public int AlternativePlaceCount { get; private set; }
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
+            _inner.PlaceOrderAsync(intent, ct);
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default)
+        {
+            StopPlaceCount++;
+            return _inner.PlaceStopOrderAsync(closeIntent, triggerPrice, decisionId, ct);
+        }
+
+        public Task<AlternativeProtectiveOrderPlacement> PlaceAlternativeStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, decimal entryReferencePrice, Guid decisionId,
+            CancellationToken ct = default)
+        {
+            AlternativePlaceCount++;
+            return Task.FromResult(new AlternativeProtectiveOrderPlacement(
+                new BrokerOrder("alt-1", closeIntent, OrderStatus.Rejected, 0, 0m,
+                    DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+                AlternativeProtectiveOrderType.StopLimit,
+                1,
+                "Paper trading does not support StopLimit order"));
+        }
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            _inner.PlaceMarketOrderAsync(closeIntent, decisionId, ct);
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.GetOrderAsync(orderId, ct);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.CancelOrderAsync(orderId, ct);
+    }
+
     private const string ServiceName = "ai-stock-trading.order-execution-service";
 
     private static Task<IHost> NewHostAsync(IExecutedOrderStore store, IBrokerAdapter broker) =>
@@ -349,6 +399,41 @@ public class OrderApprovedConsumerTests
             .Which.Reason.Should().Be(OrderDispatchForgoneReason.StopLossMethodNotPermitted);
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
         session.Sent.MessagesOf<ProtectiveStopWaived>().Should().BeEmpty();
+
+        await host.StopAsync();
+    }
+
+    // FR-10, FR-11, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: SIMULATE＋S3 の発注で、
+    // **注文種別と拒否理由（retType / retMsg）が AlternativeProtectiveStopAttempted として発行される**。
+    // 🔴 発行が欠けると、監査台帳に「なぜ S3 が使えないのか」が 1 文字も残らない（#821 の目的そのもの）。
+    [Fact]
+    public async Task SIMULATEでS3の新規買いは代替注文種別の試行と拒否理由が発行される()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var broker = new AlternativeStopRejectingSimulateBroker();
+        using var host = await NewHostAsync(store, broker);
+
+        var decisionId = Guid.NewGuid();
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(
+            decisionId, NewIntent(), 10, DateTimeOffset.UtcNow,
+            StopLossMethod: StopLossExecutionMethod.AlternativeBrokerOrderType));
+
+        broker.AlternativePlaceCount.Should().Be(1, "S3 は代替注文種別で発注する");
+        broker.StopPlaceCount.Should().Be(0, "S0 の逆指値は使わない");
+
+        var attempted = session.Sent.MessagesOf<AlternativeProtectiveStopAttempted>()
+            .Should().ContainSingle().Which;
+        attempted.EntryDecisionId.Should().Be(decisionId);
+        attempted.OrderType.Should().Be(AlternativeProtectiveOrderType.StopLimit);
+        attempted.RejectReasonCode.Should().Be(1);
+        attempted.RejectReasonMessage.Should().Be("Paper trading does not support StopLimit order");
+        attempted.Method.Should().Be(StopLossExecutionMethod.AlternativeBrokerOrderType);
+
+        // 拒否時の扱いは S0 と同じ（paper のエントリーは即時約定するため成行で手仕舞う）。
+        session.Sent.MessagesOf<ProtectiveStopPlaced>().Should().BeEmpty();
+        session.Sent.MessagesOf<ProtectiveStopWaived>().Should().BeEmpty("S3 は免除ではない");
+        session.Sent.MessagesOf<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().Be(ProtectiveStopRemediation.PositionClosed);
 
         await host.StopAsync();
     }

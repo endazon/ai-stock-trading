@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-04, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0342, IADR-0344]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop]
-issues: [#17, #18, #819, #820]
+iadrs: [IADR-0015, IADR-0019, IADR-0342, IADR-0344, IADR-0347]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types]
+issues: [#17, #18, #809, #819, #820, #821]
 -->
 
 
@@ -70,6 +70,13 @@ issues: [#17, #18, #819, #820]
   相関はいずれもエントリーの `DecisionId` である。配置の要約には「ブローカーへの逆指値なし・システム停止中は決済されない」を、
   決済拒否の要約には「建玉が無保護で残っている（要人手対応）」を書く——利用者の承認なしに決済注文・取消が起きた理由の一次証跡になるため。
   **据え置きが猶予を過ぎた記録は 1 件につき 1 回だけ残す**（毎巡回書くと台帳が同じ事実で埋まる）。
+- moomoo SIMULATE で損切りの実行機構 S3（他のブローカー側注文種別）が選ばれていた新規建ては、保護レグを
+  ストップリミット（または設定でトレーリングストップ）で発注し、**試行の事実（`AlternativeProtectiveStopAttempted`）**を
+  **受理・拒否のどちらでも 1 件**記録する（#821）。🔴 **要約と payload に注文種別と拒否理由（`retType` / `retMsg`）を残すことが
+  本記録の目的そのものである** —— 模擬取引は公式に「指値・成行のみ」とされており、断られた理由がここに無いと
+  「なぜその種別が使えないのか」を後から誰も説明できない。相関はエントリーの `DecisionId`。
+  結果の扱いは逆指値（既定の手法）と同一であり、試行の記録は `ProtectiveStopPlaced` / `ProtectiveStopCoverageLost` と
+  **排他ではなく重ねて**残る。
 
 ## 永続化方針
 

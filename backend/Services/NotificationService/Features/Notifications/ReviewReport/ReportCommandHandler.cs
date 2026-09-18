@@ -67,6 +67,34 @@ public sealed class ReportCommandHandler(
         }
     }
 
+    // FR-07, FR-14, UC-03〜05, #834: `/report` の period（会話キー）の入力補完の候補。
+    //
+    // 閂1（多層認証）は**ここでも掛ける**。補完は「どの会話キーが存在するか」を漏らす経路であり、
+    // 許可外の利用者へは**候補を返さない**（kill switch / GFV と同水準＝窓口の認可水準を下げない）。
+    //
+    // 🔴 **fail-safe**: 一覧の取得に失敗したら候補なしで素通しする（コントローラが空を返す契約）。
+    // 補完は入力の補助であって統制ではない——補完が引けないことを理由に `/report` 自体を壊さない。
+    public async Task<IReadOnlyList<string>> SuggestPeriodsAsync(
+        DiscordCommandContext context,
+        string? input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var auth = DiscordCommandAuthorizer.Authorize(context, options);
+        if (!auth.IsAllowed)
+        {
+            // 詳細設計07: 許可外の着信は無視しログのみ残す。候補も返さない（存在の探索を助けない）。
+            logger.LogWarning(
+                "報告書の入力補完を拒否しました（User={UserId}・Channel={ChannelId}・理由={Reason}）。",
+                context.UserId, context.ChannelId, auth.Reason);
+            return [];
+        }
+
+        var periodKeys = await controller.ListPeriodKeysAsync(cancellationToken).ConfigureAwait(false);
+        return ReportPeriodSuggestions.Filter(periodKeys, input);
+    }
+
     // FR-07, UC-03〜05: レビュー局面（版番号）の照会。表示専用・副作用なし。
     // **報告書の本文・要約は取りに行かない**（IADR-0240 決定4。要約は ReportDraftPresented 通知が
     // サニタイズ済みで届けており、Bot が生本文を取るとそのサニタイズを迂回する）。

@@ -880,4 +880,42 @@ public class AuditEntryFactoryTests
         entry.CorrelationId.Should().Be(entryDecisionId);
         entry.Summary.Should().Contain(expected).And.Contain("950").And.Contain("940");
     }
+
+    // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由（retType / retMsg）が要約から読めること**
+    // ——これが残らないと「なぜ S3 が使えないのか」を台帳から説明できない（#821 の目的そのもの）。
+    [Fact]
+    public void 代替注文種別の試行は種別と拒否理由が要約から読める()
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new AlternativeProtectiveStopAttempted(
+                entryDecisionId, Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                AlternativeProtectiveOrderType.StopLimit, OrderStatus.Rejected, "alt-1",
+                1, "Paper trading does not support StopLimit order",
+                StopLossExecutionMethod.AlternativeBrokerOrderType, BrokerProvider.MoomooSimulate, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(AlternativeProtectiveStopAttempted));
+        entry.CorrelationId.Should().Be(entryDecisionId, "エントリーと 1 本で辿る");
+        entry.Symbol.Should().Be("AAPL");
+        entry.OccurredAt.Should().Be(StopT0);
+        entry.Summary.Should().Contain("StopLimit").And.Contain("S3").And.Contain("retType=1")
+            .And.Contain("Paper trading does not support StopLimit order");
+    }
+
+    // 受理された試行には理由が付かない（要約が「断られた」と読めてはならない）。
+    [Fact]
+    public void 受理された代替注文種別の試行の要約に拒否理由は現れない()
+    {
+        var entry = AuditEntryFactory.From(
+            new AlternativeProtectiveStopAttempted(
+                Guid.NewGuid(), Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                AlternativeProtectiveOrderType.TrailingStop, OrderStatus.Accepted, "alt-2",
+                null, null, StopLossExecutionMethod.AlternativeBrokerOrderType,
+                BrokerProvider.MoomooSimulate, StopT0),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("TrailingStop").And.Contain("Accepted");
+        entry.Summary.Should().NotContain("retType").And.NotContain("理由:");
+    }
 }

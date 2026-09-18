@@ -1,4 +1,5 @@
 using OrderExecutionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -163,5 +164,64 @@ public class MoomooBrokerOptionsTests
 
         act.Should().Throw<InvalidOperationException>()
             .Which.Message.Should().Contain("Broker:Moomoo:OpenD:Port");
+    }
+
+    // ---- #821, IADR-0347: S3（代替注文種別）の設定 ----
+
+    [Fact]
+    public void 代替の保護注文種別は未設定なら_StopLimit_で指値幅は_1_パーセント()
+    {
+        var options = MoomooBrokerOptions.FromConfiguration(Config());
+
+        options.AlternativeStop.OrderType.Should().Be(AlternativeProtectiveOrderType.StopLimit);
+        options.AlternativeStop.StopLimitOffsetRatio.Should().Be(0.01m);
+    }
+
+    [Theory]
+    [InlineData("trailingstop", AlternativeProtectiveOrderType.TrailingStop)]
+    [InlineData("TrailingStop", AlternativeProtectiveOrderType.TrailingStop)]
+    [InlineData("stoplimit", AlternativeProtectiveOrderType.StopLimit)]
+    public void 代替の保護注文種別を構成から読む(string configured, AlternativeProtectiveOrderType expected)
+    {
+        var options = MoomooBrokerOptions.FromConfiguration(Config(
+            ("Broker:Moomoo:AlternativeStopOrderType", configured)));
+
+        options.AlternativeStop.OrderType.Should().Be(expected);
+    }
+
+    // 🔴 否定形: 未知の値を既定へ黙って倒さない（「TrailingStop を選んだつもりで StopLimit が飛ぶ」を作らない）。
+    [Theory]
+    [InlineData("trailing")]
+    [InlineData("stop")]
+    [InlineData("OrderType_StopLimit")]
+    public void 未知の代替注文種別は起動時に停止する(string configured)
+    {
+        var act = () => MoomooBrokerOptions.FromConfiguration(Config(
+            ("Broker:Moomoo:AlternativeStopOrderType", configured)));
+
+        act.Should().Throw<InvalidOperationException>()
+            .Which.Message.Should().Contain("Broker:Moomoo:AlternativeStopOrderType");
+    }
+
+    [Fact]
+    public void StopLimit_の指値幅を構成から読む()
+    {
+        var options = MoomooBrokerOptions.FromConfiguration(Config(
+            ("Broker:Moomoo:StopLimitOffsetRatio", "0.025")));
+
+        options.AlternativeStop.StopLimitOffsetRatio.Should().Be(0.025m);
+    }
+
+    [Theory]
+    [InlineData("-0.01")]
+    [InlineData("0.2")]
+    [InlineData("1%")]
+    public void 範囲外の指値幅は起動時に停止する(string configured)
+    {
+        var act = () => MoomooBrokerOptions.FromConfiguration(Config(
+            ("Broker:Moomoo:StopLimitOffsetRatio", configured)));
+
+        act.Should().Throw<InvalidOperationException>()
+            .Which.Message.Should().Contain("Broker:Moomoo:StopLimitOffsetRatio");
     }
 }

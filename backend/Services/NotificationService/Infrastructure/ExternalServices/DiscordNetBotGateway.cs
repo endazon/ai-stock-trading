@@ -96,6 +96,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         _client.Log += OnLogAsync;
         _client.Ready += OnReadyAsync;
         _client.SlashCommandExecuted += OnSlashCommandAsync;
+        _client.AutocompleteExecuted += OnAutocompleteAsync;
         _client.ButtonExecuted += OnButtonAsync;
         _client.ModalSubmitted += OnModalAsync;
     }
@@ -207,9 +208,12 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 .AddChoice("request-changes", "request-changes"))
             .AddOption(new SlashCommandOptionBuilder()
                 .WithName("period")
-                .WithDescription("会話キー（例: daily-2026-08-28）")
+                .WithDescription("会話キー（例: daily-2026-09-18 / weekly-2026-W38 / monthly-2026-09）")
                 .WithType(ApplicationCommandOptionType.String)
-                .WithRequired(true))
+                .WithRequired(true)
+                // FR-14, #834: 入力補完（候補は報告書サービスの一覧から・OnAutocompleteAsync が返す）。
+                // 自由入力は従来どおり可能（補完は補助であり、候補外のキーも送れる）。
+                .WithAutocomplete(true))
             .Build();
 
         try
@@ -308,6 +312,46 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             $"{result.Message}\n確定すると、この版の方針が取引に適用されます。確定しますか？",
             components: builder.Build(),
             ephemeral: true).ConfigureAwait(false);
+    }
+
+    // FR-07, FR-14, UC-03〜05, #834: `/report` の period の入力補完。判断（多層認証・絞り込み・上限）は
+    // すべて ReportCommandHandler / ReportPeriodSuggestions が持ち、ここは変換に徹する。
+    //
+    // 🔴 **何があっても例外を Discord.Net へ返さない（fail-safe）。** 補完が失敗しても候補なしで応答し、
+    // `/report` 自体は従来どおり動く（#834 の射程。Bot を落とさない）。
+    private async Task OnAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        IReadOnlyList<string> suggestions = [];
+
+        try
+        {
+            // 対象は /report の period だけ。他のコマンド・他のオプションには候補を出さない。
+            if (interaction.Data.CommandName == "report" && interaction.Data.Current.Name == "period")
+            {
+                // 許可判定は handler が行う（許可外には候補を返さない）。RawCommand に利用者の入力は載せない
+                // ——補完は解析しないため不要であり、ログへ外部由来の文字列を混ぜない。
+                var context = ContextOf(interaction, "/report autocomplete");
+                suggestions = await _reportHandler
+                    .SuggestPeriodsAsync(context, interaction.Data.Current.Value as string)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "報告書の入力補完に失敗しました（候補なしで応答します）。");
+        }
+
+        try
+        {
+            await interaction
+                .RespondAsync(suggestions.Select(key => new AutocompleteResult(key, key)))
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 応答期限切れ・二重応答。ここで落とすと Bot ごと巻き込むため、ログのみ残す。
+            _logger.LogWarning(ex, "入力補完の応答に失敗しました。");
+        }
     }
 
     // FR-19, FR-11, UC-06, #464, ADR-0028 決定2/決定3: /gfv clear → 確認ボタンを提示する。
@@ -574,7 +618,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     }
 
     // FR-07, FR-14, UC-03〜05, IADR-0240: 確定の確認ボタンの押下 → 版番号付きの確定を実行する。
-    // CustomId 末尾の "-<version>" を切り出し、残りを periodKey とする（periodKey は英小文字・数字・ハイフンのみで
+    // CustomId 末尾の "-<version>" を切り出し、残りを periodKey とする（periodKey は英数字・ハイフンのみで
     // パーサが値域を保証する。**版番号は最後のハイフン以降**＝periodKey 自体がハイフンを含んでも曖昧にならない）。
     //
     // **二重押下は 2 段で吸収する**: ①押下後にボタンを取り除く（再押下できない）②ハンドラの版番号ガードが
@@ -726,6 +770,8 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         SocketSlashCommand c => c.GuildId?.ToString(),
         SocketMessageComponent c => c.GuildId?.ToString(),
         SocketModal m => m.GuildId?.ToString(),
+        // #834: 入力補完も多層認証を通すため、専用サーバーの判定に GuildId が要る（欠けると DM 扱いで全拒否）。
+        SocketAutocompleteInteraction a => a.GuildId?.ToString(),
         _ => null,
     };
 

@@ -268,6 +268,12 @@ public class AuditCycleCompletenessTests
                 decisionId, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
                 ProtectiveStopRemediation.PositionClosed, 10, Guid.NewGuid(), Intent(), t),
             new ProtectiveStopPlaced(decisionId, Guid.NewGuid(), "STOP-1", Intent(), 950m, 1, t),
+            // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: 代替注文種別での保護レグ試行（種別と拒否理由）。
+            new AlternativeProtectiveStopAttempted(
+                decisionId, Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                AlternativeProtectiveOrderType.StopLimit, OrderStatus.Rejected, "alt-1",
+                1, "Paper trading does not support StopLimit order",
+                StopLossExecutionMethod.AlternativeBrokerOrderType, BrokerProvider.MoomooSimulate, t),
             // FR-10, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の免除。
             new ProtectiveStopWaived(
                 decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,

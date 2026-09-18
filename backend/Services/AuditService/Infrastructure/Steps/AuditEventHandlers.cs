@@ -509,6 +509,18 @@ public sealed class SoftwareStopExecutedAuditHandler(IAuditEventStore store, ICl
     }
 }
 
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: S3（他のブローカー側注文種別）の試行を
+// 中央監査台帳へ記録する。**注文種別と拒否理由（retType / retMsg）を残すことが S3 の目的そのもの**であり、
+// 本ハンドラが無いと理由は発注執行のログにしか残らない（7 年保持される台帳から読めない）。
+public sealed class AlternativeProtectiveStopAttemptedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(AlternativeProtectiveStopAttempted message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-04, FR-09, FR-11, ADR-0017 決定4-(3), #335, IADR-0217: フォールバック発火を台帳へ記録する。
 //
 // 🔴 **本ハンドラが「当月のフォールバック発火回数（用途別・原因別）」の唯一の供給元である。**

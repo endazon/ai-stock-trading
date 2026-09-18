@@ -263,6 +263,15 @@ spec:
             - name: Broker__Moomoo__OpenD__ReplyTimeoutSeconds
               value: {{ . | quote }}
             {{- end }}
+            {{- /* #821: S3（代替注文種別）の設定。空=アダプタ既定（stoplimit / 1%）＝env を注入しない。 */}}
+            {{- with $.Values.moomoo.alternativeStopOrderType }}
+            - name: Broker__Moomoo__AlternativeStopOrderType
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $.Values.moomoo.stopLimitOffsetRatio }}
+            - name: Broker__Moomoo__StopLimitOffsetRatio
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
           readinessProbe:

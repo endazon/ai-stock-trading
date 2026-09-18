@@ -67,6 +67,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         // FR-10, ADR-0040 決定1, #820, IADR-0344 決定8: S1（ソフトウェア逆指値）の配置と発動結果。
         [InlineData(typeof(SoftwareStopArmed), "AiStockTrading.Shared.Contracts.Events.SoftwareStopArmed")]
         [InlineData(typeof(SoftwareStopExecuted), "AiStockTrading.Shared.Contracts.Events.SoftwareStopExecuted")]
+        // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: 代替注文種別での保護レグ試行（種別と拒否理由）。
+        [InlineData(typeof(AlternativeProtectiveStopAttempted), "AiStockTrading.Shared.Contracts.Events.AlternativeProtectiveStopAttempted")]
         [InlineData(typeof(PositionCloseRequested), "AiStockTrading.Shared.Contracts.Events.PositionCloseRequested")]
         [InlineData(typeof(PositionReconciliationDrift), "AiStockTrading.Shared.Contracts.Events.PositionReconciliationDrift")]
         [InlineData(typeof(PriceMovementDetected), "AiStockTrading.Shared.Contracts.Events.PriceMovementDetected")]

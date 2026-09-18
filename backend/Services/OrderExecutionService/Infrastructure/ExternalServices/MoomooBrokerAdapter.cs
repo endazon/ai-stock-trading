@@ -19,15 +19,20 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // 逆指値へ一本化されており、逆指値レグは OrderType_Stop（AuxPrice=発火価格）で発注する。
 // FR-05, #331, IADR-0211: 接続確立の失敗（BrokerUnavailableException＝確実に未発注）は Rejected へ**丸めない**
 // （「拒否＝証券会社が受理しなかった状態」の集計を接続障害で汚染しない）。呼び出し側が「見送り」にする。
+// FR-10, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: IAlternativeProtectiveOrderBroker も実装する。
+// SIMULATE が OrderType_Stop を受け付けない（#809 で実測）ため、S3 は隣の種別（StopLimit / TrailingStop。
+// alternativeStop で選ぶ）を試し、**拒否理由（retType / retMsg）を戻り値へ載せて**呼び出し側の監査へ運ぶ。
 public sealed class MoomooBrokerAdapter(
     IMoomooTradeClient client,
     BrokerProvider provider,
     TimeProvider? timeProvider = null,
-    ILogger<MoomooBrokerAdapter>? logger = null)
+    ILogger<MoomooBrokerAdapter>? logger = null,
+    MoomooAlternativeStopSettings? alternativeStop = null)
     : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource, IBrokerAvailabilityProbe, IBrokerAccountSource,
-      IProtectiveOrderBroker
+      IProtectiveOrderBroker, IAlternativeProtectiveOrderBroker
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    private readonly MoomooAlternativeStopSettings _alternativeStop = alternativeStop ?? new MoomooAlternativeStopSettings();
 
     /// <summary>
     /// FR-20, FR-12, #386, IADR-0149 決定1: 本アダプタの発注先（<c>BrokerSelection.ToBrokerProvider()</c> の解決結果）。
@@ -58,30 +63,105 @@ public sealed class MoomooBrokerAdapter(
         PlaceCoreAsync(closeIntent, MoomooClientOrderId.From(decisionId), cancellationToken,
             MoomooOrderKind.Market);
 
+    // FR-10, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: 本アダプタが S3 で試す注文種別（構成で決まる）。
+    public AlternativeProtectiveOrderType AlternativeProtectiveOrderType => _alternativeStop.OrderType;
+
+    // FR-10, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: 保護レグを代替注文種別で発注し、
+    // **拒否理由（retType / retMsg）を戻り値へ載せる**。拒否そのものの扱い（建玉を持たない）は呼び出し側＝S0 と同一。
+    public async Task<AlternativeProtectiveOrderPlacement> PlaceAlternativeStopOrderAsync(
+        OrderIntent closeIntent,
+        decimal triggerPrice,
+        decimal entryReferencePrice,
+        Guid decisionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(closeIntent);
+        var orderType = _alternativeStop.OrderType;
+        var (kind, price, trailValue) = BuildAlternativeParameters(closeIntent, triggerPrice, entryReferencePrice);
+
+        var placement = await PlaceWithRejectionDetailAsync(
+                closeIntent with { Price = price },
+                MoomooClientOrderId.From(decisionId),
+                cancellationToken,
+                kind,
+                kind == MoomooOrderKind.StopLimit ? triggerPrice : null,
+                trailValue)
+            .ConfigureAwait(false);
+
+        return new AlternativeProtectiveOrderPlacement(
+            placement.Order, orderType, placement.RejectReasonCode, placement.RejectReasonMessage);
+    }
+
+    // #821, IADR-0347: 代替注文種別ごとの送信パラメータ。
+    // StopLimit: 指値は発火価格から**不利側**（売りなら下・買いなら上）へ StopLimitOffsetRatio だけずらす
+    //   ——発火価格と同値にすると急落・急騰時に約定せず、保護レグの体を成さない。
+    // TrailingStop: トレール幅は |エントリーの判断価格 − 発火価格|（発火価格そのものは送らない）。
+    private (MoomooOrderKind Kind, decimal Price, decimal? TrailValue) BuildAlternativeParameters(
+        OrderIntent closeIntent, decimal triggerPrice, decimal entryReferencePrice)
+    {
+        if (_alternativeStop.OrderType == AlternativeProtectiveOrderType.TrailingStop)
+        {
+            return (MoomooOrderKind.TrailingStop, closeIntent.Price,
+                Math.Abs(entryReferencePrice - triggerPrice));
+        }
+
+        var offset = triggerPrice * _alternativeStop.StopLimitOffsetRatio;
+        var limitPrice = closeIntent.Side == TradeSide.Sell ? triggerPrice - offset : triggerPrice + offset;
+        return (MoomooOrderKind.StopLimit, limitPrice, null);
+    }
+
     private async Task<BrokerOrder> PlaceCoreAsync(
         OrderIntent intent,
         string? remark,
         CancellationToken cancellationToken,
         MoomooOrderKind kind = MoomooOrderKind.Limit,
-        decimal? triggerPrice = null)
+        decimal? triggerPrice = null) =>
+        (await PlaceWithRejectionDetailAsync(intent, remark, cancellationToken, kind, triggerPrice)
+            .ConfigureAwait(false)).Order;
+
+    // #821, IADR-0347: 発注 1 回と、拒否だったときの理由。理由は S3（代替注文種別）だけが読み出す
+    // ——従来経路（PlaceCoreAsync）は Order だけを取り出すため、挙動は 1 バイトも変わらない。
+    private async Task<(BrokerOrder Order, int? RejectReasonCode, string? RejectReasonMessage)>
+        PlaceWithRejectionDetailAsync(
+            OrderIntent intent,
+            string? remark,
+            CancellationToken cancellationToken,
+            MoomooOrderKind kind,
+            decimal? triggerPrice,
+            decimal? trailValue = null)
     {
         var now = _time.GetUtcNow();
 
         // FR-05, #30: 実ブローカーが拒否する不正注文（数量/価格 <= 0）は送信せず終端 Rejected で返す（Paper と同一）。
         // 逆指値は発火価格が正であることも要する（#331）。成行は価格を送らないため参照価格の正負は問わない。
+        // #821: StopLimit は発火価格と指値の両方、TrailingStop はトレール幅が正であることを要する。
         var invalid = intent.Quantity <= 0
-            || (kind == MoomooOrderKind.Limit && intent.Price <= 0m)
-            || (kind == MoomooOrderKind.Stop && triggerPrice is not > 0m);
+            || (kind is MoomooOrderKind.Limit or MoomooOrderKind.StopLimit && intent.Price <= 0m)
+            || (kind is MoomooOrderKind.Stop or MoomooOrderKind.StopLimit && triggerPrice is not > 0m)
+            || (kind == MoomooOrderKind.TrailingStop && trailValue is not > 0m);
         if (invalid)
-            return Terminal(intent, OrderStatus.Rejected, now);
+        {
+            return (Terminal(intent, OrderStatus.Rejected, now), null,
+                $"発注前検証で棄却しました（種別={kind} 数量={intent.Quantity} 価格={intent.Price} "
+                + $"発火価格={triggerPrice} トレール幅={trailValue}）。OpenD へは送信していません。");
+        }
 
         try
         {
             // Mode=Live でも SIMULATE を用いる（本 PR は実弾を撃たない・IADR-0016）。実弾解禁は別 IADR＋明示 config。
             var request = new MoomooOrderRequest(intent.Symbol, MapMarket(intent.Market), MapSide(intent.Side),
-                intent.Quantity, intent.Price, remark, kind, triggerPrice);
+                intent.Quantity, intent.Price, remark, kind, triggerPrice, trailValue);
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
-            return ToBrokerOrder(intent, result, now);
+            return (ToBrokerOrder(intent, result, now), null, null);
+        }
+        catch (MoomooTradeRequestException ex)
+        {
+            // #821, IADR-0347: OpenD が非成功を返した＝**証券会社が受理しなかった**。retType / retMsg を保って返す
+            // （S3 はこの理由を監査台帳へ残すことが目的そのものである）。倒し先は従来どおり終端 Rejected。
+            _logger.LogWarning(ex,
+                "moomoo 発注を拒否されました symbol={Symbol} qty={Qty} 種別={Kind} retType={RetType} retMsg={RetMsg}",
+                intent.Symbol, intent.Quantity, kind, ex.RetType, ex.RetMsg);
+            return (Terminal(intent, OrderStatus.Rejected, now), ex.RetType, ex.RetMsg);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
         {
@@ -90,7 +170,7 @@ public sealed class MoomooBrokerAdapter(
             // Rejected は「証券会社が受理しなかった状態」（FR-05）であり、届いてすらいない事象を混ぜない（IADR-0211）。
             _logger.LogWarning(ex, "moomoo 発注に失敗したため Rejected に倒します symbol={Symbol} qty={Qty}",
                 intent.Symbol, intent.Quantity);
-            return Terminal(intent, OrderStatus.Rejected, now);
+            return (Terminal(intent, OrderStatus.Rejected, now), null, ex.Message);
         }
     }
 

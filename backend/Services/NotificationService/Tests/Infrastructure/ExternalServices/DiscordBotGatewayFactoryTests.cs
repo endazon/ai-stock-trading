@@ -201,5 +201,9 @@ public class DiscordBotGatewayFactoryTests
         public Task<ReportReviewResult> RequestChangesAsync(
             string periodKey, int expectedVersion, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
+
+        // #834: 入力補完の候補も同じ（生成の時点では呼ばない）。
+        public Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
     }
 }

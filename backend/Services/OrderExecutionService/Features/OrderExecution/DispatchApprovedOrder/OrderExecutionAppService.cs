@@ -23,10 +23,14 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // FR-10, FR-12, ADR-0040 決定1, #819, IADR-0342: 損切りの実行機構は承認が運ぶ（既定 S0）。解釈は
 // StopLossMethodPolicy だけが行う。**S2（moomoo SIMULATE の新規買いに限る）では保護逆指値を発注せず建玉を保持し、
 // 免除の事実（ProtectiveStopWaived）を発行する**——「逆指値なしの建玉を持たない」の例外はこの 1 分岐だけである。
-// S0 以外が SIMULATE 以外へ届いたら発注しない（実弾を無防備にしない）。S3 は未実装のため S0 と同じ扱い。
+// S0 以外が SIMULATE 以外へ届いたら発注しない（実弾を無防備にしない）。未知の手法は未実装のため S0 と同じ扱い。
 //
 // FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: **S1（moomoo SIMULATE の新規買いに限る）では保護逆指値を
 // ブローカーへ出さず、エントリーを送る前にソフトウェア逆指値を永続化する**。決済は損切りライン到達で SoftwareStopExecutor が行う。
+//
+// FR-10, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: **S3 は保護レグを代替注文種別（StopLimit / TrailingStop）で
+// 発注し、種別と拒否理由（retType / retMsg）を AlternativeProtectiveStopAttempted として残す**。
+// 結果の扱いは S0 と完全に同じ（受理＝保護レグの記録／拒否＝建玉を持たない）——分岐するのは「何で発注するか」だけである。
 public sealed class OrderExecutionAppService(
     IBrokerAdapter broker,
     IExecutedOrderStore store,
@@ -94,6 +98,14 @@ public sealed class OrderExecutionAppService(
                 _logger.LogError(
                     "損切りの実行機構 S1 の記録先（保護記録ストア）が構成されていないため発注しません（DecisionId={DecisionId}）。",
                     approved.DecisionId);
+                return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
+            }
+
+            // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: S3 の能力が無い発注先へ S3 が届いたら**発注しない**
+            // （S0 へ黙って読み替えない。上の「逆指値能力が無い Open は見送る」と同じ fail-closed）。
+            if (disposition == StopLossMethodDisposition.AlternativeBrokerOrderType
+                && broker is not IAlternativeProtectiveOrderBroker)
+            {
                 return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
         }
@@ -215,9 +227,11 @@ public sealed class OrderExecutionAppService(
 
         if (intent.PositionEffect == PositionEffect.Open && entryAlive)
         {
-            var (stopPlaced, coverageLost) = await PlaceProtectiveStopAsync(approved, brokerOrder, cancellationToken)
+            var useAlternative = disposition == StopLossMethodDisposition.AlternativeBrokerOrderType;
+            var (stopPlaced, coverageLost, attempted) = await PlaceProtectiveStopAsync(
+                    approved, brokerOrder, useAlternative, cancellationToken)
                 .ConfigureAwait(false);
-            return OrderDispatchResult.FromExecuted(executed, stopPlaced, coverageLost);
+            return OrderDispatchResult.FromExecuted(executed, stopPlaced, coverageLost, stopAttempted: attempted);
         }
 
         return OrderDispatchResult.FromExecuted(executed);
@@ -239,7 +253,7 @@ public sealed class OrderExecutionAppService(
             case StopLossMethodDisposition.NotImplementedFallbackToBrokerStop:
                 _logger.LogWarning(
                     "損切りの実行機構 {Method} は未実装のため S0（ブローカー側逆指値）と同じ扱いで発注します"
-                    + "（DecisionId={DecisionId}・S3=#821）。",
+                    + "（DecisionId={DecisionId}）。",
                     approved.StopLossMethod, approved.DecisionId);
                 break;
         }
@@ -261,8 +275,12 @@ public sealed class OrderExecutionAppService(
             new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow));
 
     // FR-10, UC-02, #331, IADR-0210 決定1/3: 保護逆指値の同時発注と、未受理時の建玉解消の全分岐。
-    private async Task<(ProtectiveStopPlaced? StopPlaced, ProtectiveStopCoverageLost? CoverageLost)>
-        PlaceProtectiveStopAsync(OrderApproved approved, BrokerOrder entryOrder, CancellationToken cancellationToken)
+    // FR-10, #821, IADR-0347: useAlternative（S3）のときだけ代替注文種別で発注し、試行の記録を返す。
+    // **未受理・受理の後段の扱いは分岐しない**（S0 と同じ 1 本の経路）。
+    private async Task<(ProtectiveStopPlaced? StopPlaced, ProtectiveStopCoverageLost? CoverageLost,
+        AlternativeProtectiveStopAttempted? StopAttempted)>
+        PlaceProtectiveStopAsync(
+            OrderApproved approved, BrokerOrder entryOrder, bool useAlternative, CancellationToken cancellationToken)
     {
         var intent = approved.Intent;
         var protective = (IProtectiveOrderBroker)broker; // 事前検証済み（未実装なら見送りで到達しない）
@@ -273,16 +291,40 @@ public sealed class OrderExecutionAppService(
         var closeIntent = BuildCloseIntent(intent, intent.Quantity, triggerPrice);
 
         BrokerOrder? stopOrder = null;
+        AlternativeProtectiveStopAttempted? attempted = null;
         try
         {
-            stopOrder = await protective
-                .PlaceStopOrderAsync(closeIntent, triggerPrice, stopDecisionId, cancellationToken)
-                .ConfigureAwait(false);
+            if (useAlternative)
+            {
+                // 事前検証済み（能力が無ければ見送りで到達しない）。
+                var alternative = (IAlternativeProtectiveOrderBroker)broker;
+                var placement = await alternative
+                    .PlaceAlternativeStopOrderAsync(
+                        closeIntent, triggerPrice, intent.Price, stopDecisionId, cancellationToken)
+                    .ConfigureAwait(false);
+                stopOrder = placement.Order;
+                attempted = Attempted(
+                    approved, stopDecisionId, placement.OrderType, placement.Order.Status,
+                    placement.Order.OrderId, placement.RejectReasonCode, placement.RejectReasonMessage);
+            }
+            else
+            {
+                stopOrder = await protective
+                    .PlaceStopOrderAsync(closeIntent, triggerPrice, stopDecisionId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // 逆指値の発注失敗（接続断含む）＝未受理と同じ分岐（建玉を持たない）。原因は解消側の結果に現れる。
             stopOrder = null;
+            if (useAlternative)
+            {
+                // #821, IADR-0347: 例外で落ちても「何の種別で試したか」は残す（種別は発注前に知れる）。
+                attempted = Attempted(
+                    approved, stopDecisionId, ((IAlternativeProtectiveOrderBroker)broker).AlternativeProtectiveOrderType,
+                    OrderStatus.Rejected, brokerOrderId: null, rejectReasonCode: null, rejectReasonMessage: ex.Message);
+            }
         }
 
         var now = clock.UtcNow;
@@ -303,14 +345,28 @@ public sealed class OrderExecutionAppService(
                 intent.FxRateToBase, attempt, ProtectiveStopState.Active, now, now));
 
             return (new ProtectiveStopPlaced(
-                approved.DecisionId, stopDecisionId, stopOrder.OrderId, closeIntent, triggerPrice, attempt, now), null);
+                    approved.DecisionId, stopDecisionId, stopOrder.OrderId, closeIntent, triggerPrice, attempt, now),
+                null, attempted);
         }
 
         // 未受理: 逆指値なしの建玉を持たない（業務フロー 02 の表）。
         var coverageLost = await ResolveUnprotectedEntryAsync(approved, entryOrder, cancellationToken)
             .ConfigureAwait(false);
-        return (null, coverageLost);
+        return (null, coverageLost, attempted);
     }
+
+    // FR-10, FR-11, FR-12, #821, IADR-0347: S3 の試行の記録（受理・拒否のどちらでも 1 件）。
+    private AlternativeProtectiveStopAttempted Attempted(
+        OrderApproved approved,
+        Guid stopDecisionId,
+        AlternativeProtectiveOrderType orderType,
+        OrderStatus status,
+        string? brokerOrderId,
+        int? rejectReasonCode,
+        string? rejectReasonMessage) =>
+        new(approved.DecisionId, stopDecisionId, approved.Intent.Symbol, approved.Intent.Market,
+            orderType, status, brokerOrderId, rejectReasonCode, rejectReasonMessage,
+            approved.StopLossMethod, broker.Provider, clock.UtcNow);
 
     // 未受理時の建玉解消: 未約定なら取消、約定済みなら成行手仕舞い、いずれも失敗なら None（Critical・人手対応）。
     private async Task<ProtectiveStopCoverageLost> ResolveUnprotectedEntryAsync(

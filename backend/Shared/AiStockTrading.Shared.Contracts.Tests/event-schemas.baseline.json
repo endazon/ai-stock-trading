@@ -1,4 +1,18 @@
 {
+  "AlternativeProtectiveStopAttempted": {
+    "BrokerOrderId": "String",
+    "EntryDecisionId": "Guid",
+    "Market": "Market",
+    "Method": "StopLossExecutionMethod",
+    "OccurredAt": "DateTimeOffset",
+    "OrderType": "AlternativeProtectiveOrderType",
+    "Provider": "BrokerProvider",
+    "RejectReasonCode": "Int32?",
+    "RejectReasonMessage": "String",
+    "Status": "OrderStatus",
+    "StopDecisionId": "Guid",
+    "Symbol": "String"
+  },
   "AssumptionsChanged": {
     "Actor": "String",
     "ChangedAt": "DateTimeOffset",
