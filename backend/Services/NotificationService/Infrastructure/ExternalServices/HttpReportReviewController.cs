@@ -131,6 +131,11 @@ public sealed class HttpReportReviewController(
     //
     // `periodStart` は**文字列として受けてから**日付として解釈を試みる。解釈できない値で一覧ごと落とさない
     //（解釈できなければ末尾へ倒し、会話キーの降順で並ぶ）。
+    //
+    // 🟡 **一覧 API は射影もページングも持たず、本文を含む全件を返す**（報告書サービス無改修の受容。#834）。
+    // ここで読み捨てても転送コストは掛かっており、**補完は打鍵ごとに発火する**ため件数とともに悪化する。
+    // 軽い一覧（会話キーだけを返す射影）を報告書サービス側へ足すのは別 issue の射程である
+    //（作業仕様書 20260918_834 の「未検証・保留」）。
     public async Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
     {
         try
