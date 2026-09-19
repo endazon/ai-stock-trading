@@ -419,12 +419,19 @@ public static class AuditEntryFactory
     // FR-10, FR-11, UC-02, #331, IADR-0210: 保護逆指値が成立しなかった（未受理・失効）ときの建玉解消の記録。
     // 利用者の承認なしに注文取消・建玉決済が起きた事象であり、この記録が「なぜ建玉/注文が消えたか」の一次証跡になる。
     // Remediation=None は解消も失敗した状態（逆指値なしの建玉が残り得る）——要約で明示する。
+    // #848, IADR-0117（2026-09-19 追記・改定 7）: CloseDispatchIndeterminate は成行手仕舞いを送ったが結果を
+    // 確認できていない状態。「失敗」とは書かない（注文は生きているかもしれない）——要約で明示する。
     public static AuditEntry From(ProtectiveStopCoverageLost e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(ProtectiveStopCoverageLost), e.EntryDecisionId, e.Symbol,
         Truncate($"{e.Symbol} 保護逆指値が成立せず（{e.Cause}）数量{e.Quantity}を対処: {e.Remediation}"
-            + (e.Remediation == ProtectiveStopRemediation.None
-                ? "——**解消にも失敗。逆指値なしの建玉が残っている可能性（要人手対応）**"
-                : string.Empty)),
+            + e.Remediation switch
+            {
+                ProtectiveStopRemediation.None =>
+                    "——**解消にも失敗。逆指値なしの建玉が残っている可能性（要人手対応）**",
+                ProtectiveStopRemediation.CloseDispatchIndeterminate =>
+                    "——**成行手仕舞いは送信済みだが結果未確認（届いたか不明）。注文は重ねていない（要人手確認）**",
+                _ => string.Empty,
+            }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // FR-10, FR-11, FR-12, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 保護逆指値の**免除**（ペーパーで免除）。

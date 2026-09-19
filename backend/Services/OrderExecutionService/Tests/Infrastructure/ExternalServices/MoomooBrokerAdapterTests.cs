@@ -125,13 +125,63 @@ public class MoomooBrokerAdapterTests
         client.LastRequest.Should().BeNull(); // 送信していない
     }
 
-    [Fact]
-    public async Task client_例外_送信後の失敗_は_Rejected_に倒す_fail_safe()
+    // 🔴 T-10-408, FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）:
+    // **送信後に結果を確認できなかった失敗を終端 Rejected へ畳まない**（否定形・最重要）。
+    // ここへ落ちる代表例は返信待ちのタイムアウトであり、注文は**既に送信済み**である。
+    // Rejected はリスク管理の取引台帳で**在庫の押さえを解く引き金**であり、不明のまま解くと
+    // 同じ建玉に 2 本目の決済が並ぶ（二重決済で意図しないショート化）。
+    [Theory]
+    [InlineData(PositionEffect.Close)]
+    [InlineData(PositionEffect.Open)]
+    public async Task 送信後に結果を確認できない失敗は_Rejected_へ畳まず伝播する_否定形(PositionEffect effect)
     {
-        // 送信後の分類不能な失敗（届いたか不明）は従来どおり終端 Rejected（予約とリコンサイルが守る）。
-        var client = new FakeClient { ThrowOnPlace = () => new InvalidOperationException("応答異常") };
+        var cause = new TimeoutException("SendAsync の返信待ちがタイムアウト（テスト）");
+        var client = new FakeClient { ThrowOnPlace = () => cause };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var act = async () => await adapter.PlaceOrderAsync(Intent() with { PositionEffect = effect });
+
+        var thrown = await act.Should()
+            .ThrowAsync<AiStockTrading.Shared.Contracts.Ports.BrokerDispatchIndeterminateException>(
+                "不明を Rejected へ畳むと在庫の押さえが解け、二重決済でショート化する（決済）／"
+                + "建玉が無いと仮定して保護レグを張らずに終わる（エントリー）");
+        thrown.Which.InnerException.Should().BeSameAs(cause, "原因が消えると切り分けができない");
+        client.LastRequest.Should().NotBeNull("送信は済んでいる——だからこそ『不明』である");
+    }
+
+    // 🔴 T-10-408: 保護レグ（逆指値）・成行手仕舞いでも同じ。**偽の注文 ID を持つ終端記録を作らない。**
+    [Fact]
+    public async Task 送信後に結果を確認できない失敗は保護レグと成行でも伝播する_否定形()
+    {
+        var client = new FakeClient { ThrowOnPlace = () => new TimeoutException("返信待ちタイムアウト（テスト）") };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+        var closeIntent = Intent(side: TradeSide.Sell) with { PositionEffect = PositionEffect.Close };
+
+        var stop = async () => await adapter.PlaceStopOrderAsync(closeIntent, 95m, Guid.NewGuid());
+        var market = async () => await adapter.PlaceMarketOrderAsync(closeIntent, Guid.NewGuid());
+
+        await stop.Should().ThrowAsync<AiStockTrading.Shared.Contracts.Ports.BrokerDispatchIndeterminateException>();
+        await market.Should().ThrowAsync<AiStockTrading.Shared.Contracts.Ports.BrokerDispatchIndeterminateException>();
+    }
+
+    // 🔴 T-10-408（是正で**変えてはいけない**側）: **確認できた非受理は従来どおり終端 Rejected** である。
+    // 発注拒否での在庫解放は #848 の射程内であり、ここを外すと 2 つ目の恒久ロックを作る。
+    // 🔴 T-10-450, IADR-0117（改定 8）: 刺激を retType=1 から **-1（Failed）**へ直した。1 は SDK の列挙に存在しない値で、
+    // 「確認できた非受理」が成り立つのは -1 だけである（-100 / -200 / -400 / -500 と未定義の値は「返事を読めなかった」
+    // であり、MoomooPlaceOrderRetTypeClassificationTests が逆向きに固定する）。
+    [Fact]
+    public async Task 証券会社が非受理を返したときは従来どおり終端_Rejected()
+    {
+        var client = new FakeClient
+        {
+            ThrowOnPlace = () => new MoomooTradeRequestException(
+                "PlaceOrder", MoomooRetType.Failed, "Insufficient buying power"),
+        };
+
         var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent());
-        order.Status.Should().Be(OrderStatus.Rejected);
+
+        order.Status.Should().Be(OrderStatus.Rejected, "retType == -1 は『証券会社が受理しなかった』と確認できている");
+        order.CompletedAt.Should().NotBeNull("終端である");
     }
 
     // FR-05, #331, IADR-0211: **接続確立の失敗（確実に未発注）は Rejected へ丸めない**——
@@ -327,6 +377,22 @@ public class MoomooBrokerAdapterTests
         MoomooBrokerAdapter.MapState(MoomooOrderState.FilledAll).Should().Be(OrderStatus.Filled);
         MoomooBrokerAdapter.MapState(MoomooOrderState.Cancelled).Should().Be(OrderStatus.Cancelled);
         MoomooBrokerAdapter.MapState(MoomooOrderState.Failed).Should().Be(OrderStatus.Rejected);
+        // 🔴 T-10-407, #848: **不明は拒否へ畳まない**（非終端＝まだ動くものとして押さえを残す）。
+        MoomooBrokerAdapter.MapState(MoomooOrderState.Unknown).Should().Be(OrderStatus.Accepted);
+    }
+
+    // 🔴 T-10-407, #848: 不明な注文は**終端化しない**ので CompletedAt が立たず、約定追跡が引き直し続ける。
+    // Rejected へ畳むと終端になり、二度と引き直されないまま建玉の押さえだけが解ける。
+    [Fact]
+    public async Task 不明な状態の照会結果は終端にしない()
+    {
+        var client = new FakeClient { QueryResult = new("mo-unknown", MoomooOrderState.Unknown, 0, 0m) };
+
+        var found = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetOrderAsync("mo-unknown");
+
+        found!.Status.Should().Be(OrderStatus.Accepted);
+        found.Status.Should().NotBe(OrderStatus.Rejected);
+        found.CompletedAt.Should().BeNull();
     }
 
     [Fact]

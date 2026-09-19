@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using RiskManagementService.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using RiskManagementService.Infrastructure.Persistence;
 namespace RiskManagementService.Infrastructure.Migrations
 {
     [DbContext(typeof(RiskManagementDbContext))]
-    partial class RiskManagementDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918151239_AddApprovedOrderTerminalState")]
+    partial class AddApprovedOrderTerminalState
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -132,26 +135,6 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.HasIndex("TradingDay");
 
                     b.ToTable("borrow_fee_unavailable_days", (string)null);
-                });
-
-            modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.BrokerPositionObservationRow", b =>
-                {
-                    b.Property<int>("Id")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("ObservedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PositionsJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("broker_position_observation", (string)null);
                 });
 
             modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.BuyInInferenceRow", b =>
@@ -401,65 +384,6 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("pause", (string)null);
-                });
-
-            modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.PositionDriftAdoptionRow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Actor")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<DateTimeOffset>("AdoptedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("BrokerQuantity")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("CostBasisPrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<decimal>("FxRateToBase")
-                        .HasColumnType("numeric");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<int>("LedgerQuantityBefore")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Market")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("ObservedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Quantity")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("Side")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IdempotencyKey")
-                        .IsUnique();
-
-                    b.ToTable("position_drift_adoptions", (string)null);
                 });
 
             modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.PositionDriftStateRow", b =>

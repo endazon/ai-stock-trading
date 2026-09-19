@@ -165,13 +165,23 @@ builder.Services.Configure<OrderExecutionService.Features.OrderExecution.GuardPr
         OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuardOptions.SectionName));
 if (brokerSelection.IsMoomoo)
 {
+    // #848, IADR-0117（改定 9）: 据え置き中の成行手仕舞いを「このプロセスがいつ通知したか」の記憶（singleton・非永続）。
+    // ガードは巡回ごとに作られる scoped なので、記憶は外に置く。再起動で消えることが「再起動後に必ず再通知する」仕組み。
+    builder.Services.AddSingleton<
+        OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>();
     builder.Services.AddScoped<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(sp =>
         new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard(
             sp.GetRequiredService<IBrokerAdapter>(),
             (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>(),
             sp.GetRequiredService<IProtectiveStopOrderStore>(),
             sp.GetRequiredService<IExecutedOrderStore>(),
-            sp.GetRequiredService<IClock>()));
+            // #848, IADR-0117（改定 7）: 成行手仕舞いも予約 → 発注 → 確定の 3 相で送る（届いたか不明を撃ち直さない）。
+            sp.GetRequiredService<IOrderReservationStore>(),
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<ILoggerFactory>()
+                .CreateLogger<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(),
+            sp.GetRequiredService<
+                OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>()));
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }

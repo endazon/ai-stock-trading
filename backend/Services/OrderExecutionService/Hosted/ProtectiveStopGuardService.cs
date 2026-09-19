@@ -1,5 +1,6 @@
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
+using AiStockTrading.Shared.Contracts.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -78,16 +79,51 @@ public sealed class ProtectiveStopGuardService(
         // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
         var bus = new MessageBus(runtime);
-        foreach (var evt in result.Events)
-            await bus.PublishAsync(evt).ConfigureAwait(false);
+        await PublishAllAsync(
+                result.Events, evt => bus.PublishAsync(evt),
+                scope.ServiceProvider.GetService<HeldCloseNotificationTracker>())
+            .ConfigureAwait(false);
 
         if (result.Replaced > 0 || result.ClosedOut > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogWarning(
                 "保護逆指値ガード: Active {Scanned} 件を評価（維持 {StillActive} / 完了 {Completed} / 再発注 {Replaced}"
-                    + " / 手仕舞い {ClosedOut} / 照会不能 {Unknown} / 失敗 {Failed}）。",
+                    + " / 手仕舞い {ClosedOut} / 据え置き（照会不能・送信結果不明） {Unknown} / 失敗 {Failed}）。",
                 result.Scanned, result.StillActive, result.Completed, result.Replaced,
                 result.ClosedOut, result.Unknown, result.Failed);
 
         return result;
+    }
+
+    // 🔴 #848, IADR-0117（2026-09-19 追記・改定 9）: **発行できなかった据え置きの通知は、通知済みとして覚えない。**
+    // ガードは CloseDispatchIndeterminate を作った時点で「通知した」と記憶する（1 時間は重ねないため）。
+    // ここで発行に失敗したのに記憶が残ると、Critical も台帳の押さえ（CloseIntent）も出ないまま 1 時間黙る。
+    // 未発行分の記憶を消してから投げ直す＝次の巡回（既定 30 秒）が入口で発行し直す。
+    // プロセスごと落ちた場合は記憶そのものが消えるので、同じく再起動後の最初の巡回が発行する。
+    public static async Task PublishAllAsync(
+        IReadOnlyList<object> events, Func<object, ValueTask> publish, HeldCloseNotificationTracker? tracker)
+    {
+        for (var i = 0; i < events.Count; i++)
+        {
+            try
+            {
+                await publish(events[i]).ConfigureAwait(false);
+            }
+            catch
+            {
+                for (var j = i; j < events.Count; j++)
+                {
+                    if (events[j] is ProtectiveStopCoverageLost
+                        {
+                            Remediation: ProtectiveStopRemediation.CloseDispatchIndeterminate,
+                            CloseDecisionId: { } closeDecisionId,
+                        })
+                    {
+                        tracker?.Forget(closeDecisionId);
+                    }
+                }
+
+                throw;
+            }
+        }
     }
 }

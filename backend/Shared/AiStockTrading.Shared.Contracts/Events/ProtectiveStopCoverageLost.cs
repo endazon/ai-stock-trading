@@ -11,6 +11,14 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //
 // Remediation=PositionClosed のとき CloseDecisionId / CloseIntent を持ち、リスク管理が台帳の承認行へ
 // 結線する（手仕舞いレグの約定は OrderExecuted 相関で台帳の建玉を減らす。ProtectiveStopPlaced と同じ作法）。
+//
+// 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）:
+// **Remediation=CloseDispatchIndeterminate も CloseDecisionId / CloseIntent を持つ。** 成行手仕舞いを送信したが
+// 結果を確認できていない（届いたか不明）状態であり、手仕舞いは証券会社側で**生きているかもしれない**。
+// リスク管理は PositionClosed と同じく承認行を足し、**処理中の決済として在庫を押さえる**
+//（押さえないと利用者の手仕舞い要求が通り、同じ株数に 2 本の決済が並ぶ＝二重決済でショート化）。
+// None で代用してはならない —— None は手仕舞いレグを運ばない約束であり、通知の文面も
+// 「解消にも失敗した」になって、読んだ人に手で成行を重ねさせる。
 public record ProtectiveStopCoverageLost(
     Guid EntryDecisionId,
     string Symbol,
@@ -43,4 +51,12 @@ public enum ProtectiveStopRemediation
 
     /// <summary>対処も失敗した。逆指値なしの建玉が残っている可能性があり、人手対応を要する（Critical）。</summary>
     None,
+
+    /// <summary>
+    /// #848, IADR-0117（改定 7）: 成行手仕舞いを**送信したが結果を確認できていない**（届いたか不明）。
+    /// システムは**注文を重ねない**（予約を Reserved のまま残し、同じ DecisionId では再送しない）。
+    /// CloseDecisionId / CloseIntent を持ち、台帳は処理中の決済として押さえる。人手の確認を要する（Critical）。
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    CloseDispatchIndeterminate,
 }
