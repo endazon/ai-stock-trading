@@ -35,11 +35,20 @@ public static class FxTranslationBuilder
     /// 集計できる（未供給へ倒さない）。対象約定が 1 件も無ければ「0 円（明細 0 件）」——事実であり未供給ではない。
     /// </para>
     /// </summary>
-    public static FxTranslationBuildResult Build(IReadOnlyList<PeriodTradeFill> fills, PeriodEndFxRate? periodEnd)
+    /// <param name="adoptions">
+    /// FR-11, ADR-0041 決定 1, #870, #859, IADR-0360 決定 4: 期間の<b>乖離の取り込み</b>。
+    /// 🔴 <b>在庫（USD 取得原価）だけを減らし、明細は作らない。</b> システム外の売買が<b>いつ・いくらのレートで</b>
+    /// 決済されたかは知り得ないため、その分の再測定を明細にすると日付とレートを捏造することになる（FR-16）。
+    /// 減らすのは、既に消えた建玉が<b>期末レートで再測定され続ける</b>のを止めるためである（#859 の主訴）。
+    /// </param>
+    public static FxTranslationBuildResult Build(
+        IReadOnlyList<PeriodTradeFill> fills,
+        PeriodEndFxRate? periodEnd,
+        IReadOnlyList<PeriodDriftAdoption>? adoptions = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
 
-        var translatable = fills.Where(IsTranslatable).OrderBy(f => f.ExecutedAt).ToList();
+        var translatable = fills.Where(IsTranslatable).ToList();
 
         var unrecorded = translatable.Count(f => f.FxRateBaseToDisplay is not > 0m);
         if (unrecorded > 0)
@@ -48,8 +57,19 @@ public static class FxTranslationBuilder
         var entries = new List<FxTranslationEntry>();
         var lots = new Dictionary<(string Symbol, Market Market), Lot>();
 
-        foreach (var fill in translatable)
+        // 対象（USD 建て）の取り込みも同じ時系列へ混ぜる。順序の定義は PeriodLedgerTimeline が持つ。
+        var translatableAdoptions = adoptions?.Where(IsTranslatable).ToList();
+        foreach (var entry in PeriodLedgerTimeline.Merge(translatable, translatableAdoptions))
         {
+            if (entry.Adoption is { } adoption)
+            {
+                var adoptionKey = (adoption.Symbol, adoption.Market);
+                lots.TryGetValue(adoptionKey, out var held);
+                lots[adoptionKey] = Reduce(held, adoption.SignedQuantity);
+                continue;
+            }
+
+            var fill = entry.Fill!;
             var key = (fill.Symbol, fill.Market);
             var signedQuantity = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             lots.TryGetValue(key, out var lot);
@@ -77,10 +97,31 @@ public static class FxTranslationBuilder
 
     // 対象＝市場通貨が基準通貨（USD）であり、かつ表示通貨（JPY）ではない約定。
     // 市場の追加で通貨が増えたときに黙って対象外になるのではなく、MarketCurrency.Of が落とす（既定へ倒さない）。
-    private static bool IsTranslatable(PeriodTradeFill fill)
+    private static bool IsTranslatable(PeriodTradeFill fill) => IsTranslatable(fill.Market);
+
+    private static bool IsTranslatable(PeriodDriftAdoption adoption) => IsTranslatable(adoption.Market);
+
+    private static bool IsTranslatable(Market market)
     {
-        var currency = MarketCurrency.Of(fill.Market);
+        var currency = MarketCurrency.Of(market);
         return currency == MarketCurrency.Base && currency != DisplayCurrency;
+    }
+
+    // #870, #859, IADR-0360 決定 4: 取り込みを在庫へ適用する。**明細を作らない**（決済時のレートが知り得ないため）。
+    // 取得単価・認識時レートは不変（SignedInventory の「同方向のまま一部決済」と同じ規則）。
+    // 取り込みは減らす方向に限られる（リスク管理のサービス層が保証する）。万一の建て増し・在庫 0 への適用は
+    // **在庫をそのまま返して無視し**、反転は**全決済として在庫を空にする**（余りを新しい建玉にしない）
+    // ——知り得ない価格・レートの建玉を作らないためである。
+    private static Lot Reduce(Lot current, int signedQuantity)
+    {
+        if (current.Quantity == 0 || Math.Sign(current.Quantity) == Math.Sign(signedQuantity))
+            return current;
+
+        var remaining = current.Quantity + signedQuantity;
+        if (remaining == 0 || Math.Sign(remaining) != Math.Sign(current.Quantity))
+            return default;
+
+        return current with { Quantity = remaining };
     }
 
     // 符号付き在庫へ 1 約定を適用し、決済分の明細を積む。SignedInventory と同じ分岐（新規建て／建て増し／減少・反転）で、

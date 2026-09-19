@@ -2,6 +2,7 @@ using RiskManagementService.Infrastructure.Persistence;
 using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Features.RiskManagement.GetRiskStatus;
 using RiskManagementService.Domain;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
@@ -20,6 +21,9 @@ public class RiskStatusServiceTests
         public InMemoryPauseStore Pause { get; } = new();
         public InMemoryLockoutStore Lockout { get; } = new();
         public InMemoryStageGateStore StageGate { get; }
+
+        // #870, IADR-0360 決定 5: 当日のシステム外売買の取り込み件数の供給元（取り込みが無ければ 0 件）。
+        public InMemoryPortfolioLedgerStore Ledger { get; } = new();
         public PortfolioState State { get; init; } = new() { Capital = 100_000m };
 
         public Fixture(TradingStage stage = TradingStage.Stage0Verification)
@@ -38,6 +42,7 @@ public class RiskStatusServiceTests
                 Pause,
                 Lockout,
                 StageGate,
+                Ledger,
                 new FakeClock(Now, Today));
             return svc.Build();
         }
@@ -136,5 +141,55 @@ public class RiskStatusServiceTests
         status.DailyOrderedAmount.Should().Be(40_000m);
         status.MaxDailyOrderAmount.Should().BeGreaterThan(0m);
         status.MaxOpenPositions.Should().BeGreaterThan(0);
+    }
+
+    // ---- FR-11, SC-03, ADR-0041 決定 1, #870, IADR-0360 決定 5: 当日のシステム外売買の取り込み件数 ----
+
+    private static LedgerDriftAdoption Adoption(DateTimeOffset adoptedAt, Market market = Market.UnitedStates) =>
+        new(Guid.NewGuid(), "AAPL", market, TradeSide.Sell, 10, CostBasisPrice: 1m, FxRateToBase: 1m, LedgerQuantityBefore: 10, BrokerQuantity: 0,
+            adoptedAt.AddMinutes(-10), "owner", "アプリから直接売却", adoptedAt);
+
+    // T-10-542: 当日の取り込みだけを数える（**当日の境界は取り込みの市場の現地取引日**）。
+    // Now は 2026-07-09 06:00Z＝**ET 07-09 02:00**・**JST 07-09 15:00**（いずれも取引日は 07-09）。
+    [Fact]
+    public void 当日のシステム外売買の取り込み件数を出す()
+    {
+        var f = new Fixture();
+        // ET 07-09 01:00 と ET 07-09 06:00。どちらも当日。
+        f.Ledger.AppendDriftAdoption(Adoption(new DateTimeOffset(2026, 7, 9, 5, 0, 0, TimeSpan.Zero)));
+        f.Ledger.AppendDriftAdoption(Adoption(new DateTimeOffset(2026, 7, 9, 10, 0, 0, TimeSpan.Zero)));
+
+        f.Build().DriftAdoptionCountToday.Should().Be(2);
+    }
+
+    // 🔴 前日の取り込みは数えない（「当期」は当日である）。
+    [Fact]
+    public void 前日の取り込みは当日の件数に入らない()
+    {
+        var f = new Fixture();
+        // ET 07-08 01:00＝米国の取引日 07-08。
+        f.Ledger.AppendDriftAdoption(Adoption(new DateTimeOffset(2026, 7, 8, 5, 0, 0, TimeSpan.Zero)));
+
+        f.Build().DriftAdoptionCountToday.Should().Be(0);
+    }
+
+    // 🔴 当日の境界は**市場ごと**である。同じ瞬間でも日本市場では 07-09（当日）・米国市場では 07-08（前日）になる
+    //    ——1 つの市場の暦で全件を切ると数え違える（IADR-0246 と同じ規律）。
+    [Fact]
+    public void 当日の境界は市場ごとに判定する()
+    {
+        var instant = new DateTimeOffset(2026, 7, 8, 20, 0, 0, TimeSpan.Zero); // JST 07-09 05:00 / ET 07-08 16:00
+        var f = new Fixture();
+        f.Ledger.AppendDriftAdoption(Adoption(instant, Market.Japan));
+        f.Ledger.AppendDriftAdoption(Adoption(instant, Market.UnitedStates));
+
+        f.Build().DriftAdoptionCountToday.Should().Be(1, "日本市場の 1 件だけが当日である");
+    }
+
+    // 🔴 0 件は「取り込みが無かった」という**事実**である（未供給ではない。台帳は常に読める）。
+    [Fact]
+    public void 取り込みが無ければ_0_件を出す()
+    {
+        new Fixture().Build().DriftAdoptionCountToday.Should().Be(0);
     }
 }

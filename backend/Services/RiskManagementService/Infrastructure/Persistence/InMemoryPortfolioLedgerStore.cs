@@ -83,7 +83,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         {
             result.Add(new LedgerFill(
                 a.Symbol, a.Market, a.Side, PositionEffect.Close, a.Quantity, a.CostBasisPrice, a.AdoptedAt,
-                StopLossPrice: null, FxRateToBase: a.FxRateToBase, IsDriftAdoption: true));
+                StopLossPrice: null, FxRateToBase: a.FxRateToBase, Origin: TradeOrigin.ManualAdoption));
         }
 
         return result;
@@ -117,6 +117,10 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         ArgumentNullException.ThrowIfNull(adoption);
         return _adoptions.TryAdd(adoption.IdempotencyKey, adoption);
     }
+
+    // #870, IADR-0360 決定 2: 取り込みそのものを読む口（EfPortfolioLedgerStore と同一の意味論）。
+    public IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions() =>
+        [.. _adoptions.Values.OrderBy(a => a.AdoptedAt).ThenBy(a => a.Id)];
 
     // #292, IADR-0117: 処理中の決済数量（EfPortfolioLedgerStore と同一の意味論）。
     public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter)

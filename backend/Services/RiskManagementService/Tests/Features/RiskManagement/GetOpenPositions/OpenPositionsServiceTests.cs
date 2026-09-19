@@ -23,6 +23,8 @@ public class OpenPositionsServiceTests
         public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter) => 0;
         public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) { }
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => false; // #849: 本テストは取り込みを使わない
+
+        public IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions() => []; // #870: 同上
     }
 
     // 損切り価格を持たない約定（欠損＝近似フォールバックの検証用）。

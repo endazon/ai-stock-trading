@@ -40,7 +40,15 @@ public sealed record RiskStatusView(
     // FR-10, SC-03, ADR-0040 決定1, #819, IADR-0342 決定2: **損切りの実行機構**（S0〜S3）。計画は「どの手法を
     // 選んでいるかを SC-03 に出す」と定める（どの手法で走ったかが読めなければ観測結果を解釈できない）。
     // 表示は #823。末尾の既定値つき項目として足し、既存の生成箇所を変えない。
-    StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder);
+    StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder,
+    // FR-11, FR-06, SC-03, ADR-0041 決定 1, #870, IADR-0360 決定 5: **当日のシステム外売買の取り込み件数**。
+    // 計画は「統制状態の参照に、当期の取り込みの件数を出す」と定める（参照のみ。本画面から取り込みは行わない）。
+    // 🔴 **0 件は「取り込みが無かった」という事実**である（未供給ではない）——台帳は常に読めるため未供給の状態が無い。
+    // 🔴 これらの取り込みは**実現損益を記録していない**（不明）。したがって当日損益・基準資金は実際の口座と
+    // ずれ得る。件数を出す目的は「ずれていることを画面から知る手段」を与えることである。
+    // 「当日」は**取り込みの市場の現地取引日**で判定する（当日実現損益・日次発注枠と同じ境界。IADR-0246）。
+    // 末尾の既定値つき項目として足し、既存の生成箇所を変えない。
+    int DriftAdoptionCountToday = 0);
 
 // ADR-0009: 成立中で最優先の統制。重い順（kill switch > 日次損失ロックアウト > 一時停止）。
 public enum ActiveTradingControl
