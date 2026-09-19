@@ -276,6 +276,25 @@ jobs:
         if: ${{ !cancelled() }}
         run: node scripts/check-adr-index-sync.js
 
+      # NFR-01 / #875 / IADR-0363: .ai-context/adr/README.md の索引行に在った**日付つき追記ブロック**
+      # （`［YYYY-MM-DD 追記 …］`）が、衝突解決で黙って消えていないこと。
+      #
+      # 🔴 索引行は 1 行が数千文字ある。**行の一部が消えても `git diff` は「1 行削除・1 行追加」としか
+      # 出さない** —— 差分としては読めず、レビューも上の adr-index-sync（「索引行が**変更**されたか」
+      # しか見ない）も捕まえない。同型の事故が 2 回起きた（IADR-0210 ← ［2026-09-18 追記 / #820］ /
+      # IADR-0118 ← ［2026-09-19 追記 / #849］）。運用標準「検査器の追加は同型事故 2 回から」。
+      #
+      # fetch-depth: 0 が要る —— base / theirs / ours の 3 版を `git show` で読むため。
+      # 浅いクローンでは版を取れず skip する（その旨を warn で出す）。
+      # 意図的な撤去はコミット本文の `[remove-adr-addendum] <IADR> <印>` で 1 件ずつ宣言する
+      # （全体スキップは用意しない。宣言したら notice が出る）。
+      - name: Self-test ADR index addendum loss checker
+        if: ${{ !cancelled() }}
+        run: node scripts/check-adr-index-addendum-loss.js --self-test
+      - name: Check ADR index addendum loss
+        if: ${{ !cancelled() }}
+        run: node scripts/check-adr-index-addendum-loss.js
+
       # NFR / #524 / IADR-0204 の残余リスクの解消: 必読規約の総量予算をエージェントごとに検査する。
       #
       # 予算値 51,200 の正本は計画リポ運用ガイド §8（planning#364）であり、検査器が持つのは複製である
