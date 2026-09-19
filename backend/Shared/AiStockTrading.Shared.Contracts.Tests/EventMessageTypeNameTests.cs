@@ -67,6 +67,10 @@ namespace AiStockTrading.Shared.Contracts.Tests
         // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: 代替注文種別での保護レグ試行（種別と拒否理由）。
         [InlineData(typeof(AlternativeProtectiveStopAttempted), "AiStockTrading.Shared.Contracts.Events.AlternativeProtectiveStopAttempted")]
         [InlineData(typeof(PositionCloseRequested), "AiStockTrading.Shared.Contracts.Events.PositionCloseRequested")]
+        // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による手仕舞いの取消要求と、
+        // 未約定残を残して終わった手仕舞い（失効・取消・拒否）。
+        [InlineData(typeof(PositionCloseCancellationRequested), "AiStockTrading.Shared.Contracts.Events.PositionCloseCancellationRequested")]
+        [InlineData(typeof(PositionCloseAbandoned), "AiStockTrading.Shared.Contracts.Events.PositionCloseAbandoned")]
         // FR-10, FR-11, UC-06, #849, IADR-0350: 利用者が承認した乖離の取り込み（台帳が約定以外で動く唯一の操作）。
         [InlineData(typeof(PositionDriftAdopted), "AiStockTrading.Shared.Contracts.Events.PositionDriftAdopted")]
         [InlineData(typeof(PositionReconciliationDrift), "AiStockTrading.Shared.Contracts.Events.PositionReconciliationDrift")]

@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using RiskManagementService.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace RiskManagementService.Infrastructure.Migrations
+namespace RiskManagementService.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(RiskManagementDbContext))]
-    partial class RiskManagementDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260919070704_AddApprovedOrderTerminalConcurrencyToken")]
+    partial class AddApprovedOrderTerminalConcurrencyToken
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,25 +24,6 @@ namespace RiskManagementService.Infrastructure.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.AccountEquityDayRow", b =>
-                {
-                    b.Property<DateOnly>("TradingDay")
-                        .HasColumnType("date");
-
-                    b.Property<decimal>("EquityInBase")
-                        .HasColumnType("numeric");
-
-                    b.Property<DateTimeOffset>("ObservedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("TradingDay");
-
-                    b.ToTable("account_equity_days", (string)null);
-                });
 
             modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.ApprovedOrderRow", b =>
                 {

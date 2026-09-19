@@ -106,6 +106,15 @@ plan_refs:
 | `OrderExecutionService/OrderAmendmentDispatcher` | 訂正・取消の**配管だけ**が入っており駆動元が呼んでいない。クラス冒頭のコメントは「本 PR の時点で呼び出し元は存在しない。[#141](https://github.com/endazon/ai-stock-trading/issues/141) / [#152](https://github.com/endazon/ai-stock-trading/issues/152) が本クラスを呼ぶ」と自認するが、🔴 **両 issue とも CLOSED でありながら呼んでいない**（実測） | 駆動元（時限取消・リコンサイル基点・pause による強制取消）が本型を呼ぶ。呼ばれないまま残すなら**型ごと消す** |
 | `RiskManagementService/BorrowFeeAccrualService` | 借株料の日次計上。登録位置のコメントが「**単位を取り違えると累計は 100 倍ずれる**ため、スケジューラも料率の供給元も登録しない＝意図した遮断」と明記（[#331](https://github.com/endazon/ai-stock-trading/issues/331) / [#342](https://github.com/endazon/ai-stock-trading/issues/342) の範囲） | 料率の単位が確定し供給元が入って、日次計上の駆動が本型を呼ぶ |
 
+🔴 **［2026-09-19 追記 / [#847](https://github.com/endazon/ai-stock-trading/issues/847)・[#768](https://github.com/endazon/ai-stock-trading/issues/768)］リストは 1 件に減った。**
+`OrderExecutionService/OrderAmendmentDispatcher` は**結線された**（利用者が板に残った手仕舞いを取り消す経路
+＝`PositionCloseCancellationHandler` が呼ぶ。IADR-0357 決定 2）ため、既知リストから外した。
+**ラチェットは設計どおり働いた** —— 外さなければ「実体を失った項目がある」で赤くなる。
+残るのは `RiskManagementService/BorrowFeeAccrualService`（料率の単位未確定による意図した遮断）の 1 件である。
+なお本件は、**未結線が実運用の実害になった最初の事例**でもある（板に残った手仕舞いを消す手段が
+moomoo アプリしか無く、下落局面で建玉を落とせなくなった）。**「型は在る・テストも通る・しかし本番から
+呼ばれない」は、いつか誰かが本番で必要とする。**
+
 🔴 **リストは無視リストではない。** 載せた項目が結線されたら「実体を失った項目がある」で**赤くなる**。
 `.claude/rules/traceability.repo.md` の「**暫定の除外は、外す条件と一緒に書く。条件を書かない除外は
 恒久化する**」に従う。

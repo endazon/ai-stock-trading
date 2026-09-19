@@ -90,25 +90,44 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
     }
 
     // FR-10, UC-06, #848, IADR-0117: 承認が終端になったことを記録する（EfPortfolioLedgerStore と同一の意味論）。
-    public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
+    // #847, IADR-0357: 戻り値は「この呼び出しで初めて終端を記録したか」（条件は 1 バイトも変えていない）。
+    public bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
     {
         // 終端を捏造しない（Accepted / PartiallyFilled は「まだ動く」）。
         // #848 改定 2: 門は AbandonsUnfilledRemainder（取消・失効・拒否）であって IsTerminal ではない。
         // **全量約定（Filled）は書かない**（EfPortfolioLedgerStore と同一の意味論）。
         if (!OrderStatusLifecycle.AbandonsUnfilledRemainder(terminalStatus))
-            return;
+            return false;
 
         // 相関する承認が無ければ**書かない**（AddOrUpdate は無い鍵を作ってしまうので使わない）。
         // 単調・冪等: 既に終端なら動かさない（最初の終端が真）。
         while (_approvals.TryGetValue(decisionId, out var current))
         {
             if (current.TerminalAt is not null)
-                return;
+                return false;
 
             var updated = current with { TerminalAt = terminalAt, TerminalStatus = terminalStatus };
             if (_approvals.TryUpdate(decisionId, updated, current))
-                return;
+                return true;
         }
+
+        return false;
+    }
+
+    // #847, IADR-0357: 承認に対する約定累計（EfPortfolioLedgerStore と同一の意味論）。
+    public int? FindApprovedFilledQuantity(Guid decisionId)
+    {
+        if (!_approvals.ContainsKey(decisionId))
+            return null;
+
+        var total = 0;
+        foreach (var fill in _fills.Values)
+        {
+            if (fill.DecisionId == decisionId)
+                total += fill.FilledQuantity;
+        }
+
+        return total;
     }
 
     // FR-05, FR-10, UC-06, #852, IADR-0356: 見送り（発注していない）を記録する

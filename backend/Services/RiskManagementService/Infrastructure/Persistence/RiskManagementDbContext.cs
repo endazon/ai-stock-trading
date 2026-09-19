@@ -144,6 +144,29 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.HasKey(r => r.DecisionId);
             e.Property(r => r.DecisionId).ValueGeneratedNever();
             e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+
+            // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: **TerminalAt は並行トークンである。**
+            // 🔴 **本列を書く操作は「読む → null か検査する → 代入する → SaveChanges」の形をとる。**
+            // **そのままでは TOCTOU が成立する。**
+            // 🔴 **書き手の数を前提にしない。** 現に EfPortfolioLedgerStore の MarkTerminal（終端・#847）と
+            // MarkForgone（見送り・#852）の 2 つが同じ列を同じ形で書いており、**どちらも catch を持つ**。
+            // トークンは**列**に付くので、**書き手が増えるたび全員に効く** —— 裏返すと、
+            // **新しい書き手は全員が catch を持たねばならない**（下の赤字）。
+            // 取消の確認（OrderCancelled）と約定追跡の再観測（OrderExecuted）は Wolverine の**別キュー＝並行実行**
+            // であり（IADR-0129 決定 1「1 サービス内 1 イベント型 = 1 キュー」）、同じ承認の終端を同時に運ぶのは
+            // まさに #847 のシナリオである。実測: トークン無しでは、200 試行の反復で「初回」が 2 回成立する試行が
+            // **多数観測された**（比率は実行環境の並行度に依存するため、絶対数は書かない）。
+            //
+            // 在庫の押さえは壊れない（どちらが勝っても TerminalAt は同じ意味に落ち着く冪等な書き込みである）。
+            // 壊れるのは **MarkTerminal の戻り値＝失効通知の冪等キー**であり、利用者に同じ失効が二度通知される。
+            // 並行トークンにすると UPDATE が `WHERE TerminalAt IS NULL` 相当になり、負けた側は 0 行更新＝
+            // DbUpdateConcurrencyException になる。
+            //
+            // 🔴 **本列を書く操作はいずれも、この例外を捕まえて「書かなかった」を返さなければならない。**
+            // 捕まえ損ねると例外がハンドラを貫通し、Wolverine の再試行 → error キューへ至って
+            // **その終端の記録そのものが落ちる**（見送りなら在庫が解放されない＝#852 の実害の再発）。
+            // 新しい書き手を足すときは catch も足すこと。
+            e.Property(r => r.TerminalAt).IsConcurrencyToken();
         });
 
         mb.Entity<TradeFillRow>(e =>

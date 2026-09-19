@@ -102,27 +102,52 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
     }
 
     // FR-10, UC-06, #848, IADR-0117: 承認が終端になったことを記録する（InMemoryPortfolioLedgerStore と同一の意味論）。
-    public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
+    // #847, IADR-0357: 戻り値は「この呼び出しで初めて終端を記録したか」（条件は 1 バイトも変えていない）。
+    public bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
     {
         // 終端を捏造しない（Accepted / PartiallyFilled は「まだ動く」）。
         // #848 改定 2: 門は AbandonsUnfilledRemainder（取消・失効・拒否）であって IsTerminal ではない。
         // **全量約定（Filled）は書かない**——集計が自然に 0 にするので得が無く、約定の記録より先に
         // commit されると建玉が丸ごと空いて見える区間を作る（同じ株数を二度売れる）。
         if (!OrderStatusLifecycle.AbandonsUnfilledRemainder(terminalStatus))
-            return;
+            return false;
 
         // 相関する承認が無ければ書かない（AppendFill と同じ。知らない注文の終端は台帳の語彙に無い）。
         if (db.ApprovedOrders.Find(decisionId) is not { } approval)
-            return;
+            return false;
 
         // 単調・冪等: 最初の終端が真。後着の終端で時刻も状態も動かさない。
         if (approval.TerminalAt is not null)
-            return;
+            return false;
 
         approval.TerminalAt = terminalAt;
         approval.TerminalStatus = terminalStatus;
-        db.SaveChanges();
+
+        // 🔴 #847, IADR-0357: **上の検査と下の書き込みのあいだは TOCTOU である。** 取消の確認（OrderCancelled）と
+        // 約定追跡の再観測（OrderExecuted）は別キュー＝並行に走り、同じ承認の終端を同時に運び得る（#847 の形）。
+        // TerminalAt は並行トークンにしてあるため（RiskManagementDbContext）、負けた側の UPDATE は 0 行になり
+        // ここで例外になる。**それは異常ではなく「先に誰かが終端を記録した」＝ false を返すべき状態である。**
+        // 在庫の押さえはどちらが勝っても同じ意味に落ち着く（冪等）。守っているのは**戻り値＝通知の冪等キー**である。
+        try
+        {
+            db.SaveChanges();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // 追跡状態を捨てる（この文脈の書き込みは成立していない）。以降の読み取りは保存された値を引き直す。
+            db.Entry(approval).State = EntityState.Detached;
+            return false;
+        }
+
+        return true;
     }
+
+    // #847, IADR-0357: 承認に対する約定累計（InMemoryPortfolioLedgerStore と同一の意味論）。
+    // 1 承認に複数の注文行が対応し得る（リコンサイル経路）ため DecisionId で合計する。
+    public int? FindApprovedFilledQuantity(Guid decisionId) =>
+        db.ApprovedOrders.Find(decisionId) is null
+            ? null
+            : db.TradeFills.Where(f => f.DecisionId == decisionId).Sum(f => (int?)f.FilledQuantity) ?? 0;
 
     // FR-05, FR-10, UC-06, #852, IADR-0356: 見送り（発注していない）を記録する。
     // 門（理由が「確実に未発注」か）は呼び出し側＝OrderDispatchForgoneLedgerHandler が持つ。

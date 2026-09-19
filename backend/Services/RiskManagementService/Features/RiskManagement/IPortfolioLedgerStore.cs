@@ -151,8 +151,37 @@ public interface IPortfolioLedgerStore
     /// 🔴 <b>呼び出し側の順序</b>: 同じイベントが約定も運ぶ場合は<b>先に <see cref="AppendFill"/> を済ませてから</b>
     /// 呼ぶ。逆順にすると、在庫を返してから約定を建玉へ反映するまでの区間で二重決済の窓が開く。
     /// </para>
+    /// <para>
+    /// FR-09, UC-06, #847, IADR-0357: <b>戻り値は「この呼び出しで初めて終端を記録したか」</b>である。
+    /// 記録する条件（<c>AbandonsUnfilledRemainder</c>・単調・冪等・相関する承認が無ければ書かない）は
+    /// #848 から 1 バイトも変えていない —— 足したのは戻り値だけである。
+    /// 呼び出し側はこれを<b>通知の冪等キー</b>として使う（再配送で失効通知を撃ち直さない）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>「初回だけ true」は並行しても成立しなければならない。</b> <c>OrderCancelled</c> と
+    /// <c>OrderExecuted</c> は Wolverine の<b>別キュー＝並行実行</b>であり（IADR-0129 決定 1）、
+    /// 同じ承認の終端を同時に運び得る（#847 のシナリオそのもの）。成立させているのは実装ごとに違う ——
+    /// インメモリ実装は <c>ConcurrentDictionary.TryUpdate</c> の CAS、EF 実装は
+    /// <c>approved_orders.TerminalAt</c> の<b>並行トークン</b>である。
+    /// <b>どちらかを外すと、この段落の主張は黙って偽になる</b>（実測: トークン無しの EF では、200 試行の
+    /// 反復で「初回」が 2 回成立する試行が多数観測される。<b>比率は実行環境の並行度に依存するので絶対数は書かない</b>）。
+    /// 回帰は <c>EfPortfolioLedgerMarkTerminalConcurrencyTests</c> と
+    /// <c>PortfolioLedgerInFlightCloseTests</c> が<b>実装ごとに</b>固定する。
+    /// </para>
     /// </summary>
-    void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);
+    bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);
+
+    /// <summary>
+    /// FR-09, FR-10, UC-06, #847, IADR-0357: <c>DecisionId</c> の承認に対する<b>約定累計</b>を返す。
+    /// 相関する承認が無ければ <c>null</c>（＝不明）。
+    /// <para>
+    /// 失効した手仕舞いの通知が「何株が残ったか」を言うために要る（<c>OrderExecuted</c> が運ぶのは
+    /// その注文の累計であり、1 承認に複数の注文行が対応し得る経路〔リコンサイル〕では取りこぼす）。
+    /// <b>読み取り専用であり、在庫の判定には使わない</b>（在庫は <see cref="GetInFlightCloseQuantity"/> が権威）。
+    /// </para>
+    /// </summary>
+    int? FindApprovedFilledQuantity(Guid decisionId);
+
 
     /// <summary>
     /// FR-05, FR-10, UC-06, #852, IADR-0356: 承認済み注文が<b>発注されずに見送られた</b>ことを台帳へ記録する

@@ -13,6 +13,23 @@ public static class NotificationFormatter
         $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}・DecisionId={e.DecisionId}）",
         e.Status == OrderStatus.Filled ? NotificationSeverity.Info : NotificationSeverity.Warning);
 
+    // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（失効・取消・拒否）。
+    //
+    // 従来はこの事象が `OrderExecuted` の「約定 Expired 数量0@0」という一般的な Warning にしかならず、
+    // **それが手仕舞いだったことも、何株が残ったかも書かれていなかった**（#847 の受け入れ基準 3）。
+    //
+    // 🔴 **Warning であって Critical ではない。** Critical は「実際に統制が破れた」事象
+    //（保護喪失・損切りライン到達）に取っておく——手仕舞いが流れたこと自体は統制の破れではない。
+    // ただし Info にもしない: **手仕舞えなかった建玉が実在し、無保護なら翌日へ持ち越される**。
+    public static NotificationMessage From(PositionCloseAbandoned e) => new(
+        "手仕舞いが約定せず終了",
+        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.ApprovedQuantity} の手仕舞いが {e.TerminalStatus} で終了しました"
+            + $"（約定 {e.FilledQuantity}・**未決済 {e.RemainingQuantity}**）。"
+            + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+            + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
+            + $"手仕舞い直すか、建玉を確認してください（DecisionId={e.DecisionId}）。",
+        NotificationSeverity.Warning);
+
     // リスク統制発動: 発注拒否（理由つき）。
     public static NotificationMessage From(OrderRejected e) => new(
         "リスク統制: 発注拒否",
