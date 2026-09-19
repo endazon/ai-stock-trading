@@ -49,7 +49,11 @@ public class GrpcAssumptionsClientIntegrationTests
     /// 同条件で 3 秒にすると **8 回とも 897〜1378 ms で収まり、1.6 秒以上の余裕が残った**。
     /// 🔴 **経過時間の上界（10 秒）は比例させない** —— 比例させると
     /// `CallOptions.Deadline` を `AddSeconds(30)` へ変える変異を捕まえられなくなる。
-    /// 上界を据え置いた結果、上界は予算の 10 倍から 3.3 倍へ**むしろ厳しくなっている**。
+    /// 上界を据え置いた結果、上界は予算の 10 倍から 3.3 倍になっている。
+    /// 🔴 **ただし「厳しくなった」を一般化しないこと。** **絶対値をハードコードする変異の検出力は変わらない**
+    /// —— `AddSeconds(5)` / `AddSeconds(8)` はどちらの予算でも素通りし、**境界を決めるのは予算ではなく
+    /// `BeLessThan(10s)` である**。**厳しくなったのは比例的逸脱（`Add(timeout * k)`）の検出だけ**で、
+    /// `k ≥ 10` → `k ≥ 3.34` になった（実測: `Add(timeout * 4)` は 1 秒予算で緑・3 秒予算で赤）。
     /// </remarks>
     private const string NegativeControlTimeoutSeconds = "3";
 
