@@ -22,6 +22,25 @@ namespace RiskManagementService.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.AccountEquityDayRow", b =>
+                {
+                    b.Property<DateOnly>("TradingDay")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("EquityInBase")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset>("ObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("TradingDay");
+
+                    b.ToTable("account_equity_days", (string)null);
+                });
+
             modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.ApprovedOrderRow", b =>
                 {
                     b.Property<Guid>("DecisionId")

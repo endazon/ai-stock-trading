@@ -59,13 +59,17 @@ describe('リスク契約フィクスチャ（実応答）', () => {
 
   it('統制状態の上限は equity から解決済みの実額であり、設定の比率とは別物である', () => {
     // #389 で**改名してはいけない**側。SC-03 の上限表示・使用率表示・実弾切替モーダル③が使う。
+    // #869, ADR-0041 決定2, IADR-0354: `capital` / 実額は**未供給（null）があり得る**契約になった。
+    // 実応答のフィクスチャは供給されている側であることを先に固定する（null で素通りさせない）。
+    expect(CONTRACT_RISK_STATUS.capital).not.toBeNull();
+    const equity = CONTRACT_RISK_STATUS.capital!;
     expect(CONTRACT_RISK_STATUS.maxOrderAmount).toBeGreaterThan(1);
     expect(CONTRACT_RISK_STATUS.maxOrderAmount).toBeCloseTo(
-      CONTRACT_RISK_STATUS.capital * CONTRACT_RISK_SETTINGS.limits.maxOrderAmountRatio,
+      equity * CONTRACT_RISK_SETTINGS.limits.maxOrderAmountRatio,
       5,
     );
     expect(CONTRACT_RISK_STATUS.maxDailyOrderAmount).toBeCloseTo(
-      CONTRACT_RISK_STATUS.capital * CONTRACT_RISK_SETTINGS.limits.maxDailyOrderAmountRatio,
+      equity * CONTRACT_RISK_SETTINGS.limits.maxDailyOrderAmountRatio,
       5,
     );
   });
@@ -125,12 +129,18 @@ describe('リスク契約フィクスチャ（実応答）', () => {
     // IADR-0151 決定4: 保存前の入力値に対する実額は画面が `capital × 比率` で計算する。
     // **同じ入力（＝現在の設定値）なら、サーバの解決結果と一致していなければならない**——
     // ずれていれば画面の実額併記が嘘になる（サーバの解決式と別物になっている）。
+    // #869, ADR-0041 決定2, IADR-0354: 契約上 `capital` / 解決済み実額は**未供給（null）があり得る**
+    // （ブローカーの口座照会が通っていない）。実応答のフィクスチャは供給されている側であり、
+    // 🔴 **供給されていること自体を先に固定する**——null のまま素通りすると本検証が空振りする。
+    expect(CONTRACT_RISK_STATUS.capital).not.toBeNull();
+    expect(CONTRACT_RISK_STATUS.maxOrderAmount).not.toBeNull();
+    expect(CONTRACT_RISK_STATUS.maxDailyOrderAmount).not.toBeNull();
     expect(
       resolveEquityAmount(CONTRACT_RISK_STATUS.capital, CONTRACT_RISK_SETTINGS.limits.maxOrderAmountRatio),
-    ).toBeCloseTo(CONTRACT_RISK_STATUS.maxOrderAmount, 5);
+    ).toBeCloseTo(CONTRACT_RISK_STATUS.maxOrderAmount!, 5);
     expect(
       resolveEquityAmount(CONTRACT_RISK_STATUS.capital, CONTRACT_RISK_SETTINGS.limits.maxDailyOrderAmountRatio),
-    ).toBeCloseTo(CONTRACT_RISK_STATUS.maxDailyOrderAmount, 5);
+    ).toBeCloseTo(CONTRACT_RISK_STATUS.maxDailyOrderAmount!, 5);
   });
 
   // ---- FR-10, SC-03, #340, IADR-0154: 空売りの現況（供給可否の宣言） ----

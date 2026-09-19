@@ -48,7 +48,9 @@ const HISTORY: SettingsChangeEntry[] = [
 ];
 // #362, IADR-0151 決定4: 実額の併記に使う equity（`RiskStatusView.capital`）。実応答の値をそのまま使う。
 const STATUS: RiskStatusView = cloneContract(CONTRACT_RISK_STATUS);
-const EQUITY = STATUS.capital;
+// #869, ADR-0041 決定2, IADR-0354: 契約では `capital` は未供給（null）があり得る。
+// 実額併記の検証はフィクスチャが値を持つ前提であり、持っていなければテスト自体が成り立たない。
+const EQUITY = STATUS.capital ?? 0;
 
 function mockDefault() {
   mocks.apiFetch.mockImplementation(async (path: string, req?: { method?: string }) => {

@@ -49,9 +49,14 @@ public class TradeDecisionServiceTests
     // #854, IADR-0351: 保有状況（数量・取得単価・損切りライン）も同じ偽物が供給する。数量だけを与えた場合は
     // 取得単価 1,000・損切りライン 970（ロング）/ 1,030（ショート）の建玉として返す。
     // 🔴 この偽物は LLM の前後で同じ値を返す。「LLM 判断の後に引き直す」（IADR-0351 決定6）は下の MovingHeld が固定する。
-    private sealed class FakeHeld(int? signedQuantity, decimal? entryPrice = 1_000m, decimal? stopLossPrice = null)
+    private sealed class FakeHeld(
+        int? signedQuantity, decimal? entryPrice = 1_000m, decimal? stopLossPrice = null, bool enabled = true)
         : IHeldPositionProvider
     {
+        // #865, IADR-0358: 偽物は**実結線**を既定とする（本物の HttpHeldPositionProvider と同じ）。
+        // 未結線（NoOp＝IsEnabled=false）の既定構成は heldPosition を渡さない Create が持つ。
+        public bool IsEnabled => enabled;
+
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
             Task.FromResult(signedQuantity);
 
@@ -66,6 +71,9 @@ public class TradeDecisionServiceTests
 
     private sealed class ThrowingHeld : IHeldPositionProvider
     {
+        // 照会先は配線されている（だから例外が出る）。#865: この不明は「照会したが分からなかった」である。
+        public bool IsEnabled => true;
+
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
             throw new InvalidOperationException("建玉照会の擬似障害");
 
@@ -303,7 +311,7 @@ public class TradeDecisionServiceTests
             perTradeRiskRatio: ctx.Limits.PerTradeRiskRatio,
             stopLossDistancePerShare: 30m,
             referencePrice: 1_000m,
-            maxOrderAmount: ctx.Limits.MaxOrderAmountFor(ctx.Capital),
+            maxOrderAmount: ctx.Limits.MaxOrderAmountFor(ctx.Capital!.Value),
             availableCapital: 20_000m, // min(50,000, 20,000)
             sizeFactor: 1m);
 
@@ -535,7 +543,7 @@ public class TradeDecisionServiceTests
         // FR-10, #329, ADR-0018: GetSizeFactor は連敗しきい値(5)以上で半減。数量が縮小される。
         var ctx = Context(losses: 5);
         var expected = PositionSizer.CalculateCappedQuantity(
-            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_000m, ctx.Limits.MaxOrderAmountFor(ctx.Capital),
+            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_000m, ctx.Limits.MaxOrderAmountFor(ctx.Capital!.Value),
             20_000m, PositionSizer.GetSizeFactor(5, 0m, ctx.Limits));
 
         var decision = await Create(BuyJson, Policy, ctx).DecideAsync(Trigger());
@@ -576,7 +584,7 @@ public class TradeDecisionServiceTests
         // 現在値 1,200（LLM の referencePrice 1,000 は使わない）。損切り価格＝1,200 − 30 = 1,170（IADR-0035）。
         var ctx = Context();
         var expectedQty = PositionSizer.CalculateCappedQuantity(
-            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_200m, ctx.Limits.MaxOrderAmountFor(ctx.Capital), 20_000m, 1m);
+            100_000m, ctx.Limits.PerTradeRiskRatio, 30m, 1_200m, ctx.Limits.MaxOrderAmountFor(ctx.Capital!.Value), 20_000m, 1m);
 
         var decision = await CreateWithPrice(BuyJson, new FakeCurrentPrice(1_200m), ctx).DecideAsync(Trigger());
 
@@ -914,16 +922,20 @@ public class TradeDecisionServiceTests
     }
 
     [Fact]
-    public async Task 建玉照会が失敗しても買い判断は従来どおり成立する()
+    public async Task 実結線で建玉照会が失敗すれば買い判断は見送る()
     {
-        // fail-safe: 照会例外は「不明」に縮退する。買いは裸になり得ず、金額系上限がそのまま効く。
+        // 🔴 #865 / IADR-0358 による改定（従来は Open が通っていた＝「建玉照会が失敗しても買い判断は従来どおり成立する」）。
+        // fail-safe で照会例外は「不明」へ縮退するが、**実結線の不明は「照会したが分からなかった」**であり、
+        // その状態で新規建てはしない。未結線（NoOp）の既定構成は下のテストのとおり従来どおり通る。
+        var logger = new RecordingLogger();
         var service = new AppSvc(
             new FakeLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
-            new FakeClock(), NullLogger<AppSvc>.Instance, heldPosition: new ThrowingHeld());
+            new FakeClock(), logger, heldPosition: new ThrowingHeld());
 
         var decision = await service.DecideAsync(Trigger());
 
-        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+        decision.Should().BeNull();
+        logger.Messages.Should().Contain(m => m.Contains("保有状況が不明なため新規建てを見送る"));
     }
 
     // --- FR-04, FR-10, FR-03, ADR-0003, #854, IADR-0351: 保有状況を判断の入力として LLM へ渡す ---
@@ -1062,6 +1074,8 @@ public class TradeDecisionServiceTests
     // LLM の前後で値が変わる台帳。照会と LLM 呼び出しの順序も記録する。
     private sealed class MovingHeld(int? beforeLlm, List<string> events) : IHeldPositionProvider
     {
+        public bool IsEnabled => true;
+
         public int? Current { get; set; } = beforeLlm;
 
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default)
@@ -1473,5 +1487,83 @@ public class TradeDecisionServiceTests
 
         decision.Should().BeNull("統制が意味を失った状態で新規建てをしない");
         string.Join("\n", logger.Messages).Should().Contain("基準通貨への換算レートが解決できないため見送り");
+    }
+
+    // --- FR-04, FR-10, ADR-0003, #865, IADR-0358: 実結線のもとで保有が不明なら新規建て（Open）を見送る ---
+    //
+    // #860（IADR-0351 決定2）はプロンプトへ「保有: 不明」を載せ「Hold を選びます」と述べた。**それは LLM への依頼であって
+    // コードの統制ではない**（IADR-0351「残る制約」）。LLM が従わなければ、保有を知らないままの新規買いが従来どおり通る。
+    //
+    // 🔴 止めるのは **Open だけ**である。手仕舞い（Close）は FR-10 により統制で止めない
+    // ——「止められない」より「閉じられない」ほうが危険である（#506 と同じ線引き）。
+
+    [Fact]
+    public async Task 実結線で保有が不明ならLLMがBuyを返しても新規建てを発注しない()
+    {
+        var logger = new RecordingLogger();
+        var service = new AppSvc(
+            new FakeLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), logger, heldPosition: new FakeHeld(null));
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().BeNull("保有を知らないままの新規建てをコードで止める（プロンプト上の歯止めだけにしない）");
+        logger.Messages.Should().Contain(m => m.Contains("保有状況が不明なため新規建てを見送る"));
+    }
+
+    // 🔴 出口は塞がない（肯定形）。プロンプト時に照会が落ちていても、**発注直前の引き直し**（IADR-0351 決定6）で
+    // 保有が判れば手仕舞いは通る。**だから不明を LLM 呼び出しの前で一律に見送らない**（IADR-0358 決定2）。
+    [Fact]
+    public async Task 実結線でプロンプト時に保有が不明でも引き直しで判れば手仕舞いは通る()
+    {
+        var (service, llm, events) = CreateWithMovingLedger(beforeLlm: null, afterLlm: 3_378);
+
+        var decision = await service.DecideAsync(Trigger());
+
+        llm.Prompt.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine, "プロンプト時の照会は落ちていた");
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Quantity.Should().Be(3_378);
+        events.Should().Equal(["held:position", "llm", "held:quantity"]);
+    }
+
+    [Fact]
+    public async Task 未結線の既定構成では保有が不明でも新規建ては従来どおり通る()
+    {
+        // RiskManagement:BaseUrl 未設定＝NoOpHeldPositionProvider（IsEnabled=false）。**「照会していない」**であって
+        // 「照会したが分からなかった」ではない。既定構成（単体テスト・内蔵 paper の検証）の新規建てを一律に止めない。
+        var decision = await Create(BuyJson, Policy).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+    }
+
+    // 保有が判っているとき（保有なし 0／保有あり）は挙動が変わらない。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    public async Task 実結線でも保有が判っていれば新規建ては従来どおり通る(int held)
+    {
+        var decision = await CreateWithHeld(BuyJson, new FakeHeld(held)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+    }
+
+    // 縮退制御の経路（一次スクリーニング・IADR-0351 決定4）でも同じ判定が効く。門を通過しても新規建ては出ない。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 一次スクリーニングの経路でも実結線の不明な新規建ては止まる(bool withContextBudget)
+    {
+        var llm = new RecordingLlm(BuyJson);
+        var options = new DecisionOrchestrationOptions
+        {
+            EnableScreening = true,
+            ScreeningContextBudgetChars = withContextBudget ? 150_000 : null,
+        };
+
+        var decision = await CreateRecording(llm, new FakeHeld(null), options: options).DecideAsync(Trigger());
+
+        llm.Calls.Should().HaveCount(2, "一次（門）を通過して本判断まで進んだうえで止まることを固定する");
+        llm.Calls[0].Prompt.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
+        decision.Should().BeNull();
     }
 }

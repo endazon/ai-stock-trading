@@ -69,6 +69,10 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
     public DbSet<PositionObservationDayRow> PositionObservationDays =>
         Set<PositionObservationDayRow>();
 
+    // FR-10, #869, ADR-0041 決定2, IADR-0354: 統制上限の基準資金（equity）の取引日ごとの観測。
+    // **判定に使うのは当日より前の取引日で最新の行**（＝前営業日終値時点の評価額の近似）。
+    public DbSet<AccountEquityDayRow> AccountEquityDays => Set<AccountEquityDayRow>();
+
     // FR-19, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**の追記専用台帳。
     // **違反記録とは別テーブルである**——決定1 が「失効させない」と定めるため、解除で行を消さない。
     public DbSet<GoodFaithViolationClearanceRow> GoodFaithViolationClearances =>
@@ -285,6 +289,15 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
         mb.Entity<PositionObservationDayRow>(e =>
         {
             e.ToTable("position_observation_days");
+            e.HasKey(r => r.TradingDay);
+            e.Property(r => r.TradingDay).ValueGeneratedNever();
+        });
+
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金（equity）の取引日ごとの観測。
+        // 🔴 取引日は**米国東部時間**の暦日である（position_observation_days の JST とは基準が違う）。
+        mb.Entity<AccountEquityDayRow>(e =>
+        {
+            e.ToTable("account_equity_days");
             e.HasKey(r => r.TradingDay);
             e.Property(r => r.TradingDay).ValueGeneratedNever();
         });

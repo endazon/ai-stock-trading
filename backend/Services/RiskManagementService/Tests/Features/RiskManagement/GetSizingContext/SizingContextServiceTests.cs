@@ -16,7 +16,7 @@ public class SizingContextServiceTests
         var snapshotBuilder = new PortfolioSnapshotBuilder(
             new FakePortfolioStateProvider(state), new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
             // サイジング文脈は口座種別に依存しない（#375 は発注審査側の統制である）。
-            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         return new SizingContextService(snapshotBuilder, new InMemoryRiskSettingsStore());
     }
 
@@ -27,7 +27,7 @@ public class SizingContextServiceTests
         // 日次上限は equity 比 150%（#329・計画 §5）。いずれも equity（Capital）から解決される。
         var state = new PortfolioState
         {
-            Capital = 100_000m,
+            LedgerEquity = 100_000m,
             InvestedCapital = 40_000m,
             DailyOrderedAmount = 50_000m,
             ConsecutiveLosses = 2,
@@ -57,9 +57,9 @@ public class SizingContextServiceTests
         var settings = new InMemoryRiskSettingsStore();
         settings.Save(settings.GetCurrent() with { StopLossMethod = method });
         var snapshotBuilder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         var view = new SizingContextService(snapshotBuilder, settings).Build();
 
@@ -71,7 +71,7 @@ public class SizingContextServiceTests
     {
         var state = new PortfolioState
         {
-            Capital = 100_000m,
+            LedgerEquity = 100_000m,
             InvestedCapital = 100_001m, // 段階の発注可能額（100,000 × 100%）超過
             DailyOrderedAmount = 200_000m, // 日次上限（100,000 × 150% = 150,000）超過
         };
