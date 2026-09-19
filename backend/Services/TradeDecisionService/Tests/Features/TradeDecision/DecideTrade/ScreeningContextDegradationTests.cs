@@ -123,10 +123,11 @@ public class ScreeningContextDegradationTests
     [Fact]
     public async Task 予算超過なら段2のRAGと段3の低関連ニュースが削られ発生が記録される()
     {
-        // 保護分（骨格 750 + 方針 11 + 銘柄行 120 + 市況 168）≒ 1049。予算 1230 → 材料は 181 文字分まで。
+        // 保護分（骨格 750 + 方針 11 + 銘柄行 400 + 市況 168）≒ 1329。予算 1510 → 材料は 181 文字分まで。
+        // #854, IADR-0351 決定4: 銘柄行は保有状況の短縮版ぶん 120→400 へ底上げ（予算も同幅 +280 シフト）。
         // RAG（171）を削っても足りず、段 3 で関連度の低いニュース（171）を削って収まる。
         // IADR-0297: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ（予算も同幅シフト）。
-        var (service, llm, reporter) = Create(budget: 1_230);
+        var (service, llm, reporter) = Create(budget: 1_510);
 
         await service.DecideAsync(Trigger());
 

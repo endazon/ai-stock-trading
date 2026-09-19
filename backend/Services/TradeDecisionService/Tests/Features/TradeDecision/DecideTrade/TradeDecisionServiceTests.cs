@@ -6,6 +6,7 @@ using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Domain;
 using TradeDecisionService.Features.TradeDecision;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AwesomeAssertions;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionAppService;
+using TradeDecisionPromptBuilder = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder;
 
 namespace TradeDecisionService.Tests;
 
@@ -44,15 +46,34 @@ public class TradeDecisionServiceTests
     }
 
     // #292, IADR-0119: 保有建玉の供給。null は「不明」（照会不能）で 0（保有なし）とは区別する。
-    private sealed class FakeHeld(int? signedQuantity) : IHeldPositionProvider
+    // #854, IADR-0351: 保有状況（数量・取得単価・損切りライン）も同じ偽物が供給する。数量だけを与えた場合は
+    // 取得単価 1,000・損切りライン 970（ロング）/ 1,030（ショート）の建玉として返す。
+    private sealed class FakeHeld(int? signedQuantity, decimal? entryPrice = 1_000m, decimal? stopLossPrice = null)
+        : IHeldPositionProvider
     {
+        public int PositionCalls { get; private set; }
+
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
             Task.FromResult(signedQuantity);
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default)
+        {
+            PositionCalls++;
+            return Task.FromResult(signedQuantity switch
+            {
+                null => null,
+                0 => HeldPosition.None,
+                { } q => new HeldPosition(q, entryPrice, stopLossPrice ?? (q > 0 ? 970m : 1_030m)),
+            });
+        }
     }
 
     private sealed class ThrowingHeld : IHeldPositionProvider
     {
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
+            throw new InvalidOperationException("建玉照会の擬似障害");
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
             throw new InvalidOperationException("建玉照会の擬似障害");
     }
 
@@ -907,6 +928,145 @@ public class TradeDecisionServiceTests
         var decision = await service.DecideAsync(Trigger());
 
         decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+    }
+
+    // --- FR-04, FR-10, FR-03, ADR-0003, #854, IADR-0351: 保有状況を判断の入力として LLM へ渡す ---
+    //
+    // 実測（2026-09-17・09-18）: 判断が Buy しか出さず、当日の発注枠を使い切るまで買い増した。Sell が出れば決済へ解決する
+    // 経路（上の #292 の節）は在ったが、プロンプトが保有を 1 つも渡しておらず、LLM は出口を判断しようがなかった。
+
+    // 全プロンプト（一次・本判断）を順に捕捉する LLM スタブ。
+    private sealed class RecordingLlm(string output) : ILlmCompletionClient
+    {
+        public List<(string Prompt, string? Purpose)> Calls { get; } = [];
+
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
+        {
+            Calls.Add((prompt, purpose));
+            return Task.FromResult(output);
+        }
+    }
+
+    private static AppSvc CreateRecording(
+        RecordingLlm llm, IHeldPositionProvider held, SizingContext? ctx = null,
+        DecisionOrchestrationOptions? options = null) =>
+        new(llm, new FakePolicy(Policy), new FakeSizing(ctx ?? Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance, options: options, heldPosition: held);
+
+    [Fact]
+    public async Task 保有中の銘柄の本判断プロンプトには保有状況が載る()
+    {
+        // 価格変動トリガーの現在値は 1,040。ロング 4,072 株・取得 1,000・損切りライン 970 → 含み益 +162,880（+4.00%）。
+        var llm = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+        var ctx = Context() with { StopLossMethod = StopLossExecutionMethod.NoProtectiveStop };
+
+        await CreateRecording(llm, new FakeHeld(4072), ctx).DecideAsync(Trigger());
+
+        var prompt = llm.Calls.Should().ContainSingle().Which.Prompt;
+        prompt.Should().Contain("- 保有: ロング 4072 株 / 平均取得単価: 1000");
+        prompt.Should().Contain("- 含み損益: +162880（+4.00%・現在値 1040 で評価）");
+        prompt.Should().Contain("- 記録上の損切りライン: 970（現在値は損切りラインに達していません）");
+        prompt.Should().Contain("- 保護の状態: 無保護です");
+        prompt.Should().Contain("買い増し（Buy）・保有継続（Hold）・手仕舞い（Sell）のいずれかを判断します。");
+        prompt.Should().NotContain(TradeDecisionPromptBuilder.HeldUnknownLine);
+        prompt.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+    }
+
+    [Fact]
+    public async Task 保有なしの銘柄の本判断プロンプトは保有なしと書く()
+    {
+        var llm = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+
+        await CreateRecording(llm, new FakeHeld(0)).DecideAsync(Trigger());
+
+        var prompt = llm.Calls.Should().ContainSingle().Which.Prompt;
+        prompt.Should().Contain(TradeDecisionPromptBuilder.HeldNoneLine);
+        prompt.Should().NotContain(TradeDecisionPromptBuilder.HeldUnknownLine);
+    }
+
+    // 🔴 取得できないときは「不明」と明示する。0 や「保有なし」と書かない。
+    [Fact]
+    public async Task 保有状況を照会できないとき本判断プロンプトは不明と書き保有なしとは書かない()
+    {
+        var byNull = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+        var byException = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+
+        await CreateRecording(byNull, new FakeHeld(null)).DecideAsync(Trigger());
+        await CreateRecording(byException, new ThrowingHeld()).DecideAsync(Trigger());
+
+        foreach (var prompt in new[] { byNull.Calls.Single().Prompt, byException.Calls.Single().Prompt })
+        {
+            prompt.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
+            prompt.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownRule);
+            prompt.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+        }
+    }
+
+    [Fact]
+    public async Task 既定のNoOpでは保有状況は不明である()
+    {
+        // RiskManagement:BaseUrl 未設定＝NoOpHeldPositionProvider。不在が「保有なし」を意味する形にしない。
+        var llm = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+        var service = new AppSvc(
+            llm, new FakePolicy(Policy), new FakeSizing(Context()), new FakeClock(), NullLogger<AppSvc>.Instance);
+
+        await service.DecideAsync(Trigger());
+
+        llm.Calls.Single().Prompt.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
+    }
+
+    // 一次スクリーニングは門である（Hold で本判断が走らない）。保有状況は一次にも渡す（IADR-0351 決定4）。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 一次スクリーニングのプロンプトにも保有状況が載る(bool withContextBudget)
+    {
+        var llm = new RecordingLlm(SellJson);
+        var options = new DecisionOrchestrationOptions
+        {
+            EnableScreening = true,
+            ScreeningContextBudgetChars = withContextBudget ? 150_000 : null,
+        };
+
+        await CreateRecording(llm, new FakeHeld(4072), options: options).DecideAsync(Trigger());
+
+        llm.Calls.Should().HaveCount(2);
+        var screening = llm.Calls[0];
+        screening.Purpose.Should().Be(LlmPurposes.TradeDecisionScreening);
+        screening.Prompt.Should().Contain("- 保有: ロング 4072 株 / 平均取得単価: 1000 / 含み損益率: +4.00%");
+        screening.Prompt.Should().Contain(TradeDecisionPromptBuilder.ScreeningHeldRule);
+        llm.Calls[1].Prompt.Should().Contain("- 保有: ロング 4072 株 / 平均取得単価: 1000");
+    }
+
+    // 受け入れ基準: 含み損が損切りラインを割っている状況で LLM が Sell を返せば、保有全量の決済になる
+    // （プロンプトが到達を示し、既存の決済経路〔IADR-0119〕がそのまま働く）。数量はシステムが決める（全量）。
+    [Fact]
+    public async Task 損切りラインに達した保有でLLMがSellを返せば保有全量の決済になる()
+    {
+        // 取得 1,100・損切りライン 1,050 のロング 3,378 株。現在値 1,040 は損切りライン以下＝到達。
+        var llm = new RecordingLlm(SellJson);
+        var held = new FakeHeld(3_378, entryPrice: 1_100m, stopLossPrice: 1_050m);
+
+        var decision = await CreateRecording(llm, held).DecideAsync(Trigger());
+
+        llm.Calls.Single().Prompt.Should().Contain("- 記録上の損切りライン: 1050（現在値は損切りラインに達しています）");
+        llm.Calls.Single().Prompt.Should().Contain(TradeDecisionPromptBuilder.StopLossLineIsRiskConstraintRule);
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Side.Should().Be(TradeSide.Sell);
+        decision.Intent.Quantity.Should().Be(3_378);
+    }
+
+    // 🔴 方針（PolicySummary）は書き換えない。保有状況の有無にかかわらず、確定済み日報の方針はそのまま 1 回だけ渡る。
+    [Fact]
+    public async Task 保有状況を足しても方針はそのまま渡る()
+    {
+        var llm = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+
+        await CreateRecording(llm, new FakeHeld(4072)).DecideAsync(Trigger());
+
+        var prompt = llm.Calls.Single().Prompt;
+        prompt.Split(Policy.Summary).Should().HaveCount(2, "方針の本文は 1 回だけ現れる");
     }
 
     [Fact]

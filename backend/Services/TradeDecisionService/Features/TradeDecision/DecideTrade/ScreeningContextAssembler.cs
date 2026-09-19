@@ -32,8 +32,11 @@ public static class ScreeningContextAssembler
     // BuildScreening が無条件で追加）の実測 142 文字ぶんを 600→750 へ底上げした（安全側の余裕込み）。
     private const int PromptScaffoldChars = 750;
 
-    // 銘柄・市場・現在値の行の概算（保護対象）。
-    private const int PerSymbolLineChars = 120;
+    // 銘柄・市場・現在値の行と**保有状況の短縮版**の概算（いずれも保護対象）。
+    // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定4: 保有状況節（`# 保有状況（この銘柄）`。BuildScreening が無条件で追加）は
+    // 銘柄ごとの保護分である——削ると、保有中の銘柄の出口を一次が落とす。保有ありの実測 200 文字に、桁の多い価格・
+    // 通貨表記・「不明」の言い回しの余裕を足して 280 文字ぶん、120→400 へ底上げした（過大に見積もるほど安全側）。
+    private const int PerSymbolLineChars = 400;
 
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;
