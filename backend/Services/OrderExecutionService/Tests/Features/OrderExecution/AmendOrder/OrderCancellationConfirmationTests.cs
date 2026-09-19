@@ -30,7 +30,8 @@ public class OrderCancellationConfirmationTests
             3381, 334.09m, PositionEffect.Close);
 
     // 取消の送信は成功するが、そのあとの照会が返す状態を注入できるブローカー（moomoo の実挙動を模す）。
-    private sealed class ScriptedCancelBroker(OrderStatus? afterCancel, bool cancelThrows = false) : IBrokerAdapter
+    private sealed class ScriptedCancelBroker(
+        OrderStatus? afterCancel, bool cancelThrows = false, int filledAfterCancel = 0) : IBrokerAdapter
     {
         public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
 
@@ -39,9 +40,11 @@ public class OrderCancellationConfirmationTests
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
             Task.FromResult(new BrokerOrder("order-1", intent, OrderStatus.Accepted, 0, 0m, Now, null));
 
+        // #847: 取消を確認する照会は**累積約定数も返す**。既定 0 のままだと「その値が運ばれているか」を
+        // 観測できず、発行側（OrderAmendmentService）の是正がテストで固定されない（監査 B-1）。
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
             Task.FromResult<BrokerOrder?>(afterCancel is { } status
-                ? new BrokerOrder(orderId, Intent(), status, 0, 0m, Now, null)
+                ? new BrokerOrder(orderId, Intent(), status, filledAfterCancel, 0m, Now, null)
                 : null);
 
         public Task CancelOrderAsync(string orderId, CancellationToken ct = default)
@@ -79,6 +82,37 @@ public class OrderCancellationConfirmationTests
         outcome.Event!.DecisionId.Should().Be(decisionId);
         outcome.Event.Reason.Should().Be("指値が置いていかれたので取り消す");
         outcome.Event.CancelledAt.Should().Be(Now);
+    }
+
+    // 🔴 T-10-589, #847, IADR-0357（発行側の固定・監査 B-1）:
+    // **取消を確認した照会が返した累積約定数を、そのままイベントへ載せる。**
+    //
+    // これが無いと、失効通知の「未決済 N 株」を正しくした是正そのものを**リファクタで黙って元へ戻せる**
+    // （実測: `snapshot!.FilledQuantity` を `0` に変えても 6 テストプロジェクトで赤が 1 件も出なかった）。
+    // 受け手側（PositionCloseAbandonedTests）は値を**手で渡して**いるため、運搬経路は観測できていなかった。
+    // テスト仕様書自身の規律「不変条件は、それを壊す経路そのものを通すテストでしか固定できない」に従う。
+    [Fact]
+    public async Task 取消を確認した時点の約定数をイベントへ載せる()
+    {
+        // 3,381 株の手仕舞いのうち 1,000 株が約定済みのまま取り消された（#847 の実測に寄せた形）。
+        var (service, decisionId, _) = Build(
+            new ScriptedCancelBroker(OrderStatus.Cancelled, filledAfterCancel: 1_000));
+
+        var outcome = await service.CancelAsync(decisionId, "取消");
+
+        outcome.Confirmed.Should().BeTrue();
+        outcome.Event!.ObservedFilledQuantity.Should().Be(
+            1_000,
+            "取消は部分約定を追い越して台帳へ着く。ここで運ばなければ、受け手は残数量を 3,381 と水増しする");
+    }
+
+    // 対（否定形）: 約定していなければ 0 を載せる（「不明」も 0 で、受け手が台帳の累計へフォールバックする）。
+    [Fact]
+    public async Task 約定が無ければ約定数はゼロで載る()
+    {
+        var (service, decisionId, _) = Build(new ScriptedCancelBroker(OrderStatus.Cancelled));
+
+        (await service.CancelAsync(decisionId, "取消")).Event!.ObservedFilledQuantity.Should().Be(0);
     }
 
     // 🔴 否定形・最重要: **取消の結果が不明なときに在庫を戻さない。**

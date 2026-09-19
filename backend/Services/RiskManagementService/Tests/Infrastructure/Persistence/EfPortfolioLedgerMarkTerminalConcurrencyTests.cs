@@ -16,7 +16,9 @@ namespace RiskManagementService.Tests;
 //
 // 🔴 **本ファイルが EF 実装側に在ることが要点である。** 冪等性の主張を `InMemoryPortfolioLedgerStore`
 // （`ConcurrentDictionary.TryUpdate` の CAS）だけで測っていたため、**本番ストア（EF）に並行トークンが無い**
-// ことが検出されていなかった（実測: トークン無しの EF は 200 試行中 63 試行で true が 2 回成立した）。
+// ことが検出されていなかった（実測: トークン無しの EF では、200 試行の反復で true が 2 回成立する試行が
+// **多数観測される**。🔴 **比率は実行環境の並行度に依存するため絶対数は書かない** —— 別環境の再測では
+// 同じ条件でも違う比率になった）。
 // 実装の差は**実装ごとに測って初めて見える**。
 public class EfPortfolioLedgerMarkTerminalConcurrencyTests
 {
@@ -42,7 +44,9 @@ public class EfPortfolioLedgerMarkTerminalConcurrencyTests
     [Fact]
     public async Task 並行して終端が届いても初回を主張するのは一度だけ()
     {
-        // 1 試行では偶然通ってしまう（トークン無しでも 200 試行中 137 試行は通った）。繰り返して確率的に暴く。
+        // 1 試行では偶然通ってしまう（トークン無しでも大半の試行は通る）。繰り返して確率的に暴く。
+        // 🔴 試行数は「壊れていれば高い確率で少なくとも 1 回は捕まる」ための値であり、
+        // 破れる比率そのものは実行環境の並行度に依存する（期待値を数として書かない）。
         const int trials = 200;
         var doubleClaims = 0;
 

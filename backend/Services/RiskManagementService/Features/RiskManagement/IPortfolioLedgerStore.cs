@@ -145,8 +145,9 @@ public interface IPortfolioLedgerStore
     /// 同じ承認の終端を同時に運び得る（#847 のシナリオそのもの）。成立させているのは実装ごとに違う ——
     /// インメモリ実装は <c>ConcurrentDictionary.TryUpdate</c> の CAS、EF 実装は
     /// <c>approved_orders.TerminalAt</c> の<b>並行トークン</b>である。
-    /// <b>どちらかを外すと、この段落の主張は黙って偽になる</b>（実測: トークン無しの EF は 200 試行中
-    /// 63 試行で「初回」が 2 回成立した）。回帰は <c>EfPortfolioLedgerMarkTerminalConcurrencyTests</c> と
+    /// <b>どちらかを外すと、この段落の主張は黙って偽になる</b>（実測: トークン無しの EF では、200 試行の
+    /// 反復で「初回」が 2 回成立する試行が多数観測される。<b>比率は実行環境の並行度に依存するので絶対数は書かない</b>）。
+    /// 回帰は <c>EfPortfolioLedgerMarkTerminalConcurrencyTests</c> と
     /// <c>PortfolioLedgerInFlightCloseTests</c> が<b>実装ごとに</b>固定する。
     /// </para>
     /// </summary>
