@@ -25,8 +25,11 @@ public static class BotCommandParser
     //
     // 🔴 **大文字英字を許す。** 週報の会話キーは ISO 週の `W` が大文字（`weekly-2026-W38`）であり、
     // 英小文字だけに限ると週報を一度も確定できない（#835 で実測。値域制限の目的＝記号の遮断は損なわれない）。
+    //
+    // 🔴 #837: **アンカーは `\A…\z` で書く。** .NET の `$` は文字列末尾だけでなく**末尾 LF の直前にもマッチする**
+    // （`\Z` も同じ）。`^…$` だと `abc\n` が値域を通り、LF を含む会話キーが URL パスへ運ばれる（#836 の監査が実測）。
     private static readonly Regex PeriodKeyPattern =
-        new("^[A-Za-z0-9-]{1,32}$", RegexOptions.CultureInvariant);
+        new(@"\A[A-Za-z0-9-]{1,32}\z", RegexOptions.CultureInvariant);
 
     // 版番号は 1 以上（報告書サービスの版番号は 1 起点。0 以下・数値でないものは Unknown へ倒す）。
     private const int MinVersion = 1;

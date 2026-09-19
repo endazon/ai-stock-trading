@@ -82,6 +82,15 @@ public class ReportPeriodSuggestionsTests
     }
 
     [Fact]
+    public void 末尾に改行を含むキーは候補に出さない()
+    {
+        // 否定形（#837）: .NET の `$` は末尾 LF の直前にもマッチするため、`^…$` のままだと `…\n` が値域を通り候補に出る。
+        var keys = new[] { "daily-2026-09-18\n", "weekly-2026-W38\n", "daily-2026-09-17" };
+
+        ReportPeriodSuggestions.Filter(keys, null).Should().Equal("daily-2026-09-17");
+    }
+
+    [Fact]
     public void 重複するキーは一度しか出さない()
     {
         var keys = new[] { "daily-2026-09-18", "daily-2026-09-18", "daily-2026-09-17" };
