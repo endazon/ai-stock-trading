@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using NotificationService.Domain;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
 
@@ -45,7 +46,18 @@ public sealed class HttpReportReviewController(
                 return new ReportReviewResult(false, 0, "レビュー局面の応答を解釈できませんでした");
             }
 
-            return new ReportReviewResult(true, view.Version, $"報告書 {periodKey}: 版 {view.Version}");
+            // FR-07, FR-14, #840, IADR-0352 決定 5: 入力が未供給のまま生成された報告書なら、**確定の前に**それを見せる。
+            // 本メッセージは `/report show` と、版番号なしの `/report approve`（確認ボタンの前段）の両方に出る。
+            var message = $"報告書 {periodKey}: 版 {view.Version}";
+            if (ReportUnsuppliedNotice.Format(view.UnsuppliedInputs) is { } notice)
+            {
+                logger.LogWarning(
+                    "報告書 {PeriodKey}（版 {Version}）は入力が未供給のまま生成されています（{Count} 件）。",
+                    periodKey, view.Version, view.UnsuppliedInputs?.Count ?? 0);
+                message += $"\n{notice}";
+            }
+
+            return new ReportReviewResult(true, view.Version, message);
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
@@ -217,7 +229,10 @@ public sealed class HttpReportReviewController(
 
     // 報告書サービス側 ReportReview の必要部分のみを受ける射影。
     // **State（enum）は受けない**——数値/文字列いずれの JSON 表現にも結合しないため（IADR-0240 決定5）。
-    private sealed record ReviewView(int Version);
+    //
+    // #840, IADR-0352 決定 5: UnsuppliedInputs は報告書サービスの**コード定数の表示名**（本文・要約ではない＝
+    // IADR-0240 決定4 に反しない）。欠落（旧版の報告書サービス）は null＝警告なし＝従来どおり。
+    private sealed record ReviewView(int Version, IReadOnlyList<string?>? UnsuppliedInputs = null);
 
     // 報告書サービス側 ConfirmReportRequest / ReviewCommandRequest と同形（版番号付き）。
     private sealed record ConfirmRequest(int ExpectedVersion);

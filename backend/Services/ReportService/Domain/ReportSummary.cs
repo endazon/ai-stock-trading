@@ -14,7 +14,15 @@ public static class ReportSummary
     /// <summary>要約全体の長さ上限。数値行は必ず残し、超過分は散文側を詰める。</summary>
     public const int MaxLength = ReportSummarySanitizer.DefaultMaxLength;
 
-    public static string Build(ReportKind kind, string periodLabel, PnlSummary pnl, string? narrative)
+    /// <summary>未供給の入力があるときに要約へ足す警告行の先頭。通知と試験が同じ語を引けるよう定数にする。</summary>
+    public const string UnsuppliedWarningPrefix = "⚠ 未供給の入力があります";
+
+    public static string Build(
+        ReportKind kind,
+        string periodLabel,
+        PnlSummary pnl,
+        string? narrative,
+        IReadOnlyList<ReportInput>? unsuppliedInputs = null)
     {
         ArgumentNullException.ThrowIfNull(pnl);
 
@@ -24,6 +32,17 @@ public static class ReportSummary
             $"実現損益（税引後・費用込み）: {ReportAmountFormat.Base(pnl.RealizedPnlNet)}"
             + $" ／ 費用: {ReportAmountFormat.Base(pnl.TotalCost)}"
             + $" ／ 取引: {pnl.TradeCount} 件（決済 {pnl.RealizingTradeCount}・勝ち {pnl.WinningTradeCount}）");
+
+        // FR-06, FR-09, #840, IADR-0352 決定 5: **入力が欠けたまま出来上がった報告書であることを、確定の前に見せる。**
+        // 本文は節ごとに「照会できませんでした」と書いているが、通知の要約は数値と散文しか運ばないため、
+        // 要約だけを見て確定する利用者には欠落が見えなかった。表示名はコード定数であり外部入力を含まない。
+        // 🔴 **数値行の直後・散文より前**に置く（上限で詰められるのは散文側であり、警告は切り落とされない）。
+        if (unsuppliedInputs is { Count: > 0 })
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"\n{UnsuppliedWarningPrefix}（確定の前に本文を確認してください）: "
+                + $"{string.Join("、", ReportInputs.Labels(unsuppliedInputs))}");
+        }
 
         // 散文は残り枠に収める（数値行が切り落とされないよう、上限は散文側に配分する）。
         var remaining = MaxLength - sb.Length - 2; // 区切りの空行ぶん

@@ -71,8 +71,23 @@ builder.Services.AddScoped<AppSvc>();
 // （MSP#1364）、匿名では 401 になる。**MSP レルム**の confidential client で取った s2s トークンを付ける
 // （AST レルムの ServiceAuth__* は issuer 不一致で通らない＝IADR-0093 が KB で実測した故障と同型）。
 // fail-safe: LlmGateway:Auth 未設定なら何も付けない＝本変更前とバイト等価。
+//
+// FR-06, #840, IADR-0352 決定 1・2: 鎖の最外に門＋観測（ReportDependencyHandler）を挿す。トークンが有効な構成で
+// 取得できなければ**送信しない**（認証なしの送信で代替しない）。門が使う供給元は付与ハンドラと同じ資格情報
+// （LlmGateway:Auth）から作り、singleton に保持する（トークンのキャッシュを巡回を跨いで使う）。
+// 🔴 DI へは**キー付き**で登録する——キー無しで登録すると AST レルムの IServiceAccessTokenProvider と
+// 衝突し、レルムを跨いでトークンが漏れる（IADR-0323 決定1 / IADR-0093 決定2）。
+// LLM のタイムアウトは一過性に数えない（モデルの所要時間であり、繰り返せば費用だけが増える・IADR-0123）。
+builder.Services.AddSingleton<ReportDependencyProbe>();
+builder.Services.AddKeyedSingleton<IServiceAccessTokenProvider>(ReportLlmTokenProviderKey, (sp, _) =>
+    PlatformRealmAuthExtensions.CreatePlatformRealmTokenProvider(
+        sp, sp.GetRequiredService<IConfiguration>(), LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName));
 builder.Services.AddHttpClient("report-llm",
         c => c.Timeout = NarrativeTimeouts(builder.Configuration).Max)
+    .AddReportDependencyGate(
+        "report-llm",
+        sp => sp.GetRequiredKeyedService<IServiceAccessTokenProvider>(ReportLlmTokenProviderKey),
+        timeoutIsTransient: false)
     .AddAiStockTradingPlatformRealmToken(
         builder.Configuration, LlmGatewayAuth.SectionName, LlmGatewayAuth.TokenClientName);
 builder.Services.AddSingleton<PlaceholderReportNarrativeDrafter>();
@@ -196,7 +211,11 @@ builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
 // FR-06/16, IADR-0115 決定5, #280: 集計対象期間の約定。権威源はリスク管理（#12）の取引台帳であり、
 // GET /risk-controls/fills（OwnerOrService・IADR-0051）へ s2s 同期照会する（IADR-0095 と同型）。
 // RiskManagement:BaseUrl 未設定/不正 URI は no-op（空列）＝数値 0 の報告書＝現行挙動。照会失敗も空列へ倒す。
+//
+// FR-06, #840, IADR-0352 決定 1・2: 門＋観測を**トークン付与より前（＝外側）**に挿す。AST レルムの供給元は
+// AddAiStockTradingServiceToken が資格情報の揃っているときだけ DI へ登録する（未整備なら null＝門は素通し）。
 builder.Services.AddHttpClient("risk-ledger", c => c.Timeout = TimeSpan.FromSeconds(10))
+    .AddReportDependencyGate("risk-ledger", sp => sp.GetService<IServiceAccessTokenProvider>())
     .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<IPeriodFillSource>(sp =>
 {
@@ -271,7 +290,9 @@ builder.Services.AddSingleton<IBuyInInferenceRecordSource>(sp =>
 // 🔴 ここで空（＝事象なし）へ倒さない。**為替のイベントは本番で実際に発行されている**ため、
 // 「劣化はありませんでした」と書けば端的に嘘になる（上の margin-reduction が空列で正しいのは、
 // **発火元が無く 1 度も発動し得ない**からであり、状況が違う。**揃えてはならない**）。
+// FR-06, #840, IADR-0352 決定 1・2: risk-ledger と同じく門＋観測を外側に挿す。
 builder.Services.AddHttpClient("audit-ledger", c => c.Timeout = TimeSpan.FromSeconds(10))
+    .AddReportDependencyGate("audit-ledger", sp => sp.GetService<IServiceAccessTokenProvider>())
     .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<IFxSourceStatusSource>(sp =>
 {
@@ -415,6 +436,9 @@ builder.Services.Configure<ReportAutoGenerationOptions>(
     builder.Configuration.GetSection(ReportAutoGenerationOptions.SectionName));
 builder.Services.AddSingleton(sp =>
     sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.ToSettings());
+// FR-06, #840, IADR-0352 決定 3: 依存先が一過性に落ちている間の見送り（上限つき）。回数はプロセス内に持つ。
+builder.Services.AddSingleton(sp => new ReportGenerationDeferralTracker(
+    sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value.ToDeferralSettings()));
 // FR-09, IADR-0116 決定2, #280: 提示（確定依頼）の通知。NotifyOnDraftPresented（既定 true）が false のときは
 // no-op＝イベントを 1 件も発行しない。実送信は通知サービス側の Discord 設定が入って初めて発火する（IADR-0020/0062）。
 builder.Services.AddSingleton<IReportDraftPresentedNotifier>(sp =>
@@ -529,4 +553,8 @@ static ReportNarrativeTimeouts NarrativeTimeouts(IConfiguration cfg) => new(
     cfg["LlmGateway:TimeoutSecondsByKind:Monthly"]);
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
-public partial class Program { }
+public partial class Program
+{
+    // #840, IADR-0352 決定 1: 報告書散文 LLM（MSP レルム）のトークン供給元を DI で引くキー。
+    internal const string ReportLlmTokenProviderKey = "report-llm";
+}
