@@ -41,7 +41,13 @@ public record ProtectiveStopOrder(
     // #820 の 7 巡目監査, IADR-0344 追記(7): 観測したが**まだ RemainingProtected へ書いていない**外部要因の超過量と、
     // その値を連続で観測した回数。確定（2 回）までは帳簿を動かさないため、戻す操作（復元）が存在しない。
     int PendingExternalReduction = 0,
-    int ExternalReductionObservations = 0)
+    int ExternalReductionObservations = 0,
+    // #820 の 8 巡目監査, IADR-0344 追記(8): 超過が**消えた**ことを連続で観測した回数（確定と対称の失効）と、
+    // 実効数量が 0 になった時刻・それを Critical で知らせた時刻（1 行 1 回）。
+    // 追記(7) の観測値は単調で確定か完了でしか消えず、1 巡回の過少照会でその行の損切りが**二度と出なくなった**。
+    int ExternalReductionAbsences = 0,
+    DateTimeOffset? ProtectionSuspendedSince = null,
+    DateTimeOffset? ProtectionSuspendedNotifiedAt = null)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;
@@ -85,6 +91,17 @@ public record ProtectiveStopOrder(
     /// </para>
     /// </summary>
     public int EffectiveProtectedQuantity => Math.Max(0, ProtectedQuantity - PendingExternalReduction);
+
+    /// <summary>
+    /// FR-10, #820 の 8 巡目監査, IADR-0344 追記(8): <b>主張はあるのに 1 株も動かせない</b>
+    /// （＝帳簿では守っているのに、未確定の観測がその全量を打ち消している）状態か。
+    /// <para>
+    /// この状態の行は <see cref="ProtectiveStopState.Active"/> であり帳簿も無傷なので、
+    /// 状態・帳簿だけを見る検査はすべて通る。**到達しても 1 株も決済しない**ことだけがその違いであり、
+    /// 放置すると無音で保護が失われる。猶予を過ぎたら Critical を 1 回出す（追記(8) 決定 3）。
+    /// </para>
+    /// </summary>
+    public bool IsProtectionSuspended => ProtectedQuantity > 0 && EffectiveProtectedQuantity == 0;
 
     /// <summary>決済方向（エントリーの反対売買）。ロング（Buy 建て）は Sell、ショート（Sell 建て）は Buy。</summary>
     public TradeSide CloseSide => EntrySide == TradeSide.Buy ? TradeSide.Sell : TradeSide.Buy;

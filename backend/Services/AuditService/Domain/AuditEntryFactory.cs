@@ -438,6 +438,9 @@ public static class AuditEntryFactory
                 // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による減少の確定。決済は出していない。
                 SoftwareStopOutcome.ProtectionReduced =>
                     "——外部要因で建玉が減ったぶんを保護記録の主張から差し引いた（決済は出していない）",
+                // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
+                SoftwareStopOutcome.ProtectionSuspended =>
+                    "——**帳簿では守っているのに 1 株も決済できない状態が猶予を過ぎても続いている（到達の有無に依らない・要人手対応）**",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

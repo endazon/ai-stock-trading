@@ -55,4 +55,12 @@ public sealed class ProtectiveStopOrderRow
     public int PendingExternalReduction { get; set; }
 
     public int ExternalReductionObservations { get; set; }
+
+    // FR-10, #820 の 8 巡目監査, IADR-0344 追記(8): 超過が**消えた**ことの連続観測回数（確定と対称の失効）と、
+    // 実効数量が 0 になった時刻・Critical で知らせた時刻（1 行 1 回。無音で保護が失われるのを止める）。
+    public int ExternalReductionAbsences { get; set; }
+
+    public DateTimeOffset? ProtectionSuspendedSince { get; set; }
+
+    public DateTimeOffset? ProtectionSuspendedNotifiedAt { get; set; }
 }

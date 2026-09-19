@@ -129,6 +129,15 @@ public static class NotificationFormatter
                 + "ブローカー側の逆指値を持つ記録が 0 になった場合は、その逆指値を取り消します。"
                 + $"建玉と保護の対応をご確認ください（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Warning),
+        // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
+        // 行は Active・帳簿も無傷なので、知らせなければ無音のまま保護が失われる（到達の有無に依らない）。
+        SoftwareStopOutcome.ProtectionSuspended => new(
+            "リスク統制: ソフトウェア逆指値が保護を再開できていません",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 建玉の照会と保護記録の主張が食い違ったまま猶予を過ぎ、"
+                + "この記録は**損切りラインへ到達しても 1 株も決済できない状態**が続いています（決済は出していません）。"
+                + "**建玉が無保護で残っている可能性があります。直ちに確認し、必要なら手動で決済してください**"
+                + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
@@ -158,6 +167,10 @@ public static class NotificationFormatter
         // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 対処は「設定を S0 へ戻す」であり、他の 3 つと違う。
         OrderDispatchForgoneReason.StopLossMethodNotPermitted =>
             "損切りの実行機構が moomoo SIMULATE 以外では選べない手法です（設定を S0 へ戻してください）",
+        // FR-10, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: 対処は「先に手仕舞ってから切り替える」であり、他と違う。
+        OrderDispatchForgoneReason.UnattributedPosition =>
+            "同一銘柄・同方向に帰属不明の建玉があります（S1 はその建玉を自分の損切りラインで売らないために武装しません。"
+                + "先に手仕舞ってから切り替えてください）",
         _ => reason.ToString(),
     };
 

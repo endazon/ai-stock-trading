@@ -65,7 +65,8 @@ public class ProtectiveStopGuardSoftwareStopTests
     }
 
     private sealed record Fixture(
-        ProtectiveStopGuard Guard, GuardBroker Broker, InMemoryProtectiveStopOrderStore Stops, InMemoryExecutedOrderStore Store);
+        ProtectiveStopGuard Guard, SoftwareStopExecutor Executor, GuardBroker Broker,
+        InMemoryProtectiveStopOrderStore Stops, InMemoryExecutedOrderStore Store);
 
     private static Fixture NewFixture()
     {
@@ -75,7 +76,8 @@ public class ProtectiveStopGuardSoftwareStopTests
         var reservations = new InMemoryOrderReservationStore();
         var clock = new FakeClock();
         var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock);
-        return new Fixture(new ProtectiveStopGuard(broker, broker, stops, store, clock, executor), broker, stops, store);
+        return new Fixture(
+            new ProtectiveStopGuard(broker, broker, stops, store, clock, executor), executor, broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);
@@ -287,6 +289,22 @@ public class ProtectiveStopGuardSoftwareStopTests
         var restored = f.Stops.Find(s1.EntryDecisionId)!;
         restored.State.Should().Be(ProtectiveStopState.Active);
         restored.RemainingProtected.Should().Be(10, "建玉 10 株を覆い続ける");
+
+        // 🔴 #820 の 8 巡目監査, IADR-0344 追記(8): **帳簿と状態だけを見ても保護が失われていることは捕まらない。**
+        // 追記(7) の観測値は単調で、S0 の約定で一度観測した超過が消えないまま
+        // その巡回で動かせる株数（EffectiveProtectedQuantity）が**恒久的に 0** になっていた
+        //（この配置は S0 の**標準的な終わり方**であり、監査が P13 として実測した）。
+        // 超過が 2 巡回連続で消えたら観測を失効させ、**実際に決済が出る**ところまで確かめる。
+        await f.Guard.RunOnceAsync(10);
+
+        var usable = f.Stops.Find(s1.EntryDecisionId)!;
+        usable.EffectiveProtectedQuantity.Should().Be(10, "1 株も動かせない状態のまま放置しない");
+
+        await f.Executor.OnTriggeredAsync(new StopLossTriggered(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 940m, 950m, Now));
+
+        f.Broker.MarketCloseCount.Should().Be(1, "到達したら実際に決済が出る（帳簿だけ無傷でも意味が無い）");
+        f.Stops.Find(s1.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
     }
 
     // T-10-369: 同上（B3）の配置だが、S0 の逆指値が**まだ生きている**場合。

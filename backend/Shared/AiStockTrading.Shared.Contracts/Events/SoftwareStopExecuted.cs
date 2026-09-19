@@ -65,4 +65,16 @@ public enum SoftwareStopOutcome
     /// </para>
     /// </summary>
     ProtectionReduced = 5,
+
+    /// <summary>
+    /// #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: <b>帳簿では守っているのに、未確定の観測がその全量を打ち消していて
+    /// 1 株も動かせない</b>状態が猶予を過ぎても続いている。
+    /// <para>
+    /// <b>決済は出していない。</b><see cref="SoftwareStopExecuted.Quantity"/> は守れていない株数である。
+    /// 行は <c>Active</c>・帳簿も無傷なので、状態や帳簿だけを見る検査はすべて通る——
+    /// 違いは「到達しても 1 株も決済しない」ことだけであり、知らせなければ無音で保護が失われる。
+    /// <b>到達の有無に依らず</b>、1 件の記録につき 1 回だけ発行する（人手対応・Critical）。
+    /// </para>
+    /// </summary>
+    ProtectionSuspended = 6,
 }

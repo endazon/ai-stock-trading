@@ -184,6 +184,55 @@ public class EfProtectiveStopOrderStoreTests
         found.StalledNotifiedAt.Should().Be(Now.AddMinutes(20));
     }
 
+    // T-10-436（受け入れ基準 43・44）: #820 の 8 巡目監査, IADR-0344 追記(8)。
+    // 失効の連続観測回数と「1 株も動かせない状態」の記録も**状態**である。
+    // 永続化されないと、再起動のたびに失効の数え直し・Critical の再送が起きる。
+    [Fact]
+    public void 失効の観測回数と保護停止の記録が往復する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 0,
+            ProtectiveStopState.Active, Now, Now, StopLossExecutionMethod.SoftwareStop,
+            RemainingProtected: 10, PendingExternalReduction: 10, ExternalReductionObservations: 1,
+            ExternalReductionAbsences: 1, ProtectionSuspendedSince: Now.AddMinutes(3),
+            ProtectionSuspendedNotifiedAt: Now.AddMinutes(18));
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Should().Be(stop);
+        found.ExternalReductionAbsences.Should().Be(1);
+        found.ProtectionSuspendedSince.Should().Be(Now.AddMinutes(3));
+        found.ProtectionSuspendedNotifiedAt.Should().Be(Now.AddMinutes(18));
+        found.EffectiveProtectedQuantity.Should().Be(0);
+        found.IsProtectionSuspended.Should().BeTrue("帳簿では 10 株を守っているのに 1 株も動かせない");
+    }
+
+    // 既定値（列を持たなかった時代の行と同じ姿）では「保護停止」ではない。
+    [Fact]
+    public void 未確定の観測が無い行は保護停止ではない()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(Stop(entryDecisionId));
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.ExternalReductionAbsences.Should().Be(0);
+        found.ProtectionSuspendedSince.Should().BeNull();
+        found.IsProtectionSuspended.Should().BeFalse();
+    }
+
     // 未確定（null）の S1 行は 1 株も主張しない。S0 の旧い行（列が無かった時代）は Quantity を主張する。
     [Fact]
     public void 残保護数量が未設定なら_S1は0を_S0はQuantityを主張する()

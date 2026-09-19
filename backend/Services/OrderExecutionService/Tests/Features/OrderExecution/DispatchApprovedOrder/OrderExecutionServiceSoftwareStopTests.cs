@@ -21,10 +21,17 @@ public class OrderExecutionServiceSoftwareStopTests
         public DateTimeOffset UtcNow => Now;
     }
 
+    // #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: S1 の武装は「同一銘柄・同方向に帰属不明の建玉が無いこと」を
+    // 前提条件にするため、SIMULATE の発注先と同じく建玉照会を実装する（既定は建玉なし＝帰属不明なし）。
     private sealed class ScriptedBroker(BrokerProvider provider = BrokerProvider.MoomooSimulate)
-        : IBrokerAdapter, IProtectiveOrderBroker
+        : IBrokerAdapter, IProtectiveOrderBroker, IBrokerPositionSource
     {
         public BrokerProvider Provider { get; } = provider;
+
+        public IReadOnlyList<BrokerPositionSnapshot>? Positions { get; set; } = [];
+
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
+            Task.FromResult(Positions);
 
         public OrderStatus EntryStatus { get; init; } = OrderStatus.Accepted;
         public bool Unavailable { get; init; }
@@ -196,6 +203,85 @@ public class OrderExecutionServiceSoftwareStopTests
         broker.PlaceCount.Should().Be(0);
         result.Forgone!.Reason.Should().Be(OrderDispatchForgoneReason.StopLossMethodNotPermitted);
         stops.FindActive(10).Should().BeEmpty();
+    }
+
+    // T-10-434（受け入れ基準 45 の fail-closed 側 / #820 の 8 巡目監査）: 建玉を照会できない巡回では
+    // 「帰属不明の建玉が無い」ことを確かめられない。**「不明」を「無い」と取り違えず**、武装せず見送る
+    //（他人の建玉を S1 の損切りラインで売るのは無音かつ不可逆な事故である）。
+    [Fact]
+    public async Task 建玉を照会できないならS1を武装せず見送る()
+    {
+        var broker = new ScriptedBroker { Positions = null };
+        var (service, _, stops, _) = NewService(broker);
+        var approved = S1();
+
+        var result = await service.ExecuteAsync(approved);
+
+        ((int)result.Forgone!.Reason).Should().Be(
+            4, "OrderDispatchForgoneReason.UnattributedPosition（不明は「ある」側へ倒す）");
+        broker.PlaceCount.Should().Be(0, "帰属不明の建玉が無いと確かめられないなら建玉を作らない");
+        stops.Find(approved.DecisionId).Should().BeNull();
+    }
+
+    // T-10-434（同上）: 建玉照会の能力そのものが無い発注先でも同じ（構成事故を fail-closed で受ける）。
+    [Fact]
+    public async Task 建玉照会の能力が無い発注先ではS1を武装せず見送る()
+    {
+        var broker = new PositionBlindBroker();
+        var (service, _, stops, _) = NewService(broker);
+        var approved = S1();
+
+        var result = await service.ExecuteAsync(approved);
+
+        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        broker.PlaceCount.Should().Be(0);
+        stops.Find(approved.DecisionId).Should().BeNull();
+    }
+
+    // 建玉照会の能力を持たない発注先（S1 は本来 moomoo SIMULATE でしか選べないが、構成事故を fail-closed で受ける）。
+    private sealed class PositionBlindBroker : IBrokerAdapter, IProtectiveOrderBroker
+    {
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
+        public int PlaceCount { get; private set; }
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
+        {
+            PlaceCount++;
+            return Task.FromResult(new BrokerOrder("entry-blind", intent, OrderStatus.Accepted, 0, 0m, Now, null));
+        }
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            Task.FromResult(new BrokerOrder("stop-blind", closeIntent, OrderStatus.Rejected, 0, 0m, Now, Now));
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            Task.FromResult(new BrokerOrder("close-blind", closeIntent, OrderStatus.Accepted, 0, 0m, Now, null));
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            Task.FromResult<BrokerOrder?>(null);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    // T-10-435（受け入れ基準 45 / #820 の 8 巡目監査）: 同一銘柄・同方向に**帰属不明の建玉**（主張する保護記録が無い建玉）
+    // があるあいだは武装しない。稼働中の S2 から S1 へ切り替えた直後そのものの配置である。
+    [Fact]
+    public async Task 帰属不明の建玉がある銘柄ではS1を武装せず発注もしない()
+    {
+        var broker = new ScriptedBroker
+        {
+            Positions = [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 10, 1_000m)],
+        };
+        var (service, _, stops, _) = NewService(broker);
+        var approved = S1();
+
+        var result = await service.ExecuteAsync(approved);
+
+        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        broker.PlaceCount.Should().Be(0, "建玉を持たずに見送る（IADR-0210 決定1 と同じ倒し方）");
+        stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元になる保護記録を作らない");
     }
 
     [Fact]

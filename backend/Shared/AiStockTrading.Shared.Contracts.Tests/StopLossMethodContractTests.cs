@@ -102,6 +102,8 @@ public class StopLossMethodContractTests
         ((int)SoftwareStopOutcome.CloseStalled).Should().Be(4);
         // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による保護対象の減少（末尾へ追加）。
         ((int)SoftwareStopOutcome.ProtectionReduced).Should().Be(5);
+        // #820 の 8 巡目監査, IADR-0344 追記(8): 帳簿では守っているのに 1 株も動かせない状態（末尾へ追加）。
+        ((int)SoftwareStopOutcome.ProtectionSuspended).Should().Be(6);
     }
 
     // 見送りの理由は末尾追加であり、既存 3 値の序数を動かさない（メトリクスのタグ・監査 payload の整数）。
@@ -112,5 +114,7 @@ public class StopLossMethodContractTests
         ((int)OrderDispatchForgoneReason.StopLossPriceMissing).Should().Be(1);
         ((int)OrderDispatchForgoneReason.StopOrderUnsupported).Should().Be(2);
         ((int)OrderDispatchForgoneReason.StopLossMethodNotPermitted).Should().Be(3);
+        // #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: 帰属不明の建玉がある銘柄では S1 を武装しない（末尾へ追加）。
+        ((int)OrderDispatchForgoneReason.UnattributedPosition).Should().Be(4);
     }
 }

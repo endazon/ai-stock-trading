@@ -28,12 +28,20 @@ namespace OrderExecutionService.Features.OrderExecution;
 //
 // 自分が出した決済による減算は SoftwareStopExecutor が行う（決定的な SoftwareCloseDecisionId の試行と 1:1）。
 //
-// 🔴 **未確定の観測は取り消さない（単調）。** 超過が見えなくなっても書き戻す値が無いので、**観測の連続回数を 0 へ戻すだけ**で
-// 済む（PendingExternalReduction は確定か行の完了でしか消えない）。これにより
+// 🔴 **未確定の観測は書き戻さない。** 超過が見えなくなっても帳簿へは何も書き戻さない
+// （RemainingProtected は確定でしか動かない）。これにより
 //   - **1 巡回だけ過少に照会された行が失われない**（帳簿を書いていないので、State も RemainingProtected も無傷）
 //   - **S1 の記録を持たない建玉（S2 の建玉・人手で建てた建玉）が現れても幽霊行が復活しない**
 // の 2 つが同時に成り立つ。倒れ方は常に「その行はしばらく動けない（EffectiveProtectedQuantity が 0）」側であり、
 // **反対建玉という不可逆な事故側へは倒れない**。
+//
+// 🔴 **［IADR-0344 追記(8) / #820 の 8 巡目監査］観測を「対称に」失効させる。**
+// 追記(7) の観測値は**単調**で確定か完了でしか消えなかった。そのため建玉照会が **1 巡回だけ**過少に返っただけで
+// PendingExternalReduction がその値のまま残り、以後どれだけ照会が正常でも EffectiveProtectedQuantity が
+// **恒久的に 0**——行は Active・帳簿も無傷なのでどの検査も通るのに、到達しても 1 株も決済しない（無音）。
+// **超過が ExternalReductionConfirmations 回連続で「消えた」ら観測を捨てる**（確定と同じ回数で対称にする）。
+// **これは「復元」ではない**——帳簿（RemainingProtected）を書き戻さないので、6・7 巡目の復元問題は生じない。
+// 🔴 ただし **到達済みの行では失効させない**（下の Confirm の注記。7 巡目 BLK-7-2 / T-10-411）。
 //
 // 🔴 **不変条件（#820 の 6 巡目監査・IADR-0344 追記(6)。追記(7) でも維持する）**:
 //   **Active 行が実際に動かす株数の合計 ＋ 送信済みで建玉照会に未反映の決済 ≦ 方向の純額**
@@ -50,6 +58,14 @@ public static class ProtectiveStopNetting
     /// 更新が新しい順に引くため、直前の巡回で決済を送って完了した行（＝未反映の決済を抱える行）が先に入る。
     /// </summary>
     public const int SentCloseScanLimit = 50;
+
+    /// <summary>
+    /// #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: <b>主張はあるのに 1 株も動かせない</b>状態が続いていることを
+    /// Critical で知らせるまでの猶予。<b>到達の有無に依らない</b>。
+    /// 孤立行の猶予（<c>SoftwareStopExecutor.DefaultOrphanGrace</c>）・据え置きの猶予
+    /// （<c>DefaultSettlementGrace</c>）と同型の 15 分にする（同じ性質の「黙って続く異常」を同じ尺度で扱う）。
+    /// </summary>
+    public static readonly TimeSpan ProtectionSuspendedGrace = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// FR-10, #820, IADR-0344 決定6・追記(4) 決定10・追記(7): <b>S0（ブローカー側逆指値）の行から見た建玉残</b>。
@@ -261,7 +277,13 @@ public static class ProtectiveStopNetting
             {
                 Replace(
                     group,
-                    row with { PendingExternalReduction = take, ExternalReductionObservations = 1, UpdatedAt = now },
+                    row with
+                    {
+                        PendingExternalReduction = take,
+                        ExternalReductionObservations = 1,
+                        ExternalReductionAbsences = 0,
+                        UpdatedAt = now,
+                    },
                     stops);
                 continue;
             }
@@ -269,20 +291,29 @@ public static class ProtectiveStopNetting
             if (row.PendingExternalReduction <= 0)
                 continue;
 
-            // 🔴 超過が見えなくなった。**書き戻すものは無い**（帳簿を書いていないため）ので、連続回数を 0 へ戻すだけ。
+            // 🔴 超過が見えなくなった。**書き戻すものは無い**（帳簿を書いていないため）。
             // ただし「送信済みで未反映の決済」「確定前の新規エントリーの**約定済み**株数」が減り分を説明できるなら、
             // 超過は消えていない——数え続ける（そうしないと、決済を送って完了した行のぶんが「建玉が戻った」に見える）。
             if (Math.Max(take, supported.GetValueOrDefault(row.EntryDecisionId)) < row.PendingExternalReduction)
             {
-                if (row.ExternalReductionObservations != 0)
-                    Replace(group, row with { ExternalReductionObservations = 0, UpdatedAt = now }, stops);
+                var expired = Expire(row, now);
+                if (!ReferenceEquals(expired, row))
+                    Replace(group, expired, stops);
                 continue;
             }
 
             var observations = row.ExternalReductionObservations + 1;
             if (observations < ExternalReductionConfirmations)
             {
-                Replace(group, row with { ExternalReductionObservations = observations, UpdatedAt = now }, stops);
+                Replace(
+                    group,
+                    row with
+                    {
+                        ExternalReductionObservations = observations,
+                        ExternalReductionAbsences = 0,
+                        UpdatedAt = now,
+                    },
+                    stops);
                 continue;
             }
 
@@ -295,6 +326,7 @@ public static class ProtectiveStopNetting
                     RemainingProtected = Math.Max(0, row.ProtectedQuantity - reduction),
                     PendingExternalReduction = 0,
                     ExternalReductionObservations = 0,
+                    ExternalReductionAbsences = 0,
                     UpdatedAt = now,
                 },
                 stops);
@@ -307,7 +339,95 @@ public static class ProtectiveStopNetting
                 CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
         }
 
+        NotifySuspended(group, stops, events, now);
+
         return group;
+    }
+
+    /// <summary>
+    /// FR-10, #820 の 8 巡目監査, IADR-0344 追記(8): <b>超過が消えた巡回</b>の扱い（確定と対称の失効）。
+    /// <para>
+    /// 追記(7) は連続回数を 0 へ戻すだけで <see cref="ProtectiveStopOrder.PendingExternalReduction"/> を
+    /// <b>単調</b>に保っていた。その結果、建玉照会が 1 巡回だけ過少に返っただけで観測がその値のまま残り、
+    /// 以後どれだけ照会が正常でも <see cref="ProtectiveStopOrder.EffectiveProtectedQuantity"/> が
+    /// <b>恒久的に 0</b>——到達しても 1 株も決済しない状態が無音で続いた（8 巡目監査 BLK-8-1）。
+    /// <b>消えたことを確定と同じ回数だけ連続で観測したら、観測そのものを捨てる。</b>
+    /// 帳簿（<see cref="ProtectiveStopOrder.RemainingProtected"/>）は書き戻さないので「復元」ではない。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>到達済みの行では失効させない。</b> その行は失効した瞬間に成行決済を出す——
+    /// 「戻ってきた自分の建玉」と「他人の建玉（S2・人手）」は純額から区別できないため、
+    /// <b>一度観測した超過を取り戻して即座に売る</b>のは 7 巡目 BLK-7-2（T-10-411）そのものである。
+    /// 到達済みの行は据え置いたまま <see cref="SoftwareStopOutcome.CloseStalled"/> と
+    /// <see cref="SoftwareStopOutcome.ProtectionSuspended"/> で人手へ回す（無音にはしない）。
+    /// </para>
+    /// </summary>
+    private static ProtectiveStopOrder Expire(ProtectiveStopOrder row, DateTimeOffset now)
+    {
+        if (row.TriggeredAt is not null)
+        {
+            return row.ExternalReductionObservations == 0 && row.ExternalReductionAbsences == 0
+                ? row
+                : row with { ExternalReductionObservations = 0, ExternalReductionAbsences = 0, UpdatedAt = now };
+        }
+
+        var absences = row.ExternalReductionAbsences + 1;
+        return absences < ExternalReductionConfirmations
+            ? row with { ExternalReductionObservations = 0, ExternalReductionAbsences = absences, UpdatedAt = now }
+            : row with
+            {
+                PendingExternalReduction = 0,
+                ExternalReductionObservations = 0,
+                ExternalReductionAbsences = 0,
+                UpdatedAt = now,
+            };
+    }
+
+    /// <summary>
+    /// FR-10, #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: <b>主張はあるのに 1 株も動かせない行</b>
+    /// （<see cref="ProtectiveStopOrder.IsProtectionSuspended"/>）が猶予を過ぎたら Critical を<b>1 行 1 回</b>出す。
+    /// <para>
+    /// 行は <c>Active</c>・帳簿も無傷なので、状態や帳簿だけを見る検査はすべて通る。
+    /// <b>到達の有無に依らず</b>知らせる——未到達の行には
+    /// <see cref="SoftwareStopOutcome.CloseStalled"/>（到達からの猶予）が効かないため、無音のまま保護が失われる。
+    /// </para>
+    /// </summary>
+    private static void NotifySuspended(
+        List<ProtectiveStopOrder> group,
+        IProtectiveStopOrderStore stops,
+        ICollection<object>? events,
+        DateTimeOffset now)
+    {
+        foreach (var row in group.ToList())
+        {
+            if (!row.IsProtectionSuspended)
+            {
+                if (row.ProtectionSuspendedSince is not null || row.ProtectionSuspendedNotifiedAt is not null)
+                {
+                    Replace(
+                        group,
+                        row with { ProtectionSuspendedSince = null, ProtectionSuspendedNotifiedAt = null, UpdatedAt = now },
+                        stops);
+                }
+
+                continue;
+            }
+
+            if (row.ProtectionSuspendedSince is not { } since)
+            {
+                Replace(group, row with { ProtectionSuspendedSince = now, UpdatedAt = now }, stops);
+                continue;
+            }
+
+            if (row.ProtectionSuspendedNotifiedAt is not null || now - since < ProtectionSuspendedGrace)
+                continue;
+
+            Replace(group, row with { ProtectionSuspendedNotifiedAt = now, UpdatedAt = now }, stops);
+            events?.Add(new SoftwareStopExecuted(
+                row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.ProtectionSuspended,
+                row.ProtectedQuantity, row.TriggerPrice, row.TriggeredPrice ?? row.TriggerPrice, row.Attempt,
+                CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+        }
     }
 
     /// <summary>

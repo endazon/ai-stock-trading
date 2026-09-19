@@ -37,9 +37,18 @@ public sealed class OrderExecutionAppService(
     IOrderReservationStore reservations,
     IClock clock,
     IProtectiveStopOrderStore? protectiveStops = null,
-    ILogger<OrderExecutionAppService>? logger = null)
+    ILogger<OrderExecutionAppService>? logger = null,
+    IBrokerPositionSource? positions = null)
 {
+    // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
+    // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
+    private const int ArmingScanLimit = 500;
+
     private readonly ILogger _logger = logger ?? NullLogger<OrderExecutionAppService>.Instance;
+
+    // 建玉照会は実運用ではブローカーアダプタそのものが実装する（Program.cs の配線と同じ）。
+    // 明示指定があればそれを使う（テスト・差し替え用）。
+    private readonly IBrokerPositionSource? _positions = positions ?? broker as IBrokerPositionSource;
 
     public async Task<OrderDispatchResult> ExecuteAsync(OrderApproved approved, CancellationToken cancellationToken = default)
     {
@@ -99,6 +108,18 @@ public sealed class OrderExecutionAppService(
                     "損切りの実行機構 S1 の記録先（保護記録ストア）が構成されていないため発注しません（DecisionId={DecisionId}）。",
                     approved.DecisionId);
                 return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
+            }
+
+            // 🔴 #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: **S1 は帰属不明の建玉がある銘柄では武装しない。**
+            // S1 の行が守る株数はブローカーの純額からしか測れず、他人の建玉（S2・人手・S0 の発注窓）と
+            // 自分の建玉を区別できない。先に他人の建玉が在ると超過が一度も観測されないまま満額の主張が残り、
+            // 到達でその建玉を S1 の損切りラインで売る（監査が実測。稼働中の S2 から S1 へ切り替えた直後そのもの）。
+            // 「保護レグを張れない Open では建玉を持たない」（IADR-0210 決定1）に合わせ、**建玉を持たずに見送る**。
+            if (disposition == StopLossMethodDisposition.SoftwareStop
+                && protectiveStops!.Find(approved.DecisionId) is null
+                && await HasUnattributedPositionAsync(approved, cancellationToken).ConfigureAwait(false))
+            {
+                return Forgone(approved, OrderDispatchForgoneReason.UnattributedPosition);
             }
 
             // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: S3 の能力が無い発注先へ S3 が届いたら**発注しない**
@@ -259,6 +280,49 @@ public sealed class OrderExecutionAppService(
         }
 
         return disposition;
+    }
+
+    // 🔴 FR-10, ADR-0040 決定1（S1）, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4:
+    // 同一銘柄・同方向に**帰属不明の建玉**（純額 − Active な保護記録の主張合計 > 0）があるか。
+    // **確かめられない場合（建玉照会の能力が無い・照会不能）も「ある」側へ倒す**（fail-closed。
+    // 「不明」を「無い」と取り違えると、他人の建玉を S1 の損切りラインで売る不可逆な事故になる）。
+    private async Task<bool> HasUnattributedPositionAsync(OrderApproved approved, CancellationToken cancellationToken)
+    {
+        var intent = approved.Intent;
+        if (_positions is null)
+        {
+            _logger.LogError(
+                "損切りの実行機構 S1 は建玉照会のできる発注先でしか武装できません（帰属不明の建玉を判別できないため）。"
+                    + "発注しません（DecisionId={DecisionId}）。",
+                approved.DecisionId);
+            return true;
+        }
+
+        var snapshot = await _positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            _logger.LogError(
+                "建玉を照会できないため S1 を武装しません（帰属不明の建玉が無いことを確かめられない）。"
+                    + "DecisionId={DecisionId} 銘柄={Symbol}",
+                approved.DecisionId, intent.Symbol);
+            return true;
+        }
+
+        var net = ProtectiveStopNetting.DirectionalNet(intent.Symbol, intent.Market, intent.Side, snapshot);
+        var claimed = protectiveStops!.FindActive(ArmingScanLimit)
+            .Where(s => s.State == ProtectiveStopState.Active
+                && s.Symbol == intent.Symbol && s.Market == intent.Market && s.EntrySide == intent.Side)
+            .Sum(s => s.ProtectedQuantity);
+        var unattributed = net - claimed;
+        if (unattributed <= 0)
+            return false;
+
+        _logger.LogError(
+            "同一銘柄・同方向に帰属不明の建玉が {Unattributed} 株あるため S1 を武装せず見送ります"
+                + "（純額 {Net} 株・保護記録の主張 {Claimed} 株）。その建玉を S1 の損切りラインで決済しないための前提条件です"
+                + "（先に手仕舞ってから切り替えてください）。DecisionId={DecisionId} 銘柄={Symbol}",
+            unattributed, net, claimed, approved.DecisionId, intent.Symbol);
+        return true;
     }
 
     // #820, IADR-0344 決定3: 建玉が生じなかった S1 のエントリー（見送り・終端失敗）の記録を完了にする。

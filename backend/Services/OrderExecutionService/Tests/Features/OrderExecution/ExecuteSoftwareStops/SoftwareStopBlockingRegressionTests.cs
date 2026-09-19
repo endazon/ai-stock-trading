@@ -8,6 +8,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
+using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder.OrderExecutionAppService;
 
 namespace OrderExecutionService.Tests;
 
@@ -21,9 +22,10 @@ public class SoftwareStopBlockingRegressionTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 18, 15, 0, 0, TimeSpan.Zero);
 
+    // #820 の 8 巡目監査: 猶予（実効 0 が続く行の Critical）を跨ぐ検証のため、時刻を進められるようにする。
     private sealed class FakeClock : IClock
     {
-        public DateTimeOffset UtcNow => Now;
+        public DateTimeOffset UtcNow { get; set; } = Now;
     }
 
     private sealed class FakeBroker : IBrokerAdapter, IProtectiveOrderBroker, IBrokerPositionSource
@@ -37,8 +39,15 @@ public class SoftwareStopBlockingRegressionTests
         public List<(OrderIntent Intent, Guid DecisionId)> MarketCloses { get; } = [];
         public List<string> Cancelled { get; } = [];
 
-        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
-            throw new NotSupportedException();
+        // #820 の 8 巡目監査: 武装の前提条件（帰属不明の建玉が無いこと）を確かめるため、エントリーの発注も受ける。
+        public List<OrderIntent> Entries { get; } = [];
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
+        {
+            Entries.Add(intent);
+            return Task.FromResult(new BrokerOrder(
+                $"entry-{Entries.Count}", intent, OrderStatus.Filled, intent.Quantity, intent.Price, Now, Now));
+        }
 
         public Task<BrokerOrder> PlaceStopOrderAsync(
             OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
@@ -68,6 +77,8 @@ public class SoftwareStopBlockingRegressionTests
     private sealed record Fixture(
         SoftwareStopExecutor Executor,
         ProtectiveStopGuard Guard,
+        AppSvc Execution,
+        FakeClock Clock,
         FakeBroker Broker,
         InMemoryProtectiveStopOrderStore Stops,
         InMemoryExecutedOrderStore Store);
@@ -81,7 +92,8 @@ public class SoftwareStopBlockingRegressionTests
         var clock = new FakeClock();
         var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock);
         return new Fixture(
-            executor, new ProtectiveStopGuard(broker, broker, stops, store, clock, executor), broker, stops, store);
+            executor, new ProtectiveStopGuard(broker, broker, stops, store, clock, executor),
+            new AppSvc(broker, store, reservations, clock, stops), clock, broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);
@@ -314,9 +326,22 @@ public class SoftwareStopBlockingRegressionTests
         var kept = f.Stops.Find(first.EntryDecisionId)!;
         kept.State.Should().Be(ProtectiveStopState.Active);
         kept.RemainingProtected.Should().Be(10, "一時的なズレを恒久的なズレにしない");
-        kept.ExternalReductionObservations.Should().Be(0, "超過が消えたら観測の連続回数を 0 へ戻すだけでよい");
+        kept.ExternalReductionObservations.Should().Be(0, "超過が消えたら観測の連続回数を 0 へ戻す");
         f.Stops.Find(second.EntryDecisionId)!.RemainingProtected.Should().Be(10);
         f.Broker.MarketCloses.Should().BeEmpty("未到達の行は決済しない");
+
+        // 🔴 #820 の 8 巡目監査, IADR-0344 追記(8): **帳簿と状態だけを見ても足りない。**
+        // 追記(7) では観測値が単調だったため、ここで `PendingExternalReduction` が 10 のまま残り、
+        // 行は Active・帳簿も 10 のままなのに**到達しても 1 株も決済しない**（無音）。
+        // 超過が 2 巡回連続で消えたら観測を失効させ、**実際に建玉 20 株の全量に決済が出る**ところまで確かめる。
+        await f.Guard.RunOnceAsync(10);
+
+        f.Stops.Find(first.EntryDecisionId)!.EffectiveProtectedQuantity.Should().Be(10);
+
+        await f.Executor.OnTriggeredAsync(new StopLossTriggered(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 20, 940m, 950m, Now));
+
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(20, "到達したら建玉の全量に決済が出る");
     }
 
     // T-10-381（受け入れ基準 35）: S1 が吸収しきれない超過は S0 も削るが、**確定するまで逆指値を取り消さない**。
@@ -533,6 +558,18 @@ public class SoftwareStopBlockingRegressionTests
             10, "建玉 10 株が実在する行の帳簿を、確定前の新規エントリーの承認数量で消してはならない");
         kept.State.Should().Be(ProtectiveStopState.Active, "建玉が実在する行を完了させると無保護になる");
         f.Broker.MarketCloses.Should().BeEmpty("未到達の行は決済しない");
+
+        // 🔴 #820 の 8 巡目監査, IADR-0344 追記(8): 帳簿と状態が無傷でも、その行が**動かせる株数**が 0 なら保護は無い。
+        // 巡回 3 で観測が失効し、到達で**実際に 10 株の決済が出る**ところまで確かめる。
+        await f.Guard.RunOnceAsync(10);
+
+        f.Stops.Find(covered.EntryDecisionId)!.EffectiveProtectedQuantity.Should().Be(10);
+
+        await f.Executor.OnTriggeredAsync(new StopLossTriggered(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 940m, 950m, Now));
+
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(
+            10, "承認数量に依らず、建玉 10 株に損切りが出る");
     }
 
     // T-10-411（受け入れ基準 42 / BLK-7-2）: **S1 の記録を持たない建玉**（S2 の建玉・S0 の発注窓・人手で建てた建玉）が
@@ -569,4 +606,161 @@ public class SoftwareStopBlockingRegressionTests
         f.Stops.Find(ghost.EntryDecisionId)!.PendingExternalReduction.Should().Be(
             10, "一度観測した超過は書き戻さない（復元という操作を持たない）");
     }
+
+    // ---- 8 巡目監査: 1 巡回の過少照会でその行の損切りが二度と出なくなる／他人の建玉を売る ----
+
+    // T-10-430（受け入れ基準 43 / BLK-8-1）: 追記(7) の観測値は**単調**で、確定か行の完了でしか消えなかった。
+    // 建玉照会が **1 巡回だけ**過少に返っただけで `PendingExternalReduction` がその値のまま残り、
+    // 以後どれだけ照会が正常でも `EffectiveProtectedQuantity` が**恒久的に 0**になる。
+    // 行は `Active`・帳簿（`RemainingProtected`）も無傷なのでどの検査も通るが、到達しても 1 株も決済しない。
+    // 監査の実測: 建玉 20 株・行 2 件・照会が 1 巡回だけ 10 株 → その後 10 巡回ずっと 20 株でも
+    // `first: Active Remaining=10 Pending=10 Obs=0 Effective=0`、到達しても決済は 10 株だけ。
+    //
+    // 🔴 是正は**観測の対称な失効**である——超過が確定と同じ回数（2 巡回）連続で**消えた**ら観測を捨てる。
+    // **帳簿は書き戻さない**（`RemainingProtected` は動かさない）ので、6・7 巡目の「復元」とは別物である。
+    [Fact]
+    public async Task 一巡回だけ過少な照会の後に照会が戻れば到達で全量が決済される()
+    {
+        var f = NewFixture();
+        var first = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        var second = SoftwareStop(Now.AddHours(-1), quantity: 10);
+        f.Stops.Save(first);
+        f.Stops.Save(second);
+        Entry(f, first, OrderStatus.Filled, 10);
+        Entry(f, second, OrderStatus.Filled, 10);
+
+        // 巡回 1: 照会が 1 巡回だけ 10 株を返す（実際の建玉は 20 株）。
+        f.Broker.Positions = [Long(10)];
+        await f.Guard.RunOnceAsync(10);
+        f.Stops.Find(first.EntryDecisionId)!.PendingExternalReduction.Should().Be(10, "観測としては積む");
+
+        // 巡回 2〜11: 照会は 20 株に戻り、以後ずっと正常（監査の実測と同じ 10 巡回）。
+        f.Broker.Positions = [Long(20)];
+        for (var cycle = 0; cycle < 10; cycle++)
+            await f.Guard.RunOnceAsync(10);
+
+        var recovered = f.Stops.Find(first.EntryDecisionId)!;
+        recovered.State.Should().Be(ProtectiveStopState.Active);
+        recovered.RemainingProtected.Should().Be(10, "帳簿は一度も書き換えていない");
+        recovered.PendingExternalReduction.Should().Be(
+            0, "超過が 2 巡回連続で消えたら観測を失効させる（確定と同じ回数で対称にする）");
+        recovered.EffectiveProtectedQuantity.Should().Be(
+            10, "その行が動かせる株数が恒久的に 0 のままになってはならない（損切りが二度と出ない）");
+
+        // 到達: 建玉 20 株の**全量**に損切りが出る（是正前は 10 株しか出なかった）。
+        await f.Executor.OnTriggeredAsync(new StopLossTriggered(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 20, 940m, 950m, Now));
+
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(
+            20, "建玉 20 株のうち 10 株に損切りが出ない状態を残さない");
+    }
+
+    // T-10-431（受け入れ基準 44 / BLK-8-1 の可観測性）: 失効も確定もしないまま
+    // **実効数量 0 が続く**配置（照会が超過と回復を交互に返す＝どちらの連続観測回数も溜まらない）では、
+    // 行は `Active`・帳簿も無傷のまま 1 株も守らない。**到達の有無に依らず**猶予（15 分）を過ぎたら
+    // Critical を **1 回だけ**出して無音をやめる（据え置き自体は続ける）。
+    [Fact]
+    public async Task 実効数量ゼロが猶予を過ぎたら到達していなくても一度だけ通知する()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        var emitted = new List<SoftwareStopExecuted>();
+
+        // 超過（建玉 0）と回復（建玉 10）が交互に見える。観測も失効も 2 巡回連続しないため、
+        // 未確定の観測が消えないまま実効数量が 0 で据え置かれ続ける。
+        async Task FlapAsync(int cycles)
+        {
+            for (var cycle = 0; cycle < cycles; cycle++)
+            {
+                f.Broker.Positions = f.Clock.UtcNow.Minute % 10 == 0 ? [] : [Long(10)];
+                var result = await f.Guard.RunOnceAsync(10);
+                emitted.AddRange(result.Events.OfType<SoftwareStopExecuted>());
+                f.Clock.UtcNow = f.Clock.UtcNow.AddMinutes(5);
+            }
+        }
+
+        await FlapAsync(2); // 10 分（猶予 15 分の内側）
+        emitted.Where(e => (int)e.Outcome == 6).Should().BeEmpty("猶予の内側では出さない");
+
+        await FlapAsync(2); // 20 分（猶予を越える）
+        var suspended = emitted.Where(e => (int)e.Outcome == 6).Should().ContainSingle().Which;
+        suspended.EntryDecisionId.Should().Be(stop.EntryDecisionId);
+        suspended.Quantity.Should().Be(10, "守れていない株数を残す");
+        suspended.CloseDecisionId.Should().BeNull("決済は出していない");
+
+        await FlapAsync(4);
+        emitted.Where(e => (int)e.Outcome == 6).Should().ContainSingle("毎巡回は出さない（1 行 1 回）");
+        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(
+            ProtectiveStopState.Active, "据え置き自体は正しい fail-safe である（閉じない）");
+    }
+
+    // T-10-432（受け入れ基準 45 / BLK-8-2）: **他人の建玉が先に在る**と超過が一度も観測されず、
+    // S1 の行は満額の主張を保ったまま**他人の建玉を自分の損切りラインで売る**。
+    // 追記(7) の復元撤去が塞いだのは「幽霊行が先に超過を観測した後で他人の建玉が現れる」経路だけだった。
+    // 監査が実測した時系列（**稼働中の S2 から S1 へ切り替えた直後そのもの**）:
+    //   1. 切替前からの S2 建玉 10 株（保護記録なし） 2. 切替後の S1 エントリー 10 株が約定（純額 20・超過なし）
+    //   3. S1 の建玉だけ人手で決済（純額 10・超過は依然 0） 4. 到達 → closes=[10@940/Sell]＝S2 の建玉を売った
+    //
+    // 🔴 純額では区別できない以上、**武装の前提条件**で塞ぐ——S1 で新規建てを武装する時点で
+    // 同一銘柄・同方向に帰属不明の建玉（純額 − Active な保護記録の主張合計 > 0）があるなら、
+    // 「保護レグを張れない Open では建玉を持たない」（IADR-0210 決定1）に合わせて**建玉を持たずに見送る**。
+    [Fact]
+    public async Task 帰属不明の建玉が先にある銘柄ではS1を武装せず幽霊行も生じない()
+    {
+        var f = NewFixture();
+
+        // 1. 切替前からの S2 の建玉 10 株（保護記録を作らない実行機構なので、主張する行が無い）。
+        f.Broker.Positions = [Long(10)];
+
+        // 2. 切替後の S1 の新規建てが承認されて届く。
+        var approved = Approved();
+
+        var result = await f.Execution.ExecuteAsync(approved);
+
+        ((int)result.Forgone!.Reason).Should().Be(
+            4, "OrderDispatchForgoneReason.UnattributedPosition（末尾へ追加した序数）");
+        f.Broker.Entries.Should().BeEmpty("帰属不明の建玉があるあいだは新規建てを送らない（建玉を持たない側へ倒す）");
+        f.Stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元になる保護記録を作らない");
+        result.SoftwareStopArmed.Should().BeNull();
+
+        // 3. S1 の建玉は生じていないので、人手の決済があっても純額は S2 のぶん（10 株）のままである。
+        // 4. 到達しても、S2 の建玉を S1 の損切りラインで売る行が存在しない。
+        var run = await f.Executor.OnTriggeredAsync(new StopLossTriggered(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 940m, 950m, Now));
+
+        run.Matched.Should().Be(0);
+        f.Broker.MarketCloses.Should().BeEmpty(
+            "他の実行機構（S2・人手・S0 の発注窓）の建玉を S1 の損切りラインで売ってはならない");
+    }
+
+    // T-10-433（受け入れ基準 45 の対の肯定形）: 帰属不明の建玉が**無い**銘柄では従来どおり武装する
+    // （前提条件が「S1 をいつまでも武装できない」ゲートに化けていないことを固定する）。
+    // 自分の S1 行が既に主張している建玉は帰属不明ではない。
+    [Fact]
+    public async Task 帰属が付いている建玉しかない銘柄では従来どおりS1を武装する()
+    {
+        var f = NewFixture();
+        var existing = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        f.Stops.Save(existing with { RemainingProtected = 10 }); // 既存行の主張は確定済み
+        Entry(f, existing, OrderStatus.Filled, 10);
+        f.Broker.Positions = [Long(10)];                          // その 10 株だけが在る
+
+        var approved = Approved();
+
+        var result = await f.Execution.ExecuteAsync(approved);
+
+        result.Forgone.Should().BeNull("帰属不明の建玉は無い");
+        f.Broker.Entries.Should().ContainSingle();
+        f.Stops.Find(approved.DecisionId)!.Mechanism.Should().Be(StopLossExecutionMethod.SoftwareStop);
+        result.SoftwareStopArmed.Should().NotBeNull();
+    }
+
+    private static OrderApproved Approved() =>
+        new(Guid.NewGuid(),
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 10, 1_000m, PositionEffect.Open, StopLossPrice: 950m, FxRateToBase: 1m),
+            10, Now, StopLossMethod: StopLossExecutionMethod.SoftwareStop);
 }
