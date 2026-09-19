@@ -49,6 +49,12 @@ public static class OrderDispatchForgoneLifecycle
             OrderDispatchForgoneReason.StopOrderUnsupported => true,
             OrderDispatchForgoneReason.StopLossMethodNotPermitted => true,
             // 🔴 既定は「解放しない」。新しい理由を足す人は、それが確実に未発注かを**実測して**からここへ足す。
+            //
+            // 🔴 判定の基準は**理由の名前ではなく「ブローカーへ送信したか」**である。
+            // #873 が足す `BrokerPositionsIndeterminate` の「不明」は***建玉照会*の不明**であり、
+            // IADR-0211 / IADR-0117 改定 6 が言う***発注*の不明**（送ったか分からない）ではない
+            // ——前者は送信前に return するので `true` 側である。字面で `false` に落とすと、
+            // 建玉が確認できない局面で見送られた手仕舞いが 30 分ロックされ #852 の実害が再発する。
             _ => false,
         };
 }

@@ -118,6 +118,17 @@ reason switch
 （IADR-0117 改定 6 / IADR-0211 の 2026-09-19 追記）。したがって本 allowlist に「不明」は入り得ない ——
 **見送りの契約そのものが「確実に未発注」を要求している**ことが、この列挙の安全性の土台である。
 
+> 🔴 **［注記 / #873］上の「不明」は *発注（dispatch）* の不明である。「不明」という語が付く見送り理由を
+> 一律に既定 `false` へ落とさないこと。**
+> [#873](https://github.com/endazon/ai-stock-trading/issues/873) は `OrderDispatchForgoneReason` へ
+> `BrokerPositionAbsent` / `BrokerPositionsIndeterminate` を足す（4 → 6）。後者の「不明」は
+> ***建玉照会* の不明**——「ブローカーに建玉がいくつあるか確認できなかった」であって、
+> 「注文を送ったかどうか分からない」ではない。**発注には一切着手していない**（#873 側の監査と本 PR 側の監査が
+> いずれも「送信前に `return` する＝確実に未発注」と確認している）ので、**2 値とも allowlist へ `true` で足す**。
+> 字面の「不明」に引かれて既定 `false` に落とすと、**建玉が確認できない局面で見送られた手仕舞いが
+> 30 分ロックされる＝#852 の実害がそのまま再発する。**
+> **判定の基準は「理由の名前」ではなく「ブローカーへ送信したか」**である。
+
 述語を**リスク管理側に置く**のは `OrderStatusLifecycle` と同じ規律による ——
 サービス間で共有する契約は列挙そのものであり、**その解釈は各サービスが自分で持つ**。
 また、見送りは `OrderStatus` を持たないので `OrderStatusLifecycle` の述語では判定できない。
@@ -186,8 +197,10 @@ reason switch
 - 🔴 **残余リスク 3（本 IADR が新たに作った露出。追随は
   [#876](https://github.com/endazon/ai-stock-trading/issues/876)）**:
   **見送りで在庫を解放した後に同じ `OrderApproved` が重複配送されると、そのとき実発注された決済が
-  「処理中の決済」に数えられない。** 再現順序（PR #872 の監査プローブ
-  `ProbeD_ForgoneThenLiveExecutionIsInvisibleToInFlight` が実測）:
+  「処理中の決済」に数えられない。** 🔴 **本項はリポジトリ内のテストでは固定していない**
+  （PR #872 のフェーズ末監査が監査側の使い捨てプローブで実測したものであり、
+  **その名前を出典として引かない**——本リポジトリに存在せず後から検証できないからである）。
+  下の再現順序は**本リポジトリのコードを読んで確かめた事実**だけで書いてある（各段に出典を併記した）:
   1. `OrderApproved`（Close 100）→ `BrokerUnavailableException` → `reservations.Release` が
      **予約行を削除**（`EfOrderReservationStore.Release` は `Remove(row)`）→ 見送りを発行。
   2. 本決定の `MarkForgone` で `TerminalAt` が立ち、`GetInFlightCloseQuantity` = 0（在庫が戻る）。
@@ -207,6 +220,44 @@ reason switch
   - **是正の方向は #876 で裁定する**（`MarkForgone` を戻す経路を持つ／再配送を見送り済みの `DecisionId` で弾く／
     予約を解放せず別状態で残す／露出を受容する、のいずれか）。**どれも台帳の単調性・予約の 3 相・
     見送りの定義のどれかを触る**ため、本 PR では決めない。
+- 🔴 **残余リスク 5（TOCTOU。`MarkTerminal` と同型で、#881 の並行トークンが入れば解消する）**:
+  `EfPortfolioLedgerStore.MarkForgone` は **「`Find` → `TerminalAt is not null` を検査 → 代入 → `SaveChanges`」**
+  であり、`ApprovedOrderRow` に並行トークンが無い現状では**検査と書き込みのあいだが TOCTOU である**。
+  見送り（`OrderDispatchForgone`）と終端（`OrderCancelled` / `OrderExecuted`）は Wolverine の**別キュー**
+  ＝並行に走る（IADR-0129 決定 1）ため、同じ承認を同時に触り得る。
+  - **実測（PR #872 のフェーズ末監査。`MarkForgone` と `MarkTerminal` を Barrier で同時起動・
+    EF InMemory・別 `DbContext`・200 試行）**:
+    `forgoneWon=91 / terminalWon=76 / TORN=33`（`fabricatedStatusOnForgone=33`・`erasedRealStatus=0`・`noWrite=0`）。
+    🔴 **33/200 が直列実行では出得ない状態**——`TerminalAt` は見送りの時刻なのに `TerminalStatus = Cancelled`。
+    **決定 2 が守ると宣言した不変条件（`TerminalAt is not null && TerminalStatus is null` が見送りの表現）
+    そのものの破れ**である。
+  - **在庫の押さえは壊れない**（どちらが勝っても `TerminalAt` は立ち、`GetInFlightCloseQuantity` は同じ値に
+    落ち着く冪等な書き込みである）。壊れるのは**見送りと終端を読み分ける診断**だけであり、
+    統制（二重決済の防止）には波及しない。これがブロッキングとされなかった理由である。
+  - **解消**: [#881](https://github.com/endazon/ai-stock-trading/issues/881)（IADR-0357）が
+    `TerminalAt` を `IsConcurrencyToken()` にすると、負けた側の UPDATE は 0 行になり
+    `DbUpdateConcurrencyException` へ落ちる＝**引き裂けなくなる**。
+    🔴 **本 PR は先回りして `MarkForgone` にもその catch を入れてある**（下の「マージ順」を参照）。
+    **トークンが入るまでは引き裂き得る**ことを、ここに残す。
+  - `InMemoryPortfolioLedgerStore.MarkForgone` は `ConcurrentDictionary.TryUpdate` の CAS ループなので
+    この破れは持たない（EF 実装だけの性質である）。
+
+- 🔴 **マージ順への非依存（#881 との結線）**: `MarkForgone` は `DbUpdateConcurrencyException` を
+  **捕まえて黙って何もしない**（追跡状態を `Detached` にする。`MarkTerminal` と同一の作法）。
+  負けた＝「先に誰かが終端または見送りを記録した」であり、**単調性（最初の終端が真）と同義**だからである。
+  - **トークンがまだ無い現状では決して投げないので無害**であり、**先に入れておけばマージ順に依存しない**。
+  - 🔴 **「片方だけ」では壊れる**: #881 が先に入ると `TerminalAt` は並行トークンになるが、#881 は本 PR より
+    前に分岐しており `MarkForgone` を 1 件も含まない（`grep -c MarkForgone` = 0）。catch が無いまま競合すると
+    `OrderDispatchForgoneLedgerHandler` を貫通して Wolverine の再試行 → error キューへ至り、
+    **見送りが記録されない＝在庫が解放されない＝#852 の実害が間欠的に再発する**
+    （監査の実測: #881 のトークンだけを本ブランチに再現して 200 試行 → `MarkForgoneTHREW=43`）。
+  - 🔴 **rebase 時の義務**: #881 が `RiskManagementDbContext` に書いた
+    「**本列を書く唯一の操作（`EfPortfolioLedgerStore.MarkTerminal`）**」というコメントは、
+    本 PR がマージされた時点で**偽になる**（`MarkForgone` も本列を書く）。
+    **`MarkTerminal` / `MarkForgone` の 2 つへ是正する。**
+    これは「**意味を変えたら、その意味に依存している既定・記述を全部引き直す**」（IADR-0117 の 2026-09-19 追記）
+    そのものであり、本 IADR 自身が残余リスク 3 で引用している作法である。
+
 - **残余リスク 4（軽微・対応しない）**: `MarkForgone` のあとに本物の終端（`MarkTerminal(Cancelled)` 等）が
   後着しても、単調性のため **`TerminalStatus` は永久に `null` のまま**である。判定に使うのは `TerminalAt`
   だけなので統制上の害は無く、診断としても「見送った承認に後から取消が届いた」は追える情報が乏しい

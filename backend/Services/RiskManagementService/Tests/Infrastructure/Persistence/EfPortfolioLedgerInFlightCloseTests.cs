@@ -2,6 +2,7 @@ using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Xunit;
 
 namespace RiskManagementService.Tests;
@@ -350,6 +351,105 @@ public class EfPortfolioLedgerInFlightCloseTests
         var row = db.ApprovedOrders.Find(id)!;
         row.TerminalAt.Should().Be(Now.AddMinutes(-3), "最初の終端が真（単調）");
         row.TerminalStatus.Should().Be(OrderStatus.Cancelled);
+    }
+
+    // 🔴 T-10-410, #852, #881, IADR-0356 / IADR-0357（否定形・最重要・マージ順に依存しないこと）:
+    // **`TerminalAt` が並行トークンになっても `MarkForgone` は例外を投げ抜けない。**
+    //
+    // 見送り（`OrderDispatchForgone`）と終端（`OrderCancelled` / `OrderExecuted`）は Wolverine の別キュー
+    // ＝並行に走る。#881 が `TerminalAt` を並行トークンにすると、負けた側の UPDATE は 0 行になり
+    // `DbUpdateConcurrencyException` になる。投げ抜けると `OrderDispatchForgoneLedgerHandler` を貫通して
+    // Wolverine の再試行 → error キューへ至り、**見送りが記録されず在庫が解放されない**（#852 の実害の再発）。
+    //
+    // ここでは #881 の並行トークンだけを `IModelCustomizer` で再現し（本ブランチの DbContext は変えない）、
+    // 「読んだあとに別コンテキストが終端を書く」競合を**決定的に**起こす。
+    // 🔴 本ブランチのままでもトークンが無いため投げないが、この試験は**トークンが入った後の世界**を固定する
+    //（＝#881 と本 PR のマージ順に依存しなくなる）。
+    [Fact]
+    public void 並行トークンが入っても見送りは例外を投げ抜けない()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        Guid id;
+        using (var seed = NewContextWithTerminalAtAsConcurrencyToken(dbName))
+        {
+            id = Approve(new EfPortfolioLedgerStore(seed), PositionEffect.Close, 60, Now.AddMinutes(-5));
+        }
+
+        using var loser = NewContextWithTerminalAtAsConcurrencyToken(dbName);
+        var store = new EfPortfolioLedgerStore(loser);
+
+        // 1) 負ける側が承認を読み込む（このとき TerminalAt は null＝トークンの元値）。
+        loser.ApprovedOrders.Find(id).Should().NotBeNull();
+
+        // 2) そのあいだに別コンテキスト（勝つ側）が終端を書き切る。
+        using (var winner = NewContextWithTerminalAtAsConcurrencyToken(dbName))
+        {
+            new EfPortfolioLedgerStore(winner).MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-2));
+        }
+
+        // 3) 負ける側が見送りを書こうとする＝トークン不一致。**投げてはならない**（黙って何もしない）。
+        var act = () => store.MarkForgone(id, Now.AddMinutes(-1));
+        act.Should().NotThrow<DbUpdateConcurrencyException>(
+            "見送りが例外で抜けると再試行 → error キューへ落ち、在庫が解放されないまま残る（#852 の実害の再発）");
+        act.Should().NotThrow();
+
+        // 4) 先に書かれた終端が残っている（単調。見送りが上書きも破壊もしていない）。
+        using var verify = NewContextWithTerminalAtAsConcurrencyToken(dbName);
+        var row = verify.ApprovedOrders.Find(id)!;
+        row.TerminalAt.Should().Be(Now.AddMinutes(-2), "最初に記録された終端が真");
+        row.TerminalStatus.Should().Be(OrderStatus.Cancelled, "負けた見送りが診断用の状態を消していない");
+        new EfPortfolioLedgerStore(verify)
+            .GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // 🔴 T-10-410（上の試験の**陽性対照**）: 上が「投げない」ことを確かめられるのは、
+    // **この仕掛けが本当に `DbUpdateConcurrencyException` を作っているとき**だけである。
+    // まったく同じ手順を EF へ直接書かせると**投げる** —— つまり上の緑は
+    // 「競合が起きていないから」ではなく「`MarkForgone` が捕まえているから」である。
+    // これが赤くなったら（例: InMemory provider が並行トークンを検査しなくなった）、上の試験は
+    // **空振りで緑**になっているので仕掛けを作り直すこと。
+    [Fact]
+    public void 並行トークンの再現が効いていることの対照()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        Guid id;
+        using (var seed = NewContextWithTerminalAtAsConcurrencyToken(dbName))
+        {
+            id = Approve(new EfPortfolioLedgerStore(seed), PositionEffect.Close, 60, Now.AddMinutes(-5));
+        }
+
+        using var loser = NewContextWithTerminalAtAsConcurrencyToken(dbName);
+        var stale = loser.ApprovedOrders.Find(id)!;
+
+        using (var winner = NewContextWithTerminalAtAsConcurrencyToken(dbName))
+        {
+            new EfPortfolioLedgerStore(winner).MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-2));
+        }
+
+        // MarkForgone が内側でやっているのと同じ書き込みを、catch 無しで行う。
+        stale.TerminalAt = Now.AddMinutes(-1);
+        var act = () => loser.SaveChanges();
+
+        act.Should().Throw<DbUpdateConcurrencyException>(
+            "この競合は実際に並行トークン違反を起こす（起こさないなら上の試験は空振りで緑になっている）");
+    }
+
+    // #881, IADR-0357 の `e.Property(r => r.TerminalAt).IsConcurrencyToken()` だけを再現する。
+    // RiskManagementDbContext は sealed なので派生できない —— モデルの組み立てに割り込む。
+    private static RiskManagementDbContext NewContextWithTerminalAtAsConcurrencyToken(string dbName) =>
+        new(new DbContextOptionsBuilder<RiskManagementDbContext>()
+            .UseInMemoryDatabase(dbName)
+            .ReplaceService<IModelCustomizer, TerminalAtConcurrencyTokenCustomizer>()
+            .Options);
+
+    private sealed class TerminalAtConcurrencyTokenCustomizer(ModelCustomizerDependencies dependencies)
+        : ModelCustomizer(dependencies)
+    {
+        public override void Customize(ModelBuilder modelBuilder, DbContext context)
+        {
+            base.Customize(modelBuilder, context);
+            modelBuilder.Entity<ApprovedOrderRow>().Property(r => r.TerminalAt).IsConcurrencyToken();
+        }
     }
 
     [Fact]

@@ -177,3 +177,19 @@ backend/Services/RiskManagementService/Tests/Infrastructure/Steps/PortfolioLedge
   通り得る**。是正前は台帳が 30 分の窓で押さえ続けていたため露出していなかった。
   前提条件（重複配送＋OpenD 復帰）が要るためブロッキングとせず、**是正の方向は
   [#876](https://github.com/endazon/ai-stock-trading/issues/876) で裁定する**（詳細は IADR-0356 の残余リスク 3）。
+
+［2026-09-19 追記 / #852・PR #872 の差分監査 B1・B2］
+- 🔴 **`EfPortfolioLedgerStore.MarkForgone` は `MarkTerminal` と同型の TOCTOU を持つ**
+  （`Find` → `TerminalAt is not null` 検査 → 代入 → `SaveChanges`。`ApprovedOrderRow` に並行トークンが無い）。
+  実測 200 試行で `TORN=33`＝**決定 A が守ると宣言した「`TerminalAt` は見送りの時刻・`TerminalStatus` は null」
+  の破れ**。在庫の押さえは冪等なので壊れず、壊れるのは診断だけ。IADR-0356 の残余リスク 5 に記録した。
+- 🔴 **`MarkForgone` にも `DbUpdateConcurrencyException` の catch を先回りで入れた**
+  （[#881](https://github.com/endazon/ai-stock-trading/issues/881) が `TerminalAt` を並行トークンにするため）。
+  **マージ順に依存しない形**にするためであり、トークンが無い現状では決して投げないので無害である。
+  catch が無いまま #881 が先に入ると 200 試行中 43 件で送出し、ハンドラを貫通して error キューへ落ちる
+  ＝見送りが記録されず **#852 の実害が間欠的に再発する**。
+- **rebase 時の義務**: #881 の `RiskManagementDbContext` のコメント「本列を書く唯一の操作（`MarkTerminal`）」を
+  **`MarkTerminal` / `MarkForgone` の 2 つへ是正する**（本 PR がマージされた時点で偽になる記述である）。
+- **#873 との衝突**: `OrderDispatchForgoneReason` が 4 → 6 になるため、**後からマージする側**が
+  要素数テストを 6 へ更新し、**2 値とも allowlist へ `true` で足す**
+  （`BrokerPositionsIndeterminate` の「不明」は***建玉照会*の不明**であり、***発注*の不明**ではない）。
