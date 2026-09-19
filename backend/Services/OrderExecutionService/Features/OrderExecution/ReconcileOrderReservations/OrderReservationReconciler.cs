@@ -3,6 +3,7 @@ using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.Options;
 
 namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 
@@ -13,8 +14,13 @@ namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservatio
 //   1. executed_orders に記録あり → phase-4 断絶（Save 成功・MarkCompleted 失敗）の**自己修復**。ブローカ照会不要。
 //   2. 記録なし → プローブ照会（IReservationBrokerProbe）:
 //        Placed        → 記録を保存し確定（MarkCompleted）＋ OrderExecuted 発行対象に載せる。
-//        NotPlaced     → 予約を解放（Release）。ブローカ呼び出しはしない（未発注＝取り消す対象がない）。
-//        Indeterminate → 据え置き（人手/`_error` の現行安全側を壊さない）。
+//        NotPlaced     → 🔴 **解放の門（Reconciliation:ReleaseOnNotPlaced）が開いているときだけ**予約を解放（Release）。
+//                        閉じているあいだは据え置き、DecisionId を HeldNotPlaced に載せる（#856 / IADR-0362）。
+//        Indeterminate → 据え置き（人手/`_error` の現行安全側を壊さない）。門の開閉に依らない。
+//
+// 🔴 FR-05, #856, IADR-0362: **突合で Placed と確定したエントリーに保護逆指値は張らない**（#853 の 2 番）。
+// したがって無保護の建玉が台帳へ載り得る。**黙って通り過ぎさせない**ため、突合で終端化した予約は
+// ProbeTerminalized に載せて返し、Worker 層が 1 件ずつ Critical でログする。保護レグを張るか否かの裁定は #853 が持つ。
 //
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 //
@@ -25,8 +31,12 @@ public sealed class OrderReservationReconciler(
     IExecutedOrderStore executedOrders,
     IReservationBrokerProbe probe,
     IBrokerAdapter broker,
-    IClock clock)
+    IClock clock,
+    IOptions<ReconciliationOptions>? options = null)
 {
+    // 🔴 #856, IADR-0362: 構成が無いときは**門を閉じた側**へ倒す（未登録＝解放してよい、にしない）。
+    private readonly ReconciliationOptions _options = options?.Value ?? new ReconciliationOptions();
+
     /// <summary>
     /// <paramref name="stallCutoff"/> より古い滞留 Reserved を最大 <paramref name="batchSize"/> 件リコンサイルする。
     /// 終端化した予約に対して発行すべき <see cref="OrderExecuted"/> を結果に載せて返す（発行は呼び出し側＝Worker）。
@@ -37,6 +47,8 @@ public sealed class OrderReservationReconciler(
         var stalled = reservations.FindStalledReserved(stallCutoff, batchSize);
 
         var executed = new List<OrderExecuted>();
+        var probeTerminalized = new List<ReservationReconciliationFinding>();
+        var heldNotPlaced = new List<Guid>();
         var terminalized = 0;
         var released = 0;
         var indeterminate = 0;
@@ -76,25 +88,43 @@ public sealed class OrderReservationReconciler(
                         // （OrderApprovedHandler）が同一 DecisionId を確定していないか、Save の直前に再確認する
                         // （TOCTOU 対策）。確定済みなら二重 Save（executed_orders 主キー競合）を避け自己修復に倒す。
                         var raced = executedOrders.FindByDecisionId(decisionId);
+                        ExecutionRecord confirmed;
                         if (raced is not null)
                         {
                             reservations.MarkCompleted(decisionId, raced.OrderId, clock.UtcNow);
-                            executed.Add(ToOrderExecuted(raced));
+                            confirmed = raced;
                         }
                         else
                         {
                             // 発注済みが確定 → 記録を保存し確定する。OrderExecuted は既存イベント
                             // （監査済み・Risk/Notification が冪等消費）を再利用する。
-                            var placedRecord = BuildRecord(decisionId, order, clock.UtcNow);
-                            executedOrders.Save(placedRecord);
+                            confirmed = BuildRecord(decisionId, order, clock.UtcNow);
+                            executedOrders.Save(confirmed);
                             reservations.MarkCompleted(decisionId, order.OrderId, clock.UtcNow);
-                            executed.Add(ToOrderExecuted(placedRecord));
                         }
+
+                        executed.Add(ToOrderExecuted(confirmed));
+                        // 🔴 #856, IADR-0362: **ブローカ照会で確定した**終端化だけを載せる（phase-4 自己修復は載せない
+                        // ——自己修復は通常フローが作った記録の追認であり、保護レグの有無も通常フローが決めている）。
+                        probeTerminalized.Add(new ReservationReconciliationFinding(
+                            confirmed.DecisionId, confirmed.OrderId, confirmed.Symbol,
+                            confirmed.Quantity, confirmed.Status));
                         terminalized++;
                         break;
 
                     case ReservationProbeOutcome.NotPlaced:
-                        // 未発注が確定 → 予約を解放する。解放後は元の OrderApproved 再配送が改めて予約→発注できる。
+                        // 🔴 #856, IADR-0362: 未発注が確定 → 予約を解放する（＝再発注を許可する）。
+                        // **解放の門が閉じているあいだは行わない。** 照会が「未発注」と答える根拠は remark 突合であり、
+                        // remark が往復しなければ発注済みの注文も「一致ゼロ」に見える＝全件解放＝二重発注になる。
+                        // 門を開けてよいのは実機で偽陽性が無いことを示した後だけである（#856 の受け入れ基準）。
+                        if (!_options.ReleaseOnNotPlaced)
+                        {
+                            // 据え置くが**無音にしない**。Worker 層が警告でログし、運用が門を開ける判断の入力にする。
+                            heldNotPlaced.Add(decisionId);
+                            break;
+                        }
+
+                        // 解放後は元の OrderApproved 再配送が改めて予約→発注できる。
                         if (reservations.Release(decisionId))
                             released++;
                         break;
@@ -112,7 +142,8 @@ public sealed class OrderReservationReconciler(
         }
 
         return new ReservationReconciliationResult(
-            stalled.Count, terminalized, released, indeterminate, failed, executed);
+            stalled.Count, terminalized, released, indeterminate, failed, executed,
+            probeTerminalized, heldNotPlaced);
     }
 
     // ブローカ照会結果（BrokerOrder）から発注結果記録を組み立てる。Intent はブローカが持つ注文実体に由来する。
@@ -149,10 +180,25 @@ public sealed class OrderReservationReconciler(
 
 // #141, IADR-0074: 1 巡回のリコンサイル結果。件数サマリ（可観測性）と、発行すべき OrderExecuted の一覧を持つ。
 // Failed は当該巡回で例外により処理できなかった件数（据え置き＝次回巡回で再試行）。
+//
+// #856, IADR-0362: 件数だけでは「何が起きたか」を人が追えないため、**人が見なければならない 2 つ**を明細で持つ。
+//   ProbeTerminalized —— 突合で発注済みと確定して終端化した注文（🔴 **保護レグは張られていない**。#853）。
+//   HeldNotPlaced     —— 照会が未発注と答えたが、解放の門が閉じているため据え置いた予約。
 public sealed record ReservationReconciliationResult(
     int Scanned,
     int Terminalized,
     int Released,
     int Indeterminate,
     int Failed,
-    IReadOnlyList<OrderExecuted> Executed);
+    IReadOnlyList<OrderExecuted> Executed,
+    IReadOnlyList<ReservationReconciliationFinding> ProbeTerminalized,
+    IReadOnlyList<Guid> HeldNotPlaced);
+
+// #856, IADR-0362: 突合で確定した 1 件の要約（ログ・運用手順で人が追える最小限）。
+// 銘柄・数量・状態まで持つのは、運用者が証券会社の画面で突き合わせるのに要るためである。
+public sealed record ReservationReconciliationFinding(
+    Guid DecisionId,
+    string OrderId,
+    string Symbol,
+    int Quantity,
+    OrderStatus Status);

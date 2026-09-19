@@ -2,7 +2,7 @@
 title: IADR-0117 建玉の手仕舞いは利用者専用の同期経路で受け、統制を通さず既存の注文パスへ載せる
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, FR-19, UC-02, UC-06, ADR-0003, ADR-0013, IADR-0018, IADR-0057, IADR-0067, IADR-0074, IADR-0092, IADR-0113, IADR-0129, IADR-0210, IADR-0211, IADR-0346]
+related_ids: [FR-05, FR-10, FR-11, FR-19, UC-02, UC-06, ADR-0003, ADR-0013, IADR-0018, IADR-0057, IADR-0067, IADR-0074, IADR-0092, IADR-0113, IADR-0129, IADR-0210, IADR-0211, IADR-0346, IADR-0362]
 author: endazon (with Claude Code)
 created: 2026-07-30
 updated: 2026-09-19
@@ -182,6 +182,18 @@ plan_refs:
     本項の初稿は「突合が解決する」と**断定**していたが、それは機構が**存在する**という意味でしかなかった
     （3 巡目監査の指摘）。**安全側（撃ち直さない・押さえを解かない）は突合の有無に依らず成立する**が、
     **滞留の解消は依る**。
+    🔴 ［2026-09-19 追記 / [#856](https://github.com/endazon/ai-stock-trading/issues/856)・IADR-0362］
+    **上の「突合は既定で無効」「`deploy/` にも上書きは無い」は、配備については偽になった。**
+    `deploy/helm/ai-stock-trading/values.yaml` が `Reconciliation__Enabled` / `__UseBrokerProbe` を `true` にし、
+    滞留閾値 2 時間・巡回 1 時間で回す（アプリ側の既定は 3 つとも `false` のままであり、そちらの記述は真）。
+    **ただし解放（`NotPlaced` → 予約の削除）だけは新設の門 `Reconciliation__ReleaseOnNotPlaced=false` で閉じている**
+    ——解放は再発注の許可であり、「未発注」の根拠は remark 突合であって証券会社が「無い」と答えた事実ではない
+    （SIMULATE が remark を往復させるかは実機未検証。往復しなければ全件が `NotPlaced`＝全件二重発注になる）。
+    したがって**いま自動で解決するのは `Placed` 側（＋記録ありの自己修復）だけ**であり、`NotPlaced` と
+    `Indeterminate` は据え置かれて人が解決する。門を開ける判断は #856 に残る。
+    なお下記「残余リスク」の**「突合で発注済みと確定したエントリーに保護レグは張られない」は解消していない**
+    （#853 が裁定を持つ）。有効化でこの経路が実際に踏まれるようになったため、常駐が 1 件ずつ Critical でログし、
+    runbook にも確認手順を書いた（**黙って通り過ぎないことだけ**を先に成立させた）。
   - **変えない側**: 発注執行で `Rejected` を作る箇所は 3 つあり、誤っていたのは包括 catch だけである。
     **発注前検証での棄却**（確実に未送信）と **`MoomooTradeRequestException`**（`retType != 0`＝
     **確認できた**非受理）は `Rejected` のままとする（確認できた拒否による在庫解放は #848 の射程内）。

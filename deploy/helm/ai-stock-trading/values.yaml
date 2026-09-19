@@ -434,6 +434,42 @@ services:
     db: order_execution_svc
     # Broker__Provider / Broker__Environment は template が broker.tier から決定する
     # （既定 paper・moomoo-sim は OpenD 経由 SIMULATE・moomoo-live は描画時 fail＝実弾は未解禁・#13 / IADR-0111）。
+    extraEnv:
+      # FR-05, FR-10, UC-06, #141, #848, #856, IADR-0057, IADR-0074, IADR-0092, IADR-0362:
+      # 滞留した発注予約（State=Reserved＝「証券会社へ届いたか不明」）の自動突合。
+      #
+      # 🔴 **これが動いていないと、「送ったが結果が不明」な注文を後から確定させる自動経路が 1 本も無い**
+      #    （在庫の押さえが残ったまま人が証券会社の画面で確認するしかない。2026-09-18 に実際にそうなった）。
+      #    アプリ側の既定は 3 つとも false（docker-compose・単体開発環境を変えないため）。**有効化はここで行う。**
+      #
+      # 配備で走るのは 2 本だけである:
+      #   ① 記録はあるのに予約が Reserved のまま（保存成功・確定失敗）→ 自己修復。ブローカ照会不要・ブローカ非依存。
+      #   ② 照会が「発注済み」と確定 → 記録を保存して確定し OrderExecuted を発行（＝下流の台帳・通知・監査が追随）。
+      #      🔴 **この経路は保護逆指値を張らない**（#853）。常駐が 1 件ずつ Critical でログする。無音にはしない。
+      - { name: Reconciliation__Enabled, value: "true" }
+      # 実照会プローブ（moomoo / OpenD SIMULATE。remark＝DecisionId で注文一覧を突合する）。
+      # **読み取り照会だけ**であり、発注・訂正・取消を 1 本も増やさない。Broker__Provider=moomoo のときだけ
+      # 配線される（paper 構成では無視され、常に Indeterminate を返す no-op プローブのまま＝①だけが走る）。
+      - { name: Reconciliation__UseBrokerProbe, value: "true" }
+      # 🔴 **解放の門。既定と同値だが明示値で可視化する（MaintenanceMarginEvaluation と同じ流儀）。**
+      #    照会が「未発注」と答えたとき予約を解放する＝**再発注を許可する**操作であり、誤判定は二重発注に直結する。
+      #    「未発注」の根拠は remark 突合であって証券会社が「無い」と言った事実ではない —— moomoo SIMULATE が
+      #    remark を往復させるかは**実機未検証**であり、往復しなければ発注済みの注文も「一致ゼロ」に見える
+      #    （＝全件解放＝全件二重発注）。**true にしてよいのは実機で偽陽性が無いことを記録つきで示した後だけ**（#856）。
+      - { name: Reconciliation__ReleaseOnNotPlaced, value: "false" }
+      # 滞留とみなす閾値（時間）。アプリ既定の 24 時間は、保護逆指値の据え置き（＝無保護の建玉が残っている状態）を
+      # 解くには遅すぎる。自動再配送の窓（約 42 秒）と `_error` 滞留の外側にあり、下限クランプ（1 時間）より上。
+      # ⚠️ **23 時間を超える値にしない。** 約定追跡（FillPolling）の追跡上限が 24 時間であり、それを超えると
+      #    突合が解決したときには追跡窓の外で、非終端の記録がそのまま取り残される。
+      - { name: Reconciliation__StallThresholdHours, value: "2" }
+      # 巡回間隔（時間）。下限は 1（それ未満はクランプされる）。検知遅れの最悪値は 2 + 1 = 3 時間。
+      - { name: Reconciliation__IntervalHours, value: "1" }
+      # 1 巡回の処理上限。アプリ既定は 200 だが、**明示的に下げる**。
+      # 1 予約あたり最大 4 往復（全対応市場 × 現在＋履歴）を OpenD へ流し、その接続は**発注アダプタと単一
+      # インスタンスを共有**する（返信待ちの既定は 15 秒）。初回デプロイ時に滞留が溜まっていると、
+      # 200 件 × 4 = 800 往復が 1 バーストで同じコネクションに乗り、発注そのものを詰まらせ得る。
+      # 溢れた分は次の巡回（1 時間後）が拾う——滞留の解消は急がなくてよいが、発注は待てない。
+      - { name: Reconciliation__BatchSize, value: "50" }
   report:
     image: ai-stock-trading/report-service
     db: report_svc

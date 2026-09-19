@@ -2,7 +2,7 @@
 title: IADR-0211 OpenD へ確実に届いていない発注は「見送り」とし、キューイングも Rejected への丸め込みもしない
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0092, IADR-0117, IADR-0210]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0210, IADR-0362]
 author: claude (Claude Code)
 created: 2026-08-28
 updated: 2026-09-19
@@ -74,6 +74,13 @@ issue #331 の要求と食い違う。
    🔴 **「リコンサイルが守る」は条件つきである**（PR #851 の 3 巡目監査）。予約が**二重発注を防ぐ**ことは
    リコンサイルの有無に依らず成立するが、**滞留した予約の解消**は自動リコンサイルが有効なときだけ自動で進む。
    既定は無効（`Reconciliation:Enabled=false`・`UseBrokerProbe=false`）で、いまの配備では人が解決する（有効化は #856）。
+   🔴 ［2026-09-19 追記 / [#856](https://github.com/endazon/ai-stock-trading/issues/856)・IADR-0362］
+   **「いまの配備では人が解決する」は偽になった。** 配備（`deploy/helm/ai-stock-trading/values.yaml`）が
+   `Reconciliation__Enabled` / `__UseBrokerProbe` を有効にした（アプリ既定は `false` のままで、そちらは真）。
+   **ただし解放（`NotPlaced`）は新設の門 `Reconciliation__ReleaseOnNotPlaced=false` で閉じている**ため、
+   自動で片付くのは「発注済みと確定できた」側だけである。**本 ADR の「確実に未発注だけが解放してよい」という
+   規律は、突合の側でも同じ形で守られている**——「未発注」の根拠が remark 突合という未検証の前提に依るあいだは、
+   それを「確実に未発注」と呼ばない。門を開けるのは実機で偽陽性が無いことを示した後（#856）。
    また、本例外と対になる `BrokerDispatchIndeterminateException` を**一括 catch で受ける呼び出し側**は
    「確実に未発注」と取り違えてはならない —— 予約を解放してよいのは本例外（`BrokerUnavailableException`）だけである
    （IADR-0117 の改定 7。保護逆指値ガードの成行手仕舞いがこれを取り違え、巡回ごとに撃ち直していた）。

@@ -2,10 +2,10 @@
 title: IADR-0114 経路B のパリティ回復は「実効するトグルだけ」を values-local で入れ、SEC の連絡先 UA は ast-secrets 経由で供給する
 type: impl-adr
 status: Accepted
-related_ids: [FR-01, FR-10, FR-15, FR-20, ADR-0004, ADR-0008, IADR-0064, IADR-0100, IADR-0103, IADR-0109]
+related_ids: [FR-01, FR-10, FR-15, FR-20, ADR-0004, ADR-0008, IADR-0064, IADR-0074, IADR-0092, IADR-0100, IADR-0103, IADR-0109, IADR-0362]
 author: endazon (with Claude Code)
 created: 2026-07-29
-updated: 2026-07-29
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0004_datasource-selection.md
@@ -139,6 +139,13 @@ ArgoCD は `valueFiles` を持たず `values.yaml` のみを描画する（IADR-
      経路B の既定 paper では `IndeterminateReservationBrokerProbe`＝解放も終端化もしない。
    - 巡回間隔は `Math.Clamp(IntervalHours, 1, …)` で**下限 1 時間**にクランプされ、短周期での検証もできない。
    - 対象領域が [#270](https://github.com/endazon/ai-stock-trading/issues/270)（moomoo 経路の約定伝播）と重複する。
+   - 🔴 ［2026-09-19 追記 / [#856](https://github.com/endazon/ai-stock-trading/issues/856)・IADR-0362］
+     **この「入れない判断」は覆った。** 入れ先は `values-local.yaml` ではなく `values.yaml`（本番描画）である
+     ——リコンサイルは経路B 固有の有効化ではなく、**配備すべてで要る**（滞留 `Reserved` を後から確定させる
+     自動経路が他に 1 本も無い）。上の 3 つの根拠に対する現在の答え: paper では自己修復のみ＝**無害**であり
+     有効化しない理由にならない／巡回下限 1 時間は受け入れる（滞留閾値 2 時間と合わせて検知遅れ最悪 3 時間）／
+     #270 との重複は対象集合が違う（`Reserved` 対 確定済みの非終端記録）。
+     解放（`NotPlaced`）だけは門で閉じたままにしている。
 
 4. **CronJob（`tradingCycle.cronjob.enabled`）**: 既定 disabled が正。in-process ポーリング（IADR-0023）が現行の正経路で実害なし。
    有効化は収集の run-once エンドポイント（#121）実装が前提。

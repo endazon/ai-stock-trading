@@ -8,6 +8,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace OrderExecutionService.Tests;
@@ -53,13 +54,21 @@ public class OrderReservationReconcilerTests
         new(orderId, Intent(), status, FilledQuantity: 10, AveragePrice: 101m,
             PlacedAt: StalledAt, CompletedAt: StalledAt);
 
+    // 🔴 T-10-600, #856, IADR-0362: 解放の門（Reconciliation:ReleaseOnNotPlaced）は**既定で閉じている**。
+    // 明示的に開けたときだけ NotPlaced が解放へ進む。テストも既定は閉じた側で組む。
+    private static IOptions<ReconciliationOptions> Options(bool releaseOnNotPlaced) =>
+        Microsoft.Extensions.Options.Options.Create(
+            new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = releaseOnNotPlaced });
+
     private static (OrderReservationReconciler Reconciler, InMemoryOrderReservationStore Reservations,
-        InMemoryExecutedOrderStore Executed, FakeProbe Probe) Build(ReservationProbeResult probeResult)
+        InMemoryExecutedOrderStore Executed, FakeProbe Probe) Build(
+            ReservationProbeResult probeResult, bool releaseOnNotPlaced = false)
     {
         var reservations = new InMemoryOrderReservationStore();
         var executed = new InMemoryExecutedOrderStore();
         var probe = new FakeProbe(probeResult);
-        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock());
+        var reconciler = new OrderReservationReconciler(
+            reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock(), Options(releaseOnNotPlaced));
         return (reconciler, reservations, executed, probe);
     }
 
@@ -105,7 +114,9 @@ public class OrderReservationReconcilerTests
     public async Task 未発注が確定した滞留予約は解放される()
     {
         // 受け入れ基準1（未発注→解放）: プローブが NotPlaced を返す。予約は削除され、再配送で改めて発注できる。
-        var (reconciler, reservations, executed, _) = Build(ReservationProbeResult.NotPlaced);
+        // 🔴 T-10-601, #856: **解放の門を明示的に開けたときだけ**この経路へ進む（既定は閉じている＝T-10-600）。
+        var (reconciler, reservations, executed, _) =
+            Build(ReservationProbeResult.NotPlaced, releaseOnNotPlaced: true);
         var decisionId = Guid.NewGuid();
         reservations.TryReserve(decisionId, StalledAt);
 
@@ -142,7 +153,8 @@ public class OrderReservationReconcilerTests
         var reservations = new InMemoryOrderReservationStore();
         var executed = new InMemoryExecutedOrderStore();
         var reconciler = new OrderReservationReconciler(
-            reservations, executed, new IndeterminateReservationBrokerProbe(), new PaperBrokerAdapter(), new FakeClock());
+            reservations, executed, new IndeterminateReservationBrokerProbe(), new PaperBrokerAdapter(), new FakeClock(),
+            Options(releaseOnNotPlaced: true));
         var ids = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToList();
         foreach (var id in ids)
             reservations.TryReserve(id, StalledAt);
@@ -199,7 +211,8 @@ public class OrderReservationReconcilerTests
                 PositionEffect.Open, 10, 100m, 10, 100m, OrderStatus.Filled, 0m, StalledAt));
             return ReservationProbeResult.Placed(Placed("BRK-PROBE"));
         });
-        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock());
+        var reconciler = new OrderReservationReconciler(
+            reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock(), Options(releaseOnNotPlaced: true));
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -222,7 +235,9 @@ public class OrderReservationReconcilerTests
         reservations.TryReserve(good, StalledAt.AddSeconds(1));
         var probe = new CallbackProbe(id =>
             id == bad ? throw new InvalidOperationException("照会失敗") : ReservationProbeResult.NotPlaced);
-        var reconciler = new OrderReservationReconciler(reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock());
+        // #856: 「1 件の失敗が他を巻き添えにしない」を見るテストなので、解放の門は開けた側で組む。
+        var reconciler = new OrderReservationReconciler(
+            reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock(), Options(releaseOnNotPlaced: true));
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -231,6 +246,126 @@ public class OrderReservationReconcilerTests
         result.Released.Should().Be(1);
         reservations.Find(bad)!.State.Should().Be(OrderDispatchState.Reserved, "失敗は据え置き");
         reservations.Find(good).Should().BeNull("他の予約は処理される");
+    }
+
+    // ---- 🔴 #856, IADR-0362: 解放の門（ReleaseOnNotPlaced）と「黙って通り過ぎない」 ----
+
+    [Fact]
+    public async Task 解放の門が閉じているあいだは未発注と出ても解放しない()
+    {
+        // 🔴 T-10-600（否定形・最重要）: `NotPlaced` は「確実に未発注」を名乗るが、その根拠は
+        // **moomoo SIMULATE で remark（client order id）が往復する**という実機未検証の前提である。
+        // 往復しなければ発注済みの注文が 1 件も一致せず**全件が NotPlaced＝全件解放＝二重発注**になる。
+        // 門が閉じているあいだは、プローブが何と言おうと在庫の押さえを解かない。
+        var (reconciler, reservations, executed, _) = Build(ReservationProbeResult.NotPlaced);
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.Released.Should().Be(0, "門が閉じているあいだは 1 件も解放しない");
+        result.Terminalized.Should().Be(0);
+        reservations.Find(decisionId).Should().NotBeNull("予約は残る");
+        reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Reserved, "据え置く");
+        executed.FindByDecisionId(decisionId).Should().BeNull("発注していないと決めつけて記録も作らない");
+        result.Executed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 門が閉じた未発注判定は件数に残り無音にならない()
+    {
+        // T-10-603: 据え置きを無音にしない。門が閉じて据え置いた `NotPlaced` は結果に載り、
+        // 常駐が警告でログする（実機検証が済めば門を開ける、という運用判断の入力になる）。
+        var (reconciler, reservations, _, _) = Build(ReservationProbeResult.NotPlaced);
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.HeldNotPlaced.Should().ContainSingle().Which.Should().Be(decisionId);
+    }
+
+    [Fact]
+    public async Task 門を開けたときだけ未発注判定が解放へ進む()
+    {
+        // T-10-601: 門の実効。開ければ従来どおり解放する（#141 / IADR-0074 の受け入れ基準1）。
+        var (reconciler, reservations, _, _) = Build(ReservationProbeResult.NotPlaced, releaseOnNotPlaced: true);
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.Released.Should().Be(1);
+        result.HeldNotPlaced.Should().BeEmpty("解放したものは据え置きではない");
+        reservations.Find(decisionId).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task 不確定は門の開閉に依らず解放されない(bool releaseOnNotPlaced)
+    {
+        // 🔴 T-10-602（否定形）: 門は `NotPlaced` にしか効かない。`Indeterminate`（照会不達・判定不能）は
+        // 門を開けても据え置く——門を開けることが「不明も解放してよい」へ広がらないことを固定する。
+        var (reconciler, reservations, _, _) = Build(ReservationProbeResult.Indeterminate, releaseOnNotPlaced);
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.Indeterminate.Should().Be(1);
+        result.Released.Should().Be(0);
+        result.HeldNotPlaced.Should().BeEmpty("不確定は「未発注と出たが据え置いた」ではない");
+        reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Reserved);
+    }
+
+    [Fact]
+    public async Task 突合で発注済みと確定した終端化は結果に載る()
+    {
+        // 🔴 T-10-604: 突合が `Placed` で終端化したエントリーには**保護逆指値が張られない**（#853 の 2 番）。
+        // 有効化するとこの経路が実際に踏まれるので、**黙って通り過ぎない**——結果に載せ、常駐が Critical でログする。
+        var (reconciler, reservations, _, _) = Build(ReservationProbeResult.Placed(Placed("BRK-P1")));
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.Terminalized.Should().Be(1);
+        var finding = result.ProbeTerminalized.Should().ContainSingle().Subject;
+        finding.DecisionId.Should().Be(decisionId);
+        finding.OrderId.Should().Be("BRK-P1");
+        finding.Symbol.Should().Be("AAPL");
+        finding.Quantity.Should().Be(10);
+    }
+
+    [Fact]
+    public async Task 自己修復による終端化は突合の結果には載らない()
+    {
+        // T-10-605: phase-4 自己修復（記録あり）はブローカへ照会していない＝突合ではない。
+        // 記録は通常フローが作ったものであり、保護レグの有無も通常フローが決めている。混ぜない。
+        var (reconciler, reservations, executed, _) = Build(ReservationProbeResult.Indeterminate);
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+        executed.Save(new ExecutionRecord(
+            decisionId, "BRK-SELF", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, 10, 100m, 10, 101m, OrderStatus.Filled, 0.01m, StalledAt));
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
+
+        result.Terminalized.Should().Be(1);
+        result.ProbeTerminalized.Should().BeEmpty("自己修復はブローカ照会による確定ではない");
+    }
+
+    [Fact]
+    public void 構成の既定は三つとも閉じている()
+    {
+        // T-10-607: fail-safe 既定の固定。有効化は**配備（Helm values）で明示的に**行う規律であり、
+        // アプリ既定が勝手に開くと docker-compose・単体開発環境まで挙動が変わる。
+        var options = new ReconciliationOptions();
+
+        options.Enabled.Should().BeFalse();
+        options.UseBrokerProbe.Should().BeFalse();
+        options.ReleaseOnNotPlaced.Should().BeFalse();
     }
 
     [Fact]
