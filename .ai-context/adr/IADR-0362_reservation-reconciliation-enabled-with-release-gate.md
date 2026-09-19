@@ -144,9 +144,12 @@ plan_refs:
 `ProtectiveStopIds.StopDecisionId` / `CloseDecisionId` はエントリー ID からの**決定的導出**であり、
 発注執行が持つ保護逆指値ストアの active な行のエントリー ID から候補を総当たりで導いて突き合わせれば判別できる
 （`protective_stop_orders` に行が残っている範囲で、という限定はつく）。**正しい表現は「予約行だけからは区別できない」**である。
-それでも本 PR では実装しない —— 総当たり突合は「行が残っているか」に依存する不完全な判別であり、
-外れたときに倒れる先が**二重決済を誘発する側**になる。確実に区別するには予約表へ `PositionEffect` を持たせる
-（Migration）のが筋であり、それも #853 の裁定の一部である。fail-safe 側（通知を出さずログに留める）で待つ。
+それでも本 PR では実装しない —— 総当たり突合は不完全な判別であり、外れたときに倒れる先が
+**二重決済を誘発する側**になる。外れ方は 2 通りある: **行が消えている**場合に加えて、
+`IProtectiveStopOrderStore` の入口が `FindActive(batchSize)` だけで、しかも
+**EntryDecisionId につき高々 1 行（最新の試行のみ）**を持つため、**試行番号が進んだ**場合も候補から外れる。
+確実に区別するには予約表へ `PositionEffect` を持たせる（Migration）のが筋であり、それも #853 の裁定の一部である。
+fail-safe 側（通知を出さずログに留める）で待つ。
 
 ## 理由
 
@@ -189,5 +192,22 @@ plan_refs:
   `catch (OperationCanceledException) { break; }` なので、**巡回ループごと恒久停止する**（再起動まで戻らない）。
   現行の `MoomooReservationBrokerProbe` は自前のタイムアウトを `TimeoutException` で投げるため到達しないが、
   **プローブを差し替えるときはここを踏む**。差し替える PR はこの分岐を先に直すこと。
+  🔴 **恒久停止だけが問題ではない**（#882 監査 N1'）。`ThrowIfCancellationRequested` は `ReportFindings` より
+  **手前**にあるため、**巡回の途中で中断されると、その時点で既に確定（`MarkCompleted` を commit）した予約の
+  所見が 1 行も出ない。** 確定した予約は次の巡回の `FindStalledReserved` に載らないので、
+  **その Critical は永久に失われる**（監査のプローブ実測: 1 件目 `Completed` ／ ログ 0 行 ／ 次巡回の走査対象は 2 件目のみ）。
+  こちらの到達性は発行の失敗より高い —— **通常のローリングデプロイや Pod 再起動が巡回中に重なるだけ**で起きる
+  （1 巡回は 50 件 × 最大 4 往復 × 最悪 15 秒＝数分に及び得る）。
+- 🔴 **発行された `OrderExecuted` 自体も失われ得る**（#882 監査 N2'。上と同じ幾何）。Wolverine の durable outbox は
+  **配線されていない**（`grep -rn "Durability\|UseDurableOutbox\|PersistMessagesWith" backend` ＝ 0 件）。
+  `PublishAsync` が落ちた時点で予約は既に `Completed` であり、**監査・リスク管理・通知は突合が確定させた約定を
+  二度と受け取らない**（台帳に約定が載らない）。順序自体は本 ADR 以前からのものだが、
+  **突合が配備で有効になったことで初めて本番経路になる**（`PositionEffect.Open` の項と同じ論法である）。
+- 🔴 上の 2 つ（**「commit 済み → 再走査されない」幾何**）は [#890](https://github.com/endazon/ai-stock-trading/issues/890)
+  へ切り出した。考え得る方向（所見を 1 件ずつ commit の直後に出す／durable outbox を配線する／`MarkCompleted` を
+  publish 成功まで遅らせる）を列挙したうえで、**本 ADR ではどれも採らない**。失うのはログ 1 行と 1 通のイベントであって
+  資金ではなく、**安全側（撃ち直さない・在庫の押さえを解かない）はこの幾何に依らず成立する**からである
+  （予約が `Completed` で残る限り再配送は二重発注しない）。`MarkCompleted` を遅らせる案は IADR-0057 の相順
+  （保存 → 確定）と逆向きの設計変更であり、本 ADR の射程では決められない。
 - 検知遅れは最悪 3 時間（滞留 2 時間 ＋ 巡回 1 時間）。巡回間隔の下限が 1 時間にクランプされているため、
   これ以上は縮まらない。短縮するには `ReconciliationOptions.Interval` のクランプ自体を改める必要がある。

@@ -240,5 +240,10 @@ $ grep -rni reconcil deploy/ | wc -l
 ## 射程外
 
 - `NotPlaced` の実機検証そのもの（SIMULATE で remark が往復するか）。**#856 に残す**——門を開ける PR が持つ。
+- 🔴 **「commit 済み → 再走査されない」幾何**（#882 監査 N1' / N2'）。確定した予約は次巡回の
+  `FindStalledReserved` に載らないため、巡回の途中で中断されるとその所見（Critical）は永久に失われ、
+  durable outbox が無いため `OrderExecuted` 自体も発行に失敗すれば台帳へ二度と届かない。
+  **#890 へ切り出し、本 PR ではどの方向も採らない**（失うのはログ 1 行と 1 通のイベントであって資金ではなく、
+  安全側はこの幾何に依らない）。
 - 突合で確定したエントリーへ保護レグを張ること（#853）。
 - `MoomooReservationBrokerProbe` が `PositionEffect` / `ProductType` を既定値で近似している件（#853 で扱う）。
