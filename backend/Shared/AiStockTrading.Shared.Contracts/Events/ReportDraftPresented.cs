@@ -18,3 +18,15 @@ public record ReportDraftPresented(
     string Summary,
     int Version,
     DateTimeOffset OccurredAt);
+
+// FR-06, FR-09, #840, #866, IADR-0352 決定 5: 要約（Summary）に埋め込まれる**印**。
+//
+// 発行側（報告書サービスの ReportSummary）と消費側（通知サービスの整形）が**同じ定数**を引くために
+// 契約アセンブリへ置く。通知サービスは報告書サービスの型を参照できず、かといってイベントへ
+// フィールドを足すと旧版の発行側との読み分けが要る（IADR-0352 決定 5 は「契約の形は変えない」）。
+// 印は要約の本文の一部であり、**イベントの形（レコードのプロパティ）は 1 つも変えていない**。
+public static class ReportSummaryMarkers
+{
+    /// <summary>未供給の入力があるときに要約へ足す警告行の先頭。これを含む要約の提示は Warning で通知する。</summary>
+    public const string UnsuppliedWarningPrefix = "⚠ 未供給の入力があります";
+}

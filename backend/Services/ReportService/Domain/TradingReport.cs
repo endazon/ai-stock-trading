@@ -44,6 +44,17 @@ public sealed record TradingReport
     /// </summary>
     public string Body { get; init; } = string.Empty;
 
+    /// <summary>
+    /// FR-06, FR-07, #840, IADR-0352 決定 5: <b>供給が届かないまま生成された入力</b>（この種別が使うものだけ）。
+    /// 空＝欠けた入力は無い（または手動 upsert・本変更前の既存行）。
+    /// <para>
+    /// 本文は節ごとに「照会できませんでした」と書くが、提示の時点（Discord の通知・<c>/report show</c>）で
+    /// 欠落に気付けるよう、記録として持つ。再起動直後の 401 で入力が広範に欠けた報告書が、そのまま確定まで
+    /// 進み得た（#840）。
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<ReportInput> UnsuppliedInputs { get; init; } = [];
+
     /// <summary>確定日時（確定時に記録）。</summary>
     public DateTimeOffset? ConfirmedAt { get; init; }
 }
