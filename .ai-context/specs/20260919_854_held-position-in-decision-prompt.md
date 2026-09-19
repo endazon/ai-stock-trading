@@ -192,6 +192,8 @@ PR #860 のフェーズ末監査（MERGEABLE 判定）と `claude-review` の指
 - 方針（`DailyPolicy.Summary`）・出力 JSON の形・パーサ・多数決・サイジング・`PositionEffectResolver`・決済の数量（全量）。
 - リスク管理の `open-positions` の応答・台帳・射影。市場監視・報告書の照会。
 - 不明・保有なしでの Sell の見送り、不明での Buy＝Open（IADR-0119 決定2。**保留点**として IADR-0351 に記す。追随は #865）。
+  ［2026-09-19 追記 / #865］後半（不明での Buy＝Open）は追随で変わった —— **実結線（`IHeldPositionProvider.IsEnabled=true`）の
+  もとでの不明な `Open` は見送る**（IADR-0358）。未結線の既定構成と Sell の扱いは本行のまま。
 
 ## 作業手順
 

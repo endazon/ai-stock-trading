@@ -16,6 +16,10 @@ public sealed class HttpHeldPositionProvider(
     ILogger<HttpHeldPositionProvider> logger)
     : IHeldPositionProvider
 {
+    // #865, IADR-0358: 実結線。RiskManagement:BaseUrl が設定されたときだけ生成されるため常に true。
+    // 以後の「不明」は**照会したが答えが得られなかった**ことを意味し、判断側は新規建てを見送る。
+    public bool IsEnabled => true;
+
     public async Task<int?> GetSignedQuantityAsync(
         string symbol, Market market, CancellationToken cancellationToken = default) =>
         (await GetPositionAsync(symbol, market, cancellationToken).ConfigureAwait(false))?.SignedQuantity;
