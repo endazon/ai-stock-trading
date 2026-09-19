@@ -187,8 +187,10 @@ public class HttpHeldPositionProviderTests
         _ = factory.CreateClient();
 
         using var scope = factory.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<IHeldPositionProvider>()
-            .Should().BeOfType<TradeDecisionService.Infrastructure.ExternalServices.NoOpHeldPositionProvider>();
+        var provider = scope.ServiceProvider.GetRequiredService<IHeldPositionProvider>();
+        provider.Should().BeOfType<TradeDecisionService.Infrastructure.ExternalServices.NoOpHeldPositionProvider>();
+        // #865, IADR-0358: 未結線は IsEnabled=false。ここが true になると既定構成の新規建てが一律に止まる。
+        provider.IsEnabled.Should().BeFalse();
     }
 
     [Fact]
@@ -198,8 +200,10 @@ public class HttpHeldPositionProviderTests
         _ = factory.CreateClient();
 
         using var scope = factory.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<IHeldPositionProvider>()
-            .Should().BeOfType<HttpHeldPositionProvider>();
+        var provider = scope.ServiceProvider.GetRequiredService<IHeldPositionProvider>();
+        provider.Should().BeOfType<HttpHeldPositionProvider>();
+        // #865, IADR-0358: 実結線は IsEnabled=true。以後の「不明」は照会したが分からなかったことを意味する。
+        provider.IsEnabled.Should().BeTrue();
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
