@@ -61,18 +61,29 @@ public static class BrokerHeldPositionGate
     /// 乖離 1 件を既存の突合（IADR-0118）と同じ表現で作る。台帳側は<b>この決済が消そうとした数量</b>を
     /// 建玉の向きで符号化した値であり、台帳の建玉そのものではない（発注執行は台帳を持たない）。
     /// ブローカー側は<b>ネット</b>を載せる（定期突合と同じ物差し。判定の「方向ごと」とは別である）。
+    /// <paramref name="closableQuantity"/> は<b>分類にだけ</b>使う（下のコメント）。
     /// </summary>
-    public static PositionDriftItem DriftOf(OrderIntent intent, int brokerNetQuantity)
+    public static PositionDriftItem DriftOf(OrderIntent intent, int brokerNetQuantity, int closableQuantity)
     {
         ArgumentNullException.ThrowIfNull(intent);
 
         var ledgerQuantity = intent.Side == TradeSide.Sell ? intent.Quantity : -intent.Quantity;
 
+        // 🔴 #873 の監査 NB1: **ネットが 0 でも「ブローカーは何も持っていない」とは限らない。**
+        // 方向ごとに数えるようにした（N1）ことで `closable` と `net` は独立した —— 両建て（ロング +100 /
+        // ショート −100）ではネットが 0 でも決済方向の建玉は 100 株あり、実際に 100 株を縮めて送る。
+        // ここで `LedgerOnly`（台帳にだけある建玉）と分類すると、**送った直後に「ブローカーには無い」と
+        // 報告する**ことになる（通知の文面と監査台帳の両方が誤る）。
+        // したがって **`closable > 0` なら数量不一致へ倒す**。`LedgerOnly` は「決済方向にも 1 株も無く、
+        // ネットも 0」＝本当に何も持っていないときだけである。
+        //
         // 🔴 #873 の監査 N7: 定期突合の `BrokerOnly`（台帳側が 0）には**ここでは分岐しない**。
         // 台帳側は必ず ±intent.Quantity であり、決済の数量は保有数（1 以上。IADR-0119 決定1）だからである。
         // 仮に 0 が来ても「台帳だけが持っている」側へ倒す —— 発注執行が根拠にできるのは台帳側の数量だけであり、
         // 「ブローカーにだけある建玉」を本経路が発見することは構造的に無い（決済の相手方しか見ていない）。
-        var kind = brokerNetQuantity == 0 ? PositionDriftKind.LedgerOnly : PositionDriftKind.QuantityMismatch;
+        var kind = brokerNetQuantity == 0 && closableQuantity == 0
+            ? PositionDriftKind.LedgerOnly
+            : PositionDriftKind.QuantityMismatch;
 
         return new PositionDriftItem(intent.Symbol, intent.Market, ledgerQuantity, brokerNetQuantity, kind);
     }

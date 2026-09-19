@@ -121,7 +121,7 @@ public sealed class OrderExecutionAppService(
                     return Forgone(
                         approved,
                         OrderDispatchForgoneReason.BrokerPositionAbsent,
-                        DriftOf(intent, verdict.BrokerNetQuantity));
+                        DriftOf(intent, verdict.BrokerNetQuantity, verdict.ClosableQuantity));
 
                 case BrokerHeldPositionOutcome.Reduce:
                     // IADR-0355 決定2: 実建玉の範囲へ縮めて送る（実在する建玉の手仕舞いまで塞がない）。
@@ -132,7 +132,7 @@ public sealed class OrderExecutionAppService(
                         + "DecisionId={DecisionId} 銘柄={Symbol}",
                         intent.Quantity, verdict.BrokerNetQuantity, verdict.ClosableQuantity,
                         approved.DecisionId, intent.Symbol);
-                    drift = DriftOf(intent, verdict.BrokerNetQuantity);
+                    drift = DriftOf(intent, verdict.BrokerNetQuantity, verdict.ClosableQuantity);
                     intent = intent with { Quantity = verdict.ClosableQuantity };
                     break;
             }
@@ -323,11 +323,11 @@ public sealed class OrderExecutionAppService(
 
     // #864, IADR-0355 決定5: 乖離は**既存の検知（IADR-0118）と同じイベント**で人へ知らせる（新しい経路を作らない）。
     // 観測時刻は照会した今である（発注執行は台帳を持たないため、台帳側の数量はこの決済が消そうとした数量を載せる）。
-    private PositionReconciliationDrift DriftOf(OrderIntent intent, int brokerQuantity)
+    private PositionReconciliationDrift DriftOf(OrderIntent intent, int brokerNetQuantity, int closableQuantity)
     {
         var now = clock.UtcNow;
         return new PositionReconciliationDrift(
-            [BrokerHeldPositionGate.DriftOf(intent, brokerQuantity)], now, now);
+            [BrokerHeldPositionGate.DriftOf(intent, brokerNetQuantity, closableQuantity)], now, now);
     }
 
     // FR-10, UC-02, #331, IADR-0210 決定1/3: 保護逆指値の同時発注と、未受理時の建玉解消の全分岐。

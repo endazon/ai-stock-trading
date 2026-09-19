@@ -12,7 +12,7 @@ using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrd
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-494〜T-10-502・T-10-505・T-10-516, FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355:
+// 🔴 T-10-494〜T-10-502・T-10-505・T-10-516・T-10-518, FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355:
 // **決済（Close）をブローカーの実建玉と突き合わせてから送る。**
 //
 // 是正前の穴: 決済の数量の出所は台帳の射影であってブローカーの事実ではない（IADR-0119 決定1 / IADR-0351 決定6）。
@@ -328,6 +328,41 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         shortBroker.Placed.Should().ContainSingle().Which.Quantity.Should().Be(100);
         shortResult.Forgone.Should().BeNull();
         shortResult.Drift.Should().BeNull();
+    }
+
+    // 🔴 T-10-518（否定形・#873 の監査 NB1）: **ネットが 0 でも「ブローカーには無い」と報告しない。**
+    // 方向ごとに数えるようにした（N1）ことで closable と net は独立した —— ロング +100 / ショート −100 の
+    // ネットは 0 だが、売りの決済に使えるロングは 100 株実在する。100 株を縮めて**送った直後に**
+    // 「台帳にだけある建玉（ブローカーには無い）」と報告すると、通知の文面も監査台帳も誤る。
+    [Fact]
+    public async Task 両建てでネットが0でも縮めて送った乖離は台帳のみとは分類しない()
+    {
+        var broker = new FakePositionAwareBroker([Position(100), Position(-100)]); // ネット 0・ロングは 100 株
+        var (service, _, _) = NewService(broker);
+
+        var result = await service.ExecuteAsync(Approved(CloseIntent(qty: 300)));
+
+        broker.Placed.Should().ContainSingle().Which.Quantity.Should().Be(100, "実在するロング 100 株は送る");
+
+        var drift = result.Drift!.Drifts.Should().ContainSingle().Subject;
+        drift.Kind.Should().Be(
+            PositionDriftKind.QuantityMismatch, "100 株を送った直後に『ブローカーには無い』と報告しない");
+        drift.LedgerQuantity.Should().Be(300);
+        drift.BrokerQuantity.Should().Be(0, "報告する数量はネットのまま（定期突合と同じ物差し）");
+    }
+
+    // T-10-518: 純関数の側でも分類を固定する（本当に 1 株も無いときだけ「台帳のみ」である）。
+    [Fact]
+    public void 台帳のみと分類するのは決済方向にもネットにも建玉が無いときだけである()
+    {
+        var intent = CloseIntent(qty: 300);
+
+        BrokerHeldPositionGate.DriftOf(intent, brokerNetQuantity: 0, closableQuantity: 0)
+            .Kind.Should().Be(PositionDriftKind.LedgerOnly);
+        BrokerHeldPositionGate.DriftOf(intent, brokerNetQuantity: 0, closableQuantity: 100)
+            .Kind.Should().Be(PositionDriftKind.QuantityMismatch, "両建てでネットだけが 0 になった場合");
+        BrokerHeldPositionGate.DriftOf(intent, brokerNetQuantity: -100, closableQuantity: 0)
+            .Kind.Should().Be(PositionDriftKind.QuantityMismatch, "反対方向の建玉しか無い場合");
     }
 
     // T-10-516: 純関数の側でも両建てを固定する（判定は方向ごと・報告はネット）。
