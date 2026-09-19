@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003]
-iadrs: [IADR-0012, IADR-0024, IADR-0352]
-specs: [20260710_report-confirmation, 20260919_840_report-transient-dependency-retry]
-issues: [#14, #18, #19, #22, #63, #840]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry]
+issues: [#14, #18, #19, #22, #63, #774, #840]
 -->
 
 
@@ -64,6 +64,13 @@ issues: [#14, #18, #19, #22, #63, #840]
 - `PUT /reports/{periodKey}`（ドラフト upsert・楽観排他）、`POST /reports/{periodKey}/confirm`（版番号付き冪等確定）。すべて OwnerOnly。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
+- **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。
+  Discord Bot は機密クライアント（`client_credentials`）のトークンで確定を呼ぶため、トークンからは人を解決できない。
+  `onBehalfOf` は **トークンの `azp` が構成 `Reports:DelegatedActor:TrustedClientIds`（カンマ区切り・既定は空＝誰も信じない）に
+  一致するときだけ**確定者として採り、`ReportConfirmed` には `Actor`＝操作した利用者と `AuthorizedBy`＝認可の主体（クライアント ID）の
+  両方を載せる。利用者本人のトークンや一覧外のクライアントが送った `onBehalfOf` は**無視**する（確定は通り、確定者はトークンの主体）。
+  信頼クライアントが値域外（`[A-Za-z0-9._@+-]` の 1〜64 文字以外）の値を送ると 400 で確定しない。
+  操作者が取れないとき（名前クレームの無いトークンで `onBehalfOf` も無い）は `client:<azp>` を確定者にする。
 
 ## 整合性・制約ルール
 

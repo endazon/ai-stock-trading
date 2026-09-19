@@ -68,16 +68,21 @@ public sealed class HttpReportReviewController(
     // FR-07, ADR-0003, 詳細設計07 §二重実行防止: 版番号付き冪等の確定。
     // 409（版不一致・確定済み変更）は Succeeded=true / Confirmed=false ではなく、**呼び出しの失敗として扱わない**
     // ——サーバは正しく応答している。受理されなかったことを Confirmed=false で表す。
+    //
+    // FR-09, UC-03, IADR-0240 決定11, #774: 本文に**代理される利用者**（onBehalfOf）を載せる。報告書サービスは
+    // owner マップ機密クライアントのトークン（azp）に限ってこの値を確定者として採り、認可の主体（クライアント）と
+    // 併せて ReportConfirmed に残す。空の操作者では呼ばない（確定者を記録できない確定をさせない）。
     public async Task<ReportConfirmResult> ConfirmAsync(
-        string periodKey, int expectedVersion, CancellationToken cancellationToken = default)
+        string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(onBehalfOf);
 
         try
         {
             using var response = await httpClient
                 .PostAsJsonAsync(
-                    $"/reports/{periodKey}/confirm", new ConfirmRequest(expectedVersion), cancellationToken)
+                    $"/reports/{periodKey}/confirm", new ConfirmRequest(expectedVersion, onBehalfOf), cancellationToken)
                 .ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.Conflict)
@@ -235,7 +240,8 @@ public sealed class HttpReportReviewController(
     private sealed record ReviewView(int Version, IReadOnlyList<string?>? UnsuppliedInputs = null);
 
     // 報告書サービス側 ConfirmReportRequest / ReviewCommandRequest と同形（版番号付き）。
-    private sealed record ConfirmRequest(int ExpectedVersion);
+    // OnBehalfOf は #774 で末尾に追加（旧版の報告書サービスは未知のプロパティとして読み飛ばす）。
+    private sealed record ConfirmRequest(int ExpectedVersion, string OnBehalfOf);
 
     private sealed record ReviewCommandRequest(int ExpectedVersion);
 

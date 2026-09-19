@@ -11,4 +11,9 @@ public sealed class NoOpHeldPositionProvider : IHeldPositionProvider
     public Task<int?> GetSignedQuantityAsync(
         string symbol, Market market, CancellationToken cancellationToken = default) =>
         Task.FromResult<int?>(null);
+
+    // #854, IADR-0351 決定1: 保有状況も常に不明。プロンプトは「不明」と明示し、「保有なし」とは書かない。
+    public Task<HeldPosition?> GetPositionAsync(
+        string symbol, Market market, CancellationToken cancellationToken = default) =>
+        Task.FromResult<HeldPosition?>(null);
 }

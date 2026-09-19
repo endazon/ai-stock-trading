@@ -1,6 +1,7 @@
 using ReportService.Common.Abstractions;
 using ReportService.Infrastructure.ExternalServices;
 using ReportService.Features.Reports;
+using ReportService.Features.Reports.ConfirmReport;
 using ReportService.Domain;
 using ReportService.Hosted;
 using ReportService.Infrastructure.Persistence;
@@ -57,6 +58,13 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<IReportStore, EfReportStore>();
 builder.Services.AddScoped<AppSvc>();
+
+// FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定要求の本文で運ばれる「代理される利用者」（OnBehalfOf）を
+// 信じてよいクライアント（Discord Bot の owner マップ機密クライアント）の一覧。**既定は空＝誰も信じない**（fail-safe）。
+// 構成は解決時に読む（起動コードの途中で読むと、後から積まれた構成源を見落とす）。
+builder.Services.AddSingleton(sp => new DelegatedActorOptions(
+    ConfirmingActorResolver.ParseTrustedClientIds(
+        sp.GetRequiredService<IConfiguration>()[DelegatedActorOptions.TrustedClientIdsKey])));
 // FR-06/16, IADR-0032/0071: 報告書生成（数値集計の組み立て＋テンプレート化）。散文は LLM ドラフト。
 // 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する（IADR-0071 決定1・#11 IADR-0061 と同形）。
 // LlmGateway:BaseUrl 未設定/不正 URI は現行プレースホルダ（定型散文）＝既定オフ。設定時のみ実照会し、送信拒否/失敗/

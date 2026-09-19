@@ -39,6 +39,41 @@ public class HttpSizingContextProviderTests
         handler.LastPath.Should().Be("/risk-controls/sizing-context");
     }
 
+    // FR-04, FR-10, ADR-0040 決定1, #854, IADR-0351 決定1: 損切りの実行機構の設定（判断プロンプトの「保護の状態」の供給元）。
+    [Fact]
+    public async Task 応答の損切りの実行機構を写像する()
+    {
+        // リスク管理の SizingContextView は列挙を数値で返す（2 = S2 逆指値なし）。
+        var view = new SizingContext(
+            120_000m, 45_000m, 22_000m, 2, 0.03m, BrokerProvider.MoomooSimulate, TradingDefaults.CreateRiskLimits(),
+            StopLossExecutionMethod.NoProtectiveStop);
+        var body = JsonSerializer.Serialize(view, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        body.Should().Contain("\"stopLossMethod\":2");
+
+        var context = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetContextAsync();
+
+        context.StopLossMethod.Should().Be(StopLossExecutionMethod.NoProtectiveStop);
+    }
+
+    // 🔴 項目を持たない旧応答・照会失敗は **null（不明）**であり S0（ブローカー側逆指値）と読まない。
+    // S0 と読むと、無保護の建玉を「保護あり」と LLM へ伝え得る。
+    [Fact]
+    public async Task 損切りの実行機構が無い応答と照会失敗は不明でありS0と読まない()
+    {
+        var legacy = new SizingContext(
+            120_000m, 45_000m, 22_000m, 2, 0.03m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits());
+        var body = JsonSerializer.Serialize(legacy, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .Replace(",\"stopLossMethod\":null", string.Empty, StringComparison.Ordinal);
+        body.Should().NotContain("stopLossMethod");
+
+        var fromLegacy = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetContextAsync();
+        var fromFailure = await Provider(new StubHandler(HttpStatusCode.InternalServerError, "")).GetContextAsync();
+
+        fromLegacy.Capital.Should().Be(120_000m);
+        fromLegacy.StopLossMethod.Should().BeNull();
+        fromFailure.StopLossMethod.Should().BeNull();
+    }
+
     [Fact]
     public async Task 未取得_404_は残枠0の安全既定_取引しない()
     {

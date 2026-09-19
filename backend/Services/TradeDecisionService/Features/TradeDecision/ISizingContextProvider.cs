@@ -21,4 +21,8 @@ public record SizingContext(
     int ConsecutiveLosses,
     decimal DrawdownRatio,
     BrokerProvider Mode,
-    RiskLimitSettings Limits);
+    RiskLimitSettings Limits,
+    // FR-04, FR-10, ADR-0040 決定1, #854, IADR-0351 決定1: 損切りの実行機構の**設定**（S0〜S3）。判断プロンプトの
+    // 「保護の状態」の供給元。🔴 **null＝未供給（不明）**であり S0 と読まない——項目を持たない旧応答・照会失敗の
+    // 安全既定（SafeDefault）・プレースホルダはいずれも null になり、プロンプトは「不明」と明示する。
+    StopLossExecutionMethod? StopLossMethod = null);

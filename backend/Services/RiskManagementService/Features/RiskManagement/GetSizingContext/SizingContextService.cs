@@ -28,6 +28,8 @@ public sealed class SizingContextService(PortfolioSnapshotBuilder snapshotBuilde
             ConsecutiveLosses: snapshot.ConsecutiveLosses,
             DrawdownRatio: snapshot.DrawdownRatio,
             Mode: settings.Stage.Mode,
-            Limits: settings.Limits);
+            Limits: settings.Limits,
+            // #854, IADR-0351 決定1: 損切りの実行機構の設定を判断プロンプトの「保護の状態」へ供給する。
+            StopLossMethod: settings.StopLossMethod);
     }
 }

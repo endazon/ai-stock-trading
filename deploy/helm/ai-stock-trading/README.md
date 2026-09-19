@@ -482,7 +482,7 @@ scripts/k8s-local-deploy.sh
 | --- | --- | --- | --- |
 | `FINNHUB_API_KEY` | `finnhub-api-key` | information-collection | 空=NoOp（#81） |
 | `DISCORD_WEBHOOK_URL` | `discord-webhook-url` | notification | 空=NoOp（#15） |
-| `DISCORD_OWNERAUTH_CLIENTID` | `discord-owner-auth-client-id` | notification | dev 既定 `ai-stock-trading-owner`（Bot 制御コマンドの OwnerAuth・#226 / IADR-0098） |
+| `DISCORD_OWNERAUTH_CLIENTID` | `discord-owner-auth-client-id` | notification・report | dev 既定 `ai-stock-trading-owner`（Bot 制御コマンドの OwnerAuth・#226 / IADR-0098）。**report も同じ鍵を `Reports__DelegatedActor__TrustedClientIds` として読む**（#774 / IADR-0240 決定11: Bot が確定要求で運ぶ「代理される利用者」を信じてよいクライアント。空=誰も信じない） |
 | `DISCORD_OWNERAUTH_CLIENTSECRET` | `discord-owner-auth-client-secret` | notification | dev 既定 `dev-only-owner-secret`（realm-export.json と一致・本番は Secret/Vault） |
 | （chart 値）`Notifications__Discord__OwnerAuth__TokenEndpoint` | — | notification | AST レルム token エンドポイント（#226。空だと IsEnabled=false→401） |
 | （chart 値）`Broker__Provider` / `Broker__Environment` | — | order-execution | `paper`（実発注しない・#13。`broker.tier` で切替・IADR-0111） |
