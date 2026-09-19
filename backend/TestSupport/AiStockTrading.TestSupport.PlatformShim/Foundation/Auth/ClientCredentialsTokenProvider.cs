@@ -7,6 +7,10 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 // IADR-0051 決定 1/4/5: Keycloak の token エンドポイントへ grant_type=client_credentials を投げてアクセストークンを
 // 取得し、expires_in − マージンまでキャッシュする。取得失敗（非 2xx・例外・タイムアウト・access_token 欠落）は
 // null を返し、可観測性のため LogWarning する（キャッシュしない）。多重取得は SemaphoreSlim で単一化する。
+//
+// #840, IADR-0352 決定 6: ログは**「認証なしで送信する」と言い切らない**。null を受けた後どうするかは呼び出し側が
+// 決める —— 共有の ServiceTokenHandler はヘッダ無しで送るが、報告書サービスは送信しない（ReportDependencyHandler）。
+// 供給元が送信の有無を断言すると、送っていないサービスのログに事実と違う行が残る。挙動は変えていない。
 public sealed class ClientCredentialsTokenProvider(
     HttpClient httpClient,
     ServiceAuthOptions options,
@@ -59,7 +63,7 @@ public sealed class ClientCredentialsTokenProvider(
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning(
-                    "サービストークンの取得に失敗（{Status}・{Endpoint}・client_id={ClientId}）。認証なしで送信し安全既定に倒します。",
+                    "サービストークンの取得に失敗（{Status}・{Endpoint}・client_id={ClientId}）。トークンなしで続行します（要求の扱いは呼び出し側に従います）。",
                     (int)response.StatusCode, options.TokenEndpoint, options.ClientId);
                 return null;
             }
@@ -71,7 +75,7 @@ public sealed class ClientCredentialsTokenProvider(
             if (payload is null || string.IsNullOrWhiteSpace(payload.AccessToken))
             {
                 logger.LogWarning(
-                    "サービストークン応答に access_token がありません（{Endpoint}・client_id={ClientId}）。認証なしで送信し安全既定に倒します。",
+                    "サービストークン応答に access_token がありません（{Endpoint}・client_id={ClientId}）。トークンなしで続行します（要求の扱いは呼び出し側に従います）。",
                     options.TokenEndpoint, options.ClientId);
                 return null;
             }
@@ -86,14 +90,14 @@ public sealed class ClientCredentialsTokenProvider(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
-                "サービストークンの取得がタイムアウト（{Endpoint}・client_id={ClientId}）。認証なしで送信し安全既定に倒します。",
+                "サービストークンの取得がタイムアウト（{Endpoint}・client_id={ClientId}）。トークンなしで続行します（要求の扱いは呼び出し側に従います）。",
                 options.TokenEndpoint, options.ClientId);
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(
-                ex, "サービストークンの取得で例外（{Endpoint}・client_id={ClientId}）。認証なしで送信し安全既定に倒します。",
+                ex, "サービストークンの取得で例外（{Endpoint}・client_id={ClientId}）。トークンなしで続行します（要求の扱いは呼び出し側に従います）。",
                 options.TokenEndpoint, options.ClientId);
             return null;
         }

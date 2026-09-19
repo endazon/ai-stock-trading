@@ -17,6 +17,8 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             e.Property(r => r.PeriodKey).HasMaxLength(64).ValueGeneratedNever();
             e.Property(r => r.BasedOn).HasMaxLength(64);
             e.Property(r => r.PolicySummary).HasMaxLength(8192);
+            // #840, IADR-0352 決定 5: 列挙名のカンマ区切り（全 12 語で 170 文字ほど）。語彙の追加に備えて余裕を持たせる。
+            e.Property(r => r.UnsuppliedInputs).HasMaxLength(1024);
             // FR-07, IADR-0071 決定5: レビュー局面（対話的確定）。既定は Drafting（列挙 int 既定 0）。
             e.Property(r => r.ReviewState);
             // 楽観的排他制御: Version を並行トークンとして扱う（更新時に一致を要求・IADR-0012）。
