@@ -135,6 +135,38 @@ public class OrderExecutionServiceMarketCloseTests
         result.Forgone.Should().BeNull("手仕舞いを見送ると建玉が残る。FR-10 は手仕舞いを止めないと定める");
     }
 
+    // ブローカーの実建玉を返す供給口（#864 / IADR-0355 の突合が使う）。
+    private sealed class StubPositions(int netQuantity) : IBrokerPositionSource
+    {
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<BrokerPositionSnapshot>?>(
+                [new BrokerPositionSnapshot("SOXL", Market.UnitedStates, netQuantity, 334.09m)]);
+    }
+
+    // 🔴 T-10-591, #847, #864, IADR-0357, IADR-0355（**2 つの PR の合成点**）:
+    // **実建玉へ縮められた手仕舞いも、成行のまま送られる。**
+    //
+    // 突合（#864）は `intent with { Quantity = ... }` で数量だけを差し替える。`with` なので `MarketOrder` は
+    // 引き継がれる —— が、これは**暗黙の依存**である。将来ここが位置指定のコンストラクタ呼び出しへ書き換われば
+    // **`MarketOrder` が既定 false へ落ち、縮められた手仕舞いだけが静かに指値へ戻る**（＝#847 の再発）。
+    // 2 つの PR が別々に正しくても合成点は誰のテストにも入らないため、ここで固定する。
+    [Fact]
+    public async Task 実建玉へ縮められた手仕舞いも成行のまま送られる()
+    {
+        var broker = new RecordingBroker();
+        var service = new AppSvc(
+            broker, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock(),
+            protectiveStops: null, logger: null, brokerPositions: new StubPositions(1_000));
+
+        // 台帳は 3,381 株の手仕舞いを承認したが、ブローカーの実建玉は 1,000 株しかない。
+        await service.ExecuteAsync(new OrderApproved(Guid.NewGuid(), CloseIntent(true), 3_381, Now));
+
+        broker.MarketCount.Should().Be(1, "縮めても成行のまま送る");
+        broker.LimitCount.Should().Be(0);
+        broker.LastIntent!.Quantity.Should().Be(1_000, "実建玉の範囲へ縮まる（#864 の突合）");
+        broker.LastIntent.MarketOrder.Should().BeTrue("縮めても成行の指定は失われない");
+    }
+
     [Fact]
     public async Task 成行の手仕舞いも決済の記録として残る()
     {

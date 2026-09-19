@@ -83,7 +83,7 @@ S1（`StopLossExecutionMethod.SoftwareStop`）は**未実装**（#820）で、�
 | `marketOrder: true` ＋ `limitPrice` 指定 | **400**（矛盾。黙ってどちらかを捨てない） |
 | `marketOrder: false` ＋ `limitPrice` 省略 | 現在値の指値（旧既定を選べる退避口） |
 
-- 要求本文の項目名は **`marketOrder`** である（`market` は既に「市場（Japan / UnitedStates）」が使っている）。
+- 要求本文の項目名は **`marketOrder`** である —— `market` は既に市場（Japan / UnitedStates）が使っているためである。
 - `OrderIntent` へ `bool MarketOrder = false` を**末尾に**足す（既定 false＝従来どおり指値）。
   **エントリー・保護レグ・判断由来の決済は 1 バイトも変わらない。**
   `approved_orders` は `OrderIntent` の列を明示写像しており本値を持たないため **Migration は無い**
@@ -208,8 +208,13 @@ S1（`StopLossExecutionMethod.SoftwareStop`）は**未実装**（#820）で、�
     素直な等値述語だと**常に 0 行更新 → 常に競合例外 → 終端が一度も記録されない**という、
     **在庫が永久に解放されない**最悪の壊れ方になる）。**インメモリ provider は SQL を発行しないので確かめられない。**
     実 PostgreSQL の結合テスト（T-10-590・`AiStockTrading.IntegrationTests`。先例は
-    `PositionDriftStateConcurrencyE2ETests`）を置き、**否定形（負けは 1 回だけ）と肯定形（勝者は書けて在庫が解ける）を
-    対で**固定した —— 述語が壊れると否定形だけは緑のまま通るためである。
+    `PositionDriftStateConcurrencyE2ETests`）を置き、**否定形（負けは 1 回だけ）と肯定形（勝者が書けて
+    在庫の押さえが実際に解ける）を対で**固定した。
+    🔴 **肯定形は「否定形の見落としを塞ぐ」ためではない** —— 否定形も勝者側の真を表明するので、
+    述語が壊れればあちらも落ちる。対で持つ理由は**固定している性質が違う**ことである ——
+    否定形は「競ったとき勝者は 1 つ」、肯定形は「**終端が在庫の押さえを実際に解く**」であり、
+    後者は `GetInFlightCloseQuantity` の絞り込みまで実 DB で通す唯一のケースで、
+    #847 の利用者に見える結末そのものである。
 
 ## 🔴 統制が効かなくなる範囲（本 PR が広げるもの）
 

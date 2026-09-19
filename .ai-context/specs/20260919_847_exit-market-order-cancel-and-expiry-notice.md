@@ -60,7 +60,7 @@ plan_refs:
 | `marketOrder: true` ＋ `limitPrice` 指定 | **400**（矛盾） | 黙ってどちらかを捨てない |
 | `marketOrder: false` ＋ `limitPrice` 省略 | 現在値の指値 | 旧既定を明示的に選べる退避口 |
 
-要求本文の項目名は **`marketOrder`** である（`market` は既に「市場（Japan / UnitedStates）」が使っている）。
+要求本文の項目名は **`marketOrder`** である —— `market` は既に市場（Japan / UnitedStates）が使っているためである。
 
 - `OrderIntent` に `bool MarketOrder = false` を足す（末尾・既定 false＝**従来どおり指値**）。
   既存の全生成点は既定に倒れるため、**エントリー・保護レグ・判断由来の決済は 1 バイトも変わらない**。
@@ -131,7 +131,7 @@ plan_refs:
   照会が返した累積約定数）を足し、受け手は台帳の累計との `Math.Max` を採る。
   **Risk からブローカーを引く案は採らない**（同期照会をホットパスへ持ち込まない規律・IADR-0018 / IADR-0117）。
 - 🔴 **`MarkTerminal` の「初回だけ true」は並行では成立していなかった。** `OrderCancelled` と `OrderExecuted` は
-  **別キュー＝並行実行**であり、EF 実装は read-then-write の TOCTOU（実測: 200 試行の反復で多数観測される（比率は実行環境の並行度に依存するため絶対数は書かない））。
+  **別キュー＝並行実行**であり、EF 実装は read-then-write の TOCTOU である。実測では、200 試行の反復で多数観測された —— 🔴 **比率は実行環境の並行度に依存するため絶対数は書かない**。
   `approved_orders.TerminalAt` を並行トークンにする（移行は DDL 無しの空 Up/Down）。
   **`order_activity` の同名列には付けない**（あちらは無条件上書きが正しい）。
   根本原因は**冪等をインメモリ実装だけで測っていたこと**であり、EF 側に並行の回帰テストを置いた。
