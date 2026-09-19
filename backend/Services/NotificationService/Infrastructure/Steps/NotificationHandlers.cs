@@ -82,6 +82,14 @@ public sealed class PositionReconciliationDriftNotificationHandler(INotification
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// FR-09, FR-10, FR-11, UC-06, #849, IADR-0350: 利用者が承認した乖離の取り込みを購読して通知する。
+// 取引台帳が約定以外で動いた事実を、操作した本人以外（別端末・後日の自分）も知れるようにする。
+public sealed class PositionDriftAdoptedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(PositionDriftAdopted message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 // FR-09, FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159:
 // 強制買戻しの**推定**を購読して利用者へ通知する。推定である以上、運用者が事後に検証できることが要件であり、
 // 通知はその第一の出口である（文言で「推定」と明示する責務は NotificationFormatter が持つ）。

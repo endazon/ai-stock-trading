@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-05, FR-09, FR-10, FR-11, UC-02, UC-06, ADR-0002]
 author: endazon (with Claude Code)
 created: 2026-07-30
-updated: 2026-09-18
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/03_moomoo-integration.md
@@ -200,3 +200,14 @@ IADR-0113 と同じ理由。副作用が**読み取り照会のみ**で、発注
   `PositionDriftDecision` が解消へ戻すため、手作業の是正は要らない。
 - 同型の「市場ごとに照会して連結」を走査した結果（注文照会・remark 照合は最初の一致を返すため該当せず）は
   作業仕様書 [20260918_827_simulate-position-dedup](../specs/20260918_827_simulate-position-dedup.md) に記す。
+
+## ［2026-09-19 追記 / #849］検知の先に「利用者の承認つきの取り込み」を足した（決定 4 は変えない）
+
+- **症状（稼働環境で実測）**: 利用者が証券会社のアプリから全株を売却し、ブローカーの建玉は 0・台帳は 3,381 株のまま。
+  実在しない建玉が段階資金の枠を占有し、新規建てが 1 本も出なくなった。乖離は設計どおり検知・通知されたが、
+  **実態へ合わせる手段が無かった**。
+- **決定 4（是正しない）は変えていない。** 観測の購読は従来どおり台帳を書かない。足したのは、利用者（OwnerOnly）が
+  **観測値へ数量だけ**台帳を合わせる操作であり、設計は [IADR-0350](IADR-0350_owner-approved-ledger-drift-adoption.md) に置く
+  （実現損益は記録しない・減らす方向に限る・報告済みの乖離に限る・観測が古ければ拒否）。
+- 本 IADR の観測に**最新 1 件の保持**（`broker_position_observation`）を足した。追跡状態（IADR-0124）はシグネチャしか持たず、
+  取り込みの瞬間に「何を・いつ観測したか」を読めなかったためである。

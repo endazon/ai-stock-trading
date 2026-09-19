@@ -272,6 +272,12 @@ builder.Services.AddScoped<ShortSellingStatusService>();
 // 分散し、乖離が例外もログも出さずに恒久未報告になり得た）。DbContext が scoped のため両者とも scoped。
 builder.Services.AddScoped<IPositionDriftStateStore, EfPositionDriftStateStore>();
 builder.Services.AddScoped<PositionDriftTracker>();
+// FR-10, FR-11, UC-06, ADR-0003, #849, IADR-0350: 乖離の取り込み（POST /risk-controls/position-drift/adopt・OwnerOnly）。
+// 検知（上）は是正しない。システム外の売買で台帳が実態から離れたとき、**利用者が承認したときだけ**観測値へ
+// 台帳の数量を合わせる。最新の観測は永続でなければならない（replicas>1 で観測を受けた Pod と API を受けた Pod が
+// 違い得る。プロセス内に持つと「観測が無い」で拒否されるか、古い観測へ合わせる）。
+builder.Services.AddScoped<IBrokerPositionObservationStore, EfBrokerPositionObservationStore>();
+builder.Services.AddScoped<RiskManagementService.Features.RiskManagement.AdoptPositionDrift.PositionDriftAdoptionService>();
 // FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159: 強制買戻しの事後推定。
 // **イベント検知の供給元が無い**（SIMULATE では原理的に発生せず専用の通知 API も無い）ため、同じ建玉観測から
 // 「自らの決済指示（約定履歴・処理中の決済承認）で説明できない消失」を突合し、強制買戻しを**推定**する。

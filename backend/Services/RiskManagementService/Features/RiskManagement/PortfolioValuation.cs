@@ -55,7 +55,9 @@ public static class PortfolioValuation
 
             // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
             // IADR-0107: エクイティは基準通貨（USD）で追跡するため、基準通貨の約定単価で畳み込む。
-            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.PriceInBase);
+            // #849, IADR-0350 決定 3: 乖離の取り込み行は平均取得単価で在庫だけを減らす（実現損益 0＝ピークを動かさない）。
+            var applied = PortfolioProjection.ApplyToLot(
+                new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.PriceInBase, fill.IsDriftAdoption);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
 
             equity += applied.RealizedPnl;

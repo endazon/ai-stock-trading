@@ -143,8 +143,67 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 f.Provider,
                 // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）。**列追加前の行・未解決の行は null のまま**
                 // （FxRateToBase の `?? 1m` とは違い、既定へ倒さない——1 円/ドルは事実ではなく、推定でもない誤りである）。
-                a.FxRateBaseToDisplay);
+                a.FxRateBaseToDisplay,
+                // #849, IADR-0350: 約定行は取り込み行ではない（式ツリーは省略可能引数を許さないため明示する）。
+                false);
 
-        return query.ToList();
+        var fills = query.ToList();
+
+        // FR-10, FR-11, #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込み行を合流させる。
+        // **約定ではない**ため IsDriftAdoption を立て、射影が数量だけで畳めるようにする（Price は参考の取得単価）。
+        // 承認行を持たないため StopLossPrice・DecisionId・Provider・認識時レートは既定（無し）のままにする。
+        fills.AddRange(db.PositionDriftAdoptions.AsNoTracking().AsEnumerable().Select(ToLedgerFill));
+        return fills;
     }
+
+    // #849, IADR-0350 決定 2: 追記専用。冪等キーの一意制約で並行の二重投入を 1 件に絞る。
+    public bool AppendDriftAdoption(LedgerDriftAdoption adoption)
+    {
+        ArgumentNullException.ThrowIfNull(adoption);
+
+        var key = adoption.IdempotencyKey;
+        if (db.PositionDriftAdoptions.AsNoTracking().Any(r => r.IdempotencyKey == key))
+            return false;
+
+        var row = new PositionDriftAdoptionRow
+        {
+            Id = adoption.Id,
+            IdempotencyKey = key,
+            Symbol = adoption.Symbol,
+            Market = adoption.Market,
+            Side = adoption.Side,
+            Quantity = adoption.Quantity,
+            CostBasisPrice = adoption.CostBasisPrice,
+            FxRateToBase = adoption.FxRateToBase,
+            LedgerQuantityBefore = adoption.LedgerQuantityBefore,
+            BrokerQuantity = adoption.BrokerQuantity,
+            ObservedAtUtc = adoption.ObservedAt,
+            Actor = adoption.Actor,
+            Reason = adoption.Reason,
+            AdoptedAtUtc = adoption.AdoptedAt,
+        };
+        var entry = db.PositionDriftAdoptions.Add(row);
+
+        try
+        {
+            db.SaveChanges();
+            return true;
+        }
+        // #714, IADR-0317: 競合の判定は例外の型ではなく**行の実在**で行う。上の存在確認から保存までの間に
+        // 他方が同じ冪等キーで先に書いた場合だけを「既に取り込み済み」として false に倒す。
+        catch (DbUpdateException)
+        {
+            entry.State = EntityState.Detached;
+            if (db.PositionDriftAdoptions.AsNoTracking().Any(r => r.IdempotencyKey == key))
+                return false;
+
+            // 冪等キーの行が無い＝競合ではなく本物の保存失敗である。**握り潰さない**
+            // （「取り込み済み」に化けると、台帳が変わっていないのに利用者へ成功に見える応答が返る）。
+            throw;
+        }
+    }
+
+    private static LedgerFill ToLedgerFill(PositionDriftAdoptionRow r) => new(
+        r.Symbol, r.Market, r.Side, PositionEffect.Close, r.Quantity, r.CostBasisPrice, r.AdoptedAtUtc,
+        StopLossPrice: null, FxRateToBase: r.FxRateToBase, IsDriftAdoption: true);
 }

@@ -21,6 +21,7 @@ public class OpenPositionsServiceTests
         public PositionEffect? FindApprovedPositionEffect(Guid decisionId) => null;
         public OrderIntent? FindApprovedIntent(Guid decisionId) => null;
         public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter) => 0;
+        public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => false; // #849: 本テストは取り込みを使わない
     }
 
     // 損切り価格を持たない約定（欠損＝近似フォールバックの検証用）。

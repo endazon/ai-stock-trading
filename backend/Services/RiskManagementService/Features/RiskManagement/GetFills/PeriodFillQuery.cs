@@ -20,7 +20,12 @@ public static class PeriodFillQuery
         if (fromInclusive > toInclusive)
             return [];
 
+        // FR-06, FR-16, FR-11, #849, IADR-0350 決定 4: **乖離の取り込み行は約定ではないため返さない。**
+        // 報告書は本列を約定として畳み込む（実現損益・勝率・費用の概算・取引履歴）。取り込み行を混ぜると
+        // 「平均取得単価で売った損益 0 の決済」が**確定値として**集計・表示される——システム外の売買の価格は
+        // 分からないのであって、0 ではない。
         return [.. fills
+            .Where(f => !f.IsDriftAdoption)
             .Where(f =>
             {
                 var tradingDay = PortfolioProjection.TradeDate(f.ExecutedAt, f.Market);

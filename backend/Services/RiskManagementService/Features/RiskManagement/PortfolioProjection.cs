@@ -51,15 +51,23 @@ public static class PortfolioProjection
             positions.TryGetValue(key, out var pos);
 
             // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
-            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
+            // #849, IADR-0350 決定 3: 取り込み行は ApplyToLot が平均取得単価で在庫だけを減らす（実現損益 0）。
+            var applied = ApplyToLot(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price, fill.IsDriftAdoption);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
 
             // IADR-0107: 同じ畳み込みを基準通貨の単価で行う。実現損益・取得額・エクイティはこちらを採る。
             positionsInBase.TryGetValue(key, out var posInBase);
-            var appliedInBase = SignedInventory.Apply(
-                new InventoryLot(posInBase.Qty, posInBase.AvgCost), signedQ, fill.PriceInBase);
+            var appliedInBase = ApplyToLot(
+                new InventoryLot(posInBase.Qty, posInBase.AvgCost), signedQ, fill.PriceInBase, fill.IsDriftAdoption);
             positionsInBase[key] = (appliedInBase.Lot.Quantity, appliedInBase.Lot.AverageCost);
             var realized = appliedInBase.RealizedPnl;
+
+            // FR-10, FR-11, #849, IADR-0350 決定 3: **取り込み行は約定ではない。** 在庫（＝段階資金・保有建玉数・
+            // 含み損益の対象）だけを観測へ合わせ、当日発注累計・同日売買銘柄・当日実現損益・連敗には触れない。
+            // システム外の売買の価格も時刻も分からないため、これらを動かせば「分からない値」を確定値として
+            // 統制へ流し込むことになる（実現損益は上の ApplyToLot により構造的に 0 である）。
+            if (fill.IsDriftAdoption)
+                continue;
 
             // #249 / IADR-0246: 当日判定は約定の市場の現地取引日で行う（JST 固定だと ET 夜間で日付がずれる）。
             var date = TradeDate(fill.ExecutedAt, fill.Market);
@@ -177,6 +185,19 @@ public static class PortfolioProjection
     // IADR-0107: 建玉に紐づく加重平均の約定時レート＝基準通貨の平均取得単価 ÷ ローカル通貨の平均取得単価。
     // 含み損益の換算（Project）と損切り決済への引き継ぎ（ProjectOpenPositions）で同じ導出を使う。
     // 単価 0（理論上のみ）はレート 1 に倒す（0 除算を作らない）。
+    // FR-10, FR-11, #849, IADR-0350 決定 3: 1 行を在庫へ適用する**単一の入口**（Project・ProjectOpenPositions・
+    // PortfolioValuation.EquityHighWaterMark が共有する）。
+    //
+    // 約定は従来どおり約定単価で畳む。**乖離の取り込み行は、その時点の平均取得単価で畳む** ——
+    // SignedInventory.Apply の実現損益は (決済単価 − 取得単価) × 数量 なので、決済単価に取得単価そのものを
+    // 渡せば**丸め誤差なしに 0** になる（行に保存した単価を使うと、為替換算の端数で ±1e-27 の「損益」が生まれ、
+    // 連敗カウンタを動かし得る）。取得単価は不変のため、部分的な取り込みの後も残りの建玉の評価は変わらない。
+    // 取り込みは在庫を**減らす方向に限る**（サービス層が保証する）ため、在庫 0 への適用・建て増し・反転は
+    // ここへ来ない。来た場合も SignedInventory の通常の規則で畳まれ、例外にはしない（射影は読み取り経路であり、
+    // 1 行の異常で統制の全判定を落とさない）。
+    internal static InventoryFillResult ApplyToLot(InventoryLot lot, int signedQuantity, decimal price, bool isDriftAdoption) =>
+        SignedInventory.Apply(lot, signedQuantity, isDriftAdoption ? lot.AverageCost : price);
+
     private static decimal ImpliedRateToBase(decimal averageCost, decimal averageCostInBase) =>
         averageCost > 0m ? averageCostInBase / averageCost : 1m;
 
@@ -197,13 +218,14 @@ public static class PortfolioProjection
             var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             positions.TryGetValue(key, out var pos);
             // IADR-0033: 共有の畳み込み純関数を用いる（実現損益はここでは不要）。
-            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
+            // #849, IADR-0350 決定 3: 取り込み行は平均取得単価で在庫だけを減らす（Project と同じ規則）。
+            var applied = ApplyToLot(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price, fill.IsDriftAdoption);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
 
             // IADR-0107: 基準通貨側の平均取得単価（＝加重平均約定時レートを内包）を並行して畳み込む。
             positionsInBase.TryGetValue(key, out var posInBase);
-            var appliedInBase = SignedInventory.Apply(
-                new InventoryLot(posInBase.Qty, posInBase.AvgCost), signedQ, fill.PriceInBase);
+            var appliedInBase = ApplyToLot(
+                new InventoryLot(posInBase.Qty, posInBase.AvgCost), signedQ, fill.PriceInBase, fill.IsDriftAdoption);
             positionsInBase[key] = (appliedInBase.Lot.Quantity, appliedInBase.Lot.AverageCost);
 
             // IADR-0035: 建玉が消滅したら損切りも消滅。約定が建玉と同方向（新規/建て増し/反転）なら最新エントリーの損切りに更新。
