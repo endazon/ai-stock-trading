@@ -48,12 +48,20 @@ public static class NotificationFormatter
     // 🔴 **「再試行されない」を明示する。** キューイングしない裁定のため、この注文は破棄され、
     // 再発注は次の取引判断からになる。建玉は増えておらずリスクは発生していないため Warning
     // （実際に止まる事象〔損切り到達・保護喪失〕の Critical を埋もれさせない）。
+    //
+    // 🔴 #864, IADR-0355 決定3: **建玉を照会できずに見送った決済だけは Critical** である。
+    // 他の見送りは「建玉が増えなかった」＝リスクが発生していないが、これは**建玉が残ったまま手仕舞いが出なかった**
+    // ことを意味し、他に鳴る通知が 1 本も無い（乖離イベントは「乖離を確認できたとき」しか出ない）。
+    // 建玉が無いことを確認して見送った側（BrokerPositionAbsent）は Warning のまま —— 同時に乖離の
+    // Critical が鳴るので、二重に Critical を立てると本当に止まった事象が埋もれる。
     public static NotificationMessage From(OrderDispatchForgone e) => new(
         "発注見送り: " + ReasonLabel(e.Reason),
         $"{e.Intent.Symbol}/{e.Intent.Market} {e.Intent.Side} 数量{e.Intent.Quantity} の発注を見送りました"
             + $"（理由: {ReasonLabel(e.Reason)}・DecisionId={e.DecisionId}）。"
             + "**この注文は再試行されません**（キューイングしない・再発注は次の取引判断から）。",
-        NotificationSeverity.Warning);
+        e.Reason == OrderDispatchForgoneReason.BrokerPositionsIndeterminate
+            ? NotificationSeverity.Critical
+            : NotificationSeverity.Warning);
 
     // FR-10, UC-02, #331, IADR-0210: 保護逆指値の発注（エントリー同時 or 失効後の再発注）。
     // 統制が設計どおり働いた記録であり Info。
@@ -125,6 +133,12 @@ public static class NotificationFormatter
         // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 対処は「設定を S0 へ戻す」であり、他の 3 つと違う。
         OrderDispatchForgoneReason.StopLossMethodNotPermitted =>
             "損切りの実行機構が moomoo SIMULATE 以外では選べない手法です（設定を S0 へ戻してください）",
+        // 🔴 FR-10, FR-05, ADR-0016, #864, IADR-0355: 決済をブローカーの実建玉と突き合わせて止めた 2 つ。
+        // 対処は他と違い「台帳とブローカーのどちらが正しいかを確かめる」であって、再発注ではない。
+        OrderDispatchForgoneReason.BrokerPositionAbsent =>
+            "ブローカーに決済できる建玉がありません（送れば保有 0 からの売り＝裸のショートになります）",
+        OrderDispatchForgoneReason.BrokerPositionsIndeterminate =>
+            "ブローカーの建玉を照会できません（不明のまま決済を送りません）",
         _ => reason.ToString(),
     };
 

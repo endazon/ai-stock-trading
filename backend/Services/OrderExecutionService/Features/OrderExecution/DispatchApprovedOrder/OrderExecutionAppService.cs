@@ -28,13 +28,19 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // FR-10, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: **S3 は保護レグを代替注文種別（StopLimit / TrailingStop）で
 // 発注し、種別と拒否理由（retType / retMsg）を AlternativeProtectiveStopAttempted として残す**。
 // 結果の扱いは S0 と完全に同じ（受理＝保護レグの記録／拒否＝建玉を持たない）——分岐するのは「何で発注するか」だけである。
+//
+// 🔴 FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355: **決済（Close）はブローカーの実建玉と突き合わせてから送る。**
+// 決済の数量の出所は台帳の射影であってブローカーの事実ではないため、台帳が乖離していると（#849）決済注文が
+// **保有 0 からの売り＝裸の新規ショート**になる。突合の能力（IBrokerPositionSource）を持つ発注先でのみ行い、
+// 内蔵 paper では従来どおり照合しない（依存が DI に現れない＝構造的な非干渉）。
 public sealed class OrderExecutionAppService(
     IBrokerAdapter broker,
     IExecutedOrderStore store,
     IOrderReservationStore reservations,
     IClock clock,
     IProtectiveStopOrderStore? protectiveStops = null,
-    ILogger<OrderExecutionAppService>? logger = null)
+    ILogger<OrderExecutionAppService>? logger = null,
+    IBrokerPositionSource? brokerPositions = null)
 {
     private readonly ILogger _logger = logger ?? NullLogger<OrderExecutionAppService>.Instance;
 
@@ -64,6 +70,73 @@ public sealed class OrderExecutionAppService(
         }
 
         var intent = approved.Intent;
+
+        // 🔴 FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355: **決済（Close）はブローカーの実建玉と突き合わせてから送る。**
+        // 決済の数量の出所は台帳の射影であってブローカーの事実ではないため（IADR-0119 決定1 / IADR-0351 決定6）、
+        // 台帳が乖離していると（#849。台帳 3,381 株 / ブローカー 0 株を実測）ブローカー上では
+        // **保有 0 からの売り＝裸の新規ショート**になる。**予約（相2）より前**に判定する
+        //（送らないと決めたら発注に着手しない＝予約も取らない。逆指値を張れない Open の見送りと同じ位置）。
+        // 能力の無い発注先（内蔵 paper）では brokerPositions が DI に現れないため、この分岐そのものが起きない。
+        PositionReconciliationDrift? drift = null;
+        if (intent.PositionEffect == PositionEffect.Close && brokerPositions is not null)
+        {
+            // ポートの契約は「照会不能は null（例外を投げない）」である（IBrokerPositionSource）。
+            // #873 の監査 N2: それでも**例外は不明として扱う**——契約違反の実装が現れたときに
+            // ExecuteAsync ごと落ちると、承認が再配送で撃ち直され（予約はまだ取っていない）、
+            // 最後には error キューへ落ちる。落とすより「不明として送らない」方が本 IADR の向きと一致する。
+            IReadOnlyList<BrokerPositionSnapshot>? snapshot;
+            try
+            {
+                snapshot = await brokerPositions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "ブローカーの建玉照会が例外で失敗しました（不明として扱います）。");
+                snapshot = null;
+            }
+
+            var verdict = BrokerHeldPositionGate.Evaluate(intent, snapshot);
+            switch (verdict.Outcome)
+            {
+                case BrokerHeldPositionOutcome.Indeterminate:
+                    // 🔴 IADR-0355 決定3: **不明のまま決済を送らない。** 空列（建玉ゼロ）と null（不明）を
+                    // 取り違えないという契約の下で、「分からない」を「持っている」へは倒さない。
+                    // 選ばなかった側（不明でも送る）の害は、台帳が乖離していたときに裸のショートが出ること——
+                    // 不可逆であり、買い戻すまで損失が限定されない。選んだ側の害（手仕舞いが出ない）は
+                    // 建玉が残るだけで可逆であり、**損切りはブローカー側の逆指値が担う**ため本経路の見送りで消えない。
+                    _logger.LogError(
+                        "決済を見送りました: ブローカーの建玉を照会できません（不明）。台帳の建玉だけを根拠に売ると"
+                        + "保有 0 からの売り（裸のショート）になり得るため送りません。証券会社の画面で建玉を確認してください: "
+                        + "DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity}",
+                        approved.DecisionId, intent.Symbol, intent.Quantity);
+                    return Forgone(approved, OrderDispatchForgoneReason.BrokerPositionsIndeterminate);
+
+                case BrokerHeldPositionOutcome.NoPosition:
+                    // 🔴 IADR-0355 決定2: 決済方向の実建玉が 0。送れば**裸の新規ショート**である（1 株も送らない）。
+                    _logger.LogError(
+                        "決済を見送りました: ブローカーに決済方向の建玉がありません"
+                        + "（台帳 {Ledger} 株 / ブローカーのネット建玉 {Broker} 株）。"
+                        + "送れば保有 0 からの売り（裸のショート）になります: DecisionId={DecisionId} 銘柄={Symbol}",
+                        intent.Quantity, verdict.BrokerNetQuantity, approved.DecisionId, intent.Symbol);
+                    return Forgone(
+                        approved,
+                        OrderDispatchForgoneReason.BrokerPositionAbsent,
+                        DriftOf(intent, verdict.BrokerNetQuantity, verdict.ClosableQuantity));
+
+                case BrokerHeldPositionOutcome.Reduce:
+                    // IADR-0355 決定2: 実建玉の範囲へ縮めて送る（実在する建玉の手仕舞いまで塞がない）。
+                    // **縮めた事実は必ず監査・通知に残す**（下の drift。黙って数量を変えない）。
+                    _logger.LogWarning(
+                        "決済の数量をブローカーの実建玉へ縮めました"
+                        + "（台帳 {Ledger} 株 / ブローカーのネット建玉 {Broker} 株 → 決済方向で送れる {Sent} 株）: "
+                        + "DecisionId={DecisionId} 銘柄={Symbol}",
+                        intent.Quantity, verdict.BrokerNetQuantity, verdict.ClosableQuantity,
+                        approved.DecisionId, intent.Symbol);
+                    drift = DriftOf(intent, verdict.BrokerNetQuantity, verdict.ClosableQuantity);
+                    intent = intent with { Quantity = verdict.ClosableQuantity };
+                    break;
+            }
+        }
 
         // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 承認が運ぶ手法を解決する（Open にのみ効く）。
         // S0 は常に S0 であり、以降の分岐は 1 バイトも変わらない。
@@ -226,7 +299,10 @@ public sealed class OrderExecutionAppService(
             return OrderDispatchResult.FromExecuted(executed, stopPlaced, coverageLost, stopAttempted: attempted);
         }
 
-        return OrderDispatchResult.FromExecuted(executed);
+        // #864, IADR-0355 決定5: 数量を縮めた決済はここへ帰る（Open の 2 分岐は drift を持ち得ない）。
+        // 監査（3 巡目）3: 乖離を添えるときは**実際に送った株数**も渡す（通知・ログで取り違えさせない）。
+        return OrderDispatchResult.FromExecuted(
+            executed, drift: drift, driftDispatchedQuantity: drift is null ? 0 : intent.Quantity);
     }
 
     // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4・決定7: 解決とログ。拒否は Error（実弾で S0 以外が
@@ -253,9 +329,19 @@ public sealed class OrderExecutionAppService(
         return disposition;
     }
 
-    private OrderDispatchResult Forgone(OrderApproved approved, OrderDispatchForgoneReason reason) =>
+    private OrderDispatchResult Forgone(
+        OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null) =>
         OrderDispatchResult.FromForgone(
-            new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow));
+            new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow), drift);
+
+    // #864, IADR-0355 決定5: 乖離は**既存の検知（IADR-0118）と同じイベント**で人へ知らせる（新しい経路を作らない）。
+    // 観測時刻は照会した今である（発注執行は台帳を持たないため、台帳側の数量はこの決済が消そうとした数量を載せる）。
+    private PositionReconciliationDrift DriftOf(OrderIntent intent, int brokerNetQuantity, int closableQuantity)
+    {
+        var now = clock.UtcNow;
+        return new PositionReconciliationDrift(
+            [BrokerHeldPositionGate.DriftOf(intent, brokerNetQuantity, closableQuantity)], now, now);
+    }
 
     // FR-10, UC-02, #331, IADR-0210 決定1/3: 保護逆指値の同時発注と、未受理時の建玉解消の全分岐。
     // FR-10, #821, IADR-0347: useAlternative（S3）のときだけ代替注文種別で発注し、試行の記録を返す。

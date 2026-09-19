@@ -81,5 +81,13 @@ public class StopLossMethodContractTests
         ((int)OrderDispatchForgoneReason.StopLossPriceMissing).Should().Be(1);
         ((int)OrderDispatchForgoneReason.StopOrderUnsupported).Should().Be(2);
         ((int)OrderDispatchForgoneReason.StopLossMethodNotPermitted).Should().Be(3);
+
+        // 🔴 T-10-518, #864, IADR-0355: 決済をブローカーの実建玉と突き合わせて止めた 2 値も**末尾**である。
+        // 序数はメトリクスのタグ・監査 payload の整数として往来するため、間に挿し込むと過去の記録の意味が変わる。
+        ((int)OrderDispatchForgoneReason.BrokerPositionAbsent).Should().Be(4);
+        ((int)OrderDispatchForgoneReason.BrokerPositionsIndeterminate).Should().Be(5);
+
+        // 値を増やしたら、見送りを分類し直す側（在庫解放の可否など）も引き直させる。
+        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(6);
     }
 }
