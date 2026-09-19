@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, ADR-0040, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118, IADR-0342, IADR-0344]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-09-18
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md
@@ -125,3 +125,57 @@ plan_refs:
   確認し、結果に応じて計画へ環流する（実装側で勝手に逆指値必須を外さない）。
 - ガードの再発注は巡回間隔ぶん遅れる。その間はブローカー側の保護が無い（計画も「システムが検知して再発注する」
   としており、遅延自体は計画の想定内。間隔は構成で短縮可能）。
+
+## ［2026-09-19 追記 / #846］S0 の発火価格とエントリーの指値も市場の刻みへ丸めてから送る
+
+[IADR-0347](IADR-0347_alternative-broker-order-types-for-simulate.md) の 2026-09-18 追記（#844）は、
+**代替レグ（S3）の価格だけ**を刻みへ丸めた。その監査（#845）で、**本 IADR の S0 の発火価格（`OrderType_Stop` の
+`AuxPrice`）とエントリーの指値が丸めを通っていない**ことが分かった。#846 の監査プローブが稼働環境で実測している
+（プローブは削除済み）。
+
+```
+P4 S0(OrderType_Stop): Kind=Stop Price=332.3512 Trigger=332.3512
+P5 entry(Limit):       Kind=Limit Price=329.0265
+```
+
+🔴 **S0 は S3 と違い、実弾が解禁された後もそのまま使う経路である**（現状のクライアントは
+`TrdEnv_Simulate` にピン留めされており〔`MMApiMoomooTradeClient` の SIMULATE 固定〕、今この瞬間に実弾が
+流れるわけではない。当初「実弾でも使う経路」と書いたのは強すぎた——#850 の監査の指摘）。 損切りラインは `参照価格 ∓ StopLossDistancePerShare` で
+作られ、`StopLossDistancePerShare` は **LLM の JSON をそのまま読む値**（`TradeDecisionParser.ReadDecimal`。
+桁の制約はプロンプトにもパーサにも無い）。エントリーの指値も、現在値が取れない日は
+`currentPrice ?? decision.ReferencePrice` で **LLM の値がそのまま指値になる**。つまり
+`retType=-1 The precision of Price in Place Order does not meet the specification.` は S0 でも起き得る
+——起きれば**保護レグが立たず建玉が取り消される**（実弾では取引機会の喪失であり、原因も分かりにくい）。
+
+- **`MoomooBrokerAdapter.PlaceCoreAsync` の 1 箇所で丸める**（既存の `MoomooPriceRounding` を使う。新しい丸め規則は
+  作らない）。S3 は `PlaceAlternativeStopOrderAsync` が自前で丸めてから `PlaceWithRejectionDetailAsync` を直接呼ぶため
+  ここを通らない——**二重に丸めて #844 追記が決めた S3 の向きを壊すことがない**。成行は価格を注文へ載せないため対象外。
+- **S0 の発火価格は #844 追記と同じ向き**＝**早く発火する側**（ロングの保護＝売りは切り上げ・ショートの保護は切り下げ）。
+  **保護が緩む側へ倒さない**という本 IADR の規律をそのまま延長したものである。
+- 🔴 **エントリーの指値は向きが逆で、「約定しやすい側」ではなく「不利にならない側」へ丸める**
+  （買いは切り下げ・売りは切り上げ。`RoundEntryLimit` を `RoundLimit` と別メソッドにして取り違えを防ぐ）。
+  保護レグは約定しなければ保護にならないが、**エントリーは約定しなくても損をしない**（見送りは可逆）。
+  逆に意図より悪い価格で建つと、損切りラインは判断時に固定されているため
+  **「エントリー − 損切りライン」の実幅が広がり、サイジングが前提にした 1 株あたりリスク（FR-10）を超える**
+  ——こちらは不可逆である。**可逆な損失より不可逆な統制違反を避ける**、という本 IADR の fail-closed と同じ選び方になる。
+- **丸めた後の値を既存の発注前検証へ渡す。** 刻みに満たない価格は 0 になり、従来どおり送信せず終端 Rejected になる。
+  **1 刻みを足して 0 を避けることはしない**（決定が求めていない価格を捏造しない。#844 追記のトレール幅と同じ規律）。
+- **同じ経路を通る指値の決済（owner 手仕舞い・自動縮小＝`PositionEffect.Close`）にも同じ向きが掛かる**
+  （`PlaceCoreAsync` は Open / Close を区別しない）。売りの決済は切り上げ＝**約定価格が意図より悪くならない**側であり、
+  代償は 1 刻みぶん約定しにくくなることである。**損切りの保護はブローカー側の逆指値レグ（本 IADR 決定 1）が
+  別に持つ**ため、指値の決済が 1 刻み届かないことは保護の喪失にならない。**Close だけ約定しやすい側へ倒す案は
+  採らなかった**——向きが 2 つあると呼び出し側が取り違えるうえ、「意図より悪い価格で決済する」を許す理由が
+  ここには無い（成行の手仕舞いは別経路で、そもそも価格を送らない）。
+
+**LLM が返す損切り幅の桁は、プロンプトでもパーサでも制約しない**（#846 射程 3 の検討結果・採らない判断）。理由:
+①**LLM の出力は保証にならない**——指示が守られたかを検査していない以上、丸めは依然として要る。
+②**パーサは市場も刻みも知らない**（`TradeDecisionParser` は JSON だけを見る）。ここで桁を決めると**ブローカー固有の
+知識が判断サービスへ漏れ**、正本が 2 箇所になる。③**上流で丸めると統制の入力が変わる**——
+`StopLossDistancePerShare` は `PositionSizer` の入力であり、丸めれば**数量（＝実弾の発注金額）が動く**。
+よって**刻みの知識はブローカー境界（アダプタ）の 1 箇所に寄せる**。
+
+残る制約: **台帳には丸める前の値が残る**（`ExecutionRecord.Price` / `ProtectiveStopOrder.TriggerPrice` は
+呼び出し側の値を保存する）。「記録した価格」と「送った価格」の間に**最大 1 刻みの差**が残る（#844 追記も同じ形）。
+また、**拒否が消えたことの最終確認は稼働環境での再実測でしか取れない**（本追記の PR は送信値を単体テストで固定するのみ）。
+
+作業仕様書: [20260919_846_entry-and-stop-price-precision](../specs/20260919_846_entry-and-stop-price-precision.md)

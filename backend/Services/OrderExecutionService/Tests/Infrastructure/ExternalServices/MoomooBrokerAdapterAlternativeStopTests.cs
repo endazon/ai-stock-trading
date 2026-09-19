@@ -70,6 +70,37 @@ public class MoomooBrokerAdapterAlternativeStopTests
         placement.RejectReasonMessage.Should().BeNull();
     }
 
+    // T-10-395: #844 の実測（稼働環境）。発火価格 332.35・ずらし 1% だと 329.0265 になり、
+    // ブローカーが `The precision of Price in Place Order does not meet the specification.` で拒否した。
+    // 刻みへ丸めてから送る（売りなので**切り下げ**＝約定しやすい側）。
+    [Fact]
+    public async Task StopLimitの指値は市場の刻みへ丸めて送る()
+    {
+        var client = new FakeClient();
+
+        await Adapter(client, AlternativeProtectiveOrderType.StopLimit)
+            .PlaceAlternativeStopOrderAsync(
+                CloseIntent(), triggerPrice: 332.35m, entryReferencePrice: 335.86m, Guid.NewGuid());
+
+        var request = client.LastRequest!;
+        request.Price.Should().Be(329.02m, "332.35 × 0.99 = 329.0265 を小数 2 桁へ切り下げる");
+        request.TriggerPrice.Should().Be(332.35m, "発火価格は既に刻みに合っているので動かさない");
+    }
+
+    // T-10-396: 発火価格が刻みを外れていれば、そちらも丸めて送る（指値だけ直しても同じ拒否になる）。
+    [Fact]
+    public async Task StopLimitの発火価格も刻みへ丸めて送る()
+    {
+        var client = new FakeClient();
+
+        await Adapter(client, AlternativeProtectiveOrderType.StopLimit)
+            .PlaceAlternativeStopOrderAsync(
+                CloseIntent(), triggerPrice: 332.3512m, entryReferencePrice: 335.86m, Guid.NewGuid());
+
+        client.LastRequest!.TriggerPrice.Should().Be(
+            332.36m, "ロングの保護は**早く発火する側**（切り上げ）へ倒す");
+    }
+
     [Fact]
     public async Task StopLimitの買戻しは指値を発火価格の上へずらす()
     {
