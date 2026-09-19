@@ -370,6 +370,9 @@ services:
       KnowledgeBase__Auth__ClientSecret: ${KNOWLEDGEBASE_AUTH_CLIENTSECRET:-}
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
       Reports__NoResponseBehavior: ${REPORTS_NORESPONSE_BEHAVIOR:-}
+      # FR-09, UC-03, #774, IADR-0240 決定11: 確定要求の onBehalfOf（代理される利用者）を信じてよいクライアント。
+      # notification-service の Notifications__Discord__OwnerAuth__ClientId と**同じ変数**から採る（単一情報源）。
+      Reports__DelegatedActor__TrustedClientIds: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
     depends_on:
       <<: *depends-infra
       postgres:

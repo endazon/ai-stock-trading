@@ -256,6 +256,13 @@ services:
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       - { name: Reports__NoResponseBehavior, value: "" }
+      # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を
+      # 信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントのトークンで確定を呼ぶため、
+      # トークンからは人を解決できない（通知・監査の確定者が unknown になっていた）。**notification の
+      # Notifications__Discord__OwnerAuth__ClientId と同じ秘密鍵から採る**（単一情報源。片方だけ変えると代理が
+      # 黙って不成立になり確定者が `client:<azp>` へ落ちる）。fail-safe: 未設定/空=誰の onBehalfOf も信じない。
+      - name: Reports__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       # FR-06, UC-03, #740, IADR-0115 決定6: 日報ドラフトの自動生成（スケジューラ常駐）。既定 opt-in（無効）のままだと
       # 報告書が一度も作られず、利用者が確定する対象が無い → trade-decision は「確定済み日報の方針が無い」で
       # fail-closed し、経路B の周回は構造的に発注へ到達しない。境界・間隔は組込既定（日報 16:00 JST / 300 秒）。
