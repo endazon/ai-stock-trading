@@ -57,10 +57,33 @@ public sealed class PositionDriftTracker(
     // 乖離ゼロなら空文字＝「解消」を意味する（乖離が 1 件でもあれば必ず非空になる）。
     private static string Signature(IReadOnlyList<PositionDriftItem> drifts) =>
         string.Join(
-            "|",
+            ItemSeparator,
             drifts
-                .Select(d => string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{d.Symbol}:{(int)d.Market}:{d.LedgerQuantity}:{d.BrokerQuantity}:{(int)d.Kind}"))
+                .Select(ItemSignature)
                 .OrderBy(s => s, StringComparer.Ordinal));
+
+    private const char ItemSeparator = '|';
+
+    private static string ItemSignature(PositionDriftItem d) => string.Create(
+        CultureInfo.InvariantCulture,
+        $"{d.Symbol}:{(int)d.Market}:{d.LedgerQuantity}:{d.BrokerQuantity}:{(int)d.Kind}");
+
+    /// <summary>
+    /// FR-10, FR-11, #849, IADR-0350 決定 2: この乖離（銘柄・市場・**双方の数量まで同一**）が
+    /// <b>既に報告済み</b>か。報告済み＝連続観測条件を満たし、利用者へ通知が出た乖離である。
+    /// <para>
+    /// 取り込みの可否に使う。未報告の乖離は「発注してから約定が台帳へ届くまで」の一過性の未反映かもしれず、
+    /// それへ台帳を合わせると、後から届いた約定で二重に動く。
+    /// 報告済みシグネチャは乖離が解消するまで保たれるため、複数銘柄の乖離を 1 件ずつ取り込む間も
+    /// 残りの銘柄は報告済みのままである（1 件取り込むたびに連続観測を待ち直させない）。
+    /// </para>
+    /// </summary>
+    public bool IsReported(PositionDriftItem drift)
+    {
+        ArgumentNullException.ThrowIfNull(drift);
+
+        var reported = store.Get().ReportedSignature;
+        return reported.Length > 0
+            && reported.Split(ItemSeparator).Contains(ItemSignature(drift), StringComparer.Ordinal);
+    }
 }

@@ -246,7 +246,7 @@ public class SecretRedactionTests
             Task.FromResult(new ReportReviewResult(true, 1, "版 1"));
 
         public Task<ReportConfirmResult> ConfirmAsync(
-            string periodKey, int expectedVersion, CancellationToken cancellationToken = default) =>
+            string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default) =>
             Task.FromResult(new ReportConfirmResult(true, true, "確定"));
 
         public Task<ReportReviewResult> RequestChangesAsync(

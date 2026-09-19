@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #820, #826, #829, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #820, #826, #829, #849, planning#292]
 -->
 
 
@@ -871,6 +871,36 @@ owner の手仕舞いには**過剰決済ガード**がある。取引台帳は�
 
 決済の要求は `PositionCloseRequested`（アクター・理由つき）として `OrderApproved` より先に発行され、監査台帳に残る
 （`OrderApproved` はアクターも理由も持たないため）。約定以降は通常の注文経路（台帳・枠回復・通知）に載る。
+
+### 台帳とブローカーの乖離の取り込み（#849）
+
+取引台帳は約定イベントでしか動かず、ブローカー建玉の観測では書き換えない。乖離は検知・記録・通知のみで**自動では是正しない**。
+この原則は変えない。ただし検知で止まると、**システム外の売買**（証券会社のアプリからの直接の売却など）で台帳が実態より多い
+建玉を持ったままになり、実在しない建玉が段階資金・保有建玉数の枠を占有して**新規建てが 1 本も出なくなる**（稼働環境で実測）。
+そこで、**利用者が承認したときだけ**観測値へ台帳の数量を合わせる経路を持つ。
+
+| 項目 | 内容 |
+| --- | --- |
+| 操作 | `POST /risk-controls/position-drift/adopt`（OwnerOnly・理由必須）。本文は `symbol`・`market`・`reason` のみ |
+| 誰が | 利用者のみ。**サービストークンでは 403**（生成 AI・自動処理は台帳を書き換えられない） |
+| 何へ合わせるか | **最新の観測**のブローカー建玉。**数量は受け取らない**（利用者が任意の数量で台帳を書き換える操作ではない） |
+| 取り込める乖離 | 台帳の建玉を**減らす**もの（同じ向きのまま数量が減る・0 になる）で、**連続観測を経て報告済み**のもの |
+| 拒否（422・台帳は動かない） | 観測が無い（照会不能を含む）／60 分より古い・当該銘柄に乖離が無い（取り込み済みを含む＝冪等）・未報告の乖離・台帳に無い建玉／数量の増加／方向の反転・観測より後に台帳が動いた・処理中の決済がある |
+| 実現損益 | **記録しない**。システム外の売買は約定価格が分からないため、数量だけを合わせる。推定値を確定値のように記録しない |
+
+取り込みが**動かす**のは、取得額累計（段階資金）・保有建玉数・建玉一覧・含み損益の対象だけである。
+**当日実現損益・基準資金・連敗・エクイティのピーク・当日発注累計・同日売買銘柄は動かさない**（射影は取り込み行を
+その時点の平均取得単価で畳むため、実現損益は丸め誤差なしに 0 になる）。取り込み行は約定と別の追記専用の表に残り、
+**期間約定の照会（報告書の入力）へは返さない** —— 返すと「平均取得単価で売った損益 0 の決済」が確定値として集計される。
+
+取り込みは `PositionDriftAdopted`（操作者・理由・取り込み前後の数量・観測値と観測時刻・実現損益が未記録であること）として
+発行され、監査台帳（観測・乖離の報告と同一相関）と通知（Critical）に残る。取り込み時点の現在値が取れた場合に限り、
+参考の**推定損益**を載せるが、「推定・未記録」と明示し、台帳のどの数値にも入れない。
+
+🔴 **残る制約**: システム外の損益は統制へ入らない。取り込み前に数えていた含み損は実現へ振り替わらずに消えるため、
+売却が当日の損失だった場合は**日次損失上限の判定が実態より緩む**。基準資金も実際の口座残高からずれたままになる。
+発注執行側の保護記録（保護逆指値の記録）の追随（#858）と、報告書での「システム外の決済・損益不明」の明示（#859）は後続である ——
+それまでは、取り込みの通知が「ブローカー側に保護注文が残っていないか確認する」よう案内する。
 
 ### 判定基準の確定（Issue #31）
 

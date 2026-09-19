@@ -57,6 +57,7 @@ report_svc	reports	ledger	ConfirmedAt	-
 risk_management_svc	approved_orders	ledger	ApprovedAt	-
 risk_management_svc	borrow_fee_accruals	ledger	AccruedAtUtc	-
 risk_management_svc	borrow_fee_unavailable_days	ledger	ObservedAtUtc	-
+risk_management_svc	broker_position_observation	state	UpdatedAt	-
 risk_management_svc	buy_in_inferences	ledger	InferredAtUtc	-
 risk_management_svc	good_faith_violation_clearances	ledger	ClearedAtUtc	-
 risk_management_svc	good_faith_violations	ledger	RecordedAtUtc	-
@@ -65,6 +66,7 @@ risk_management_svc	lockout	state	EngagedAt	-
 risk_management_svc	order_activity	ledger	PlacedAt	-
 risk_management_svc	order_screening_observations	ledger	ObservedAtUtc	-
 risk_management_svc	pause	state	ChangedAt	-
+risk_management_svc	position_drift_adoptions	ledger	AdoptedAtUtc	-
 risk_management_svc	position_drift_state	state	UpdatedAt	-
 risk_management_svc	position_observation_days	ledger	UpdatedAt	-
 risk_management_svc	risk_settings	state	UpdatedAt	-

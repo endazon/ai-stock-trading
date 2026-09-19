@@ -61,10 +61,14 @@ public class ReportCommandHandlerTests
                 : new ReportReviewResult(true, Version, $"報告書 {periodKey}: 版 {Version}"));
         }
 
+        // #774: 確定要求へ添えられた操作者（多層認証が解決した Keycloak 利用者名）。
+        public string? LastOnBehalfOf { get; private set; }
+
         public Task<ReportConfirmResult> ConfirmAsync(
-            string periodKey, int expectedVersion, CancellationToken cancellationToken = default)
+            string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default)
         {
             ConfirmCalls++;
+            LastOnBehalfOf = onBehalfOf;
             LastConfirmedVersion = expectedVersion;
             LastPeriodKey = periodKey;
 
@@ -132,6 +136,46 @@ public class ReportCommandHandlerTests
         result.ConfirmedNow.Should().BeTrue();
         controller.ConfirmCalls.Should().Be(1);
         controller.LastConfirmedVersion.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task 確定要求には多層認証で解決した操作者を添える()
+    {
+        // FR-09, UC-03, IADR-0240 決定11, #774: Bot のトークンは owner マップ機密クライアントのもので人を表さない。
+        // 操作者を添えないと、報告書サービスが確定者を解決できず通知・監査台帳に unknown が残る（稼働環境で実測）。
+        var controller = new FakeReportReviewController();
+
+        var result = await Handler(controller, FullyConfigured())
+            .HandleAsync(Context($"/report approve {PeriodKey} 2"));
+
+        result.ConfirmedNow.Should().BeTrue();
+        controller.LastOnBehalfOf.Should().Be("endazon", "UserMapping が対応付けた Keycloak 利用者名");
+    }
+
+    [Fact]
+    public async Task 操作者は押した本人であり_許可リストの他人の名前にはならない()
+    {
+        // 🔴 なりすましの否定形（窓口側）: 操作者は **着信の Discord ユーザー ID から** 多層認証が引く。
+        // コマンド文字列からは採らない——文字列に他人の名前を混ぜても操作者は変わらない。
+        const string secondUser = "222222222222222222";
+        var options = FullyConfigured();
+        options.AllowedUserIds.Add(secondUser);
+        options.UserMapping[secondUser] = "second-owner";
+        var controller = new FakeReportReviewController();
+
+        var result = await Handler(controller, options)
+            .HandleAsync(Context($"/report approve {PeriodKey} 2", user: secondUser));
+
+        result.ConfirmedNow.Should().BeTrue();
+        controller.LastOnBehalfOf.Should().Be("second-owner");
+        controller.LastOnBehalfOf.Should().NotBe("endazon");
+
+        // 余分な引数（他人の名前）を混ぜたコマンドは解析で落ち、確定 API を呼ばない。
+        var forged = new FakeReportReviewController();
+        var denied = await Handler(forged, options)
+            .HandleAsync(Context($"/report approve {PeriodKey} 3 endazon", user: secondUser));
+        denied.ConfirmedNow.Should().BeFalse();
+        forged.LastOnBehalfOf.Should().NotBe("endazon");
     }
 
     [Fact]

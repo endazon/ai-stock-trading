@@ -51,7 +51,7 @@ public class HttpReportReviewControllerTests
     {
         var handler = new FakeHandler(HttpStatusCode.OK, """{"periodKey":"daily-2026-08-28","state":1}""");
 
-        var result = await Controller(handler).ConfirmAsync(PeriodKey, 3);
+        var result = await Controller(handler).ConfirmAsync(PeriodKey, 3, "developer");
 
         handler.RequestUri.Should().Be("http://report-service/reports/daily-2026-08-28/confirm");
         handler.Method.Should().Be(HttpMethod.Post);
@@ -64,12 +64,41 @@ public class HttpReportReviewControllerTests
     }
 
     [Fact]
+    public async Task 確定の本文には代理される利用者を_onBehalfOf_として載せる()
+    {
+        // FR-09, UC-03, IADR-0240 決定11, #774: 報告書サービスはトークン（owner マップ機密クライアント）からは
+        // 人を解決できない。操作者は本文で運ぶ（報告書サービス側 ConfirmReportRequest.OnBehalfOf と同名）。
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"periodKey":"daily-2026-08-28","state":1}""");
+
+        var result = await Controller(handler).ConfirmAsync(PeriodKey, 3, "developer");
+
+        result.Confirmed.Should().BeTrue();
+        using var doc = JsonDocument.Parse(handler.Body);
+        doc.RootElement.GetProperty("onBehalfOf").GetString().Should().Be("developer");
+        doc.RootElement.GetProperty("expectedVersion").GetInt32().Should().Be(3);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task 操作者が空なら確定を呼ばない(string onBehalfOf)
+    {
+        // 確定者を記録できない確定はさせない（多層認証は空の actor を通さないため、ここへ来るのは配線の誤り）。
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}");
+
+        var act = () => Controller(handler).ConfirmAsync(PeriodKey, 3, onBehalfOf);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        handler.RequestUri.Should().BeNull("報告書サービスを呼んでいない");
+    }
+
+    [Fact]
     public async Task 版不一致の_409_は受理されなかったこととして返る()
     {
         // サーバは正しく応答している（呼び出しの失敗ではない）。受理されなかったことを Confirmed=false で表す。
         var handler = new FakeHandler(HttpStatusCode.Conflict, """{"error":"版番号が一致しません。"}""");
 
-        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1);
+        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1, "developer");
 
         result.Succeeded.Should().BeTrue();
         result.Confirmed.Should().BeFalse();
@@ -85,7 +114,7 @@ public class HttpReportReviewControllerTests
     {
         var handler = new FakeHandler(status, "{}");
 
-        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1);
+        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1, "developer");
 
         result.Succeeded.Should().BeFalse();
         result.Confirmed.Should().BeFalse();
@@ -96,7 +125,7 @@ public class HttpReportReviewControllerTests
     {
         var handler = new FakeHandler(HttpStatusCode.Forbidden, "{}");
 
-        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1);
+        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1, "developer");
 
         result.Message.Should().Contain("trading-owner");
     }
@@ -118,7 +147,7 @@ public class HttpReportReviewControllerTests
     {
         var handler = new FakeHandler(new HttpRequestException("接続できません"));
 
-        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1);
+        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1, "developer");
 
         result.Succeeded.Should().BeFalse();
         result.Message.Should().Contain("HttpRequestException");
@@ -163,7 +192,7 @@ public class HttpReportReviewControllerTests
         // 「結果は不明」と伝える（確定できたかどうか分からない状態を、成功にも明確な失敗にも寄せない）。
         var handler = new FakeHandler(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout"));
 
-        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1);
+        var result = await Controller(handler).ConfirmAsync(PeriodKey, 1, "developer");
 
         result.Succeeded.Should().BeFalse();
         result.Message.Should().Contain("結果は不明");
@@ -304,7 +333,7 @@ public class HttpReportReviewControllerTests
     [Fact]
     public async Task 確定と差し戻しの_404_にも同じ案内を返す()
     {
-        var confirm = await Controller(new FakeHandler(HttpStatusCode.NotFound, "{}")).ConfirmAsync("nope", 1);
+        var confirm = await Controller(new FakeHandler(HttpStatusCode.NotFound, "{}")).ConfirmAsync("nope", 1, "developer");
         var changes = await Controller(new FakeHandler(HttpStatusCode.NotFound, "{}")).RequestChangesAsync("nope", 1);
 
         confirm.Message.Should().Contain("daily-2026-09-18");

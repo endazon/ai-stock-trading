@@ -263,6 +263,10 @@ public class AuditCycleCompletenessTests
             new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, t.AddDays(-31), 31d, t),
             new PositionReconciliationDrift(
                 [new PositionDriftItem("AAPL", Market.UnitedStates, 10, 8, PositionDriftKind.QuantityMismatch)], t, t),
+            // FR-10, FR-11, #849, IADR-0350: 利用者が承認した乖離の取り込み（台帳が約定以外で動く唯一の操作）。
+            new PositionDriftAdopted(
+                Guid.NewGuid(), "AAPL", Market.UnitedStates, 10, 8, 8, t, 1_000m, false, null, null,
+                "endazon", "手動売却", t),
             new PriceMovementDetected(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_050m, 1_000m, 0.05m, t),
             new ProtectiveStopCoverageLost(
                 decisionId, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,

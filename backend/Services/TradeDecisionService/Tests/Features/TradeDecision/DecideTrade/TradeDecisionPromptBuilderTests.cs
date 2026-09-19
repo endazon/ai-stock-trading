@@ -481,6 +481,420 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().NotContain("Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい");
     }
 
+    // ------------------------------------------------------------------------------------------------
+    // FR-04, FR-10, FR-03, ADR-0003, #854, IADR-0351: 保有状況（保有あり／保有なし／不明の 3 状態）
+    //
+    // 実測（2026-09-17・09-18 の 2 夜）: 判断が Buy しか出さず、当日の発注枠を使い切るまで買い増した。プロンプトが
+    // 保有を 1 つも渡しておらず、LLM は毎サイクルを「何も持っていない状態での新規買いの是非」として判断していた。
+    // 計画 ADR-0003 は判断入力を「確定済み日報＋保有ポジション＋収集情報＋過去判断のRAG」と定めている。
+    // ------------------------------------------------------------------------------------------------
+
+    private const string HeldHeading = TradeDecisionPromptBuilder.HeldPositionSectionTitle;
+
+    // 実測に近い形: AAPL ロング 3,378 株・平均取得単価 229.5・記録上の損切りライン 222.6。
+    private static readonly HeldPosition LongAapl = new(3_378, 229.5m, 222.6m);
+
+    private static SizingContext ContextWith(StopLossExecutionMethod? method) => Context with { StopLossMethod = method };
+
+    private static DecisionTrigger ScheduledAapl() => DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+    [Fact]
+    public void 保有ありの本判断プロンプトは数量と取得単価と含み損益と損切りラインと保護の状態を載せる()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, ContextWith(StopLossExecutionMethod.NoProtectiveStop),
+            currentPrice: 217.5m, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("- 保有: ロング 3378 株 / 平均取得単価: 229.5");
+        // (217.5 − 229.5) × 3378 = −40,536。率は −12 / 229.5 = −5.23%。数値はコードが計算して渡す（LLM に計算させない）。
+        section.Should().Contain("- 含み損益: -40536（-5.23%・現在値 217.5 で評価）");
+        section.Should().Contain("- 記録上の損切りライン: 222.6（現在値は損切りラインに達しています）");
+        section.Should().Contain("- 保護の状態: 無保護です（逆指値なしの建玉を許容する設定＝S2）。損切りは自動では執行されません。");
+        section.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+        section.Should().NotContain(TradeDecisionPromptBuilder.HeldUnknownLine);
+    }
+
+    [Fact]
+    public void 保有中は買い増しと保有継続と手仕舞いのいずれかを判断すると明示し数量はシステムが決める()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("買い増し（Buy）・保有継続（Hold）・手仕舞い（Sell）のいずれかを判断します。");
+        section.Should().Contain(TradeDecisionPromptBuilder.CloseQuantityIsWholeRule);
+        section.Should().Contain(TradeDecisionPromptBuilder.ExitFollowsPolicyRule);
+        section.Should().Contain(TradeDecisionPromptBuilder.AddOnlyWithinPolicyRule);
+        // ADR-0040 決定5: 数量をシステムが決める規律はそのまま（保有状況を足しても消えない）。
+        prompt.Should().Contain(TradeDecisionPromptBuilder.QuantityIsSystemDecidedRule);
+    }
+
+    // 受け入れ基準: 含み損が損切りラインを割っている状況で、LLM が Sell を返せる（手仕舞いを選択肢として示している）。
+    // 方針に出口の基準が無くても、損切りラインは FR-04 のいう「リスク制約」の一部である（IADR-0351 決定3）。
+    [Fact]
+    public void 損切りラインに達した建玉はリスク制約に基づいて手仕舞いを選べると述べる()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("現在値は損切りラインに達しています");
+        section.Should().Contain(TradeDecisionPromptBuilder.StopLossLineIsRiskConstraintRule);
+        TradeDecisionPromptBuilder.StopLossLineIsRiskConstraintRule.Should().Contain("手仕舞いを選べます");
+    }
+
+    // 🔴 FR-04, FR-10, #854, IADR-0351 決定3 の 4（#860 の監査の指摘）: 損切りライン到達中の建玉へは買い増ししない。
+    // リスク管理の射影は建玉と同方向の約定のたびに記録上の損切りラインを最新エントリーの値へ更新する（IADR-0035）。
+    // 含み損の中で買い増すとラインが下がり、「達しています」が「達していません」へ戻って出口の条件が消える。
+    // 保有ありの保有状況節を**全文で固定**する（文言が 1 つ消えても、順序が変わっても落ちる）。
+    [Fact]
+    public void 保有ありの保有状況節は全文が固定され損切りライン到達中の買い増しを禁じる()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, ContextWith(StopLossExecutionMethod.NoProtectiveStop),
+            currentPrice: 217.5m, held: LongAapl);
+
+        // 節の末尾の空行（次の見出しとの区切り）は比較から外す。
+        Normalize(ExtractSection(prompt, HeldHeading)).TrimEnd().Should().Be(Normalize(GoldenHeldSection));
+        TradeDecisionPromptBuilder.NoAddAtStopLossLineRule.Should().Contain("買い増し・売り増しをしません");
+        // 方針は書き換えない: 規則は保有状況節にだけあり、方針の節には入らない。
+        CountOccurrences(prompt, TradeDecisionPromptBuilder.NoAddAtStopLossLineRule).Should().Be(1);
+        CountOccurrences(prompt, Policy.Summary).Should().Be(1);
+    }
+
+    // 規則は「到達している建玉」を条件に含む文であり、保有ありなら到達の有無にかかわらず出す（出口の規則と同じ）。
+    // 保有なし・不明（買い増しの対象が無い）と、一次スクリーニング（費用統制。規則の詳細は本判断側）には出さない。
+    [Fact]
+    public void 損切りライン到達中の買い増しの禁止は保有ありの本判断にだけ出る()
+    {
+        var reached = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+        var notReached = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 231m, held: LongAapl);
+        var none = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: HeldPosition.None);
+        var unknown = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: null);
+        var screening = TradeDecisionPromptBuilder.BuildScreening(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+
+        reached.Should().Contain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        notReached.Should().Contain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        none.Should().NotContain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        unknown.Should().NotContain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        screening.Should().NotContain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+    }
+
+    // IADR-0351 決定2（#860 の監査・レビューの指摘）: 正でない取得単価は「不明」。0 のまま含み損益率を割ると
+    // DivideByZeroException になる（本番の供給元は正でない価格を null にするが、HeldPosition は公開レコードである）。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void 取得単価が正でなければ例外を出さず取得単価と含み損益を不明と書く(int entryPrice)
+    {
+        var held = new HeldPosition(10, AverageEntryPrice: entryPrice, StopLossPrice: 222.6m);
+
+        var build = () => TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: held);
+        var buildScreening = () => TradeDecisionPromptBuilder.BuildScreening(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: held);
+
+        var section = ExtractSection(build.Should().NotThrow().Subject, HeldHeading);
+        section.Should().Contain("- 保有: ロング 10 株 / 平均取得単価: 不明");
+        section.Should().Contain("- 含み損益: 不明");
+        // 損切りラインの到達判定は取得単価に依らない（現在値とラインだけで決まる）。
+        section.Should().Contain("- 記録上の損切りライン: 222.6（現在値は損切りラインに達しています）");
+
+        ExtractSection(buildScreening.Should().NotThrow().Subject, HeldHeading)
+            .Should().Contain("平均取得単価: 不明 / 含み損益率: 不明");
+    }
+
+    [Fact]
+    public void 損切りラインに達していない建玉は未到達と書く()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: 231m, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("- 記録上の損切りライン: 222.6（現在値は損切りラインに達していません）");
+        section.Should().NotContain("現在値は損切りラインに達しています");
+        // (231 − 229.5) × 3378 = +5,067。率は +0.65%。
+        section.Should().Contain("- 含み損益: +5067（+0.65%・現在値 231 で評価）");
+    }
+
+    // 到達判定の向きは市場監視の StopLossEvaluator と同じ（ロング: 現在値 ≤ ライン／ショート: 現在値 ≥ ライン）。
+    [Theory]
+    [InlineData(222.6, true)]
+    [InlineData(222.61, false)]
+    public void ロングの到達判定は現在値が損切りライン以下で成立する(double price, bool reached)
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: (decimal)price, held: LongAapl);
+
+        ExtractSection(prompt, HeldHeading).Contains("現在値は損切りラインに達しています", StringComparison.Ordinal)
+            .Should().Be(reached);
+    }
+
+    [Fact]
+    public void ショートの保有は向きが反転する()
+    {
+        // ショート 100 株・取得 2,500・損切りライン 2,600。現在値 2,650 は損切りライン以上＝到達。含み損益は −15,000。
+        var trigger = DecisionTrigger.Scheduled("7203", Market.Japan);
+        var held = new HeldPosition(-100, 2_500m, 2_600m);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, currentPrice: 2_650m, held: held);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("- 保有: ショート 100 株 / 平均取得単価: 2500 JPY");
+        section.Should().Contain("- 含み損益: -15000 JPY（-6.00%・現在値 2650 JPY で評価）");
+        section.Should().Contain("- 記録上の損切りライン: 2600 JPY（現在値は損切りラインに達しています）");
+        section.Should().Contain("売り増し（Sell）・保有継続（Hold）・手仕舞い（Buy）のいずれかを判断します。");
+    }
+
+    [Fact]
+    public void 価格変動トリガーではトリガーの現在値で含み損益を評価する()
+    {
+        // 価格変動節が LLM に見せる現在値（trigger.Price）と同じ値で評価する（節の間で値が食い違わない）。
+        var trigger = DecisionTrigger.FromPriceMovement(
+            new PriceMovementDetected(Guid.NewGuid(), "AAPL", Market.UnitedStates, 220m, 229m, -0.039m, DateTimeOffset.UtcNow));
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, currentPrice: 999m, held: LongAapl);
+
+        ExtractSection(prompt, HeldHeading).Should().Contain("現在値 220 で評価");
+    }
+
+    // 🔴 「保有なし」と「不明」はプロンプト上で区別できる（IADR-0351 決定2）。
+    [Fact]
+    public void 保有なしと不明はプロンプト上で区別できる()
+    {
+        var none = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, held: HeldPosition.None);
+        var unknown = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, held: null);
+
+        var noneSection = ExtractSection(none, HeldHeading);
+        var unknownSection = ExtractSection(unknown, HeldHeading);
+
+        noneSection.Should().Contain(TradeDecisionPromptBuilder.HeldNoneLine);
+        noneSection.Should().NotContain("不明");
+
+        unknownSection.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
+        unknownSection.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownRule);
+        // 不明の節は「保有: なし」を名乗らない（「保有なし」とは扱いません、という否定の言及だけを持つ）。
+        unknownSection.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+        unknownSection.Should().NotContain("保有: なし");
+
+        noneSection.Should().NotBe(unknownSection);
+        TradeDecisionPromptBuilder.HeldUnknownRule.Should().Contain("Hold を選びます");
+    }
+
+    // 🔴 引数を渡さない呼び出しは「不明」であり「保有なし」ではない（不在が保有なしを意味する形にしない）。
+    [Fact]
+    public void 保有状況を渡さない既定は不明であり保有なしとは書かない()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
+        section.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+    }
+
+    // 受け入れ基準: 保有なしのとき従来のプロンプトと意味が変わらない。保有状況節（見出し＋1 行＋空行）を除けば
+    // **#854 以前のプロンプトと一字一句一致する**（下の Legacy は修正前の Build の出力そのもの）。
+    [Fact]
+    public void 保有なしのプロンプトは保有状況節を除けば従来のプロンプトと一致する()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: HeldPosition.None);
+
+        var noneSection = $"{HeldHeading}{Environment.NewLine}- {TradeDecisionPromptBuilder.HeldNoneLine}{Environment.NewLine}{Environment.NewLine}";
+        prompt.Should().Contain(noneSection);
+
+        Normalize(prompt.Replace(noneSection, string.Empty, StringComparison.Ordinal)).Should().Be(Normalize(LegacyScheduledPrompt));
+    }
+
+    [Fact]
+    public void 保有状況が変わっても保有状況節以外は一字も変わらない()
+    {
+        static string WithoutHeld(string prompt)
+        {
+            var section = ExtractSection(prompt, HeldHeading);
+            return prompt.Replace(section, string.Empty, StringComparison.Ordinal);
+        }
+
+        var none = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: HeldPosition.None);
+        var unknown = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: null);
+        var held = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+
+        WithoutHeld(unknown).Should().Be(WithoutHeld(none));
+        WithoutHeld(held).Should().Be(WithoutHeld(none));
+    }
+
+    // 🔴 方針（PolicySummary）は利用者のものである。保有状況を足しても書き換えない・上書きしない・複製しない。
+    [Fact]
+    public void 方針は保有状況にかかわらず一字も変わらず1回だけ出る()
+    {
+        var policy = new DailyPolicy(new DateOnly(2026, 9, 18), "AAPL は押し目で新規買いを検討する。出口の基準は定めない。");
+
+        foreach (var held in new[] { null, HeldPosition.None, LongAapl })
+        {
+            var prompt = TradeDecisionPromptBuilder.Build(ScheduledAapl(), policy, Context, currentPrice: 217.5m, held: held);
+
+            Normalize(ExtractSection(prompt, "# 確定済み日報の方針（2026-09-18）")).TrimEnd()
+                .Should().Be($"# 確定済み日報の方針（2026-09-18）\n{policy.Summary}");
+            CountOccurrences(prompt, policy.Summary).Should().Be(1);
+            // 方針の節は保有状況節より前にあり、保有状況節が方針を言い換えることはない。
+            prompt.IndexOf(policy.Summary, StringComparison.Ordinal)
+                .Should().BeLessThan(prompt.IndexOf(HeldHeading, StringComparison.Ordinal));
+        }
+    }
+
+    // 🔴 値が無いものは「不明」と書く。0 や空で埋めない。
+    [Fact]
+    public void 現在値が無ければ含み損益と到達判定は不明と書く()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: null, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("- 含み損益: 不明（現在値が供給されていないため評価できません）");
+        section.Should().Contain("- 記録上の損切りライン: 222.6（到達したかは不明＝現在値が供給されていません）");
+        section.Should().NotContain("達しています");
+        section.Should().NotContain("達していません");
+    }
+
+    [Fact]
+    public void 取得単価と損切りラインが無ければ不明と書きゼロで埋めない()
+    {
+        var held = new HeldPosition(10, AverageEntryPrice: null, StopLossPrice: null);
+
+        var prompt = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: held);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("- 保有: ロング 10 株 / 平均取得単価: 不明");
+        section.Should().Contain("- 含み損益: 不明");
+        section.Should().Contain("- 記録上の損切りライン: 不明");
+        section.Should().NotContain("達しています");
+        section.Should().NotContain("達していません");
+    }
+
+    // 保護の状態は「損切りの実行機構の設定」であり、個々の建玉の逆指値が今有効かではない（その射影は無い）。
+    // 🔴 設定から「保護あり」を断定しない。断定できるのは S2（無保護）だけ。未供給（null）は不明。
+    [Theory]
+    [InlineData(null, "保護の状態: 不明（損切りの実行機構の設定を取得できませんでした。自動の損切りが効く前提に立ちません）。")]
+    [InlineData(StopLossExecutionMethod.BrokerStopOrder, "ブローカー側逆指値を建玉と同時に発注する設定です（S0）。この建玉の逆指値が現在有効かどうかは供給されていません（不明）。")]
+    [InlineData(StopLossExecutionMethod.SoftwareStop, "ソフトウェア逆指値の設定です（S1）が未実装のため、ブローカー側逆指値（S0）と同じ扱いです。")]
+    [InlineData(StopLossExecutionMethod.NoProtectiveStop, "保護の状態: 無保護です（逆指値なしの建玉を許容する設定＝S2）。")]
+    [InlineData(StopLossExecutionMethod.AlternativeBrokerOrderType, "ブローカー側の代替注文種別で保護する設定です（S3）。この建玉の保護注文が現在有効かどうかは供給されていません（不明）。")]
+    public void 保護の状態は損切りの実行機構の設定から書き未供給は不明と書く(StopLossExecutionMethod? method, string expected)
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, ContextWith(method), currentPrice: 217.5m, held: LongAapl);
+
+        ExtractSection(prompt, HeldHeading).Should().Contain(expected);
+    }
+
+    [Fact]
+    public void 無保護と断定するのはS2だけである()
+    {
+        foreach (var method in new StopLossExecutionMethod?[]
+                 {
+                     null, StopLossExecutionMethod.BrokerStopOrder, StopLossExecutionMethod.SoftwareStop,
+                     StopLossExecutionMethod.AlternativeBrokerOrderType,
+                 })
+        {
+            var prompt = TradeDecisionPromptBuilder.Build(
+                ScheduledAapl(), Policy, ContextWith(method), currentPrice: 217.5m, held: LongAapl);
+
+            ExtractSection(prompt, HeldHeading).Should().NotContain("無保護");
+        }
+    }
+
+    // IADR-0351 決定4: 一次スクリーニングは門である（Hold で本判断が走らない）。保有を知らない一次は、新規の関心が
+    // 無いという理由で損切りライン到達の建玉を落とし得るため、3 状態の短縮版を一次にも載せる。
+    [Fact]
+    public void スクリーニングプロンプトも保有状況の短縮版を載せる()
+    {
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain(
+            "- 保有: ロング 3378 株 / 平均取得単価: 229.5 / 含み損益率: -5.23% / 記録上の損切りライン: 222.6（現在値は損切りラインに達しています）");
+        section.Should().Contain(TradeDecisionPromptBuilder.ScreeningHeldRule);
+        section.Should().Contain("（この建玉の手仕舞いは Sell）");
+        // 短縮版: 保護の状態と出口の規則の詳細は本判断側が担う（費用統制・IADR-0039）。
+        section.Should().NotContain("保護の状態");
+        section.Should().NotContain(TradeDecisionPromptBuilder.ExitFollowsPolicyRule);
+    }
+
+    [Fact]
+    public void スクリーニングプロンプトでも保有なしと不明を区別する()
+    {
+        var none = ExtractSection(
+            TradeDecisionPromptBuilder.BuildScreening(ScheduledAapl(), Policy, Context, held: HeldPosition.None), HeldHeading);
+        var unknown = ExtractSection(
+            TradeDecisionPromptBuilder.BuildScreening(ScheduledAapl(), Policy, Context), HeldHeading);
+
+        none.Should().Contain(TradeDecisionPromptBuilder.HeldNoneLine);
+        none.Should().NotContain("不明");
+        unknown.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
+        unknown.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownRule);
+        unknown.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+    }
+
+    // 保有あり（AAPL ロング 3,378 株・S2・現在値 217.5）の保有状況節の全文（IADR-0351 決定1〜3）。
+    private const string GoldenHeldSection = """
+        # 保有状況（この銘柄）
+        - 保有: ロング 3378 株 / 平均取得単価: 229.5
+        - 含み損益: -40536（-5.23%・現在値 217.5 で評価）
+        - 記録上の損切りライン: 222.6（現在値は損切りラインに達しています）
+        - 保護の状態: 無保護です（逆指値なしの建玉を許容する設定＝S2）。損切りは自動では執行されません。
+        - この銘柄は保有中です。買い増し（Buy）・保有継続（Hold）・手仕舞い（Sell）のいずれかを判断します。手仕舞いは保有の全量をシステムが決済します（一部だけの決済は選べません）。
+        - 出口の基準（利確・損切り・保有期間など）が方針にあれば、それに従います。方針に出口の基準が無ければ、保有継続（Hold）を既定とします。
+        - 記録上の損切りラインはリスク制約の一部です。現在値が損切りラインに達している建玉は、方針に出口の基準が無くても、リスク制約に基づいて手仕舞いを選べます。
+        - 現在値が記録上の損切りラインに達している建玉へは、買い増し・売り増しをしません（損切りラインはリスク制約であり、方針が買い増しを支持していても同じです）。
+        - 買い増し・売り増しは、方針がそれを支持する場合に限ります。保有を踏まえずに同じ根拠で新規建てを繰り返しません。
+        """;
+
+    // #854 以前の Build(Scheduled AAPL, Policy, Context, currentPrice: 217.5) の出力（修正前のコードで採取）。
+    private const string LegacyScheduledPrompt = """
+        あなたは確定済み日報の方針とリスク制約の範囲内でのみ判断する取引アシスタントです。
+        方針の範囲外・不確実な場合は必ず Hold（取引しない）を選びます。
+
+        # 確定済み日報の方針（2026-07-10）
+        米国株の押し目買い方針
+
+        # 定時サイクル（価格変動トリガーなし）
+        - 銘柄: AAPL / 市場: UnitedStates
+        - 現在値: 217.5
+
+        # リスク制約
+        - 運用資金: 100000 USD / 1取引リスク: 1.0 %
+        - 1注文金額上限: 25000.00 USD / 段階残枠: 50000 / 当日発注残枠: 20000
+        - 発注数量はこの判断の後にシステムが上記の統制値から算出します（あなたは数量を決めません）。rationale では株数に言及しないでください。
+        - 方針にある「1株単位」等の表記は売買単位（1株刻みで売買できること）であり、数量の上限ではありません。
+
+        # 空売りの制約
+        空売りが有効な構成かどうかに関わらず、次の制約は常に適用されます。
+        - 「株価が下がると予想する」ことと「空売りする」ことは別の判断です。空売りには借株コストがかかり、株価が反発すれば踏み上げ（急な買い戻しによる急騰）で損失が青天井になり得ます。下落を予想しているという理由だけでは、空売りを選ぶ理由になりません。
+        - 急落した銘柄への追随空売りは禁止します。急落した直後は反発（踏み上げ）が最も起きやすい局面であり、下落が続くと決め込んだ空売りは最も危険な判断です。
+        - ニュース由来の急落に対する即時の空売りは保留します。ニュースを発端とする急落は続報で反転しやすく、直後の空売りは見送ります。
+        - 空売りの余力（証拠金枠）を作る目的でロング建玉を取得することは禁止します。空売りの上限がロング建玉総額に連動する仕組みを、空売りをしたいからロングを建てるという逆向きの目的で利用すると、方向性リスクを相殺するという本来の目的に反します。
+
+        # 出力形式（JSON のみ）
+        {"action":"Buy|Sell|Hold","rationale":"判断根拠","referencePrice":参照価格,"stopLossDistancePerShare":損切り幅}
+        Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。
+        """;
+
+    private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n');
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
+    }
+
     // 指定した見出し行から、次の `# ` 見出し（または末尾）までを切り出す（節の不変性比較に使う）。
     private static string ExtractSection(string prompt, string heading)
     {

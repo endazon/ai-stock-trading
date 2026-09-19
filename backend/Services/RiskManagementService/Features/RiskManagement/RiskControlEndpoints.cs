@@ -1,5 +1,6 @@
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.EntityFrameworkCore;
+using RiskManagementService.Features.RiskManagement.AdoptPositionDrift;
 using RiskManagementService.Features.RiskManagement.ClearGoodFaithViolations;
 using RiskManagementService.Features.RiskManagement.ClosePosition;
 using RiskManagementService.Features.RiskManagement.DisengageKillSwitch;
@@ -87,6 +88,9 @@ internal static class RiskControlEndpoints
         owner.MapResumeTrading();
 
         owner.MapClosePosition();
+        // FR-10, FR-11, UC-06, ADR-0003, #849, IADR-0350: 台帳とブローカーの乖離の取り込み（利用者のみ・理由必須）。
+        // **サービスへは開かない**——生成AI・自動処理が台帳を書き換えられないようにする。
+        owner.MapAdoptPositionDrift();
         owner.MapClearGoodFaithViolations();
         owner.MapGetRiskStatus();
         owner.MapGetShortSellingStatus();

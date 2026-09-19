@@ -9,7 +9,8 @@ using TradeDecisionService.Features.TradeDecision;
 
 namespace TradeDecisionService.Features.TradeDecision.DecideTrade;
 
-// FR-02, FR-04, ADR-0003: 確定済み日報の方針・判断トリガー・サイジング文脈から LLM プロンプトを構築する。
+// FR-02, FR-04, ADR-0003: 確定済み日報の方針・判断トリガー・保有状況（#854, IADR-0351）・サイジング文脈から
+// LLM プロンプトを構築する。
 // AI は「確定済み日報の方針とリスク制約の範囲内でのみ」判断する（ADR-0003）。出力は JSON 構造化を要求する。
 // トリガーは定時（Scheduled）と価格変動（PriceMovement）を合流した DecisionTrigger（IADR-0023）。
 public static class TradeDecisionPromptBuilder
@@ -37,17 +38,63 @@ public static class TradeDecisionPromptBuilder
     public const string TradingUnitIsNotCapRule =
         "方針にある「1株単位」等の表記は売買単位（1株刻みで売買できること）であり、数量の上限ではありません。";
 
+    // FR-04, FR-10, ADR-0003, #854, IADR-0351: 保有状況節の文言。計画 ADR-0003 は判断入力を「確定済み日報＋保有ポジション＋
+    // 収集情報＋過去判断のRAG」と定めるが、従来のプロンプトは保有を 1 つも渡しておらず、LLM は毎サイクルを「何も持って
+    // いない状態での新規買いの是非」として判断していた（実測: 2 夜連続で Buy しか出ず、当日枠を使い切るまで買い増した）。
+    // 🔴 **「保有なし」と「不明」は別の文言である**（IADR-0351 決定2）。不明を保有なしと書くと同じ事故が再発する。
+    // テストがこれらの const を直接参照する（IADR-0297 決定1 と同じ規律）。
+    public const string HeldPositionSectionTitle = "# 保有状況（この銘柄）";
+
+    public const string HeldNoneLine = "保有: なし（この銘柄の建玉はありません）";
+
+    public const string HeldUnknownLine = "保有: 不明（保有状況を取得できませんでした。「保有なし」とは扱いません）";
+
+    public const string HeldUnknownRule =
+        "保有状況が不明なときは、新規建て・買い増し・手仕舞いのいずれも判断できないため Hold を選びます。";
+
+    // IADR-0351 決定3: 方針（PolicySummary）は書き換えない。出口の基準は ① 方針にあればそれに従う ② 無ければ保有継続が既定
+    // ③ ただし記録上の損切りライン（FR-10 のリスク制約。建てた時点で判断が決めた権威データ＝IADR-0035）に達した建玉は
+    // 手仕舞いを選べる。FR-04 は判断の枠を「方針」と「リスク制約」の 2 つで定めており、③ は方針の範囲外の行動ではない。
+    public const string ExitFollowsPolicyRule =
+        "出口の基準（利確・損切り・保有期間など）が方針にあれば、それに従います。方針に出口の基準が無ければ、保有継続（Hold）を既定とします。";
+
+    public const string StopLossLineIsRiskConstraintRule =
+        "記録上の損切りラインはリスク制約の一部です。現在値が損切りラインに達している建玉は、方針に出口の基準が無くても、リスク制約に基づいて手仕舞いを選べます。";
+
+    // FR-04, FR-10, #854, IADR-0351 決定3 の 4（#860 の監査の指摘）: 損切りライン到達中の建玉へは買い増ししない。
+    // 🔴 これが無いと上の出口が消える —— リスク管理の射影（PortfolioProjection）は建玉と同方向の約定のたびに記録上の
+    // 損切りラインを**最新エントリーの値へ更新する**（IADR-0035）。含み損の中で買い増すとラインが下がり、「達しています」が
+    // 「達していません」へ戻って既定が Hold へ戻る。方針が「押し目買い」なら含み損が買い増しの根拠として読まれ得る。
+    // 出口の規則と同じくリスク制約（FR-10 の銘柄別損切りライン）由来であり、方針（PolicySummary）は書き換えない。
+    // プロンプト上の歯止めであってコードの統制ではない（IADR-0351 残る制約）。
+    public const string NoAddAtStopLossLineRule =
+        "現在値が記録上の損切りラインに達している建玉へは、買い増し・売り増しをしません（損切りラインはリスク制約であり、方針が買い増しを支持していても同じです）。";
+
+    public const string AddOnlyWithinPolicyRule =
+        "買い増し・売り増しは、方針がそれを支持する場合に限ります。保有を踏まえずに同じ根拠で新規建てを繰り返しません。";
+
+    public const string CloseQuantityIsWholeRule = "手仕舞いは保有の全量をシステムが決済します（一部だけの決済は選べません）。";
+
+    // IADR-0351 決定4: 一次スクリーニングは門である（Hold を返すと本判断が走らない）。保有を知らない一次は、新規の関心が
+    // 無いという理由で損切りライン到達の建玉を落とし得る＝出口の判断が本判断へ届かない。費用統制のため短縮版に留める。
+    public const string ScreeningHeldRule =
+        "保有中の銘柄は、買い増し・売り増しに加えて、手仕舞いの検討に値する場合も本判断へ進めます。現在値が記録上の損切りラインに達している建玉は手仕舞いの候補です。";
+
     // retrieved は #18（IADR-0069）の RAG 取得結果（IADR-0072）。null/空は現行動作（参考情報節なし）。
     // FR-17, IADR-0076 決定5: includeProfitability=false（既定）なら採算節・expectedProfitPerShare を出さない＝
     // 採算ゲート無効時（既定）はプロンプト文言も現行動作と完全に一致させる（LLM の判断傾向も変えない）。有効時のみ注入する。
     // FR-02, IADR-0099 決定2: currentPrice（権威ある現在値）は定時（Scheduled）トリガーの価格文脈を補う。非 null のとき
     // だけ定時節に「現在値」行を追記する（既定 null＝現行動作＝価格行なし）。価格変動（PriceMovement）節は既に trigger.Price
     // を出しているため currentPrice の有無で変えない（現在値供給の有無で PriceMovement 経路のプロンプト文言を変えない）。
+    // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定2: held は判断対象の銘柄の保有状況。🔴 **null（既定）＝不明**であり、
+    // 保有なしは HeldPosition.None を明示して渡す（不在が「保有なし」を意味する形にしない）。保有状況節は無条件で出す。
+    // 保護の状態は context.StopLossMethod（損切りの実行機構の設定。null＝不明）から書く。
     public static string Build(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         IReadOnlyList<RetrievedContext>? retrieved = null,
         bool includeProfitability = false,
-        decimal? currentPrice = null)
+        decimal? currentPrice = null,
+        HeldPosition? held = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -85,6 +132,12 @@ public static class TradeDecisionPromptBuilder
             }
         }
         sb.AppendLine();
+        // FR-04, FR-10, ADR-0003, #854, IADR-0351: 保有状況（保有あり／保有なし／不明の 3 状態を必ず書き分ける）。
+        // 含み損益の評価価格は、この節より上で LLM に見せた現在値と同じ値にする（別の値で評価すると節の間で食い違う）。
+        var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
+            ? triggerPrice
+            : currentPrice;
+        AppendHeldPositionSection(sb, held, markPrice, priceUnit, context.StopLossMethod);
         sb.AppendLine("# リスク制約");
         sb.AppendLine($"- 運用資金: {context.Capital.ToString(ci)} {baseUnit} / 1取引リスク: {context.Limits.PerTradeRiskRatio.ToString("P1", ci)}");
         // FR-10, #329, IADR-0130: 上限は equity 比で保持されるため、equity から解決した実額を提示する。
@@ -137,10 +190,19 @@ public static class TradeDecisionPromptBuilder
     // 既定 150,000 文字）。したがって**既定の呼び出しは市況・参考情報つきの側**であり、従来のプロンプトを
     // 観測できるのは同構成へ "0" / "off" を明示した場合に限られる。
     // 参考情報の構造分離（1 件 1 行 JSON フェンス）は本判断と同じ防御を再利用する（ADR-0003 追補）。
+    //
+    // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定4: held（保有状況。**null＝不明**／保有なしは HeldPosition.None）。
+    // 保有状況節は currentPrice / references の有無にかかわらず**無条件で出る**——上の「従来のプロンプトと一致」は
+    // 保有状況節を除いた部分についての記述である。一次は門（Hold で本判断が走らない）なので、保有を知らせないと
+    // 損切りライン到達の建玉を「新規の関心なし」で落とし、出口の判断が本判断へ届かない。
+    // ［#860 の監査の指摘］上の「縮退制御が有効なときだけ currentPrice を渡す」は #854 で変わった: **呼び出し側は縮退制御の
+    // 有無にかかわらず currentPrice を渡す**（references は従来どおり縮退制御が有効なときだけ）。渡さないと定時トリガーの
+    // 一次は損切りライン到達を判定できない。縮退制御なしの構成でも、現在値が供給されていれば「- 現在値」行が出る。
     public static string BuildScreening(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         decimal? currentPrice = null,
-        IReadOnlyList<RetrievedContext>? references = null)
+        IReadOnlyList<RetrievedContext>? references = null,
+        HeldPosition? held = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -156,15 +218,21 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine(policy.Summary);
         sb.AppendLine();
         sb.AppendLine($"# 対象: {trigger.Symbol} / 市場: {trigger.Market}");
+        var currency = MarketCurrency.Of(trigger.Market);
+        var priceUnit = currency == MarketCurrency.Base ? string.Empty : $" {CurrencyFormat.CodeOf(currency)}";
         if (currentPrice is { } cp)
         {
             // #337: 当日の市況・価格データは縮退の**保護対象**（削ると銘柄を評価できない）。
-            var currency = MarketCurrency.Of(trigger.Market);
-            var priceUnit = currency == MarketCurrency.Base ? string.Empty : $" {CurrencyFormat.CodeOf(currency)}";
             sb.AppendLine($"- 現在値: {cp.ToString(ci)}{priceUnit}");
         }
 
         sb.AppendLine();
+        // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定4: 保有状況の短縮版。縮退の**保護対象**（削ると、保有中の銘柄の
+        // 出口を一次が落とす）。評価価格は本判断と同じ規則で選ぶ（価格変動トリガーの価格があればそれ、無ければ現在値）。
+        var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
+            ? triggerPrice
+            : currentPrice;
+        AppendHeldPositionSectionShort(sb, held, markPrice, priceUnit);
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
         // 二段判断（IADR-0039）の費用統制のため、誘因の詳細説明（本判断側）は省き結論だけを渡す。
         // 無条件で出す（Build と同じく空売り可否のフラグをこのメソッドへ持ち込まない）。
@@ -176,6 +244,139 @@ public static class TradeDecisionPromptBuilder
         // （「必ず数値を入れる」と要求しても LLM 出力は揺れ、数値欠損の Buy を見送りにすると関心ありの銘柄が本判断に届かない）。
         sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい（価格・損切り幅は本判断で決める）。""");
         return sb.ToString();
+    }
+
+    // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定2/決定3: 保有状況節（本判断）。
+    // 数値はすべてコードが計算して渡す（LLM に損益・到達判定を計算させない。FR-16 と同じ規律）。
+    // 🔴 値が無いものは「不明」と書く。0 や空で埋めない（取得単価 0 は含み損益を、損切りライン 0 は「未到達」を捏造する）。
+    private static void AppendHeldPositionSection(
+        StringBuilder sb, HeldPosition? held, decimal? markPrice, string priceUnit, StopLossExecutionMethod? stopLossMethod)
+    {
+        sb.AppendLine(HeldPositionSectionTitle);
+        if (held is null)
+        {
+            sb.AppendLine($"- {HeldUnknownLine}");
+            sb.AppendLine($"- {HeldUnknownRule}");
+            sb.AppendLine();
+            return;
+        }
+
+        if (!held.IsHeld)
+        {
+            sb.AppendLine($"- {HeldNoneLine}");
+            sb.AppendLine();
+            return;
+        }
+
+        var view = HeldPositionView.Of(held, markPrice, priceUnit);
+        sb.AppendLine($"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice}");
+        sb.AppendLine($"- 含み損益: {view.UnrealizedPnl}");
+        sb.AppendLine($"- 記録上の損切りライン: {view.StopLossLine}");
+        sb.AppendLine($"- 保護の状態: {DescribeProtection(stopLossMethod)}");
+        sb.AppendLine(
+            $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
+        sb.AppendLine($"- {ExitFollowsPolicyRule}");
+        sb.AppendLine($"- {StopLossLineIsRiskConstraintRule}");
+        sb.AppendLine($"- {NoAddAtStopLossLineRule}");
+        sb.AppendLine($"- {AddOnlyWithinPolicyRule}");
+        sb.AppendLine();
+    }
+
+    // FR-04, #854, IADR-0351 決定4: 保有状況節の短縮版（一次スクリーニング）。保護の状態と規則の詳細は本判断側が担う。
+    private static void AppendHeldPositionSectionShort(
+        StringBuilder sb, HeldPosition? held, decimal? markPrice, string priceUnit)
+    {
+        sb.AppendLine(HeldPositionSectionTitle);
+        if (held is null)
+        {
+            sb.AppendLine($"- {HeldUnknownLine}");
+            sb.AppendLine($"- {HeldUnknownRule}");
+        }
+        else if (!held.IsHeld)
+        {
+            sb.AppendLine($"- {HeldNoneLine}");
+        }
+        else
+        {
+            var view = HeldPositionView.Of(held, markPrice, priceUnit);
+            sb.AppendLine(
+                $"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice} / 含み損益率: {view.UnrealizedPnlRatio} / 記録上の損切りライン: {view.StopLossLine}");
+            sb.AppendLine($"- {ScreeningHeldRule}（この建玉の手仕舞いは {view.CloseAction}）");
+        }
+
+        sb.AppendLine();
+    }
+
+    // #854, IADR-0351 決定1: 保護の状態。供給できるのは**損切りの実行機構の設定**（S0〜S3）だけであり、個々の建玉の
+    // 逆指値が現在有効かを持つ射影は無い。🔴 **設定から「保護あり」を断定しない**——S0 でも保護を失った建玉は残り得る
+    // （#847）。断定できるのは S2（保護レグを発注しない＝無保護）だけである。未供給（null）・未知の値は不明。
+    private static string DescribeProtection(StopLossExecutionMethod? method) => method switch
+    {
+        StopLossExecutionMethod.BrokerStopOrder =>
+            "ブローカー側逆指値を建玉と同時に発注する設定です（S0）。この建玉の逆指値が現在有効かどうかは供給されていません（不明）。",
+        StopLossExecutionMethod.SoftwareStop =>
+            "ソフトウェア逆指値の設定です（S1）が未実装のため、ブローカー側逆指値（S0）と同じ扱いです。この建玉の逆指値が現在有効かどうかは供給されていません（不明）。",
+        StopLossExecutionMethod.NoProtectiveStop =>
+            "無保護です（逆指値なしの建玉を許容する設定＝S2）。損切りは自動では執行されません。",
+        StopLossExecutionMethod.AlternativeBrokerOrderType =>
+            "ブローカー側の代替注文種別で保護する設定です（S3）。この建玉の保護注文が現在有効かどうかは供給されていません（不明）。",
+        _ => "不明（損切りの実行機構の設定を取得できませんでした。自動の損切りが効く前提に立ちません）。",
+    };
+
+    // 保有状況の表示用の値（本判断・一次で共用）。計算はここ 1 か所に寄せる。
+    private sealed record HeldPositionView(
+        string Direction, string Quantity, string EntryPrice, string UnrealizedPnl, string UnrealizedPnlRatio,
+        string StopLossLine, string AddWord, string AddAction, string CloseAction)
+    {
+        private const string Unknown = "不明";
+
+        public static HeldPositionView Of(HeldPosition held, decimal? markPrice, string priceUnit)
+        {
+            var ci = CultureInfo.InvariantCulture;
+            var quantity = Math.Abs(held.SignedQuantity);
+            // IADR-0351 決定2（#860 の監査・レビューの指摘）: 正でない取得単価は「不明」として扱う。本番の供給元
+            // （HttpHeldPositionProvider）は正でない価格を null にするが、HeldPosition は公開レコードであり、0 が直接渡ると
+            // 下の含み損益率の除算が DivideByZeroException になる（取得単価 0 の含み損益は捏造でもある）。
+            var knownEntryPrice = held.AverageEntryPrice is > 0m ? held.AverageEntryPrice : null;
+            var entry = knownEntryPrice is { } e ? $"{e.ToString("0.####", ci)}{priceUnit}" : Unknown;
+
+            // 含み損益＝(評価価格 − 平均取得単価) × 符号付き数量。ショートは符号が反転する。
+            var pnl = Unknown;
+            var ratio = Unknown;
+            if (knownEntryPrice is { } entryPrice && markPrice is { } mark)
+            {
+                var amount = (mark - entryPrice) * held.SignedQuantity;
+                var rate = amount / (entryPrice * quantity) * 100m;
+                ratio = $"{rate.ToString("+0.00;-0.00;0.00", ci)}%";
+                pnl = $"{amount.ToString("+0.##;-0.##;0", ci)}{priceUnit}（{ratio}・現在値 {mark.ToString(ci)}{priceUnit} で評価）";
+            }
+            else if (markPrice is null)
+            {
+                pnl = $"{Unknown}（現在値が供給されていないため評価できません）";
+            }
+
+            // 到達判定は市場監視の StopLossEvaluator と同じ向き（ロング: 現在値 ≤ ライン／ショート: 現在値 ≥ ライン）。
+            string stop;
+            if (held.StopLossPrice is not { } line)
+            {
+                stop = Unknown;
+            }
+            else if (markPrice is not { } price)
+            {
+                stop = $"{line.ToString("0.####", ci)}{priceUnit}（到達したかは不明＝現在値が供給されていません）";
+            }
+            else
+            {
+                var reached = held.IsLong ? price <= line : price >= line;
+                stop = reached
+                    ? $"{line.ToString("0.####", ci)}{priceUnit}（現在値は損切りラインに達しています）"
+                    : $"{line.ToString("0.####", ci)}{priceUnit}（現在値は損切りラインに達していません）";
+            }
+
+            return held.IsLong
+                ? new HeldPositionView("ロング", quantity.ToString(ci), entry, pnl, ratio, stop, "買い増し", "Buy", "Sell")
+                : new HeldPositionView("ショート", quantity.ToString(ci), entry, pnl, ratio, stop, "売り増し", "Sell", "Buy");
+        }
     }
 
     // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件（全文・誘因の説明つき）。

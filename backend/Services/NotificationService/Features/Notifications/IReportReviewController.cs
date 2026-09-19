@@ -19,8 +19,13 @@ public interface IReportReviewController
     Task<ReportReviewResult> GetReviewAsync(string periodKey, CancellationToken cancellationToken = default);
 
     // 確定（版番号付き冪等）。報告書サービスが版番号を検証し、遷移時のみ ReportConfirmed を発行する。
+    //
+    // FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: **onBehalfOf は多層認証が解決した操作者**（Keycloak 利用者名＝
+    // `AuthorizationResult.Actor`）。Bot のトークンは owner マップ機密クライアントのもので**人を表さない**ため、
+    // 確定者を本文で運ぶ（kill switch / pause / GFV が理由欄で運ぶのと同じ作法）。**省略できない引数にしてある**
+    // ——渡し忘れると通知と監査台帳の確定者がクライアント主体へ落ちる。
     Task<ReportConfirmResult> ConfirmAsync(
-        string periodKey, int expectedVersion, CancellationToken cancellationToken = default);
+        string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default);
 
     // 差し戻し（修正指示）。PendingApproval → ChangesRequested。版番号付き楽観排他。
     Task<ReportReviewResult> RequestChangesAsync(

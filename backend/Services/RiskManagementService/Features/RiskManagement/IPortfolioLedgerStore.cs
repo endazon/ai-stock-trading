@@ -44,8 +44,25 @@ public interface IPortfolioLedgerStore
         DateTimeOffset executedAt,
         BrokerProvider? provider = null);
 
-    /// <summary>相関済みの約定列（射影入力）。</summary>
+    /// <summary>
+    /// 相関済みの約定列（射影入力）。
+    /// <para>
+    /// #849, IADR-0350 決定 2: 利用者が承認した<b>乖離の取り込み行</b>（<see cref="LedgerFill.IsDriftAdoption"/>）も
+    /// 本列へ合流する。台帳の読み口を 1 点に保つことで、射影を読むすべての統制（段階資金・保有建玉数・含み損益・
+    /// 手仕舞い・損切り検知・乖離検知自身）が同じ建玉を見る。
+    /// </para>
+    /// </summary>
     IReadOnlyList<LedgerFill> GetFills();
+
+    /// <summary>
+    /// FR-10, FR-11, UC-06, #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込みを追記する（追記専用）。
+    /// <para>
+    /// <b>同じ冪等キー（<see cref="LedgerDriftAdoption.IdempotencyKey"/>）が既にあれば何も書かずに false を返す。</b>
+    /// 呼び出せるのは取り込みサービス（OwnerOnly の API）だけであり、観測の購読経路からは呼ばない
+    /// ——観測を台帳の権威にしない（IADR-0118）。
+    /// </para>
+    /// </summary>
+    bool AppendDriftAdoption(LedgerDriftAdoption adoption);
 
     /// <summary>
     /// FR-20, #386, IADR-0149 決定2: 承認済み注文の<b>建玉効果</b>を <c>DecisionId</c> で引く。

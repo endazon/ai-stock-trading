@@ -24,7 +24,10 @@ public sealed class BrokerPositionsObservedHandler(
     // ことを意味しないため、黙って落ちる経路を作らない。
     BuyInInferenceService buyInInference,
     // FR-21, #463, IADR-0181: 観測の到達（最終観測時刻）の記録。**必須依存**（上と同じ理由）。
-    IPositionObservationArrivalStore observationArrivals)
+    IPositionObservationArrivalStore observationArrivals,
+    // FR-10, FR-11, #849, IADR-0350 決定 1: 最新の観測の保持。**必須依存**（上と同じ理由）——配線を忘れると
+    // 取り込み API が恒久的に「観測が無い」で拒否し、乖離を埋める手段が静かに失われる。
+    IBrokerPositionObservationStore latestObservation)
 {
     public async Task Handle(BrokerPositionsObserved message, IMessageBus bus)
     {
@@ -45,6 +48,11 @@ public sealed class BrokerPositionsObservedHandler(
         // 観測が途中で止まった期間が「正当な 0」として報告されてしまった。
         // 取引日は観測**時刻**から導出する（処理時刻ではない——遅延・再送で別の日に付け替わらない）。
         observationArrivals.Record(TradingDay.Of(message.ObservedAt), message.ObservedAt);
+
+        // FR-10, FR-11, #849, IADR-0350 決定 1: **最新の観測を保持する**（利用者が乖離を台帳へ取り込むときの目標と鮮度の根）。
+        // 🔴 **ここでは台帳を書かない。** 観測は記録するだけであり、台帳を動かせるのは利用者の承認（OwnerOnly の API）
+        // だけである——観測を権威にしない（IADR-0118）という原則は変えていない。
+        latestObservation.Record(message.Positions, message.ObservedAt);
 
         // FR-10, FR-11, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159: 同じ観測から強制買戻しを事後推定する。
         // **イベント検知の供給元が無い**ため、建玉の消失を自らの決済指示（約定履歴・処理中の決済承認）と突合して

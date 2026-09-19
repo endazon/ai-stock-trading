@@ -293,6 +293,18 @@ public sealed class PositionReconciliationDriftAuditHandler(IAuditEventStore sto
     }
 }
 
+// FR-10, FR-11, UC-06, ADR-0003, #849, IADR-0350: 利用者が承認した乖離の取り込みを中央監査台帳へ記録する。
+// 取引台帳が**約定以外で動く唯一の操作**であり、この記録が「なぜ台帳の建玉が減ったか」の一次証跡になる
+// （実現損益を記録していないこと・推定を含むかも、ここから 7 年後に読める）。
+public sealed class PositionDriftAdoptedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PositionDriftAdopted message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159:
 // 強制買戻しの**推定**を中央監査台帳へ記録する。**これは検知ではなく推定であり、取り違えがあり得る**。
 // だからこそ根拠（消失した建玉・突合した自らの決済約定・処理中の決済・推定日時）を残し、

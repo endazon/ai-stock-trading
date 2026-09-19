@@ -12,4 +12,9 @@ public sealed record SizingContextView(
     int ConsecutiveLosses,
     decimal DrawdownRatio,
     BrokerProvider Mode,
-    RiskLimitSettings Limits);
+    RiskLimitSettings Limits,
+    // FR-04, FR-10, ADR-0040 決定1, #854, IADR-0351 決定1: 損切りの実行機構の設定（S0〜S3）。取引判断が判断プロンプトの
+    // 「保護の状態」に用いる（保有中の建玉に自動の損切りが効く前提に立ってよいかを LLM へ偽らずに伝えるため）。
+    // 末尾の既定値つき項目として足し、既存の生成箇所を変えない（RiskStatusView と同じ足し方・IADR-0342 決定2）。
+    // 🔴 これは**設定**であり、個々の建玉の逆指値が現在有効かどうかではない（その射影は無い）。
+    StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder);
