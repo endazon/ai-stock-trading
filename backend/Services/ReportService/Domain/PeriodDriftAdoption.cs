@@ -35,16 +35,57 @@ public sealed record PeriodDriftAdoption(
     public int SignedQuantity => Side == TradeSide.Buy ? Quantity : -Quantity;
 
     /// <summary>
-    /// 在庫へ<b>数量だけ</b>適用する（リスク管理の <c>PortfolioProjection.ApplyToLot</c> と<b>同じ規則</b>）。
+    /// FR-06, FR-11, #870, #859, IADR-0360 決定 4（2026-09-19 改定）:
+    /// 取り込みを適用した後の<b>符号付き在庫数量</b>（純関数）。
     /// <para>
-    /// 🔴 <b>決済単価に「その時点の平均取得単価」そのものを渡す。</b> <see cref="SignedInventory.Apply"/> の実現損益は
-    /// (決済単価 − 取得単価) × 数量 なので、これで<b>丸め誤差なしに 0</b> になる。取得単価は不変のため、
-    /// 部分的な取り込みの後も残りの建玉の評価は変わらない。
+    /// 🔴 <b>取り込みは在庫を「減らす」ことしかできない。建てない・反転しない。</b>
+    /// <list type="bullet">
+    /// <item>在庫 0 ／ 同方向 ⇒ <b>何も起きない</b>（現在の数量をそのまま返す）。</item>
+    /// <item>反対方向 ⇒ 減らす。<b>在庫を超える分は 0 でクランプする</b>（余りを新しい建玉にしない）。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 🔴 <b><see cref="SignedInventory.Apply"/> をそのまま使ってはならない。</b> 同関数は在庫 0 を<b>新規建て</b>として扱い、
+    /// 反転では余りを<b>新しい建玉</b>にする。報告書側の在庫は<b>その期間の約定だけ</b>から畳まれるため
+    /// （期間の切り出しは <c>PeriodFillQuery</c>）、<b>期間より前に建てた建玉は報告書の在庫に存在しない</b> ——
+    /// それを手動で売った取り込みを素の <c>Apply</c> へ通すと<b>平均取得単価 0 の幻のショート</b>が開く。
+    /// 幻のショートは現在値を引かれて<b>評価損益として日報 §1 に出る</b>うえ、後続のシステムの売り約定を
+    /// 「決済」ではなく「新規ショート」に変えて<b>実現損益・決済件数・勝率まで汚す</b>
+    ///（#859 が止めようとした「実在しない建玉の評価損益」を符号違いで再導入する）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>クランプは「取り込みを無かったことにする」のではない。</b> 報告書が知らない在庫は報告書が評価もしていない
+    /// ——減らす対象がそもそも無いだけである。<b>取り込みの事実は日報 §2-b が別掲する</b>（それが §2-b の目的である）。
+    /// </para>
+    /// </summary>
+    public static int ReducedQuantity(int currentQuantity, int signedQuantity)
+    {
+        // 在庫が無い／同方向＝減らす対象が無い。**建てない。**
+        if (currentQuantity == 0 || Math.Sign(currentQuantity) == Math.Sign(signedQuantity))
+            return currentQuantity;
+
+        var remaining = currentQuantity + signedQuantity;
+
+        // 符号が変わる（＝在庫を超えて減らした）なら 0 でクランプする。**反転させない。**
+        return Math.Sign(remaining) == Math.Sign(currentQuantity) ? remaining : 0;
+    }
+
+    /// <summary>
+    /// 在庫へ<b>数量だけ</b>適用する。
+    /// <para>
+    /// 規則は <see cref="ReducedQuantity"/> ——<b>減らす方向にしか効かず、建てない・反転しない。</b>
+    /// <b>平均取得単価は動かさない</b>（リスク管理の <c>PortfolioProjection.ApplyToLot</c> が
+    /// 「その時点の平均取得単価で畳む」＝実現損益 0 を丸め誤差なしに保証するのと同じ結果になる。
+    /// 🔴 <b>ただし在庫 0・在庫超過の扱いは同じではない</b> —— 理由は <see cref="ReducedQuantity"/> を参照）。
+    /// 在庫が 0 になったときだけ取得単価も落とす（<see cref="SignedInventory"/> の全決済と同じ形）。
     /// </para>
     /// <para>🔴 <b>戻り値は在庫だけである。</b> 実現損益・決済件数・費用を呼び出し側へ返さない（算入させない）。</para>
     /// </summary>
-    public InventoryLot ApplyTo(InventoryLot lot) =>
-        SignedInventory.Apply(lot, SignedQuantity, lot.AverageCost).Lot;
+    public InventoryLot ApplyTo(InventoryLot lot)
+    {
+        var quantity = ReducedQuantity(lot.Quantity, SignedQuantity);
+        return quantity == 0 ? default : lot with { Quantity = quantity };
+    }
 }
 
 // FR-06, FR-16, #870, #859, IADR-0360 決定 4: 約定と取り込みを**時系列に 1 本へ並べる**純関数。

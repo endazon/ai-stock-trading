@@ -109,19 +109,14 @@ public static class FxTranslationBuilder
 
     // #870, #859, IADR-0360 決定 4: 取り込みを在庫へ適用する。**明細を作らない**（決済時のレートが知り得ないため）。
     // 取得単価・認識時レートは不変（SignedInventory の「同方向のまま一部決済」と同じ規則）。
-    // 取り込みは減らす方向に限られる（リスク管理のサービス層が保証する）。万一の建て増し・在庫 0 への適用は
-    // **在庫をそのまま返して無視し**、反転は**全決済として在庫を空にする**（余りを新しい建玉にしない）
-    // ——知り得ない価格・レートの建玉を作らないためである。
+    //
+    // 🔴 数量の規則は **PeriodDriftAdoption.ReducedQuantity が単一情報源**である
+    //（在庫 0・同方向は効かせない／在庫を超える減少は 0 でクランプし、反転させない）。
+    // ここで別の判定を書くと、為替差損益だけが他の畳み込みと違う在庫を持つ。
     private static Lot Reduce(Lot current, int signedQuantity)
     {
-        if (current.Quantity == 0 || Math.Sign(current.Quantity) == Math.Sign(signedQuantity))
-            return current;
-
-        var remaining = current.Quantity + signedQuantity;
-        if (remaining == 0 || Math.Sign(remaining) != Math.Sign(current.Quantity))
-            return default;
-
-        return current with { Quantity = remaining };
+        var remaining = PeriodDriftAdoption.ReducedQuantity(current.Quantity, signedQuantity);
+        return remaining == 0 ? default : current with { Quantity = remaining };
     }
 
     // 符号付き在庫へ 1 約定を適用し、決済分の明細を積む。SignedInventory と同じ分岐（新規建て／建て増し／減少・反転）で、

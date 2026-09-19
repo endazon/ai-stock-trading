@@ -72,11 +72,12 @@ plan_refs:
 | # | 畳み込み | 取り込みを反映するか | 理由 |
 | --- | --- | --- | --- |
 | 1 | `PnlAggregator.Aggregate` | **する（数量だけ）** | 🔴 **評価損益（参考）が実在しない建玉から出る**のを止める。実現損益・費用・決済件数・勝率には入れない |
+| — | 🔴 **［2026-09-19 追記 / #870 の監査 BLK-1］5 箇所すべてで、規則は `PeriodDriftAdoption.ReducedQuantity`（減らす方向にしか効かない・在庫を超える分は 0 でクランプ）である。** 当初はリスク管理と同じ `SignedInventory.Apply` を呼んでいたが、**報告書側の在庫は期間の約定だけから畳まれる**ため期間前の建玉が存在せず、**平均取得単価 0 の幻のショート**が開いていた（日報 §1 に評価損益 −30,000）。詳細と実測は IADR-0360 決定 4 の改定ブロック。 | | |
 | 2 | `FillPnlAttributionBuilder.Build` | **する（数量だけ・帰属行は作らない）** | 週報 §2/§3・月報 §2 の内訳。**畳み込み順序と規則を `PnlAggregator` と一致させる**のが不変条件（IADR-0301） |
 | 3 | `TradeHistoryViewBuilder.Build` | **する（数量だけ・§2 の明細行にはしない）** | 日報 §2 の実現損益は §1 と同じ畳み込みでなければならない。§2-b の供給元も本ビルダが持つ |
 | 4 | `FxTranslationBuilder.Build` | **する（数量だけ・明細は作らない）** | 実在しない建玉の**期末レートでの再測定**を止める。決済時の認識時レートは**知り得ない**ため明細にしない（推定で埋めない） |
 | 5 | `ReportDraftService.ResolveCurrentPricesAsync` | **する（数量だけ）** | 実在しない建玉の現在値を市場データ源へ取りに行かない |
-| 6 | `ThreeWayComparisonAggregator.Aggregate` | 🔴 **しない** | 段は**発注先**（`Provider`）で分ける。取り込み行は発注先が**不明**であり、どちらの段にも算入しない（IADR-0271 の既存規律）。本集計は評価損益を出さないため、幻の建玉による誤りも生じない。**否定形テストで固定する** |
+| 6 | `ThreeWayComparisonAggregator.Aggregate` | 🔴 **しない** | 段は**発注先**（`Provider`）で分ける。取り込み行は発注先が**不明**であり、どちらの段にも算入しない（IADR-0271 の既存規律）。**担保は型**（引数を持たない）であり、`ThreeWayComparison` に評価損益の欄が無いことと `currentPrices` を渡さないことに依存している点は IADR-0360 決定 4 に明文化した。**否定形テストで固定する** |
 | 7 | `PeriodCostReviewBuilder` | しない（変更なし） | 入力は 2 の帰属行のみ。取り込み行は帰属行にならないため、費用の概算へ構造的に入らない |
 | 8 | `SummarizePnl/Endpoint.cs`・`DraftReport/Endpoint.cs` | しない（変更なし） | 呼び出し側が約定列を直接与える手動 API。台帳の取り込み行を知る経路が無い |
 
@@ -111,6 +112,8 @@ plan_refs:
 - [x] C: `RiskStatusView.DriftAdoptionCountToday` ＋ SC-03 画面
 - [x] B: `PeriodDriftAdoption` ＋ 供給ポート ＋ §2-b レンダリング
 - [x] D: 5 箇所の畳み込みへ数量だけ反映（＋三者比較・費用は算入しない否定形テスト）
+- [x] 🔴 ［2026-09-19 追記 / 監査 BLK-1］畳み込みを**減らす方向へクランプ**（`PeriodDriftAdoption.ReducedQuantity`）。
+      期間前建玉・在庫超過の 4 経路を `DriftAdoptionPhantomPositionTests` で固定
 - [x] `docs/tests/FR-10_risk-controls-tests.md` へ T-10-540〜 を登録
 
 ## 受け入れ基準 → テストの写像
@@ -122,7 +125,7 @@ plan_refs:
 | 取り込みが無い期間には §2-b が「該当なし」で出る（欄ごと落ちない） | `TradeHistoryRendererDriftAdoptionTests`（空列・`null` の 2 通り） |
 | SC-03 に当期の取り込み件数が出る | `RiskStatusServiceTests`（T-10-542）／`ControlStatusPage.driftAdoption.test.tsx` |
 | 🔴 実現損益・決済件数・勝率・費用の概算・三者比較のいずれにも算入されない | `DriftAdoptionFoldingTests`（否定形 5 件: 実現損益／決済件数／勝率／費用／三者比較） |
-| 取り込み後の期間の報告書が、実在しない建玉の評価損益を出さない | `DriftAdoptionFoldingTests`（評価損益が 0 になる・期末レートで再測定されない） |
+| 取り込み後の期間の報告書が、実在しない建玉の評価損益を出さない | `DriftAdoptionFoldingTests`（評価損益が 0 になる・期末レートで再測定されない）／🔴 `DriftAdoptionPhantomPositionTests`（**期間前建玉・在庫超過で幻のショートを作らない**。日報の生成経路も含む） |
 | FR-16「推定で埋めない」 | §2-b の実現損益列は常に `不明`（定数）。推定値を渡す経路そのものを作らない |
 
 ## 残余リスク

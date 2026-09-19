@@ -40,8 +40,10 @@ public sealed record LedgerFill(
     // システム外の売買は約定価格が分からないため、この行は**数量だけ**を運ぶ。射影は Price を使わず、
     // **その時点の平均取得単価で在庫だけを減らす**（実現損益 0 を構造的に保証する。PortfolioProjection.ApplyToLot）。
     // Price は取り込み時点の台帳の平均取得単価（参考）であり、**約定価格ではない**。
-    // 約定列として外へ返す経路（GET /risk-controls/fills）は取り込み行そのものを除外するが、**本列は wire へ載せる**
-    // ——由来は「後から記録上で区別できる」ことが目的であり、隠すと監査で読めない（IADR-0360 決定 1）。
+    // 本列は wire へ載せるが、🔴 **GET /risk-controls/fills に出る値は常に System である**
+    // ——同経路は PeriodFillQuery が取り込み行そのものを除外するため、ManualAdoption の行は 1 件も通らない。
+    // **監査で由来を読む手段は GET /risk-controls/drift-adoptions（DriftAdoptionView.Origin）が担う。**
+    // ここで wire へ出す意味は「由来が 1 級の列である」という軸の表明に留まる（IADR-0360 決定 1・2026-09-19 の監査）。
     TradeOrigin Origin = TradeOrigin.System)
 {
     /// <summary>基準通貨（USD）建ての約定単価。金額集計・実現損益・エクイティはこの単価で積む。**永続化しない計算値**である。</summary>
