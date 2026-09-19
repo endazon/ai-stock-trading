@@ -661,7 +661,22 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             return null;
         }
 
-        return (decimal)funds.TotalAssets;
+        var totalAssets = (decimal)funds.TotalAssets;
+
+        // 🔴 #869, IADR-0354 決定7: **0 以下は「判定できる値」として扱わない。**
+        // 0 を分母にすると比率上限がすべて 0 になり、**損益ゼロ・枠未使用の平常状態でも**
+        // `DailyLossLimitReached`（`0 <= -(0 × 2%)` が成立する）が立つ —— これは起きていない事実であり、
+        // しかも発注審査がその理由で**翌営業日まで続く日次損失ロックアウトを実際に張る**。
+        // 分母が定義できない以上「未供給」が正しい表現である（拒否の向きは変わらず、理由だけが正しくなる）。
+        if (totalAssets <= 0m)
+        {
+            _logger.LogWarning(
+                "口座照会の資産純値が 0 以下です totalAssets={TotalAssets}。基準資金は未供給として扱います。",
+                totalAssets);
+            return null;
+        }
+
+        return totalAssets;
     }
 
     private TrdCommon.TrdHeader BuildHeader(int trdMarket) =>

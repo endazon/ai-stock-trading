@@ -173,6 +173,25 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         state.EquityInBase.Should().Be(expected is { } e ? e : null);
     }
 
+    // T-10-515, FR-10, #869, IADR-0354 決定7: **資産純値が 0 以下なら供給しない**（未供給へ倒す）。
+    // 🔴 0 を分母にすると比率上限がすべて 0 になり、平常状態でも `DailyLossLimitReached` が立ち、
+    // 発注審査が**翌営業日まで続くロックアウト**を張る。口座種別は（応答があるので）残る。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task 資産純値が0以下なら基準資金を供給しない(int equity)
+    {
+        using var opend = new FakeOpenD { EquityInBase = equity };
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state.Should().NotBeNull();
+        state!.AccountType.Should().Be(AccountType.Margin);
+        state.EquityInBase.Should().BeNull();
+    }
+
     // #754 陰性対照, FR-05, IADR-0211: OpenD が受け付けないなら**注文は 1 度も送られない**。
     [Fact]
     public async Task 陰性対照_OpenDが応答しないと発注は1度もブローカーへ届かない()

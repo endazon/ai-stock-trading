@@ -152,6 +152,59 @@ public class CapitalBaselineTests
         (store.GetCurrent() is not null).Should().Be(supplied);
     }
 
+    // T-10-515, FR-10, #869, IADR-0354 決定7: **0 以下の行は「判定できる値」として扱わない。**
+    // 🔴 0 を分母にすると比率上限がすべて 0 になり、**損益ゼロ・枠未使用の平常状態でも**
+    // `DailyLossLimitReached`（`0 <= -(0 × 2%)`）が立つ。しかも発注審査はその理由で
+    // **翌営業日まで続く日次損失ロックアウトを実際に張る** —— 嘘の理由から本物の状態が生まれる。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void 評価額が0以下の行は未供給として扱う(int equity)
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfCapitalBaselineStore(
+            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+
+        store.Record(equity, Now.AddDays(-1));
+
+        store.GetCurrent().Should().BeNull("分母が定義できない値を「判定できる値」として通さない");
+    }
+
+    // T-10-515（否定形・本体）: 🔴 **平常状態で `DailyLossLimitReached` を立てない。**
+    // 供給が 0 以下なら基準資金は `null` になり、拒否理由は `CapitalBaselineUnavailable` だけになる。
+    [Fact]
+    public void 評価額が0のとき日次損失上限に達したと記録しない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfCapitalBaselineStore(
+            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        store.Record(0m, Now.AddDays(-1));
+
+        // 損益ゼロ・枠未使用の平常状態で審査する。
+        var snapshot = Snapshot(store.GetCurrent()?.EquityInBase);
+        var result = RiskEvaluator.Evaluate(Entry(100m), Settings(), snapshot);
+
+        result.Reasons.Should().Contain(RejectionReason.CapitalBaselineUnavailable);
+        result.Reasons.Should().NotContain(RejectionReason.DailyLossLimitReached,
+            "当日の損失は 0 である。起きていない到達を記録すると、発注審査が本物のロックアウトを張る");
+        result.Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
+        result.Reasons.Should().NotContain(RejectionReason.PerOrderAmountExceeded);
+        result.Reasons.Should().NotContain(RejectionReason.DailyOrderAmountExceeded);
+    }
+
+    // T-10-515（対の肯定形）: 🔴 **0 を素通しすると 4 件の嘘が立つ**ことを固定する。
+    // 本テストが緑であること自体が、上の門が無ければ何が起きるかの証跡である。
+    [Fact]
+    public void 参照_基準資金に0が入ると平常状態でも4件の拒否理由が立つ()
+    {
+        var result = RiskEvaluator.Evaluate(Entry(100m), Settings(), Snapshot(0m));
+
+        result.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
+        result.Reasons.Should().Contain(RejectionReason.StageCapitalCapExceeded);
+        result.Reasons.Should().Contain(RejectionReason.PerOrderAmountExceeded);
+        result.Reasons.Should().Contain(RejectionReason.DailyOrderAmountExceeded);
+    }
+
     // T-10-512: **当日の観測は基準資金を動かさない。** 計画 §5 注記は「日中の評価損益で上限を動かすと、
     // 含み益で上限が緩み含み損で締まるという逆方向の作用が起きる」として明示的に禁じている。
     [Fact]
