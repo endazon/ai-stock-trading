@@ -260,7 +260,8 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
     [InlineData(0, 100, BrokerHeldPositionOutcome.NoPosition, 0)]      // 建玉ゼロ
     [InlineData(99, 100, BrokerHeldPositionOutcome.Reduce, 99)]        // 1 株足りない（境界）
     [InlineData(100, 100, BrokerHeldPositionOutcome.Proceed, 100)]     // ちょうど（境界）
-    [InlineData(101, 100, BrokerHeldPositionOutcome.Proceed, 100)]     // 1 株多い（境界）
+    // 🔴 1 株多い（境界）: **注文数量で切らず、実際の建玉数 101 が入る**（#873 の監査〔3 巡目〕1）。
+    [InlineData(101, 100, BrokerHeldPositionOutcome.Proceed, 101)]
     [InlineData(-100, 100, BrokerHeldPositionOutcome.NoPosition, 0)]   // 反対方向
     public void 売りの決済は決済方向の建玉だけを数える(
         int netQuantity, int orderQuantity, BrokerHeldPositionOutcome expected, int closable)
@@ -269,7 +270,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
             CloseIntent(qty: orderQuantity), [Position(netQuantity)]);
 
         verdict.Outcome.Should().Be(expected);
-        verdict.ClosableQuantity.Should().Be(closable);
+        verdict.ClosableQuantity.Should().Be(closable, "決済方向の実際の建玉数（注文数量で切らない）");
         verdict.BrokerNetQuantity.Should().Be(netQuantity);
     }
 
@@ -379,5 +380,11 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         var buy = BrokerHeldPositionGate.Evaluate(CloseIntent(qty: 100, side: TradeSide.Buy), snapshot);
         buy.Outcome.Should().Be(BrokerHeldPositionOutcome.Proceed);
         buy.ClosableQuantity.Should().Be(100, "買いの決済が消せるのはショートの 100 株である");
+
+        // 🔴 #873 の監査（3 巡目）1: **注文数量より建玉が多くても、入るのは実際の建玉数である。**
+        // 現在の読み手は Proceed の本項目を見ないが、分岐で意味が変わる値は次の追随で必ず踏む。
+        var partial = BrokerHeldPositionGate.Evaluate(CloseIntent(qty: 100), snapshot);
+        partial.Outcome.Should().Be(BrokerHeldPositionOutcome.Proceed);
+        partial.ClosableQuantity.Should().Be(300, "注文が 100 株でもロングの実建玉は 300 株である");
     }
 }

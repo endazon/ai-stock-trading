@@ -289,7 +289,9 @@ public sealed class OrderExecutionAppService(
         }
 
         // #864, IADR-0355 決定5: 数量を縮めた決済はここへ帰る（Open の 2 分岐は drift を持ち得ない）。
-        return OrderDispatchResult.FromExecuted(executed, drift: drift);
+        // 監査（3 巡目）3: 乖離を添えるときは**実際に送った株数**も渡す（通知・ログで取り違えさせない）。
+        return OrderDispatchResult.FromExecuted(
+            executed, drift: drift, driftDispatchedQuantity: drift is null ? 0 : intent.Quantity);
     }
 
     // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4・決定7: 解決とログ。拒否は Error（実弾で S0 以外が

@@ -52,9 +52,14 @@ public static class BrokerHeldPositionGate
         if (closable == 0)
             return new BrokerHeldPositionVerdict(BrokerHeldPositionOutcome.NoPosition, net, 0);
 
+        // 🔴 #873 の監査（3 巡目）1: **`Proceed` でも「実際に決済できる株数」を入れる**（`intent.Quantity` で
+        // 上限を切らない）。読み手は現在 `NoPosition` / `Reduce` しか見ないので害は出ていないが、
+        // **分岐によって同じ項目の意味が変わる**のは N1（判定にネットを使った）→ NB1（分類にネットを使った）と
+        // **同じ系統の罠**である。送る数量は `Math.Min(closable, intent.Quantity)` を呼び出し側が決める
+        //（`Reduce` のときだけ縮める）のであって、この値が上限を兼ねてはならない。
         return closable < intent.Quantity
             ? new BrokerHeldPositionVerdict(BrokerHeldPositionOutcome.Reduce, net, closable)
-            : new BrokerHeldPositionVerdict(BrokerHeldPositionOutcome.Proceed, net, intent.Quantity);
+            : new BrokerHeldPositionVerdict(BrokerHeldPositionOutcome.Proceed, net, closable);
     }
 
     /// <summary>
@@ -110,8 +115,10 @@ public enum BrokerHeldPositionOutcome
 /// <para>
 /// <paramref name="BrokerNetQuantity"/> は符号付きのネット建玉で、**報告（乖離イベント）専用**である
 /// （不明のときは 0 だが、<see cref="BrokerHeldPositionOutcome.Indeterminate"/> のときは**意味を持たない**）。
-/// <paramref name="ClosableQuantity"/> は**決済方向だけを数えた**送ってよい数量であり、**判定はこちらで行う**
+/// <paramref name="ClosableQuantity"/> は**決済方向だけを数えた実際の建玉数**であり、**判定はこちらで行う**
 /// （両建てでネットを使うと正当な決済を止める。#873 の監査 N1）。
+/// **注文数量で切っていない**（`Proceed` でも実際の建玉数が入る。#873 の監査〔3 巡目〕1）——
+/// 送る数量は呼び出し側が `Reduce` のときだけ縮めて決める。
 /// </para>
 /// </summary>
 public readonly record struct BrokerHeldPositionVerdict(

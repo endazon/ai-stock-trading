@@ -41,12 +41,17 @@ public sealed class OrderApprovedHandler(
         // ——見送り／発注の結果より、その理由である乖離が時系列で前に並ぶ方が辿りやすい。
         if (result.Drift is { } drift)
         {
+            // 🔴 監査（3 巡目）3: **イベントが運ぶ 2 つの数量はどちらも「送った株数」ではない**
+            // （台帳の決済数量とブローカーの**ネット**であり、両建てでは 3 つ目の数になる）。
+            // 通知を読む人が「結局この決済は出たのか・何株出たのか」を取り違えないよう、
+            // **実際に送った株数をログに併記する**（0 なら 1 株も送っていない＝見送り）。
             logger.LogError(
-                "決済の発注前にブローカーの建玉との乖離を検知しました（{Count} 件）: {Drifts}",
+                "決済の発注前にブローカーの建玉との乖離を検知しました（{Count} 件・この決済で実際に送った株数={Dispatched}）: {Drifts}",
                 drift.Drifts.Count,
+                result.DriftDispatchedQuantity,
                 string.Join(
                     "、",
-                    drift.Drifts.Select(d => $"{d.Symbol}/{d.Market} 台帳 {d.LedgerQuantity} / ブローカー {d.BrokerQuantity}")));
+                    drift.Drifts.Select(d => $"{d.Symbol}/{d.Market} 台帳 {d.LedgerQuantity} / ブローカーのネット {d.BrokerQuantity}")));
             await bus.PublishAsync(drift).ConfigureAwait(false);
         }
 
