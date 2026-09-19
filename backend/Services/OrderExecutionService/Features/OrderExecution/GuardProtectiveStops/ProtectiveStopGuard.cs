@@ -132,6 +132,13 @@ public sealed class ProtectiveStopGuard(
         // 評価の**後**に行う——この巡回で出した決済のレグが記録済みになっているため、
         // 「送信済みで未反映の決済」を数え落とさない（早まった警告を出さない）。
         // 検知だけであり、建玉を売らず・記録も作らず・主張も動かさない。
+        //
+        // 🔴 **#820 の 11 巡目監査, IADR-0344 追記(10): ここへ来るのは Active な行が 1 件以上ある巡回だけである。**
+        // 上の早期 return（巡回対象ゼロなら建玉を照会しない）は無駄な OpenD 往復を避けるための既存の規律であり、
+        // 壊さない。そのため「受理後に 0 約定で取り消された決済の残り」——決済を送った行はその時点で完了し
+        // 巡回の対象に残らない——が**その口座で唯一の S1 の痕跡**なら、検知は一度も走らない（監査の PROBE1）。
+        // 気づける経路はその銘柄への**次の武装の見送り**である。塞ぐには建玉観測の常駐
+        //（Hosted/BrokerPositionSnapshotService。既定 600 秒・無条件に照会する）へ相乗りする——**追随は #880**。
         ProtectiveStopNetting.DetectUnattributedPositions(
             snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events);
 

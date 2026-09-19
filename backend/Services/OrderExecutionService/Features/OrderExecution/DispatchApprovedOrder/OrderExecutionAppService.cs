@@ -321,6 +321,20 @@ public sealed class OrderExecutionAppService(
             return true;
         }
 
+        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定2: **主張を数える前にエントリーの約定を確定する。**
+        // 終端になったエントリーの約定数量は、ガードが巡回するまで帳簿（RemainingProtected）へ書かれない。
+        // 確定を待たずに数えると、直前に約定したばかりの自分の建玉が「帰属不明」に見え、同一銘柄・同方向への
+        // 2 本目が見送られる（追記(8) の残る制約）。確定は建玉照会を要さない突き合わせである。
+        //
+        // 🔴 **#820 の 11 巡目監査, IADR-0344 追記(10) 決定1: 確定は建玉照会より「前」でなければならない**（BLK-11-1）。
+        // 建玉照会は OpenD への RPC であり、その待ちのあいだに OrderFillPollingService が先行エントリーの記録を
+        // 終端化し得る。照会を先に済ませてから確定すると、**claimed（主張）だけが新しく net（純額）は古い**——
+        // 帰属不明が**過少**に読まれ、他人の建玉が在るのに武装してしまう（監査の PROBE4 が実測）。
+        // 確定を先に置けば、取り違えは必ず「claimed が古く net が新しい」＝帰属不明を**過大**に読む側になり、
+        // **安全側（見送り）へ倒れる**。ProtectiveStopGuard.RunOnceAsync も同じ順序である（確定 → 照会）。
+        var stops = ProtectiveStopNetting.ConfirmEntryFills(
+            protectiveStops!.FindActive(ArmingScanLimit), protectiveStops, store, clock.UtcNow);
+
         var snapshot = await _positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
         {
@@ -332,14 +346,6 @@ public sealed class OrderExecutionAppService(
         }
 
         var net = ProtectiveStopNetting.DirectionalNet(intent.Symbol, intent.Market, intent.Side, snapshot);
-
-        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定2: **主張を数える前にエントリーの約定を確定する。**
-        // 終端になったエントリーの約定数量は、ガードが巡回するまで帳簿（RemainingProtected）へ書かれない。
-        // 確定を待たずに数えると、直前に約定したばかりの自分の建玉が「帰属不明」に見え、同一銘柄・同方向への
-        // 2 本目が見送られる（追記(8) の残る制約）。確定は建玉照会を要さない突き合わせであり、
-        // ガードが巡回の先頭で行っているのと同じ操作である。
-        var stops = ProtectiveStopNetting.ConfirmEntryFills(
-            protectiveStops!.FindActive(ArmingScanLimit), protectiveStops, store, clock.UtcNow);
 
         // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定1: **帳簿の主張ではなく「その巡回で実際に動かせる株数」で引く。**
         // 帳簿の主張（ProtectedQuantity）で引くと、未確定の観測を抱えた幽霊行——実際には 1 株も動かせない行——が

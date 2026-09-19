@@ -483,6 +483,14 @@ public static class ProtectiveStopNetting
     /// <b>株数が変わったとき</b>か <see cref="UnattributedRenotifyInterval"/> が経ったときだけ出す。
     /// 帰属不明が消えたら両方を <c>null</c> へ戻す（再発したら改めて知らせる）。
     /// </para>
+    /// <para>
+    /// 🔴 <b>#820 の 11 巡目監査, IADR-0344 追記(10) の残る制約（NB-1・NB-2。追随は #880）</b>:
+    /// (1) 外側のループは<b>建玉スナップショットの側</b>を回すため、<b>その銘柄が純額 0 になった巡回では
+    /// リセット分岐に到達しない</b>——一度解消したあと<b>再発した同数</b>の帰属不明は
+    /// <see cref="UnattributedRenotifyInterval"/> のあいだ黙る。
+    /// (2) 呼び出し元のガードは<b>Active な行が 1 件も無い巡回では建玉を照会しない</b>ため、
+    /// 「受理後に 0 約定で取り消された決済の残り」がその口座で唯一の S1 の痕跡なら検知が走らない。
+    /// </para>
     /// </summary>
     public static void DetectUnattributedPositions(
         IReadOnlyList<BrokerPositionSnapshot> snapshot,

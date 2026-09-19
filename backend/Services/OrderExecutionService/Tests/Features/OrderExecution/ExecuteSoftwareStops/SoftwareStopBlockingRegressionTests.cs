@@ -71,8 +71,16 @@ public class SoftwareStopBlockingRegressionTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
-            Task.FromResult(Positions);
+        // #820 の 11 巡目監査（BLK-11-1）: 建玉照会は OpenD への RPC であり、その**待ちのあいだ**に
+        // OrderFillPollingService が発注記録を終端化し得る。その競合を決定的に再現するための差し込み口。
+        public Func<Task>? DuringGetPositions { get; set; }
+
+        public async Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
+        {
+            if (DuringGetPositions is { } hook)
+                await hook().ConfigureAwait(false);
+            return Positions;
+        }
     }
 
     private sealed record Fixture(
@@ -1071,6 +1079,52 @@ public class SoftwareStopBlockingRegressionTests
         f.Stops.Find(s0.EntryDecisionId)!.ProtectionSuspendedSince.Should().BeNull(
             "S0 の行では計時もしない");
         f.Broker.Cancelled.Should().BeEmpty("未確定のあいだは生きた逆指値を取り消さない（従来どおり）");
+    }
+
+    // 🔴 T-10-506（受け入れ基準 56 / #820 の 11 巡目監査 BLK-11-1・監査の PROBE4）:
+    // **武装の判定は「同じ時点の」純額と主張を突き合わせなければならない。**
+    // 建玉照会は OpenD への RPC であり、その待ちのあいだに OrderFillPollingService が先行エントリーの記録を
+    // 終端化し得る。10 巡目の是正 2 は確定（ConfirmEntryFills）を**照会の後**に置いたため、
+    // **claimed だけが新しく net は古い**——帰属不明が過少に読まれ、他人の建玉が在るのに武装した。
+    // これは是正 1（実効数量で安全側へ倒す）が塞いだはずの P6(1) と同じ帰結の門である。
+    //
+    // 確定を照会の**前**へ置けば、取り違えは必ず「claimed が古く net が新しい」＝帰属不明を**過大**に読む側になり、
+    // **安全側（見送り）へ倒れる**。ProtectiveStopGuard.RunOnceAsync も同じ順序（確定 → 照会）である。
+    [Fact]
+    public async Task 建玉照会の最中に約定が確定しても武装の判定は安全側へ倒れる()
+    {
+        var f = NewFixture();
+
+        // 先行エントリー: 保護記録はあるが、発注記録はまだ**終端になっていない**（約定が届いていない）。
+        var prior = SoftwareStop(Now.AddMinutes(-1), quantity: 10);
+        f.Stops.Save(prior);
+
+        // ブローカーに在る 10 株は**他人の建玉**である（先行エントリーの約定はまだ純額へ現れていない）。
+        f.Broker.Positions = [Long(10)];
+
+        // 🔴 建玉照会の RPC の**最中**に、約定追跡が先行エントリーの記録を終端化する（競合の再現）。
+        // インメモリの発注記録ストアは同一 DecisionId を上書きしない（FindByDecisionId は最初の 1 件を返す）ため、
+        // 「終端の記録がこの瞬間に現れる」形で置く。
+        f.Broker.DuringGetPositions = () =>
+        {
+            Entry(f, prior, OrderStatus.Filled, filled: 10);
+            return Task.CompletedTask;
+        };
+
+        var approved = Approved();
+        var result = await f.Execution.ExecuteAsync(approved);
+
+        // 🔴 競合そのものが起きたことを先に確かめる（起きていなければ、このテストは何も見ていない）。
+        var priorEntry = f.Store.FindByDecisionId(prior.EntryDecisionId);
+        priorEntry.Should().NotBeNull("建玉照会の最中に発注記録が現れていなければ競合を再現できていない");
+        priorEntry!.Status.Should().Be(OrderStatus.Filled);
+        priorEntry.FilledQuantity.Should().Be(10);
+        result.Forgone.Should().NotBeNull(
+            "照会が返した純額 10 は他人の建玉であり、その時点で先行エントリーはまだ 1 株も主張していない"
+                + "（確定を照会の後に置くと claimed だけが新しくなり、帰属不明が 0 に見えて武装する）");
+        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        f.Broker.Entries.Should().BeEmpty("他人の建玉が在るあいだは新規建てを送らない");
+        f.Stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元を作らない");
     }
 
     private static IReadOnlyList<SoftwareStopExecuted> Unattributed(ProtectiveStopGuardResult result) =>
