@@ -1,6 +1,9 @@
+using System.Reflection;
 using Discord;
 using NotificationService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using Xunit;
 
 namespace NotificationService.Tests;
@@ -32,6 +35,62 @@ public class DiscordMentionPolicyTests
     public void ライブラリの_AllowedMentions_None_は_AllowedTypes_が_null_であり使わない()
     {
         AllowedMentions.None.AllowedTypes.Should().BeNull();
+    }
+
+    // 🔴 **電線に載る形**を固定する（#867 の監査指摘 N4）。上の 2 本はメモリ上の `AllowedMentions` しか
+    // 見ておらず、**Discord.Net が `AllowedMentionTypes.None` の写し方を変えたら誰も気付けない**。
+    // ライブラリ自身の `ToModel` ＋ `DiscordContractResolver` で JSON まで写して固定する。
+    // Webhook 側（素の JSON）は `DiscordWebhookNotificationSenderTests` が同じ形を固定している。
+    [Fact]
+    public void 方針は直列化すると_parse_が空配列になる()
+    {
+        SerializeAsDiscordNetDoes(DiscordMentionPolicy.SuppressAll)
+            .Should().Be("""{"parse":[],"roles":[],"users":[],"replied_user":false}""");
+    }
+
+    [Fact]
+    public void ライブラリの_AllowedMentions_None_は直列化すると_parse_が_null_になる()
+    {
+        // 空配列ではない＝「一切解釈しない」の正規形ではない。決定 2 が明示形を使う根拠。
+        SerializeAsDiscordNetDoes(AllowedMentions.None)
+            .Should().Be("""{"parse":null,"roles":[],"users":[]}""");
+    }
+
+    [Fact]
+    public void 対照_AllowedMentions_All_は_everyone_を通す()
+    {
+        // 対照群。この形が出たらメンションは発火する（= 是正前の既定に相当する挙動）。
+        SerializeAsDiscordNetDoes(AllowedMentions.All)
+            .Should().Be("""{"parse":["everyone","roles","users"],"roles":[],"users":[]}""");
+    }
+
+    // Discord.Net が REST 要求へ載せるときと同じ経路（内部の `EntityExtensions.ToModel` ＋
+    // `DiscordContractResolver`）で JSON へ写す。**実送信はしない。**
+    // ライブラリ側が内部構造を変えたらここが落ちる——それが狙いである（黙って形が変わるより落ちるほうがよい）。
+    private static string SerializeAsDiscordNetDoes(AllowedMentions allowedMentions)
+    {
+        var rest = typeof(Discord.Rest.DiscordRestClient).Assembly;
+
+        var entityExtensions = rest.GetType("Discord.Rest.EntityExtensions");
+        entityExtensions.Should().NotBeNull("Discord.Net.Rest の内部構造が変わった（IADR-0359 決定 2 の実測をやり直すこと）");
+        var toModel = entityExtensions!
+            .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            .FirstOrDefault(m => m.Name == "ToModel"
+                && m.GetParameters() is [{ } p] && p.ParameterType == typeof(AllowedMentions));
+        toModel.Should().NotBeNull("EntityExtensions.ToModel(AllowedMentions) が見つからない");
+
+        var resolverType = rest.GetType("Discord.Net.Converters.DiscordContractResolver");
+        resolverType.Should().NotBeNull("DiscordContractResolver が見つからない");
+
+        var serializer = new JsonSerializer
+        {
+            ContractResolver = (IContractResolver)Activator.CreateInstance(resolverType!)!,
+        };
+
+        using var text = new StringWriter();
+        using var writer = new JsonTextWriter(text);
+        serializer.Serialize(writer, toModel!.Invoke(null, [allowedMentions]));
+        return text.ToString();
     }
 
     [Fact]

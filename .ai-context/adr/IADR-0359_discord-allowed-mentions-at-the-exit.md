@@ -52,25 +52,45 @@ Discord は既定で**本文を解釈して**メンションを発火させる�
 Webhook 用（素の JSON フィールド `{"parse": []}`）の**両方の形**を公開する。方針を変えるときに直す場所を 1 つにする。
 
 **明示の許可リスト（`users` / `roles`）は持たせない。** 持たせると個別 ID のメンションが通る。
-**意図してメンションを必要としている経路は現時点で 1 つも無い**（仕様書の母集合表の 9 行すべてを走査済み）ため、
-全経路で「何もメンションしない」を既定にできる。将来そういう経路ができたら、**その経路だけ**が方針を上書きする。
+**意図してメンションを必要としている経路は現時点で 1 つも無い**ため、全経路で「何もメンションしない」を
+既定にできる。将来そういう経路ができたら、**その経路だけ**が方針を上書きする。
+
+🔴 **この「1 つも無い」の根拠は、API 名を記憶で列挙した走査ではない。** 起案時の初版は記憶で 16 種を
+並べ、`CreatePostAsync` / `CreatePostWithFile(s)Async`（フォーラム投稿）・`UpdateAsync`
+（`SocketMessageComponent` のボタン応答で本文を差し替える定番 API）・`ModifyAsync` / `Respond` を
+**落としていた**（#867 の監査が検出）。母集合は
+**`Discord.Net.Core` / `Rest` / `WebSocket` の公開型から「`AllowedMentions` を引数に取る public メソッド」
+＝ 14 種と「`AllowedMentions` を持つ public プロパティ」＝ `MessageProperties.AllowedMentions` を
+反射で導出して**引き直した（`traceability.repo.md` 規則 9）。**引き直しても本番コードの漏れは 0 件で
+結論は変わらなかった**が、**引き方が記憶依存だった**ことを是正として記録する。手順と出力は仕様書 §母集合。
+
+この導出は `DeferAsync` / `RespondWithModalAsync` / `RespondWithPremiumRequiredAsync` を**自動的に外す**
+——`AllowedMentions` を取らない＝メンションを載せる場所が無いからである（初版は同じ結論を人の判断で
+書いていた。導出に任せるほうが強い）。
 
 ### 決定 2: 🔴 Discord.Net の `AllowedMentions.None` は使わない
 
 **名前に反して `AllowedTypes` が null** であり、REST モデルへ写すと `parse: null` になる。
 `parse` が**空配列**になるのは `new AllowedMentions(AllowedMentionTypes.None)` のほうである。
-実測（`Discord.Rest.EntityExtensions.ToModel` を反射で呼んだ。Discord.Net 3.20.1・**実送信なし**）:
+実測（`Discord.Rest.EntityExtensions.ToModel` を反射で呼び、**Discord.Net 自身の `DiscordContractResolver`
+で JSON まで写した**。Discord.Net 3.20.1・**実送信なし**）:
 
 ```
---- AllowedMentions.None
-    Parse: IsSpecified=True Value=null     ← 空配列ではない
---- new AllowedMentions(AllowedMentionTypes.None)
-    Parse: IsSpecified=True Value=[]       ← 「一切解釈しない」の正規形
+AllowedMentions.None                           -> {"parse":null,"roles":[],"users":[]}   ← 空配列ではない
+new AllowedMentions(AllowedMentionTypes.None)  -> {"parse":[],"roles":[],"users":[]}     ← 正規形
+SuppressAll（出荷形）                          -> {"parse":[],"roles":[],"users":[],"replied_user":false}
+AllowedMentions.All（対照）                    -> {"parse":["everyone","roles","users"],"roles":[],"users":[]}
 ```
 
 方針オブジェクトは**呼ぶたびに新しい実体を返す**（`AllowedMentions` は可変であり、共有した 1 個を
-呼び出し側が書き換えると全経路の方針が静かに崩れる）。この落とし穴はテストで固定した
-（ライブラリ側が将来直っても本リポジトリは明示形を使い続ける）。
+呼び出し側が書き換えると全経路の方針が静かに崩れる）。
+
+**固定は「電線に載る形」で行う**（#867 の監査指摘 N4）。メモリ上の `AllowedMentions`
+（`AllowedTypes == None`）だけを見る表明では、**Discord.Net が `AllowedMentionTypes.None` の写し方を
+変えたときに誰も気付けない**。テストは上と同じ経路（`ToModel` ＋ `DiscordContractResolver`）で
+JSON まで写して文字列で固定する。ライブラリ側の内部構造が変わればそこで落ちる——それが狙いである。
+Webhook 側は素の JSON を組んでいるため、送信要求の本文を直接固定している
+（`"allowed_mentions":{"parse":[]}`）。
 
 ### 決定 3: Bot の**本文つき**応答はラッパー（`DiscordInteractionResponses`）経由に寄せる
 
@@ -103,7 +123,10 @@ Webhook 用（素の JSON フィールド `{"parse": []}`）の**両方の形**�
 
 - 既存の通知・応答の**見た目と内容は変わらない**（本文・`ephemeral`・ボタンはそのまま渡す）。
   変わるのは「Discord がメンションとして発火させるか」だけである。
-- `NotificationService` の 479 件のテストが緑。
+- `NotificationService` の 495 件のテストが緑（`backend.slnx` 全体でも Docker 依存の
+  `AiStockTrading.IntegrationTests` 8 件を除き緑）。
+- **ミューテーション確認**: `SuppressAll` を `AllowedMentions.None` へ差し戻すと
+  `DiscordMentionPolicyTests` 10 本中 7 本が落ちる（直列化テストを含む）。表明は空振りしていない。
 
 ## 残余リスク
 
