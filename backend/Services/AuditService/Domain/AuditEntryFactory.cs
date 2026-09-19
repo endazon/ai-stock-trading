@@ -64,8 +64,18 @@ public static class AuditEntryFactory
     // FR-07: 報告書の確定（報告書 #14）。同一 PeriodKey で同一相関になるよう "report:{PeriodKey}" の決定的 GUID を相関にする。
     public static AuditEntry From(ReportConfirmed e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(ReportConfirmed), AuditCorrelation.From($"report:{e.PeriodKey}"), Symbol: null,
-        Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{e.Actor}・前提 v{e.AssumptionsVersion}）"),
+        Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{ConfirmerOf(e)}・前提 v{e.AssumptionsVersion}）"),
         AuditSerialization.Serialize(e), e.ConfirmedAt, recordedAt);
+
+    // FR-07, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定者の要約。**実際に操作した利用者と、認可の主体である
+    // クライアントの両方を残す**（Discord Bot 経由の確定は owner マップ機密クライアントのトークンで行われる）。
+    // 生の値（Actor / AuthorizedBy）はペイロードにそのまま残る。要約だけ、操作者が分からないことを
+    // 内部の既定値 `unknown` ではなく「確定者不明」と書く。
+    private static string ConfirmerOf(ReportConfirmed e)
+    {
+        var actor = string.IsNullOrWhiteSpace(e.Actor) || e.Actor == "unknown" ? "確定者不明" : e.Actor;
+        return string.IsNullOrWhiteSpace(e.AuthorizedBy) ? actor : $"{actor}・代理 {e.AuthorizedBy}";
+    }
 
     // FR-06/07/09, IADR-0116, #280: 報告書ドラフトの提示（承認待ち）。確定（ReportConfirmed）と同じ "report:{PeriodKey}" 相関で
     // 束ね、監査照会で「いつ提示され、いつ確定したか」を 1 本の相関で辿れるようにする。

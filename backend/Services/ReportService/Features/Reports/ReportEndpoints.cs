@@ -82,7 +82,10 @@ internal static class ReportEndpoints
         return app;
     }
 
-    // NFR, IADR-0289 決定3: 書き込み系の複数操作（present / request-changes / confirm）が使うため 2 段目に残す。
+    // NFR, IADR-0289 決定3: 書き込み系の複数操作（present / request-changes）が使うため 2 段目に残す。
+    // #774, IADR-0240 決定11: **confirm はここを使わない**（確定者は発行・監査されるため
+    // ConfirmReport/ConfirmingActorResolver が代理確定を含めて解決する）。present / request-changes の actor は
+    // 「空でないこと」の検査にしか使われず、永続化も発行もされない。
     internal static string ActorOf(HttpContext http) =>
         http.User.Identity?.Name is { Length: > 0 } name ? name : "unknown";
 

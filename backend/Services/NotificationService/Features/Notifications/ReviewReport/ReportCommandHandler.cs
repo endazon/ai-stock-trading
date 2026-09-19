@@ -134,7 +134,11 @@ public sealed class ReportCommandHandler(
                     $"版 {version} は最新ではありません。最新ドラフトを確認してください。");
         }
 
-        var result = await controller.ConfirmAsync(periodKey, version, cancellationToken).ConfigureAwait(false);
+        // FR-09, UC-03, IADR-0240 決定11, #774: 多層認証で解決した操作者を確定要求へ添える。Bot のトークンは
+        // owner マップ機密クライアントのもので人を表さない——添えないと確定者が通知・監査台帳で unknown になる。
+        var result = await controller
+            .ConfirmAsync(periodKey, version, actor, cancellationToken)
+            .ConfigureAwait(false);
 
         // 🔴 IADR-0240 決定3: 呼び出しが失敗したら予約を解放する。解放しないと同じ版を二度と確定できない
         // （Discord は確定の唯一の窓口であり、詰みは Bot の再起動でしか解けない）。
