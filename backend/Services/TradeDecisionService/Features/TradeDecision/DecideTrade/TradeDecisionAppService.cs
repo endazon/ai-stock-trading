@@ -242,9 +242,28 @@ public sealed class TradeDecisionAppService(
         // 逆指値が約定し得るため、決済の数量（保有全量）は発注直前の事実で決める（古い数量での決済は在庫を超え得る）。
         var heldQuantity = preFetchedHeldQuantity
             ?? await GetSignedHeldQuantitySafeAsync(trigger, cancellationToken).ConfigureAwait(false);
-        var effect = PositionEffectResolver.Resolve(side, heldQuantity);
+        // 🔴 FR-04, FR-10, ADR-0003, #865, IADR-0358: 保有状況の照会先が**実結線**されている（IsEnabled=true）のに
+        // 保有が不明なら、新規建て（Open）を見送る。#860（IADR-0351 決定2）が載せたプロンプトの「不明なら Hold」は
+        // **LLM への依頼であってコードの統制ではない** —— 従わなければ、保有を知らないままの新規買いが従来どおり通る。
+        // 未結線（NoOp＝常に不明）の既定構成は「照会していない」であり、従来どおり新規建てを通す（IADR-0119 決定2）。
+        var effect = PositionEffectResolver.Resolve(
+            side, heldQuantity, requireKnownHoldingForOpen: _heldPosition.IsEnabled);
         if (effect.IsSkipped)
         {
+            // 🔴 見送りの理由を取り違えない。**出口（Close）はここまで来ない** —— 不明のときは決済の分岐に入りようがなく、
+            // 保有が判っていれば Close は上で確定している（FR-10「手仕舞いは止めない」）。
+            if (side == TradeSide.Buy)
+            {
+                // #865, IADR-0358: 実結線の照会が不明を返した（照会失敗・例外）状態での新規建て。
+                // 金額系の統制（1 注文上限・当日残枠・段階残枠）は sizing-context の照会が生きている前提であり、
+                // 保有を知らないままの買い増しを止められない（#854 の実測）。
+                logger.LogWarning(
+                    "保有状況が不明なため新規建てを見送る（照会先は結線済み・手仕舞いは止めない・IADR-0358）: " +
+                    "{Symbol} side={Side}",
+                    trigger.Symbol, side);
+                return null;
+            }
+
             // 保有なし・不明での売り＝裸の新規ショート建て。現物のみ有効な段階では成立せず、取引ガードは方向を
             // 見ないため素通りしてブローカへ飛ぶ。ADR-0003（不確実なら Hold）に従い見送る。
             logger.LogInformation(
