@@ -1717,20 +1717,27 @@ module.exports = ({ ok, assert }) => {
   // 漏らしていた（実測 2 件。AI レビューが検出）。無関係な IADR 番号に言及する notice が
   // 毎 PR で出続けると、**notice が読まれなくなる** —— IADR-0193 決定2 は「宣言すると notice が
   // 出るから黙って素通りにはならない」という前提の上に立っているため、これは統制の土台を崩す。
-  ok('自己試験は CI アノテーションを漏らさない（GITHUB_ACTIONS=true で実行しても notice/warning ゼロ）', () => {
-    const { execFileSync } = require('child_process');
-    const out = execFileSync(process.execPath, [pathFb.join(__dirname, 'check-adr-index-sync.js'), '--self-test'], {
-      cwd: pathFb.resolve(__dirname, '..'),
-      env: { ...process.env, GITHUB_ACTIONS: 'true' },
-      encoding: 'utf8',
-      stdio: 'pipe',
+  //
+  // 🔴 **検査器名でループさせる。** 初版は `check-adr-index-sync.js` をハードコードしており、
+  // **後から足した検査器（`check-adr-index-addendum-loss.js`）を覆っていなかった**
+  // ——「漏らさない仕組み」（`quiet()` / `capture()`）が将来壊れても気付けない。
+  // 逃げ道の告知を `notice` / `warn` で出す検査器を足したら、**このリストへ足すこと。**
+  for (const checker of ['check-adr-index-sync.js', 'check-adr-index-addendum-loss.js']) {
+    ok(`自己試験は CI アノテーションを漏らさない（${checker}。GITHUB_ACTIONS=true で notice/warning ゼロ）`, () => {
+      const { execFileSync } = require('child_process');
+      const out = execFileSync(process.execPath, [pathFb.join(__dirname, checker), '--self-test'], {
+        cwd: pathFb.resolve(__dirname, '..'),
+        env: { ...process.env, GITHUB_ACTIONS: 'true' },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+      const leaked = out.split('\n').filter((l) => l.startsWith('::notice::') || l.startsWith('::warning::'));
+      assert(
+        leaked.length === 0,
+        `${checker} の自己試験が CI アノテーションを ${leaked.length} 件漏らした:\n${leaked.join('\n')}`,
+      );
     });
-    const leaked = out.split('\n').filter((l) => l.startsWith('::notice::') || l.startsWith('::warning::'));
-    assert(
-      leaked.length === 0,
-      `自己試験が CI アノテーションを ${leaked.length} 件漏らした:\n${leaked.join('\n')}`,
-    );
-  });
+  }
 
   // --- 必読規約の総量予算（NFR / #519 / IADR-0204） -------------------------------------------
   //
@@ -2611,8 +2618,9 @@ module.exports = ({ ok, assert }) => {
   // --- check-adr-index-addendum-loss: ADR 索引行の追記ブロックの消失（NFR-01 / #875 / IADR-0363） ---
   //
   // 索引行は 1 行が数千文字あり、衝突解決で行の一部（`［YYYY-MM-DD 追記 …］`）が消えても
-  // `git diff` は「1 行削除・1 行追加」としか出さない。**同型の事故が 2 回起きた**（IADR-0210 /
-  // IADR-0118）。検査器は印の単位で持ち、行の再構成の仕方に依らず「消えたこと」だけを見る。
+  // `git diff` は「1 行削除・1 行追加」としか出さない。**追加条件の「同型 2 回」は着手時点で満ちていた**
+  // （IADR-0210 / IADR-0118）が、**検査器を develop の履歴へ当てたら 3 件目が出た**（IADR-0327。#886）。
+  // 検査器は印の単位で持ち、行の再構成の仕方に依らず「消えたこと」だけを見る。
   //
   // 🔴 **偽陽性を作ると検査そのものが外される**ため、否定形（誤検知しないこと）を正の確認と
   // 同数以上置く（IADR-0143 / IADR-0145 と同じ思想）。
@@ -2670,7 +2678,8 @@ module.exports = ({ ok, assert }) => {
 
     // 🔴 **BLK-1 の回帰**: 初版の `touched = !baseRow || !oursRow || …` は、**統合ブランチ側が
     // 後から足した行**（マージベースに無い）を「我々が触った」と誤認し、**索引行が develop に
-    // 1 本増えるたびに在庫の PR を全部赤にした**（実測 4/10。何も失われていない）。
+    // 1 本増えるたびに在庫の PR を全部赤にした**（2026-09-19・origin/develop=be97cf2b 時点の 10 本で
+    // 実測 4/10。何も失われていない）。
     // 素通りの原因は固定データが **base・ours 双方に行が在る形しか踏んでいなかった**ことなので、
     // 「**base に行が無い**」形をここで踏む。
     ok('check-adr-index-addendum-loss[N4/BLK-1]: 統合ブランチ側が新設した行は要求しない（base にも ours にも無い）', () => {
@@ -2802,6 +2811,30 @@ module.exports = ({ ok, assert }) => {
         }
         assert.strictEqual(code, 1, `是正前のデータで赤にならなかった: ${out}`);
         assert.ok(out.includes(inc.id), `${inc.id} を名指ししていない: ${out}`);
+      });
+    }
+
+    // 🔴 **BLK-1 の偽陽性を「ドリフトしない実データ」で固定する。**
+    //
+    // 開いている PR で測った「4/10 が赤」は**腐る** —— 各 PR が develop を取り込むと
+    // マージベースが先端へ動き、`theirs == base` に潰れて同じ状況が再現しなくなる
+    // （実際、是正の 30 分後には 10 本すべてが潰れて旧コードでも緑になった）。
+    // よって**不変の SHA** で固定する: PR が develop を取り込む直前のブランチ tip を `ours`、
+    // 当時の develop 先端を `theirs` に採ると、マージベースは `c53876d4` のまま動かない。
+    // その時点の develop は IADR-0352 の索引行（印 3 個）を持ち、ブランチは持っていない
+    // ——**旧 touched はこれを「我々が触った」と誤認して赤にした。新 touched は緑。**
+    // `touched` を旧形へ戻すと、この 2 件が赤に戻って気付ける。
+    for (const [pr, ours] of [['#877', 'e6f58d1e'], ['#830', 'e02b4229']]) {
+      ok(`check-adr-index-addendum-loss[BLK-1 実データ]: ${pr} の取り込み直前 tip（${ours}）は緑（statement: 偽陽性を出さない）`, () => {
+        if (!revAl('be97cf2b') || !revAl(ours)) {
+          process.stdout.write(`      (skip) be97cf2b / ${ours} が履歴に無い\n`);
+          return;
+        }
+        const out = execAl(
+          `node ${JSON.stringify(pathAl.join(__dirname, 'check-adr-index-addendum-loss.js'))} --range=be97cf2b...${ours}`,
+          { cwd: REPO_AL, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+        );
+        assert.match(out, /OK:/, `偽陽性が出ている（旧 touched への退行の疑い）: ${out}`);
       });
     }
 
