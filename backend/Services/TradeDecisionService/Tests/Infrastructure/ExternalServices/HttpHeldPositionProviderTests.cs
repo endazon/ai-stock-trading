@@ -80,6 +80,76 @@ public class HttpHeldPositionProviderTests
         held.Should().Be(0);
     }
 
+    // --- FR-04, FR-10, ADR-0003, #854, IADR-0351 決定1: 判断プロンプトへ載せる保有状況（数量・取得単価・損切りライン） ---
+
+    [Fact]
+    public async Task 保有状況は数量と平均取得単価と記録上の損切りラインを返す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, TwoPositions);
+
+        var held = await Provider(handler).GetPositionAsync("AAPL", Market.UnitedStates);
+
+        held.Should().Be(new HeldPosition(4072, 20.5m, 19.0m));
+        handler.LastPath.Should().Be("/risk-controls/open-positions");
+    }
+
+    [Fact]
+    public async Task ショートの保有状況は負の数量で返る()
+    {
+        var held = await Provider(new StubHandler(HttpStatusCode.OK, TwoPositions))
+            .GetPositionAsync("7203", Market.Japan);
+
+        held.Should().Be(new HeldPosition(-100, 2500m, 2600m));
+    }
+
+    // 🔴 中核の区別: 一覧に無い＝保有なし（None）／失敗＝null（不明）。不明を保有なしへ倒さない。
+    [Fact]
+    public async Task 一覧に無い銘柄の保有状況は保有なしであり不明ではない()
+    {
+        var held = await Provider(new StubHandler(HttpStatusCode.OK, TwoPositions))
+            .GetPositionAsync("MSFT", Market.UnitedStates);
+
+        held.Should().Be(HeldPosition.None);
+        held!.IsHeld.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task 非2xx_の保有状況は不明であり保有なしではない(HttpStatusCode status)
+    {
+        var held = await Provider(new StubHandler(status, "[]")).GetPositionAsync("AAPL", Market.UnitedStates);
+
+        held.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 不正な応答の保有状況は不明()
+    {
+        var held = await Provider(new StubHandler(HttpStatusCode.OK, "not-json"))
+            .GetPositionAsync("AAPL", Market.UnitedStates);
+
+        held.Should().BeNull();
+    }
+
+    // 🔴 価格の項目を持たない・正でない応答を 0 と読まない（取得単価 0 は含み損益を、損切りライン 0 は「未到達」を捏造する）。
+    [Fact]
+    public async Task 価格の項目が無い_または正でない応答は価格だけ不明にする()
+    {
+        const string body = """
+            [
+              {"symbol":"AAPL","market":1,"side":0,"quantity":10},
+              {"symbol":"MSFT","market":1,"side":0,"quantity":5,"entryPrice":0,"stopLossPrice":0}
+            ]
+            """;
+
+        var aapl = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetPositionAsync("AAPL", Market.UnitedStates);
+        var msft = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetPositionAsync("MSFT", Market.UnitedStates);
+
+        aapl.Should().Be(new HeldPosition(10, null, null));
+        msft.Should().Be(new HeldPosition(5, null, null));
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.NotFound)]
     [InlineData(HttpStatusCode.Unauthorized)]

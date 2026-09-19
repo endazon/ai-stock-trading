@@ -243,9 +243,13 @@ public sealed class Stage0DecisionRecorder(
     {
         // 定時サイクル相当のトリガー（価格文脈は as-of の参照価格で補う。IADR-0099 決定2 と同じ形）。
         var trigger = DecisionTrigger.Scheduled(symbol, market);
+        // 🔴 #854, IADR-0351 決定7: **保有なしを明示して渡す。** 記録は銘柄 × 判断時点で独立であり、保有は再生側
+        // （BacktestService）のシミュレーションでしか決まらない——記録器は知り得ない。既定（null＝不明）のままでは
+        // プロンプトが「不明なら Hold」と述べ、全件が Hold へ倒れて Stage 0 が成立しない。
+        // 帰結: 記録が検証するのは本番プロンプトの「保有なし」の枝だけである（IADR-0351「残る制約」）。
         var prompt = TradeDecisionPromptBuilder.Build(
             trigger, input.Policy, input.Sizing, input.References, includeProfitability: false,
-            currentPrice: input.ReferencePrice);
+            currentPrice: input.ReferencePrice, held: HeldPosition.None);
         var fingerprint = Fingerprint(prompt);
 
         if (input.DroppedFutureReferenceCount > 0 || input.DroppedUndatedReferenceCount > 0)
