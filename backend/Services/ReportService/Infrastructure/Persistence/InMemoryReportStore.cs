@@ -50,7 +50,11 @@ public sealed class InMemoryReportStore : IReportStore
             var newVersion = existing.Version + 1;
             // FR-06, IADR-0115: 本文（Markdown）は明示的に非空を渡されたときだけ差し替える（EfReportStore と同じ規則）。
             // 手動 upsert（PUT /reports/{periodKey}）は本文を持たないため、空で上書きして生成済みの本文を消さない。
-            var merged = string.IsNullOrEmpty(report.Body) ? report with { Body = existing.Report.Body } : report;
+            // #840, IADR-0352 決定 5: **未供給の記録は本文に従う**。本文を差し替えない改訂では、その本文が
+            // どの入力を欠いて生成されたかの記録も残す（本文だけ残って警告が消える、を作らない）。
+            var merged = string.IsNullOrEmpty(report.Body)
+                ? report with { Body = existing.Report.Body, UnsuppliedInputs = existing.Report.UnsuppliedInputs }
+                : report;
             // 改訂（新ドラフト）はレビュー局面を Drafting へ戻す（対話的確定の Revise・IADR-0071 決定5）。
             _rows[report.PeriodKey] = (merged, newVersion, ReviewState.Drafting);
             return newVersion;

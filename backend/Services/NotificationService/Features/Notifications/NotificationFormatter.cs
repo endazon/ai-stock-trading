@@ -203,12 +203,22 @@ public static class NotificationFormatter
     // FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示（＝確定依頼）。
     // 要約は発行側でサニタイズ済み（IADR-0116 決定3/4）。確定は利用者のみが行う（ADR-0003）ため本文で確定を促し、
     // 版番号を載せる（確定 API は版番号付き冪等・IADR-0024。通知だけで期待版が分かるようにする）。
+    //
+    // 🔴 #840, #866, IADR-0352 決定 5: **入力が未供給のまま出来上がったドラフトの提示は Warning で出す。**
+    // 警告文は要約の本文に入っているが、重大度が Info のままでは定常の提示通知に埋もれ、欠落に気付かないまま
+    // 確定され得る（確定された日報の方針は翌日の取引に効く）。「埋もれない経路で出す」は LlmFallbackFired
+    // （ADR-0017 決定4-(2)）で既に採っている形である。**未供給が無ければ従来どおり Info**——毎回警告にすると
+    // 警告の意味が消える。判定は発行側と共有する印（契約アセンブリの定数）で行い、イベントの形は変えない。
     public static NotificationMessage From(ReportDraftPresented e) => new(
         "報告書ドラフト（承認待ち）",
         $"{e.Summary}\n\n"
             + $"内容を確認のうえ確定してください（{e.PeriodKey}・版 {e.Version}）。"
             + "確定するまで取引方針は変わりません。",
-        NotificationSeverity.Info);
+        HasUnsuppliedInputs(e) ? NotificationSeverity.Warning : NotificationSeverity.Info);
+
+    // #866: 要約に未供給の警告行が含まれているか（発行側 ReportSummary.Build が同じ定数で組み立てる）。
+    private static bool HasUnsuppliedInputs(ReportDraftPresented e) =>
+        e.Summary?.Contains(ReportSummaryMarkers.UnsuppliedWarningPrefix, StringComparison.Ordinal) == true;
 
     // NFR（費用）, FR-09: 費用しきい値到達（間隔延長/停止）。停止（Halted）は Critical、間隔延長（Throttled）は Warning。
     public static NotificationMessage From(CostThresholdReached e) => new(
