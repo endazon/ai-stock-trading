@@ -28,9 +28,9 @@ public class OrderDispatchForgoneLifecycleTests
     // 未定義の値（列挙に無い整数）を投げて既定の向きを直接固定する —— 新しい理由を足した人が
     // ここを通らずに在庫解放を手に入れることはできない。
     [Theory]
-    [InlineData(9999)]
-    [InlineData(4)]
-    [InlineData(-1)]
+    [MemberData(
+        nameof(UndefinedForgoneReasons.未定義の見送り理由),
+        MemberType = typeof(UndefinedForgoneReasons))]
     public void 列挙に無い理由は在庫を解放しない(int futureReason)
     {
         OrderDispatchForgoneLifecycle
@@ -41,13 +41,23 @@ public class OrderDispatchForgoneLifecycleTests
     // 🔴 T-10-410（境界値・列挙の要素数）: 列挙に値が**増えた**ら落ちる。落ちたら
     // 「その理由は確実に未発注か」を実測してから allowlist へ足すか、既定のまま残すかを決める。
     //
-    // 🔴 **#873 と衝突する（後からマージする側が必ずここで赤くなる）。**
+    // 🔴 **#873 と衝突する（後からマージする側が必ずここで赤くなる）。本テストが唯一のトリップワイヤである。**
     // #873 は `OrderDispatchForgoneReason` へ `BrokerPositionAbsent` / `BrokerPositionsIndeterminate` を
-    // 足して **4 → 6** にする。赤くなった側がやることは 2 つで、**両方やること**:
+    // 足して **4 → 6** にする。赤くなった側がやること:
+    //
+    //   【必須（やらないと赤のまま）】
     //   1. 本テストの期待値を **6** にする。
     //   2. 🔴 **2 値とも `OrderDispatchForgoneLifecycle` の allowlist へ `true` で足す。**
     //      どちらも**ブローカーへ送信する前に `return` する**＝確実に未発注である
     //      （#873 側の監査と #852 側の監査がいずれも確認済み）。
+    //
+    //   【赤にはならないが揃えること】
+    //   3. 上の肯定形 Theory（`確実に未発注と判っている理由は在庫を解放してよい`）と
+    //      `PortfolioLedgerConsumersTests.現行の見送り理由はいずれも処理中から外れる` へ 2 値を足す（被覆）。
+    //
+    //   【触らなくてよい】
+    //   - 否定形の番兵（`UndefinedForgoneReasons`）は**列挙から導いている**ので自動で追随する。
+    //     ここに literal の序数を書き戻さないこと（書くと番兵が実在の理由へ化ける）。
     // 🔴 **`BrokerPositionsIndeterminate` の「不明」に引かれて既定 `false` に落とさないこと。**
     // それは***建玉照会*の不明**（建玉がいくつあるか確認できなかった）であって、
     // IADR-0356 が「allowlist に入り得ない」と書いた***発注*の不明**（送ったか分からない）ではない。

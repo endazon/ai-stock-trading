@@ -379,7 +379,8 @@ public class EfPortfolioLedgerInFlightCloseTests
         var store = new EfPortfolioLedgerStore(loser);
 
         // 1) 負ける側が承認を読み込む（このとき TerminalAt は null＝トークンの元値）。
-        loser.ApprovedOrders.Find(id).Should().NotBeNull();
+        var tracked = loser.ApprovedOrders.Find(id);
+        tracked.Should().NotBeNull();
 
         // 2) そのあいだに別コンテキスト（勝つ側）が終端を書き切る。
         using (var winner = NewContextWithTerminalAtAsConcurrencyToken(dbName))
@@ -392,6 +393,13 @@ public class EfPortfolioLedgerInFlightCloseTests
         act.Should().NotThrow<DbUpdateConcurrencyException>(
             "見送りが例外で抜けると再試行 → error キューへ落ち、在庫が解放されないまま残る（#852 の実害の再発）");
         act.Should().NotThrow();
+
+        // 🔴 3b) **catch を通ったことまで固定する。** 「投げなかった」だけでは
+        // 「書きに行って負けて飲み込んだ」と「そもそも書きに行かなかった」を区別できない
+        //（例: `MarkForgone` の頭で `Reload()` していても 3) は緑になる）。
+        // catch は追跡状態を Detached にするので、それが**この文脈で例外処理が走った証拠**になる。
+        loser.Entry(tracked!).State
+            .Should().Be(EntityState.Detached, "並行トークン違反を catch して追跡状態を捨てた証跡");
 
         // 4) 先に書かれた終端が残っている（単調。見送りが上書きも破壊もしていない）。
         using var verify = NewContextWithTerminalAtAsConcurrencyToken(dbName);

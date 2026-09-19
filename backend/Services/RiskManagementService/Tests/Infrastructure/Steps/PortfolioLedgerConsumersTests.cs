@@ -407,9 +407,13 @@ public class PortfolioLedgerConsumersTests
     // 「確実に未発注」と分類されていない見送り（将来足される値を未定義の整数で模す）では
     // 在庫を解放しない —— 「送ったかもしれない見送り」で押さえを解くと、証券会社側で生きている
     // 手仕舞いと合わせて同じ株数に 2 本の決済が並び、**二重決済でショート化**する。
+    //
+    // 🔴 番兵の値は `UndefinedForgoneReasons` が**列挙から導く**（literal で書かない。
+    // 書くと #873 が値を足した瞬間に番兵が実在の理由へ化け、事実と逆のメッセージで赤くなる）。
     [Theory]
-    [InlineData(9999)]
-    [InlineData(4)]
+    [MemberData(
+        nameof(UndefinedForgoneReasons.未定義の見送り理由),
+        MemberType = typeof(UndefinedForgoneReasons))]
     public async Task 確実に未発注と分類されていない見送りでは在庫を解放しない(int futureReason)
     {
         var ledger = new InMemoryPortfolioLedgerStore();
