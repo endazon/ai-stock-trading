@@ -79,8 +79,8 @@ git grep -il discord -- deploy infra scripts .github
 | 3 | 同 `FollowupAsync`（7 箇所） | ハンドラの整形済み `Message`（`ReportResponseTextOf` 等） | **直す**（ラッパー経由） |
 | 4 | 同 `ModifyOriginalResponseAsync`（1 箇所。`MessageProperties` の担い手） | 同上（編集でも本文は解釈し直される） | **直す**（ラッパー経由） |
 | 5 | 同 `SocketAutocompleteInteraction.RespondAsync(IEnumerable<AutocompleteResult>)`（1 箇所） | 入力補完の候補。**`AllowedMentions` を取らないオーバーロード**であり、メッセージでもない | 対象外 |
-| 6 | `OrderExecutionService` の `ModifyAsync`（本番 2・テスト 4） | 注文訂正。**Discord ではない** | 対象外 |
-| 7 | `CostControlService` / `OrderExecutionService` のテストの `Respond`（16 箇所） | テストスタブのプロパティ名。**Discord ではない** | 対象外 |
+| 6 | `OrderExecutionService` の `ModifyAsync`（本番 3 行・テスト 5 行） | 注文訂正。**Discord ではない** | 対象外 |
+| 7 | `CostControlService`（11 行）/ `OrderExecutionService`（10 行）のテストの `Respond` | テストスタブのプロパティ名・メソッド名。**Discord ではない** | 対象外 |
 | 8 | `NullDiscordBotGateway` / `LoggingNotificationSender` | 送信しない（安全既定・ログのみ） | 対象外 |
 | 9 | `UpdateAsync` / `CreatePostAsync` / `CreatePostWithFile(s)Async` / `SendMessageAsync` / `ReplyAsync` / `SendFile(s)Async` / `RespondWithFile(s)Async` / `FollowupWithFile(s)Async` | **一致 0 件**＝DM・スレッド・フォーラム投稿・ボタン応答の `UpdateAsync`・embed・ファイル添付の経路は**存在しない** | 対象外 |
 | 10 | `deploy/` `infra/` `scripts/` `.github/`（手順 3 の 2 本目・12 ファイル） | helm の値・環境変数名・Secret 名・その描画検査。**送信コードではない** | 対象外 |
