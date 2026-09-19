@@ -95,6 +95,7 @@ plan_refs:
 | `Reconciliation__ReleaseOnNotPlaced` | `"false"` | 🔴 決定 1 の門。既定と同値だが**明示値で可視化する** |
 | `Reconciliation__StallThresholdHours` | `"2"` | 24 時間は保護レグの据え置きを解くには遅すぎる |
 | `Reconciliation__IntervalHours` | `"1"` | 下限。検知遅れは最悪 2 + 1 = 3 時間 |
+| `Reconciliation__BatchSize` | `"50"` | アプリ既定 200 から**下げる**（#882 監査 N4）。1 予約あたり最大 4 往復を、発注アダプタと**単一インスタンスを共有する** OpenD 接続へ流すため、初回デプロイで滞留が溜まっていると最悪 800 往復が 1 バーストで同じ接続に乗り、発注そのものを詰まらせ得る（返信待ち既定 15 秒）。溢れた分は次の巡回が拾う |
 
 **アプリの既定（3 つとも `false`）は変えない。** リポジトリは一貫して「fail-safe 既定＋配備で明示的に有効化」を
 採っており（`MaintenanceMarginEvaluation` が同型）、既定を反転させると docker-compose・単体開発環境の挙動まで変わる。
@@ -115,19 +116,37 @@ plan_refs:
 
 - 結果に `ProbeTerminalized`（DecisionId・注文 ID・銘柄・数量・状態）を載せ、常駐が 1 件ずつ **Critical** でログする
   （本文に「この経路は保護逆指値を張りません」を明記する）。
+- 🔴 **記録は発行（`PublishAsync`）より先に出す**（#882 監査 N1）。発行は外部のメッセージ基盤に触れるため落ち得る。
+  記録を発行の後ろに置くと、例外で巡回ごと抜けて記録が出ない —— **しかも予約は既に `MarkCompleted` を commit 済みで
+  次回巡回の `FindStalledReserved` に載らないため、その Critical は二度と出ない。**
+  「黙って通り過ぎさせない」は発行の成否に依ってはならない。T-10-609 が破棄済みバスで固定する。
+- **据え置き（`HeldNotPlaced`）も巡回サマリの件数に出す**（#882 監査 N3）。出さないと、全件が門で据え置かれた巡回が
+  「滞留 5 件を走査（終端化 0 / 解放 0 / 不確定 0 / 失敗 0）」になり、運用者には内訳の合わない行に見える。
 - 運用手順（`docs/operations/broker-execution-paths-runbook.md` / `operations.md`）に確認手順を書く。
 - **phase-4 自己修復は載せない。** ブローカへ照会していない＝突合ではなく、記録も保護レグの有無も通常フローが決めている。
+
+🔴 **Critical ログには通知の配線が無い**（#882 監査 N2）。本 ADR が足した `LogCritical` は**リポジトリ唯一**であり、
+`deploy/` にアラート配線は存在しない。他の重大事象（`ProtectiveStopCoverageLost` 等）がイベント → 通知 → Discord で
+人に届くのに対し、この経路はログ止まりである。**承知のうえでログに留める** —— 通知は「手で何をすべきか」を決めるため、
+エントリーと手仕舞いレグを取り違えたまま出すほうが有害だからである（上記）。配線は #853 の裁定と併せて行う。
 
 **保護レグを張るか否かの裁定は #853 に残す。** IADR-0210 の fail-closed（逆指値なしの建玉を持たない）と
 「状態が不明なとき建玉を落としてよいか」の優先順位を決める必要があり、単純な実装変更では済まない。
 
 🔴 **新しい契約イベントは作らない。特に `ProtectiveStopCoverageLost`（`Remediation=None`）の再利用は採らない。**
-予約は `PositionEffect` を持たず、プローブが返す `BrokerOrder` の `PositionEffect` は
-`MoomooReservationBrokerProbe` が `Open` に固定しているため、**エントリーと手仕舞いレグを区別できない**。
+**予約行だけからはエントリーと手仕舞いレグを区別できない** —— 予約は `PositionEffect` を持たず、
+プローブが返す `BrokerOrder` の `PositionEffect` は `MoomooReservationBrokerProbe` が `Open` に固定している。
 手仕舞いレグに対して「逆指値なしの建玉が残っている可能性があり人手対応を要する」と通知すると、
 読んだ人が手で成行を重ねる＝**二重決済でショート化**を誘発する。**通知は「手で何をすべきか」を決める**ので、
-区別できないまま発行してはならない。区別するには予約表へ `PositionEffect` を持たせる必要があり（Migration）、
-それも #853 の裁定の一部である。
+区別がつかないまま発行してはならない。
+
+［#882 監査 N2 の指摘を容れて訂正］**「原理的に区別できない」とは言えない。**
+`ProtectiveStopIds.StopDecisionId` / `CloseDecisionId` はエントリー ID からの**決定的導出**であり、
+発注執行が持つ保護逆指値ストアの active な行のエントリー ID から候補を総当たりで導いて突き合わせれば判別できる
+（`protective_stop_orders` に行が残っている範囲で、という限定はつく）。**正しい表現は「予約行だけからは区別できない」**である。
+それでも本 PR では実装しない —— 総当たり突合は「行が残っているか」に依存する不完全な判別であり、
+外れたときに倒れる先が**二重決済を誘発する側**になる。確実に区別するには予約表へ `PositionEffect` を持たせる
+（Migration）のが筋であり、それも #853 の裁定の一部である。fail-safe 側（通知を出さずログに留める）で待つ。
 
 ## 理由
 
@@ -160,5 +179,15 @@ plan_refs:
 - `MoomooReservationBrokerProbe` が `PositionEffect` / `ProductType` / `Mode` を既定値で近似するため、
   突合で作られる `ExecutionRecord` はそれらの列が実態とずれる（手仕舞いレグでも `Open` と記録される）。
   IADR-0092 が記録した既知の近似であり、本 ADR では変えない（#853 の射程）。
+  🔴 **ただし時系列に注意する**（#882 監査）: 近似そのものは `16040fc17`（2026-07-19）からの既存だが、
+  **決済レグに予約が付いたのは `c53876d49`（2026-09-19・#851）**である。したがって
+  「決済レグが `Open` として `executed_orders` に載る」という事象は、**本 ADR の有効化で初めて実際に書かれる**。
+  下流はこの列を読まないため実害は無いが、「前からある近似」と片付けてよい話ではない。
+- 🔴 **構造的な脆さ（今日は到達不能・#882 監査）**: `OrderReservationReconciler` の
+  `catch (Exception ex) when (ex is not OperationCanceledException)` は、プローブが**呼び出し元のトークンと無関係の**
+  `OperationCanceledException` を投げた場合もバッチごと中断させる。常駐の `ExecuteAsync` は
+  `catch (OperationCanceledException) { break; }` なので、**巡回ループごと恒久停止する**（再起動まで戻らない）。
+  現行の `MoomooReservationBrokerProbe` は自前のタイムアウトを `TimeoutException` で投げるため到達しないが、
+  **プローブを差し替えるときはここを踏む**。差し替える PR はこの分岐を先に直すこと。
 - 検知遅れは最悪 3 時間（滞留 2 時間 ＋ 巡回 1 時間）。巡回間隔の下限が 1 時間にクランプされているため、
   これ以上は縮まらない。短縮するには `ReconciliationOptions.Interval` のクランプ自体を改める必要がある。

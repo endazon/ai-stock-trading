@@ -40,7 +40,10 @@ public sealed class ReconciliationOptions
 
     /// <summary>
     /// 滞留とみなす閾値（時間）。既定 24 時間（配備は 2 時間。#856 / IADR-0362 —— 24 時間は保護レグの据え置き
-    /// ＝無保護の建玉が残っている状態を解くには遅すぎる）。<see cref="ReconciliationPolicy.MinimumStallThresholdHours"/>
+    /// ＝無保護の建玉が残っている状態を解くには遅すぎる）。
+    /// ⚠️ #856 監査 N6: **23 時間を超える値にしない。** 約定追跡の追跡上限
+    /// （<see cref="PollOrderFills.FillPollingOptions.MaxTrackingHours"/>・既定 24 時間）を超えると、
+    /// 突合が Placed で記録を作った時点で既に追跡窓の外にあり、非終端のまま取り残される。<see cref="ReconciliationPolicy.MinimumStallThresholdHours"/>
     /// 未満を設定しても下限クランプされるため、in-flight の予約に触れることはない。
     /// </summary>
     public int StallThresholdHours { get; set; } = ReconciliationPolicy.DefaultStallThresholdHours;

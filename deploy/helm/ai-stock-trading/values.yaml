@@ -459,9 +459,17 @@ services:
       - { name: Reconciliation__ReleaseOnNotPlaced, value: "false" }
       # 滞留とみなす閾値（時間）。アプリ既定の 24 時間は、保護逆指値の据え置き（＝無保護の建玉が残っている状態）を
       # 解くには遅すぎる。自動再配送の窓（約 42 秒）と `_error` 滞留の外側にあり、下限クランプ（1 時間）より上。
+      # ⚠️ **23 時間を超える値にしない。** 約定追跡（FillPolling）の追跡上限が 24 時間であり、それを超えると
+      #    突合が解決したときには追跡窓の外で、非終端の記録がそのまま取り残される。
       - { name: Reconciliation__StallThresholdHours, value: "2" }
       # 巡回間隔（時間）。下限は 1（それ未満はクランプされる）。検知遅れの最悪値は 2 + 1 = 3 時間。
       - { name: Reconciliation__IntervalHours, value: "1" }
+      # 1 巡回の処理上限。アプリ既定は 200 だが、**明示的に下げる**。
+      # 1 予約あたり最大 4 往復（全対応市場 × 現在＋履歴）を OpenD へ流し、その接続は**発注アダプタと単一
+      # インスタンスを共有**する（返信待ちの既定は 15 秒）。初回デプロイ時に滞留が溜まっていると、
+      # 200 件 × 4 = 800 往復が 1 バーストで同じコネクションに乗り、発注そのものを詰まらせ得る。
+      # 溢れた分は次の巡回（1 時間後）が拾う——滞留の解消は急がなくてよいが、発注は待てない。
+      - { name: Reconciliation__BatchSize, value: "50" }
   report:
     image: ai-stock-trading/report-service
     db: report_svc

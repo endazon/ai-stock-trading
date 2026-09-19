@@ -92,6 +92,13 @@ $ grep -rni reconcil deploy/ | wc -l
   `ReservationReconciliationResult.ProbeTerminalized` に載せ、常駐が **1 件ずつ Critical でログする**
   （DecisionId・注文 ID・銘柄・数量・状態、および「この経路は保護レグを張らない」の明示）。
   運用手順（runbook）にも「突合が解決した注文は保護レグを持たない。エントリーなら保護の有無を確認せよ」を書く。
+- 🔴 **記録は発行（`PublishAsync`）より先に出す**（#882 監査 N1）。発行は外部のメッセージ基盤に触れるため落ち得る。
+  記録を後ろに置くと例外で巡回ごと抜けて記録が出ず、**予約は既に `MarkCompleted` を commit 済みで次回巡回の
+  `FindStalledReserved` に載らないため、その Critical は二度と出ない**。T-10-609 が破棄済みバスで固定する。
+- 据え置き（`HeldNotPlaced`）も巡回サマリの件数に出す（#882 監査 N3。出さないと内訳の合わない行に見える）。
+- ⚠️ **Critical ログには通知の配線が無い**（#882 監査 N2）。本 PR が足した `LogCritical` はリポジトリ唯一であり、
+  `deploy/` にアラート配線は無い。承知のうえでログに留める（通知は「手で何をすべきか」を決めるため、
+  エントリーと手仕舞いレグを取り違えたまま出すほうが有害である）。配線は #853 の裁定と併せて行う。
 - **通知（Discord）の面では、突合の終端化は既に `OrderExecuted` として通知される**（`OrderExecutedNotificationHandler`）。
   本 PR で足すのは「保護が無い」という追加の事実であり、新しい契約イベントは**作らない**
   （`ProtectiveStopCoverageLost` の再利用は採らない。理由は下記「採らなかった案」）。
@@ -134,12 +141,16 @@ $ grep -rni reconcil deploy/ | wc -l
 | `Reconciliation__ReleaseOnNotPlaced` | `"false"` | 🔴 解放の門。実機検証まで閉じる。**明示値で可視化する**（既定と同値でも書く） |
 | `Reconciliation__StallThresholdHours` | `"2"` | 24 時間は保護レグの据え置き（無保護の建玉が残る）を解くには遅すぎる。再配送窓（約 42 秒）と `_error` 滞留の外側であり、下限クランプ（1 時間）より上 |
 | `Reconciliation__IntervalHours` | `"1"` | 6 時間 → 下限の 1 時間。検知遅れの最悪値は 2 + 1 = 3 時間 |
+| `Reconciliation__BatchSize` | `"50"` | #882 監査 N4。アプリ既定 200 から下げる。1 予約あたり最大 4 往復を**発注アダプタと単一インスタンスを共有する** OpenD 接続へ流すため、初回デプロイで滞留が溜まっていると最悪 800 往復が 1 バーストで同じ接続に乗る（返信待ち既定 15 秒）。溢れた分は次の巡回が拾う |
+
+⚠️ `StallThresholdHours` を 23 時間より上げてはならない（#882 監査 N6）。約定追跡の追跡上限（`MaxTrackingHours`＝24 時間）を
+超えると、突合が `Placed` で記録を作った時点で既に追跡窓の外にあり、非終端のまま取り残される。
 
 `values-local.yaml` は `order-execution` を持たないため、マップのマージで上記がそのまま経路B にも効く
 （Helm がリストを置換するのは同じキーを定義したときだけ。`helm.yml` の「values-local drops no env from prod default」検査も通る）。
 
 `helm.yml` に描画アサーションを 1 ステップ足し、既定描画・`broker.tier=moomoo-sim` 描画・`values-local` 描画の
-3 つで上記 5 キーが order-execution の Deployment に載ること、`ReleaseOnNotPlaced` が `"false"` であることを固定する。
+3 つで上記 6 キーが order-execution の Deployment に載ること、`ReleaseOnNotPlaced` が `"false"` であることを固定する。
 
 ## 採らなかった案
 
@@ -148,10 +159,13 @@ $ grep -rni reconcil deploy/ | wc -l
    そちらへ揃える。既定を変える積極的な理由が無い。
 2. **`UseBrokerProbe` も含めて一気に解放まで開ける** —— #856 が「示せないなら有効化しない」と名指しで禁じている。
 3. **`ProtectiveStopCoverageLost`（`Remediation=None`）を突合の終端化で発行する** ——
-   予約は `PositionEffect` を持たず、プローブが返す `BrokerOrder` の `PositionEffect` は
-   `MoomooReservationBrokerProbe` が `Open` に固定しているため、**エントリーと手仕舞いレグを区別できない**。
+   **予約行だけからはエントリーと手仕舞いレグを区別できない**（予約は `PositionEffect` を持たず、
+   プローブが返す `BrokerOrder` の `PositionEffect` は `MoomooReservationBrokerProbe` が `Open` に固定している）。
    手仕舞いレグに対して「逆指値なしの建玉が残っている可能性があり人手対応を要する」と通知すると、
    読んだ人が手で成行を重ねる＝**二重決済でショート化**を誘発する。採らない。
+   ［#882 監査 N2 の訂正］**「原理的に区別できない」とは言えない** —— `ProtectiveStopIds` の決定的導出と
+   保護逆指値ストアの active 行を総当たりで突き合わせれば判別の余地はある。ただし「行が残っているか」に依存する
+   不完全な判別であり、外れたときに倒れる先が二重決済を誘発する側なので採らない。
 4. **予約表へ `PositionEffect` を持たせる（Migration）** —— 3 を成立させる正攻法だが、
    `TryReserve` の署名変更＋Migration であり #830 / #873 / #881 と衝突面が広い。#853 の裁定に委ねる。
 
@@ -206,7 +220,8 @@ $ grep -rni reconcil deploy/ | wc -l
 | T-10-605 | phase-4 自己修復（記録あり）は `ProbeTerminalized` に載せない（ブローカ照会していない＝突合ではない） | 落ちる |
 | T-10-606 | 常駐（`OrderReservationReconciliationService`）経由でも門が閉じた `NotPlaced` を解放しない | 落ちる |
 | T-10-607 | `ReconciliationOptions` の既定 3 つが `false`（配備で明示的に開ける規律の固定） | 通る（回帰の固定） |
-| T-10-608 | Helm: 既定描画 / `broker.tier=moomoo-sim` / `values-local` の 3 つで 5 キーが order-execution に載り、`ReleaseOnNotPlaced` が `"false"` | 落ちる（`helm.yml` のアサーション） |
+| T-10-608 | Helm: 既定描画 / `broker.tier=moomoo-sim` / `values-local` の 3 つで 6 キーが order-execution に載り、`ReleaseOnNotPlaced` が `"false"` | 落ちる（`helm.yml` のアサーション） |
+| 🔴 T-10-609 | **否定形・#882 監査 N1**: 発行（`PublishAsync`）が落ちても、保護レグ不在の Critical は**既に出ている**（記録は発行より先） | 落ちる（記録を発行の後ろへ戻すと 1 件も出ないことを破棄済みバスで実証） |
 
 **変えてはいけない側**: T-10-402 / T-10-403 / T-10-406 / T-10-407 / T-10-408 / T-10-409 は緑のまま
 （二重決済でショート化しないことの固定）。既存の

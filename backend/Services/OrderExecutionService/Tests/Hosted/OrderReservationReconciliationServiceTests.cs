@@ -13,6 +13,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Wolverine;
@@ -168,6 +169,70 @@ public class OrderReservationReconciliationServiceTests
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
 
         await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 発行が落ちても保護レグ不在のCriticalは出る()
+    {
+        // 🔴 T-10-609（否定形・#882 監査 N1）: 記録は**発行より先**に出す。
+        //
+        // 発行（PublishAsync）はメッセージ基盤に触れるため落ち得る。落ちた後ろに記録を置くと、例外で
+        // ReconcileOnceAsync ごと抜けて記録が出ない。**しかも予約は既に MarkCompleted を commit 済みで、
+        // 次回巡回の FindStalledReserved に載らない** —— 「保護レグの無い建玉が載った」Critical は二度と出なくなる。
+        // 本 PR の中心的主張（黙って通り過ぎさせない）が、発行の成否に依ってはならない。
+        //
+        // 発行だけを確実に落とすため、**破棄済みの** Wolverine ランタイムで publish させる
+        //（ObjectDisposedException）。リコンサイル本体は生きているホストの scope で動かす
+        //（同じホストを破棄すると DI ごと死んで本体まで走らなくなり、見たい分岐に届かない）。
+        var reservations = new InMemoryOrderReservationStore();
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+        using var live = await BuildHostAsync(
+            new StubProbe(ReservationProbeResult.Placed(Placed("BRK-DOWN"))), reservations);
+
+        var brokenBus = await BuildHostAsync(
+            new IndeterminateReservationBrokerProbe(), new InMemoryOrderReservationStore());
+        var deadRuntime = brokenBus.Services.GetRequiredService<IWolverineRuntime>();
+        await brokenBus.StopAsync();
+        brokenBus.Dispose(); // 以降 deadRuntime 経由の PublishAsync は ObjectDisposedException を投げる
+
+        var logger = new RecordingLogger();
+        var service = new OrderReservationReconciliationService(
+            live.Services.GetRequiredService<IServiceScopeFactory>(),
+            deadRuntime,
+            live.Services.GetRequiredService<IClock>(),
+            Options.Create(new ReconciliationOptions { Enabled = true }),
+            logger);
+
+        var publish = async () => await service.ReconcileOnceAsync(CancellationToken.None);
+
+        // 例外の型は Wolverine の内部事情（破棄済み端点の扱い）で変わり得るので固定しない。
+        // 本テストが固定するのは「発行が落ちること」ではなく「落ちても記録は出ていること」である。
+        await publish.Should().ThrowAsync<Exception>("発行の失敗は握り潰さない（常駐が拾って次巡回で再試行する）");
+        logger.Entries.Should().Contain(
+            e => e.Level == LogLevel.Critical && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal),
+            "発行が落ちても、保護レグ不在の Critical は既に出ていなければならない");
+        logger.Entries.Should().Contain(
+            e => e.Level == LogLevel.Information && e.Message.Contains("滞留 1 件を走査", StringComparison.Ordinal));
+        reservations.Find(decisionId)!.State.Should().Be(
+            OrderDispatchState.Completed, "予約は確定済み＝次回巡回の走査対象に入らない（だから記録が最後の砦である）");
+    }
+
+    // 記録の実物を見るための最小のスパイ（本リポジトリはモックライブラリを持たない）。
+    private sealed record LogEntry(LogLevel Level, string Message);
+
+    private sealed class RecordingLogger : ILogger<OrderReservationReconciliationService>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add(new LogEntry(logLevel, formatter(state, exception)));
     }
 
     // 常駐を起動して止めるだけの補助（元テストと呼び出し順は同じ）。

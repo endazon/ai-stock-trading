@@ -86,16 +86,33 @@ public sealed class OrderReservationReconciliationService(
         var result = await reconciler
             .ReconcileAsync(cutoff, options.Value.EffectiveBatchSize, cancellationToken).ConfigureAwait(false);
 
+        // 🔴 #856, IADR-0362（PR #882 監査 N1）: **記録は発行より先に出す。**
+        // 発行（PublishAsync）は外部のメッセージ基盤に触れるため落ち得る。落ちた後ろに記録を置くと、
+        // 例外で ReconcileOnceAsync ごと抜けて記録が出ない —— しかも予約は既に MarkCompleted を commit 済みで
+        // 次回巡回の FindStalledReserved に載らないため、**「保護レグの無い建玉が載った」Critical は二度と出ない**。
+        // 「黙って通り過ぎさせない」は発行の成否に依ってはならない。
+        ReportFindings(result);
+
         // 終端化（発注済み確定・phase-4 自己修復）で得た OrderExecuted を発行し、下流（監査・Risk・通知）を追随させる。
         // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
         foreach (var executed in result.Executed)
             await new MessageBus(runtime).PublishAsync(executed).ConfigureAwait(false);
 
+        return result;
+    }
+
+    // #856, IADR-0362: 1 巡回の結果を記録に落とす。**発行より先に呼ぶ**（上のコメント）。
+    private void ReportFindings(ReservationReconciliationResult result)
+    {
+        // #856 監査 N3: 据え置き（Held）も件数に出す。出さないと、全件が門で据え置かれた巡回が
+        // 「滞留 5 件を走査（終端化 0 / 解放 0 / 不確定 0 / 失敗 0）」になり、運用者には内訳の合わない行に見える。
         if (result.Scanned > 0)
             logger.LogInformation(
-                "発注予約リコンサイル: 滞留 {Scanned} 件を走査（終端化 {Terminalized} / 解放 {Released} / 不確定 {Indeterminate} / 失敗 {Failed}）。",
-                result.Scanned, result.Terminalized, result.Released, result.Indeterminate, result.Failed);
+                "発注予約リコンサイル: 滞留 {Scanned} 件を走査"
+                    + "（終端化 {Terminalized} / 解放 {Released} / 据え置き〔未発注だが門が閉〕 {Held} / 不確定 {Indeterminate} / 失敗 {Failed}）。",
+                result.Scanned, result.Terminalized, result.Released, result.HeldNotPlaced.Count,
+                result.Indeterminate, result.Failed);
 
         if (result.Failed > 0)
             logger.LogWarning(
@@ -120,7 +137,5 @@ public sealed class OrderReservationReconciliationService(
                     + "（DecisionId={DecisionId}）。Reconciliation:ReleaseOnNotPlaced=true にしてよいのは、"
                     + "実機で誤判定が無いことを確かめた後だけです（#856）。それまでは人が証券会社の画面で確認してください。",
                 decisionId);
-
-        return result;
     }
 }
