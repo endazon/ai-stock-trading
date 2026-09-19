@@ -8,6 +8,17 @@ namespace TradeDecisionService.Features.TradeDecision;
 public interface IHeldPositionProvider
 {
     /// <summary>
+    /// FR-04, FR-10, ADR-0003, #865, IADR-0358: 保有状況の照会先が**実結線**されているか
+    /// （<c>RiskManagement:BaseUrl</c> が設定され <c>HttpHeldPositionProvider</c> が配線されている）。
+    ///
+    /// 🔴 これは「不明」の意味を分けるためだけに在る。未結線（NoOp＝常に不明）は「照会していない」であり、
+    /// 実結線の不明は「照会したが答えが得られなかった」である。後者のときだけ新規建て（Open）を見送る
+    /// （<c>PositionEffectResolver</c> の <c>requireKnownHoldingForOpen</c>）。
+    /// <see cref="ICurrentPriceProvider.IsEnabled"/> と同じ形（IADR-0099 決定3）。
+    /// </summary>
+    bool IsEnabled { get; }
+
+    /// <summary>
     /// (銘柄, 市場) の**符号付き**建玉数量（+ ロング / − ショート / 0 保有なし）。
     ///
     /// 照会できない場合は **null（＝不明）** を返す。0（保有なし）と厳格に区別すること。
