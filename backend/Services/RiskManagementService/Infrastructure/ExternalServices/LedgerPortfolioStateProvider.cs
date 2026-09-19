@@ -15,7 +15,12 @@ namespace RiskManagementService.Infrastructure.ExternalServices;
 // 含み 0・DD 0 のまま＝現行挙動を保つ（Worker 側の MarketData:EnableMarkToMarket が既定 false のため既定は未注入）。
 // #257, IADR-0108: **DD 系列の起点**は注入できるようにする（既定＝TradingDefaults.InitialCapital＝現行等価）。
 // SIMULATE 限定プロファイル（Risk:SimulatorProfile:Enabled）有効時のみ、ホストがシミュレータ残高相当を渡す。
-// #869: これは統制の基準資金ではないため、注入しても比率上限は 1 つも動かない。
+// #869: これは統制の基準資金ではないため、注入しても **equity 比の 4 上限**（1 注文 25% / 1 日 150% /
+// 段階の総資金比 / 日次損失 2%）は 1 つも動かない。
+// 🔴 **ただし DD は動く。** `DrawdownRatio = (peak − equity) / peak` は起点の平行移動に不変ではない——
+// 損失 10,000 のとき起点 100,000 なら DD 0.10、起点 20,000 なら DD 0.50 であり、既定の
+// `MaxDrawdownRatio = 0.10` に対して `MaxDrawdownReached` の成否が実際に入れ替わる。
+// **#257 / IADR-0108 の注入はそのために在る**（SIMULATE の残高規模で DD を意味のある値にする）。
 //
 // FR-10, #829, IADR-0346 決定3: 承認済みで生きている新規建て注文（IWorkingEntryOrderSource）を射影へ渡し、
 // 日次発注累計・段階資金・保有建玉数へ算入させる。**必須依存である**（IADR-0163 決定2——省略可能にすると

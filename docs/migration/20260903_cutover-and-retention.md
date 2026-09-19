@@ -33,7 +33,7 @@ issues: [#346, #344, #204, #137, #141, #342, #24, #339, #849, planning#28]
 
 | 項目 | 内容 |
 | --- | --- |
-| 移行対象 | データ（7 サービス DB・37 テーブル）／統制状態（リスク統制設定・取引ガード・段階ゲート・停止系）／設定（Helm values・`ast-secrets`） |
+| 移行対象 | データ（7 サービス DB・38 テーブル）／統制状態（リスク統制設定・取引ガード・段階ゲート・停止系）／設定（Helm values・`ast-secrets`） |
 | 移行元 | 現行デプロイ（namespace `ai-stock-trading`）が使う `<service>_svc` DB（`platform-infra` の `postgres`・利用者 `ai`） |
 | 移行先 | 再実装版のデプロイが使う**同じ** `<service>_svc` DB（新ビルドが起動時に EF マイグレーションを適用する。各サービスの `Program.cs` が `MigrateAsync()` を呼ぶ） |
 | 方式 | **一括**（市場閉場中に凍結して切り替える。並行稼働はしない——発注執行が 2 系統走ると二重発注になる） |
@@ -42,7 +42,7 @@ issues: [#346, #344, #204, #137, #141, #342, #24, #339, #849, planning#28]
 
 ## 保全対象の全数表
 
-**母集合**: 7 つの `DbContext` の全 `DbSet`（37。走査と除外の記録は作業仕様書 §保全対象の母集合）。
+**母集合**: 7 つの `DbContext` の全 `DbSet`（38。走査と除外の記録は作業仕様書 §保全対象の母集合）。
 **件数の取り方**: すべて `bash scripts/cutover-count-reconcile.sh snapshot <out.tsv>`（`AST_PSQL` で接続先を差し替える。下記 §手順 0）。
 1 テーブルを手で数えるときは `select count(*) from "<table>"`——列名・テーブル名は**引用符付き**（EF の既定で PascalCase のまま。命名規約プラグインは無い）。
 
@@ -119,7 +119,7 @@ issues: [#346, #344, #204, #137, #141, #342, #24, #339, #849, planning#28]
 
 ```bash
 export AST_PSQL="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai"   # ローカル k3s
-bash scripts/cutover-count-reconcile.sh manifest        # 保全対象 37 テーブルの全数表
+bash scripts/cutover-count-reconcile.sh manifest        # 保全対象 38 テーブルの全数表
 bash scripts/cutover-count-reconcile.sh controls        # 統制状態・切替前チェックの現在値（29 項目）
 ```
 

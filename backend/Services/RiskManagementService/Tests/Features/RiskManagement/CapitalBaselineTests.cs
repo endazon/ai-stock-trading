@@ -205,6 +205,49 @@ public class CapitalBaselineTests
         result.Reasons.Should().Contain(RejectionReason.DailyOrderAmountExceeded);
     }
 
+    // T-10-516, FR-10, #869, IADR-0354 決定7 の**受け入れた残余リスク**（#889）:
+    // 🔴 **供給側の門が 0 を弾いた日は行が 1 行も書かれない。** その結果 `GetCurrent()`（当日より前の
+    // 取引日で最新の行）は**前取引日の正の行を返し続け**、鮮度（既定 4 日）が切れるまで
+    // **新規建ては止まらない**。
+    //
+    // 🔴 **これは「読めなかった日があっても前取引日の値を使う」という設計（鮮度 4 日の存在理由そのもの）
+    // の帰結であり、意図した挙動である。** 本テストは「いずれにせよ 1 株も通らない」という**誤った理解**が
+    // 記録へ戻らないように、実際の向きを固定する（残高 0 を検知して止めるかは #889 で別途扱う）。
+    [Fact]
+    public void 供給側が0を弾いた日は前取引日の正の値が使われ続ける_新規建ては止まらない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfCapitalBaselineStore(
+            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+
+        // 前取引日に 100,000 を観測。翌日は口座が空になり、アダプタは 0 を未供給へ倒す＝Record は呼ばれない。
+        store.Record(100_000m, Now.AddDays(-1));
+
+        var baseline = store.GetCurrent();
+
+        baseline.Should().NotBeNull("0 の日は行が書かれないため、前取引日の行がそのまま残る");
+        baseline!.EquityInBase.Should().Be(100_000m);
+        RiskEvaluator.Evaluate(Entry(100m), Settings(), Snapshot(baseline.EquityInBase))
+            .IsApproved.Should().BeTrue("鮮度が切れるまでは古い正の分母で新規建てが通る（受け入れた残余リスク）");
+    }
+
+    // T-10-516（対の否定形・**2 つの門の非対称**）: 🔴 **人手で 0 を 1 行入れた場合は止まる。**
+    // 読み出し側の門が当日より前の最新行（＝その 0 の行）を掴んで `null` へ倒すためである。
+    // 供給側（ブローカーが 0 を返す）と帰結が逆になることを固定する。
+    [Fact]
+    public void 人手で0の行を入れた場合は読み出し側の門が止める_供給側とは帰結が逆()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfCapitalBaselineStore(
+            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+
+        store.Record(100_000m, Now.AddDays(-2)); // 一昨日の正の行
+        store.Record(0m, Now.AddDays(-1));       // 前取引日に人手で 0 を投入（Runbook 経路）
+
+        store.GetCurrent().Should().BeNull(
+            "最新行が 0 なら読み出し側の門が未供給へ倒す。供給側の門（行を書かない）とは帰結が逆である");
+    }
+
     // T-10-512: **当日の観測は基準資金を動かさない。** 計画 §5 注記は「日中の評価損益で上限を動かすと、
     // 含み益で上限が緩み含み損で締まるという逆方向の作用が起きる」として明示的に禁じている。
     [Fact]
