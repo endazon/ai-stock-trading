@@ -11,6 +11,7 @@ public sealed class RiskStatusService(
     IPauseStore pauseStore,
     ILockoutStore lockoutStore,
     IStageGateStore stageGateStore,
+    IPortfolioLedgerStore ledger,
     IClock clock)
 {
     public RiskStatusView Build()
@@ -39,6 +40,15 @@ public sealed class RiskStatusService(
 
         // 新規建て停止は 3 統制の OR。手仕舞い・損切りは本フラグに関わらず継続する。
         var newEntriesBlocked = snapshot.KillSwitchEngaged || lockoutActive || pause.Paused;
+
+        // FR-11, SC-03, ADR-0041 決定 1, #870, IADR-0360 決定 5: 当日のシステム外売買の取り込み件数。
+        // 「当日」は**取り込みの市場の現地取引日**で判定する（当日実現損益・日次発注枠と同じ境界。IADR-0246）。
+        // 🔴 表示は市場を特定できないため、取り込み 1 件ごとに**その市場の取引日**と**同じ市場の今日**を比べる
+        //（1 つの市場の暦で全件を切ると、同一瞬間でも JST と ET で日付が違う分だけ数え違える）。
+        var now = clock.UtcNow;
+        var driftAdoptionCountToday = ledger.GetDriftAdoptions()
+            .Count(a => PortfolioProjection.TradeDate(a.AdoptedAt, a.Market)
+                     == PortfolioProjection.TradeDate(now, a.Market));
 
         return new RiskStatusView(
             KillSwitchEngaged: snapshot.KillSwitchEngaged,
@@ -69,6 +79,8 @@ public sealed class RiskStatusService(
             OpenPositionCount: snapshot.OpenPositionCount,
             MaxOpenPositions: settings.Limits.MaxOpenPositions,
             // FR-10, SC-03, ADR-0040 決定1, #819: 選択中の損切りの実行機構（参照専用）。
-            StopLossMethod: settings.StopLossMethod);
+            StopLossMethod: settings.StopLossMethod,
+            // FR-11, SC-03, ADR-0041 決定 1, #870: 当日の取り込み件数（参照専用）。
+            DriftAdoptionCountToday: driftAdoptionCountToday);
     }
 }

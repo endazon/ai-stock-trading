@@ -79,4 +79,20 @@ public sealed record TradeHistoryView
 
     /// <summary><c>null</c> ＝見送り判断の記録源が無い（未供給）。空列＝見送りなし。</summary>
     public IReadOnlyList<SkippedDecision>? Skipped { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-11, FR-16, ADR-0041 決定 1, #870, #859, IADR-0360 決定 3,
+    /// 04_report-templates 日報 <b>§2-b「手動売買（損益不明）」</b>:
+    /// 利用者が証券会社のアプリから直接売買した結果を取引台帳へ取り込んだ記録。
+    /// <para>
+    /// 🔴 <b>§2 の取引履歴とは別の欄である。</b> 約定単価も実現損益も分からず §2 の 11 列を埋められないため、
+    /// 計画は本表に載せず別欄へ出すと定めている。実現損益の列は<b>常に <c>不明</c></b>（空欄にも 0 にもしない）で、
+    /// <b>§1 の合計へ算入しない</b>。
+    /// </para>
+    /// <para>
+    /// 🔴 <c>null</c> ＝<b>照会できていない</b>／空列＝<b>該当なし</b>（計画は「該当が無い日は『該当なし』と書く」と
+    /// 定める。<b>欄ごと落とさない</b>——落とすと「取り込みが無かった」のか「欄を忘れた」のかが読めない）。
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<PeriodDriftAdoption>? DriftAdoptions { get; init; }
 }

@@ -18,5 +18,6 @@
   "maxDrawdownRatio": 0.10,
   "openPositionCount": 0,
   "maxOpenPositions": 3,
-  "stopLossMethod": 0
+  "stopLossMethod": 0,
+  "driftAdoptionCountToday": 0
 }

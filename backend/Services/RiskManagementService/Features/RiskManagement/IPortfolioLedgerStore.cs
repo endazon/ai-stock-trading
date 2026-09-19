@@ -65,6 +65,21 @@ public interface IPortfolioLedgerStore
     bool AppendDriftAdoption(LedgerDriftAdoption adoption);
 
     /// <summary>
+    /// FR-11, FR-06, SC-03, ADR-0041 決定 1, #870, IADR-0360 決定 2: 記録済みの<b>乖離の取り込み</b>を
+    /// 追記順（取り込み日時の昇順）で返す。
+    /// <para>
+    /// <see cref="GetFills"/> は取り込みを <see cref="LedgerFill"/>（由来 <c>ManualAdoption</c>）へ均して合流させるため、
+    /// <b>操作者・理由・取り込み前後の数量・観測時刻が落ちる</b>。報告書の日報 §2-b「手動売買（損益不明）」と
+    /// SC-03 の件数はそれらを必要とするため、<b>取り込みそのものを読む口</b>を別に持つ。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>約定列（<see cref="GetFills"/>）と混ぜない。</b> 混ぜると、消費側が 1 箇所でも除外を書き落としたときに
+    /// 「平均取得単価で売った損益 0 の決済」が<b>確定値として</b>集計される（IADR-0350 決定 4 と同じ理由）。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions();
+
+    /// <summary>
     /// FR-20, #386, IADR-0149 決定2: 承認済み注文の<b>建玉効果</b>を <c>DecisionId</c> で引く。
     /// 相関する承認が無ければ <c>null</c>（＝不明）。
     /// <para>

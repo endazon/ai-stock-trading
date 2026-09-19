@@ -499,5 +499,7 @@ public class PortfolioLedgerConsumersTests
 
         // #849, IADR-0350: 本プローブは取り込みを使わないが、委譲しておけば台帳の意味論がずれない。
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => inner.AppendDriftAdoption(adoption);
+
+        public IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions() => inner.GetDriftAdoptions();
     }
 }

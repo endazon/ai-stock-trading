@@ -105,8 +105,14 @@ public class ReportAutoGeneratorDependencyRetryTests
     // こうしておかないと、未設定（Unsupplied*）ぶんの未供給が混ざり「縮退していない」を結果で言えない。
     private sealed class SuppliedSources :
         IBuyInInferenceRecordSource, IFxSourceStatusSource, ILlmUsageRecordSource, IBorrowFeeRecordSource,
-        ITradeRationaleSource, IOpenDUptimeSource, IPeriodEndFxRateSource, IStageProgressSource
+        ITradeRationaleSource, IOpenDUptimeSource, IPeriodEndFxRateSource, IStageProgressSource,
+        IPeriodDriftAdoptionSource
     {
+        // #870: 全種別が使う入力（在庫の畳み込み）。空列＝該当なし（null＝未供給ではない）。
+        public Task<IReadOnlyList<PeriodDriftAdoption>?> GetDriftAdoptionsAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<PeriodDriftAdoption>?>([]);
+
         // #866: 月報だけが使う入力。供給しておかないと「段階が未設定」で月報が常に縮退し、
         // 窓の終端の検証（何が欠けて縮退したのか）が読み取れなくなる。
         public Task<TradingStage?> GetCurrentStageAsync(CancellationToken cancellationToken = default) =>
@@ -201,7 +207,8 @@ public class ReportAutoGeneratorDependencyRetryTests
                 stageProgressSource: supplied,
                 periodEndFxRateSource: supplied,
                 dependencyProbe: Probe,
-                deferrals: Deferrals);
+                deferrals: Deferrals,
+                driftAdoptionSource: supplied);
 
             return generator.RunOnceAsync();
         }

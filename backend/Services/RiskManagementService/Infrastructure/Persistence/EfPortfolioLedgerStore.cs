@@ -211,13 +211,14 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）。**列追加前の行・未解決の行は null のまま**
                 // （FxRateToBase の `?? 1m` とは違い、既定へ倒さない——1 円/ドルは事実ではなく、推定でもない誤りである）。
                 a.FxRateBaseToDisplay,
-                // #849, IADR-0350: 約定行は取り込み行ではない（式ツリーは省略可能引数を許さないため明示する）。
-                false);
+                // #849, #870, IADR-0350, IADR-0360 決定 1: 約定行の由来はシステムである
+                // （式ツリーは省略可能引数を許さないため明示する）。
+                TradeOrigin.System);
 
         var fills = query.ToList();
 
         // FR-10, FR-11, #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込み行を合流させる。
-        // **約定ではない**ため IsDriftAdoption を立て、射影が数量だけで畳めるようにする（Price は参考の取得単価）。
+        // **約定ではない**ため由来を ManualAdoption にし、射影が数量だけで畳めるようにする（Price は参考の取得単価）。
         // 承認行を持たないため StopLossPrice・DecisionId・Provider・認識時レートは既定（無し）のままにする。
         fills.AddRange(db.PositionDriftAdoptions.AsNoTracking().AsEnumerable().Select(ToLedgerFill));
         return fills;
@@ -270,7 +271,20 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
         }
     }
 
+    // #870, IADR-0360 決定 2: 取り込みそのものを読む口（操作者・理由・取り込み前後の数量・観測時刻を落とさない）。
+    public IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions() =>
+    [
+        .. db.PositionDriftAdoptions.AsNoTracking()
+            .OrderBy(r => r.AdoptedAtUtc).ThenBy(r => r.Id)
+            .AsEnumerable()
+            .Select(ToAdoption),
+    ];
+
+    private static LedgerDriftAdoption ToAdoption(PositionDriftAdoptionRow r) => new(
+        r.Id, r.Symbol, r.Market, r.Side, r.Quantity, r.CostBasisPrice, r.FxRateToBase,
+        r.LedgerQuantityBefore, r.BrokerQuantity, r.ObservedAtUtc, r.Actor, r.Reason, r.AdoptedAtUtc);
+
     private static LedgerFill ToLedgerFill(PositionDriftAdoptionRow r) => new(
         r.Symbol, r.Market, r.Side, PositionEffect.Close, r.Quantity, r.CostBasisPrice, r.AdoptedAtUtc,
-        StopLossPrice: null, FxRateToBase: r.FxRateToBase, IsDriftAdoption: true);
+        StopLossPrice: null, FxRateToBase: r.FxRateToBase, Origin: TradeOrigin.ManualAdoption);
 }

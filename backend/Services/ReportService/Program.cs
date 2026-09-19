@@ -236,6 +236,22 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
     return new HttpPeriodFillSource(http, sp.GetRequiredService<ILogger<HttpPeriodFillSource>>());
 });
 
+// FR-06, FR-11, ADR-0041 決定 1, #870, #859, IADR-0360 決定 2: 期間の**手動売買の取り込み**。
+// 権威源は同じリスク管理の取引台帳だが、**約定とは別の口**（GET /risk-controls/drift-adoptions）である
+// ——取り込みは約定価格を持たず、実現損益は不明であるため、1 本の列に混ぜない。
+// 🔴 **未構成・照会失敗はいずれも null（未供給）へ倒す。空列（該当なし）へ倒さない。**
+builder.Services.AddSingleton<IPeriodDriftAdoptionSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedPeriodDriftAdoptionSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new HttpPeriodDriftAdoptionSource(
+        http, sp.GetRequiredService<ILogger<HttpPeriodDriftAdoptionSource>>());
+});
+
 // FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0286 決定2: 為替差損益の**期末レート**
 // （期末日以前の直近の日次観測・1 USD あたりの円）。源は判断サービスと同じ為替レート源
 // （Fx:Provider＝日銀第一・FRED フォールバック・鮮度装飾。Shared.Infrastructure の factory）を同じ構成キーで組む。

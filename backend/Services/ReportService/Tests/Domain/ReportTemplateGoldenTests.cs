@@ -107,6 +107,19 @@ public class ReportTemplateGoldenTests
                     Quantity: 10, FillPrice: 315m, Cost: 20m, Tax: null, RealizedPnl: 1_520m,
                     Trigger: null, RationaleSummary: null),
             ],
+            // FR-11, ADR-0041 決定 1, #870, IADR-0360 決定 3, 04_report-templates 日報 §2-b:
+            // **手動売買（損益不明）**。実現損益の列に `不明` が入り、§1 の合計（Pnl）に入らないことを全文で固定する。
+            DriftAdoptions =
+            [
+                new PeriodDriftAdoption(
+                    new Guid("22222222-2222-2222-2222-222222222222"),
+                    "TSLA", Market.UnitedStates, TradeSide.Sell, Quantity: 20,
+                    LedgerQuantityBefore: 20, BrokerQuantity: 0,
+                    ObservedAt: new DateTimeOffset(2026, 8, 28, 5, 0, 0, TimeSpan.Zero),
+                    Actor: "owner",
+                    Reason: "moomoo アプリから直接売却したため台帳を合わせる。",
+                    AdoptedAt: new DateTimeOffset(2026, 8, 28, 5, 30, 0, TimeSpan.Zero)),
+            ],
         },
         // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（ロング＋ショート）。
         // 現在値が引けた建玉と引けなかった建玉の両方を置く（未供給と 0 を混同していないことを全文で固定する）。

@@ -24,6 +24,8 @@ public class OpenPositionsServiceTests
         public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) { }
         public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt) { } // #852: 本テストは見送りを使わない
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => false; // #849: 本テストは取り込みを使わない
+
+        public IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions() => []; // #870: 同上
     }
 
     // 損切り価格を持たない約定（欠損＝近似フォールバックの検証用）。

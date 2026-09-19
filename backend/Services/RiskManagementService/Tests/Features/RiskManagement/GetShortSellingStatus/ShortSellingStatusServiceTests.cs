@@ -32,6 +32,8 @@ public class ShortSellingStatusServiceTests
         public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) { }
         public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt) { } // #852: 本テストは見送りを使わない
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => false; // #849: 本テストは取り込みを使わない
+
+        public IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions() => []; // #870: 同上
     }
 
     private sealed class FixedSnapshotSource(MaintenanceMarginSnapshot? snapshot) : IMaintenanceMarginSnapshotSource
