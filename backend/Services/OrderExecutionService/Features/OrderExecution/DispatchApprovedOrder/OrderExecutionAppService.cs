@@ -119,9 +119,26 @@ public sealed class OrderExecutionAppService(
         {
             // FR-05, ADR-0002（SPOF・再起動中は発注不可）, #331, IADR-0211: 接続確立の失敗＝**確実に未発注**。
             // 予約を解放し（二重発注の窓は無い）、キューイングせず見送りで正常終了する（Rejected へ丸めない）。
-            // 送信後の失敗（届いたか不明）は本例外の契約外であり、従来どおり伝播して予約とリコンサイルが守る。
+            // 送信後の失敗（届いたか不明）は本例外の契約外であり、BrokerDispatchIndeterminateException として
+            // 伝播する（次の catch。予約を解放せず据え置き、リコンサイルが守る。#848・IADR-0117 改定 6）。
             reservations.Release(approved.DecisionId);
             return Forgone(approved, OrderDispatchForgoneReason.BrokerUnavailable);
+        }
+        catch (BrokerDispatchIndeterminateException ex)
+        {
+            // 🔴 FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）:
+            // **送信後に結果を確認できなかった＝届いたか不明。** ここで行ってよいことは「何もしない」だけである。
+            //   - 予約を**解放しない**（解放すると再配送で二重発注になる。BrokerUnavailable との決定的な違い）。
+            //   - 予約を**確定しない**・結果を**保存しない**（実在しない注文 ID の終端記録を台帳へ残さない）。
+            //   - 見送り（OrderDispatchForgone）にも**しない**——見送りは「発注していない」という主張であり、
+            //     ここでそれを主張すると Rejected と同じ誤り（建玉が無いという仮定）になる。
+            // 予約は Reserved のまま残り、client order id によるリコンサイル（IADR-0092 / IADR-0074）が
+            // 実状態を Placed / NotPlaced / Indeterminate に解決する。**本経路は例外で終わるのが正しい。**
+            _logger.LogError(ex,
+                "発注の結果を確認できませんでした（送信済み・届いたか不明）: DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity}。"
+                + "予約は Reserved のまま据え置き、リコンサイルの解決に委ねます（拒否へ畳まず・見送りにもしません）。",
+                approved.DecisionId, intent.Symbol, intent.Quantity);
+            throw;
         }
 
         // FR-16: 実効スリッページを取引毎に算出・記録する。

@@ -8,8 +8,9 @@ namespace AiStockTrading.Shared.Contracts.Ports;
 //     InitConnect 失敗・接続応答タイムアウト・口座列挙失敗）。
 //   - **発注送信後の失敗（応答タイムアウト等）に使ってはならない**——届いたか不明であり、
 //     受け手（発注執行）は本例外で予約（IADR-0057）を解放する。届いていた注文の予約を解放すると
-//     再配送で二重発注（実弾では実損）になる。不明は従来どおり例外をそのまま伝播し、
-//     予約とリコンサイル（IADR-0092）に委ねる。
+//     再配送で二重発注（実弾では実損）になる。不明は対になる
+//     <see cref="BrokerDispatchIndeterminateException"/> で伝播し、予約は解放も確定もせず
+//     リコンサイル（IADR-0092）に委ねる（#848・IADR-0117 改定 6 で型を与えた）。
 //   - 受け手は本例外を OrderStatus.Rejected（証券会社が受理しなかった状態）へ**丸めない**。
 //     見送り（OrderDispatchForgone）として記録・通知する（キューイングせず破棄）。
 public sealed class BrokerUnavailableException : Exception

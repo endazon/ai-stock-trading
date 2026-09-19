@@ -8,7 +8,9 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 
 // #13, FR-05, ADR-0002, IADR-0016: moomoo ブローカアダプタ。OpenD（IMoomooTradeClient）経由で発注する。
 // SIMULATE 限定（client 実装が TrdEnv_Simulate を用いる）。実弾は撃たない。判断・記録・報告のフローは
-// PaperBrokerAdapter と完全に同一（不正注文・不達は終端 Rejected で返しフローを止めない）。
+// PaperBrokerAdapter と完全に同一（**送信していないと言い切れる不正注文**は終端 Rejected で返しフローを止めない）。
+// 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）: **送信後に結果を確認できなかった失敗は
+// Rejected へ畳まない**（BrokerDispatchIndeterminateException で伝播する。下の PlaceWithRejectionDetailAsync）。
 //
 // #141, IADR-0092: IClientOrderIdBroker を実装し、発注時に DecisionId を moomoo の remark（client order id相当）へ
 // 伝播する。これにより滞留 Reserved を後から DecisionId で照合できる（実照会リコンサイル）。paper は本 capability を
@@ -198,12 +200,22 @@ public sealed class MoomooBrokerAdapter(
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
         {
-            // 送信後の SDK 例外・応答異常は終端 Rejected（フローを止めない・実弾防止の安全側）。原因はログに残す。
-            // BrokerUnavailableException（接続確立の失敗＝確実に未発注）だけは**丸めずに伝播**する——
-            // Rejected は「証券会社が受理しなかった状態」（FR-05）であり、届いてすらいない事象を混ぜない（IADR-0211）。
-            _logger.LogWarning(ex, "moomoo 発注に失敗したため Rejected に倒します symbol={Symbol} qty={Qty}",
-                intent.Symbol, intent.Quantity);
-            return (Terminal(intent, OrderStatus.Rejected, now), null, ex.Message);
+            // 🔴 FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）:
+            // **送信後の SDK 例外・応答異常は「届いたか不明」であり、終端 Rejected へ畳まない。**
+            // ここへ落ちる代表例は SendAsync の返信待ちタイムアウトで、**注文は既に送信済み**である
+            //（MMApiMoomooTradeClient の分類もそう書いている）。Rejected はリスク管理の取引台帳で
+            // **在庫の押さえを解く引き金**であり、不明のまま解くと同じ建玉に 2 本目の決済が並ぶ
+            //（二重決済で意図しないショート化）。エントリーでは「建玉は生じていない」という仮定になり、
+            // 注文が生きていた場合に保護レグ無しの建玉ができる。実在しない注文 ID も捏造しない（#842 と同型）。
+            // 不明は伝播させ、**予約（IADR-0057）を解放も確定もせず**リコンサイル（IADR-0092）に解決させる。
+            // BrokerUnavailableException（接続確立の失敗＝確実に未発注）は従来どおり丸めずに伝播する（IADR-0211）。
+            _logger.LogError(ex,
+                "moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）symbol={Symbol} qty={Qty} 種別={Kind}。"
+                + "拒否へ畳まず予約を Reserved のまま残し、リコンサイルの解決に委ねます。",
+                intent.Symbol, intent.Quantity, kind);
+            throw new BrokerDispatchIndeterminateException(
+                $"moomoo へ発注を送信しましたが結果を確認できませんでした（種別={kind} 銘柄={intent.Symbol} "
+                + $"数量={intent.Quantity}）: {ex.Message}", ex);
         }
     }
 

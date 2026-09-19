@@ -146,17 +146,20 @@ public class MoomooBrokerAdapterAlternativeStopTests
         placement.RejectReasonMessage.Should().Be("Paper trading does not support StopLimit order");
     }
 
+    // 🔴 T-10-408, #848, IADR-0117（2026-09-19 追記・改定 6）: **送信後に結果を確認できなかった失敗は
+    // S3 でも Rejected へ畳まない**（否定形）。理由文は呼び出し側（発注執行）が例外から取り出して
+    // 試行の記録へ載せるため、監査に空欄は残らない。
     [Fact]
-    public async Task 送信後の一般例外は理由をメッセージとして載せretTypeは持たない()
+    public async Task 送信後に結果を確認できない失敗は_S3_でも_Rejected_へ畳まず伝播する_否定形()
     {
-        var client = new FakeClient { ThrowOnPlace = () => new InvalidOperationException("SDK が応答異常を返した") };
+        var cause = new TimeoutException("SDK の返信待ちがタイムアウト（テスト）");
+        var client = new FakeClient { ThrowOnPlace = () => cause };
 
-        var placement = await Adapter(client, AlternativeProtectiveOrderType.StopLimit)
+        var act = async () => await Adapter(client, AlternativeProtectiveOrderType.StopLimit)
             .PlaceAlternativeStopOrderAsync(CloseIntent(), 950m, 1_000m, Guid.NewGuid());
 
-        placement.Order.Status.Should().Be(OrderStatus.Rejected);
-        placement.RejectReasonCode.Should().BeNull("ブローカーの retType ではない");
-        placement.RejectReasonMessage.Should().Be("SDK が応答異常を返した");
+        var thrown = await act.Should().ThrowAsync<BrokerDispatchIndeterminateException>();
+        thrown.Which.InnerException.Should().BeSameAs(cause);
     }
 
     // 接続確立の失敗は**確実に未発注**であり、Rejected へ丸めない（IADR-0211。S3 でも変えない）。

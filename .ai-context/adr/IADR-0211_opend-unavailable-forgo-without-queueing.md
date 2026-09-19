@@ -2,10 +2,10 @@
 title: IADR-0211 OpenD へ確実に届いていない発注は「見送り」とし、キューイングも Rejected への丸め込みもしない
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, ADR-0002, ADR-0024, IADR-0057, IADR-0092, IADR-0210]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0092, IADR-0117, IADR-0210]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-05)
   - planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md (OpenD 常駐・SPOF・INDEX 決定 33)
@@ -58,6 +58,19 @@ issue #331 の要求と食い違う。
    対象外**——届いたか不明であり、従来どおり予約（IADR-0057）とリコンサイル（IADR-0092）が守る。
 2. **`MoomooBrokerAdapter` は同例外を `Rejected` へ丸めず伝播する。** `Rejected` は「証券会社が受理しなかった」
    事象（不正注文の事前弾き・ブローカー応答の拒否状態・送信後の分類不能な失敗）に限定される。
+
+   ［2026-09-19 追記 / [#848](https://github.com/endazon/ai-stock-trading/issues/848)］
+   🔴 **上の列挙の 3 番目（送信後の分類不能な失敗）は本追記で外れた。**
+   当時これを `Rejected` に含めてよかったのは、`Rejected` が「台帳に約定を載せない」以上の意味を
+   持たなかったからである。**IADR-0117（2026-09-19 追記）が `Rejected` を在庫解放の引き金にした時点で、
+   この分類は fail-safe から fail-open へ反転した** —— 送信後の失敗は**届いたか不明**であり、
+   在庫の押さえを解く根拠にならない（決済では二重決済でショート化し、エントリーでは
+   「建玉が生じていない」という仮定になって無保護の建玉を残す）。
+   送信後に結果を確認できなかった失敗は、本 ADR 決定 1 が定めた「対象外＝予約とリコンサイルが守る」を
+   **型として持つ** `BrokerDispatchIndeterminateException`（本例外と対になる新しい契約）で伝播させる。
+   **現在 `Rejected` に限定されるのは 2 事象**（不正注文の事前弾き・ブローカー応答の拒否状態）である。
+   決定 1・3・4・5 は変更しない（**確実に未発注**の見送りと理由列挙はそのまま）。
+   詳細は IADR-0117 の改定 6。
 3. **発注執行は同例外を捕捉し、(a) 予約を解放（確実に未発注のため二重発注の窓は無い）、(b) `ExecutionRecord`
    を残さず（注文は存在しない）、(c) 新イベント `OrderDispatchForgone`（DecisionId・Intent・理由・時刻）を
    発行して正常終了する。** ハンドラが例外を投げないため Wolverine の再試行・error キュー滞留は発生しない。

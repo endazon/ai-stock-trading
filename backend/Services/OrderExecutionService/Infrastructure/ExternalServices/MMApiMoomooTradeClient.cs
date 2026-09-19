@@ -459,7 +459,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // #331, IADR-0211: 接続確立の失敗は BrokerUnavailableException に分類する——この段階の失敗は
     // **注文がブローカーへ届き得ない**（確実に未発注）ため、発注執行は予約を解放して「見送り」にできる。
     // 発注**送信後**の失敗（SendAsync のタイムアウト等）は届いたか不明であり、本分類の対象外
-    // （従来どおり例外を伝播し、予約とリコンサイル〔IADR-0057/0092〕が守る）。
+    // （アダプタが BrokerDispatchIndeterminateException へ包んで伝播し、予約とリコンサイル
+    // 〔IADR-0057/0092〕が守る。**拒否へ畳まない**——#848 / IADR-0117 改定 6）。
     private async Task EnsureConnectedAsync(CancellationToken cancellationToken)
     {
         if (_connected)

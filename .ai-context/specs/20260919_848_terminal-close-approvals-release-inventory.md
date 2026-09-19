@@ -2,7 +2,7 @@
 title: 終端になった決済承認を「処理中の決済」から除き、取り消した手仕舞いが建玉をロックし続けないようにする
 type: spec
 status: accepted
-related_ids: [FR-05, FR-10, FR-11, FR-19, UC-06, ADR-0003, ADR-0013, IADR-0018, IADR-0067, IADR-0113, IADR-0117, IADR-0129, IADR-0159, IADR-0346]
+related_ids: [FR-05, FR-10, FR-11, FR-19, UC-06, ADR-0003, ADR-0013, IADR-0018, IADR-0057, IADR-0067, IADR-0074, IADR-0092, IADR-0113, IADR-0117, IADR-0129, IADR-0159, IADR-0210, IADR-0211, IADR-0346]
 author: endazon (with Claude Code)
 created: 2026-09-19
 updated: 2026-09-19
@@ -322,3 +322,129 @@ OpenD=99 → Failed → Rejected → 終端=True   ← 将来の新コード
   終端を「**取消・失効・拒否・全量約定**」と列挙しており、改定 2 で**誤りになった**。是正した。
   🔴 **これが規則 10（是正のたびに「この変更で新たに誤りになる自分の記述」を引き直す）の実例である** ——
   「終端の定義を変える」という変更は、**変更前の語（「全量約定」）で引かないと捕まらない**。
+
+---
+
+## ［2026-09-19 追記 / #848］監査ブロッキング B3 の是正（2 巡目・PR #851 head `94c0da10` に対する指摘）
+
+フェーズ末監査の 2 巡目が**ブロッキング 1 件（B3）**を出した。1 巡目の B2 と**同じ穴の裏側**である ——
+B2 は**照会側**の写像（`MoomooOrderState.Unknown` を新設して解消）、B3 は**発注側**の写像であり、
+**両方を塞がないと「不明では在庫を解放しない」は成立しない**。
+
+### B3: 発注側の「届いたか不明」が終端 `Rejected` へ畳まれ、在庫解放の引き金になっている
+
+**指摘（実測）**: `MoomooBrokerAdapter.PlaceWithRejectionDetailAsync` の包括 catch が、
+**送信後の SDK 例外・応答異常**を終端 `Rejected` に倒していた。ここへ落ちる代表例は `SendAsync` の
+返信待ちタイムアウトであり、**`send()` は既に実行済み**である（`MMApiMoomooTradeClient` のコメント自身が
+「発注**送信後**の失敗は**届いたか不明**」と書いていた）。
+
+```
+[発注側] status=Rejected terminal=True orderId=1b26000f...（Guid.NewGuid の偽 ID）
+[台帳]   承認 3,381 → OrderExecuted(Rejected, 約定 0) → 処理中=0（建玉の押さえが解ける）
+```
+
+**帰結は 2 つある。**
+
+1. **決済（手仕舞い）**: 手仕舞い注文が証券会社側で生きているかもしれないのに押さえが解け、再要求が通って
+   **同じ株数に 2 本の決済が並ぶ＝二重決済でショート化**する。本 PR 以前は 30 分の窓が偶然これを防いでいた
+   （それが #848 の不便の正体でもあった）。
+2. **エントリー**: `Rejected` は `OrderExecutionAppService` で「終端失敗＝建玉が生じない」と読まれ、
+   **保護レグを張らずに正常終了**する。注文が実際には生きていた場合、**無保護の建玉**がそのまま残る。
+
+### 是正（決定 2 の補い・**発注側の**写像で直す。B2 は照会側だった）
+
+**包括 catch を廃し、`BrokerDispatchIndeterminateException` として伝播させる。**
+
+- 新設した例外は `BrokerUnavailableException`（接続確立の失敗＝**確実に未発注**）と**対になる型**で、
+  同じ `Shared.Contracts/Ports/` に並べる。契約は「**送信は済んだが結果が確認できない**」だけを運ぶこと。
+- `OrderExecutionAppService` は本例外を**明示的に捕捉して Error でログし、そのまま再送出**する。
+  ここで行ってよいことは**何もしない**ことだけである ——
+  - 予約を**解放しない**（解放すると再配送で二重発注。`BrokerUnavailable` との決定的な違いはここである）
+  - 予約を**確定しない**・結果を**保存しない**（**偽の注文 ID による終端記録を作らない**。#842 と同型の指摘）
+  - **見送り（`OrderDispatchForgone`）にもしない** —— 見送りは「発注していない」という主張であり、
+    ここでそれを主張するのは `Rejected` と同じ誤り（建玉が無いという仮定）である
+- 予約は `Reserved` のまま残り、**client order id（remark＝`DecisionId`）による突合**
+  （`MoomooReservationBrokerProbe` → `OrderReservationReconciler`）が実状態を
+  `Placed` / `NotPlaced` / `Indeterminate` に解決する。発注済みだった場合は**証券会社が採番した本物の
+  注文 ID**で `executed_orders` に記録され、`OrderExecuted` が発行される。**予約を勝手に完了させない。**
+- **変えない側（#848 の射程を壊さない）**: 発注執行で `OrderStatus.Rejected` を返す箇所は 3 つあり、
+  誤っていたのは包括 catch の 1 つだけである。**発注前検証での棄却**（確実に未送信）と
+  **`MoomooTradeRequestException`**（`retType != 0`＝**確認できた**非受理）は `Rejected` のままとする
+  ——「確認できた拒否」による在庫解放は #848 の射程内であり、外すと 2 つ目の恒久ロックを作る。
+
+> 🔴 **これは「例外を握り潰す fail-safe」が反転していた実例である。** 包括 catch のコメントは
+> 「フローを止めない・実弾防止の安全側」と書いていた。**在庫解放の引き金が `Rejected` になった瞬間、
+> 『フローを止めない』は『状態を知らないまま押さえを解く』に化けた。**
+> B1・B2 と合わせて 3 度目であり、**共通の形は「安全側と書いてある既定が、下流の意味変更で反転する」**である。
+
+### 共有契約 `OrderStatus` へ値を足さない理由
+
+**足さない。** 本件で必要なのは「不明という**状態**を運ぶこと」ではなく「**結果を確認できていないのだから
+何も主張しないこと**」である。`OrderStatus` は**証券会社に存在する注文の状態**の集合であり（FR-05）、
+存在するかどうかが分からない注文はその集合の要素ではない。値を足すと通知の文面・監査・射影・
+ペーパーアダプタまで「不明」を表現する義務が広がるうえ、**`Unknown` という状態を持つ注文記録**を
+台帳に作ることになり、偽の注文 ID を残さないという不変条件 3 と正面から衝突する。
+**記録を作らずに例外で終わる**方が、意味の上でも面の上でも小さい。B2 が
+`MoomooOrderState`（サービス内の正規化列挙）で足りたのと同じ判断である。
+
+### 追加する受け入れ基準
+
+8. **送信後に結果を確認できなかった発注は、在庫解放の引き金を作らない。** 終端の記録
+   （`ExecutionRecord` / `OrderExecuted(Rejected)`）が 1 件も生じず、処理中の決済は承認数量のまま押さえられる。
+9. **同じとき、「建玉は生じていない」とも仮定しない。** エントリーでも終端失敗として扱わず、
+   予約を `Reserved` のまま据え置いて突合の解決に委ねる（偽の注文 ID を残さない）。
+   **変えない側**: 発注前棄却と確認できた非受理は従来どおり `Rejected`、確実に未発注は従来どおり見送り。
+
+### 追加するテスト（`T-10-408` から採番。407 以下は本 PR で使用済み）
+
+| ID | 固定すること |
+| --- | --- |
+| **T-10-408** | 🔴 **送信後に結果を確認できない発注を「拒否」とも「建玉なし」とも仮定しない**（13 ケース）。写像（手仕舞い・エントリー・保護レグ・成行・代替注文種別）／**実アダプタを通した結線**（在庫解放の引き金を作らない・建玉なしと仮定しない）／据え置いた予約を突合が本物の注文 ID で解決する・確定できないあいだは据え置いたまま／**変えない側**（確認できた非受理は `Rejected`・確実に未発注は見送りで解放） |
+
+### 母集合（本追記の是正のために引き直したもの）
+
+走査（2026-09-19・`git rev-parse --is-shallow-repository` ＝ `false`）:
+
+- 軸 1: `grep -rn "届いたか不明" backend docs .ai-context`（**誤りの側の概念**。「不明」と書きながら
+  拒否へ倒している箇所を、倒し方を変える前に全部引く）
+- 軸 2: `grep -rn "送信後" backend docs .ai-context`
+- 軸 3: `grep -rn "Rejected に倒\|Rejected へ倒\|Rejected で返し" backend docs .ai-context`
+- 軸 4: `grep -rn "OrderStatus.Rejected" backend --include=*.cs`（発注執行で拒否を作る全 3 箇所の同定）
+
+| 箇所 | 扱い |
+| --- | --- |
+| `Shared.Contracts/Ports/BrokerDispatchIndeterminateException.cs` | **追加**（`BrokerUnavailableException` と対になる契約） |
+| `Shared.Contracts/Ports/BrokerUnavailableException.cs` | **変更**（対の型を指す。「従来どおり例外をそのまま伝播」が型を持った） |
+| `Infrastructure/ExternalServices/MoomooBrokerAdapter.cs` | **変更**（包括 catch を伝播へ・クラス冒頭の誤った要約を是正・ログ文面） |
+| `Infrastructure/ExternalServices/MMApiMoomooTradeClient.cs` | **変更**（分類のコメントが新しい型を指す） |
+| `Features/OrderExecution/DispatchApprovedOrder/OrderExecutionAppService.cs` | **変更**（明示的な捕捉＋Error ログ＋再送出。解放も確定も見送りもしないことを本文で固定） |
+| `Tests/.../MoomooBrokerAdapterTests.cs` | **変更**（是正前の挙動を肯定していた `client_例外_送信後の失敗_は_Rejected_に倒す_fail_safe` を廃し T-10-408 へ） |
+| `Tests/.../MoomooBrokerAdapterAlternativeStopTests.cs` | **変更**（同上・S3 側） |
+| `Tests/.../OrderExecutionServiceIndeterminateDispatchTests.cs` | **追加**（アプリケーション層の契約＋実アダプタを通した結線） |
+| `Features/OrderExecution/GuardProtectiveStops/ProtectiveStopGuard.cs` | 変更なし —— 例外を既に捕捉しており、**分岐は是正前後で同一**（拒否が返っていたときと同じ「再発注不可→手仕舞い」へ落ちる）。偽 ID の記録と「手仕舞い済み」の誤った主張が消える方向にだけ動く |
+| `Features/.../OrderExecutionAppService.PlaceProtectiveStopAsync` | 変更なし —— 同上（拒否と同じ「未受理」分岐へ落ちる。S3 の試行の記録には例外のメッセージが載るため監査に空欄は残らない） |
+| `docs/tests/FR-10_risk-controls-tests.md` | **変更**（T-10-408 の追加・対照実験・**T-10-303 / T-10-363 の是正**。どちらも「送信後の失敗は従来どおり拒否へ倒す」と書いており、本是正で**誤りになった**） |
+| `docs/operations/broker-execution-paths-runbook.md` | **変更**（ログ文面の行・`OrderId` の形の表。**「記録が無い＝発注していない」ではない**ことを明記し、滞留予約を探す SQL を足した） |
+| `.ai-context/adr/IADR-0117_*.md` ＋ `.ai-context/adr/README.md` | **変更**（改定 6・索引行） |
+| `.ai-context/adr/IADR-0211_*.md` ＋ 同索引行 | **変更**（同 ADR が列挙した「`Rejected` へ倒す 3 事象」の 3 番目が本是正で**誤りになった**。日付つき追記で訂正） |
+
+除外した理由:
+
+- `PaperBrokerAdapter`（内蔵 paper）: ネットワーク越しの送信が無く、「送ったが結果が分からない」という
+  事象そのものが起こり得ない。包括 catch も持たない。**契約 `OrderStatus` を触らなかったため波及もゼロ**である。
+- 通知・監査・射影: `OrderStatus` の値域を変えていないため、写る面が 1 つも増えない
+  （これが「契約へ値を足さない」ことの実利である）。
+- `OrderExecutionService/Domain/OrderStatusLifecycle.cs`: 約定追跡の「引き直しを止めてよいか」の判定であり、
+  本件は**そもそも記録を作らない**ため到達しない。
+
+### 残余リスク（本追記で新たに残るもの）
+
+- **保護レグの送信後が不明なとき、「張れなかった」側へ倒す挙動は変えていない**（既存の分岐のまま）。
+  逆指値が実際には生きていた場合、エントリーを成行で手仕舞うと**孤立した逆指値**が残り得る。
+  是正前（`Rejected` が返っていた）と**同一の挙動**であり本追記で悪化はしないが、
+  同型の穴であることは確かなので**別 issue で扱う**（本 PR の射程外。IADR-0210 の fail-closed 方針の見直しを伴う）。
+- **突合で `Placed` と確定したエントリーに、保護レグは張られない**（`OrderReservationReconciler` は
+  記録と `OrderExecuted` の発行までしか行わない）。建玉突合（IADR-0118）が乖離として報告する経路は残る。
+  これも**別 issue**で扱う。
+- **「不明」は計器に現れない**。`BusinessMetrics` は注文状態と見送り理由で数えており、例外で終わる本経路は
+  どちらにも計上されない（Error ログと `_error` キューでのみ観測できる）。計器を足すかは運用で判断する。

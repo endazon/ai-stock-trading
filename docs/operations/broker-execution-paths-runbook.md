@@ -99,7 +99,7 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 | `OpenD へ接続します <host>:<port> encrypt=...` | moomoo 経路の接続開始（**接続は遅延**＝初回の発注・照会時に張る。起動直後には出ない） |
 | `OpenD 接続完了・SIMULATE 口座 accId=<数値>` | **SIMULATE 口座を掴んだ**。この行が無ければ moomoo へは出ていない |
 | `moomoo SIMULATE 発注成功 orderId=<数値> <side> <symbol> x<qty>@<price>` | moomoo へ 1 件送った（**注文ごとに 1 行**） |
-| `moomoo 発注に失敗したため Rejected に倒します ...` | moomoo 経路だが**不達**（OpenD 未接続等）。moomoo 側に注文は無い |
+| `moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）...` | 🔴 **送信は済んだが結果が分からない**（返信待ちのタイムアウト等）。**注文は証券会社側で生きているかもしれない**。拒否として記録せず、予約を据え置いて突合の解決を待つ（2026-09-19 改定。旧: `moomoo 発注に失敗したため Rejected に倒します ...`） |
 
 ### 3. `OrderId` の形で見分ける（事後・DB / イベントから）
 
@@ -107,11 +107,22 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 | --- | --- | --- |
 | paper の約定・拒否 | **32 桁 hex**（`Guid` の `"N"` 書式・ハイフン無し） | `3f2a9c1e4b7d48a0b1c2d3e4f5061728` |
 | moomoo が受け付けた注文 | **moomoo 採番の数値**（10 進・19 桁程度） | `9049618348733212748` |
-| moomoo 経路だが**不達・不正注文** | **32 桁 hex**（AST が終端 `Rejected` を自前採番するため） | 同上（`Status=Rejected` で区別する） |
+| moomoo 経路だが**送信前に棄却・証券会社が受理せず** | **32 桁 hex**（自前採番の終端 `Rejected` を残すため） | 同上（`Status=Rejected` で区別する） |
+| moomoo 経路で**送信後に結果を確認できなかった** | **行そのものが無い**（2026-09-19 改定。結果を知らないまま記録を作らない） | 予約が `Reserved` のまま残る（下の SQL で探す） |
 
-> ⚠️ **形だけで断定しない。** 32 桁 hex は「paper の約定」と「moomoo 経路の不達 `Rejected`」の両方に現れる。
-> `Status` を併せて見る（`Filled` の 32 桁 hex ＝ paper、`Rejected` の 32 桁 hex ＝ moomoo 不達の可能性あり）。
-> 確実な判定は 1・2（introspection とログ）で行う。
+> ⚠️ **形だけで断定しない。** 32 桁 hex は「paper の約定」と「moomoo 経路の `Rejected`」の両方に現れる。
+> `Status` を併せて見る（`Filled` の 32 桁 hex ＝ paper、`Rejected` の 32 桁 hex ＝ moomoo で受理されなかった
+> 可能性あり）。確実な判定は 1・2（introspection とログ）で行う。
+>
+> 🔴 **「記録が無い」は「発注していない」ではない**（2026-09-19 改定）。送信後に結果を確認できなかった発注は
+> 拒否として記録せず、予約を `Reserved` のまま据え置く（証券会社側で生きているかもしれないものを
+> 「拒否された」と記録すると、建玉の押さえが解けて**二重決済**になる）。実状態は突合が解決する。
+> 滞留している予約は次の SQL で探す:
+>
+> ```sql
+> SELECT "DecisionId", "State", "ReservedAt" FROM order_dispatch_reservations
+> WHERE "State" = 0 ORDER BY "ReservedAt" DESC LIMIT 20;  -- 0 = Reserved
+> ```
 
 order-execution DB から確認する（発注結果は**経路に依らず** `executed_orders` に記録される）:
 
