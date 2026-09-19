@@ -216,6 +216,22 @@ public static class AuditEntryFactory
         Truncate($"{e.Symbol} 手仕舞い要求 {e.Side} 数量{e.Quantity}@{e.Price}（{e.Actor}）: {e.Reason}"),
         AuditSerialization.Serialize(e), e.RequestedAt, recordedAt);
 
+    // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による「板に残った手仕舞いの取消」要求。
+    // 後続の OrderCancelled はアクターを持たないため、本記録が「誰が・なぜ板の注文を消したか」の唯一の証跡になる。
+    // 🔴 本イベントは「取り消したい」であって「取り消せた」ではない（確定は OrderCancelled 側に残る）。
+    public static AuditEntry From(PositionCloseCancellationRequested e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionCloseCancellationRequested), e.DecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 手仕舞いの取消要求（{e.Actor}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.RequestedAt, recordedAt);
+
+    // FR-09, FR-10, FR-11, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（失効・取消・拒否）。
+    // 建玉が残ったまま翌日へ持ち越される事象であり、「黙って残らない」ことの監査側の記録である。
+    public static AuditEntry From(PositionCloseAbandoned e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionCloseAbandoned), e.DecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 手仕舞いが未約定のまま終了 {e.TerminalStatus}"
+            + $"（承認{e.ApprovedQuantity} 約定{e.FilledQuantity} 残{e.RemainingQuantity}）"),
+        AuditSerialization.Serialize(e), e.AbandonedAt, recordedAt);
+
     // FR-05, FR-10, FR-11, #292, IADR-0118: ブローカ実ポジションの観測。注文相関を持たないため "position-reconciliation" の
     // 決定的 GUID を相関にする（観測と乖離検知が同一相関で束ねられ、監査照会でまとめて辿れる）。
     public static AuditEntry From(BrokerPositionsObserved e, Guid id, DateTimeOffset recordedAt) => new(

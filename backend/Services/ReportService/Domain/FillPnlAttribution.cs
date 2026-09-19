@@ -105,10 +105,18 @@ public static class FillPnlAttributionBuilder
     /// <c>DecisionId</c> → 記録された判断根拠。<c>null</c>＝判断記録そのものが未供給。
     /// 辞書に無い <c>DecisionId</c> と空文字の根拠は<b>その約定だけ</b>未供給になる。
     /// </param>
+    /// <param name="adoptions">
+    /// FR-11, ADR-0041 決定 1, #870, #859, IADR-0360 決定 4: 期間の<b>乖離の取り込み</b>。
+    /// 🔴 <b>在庫だけを畳み、帰属行は作らない</b>——取り込みは約定ではなく、実現損益は<b>不明</b>である。
+    /// 帰属行にしないことで、日別推移・ハイライト取引・週別／市場別の内訳・費用の内訳・勝率のどれにも
+    /// <b>構造的に入らない</b>。畳むのは、畳み込み順序と規則を <see cref="PnlAggregator"/> と一致させるためである
+    /// （一致しないと内訳の合計が §1 サマリとずれ、しかも全テストは緑のままそうなる）。
+    /// </param>
     public static IReadOnlyList<FillPnlAttribution> Build(
         IReadOnlyList<PeriodTradeFill> fills,
         TradingAssumptions assumptions,
-        IReadOnlyDictionary<Guid, string>? rationales)
+        IReadOnlyDictionary<Guid, string>? rationales,
+        IReadOnlyList<PeriodDriftAdoption>? adoptions = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
         ArgumentNullException.ThrowIfNull(assumptions);
@@ -118,9 +126,19 @@ public static class FillPnlAttributionBuilder
         var sequence = 0;
 
         // 🔴 **並べ替えは PnlAggregator / TradeHistoryViewBuilder と同一**（同じ畳み込み順序でなければ
-        // 内訳の合計が §1 サマリと一致しない）。
-        foreach (var fill in fills.OrderBy(f => f.ExecutedAt))
+        // 内訳の合計が §1 サマリと一致しない）。取り込みも同じ時系列へ混ぜて畳む（#870・IADR-0360 決定 4）。
+        foreach (var entry in PeriodLedgerTimeline.Merge(fills, adoptions))
         {
+            // 🔴 取り込みは**在庫だけ**を動かし、帰属行にしない（Sequence も進めない）。
+            if (entry.Adoption is { } adoption)
+            {
+                var adoptionKey = (adoption.Symbol, adoption.Market);
+                positions.TryGetValue(adoptionKey, out var held);
+                positions[adoptionKey] = adoption.ApplyTo(held);
+                continue;
+            }
+
+            var fill = entry.Fill!;
             sequence++;
 
             var key = (fill.Symbol, fill.Market);

@@ -7,7 +7,7 @@ namespace RiskManagementService.Features.RiskManagement;
 //
 // 約定（TradeFillRow）とは別の事実である——約定はブローカーが返した数量と単価を持つが、取り込みは
 // 「観測されたブローカーの建玉へ台帳の数量を合わせた」という利用者の承認であり、**約定価格を持たない**。
-// 射影（PortfolioProjection）へは LedgerFill（IsDriftAdoption=true）として合流し、数量だけが効く。
+// 射影（PortfolioProjection）へは LedgerFill（由来 TradeOrigin.ManualAdoption）として合流し、数量だけが効く。
 //
 // 数量の表現: Side × Quantity（>0）は**台帳へ適用する減少分**（ロングの減少は Sell、ショートの減少は Buy）。
 // LedgerQuantityBefore / BrokerQuantity は符号付き（PositionDriftItem と同じ）で、監査と冪等キーのために持つ。

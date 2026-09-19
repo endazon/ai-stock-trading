@@ -19,6 +19,14 @@ public sealed class OrderExecutedNotificationHandler(INotificationSender sender)
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（引け跨ぎの失効・取消・拒否）。
+// 建玉が**黙って**翌日へ持ち越されることを防ぐための通知である。
+public sealed class PositionCloseAbandonedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(PositionCloseAbandoned message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 public sealed class OrderRejectedNotificationHandler(INotificationSender sender)
 {
     public Task Handle(OrderRejected message, CancellationToken cancellationToken) =>

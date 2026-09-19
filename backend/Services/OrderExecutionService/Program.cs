@@ -116,20 +116,27 @@ builder.Services.AddScoped(sp => new SoftwareStopExecutor(
 builder.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
 builder.Services.AddScoped<TradeExpenseRecordingService>();
 
-// #154, FR-19, IADR-0067: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
-// 訂正・取消の口（IOrderAmendmentBroker）はペーパーだけが実装する。実ブローカー（moomoo）選択時は本経路を
-// 登録しない＝実弾に対する訂正・取消が構成上も存在しない（fail-safe）。実ブローカーの訂正・取消配線は
-// 後続・実コンテナ E2E（#82 系）で扱う。
-// 駆動元（時限取消・#141 リコンサイル基点・#152 pause 強制取消）は本 PR の対象外で、それらが
-// OrderAmendmentDispatcher を呼ぶ。moomoo 構成でそれらを配線した場合は DI 解決に失敗して起動時に気づける。
+// #154, FR-19, #847, #768, IADR-0067, IADR-0357: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
+//
+// 🔴 **取消は全構成で登録する（moomoo を含む）。** 稼働環境（#847）で、板に残った手仕舞いを消す手段が
+// moomoo アプリしか無く、利用者が手で取り消すしかなかった。取消そのものは当初から IBrokerAdapter に在り
+// moomoo も実装している（ProtectiveStopGuard も OrderExecutionAppService も既に呼んでいる）ため、
+// ここを閉じていたことに fail-safe 上の意味は無かった。駆動元は PositionCloseCancellationHandler
+//（利用者の OwnerOnly 操作）であり、これが #768「呼び出し元が無い」の解消である。
+//
+// **訂正（ModifyOrderAsync）はペーパー専用のまま**である（IADR-0067）。実 OpenD へ TrdModifyOrder を
+// 配線していないためで、IOrderAmendmentBroker は moomoo 構成では登録せず、OrderAmendmentService は
+// それを任意依存として受けて ModifyAsync を NotSupportedException で閉じる（型と実行時の二重の遮断）。
+// #141（リコンサイルの取消基点）・#152（pause による強制取消）は依然として未配線である。
 builder.Services.AddScoped<IOrderLifecycleStore, EfOrderLifecycleStore>();
 if (!brokerSelection.IsMoomoo)
 {
     builder.Services.AddSingleton<IOrderAmendmentBroker>(sp =>
         (IOrderAmendmentBroker)sp.GetRequiredService<IBrokerAdapter>());
-    builder.Services.AddScoped<OrderAmendmentService>();
-    builder.Services.AddScoped<OrderAmendmentDispatcher>();
 }
+
+builder.Services.AddScoped<OrderAmendmentService>();
+builder.Services.AddScoped<OrderAmendmentDispatcher>();
 
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。

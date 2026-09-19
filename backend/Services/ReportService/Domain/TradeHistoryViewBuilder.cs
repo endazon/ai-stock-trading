@@ -23,10 +23,17 @@ public static class TradeHistoryViewBuilder
     /// `DecisionId` → 記録された判断根拠。<c>null</c> ＝判断記録そのものが未供給（全行が未供給になる）。
     /// 辞書にあるが空文字の根拠、および辞書に無い `DecisionId` は<b>その行だけ</b>未供給になる。
     /// </param>
+    /// <param name="adoptions">
+    /// FR-11, ADR-0041 決定 1, #870, #859, IADR-0360 決定 3・決定 4: 期間の<b>乖離の取り込み</b>。
+    /// 🔴 <b>§2 の明細行にはしない。</b> 約定単価も実現損益も分からず、§2 の 11 列を埋められないためである
+    /// （計画テンプレートの明文）。代わりに <b>§2-b「手動売買（損益不明）」</b>へ別掲し、在庫は数量だけ畳む。
+    /// <c>null</c>＝照会できていない（§2-b は「照会できませんでした」）／空列＝<b>該当なし</b>（欄は出す）。
+    /// </param>
     public static TradeHistoryView Build(
         IReadOnlyList<PeriodTradeFill> fills,
         TradingAssumptions assumptions,
-        IReadOnlyDictionary<Guid, string>? rationales)
+        IReadOnlyDictionary<Guid, string>? rationales,
+        IReadOnlyList<PeriodDriftAdoption>? adoptions = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
         ArgumentNullException.ThrowIfNull(assumptions);
@@ -35,8 +42,19 @@ public static class TradeHistoryViewBuilder
         var lines = new List<TradeHistoryLine>(fills.Count);
         var index = 0;
 
-        foreach (var fill in fills.OrderBy(f => f.ExecutedAt))
+        // #870, IADR-0360 決定 4: 取り込みも同じ時系列へ混ぜて畳む（順序は PnlAggregator と同一）。
+        foreach (var entry in PeriodLedgerTimeline.Merge(fills, adoptions))
         {
+            // 🔴 取り込みは**在庫だけ**を動かし、§2 の行にも通し番号にもしない（§2-b へ別掲する）。
+            if (entry.Adoption is { } adoption)
+            {
+                var adoptionKey = (adoption.Symbol, adoption.Market);
+                positions.TryGetValue(adoptionKey, out var held);
+                positions[adoptionKey] = adoption.ApplyTo(held);
+                continue;
+            }
+
+            var fill = entry.Fill!;
             index++;
 
             var key = (fill.Symbol, fill.Market);
@@ -70,6 +88,8 @@ public static class TradeHistoryViewBuilder
         return new TradeHistoryView
         {
             Lines = lines,
+            // 🔴 04_report-templates 日報 §2-b: **null＝照会できていない／空列＝該当なし。** 潰さない。
+            DriftAdoptions = adoptions,
             // 🔴 5 項目を分けて持つ記録源が無い＝未供給（空列＝該当なし、ではない）。
             Details = null,
             // 🔴 見送り（Hold）はイベント化されておらずログにしか残らない＝未供給（「見送りなし」ではない）。

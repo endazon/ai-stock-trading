@@ -313,6 +313,22 @@ public class NotificationTemplateGoldenTests
                     + "**この注文は再試行されません**（キューイングしない・再発注は次の取引判断から）。",
                 NotificationSeverity.Warning)),
 
+        // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（引け跨ぎの失効・取消）。
+        // **「未決済 N」と「翌日へ持ち越される」が本文から欠けると、利用者は建玉が残ったことに気づかない**
+        // ——従来の「約定 Expired 数量0@0」がまさにそれだった。
+        ["PositionCloseAbandoned"] = (
+            new PositionCloseAbandoned(
+                Id, "AAPL", Market.UnitedStates, TradeSide.Sell, 3381, 0, 3381, OrderStatus.Expired, T),
+            new NotificationMessage(
+                "手仕舞いが約定せず終了",
+                "AAPL/UnitedStates Sell 数量3381 の手仕舞いが Expired で終了しました"
+                    + "（約定 0・**未決済 3381**）。"
+                    + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+                    + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
+                    + "手仕舞い直すか、建玉を確認してください"
+                    + "（DecisionId=11111111-1111-1111-1111-111111111111）。",
+                NotificationSeverity.Warning)),
+
         // #331, IADR-0210: 保護逆指値の発注。統制が設計どおり働いた記録であり Info
         // （Critical にすると実際に止まる事象が埋もれる）。
         ["ProtectiveStopPlaced"] = (

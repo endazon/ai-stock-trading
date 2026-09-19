@@ -29,10 +29,6 @@ public class UnwiredDiRegistrationTests
     private static readonly IReadOnlyDictionary<string, string> KnownUnwired =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["OrderExecutionService/OrderAmendmentDispatcher"] =
-                "訂正・取消の配管だけが入っており駆動元が呼んでいない（クラス冒頭のコメントが自認）。"
-                + "外す条件: 駆動元（時限取消・リコンサイル基点・pause による強制取消）が本型を呼ぶ。"
-                + "呼ばれないまま残すなら型ごと消す。",
             ["RiskManagementService/BorrowFeeAccrualService"] =
                 "借株料の日次計上。料率の単位が未確定で、取り違えると累計が 100 倍ずれるため"
                 + "スケジューラも供給元も登録しない＝意図した遮断（登録位置のコメントが明記）。"

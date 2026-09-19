@@ -33,13 +33,27 @@ public sealed record LedgerFill(
     // **既定 null＝未記録（列追加前の行・承認時に為替レート源が解決できなかった行）。推定で埋めない**——
     // 報告書は当該約定を含む期間の為替差損益を未供給とし、未記録の件数を明記する。
     decimal? FxRateBaseToDisplay = null,
-    // FR-10, FR-11, #849, IADR-0350 決定 2/3: **約定ではなく、利用者が承認した乖離の取り込み行**である。
+    // FR-11, FR-10, #849, #870, ADR-0041 決定 1, IADR-0350 決定 2/3, IADR-0360 決定 1: この行の**由来**
+    // ——「**誰が約定させたか**」を表す軸である。🔴 **経費区分（TradeExpenseCategory）とは別の軸である**
+    // （区分は「何の費用か」、由来は「誰が約定させたか」。混ぜない）。
+    // TradeOrigin.ManualAdoption は**約定ではなく、利用者が承認した乖離の取り込み行**である。
     // システム外の売買は約定価格が分からないため、この行は**数量だけ**を運ぶ。射影は Price を使わず、
     // **その時点の平均取得単価で在庫だけを減らす**（実現損益 0 を構造的に保証する。PortfolioProjection.ApplyToLot）。
     // Price は取り込み時点の台帳の平均取得単価（参考）であり、**約定価格ではない**。
-    // 約定列として外へ返す経路（GET /risk-controls/fills）は本行を除外するため、wire へは載せない。
-    [property: System.Text.Json.Serialization.JsonIgnore] bool IsDriftAdoption = false)
+    // 本列は wire へ載せるが、🔴 **GET /risk-controls/fills に出る値は常に System である**
+    // ——同経路は PeriodFillQuery が取り込み行そのものを除外するため、ManualAdoption の行は 1 件も通らない。
+    // **監査で由来を読む手段は GET /risk-controls/drift-adoptions（DriftAdoptionView.Origin）が担う。**
+    // ここで wire へ出す意味は「由来が 1 級の列である」という軸の表明に留まる（IADR-0360 決定 1・2026-09-19 の監査）。
+    TradeOrigin Origin = TradeOrigin.System)
 {
     /// <summary>基準通貨（USD）建ての約定単価。金額集計・実現損益・エクイティはこの単価で積む。**永続化しない計算値**である。</summary>
     public decimal PriceInBase => Price * FxRateToBase;
+
+    /// <summary>
+    /// 由来が<b>手動売買による取り込み</b>か（<see cref="Origin"/> からの導出）。
+    /// 読み手（射影・期間約定の照会・強制買戻しの推定）は本述語で分岐する。**永続化も wire への露出もしない**
+    /// ——軸そのものは <see cref="Origin"/> が運ぶ（同じ事実を 2 つの名前で wire へ出さない）。
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDriftAdoption => Origin == TradeOrigin.ManualAdoption;
 }

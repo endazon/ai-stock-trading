@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #820, #826, #829, #848, #849, #864, #879, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, planning#292]
 -->
 
 
@@ -757,6 +757,43 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | **判断由来の決済** | LLM が保有建玉の反対売買を判断 | 保有全量 | 通す（Close は上記のとおり素通りする） |
 
 このほか維持率割れの自動縮小（前掲）も決済を起こす。
+
+#### owner の手仕舞いは既定で成行である（#847）
+
+`limitPrice` を**省略すると成行**で発注する。現在値の指値は、価格が下げ続けるかぎり置いていかれるため、
+**手仕舞いが必要な場面（下落）でこそ効かない**（稼働環境で実測。3,381 株の売り指値が板に残り、
+板に残った注文が数量を占めるため指値を変えた出し直しもできなくなった）。
+
+| 要求 | 発注種別 |
+| --- | --- |
+| `limitPrice` 省略（`marketOrder` 省略） | **成行** |
+| `limitPrice` 指定 | 指値 |
+| `marketOrder: true` ＋ `limitPrice` 指定 | 400（矛盾） |
+| `marketOrder: false` ＋ `limitPrice` 省略 | 現在値の指値 |
+
+**成行には約定価格の上限が無い。** 手仕舞いは発注前スクリーニングを通らない（前掲）ため、
+指値が事実上のブレーキになっていた分がここで外れる。残るのは数量の上限（在庫ガード＝「建玉 − 処理中の決済」）
+だけであり、**建玉を超える成行は作れない**。
+
+参照価格（台帳・監査・通知が使う値）は成行でも載せる。現在値が取得できないときは**成行に限り**
+建玉の平均取得単価へ倒し、手仕舞いを止めない。指値では従来どおり 422 で拒否する。
+
+#### 板に残った手仕舞いは利用者が取り消せる（#847）
+
+`POST /risk-controls/positions/close/cancel`（OwnerOnly・`decisionId` と `reason` が必須）。
+サービストークンには開かない（自動処理が板の注文を消せないようにする）。202 で受け、取消は非同期に届く。
+
+🔴 **「取消を送った」と「確実に取り消せた」は別である。** 証券会社は取消要求を受理しても、
+注文がまだ生きていることがある（取消進行中の状態を経てから終端になり、その間に約定し得る）。
+**取り消せたと確認できるまで、この手仕舞いは「処理中の決済」として建玉を押さえ続ける** ——
+押さえを先に解くと、同じ建玉に 2 本目の決済が並んで意図しないショートになる。
+確認できないときの本当の終端は、既存の約定状態の追跡（30 秒周期）が観測して届ける。
+
+#### 約定しないまま終わった手仕舞いは通知する（#847）
+
+手仕舞いは当日注文であり、約定しなければ引け後に失効する。未約定残を残して終わった手仕舞い
+（失効・取消・拒否）は、**残った株数つきで通知する**（重大度は Warning）。
+逆指値なしの建玉はそのまま翌日へ持ち越されるため、黙って残さないことが目的である。
 
 #### 決済は発注の直前にブローカーの実建玉と突き合わせる（#864）
 

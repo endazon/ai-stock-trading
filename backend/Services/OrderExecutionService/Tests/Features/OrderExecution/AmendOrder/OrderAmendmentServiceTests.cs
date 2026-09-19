@@ -11,9 +11,11 @@ using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrd
 
 namespace OrderExecutionService.Tests;
 
-// FR-05, FR-19, #154, IADR-0067: 注文の訂正・取消（ブローカ適用＋永続化＋イベント生成）の検証。
-// 本サービスは配管であり、訂正・取消を「起こす」駆動元（時限取消・#141 リコンサイル・#152 pause 強制取消）は
-// 対象外（各 issue に残す）。イベントの発行そのものは Worker 層の OrderAmendmentDispatcher が行う。
+// FR-05, FR-19, #154, #847, IADR-0067, IADR-0357: 注文の訂正・取消（ブローカ適用＋永続化＋イベント生成）の検証。
+// イベントの発行そのものは Worker 層の OrderAmendmentDispatcher が行う。
+// 取消の駆動元は利用者の手仕舞い取消（#847 で配線した PositionCloseCancellationHandler）であり、
+// 訂正の駆動元（時限取消・#141 リコンサイル・#152 pause 強制取消）は依然として未実装である。
+// 取消の**確認**（在庫を戻してよいか）は OrderCancellationConfirmationTests が固定する。
 public class OrderAmendmentServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 17, 6, 0, 0, TimeSpan.Zero);
@@ -38,7 +40,8 @@ public class OrderAmendmentServiceTests
 
         public InMemoryOrderLifecycleStore Lifecycle { get; } = new();
 
-        public OrderAmendmentService Service => new(Broker, Broker, ExecutedOrders, Lifecycle, new FakeClock());
+        // #847, IADR-0357: 取消は IBrokerAdapter 経由（moomoo も実装）。訂正だけが IOrderAmendmentBroker を要する。
+        public OrderAmendmentService Service => new(Broker, ExecutedOrders, Lifecycle, new FakeClock(), Broker);
 
         public async Task<(Guid DecisionId, string OrderId)> PlaceAsync(int quantity = 10, decimal price = 3000m)
         {
@@ -60,10 +63,12 @@ public class OrderAmendmentServiceTests
 
         var cancelled = await fx.Service.CancelAsync(decisionId, reason: "時限取消");
 
+        // #847, IADR-0357: ペーパーの取消は同期的に終端 Cancelled になるため「確認できた取消」である。
+        cancelled.Confirmed.Should().BeTrue();
         cancelled.DecisionId.Should().Be(decisionId);
         cancelled.OrderId.Should().Be(orderId);
         cancelled.Reason.Should().Be("時限取消");
-        cancelled.CancelledAt.Should().Be(Now);
+        cancelled.Event!.CancelledAt.Should().Be(Now);
 
         // ブローカに反映されている。
         var order = await fx.Broker.GetOrderAsync(orderId);
@@ -157,7 +162,7 @@ public class OrderAmendmentServiceTests
         var executed = (await execution.ExecuteAsync(
             new AiStockTrading.Shared.Contracts.Events.OrderApproved(decisionId, Intent(), 10, Now))).Executed!;
 
-        var service = new OrderAmendmentService(broker, broker, store, lifecycle, new FakeClock());
+        var service = new OrderAmendmentService(broker, store, lifecycle, new FakeClock(), broker);
         var act = () => service.ModifyAsync(decisionId, quantity: 5, price: 2900m, reason: "遅れた訂正");
 
         await act.Should().ThrowAsync<InvalidOperationException>();

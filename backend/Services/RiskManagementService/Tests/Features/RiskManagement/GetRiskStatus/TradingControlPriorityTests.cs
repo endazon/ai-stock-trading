@@ -83,6 +83,8 @@ public class TradingControlPriorityTests
             Pause,
             Lockout,
             new InMemoryStageGateStore(TradingStage.Stage0Verification),
+            // #870: 本テストは統制の優先順位だけを関心に持つため、取り込みの無い台帳を渡す。
+            new InMemoryPortfolioLedgerStore(),
             new FakeClock(Now, Today)).Build();
 
         public ScreeningOutcome Screen(PositionEffect effect)

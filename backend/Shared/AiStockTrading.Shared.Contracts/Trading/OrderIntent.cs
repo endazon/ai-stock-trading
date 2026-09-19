@@ -14,6 +14,12 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 // NotionalInBase で基準通貨の金額を判定する。既定 1＝基準通貨市場（米国株）。
 // **既定 1 の意味は基準通貨の反転で変わる**（旧: 日本株）。既存の永続データが本移行を跨いで混在しないことは
 // EF マイグレーション AssertLedgerSafeForUsdBaseCurrency が構造的に検査する（IADR-0152 決定5）。
+// FR-10, UC-06, #847, IADR-0357: MarketOrder は「この注文を成行で送る」ことを表す（既定 false＝従来どおり指値）。
+// 利用者の手仕舞い（Close）だけが true を立てる —— 現在値の指値は下落局面で置いていかれ、**手仕舞いが必要な
+// 場面でこそ効かない**（稼働環境で実測。#847）。成行でも Price は**参照価格**として載せる（台帳・監査・通知・
+// 内蔵 paper の約定価格が使う）。実ブローカー（moomoo）は成行注文に価格を載せないため、送信内容には影響しない。
+// 既定 false により、エントリー・保護レグ・判断由来の決済の挙動は 1 バイトも変わらない。
+// 取引台帳（approved_orders）は OrderIntent の列を明示写像しており本値を持たない（発注時にしか意味を持たない）。
 public record OrderIntent(
     string Symbol,
     Market Market,
@@ -24,7 +30,8 @@ public record OrderIntent(
     decimal Price,
     PositionEffect PositionEffect = PositionEffect.Open,
     decimal? StopLossPrice = null,
-    decimal FxRateToBase = 1m)
+    decimal FxRateToBase = 1m,
+    bool MarketOrder = false)
 {
     /// <summary>ローカル通貨建ての概算約定金額（執行・スリッページ評価用）。</summary>
     public decimal Notional => Quantity * Price;

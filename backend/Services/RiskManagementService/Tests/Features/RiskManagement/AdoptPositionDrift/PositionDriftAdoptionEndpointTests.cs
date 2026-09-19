@@ -223,6 +223,59 @@ public class PositionDriftAdoptionEndpointTests
         fills!.Should().ContainSingle("建てた約定 1 件だけ").Which.Side.Should().Be(TradeSide.Buy);
     }
 
+    // FR-11, FR-06, ADR-0041 決定 1, #870, IADR-0360 決定 1・決定 2:
+    // T-10-543: 取り込みは**別の口**（GET /risk-controls/drift-adoptions）から、由来つきで返る。
+    [Fact]
+    public async Task 取り込みは別の口から由来つきで返る()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        var client = ClientWithRoles(factory, Owner);
+        SeedPosition(factory, "AAPL", 100, 1m);
+        Observe(factory, times: 2, DateTimeOffset.UtcNow.AddMinutes(-1));
+        (await client.PostAsJsonAsync(Path, Body("AAPL"))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var adoptions = await client.GetFromJsonAsync<List<DriftAdoptionDto>>(
+            $"/risk-controls/drift-adoptions?from={today.AddDays(-7):yyyy-MM-dd}&to={today.AddDays(7):yyyy-MM-dd}");
+
+        var a = adoptions!.Should().ContainSingle().Subject;
+        a.Symbol.Should().Be("AAPL");
+        a.Side.Should().Be(TradeSide.Sell);
+        a.Quantity.Should().Be(100);
+        a.LedgerQuantityBefore.Should().Be(100);
+        a.BrokerQuantity.Should().Be(0);
+        a.Actor.Should().NotBeNullOrWhiteSpace();
+        a.Reason.Should().NotBeNullOrWhiteSpace();
+        // 🔴 由来のラベル（誰が約定させたか）。経費区分とは別の軸である。
+        a.Origin.Should().Be(TradeOrigin.ManualAdoption);
+        // 🔴 実現損益は記録していない（不明）。0 ではない。
+        a.RealizedPnlRecorded.Should().BeFalse();
+    }
+
+    // T-10-544: **サービストークンでも読める**（報告書サービスが s2s で引く読み取り口・IADR-0051 の OwnerOrService）。
+    [Fact]
+    public async Task 取り込みの照会はサービストークンでも読める()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var res = await ClientWithRoles(factory, Service).GetAsync(
+            $"/risk-controls/drift-adoptions?from={today:yyyy-MM-dd}&to={today:yyyy-MM-dd}");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // T-10-545: 期間の指定が無ければ 400（報告書が「全期間」を黙って受け取らない）。
+    [Fact]
+    public async Task 取り込みの照会は期間が無ければ400()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+
+        var res = await ClientWithRoles(factory, Owner).GetAsync("/risk-controls/drift-adoptions");
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // ---- 否定形（いずれも台帳が動かない） ----
 
     // T-10-466: 観測が一度も届いていなければ 422（ObservationUnavailable）。
@@ -303,6 +356,22 @@ public class PositionDriftAdoptionEndpointTests
     private sealed record SizingContextDto(decimal Capital, decimal StageCapitalRemaining, decimal DailyOrderRemaining);
 
     private sealed record OpenPositionDto(string Symbol);
+
+    // #870, IADR-0360 決定 2: GET /risk-controls/drift-adoptions の応答（DriftAdoptionView と同形）。
+    private sealed record DriftAdoptionDto(
+        Guid AdoptionId,
+        string Symbol,
+        Market Market,
+        TradeSide Side,
+        int Quantity,
+        int LedgerQuantityBefore,
+        int BrokerQuantity,
+        DateTimeOffset ObservedAt,
+        string Actor,
+        string Reason,
+        DateTimeOffset AdoptedAt,
+        TradeOrigin Origin,
+        bool RealizedPnlRecorded);
 
     private sealed record FillDto(string Symbol, TradeSide Side, int Quantity);
 

@@ -406,6 +406,10 @@ msgid "されます。上表は「現時点で確認できたコマンドの一�
 msgstr "されます。上表は「現時点で確認できたコマンドの一覧」ではなく"
 
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "システム外売買の取り込み"
+msgstr "システム外売買の取り込み"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "システム自動"
 msgstr "システム自動"
 
@@ -1041,6 +1045,10 @@ msgstr "強制買戻しの発生回数:"
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "強制買戻しの発生回数を取得できません。事後推定の台帳はありますが、推定が起きたときにしか行が書かれないため、件数 0 は「ブローカー建玉の観測が一度も届いていない」状態と区別できません。"
 msgstr "強制買戻しの発生回数を取得できません。事後推定の台帳はありますが、推定が起きたときにしか行が書かれないため、件数 0 は「ブローカー建玉の観測が一度も届いていない」状態と区別できません。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "当日、証券会社のアプリからの直接売買を取引台帳へ取り込んでいます。取り込みは数量だけを反映しており、実現損益は不明です（0 円ではありません）。上の当日損益と資金は、実際の口座とずれている可能性があります。"
+msgstr "当日、証券会社のアプリからの直接売買を取引台帳へ取り込んでいます。取り込みは数量だけを反映しており、実現損益は不明です（0 円ではありません）。上の当日損益と資金は、実際の口座とずれている可能性があります。"
 
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "当日の統制違反 0 件"

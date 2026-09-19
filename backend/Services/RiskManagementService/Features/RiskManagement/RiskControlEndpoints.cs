@@ -1,12 +1,14 @@
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.EntityFrameworkCore;
 using RiskManagementService.Features.RiskManagement.AdoptPositionDrift;
+using RiskManagementService.Features.RiskManagement.CancelPositionClose;
 using RiskManagementService.Features.RiskManagement.ClearGoodFaithViolations;
 using RiskManagementService.Features.RiskManagement.ClosePosition;
 using RiskManagementService.Features.RiskManagement.DisengageKillSwitch;
 using RiskManagementService.Features.RiskManagement.EngageKillSwitch;
 using RiskManagementService.Features.RiskManagement.EvaluateWithdrawal;
 using RiskManagementService.Features.RiskManagement.GetBuyInInferences;
+using RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
 using RiskManagementService.Features.RiskManagement.GetFills;
 using RiskManagementService.Features.RiskManagement.GetKillSwitch;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
@@ -72,6 +74,9 @@ internal static class RiskControlEndpoints
         read.MapGetSizingContext();
         read.MapGetOpenPositions();
         read.MapGetFills();
+        // FR-06, FR-11, ADR-0041 決定 1, #870, IADR-0360 決定 2: 期間の乖離の取り込み（報告書 §2-b の供給元）。
+        // **約定列（/fills）とは別の口**である（取り込みは約定価格を持たず、実現損益は不明である）。
+        read.MapGetDriftAdoptions();
         read.MapGetBuyInInferences();
         read.MapGetSessionUptime();
 
@@ -88,6 +93,9 @@ internal static class RiskControlEndpoints
         owner.MapResumeTrading();
 
         owner.MapClosePosition();
+        // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 板に残った手仕舞いの取消（利用者のみ・理由必須）。
+        // **アプリ操作に逃がさない**——稼働環境では moomoo アプリでしか消せなかった（#847 の実害）。
+        owner.MapCancelPositionClose();
         // FR-10, FR-11, UC-06, ADR-0003, #849, IADR-0350: 台帳とブローカーの乖離の取り込み（利用者のみ・理由必須）。
         // **サービスへは開かない**——生成AI・自動処理が台帳を書き換えられないようにする。
         owner.MapAdoptPositionDrift();

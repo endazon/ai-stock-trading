@@ -41,7 +41,10 @@ public sealed class ReportAutoGenerator(
     IStageProgressSource? stageProgressSource = null,
     IPeriodEndFxRateSource? periodEndFxRateSource = null,
     ReportDependencyProbe? dependencyProbe = null,
-    ReportGenerationDeferralTracker? deferrals = null)
+    ReportGenerationDeferralTracker? deferrals = null,
+    // FR-06, FR-11, ADR-0041 決定 1, #870, #859, IADR-0360 決定 2: 期間の手動売買の取り込み。
+    // 未注入は「供給元が構成されていない」＝常に未供給（空列へ倒さない）。
+    IPeriodDriftAdoptionSource? driftAdoptionSource = null)
 {
     // 観測点が未注入（単体テスト・旧構成）なら誰も記録しない観測になり、見送りは起きない＝従来挙動。
     private readonly ReportDependencyProbe _probe = dependencyProbe ?? new ReportDependencyProbe();
@@ -144,6 +147,11 @@ public sealed class ReportAutoGenerator(
         if (fillsFailed || observation.HasFailure(ReportInput.Fills))
             unsupplied.Add(ReportInput.Fills);
 
+        observation.Enter(ReportInput.DriftAdoptions);
+        var driftAdoptions = await SafeDriftAdoptionsAsync(due, cancellationToken).ConfigureAwait(false);
+        if (driftAdoptions is null)
+            unsupplied.Add(ReportInput.DriftAdoptions);
+
         observation.Enter(ReportInput.MarginReductions);
         var reductions = await SafeReductionsAsync(due, cancellationToken).ConfigureAwait(false);
         if (reductions is null)
@@ -231,7 +239,8 @@ public sealed class ReportAutoGenerator(
                 Positions: positions,
                 Uptime: uptime,
                 CurrentStage: currentStage,
-                PeriodEndFxRate: periodEndFxRate),
+                PeriodEndFxRate: periodEndFxRate,
+                DriftAdoptions: driftAdoptions),
             cancellationToken).ConfigureAwait(false);
 
         // 散文の未供給＝プレースホルダ散文（LLM 未接続・縮退のいずれも。数値には関与しない）。
@@ -649,6 +658,31 @@ public sealed class ReportAutoGenerator(
         {
             return await buyInSource
                 .GetInferencesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-11, ADR-0041 決定 1, #870, #859, IADR-0360 決定 2: 手動売買の取り込み。
+    // 🔴 **不達は null（照会できていない）へ倒す。空列（該当なし）へ倒さない**——空列は日報 §2-b で嘘になり、
+    // かつ在庫の畳み込みからも落ちて実在しない建玉の評価損益を出す。
+    private async Task<IReadOnlyList<PeriodDriftAdoption>?> SafeDriftAdoptionsAsync(
+        DueReport due, CancellationToken cancellationToken)
+    {
+        if (driftAdoptionSource is null)
+            return null;
+
+        try
+        {
+            return await driftAdoptionSource
+                .GetDriftAdoptionsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

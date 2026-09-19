@@ -85,6 +85,7 @@ namespace RiskManagementService.Infrastructure.Migrations
                         .HasColumnType("character varying(32)");
 
                     b.Property<DateTimeOffset?>("TerminalAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("TerminalStatus")

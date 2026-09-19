@@ -352,7 +352,21 @@ function StatusView({ view }: { view: RiskStatusView }) {
           <Kv columns={1} className="mt-2">
             <KvItem label={i18n._(msg`実現損益`)}>{view.dailyRealizedPnl}</KvItem>
             <KvItem label={i18n._(msg`含み損益`)}>{view.unrealizedPnl}</KvItem>
+            {/* FR-11, SC-03, ADR-0041 決定1, #870: **当日のシステム外売買の取り込み件数**。
+                当日損益のすぐ隣に置く——この件数こそが「当日損益が実際の口座とずれている」ことの手がかりである。
+                🔴 0 件は「取り込みが無かった」という事実であり、行ごと消さない（消すと未供給と区別できない）。 */}
+            <KvItem label={i18n._(msg`システム外売買の取り込み`)}>
+              {view.driftAdoptionCountToday}
+              {i18n._(msg`件`)}
+            </KvItem>
           </Kv>
+          {view.driftAdoptionCountToday > 0 && (
+            <Note>
+              {i18n._(
+                msg`当日、証券会社のアプリからの直接売買を取引台帳へ取り込んでいます。取り込みは数量だけを反映しており、実現損益は不明です（0 円ではありません）。上の当日損益と資金は、実際の口座とずれている可能性があります。`,
+              )}
+            </Note>
+          )}
         </Panel>
 
         <Panel className="m-0" heading={paperSuffix(paper, i18n._(msg`上限使用率`))}>
