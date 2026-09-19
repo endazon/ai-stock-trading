@@ -26,7 +26,7 @@ plan_refs:
 ## 母集合（2026-09-19・`origin/develop` = `a1421b33`）
 
 🔴 **API 名を記憶で列挙しない。ライブラリのアセンブリから反射で導出する**
-（`.claude/rules/traceability.repo.md` 規則 9。**初版は記憶で 16 種を列挙し、`CreatePostAsync` /
+（`.claude/rules/traceability.repo.md` 規則 9。**初版は記憶で 17 種を列挙し、`CreatePostAsync` /
 `CreatePostWithFile(s)Async`〔フォーラム投稿〕・`UpdateAsync`〔`SocketMessageComponent` のボタン応答で
 本文を差し替える定番 API〕・`ModifyAsync` / `Respond` を落としていた**。#867 の監査が反射で引き直して
 検出した。結論は変わらなかったが、**引き方が記憶依存だった**ので以下の形へ是正する）。
