@@ -167,4 +167,47 @@ public class BotCommandParserTests
         BotCommandParser.Parse($"/report show {ok}").Kind.Should().Be(BotCommandKind.ReportShow);
         BotCommandParser.Parse($"/report show {tooLong}").Kind.Should().Be(BotCommandKind.Unknown);
     }
+
+    // --- FR-14, #837, IADR-0240 決定6: 値域のアンカーは \A…\z（.NET の `$` は末尾 LF の直前にもマッチする）---
+
+    [Theory]
+    [InlineData("/report approve daily-2026-08-28\n 1")]
+    [InlineData("/report approve abc\n 1")]
+    [InlineData("/report approve weekly-2026-W38\n 3")]
+    [InlineData("/report request-changes daily-2026-08-28\n 2")]
+    // 以下は `^…$` でも通らなかった形。値域の境界として併せて固定する（LF 2 つ・CRLF・先頭 LF・途中 LF）。
+    [InlineData("/report approve daily-2026-08-28\n\n 1")]
+    [InlineData("/report approve daily-2026-08-28\r\n 1")]
+    [InlineData("/report approve \ndaily-2026-08-28 1")]
+    [InlineData("/report approve daily-\n2026-08-28 1")]
+    public void 会話キーに改行を含む入力は_Unknown_になる(string raw)
+    {
+        // 否定形: 入力の途中にある LF は、半角空白で割ったトークンに残る。`^…$` だと「末尾 LF の直前」にマッチして
+        // `abc\n` が値域を通り、LF を含む会話キーが URL パスへ運ばれていた（#836 の監査が実測）。
+        var command = BotCommandParser.Parse(raw);
+
+        command.Kind.Should().Be(BotCommandKind.Unknown);
+        command.PeriodKey.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("daily-2026-08-28\n")]
+    [InlineData("abc\n")]
+    [InlineData("\n")]
+    [InlineData("daily-2026-08-28\r\n")]
+    public void 末尾に改行を含む値は会話キーとして受け付けない(string value)
+    {
+        // 入力補完の候補側（ReportPeriodSuggestions）と共用する判定。パーサと同じ 1 箇所で値域が決まる。
+        BotCommandParser.IsPeriodKey(value).Should().BeFalse();
+    }
+
+    [Fact]
+    public void 入力全体の末尾にある改行は従来どおり_Trim_で落ちる()
+    {
+        // 変更しないもの: 末尾の空白類は Parse 冒頭の Trim が落とす。会話キーへ LF は残らない。
+        var command = BotCommandParser.Parse("/report show daily-2026-08-28\n");
+
+        command.Kind.Should().Be(BotCommandKind.ReportShow);
+        command.PeriodKey.Should().Be("daily-2026-08-28");
+    }
 }

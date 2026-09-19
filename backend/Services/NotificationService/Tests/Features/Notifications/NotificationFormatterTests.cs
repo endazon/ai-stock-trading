@@ -377,4 +377,54 @@ public class NotificationFormatterTests
 
         msg.Content.Should().Contain("システムは決済注文を発行しません");
     }
+
+    // ---- FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 報告書確定の確定者の表示 ----
+
+    private static readonly DateTimeOffset ConfirmedAt = new(2026, 9, 11, 4, 36, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Bot経由の確定は_操作した利用者と認可の主体の両方を表示する()
+    {
+        var e = new ReportConfirmed(
+            "daily-2026-09-10", "Daily", "developer", 1, ConfirmedAt, AuthorizedBy: "ai-stock-trading-owner");
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Content.Should().Be(
+            "Daily 報告書 daily-2026-09-10 が確定しました（developer・ai-stock-trading-owner 経由・前提条件 v1）。");
+        msg.Content.Should().NotContain("unknown");
+    }
+
+    [Fact]
+    public void 利用者本人の確定は従来どおり確定者だけを表示する()
+    {
+        var e = new ReportConfirmed("daily-2026-09-10", "Daily", "owner", 1, ConfirmedAt);
+
+        NotificationFormatter.From(e).Content.Should().Be(
+            "Daily 報告書 daily-2026-09-10 が確定しました（owner・前提条件 v1）。");
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void 確定者が分からないときは_unknown_ではなく確定者不明と表示する(string actor)
+    {
+        var e = new ReportConfirmed("daily-2026-09-10", "Daily", actor, 1, ConfirmedAt);
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Content.Should().Be("Daily 報告書 daily-2026-09-10 が確定しました（確定者不明・前提条件 v1）。");
+        msg.Content.Should().NotContain("unknown");
+    }
+
+    [Fact]
+    public void 操作者を添えない旧版_Bot_の確定は_誰の資格で確定されたかを表示する()
+    {
+        // 報告書サービスは unknown へ倒す前に client:<azp> を確定者にする。表示はそのまま出す。
+        var e = new ReportConfirmed("daily-2026-09-10", "Daily", "client:ai-stock-trading-owner", 1, ConfirmedAt);
+
+        NotificationFormatter.From(e).Content.Should().Be(
+            "Daily 報告書 daily-2026-09-10 が確定しました（client:ai-stock-trading-owner・前提条件 v1）。");
+    }
 }

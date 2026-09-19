@@ -44,7 +44,9 @@ public class BrokerPositionsObservedConsumerTests
         PositionDriftTracker tracker,
         IBuyInInferenceStore? buyInStore = null,
         // FR-21, #463, IADR-0181: 観測の到達の記録（ハンドラの必須依存）。
-        IPositionObservationArrivalStore? arrivalStore = null) =>
+        IPositionObservationArrivalStore? arrivalStore = null,
+        // FR-10, FR-11, #849, IADR-0350 決定 1: 最新の観測の保持（ハンドラの必須依存）。
+        IBrokerPositionObservationStore? observationStore = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
@@ -56,6 +58,8 @@ public class BrokerPositionsObservedConsumerTests
                 opts.Services.AddSingleton(buyInStore ?? new InMemoryBuyInInferenceStore());
                 opts.Services.AddSingleton(
                     arrivalStore ?? new InMemoryPositionObservationArrivalStore());
+                opts.Services.AddSingleton(
+                    observationStore ?? new InMemoryBrokerPositionObservationStore());
                 opts.Services.AddSingleton(sp => new BuyInInferenceService(
                     sp.GetRequiredService<IPortfolioLedgerStore>(),
                     sp.GetRequiredService<IBuyInInferenceStore>(),
@@ -125,6 +129,67 @@ public class BrokerPositionsObservedConsumerTests
             .Should().BeEmpty();
 
         await host.StopAsync();
+    }
+
+    // ---- FR-10, FR-11, UC-06, #849, IADR-0350: 最新の観測の保持と、取り込み後の乖離の解消 ----
+
+    // T-10-473: 観測は**乖離が無くても**最新の 1 件として保持される（利用者が取り込むときの目標と鮮度の根）。
+    // 🔴 観測の購読は**台帳を書かない**——観測を権威にしない（IADR-0118）ことを、同じテストで固定する。
+    [Fact]
+    public async Task 観測は最新の一件として保持され台帳は書き換えない()
+    {
+        var observations = new InMemoryBrokerPositionObservationStore();
+        var ledger = LedgerWithAapl(100);
+        using var host = await BuildHostAsync(ledger, NewTracker(), observationStore: observations);
+
+        var observed = Observed();
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+
+        var latest = observations.GetLatest();
+        latest.Should().NotBeNull();
+        latest!.ObservedAt.Should().Be(At);
+        latest.Positions.Should().BeEmpty("空列は『建玉が無いと観測した』事実であり、不明ではない");
+        // 乖離（台帳 100・ブローカー 0）が連続で観測され報告されても、台帳は 1 行も動かない。
+        PortfolioProjection.ProjectOpenPositions(ledger.GetFills()).Single().Quantity.Should().Be(100);
+        ledger.GetFills().Should().NotContain(f => f.IsDriftAdoption);
+
+        await host.StopAsync();
+    }
+
+    // T-10-474: 利用者が乖離を取り込んだ後の観測では乖離が解消し、追跡状態が初期化される
+    // （同じ乖離が再発したときに再び報告できる）。
+    [Fact]
+    public async Task 取り込み後の観測では乖離が解消し追跡状態が初期化される()
+    {
+        var ledger = LedgerWithAapl(100);
+        var driftState = new InMemoryPositionDriftStateStore();
+        var tracker = new PositionDriftTracker(driftState, NullLogger<PositionDriftTracker>.Instance);
+        var observations = new InMemoryBrokerPositionObservationStore();
+        using var host = await BuildHostAsync(ledger, tracker, observationStore: observations);
+        var observed = Observed();
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+        driftState.Get().ReportedSignature.Should().NotBeEmpty("前提: 乖離は報告済み");
+
+        var adoption = new RiskManagementService.Features.RiskManagement.AdoptPositionDrift.PositionDriftAdoptionService(
+            ledger, observations, tracker, new NoPrices(), new FixedClock());
+        adoption.Adopt(new("AAPL", Market.UnitedStates, "手動売却"), "endazon").Accepted.Should().BeTrue();
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(observed);
+
+        session.Sent.MessagesOf<PositionReconciliationDrift>().Should().BeEmpty();
+        driftState.Get().ObservedSignature.Should().BeEmpty();
+        driftState.Get().ReportedSignature.Should().BeEmpty();
+        driftState.Get().ConsecutiveCount.Should().Be(0);
+
+        await host.StopAsync();
+    }
+
+    private sealed class NoPrices : ICurrentPriceSource
+    {
+        public IReadOnlyDictionary<(string Symbol, Market Market), decimal> GetCurrentPrices(
+            IReadOnlyList<OpenPosition> positions) => new Dictionary<(string Symbol, Market Market), decimal>();
     }
 
     [Fact]

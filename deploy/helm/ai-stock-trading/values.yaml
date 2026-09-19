@@ -492,6 +492,13 @@ services:
       - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
       # FR-07, IADR-0071 決定2: 無応答時の既定動作。空/不正=ContinueLastConfirmed（直近確定を継続＝安全既定）。
       - { name: Reports__NoResponseBehavior, value: "" }
+      # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を
+      # 信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントのトークンで確定を呼ぶため、
+      # トークンからは人を解決できない（通知・監査の確定者が unknown になっていた）。**notification の
+      # Notifications__Discord__OwnerAuth__ClientId と同じ秘密鍵から採る**（単一情報源。片方だけ変えると代理が
+      # 黙って不成立になり確定者が `client:<azp>` へ落ちる）。fail-safe: 未設定/空=誰の onBehalfOf も信じない。
+      - name: Reports__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
       # FR-06/16, #611, ADR-0022, IADR-0286 決定2: 為替差損益の**期末レート**（期末日以前の直近の日次観測・1 USD あたりの円）。
       # trade-decision と同じ為替レート源（日銀第一・FRED フォールバック）を同じ構成キーで組む。
       # #686, IADR-0308: 計画 ADR-0022 決定1 の第一情報源＝日銀（認証不要）。鍵があれば FRED が後段に積まれる。

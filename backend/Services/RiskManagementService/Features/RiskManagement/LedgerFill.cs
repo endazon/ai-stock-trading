@@ -32,7 +32,13 @@ public sealed record LedgerFill(
     // とは軸が違い、米国株では後者が 1 で円の情報を持たない。
     // **既定 null＝未記録（列追加前の行・承認時に為替レート源が解決できなかった行）。推定で埋めない**——
     // 報告書は当該約定を含む期間の為替差損益を未供給とし、未記録の件数を明記する。
-    decimal? FxRateBaseToDisplay = null)
+    decimal? FxRateBaseToDisplay = null,
+    // FR-10, FR-11, #849, IADR-0350 決定 2/3: **約定ではなく、利用者が承認した乖離の取り込み行**である。
+    // システム外の売買は約定価格が分からないため、この行は**数量だけ**を運ぶ。射影は Price を使わず、
+    // **その時点の平均取得単価で在庫だけを減らす**（実現損益 0 を構造的に保証する。PortfolioProjection.ApplyToLot）。
+    // Price は取り込み時点の台帳の平均取得単価（参考）であり、**約定価格ではない**。
+    // 約定列として外へ返す経路（GET /risk-controls/fills）は本行を除外するため、wire へは載せない。
+    [property: System.Text.Json.Serialization.JsonIgnore] bool IsDriftAdoption = false)
 {
     /// <summary>基準通貨（USD）建ての約定単価。金額集計・実現損益・エクイティはこの単価で積む。**永続化しない計算値**である。</summary>
     public decimal PriceInBase => Price * FxRateToBase;

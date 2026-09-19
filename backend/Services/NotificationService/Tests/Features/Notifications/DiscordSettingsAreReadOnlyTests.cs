@@ -216,7 +216,7 @@ public class DiscordSettingsAreReadOnlyTests
             }
 
             public Task<ReportConfirmResult> ConfirmAsync(
-                string periodKey, int expectedVersion, CancellationToken cancellationToken = default)
+                string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default)
             {
                 owner.Record();
                 return Task.FromResult(new ReportConfirmResult(true, true, "確定"));

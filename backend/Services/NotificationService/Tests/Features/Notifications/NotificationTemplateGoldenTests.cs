@@ -177,7 +177,41 @@ public class NotificationTemplateGoldenTests
                 "リスク統制: 建玉の乖離を検知",
                 "取引台帳とブローカの建玉が一致しません（2 件・観測 2026-08-28 03:00:00Z）。"
                     + "AAPL/UnitedStates: 台帳に無い建玉がブローカに 4072、7203/Japan: 台帳 100 ≠ ブローカ 80。"
-                    + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。",
+                    + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。"
+                    + "システム外の売買で台帳の建玉が実態より多い場合は、利用者の操作で台帳へ取り込めます"
+                    + "（POST /risk-controls/position-drift/adopt・理由必須）。",
+                NotificationSeverity.Critical)),
+
+        // T-10-480: FR-09, FR-10, FR-11, #849, IADR-0350: 乖離の取り込み（推定なし）。
+        ["PositionDriftAdopted/NoEstimate"] = (
+            new PositionDriftAdopted(
+                Id, "AAPL", Market.UnitedStates, 3381, 0, 0, T, 335.1225m, false, null, null,
+                "endazon", "moomoo アプリから全株を手動売却した", T),
+            new NotificationMessage(
+                "リスク統制: 建玉の乖離を台帳へ取り込み",
+                "AAPL/UnitedStates の台帳の建玉を 3381 → 0 へ合わせました"
+                    + "（ブローカの観測 0・観測 2026-08-28 03:00:00Z）。"
+                    + "操作者 endazon・理由: moomoo アプリから全株を手動売却した。"
+                    + "システム外の売買の約定価格は分からないため、**実現損益は記録していません**"
+                    + "（当日損益・連敗・段階ゲートの実績には入りません）。"
+                    + "現在値を取得できなかったため、参考の推定損益もありません。"
+                    + "当該銘柄にブローカー側の保護注文（逆指値）が残っていないか、証券会社のアプリで確認してください。",
+                NotificationSeverity.Critical)),
+
+        // T-10-481: 推定を含むときは「推定・台帳へ未記録」が必ず添えられる。
+        ["PositionDriftAdopted/Estimated"] = (
+            new PositionDriftAdopted(
+                Id, "AAPL", Market.UnitedStates, 3381, 0, 0, T, 335m, false, 332.83m, -7336.77m,
+                "endazon", "手動売却", T),
+            new NotificationMessage(
+                "リスク統制: 建玉の乖離を台帳へ取り込み",
+                "AAPL/UnitedStates の台帳の建玉を 3381 → 0 へ合わせました"
+                    + "（ブローカの観測 0・観測 2026-08-28 03:00:00Z）。"
+                    + "操作者 endazon・理由: 手動売却。"
+                    + "システム外の売買の約定価格は分からないため、**実現損益は記録していません**"
+                    + "（当日損益・連敗・段階ゲートの実績には入りません）。"
+                    + "参考: 現在値 332.83 で評価した損益は -7,336.77 USD（推定・台帳へ未記録）。"
+                    + "当該銘柄にブローカー側の保護注文（逆指値）が残っていないか、証券会社のアプリで確認してください。",
                 NotificationSeverity.Critical)),
 
         ["MaintenanceMarginReductionExecuted"] = (

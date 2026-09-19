@@ -64,8 +64,18 @@ public static class AuditEntryFactory
     // FR-07: 報告書の確定（報告書 #14）。同一 PeriodKey で同一相関になるよう "report:{PeriodKey}" の決定的 GUID を相関にする。
     public static AuditEntry From(ReportConfirmed e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(ReportConfirmed), AuditCorrelation.From($"report:{e.PeriodKey}"), Symbol: null,
-        Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{e.Actor}・前提 v{e.AssumptionsVersion}）"),
+        Truncate($"{e.Kind} 報告書 {e.PeriodKey} 確定（{ConfirmerOf(e)}・前提 v{e.AssumptionsVersion}）"),
         AuditSerialization.Serialize(e), e.ConfirmedAt, recordedAt);
+
+    // FR-07, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定者の要約。**実際に操作した利用者と、認可の主体である
+    // クライアントの両方を残す**（Discord Bot 経由の確定は owner マップ機密クライアントのトークンで行われる）。
+    // 生の値（Actor / AuthorizedBy）はペイロードにそのまま残る。要約だけ、操作者が分からないことを
+    // 内部の既定値 `unknown` ではなく「確定者不明」と書く。
+    private static string ConfirmerOf(ReportConfirmed e)
+    {
+        var actor = string.IsNullOrWhiteSpace(e.Actor) || e.Actor == "unknown" ? "確定者不明" : e.Actor;
+        return string.IsNullOrWhiteSpace(e.AuthorizedBy) ? actor : $"{actor}・代理 {e.AuthorizedBy}";
+    }
 
     // FR-06/07/09, IADR-0116, #280: 報告書ドラフトの提示（承認待ち）。確定（ReportConfirmed）と同じ "report:{PeriodKey}" 相関で
     // 束ね、監査照会で「いつ提示され、いつ確定したか」を 1 本の相関で辿れるようにする。
@@ -258,6 +268,23 @@ public static class AuditEntryFactory
         Truncate($"建玉の乖離 {e.Drifts.Count}件: "
             + string.Join(", ", e.Drifts.Select(d => $"{d.Symbol}/{d.Market} 台帳{d.LedgerQuantity}≠ブローカ{d.BrokerQuantity}({d.Kind})"))),
         AuditSerialization.Serialize(e), e.DetectedAt, recordedAt);
+
+    // FR-10, FR-11, UC-06, ADR-0003, #849, IADR-0350: 利用者が承認した**乖離の取り込み**（台帳を観測値へ合わせた）。
+    // 乖離の検知は是正を伴わないため、台帳が約定以外で動くのはこの操作だけである——
+    // 「誰が・なぜ・何株から何株へ・何を観測して」を要約に出し、観測・検知と**同一相関**（position-reconciliation）で束ねる
+    // （観測 → 乖離の報告 → 取り込みを 1 本の相関で辿れる）。
+    // 🔴 **実現損益は記録していない**ことを要約に明記する。推定を含む場合は「推定・未記録」と添える
+    // ——数値だけを出すと、後から読んだ人が確定した損益として扱う。
+    public static AuditEntry From(PositionDriftAdopted e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionDriftAdopted), AuditCorrelation.From("position-reconciliation"), e.Symbol,
+        Truncate($"{e.Symbol}/{e.Market} 乖離を台帳へ取り込み 台帳{e.LedgerQuantityBefore}→{e.LedgerQuantityAfter}"
+            + $"（ブローカ観測{e.BrokerQuantity}・観測 {e.ObservedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}Z）"
+            + "・実現損益は未記録（約定価格不明）"
+            + (e.EstimatedPnlInBase is { } estimate
+                ? $"・推定 {estimate.ToString("0.##", CultureInfo.InvariantCulture)} USD（推定・未記録）"
+                : "・推定なし")
+            + $"（{e.Actor}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.AdoptedAt, recordedAt);
 
     // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れによる建玉の自動縮小。
     // **システムが自ら決済した唯一の統制**であり、この記録が「なぜ建玉が減ったか」の一次証跡になる。

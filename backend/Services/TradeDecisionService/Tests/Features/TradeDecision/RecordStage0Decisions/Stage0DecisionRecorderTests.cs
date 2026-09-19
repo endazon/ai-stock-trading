@@ -8,6 +8,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Features.TradeDecision;
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using TradeDecisionService.Features.TradeDecision.RecordStage0Decisions;
 using TradeDecisionService.Domain;
 using Xunit;
@@ -306,6 +307,21 @@ public class Stage0DecisionRecorderTests
         llm.Models.Should().OnlyContain(m => m == "claude-sonnet-5");
     }
 
+    // 🔴 #854, IADR-0351 決定7: 記録器は**保有なしを明示して**プロンプトを組む。記録は銘柄 × 判断時点で独立であり、
+    // 保有は再生側のシミュレーションでしか決まらない。既定（不明）のままだとプロンプトが「不明なら Hold」と述べ、
+    // 全件が Hold へ倒れて Stage 0 が成立しない。
+    [Fact]
+    public async Task 記録器のプロンプトは保有なしであり不明へ倒れない()
+    {
+        var (recorder, llm, _, _) = Build([Decision("Buy")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.HeldNoneLine));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.HeldUnknownLine));
+    }
+
     // 🔴 **否定形**: 記録中でなければ計上は素通しである（本番の計上区分を変えない）。
     [Fact]
     public async Task 記録中でなければ計上は素通しである()
@@ -335,6 +351,8 @@ public class Stage0DecisionRecorderTests
 
         public List<string?> Models { get; } = [];
 
+        public List<string> Prompts { get; } = [];
+
         public async Task<string> CompleteAsync(
             string prompt, string? model = null, string? purpose = null,
             CancellationToken cancellationToken = default)
@@ -343,6 +361,7 @@ public class Stage0DecisionRecorderTests
             CallCount++;
             Purposes.Add(purpose);
             Models.Add(model);
+            Prompts.Add(prompt);
 
             await usage.ReportAsync(
                 new LlmUsage(purpose ?? LlmPurposes.TradeDecision, tokensPerCall, tokensPerCall, model),

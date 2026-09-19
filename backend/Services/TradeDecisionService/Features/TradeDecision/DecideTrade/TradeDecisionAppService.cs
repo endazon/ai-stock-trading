@@ -80,6 +80,8 @@ public sealed class TradeDecisionAppService(
 
     // FR-04, FR-05, FR-10, #292, IADR-0119: 判断由来の決済（AI の出口）に用いる保有建玉の照会口。
     // 未指定＝NoOp（常に null＝不明）。不明のもとでは売り判断が見送りへ倒れる（裸の新規売りを出さない）。
+    // #854, IADR-0351: 同じ照会口が判断プロンプトの保有状況（数量・取得単価・損切りライン）も供給する。
+    // 不明のもとではプロンプトが「保有: 不明」と明示し、Hold を選ぶよう述べる（「保有なし」とは書かない）。
     // 実照会（HttpHeldPositionProvider）は Worker が RiskManagement:BaseUrl 設定時に差し替える。
     private readonly IHeldPositionProvider _heldPosition = heldPosition ?? new NoOpHeldPositionProvider();
 
@@ -147,13 +149,21 @@ public sealed class TradeDecisionAppService(
         // **「止められない」より「閉じられない」ほうが危険である**（損失を抱えた建玉から出られない）。
         //
         // 費用の据え置き（IADR-0107 決定2）: 保有が無ければ建玉効果は Open にしかならないため、
-        // **鮮度切れかつ保有なしのときだけ保有数を先に引いて即座に見送る**（LLM を呼ばない）。
-        // 正常時の経路は変えない。先読みした保有数は後段で再利用する（ブローカ照会を二重に打たない）。
+        // **鮮度切れかつ保有なし（または不明）のときは即座に見送る**（LLM を呼ばない）。
+        // 鮮度切れの経路では、先に引いた保有数を後段で再利用する（同じ照会を二重に打たない）。
+        // ［#854］保有状況の照会そのものは、鮮度切れに限らず LLM 呼び出しの前に常に行うようになった（直下）。
+        //
+        // 🔴 FR-04, FR-10, ADR-0003, #854, IADR-0351 決定1: **保有状況は判断の入力である**（計画 ADR-0003 の判断入力
+        // 「確定済み日報＋保有ポジション＋…」）。従来はここで引かず、LLM は保有を知らないまま毎サイクルを新規買いの是非として
+        // 判断していた（実測: 2 夜連続で Buy しか出ず、当日枠を使い切るまで買い増した）。LLM 呼び出しの前に 1 回引き、
+        // 本判断・一次スクリーニングの両プロンプトへ渡す。null＝不明（プロンプトは「不明」と明示し、保有なしとは書かない）。
+        var heldPosition = await GetHeldPositionSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+
         int? preFetchedHeldQuantity = null;
         if (!fxReading.UsableForEntry)
         {
-            preFetchedHeldQuantity =
-                await GetSignedHeldQuantitySafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+            // 鮮度切れの経路は従来どおり先読みの数量を後段で再利用する（同じ照会を二重に打たない・#506）。
+            preFetchedHeldQuantity = heldPosition?.SignedQuantity;
 
             if (preFetchedHeldQuantity is not { } held || held == 0)
             {
@@ -181,7 +191,7 @@ public sealed class TradeDecisionAppService(
         // FR-17, IADR-0076 決定5: 採算ゲート有効時のみプロンプトに採算節を注入する（無効の既定は現行動作のプロンプトと一致）。
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
-            currentPrice: currentPrice);
+            currentPrice: currentPrice, held: heldPosition);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -191,10 +201,13 @@ public sealed class TradeDecisionAppService(
             : null;
 
         var orchestrated = await _orchestrator.DecideAsync(
+            // #854, IADR-0351 決定4: 一次は門である（Hold で本判断が走らない）ため、保有状況は一次にも渡す。
+            // 🔴 縮退制御なしの経路でも現在値を渡す（#860 の監査の指摘）。渡さないと、定時トリガー（価格を持たない）では
+            // 一次の保有状況が常に「到達したかは不明」になり、門である一次だけが損切りライン到達を知らない。
             () => screening is null
-                ? TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context)
+                ? TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context, currentPrice, held: heldPosition)
                 : TradeDecisionPromptBuilder.BuildScreening(
-                    trigger, policy, context, currentPrice, screening.RetainedReferences),
+                    trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition),
             decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
@@ -225,6 +238,8 @@ public sealed class TradeDecisionAppService(
         // FR-04, FR-05, FR-10, #292, IADR-0119: 保有建玉から建玉効果を決める。従来は Open がリテラル固定で、
         // LLM の Sell が「保有ロングの決済」ではなく新規ショート建てとして扱われていた（AI に出口が無かった）。
         // 鮮度切れの経路では上で先読み済み（ブローカ照会を二重に打たない・#506）。
+        // #854, IADR-0351 決定6: それ以外の経路では、プロンプト用に引いた保有状況を**使い回さず引き直す**。LLM 呼び出しの間に
+        // 逆指値が約定し得るため、決済の数量（保有全量）は発注直前の事実で決める（古い数量での決済は在庫を超え得る）。
         var heldQuantity = preFetchedHeldQuantity
             ?? await GetSignedHeldQuantitySafeAsync(trigger, cancellationToken).ConfigureAwait(false);
         var effect = PositionEffectResolver.Resolve(side, heldQuantity);
@@ -409,6 +424,25 @@ public sealed class TradeDecisionAppService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "保有建玉の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
+            return null;
+        }
+    }
+
+    // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定1/決定2: 判断プロンプトへ載せる保有状況の照会（fail-safe ラッパ）。
+    // 例外・キャンセル以外の失敗は **null（不明）** に縮退する。保有なしへ倒すと、LLM は保有を知らないまま新規買いの是非として
+    // 判断する（#854 の実測そのもの）。プロンプトは不明を「不明」と明示し、Hold を選ぶよう述べる。
+    private async Task<HeldPosition?> GetHeldPositionSafeAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _heldPosition
+                .GetPositionAsync(trigger.Symbol, trigger.Market, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "保有状況の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
             return null;
         }
     }

@@ -12,6 +12,9 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
     private readonly ConcurrentDictionary<Guid, ApprovalRecord> _approvals = new();
     private readonly ConcurrentDictionary<string, FillRecord> _fills = new();
 
+    // #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込み（冪等キー → 行）。
+    private readonly ConcurrentDictionary<string, LedgerDriftAdoption> _adoptions = new();
+
     public void AppendApproval(
         Guid decisionId,
         OrderIntent intent,
@@ -75,6 +78,14 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
                 approval.FxRateBaseToDisplay));
         }
 
+        // #849, IADR-0350 決定 2: 乖離の取り込み行を合流させる（EfPortfolioLedgerStore と同一の意味論）。
+        foreach (var a in _adoptions.Values)
+        {
+            result.Add(new LedgerFill(
+                a.Symbol, a.Market, a.Side, PositionEffect.Close, a.Quantity, a.CostBasisPrice, a.AdoptedAt,
+                StopLossPrice: null, FxRateToBase: a.FxRateToBase, IsDriftAdoption: true));
+        }
+
         return result;
     }
 
@@ -98,6 +109,12 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
             if (_approvals.TryUpdate(decisionId, updated, current))
                 return;
         }
+
+    // #849, IADR-0350 決定 2: 追記専用・冪等キーで 1 件に絞る（EfPortfolioLedgerStore と同一の意味論）。
+    public bool AppendDriftAdoption(LedgerDriftAdoption adoption)
+    {
+        ArgumentNullException.ThrowIfNull(adoption);
+        return _adoptions.TryAdd(adoption.IdempotencyKey, adoption);
     }
 
     // #292, IADR-0117: 処理中の決済数量（EfPortfolioLedgerStore と同一の意味論）。

@@ -565,3 +565,64 @@ public sealed class BorrowFeeUnavailableDayRow
 
     public DateTimeOffset ObservedAtUtc { get; set; }
 }
+
+// FR-05, FR-10, FR-11, #849, IADR-0350 決定 1: ブローカ建玉の**最新の観測**（単一行）。
+//
+// 乖離の追跡状態（PositionDriftStateRow）はシグネチャしか持たず、観測時刻を持たない。利用者が乖離を台帳へ
+// 取り込むとき、「いま観測されている値」と「それがいつの観測か」を**同じ行から**読めなければ、古い観測や
+// 照会不能の間に残った値へ台帳を合わせてしまう。永続にするのは replicas>1 で観測が Pod へ分散するため
+// （IADR-0124 と同じ理由）。
+public sealed class BrokerPositionObservationRow
+{
+    public int Id { get; set; } = SingletonKeys.Id;
+
+    /// <summary>観測した建玉一覧（BrokerPositionSnapshot の配列を System.Text.Json で直列化）。空配列＝建玉なし。</summary>
+    public string PositionsJson { get; set; } = "[]";
+
+    /// <summary>観測時刻（発注執行がブローカーへ照会した時刻）。**受信時刻ではない**（遅延・再送で新しく見せない）。</summary>
+    public DateTimeOffset ObservedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+// FR-10, FR-11, UC-06, ADR-0003, #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込み（追記専用・取引台帳の一部）。
+//
+// 🔴 **約定（TradeFillRow）へ混ぜない。** 約定は「ブローカーが返した数量と単価」であり、取り込みは
+// 「観測へ数量を合わせた利用者の承認」である。同じ表へ入れると、単価の列に約定価格でない値が入り、
+// 後から区別できなくなる（FR-11「記録は遡って復元できない」）。
+public sealed class PositionDriftAdoptionRow
+{
+    public Guid Id { get; set; }
+
+    /// <summary>同じ観測に対する同じ取り込みを 1 件に絞る一意キー（LedgerDriftAdoption.IdempotencyKey）。</summary>
+    public string IdempotencyKey { get; set; } = string.Empty;
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    /// <summary>台帳へ適用する減少の方向（ロングの減少は Sell・ショートの減少は Buy）。</summary>
+    public AiStockTrading.Shared.Contracts.Trading.TradeSide Side { get; set; }
+
+    /// <summary>台帳へ適用する減少分（&gt; 0）。</summary>
+    public int Quantity { get; set; }
+
+    /// <summary>取り込み前の台帳の平均取得単価（ローカル通貨）。**約定価格ではない。**</summary>
+    public decimal CostBasisPrice { get; set; }
+
+    public decimal FxRateToBase { get; set; }
+
+    /// <summary>取り込み前の台帳の数量（符号付き）。</summary>
+    public int LedgerQuantityBefore { get; set; }
+
+    /// <summary>観測されたブローカーの数量（符号付き）＝取り込み後の台帳の数量。</summary>
+    public int BrokerQuantity { get; set; }
+
+    public DateTimeOffset ObservedAtUtc { get; set; }
+
+    public string Actor { get; set; } = string.Empty;
+
+    public string Reason { get; set; } = string.Empty;
+
+    public DateTimeOffset AdoptedAtUtc { get; set; }
+}

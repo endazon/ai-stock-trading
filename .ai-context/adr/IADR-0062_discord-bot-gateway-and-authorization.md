@@ -12,7 +12,7 @@ related_ids:
   - IADR-0051
 author: claude
 created: 2026-07-17
-updated: 2026-07-17
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/07_discord-bot-design.md (fixed・接続方式/認証・認可/二重実行防止)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-09 通知 / FR-14 対話)
@@ -100,6 +100,13 @@ plan_refs:
 - 良い影響:
   - 多層認証・確認フレーズ・冪等機構が**実 Discord なしで全数テスト可能**（CI 緑を維持）。
   - Risk 側無改修で kill switch を本人権限で操作でき、監査ログに本人として残る。
+    ［2026-09-19 追記 / #774］**「本人として残る」は actor 欄については成り立っていなかった。** owner マップ機密
+    クライアント（`client_credentials`）のトークンの主体は人ではなく、権威側が `Identity.Name` から採る actor は
+    `service-account-<clientId>` か、名前クレームが無ければ `unknown` になる（稼働環境の報告書確定通知で実測）。
+    kill switch・pause/resume・GFV 解除は Bot が**理由欄に `actor=<利用者>` を書いて運んでいる**ため操作者は
+    台帳に残るが、理由欄を持たない操作（報告書の確定・`/stage`）には残っていなかった。報告書の確定は
+    [IADR-0240](IADR-0240_discord-report-review-window-and-idempotent-confirm.md) 決定 11 が構造化した欄
+    （要求の `onBehalfOf`／イベントの `AuthorizedBy`）で是正した。**`/stage` は未是正**（同決定の射程外・保留）。
   - 既定 no-op のため、本 PR のマージで**実挙動は一切変わらない**（設定投入が有効化の唯一の引き金）。
 - 悪い影響・トレードオフ:
   - Bot 専用 owner クライアントは**実質的に利用者権限を持つ機密資格情報**であり、漏洩時の影響が大きい。

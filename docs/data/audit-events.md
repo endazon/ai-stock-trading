@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-04, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0347]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260919_848_terminal-close-approvals-release-inventory]
-issues: [#17, #18, #809, #819, #821, #848]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0347, IADR-0350]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260919_848_terminal-close-approvals-release-inventory, 20260919_849_ledger-drift-adoption]
+issues: [#17, #18, #809, #819, #821, #848, #849]
 -->
 
 
@@ -76,6 +76,11 @@ issues: [#17, #18, #809, #819, #821, #848]
   「なぜその種別が使えないのか」を後から誰も説明できない。相関はエントリーの `DecisionId`。
   結果の扱いは逆指値（既定の手法）と同一であり、試行の記録は `ProtectiveStopPlaced` / `ProtectiveStopCoverageLost` と
   **排他ではなく重ねて**残る。
+- 利用者が承認した**台帳とブローカーの乖離の取り込み**（`PositionDriftAdopted`・#849）は、取引台帳が**約定以外で動く唯一の操作**
+  である。相関はブローカー建玉の観測（`BrokerPositionsObserved`）・乖離の報告（`PositionReconciliationDrift`）と**同じ**決定的 GUID
+  であり、「何を観測し、いつ乖離と報告し、誰がなぜ取り込んだか」を 1 本で辿れる。要約に取り込み前後の数量・観測値と観測時刻・
+  操作者・理由を書き、🔴 **「実現損益は未記録（約定価格不明）」を必ず明記する**。推定を含む場合は数値に「推定・未記録」を添える
+  —— 数値だけを残すと、後から読んだ人が確定した損益として扱う。
 
 ## 永続化方針
 

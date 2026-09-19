@@ -134,6 +134,40 @@ public class AuditEntryFactoryTests
             new AssumptionsChanged(4, "owner", "別の変更", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt).CorrelationId);
     }
 
+    // FR-07, UC-03, ADR-0003, IADR-0240 決定11, #774: Discord Bot 経由の確定は owner マップ機密クライアントの
+    // トークンで行われる。**実際に操作した利用者と、認可の主体であるクライアントの両方**を台帳へ残す。
+    [Fact]
+    public void ReportConfirmed_の代理確定は_操作した利用者と認可の主体の両方を記録する()
+    {
+        var e = new ReportConfirmed(
+            "daily-2026-09-10", "Daily", "developer", 1, DateTimeOffset.UtcNow, AuthorizedBy: "ai-stock-trading-owner");
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Be("Daily 報告書 daily-2026-09-10 確定（developer・代理 ai-stock-trading-owner・前提 v1）");
+        entry.Summary.Should().NotContain("unknown");
+
+        // 生の値はペイロードにそのまま残る（要約の言い換えに依存せず照会できる）。
+        using var detail = System.Text.Json.JsonDocument.Parse(entry.Detail);
+        var root = detail.RootElement;
+        var actor = root.TryGetProperty("actor", out var a) ? a : root.GetProperty("Actor");
+        var authorizedBy = root.TryGetProperty("authorizedBy", out var b) ? b : root.GetProperty("AuthorizedBy");
+        actor.GetString().Should().Be("developer");
+        authorizedBy.GetString().Should().Be("ai-stock-trading-owner");
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("")]
+    public void ReportConfirmed_の確定者が分からないときは_要約に確定者不明と書く(string actor)
+    {
+        var e = new ReportConfirmed("daily-2026-09-10", "Daily", actor, 1, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Be("Daily 報告書 daily-2026-09-10 確定（確定者不明・前提 v1）");
+    }
+
     [Fact]
     public void ReportConfirmed_は_PeriodKey_相関で確定者を記録する()
     {
@@ -423,6 +457,46 @@ public class AuditEntryFactoryTests
 
         driftEntry.CorrelationId.Should().Be(observedEntry.CorrelationId);
     }
+
+    // T-10-477: FR-10, FR-11, UC-06, #849, IADR-0350: 乖離の取り込みは「誰が・なぜ・取り込み前後の数量・観測」を要約に残し、
+    // 観測・検知と同一相関で束ねる。**実現損益を記録していないこと**が要約から読める。
+    [Fact]
+    public void PositionDriftAdopted_は誰がなぜ何株から何株へを残し実現損益が未記録と分かる()
+    {
+        var observed = new BrokerPositionsObserved([], RecordedAt.AddMinutes(-5));
+        var e = new PositionDriftAdopted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, 3_381, 0, 0, RecordedAt.AddMinutes(-5), 335.1225m,
+            RealizedPnlRecorded: false, ReferencePrice: null, EstimatedPnlInBase: null,
+            "endazon", "moomoo アプリから全株を手動売却した", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("PositionDriftAdopted");
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("3381→0").And.Contain("endazon").And.Contain("moomoo アプリから全株を手動売却した");
+        entry.Summary.Should().Contain("実現損益は未記録").And.Contain("推定なし");
+        entry.OccurredAt.Should().Be(e.AdoptedAt);
+        entry.Detail.Should().Contain("RealizedPnlRecorded").And.Contain("LedgerQuantityBefore");
+        entry.CorrelationId.Should().Be(
+            AuditEntryFactory.From(observed, Guid.NewGuid(), RecordedAt).CorrelationId,
+            "観測 → 乖離の報告 → 取り込みを 1 本の相関で辿れる");
+    }
+
+    // T-10-478: 推定を含むときは、要約の数値に「推定・未記録」が必ず添えられる（確定値のように読ませない）。
+    [Fact]
+    public void PositionDriftAdopted_の推定は推定かつ未記録と明示される()
+    {
+        var e = new PositionDriftAdopted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, 3_381, 0, 0, RecordedAt.AddMinutes(-5), 335m,
+            RealizedPnlRecorded: false, ReferencePrice: 332.83m, EstimatedPnlInBase: -7_336.77m,
+            "endazon", "手動売却", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("推定 -7336.77 USD（推定・未記録）");
+        entry.Summary.Should().Contain("実現損益は未記録");
+    }
+
     // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れの自動縮小（**記録先 1: 監査ログ**）。
     // 利用者の承認も AI も介在しない自動決済であるため、この記録が「なぜ建玉が減ったか」の一次証跡になる。
     [Fact]

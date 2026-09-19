@@ -173,8 +173,18 @@ public static class NotificationFormatter
     // FR-07, FR-09: 報告書の確定（方針が取引に有効化された通知）。
     public static NotificationMessage From(ReportConfirmed e) => new(
         "報告書確定",
-        $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{e.Actor}・前提条件 v{e.AssumptionsVersion}）。",
+        $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。",
         NotificationSeverity.Info);
+
+    // FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定者の表示。
+    //   代理確定（Discord Bot 経由）: 「<操作した利用者>・<認可の主体のクライアント> 経由」——**両方を見せる**。
+    //   操作者が分からない（空／報告書サービスの最終の倒し先 `unknown`）: 「確定者不明」——内部の既定値を生で出さない。
+    //   それ以外（利用者本人のトークン・`client:<azp>`）: そのまま。
+    private static string ConfirmerOf(ReportConfirmed e)
+    {
+        var actor = string.IsNullOrWhiteSpace(e.Actor) || e.Actor == "unknown" ? "確定者不明" : e.Actor;
+        return string.IsNullOrWhiteSpace(e.AuthorizedBy) ? actor : $"{actor}・{e.AuthorizedBy} 経由";
+    }
 
     // FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示（＝確定依頼）。
     // 要約は発行側でサニタイズ済み（IADR-0116 決定3/4）。確定は利用者のみが行う（ADR-0003）ため本文で確定を促し、
@@ -237,7 +247,28 @@ public static class NotificationFormatter
         "リスク統制: 建玉の乖離を検知",
         $"取引台帳とブローカの建玉が一致しません（{e.Drifts.Count} 件・観測 {e.ObservedAt:yyyy-MM-dd HH:mm:ss}Z）。"
             + $"{string.Join("、", e.Drifts.Select(Describe))}。"
-            + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。",
+            + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。"
+            // #849, IADR-0350: 検知で止めない。システム外の売買が原因なら、利用者の承認つきで台帳を観測へ合わせられる。
+            + "システム外の売買で台帳の建玉が実態より多い場合は、利用者の操作で台帳へ取り込めます"
+            + "（POST /risk-controls/position-drift/adopt・理由必須）。",
+        NotificationSeverity.Critical);
+
+    // FR-09, FR-10, FR-11, UC-06, #849, IADR-0350: 利用者が承認した乖離の取り込み。
+    // 取引台帳が**約定以外で動く唯一の操作**であるため Critical とし、誰が・なぜ・何株から何株へを必ず出す。
+    // 🔴 **実現損益を記録していないこと**を本文に明記する。推定を含む場合は「推定・台帳へ未記録」と添える
+    // ——数値だけを出すと確定した損益に読める。
+    public static NotificationMessage From(PositionDriftAdopted e) => new(
+        "リスク統制: 建玉の乖離を台帳へ取り込み",
+        $"{e.Symbol}/{e.Market} の台帳の建玉を {e.LedgerQuantityBefore} → {e.LedgerQuantityAfter} へ合わせました"
+            + $"（ブローカの観測 {e.BrokerQuantity}・観測 {e.ObservedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}Z）。"
+            + $"操作者 {e.Actor}・理由: {e.Reason}。"
+            + "システム外の売買の約定価格は分からないため、**実現損益は記録していません**"
+            + "（当日損益・連敗・段階ゲートの実績には入りません）。"
+            + (e.EstimatedPnlInBase is { } estimate && e.ReferencePrice is { } reference
+                ? $"参考: 現在値 {reference.ToString(CultureInfo.InvariantCulture)} で評価した損益は "
+                    + $"{estimate.ToString("N2", CultureInfo.InvariantCulture)} USD（推定・台帳へ未記録）。"
+                : "現在値を取得できなかったため、参考の推定損益もありません。")
+            + "当該銘柄にブローカー側の保護注文（逆指値）が残っていないか、証券会社のアプリで確認してください。",
         NotificationSeverity.Critical);
 
     // FR-09, FR-10, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小。
