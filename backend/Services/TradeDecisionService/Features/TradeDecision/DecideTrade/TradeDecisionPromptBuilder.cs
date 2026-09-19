@@ -61,6 +61,15 @@ public static class TradeDecisionPromptBuilder
     public const string StopLossLineIsRiskConstraintRule =
         "記録上の損切りラインはリスク制約の一部です。現在値が損切りラインに達している建玉は、方針に出口の基準が無くても、リスク制約に基づいて手仕舞いを選べます。";
 
+    // FR-04, FR-10, #854, IADR-0351 決定3 の 4（#860 の監査の指摘）: 損切りライン到達中の建玉へは買い増ししない。
+    // 🔴 これが無いと上の出口が消える —— リスク管理の射影（PortfolioProjection）は建玉と同方向の約定のたびに記録上の
+    // 損切りラインを**最新エントリーの値へ更新する**（IADR-0035）。含み損の中で買い増すとラインが下がり、「達しています」が
+    // 「達していません」へ戻って既定が Hold へ戻る。方針が「押し目買い」なら含み損が買い増しの根拠として読まれ得る。
+    // 出口の規則と同じくリスク制約（FR-10 の銘柄別損切りライン）由来であり、方針（PolicySummary）は書き換えない。
+    // プロンプト上の歯止めであってコードの統制ではない（IADR-0351 残る制約）。
+    public const string NoAddAtStopLossLineRule =
+        "現在値が記録上の損切りラインに達している建玉へは、買い増し・売り増しをしません（損切りラインはリスク制約であり、方針が買い増しを支持していても同じです）。";
+
     public const string AddOnlyWithinPolicyRule =
         "買い増し・売り増しは、方針がそれを支持する場合に限ります。保有を踏まえずに同じ根拠で新規建てを繰り返しません。";
 
@@ -186,6 +195,9 @@ public static class TradeDecisionPromptBuilder
     // 保有状況節は currentPrice / references の有無にかかわらず**無条件で出る**——上の「従来のプロンプトと一致」は
     // 保有状況節を除いた部分についての記述である。一次は門（Hold で本判断が走らない）なので、保有を知らせないと
     // 損切りライン到達の建玉を「新規の関心なし」で落とし、出口の判断が本判断へ届かない。
+    // ［#860 の監査の指摘］上の「縮退制御が有効なときだけ currentPrice を渡す」は #854 で変わった: **呼び出し側は縮退制御の
+    // 有無にかかわらず currentPrice を渡す**（references は従来どおり縮退制御が有効なときだけ）。渡さないと定時トリガーの
+    // 一次は損切りライン到達を判定できない。縮退制御なしの構成でも、現在値が供給されていれば「- 現在値」行が出る。
     public static string BuildScreening(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         decimal? currentPrice = null,
@@ -216,8 +228,7 @@ public static class TradeDecisionPromptBuilder
 
         sb.AppendLine();
         // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定4: 保有状況の短縮版。縮退の**保護対象**（削ると、保有中の銘柄の
-        // 出口を一次が落とす）。評価価格は上の現在値行と同じ値。縮退制御なしの呼び出しは現在値を持たないため、
-        // 価格変動トリガーの価格があればそれを使う（本判断と同じ規則）。
+        // 出口を一次が落とす）。評価価格は本判断と同じ規則で選ぶ（価格変動トリガーの価格があればそれ、無ければ現在値）。
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
@@ -266,6 +277,7 @@ public static class TradeDecisionPromptBuilder
             $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
         sb.AppendLine($"- {ExitFollowsPolicyRule}");
         sb.AppendLine($"- {StopLossLineIsRiskConstraintRule}");
+        sb.AppendLine($"- {NoAddAtStopLossLineRule}");
         sb.AppendLine($"- {AddOnlyWithinPolicyRule}");
         sb.AppendLine();
     }
@@ -322,12 +334,16 @@ public static class TradeDecisionPromptBuilder
         {
             var ci = CultureInfo.InvariantCulture;
             var quantity = Math.Abs(held.SignedQuantity);
-            var entry = held.AverageEntryPrice is { } e ? $"{e.ToString("0.####", ci)}{priceUnit}" : Unknown;
+            // IADR-0351 決定2（#860 の監査・レビューの指摘）: 正でない取得単価は「不明」として扱う。本番の供給元
+            // （HttpHeldPositionProvider）は正でない価格を null にするが、HeldPosition は公開レコードであり、0 が直接渡ると
+            // 下の含み損益率の除算が DivideByZeroException になる（取得単価 0 の含み損益は捏造でもある）。
+            var knownEntryPrice = held.AverageEntryPrice is > 0m ? held.AverageEntryPrice : null;
+            var entry = knownEntryPrice is { } e ? $"{e.ToString("0.####", ci)}{priceUnit}" : Unknown;
 
             // 含み損益＝(評価価格 − 平均取得単価) × 符号付き数量。ショートは符号が反転する。
             var pnl = Unknown;
             var ratio = Unknown;
-            if (held.AverageEntryPrice is { } entryPrice && markPrice is { } mark)
+            if (knownEntryPrice is { } entryPrice && markPrice is { } mark)
             {
                 var amount = (mark - entryPrice) * held.SignedQuantity;
                 var rate = amount / (entryPrice * quantity) * 100m;

@@ -48,24 +48,20 @@ public class TradeDecisionServiceTests
     // #292, IADR-0119: 保有建玉の供給。null は「不明」（照会不能）で 0（保有なし）とは区別する。
     // #854, IADR-0351: 保有状況（数量・取得単価・損切りライン）も同じ偽物が供給する。数量だけを与えた場合は
     // 取得単価 1,000・損切りライン 970（ロング）/ 1,030（ショート）の建玉として返す。
+    // 🔴 この偽物は LLM の前後で同じ値を返す。「LLM 判断の後に引き直す」（IADR-0351 決定6）は下の MovingHeld が固定する。
     private sealed class FakeHeld(int? signedQuantity, decimal? entryPrice = 1_000m, decimal? stopLossPrice = null)
         : IHeldPositionProvider
     {
-        public int PositionCalls { get; private set; }
-
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
             Task.FromResult(signedQuantity);
 
-        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default)
-        {
-            PositionCalls++;
-            return Task.FromResult(signedQuantity switch
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult(signedQuantity switch
             {
                 null => null,
                 0 => HeldPosition.None,
                 { } q => new HeldPosition(q, entryPrice, stopLossPrice ?? (q > 0 ? 970m : 1_030m)),
             });
-        }
     }
 
     private sealed class ThrowingHeld : IHeldPositionProvider
@@ -1055,6 +1051,132 @@ public class TradeDecisionServiceTests
         decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
         decision.Intent.Side.Should().Be(TradeSide.Sell);
         decision.Intent.Quantity.Should().Be(3_378);
+    }
+
+    // --- #854, IADR-0351 決定6（#860 の監査・レビューの指摘）: 発注に使う保有数は LLM 判断の後に引き直す ---
+    //
+    // LLM 呼び出しには数秒〜数十秒かかり、その間に逆指値が約定し得る。プロンプト用に先取りした保有数を決済数量へ使い回すと、
+    // 古い数量での全量決済が在庫を超える。上の各テストの FakeHeld は LLM の前後で同じ数量を返すため、「引き直している」ことと
+    // 「先取りした値を使い回している」ことを区別できない —— 下の偽物は **LLM 呼び出しの最中に台帳が動く**状況を再現する。
+
+    // LLM の前後で値が変わる台帳。照会と LLM 呼び出しの順序も記録する。
+    private sealed class MovingHeld(int? beforeLlm, List<string> events) : IHeldPositionProvider
+    {
+        public int? Current { get; set; } = beforeLlm;
+
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default)
+        {
+            events.Add("held:quantity");
+            return Task.FromResult(Current);
+        }
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default)
+        {
+            events.Add("held:position");
+            return Task.FromResult(Current switch
+            {
+                null => null,
+                0 => HeldPosition.None,
+                { } q => new HeldPosition(q, 1_100m, 1_050m),
+            });
+        }
+    }
+
+    // 呼び出しの最中に台帳を動かす LLM スタブ（逆指値の約定・外部の売買に相当）。
+    private sealed class LedgerMovingLlm(string output, MovingHeld held, int? afterLlm, List<string> events)
+        : ILlmCompletionClient
+    {
+        public string? Prompt { get; private set; }
+
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
+        {
+            events.Add("llm");
+            Prompt = prompt;
+            held.Current = afterLlm;
+            return Task.FromResult(output);
+        }
+    }
+
+    private static (AppSvc Service, LedgerMovingLlm Llm, List<string> Events) CreateWithMovingLedger(
+        int? beforeLlm, int? afterLlm)
+    {
+        var events = new List<string>();
+        var held = new MovingHeld(beforeLlm, events);
+        var llm = new LedgerMovingLlm(SellJson, held, afterLlm, events);
+        var service = new AppSvc(
+            llm, new FakePolicy(Policy), new FakeSizing(Context()), new FakeClock(), NullLogger<AppSvc>.Instance,
+            heldPosition: held);
+        return (service, llm, events);
+    }
+
+    [Fact]
+    public async Task プロンプト時は保有ありでもLLM判断の後に保有が無くなっていれば決済を見送る()
+    {
+        // 監査のプローブ P1: LLM 呼び出しの間に逆指値が全量約定した。先取りした 3,378 株で Close を出すと保有 0 からの売りになる。
+        var (service, llm, events) = CreateWithMovingLedger(beforeLlm: 3_378, afterLlm: 0);
+
+        var decision = await service.DecideAsync(Trigger());
+
+        llm.Prompt.Should().Contain("- 保有: ロング 3378 株", "プロンプトは LLM の前の保有状況で書かれる");
+        decision.Should().BeNull("発注直前の保有は 0 であり、Sell は裸の新規売りになるため見送る（IADR-0119 決定2）");
+        events.Should().Equal(["held:position", "llm", "held:quantity"], "保有数の引き直しは LLM 判断の後に行う");
+    }
+
+    [Fact]
+    public async Task プロンプト時は保有ありでもLLM判断の後に保有が不明になれば決済を見送る()
+    {
+        // 監査のプローブ P1b: LLM 呼び出しの間にリスク管理の照会が落ちた。先取りした数量を「分かっている保有」として使わない。
+        var (service, llm, events) = CreateWithMovingLedger(beforeLlm: 3_378, afterLlm: null);
+
+        var decision = await service.DecideAsync(Trigger());
+
+        llm.Prompt.Should().Contain("- 保有: ロング 3378 株");
+        decision.Should().BeNull("発注直前の保有が不明なら Sell は見送る（不明を先取りの値で埋めない）");
+        events.Should().Equal(["held:position", "llm", "held:quantity"]);
+    }
+
+    [Fact]
+    public async Task プロンプト時とLLM判断の後で保有数が変わっていれば変わった後の数量で決済する()
+    {
+        // 監査のプローブ P1c: LLM 呼び出しの間に一部が約定して 3,378 → 1,000 株になった。決済は発注直前の 1,000 株の全量。
+        var (service, llm, events) = CreateWithMovingLedger(beforeLlm: 3_378, afterLlm: 1_000);
+
+        var decision = await service.DecideAsync(Trigger());
+
+        llm.Prompt.Should().Contain("- 保有: ロング 3378 株");
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Side.Should().Be(TradeSide.Sell);
+        decision.Intent.Quantity.Should().Be(1_000, "古い数量（3,378）での全量決済は在庫を超える");
+        events.Should().Equal(["held:position", "llm", "held:quantity"]);
+    }
+
+    // #860 の監査の指摘（IADR-0351 決定4）: 縮退制御なしの経路でも一次スクリーニングへ現在値を渡す。渡さないと、
+    // 定時トリガー（価格を持たない）の一次は常に「到達したかは不明」になり、門である一次だけが損切りライン到達を知らない。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 定時トリガーの一次スクリーニングは現在値で損切りライン到達を判定する(bool withContextBudget)
+    {
+        // 取得 1,100・損切りライン 1,050 のロング。権威ある現在値 1,040 は損切りライン以下＝到達。
+        var llm = new RecordingLlm(SellJson);
+        var options = new DecisionOrchestrationOptions
+        {
+            EnableScreening = true,
+            ScreeningContextBudgetChars = withContextBudget ? 150_000 : null,
+        };
+        var service = new AppSvc(
+            llm, new FakePolicy(Policy), new FakeSizing(Context()), new FakeClock(), NullLogger<AppSvc>.Instance,
+            options: options, currentPrice: new FakeCurrentPrice(1_040m),
+            heldPosition: new FakeHeld(3_378, entryPrice: 1_100m, stopLossPrice: 1_050m));
+
+        await service.DecideAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates));
+
+        var screening = llm.Calls[0];
+        screening.Purpose.Should().Be(LlmPurposes.TradeDecisionScreening);
+        screening.Prompt.Should().Contain("記録上の損切りライン: 1050（現在値は損切りラインに達しています）");
+        screening.Prompt.Should().NotContain("到達したかは不明");
+        screening.Prompt.Should().Contain("含み損益率: -5.45%");
     }
 
     // 🔴 方針（PolicySummary）は書き換えない。保有状況の有無にかかわらず、確定済み日報の方針はそのまま 1 回だけ渡る。

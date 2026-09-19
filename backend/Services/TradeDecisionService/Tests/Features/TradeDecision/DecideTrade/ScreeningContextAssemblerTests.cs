@@ -63,8 +63,9 @@ public class ScreeningContextAssemblerTests
         var datedLowRelevance = News("発行時刻ありで関連度が低い記事", score: 0.1, New);
         var retrieved = new[] { unknownHighRelevance, datedLowRelevance };
 
-        // 保護分 872 ＋材料 2 件（176+175=351）=1223 > 予算 1050 のため 1 件だけ削れば収まる
-        // （872+175=1047 ≤ 1050）。発行時刻不明（HasValue=false）は関連度に関わらずソート順の先頭に来る。
+        // 保護分 1152（骨格 750 + 方針 2 文字 + 銘柄行 400）＋材料 2 件（176+175=351）=1503 > 予算 1330 のため
+        // 1 件だけ削れば収まる（1152+175=1327 ≤ 1330）。発行時刻不明（HasValue=false）は関連度に関わらずソート順の先頭に来る。
+        // #854, IADR-0351 決定4: 銘柄行 120→400 の底上げぶん、保護分と予算を同幅（+280）でずらした（上のテストと同じ）。
         var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1);

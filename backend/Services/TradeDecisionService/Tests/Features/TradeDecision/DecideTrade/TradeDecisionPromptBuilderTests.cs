@@ -544,6 +544,67 @@ public class TradeDecisionPromptBuilderTests
         TradeDecisionPromptBuilder.StopLossLineIsRiskConstraintRule.Should().Contain("手仕舞いを選べます");
     }
 
+    // 🔴 FR-04, FR-10, #854, IADR-0351 決定3 の 4（#860 の監査の指摘）: 損切りライン到達中の建玉へは買い増ししない。
+    // リスク管理の射影は建玉と同方向の約定のたびに記録上の損切りラインを最新エントリーの値へ更新する（IADR-0035）。
+    // 含み損の中で買い増すとラインが下がり、「達しています」が「達していません」へ戻って出口の条件が消える。
+    // 保有ありの保有状況節を**全文で固定**する（文言が 1 つ消えても、順序が変わっても落ちる）。
+    [Fact]
+    public void 保有ありの保有状況節は全文が固定され損切りライン到達中の買い増しを禁じる()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, ContextWith(StopLossExecutionMethod.NoProtectiveStop),
+            currentPrice: 217.5m, held: LongAapl);
+
+        // 節の末尾の空行（次の見出しとの区切り）は比較から外す。
+        Normalize(ExtractSection(prompt, HeldHeading)).TrimEnd().Should().Be(Normalize(GoldenHeldSection));
+        TradeDecisionPromptBuilder.NoAddAtStopLossLineRule.Should().Contain("買い増し・売り増しをしません");
+        // 方針は書き換えない: 規則は保有状況節にだけあり、方針の節には入らない。
+        CountOccurrences(prompt, TradeDecisionPromptBuilder.NoAddAtStopLossLineRule).Should().Be(1);
+        CountOccurrences(prompt, Policy.Summary).Should().Be(1);
+    }
+
+    // 規則は「到達している建玉」を条件に含む文であり、保有ありなら到達の有無にかかわらず出す（出口の規則と同じ）。
+    // 保有なし・不明（買い増しの対象が無い）と、一次スクリーニング（費用統制。規則の詳細は本判断側）には出さない。
+    [Fact]
+    public void 損切りライン到達中の買い増しの禁止は保有ありの本判断にだけ出る()
+    {
+        var reached = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+        var notReached = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 231m, held: LongAapl);
+        var none = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: HeldPosition.None);
+        var unknown = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: null);
+        var screening = TradeDecisionPromptBuilder.BuildScreening(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl);
+
+        reached.Should().Contain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        notReached.Should().Contain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        none.Should().NotContain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        unknown.Should().NotContain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        screening.Should().NotContain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+    }
+
+    // IADR-0351 決定2（#860 の監査・レビューの指摘）: 正でない取得単価は「不明」。0 のまま含み損益率を割ると
+    // DivideByZeroException になる（本番の供給元は正でない価格を null にするが、HeldPosition は公開レコードである）。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void 取得単価が正でなければ例外を出さず取得単価と含み損益を不明と書く(int entryPrice)
+    {
+        var held = new HeldPosition(10, AverageEntryPrice: entryPrice, StopLossPrice: 222.6m);
+
+        var build = () => TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: held);
+        var buildScreening = () => TradeDecisionPromptBuilder.BuildScreening(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: held);
+
+        var section = ExtractSection(build.Should().NotThrow().Subject, HeldHeading);
+        section.Should().Contain("- 保有: ロング 10 株 / 平均取得単価: 不明");
+        section.Should().Contain("- 含み損益: 不明");
+        // 損切りラインの到達判定は取得単価に依らない（現在値とラインだけで決まる）。
+        section.Should().Contain("- 記録上の損切りライン: 222.6（現在値は損切りラインに達しています）");
+
+        ExtractSection(buildScreening.Should().NotThrow().Subject, HeldHeading)
+            .Should().Contain("平均取得単価: 不明 / 含み損益率: 不明");
+    }
+
     [Fact]
     public void 損切りラインに達していない建玉は未到達と書く()
     {
@@ -774,6 +835,20 @@ public class TradeDecisionPromptBuilderTests
         unknown.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownRule);
         unknown.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
     }
+
+    // 保有あり（AAPL ロング 3,378 株・S2・現在値 217.5）の保有状況節の全文（IADR-0351 決定1〜3）。
+    private const string GoldenHeldSection = """
+        # 保有状況（この銘柄）
+        - 保有: ロング 3378 株 / 平均取得単価: 229.5
+        - 含み損益: -40536（-5.23%・現在値 217.5 で評価）
+        - 記録上の損切りライン: 222.6（現在値は損切りラインに達しています）
+        - 保護の状態: 無保護です（逆指値なしの建玉を許容する設定＝S2）。損切りは自動では執行されません。
+        - この銘柄は保有中です。買い増し（Buy）・保有継続（Hold）・手仕舞い（Sell）のいずれかを判断します。手仕舞いは保有の全量をシステムが決済します（一部だけの決済は選べません）。
+        - 出口の基準（利確・損切り・保有期間など）が方針にあれば、それに従います。方針に出口の基準が無ければ、保有継続（Hold）を既定とします。
+        - 記録上の損切りラインはリスク制約の一部です。現在値が損切りラインに達している建玉は、方針に出口の基準が無くても、リスク制約に基づいて手仕舞いを選べます。
+        - 現在値が記録上の損切りラインに達している建玉へは、買い増し・売り増しをしません（損切りラインはリスク制約であり、方針が買い増しを支持していても同じです）。
+        - 買い増し・売り増しは、方針がそれを支持する場合に限ります。保有を踏まえずに同じ根拠で新規建てを繰り返しません。
+        """;
 
     // #854 以前の Build(Scheduled AAPL, Policy, Context, currentPrice: 217.5) の出力（修正前のコードで採取）。
     private const string LegacyScheduledPrompt = """

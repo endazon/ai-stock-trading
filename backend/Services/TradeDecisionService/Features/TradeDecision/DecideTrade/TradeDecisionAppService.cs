@@ -202,8 +202,10 @@ public sealed class TradeDecisionAppService(
 
         var orchestrated = await _orchestrator.DecideAsync(
             // #854, IADR-0351 決定4: 一次は門である（Hold で本判断が走らない）ため、保有状況は一次にも渡す。
+            // 🔴 縮退制御なしの経路でも現在値を渡す（#860 の監査の指摘）。渡さないと、定時トリガー（価格を持たない）では
+            // 一次の保有状況が常に「到達したかは不明」になり、門である一次だけが損切りライン到達を知らない。
             () => screening is null
-                ? TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context, held: heldPosition)
+                ? TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context, currentPrice, held: heldPosition)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition),
             decisionPrompt, cancellationToken)
