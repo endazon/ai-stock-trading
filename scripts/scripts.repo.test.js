@@ -2668,6 +2668,53 @@ module.exports = ({ ok, assert }) => {
       assert.deepStrictEqual(al.findLosses({ base, theirs, ours }), []);
     });
 
+    // 🔴 **BLK-1 の回帰**: 初版の `touched = !baseRow || !oursRow || …` は、**統合ブランチ側が
+    // 後から足した行**（マージベースに無い）を「我々が触った」と誤認し、**索引行が develop に
+    // 1 本増えるたびに在庫の PR を全部赤にした**（実測 4/10。何も失われていない）。
+    // 素通りの原因は固定データが **base・ours 双方に行が在る形しか踏んでいなかった**ことなので、
+    // 「**base に行が無い**」形をここで踏む。
+    ok('check-adr-index-addendum-loss[N4/BLK-1]: 統合ブランチ側が新設した行は要求しない（base にも ours にも無い）', () => {
+      const base = al.parseIndex(rowOf('IADR-0118', '既存'));
+      const theirs = al.parseIndex(
+        `${rowOf('IADR-0118', '既存')}\n${rowOf('IADR-0352', 'develop が足した［2026-09-19 追記 / #866］')}`,
+      );
+      const ours = al.parseIndex(rowOf('IADR-0118', '既存'));
+      assert.deepStrictEqual(al.findLosses({ base, theirs, ours }), []);
+    });
+
+    ok('check-adr-index-addendum-loss[P3/BLK-1]: 両側が同じ行を新設したら theirs の印を要求する（base に無く ours に在る）', () => {
+      const base = al.parseIndex('');
+      const theirs = al.parseIndex(rowOf('IADR-0352', 'a［2026-09-19 追記 / #866］b'));
+      const ours = al.parseIndex(rowOf('IADR-0352', '我々が書いた別の本文'));
+      const losses = al.findLosses({ base, theirs, ours });
+      assert.strictEqual(losses.length, 1);
+      assert.strictEqual(losses[0].from, 'theirs');
+    });
+
+    ok('check-adr-index-addendum-loss[P4/BLK-1]: 我々が行を消したら theirs の印も要求する（ours に無く base に在る）', () => {
+      const base = al.parseIndex(rowOf('IADR-0352', 'a'));
+      const theirs = al.parseIndex(rowOf('IADR-0352', 'a［2026-09-19 追記 / #866］b'));
+      const ours = al.parseIndex('');
+      assert.strictEqual(al.findLosses({ base, theirs, ours }).length, 1);
+    });
+
+    // 🔴 **見逃すと決めた 1 形**（IADR-0363 決定 6 / 監査プローブ B1）を固定する。
+    // 期待値は「消失なし」であり、**合格ではなく見逃しの明示である。**
+    ok('check-adr-index-addendum-loss[見逃しの固定]: 衝突を base の本文へ戻すと theirs 側の印の消失を検出しない', () => {
+      const base = al.parseIndex(rowOf('IADR-0118', '元の本文'));
+      const theirs = al.parseIndex(rowOf('IADR-0118', '元の本文［2026-09-19 追記 / #849］x'));
+      const ours = al.parseIndex(rowOf('IADR-0118', '元の本文'));
+      assert.deepStrictEqual(al.findLosses({ base, theirs, ours }), [], 'IADR-0363 決定 6 の見逃し');
+    });
+
+    ok('check-adr-index-addendum-loss: extractMarks は lastIndex を持ち越さない（g 付き正規表現を export しない）', () => {
+      const line = rowOf('IADR-0001', 'a［2026-09-19 追記 / #866］b［2026-09-18 追記 / #827］');
+      assert.deepStrictEqual(al.extractMarks(line), al.extractMarks(line));
+      assert.strictEqual(al.extractMarks(line).length, 2);
+      assert.strictEqual(typeof al.MARK_SOURCE, 'string', 'MARK_SOURCE は文字列で export する');
+      assert.strictEqual(al.MARK_RE, undefined, 'g 付き正規表現オブジェクトを export してはならない');
+    });
+
     ok('check-adr-index-addendum-loss[N2]: 印の追加・行の並べ替えでは消失としない', () => {
       const a = rowOf('IADR-0118', 'a');
       const b = rowOf('IADR-0210', 'b［2026-09-18 追記 / #820］');
@@ -2723,6 +2770,8 @@ module.exports = ({ ok, assert }) => {
     const incidents = [
       { name: '事故 1（IADR-0210 / ［2026-09-18 追記 / #820］）', range: '67628182..c1023d74', id: 'IADR-0210' },
       { name: '事故 2（IADR-0118 / ［2026-09-19 追記 / #849］）', range: '13e8e19f..c53876d4', id: 'IADR-0118' },
+      // 3 件目は本検査器を develop の履歴へ当てて初めて見つかったもの（develop 上に現存する）。
+      { name: '事故 3（IADR-0327 / ［2026-09-11 追記 / #743］）', range: 'bdff6736..1cf92ed8', id: 'IADR-0327' },
     ];
     for (const inc of incidents) {
       ok(`check-adr-index-addendum-loss: ${inc.name} を実データで再現して赤になる`, () => {

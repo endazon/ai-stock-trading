@@ -34,13 +34,21 @@
  *                         —— **2 件の事故はどちらもこの形である。**
  *     規則 3（不干渉）    触っていない行は theirs を要求しない。統合ブランチが先に進んだだけの PR を
  *                         赤にしない（3-way マージでは統合ブランチ側が採られる。**偽陽性を作ると
- *                         検査そのものが外される**）。
+ *                         検査そのものが外される**）。**「触った」は ours を起点に読む** ——
+ *                         「マージベースに行が無い」は**統合ブランチ側が足した**場合にも起きる
+ *                         （初版はこれを取り違え、在庫の PR を 4/10 赤にした。findLosses の注記）。
  *
  * ■ 🔴 何を見ないか（明示する）
  *   - **`.ai-context/adr/IADR-XXXX_*.md` 本体**の追記ブロック、および **`docs/` の trace ブロック**。
  *     同じ弱さはあるが、**まずは索引行だけ**に絞る（#875。広げるかは別 issue）。
  *   - **印の中身が正しいか。** 機械では判定できない。見るのは「在ったものが在るか」だけである。
  *   - **索引行の外**（README 冒頭の運用ルール等）の追記ブロック。事故は索引行で起きた。
+ *   - 🔴 **衝突を「マージベースの本文へ戻して」解決した場合の、theirs 側の印の消失。**
+ *     ours の行が base の行と**同一に戻る**ため規則 3 が不干渉と読み、規則 2 が発動しない。
+ *     **規則 3 を緩めれば捕まえられるが、それは上の 4/10 の偽陽性を復活させる** ——
+ *     「統合ブランチが先へ進んだだけ」と「衝突を base へ戻した」は、**索引ファイルの 3 版だけでは
+ *     区別できない**（区別には、その PR が当該行に対して何をしたかの履歴が要る）。
+ *     **偽陽性を避ける側へ倒し、この 1 形だけは見逃す**と決めた（IADR-0363 決定 6）。
  *
  * ■ 印の形（実データから引いた）
  *   `/ #NNN` は**必須ではない**。`［2026-09-03 追記］`・`［2026-08-28 追記 / IADR-0259］`・
@@ -64,8 +72,19 @@ const INDEX_PATH = '.ai-context/adr/README.md';
 /** 索引行（`| IADR-XXXX | … |`）。3 桁運用へ戻っても漏れないよう `\d{3,4}`（check-adr-index-sync と同じ）。 */
 const ROW_RE = /^\|\s*(IADR-\d{3,4})\s*\|/;
 
-/** 日付つき追記ブロックの印。**issue 番号は必須にしない**（上記「印の形」）。 */
-const MARK_RE = /［\d{4}-\d{2}-\d{2}\s*追記[^］]*］/g;
+/**
+ * 日付つき追記ブロックの印。**issue 番号は必須にしない**（上記「印の形」）。
+ *
+ * 🔴 **`g` 付きの正規表現オブジェクトは外へ出さない。** `lastIndex` を持ち回るため、
+ * 呼び出し側が `.test()` / `.exec()` で使うと**前回の位置から探して 1 回おきに外す**。
+ * 外へは文字列（`MARK_SOURCE`）と関数（`extractMarks`）だけを出す。
+ */
+const MARK_SOURCE = '［\\d{4}-\\d{2}-\\d{2}\\s*追記[^］]*］';
+
+/** 1 行から印を全部取り出す。毎回新しい正規表現を作るので `lastIndex` を持ち越さない。 */
+function extractMarks(line) {
+  return String(line).match(new RegExp(MARK_SOURCE, 'g')) || [];
+}
 
 /**
  * 印の同一性を判定するための正規化。**表示は原文のまま**で、突合だけ正規化した形で行う。
@@ -168,7 +187,7 @@ function parseIndex(content) {
     const id = m[1];
     const row = rows.get(id) || { line: null, marks: new Map(), sample: new Map() };
     row.line = row.line === null ? line : `${row.line}\n${line}`;
-    for (const hit of line.match(MARK_RE) || []) {
+    for (const hit of extractMarks(line)) {
       const key = normalizeMark(hit);
       row.marks.set(key, (row.marks.get(key) || 0) + 1);
       if (!row.sample.has(key)) row.sample.set(key, hit);
@@ -223,7 +242,19 @@ function findLosses({ base, theirs, ours }) {
     const oursRow = ours.get(id);
     const baseRow = base.get(id);
     // 規則 3: 我々が触っていない行は要求しない（統合ブランチ側が 3-way マージで採られる）。
-    const touched = !baseRow || !oursRow || oursRow.line !== baseRow.line;
+    //
+    // 🔴 **「マージベースに行が無い」を『我々が足した』と読んではならない。**
+    // 行がマージベースに無いのは、**統合ブランチ側が後から足した**場合にも起きる。
+    // 初版は `!baseRow || !oursRow || …` と書いており、この形を「触った」と誤認して
+    // **索引行が develop に 1 本増えるたびに在庫の PR を全部赤にした**
+    // （実測: 開いている 10 本のうち 4 本が IADR-0352 の行で赤。**何も失われていない**）。
+    // `static-checks` は必須チェックであり、これはマージ列そのものを止める
+    // —— 本ファイルが繰り返し書いている「偽陽性は検査を外させる」の実例を自分で作っていた。
+    //
+    // 正しくは **ours を起点に読む**:
+    //   ours に在る → base に無ければ「我々が足した」、在れば行文字列の差で判定
+    //   ours に無い → base に在れば「我々が消した」、base にも無ければ**我々は無関係**
+    const touched = oursRow ? !baseRow || oursRow.line !== baseRow.line : !!baseRow;
     if (!touched) continue;
     for (const [mark, count] of row.marks) {
       const have = oursRow ? oursRow.marks.get(mark) || 0 : 0;
@@ -293,12 +324,26 @@ function main(opts = {}) {
   const declared = parseRemovals(declaredText);
   const intentional = losses.filter((l) => isDeclared(declared, l.id, l.mark));
   const silent = losses.filter((l) => !isDeclared(declared, l.id, l.mark));
+  // 印を名指しした宣言と、`*`（その行の印を全部解放）で通ったものを分ける。
+  const byName = intentional.filter((l) => (declared.get(l.id) || new Set()).has(l.mark));
+  const byStar = intentional.filter((l) => !(declared.get(l.id) || new Set()).has(l.mark));
 
-  if (intentional.length) {
+  if (byName.length) {
     notice(
-      `[check-adr-index-addendum-loss] ${REMOVE_TOKEN} で宣言された撤去 ${intentional.length} 件を許容した: ` +
-        intentional.map((l) => `${l.id} ${l.display}`).join(' / ') +
+      `[check-adr-index-addendum-loss] ${REMOVE_TOKEN} で名指しされた撤去 ${byName.length} 件を許容した: ` +
+        byName.map((l) => `${l.id} ${l.display}`).join(' / ') +
         '。**撤去してよい追記かは人が確かめること。**',
+    );
+  }
+  // 🔴 `*` は notice ではなく **warn** にする。`*` はその行の印を**全部**解放するため、
+  // 「1 件だけ撤去したいが印を書き写すのが面倒」で使われると、**同じ行の他の消失を巻き込んで隠す**。
+  // しかも走査範囲は `git log <base>..HEAD`＝PR の全コミットなので、**古いコミットに 1 行書いた
+  // `*` がブランチの寿命のあいだずっと効き続ける**。
+  if (byStar.length) {
+    warn(
+      `[check-adr-index-addendum-loss] ${REMOVE_TOKEN} の \`*\`（行の印を全部解放）で ${byStar.length} 件を許容した: ` +
+        byStar.map((l) => `${l.id} ${l.display}`).join(' / ') +
+        '。**`*` は同じ行の他の消失も巻き込んで隠す。撤去する印を 1 件ずつ名指しできないか見直すこと。**',
     );
   }
 
@@ -388,6 +433,29 @@ function selfTest() {
   };
   const run = (o) => quiet(() => main({ range: null, commitBodies: '', ...o }));
 
+  /** 逃げ道の告知が notice か warn かを見るため、stdout を捨てずに集める。 */
+  const capture = (o) => {
+    const e = console.error;
+    const l = console.log;
+    const w = process.stdout.write.bind(process.stdout);
+    let buf = '';
+    console.error = () => {};
+    console.log = () => {};
+    process.stdout.write = (s) => {
+      buf += s;
+      return true;
+    };
+    let code;
+    try {
+      code = main({ range: null, commitBodies: '', ...o });
+    } finally {
+      console.error = e;
+      console.log = l;
+      process.stdout.write = w;
+    }
+    return { code, out: buf };
+  };
+
   // ---- 再現データ（実際に起きた 2 件）: 是正前は落ちる ----
   t(
     '🔴 事故 1 の再現: IADR-0210 から ［2026-09-18 追記 / #820］ が消えると赤',
@@ -468,6 +536,50 @@ function selfTest() {
       baseContent: '| IADR-0118 | **要約** | Accepted |',
       theirsContent: '| IADR-0118 | **要約**［2026-09-19 追記 / #849］x | Accepted |',
       oursContent: '| IADR-0118 | **要約** | Accepted |',
+    }) === 0,
+  );
+
+  // ---- 🔴 BLK-1 の穴（初版が素通りさせた形）: **base に行が無い**ケースを踏む ----
+  //
+  // 初版は `touched = !baseRow || !oursRow || …` と書いており、**統合ブランチ側が後から
+  // 足した行**（base にも ours にも無い）を「我々が触った」と誤認した。実測で開いている
+  // PR 10 本のうち 4 本が IADR-0352 の行で赤になった（**何も失われていない**）。
+  // 固定データが base・ours 双方に行が在る形しか踏んでいなかったことが、素通りの原因である。
+  t(
+    '🔴 規則 3（BLK-1 回帰）: 統合ブランチ側が新設した行（base にも ours にも無い）は要求しない',
+    run({
+      baseContent: '| IADR-0118 | **他の行** | Accepted |',
+      theirsContent:
+        '| IADR-0118 | **他の行** | Accepted |\n| IADR-0352 | **develop が足した行**［2026-09-19 追記 / #866］ | Accepted |',
+      oursContent: '| IADR-0118 | **他の行** | Accepted |',
+    }) === 0,
+  );
+  t(
+    '🔴 規則 2（BLK-1 の裏）: 両側が同じ行を新設した（base に無く ours に在る）なら theirs の印を要求する',
+    run({
+      baseContent: '',
+      theirsContent: '| IADR-0352 | a［2026-09-19 追記 / #866］b | Accepted |',
+      oursContent: '| IADR-0352 | 我々が書いた別の本文 | Accepted |',
+    }) === 1,
+  );
+  t(
+    '🔴 規則 2（BLK-1 の裏）: 我々が行を消した（ours に無く base に在る）なら theirs の印も要求する',
+    run({
+      baseContent: '| IADR-0352 | a | Accepted |',
+      theirsContent: '| IADR-0352 | a［2026-09-19 追記 / #866］b | Accepted |',
+      oursContent: '',
+    }) === 1,
+  );
+
+  // ---- 🔴 見逃すと決めた 1 形（IADR-0363 決定 6 / 監査プローブ B1）を**固定する** ----
+  // 期待値は exit 0 である。**これは合格ではなく、見逃しの明示である。**
+  // 捕まえるには規則 3 を緩めるしかなく、それは上の 4/10 の偽陽性を復活させる。
+  t(
+    '（見逃しの固定）衝突を base の本文へ戻して解決すると theirs 側の印の消失を検出しない',
+    run({
+      baseContent: '| IADR-0118 | **元の本文** | Accepted |',
+      theirsContent: '| IADR-0118 | **元の本文**［2026-09-19 追記 / #849］x | Accepted |',
+      oursContent: '| IADR-0118 | **元の本文** | Accepted |',
     }) === 0,
   );
 
@@ -558,6 +670,32 @@ function selfTest() {
   );
 
   // ---- 範囲の割り方 ----
+  // ---- 逃げ道の告知の強さ（名指しは notice / `*` は warn） ----
+  t('名指しの撤去は notice で告知する', (() => {
+    const r = capture({
+      baseContent: FIX.case2Base,
+      oursContent: FIX.case2Ours,
+      commitBodies: `chore: x\n\n${REMOVE_TOKEN} IADR-0118 ［2026-09-19 追記 / #849］\n`,
+    });
+    return r.code === 0 && r.out.includes('notice: ') && !r.out.includes('  warn  ');
+  })());
+  t('🔴 `*` で通した撤去は warn へ格上げする（行の印を全部解放するため）', (() => {
+    const r = capture({
+      baseContent: FIX.case2Base,
+      oursContent: '',
+      commitBodies: `chore: x\n\n${REMOVE_TOKEN} IADR-0118 *\n`,
+    });
+    return r.code === 0 && r.out.includes('  warn  ') && r.out.includes('*');
+  })());
+
+  // ---- extractMarks は lastIndex を持ち越さない（`g` 付き正規表現を外へ出さない理由） ----
+  t('extractMarks: 同じ行を 2 回読んでも同じ結果になる（lastIndex の持ち越しが無い）', (() => {
+    const line = '| IADR-0001 | a［2026-09-19 追記 / #866］b［2026-09-18 追記 / #827］ | Accepted |';
+    const a = extractMarks(line);
+    const b = extractMarks(line);
+    return a.length === 2 && b.length === 2 && a.join('|') === b.join('|');
+  })());
+
   t('parseRange: 3 ドットは merge-base を base にする', (() => {
     const r = parseRange('origin/develop...HEAD', { mergeBase: () => 'MB' });
     return r.base === 'MB' && r.theirs === 'origin/develop' && r.ours === 'HEAD' && r.strict === false;
@@ -597,7 +735,8 @@ module.exports = {
   looksTruncated,
   resolveRange,
   INDEX_PATH,
-  MARK_RE,
+  MARK_SOURCE,
+  extractMarks,
   REMOVE_TOKEN,
   FIXTURES: FIX,
 };
