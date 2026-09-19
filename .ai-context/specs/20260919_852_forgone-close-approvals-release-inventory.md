@@ -150,7 +150,8 @@ backend/Services/RiskManagementService/Tests/Infrastructure/Steps/PortfolioLedge
 | T-10-410（否定形・最重要） | 🔴 allowlist に無い理由（将来足される値を `(OrderDispatchForgoneReason)9999` で模す）では**在庫を解放しない** |
 | T-10-410（境界値） | 現行 4 値すべてについて `ConfirmsNoOrderPlaced` の真偽を固定し、**列挙の要素数**も固定する（値が増えたら落ちて分類を見直させる） |
 | T-10-410（否定形） | 相関する承認が無い見送りは**書かない**（後着の承認は処理中として数える） |
-| T-10-410（冪等・単調） | 見送りの再送で時刻が動かない／先に終端が立っていれば見送りで上書きしない |
+| T-10-410（戻り幅） | 戻るのは**未約定残だけ**で約定済みぶんを二重に引かない。🔴 **窓内に「戻らない側」の手仕舞いを残して差分を測る**——見送った承認だけでは 0 になり、未約定残が戻ったのか承認数量が戻ったのか区別できない |
+| T-10-410（冪等・単調） | 見送りの再送で時刻が動かない／先に終端が立っていれば見送りで上書きしない。🔴 **`TerminalAt` を直接アサートする**——数量はどちらに転んでも 0 で、単調性を測れない。後着は `Cancelled` を使う（`Accepted` / `PartiallyFilled` は `MarkTerminal` の最初の門で return し、`TerminalAt` のガードを通らない） |
 | T-10-410（結線） | ハンドラ経由（Wolverine のテストハーネス）で在庫が戻る／allowlist 外では戻らない。両実装（Ef / InMemory）で同一の意味論 |
 
 **既存の T-10-402 / T-10-403 / T-10-406 / T-10-407 / T-10-408 が緑のままであること**を回帰の条件とする。
@@ -168,3 +169,11 @@ backend/Services/RiskManagementService/Tests/Infrastructure/Steps/PortfolioLedge
   （`MarkTerminal` と同じ既知の性質。安全側へ倒れる）。実運用では `OrderApproved` はリスク管理自身が発行し、
   見送りは発注執行がそれを消費した後に出るため、この順序は起きにくい。
 - 監査・通知の集計は変えていない。見送りは従来どおり `OrderRejected` / `OrderExecuted(Rejected)` と別集計である。
+
+［2026-09-19 追記 / #852・PR #872 のフェーズ末監査 N1］
+- 🔴 **本仕様が新たに作る露出**: 見送りで在庫を解放した後に**同じ `OrderApproved` が重複配送**されると、
+  予約は削除済み・`FindByDecisionId` も空のため**再予約が通り**、OpenD が復帰していれば本物の決済注文が出る。
+  ところが `TerminalAt` を戻す経路が無いため、**生きている決済が処理中に数えられず 2 本目の手仕舞いが
+  通り得る**。是正前は台帳が 30 分の窓で押さえ続けていたため露出していなかった。
+  前提条件（重複配送＋OpenD 復帰）が要るためブロッキングとせず、**是正の方向は
+  [#876](https://github.com/endazon/ai-stock-trading/issues/876) で裁定する**（詳細は IADR-0356 の残余リスク 3）。

@@ -168,6 +168,15 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         return total;
     }
 
+    // #848, #852, IADR-0117 / IADR-0356: 終端（見送りを含む）の記録を読む**読み取り専用**の口。
+    // 台帳の意味論（単調・見送りは TerminalStatus を立てない）は数量の集計だけでは確かめられないため、
+    // EF 実装が `db.ApprovedOrders.Find(id)` の行を直接読むのと同じものを、インメモリ実装でも読めるようにする。
+    // 相関する承認が無ければ (null, null)。**書き込みはしない**（判定・集計はこの口を通さない）。
+    public (DateTimeOffset? TerminalAt, OrderStatus? TerminalStatus) TerminalStateOf(Guid decisionId) =>
+        _approvals.TryGetValue(decisionId, out var approval)
+            ? (approval.TerminalAt, approval.TerminalStatus)
+            : (null, null);
+
     // FR-10, #829, IADR-0346 決定1: 承認の一覧（InMemoryWorkingEntryOrderSource が未終端の新規建てを切り出す）。
     internal IReadOnlyList<(Guid DecisionId, OrderIntent Intent, DateTimeOffset ApprovedAt)> SnapshotApprovals() =>
         _approvals.Select(a => (a.Key, a.Value.Intent, a.Value.ApprovedAt)).ToList();

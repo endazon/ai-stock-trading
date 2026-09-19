@@ -183,10 +183,41 @@ reason switch
   リスク管理自身が発行し、見送りは発注執行がそれを消費した後に出るため、この順序は起きにくい。
 - **残余リスク 2**: 窓（30 分）は残す。終端も見送りも**届かない**事象（イベント欠落）は依然あり得るため、
   恒久ロックを防ぐ最後の受け皿として要る（IADR-0117 の判断を変えない）。
+- 🔴 **残余リスク 3（本 IADR が新たに作った露出。追随は
+  [#876](https://github.com/endazon/ai-stock-trading/issues/876)）**:
+  **見送りで在庫を解放した後に同じ `OrderApproved` が重複配送されると、そのとき実発注された決済が
+  「処理中の決済」に数えられない。** 再現順序（PR #872 の監査プローブ
+  `ProbeD_ForgoneThenLiveExecutionIsInvisibleToInFlight` が実測）:
+  1. `OrderApproved`（Close 100）→ `BrokerUnavailableException` → `reservations.Release` が
+     **予約行を削除**（`EfOrderReservationStore.Release` は `Remove(row)`）→ 見送りを発行。
+  2. 本決定の `MarkForgone` で `TerminalAt` が立ち、`GetInFlightCloseQuantity` = 0（在庫が戻る）。
+  3. **同じ `OrderApproved` が重複配送される**（at-least-once・ack 喪失）。`ExecuteAsync` 相 1 の
+     `store.FindByDecisionId` は **null**（見送りは `ExecutionRecord` を残さない。IADR-0211 決定 3(b)）、
+     `TryReserve` も**成功する**（予約行は削除済み）。OpenD が復帰していれば**本物の決済注文が出る**。
+  4. 台帳の `TerminalAt` を戻す経路は無い —— `AppendApproval` は冪等、`MarkTerminal` / `MarkForgone` は
+     どちらも `TerminalAt is not null` で早期 return（単調）、`OrderExecutedLedgerHandler` も戻さない。
+     **生きている決済が押さえられず、2 本目の手仕舞いが通り得る**（#848 の 2 巡目監査 B3 と同じ帰結）。
+  - 🔴 **本決定の前にはこの露出は無かった。** 予約の解放と再予約の成立は従来どおりだったが、
+    **台帳が 30 分の窓のあいだ承認数量を押さえ続けていた**ため、重複配送で出た注文は押さえの中に収まっていた。
+    本決定でその押さえを外したことで露出した ——「**意味を変えたら、その意味に依存している既定を全部引き直す**」
+    （IADR-0117 の 2026-09-19 追記の教訓）が、今度は**本決定の側**に当たったものである。
+  - **ブロッキングとしなかった理由**: 前提条件（同一 `OrderApproved` の重複配送）が要り、定常経路では起きない。
+    実発注に至るにはさらに見送り直後の OpenD 復帰が要る。一方 #852 が直した実害
+    （手仕舞いが必要なときに 30 分手仕舞えない）は発生頻度・深刻度とも上であり、是正を止める理由にならない。
+  - **是正の方向は #876 で裁定する**（`MarkForgone` を戻す経路を持つ／再配送を見送り済みの `DecisionId` で弾く／
+    予約を解放せず別状態で残す／露出を受容する、のいずれか）。**どれも台帳の単調性・予約の 3 相・
+    見送りの定義のどれかを触る**ため、本 PR では決めない。
+- **残余リスク 4（軽微・対応しない）**: `MarkForgone` のあとに本物の終端（`MarkTerminal(Cancelled)` 等）が
+  後着しても、単調性のため **`TerminalStatus` は永久に `null` のまま**である。判定に使うのは `TerminalAt`
+  だけなので統制上の害は無く、診断としても「見送った承認に後から取消が届いた」は追える情報が乏しい
+  （そもそも注文が存在しない）。**単調性の方を優先する**（後着で状態だけ書けるようにすると、
+  「最初の終端が真」という #848 以来の不変条件に例外を作ることになる）。
 - 監査・通知の集計は変えていない。見送りは従来どおり `OrderRejected`（事前拒否）・
   `OrderExecuted(Status=Rejected)`（証券会社拒否）と**別集計**である（IADR-0211 決定 5）。
 
 ## フォローアップ
 
+- 🔴 **[#876](https://github.com/endazon/ai-stock-trading/issues/876)**（残余リスク 3 の裁定。
+  見送りで解放した予約が再配送で実発注されると、生きている決済が処理中に数えられない）。
 - 見送りの多発（OpenD 長期停止）の集約通知は IADR-0211 の残余リスクのまま（本 IADR で変えない）。
 - #847（成行での手仕舞い・取消の口）は射程外。
