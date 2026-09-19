@@ -654,18 +654,35 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         //
         // `Funds.currency` は protobuf の **optional** フィールドである（required は power / totalAssets /
         // cash / marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つだけ。SDK 10.8.6808 の
-        // ディスクリプタをリフレクションで実測）。**実機の OpenD はこの欄を載せてこない。**
+        // ディスクリプタをリフレクションで実測）。**本系の口座に対して、この欄は載らない**
+        // （OpenD のバージョン特性ではない。理由は下記——単一市場口座だからである）。
         // #874 が入れた `!HasCurrency || != USD` は、実機に対して**常に成立**して基準資金を一度も供給せず、
         // 新規建てを丸ごと止めていた（稼働環境で実測・#897）。
         //
-        // 要求は `RequestedCurrency`（USD）を明示しており、moomoo の API 契約では応答はその通貨で返る。
-        // 🔴 **応答が黙っていることは「別の通貨で返した」を意味しない** —— 要求した通貨を前提として採る。
-        // 🔴 **これは近似である**（応答に「要求に従った」証拠は無く、moomoo の契約を信じている）。
+        // 🔴 **要求した `currency` は、この口座では効いていない。** moomoo 公式ドキュメント（get-funds）は
+        // 要求側・応答側の双方について「**universal 証券口座と先物口座にのみ適用され、他の単一市場口座では
+        // このパラメータは無視される**」と明記している。したがって **欄が無いこと自体が「この口座は
+        // 単一市場口座である」という documented なシグナル**であり、そのとき `TotalAssets` は
+        // **口座自身の基準通貨**で返る（「要求した通貨で返る」のではない）。
+        //
+        // 🔴 **近似の根拠は「要求が尊重される」ことではなく、この口座の実測である。**
+        // 本系が使う SIMULATE 口座は **US 単一市場口座**であり、その基準通貨は USD である
+        // （#397 の実機 probe `.ai-context/specs/20260902_397_342_moomoo-readonly-probes.md`:
+        //  `ACC accId=724808 trdEnv=0(Simulate) accType=2(Margin) trdMarketAuthList=[2(US)]` ＝ JP を含まない。
+        //  `FUNDS totalAssets=968788.459 power=1937576.918`〔power は正確に 2 倍〕は
+        //  USD 1,000,000 の moomoo US ペーパー口座と整合する）。
+        //
+        // 守りの構造は fail-safe に閉じている —— **要求が尊重される口座（universal / 先物）では応答が
+        // `currency` を載せる**ので下の明示検査が働き、**応答が黙る口座は単一市場口座**で自口座通貨建てである。
+        // 🔴 **ただし「単一市場 ＝ USD」ではない。** 米国株の取扱権限を持つ **JP 単一市場口座**は
+        // 欄を載せず `TotalAssets` を JPY で返し、ここはそれを USD として採る（残余リスク。IADR-0354 §結果）。
+        //
         // 近似で採ったことは毎回ログへ残す。**水準は Information である** —— 実機では毎巡回（既定 5 分）
         // 必ず通るため、Warning にすると警告が常時鳴って本物の警告が埋もれる（#874 が作った状態がそれ）。
         //
         // 応答から通貨を確証できる別の欄は無い（#897 で走査済み。`AssetCategory` は要求側にしか無く、
-        // `cashInfoList` は通貨ごとの現金の**内訳**であって換算後の `TotalAssets` の建値を語らない）。
+        // `cashInfoList` は通貨ごとの現金の**内訳**であって換算後の `TotalAssets` の建値を語らない。
+        // `TrdGetAccList` の `TrdAcc`〔12 欄〕にも通貨欄は無い）。
         if (!funds.HasCurrency)
         {
             _logger.LogInformation(

@@ -152,9 +152,14 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
     // moomoo の契約では応答はその通貨で返る —— **近似として採る**（IADR-0354 決定1 の追記）。
     //
     // 🔴 **別通貨を明示したケースは従来どおり採らない**（この守りは実機でも意味がある）。
+    //
+    // 🔴 **［#898 監査］`Currency_Unknown(0)` は第 4 のケースである** ——「欄は送ったが値を決められなかった」
+    // 場合に現れ得る。**欄が「無い」のとは別物**であり、こちらは未供給へ倒す（決められなかったと
+    // 名乗っている応答を「USD だろう」と読む理由が無い）。
     [Theory]
     [InlineData("usd", 3_000)]    // 応答が USD と名乗る → 採る
     [InlineData("jpy", null)]     // 応答が別通貨と名乗る → 採らない（守りは残す）
+    [InlineData("unknown", null)] // 応答が「決められない」と名乗る → 採らない（欄が無いのとは別物）
     [InlineData("unset", 3_000)]  // 🔴 応答が通貨を名乗らない（＝実機）→ 要求した通貨を前提として採る
     public async Task 基準資金は応答が別通貨を名乗らないときに採る(string currency, int? expected)
     {
@@ -165,6 +170,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             {
                 "usd" => (int)TrdCommon.Currency.Currency_USD,
                 "jpy" => (int)TrdCommon.Currency.Currency_JPY,
+                "unknown" => (int)TrdCommon.Currency.Currency_Unknown,
                 _ => null,
             },
         };

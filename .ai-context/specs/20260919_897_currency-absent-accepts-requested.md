@@ -58,9 +58,17 @@ issue は `AssetCategory` などで確証できないかを検討させている
   しかも `currency` と同じく optional の repeated であり、**実機が載せる保証が無い**
   （載せてこなければ同じ fail-closed の罠を作り直すだけである）。
 - `Funds.marketInfoList`（`AccMarketInfo`）は `trdMarket` / `assets` の 2 欄だけで、通貨を持たない。
+- 🔴 **［PR #898 監査が補完］口座一覧 `TrdGetAccList` の `TrdAcc`（12 欄）にも通貨欄は無い。**
+  **口座の基準通貨は API から直接読めず**、`TrdMarketAuthListList`（取扱市場）から推定するほかない。
 
-**結論: 応答から通貨を確証する手段は `Funds.currency` 以外に無い。** 実機がそれを載せない以上、
+**結論: 応答から通貨を確証する手段は `Funds.currency` 以外に無い。** この口座がそれを載せない以上、
 「確証できたときだけ採る」は「永久に採らない」と同義である。
+
+🔴 **［PR #898 監査の指摘］「確証」ではなく「反証」なら、依存の反転なしに歯止めを置けた。**
+`cashInfoList` は**確証**には使えないが、**反証**（「`cashInfoList` が**存在し**、かつ USD の行を
+**1 つも含まない**なら採らない」）であれば、欄が空／無いときは何もしないため**新たな fail-closed を
+一切生まない**。同型が `Trd_Common.Position.currency`（#30。監査が発見。本走査では見落としていた）でも組める。
+**本 PR の射程外として #899 へ切り出した**（決定 A の残余リスクに正面から効く）。
 
 ### 実測 3 — 偽 OpenD の既定が実機と違っていた（今回の事故の再発条件）
 
@@ -110,12 +118,57 @@ issue は `AssetCategory` などで確証できないかを検討させている
 
 ### 決定 A: 応答が通貨を**明示しない**ときは、**要求した通貨**を前提として採る（近似）
 
-- 要求は `TrdGetFunds.C2S.SetCurrency(Currency_USD)` で **USD を明示している**。
-  moomoo の API 契約では応答はその通貨で返る。**応答が黙っていることは「別の通貨で返した」を意味しない。**
-- 要求と門が同じ値を見るよう、`RequestedCurrency` という 1 つの定数から両方を組む
+- 応答が通貨を明示しないときは、要求（`TrdGetFunds.C2S.SetCurrency(Currency_USD)`）で指定した通貨を
+  前提として採る。要求と門が同じ値を見るよう、`RequestedCurrency` という 1 つの定数から両方を組む
   （2 か所に書くと、片方を変えたときに黙って割れる）。
-- 🔴 **近似である。** 「要求に従った」という証拠は応答に無く、**moomoo の契約を信じている**。
-  この近似は IADR-0354 決定 1 の追記とログに残す。
+- 🔴 **［2026-09-19 追記 / #897・PR #898 監査の是正］初稿の根拠づけは誤りだった。**
+  初稿はここに「**moomoo の API 契約では応答はその通貨で返る**」と書いたが、**当該口座種別に対して偽**である。
+  監査が一次資料（`openapi.moomoo.com/moomoo-api-doc/en/trade/get-funds.html`。同ページが載せる
+  `.proto` 定義を含む）を実読した:
+
+  | 箇所 | 原文 |
+  | --- | --- |
+  | 要求 `currency` | "The display currency of the funds." / **"Only applicable to universal securities accounts and futures accounts, other single-market accounts will ignore this parameter."** |
+  | 要求 `currency`（proto） | `optional int32 currency = 3;` **"Only required for universal securities accounts and futures accounts, other accounts are ignored"** |
+  | 応答 `Funds.currency` | "The currency used for this query. **Only applicable to universal securities accounts and futures accounts.**" |
+
+  導かれる事実は 3 つ:
+  1. **要求した USD は、この口座では「無視されて」いる。**
+  2. **欄の欠落は OpenD のバージョン特性ではなく、「この口座が universal / 先物口座ではない」ことの
+     documented な帰結**である（＝ OpenD をいくら更新しても、単一市場口座である限り欄は出ない）。
+  3. `TotalAssets` の建値は「要求した通貨」ではなく **口座自身の基準通貨**である。
+- 🔴 **本当の根拠は口座実測である。** 本系が使う SIMULATE 口座は **US 単一市場口座**であり、
+  単一市場 US 証券口座の基準通貨は USD である。#397 の実機 probe
+  （`.ai-context/specs/20260902_397_342_moomoo-readonly-probes.md`）:
+
+  ```
+  ACC accId=724808 trdEnv=0(Simulate) accType=2(Margin) simAccType=4 trdMarketAuthList=[2(US)]
+  FUNDS accId=724808 totalAssets=968788.459 cash=968788.459 power=1937576.918
+  ```
+
+  `trdMarketAuthList` は `[2(US)]` のみで **JP を含まない**。`power` は `totalAssets` の**正確に 2 倍**
+  （信用 2 倍）であり、USD 1,000,000 の moomoo US ペーパー口座と整合する。
+  **近似の根拠はこの口座実測であって、「要求が尊重される」という契約ではない。**
+- **守りの構造は fail-safe に閉じている。** **要求が尊重される口座（universal / 先物）では応答が必ず
+  `currency` を載せる**ので決定 B の明示検査が働き、**応答が黙る口座は単一市場口座**で自口座通貨建てである。
+  「黙っている＝要求が無視された」は常に「口座の基準通貨で返っている」と一致する。
+  🔴 **ただし「単一市場 ＝ USD」ではない**（下の残余リスク）。
+- この近似は IADR-0354 決定 1 の追記とログに残す。
+
+### 🔴 決定 A の残余リスク: 非 USD の「単一市場口座」（#899 へ切り出し）
+
+**米国株の取扱権限を持つ moomoo JP 単一市場口座**は `currency` を載せず `TotalAssets` を **JPY** で返し、
+本実装はそれを USD として採る —— **全比率上限が約 150 倍緩む**。
+
+現在の歯止めは**偶発的**である。`FetchSimulateAccountAsync` は
+`if (acc.TrdEnv == Simulate)` で最初の SIMULATE 口座を採るだけで **`TrdMarketAuthListList` を見ていない**。
+US 権限の**無い**口座なら `BuildHeader(TrdMarket_US)` が弾かれて fail-closed になるが、
+**US 権限を持つ JP 口座はこの網を通過する**。
+
+**本 PR では塞がない**（#897 は稼働環境で新規建てが止まっている実害の是正であり、射程を広げない）。
+塞ぎ方は **#899** —— 🔴 **「確証」ではなく「反証」**（`cashInfoList` が**存在し USD の行を 1 つも含まない**
+なら採らない／`Trd_Common.Position.currency`〔#30〕でも同型）であれば、**新たな fail-closed を生まずに**
+歯止めを置ける。IADR-0354 §結果 の残余リスクにも 1 項として立てた。
 
 ### 決定 B: 応答が通貨を**明示しており USD でない**ときは、従来どおり**採らない**（撤去しない）
 
@@ -150,7 +203,8 @@ issue は `AssetCategory` などで確証できないかを検討させている
 | --- | --- | --- |
 | **人手で `account_equity_days` へ毎日 1 行投入する**（#874 の Runbook） | 毎営業日の手作業。忘れれば止まる。**PoC の運用として現実的でない**（Runbook は事故時の応急であって定常運用ではない） | 不採用 |
 | **門を撤去する**（通貨を一切見ない） | 応答が JPY を**明示**したときも採ってしまう。桁が 2 つずれた分母で統制が効かなくなる | 不採用（決定 B） |
-| **別のフィールドで通貨を確証する**（`AssetCategory` / `cashInfoList`） | 実測 2 のとおり **`AssetCategory` は応答に存在しない**。`cashInfoList` は内訳であって `totalAssets` の建値を語らず、しかも optional で実機が載せる保証が無い＝**同じ fail-closed の罠を作り直す** | 不採用（**見つかれば第一候補だったが、無かった**） |
+| **別のフィールドで通貨を確証する**（`AssetCategory` / `cashInfoList` / `TrdAcc`） | 実測 2 のとおり **`AssetCategory` は応答に存在しない**。`cashInfoList` は内訳であって `totalAssets` の建値を語らず、しかも optional で実機が載せる保証が無い＝**同じ fail-closed の罠を作り直す**。`TrdAcc` にも通貨欄は無い | 不採用（**見つかれば第一候補だったが、無かった**） |
+| **別のフィールドで通貨を「反証」する**（`cashInfoList` / `Position.currency`） | 害は無い（欄が空／無いときは何もしないので新たな fail-closed を生まない）。**本 PR で採らないのは射程の問題だけである** —— #897 は寄り付きまでに実害を止める修正であり、歯止めの追加は別の変更単位に属する | 不採用（**#899 へ切り出し**。害ではなく射程が理由） |
 | **桁の健全性検査**（`LedgerEquity` と 100 倍以上乖離したら採らない） | ①`MMApiMoomooTradeClient` は OpenD 専用のインフラ層で、台帳（Risk 側の `LedgerEquity`）を**知らないし知るべきでない**——渡すには依存の向きを反転させる必要がある。②`LedgerEquity` は IADR-0354 決定 3 が **DD 専用の別量**と定めた値であり、基準資金の検証に流用すると決定 3 が消した結線を裏口から戻すことになる。③初回起動・入出金直後・システム外売買の取り込み直後は**正当に大きく乖離する**ため、閾値は本物の値を落とし得る（＝ fail-closed の罠の再生産）。**脆い** | 不採用 |
 
 ## 受け入れ基準 → テスト
@@ -158,7 +212,7 @@ issue は `AssetCategory` などで確証できないかを検討させている
 | # | 受け入れ基準 | テスト |
 | --- | --- | --- |
 | 1 | 実機の OpenD（`currency` を送らない）に対して基準資金が供給される | **T-10-514**（`unset` → 3,000）／**T-10-620**（偽 OpenD の**既定**で供給される） |
-| 2 | 応答が USD 以外を明示したときは採らない | **T-10-514**（`jpy` → null。既存を維持） |
+| 2 | 応答が USD 以外を明示したときは採らない | **T-10-514**（`jpy` → null。既存を維持。🔴 ［#898 監査］**`Currency_Unknown(0)`＝「欄は送ったが値を決められなかった」も第 4 のケースとして追加**し null を固定した。実装は元から正しく倒れていた〔監査の enum 全値プローブで実測〕が、テストが押さえていなかった） |
 | 3 | 近似であることが記録されている | IADR-0354 決定 1 の ［2026-09-19 追記 / #897］／**T-10-621**（Information で「要求した通貨を前提」と残る・Warning ではない） |
 | 4 | `TotalAssets <= 0` は維持 | **T-10-515**（既存を維持。偽 OpenD の既定が通貨なしに替わっても緑） |
 | 5 | 偽 OpenD の既定が実機と同じ | **T-10-620** |
