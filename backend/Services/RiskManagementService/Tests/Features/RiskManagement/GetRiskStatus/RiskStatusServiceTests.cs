@@ -24,7 +24,7 @@ public class RiskStatusServiceTests
 
         // #870, IADR-0360 決定 5: 当日のシステム外売買の取り込み件数の供給元（取り込みが無ければ 0 件）。
         public InMemoryPortfolioLedgerStore Ledger { get; } = new();
-        public PortfolioState State { get; init; } = new() { Capital = 100_000m };
+        public PortfolioState State { get; init; } = new() { LedgerEquity = 100_000m };
 
         public Fixture(TradingStage stage = TradingStage.Stage0Verification)
         {
@@ -35,7 +35,7 @@ public class RiskStatusServiceTests
         {
             var builder = new PortfolioSnapshotBuilder(
                 new FakePortfolioStateProvider(State), KillSwitch, Pause,
-                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
             var svc = new RiskStatusService(
                 builder,
                 new InMemoryRiskSettingsStore(),
@@ -122,7 +122,7 @@ public class RiskStatusServiceTests
         {
             State = new PortfolioState
             {
-                Capital = 100_000m,
+                LedgerEquity = 100_000m,
                 OpenPositionCount = 3,
                 DailyRealizedPnl = -500m,
                 UnrealizedPnl = -1_200m,

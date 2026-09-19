@@ -67,12 +67,15 @@ public class TradingControlPriorityTests
         }
 
         private PortfolioSnapshotBuilder Builder() => new(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             KillSwitch,
             Pause,
             // 本テストの注文は内蔵 paper であり口座種別を要求しない（IADR-0153 決定2）。
             FakeBrokerAccountObservations.NotObserved(),
-            FakeInformationDegradation.Affirmed());
+            FakeInformationDegradation.Affirmed(),
+            // #869, ADR-0041 決定2, IADR-0354: 基準資金はブローカーの口座照会由来。
+            // 本テストの関心は 3 統制の優先順位であり、基準資金は照会できている状態を与える。
+            capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         public RiskStatusView Status() => new RiskStatusService(
             Builder(),

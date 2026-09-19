@@ -60,11 +60,14 @@ public sealed class PlaceholderSizingContextProvider(ILogger<PlaceholderSizingCo
         PlaceholderLlmCompletionClient.WarnOnce(logger, ref _warned,
             "PlaceholderSizingContextProvider を使用中: RiskManagement:BaseUrl 未設定のため既定値を返します（実残枠は #12 連携）。");
 
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: **資金は null（未供給）で返す。** リスク管理が未結線なら
+        // 口座照会もできておらず、初期資金（定数）を名乗ると「その額の運用資金がある」と読まれる。
+        // 残枠 0 と合わせて数量 0 ＝ 見送りへ倒れる。
         var limits = TradingDefaults.CreateRiskLimits();
         return Task.FromResult(new SizingContext(
-            Capital: TradingDefaults.InitialCapital,
-            StageCapitalRemaining: TradingDefaults.InitialCapital,
-            DailyOrderRemaining: limits.MaxDailyOrderAmountFor(TradingDefaults.InitialCapital),
+            Capital: null,
+            StageCapitalRemaining: 0m,
+            DailyOrderRemaining: 0m,
             ConsecutiveLosses: 0,
             DrawdownRatio: 0m,
             Mode: BrokerProvider.InternalPaper,

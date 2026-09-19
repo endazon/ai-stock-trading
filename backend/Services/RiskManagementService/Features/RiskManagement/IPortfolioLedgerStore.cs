@@ -115,7 +115,9 @@ public interface IPortfolioLedgerStore
     ///
     /// <para>
     /// #848, IADR-0117（2026-09-19 追記）: <b>終端になったと確認できた承認（<see cref="MarkTerminal"/> 済み）は
-    /// 数えない。</b> 終端の未約定残は二度と約定しないため、在庫から引く理由が無い。
+    /// 数えない。</b> #852, IADR-0356: <b>確実に未発注と判っている見送り（<see cref="MarkForgone"/> 済み）も同じく
+    /// 数えない</b>（注文が存在しないため未約定残は永久に約定しない）。
+    /// いずれも未約定残は二度と約定しないため、在庫から引く理由が無い。
     /// 🔴 <b>終端が確認できていない承認は従来どおり全量を処理中として数える</b>（不明は安全側）。
     /// 除外し過ぎると二重決済で意図しないショート化を作る。
     /// </para>
@@ -126,7 +128,8 @@ public interface IPortfolioLedgerStore
     /// FR-10, UC-06, #848, IADR-0117（2026-09-19 追記）: 承認済み注文の<b>未約定残が二度と約定しなくなった</b>
     /// ことを台帳へ記録する。
     /// <para>
-    /// 取消・失効・拒否はいずれもそれを意味する。これを記録しないと、取り消された手仕舞いが
+    /// 取消・失効・拒否はいずれもそれを意味する。<b>発注していない見送りは本メソッドではなく
+    /// <see cref="MarkForgone"/> が受ける</b>（注文状態を持たないため。#852 / IADR-0356）。これを記録しないと、取り消された手仕舞いが
     /// <see cref="GetInFlightCloseQuantity"/> の窓（既定 30 分）のあいだ建玉をロックし続け、
     /// <b>下落局面で手仕舞えない</b>（#848 の実害）。
     /// </para>
@@ -150,4 +153,33 @@ public interface IPortfolioLedgerStore
     /// </para>
     /// </summary>
     void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);
+
+    /// <summary>
+    /// FR-05, FR-10, UC-06, #852, IADR-0356: 承認済み注文が<b>発注されずに見送られた</b>ことを台帳へ記録する
+    /// （<c>OrderDispatchForgone</c>。IADR-0211）。
+    /// <para>
+    /// 見送りは<b>終端ではない</b>——そもそもブローカーに注文が存在しないため、注文状態
+    /// （<see cref="OrderStatus"/>）を持たない。それでも<b>未約定残が二度と約定しない</b>ことは
+    /// <see cref="MarkTerminal"/> と同じであり、<see cref="GetInFlightCloseQuantity"/> から外れる根拠になる。
+    /// 記録しないと、OpenD の再起動中（ADR-0002 の SPOF・ADR-0024）に見送られた手仕舞いが
+    /// 窓（既定 30 分）のあいだ建玉をロックし続ける（#852 の実害。<b>手仕舞いが必要なときにまとまって起きる</b>）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b><see cref="MarkTerminal"/> を流用せず別の口にしてあるのは、見送りに注文状態を与えないため</b>である。
+    /// <c>Cancelled</c> / <c>Rejected</c> を捏造すると、FR-05 の「拒否」（＝証券会社が受理しなかった状態）の
+    /// 別集計が接続障害で汚染される —— IADR-0211 が正面から塞いだ穴である。記録は
+    /// <b><c>TerminalAt</c> だけを立て、<c>TerminalStatus</c> は <c>null</c> のまま</b>にする。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>呼び出し側の義務</b>: <b>理由を見ずに呼ばない。</b> 呼んでよいのは見送りの理由が
+    /// 「確実に未発注」を意味するとき（<c>Domain.OrderDispatchForgoneLifecycle.ConfirmsNoOrderPlaced</c> が
+    /// <c>true</c>）だけである。「送ったかもしれない見送り」で押さえを解くと二重決済でショート化する。
+    /// </para>
+    /// <para>
+    /// 意味論は <see cref="MarkTerminal"/> と同じ（いずれも fail-safe の向き）:
+    /// 相関する承認が無ければ<b>何もしない</b>／既に終端（または見送り）が記録されていれば<b>何もしない</b>
+    /// （単調・冪等。再送・順序前後で時刻が動かない）。
+    /// </para>
+    /// </summary>
+    void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt);
 }

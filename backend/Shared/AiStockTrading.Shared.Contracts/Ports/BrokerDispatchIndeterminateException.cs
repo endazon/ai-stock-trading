@@ -19,10 +19,14 @@ namespace AiStockTrading.Shared.Contracts.Ports;
 //     生きていた場合に**保護レグを張らないまま無保護の建玉**ができる。
 //   - 受け手は予約（IADR-0057）を**解放も確定もしない**。Reserved のまま残す。**二重発注を防ぐのは
 //     この予約であり、リコンサイルの有無に依らない。** 滞留の解消は、client order id による
-//     リコンサイル（IADR-0092 / IADR-0074）が**有効なら**実状態（Placed / NotPlaced / Indeterminate）へ解決する。
-//     🔴 **リコンサイルは既定で無効**（Reconciliation:Enabled=false・UseBrokerProbe=false。deploy/ にも上書きは無い）。
-//     いまの配備では滞留 Reserved は**自動では解決せず、人が証券会社の画面で確認して解決する**
-//     （docs/operations/broker-execution-paths-runbook.md。有効化は #856）。
+//     リコンサイル（IADR-0092 / IADR-0074）が実状態（Placed / NotPlaced / Indeterminate）へ解決する。
+//     🔴 #856, IADR-0362（2026-09-19）: **アプリの既定は無効のままだが、配備では有効である**
+//     （deploy/helm/ai-stock-trading/values.yaml の Reconciliation__Enabled / __UseBrokerProbe＝true）。
+//     ただし**解放（NotPlaced → 予約の削除）だけは門が閉じている**（Reconciliation__ReleaseOnNotPlaced=false）
+//     ——解放は再発注の許可であり、誤判定は二重発注に直結するため、実機で偽陽性が無いことを示すまで開けない。
+//     したがって配備でいま自動解決するのは **Placed 側（＋記録ありの自己修復）だけ**であり、
+//     NotPlaced と Indeterminate は据え置かれて人が証券会社の画面で確認する
+//     （docs/operations/broker-execution-paths-runbook.md）。
 //   - 🔴 受け手は本例外を**一括 catch（catch (Exception)）で「再試行してよい失敗」として受けてはならない**
 //     （IADR-0117 改定 7）。保護逆指値ガードの成行手仕舞いがそう受けていたため、巡回ごとに全数量の成行を
 //     1 本ずつ重ねていた。**送る前に決定的な DecisionId を予約し、予約が残っている限り再送しない**こと。

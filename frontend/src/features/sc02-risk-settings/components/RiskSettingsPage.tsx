@@ -241,7 +241,9 @@ export function RiskSettingsPage() {
                     {i18n._(msg`します（25 ＝ equity の 25%）。比率（0.25）ではありません。各項目には`)}
                     <strong>
                       {i18n._(msg`現在の equity（`)}
-                      {riskStatus === null ? METRIC_NOT_SUPPLIED_TEXT : formatAmount(riskStatus.capital)}
+                      {riskStatus === null || riskStatus.capital === null
+                        ? METRIC_NOT_SUPPLIED_TEXT
+                        : formatAmount(riskStatus.capital)}
                       {i18n._(msg`）での実額`)}
                     </strong>
                     {i18n._(
@@ -1083,17 +1085,31 @@ function LiveSwitchWarningDialog({
                 <TableHeaderCell scope="row">
                   {i18n._(msg`現在の equity（自己資金）`)}
                 </TableHeaderCell>
-                <TableCell>{formatAmount(status.capital)}</TableCell>
+                {/* FR-10, #869, ADR-0041 決定2, IADR-0354: equity はブローカーの口座照会に由来する。
+                    未供給（口座を照会できていない）は「—」ではなく未供給の文言を出す。 */}
+                <TableCell>
+                  {status.capital === null
+                    ? METRIC_NOT_SUPPLIED_TEXT
+                    : formatAmount(status.capital)}
+                </TableCell>
               </TableRow>
               <TableRow>
                 <TableHeaderCell scope="row">
                   {i18n._(msg`1 注文あたり発注金額上限`)}
                 </TableHeaderCell>
-                <TableCell>{formatAmount(status.maxOrderAmount)}</TableCell>
+                <TableCell>
+                  {status.maxOrderAmount === null
+                    ? METRIC_NOT_SUPPLIED_TEXT
+                    : formatAmount(status.maxOrderAmount)}
+                </TableCell>
               </TableRow>
               <TableRow>
                 <TableHeaderCell scope="row">{i18n._(msg`1 日あたり発注金額上限`)}</TableHeaderCell>
-                <TableCell>{formatAmount(status.maxDailyOrderAmount)}</TableCell>
+                <TableCell>
+                  {status.maxDailyOrderAmount === null
+                    ? METRIC_NOT_SUPPLIED_TEXT
+                    : formatAmount(status.maxDailyOrderAmount)}
+                </TableCell>
               </TableRow>
               <TableRow>
                 <TableHeaderCell scope="row">{i18n._(msg`保有建玉数上限`)}</TableHeaderCell>

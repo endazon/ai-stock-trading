@@ -1717,20 +1717,27 @@ module.exports = ({ ok, assert }) => {
   // 漏らしていた（実測 2 件。AI レビューが検出）。無関係な IADR 番号に言及する notice が
   // 毎 PR で出続けると、**notice が読まれなくなる** —— IADR-0193 決定2 は「宣言すると notice が
   // 出るから黙って素通りにはならない」という前提の上に立っているため、これは統制の土台を崩す。
-  ok('自己試験は CI アノテーションを漏らさない（GITHUB_ACTIONS=true で実行しても notice/warning ゼロ）', () => {
-    const { execFileSync } = require('child_process');
-    const out = execFileSync(process.execPath, [pathFb.join(__dirname, 'check-adr-index-sync.js'), '--self-test'], {
-      cwd: pathFb.resolve(__dirname, '..'),
-      env: { ...process.env, GITHUB_ACTIONS: 'true' },
-      encoding: 'utf8',
-      stdio: 'pipe',
+  //
+  // 🔴 **検査器名でループさせる。** 初版は `check-adr-index-sync.js` をハードコードしており、
+  // **後から足した検査器（`check-adr-index-addendum-loss.js`）を覆っていなかった**
+  // ——「漏らさない仕組み」（`quiet()` / `capture()`）が将来壊れても気付けない。
+  // 逃げ道の告知を `notice` / `warn` で出す検査器を足したら、**このリストへ足すこと。**
+  for (const checker of ['check-adr-index-sync.js', 'check-adr-index-addendum-loss.js']) {
+    ok(`自己試験は CI アノテーションを漏らさない（${checker}。GITHUB_ACTIONS=true で notice/warning ゼロ）`, () => {
+      const { execFileSync } = require('child_process');
+      const out = execFileSync(process.execPath, [pathFb.join(__dirname, checker), '--self-test'], {
+        cwd: pathFb.resolve(__dirname, '..'),
+        env: { ...process.env, GITHUB_ACTIONS: 'true' },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+      const leaked = out.split('\n').filter((l) => l.startsWith('::notice::') || l.startsWith('::warning::'));
+      assert(
+        leaked.length === 0,
+        `${checker} の自己試験が CI アノテーションを ${leaked.length} 件漏らした:\n${leaked.join('\n')}`,
+      );
     });
-    const leaked = out.split('\n').filter((l) => l.startsWith('::notice::') || l.startsWith('::warning::'));
-    assert(
-      leaked.length === 0,
-      `自己試験が CI アノテーションを ${leaked.length} 件漏らした:\n${leaked.join('\n')}`,
-    );
-  });
+  }
 
   // --- 必読規約の総量予算（NFR / #519 / IADR-0204） -------------------------------------------
   //
@@ -2605,6 +2612,238 @@ module.exports = ({ ok, assert }) => {
       assert.strictEqual(nvmrc, '22', `.nvmrc が 22 でない: ${nvmrc}`);
       const dc = fsSs.readFileSync(pathSs.join(REPO_ROOT_SS, '.devcontainer', 'devcontainer.json'), 'utf8');
       assert.match(dc, /"ghcr\.io\/devcontainers\/features\/node:1":\s*\{\s*"version":\s*"22"/, 'devcontainer の Node feature が 22 でない');
+    });
+  }
+
+  // --- check-adr-index-addendum-loss: ADR 索引行の追記ブロックの消失（NFR-01 / #875 / IADR-0363） ---
+  //
+  // 索引行は 1 行が数千文字あり、衝突解決で行の一部（`［YYYY-MM-DD 追記 …］`）が消えても
+  // `git diff` は「1 行削除・1 行追加」としか出さない。**追加条件の「同型 2 回」は着手時点で満ちていた**
+  // （IADR-0210 / IADR-0118）が、**検査器を develop の履歴へ当てたら 3 件目が出た**（IADR-0327。#886）。
+  // 検査器は印の単位で持ち、行の再構成の仕方に依らず「消えたこと」だけを見る。
+  //
+  // 🔴 **偽陽性を作ると検査そのものが外される**ため、否定形（誤検知しないこと）を正の確認と
+  // 同数以上置く（IADR-0143 / IADR-0145 と同じ思想）。
+  {
+    const fsAl = require('fs');
+    const pathAl = require('path');
+    const { execSync: execAl } = require('child_process');
+    const al = require('./check-adr-index-addendum-loss.js');
+    const REPO_AL = pathAl.join(__dirname, '..');
+
+    const rowOf = (id, body) => `| ${id} | ${body} | Accepted |`;
+
+    ok('check-adr-index-addendum-loss: parseIndex は索引行ごとに印の多重集合を持つ', () => {
+      const rows = al.parseIndex(
+        [
+          rowOf('IADR-0118', 'a［2026-09-19 追記 / #866］b［2026-09-19 追記 / #866］'),
+          rowOf('IADR-0210', 'c［2026-09-19 追記 / #866］'),
+          '> 注: 索引行の外の ［2026-09-19 追記 / #999］ は対象外',
+        ].join('\n'),
+      );
+      assert.deepStrictEqual([...rows.keys()], ['IADR-0118', 'IADR-0210']);
+      assert.strictEqual(rows.get('IADR-0118').marks.get('［2026-09-19 追記 / #866］'), 2);
+      assert.strictEqual(rows.get('IADR-0210').marks.get('［2026-09-19 追記 / #866］'), 1);
+    });
+
+    ok('check-adr-index-addendum-loss: normalizeMark は Markdown の明示リンクを短縮形へ畳む', () => {
+      assert.strictEqual(
+        al.normalizeMark('［2026-09-11 追記 / [#743](https://github.com/endazon/ai-stock-trading/issues/743)］'),
+        '［2026-09-11 追記 / #743］',
+      );
+    });
+
+    ok('check-adr-index-addendum-loss[P1]: 消えた印を検出する（規則 1）', () => {
+      const base = al.parseIndex(rowOf('IADR-0118', 'a［2026-09-19 追記 / #849］b'));
+      const ours = al.parseIndex(rowOf('IADR-0118', 'ab'));
+      const losses = al.findLosses({ base, theirs: base, ours });
+      assert.strictEqual(losses.length, 1);
+      assert.strictEqual(losses[0].id, 'IADR-0118');
+      assert.strictEqual(losses[0].mark, '［2026-09-19 追記 / #849］');
+    });
+
+    ok('check-adr-index-addendum-loss[P2]: 触った行では統合ブランチ側の印も要求する（規則 2）', () => {
+      const base = al.parseIndex(rowOf('IADR-0118', 'a'));
+      const theirs = al.parseIndex(rowOf('IADR-0118', 'a［2026-09-19 追記 / #849］x'));
+      const ours = al.parseIndex(rowOf('IADR-0118', 'a を書き換えた'));
+      assert.strictEqual(al.findLosses({ base, theirs, ours }).length, 1);
+    });
+
+    ok('check-adr-index-addendum-loss[N1]: 触っていない行は統合ブランチ側の印を要求しない（規則 3）', () => {
+      const base = al.parseIndex(rowOf('IADR-0118', 'a'));
+      const theirs = al.parseIndex(rowOf('IADR-0118', 'a［2026-09-19 追記 / #849］x'));
+      const ours = al.parseIndex(rowOf('IADR-0118', 'a'));
+      assert.deepStrictEqual(al.findLosses({ base, theirs, ours }), []);
+    });
+
+    // 🔴 **BLK-1 の回帰**: 初版の `touched = !baseRow || !oursRow || …` は、**統合ブランチ側が
+    // 後から足した行**（マージベースに無い）を「我々が触った」と誤認し、**索引行が develop に
+    // 1 本増えるたびに在庫の PR を全部赤にした**（2026-09-19・origin/develop=be97cf2b 時点の 10 本で
+    // 実測 4/10。何も失われていない）。
+    // 素通りの原因は固定データが **base・ours 双方に行が在る形しか踏んでいなかった**ことなので、
+    // 「**base に行が無い**」形をここで踏む。
+    ok('check-adr-index-addendum-loss[N4/BLK-1]: 統合ブランチ側が新設した行は要求しない（base にも ours にも無い）', () => {
+      const base = al.parseIndex(rowOf('IADR-0118', '既存'));
+      const theirs = al.parseIndex(
+        `${rowOf('IADR-0118', '既存')}\n${rowOf('IADR-0352', 'develop が足した［2026-09-19 追記 / #866］')}`,
+      );
+      const ours = al.parseIndex(rowOf('IADR-0118', '既存'));
+      assert.deepStrictEqual(al.findLosses({ base, theirs, ours }), []);
+    });
+
+    ok('check-adr-index-addendum-loss[P3/BLK-1]: 両側が同じ行を新設したら theirs の印を要求する（base に無く ours に在る）', () => {
+      const base = al.parseIndex('');
+      const theirs = al.parseIndex(rowOf('IADR-0352', 'a［2026-09-19 追記 / #866］b'));
+      const ours = al.parseIndex(rowOf('IADR-0352', '我々が書いた別の本文'));
+      const losses = al.findLosses({ base, theirs, ours });
+      assert.strictEqual(losses.length, 1);
+      assert.strictEqual(losses[0].from, 'theirs');
+    });
+
+    ok('check-adr-index-addendum-loss[P4/BLK-1]: 我々が行を消したら theirs の印も要求する（ours に無く base に在る）', () => {
+      const base = al.parseIndex(rowOf('IADR-0352', 'a'));
+      const theirs = al.parseIndex(rowOf('IADR-0352', 'a［2026-09-19 追記 / #866］b'));
+      const ours = al.parseIndex('');
+      assert.strictEqual(al.findLosses({ base, theirs, ours }).length, 1);
+    });
+
+    // 🔴 **見逃すと決めた 1 形**（IADR-0363 決定 6 / 監査プローブ B1）を固定する。
+    // 期待値は「消失なし」であり、**合格ではなく見逃しの明示である。**
+    ok('check-adr-index-addendum-loss[見逃しの固定]: 衝突を base の本文へ戻すと theirs 側の印の消失を検出しない', () => {
+      const base = al.parseIndex(rowOf('IADR-0118', '元の本文'));
+      const theirs = al.parseIndex(rowOf('IADR-0118', '元の本文［2026-09-19 追記 / #849］x'));
+      const ours = al.parseIndex(rowOf('IADR-0118', '元の本文'));
+      assert.deepStrictEqual(al.findLosses({ base, theirs, ours }), [], 'IADR-0363 決定 6 の見逃し');
+    });
+
+    ok('check-adr-index-addendum-loss: extractMarks は lastIndex を持ち越さない（g 付き正規表現を export しない）', () => {
+      const line = rowOf('IADR-0001', 'a［2026-09-19 追記 / #866］b［2026-09-18 追記 / #827］');
+      assert.deepStrictEqual(al.extractMarks(line), al.extractMarks(line));
+      assert.strictEqual(al.extractMarks(line).length, 2);
+      assert.strictEqual(typeof al.MARK_SOURCE, 'string', 'MARK_SOURCE は文字列で export する');
+      assert.strictEqual(al.MARK_RE, undefined, 'g 付き正規表現オブジェクトを export してはならない');
+    });
+
+    ok('check-adr-index-addendum-loss[N2]: 印の追加・行の並べ替えでは消失としない', () => {
+      const a = rowOf('IADR-0118', 'a');
+      const b = rowOf('IADR-0210', 'b［2026-09-18 追記 / #820］');
+      const base = al.parseIndex(`${a}\n${b}`);
+      const ours = al.parseIndex(`${b}\n${rowOf('IADR-0118', 'a［2026-09-19 追記 / #849］')}`);
+      assert.deepStrictEqual(al.findLosses({ base, theirs: base, ours }), []);
+    });
+
+    ok('check-adr-index-addendum-loss[N3]: 明示リンクを短縮形へ直しただけでは消失としない', () => {
+      const base = al.parseIndex(
+        rowOf('IADR-0327', 'a［2026-09-11 追記 / [#743](https://github.com/endazon/ai-stock-trading/issues/743)］b'),
+      );
+      const ours = al.parseIndex(rowOf('IADR-0327', 'a［2026-09-11 追記 / #743］b'));
+      assert.deepStrictEqual(al.findLosses({ base, theirs: base, ours }), []);
+    });
+
+    ok('check-adr-index-addendum-loss: 意図的な撤去の宣言は行として単独のときだけ効く（自己発火の防止）', () => {
+      const declared = al.parseRemovals(
+        [
+          'chore: 追記を撤回する',
+          '',
+          '[remove-adr-addendum] IADR-0118 ［2026-09-19 追記 / #849］',
+          '  [remove-adr-addendum] IADR-0210 *  ',
+          '逃げ道は [remove-adr-addendum] IADR-0352 ［2026-09-19 追記 / #999］ の形で書く、と説明した文',
+        ].join('\n'),
+      );
+      assert.deepStrictEqual([...declared.keys()].sort(), ['IADR-0118', 'IADR-0210']);
+      assert.ok(declared.get('IADR-0118').has('［2026-09-19 追記 / #849］'));
+      assert.ok(declared.get('IADR-0210').has('*'));
+      assert.ok(!declared.has('IADR-0352'), '本文中に埋めた言及で発動してはならない');
+    });
+
+    // 🔴 **`GITHUB_ACTIONS` の有無の両方で走らせる。** `lib/ci-annotate.js` は CI 上でだけ
+    // `::warning::` / `::notice::` を出す（手元は `  warn  ` / `notice: `）。手元の書式に依存した
+    // 判定を書くと**手元で緑・CI でだけ赤**になる —— 実際に本 PR でそれを 2 件やって CI が落ちた。
+    for (const actions of ['', 'true']) {
+      ok(`check-adr-index-addendum-loss: 自己試験が緑（判定規則の固定。GITHUB_ACTIONS=${actions || '未設定'}）`, () => {
+        const env = { ...process.env };
+        if (actions) env.GITHUB_ACTIONS = actions;
+        else delete env.GITHUB_ACTIONS;
+        const out = execAl(
+          `node ${JSON.stringify(pathAl.join(__dirname, 'check-adr-index-addendum-loss.js'))} --self-test`,
+          { cwd: REPO_AL, encoding: 'utf8', env },
+        );
+        assert.match(out, /自己試験 \d+ 件 all passed/, `自己試験が緑でない: ${out}`);
+      });
+    }
+
+    // 🔴 **実際に起きた 2 件を実データで固定する。** 合成データだけだと「事故の形を取り違えたまま
+    // 緑」になり得る（自己試験の固定ケースは短縮した散文で持っているため、実物との差は残る）。
+    // 履歴が無い環境（浅いクローン・当該ブランチ未取得）では best-effort で skip する。
+    // 🔴 `^{commit}` を付けない。Windows の `cmd.exe` では `^` がエスケープ文字であり、
+    // 手元では常に「履歴に無い」へ倒れて**検査していないのに緑**になる（実測した）。
+    const revAl = (sha) => {
+      try {
+        return execAl(`git cat-file -t ${sha}`, { cwd: REPO_AL, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() === 'commit';
+      } catch {
+        return false;
+      }
+    };
+    const incidents = [
+      { name: '事故 1（IADR-0210 / ［2026-09-18 追記 / #820］）', range: '67628182..c1023d74', id: 'IADR-0210' },
+      { name: '事故 2（IADR-0118 / ［2026-09-19 追記 / #849］）', range: '13e8e19f..c53876d4', id: 'IADR-0118' },
+      // 3 件目は本検査器を develop の履歴へ当てて初めて見つかったもの（develop 上に現存する）。
+      { name: '事故 3（IADR-0327 / ［2026-09-11 追記 / #743］）', range: 'bdff6736..1cf92ed8', id: 'IADR-0327' },
+    ];
+    for (const inc of incidents) {
+      ok(`check-adr-index-addendum-loss: ${inc.name} を実データで再現して赤になる`, () => {
+        const [base, head] = inc.range.split('..');
+        if (!revAl(base) || !revAl(head)) {
+          // 検査していないことを黙らせない（skip も出力に残す）。
+          process.stdout.write(`      (skip) ${inc.range} が履歴に無い\n`);
+          return;
+        }
+        let out = '';
+        let code = 0;
+        try {
+          out = execAl(
+            `node ${JSON.stringify(pathAl.join(__dirname, 'check-adr-index-addendum-loss.js'))} --range=${inc.range}`,
+            { cwd: REPO_AL, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+          );
+        } catch (e) {
+          code = 1;
+          out = `${e.stdout || ''}${e.stderr || ''}`;
+        }
+        assert.strictEqual(code, 1, `是正前のデータで赤にならなかった: ${out}`);
+        assert.ok(out.includes(inc.id), `${inc.id} を名指ししていない: ${out}`);
+      });
+    }
+
+    // 🔴 **BLK-1 の偽陽性を「ドリフトしない実データ」で固定する。**
+    //
+    // 開いている PR で測った「4/10 が赤」は**腐る** —— 各 PR が develop を取り込むと
+    // マージベースが先端へ動き、`theirs == base` に潰れて同じ状況が再現しなくなる
+    // （実際、是正の 30 分後には 10 本すべてが潰れて旧コードでも緑になった）。
+    // よって**不変の SHA** で固定する: PR が develop を取り込む直前のブランチ tip を `ours`、
+    // 当時の develop 先端を `theirs` に採ると、マージベースは `c53876d4` のまま動かない。
+    // その時点の develop は IADR-0352 の索引行（印 3 個）を持ち、ブランチは持っていない
+    // ——**旧 touched はこれを「我々が触った」と誤認して赤にした。新 touched は緑。**
+    // `touched` を旧形へ戻すと、この 2 件が赤に戻って気付ける。
+    for (const [pr, ours] of [['#877', 'e6f58d1e'], ['#830', 'e02b4229']]) {
+      ok(`check-adr-index-addendum-loss[BLK-1 実データ]: ${pr} の取り込み直前 tip（${ours}）は緑（statement: 偽陽性を出さない）`, () => {
+        if (!revAl('be97cf2b') || !revAl(ours)) {
+          process.stdout.write(`      (skip) be97cf2b / ${ours} が履歴に無い\n`);
+          return;
+        }
+        const out = execAl(
+          `node ${JSON.stringify(pathAl.join(__dirname, 'check-adr-index-addendum-loss.js'))} --range=be97cf2b...${ours}`,
+          { cwd: REPO_AL, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+        );
+        assert.match(out, /OK:/, `偽陽性が出ている（旧 touched への退行の疑い）: ${out}`);
+      });
+    }
+
+    // 配線の退行テスト（`check-cross-repo-refs` と同じ趣旨）: CI に載っていない検査器は
+    // 「誰かが手で叩いたときだけ走る検査器」であり、規約を守らせない。
+    ok('check-adr-index-addendum-loss: ci.yml の static-checks から本走されている（配線の退行防止）', () => {
+      const ci = fsAl.readFileSync(pathAl.join(REPO_AL, '.github', 'workflows', 'ci.yml'), 'utf8');
+      assert.match(ci, /node scripts\/check-adr-index-addendum-loss\.js --self-test/, '自己試験の step が無い');
+      assert.match(ci, /node scripts\/check-adr-index-addendum-loss\.js\s*$/m, '本走の step が無い');
     });
   }
 };

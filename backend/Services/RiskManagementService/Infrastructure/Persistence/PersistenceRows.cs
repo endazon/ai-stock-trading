@@ -126,7 +126,8 @@ public sealed class ApprovedOrderRow
 
     /// <summary>
     /// FR-10, UC-06, #848, IADR-0117: この承認の<b>未約定残が二度と約定しないと確認できた時刻</b>
-    /// （取消・失効・拒否）。
+    /// （取消・失効・拒否）。#852, IADR-0356: <b>確実に未発注と判っている見送り</b>
+    /// （<c>OrderDispatchForgone</c>。注文が存在しないので未約定残は永久に約定しない）も本列を立てる。
     /// <para>
     /// 🔴 <b>全量約定は含めない</b>（改定 2）——差し引きが自然に 0 にするので含める得が無く、
     /// 約定の記録より先に commit されると建玉が丸ごと空いて見える区間ができる。
@@ -148,6 +149,11 @@ public sealed class ApprovedOrderRow
     /// FR-10, UC-06, #848: 終端になったときの注文状態（<b>診断用</b>）。取消か・失効か・拒否かが
     /// DB から読めること自体に価値がある（#848 は「取り消したのに在庫が戻らない」の切り分けに 30 分を要した）。
     /// <b>判定には使わない</b>（<see cref="TerminalAt"/> を見る）。<c>null</c> ＝未確認。
+    /// <para>
+    /// 🔴 #852, IADR-0356: <b>見送りは本列を立てない</b>——証券会社に存在しない注文であり、注文状態を持たない
+    /// （IADR-0211。捏造すると FR-05 の「拒否」の別集計が接続障害で汚染される）。したがって
+    /// <c><see cref="TerminalAt"/> is not null &amp;&amp; <see cref="TerminalStatus"/> is null</c> が「見送り」の表現である。
+    /// </para>
     /// </summary>
     public AiStockTrading.Shared.Contracts.Trading.OrderStatus? TerminalStatus { get; set; }
 }
@@ -497,6 +503,28 @@ public sealed class PositionObservationDayRow
 
     /// <summary>その取引日で最後に観測した時刻（同一日の複数観測では最新を保つ）。</summary>
     public DateTimeOffset LastObservedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+// FR-10, #869, ADR-0041 決定2, IADR-0354: **統制上限の基準資金（equity）**の 1 行（取引日ごとに 1 行）。
+//
+// ブローカーの口座照会（`BrokerAccountObserved.Account.EquityInBase`）を取引日ごとに畳んだもので、
+// 判定には**当日より前の取引日で最新の行**を使う（計画 05_trading-assumptions §5 注記
+// 「判定に用いる equity は前営業日終値時点の USD 評価額」）。
+//
+// 🔴 **取引日は米国東部時間の暦日**である（`position_observation_days` の JST とは基準が違う）——
+// 「前営業日終値」は市場の現地時刻に属する概念であり、JST で数えると米国セッションの途中で基準が入れ替わる。
+public sealed class AccountEquityDayRow
+{
+    /// <summary>観測が属する取引日（米国東部時間の暦日。主キー＝1 取引日 1 行）。</summary>
+    public DateOnly TradingDay { get; set; }
+
+    /// <summary>その取引日で**最後に観測した**口座の評価額（USD・含み損益を含む）。</summary>
+    public decimal EquityInBase { get; set; }
+
+    /// <summary>その評価額を照会した時刻（同一取引日の複数観測では最新を保つ）。鮮度の判定に用いる。</summary>
+    public DateTimeOffset ObservedAtUtc { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
 }

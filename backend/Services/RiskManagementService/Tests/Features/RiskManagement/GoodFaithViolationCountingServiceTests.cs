@@ -251,12 +251,12 @@ public class GoodFaithViolationCountingServiceTests
     public void 台帳が結線されていれば0件でも供給する()
     {
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             FakeBrokerAccountObservations.Cash(),
             FakeInformationDegradation.Affirmed(),
-            new InMemoryGoodFaithViolationStore());
+            new InMemoryGoodFaithViolationStore(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         var snapshot = builder.Build();
 
@@ -270,11 +270,11 @@ public class GoodFaithViolationCountingServiceTests
     public void 台帳が結線されていなければ未供給のまま渡す()
     {
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             FakeBrokerAccountObservations.Cash(),
-            FakeInformationDegradation.Affirmed());
+            FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         var snapshot = builder.Build();
 
@@ -297,12 +297,12 @@ public class GoodFaithViolationCountingServiceTests
         service.Observe(Fill(orderId: "ORD-2"), OccurredOn);
 
         var snapshot = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             observations,
             FakeInformationDegradation.Affirmed(),
-            store).Build();
+            store, capitalBaseline: FakeCapitalBaseline.Of(100_000m)).Build();
 
         snapshot.GoodFaithViolations!.Count.Should().Be(2);
         snapshot.GoodFaithViolations.BlocksNewEntry.Should().BeTrue();

@@ -82,7 +82,17 @@ builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 builder.Services.AddScoped<IOrderReservationStore, EfOrderReservationStore>();
 // FR-10, #331, IADR-0210: 保護逆指値レグの記録（同時発注の保存とガードの巡回対象）。
 builder.Services.AddScoped<IProtectiveStopOrderStore, EfProtectiveStopOrderStore>();
-builder.Services.AddScoped<OrderExecutionAppService>();
+// 🔴 FR-10, FR-05, ADR-0016, #864, IADR-0355: 決済（Close）の発注前に**ブローカーの実建玉と突き合わせる**ため、
+// 建玉照会（IBrokerPositionSource）を任意依存として渡す。**実装しない発注先（内蔵 paper）では null のまま**であり、
+// 突合そのものが起きない（従来どおり。下の moomoo 限定の登録と対になる構造的な非干渉）。
+builder.Services.AddScoped(sp => new OrderExecutionAppService(
+    sp.GetRequiredService<IBrokerAdapter>(),
+    sp.GetRequiredService<IExecutedOrderStore>(),
+    sp.GetRequiredService<IOrderReservationStore>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<IProtectiveStopOrderStore>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderExecutionAppService>(),
+    sp.GetService<IBrokerPositionSource>()));
 
 // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
 // 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
@@ -112,7 +122,10 @@ if (!brokerSelection.IsMoomoo)
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 builder.Services.AddHostedService<OrderReservationRetentionService>();
 
-// #141, IADR-0074: Reserved 滞留の自動リコンサイル（既定無効 Reconciliation:Enabled=false）。
+// #141, IADR-0074: Reserved 滞留の自動リコンサイル（アプリ既定は無効 Reconciliation:Enabled=false）。
+// 🔴 #856, IADR-0362: **配備（deploy/helm/ai-stock-trading/values.yaml）では Enabled / UseBrokerProbe が true** で、
+// 解放の門（ReleaseOnNotPlaced）だけを閉じている。ここで既定を反転させないのは、docker-compose・単体開発環境の
+// 挙動を変えないためである（有効化は配備の設定点 1 箇所に集める）。
 // プローブは差し替え可能で、既定は no-op（常に Indeterminate＝何も解放・終端化しない）。
 // #141, IADR-0092: Broker:Provider=moomoo かつ Reconciliation:UseBrokerProbe=true のときだけ実照会プローブ
 // （MoomooReservationBrokerProbe・OpenD SIMULATE）を配線する。それ以外（paper／OpenD 無し／既定）は no-op のまま。
