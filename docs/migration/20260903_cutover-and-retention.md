@@ -66,6 +66,7 @@ issues: [#346, #344, #204, #137, #141, #342, #24, #339, #849, planning#28]
 | order_execution_svc | order_lifecycle_events | ledger | Id | OccurredAt | 訂正・取消の履歴 |
 | order_execution_svc | protective_stop_orders | ledger | EntryDecisionId | UpdatedAt | 建玉と同時に出した逆指値（`State` 0=Active） |
 | report_svc | reports | ledger | PeriodKey | ConfirmedAt | 日報・週報・月報（本文・方針・確定日時・版） |
+| risk_management_svc | account_equity_days | ledger | TradingDay | UpdatedAt | 統制上限の基準資金（ブローカーの口座照会を取引日ごとに畳んだ評価額） |
 | risk_management_svc | approved_orders | ledger | DecisionId | ApprovedAt | 承認済み注文の意図 |
 | risk_management_svc | borrow_fee_accruals | ledger | Symbol+Market+TradingDay | AccruedAtUtc | 借株料の日次計上 |
 | risk_management_svc | borrow_fee_unavailable_days | ledger | Symbol+Market+TradingDay | ObservedAtUtc | 借株料を照会できなかった日 |
