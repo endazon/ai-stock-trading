@@ -51,10 +51,14 @@ public class OrderReservationReconciliationServiceTests
 
     // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
     private static Task<IHost> BuildHostAsync(
-        IReservationBrokerProbe probe, InMemoryOrderReservationStore reservations) =>
+        IReservationBrokerProbe probe, InMemoryOrderReservationStore reservations,
+        ReconciliationOptions? options = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                // #856, IADR-0362: リコンサイラは解放の門（ReleaseOnNotPlaced）を構成から読む。
+                // 本番と同じく DI から渡す（未登録なら既定＝門は閉じている）。
+                opts.Services.AddSingleton(Options.Create(options ?? new ReconciliationOptions { Enabled = true }));
                 opts.Services.AddSingleton<IClock, FakeClock>();
                 opts.Services.AddSingleton<IOrderReservationStore>(reservations);
                 opts.Services.AddSingleton<IExecutedOrderStore, InMemoryExecutedOrderStore>();
@@ -93,6 +97,8 @@ public class OrderReservationReconciliationServiceTests
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcile);
 
         result.Terminalized.Should().Be(1);
+        // 🔴 T-10-604, #856: 突合で確定した建玉には保護レグが張られない（#853 の 2 番）。結果に載せて可視にする。
+        result.ProbeTerminalized.Should().ContainSingle().Which.DecisionId.Should().Be(decisionId);
         session.Sent.MessagesOf<OrderExecuted>().Should().Contain(m => m.DecisionId == decisionId);
         reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Completed);
 
@@ -133,6 +139,32 @@ public class OrderReservationReconciliationServiceTests
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => StartAndStopAsync(service));
 
         reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Reserved, "無効時は解放しない");
+        session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 常駐経由でも門が閉じた未発注判定は解放されない()
+    {
+        // 🔴 T-10-606（否定形）: 本番の合成（常駐 → scope → リコンサイラ）を通しても、解放の門が閉じているあいだは
+        // 在庫の押さえを解かない。**単体では閉じているのに配線で開く**という事故を塞ぐ（#848 の B2〜B4 と同じ型）。
+        var reservations = new InMemoryOrderReservationStore();
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+        using var host = await BuildHostAsync(
+            new StubProbe(ReservationProbeResult.NotPlaced), reservations,
+            new ReconciliationOptions { Enabled = true }); // ReleaseOnNotPlaced は既定 false
+        var service = BuildService(host, new ReconciliationOptions { Enabled = true });
+
+        ReservationReconciliationResult result = null!;
+        Func<IMessageContext, Task> reconcile = async _ =>
+            result = await service.ReconcileOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcile);
+
+        result.Released.Should().Be(0);
+        result.HeldNotPlaced.Should().ContainSingle().Which.Should().Be(decisionId);
+        reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Reserved);
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
 
         await host.StopAsync();

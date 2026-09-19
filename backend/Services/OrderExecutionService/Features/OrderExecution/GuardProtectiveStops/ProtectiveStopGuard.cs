@@ -290,8 +290,10 @@ public sealed class ProtectiveStopGuard(
     //   - **無音にしない**: CloseDispatchIndeterminate を発行する（Critical）。CloseIntent を運ぶので、
     //     取引台帳は生きているかもしれない成行を処理中の決済として押さえる。据え置きが続くあいだは
     //     入口の (b) が 1 時間ごとに発行し直す（改定 9。30 秒の巡回ごとには重ねない）。
-    // 滞留した予約は、自動リコンサイル（IADR-0074 / IADR-0092）が**有効なら**解決する。既定は無効であり、
-    // その場合は人が証券会社の画面で確認して解決する（docs/operations/broker-execution-paths-runbook.md）。
+    // 滞留した予約は、自動リコンサイル（IADR-0074 / IADR-0092）が解決する。#856, IADR-0362: アプリ既定は
+    // 無効のままだが**配備では有効**であり、突合が「発注済み」と確定すれば次の巡回が (b) で「送らずに完了」させる。
+    // ただし**解放（NotPlaced）の門は閉じている**ので、未発注と出ても撃ち直しは起きない（実機検証まで据え置き）。
+    // 据え置きが続くあいだは人が証券会社の画面で確認して解決する（docs/operations/broker-execution-paths-runbook.md）。
     private Outcome HoldIndeterminateClose(
         ProtectiveStopOrder stop, int quantity, Guid closeDecisionId, OrderIntent closeIntent,
         List<object> events, Exception ex)

@@ -133,16 +133,18 @@ public sealed class OrderExecutionAppService(
             //   - 見送り（OrderDispatchForgone）にも**しない**——見送りは「発注していない」という主張であり、
             //     ここでそれを主張すると Rejected と同じ誤り（建玉が無いという仮定）になる。
             // 予約は Reserved のまま残る。**二重発注を防ぐのはこの予約であり、リコンサイルの有無に依らない。**
-            // 滞留の解消は、client order id によるリコンサイル（IADR-0092 / IADR-0074）が**有効なら**
-            // Placed / NotPlaced / Indeterminate に解決する。🔴 **既定は無効**（Reconciliation:Enabled=false・
-            // UseBrokerProbe=false）であり、その場合は人が証券会社の画面で確認して解決する
-            //（docs/operations/broker-execution-paths-runbook.md。有効化は #856）。**本経路は例外で終わるのが正しい。**
+            // 滞留の解消は、client order id によるリコンサイル（IADR-0092 / IADR-0074）が
+            // Placed / NotPlaced / Indeterminate に解決する。🔴 #856, IADR-0362: **アプリ既定は無効のままだが、
+            // 配備（Helm values）では有効**である。ただし**解放（NotPlaced）の門は閉じている**
+            // （Reconciliation:ReleaseOnNotPlaced=false）ので、自動で解決するのは Placed 側だけであり、
+            // NotPlaced / Indeterminate は据え置かれて人が証券会社の画面で確認する
+            //（docs/operations/broker-execution-paths-runbook.md）。**本経路は例外で終わるのが正しい。**
             // 再試行を使い切ったあと _error キューに残る例外は OrderDispatchReservationConflictException であり
             // 真因を指さない。**真因は初回のこの Error ログである。**
             _logger.LogError(ex,
                 "発注の結果を確認できませんでした（送信済み・届いたか不明）: DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity}。"
-                + "予約は Reserved のまま据え置きます（拒否へ畳まず・見送りにもしません）。自動リコンサイルが無効なら"
-                + "証券会社の画面で注文を確認してください。",
+                + "予約は Reserved のまま据え置きます（拒否へ畳まず・見送りにもしません）。自動リコンサイルが"
+                + "「発注済み」と確定できなかった場合は、証券会社の画面で注文を確認してください。",
                 approved.DecisionId, intent.Symbol, intent.Quantity);
             throw;
         }
