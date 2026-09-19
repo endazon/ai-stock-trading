@@ -618,6 +618,44 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         return accType;
     }
 
+    // FR-10, #869, ADR-0041 決定2, IADR-0354: 口座の評価額（資産純値・USD）を**呼ばれるたびに照会し直す**
+    // （GetAccountTypeAsync と同じ理由——接続時のスナップショットを返すと鮮度が「自分のキャッシュを読んだ時刻」になる）。
+    //
+    // **通貨を明示して要求し、応答の通貨も確かめる。** moomoo は口座の基準通貨で返し得るため、
+    // 要求だけで信じると JPY 建ての数値を USD の統制上限の分母に据えることになる（桁が 2 つずれる）。
+    // **買付余力（Power）で代替しない**——信用で 2 倍になり、統制が黙って 2 倍に緩む（ADR-0016 決定6 と同じ論拠）。
+    public async Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+
+        var c2s = TrdGetFunds.C2S.CreateBuilder()
+            .SetHeader(BuildHeader((int)TrdCommon.TrdMarket.TrdMarket_US))
+            .SetRefreshCache(true)
+            .SetCurrency((int)TrdCommon.Currency.Currency_USD)
+            .Build();
+        var req = TrdGetFunds.Request.CreateBuilder().SetC2S(c2s).Build();
+        var rsp = (TrdGetFunds.Response)await SendAsync(() => _connection.GetFunds(req), cancellationToken)
+            .ConfigureAwait(false);
+        EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetFunds");
+
+        var funds = rsp.S2C.Funds;
+        if (!funds.HasTotalAssets)
+        {
+            _logger.LogWarning("口座照会の応答に資産純値（TotalAssets）がありません。基準資金は未供給として扱います。");
+            return null;
+        }
+
+        if (funds.HasCurrency && funds.Currency != (int)TrdCommon.Currency.Currency_USD)
+        {
+            _logger.LogWarning(
+                "口座照会の応答通貨が USD ではありません currency={Currency}。基準資金は未供給として扱います。",
+                funds.Currency);
+            return null;
+        }
+
+        return (decimal)funds.TotalAssets;
+    }
+
     private TrdCommon.TrdHeader BuildHeader(int trdMarket) =>
         TrdCommon.TrdHeader.CreateBuilder()
             .SetTrdEnv((int)TrdCommon.TrdEnv.TrdEnv_Simulate) // SIMULATE 固定（実弾を撃たない）
@@ -737,12 +775,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     public void OnReply_GetHistoryOrderList(MMAPI_Conn client, uint nSerialNo, TrdGetHistoryOrderList.Response rsp) => Complete(nSerialNo, rsp);
     // #292, IADR-0118: 建玉突合の照会。応答を捨てると GetPositionsAsync が応答待ちのままタイムアウトする。
     public void OnReply_GetPositionList(MMAPI_Conn client, uint nSerialNo, TrdGetPositionList.Response rsp) => Complete(nSerialNo, rsp);
+    // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金（口座の評価額）の照会。応答を捨てると
+    // GetAccountEquityInBaseAsync が応答待ちのままタイムアウトする（建玉照会と同型の事故）。
+    public void OnReply_GetFunds(MMAPI_Conn client, uint nSerialNo, TrdGetFunds.Response rsp) => Complete(nSerialNo, rsp);
 
     // ---- MMSPI_Trd（未使用・no-op）----
 
     public void OnReply_UnlockTrade(MMAPI_Conn client, uint nSerialNo, TrdUnlockTrade.Response rsp) { }
     public void OnReply_SubAccPush(MMAPI_Conn client, uint nSerialNo, TrdSubAccPush.Response rsp) { }
-    public void OnReply_GetFunds(MMAPI_Conn client, uint nSerialNo, TrdGetFunds.Response rsp) { }
     public void OnReply_GetMaxTrdQtys(MMAPI_Conn client, uint nSerialNo, TrdGetMaxTrdQtys.Response rsp) { }
     public void OnReply_GetComboMaxTrdQtys(MMAPI_Conn client, uint nSerialNo, TrdGetComboMaxTrdQtys.Response rsp) { }
     public void OnReply_GetOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFillList.Response rsp) { }

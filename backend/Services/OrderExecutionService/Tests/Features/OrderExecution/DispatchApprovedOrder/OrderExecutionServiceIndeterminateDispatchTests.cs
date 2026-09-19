@@ -246,6 +246,9 @@ public class OrderExecutionServiceIndeterminateDispatchTests
             CancellationToken ct = default) =>
             Task.FromResult<Infrastructure.ExternalServices.MoomooAccountType?>(
                 Infrastructure.ExternalServices.MoomooAccountType.Margin);
+
+        public Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken ct = default) =>
+            Task.FromResult<decimal?>(3_000m);
     }
 
     // 🔴 T-10-408（否定形・最重要）: **手仕舞いの送信後タイムアウトで在庫が解放されない。**

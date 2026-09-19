@@ -19,7 +19,7 @@ public class InformationDegradationScreeningTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 9, 14, 0, 0, TimeSpan.Zero);
 
-    private static PortfolioState HealthyState => new() { Capital = 100_000m };
+    private static PortfolioState HealthyState => new() { LedgerEquity = 100_000m };
 
     private static OrderIntent Intent(PositionEffect effect) =>
         new("AAPL", Market.UnitedStates,
@@ -45,7 +45,7 @@ public class InformationDegradationScreeningTests
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             FakeBrokerAccountObservations.NotObserved(),
-            degradation);
+            degradation, capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, new InMemoryLockoutStore(),
             new FakeClock(Now, new DateOnly(2026, 7, 9)), new WeekendBusinessCalendar(),

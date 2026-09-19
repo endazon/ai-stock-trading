@@ -162,6 +162,18 @@ if (builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDa
 // 観測が無い（または 30 分で失効した）状態では新規建てが `BrokerAccountTypeUnverified` で止まる。
 builder.Services.AddSingleton<IBrokerAccountObservationStore>(sp =>
     new InMemoryBrokerAccountObservationStore(sp.GetRequiredService<TimeProvider>()));
+// FR-10, #869, ADR-0041 決定2, IADR-0354: **統制上限の基準資金（equity）**の保持。
+// 供給元はブローカーの口座照会（BrokerAccountObserved.Account.EquityInBase）であり、**台帳から導かない**。
+// 🔴 **永続（EF）でなければならない**——判定に使うのは「当日より前の取引日で最新の行」であり、
+// プロセス内に持つと再起動のたびに前日の行が消え、次の取引日境界まで新規建てが丸一日止まる。
+// 口座種別の観測（上・非永続）と設計が違うのは「いまの値」と「昨日の値」の違いである。
+// DbContext が scoped のため本ストアも scoped。
+builder.Services.Configure<CapitalBaselineOptions>(
+    builder.Configuration.GetSection(CapitalBaselineOptions.SectionName));
+builder.Services.AddScoped<ICapitalBaselineStore>(sp => new EfCapitalBaselineStore(
+    sp.GetRequiredService<RiskManagementDbContext>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<IOptions<CapitalBaselineOptions>>().Value));
 // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165: GFV 発生回数の**自前計数**の台帳。
 // **永続（EF）でなければならない**——違反記録をプロセス内に持つと再起動で消え、「2 件で新規建てを止める」
 // 統制が再起動 1 回で解ける（fail-open）。口座種別の観測（上・非永続）と設計が違うのは「集計 vs 現在値」の

@@ -29,6 +29,23 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 /// （ADR-0025 §理由）。供給は <c>PortfolioSnapshot.GoodFaithViolations</c>
 /// （<c>GoodFaithViolationTally</c>・自前の追記台帳が権威）が担う。
 /// </remarks>
+/// <param name="EquityInBase">
+/// FR-10, #869, ADR-0041 決定2, IADR-0354: 口座全体の**評価額**（自己資金 equity・基準通貨 USD）。
+/// **照会した時点の値であり、含み損益を含む。**
+/// <para>
+/// <b><c>SettledCashInBase</c> とは別物である。</b> あちらは GFV 回避ガードの分母（未決済の売却代金を含まない現金）で、
+/// moomoo API に専用フィールドが存在しない。こちらは口座の資産純値（現金＋建玉評価額−負債）であり、
+/// <c>TrdGetFunds</c> の <c>Funds.TotalAssets</c> として**実在する**。
+/// </para>
+/// <para>
+/// <b>本値をそのまま統制上限の分母にしてはならない。</b> 計画（05_trading-assumptions §5 注記）は
+/// 「判定に用いる equity は<b>前営業日終値時点</b>の USD 評価額」と定める——日中の評価損益で上限を動かすと
+/// 含み益で上限が緩み含み損で締まるという逆方向の作用が起きる。日次への写像（latch）は
+/// リスク管理サービス側（<c>ICapitalBaselineStore</c>）の責務である。
+/// </para>
+/// <para><b><c>null</c> は「取得できなかった」を意味し、新規建てを止める</b>（fail-closed）。推定値で埋めない。</para>
+/// </param>
 public sealed record BrokerAccountState(
     AccountType AccountType,
-    decimal? SettledCashInBase = null);
+    decimal? SettledCashInBase = null,
+    decimal? EquityInBase = null);

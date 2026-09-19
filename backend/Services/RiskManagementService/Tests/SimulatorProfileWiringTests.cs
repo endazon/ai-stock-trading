@@ -98,14 +98,14 @@ public class SimulatorProfileWiringTests
         _ = enabled.CreateClient();
         using var enabledScope = enabled.Services.CreateScope();
 
-        enabledScope.ServiceProvider.GetRequiredService<IPortfolioStateProvider>().GetCurrent().Capital
+        enabledScope.ServiceProvider.GetRequiredService<IPortfolioStateProvider>().GetCurrent().LedgerEquity
             .Should().Be(SimulatorTradingDefaults.InitialCapital);
 
         using var disabled = Factory();
         _ = disabled.CreateClient();
         using var disabledScope = disabled.Services.CreateScope();
 
-        disabledScope.ServiceProvider.GetRequiredService<IPortfolioStateProvider>().GetCurrent().Capital
+        disabledScope.ServiceProvider.GetRequiredService<IPortfolioStateProvider>().GetCurrent().LedgerEquity
             .Should().Be(TradingDefaults.InitialCapital);
     }
 }

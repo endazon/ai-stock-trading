@@ -20,6 +20,13 @@ public static class PortfolioProjection
     //
     // FR-10, #829, IADR-0346 決定2: workingEntries（承認済みで終端でない新規建て注文）を与えると、当日分の残数量を
     // 日次発注累計・段階資金・保有建玉数へ算入する。既定（null）は従来どおり約定だけ。
+    //
+    // 🔴 FR-10, #869, ADR-0041 決定2, IADR-0354: **本射影は統制上限の基準資金（equity）を作らない。**
+    // 基準資金の供給元はブローカーの口座照会（ICapitalBaselineStore）に確定しており、台帳から導くのをやめた
+    // （従前の「初期資金 ＋ 当日より前の実現損益」は含み損益を含まず、計画〔FR-10 本文・05_trading-assumptions
+    // §5 注記〕の「前営業日終値時点の USD 評価額」と食い違っていた）。
+    // <paramref name="initialCapital"/> が残るのは**ドローダウンのエクイティ系列の起点**としてだけである
+    // （IADR-0066。DD は比率上限の分母ではなく「ピークと現在の比」であり、ADR-0041 決定2 の射程外）。
     public static PortfolioState Project(
         IReadOnlyList<LedgerFill> fills,
         DateTimeOffset now,
@@ -159,15 +166,16 @@ public static class PortfolioProjection
             // IADR-0346 決定4: SymbolsTradedToday（同日再エントリーの入力）には算入しない。
         }
 
-        // IADR-0036: 含み損益は現在値入力から時価算出（現在値欠損は 0）。当日開始運用資金（固定基準）= 初期資金 + 当日より前の実現損益。
-        var capital = initialCapital + realizedBeforeToday;
+        // IADR-0036: 含み損益は現在値入力から時価算出（現在値欠損は 0）。
         var unrealized = PortfolioValuation.UnrealizedPnl(openPositions, currentPrices);
-        // 現在エクイティ = 固定基準 + 当日実現 + 含み。DD はピーク入力から算出（ピーク追跡は #22/#82 の後続）。
-        var currentEquity = capital + realizedToday + unrealized;
+        // 台帳由来の現在エクイティ = 初期資金 + 累計実現損益 + 含み。DD はピーク入力から算出（IADR-0066）。
+        // 🔴 #869 / ADR-0041 決定2: **これは統制上限の基準資金ではない。** 基準資金はブローカーの口座照会に
+        // 由来し（ICapitalBaselineStore）、本射影は 1 度も触れない。ここで積むのは DD の入力だけである。
+        var currentEquity = initialCapital + realizedBeforeToday + realizedToday + unrealized;
 
         return new PortfolioState
         {
-            Capital = capital,
+            LedgerEquity = currentEquity,
             OpenPositionCount = openPositionCount,
             InvestedCapital = invested,
             DailyOrderedAmount = orderedToday,

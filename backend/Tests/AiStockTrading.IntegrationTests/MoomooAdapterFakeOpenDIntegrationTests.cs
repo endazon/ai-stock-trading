@@ -205,6 +205,12 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         public void Position(string symbol, int quantity, double costPrice, bool isShort) =>
             _position = (symbol, quantity, costPrice, isShort);
 
+        /// <summary>
+        /// FR-10, #869, ADR-0041 決定2, IADR-0354: 口座照会（GetFunds）が返す資産純値（USD）。
+        /// 統制上限の基準資金の供給元である。
+        /// </summary>
+        public decimal EquityInBase { get; set; } = 3_000m;
+
         public IMoomooTradeConnection Create()
         {
             var connection = new FakeConnection(this);
@@ -372,6 +378,23 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                     .SetS2C(builder.BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_GetPositionList(_handle, serial, response));
+                return serial;
+            }
+
+            // FR-10, #869, ADR-0041 決定2, IADR-0354: 口座の評価額（基準資金の供給元）を返す。
+            public uint GetFunds(TrdGetFunds.Request request)
+            {
+                var serial = ++_serial;
+                var funds = TrdCommon.Funds.CreateBuilder()
+                    .SetTotalAssets((double)opend.EquityInBase)
+                    .SetCurrency((int)TrdCommon.Currency.Currency_USD)
+                    .BuildPartial();
+                var response = TrdGetFunds.Response.CreateBuilder()
+                    .SetRetType(0)
+                    .SetRetMsg(string.Empty)
+                    .SetS2C(TrdGetFunds.S2C.CreateBuilder().SetFunds(funds).BuildPartial())
+                    .BuildPartial();
+                Reply(() => _trdCallback?.OnReply_GetFunds(_handle, serial, response));
                 return serial;
             }
 

@@ -64,6 +64,18 @@ public class MoomooBrokerAdapterTests
             if (AccountTypeThrow is not null) throw AccountTypeThrow();
             return Task.FromResult(AccountType);
         }
+
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: 口座の評価額（基準資金の供給元）。
+        // null＝応答に値が無い、Throw＝照会失敗を差し替えて検証する。
+        public Func<Exception>? EquityThrow { get; set; }
+
+        public decimal? EquityInBase { get; set; } = 3_000m;
+
+        public Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken ct = default)
+        {
+            if (EquityThrow is not null) throw EquityThrow();
+            return Task.FromResult(EquityInBase);
+        }
     }
 
     // #141, IADR-0092: DecisionId を remark（client order id相当）として発注リクエストに載せることを検証する。
@@ -511,6 +523,47 @@ public class MoomooBrokerAdapterTests
         var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
 
         state!.SettledCashInBase.Should().BeNull();
+    }
+
+    // T-10-490, FR-10, #869, ADR-0041 決定2, IADR-0354:
+    // **口座の評価額（資産純値・USD）は供給する。** 決済済み資金と違い `TrdGetFunds.Funds.TotalAssets` として実在する。
+    // これが統制上限の基準資金（equity）の供給元である。
+    [Fact]
+    public async Task 口座の評価額を供給する()
+    {
+        var client = new FakeClient { AccountType = MoomooAccountType.Margin, EquityInBase = 3_142.50m };
+
+        var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
+
+        state!.EquityInBase.Should().Be(3_142.50m);
+    }
+
+    // **否定形（fail-closed の要）**: 評価額が取れない（応答に値が無い / 通貨が USD でない）なら `null` のまま。
+    // 🔴 **買付余力や初期資金で代替してはならない**——分母を騙ると統制が黙って緩む。
+    // 一方で**口座種別まで捨てない**（種別は確認できており、捨てると口座種別依存の統制まで沈黙する）。
+    [Theory]
+    [InlineData(false)] // 応答に値が無い
+    [InlineData(true)]  // 照会そのものが失敗
+    public async Task 評価額が取れなくても種別は残し評価額は_null_のままにする(bool throws)
+    {
+        var client = new FakeClient { AccountType = MoomooAccountType.Margin, EquityInBase = null };
+        if (throws)
+        {
+            client.EquityThrow = () => new InvalidOperationException("OpenD 不達");
+        }
+
+        var state = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetAccountStateAsync();
+
+        if (throws)
+        {
+            // 照会失敗は口座照会全体の失敗として不明（null）へ倒す（既存の例外ハンドリングと同じ向き）。
+            state.Should().BeNull();
+        }
+        else
+        {
+            state!.AccountType.Should().Be(AccountType.Margin);
+            state.EquityInBase.Should().BeNull();
+        }
     }
 
     // SDK の `TrdAccType` から本システムの 2 値への写像。**未知の値は null（不明）へ倒す。**

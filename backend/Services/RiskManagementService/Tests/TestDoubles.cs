@@ -97,3 +97,35 @@ internal sealed class FakeBrokerAccountObservations : IBrokerAccountObservationS
 
     public BrokerAccountState? GetCurrent() => Account;
 }
+
+// FR-10, #869, ADR-0041 決定2, IADR-0354: 統制上限の基準資金（ブローカーの口座照会由来）のテスト用供給。
+//
+// 🔴 **既定は「照会できていない」（null）である**——明示しないテストが**統制の掛かる側**へ倒れるようにする
+// （FakeBrokerAccountObservations.NotObserved と同じ向き）。
+internal sealed class FakeCapitalBaseline : ICapitalBaselineStore
+{
+    private FakeCapitalBaseline(CapitalBaseline? baseline) => Baseline = baseline;
+
+    public CapitalBaseline? Baseline { get; set; }
+
+    public decimal? LastRecorded { get; private set; }
+
+    public DateTimeOffset? LastRecordedAt { get; private set; }
+
+    /// <summary>口座を照会できていない状態（未観測・鮮度切れ・応答に評価額が無い）。新規建ては止まる。</summary>
+    public static FakeCapitalBaseline NotObserved() => new(null);
+
+    /// <summary>前営業日終値時点の評価額を照会できている状態。</summary>
+    public static FakeCapitalBaseline Of(decimal equityInBase) => new(new CapitalBaseline(
+        equityInBase,
+        new DateOnly(2026, 7, 8),
+        new DateTimeOffset(2026, 7, 9, 3, 0, 0, TimeSpan.Zero)));
+
+    public void Record(decimal equityInBase, DateTimeOffset observedAt)
+    {
+        LastRecorded = equityInBase;
+        LastRecordedAt = observedAt;
+    }
+
+    public CapitalBaseline? GetCurrent() => Baseline;
+}
