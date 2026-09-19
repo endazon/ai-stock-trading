@@ -250,6 +250,18 @@ $ grep -o '［[^］]\{0,60\}追記[^］]\{0,60\}］' .ai-context/adr/README.md |
 例外を捕捉するハーネスで走らせ直して `total=211 / pass=207 / fail=4`（新規 18 件は全て ok）を確認した。
 CI は `ubuntu-latest` なので緑であり、**この穴はローカルでしか現れない**。**本 PR では直さず #888 で扱う。**
 
+### 🔴 手元で緑・CI でだけ赤だった 2 件（`lib/ci-annotate.js` の書式が環境で変わる）
+
+BLK-1 の是正と同時に足した「名指しは `notice` / `*` は `warn`」の自己試験 2 件が、**手元では緑・CI では赤**
+になった（`static-checks` / `scripts-tests` が実際に落ちた）。`lib/ci-annotate.js` は
+`GITHUB_ACTIONS === 'true'` のときだけ `::warning::` / `::notice::` を出し、手元では
+`  warn  ` / `notice: ` を出す。**手元の書式で照合を書いたため、CI でだけ一致しなかった。**
+
+是正: 自己試験の `capture()` が `GITHUB_ACTIONS` を**外してから**判定する（見たいのは
+「notice か warn か」であって書式ではない）。あわせて `scripts.repo.test.js` の
+「自己試験が緑」を **`GITHUB_ACTIONS` 未設定と `true` の 2 通りで走らせる**ようにし、
+**同じ形の「手元で緑・CI で赤」を手元で捕まえられる**ようにした。
+
 ### 事実誤認の訂正（本 PR 内で作ったもの）
 
 | 誤った記述 | どこに残るか | 訂正 |

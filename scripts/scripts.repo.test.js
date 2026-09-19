@@ -2747,13 +2747,21 @@ module.exports = ({ ok, assert }) => {
       assert.ok(!declared.has('IADR-0352'), '本文中に埋めた言及で発動してはならない');
     });
 
-    ok('check-adr-index-addendum-loss: 自己試験が緑（判定規則そのものの固定）', () => {
-      const out = execAl(
-        `node ${JSON.stringify(pathAl.join(__dirname, 'check-adr-index-addendum-loss.js'))} --self-test`,
-        { cwd: REPO_AL, encoding: 'utf8' },
-      );
-      assert.match(out, /自己試験 \d+ 件 all passed/, `自己試験が緑でない: ${out}`);
-    });
+    // 🔴 **`GITHUB_ACTIONS` の有無の両方で走らせる。** `lib/ci-annotate.js` は CI 上でだけ
+    // `::warning::` / `::notice::` を出す（手元は `  warn  ` / `notice: `）。手元の書式に依存した
+    // 判定を書くと**手元で緑・CI でだけ赤**になる —— 実際に本 PR でそれを 2 件やって CI が落ちた。
+    for (const actions of ['', 'true']) {
+      ok(`check-adr-index-addendum-loss: 自己試験が緑（判定規則の固定。GITHUB_ACTIONS=${actions || '未設定'}）`, () => {
+        const env = { ...process.env };
+        if (actions) env.GITHUB_ACTIONS = actions;
+        else delete env.GITHUB_ACTIONS;
+        const out = execAl(
+          `node ${JSON.stringify(pathAl.join(__dirname, 'check-adr-index-addendum-loss.js'))} --self-test`,
+          { cwd: REPO_AL, encoding: 'utf8', env },
+        );
+        assert.match(out, /自己試験 \d+ 件 all passed/, `自己試験が緑でない: ${out}`);
+      });
+    }
 
     // 🔴 **実際に起きた 2 件を実データで固定する。** 合成データだけだと「事故の形を取り違えたまま
     // 緑」になり得る（自己試験の固定ケースは短縮した散文で持っているため、実物との差は残る）。

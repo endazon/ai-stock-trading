@@ -433,12 +433,21 @@ function selfTest() {
   };
   const run = (o) => quiet(() => main({ range: null, commitBodies: '', ...o }));
 
-  /** 逃げ道の告知が notice か warn かを見るため、stdout を捨てずに集める。 */
+  /**
+   * 逃げ道の告知が notice か warn かを見るため、stdout を捨てずに集める。
+   *
+   * 🔴 **`GITHUB_ACTIONS` を必ず外してから呼ぶ。** `lib/ci-annotate.js` は CI 上では
+   * `::warning::` / `::notice::` を、手元では `  warn  ` / `notice: ` を出す。
+   * 環境で出力が変わるため、**手元で通る判定を書くと CI でだけ落ちる**（実測した）。
+   * 判定したいのは「notice か warn か」であって書式ではないので、片方へ固定して見る。
+   */
   const capture = (o) => {
     const e = console.error;
     const l = console.log;
     const w = process.stdout.write.bind(process.stdout);
+    const ga = process.env.GITHUB_ACTIONS;
     let buf = '';
+    delete process.env.GITHUB_ACTIONS;
     console.error = () => {};
     console.log = () => {};
     process.stdout.write = (s) => {
@@ -452,6 +461,8 @@ function selfTest() {
       console.error = e;
       console.log = l;
       process.stdout.write = w;
+      if (ga === undefined) delete process.env.GITHUB_ACTIONS;
+      else process.env.GITHUB_ACTIONS = ga;
     }
     return { code, out: buf };
   };
