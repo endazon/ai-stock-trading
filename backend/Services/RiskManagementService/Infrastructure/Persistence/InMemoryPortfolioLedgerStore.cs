@@ -109,6 +109,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
             if (_approvals.TryUpdate(decisionId, updated, current))
                 return;
         }
+    }
 
     // #849, IADR-0350 決定 2: 追記専用・冪等キーで 1 件に絞る（EfPortfolioLedgerStore と同一の意味論）。
     public bool AppendDriftAdoption(LedgerDriftAdoption adoption)
