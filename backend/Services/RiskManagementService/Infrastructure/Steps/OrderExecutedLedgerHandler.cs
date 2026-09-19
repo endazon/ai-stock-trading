@@ -26,21 +26,32 @@ public sealed class OrderExecutedLedgerHandler(
         ArgumentNullException.ThrowIfNull(message);
 
         // 約定していない結果（受付・失注・約定 0 の取消・拒否）は台帳に載せない。
-        if (message.FilledQuantity <= 0)
-            return;
-
-        // #569, IADR-0271: **実際に発注したアダプタの発注先**を台帳へ残す。月報 §5 の三者比較が
-        // SIMULATE 列と実弾列を分ける唯一正しい情報であり（IADR-0149 決定1 と同じ理由）、
-        // 承認 Intent の Mode（段階が定める既定）では代用できない。
-        var recorded = ledger.AppendFill(
-            message.DecisionId, message.OrderId, message.FilledQuantity, message.AveragePrice, message.ExecutedAt,
-            message.Provider);
-        if (!recorded)
+        // 🔴 #848: ここで早期 return してはならない。約定追跡（OrderFillPoller）はブローカー側の
+        // 取消・失効・拒否を観測して本イベントを再発行するが、その多くは FilledQuantity == 0 である。
+        // 返してしまうと、まさに #848 の事象（利用者が moomoo アプリで取り消した手仕舞い）が丸ごと捨てられ、
+        // 取り消した注文が「処理中の決済」として 30 分間建玉をロックし続ける（下落局面で手仕舞えない）。
+        if (message.FilledQuantity > 0)
         {
-            // 相関する承認が台帳に無い異常（承認は約定に先行して発行されるため通常は発生しない）。
-            logger.LogWarning(
-                "約定に相関する承認が台帳に無いため記録をスキップ: DecisionId={DecisionId} OrderId={OrderId}",
-                message.DecisionId, message.OrderId);
+            // #569, IADR-0271: **実際に発注したアダプタの発注先**を台帳へ残す。月報 §5 の三者比較が
+            // SIMULATE 列と実弾列を分ける唯一正しい情報であり（IADR-0149 決定1 と同じ理由）、
+            // 承認 Intent の Mode（段階が定める既定）では代用できない。
+            var recorded = ledger.AppendFill(
+                message.DecisionId, message.OrderId, message.FilledQuantity, message.AveragePrice, message.ExecutedAt,
+                message.Provider);
+            if (!recorded)
+            {
+                // 相関する承認が台帳に無い異常（承認は約定に先行して発行されるため通常は発生しない）。
+                logger.LogWarning(
+                    "約定に相関する承認が台帳に無いため記録をスキップ: DecisionId={DecisionId} OrderId={OrderId}",
+                    message.DecisionId, message.OrderId);
+            }
         }
+
+        // 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 2/改定 4）:
+        // **終端の記録は約定の記録より後ろに置く。** 先に置くと、在庫を返してから約定が建玉へ反映されるまでの
+        // 区間で建玉が丸ごと空いて見え（実測: 建玉 100 / 処理中 0 / 利用可能 100）、その瞬間の手仕舞い要求が
+        // 同じ株数をもう一度売れてしまう（EF 実装では 2 つの SaveChanges に分かれるため区間は実在する）。
+        // 非終端の状態・全量約定・未知の DecisionId・二重の終端は MarkTerminal 側が無視する（fail-safe・冪等）。
+        ledger.MarkTerminal(message.DecisionId, message.Status, message.ExecutedAt);
     }
 }

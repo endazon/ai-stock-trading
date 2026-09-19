@@ -73,17 +73,32 @@ public class ProtectiveStopEventPayloadTests
         restored.CloseIntent.Should().BeNull();
     }
 
-    [Fact]
-    public void 手仕舞いレグを伴う保護喪失は往復しても決済意図を保つ()
+    // #848, IADR-0117（2026-09-19 追記・改定 7）: CloseDispatchIndeterminate（成行手仕舞いの結果が未確認）も
+    // 手仕舞いレグを運ぶ。往復で落ちると台帳が押さえられない。
+    [Theory]
+    [InlineData(ProtectiveStopRemediation.PositionClosed)]
+    [InlineData(ProtectiveStopRemediation.CloseDispatchIndeterminate)]
+    public void 手仕舞いレグを伴う保護喪失は往復しても決済意図を保つ(ProtectiveStopRemediation remediation)
     {
         var evt = new ProtectiveStopCoverageLost(
             Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
-            ProtectiveStopRemediation.PositionClosed, 10, Guid.NewGuid(), CloseIntent(), T0);
+            remediation, 10, Guid.NewGuid(), CloseIntent(), T0);
 
         var restored = RoundTrip(evt);
 
         restored.Should().Be(evt);
+        restored.Remediation.Should().Be(remediation);
         restored.CloseIntent!.Quantity.Should().Be(10);
+    }
+
+    // 🔴 列挙は末尾へ足す（既存値の序数を動かさない）。序数で永続化・送受信されても過去の記録の意味が変わらない。
+    [Fact]
+    public void 保護喪失への対処の列挙は既存値の序数を動かさない()
+    {
+        ((int)ProtectiveStopRemediation.EntryCancelled).Should().Be(0);
+        ((int)ProtectiveStopRemediation.PositionClosed).Should().Be(1);
+        ((int)ProtectiveStopRemediation.None).Should().Be(2);
+        ((int)ProtectiveStopRemediation.CloseDispatchIndeterminate).Should().Be(3);
     }
 
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由が往復で欠落しないこと**。

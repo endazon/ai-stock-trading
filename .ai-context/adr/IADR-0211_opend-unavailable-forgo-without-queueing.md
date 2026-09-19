@@ -2,10 +2,10 @@
 title: IADR-0211 OpenD へ確実に届いていない発注は「見送り」とし、キューイングも Rejected への丸め込みもしない
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, ADR-0002, ADR-0024, IADR-0057, IADR-0092, IADR-0210]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0092, IADR-0117, IADR-0210]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-05)
   - planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md (OpenD 常駐・SPOF・INDEX 決定 33)
@@ -58,6 +58,33 @@ issue #331 の要求と食い違う。
    対象外**——届いたか不明であり、従来どおり予約（IADR-0057）とリコンサイル（IADR-0092）が守る。
 2. **`MoomooBrokerAdapter` は同例外を `Rejected` へ丸めず伝播する。** `Rejected` は「証券会社が受理しなかった」
    事象（不正注文の事前弾き・ブローカー応答の拒否状態・送信後の分類不能な失敗）に限定される。
+
+   ［2026-09-19 追記 / [#848](https://github.com/endazon/ai-stock-trading/issues/848)］
+   🔴 **上の列挙の 3 番目（送信後の分類不能な失敗）は本追記で外れた。**
+   当時これを `Rejected` に含めてよかったのは、`Rejected` が「台帳に約定を載せない」以上の意味を
+   持たなかったからである。**IADR-0117（2026-09-19 追記）が `Rejected` を在庫解放の引き金にした時点で、
+   この分類は fail-safe から fail-open へ反転した** —— 送信後の失敗は**届いたか不明**であり、
+   在庫の押さえを解く根拠にならない（決済では二重決済でショート化し、エントリーでは
+   「建玉が生じていない」という仮定になって無保護の建玉を残す）。
+   送信後に結果を確認できなかった失敗は、本 ADR 決定 1 が定めた「対象外＝予約とリコンサイルが守る」を
+   **型として持つ** `BrokerDispatchIndeterminateException`（本例外と対になる新しい契約）で伝播させる。
+   **現在 `Rejected` に限定されるのは 2 事象**（不正注文の事前弾き・ブローカー応答の拒否状態）である。
+   決定 1・3・4・5 は変更しない（**確実に未発注**の見送りと理由列挙はそのまま）。
+   詳細は IADR-0117 の改定 6。
+   🔴 **「リコンサイルが守る」は条件つきである**（PR #851 の 3 巡目監査）。予約が**二重発注を防ぐ**ことは
+   リコンサイルの有無に依らず成立するが、**滞留した予約の解消**は自動リコンサイルが有効なときだけ自動で進む。
+   既定は無効（`Reconciliation:Enabled=false`・`UseBrokerProbe=false`）で、いまの配備では人が解決する（有効化は #856）。
+   また、本例外と対になる `BrokerDispatchIndeterminateException` を**一括 catch で受ける呼び出し側**は
+   「確実に未発注」と取り違えてはならない —— 予約を解放してよいのは本例外（`BrokerUnavailableException`）だけである
+   （IADR-0117 の改定 7。保護逆指値ガードの成行手仕舞いがこれを取り違え、巡回ごとに撃ち直していた）。
+   🔴 **［2026-09-19 追記 / #848・B5］上の「現在 2 事象」の 2 つ目（ブローカー応答の拒否状態）は、
+   発注応答では `retType == -1`（`Failed`）に限る**（PR #851 の 4 巡目監査）。当初の実装は `retType != 0` を
+   丸ごと「ブローカー応答の拒否」と読んでいたが、`-100`（TimeOut）/ `-200`（DisConnect）/ `-400`（Unknown）/
+   `-500`（Invalid）は**送信後に返事を読めなかった**ことを SDK が応答の形に包んだ値であり
+   （`-100` と `-500` は SDK がクライアント側で合成する。`-100` は 12 秒の打ち切りで、既定の返信待ち 15 秒より先に来る）、
+   決定 1 の言う「発注送信後の失敗＝届いたか不明」そのものである。これらは `BrokerDispatchIndeterminateException` で
+   伝播させる。稼働環境で実測した拒否 2 件（#844 の価格精度・#809 の `Paper trading does not support Stop order`）は
+   どちらも `retType=-1` であり `Rejected` のままである。詳細は IADR-0117 の改定 8。
 3. **発注執行は同例外を捕捉し、(a) 予約を解放（確実に未発注のため二重発注の窓は無い）、(b) `ExecutionRecord`
    を残さず（注文は存在しない）、(c) 新イベント `OrderDispatchForgone`（DecisionId・Intent・理由・時刻）を
    発行して正常終了する。** ハンドラが例外を投げないため Wolverine の再試行・error キュー滞留は発生しない。

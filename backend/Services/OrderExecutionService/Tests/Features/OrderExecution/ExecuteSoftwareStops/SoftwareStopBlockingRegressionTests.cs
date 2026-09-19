@@ -93,7 +93,7 @@ public class SoftwareStopBlockingRegressionTests
         var clock = new FakeClock();
         var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock);
         return new Fixture(
-            executor, new ProtectiveStopGuard(broker, broker, stops, store, clock, executor),
+            executor, new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, softwareStops: executor),
             new AppSvc(broker, store, reservations, clock, stops), clock, broker, stops, store);
     }
 

@@ -165,10 +165,33 @@ public sealed class OrderExecutionAppService(
         {
             // FR-05, ADR-0002（SPOF・再起動中は発注不可）, #331, IADR-0211: 接続確立の失敗＝**確実に未発注**。
             // 予約を解放し（二重発注の窓は無い）、キューイングせず見送りで正常終了する（Rejected へ丸めない）。
-            // 送信後の失敗（届いたか不明）は本例外の契約外であり、従来どおり伝播して予約とリコンサイルが守る。
+            // 送信後の失敗（届いたか不明）は本例外の契約外であり、BrokerDispatchIndeterminateException として
+            // 伝播する（次の catch。予約を解放せず据え置く＝再配送で二重発注しない。#848・IADR-0117 改定 6）。
             reservations.Release(approved.DecisionId);
             CompleteSoftwareStopWithoutPosition(approved, disposition);
             return Forgone(approved, OrderDispatchForgoneReason.BrokerUnavailable);
+        }
+        catch (BrokerDispatchIndeterminateException ex)
+        {
+            // 🔴 FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）:
+            // **送信後に結果を確認できなかった＝届いたか不明。** ここで行ってよいことは「何もしない」だけである。
+            //   - 予約を**解放しない**（解放すると再配送で二重発注になる。BrokerUnavailable との決定的な違い）。
+            //   - 予約を**確定しない**・結果を**保存しない**（実在しない注文 ID の終端記録を台帳へ残さない）。
+            //   - 見送り（OrderDispatchForgone）にも**しない**——見送りは「発注していない」という主張であり、
+            //     ここでそれを主張すると Rejected と同じ誤り（建玉が無いという仮定）になる。
+            // 予約は Reserved のまま残る。**二重発注を防ぐのはこの予約であり、リコンサイルの有無に依らない。**
+            // 滞留の解消は、client order id によるリコンサイル（IADR-0092 / IADR-0074）が**有効なら**
+            // Placed / NotPlaced / Indeterminate に解決する。🔴 **既定は無効**（Reconciliation:Enabled=false・
+            // UseBrokerProbe=false）であり、その場合は人が証券会社の画面で確認して解決する
+            //（docs/operations/broker-execution-paths-runbook.md。有効化は #856）。**本経路は例外で終わるのが正しい。**
+            // 再試行を使い切ったあと _error キューに残る例外は OrderDispatchReservationConflictException であり
+            // 真因を指さない。**真因は初回のこの Error ログである。**
+            _logger.LogError(ex,
+                "発注の結果を確認できませんでした（送信済み・届いたか不明）: DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity}。"
+                + "予約は Reserved のまま据え置きます（拒否へ畳まず・見送りにもしません）。自動リコンサイルが無効なら"
+                + "証券会社の画面で注文を確認してください。",
+                approved.DecisionId, intent.Symbol, intent.Quantity);
+            throw;
         }
 
         // FR-16: 実効スリッページを取引毎に算出・記録する。
@@ -394,6 +417,9 @@ public sealed class OrderExecutionAppService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // 逆指値の発注失敗（接続断含む）＝未受理と同じ分岐（建玉を持たない）。原因は解消側の結果に現れる。
+            // #848, IADR-0117（改定 7）の走査: 「届いたか不明」（BrokerDispatchIndeterminateException）も
+            // ここへ落ちる。単発であり撃ち直しはしない。分岐は改定 6 の前後で同一（前は偽 ID の Rejected が
+            // 返って同じ分岐へ落ちていた）。逆指値が生きていた場合に孤立する件は #853 で扱う。
             stopOrder = null;
             if (useAlternative)
             {
@@ -484,29 +510,72 @@ public sealed class OrderExecutionAppService(
         // 参照価格は判断時点の価格（intent.Price）。成行手仕舞いの実約定はブローカ側で決まる。
         var closeIntent = BuildCloseIntent(intent, quantity, intent.Price);
 
+        // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いもエントリーと同じ
+        // 予約 → 発注 → 確定の 3 相（IADR-0057）で送る。「送ったかもしれない」を予約に残し、
+        // **届いたか不明を「解消に失敗した（＝未発注）」と取り違えない**。
+        if (!reservations.TryReserve(closeDecisionId, clock.UtcNow))
+        {
+            // 予約済み＝送信中か成否不明。重ねて送らない。
+            return IndeterminateClose(approved, quantity, closeDecisionId, closeIntent, cause: null);
+        }
+
+        BrokerOrder closeOrder;
         try
         {
-            var closeOrder = await protective
+            closeOrder = await protective
                 .PlaceMarketOrderAsync(closeIntent, closeDecisionId, cancellationToken)
                 .ConfigureAwait(false);
-            var now = clock.UtcNow;
-
-            // 手仕舞いレグも ExecutionRecord に載せ、約定追跡・台帳反映を既存経路で行う（IADR-0210 決定3）。
-            store.Save(new ExecutionRecord(
-                closeDecisionId, closeOrder.OrderId, intent.Symbol, intent.Market, closeIntent.Side,
-                intent.ProductType, PositionEffect.Close, quantity, closeIntent.Price,
-                closeOrder.FilledQuantity, closeOrder.AveragePrice, closeOrder.Status,
-                SlippageCalculator.Compute(closeIntent.Price, closeOrder.AveragePrice, closeIntent.Side), now));
-
-            return new ProtectiveStopCoverageLost(
-                approved.DecisionId, intent.Symbol, intent.Market,
-                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.PositionClosed,
-                quantity, closeDecisionId, closeIntent, now);
+        }
+        catch (BrokerUnavailableException)
+        {
+            // 接続確立の失敗＝**確実に未発注**。予約を解放してよいのはこの型だけである（IADR-0211 決定 1）。
+            reservations.Release(closeDecisionId);
+            return CoverageLost(approved, ProtectiveStopRemediation.None, quantity);
+        }
+        catch (BrokerDispatchIndeterminateException ex)
+        {
+            // 送信済み・**届いたか不明**。None（解消に失敗）にしない —— None は手仕舞いレグを運ばないため
+            // 取引台帳が押さえず、利用者の手仕舞い要求が通って同じ株数に 2 本の決済が並ぶ。
+            return IndeterminateClose(approved, quantity, closeDecisionId, closeIntent, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return CoverageLost(approved, ProtectiveStopRemediation.None, quantity);
+            // 分類できない失敗は未発注と言い切れない。「届いたか不明」の側へ倒す。
+            return IndeterminateClose(approved, quantity, closeDecisionId, closeIntent, ex);
         }
+
+        var now = clock.UtcNow;
+
+        // 手仕舞いレグも ExecutionRecord に載せ、約定追跡・台帳反映を既存経路で行う（IADR-0210 決定3）。
+        store.Save(new ExecutionRecord(
+            closeDecisionId, closeOrder.OrderId, intent.Symbol, intent.Market, closeIntent.Side,
+            intent.ProductType, PositionEffect.Close, quantity, closeIntent.Price,
+            closeOrder.FilledQuantity, closeOrder.AveragePrice, closeOrder.Status,
+            SlippageCalculator.Compute(closeIntent.Price, closeOrder.AveragePrice, closeIntent.Side), now));
+        reservations.MarkCompleted(closeDecisionId, closeOrder.OrderId, now);
+
+        return new ProtectiveStopCoverageLost(
+            approved.DecisionId, intent.Symbol, intent.Market,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.PositionClosed,
+            quantity, closeDecisionId, closeIntent, now);
+    }
+
+    // 🔴 #848, IADR-0117（改定 7）: 成行手仕舞いを送ったが結果を確認できない。予約は Reserved のまま残し
+    //（解放も確定もしない）、結果は保存しない（実在しない注文 ID の記録を作らない）。CloseIntent を運ぶので
+    // 取引台帳は処理中の決済として押さえる。Critical の通知で人手の確認を求める（無音にしない）。
+    private ProtectiveStopCoverageLost IndeterminateClose(
+        OrderApproved approved, int quantity, Guid closeDecisionId, OrderIntent closeIntent, Exception? cause)
+    {
+        _logger.LogError(cause,
+            "保護逆指値を張れなかった建玉の成行手仕舞いの結果を確認できませんでした（送信済み・届いたか不明）。"
+            + "重ねて発注しません。予約は Reserved のまま据え置きます。証券会社の画面で注文と建玉を確認してください: "
+            + "EntryDecisionId={EntryDecisionId} CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",
+            approved.DecisionId, closeDecisionId, approved.Intent.Symbol, quantity);
+
+        return new ProtectiveStopCoverageLost(
+            approved.DecisionId, approved.Intent.Symbol, approved.Intent.Market,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.CloseDispatchIndeterminate,
+            quantity, closeDecisionId, closeIntent, clock.UtcNow);
     }
 
     private ProtectiveStopCoverageLost CoverageLost(

@@ -76,6 +76,10 @@ public sealed class ProtectiveStopCoverageLostLedgerHandler(
         ArgumentNullException.ThrowIfNull(message);
 
         // 手仕舞いレグを伴う場合のみ承認行を追加する（EntryCancelled / None は追加すべきレグが無い）。
+        // 🔴 #848, IADR-0117（2026-09-19 追記・改定 7）: **Remediation ではなくレグの有無で判定する。**
+        // CloseDispatchIndeterminate（成行手仕舞いを送ったが届いたか不明）もレグを運び、ここで承認行になる
+        // ＝生きているかもしれない成行を**処理中の決済として在庫から引く**。PositionClosed だけに絞ると、
+        // 不明のあいだに利用者の手仕舞い要求が通り、同じ株数に 2 本の決済が並ぶ（二重決済でショート化）。
         if (message is { CloseDecisionId: { } closeDecisionId, CloseIntent: { } closeIntent })
         {
             // #611, IADR-0286 決定1: レグが無いときは解決しない（外部照会を無駄に増やさない）。

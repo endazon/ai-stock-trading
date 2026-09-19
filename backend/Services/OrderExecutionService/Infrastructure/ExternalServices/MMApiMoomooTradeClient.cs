@@ -459,7 +459,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // #331, IADR-0211: 接続確立の失敗は BrokerUnavailableException に分類する——この段階の失敗は
     // **注文がブローカーへ届き得ない**（確実に未発注）ため、発注執行は予約を解放して「見送り」にできる。
     // 発注**送信後**の失敗（SendAsync のタイムアウト等）は届いたか不明であり、本分類の対象外
-    // （従来どおり例外を伝播し、予約とリコンサイル〔IADR-0057/0092〕が守る）。
+    // （アダプタが BrokerDispatchIndeterminateException へ包んで伝播し、予約とリコンサイル
+    // 〔IADR-0057/0092〕が守る。**拒否へ畳まない**——#848 / IADR-0117 改定 6）。
     private async Task EnsureConnectedAsync(CancellationToken cancellationToken)
     {
         if (_connected)
@@ -639,6 +640,12 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     };
 
     // OpenD OrderStatus（TrdCommon.OrderStatus）を moomoo アダプタの状態へ写像する（SDK 非依存・単体テスト対象）。
+    //
+    // 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 3）: **「確認できた失敗」と「不明」を分ける。**
+    // 従来は既定（`_`）が Failed であり、NONE（-1）・TIMEOUT（4。OpenD 定義上「結果未知」）・本実装が知らない
+    // 新コードまで Failed → OrderStatus.Rejected（終端）へ畳んでいた。拒否がリスク管理の**在庫解放の引き金**に
+    // なった時点で、この既定は fail-safe から fail-open へ反転した（状態が分からないまま建玉の押さえを解く＝
+    // 二重決済で意図しないショート化）。**知らないコードは Unknown へ倒す。**
     public static MoomooOrderState MapState(int openDStatus) => openDStatus switch
     {
         0 or 1 or 2 => MoomooOrderState.Submitting,      // Unsubmitted / WaitingSubmit / Submitting
@@ -647,7 +654,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         11 => MoomooOrderState.FilledAll,                // Filled_All
         12 or 13 => MoomooOrderState.Submitted,          // Cancelling_*（取消進行中・まだ有効）
         14 or 15 or 24 => MoomooOrderState.Cancelled,    // Cancelled_Part / Cancelled_All / FillCancelled
-        _ => MoomooOrderState.Failed,                    // SubmitFailed / TimeOut / Failed / Disabled / Deleted / Unknown
+        3 or 21 or 22 or 23 => MoomooOrderState.Failed,  // SubmitFailed / Failed / Disabled / Deleted（**確認できた失敗**）
+        _ => MoomooOrderState.Unknown,                   // NONE(-1) / TimeOut(4) / 未知の新コード（**結果が分からない**）
     };
 
     // ---- 応答相関 ----
@@ -681,6 +689,11 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // #821, IADR-0347: 非成功は **retType / retMsg を保つ例外**で投げる（従来のメッセージ文字列は不変。
     // MoomooTradeRequestException は InvalidOperationException 派生であり、既存の捕捉は 1 行も変わらない）。
     // S3（代替注文種別）は「拒否理由を監査台帳へ残すこと」自体が目的であり、文字列へ畳むと取り出せない。
+    //
+    // 🔴 #848, IADR-0117（2026-09-19 追記・改定 8）: **ここで投げる例外は「拒否」を意味しない。**
+    // retType は OpenD の返事（-1＝Failed）だけでなく、SDK がクライアント側で合成する「返事を読めなかった」
+    //（-100＝送信済み要求の 12 秒打ち切り／-500＝届いた応答の復号・パース失敗）も運ぶ。本メソッドは分類しない
+    //（照会・取消も通るため）。**発注の分類はアダプタが MoomooTradeRequestException.IsConfirmedFailure で行う。**
     private static void EnsureSucceeded(int retType, string retMsg, string op)
     {
         if (retType != 0) // RetType_Succeed=0

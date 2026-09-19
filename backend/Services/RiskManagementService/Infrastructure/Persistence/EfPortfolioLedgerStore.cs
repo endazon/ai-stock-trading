@@ -1,3 +1,4 @@
+using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.EntityFrameworkCore;
@@ -100,6 +101,29 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
         return true;
     }
 
+    // FR-10, UC-06, #848, IADR-0117: 承認が終端になったことを記録する（InMemoryPortfolioLedgerStore と同一の意味論）。
+    public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt)
+    {
+        // 終端を捏造しない（Accepted / PartiallyFilled は「まだ動く」）。
+        // #848 改定 2: 門は AbandonsUnfilledRemainder（取消・失効・拒否）であって IsTerminal ではない。
+        // **全量約定（Filled）は書かない**——集計が自然に 0 にするので得が無く、約定の記録より先に
+        // commit されると建玉が丸ごと空いて見える区間を作る（同じ株数を二度売れる）。
+        if (!OrderStatusLifecycle.AbandonsUnfilledRemainder(terminalStatus))
+            return;
+
+        // 相関する承認が無ければ書かない（AppendFill と同じ。知らない注文の終端は台帳の語彙に無い）。
+        if (db.ApprovedOrders.Find(decisionId) is not { } approval)
+            return;
+
+        // 単調・冪等: 最初の終端が真。後着の終端で時刻も状態も動かさない。
+        if (approval.TerminalAt is not null)
+            return;
+
+        approval.TerminalAt = terminalAt;
+        approval.TerminalStatus = terminalStatus;
+        db.SaveChanges();
+    }
+
     // #292, IADR-0117: 処理中の決済数量（InMemoryPortfolioLedgerStore と同一の意味論）。
     public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter)
     {
@@ -107,7 +131,10 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             .Where(a => a.Symbol == symbol
                      && a.Market == market
                      && a.PositionEffect == PositionEffect.Close
-                     && a.ApprovedAt >= approvedAtOrAfter)
+                     && a.ApprovedAt >= approvedAtOrAfter
+                     // #848: 終端になったと**確認できた**承認は数えない（残りは二度と約定しない）。
+                     // null＝未確認は従来どおり処理中として数える（fail-safe。除外し過ぎるとショート化する）。
+                     && a.TerminalAt == null)
             .Select(a => new { a.DecisionId, a.Quantity })
             .ToList();
 

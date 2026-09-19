@@ -10,8 +10,8 @@ author: endazon (with Claude Code)
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
 iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #820, #826, #829, #849, planning#292]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #820, #826, #829, #848, #849, planning#292]
 -->
 
 
@@ -290,7 +290,7 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
 | --- | --- | --- |
 | 台帳の空売り数量 | `PortfolioProjection.ProjectOpenPositions(ledger.GetFills())` | **自らの約定履歴**の畳み込み。自分で手仕舞い・損切りをすれば台帳側も減る |
 | ブローカの空売り数量 | `BrokerPositionsObserved`（発注執行サービスの定期照会） | 実際に残っている建玉。**応答に現れない銘柄は 0＝全量消失**として扱う |
-| 処理中の決済数量 | `IPortfolioLedgerStore.GetInFlightCloseQuantity`（遡り窓 30 分） | **承認済みだが約定が台帳へ届いていない決済**＝自らの決済指示そのもの |
+| 処理中の決済数量 | `IPortfolioLedgerStore.GetInFlightCloseQuantity`（遡り窓 30 分） | **承認済みだが約定が台帳へ届いていない決済**＝自らの決済指示そのもの。**終端になったと確認できた承認は含めない**（取り消された決済は「自らの決済指示」ではなく、消失を説明しない） |
 
 **この式が、正常な手仕舞い・損切りと強制買戻しを区別する唯一の手段である。** 自分で決済したなら、その数量は
 約定（台帳）か承認（処理中）のどちらかに必ず現れ、右辺で相殺されて 0 になる。処理中の決済を引かないと、
@@ -773,7 +773,8 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | 逆指値が未受理（エントリーと同時に発注したが拒否） | エントリー未約定なら**取消**、約定済みなら**即座に成行で手仕舞い** | 発注執行の建玉解消（`ProtectiveStopCoverageLost`・Critical 通知） |
 | 逆指値が滞留中に失効（取消・拒否・期限切れ） | **再発注**する。再発注できなければ成行で手仕舞い | 発注執行の常駐ガード（定期巡回） |
 | 建玉が消滅した（owner 手仕舞い・自動縮小・強制買戻し等） | **残存逆指値を取り消す**（反対建玉の防止） | 同ガード |
-| 建玉解消も失敗した | Critical 通知で**人手対応**を求める（黙って残さない） | `ProtectiveStopCoverageLost`（Remediation=None） |
+| 建玉解消も失敗した（**確実に未発注**＝接続確立の失敗） | Critical 通知で**人手対応**を求める（黙って残さない）。常駐ガードは次の巡回で撃ち直す | `ProtectiveStopCoverageLost`（Remediation=None） |
+| 成行手仕舞いを**送信したが結果を確認できない**（届いたか不明） | 🔴 **注文を重ねない**（未発注と仮定して撃ち直すと、巡回ごとに全数量の成行が増えて二重決済でショートになる）。発注前の予約を残して据え置き、逆指値の再発注も重ねない。Critical 通知は「解消に失敗」とは言わず、**重ねる前に証券会社の画面で確認**するよう求める。**据え置きが続くあいだ約 1 時間ごと、および再起動後の最初の巡回で通知を出し直す**（見逃すと逆指値なしの建玉が無期限に残るため。送信中にサービスが止まって通知が 1 通も出ていない場合もここで出る。出し直しは注文を増やさない）。決済意図を運ぶので取引台帳は処理中の決済として押さえる（#848） | `ProtectiveStopCoverageLost`（Remediation=CloseDispatchIndeterminate）＋発注前の予約 |
 
 逆指値レグ・手仕舞いレグの約定は発注執行の約定追跡ポーリング経由で取引台帳へ届き、建玉・枠回復・
 報告書は既存経路のまま動く（決済の観測経路を増やさない）。逆指値の受理可否（銘柄・時間帯）の
@@ -880,11 +881,26 @@ owner の手仕舞いには**過剰決済ガード**がある。取引台帳は�
 建玉数量が減らない。多重投入で在庫を超える決済（意図しないショート化）を作らせないため、
 
 ```
-利用可能数量 = 建玉数量 − Σ max(0, 決済承認数量 − 当該 DecisionId の約定累計)   （直近 30 分に承認されたもののみ）
+利用可能数量 = 建玉数量 − Σ max(0, 決済承認数量 − 当該 DecisionId の約定累計)
+               （直近 30 分に承認され、かつ**終端になったと確認できていない**もののみ）
 ```
 
 を在庫とし、数量省略（全量指定）もこの利用可能数量と解釈する。時間窓で切るのは、永久に約定しない滞留承認が
 建玉を恒久的にロックし「手仕舞い手段があるのに手仕舞えない」状態を作らないため。
+
+**終端（取消・失効・拒否）になったと確認できた承認は、窓の満了を待たずに在庫へ返す。** 終端の未約定残は
+二度と約定しないため押さえる理由が無い。これが無いと、証券会社のアプリで手仕舞いを取り消したあと
+**30 分間ずっと手仕舞えない**（稼働環境で実測した実害。損切りが必要な下落局面でこそ効かないという最悪の形になる）。
+終端は注文の結果イベントと取消イベントで届き、台帳が承認ごとに**単調に**（一度立ったら戻さず）記録する。
+
+🔴 **全量約定はここに入れない。** 全量約定した承認は上式の差し引きで自然に 0 になるため入れる得が無く、
+一方で終端の記録と約定の記録は別の書き込みであるから、**終端だけが先に書かれた区間で建玉が丸ごと空いて見える**
+（その瞬間に同じ株数をもう一度売れる）。終端の記録は**約定を台帳へ書いたあと**に行う。
+
+🔴 **向きは逆にしない。** 終端だと**確認できていない**承認は、従来どおり全量を処理中として押さえる。
+「取消が届いていない」を「取り消された」と読むと、同じ建玉を 2 回売って**意図しないショート**になる。
+これは台帳だけでは守れない —— **証券会社が返す「結果が分からない」状態を「拒否」へ畳まない**ところまで含めて
+初めて成立する（畳むと、状態が分からないまま押さえが解ける）。
 
 決済の要求は `PositionCloseRequested`（アクター・理由つき）として `OrderApproved` より先に発行され、監査台帳に残る
 （`OrderApproved` はアクターも理由も持たないため）。約定以降は通常の注文経路（台帳・枠回復・通知）に載る。

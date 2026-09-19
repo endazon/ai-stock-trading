@@ -77,7 +77,7 @@ public class ProtectiveStopGuardSoftwareStopTests
         var clock = new FakeClock();
         var executor = new SoftwareStopExecutor(broker, broker, stops, store, reservations, clock);
         return new Fixture(
-            new ProtectiveStopGuard(broker, broker, stops, store, clock, executor), executor, broker, stops, store);
+            new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, softwareStops: executor), executor, broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);

@@ -73,6 +73,28 @@ public class ProtectiveStopLedgerHandlersTests
         ledger.FindApprovedIntent(closeDecisionId).Should().NotBeNull();
     }
 
+    // 🔴 T-10-409, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）:
+    // 成行手仕舞いを送ったが届いたか不明（CloseDispatchIndeterminate）も手仕舞いレグを運ぶ。
+    // 台帳は**処理中の決済として在庫を押さえる**——押さえないと利用者の手仕舞い要求が通り、
+    // 生きているかもしれない成行と合わせて同じ株数に 2 本の決済が並ぶ（二重決済でショート化）。
+    [Fact]
+    public async Task 結果が未確認の成行手仕舞いも処理中の決済として在庫を押さえる_否定形()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var handler = new ProtectiveStopCoverageLostLedgerHandler(
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopCoverageLostLedgerHandler>.Instance);
+        var closeDecisionId = Guid.NewGuid();
+
+        await handler.Handle(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseDispatchIndeterminate,
+            10, closeDecisionId, CloseIntent(), Now), CancellationToken.None);
+
+        ledger.FindApprovedIntent(closeDecisionId).Should().NotBeNull("後から発注済みと判明したときに約定を相関できる");
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1))
+            .Should().Be(10, "不明のあいだは押さえたまま（終端が確認できるか、時間窓が満了するまで）");
+    }
+
     [Theory]
     [InlineData(ProtectiveStopRemediation.EntryCancelled)]
     [InlineData(ProtectiveStopRemediation.None)]
