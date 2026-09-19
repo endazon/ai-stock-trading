@@ -30,11 +30,14 @@ public class BrokerAccountObservedConsumerTests
         public override DateTimeOffset GetUtcNow() => Now;
     }
 
-    private static Task<IHost> BuildHostAsync(IBrokerAccountObservationStore store) =>
+    private static Task<IHost> BuildHostAsync(
+        IBrokerAccountObservationStore store, ICapitalBaselineStore? capitalBaseline = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
                 opts.Services.AddSingleton(store);
+                // FR-10, #869, ADR-0041 決定2, IADR-0354: 同じ観測から基準資金（equity）も畳む経路を持つ。
+                opts.Services.AddSingleton(capitalBaseline ?? FakeCapitalBaseline.NotObserved());
                 opts.Discovery.DisableConventionalDiscovery()
                     .IncludeType<BrokerAccountObservedHandler>();
                 opts.StubAllExternalTransports();

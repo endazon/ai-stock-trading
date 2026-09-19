@@ -21,7 +21,7 @@ public class OrderScreeningServiceTests
     // 既定で全統制を通過する状態（資金 10 万・損益ゼロ・保有なし）。
     private static PortfolioState HealthyState => new()
     {
-        Capital = 100_000m,
+        LedgerEquity = 100_000m,
         OpenPositionCount = 0,
         InvestedCapital = 0m,
         DailyOrderedAmount = 0m,
@@ -49,7 +49,7 @@ public class OrderScreeningServiceTests
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
             portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved(),
-            FakeInformationDegradation.Affirmed());
+            FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
@@ -206,7 +206,7 @@ public class OrderScreeningServiceTests
         // BrokerAccountTypeUnverified で落ちる（フェイルクローズが効いていることが退行検知になる）。
         var builder = new PortfolioSnapshotBuilder(
             portfolio, killSwitch, new InMemoryPauseStore(), FakeBrokerAccountObservations.NotObserved(),
-            FakeInformationDegradation.Affirmed());
+            FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
@@ -239,7 +239,7 @@ public class OrderScreeningServiceTests
         var lockout = new InMemoryLockoutStore();
         var builder = new PortfolioSnapshotBuilder(
             portfolio, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
             new InMemoryBuyInInferenceStore());

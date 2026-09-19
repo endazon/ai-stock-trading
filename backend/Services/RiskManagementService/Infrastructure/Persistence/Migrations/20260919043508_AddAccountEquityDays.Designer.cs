@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using RiskManagementService.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace RiskManagementService.Infrastructure.Migrations
+namespace RiskManagementService.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(RiskManagementDbContext))]
-    partial class RiskManagementDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260919043508_AddAccountEquityDays")]
+    partial class AddAccountEquityDays
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -83,12 +86,6 @@ namespace RiskManagementService.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
-
-                    b.Property<DateTimeOffset?>("TerminalAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("TerminalStatus")
-                        .HasColumnType("integer");
 
                     b.HasKey("DecisionId");
 

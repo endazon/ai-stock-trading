@@ -6,6 +6,12 @@ namespace RiskManagementService.Features.RiskManagement;
 // 生の運用状態（IPortfolioStateProvider）に kill switch 状態（IKillSwitchStore）と一時停止状態（IPauseStore）を合成する。
 // InvestedCapital（取得額合計）・UnrealizedPnl（含み損益）はプロバイダが供給した実値をそのまま反映する。
 //
+// FR-10, #869, ADR-0041 決定2, IADR-0354: **基準資金（equity）はブローカーの口座照会に由来する**
+// （ICapitalBaselineStore）。台帳から導くのをやめた。
+// **未結線・未供給は null のまま渡す**（判定コアが新規建てを止める）。ここで既定値を補ってはならない。
+// 省略可能引数で受けるのは GFV 計数と同じ理由である——**不在が統制の掛かる側へ倒れる**ため
+// （IADR-0163 決定2 が必須引数を求めたのは既定が fail-open だったからであり、向きが逆の本件では該当しない）。
+//
 // FR-19, #375, ADR-0021 決定3, IADR-0153: あわせてブローカーへ照会した口座種別の観測を合成する。
 // **未供給・失効は null のまま渡す**（判定コアが新規建てを止める）。ここで既定値を補ってはならない。
 //
@@ -27,7 +33,8 @@ public sealed class PortfolioSnapshotBuilder(
     IPauseStore pauseStore,
     IBrokerAccountObservationStore accountObservations,
     IInformationDegradationStore informationDegradation,
-    IGoodFaithViolationStore? goodFaithViolations = null)
+    IGoodFaithViolationStore? goodFaithViolations = null,
+    ICapitalBaselineStore? capitalBaseline = null)
 {
     public PortfolioSnapshot Build()
     {
@@ -37,7 +44,10 @@ public sealed class PortfolioSnapshotBuilder(
 
         return new PortfolioSnapshot
         {
-            Capital = state.Capital,
+            // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金は**ブローカーの口座照会**に由来する。
+            // 台帳射影（IPortfolioStateProvider）はもう基準資金を持たない（PortfolioState.Capital は廃止）。
+            // **未供給（null）はそのまま渡す**——判定コアが新規建てを止める（fail-closed）。ここで補わない。
+            Capital = capitalBaseline?.GetCurrent()?.EquityInBase,
             OpenPositionCount = state.OpenPositionCount,
             InvestedCapital = state.InvestedCapital,
             DailyOrderedAmount = state.DailyOrderedAmount,

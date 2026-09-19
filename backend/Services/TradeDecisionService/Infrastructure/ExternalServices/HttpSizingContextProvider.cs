@@ -46,8 +46,10 @@ public sealed class HttpSizingContextProvider(
     }
 
     // フェイルセーフ既定: 段階/日次残枠 0 → availableCapital 0 → 数量 0 → 見送り（取引しない）。Limits は PositionSizer を動かせる既定値。
+    // FR-10, #869, ADR-0041 決定2, IADR-0354: **資金は null（未供給）で倒す。** 照会できていないのに
+    // 初期資金（定数）を名乗ると、プロンプトにも監査にも「その額の運用資金がある」と書かれてしまう。
     private static SizingContext SafeDefault() => new(
-        Capital: TradingDefaults.InitialCapital,
+        Capital: null,
         StageCapitalRemaining: 0m,
         DailyOrderRemaining: 0m,
         ConsecutiveLosses: 0,

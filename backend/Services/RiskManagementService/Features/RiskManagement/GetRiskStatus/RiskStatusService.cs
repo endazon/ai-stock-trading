@@ -56,8 +56,14 @@ public sealed class RiskStatusService(
             Capital: snapshot.Capital,
             DailyOrderedAmount: snapshot.DailyOrderedAmount,
             // FR-10, #329, IADR-0130 決定1: 上限は equity 比のため、表示も equity から解決した実額を載せる。
-            MaxOrderAmount: settings.Limits.MaxOrderAmountFor(snapshot.Capital),
-            MaxDailyOrderAmount: settings.Limits.MaxDailyOrderAmountFor(snapshot.Capital),
+            // #869, ADR-0041 決定2: equity が未供給（口座を照会できていない）なら実額も未供給である。
+            // **0 で埋めない**——「上限 0」と「上限が分からない」は別の事実である。
+            MaxOrderAmount: snapshot.Capital is { } equity
+                ? settings.Limits.MaxOrderAmountFor(equity)
+                : null,
+            MaxDailyOrderAmount: snapshot.Capital is { } dailyEquity
+                ? settings.Limits.MaxDailyOrderAmountFor(dailyEquity)
+                : null,
             DrawdownRatio: snapshot.DrawdownRatio,
             MaxDrawdownRatio: settings.Limits.MaxDrawdownRatio,
             OpenPositionCount: snapshot.OpenPositionCount,
