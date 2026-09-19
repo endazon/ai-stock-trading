@@ -42,6 +42,17 @@ public interface IMoomooTradeClient
     // 呼び出し側（MoomooBrokerAdapter）は例外も null も「口座種別を確認できていない」へ倒す。
     // **「不明なら信用口座」を返してはならない**——現金口座で GFV 回避ガードが無効のまま回る事故になる。
     Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken cancellationToken = default);
+
+    // FR-10, #869, ADR-0041 決定2, IADR-0354: 接続している口座の**評価額**（資産純値・USD）。
+    // 統制上限の基準資金（equity）の供給元である。
+    //
+    // 契約（fail-safe の要）:
+    //   - 応答が USD の資産純値を持つ → その値
+    //   - 応答に値が無い（フィールド未設定・通貨が USD でない）→ null
+    //   - 照会失敗（不達・応答異常）→ **例外を送出する**（null を返してはならない）
+    // 呼び出し側（MoomooBrokerAdapter）は例外も null も「照会できていない」へ倒す。
+    // **買付余力（power）で代替してはならない**——信用で 2 倍になり、統制が黙って 2 倍に緩む。
+    Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken cancellationToken = default);
 }
 
 // #375, ADR-0021: SDK 非依存の口座種別（TrdAccType の写像）。本システムが扱うのは 2 種のみである（決定2）。

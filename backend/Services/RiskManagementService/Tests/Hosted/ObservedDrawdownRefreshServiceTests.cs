@@ -217,7 +217,7 @@ public class ObservedDrawdownRefreshServiceTests
                 throw new InvalidOperationException("時価取得に失敗しました（テスト）");
             }
 
-            return new PortfolioState { Capital = TradingDefaults.InitialCapital, DrawdownRatio = DrawdownRatio };
+            return new PortfolioState { LedgerEquity = TradingDefaults.InitialCapital, DrawdownRatio = DrawdownRatio };
         }
     }
 

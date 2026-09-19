@@ -361,10 +361,10 @@ public class BuyInInferenceTests
         var enabled = new HashSet<ProductType> { ProductType.Cash, ProductType.MarginLong, ProductType.ShortSell };
         var settingsStore = new InMemoryRiskSettingsStore(
             settings with { Guard = settings.Guard with { EnabledProductTypes = enabled } });
-        var portfolio = new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m });
+        var portfolio = new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m });
         var builder = new PortfolioSnapshotBuilder(
             portfolio, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.Margin(), FakeInformationDegradation.Affirmed());
+            FakeBrokerAccountObservations.Margin(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         return new OrderScreeningService(
             settingsStore, builder, new InMemoryLockoutStore(), new FixedClock(),

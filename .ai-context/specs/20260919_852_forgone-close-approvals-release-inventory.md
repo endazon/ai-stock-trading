@@ -193,3 +193,12 @@ backend/Services/RiskManagementService/Tests/Infrastructure/Steps/PortfolioLedge
 - **#873 との衝突**: `OrderDispatchForgoneReason` が 4 → 6 になるため、**後からマージする側**が
   要素数テストを 6 へ更新し、**2 値とも allowlist へ `true` で足す**
   （`BrokerPositionsIndeterminate` の「不明」は***建玉照会*の不明**であり、***発注*の不明**ではない）。
+
+［2026-09-19 追記 / #852・#873 が develop へ入った］
+- 🔴 **本 PR が「後からマージする側」になった。** develop（`d8264233`）を取り込み、上の手順を実行した。
+  **赤くなったのは要素数テスト 1 本だけ**である（番兵は列挙から導くよう改めたので自動で追随した。
+  literal のままなら「`BrokerPositionAbsent` を解放するな」という**事実と逆の赤**が 2 件出ていた）。
+- **`origin/develop` の実コードで根拠を確かめてから** 2 値を allowlist へ `true` で足した ——
+  建玉の突き合わせは読み取りの `GetPositionsAsync` だけで、2 分岐は `ExecuteAsync` の L112 / L123 で
+  `return` し、`reservations.TryReserve` は L178＝後である。**建玉の照会は注文の送信ではない。**
+- 肯定形の Theory 2 本にも 2 値を足した（被覆）。RiskManagementService は 1822 件すべて緑。

@@ -115,11 +115,11 @@ public class BrokerAccountObservationStoreTests
         var observed = new BrokerAccountState(AccountType.Cash, 1_234m);
         store.Record(observed, Origin);
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             store,
-            FakeInformationDegradation.Affirmed());
+            FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         builder.Build().Account.Should().Be(observed);
     }
@@ -128,11 +128,11 @@ public class BrokerAccountObservationStoreTests
     public void 観測が無ければスナップショットの口座状態はnullである()
     {
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             new InMemoryBrokerAccountObservationStore(new StubTimeProvider(Origin)),
-            FakeInformationDegradation.Affirmed());
+            FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         builder.Build().Account.Should().BeNull();
     }
@@ -145,11 +145,11 @@ public class BrokerAccountObservationStoreTests
         store.Record(new BrokerAccountState(AccountType.Margin), Origin);
         time.Now = Origin.AddHours(2);
         var builder = new PortfolioSnapshotBuilder(
-            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new FakePortfolioStateProvider(new PortfolioState { LedgerEquity = 100_000m }),
             new InMemoryKillSwitchStore(),
             new InMemoryPauseStore(),
             store,
-            FakeInformationDegradation.Affirmed());
+            FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
 
         builder.Build().Account.Should().BeNull();
     }

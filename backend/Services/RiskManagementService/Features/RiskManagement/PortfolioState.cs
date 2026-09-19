@@ -6,8 +6,19 @@ namespace RiskManagementService.Features.RiskManagement;
 // これに kill switch 状態を合成して判定入力 PortfolioSnapshot（Domain）を組み立てる（PortfolioSnapshotBuilder）。
 public record PortfolioState
 {
-    /// <summary>当日開始時運用資金（固定基準・基準通貨 USD）。日次損失上限・1取引リスクの基準。当日中は不変。</summary>
-    public required decimal Capital { get; init; }
+    /// <summary>
+    /// 台帳由来の現在エクイティ（初期資金 ＋ 累計実現損益 ＋ 含み損益。基準通貨 USD）。
+    /// <para>
+    /// 🔴 <b>統制上限の基準資金（equity）ではない。</b> #869 / ADR-0041 決定2 により、基準資金の供給元は
+    /// **ブローカーの口座照会**（<c>ICapitalBaselineStore</c>）に確定した。本値はドローダウン
+    /// （<c>PortfolioValuation.DrawdownRatio</c>・ピークとの比。IADR-0066）の入力**専用**である。
+    /// </para>
+    /// <para>
+    /// 名前を <c>Capital</c> から変えてあるのは、<b>台帳から基準資金を導く経路を型の上から消すため</b>である
+    /// （旧 <c>Capital</c>＝初期資金 ＋ 当日より前の実現損益は、含み損益を含まない点で計画の定義と食い違っていた）。
+    /// </para>
+    /// </summary>
+    public required decimal LedgerEquity { get; init; }
 
     public int OpenPositionCount { get; init; }
 

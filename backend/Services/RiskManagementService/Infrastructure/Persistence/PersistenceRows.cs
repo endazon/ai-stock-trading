@@ -507,6 +507,28 @@ public sealed class PositionObservationDayRow
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+// FR-10, #869, ADR-0041 決定2, IADR-0354: **統制上限の基準資金（equity）**の 1 行（取引日ごとに 1 行）。
+//
+// ブローカーの口座照会（`BrokerAccountObserved.Account.EquityInBase`）を取引日ごとに畳んだもので、
+// 判定には**当日より前の取引日で最新の行**を使う（計画 05_trading-assumptions §5 注記
+// 「判定に用いる equity は前営業日終値時点の USD 評価額」）。
+//
+// 🔴 **取引日は米国東部時間の暦日**である（`position_observation_days` の JST とは基準が違う）——
+// 「前営業日終値」は市場の現地時刻に属する概念であり、JST で数えると米国セッションの途中で基準が入れ替わる。
+public sealed class AccountEquityDayRow
+{
+    /// <summary>観測が属する取引日（米国東部時間の暦日。主キー＝1 取引日 1 行）。</summary>
+    public DateOnly TradingDay { get; set; }
+
+    /// <summary>その取引日で**最後に観測した**口座の評価額（USD・含み損益を含む）。</summary>
+    public decimal EquityInBase { get; set; }
+
+    /// <summary>その評価額を照会した時刻（同一取引日の複数観測では最新を保つ）。鮮度の判定に用いる。</summary>
+    public DateTimeOffset ObservedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 // FR-19, FR-10, FR-11, UC-06, #464, ADR-0028 決定1/決定2, IADR-0182: GFV 違反記録の**解除**の 1 行（追記専用）。
 //
 // 🔴 **違反記録（GoodFaithViolationRow）は消さない・更新しない。** ADR-0028 決定1 が「失効させない」と

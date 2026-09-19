@@ -19,6 +19,8 @@ public class OrderDispatchForgoneLifecycleTests
     [InlineData(OrderDispatchForgoneReason.StopLossPriceMissing)]
     [InlineData(OrderDispatchForgoneReason.StopOrderUnsupported)]
     [InlineData(OrderDispatchForgoneReason.StopLossMethodNotPermitted)]
+    [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent)]
+    [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate)]
     public void 確実に未発注と判っている理由は在庫を解放してよい(OrderDispatchForgoneReason reason)
     {
         OrderDispatchForgoneLifecycle.ConfirmsNoOrderPlaced(reason).Should().BeTrue();
@@ -67,7 +69,7 @@ public class OrderDispatchForgoneLifecycleTests
     public void 見送り理由の要素数を固定する()
     {
         Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(
-            4,
+            6,
             "見送り理由が増えたら、それが「確実に未発注」かを実測して分類し直すこと（既定は解放しない側）");
     }
 }

@@ -93,14 +93,18 @@ export interface RiskStatusView {
   dailyRealizedPnl: number;
   unrealizedPnl: number;
   dailyPnl: number;
-  capital: number;
+  // FR-10, #869, ADR-0041 決定2, IADR-0354: equity（基準資金）は**ブローカーの口座照会に由来**する。
+  // 🔴 **null は「口座を照会できていない」**（新規建てはバックエンドで止まっている）。
+  // 画面は 0 や「—」ではなく `METRIC_NOT_SUPPLIED_TEXT` を出す（05_screens「供給が無い値の表示規約」）。
+  capital: number | null;
   dailyOrderedAmount: number;
   // FR-10, FR-20, #334, #389: equity から解決した 1 注文あたりの上限**額**（比率ではない）。
   // 実弾切替モーダル③と SC-03 の上限表示・使用率表示が用いる。
   // **設定側の `RiskLimitSettings.maxOrderAmountRatio` と同名にしない・改名しない。**
   // バックエンドの `RiskStatusView.MaxOrderAmount` は解決済みの実額であり、ここは正しい（#389 で触らない）。
-  maxOrderAmount: number;
-  maxDailyOrderAmount: number;
+  // #869: equity が未供給なら実額も解決できないため null（0 を出すと「上限 0」と読める）。
+  maxOrderAmount: number | null;
+  maxDailyOrderAmount: number | null;
   drawdownRatio: number;
   maxDrawdownRatio: number;
   openPositionCount: number;

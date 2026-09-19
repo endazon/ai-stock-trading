@@ -385,6 +385,8 @@ public class PortfolioLedgerConsumersTests
     [InlineData(OrderDispatchForgoneReason.StopLossPriceMissing)]
     [InlineData(OrderDispatchForgoneReason.StopOrderUnsupported)]
     [InlineData(OrderDispatchForgoneReason.StopLossMethodNotPermitted)]
+    [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent)]
+    [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate)]
     public async Task 現行の見送り理由はいずれも処理中から外れる(OrderDispatchForgoneReason reason)
     {
         var ledger = new InMemoryPortfolioLedgerStore();

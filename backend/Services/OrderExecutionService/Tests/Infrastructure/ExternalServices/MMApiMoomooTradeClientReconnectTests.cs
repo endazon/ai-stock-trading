@@ -209,6 +209,9 @@ public class MMApiMoomooTradeClientReconnectTests
             return serial;
         }
 
+        // #869, IADR-0354: 再接続の検証は資金照会を用いない（応答も返さない＝呼ばれれば待ちで顕在化する）。
+        public uint GetFunds(TrdGetFunds.Request request) => ++_serial;
+
         public uint PlaceOrder(TrdPlaceOrder.Request request)
         {
             PlaceOrderCalls++;

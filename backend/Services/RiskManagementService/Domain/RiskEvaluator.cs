@@ -32,6 +32,22 @@ public static class RiskEvaluator
         //
         // **手仕舞い（Close）・損切りは止めない**（isEntry の短絡）。ADR-0009 の不変条件であり、
         // 口座種別が分からないことを理由に建玉を閉じられなくするのは統制ではなく事故である。
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: **統制上限の基準資金（equity）はブローカーの口座照会に由来する。**
+        // 計画（FR-10 本文の括弧書き・05_trading-assumptions §5 注記）は「判定に用いる equity は前営業日終値時点の
+        // USD 評価額」と定め、裁定がその供給元を口座照会に確定した（台帳から導くのをやめた）。
+        //
+        // **照会できていない（null）ときは新規建てを止める（フェイルクローズ）。** 分母が分からないまま
+        // 比率の上限（1 注文 25% / 1 日 150% / 段階の総資金比 / 日次損失 2%）を判定すると、**統制が掛かって
+        // いるように見えて実際には何も制限していない**状態になる。ADR-0016 決定3（借株料を照会できないなら
+        // 空売りしない）・ADR-0028（未供給時の fail-closed）と同じ形であり、新しい規律を作っていない。
+        //
+        // **手仕舞い（Close）・損切りは止めない**（isEntry の短絡）。口座種別の未確認と同じ扱いである。
+        var equity = snapshot.Capital;
+        if (isEntry && equity is null)
+        {
+            reasons.Add(RejectionReason.CapitalBaselineUnavailable);
+        }
+
         var observedAccount = snapshot.Account;
         var accountVerified = observedAccount is not null
             && observedAccount.AccountType == settings.Guard.ConfiguredAccountType;
@@ -94,9 +110,13 @@ public static class RiskEvaluator
         // FR-20, #333, IADR-0136: 段階の発注可能額は**総資金比**で保持されており、判定時に equity から解決する
         // （Stage 2 ＝ 総資金の 30%。計画 §5）。equity は FR-10 の金額上限と同じ snapshot.Capital を用いる
         // （基準がばらけると「厳しい方が効く」の比較が成り立たない）。
+        // #869: equity が未供給なら段階資金上限は**解決できない**ため評価しない（上の
+        // CapitalBaselineUnavailable が既に新規建てを止めている）。0 を代入して「超過」と記録すると、
+        // 監査ログが「段階の枠を使い切った」という**起きていない事実**を主張することになる。
         if (isEntry
+            && equity is { } stageEquity
             && snapshot.InvestedCapital + intent.NotionalInBase
-                > settings.Stage.OrderableCapFor(snapshot.Capital))
+                > settings.Stage.OrderableCapFor(stageEquity))
         {
             reasons.Add(RejectionReason.StageCapitalCapExceeded);
         }
@@ -125,9 +145,12 @@ public static class RiskEvaluator
         // **適用は新規建てのみ**（planning#179 の裁定）。手仕舞い・損切りは止めない——
         // 段階を上げる前に建てた建玉を閉じられないと ADR-0009 の不変条件に反する。
         // 照合は実効商品種別で行う（申告値で段階制約を迂回できないようにする。IADR-0132 決定3 と同じ規律）。
+        // #869: equity が未供給なら **0 を渡す**（空売り実弾解禁の $5,000 を満たさない側＝最も厳しい側）。
+        // ここは段階資金上限と違い equity 以外の軸（段階 × 商品種別）が主であり、評価を飛ばすと
+        // 「Stage 2 で信用買い」のような equity と無関係の違反まで記録から落ちる。
         if (isEntry
             && StageProductPolicy.Evaluate(
-                settings.Stage.Stage, effectiveProductType, snapshot.Capital, stageRelease) is { } stageReason)
+                settings.Stage.Stage, effectiveProductType, equity ?? 0m, stageRelease) is { } stageReason)
         {
             reasons.Add(stageReason);
         }
@@ -223,7 +246,9 @@ public static class RiskEvaluator
         // FR-10, #329, IADR-0130 決定1/2: 金額上限は equity 比で保持されており、判定時に equity から解決する。
         // equity は snapshot.Capital（＝前営業日終値時点の評価額・当日中は不変。計画 §5 注記）であり、
         // 日次損失上限・最大 DD と同一の基準を用いる（基準がばらけると「厳しい方が効く」の比較が成り立たない）。
-        if (isEntry && intent.NotionalInBase > settings.Limits.MaxOrderAmountFor(snapshot.Capital))
+        if (isEntry
+            && equity is { } perOrderEquity
+            && intent.NotionalInBase > settings.Limits.MaxOrderAmountFor(perOrderEquity))
         {
             reasons.Add(RejectionReason.PerOrderAmountExceeded);
         }
@@ -232,8 +257,9 @@ public static class RiskEvaluator
         // ゲート側の除外に加え、カウンタ側（DailyOrderedAmount の集計＝PortfolioProjection）も
         // 新規建てに限定してある。片側だけでは「拒否されないが枠は減る」状態が残る。
         if (isEntry
+            && equity is { } dailyEquity
             && snapshot.DailyOrderedAmount + intent.NotionalInBase
-                > settings.Limits.MaxDailyOrderAmountFor(snapshot.Capital))
+                > settings.Limits.MaxDailyOrderAmountFor(dailyEquity))
         {
             reasons.Add(RejectionReason.DailyOrderAmountExceeded);
         }
@@ -249,7 +275,9 @@ public static class RiskEvaluator
         // 日次損失は実現損益と含み損益（評価損益）の合算で判定する（IADR-0008, Issue #31）。実現ゼロでも
         // 含み損が大きいケースの検知遅れを防ぐデイリーストップ。手仕舞いは含み損を実現・縮小する方向のため対象外。
         var dailyLoss = snapshot.DailyRealizedPnl + snapshot.UnrealizedPnl;
-        if (isEntry && dailyLoss <= -(snapshot.Capital * settings.Limits.DailyLossLimitRatio))
+        if (isEntry
+            && equity is { } lossEquity
+            && dailyLoss <= -(lossEquity * settings.Limits.DailyLossLimitRatio))
         {
             reasons.Add(RejectionReason.DailyLossLimitReached);
         }
@@ -277,8 +305,13 @@ public static class RiskEvaluator
             && AccountTypePolicy.AppliesShortSellControls(accountType))
         {
             var shortSellEnabled = ProductTypeResolver.IsEnabled(settings.Guard, accountType, ProductType.ShortSell);
+            // #869, IADR-0354 決定6: equity は**そのまま（null を含めて）渡す**。
+            // 評価器の側で「1 銘柄あたり上限 10% だけを判定しない」——0 を代入すると、分母が無いのに
+            // ShortExposureExceeded という**起きていない事実**が監査ログへ残る。
+            // 評価そのものを飛ばさないのは、借株可否・株価下限・逆指値必須のような equity と無関係の規則を
+            // 記録から落とさないためである。
             reasons.AddRange(ShortSellEvaluator.Evaluate(
-                intent, shortSellEnabled, settings.ShortSell.Limits, snapshot.Capital, shortSellContext));
+                intent, shortSellEnabled, settings.ShortSell.Limits, equity, shortSellContext));
 
             // FR-10, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5: 強制買戻し由来の 30 日禁止は
             // **文脈が組めなくても単独で判定できる唯一の統制**である（供給されるのは期限という 1 つの日付だけであり、

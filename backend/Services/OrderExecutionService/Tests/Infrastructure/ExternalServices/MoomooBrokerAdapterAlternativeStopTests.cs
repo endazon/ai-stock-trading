@@ -37,6 +37,9 @@ public class MoomooBrokerAdapterAlternativeStopTests
 
         public Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken ct = default) =>
             Task.FromResult<MoomooAccountType?>(MoomooAccountType.Margin);
+
+        public Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken ct = default) =>
+            Task.FromResult<decimal?>(3_000m);
     }
 
     // ロング建玉の保護レグ＝売りの決済意図（発火価格 950・エントリーの判断価格 1,000）。

@@ -230,5 +230,8 @@ public class OrderFillPollingServiceTests
         // #375, ADR-0021: 約定追跡は口座種別を用いない。
         public Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("約定追跡は口座種別照会を用いない。");
+
+        public Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("約定追跡は口座照会を用いない。");
     }
 }

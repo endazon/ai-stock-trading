@@ -5,10 +5,13 @@ namespace RiskManagementService.Features.RiskManagement.GetSizingContext;
 
 // FR-04, FR-10, IADR-0029: 取引判断のサイジングに供給する文脈（設定＋ポートフォリオ状態から導出）。
 // 取引判断（#11）の SizingContext と同形。段階/日次残枠は負値を 0 にクランプ済み。
+// FR-10, #869, ADR-0041 決定2, IADR-0354: equity（基準資金）は**ブローカーの口座照会に由来する**。
+// 🔴 **null は「口座を照会できていない」を意味し、残枠も解決できない**（新規建ては発注審査で止まる）。
+// 取引判断は残枠 null を「0」として扱い、**新規建てを提案しない**（0 で埋めて渡すと「枠がある」と読める）。
 public sealed record SizingContextView(
-    decimal Capital,
-    decimal StageCapitalRemaining,
-    decimal DailyOrderRemaining,
+    decimal? Capital,
+    decimal? StageCapitalRemaining,
+    decimal? DailyOrderRemaining,
     int ConsecutiveLosses,
     decimal DrawdownRatio,
     BrokerProvider Mode,

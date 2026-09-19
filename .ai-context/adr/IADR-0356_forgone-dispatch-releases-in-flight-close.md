@@ -106,6 +106,16 @@ reason switch
 | `StopLossPriceMissing` | Open の発注前判定（`intent.StopLossPrice` が無い。IADR-0210 決定 1 の fail-closed） | 確実に未発注 |
 | `StopOrderUnsupported` | Open の発注前判定（`broker is not IProtectiveOrderBroker` ／ S3 の能力なし。IADR-0347） | 確実に未発注 |
 | `StopLossMethodNotPermitted` | Open の発注前判定（`disposition == Refused`。IADR-0342 決定 4。予約の取得より前） | 確実に未発注 |
+| `BrokerPositionAbsent` | 決済の発注前判定（#873 / IADR-0355 決定 2。`ExecuteAsync` **L123** で `return`） | 確実に未発注 |
+| `BrokerPositionsIndeterminate` | 決済の発注前判定（#873 / IADR-0355 決定 3。`ExecuteAsync` **L112** で `return`） | 確実に未発注 |
+
+［2026-09-19 追記 / [#873](https://github.com/endazon/ai-stock-trading/issues/873) が develop へ入った］
+**下 2 行は実際にマージして追加した**ものである（本 PR が「後からマージする側」になったので、
+下の注記の手順をそのまま実行した。実測は PR 本文）。**根拠は `origin/develop` の実コードで確かめた** ——
+建玉の突き合わせは**読み取りの** `brokerPositions.GetPositionsAsync` だけで、2 分岐は `ExecuteAsync` の
+**L112 / L123** で `return` する。`reservations.TryReserve` は **L178**＝**後**である
+（#873 側のコメントも「予約はまだ取っていない」と書いている）。
+🔴 **建玉の照会は注文の送信ではない。** どちらも「確実に未発注」である。
 
 🔴 **issue #852 の本文は 3 つを例示しているが、4 つ目（`StopLossMethodNotPermitted`。#819 で後から足された）も
 同じく発注前確定であることを確かめて列挙に入れた。** 「入れない側」も主張であり、実測せずに落とせば
@@ -128,6 +138,11 @@ reason switch
 > 字面の「不明」に引かれて既定 `false` に落とすと、**建玉が確認できない局面で見送られた手仕舞いが
 > 30 分ロックされる＝#852 の実害がそのまま再発する。**
 > **判定の基準は「理由の名前」ではなく「ブローカーへ送信したか」**である。
+>
+> 🔴 **［2026-09-19 追記 / #873 は develop へ入り、本 PR がこの手順を実行済み］**
+> 下の手順は**実際になぞって緑を確認した**（実測は PR 本文）。#873 のマージで赤くなったのは
+> **要素数テスト 1 本だけ**であり、番兵は列挙由来なので自動で追随した（literal のままなら
+> 「`BrokerPositionAbsent` を解放するな」という事実と逆の赤が 2 件出ていた）。以下は次に理由を足す人向けに残す。
 >
 > **後からマージする側の手順**——【必須】① 要素数テスト（`見送り理由の要素数を固定する`）を **6** にする
 > ② 2 値とも allowlist へ `true` で足す。【赤にはならないが揃える】③ 肯定形の Theory 2 本へ 2 値を足す（被覆）。

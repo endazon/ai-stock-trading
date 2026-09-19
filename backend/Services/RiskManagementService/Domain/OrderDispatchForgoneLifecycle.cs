@@ -48,6 +48,14 @@ public static class OrderDispatchForgoneLifecycle
             OrderDispatchForgoneReason.StopLossPriceMissing => true,
             OrderDispatchForgoneReason.StopOrderUnsupported => true,
             OrderDispatchForgoneReason.StopLossMethodNotPermitted => true,
+            // #873, IADR-0355: 決済の発注前にブローカーの実建玉と突き合わせる門。**どちらも送信前**である
+            // （`OrderExecutionAppService.ExecuteAsync` を実測: 建玉照会は読み取りの
+            // `GetPositionsAsync` だけで、この 2 分岐は L112 / L123 で `return` する。
+            // `reservations.TryReserve` は L178＝**後**。#873 側のコメントも「予約はまだ取っていない」と書いている）。
+            // 🔴 `BrokerPositionsIndeterminate` の「不明」は***建玉照会*の不明**であり、
+            // ***発注*の不明**（送ったか分からない）ではない —— 下の注記を参照。
+            OrderDispatchForgoneReason.BrokerPositionAbsent => true,
+            OrderDispatchForgoneReason.BrokerPositionsIndeterminate => true,
             // 🔴 既定は「解放しない」。新しい理由を足す人は、それが確実に未発注かを**実測して**からここへ足す。
             //
             // 🔴 判定の基準は**理由の名前ではなく「ブローカーへ送信したか」**である。
