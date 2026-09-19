@@ -468,6 +468,9 @@ public static class AuditEntryFactory
                 // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
                 SoftwareStopOutcome.ProtectionSuspended =>
                     "——**帳簿では守っているのに 1 株も決済できない状態が猶予を過ぎても続いている（到達の有無に依らない・要人手対応）**",
+                // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: どの保護記録も主張していない建玉の検知（是正はしない）。
+                SoftwareStopOutcome.UnattributedPosition =>
+                    "——**どの保護記録も主張していない建玉がある（検知のみ。ソフトウェア逆指値は決済しない・要人手確認）**",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

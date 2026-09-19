@@ -309,10 +309,23 @@ public sealed class OrderExecutionAppService(
         }
 
         var net = ProtectiveStopNetting.DirectionalNet(intent.Symbol, intent.Market, intent.Side, snapshot);
-        var claimed = protectiveStops!.FindActive(ArmingScanLimit)
+
+        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定2: **主張を数える前にエントリーの約定を確定する。**
+        // 終端になったエントリーの約定数量は、ガードが巡回するまで帳簿（RemainingProtected）へ書かれない。
+        // 確定を待たずに数えると、直前に約定したばかりの自分の建玉が「帰属不明」に見え、同一銘柄・同方向への
+        // 2 本目が見送られる（追記(8) の残る制約）。確定は建玉照会を要さない突き合わせであり、
+        // ガードが巡回の先頭で行っているのと同じ操作である。
+        var stops = ProtectiveStopNetting.ConfirmEntryFills(
+            protectiveStops!.FindActive(ArmingScanLimit), protectiveStops, store, clock.UtcNow);
+
+        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定1: **帳簿の主張ではなく「その巡回で実際に動かせる株数」で引く。**
+        // 帳簿の主張（ProtectedQuantity）で引くと、未確定の観測を抱えた幽霊行——実際には 1 株も動かせない行——が
+        // 他人の建玉を「帰属済み」に見せ、帰属不明が 0 と読まれて新しい S1 が武装される（監査の P6(1)・実測 SOLD=20）。
+        // 実効数量で引けば幽霊行は 0 株しか主張せず、帰属不明が正しく見えて**安全側（見送り）へ倒れる**。
+        var claimed = stops
             .Where(s => s.State == ProtectiveStopState.Active
                 && s.Symbol == intent.Symbol && s.Market == intent.Market && s.EntrySide == intent.Side)
-            .Sum(s => s.ProtectedQuantity);
+            .Sum(s => s.EffectiveProtectedQuantity);
         var unattributed = net - claimed;
         if (unattributed <= 0)
             return false;

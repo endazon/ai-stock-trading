@@ -231,6 +231,38 @@ public class EfProtectiveStopOrderStoreTests
         found.ExternalReductionAbsences.Should().Be(0);
         found.ProtectionSuspendedSince.Should().BeNull();
         found.IsProtectionSuspended.Should().BeFalse();
+        // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: 既定値では「まだ知らせていない」。
+        found.UnattributedNotifiedQuantity.Should().BeNull();
+        found.UnattributedNotifiedAt.Should().BeNull();
+    }
+
+    // T-10-491（受け入れ基準 54 / #820 の 10 巡目監査, IADR-0344 追記(9) 決定3）:
+    // 「帰属不明の建玉」を知らせた記録が往復する。再起動のたびに Warning を再送しないための記録であり、
+    // 揮発させると**毎巡回（既定 30 秒）鳴って通知が埋もれる**。
+    [Fact]
+    public void 帰属不明の通知の記録が往復する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 0,
+            ProtectiveStopState.Completed, Now, Now, StopLossExecutionMethod.SoftwareStop,
+            RemainingProtected: 0,
+            UnattributedNotifiedQuantity: 10, UnattributedNotifiedAt: Now.AddMinutes(7));
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Should().Be(stop);
+        found.UnattributedNotifiedQuantity.Should().Be(10);
+        found.UnattributedNotifiedAt.Should().Be(Now.AddMinutes(7));
+        found.State.Should().Be(
+            ProtectiveStopState.Completed, "群の代表が完了済みの行でも記録を持つ（受理後に取消された決済の残りの配置）");
     }
 
     // 未確定（null）の S1 行は 1 株も主張しない。S0 の旧い行（列が無かった時代）は Quantity を主張する。

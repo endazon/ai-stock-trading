@@ -108,6 +108,14 @@ public sealed class ProtectiveStopGuard(
             }
         }
 
+        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: **どの保護記録も主張していない建玉**を知らせる。
+        // 武装の前提条件は武装の時点しか見ないが、材料（純額と保護記録）はガードが毎巡回持っている。
+        // 評価の**後**に行う——この巡回で出した決済のレグが記録済みになっているため、
+        // 「送信済みで未反映の決済」を数え落とさない（早まった警告を出さない）。
+        // 検知だけであり、建玉を売らず・記録も作らず・主張も動かさない。
+        ProtectiveStopNetting.DetectUnattributedPositions(
+            snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events);
+
         return new ProtectiveStopGuardResult(active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events);
     }
 

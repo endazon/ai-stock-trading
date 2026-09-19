@@ -47,7 +47,11 @@ public record ProtectiveStopOrder(
     // 追記(7) の観測値は単調で確定か完了でしか消えず、1 巡回の過少照会でその行の損切りが**二度と出なくなった**。
     int ExternalReductionAbsences = 0,
     DateTimeOffset? ProtectionSuspendedSince = null,
-    DateTimeOffset? ProtectionSuspendedNotifiedAt = null)
+    DateTimeOffset? ProtectionSuspendedNotifiedAt = null,
+    // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: 群に「帰属不明の建玉」があることを最後に知らせた株数と時刻
+    // （群につき 1 行＝S1 の行のうち作成が最も新しいもの——が代表して持つ。同じ状態で毎巡回鳴らさないための記録）。
+    int? UnattributedNotifiedQuantity = null,
+    DateTimeOffset? UnattributedNotifiedAt = null)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;

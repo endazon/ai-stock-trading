@@ -63,4 +63,10 @@ public sealed class ProtectiveStopOrderRow
     public DateTimeOffset? ProtectionSuspendedSince { get; set; }
 
     public DateTimeOffset? ProtectionSuspendedNotifiedAt { get; set; }
+
+    // FR-10, #820 の 10 巡目監査, IADR-0344 追記(9): 「帰属不明の建玉」を最後に知らせた株数と時刻
+    // （群の代表行が持つ。同じ状態で毎巡回鳴らさない・再起動で Critical を再送しない）。
+    public int? UnattributedNotifiedQuantity { get; set; }
+
+    public DateTimeOffset? UnattributedNotifiedAt { get; set; }
 }

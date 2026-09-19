@@ -2,6 +2,7 @@ using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -756,6 +757,334 @@ public class SoftwareStopBlockingRegressionTests
         f.Broker.Entries.Should().ContainSingle();
         f.Stops.Find(approved.DecisionId)!.Mechanism.Should().Be(StopLossExecutionMethod.SoftwareStop);
         result.SoftwareStopArmed.Should().NotBeNull();
+    }
+
+    // ---- 10 巡目監査（IADR-0344 追記(9)） ----
+
+    // 🔴 T-10-483（受け入れ基準 53 / #820 の 10 巡目監査 BLK-10-1・監査の P1）
+    //
+    // 🔴🔴 **これは不具合を固定したテストではない。** 「本来こう動くべきなのに動かない」ことを固定したのではなく、
+    // **原理的に区別できないために受容した挙動**を固定したものである（利用者の裁定＝案①。IADR-0344 追記(9)）。
+    // 期待値を「売らない」へ変えることは**できない**——変えると 8 巡目 BLK-8-1（1 巡回の過少照会でその行の
+    // 損切りが二度と出なくなる）が再発する。恒久対策は **#863**（ブローカーの注文一覧から
+    // 「自分が出していない約定」を特定する）であり、それが入るまでこの挙動は仕様である。
+    //
+    // **区別できない 2 つ**（建玉照会が返す純額の系列は `[0, 10, 10]` で**完全に同一**である）:
+    //   (a) 一過性の過少照会（1 巡回だけ 0 が返った）        → 主張を**戻すべき**（戻さないと損切りが出ない）
+    //   (b) 真の減少の後に、保護記録を持たない他人の建玉が現れた → 主張を**戻してはいけない**（他人の建玉を売る）
+    // 本テストは (b) の時系列を置き、実装が (a) として扱う（＝売る）ことを固定する。
+    //
+    // **発生条件**: 未到達の行が減少を観測してから次の観測までのあいだ（ガードの巡回 1 回ぶん・既定 30 秒。
+    // 失効の確定までは約 2 巡回＝約 60 秒）に、保護記録を持たない建玉が同じ銘柄・同方向へ現れること。
+    // **SIMULATE 限定**であり（実弾では S1 を選べない・空売りは常に S0）、**売り過ぎ（反対建玉）にはならない**。
+    [Fact]
+    public async Task 受容した制約_一過性の過少照会と他人の建玉の出現は純額から区別できない()
+    {
+        var f = NewFixture();
+        var ghost = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        f.Stops.Save(ghost with { RemainingProtected = 10 });
+        Entry(f, ghost, OrderStatus.Filled, 10);
+
+        // 巡回 1: 自分の建玉が本当に消えた（純額 0）。超過 10 株を観測として積む（帳簿は動かさない）。
+        f.Broker.Positions = [];
+        await f.Guard.RunOnceAsync(10);
+        f.Stops.Find(ghost.EntryDecisionId)!.PendingExternalReduction.Should().Be(10);
+        f.Stops.Find(ghost.EntryDecisionId)!.EffectiveProtectedQuantity.Should().Be(0);
+
+        // 巡回 2・3: **保護記録を持たない他人の建玉 10 株**が現れる（切替前の S2 の建玉・人手で建てた建玉）。
+        // 純額は 10 へ戻る——これは「自分の建玉が戻った」のと**同じ観測**である。
+        f.Broker.Positions = [Long(10)];
+        var events = new List<object>();
+        events.AddRange((await f.Guard.RunOnceAsync(10)).Events);
+        events.AddRange((await f.Guard.RunOnceAsync(10)).Events);
+
+        // 失効（確定と対称・2 巡回連続の不在）で観測が捨てられ、主張が満額へ戻る。
+        var revived = f.Stops.Find(ghost.EntryDecisionId)!;
+        revived.PendingExternalReduction.Should().Be(0, "2 巡回連続で超過が消えたら観測を捨てる（追記(8) 決定1）");
+        revived.EffectiveProtectedQuantity.Should().Be(10);
+
+        // 🔴 受容した結果: 次の到達で**他人の 10 株を自分の損切りラインで売る**。
+        await f.Executor.OnTriggeredAsync(new StopLossTriggered(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 940m, 950m, f.Clock.UtcNow));
+
+        f.Broker.MarketCloses.Should().ContainSingle(
+            "🔴 受容した挙動: 純額の系列が一過性の過少照会と同一であるため、実装は主張を戻して売る（#863 が恒久対策）");
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(10);
+
+        // 🔴 **売り過ぎ（反対建玉）にはならない**——数量は常に実効数量（≦ 方向の純額）で頭打ちである。
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().BeLessThanOrEqualTo(
+            10, "受容するのは「帰属を誤る」ことだけであり、純額を超えて売ることは受容していない");
+
+        // 🔴 この配置では帰属不明の検知（追記(9) 決定3）も鳴らない——帳簿の主張が純額と釣り合っており、
+        // **まさにそれが「区別できない」ということ**である。検知は BLK-10-1 を直すものではない。
+        events.OfType<SoftwareStopExecuted>()
+            .Where(e => e.Outcome == SoftwareStopOutcome.UnattributedPosition)
+            .Should().BeEmpty("純額 10・主張 10 で釣り合うため、この時点では帰属不明に見えない");
+    }
+
+    // T-10-484（受け入れ基準 47 / #820 の 10 巡目監査の P6(1)・実測 SOLD=20）:
+    // 武装の前提条件が**帳簿の主張**（ProtectedQuantity）で引いていたため、
+    // **未確定の観測を抱えた幽霊行**——実際には 1 株も動かせない行——が他人の建玉を「帰属済み」に見せ、
+    // 帰属不明が 0 と読まれて**新しい S1 が武装されて**いた。
+    // 「その巡回で実際に動かせる株数」（EffectiveProtectedQuantity）で引けば安全側（見送り）へ倒れる。
+    [Fact]
+    public async Task 未確定の観測を抱えた行は帰属済みに見せずS1の武装は見送られる()
+    {
+        var f = NewFixture();
+        var ghost = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        // 帳簿では 10 株を守っているが、未確定の観測がその全量を打ち消している（1 株も動かせない）。
+        f.Stops.Save(ghost with { RemainingProtected = 10, PendingExternalReduction = 10 });
+        Entry(f, ghost, OrderStatus.Filled, 10);
+        f.Stops.Find(ghost.EntryDecisionId)!.EffectiveProtectedQuantity.Should().Be(0, "前提の確認");
+
+        // 在る 10 株は**他人の建玉**である（幽霊行は 1 株も動かせないのだから、この 10 株は誰のものでもない）。
+        f.Broker.Positions = [Long(10)];
+
+        var approved = Approved();
+        var result = await f.Execution.ExecuteAsync(approved);
+
+        result.Forgone.Should().NotBeNull(
+            "幽霊行は 1 株も動かせないので、在る 10 株は帰属不明である（帳簿の主張で引くと 0 に見えて武装してしまう）");
+        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        f.Broker.Entries.Should().BeEmpty("帰属不明の建玉があるあいだは新規建てを送らない");
+        f.Stops.Find(approved.DecisionId).Should().BeNull("2 本目の幽霊行の元を作らない");
+        result.SoftwareStopArmed.Should().BeNull();
+    }
+
+    // T-10-485（受け入れ基準 48 / #820 の 10 巡目監査。追記(8) の残る制約 ③ の解消）:
+    // **終端したエントリーの約定数量は、ガードが巡回するまで帳簿へ書かれない。**
+    // 確定を待たずに主張を数えると、直前に約定したばかりの**自分の**建玉が「帰属不明」に見え、
+    // 同一銘柄・同方向への 2 本目が（安全側ではあるが）取りこぼされていた。
+    // 武装の判定の前に ConfirmEntryFills を通す（建玉照会を要さない突き合わせである）。
+    [Fact]
+    public async Task 終端したエントリーの約定はガードを待たずに武装の判定へ効く()
+    {
+        var f = NewFixture();
+        var prior = SoftwareStop(Now.AddMinutes(-1), quantity: 10);
+        f.Stops.Save(prior);                       // RemainingProtected は null（ガードがまだ巡回していない）
+        Entry(f, prior, OrderStatus.Filled, 10);   // 発注記録は**終端**（10 株約定済み）
+        f.Broker.Positions = [Long(10)];           // 在る 10 株は prior 自身のものである
+
+        var approved = Approved();
+        var result = await f.Execution.ExecuteAsync(approved);
+
+        result.Forgone.Should().BeNull("その 10 株は prior が主張する自分の建玉であり、帰属不明ではない");
+        f.Broker.Entries.Should().ContainSingle("2 本目の新規建てを送る");
+        f.Stops.Find(approved.DecisionId)!.Mechanism.Should().Be(StopLossExecutionMethod.SoftwareStop);
+        result.SoftwareStopArmed.Should().NotBeNull();
+        f.Stops.Find(prior.EntryDecisionId)!.RemainingProtected.Should().Be(
+            10, "武装の判定が確定を先に通したため、帳簿にも書かれている");
+    }
+
+    // T-10-486（受け入れ基準 49 / #820 の 10 巡目監査, IADR-0344 追記(9) 決定3。追記(8) の残る制約 ②）:
+    // **武装の前提条件は武装の時点しか見ない**が、材料（純額と保護記録）はガードが毎巡回持っている。
+    // 武装より後に他人の建玉が現れる経路を可観測にする。**同じ状態で毎巡回は鳴らさない**
+    // （株数が変わったとき／一定間隔）——毎巡回（既定 30 秒）鳴ると通知が埋もれて意味を失う。
+    // 🔴 検知だけであり、建玉を売らず・記録も作らず・主張も動かさない。
+    [Fact]
+    public async Task 帰属不明の建玉をガードが検知して同じ状態では一度だけ知らせる()
+    {
+        var f = NewFixture();
+        var mine = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        f.Stops.Save(mine with { RemainingProtected = 10 });
+        Entry(f, mine, OrderStatus.Filled, 10);
+
+        // 巡回 1: 純額 20 のうち 10 株は誰も主張していない。
+        f.Broker.Positions = [Long(20)];
+        Unattributed(await f.Guard.RunOnceAsync(10)).Should().ContainSingle()
+            .Which.Quantity.Should().Be(10);
+
+        // 巡回 2: 同じ状態では鳴らさない。
+        Unattributed(await f.Guard.RunOnceAsync(10)).Should().BeEmpty("同じ株数のまま毎巡回は鳴らさない");
+
+        // 巡回 3: 株数が変わったら改めて知らせる。
+        f.Broker.Positions = [Long(30)];
+        Unattributed(await f.Guard.RunOnceAsync(10)).Should().ContainSingle()
+            .Which.Quantity.Should().Be(20, "状態が変わったので鳴らす");
+
+        // 巡回 4: 同じ株数でも一定間隔を過ぎたら改めて知らせる。
+        f.Clock.UtcNow = f.Clock.UtcNow + ProtectiveStopNetting.UnattributedRenotifyInterval + TimeSpan.FromMinutes(1);
+        Unattributed(await f.Guard.RunOnceAsync(10)).Should().ContainSingle()
+            .Which.Quantity.Should().Be(20);
+
+        // 巡回 5: 帰属不明が消えたら鳴らさず、記録も戻す（再発したら改めて知らせる）。
+        f.Broker.Positions = [Long(10)];
+        Unattributed(await f.Guard.RunOnceAsync(10)).Should().BeEmpty();
+        f.Stops.Find(mine.EntryDecisionId)!.UnattributedNotifiedQuantity.Should().BeNull();
+
+        // 🔴 検知は是正ではない: 1 株も売らず、主張も帳簿も動いていない。
+        f.Broker.MarketCloses.Should().BeEmpty("検知だけであり決済は出さない");
+        f.Stops.Find(mine.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+        f.Stops.Find(mine.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    // T-10-487（受け入れ基準 49 / #820 の 10 巡目監査の P5）:
+    // **受理後に 0 約定で取り消された決済の残り**。決済が受理された時点で行は完了するため、
+    // この配置には Active な行が 1 件も残らない——どのイベントも出ないまま建玉が無保護で残っていた。
+    // 走査を**建玉の側から**行い、完了済みの S1 行も足跡として見ることで可観測になる。
+    // 対照（用量反応）: 同じレグが**まだ受理・未約定**なら「送信済みで未反映の決済」として説明が付き、鳴らない。
+    [Theory]
+    [InlineData(true)]   // 受理後に 0 約定で取消された → 建玉が無保護で残っている（鳴る）
+    [InlineData(false)]  // 受理・未約定のまま滞留中 → 純額がまだ減っていないだけ（鳴らない）
+    public async Task 受理後に取り消された決済の残りは行が完了していても検知される(bool cancelled)
+    {
+        var f = NewFixture();
+
+        // ガードが巡回するための Active な行（別銘柄。AAPL 側には Active な行が 1 件も残らない配置である）。
+        var other = SoftwareStopFor("MSFT", Now.AddHours(-2), quantity: 5);
+        f.Stops.Save(other with { RemainingProtected = 5 });
+        f.Store.Save(new ExecutionRecord(
+            other.EntryDecisionId, "entry-msft", "MSFT", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, 5, 1_000m, 5, 1_000m, OrderStatus.Filled, 0m, Now.AddHours(-4)));
+
+        // AAPL: 決済を出して**完了済み**になった S1 行（試行 1）。
+        var closed = SoftwareStop(Now.AddHours(-1), quantity: 10);
+        f.Stops.Save(closed with
+        {
+            RemainingProtected = 0,
+            State = ProtectiveStopState.Completed,
+            Attempt = 1,
+            TriggeredAt = Now.AddMinutes(-10),
+            TriggeredPrice = 940m,
+        });
+        Entry(f, closed, OrderStatus.Filled, 10);
+        f.Store.Save(new ExecutionRecord(
+            ProtectiveStopIds.SoftwareCloseDecisionId(closed.EntryDecisionId, 1), "close-1", "AAPL",
+            Market.UnitedStates, TradeSide.Sell, ProductType.Cash, PositionEffect.Close, 10, 940m, 0, 0m,
+            cancelled ? OrderStatus.Cancelled : OrderStatus.Accepted, 0m, Now.AddMinutes(-9)));
+
+        // 建玉は減っていない（取消なら永久に減らない・未約定なら約定すれば減る）。
+        f.Broker.Positions = [Long(10), new BrokerPositionSnapshot("MSFT", Market.UnitedStates, 5, 1_000m)];
+
+        var emitted = Unattributed(await f.Guard.RunOnceAsync(10));
+
+        if (cancelled)
+        {
+            emitted.Should().ContainSingle("受理後に取り消された決済の残りは、どの記録も主張していない建玉である")
+                .Which.Quantity.Should().Be(10);
+            emitted.Single().Symbol.Should().Be("AAPL");
+        }
+        else
+        {
+            emitted.Should().BeEmpty("受理・未約定の決済はまだ建玉照会に反映されていないだけで、無保護ではない");
+        }
+
+        f.Broker.MarketCloses.Should().BeEmpty("検知だけであり決済は出さない");
+    }
+
+    // T-10-488（受け入れ基準 50 の否定形 / #820 の 10 巡目監査, IADR-0344 追記(9) 決定3）:
+    // 🔴 **S1 の足跡が無い群（実弾・S0 のみ）では 1 バイトも動かない。**
+    // この不変条件（「S1 が無い構成で S0 の挙動は変わらない」）は本 PR の 4 巡目以降ずっと守ってきたものであり、
+    // 検知を足したことで破ってはならない。
+    [Fact]
+    public async Task 帰属不明の検知はS1の足跡が無い群では何も出さない()
+    {
+        var f = NewFixture();
+        var s0 = BrokerStop(Now.AddHours(-2), quantity: 10);
+        f.Stops.Save(s0);
+        f.Broker.Orders["stop-s0"] = new BrokerOrder(
+            "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 10, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
+
+        // 純額 25 に対し S0 の主張は 10。**帰属不明は 15 株あるが、S1 が 1 件も無いので触れない。**
+        f.Broker.Positions = [Long(25)];
+
+        var result = await f.Guard.RunOnceAsync(10);
+
+        Unattributed(result).Should().BeEmpty("S1 の足跡が無い群は従来どおり（S0 の近似の挙動を変えない）");
+        f.Broker.Cancelled.Should().BeEmpty();
+        f.Stops.Find(s0.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        f.Stops.Find(s0.EntryDecisionId)!.UnattributedNotifiedQuantity.Should().BeNull();
+    }
+
+    // T-10-489（受け入れ基準 51 / #820 の 10 巡目監査の非ブロッキング 6）:
+    // 決済経路（観測として数えない呼び出し）が観測値を**増やした**とき、それまでに数えた
+    // 「超過が消えた」観測（ExternalReductionAbsences）は無効である。0 へ戻さないと、
+    // 真の追加減少の直後の **1 巡回**で失効が成立し得る（確定と対称であるべき失効が対称でなくなる）。
+    [Fact]
+    public async Task 観測値を増やした巡回では不在の連続回数も数え直す()
+    {
+        var f = NewFixture();
+        var stop = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        // 5 株の超過を観測済みで、「消えた」観測も 1 回数えている（あと 1 回で失効する状態）。
+        f.Stops.Save(stop with
+        {
+            RemainingProtected = 10,
+            PendingExternalReduction = 5,
+            ExternalReductionAbsences = 1,
+        });
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        // 決済経路からの呼び出し（observing: false）。超過が 10 株へ増えた＝真の追加減少である。
+        ProtectiveStopNetting.ReconcileShares(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, [], f.Stops.FindActive(10), f.Stops, f.Store, Now);
+
+        var observed = f.Stops.Find(stop.EntryDecisionId)!;
+        observed.PendingExternalReduction.Should().Be(10);
+        observed.ExternalReductionAbsences.Should().Be(0, "観測が増えたら「消えた」の数えは無効である");
+
+        // 挙動の確認: 1 巡回だけ超過が消えても失効しない（失効には 2 巡回連続の不在が要る）。
+        f.Broker.Positions = [Long(10)];
+        await f.Guard.RunOnceAsync(10);
+
+        f.Stops.Find(stop.EntryDecisionId)!.PendingExternalReduction.Should().Be(
+            10, "不在 1 回で失効してはならない（確定と対称の 2 回が要る）");
+    }
+
+    // T-10-490（受け入れ基準 52 の否定形 / #820 の 10 巡目監査の非ブロッキング 7）:
+    // 「保護の停止」（ソフトウェア逆指値が 1 株も決済できない）は **S1 の行にだけ**当たる話である。
+    // S0 の行も同じ状態にはなり得るが、S0 の保護は**ブローカーに実在する逆指値**であり、
+    // 帳簿の主張が一時的に打ち消されても**建玉は現に守られている**——
+    // 「ソフトウェア逆指値が…」という文面をその行に当てると、読んだ人を誤らせる。
+    [Fact]
+    public async Task 保護の停止はブローカー側逆指値の行には通知しない()
+    {
+        var f = NewFixture();
+        var s1 = SoftwareStop(Now.AddHours(-2), quantity: 10);
+        var s0 = BrokerStop(Now.AddHours(-1), quantity: 5);
+        f.Stops.Save(s1 with { RemainingProtected = 10 });
+        f.Stops.Save(s0);
+        Entry(f, s1, OrderStatus.Filled, 10);
+        f.Broker.Orders["stop-s0"] = new BrokerOrder(
+            "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 5, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
+
+        // 超過（純額 0）と回復（純額 15）を交互に返し、確定も失効も 2 巡回連続しない
+        //（どちらの行も「主張はあるのに 1 株も動かせない」状態が続く）。
+        var events = new List<object>();
+        for (var cycle = 0; cycle < 8; cycle++)
+        {
+            f.Broker.Positions = cycle % 2 == 0 ? [] : [Long(15)];
+            events.AddRange((await f.Guard.RunOnceAsync(10)).Events);
+            f.Clock.UtcNow = f.Clock.UtcNow.AddMinutes(5);
+        }
+
+        f.Stops.Find(s0.EntryDecisionId)!.IsProtectionSuspended.Should().BeTrue(
+            "S0 の行も同じ状態にはなる（前提の確認。ここで false だとテストが何も見ていない）");
+
+        var suspended = events.OfType<SoftwareStopExecuted>()
+            .Where(e => e.Outcome == SoftwareStopOutcome.ProtectionSuspended)
+            .ToList();
+        suspended.Should().ContainSingle("ソフトウェア逆指値の行 1 件だけが対象である");
+        suspended.Single().EntryDecisionId.Should().Be(
+            s1.EntryDecisionId, "S0 の行へ「ソフトウェア逆指値が…」と通知してはならない");
+        f.Stops.Find(s0.EntryDecisionId)!.ProtectionSuspendedSince.Should().BeNull(
+            "S0 の行では計時もしない");
+        f.Broker.Cancelled.Should().BeEmpty("未確定のあいだは生きた逆指値を取り消さない（従来どおり）");
+    }
+
+    private static IReadOnlyList<SoftwareStopExecuted> Unattributed(ProtectiveStopGuardResult result) =>
+        result.Events.OfType<SoftwareStopExecuted>()
+            .Where(e => e.Outcome == SoftwareStopOutcome.UnattributedPosition)
+            .ToList();
+
+    private static ProtectiveStopOrder SoftwareStopFor(string symbol, DateTimeOffset createdAt, int quantity)
+    {
+        var id = Guid.NewGuid();
+        return new ProtectiveStopOrder(
+            id, ProtectiveStopIds.SoftwareStopId(id), string.Empty, symbol, Market.UnitedStates, TradeSide.Buy,
+            ProductType.Cash, BrokerProvider.MoomooSimulate, quantity, 950m, 1m, 0, ProtectiveStopState.Active,
+            createdAt, createdAt, StopLossExecutionMethod.SoftwareStop);
     }
 
     private static OrderApproved Approved() =>

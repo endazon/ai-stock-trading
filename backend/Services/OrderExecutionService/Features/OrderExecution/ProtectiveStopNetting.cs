@@ -68,6 +68,13 @@ public static class ProtectiveStopNetting
     public static readonly TimeSpan ProtectionSuspendedGrace = TimeSpan.FromMinutes(15);
 
     /// <summary>
+    /// #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: <b>帰属不明の建玉</b>が同じ株数のまま続いているときに、
+    /// 改めて知らせるまでの間隔。状態が変わったとき（株数が動いたとき）は間隔を待たずに知らせる。
+    /// <b>毎巡回（既定 30 秒）鳴らすと通知が埋もれて意味を失う</b>ため、猶予の類（15 分）より長く取る。
+    /// </summary>
+    public static readonly TimeSpan UnattributedRenotifyInterval = TimeSpan.FromMinutes(60);
+
+    /// <summary>
     /// FR-10, #820, IADR-0344 決定6・追記(4) 決定10・追記(7): <b>S0（ブローカー側逆指値）の行から見た建玉残</b>。
     /// 方向の純額から<b>他の S1 行が実際に動かす株数</b>を差し引く（S1 行が無い構成では差し引く量が 0 で従来と同一）。
     /// <para>
@@ -229,6 +236,11 @@ public static class ProtectiveStopNetting
     // 決済経路（観測として数えない呼び出し）: **観測値を増やす方向にだけ**記録する。
     // 🔴 減らさないのは、同じ巡回で先に決済を出した行が Completed になって群から消えると超過が見かけ上消え、
     // 残った行が古い建玉を主張して売り過ぎるためである（T-10-353）。確定も通知もここでは行わない。
+    //
+    // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定4: **不在の連続回数（ExternalReductionAbsences）も 0 へ戻す。**
+    // 観測が増えた＝真の追加減少であり、それまでに数えた「超過が消えた」観測は無効である。戻さないと、
+    // 決済経路が観測を積み増した直後の 1 巡回で失効が成立し得た（確定と対称であるべき失効が対称でなくなる）。
+    // Confirm 側の同じ分岐は初めから 0 へ戻していた。
     private static void RecordObservation(
         List<ProtectiveStopOrder> group,
         IReadOnlyDictionary<Guid, int> observed,
@@ -243,7 +255,13 @@ public static class ProtectiveStopNetting
 
             Replace(
                 group,
-                row with { PendingExternalReduction = take, ExternalReductionObservations = 0, UpdatedAt = now },
+                row with
+                {
+                    PendingExternalReduction = take,
+                    ExternalReductionObservations = 0,
+                    ExternalReductionAbsences = 0,
+                    UpdatedAt = now,
+                },
                 stops);
         }
     }
@@ -391,6 +409,15 @@ public static class ProtectiveStopNetting
     /// <b>到達の有無に依らず</b>知らせる——未到達の行には
     /// <see cref="SoftwareStopOutcome.CloseStalled"/>（到達からの猶予）が効かないため、無音のまま保護が失われる。
     /// </para>
+    /// <para>
+    /// 🔴 <b>#820 の 10 巡目監査, IADR-0344 追記(9) 決定5: ソフトウェア逆指値（S1）の行にだけ効かせる。</b>
+    /// S0 の行も <see cref="ProtectiveStopOrder.IsProtectionSuspended"/> になり得る（「全部か 0 か」の割り当てで
+    /// 主張の全量が未確定の観測に打ち消される）が、<b>S0 の保護はブローカーに実在する逆指値</b>であり、
+    /// 帳簿の主張が一時的に打ち消されても<b>建玉は現に守られている</b>——
+    /// 「ソフトウェア逆指値が 1 株も決済できない」という <see cref="SoftwareStopOutcome.ProtectionSuspended"/> の
+    /// 文面はその行に当たらない。S0 側の帰結は確定時の <see cref="SoftwareStopOutcome.ProtectionReduced"/>
+    /// （＋ガードによる逆指値の取消）が既に 1 回残す。
+    /// </para>
     /// </summary>
     private static void NotifySuspended(
         List<ProtectiveStopOrder> group,
@@ -400,6 +427,9 @@ public static class ProtectiveStopNetting
     {
         foreach (var row in group.ToList())
         {
+            if (!row.IsSoftwareStop)
+                continue;
+
             if (!row.IsProtectionSuspended)
             {
                 if (row.ProtectionSuspendedSince is not null || row.ProtectionSuspendedNotifiedAt is not null)
@@ -426,6 +456,111 @@ public static class ProtectiveStopNetting
             events?.Add(new SoftwareStopExecuted(
                 row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.ProtectionSuspended,
                 row.ProtectedQuantity, row.TriggerPrice, row.TriggeredPrice ?? row.TriggerPrice, row.Attempt,
+                CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
+        }
+    }
+
+    /// <summary>
+    /// FR-10, #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: <b>どの保護記録も主張していない建玉</b>を毎巡回検知して
+    /// <see cref="SoftwareStopOutcome.UnattributedPosition"/> を<b>1 回だけ</b>積む。
+    /// <para>
+    /// 🔴 <b>これは検知であって是正ではない。</b>建玉を売らず・記録も作らず・主張も動かさない。
+    /// 武装の前提条件（<c>OrderExecutionAppService</c>）は<b>武装の時点しか見ない</b>ため、
+    /// 武装より後に他人の建玉（S2・人手）が現れる経路と、<b>受理後に 0 約定で取り消された決済の残り</b>は、
+    /// これまでどのイベントも出さないまま建玉が無保護で残っていた。材料（純額と保護記録）はガードが毎巡回持っている。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>走査は建玉の側から行う。</b> 決済が受理された時点で行は完了するため、
+    /// 「受理後に取り消された決済の残り」の配置には <c>Active</c> な行が 1 件も残らない——
+    /// Active 行の群を回すだけでは見えない。ただし <b>S1 の足跡がある群に限る</b>
+    /// （Active な S1 行、または <see cref="IProtectiveStopOrderStore.FindCompletedSoftwareStops"/> が返す完了済みの行）。
+    /// <b>S1 が 1 件も無い構成（実弾・S0 のみ）では 1 バイトも動かない。</b>
+    /// </para>
+    /// <para>
+    /// <b>同じ状態で毎巡回鳴らさない</b>: 群の S1 行のうち<b>作成が最も新しい 1 行</b>が
+    /// <see cref="ProtectiveStopOrder.UnattributedNotifiedQuantity"/> /
+    /// <see cref="ProtectiveStopOrder.UnattributedNotifiedAt"/> を代表して持ち、
+    /// <b>株数が変わったとき</b>か <see cref="UnattributedRenotifyInterval"/> が経ったときだけ出す。
+    /// 帰属不明が消えたら両方を <c>null</c> へ戻す（再発したら改めて知らせる）。
+    /// </para>
+    /// </summary>
+    public static void DetectUnattributedPositions(
+        IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        IEnumerable<ProtectiveStopOrder> activeStops,
+        IProtectiveStopOrderStore stops,
+        IExecutedOrderStore store,
+        DateTimeOffset now,
+        ICollection<object>? events = null)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(activeStops);
+        ArgumentNullException.ThrowIfNull(stops);
+        ArgumentNullException.ThrowIfNull(store);
+
+        var active = activeStops.Where(s => s.State == ProtectiveStopState.Active).ToList();
+
+        foreach (var (symbol, market, entrySide) in snapshot
+            .Where(p => p.Quantity != 0)
+            .Select(p => (p.Symbol, p.Market, EntrySide: p.Quantity > 0 ? TradeSide.Buy : TradeSide.Sell))
+            .Distinct())
+        {
+            var net = DirectionalNet(symbol, market, entrySide, snapshot);
+            if (net <= 0)
+                continue;
+
+            var group = active
+                .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+                .ToList();
+            var completed = stops.FindCompletedSoftwareStops(symbol, market, entrySide, SentCloseScanLimit);
+
+            // S1 の足跡が無い群（実弾・S0 のみ）には触れない。
+            if (!group.Any(s => s.IsSoftwareStop) && completed.Count == 0)
+                continue;
+
+            // 群を代表して記録を持つ行（作成が最も新しい S1 行）。完了済みでも構わない（状態は変えない）。
+            var anchor = group
+                .Where(s => s.IsSoftwareStop)
+                .Concat(completed)
+                .OrderByDescending(s => s.CreatedAt)
+                .ThenByDescending(s => s.EntryDecisionId)
+                .First();
+
+            // 帳簿の主張（一時的な観測で揺れない側）で引き、さらに「純額に含まれるが帳簿に現れない株数」を除く。
+            var unattributed = net
+                - group.Sum(s => s.ProtectedQuantity)
+                - SharesAccountedElsewhere(symbol, market, entrySide, group, stops, store);
+
+            if (unattributed <= 0)
+            {
+                if (anchor.UnattributedNotifiedQuantity is not null || anchor.UnattributedNotifiedAt is not null)
+                {
+                    stops.Save(anchor with
+                    {
+                        UnattributedNotifiedQuantity = null,
+                        UnattributedNotifiedAt = null,
+                        UpdatedAt = now,
+                    });
+                }
+
+                continue;
+            }
+
+            if (anchor.UnattributedNotifiedQuantity == unattributed
+                && anchor.UnattributedNotifiedAt is { } notifiedAt
+                && now - notifiedAt < UnattributedRenotifyInterval)
+            {
+                continue;
+            }
+
+            stops.Save(anchor with
+            {
+                UnattributedNotifiedQuantity = unattributed,
+                UnattributedNotifiedAt = now,
+                UpdatedAt = now,
+            });
+            events?.Add(new SoftwareStopExecuted(
+                anchor.EntryDecisionId, symbol, market, SoftwareStopOutcome.UnattributedPosition,
+                unattributed, anchor.TriggerPrice, anchor.TriggeredPrice ?? anchor.TriggerPrice, anchor.Attempt,
                 CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
         }
     }

@@ -946,6 +946,8 @@ public class AuditEntryFactoryTests
     [InlineData(SoftwareStopOutcome.ProtectionReduced, "外部要因で建玉が減ったぶんを保護記録の主張から差し引いた")]
     // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も決済できない状態が続いている。
     [InlineData(SoftwareStopOutcome.ProtectionSuspended, "1 株も決済できない状態が猶予を過ぎても続いている")]
+    // T-10-493（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: 帰属不明の建玉の**検知**（是正ではない）。
+    [InlineData(SoftwareStopOutcome.UnattributedPosition, "どの保護記録も主張していない建玉がある")]
     public void ソフトウェア逆指値の発動結果は結末が読める(SoftwareStopOutcome outcome, string expected)
     {
         var entryDecisionId = Guid.NewGuid();

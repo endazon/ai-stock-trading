@@ -138,6 +138,16 @@ public static class NotificationFormatter
                 + "**建玉が無保護で残っている可能性があります。直ちに確認し、必要なら手動で決済してください**"
                 + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Critical),
+        // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: どの保護記録も主張していない建玉がある（検知のみ・是正はしない）。
+        SoftwareStopOutcome.UnattributedPosition => new(
+            "リスク統制: どの保護記録も主張していない建玉があります",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: この銘柄・方向の建玉のうち {e.Quantity} 株を、"
+                + "どの保護記録も主張していません（他の実行機構の建玉・手動で建てた建玉・"
+                + "受理後に取り消された決済の残りなど）。"
+                + "**ソフトウェア逆指値はこの建玉を決済しません。手動で決済するか、保護を掛け直してください**"
+                + "（この銘柄ではソフトウェア逆指値の新規建ても見送られます）"
+                + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
