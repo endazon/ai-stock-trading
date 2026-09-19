@@ -134,6 +134,40 @@ public class AuditEntryFactoryTests
             new AssumptionsChanged(4, "owner", "別の変更", DateTimeOffset.UtcNow), Guid.NewGuid(), RecordedAt).CorrelationId);
     }
 
+    // FR-07, UC-03, ADR-0003, IADR-0240 決定11, #774: Discord Bot 経由の確定は owner マップ機密クライアントの
+    // トークンで行われる。**実際に操作した利用者と、認可の主体であるクライアントの両方**を台帳へ残す。
+    [Fact]
+    public void ReportConfirmed_の代理確定は_操作した利用者と認可の主体の両方を記録する()
+    {
+        var e = new ReportConfirmed(
+            "daily-2026-09-10", "Daily", "developer", 1, DateTimeOffset.UtcNow, AuthorizedBy: "ai-stock-trading-owner");
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Be("Daily 報告書 daily-2026-09-10 確定（developer・代理 ai-stock-trading-owner・前提 v1）");
+        entry.Summary.Should().NotContain("unknown");
+
+        // 生の値はペイロードにそのまま残る（要約の言い換えに依存せず照会できる）。
+        using var detail = System.Text.Json.JsonDocument.Parse(entry.Detail);
+        var root = detail.RootElement;
+        var actor = root.TryGetProperty("actor", out var a) ? a : root.GetProperty("Actor");
+        var authorizedBy = root.TryGetProperty("authorizedBy", out var b) ? b : root.GetProperty("AuthorizedBy");
+        actor.GetString().Should().Be("developer");
+        authorizedBy.GetString().Should().Be("ai-stock-trading-owner");
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("")]
+    public void ReportConfirmed_の確定者が分からないときは_要約に確定者不明と書く(string actor)
+    {
+        var e = new ReportConfirmed("daily-2026-09-10", "Daily", actor, 1, DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Be("Daily 報告書 daily-2026-09-10 確定（確定者不明・前提 v1）");
+    }
+
     [Fact]
     public void ReportConfirmed_は_PeriodKey_相関で確定者を記録する()
     {

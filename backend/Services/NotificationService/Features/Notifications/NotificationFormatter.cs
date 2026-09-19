@@ -159,8 +159,18 @@ public static class NotificationFormatter
     // FR-07, FR-09: 報告書の確定（方針が取引に有効化された通知）。
     public static NotificationMessage From(ReportConfirmed e) => new(
         "報告書確定",
-        $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{e.Actor}・前提条件 v{e.AssumptionsVersion}）。",
+        $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。",
         NotificationSeverity.Info);
+
+    // FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定者の表示。
+    //   代理確定（Discord Bot 経由）: 「<操作した利用者>・<認可の主体のクライアント> 経由」——**両方を見せる**。
+    //   操作者が分からない（空／報告書サービスの最終の倒し先 `unknown`）: 「確定者不明」——内部の既定値を生で出さない。
+    //   それ以外（利用者本人のトークン・`client:<azp>`）: そのまま。
+    private static string ConfirmerOf(ReportConfirmed e)
+    {
+        var actor = string.IsNullOrWhiteSpace(e.Actor) || e.Actor == "unknown" ? "確定者不明" : e.Actor;
+        return string.IsNullOrWhiteSpace(e.AuthorizedBy) ? actor : $"{actor}・{e.AuthorizedBy} 経由";
+    }
 
     // FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示（＝確定依頼）。
     // 要約は発行側でサニタイズ済み（IADR-0116 決定3/4）。確定は利用者のみが行う（ADR-0003）ため本文で確定を促し、

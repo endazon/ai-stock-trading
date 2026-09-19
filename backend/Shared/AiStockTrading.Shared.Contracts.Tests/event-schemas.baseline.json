@@ -326,6 +326,7 @@
   "ReportConfirmed": {
     "Actor": "String",
     "AssumptionsVersion": "Int32",
+    "AuthorizedBy": "String",
     "ConfirmedAt": "DateTimeOffset",
     "Kind": "String",
     "PeriodKey": "String"

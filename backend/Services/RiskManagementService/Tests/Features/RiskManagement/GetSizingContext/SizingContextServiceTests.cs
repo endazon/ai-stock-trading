@@ -46,6 +46,26 @@ public class SizingContextServiceTests
         view.Limits.MaxOrderAmountRatio.Should().Be(TradingDefaults.CreateRiskLimits().MaxOrderAmountRatio);
     }
 
+    // FR-04, FR-10, ADR-0040 決定1, #854, IADR-0351 決定1: 損切りの実行機構の設定を取引判断へ供給する
+    // （判断プロンプトの「保護の状態」の供給元。保有中の建玉に自動の損切りが効く前提に立ってよいかを偽らずに伝える）。
+    [Theory]
+    [InlineData(StopLossExecutionMethod.BrokerStopOrder)]
+    [InlineData(StopLossExecutionMethod.NoProtectiveStop)]
+    [InlineData(StopLossExecutionMethod.AlternativeBrokerOrderType)]
+    public void 損切りの実行機構の設定をそのまま返す(StopLossExecutionMethod method)
+    {
+        var settings = new InMemoryRiskSettingsStore();
+        settings.Save(settings.GetCurrent() with { StopLossMethod = method });
+        var snapshotBuilder = new PortfolioSnapshotBuilder(
+            new FakePortfolioStateProvider(new PortfolioState { Capital = 100_000m }),
+            new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
+            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+
+        var view = new SizingContextService(snapshotBuilder, settings).Build();
+
+        view.StopLossMethod.Should().Be(method);
+    }
+
     [Fact]
     public void 使用分が上限を超えると残枠は0にクランプされる()
     {
