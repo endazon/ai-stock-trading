@@ -45,6 +45,8 @@ public class RejectionReasonOrdinalStabilityTests
         { RejectionReason.GoodFaithViolationLimitReached, 27 },
         // FR-01, FR-10, ADR-0020, #337, IADR-0249: 情報源の欠測による限定縮退。**末尾へ追加**している。
         { RejectionReason.InformationSourceDegraded, 28 },
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金（equity）の未照会。**末尾へ追加**している。
+        { RejectionReason.CapitalBaselineUnavailable, 29 },
     };
 
     [Theory]

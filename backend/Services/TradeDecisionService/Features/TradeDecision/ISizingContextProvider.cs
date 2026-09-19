@@ -14,10 +14,13 @@ public interface ISizingContextProvider
 }
 
 // サイジング文脈。availableCapital は段階資金残枠と日次発注残枠の小さい方を用いる（IADR-0017）。
+// FR-10, #869, ADR-0041 決定2, IADR-0354: 🔴 **Capital / 残枠は null＝未供給**（ブローカーの口座照会に
+// 由来する基準資金が取れていない）。**0 と読まない**——0 は「枠を使い切った」であり、null は「分からない」である。
+// いずれの場合もサイジングは数量 0 ＝ 見送りに倒れ、発注審査側も CapitalBaselineUnavailable で新規建てを止める。
 public record SizingContext(
-    decimal Capital,
-    decimal StageCapitalRemaining,   // CapitalCap − InvestedCapital（段階資金の残枠）
-    decimal DailyOrderRemaining,     // MaxDailyOrderAmount − DailyOrderedAmount（当日発注の残枠）
+    decimal? Capital,
+    decimal? StageCapitalRemaining,   // CapitalCap − InvestedCapital（段階資金の残枠）
+    decimal? DailyOrderRemaining,     // MaxDailyOrderAmount − DailyOrderedAmount（当日発注の残枠）
     int ConsecutiveLosses,
     decimal DrawdownRatio,
     BrokerProvider Mode,

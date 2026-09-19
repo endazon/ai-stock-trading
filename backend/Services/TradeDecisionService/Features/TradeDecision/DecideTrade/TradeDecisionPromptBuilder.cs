@@ -49,6 +49,10 @@ public static class TradeDecisionPromptBuilder
 
     public const string HeldUnknownLine = "保有: 不明（保有状況を取得できませんでした。「保有なし」とは扱いません）";
 
+    // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金・残枠が未供給のときの文言。
+    // 🔴 **0 や空で埋めない**（0 は「枠を使い切った」であり、未供給は「分からない」である）。
+    public const string UnsuppliedText = "不明（未供給）";
+
     public const string HeldUnknownRule =
         "保有状況が不明なときは、新規建て・買い増し・手仕舞いのいずれも判断できないため Hold を選びます。";
 
@@ -139,9 +143,24 @@ public static class TradeDecisionPromptBuilder
             : currentPrice;
         AppendHeldPositionSection(sb, held, markPrice, priceUnit, context.StopLossMethod);
         sb.AppendLine("# リスク制約");
-        sb.AppendLine($"- 運用資金: {context.Capital.ToString(ci)} {baseUnit} / 1取引リスク: {context.Limits.PerTradeRiskRatio.ToString("P1", ci)}");
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金はブローカーの口座照会に由来し、**未供給があり得る**。
+        // 🔴 **未供給を数値で埋めない**——LLM に「その額の運用資金がある」と読ませることになる。
+        // 「不明」と書いたうえで新規建てが止まっていることを明示する（保有状況の 3 状態と同じ作法・IADR-0351）。
+        var capitalText = context.Capital is { } capital ? $"{capital.ToString(ci)} {baseUnit}" : UnsuppliedText;
+        sb.AppendLine($"- 運用資金: {capitalText} / 1取引リスク: {context.Limits.PerTradeRiskRatio.ToString("P1", ci)}");
         // FR-10, #329, IADR-0130: 上限は equity 比で保持されるため、equity から解決した実額を提示する。
-        sb.AppendLine($"- 1注文金額上限: {context.Limits.MaxOrderAmountFor(context.Capital).ToString(ci)} {baseUnit} / 段階残枠: {context.StageCapitalRemaining.ToString(ci)} / 当日発注残枠: {context.DailyOrderRemaining.ToString(ci)}");
+        var maxOrderText = context.Capital is { } capitalForCap
+            ? $"{context.Limits.MaxOrderAmountFor(capitalForCap).ToString(ci)} {baseUnit}"
+            : UnsuppliedText;
+        var stageRemainingText = context.StageCapitalRemaining?.ToString(ci) ?? UnsuppliedText;
+        var dailyRemainingText = context.DailyOrderRemaining?.ToString(ci) ?? UnsuppliedText;
+        sb.AppendLine($"- 1注文金額上限: {maxOrderText} / 段階残枠: {stageRemainingText} / 当日発注残枠: {dailyRemainingText}");
+        if (context.Capital is null)
+        {
+            sb.AppendLine(
+                "- 🔴 基準資金（自己資金）をブローカーへ照会できていないため、**新規建ては拒否されます**"
+                    + "（手仕舞い・損切りは通ります）。新規建ての提案は行わないでください。");
+        }
         if (priceUnit.Length > 0)
         {
             // #257, #364, IADR-0107/0152: 基準通貨建ての上限と非基準通貨建ての価格が混在することを明示し、回答の単位も

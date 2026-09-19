@@ -353,15 +353,19 @@ public sealed class TradeDecisionAppService(
 
         // IADR-0003: サイジングは判断サービスの責務。availableCapital は段階残枠と日次発注残枠の小さい方（IADR-0017）。
         var sizeFactor = PositionSizer.GetSizeFactor(context.ConsecutiveLosses, context.DrawdownRatio, context.Limits);
-        var availableCapital = Math.Max(0m, Math.Min(context.StageCapitalRemaining, context.DailyOrderRemaining));
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金・残枠は**未供給（null）があり得る**（口座を照会できていない）。
+        // 未供給は 0 として畳み、サイジングは数量 0 ＝ 見送りに倒れる（発注審査側も CapitalBaselineUnavailable で止める）。
+        var capital = context.Capital ?? 0m;
+        var availableCapital = Math.Max(
+            0m, Math.Min(context.StageCapitalRemaining ?? 0m, context.DailyOrderRemaining ?? 0m));
         var quantity = PositionSizer.CalculateCappedQuantity(
-            context.Capital,
+            capital,
             context.Limits.PerTradeRiskRatio,
             stopLossDistanceBase,
             referencePriceBase,
             // FR-10, #329, IADR-0130 決定1: 1 注文金額上限は equity 比のため equity（context.Capital）から解決する。
             // 「1 取引リスク 1%」と「1 注文 25%」のどちらが厳しいかは CalculateCappedQuantity が min で採る。
-            context.Limits.MaxOrderAmountFor(context.Capital),
+            context.Limits.MaxOrderAmountFor(capital),
             availableCapital,
             sizeFactor);
 

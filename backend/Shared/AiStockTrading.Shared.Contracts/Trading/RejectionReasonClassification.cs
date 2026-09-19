@@ -48,6 +48,8 @@ public static class RejectionReasonClassification
         // クラス B である。照会の失敗・設定値との食い違いは「AI が禁止事項を犯そうとした」ものではない。
         // #337, IADR-0249: 情報源の欠測による限定縮退（ADR-0020）も「取引を止めている状態そのものの記録」
         // であり、kill switch / pause と同じクラス B である（市況由来の事象をクラス C へ混ぜない）。
+        // #869, ADR-0041 決定2, IADR-0354: 基準資金（equity）を照会できていない状態も同じく
+        // 「取引を止めている状態そのものの記録」であり、BrokerAccountTypeUnverified と同じクラス B である。
         RejectionReason.KillSwitchActive
             or RejectionReason.TradingPaused
             or RejectionReason.StageProhibitsLiveTrading
@@ -57,6 +59,7 @@ public static class RejectionReasonClassification
             or RejectionReason.ProductTypeDisabled
             or RejectionReason.BrokerAccountTypeUnverified
             or RejectionReason.InformationSourceDegraded
+            or RejectionReason.CapitalBaselineUnavailable
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 
         // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則＝拒否理由 9 種、

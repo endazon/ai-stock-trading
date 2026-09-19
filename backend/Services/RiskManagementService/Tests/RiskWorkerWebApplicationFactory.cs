@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -50,6 +51,46 @@ public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Prog
             services.AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
         });
+    }
+
+    /// <summary>
+    /// FR-10, #869, ADR-0041 決定2, IADR-0354: 起動時に仕込む**基準資金**（前取引日の口座照会の観測）。
+    /// <para>
+    /// 🔴 <c>null</c> にすると「口座を照会できていない」状態になり、**新規建ては
+    /// <c>CapitalBaselineUnavailable</c> で止まる**（fail-closed の検証はこちらを使う）。
+    /// 既定は従前の台帳由来の基準資金と同額（<c>TradingDefaults.InitialCapital</c>）であり、
+    /// 基準資金を関心に持たない既存テストの期待値を保つ。
+    /// </para>
+    /// </summary>
+    public decimal? CapitalBaselineEquityInBase { get; init; } = Domain.TradingDefaults.InitialCapital;
+
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        var host = base.CreateHost(builder);
+
+        if (CapitalBaselineEquityInBase is { } equity)
+        {
+            using var scope = host.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<RiskManagementDbContext>();
+            var observedAt = DateTimeOffset.UtcNow.AddDays(-1);
+            // 取引日は米国東部時間の暦日（EfCapitalBaselineStore と同じ基準）。当日より前を仕込む。
+            var tradingDay = Common.Abstractions.TradingDay.Of(
+                observedAt, AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates);
+            // CreateHost は 1 つの factory につき複数回呼ばれ得る（InMemory DB は共有）ため冪等に書く。
+            if (db.AccountEquityDays.Find(tradingDay) is null)
+            {
+                db.AccountEquityDays.Add(new AccountEquityDayRow
+                {
+                    TradingDay = tradingDay,
+                    EquityInBase = equity,
+                    ObservedAtUtc = observedAt,
+                    UpdatedAt = observedAt,
+                });
+                db.SaveChanges();
+            }
+        }
+
+        return host;
     }
 
     private static void ReplaceDbContextWithInMemory(IServiceCollection services, string dbName)

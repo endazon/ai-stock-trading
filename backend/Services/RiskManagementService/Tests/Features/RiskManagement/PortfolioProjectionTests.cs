@@ -39,7 +39,7 @@ public class PortfolioProjectionTests
         state.DailyOrderedAmount.Should().Be(10_000m);
         state.SymbolsTradedToday.Should().Contain(("AAPL", Market.UnitedStates));
         state.DailyRealizedPnl.Should().Be(0m);
-        state.Capital.Should().Be(InitialCapital);
+        state.LedgerEquity.Should().Be(InitialCapital);
     }
 
     [Fact]
@@ -91,10 +91,15 @@ public class PortfolioProjectionTests
         state.OpenPositionCount.Should().Be(0);
     }
 
+    // T-10-513, FR-10, #869, ADR-0041 決定2, IADR-0354:
+    // 🔴 **台帳の射影は統制上限の基準資金（equity）を作らない。** 作るのはドローダウン用の
+    // 台帳由来エクイティ（初期資金 ＋ **すべての**実現損益 ＋ 含み）だけである。
+    // 従前は「初期資金 ＋ 当日より前の実現損益」を Capital として返し、それが比率上限の分母になっていた
+    // （計画が定める「前営業日終値時点の USD 評価額」は含み損益を含むため、定義が食い違っていた）。
     [Fact]
-    public void 資金は当日より前の実現損益を反映し当日実現は含めない()
+    public void 台帳由来エクイティは実現損益を当日分まで含む_基準資金は作らない()
     {
-        // 前日: +3,000 の実現。当日: -500 の実現。当日開始資金 = 100,000 + 3,000。当日実現は Capital に含めない。
+        // 前日: +3,000 の実現。当日: -500 の実現。台帳由来エクイティ = 100,000 + 3,000 − 500。
         var state = PortfolioProjection.Project(
             new[]
             {
@@ -105,8 +110,12 @@ public class PortfolioProjectionTests
             },
             Now, InitialCapital);
 
-        state.Capital.Should().Be(103_000m);
+        state.LedgerEquity.Should().Be(102_500m);
         state.DailyRealizedPnl.Should().Be(-500m);
+
+        // 🔴 否定形: 射影の戻り値に統制上限の基準資金を名乗る項目が無いこと（型から消えている）。
+        typeof(PortfolioState).GetProperty("Capital").Should().BeNull(
+            "基準資金はブローカーの口座照会に由来し、台帳射影は作らない（ADR-0041 決定2）");
     }
 
     [Fact]
@@ -232,7 +241,7 @@ public class PortfolioProjectionTests
     {
         var state = PortfolioProjection.Project(Array.Empty<LedgerFill>(), Now, InitialCapital);
 
-        state.Capital.Should().Be(InitialCapital);
+        state.LedgerEquity.Should().Be(InitialCapital);
         state.OpenPositionCount.Should().Be(0);
         state.InvestedCapital.Should().Be(0m);
         state.DailyRealizedPnl.Should().Be(0m);
@@ -470,7 +479,7 @@ public class PortfolioProjectionTests
             new DateTimeOffset(2026, 7, 9, 14, 30, 0, TimeSpan.Zero), InitialCapital);
 
         state.DailyRealizedPnl.Should().Be(0m);
-        state.Capital.Should().Be(InitialCapital + 2_000m);
+        state.LedgerEquity.Should().Be(InitialCapital + 2_000m);
     }
 
     [Fact]
@@ -528,7 +537,7 @@ public class PortfolioProjectionTests
         state.SymbolsTradedToday.Should().BeEmpty();
         // 未約定は損益を持たない。
         state.DailyRealizedPnl.Should().Be(0m);
-        state.Capital.Should().Be(InitialCapital);
+        state.LedgerEquity.Should().Be(InitialCapital);
     }
 
     // T-10-334: 約定が進んでも「約定分＋残数量」の合計は変わらない（二重計上しない・取りこぼさない）。

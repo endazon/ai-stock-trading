@@ -32,8 +32,10 @@ import {
   brokerProviderLabel,
   CHANGE_TYPE_BROKER_PROVIDER,
   criterionLabel,
+  formatAmount,
   formatAt,
   isInternalPaper,
+  METRIC_NOT_SUPPLIED_TEXT,
   ratioPercent,
   stageLabel,
   transitionKindLabel,
@@ -238,16 +240,21 @@ function UsageRow({
 }: {
   label: string;
   used: number;
-  limit: number;
+  // FR-10, #869, ADR-0041 決定2, IADR-0354: equity 由来の上限は**未供給があり得る**
+  // （口座を照会できていない）。🔴 0 で描くと「上限 0」＝使用率 ∞ に見えるため、
+  // 未供給は上限欄に文言を出し、使用率とバーは出さない（05_screens「供給が無い値の表示規約」）。
+  limit: number | null;
 }) {
-  const percent = limit > 0 ? (used / limit) * 100 : null;
+  const percent = limit !== null && limit > 0 ? (used / limit) * 100 : null;
   return (
     <TableRow>
       <TableHeaderCell scope="row">{label}</TableHeaderCell>
       <TableCell>{used}</TableCell>
-      <TableCell>{limit}</TableCell>
+      <TableCell>{limit === null ? METRIC_NOT_SUPPLIED_TEXT : limit}</TableCell>
       <TableCell>
-        <span className="mr-2 tabular-nums">{ratioPercent(used, limit)}</span>
+        <span className="mr-2 tabular-nums">
+          {limit === null ? METRIC_NOT_SUPPLIED_TEXT : ratioPercent(used, limit)}
+        </span>
         {percent !== null && (
           <ProgressBar
             className="mt-1"
@@ -377,7 +384,8 @@ function StatusView({ view }: { view: RiskStatusView }) {
             </TableBody>
           </Table>
           <Note>
-            {i18n._(msg`資金:`)} {view.capital}
+            {i18n._(msg`資金:`)}{' '}
+            {view.capital === null ? METRIC_NOT_SUPPLIED_TEXT : formatAmount(view.capital)}
           </Note>
         </Panel>
       </div>

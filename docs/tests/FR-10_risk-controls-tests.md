@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
-adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0022, ADR-0027, ADR-0040]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346, IADR-0347, IADR-0350]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_848_terminal-close-approvals-release-inventory, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #821, #829, #844, #846, #848, #849]
+adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346, IADR-0347, IADR-0350, IADR-0354]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_848_terminal-close-approvals-release-inventory, 20260919_849_ledger-drift-adoption, 20260919_869_capital-baseline-from-broker-account, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #821, #829, #844, #846, #848, #849, #869]
 -->
 
 
@@ -900,6 +900,63 @@ row43: FR-10, FR-05
 - **未カバー**: 発注執行側の保護記録の追随（取り込みで建玉が消えたときの保護注文の取消と記録の終端化。#858）と、
   報告書での「システム外の決済・損益不明」の明示（#859）は**別 issue** である。ブローカーの実口座での挙動
   （売却後にブローカー側へ残った保護注文の扱い）は実環境依存であり、本書の写像では検証できない。
+
+## 基準資金（equity）をブローカーの口座照会に由来させる（#869。照会できないときは新規建てを拒否する）
+
+計画は 2 箇所で「**判定に用いる equity は前営業日終値時点の USD 評価額**」と定め、2026-09-19 の裁定がその
+**供給元をブローカーの口座照会に確定**した。従前の実装は「初期資金 ＋ 当日より前の実現損益」を基準にしており、
+**含み損益を含まない**点で定義が食い違っていた（システム外の売買とは無関係に存在した乖離である）。
+
+写像の要点は 4 つある。**(1) 結果を assert する** —— 各上限が口座照会由来の値から解決されること（境界の両側）。
+**(2) 照会できないとき新規建てが拒否されること**（fail-closed）。**(3) 同じ状況で手仕舞い・損切りは通ること**
+（止めてはならない不変条件）。**(4) 分からない値を確定値にしないこと** —— 未供給を 0 や初期資金で埋めず、
+起きていない上限超過を監査ログへ書かない。
+
+`CapitalBaselineTests` / `PortfolioProjectionTests`（リスク管理）、`MoomooBrokerAdapterTests`（発注執行）。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-508** | 口座照会が評価額（資産純値・USD）を返す | 1 注文金額上限（equity の 25%）を判定する／アダプタが口座状態を組み立てる | 🔴 **上限が口座照会由来の値から解決される**（equity 2,000 → 500 ちょうどは通り 501 は拒否。8,000 → 2,000/2,001 も同様）。アダプタは評価額を載せ、取れなければ **null のまま**（買付余力・初期資金で代替しない）で口座種別は残す | ① | 自動（単体・境界値） |
+| **T-10-509** | 口座を照会できていない（観測なし／鮮度切れ／応答に評価額が無い） | 新規建てを審査する | 🔴 **拒否**（`CapitalBaselineUnavailable`）。**比率上限の拒否理由は立たない**（分母が無いのに「枠を使い切った」と監査ログへ書かない） | ② | 自動（単体・否定形） |
+| **T-10-510** | 同上（基準資金は未供給のまま） | **手仕舞い（Close）**を審査する | 🔴 **承認**（拒否理由 0 件）。照会できないことを理由に建玉を抱え続けさせない | ③ | 自動（単体・対の否定形） |
+| **T-10-511** | 観測が 4 日前／5 日前 | 基準資金を読む | ちょうど 4 日は**使える**、超えたら**照会できていない**扱い（両側の境界。既定 `Risk:CapitalBaseline:MaxAge`） | ② | 自動（単体・境界値） |
+| **T-10-512** | 前取引日の観測（3,000）と当日セッション中の観測（9,999） | 基準資金を読む／同一取引日で観測が前後して届く | 🔴 **前取引日の値（3,000）を返す**（日中の含み益で上限が緩まない）。同一取引日では最後の観測を保ち、逆行する観測は無視する | ① | 自動（単体・否定形） |
+| **T-10-513** | 前日 +3,000・当日 −500 の実現損益を持つ台帳 | 台帳を射影する／観測を購読する | 台帳が作るのは DD 用のエクイティ（102,500）だけで、**基準資金を名乗る項目は型から消えている**。スナップショットの基準資金は口座照会のストアだけから来る（台帳の 777,777 は漏れない）。評価額の無い観測は**書かない**（鮮度の検査を殺さない） | ① | 自動（単体・否定形） |
+| **T-10-514** | 偽 OpenD の口座照会が **USD と名乗る／別通貨と名乗る／通貨を名乗らない**（3 通り） | 接続 → 口座照会（protobuf を実際に組む経路） | 🔴 **USD と名乗るときだけ評価額を採る**。別通貨・**通貨欠落**はいずれも未供給（`Funds.currency` は optional であり、欠落を「USD だろう」と読むと要求で指定しただけの値を採ることになる）。**いずれの場合も口座種別は残る** | ① | 自動（結合・否定形） |
+| **T-10-515** | 口座照会の資産純値が **0 / 負** ／ その値の行が台帳にある（人手投入を含む） | 供給側と読み出し側の両方で基準資金を読む／損益ゼロ・枠未使用の平常状態で新規建てを審査する | 🔴 いずれも**未供給**（0 は分母として定義できない）。審査の拒否理由は `CapitalBaselineUnavailable` **だけ**であり、**`DailyLossLimitReached` は立たない**（`0 <= -(0 × 2%)` が成立してしまう嘘。発注審査はこの理由で**翌営業日まで続くロックアウトを実際に張る**）。対の参照として、0 を素通しすると平常状態でも 4 件が立つことも固定する | ② | 自動（単体・結合・否定形） |
+| **T-10-516** | 前取引日に 100,000 を観測 → 翌日は口座照会が 0 を返す（＝**行が書かれない**）／人手で 0 を 1 行投入した | 基準資金を読む／新規建てを審査する | 🔴 **供給側の 0 は止めない** —— 前取引日の正の行が返り、鮮度が切れるまで新規建ては**通る**（受け入れた残余リスク。`#889`）。🔴 **人手投入の 0 は止める**（最新行を読み出し側の門が `null` へ倒す）。**2 つの門の帰結が逆である**ことを固定する | ② | 自動（単体・否定形＋対の肯定形） |
+
+<!-- trace-table:
+row1: FR-10, FR-19
+row2: FR-10
+row3: FR-10
+row4: FR-10
+row5: FR-10
+row6: FR-10, FR-05
+row7: FR-10, FR-19
+row8: FR-10, FR-19
+row9: FR-10
+-->
+
+**対照実験（実走した実測）**: 守りを 1 つずつ外して赤を確かめた（`dotnet test --filter CapitalBaselineTests|PortfolioProjectionTests`）。
+
+| 壊した箇所 | 赤くなったテスト |
+| --- | --- |
+| 判定コアの fail-closed を外す（未供給でも新規建てを通す） | **2 件**（T-10-509 の 2 本）。🔴 **T-10-510〔手仕舞いは通る〕は緑のまま** —— 不変条件を壊していないことの確認である |
+| 基準資金を台帳由来（`LedgerEquity`）へ戻す | **1 件**（T-10-513 の合成） |
+| 当日の行を除外する条件を外す | **1 件**（T-10-512）。当日セッション中の観測（9,999）が基準資金になった |
+| 鮮度の検査を外す | **1 件**（T-10-511 の 5 日側） |
+| 🔴 通貨の検査を `HasCurrency && != USD`（＝**欠落なら検証しない**）へ戻す | **1 件**（T-10-514 の「通貨を名乗らない」ケース）。**別通貨のケースは緑のまま**であり、欠落だけが漏れることを示している |
+| 🔴 `0 以下は未供給` の門を外す（供給側・読み出し側のどちらか一方でも） | **1 件以上**（T-10-515）。**平常状態で `DailyLossLimitReached` が立ち**、発注審査が翌営業日まで続くロックアウトを張る |
+
+- **未カバー**: **実口座での `TrdGetFunds` の応答形**（`TotalAssets` の有無・`Currency` の値）は実環境依存であり、
+  本書の写像では検証できない（接続は模擬取引口座に固定してある）。**偽 OpenD に対する結合試験（T-10-514）で
+  protobuf を実際に組む経路の分岐は固定した**が、**実口座がどの形で返すかは実環境でしか分からない**。
+  応答に値が無い・通貨を名乗らない場合は基準資金が未供給＝新規建てが止まる（安全側）。
+  **日次 latch の近似**（前取引日の「最後の観測」と「終値」のずれ）も実運用でしか測れない。
+- 🔴 **受け入れた残余リスク**: **残高 0 が続いても、鮮度（既定 4 日）が切れるまで前取引日の正の値で
+  新規建てが通る**（供給側の門は 0 の日に行を書かないため）。**止めるかどうかは別 issue（`#889`）**であり、
+  本書は**現在の向きを T-10-516 で固定する**に留める（「いずれ止まる」と読み違えないため）。
 
 ## 未カバー・実施予定
 

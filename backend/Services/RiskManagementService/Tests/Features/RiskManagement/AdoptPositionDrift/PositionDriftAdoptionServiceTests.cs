@@ -93,7 +93,7 @@ public class PositionDriftAdoptionServiceTests
                 initialCapital: 1_133_333m);
             var snapshots = new PortfolioSnapshotBuilder(
                 provider, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(1_133_333m));
             return new SizingContextService(snapshots, new InMemoryRiskSettingsStore());
         }
     }
@@ -207,7 +207,7 @@ public class PositionDriftAdoptionServiceTests
 
         var state = PortfolioProjection.Project(w.Ledger.GetFills(), Now, 1_133_333m);
         state.DailyRealizedPnl.Should().Be(0m, "推定値を確定値のように記録しない");
-        state.Capital.Should().Be(1_133_333m);
+        state.LedgerEquity.Should().Be(1_133_333m);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -427,7 +427,7 @@ public class PositionDriftAdoptionServiceTests
         state.OpenPositionCount.Should().Be(0);
         state.InvestedCapital.Should().Be(0m);
         state.DailyRealizedPnl.Should().Be(0m, "丸め誤差の『損益』も生まない（平均取得単価そのもので畳む）");
-        state.Capital.Should().Be(baseline.Capital);
+        state.LedgerEquity.Should().Be(baseline.LedgerEquity);
         state.ConsecutiveLosses.Should().Be(baseline.ConsecutiveLosses);
         state.DailyOrderedAmount.Should().Be(baseline.DailyOrderedAmount, "取り込みは新規建ての発注ではない");
         state.SymbolsTradedToday.Should().BeEquivalentTo(baseline.SymbolsTradedToday);
