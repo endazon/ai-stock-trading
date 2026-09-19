@@ -27,6 +27,10 @@ public sealed class ReportRow
     // FR-06, IADR-0115, #280: 報告書本文（Markdown）。既存行は NULL＝読み出し時に空文字（後方互換）。
     public string? Body { get; set; }
 
+    // FR-06, FR-07, #840, IADR-0352 決定 5: 供給が届かないまま生成された入力（ReportInput 名のカンマ区切り）。
+    // NULL＝欠けた入力は無い／本変更前の既存行（読み出し時は空列）。
+    public string? UnsuppliedInputs { get; set; }
+
     public DateTimeOffset? ConfirmedAt { get; set; }
 
     public int Version { get; set; }

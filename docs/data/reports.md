@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003]
-iadrs: [IADR-0012, IADR-0024, IADR-0240]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of]
-issues: [#14, #18, #19, #22, #63, #774]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry]
+issues: [#14, #18, #19, #22, #63, #774, #840]
 -->
 
 
@@ -39,6 +39,7 @@ issues: [#14, #18, #19, #22, #63, #774]
 | BasedOn | string? | 参照した上位方針の PeriodKey（daily→週報 / weekly→月報 / monthly→前月報） |
 | AssumptionsVersion | int | 適用した全体前提条件のバージョン（#19） |
 | PolicySummary | string | 翌期間の方針（確定で有効化） |
+| UnsuppliedInputs | ReportInput の列 | 供給が届かないまま生成された入力（その種別が使うものだけ）。空＝欠けた入力なし。提示通知の要約とレビュー照会（`GET /reports/{periodKey}/review`）が表示名で返し、確定の前に欠落へ気付けるようにする |
 | ConfirmedAt | DateTimeOffset? | 確定日時 |
 
 ## エンティティ定義（`reports`・永続）
@@ -51,6 +52,7 @@ issues: [#14, #18, #19, #22, #63, #774]
 | BasedOn | string(64)? | 上位方針参照 |
 | AssumptionsVersion | int | 前提条件バージョン |
 | PolicySummary | string(8192) | 方針テキスト |
+| UnsuppliedInputs | string(1024)? | 供給が届かないまま生成された入力（入力名のカンマ区切り・宣言順）。NULL＝欠けた入力なし（列の追加前に作られた行も NULL）。**本文に従う**——本文を差し替えない改訂では残し、確定しても残る |
 | ConfirmedAt | timestamptz? | 確定日時 |
 | Version | int（並行トークン） | 版番号付き冪等確定の楽観排他 |
 

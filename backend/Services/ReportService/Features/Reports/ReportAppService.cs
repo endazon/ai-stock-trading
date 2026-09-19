@@ -34,6 +34,24 @@ public sealed class ReportAppService(IReportStore store, IClock clock)
     public ReportReview? GetReview(string periodKey) => store.GetReview(periodKey);
 
     /// <summary>
+    /// FR-07, FR-14, #840, IADR-0352 決定 5: レビュー局面に**未供給だった入力の表示名**を添えた照会用の射影。
+    /// Bot（<c>/report show</c>・確認ボタンの前段）が確定の前に欠落を見せるために使う。対象が無ければ null。
+    /// <para>
+    /// 🔴 本文・要約は載せない（IADR-0240 決定4: サニタイズ済みの通知経路を迂回する経路を作らない）。
+    /// 載せるのは <see cref="ReportInputs.Label"/> の**コード定数**だけであり、外部入力を含まない。
+    /// </para>
+    /// </summary>
+    public ReportReviewView? GetReviewView(string periodKey)
+    {
+        var review = store.GetReview(periodKey);
+        if (review is null)
+            return null;
+
+        var unsupplied = store.Get(periodKey)?.Report.UnsuppliedInputs ?? [];
+        return new ReportReviewView(review.PeriodKey, review.State, review.Version, ReportInputs.Labels(unsupplied));
+    }
+
+    /// <summary>
     /// FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー操作（提示・差し戻し）を適用する。利用者のみ（actor 必須）。
     /// 版番号付きの楽観排他・不正遷移・確定済み変更は状態機械が拒否し、拒否理由を含む決定を返す。対象が無ければ null。
     /// </summary>
