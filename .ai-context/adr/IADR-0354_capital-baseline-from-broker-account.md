@@ -85,6 +85,65 @@ ADR-0041 §結果 フォローアップ 3 が明記している。
   7 つだけである）。本文の「応答の通貨も確かめる」という主張が**守りの実態より広かった**。
   未供給は止める側へ倒すという本系の作法どおりに直し、3 通り（USD / 別通貨 / **欠落**）を結合試験
   （T-10-514・偽 OpenD に対して protobuf を実際に組む経路）で固定した。
+  🔴 **［2026-09-19 追記 / #897］この是正は実機に対して常に fail-closed であり、稼働環境で基準資金が
+  一度も供給されなかった（新規建てが一切出ない）。欠落は「要求した通貨」として採る。**
+  - **実測（2026-09-19 13:24 JST・develop `b0fc1653` 配備直後）**:
+    `口座照会の応答通貨を USD と確認できません hasCurrency=False currency=null` が毎巡回出続け、
+    `GET /risk-controls/sizing-context` の `capital` が `null` のままだった。
+    **実機の OpenD は `TrdGetFunds` の応答に `currency` を載せない。**
+  - 直した形: **応答が別通貨を「明示」したときだけ採らない。** 欄が無い応答は、要求
+    （`TrdGetFunds.C2S.SetCurrency(Currency_USD)`）で明示した通貨を前提として採る。
+    要求と門は同じ定数（`RequestedCurrency`）から組み、2 か所に書いて割れないようにした。
+  - 🔴 **要求した `currency` は、この口座では効いていない**（PR #898 の監査が一次資料を実読して是正。
+    初稿は「moomoo の API 契約では応答はその通貨で返る」と書いていたが**当該口座種別に対して偽**である）。
+    moomoo 公式ドキュメント（`openapi.moomoo.com/moomoo-api-doc/en/trade/get-funds.html`。同ページが載せる
+    `.proto` 定義を含む）は、**要求側**の `currency` について
+    「Only applicable to universal securities accounts and futures accounts, other single-market accounts
+    will ignore this parameter」、**応答側** `Funds.currency` について
+    「The currency used for this query. Only applicable to universal securities accounts and futures accounts」
+    と明記している。したがって:
+    1. 要求した USD は、この口座では**無視されている**。
+    2. **欄の欠落は OpenD のバージョン特性ではなく、「この口座が universal / 先物口座ではない」ことの
+       documented な帰結**である。
+    3. `TotalAssets` の建値は「要求した通貨」ではなく **口座自身の基準通貨**である。
+  - 🔴 **では、なぜ振る舞いが安全なのか（本当の根拠）。** 本系が使う SIMULATE 口座が
+    **US 単一市場口座**であり、その基準通貨が USD だからである。#397 の実機 probe
+    （[20260902_397_342_moomoo-readonly-probes](../specs/20260902_397_342_moomoo-readonly-probes.md)）の実測:
+    `ACC accId=724808 trdEnv=0(Simulate) accType=2(Margin) simAccType=4 trdMarketAuthList=[2(US)]`
+    （**JP を含まない**）、`FUNDS accId=724808 totalAssets=968788.459 cash=968788.459 power=1937576.918`
+    （`power` が `totalAssets` の正確に 2 倍＝信用 2 倍。USD 1,000,000 の moomoo US ペーパー口座と整合）。
+    **近似の根拠はこの口座実測であって、「要求が尊重される」という契約ではない。**
+  - **守りの構造は fail-safe に閉じている**: **要求が尊重される口座（universal / 先物）では応答が必ず
+    `currency` を載せる**ので明示検査が働き、**応答が黙る口座は単一市場口座**で自口座通貨建てである。
+    「黙っている＝要求が無視された」は常に「口座の基準通貨で返っている」と一致する。
+    🔴 **ただし「単一市場 ＝ USD」ではない**（残余リスク。§結果 の残余リスクに 1 項として立てた）。
+  - 🔴 **近似である。** 近似で採ったことは毎回ログへ残す。**水準は Warning ではなく Information** ——
+    実機では毎巡回（既定 5 分）必ず通るため、Warning だと警告が常時鳴って**本物の警告が埋もれる**
+    （#874 が作ってしまった状態がまさにそれである）。黙らせもしない（「いま採っている値が近似か」を
+    ログの 1 行で答えられなくなる）。**別通貨の明示は Warning のまま**（こちらは異常である）。
+  - **応答から通貨を確証できる別の欄は無い**（#897 で SDK 10.8.6808 をリフレクション走査した実測）。
+    `AssetCategory` は**要求側（`TrdGetFunds.C2S`）にしか存在せず**、応答には無い。
+    `Funds.cashInfoList`（`AccCashInfo`）は通貨ごとの現金の**内訳**であり、換算後の集計値である
+    `TotalAssets` の建値を語らない（しかも同じく optional で、実機が載せる保証が無い＝同じ罠の再生産）。
+    `Funds.marketInfoList` は `trdMarket` / `assets` の 2 欄だけで通貨を持たない。
+    **口座一覧（`TrdGetAccList` の `TrdAcc`・12 欄）にも通貨欄は無い**（PR #898 の監査が走査して補完。
+    口座の基準通貨は API から読めず、`TrdMarketAuthListList`〔取扱市場〕から推定するほかない）。
+    🔴 **「確証」ではなく「反証」なら依存の反転なしに歯止めを置けた**（同監査の指摘）——
+    `cashInfoList` が**存在し、かつ USD の行を 1 つも含まない**なら採らない、という形は
+    新たな fail-closed を生まない。同型が `Trd_Common.Position.currency`（#30）でも組める。
+    **本 IADR の射程外として #899 へ切り出した**（下記の残余リスクに正面から効く）。
+  - **採らなかった代替**: ①人手で `account_equity_days` へ毎日 1 行投入（毎営業日の手作業・忘れれば止まる。
+    Runbook は事故時の応急であって定常運用ではない）②門の撤去（JPY を明示した応答まで採ってしまう）
+    ③台帳（`LedgerEquity`）との桁の健全性検査（インフラ層が台帳を知る依存の反転になり、
+    決定 3 が型から消した結線を裏口から戻す。加えて初回起動・入出金直後・システム外売買の取り込み直後は
+    **正当に大きく乖離する**ため、閾値が本物の値を落とす＝ fail-closed の罠の再生産。**脆い**）。
+  - 🔴 **今回の教訓（記録しておく）**: **偽物が本物より行儀が良いと、守りが常時発動していても気づけない。**
+    `FakeOpenD.FundsCurrency` の**既定が `Currency_USD`** であったため、#874 の是正・2 巡の監査・
+    差分監査のすべてが「実機では起きない、通貨を送る OpenD」に対して緑だった。
+    **既定を実機と同じ（欄を設定しない）へ変え**、既定そのものを T-10-620 で固定した。
+    3 通り（USD 明示 / 別通貨明示 / 欠落）は T-10-514 が引き続き固定する（期待値だけ替わった）。
+    ログの水準は T-10-621 が固定する。
+  - **`TotalAssets <= 0` の門（決定 7 / T-10-515）は維持**する（通貨の門の後ろのまま）。
 - 値は `BrokerAccountState.EquityInBase` に載せ、**既存の口座観測（`BrokerAccountObserved`・既定 5 分の巡回）に相乗りする**。
   新しい巡回・新しいイベントを作らない（IADR-0153 の経路をそのまま使う）。
 - 🔴 **買付余力（`Power`）で代替しない。** 信用で自己資金の 2 倍になり、**統制が黙って 2 倍に緩む**
@@ -263,6 +322,22 @@ StageCapitalCapExceeded, PerOrderAmountExceeded, DailyOrderAmountExceeded, Daily
     急ぐ場合の唯一の手段は `account_equity_days` へ手で 1 行入れることであり、手順は
     [基準資金の供給が無いときの Runbook](../../docs/operations/capital-baseline-seed-runbook.md) に置いた。
   - **当日のうちは日次損失上限の判定が緩いまま**（ADR-0041 決定 1 が受け入れた既知の緩み。本 IADR は塞がない）。
+  - 🔴 **［2026-09-19 追記 / #897］残余リスク: 非 USD の「単一市場口座」を USD として採ってしまう。**
+    決定 1 の追記が示したとおり、**`currency` 欄の欠落は「この口座は単一市場口座である」までしか語らず、
+    「その基準通貨が USD である」とは語らない**。したがって **米国株の取扱権限を持つ moomoo JP 単一市場口座**は
+    欄を載せずに `TotalAssets` を **JPY** で返し、本実装はそれを USD として採る ——
+    **全比率上限が約 150 倍緩む**（統制が事実上外れる）。
+    - 🔴 **現在の歯止めは偶発的である。** `FetchSimulateAccountAsync` は
+      `if (acc.TrdEnv == Simulate)` で最初の SIMULATE 口座を採るだけで、**`TrdMarketAuthListList`
+      （取扱市場）を見ていない**。US 権限の**無い**口座なら `BuildHeader(TrdMarket_US)` が弾かれて
+      fail-closed になるが、**US 権限を持つ JP 口座はこの網を通過する**。
+    - 現に安全なのは、#397 の実機 probe で当該 SIMULATE 口座の `trdMarketAuthList` が `[2(US)]` のみ
+      （JP を含まない）と実測されているからである。**同 probe は「前回 PoC 時点の実弾口座の観測は
+      JP を含んでいた」とも記録しており、口座構成が変われば成立しなくなる。**
+    - **本 IADR では塞がない**（#897 は稼働環境で新規建てが止まっている実害の是正であり、射程を広げない）。
+      塞ぎ方は **#899** へ切り出した —— **「確証」ではなく「反証」**（`cashInfoList` が存在し USD の行を
+      1 つも含まないなら採らない／`Trd_Common.Position.currency` でも同型）であれば、
+      **新たな fail-closed を生まずに**歯止めを置ける。
 - フォローアップ:
   1. **実弾 / SIMULATE で `TrdGetFunds` の応答形を 1 回観測する**（`TotalAssets` の有無・`Currency` の値）。
      本 PR は SIMULATE 固定（IADR-0016）であり、**live 実測は行っていない**。応答に値が無ければ基準資金は未供給＝
@@ -279,3 +354,19 @@ StageCapitalCapExceeded, PerOrderAmountExceeded, DailyOrderAmountExceeded, Daily
      考え得る方向は「0 を観測した取引日を未供給として latch する」「`Power` 等で残高 0 を確証してから止める」
      「人手の Runbook に委ねる（現状）」の 3 つで、**本 IADR ではどれも選ばない**——
      実口座が残高 0 のときに何を返すかを先に観測する必要がある。
+  7. 🔴 **［2026-09-19 追記 / #897］OpenD の更新時、および口座の追加・種別変更・取扱市場の変更時に、
+     `TrdGetFunds` の応答が `currency` を載せるようになっていないかを再確認する。**
+     決定 1 の「欠落は要求した通貨として採る」は**近似**であり、その根拠は
+     「本系の SIMULATE 口座は **US 単一市場口座**である」という #397 の実測である。
+     🔴 **契機を「OpenD の更新時」だけにしてはならない**（PR #898 の監査が是正）——
+     欄が載るかどうかは **口座が universal 証券口座／先物口座かどうか**で決まるため、
+     **OpenD をいくら更新しても単一市場口座である限り欄は出ない**。効く契機は**口座側の変更**である。
+     - **確認の仕方**: 配備後の最初の巡回でログを読む。
+       `口座照会の応答が通貨を明示していないため…（近似）`（Information）が出ていれば**従来どおり載せていない**。
+       この行が消えていれば載せるようになっている——そのときは**近似をやめて厳格な検査へ戻せる**
+       （`!HasCurrency` を再び未供給へ倒す。ただし **戻す前に実機のログで欄が実在することを確かめる**。
+       偽 OpenD だけで確かめると #897 と同じ事故を繰り返す）。
+     - `口座照会の応答通貨が USD ではありません`（Warning）が出ていれば**口座の通貨設定が変わっている**。
+       これは近似の話ではなく、統制の分母が別建値になる実害であり、**口座側を直す**。
+     - **専用の追随 issue は立てない。** OpenD の更新は不定期であり、期限のある作業ではない。
+       確認の手順を上のとおり本 IADR とログの文面に埋め込み、**更新作業の手元で読める形**にした。

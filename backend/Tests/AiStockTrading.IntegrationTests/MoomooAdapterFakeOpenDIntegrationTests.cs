@@ -1,6 +1,7 @@
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moomoo.OpenApi;
 using Moomoo.OpenApi.Pb;
@@ -137,21 +138,36 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         (await adapter.IsOperationalAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
     }
 
-    // T-10-508, T-10-514, FR-10, #869, ADR-0041 決定2, IADR-0354 決定1:
-    // **基準資金（equity）は「応答が USD と名乗っている」ときだけ採る。**
+    // T-10-508, T-10-514, FR-10, #869, #897, ADR-0041 決定2, IADR-0354 決定1:
+    // **基準資金（equity）は「応答が別通貨を名乗っていない」ときに採る。**
     //
     // 🔴 本経路でしか通貨の検証は試験できない（`MoomooBrokerAdapterTests` は `IMoomooTradeClient` を
     // fake 化するため protobuf を 1 バイトも組まず、通貨の分岐に到達しない）。
     //
-    // 🔴 **通貨の欠落**を別ケースとして固定する。`Funds.currency` は protobuf の **optional** であり
-    // （required は power / totalAssets / cash / marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つ）、
-    // 欠落を「USD だろう」と読むと、**要求で USD を指定しただけで応答がそれに従った証拠が無いまま**
-    // JPY 建ての数値を USD の統制上限の分母に据え得る（桁が 2 つずれる）。未供給は止める側へ倒す。
+    // 🔴 **［2026-09-19 / #897］通貨の欠落は「要求した通貨（USD）」として採る。**
+    // `Funds.currency` は protobuf の **optional** であり（required は power / totalAssets / cash /
+    // marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つ）、**本系の口座に対して載らない**。
+    // 「名乗っているときだけ採る」（#874）は実機に対して**常に fail-closed** になり、基準資金が
+    // 一度も供給されなかった（稼働環境で実測）。
+    //
+    // 🔴 **［#898 監査の是正］近似の根拠は「要求が尊重される」という契約ではない。**
+    // 要求した `currency` は **universal 証券口座／先物口座にしか効かず、単一市場口座では無視される**
+    // （moomoo 公式ドキュメント）。**欄が無いこと自体が「この口座は単一市場口座である」というシグナル**であり、
+    // そのとき `TotalAssets` は**口座自身の基準通貨**で返る。本系の SIMULATE 口座は **US 単一市場口座**
+    // （#397 probe: `trdMarketAuthList=[2(US)]`）であり、その基準通貨が USD である ——
+    // これが根拠である（IADR-0354 決定1 の追記）。
+    //
+    // 🔴 **別通貨を明示したケースは従来どおり採らない**（この守りは実機でも意味がある）。
+    //
+    // 🔴 **［#898 監査］`Currency_Unknown(0)` は第 4 のケースである** ——「欄は送ったが値を決められなかった」
+    // 場合に現れ得る。**欄が「無い」のとは別物**であり、こちらは未供給へ倒す（決められなかったと
+    // 名乗っている応答を「USD だろう」と読む理由が無い）。
     [Theory]
-    [InlineData("usd", 3_000)]   // 応答が USD と名乗る → 採る
-    [InlineData("jpy", null)]    // 応答が別通貨と名乗る → 採らない
-    [InlineData("unset", null)]  // 🔴 応答が通貨を名乗らない → 採らない（本 Theory の主眼）
-    public async Task 基準資金は応答がUSDと名乗るときだけ採る(string currency, int? expected)
+    [InlineData("usd", 3_000)]    // 応答が USD と名乗る → 採る
+    [InlineData("jpy", null)]     // 応答が別通貨と名乗る → 採らない（守りは残す）
+    [InlineData("unknown", null)] // 応答が「決められない」と名乗る → 採らない（欄が無いのとは別物）
+    [InlineData("unset", 3_000)]  // 🔴 応答が通貨を名乗らない（＝実機）→ 要求した通貨を前提として採る
+    public async Task 基準資金は応答が別通貨を名乗らないときに採る(string currency, int? expected)
     {
         using var opend = new FakeOpenD
         {
@@ -160,6 +176,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             {
                 "usd" => (int)TrdCommon.Currency.Currency_USD,
                 "jpy" => (int)TrdCommon.Currency.Currency_JPY,
+                "unknown" => (int)TrdCommon.Currency.Currency_Unknown,
                 _ => null,
             },
         };
@@ -190,6 +207,54 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         state.Should().NotBeNull();
         state!.AccountType.Should().Be(AccountType.Margin);
         state.EquityInBase.Should().BeNull();
+    }
+
+    // T-10-620, FR-10, #897, IADR-0354 決定1:
+    // 🔴 **偽 OpenD の既定は実機と同じ（通貨を送らない）であり、その既定のままで基準資金が供給される。**
+    //
+    // 本テストが守っているのは実装ではなく**試験環境そのもの**である。既定が `Currency_USD` へ戻されると、
+    // 通貨に触れない他のすべてのケースが「実機では起きない、通貨を送る OpenD」に対して緑になり、
+    // #897 と同型の事故（実機でだけ常時 fail-closed）が再び見えなくなる。
+    [Fact]
+    public async Task 偽OpenDの既定は実機と同じく通貨を送らずその既定で基準資金が供給される()
+    {
+        using var opend = new FakeOpenD();
+
+        opend.FundsCurrency.Should().BeNull(
+            "実機の OpenD は TrdGetFunds の応答に currency（protobuf の optional）を載せない。"
+                + "偽物の既定を本物より行儀良くしない");
+
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state.Should().NotBeNull();
+        state!.EquityInBase.Should().Be(3_000m, "要求した通貨（USD）を前提として採る");
+    }
+
+    // T-10-621, FR-10, #897, IADR-0354 決定1（近似の記録）:
+    // 🔴 **近似で採ったことは毎回ログに残る。ただし Warning ではなく Information である。**
+    //
+    // 通貨の欠落は実機の**正常な見え方**であり、既定 5 分の巡回で必ず出る。Warning のままだと
+    // 警告が常時鳴って本物の警告が埋もれる（#874 が作った状態がまさにそれ）。黙らせもしない ——
+    // 「いま採っている値が近似かどうか」をログの 1 行で答えられなくなるためである。
+    [Fact]
+    public async Task 通貨が欠けている応答から採ったことはInformationで記録されWarningにはならない()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state!.EquityInBase.Should().Be(3_000m);
+        logger.Entries.Should().ContainSingle(e =>
+                e.Level == LogLevel.Information && e.Message.Contains("要求した通貨"),
+            "近似で採ったことを毎回残す");
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning,
+            "実機の正常な見え方を警告として鳴らし続けない（本物の警告が埋もれる）");
     }
 
     // #754 陰性対照, FR-05, IADR-0211: OpenD が受け付けないなら**注文は 1 度も送られない**。
@@ -226,6 +291,26 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             .Should().BeNull();
         (await ((MoomooBrokerAdapter)adapter).IsOperationalAsync(TestContext.Current.CancellationToken))
             .Should().BeFalse();
+    }
+
+    /// <summary>
+    /// ログの水準と本文を実測するための <see cref="ILogger{TCategoryName}"/>（#897 / T-10-621）。
+    /// </summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
     }
 
     /// <summary>
@@ -267,15 +352,21 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         public decimal EquityInBase { get; set; } = 3_000m;
 
         /// <summary>
-        /// FR-10, #869, IADR-0354 決定1: 口座照会（GetFunds）の応答が名乗る通貨。
+        /// FR-10, #869, #897, IADR-0354 決定1: 口座照会（GetFunds）の応答が名乗る通貨。
         /// <para>
-        /// 🔴 <c>null</c> は<b>通貨フィールドを設定しない</b>応答である（`Funds.currency` は protobuf の
+        /// 🔴 <c>null</c> は<b>通貨フィールドを設定しない</b>応答である（<c>Funds.currency</c> は protobuf の
         /// <b>optional</b> であり、required は power / totalAssets / cash / marketVal / frozenCash /
-        /// debtCash / avlWithdrawalCash の 7 つだけ）。**欠落を「USD だろう」と読むと、要求で USD を指定した
-        /// だけで応答がそれに従った証拠が無いまま値を採ることになる。**
+        /// debtCash / avlWithdrawalCash の 7 つだけ）。
+        /// </para>
+        /// <para>
+        /// 🔴 <b>［2026-09-19 / #897］既定は <c>null</c>（＝欄を設定しない）である。これは実機の OpenD と同じ
+        /// 見え方である。</b> 従前の既定は <c>Currency_USD</c> であり、<b>偽物が本物より行儀が良かった</b> ——
+        /// そのため #874 が入れた通貨ガードが実機で常時 fail-closed になっていることに、
+        /// 是正・2 巡の監査・差分監査のいずれも気づけなかった（すべて偽 OpenD 上で緑だった）。
+        /// <b>既定を実機へ寄せておかないと、同じ事故がまた起きる。</b> 既定そのものは T-10-620 が固定する。
         /// </para>
         /// </summary>
-        public int? FundsCurrency { get; set; } = (int)TrdCommon.Currency.Currency_USD;
+        public int? FundsCurrency { get; set; }
 
         public IMoomooTradeConnection Create()
         {
