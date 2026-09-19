@@ -12,7 +12,7 @@ using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrd
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-483〜T-10-491・T-10-494, FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355:
+// 🔴 T-10-494〜T-10-502・T-10-505・T-10-506, FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355:
 // **決済（Close）をブローカーの実建玉と突き合わせてから送る。**
 //
 // 是正前の穴: 決済の数量の出所は台帳の射影であってブローカーの事実ではない（IADR-0119 決定1 / IADR-0351 決定6）。
@@ -90,7 +90,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         return (new AppSvc(broker, store, reservations, new FakeClock(), null, null, broker), store, reservations);
     }
 
-    // 🔴 T-10-483（否定形・最重要）: **台帳に建玉があり、ブローカーに無い。** #849 の実測そのもの
+    // 🔴 T-10-494（否定形・最重要）: **台帳に建玉があり、ブローカーに無い。** #849 の実測そのもの
     //（台帳 3,381 株 / ブローカー 0 株）。是正前はここで売り注文が飛び、**裸の新規ショート**になっていた。
     [Fact]
     public async Task ブローカーに建玉が無い決済は発注されず見送りと乖離が残る()
@@ -115,7 +115,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         drift.Kind.Should().Be(PositionDriftKind.LedgerOnly);
     }
 
-    // 🔴 T-10-484（否定形・最重要）: **実建玉に満たない決済は実建玉の範囲へ縮めて送る。**
+    // 🔴 T-10-495（否定形・最重要）: **実建玉に満たない決済は実建玉の範囲へ縮めて送る。**
     // 見送りに倒すと、実在する 100 株の手仕舞いまで塞いでしまう（FR-10 に反する）。
     [Fact]
     public async Task 実建玉に満たない決済は実建玉の範囲へ縮めて発注され乖離が残る()
@@ -135,7 +135,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         drift.Kind.Should().Be(PositionDriftKind.QuantityMismatch);
     }
 
-    // 🔴 T-10-485（否定形・最重要）: **建玉を照会できない（null＝不明）ときは送らない。**
+    // 🔴 T-10-496（否定形・最重要）: **建玉を照会できない（null＝不明）ときは送らない。**
     // 空列（建玉ゼロ）と取り違えず、理由も別に持つ（IADR-0355 決定3）。
     [Fact]
     public async Task 建玉を照会できないときの決済は見送り乖離は発行しない()
@@ -154,7 +154,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         reservations.Find(approved.DecisionId).Should().BeNull();
     }
 
-    // T-10-486（是正で**変えてはいけない**側）: 台帳とブローカーが一致している通常時は挙動が変わらない。
+    // T-10-497（是正で**変えてはいけない**側）: 台帳とブローカーが一致している通常時は挙動が変わらない。
     // ブローカーの方が多い場合も、送るのは承認された数量だけである（勝手に増やさない）。
     [Theory]
     [InlineData(300)] // 一致
@@ -174,7 +174,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         reservations.Find(approved.DecisionId)!.CompletedAt.Should().NotBeNull();
     }
 
-    // T-10-487（是正で**変えてはいけない**側）: **能力の無いブローカー（内蔵 paper）では照合しない。**
+    // T-10-498（是正で**変えてはいけない**側）: **能力の無いブローカー（内蔵 paper）では照合しない。**
     // 建玉照会の実装が無い発注先では依存そのものが DI に現れない（構造的な非干渉）。
     [Fact]
     public async Task 建玉照会の能力が無い発注先では従来どおり照合せずに決済を送る()
@@ -191,7 +191,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         store.GetAll().Should().ContainSingle().Which.Quantity.Should().Be(300);
     }
 
-    // T-10-488（是正で**変えてはいけない**側）: **新規建て（Open）は突き合わせない。**
+    // T-10-499（是正で**変えてはいけない**側）: **新規建て（Open）は突き合わせない。**
     // 建玉が無いのは新規建てでは正常であり、ここで止めると 1 本も建てられなくなる。
     [Fact]
     public async Task 新規建ては建玉を照会せずに従来どおり発注される()
@@ -207,7 +207,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         result.Drift.Should().BeNull();
     }
 
-    // 🔴 T-10-489（否定形）: **反対方向の建玉は決済に使えない。** ショートを持っているところへ
+    // 🔴 T-10-500（否定形）: **反対方向の建玉は決済に使えない。** ショートを持っているところへ
     // さらに売れば、決済ではなくショートの積み増しになる。
     [Fact]
     public async Task 反対方向の建玉しか無い決済は発注されない()
@@ -222,7 +222,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         result.Drift!.Drifts.Should().ContainSingle().Which.BrokerQuantity.Should().Be(-100);
     }
 
-    // T-10-490: ショート建玉の決済（買い戻し）にも同じ規律が効く（向きだけが反転する）。
+    // T-10-501: ショート建玉の決済（買い戻し）にも同じ規律が効く（向きだけが反転する）。
     [Fact]
     public async Task ショート建玉の決済も実建玉の範囲へ縮めて発注される()
     {
@@ -237,7 +237,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         drift.BrokerQuantity.Should().Be(-40);
     }
 
-    // T-10-491: 同一 DecisionId の再処理（メッセージ再配送）では**照会もしない**。
+    // T-10-502: 同一 DecisionId の再処理（メッセージ再配送）では**照会もしない**。
     // 相 1（完了の権威）で既存結果を返す経路は、ブローカーの建玉が後から変わっていても影響を受けない。
     [Fact]
     public async Task 再処理では建玉を照会せず既存結果を返す()
@@ -254,7 +254,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         second.Executed!.OrderId.Should().Be("ORD-1");
     }
 
-    // ---- T-10-494: 突き合わせの純関数（境界値。IADR-0355 決定2・決定3）----
+    // ---- T-10-505: 突き合わせの純関数（境界値。IADR-0355 決定2・決定3）----
 
     [Theory]
     [InlineData(0, 100, BrokerHeldPositionOutcome.NoPosition, 0)]      // 建玉ゼロ
@@ -270,7 +270,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
 
         verdict.Outcome.Should().Be(expected);
         verdict.ClosableQuantity.Should().Be(closable);
-        verdict.BrokerQuantity.Should().Be(netQuantity);
+        verdict.BrokerNetQuantity.Should().Be(netQuantity);
     }
 
     // 🔴 空列（建玉ゼロ）と null（不明）を取り違えない —— 倒す先も理由も違う。
@@ -298,6 +298,51 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         var verdict = BrokerHeldPositionGate.Evaluate(CloseIntent(qty: 100), snapshot);
 
         verdict.Outcome.Should().Be(BrokerHeldPositionOutcome.Proceed);
-        verdict.BrokerQuantity.Should().Be(100);
+        verdict.BrokerNetQuantity.Should().Be(100);
+    }
+
+    // 🔴 T-10-506（否定形・#873 の監査 N1）: **両建て（同一銘柄にロングとショートが同時にある）でも
+    // 正当な決済を止めない。** ネット（符号付き合算）で数えると、ロング +300・ショート −100 のネットは +200 であり、
+    // ショート 100 株の買い戻しが「建玉なし」で見送られ、ロング 300 株の売り決済も 200 株へ縮められる
+    // ——**どちらも FR-10 に反する側の誤り**である。方向ごとに数えればどちらも全量が通る。
+    [Fact]
+    public async Task 両建ての銘柄でも決済方向の建玉で判定する()
+    {
+        // ブローカーはロング 300 株とショート 100 株を同時に持つ（ネットは +200）。
+        var snapshot = new List<BrokerPositionSnapshot> { Position(300), Position(-100) };
+
+        // (a) ロング 300 株の売り決済: **縮めない**（200 株へ縮めるのは誤り）。
+        var longBroker = new FakePositionAwareBroker(snapshot);
+        var (longService, _, _) = NewService(longBroker);
+        var longResult = await longService.ExecuteAsync(Approved(CloseIntent(qty: 300)));
+
+        longBroker.Placed.Should().ContainSingle().Which.Quantity.Should().Be(300);
+        longResult.Drift.Should().BeNull();
+
+        // (b) ショート 100 株の買い戻し: **送る**（「建玉なし」で見送るのは誤り）。
+        var shortBroker = new FakePositionAwareBroker(snapshot);
+        var (shortService, _, _) = NewService(shortBroker);
+        var shortResult = await shortService.ExecuteAsync(
+            Approved(CloseIntent(qty: 100, side: TradeSide.Buy)));
+
+        shortBroker.Placed.Should().ContainSingle().Which.Quantity.Should().Be(100);
+        shortResult.Forgone.Should().BeNull();
+        shortResult.Drift.Should().BeNull();
+    }
+
+    // T-10-506: 純関数の側でも両建てを固定する（判定は方向ごと・報告はネット）。
+    [Fact]
+    public void 両建てでは判定は方向ごとで報告はネットである()
+    {
+        var snapshot = new List<BrokerPositionSnapshot> { Position(300), Position(-100) };
+
+        var sell = BrokerHeldPositionGate.Evaluate(CloseIntent(qty: 300), snapshot);
+        sell.Outcome.Should().Be(BrokerHeldPositionOutcome.Proceed);
+        sell.ClosableQuantity.Should().Be(300, "売りの決済が消せるのはロングの 300 株である");
+        sell.BrokerNetQuantity.Should().Be(200, "報告はネット（定期突合と同じ物差し）");
+
+        var buy = BrokerHeldPositionGate.Evaluate(CloseIntent(qty: 100, side: TradeSide.Buy), snapshot);
+        buy.Outcome.Should().Be(BrokerHeldPositionOutcome.Proceed);
+        buy.ClosableQuantity.Should().Be(100, "買いの決済が消せるのはショートの 100 株である");
     }
 }

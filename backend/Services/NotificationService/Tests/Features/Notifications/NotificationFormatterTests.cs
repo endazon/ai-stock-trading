@@ -388,7 +388,7 @@ public class NotificationFormatterTests
     [InlineData(OrderDispatchForgoneReason.StopOrderUnsupported, "逆指値に対応")]
     // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 手法による見送りは「S0 へ戻す」が対処である。
     [InlineData(OrderDispatchForgoneReason.StopLossMethodNotPermitted, "S0 へ戻して")]
-    // 🔴 T-10-493, FR-10, FR-05, ADR-0016, #864, IADR-0355: 決済を実建玉と突き合わせて止めた 2 つ。対処は再発注ではなく
+    // 🔴 T-10-504, FR-10, FR-05, ADR-0016, #864, IADR-0355: 決済を実建玉と突き合わせて止めた 2 つ。対処は再発注ではなく
     // 「台帳とブローカーのどちらが正しいかを確かめる」であり、他の 4 つと読み分けられなければならない。
     [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent, "裸のショート")]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate, "建玉を照会できません")]
@@ -403,7 +403,7 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain(expected);
     }
 
-    // 🔴 T-10-493, FR-10, #864, IADR-0355 決定3: **建玉を照会できずに見送った決済だけは Critical** である
+    // 🔴 T-10-504, FR-10, #864, IADR-0355 決定3: **建玉を照会できずに見送った決済だけは Critical** である
     // （建玉が残ったまま手仕舞いが出ておらず、他に鳴る通知が 1 本も無い）。建玉が無いことを**確認して**
     // 見送った側は Warning のまま —— 同時に乖離の Critical が鳴るため、二重に立てると本当に止まった事象が埋もれる。
     [Theory]

@@ -80,7 +80,21 @@ public sealed class OrderExecutionAppService(
         PositionReconciliationDrift? drift = null;
         if (intent.PositionEffect == PositionEffect.Close && brokerPositions is not null)
         {
-            var snapshot = await brokerPositions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+            // ポートの契約は「照会不能は null（例外を投げない）」である（IBrokerPositionSource）。
+            // #873 の監査 N2: それでも**例外は不明として扱う**——契約違反の実装が現れたときに
+            // ExecuteAsync ごと落ちると、承認が再配送で撃ち直され（予約はまだ取っていない）、
+            // 最後には error キューへ落ちる。落とすより「不明として送らない」方が本 IADR の向きと一致する。
+            IReadOnlyList<BrokerPositionSnapshot>? snapshot;
+            try
+            {
+                snapshot = await brokerPositions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "ブローカーの建玉照会が例外で失敗しました（不明として扱います）。");
+                snapshot = null;
+            }
+
             var verdict = BrokerHeldPositionGate.Evaluate(intent, snapshot);
             switch (verdict.Outcome)
             {
@@ -100,23 +114,25 @@ public sealed class OrderExecutionAppService(
                 case BrokerHeldPositionOutcome.NoPosition:
                     // 🔴 IADR-0355 決定2: 決済方向の実建玉が 0。送れば**裸の新規ショート**である（1 株も送らない）。
                     _logger.LogError(
-                        "決済を見送りました: ブローカーに決済できる建玉がありません（台帳 {Ledger} 株 / ブローカー {Broker} 株）。"
+                        "決済を見送りました: ブローカーに決済方向の建玉がありません"
+                        + "（台帳 {Ledger} 株 / ブローカーのネット建玉 {Broker} 株）。"
                         + "送れば保有 0 からの売り（裸のショート）になります: DecisionId={DecisionId} 銘柄={Symbol}",
-                        intent.Quantity, verdict.BrokerQuantity, approved.DecisionId, intent.Symbol);
+                        intent.Quantity, verdict.BrokerNetQuantity, approved.DecisionId, intent.Symbol);
                     return Forgone(
                         approved,
                         OrderDispatchForgoneReason.BrokerPositionAbsent,
-                        DriftOf(intent, verdict.BrokerQuantity));
+                        DriftOf(intent, verdict.BrokerNetQuantity));
 
                 case BrokerHeldPositionOutcome.Reduce:
                     // IADR-0355 決定2: 実建玉の範囲へ縮めて送る（実在する建玉の手仕舞いまで塞がない）。
                     // **縮めた事実は必ず監査・通知に残す**（下の drift。黙って数量を変えない）。
                     _logger.LogWarning(
-                        "決済の数量をブローカーの実建玉へ縮めました（台帳 {Ledger} 株 / ブローカー {Broker} 株 → 発注 {Sent} 株）: "
+                        "決済の数量をブローカーの実建玉へ縮めました"
+                        + "（台帳 {Ledger} 株 / ブローカーのネット建玉 {Broker} 株 → 決済方向で送れる {Sent} 株）: "
                         + "DecisionId={DecisionId} 銘柄={Symbol}",
-                        intent.Quantity, verdict.BrokerQuantity, verdict.ClosableQuantity,
+                        intent.Quantity, verdict.BrokerNetQuantity, verdict.ClosableQuantity,
                         approved.DecisionId, intent.Symbol);
-                    drift = DriftOf(intent, verdict.BrokerQuantity);
+                    drift = DriftOf(intent, verdict.BrokerNetQuantity);
                     intent = intent with { Quantity = verdict.ClosableQuantity };
                     break;
             }
