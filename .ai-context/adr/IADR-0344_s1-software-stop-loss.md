@@ -952,7 +952,7 @@ T-10-506 も変異注入で非空虚と確認された。**決定 1〜4・7〜9�
 13 巡目の監査は**ブロッキング 0 件**で通り、非ブロッキング 5 件（NB-13-1〜5）を直してマージへ進んだ。
 その最後の `develop` 取り込み（`890f6b24`＝#874）で、**同じ enum の末尾を取り合う衝突**が起きた。
 
-- **#864（先にマージ済み）**が `OrderDispatchForgoneReason` へ `BrokerPositionAbsent=4` と
+- **#864（先にマージ済み。PR は #873・IADR-0355）**が `OrderDispatchForgoneReason` へ `BrokerPositionAbsent=4` と
   `BrokerPositionsIndeterminate=5` を足していた。
 - 本 PR は同じ enum へ `UnattributedPosition=4` を足していた（追記(8) 決定 4）。
 

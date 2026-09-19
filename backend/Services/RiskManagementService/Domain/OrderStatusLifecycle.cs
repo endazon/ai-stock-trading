@@ -12,6 +12,8 @@ namespace RiskManagementService.Domain;
 // 🔴 **定義はこのファイルの外へ置かない。** 片方だけに状態が足されると、統制の一方だけが静かに緩む。
 // 逆に、**片方の都合でもう片方の述語を書き換えてもいけない**（在庫解放の都合で射影の生存区間を動かすと
 // 相場操縦検知の入力が変わる）。足すなら述語を足す。
+// **見送り（OrderDispatchForgone）は OrderStatus を持たないため本ファイルの対象外**であり、別の純関数
+// OrderDispatchForgoneLifecycle が持つ（#852 / IADR-0356。まさに「足すなら述語を足す」の実例）。
 // 発注執行サービス側にも同名の純関数があるが、**サービス境界を越えて参照しない**
 // （サービス間で共有する契約は `OrderStatus` 列挙そのものであり、その解釈は各サービスが自分で持つ）。
 public static class OrderStatusLifecycle

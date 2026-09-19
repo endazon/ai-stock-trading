@@ -247,4 +247,113 @@ public class PortfolioLedgerInFlightCloseTests
 
         ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
     }
+
+    // --- T-10-410, #852, IADR-0356: 見送り（発注していない）は処理中から外す ---
+
+    // T-10-410（肯定形・主目的）: 見送られた決済は窓を待たずに在庫へ戻る。
+    [Fact]
+    public void 見送られた決済承認は処理中から外れる()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+
+        ledger.MarkForgone(id, Now.AddMinutes(-1));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-410: 見送りで戻るのは当該承認の**未約定残だけ**であり、約定済みぶんを二重に引かない
+    //（MarkTerminal と同一の意味論）。
+    //
+    // 🔴 **戻り幅を測るには、窓内に「戻らない側」が要る。** 見送った承認だけを置いて 0 を見ても、
+    // 未約定残 40 が戻ったのか承認数量 60 が戻ったのかを区別できない（どちらでも 0 になる）。
+    // ここでは生きている別の手仕舞い 25 を残し、**65 → 25＝戻ったのは 40（＝60 − 約定 20）**であることを測る
+    //（承認数量ぶん引いていたら 5 になる）。約定した 20 株は建玉数量へ既に反映されており、二重に引かない。
+    [Fact]
+    public void 見送りで戻るのは未約定残だけで約定済みぶんを二重に引かない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var forgone = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        ledger.AppendFill(forgone, "order-1", 20, 21m, Now.AddMinutes(-4));
+        // 戻らない側（見送られていない・終端も届いていない手仕舞い）。
+        Approve(ledger, PositionEffect.Close, 25, Now.AddMinutes(-3));
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(65, "40（未約定残）+ 25");
+
+        ledger.MarkForgone(forgone, Now.AddMinutes(-1));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(
+            25, "戻るのは未約定残 40 だけ（承認数量 60 を引いていたら 5 になる）。生きている 25 は押さえたまま");
+    }
+
+    // 🔴 T-10-410（否定形）: 相関する承認が無い見送りは**書かない**（MarkTerminal と同じ）。
+    // 後から届いた承認は終端未確認＝処理中として数える（安全側へ倒れる）。
+    [Fact]
+    public void 承認より先に届いた見送りは記録しない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var decisionId = Guid.NewGuid();
+
+        ledger.MarkForgone(decisionId, Now.AddMinutes(-5));
+        ledger.AppendApproval(
+            decisionId,
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.InternalPaper, 60, 21m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 1m),
+            Now.AddMinutes(-4));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+    }
+
+    // T-10-410（単調・冪等）: 見送りの再送で**時刻が動かない**。後着の本物の終端でも上書きしない。
+    //
+    // 🔴 **数量だけを見ても単調性は測れない**（どちらに転んでも 0 になる）。判定に使う TerminalAt を直接見る。
+    // 後着に Cancelled を使うのも要点である —— Accepted / PartiallyFilled は MarkTerminal の
+    // **最初の門**（AbandonsUnfilledRemainder）で return してしまい、**TerminalAt のガードを一度も通らない**。
+    [Fact]
+    public void 見送りは単調で再送しても後着の終端でも動かない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        ledger.MarkForgone(id, Now.AddMinutes(-3));
+        ledger.MarkForgone(id, Now.AddMinutes(-1));
+        // 🔴 TerminalAt のガードを実際に通す後着（Cancelled は最初の門を抜ける）。
+        ledger.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        var (terminalAt, terminalStatus) = ledger.TerminalStateOf(id);
+        terminalAt.Should().Be(Now.AddMinutes(-3), "最初の見送りが真（単調。再送でも後着の終端でも動かさない）");
+        terminalStatus.Should().BeNull("見送りは注文状態を持たない。後着の終端でも書き込まない（単調）");
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-410（単調・冪等の裏側）: 先に**本物の終端**が記録されていれば、見送りは時刻も状態も上書きしない
+    //（EfPortfolioLedgerStore の同名テストと同一の観点をインメモリ実装でも固定する）。
+    [Fact]
+    public void 先に記録された終端を見送りで上書きしない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        ledger.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-3));
+
+        ledger.MarkForgone(id, Now.AddMinutes(-1));
+
+        var (terminalAt, terminalStatus) = ledger.TerminalStateOf(id);
+        terminalAt.Should().Be(Now.AddMinutes(-3), "最初の終端が真（単調）");
+        terminalStatus.Should().Be(OrderStatus.Cancelled, "見送りが診断用の状態を消さない");
+    }
+
+    // T-10-410: 見送りは**注文状態を持たない**（IADR-0211）。判定に使う TerminalAt だけが立ち、
+    // 診断用の TerminalStatus は null のままである（EfPortfolioLedgerStore と同一の意味論）。
+    [Fact]
+    public void 見送りは注文状態を捏造しない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        ledger.MarkForgone(id, Now.AddMinutes(-1));
+
+        var (terminalAt, terminalStatus) = ledger.TerminalStateOf(id);
+        terminalAt.Should().Be(Now.AddMinutes(-1));
+        terminalStatus.Should().BeNull("見送りは証券会社に存在しない注文であり、注文状態を持たない");
+    }
 }

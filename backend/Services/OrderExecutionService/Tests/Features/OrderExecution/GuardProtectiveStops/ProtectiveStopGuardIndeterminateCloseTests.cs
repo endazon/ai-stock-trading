@@ -9,6 +9,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace OrderExecutionService.Tests;
@@ -276,11 +277,15 @@ public class ProtectiveStopGuardIndeterminateCloseTests
     [Fact]
     public async Task 突合が未発注と解決したら_予約が解放され次の巡回で撃ち直せる()
     {
+        // #856, IADR-0362: 解放は**門（Reconciliation:ReleaseOnNotPlaced）が開いているときだけ**進む。
+        // 本テストが見るのは「解放された後に撃ち直せる」なので、門を明示的に開けた構成で組む
+        //（門が閉じているときに撃ち直さないことは、すぐ下の T-10-600 が固定する）。
         var h = NewHarness(CloseBehavior.Indeterminate);
         await h.Guard.RunOnceAsync(10);
 
         var reconciler = new OrderReservationReconciler(
-            h.Reservations, h.Store, new StubProbe(ReservationProbeResult.NotPlaced), h.Broker, new FakeClock());
+            h.Reservations, h.Store, new StubProbe(ReservationProbeResult.NotPlaced), h.Broker, new FakeClock(),
+            Options.Create(new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = true }));
         (await reconciler.ReconcileAsync(Now.AddHours(1), 10)).Released.Should().Be(1);
 
         h.Broker.Close = CloseBehavior.Filled;
@@ -288,6 +293,30 @@ public class ProtectiveStopGuardIndeterminateCloseTests
 
         h.Broker.MarketCloseCount.Should().Be(2, "未発注と**確認できた**ので撃ち直してよい");
         next.ClosedOut.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task 解放の門が閉じていれば未発注と出ても撃ち直さない()
+    {
+        // 🔴 T-10-600（否定形・最重要）, #856, IADR-0362: 「未発注」の根拠は remark 突合であり、
+        // moomoo SIMULATE で remark が往復するかは実機未検証である。門が閉じているあいだに解放すると、
+        // **送信済みの成行に 2 本目が並ぶ＝二重決済でショート化**する。門は既定で閉じている。
+        var h = NewHarness(CloseBehavior.Indeterminate);
+        await h.Guard.RunOnceAsync(10);
+        h.Broker.MarketCloseCount.Should().Be(1);
+
+        var reconciler = new OrderReservationReconciler(
+            h.Reservations, h.Store, new StubProbe(ReservationProbeResult.NotPlaced), h.Broker, new FakeClock());
+        var reconciled = await reconciler.ReconcileAsync(Now.AddHours(1), 10);
+
+        reconciled.Released.Should().Be(0, "門が閉じているあいだは解放しない");
+        reconciled.HeldNotPlaced.Should().ContainSingle().Which.Should().Be(h.CloseDecisionId);
+        h.Reservations.Find(h.CloseDecisionId)!.State.Should().Be(OrderDispatchState.Reserved);
+
+        h.Broker.Close = CloseBehavior.Filled;
+        await h.Guard.RunOnceAsync(10);
+
+        h.Broker.MarketCloseCount.Should().Be(1, "🔴 予約が残っているので成行を重ねない（二重決済でショート化しない）");
     }
 
     private sealed class StubProbe(ReservationProbeResult result) : IReservationBrokerProbe

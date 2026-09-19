@@ -2,10 +2,10 @@
 title: IADR-0074 Reserved 滞留の自動リコンサイルはプローブ・ポート＋fail-safe 既定 no-op で行い、実照会は後続へ分離する
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, UC-01, UC-02, ADR-0002, ADR-0003, IADR-0016, IADR-0056, IADR-0057, IADR-0059, IADR-0067]
+related_ids: [FR-05, UC-01, UC-02, ADR-0002, ADR-0003, IADR-0016, IADR-0056, IADR-0057, IADR-0059, IADR-0067, IADR-0092, IADR-0362]
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-07-18
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
@@ -79,6 +79,13 @@ IADR-0059 は「Reserved は時間経過で消してはならない（消せば�
    retention と同型。`Reconciliation:Enabled=false` が既定で、有効化しても no-op プローブ下では
    `Placed/NotPlaced` 経路は発火しない（自己修復経路のみ作動＝ブローカ非依存で安全）。滞留閾値は再配送窓
    （約42秒）＋`_error` 滞留の外側に置き、下限クランプ（1 時間）で設定ミスに耐える。
+
+   🔴 ［2026-09-19 追記 / [#856](https://github.com/endazon/ai-stock-trading/issues/856)・IADR-0362］
+   **本項の「既定無効」はアプリの既定の話であり、そのまま真である。ただし配備では有効である** ——
+   `deploy/helm/ai-stock-trading/values.yaml` が `Reconciliation__Enabled` / `__UseBrokerProbe` を `true` にし、
+   滞留閾値 2 時間・巡回 1 時間・1 巡回 50 件で回す。**決定 3 の `NotPlaced → Release` だけは新設の門
+   `Reconciliation:ReleaseOnNotPlaced`（既定 `false`）で閉じてある** —— 解放は再発注の許可であり、
+   その根拠（remark の往復）が実機未検証であるあいだは「確実に未発注」と呼ばない。詳細は IADR-0362。
 
 5. **新イベントを足さない**: 終端化は既存の `OrderExecuted`（監査済み・Risk/Notification が冪等消費）を再利用する。
    新イベントを足すと監査 Consumer 追随（AuditConsumerCoverageTests）が要り、滞留の可観測性は当面**構造化ログ**で足りる。

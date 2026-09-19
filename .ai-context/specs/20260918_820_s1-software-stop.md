@@ -844,3 +844,18 @@ S1 では「帰属不明を過大に読む」が安全側である。
 | # | 受け入れ基準 | テスト |
 | --- | --- | --- |
 | 57 | **建玉照会の最中に決済で主張が消えても、武装の判定は安全側（見送り）へ倒れる** | `SoftwareStopBlockingRegressionTests.建玉照会の最中に決済で主張が消えても武装の判定は安全側へ倒れる`（T-10-507） |
+
+## ［2026-09-19 追記（10） / 最後の develop 取り込み］#882 の常駐と S1 のガードの相互作用を確認した
+
+`d15ca065`（#882）が `OrderExecutionService` に `OrderReservationReconciliationService`（滞留 `Reserved` の
+自動突合）を配備で有効化した。**同じサービス内に常駐が 1 つ増える**ため、S1 のガードとの干渉を実測で確かめた。
+
+| 観点 | 結果 |
+| --- | --- |
+| `IProtectiveStopOrderStore.FindActive` の競合 | **無い。** リコンサイラが触るのは `IOrderReservationStore` と `IExecutedOrderStore` だけで、保護記録ストアを参照しない |
+| 建玉照会（`GetPositionsAsync`）の往復増加 | **無い。** 突合は `IReservationBrokerProbe`（**注文一覧**の照合）であり、建玉照会を叩かない。ガードの 30 秒周期の建玉照会とは別の経路である |
+| 巡回間隔 | 配備値は 1 時間（`Reconciliation__IntervalHours=1`・下限 1 時間）。ガードの 30 秒とは桁が違い、輻輳しない |
+| 🔴 **S1 の決済予約が解放され得るか** | **今は起きない。** S1 は「送信結果が不明な決済は**予約を残す**」ことで同じ `SoftwareCloseDecisionId` の再送を防いでいる（決定 5-4）。リコンサイラが解放するのは `NotPlaced` と確定できたときだけで、**配備値は `Reconciliation__ReleaseOnNotPlaced=false`**（#856 で実機の偽陽性が無いと示すまで閉じたまま）。将来この門を開けても、**`NotPlaced`＝本当に送っていないことが確定した予約だけ**が解放されるので、S1 にとっても再送が正しい側である |
+
+**結論: 変更は要らない。** ただし **#856 でこの門を開ける人は、S1 の決済予約（`SoftwareCloseDecisionId`）も
+解放の対象に入ることを承知しておくこと**——偽陽性の `NotPlaced` は S1 では**二重決済**として現れる。

@@ -126,7 +126,8 @@ public sealed class ApprovedOrderRow
 
     /// <summary>
     /// FR-10, UC-06, #848, IADR-0117: この承認の<b>未約定残が二度と約定しないと確認できた時刻</b>
-    /// （取消・失効・拒否）。
+    /// （取消・失効・拒否）。#852, IADR-0356: <b>確実に未発注と判っている見送り</b>
+    /// （<c>OrderDispatchForgone</c>。注文が存在しないので未約定残は永久に約定しない）も本列を立てる。
     /// <para>
     /// 🔴 <b>全量約定は含めない</b>（改定 2）——差し引きが自然に 0 にするので含める得が無く、
     /// 約定の記録より先に commit されると建玉が丸ごと空いて見える区間ができる。
@@ -148,6 +149,11 @@ public sealed class ApprovedOrderRow
     /// FR-10, UC-06, #848: 終端になったときの注文状態（<b>診断用</b>）。取消か・失効か・拒否かが
     /// DB から読めること自体に価値がある（#848 は「取り消したのに在庫が戻らない」の切り分けに 30 分を要した）。
     /// <b>判定には使わない</b>（<see cref="TerminalAt"/> を見る）。<c>null</c> ＝未確認。
+    /// <para>
+    /// 🔴 #852, IADR-0356: <b>見送りは本列を立てない</b>——証券会社に存在しない注文であり、注文状態を持たない
+    /// （IADR-0211。捏造すると FR-05 の「拒否」の別集計が接続障害で汚染される）。したがって
+    /// <c><see cref="TerminalAt"/> is not null &amp;&amp; <see cref="TerminalStatus"/> is null</c> が「見送り」の表現である。
+    /// </para>
     /// </summary>
     public AiStockTrading.Shared.Contracts.Trading.OrderStatus? TerminalStatus { get; set; }
 }

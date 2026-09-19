@@ -124,6 +124,46 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
         db.SaveChanges();
     }
 
+    // FR-05, FR-10, UC-06, #852, IADR-0356: 見送り（発注していない）を記録する。
+    // 門（理由が「確実に未発注」か）は呼び出し側＝OrderDispatchForgoneLedgerHandler が持つ。
+    public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt)
+    {
+        // 相関する承認が無ければ書かない（MarkTerminal と同じ。知らない注文の見送りは台帳の語彙に無い）。
+        if (db.ApprovedOrders.Find(decisionId) is not { } approval)
+            return;
+
+        // 単調・冪等: 最初の終端（見送りを含む）が真。後着で時刻も状態も動かさない。
+        if (approval.TerminalAt is not null)
+            return;
+
+        approval.TerminalAt = forgoneAt;
+        // 🔴 TerminalStatus は **null のまま**。見送りは証券会社に存在しない注文であり、注文状態を持たない
+        //（IADR-0211）。`TerminalAt is not null && TerminalStatus is null` が「見送り」の表現になる。
+
+        // 🔴 #852, #881, IADR-0356 / IADR-0357: **上の検査と下の書き込みのあいだは TOCTOU である。**
+        // 見送り（OrderDispatchForgone）と終端（OrderCancelled / OrderExecuted）は Wolverine の**別キュー**
+        // ＝並行に走り（IADR-0129 決定 1「1 サービス内 1 イベント型 = 1 キュー」）、同じ承認を同時に触り得る。
+        //
+        // 🔴 **#881 が `TerminalAt` を並行トークンにすると、負けた側の UPDATE は 0 行になり
+        // `DbUpdateConcurrencyException` になる。** それは異常ではなく「**先に誰かが終端（または見送り）を
+        // 記録した**」＝本メソッドが何もしないべき状態そのものであり、単調性（最初の終端が真）と同義である。
+        // 捕まえずに投げると `OrderDispatchForgoneLedgerHandler` を貫通して Wolverine の再試行 → error キューへ至り、
+        // **見送りが記録されない＝在庫が解放されない＝#852 の実害（30 分手仕舞えない）が間欠的に再発する。**
+        //
+        // 🔴 **トークンがまだ無い現状では決して投げないので無害であり、先に入れておけばマージ順に依存しない**
+        // （#881 → 本 PR でも、本 PR → #881 でも壊れない。「片方だけ」では壊れることは PR 本文に明記した）。
+        try
+        {
+            db.SaveChanges();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // 追跡状態を捨てる（この文脈の書き込みは成立していない）。以降の読み取りは保存された値を引き直す。
+            // MarkTerminal（#881）と同一の作法に揃える。
+            db.Entry(approval).State = EntityState.Detached;
+        }
+    }
+
     // #292, IADR-0117: 処理中の決済数量（InMemoryPortfolioLedgerStore と同一の意味論）。
     public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter)
     {
