@@ -20,6 +20,11 @@ public class ReportAutoGenerationDeferralTests
     private static readonly DateTimeOffset WedAfterClose = new(2026, 7, 8, 7, 0, 0, TimeSpan.Zero);
     private const string PeriodKey = "daily-2026-07-08";
 
+    // #866: 2026-07-31（金・月末最終営業日）23:59:45 JST ＝ 14:59:45 UTC。
+    // 次に再試行する時刻（+30 秒）には月報 monthly-2026-07 が生成対象から外れる。
+    private static readonly DateTimeOffset MonthEnd235945 = new(2026, 7, 31, 14, 59, 45, TimeSpan.Zero);
+    private const string MonthlyKey = "monthly-2026-07";
+
     // ---- 常駐のログと次回巡回 -------------------------------------------------------------------
 
     [Fact]
@@ -85,6 +90,27 @@ public class ReportAutoGenerationDeferralTests
         store.Get(PeriodKey).Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task 窓が閉じる直前の縮退は_上限到達とは別の文言で警告に残す()
+    {
+        // #866: 月報が使う入力（運用段階）が一過性に落ちている。見送ると次の試行時刻には窓が閉じており、
+        // その期間は二度と生成対象にならない＝縮退版すら出ない。待たずに出し、理由を言う警告を残す。
+        var logger = new RecordingLogger();
+        var (service, store) = NewService(
+            logger, new FailingPositionSource { Fail = false }, new ReportAutoGenerationOptions(),
+            MonthEnd235945, new FailingStageSource());
+
+        var retryAfter = await service.RunOnceAsync(CancellationToken.None);
+
+        logger.Warnings.Should().ContainSingle(m =>
+            m.Contains("生成窓") && m.Contains(MonthlyKey) && m.Contains("運用段階"));
+        // 🔴 否定形: 上限到達の文言は出さない（原因が違う）。見送ってもいない。
+        logger.Warnings.Should().NotContain(m => m.Contains("見送りの上限に達したため"));
+        logger.Warnings.Should().NotContain(m => m.Contains("生成を見送りました"));
+        retryAfter.Should().BeNull();
+        store.Get(MonthlyKey)!.Report.UnsuppliedInputs.Should().Contain(ReportInput.CurrentStage);
+    }
+
     // ---- 構成値の解釈 ---------------------------------------------------------------------------
 
     [Fact]
@@ -145,32 +171,85 @@ public class ReportAutoGenerationDeferralTests
         tracker.TryDefer("daily-a")!.Attempt.Should().Be(1);
     }
 
+    [Fact]
+    public void 次の待ち時間は回数を消費せずに先読みでき_上限に達していれば無い()
+    {
+        // #866: 「その待ち時間の後もまだ生成対象か」を確かめてから見送るため、回数と待ち時間を分ける。
+        var tracker = new ReportGenerationDeferralTracker(new ReportDeferralSettings { MaxDeferrals = 2 });
+
+        tracker.NextDelay("daily-a").Should().Be(TimeSpan.FromSeconds(30));
+        // 🔴 否定形: 先読みしただけでは 1 回も数えない。
+        tracker.DeferralsOf("daily-a").Should().Be(0);
+
+        tracker.TryDefer("daily-a")!.Attempt.Should().Be(1);
+        tracker.NextDelay("daily-a").Should().Be(TimeSpan.FromSeconds(60));
+        tracker.TryDefer("daily-a")!.Attempt.Should().Be(2);
+        tracker.NextDelay("daily-a").Should().BeNull();
+    }
+
+    [Fact]
+    public void 生成対象から外れた期間の見送り回数だけを捨てる()
+    {
+        // #866: 窓が閉じた期間は二度と Due に現れず、生成による解放（Clear）が起きない。
+        var tracker = new ReportGenerationDeferralTracker(new ReportDeferralSettings { MaxDeferrals = 5 });
+        tracker.TryDefer("monthly-2026-07");
+        tracker.TryDefer("daily-2026-07-31");
+
+        tracker.RetainOnly(["daily-2026-07-31"]);
+
+        tracker.DeferralsOf("monthly-2026-07").Should().Be(0);
+        // 🔴 否定形: まだ生成対象である期間の回数は捨てない（捨てると上限が効かなくなる）。
+        tracker.DeferralsOf("daily-2026-07-31").Should().Be(1);
+    }
+
     // ---- 部品 -----------------------------------------------------------------------------------
 
     private static (ReportAutoGenerationService Service, InMemoryReportStore Store) NewService(
-        RecordingLogger logger, FailingPositionSource positions, ReportAutoGenerationOptions options)
+        RecordingLogger logger, FailingPositionSource positions, ReportAutoGenerationOptions options,
+        DateTimeOffset? now = null, FailingStageSource? stages = null)
     {
         var store = new InMemoryReportStore();
         var probe = new ReportDependencyProbe();
         positions.Probe = probe;
+        if (stages is not null)
+            stages.Probe = probe;
 
         var services = new ServiceCollection()
             .AddSingleton<IReportStore>(store)
             .AddSingleton<IPeriodFillSource, NoOpPeriodFillSource>()
             .AddSingleton<IOpenPositionSource>(positions)
-            .AddSingleton<IClock>(new FixedClock(WedAfterClose))
+            .AddSingleton<IClock>(new FixedClock(now ?? WedAfterClose))
             .AddSingleton<IReportNarrativeDrafter, StubDrafter>()
             .AddSingleton<IReportDraftPresentedNotifier>(new NoOpReportDraftPresentedNotifier())
             .AddSingleton(new ReportAutoGenerationSettings())
             .AddSingleton(probe)
             .AddSingleton(new ReportGenerationDeferralTracker(options.ToDeferralSettings()))
             .AddScoped<ReportDraftService>()
-            .AddScoped<ReportAutoGenerator>()
-            .BuildServiceProvider();
+            .AddScoped<ReportAutoGenerator>();
+
+        if (stages is not null)
+            services.AddSingleton<IStageProgressSource>(stages);
+
+        var provider = services.BuildServiceProvider();
 
         var service = new ReportAutoGenerationService(
-            services.GetRequiredService<IServiceScopeFactory>(), Options.Create(options), logger);
+            provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(options), logger);
         return (service, store);
+    }
+
+    // #866: 月報だけが使う入力（運用段階）の供給元。一過性の失敗を観測へ残し、未供給（null）を返す。
+    private sealed class FailingStageSource : IStageProgressSource
+    {
+        public ReportDependencyProbe? Probe { get; set; }
+
+        public Task<AiStockTrading.Shared.Kernel.Trading.TradingStage?> GetCurrentStageAsync(
+            CancellationToken cancellationToken = default)
+        {
+            Probe!.Record(
+                "risk-ledger", ReportDependencyFailureKind.ServiceTokenUnavailable, transient: true,
+                "サービストークンを取得できない");
+            return Task.FromResult<AiStockTrading.Shared.Kernel.Trading.TradingStage?>(null);
+        }
     }
 
     // 建玉の供給元。鎖（ReportDependencyHandler）が記録するのと同じ形で失敗を観測へ残し、未供給（null）を返す。

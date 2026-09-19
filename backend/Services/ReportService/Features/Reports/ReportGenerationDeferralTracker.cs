@@ -18,6 +18,21 @@ public sealed class ReportGenerationDeferralTracker(ReportDeferralSettings setti
     public int MaxDeferrals => settings.MaxDeferrals;
 
     /// <summary>
+    /// **次に見送るとしたら待つことになる時間**（回数は増やさない）。上限に達していれば <c>null</c>。
+    /// <para>
+    /// #866: 呼び出し側は「その待ち時間の後もこの期間がまだ生成対象か」を確かめてから見送る。
+    /// 回数を消費してから取り消すと、取り消し漏れが「上限だけ減る」側の事故になるため**先読みで分ける**。
+    /// </para>
+    /// </summary>
+    public TimeSpan? NextDelay(string periodKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
+
+        var used = _deferrals.GetValueOrDefault(periodKey);
+        return used >= settings.MaxDeferrals ? null : settings.DelayFor(used + 1);
+    }
+
+    /// <summary>
     /// 見送りを 1 回ぶん数える。上限内なら見送りの内容（何回目か・次に試すまでの待ち時間）を返し、
     /// **上限に達していれば <c>null</c>**（＝これ以上は見送らない）。
     /// </summary>
@@ -38,6 +53,23 @@ public sealed class ReportGenerationDeferralTracker(ReportDeferralSettings setti
 
     /// <summary>生成できた（縮退の有無を問わない）期間の記録を捨てる。</summary>
     public void Clear(string periodKey) => _deferrals.TryRemove(periodKey, out _);
+
+    /// <summary>
+    /// #866: **いま生成対象である期間だけを残す。** 生成窓が閉じて対象から外れた期間（月報＝当月を過ぎた・
+    /// 週報＝ ISO 週が変わった）は二度と <c>Due</c> に現れず、生成による解放（<see cref="Clear"/>）も
+    /// 起きないため、捨てないとプロセス内に永久に残る。
+    /// </summary>
+    public void RetainOnly(IReadOnlyCollection<string> periodKeys)
+    {
+        ArgumentNullException.ThrowIfNull(periodKeys);
+
+        var keep = new HashSet<string>(periodKeys, StringComparer.Ordinal);
+        foreach (var tracked in _deferrals.Keys)
+        {
+            if (!keep.Contains(tracked))
+                _deferrals.TryRemove(tracked, out _);
+        }
+    }
 }
 
 // 見送り 1 回の内容。Attempt は 1 始まり。

@@ -90,6 +90,37 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("確定");
     }
 
+    // FR-06/09, #840, #866, IADR-0352 決定 5: **未供給の入力があるドラフトの提示は Warning で出す。**
+    // 警告文は本文に入っているが、重大度が Info のままでは定常通知に埋もれる（埋もれない経路で出す、は
+    // LlmFallbackFired（ADR-0017 決定4-(2)）で既に採っている形）。
+    [Fact]
+    public void 未供給の入力があるドラフトの提示は_Warning_で通知する()
+    {
+        var e = new ReportDraftPresented(
+            "monthly-2026-07", "Monthly", "2026-07",
+            "月報 2026-07（承認待ち）\n実現損益（税引後・費用込み）: +12,300 円"
+            + $"\n{ReportSummaryMarkers.UnsuppliedWarningPrefix}（確定の前に本文を確認してください）: 散文（LLM）",
+            1, DateTimeOffset.UtcNow);
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        // 要約はそのまま載せる（警告行は発行側が組み立てている）。
+        msg.Content.Should().Contain(ReportSummaryMarkers.UnsuppliedWarningPrefix);
+        msg.Content.Should().Contain("確定するまで取引方針は変わりません");
+    }
+
+    [Fact]
+    public void 未供給が無いドラフトの提示は_Info_のまま通知する()
+    {
+        // 🔴 否定形: 常に Warning にはしない（毎回警告だと警告の意味が消える）。
+        var e = new ReportDraftPresented(
+            "daily-2026-07-29", "Daily", "2026-07-29",
+            "日報 2026-07-29（承認待ち）\n実現損益（税引後・費用込み）: +12,300 円", 3, DateTimeOffset.UtcNow);
+
+        NotificationFormatter.From(e).Severity.Should().Be(NotificationSeverity.Info);
+    }
+
     [Fact]
     public void 報告書ドラフトの提示は確定前に方針が変わらないことを明示する()
     {

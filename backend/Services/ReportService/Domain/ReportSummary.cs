@@ -14,8 +14,13 @@ public static class ReportSummary
     /// <summary>要約全体の長さ上限。数値行は必ず残し、超過分は散文側を詰める。</summary>
     public const int MaxLength = ReportSummarySanitizer.DefaultMaxLength;
 
-    /// <summary>未供給の入力があるときに要約へ足す警告行の先頭。通知と試験が同じ語を引けるよう定数にする。</summary>
-    public const string UnsuppliedWarningPrefix = "⚠ 未供給の入力があります";
+    /// <summary>
+    /// 未供給の入力があるときに要約へ足す警告行の先頭。通知と試験が同じ語を引けるよう定数にする。
+    /// #866: 実体は契約アセンブリ（<c>ReportSummaryMarkers</c>）に置く——**通知サービスが同じ印で
+    /// 重大度を Warning へ上げる**ため（IADR-0352 決定 5 の追記）。印を変えるときは両側が同時に変わる。
+    /// </summary>
+    public const string UnsuppliedWarningPrefix =
+        AiStockTrading.Shared.Contracts.Events.ReportSummaryMarkers.UnsuppliedWarningPrefix;
 
     public static string Build(
         ReportKind kind,

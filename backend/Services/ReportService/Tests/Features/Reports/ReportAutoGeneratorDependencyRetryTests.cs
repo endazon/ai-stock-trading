@@ -1,5 +1,6 @@
 using System.Net;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ReportService.Common.Abstractions;
@@ -25,6 +26,20 @@ public class ReportAutoGeneratorDependencyRetryTests
 
     // 2026-07-10（金）16:30 JST ＝ 07:30 UTC。日報と週報が生成境界を越えている時刻。
     private static readonly DateTimeOffset FriAfterClose = new(2026, 7, 10, 7, 30, 0, TimeSpan.Zero);
+
+    // #866: 生成窓の終端。2026-07-31（金）は**月末の最終営業日**であり、月報の窓は
+    // 「17:00 JST（MonthlyAt）〜 月末 24:00 JST」＝この日だけの 7 時間しかない（当月を過ぎると Due から消える）。
+    // 23:55 JST ＝ 14:55 UTC / 23:59:45 JST ＝ 14:59:45 UTC / 翌 00:01 JST ＝ 15:01 UTC。
+    private static readonly DateTimeOffset MonthEnd2355 = new(2026, 7, 31, 14, 55, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset MonthEnd235945 = new(2026, 7, 31, 14, 59, 45, TimeSpan.Zero);
+    private static readonly DateTimeOffset MonthWindowClosed = new(2026, 7, 31, 15, 1, 0, TimeSpan.Zero);
+
+    // 2026-08-02（日）23:59:45 JST ＝ 14:59:45 UTC。次の試行は月曜＝当 ISO 週が変わる（週報の窓の終端）。
+    private static readonly DateTimeOffset WeekEnd235945 = new(2026, 8, 2, 14, 59, 45, TimeSpan.Zero);
+
+    private const string MonthlyKey = "monthly-2026-07";
+    private const string WeeklyW31Key = "weekly-2026-W31";
+    private const string DailyJul31Key = "daily-2026-07-31";
 
     private const string PositionsJson =
         """[{"symbol":"AAPL","market":1,"side":0,"quantity":1,"entryPrice":190.5,"stopLossPrice":180.0}]""";
@@ -90,8 +105,13 @@ public class ReportAutoGeneratorDependencyRetryTests
     // こうしておかないと、未設定（Unsupplied*）ぶんの未供給が混ざり「縮退していない」を結果で言えない。
     private sealed class SuppliedSources :
         IBuyInInferenceRecordSource, IFxSourceStatusSource, ILlmUsageRecordSource, IBorrowFeeRecordSource,
-        ITradeRationaleSource, IOpenDUptimeSource, IPeriodEndFxRateSource
+        ITradeRationaleSource, IOpenDUptimeSource, IPeriodEndFxRateSource, IStageProgressSource
     {
+        // #866: 月報だけが使う入力。供給しておかないと「段階が未設定」で月報が常に縮退し、
+        // 窓の終端の検証（何が欠けて縮退したのか）が読み取れなくなる。
+        public Task<TradingStage?> GetCurrentStageAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<TradingStage?>(TradingStage.Stage1Simulate);
+
         public Task<IReadOnlyList<AiStockTrading.Shared.Contracts.Events.BuyInInferred>?> GetInferencesAsync(
             DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AiStockTrading.Shared.Contracts.Events.BuyInInferred>?>([]);
@@ -178,6 +198,7 @@ public class ReportAutoGeneratorDependencyRetryTests
                 openPositionSource: new HttpOpenPositionSource(
                     Client(Risk, "risk-ledger", Tokens), NullLogger<HttpOpenPositionSource>.Instance),
                 uptimeSource: supplied,
+                stageProgressSource: supplied,
                 periodEndFxRateSource: supplied,
                 dependencyProbe: Probe,
                 deferrals: Deferrals);
@@ -287,6 +308,8 @@ public class ReportAutoGeneratorDependencyRetryTests
         var degradation = result.Degraded.Should().ContainSingle().Subject;
         degradation.PeriodKey.Should().Be(DailyKey);
         degradation.RetriesExhausted.Should().BeTrue();
+        // 🔴 否定形: 上限到達であり、窓の終端ではない（#866）。
+        degradation.WindowClosing.Should().BeFalse();
         // 欠けたのは建玉だけ（他の入力は供給できている。欠けていない入力を警告に混ぜない）。
         degradation.UnsuppliedInputs.Should().Equal(ReportInput.OpenPositions);
 
@@ -341,9 +364,10 @@ public class ReportAutoGeneratorDependencyRetryTests
 
     // ---- 恒常的な失敗 → 見送らない ----------------------------------------------------------------
 
+    // #866: **401 はここから外した**（一過性へ移した）。上流の設定取得器のバックオフにより、
+    // Keycloak 回復から 24.6 秒は正しいトークンでも 401 が返る（実測）。恒常なのは 403 である。
     [Theory]
     [InlineData(HttpStatusCode.Forbidden)]
-    [InlineData(HttpStatusCode.Unauthorized)]
     public async Task 恒常的な設定誤りは見送らず_その巡回で縮退した報告書と警告を出す(HttpStatusCode status)
     {
         var rig = new Rig();
@@ -411,8 +435,9 @@ public class ReportAutoGeneratorDependencyRetryTests
     [Fact]
     public async Task LLM_が認可を拒否するなら見送らず_プレースホルダ散文であることを提示に見せる()
     {
+        // #866: 403（ロール未付与などの設定誤り）＝恒常。401 は一過性であり、下の「401 は見送る」で固定する。
         var rig = new Rig { UseRealDrafter = true };
-        rig.Llm.Status = HttpStatusCode.Unauthorized;
+        rig.Llm.Status = HttpStatusCode.Forbidden;
 
         var result = await rig.RunOnceAsync();
 
@@ -439,5 +464,129 @@ public class ReportAutoGeneratorDependencyRetryTests
         rig.Store.Get(DailyKey).Should().BeNull();
         // 台帳へはトークン付きで送れている。
         rig.Risk.Requests.Should().ContainSingle().Which.Authorization.Should().Be("Bearer T");
+    }
+
+    // ---- #866 R1: 上流の 401 は一過性（上流自身が起動直後で公開鍵を引けていない窓がある） ----------
+
+    [Fact]
+    public async Task 上流が_401_を返す間は一過性として見送り_回復すれば縮退しない報告書が出る()
+    {
+        // 監査の実測: 上流の JwtBearer 設定取得器（IdentityModel 8.0.1）は起動時の取得失敗にバックオフを持ち、
+        // **Keycloak 回復から 24.6 秒は正しいトークンでも 401** を返す。恒常と分類すると #840 の事故が再発する。
+        var rig = new Rig();
+        rig.Risk.Status = HttpStatusCode.Unauthorized; // トークンは付いているが上流がまだ検証できない。
+
+        var first = await rig.RunOnceAsync();
+
+        first.Deferred.Should().ContainSingle().Which.Causes.Should().ContainSingle().Which.Should().Contain("401");
+        // 🔴 否定形: 待てば直る 401 で縮退した報告書を出さない（本是正前はここで承認待ちに並んでいた）。
+        first.Generated.Should().BeEmpty();
+        rig.Store.Get(DailyKey).Should().BeNull();
+
+        rig.Risk.Status = HttpStatusCode.OK; // 上流の検証器が回復した。
+        var second = await rig.RunOnceAsync();
+
+        second.Generated.Should().ContainSingle().Which.UnsuppliedInputs.Should().BeEmpty();
+        second.Degraded.Should().BeEmpty();
+    }
+
+    // ---- #866 B1: 見送りが生成窓の終端を跨ぐなら見送らない ------------------------------------------
+
+    [Fact]
+    public async Task 月報は_次の試行時刻に生成窓が閉じているなら見送らず_その巡回で縮退版を出す()
+    {
+        // 2026-07-31（金・月末最終営業日）23:59:45 JST。次の試行（+30 秒）は 08-01 00:00:15 JST であり、
+        // 月報 monthly-2026-07 はもう Due に現れない＝見送ると**二度と生成されない**。
+        var rig = new Rig { UseRealDrafter = true, Now = MonthEnd235945 };
+        rig.LlmTokens.Token = null; // 散文（全種別が使う入力）が一過性に落ちている。
+
+        var result = await rig.RunOnceAsync();
+
+        var degradation = result.Degraded.Should().ContainSingle().Subject;
+        degradation.PeriodKey.Should().Be(MonthlyKey);
+        degradation.WindowClosing.Should().BeTrue();
+        // 上限を使い切ったのではない（原因が違うので常駐の文言も分ける）。
+        degradation.RetriesExhausted.Should().BeFalse();
+        degradation.UnsuppliedInputs.Should().Contain(ReportInput.Narrative);
+        // 縮退版でも保存・提示されている（無音で消えない）。
+        rig.Store.Get(MonthlyKey).Should().NotBeNull();
+        rig.Store.GetReview(MonthlyKey)!.State.Should().Be(ReviewState.PendingApproval);
+        rig.Notifier.Notices.Should().ContainSingle()
+            .Which.Summary.Should().Contain(ReportSummary.UnsuppliedWarningPrefix);
+        // 日報・週報は窓が残っているので従来どおり見送る（窓の判定は期間ごとに行う）。
+        result.Deferred.Select(d => d.PeriodKey).Should().BeEquivalentTo([DailyJul31Key, WeeklyW31Key]);
+        // 出した期間の見送り回数は残らない。
+        rig.Deferrals.DeferralsOf(MonthlyKey).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task 週報は_次の試行時刻に_ISO_週が変わるなら見送らず_その巡回で縮退版を出す()
+    {
+        // 2026-08-02（日）23:59:45 JST。次の試行（+30 秒）は月曜＝当 ISO 週が変わり weekly-2026-W31 は Due から消える。
+        var rig = new Rig { UseRealDrafter = true, Now = WeekEnd235945 };
+        rig.LlmTokens.Token = null;
+
+        var result = await rig.RunOnceAsync();
+
+        var degradation = result.Degraded.Should().ContainSingle().Subject;
+        degradation.PeriodKey.Should().Be(WeeklyW31Key);
+        degradation.WindowClosing.Should().BeTrue();
+        degradation.RetriesExhausted.Should().BeFalse();
+        degradation.UnsuppliedInputs.Should().Contain(ReportInput.Narrative);
+        rig.Store.Get(WeeklyW31Key).Should().NotBeNull();
+        rig.Store.GetReview(WeeklyW31Key)!.State.Should().Be(ReviewState.PendingApproval);
+        // 日報は直近営業日（金）を指したまま窓が続くので見送る。
+        result.Deferred.Should().ContainSingle().Which.PeriodKey.Should().Be(DailyJul31Key);
+    }
+
+    [Fact]
+    public async Task 監査の再現_月末の深夜に見送っても_窓が閉じる前に月報が出る()
+    {
+        // 監査の再現: 2026-07-31 23:55 JST に LLM のトークンが取れず全種別が見送りになる。
+        // 常駐と同じカデンツ（見送りの待ち時間ぶん時計を進める）で回したとき、**月報は窓が閉じる前に出る**こと。
+        var rig = new Rig { UseRealDrafter = true, Now = MonthEnd2355 };
+        rig.LlmTokens.Token = null;
+        var windowEnds = new DateTimeOffset(2026, 7, 31, 15, 0, 0, TimeSpan.Zero); // 08-01 00:00 JST
+
+        DateTimeOffset? generatedAt = null;
+        for (var cycle = 0; cycle < 10 && rig.Now < windowEnds; cycle++)
+        {
+            var result = await rig.RunOnceAsync();
+            if (rig.Store.Get(MonthlyKey) is not null)
+            {
+                generatedAt = rig.Now;
+                break;
+            }
+
+            result.Deferred.Should().NotBeEmpty("見送りが無いのに月報が出ていないなら、期間が黙って消えている");
+            rig.Now += result.Deferred.Min(d => d.RetryAfter);
+        }
+
+        generatedAt.Should().NotBeNull(
+            "月報の生成窓（当月内）が閉じる前に、縮退版でも生成・提示されなければならない"
+            + "（見送ったまま窓が閉じると二度と Due にならず、警告も通知も出ないまま消える）");
+        generatedAt!.Value.Should().BeBefore(windowEnds);
+
+        var stored = rig.Store.Get(MonthlyKey)!.Report;
+        stored.UnsuppliedInputs.Should().Contain(ReportInput.Narrative);
+        rig.Store.GetReview(MonthlyKey)!.State.Should().Be(ReviewState.PendingApproval);
+    }
+
+    [Fact]
+    public async Task 窓が閉じて対象から外れた期間の見送り回数は_巡回の終わりに捨てる()
+    {
+        // 23:55 JST の見送りは成立する（次の試行 23:55:30 はまだ窓の中）。その後、常駐の巡回が遅れて
+        // 窓が閉じた後に回ると、月報はもう Due に現れない＝**生成による解放が起きない**。
+        var rig = new Rig { UseRealDrafter = true, Now = MonthEnd2355 };
+        rig.LlmTokens.Token = null;
+
+        (await rig.RunOnceAsync()).Deferred.Select(d => d.PeriodKey).Should().Contain(MonthlyKey);
+        rig.Deferrals.DeferralsOf(MonthlyKey).Should().Be(1);
+
+        rig.Now = MonthWindowClosed; // 08-01 00:01 JST。
+        var after = await rig.RunOnceAsync();
+
+        after.Deferred.Should().NotContain(d => d.PeriodKey == MonthlyKey);
+        rig.Deferrals.DeferralsOf(MonthlyKey).Should().Be(0);
     }
 }

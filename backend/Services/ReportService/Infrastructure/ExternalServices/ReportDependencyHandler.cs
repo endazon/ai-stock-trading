@@ -23,8 +23,9 @@ namespace ReportService.Infrastructure.ExternalServices;
 //    未整備は「取得に失敗した」ではなく、認証なしで動かす dev・単体実行の構成である（従来どおり）。
 //
 // 2. **観測**: 失敗を「待てば直り得る（一過性）」と「待っても直らない（恒常）」に分けて
-//    `ReportDependencyProbe` へ記録する。分類の考え方は `GrpcAssumptionsClient.IsRetryable`
-//    （Unavailable / DeadlineExceeded だけを再試行し、Unauthenticated / PermissionDenied は即座に倒す）と同じ。
+//    `ReportDependencyProbe` へ記録する。考え方は `GrpcAssumptionsClient.IsRetryable`（Unavailable /
+//    DeadlineExceeded だけを再試行し、PermissionDenied は即座に倒す）と同じだが、**認証の失敗の扱いだけは違う**
+//    ——#866 の実測により、REST の 401 は一過性に入れる（下の `IsTransient` を読むこと）。
 //    応答・例外はそのまま呼び出し元へ返す（供給元の縮退とログは変えない）。
 public sealed class ReportDependencyHandler(
     ReportDependencyProbe probe,
@@ -90,13 +91,24 @@ public sealed class ReportDependencyHandler(
     private bool RequiresToken => tokenProvider is not null and not NoServiceAccessTokenProvider;
 
     /// <summary>
-    /// 待てば直り得る状態か。5xx（依存先・その手前のプロキシがまだ立ち上がっていない）・408・429。
-    /// 🔴 **401 / 403 は入れない**——トークンを付けて拒否されたのなら、ロール未付与などの設定誤りであり、
-    /// 待っても変わらない。ここへ足すと「沈黙せず縮退した報告書を出す」までの時間が伸びるだけになる。
+    /// 待てば直り得る状態か。5xx（依存先・その手前のプロキシがまだ立ち上がっていない）・408・429・**401**。
+    /// <para>
+    /// 🔴 **#866: 401 は一過性である**（当初は恒常に分類していた）。上流の JwtBearer は IdentityModel の
+    /// 設定取得器で OIDC メタデータを引くが、**起動時に取得へ失敗するとバックオフが掛かる**。監査がプローブで
+    /// 実測した窓は「Keycloak が戻ってから 24.6 秒は、正しいトークンでも 401」であった。report-service 側は
+    /// 先にトークンを取れるようになる（＝門が開く）ため、この窓は再起動直後（#840）にそのまま重なる。
+    /// 恒常のままだと「待てば直る 401」で縮退した報告書が確定まで進む＝#840 で直した事故の再発になる。
+    /// </para>
+    /// <para>
+    /// 🔴 **403 は恒常のまま入れない。** ロール未付与・クライアント設定の誤りは待っても直らず、一過性に入れると
+    /// 「沈黙せず縮退した報告書を出す」までの時間が伸びるだけになる（IADR-0352 決定 2 の 2026-09-19 追記）。
+    /// </para>
     /// </summary>
     public static bool IsTransient(HttpStatusCode status) =>
         (int)status >= 500
-        || status is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests;
+        || status is HttpStatusCode.RequestTimeout
+            or HttpStatusCode.TooManyRequests
+            or HttpStatusCode.Unauthorized;
 }
 
 // FR-06, NFR-05, #840, IADR-0352 決定 1: サービストークンを取得できず、要求を**送信しなかった**。

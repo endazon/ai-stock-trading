@@ -110,10 +110,18 @@ public sealed class ReportAutoGenerationService(
 
         foreach (var degradation in result.Degraded)
         {
-            // #840, IADR-0352 決定 4: 縮退した報告書を**黙って通さない**。恒常的な失敗（401/403・未設定）でも、
+            // #840, IADR-0352 決定 4: 縮退した報告書を**黙って通さない**。恒常的な失敗（403・未設定）でも、
             // 見送りの上限に達した場合でも、どの入力が欠けたまま提示されたかを警告として残す。
             var inputs = string.Join("、", ReportInputs.Labels(degradation.UnsuppliedInputs));
-            if (degradation.RetriesExhausted)
+            if (degradation.WindowClosing)
+                // #866: 次の再試行の時刻には、この期間は生成対象から外れる（月報＝当月内・週報＝当 ISO 週内）。
+                // 見送ると二度と生成されないため、待たずに縮退版を出した。**上限到達とは原因が違う。**
+                logger.LogWarning(
+                    "報告書ドラフト {PeriodKey} は、次に再試行する時刻には生成対象の期間（生成窓）が閉じているため、"
+                    + "依存先の回復を待たずに入力が未供給のまま生成しました: {Inputs}。"
+                    + "提示の通知と /report show に同じ内容を表示しています。確定の前に本文を確認してください。",
+                    degradation.PeriodKey, inputs);
+            else if (degradation.RetriesExhausted)
                 logger.LogWarning(
                     "報告書ドラフト {PeriodKey} は、依存先が回復しないまま見送りの上限に達したため、入力が未供給のまま生成しました: {Inputs}。"
                     + "提示の通知と /report show に同じ内容を表示しています。確定の前に本文を確認してください。",

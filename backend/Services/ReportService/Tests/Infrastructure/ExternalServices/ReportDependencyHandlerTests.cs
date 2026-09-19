@@ -146,8 +146,10 @@ public class ReportDependencyHandlerTests
     [InlineData(HttpStatusCode.GatewayTimeout, true)]
     [InlineData(HttpStatusCode.RequestTimeout, true)]
     [InlineData(HttpStatusCode.TooManyRequests, true)]
-    // 🔴 トークンを付けて拒否されたのなら設定誤り（ロール未付与など）。待っても変わらない。
-    [InlineData(HttpStatusCode.Unauthorized, false)]
+    // #866: **401 は一過性**。上流の JwtBearer 設定取得器（IdentityModel 8.0.1）は起動時の取得失敗に
+    // バックオフを持ち、Keycloak が戻ってからも 24.6 秒は正しいトークンで 401 を返す（監査の実測）。
+    [InlineData(HttpStatusCode.Unauthorized, true)]
+    // 🔴 403 は恒常のまま。ロール未付与などの設定誤りは待っても変わらない。
     [InlineData(HttpStatusCode.Forbidden, false)]
     [InlineData(HttpStatusCode.NotFound, false)]
     [InlineData(HttpStatusCode.BadRequest, false)]

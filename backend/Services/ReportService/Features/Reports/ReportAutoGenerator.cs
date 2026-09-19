@@ -19,8 +19,9 @@ namespace ReportService.Features.Reports;
 // #840, IADR-0352: **依存先が一過性に落ちている間は、縮退した報告書を作らずに見送る。**
 // 再起動の直後は Keycloak・台帳・LLM ゲートウェイがまだ立ち上がっておらず、入力が広範に未供給のまま
 // 報告書が出来上がって提示・確定まで進み得た。見送った期間は行を作らないため、上の冪等の規則どおり
-// 次の巡回で再び対象になる（再試行の仕組みを別に持たない）。見送りは上限つきで、上限に達したら・または
-// 失敗が恒常的（401/403 など）なら、従来どおり縮退した報告書を出して**未供給だった入力を記録・提示する**。
+// 次の巡回で再び対象になる（再試行の仕組みを別に持たない）。見送りは上限つきで、上限に達したら・
+// 失敗が恒常的（403 など）なら・**次に試す時刻には生成窓が閉じているなら（#866）**、従来どおり
+// 縮退した報告書を出して**未供給だった入力を記録・提示する**。
 public sealed class ReportAutoGenerator(
     IReportStore store,
     ReportDraftService draftService,
@@ -55,7 +56,13 @@ public sealed class ReportAutoGenerator(
         var deferred = new List<ReportGenerationDeferral>();
         var degraded = new List<ReportGenerationDegradation>();
 
-        foreach (var due in ReportSchedule.Due(clock.UtcNow, settings.Schedule))
+        var dueNow = ReportSchedule.Due(clock.UtcNow, settings.Schedule);
+
+        // #866: 生成窓が閉じて対象から外れた期間の見送り回数を捨てる（その PeriodKey は二度と Due に
+        // 現れず、生成による解放が起きないため、捨てないとプロセス内に残り続ける）。
+        deferrals?.RetainOnly([.. dueNow.Select(d => d.PeriodKey)]);
+
+        foreach (var due in dueNow)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -81,7 +88,8 @@ public sealed class ReportAutoGenerator(
                 generated.Add(outcome.Report!);
                 if (outcome.Report!.UnsuppliedInputs.Count > 0)
                     degraded.Add(new ReportGenerationDegradation(
-                        due.PeriodKey, outcome.Report.UnsuppliedInputs, outcome.RetriesExhausted));
+                        due.PeriodKey, outcome.Report.UnsuppliedInputs, outcome.RetriesExhausted,
+                        outcome.WindowClosing));
                 if (!outcome.Presented)
                     notPresented.Add(due.PeriodKey);
                 if (outcome.NotificationFailed)
@@ -193,7 +201,8 @@ public sealed class ReportAutoGenerator(
         // #840, IADR-0352 決定 3: **散文（LLM）を呼ぶ前に**見送りを判定する。入力が欠けたままの回に
         // LLM 費用を出さない（見送る回の散文は捨てるしかない）。
         var retriesExhausted = false;
-        if (TryDefer(due, unsupplied, observation, ref retriesExhausted) is { } deferredForInputs)
+        var windowClosing = false;
+        if (TryDefer(due, unsupplied, observation, ref retriesExhausted, ref windowClosing) is { } deferredForInputs)
             return GenerationOutcome.Deferred(deferredForInputs);
 
         observation.Enter(ReportInput.Narrative);
@@ -229,8 +238,11 @@ public sealed class ReportAutoGenerator(
         if (string.Equals(draft.Narrative, ReportNarrativeDefaults.PlaceholderText, StringComparison.Ordinal))
         {
             unsupplied.Add(ReportInput.Narrative);
-            if (TryDefer(due, [ReportInput.Narrative], observation, ref retriesExhausted) is { } deferredForNarrative)
+            if (TryDefer(due, [ReportInput.Narrative], observation, ref retriesExhausted, ref windowClosing)
+                is { } deferredForNarrative)
+            {
                 return GenerationOutcome.Deferred(deferredForNarrative);
+            }
         }
 
         var unsuppliedInputs = ReportInputs.Parse(ReportInputs.Serialize(unsupplied));
@@ -267,21 +279,29 @@ public sealed class ReportAutoGenerator(
         var notificationFailed = presented
             && !await NotifyAsync(due, summary, version, cancellationToken).ConfigureAwait(false);
 
-        return new GenerationOutcome(report, presented, notificationFailed, retriesExhausted, Deferral: null);
+        return new GenerationOutcome(
+            report, presented, notificationFailed, retriesExhausted, windowClosing, Deferral: null);
     }
 
     // #840, IADR-0352 決定 3・4: 見送るかどうか。
     //
     // 見送るのは「未供給の入力のうち、取得中に**一過性**の失敗を観測したものがある」ときだけである。
     //   - 未設定（Unsupplied*）で欠けている入力は HTTP を出さない＝観測が無い＝見送らない（待っても変わらない）。
-    //   - 401 / 403 などの恒常的な失敗だけなら見送らない（従来どおり縮退した報告書を出し、警告が残る）。
+    //   - 403 などの恒常的な失敗だけなら見送らない（従来どおり縮退した報告書を出し、警告が残る）。
     //   - 途中で失敗したが最終的に供給できた入力（フォールバック成功）は、未供給に入らないので数えない。
     // 上限に達していれば見送らず、retriesExhausted を立てて呼び出し側（常駐）に警告させる。
+    //
+    // 🔴 #866, IADR-0352 決定 3 の 2026-09-19 追記: **見送りが生成窓の終端を跨ぐなら見送らない。**
+    // ReportSchedule.Due は月報を当月内・週報を当 ISO 週内でしか due にしない（月報の窓は最短 7 時間＝
+    // 最終営業日 17:00 JST 〜 月末 24:00 JST）。次に試す時刻に対象から外れていると、その期間は
+    // **二度と due にならず、上限も効かないまま縮退版すら出ない**（警告も提示通知も無い＝無音の消失）。
+    // 本変更前は同じ時刻に縮退した報告書が出ていたので、見送りだけを足すのは退行である。
     private ReportGenerationDeferral? TryDefer(
         DueReport due,
         IReadOnlyCollection<ReportInput> unsupplied,
         ReportDependencyObservation observation,
-        ref bool retriesExhausted)
+        ref bool retriesExhausted,
+        ref bool windowClosing)
     {
         if (deferrals is null)
             return null;
@@ -290,9 +310,24 @@ public sealed class ReportAutoGenerator(
         if (waitingFor.Count == 0)
             return null;
 
-        if (deferrals.TryDefer(due.PeriodKey) is not { } ticket)
+        // 待ち時間は**回数を消費せずに**先読みする（窓の外なら 1 回も数えない）。
+        if (deferrals.NextDelay(due.PeriodKey) is not { } nextDelay)
         {
             // 上限 0（見送らない構成）は「使い切った」ではない。警告の文言を変えないために分ける。
+            retriesExhausted = deferrals.MaxDeferrals > 0;
+            return null;
+        }
+
+        if (!StillDueAfter(due, nextDelay))
+        {
+            windowClosing = true;
+            // この期間はこの巡回を逃すと対象から消える。数えた回数も用済みである（生成による解放が起きない）。
+            deferrals.Clear(due.PeriodKey);
+            return null;
+        }
+
+        if (deferrals.TryDefer(due.PeriodKey) is not { } ticket)
+        {
             retriesExhausted = deferrals.MaxDeferrals > 0;
             return null;
         }
@@ -306,6 +341,12 @@ public sealed class ReportAutoGenerator(
         return new ReportGenerationDeferral(
             due.PeriodKey, waitingFor, ticket.Attempt, ticket.MaxDeferrals, ticket.RetryAfter, causes);
     }
+
+    // #866: 待ち時間の後も、この PeriodKey が生成対象（Due）に含まれているか。
+    // 判定は ReportSchedule.Due そのものを使う（「窓の終端」を別式で書き直すと、境界の規則が 2 か所に割れる）。
+    private bool StillDueAfter(DueReport due, TimeSpan delay) =>
+        ReportSchedule.Due(clock.UtcNow + delay, settings.Schedule)
+            .Any(d => string.Equals(d.PeriodKey, due.PeriodKey, StringComparison.Ordinal));
 
     // FR-09, IADR-0116 決定2: 提示（確定依頼）の通知。best-effort であり、失敗しても生成・提示は巻き戻さない
     // （報告書は既に永続化され承認待ちに並んでいる）。通知の不達で報告書を作り直すほうが害が大きい。
@@ -343,10 +384,12 @@ public sealed class ReportAutoGenerator(
         bool Presented,
         bool NotificationFailed,
         bool RetriesExhausted,
+        bool WindowClosing,
         ReportGenerationDeferral? Deferral)
     {
         public static GenerationOutcome Deferred(ReportGenerationDeferral deferral) =>
-            new(Report: null, Presented: false, NotificationFailed: false, RetriesExhausted: false, deferral);
+            new(Report: null, Presented: false, NotificationFailed: false,
+                RetriesExhausted: false, WindowClosing: false, deferral);
     }
 
     // FR-10, UC-06, #330, IADR-0133 決定7: 自動縮小の記録は**空列へ倒さない**。「発動があったのに『なし』と書く」ことは
@@ -691,11 +734,14 @@ public sealed record ReportGenerationDeferral(
     TimeSpan RetryAfter,
     IReadOnlyList<string> Causes);
 
-// #840, IADR-0352 決定 4: 縮退して生成した 1 件。RetriesExhausted は「見送りの上限に達したので出した」。
+// #840, IADR-0352 決定 4: 縮退して生成した 1 件。RetriesExhausted は「見送りの上限に達したので出した」、
+// #866 の WindowClosing は「次に試す時刻には生成対象から外れる（窓が閉じる）ので、見送らずに出した」。
+// 原因が違うので常駐は別の文言で警告する（同じ文にすると、なぜ縮退したのかを読み手が誤る）。
 public sealed record ReportGenerationDegradation(
     string PeriodKey,
     IReadOnlyList<ReportInput> UnsuppliedInputs,
-    bool RetriesExhausted);
+    bool RetriesExhausted,
+    bool WindowClosing = false);
 
 
 // 期間単位の失敗（常駐側のログ出力に用いる）。
