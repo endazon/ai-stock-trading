@@ -40,9 +40,10 @@ plan_refs:
 1. **「不明」を 2 つに割る。** `IHeldPositionProvider.IsEnabled`（`ICurrentPriceProvider` と同じ形・IADR-0099 決定3）を足し、
    未結線（`NoOpHeldPositionProvider`＝「照会していない」）と実結線（`HttpHeldPositionProvider`＝「照会したが
    分からなかった」）を区別する。既定構成（`RiskManagement:BaseUrl` 未設定）の挙動は変えない。
-2. **止めるのは Open だけ。** `PositionEffectResolver.Resolve` に `requireKnownHoldingForOpen`（既定 false）を足し、
-   実結線かつ不明のときだけ Open を見送る。決済（Close）の分岐はこの判定より**前**にあり、保有が判っている限り
-   常に通る（FR-10「手仕舞いは止めない」）。
+2. **止めるのは Open だけ。** `PositionEffectResolver.Resolve` に `requireKnownHoldingForOpen` を**必須引数**で足し
+   （IADR-0163 決定2 第 1 節。省略可能にすると渡し忘れが「統制なし」になる。［2026-09-19 追記 / #877 の監査］
+   当初は既定 `false` の省略可能引数で起草し、指摘を受けて必須へ改めた）、実結線かつ不明のときだけ Open を見送る。
+   決済（Close）の分岐はこの判定より**前**にあり、保有が判っている限り常に通る（FR-10「手仕舞いは止めない」）。
 3. **見送りは LLM 呼び出しの前に倒さない。** 発注に使う保有数は LLM 判断の**後**に引き直す（IADR-0351 決定6）。
    プロンプト用の照会が落ちていても引き直しで保有が判れば手仕舞いは通るため、**前で一律に見送ると出口を塞ぐ**。
 4. **見送りの表現は既存の語彙に載せる。** 新しいイベント・通知経路は作らず、取引判断側のスキップ（構造化 WARN ログ
@@ -77,6 +78,8 @@ plan_refs:
 4. 未結線（NoOp）の既定構成は従来どおり（既存テストが緑のまま）。
 5. 縮退制御の経路（一次スクリーニング。予算あり／なしの両方）でも同じ判定が効く。
 6. 見送ったことが記録に残る（構造化 WARN ログ）。
+   ［2026-09-19 追記 / #877 の監査］見送りの**理由**は観測から区別できない（`action=no-trade` の 1 種類に
+   まとまる）。`deploy/observability/` にアラートルールが 1 件も無いことと併せて、追随 issue **#891** で扱う。
 
 ## 変更しないもの
 
@@ -88,5 +91,6 @@ plan_refs:
 ## 作業手順
 
 1. 失敗するテストを先に書く（不明のときに Open が通ってしまうことの再現）。
-2. `IsEnabled` を足す → `requireKnownHoldingForOpen` を足す → 判断サービスで配線する。
+2. `IsEnabled` を足す → `requireKnownHoldingForOpen`（必須引数）を足す → 判断サービスで配線し、
+   全呼び出し元（本番 1・テスト 12）で明示する。
 3. `dotnet build` / `dotnet test` / `dotnet format --verify-no-changes` / `node scripts/check-*.js`。

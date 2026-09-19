@@ -29,11 +29,14 @@ public static class PositionEffectResolver
     /// 常に通る（FR-10「手仕舞いは止めない」）。不明のときは決済の分岐に入りようがないため、
     /// この引数が出口を塞ぐことはない。
     ///
-    /// 既定は false ＝従来どおり（IADR-0119 決定2）。未結線（NoOp＝常に不明）の既定構成の挙動を変えないため、
-    /// **不在が統制の有効を意味する形にしない**（不明を一律に止めると既定構成で新規建てが一切できなくなる）。
+    /// 🔴 **省略可能にしない**（IADR-0163 決定2 第 1 節「不在が統制の無効を意味する依存は必須引数にする」）。
+    /// 引数を省けるようにすると、**渡し忘れが「統制なし」を意味する**——配線を削った側は静かに緩み、
+    /// テストは全緑のままになる。必須にすれば、渡さなくなった瞬間に**コンパイルエラー**になる。
+    /// 値が <c>false</c> になるのは未結線（NoOp＝「照会していない」）という**正当な構成**のときだけであり
+    /// （同決定2 第 2 節）、そのとき従来どおり（IADR-0119 決定2）の挙動になる。
     /// </param>
     public static PositionEffectDecision Resolve(
-        TradeSide side, int? signedHeldQuantity, bool requireKnownHoldingForOpen = false)
+        TradeSide side, int? signedHeldQuantity, bool requireKnownHoldingForOpen)
     {
         // 建玉の反対売買は手仕舞い。数量は保有数（全量）＝ゼロを跨がないため IADR-0038 の分割は発生しない。
         if (signedHeldQuantity is > 0 && side == TradeSide.Sell)
