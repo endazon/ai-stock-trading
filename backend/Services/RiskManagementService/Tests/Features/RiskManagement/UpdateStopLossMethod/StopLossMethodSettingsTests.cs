@@ -217,7 +217,7 @@ public class StopLossMethodSettingsTests
         var clock = new FakeClock(Now, new DateOnly(2026, 9, 17));
         var portfolio = new FakePortfolioStateProvider(new PortfolioState
         {
-            Capital = 100_000m,
+            LedgerEquity = 100_000m,
             OpenPositionCount = 0,
             InvestedCapital = 0m,
             DailyOrderedAmount = 0m,
@@ -226,7 +226,7 @@ public class StopLossMethodSettingsTests
         });
         var builder = new PortfolioSnapshotBuilder(
             portfolio, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
-            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+            FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         var settings = new InMemoryRiskSettingsStore(TradingDefaults.CreateSettings() with { StopLossMethod = method });
         var service = new OrderScreeningService(
             settings, builder, new InMemoryLockoutStore(), clock, new WeekendBusinessCalendar(),

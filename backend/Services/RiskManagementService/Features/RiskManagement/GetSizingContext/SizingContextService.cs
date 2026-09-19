@@ -14,12 +14,15 @@ public sealed class SizingContextService(PortfolioSnapshotBuilder snapshotBuilde
         // いずれも負値は 0。
         // FR-10, #329, IADR-0130 決定1/2: 日次上限は equity 比のため、equity（snapshot.Capital）から解決する。
         // FR-20, #333, IADR-0136: 段階の発注可能額も総資金比のため、同じ equity から解決する。
-        var stageRemaining = Math.Max(
-            0m,
-            settings.Stage.OrderableCapFor(snapshot.Capital) - snapshot.InvestedCapital);
-        var dailyRemaining = Math.Max(
-            0m,
-            settings.Limits.MaxDailyOrderAmountFor(snapshot.Capital) - snapshot.DailyOrderedAmount);
+        // FR-10, #869, ADR-0041 決定2, IADR-0354: equity が未供給（口座を照会できていない）なら残枠も未供給である。
+        // **0 で埋めない**——「枠を使い切った」と「枠が分からない」は別の事実であり、
+        // 前者はプロンプトにも監査にもそのまま「0」として現れてしまう。
+        var stageRemaining = snapshot.Capital is { } stageEquity
+            ? Math.Max(0m, settings.Stage.OrderableCapFor(stageEquity) - snapshot.InvestedCapital)
+            : (decimal?)null;
+        var dailyRemaining = snapshot.Capital is { } dailyEquity
+            ? Math.Max(0m, settings.Limits.MaxDailyOrderAmountFor(dailyEquity) - snapshot.DailyOrderedAmount)
+            : (decimal?)null;
 
         return new SizingContextView(
             Capital: snapshot.Capital,

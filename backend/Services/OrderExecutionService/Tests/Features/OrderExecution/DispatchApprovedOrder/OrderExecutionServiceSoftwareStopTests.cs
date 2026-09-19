@@ -218,7 +218,7 @@ public class OrderExecutionServiceSoftwareStopTests
         var result = await service.ExecuteAsync(approved);
 
         ((int)result.Forgone!.Reason).Should().Be(
-            4, "OrderDispatchForgoneReason.UnattributedPosition（不明は「ある」側へ倒す）");
+            6, "OrderDispatchForgoneReason.UnattributedPosition（不明は「ある」側へ倒す）");
         broker.PlaceCount.Should().Be(0, "帰属不明の建玉が無いと確かめられないなら建玉を作らない");
         stops.Find(approved.DecisionId).Should().BeNull();
     }
@@ -233,7 +233,7 @@ public class OrderExecutionServiceSoftwareStopTests
 
         var result = await service.ExecuteAsync(approved);
 
-        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        ((int)result.Forgone!.Reason).Should().Be(6, "OrderDispatchForgoneReason.UnattributedPosition");
         broker.PlaceCount.Should().Be(0);
         stops.Find(approved.DecisionId).Should().BeNull();
     }
@@ -279,7 +279,7 @@ public class OrderExecutionServiceSoftwareStopTests
 
         var result = await service.ExecuteAsync(approved);
 
-        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        ((int)result.Forgone!.Reason).Should().Be(6, "OrderDispatchForgoneReason.UnattributedPosition");
         broker.PlaceCount.Should().Be(0, "建玉を持たずに見送る（IADR-0210 決定1 と同じ倒し方）");
         stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元になる保護記録を作らない");
     }

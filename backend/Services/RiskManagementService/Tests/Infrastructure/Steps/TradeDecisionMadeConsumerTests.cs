@@ -55,6 +55,10 @@ public class TradeDecisionMadeConsumerTests
                 opts.Services.AddSingleton<IInformationDegradationStore>(FakeInformationDegradation.Affirmed());
                 opts.Services.AddSingleton<IBrokerAccountObservationStore>(
                     new InMemoryBrokerAccountObservationStore(TimeProvider.System));
+                // FR-10, #869, ADR-0041 決定2, IADR-0354: 統制上限の基準資金はブローカーの口座照会由来。
+                // 本テストの関心は承認・拒否の中継であり、基準資金は照会できている状態を与える
+                // （与えないと CapitalBaselineUnavailable で全件が拒否される＝fail-closed）。
+                opts.Services.AddSingleton<ICapitalBaselineStore>(FakeCapitalBaseline.Of(100_000m));
                 opts.Services.AddSingleton<PortfolioSnapshotBuilder>();
                 // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
                 // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
@@ -175,6 +179,6 @@ public class TradeDecisionMadeConsumerTests
     // 全統制を通過する健全な運用状態（資金 10 万・損益ゼロ）。
     private sealed class HealthyPortfolioProvider : IPortfolioStateProvider
     {
-        public PortfolioState GetCurrent() => new() { Capital = 100_000m };
+        public PortfolioState GetCurrent() => new() { LedgerEquity = 100_000m };
     }
 }

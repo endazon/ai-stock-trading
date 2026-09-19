@@ -118,7 +118,17 @@ public class StopLossMethodContractTests
         ((int)OrderDispatchForgoneReason.StopLossPriceMissing).Should().Be(1);
         ((int)OrderDispatchForgoneReason.StopOrderUnsupported).Should().Be(2);
         ((int)OrderDispatchForgoneReason.StopLossMethodNotPermitted).Should().Be(3);
-        // #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: 帰属不明の建玉がある銘柄では S1 を武装しない（末尾へ追加）。
-        ((int)OrderDispatchForgoneReason.UnattributedPosition).Should().Be(4);
+
+        // 🔴 T-10-518, #864, IADR-0355: 決済をブローカーの実建玉と突き合わせて止めた 2 値も**末尾**である。
+        // 序数はメトリクスのタグ・監査 payload の整数として往来するため、間に挿し込むと過去の記録の意味が変わる。
+        ((int)OrderDispatchForgoneReason.BrokerPositionAbsent).Should().Be(4);
+        ((int)OrderDispatchForgoneReason.BrokerPositionsIndeterminate).Should().Be(5);
+
+        // #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: 帰属不明の建玉がある銘柄では S1 を武装しない。
+        // 🔴 #864 が序数 4・5 を先に取ったため 4 → 6 へ繰り下げた（先にマージされた側が確保する）。
+        ((int)OrderDispatchForgoneReason.UnattributedPosition).Should().Be(6);
+
+        // 値を増やしたら、見送りを分類し直す側（在庫解放の可否など）も引き直させる。
+        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(7);
     }
 }

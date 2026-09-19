@@ -533,7 +533,7 @@ P13: T-10-368 の配置（S0 の逆指値が正常に約定した＝S0 の標準
 3. **実効数量 0 が猶予 15 分を超えたら `SoftwareStopOutcome.ProtectionSuspended=6`（Critical）を 1 行 1 回**出す
    （`ProtectionSuspendedSince` / `ProtectionSuspendedNotifiedAt`）。**到達の有無に依らない。**
 4. **S1 の武装に前提条件** —— 同一銘柄・同方向に帰属不明の建玉（方向の純額 − Active な保護記録の主張合計 > 0）が
-   あるなら、**エントリーを送らず建玉を持たずに見送る**（`OrderDispatchForgoneReason.UnattributedPosition=4`）。
+   あるなら、**エントリーを送らず建玉を持たずに見送る**（`OrderDispatchForgoneReason.UnattributedPosition=4`〔🔴 **13 巡目のマージで 4 → 6 へ繰り下げた**——#864 が 4・5 を先に取ったため。IADR-0344 追記(12) が正本〕）。
    確かめられない場合（照会能力なし・`null`）も「ある」側へ倒す。**S0 / S2 / S3 の経路は変えない。**
 
 migration は `AddProtectiveStopSuspension`（3 列。既存行は 0 / null）。

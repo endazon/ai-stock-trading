@@ -26,12 +26,16 @@ public sealed record RiskStatusView(
     decimal UnrealizedPnl,
     decimal DailyPnl,
     // --- 上限使用率の入力（残枠・上限） ---
-    decimal Capital,
+    // FR-10, #869, ADR-0041 決定2, IADR-0354: equity（基準資金）は**ブローカーの口座照会に由来する**。
+    // 🔴 **null は「口座を照会できていない」を意味する**（新規建ては止まっている）。
+    // 画面は 0 や「—」ではなく**未供給の表示**を出す（05_screens「供給が無い値の表示規約」・IADR-0162）。
+    decimal? Capital,
     decimal DailyOrderedAmount,
     // FR-10, FR-20, SC-02, #334: 1 注文あたりの発注金額上限（equity から解決した実額）。
     // 実弾切替の警告モーダル③「現在の equity と、それに対する統制値の実額」の提示に用いる。
-    decimal MaxOrderAmount,
-    decimal MaxDailyOrderAmount,
+    // #869: equity が未供給なら**実額は解決できない**ため null（0 を出すと「上限 0」と読める）。
+    decimal? MaxOrderAmount,
+    decimal? MaxDailyOrderAmount,
     decimal DrawdownRatio,
     decimal MaxDrawdownRatio,
     // --- ポジション ---

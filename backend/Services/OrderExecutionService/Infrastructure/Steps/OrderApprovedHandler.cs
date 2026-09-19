@@ -35,6 +35,26 @@ public sealed class OrderApprovedHandler(
 
         var result = await executionService.ExecuteAsync(message, cancellationToken).ConfigureAwait(false);
 
+        // 🔴 FR-10, FR-05, FR-09, FR-11, ADR-0016, #864, IADR-0355 決定5: 決済をブローカーの実建玉と突き合わせて
+        // 見つけた乖離は、**既存の乖離検知（IADR-0118）と同じイベント**で監査台帳と Critical 通知へ流す
+        // （新しい通知経路を作らない）。見送りにも、数量を縮めた発注にも付き得るため**先に**出す
+        // ——見送り／発注の結果より、その理由である乖離が時系列で前に並ぶ方が辿りやすい。
+        if (result.Drift is { } drift)
+        {
+            // 🔴 監査（3 巡目）3: **イベントが運ぶ 2 つの数量はどちらも「送った株数」ではない**
+            // （台帳の決済数量とブローカーの**ネット**であり、両建てでは 3 つ目の数になる）。
+            // 通知を読む人が「結局この決済は出たのか・何株出たのか」を取り違えないよう、
+            // **実際に送った株数をログに併記する**（0 なら 1 株も送っていない＝見送り）。
+            logger.LogError(
+                "決済の発注前にブローカーの建玉との乖離を検知しました（{Count} 件・この決済で実際に送った株数={Dispatched}）: {Drifts}",
+                drift.Drifts.Count,
+                result.DriftDispatchedQuantity,
+                string.Join(
+                    "、",
+                    drift.Drifts.Select(d => $"{d.Symbol}/{d.Market} 台帳 {d.LedgerQuantity} / ブローカーのネット {d.BrokerQuantity}")));
+            await bus.PublishAsync(drift).ConfigureAwait(false);
+        }
+
         // FR-05, ADR-0002（SPOF）, #331, IADR-0211: 見送り（OpenD 切断・逆指値を張れない Open）は
         // **例外を投げずに**正常終了する——投げると Wolverine の共通再試行がキューで再送し、
         // 「キューイングせず見送り」の裁定に反する。再発注は次の取引判断からのみ。

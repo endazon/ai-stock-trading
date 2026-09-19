@@ -38,13 +38,23 @@ public static class ShortSellEvaluator
     /// <see cref="ProductType.ShortSell"/> を含むか。#332・IADR-0132 決定2）。既定は無効である。
     /// </param>
     /// <param name="limits">空売り専用の統制値（ADR-0016 決定2,3,4,7,9）。</param>
-    /// <param name="equity">自己資金（前営業日終値時点。IADR-0130 決定2）。1 銘柄あたり上限の基準。</param>
+    /// <param name="equity">
+    /// 自己資金（前営業日終値時点。IADR-0130 決定2）。1 銘柄あたり上限の基準。
+    /// <para>
+    /// 🔴 <b>#869, ADR-0041 決定2, IADR-0354: <c>null</c> ＝ブローカーの口座を照会できていない。</b>
+    /// このとき 1 銘柄あたり上限（equity の 10%）は**解決できないため評価しない**——0 を代入すると
+    /// あらゆる注文で <c>ShortExposureExceeded</c> が立ち、<b>監査ログが「エクスポージャ上限を超えた」という
+    /// 起きていない事実を主張する</b>（IADR-0354 決定6 と同じ規律）。
+    /// <b>新規建てそのものは <c>CapitalBaselineUnavailable</c> が既に止めている。</b>
+    /// equity に依存しない規則（借株可否・株価下限・逆指値必須・空売り比率 50%・維持率ほか）は**そのまま効く**。
+    /// </para>
+    /// </param>
     /// <param name="context">外部由来の入力。**null は照会経路が無いことを意味し、空売りは通さない**。</param>
     public static IReadOnlyList<RejectionReason> Evaluate(
         OrderIntent intent,
         bool shortSellEnabled,
         ShortSellingLimits limits,
-        decimal equity,
+        decimal? equity,
         ShortSellOrderContext? context)
     {
         ArgumentNullException.ThrowIfNull(intent);
@@ -139,7 +149,10 @@ public static class ShortSellEvaluator
         // (1) 1 銘柄あたり equity の 10% 上限・(6) 空売り比率 50% 上限。いずれも ShortExposureExceeded。
         // 判定は「既存の空売り建玉 ＋ 当該注文」で行う（1 件ずつ上限内でも累計で超過できるため）。
         var notional = intent.NotionalInBase;
-        var perSymbolExceeded = context.SymbolShortExposure + notional > limits.PerSymbolCapFor(equity);
+        // #869, IADR-0354 決定6: equity が未供給なら 1 銘柄あたり上限は**判定しない**（0 で代用しない）。
+        // 空売り比率 50% は equity に依存しないため、未供給でもそのまま効く。
+        var perSymbolExceeded = equity is { } perSymbolEquity
+            && context.SymbolShortExposure + notional > limits.PerSymbolCapFor(perSymbolEquity);
         var ratioExceeded = context.TotalShortExposure + notional
             > (context.TotalExposure + notional) * limits.ExposureRatioCap;
         if (perSymbolExceeded || ratioExceeded)

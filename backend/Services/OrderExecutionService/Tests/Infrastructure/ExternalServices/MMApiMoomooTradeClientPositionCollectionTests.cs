@@ -292,6 +292,19 @@ public class MMApiMoomooTradeClientPositionCollectionTests
             return serial;
         }
 
+        // #869, IADR-0354: 本テストは建玉照会だけを見るため、資金照会は空応答（値なし）を返す。
+        public uint GetFunds(TrdGetFunds.Request request)
+        {
+            var serial = ++_serial;
+            var response = TrdGetFunds.Response.CreateBuilder()
+                .SetRetType(0)
+                .SetRetMsg(string.Empty)
+                .SetS2C(TrdGetFunds.S2C.CreateBuilder().BuildPartial())
+                .BuildPartial();
+            _ = Task.Run(() => _trdCallback?.OnReply_GetFunds(_handle, serial, response));
+            return serial;
+        }
+
         public uint PlaceOrder(TrdPlaceOrder.Request request) => ++_serial;
 
         public uint ModifyOrder(TrdModifyOrder.Request request) => ++_serial;

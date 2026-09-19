@@ -730,7 +730,7 @@ public class SoftwareStopBlockingRegressionTests
         var result = await f.Execution.ExecuteAsync(approved);
 
         ((int)result.Forgone!.Reason).Should().Be(
-            4, "OrderDispatchForgoneReason.UnattributedPosition（末尾へ追加した序数）");
+            6, "OrderDispatchForgoneReason.UnattributedPosition（#864 が 4・5 を先に取ったため 6 へ繰り下げ）");
         f.Broker.Entries.Should().BeEmpty("帰属不明の建玉があるあいだは新規建てを送らない（建玉を持たない側へ倒す）");
         f.Stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元になる保護記録を作らない");
         result.SoftwareStopArmed.Should().BeNull();
@@ -853,7 +853,7 @@ public class SoftwareStopBlockingRegressionTests
 
         result.Forgone.Should().NotBeNull(
             "幽霊行は 1 株も動かせないので、在る 10 株は帰属不明である（帳簿の主張で引くと 0 に見えて武装してしまう）");
-        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        ((int)result.Forgone!.Reason).Should().Be(6, "OrderDispatchForgoneReason.UnattributedPosition");
         f.Broker.Entries.Should().BeEmpty("帰属不明の建玉があるあいだは新規建てを送らない");
         f.Stops.Find(approved.DecisionId).Should().BeNull("2 本目の幽霊行の元を作らない");
         result.SoftwareStopArmed.Should().BeNull();
@@ -1130,7 +1130,7 @@ public class SoftwareStopBlockingRegressionTests
         result.Forgone.Should().NotBeNull(
             "照会が返した純額 10 は他人の建玉であり、その時点で先行エントリーはまだ 1 株も主張していない"
                 + "（確定を照会の後に置くと claimed だけが新しくなり、帰属不明が 0 に見えて武装する）");
-        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        ((int)result.Forgone!.Reason).Should().Be(6, "OrderDispatchForgoneReason.UnattributedPosition");
         f.Broker.Entries.Should().BeEmpty("他人の建玉が在るあいだは新規建てを送らない");
         f.Stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元を作らない");
     }
@@ -1181,7 +1181,7 @@ public class SoftwareStopBlockingRegressionTests
         result.Forgone.Should().NotBeNull(
             "照会が返した純額 10 は他人の建玉であり、A は決済を終えてもう 1 株も主張していない"
                 + "（照会の前の主張だけを採ると帰属不明が 0 に見えて武装する）");
-        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        ((int)result.Forgone!.Reason).Should().Be(6, "OrderDispatchForgoneReason.UnattributedPosition");
         f.Broker.Entries.Should().BeEmpty("他人の建玉が在るあいだは新規建てを送らない");
         f.Stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元を作らない");
     }

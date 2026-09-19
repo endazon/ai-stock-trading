@@ -595,7 +595,9 @@ BLK-8-2 は逆に、**武装の時点で純額の帰属が付いていない**�
    猶予は孤立行（`DefaultOrphanGrace`）・据え置き（`DefaultSettlementGrace`）と**同型の 15 分**にする。
 4. **S1 の武装に前提条件を置く（BLK-8-2）。** `OrderExecutionAppService` は S1 で新規建てを武装する時点で、
    同一銘柄・同方向に**帰属不明の建玉**（＝方向の純額 − Active な保護記録の主張合計 > 0）があるなら、
-   **エントリーを送らず建玉を持たずに見送る**（`OrderDispatchForgoneReason.UnattributedPosition=4`）。
+   **エントリーを送らず建玉を持たずに見送る**（`OrderDispatchForgoneReason.UnattributedPosition=4`
+   〔🔴 **2026-09-19 / 13 巡目のマージで序数は 4 → 6 へ繰り下げた**——#864 が 4・5 を先に取ったため。
+   **先にマージされた側が確保する**（改番手順と同じ規律）。値は下の追記(12) が正本〕）。
    「保護レグを張れない Open では建玉を持たない」（IADR-0210 決定 1）と同じ倒し方である。
    - 🔴 **確かめられない場合も「ある」側へ倒す**（建玉照会の能力が無い発注先・照会が `null`）。
      「不明」を「無い」と取り違えると、他人の建玉を S1 のラインで売る不可逆な事故になる。
@@ -943,3 +945,33 @@ T-10-506 も変異注入で非空虚と確認された。**決定 1〜4・7〜9�
   窓のあいだに主張が減り、かつ同量の建玉も消えた（＝本当は帰属不明が無い）場合、**安全側に見送る**ことがある。
   倒れ方は「建玉を作らない」側であり、次の巡回で解消する。
 - **到達済みの行の観測は依然として単調である**（追記(8) のまま）。
+
+
+## ［2026-09-19 追記（12） / #820 の 13 巡目監査とマージ］`UnattributedPosition` の序数を 4 から 6 へ繰り下げた
+
+13 巡目の監査は**ブロッキング 0 件**で通り、非ブロッキング 5 件（NB-13-1〜5）を直してマージへ進んだ。
+その最後の `develop` 取り込み（`890f6b24`＝#874）で、**同じ enum の末尾を取り合う衝突**が起きた。
+
+- **#864（先にマージ済み）**が `OrderDispatchForgoneReason` へ `BrokerPositionAbsent=4` と
+  `BrokerPositionsIndeterminate=5` を足していた。
+- 本 PR は同じ enum へ `UnattributedPosition=4` を足していた（追記(8) 決定 4）。
+
+🔴 **序数はメトリクスのタグ・監査 payload の整数として往来するため、既存の値を動かせない。**
+**先にマージされた側が番号を確保する**（`traceability.md` の改番手順と同じ規律）ので、
+**本 PR の値を 4 → 6 へ繰り下げた**（総数は 7）。追随させたのは次のすべてである。
+
+- 契約: `OrderDispatchForgone.cs`（enum の位置と doc の「序数 6」）
+- 契約テスト: `StopLossMethodContractTests` の序数表（`UnattributedPosition == 6`・`HaveCount(7)`）
+- 発注執行のテスト 7 箇所（`Should().Be(6, "OrderDispatchForgoneReason.UnattributedPosition")`）
+- 本 IADR の追記(8) 決定 4 と作業仕様書の追記(5)（**凍結記録なので本文は残し、インラインで繰り下げを注記**）
+
+**挙動は 1 バイトも変わらない**（見送りの条件・通知の文面・監査の要約はいずれも enum 名で書かれている）。
+変わったのは**整数として外へ出る値**だけであり、**本 PR は未マージなので過去の記録との齟齬は生じない**。
+
+### 同じマージで併せて解決したもの（いずれも両側の和集合）
+
+- `OrderDispatchResult`: #874 が `Drift` / `DriftDispatchedQuantity` を位置引数で足していたため、
+  **`SoftwareStopArmed` を末尾へ回した**（位置引数の並びを壊さない）。
+- `OrderExecutionAppService` の引数名 `positions` → **`brokerPositions`**（#874 の名前を採る）。
+  `Forgone` は #874 の `drift` 付き署名を採る。
+- `NotificationFormatter` / そのテスト・`docs/functional` と `docs/tests` の trace ブロック: 両側の項目を残した。

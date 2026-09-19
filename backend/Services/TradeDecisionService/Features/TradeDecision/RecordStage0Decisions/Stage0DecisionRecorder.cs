@@ -337,13 +337,16 @@ public sealed class Stage0DecisionRecorder(
         var referencePriceBase = decision.ReferencePrice * input.RateToBase;
         var stopLossDistanceBase = decision.StopLossDistancePerShare * input.RateToBase;
         var sizeFactor = PositionSizer.GetSizeFactor(context.ConsecutiveLosses, context.DrawdownRatio, context.Limits);
-        var availableCapital = Math.Max(0m, Math.Min(context.StageCapitalRemaining, context.DailyOrderRemaining));
+        // #869, ADR-0041 決定2, IADR-0354: 基準資金・残枠の未供給（null）は 0 として畳む（本番の経路と同じ扱い）。
+        var capital = context.Capital ?? 0m;
+        var availableCapital = Math.Max(
+            0m, Math.Min(context.StageCapitalRemaining ?? 0m, context.DailyOrderRemaining ?? 0m));
         var quantity = PositionSizer.CalculateCappedQuantity(
-            context.Capital,
+            capital,
             context.Limits.PerTradeRiskRatio,
             stopLossDistanceBase,
             referencePriceBase,
-            context.Limits.MaxOrderAmountFor(context.Capital),
+            context.Limits.MaxOrderAmountFor(capital),
             availableCapital,
             sizeFactor);
 
