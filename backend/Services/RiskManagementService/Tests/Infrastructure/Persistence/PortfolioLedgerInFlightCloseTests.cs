@@ -247,4 +247,65 @@ public class PortfolioLedgerInFlightCloseTests
 
         ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
     }
+
+    // --- T-10-410, #852, IADR-0356: 見送り（発注していない）は処理中から外す ---
+
+    // T-10-410（肯定形・主目的）: 見送られた決済は窓を待たずに在庫へ戻る。
+    [Fact]
+    public void 見送られた決済承認は処理中から外れる()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+
+        ledger.MarkForgone(id, Now.AddMinutes(-1));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-410: 部分約定はあり得ない（見送りは発注していない）が、万一約定が相関していても
+    // 二重に引かない —— 残数量ぶんだけが戻る（MarkTerminal と同一の意味論）。
+    [Fact]
+    public void 見送りでも約定済みぶんを二重に引かない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        ledger.AppendFill(id, "order-1", 20, 21m, Now.AddMinutes(-4));
+
+        ledger.MarkForgone(id, Now.AddMinutes(-1));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // 🔴 T-10-410（否定形）: 相関する承認が無い見送りは**書かない**（MarkTerminal と同じ）。
+    // 後から届いた承認は終端未確認＝処理中として数える（安全側へ倒れる）。
+    [Fact]
+    public void 承認より先に届いた見送りは記録しない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var decisionId = Guid.NewGuid();
+
+        ledger.MarkForgone(decisionId, Now.AddMinutes(-5));
+        ledger.AppendApproval(
+            decisionId,
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.InternalPaper, 60, 21m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 1m),
+            Now.AddMinutes(-4));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+    }
+
+    // T-10-410（単調・冪等）: 見送りの再送で結果が動かない。先に記録された終端も上書きしない。
+    [Fact]
+    public void 見送りは単調で再送しても動かない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var id = Approve(ledger, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        ledger.MarkForgone(id, Now.AddMinutes(-3));
+        ledger.MarkForgone(id, Now.AddMinutes(-1));
+        ledger.MarkTerminal(id, OrderStatus.Accepted, Now.AddMinutes(-1));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
 }

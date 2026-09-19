@@ -124,6 +124,24 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
         db.SaveChanges();
     }
 
+    // FR-05, FR-10, UC-06, #852, IADR-0356: 見送り（発注していない）を記録する。
+    // 門（理由が「確実に未発注」か）は呼び出し側＝OrderDispatchForgoneLedgerHandler が持つ。
+    public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt)
+    {
+        // 相関する承認が無ければ書かない（MarkTerminal と同じ。知らない注文の見送りは台帳の語彙に無い）。
+        if (db.ApprovedOrders.Find(decisionId) is not { } approval)
+            return;
+
+        // 単調・冪等: 最初の終端（見送りを含む）が真。後着で時刻も状態も動かさない。
+        if (approval.TerminalAt is not null)
+            return;
+
+        approval.TerminalAt = forgoneAt;
+        // 🔴 TerminalStatus は **null のまま**。見送りは証券会社に存在しない注文であり、注文状態を持たない
+        //（IADR-0211）。`TerminalAt is not null && TerminalStatus is null` が「見送り」の表現になる。
+        db.SaveChanges();
+    }
+
     // #292, IADR-0117: 処理中の決済数量（InMemoryPortfolioLedgerStore と同一の意味論）。
     public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter)
     {

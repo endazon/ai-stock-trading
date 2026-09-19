@@ -111,6 +111,23 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         }
     }
 
+    // FR-05, FR-10, UC-06, #852, IADR-0356: 見送り（発注していない）を記録する
+    //（EfPortfolioLedgerStore と同一の意味論）。門（理由が「確実に未発注」か）は呼び出し側が持つ。
+    public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt)
+    {
+        // 相関する承認が無ければ**書かない**。単調・冪等: 既に終端（見送りを含む）なら動かさない。
+        while (_approvals.TryGetValue(decisionId, out var current))
+        {
+            if (current.TerminalAt is not null)
+                return;
+
+            // 🔴 TerminalStatus は **null のまま**（見送りは注文状態を持たない。IADR-0211）。
+            var updated = current with { TerminalAt = forgoneAt, TerminalStatus = null };
+            if (_approvals.TryUpdate(decisionId, updated, current))
+                return;
+        }
+    }
+
     // #849, IADR-0350 決定 2: 追記専用・冪等キーで 1 件に絞る（EfPortfolioLedgerStore と同一の意味論）。
     public bool AppendDriftAdoption(LedgerDriftAdoption adoption)
     {
@@ -159,6 +176,8 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
     {
         // #848, IADR-0117: 終端になったと確認できた時刻と状態（ApprovedOrderRow と同じ意味論）。
         // null＝未確認。判定に使うのは TerminalAt だけで、TerminalStatus は診断用である。
+        // #852, IADR-0356: 見送りは TerminalAt だけを立て、TerminalStatus は null のままにする
+        //（見送りは注文状態を持たない。IADR-0211）。
         public DateTimeOffset? TerminalAt { get; init; }
 
         public OrderStatus? TerminalStatus { get; init; }

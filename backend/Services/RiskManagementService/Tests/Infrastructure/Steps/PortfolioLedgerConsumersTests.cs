@@ -41,6 +41,10 @@ public class PortfolioLedgerConsumersTests
                     .IncludeType<OrderExecutedLedgerHandler>()
                     // #848, IADR-0117: 明示的な取消も台帳へ終端として届ける（新しいキューは増えない）。
                     .IncludeType<OrderCancelledLedgerHandler>()
+                    // #852, IADR-0356: 見送り（発注していない）も台帳へ届ける（新しいキューは増えない
+                    // ——OrderDispatchForgone はリスク管理が既に購読しており、Wolverine では
+                    // 1 サービス内 1 イベント型 = 1 キューである）。
+                    .IncludeType<OrderDispatchForgoneLedgerHandler>()
                     // #848, IADR-0117 改定 5: 保護レグの決済承認は OrderApproved を流さず台帳へ直接足される
                     //（IADR-0210 決定 2/3）。order_activity に行が無い母集合であり、終端の除外が
                     // 本当に台帳側で効いていることを同じ経路で確かめる。
@@ -348,6 +352,106 @@ public class PortfolioLedgerConsumersTests
         ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(100);
     }
 
+    // --- T-10-410, #852, IADR-0356: 見送り（OrderDispatchForgone）を台帳へ届ける ---
+
+    // T-10-410（肯定形・主目的）: OpenD の再起動中に見送られた手仕舞いは、30 分の窓を待たずに
+    // 処理中から外れる。是正前は取引台帳に届く経路が 1 本も無く、窓の満了まで建玉をロックしていた。
+    [Fact]
+    public async Task 確実に未発注の見送りは台帳へ届き処理中から外れる()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var decisionId = Guid.NewGuid();
+        var intent = CloseIntent(3_381, 334.09m);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(decisionId, intent, 3_381, Approved));
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(3_381);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderDispatchForgone(
+            decisionId, intent, OrderDispatchForgoneReason.BrokerUnavailable, Approved.AddMinutes(2)));
+        session.Executed.MessagesOf<OrderDispatchForgone>().Should().NotBeEmpty();
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(0);
+        ledger.GetFills().Should().BeEmpty("見送りは約定ではない（台帳に約定は載らない）");
+
+        await host.StopAsync();
+    }
+
+    // T-10-410（境界値）: 現行の見送り理由はいずれも**発注前**に確定する＝確実に未発注であり、
+    // すべて処理中から外れる。
+    [Theory]
+    [InlineData(OrderDispatchForgoneReason.BrokerUnavailable)]
+    [InlineData(OrderDispatchForgoneReason.StopLossPriceMissing)]
+    [InlineData(OrderDispatchForgoneReason.StopOrderUnsupported)]
+    [InlineData(OrderDispatchForgoneReason.StopLossMethodNotPermitted)]
+    public async Task 現行の見送り理由はいずれも処理中から外れる(OrderDispatchForgoneReason reason)
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var decisionId = Guid.NewGuid();
+        var intent = CloseIntent(100, 334.09m);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(decisionId, intent, 100, Approved));
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderDispatchForgone(decisionId, intent, reason, Approved.AddMinutes(2)));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(0);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-410（否定形・最重要）: **理由を見ずに一律で外さない。**
+    // 「確実に未発注」と分類されていない見送り（将来足される値を未定義の整数で模す）では
+    // 在庫を解放しない —— 「送ったかもしれない見送り」で押さえを解くと、証券会社側で生きている
+    // 手仕舞いと合わせて同じ株数に 2 本の決済が並び、**二重決済でショート化**する。
+    [Theory]
+    [InlineData(9999)]
+    [InlineData(4)]
+    public async Task 確実に未発注と分類されていない見送りでは在庫を解放しない(int futureReason)
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var decisionId = Guid.NewGuid();
+        var intent = CloseIntent(100, 334.09m);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(decisionId, intent, 100, Approved));
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderDispatchForgone(
+            decisionId, intent, (OrderDispatchForgoneReason)futureReason, Approved.AddMinutes(2)));
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(
+            100, "分類されていない見送りで押さえを解くと、二重決済でショート化する（既定は解放しない側）");
+
+        await host.StopAsync();
+    }
+
+    // T-10-410（冪等）: 見送りの再配送で結果が動かない（Wolverine の再試行では射影のハンドラと
+    // 同じチェーンで両方が再実行される。ADR-0013 / IADR-0129 決定 10）。
+    [Fact]
+    public async Task 見送りの再配送でも結果が動かない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+
+        var decisionId = Guid.NewGuid();
+        var intent = CloseIntent(100, 334.09m);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(decisionId, intent, 100, Approved));
+
+        var forgone = new OrderDispatchForgone(
+            decisionId, intent, OrderDispatchForgoneReason.BrokerUnavailable, Approved.AddMinutes(2));
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(forgone);
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(forgone);
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Approved).Should().Be(0);
+
+        await host.StopAsync();
+    }
+
     // 🔴 T-10-406, #848: AppendFill が呼ばれた**瞬間**の「処理中の決済」を覗く台帳。
     // 順序の不変条件（終端の記録は約定の記録より後ろ）は、最終状態だけを見ても検出できない。
     private sealed class InFlightProbeLedger(
@@ -382,6 +486,10 @@ public class PortfolioLedgerConsumersTests
 
         public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) =>
             inner.MarkTerminal(decisionId, terminalStatus, terminalAt);
+
+        // #852, IADR-0356: 見送り（発注していない）。委譲しておけば台帳の意味論がずれない。
+        public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
+            inner.MarkForgone(decisionId, forgoneAt);
 
         // #849, IADR-0350: 本プローブは取り込みを使わないが、委譲しておけば台帳の意味論がずれない。
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => inner.AppendDriftAdoption(adoption);

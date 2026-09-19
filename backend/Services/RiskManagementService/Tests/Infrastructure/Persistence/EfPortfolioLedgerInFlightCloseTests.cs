@@ -275,6 +275,83 @@ public class EfPortfolioLedgerInFlightCloseTests
         store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
     }
 
+    // --- T-10-410, #852, IADR-0356: 見送り（発注していない）は処理中から外す（InMemory と同一の意味論） ---
+
+    // T-10-410（肯定形・主目的）: 見送られた決済は窓を待たずに在庫へ戻り、**永続化される**
+    //（別コンテキストで読み直しても戻ったまま）。
+    [Fact]
+    public void 見送られた決済承認は処理中から外れ別コンテキストでも残る()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        Guid id;
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+            store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+
+            store.MarkForgone(id, Now.AddMinutes(-1));
+
+            store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfPortfolioLedgerStore(db2)
+            .GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // 🔴 T-10-410, #852, IADR-0356: 見送りは**注文状態を持たない**（IADR-0211。証券会社に注文が存在しない）。
+    // 判定に使う TerminalAt だけが立ち、診断用の TerminalStatus は **null のまま**である
+    //（`TerminalAt is not null && TerminalStatus is null` が「見送り」の表現になる）。
+    // 取消・拒否を捏造すると、FR-05 の「拒否」の別集計が接続障害で汚染される。
+    [Fact]
+    public void 見送りは注文状態を捏造しない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        store.MarkForgone(id, Now.AddMinutes(-1));
+
+        var row = db.ApprovedOrders.Find(id)!;
+        row.TerminalAt.Should().Be(Now.AddMinutes(-1));
+        row.TerminalStatus.Should().BeNull("見送りは証券会社に存在しない注文であり、注文状態を持たない");
+    }
+
+    // 🔴 T-10-410（否定形）: 相関する承認が無い見送りは書かない。後着の承認は処理中として数える（安全側）。
+    [Fact]
+    public void 承認より先に届いた見送りは記録しない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var decisionId = Guid.NewGuid();
+
+        store.MarkForgone(decisionId, Now.AddMinutes(-5));
+        store.AppendApproval(
+            decisionId,
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.InternalPaper, 60, 21m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 1m),
+            Now.AddMinutes(-4));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+    }
+
+    // T-10-410（単調・冪等）: 先に本物の終端が立っていれば見送りは上書きしない（時刻も状態も動かさない）。
+    [Fact]
+    public void 先に記録された終端を見送りで上書きしない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-3));
+
+        store.MarkForgone(id, Now.AddMinutes(-1));
+
+        var row = db.ApprovedOrders.Find(id)!;
+        row.TerminalAt.Should().Be(Now.AddMinutes(-3), "最初の終端が真（単調）");
+        row.TerminalStatus.Should().Be(OrderStatus.Cancelled);
+    }
+
     [Fact]
     public void 別コンテキストで読み直しても同じ結果になる()
     {
