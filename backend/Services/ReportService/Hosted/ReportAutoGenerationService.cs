@@ -1,3 +1,4 @@
+using ReportService.Domain;
 using ReportService.Features.Reports;
 // IADR-0128: Web SDK（旧 Worker）の暗黙 using に頼っていた型を、ライブラリ SDK では明示する。
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,10 @@ namespace ReportService.Hosted;
 //
 // 生成対象の判定は「境界時刻を過ぎていて未生成」であり、巡回時刻の一致を要求しない。したがって巡回の遅延・
 // プロセス再起動があっても当期ぶんは次の巡回で回収される（IADR-0115 決定2/3）。
+//
+// #840, IADR-0352 決定 3・4: 依存先が一過性に落ちていて生成を見送った期間があるときは、**次の巡回を早める**
+// （30 秒 → 60 → 120 → …。上限は通常の巡回間隔）。再起動の直後に依存先が立ち上がるまでの数分を、
+// 通常の 5 分間隔より細かく拾うためである。見送りが無くなれば通常の間隔へ戻す。
 public sealed class ReportAutoGenerationService(
     IServiceScopeFactory scopeFactory,
     IOptions<ReportAutoGenerationOptions> options,
@@ -23,13 +28,15 @@ public sealed class ReportAutoGenerationService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(options.Value.Interval);
+        var interval = options.Value.Interval;
+        using var timer = new PeriodicTimer(interval);
 
         do
         {
+            var next = interval;
             try
             {
-                await RunOnceAsync(stoppingToken).ConfigureAwait(false);
+                next = await RunOnceAsync(stoppingToken).ConfigureAwait(false) ?? interval;
             }
             catch (OperationCanceledException)
             {
@@ -41,12 +48,17 @@ public sealed class ReportAutoGenerationService(
                 // （冪等の根拠は PeriodKey の存在であり、部分的に生成された期間は二度作られない）。
                 logger.LogError(ex, "報告書の自動生成でエラーが発生しました。次回巡回を継続します。");
             }
+
+            // 変わったときだけ設定する（設定のたびにタイマーが張り直されるため、通常時の定時性を崩さない）。
+            if (timer.Period != next)
+                timer.Period = next;
         }
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
 
     // 1 巡回。単体テスト可能な単位として公開する。
-    public async Task RunOnceAsync(CancellationToken cancellationToken)
+    // 戻り値は**次の巡回を早めたい待ち時間**（見送った期間があるときだけ非 null。#840 / IADR-0352 決定 3）。
+    public async Task<TimeSpan?> RunOnceAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var generator = scope.ServiceProvider.GetRequiredService<ReportAutoGenerator>();
@@ -82,11 +94,53 @@ public sealed class ReportAutoGenerationService(
                 periodKey);
         }
 
+        foreach (var deferral in result.Deferred)
+        {
+            // #840, IADR-0352 決定 3: 見送り。報告書は保存も提示もしていない（承認待ちに並んでいない）。
+            logger.LogWarning(
+                "報告書ドラフト {PeriodKey} の生成を見送りました。依存先が一過性に応答していません（未供給になる入力: {Inputs}・原因: {Causes}）。"
+                + "約 {RetryAfterSeconds} 秒後に再試行します（見送り {Attempt}/{MaxDeferrals} 回目）。",
+                deferral.PeriodKey,
+                string.Join("、", ReportInputs.Labels(deferral.WaitingFor)),
+                string.Join(" / ", deferral.Causes),
+                (int)deferral.RetryAfter.TotalSeconds,
+                deferral.Attempt,
+                deferral.MaxDeferrals);
+        }
+
+        foreach (var degradation in result.Degraded)
+        {
+            // #840, IADR-0352 決定 4: 縮退した報告書を**黙って通さない**。恒常的な失敗（403・未設定）でも、
+            // 見送りの上限に達した場合でも、どの入力が欠けたまま提示されたかを警告として残す。
+            var inputs = string.Join("、", ReportInputs.Labels(degradation.UnsuppliedInputs));
+            if (degradation.WindowClosing)
+                // #866: 次の再試行の時刻には、この期間は生成対象から外れる（月報＝当月内・週報＝当 ISO 週内）。
+                // 見送ると二度と生成されないため、待たずに縮退版を出した。**上限到達とは原因が違う。**
+                logger.LogWarning(
+                    "報告書ドラフト {PeriodKey} は、次に再試行する時刻には生成対象の期間（生成窓）が閉じているため、"
+                    + "依存先の回復を待たずに入力が未供給のまま生成しました: {Inputs}。"
+                    + "提示の通知と /report show に同じ内容を表示しています。確定の前に本文を確認してください。",
+                    degradation.PeriodKey, inputs);
+            else if (degradation.RetriesExhausted)
+                logger.LogWarning(
+                    "報告書ドラフト {PeriodKey} は、依存先が回復しないまま見送りの上限に達したため、入力が未供給のまま生成しました: {Inputs}。"
+                    + "提示の通知と /report show に同じ内容を表示しています。確定の前に本文を確認してください。",
+                    degradation.PeriodKey, inputs);
+            else
+                logger.LogWarning(
+                    "報告書ドラフト {PeriodKey} は、入力が未供給のまま生成しました: {Inputs}。"
+                    + "提示の通知と /report show に同じ内容を表示しています。確定の前に本文を確認してください。",
+                    degradation.PeriodKey, inputs);
+        }
+
         foreach (var failure in result.Failed)
         {
             // 期間単位の失敗。他の期間の生成は継続しており、この期間は次周期で再試行される。
             logger.LogWarning(failure.Error, "報告書ドラフトの自動生成に失敗しました: {PeriodKey}。次回巡回で再試行します。",
                 failure.PeriodKey);
         }
+
+        // 見送った期間が複数あれば、最も早い再試行に合わせる（他方も同じ巡回で再び対象になる）。
+        return result.Deferred.Count == 0 ? null : result.Deferred.Min(d => d.RetryAfter);
     }
 }

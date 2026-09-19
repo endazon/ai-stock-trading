@@ -40,6 +40,8 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
                 PolicySummary = report.PolicySummary,
                 // FR-06, IADR-0115: 本文（Markdown）は自動生成経路のみが持つ。空なら NULL のまま。
                 Body = string.IsNullOrEmpty(report.Body) ? null : report.Body,
+                // #840, IADR-0352 決定 5: 欠けた入力の記録。空なら NULL のまま。
+                UnsuppliedInputs = ReportInputs.Serialize(report.UnsuppliedInputs),
                 ConfirmedAt = null,
                 Version = 1,
             });
@@ -81,8 +83,13 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         row.PolicySummary = report.PolicySummary;
         // FR-06, IADR-0115: 本文は明示的に非空を渡されたときだけ差し替える。手動 upsert（PUT /reports/{periodKey}）は
         // 本文を持たないため、空で上書きして生成済みの Markdown を消さない。
+        // #840, IADR-0352 決定 5: **未供給の記録は本文に従う**（本文を差し替えない改訂では記録も残す）。
         if (!string.IsNullOrEmpty(report.Body))
+        {
             row.Body = report.Body;
+            row.UnsuppliedInputs = ReportInputs.Serialize(report.UnsuppliedInputs);
+        }
+
         row.State = ReportState.Draft;
         // 改訂（新ドラフト）はレビュー局面を Drafting へ戻す（対話的確定の Revise・IADR-0071 決定5）。
         row.ReviewState = ReviewState.Drafting;
@@ -163,6 +170,7 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         AssumptionsVersion = r.AssumptionsVersion,
         PolicySummary = r.PolicySummary,
         Body = r.Body ?? string.Empty,
+        UnsuppliedInputs = ReportInputs.Parse(r.UnsuppliedInputs),
         ConfirmedAt = r.ConfirmedAt,
     };
 }

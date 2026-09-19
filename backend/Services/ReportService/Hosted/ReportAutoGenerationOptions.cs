@@ -45,8 +45,34 @@ public sealed class ReportAutoGenerationOptions
     /// </summary>
     public bool NotifyOnDraftPresented { get; set; } = true;
 
+    /// <summary>
+    /// FR-06, #840, IADR-0352 決定 3: 依存先が一過性に落ちているとき、1 期間あたり生成を**見送ってよい回数**。
+    /// 既定 5。0 は「見送らない」（本変更前と同じく、その巡回で縮退した報告書を出す）。負値は既定へ倒す。
+    /// </summary>
+    public int DependencyRetryMaxAttempts { get; set; } = ReportDeferralSettings.DefaultMaxDeferrals;
+
+    /// <summary>
+    /// FR-06, #840, IADR-0352 決定 3: 見送った後に次の巡回を早める待ち時間の基準（秒）。既定 30。
+    /// 見送るたびに倍になり（30 → 60 → 120 → …）、通常の巡回間隔（<see cref="IntervalSeconds"/>）を超えない。
+    /// 非正値は既定へ倒す（0 秒で回し続ける暴走ループにしない）。
+    /// </summary>
+    public int DependencyRetryBaseSeconds { get; set; } = (int)ReportDeferralSettings.DefaultBaseDelay.TotalSeconds;
+
     /// <summary>巡回間隔（非正値は既定 300 秒へ倒す＝暴走ループにしない）。</summary>
     public TimeSpan Interval => TimeSpan.FromSeconds(IntervalSeconds > 0 ? IntervalSeconds : 300);
+
+    /// <summary>見送りの上限と待ち時間へ写す。解釈できない値は既定へ倒す（fail-safe）。</summary>
+    public ReportDeferralSettings ToDeferralSettings() => new()
+    {
+        MaxDeferrals = DependencyRetryMaxAttempts >= 0
+            ? DependencyRetryMaxAttempts
+            : ReportDeferralSettings.DefaultMaxDeferrals,
+        BaseDelay = DependencyRetryBaseSeconds > 0
+            ? TimeSpan.FromSeconds(DependencyRetryBaseSeconds)
+            : ReportDeferralSettings.DefaultBaseDelay,
+        // 見送ったせいで通常の巡回より遅くなる、という向きへは倒さない。
+        MaxDelay = Interval,
+    };
 
     /// <summary>構成値を生成オーケストレータの設定へ写す。解釈できない値は既定へ倒す（fail-safe）。</summary>
     public ReportAutoGenerationSettings ToSettings()

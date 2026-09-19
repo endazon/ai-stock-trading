@@ -26,7 +26,14 @@ public sealed class DiscordWebhookNotificationSender(
         if (content.Length > DiscordContentLimit)
             content = content[..(DiscordContentLimit - 1)] + "…";
 
-        using var response = await httpClient.PostAsJsonAsync(webhookUrl, new { content }, cancellationToken);
+        // FR-09, FR-14, IADR-0359, #867: content には外部由来の文字列がそのまま載る（銘柄名・LLM の散文・
+        // 利用者が入力した理由・確定者名）。`allowed_mentions` を省くと Discord が本文を解釈し、
+        // 仕込まれた `@everyone` / `@here` / ロールメンションを**実際に発火させる**。
+        // 本文は無加工のまま（サニタイズはしない）、発火だけを止める。
+        using var response = await httpClient.PostAsJsonAsync(
+            webhookUrl,
+            new { content, allowed_mentions = DiscordMentionPolicy.SuppressAllWebhookField },
+            cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             logger.LogWarning("Discord Webhook 送信失敗: {Status}", (int)response.StatusCode);
