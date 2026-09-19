@@ -22,6 +22,11 @@ namespace NotificationService.Infrastructure.ExternalServices;
 // 自然文リプライの中継は #14 交差のため対象外・IADR-0062 決定2）。
 //
 // 実 Gateway への接続は本 PR では未検証（CI で外部 SaaS への WebSocket は張れない）。後続 E2E で検証する。
+//
+// 🔴 **本文を伴う応答は必ず `DiscordInteractionResponses` の拡張メソッド経由で出す**（#867 / IADR-0359）。
+// 素の `RespondAsync` / `FollowupAsync` / `ModifyOriginalResponseAsync` は `allowedMentions` の既定が
+// null＝**本文を解釈して `@everyone` を発火させる**。応答文には外部由来の値（ハンドラの整形済み Message・
+// 利用者の入力）が載るため、既定が安全側になる出口へ寄せている。
 public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 {
     // 確認フレーズを受け取るモーダル・ボタンの識別子。
@@ -280,7 +285,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         {
             _logger.LogWarning(
                 "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
-            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            await command.RespondTextAsync("この操作は許可されていません。").ConfigureAwait(false);
             return;
         }
 
@@ -291,14 +296,14 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 
         if (action != "approve")
         {
-            await command.FollowupAsync(ReportResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+            await command.FollowupTextAsync(ReportResponseTextOf(result)).ConfigureAwait(false);
             return;
         }
 
         // 照会に失敗したら確認ボタンを出さない（版番号が分からないまま確定させない）。
         if (!result.WasExecuted || result.Version is not { } version)
         {
-            await command.FollowupAsync(ReportResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+            await command.FollowupTextAsync(ReportResponseTextOf(result)).ConfigureAwait(false);
             return;
         }
 
@@ -308,10 +313,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             // 確定は取引方針を有効化する破壊的操作（ADR-0003）のため危険色。
             ButtonStyle.Danger);
 
-        await command.FollowupAsync(
+        await command.FollowupTextAsync(
             $"{result.Message}\n確定すると、この版の方針が取引に適用されます。確定しますか？",
-            components: builder.Build(),
-            ephemeral: true).ConfigureAwait(false);
+            builder.Build()).ConfigureAwait(false);
     }
 
     // FR-07, FR-14, UC-03〜05, #834: `/report` の period の入力補完。判断（多層認証・絞り込み・上限）は
@@ -369,7 +373,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         {
             _logger.LogWarning(
                 "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
-            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            await command.RespondTextAsync("この操作は許可されていません。").ConfigureAwait(false);
             return;
         }
 
@@ -378,12 +382,11 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 
         // 🔴 **確認の文面に「記録は消えない」ことを明示する。** ADR-0028 決定1 が「違反記録は失効させない」と
         // 定めており、解けるのは**停止**である。ここを曖昧にすると「記録を消す操作」として押される。
-        await command.RespondAsync(
+        await command.RespondTextAsync(
             "GFV 違反による停止を解除しますか？"
             + "**この操作は違反記録を消しません**（記録は監査証跡として残ります）。解除されるのは**停止**です。"
             + "原因の是正が済んでいることを確認したうえで実行してください。",
-            components: builder.Build(),
-            ephemeral: true).ConfigureAwait(false);
+            builder.Build()).ConfigureAwait(false);
     }
 
     private async Task OnKillSwitchSlashAsync(SocketSlashCommand command)
@@ -398,7 +401,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             _logger.LogWarning(
                 "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
             // 応答しないと Discord 側にエラーが残るため、ephemeral で最小限の応答のみ返す（理由は返さない）。
-            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            await command.RespondTextAsync("この操作は許可されていません。").ConfigureAwait(false);
             return;
         }
 
@@ -407,10 +410,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             isOff ? KillSwitchDisengageButtonId : KillSwitchEngageButtonId,
             ButtonStyle.Danger);
 
-        await command.RespondAsync(
+        await command.RespondTextAsync(
             isOff ? "本当に停止を解除しますか？" : "本当に全取引を停止しますか？",
-            components: builder.Build(),
-            ephemeral: true).ConfigureAwait(false);
+            builder.Build()).ConfigureAwait(false);
     }
 
     // FR-10, ADR-0009: /pause・/resume → 確認ボタンを提示する（確認フレーズは求めない）。ここでは Risk を呼ばない。
@@ -423,7 +425,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         {
             _logger.LogWarning(
                 "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
-            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            await command.RespondTextAsync("この操作は許可されていません。").ConfigureAwait(false);
             return;
         }
 
@@ -433,10 +435,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             // pause は kill switch ほど重くない可逆操作のため Primary（危険色にしない）。
             ButtonStyle.Primary);
 
-        await command.RespondAsync(
+        await command.RespondTextAsync(
             isResume ? "一時停止を解除しますか？" : "新規建てを一時停止しますか？（手仕舞い・損切りは継続します）",
-            components: builder.Build(),
-            ephemeral: true).ConfigureAwait(false);
+            builder.Build()).ConfigureAwait(false);
     }
 
     // FR-10, UC-07, ADR-0009: /status → 参照のみ。認証を通過していれば現在状態を表示する（確認ステップ無し）。
@@ -446,7 +447,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         var result = await _pauseHandler
             .HandleAsync(ContextOf(command, "/status"))
             .ConfigureAwait(false);
-        await command.FollowupAsync(PauseResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+        await command.FollowupTextAsync(PauseResponseTextOf(result)).ConfigureAwait(false);
     }
 
     // FR-20, UC-06, ADR-0008: /stage → action で分岐。status/withdrawal は参照・安全側のため直接実行。
@@ -463,7 +464,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         {
             _logger.LogWarning(
                 "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
-            await command.RespondAsync("この操作は許可されていません。", ephemeral: true).ConfigureAwait(false);
+            await command.RespondTextAsync("この操作は許可されていません。").ConfigureAwait(false);
             return;
         }
 
@@ -476,7 +477,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                     var result = await _stageGateHandler
                         .HandleAsync(ContextOf(command, $"/stage {action}"))
                         .ConfigureAwait(false);
-                    await command.FollowupAsync(StageResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+                    await command.FollowupTextAsync(StageResponseTextOf(result)).ConfigureAwait(false);
                     return;
                 }
 
@@ -486,8 +487,8 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                     // 遷移先が無い・範囲外なら実行しない（Discord 側の 0〜3 制約に加え防御的に確認）。
                     if (stageValue is not (long or int) || !TryStage(stageValue, out var target))
                     {
-                        await command.RespondAsync(
-                            "promote/demote には遷移先の段階（0〜3）を指定してください。", ephemeral: true).ConfigureAwait(false);
+                        await command.RespondTextAsync(
+                            "promote/demote には遷移先の段階（0〜3）を指定してください。").ConfigureAwait(false);
                         return;
                     }
 
@@ -517,15 +518,14 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                         ? $"本当に Stage {target} へ昇格しますか？（実弾方向の段階前進です）"
                         : $"Stage {target} へ差し戻しますか？";
 
-                    await command.RespondAsync(
+                    await command.RespondTextAsync(
                         promoteWarning is null ? prompt : $"{promoteWarning}\n{prompt}",
-                        components: builder.Build(),
-                        ephemeral: true).ConfigureAwait(false);
+                        builder.Build()).ConfigureAwait(false);
                     return;
                 }
 
             default:
-                await command.RespondAsync("不明な操作です。", ephemeral: true).ConfigureAwait(false);
+                await command.RespondTextAsync("不明な操作です。").ConfigureAwait(false);
                 return;
         }
     }
@@ -692,7 +692,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             .HandleAsync(ContextOf(modal, rawCommand), phrase)
             .ConfigureAwait(false);
 
-        await modal.FollowupAsync(ResponseTextOf(result), ephemeral: true).ConfigureAwait(false);
+        await modal.FollowupTextAsync(ResponseTextOf(result)).ConfigureAwait(false);
     }
 
     // #464, ADR-0028 決定2: 確認フレーズの送信 → 解除の実行。認証・フレーズ検証はハンドラ側で行う。
@@ -711,7 +711,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 
         // 拒否理由（内部の層名）はそのまま出さず一般化する（kill switch と同じ規律）。
         var text = result.WasExecuted ? result.Message : "この操作は許可されていません。";
-        await modal.FollowupAsync(text, ephemeral: true).ConfigureAwait(false);
+        await modal.FollowupTextAsync(text).ConfigureAwait(false);
     }
 
     // 実行結果の文言。拒否理由（内部の層名）はそのまま出さず、一般化した文言にする。
@@ -745,11 +745,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
 
     private static async Task DisableComponentsAsync(SocketMessageComponent component, string text)
     {
-        await component.ModifyOriginalResponseAsync(m =>
-        {
-            m.Content = text;
-            m.Components = new ComponentBuilder().Build(); // ボタンを取り除く＝再押下できない。
-        }).ConfigureAwait(false);
+        // ボタンを取り除く＝再押下できない。編集でも Discord は本文を解釈し直すため、
+        // ラッパー（IADR-0359）がメンション方針を載せる。
+        await component.ReplaceOriginalResponseAsync(text, new ComponentBuilder().Build()).ConfigureAwait(false);
     }
 
     // Discord.Net の相互作用を Application の素の文脈へ変換する。DM は GuildId が null になるため
