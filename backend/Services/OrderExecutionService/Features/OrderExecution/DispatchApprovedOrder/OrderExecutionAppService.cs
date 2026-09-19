@@ -326,14 +326,19 @@ public sealed class OrderExecutionAppService(
         // 確定を待たずに数えると、直前に約定したばかりの自分の建玉が「帰属不明」に見え、同一銘柄・同方向への
         // 2 本目が見送られる（追記(8) の残る制約）。確定は建玉照会を要さない突き合わせである。
         //
-        // 🔴 **#820 の 11 巡目監査, IADR-0344 追記(10) 決定1: 確定は建玉照会より「前」でなければならない**（BLK-11-1）。
-        // 建玉照会は OpenD への RPC であり、その待ちのあいだに OrderFillPollingService が先行エントリーの記録を
-        // 終端化し得る。照会を先に済ませてから確定すると、**claimed（主張）だけが新しく net（純額）は古い**——
-        // 帰属不明が**過少**に読まれ、他人の建玉が在るのに武装してしまう（監査の PROBE4 が実測）。
-        // 確定を先に置けば、取り違えは必ず「claimed が古く net が新しい」＝帰属不明を**過大**に読む側になり、
-        // **安全側（見送り）へ倒れる**。ProtectiveStopGuard.RunOnceAsync も同じ順序である（確定 → 照会）。
+        // 🔴 **#820 の 12 巡目監査, IADR-0344 追記(11) 決定1: 建玉照会の「前と後」の両方で主張を読み、小さい方を採る。**
+        // 建玉照会は OpenD への RPC であり、その待ちのあいだに主張（claimed）は**両方向へ動く**。
+        //   - **増える側**: OrderFillPollingService が先行エントリーの記録を終端化して確定が進む（11 巡目 PROBE4）。
+        //   - **減る側**: SoftwareStopExecutor の決済（RemainingProtected→0 かつ Completed）・ガードによる外部要因の確定・
+        //     PendingExternalReduction の計上（12 巡目 PROBE-A / PROBE-A3）。
+        // 🔴 **どちらか一方の時点だけを採ると、逆側の窓で帰属不明が「過少」に読まれて武装する。**
+        // 11 巡目は「確定 → 照会」に固定して増える側だけを塞ぎ、**減る側の鏡像を新設してしまった**
+        // （追記(10) 決定 1 の「取り違えは必ず安全側へ倒れる」は偽であり、追記(11) で撤回した）。
+        // **min(前, 後) なら、どちらへ動いても帰属不明を「過大」に読む側へ倒れる**——読みが 1 回増えるだけで
+        // OpenD への往復は増えない（確定はローカルな突き合わせ、2 回目は保護記録の読み直しだけ）。
         var stops = ProtectiveStopNetting.ConfirmEntryFills(
             protectiveStops!.FindActive(ArmingScanLimit), protectiveStops, store, clock.UtcNow);
+        var claimedBefore = ClaimedFor(intent, stops);
 
         var snapshot = await _positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
@@ -345,27 +350,33 @@ public sealed class OrderExecutionAppService(
             return true;
         }
 
-        var net = ProtectiveStopNetting.DirectionalNet(intent.Symbol, intent.Market, intent.Side, snapshot);
+        // 照会の**後**の主張を読み直す（確定は上で済んでおり永続化されているため、ここでは読むだけでよい）。
+        var claimedAfter = ClaimedFor(intent, protectiveStops.FindActive(ArmingScanLimit));
 
-        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定1: **帳簿の主張ではなく「その巡回で実際に動かせる株数」で引く。**
-        // 帳簿の主張（ProtectedQuantity）で引くと、未確定の観測を抱えた幽霊行——実際には 1 株も動かせない行——が
-        // 他人の建玉を「帰属済み」に見せ、帰属不明が 0 と読まれて新しい S1 が武装される（監査の P6(1)・実測 SOLD=20）。
-        // 実効数量で引けば幽霊行は 0 株しか主張せず、帰属不明が正しく見えて**安全側（見送り）へ倒れる**。
-        var claimed = stops
-            .Where(s => s.State == ProtectiveStopState.Active
-                && s.Symbol == intent.Symbol && s.Market == intent.Market && s.EntrySide == intent.Side)
-            .Sum(s => s.EffectiveProtectedQuantity);
+        var net = ProtectiveStopNetting.DirectionalNet(intent.Symbol, intent.Market, intent.Side, snapshot);
+        var claimed = Math.Min(claimedBefore, claimedAfter);
         var unattributed = net - claimed;
         if (unattributed <= 0)
             return false;
 
         _logger.LogError(
             "同一銘柄・同方向に帰属不明の建玉が {Unattributed} 株あるため S1 を武装せず見送ります"
-                + "（純額 {Net} 株・保護記録の主張 {Claimed} 株）。その建玉を S1 の損切りラインで決済しないための前提条件です"
+                + "（純額 {Net} 株・保護記録の主張 {Claimed} 株＝照会の前 {Before} 株と後 {After} 株の小さい方）。"
+                + "その建玉を S1 の損切りラインで決済しないための前提条件です"
                 + "（先に手仕舞ってから切り替えてください）。DecisionId={DecisionId} 銘柄={Symbol}",
-            unattributed, net, claimed, approved.DecisionId, intent.Symbol);
+            unattributed, net, claimed, claimedBefore, claimedAfter, approved.DecisionId, intent.Symbol);
         return true;
     }
+
+    // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定1: **帳簿の主張ではなく「その巡回で実際に動かせる株数」で数える。**
+    // 帳簿の主張（ProtectedQuantity）で数えると、未確定の観測を抱えた幽霊行——実際には 1 株も動かせない行——が
+    // 他人の建玉を「帰属済み」に見せ、帰属不明が 0 と読まれて新しい S1 が武装される（監査の P6(1)・実測 SOLD=20）。
+    // 実効数量なら幽霊行は 0 株しか主張せず、帰属不明が正しく見えて**安全側（見送り）へ倒れる**。
+    private static int ClaimedFor(OrderIntent intent, IEnumerable<ProtectiveStopOrder> stops) =>
+        stops
+            .Where(s => s.State == ProtectiveStopState.Active
+                && s.Symbol == intent.Symbol && s.Market == intent.Market && s.EntrySide == intent.Side)
+            .Sum(s => s.EffectiveProtectedQuantity);
 
     // #820, IADR-0344 決定3: 建玉が生じなかった S1 のエントリー（見送り・終端失敗）の記録を完了にする。
     private void CompleteSoftwareStopWithoutPosition(OrderApproved approved, StopLossMethodDisposition disposition)

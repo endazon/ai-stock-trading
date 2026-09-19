@@ -1088,8 +1088,9 @@ public class SoftwareStopBlockingRegressionTests
     // **claimed だけが新しく net は古い**——帰属不明が過少に読まれ、他人の建玉が在るのに武装した。
     // これは是正 1（実効数量で安全側へ倒す）が塞いだはずの P6(1) と同じ帰結の門である。
     //
-    // 確定を照会の**前**へ置けば、取り違えは必ず「claimed が古く net が新しい」＝帰属不明を**過大**に読む側になり、
-    // **安全側（見送り）へ倒れる**。ProtectiveStopGuard.RunOnceAsync も同じ順序（確定 → 照会）である。
+    // 🔴 **#820 の 12 巡目監査: 「確定を前に置けば必ず安全側」は偽であった**（claimed は減る側にも動く。T-10-507）。
+    // 是正は「照会の**前と後**の両方で主張を読み、**小さい方**を採る」であり、本テストは**増える側**の窓を固定する
+    // （減る側は T-10-507）。**2 本そろって初めて両方向が閉じる。**
     [Fact]
     public async Task 建玉照会の最中に約定が確定しても武装の判定は安全側へ倒れる()
     {
@@ -1114,14 +1115,66 @@ public class SoftwareStopBlockingRegressionTests
         var approved = Approved();
         var result = await f.Execution.ExecuteAsync(approved);
 
-        // 🔴 競合そのものが起きたことを先に確かめる（起きていなければ、このテストは何も見ていない）。
+        // フックが発火し、終端の記録が現れたことを先に確かめる（現れていなければ、このテストは何も見ていない）。
+        // ※ これは「交錯そのもの」を示すものではない——欠陥の検出は下の結果側の assert が担う。
         var priorEntry = f.Store.FindByDecisionId(prior.EntryDecisionId);
-        priorEntry.Should().NotBeNull("建玉照会の最中に発注記録が現れていなければ競合を再現できていない");
+        priorEntry.Should().NotBeNull("建玉照会の最中に発注記録が現れていなければ、窓そのものを置けていない");
         priorEntry!.Status.Should().Be(OrderStatus.Filled);
         priorEntry.FilledQuantity.Should().Be(10);
         result.Forgone.Should().NotBeNull(
             "照会が返した純額 10 は他人の建玉であり、その時点で先行エントリーはまだ 1 株も主張していない"
                 + "（確定を照会の後に置くと claimed だけが新しくなり、帰属不明が 0 に見えて武装する）");
+        ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
+        f.Broker.Entries.Should().BeEmpty("他人の建玉が在るあいだは新規建てを送らない");
+        f.Stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元を作らない");
+    }
+
+    // 🔴 T-10-507（受け入れ基準 57 / #820 の 12 巡目監査 BLK-12-1・監査の PROBE-A / PROBE-A3）:
+    // **T-10-506 の鏡像。** 11 巡目の是正（確定 → 照会に固定する）は「窓のあいだ主張は**増える**方向にしか動かない」を
+    // 暗黙に仮定していたが、**主張は減る方向にも動く**——
+    //   ①`SoftwareStopExecutor` の決済（`RemainingProtected`→0 かつ `Completed`）
+    //   ②ガードによる外部要因の確定  ③`PendingExternalReduction` の計上。
+    // 減る側が起きると **主張が古く大きく／純額が新しく小さい**組み合わせになり、
+    // 帰属不明が**過少**に読まれて武装する——**11 巡目 PROBE4 とまったく同じ帰結**である。
+    //
+    // 本テストは**本物の `SoftwareStopExecutor.TryCloseAsync`** を RPC 待ちの窓に踏ませる（PROBE-A3 の形）。
+    // 是正は「照会の**前と後**の両方で主張を読み、**小さい方**を採る」であり、
+    // **増える側（T-10-506）と減る側（本テスト）の両方が同時に閉じる**ことを 2 本で固定する。
+    [Fact]
+    public async Task 建玉照会の最中に決済で主張が消えても武装の判定は安全側へ倒れる()
+    {
+        var f = NewFixture();
+
+        // 到達済みの S1 行 A（自分の 10 株を守っている）。
+        var a = SoftwareStop(Now.AddHours(-1), quantity: 10, triggeredAt: Now);
+        f.Stops.Save(a with { RemainingProtected = 10 });
+        Entry(f, a, OrderStatus.Filled, filled: 10);
+
+        // 純額 20 ＝ A の 10 株 ＋ **他人の 10 株**（保護記録を持たない）。
+        f.Broker.Positions = [Long(20)];
+
+        // 🔴 建玉照会の RPC の**最中**に、常駐ガードの決済経路が A を決済して行を完了させる。
+        // 同一プロセスの実機構であり、照会が返す純額はその後の 10 株（＝他人のぶんだけ）になる。
+        f.Broker.DuringGetPositions = async () =>
+        {
+            var current = f.Stops.Find(a.EntryDecisionId)!;
+            await f.Executor.TryCloseAsync(current, [Long(20)]);
+            f.Broker.Positions = [Long(10)];
+        };
+
+        var approved = Approved();
+        var result = await f.Execution.ExecuteAsync(approved);
+
+        // 窓の中で**実際に決済が走った**ことを確かめる（走っていなければ鏡像を再現できていない）。
+        f.Broker.MarketCloses.Should().ContainSingle("本物の決済経路が窓の中で動いていなければ、このテストは何も見ていない");
+        var closed = f.Stops.Find(a.EntryDecisionId)!;
+        closed.State.Should().Be(ProtectiveStopState.Completed);
+        closed.RemainingProtected.Should().Be(0, "決済で主張が消えた＝claimed が減る側の窓");
+
+        // 🔴 残った 10 株は**他人の建玉**である。照会の前の主張（10）だけを採ると 10 − 10 = 0 に見えて武装する。
+        result.Forgone.Should().NotBeNull(
+            "照会が返した純額 10 は他人の建玉であり、A は決済を終えてもう 1 株も主張していない"
+                + "（照会の前の主張だけを採ると帰属不明が 0 に見えて武装する）");
         ((int)result.Forgone!.Reason).Should().Be(4, "OrderDispatchForgoneReason.UnattributedPosition");
         f.Broker.Entries.Should().BeEmpty("他人の建玉が在るあいだは新規建てを送らない");
         f.Stops.Find(approved.DecisionId).Should().BeNull("幽霊行の元を作らない");

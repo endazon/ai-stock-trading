@@ -139,6 +139,11 @@ public sealed class ProtectiveStopGuard(
         // 巡回の対象に残らない——が**その口座で唯一の S1 の痕跡**なら、検知は一度も走らない（監査の PROBE1）。
         // 気づける経路はその銘柄への**次の武装の見送り**である。塞ぐには建玉観測の常駐
         //（Hosted/BrokerPositionSnapshotService。既定 600 秒・無条件に照会する）へ相乗りする——**追随は #880**。
+        //
+        // 🔴 **#820 の 12 巡目監査（NB-12-5）: ここは保護記録を「照会の後」に引き直している**（下の FindActive）。
+        // つまりガードは**照会前の主張を持ち越さない**。発注側（OrderExecutionAppService）は持ち越すため、
+        // 「ガードと同じ順序だから安全」という類比は**片手落ちである**——発注側は照会の前と後の両方で主張を読み、
+        // **小さい方**を採ることで両方向の窓を閉じている（IADR-0344 追記(11) 決定1）。
         ProtectiveStopNetting.DetectUnattributedPositions(
             snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events);
 
