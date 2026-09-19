@@ -4,6 +4,7 @@ using TradeDecisionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Grpc.Core;
+using Grpc.Net.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -47,6 +48,15 @@ public class GrpcAssumptionsClientIntegrationTests
         services.AddAiStockTradingAssumptions(config);
         await using var sp = services.BuildServiceProvider();
 
+        // 🔴 **構成した deadline の予算にチャネルの接続確立を含めない**（#885）。
+        // `GrpcAssumptionsClient` は deadline を `DateTime.UtcNow.Add(timeout)` で**接続前に**置き、
+        // 本ヘルパは呼び出しごとに warm-up の無い新しいチャネルを作る。そのため
+        // **TCP 接続＋HTTP/2 preface が 1 秒の予算を食う** —— 並行する `dotnet test` の下で
+        // **809.7ms / 1000ms を食った実測がある**（作業仕様書 `20260919_885_grpc-deadline-test-flake`）。
+        // 食い切れば提供側は呼び出しを一度も観測せず `Calls` が 0 のままになる。
+        // それは**製品の振る舞いではなく計測の人工物**なので、接続を先に済ませておく。
+        await sp.GetRequiredService<GrpcChannel>().ConnectAsync(TestContext.Current.CancellationToken);
+
         return await sp.GetRequiredService<IAssumptionsProvider>().GetCurrentAsync();
     }
 
@@ -83,6 +93,11 @@ public class GrpcAssumptionsClientIntegrationTests
 
         current.IsResolved.Should().BeFalse("一度も取得できていなければ既定値（未解決）へ倒す");
         current.Assumptions.Should().Be(TradingAssumptionsDefaults.Create());
+
+        // 🔴 **件数の観測を決定的にする**（#885）—— 提供側が呼び出しを観測したことを
+        // 寛大な上限で待ってから数える。**deadline の振る舞いは下の経過時間の assert が引き続き担う**
+        // （役割を分ける）。この待ちは上限を緩めない —— 届かなければ理由付きで赤くなる。
+        await host.Stub.WaitForFirstCallAsync(TimeSpan.FromSeconds(30));
         host.Stub.Calls.Should().Be(1, "既定は再試行しない");
         elapsed.Elapsed.Should().BeLessThan(
             TimeSpan.FromSeconds(10),
@@ -219,12 +234,29 @@ internal sealed class StubAssumptionsService(StubAssumptions stub) : Proto.Assum
 // 提供側の振る舞いを注入し、**実際に呼ばれた回数**を数える（再試行の有無は回数でしか観測できない）。
 internal sealed class StubAssumptions(Func<int, CancellationToken, Task<Proto.GetAssumptionsResponse>> handler)
 {
+    private readonly TaskCompletionSource _firstCall =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private int _calls;
 
     internal int Calls => Volatile.Read(ref _calls);
 
-    internal Task<Proto.GetAssumptionsResponse> HandleAsync(CancellationToken cancellationToken) =>
-        handler(Interlocked.Increment(ref _calls), cancellationToken);
+    internal Task<Proto.GetAssumptionsResponse> HandleAsync(CancellationToken cancellationToken)
+    {
+        var call = Interlocked.Increment(ref _calls);
+        _firstCall.TrySetResult();
+        return handler(call, cancellationToken);
+    }
+
+    // 🔴 #885: 「呼ばれた回数」の観測点を決定的にするための同期点。
+    // 実時間の deadline と競争させず、**届いたこと**を寛大な上限で待つ。
+    internal async Task WaitForFirstCallAsync(TimeSpan timeout)
+    {
+        var completed = await Task.WhenAny(_firstCall.Task, Task.Delay(timeout)).ConfigureAwait(false);
+        if (completed != _firstCall.Task)
+            throw new TimeoutException(
+                $"提供側のスタブは {timeout.TotalSeconds:F0} 秒以内に呼び出しを 1 回も観測しなかった。");
+    }
 
     internal static StubAssumptions AlwaysOk() =>
         new((_, _) => Task.FromResult(Ok()));

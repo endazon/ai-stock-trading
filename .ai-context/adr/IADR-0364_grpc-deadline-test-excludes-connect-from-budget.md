@@ -1,0 +1,139 @@
+---
+title: IADR-0364 deadline の結合試験は「接続確立」を構成した予算の外へ出し、到達の観測を同期点で確定させる
+type: impl-adr
+status: Accepted
+related_ids: [FR-17, IADR-0063, IADR-0284, IADR-0328, IADR-0331]
+author: claude (Claude Code)
+created: 2026-09-19
+updated: 2026-09-19
+plan_refs:
+  - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-17)
+---
+
+# IADR-0364: deadline の結合試験は「接続確立」を構成した予算の外へ出し、到達の観測を同期点で確定させる
+
+- 状態: Accepted
+- 日付: 2026-09-19
+- 決定者: claude (Claude Code) / #885
+
+## 起点・関連
+
+- 関連する計画書 ID: FR-17（全体前提条件の一元管理）
+- 関連する実装 ADR: [IADR-0331](IADR-0331_assumptions-grpc-transport-and-proto-contract-checks.md) 決定 6
+  （「呼び出し元ごとの timeout / retry が効く」を実 Kestrel h2c の結合試験で固定する）を**覆さず補う**。
+  段の親は [IADR-0284](IADR-0284_east-west-grpc-scope-and-order-ruling.md) 決定 5（段 1）/
+  [IADR-0328](IADR-0328_east-west-grpc-foundation-stage0.md)。
+- 関連する実装仕様書: `.ai-context/specs/20260919_885_grpc-deadline-test-flake.md`
+- 起票: [#885](https://github.com/endazon/ai-stock-trading/issues/885)
+
+## コンテキストと課題
+
+`GrpcAssumptionsClientIntegrationTests.提供側が黙れば_構成した_deadline_で安全側既定へ倒れる` が、
+全ソリューション並列実行でまれに落ちる（報告された再現率 6 回中 3 回）。
+
+```
+Expected host.Stub.Calls to be 1 because 既定は再試行しない, but found 0 (difference of -1).
+```
+
+**このテストは 2 つの性質を守っている。どちらも弱めてはならない。**
+
+1. **経過時間の assert** —— 「呼び出し元が**構成した秒数で**諦めること」。
+   過去に `CallOptions.Deadline` を `AddSeconds(30)` へ変える変異が、弱い版のテストを素通りした実績がある。
+2. **`Calls` の assert** —— 「**既定は再試行しない**」の対照。
+
+### 🔴 機序（実測で確かめた）
+
+`GrpcAssumptionsClient.FetchAsync` は deadline を `DateTime.UtcNow.Add(timeout)` で置くが、これは
+**チャネルが一度も接続していない時点**である。テストヘルパ `ResolveAsync` は呼び出しごとに
+`AddAiStockTradingAssumptions` で新しい `GrpcChannel` を作り、**warm-up を行わない**。したがって
+**DI 構築・TCP 接続・HTTP/2 preface・要求送出のすべてが構成した 1 秒の予算の内側で起こる。**
+
+一時的な計装（ASP.NET Core のミドルウェアで HTTP 要求の到達時刻、`Get` ハンドラの入場時刻、
+クライアント側の RPC 開始時刻を記録）を入れ、**並行する `dotnet test` 6 本の下で 20 回**測った。
+
+| 区間 | 無負荷 10 回 | 並行 `dotnet test` 下 20 回 |
+| --- | --- | --- |
+| RPC 開始 → HTTP 要求が提供側へ到達 | 64.7〜68.1 ms | 66.3〜**764.4** ms |
+| 到達 → ハンドラ入場 | 14.3〜15.6 ms | 14.9〜45.4 ms |
+| **RPC 開始 → ハンドラ入場（＝1 秒の予算の消費分）** | **79.1〜83.4 ms** | **81.4〜809.7 ms** |
+
+🔴 **最悪の 1 本は 1000 ms の予算のうち 809.7 ms を、ハンドラに入るまでに食っていた。** 残余は 190 ms である。
+食い切れば提供側は呼び出しを一度も観測せず、`Calls` は 0 のままになる ——
+**製品は「1 秒で諦める」を正しく守っているのに、観測の側が壊れる。**
+
+なお `Calls` のメモリ可視性は既に手当て済みであった（`Interlocked.Increment` で書き `Volatile.Read` で読む）。
+この枝は読みで否定した。
+
+## 検討した選択肢
+
+| # | 案 | 評価 |
+| --- | --- | --- |
+| A | スタブが呼び出しを受けたことを `TaskCompletionSource` で通知し、寛大な上限で待ってから件数を数える | **単独では直らない。** 機序は「ハンドラに**入らない**」ことであり、入らないものを待っても永遠に来ない（30 秒後に別の理由で赤くなるだけ）。ただし**観測点の確定と失敗時の可読性**には効く |
+| B | 構成する deadline を 2 秒へ上げ、経過時間の上界も比例させる | **採らない。** 実測の分布は**裾が重い**（中央値 85 ms に対し最悪 809.7 ms ＝ 約 10 倍）。2 秒にしても同じ競合が起き得るうえ、**「1 秒で諦める」という固定したい値そのものを動かす** |
+| C | `Calls` の assert を削る | **不可。**「再試行しない」の対照そのものである |
+| **D** | **接続確立を予算の外へ出す**（RPC の前にチャネルを `ConnectAsync` で暖めておく） | **採用。** 食っていた区間を測って特定したうえで、その区間だけを予算の外へ出す。**deadline の値も、経過時間の assert も、`Calls` の assert も一切触らない** |
+
+## 決定
+
+### 決定 1 — テストヘルパは deadline を伴う RPC の前にチャネルを接続しておく
+
+`ResolveAsync` の中で、`IAssumptionsProvider` を呼ぶ前に
+`sp.GetRequiredService<GrpcChannel>().ConnectAsync(...)` を実行する。
+
+- **構成した deadline（1 秒）が測るものを「黙っている提供側を待つ時間」だけにする。**
+  接続確立は製品の deadline の対象ではあるが、**本テストが固定したいのは「構成した秒数で諦めること」**であり、
+  接続に何ミリ秒かかるかは本テストの命題ではない。
+- 製品コード（`GrpcAssumptionsClient` / `AssumptionsClientExtensions`）は**変更しない**。
+  本番の縮退の向き（IADR-0331 決定 3 / IADR-0063 決定 5）は変えない。
+
+### 決定 2 — 「呼ばれた回数」の観測点は同期点で確定させる（案 A を決定 1 の上に重ねる）
+
+スタブは最初の呼び出しで `TaskCompletionSource` を完了させ、テストは
+`WaitForFirstCallAsync(TimeSpan.FromSeconds(30))` で**届いたこと**を待ってから件数を数える。
+
+- 🔴 **これは決定 1 の代わりではない。** 決定 1 が無ければ「届かない」のだから待っても意味がない。
+  重ねる理由は 2 つ: ①読み取り順序の競合を原理的に消す
+  ②届かなかったときの失敗が `found 0` ではなく
+  「提供側のスタブは 30 秒以内に呼び出しを 1 回も観測しなかった」になり、**次の人が機序を読み違えない**。
+- **上限は緩めない。** 届かなければ理由付きで赤くなる。
+
+### 決定 3 — 2 つのコピーへ同時に入れる
+
+`CostControlService.Tests` と `TradeDecisionService.Tests` の当該ファイルは
+**`using` と `namespace` の 2 行を除いてバイト同一**である（IADR-0264 決定 1 が定めた
+「呼び出し元ごとの複製」の帰結）。**片方だけ直すとフレークは残る。**
+
+### 決定 4 — 弱めていないことは変異注入で示す（宣言では足りない）
+
+- `CallOptions.Deadline` を `AddSeconds(30)` 相当のハードコードへ → **両方赤**
+  （`Expected elapsed.Elapsed to be less than 10s ... but found 30s`）
+- `DefaultMaxAttempts` を 1 → 2（`DeadlineExceeded` は既に再試行対象）→ **両方赤**
+  （`Expected host.Stub.Calls to be 1 because 既定は再試行しない, but found 2`）
+
+## 理由
+
+**測ってから直した。** 「CPU 競合だろう」という見立ては着手時点では仮説でしかなく、
+本 PR の実行環境では **19 回（素の全ソリューション 12・CPU 飽和 1・並行 `dotnet test` 下 6）走らせても
+1 度も再現しなかった。** 再現しないまま案 A（同期点）だけを入れていたら、
+**機序に当たらない変更を「直った」と呼ぶところだった。** 計装して初めて
+「予算の 81% を接続確立が食う瞬間がある」ことが分かり、**直す場所が決まった。**
+
+## 結果
+
+- 良い影響: 予算の消費分が **81.4〜809.7 ms → 65.4〜69.6 ms**（並行 `dotnet test` 下 20 回）へ収束した。
+  最悪値が**是正前の最良値（81.4 ms）よりも小さい**。
+- 悪い影響・トレードオフ:
+  - テストが DI の登録詳細（`GrpcChannel` が singleton で引けること）へ依存する。
+    ただし本テストは**登録そのものを通す結合試験**（IADR-0331 決定 6）であり、依存先としては同格である。
+  - **接続確立が異常に遅いこと自体は、このテストではもう捕まらない。**
+    それは deadline の命題ではなく、捕まえるなら別のテストを立てる。
+- フォローアップ:
+  - 🔴 **是正前の再現率を測れていない**（0/19）。したがって**是正前後の再現率の差は示せない。**
+    根拠は①機序の実測②予算の内訳の前後比較③変異注入の 3 つである。
+  - 同型（実時間の締切・スリープに依存するテスト）の一覧は #885 へコメントで残した。
+    **本 PR では直さない。**
+
+## 関連
+
+- Supersedes: なし（IADR-0331 決定 6 を**補う**。決定内容は覆さない）
+- Superseded by: なし
