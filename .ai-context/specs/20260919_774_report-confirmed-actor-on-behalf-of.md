@@ -119,6 +119,13 @@ plan_refs:
 
 ## 未検証・保留
 
+- **Discord のメンション注入は塞げていない**（#861 の監査が実測）。`onBehalfOf` の値域は `@` を許しているため
+  `@everyone` / `@here` が通り、Webhook 送信は `allowed_mentions` を指定していない。値を送れるのは owner
+  クライアントの secret を持つ者だけなので権限昇格ではないが、送信側で塞ぐ（#867）。
+- **`/stage`（段階遷移）が同型の問題を持つ**。承認者がクライアント主体のまま `StageTransitioned.ApprovedBy` と
+  台帳に残る。FR-20 の実資金ゲートの承認記録であり、報告書の確定より監査上の重みが大きい（#868）。
+- **UserMapping の値が値域外だと確定が恒常的に 400 になる**。Bot 側は起動時に値域を検証していない（#868 に併記）。
+
 - 実 Keycloak のトークンで `azp` が届くことは単体テストではクレーム注入で代替しており、**実クラスタでは未検証**
   （kubectl 禁止の射程）。`JwtBearer` の受信クレーム写像が `azp` を改名しないことだけは
   `ConfirmingActorResolverTests.JwtBearer_の受信クレーム写像は_azp_を改名しない` で固定した。

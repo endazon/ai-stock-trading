@@ -25,7 +25,11 @@ public static partial class ConfirmingActorResolver
     public const string Unknown = "unknown";
 
     // Keycloak 利用者名の値域。**`\A…\z`**（.NET の `$` は末尾 LF の直前にもマッチする。IADR-0240 決定6 の追記）。
-    // 通知本文・監査要約へそのまま載るため、空白・改行・記号（Discord のメンション／マークダウン）を通さない。
+    // 通知本文・監査要約へそのまま載るため、空白・改行・マークダウンの記号を通さない。
+    // 🔴 **Discord のメンションは塞げていない。** メール形式の利用者名のために `@` を許しているので、
+    // `@everyone` / `@here` は値域を通り、通知本文へそのまま出る（#861 の監査が実測）。この値を送れるのは
+    // owner クライアントの secret を持つ者だけで、出所は運用者設定の UserMapping なので権限昇格にはならないが、
+    // 塞ぐのは送信側（Webhook の `allowed_mentions`）の仕事である——#867。
     [GeneratedRegex(@"\A[A-Za-z0-9._@+-]{1,64}\z")]
     private static partial Regex OnBehalfOfPattern();
 
