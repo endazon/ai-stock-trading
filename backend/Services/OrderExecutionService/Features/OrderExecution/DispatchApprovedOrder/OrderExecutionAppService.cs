@@ -108,12 +108,23 @@ public sealed class OrderExecutionAppService(
         // 相3: ADR-0003: 承認済み注文のみ発注する。Close（owner 手仕舞い・自動縮小）も同一経路。
         // #141, IADR-0092: ブローカが client order id 伝播に対応していれば DecisionId を紐づけて発注する
         // （滞留 Reserved を後から DecisionId で照合＝実照会リコンサイルの前提）。非対応（paper 等）は従来経路。
+        // 🔴 FR-10, UC-06, #847, IADR-0357: **成行の手仕舞いだけ**、既存の成行の口（IADR-0210 で入った
+        // IProtectiveOrderBroker.PlaceMarketOrderAsync）へ送る。新しいブローカー呼び出しは 1 つも作らない。
+        // 現在値の指値は下落局面で置いていかれ、手仕舞いが必要な場面でこそ効かない（稼働環境で実測・#847）。
+        // 成行の能力が無い発注先では**指値で送る**（見送らない）——手仕舞いを止めないほうが重い（FR-10）。
+        // 実在するアダプタ（内蔵 paper / moomoo）はどちらも能力を持つため、この退避は到達しない。
+        var marketClose = intent is { PositionEffect: PositionEffect.Close, MarketOrder: true }
+            && broker is IProtectiveOrderBroker;
+
         BrokerOrder brokerOrder;
         try
         {
-            brokerOrder = broker is IClientOrderIdBroker correlating
-                ? await correlating.PlaceOrderAsync(intent, approved.DecisionId, cancellationToken).ConfigureAwait(false)
-                : await broker.PlaceOrderAsync(intent, cancellationToken).ConfigureAwait(false);
+            brokerOrder = marketClose
+                ? await ((IProtectiveOrderBroker)broker)
+                    .PlaceMarketOrderAsync(intent, approved.DecisionId, cancellationToken).ConfigureAwait(false)
+                : broker is IClientOrderIdBroker correlating
+                    ? await correlating.PlaceOrderAsync(intent, approved.DecisionId, cancellationToken).ConfigureAwait(false)
+                    : await broker.PlaceOrderAsync(intent, cancellationToken).ConfigureAwait(false);
         }
         catch (BrokerUnavailableException)
         {

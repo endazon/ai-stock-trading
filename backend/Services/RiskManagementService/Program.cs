@@ -249,6 +249,10 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
 // FR-10, FR-11, UC-06, #292, IADR-0117: 利用者（owner）による建玉の手仕舞い（POST /risk-controls/positions/close）。
 // 統制ストアを依存に持たない＝手仕舞いは kill switch・日次損失ロックアウト・一時停止で止まらない（FR-10 本文）。
 builder.Services.AddScoped<PositionCloseService>();
+// FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 板に残った手仕舞いの取消
+//（POST /risk-controls/positions/close/cancel）。同じく統制ストアを依存に持たない。
+builder.Services.AddScoped<RiskManagementService.Features.RiskManagement.CancelPositionClose
+    .PositionCloseCancellationService>();
 // FR-10, UC-06, ADR-0016 決定7, #330, IADR-0133: 維持率割れによる建玉の自動縮小（システム自動・AI 非介在）。
 // 統制ストアもスクリーニングも依存に持たない＝3 統制が成立していても動く（UC-06・ADR-0009）。
 // 維持率・純資産・必要証拠金の供給元は未実装のため既定は「供給なし」＝発動しない（#342 / #331 が実装を入れる）。

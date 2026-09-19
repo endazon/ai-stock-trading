@@ -357,8 +357,20 @@ Helm / values / compose / `.env.example` は不変で、本番描画はバイト
   （後方互換・安全側）。
 - 現在値が取得できず `limitPrice` も指定されない場合は 422 で拒否する（価格 0 の注文を投げない）。
   現在値の供給は市況フィード（IADR-0068）に依存するため、供給が無い環境では `limitPrice` 必須になる。
+  🔴 **［2026-09-19 追記 / [#847](https://github.com/endazon/ai-stock-trading/issues/847)］この行は覆った**
+  （IADR-0357 決定 1）。**`limitPrice` 省略の既定は成行になった**——現在値の指値は下落局面で置いていかれ、
+  手仕舞いが必要な場面でこそ効かないことが稼働環境で実証された。現在値が取れないときも、成行では
+  参照価格を建玉の平均取得単価へ倒して**手仕舞いを止めない**。422 に落ちるのは
+  「`marketOrder: false` で指値を明示的に選んだのに価格が決まらない」場合だけである。
 - 決済注文の**訂正・取消の口は作らない**（moomoo 経路に訂正・取消を配線しない既存方針を維持）。
   誤った決済の是正は反対売買（新規建て）であり、統制の対象に戻る。
+  🔴 **［2026-09-19 追記 / [#847](https://github.com/endazon/ai-stock-trading/issues/847)］この行は半分覆った**
+  （IADR-0357 決定 2）。**取消の口は作った**（`POST /risk-controls/positions/close/cancel`・OwnerOnly・理由必須）
+  ——板に残った手仕舞いを消す手段が moomoo アプリしか無く、下落局面で建玉を落とせない詰みが実際に起きた。
+  取消は当初から `IBrokerAdapter.CancelOrderAsync` に在って moomoo も実装しており、配線されていなかっただけである
+  （#768）。**訂正の口は依然として作らない**（実 OpenD へ `TrdModifyOrder` を配線していない）。
+  🔴 取消が在庫の押さえを解くのは**確実に取り消せたと確認できたときだけ**である（IADR-0357 決定 3。
+  本 ADR 決定 3 の改定 1/4 が定める `MarkTerminal` の引き金を、不明な取消で引かせない）。
 - **AI は依然として自分で建玉を落とせない。** `TradeDecisionService` の `PositionEffect.Open` 固定は本 ADR の
   対象外で、判断由来の決済は #292 の PR 3/3（IADR-0119）で扱う。
 - Discord の `/close` コマンドは本 ADR の対象外（HTTP 経路のみ）。

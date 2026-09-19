@@ -43,8 +43,10 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
         ledger.AppendFill(decisionId, $"open-{decisionId:N}", quantity, 20m, at);
     }
 
-    private static object Body(string symbol, int? quantity = null, decimal? limitPrice = 21m, string? reason = "手仕舞い") =>
-        new { symbol, market = (int)Market.UnitedStates, quantity, limitPrice, reason };
+    private static object Body(
+        string symbol, int? quantity = null, decimal? limitPrice = 21m, string? reason = "手仕舞い",
+        bool? marketOrder = null) =>
+        new { symbol, market = (int)Market.UnitedStates, quantity, limitPrice, reason, marketOrder };
 
     [Fact]
     public async Task 未認証は401()
@@ -126,15 +128,40 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
     }
 
     [Fact]
-    public async Task 価格を決められなければ422()
+    public async Task 指値を選んだのに価格を決められなければ422()
     {
-        // 現在値キャッシュは空。limitPrice も無ければ価格 0 の注文を投げずに拒否する。
+        // 現在値キャッシュは空。**指値を明示的に選んだ**（marketOrder=false）のに価格が無ければ、
+        // 価格 0 の指値を投げずに拒否する。#847 以降、省略時は成行になるためここへは落ちない。
         SeedPosition("CLOSE4", 10);
 
-        var res = await OwnerClient()
-            .PostAsJsonAsync("/risk-controls/positions/close", Body("CLOSE4", limitPrice: null));
+        var res = await OwnerClient().PostAsJsonAsync(
+            "/risk-controls/positions/close", Body("CLOSE4", limitPrice: null, marketOrder: false));
 
         res.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    // 🔴 #847, IADR-0357: 現在値が取れなくても**成行の手仕舞いは通る**（市況フィードの不調で手仕舞えなくしない）。
+    [Fact]
+    public async Task 現在値が無くても成行の手仕舞いは受理される()
+    {
+        SeedPosition("CLOSE9", 10);
+
+        var res = await OwnerClient()
+            .PostAsJsonAsync("/risk-controls/positions/close", Body("CLOSE9", limitPrice: null));
+
+        res.StatusCode.Should().Be(HttpStatusCode.Accepted);
+    }
+
+    // #847, IADR-0357: 成行と指値の同時指定は矛盾であり 400（黙ってどちらかを捨てない）。
+    [Fact]
+    public async Task 成行と指値の同時指定は400()
+    {
+        SeedPosition("CLOSE10", 10);
+
+        var res = await OwnerClient().PostAsJsonAsync(
+            "/risk-controls/positions/close", Body("CLOSE10", limitPrice: 21m, marketOrder: true));
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]

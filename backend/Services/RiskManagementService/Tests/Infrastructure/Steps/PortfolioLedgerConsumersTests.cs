@@ -380,8 +380,10 @@ public class PortfolioLedgerConsumersTests
         public int GetInFlightCloseQuantity(string s, Market m, DateTimeOffset approvedAtOrAfter) =>
             inner.GetInFlightCloseQuantity(s, m, approvedAtOrAfter);
 
-        public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) =>
+        public bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) =>
             inner.MarkTerminal(decisionId, terminalStatus, terminalAt);
+
+        public int? FindApprovedFilledQuantity(Guid decisionId) => inner.FindApprovedFilledQuantity(decisionId);
 
         // #849, IADR-0350: 本プローブは取り込みを使わないが、委譲しておけば台帳の意味論がずれない。
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => inner.AppendDriftAdoption(adoption);

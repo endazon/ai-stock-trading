@@ -240,6 +240,25 @@
     "Reasons": "IReadOnlyList\u003CRejectionReason\u003E",
     "RejectedAt": "DateTimeOffset"
   },
+  "PositionCloseAbandoned": {
+    "AbandonedAt": "DateTimeOffset",
+    "ApprovedQuantity": "Int32",
+    "DecisionId": "Guid",
+    "FilledQuantity": "Int32",
+    "Market": "Market",
+    "RemainingQuantity": "Int32",
+    "Side": "TradeSide",
+    "Symbol": "String",
+    "TerminalStatus": "OrderStatus"
+  },
+  "PositionCloseCancellationRequested": {
+    "Actor": "String",
+    "DecisionId": "Guid",
+    "Market": "Market",
+    "Reason": "String",
+    "RequestedAt": "DateTimeOffset",
+    "Symbol": "String"
+  },
   "PositionCloseRequested": {
     "Actor": "String",
     "DecisionId": "Guid",

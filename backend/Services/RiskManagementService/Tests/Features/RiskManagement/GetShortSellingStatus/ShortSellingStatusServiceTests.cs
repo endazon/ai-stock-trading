@@ -29,7 +29,10 @@ public class ShortSellingStatusServiceTests
         public PositionEffect? FindApprovedPositionEffect(Guid decisionId) => null;
         public OrderIntent? FindApprovedIntent(Guid decisionId) => null;
         public int GetInFlightCloseQuantity(string symbol, Market market, DateTimeOffset approvedAtOrAfter) => 0;
-        public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) { }
+        // #847: 戻り値は「初めて終端を記録したか」。本 fake は台帳を持たないため常に false。
+        public bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) => false;
+
+        public int? FindApprovedFilledQuantity(Guid decisionId) => null;
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => false; // #849: 本テストは取り込みを使わない
     }
 

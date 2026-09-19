@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12]
 adrs: [ADR-0002]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory]
-issues: [#132, #268, #269, #270, #848, #856]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice]
+issues: [#132, #268, #269, #270, #768, #847, #848, #856]
 -->
 
 
@@ -46,7 +46,8 @@ paper の擬似約定を moomoo 模擬口座の残高・履歴で探しても**�
 | 状態遷移 | 発注＝即 `Filled`（`CompletedAt` も同時刻）。不正注文（数量/価格 ≤ 0）は `Rejected` | 発注直後は `Accepted`（moomoo の `Submitted`）。約定は**後追い**で `PartiallyFilled` / `Filled` |
 | 残高の所在 | AST の内部台帳のみ（risk-management の `trade_fills` を起点とする射影）。**現金・建玉は仮想** | **moomoo 模擬口座の残高・建玉が権威**。AST の台帳は現状これを取り込まない（[#270](https://github.com/endazon/ai-stock-trading/issues/270)） |
 | 注文履歴の確認先 | order-execution DB の `executed_orders` / `order_lifecycle_events`、および `OrderExecuted` イベント | 上記に加えて **moomoo アプリ / OpenD の注文照会**（moomoo 側が権威） |
-| 訂正・取消 | 訂正・取消の口（`IOrderAmendmentBroker`）を**paper だけが実装**する（ただし既定の即時約定では常に終端のため成立しない） | **その口を実装しない**＝訂正・取消の配管（`OrderAmendmentService`）を構成上そもそも登録しない（fail-safe。訂正・取消の口はペーパー専用ポートに閉じるという決定による） |
+| 取消 | 取消の口（`IBrokerAdapter.CancelOrderAsync`）を実装する（ただし既定の即時約定では常に終端のため成立しない） | **実装する**。利用者が板に残った手仕舞いを取り消す経路（`POST /risk-controls/positions/close/cancel`）がここへ届く |
+| 訂正 | 訂正の口（`IOrderAmendmentBroker`）を**paper だけが実装**する | **その口を実装しない**＝訂正の配管を構成上そもそも登録しない（fail-safe。訂正の口はペーパー専用ポートに閉じるという決定による）。実行時も `NotSupportedException` で閉じる |
 | 前提（運用） | 無し（起動するだけ） | **OpenD 常駐＋ログイン済み**、`moomoo-credentials` / `moomoo-rsa` Secret |
 | 実弾か | いいえ（そもそも外へ出さない） | いいえ（`TrdEnv_Simulate` 固定） |
 

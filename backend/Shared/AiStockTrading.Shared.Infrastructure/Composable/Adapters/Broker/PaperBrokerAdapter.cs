@@ -8,7 +8,8 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 // 判断・記録・報告のフローは実発注（moomoo アダプタ）と完全に同一とする。
 //
 // FR-05, FR-19, IADR-0067: 注文履歴テレメトリ（#154）の訂正・取消を成立させるため IOrderAmendmentBroker も実装する。
-// 実ブローカー（moomoo）は本ポートを実装しない＝実弾経路には訂正・取消の口が型として存在しない（fail-safe）。
+// 実ブローカー（moomoo）は本ポートを実装しない＝実弾経路には**訂正**の口が型として存在しない（fail-safe）。
+// #847, IADR-0357: **取消は IBrokerAdapter.CancelOrderAsync 側に在り moomoo も実装している**（利用者が板に残った手仕舞いを取り消す経路は実ブローカーでも要る）。
 //
 // FR-10, #331, IADR-0210: 保護注文（IProtectiveOrderBroker）も実装する——損切りはブローカー側逆指値へ
 // 一本化されており、実装しないと paper 構成の Open 注文がすべて見送られる（逆指値なしの建玉を持たない・

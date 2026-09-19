@@ -86,6 +86,21 @@ plan_refs:
 5. **発行は Worker 層**（`OrderAmendmentDispatcher`）。Application 層は MassTransit を参照しない既存レイヤリングを維持し、`OrderAmendmentService` はイベントを返すに留める。
 6. **本決定はトリガを含まない**。`OrderAmendmentDispatcher` は #141/#152 の呼び出し口として提供し、本 PR では呼び出し元を実装しない。
 
+🔴 **［2026-09-19 追記 / [#847](https://github.com/endazon/ai-stock-trading/issues/847)・[#768](https://github.com/endazon/ai-stock-trading/issues/768)］決定 3 と決定 6 は覆った**（IADR-0357 決定 2）。
+
+- **決定 3（訂正・取消の口をペーパー専用ポートへ閉じる）は「訂正」だけに縮んだ。** 本 ADR は 2 つの操作を
+  1 つのポートへまとめたが、**取消は当初から `IBrokerAdapter.CancelOrderAsync` に在り、`MoomooBrokerAdapter` も
+  実装していた**（`ProtectiveStopGuard`・`OrderExecutionAppService` が既に呼んでいる）。本ポートの
+  `CancelOrderAsync` は、ペーパー実装が両方を満たすだけの重複であり、**fail-safe は型では成立していなかった**。
+  そのうえで「取消の配管を moomoo 構成で登録しない」ことにしていたため、**利用者は板に残った手仕舞いを
+  moomoo アプリでしか消せず、下落局面で建玉を落とせない詰みが稼働環境で起きた**（#847）。
+  以後、取消は `IBrokerAdapter` を使い、DI も全構成で登録する。**訂正（`ModifyOrderAsync`）は本決定のまま**で、
+  実ブローカー構成では型として与えず、実行時も `NotSupportedException` で閉じる（二重の遮断）。
+- **決定 6（トリガを含まない）は解消した。** 取消の駆動元は利用者の手仕舞い取消
+  （`PositionCloseCancellationHandler`）である。訂正の駆動元（時限取消・#141・#152）は依然として無い。
+- 🔴 **教訓**: 「型で塞いだ」と書いた fail-safe が、**同じ操作の別の口が既に開いていたために成立していなかった**。
+  ポートを足すときは、**その操作が既存のポートに無いことを実測する**（IADR-0117 改定 8 の「変えない側も主張である」と同型）。
+
 ## 理由
 
 - **同期契約が供給経路を決めている**。`IOrderActivitySource.GetRecentActivity` は同期であり、発注審査という取引の最短経路上にある。ここに他サービスへの同期 HTTP を挟むと、OrderExecution が落ちた瞬間に発注審査が止まる（fail-safe に反する）。射影なら OrderExecution が落ちても審査は最後に射影された窓で継続でき、行が無ければ空窓＝最小標本ガードで無嫌疑に倒れる。
