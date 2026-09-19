@@ -191,6 +191,40 @@ public class OrderApprovedConsumerTests
             _inner.CancelOrderAsync(orderId, ct);
     }
 
+    // 🔴 #864, IADR-0355: 建玉照会の能力を持つブローカー（moomoo 相当）。発注は paper に委譲し、
+    // **建玉は空列（＝ブローカーは 1 株も持っていない）**を返す —— #849 で実測した乖離そのものである。
+    private sealed class EmptyPositionBroker : IBrokerAdapter, IProtectiveOrderBroker, IBrokerPositionSource
+    {
+        private readonly PaperBrokerAdapter _inner = new();
+
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
+        public int PlaceCount { get; private set; }
+
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<BrokerPositionSnapshot>?>([]);
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default)
+        {
+            PlaceCount++;
+            return _inner.PlaceOrderAsync(intent, ct);
+        }
+
+        public Task<BrokerOrder> PlaceStopOrderAsync(
+            OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
+            _inner.PlaceStopOrderAsync(closeIntent, triggerPrice, decisionId, ct);
+
+        public Task<BrokerOrder> PlaceMarketOrderAsync(
+            OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
+            _inner.PlaceMarketOrderAsync(closeIntent, decisionId, ct);
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.GetOrderAsync(orderId, ct);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) =>
+            _inner.CancelOrderAsync(orderId, ct);
+    }
+
     private const string ServiceName = "ai-stock-trading.order-execution-service";
 
     private static Task<IHost> NewHostAsync(IExecutedOrderStore store, IBrokerAdapter broker) =>
@@ -323,6 +357,53 @@ public class OrderApprovedConsumerTests
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty("発注していないため注文状態は存在しない");
         store.GetAll().Should().BeEmpty("発注していない注文の記録を残さない");
         reservations.Find(approved.DecisionId).Should().BeNull("確実に未発注のため予約は解放される");
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-492, FR-10, FR-05, FR-09, FR-11, ADR-0016, #864, IADR-0355: **台帳に建玉があり、ブローカーに無い決済。**
+    // 本番と同じ配線（ハンドラ・DI・発行）で、①売り注文が 1 本も出ない ②見送りが出る
+    // ③**既存の乖離検知と同じイベント**が出る（監査台帳と Critical 通知の入口。新しい経路を作らない）。
+    [Fact]
+    public async Task ブローカーに建玉が無い決済は本番配線でも発注されず乖離が発行される()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var broker = new EmptyPositionBroker();
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.AddSingleton<IClock, SystemClock>();
+                opts.Services.AddSingleton<IBrokerAdapter>(broker);
+                opts.Services.AddSingleton<IBrokerPositionSource>(broker);
+                opts.Services.AddSingleton<IExecutedOrderStore>(store);
+                opts.Services.AddSingleton<IOrderReservationStore>(reservations);
+                opts.Services.AddSingleton<BusinessMetrics>();
+                opts.Services.AddSingleton<AppSvc>();
+                opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
+                opts.Services.AddSingleton<TradeExpenseRecordingService>();
+                opts.UseAiStockTradingRabbitMq(
+                    ServiceName, "amqp://guest:guest@localhost:5672", typeof(OrderApprovedHandler).Assembly);
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
+
+        // #849 の実測（台帳 3,381 株 / ブローカー 0 株）を決済として流す。
+        var closeIntent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.MoomooSimulate,
+            3_381, 100m, PositionEffect.Close);
+        var approved = new OrderApproved(Guid.NewGuid(), closeIntent, 3_381, DateTimeOffset.UtcNow);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(approved);
+
+        broker.PlaceCount.Should().Be(0, "保有 0 からの売り（裸のショート）を出してはならない");
+        session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty();
+        session.Sent.MessagesOf<OrderDispatchForgone>().Should().ContainSingle()
+            .Which.Reason.Should().Be(OrderDispatchForgoneReason.BrokerPositionAbsent);
+        var drift = session.Sent.MessagesOf<PositionReconciliationDrift>().Should().ContainSingle().Which;
+        drift.Drifts.Should().ContainSingle().Which.BrokerQuantity.Should().Be(0);
+        store.GetAll().Should().BeEmpty();
+        reservations.Find(approved.DecisionId).Should().BeNull("送らないと決めた注文は予約も取らない");
 
         await host.StopAsync();
     }

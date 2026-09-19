@@ -1,0 +1,165 @@
+---
+title: IADR-0355 決済（Close）は発注直前にブローカーの実建玉と突き合わせ、足りなければ実建玉の範囲へ縮め、無い／照会できないときは送らない
+type: impl-adr
+status: Accepted
+related_ids: [FR-10, FR-05, FR-09, FR-11, UC-02, UC-06, ADR-0003, ADR-0016, IADR-0004, IADR-0057, IADR-0118, IADR-0119, IADR-0210, IADR-0211, IADR-0117, IADR-0350, IADR-0351]
+author: endazon (with Claude Code)
+created: 2026-09-19
+updated: 2026-09-19
+plan_refs:
+  - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
+  - planning:projects/ai-stock-trading/07_adr/ADR-0016_broker-adapter-and-paper-trading.md
+related_specs:
+  - ../specs/20260919_864_close-vs-broker-positions.md
+---
+
+# IADR-0355: 決済の発注をブローカーの実建玉と突き合わせる
+
+> 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
+> 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
+> 計画に影響する決定は planning へ issue で環流する（`feedback.yml` テンプレート）。
+
+- 状態: Accepted
+- 日付: 2026-09-19
+- 決定者: endazon（[#864](https://github.com/endazon/ai-stock-trading/issues/864)）/ Claude Code（起案）
+
+## 起点・関連
+
+- [#864](https://github.com/endazon/ai-stock-trading/issues/864)（[#860](https://github.com/endazon/ai-stock-trading/issues/860) の監査が見つけた**出口側の穴**。コードで確認・未発生）。
+- 決済（`PositionEffect.Close`）の注文は、**ブローカーの実建玉と一度も突き合わされずに発注される**
+  （`DispatchApprovedOrder` 配下に `IBrokerPositionSource` の参照が 0 件だった）。
+- 台帳とブローカーが乖離していると（[#849](https://github.com/endazon/ai-stock-trading/issues/849)。2026-09-18 に実際に発生し
+  **台帳 3,381 株 / ブローカー 0 株**になった）、決済注文は**ブローカー上では保有 0 からの売り＝裸の新規ショート**になる。
+- 空売りは方針で禁止であり、ショート建玉の規律（計画 ADR-0016）も空売り固有の統制も、この経路では効かない
+  ——注文が「決済」として通るためである（`isEntry = (PositionEffect == Open)`。[IADR-0004](IADR-0004_position-effect-entry-scoping.md)）。
+- 決済数量の出所が台帳であることは [IADR-0119](IADR-0119_decision-derived-close.md) 決定1 /
+  [IADR-0351](IADR-0351_held-position-in-decision-prompt.md) 決定6 が明記しており、**IADR-0351 は残る制約として
+  本 issue を対策先に挙げていた**。本 IADR がそれを閉じる。
+- 作業仕様書: `.ai-context/specs/20260919_864_close-vs-broker-positions.md`（母集合・受け入れ基準の写像）。
+
+## コンテキスト
+
+決済を起こす経路は 4 つ（判断由来の決済・利用者の手仕舞い API・維持率割れの自動縮小・保護逆指値が成立しない
+ときの建玉解消）あるが、**前 3 者はいずれも台帳の射影を根拠に数量を決め、同じ `OrderApproved` として
+発注執行の 1 か所（`OrderExecutionAppService.ExecuteAsync`）へ集まる**。4 つ目だけは根拠が違う
+（ブローカーが返した約定数量そのもの）。
+
+既に建玉と突き合わせている経路もある —— 保護逆指値ガード（[IADR-0210](IADR-0210_broker-side-stop-loss-unification.md) 決定4）は
+巡回のたびに `IBrokerPositionSource` を引き、**照会不能（null）なら据え置く**。定期観測
+（[IADR-0118](IADR-0118_broker-position-reconciliation.md)）も **null なら 1 通も発行しない**。
+決済の発注経路だけが、この規律の外にあった。
+
+## 決定
+
+### 決定1: 突き合わせは発注執行の 1 か所で、予約より前に行う
+
+`OrderExecutionAppService.ExecuteAsync` の中、**相 1（完了の権威＝既存記録の再発行）より後**、
+**相 2（予約）より前**に置く。
+
+- 経路ごとに門を置かない（判断由来・利用者の手仕舞い・自動縮小はすべてここへ集まる）。
+- 相 1 より後に置くので、**再配送された承認は照会すらしない**（既存結果をそのまま再発行する。
+  後から建玉が変わっていても過去の発注結果は変わらない）。
+- 相 2 より前に置くので、**送らないと決めた注文は予約も取らない**（[IADR-0057](IADR-0057_order-dispatch-idempotency.md) の 3 相を汚さない。
+  「逆指値を張れない Open は予約の前に見送る」＝ [IADR-0210](IADR-0210_broker-side-stop-loss-unification.md) 決定1 と同じ位置）。
+
+判定そのものは副作用のない純関数（`BrokerHeldPositionGate.Evaluate`）へ出す。数えるのは
+**決済方向の建玉だけ**である —— `Sell` の決済が消せるのはロング（正の数量）、`Buy` の決済が消せるのは
+ショート（負の数量）であり、**反対方向の建玉は 0 として扱う**（反対方向へ送れば建玉が増える）。
+
+### 決定2: 実建玉が足りないときは実建玉の範囲へ縮めて送る。0 なら送らない
+
+| ブローカーの実建玉（決済方向） | 送るもの | 残すもの |
+| --- | --- | --- |
+| 注文数量以上 | **従来どおり全量**（挙動は 1 バイトも変わらない） | 何も足さない |
+| 1 株以上・注文数量未満 | **実建玉の数量**へ縮めた注文 1 本 | 警告ログ ＋ 乖離イベント（決定5） |
+| 0（反対方向しか無い場合を含む） | **何も送らない**（見送り `BrokerPositionAbsent`） | Error ログ ＋ 見送りイベント ＋ 乖離イベント |
+
+**縮める側を採った理由**: 縮小は実在する建玉を手仕舞うだけであり、**裸のショートを構造的に作れない**。
+見送りに倒すと、ブローカーに実在する 100 株の手仕舞いまで塞ぐことになり、FR-10（手仕舞い・損切りは止めない）に
+正面から反する。**縮めた事実は必ず監査と通知に残す**（黙って数量を変えない）。
+
+台帳側の在庫の押さえ（「処理中の決済」）は承認数量のまま 30 分の窓で自然に解ける
+（[IADR-0117](IADR-0117_owner-position-close-path.md)）ので、縮小によって建玉が恒久的にロックされることはない。
+
+### 決定3: 🔴 建玉を照会できない（`null`＝不明）ときは送らない
+
+**選んだ側**: 不明なら見送る（`BrokerPositionsIndeterminate`）。**Critical で通知する**
+（他に鳴るものが 1 本も無く、建玉が残ったまま手仕舞いが出ていないため）。
+
+**選ばなかった側（不明でも送る）の害** —— 台帳が乖離しているときに**裸の新規ショートが出る**。
+これは**不可逆**であり、買い戻すまで損失が限定されない。空売り禁止の方針違反であり、ショート建玉の規律
+（計画 ADR-0016）も借株・強制買戻しの推定も、決済として通る注文には一切効かない。#849 が実測した乖離は
+「照会できた上での乖離」だったが、**乖離と照会不能が同時に起きないという保証はどこにも無い**。
+
+**選んだ側の害** —— 出したかった手仕舞いが出ない。建玉は残り、その間の市場変動の損失を負う。
+見送りはキューイングされないため、自動では撃ち直されない（再発注は次の取引判断か人手）。
+**この害を小さいと判断した根拠を 3 つ挙げる**（いずれも develop の現物で確かめた）。
+
+1. 🔴 **損切りはこの経路では実行されない。** `StopLossTriggeredHandler` は**決済注文を発行しない**
+   （「決済はブローカー側の逆指値が実行・システムは発注しない」。[IADR-0210](IADR-0210_broker-side-stop-loss-unification.md) 決定5）。
+   損切りはエントリー時にブローカーへ置いた逆指値が担い、**本経路の見送りでは消えない**。
+   したがって「不明で見送る」は FR-10 の**損切り**を止めない。止まるのは裁量の手仕舞いである。
+2. **照会不能は多くの場合 OpenD 側の障害であり、そのときは発注自体も届かない。** 建玉照会と発注は
+   同一の OpenD 接続（`IMoomooTradeClient`）を共有しており、照会が `null` へ倒れる状況では発注も
+   `BrokerUnavailable`（＝どのみち見送り）になる公算が高い。**追加で失う機会は、照会だけが落ちて発注は通る
+   という狭い状態に限られる。**
+3. **不可逆 > 可逆という既存の重み付けに従う。** 本リポジトリは同種の二択で一貫して不可逆側を避けてきた
+   （「実弾では二重発注〔不可逆〕の方が取りこぼし〔可逆〕より重い」＝ [IADR-0057](IADR-0057_order-dispatch-idempotency.md)。
+   保護逆指値ガードの「建玉の照会不能は据え置き」＝ [IADR-0210](IADR-0210_broker-side-stop-loss-unification.md) 決定4。
+   定期観測の「null なら発行しない」＝ [IADR-0118](IADR-0118_broker-position-reconciliation.md)）。
+
+> 🔴 **前例として挙げられた S1 の `SoftwareStopExecutor`（「不明は据え置き」）は develop に存在しない**
+> （PR #830 が未マージ。`grep -rl SoftwareStopExecutor` の当たりは `.ai-context/specs/20260919_848_...` の
+> 対象外リスト 1 件だけである）。**読めない前例に揃えたとは書けない**ので、develop に在る 2 つの前例
+> （上記 3 の後半 2 件）で判断した。**向きは同じ**（不明なら動かない）であり、#830 がマージされても
+> 衝突しない。
+
+### 決定4: 能力の無い発注先（内蔵 paper）では照合しない
+
+判定は「`IBrokerPositionSource` が DI に在るか」だけで行う。内蔵 paper は建玉照会を実装しないため
+依存が現れず、**分岐そのものが起きない**（既存の「構造的な非干渉」と同じ表現。定期観測・保護逆指値ガードが
+moomoo 構成でだけ常駐するのと対になる）。発注執行の合成起点だけを 1 か所変え、`Program.cs` の
+moomoo 限定の登録（`IBrokerPositionSource`）はそのまま使う。
+
+### 決定5: 乖離は既存の `PositionReconciliationDrift` で知らせる（新しい通知経路を作らない）
+
+突き合わせで見つけた乖離は、定期観測の突合（[IADR-0118](IADR-0118_broker-position-reconciliation.md)）と**同じイベント**で
+発行する。監査台帳（`AuditEntryFactory`）と Critical 通知（`NotificationFormatter`）の受け口は既にあり、
+二本目を作ると人が見る場所が割れる。発行は従来どおり Worker 層（`OrderApprovedHandler`）が行い、
+**見送りにも縮小した発注にも付き得る**ため排他にしない。
+
+**正直に書いておく 2 点**:
+
+- 台帳側の数量として載せるのは**この決済が消そうとした数量**であって、台帳の建玉そのものではない
+  （発注執行は台帳を持たない）。全量手仕舞いが既定（[IADR-0119](IADR-0119_decision-derived-close.md) 決定1）なので通常は一致する。
+- この発行は、乖離の取り込み（[IADR-0350](IADR-0350_owner-approved-ledger-drift-adoption.md)）が要求する
+  「**報告済み**」の追跡状態を**進めない**（リスク管理は本イベントを購読していない）。取り込みの前提は
+  従来どおり定期観測 2 回の連続報告である。
+
+### 決定6: 見送りの重大度は 2 つに分ける
+
+`BrokerPositionsIndeterminate` は **Critical**（建玉が残ったまま手仕舞いが出ず、他に鳴る通知が無い）。
+`BrokerPositionAbsent` は **Warning のまま**（同時に乖離の Critical が鳴る。二重に立てると本当に止まった
+事象が埋もれる＝為替フォールバックの通知で採ったのと同じ判断）。
+
+## 影響
+
+- 契約: `OrderDispatchForgoneReason` へ **末尾 2 値**（序数 4・5）。メトリクスのタグ・監査 payload の整数が
+  往来するため、既存の序数は動かさない。
+- 発注執行: `OrderExecutionAppService` が任意依存 `IBrokerPositionSource` を受け、`OrderDispatchResult` が
+  `Drift` を運ぶ（末尾の任意項目。既存の生成箇所は変えない）。
+- DB スキーマ・EF マイグレーション・API・Helm/values: **変更なし**。
+- リスク統制（`RiskEvaluator` / `OrderScreeningService`）: **変更なし**（決済は従来どおり統制を素通りする）。
+
+## 残余リスク
+
+- **縮小と見送りは「ブローカーが正しい」と仮定している。** ブローカーの照会が成功しつつ**誤った建玉**を返す
+  場合（部分列挙の見落とし等）は、実在する建玉の手仕舞いを縮めてしまう。`IBrokerPositionSource` の契約が
+  「部分列挙は null」を要求しているのが唯一の歯止めである。
+- **照会と発注のあいだの窓**は塞げない（照会した後に建玉が減れば、送った決済は依然として建玉を超え得る）。
+  窓を消すにはブローカー側の建玉ロックが要るが、そのような API は無い。
+- **見送った決済は自動で撃ち直されない。** 通知を見た人が対処する（キューイングしない裁定
+  ＝ [IADR-0211](IADR-0211_opend-unavailable-forgo-without-queueing.md)）。
+- 保護逆指値が成立しないときの成行手仕舞い（`CloseUnprotectedPositionAsync`）には門を置いていない
+  ——根拠がブローカーの返した約定数量そのものだからである。ここに門を置くと、いま作った無保護の建玉を
+  解消できなくなる。

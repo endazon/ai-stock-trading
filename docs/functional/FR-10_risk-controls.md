@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346, IADR-0350]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_829_count-working-entry-orders, 20260919_848_terminal-close-approvals-release-inventory, 20260919_849_ledger-drift-adoption]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #829, #848, #849, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0346, IADR-0350, IADR-0355]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_829_count-working-entry-orders, 20260919_848_terminal-close-approvals-release-inventory, 20260919_849_ledger-drift-adoption, 20260919_864_close-vs-broker-positions]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #809, #819, #829, #848, #849, #864, planning#292]
 -->
 
 
@@ -756,6 +756,33 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | **判断由来の決済** | LLM が保有建玉の反対売買を判断 | 保有全量 | 通す（Close は上記のとおり素通りする） |
 
 このほか維持率割れの自動縮小（前掲）も決済を起こす。
+
+#### 決済は発注の直前にブローカーの実建玉と突き合わせる（#864）
+
+**統制（発注前スクリーニング）を通さないことと、実在しない建玉を売ってよいことは別である。**
+決済の数量の出所は取引台帳の射影であってブローカーの事実ではないため、台帳が乖離していると（#849。
+2026-09-18 に台帳 3,381 株 / ブローカー 0 株が実際に発生した）、決済注文は**ブローカー上では保有 0 からの売り
+＝裸の新規ショート**になる。空売りは方針で禁止であり、注文が「決済」として通るためショート建玉の規律も
+空売り固有の統制も効かない。
+
+そこで**発注執行が、決済をブローカーへ送る直前に実建玉と突き合わせる**。上の表の 4 経路のうち、
+台帳を根拠に数量を決める 3 経路（保護逆指値が成立しないときの建玉解消を除く）がここを通る。
+
+| ブローカーの実建玉（決済方向） | 送るもの | 残すもの |
+| --- | --- | --- |
+| 注文数量以上 | 従来どおり全量（**通常時の挙動は変わらない**） | — |
+| 1 株以上・注文数量未満 | **実建玉の数量へ縮めた注文 1 本** | 警告ログと乖離の記録・通知（黙って数量を変えない） |
+| 0（反対方向の建玉しか無い場合を含む） | **何も送らない**（見送り） | 見送りの記録・通知と乖離の記録・通知 |
+| 照会できない（不明） | **何も送らない**（見送り・重大） | 見送りの記録・通知（乖離は確認できていないので報告しない） |
+
+数えるのは**決済方向の建玉だけ**である（売りの決済が消せるのはロング、買いの決済が消せるのはショート。
+反対方向の建玉は 0 として扱う —— 反対方向へ送れば建玉が増える）。乖離は**既存の乖離検知と同じ記録・通知**へ流す
+（新しい経路を作らない）。**建玉照会の能力を持たない発注先（内蔵 paper）では突き合わせを行わない**（従来どおり）。
+
+🔴 **照会できないときに送らない**のは、台帳が乖離していたときに出る裸のショートが**不可逆**である一方、
+出せなかった手仕舞いは建玉が残るだけで可逆だからである。**損切りはこの経路では実行されない**
+（建玉と同時にブローカーへ置いた逆指値が担う。下記「損切りの実行機構」）ため、見送っても損切りは消えない。
+選ばなかった側の害を含む理由は実装の意思決定記録に残した。
 
 ### 損切りの実行機構 — ブローカー側逆指値への一本化（#331）
 
