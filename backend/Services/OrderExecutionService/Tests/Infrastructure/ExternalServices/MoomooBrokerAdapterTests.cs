@@ -525,7 +525,7 @@ public class MoomooBrokerAdapterTests
         state!.SettledCashInBase.Should().BeNull();
     }
 
-    // T-10-490, FR-10, #869, ADR-0041 決定2, IADR-0354:
+    // T-10-508, FR-10, #869, ADR-0041 決定2, IADR-0354:
     // **口座の評価額（資産純値・USD）は供給する。** 決済済み資金と違い `TrdGetFunds.Funds.TotalAssets` として実在する。
     // これが統制上限の基準資金（equity）の供給元である。
     [Fact]
@@ -540,11 +540,13 @@ public class MoomooBrokerAdapterTests
 
     // **否定形（fail-closed の要）**: 評価額が取れない（応答に値が無い / 通貨が USD でない）なら `null` のまま。
     // 🔴 **買付余力や初期資金で代替してはならない**——分母を騙ると統制が黙って緩む。
-    // 一方で**口座種別まで捨てない**（種別は確認できており、捨てると口座種別依存の統制まで沈黙する）。
+    // 🔴 **「種別を残す」のは応答に値が無い場合だけである**（IADR-0354 決定1 の 2026-09-19 限定）。
+    // 照会そのものが例外で終わったときは、口座照会全体の失敗として口座種別ごと不明（null）へ倒れる。
+    // 2 つを 1 つの Theory に置いてあるのは、**どちらの向きなのかを取り違えないため**である。
     [Theory]
-    [InlineData(false)] // 応答に値が無い
-    [InlineData(true)]  // 照会そのものが失敗
-    public async Task 評価額が取れなくても種別は残し評価額は_null_のままにする(bool throws)
+    [InlineData(false)] // 応答に値が無い → 種別は残る
+    [InlineData(true)]  // 照会そのものが失敗 → 口座照会ごと不明
+    public async Task 応答に値が無ければ種別を残し例外なら口座照会ごと不明にする(bool throws)
     {
         var client = new FakeClient { AccountType = MoomooAccountType.Margin, EquityInBase = null };
         if (throws)

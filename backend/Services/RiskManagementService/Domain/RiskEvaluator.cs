@@ -305,11 +305,13 @@ public static class RiskEvaluator
             && AccountTypePolicy.AppliesShortSellControls(accountType))
         {
             var shortSellEnabled = ProductTypeResolver.IsEnabled(settings.Guard, accountType, ProductType.ShortSell);
-            // #869: equity が未供給なら 0 を渡す（1 銘柄あたり上限 10% が 0＝最も厳しい側）。
-            // 空売り統制はそれ自体がフェイルクローズであり、評価を飛ばすと借株可否・株価下限のような
-            // equity と無関係の 8 規則まで記録から落ちる。
+            // #869, IADR-0354 決定6: equity は**そのまま（null を含めて）渡す**。
+            // 評価器の側で「1 銘柄あたり上限 10% だけを判定しない」——0 を代入すると、分母が無いのに
+            // ShortExposureExceeded という**起きていない事実**が監査ログへ残る。
+            // 評価そのものを飛ばさないのは、借株可否・株価下限・逆指値必須のような equity と無関係の規則を
+            // 記録から落とさないためである。
             reasons.AddRange(ShortSellEvaluator.Evaluate(
-                intent, shortSellEnabled, settings.ShortSell.Limits, equity ?? 0m, shortSellContext));
+                intent, shortSellEnabled, settings.ShortSell.Limits, equity, shortSellContext));
 
             // FR-10, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5: 強制買戻し由来の 30 日禁止は
             // **文脈が組めなくても単独で判定できる唯一の統制**である（供給されるのは期限という 1 つの日付だけであり、

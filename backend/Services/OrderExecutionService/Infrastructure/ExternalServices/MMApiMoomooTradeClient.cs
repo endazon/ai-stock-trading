@@ -645,11 +645,19 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             return null;
         }
 
-        if (funds.HasCurrency && funds.Currency != (int)TrdCommon.Currency.Currency_USD)
+        // 🔴 #869, IADR-0354 決定1（2026-09-19 是正）: **通貨が欠けている応答も採らない。**
+        // `Funds.currency` は protobuf の **optional** フィールドである（required は power / totalAssets /
+        // cash / marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つだけ）。
+        // 従前は `HasCurrency && != USD` と書いており、**通貨が未設定なら検証せずに値を採っていた** ——
+        // 要求で USD を指定していても、応答がそれに従った証拠が無いまま JPY 建ての数値を USD の分母に
+        // 据え得る（桁が 2 つずれる）。本系の作法どおり**未供給は止める側へ倒す**。
+        if (!funds.HasCurrency || funds.Currency != (int)TrdCommon.Currency.Currency_USD)
         {
             _logger.LogWarning(
-                "口座照会の応答通貨が USD ではありません currency={Currency}。基準資金は未供給として扱います。",
-                funds.Currency);
+                "口座照会の応答通貨を USD と確認できません hasCurrency={HasCurrency} currency={Currency}。"
+                    + "基準資金は未供給として扱います。",
+                funds.HasCurrency,
+                funds.HasCurrency ? funds.Currency : (int?)null);
             return null;
         }
 

@@ -102,7 +102,8 @@ docs/
 > 本リポジトリの Runbook 例: [実弾解禁 Runbook](operations/live-trading-cutover-runbook.md)・
 > [発注経路の区別と識別 Runbook](operations/broker-execution-paths-runbook.md)・
 > [旧キュー削除 Runbook](operations/wolverine-queue-cleanup-runbook.md)・
-> [KB タグ辞書登録 Runbook](operations/kb-tag-dictionary-runbook.md)。
+> [KB タグ辞書登録 Runbook](operations/kb-tag-dictionary-runbook.md)・
+> [基準資金の供給が無いときの Runbook](operations/capital-baseline-seed-runbook.md)。
 >
 > `how-to` は仕様ではなく作業手順の案内であり、起点 ID を持たないことがある。
 > その場合はフロントマターの起点 ID を空にしてよい（他の仕様書と異なり必須としない）。

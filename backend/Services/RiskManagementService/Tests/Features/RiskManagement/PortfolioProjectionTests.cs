@@ -91,7 +91,7 @@ public class PortfolioProjectionTests
         state.OpenPositionCount.Should().Be(0);
     }
 
-    // T-10-495, FR-10, #869, ADR-0041 決定2, IADR-0354:
+    // T-10-513, FR-10, #869, ADR-0041 決定2, IADR-0354:
     // 🔴 **台帳の射影は統制上限の基準資金（equity）を作らない。** 作るのはドローダウン用の
     // 台帳由来エクイティ（初期資金 ＋ **すべての**実現損益 ＋ 含み）だけである。
     // 従前は「初期資金 ＋ 当日より前の実現損益」を Capital として返し、それが比率上限の分母になっていた

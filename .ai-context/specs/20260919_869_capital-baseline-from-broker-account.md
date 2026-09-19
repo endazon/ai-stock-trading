@@ -62,7 +62,7 @@ grep -rn "equity|Equity" --include=*.cs backend | grep -v "/Tests/"
 | 2 | `RiskEvaluator` 1 日あたり発注金額上限（`MaxDailyOrderAmountFor`） | equity の 150%/日 | 同上 |
 | 3 | `RiskEvaluator` 日次損失上限 | `dailyLoss <= -(equity × 2%)` | 同上 |
 | 4 | `RiskEvaluator` 段階資金上限（`StageSettings.OrderableCapFor`） | 総資金比（Stage 2 ＝ 30%） | 同上 |
-| 5 | `RiskEvaluator` 空売り統制（`ShortSellEvaluator`・1 銘柄 10%） | equity の 10% | 基準資金が無いときは **0 を渡す**（最も厳しい側）。主因は併記される `CapitalBaselineUnavailable` |
+| 5 | `RiskEvaluator` 空売り統制（`ShortSellEvaluator`・1 銘柄 10%） | equity の 10% | 🔴 **［2026-09-19 是正 / #874 の監査］`null` をそのまま渡し、1 銘柄あたり上限だけを判定しない**（0 だと全注文で `ShortExposureExceeded` が立ち、起きていない事実を監査ログへ書く）。equity 非依存の規則はそのまま効く |
 | 6 | `RiskEvaluator` 段階別商品種別（`StageProductPolicy`・空売り実弾解禁 $5,000） | equity ≥ $5,000 | 同上（0 は解禁条件を満たさない側） |
 | 7 | `PortfolioValuation.DrawdownRatio` / `EquityHighWaterMark`（IADR-0066） | 台帳由来のエクイティ系列のピークと現在値 | 🔴 **変えない。** 比率上限の分母ではなく「ピークと現在の比」であり ADR-0041 決定 2 の射程外。ただし `PortfolioState.Capital` を廃したため、入力は新設の `LedgerEquity`（台帳由来・**統制の基準ではない**と型の上で明示）から採る |
 | 8 | `MaintenanceMarginSnapshot.NetEquityUsd`（維持率） | 日中の純資産（維持率の分子） | 変えない。**日中に動くこと自体が判定対象**であり基準資金と別物（同型の注意書きが既に型にある）。供給元は未実装のまま |
@@ -79,6 +79,10 @@ grep -rn "equity|Equity" --include=*.cs backend | grep -v "/Tests/"
 
 - `IMoomooTradeClient.GetAccountEquityInBaseAsync` を新設し、`TrdGetFunds`（`Currency=Currency_USD` / `RefreshCache=true`）の
   `Funds.TotalAssets`（**資産純値**。現金 ＋ 建玉評価額 − 負債。**含み損益を含む**）を返す。応答に `TotalAssets` が無ければ `null`。
+  🔴 **［2026-09-19 追記 / #874 の監査］応答が USD と名乗っていなければ採らない（通貨の欠落を含む）。**
+  `Funds.currency` は protobuf の **optional**（required は `power` / `totalAssets` / `cash` / `marketVal` /
+  `frozenCash` / `debtCash` / `avlWithdrawalCash` の 7 つ）であり、初稿の `HasCurrency && != USD` は
+  **通貨未設定の応答を検証せず素通りさせていた**。3 通り（USD / 別通貨 / 欠落）を T-10-514 が固定する。
 - `BrokerAccountState` に `EquityInBase`（`decimal?`）を足す。**既存の `SettledCashInBase` とは別物である**
   （あちらは GFV ガードの分母＝未決済を含まない現金で、moomoo に該当フィールドが無い〔IADR-0153 決定 4〕。
   こちらは口座全体の評価額であり、**専用フィールドが実在する**）。
@@ -96,6 +100,10 @@ grep -rn "equity|Equity" --include=*.cs backend | grep -v "/Tests/"
   プロセスが夕方に落ちていた等で最後の観測がセッション中だった場合のみ、その時点の評価額になる（**値を騙らないため IADR-0354 に記録する**）。
 - **永続である理由**: 非永続にすると再起動のたびに「前日の行」が消え、**翌日の取引日境界まで新規建てが丸一日止まる**。
   口座種別の観測（非永続・30 分失効）と設計が違うのは「いまの値」と「昨日の値」の違いである。
+- 🔴 **［2026-09-19 追記 / #874 の監査］暦日で数えることの帰結**: 巡回に市場カレンダーのゲートが無いため**土日にも行が作られる**。
+  **週末に口座照会が 1 回でも成功していれば月曜の寄り付きから供給され、成功していなければ月曜は一日中止まる。**
+  月曜の基準は「金曜の終値」ではなく「**日曜の観測**」の行になる。埋め合わせ手順は
+  [基準資金の供給が無いときの Runbook](../../docs/operations/capital-baseline-seed-runbook.md)。
 
 ### 3. 鮮度（計画が定めていないため実装判断）
 
@@ -119,16 +127,17 @@ grep -rn "equity|Equity" --include=*.cs backend | grep -v "/Tests/"
   **ここだけ非対称にすると「新しい規律を作らない」に反する。**
 - あわせて `/status`（SC-03）と SC-02 の実額併記で「未供給」を表示する（05_screens の未供給表示規約・IADR-0162）。
 
-## テスト（`docs/tests/FR-10_risk-controls-tests.md` に T-10-490 から追記）
+## テスト（`docs/tests/FR-10_risk-controls-tests.md` に T-10-508 から追記）
 
 | ID | 何を固定するか |
 | --- | --- |
-| T-10-490 | 基準資金が口座照会由来の値で解決される（1 注文上限＝その 25%） |
-| T-10-491 | 照会できないとき新規建てが拒否される（`CapitalBaselineUnavailable`） |
-| T-10-492 | 同じ状況で手仕舞い・損切りは通る |
-| T-10-493 | 鮮度切れ（既定 4 日超）は照会できていないのと同じ扱い／境界ちょうどは通る |
-| T-10-494 | 当日中に届いた観測は基準資金を動かさない（前取引日の行だけを見る） |
-| T-10-495 | 台帳の実現損益は基準資金を動かさない（台帳由来の経路が無いことの回帰） |
+| T-10-508 | 基準資金が口座照会由来の値で解決される（1 注文上限＝その 25%） |
+| T-10-509 | 照会できないとき新規建てが拒否される（`CapitalBaselineUnavailable`） |
+| T-10-510 | 同じ状況で手仕舞い・損切りは通る |
+| T-10-511 | 鮮度切れ（既定 4 日超）は照会できていないのと同じ扱い／境界ちょうどは通る |
+| T-10-512 | 当日中に届いた観測は基準資金を動かさない（前取引日の行だけを見る） |
+| T-10-513 | 台帳の実現損益は基準資金を動かさない（台帳由来の経路が無いことの回帰） |
+| T-10-514 | 口座照会の応答が **USD と名乗るときだけ**評価額を採る（別通貨・**通貨欠落**は未供給） |
 
 ## 受け入れ基準（#869 より）
 

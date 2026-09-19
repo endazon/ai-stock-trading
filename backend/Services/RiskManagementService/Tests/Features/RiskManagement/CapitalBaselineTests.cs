@@ -21,7 +21,7 @@ namespace RiskManagementService.Tests;
 //   「**手仕舞い（Close）と損切りは止めない**」「**鮮度は日次でよい**」
 //
 // 従前の実装は「初期資金 ＋ 当日より前の実現損益」を基準にしており、**含み損益を含まない**点で計画と食い違っていた。
-// 本書はその是正を固定する（T-10-490〜T-10-495。T-10-495 は PortfolioProjectionTests に置く）。
+// 本書はその是正を固定する（T-10-508〜T-10-513。T-10-513 は PortfolioProjectionTests に置く）。
 public class CapitalBaselineTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 9, 18, 0, 0, TimeSpan.Zero); // 木曜 14:00 ET
@@ -50,7 +50,7 @@ public class CapitalBaselineTests
     private static RiskManagementDbContext NewContext(string dbName) =>
         new(new DbContextOptionsBuilder<RiskManagementDbContext>().UseInMemoryDatabase(dbName).Options);
 
-    // T-10-490: 口座照会に由来する基準資金から 1 注文金額上限（equity の 25%）が解決される。
+    // T-10-508: 口座照会に由来する基準資金から 1 注文金額上限（equity の 25%）が解決される。
     // **境界の両側**を採る——内側は通り、1 円でも外は拒否される。値は口座照会の値だけで決まり、
     // 台帳の実現損益には依存しない。
     [Theory]
@@ -65,7 +65,7 @@ public class CapitalBaselineTests
         result.Reasons.Contains(RejectionReason.PerOrderAmountExceeded).Should().Be(rejected);
     }
 
-    // T-10-491: **照会できないとき新規建ては拒否される**（fail-closed）。
+    // T-10-509: **照会できないとき新規建ては拒否される**（fail-closed）。
     // ADR-0016 決定3・ADR-0028 と同じ形であり、新しい規律ではない。
     [Fact]
     public void 口座を照会できないとき新規建ては拒否される()
@@ -76,7 +76,7 @@ public class CapitalBaselineTests
         result.Reasons.Should().Contain(RejectionReason.CapitalBaselineUnavailable);
     }
 
-    // T-10-491（続き・否定形）: 分母が分からない状態で「上限を満たした」という判定を作らない。
+    // T-10-509（続き・否定形）: 分母が分からない状態で「上限を満たした」という判定を作らない。
     // 🔴 比率上限の理由（1 注文 25% / 1 日 150% / 段階の総資金比 / 日次損失 2%）は**立たない**——
     // 立ててしまうと監査ログが「枠を使い切った」という起きていない事実を主張する。
     [Fact]
@@ -93,7 +93,7 @@ public class CapitalBaselineTests
         result.Reasons.Should().NotContain(RejectionReason.StageCapitalCapExceeded);
     }
 
-    // T-10-492: **同じ状況で手仕舞い・損切りは通る**（FR-10 の不変条件・ADR-0009）。
+    // T-10-510: **同じ状況で手仕舞い・損切りは通る**（FR-10 の不変条件・ADR-0009）。
     // 照会できないことを理由に建玉を閉じられなくするのは統制ではなく事故である。
     [Fact]
     public void 照会できなくても手仕舞いと損切りは通る()
@@ -104,7 +104,38 @@ public class CapitalBaselineTests
         result.Reasons.Should().BeEmpty();
     }
 
-    // T-10-493: 鮮度（実装判断・IADR-0354 決定4）。既定 4 日。**境界の両側**を採る。
+    // T-10-509（続き・空売り）: 空売り統制でも**分母の無い上限は判定しない**。
+    // 🔴 0 を代入すると 1 銘柄あたり上限（equity の 10%）があらゆる注文で成立し、
+    // 監査ログに `ShortExposureExceeded` という**起きていない事実**が残る（IADR-0354 決定6）。
+    // equity に依存しない規則（借株可否・逆指値必須・株価下限）は**未供給でもそのまま効く**。
+    [Fact]
+    public void 照会できないとき空売りの1銘柄あたり上限は判定しない()
+    {
+        var intent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.ShortSell,
+            BrokerProvider.InternalPaper, 10, 100m, PositionEffect.Open, StopLossPrice: 110m);
+        var context = new ShortSellOrderContext
+        {
+            Today = Today,
+            BorrowRateAnnual = 0.10m,
+            ShortPermit = true,
+            SymbolShortExposure = 0m,
+            TotalShortExposure = 0m,
+            TotalExposure = 1_000_000m, // 空売り比率 50%（equity 非依存）は先に効かせない
+        };
+
+        var unsupplied = ShortSellEvaluator.Evaluate(
+            intent, shortSellEnabled: true, TradingDefaults.CreateShortSellSettings().Limits, equity: null, context);
+        var zero = ShortSellEvaluator.Evaluate(
+            intent, shortSellEnabled: true, TradingDefaults.CreateShortSellSettings().Limits, equity: 0m, context);
+
+        unsupplied.Should().NotContain(RejectionReason.ShortExposureExceeded,
+            "分母が無いのに「エクスポージャ上限を超えた」と記録してはならない");
+        // 対の肯定形: 0 は「資金が 0」という**判定できる値**であり、こちらでは立つ。
+        zero.Should().Contain(RejectionReason.ShortExposureExceeded);
+    }
+
+    // T-10-511: 鮮度（実装判断・IADR-0354 決定4）。既定 4 日。**境界の両側**を採る。
     [Theory]
     [InlineData(4, true)]  // ちょうど 4 日前の観測は使える
     [InlineData(5, false)] // 超えたら「照会できていない」と同じ扱い
@@ -121,7 +152,7 @@ public class CapitalBaselineTests
         (store.GetCurrent() is not null).Should().Be(supplied);
     }
 
-    // T-10-494: **当日の観測は基準資金を動かさない。** 計画 §5 注記は「日中の評価損益で上限を動かすと、
+    // T-10-512: **当日の観測は基準資金を動かさない。** 計画 §5 注記は「日中の評価損益で上限を動かすと、
     // 含み益で上限が緩み含み損で締まるという逆方向の作用が起きる」として明示的に禁じている。
     [Fact]
     public void 当日中に届いた観測は基準資金を動かさない()
