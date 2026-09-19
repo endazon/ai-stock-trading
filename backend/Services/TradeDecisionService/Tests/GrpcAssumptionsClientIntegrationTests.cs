@@ -35,6 +35,24 @@ public class GrpcAssumptionsClientIntegrationTests
     private const string ExpectedTaxRate = "0.20315";
     private const int ExpectedVersion = 3;
 
+    /// <summary>接続の暖機に許す上限（#885。deadline の予算とは別物で、超えたら理由付きで落とす）。</summary>
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// 🔴 陰性対照で構成する deadline（#885。**1 秒ではなく 3 秒**）。
+    /// </summary>
+    /// <remarks>
+    /// 固定したいのは「呼び出し元が**構成した秒数で**諦めること」であり、**その秒数が 1 であること**ではない。
+    /// 暖機しても、十分な CPU 枯渇下（8 論理 CPU に対しスピンループ 16 本）では
+    /// **RPC 開始からハンドラ入場までに 833〜1288 ms** を要し、**8 回中 4 回が 1 秒の予算を超え、
+    /// 1 回は提供側へ一度も届かなかった**（実測。作業仕様書 `20260919_885_grpc-deadline-test-flake`）。
+    /// 同条件で 3 秒にすると **8 回とも 897〜1378 ms で収まり、1.6 秒以上の余裕が残った**。
+    /// 🔴 **経過時間の上界（10 秒）は比例させない** —— 比例させると
+    /// `CallOptions.Deadline` を `AddSeconds(30)` へ変える変異を捕まえられなくなる。
+    /// 上界を据え置いた結果、上界は予算の 10 倍から 3.3 倍へ**むしろ厳しくなっている**。
+    /// </remarks>
+    private const string NegativeControlTimeoutSeconds = "3";
+
     private static async Task<VersionedAssumptions> ResolveAsync(
         string address, Dictionary<string, string?> extra)
     {
@@ -50,12 +68,30 @@ public class GrpcAssumptionsClientIntegrationTests
 
         // 🔴 **構成した deadline の予算にチャネルの接続確立を含めない**（#885）。
         // `GrpcAssumptionsClient` は deadline を `DateTime.UtcNow.Add(timeout)` で**接続前に**置き、
-        // 本ヘルパは呼び出しごとに warm-up の無い新しいチャネルを作る。そのため
-        // **TCP 接続＋HTTP/2 preface が 1 秒の予算を食う** —— 並行する `dotnet test` の下で
-        // **809.7ms / 1000ms を食った実測がある**（作業仕様書 `20260919_885_grpc-deadline-test-flake`）。
-        // 食い切れば提供側は呼び出しを一度も観測せず `Calls` が 0 のままになる。
-        // それは**製品の振る舞いではなく計測の人工物**なので、接続を先に済ませておく。
-        await sp.GetRequiredService<GrpcChannel>().ConnectAsync(TestContext.Current.CancellationToken);
+        // 本ヘルパは呼び出しごとに新しいチャネルを作る。暖めずに測ると
+        // **TCP 接続＋HTTP/2 preface が予算を食う** —— 実測で **809.7ms / 1000ms** を食った例がある
+        // （作業仕様書 `20260919_885_grpc-deadline-test-flake`）。食い切れば提供側は呼び出しを一度も
+        // 観測せず `Calls` が 0 のままになる。それは**製品の振る舞いではなく計測の人工物**である。
+        // 本番の `GrpcChannel` は singleton（`AssumptionsClientExtensions`）なので、
+        // 暖めるほうが**本番の定常状態に近い**。
+        //
+        // 🔴 タイムアウトを付ける —— 付けないと、宛先へ到達できない構成で
+        // **1 秒の deadline ではなくテスト全体のタイムアウトまでハングする**（診断が遅くなる）。
+        using (var connect = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken))
+        {
+            connect.CancelAfter(ConnectTimeout);
+            try
+            {
+                await sp.GetRequiredService<GrpcChannel>().ConnectAsync(connect.Token);
+            }
+            catch (OperationCanceledException)
+                when (!TestContext.Current.CancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"スタブホストへの h2c チャネルが {ConnectTimeout.TotalSeconds:F0} 秒以内に接続できなかった。");
+            }
+        }
 
         return await sp.GetRequiredService<IAssumptionsProvider>().GetCurrentAsync();
     }
@@ -88,7 +124,8 @@ public class GrpcAssumptionsClientIntegrationTests
         await using var host = await GrpcStubHost.StartAsync(StubAssumptions.NeverResponds());
 
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        var current = await ResolveAsync(host.Address, new() { ["Configuration:GrpcTimeoutSeconds"] = "1" });
+        var current = await ResolveAsync(
+            host.Address, new() { ["Configuration:GrpcTimeoutSeconds"] = NegativeControlTimeoutSeconds });
         elapsed.Stop();
 
         current.IsResolved.Should().BeFalse("一度も取得できていなければ既定値（未解決）へ倒す");
@@ -101,7 +138,8 @@ public class GrpcAssumptionsClientIntegrationTests
         host.Stub.Calls.Should().Be(1, "既定は再試行しない");
         elapsed.Elapsed.Should().BeLessThan(
             TimeSpan.FromSeconds(10),
-            "構成した 1 秒の deadline で打ち切られること（値を無視する実装はここで落ちる）");
+            $"構成した {NegativeControlTimeoutSeconds} 秒の deadline で打ち切られること"
+            + "（値を無視する実装はここで落ちる）");
     }
 
     // ---- retry（呼び出し元ごとの試行回数） ----
@@ -252,10 +290,16 @@ internal sealed class StubAssumptions(Func<int, CancellationToken, Task<Proto.Ge
     // 実時間の deadline と競争させず、**届いたこと**を寛大な上限で待つ。
     internal async Task WaitForFirstCallAsync(TimeSpan timeout)
     {
-        var completed = await Task.WhenAny(_firstCall.Task, Task.Delay(timeout)).ConfigureAwait(false);
+        // 待ちが成功したら遅延タイマーは畳む（成功のたびに 30 秒のタイマーを放置しない）。
+        using var cts = new CancellationTokenSource();
+        var completed = await Task.WhenAny(_firstCall.Task, Task.Delay(timeout, cts.Token))
+            .ConfigureAwait(false);
+
         if (completed != _firstCall.Task)
             throw new TimeoutException(
                 $"提供側のスタブは {timeout.TotalSeconds:F0} 秒以内に呼び出しを 1 回も観測しなかった。");
+
+        await cts.CancelAsync().ConfigureAwait(false);
     }
 
     internal static StubAssumptions AlwaysOk() =>

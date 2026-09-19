@@ -136,6 +136,15 @@ rpcStart->handler=809.7ms totalElapsed=1118.9ms calls=1 reqArrived=yes
 
 🔴 **是正後の最悪値（69.6 ms）が、是正前の最良値（81.4 ms）よりも小さい。** 裾が消えた。
 
+> 🔴 ［2026-09-19 追記 / #885］**「裾が消えた」は撤回する。**
+> **20 サンプルで観測されなかったことを「消えた」と一般化していた。** PR #896 の監査が
+> **スピンループ 16 本**（8 論理 CPU）という**より強い枯渇**で測り直したところ、
+> 無負荷でも範囲は重なり（warm 最大 104.1 ms ＞ cold 最小 97.2 ms）、
+> **負荷下では warm-up 後も 988〜991 ms を消費し 1/3 が失敗**した。
+> **本 PR の負荷（並行 `dotnet test`）は機序に到達していなかった**（最悪 809.7 ms でも `calls=1`＝成功例）。
+> **スピンループのほうが強かった** —— 「スピンは CPU を焼くだけ」という見立ては誤りであった。
+> 追試の数値と是正（案 B の併用）は次節。
+
 ### 🔴 この計測が案の選択を変えた
 
 **案 A（`TaskCompletionSource` で到達を待つ）だけでは直らない。**
@@ -143,6 +152,35 @@ rpcStart->handler=809.7ms totalElapsed=1118.9ms calls=1 reqArrived=yes
 （30 秒待って別の理由で赤くなるだけ）。よって**接続確立を予算の外へ出す**ことが本体の是正であり、
 案 A はその上に重ねる観測点の確定として採る。詳細は
 [IADR-0364](../adr/IADR-0364_grpc-deadline-test-excludes-connect-from-budget.md)。
+
+### 🔴 ［2026-09-19 追記 / #885］案 B の再評価（監査の指摘を受けた追試）
+
+初版は案 B を「2 秒でも同じ競合が起き得る」として退けたが、**これは未検証の推論であった**
+（残余を測っていなかった）。**監査と同じスピンループ 16 本**（8 論理 CPU）で、
+**1 秒予算と 3 秒予算を別プロセス・交互に 8 回ずつ**（プロセス内の JIT 暖機バイアスを避けるため）
+測り直した。**いずれも決定 1 の暖機は適用済み**である。
+
+| 構成した予算 | RPC 開始 → ハンドラ入場（ms） | 予算超過 | 未到達 | 判定 |
+| --- | --- | --- | --- | --- |
+| **1 秒** | 833.4 / 837.7 / 941.1 / 1009.3 / 1159.6 / 1205.2 / 1287.9 ＋ 未到達 1 | **4 / 8** | **1 / 8** | 🔴 赤が出る |
+| **3 秒** | 897.8 / 926.1 / 985.1 / 1012.0 / 1020.8 / 1133.4 / 1186.1 / 1378.2 | **0 / 8** | **0 / 8** | ✅ 最悪でも 1.6 秒の余裕 |
+
+生の計測行（1 秒予算・未到達の 1 本と、待ちが救った 1 本）:
+
+```
+budget=1s rpcStart->reqArrived=-1.0ms   rpcStart->handler=-1.0ms   totalElapsed=1522.5ms callsAtReturn=0 callsFinal=0 arrived=NEVER
+budget=1s rpcStart->reqArrived=1050.3ms rpcStart->handler=1159.6ms totalElapsed=1538.6ms callsAtReturn=0 callsFinal=1 arrived=yes
+budget=3s rpcStart->reqArrived=1267.5ms rpcStart->handler=1378.2ms totalElapsed=3768.5ms callsAtReturn=1 callsFinal=1 arrived=yes
+```
+
+**よって案 B を併用する**（[IADR-0364](../adr/IADR-0364_grpc-deadline-test-excludes-connect-from-budget.md) 決定 5）。
+構成する deadline を **1 秒 → 3 秒**へ上げ、**経過時間の上界（10 秒）は比例させない**
+（比例させると `AddSeconds(30)` の変異を捕まえられない。据え置いた結果、上界は予算の 10 倍から
+3.3 倍へ**むしろ厳しくなった**）。
+
+🔴 **決定 2（待ち）の効き目も訂正する。** 1 秒予算の 8 サンプルのうち **3 本は `callsAtReturn=0` だが
+`callsFinal=1`** であった —— **ハンドラが遅れて入り、待ちがそれを拾った**。
+待ちが無ければこの 3 本は `found 0` で赤である。**待ちが救えないのは「一度も届かない」1 本だけ**である。
 
 ## 対象範囲
 
@@ -197,12 +235,16 @@ rpcStart->handler=809.7ms totalElapsed=1118.9ms calls=1 reqArrived=yes
 
 ## 受け入れ基準
 
-- [ ] `CostControlService.Tests` / `TradeDecisionService.Tests` の当該テストが、全ソリューション実行
-      6 回以上で全回緑
-- [ ] `CallOptions.Deadline` を `AddSeconds(30)` 相当のハードコードへ変える変異で**両方赤**
-- [ ] 再試行を入れる変異（`Calls` が 2 以上になる形）で**両方赤**
-- [ ] 経過時間の assert と `Calls` の assert が**両方残っている**
-- [ ] 計装を外し `git status` が clean
+- [x] `CostControlService.Tests` / `TradeDecisionService.Tests` の当該テストが、全ソリューション実行
+      6 回以上で全回緑（素 6 回 ＋ 並行 `dotnet test` 下 3 回。さらに案 B 併用後に再実行）
+- [x] `CallOptions.Deadline` を `AddSeconds(30)` 相当のハードコードへ変える変異で**両方赤**
+      （`but found 30s, 74ms` / `30s, 66ms`）
+- [x] 再試行を入れる変異（`Calls` が 2 以上になる形）で**両方赤**（`but found 2`）
+- [x] 経過時間の assert と `Calls` の assert が**両方残っている**
+- [x] 計装を外し `git status` が clean
+- [x] ［2026-09-19 追記 / #885］**待ちが本物の欠落を隠さない**: `deadline` を `AddMilliseconds(1)` へ
+      変える変異で**両方赤**（`System.TimeoutException : 提供側のスタブは 30 秒以内に呼び出しを 1 回も観測しなかった。`）
+- [x] ［2026-09-19 追記 / #885］案 B を併用し、負荷下で残余が消えることを実測（上表）
 
 ## テスト方針
 
@@ -230,6 +272,24 @@ rpcStart->handler=809.7ms totalElapsed=1118.9ms calls=1 reqArrived=yes
 - **是正前の再現率を測れていない**（0/19）。したがって**是正前後の再現率の差は示せない**。
   根拠は①機序の実測②予算の内訳の前後比較③変異注入の 3 つである。**「直った」とは書かない。**
 - 同型（実時間の締切・スリープに依存するテスト）の一覧は **#885 へコメントで残す**。本 PR では直さない。
-  最も #885 と形が近いのは `InformationCollectionService/Tests/Hosted/CollectionPollingServiceTests.cs:161`
-  （`Start → Task.Delay(300) → Stop` して周期が実際に publish したことを assert する）である。
+  ~~最も #885 と形が近いのは `InformationCollectionService/Tests/Hosted/CollectionPollingServiceTests.cs:161`
+  （`Start → Task.Delay(300) → Stop` して周期が実際に publish したことを assert する）である。~~
+
+  > 🔴 ［2026-09-19 追記 / #885］**上の記述は事実と異なるので取り消す。**
+  > `RunBrieflyAsync` の使用箇所は**全リポジトリで 1 箇所だけ**（同ファイル `:150`、
+  > `External_モードでは_in_process_巡回を行わない`）で、その assert は
+  > **`session.Sent.MessagesOf<InformationCollected>().Should().BeEmpty()`
+  > ＝「publish しなかった」ことを確かめる否定的表明**である。
+  > **CPU 枯渇下ではこの assert はむしろ通りやすくなり、#885 とは形が逆**である。
+  > よって「最も形が近い」「`InformationCollectionService.Tests` の失敗の正体である可能性が高い」は
+  > **成り立たない**。**grep の行番号だけを見て呼び出し元を読まずに書いた誤りである**
+  > （規約「追随する文書を記憶で挙げない・走査してから挙げる」を自分の推論にも当てるべきだった）。
+  > 同ファイルが実時間に依存すること自体は事実だが、**理由は Wolverine の
+  > `ExecuteAndWaitAsync` のトラッキング・タイムアウト**であって `Task.Delay(300)` の assert 競争ではない。
+  > **#885 のコメントにも同じ誤りを投稿したため、訂正コメントを投稿した。**
 - 接続確立が異常に遅いこと自体は、本テストではもう捕まらない。捕まえるなら別のテストを立てる。
+- 🔴 ［2026-09-19 追記 / #885］**#885 は閉じない**（PR は `Refs #885`）。是正は部分的である ——
+  **十分な CPU 枯渇下では warm-up 後も予算を食い切り得る**（実測 988〜991 ms / 1000 ms〔監査〕・
+  最大 1287.9 ms / 1000 ms〔本 PR の追試〕）。案 B（3 秒）で余裕の桁を取ったが、「起きない」保証ではない。
+- 🔴 ［2026-09-19 追記 / #885］**残余の失敗の形が変わった** —— 即座の `found 0` から
+  **30 秒待ってからの `TimeoutException`** になる。診断は読みやすくなるが **CI の失敗コストは増える**。
