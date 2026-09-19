@@ -129,6 +129,152 @@ public class EfPortfolioLedgerInFlightCloseTests
         store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
     }
 
+    // --- #848: 終端になった承認を除く（InMemory 実装の同名テストと同一の観点） ---
+
+    // T-10-400, #848: 稼働環境の実測そのもの（利用者が moomoo アプリで取り消した手仕舞い）。
+    [Fact]
+    public void 取消が確認できた決済承認は数えない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 3_381, Now.AddMinutes(-5));
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(3_381);
+
+        store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-401, #848: 終端は 3 値とも同じ扱い（取消・失効・拒否）。
+    [Theory]
+    [InlineData(OrderStatus.Cancelled)]
+    [InlineData(OrderStatus.Expired)]
+    [InlineData(OrderStatus.Rejected)]
+    public void 終端になった決済承認は状態を問わず数えない(OrderStatus terminal)
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        store.MarkTerminal(id, terminal, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-401, #848: 部分約定のまま取消された承認は丸ごと除く（残りは二度と約定しない）。
+    [Fact]
+    public void 部分約定のまま取消された承認は残数量も数えない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        store.AppendFill(id, "ORD-1", 20, 21m, Now.AddMinutes(-4));
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(40);
+
+        store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // 🔴 T-10-402, #848（否定形・最重要）: 非終端の状態で終端を捏造しない（除外し過ぎるとショート化する）。
+    [Theory]
+    [InlineData(OrderStatus.Accepted)]
+    [InlineData(OrderStatus.PartiallyFilled)]
+    public void 非終端の状態では処理中のままにする(OrderStatus pending)
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        store.MarkTerminal(id, pending, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+    }
+
+    // T-10-405, #848: 単調・冪等（後着の非終端で戻らない）。
+    [Fact]
+    public void 終端は単調で後着の非終端では戻らない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+        store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-2));
+
+        store.MarkTerminal(id, OrderStatus.Accepted, Now.AddMinutes(-1));
+        store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // 🔴 T-10-405, #848（否定形）: 相関する承認が無い終端は書かない。後着の承認は処理中として数える（安全側）。
+    [Fact]
+    public void 承認より先に届いた終端は記録しない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var decisionId = Guid.NewGuid();
+
+        store.MarkTerminal(decisionId, OrderStatus.Cancelled, Now.AddMinutes(-5));
+        store.AppendApproval(
+            decisionId,
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.InternalPaper, 60, 21m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 1m),
+            Now.AddMinutes(-4));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+    }
+
+    // T-10-400, #848: 終端は永続化される（別コンテキストで読み直しても在庫が戻ったまま）。
+    [Fact]
+    public void 終端は別コンテキストで読み直しても残る()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        Guid id;
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfPortfolioLedgerStore(db);
+            id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+            store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfPortfolioLedgerStore(db2)
+            .GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // 🔴 T-10-406, #848（監査ブロッキング B1・否定形）: **全量約定は在庫解放の終端ではない**
+    //（InMemory 実装の同名テストと同一の観点）。EF 実装では MarkTerminal と AppendFill が別々の
+    // SaveChanges であるため、Filled を終端に入れると建玉が丸ごと空いて見える区間が実在する。
+    [Fact]
+    public void 全量約定の終端は記録せず処理中のままにする()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        store.MarkTerminal(id, OrderStatus.Filled, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(60);
+
+        // 約定が載れば自然に 0 になる（＝Filled を終端に入れる必要がそもそも無い）。
+        store.AppendFill(id, "ORD-1", 60, 21m, Now.AddMinutes(-1));
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
+    // T-10-406, #848: 全量約定を無視しても門を閉じ切らない —— そのあとに本物の終端（取消）が来れば記録する。
+    [Fact]
+    public void 全量約定を無視した後でも本物の終端は記録する()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfPortfolioLedgerStore(db);
+        var id = Approve(store, PositionEffect.Close, 60, Now.AddMinutes(-5));
+
+        store.MarkTerminal(id, OrderStatus.Filled, Now.AddMinutes(-2));
+        store.MarkTerminal(id, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        store.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Window).Should().Be(0);
+    }
+
     [Fact]
     public void 別コンテキストで読み直しても同じ結果になる()
     {

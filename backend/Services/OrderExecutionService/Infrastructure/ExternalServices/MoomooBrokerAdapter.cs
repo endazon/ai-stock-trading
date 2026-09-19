@@ -8,7 +8,9 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 
 // #13, FR-05, ADR-0002, IADR-0016: moomoo ブローカアダプタ。OpenD（IMoomooTradeClient）経由で発注する。
 // SIMULATE 限定（client 実装が TrdEnv_Simulate を用いる）。実弾は撃たない。判断・記録・報告のフローは
-// PaperBrokerAdapter と完全に同一（不正注文・不達は終端 Rejected で返しフローを止めない）。
+// PaperBrokerAdapter と完全に同一（**送信していないと言い切れる不正注文**は終端 Rejected で返しフローを止めない）。
+// 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）: **送信後に結果を確認できなかった失敗は
+// Rejected へ畳まない**（BrokerDispatchIndeterminateException で伝播する。下の PlaceWithRejectionDetailAsync）。
 //
 // #141, IADR-0092: IClientOrderIdBroker を実装し、発注時に DecisionId を moomoo の remark（client order id相当）へ
 // 伝播する。これにより滞留 Reserved を後から DecisionId で照合できる（実照会リコンサイル）。paper は本 capability を
@@ -187,10 +189,14 @@ public sealed class MoomooBrokerAdapter(
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
             return (ToBrokerOrder(intent, result, now), null, null);
         }
-        catch (MoomooTradeRequestException ex)
+        catch (MoomooTradeRequestException ex) when (ex.IsConfirmedFailure)
         {
-            // #821, IADR-0347: OpenD が非成功を返した＝**証券会社が受理しなかった**。retType / retMsg を保って返す
+            // #821, IADR-0347: OpenD が**返事として**失敗を返した＝**証券会社が受理しなかった**。retType / retMsg を保って返す
             // （S3 はこの理由を監査台帳へ残すことが目的そのものである）。倒し先は従来どおり終端 Rejected。
+            // 🔴 #848, IADR-0117（2026-09-19 追記・改定 8）: ここへ入れてよいのは **retType == -1（Failed）だけ**である。
+            // -100（TimeOut）/ -200 / -400 / -500（Invalid）と未定義の値は「返事を読めなかった」であり
+            //（-100 と -500 は SDK がクライアント側で合成する。MoomooRetType の注釈）、下の「届いたか不明」へ落とす。
+            // 実測済みの拒否（#844 の価格精度・#809 の Stop 非対応）はどちらも -1 で、従来どおりここへ入る。
             _logger.LogWarning(ex,
                 "moomoo 発注を拒否されました symbol={Symbol} qty={Qty} 種別={Kind} retType={RetType} retMsg={RetMsg}",
                 intent.Symbol, intent.Quantity, kind, ex.RetType, ex.RetMsg);
@@ -198,12 +204,26 @@ public sealed class MoomooBrokerAdapter(
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
         {
-            // 送信後の SDK 例外・応答異常は終端 Rejected（フローを止めない・実弾防止の安全側）。原因はログに残す。
-            // BrokerUnavailableException（接続確立の失敗＝確実に未発注）だけは**丸めずに伝播**する——
-            // Rejected は「証券会社が受理しなかった状態」（FR-05）であり、届いてすらいない事象を混ぜない（IADR-0211）。
-            _logger.LogWarning(ex, "moomoo 発注に失敗したため Rejected に倒します symbol={Symbol} qty={Qty}",
-                intent.Symbol, intent.Quantity);
-            return (Terminal(intent, OrderStatus.Rejected, now), null, ex.Message);
+            // 🔴 FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）:
+            // **送信後の SDK 例外・応答異常は「届いたか不明」であり、終端 Rejected へ畳まない。**
+            // ここへ落ちる代表例は返信待ちのタイムアウトで、**注文は既に送信済み**である
+            //（MMApiMoomooTradeClient の分類もそう書いている）。タイムアウトは 2 つの形で来る——SDK の 12 秒打ち切りが
+            // 応答の形で返す **retType=-100**（既定構成ではこちらが先。改定 8）と、SendAsync の TimeoutException。
+            // **確認できた失敗（retType=-1）以外の MoomooTradeRequestException もここへ落ちる**（上の when）。
+            // Rejected はリスク管理の取引台帳で
+            // **在庫の押さえを解く引き金**であり、不明のまま解くと同じ建玉に 2 本目の決済が並ぶ
+            //（二重決済で意図しないショート化）。エントリーでは「建玉は生じていない」という仮定になり、
+            // 注文が生きていた場合に保護レグ無しの建玉ができる。実在しない注文 ID も捏造しない（#842 と同型）。
+            // 不明は伝播させ、呼び出し側は**予約（IADR-0057）を解放も確定もしない**（撃ち直さない）。
+            // 滞留の解消はリコンサイル（IADR-0092）が**有効なら**行う。既定は無効で、その場合は人が解決する（#856）。
+            // BrokerUnavailableException（接続確立の失敗＝確実に未発注）は従来どおり丸めずに伝播する（IADR-0211）。
+            _logger.LogError(ex,
+                "moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）symbol={Symbol} qty={Qty} 種別={Kind}。"
+                + "拒否へ畳まず、予約を Reserved のまま残します（自動リコンサイルが無効なら人手で確認してください）。",
+                intent.Symbol, intent.Quantity, kind);
+            throw new BrokerDispatchIndeterminateException(
+                $"moomoo へ発注を送信しましたが結果を確認できませんでした（種別={kind} 銘柄={intent.Symbol} "
+                + $"数量={intent.Quantity}）: {ex.Message}", ex);
         }
     }
 
@@ -332,16 +352,31 @@ public sealed class MoomooBrokerAdapter(
         _ => throw new ArgumentOutOfRangeException(nameof(side), side, "未対応の売買方向です。"),
     };
 
-    // moomoo 注文状態 → OrderStatus（安全側: 不明/失敗は Rejected）。
+    // moomoo 注文状態 → OrderStatus。
+    //
+    // 🔴 FR-10, UC-06, #848, IADR-0117（2026-09-19 追記・改定 3）: **安全側は「不明を終端にしないこと」である。**
+    // 旧コメントは「安全側: 不明/失敗は Rejected」と書いていたが、これは事実と食い違っていた ——
+    // リスク管理の取引台帳が Rejected を**在庫解放の引き金**にした時点で、不明を Rejected へ畳むことは
+    // 「状態が分からないまま建玉の押さえを解く」（＝二重決済で意図しないショート化）になった。
+    // 確認できた失敗（Failed）だけを Rejected とし、不明（Unknown）と**名前を付けられない状態（既定）**は
+    // 非終端（Accepted）へ倒す。約定追跡（OrderFillPoller）が非終端を引き直し続け、本当の状態へ解決する。
     public static OrderStatus MapState(MoomooOrderState state) => state switch
     {
         MoomooOrderState.Submitting or MoomooOrderState.Submitted => OrderStatus.Accepted,
         MoomooOrderState.Filling or MoomooOrderState.FilledPart => OrderStatus.PartiallyFilled,
         MoomooOrderState.FilledAll => OrderStatus.Filled,
         MoomooOrderState.Cancelled => OrderStatus.Cancelled,
-        _ => OrderStatus.Rejected,
+        // 証券会社が受理しなかったことが**分かっている**状態。在庫解放の対象のままにする
+        //（発注拒否で押さえが解けるのは #848 の射程内であり、外すと 2 つ目の恒久ロックを作る）。
+        MoomooOrderState.Failed => OrderStatus.Rejected,
+        // 🔴 この既定アームは **Unknown 専用ではない**。いま到達するのは MoomooOrderState.Unknown だけだが、
+        // 将来 MoomooOrderState へ値を足して上のアームへ写し忘れた場合も**ここへ落ちる**（＝非終端）。
+        // 向きは意図どおり（名前を付けられない状態で在庫を解放しない）。ただし新しい値が**終端**を意味するなら
+        // 必ず明示のアームを足すこと——足し忘れると終端が届かず、約定追跡が引き直し続ける（安全側だが解けない）。
+        _ => OrderStatus.Accepted,
     };
 
+    // #848: Unknown は**終端に入れない**（CompletedAt を立てない・約定追跡が引き直す）。
     private static bool IsTerminal(MoomooOrderState state) =>
         state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed;
 

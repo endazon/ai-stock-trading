@@ -58,7 +58,8 @@ public class PositionCloseServiceTests
     }
 
     // 台帳へ「承認済み・未約定（または部分約定）の決済」を積む。in-flight 判定の入力。
-    private static void AppendPendingClose(
+    // #848: 終端（取消・失効・拒否）を後から記録できるよう DecisionId を返す。
+    private static Guid AppendPendingClose(
         InMemoryPortfolioLedgerStore ledger, int quantity, DateTimeOffset approvedAt, int filled = 0)
     {
         var decisionId = Guid.NewGuid();
@@ -70,6 +71,7 @@ public class PositionCloseServiceTests
             approvedAt);
         if (filled > 0)
             ledger.AppendFill(decisionId, $"close-{decisionId:N}", filled, 21m, approvedAt);
+        return decisionId;
     }
 
     private static PositionCloseService Create(
@@ -177,6 +179,79 @@ public class PositionCloseServiceTests
 
         Create(ledger).Request(Command(), Actor)
             .Rejection.Should().Be(PositionCloseRejection.ExceedsAvailable);
+    }
+
+    // --- #848: 取り消した手仕舞いは 30 分を待たずに再要求できる（本 issue の主目的） ---
+
+    // 🔴 T-10-400, #848: 稼働環境の実測の再現。利用者が moomoo アプリで手仕舞い（3,381 株のうち全量）を
+    // 取り消したあと、指値を変えた再要求が ExceedsAvailable で弾かれ続けた。終端を記録した時点で在庫へ戻る。
+    [Fact]
+    public void 取り消された手仕舞いは窓を待たずに再要求できる()
+    {
+        var ledger = LedgerWithLong();
+        var cancelled = AppendPendingClose(ledger, quantity: 100, approvedAt: Now.AddMinutes(-5));
+        Create(ledger).Request(Command(), Actor)
+            .Rejection.Should().Be(PositionCloseRejection.ExceedsAvailable, "取消が届く前は処理中である");
+
+        ledger.MarkTerminal(cancelled, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        var outcome = Create(ledger).Request(Command(limitPrice: 19m), Actor);
+        outcome.Accepted.Should().BeTrue("取り消された注文は建玉をロックしない（下落局面で損切りできる）");
+        outcome.Approval!.Intent.Quantity.Should().Be(100);
+        outcome.Approval.Intent.Price.Should().Be(19m, "指値を下げた再要求が通ること自体が #848 の受け入れ基準");
+    }
+
+    // 🔴 T-10-403, #848（否定形・最重要）: **除外し過ぎて二重決済でショート化しない。**
+    // 終端が届いていない処理中の決済は在庫を押さえ続ける——押さえなければ同じ 100 株を 2 回売り、
+    // 建玉 100 に対して 200 の売りが成立して 100 株のショートになる。
+    [Fact]
+    public void 終端が届いていない処理中の決済はショート化を防ぐために在庫を押さえ続ける()
+    {
+        var ledger = LedgerWithLong();
+        var first = Create(ledger).Request(Command(), Actor);
+        first.Accepted.Should().BeTrue();
+        first.Approval!.Intent.Quantity.Should().Be(100);
+
+        // 1 本目の承認が台帳へ届く（OrderApprovedLedgerHandler と同じ経路）。約定も終端もまだ届いていない。
+        ledger.AppendApproval(
+            first.Approval.DecisionId, first.Approval.Intent, first.Approval.ApprovedAt);
+
+        Create(ledger).Request(Command(), Actor)
+            .Rejection.Should().Be(
+                PositionCloseRejection.ExceedsAvailable,
+                "状態が不明な決済を処理中から外すと、同じ建玉を 2 回売ってショートになる");
+    }
+
+    // 🔴 T-10-403, #848（否定形）: 終端になっても**建玉を超える決済は作れない**。
+    // 取消で戻るのは「処理中として押さえていた分」だけであり、在庫そのものが増えるわけではない。
+    [Fact]
+    public void 取消で戻るのは処理中ぶんだけで建玉を超える決済は作れない()
+    {
+        var ledger = LedgerWithLong();
+        var cancelled = AppendPendingClose(ledger, quantity: 60, approvedAt: Now.AddMinutes(-5));
+        ledger.MarkTerminal(cancelled, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        Create(ledger).Request(Command(quantity: 101), Actor)
+            .Rejection.Should().Be(PositionCloseRejection.ExceedsAvailable);
+
+        Create(ledger).Request(Command(), Actor)
+            .Approval!.Intent.Quantity.Should().Be(100, "建玉数量が上限であることは変わらない");
+    }
+
+    // T-10-401, #848: 部分約定のまま取り消された手仕舞いは、残数量ぶんの在庫を返す。
+    // 約定した 30 株は建玉から既に引かれており（台帳の約定）、二重に引かない。
+    [Fact]
+    public void 部分約定のまま取り消された手仕舞いは残数量ぶんの在庫を返す()
+    {
+        var ledger = LedgerWithLong();
+        var cancelled = AppendPendingClose(ledger, quantity: 100, approvedAt: Now.AddMinutes(-5), filled: 30);
+        Create(ledger).Request(Command(), Actor)
+            .Rejection.Should().Be(PositionCloseRejection.ExceedsAvailable, "建玉 70・処理中 70");
+
+        ledger.MarkTerminal(cancelled, OrderStatus.Cancelled, Now.AddMinutes(-1));
+
+        Create(ledger).Request(Command(), Actor)
+            .Approval!.Intent.Quantity.Should().Be(70, "残った建玉 70 株を手仕舞える");
     }
 
     [Fact]

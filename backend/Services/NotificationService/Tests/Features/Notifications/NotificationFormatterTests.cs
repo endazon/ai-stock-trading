@@ -303,6 +303,28 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("直ちに確認");
     }
 
+    // T-10-409, FR-10, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いの結果が未確認のとき、
+    // 「解消に失敗した」と伝えてはならない（読んだ人が手で成行を重ね、二重決済でショート化する）。
+    [Fact]
+    public void 保護喪失の成行手仕舞いが未確認なら_失敗とは言わず重ねる前の確認を求めるCriticalになる()
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseDispatchIndeterminate,
+            10, closeDecisionId, StopIntent(PositionEffect.Close), StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("未確認").And.NotContain("建玉を解消");
+        msg.Content.Should().Contain("届いたか不明").And.Contain("重ねません").And.Contain("証券会社の画面")
+            .And.Contain(closeDecisionId.ToString());
+        msg.Content.Should().NotContain("解消にも失敗", "失敗と読めると手で成行を重ねてしまう");
+        msg.Content.Should().NotContain("手仕舞いました", "手仕舞い済みも主張しない");
+        // T-10-451, IADR-0117（改定 9）: 据え置きが続くあいだ約 1 時間ごとに再通知する。
+        // 再通知を「もう 1 本送った」と読ませない（同じ CloseDecisionId＝同じ 1 本の成行）。
+        msg.Content.Should().Contain("約 1 時間ごと").And.Contain("新しい発注ではありません");
+    }
+
     [Fact]
     public void 保護喪失の建玉解消は解消内容が読めるCriticalになる()
     {
