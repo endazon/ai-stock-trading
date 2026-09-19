@@ -70,10 +70,53 @@ public class PositionEffectResolverTests
     }
 
     [Fact]
-    public void 建玉が不明でも買いは従来どおり新規建てになる()
+    public void 建玉が不明でも照会先が未結線なら買いは従来どおり新規建てになる()
     {
-        // 買いは裸になり得ず、金額系上限がそのまま効く（不明を理由に取引機会を落とさない）。
+        // 未結線（NoOp＝常に不明）は「照会していない」であり、既定構成の新規建てを一律に止めない（IADR-0119 決定2）。
         PositionEffectResolver.Resolve(TradeSide.Buy, signedHeldQuantity: null)
+            .Effect.Should().Be(PositionEffect.Open);
+    }
+
+    // --- FR-04, FR-10, ADR-0003, #865, IADR-0358: 実結線のもとで保有が不明なら新規建てを見送る ---
+
+    [Fact]
+    public void 実結線で建玉が不明なら買いの新規建てを見送る()
+    {
+        var decision = PositionEffectResolver.Resolve(
+            TradeSide.Buy, signedHeldQuantity: null, requireKnownHoldingForOpen: true);
+
+        decision.IsSkipped.Should().BeTrue();
+        decision.Effect.Should().BeNull();
+    }
+
+    [Fact]
+    public void 実結線で建玉が不明なら売りの建て増しも見送る()
+    {
+        // 不明の売りは元から見送り（裸の新規ショート建て・IADR-0119 決定2）。判定が重なっても結果は変わらない。
+        PositionEffectResolver.Resolve(TradeSide.Sell, signedHeldQuantity: null, requireKnownHoldingForOpen: true)
+            .IsSkipped.Should().BeTrue();
+    }
+
+    // 🔴 出口は塞がない（肯定形）。保有が判っていれば、実結線の判定を有効にしても決済はそのまま通る。
+    [Theory]
+    [InlineData(4072, (int)TradeSide.Sell, 4072)]
+    [InlineData(-100, (int)TradeSide.Buy, 100)]
+    public void 実結線の判定を有効にしても保有が判っていれば決済は通る(int held, int side, int expectedQuantity)
+    {
+        var decision = PositionEffectResolver.Resolve(
+            (TradeSide)side, signedHeldQuantity: held, requireKnownHoldingForOpen: true);
+
+        decision.Effect.Should().Be(PositionEffect.Close);
+        decision.CloseQuantity.Should().Be(expectedQuantity);
+    }
+
+    // 保有が判っているとき（あり／なし）は挙動が変わらない。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    public void 実結線でも保有が判っていれば買いは従来どおり新規建てになる(int held)
+    {
+        PositionEffectResolver.Resolve(TradeSide.Buy, signedHeldQuantity: held, requireKnownHoldingForOpen: true)
             .Effect.Should().Be(PositionEffect.Open);
     }
 }

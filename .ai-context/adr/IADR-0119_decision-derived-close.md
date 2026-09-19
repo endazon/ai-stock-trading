@@ -2,10 +2,10 @@
 title: IADR-0119 判断由来の建玉効果は保有建玉から決め、保有なし・不明の売りは見送る
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-05, FR-10, FR-19, UC-01, UC-02, ADR-0003]
+related_ids: [FR-04, FR-05, FR-10, FR-19, UC-01, UC-02, ADR-0003, IADR-0358]
 author: endazon (with Claude Code)
 created: 2026-07-30
-updated: 2026-07-30
+updated: 2026-09-19
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -86,6 +86,13 @@ plan_refs:
 見送る。**これは既存挙動の意図的な変更**であり、現物のみ有効な現段階で成立しない注文を止める安全側の是正である。
 
 `Buy` は不明でも従来どおり `Open`（買いは裸になり得ず、金額系上限がそのまま効くため、不明を理由に取引機会を落とさない）。
+
+［2026-09-19 追記 / [#865](https://github.com/endazon/ai-stock-trading/issues/865)］🔴 **`Buy` の扱いを改定した**
+（[IADR-0358](IADR-0358_skip-open-when-holdings-unknown.md)）。保有状況の照会先が**実結線**
+（`HttpHeldPositionProvider`＝`IHeldPositionProvider.IsEnabled` が `true`）のときに限り、**不明のもとでの `Open` は見送る**。
+未結線（`NoOpHeldPositionProvider`＝「照会していない」）は本決定のまま `Open` を通す。`Sell` の扱いと決済（`Close`）は変えない
+（手仕舞いは止めない・FR-10）。改定の理由は #854 の実測——金額系の統制はリスク管理の `sizing-context` の照会が
+生きていることが前提であり、**保有を知らないままの買い増しは止められない**。
 
 ### 決定 3: 建玉照会は既存エンドポイントの再利用・失敗は「不明」
 
