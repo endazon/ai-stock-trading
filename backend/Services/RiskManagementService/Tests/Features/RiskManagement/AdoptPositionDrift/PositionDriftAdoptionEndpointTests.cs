@@ -150,6 +150,36 @@ public class PositionDriftAdoptionEndpointTests
         positions!.Should().NotContain(p => p.Symbol == "AAPL");
     }
 
+    // T-10-482: **本番の配線を端から端まで通す。** 観測イベントを Wolverine のハンドラ（本番と同じ DI・EF ストア）へ
+    // 2 回流し、乖離が報告された状態を**ハンドラ自身に作らせて**から取り込む。
+    // 本クラスの他のテストは観測ストアと追跡状態へ直接書くため、**ハンドラ → EF ストア → API が本番の DI で
+    // つながっていること**は本テストだけが見る（ハンドラが観測を保持しなくなると 422＝観測なしで赤になる。実走で確認済み）。
+    [Fact]
+    public async Task 観測イベントを本番の配線で二回受けた後に取り込める()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        var client = ClientWithRoles(factory, Owner);
+        SeedPosition(factory, "AAPL", 100, 1m);
+
+        for (var i = 0; i < 2; i++)
+        {
+            var observed = new BrokerPositionsObserved([], DateTimeOffset.UtcNow.AddMinutes(-2).AddSeconds(i));
+            await factory.Services.ExecuteAndWaitAsync(async () =>
+            {
+                using var scope = factory.Services.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<Wolverine.IMessageBus>().InvokeAsync(observed);
+            });
+        }
+
+        // 観測の購読は台帳を書かない（IADR-0118 の原則）。
+        LedgerQuantity(factory, "AAPL").Should().Be(100);
+
+        var res = await client.PostAsJsonAsync(Path, Body("AAPL"));
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        LedgerQuantity(factory, "AAPL").Should().Be(0);
+    }
+
     // T-10-464: **冪等。** 二重に取り込んでも 2 回目は 422 で、台帳は二重に減らず、監査イベントも 2 度は出ない。
     [Fact]
     public async Task 二重に取り込んでも二回目は422で台帳は壊れない()
