@@ -2,9 +2,12 @@ using RiskManagementService.Infrastructure.Persistence;
 using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Features.RiskManagement.ClosePosition;
 using RiskManagementService.Domain;
+using RiskManagementService.Infrastructure.Steps;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace RiskManagementService.Tests;
@@ -199,6 +202,49 @@ public class PositionCloseServiceTests
         outcome.Accepted.Should().BeTrue("取り消された注文は建玉をロックしない（下落局面で損切りできる）");
         outcome.Approval!.Intent.Quantity.Should().Be(100);
         outcome.Approval.Intent.Price.Should().Be(19m, "指値を下げた再要求が通ること自体が #848 の受け入れ基準");
+    }
+
+    // 🔴 T-10-410, #852, IADR-0356（肯定形・主目的）: **見送られた手仕舞いは 30 分の窓を待たずに在庫へ戻る。**
+    // OpenD の再起動中（ADR-0002 の SPOF・ADR-0024）は手仕舞いが見送られる。是正前は見送りが
+    // 取引台帳へ届く経路が 1 本も無く、手仕舞いが必要なときに窓の満了まで再要求が 422 で拒否され続けた。
+    [Fact]
+    public void 見送られた手仕舞いは窓を待たずに在庫へ戻る()
+    {
+        var ledger = LedgerWithLong();
+        var forgone = AppendPendingClose(ledger, quantity: 100, approvedAt: Now.AddMinutes(-5));
+        Create(ledger).Request(Command(), Actor)
+            .Rejection.Should().Be(PositionCloseRejection.ExceedsAvailable, "見送りが届く前は処理中である");
+
+        // 発注執行が「確実に未発注」で見送った（接続確立の失敗）。台帳のハンドラが受ける。
+        new OrderDispatchForgoneLedgerHandler(ledger, NullLogger<OrderDispatchForgoneLedgerHandler>.Instance)
+            .Handle(new OrderDispatchForgone(
+                forgone, ledger.FindApprovedIntent(forgone)!,
+                OrderDispatchForgoneReason.BrokerUnavailable, Now.AddMinutes(-1)));
+
+        var outcome = Create(ledger).Request(Command(limitPrice: 19m), Actor);
+        outcome.Accepted.Should().BeTrue("見送られた注文は建玉をロックしない（下落局面で損切りできる）");
+        outcome.Approval!.Intent.Quantity.Should().Be(100);
+        outcome.Approval.Intent.Price.Should().Be(19m);
+    }
+
+    // 🔴 T-10-410, #852（否定形・最重要）: **確実に未発注と分類されていない見送りでは在庫を解放しない。**
+    // 将来足される理由（未定義の整数で模す）で押さえが解けると、証券会社側で生きているかもしれない
+    // 手仕舞いと合わせて同じ建玉に 2 本の決済が並び、二重決済でショート化する。
+    [Fact]
+    public void 確実に未発注と分類されていない見送りでは在庫を押さえ続ける()
+    {
+        var ledger = LedgerWithLong();
+        var forgone = AppendPendingClose(ledger, quantity: 100, approvedAt: Now.AddMinutes(-5));
+
+        new OrderDispatchForgoneLedgerHandler(ledger, NullLogger<OrderDispatchForgoneLedgerHandler>.Instance)
+            .Handle(new OrderDispatchForgone(
+                forgone, ledger.FindApprovedIntent(forgone)!,
+                (OrderDispatchForgoneReason)9999, Now.AddMinutes(-1)));
+
+        Create(ledger).Request(Command(), Actor)
+            .Rejection.Should().Be(
+                PositionCloseRejection.ExceedsAvailable,
+                "分類されていない見送りで押さえを解くと、同じ建玉を 2 回売ってショートになる");
     }
 
     // 🔴 T-10-403, #848（否定形・最重要）: **除外し過ぎて二重決済でショート化しない。**

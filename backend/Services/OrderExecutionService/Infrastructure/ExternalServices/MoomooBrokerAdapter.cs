@@ -215,11 +215,12 @@ public sealed class MoomooBrokerAdapter(
             //（二重決済で意図しないショート化）。エントリーでは「建玉は生じていない」という仮定になり、
             // 注文が生きていた場合に保護レグ無しの建玉ができる。実在しない注文 ID も捏造しない（#842 と同型）。
             // 不明は伝播させ、呼び出し側は**予約（IADR-0057）を解放も確定もしない**（撃ち直さない）。
-            // 滞留の解消はリコンサイル（IADR-0092）が**有効なら**行う。既定は無効で、その場合は人が解決する（#856）。
+            // 滞留の解消はリコンサイル（IADR-0092）が行う。#856, IADR-0362: アプリ既定は無効のままだが配備では
+            // 有効であり、解放（NotPlaced）の門だけが閉じている＝自動で片付くのは「発注済み」と確定した側だけである。
             // BrokerUnavailableException（接続確立の失敗＝確実に未発注）は従来どおり丸めずに伝播する（IADR-0211）。
             _logger.LogError(ex,
                 "moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）symbol={Symbol} qty={Qty} 種別={Kind}。"
-                + "拒否へ畳まず、予約を Reserved のまま残します（自動リコンサイルが無効なら人手で確認してください）。",
+                + "拒否へ畳まず、予約を Reserved のまま残します（自動リコンサイルが確定できなければ人手で確認してください）。",
                 intent.Symbol, intent.Quantity, kind);
             throw new BrokerDispatchIndeterminateException(
                 $"moomoo へ発注を送信しましたが結果を確認できませんでした（種別={kind} 銘柄={intent.Symbol} "

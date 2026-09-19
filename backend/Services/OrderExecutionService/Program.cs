@@ -129,7 +129,10 @@ builder.Services.AddScoped<OrderAmendmentDispatcher>();
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 builder.Services.AddHostedService<OrderReservationRetentionService>();
 
-// #141, IADR-0074: Reserved 滞留の自動リコンサイル（既定無効 Reconciliation:Enabled=false）。
+// #141, IADR-0074: Reserved 滞留の自動リコンサイル（アプリ既定は無効 Reconciliation:Enabled=false）。
+// 🔴 #856, IADR-0362: **配備（deploy/helm/ai-stock-trading/values.yaml）では Enabled / UseBrokerProbe が true** で、
+// 解放の門（ReleaseOnNotPlaced）だけを閉じている。ここで既定を反転させないのは、docker-compose・単体開発環境の
+// 挙動を変えないためである（有効化は配備の設定点 1 箇所に集める）。
 // プローブは差し替え可能で、既定は no-op（常に Indeterminate＝何も解放・終端化しない）。
 // #141, IADR-0092: Broker:Provider=moomoo かつ Reconciliation:UseBrokerProbe=true のときだけ実照会プローブ
 // （MoomooReservationBrokerProbe・OpenD SIMULATE）を配線する。それ以外（paper／OpenD 無し／既定）は no-op のまま。

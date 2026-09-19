@@ -260,6 +260,30 @@ jobs:
           assert_render_fails "--set broker.tier=paper --set moomoo.enabled=true" "tier とエイリアスの矛盾指定は止めねばならない"
           assert_render_fails "--set broker.tier=bogus-tier" "未知の tier は止めねばならない"
           echo "ok: broker.tier は paper（既定・バイト等価）/ moomoo-sim（SIMULATE）のみ描画でき、実弾は到達不能"
+      # 🔴 T-10-608, #141 / #848 / #856, IADR-0074 / IADR-0092 / IADR-0362: 滞留 Reserved の自動突合。
+      #    これが描画されないと「送ったが結果が不明」な注文を後から確定させる自動経路が 1 本も無くなる
+      #    （2026-09-18 に人が詰んだ状態そのもの）。**解放の門（ReleaseOnNotPlaced）が開いたら赤にする**
+      #    ——解放は再発注の許可であり、実機で偽陽性が無いことを示すまで開けてはならない（#856）。
+      - name: Assert reservation reconciliation is enabled and the release gate stays shut
+        run: |
+          set -eu
+          assert_reconciliation() {
+            label="$1"; out="$2"
+            doc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: order-execution-service/')"
+            [ -n "$doc" ] || { echo "::error::[$label] order-execution の Deployment が描画されない。"; exit 1; }
+            for pair in "Reconciliation__Enabled true" "Reconciliation__UseBrokerProbe true" "Reconciliation__ReleaseOnNotPlaced false" "Reconciliation__StallThresholdHours 2" "Reconciliation__IntervalHours 1" "Reconciliation__BatchSize 50"; do
+              key="${pair%% *}"; want="${pair##* }"
+              if ! printf '%s' "$doc" | grep -A1 "name: ${key}$" | grep -q "value: \"${want}\""; then
+                echo "::error::[$label] ${key} が \"${want}\" で描画されない（滞留 Reserved が自動解決しない構成へ戻った）。"
+                printf '%s' "$doc" | grep -A1 'name: Reconciliation__' || true
+                exit 1
+              fi
+            done
+          }
+          assert_reconciliation "既定描画" "$(helm template ast "$CHART")"
+          assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
+          assert_reconciliation "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          echo "ok: 突合は 3 描画とも有効で、解放の門は閉じている（BatchSize も pin 済み）"
       # #238 / IADR-0100: 本番バイト等価の担保。ArgoCD は values.yaml のみを描画する（valueFiles 無し）ため、
       # 経路B の有効化（values-local.yaml）が既定描画へ漏れていないことを検査する。既定描画に実 LLM/実市況/Discord の
       # 有効化痕跡が現れたら、本番へ漏れたということなので落とす（fail-safe 既定の反転検出）。

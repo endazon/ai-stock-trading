@@ -33,6 +33,8 @@ public class ShortSellingStatusServiceTests
         public bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) => false;
 
         public int? FindApprovedFilledQuantity(Guid decisionId) => null;
+
+        public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt) { } // #852: 本テストは見送りを使わない
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => false; // #849: 本テストは取り込みを使わない
     }
 
