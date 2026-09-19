@@ -140,7 +140,7 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
         res.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
-    // 🔴 #847, IADR-0357: 現在値が取れなくても**成行の手仕舞いは通る**（市況フィードの不調で手仕舞えなくしない）。
+    // 🔴 T-10-583, #847, IADR-0357: 現在値が取れなくても**成行の手仕舞いは通る**（市況フィードの不調で手仕舞えなくしない）。
     [Fact]
     public async Task 現在値が無くても成行の手仕舞いは受理される()
     {
@@ -152,7 +152,7 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
         res.StatusCode.Should().Be(HttpStatusCode.Accepted);
     }
 
-    // #847, IADR-0357: 成行と指値の同時指定は矛盾であり 400（黙ってどちらかを捨てない）。
+    // T-10-583, #847, IADR-0357: 成行と指値の同時指定は矛盾であり 400（黙ってどちらかを捨てない）。
     [Fact]
     public async Task 成行と指値の同時指定は400()
     {

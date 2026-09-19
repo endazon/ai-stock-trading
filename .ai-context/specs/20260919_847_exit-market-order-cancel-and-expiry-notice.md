@@ -55,10 +55,12 @@ plan_refs:
 
 | 要求 | 発注種別 | 備考 |
 | --- | --- | --- |
-| `limitPrice` 省略（`market` 省略） | **成行**（既定が変わる） | #847 の事故そのものの形。ここを直さないと同じ事故が再発する |
+| `limitPrice` 省略（`marketOrder` 省略） | **成行**（既定が変わる） | #847 の事故そのものの形。ここを直さないと同じ事故が再発する |
 | `limitPrice` 指定 | 指値 | 従来どおり |
-| `market: true` ＋ `limitPrice` 指定 | **400**（矛盾） | 黙ってどちらかを捨てない |
-| `market: false` ＋ `limitPrice` 省略 | 現在値の指値 | 旧既定を明示的に選べる退避口 |
+| `marketOrder: true` ＋ `limitPrice` 指定 | **400**（矛盾） | 黙ってどちらかを捨てない |
+| `marketOrder: false` ＋ `limitPrice` 省略 | 現在値の指値 | 旧既定を明示的に選べる退避口 |
+
+要求本文の項目名は **`marketOrder`** である（`market` は既に「市場（Japan / UnitedStates）」が使っている）。
 
 - `OrderIntent` に `bool MarketOrder = false` を足す（末尾・既定 false＝**従来どおり指値**）。
   既存の全生成点は既定に倒れるため、**エントリー・保護レグ・判断由来の決済は 1 バイトも変わらない**。
@@ -119,6 +121,20 @@ plan_refs:
   そのまま翌日へ持ち越すことを書く。重大度は **Warning**
   （Critical は「実際に統制が破れた」事象＝保護喪失・損切り到達に取っておく。埋もれさせない）。
 - 監査にも残す（`AuditEntryFactory` ＋ 専用ハンドラ。`AuditConsumerCoverageTests` が全イベントに要求する）。
+
+［2026-09-19 追記 / #847・フェーズ末監査］**決定 C に 2 点を足した**（詳細は IADR-0357 決定 4）。
+
+- 🔴 **残数量は台帳の約定累計だけでは出せない（到着順序）。** 取消の確認 → `OrderCancelled` は即座に発行される
+  のに対し、部分約定は約定追跡（30 秒周期）経由で届く。**取消が約定を追い越すのが通常**であり、台帳だけで
+  数えると部分約定ぶんを二重に数える（実測: 承認 3,381・約定 1,000 で残が 2,381 ではなく 3,381）。
+  終端の記録は単調なので**訂正通知も出ない**。`OrderCancelled` へ `ObservedFilledQuantity`（取消を確認した
+  照会が返した累積約定数）を足し、受け手は台帳の累計との `Math.Max` を採る。
+  **Risk からブローカーを引く案は採らない**（同期照会をホットパスへ持ち込まない規律・IADR-0018 / IADR-0117）。
+- 🔴 **`MarkTerminal` の「初回だけ true」は並行では成立していなかった。** `OrderCancelled` と `OrderExecuted` は
+  **別キュー＝並行実行**であり、EF 実装は read-then-write の TOCTOU（実測: 200 試行中 63 試行で破れた）。
+  `approved_orders.TerminalAt` を並行トークンにする（移行は DDL 無しの空 Up/Down）。
+  **`order_activity` の同名列には付けない**（あちらは無条件上書きが正しい）。
+  根本原因は**冪等をインメモリ実装だけで測っていたこと**であり、EF 側に並行の回帰テストを置いた。
 - **副作用として保護レグ（逆指値）の終端でも発行される**。承認行は `approved_orders` に同じ形で載り、
   台帳からは owner の手仕舞いと区別できないためである。**受容する**——保護レグが未約定残を残して終端になった
   状態は「無保護の建玉が残っている」ことそのものであり、黙らせてよい事象ではない。
@@ -180,4 +196,4 @@ plan_refs:
 | --- | --- |
 | 下落局面でも手仕舞いが成立する経路がある（成行） | `PositionCloseServiceTests`（既定が成行・矛盾指定の拒否・参照価格の解決）／`OrderExecutionServiceMarketCloseTests`（`PlaceMarketOrderAsync` へ送る）／`PositionCloseEndpointTests` |
 | 未約定の手仕舞いを利用者が取り消せる（監査に誰が・なぜが残る） | `PositionCloseCancellationEndpointTests`（OwnerOnly・理由必須・404/422）／`PositionCloseCancellationHandlerTests`（#768 の配線）／`OrderAmendmentServiceTests`（**確認できたときだけ**発行）／`UnwiredDiRegistrationTests` |
-| 失効した手仕舞いが通知される | `PortfolioLedgerConsumersTests`（`PositionCloseAbandoned` の発行・冪等）／`NotificationFormatterTests` |
+| 失効した手仕舞いが通知される | `PositionCloseAbandonedTests`（発行・冪等・到着順序）／`EfPortfolioLedgerMarkTerminalConcurrencyTests`（並行）／`NotificationTemplateGoldenTests` |

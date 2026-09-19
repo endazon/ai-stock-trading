@@ -30,9 +30,12 @@ public sealed class OrderCancelledLedgerHandler(IPortfolioLedgerStore ledger)
         var newlyTerminal = ledger.MarkTerminal(
             message.DecisionId, OrderStatus.Cancelled, message.CancelledAt);
 
+        // #847, IADR-0357: 取消は部分約定を追い越して届く。発注執行が取消を確認したときに観測した累積約定数を
+        // 渡して、失効通知の「未決済 N 株」が水増しされないようにする（在庫の判定には一切使わない）。
         return newlyTerminal
             ? PositionCloseAbandonment.Describe(
-                ledger, message.DecisionId, OrderStatus.Cancelled, message.CancelledAt)
+                ledger, message.DecisionId, OrderStatus.Cancelled, message.CancelledAt,
+                message.ObservedFilledQuantity)
             : null;
     }
 }

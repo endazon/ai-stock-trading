@@ -17,7 +17,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: **OrderAmendmentDispatcher の呼び出し元**。
+// 🔴 T-10-587, FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: **OrderAmendmentDispatcher の呼び出し元**。
 //
 // #768 は「DI 登録だけで本番の呼び出し元が無い」を台帳へ載せていた（UnwiredDiRegistrationTests の既知一覧）。
 // #847 はそれが実運用で実害になった最初の事例であり（板に残った手仕舞いを消す手段が moomoo アプリだけだった）、

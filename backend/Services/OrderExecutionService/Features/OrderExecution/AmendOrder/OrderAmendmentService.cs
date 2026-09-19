@@ -65,7 +65,11 @@ public sealed class OrderAmendmentService(
             orderId,
             reason,
             snapshot?.Status,
-            confirmed ? new OrderCancelled(decisionId, orderId, reason, now) : null);
+            // #847, IADR-0357: 確認に使った照会は**累積約定数も返している**。それを載せる ——
+            // 取消は部分約定を追い越して台帳へ着くため、載せないと失効通知の「未決済 N 株」が水増しされる。
+            confirmed
+                ? new OrderCancelled(decisionId, orderId, reason, now, snapshot!.FilledQuantity)
+                : null);
     }
 
     /// <summary>DecisionId の注文を訂正し、記録して <see cref="OrderModified"/> を返す。</summary>

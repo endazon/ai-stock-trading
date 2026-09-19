@@ -204,6 +204,7 @@
   "OrderCancelled": {
     "CancelledAt": "DateTimeOffset",
     "DecisionId": "Guid",
+    "ObservedFilledQuantity": "Int32",
     "OrderId": "String",
     "Reason": "String"
   },

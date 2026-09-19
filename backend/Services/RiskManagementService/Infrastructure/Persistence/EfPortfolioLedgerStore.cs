@@ -122,7 +122,23 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
 
         approval.TerminalAt = terminalAt;
         approval.TerminalStatus = terminalStatus;
-        db.SaveChanges();
+
+        // 🔴 #847, IADR-0357: **上の検査と下の書き込みのあいだは TOCTOU である。** 取消の確認（OrderCancelled）と
+        // 約定追跡の再観測（OrderExecuted）は別キュー＝並行に走り、同じ承認の終端を同時に運び得る（#847 の形）。
+        // TerminalAt は並行トークンにしてあるため（RiskManagementDbContext）、負けた側の UPDATE は 0 行になり
+        // ここで例外になる。**それは異常ではなく「先に誰かが終端を記録した」＝ false を返すべき状態である。**
+        // 在庫の押さえはどちらが勝っても同じ意味に落ち着く（冪等）。守っているのは**戻り値＝通知の冪等キー**である。
+        try
+        {
+            db.SaveChanges();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // 追跡状態を捨てる（この文脈の書き込みは成立していない）。以降の読み取りは保存された値を引き直す。
+            db.Entry(approval).State = EntityState.Detached;
+            return false;
+        }
+
         return true;
     }
 

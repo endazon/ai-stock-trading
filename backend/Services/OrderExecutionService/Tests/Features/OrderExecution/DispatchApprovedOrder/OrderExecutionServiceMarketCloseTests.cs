@@ -9,7 +9,7 @@ using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrd
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 FR-05, FR-10, UC-06, #847, IADR-0357: 成行の手仕舞いは既存の `IProtectiveOrderBroker.PlaceMarketOrderAsync`
+// 🔴 T-10-584, FR-05, FR-10, UC-06, #847, IADR-0357: 成行の手仕舞いは既存の `IProtectiveOrderBroker.PlaceMarketOrderAsync`
 // （IADR-0210 で入った「逆指値が成立しないときの建玉解消」の口）へ送る。**新しいブローカー呼び出しを作らない。**
 //
 // 稼働環境（2026-09-18 23:13 JST）の実測: 現在値の売り指値 334.09 が、直後の下落（333.59）で約定せず板に残った。

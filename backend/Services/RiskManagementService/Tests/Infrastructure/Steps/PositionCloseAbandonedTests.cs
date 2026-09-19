@@ -14,7 +14,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// 🔴 FR-09, FR-10, FR-11, UC-06, #847, IADR-0357: **失効した手仕舞いを黙って捨てない。**
+// 🔴 T-10-588, FR-09, FR-10, FR-11, UC-06, #847, IADR-0357: **失効した手仕舞いを黙って捨てない。**
 //
 // 手仕舞いは当日注文であり、約定しなければ引け後に失効する。従来は `OrderExecuted(Status=Expired)` が
 // 「約定 Expired 数量0@0」という一般的な Warning になるだけで、**それが手仕舞いだったことも、建玉が
@@ -114,6 +114,75 @@ public class PositionCloseAbandonedTests
 
         session.Sent.MessagesOf<PositionCloseAbandoned>().Single()
             .RemainingQuantity.Should().Be(100);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-581, #847（冪等・取消経路）: **取消の再配送でも二度発行しない。**
+    // OrderExecuted 側だけで冪等を固定していたため、OrderCancelledLedgerHandler の冪等キーを無視する変異が
+    // 1 件も赤にならなかった（1793 件すべて緑）。**経路ごとに固定する。**
+    [Fact]
+    public async Task 取消の再配送では二度発行しない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+        var decisionId = await ApproveCloseAsync(host, 100);
+        var cancelled = new OrderCancelled(decisionId, "ORD-1", "利用者による取消", Approved.AddMinutes(5));
+
+        (await host.TrackActivityForTest().InvokeMessageAndWaitAsync(cancelled))
+            .Sent.MessagesOf<PositionCloseAbandoned>().Should().ContainSingle();
+
+        (await host.TrackActivityForTest().InvokeMessageAndWaitAsync(cancelled))
+            .Sent.MessagesOf<PositionCloseAbandoned>().Should().BeEmpty("MarkTerminal は単調（最初の終端が真）");
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-582, #847: **取消が部分約定を追い越しても「未決済 N 株」を水増ししない。**
+    // 取消の確認 → OrderCancelled は発注執行が即座に発行するのに対し、部分約定は約定追跡（30 秒周期）経由で
+    // 台帳へ届く。**取消が先に着くのが通常**であり、台帳の累計だけで数えると部分約定ぶんを二重に数える。
+    // しかも終端の記録は単調なので、あとから約定が届いても訂正通知は出ない（誤った数字が残り続ける）。
+    [Fact]
+    public async Task 取消が部分約定より先に届いても残数量を水増ししない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+        var decisionId = await ApproveCloseAsync(host, 3_381);
+
+        // 台帳にはまだ約定が 1 件も無い（ポーラーが未着）。取消だけが、確認時の観測（1,000 株）を連れて届く。
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderCancelled(decisionId, "ORD-1", "利用者による取消", Approved.AddMinutes(5),
+                ObservedFilledQuantity: 1_000));
+
+        var abandoned = session.Sent.MessagesOf<PositionCloseAbandoned>().Single();
+        abandoned.FilledQuantity.Should().Be(1_000);
+        abandoned.RemainingQuantity.Should().Be(
+            2_381, "台帳が約定を受け取る前でも、実際に残っている株数を通知する");
+
+        await host.StopAsync();
+    }
+
+    // 対（否定形）: 観測値が台帳より小さくても**過小報告しない**（大きいほうを採る・単調）。
+    [Fact]
+    public async Task 観測値が台帳より古くても約定数は戻らない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+        var decisionId = await ApproveCloseAsync(host, 3_381);
+
+        // 先に約定 1,500 が台帳へ載る（ポーラーが先着した順序）。
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderExecuted(
+            decisionId, "ORD-1", OrderStatus.PartiallyFilled, 1_500, 334m, Approved.AddMinutes(4),
+            BrokerProvider.MoomooSimulate));
+
+        // 取消は古い観測（1,000）を連れてくる。
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderCancelled(decisionId, "ORD-1", "利用者による取消", Approved.AddMinutes(5),
+                ObservedFilledQuantity: 1_000));
+
+        var abandoned = session.Sent.MessagesOf<PositionCloseAbandoned>().Single();
+        abandoned.FilledQuantity.Should().Be(1_500, "台帳の累計のほうが新しければそちらを採る");
+        abandoned.RemainingQuantity.Should().Be(1_881);
 
         await host.StopAsync();
     }

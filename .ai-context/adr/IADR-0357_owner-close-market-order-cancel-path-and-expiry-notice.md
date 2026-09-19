@@ -159,6 +159,33 @@ S1（`StopLossExecutionMethod.SoftwareStop`）は**未実装**（#820）で、�
 - 監査にも残す（`AuditEntryFactory` ＋ 専用ハンドラ。`AuditCycleCompletenessTests` が全イベントに要求する）。
 - 🔴 **本イベントは在庫の押さえに一切関与しない**（通知と監査のためだけに存在する）。
   判定を誤っても二重決済は生じず、生じるのは通知の過不足だけである。
+- 🔴 **残数量は「台帳の約定累計」だけでは出せない（到着順序）。** 取消の確認 → `OrderCancelled` は発注執行が
+  **即座に**発行するのに対し、部分約定は約定追跡（`OrderFillPoller`・30 秒周期）経由で台帳へ届く。
+  **取消が約定を追い越すのが通常**であり、台帳の累計だけで数えると部分約定ぶんを未決済として二重に数える
+  （実測: 承認 3,381・約定 1,000 のとき残が 2,381 ではなく **3,381**）。しかも終端の記録は単調なので
+  **あとから約定が届いても訂正通知は出ない** —— 誤った数字がそのまま残る。
+  - **是正**: `OrderCancelled` に **`ObservedFilledQuantity`**（取消を確認した照会が返した累積約定数）を足す。
+    取消の確認は**注文状態の照会そのもの**なので、この値は既に手元にある——**Risk からブローカーを引かない**
+    （同期照会をホットパスへ持ち込まない規律＝IADR-0018 / IADR-0117。issue の助言 1 の literal な形は採れない）。
+    受け手は台帳の累計との **`Math.Max`** を採る（過小報告しない・遅着の台帳更新で数字が戻らない＝単調）。
+  - **`OrderExecuted` 側は直す必要が無い** —— そちらは `FilledQuantity` を運び、ハンドラが
+    `AppendFill` を済ませて**から** `MarkTerminal` を呼ぶため、台帳は既に最新である（IADR-0117 改定 2/4 の順序）。
+- 🔴 **「初回だけ true」は並行しても成立しなければ意味が無い。** `OrderCancelled` と `OrderExecuted` は
+  Wolverine の**別キュー＝並行実行**であり（IADR-0129 決定 1「1 サービス内 1 イベント型 = 1 キュー」）、
+  同じ承認の終端を同時に運ぶのはまさに #847 のシナリオである。
+  `EfPortfolioLedgerStore.MarkTerminal` は「読む → `null` か検査する → 代入する → `SaveChanges`」の
+  **TOCTOU** であり、実測で **200 試行中 63 試行**が「初回」を 2 回成立させた（＝失効通知が二重に出る）。
+  - **是正**: `approved_orders.TerminalAt` を **並行トークン**（`IsConcurrencyToken`）にする。
+    負けた側の UPDATE は 0 行になり `DbUpdateConcurrencyException` になるので、`MarkTerminal` が捕まえて
+    `false` を返す（＝通知しない）。**在庫の押さえは壊れない**——どちらが勝っても `TerminalAt` は同じ意味に
+    落ち着く冪等な書き込みである。**PostgreSQL の DDL は 1 行も要らない**（移行は
+    `AddApprovedOrderTerminalConcurrencyToken`。Up / Down は**意図的に空**で、モデルとスナップショットを
+    一致させるためだけに置く）。
+  - 🔴 **`order_activity` の同名列には付けない。** あちらは `EfOrderActivityStore.RecordCancellation` が
+    **無条件に上書きする**規約であり（IADR-0117 改定 1 の赤字）、トークンを付けると正常な上書きが競合例外になる。
+  - 🔴 **根本原因は「冪等をインメモリ実装だけで測っていた」ことである。** `InMemoryPortfolioLedgerStore` は
+    `ConcurrentDictionary.TryUpdate` の CAS で元から正しく、そちらのテストだけが緑だった。
+    **実装が 2 つあるなら、不変条件は実装ごとに測る**（T-10-580 を EF 側に置いた理由）。
 
 ## 🔴 統制が効かなくなる範囲（本 PR が広げるもの）
 
@@ -185,6 +212,20 @@ S1（`StopLossExecutionMethod.SoftwareStop`）は**未実装**（#820）で、�
     こちらは Warning に留めて重大度の階層を壊さない。
   - 取消が「不明」で終わったとき、利用者へ能動的な通知は出ない（Warning ログのみ）。
     押さえは残るので安全側だが、**滞留の解消は約定追跡に依る**（IADR-0117 改定 6 の残余リスクと同型）。
+  - **失効通知の約定数は「取消を確認した瞬間の観測」である。** その直後に約定が成立していれば、
+    通知の「未決済 N 株」は依然として多めに出る（`Math.Max` は過小報告を防ぐが、未来の約定は読めない）。
+    台帳は約定が届き次第正しくなるが、**終端の記録は単調なので訂正通知は出ない**。
+    数字を鵜呑みにせず建玉を確認してほしい、という趣旨は通知文面の「建玉を確認してください」が担う。
+  - 🔴 **内蔵 paper では、参照価格へ倒した成行手仕舞いの実現損益がちょうど 0 になる。**
+    `PaperBrokerAdapter.PlaceMarketOrderAsync` は `intent.Price` で即時約定するため、現在値が取れずに
+    平均取得単価へ倒した場合、**建値と同値で決済したことになる**。市況フィードが落ちている間の
+    paper / バックテストの損益指標が静かに歪む（moomoo は価格を送らないので実約定価格が入り、影響しない）。
+    **手仕舞いを止めないことを優先した代償**であり、Stage 判定は SIMULATE の約定だけで集計する（FR-20 /
+    IADR-0149 決定 1）ため合否には混入しない。
+  - **建玉の平均取得単価が 0 以下の場合は、成行でも `PriceUnavailable`（422）で落ちる**
+    （`ResolvePrice` の `> 0m` 条件）。「成行なら止めない」には**この例外がある**。
+    倒し先が無い以上、価格 0 の記録を台帳へ残すより拒否するほうが安全であり、
+    平均取得単価が 0 以下の建玉は台帳の破損を意味する（正常系では作れない）。
 
 ## 根拠
 
@@ -216,9 +257,16 @@ moomoo で訂正はできないため、「手仕舞い要求に既存の未約�
 - **実弾ゲート（閂 0〜4）に差分ゼロ。** 新しいブローカー呼び出しは 1 つも増えない
   （成行は `PlaceMarketOrderAsync`＝IADR-0210 で既に在る口、取消は `CancelOrderAsync`＝IADR-0067 以前から在る口）。
   SIMULATE 限定・実弾 OFF は不変である。
-- **DB スキーマ変更なし（Migration 無し）。** `OrderIntent.MarketOrder` は `approved_orders` の列に写さない。
+- **DB の列は 1 つも増えない。** `OrderIntent.MarketOrder` は `approved_orders` の列に写さない。
+  ただし **Migration は 1 本入る** —— `approved_orders.TerminalAt` を並行トークンにするモデル変更のためで、
+  `AddApprovedOrderTerminalConcurrencyToken` の **Up / Down は意図的に空**である（PostgreSQL の DDL を伴わない。
+  置かないと次の `migrations add` へこの注釈が黙って混ざる）。
+  🔴 **`dotnet ef migrations has-pending-model-changes` は並行トークンの追加を検出しなかった**（実測）。
+  差分が DDL を生まないためであり、**この検査だけではモデルとスナップショットの乖離は見つからない**。
 - **構成キーを 1 つも足さない**（IADR-0117 と同じ理由——利用者の明示操作でしか動かず、
   無効化スイッチは「手仕舞えない状態を作れるスイッチ」にしかならない）。Helm / values / compose は不変。
+- **既存契約 `OrderCancelled` へ 1 項目を足す**（`ObservedFilledQuantity`・既定 0＝加算のみで後方互換）。
+  発行元は取消の配管 1 箇所だけで、既存の購読側（台帳・注文アクティビティ・監査）は読まなくても壊れない。
 - **新しいキューは 2 本増える**（`PositionCloseCancellationRequested` / `PositionCloseAbandoned`）。
   監査サービスは契約イベント全数を購読するため、購読対象が 2 型増える（IADR-0129 の
   `codegen write` 済みイメージで読むため、起動時の実行時コンパイルは増えない）。

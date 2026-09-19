@@ -9,7 +9,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357, IADR-0117（2026-09-19 追記・改定 1/4）:
+// 🔴 T-10-585, FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357, IADR-0117（2026-09-19 追記・改定 1/4）:
 // **「確実に取り消せた」と「取消を送ったが結果が不明」を混同しない。**
 //
 // OrderCancelled は取引台帳で MarkTerminal → **在庫の押さえを解く引き金**である。

@@ -290,7 +290,7 @@ public class PositionCloseServiceTests
         outcome.Approval!.Intent.Price.Should().Be(25m);
     }
 
-    // #847, IADR-0357: 指値省略は**成行**になったが、参照価格（台帳・監査・通知が使う）には現在値を載せる。
+    // T-10-583, #847, IADR-0357: 指値省略は**成行**になったが、参照価格（台帳・監査・通知が使う）には現在値を載せる。
     // 既定の切り替えそのものは PositionCloseMarketOrderTests が固定する。
     [Fact]
     public void 指値省略時は参照価格として現在値を用いる()

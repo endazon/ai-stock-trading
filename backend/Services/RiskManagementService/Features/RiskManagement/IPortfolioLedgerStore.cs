@@ -139,6 +139,16 @@ public interface IPortfolioLedgerStore
     /// #848 から 1 バイトも変えていない —— 足したのは戻り値だけである。
     /// 呼び出し側はこれを<b>通知の冪等キー</b>として使う（再配送で失効通知を撃ち直さない）。
     /// </para>
+    /// <para>
+    /// 🔴 <b>「初回だけ true」は並行しても成立しなければならない。</b> <c>OrderCancelled</c> と
+    /// <c>OrderExecuted</c> は Wolverine の<b>別キュー＝並行実行</b>であり（IADR-0129 決定 1）、
+    /// 同じ承認の終端を同時に運び得る（#847 のシナリオそのもの）。成立させているのは実装ごとに違う ——
+    /// インメモリ実装は <c>ConcurrentDictionary.TryUpdate</c> の CAS、EF 実装は
+    /// <c>approved_orders.TerminalAt</c> の<b>並行トークン</b>である。
+    /// <b>どちらかを外すと、この段落の主張は黙って偽になる</b>（実測: トークン無しの EF は 200 試行中
+    /// 63 試行で「初回」が 2 回成立した）。回帰は <c>EfPortfolioLedgerMarkTerminalConcurrencyTests</c> と
+    /// <c>PortfolioLedgerInFlightCloseTests</c> が<b>実装ごとに</b>固定する。
+    /// </para>
     /// </summary>
     bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);
 

@@ -10,7 +10,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// 🔴 FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 板に残った手仕舞いを取り消すエンドポイント。
+// 🔴 T-10-586, FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 板に残った手仕舞いを取り消すエンドポイント。
 // 利用者専用（OwnerOnly）・理由必須・監査に「誰が・なぜ」が残ること、そして**アプリ操作に逃がさない**こと。
 public class PositionCloseCancellationEndpointTests(RiskWorkerWebApplicationFactory factory)
     : IClassFixture<RiskWorkerWebApplicationFactory>
