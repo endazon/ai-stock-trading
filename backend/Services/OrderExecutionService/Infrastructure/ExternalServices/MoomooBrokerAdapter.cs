@@ -207,11 +207,12 @@ public sealed class MoomooBrokerAdapter(
             // **在庫の押さえを解く引き金**であり、不明のまま解くと同じ建玉に 2 本目の決済が並ぶ
             //（二重決済で意図しないショート化）。エントリーでは「建玉は生じていない」という仮定になり、
             // 注文が生きていた場合に保護レグ無しの建玉ができる。実在しない注文 ID も捏造しない（#842 と同型）。
-            // 不明は伝播させ、**予約（IADR-0057）を解放も確定もせず**リコンサイル（IADR-0092）に解決させる。
+            // 不明は伝播させ、呼び出し側は**予約（IADR-0057）を解放も確定もしない**（撃ち直さない）。
+            // 滞留の解消はリコンサイル（IADR-0092）が**有効なら**行う。既定は無効で、その場合は人が解決する（#856）。
             // BrokerUnavailableException（接続確立の失敗＝確実に未発注）は従来どおり丸めずに伝播する（IADR-0211）。
             _logger.LogError(ex,
                 "moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）symbol={Symbol} qty={Qty} 種別={Kind}。"
-                + "拒否へ畳まず予約を Reserved のまま残し、リコンサイルの解決に委ねます。",
+                + "拒否へ畳まず、予約を Reserved のまま残します（自動リコンサイルが無効なら人手で確認してください）。",
                 intent.Symbol, intent.Quantity, kind);
             throw new BrokerDispatchIndeterminateException(
                 $"moomoo へ発注を送信しましたが結果を確認できませんでした（種別={kind} 銘柄={intent.Symbol} "
@@ -361,6 +362,10 @@ public sealed class MoomooBrokerAdapter(
         // 証券会社が受理しなかったことが**分かっている**状態。在庫解放の対象のままにする
         //（発注拒否で押さえが解けるのは #848 の射程内であり、外すと 2 つ目の恒久ロックを作る）。
         MoomooOrderState.Failed => OrderStatus.Rejected,
+        // 🔴 この既定アームは **Unknown 専用ではない**。いま到達するのは MoomooOrderState.Unknown だけだが、
+        // 将来 MoomooOrderState へ値を足して上のアームへ写し忘れた場合も**ここへ落ちる**（＝非終端）。
+        // 向きは意図どおり（名前を付けられない状態で在庫を解放しない）。ただし新しい値が**終端**を意味するなら
+        // 必ず明示のアームを足すこと——足し忘れると終端が届かず、約定追跡が引き直し続ける（安全側だが解けない）。
         _ => OrderStatus.Accepted,
     };
 

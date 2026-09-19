@@ -24,7 +24,9 @@ public class OrderExecutionServiceProtectiveStopTests
 
     public enum StopBehavior { Accept, Reject, Throw, Unavailable }
 
-    public enum RemedyBehavior { Succeed, Throw }
+    // #848, IADR-0117（改定 7）: Unavailable＝確実に未発注（接続確立の失敗）。Throw＝分類できない例外
+    //（未発注と言い切れない）。**値は末尾へ足している**（不変条件テストの疑似乱数は先頭 2 値から引く）。
+    public enum RemedyBehavior { Succeed, Throw, Unavailable, Indeterminate }
 
     // エントリー・逆指値・取消・成行手仕舞いの挙動を分岐単位で注入できるブローカ。
     private sealed class ScriptedBroker : IBrokerAdapter, IProtectiveOrderBroker
@@ -70,10 +72,15 @@ public class OrderExecutionServiceProtectiveStopTests
         {
             MarketCloseCount++;
             MarketCloseIntent = closeIntent;
-            return MarketClose == RemedyBehavior.Succeed
-                ? Task.FromResult(new BrokerOrder(
-                    "close-1", closeIntent, OrderStatus.Filled, closeIntent.Quantity, closeIntent.Price, Now, Now))
-                : throw new InvalidOperationException("成行手仕舞いに失敗（テスト）");
+            return MarketClose switch
+            {
+                RemedyBehavior.Succeed => Task.FromResult(new BrokerOrder(
+                    "close-1", closeIntent, OrderStatus.Filled, closeIntent.Quantity, closeIntent.Price, Now, Now)),
+                RemedyBehavior.Unavailable => throw new BrokerUnavailableException("OpenD 切断・成行手仕舞いは未発注（テスト）"),
+                RemedyBehavior.Indeterminate => throw new BrokerDispatchIndeterminateException(
+                    "moomoo へ発注を送信しましたが結果を確認できませんでした（テスト）"),
+                _ => throw new InvalidOperationException("成行手仕舞いに失敗（テスト）"),
+            };
         }
 
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
@@ -244,18 +251,77 @@ public class OrderExecutionServiceProtectiveStopTests
     [Fact]
     public async Task 手仕舞いも失敗したらNoneを返す()
     {
+        // #848, IADR-0117（改定 7）: None（解消に失敗）と言えるのは**確実に未発注**（接続確立の失敗）のときだけである。
+        // 分類できない例外・届いたか不明は CloseDispatchIndeterminate であり、T-10-409 が固定する。
         var broker = new ScriptedBroker
         {
             EntryStatus = OrderStatus.Filled,
             EntryFilled = 10,
             Stop = StopBehavior.Reject,
-            MarketClose = RemedyBehavior.Throw,
+            MarketClose = RemedyBehavior.Unavailable,
         };
-        var (service, _, _, _) = NewService(broker);
+        var (service, _, _, reservations) = NewService(broker);
+        var approved = Approved(Intent());
 
-        var result = await service.ExecuteAsync(Approved(Intent()));
+        var result = await service.ExecuteAsync(approved);
 
         result.CoverageLost!.Remediation.Should().Be(ProtectiveStopRemediation.None);
+        result.CoverageLost.CloseDecisionId.Should().BeNull("未発注の手仕舞いレグを台帳へ結線しない");
+        reservations.Find(ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1))
+            .Should().BeNull("確実に未発注なので予約は解放される");
+    }
+
+    // 🔴 T-10-409, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）:
+    // エントリー直後の成行手仕舞いが**届いたか不明**で終わったとき、None（解消に失敗＝未発注）と主張しない。
+    // None は手仕舞いレグを運ばないため取引台帳が押さえず、利用者の手仕舞い要求が通って同じ株数に 2 本の決済が並ぶ。
+    // 改定 6 以前は偽 ID の Rejected＋PositionClosed で承認行が足され、30 分の窓が押さえていた。
+    [Theory]
+    [InlineData(RemedyBehavior.Indeterminate)]
+    [InlineData(RemedyBehavior.Throw)] // 分類できない例外も未発注とは言い切れない
+    public async Task 成行手仕舞いが届いたか不明なら_未発注と主張せず手仕舞いレグを運び予約を据え置く_否定形(RemedyBehavior close)
+    {
+        var broker = new ScriptedBroker
+        {
+            EntryStatus = OrderStatus.Filled,
+            EntryFilled = 10,
+            Stop = StopBehavior.Reject,
+            MarketClose = close,
+        };
+        var (service, store, _, reservations) = NewService(broker);
+        var approved = Approved(Intent());
+        var closeDecisionId = ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1);
+
+        var result = await service.ExecuteAsync(approved);
+
+        broker.MarketCloseCount.Should().Be(1);
+        var lost = result.CoverageLost!;
+        lost.Remediation.Should().Be(ProtectiveStopRemediation.CloseDispatchIndeterminate);
+        lost.CloseDecisionId.Should().Be(closeDecisionId, "台帳が処理中の決済として押さえるために手仕舞いレグを運ぶ");
+        lost.CloseIntent.Should().NotBeNull();
+        lost.CloseIntent!.Quantity.Should().Be(10);
+        lost.CloseIntent.PositionEffect.Should().Be(PositionEffect.Close);
+
+        // 予約は解放も確定もしない。実在しない注文 ID の記録は作らない。
+        var reservation = reservations.Find(closeDecisionId);
+        reservation.Should().NotBeNull();
+        reservation!.State.Should().Be(OrderExecutionService.Features.OrderExecution.OrderDispatchState.Reserved);
+        store.FindByDecisionId(closeDecisionId).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 成行手仕舞いが成功したら手仕舞いレグの予約を確定する()
+    {
+        var broker = new ScriptedBroker { EntryStatus = OrderStatus.Filled, EntryFilled = 10, Stop = StopBehavior.Reject };
+        var (service, store, _, reservations) = NewService(broker);
+        var approved = Approved(Intent());
+        var closeDecisionId = ProtectiveStopIds.CloseDecisionId(approved.DecisionId, attempt: 1);
+
+        var result = await service.ExecuteAsync(approved);
+
+        result.CoverageLost!.Remediation.Should().Be(ProtectiveStopRemediation.PositionClosed);
+        reservations.Find(closeDecisionId)!.State
+            .Should().Be(OrderExecutionService.Features.OrderExecution.OrderDispatchState.Completed);
+        store.FindByDecisionId(closeDecisionId)!.OrderId.Should().Be("close-1");
     }
 
     [Theory]
@@ -398,7 +464,10 @@ public class OrderExecutionServiceProtectiveStopTests
             {
                 var protectedByStop = result.StopPlaced is not null
                     && stops.Find(approved.DecisionId)?.State == ProtectiveStopState.Active;
-                var humanAlerted = result.CoverageLost?.Remediation == ProtectiveStopRemediation.None;
+                // #848, IADR-0117（改定 7）: 成行手仕舞いの結果が未確認（CloseDispatchIndeterminate）も Critical の
+                // 人手対応である（通知の重大度は NotificationFormatterTests が固定する）。
+                var humanAlerted = result.CoverageLost?.Remediation
+                    is ProtectiveStopRemediation.None or ProtectiveStopRemediation.CloseDispatchIndeterminate;
 
                 (protectedByStop || humanAlerted).Should().BeTrue(
                     $"逆指値なしの建玉が黙って残ってはならない（case {i}: entry={entryStatus}/{filled}"

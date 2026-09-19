@@ -152,6 +152,7 @@ public sealed class ProtectiveStopPlacedNotificationHandler(INotificationSender 
 
 // FR-10, FR-09, UC-02, #331, IADR-0210: 保護逆指値が成立せず建玉を解消した（Critical）。
 // Remediation=None（解消も失敗）は人手対応を要するため、通知が唯一の即時警報である。
+// #848, IADR-0117（改定 7）: CloseDispatchIndeterminate（成行手仕舞いの結果が未確認）も同じく Critical。
 public sealed class ProtectiveStopCoverageLostNotificationHandler(INotificationSender sender)
 {
     public Task Handle(ProtectiveStopCoverageLost message, CancellationToken cancellationToken) =>

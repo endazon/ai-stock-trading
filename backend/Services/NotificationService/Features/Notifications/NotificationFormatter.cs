@@ -49,14 +49,24 @@ public static class NotificationFormatter
     // FR-10, UC-02, #331, IADR-0210: 保護逆指値が成立しない（未受理・失効）——建玉を持たないための対処。
     // 対処が成功しても**利用者の承認なしに建玉が消えた/注文が取り消された**事象であり Critical。
     // Remediation=None は逆指値なしの建玉が残っている可能性があり、人手対応を明示的に求める。
+    // 🔴 #848, IADR-0117（2026-09-19 追記・改定 7）: CloseDispatchIndeterminate は**「解消に失敗」とは言わない**。
+    // 成行手仕舞いは送信済みで、証券会社側で生きているかもしれない。「失敗した」と読んだ人は手で成行を重ね、
+    // 二重決済でショート化する。伝えるのは「送った・届いたか分からない・重ねる前に確かめよ」である。
     public static NotificationMessage From(ProtectiveStopCoverageLost e) => new(
-        "リスク統制: 保護逆指値が成立せず建玉を解消",
+        e.Remediation == ProtectiveStopRemediation.CloseDispatchIndeterminate
+            ? "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認"
+            : "リスク統制: 保護逆指値が成立せず建玉を解消",
         $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"
             + $"{(e.Cause == ProtectiveStopLossCause.RejectedAtEntry ? "エントリー時に未受理" : "滞留中に失効（再発注不可）")}のため、"
             + e.Remediation switch
             {
                 ProtectiveStopRemediation.EntryCancelled => "エントリー注文を取り消しました（建玉は生じていません）。",
                 ProtectiveStopRemediation.PositionClosed => "建玉を成行で手仕舞いました（逆指値なしの建玉を持たない規律・FR-10）。",
+                ProtectiveStopRemediation.CloseDispatchIndeterminate =>
+                    "建玉の成行手仕舞いを**送信しましたが、結果を確認できていません（届いたか不明）**。"
+                    + "システムは注文を重ねません。**手で決済を重ねる前に、証券会社の画面で注文と建玉を確認してください**"
+                    + "（手仕舞いが生きていれば二重決済になります）。"
+                    + $"CloseDecisionId={e.CloseDecisionId}",
                 _ => "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。直ちに確認してください。**",
             },
         NotificationSeverity.Critical);

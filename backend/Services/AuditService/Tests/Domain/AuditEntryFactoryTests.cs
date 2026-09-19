@@ -823,6 +823,21 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain("人手対応");
     }
 
+    // T-10-409, FR-10, FR-11, #848, IADR-0117（2026-09-19 追記・改定 7）
+    [Fact]
+    public void 保護喪失の成行手仕舞いが未確認なら_送信済みで結果未確認と読め_失敗とは書かない()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseDispatchIndeterminate,
+                10, Guid.NewGuid(), Intent(PositionEffect.Close), StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopCoverageLost));
+        entry.Summary.Should().Contain("送信済み").And.Contain("結果未確認").And.Contain("要人手確認");
+        entry.Summary.Should().NotContain("解消にも失敗");
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 免除は保護喪失と別の EventType で残り、
     // 要約から「手法 S2・ペーパーで免除・逆指値なしの建玉を保持」が読める。
     [Fact]

@@ -171,3 +171,25 @@ P5 entry(Limit):       Kind=Limit Price=329.0265
 また、**拒否が消えたことの最終確認は稼働環境での再実測でしか取れない**（本追記の PR は送信値を単体テストで固定するのみ）。
 
 作業仕様書: [20260919_846_entry-and-stop-price-precision](../specs/20260919_846_entry-and-stop-price-precision.md)
+
+## ［2026-09-19 追記 / #848］成行手仕舞い（決定 3・決定 4）を予約 → 発注 → 確定の 3 相へ載せる
+
+**決定 3・決定 4 の「不可なら成行手仕舞い」「解消も失敗したら Remediation=None」は、例外の種類を区別していなかった。**
+[IADR-0117](IADR-0117_owner-position-close-path.md) の改定 6（#848）が、発注の送信後に結果を確認できない失敗を
+終端 `Rejected` の**戻り値**から `BrokerDispatchIndeterminateException`（**例外**）へ変えた結果、
+決定 4 のガードの一括 catch は「届いたか不明」を「次の巡回で再試行してよい失敗」として受け、
+**巡回（既定 30 秒）ごとに全数量の成行を 1 本ずつ重ねる**ようになっていた（PR #851 の 3 巡目監査 B4・実測）。
+
+- **成行手仕舞いレグは、送る前に決定的な `CloseDecisionId` を予約する**（`IOrderReservationStore.TryReserve`。IADR-0057）。
+  取れなければ送らない。**予約を解放してよいのは `BrokerUnavailableException`（確実に未発注）だけ**であり、
+  それ以外の例外は予約を `Reserved` のまま残して**再送しない**。決定 3（発注執行）・決定 4（ガード）の両方に適用する。
+- **ガードは巡回の入口で、この試行の手仕舞いレグの痕跡（発注結果の記録・予約）を先に見る。** 記録があれば送らずに完了、
+  予約だけなら**逆指値の再発注も行わず据え置く**（(c) の「照会不能 → 据え置き」と同じ規律＝不明を「無い」と取り違えない）。
+- **`ProtectiveStopRemediation` に `CloseDispatchIndeterminate` を足す**（末尾）。決定 3 の「Close Intent で台帳へ結線」を
+  不明のときにも行い、生きているかもしれない成行を台帳に押さえさせる。通知は Critical のまま、
+  文面は「重ねて発注しない・証券会社の画面で確認」を伝える。
+- 逆指値レグの不明（孤立した逆指値）は本追記の射程外（#853）。成行手仕舞いへの**確認できた拒否**を
+  「手仕舞い済み」と扱う既存の挙動も射程外（#857）。
+
+根拠・走査の全量は IADR-0117 の改定 7 と作業仕様書
+[20260919_848_terminal-close-approvals-release-inventory](../specs/20260919_848_terminal-close-approvals-release-inventory.md) の B4 の節。

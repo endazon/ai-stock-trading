@@ -84,7 +84,7 @@ public sealed class ProtectiveStopGuardService(
         if (result.Replaced > 0 || result.ClosedOut > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogWarning(
                 "保護逆指値ガード: Active {Scanned} 件を評価（維持 {StillActive} / 完了 {Completed} / 再発注 {Replaced}"
-                    + " / 手仕舞い {ClosedOut} / 照会不能 {Unknown} / 失敗 {Failed}）。",
+                    + " / 手仕舞い {ClosedOut} / 据え置き（照会不能・送信結果不明） {Unknown} / 失敗 {Failed}）。",
                 result.Scanned, result.StillActive, result.Completed, result.Replaced,
                 result.ClosedOut, result.Unknown, result.Failed);
 

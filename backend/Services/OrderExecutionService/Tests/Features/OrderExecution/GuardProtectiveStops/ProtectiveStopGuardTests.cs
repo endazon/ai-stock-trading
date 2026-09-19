@@ -69,8 +69,10 @@ public class ProtectiveStopGuardTests
         {
             MarketCloseCount++;
             LastCloseIntent = closeIntent;
+            // #848, IADR-0117（改定 7）: 「次の巡回で再試行できる失敗」は**確実に未発注**（接続確立の失敗）だけである。
+            // 分類できない例外・届いたか不明は逆向き（撃ち直さない）であり、T-10-409 が固定する。
             return ThrowOnMarketClose
-                ? throw new InvalidOperationException("成行手仕舞いに失敗（テスト）")
+                ? throw new BrokerUnavailableException("OpenD 切断・成行手仕舞いは未発注（テスト）")
                 : Task.FromResult(new BrokerOrder(
                     $"close-{MarketCloseCount}", closeIntent, OrderStatus.Filled,
                     closeIntent.Quantity, closeIntent.Price, Now, Now));
@@ -109,7 +111,8 @@ public class ProtectiveStopGuardTests
         var stops = new InMemoryProtectiveStopOrderStore();
         stops.Save(stop);
         var store = new InMemoryExecutedOrderStore();
-        return (new ProtectiveStopGuard(broker, broker, stops, store, new FakeClock()), broker, stops, store);
+        return (new ProtectiveStopGuard(
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock()), broker, stops, store);
     }
 
     private static BrokerPositionSnapshot Long(int qty) => new("AAPL", Market.UnitedStates, qty, 1_000m);
@@ -242,6 +245,7 @@ public class ProtectiveStopGuardTests
         var lost = result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle().Which;
         lost.Remediation.Should().Be(ProtectiveStopRemediation.None);
         // 次回巡回で再試行できるよう Active のまま残す（黙って完了にしない）。
+        // 再試行してよいのは失敗が**確実に未発注**（BrokerUnavailableException）だからである（#848・T-10-409）。
         stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
     }
 
@@ -333,7 +337,8 @@ public class ProtectiveStopGuardTests
         // 「対象ゼロなら何もしない」を固定する（結果は空のサマリ）。
         var broker = new GuardBroker { Positions = null };
         var guard = new ProtectiveStopGuard(
-            broker, broker, new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(), new FakeClock());
+            broker, broker, new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(),
+            new InMemoryOrderReservationStore(), new FakeClock());
 
         var result = await guard.RunOnceAsync(10);
 
@@ -360,7 +365,7 @@ public class ProtectiveStopGuardTests
         stops.Save(broken);
         stops.Save(healthy);
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, new InMemoryExecutedOrderStore(), new FakeClock());
+            broker, broker, stops, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock());
 
         var result = await guard.RunOnceAsync(10);
 

@@ -3,15 +3,15 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-08-21
+updated: 2026-09-19
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-05, FR-12]
+ids: [FR-05, FR-10, FR-11, FR-12]
 adrs: [ADR-0002]
-iadrs: [IADR-0016, IADR-0056, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction]
-issues: [#132, #268, #269, #270]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory]
+issues: [#132, #268, #269, #270, #848, #856]
 -->
 
 
@@ -99,7 +99,9 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 | `OpenD へ接続します <host>:<port> encrypt=...` | moomoo 経路の接続開始（**接続は遅延**＝初回の発注・照会時に張る。起動直後には出ない） |
 | `OpenD 接続完了・SIMULATE 口座 accId=<数値>` | **SIMULATE 口座を掴んだ**。この行が無ければ moomoo へは出ていない |
 | `moomoo SIMULATE 発注成功 orderId=<数値> <side> <symbol> x<qty>@<price>` | moomoo へ 1 件送った（**注文ごとに 1 行**） |
-| `moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）...` | 🔴 **送信は済んだが結果が分からない**（返信待ちのタイムアウト等）。**注文は証券会社側で生きているかもしれない**。拒否として記録せず、予約を据え置いて突合の解決を待つ（2026-09-19 改定。旧: `moomoo 発注に失敗したため Rejected に倒します ...`） |
+| `moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）...` | 🔴 **送信は済んだが結果が分からない**（返信待ちのタイムアウト等）。**注文は証券会社側で生きているかもしれない**。拒否として記録せず、予約を据え置く（2026-09-19 改定。旧: `moomoo 発注に失敗したため Rejected に倒します ...`）。🔴 **自動の突合は既定で無効**であり、その場合は下の「滞留した予約を人が解決する」で解決する |
+| `保護逆指値ガード: 成行手仕舞いの結果を確認できませんでした（送信済み・届いたか不明）...` | 🔴 逆指値が失効した建玉の**成行手仕舞いを送ったが結果が分からない**。システムは**成行も逆指値も重ねない**（重ねると巡回ごとに全数量の成行が増え、二重決済でショートになる）。同時に Critical の通知が 1 回出る。`CloseDecisionId` が予約のキー |
+| `保護逆指値ガード: 成行手仕舞いは発注に着手済みで結果が未確定です（予約あり・記録なし）...` | 上の据え置きが**続いている**（巡回のたびに出る Warning）。予約が解決されるまで、その建玉は**逆指値なし**のまま残る＝人の確認が要る |
 
 ### 3. `OrderId` の形で見分ける（事後・DB / イベントから）
 
@@ -116,13 +118,39 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 >
 > 🔴 **「記録が無い」は「発注していない」ではない**（2026-09-19 改定）。送信後に結果を確認できなかった発注は
 > 拒否として記録せず、予約を `Reserved` のまま据え置く（証券会社側で生きているかもしれないものを
-> 「拒否された」と記録すると、建玉の押さえが解けて**二重決済**になる）。実状態は突合が解決する。
+> 「拒否された」と記録すると、建玉の押さえが解けて**二重決済**になる）。
 > 滞留している予約は次の SQL で探す:
 >
 > ```sql
 > SELECT "DecisionId", "State", "ReservedAt" FROM order_dispatch_reservations
 > WHERE "State" = 0 ORDER BY "ReservedAt" DESC LIMIT 20;  -- 0 = Reserved
 > ```
+>
+> 🔴 **滞留した予約は、既定では自動で解決しない**（2026-09-19 追記）。自動の突合（発注予約のリコンサイル）は
+> `Reconciliation:Enabled` と `Reconciliation:UseBrokerProbe` の**両方が `true`** のときだけ証券会社へ照会して解決する。
+> **既定はどちらも `false`** で、`deploy/` にも上書きは無い。**二重発注を防ぐこと自体は予約が担うので突合の有無に依らない**が、
+> **滞留の解消は人が行う**。
+
+#### 滞留した予約を人が解決する（自動の突合が無効のとき）
+
+1. **真因のログを探す。** メッセージ基盤の `_error` キューに最後に残る例外は
+   `OrderDispatchReservationConflictException`（予約の衝突）であり、**真因を指さない**——初回の配送が
+   「結果を確認できませんでした」で落ち、再配送がすべて予約の衝突で落ちるためである。
+   **真因は初回の Error ログ**（上の表の `...結果を確認できませんでした（送信済み・届いたか不明）...`）で、`DecisionId` が載っている。
+   保護逆指値ガード由来のものは `_error` キューには現れない（常駐の巡回でありメッセージの配送ではない）。ログと Critical の通知で気付く。
+2. **証券会社の画面で、その注文が存在するかを確認する**（moomoo アプリの注文履歴。注文の備考（remark）に `DecisionId` が**ハイフン無しの 32 桁**で入っている）。
+3. 結果に応じて:
+   - **注文が存在する（約定済み・板に残っている）**: システムからは**何も重ねない**。約定していれば建玉は証券会社側で減っており、
+     建玉突合が乖離として報告する。保護逆指値ガードの据え置きは、建玉が 0 になれば次の巡回で完了する。
+   - **注文が存在しない（未発注と確認できた）**: 予約行を削除すると、システムは同じ `DecisionId` で送り直せる
+     （保護逆指値ガードは次の巡回で成行手仕舞いを撃ち直す。承認済み注文〔新規建て・利用者の手仕舞い〕は
+     `_error` キューからの再投入が要り、再投入しなければ発注されないまま終わる）。🔴 **確認せずに削除しない**——生きている注文の予約を消すと二重発注になる。
+
+     ```sql
+     -- 未発注と確認できた予約だけを消す（State = 0 の行に限る。Completed は決して消さない）
+     DELETE FROM order_dispatch_reservations WHERE "DecisionId" = '<確認した DecisionId>' AND "State" = 0;
+     ```
+   - **判断できない**: 据え置く（何もしない）。建玉は証券会社の画面から人が管理する。
 
 order-execution DB から確認する（発注結果は**経路に依らず** `executed_orders` に記録される）:
 

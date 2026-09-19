@@ -3,6 +3,8 @@ using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 
@@ -14,6 +16,10 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //   - 逆指値の照会不能（null）・建玉の照会不能（null）→ **据え置き**（不明を「無い」と取り違えない。
 //     IADR-0118 と同じ規律。誤った再発注・誤った取消はどちらも実弾で実損になる）。
 //   - 1 件の失敗でバッチ全体を止めない（件数集計・OrderFillPoller と同じ流儀）。
+//   - 🔴 #848, IADR-0117（2026-09-19 追記・改定 7）: **成行手仕舞いの「届いたか不明」を「未発注」と取り違えない。**
+//     成行手仕舞いは予約 → 発注 → 確定の 3 相（IADR-0057）で送る。予約を解放してよいのは
+//     BrokerUnavailableException（確実に未発注）だけであり、それ以外の失敗は予約を Reserved のまま残して
+//     **次の巡回で撃ち直さない**（撃ち直すと巡回ごとに全数量の成行が 1 本ずつ増える＝二重決済でショート化）。
 //
 // 発行（イベントの Publish）は Worker 層（ProtectiveStopGuardService）が担う。
 public sealed class ProtectiveStopGuard(
@@ -21,8 +27,12 @@ public sealed class ProtectiveStopGuard(
     IBrokerPositionSource positions,
     IProtectiveStopOrderStore stops,
     IExecutedOrderStore store,
-    IClock clock)
+    IOrderReservationStore reservations,
+    IClock clock,
+    ILogger<ProtectiveStopGuard>? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger<ProtectiveStopGuard>.Instance;
+
     public async Task<ProtectiveStopGuardResult> RunOnceAsync(int batchSize, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -125,6 +135,30 @@ public sealed class ProtectiveStopGuard(
         var closeIntent = BuildCloseIntent(stop, quantity, stop.TriggerPrice);
         var now = clock.UtcNow;
 
+        // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）:
+        // **この試行の成行手仕舞いレグの痕跡を、逆指値の再発注より「前」に見る。**
+        // closeDecisionId は決定的（手仕舞いが完了しない限り stop.Attempt は進まない＝巡回をまたいで同じ値）。
+        var closeDecisionId = ProtectiveStopIds.CloseDecisionId(stop.EntryDecisionId, attempt);
+
+        // (a) 発注結果の記録が既にある: 送信後に行の更新だけが失われた窓、または突合（IADR-0074）が
+        //     Placed と解決した後。**新しい注文は出さず**、記録で保護の完了を確定する。
+        var recordedClose = store.FindByDecisionId(closeDecisionId);
+        if (recordedClose is not null)
+        {
+            var recordedIntent = BuildCloseIntent(stop, recordedClose.Quantity, stop.TriggerPrice);
+            return CompleteAsClosed(stop, recordedClose.Quantity, closeDecisionId, recordedIntent, events);
+        }
+
+        // (b) 予約だけがある（記録なし）: 以前の巡回で成行手仕舞いを**送ったかもしれない**。
+        //     逆指値の再発注も成行も行わず据え置く（不明を「未発注」と取り違えない）。
+        //     逆指値より前に見る理由: 成行が生きているかもしれない建玉へ新しい逆指値を張ると、成行の約定後に
+        //     **建玉なき逆指値**が残り、発火すれば反対建玉になる。Critical の通知は不明になった巡回で発行済み。
+        if (reservations.Find(closeDecisionId) is not null)
+        {
+            LogHeldClose(stop, closeDecisionId);
+            return Outcome.Unknown;
+        }
+
         if (protective is not null)
         {
             BrokerOrder? newStop = null;
@@ -136,7 +170,9 @@ public sealed class ProtectiveStopGuard(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                newStop = null; // 再発注不可→手仕舞いへ。
+                // 再発注不可→手仕舞いへ。「届いたか不明」もここへ落ちる（IADR-0117 改定 6 の前後で同一の分岐。
+                // 逆指値が生きていた場合に孤立する件は #853）。成行手仕舞いの側は下で 3 相に載せている。
+                newStop = null;
             }
 
             if (newStop is not null && newStop.Status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
@@ -164,31 +200,54 @@ public sealed class ProtectiveStopGuard(
         // 再発注できない: 成行で手仕舞う（逆指値なしの建玉を持たない）。
         if (protective is not null)
         {
+            // 相 2（発注着手の権威・IADR-0057）: 送る「前」に決定的な DecisionId を予約する。取れなければ送らない
+            //（(b) の後に並行して予約された＝送信中か成否不明。重ねて送らない）。
+            if (!reservations.TryReserve(closeDecisionId, clock.UtcNow))
+            {
+                LogHeldClose(stop, closeDecisionId);
+                return Outcome.Unknown;
+            }
+
+            BrokerOrder? closeOrder = null;
             try
             {
-                var closeDecisionId = ProtectiveStopIds.CloseDecisionId(stop.EntryDecisionId, attempt);
-                var closeOrder = await protective
+                closeOrder = await protective
                     .PlaceMarketOrderAsync(closeIntent, closeDecisionId, cancellationToken)
                     .ConfigureAwait(false);
-                var closedAt = clock.UtcNow;
+            }
+            catch (BrokerUnavailableException)
+            {
+                // 接続確立の失敗＝**確実に未発注**（IADR-0211 決定 1 の契約）。予約を解放してよいのはこの型だけである。
+                // 記録は Active のまま残し、次回巡回で同じ DecisionId を再予約して撃ち直す。人手対応は下の None で求める。
+                reservations.Release(closeDecisionId);
+            }
+            catch (BrokerDispatchIndeterminateException ex)
+            {
+                // 🔴 送信済み・**届いたか不明**。未発注と仮定して撃ち直さない（IADR-0117 改定 7）。
+                return HoldIndeterminateClose(stop, quantity, closeDecisionId, closeIntent, events, ex);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 分類できない失敗は**未発注と言い切れない**。「確実に未発注」の側ではなく「届いたか不明」の側へ倒す。
+                return HoldIndeterminateClose(stop, quantity, closeDecisionId, closeIntent, events, ex);
+            }
 
+            if (closeOrder is not null)
+            {
+                // 相 4（確定）: 結果を保存してから予約を確定する。保存に失敗して例外で抜けても予約は Reserved のまま
+                // 残るため、次の巡回は (b) で据え置く（送信済みの成行を撃ち直さない）。
+                var closedAt = clock.UtcNow;
                 store.Save(new ExecutionRecord(
                     closeDecisionId, closeOrder.OrderId, stop.Symbol, stop.Market, stop.CloseSide,
                     stop.ProductType, PositionEffect.Close, quantity, closeIntent.Price,
                     closeOrder.FilledQuantity, closeOrder.AveragePrice, closeOrder.Status,
                     SlippageCalculator.Compute(closeIntent.Price, closeOrder.AveragePrice, stop.CloseSide), closedAt));
+                reservations.MarkCompleted(closeDecisionId, closeOrder.OrderId, closedAt);
 
-                MarkCompleted(stop);
-                events.Add(new ProtectiveStopCoverageLost(
-                    stop.EntryDecisionId, stop.Symbol, stop.Market,
-                    ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.PositionClosed,
-                    quantity, closeDecisionId, closeIntent, closedAt));
-                return Outcome.ClosedOut;
+                return CompleteAsClosed(stop, quantity, closeDecisionId, closeIntent, events);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // 手仕舞いも失敗: 記録は Active のまま残し（次回巡回で再試行）、人手対応を Critical で求める。
-            }
+
+            // 手仕舞いも失敗（確実に未発注）: 記録は Active のまま残し（次回巡回で再試行）、人手対応を Critical で求める。
         }
 
         events.Add(new ProtectiveStopCoverageLost(
@@ -197,6 +256,50 @@ public sealed class ProtectiveStopGuard(
             quantity, CloseDecisionId: null, CloseIntent: null, clock.UtcNow));
         return Outcome.ClosedOut;
     }
+
+    // 成行手仕舞いレグが（今回の送信・以前の送信の記録・突合の解決のいずれかで）確定した: 保護を完了し、
+    // 手仕舞いレグを台帳へ結線する（AppendApproval は DecisionId で冪等。再発行しても二重計上しない）。
+    private Outcome CompleteAsClosed(
+        ProtectiveStopOrder stop, int quantity, Guid closeDecisionId, OrderIntent closeIntent, List<object> events)
+    {
+        MarkCompleted(stop);
+        events.Add(new ProtectiveStopCoverageLost(
+            stop.EntryDecisionId, stop.Symbol, stop.Market,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.PositionClosed,
+            quantity, closeDecisionId, closeIntent, clock.UtcNow));
+        return Outcome.ClosedOut;
+    }
+
+    // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いを送ったが結果を確認できない。
+    //   - 予約を**解放も確定もしない**（Reserved のまま。次の巡回は入口の (b) で据え置き、同じ成行を重ねない）。
+    //   - 結果を**保存しない**（実在しない注文 ID の記録を作らない）。記録は Active のまま（完了を主張しない）。
+    //   - **無音にしない**: CloseDispatchIndeterminate を 1 回発行する（Critical）。CloseIntent を運ぶので、
+    //     取引台帳は生きているかもしれない成行を処理中の決済として押さえる。
+    // 滞留した予約は、自動リコンサイル（IADR-0074 / IADR-0092）が**有効なら**解決する。既定は無効であり、
+    // その場合は人が証券会社の画面で確認して解決する（docs/operations/broker-execution-paths-runbook.md）。
+    private Outcome HoldIndeterminateClose(
+        ProtectiveStopOrder stop, int quantity, Guid closeDecisionId, OrderIntent closeIntent,
+        List<object> events, Exception ex)
+    {
+        _logger.LogError(ex,
+            "保護逆指値ガード: 成行手仕舞いの結果を確認できませんでした（送信済み・届いたか不明）。"
+            + "重ねて発注しません。予約は Reserved のまま据え置きます。証券会社の画面で注文と建玉を確認してください: "
+            + "EntryDecisionId={EntryDecisionId} CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",
+            stop.EntryDecisionId, closeDecisionId, stop.Symbol, quantity);
+
+        events.Add(new ProtectiveStopCoverageLost(
+            stop.EntryDecisionId, stop.Symbol, stop.Market,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseDispatchIndeterminate,
+            quantity, closeDecisionId, closeIntent, clock.UtcNow));
+        return Outcome.Unknown;
+    }
+
+    private void LogHeldClose(ProtectiveStopOrder stop, Guid closeDecisionId) =>
+        _logger.LogWarning(
+            "保護逆指値ガード: 成行手仕舞いは発注に着手済みで結果が未確定です（予約あり・記録なし）。"
+            + "逆指値の再発注も成行も重ねずに据え置きます: EntryDecisionId={EntryDecisionId} "
+            + "CloseDecisionId={CloseDecisionId} 銘柄={Symbol}",
+            stop.EntryDecisionId, closeDecisionId, stop.Symbol);
 
     private void MarkCompleted(ProtectiveStopOrder stop) =>
         stops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });

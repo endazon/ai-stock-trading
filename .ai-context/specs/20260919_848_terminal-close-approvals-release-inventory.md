@@ -457,3 +457,209 @@ B2 は**照会側**の写像（`MoomooOrderState.Unknown` を新設して解消�
   #848 は「**終端になった**承認を外す」であり、見送りは「そもそも発注していない」という別の事実である。
   是正するときも **fail-safe の向きを守る**こと（外してよいのは「確実に未発注」を意味する理由のときだけ）。
 - **#853**: 保護レグの状態が不明／後から判明したときの扱い（上の残余リスク 2 件）。
+
+---
+
+## ［2026-09-19 追記 / #848］監査ブロッキング B4 の是正（3 巡目・PR #851 head `f873a6d3` に対する指摘）
+
+フェーズ末監査の 3 巡目が**ブロッキング 1 件（B4）**を出した。B1〜B3 の是正は確認済みで、
+**B4 は B3 の是正そのものが作った穴**である。
+
+### B4: B3 の是正が、保護逆指値ガードの成行手仕舞いを「撃ち直し」に変えた
+
+**指摘（実測）**: `ProtectiveStopGuard.ReplaceOrCloseAsync` の成行手仕舞いは
+`catch (Exception ex) when (ex is not OperationCanceledException)` で例外を握り、**`MarkCompleted(stop)` を
+呼ばずに** `Remediation.None` で終わる。逆指値の記録は `Active` のまま残り、**次の巡回（既定 30 秒）で
+同じ数量の成行手仕舞いをもう一度送る**。
+
+```
+indeterminate=False（是正前の形）: 1巡目=(Completed, 成行 1 回)  2巡目=(Completed, 成行 1 回)
+indeterminate=True （是正後の形）: 1巡目=(Active,    成行 1 回)  2巡目=(Active,    成行 2 回)
+```
+
+B3 以前はアダプタが終端 `Rejected` を**返して**いたためこの catch に例外は来ず、1 回で終わっていた。
+B3 が「届いたか不明」を**例外**にした瞬間、この catch の意味は
+「確実に失敗した → 次の巡回で再試行してよい」から
+「**届いたか不明 → 未発注と仮定して撃ち直す**」へ反転した。
+1 巡回ごとに全数量の成行売りが 1 本増える＝**二重決済でショート化**（本 PR が守ろうとしている性質そのもの）。
+
+> 🔴 **上の B3 の母集合の表は、この行を「変更なし——分岐は是正前後で同一」と書いていた。事実と異なる。**
+> 同一だったのは**逆指値の再発注**（`PlaceStopOrderAsync` の catch → 手仕舞いへ落ちる）だけであり、
+> **成行手仕舞い**（`PlaceMarketOrderAsync` の catch）は「1 回で完了」から「巡回ごとに再送」へ変わっていた。
+> 同じ表の `OrderExecutionAppService.PlaceProtectiveStopAsync` の行も、その先の
+> `CloseUnprotectedPositionAsync`（成行手仕舞い）の挙動が変わっていたこと
+> （`PositionClosed`＋偽 ID の記録 → `None`）を載せていなかった。**下の表で引き直す。**
+> 誤りの形は B2・B3 と同じで、**「変更なし」を、誤りの側の語（ここでは `catch (Exception`）で引き直さずに書いた**ことである。
+
+### 是正（決定 2 の補い・**呼び出し側**で直す。B2 は照会側の写像、B3 は発注側の写像だった）
+
+**成行手仕舞いを、エントリーと同じ「予約 → 発注 → 確定」の 3 相（IADR-0057）に載せる。**
+ソフトウェア逆指値（S1・PR #830）の決済が採っている作法と同じである。
+
+1. **決定的な DecisionId は既にある**（`ProtectiveStopIds.CloseDecisionId(entry, attempt)`。
+   ガードでは `attempt = stop.Attempt + 1` であり、手仕舞いが完了しない限り `stop.Attempt` は進まないため
+   **巡回をまたいで同じ値**になる）。足りなかったのは**予約**である —— ガードは
+   `IOrderReservationStore` を持っておらず、「送ったかもしれない」をどこにも記録していなかった。
+2. **送る前に `TryReserve(closeDecisionId)`。** 取れなければ**送らない**（`Outcome.Unknown`＝据え置き）。
+3. **例外を 3 つに分ける**（一括 catch に混ぜない）:
+
+   | 例外 | 意味 | 予約 | 次の巡回 | 通知 |
+   | --- | --- | --- | --- | --- |
+   | `BrokerUnavailableException` | 接続確立の失敗＝**確実に未発注** | **解放する** | **撃ち直してよい**（同じ DecisionId で再予約できる） | 従来どおり `Remediation=None`（Critical） |
+   | `BrokerDispatchIndeterminateException` | 送信済み・**届いたか不明** | **解放も確定もしない**（`Reserved` のまま） | 🔴 **撃ち直さない**（予約が残っている限り再送しない） | **新設 `Remediation=CloseDispatchIndeterminate`（Critical）**。`CloseDecisionId` / `CloseIntent` を運ぶ |
+   | それ以外（`OperationCanceledException` を除く） | **未発注と言い切れない**（送信後の保存失敗を含む） | 同上 | 同上 | 同上 |
+
+   「確実に未発注」と言えるのは `BrokerUnavailableException` **だけ**であり（IADR-0211 決定 1 がその契約を
+   型に持たせている）、**それ以外は全部「送ったかもしれない」側へ倒す**。
+4. **巡回の入口で、この試行の手仕舞いレグの痕跡を先に見る**（逆指値の再発注より**前**）:
+   - 発注結果の記録（`executed_orders`）が既にある → **送らずに**その記録で完了させる
+     （送信後に行の更新だけが失われた窓・突合が `Placed` と解決した後）。`PositionClosed` を発行する。
+   - 予約だけがある（記録なし）→ **逆指値の再発注も成行も行わず据え置く**（`Outcome.Unknown`）。
+     🔴 **逆指値の再発注より前に見る理由**: 成行手仕舞いが生きているかもしれない建玉へ新しい逆指値を張ると、
+     手仕舞いが約定した後に**建玉なき逆指値**が残り、発火すれば反対建玉になる。
+5. **無音にしない。** 不明になった巡回で Critical の通知を 1 回出す（上表）。以後の据え置きは巡回のたびに
+   Warning ログ（`DecisionId` つき）と件数サマリ（`Unknown`）に現れる。**30 秒ごとに Critical を重ねない**
+   （IADR-0211 決定 5 が通知の重みを決めたのと同じ判断。本当に止まる事象の通知を埋もれさせない）。
+
+### なぜ `ProtectiveStopRemediation` へ値を足すのか（`OrderStatus` へは足さなかったのに）
+
+B3 で `OrderStatus` へ `Unknown` を足さなかったのは、`OrderStatus` が**証券会社に存在する注文の状態**の
+集合であり、存在するか分からない注文はその要素ではないからだった。**`ProtectiveStopRemediation` は
+「保護喪失に対してシステムが何をしたか」の集合であり、「成行手仕舞いを送ったが結果を確認できていない」は
+その正当な要素である。** 既存の `None`（対処も失敗）で代用すると 2 つの実害が出る。
+
+- **台帳が押さえない。** `None` は `CloseDecisionId` / `CloseIntent` を運ばない約束であり、リスク管理は承認行を
+  足さない。生きているかもしれない成行手仕舞いが**処理中の決済として数えられず**、利用者の手仕舞い要求
+  （UC-06）が通って**同じ株数に 2 本の決済が並ぶ**。是正前（偽 ID の `Rejected`＋`PositionClosed`）は
+  承認行が足されて 30 分の窓で押さえられていたので、**B3 はここでも安全側を 1 つ外していた**。
+- **通知が人を誤誘導する。** `None` の文面は「建玉の解消にも失敗しました。直ちに確認してください」であり、
+  読んだ利用者は**手で成行を重ねる**。不明のときに伝えるべきは「**送った。届いたか分からない。
+  重ねる前に証券会社の画面で注文と建玉を確かめよ**」である。
+
+面は小さい —— 値を読むのは通知（`NotificationFormatter`）と監査要約（`AuditEntryFactory`）の 2 か所だけで、
+どちらも既定アームが Critical 側へ倒れる。リスク管理の台帳ハンドラは `Remediation` を読まず
+**`CloseDecisionId` / `CloseIntent` の有無**だけで承認行を足すため、コードは変わらない（コメントだけ直す）。
+列挙は**末尾へ足す**（既存値の序数を動かさない）。
+
+### 全呼び出し元の走査（B4 と同じ穴が他に無いか）
+
+走査（2026-09-19・`git rev-parse --is-shallow-repository` ＝ `false`）:
+
+- 軸 1: `grep -rn "PlaceOrderAsync\|PlaceStopOrderAsync\|PlaceMarketOrderAsync\|PlaceAlternativeStopOrderAsync" backend --include=*.cs`
+  からテストと定義（インターフェース・アダプタ実装）を除いた**本番の呼び出し**＝ 7 箇所（5 経路）
+- 軸 2: 各呼び出しを囲む `catch` を**コードで読む**（`grep -n "catch (" <file>`）
+- 軸 3（**誤りの側の語**）: `grep -rn "分岐は是正前後で同一\|挙動は 1 バイトも\|リコンサイルが守る\|リコンサイルの解決\|リコンサイルに\|突合が解決\|突合の解決" backend docs .ai-context`
+
+`BrokerDispatchIndeterminateException` を投げ得るのは `MoomooBrokerAdapter` の 4 メソッドで、
+いずれも `PlaceWithRejectionDetailAsync` を通る。行番号は是正前（head `f873a6d3`）のもの。
+
+| # | メソッド | 呼び出し元 | 例外の扱い（是正前） | 撃ち直すか | 判定・本追記での扱い |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `PlaceOrderAsync`（2 形） | `OrderExecutionAppService.ExecuteAsync` :115 / :116 | 個別に捕捉し再送出。予約は `Reserved` のまま | **しない**（再配送は `TryReserve` が失敗し `OrderDispatchReservationConflictException`） | **安全**（B3 で是正済み）。分岐は変更なし（コメントとログ文面だけ条件つきへ直す） |
+| 2 | `PlaceAlternativeStopOrderAsync` / `PlaceStopOrderAsync` | `OrderExecutionAppService.PlaceProtectiveStopAsync` :268 / :279 | 一括 catch → 「未受理」分岐（エントリーの取消／成行手仕舞い） | **しない**（単発。再配送は相 1 が既存結果を返す） | 未発注と**仮定している**が、分岐は B3 の前後で**同一**（前は偽 ID の `Rejected` が返り同じ分岐へ落ちた）。逆指値が生きていれば**孤立した逆指値**が残る＝ #853 の 1。**変更なし**（IADR-0210 の fail-closed との優先順位の裁定が要る） |
+| 3 | `PlaceMarketOrderAsync` | `OrderExecutionAppService.CloseUnprotectedPositionAsync` :379 | 一括 catch → `Remediation=None` | **しない**（単発） | 🔴 **B3 で挙動が変わっていた**（前: 偽 ID の記録＋`PositionClosed`＝台帳が 30 分押さえる／後: `None`＝**台帳が押さえない**・通知は「解消に失敗」）。撃ち直しはしないが、**利用者の手仕舞い要求が通って二重決済になり得る**。**変更**: 3 相へ載せ、不明は `CloseDispatchIndeterminate`（`CloseIntent` つき）で台帳に押さえさせる |
+| 4 | `PlaceStopOrderAsync` | `ProtectiveStopGuard.ReplaceOrCloseAsync` :134 | 一括 catch → 成行手仕舞いへ落ちる | 成行が「確実に未発注」で終わったときだけ、次の巡回で**同じ `StopDecisionId` の逆指値を再送し得る** | 分岐は B3 の前後で**同一**（前は偽 ID の `Rejected` が返り同じ分岐）。逆指値が生きていた場合の孤立・重複は #853 の 1。**逆指値レグは変更なし**。ただし本追記の 4（入口で手仕舞いレグの予約を見る）により、**成行が不明のあいだは逆指値も重ねない** |
+| 5 | `PlaceMarketOrderAsync` | `ProtectiveStopGuard.ReplaceOrCloseAsync` :171 | 一括 catch → `None`・記録は `Active` のまま | 🔴 **する**（30 秒ごとに全数量の成行が 1 本ずつ増える） | **B4 本体。変更**（上の是正 1〜5） |
+
+対象外:
+
+- **S1 の `SoftwareStopExecutor`**（ソフトウェア逆指値の成行決済）は**本ブランチに無い**（PR #830 側）。
+  あちらは最初から予約＋決定的 DecisionId で書かれており、本追記はその作法に**倣った側**である。
+  #830 と本 PR のどちらが後にマージされても、`BrokerDispatchIndeterminateException` は S1 の
+  包括 catch（届いたか不明＝予約を残す）へ落ちるため向きは合う。
+- `PaperBrokerAdapter`: 送信が無く、本例外を投げない。
+- `OrderAmendmentDispatcher`（訂正・取消）: 発注（`Place*`）を呼ばない。
+
+### 追随する記述（規則 9・10。誤りの側の語で引いた結果）
+
+| 箇所 | 扱い |
+| --- | --- |
+| 本仕様書の B3 の表（`ProtectiveStopGuard.cs` / `PlaceProtectiveStopAsync` の「変更なし」） | **本追記で訂正**（上の引用ブロック。B3 の節の本文は書き換えない＝当時の判断の記録として残す） |
+| PR #851 本文の同じ表 | **訂正**する |
+| #853 の本文「#851 は例外へ変えただけで挙動は 1 バイトも変わっていない」 | 成行手仕舞いについては**事実と異なる**。#853 の射程（逆指値レグ）については正しい。報告に残す |
+| 「リコンサイルが解決する」と断定している箇所（`BrokerDispatchIndeterminateException` の契約コメント・`BrokerUnavailableException`・`OrderExecutionAppService` / `MoomooBrokerAdapter` のコメントとログ文面・runbook・IADR-0117 改定 6・IADR-0211 追記・本仕様書 B3 の節） | **条件つきへ直す**（下） |
+
+### 非ブロッキングの受け止め
+
+- 🔴 **「リコンサイルが解決する」は、いまの配備では成立しない。** `Reconciliation:Enabled` の既定は `false`、
+  `Reconciliation:UseBrokerProbe` も `false`（`ReconciliationOptions.cs` / `Program.cs`）であり、
+  `deploy/` に上書きは無い（`grep -rni reconcil deploy` ＝ 0 件）。**滞留 `Reserved` は自動では解決しない。**
+  上の B3 の節が「突合が実状態を解決する」と書いたのは**機構が存在する**という意味でしかなく、
+  **稼働しているとは限らない**。コード・runbook・IADR の文面を「**有効なら**突合が解決する／
+  既定（無効）では**人が解決する**」へ直し、runbook に人手の手順を足す。
+  **有効化そのものは別 issue（#856）**（実照会プローブは SIMULATE の注文履歴照会に依存し、`NotPlaced` の誤判定は
+  二重発注に直結するため、有効化は実機での検証を伴う）。
+- `_error` キューに最後に残る例外は `OrderDispatchReservationConflictException` であり**真因を指さない**
+  （初回が `BrokerDispatchIndeterminateException`、再配送が予約の衝突で落ちるため）。
+  runbook に「**真因は初回の Error ログ**」と明記する。
+- `MoomooBrokerAdapter.MapState` の既定アーム `_ => Accepted` が **`Unknown` 専用ではない**
+  （将来 `MoomooOrderState` に足された値もここへ落ちる）ことをコメントで明示する。
+
+- **走査で引き当てた射程外の穴（#857）**: 成行手仕舞いが**確認できた拒否**（`Rejected` が**返る**）で終わっても、
+  ガードと発注執行は状態を見ずに `PositionClosed` を主張し、ガードは記録を `Completed` にする
+  （逆指値なしの建玉が巡回対象から外れる）。**本 PR の前後で同一**であり、直すには試行番号の進め方と
+  撃ち直しの上限を決める必要があるため別 issue とした。本追記は**不明**だけを扱う。
+
+### 追加する受け入れ基準
+
+10. **保護逆指値ガードの成行手仕舞いは、届いたか不明のとき撃ち直さない。** 2 巡回・3 巡回まわしても
+    成行の送信回数は **1 回のまま**であり、逆指値の再発注も重ねない。Critical の通知が 1 回出る。
+11. **確実に未発注（接続確立の失敗）のときは、従来どおり次の巡回で撃ち直せる**（変えない側）。
+12. **不明な成行手仕舞いは、取引台帳が処理中の決済として押さえる**（`CloseIntent` を運ぶ）。
+
+### 追加するテスト（`T-10-409`）
+
+| ID | 固定すること |
+| --- | --- |
+| **T-10-409** | 🔴 **成行手仕舞いの「届いたか不明」を未発注と仮定して撃ち直さない。** ガード: 3 巡回まわして成行の送信が 1 回のまま／逆指値の再発注も 1 回のまま／予約は `Reserved` のまま・記録なし／通知は不明の 1 回だけで `CloseIntent` を運ぶ／分類できない例外も同じ側へ倒す／**実アダプタを通した結線**（送信後の応答異常）／突合が `Placed` と解決したら送らずに完了／**変えない側**: 確実に未発注は予約を解放して次の巡回で撃ち直す・成功は予約を確定する。発注執行（エントリー直後の成行手仕舞い）: 不明は `CloseDispatchIndeterminate`＋予約据え置き・確実に未発注は `None`＋解放。下流: 台帳は不明の手仕舞いを押さえる・通知と監査要約は「重ねて発注しない・証券会社の画面で確認」を伝える |
+
+### 既存テストの刺激を変えたもの（弱めていないことの説明）
+
+- `ProtectiveStopGuardTests.手仕舞いも失敗したらNoneで…` と
+  `OrderExecutionServiceProtectiveStopTests.手仕舞いも失敗したらNoneを返す`: 刺激を
+  `InvalidOperationException`（分類できない例外）から **`BrokerUnavailableException`（確実に未発注）**へ変えた。
+  両テストが固定したいのは「**次の巡回で再試行できる失敗は `None` で人手対応を求める**」であり、
+  それが成り立つのは確実に未発注のときだけである。分類できない例外は T-10-409 が**逆向き**（撃ち直さない）で固定する。
+- `不変条件_建玉が残るなら有効な逆指値があるか人手対応が発火している`: 人手対応の発火に
+  `CloseDispatchIndeterminate` を加えた（Critical であることは通知のテストが固定する）。
+
+### 対照実験（実走した実測・2026-09-19）
+
+`ProtectiveStopGuard.cs` と `OrderExecutionAppService.cs` のロジックを是正前（head `f873a6d3`）へ戻し
+（`git diff --stat` で `OrderExecutionAppService.cs` は差分 0・`ProtectiveStopGuard.cs` は新テストをコンパイルさせるための
+コンストラクタ引数 5 行だけ、を確認）、`dotnet test backend/Services/OrderExecutionService/Tests` を実走した。
+
+```
+失敗 …ProtectiveStopGuardIndeterminateCloseTests.成行手仕舞いが届いたか不明なら_3巡回まわしても成行の送信は1回のまま_否定形(close: Indeterminate)
+   Expected h.Broker.MarketCloseCount to be 1 because 届いたか不明の成行を、未発注と仮定して撃ち直してはならない（二重決済でショート化）, but found 3.
+失敗 …同上(close: Unclassified)
+   Expected h.Broker.MarketCloseCount to be 1 because …, but found 3.
+失敗 …実アダプタ経由_成行の送信後タイムアウトを_巡回ごとに撃ち直さない_否定形
+   Expected client.MarketSendCount to be 1 because OpenD へ送った成行は 1 本だけ（是正前は巡回ごとに 1 本ずつ増えた）, but found 3.
+失敗 …届いたか不明は無音にしない_Criticalの通知を不明になった巡回で1回だけ出し_手仕舞いレグを運ぶ
+   Expected lost.Remediation[0] to be ProtectiveStopRemediation.CloseDispatchIndeterminate {value: 3} …, but found ProtectiveStopRemediation.None {value: 2}.
+失敗 …突合が発注済みと解決したら_送らずに記録で完了させる       Expected reconciled.Terminalized to be 1, but found 0
+失敗 …突合が未発注と解決したら_予約が解放され次の巡回で撃ち直せる   Expected (…).Released to be 1, but found 0
+失敗 …成行手仕舞いが成功したら予約を確定する
+失敗 …OrderExecutionServiceProtectiveStopTests.成行手仕舞いが届いたか不明なら_未発注と主張せず手仕舞いレグを運び予約を据え置く_否定形(close: Indeterminate)
+   Expected lost.Remediation to be …CloseDispatchIndeterminate {value: 3}, but found …None {value: 2}.
+失敗 …同上(close: Throw)
+失敗 …OrderExecutionServiceProtectiveStopTests.成行手仕舞いが成功したら手仕舞いレグの予約を確定する
+失敗!   -失敗:    10、合格:   496、スキップ:     0、合計:   506
+```
+
+**10 件が赤**（T-10-409 として発注執行に足した 11 ケース中）。残り 1 件
+（`確実に未発注_接続確立の失敗_なら予約を解放し_次の巡回で撃ち直す`）は**是正前も緑**——変えない側の固定だからである。
+是正後は **506 件すべて緑**。
+
+### 残余リスク（本追記で新たに残るもの）
+
+- **据え置かれた建玉は、予約が解決されるまで逆指値なしのまま残る。** 撃ち直さないことの代償であり、
+  「二重決済でショート化しない」を優先した結果である。Critical の通知・巡回ごとの Warning ログ・
+  `order_dispatch_reservations` の滞留行で見える。自動リコンサイルが無効のあいだは人が解決する（runbook。有効化は #856）。
+- **送信中にプロセスが止まった場合（`OperationCanceledException`）は通知が出ない。** 予約は `Reserved` のまま残るので
+  再起動後も撃ち直しはしない（安全側）が、Critical は発行されず、巡回ごとの Warning ログでしか気付けない。
+  S1（#820）の決済も同じ形である。
+- **不明の成行を台帳が押さえるのは 30 分の窓のあいだだけ**（IADR-0117 決定 3 の窓）。窓の満了後は利用者の手仕舞い要求が通る。
+  窓は「終端が届かない承認による恒久ロックを防ぐ」ための意図した受け皿であり、本追記では変えない。
+- 逆指値レグの不明（#853）・成行への確認できた拒否（#857）は本追記の射程外（どちらも本 PR の前後で同一）。

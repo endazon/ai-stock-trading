@@ -171,7 +171,11 @@ if (brokerSelection.IsMoomoo)
             (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>(),
             sp.GetRequiredService<IProtectiveStopOrderStore>(),
             sp.GetRequiredService<IExecutedOrderStore>(),
-            sp.GetRequiredService<IClock>()));
+            // #848, IADR-0117（改定 7）: 成行手仕舞いも予約 → 発注 → 確定の 3 相で送る（届いたか不明を撃ち直さない）。
+            sp.GetRequiredService<IOrderReservationStore>(),
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<ILoggerFactory>()
+                .CreateLogger<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>()));
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }
