@@ -12,7 +12,7 @@ using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrd
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-494〜T-10-502・T-10-505・T-10-506, FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355:
+// 🔴 T-10-494〜T-10-502・T-10-505・T-10-516, FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355:
 // **決済（Close）をブローカーの実建玉と突き合わせてから送る。**
 //
 // 是正前の穴: 決済の数量の出所は台帳の射影であってブローカーの事実ではない（IADR-0119 決定1 / IADR-0351 決定6）。
@@ -301,7 +301,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         verdict.BrokerNetQuantity.Should().Be(100);
     }
 
-    // 🔴 T-10-506（否定形・#873 の監査 N1）: **両建て（同一銘柄にロングとショートが同時にある）でも
+    // 🔴 T-10-516（否定形・#873 の監査 N1）: **両建て（同一銘柄にロングとショートが同時にある）でも
     // 正当な決済を止めない。** ネット（符号付き合算）で数えると、ロング +300・ショート −100 のネットは +200 であり、
     // ショート 100 株の買い戻しが「建玉なし」で見送られ、ロング 300 株の売り決済も 200 株へ縮められる
     // ——**どちらも FR-10 に反する側の誤り**である。方向ごとに数えればどちらも全量が通る。
@@ -330,7 +330,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         shortResult.Drift.Should().BeNull();
     }
 
-    // T-10-506: 純関数の側でも両建てを固定する（判定は方向ごと・報告はネット）。
+    // T-10-516: 純関数の側でも両建てを固定する（判定は方向ごと・報告はネット）。
     [Fact]
     public void 両建てでは判定は方向ごとで報告はネットである()
     {

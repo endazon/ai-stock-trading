@@ -82,7 +82,7 @@ public class StopLossMethodContractTests
         ((int)OrderDispatchForgoneReason.StopOrderUnsupported).Should().Be(2);
         ((int)OrderDispatchForgoneReason.StopLossMethodNotPermitted).Should().Be(3);
 
-        // 🔴 T-10-507, #864, IADR-0355: 決済をブローカーの実建玉と突き合わせて止めた 2 値も**末尾**である。
+        // 🔴 T-10-517, #864, IADR-0355: 決済をブローカーの実建玉と突き合わせて止めた 2 値も**末尾**である。
         // 序数はメトリクスのタグ・監査 payload の整数として往来するため、間に挿し込むと過去の記録の意味が変わる。
         ((int)OrderDispatchForgoneReason.BrokerPositionAbsent).Should().Be(4);
         ((int)OrderDispatchForgoneReason.BrokerPositionsIndeterminate).Should().Be(5);
