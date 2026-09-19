@@ -269,6 +269,29 @@ public class NotificationConsumersTests
         await host.StopAsync();
     }
 
+    // FR-10, FR-09, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は Warning、決済の拒否の打ち切りは Critical で届く。
+    [Fact]
+    public async Task ソフトウェア逆指値の配置と決済拒否が通知される()
+    {
+        var (host, sender) = await BuildAsync();
+        using var _ = host;
+
+        var armed = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new SoftwareStopArmed(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+            BrokerProvider.MoomooSimulate, DateTimeOffset.UtcNow));
+        armed.Executed.MessagesOf<SoftwareStopArmed>().Should().NotBeEmpty();
+
+        var rejected = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new SoftwareStopExecuted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, SoftwareStopOutcome.CloseRejected, 10, 950m, 940m, 3,
+            Guid.NewGuid(), "close-3", null, DateTimeOffset.UtcNow));
+        rejected.Executed.MessagesOf<SoftwareStopExecuted>().Should().NotBeEmpty();
+
+        sender.Sent.Should().Contain(m => m.Severity == NotificationSeverity.Warning && m.Title.Contains("ソフトウェア逆指値を配置"));
+        sender.Sent.Should().Contain(m => m.Severity == NotificationSeverity.Critical && m.Title.Contains("決済が拒否"));
+
+        await host.StopAsync();
+    }
+
     // FR-09, FR-19, UC-06, #341, ADR-0025, ADR-0028 決定3, IADR-0241:
     // GFV 違反の計上は Critical で通知される。**発注前ガードのすり抜けが現に起きたこと**を知らせる唯一の経路であり、
     // 停止の解除窓口が Discord だけである以上、通知が無ければ利用者は解除が要ることに気付けない。

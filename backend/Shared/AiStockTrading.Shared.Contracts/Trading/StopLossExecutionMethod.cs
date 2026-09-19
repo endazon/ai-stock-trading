@@ -25,7 +25,11 @@ public enum StopLossExecutionMethod
     /// </summary>
     BrokerStopOrder = 0,
 
-    /// <summary><b>S1</b>: ソフトウェア逆指値（損切り検知を購読して成行で決済する）。<b>未実装</b>（#820）——現状は S0 と同じ扱い。</summary>
+    /// <summary>
+    /// <b>S1</b>: ソフトウェア逆指値（損切り検知を購読して成行で決済する）。ブローカーへ保護レグを出さず、発注執行が
+    /// 損切りラインを永続化し、到達で固定の決済 DecisionId の成行を 1 回だけ発注する（#820・IADR-0344。
+    /// <c>SoftwareStopArmed</c> / <c>SoftwareStopExecuted</c>）。
+    /// </summary>
     SoftwareStop = 1,
 
     /// <summary>

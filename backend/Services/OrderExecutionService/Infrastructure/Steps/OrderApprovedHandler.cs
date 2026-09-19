@@ -122,6 +122,16 @@ public sealed class OrderApprovedHandler(
             await bus.PublishAsync(waived).ConfigureAwait(false);
         }
 
+        // FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: ソフトウェア逆指値の配置。ブローカー側に保護が無い
+        // （システム停止中は決済されない）ことを監査と通知に残す。
+        if (result.SoftwareStopArmed is { } softwareStop)
+        {
+            logger.LogWarning(
+                "ソフトウェア逆指値を配置（S1・ブローカーへの逆指値なし）: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} 数量={Quantity} 損切りライン={StopLossPrice} 発注先={Provider}",
+                softwareStop.EntryDecisionId, softwareStop.Symbol, softwareStop.Quantity, softwareStop.StopLossPrice, softwareStop.Provider);
+            await bus.PublishAsync(softwareStop).ConfigureAwait(false);
+        }
+
         if (result.CoverageLost is { } coverageLost)
         {
             logger.LogWarning(

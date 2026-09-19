@@ -12,7 +12,7 @@ namespace RiskManagementService.Tests;
 // 黙って混じると、二重決済で意図しないショート化を作る（#848 の 2 巡目監査 B3 と同型の穴）。
 public class OrderDispatchForgoneLifecycleTests
 {
-    // T-10-410（境界値・現行 4 値）: いずれも発注執行が **reservations.TryReserve より前**で
+    // T-10-410（境界値・現行 7 値）: いずれも発注執行が **reservations.TryReserve より前**で
     // return する＝ブローカーへ 1 バイトも送っていない（OrderExecutionAppService.ExecuteAsync を実測）。
     [Theory]
     [InlineData(OrderDispatchForgoneReason.BrokerUnavailable)]
@@ -21,6 +21,7 @@ public class OrderDispatchForgoneLifecycleTests
     [InlineData(OrderDispatchForgoneReason.StopLossMethodNotPermitted)]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent)]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate)]
+    [InlineData(OrderDispatchForgoneReason.UnattributedPosition)]
     public void 確実に未発注と判っている理由は在庫を解放してよい(OrderDispatchForgoneReason reason)
     {
         OrderDispatchForgoneLifecycle.ConfirmsNoOrderPlaced(reason).Should().BeTrue();
@@ -43,9 +44,14 @@ public class OrderDispatchForgoneLifecycleTests
     // 🔴 T-10-410（境界値・列挙の要素数）: 列挙に値が**増えた**ら落ちる。落ちたら
     // 「その理由は確実に未発注か」を実測してから allowlist へ足すか、既定のまま残すかを決める。
     //
-    // 🔴 **#873 と衝突する（後からマージする側が必ずここで赤くなる）。本テストが唯一のトリップワイヤである。**
-    // #873 は `OrderDispatchForgoneReason` へ `BrokerPositionAbsent` / `BrokerPositionsIndeterminate` を
-    // 足して **4 → 6** にする。赤くなった側がやること:
+    // 🔴 **後からマージする側が必ずここで赤くなる。本テストが唯一のトリップワイヤである。**（実際に 2 回機能した）
+    //   - #873 が `BrokerPositionAbsent` / `BrokerPositionsIndeterminate` を足して **4 → 6**（対応済み）。
+    //   - #820 が `UnattributedPosition` を足して **6 → 7**（対応済み）。**#873 が先に序数 4・5 を取ったため、
+    //     #820 側は自分の値を 4 → 6 へ繰り下げてからここへ来た**（先にマージされた側が番号を確保する）。
+    //     分類は `true`＝確実に未発注（`ExecuteAsync` を実測: **L194** で `return`・`TryReserve` は **L223**・
+    //     送信は **L233/234**。判定中の `GetPositionsAsync` は読み取りのみ）。
+    //     ただし本理由は **Open でしか起き得ない**ため、決済の在庫解放が実際に動くことは今のところ無い。
+    // 赤くなった側がやること:
     //
     //   【必須（やらないと赤のまま）】
     //   1. 本テストの期待値を **6** にする。
@@ -69,7 +75,7 @@ public class OrderDispatchForgoneLifecycleTests
     public void 見送り理由の要素数を固定する()
     {
         Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(
-            6,
+            7,
             "見送り理由が増えたら、それが「確実に未発注」かを実測して分類し直すこと（既定は解放しない側）");
     }
 }

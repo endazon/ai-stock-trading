@@ -6,7 +6,9 @@ using Xunit;
 namespace OrderExecutionService.Tests;
 
 // FR-10, FR-12, ADR-0040 決定1, #819, IADR-0342 決定4: 手法の解決（純関数）の全組み合わせ表。
-// 4 手法（＋未知）× 3 発注先 × 2 向き（買い・空売り）を網羅し、判定の順序（S0 → 発注先 → 空売り → S2 → その他）を固定する。
+// 4 手法（＋未知）× 3 発注先 × 2 向き（買い・空売り）を網羅し、判定の順序（S0 → 発注先 → 空売り → S2 → S1 → その他）を固定する。
+// #820, IADR-0344 決定2: S1 は SIMULATE の新規買いで SoftwareStop に解決される。
+// #821, IADR-0347: S3 は SIMULATE の新規買いで AlternativeBrokerOrderType に解決される（未知だけが S0 へのフォールバック）。
 public class StopLossMethodPolicyTests
 {
     private static OrderIntent Entry(ProductType productType, TradeSide side) =>
@@ -57,10 +59,11 @@ public class StopLossMethodPolicyTests
             return StopLossMethodDisposition.BrokerStopOrder;
         }
 
-        // #821, IADR-0347: S3 は代替注文種別の扱いへ分かれた（未実装の fallback に残るのは S1 と未知だけ）。
+        // #820, IADR-0344 決定2 / #821, IADR-0347: S1 も S3 も実装済み（未実装の fallback に残るのは未知だけ）。
         return method switch
         {
             StopLossExecutionMethod.NoProtectiveStop => StopLossMethodDisposition.ProtectiveStopWaived,
+            StopLossExecutionMethod.SoftwareStop => StopLossMethodDisposition.SoftwareStop,
             StopLossExecutionMethod.AlternativeBrokerOrderType => StopLossMethodDisposition.AlternativeBrokerOrderType,
             _ => StopLossMethodDisposition.NotImplementedFallbackToBrokerStop,
         };
@@ -94,6 +97,30 @@ public class StopLossMethodPolicyTests
             .Should().Be(StopLossMethodDisposition.BrokerStopOrder);
     }
 
+    [Fact]
+    public void SIMULATEのS1の新規買いはソフトウェア逆指値になる()
+    {
+        StopLossMethodPolicy.Resolve(
+                StopLossExecutionMethod.SoftwareStop, Entry(ProductType.Cash, TradeSide.Buy), BrokerProvider.MoomooSimulate)
+            .Should().Be(StopLossMethodDisposition.SoftwareStop);
+    }
+
+    [Fact]
+    public void 空売りはSIMULATEのS1でもソフトウェア逆指値にならない()
+    {
+        StopLossMethodPolicy.Resolve(
+                StopLossExecutionMethod.SoftwareStop, Entry(ProductType.ShortSell, TradeSide.Sell),
+                BrokerProvider.MoomooSimulate)
+            .Should().Be(StopLossMethodDisposition.BrokerStopOrder);
+    }
+
+    [Fact]
+    public void 実弾ではS1は拒否される()
+    {
+        StopLossMethodPolicy.Resolve(
+                StopLossExecutionMethod.SoftwareStop, Entry(ProductType.Cash, TradeSide.Buy), BrokerProvider.MoomooReal)
+            .Should().Be(StopLossMethodDisposition.Refused);
+    }
     // #821, IADR-0347: S3 は SIMULATE の買いにだけ届く（実弾・空売りは従来の統制のまま）。
     [Fact]
     public void 実弾ではS3は代替注文種別にならない()

@@ -112,4 +112,41 @@ public class ProtectiveStopLedgerHandlersTests
 
         ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1)).Should().Be(0);
     }
+
+    // FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の成行決済レグも台帳へ結線する
+    // （結線が無いと決済が約定しても台帳の建玉が減らず、市場監視が到達を出し続ける）。再送でも 1 本。
+    [Fact]
+    public async Task ソフトウェア逆指値の決済レグは承認行が台帳へ一度だけ記録される()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var handler = new SoftwareStopExecutedLedgerHandler(
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<SoftwareStopExecutedLedgerHandler>.Instance);
+        var closeDecisionId = Guid.NewGuid();
+        var evt = new SoftwareStopExecuted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced, 10, 950m, 940m, 1,
+            closeDecisionId, "close-1", CloseIntent(), Now);
+
+        await handler.Handle(evt, CancellationToken.None);
+        await handler.Handle(evt, CancellationToken.None); // 再送
+
+        ledger.FindApprovedIntent(closeDecisionId)!.PositionEffect.Should().Be(PositionEffect.Close);
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1)).Should().Be(10);
+    }
+
+    [Theory]
+    [InlineData(SoftwareStopOutcome.EntryCancelled)]
+    [InlineData(SoftwareStopOutcome.CloseRejected)]
+    public async Task 決済レグの無いソフトウェア逆指値の発動は台帳へ何も書かない_否定形(SoftwareStopOutcome outcome)
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var handler = new SoftwareStopExecutedLedgerHandler(
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<SoftwareStopExecutedLedgerHandler>.Instance);
+
+        // 拒否でも CloseDecisionId は付く（どの試行が拒否されたか）が、約定しない決済を在庫の控除にしない。
+        await handler.Handle(new SoftwareStopExecuted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, outcome, 10, 950m, 940m, 3,
+            Guid.NewGuid(), "close-3", CloseIntent(), Now), CancellationToken.None);
+
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1)).Should().Be(0);
+    }
 }

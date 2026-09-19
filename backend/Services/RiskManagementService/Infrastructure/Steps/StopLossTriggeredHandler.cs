@@ -16,10 +16,13 @@ public sealed class StopLossTriggeredHandler(ILogger<StopLossTriggeredHandler> l
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        // 到達の検知をサービスログにも残す（決済はブローカー側の逆指値が実行する。ここでは何も発注しない）。
+        // 到達の検知をサービスログにも残す（ここでは何も発注しない）。
+        // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは建玉ごとの手法で決まり、本サービスは知らない
+        // （S0＝ブローカー側の逆指値・S1＝発注執行が成行決済・S2＝誰も決済しない）。断定せず列挙する。
         logger.LogWarning(
             "損切りライン到達を検知: {Symbol}/{Market} 建玉方向={PositionSide} 数量={Quantity}"
-                + " 損切り価格={StopLossPrice} 現在値={Price}（決済はブローカー側の逆指値が実行・システムは発注しない）",
+                + " 損切り価格={StopLossPrice} 現在値={Price}（リスク管理は発注しない。決済は手法による:"
+                + " S0=ブローカー側の逆指値／S1=発注執行が成行決済／S2=誰も決済しない）",
             message.Symbol, message.Market, message.PositionSide, message.Quantity,
             message.StopLossPrice, message.Price);
     }

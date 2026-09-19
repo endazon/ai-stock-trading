@@ -419,14 +419,59 @@ public class NotificationFormatterTests
         msg.Severity.Should().Be(expected);
     }
 
-    // 🔴 否定形（#331）: 損切り到達の通知は「システムが決済した」と読ませない（実行はブローカー側の逆指値）。
+    // 🔴 否定形（#331）: 損切り到達の通知は「システムが決済した」と読ませない。
+    // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは建玉ごとの手法で決まり、検知側は手法を知らない。
+    // **ブローカーの逆指値が決済すると断定しない**（S1 / S2 の建玉で誤りになる）——3 手法の帰結を列挙する。
     [Fact]
-    public void 損切り到達の通知は_システムが決済注文を出すとは書かない()
+    public void 損切り到達の通知は手法ごとの帰結を列挙しブローカーが決済すると断定しない()
     {
         var msg = NotificationFormatter.From(new StopLossTriggered(
             Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 940m, 950m, StopT0));
 
-        msg.Content.Should().Contain("システムは決済注文を発行しません");
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Content.Should().Contain("S0＝ブローカー側の逆指値が実行（システムは発注しない）")
+            .And.Contain("S1＝システムが成行で決済")
+            .And.Contain("S2＝**システムもブローカーも決済しない（手動で決済してください）**");
+        msg.Content.Should().NotContain("決済はブローカー側の逆指値が実行します");
+    }
+
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は Warning で「システム停止中は決済されない」が読める。
+    [Fact]
+    public void ソフトウェア逆指値の配置はシステム停止中は決済されないことが読めるWarningになる()
+    {
+        var msg = NotificationFormatter.From(new SoftwareStopArmed(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+            BrokerProvider.MoomooSimulate, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Title.Should().Contain("S1");
+        msg.Content.Should().Contain("システム停止中は決済されません").And.Contain("950").And.Contain("MoomooSimulate");
+    }
+
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: 決済の発注・取消は Warning、拒否の打ち切りだけが Critical。
+    [Theory]
+    [InlineData(SoftwareStopOutcome.ClosePlaced, NotificationSeverity.Warning, "成行の決済注文を発注しました")]
+    [InlineData(SoftwareStopOutcome.EntryCancelled, NotificationSeverity.Warning, "建玉は生じていません")]
+    [InlineData(SoftwareStopOutcome.CloseRejected, NotificationSeverity.Critical, "建玉が無保護で残っています")]
+    [InlineData(SoftwareStopOutcome.EntryMissing, NotificationSeverity.Critical, "決済は出していません")]
+    // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 据え置きが猶予を過ぎた（無音の失敗を残さない）。
+    [InlineData(SoftwareStopOutcome.CloseStalled, NotificationSeverity.Critical, "猶予を過ぎても成行の決済を発注できていません")]
+    // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因で保護対象を減らした（無音にしない・決済は出していない）。
+    [InlineData(SoftwareStopOutcome.ProtectionReduced, NotificationSeverity.Warning, "保護記録が守る株数をその分だけ減らしました")]
+    // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
+    [InlineData(SoftwareStopOutcome.ProtectionSuspended, NotificationSeverity.Critical, "1 株も決済できない状態**が続いています")]
+    // T-10-492（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: どの保護記録も主張していない建玉の**検知**。
+    // 🔴 是正ではないので Critical ではなく Warning であり、「決済しません」と明記する。
+    [InlineData(SoftwareStopOutcome.UnattributedPosition, NotificationSeverity.Warning, "どの保護記録も主張していません")]
+    public void ソフトウェア逆指値の発動結果は結末ごとの重みと文言になる(
+        SoftwareStopOutcome outcome, NotificationSeverity severity, string expected)
+    {
+        var msg = NotificationFormatter.From(new SoftwareStopExecuted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, outcome, 10, 950m, 940m, 1,
+            Guid.NewGuid(), "close-1", null, StopT0));
+
+        msg.Severity.Should().Be(severity);
+        msg.Content.Should().Contain(expected).And.Contain("950");
     }
 
     // ---- FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 報告書確定の確定者の表示 ----

@@ -522,6 +522,26 @@ public sealed class ProtectiveStopWaivedAuditHandler(IAuditEventStore store, ICl
     }
 }
 
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置を中央監査台帳へ記録する。
+public sealed class SoftwareStopArmedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(SoftwareStopArmed message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の発動結果（決済・取消・拒否）を記録する。
+public sealed class SoftwareStopExecutedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(SoftwareStopExecuted message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: S3（他のブローカー側注文種別）の試行を
 // 中央監査台帳へ記録する。**注文種別と拒否理由（retType / retMsg）を残すことが S3 の目的そのもの**であり、
 // 本ハンドラが無いと理由は発注執行のログにしか残らない（7 年保持される台帳から読めない）。

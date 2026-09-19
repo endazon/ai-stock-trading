@@ -8,6 +8,7 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // 発行（Publish）は Worker 層（OrderApprovedHandler）が非 null のイベントに対して行う。
 // FR-10, ADR-0040 決定1, #819, IADR-0342 決定6: S2 では StopPlaced / CoverageLost の代わりに StopWaived が付く
 // （3 つは排他。末尾の任意項目として足し、既存の生成箇所を変えない）。
+// FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: S1 では SoftwareStopArmed が付く（上の 3 つと排他）。
 // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: S3 では StopAttempted（試行の記録＝注文種別と拒否理由）が
 // **StopPlaced または CoverageLost と一緒に**付く（排他ではない）——結果の扱いは S0 と同じであり、
 // 試行の記録はその手前の事実だからである。
@@ -27,7 +28,8 @@ public sealed record OrderDispatchResult(
     ProtectiveStopWaived? StopWaived = null,
     AlternativeProtectiveStopAttempted? StopAttempted = null,
     PositionReconciliationDrift? Drift = null,
-    int DriftDispatchedQuantity = 0)
+    int DriftDispatchedQuantity = 0,
+    SoftwareStopArmed? SoftwareStopArmed = null)
 {
     public static OrderDispatchResult FromExecuted(
         OrderExecuted executed,
@@ -36,8 +38,10 @@ public sealed record OrderDispatchResult(
         ProtectiveStopWaived? stopWaived = null,
         AlternativeProtectiveStopAttempted? stopAttempted = null,
         PositionReconciliationDrift? drift = null,
-        int driftDispatchedQuantity = 0) =>
-        new(executed, null, stopPlaced, coverageLost, stopWaived, stopAttempted, drift, driftDispatchedQuantity);
+        int driftDispatchedQuantity = 0,
+        SoftwareStopArmed? softwareStopArmed = null) =>
+        new(executed, null, stopPlaced, coverageLost, stopWaived, stopAttempted, drift, driftDispatchedQuantity,
+            softwareStopArmed);
 
     // 見送りは 1 株も送っていない（DriftDispatchedQuantity は 0 のまま）。
     public static OrderDispatchResult FromForgone(

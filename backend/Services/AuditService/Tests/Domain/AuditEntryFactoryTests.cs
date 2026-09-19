@@ -932,6 +932,50 @@ public class AuditEntryFactoryTests
             .And.Contain("MoomooSimulate").And.Contain("950");
     }
 
+    // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は「ブローカーへの逆指値なし・システム停止中は決済されない」が読める。
+    [Fact]
+    public void ソフトウェア逆指値の配置はブローカーに保護が無いことが読める()
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new SoftwareStopArmed(entryDecisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                10, 950m, BrokerProvider.MoomooSimulate, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(SoftwareStopArmed));
+        entry.CorrelationId.Should().Be(entryDecisionId, "エントリーと 1 本で辿る");
+        entry.OccurredAt.Should().Be(StopT0);
+        entry.Summary.Should().Contain("S1").And.Contain("ブローカーへの逆指値なし").And.Contain("システム停止中は決済されない")
+            .And.Contain("950");
+    }
+
+    // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: 発動結果は結末ごとに要約が変わり、拒否は人手対応を明示する。
+    [Theory]
+    [InlineData(SoftwareStopOutcome.ClosePlaced, "成行決済を発注")]
+    [InlineData(SoftwareStopOutcome.EntryCancelled, "未約定のエントリーを取消")]
+    [InlineData(SoftwareStopOutcome.CloseRejected, "要人手対応")]
+    [InlineData(SoftwareStopOutcome.EntryMissing, "決済を出さずに閉じた")]
+    // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 据え置きが猶予を過ぎた（再試行は続いている）。
+    [InlineData(SoftwareStopOutcome.CloseStalled, "猶予を過ぎても決済できていない")]
+    // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による減少の確定（決済は出していない）。
+    [InlineData(SoftwareStopOutcome.ProtectionReduced, "外部要因で建玉が減ったぶんを保護記録の主張から差し引いた")]
+    // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も決済できない状態が続いている。
+    [InlineData(SoftwareStopOutcome.ProtectionSuspended, "1 株も決済できない状態が猶予を過ぎても続いている")]
+    // T-10-493（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: 帰属不明の建玉の**検知**（是正ではない）。
+    [InlineData(SoftwareStopOutcome.UnattributedPosition, "どの保護記録も主張していない建玉がある")]
+    public void ソフトウェア逆指値の発動結果は結末が読める(SoftwareStopOutcome outcome, string expected)
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new SoftwareStopExecuted(entryDecisionId, "AAPL", Market.UnitedStates, outcome, 10, 950m, 940m, 1,
+                Guid.NewGuid(), "CLOSE-1", null, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(SoftwareStopExecuted));
+        entry.CorrelationId.Should().Be(entryDecisionId);
+        entry.Summary.Should().Contain(expected).And.Contain("950").And.Contain("940");
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由（retType / retMsg）が要約から読めること**
     // ——これが残らないと「なぜ S3 が使えないのか」を台帳から説明できない（#821 の目的そのもの）。
     [Fact]

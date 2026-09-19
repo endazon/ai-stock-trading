@@ -370,6 +370,31 @@
     "Truncated": "Boolean",
     "UnresolvableOverflow": "Boolean"
   },
+  "SoftwareStopArmed": {
+    "EntryDecisionId": "Guid",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "ProductType": "ProductType",
+    "Provider": "BrokerProvider",
+    "Quantity": "Int32",
+    "Side": "TradeSide",
+    "StopLossPrice": "Decimal",
+    "Symbol": "String"
+  },
+  "SoftwareStopExecuted": {
+    "Attempt": "Int32",
+    "CloseDecisionId": "Guid?",
+    "CloseIntent": "OrderIntent",
+    "CloseOrderId": "String",
+    "EntryDecisionId": "Guid",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "Outcome": "SoftwareStopOutcome",
+    "Quantity": "Int32",
+    "StopLossPrice": "Decimal",
+    "Symbol": "String",
+    "TriggeredPrice": "Decimal"
+  },
   "StageTransitioned": {
     "ApprovedBy": "String",
     "FromStage": "Int32",

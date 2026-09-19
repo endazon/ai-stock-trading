@@ -23,7 +23,10 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // FR-10, FR-12, ADR-0040 決定1, #819, IADR-0342: 損切りの実行機構は承認が運ぶ（既定 S0）。解釈は
 // StopLossMethodPolicy だけが行う。**S2（moomoo SIMULATE の新規買いに限る）では保護逆指値を発注せず建玉を保持し、
 // 免除の事実（ProtectiveStopWaived）を発行する**——「逆指値なしの建玉を持たない」の例外はこの 1 分岐だけである。
-// S0 以外が SIMULATE 以外へ届いたら発注しない（実弾を無防備にしない）。S1 は未実装のため S0 と同じ扱い。
+// S0 以外が SIMULATE 以外へ届いたら発注しない（実弾を無防備にしない）。未知の手法は未実装のため S0 と同じ扱い。
+//
+// FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: **S1（moomoo SIMULATE の新規買いに限る）では保護逆指値を
+// ブローカーへ出さず、エントリーを送る前にソフトウェア逆指値を永続化する**。決済は損切りライン到達で SoftwareStopExecutor が行う。
 //
 // FR-10, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: **S3 は保護レグを代替注文種別（StopLimit / TrailingStop）で
 // 発注し、種別と拒否理由（retType / retMsg）を AlternativeProtectiveStopAttempted として残す**。
@@ -42,7 +45,15 @@ public sealed class OrderExecutionAppService(
     ILogger<OrderExecutionAppService>? logger = null,
     IBrokerPositionSource? brokerPositions = null)
 {
+    // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
+    // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
+    private const int ArmingScanLimit = 500;
+
     private readonly ILogger _logger = logger ?? NullLogger<OrderExecutionAppService>.Instance;
+
+    // 建玉照会は実運用ではブローカーアダプタそのものが実装する（Program.cs の配線と同じ）。
+    // 明示指定があればそれを使う（テスト・差し替え用）。
+    private readonly IBrokerPositionSource? _positions = brokerPositions ?? broker as IBrokerPositionSource;
 
     public async Task<OrderDispatchResult> ExecuteAsync(OrderApproved approved, CancellationToken cancellationToken = default)
     {
@@ -162,6 +173,27 @@ public sealed class OrderExecutionAppService(
                 return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
 
+            // #820, IADR-0344 決定3: S1 はソフトウェア逆指値の記録先が要る（無ければ建玉を守れないため建てない）。
+            if (disposition == StopLossMethodDisposition.SoftwareStop && protectiveStops is null)
+            {
+                _logger.LogError(
+                    "損切りの実行機構 S1 の記録先（保護記録ストア）が構成されていないため発注しません（DecisionId={DecisionId}）。",
+                    approved.DecisionId);
+                return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
+            }
+
+            // 🔴 #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: **S1 は帰属不明の建玉がある銘柄では武装しない。**
+            // S1 の行が守る株数はブローカーの純額からしか測れず、他人の建玉（S2・人手・S0 の発注窓）と
+            // 自分の建玉を区別できない。先に他人の建玉が在ると超過が一度も観測されないまま満額の主張が残り、
+            // 到達でその建玉を S1 の損切りラインで売る（監査が実測。稼働中の S2 から S1 へ切り替えた直後そのもの）。
+            // 「保護レグを張れない Open では建玉を持たない」（IADR-0210 決定1）に合わせ、**建玉を持たずに見送る**。
+            if (disposition == StopLossMethodDisposition.SoftwareStop
+                && protectiveStops!.Find(approved.DecisionId) is null
+                && await HasUnattributedPositionAsync(approved, cancellationToken).ConfigureAwait(false))
+            {
+                return Forgone(approved, OrderDispatchForgoneReason.UnattributedPosition);
+            }
+
             // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: S3 の能力が無い発注先へ S3 が届いたら**発注しない**
             // （S0 へ黙って読み替えない。上の「逆指値能力が無い Open は見送る」と同じ fail-closed）。
             if (disposition == StopLossMethodDisposition.AlternativeBrokerOrderType
@@ -169,6 +201,19 @@ public sealed class OrderExecutionAppService(
             {
                 return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
+        }
+
+        // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: 🔴 **エントリーを送る前に**ソフトウェア逆指値を Active で残す。
+        // 送った後に保存すると「建玉はあるのにソフトウェア逆指値が無い」窓ができる（保存の失敗・プロセス停止）。
+        // 既に行があれば触らない（再配送で到達の記録や試行数を巻き戻さない）。建玉が生じなければ下で完了にする。
+        if (disposition == StopLossMethodDisposition.SoftwareStop && protectiveStops!.Find(approved.DecisionId) is null)
+        {
+            var armedAt = clock.UtcNow;
+            protectiveStops.Save(new ProtectiveStopOrder(
+                approved.DecisionId, ProtectiveStopIds.SoftwareStopId(approved.DecisionId), StopOrderId: string.Empty,
+                intent.Symbol, intent.Market, intent.Side, intent.ProductType, intent.Mode, intent.Quantity,
+                intent.StopLossPrice!.Value, intent.FxRateToBase, Attempt: 0, ProtectiveStopState.Active, armedAt, armedAt,
+                Mechanism: StopLossExecutionMethod.SoftwareStop));
         }
 
         // 相2（発注着手の権威）: ブローカへ送る「前」に一意予約を確保する。確保できない＝予約済みで未確定であり、
@@ -206,6 +251,7 @@ public sealed class OrderExecutionAppService(
             // 送信後の失敗（届いたか不明）は本例外の契約外であり、BrokerDispatchIndeterminateException として
             // 伝播する（次の catch。予約を解放せず据え置く＝再配送で二重発注しない。#848・IADR-0117 改定 6）。
             reservations.Release(approved.DecisionId);
+            CompleteSoftwareStopWithoutPosition(approved, disposition);
             return Forgone(approved, OrderDispatchForgoneReason.BrokerUnavailable);
         }
         catch (BrokerDispatchIndeterminateException ex)
@@ -292,6 +338,22 @@ public sealed class OrderExecutionAppService(
             return OrderDispatchResult.FromExecuted(executed, stopWaived: waived);
         }
 
+        if (intent.PositionEffect == PositionEffect.Open && disposition == StopLossMethodDisposition.SoftwareStop)
+        {
+            // FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定3: ブローカーへ保護レグを出さない。
+            // 建玉が生じ得る（生きている）ならソフトウェア逆指値の配置を発行し、生じないなら記録を完了にする。
+            if (!entryAlive)
+            {
+                CompleteSoftwareStopWithoutPosition(approved, disposition);
+                return OrderDispatchResult.FromExecuted(executed);
+            }
+
+            var armed = new SoftwareStopArmed(
+                approved.DecisionId, intent.Symbol, intent.Market, intent.Side, intent.ProductType, intent.Quantity,
+                intent.StopLossPrice!.Value, broker.Provider, now);
+            return OrderDispatchResult.FromExecuted(executed, softwareStopArmed: armed);
+        }
+
         if (intent.PositionEffect == PositionEffect.Open && entryAlive)
         {
             var useAlternative = disposition == StopLossMethodDisposition.AlternativeBrokerOrderType;
@@ -323,12 +385,94 @@ public sealed class OrderExecutionAppService(
             case StopLossMethodDisposition.NotImplementedFallbackToBrokerStop:
                 _logger.LogWarning(
                     "損切りの実行機構 {Method} は未実装のため S0（ブローカー側逆指値）と同じ扱いで発注します"
-                    + "（DecisionId={DecisionId}・S1=#820）。",
+                    + "（DecisionId={DecisionId}）。",
                     approved.StopLossMethod, approved.DecisionId);
                 break;
         }
 
         return disposition;
+    }
+
+    // 🔴 FR-10, ADR-0040 決定1（S1）, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4:
+    // 同一銘柄・同方向に**帰属不明の建玉**（純額 − Active な保護記録の主張合計 > 0）があるか。
+    // **確かめられない場合（建玉照会の能力が無い・照会不能）も「ある」側へ倒す**（fail-closed。
+    // 「不明」を「無い」と取り違えると、他人の建玉を S1 の損切りラインで売る不可逆な事故になる）。
+    private async Task<bool> HasUnattributedPositionAsync(OrderApproved approved, CancellationToken cancellationToken)
+    {
+        var intent = approved.Intent;
+        if (_positions is null)
+        {
+            _logger.LogError(
+                "損切りの実行機構 S1 は建玉照会のできる発注先でしか武装できません（帰属不明の建玉を判別できないため）。"
+                    + "発注しません（DecisionId={DecisionId}）。",
+                approved.DecisionId);
+            return true;
+        }
+
+        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定2: **主張を数える前にエントリーの約定を確定する。**
+        // 終端になったエントリーの約定数量は、ガードが巡回するまで帳簿（RemainingProtected）へ書かれない。
+        // 確定を待たずに数えると、直前に約定したばかりの自分の建玉が「帰属不明」に見え、同一銘柄・同方向への
+        // 2 本目が見送られる（追記(8) の残る制約）。確定は建玉照会を要さない突き合わせである。
+        //
+        // 🔴 **#820 の 12 巡目監査, IADR-0344 追記(11) 決定1: 建玉照会の「前と後」の両方で主張を読み、小さい方を採る。**
+        // 建玉照会は OpenD への RPC であり、その待ちのあいだに主張（claimed）は**両方向へ動く**。
+        //   - **増える側**: OrderFillPollingService が先行エントリーの記録を終端化して確定が進む（11 巡目 PROBE4）。
+        //   - **減る側**: SoftwareStopExecutor の決済（RemainingProtected→0 かつ Completed）・ガードによる外部要因の確定・
+        //     PendingExternalReduction の計上（12 巡目 PROBE-A / PROBE-A3）。
+        // 🔴 **どちらか一方の時点だけを採ると、逆側の窓で帰属不明が「過少」に読まれて武装する。**
+        // 11 巡目は「確定 → 照会」に固定して増える側だけを塞ぎ、**減る側の鏡像を新設してしまった**
+        // （追記(10) 決定 1 の「取り違えは必ず安全側へ倒れる」は偽であり、追記(11) で撤回した）。
+        // **min(前, 後) なら、どちらへ動いても帰属不明を「過大」に読む側へ倒れる**——読みが 1 回増えるだけで
+        // OpenD への往復は増えない（確定はローカルな突き合わせ、2 回目は保護記録の読み直しだけ）。
+        var stops = ProtectiveStopNetting.ConfirmEntryFills(
+            protectiveStops!.FindActive(ArmingScanLimit), protectiveStops, store, clock.UtcNow);
+        var claimedBefore = ClaimedFor(intent, stops);
+
+        var snapshot = await _positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            _logger.LogError(
+                "建玉を照会できないため S1 を武装しません（帰属不明の建玉が無いことを確かめられない）。"
+                    + "DecisionId={DecisionId} 銘柄={Symbol}",
+                approved.DecisionId, intent.Symbol);
+            return true;
+        }
+
+        // 照会の**後**の主張を読み直す（確定は上で済んでおり永続化されているため、ここでは読むだけでよい）。
+        var claimedAfter = ClaimedFor(intent, protectiveStops.FindActive(ArmingScanLimit));
+
+        var net = ProtectiveStopNetting.DirectionalNet(intent.Symbol, intent.Market, intent.Side, snapshot);
+        var claimed = Math.Min(claimedBefore, claimedAfter);
+        var unattributed = net - claimed;
+        if (unattributed <= 0)
+            return false;
+
+        _logger.LogError(
+            "同一銘柄・同方向に帰属不明の建玉が {Unattributed} 株あるため S1 を武装せず見送ります"
+                + "（純額 {Net} 株・保護記録の主張 {Claimed} 株＝照会の前 {Before} 株と後 {After} 株の小さい方）。"
+                + "その建玉を S1 の損切りラインで決済しないための前提条件です"
+                + "（先に手仕舞ってから切り替えてください）。DecisionId={DecisionId} 銘柄={Symbol}",
+            unattributed, net, claimed, claimedBefore, claimedAfter, approved.DecisionId, intent.Symbol);
+        return true;
+    }
+
+    // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定1: **帳簿の主張ではなく「その巡回で実際に動かせる株数」で数える。**
+    // 帳簿の主張（ProtectedQuantity）で数えると、未確定の観測を抱えた幽霊行——実際には 1 株も動かせない行——が
+    // 他人の建玉を「帰属済み」に見せ、帰属不明が 0 と読まれて新しい S1 が武装される（監査の P6(1)・実測 SOLD=20）。
+    // 実効数量なら幽霊行は 0 株しか主張せず、帰属不明が正しく見えて**安全側（見送り）へ倒れる**。
+    private static int ClaimedFor(OrderIntent intent, IEnumerable<ProtectiveStopOrder> stops) =>
+        stops
+            .Where(s => s.State == ProtectiveStopState.Active
+                && s.Symbol == intent.Symbol && s.Market == intent.Market && s.EntrySide == intent.Side)
+            .Sum(s => s.EffectiveProtectedQuantity);
+
+    // #820, IADR-0344 決定3: 建玉が生じなかった S1 のエントリー（見送り・終端失敗）の記録を完了にする。
+    private void CompleteSoftwareStopWithoutPosition(OrderApproved approved, StopLossMethodDisposition disposition)
+    {
+        if (disposition != StopLossMethodDisposition.SoftwareStop || protectiveStops?.Find(approved.DecisionId) is not { } stop)
+            return;
+
+        protectiveStops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });
     }
 
     private OrderDispatchResult Forgone(
