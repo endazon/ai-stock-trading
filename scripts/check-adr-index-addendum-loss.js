@@ -205,7 +205,7 @@ function findLosses({ base, theirs, ours }) {
   const seen = new Set(); // 同じ (id, mark) を base 由来と theirs 由来で二重に出さない
 
   const push = (id, mark, display, from) => {
-    const key = `${id} ${mark}`;
+    const key = JSON.stringify([id, mark]);
     if (seen.has(key)) return;
     seen.add(key);
     losses.push({ id, mark, display, from });
