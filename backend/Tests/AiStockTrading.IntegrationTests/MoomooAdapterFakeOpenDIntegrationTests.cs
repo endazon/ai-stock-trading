@@ -146,10 +146,16 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
     //
     // 🔴 **［2026-09-19 / #897］通貨の欠落は「要求した通貨（USD）」として採る。**
     // `Funds.currency` は protobuf の **optional** であり（required は power / totalAssets / cash /
-    // marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つ）、**実機の OpenD は載せてこない**。
+    // marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つ）、**本系の口座に対して載らない**。
     // 「名乗っているときだけ採る」（#874）は実機に対して**常に fail-closed** になり、基準資金が
-    // 一度も供給されなかった（稼働環境で実測）。要求は `Currency_USD` を明示しており、
-    // moomoo の契約では応答はその通貨で返る —— **近似として採る**（IADR-0354 決定1 の追記）。
+    // 一度も供給されなかった（稼働環境で実測）。
+    //
+    // 🔴 **［#898 監査の是正］近似の根拠は「要求が尊重される」という契約ではない。**
+    // 要求した `currency` は **universal 証券口座／先物口座にしか効かず、単一市場口座では無視される**
+    // （moomoo 公式ドキュメント）。**欄が無いこと自体が「この口座は単一市場口座である」というシグナル**であり、
+    // そのとき `TotalAssets` は**口座自身の基準通貨**で返る。本系の SIMULATE 口座は **US 単一市場口座**
+    // （#397 probe: `trdMarketAuthList=[2(US)]`）であり、その基準通貨が USD である ——
+    // これが根拠である（IADR-0354 決定1 の追記）。
     //
     // 🔴 **別通貨を明示したケースは従来どおり採らない**（この守りは実機でも意味がある）。
     //
