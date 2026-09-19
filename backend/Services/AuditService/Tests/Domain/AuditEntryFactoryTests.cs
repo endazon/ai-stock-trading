@@ -423,6 +423,46 @@ public class AuditEntryFactoryTests
 
         driftEntry.CorrelationId.Should().Be(observedEntry.CorrelationId);
     }
+
+    // T-10-477: FR-10, FR-11, UC-06, #849, IADR-0350: 乖離の取り込みは「誰が・なぜ・取り込み前後の数量・観測」を要約に残し、
+    // 観測・検知と同一相関で束ねる。**実現損益を記録していないこと**が要約から読める。
+    [Fact]
+    public void PositionDriftAdopted_は誰がなぜ何株から何株へを残し実現損益が未記録と分かる()
+    {
+        var observed = new BrokerPositionsObserved([], RecordedAt.AddMinutes(-5));
+        var e = new PositionDriftAdopted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, 3_381, 0, 0, RecordedAt.AddMinutes(-5), 335.1225m,
+            RealizedPnlRecorded: false, ReferencePrice: null, EstimatedPnlInBase: null,
+            "endazon", "moomoo アプリから全株を手動売却した", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("PositionDriftAdopted");
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("3381→0").And.Contain("endazon").And.Contain("moomoo アプリから全株を手動売却した");
+        entry.Summary.Should().Contain("実現損益は未記録").And.Contain("推定なし");
+        entry.OccurredAt.Should().Be(e.AdoptedAt);
+        entry.Detail.Should().Contain("RealizedPnlRecorded").And.Contain("LedgerQuantityBefore");
+        entry.CorrelationId.Should().Be(
+            AuditEntryFactory.From(observed, Guid.NewGuid(), RecordedAt).CorrelationId,
+            "観測 → 乖離の報告 → 取り込みを 1 本の相関で辿れる");
+    }
+
+    // T-10-478: 推定を含むときは、要約の数値に「推定・未記録」が必ず添えられる（確定値のように読ませない）。
+    [Fact]
+    public void PositionDriftAdopted_の推定は推定かつ未記録と明示される()
+    {
+        var e = new PositionDriftAdopted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, 3_381, 0, 0, RecordedAt.AddMinutes(-5), 335m,
+            RealizedPnlRecorded: false, ReferencePrice: 332.83m, EstimatedPnlInBase: -7_336.77m,
+            "endazon", "手動売却", RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("推定 -7336.77 USD（推定・未記録）");
+        entry.Summary.Should().Contain("実現損益は未記録");
+    }
+
     // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れの自動縮小（**記録先 1: 監査ログ**）。
     // 利用者の承認も AI も介在しない自動決済であるため、この記録が「なぜ建玉が減ったか」の一次証跡になる。
     [Fact]

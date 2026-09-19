@@ -261,6 +261,22 @@
     "RateAsOf": "DateTimeOffset",
     "Symbol": "String"
   },
+  "PositionDriftAdopted": {
+    "Actor": "String",
+    "AdoptedAt": "DateTimeOffset",
+    "AdoptionId": "Guid",
+    "BrokerQuantity": "Int32",
+    "CostBasisPrice": "Decimal",
+    "EstimatedPnlInBase": "Decimal?",
+    "LedgerQuantityAfter": "Int32",
+    "LedgerQuantityBefore": "Int32",
+    "Market": "Market",
+    "ObservedAt": "DateTimeOffset",
+    "RealizedPnlRecorded": "Boolean",
+    "Reason": "String",
+    "ReferencePrice": "Decimal?",
+    "Symbol": "String"
+  },
   "PositionReconciliationDrift": {
     "DetectedAt": "DateTimeOffset",
     "Drifts": "IReadOnlyList\u003CPositionDriftItem\u003E",

@@ -156,7 +156,9 @@ public static class BuyInInference
 
         return ordered
             .Skip(startIndex)
-            .Where(f => f.Side == TradeSide.Buy) // 空売り建玉に対する自らの決済指示＝買い戻し。
+            // #849, IADR-0350: 乖離の取り込み行は**自らの決済指示ではない**（利用者が承認した数量合わせ）。
+            // 在庫の畳み込み（上）には入れるが、突合の根拠としては並べない。
+            .Where(f => f.Side == TradeSide.Buy && !f.IsDriftAdoption) // 空売り建玉に対する自らの決済指示＝買い戻し。
             .Select(f => new BuyInCoveringFill(f.Side, f.Quantity, f.Price, f.ExecutedAt))
             .ToList();
     }
