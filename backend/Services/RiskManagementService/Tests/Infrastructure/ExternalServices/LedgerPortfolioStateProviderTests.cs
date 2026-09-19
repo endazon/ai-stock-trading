@@ -30,7 +30,7 @@ public class LedgerPortfolioStateProviderTests
 
         state.OpenPositionCount.Should().Be(1);
         state.InvestedCapital.Should().Be(10_000m);
-        state.Capital.Should().Be(TradingDefaults.InitialCapital);
+        state.LedgerEquity.Should().Be(TradingDefaults.InitialCapital);
     }
 
     // IADR-0163 決定2 / IADR-0346 決定3: 注文源は必須依存。テストの既定は「未約定の注文なし」。

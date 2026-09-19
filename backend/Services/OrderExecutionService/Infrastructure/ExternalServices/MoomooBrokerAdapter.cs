@@ -293,6 +293,18 @@ public sealed class MoomooBrokerAdapter(
     /// 供給が無い以上、現金口座では買付が止まる（安全側）。
     /// </para>
     /// <para>
+    /// <b>口座の評価額（<c>EquityInBase</c>）は供給する</b>（#869 / ADR-0041 決定2 / IADR-0354）。
+    /// <c>TrdGetFunds</c> の <c>Funds.TotalAssets</c>（資産純値・USD）であり、<b>決済済み資金とは別のフィールドで実在する</b>。
+    /// 取れなければ <c>null</c> のままとし（統制の基準資金が未供給＝新規建てが止まる側）、買付余力で代替しない。
+    /// <b>応答が USD と名乗っていないとき（別通貨・通貨の欠落）も <c>null</c> である。</b>
+    /// </para>
+    /// <para>
+    /// 🔴 <b>「応答に評価額が無い」場合に限り、口座種別は残す。</b> 欄が別だからである。
+    /// <b>評価額の照会が例外で終わった場合（OpenD 不達・応答異常）は、下の <c>catch</c> が口座照会全体の失敗として
+    /// <c>null</c> を返し、口座種別も一緒に落ちる</b>（fail-closed。<c>GetAccountTypeAsync</c> の失敗と同じ扱い）。
+    /// 「評価額が取れなくても種別は残る」と読める広い書き方をしない——実挙動は上の 2 つで分かれる。
+    /// </para>
+    /// <para>
     /// <b>推定値・代替値で埋めてはならない</b>（#425 / ADR-0025）。とりわけ「現金買付余力」は現金口座では
     /// <b>未決済の売却代金を含む</b>のが通例であり、<b>それこそが GFV を引き起こす当の資金である。
     /// これを分母に据えると GFV 回避ガードが GFV を許可する。</b> 出金可能額も別概念である。
@@ -310,13 +322,22 @@ public sealed class MoomooBrokerAdapter(
         try
         {
             var accountType = await client.GetAccountTypeAsync(cancellationToken).ConfigureAwait(false);
-            return accountType switch
+            if (accountType is not (MoomooAccountType.Cash or MoomooAccountType.Margin))
             {
-                MoomooAccountType.Cash => new BrokerAccountState(AccountType.Cash),
-                MoomooAccountType.Margin => new BrokerAccountState(AccountType.Margin),
                 // 種別不明（TrdAccType_Unknown・未対応の口座種別）。既定へ丸めない。
-                _ => null,
-            };
+                return null;
+            }
+
+            // FR-10, #869, ADR-0041 決定2, IADR-0354: 同じ照会で口座の評価額（基準資金の供給元）も取る。
+            // **応答に評価額が無い（null）ことを理由に口座種別まで捨てない**——種別は種別で確認できており、
+            // 捨てると口座種別依存の統制（ADR-0021 決定4）まで一緒に沈黙する。載せる欄を分けてある。
+            // 🔴 **例外で終わった場合は別である**——下の catch が口座照会全体の失敗として null を返し、
+            // 口座種別も一緒に落ちる（fail-closed。GetAccountTypeAsync の失敗と同じ扱い）。
+            var equityInBase = await client.GetAccountEquityInBaseAsync(cancellationToken).ConfigureAwait(false);
+
+            return new BrokerAccountState(
+                accountType == MoomooAccountType.Cash ? AccountType.Cash : AccountType.Margin,
+                EquityInBase: equityInBase);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

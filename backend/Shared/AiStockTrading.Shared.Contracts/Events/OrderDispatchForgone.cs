@@ -33,4 +33,19 @@ public enum OrderDispatchForgoneReason
     /// 読み替えずに発注しない（fail-closed）。<b>末尾へ追加する</b>（序数 3。メトリクスのタグ・監査 payload の整数が往来する）。
     /// </summary>
     StopLossMethodNotPermitted,
+
+    /// <summary>
+    /// 🔴 FR-10, FR-05, ADR-0016, #864, IADR-0355 決定2: 決済（Close）だが、<b>ブローカーに決済方向の建玉が
+    /// 1 株も無い</b>。台帳の建玉は実在せず（#849 の乖離）、送れば<b>保有 0 からの売り＝裸の新規ショート</b>になる。
+    /// 空売りは方針で禁止であり、決済として通る注文にはショート建玉の規律も空売り統制も効かない。
+    /// <b>末尾へ追加する</b>（序数 4。メトリクスのタグ・監査 payload の整数が往来する）。
+    /// </summary>
+    BrokerPositionAbsent,
+
+    /// <summary>
+    /// 🔴 FR-10, FR-05, ADR-0016, #864, IADR-0355 決定3: 決済（Close）だが、<b>ブローカーの建玉を照会できない
+    /// （null＝不明）</b>。空列（建玉ゼロ）と取り違えず、不明のままでは送らない（fail-closed）。
+    /// 選ばなかった側（不明でも送る）の害は IADR-0355 決定3 に明記した。<b>末尾へ追加する</b>（序数 5）。
+    /// </summary>
+    BrokerPositionsIndeterminate,
 }

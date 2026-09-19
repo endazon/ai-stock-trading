@@ -20,7 +20,7 @@ public class RiskStatusServiceTests
         public InMemoryPauseStore Pause { get; } = new();
         public InMemoryLockoutStore Lockout { get; } = new();
         public InMemoryStageGateStore StageGate { get; }
-        public PortfolioState State { get; init; } = new() { Capital = 100_000m };
+        public PortfolioState State { get; init; } = new() { LedgerEquity = 100_000m };
 
         public Fixture(TradingStage stage = TradingStage.Stage0Verification)
         {
@@ -31,7 +31,7 @@ public class RiskStatusServiceTests
         {
             var builder = new PortfolioSnapshotBuilder(
                 new FakePortfolioStateProvider(State), KillSwitch, Pause,
-                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed());
+                FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
             var svc = new RiskStatusService(
                 builder,
                 new InMemoryRiskSettingsStore(),
@@ -117,7 +117,7 @@ public class RiskStatusServiceTests
         {
             State = new PortfolioState
             {
-                Capital = 100_000m,
+                LedgerEquity = 100_000m,
                 OpenPositionCount = 3,
                 DailyRealizedPnl = -500m,
                 UnrealizedPnl = -1_200m,

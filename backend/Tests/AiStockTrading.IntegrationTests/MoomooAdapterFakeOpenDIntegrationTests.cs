@@ -137,6 +137,61 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         (await adapter.IsOperationalAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
     }
 
+    // T-10-508, T-10-514, FR-10, #869, ADR-0041 決定2, IADR-0354 決定1:
+    // **基準資金（equity）は「応答が USD と名乗っている」ときだけ採る。**
+    //
+    // 🔴 本経路でしか通貨の検証は試験できない（`MoomooBrokerAdapterTests` は `IMoomooTradeClient` を
+    // fake 化するため protobuf を 1 バイトも組まず、通貨の分岐に到達しない）。
+    //
+    // 🔴 **通貨の欠落**を別ケースとして固定する。`Funds.currency` は protobuf の **optional** であり
+    // （required は power / totalAssets / cash / marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つ）、
+    // 欠落を「USD だろう」と読むと、**要求で USD を指定しただけで応答がそれに従った証拠が無いまま**
+    // JPY 建ての数値を USD の統制上限の分母に据え得る（桁が 2 つずれる）。未供給は止める側へ倒す。
+    [Theory]
+    [InlineData("usd", 3_000)]   // 応答が USD と名乗る → 採る
+    [InlineData("jpy", null)]    // 応答が別通貨と名乗る → 採らない
+    [InlineData("unset", null)]  // 🔴 応答が通貨を名乗らない → 採らない（本 Theory の主眼）
+    public async Task 基準資金は応答がUSDと名乗るときだけ採る(string currency, int? expected)
+    {
+        using var opend = new FakeOpenD
+        {
+            EquityInBase = 3_000m,
+            FundsCurrency = currency switch
+            {
+                "usd" => (int)TrdCommon.Currency.Currency_USD,
+                "jpy" => (int)TrdCommon.Currency.Currency_JPY,
+                _ => null,
+            },
+        };
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state.Should().NotBeNull("口座種別は確認できている（評価額の可否で種別まで捨てない）");
+        state!.AccountType.Should().Be(AccountType.Margin);
+        state.EquityInBase.Should().Be(expected is { } e ? e : null);
+    }
+
+    // T-10-515, FR-10, #869, IADR-0354 決定7: **資産純値が 0 以下なら供給しない**（未供給へ倒す）。
+    // 🔴 0 を分母にすると比率上限がすべて 0 になり、平常状態でも `DailyLossLimitReached` が立ち、
+    // 発注審査が**翌営業日まで続くロックアウト**を張る。口座種別は（応答があるので）残る。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task 資産純値が0以下なら基準資金を供給しない(int equity)
+    {
+        using var opend = new FakeOpenD { EquityInBase = equity };
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state.Should().NotBeNull();
+        state!.AccountType.Should().Be(AccountType.Margin);
+        state.EquityInBase.Should().BeNull();
+    }
+
     // #754 陰性対照, FR-05, IADR-0211: OpenD が受け付けないなら**注文は 1 度も送られない**。
     [Fact]
     public async Task 陰性対照_OpenDが応答しないと発注は1度もブローカーへ届かない()
@@ -204,6 +259,23 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         /// <summary>建玉照会（GetPositionList）で US 市場に返す建玉を仕込む。</summary>
         public void Position(string symbol, int quantity, double costPrice, bool isShort) =>
             _position = (symbol, quantity, costPrice, isShort);
+
+        /// <summary>
+        /// FR-10, #869, ADR-0041 決定2, IADR-0354: 口座照会（GetFunds）が返す資産純値（USD）。
+        /// 統制上限の基準資金の供給元である。
+        /// </summary>
+        public decimal EquityInBase { get; set; } = 3_000m;
+
+        /// <summary>
+        /// FR-10, #869, IADR-0354 決定1: 口座照会（GetFunds）の応答が名乗る通貨。
+        /// <para>
+        /// 🔴 <c>null</c> は<b>通貨フィールドを設定しない</b>応答である（`Funds.currency` は protobuf の
+        /// <b>optional</b> であり、required は power / totalAssets / cash / marketVal / frozenCash /
+        /// debtCash / avlWithdrawalCash の 7 つだけ）。**欠落を「USD だろう」と読むと、要求で USD を指定した
+        /// だけで応答がそれに従った証拠が無いまま値を採ることになる。**
+        /// </para>
+        /// </summary>
+        public int? FundsCurrency { get; set; } = (int)TrdCommon.Currency.Currency_USD;
 
         public IMoomooTradeConnection Create()
         {
@@ -372,6 +444,27 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                     .SetS2C(builder.BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_GetPositionList(_handle, serial, response));
+                return serial;
+            }
+
+            // FR-10, #869, ADR-0041 決定2, IADR-0354: 口座の評価額（基準資金の供給元）を返す。
+            public uint GetFunds(TrdGetFunds.Request request)
+            {
+                var serial = ++_serial;
+                var fundsBuilder = TrdCommon.Funds.CreateBuilder()
+                    .SetTotalAssets((double)opend.EquityInBase);
+                // 🔴 null のときは currency を**設定しない**（optional フィールドの欠落を再現する）。
+                if (opend.FundsCurrency is { } currency)
+                {
+                    fundsBuilder = fundsBuilder.SetCurrency(currency);
+                }
+                var funds = fundsBuilder.BuildPartial();
+                var response = TrdGetFunds.Response.CreateBuilder()
+                    .SetRetType(0)
+                    .SetRetMsg(string.Empty)
+                    .SetS2C(TrdGetFunds.S2C.CreateBuilder().SetFunds(funds).BuildPartial())
+                    .BuildPartial();
+                Reply(() => _trdCallback?.OnReply_GetFunds(_handle, serial, response));
                 return serial;
             }
 

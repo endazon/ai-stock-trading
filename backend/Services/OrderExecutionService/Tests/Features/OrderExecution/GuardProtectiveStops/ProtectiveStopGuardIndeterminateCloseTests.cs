@@ -365,6 +365,9 @@ public class ProtectiveStopGuardIndeterminateCloseTests
 
         public Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken ct = default) =>
             Task.FromResult<MoomooAccountType?>(MoomooAccountType.Margin);
+
+        public Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken ct = default) =>
+            Task.FromResult<decimal?>(3_000m);
     }
 
     [Fact]

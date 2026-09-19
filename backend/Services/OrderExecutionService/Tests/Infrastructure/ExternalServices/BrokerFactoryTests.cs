@@ -63,6 +63,9 @@ public class BrokerFactoryTests
         // #375, ADR-0021: 口座種別の照会（本テストでは未使用）。
         public Task<MoomooAccountType?> GetAccountTypeAsync(CancellationToken ct = default) =>
             Task.FromResult<MoomooAccountType?>(MoomooAccountType.Margin);
+
+        public Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken ct = default) =>
+            Task.FromResult<decimal?>(3_000m);
     }
 
     [Fact]
