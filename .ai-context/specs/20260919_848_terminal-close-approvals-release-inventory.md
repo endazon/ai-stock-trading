@@ -596,6 +596,13 @@ B3 で `OrderStatus` へ `Unknown` を足さなかったのは、`OrderStatus` �
   既定（無効）では**人が解決する**」へ直し、runbook に人手の手順を足す。
   **有効化そのものは別 issue（#856）**（実照会プローブは SIMULATE の注文履歴照会に依存し、`NotPlaced` の誤判定は
   二重発注に直結するため、有効化は実機での検証を伴う）。
+  ［2026-09-19 追記 / #856］**#856 が配備側で有効化した**（`deploy/helm/ai-stock-trading/values.yaml` の
+  `Reconciliation__Enabled` / `__UseBrokerProbe` ＝ `true`。アプリの既定は `false` のままなので、上の
+  「既定は `false`」という記述自体は真である）。**ただし解放（`NotPlaced` → 予約の削除）だけは新設の門
+  `Reconciliation__ReleaseOnNotPlaced=false` で閉じてある**ため、自動で片付くのは突合が「発注済み」と
+  確定できたものだけで、`NotPlaced` / `Indeterminate` は据え置かれ**人が解決する**（この点は変わっていない）。
+  門を開けるための実機検証は #856 に残る。詳細は IADR-0362。**以降、本文書で「自動では解決しない」
+  「自動リコンサイルが無効」と書いている箇所は、すべてこの追記を併せて読むこと。**
 - `_error` キューに最後に残る例外は `OrderDispatchReservationConflictException` であり**真因を指さない**
   （初回が `BrokerDispatchIndeterminateException`、再配送が予約の衝突で落ちるため）。
   runbook に「**真因は初回の Error ログ**」と明記する。
@@ -665,6 +672,8 @@ B3 で `OrderStatus` へ `Unknown` を足さなかったのは、`OrderStatus` �
 - **据え置かれた建玉は、予約が解決されるまで逆指値なしのまま残る。** 撃ち直さないことの代償であり、
   「二重決済でショート化しない」を優先した結果である。Critical の通知・巡回ごとの Warning ログ・
   `order_dispatch_reservations` の滞留行で見える。自動リコンサイルが無効のあいだは人が解決する（runbook。有効化は #856）。
+  ［2026-09-19 追記 / #856］配備では突合が有効になった。ただし解放の門は閉じたままなので、
+  「未発注」「判定不能」で据え置かれた分は従来どおり人が解決する（上の「非ブロッキングの受け止め」の追記を参照）。
 - **送信中にプロセスが止まった場合（`OperationCanceledException`）は通知が出ない。** 予約は `Reserved` のまま残るので
   再起動後も撃ち直しはしない（安全側）が、Critical は発行されず、巡回ごとの Warning ログでしか気付けない。
   S1（#820）の決済も同じ形である。
@@ -902,6 +911,8 @@ Expected thrown to be …BrokerDispatchIndeterminateException because 拒否に�
   稼働環境で `-1` かつタイムアウトを示す `retMsg` を実測したら、その時点で分類を見直す。
 - **不明が増える。** これまで偽の `Rejected` で静かに終わっていた返信待ちタイムアウトが、予約の滞留（`Reserved`）と
   Error ログ・`_error` キューとして見えるようになる。自動の突合は既定で無効であり、人が解決する（runbook。有効化は #856）。
+  ［2026-09-19 追記 / #856］アプリ既定は無効のままだが、**配備では有効**である（解放の門だけが閉じている。
+  上の「非ブロッキングの受け止め」の追記を参照）。
   利用者の手仕舞いがこの形で滞留すると、台帳は 30 分の窓の満了まで押さえ続ける（**意図した安全側**。
   確認できた拒否 `-1` は従来どおり即座に解放される）。
 - **発注執行の単発の成行手仕舞い（`CloseUnprotectedPositionAsync`）で送信中にプロセスが止まった場合**は塞いでいない
