@@ -621,9 +621,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // FR-10, #869, ADR-0041 決定2, IADR-0354: 口座の評価額（資産純値・USD）を**呼ばれるたびに照会し直す**
     // （GetAccountTypeAsync と同じ理由——接続時のスナップショットを返すと鮮度が「自分のキャッシュを読んだ時刻」になる）。
     //
-    // **通貨を明示して要求し、応答の通貨も確かめる。** moomoo は口座の基準通貨で返し得るため、
-    // 要求だけで信じると JPY 建ての数値を USD の統制上限の分母に据えることになる（桁が 2 つずれる）。
+    // **通貨を明示して要求し、応答が別通貨を名乗っていないことを確かめる。** moomoo は口座の基準通貨で
+    // 返し得るため、別通貨を名乗る応答を採ると JPY 建ての数値を USD の統制上限の分母に据えることになる
+    // （桁が 2 つずれる）。
     // **買付余力（Power）で代替しない**——信用で 2 倍になり、統制が黙って 2 倍に緩む（ADR-0016 決定6 と同じ論拠）。
+    //
+    // FR-10, #897: 要求と応答の検査が**同じ値**を見るよう 1 つの定数から組む（2 か所に書くと黙って割れる）。
+    private const int RequestedCurrency = (int)TrdCommon.Currency.Currency_USD;
+
     public async Task<decimal?> GetAccountEquityInBaseAsync(CancellationToken cancellationToken = default)
     {
         await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
@@ -631,7 +636,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         var c2s = TrdGetFunds.C2S.CreateBuilder()
             .SetHeader(BuildHeader((int)TrdCommon.TrdMarket.TrdMarket_US))
             .SetRefreshCache(true)
-            .SetCurrency((int)TrdCommon.Currency.Currency_USD)
+            .SetCurrency(RequestedCurrency)
             .Build();
         var req = TrdGetFunds.Request.CreateBuilder().SetC2S(c2s).Build();
         var rsp = (TrdGetFunds.Response)await SendAsync(() => _connection.GetFunds(req), cancellationToken)
@@ -645,19 +650,35 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             return null;
         }
 
-        // 🔴 #869, IADR-0354 決定1（2026-09-19 是正）: **通貨が欠けている応答も採らない。**
+        // 🔴 #869, #897, IADR-0354 決定1（2026-09-19 再是正）: **応答が「別通貨」を明示したときだけ採らない。**
+        //
         // `Funds.currency` は protobuf の **optional** フィールドである（required は power / totalAssets /
-        // cash / marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つだけ）。
-        // 従前は `HasCurrency && != USD` と書いており、**通貨が未設定なら検証せずに値を採っていた** ——
-        // 要求で USD を指定していても、応答がそれに従った証拠が無いまま JPY 建ての数値を USD の分母に
-        // 据え得る（桁が 2 つずれる）。本系の作法どおり**未供給は止める側へ倒す**。
-        if (!funds.HasCurrency || funds.Currency != (int)TrdCommon.Currency.Currency_USD)
+        // cash / marketVal / frozenCash / debtCash / avlWithdrawalCash の 7 つだけ。SDK 10.8.6808 の
+        // ディスクリプタをリフレクションで実測）。**実機の OpenD はこの欄を載せてこない。**
+        // #874 が入れた `!HasCurrency || != USD` は、実機に対して**常に成立**して基準資金を一度も供給せず、
+        // 新規建てを丸ごと止めていた（稼働環境で実測・#897）。
+        //
+        // 要求は `RequestedCurrency`（USD）を明示しており、moomoo の API 契約では応答はその通貨で返る。
+        // 🔴 **応答が黙っていることは「別の通貨で返した」を意味しない** —— 要求した通貨を前提として採る。
+        // 🔴 **これは近似である**（応答に「要求に従った」証拠は無く、moomoo の契約を信じている）。
+        // 近似で採ったことは毎回ログへ残す。**水準は Information である** —— 実機では毎巡回（既定 5 分）
+        // 必ず通るため、Warning にすると警告が常時鳴って本物の警告が埋もれる（#874 が作った状態がそれ）。
+        //
+        // 応答から通貨を確証できる別の欄は無い（#897 で走査済み。`AssetCategory` は要求側にしか無く、
+        // `cashInfoList` は通貨ごとの現金の**内訳**であって換算後の `TotalAssets` の建値を語らない）。
+        if (!funds.HasCurrency)
         {
+            _logger.LogInformation(
+                "口座照会の応答が通貨を明示していないため、要求した通貨（currency={RequestedCurrency}・USD）を"
+                    + "前提として基準資金を採ります（近似）。",
+                RequestedCurrency);
+        }
+        else if (funds.Currency != RequestedCurrency)
+        {
+            // 🔴 **この守りは撤去しない。** 口座の通貨設定が変わる・別市場の口座を足す、で実機でも起こり得る。
             _logger.LogWarning(
-                "口座照会の応答通貨を USD と確認できません hasCurrency={HasCurrency} currency={Currency}。"
-                    + "基準資金は未供給として扱います。",
-                funds.HasCurrency,
-                funds.HasCurrency ? funds.Currency : (int?)null);
+                "口座照会の応答通貨が USD ではありません currency={Currency}。基準資金は未供給として扱います。",
+                funds.Currency);
             return null;
         }
 
