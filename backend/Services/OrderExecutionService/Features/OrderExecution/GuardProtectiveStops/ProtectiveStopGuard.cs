@@ -20,6 +20,9 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //     成行手仕舞いは予約 → 発注 → 確定の 3 相（IADR-0057）で送る。予約を解放してよいのは
 //     BrokerUnavailableException（確実に未発注）だけであり、それ以外の失敗は予約を Reserved のまま残して
 //     **次の巡回で撃ち直さない**（撃ち直すと巡回ごとに全数量の成行が 1 本ずつ増える＝二重決済でショート化）。
+//   - 🔴 #848, IADR-0117（2026-09-19 追記・改定 9）: **据え置きを無音にしない。** 予約だけが残っている成行手仕舞いは、
+//     このプロセスが未通知のとき（再起動後の最初の巡回・送信中／発行前にプロセスが止まった後）と、前回の通知から
+//     1 時間たったときに CloseDispatchIndeterminate（Critical・CloseIntent つき）を発行し直す。成行も逆指値も送らない。
 //
 // 発行（イベントの Publish）は Worker 層（ProtectiveStopGuardService）が担う。
 public sealed class ProtectiveStopGuard(
@@ -29,9 +32,15 @@ public sealed class ProtectiveStopGuard(
     IExecutedOrderStore store,
     IOrderReservationStore reservations,
     IClock clock,
-    ILogger<ProtectiveStopGuard>? logger = null)
+    ILogger<ProtectiveStopGuard>? logger = null,
+    HeldCloseNotificationTracker? heldCloseNotifications = null)
 {
     private readonly ILogger _logger = logger ?? NullLogger<ProtectiveStopGuard>.Instance;
+
+    // #848, IADR-0117（改定 9）: 据え置き中の成行手仕舞いを「このプロセスがいつ通知したか」の記憶。本番は singleton を
+    // 渡す（ガード自体は巡回ごとに作られる scoped）。省略時は本インスタンスの寿命で持つ（単体テスト用）。
+    private readonly HeldCloseNotificationTracker _heldCloseNotifications =
+        heldCloseNotifications ?? new HeldCloseNotificationTracker();
 
     public async Task<ProtectiveStopGuardResult> RunOnceAsync(int batchSize, CancellationToken cancellationToken = default)
     {
@@ -152,10 +161,14 @@ public sealed class ProtectiveStopGuard(
         // (b) 予約だけがある（記録なし）: 以前の巡回で成行手仕舞いを**送ったかもしれない**。
         //     逆指値の再発注も成行も行わず据え置く（不明を「未発注」と取り違えない）。
         //     逆指値より前に見る理由: 成行が生きているかもしれない建玉へ新しい逆指値を張ると、成行の約定後に
-        //     **建玉なき逆指値**が残り、発火すれば反対建玉になる。Critical の通知は不明になった巡回で発行済み。
+        //     **建玉なき逆指値**が残り、発火すれば反対建玉になる。
+        //     🔴 改定 9: ここは**無音にしない**。「Critical は不明になった巡回で発行済み」とは限らない——
+        //     送信中にプロセスが止まった（OperationCanceledException）・巡回の結果を発行する前に止まった場合、
+        //     予約だけが残ってイベントは 1 通も出ておらず、**取引台帳も一切押さえていない**。
         if (reservations.Find(closeDecisionId) is not null)
         {
             LogHeldClose(stop, closeDecisionId);
+            RenotifyHeldCloseIfDue(stop, quantity, closeDecisionId, closeIntent, events);
             return Outcome.Unknown;
         }
 
@@ -263,6 +276,7 @@ public sealed class ProtectiveStopGuard(
         ProtectiveStopOrder stop, int quantity, Guid closeDecisionId, OrderIntent closeIntent, List<object> events)
     {
         MarkCompleted(stop);
+        _heldCloseNotifications.Forget(closeDecisionId); // 解決した。以後は再通知しない。
         events.Add(new ProtectiveStopCoverageLost(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.PositionClosed,
@@ -273,8 +287,9 @@ public sealed class ProtectiveStopGuard(
     // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いを送ったが結果を確認できない。
     //   - 予約を**解放も確定もしない**（Reserved のまま。次の巡回は入口の (b) で据え置き、同じ成行を重ねない）。
     //   - 結果を**保存しない**（実在しない注文 ID の記録を作らない）。記録は Active のまま（完了を主張しない）。
-    //   - **無音にしない**: CloseDispatchIndeterminate を 1 回発行する（Critical）。CloseIntent を運ぶので、
-    //     取引台帳は生きているかもしれない成行を処理中の決済として押さえる。
+    //   - **無音にしない**: CloseDispatchIndeterminate を発行する（Critical）。CloseIntent を運ぶので、
+    //     取引台帳は生きているかもしれない成行を処理中の決済として押さえる。据え置きが続くあいだは
+    //     入口の (b) が 1 時間ごとに発行し直す（改定 9。30 秒の巡回ごとには重ねない）。
     // 滞留した予約は、自動リコンサイル（IADR-0074 / IADR-0092）が**有効なら**解決する。既定は無効であり、
     // その場合は人が証券会社の画面で確認して解決する（docs/operations/broker-execution-paths-runbook.md）。
     private Outcome HoldIndeterminateClose(
@@ -287,11 +302,31 @@ public sealed class ProtectiveStopGuard(
             + "EntryDecisionId={EntryDecisionId} CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",
             stop.EntryDecisionId, closeDecisionId, stop.Symbol, quantity);
 
+        AddHeldCloseNotification(stop, quantity, closeDecisionId, closeIntent, events);
+        return Outcome.Unknown;
+    }
+
+    // 🔴 #848, IADR-0117（2026-09-19 追記・改定 9）: 据え置き（予約あり・記録なし）が続いている。次のどちらかなら発行し直す。
+    //   - このプロセスが未通知: 再起動後の最初の巡回。送信中にプロセスが止まった場合はイベントが 1 通も出ておらず、
+    //     **台帳の押さえ（CloseIntent）も無い**。発行前に止まった場合も同じ。ここで初めて押さえさせる。
+    //   - 前回の通知から 1 時間: 通知を 1 回見逃すと、逆指値なしの建玉が無期限に残る。
+    // 発行するのは通知と台帳への結線だけであり、**成行も逆指値も送らない**。
+    private void RenotifyHeldCloseIfDue(
+        ProtectiveStopOrder stop, int quantity, Guid closeDecisionId, OrderIntent closeIntent, List<object> events)
+    {
+        if (_heldCloseNotifications.IsDue(closeDecisionId, clock.UtcNow))
+            AddHeldCloseNotification(stop, quantity, closeDecisionId, closeIntent, events);
+    }
+
+    private void AddHeldCloseNotification(
+        ProtectiveStopOrder stop, int quantity, Guid closeDecisionId, OrderIntent closeIntent, List<object> events)
+    {
+        var now = clock.UtcNow;
         events.Add(new ProtectiveStopCoverageLost(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseDispatchIndeterminate,
-            quantity, closeDecisionId, closeIntent, clock.UtcNow));
-        return Outcome.Unknown;
+            quantity, closeDecisionId, closeIntent, now));
+        _heldCloseNotifications.MarkNotified(closeDecisionId, now);
     }
 
     private void LogHeldClose(ProtectiveStopOrder stop, Guid closeDecisionId) =>

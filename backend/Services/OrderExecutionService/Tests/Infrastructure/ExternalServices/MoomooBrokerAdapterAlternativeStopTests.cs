@@ -129,20 +129,22 @@ public class MoomooBrokerAdapterAlternativeStopTests
     }
 
     // 🔴 #821 の目的そのもの: 拒否理由（retType / retMsg）を戻り値へ載せること。
+    // T-10-450, #848, IADR-0117（改定 8）: 刺激を retType=1（SDK に存在しない値）から実測値の -1（Failed）へ直した。
+    // 「拒否」と確認できるのは -1 だけであり、それ以外は届いたか不明として伝播する。
     [Fact]
     public async Task 代替注文種別の拒否はretTypeとretMsgを戻り値へ載せる()
     {
         var client = new FakeClient
         {
             ThrowOnPlace = () => new MoomooTradeRequestException(
-                "PlaceOrder", 1, "Paper trading does not support StopLimit order"),
+                "PlaceOrder", MoomooRetType.Failed, "Paper trading does not support StopLimit order"),
         };
 
         var placement = await Adapter(client, AlternativeProtectiveOrderType.StopLimit)
             .PlaceAlternativeStopOrderAsync(CloseIntent(), 950m, 1_000m, Guid.NewGuid());
 
         placement.Order.Status.Should().Be(OrderStatus.Rejected, "拒否は終端 Rejected へ倒す（従来どおり）");
-        placement.RejectReasonCode.Should().Be(1);
+        placement.RejectReasonCode.Should().Be(-1);
         placement.RejectReasonMessage.Should().Be("Paper trading does not support StopLimit order");
     }
 

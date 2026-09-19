@@ -166,17 +166,21 @@ public class MoomooBrokerAdapterTests
 
     // 🔴 T-10-408（是正で**変えてはいけない**側）: **確認できた非受理は従来どおり終端 Rejected** である。
     // 発注拒否での在庫解放は #848 の射程内であり、ここを外すと 2 つ目の恒久ロックを作る。
+    // 🔴 T-10-450, IADR-0117（改定 8）: 刺激を retType=1 から **-1（Failed）**へ直した。1 は SDK の列挙に存在しない値で、
+    // 「確認できた非受理」が成り立つのは -1 だけである（-100 / -200 / -400 / -500 と未定義の値は「返事を読めなかった」
+    // であり、MoomooPlaceOrderRetTypeClassificationTests が逆向きに固定する）。
     [Fact]
     public async Task 証券会社が非受理を返したときは従来どおり終端_Rejected()
     {
         var client = new FakeClient
         {
-            ThrowOnPlace = () => new MoomooTradeRequestException("PlaceOrder", 1, "Insufficient buying power"),
+            ThrowOnPlace = () => new MoomooTradeRequestException(
+                "PlaceOrder", MoomooRetType.Failed, "Insufficient buying power"),
         };
 
         var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(Intent());
 
-        order.Status.Should().Be(OrderStatus.Rejected, "retType != 0 は『証券会社が受理しなかった』と確認できている");
+        order.Status.Should().Be(OrderStatus.Rejected, "retType == -1 は『証券会社が受理しなかった』と確認できている");
         order.CompletedAt.Should().NotBeNull("終端である");
     }
 

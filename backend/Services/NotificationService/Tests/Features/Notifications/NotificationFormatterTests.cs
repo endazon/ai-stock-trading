@@ -320,6 +320,9 @@ public class NotificationFormatterTests
             .And.Contain(closeDecisionId.ToString());
         msg.Content.Should().NotContain("解消にも失敗", "失敗と読めると手で成行を重ねてしまう");
         msg.Content.Should().NotContain("手仕舞いました", "手仕舞い済みも主張しない");
+        // T-10-451, IADR-0117（改定 9）: 据え置きが続くあいだ約 1 時間ごとに再通知する。
+        // 再通知を「もう 1 本送った」と読ませない（同じ CloseDecisionId＝同じ 1 本の成行）。
+        msg.Content.Should().Contain("約 1 時間ごと").And.Contain("新しい発注ではありません");
     }
 
     [Fact]

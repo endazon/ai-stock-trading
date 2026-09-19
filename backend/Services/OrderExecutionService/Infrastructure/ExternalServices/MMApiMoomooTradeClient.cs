@@ -689,6 +689,11 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // #821, IADR-0347: 非成功は **retType / retMsg を保つ例外**で投げる（従来のメッセージ文字列は不変。
     // MoomooTradeRequestException は InvalidOperationException 派生であり、既存の捕捉は 1 行も変わらない）。
     // S3（代替注文種別）は「拒否理由を監査台帳へ残すこと」自体が目的であり、文字列へ畳むと取り出せない。
+    //
+    // 🔴 #848, IADR-0117（2026-09-19 追記・改定 8）: **ここで投げる例外は「拒否」を意味しない。**
+    // retType は OpenD の返事（-1＝Failed）だけでなく、SDK がクライアント側で合成する「返事を読めなかった」
+    //（-100＝送信済み要求の 12 秒打ち切り／-500＝届いた応答の復号・パース失敗）も運ぶ。本メソッドは分類しない
+    //（照会・取消も通るため）。**発注の分類はアダプタが MoomooTradeRequestException.IsConfirmedFailure で行う。**
     private static void EnsureSucceeded(int retType, string retMsg, string op)
     {
         if (retType != 0) // RetType_Succeed=0

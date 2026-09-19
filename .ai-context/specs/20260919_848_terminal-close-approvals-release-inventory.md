@@ -371,6 +371,10 @@ B2 は**照会側**の写像（`MoomooOrderState.Unknown` を新設して解消�
   誤っていたのは包括 catch の 1 つだけである。**発注前検証での棄却**（確実に未送信）と
   **`MoomooTradeRequestException`**（`retType != 0`＝**確認できた**非受理）は `Rejected` のままとする
   ——「確認できた拒否」による在庫解放は #848 の射程内であり、外すと 2 つ目の恒久ロックを作る。
+  🔴 **［2026-09-19 追記 / #848・B5］この箇条の「`retType != 0`＝確認できた非受理」は誤りだった**（4 巡目監査）。
+  確認できた非受理は **`retType == -1`（`Failed`）だけ**である。`-100`（TimeOut）/ `-200`（DisConnect）/
+  `-400`（Unknown）/ `-500`（Invalid）は**送信後に返事が読めなかった**ことを SDK が応答の形に包んだ値で、
+  B3 と同じ「届いたか不明」である。**誤っていた箇所は 1 つではなく 2 つだった。** 是正は末尾の B5 の節。
 
 > 🔴 **これは「例外を握り潰す fail-safe」が反転していた実例である。** 包括 catch のコメントは
 > 「フローを止めない・実弾防止の安全側」と書いていた。**在庫解放の引き金が `Rejected` になった瞬間、
@@ -394,6 +398,7 @@ B2 は**照会側**の写像（`MoomooOrderState.Unknown` を新設して解消�
 9. **同じとき、「建玉は生じていない」とも仮定しない。** エントリーでも終端失敗として扱わず、
    予約を `Reserved` のまま据え置いて突合の解決に委ねる（偽の注文 ID を残さない）。
    **変えない側**: 発注前棄却と確認できた非受理は従来どおり `Rejected`、確実に未発注は従来どおり見送り。
+   ［2026-09-19 追記 / #848・B5］「確認できた非受理」は `retType == -1` に限る（受け入れ基準 13・14。末尾の B5 の節）。
 
 ### 追加するテスト（`T-10-408` から採番。407 以下は本 PR で使用済み）
 
@@ -520,6 +525,8 @@ B3 が「届いたか不明」を**例外**にした瞬間、この catch の意
 5. **無音にしない。** 不明になった巡回で Critical の通知を 1 回出す（上表）。以後の据え置きは巡回のたびに
    Warning ログ（`DecisionId` つき）と件数サマリ（`Unknown`）に現れる。**30 秒ごとに Critical を重ねない**
    （IADR-0211 決定 5 が通知の重みを決めたのと同じ判断。本当に止まる事象の通知を埋もれさせない）。
+   ［2026-09-19 追記 / #848・4 巡目監査］**「1 回」は改めた。** 据え置きが続くあいだ 1 時間ごとに、再起動後は最初の巡回で
+   出し直す（30 秒ごとに重ねない判断は維持）。末尾の B5 の節「非ブロッキングの受け止め」1〜3。
 
 ### なぜ `ProtectiveStopRemediation` へ値を足すのか（`OrderStatus` へは足さなかったのに）
 
@@ -603,7 +610,8 @@ B3 で `OrderStatus` へ `Unknown` を足さなかったのは、`OrderStatus` �
 ### 追加する受け入れ基準
 
 10. **保護逆指値ガードの成行手仕舞いは、届いたか不明のとき撃ち直さない。** 2 巡回・3 巡回まわしても
-    成行の送信回数は **1 回のまま**であり、逆指値の再発注も重ねない。Critical の通知が 1 回出る。
+    成行の送信回数は **1 回のまま**であり、逆指値の再発注も重ねない。Critical の通知が 1 回出る
+    （［2026-09-19 追記 / #848］3 巡回＝1 時間未満のあいだの話である。据え置きが続いたときは受け入れ基準 15・16）。
 11. **確実に未発注（接続確立の失敗）のときは、従来どおり次の巡回で撃ち直せる**（変えない側）。
 12. **不明な成行手仕舞いは、取引台帳が処理中の決済として押さえる**（`CloseIntent` を運ぶ）。
 
@@ -660,6 +668,247 @@ B3 で `OrderStatus` へ `Unknown` を足さなかったのは、`OrderStatus` �
 - **送信中にプロセスが止まった場合（`OperationCanceledException`）は通知が出ない。** 予約は `Reserved` のまま残るので
   再起動後も撃ち直しはしない（安全側）が、Critical は発行されず、巡回ごとの Warning ログでしか気付けない。
   S1（#820）の決済も同じ形である。
+  ［2026-09-19 追記 / #848・4 巡目監査］🔴 **この項は被害を小さく書いていた。** 出ないのは Critical だけではなく、
+  **`CloseIntent` も一度も発行されないので取引台帳が一切押さえない**（利用者の手仕舞いが 30 分待たずに通る）。
+  **常駐ガードについては塞いだ**（再起動後の最初の巡回が入口で発行する。末尾の B5 の節）。
+  発注執行の単発の成行手仕舞い（`CloseUnprotectedPositionAsync`）には巡回が無く、同じ穴が**残る**。
 - **不明の成行を台帳が押さえるのは 30 分の窓のあいだだけ**（IADR-0117 決定 3 の窓）。窓の満了後は利用者の手仕舞い要求が通る。
   窓は「終端が届かない承認による恒久ロックを防ぐ」ための意図した受け皿であり、本追記では変えない。
 - 逆指値レグの不明（#853）・成行への確認できた拒否（#857）は本追記の射程外（どちらも本 PR の前後で同一）。
+
+---
+
+## ［2026-09-19 追記 / #848］監査ブロッキング B5 の是正（4 巡目・PR #851 head `ff36cd9c` に対する指摘）
+
+フェーズ末監査の 4 巡目が**ブロッキング 1 件（B5）**を出した。B1〜B4 の是正は確認済み。
+B5 は **B3 の節が「変えない側」として残した分岐そのもの**であり、B2（OpenD の注文状態 `4`＝TIMEOUT を不明へ分けた）と
+**同じ基準で扱うべきだった穴**である。
+
+### B5: 発注応答の `retType` の「不明」系の値が `Rejected` に畳まれている
+
+**指摘（実測）**: `MMApiMoomooTradeClient.EnsureSucceeded` は `retType != 0` を**すべて**
+`MoomooTradeRequestException` にし、`MoomooBrokerAdapter.PlaceWithRejectionDetailAsync` がそれを
+`Terminal(Rejected)` として返す。監査が SDK の列挙を反射で実測した結果:
+
+```
+Moomoo.OpenApi.Pb.Common+RetType: Succeed=0 Invalid=-500 Unknown=-400 DisConnect=-200 TimeOut=-100 Failed=-1
+```
+
+監査の実測（実アダプタ＋`OrderExecutionAppService` に利用者の Close 承認を流した）:
+
+```
+retType=-100/-400/-200/-1: OrderExecuted.Status=Rejected orderId=<偽 32hex> reservation=Completed
+```
+
+> 🔴 **上の B3 の節（「変えない側」の箇条と受け入れ基準 9）は `retType != 0`＝「確認できた非受理」と断定していた。事実と異なる。**
+> `retType` は「証券会社が答えた拒否」だけを運ぶ値ではない。**`-1` 以外は『返事が読めなかった』を SDK が応答の形に包んだもの**である（下の実測）。
+> 誤りの形は B2・B3・B4 と同じで、**「変えない側」と書く前に、その値域を実測しなかった**ことである。
+
+**帰結は B3 と同一**: Close なら `OrderExecuted(Rejected)` が `MarkTerminal` に届いて在庫が解放され、再要求が通る
+（注文が実際には届いていれば**二重決済でショート化**）。Open なら「終端失敗＝建玉は生じない」と読まれて保護レグを張らない
+（届いていれば**無保護の建玉**）。
+
+### `retType` の値はどこで作られるのか（SDK の逆コンパイルで実測・2026-09-19）
+
+`moomoo-api 10.8.6808`（`lib/netcoreapp2.1/MMAPI4Net.dll`）を `ilspycmd` で逆コンパイルして読んだ。
+
+| 値 | 列挙名 | 作る場所（実測） | 送信は済んでいるか | 分類 |
+| --- | --- | --- | --- | --- |
+| `0` | `Succeed` | OpenD の応答 | 済 | 成功 |
+| `-1` | `Failed` | **OpenD の応答**（`retMsg` に理由文が入る） | 済 | **確認できた非受理** → `Rejected`（従来どおり） |
+| `-100` | `TimeOut` | 🔴 **SDK がクライアント側で合成する**。`MMAPI_Conn` が送信済み要求を `sentTime` から **12,000 ms** で打ち切り、`HandleReplyPacket(ReqReplyType.Timeout, …)` → `MMAPI_Trd.OnReply` が `TrdPlaceOrder.Response.CreateBuilder().SetRetType((int)replyType)` で**応答オブジェクトを自前で組み立てて** `OnReply_PlaceOrder` へ渡す | **済**（`sentProtoMap` に載るのは送信後） | **届いたか不明** |
+| `-200` | `DisConnect` | SDK の `ReqReplyType` に定義がある（応答待ち中の切断）。**本バージョンの `MMAPI_Conn` が発注応答へ合成している箇所は見つからなかった**が、`MMAPI_Trd.OnReply` は `SvrReply` 以外の値をそのまま `retType` へ写す。OpenD 自身が返す可能性も否定できない | 済（応答として届く以上、要求は送信後） | **届いたか不明** |
+| `-400` | `Unknown` | 同上（「結果未知」） | 済 | **届いたか不明** |
+| `-500` | `Invalid` | 🔴 **SDK がクライアント側で合成する**。①応答本文の復号に失敗（`MMAPI_Conn` の受信ループ `catch → reqReplyType = ReqReplyType.Invalid`）、②`TrdPlaceOrder.Response.ParseFrom(data)` が `InvalidProtocolBufferException`（`SetRetType(-500)`） | **済**（**サーバーの返事は届いているが読めなかった**） | **届いたか不明** |
+| その他 | （未定義） | — | 不明 | **届いたか不明**（B2 の「知らないコードは Unknown へ」と同じ規律） |
+
+🔴 **`-100` は周辺事象ではなく、既定構成での「返信待ちタイムアウト」の本線である。**
+本実装の返信待ち（`Broker:Moomoo:OpenD:ReplyTimeoutSeconds`）の既定は **15 秒**、SDK の打ち切りは **12 秒**である。
+したがって既定構成では、B3 が「代表例」として塞いだ `SendAsync` の `TimeoutException`（15 秒）より**先に**、
+SDK が `retType=-100` の応答を返す。**B3 の是正は、既定構成の返信待ちタイムアウトを塞げていなかった**
+（塞げていたのは、返信待ちを 12 秒未満に構成した場合と、SDK の外で例外が起きた場合だけである）。
+
+#### `Invalid(-500)` をどちらへ入れたか —— **「届いたか不明」の側**
+
+依頼は「送信前のパラメータ検証で弾かれた＝確実に未発注と言えるか」を確かめて決めよ、であった。**言えない。**
+列挙名（と proto の注釈「包内容非法」）は「要求が不正で弾かれた」と読めるが、**SDK の実装はそう使っていない**。
+`-500` が作られるのは上表のとおり**応答の復号・パースに失敗したとき**であり、どちらも**要求は送信済みで、
+サーバーの返事が届いた後**である。注文が受理された応答を読み損ねた場合もここへ落ちる。
+仮に OpenD 自身が要求の不正を `-500` で返すことがあるとしても、受け手は SDK 合成の `-500` と区別できない。
+**区別できない以上、安全側（不明）へ倒す。**
+
+### 是正（決定 2 の補い・**発注応答の写像**で直す。B2 は注文状態の写像、B3 は例外の写像だった）
+
+- **確認できた非受理は `retType == -1`（`Failed`）だけ**とする。値と述語は SDK 非依存の
+  `MoomooRetType`（`IMoomooTradeClient.cs`）に置き、`MoomooTradeRequestException.IsConfirmedFailure` で読む。
+  値が SDK の列挙と一致することはテストで固定する（SDK 更新で値がずれたら落ちる）。
+- `MoomooBrokerAdapter.PlaceWithRejectionDetailAsync` の
+  `catch (MoomooTradeRequestException ex)` に **`when (ex.IsConfirmedFailure)`** を付ける。
+  **それ以外の `retType` は次の包括 catch（B3 で作った「届いたか不明」の口）へそのまま落ち**、
+  `BrokerDispatchIndeterminateException` で伝播する。呼び出し側（`ExecuteAsync`／ガード／
+  `CloseUnprotectedPositionAsync`／保護レグ）は B3・B4 で既に正しく受けるので**変更しない**。
+  例外メッセージは `retType` / `retMsg` を含む（S3 の試行の記録に理由が残る）。
+- **`EnsureSucceeded` 自体は変えない。** 照会・取消も同じ関数を通るが、どちらも失敗を「不明／まだ生きている」側へ
+  読む（下の走査）。分類が要るのは**発注だけ**であり、発注の分類点はアダプタ 1 か所にある。
+
+**回帰させない 2 件（稼働環境で実測済みの確認できた拒否。どちらも `retType=-1`）**:
+
+| 実測 | 記録 |
+| --- | --- |
+| `retType=-1 The precision of Price in Place Order does not meet the specification.` | #844 |
+| `moomoo PlaceOrder が失敗しました（retType=-1）: Paper trading does not support Stop order.` | #809 の本文（2026-09-16 14:43Z のログ） |
+
+### 走査（B5 と同じ穴が他に無いか。規則 9・10）
+
+走査（2026-09-19・`git rev-parse --is-shallow-repository` ＝ `false`）:
+
+- 軸 1（**誤りの側の語**）: `grep -rn "retType != 0\|RetType != 0" backend docs .ai-context`
+- 軸 2: `grep -rn "確認できた非受理\|確認できた\*\*非受理" backend docs .ai-context`
+- 軸 3: `grep -rn "証券会社が受理しなかった\|OpenD が非成功\|ブローカー応答の拒否" backend docs .ai-context`
+- 軸 4: `grep -rn "MoomooTradeRequestException" backend --include=*.cs`（型を捕まえ得る全 catch・全生成箇所）
+- 軸 5: `grep -n "EnsureSucceeded" MMApiMoomooTradeClient.cs`（同じ関数を通る全操作）
+
+| 箇所 | 扱い |
+| --- | --- |
+| `Infrastructure/ExternalServices/IMoomooTradeClient.cs` | **変更**（`MoomooRetType` を追加・例外に `IsConfirmedFailure`・「非成功＝拒否」と読める注釈を是正） |
+| `Infrastructure/ExternalServices/MoomooBrokerAdapter.cs` | **変更**（`when (ex.IsConfirmedFailure)`・注釈・ログ文面） |
+| `Infrastructure/ExternalServices/MMApiMoomooTradeClient.cs` | **変更**（`EnsureSucceeded` の注釈だけ。「非成功＝拒否ではない」と SDK の 12 秒打ち切りを書く。ロジックは不変） |
+| `Shared.Contracts/Ports/BrokerDispatchIndeterminateException.cs` | **変更**（契約の注釈「OpenD が retType != 0 を返した」は対象外、が誤りになった） |
+| `Tests/.../MoomooBrokerAdapterTests.cs` `証券会社が非受理を返したときは…` | **変更**（刺激が `retType=1`＝**SDK に存在しない値**だった。実測値 `-1` へ直す。**弱めていない**——固定したいのは「確認できた非受理は `Rejected`」であり、それが成り立つ値は `-1` だけである） |
+| `Tests/.../MoomooBrokerAdapterAlternativeStopTests.cs` `代替注文種別の拒否は…` | **変更**（同上。`1` → `-1`） |
+| `Tests/.../ProtectiveStopGuardIndeterminateCloseTests.cs` の `-1` | 変更なし（既に実測値） |
+| `GetOrderList` / `GetHistoryOrderList` / `GetPositionList` / `GetAccList`（照会） | 変更なし —— 例外は `GetOrderAsync`＝`null`（照会不能）・`GetPositionsAsync`＝`null`（不明）・プローブ＝`Indeterminate` へ落ちる。**どれも「不明」の側**であり、`-100` でも `-1` でも向きは同じ |
+| `CancelOrder`（取消） | 変更なし —— 例外は呼び出し側で「取消できなかった＝**注文はまだ生きている**」と読まれる（ガードは次の巡回で再試行・建玉解消は照会へ進む・訂正 API はエラーを返し `OrderCancelled` を発行しない）。**在庫を解放する向きへは倒れない** |
+| `BacktestService` の `retType != 0`（ヒストリカル K 線） | 対象外 —— 発注ではなく、失敗は「その銘柄を欠測」へ落ちる |
+| `.ai-context/adr/IADR-0117` 改定 6 の「変えない側」・`IADR-0211` の「現在 2 事象」・`IADR-0210` の追記・各索引行 | **変更**（日付つき追記で訂正。IADR-0117 は改定 8） |
+| `docs/tests/FR-10_risk-controls-tests.md` の T-10-303 / T-10-363 / T-10-408 / T-10-409 | **変更**（「非成功は終端拒否」を「**確認できた**非成功は」へ。「Critical は 1 回だけ」を是正。T-10-450 / T-10-451 を追加） |
+| `docs/operations/broker-execution-paths-runbook.md` | **変更**（ログ文面の表・非ブロッキング 1・5） |
+| PR #851 本文の「B3 で変えていない側」 | **訂正**する |
+
+### 非ブロッキングの受け止め（4 巡目。無音の失敗に当たるものを本 PR で塞ぐ）
+
+1. **Critical が 1 回きり**（B4 の是正 5 が「30 秒ごとに重ねない」を「1 回だけ」にしていた）。
+   通知を見逃すと逆指値なしの建玉が無期限に残る。`None` は巡回ごとに Critical を出すので扱いが**非対称**だった。
+   → **据え置きが続くあいだ、1 時間ごとに `CloseDispatchIndeterminate` を再発行する**（間隔は定数。構成キーは足さない）。
+   台帳の `AppendApproval` は `DecisionId` で冪等なので、再発行しても二重に押さえない（**窓も延びない**——最初の承認時刻のまま）。
+   通知の文面に「予約が解決されるまで約 1 時間ごとに再通知する・同じ `CloseDecisionId` は同じ 1 本の成行」を足す
+   （再通知を「もう 1 本送った」と読ませない）。
+2. **送信中にプロセスが止まった場合**（`OperationCanceledException`）。監査の実測では再起動後のイベントが 0 件で、
+   Critical が出ないだけでなく **`CloseIntent` も一度も発行されず、台帳が一切押さえない**。
+   → **「予約だけある」分岐（入口の (b)）へ入った巡回で、このプロセスがまだ通知していなければイベントを発行する。**
+   「通知したか」は**プロセス内の記憶**（`HeldCloseNotificationTracker`・singleton）で持つ。再起動で消えるので、
+   **再起動後の最初の巡回が必ず再発行する**（永続化しないことが、そのまま「再起動後に塞ぐ」仕組みになる）。
+3. **発行の欠落**（巡回の結果を受け取ってから `PublishAsync` するまでのあいだに落ちる）。
+   → **2 と同じ仕組みで塞がる。** プロセスが落ちれば記憶が消え、再起動後の最初の巡回が入口で再発行する。
+   プロセスが落ちずに `PublishAsync` だけが失敗した場合は、`ProtectiveStopGuardService` が**未発行分の記憶を消してから**
+   例外を投げ直す（次の巡回＝30 秒後に再発行される）。配送は at-least-once になるが、受け側は台帳＝冪等・
+   通知と監査＝重複しても害が無いので成立する。
+4. **#853 の本文は「孤立」しか書いていない**が、実測では**届いたか不明の逆指値を巡回ごとに送り直している**
+   （3 巡回で `stopSends` 1→2→3。develop でも同じ挙動）。→ **#853 へコメントで追記**する。**本 PR では直さない**
+   （B5 の是正で `retType=-100` の逆指値も「不明」になるが、ガードの逆指値の catch は B3 の前後と同じ分岐へ落ちるので
+   挙動は変わらない。成行が不明のあいだは入口の (b) が逆指値も止める）。
+5. **runbook の「建玉突合が乖離として報告する」**は、稼働 PoC で突合が働いていることを確かめていない記述だった。
+   → 条件つきへ直す（コードの既定は有効だが、実環境で乖離の報告が出ることは未確認。**突合に頼らず証券会社の画面で確かめる**）。
+   同じ断定は本仕様書の B3 の残余リスク（「建玉突合（IADR-0118）が乖離として報告する経路は残る」）と
+   IADR-0117 の索引行にもある（`grep -rn "乖離として報告" docs .ai-context` で引いた）。どちらも**機構が存在する**という
+   意味でしかなく、**稼働 PoC で報告が出ることは確かめていない**（B4 で「突合が解決する」を条件つきへ直したのと同じ型）。
+   索引行には注記を足した。B3 の節の本文は当時の記録として残し、ここで訂正する。
+
+**本 PR で塞がないもの（残余リスクへ）**: 発注執行の `CloseUnprotectedPositionAsync`（エントリー直後の単発の成行手仕舞い）で
+送信中にプロセスが止まった場合。こちらは**巡回が無い**（逆指値の記録が作られていないのでガードの対象にならない）ため、
+入口で再発行する仕組みが効かない。予約は残るので撃ち直しはしないが、Critical も台帳の押さえも出ない。
+
+### 追加する受け入れ基準
+
+13. **発注応答の `retType` が `-1` 以外の非成功（`-100` / `-200` / `-400` / `-500` / 未定義の値）のとき、
+    「拒否された」とも「建玉は生じていない」とも仮定しない。** 終端の記録（`ExecutionRecord` / `OrderExecuted(Rejected)`）が
+    1 件も生じず、予約は `Reserved` のまま据え置かれる（受け入れ基準 8・9 と同じ結果）。
+14. **`retType == -1`（確認できた非受理）では従来どおり `Rejected` の終端記録が作られ、在庫解放の引き金になる**（変えない側）。
+15. **成行手仕舞いの据え置きが続くあいだ、Critical は 1 時間ごとに再発行される**（1 時間未満では重ねない）。
+16. **予約だけが残っている成行手仕舞い（送信中の停止・発行の欠落）は、再起動後の最初の巡回で
+    `CloseDispatchIndeterminate`（`CloseIntent` つき）が発行される。** 成行も逆指値も送らない。
+
+### 追加するテスト（`T-10-450` から採番。409 以下と 410〜449 は使用中）
+
+| ID | 固定すること |
+| --- | --- |
+| **T-10-450** | 🔴 **発注応答の「返事が読めなかった」系の `retType` を「確認できた拒否」に畳まない**（B5）。写像（`-100` / `-200` / `-400` / `-500` / 未定義の値は伝播・`-1` は `Rejected`・列挙値が SDK と一致）／**実アダプタを通した結線**: 手仕舞いで**在庫解放の引き金（`OrderExecuted(Rejected)`）が作られない**・エントリーで**建玉なしと仮定しない**（保護レグの分岐へ進まず例外で終わる）・ガードの成行を巡回ごとに撃ち直さない／**変えない側**: `-1`（実測した 2 つの理由文）は従来どおり `OrderExecuted(Rejected)` が作られ予約が確定する。台帳側で `Rejected` が在庫を解放することは T-10-401 が固定済み |
+| **T-10-451** | 🔴 **成行手仕舞いの据え置きを無音にしない**。1 時間未満では Critical を重ねない／1 時間たてば再発行する（`CloseIntent` つき・成行も逆指値も送らない）／**再起動後（予約だけが残り、通知の記憶が無い）の最初の巡回で発行する**／発行に失敗したら次の巡回で再発行する／解決したら止まる |
+
+### 既存テストの刺激を変えたもの（弱めていないことの説明）
+
+- `MoomooBrokerAdapterTests.証券会社が非受理を返したときは従来どおり終端_Rejected` と
+  `MoomooBrokerAdapterAlternativeStopTests.代替注文種別の拒否はretTypeとretMsgを戻り値へ載せる`: 刺激の `retType` を
+  **`1` から `-1` へ**変えた。`1` は **SDK の列挙に存在しない値**であり、両テストが固定したい「確認できた非受理は `Rejected`・
+  理由を持ち帰る」が成り立つのは `-1` だけである（未定義の値は T-10-450 が**逆向き**＝不明へ伝播、で固定する）。
+  B3 の「変えない側」が緑で固定されていたのに B5 が成立していたのは、**刺激が実在しない値だった**からである。
+- `ProtectiveStopGuardIndeterminateCloseTests.届いたか不明は無音にしない_Criticalの通知を不明になった巡回で1回だけ出し…`:
+  コードは変えていない（時計が進まないテストなので 1 時間未満＝重ねない、が成り立つ）。前提を注釈に書き足した。
+
+### 対照実験（実走した実測・2026-09-19）
+
+`MoomooBrokerAdapter.cs` の `catch (MoomooTradeRequestException ex) when (ex.IsConfirmedFailure)` から
+**`when` 句だけを外して**是正前のロジックへ戻し（`git diff` でその行が HEAD `ff36cd9c` と一致することを確認。
+新テストをコンパイルさせるため `MoomooRetType` の定義は残した）、`dotnet test backend/Services/OrderExecutionService/Tests` を実走した。
+
+```
+失敗 …MoomooPlaceOrderRetTypeClassificationTests.実アダプタ経由_手仕舞いの応答が不明系の_retType_なら_在庫解放の引き金を作らない_否定形(retType: -100)
+   Expected executed to be <null> because OrderExecuted(Rejected) は取引台帳の在庫解放の引き金である。…, but found AiStockTrading.Shared.Contracts.Events.OrderExecuted
+Expected store.GetAll() to be empty because 偽の注文 ID を持つ終端 Rejected の記録を作らない, but found at least one item
+Expected reservation?.State to be OrderDispatchState.Reserved {value: 0} because 是正前は Completed（＝終端として確定）になっていた, but found OrderDispatchState.Completed {value: 1}.
+Expected reservation?.BrokerOrderId to be <null> because 注文 ID を捏造しない, but found "2f9a947e9bd84b51a0fbac394daacffe".
+Expected thrown to be …BrokerDispatchIndeterminateException because 拒否にも見送りにも畳まず、不明のまま伝播する, but found <null>.
+失敗 …同上(retType: -200) / (retType: -400) / (retType: -500) / (retType: -999)
+失敗 …実アダプタ経由_エントリーの応答が不明系の_retType_なら_建玉なしと仮定しない_否定形(retType: -100)
+   Expected executed to be <null> because 『終端失敗（Rejected）だから建玉は生じない＝保護レグは不要』と読んで正常終了すると、…, but found …OrderExecuted
+   Expected reservations.Find(approved.DecisionId)?.State to be OrderDispatchState.Reserved {value: 0} …, but found OrderDispatchState.Completed {value: 1}.
+失敗 …同上(retType: -500)
+失敗 …実アダプタ経由_ガードの成行の応答が_TimeOut_なら_完了を主張せず撃ち直しもしない_否定形
+   Expected store.FindByDecisionId(closeDecisionId) to be <null> because 是正前は偽 ID の Rejected が記録され、ガードはそれを『手仕舞い済み』として保護を完了していた, but found …ExecutionRecord
+失敗 …返事を読めなかった系の_retType_は_全レグで_Rejected_へ畳まず伝播する_否定形(retType: -100) / (-200) / (-400) / (-500) / (1) / (-999)
+   Expected a <…BrokerDispatchIndeterminateException> to be thrown because retType=-100 は『送ったが返事を読めなかった』であり、…, but no exception was thrown.
+失敗!   -失敗:    14、合格:   525、スキップ:     0、合計:   539
+```
+
+**14 件が赤**（T-10-450 の 26 ケース中）。監査の実測（`OrderExecuted.Status=Rejected orderId=<偽 32hex> reservation=Completed`）が
+そのまま再現している。残り 12 件（値と述語の 9・**`-1` は従来どおり `Rejected`** の 2・S3 の理由の持ち帰り 1）は**是正前も緑**
+——変えない側の固定だからである。
+
+非ブロッキング 1〜3 も同じ手順で確かめた。
+
+```
+（入口の RenotifyHeldCloseIfDue の呼び出しを外す）
+失敗 …ProtectiveStopGuardHeldCloseRenotifyTests.据え置きが1時間続いたら_Criticalを再発行する_それ未満では重ねない
+失敗 …送信中にプロセスが止まっても_再起動後の最初の巡回で_CloseIntentつきのCriticalを発行する
+失敗 …発行の前にプロセスが落ちても_再起動後の最初の巡回で発行し直す
+失敗 …発行に失敗したら通知済みと覚えず_次の巡回で発行し直す
+   Expected var lost = result.Events.OfType<ProtectiveStopCoverageLost>() to contain a single item, but the collection is empty.（4 件とも）
+失敗!   -失敗:     4、合格:   535、スキップ:     0、合計:   539
+
+（常駐の tracker?.Forget を外す）
+失敗 …発行に失敗したら通知済みと覚えず_次の巡回で発行し直す
+失敗 …発行の失敗で忘れるのは_未発行の据え置き通知だけ
+   Expected tracker.IsDue(failedId, Start.AddSeconds(30)) to be True because 発行できなかった通知は次の巡回で発行し直す, but found False.
+失敗!   -失敗:     2、合格:   537、スキップ:     0、合計:   539
+```
+
+「再起動後のイベント 0 件」（監査の実測）が再現している。是正後は **539 件すべて緑**。
+
+### 残余リスク（本追記で新たに残るもの）
+
+- **`retType == -1` の `retMsg` の中身は検査しない。** OpenD が自身の上流（証券会社のサーバー）のタイムアウトを
+  `-1` で返す可能性は、SDK からは否定できない。OpenD はタイムアウト・結果未知に専用の値（`-100` / `-400`）を持つので、
+  それを契約として読む（`retMsg` の文言照合は OpenD の版と表示言語で変わるため採らない）。
+  稼働環境で `-1` かつタイムアウトを示す `retMsg` を実測したら、その時点で分類を見直す。
+- **不明が増える。** これまで偽の `Rejected` で静かに終わっていた返信待ちタイムアウトが、予約の滞留（`Reserved`）と
+  Error ログ・`_error` キューとして見えるようになる。自動の突合は既定で無効であり、人が解決する（runbook。有効化は #856）。
+  利用者の手仕舞いがこの形で滞留すると、台帳は 30 分の窓の満了まで押さえ続ける（**意図した安全側**。
+  確認できた拒否 `-1` は従来どおり即座に解放される）。
+- **発注執行の単発の成行手仕舞い（`CloseUnprotectedPositionAsync`）で送信中にプロセスが止まった場合**は塞いでいない
+  （巡回が無く、入口で出し直す仕組みが効かない）。予約は残るので撃ち直しはしないが、Critical も台帳の押さえも出ない。
+- **再通知の記憶はプロセス内にしか無い。** 再起動のたびに、据え置き中の手仕舞い 1 件につき Critical が 1 回出る
+  （再起動を繰り返すと通知も繰り返す）。「通知が出ない」より「重複する」側を選んだ結果である。
+- **不明の成行を台帳が押さえるのは 30 分の窓のあいだだけ**であることは変わらない。再発行しても `AppendApproval` は
+  冪等で、承認時刻は最初のままである（再通知が窓を延ばすことはない）。窓の満了後は利用者の手仕舞い要求が通るので、
+  再通知の文面が「重ねる前に証券会社の画面で確認」を求め続けることが最後の守りになる。
+- 逆指値レグの不明を巡回ごとに送り直す件（#853 へ追記）・成行への確認できた拒否（#857）は本追記の射程外。

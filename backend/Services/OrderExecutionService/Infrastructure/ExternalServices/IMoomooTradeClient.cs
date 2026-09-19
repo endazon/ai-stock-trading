@@ -90,7 +90,11 @@ public sealed record MoomooOrderRequest(
 // FR-10, #821, IADR-0347: S3 の代替種別を末尾へ足す。StopLimit=OrderType_StopLimit / TrailingStop=OrderType_TrailingStop。
 public enum MoomooOrderKind { Limit, Stop, Market, StopLimit, TrailingStop }
 
-// FR-10, FR-11, #821, IADR-0347: OpenD が非成功（retType != 0）を返したことを表す。
+// FR-10, FR-11, #821, IADR-0347: OpenD への要求が非成功（retType != 0）で終わったことを表す。
+//
+// 🔴 FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 8）: **「非成功」は「拒否」ではない。**
+// retType は OpenD の返事だけを運ぶ値ではなく、**返事を読めなかったこと**も同じ欄で運ぶ（MoomooRetType の注釈）。
+// 「証券会社が受理しなかった」と言えるのは IsConfirmedFailure が true のときだけである。
 //
 // 🔴 **retType / retMsg を構造として保つことが本型の存在理由である。** 従来は文字列へ畳んだ
 // InvalidOperationException であり、拒否理由はログにしか残らなかった。S3（#821）は「拒否理由を監査台帳へ残すこと」
@@ -108,6 +112,39 @@ public sealed class MoomooTradeRequestException(string operation, int retType, s
 
     /// <summary>moomoo の retMsg（ブローカーが返した拒否理由の原文）。</summary>
     public string RetMsg { get; } = retMsg;
+
+    /// <summary>
+    /// OpenD が<b>返事として</b>失敗を返した（＝要求は受理されなかったと確認できた）か。
+    /// false は「送ったが返事を読めなかった」であり、発注では<b>届いたか不明</b>として扱う。
+    /// </summary>
+    public bool IsConfirmedFailure => MoomooRetType.IsConfirmedFailure(RetType);
+}
+
+// 🔴 FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 8）: moomoo の retType（SDK 非依存の写し）。
+// 値は SDK の Moomoo.OpenApi.Pb.Common.RetType と一致する（テストで固定。SDK の更新でずれたら落ちる）。
+//
+// **確認できた失敗は Failed（-1）だけである。** 残りは「返事を読めなかった」を応答の形に包んだ値で、
+// moomoo-api 10.8.6808 を逆コンパイルして読むと、次の 2 つは **OpenD ではなく SDK がクライアント側で合成する**:
+//   - TimeOut（-100）: MMAPI_Conn が**送信済みの**要求を 12 秒で打ち切り、MMAPI_Trd.OnReply が
+//     Response.SetRetType((int)replyType) で応答オブジェクトを自前で組み立てて渡す。
+//     🔴 本実装の返信待ちの既定は 15 秒なので、**既定構成の返信待ちタイムアウトは例外ではなくこの値で現れる。**
+//   - Invalid（-500）: **届いた応答**の復号・パースに失敗したとき。名前は「要求が不正」と読めるが、
+//     受理の応答を読み損ねた場合もここへ落ちる＝「確実に未発注」とは言えない。
+// DisConnect（-200）・Unknown（-400）も同じ側（応答待ち中の切断・結果未知）。**未定義の値も確認できた失敗とはしない**
+//（MapState の「知らないコードは Unknown へ」と同じ規律）。
+// これらを「拒否」と読むと OrderStatus.Rejected（リスク管理の**在庫解放の引き金**）になり、注文が届いていれば
+// 決済では二重決済でショート化・エントリーでは保護レグ無しの建玉になる（注文状態 4＝TIMEOUT を分けた改定 3 と同じ穴）。
+public static class MoomooRetType
+{
+    public const int Succeed = 0;
+    public const int Failed = -1;
+    public const int TimeOut = -100;
+    public const int DisConnect = -200;
+    public const int Unknown = -400;
+    public const int Invalid = -500;
+
+    /// <summary>OpenD が返事として失敗を返した（確認できた失敗）か。Failed（-1）だけが該当する。</summary>
+    public static bool IsConfirmedFailure(int retType) => retType == Failed;
 }
 
 public enum MoomooMarket { Japan, UnitedStates }

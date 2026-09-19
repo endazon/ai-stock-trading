@@ -189,10 +189,14 @@ public sealed class MoomooBrokerAdapter(
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
             return (ToBrokerOrder(intent, result, now), null, null);
         }
-        catch (MoomooTradeRequestException ex)
+        catch (MoomooTradeRequestException ex) when (ex.IsConfirmedFailure)
         {
-            // #821, IADR-0347: OpenD が非成功を返した＝**証券会社が受理しなかった**。retType / retMsg を保って返す
+            // #821, IADR-0347: OpenD が**返事として**失敗を返した＝**証券会社が受理しなかった**。retType / retMsg を保って返す
             // （S3 はこの理由を監査台帳へ残すことが目的そのものである）。倒し先は従来どおり終端 Rejected。
+            // 🔴 #848, IADR-0117（2026-09-19 追記・改定 8）: ここへ入れてよいのは **retType == -1（Failed）だけ**である。
+            // -100（TimeOut）/ -200 / -400 / -500（Invalid）と未定義の値は「返事を読めなかった」であり
+            //（-100 と -500 は SDK がクライアント側で合成する。MoomooRetType の注釈）、下の「届いたか不明」へ落とす。
+            // 実測済みの拒否（#844 の価格精度・#809 の Stop 非対応）はどちらも -1 で、従来どおりここへ入る。
             _logger.LogWarning(ex,
                 "moomoo 発注を拒否されました symbol={Symbol} qty={Qty} 種別={Kind} retType={RetType} retMsg={RetMsg}",
                 intent.Symbol, intent.Quantity, kind, ex.RetType, ex.RetMsg);
@@ -202,8 +206,11 @@ public sealed class MoomooBrokerAdapter(
         {
             // 🔴 FR-05, FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 6）:
             // **送信後の SDK 例外・応答異常は「届いたか不明」であり、終端 Rejected へ畳まない。**
-            // ここへ落ちる代表例は SendAsync の返信待ちタイムアウトで、**注文は既に送信済み**である
-            //（MMApiMoomooTradeClient の分類もそう書いている）。Rejected はリスク管理の取引台帳で
+            // ここへ落ちる代表例は返信待ちのタイムアウトで、**注文は既に送信済み**である
+            //（MMApiMoomooTradeClient の分類もそう書いている）。タイムアウトは 2 つの形で来る——SDK の 12 秒打ち切りが
+            // 応答の形で返す **retType=-100**（既定構成ではこちらが先。改定 8）と、SendAsync の TimeoutException。
+            // **確認できた失敗（retType=-1）以外の MoomooTradeRequestException もここへ落ちる**（上の when）。
+            // Rejected はリスク管理の取引台帳で
             // **在庫の押さえを解く引き金**であり、不明のまま解くと同じ建玉に 2 本目の決済が並ぶ
             //（二重決済で意図しないショート化）。エントリーでは「建玉は生じていない」という仮定になり、
             // 注文が生きていた場合に保護レグ無しの建玉ができる。実在しない注文 ID も捏造しない（#842 と同型）。

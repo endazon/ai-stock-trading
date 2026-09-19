@@ -194,6 +194,8 @@ public class ProtectiveStopGuardIndeterminateCloseTests
         lost.CloseIntent.PositionEffect.Should().Be(PositionEffect.Close);
 
         // 以後の据え置きでは Critical を重ねない（30 秒ごとに同じ通知を積まない）。件数サマリとログには現れ続ける。
+        // 「1 回だけ」が成り立つのは **1 時間未満**のあいだである（時計が進んでいない本テストの前提）。
+        // 据え置きが 1 時間続いたとき・再起動後の再通知は T-10-451（ProtectiveStopGuardHeldCloseRenotifyTests）。
         second.Events.Should().BeEmpty();
         third.Events.Should().BeEmpty();
     }

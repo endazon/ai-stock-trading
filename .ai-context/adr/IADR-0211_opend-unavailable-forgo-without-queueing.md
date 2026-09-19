@@ -77,6 +77,14 @@ issue #331 の要求と食い違う。
    また、本例外と対になる `BrokerDispatchIndeterminateException` を**一括 catch で受ける呼び出し側**は
    「確実に未発注」と取り違えてはならない —— 予約を解放してよいのは本例外（`BrokerUnavailableException`）だけである
    （IADR-0117 の改定 7。保護逆指値ガードの成行手仕舞いがこれを取り違え、巡回ごとに撃ち直していた）。
+   🔴 **［2026-09-19 追記 / #848・B5］上の「現在 2 事象」の 2 つ目（ブローカー応答の拒否状態）は、
+   発注応答では `retType == -1`（`Failed`）に限る**（PR #851 の 4 巡目監査）。当初の実装は `retType != 0` を
+   丸ごと「ブローカー応答の拒否」と読んでいたが、`-100`（TimeOut）/ `-200`（DisConnect）/ `-400`（Unknown）/
+   `-500`（Invalid）は**送信後に返事を読めなかった**ことを SDK が応答の形に包んだ値であり
+   （`-100` と `-500` は SDK がクライアント側で合成する。`-100` は 12 秒の打ち切りで、既定の返信待ち 15 秒より先に来る）、
+   決定 1 の言う「発注送信後の失敗＝届いたか不明」そのものである。これらは `BrokerDispatchIndeterminateException` で
+   伝播させる。稼働環境で実測した拒否 2 件（#844 の価格精度・#809 の `Paper trading does not support Stop order`）は
+   どちらも `retType=-1` であり `Rejected` のままである。詳細は IADR-0117 の改定 8。
 3. **発注執行は同例外を捕捉し、(a) 予約を解放（確実に未発注のため二重発注の窓は無い）、(b) `ExecutionRecord`
    を残さず（注文は存在しない）、(c) 新イベント `OrderDispatchForgone`（DecisionId・Intent・理由・時刻）を
    発行して正常終了する。** ハンドラが例外を投げないため Wolverine の再試行・error キュー滞留は発生しない。
