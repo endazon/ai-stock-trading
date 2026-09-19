@@ -46,6 +46,12 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
     // FR-05, FR-10, #305, IADR-0124: 建玉乖離の追跡状態（連続観測回数・報告済みシグネチャ・単一行）。
     public DbSet<PositionDriftStateRow> PositionDriftStates => Set<PositionDriftStateRow>();
 
+    // FR-05, FR-10, FR-11, #849, IADR-0350 決定 1: ブローカ建玉の最新の観測（単一行）。取り込みの目標数量と鮮度の根。
+    public DbSet<BrokerPositionObservationRow> BrokerPositionObservations => Set<BrokerPositionObservationRow>();
+
+    // FR-10, FR-11, UC-06, #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込み（追記専用・取引台帳の一部）。
+    public DbSet<PositionDriftAdoptionRow> PositionDriftAdoptions => Set<PositionDriftAdoptionRow>();
+
     // FR-10, FR-11, FR-06, #419, IADR-0159: 強制買戻しの事後推定の追記専用台帳
     // （30 日禁止の供給元・ADR-0016 決定15 の「発生回数」の集計元）。
     public DbSet<BuyInInferenceRow> BuyInInferences => Set<BuyInInferenceRow>();
@@ -231,6 +237,31 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.Property(r => r.ObservedSignature).IsRequired();
             e.Property(r => r.ReportedSignature).IsRequired();
             e.Property(r => r.Version).IsConcurrencyToken();
+        });
+
+        // FR-05, FR-10, FR-11, #849, IADR-0350 決定 1: ブローカ建玉の最新の観測（単一行）。
+        // **並行トークンを置かない。** 更新は「より新しい観測で上書きする」だけであり、競合で 1 回取りこぼしても
+        // 次の巡回が上書きする。古い側が勝った場合は鮮度の判定（取り込みサービス）が拒否側へ倒す。
+        mb.Entity<BrokerPositionObservationRow>(e =>
+        {
+            e.ToTable("broker_position_observation");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
+            e.Property(r => r.PositionsJson).HasColumnType("jsonb").IsRequired();
+        });
+
+        // FR-10, FR-11, UC-06, #849, IADR-0350 決定 2: 乖離の取り込み（追記専用）。
+        // IdempotencyKey の一意制約が、並行の二重投入（台帳が二重に減ってロングがショートへ反転する）を弾く。
+        mb.Entity<PositionDriftAdoptionRow>(e =>
+        {
+            e.ToTable("position_drift_adoptions");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).ValueGeneratedNever();
+            e.Property(r => r.IdempotencyKey).HasMaxLength(128).IsRequired();
+            e.HasIndex(r => r.IdempotencyKey).IsUnique();
+            e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            e.Property(r => r.Actor).HasMaxLength(256).IsRequired();
+            e.Property(r => r.Reason).IsRequired();
         });
 
         // FR-21, FR-10, FR-06, #463, IADR-0181: 観測が届いた取引日（**取引日ごとに 1 行**）。

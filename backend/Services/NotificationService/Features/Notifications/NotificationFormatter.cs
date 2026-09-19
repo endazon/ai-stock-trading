@@ -233,7 +233,28 @@ public static class NotificationFormatter
         "リスク統制: 建玉の乖離を検知",
         $"取引台帳とブローカの建玉が一致しません（{e.Drifts.Count} 件・観測 {e.ObservedAt:yyyy-MM-dd HH:mm:ss}Z）。"
             + $"{string.Join("、", e.Drifts.Select(Describe))}。"
-            + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。",
+            + "自動是正は行いません。内容を確認し、必要なら決済または証券会社側で調整してください。"
+            // #849, IADR-0350: 検知で止めない。システム外の売買が原因なら、利用者の承認つきで台帳を観測へ合わせられる。
+            + "システム外の売買で台帳の建玉が実態より多い場合は、利用者の操作で台帳へ取り込めます"
+            + "（POST /risk-controls/position-drift/adopt・理由必須）。",
+        NotificationSeverity.Critical);
+
+    // FR-09, FR-10, FR-11, UC-06, #849, IADR-0350: 利用者が承認した乖離の取り込み。
+    // 取引台帳が**約定以外で動く唯一の操作**であるため Critical とし、誰が・なぜ・何株から何株へを必ず出す。
+    // 🔴 **実現損益を記録していないこと**を本文に明記する。推定を含む場合は「推定・台帳へ未記録」と添える
+    // ——数値だけを出すと確定した損益に読める。
+    public static NotificationMessage From(PositionDriftAdopted e) => new(
+        "リスク統制: 建玉の乖離を台帳へ取り込み",
+        $"{e.Symbol}/{e.Market} の台帳の建玉を {e.LedgerQuantityBefore} → {e.LedgerQuantityAfter} へ合わせました"
+            + $"（ブローカの観測 {e.BrokerQuantity}・観測 {e.ObservedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}Z）。"
+            + $"操作者 {e.Actor}・理由: {e.Reason}。"
+            + "システム外の売買の約定価格は分からないため、**実現損益は記録していません**"
+            + "（当日損益・連敗・段階ゲートの実績には入りません）。"
+            + (e.EstimatedPnlInBase is { } estimate && e.ReferencePrice is { } reference
+                ? $"参考: 現在値 {reference.ToString(CultureInfo.InvariantCulture)} で評価した損益は "
+                    + $"{estimate.ToString("N2", CultureInfo.InvariantCulture)} USD（推定・台帳へ未記録）。"
+                : "現在値を取得できなかったため、参考の推定損益もありません。")
+            + "当該銘柄にブローカー側の保護注文（逆指値）が残っていないか、証券会社のアプリで確認してください。",
         NotificationSeverity.Critical);
 
     // FR-09, FR-10, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小。

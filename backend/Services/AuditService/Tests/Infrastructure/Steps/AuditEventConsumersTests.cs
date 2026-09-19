@@ -428,6 +428,31 @@ public class AuditEventConsumersTests
         await host.StopAsync();
     }
 
+    // T-10-479: FR-10, FR-11, UC-06, #849, IADR-0350: 乖離の取り込みが中央監査台帳へ残る。
+    // 🔴 ハンドラが無いと、取引台帳が約定以外で動いた事実が 7 年保持される台帳から読めない。
+    [Fact]
+    public async Task 乖離の取り込みは誰がなぜ取り込んだかとして台帳に残る()
+    {
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var at = DateTimeOffset.UtcNow;
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new PositionDriftAdopted(
+                Guid.NewGuid(), "AAPL", Market.UnitedStates, 3_381, 0, 0, at.AddMinutes(-5), 335.1225m,
+                false, null, null, "endazon", "manual sell in the broker app", at));
+        session.Executed.MessagesOf<PositionDriftAdopted>().Should().NotBeEmpty();
+
+        // 観測・乖離の報告と同じ相関（position-reconciliation）に載る。相関 ID は観測の記録から引く。
+        var correlation = AuditEntryFactory.From(new BrokerPositionsObserved([], at), Guid.NewGuid(), at).CorrelationId;
+        var entry = store.GetByCorrelation(correlation)
+            .Should().ContainSingle(e => e.EventType == nameof(PositionDriftAdopted)).Subject;
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("3381→0").And.Contain("endazon").And.Contain("実現損益は未記録");
+
+        await host.StopAsync();
+    }
+
     // NFR-02, #689, IADR-0307: **記録完了（台帳へ 1 行書いた時点）が NFR-02 の終点である。**
     // 計画は「収集→判断→発注→記録」の 1 周を 10 分以内と定めており、発注完了で代表すると
     // 構造的に過少報告になる。起点はイベントが運んでくるため、突き合わせ（join）も状態も要らない。

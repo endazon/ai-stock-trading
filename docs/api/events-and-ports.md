@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-09, FR-10, FR-11, FR-12, UC-02, UC-06]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0040]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0347, MSP:IADR-0049]
-specs: [20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260919_774_report-confirmed-actor-on-behalf-of]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #821]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0347, IADR-0350, MSP:IADR-0049]
+specs: [20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #821, #849]
 -->
 
 
@@ -48,6 +48,7 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 | `OrderExecuted` | 発注執行 | DecisionId, OrderId, Status(OrderStatus), FilledQuantity, AveragePrice, ExecutedAt | 約定/失注/取消/証券会社拒否の確定 |
 | `ProtectiveStopWaived` | 発注執行 | EntryDecisionId, Symbol, Market, Side, ProductType, Quantity, StopLossPrice, Method, Provider, OccurredAt | moomoo SIMULATE で手法 S2 が選ばれた新規買いに保護逆指値を発注せず建玉を保持した（ペーパーで免除）。監査ログと Discord 通知が購読（#819） |
 | `AlternativeProtectiveStopAttempted` | 発注執行 | EntryDecisionId, StopDecisionId, Symbol, Market, OrderType, Status, BrokerOrderId, RejectReasonCode, RejectReasonMessage, Method, Provider, OccurredAt | moomoo SIMULATE で手法 S3 が選ばれた新規買いの保護レグを代替注文種別（ストップリミット／トレーリングストップ）で試した。**受理・拒否のどちらでも 1 件**出し、拒否理由（`retType` / `retMsg`）を監査ログへ残す（#821） |
+| `PositionDriftAdopted` | リスク管理 | AdoptionId, Symbol, Market, LedgerQuantityBefore, LedgerQuantityAfter, BrokerQuantity, ObservedAt, CostBasisPrice, RealizedPnlRecorded, ReferencePrice, EstimatedPnlInBase, Actor, Reason, AdoptedAt | 利用者が承認した**台帳とブローカーの乖離の取り込み**（#849）。数量は符号付き。**`RealizedPnlRecorded` は常に false** —— システム外の売買は約定価格が分からないため実現損益を記録しない。`ReferencePrice` / `EstimatedPnlInBase` は取り込み時点の現在値による**推定**であり台帳へは入らない（現在値が取れなければ null）。`CostBasisPrice` は取り込み前の平均取得単価で、約定価格ではない。監査ログと Discord 通知が購読する。発注執行側の保護記録の追随は本イベントの購読で行う想定（後続） |
 
 市場監視のイベント（価格変動監視と、変動トリガーによる取引の起動に対応する）。`EventId`（Guid）で 1 検知を相関する
 （取引判断サイクルとは別系統。市場監視は検知してイベントを発行し、損切りの執行はリスク管理が担うという責務境界による）。
