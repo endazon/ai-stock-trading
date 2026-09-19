@@ -17,11 +17,15 @@ namespace RiskManagementService.Infrastructure.Steps;
 // 再試行では両方が再実行されるが、双方の書き込みは冪等である（IADR-0129 決定 10 に根拠を記載）:
 //   - 本ハンドラ: AppendFill は累積数量の単調 upsert（`filledQuantity <= existing` なら無変更）
 //   - 相方:       RecordExecution は同一メッセージの再適用で同じ状態になる絶対値の代入
+//
+// FR-09, UC-06, #847, IADR-0357: 終端を**初めて**記録したとき、その承認が手仕舞い（Close）で未約定残が
+// 残っていれば PositionCloseAbandoned を返す（Wolverine のカスケード送信）。引け跨ぎで失効した手仕舞いを
+// 黙って捨てないための通知であり、**在庫の押さえには一切関与しない**（押さえは MarkTerminal が済ませている）。
 public sealed class OrderExecutedLedgerHandler(
     IPortfolioLedgerStore ledger,
     ILogger<OrderExecutedLedgerHandler> logger)
 {
-    public void Handle(OrderExecuted message)
+    public PositionCloseAbandoned? Handle(OrderExecuted message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
@@ -52,6 +56,11 @@ public sealed class OrderExecutedLedgerHandler(
         // 区間で建玉が丸ごと空いて見え（実測: 建玉 100 / 処理中 0 / 利用可能 100）、その瞬間の手仕舞い要求が
         // 同じ株数をもう一度売れてしまう（EF 実装では 2 つの SaveChanges に分かれるため区間は実在する）。
         // 非終端の状態・全量約定・未知の DecisionId・二重の終端は MarkTerminal 側が無視する（fail-safe・冪等）。
-        ledger.MarkTerminal(message.DecisionId, message.Status, message.ExecutedAt);
+        var newlyTerminal = ledger.MarkTerminal(message.DecisionId, message.Status, message.ExecutedAt);
+
+        // #847: 冪等キーは「初めて終端を記録したか」である（再配送で失効通知を撃ち直さない）。
+        return newlyTerminal
+            ? PositionCloseAbandonment.Describe(ledger, message.DecisionId, message.Status, message.ExecutedAt)
+            : null;
     }
 }

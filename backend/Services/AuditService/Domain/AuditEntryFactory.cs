@@ -216,6 +216,22 @@ public static class AuditEntryFactory
         Truncate($"{e.Symbol} 手仕舞い要求 {e.Side} 数量{e.Quantity}@{e.Price}（{e.Actor}）: {e.Reason}"),
         AuditSerialization.Serialize(e), e.RequestedAt, recordedAt);
 
+    // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による「板に残った手仕舞いの取消」要求。
+    // 後続の OrderCancelled はアクターを持たないため、本記録が「誰が・なぜ板の注文を消したか」の唯一の証跡になる。
+    // 🔴 本イベントは「取り消したい」であって「取り消せた」ではない（確定は OrderCancelled 側に残る）。
+    public static AuditEntry From(PositionCloseCancellationRequested e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionCloseCancellationRequested), e.DecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 手仕舞いの取消要求（{e.Actor}）: {e.Reason}"),
+        AuditSerialization.Serialize(e), e.RequestedAt, recordedAt);
+
+    // FR-09, FR-10, FR-11, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（失効・取消・拒否）。
+    // 建玉が残ったまま翌日へ持ち越される事象であり、「黙って残らない」ことの監査側の記録である。
+    public static AuditEntry From(PositionCloseAbandoned e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionCloseAbandoned), e.DecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 手仕舞いが未約定のまま終了 {e.TerminalStatus}"
+            + $"（承認{e.ApprovedQuantity} 約定{e.FilledQuantity} 残{e.RemainingQuantity}）"),
+        AuditSerialization.Serialize(e), e.AbandonedAt, recordedAt);
+
     // FR-05, FR-10, FR-11, #292, IADR-0118: ブローカ実ポジションの観測。注文相関を持たないため "position-reconciliation" の
     // 決定的 GUID を相関にする（観測と乖離検知が同一相関で束ねられ、監査照会でまとめて辿れる）。
     public static AuditEntry From(BrokerPositionsObserved e, Guid id, DateTimeOffset recordedAt) => new(
@@ -443,6 +459,43 @@ public static class AuditEntryFactory
         Truncate($"{e.Symbol} 保護逆指値をペーパーで免除（損切りの実行機構 {MethodLabel(e.Method)}・発注先 {e.Provider}）"
             + $" {e.Side} 数量{e.Quantity} 損切りライン{(e.StopLossPrice is { } price ? price.ToString(CultureInfo.InvariantCulture) : "なし")}"
             + "——**逆指値なしの建玉を保持する（システムは決済しない）**"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置。
+    // 相関はエントリーの DecisionId（ProtectiveStopPlaced / ProtectiveStopWaived と同じ）。「ブローカー側に保護が無い建玉」であることを要約に書く。
+    public static AuditEntry From(SoftwareStopArmed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(SoftwareStopArmed), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol} ソフトウェア逆指値を配置（損切りの実行機構 S1・発注先 {e.Provider}） {e.Side} 数量{e.Quantity}"
+            + $" 損切りライン{e.StopLossPrice.ToString(CultureInfo.InvariantCulture)}"
+            + "——**ブローカーへの逆指値なし。到達でシステムが成行決済する（システム停止中は決済されない）**"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: ソフトウェア逆指値の発動結果。
+    // 利用者の承認なしに決済注文・取消が起きる事象であり、この記録が「なぜ建玉が消えたか」の一次証跡になる。
+    public static AuditEntry From(SoftwareStopExecuted e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(SoftwareStopExecuted), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol} ソフトウェア逆指値が発動（{e.Outcome}） 数量{e.Quantity}"
+            + $" 損切りライン{e.StopLossPrice.ToString(CultureInfo.InvariantCulture)} 検知{e.TriggeredPrice.ToString(CultureInfo.InvariantCulture)}"
+            + $" 試行{e.Attempt}"
+            + e.Outcome switch
+            {
+                SoftwareStopOutcome.ClosePlaced => $"——成行決済を発注（CloseDecisionId={e.CloseDecisionId}・OrderId={e.CloseOrderId}）",
+                SoftwareStopOutcome.EntryCancelled => "——未約定のエントリーを取消（建玉なし）",
+                SoftwareStopOutcome.EntryMissing =>
+                    "——**エントリーの発注記録が猶予を過ぎても見つからず、決済を出さずに閉じた（要人手対応）**",
+                SoftwareStopOutcome.CloseStalled =>
+                    "——**到達したのに猶予を過ぎても決済できていない（据え置きが継続・再試行中・要人手対応）**",
+                // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による減少の確定。決済は出していない。
+                SoftwareStopOutcome.ProtectionReduced =>
+                    "——外部要因で建玉が減ったぶんを保護記録の主張から差し引いた（決済は出していない）",
+                // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
+                SoftwareStopOutcome.ProtectionSuspended =>
+                    "——**帳簿では守っているのに 1 株も決済できない状態が猶予を過ぎても続いている（到達の有無に依らない・要人手対応）**",
+                // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: どの保護記録も主張していない建玉の検知（是正はしない）。
+                SoftwareStopOutcome.UnattributedPosition =>
+                    "——**どの保護記録も主張していない建玉がある（検知のみ。ソフトウェア逆指値は決済しない・要人手確認）**",
+                _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
+            }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // FR-10, FR-11, FR-12, ADR-0040 決定1（S3）, #821, IADR-0347: S3（他のブローカー側注文種別）で保護レグを

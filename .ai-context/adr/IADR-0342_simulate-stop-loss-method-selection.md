@@ -2,10 +2,10 @@
 title: IADR-0342 SIMULATE の損切り実行機構を選択式にする — 設定点は risk-management の利用者専用設定、手法は承認に載せ、発注執行が SIMULATE 限定・空売り除外で解決し、S2 は免除の事実を別イベントで残す
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-11, FR-12, UC-02, UC-06, SC-02, SC-03, ADR-0003, ADR-0016, ADR-0040, IADR-0016, IADR-0111, IADR-0134, IADR-0141, IADR-0161, IADR-0210, IADR-0211]
+related_ids: [FR-10, FR-11, FR-12, UC-02, UC-06, SC-02, SC-03, ADR-0003, ADR-0016, ADR-0040, IADR-0016, IADR-0111, IADR-0134, IADR-0141, IADR-0161, IADR-0210, IADR-0211, IADR-0344]
 author: claude (Claude Code)
 created: 2026-09-17
-updated: 2026-09-17
+updated: 2026-09-18
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1・決定2・決定3・決定6)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 の 3 文〔口座種別の軸〕)
@@ -28,6 +28,15 @@ plan_refs:
   [IADR-0211](IADR-0211_opend-unavailable-forgo-without-queueing.md)（見送り）、[IADR-0016](IADR-0016_safe-broker-execution.md) /
   [IADR-0111](IADR-0111_broker-tier-selection.md)（実弾の閂）、[IADR-0141](IADR-0141_live-switch-explicit-confirmation.md)（発注先の変更）、
   [IADR-0161](IADR-0161_broker-provider-allow-list-resolution.md)（設定行の allow-list 読み取り）、IADR-0134 決定 2（序数は末尾追加）
+
+> **［2026-09-18 追記 / #820］S1 はフォールバックしなくなった。**
+> 決定 4-5「S1 / S3 / 未知の値 → S0 と同じ扱い＋Warning」のうち **S1 を外した**。S1 は
+> [IADR-0344](IADR-0344_s1-software-stop-loss.md) のソフトウェア逆指値（`StopLossMethodDisposition.SoftwareStop`）へ解決され、
+> ブローカーへ保護レグを出さず、エントリーを送る前に `protective_stop_orders` へ機構 S1 の行を記録する。
+> **S0 → 拒否 → 空売り → S2 の判定順序と、S3・未知の値のフォールバックは不変**（S1 の判定は S2 の次に入る）。
+> 本 IADR の残余リスクのうち「損切り到達通知の文言が S2 建玉に当たらない」は IADR-0344 決定 7（手法ごとの帰結の列挙）で解消した。
+> 「同一銘柄の S0・S2 併存時のガード」は**残る**——IADR-0344 決定 6 の按分は保護記録を持つ手法どうし（S0 と S1）にしか効かず、
+> S2 は記録を持たないため差し引けない。
 
 ## コンテキストと課題
 

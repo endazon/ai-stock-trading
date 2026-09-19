@@ -55,6 +55,8 @@ public sealed class OrderExecutionDbContext(DbContextOptions<OrderExecutionDbCon
             e.Property(r => r.StopOrderId).HasMaxLength(64).IsRequired();
             e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
             e.HasIndex(r => new { r.State, r.CreatedAt });
+            // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: 機構列 Mechanism（非 null の整数。migration が既存行を 0＝S0 で埋める）と
+            // 到達の記録 TriggeredAt / TriggeredPrice（null＝未到達）は規約どおりに写像する（明示の設定は要らない）。
         });
 
         // #154, IADR-0067: 訂正・取消の追記専用台帳。

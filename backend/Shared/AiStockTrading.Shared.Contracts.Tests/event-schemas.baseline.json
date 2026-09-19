@@ -204,6 +204,7 @@
   "OrderCancelled": {
     "CancelledAt": "DateTimeOffset",
     "DecisionId": "Guid",
+    "ObservedFilledQuantity": "Int32",
     "OrderId": "String",
     "Reason": "String"
   },
@@ -239,6 +240,25 @@
     "Intent": "OrderIntent",
     "Reasons": "IReadOnlyList\u003CRejectionReason\u003E",
     "RejectedAt": "DateTimeOffset"
+  },
+  "PositionCloseAbandoned": {
+    "AbandonedAt": "DateTimeOffset",
+    "ApprovedQuantity": "Int32",
+    "DecisionId": "Guid",
+    "FilledQuantity": "Int32",
+    "Market": "Market",
+    "RemainingQuantity": "Int32",
+    "Side": "TradeSide",
+    "Symbol": "String",
+    "TerminalStatus": "OrderStatus"
+  },
+  "PositionCloseCancellationRequested": {
+    "Actor": "String",
+    "DecisionId": "Guid",
+    "Market": "Market",
+    "Reason": "String",
+    "RequestedAt": "DateTimeOffset",
+    "Symbol": "String"
   },
   "PositionCloseRequested": {
     "Actor": "String",
@@ -349,6 +369,31 @@
     "Symbols": "IReadOnlyList\u003CString\u003E",
     "Truncated": "Boolean",
     "UnresolvableOverflow": "Boolean"
+  },
+  "SoftwareStopArmed": {
+    "EntryDecisionId": "Guid",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "ProductType": "ProductType",
+    "Provider": "BrokerProvider",
+    "Quantity": "Int32",
+    "Side": "TradeSide",
+    "StopLossPrice": "Decimal",
+    "Symbol": "String"
+  },
+  "SoftwareStopExecuted": {
+    "Attempt": "Int32",
+    "CloseDecisionId": "Guid?",
+    "CloseIntent": "OrderIntent",
+    "CloseOrderId": "String",
+    "EntryDecisionId": "Guid",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "Outcome": "SoftwareStopOutcome",
+    "Quantity": "Int32",
+    "StopLossPrice": "Decimal",
+    "Symbol": "String",
+    "TriggeredPrice": "Decimal"
   },
   "StageTransitioned": {
     "ApprovedBy": "String",

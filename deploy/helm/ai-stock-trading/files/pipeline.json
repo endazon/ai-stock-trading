@@ -7,7 +7,8 @@
     "TradeDecisionMade",
     "OrderApproved",
     "OrderRejected",
-    "OrderExecuted"
+    "OrderExecuted",
+    "SoftwareStopExecuted"
   ],
   "sources": [
     { "event": "PriceMovementDetected", "service": "market-monitor-service" },
@@ -53,6 +54,14 @@
       "consumer": "OrderExecutionService.Infrastructure.Steps.OrderApprovedHandler",
       "input": "OrderApproved",
       "outputs": ["OrderExecuted"],
+      "enabled": true
+    },
+    {
+      "name": "execute-software-stop",
+      "service": "order-execution-service",
+      "consumer": "OrderExecutionService.Infrastructure.Steps.StopLossTriggeredHandler",
+      "input": "StopLossTriggered",
+      "outputs": ["SoftwareStopExecuted"],
       "enabled": true
     }
   ]

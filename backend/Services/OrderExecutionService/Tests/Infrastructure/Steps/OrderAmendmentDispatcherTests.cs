@@ -21,7 +21,8 @@ namespace OrderExecutionService.Tests;
 
 // #154, FR-05, FR-19, IADR-0067: 訂正・取消の発行を Wolverine のテストハーネス（Wolverine.Tracking）で検証する。
 // ADR-0013, IADR-0129, #354: harness.Published → session.Sent への移行。表明の意味は同じ。
-// 本 PR では駆動元（#141/#152・時限取消）を実装しないため、ここが配管の終端（発行）の担保になる。
+// #847, IADR-0357: 取消の駆動元は PositionCloseCancellationHandler（PositionCloseCancellationHandlerTests が固定）。
+// 訂正の駆動元（#141/#152・時限取消）は未実装であり、ここが配管の終端（発行）の担保になる。
 public class OrderAmendmentDispatcherTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 17, 6, 0, 0, TimeSpan.Zero);
@@ -127,6 +128,6 @@ public class OrderAmendmentDispatcherTests
     }
 
     // 追跡ブロック内で「例外が投げられる」ことを表明する補助（元テストの act.Should().ThrowAsync と同じ）。
-    private static async Task ShouldThrowAsync(Func<Task<OrderCancelled>> act) =>
+    private static async Task ShouldThrowAsync(Func<Task<OrderCancellationOutcome>> act) =>
         await act.Should().ThrowAsync<InvalidOperationException>();
 }

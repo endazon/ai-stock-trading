@@ -2,7 +2,7 @@
 title: IADR-0210 損切りはブローカー側逆指値へ一本化し、発注執行が保護レグの同時発注・建玉解消・失効ガードまで持つ
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, ADR-0040, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118, IADR-0342]
+related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, ADR-0040, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118, IADR-0342, IADR-0344]
 author: claude (Claude Code)
 created: 2026-08-28
 updated: 2026-09-19
@@ -40,6 +40,14 @@ plan_refs:
 > [IADR-0342](IADR-0342_simulate-stop-loss-method-selection.md) が実装する。本 IADR の決定 1 の fail-closed（逆指値を張れない
 > Open は発注しない）は **S0 の規律として**そのまま効き、S2 の免除は IADR-0342 決定 6 の 1 分岐だけが例外である。
 > 残余リスク 2 項目めの「SIMULATE が `OrderType_Stop` を受理しない可能性」は #809 で**成立を実測**した（全件拒否）。
+
+> **［2026-09-18 追記 / #820］保護記録のモデルに機構列を足した（S0 の挙動は不変）。**
+> 決定 6 の `protective_stop_orders` に `Mechanism`（既定 0＝S0）・`TriggeredAt`・`TriggeredPrice` を足し、moomoo SIMULATE の S1
+> （ソフトウェア逆指値）の行を同じテーブルに置く（[IADR-0344](IADR-0344_s1-software-stop-loss.md) 決定 1。既存行は S0 として読まれる）。
+> 決定 4 の `ProtectiveStopGuard` は **S1 の行をブローカーへ照会せず**（到達済みなら決済の再試行・未到達なら建玉消滅で完了）、
+> **S0 の行の建玉残を「手法の異なる Active 行（S1）の約定数量」を差し引いて判定する**（IADR-0344 決定 6。S1 の行が無ければ差し引く量は 0 で
+> 従来と同一）。決定 5「リスク管理の `StopLossTriggered` 購読は記録のみ」は不変であり、S1 の決済は発注執行の新しい購読が担う
+> （IADR-0344 決定 4。S0 / S2 の建玉には何もしない）。
 
 ## コンテキストと課題
 

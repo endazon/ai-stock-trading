@@ -387,6 +387,7 @@ public class PortfolioLedgerConsumersTests
     [InlineData(OrderDispatchForgoneReason.StopLossMethodNotPermitted)]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent)]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate)]
+    [InlineData(OrderDispatchForgoneReason.UnattributedPosition)]
     public async Task 現行の見送り理由はいずれも処理中から外れる(OrderDispatchForgoneReason reason)
     {
         var ledger = new InMemoryPortfolioLedgerStore();
@@ -490,8 +491,10 @@ public class PortfolioLedgerConsumersTests
         public int GetInFlightCloseQuantity(string s, Market m, DateTimeOffset approvedAtOrAfter) =>
             inner.GetInFlightCloseQuantity(s, m, approvedAtOrAfter);
 
-        public void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) =>
+        public bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt) =>
             inner.MarkTerminal(decisionId, terminalStatus, terminalAt);
+
+        public int? FindApprovedFilledQuantity(Guid decisionId) => inner.FindApprovedFilledQuantity(decisionId);
 
         // #852, IADR-0356: 見送り（発注していない）。委譲しておけば台帳の意味論がずれない。
         public void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
@@ -499,5 +502,7 @@ public class PortfolioLedgerConsumersTests
 
         // #849, IADR-0350: 本プローブは取り込みを使わないが、委譲しておけば台帳の意味論がずれない。
         public bool AppendDriftAdoption(LedgerDriftAdoption adoption) => inner.AppendDriftAdoption(adoption);
+
+        public IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions() => inner.GetDriftAdoptions();
     }
 }

@@ -96,4 +96,193 @@ public class EfProtectiveStopOrderStoreTests
         using var db2 = NewContext(dbName);
         new EfProtectiveStopOrderStore(db2).FindActive(3).Should().HaveCount(3);
     }
+
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: 機構列と到達の記録が往復し、旧い行（列の既定）は S0 として読まれる。
+    [Fact]
+    public void ソフトウェア逆指値の機構と到達の記録はラウンドトリップする()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 2,
+            ProtectiveStopState.Active, Now, Now, StopLossExecutionMethod.SoftwareStop, Now.AddMinutes(1), 940.25m);
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfProtectiveStopOrderStore(db2).Find(entryDecisionId).Should().Be(stop);
+    }
+
+    [Fact]
+    public void 機構を指定しない保護記録はS0として保存される()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(Stop(entryDecisionId));
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Mechanism.Should().Be(StopLossExecutionMethod.BrokerStopOrder);
+        found.IsSoftwareStop.Should().BeFalse();
+        found.TriggeredAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void FindActiveSoftwareStopsはActiveなS1の同一銘柄同一方向だけを古い順に返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        StopLossExecutionMethod s1 = StopLossExecutionMethod.SoftwareStop;
+        var older = Guid.NewGuid();
+        var newer = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfProtectiveStopOrderStore(db);
+            store.Save(Stop(newer, createdAt: Now) with { Mechanism = s1 });
+            store.Save(Stop(older, createdAt: Now.AddMinutes(-5)) with { Mechanism = s1 });
+            store.Save(Stop(Guid.NewGuid()));                                                          // S0
+            store.Save(Stop(Guid.NewGuid(), state: ProtectiveStopState.Completed) with { Mechanism = s1 }); // 完了
+            store.Save(Stop(Guid.NewGuid()) with { Mechanism = s1, Symbol = "MSFT" });                  // 別銘柄
+            store.Save(Stop(Guid.NewGuid()) with { Mechanism = s1, EntrySide = TradeSide.Sell });       // 別方向
+        }
+
+        using var db2 = NewContext(dbName);
+        new EfProtectiveStopOrderStore(db2).FindActiveSoftwareStops("AAPL", Market.UnitedStates, TradeSide.Buy)
+            .Select(s => s.EntryDecisionId).Should().Equal(older, newer);
+    }
+
+    // T-10-378（受け入れ基準 32）: #820 の 4 巡目監査, IADR-0344 追記(4)。
+    // 残保護数量は**状態**であり、毎巡回引き直さないことが設計の要である。永続化されなければ成立しない。
+    [Fact]
+    public void 残保護数量と据え置き通知の記録が往復する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 1,
+            ProtectiveStopState.Active, Now, Now, StopLossExecutionMethod.SoftwareStop, Now.AddMinutes(1), 940m,
+            RemainingProtected: 4, StalledNotifiedAt: Now.AddMinutes(20));
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Should().Be(stop);
+        found.RemainingProtected.Should().Be(4);
+        found.IsEntryFillConfirmed.Should().BeTrue();
+        found.ProtectedQuantity.Should().Be(4);
+        found.StalledNotifiedAt.Should().Be(Now.AddMinutes(20));
+    }
+
+    // T-10-436（受け入れ基準 43・44）: #820 の 8 巡目監査, IADR-0344 追記(8)。
+    // 失効の連続観測回数と「1 株も動かせない状態」の記録も**状態**である。
+    // 永続化されないと、再起動のたびに失効の数え直し・Critical の再送が起きる。
+    [Fact]
+    public void 失効の観測回数と保護停止の記録が往復する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 0,
+            ProtectiveStopState.Active, Now, Now, StopLossExecutionMethod.SoftwareStop,
+            RemainingProtected: 10, PendingExternalReduction: 10, ExternalReductionObservations: 1,
+            ExternalReductionAbsences: 1, ProtectionSuspendedSince: Now.AddMinutes(3),
+            ProtectionSuspendedNotifiedAt: Now.AddMinutes(18));
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Should().Be(stop);
+        found.ExternalReductionAbsences.Should().Be(1);
+        found.ProtectionSuspendedSince.Should().Be(Now.AddMinutes(3));
+        found.ProtectionSuspendedNotifiedAt.Should().Be(Now.AddMinutes(18));
+        found.EffectiveProtectedQuantity.Should().Be(0);
+        found.IsProtectionSuspended.Should().BeTrue("帳簿では 10 株を守っているのに 1 株も動かせない");
+    }
+
+    // 既定値（列を持たなかった時代の行と同じ姿）では「保護停止」ではない。
+    [Fact]
+    public void 未確定の観測が無い行は保護停止ではない()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(Stop(entryDecisionId));
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.ExternalReductionAbsences.Should().Be(0);
+        found.ProtectionSuspendedSince.Should().BeNull();
+        found.IsProtectionSuspended.Should().BeFalse();
+        // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: 既定値では「まだ知らせていない」。
+        found.UnattributedNotifiedQuantity.Should().BeNull();
+        found.UnattributedNotifiedAt.Should().BeNull();
+    }
+
+    // T-10-491（受け入れ基準 54 / #820 の 10 巡目監査, IADR-0344 追記(9) 決定3）:
+    // 「帰属不明の建玉」を知らせた記録が往復する。再起動のたびに Warning を再送しないための記録であり、
+    // 揮発させると**毎巡回（既定 30 秒）鳴って通知が埋もれる**。
+    [Fact]
+    public void 帰属不明の通知の記録が往復する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var entryDecisionId = Guid.NewGuid();
+        var stop = new ProtectiveStopOrder(
+            entryDecisionId, ProtectiveStopIds.SoftwareStopId(entryDecisionId), string.Empty, "AAPL",
+            Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 0,
+            ProtectiveStopState.Completed, Now, Now, StopLossExecutionMethod.SoftwareStop,
+            RemainingProtected: 0,
+            UnattributedNotifiedQuantity: 10, UnattributedNotifiedAt: Now.AddMinutes(7));
+
+        using (var db = NewContext(dbName))
+        {
+            new EfProtectiveStopOrderStore(db).Save(stop);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).Find(entryDecisionId)!;
+        found.Should().Be(stop);
+        found.UnattributedNotifiedQuantity.Should().Be(10);
+        found.UnattributedNotifiedAt.Should().Be(Now.AddMinutes(7));
+        found.State.Should().Be(
+            ProtectiveStopState.Completed, "群の代表が完了済みの行でも記録を持つ（受理後に取消された決済の残りの配置）");
+    }
+
+    // 未確定（null）の S1 行は 1 株も主張しない。S0 の旧い行（列が無かった時代）は Quantity を主張する。
+    [Fact]
+    public void 残保護数量が未設定なら_S1は0を_S0はQuantityを主張する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var s1 = Guid.NewGuid();
+        var s0 = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfProtectiveStopOrderStore(db);
+            store.Save(Stop(s1) with { Mechanism = StopLossExecutionMethod.SoftwareStop });
+            store.Save(Stop(s0));
+        }
+
+        using var db2 = NewContext(dbName);
+        var store2 = new EfProtectiveStopOrderStore(db2);
+        store2.Find(s1)!.ProtectedQuantity.Should().Be(0, "約定が確定するまで建玉を主張しない");
+        store2.Find(s1)!.IsEntryFillConfirmed.Should().BeFalse();
+        store2.Find(s0)!.ProtectedQuantity.Should().Be(10, "S0 はブローカーに実在する逆指値が覆う数量を主張する");
+    }
 }

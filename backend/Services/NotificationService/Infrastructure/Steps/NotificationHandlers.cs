@@ -19,6 +19,14 @@ public sealed class OrderExecutedNotificationHandler(INotificationSender sender)
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（引け跨ぎの失効・取消・拒否）。
+// 建玉が**黙って**翌日へ持ち越されることを防ぐための通知である。
+public sealed class PositionCloseAbandonedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(PositionCloseAbandoned message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 public sealed class OrderRejectedNotificationHandler(INotificationSender sender)
 {
     public Task Handle(OrderRejected message, CancellationToken cancellationToken) =>
@@ -172,6 +180,21 @@ public sealed class ProtectiveStopCoverageLostNotificationHandler(INotificationS
 public sealed class ProtectiveStopWaivedNotificationHandler(INotificationSender sender)
 {
     public Task Handle(ProtectiveStopWaived message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+// FR-10, FR-09, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置（Warning）。
+public sealed class SoftwareStopArmedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(SoftwareStopArmed message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+// FR-10, FR-09, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の発動結果
+// （決済の発注・エントリー取消は Warning、決済の拒否が続いたら Critical）。
+public sealed class SoftwareStopExecutedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(SoftwareStopExecuted message, CancellationToken cancellationToken) =>
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 

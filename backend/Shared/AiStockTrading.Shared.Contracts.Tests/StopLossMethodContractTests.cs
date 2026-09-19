@@ -73,6 +73,43 @@ public class StopLossMethodContractTests
         JsonSerializer.Deserialize<ProtectiveStopWaived>(JsonSerializer.Serialize(evt)).Should().Be(evt);
     }
 
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: S1 の配置と発動結果も監査 payload が一次証跡になる。
+    [Fact]
+    public void ソフトウェア逆指値の配置と発動結果はJSONを往復しても値が変わらない()
+    {
+        var armed = new SoftwareStopArmed(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+            BrokerProvider.MoomooSimulate, T0);
+        JsonSerializer.Deserialize<SoftwareStopArmed>(JsonSerializer.Serialize(armed)).Should().Be(armed);
+
+        var closeIntent = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 10, 940m, PositionEffect.Close, StopLossPrice: null, FxRateToBase: 1m);
+        var executed = new SoftwareStopExecuted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced, 10, 950m, 940m, 1,
+            Guid.NewGuid(), "close-1", closeIntent, T0);
+        var restored = JsonSerializer.Deserialize<SoftwareStopExecuted>(JsonSerializer.Serialize(executed))!;
+        restored.Should().BeEquivalentTo(executed);
+    }
+
+    [Fact]
+    public void ソフトウェア逆指値の発動結果の序数は動かない()
+    {
+        ((int)SoftwareStopOutcome.ClosePlaced).Should().Be(0);
+        ((int)SoftwareStopOutcome.EntryCancelled).Should().Be(1);
+        ((int)SoftwareStopOutcome.CloseRejected).Should().Be(2);
+        ((int)SoftwareStopOutcome.EntryMissing).Should().Be(3);
+        // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 末尾へ追加した（既存の序数を動かさない）。
+        ((int)SoftwareStopOutcome.CloseStalled).Should().Be(4);
+        // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による保護対象の減少（末尾へ追加）。
+        ((int)SoftwareStopOutcome.ProtectionReduced).Should().Be(5);
+        // #820 の 8 巡目監査, IADR-0344 追記(8): 帳簿では守っているのに 1 株も動かせない状態（末尾へ追加）。
+        ((int)SoftwareStopOutcome.ProtectionSuspended).Should().Be(6);
+        // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: どの保護記録も主張していない建玉の検知（末尾へ追加）。
+        ((int)SoftwareStopOutcome.UnattributedPosition).Should().Be(7);
+        // 🔴 序数だけでなく**値の総数**も固定する（末尾追加なら 1 つ増える。既存値の削除・並べ替えを捕まえる）。
+        Enum.GetValues<SoftwareStopOutcome>().Should().HaveCount(8);
+    }
+
     // 見送りの理由は末尾追加であり、既存 3 値の序数を動かさない（メトリクスのタグ・監査 payload の整数）。
     [Fact]
     public void 手法による見送りの理由は末尾に追加され既存の序数を動かさない()
@@ -87,7 +124,11 @@ public class StopLossMethodContractTests
         ((int)OrderDispatchForgoneReason.BrokerPositionAbsent).Should().Be(4);
         ((int)OrderDispatchForgoneReason.BrokerPositionsIndeterminate).Should().Be(5);
 
+        // #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: 帰属不明の建玉がある銘柄では S1 を武装しない。
+        // 🔴 #864 が序数 4・5 を先に取ったため 4 → 6 へ繰り下げた（先にマージされた側が確保する）。
+        ((int)OrderDispatchForgoneReason.UnattributedPosition).Should().Be(6);
+
         // 値を増やしたら、見送りを分類し直す側（在庫解放の可否など）も引き直させる。
-        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(6);
+        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(7);
     }
 }

@@ -15,7 +15,7 @@ namespace OrderExecutionService.Tests;
 //   2b. 実弾（SIMULATE 以外）で S0 以外が有効な承認は発注されない
 //   3.  SIMULATE＋S2 で新規買いが保護レグなしで建玉として残り、免除の事実が発行される
 //   4.  空売りは S2 でも S0 と同じ扱い
-//   5.  S1 / 未知の手法は未実装のため S0 と同じ扱い（#821・IADR-0347 で **S3 はここから抜けた**）
+//   5.  未知の手法は未実装のため S0 と同じ扱い（S1 は #820、S3 は #821 で実装済みでありここから抜けた）
 public class OrderExecutionServiceStopLossMethodTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 17, 14, 0, 0, TimeSpan.Zero);
@@ -218,13 +218,13 @@ public class OrderExecutionServiceStopLossMethodTests
         stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.Active);
     }
 
-    // ---- 受け入れ基準 5: S1 / 未知は未実装のため S0 ----
-    // #821, IADR-0347: **S3 はここから抜けた**（代替注文種別として実装された。OrderExecutionServiceAlternativeStopTests）。
+    // ---- 受け入れ基準 5: 未知の手法は未実装のため S0 ----
+    // #820, IADR-0344 決定2: S1 は実装済みでフォールバックしない（OrderExecutionServiceSoftwareStopTests が扱う）。
+    // #821, IADR-0347: **S3 もここから抜けた**（代替注文種別として実装された。OrderExecutionServiceAlternativeStopTests）。
 
     [Theory]
-    [InlineData(StopLossExecutionMethod.SoftwareStop)]
     [InlineData((StopLossExecutionMethod)99)]
-    public async Task S1と未知の手法はSIMULATEでS0と同じ扱いになる(StopLossExecutionMethod method)
+    public async Task 未知の手法はSIMULATEでS0と同じ扱いになる(StopLossExecutionMethod method)
     {
         var broker = new ScriptedBroker(BrokerProvider.MoomooSimulate) { EntryStatus = OrderStatus.Accepted };
         var (service, _, _, _) = NewService(broker);

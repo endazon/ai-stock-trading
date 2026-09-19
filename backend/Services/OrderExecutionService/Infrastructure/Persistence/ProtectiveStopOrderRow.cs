@@ -36,4 +36,37 @@ public sealed class ProtectiveStopOrderRow
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+
+    // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: 保護の機構（既定 0＝S0）と損切りライン到達の記録（S1 のみ）。
+    public StopLossExecutionMethod Mechanism { get; set; } = StopLossExecutionMethod.BrokerStopOrder;
+
+    public DateTimeOffset? TriggeredAt { get; set; }
+
+    public decimal? TriggeredPrice { get; set; }
+
+    // FR-10, #820 の 4 巡目監査, IADR-0344 追記(4): 残保護数量（null＝エントリーの約定が未確定）と、
+    // 到達済みなのに決済できない状態を Critical で知らせた時刻（1 行 1 回）。
+    public int? RemainingProtected { get; set; }
+
+    public DateTimeOffset? StalledNotifiedAt { get; set; }
+
+    // FR-10, #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因で削ったが**まだ確定していない**株数と、その連続観測回数。
+    // 建玉照会が 1 巡回だけ過少に見えただけで行を失わないための門（確定するまで完了させない・S0 の逆指値も取り消さない）。
+    public int PendingExternalReduction { get; set; }
+
+    public int ExternalReductionObservations { get; set; }
+
+    // FR-10, #820 の 8 巡目監査, IADR-0344 追記(8): 超過が**消えた**ことの連続観測回数（確定と対称の失効）と、
+    // 実効数量が 0 になった時刻・Critical で知らせた時刻（1 行 1 回。無音で保護が失われるのを止める）。
+    public int ExternalReductionAbsences { get; set; }
+
+    public DateTimeOffset? ProtectionSuspendedSince { get; set; }
+
+    public DateTimeOffset? ProtectionSuspendedNotifiedAt { get; set; }
+
+    // FR-10, #820 の 10 巡目監査, IADR-0344 追記(9): 「帰属不明の建玉」を最後に知らせた株数と時刻
+    // （群の代表行が持つ。同じ状態で毎巡回鳴らさない・再起動で Critical を再送しない）。
+    public int? UnattributedNotifiedQuantity { get; set; }
+
+    public DateTimeOffset? UnattributedNotifiedAt { get; set; }
 }

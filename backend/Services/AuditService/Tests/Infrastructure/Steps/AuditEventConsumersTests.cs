@@ -401,6 +401,30 @@ public class AuditEventConsumersTests
         await host.StopAsync();
     }
 
+    // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置と発動がエントリーの相関で台帳に残る。
+    [Fact]
+    public async Task ソフトウェア逆指値の配置と発動はエントリーの相関で台帳に残る()
+    {
+        var store = new InMemoryAuditEventStore();
+        using var host = await BuildHostAsync(store);
+
+        var entryDecisionId = Guid.NewGuid();
+        var armed = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new SoftwareStopArmed(entryDecisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                10, 950m, BrokerProvider.MoomooSimulate, DateTimeOffset.UtcNow));
+        armed.Executed.MessagesOf<SoftwareStopArmed>().Should().NotBeEmpty();
+
+        var executed = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new SoftwareStopExecuted(entryDecisionId, "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced,
+                10, 950m, 940m, 1, Guid.NewGuid(), "CLOSE-1", null, DateTimeOffset.UtcNow));
+        executed.Executed.MessagesOf<SoftwareStopExecuted>().Should().NotBeEmpty();
+
+        store.GetByCorrelation(entryDecisionId).Select(e => e.EventType)
+            .Should().BeEquivalentTo([nameof(SoftwareStopArmed), nameof(SoftwareStopExecuted)]);
+
+        await host.StopAsync();
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: S3 の試行（注文種別と拒否理由）が台帳へ残る。
     // 🔴 ハンドラが無いと理由は発注執行のログにしか残らない（7 年保持される台帳から読めない）。
     [Fact]

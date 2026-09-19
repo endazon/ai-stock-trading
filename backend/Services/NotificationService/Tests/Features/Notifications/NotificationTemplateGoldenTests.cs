@@ -70,7 +70,9 @@ public class NotificationTemplateGoldenTests
             new NotificationMessage(
                 "リスク統制: 損切りライン到達",
                 "7203 損切り SL=940（現在 950・数量 5・建玉 Buy）。"
-                    + "決済はブローカー側の逆指値が実行します（システムは決済注文を発行しません）。",
+                    + "決済は建玉の損切りの実行機構によります: S0＝ブローカー側の逆指値が実行（システムは発注しない）／"
+                    + "S1＝システムが成行で決済（別途「ソフトウェア逆指値」の通知）／"
+                    + "S2＝**システムもブローカーも決済しない（手動で決済してください）**。",
                 NotificationSeverity.Critical)),
 
         ["FxRateSourceFellBack"] = (
@@ -311,6 +313,22 @@ public class NotificationTemplateGoldenTests
                     + "**この注文は再試行されません**（キューイングしない・再発注は次の取引判断から）。",
                 NotificationSeverity.Warning)),
 
+        // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（引け跨ぎの失効・取消）。
+        // **「未決済 N」と「翌日へ持ち越される」が本文から欠けると、利用者は建玉が残ったことに気づかない**
+        // ——従来の「約定 Expired 数量0@0」がまさにそれだった。
+        ["PositionCloseAbandoned"] = (
+            new PositionCloseAbandoned(
+                Id, "AAPL", Market.UnitedStates, TradeSide.Sell, 3381, 0, 3381, OrderStatus.Expired, T),
+            new NotificationMessage(
+                "手仕舞いが約定せず終了",
+                "AAPL/UnitedStates Sell 数量3381 の手仕舞いが Expired で終了しました"
+                    + "（約定 0・**未決済 3381**）。"
+                    + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+                    + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
+                    + "手仕舞い直すか、建玉を確認してください"
+                    + "（DecisionId=11111111-1111-1111-1111-111111111111）。",
+                NotificationSeverity.Warning)),
+
         // #331, IADR-0210: 保護逆指値の発注。統制が設計どおり働いた記録であり Info
         // （Critical にすると実際に止まる事象が埋もれる）。
         ["ProtectiveStopPlaced"] = (
@@ -336,6 +354,52 @@ public class NotificationTemplateGoldenTests
                     + "**システムもブローカーも決済しません**（実弾口座では選べない手法です・"
                     + "EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
                 NotificationSeverity.Warning)),
+
+        // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置と発動結果（結末ごとに 1 行）。
+        ["SoftwareStopArmed"] = (
+            new SoftwareStopArmed(
+                Id, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+                BrokerProvider.MoomooSimulate, T),
+            new NotificationMessage(
+                "リスク統制: ソフトウェア逆指値を配置（S1）",
+                "AAPL/UnitedStates Buy 数量10: 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれているため、"
+                    + "MoomooSimulate へ保護逆指値を発注せず、損切りライン 950 への到達で"
+                    + "システムが成行で決済します。**ブローカー側に保護は無く、システム停止中は決済されません**"
+                    + "（実弾口座では選べない手法です・EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
+                NotificationSeverity.Warning)),
+
+        ["SoftwareStopExecuted/成行決済"] = (
+            new SoftwareStopExecuted(
+                Id, "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced, 10, 950m, 940.5m, 1, Id, "close-1",
+                new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                    BrokerProvider.MoomooSimulate, 10, 940.5m, PositionEffect.Close),
+                T),
+            new NotificationMessage(
+                "リスク統制: ソフトウェア逆指値で成行決済",
+                "AAPL/UnitedStates 数量10: 損切りライン 950 への到達（検知 940.5）で"
+                    + "成行の決済注文を発注しました（試行 1・OrderId=close-1・EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
+                NotificationSeverity.Warning)),
+
+        ["SoftwareStopExecuted/エントリー取消"] = (
+            new SoftwareStopExecuted(
+                Id, "AAPL", Market.UnitedStates, SoftwareStopOutcome.EntryCancelled, 0, 950m, 940.5m, 0, null, null, null, T),
+            new NotificationMessage(
+                "リスク統制: ソフトウェア逆指値でエントリーを取消",
+                "AAPL/UnitedStates: 損切りライン 950 への到達（検知 940.5）時点で"
+                    + "エントリーが未約定だったため取り消しました（建玉は生じていません・EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
+                NotificationSeverity.Warning)),
+
+        // 🔴 無保護の建玉が残る唯一の分岐。人手対応を促す文言が欠けると「決済済み」と読まれる。
+        ["SoftwareStopExecuted/決済拒否"] = (
+            new SoftwareStopExecuted(
+                Id, "AAPL", Market.UnitedStates, SoftwareStopOutcome.CloseRejected, 10, 950m, 940.5m, 3, Id, "close-3", null, T),
+            new NotificationMessage(
+                "リスク統制: ソフトウェア逆指値の決済が拒否されました",
+                "AAPL/UnitedStates 数量10: 損切りライン 950 へ到達しましたが、"
+                    + "成行の決済注文が 3 回目まで受理されませんでした。"
+                    + "**建玉が無保護で残っています。直ちに確認し、必要なら手動で決済してください**"
+                    + "（次の損切りライン到達で再試行します・EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
+                NotificationSeverity.Critical)),
 
         // 🔴 同じイベント型でも**対処の結末で本文が変わる**（FxRateStale と同じ扱いで分岐ごとに 1 行）。
         // 手仕舞いに成功した側。

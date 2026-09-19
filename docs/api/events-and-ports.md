@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-09, FR-10, FR-11, FR-12, UC-02, UC-06]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0040]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0347, IADR-0350, MSP:IADR-0049]
-specs: [20260917_819_stop-loss-method-selection, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #821, #849]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, MSP:IADR-0049]
+specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #849]
 -->
 
 
@@ -46,6 +46,8 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 | `OrderApproved` | リスク管理 | DecisionId, Intent, ApprovedQuantity, ApprovedAt, StopLossMethod（損切りの実行機構。任意・既定 0＝S0） | 発注前検証を通過し発注執行へ。発注執行は承認が運ぶ手法で保護逆指値を扱う（#819） |
 | `OrderRejected` | リスク管理 | DecisionId, Intent, Reasons(RejectionReason[]), RejectedAt | 発注前拒否（理由列挙。監査ログと Discord 通知が購読） |
 | `OrderExecuted` | 発注執行 | DecisionId, OrderId, Status(OrderStatus), FilledQuantity, AveragePrice, ExecutedAt | 約定/失注/取消/証券会社拒否の確定 |
+| `SoftwareStopArmed` | 発注執行 | EntryDecisionId, Symbol, Market, Side, ProductType, Quantity, StopLossPrice, Provider, OccurredAt | moomoo SIMULATE で手法 S1 が選ばれた新規買いに保護逆指値を発注せず、ソフトウェア逆指値（損切りライン到達で成行決済）を記録した。監査ログと Discord 通知が購読 |
+| `SoftwareStopExecuted` | 発注執行 | EntryDecisionId, Symbol, Market, Outcome(ClosePlaced/EntryCancelled/CloseRejected/EntryMissing/CloseStalled/ProtectionReduced/ProtectionSuspended/UnattributedPosition), Quantity, StopLossPrice, TriggeredPrice, Attempt, CloseDecisionId?, CloseOrderId?, CloseIntent?, OccurredAt | ソフトウェア逆指値が損切りライン到達で発動した結果（成行決済の発注・未約定エントリーの取消・決済拒否の打ち切り・エントリー記録の欠落・到達後の決済不能）と、**外部要因で保護対象を減らしたこと**（`ProtectionReduced`。決済は出していない）、**帳簿では守っているのに 1 株も決済できない状態が猶予を過ぎたこと**（`ProtectionSuspended`。到達の有無に依らない・決済は出していない）、**どの保護記録も主張していない建玉があること**（`UnattributedPosition`。**検知であって是正ではない**——売らず・記録も作らず・主張も動かさない。同じ状態では毎巡回出さない）。監査ログ・Discord 通知と、決済レグの台帳結線（リスク管理）が購読 |
 | `ProtectiveStopWaived` | 発注執行 | EntryDecisionId, Symbol, Market, Side, ProductType, Quantity, StopLossPrice, Method, Provider, OccurredAt | moomoo SIMULATE で手法 S2 が選ばれた新規買いに保護逆指値を発注せず建玉を保持した（ペーパーで免除）。監査ログと Discord 通知が購読（#819） |
 | `AlternativeProtectiveStopAttempted` | 発注執行 | EntryDecisionId, StopDecisionId, Symbol, Market, OrderType, Status, BrokerOrderId, RejectReasonCode, RejectReasonMessage, Method, Provider, OccurredAt | moomoo SIMULATE で手法 S3 が選ばれた新規買いの保護レグを代替注文種別（ストップリミット／トレーリングストップ）で試した。**受理・拒否のどちらでも 1 件**出し、拒否理由（`retType` / `retMsg`）を監査ログへ残す（#821） |
 | `PositionDriftAdopted` | リスク管理 | AdoptionId, Symbol, Market, LedgerQuantityBefore, LedgerQuantityAfter, BrokerQuantity, ObservedAt, CostBasisPrice, RealizedPnlRecorded, ReferencePrice, EstimatedPnlInBase, Actor, Reason, AdoptedAt | 利用者が承認した**台帳とブローカーの乖離の取り込み**（#849）。数量は符号付き。**`RealizedPnlRecorded` は常に false** —— システム外の売買は約定価格が分からないため実現損益を記録しない。`ReferencePrice` / `EstimatedPnlInBase` は取り込み時点の現在値による**推定**であり台帳へは入らない（現在値が取れなければ null）。`CostBasisPrice` は取り込み前の平均取得単価で、約定価格ではない。監査ログと Discord 通知が購読する。発注執行側の保護記録の追随は本イベントの購読で行う想定（後続） |
@@ -56,7 +58,7 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 | イベント | 発行元 | 主なフィールド | 用途 |
 | --- | --- | --- | --- |
 | `PriceMovementDetected` | 市場監視 | EventId, Symbol, Market, Price, BaselinePrice, ChangeRatio, DetectedAt | 変動閾値超過→対象銘柄限定の取引サイクル即時起動（取引判断#11／サイクル#21 が購読） |
-| `StopLossTriggered` | 市場監視 | EventId, Symbol, Market, PositionSide(TradeSide), Quantity, Price, StopLossPrice, DetectedAt | 損切りライン到達→リスク管理（#12 Slice C）が LLM 迂回で決済(Close)注文を発行 |
+| `StopLossTriggered` | 市場監視 | EventId, Symbol, Market, PositionSide(TradeSide), Quantity, Price, StopLossPrice, DetectedAt | 損切りライン到達の検知。リスク管理は記録のみ（決済を発行しない）。発注執行は moomoo SIMULATE の S1（ソフトウェア逆指値）の建玉だけを成行で決済する。監査・通知が購読する |
 
 - `RejectionReason` / `OrderStatus` の値はデータ仕様書を参照。`OrderRejected`（発注前拒否）と
   `OrderExecuted.Status = Rejected`（証券会社拒否）は別事象。

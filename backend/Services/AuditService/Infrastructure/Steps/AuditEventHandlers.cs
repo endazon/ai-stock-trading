@@ -237,6 +237,27 @@ public sealed class PositionCloseRequestedAuditHandler(IAuditEventStore store, I
     }
 }
 
+// FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による手仕舞いの取消要求を中央監査台帳へ記録する。
+// 後続の OrderCancelled はアクターを持たないため、本記録が「誰が・なぜ板の注文を消したか」の唯一の証跡になる。
+public sealed class PositionCloseCancellationRequestedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PositionCloseCancellationRequested message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-09, FR-10, FR-11, UC-06, #847, IADR-0357: 未約定残を残して終わった手仕舞いを中央監査台帳へ記録する。
+public sealed class PositionCloseAbandonedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PositionCloseAbandoned message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ（取引判断 #11）を中央監査台帳へ記録する（全イベントの時系列記録・FR-11）。
 public sealed class DailyPolicyUnconfirmedAuditHandler(IAuditEventStore store, IClock clock)
 {
@@ -495,6 +516,26 @@ public sealed class ProtectiveStopCoverageLostAuditHandler(IAuditEventStore stor
 public sealed class ProtectiveStopWaivedAuditHandler(IAuditEventStore store, IClock clock)
 {
     public void Handle(ProtectiveStopWaived message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置を中央監査台帳へ記録する。
+public sealed class SoftwareStopArmedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(SoftwareStopArmed message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の発動結果（決済・取消・拒否）を記録する。
+public sealed class SoftwareStopExecutedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(SoftwareStopExecuted message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));

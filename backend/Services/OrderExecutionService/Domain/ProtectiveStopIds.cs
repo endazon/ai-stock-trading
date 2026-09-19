@@ -17,6 +17,20 @@ public static class ProtectiveStopIds
     public static Guid CloseDecisionId(Guid entryDecisionId, int attempt) =>
         Derive($"protective-close:{entryDecisionId:N}:{attempt}");
 
+    /// <summary>
+    /// FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定1: ソフトウェア逆指値の識別子（行の StopDecisionId）。
+    /// ブローカーへ発注しないため試行番号を持たない。
+    /// </summary>
+    public static Guid SoftwareStopId(Guid entryDecisionId) =>
+        Derive($"software-stop:{entryDecisionId:N}");
+
+    /// <summary>
+    /// #820, IADR-0344 決定5: ソフトウェア逆指値が発動したときの成行決済レグの DecisionId（試行番号つき・1 始まり）。
+    /// 保護喪失の手仕舞い（<see cref="CloseDecisionId"/>）とは名前空間を分け、同じエントリーでも衝突させない。
+    /// </summary>
+    public static Guid SoftwareCloseDecisionId(Guid entryDecisionId, int attempt) =>
+        Derive($"software-stop-close:{entryDecisionId:N}:{attempt}");
+
     // 名前ベースの決定的 GUID（SHA-256 の先頭 16 バイト）。暗号用途ではなく相関キーの導出であり、
     // 必要な性質は「同じ入力 → 同じ GUID・異なる入力 → 衝突が実用上起きない」のみ。
     private static Guid Derive(string name)

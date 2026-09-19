@@ -260,6 +260,12 @@ public class AuditCycleCompletenessTests
             new OrderRejected(decisionId, Intent(), [RejectionReason.PerOrderAmountExceeded], t),
             new PositionCloseRequested(
                 decisionId, "AAPL", Market.UnitedStates, TradeSide.Sell, 10, 1_020m, "endazon", "利益確定", t),
+            // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による手仕舞いの取消要求と、
+            // 未約定残を残して終わった手仕舞い（引け跨ぎの失効・取消・拒否）。
+            new PositionCloseCancellationRequested(
+                decisionId, "AAPL", Market.UnitedStates, "endazon", "指値が置いていかれた", t),
+            new PositionCloseAbandoned(
+                decisionId, "AAPL", Market.UnitedStates, TradeSide.Sell, 10, 0, 10, OrderStatus.Expired, t),
             new PositionClosedWithStaleFxRate("7203", Market.Japan, "JPY", 300, 0.0067m, t.AddDays(-31), 31d, t),
             new PositionReconciliationDrift(
                 [new PositionDriftItem("AAPL", Market.UnitedStates, 10, 8, PositionDriftKind.QuantityMismatch)], t, t),
@@ -284,6 +290,13 @@ public class AuditCycleCompletenessTests
                 StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, t),
             new ReportConfirmed("2026-08-28", "Daily", "endazon", 3, t),
             new ReportDraftPresented("2026-08-28", "Daily", "2026-08-28（日報）", "本日の方針", 1, t),
+            // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置と発動結果。
+            new SoftwareStopArmed(
+                decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+                BrokerProvider.MoomooSimulate, t),
+            new SoftwareStopExecuted(
+                decisionId, "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced, 10, 950m, 940m, 1,
+                Guid.NewGuid(), "CLOSE-1", Intent(), t),
             new ScreeningContextReduced(
                 ["AAPL", "MSFT"], 2, Split: true, DroppedRagCount: 1, DroppedNewsCount: 2,
                 UnresolvableOverflow: false, BudgetChars: 8_000, t),

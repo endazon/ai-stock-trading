@@ -336,19 +336,24 @@ public class PositionCloseServiceTests
         outcome.Approval!.Intent.Price.Should().Be(25m);
     }
 
+    // T-10-583, #847, IADR-0357: 指値省略は**成行**になったが、参照価格（台帳・監査・通知が使う）には現在値を載せる。
+    // 既定の切り替えそのものは PositionCloseMarketOrderTests が固定する。
     [Fact]
-    public void 指値省略時は現在値を用いる()
+    public void 指値省略時は参照価格として現在値を用いる()
     {
         var outcome = Create(LedgerWithLong()).Request(Command(), Actor);
 
         outcome.Approval!.Intent.Price.Should().Be(21m);
+        outcome.Approval.Intent.MarketOrder.Should().BeTrue("#847: limitPrice 省略の既定は成行である");
     }
 
     [Fact]
-    public void 指値も現在値も無ければ拒否する()
+    public void 指値を選んだのに指値も現在値も無ければ拒否する()
     {
-        // 価格 0 の注文を投げない（ブローカが拒否するか、成行相当で意図しない価格で約定する）。
-        var outcome = Create(LedgerWithLong(), prices: new FakeCurrentPriceSource()).Request(Command(), Actor);
+        // 価格 0 の**指値**を投げない。#847 以降、この拒否に至るのは「成行を明示的に否定した」ときだけである
+        //（省略時は成行になり、参照価格は建玉の平均取得単価へ倒れる＝手仕舞いは止まらない）。
+        var outcome = Create(LedgerWithLong(), prices: new FakeCurrentPriceSource())
+            .Request(new PositionCloseCommand("AAPL", Market.UnitedStates, null, null, "手仕舞い", false), Actor);
 
         outcome.Rejection.Should().Be(PositionCloseRejection.PriceUnavailable);
     }

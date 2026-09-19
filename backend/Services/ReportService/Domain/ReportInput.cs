@@ -46,6 +46,13 @@ public enum ReportInput
 
     /// <summary>散文（LLM ドラフト）。未供給＝プレースホルダ散文。</summary>
     Narrative,
+
+    /// <summary>
+    /// FR-11, ADR-0041 決定 1, #870, #859, IADR-0360: <b>手動売買の取り込み</b>（取引台帳）。
+    /// 🔴 未供給は日報 §2-b が欠けるだけでなく、<b>在庫の畳み込みからも落ちる</b>
+    /// ——実在しない建玉の評価損益が出得る。**空列（該当なし）へ倒さない。**
+    /// </summary>
+    DriftAdoptions,
 }
 
 // FR-06, #840, IADR-0352 決定 5: 入力の表示名・種別ごとの適用・永続化形式（純関数）。
@@ -62,6 +69,9 @@ public static class ReportInputs
     public static bool AppliesTo(ReportInput input, ReportKind kind) => input switch
     {
         ReportInput.Fills or ReportInput.Narrative => true,
+        // 🔴 日報 §2-b を描くのは日報だけだが、**在庫の畳み込みは全種別が行う**（欠けると週報・月報も
+        // 実在しない建玉の評価損益を出す）。したがって全種別が使う入力である。
+        ReportInput.DriftAdoptions => true,
         // 日報 §2 の明細・週報 §3 のハイライトが根拠を転記する。月報の内訳は根拠を描かない。
         ReportInput.TradeRationales => kind is ReportKind.Daily or ReportKind.Weekly,
         // 日報 §3 だけが建玉を持つ。
@@ -94,6 +104,7 @@ public static class ReportInputs
         ReportInput.CurrentStage => "運用段階",
         ReportInput.PeriodEndFxRate => "為替差損益の期末レート",
         ReportInput.Narrative => "散文（LLM）",
+        ReportInput.DriftAdoptions => "手動売買の取り込み",
         _ => input.ToString(),
     };
 

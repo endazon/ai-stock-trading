@@ -17,13 +17,25 @@ namespace RiskManagementService.Infrastructure.Steps;
 // （Wolverine では 1 サービス内 1 イベント型 = 1 キュー）。再試行では両方が再実行されるが、双方の書き込みは
 // 冪等である —— MarkTerminal は単調（既に終端なら何もしない）、RecordCancellation は絶対値の代入。
 // **新しいキューは増えない**（OrderCancelled の購読は既に存在する）。
+//
+// FR-09, UC-06, #847, IADR-0357: OrderExecutedLedgerHandler と同じく、終端を**初めて**記録したときに
+// 「未約定残を残して終わった手仕舞い」を PositionCloseAbandoned として返す（通知・監査のみ。在庫に触れない）。
 public sealed class OrderCancelledLedgerHandler(IPortfolioLedgerStore ledger)
 {
-    public void Handle(OrderCancelled message)
+    public PositionCloseAbandoned? Handle(OrderCancelled message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
         // 相関する承認が無い取消（他サービス由来・台帳に載らない注文）は MarkTerminal 側が無視する。
-        ledger.MarkTerminal(message.DecisionId, OrderStatus.Cancelled, message.CancelledAt);
+        var newlyTerminal = ledger.MarkTerminal(
+            message.DecisionId, OrderStatus.Cancelled, message.CancelledAt);
+
+        // #847, IADR-0357: 取消は部分約定を追い越して届く。発注執行が取消を確認したときに観測した累積約定数を
+        // 渡して、失効通知の「未決済 N 株」が水増しされないようにする（在庫の判定には一切使わない）。
+        return newlyTerminal
+            ? PositionCloseAbandonment.Describe(
+                ledger, message.DecisionId, OrderStatus.Cancelled, message.CancelledAt,
+                message.ObservedFilledQuantity)
+            : null;
     }
 }

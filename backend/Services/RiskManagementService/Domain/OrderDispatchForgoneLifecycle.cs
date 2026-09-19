@@ -56,6 +56,16 @@ public static class OrderDispatchForgoneLifecycle
             // ***発注*の不明**（送ったか分からない）ではない —— 下の注記を参照。
             OrderDispatchForgoneReason.BrokerPositionAbsent => true,
             OrderDispatchForgoneReason.BrokerPositionsIndeterminate => true,
+            // #820, IADR-0344 追記(8) 決定4: S1 の武装の前提条件（帰属不明の建玉がある／確かめられない）。
+            // **送信前**である（`OrderExecutionAppService.ExecuteAsync` を実測: この分岐は **L194** で `return` し、
+            // `reservations.TryReserve` は **L223**・ブローカーへの送信は **L233/234**＝いずれも後）。
+            // 判定の中で叩く `GetPositionsAsync` は**読み取りの建玉照会だけ**で、注文は 1 バイトも送らない。
+            // 🔴 「不明」の 3 つ目の文脈である——**建玉照会の能力が無い／照会が `null`** のときも
+            // この理由で見送るが、それは***建玉照会*の不明**であって***発注*の不明**ではない（下の注記）。
+            // なお本理由は **Open でしか起き得ない**（分岐が `PositionEffect.Open` の内側）ため、
+            // 決済の在庫解放が実際に動くことは今のところ無い。**それでも事実として正しい側へ分類する**
+            // ——既定 `false` は「送ったかもしれない」という*誤った事実*を述べることになる。
+            OrderDispatchForgoneReason.UnattributedPosition => true,
             // 🔴 既定は「解放しない」。新しい理由を足す人は、それが確実に未発注かを**実測して**からここへ足す。
             //
             // 🔴 判定の基準は**理由の名前ではなく「ブローカーへ送信したか」**である。

@@ -25,6 +25,17 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //     1 時間たったときに CloseDispatchIndeterminate（Critical・CloseIntent つき）を発行し直す。成行も逆指値も送らない。
 //
 // 発行（イベントの Publish）は Worker 層（ProtectiveStopGuardService）が担う。
+//
+// FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定6・追記(4): ソフトウェア逆指値（S1）の行は**ブローカーの注文照会をしない**
+// （ブローカーに注文が無い）。到達済みなら SoftwareStopExecutor で決済を再試行し、未到達なら
+// **残保護数量が 0 になったときだけ**完了する（純額や他手法の主張では完了させない。BLK-1・B3）。
+// S0 行の建玉残は S1 行の残保護数量を差し引いて判定する（S1 行が無い構成では差し引く量が 0 で、S0 の判定は従来と同一）。
+//
+// 🔴 **評価の順序は S0 → 到達済み S1 → 未到達 S1**（IADR-0344 追記(4) 決定8）。
+//   - S0 を先に評価するのは、S1 の予算が「**この巡回の後も生きている S0**」の数量を引くべきだからである。
+//     約定・取消で役目を終えた S0 の数量を引くと、建玉が残っているのに S1 の持ち分が 0 になり保護が黙って消える（B3）。
+//   - 到達済みを未到達より先にするのは、未到達の行が先に持ち分を取って**到達した行が決済できなくなる**のを防ぐため
+//     （#820 の 4 巡目監査 BLK-4）。
 public sealed class ProtectiveStopGuard(
     IBrokerAdapter broker,
     IBrokerPositionSource positions,
@@ -33,7 +44,8 @@ public sealed class ProtectiveStopGuard(
     IOrderReservationStore reservations,
     IClock clock,
     ILogger<ProtectiveStopGuard>? logger = null,
-    HeldCloseNotificationTracker? heldCloseNotifications = null)
+    HeldCloseNotificationTracker? heldCloseNotifications = null,
+    OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null)
 {
     private readonly ILogger _logger = logger ?? NullLogger<ProtectiveStopGuard>.Instance;
 
@@ -46,9 +58,14 @@ public sealed class ProtectiveStopGuard(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var active = stops.FindActive(batchSize);
-        if (active.Count == 0)
+        var scanned = stops.FindActive(batchSize);
+        if (scanned.Count == 0)
             return ProtectiveStopGuardResult.Empty;
+
+        // 🔴 #820 の 4 巡目監査, IADR-0344 追記(4): **巡回の最初に S1 行の残保護数量を確定する**。
+        // S0 行の建玉残は S1 行の残保護数量を差し引いて判定するため、確定前の（主張 0 の）S1 行があると
+        // S0 が「その建玉は自分のもの」と誤認し、#826 項目 3 が 1 巡回ぶん効かない。
+        var active = ProtectiveStopNetting.ConfirmEntryFills(scanned, stops, store, clock.UtcNow);
 
         // 建玉は 1 巡回につき 1 回照会する。null（照会不能）なら巡回ごと据え置く——建玉不明のまま
         // 「消滅した」と誤認して逆指値を取り消すと、直後の失効側の保護が消える。
@@ -57,6 +74,25 @@ public sealed class ProtectiveStopGuard(
             return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, active.Count, 0, []);
 
         var events = new List<object>();
+
+        // 🔴 #820 の 4 巡目監査, IADR-0344 追記(4) 決定4: 外部要因（人手決済・強制決済・S0 の逆指値の約定）による減少を
+        // **この巡回で一度だけ**割り当てて保存する。S0 の取消判定より前に行う——判定は「割り当て後の主張」を見るべきで、
+        // 割り当て前の（消えた建玉をまだ主張している）値で判定すると、生きている逆指値を取り消してしまう（BLK-1）。
+        //
+        // 🔴 #820 の 5 巡目監査・7 巡目監査, IADR-0344 追記(5)・追記(7): **ここだけが「観測」である**（群につき 1 巡回 1 回）。
+        // 観測の連続回数を数え、確定（2 巡回連続）したぶんだけ帳簿を減らして通知するのがこの呼び出しである。
+        // **未確定のあいだ帳簿は動かない**ため、建玉が戻ったときに書き戻す（復元する）経路は存在しない。
+        foreach (var (symbol, market, entrySide) in active
+            .Select(s => (s.Symbol, s.Market, s.EntrySide))
+            .Distinct())
+        {
+            ProtectiveStopNetting.ReconcileShares(
+                symbol, market, entrySide, snapshot, active, stops, store, clock.UtcNow,
+                observing: true, events: events);
+        }
+
+        active = stops.FindActive(batchSize);
+
         var stillActive = 0;
         var completed = 0;
         var replaced = 0;
@@ -64,12 +100,18 @@ public sealed class ProtectiveStopGuard(
         var unknown = 0;
         var failed = 0;
 
-        foreach (var stop in active)
+        // #820 の 4 巡目監査, IADR-0344 追記(4) 決定8: S0 → 到達済み S1 → 未到達 S1 の順に評価する（理由は冒頭の注記）。
+        foreach (var stop in active
+            .OrderBy(s => s.IsSoftwareStop ? (s.TriggeredAt is null ? 2 : 1) : 0)
+            .ThenBy(s => s.CreatedAt)
+            .ThenBy(s => s.EntryDecisionId))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var outcome = await EvaluateAsync(stop, snapshot, events, cancellationToken).ConfigureAwait(false);
+                var outcome = stop.IsSoftwareStop
+                    ? await EvaluateSoftwareStopAsync(stop, snapshot, events, cancellationToken).ConfigureAwait(false)
+                    : await EvaluateAsync(stop, snapshot, active, events, cancellationToken).ConfigureAwait(false);
                 switch (outcome)
                 {
                     case Outcome.StillActive: stillActive++; break;
@@ -85,12 +127,88 @@ public sealed class ProtectiveStopGuard(
             }
         }
 
+        // 🔴 #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: **どの保護記録も主張していない建玉**を知らせる。
+        // 武装の前提条件は武装の時点しか見ないが、材料（純額と保護記録）はガードが毎巡回持っている。
+        // 評価の**後**に行う——この巡回で出した決済のレグが記録済みになっているため、
+        // 「送信済みで未反映の決済」を数え落とさない（早まった警告を出さない）。
+        // 検知だけであり、建玉を売らず・記録も作らず・主張も動かさない。
+        //
+        // 🔴 **#820 の 11 巡目監査, IADR-0344 追記(10): ここへ来るのは Active な行が 1 件以上ある巡回だけである。**
+        // 上の早期 return（巡回対象ゼロなら建玉を照会しない）は無駄な OpenD 往復を避けるための既存の規律であり、
+        // 壊さない。そのため「受理後に 0 約定で取り消された決済の残り」——決済を送った行はその時点で完了し
+        // 巡回の対象に残らない——が**その口座で唯一の S1 の痕跡**なら、検知は一度も走らない（監査の PROBE1）。
+        // 気づける経路はその銘柄への**次の武装の見送り**である。塞ぐには建玉観測の常駐
+        //（Hosted/BrokerPositionSnapshotService。既定 600 秒・無条件に照会する）へ相乗りする——**追随は #880**。
+        //
+        // 🔴 **#820 の 12 巡目監査（NB-12-5）: ここは保護記録を「照会の後」に引き直している**（下の FindActive）。
+        // つまりガードは**照会前の主張を持ち越さない**。発注側（OrderExecutionAppService）は持ち越すため、
+        // 「ガードと同じ順序だから安全」という類比は**片手落ちである**——発注側は照会の前と後の両方で主張を読み、
+        // **小さい方**を採ることで両方向の窓を閉じている（IADR-0344 追記(11) 決定1）。
+        ProtectiveStopNetting.DetectUnattributedPositions(
+            snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events);
+
         return new ProtectiveStopGuardResult(active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events);
+    }
+
+    // #820, IADR-0344 決定6・追記(4): ソフトウェア逆指値の巡回（ブローカーの注文照会をしない）。
+    private async Task<Outcome> EvaluateSoftwareStopAsync(
+        ProtectiveStopOrder stop,
+        IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        List<object> events,
+        CancellationToken cancellationToken)
+    {
+        if (stop.TriggeredAt is not null)
+        {
+            // 到達済みで決済できていない（接続断・取消待ち・拒否の途中）。決済を再試行する。
+            if (softwareStops is null)
+                return Outcome.Unknown;
+
+            var outcome = await softwareStops
+                .TryCloseAsync(stop, snapshot, cancellationToken)
+                .ConfigureAwait(false);
+            if (outcome.Event is not null)
+                events.Add(outcome.Event);
+            return outcome.Kind switch
+            {
+                OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.Completed =>
+                    outcome.Event is { Outcome: SoftwareStopOutcome.ClosePlaced } ? Outcome.ClosedOut : Outcome.Completed,
+                // 部分的に決済した行は Active のまま残る（残りは次の巡回で決済する。BLK-3）。
+                OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.PartiallyClosed =>
+                    Outcome.ClosedOut,
+                OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopCloseKind.Rejected => Outcome.StillActive,
+                _ => Outcome.Unknown,
+            };
+        }
+
+        // 🔴 #820 の 4 巡目監査, IADR-0344 追記(4): **残保護数量が 0 になったときだけ**保護を外す。
+        // 純額や他手法の主張で外すと、建玉が残っているのに保護がゼロになる（3 巡目監査 B3）か、
+        // 自分の建玉を失った行が不死化して生きている S0 の逆指値を毎巡回取り消す（4 巡目監査 BLK-1）。
+        // 減った建玉の観測と確定は巡回の先頭の ReconcileShares が済ませており、保存済みである。
+        var current = stops.Find(stop.EntryDecisionId) ?? stop;
+
+        // 未確定（エントリーの発注記録が無い・まだ終端でない）＝これから約定し得る。建玉が 0 でも完了しない。
+        if (current.RemainingProtected is not { } remaining)
+            return Outcome.StillActive;
+
+        // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5)・追記(7): 外部要因の減少が**まだ確定していない**あいだは完了させない。
+        // 建玉照会は 1 巡回だけ過少に返り得る——1 回の観測で行を閉じると、次の巡回で建玉が戻っても取り返せない。
+        if (current.HasUnconfirmedExternalReduction)
+            return Outcome.StillActive;
+
+        if (remaining <= 0)
+        {
+            // 建玉が生じなかった、または外部要因で自分の建玉が消えた。保護の役目を終える（ブローカーに取り消す注文は無い）。
+            MarkCompleted(current);
+            return Outcome.Completed;
+        }
+
+        return Outcome.StillActive;
     }
 
     private async Task<Outcome> EvaluateAsync(
         ProtectiveStopOrder stop,
         IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        IReadOnlyList<ProtectiveStopOrder> active,
         List<object> events,
         CancellationToken cancellationToken)
     {
@@ -101,12 +219,19 @@ public sealed class ProtectiveStopGuard(
             return Outcome.Unknown;
         }
 
-        var remaining = RemainingPositionFor(stop, snapshot);
+        // #820, IADR-0344 決定6・追記(4) 決定10: 手法の異なる Active 行（S1）の**残保護数量**を差し引く（無ければ従来と同一）。
+        var remaining = ProtectiveStopNetting.RemainingPositionFor(stop, snapshot, active);
 
         if (OrderStatusLifecycle.IsPending(order.Status))
         {
             if (remaining > 0)
                 return Outcome.StillActive; // 正常: 建玉あり・逆指値滞留中。
+
+            // 🔴 #820 の 5 巡目監査, IADR-0344 追記(5)・追記(7): 建玉残が 0 になった理由が**まだ確定していない外部要因**なら据え置く。
+            // 建玉照会は 1 巡回だけ過少に返り得る——その 1 回で**ブローカーに実在する生きた逆指値を取り消す**のは
+            // 無音かつ不可逆な破壊である。確定（2 巡回連続の観測）を待ってから取り消す。
+            if (stop.HasUnconfirmedExternalReduction)
+                return Outcome.Unknown;
 
             // 建玉消滅（owner 手仕舞い・自動縮小・強制買戻し等）: 残存逆指値を取り消す。
             // 決済済み建玉に残る注文が発火すると**反対方向の建玉を生む**（業務フロー 02 補足の二重決済問題）。
@@ -126,6 +251,10 @@ public sealed class ProtectiveStopGuard(
         // 失効（Cancelled / Rejected / Expired）。
         if (remaining <= 0)
         {
+            // 建玉残が 0 の理由が未確定の外部要因なら据え置く（確定しなければ主張は減らないまま再発注へ回る。追記(7)）。
+            if (stop.HasUnconfirmedExternalReduction)
+                return Outcome.Unknown;
+
             MarkCompleted(stop); // 建玉も無い: 保護対象が消えている。
             return Outcome.Completed;
         }
@@ -200,6 +329,9 @@ public sealed class ProtectiveStopGuard(
                     StopDecisionId = stopDecisionId,
                     StopOrderId = newStop.OrderId,
                     Quantity = quantity,
+                    // #820 の 4 巡目監査, IADR-0344 追記(4): 再発注で覆う数量が縮んだら、S0 の主張もその数量へ揃える
+                    // （S1 側の予算はこの主張を引くため、古い数量のままだと S1 の持ち分が足りなくなる）。
+                    RemainingProtected = quantity,
                     Attempt = attempt,
                     UpdatedAt = now,
                 });
@@ -343,13 +475,8 @@ public sealed class ProtectiveStopGuard(
 
     // 建玉スナップショットから「エントリー方向の残数量」を求める。数量は符号付き（+ロング/−ショート・IADR-0118）。
     // ロング建玉（Buy 建て）は正の数量、ショート建玉（Sell 建て）は負の数量の絶対値が残である。
-    public static int RemainingPositionFor(ProtectiveStopOrder stop, IReadOnlyList<BrokerPositionSnapshot> snapshot)
-    {
-        var net = snapshot
-            .Where(p => p.Symbol == stop.Symbol && p.Market == stop.Market)
-            .Sum(p => p.Quantity);
-        return stop.EntrySide == TradeSide.Buy ? Math.Max(0, net) : Math.Max(0, -net);
-    }
+    public static int RemainingPositionFor(ProtectiveStopOrder stop, IReadOnlyList<BrokerPositionSnapshot> snapshot) =>
+        ProtectiveStopNetting.DirectionalNet(stop, snapshot);
 
     // FR-17, IADR-0107: 決済レグはエントリーの換算レートを引き継ぐ（OrderExecutionService と同じ規律）。
     private static OrderIntent BuildCloseIntent(ProtectiveStopOrder stop, int quantity, decimal referencePrice) =>

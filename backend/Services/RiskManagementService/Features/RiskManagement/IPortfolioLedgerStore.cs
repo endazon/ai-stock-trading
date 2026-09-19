@@ -65,6 +65,21 @@ public interface IPortfolioLedgerStore
     bool AppendDriftAdoption(LedgerDriftAdoption adoption);
 
     /// <summary>
+    /// FR-11, FR-06, SC-03, ADR-0041 決定 1, #870, IADR-0360 決定 2: 記録済みの<b>乖離の取り込み</b>を
+    /// 追記順（取り込み日時の昇順）で返す。
+    /// <para>
+    /// <see cref="GetFills"/> は取り込みを <see cref="LedgerFill"/>（由来 <c>ManualAdoption</c>）へ均して合流させるため、
+    /// <b>操作者・理由・取り込み前後の数量・観測時刻が落ちる</b>。報告書の日報 §2-b「手動売買（損益不明）」と
+    /// SC-03 の件数はそれらを必要とするため、<b>取り込みそのものを読む口</b>を別に持つ。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>約定列（<see cref="GetFills"/>）と混ぜない。</b> 混ぜると、消費側が 1 箇所でも除外を書き落としたときに
+    /// 「平均取得単価で売った損益 0 の決済」が<b>確定値として</b>集計される（IADR-0350 決定 4 と同じ理由）。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<LedgerDriftAdoption> GetDriftAdoptions();
+
+    /// <summary>
     /// FR-20, #386, IADR-0149 決定2: 承認済み注文の<b>建玉効果</b>を <c>DecisionId</c> で引く。
     /// 相関する承認が無ければ <c>null</c>（＝不明）。
     /// <para>
@@ -136,8 +151,37 @@ public interface IPortfolioLedgerStore
     /// 🔴 <b>呼び出し側の順序</b>: 同じイベントが約定も運ぶ場合は<b>先に <see cref="AppendFill"/> を済ませてから</b>
     /// 呼ぶ。逆順にすると、在庫を返してから約定を建玉へ反映するまでの区間で二重決済の窓が開く。
     /// </para>
+    /// <para>
+    /// FR-09, UC-06, #847, IADR-0357: <b>戻り値は「この呼び出しで初めて終端を記録したか」</b>である。
+    /// 記録する条件（<c>AbandonsUnfilledRemainder</c>・単調・冪等・相関する承認が無ければ書かない）は
+    /// #848 から 1 バイトも変えていない —— 足したのは戻り値だけである。
+    /// 呼び出し側はこれを<b>通知の冪等キー</b>として使う（再配送で失効通知を撃ち直さない）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>「初回だけ true」は並行しても成立しなければならない。</b> <c>OrderCancelled</c> と
+    /// <c>OrderExecuted</c> は Wolverine の<b>別キュー＝並行実行</b>であり（IADR-0129 決定 1）、
+    /// 同じ承認の終端を同時に運び得る（#847 のシナリオそのもの）。成立させているのは実装ごとに違う ——
+    /// インメモリ実装は <c>ConcurrentDictionary.TryUpdate</c> の CAS、EF 実装は
+    /// <c>approved_orders.TerminalAt</c> の<b>並行トークン</b>である。
+    /// <b>どちらかを外すと、この段落の主張は黙って偽になる</b>（実測: トークン無しの EF では、200 試行の
+    /// 反復で「初回」が 2 回成立する試行が多数観測される。<b>比率は実行環境の並行度に依存するので絶対数は書かない</b>）。
+    /// 回帰は <c>EfPortfolioLedgerMarkTerminalConcurrencyTests</c> と
+    /// <c>PortfolioLedgerInFlightCloseTests</c> が<b>実装ごとに</b>固定する。
+    /// </para>
     /// </summary>
-    void MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);
+    bool MarkTerminal(Guid decisionId, OrderStatus terminalStatus, DateTimeOffset terminalAt);
+
+    /// <summary>
+    /// FR-09, FR-10, UC-06, #847, IADR-0357: <c>DecisionId</c> の承認に対する<b>約定累計</b>を返す。
+    /// 相関する承認が無ければ <c>null</c>（＝不明）。
+    /// <para>
+    /// 失効した手仕舞いの通知が「何株が残ったか」を言うために要る（<c>OrderExecuted</c> が運ぶのは
+    /// その注文の累計であり、1 承認に複数の注文行が対応し得る経路〔リコンサイル〕では取りこぼす）。
+    /// <b>読み取り専用であり、在庫の判定には使わない</b>（在庫は <see cref="GetInFlightCloseQuantity"/> が権威）。
+    /// </para>
+    /// </summary>
+    int? FindApprovedFilledQuantity(Guid decisionId);
+
 
     /// <summary>
     /// FR-05, FR-10, UC-06, #852, IADR-0356: 承認済み注文が<b>発注されずに見送られた</b>ことを台帳へ記録する

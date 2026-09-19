@@ -48,6 +48,7 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
+
     // #270, IADR-0113: 観測した最新状態を既存記録へ反映する（無ければ何もしない＝新規に作らない）。
     public bool UpdateOutcome(
         string orderId,

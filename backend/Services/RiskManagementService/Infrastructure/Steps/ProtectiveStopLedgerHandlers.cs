@@ -38,6 +38,34 @@ public sealed class ProtectiveStopPlacedLedgerHandler(
     }
 }
 
+// FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の成行決済レグを台帳の承認行へ結線する。
+// 決済は発注執行が既にブローカーへ発注済みであり（OrderApproved を流すと二重発注）、ここでは承認行だけを足す。
+// 承認行が無いと決済の約定（OrderExecuted）を台帳が相関できず、損切りが成立しても台帳の建玉が減らない
+// （市場監視は台帳の建玉を見て到達を出し続ける）。冪等は AppendApproval の DecisionId 冪等が担う。
+public sealed class SoftwareStopExecutedLedgerHandler(
+    IPortfolioLedgerStore ledger,
+    IRecognitionFxRateResolver recognitionFxRate,
+    ILogger<SoftwareStopExecutedLedgerHandler> logger)
+{
+    public async Task Handle(SoftwareStopExecuted message, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        // 決済レグを伴う（ClosePlaced）ときだけ。取消・拒否は結線すべき約定が無い。
+        if (message is not { Outcome: SoftwareStopOutcome.ClosePlaced, CloseDecisionId: { } closeDecisionId, CloseIntent: { } closeIntent })
+            return;
+
+        var fxRateBaseToDisplay = await recognitionFxRate
+            .ResolveBaseToDisplayAsync(cancellationToken).ConfigureAwait(false);
+
+        ledger.AppendApproval(closeDecisionId, closeIntent, message.OccurredAt, fxRateBaseToDisplay);
+        logger.LogDebug(
+            "台帳にソフトウェア逆指値の決済レグの承認を記録: EntryDecisionId={EntryDecisionId}"
+                + " CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",
+            message.EntryDecisionId, closeDecisionId, message.Symbol, message.Quantity);
+    }
+}
+
 public sealed class ProtectiveStopCoverageLostLedgerHandler(
     IPortfolioLedgerStore ledger,
     IRecognitionFxRateResolver recognitionFxRate,

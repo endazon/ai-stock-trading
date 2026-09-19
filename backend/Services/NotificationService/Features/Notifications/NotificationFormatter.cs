@@ -13,18 +13,39 @@ public static class NotificationFormatter
         $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}・DecisionId={e.DecisionId}）",
         e.Status == OrderStatus.Filled ? NotificationSeverity.Info : NotificationSeverity.Warning);
 
+    // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（失効・取消・拒否）。
+    //
+    // 従来はこの事象が `OrderExecuted` の「約定 Expired 数量0@0」という一般的な Warning にしかならず、
+    // **それが手仕舞いだったことも、何株が残ったかも書かれていなかった**（#847 の受け入れ基準 3）。
+    //
+    // 🔴 **Warning であって Critical ではない。** Critical は「実際に統制が破れた」事象
+    //（保護喪失・損切りライン到達）に取っておく——手仕舞いが流れたこと自体は統制の破れではない。
+    // ただし Info にもしない: **手仕舞えなかった建玉が実在し、無保護なら翌日へ持ち越される**。
+    public static NotificationMessage From(PositionCloseAbandoned e) => new(
+        "手仕舞いが約定せず終了",
+        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.ApprovedQuantity} の手仕舞いが {e.TerminalStatus} で終了しました"
+            + $"（約定 {e.FilledQuantity}・**未決済 {e.RemainingQuantity}**）。"
+            + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
+            + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"
+            + $"手仕舞い直すか、建玉を確認してください（DecisionId={e.DecisionId}）。",
+        NotificationSeverity.Warning);
+
     // リスク統制発動: 発注拒否（理由つき）。
     public static NotificationMessage From(OrderRejected e) => new(
         "リスク統制: 発注拒否",
         $"{e.Intent.Symbol} 拒否: {string.Join(",", e.Reasons)}（DecisionId={e.DecisionId}）",
         NotificationSeverity.Warning);
 
-    // リスク統制: 損切りライン到達の検知（#331・逆指値一本化）。決済はブローカー側の逆指値が実行し、
-    // システムは発注しない——本文にその旨を明示する（「システムが決済した」と誤読させない）。
+    // リスク統制: 損切りライン到達の検知（#331・逆指値一本化）。
+    // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは**建玉ごとの損切りの実行機構**で決まるが、
+    // 到達を検知する市場監視は手法を知らない。🔴 「ブローカーの逆指値が決済する」と断定すると S1 / S2 の建玉で誤りになるため、
+    // 手法ごとの帰結を列挙する（S1 の決済・拒否は SoftwareStopExecuted、S2 は免除の通知が建玉を特定して伝える）。
     public static NotificationMessage From(StopLossTriggered e) => new(
         "リスク統制: 損切りライン到達",
         $"{e.Symbol} 損切り SL={e.StopLossPrice}（現在 {e.Price}・数量 {e.Quantity}・建玉 {e.PositionSide}）。"
-            + "決済はブローカー側の逆指値が実行します（システムは決済注文を発行しません）。",
+            + "決済は建玉の損切りの実行機構によります: S0＝ブローカー側の逆指値が実行（システムは発注しない）／"
+            + "S1＝システムが成行で決済（別途「ソフトウェア逆指値」の通知）／"
+            + "S2＝**システムもブローカーも決済しない（手動で決済してください）**。",
         NotificationSeverity.Critical);
 
     // FR-05, ADR-0002（OpenD 常駐・SPOF）, #331, IADR-0211: 発注の見送り。
@@ -98,6 +119,85 @@ public static class NotificationFormatter
             + $"EntryDecisionId={e.EntryDecisionId}）。",
         NotificationSeverity.Warning);
 
+    // FR-10, FR-12, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置。
+    // 🔴 **Warning。** 本番の機構（ブローカー側逆指値）ではなく、**システムが止まっている間は決済されない**ことを読み落とさせない。
+    public static NotificationMessage From(SoftwareStopArmed e) => new(
+        "リスク統制: ソフトウェア逆指値を配置（S1）",
+        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.Quantity}: 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれているため、"
+            + $"{e.Provider} へ保護逆指値を発注せず、損切りライン {Invariant(e.StopLossPrice)} への到達で"
+            + "システムが成行で決済します。**ブローカー側に保護は無く、システム停止中は決済されません**"
+            + $"（実弾口座では選べない手法です・EntryDecisionId={e.EntryDecisionId}）。",
+        NotificationSeverity.Warning);
+
+    // FR-10, FR-12, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: ソフトウェア逆指値の発動結果。
+    // 決済の発注・未約定エントリーの取消は設計どおりの帰結で Warning、**決済が拒否され続けた（無保護の建玉が残る）ときだけ Critical**。
+    public static NotificationMessage From(SoftwareStopExecuted e) => e.Outcome switch
+    {
+        SoftwareStopOutcome.ClosePlaced => new(
+            "リスク統制: ソフトウェア逆指値で成行決済",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} への到達（検知 {Invariant(e.TriggeredPrice)}）で"
+                + $"成行の決済注文を発注しました（試行 {e.Attempt}・OrderId={e.CloseOrderId}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
+        SoftwareStopOutcome.EntryCancelled => new(
+            "リスク統制: ソフトウェア逆指値でエントリーを取消",
+            $"{e.Symbol}/{e.Market}: 損切りライン {Invariant(e.StopLossPrice)} への到達（検知 {Invariant(e.TriggeredPrice)}）時点で"
+                + $"エントリーが未約定だったため取り消しました（建玉は生じていません・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
+        // #820 の監査, IADR-0344 決定5-7: エントリーの発注記録が無い孤立行。**決済は 1 株も出していない。**
+        // 記録の数量で決済すると同じ銘柄の別の建玉を売るため、猶予を過ぎたら出さずに閉じて人手へ回す。
+        SoftwareStopOutcome.EntryMissing => new(
+            "リスク統制: ソフトウェア逆指値のエントリー記録が見つかりません",
+            $"{e.Symbol}/{e.Market}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
+                + "エントリーの発注記録が猶予を過ぎても見つかりませんでした。"
+                + "**決済は出していません。建玉が残っているかを確認し、必要なら手動で決済してください**"
+                + $"（EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
+        // #820 の 4 巡目監査, IADR-0344 追記(4) 決定9: 到達したのに決済できない状態が猶予を過ぎた。再試行は続いている。
+        SoftwareStopOutcome.CloseStalled => new(
+            "リスク統制: ソフトウェア逆指値が到達後も決済できていません",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達（検知 {Invariant(e.TriggeredPrice)}）しましたが、"
+                + "猶予を過ぎても成行の決済を発注できていません（接続断・建玉照会不能・エントリーの取消待ちなど）。"
+                + "**建玉が無保護で残っている可能性があります。直ちに確認し、必要なら手動で決済してください**"
+                + $"（再試行は続けます・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
+        // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因で保護対象を減らした（決済は出していない）。
+        SoftwareStopOutcome.ProtectionReduced => new(
+            "リスク統制: 外部要因により保護対象を減らしました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 建玉が外部要因（手動決済・強制決済・ブローカー側逆指値の約定など）で"
+                + "減ったため、保護記録が守る株数をその分だけ減らしました（**決済は出していません**）。"
+                + "ブローカー側の逆指値を持つ記録が 0 になった場合は、その逆指値を取り消します。"
+                + $"建玉と保護の対応をご確認ください（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
+        // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
+        // 行は Active・帳簿も無傷なので、知らせなければ無音のまま保護が失われる（到達の有無に依らない）。
+        SoftwareStopOutcome.ProtectionSuspended => new(
+            "リスク統制: ソフトウェア逆指値が保護を再開できていません",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 建玉の照会と保護記録の主張が食い違ったまま猶予を過ぎ、"
+                + "この記録は**損切りラインへ到達しても 1 株も決済できない状態**が続いています（決済は出していません）。"
+                + "**建玉が無保護で残っている可能性があります。直ちに確認し、必要なら手動で決済してください**"
+                + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
+        // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: どの保護記録も主張していない建玉がある（検知のみ・是正はしない）。
+        SoftwareStopOutcome.UnattributedPosition => new(
+            "リスク統制: どの保護記録も主張していない建玉があります",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: この銘柄・方向の建玉のうち {e.Quantity} 株を、"
+                + "どの保護記録も主張していません（他の実行機構の建玉・手動で建てた建玉・"
+                + "受理後に取り消された決済の残りなど）。"
+                + "**ソフトウェア逆指値はこの建玉を決済しません。手動で決済するか、保護を掛け直してください**"
+                + "（この銘柄ではソフトウェア逆指値の新規建ても見送られます）"
+                + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Warning),
+        _ => new(
+            "リスク統制: ソフトウェア逆指値の決済が拒否されました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
+                + $"成行の決済注文が {e.Attempt} 回目まで受理されませんでした。"
+                + "**建玉が無保護で残っています。直ちに確認し、必要なら手動で決済してください**"
+                + $"（次の損切りライン到達で再試行します・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
+    };
+
+    private static string Invariant(decimal value) => value.ToString(CultureInfo.InvariantCulture);
+
     // #819, IADR-0342: 計画の手法 ID（S0〜S3）。enum 名だけでは計画の表と突き合わせにくい。
     private static string StopLossMethodLabel(StopLossExecutionMethod method) => method switch
     {
@@ -122,6 +222,10 @@ public static class NotificationFormatter
             "ブローカーに決済できる建玉がありません（送れば保有 0 からの売り＝裸のショートになります）",
         OrderDispatchForgoneReason.BrokerPositionsIndeterminate =>
             "ブローカーの建玉を照会できません（不明のまま決済を送りません）",
+        // FR-10, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: 対処は「先に手仕舞ってから切り替える」であり、他と違う。
+        OrderDispatchForgoneReason.UnattributedPosition =>
+            "同一銘柄・同方向に帰属不明の建玉があります（S1 はその建玉を自分の損切りラインで売らないために武装しません。"
+                + "先に手仕舞ってから切り替えてください）",
         _ => reason.ToString(),
     };
 

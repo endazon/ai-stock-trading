@@ -2,6 +2,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
+using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
@@ -94,6 +95,19 @@ builder.Services.AddScoped(sp => new OrderExecutionAppService(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderExecutionAppService>(),
     sp.GetService<IBrokerPositionSource>()));
 
+// FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定9: ソフトウェア逆指値の発動（StopLossTriggered の購読と、ガードの再試行が共有）。
+// 🔴 **構成を問わず登録する**——購読ハンドラ（StopLossTriggeredHandler）は規約発見で常に配線され、ビルド時 codegen も
+// 既定（内蔵 paper）構成でホストを組むため、依存が解決できないとハンドラが組めない。建玉照会（IBrokerPositionSource）は
+// moomoo 構成でだけ登録されており、内蔵 paper では null（決済は据え置き）になる。S1 は内蔵 paper では選べない（行ができない）。
+builder.Services.AddScoped(sp => new SoftwareStopExecutor(
+    sp.GetRequiredService<IBrokerAdapter>(),
+    sp.GetService<IBrokerPositionSource>(),
+    sp.GetRequiredService<IProtectiveStopOrderStore>(),
+    sp.GetRequiredService<IExecutedOrderStore>(),
+    sp.GetRequiredService<IOrderReservationStore>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>()));
+
 // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
 // 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
 // 出るのは「7 区分すべて未計上（明細 0 件）」を残す警告ログだけである——「照会する経路が無い」と
@@ -102,20 +116,27 @@ builder.Services.AddScoped(sp => new OrderExecutionAppService(
 builder.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
 builder.Services.AddScoped<TradeExpenseRecordingService>();
 
-// #154, FR-19, IADR-0067: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
-// 訂正・取消の口（IOrderAmendmentBroker）はペーパーだけが実装する。実ブローカー（moomoo）選択時は本経路を
-// 登録しない＝実弾に対する訂正・取消が構成上も存在しない（fail-safe）。実ブローカーの訂正・取消配線は
-// 後続・実コンテナ E2E（#82 系）で扱う。
-// 駆動元（時限取消・#141 リコンサイル基点・#152 pause 強制取消）は本 PR の対象外で、それらが
-// OrderAmendmentDispatcher を呼ぶ。moomoo 構成でそれらを配線した場合は DI 解決に失敗して起動時に気づける。
+// #154, FR-19, #847, #768, IADR-0067, IADR-0357: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
+//
+// 🔴 **取消は全構成で登録する（moomoo を含む）。** 稼働環境（#847）で、板に残った手仕舞いを消す手段が
+// moomoo アプリしか無く、利用者が手で取り消すしかなかった。取消そのものは当初から IBrokerAdapter に在り
+// moomoo も実装している（ProtectiveStopGuard も OrderExecutionAppService も既に呼んでいる）ため、
+// ここを閉じていたことに fail-safe 上の意味は無かった。駆動元は PositionCloseCancellationHandler
+//（利用者の OwnerOnly 操作）であり、これが #768「呼び出し元が無い」の解消である。
+//
+// **訂正（ModifyOrderAsync）はペーパー専用のまま**である（IADR-0067）。実 OpenD へ TrdModifyOrder を
+// 配線していないためで、IOrderAmendmentBroker は moomoo 構成では登録せず、OrderAmendmentService は
+// それを任意依存として受けて ModifyAsync を NotSupportedException で閉じる（型と実行時の二重の遮断）。
+// #141（リコンサイルの取消基点）・#152（pause による強制取消）は依然として未配線である。
 builder.Services.AddScoped<IOrderLifecycleStore, EfOrderLifecycleStore>();
 if (!brokerSelection.IsMoomoo)
 {
     builder.Services.AddSingleton<IOrderAmendmentBroker>(sp =>
         (IOrderAmendmentBroker)sp.GetRequiredService<IBrokerAdapter>());
-    builder.Services.AddScoped<OrderAmendmentService>();
-    builder.Services.AddScoped<OrderAmendmentDispatcher>();
 }
+
+builder.Services.AddScoped<OrderAmendmentService>();
+builder.Services.AddScoped<OrderAmendmentDispatcher>();
 
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
@@ -194,7 +215,9 @@ if (brokerSelection.IsMoomoo)
             sp.GetRequiredService<ILoggerFactory>()
                 .CreateLogger<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(),
             sp.GetRequiredService<
-                OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>()));
+                OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>(),
+            // #820, IADR-0344 決定6: 到達済み S1 行の決済再試行はガードが実行器へ委ねる。
+            sp.GetRequiredService<SoftwareStopExecutor>()));
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }
