@@ -11,22 +11,36 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: S3 では StopAttempted（試行の記録＝注文種別と拒否理由）が
 // **StopPlaced または CoverageLost と一緒に**付く（排他ではない）——結果の扱いは S0 と同じであり、
 // 試行の記録はその手前の事実だからである。
+// 🔴 FR-10, FR-05, ADR-0016, #864, IADR-0355 決定5: 決済をブローカーの実建玉と突き合わせて乖離を見つけたら、
+// **既存の乖離検知（IADR-0118）と同じイベント**（PositionReconciliationDrift）を添える。新しい通知経路を作らない
+// ——監査台帳と Critical 通知の受け口は既にあり、二本目を作ると人が見る場所が割れる。
+// 見送り（Forgone）にも発注（Executed・数量を縮めた場合）にも付き得るため、**排他にしない**（末尾の任意項目）。
+// 🔴 #873 の監査（3 巡目）3: 乖離イベントが運ぶ数量は「台帳の決済数量」と「ブローカーのネット」であり、
+// **この決済で実際に送った株数はどちらでもない**（両建てでは 3 つ目の数になる）。通知を読む人が
+// 「送ったのか・何株送ったのか」を取り違えないよう、**送った株数を結果に添えてログへ出す**
+// （イベントの形は変えない＝監査台帳・通知の受け口は不変）。見送りなら 0 である。
 public sealed record OrderDispatchResult(
     OrderExecuted? Executed,
     OrderDispatchForgone? Forgone,
     ProtectiveStopPlaced? StopPlaced,
     ProtectiveStopCoverageLost? CoverageLost,
     ProtectiveStopWaived? StopWaived = null,
-    AlternativeProtectiveStopAttempted? StopAttempted = null)
+    AlternativeProtectiveStopAttempted? StopAttempted = null,
+    PositionReconciliationDrift? Drift = null,
+    int DriftDispatchedQuantity = 0)
 {
     public static OrderDispatchResult FromExecuted(
         OrderExecuted executed,
         ProtectiveStopPlaced? stopPlaced = null,
         ProtectiveStopCoverageLost? coverageLost = null,
         ProtectiveStopWaived? stopWaived = null,
-        AlternativeProtectiveStopAttempted? stopAttempted = null) =>
-        new(executed, null, stopPlaced, coverageLost, stopWaived, stopAttempted);
+        AlternativeProtectiveStopAttempted? stopAttempted = null,
+        PositionReconciliationDrift? drift = null,
+        int driftDispatchedQuantity = 0) =>
+        new(executed, null, stopPlaced, coverageLost, stopWaived, stopAttempted, drift, driftDispatchedQuantity);
 
-    public static OrderDispatchResult FromForgone(OrderDispatchForgone forgone) =>
-        new(null, forgone, null, null);
+    // 見送りは 1 株も送っていない（DriftDispatchedQuantity は 0 のまま）。
+    public static OrderDispatchResult FromForgone(
+        OrderDispatchForgone forgone, PositionReconciliationDrift? drift = null) =>
+        new(null, forgone, null, null, null, null, drift);
 }
