@@ -46,7 +46,8 @@ plan_refs:
    （既定 `Monitor:QuoteMissingWarningSeconds=300`）。連続中は要約間隔に 1 回まで。回復で Information を 1 回。
    🔴 **これを理由に建玉を決済しない**——価格が分からないことは「到達した」ではない（fail-loud であって fail-close ではない）。
 4. **配線は巡回の発行の後**（`MonitorPollingService.RunOnceAsync`）。要約の例外は Warning に落として巡回を失敗させない。
-   閉場中は巡回そのものが評価しないので要約も出ない（仕様どおり）。
+   閉場中は巡回そのものが評価しないので要約も出ない（仕様どおり）。閉場中の巡回は `OnMarketClosed` で欠落の起点と要約の間隔を捨て、
+   次の開場の最初の巡回から数え直す（閉場前の最終取得から数えると、週末明けの最初の欠落が即座に警告される。PR #904 監査 N2）。
 5. **発注執行の S1 行要約**（`SoftwareStopLivenessReporter`・singleton）: 常駐ガードの巡回の後、**間隔に 1 回だけ**ストアを読み
    （既定 `ProtectiveStopGuard:SoftwareStopSummaryInterval=00:05:00`。S1 が無いときも読む頻度は同じ）、Active な S1 行があれば
    件数と行ごとの銘柄・方向・残保護数量・トリガー・到達状態を Information で出す。台帳のライン（市場監視が比べる値。銘柄単位で

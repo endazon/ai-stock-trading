@@ -49,6 +49,8 @@ public sealed class MonitorPollingService(
     {
         if (!schedule.IsOpen(clock.UtcNow))
         {
+            // #902, IADR-0365 決定4: 閉場中は評価しないので、欠落の起点を持ち越さない（#904 監査 N2）。
+            liveness?.OnMarketClosed();
             return; // 閉場中は監視停止（04_workflows/02）
         }
 

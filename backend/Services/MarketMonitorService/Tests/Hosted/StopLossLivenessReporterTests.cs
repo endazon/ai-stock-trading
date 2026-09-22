@@ -182,4 +182,23 @@ public class StopLossLivenessReporterTests
 
         log.Informations.Last().Should().Contain("保有 1 件").And.NotContain("MSFT");
     }
+
+    [Fact]
+    public void T_10_633_閉場をまたいだ最初の欠落は閉場前の最終取得から数えず_開場後の最初の欠落から数える()
+    {
+        // T-10-633, FR-10, #902, IADR-0365 決定3・決定4（#904 監査 N2）
+        var (reporter, log) = Create();
+        var monday = T0.AddDays(3);
+
+        reporter.Observe([Aapl(340m, T0)], T0);
+        reporter.OnMarketClosed();
+        reporter.Observe([Aapl(null, monday)], monday);
+        reporter.Observe([Aapl(null, monday.AddSeconds(300))], monday.AddSeconds(300));
+
+        log.Warnings.Should().BeEmpty("閉場のあいだは評価していないので欠落ではない");
+
+        reporter.Observe([Aapl(null, monday.AddSeconds(301))], monday.AddSeconds(301));
+
+        log.Warnings.Should().ContainSingle();
+    }
 }

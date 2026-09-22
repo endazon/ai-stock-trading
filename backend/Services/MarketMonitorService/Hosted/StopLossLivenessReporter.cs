@@ -28,6 +28,19 @@ public sealed class StopLossLivenessReporter(
 
     private TimeSpan MissingThreshold => TimeSpan.FromSeconds(Math.Max(1, options.Value.QuoteMissingWarningSeconds));
 
+    /// <summary>
+    /// 閉場を知らせる。欠落の起点・要約の間隔を捨て、次の開場の最初の巡回から数え直す（#904 監査 N2）。
+    /// 捨てないと、週末をまたいだ最初の欠落が「金曜の最終取得からの 48 時間」として即座に警告される。
+    /// </summary>
+    public void OnMarketClosed()
+    {
+        lock (_gate)
+        {
+            _states.Clear();
+            _lastSummaryAt = null;
+        }
+    }
+
     /// <summary>1 巡回の評価記録を受け取り、必要なら要約・欠落の Warning・回復を記録する。</summary>
     public void Observe(IReadOnlyList<StopLossEvaluation> evaluations, DateTimeOffset now)
     {
