@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Threading.Channels;
 using AiStockTrading.Shared.Contracts.Logging;
 using ReportService.Features.Reports;
 using ReportService.Domain;
@@ -23,6 +24,10 @@ public class HttpReportNarrativeDrafterTests
     // 期間表記は自然キー（ReportPeriod.ExpectedKey）そのもの。定数へ括り出すのは可読性のためと、
     // `PeriodKey = "weekly-…"` の形が gitleaks の generic-api-key（キーワード "key" ＋エントロピー）に
     // 誤検知されるためである（値は認証情報ではない。ReportPolicyDraftTests と同じ扱い）。
+    // #900: 打ち切りが効かなくなったときに、黙って固まる代わりに理由付きで赤くするための上限
+    //（合否の基準ではない。合否は下の順序が決める）。
+    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
+
     private const string WeeklyPeriod = "weekly-2026-W31";
     private const string MonthlyPeriod = "monthly-2026-07";
 
@@ -123,22 +128,44 @@ public class HttpReportNarrativeDrafterTests
 
     // T-5, FR-06/16, IADR-0123 決定1, #308: タイムアウトは**種別ごとに**効く。従来はサービス共通の 1 本だったため、
     // 重いモデルが割り当たる週報・月報（IADR-0120 / MSP#422）が日報と同じ 30 秒で打ち切られ、所感が恒常的に
-    // プレースホルダへ縮退していた。同一インスタンス・同一の応答遅延で、日報は打ち切られ週報は通ることを固定する。
+    // プレースホルダへ縮退していた。同一インスタンス・同一のハンドラで、日報は打ち切られ週報は通ることを固定する。
+    //
+    // #900, IADR-0366: 合否を「100 ms の打ち切り」対「600 ms の応答遅延」という**壁時計どうしの競争**で決めていた
+    // ため、全ソリューション実行で稀に遅延が勝ち、日報が応答を受け取って落ちた（実測の機序は IADR-0366）。
+    // 遅延を同期点（`TaskCompletionSource`）へ置き換え、**順序**で同じ命題を固定する:
+    //   ① 週報を飛行中にする → ② 同じハンドラのまま日報を投げ、**解放しないのに戻ってくる**ことで打ち切りを観測する
+    //   → ③ その時点でも週報は打ち切られていない（種別ごとに上限が違う）→ ④ 解放すると週報は本文を受け取る。
+    // 週報が「日報の上限より長く飛んでいた」ことは②の完了が保証する（時刻の比較ではなく前後関係で言える）。
     [Fact]
     public async Task タイムアウトは報告書種別ごとに効く_日報は打ち切られ週報は通る()
     {
-        var handler = new DelayingRespondingHandler(
-            TimeSpan.FromMilliseconds(600), """{"text":"週次の所感です。","sent":true}""");
-        // HttpClient 自体の上限は十分長くし、種別ごとの打ち切りだけを観測する。
-        var http = new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway"), Timeout = TimeSpan.FromSeconds(30) };
+        var handler = new HeldRespondingHandler("""{"text":"週次の所感です。","sent":true}""");
+        // HttpClient 自体の上限は外し（無期限）、**種別ごとの打ち切りだけ**が要求を切れるようにする。
+        var http = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://llm-gateway"),
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
         var drafter = new HttpReportNarrativeDrafter(
             http, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", null, logPrompts: false,
             timeoutFor: kind => kind == ReportKind.Daily ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(20));
 
-        (await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Daily }))
-            .Should().Be(ReportNarrativeDefaults.PlaceholderText);
-        (await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Weekly, PeriodKey = WeeklyPeriod }))
-            .Should().Be("週次の所感です。");
+        // ① 週報を飛行中にする（ハンドラは解放されるまで応答しない）。
+        var weeklyDraft = drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Weekly, PeriodKey = WeeklyPeriod });
+        var weeklyRequest = await handler.NextRequestAsync(Guard);
+
+        // ② 日報は解放しない。戻ってきたなら、戻した経路は種別ごとの打ち切りしかない。
+        var dailyDraft = drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Daily });
+        var dailyRequest = await handler.NextRequestAsync(Guard);
+        (await dailyDraft.WaitAsync(Guard)).Should().Be(ReportNarrativeDefaults.PlaceholderText);
+        dailyRequest.Token.IsCancellationRequested.Should().BeTrue("日報は打ち切りで切られる（応答は返っていない）");
+
+        // ③ 週報は日報より前から飛んでおり、日報の上限はもう発火した。それでも週報は切られていない。
+        weeklyRequest.Token.IsCancellationRequested.Should().BeFalse("週報の上限は日報より長い（種別ごとに効く）");
+
+        // ④ 解放すれば週報は本文を受け取る（打ち切りではなく応答で終わる）。
+        weeklyRequest.Release();
+        (await weeklyDraft.WaitAsync(Guard)).Should().Be("週次の所感です。");
     }
 
     // T-6, IADR-0123 決定5, #308: 縮退の WRN は「タイムアウトした」しか言わず、どの上限で切られたのかが
@@ -439,13 +466,35 @@ public class HttpReportNarrativeDrafterTests
         }
     }
 
-    // 遅延して**正常応答**を返す（打ち切られなかった場合に本文が返ることを観測するため）。
-    private sealed class DelayingRespondingHandler(TimeSpan delay, string body) : HttpMessageHandler
+    // #900, IADR-0366: 要求を**テストが解放するまで保持する**ハンドラ。時間では応答せず、解放か打ち切りでしか
+    // 終わらないため、「打ち切りが効いたか」を実時間の競争ではなく順序で観測できる。
+    private sealed class HeldRespondingHandler(string body) : HttpMessageHandler
     {
+        private readonly Channel<HeldRequest> _arrivals = Channel.CreateUnbounded<HeldRequest>();
+
+        // 到達した要求を 1 件受け取る（来なければ上限で失敗する＝黙って固まらない）。
+        public async Task<HeldRequest> NextRequestAsync(TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            return await _arrivals.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
+        }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            var held = new HeldRequest(cancellationToken);
+            await _arrivals.Writer.WriteAsync(held, CancellationToken.None).ConfigureAwait(false);
+            await held.Released.WaitAsync(cancellationToken).ConfigureAwait(false);
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
         }
+    }
+
+    // 保持中の 1 要求。`Token` は製品が要求ごとに張る打ち切り用トークンで、発火の有無をテストが観測する。
+    private sealed class HeldRequest(CancellationToken token)
+    {
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CancellationToken Token { get; } = token;
+        public Task Released => _released.Task;
+        public void Release() => _released.TrySetResult();
     }
 }
