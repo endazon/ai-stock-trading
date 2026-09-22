@@ -133,8 +133,9 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
         // 前取引日の観測を残していないため、整えなければ TradeDecisionMade は必ず拒否される（#893 の実測）。
         //
         // 上と同じく**統制を迂回しない**: DB へ行を書かず、口座照会の観測イベントを実ブローカへ発行する。
-        // 観測時刻は 1 日前——ストアは当日（米国東部の暦日）の行を判定に使わず（日中の評価損益を含むため）、
-        // 鮮度上限は既定 4 日である。評価額は従前の既定資金（$3,000）と同額にし、下の上限計算を保つ。
+        // 観測時刻は 2 日前——ストアは当日（米国東部の暦日）の行を判定に使わず（日中の評価損益を含むため）、
+        // 鮮度上限は既定 4 日である。1 日前（24 時間前）では、夏時間が終わる 25 時間の日の最後の 1 時間に
+        // 米国東部で同じ暦日に落ち、行が判定から外れる（#903 監査）。2 日前ならどの時刻でも前暦日かつ鮮度内。評価額は従前の既定資金（$3,000）と同額にし、下の上限計算を保つ。
         // 同じ観測は口座種別のストアにも入るが、30 分の有効期間を過ぎているため「観測無し」と同じに扱われる
         // （#874 以前の本試験と同じ前提）。
         await WaitSubscribedAsync(RiskServiceName, typeof(BrokerAccountObserved));
@@ -143,7 +144,7 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
             new BrokerAccountObserved(
                 BrokerProvider.InternalPaper,
                 new BrokerAccountState(AccountType.Margin, EquityInBase: RiskTradingDefaults.InitialCapital),
-                DateTimeOffset.UtcNow.AddDays(-1)));
+                DateTimeOffset.UtcNow.AddDays(-2)));
         await WaitCapitalBaselineAsync(TimeSpan.FromSeconds(30));
 
         // #364, IADR-0152 決定1/3: 既定資金（InitialCapital ＝ equity $3,000・基準通貨 USD）に対し十分小さい
