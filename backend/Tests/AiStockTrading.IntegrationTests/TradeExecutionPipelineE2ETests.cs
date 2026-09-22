@@ -12,6 +12,8 @@ using Testcontainers.RabbitMq;
 using Xunit;
 using RiskManagementDbContext = RiskManagementWorker::RiskManagementService.Infrastructure.Persistence.RiskManagementDbContext;
 using IInformationDegradationStore = RiskManagementWorker::RiskManagementService.Features.RiskManagement.IInformationDegradationStore;
+using ICapitalBaselineStore = RiskManagementWorker::RiskManagementService.Features.RiskManagement.ICapitalBaselineStore;
+using RiskTradingDefaults = RiskManagementWorker::RiskManagementService.Domain.TradingDefaults;
 
 namespace AiStockTrading.IntegrationTests;
 
@@ -124,6 +126,25 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
             _riskFactory.Services,
             new InformationSourceStateObserved([], TimeSpan.FromMinutes(10), DateTimeOffset.UtcNow));
         await WaitInformationObservedAsync(TimeSpan.FromSeconds(30));
+
+        // 🔴 FR-10, #893, ADR-0041 決定2, IADR-0354: **基準資金（equity）も本番と同じ経路で整える。**
+        // #874 以降、統制上限の分母は「前取引日の口座照会の観測」であり、無ければ新規建ては
+        // CapitalBaselineUnavailable で拒否される（fail-closed）。本 fixture には発注執行の口座照会巡回が
+        // 前取引日の観測を残していないため、整えなければ TradeDecisionMade は必ず拒否される（#893 の実測）。
+        //
+        // 上と同じく**統制を迂回しない**: DB へ行を書かず、口座照会の観測イベントを実ブローカへ発行する。
+        // 観測時刻は 1 日前——ストアは当日（米国東部の暦日）の行を判定に使わず（日中の評価損益を含むため）、
+        // 鮮度上限は既定 4 日である。評価額は従前の既定資金（$3,000）と同額にし、下の上限計算を保つ。
+        // 同じ観測は口座種別のストアにも入るが、30 分の有効期間を過ぎているため「観測無し」と同じに扱われる
+        // （#874 以前の本試験と同じ前提）。
+        await WaitSubscribedAsync(RiskServiceName, typeof(BrokerAccountObserved));
+        await OrderExecutionPipelineE2ETests.PublishAsync(
+            _riskFactory.Services,
+            new BrokerAccountObserved(
+                BrokerProvider.InternalPaper,
+                new BrokerAccountState(AccountType.Margin, EquityInBase: RiskTradingDefaults.InitialCapital),
+                DateTimeOffset.UtcNow.AddDays(-1)));
+        await WaitCapitalBaselineAsync(TimeSpan.FromSeconds(30));
 
         // #364, IADR-0152 決定1/3: 既定資金（InitialCapital ＝ equity $3,000・基準通貨 USD）に対し十分小さい
         // 新規建て。10 株 × $20 ＝ $200 は 1 注文上限（25% ＝ $750）・日次上限（150% ＝ $4,500）の内側であり、
@@ -259,6 +280,27 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
 
         throw new TimeoutException(
             "情報収集の現況観測がリスク管理へ適用されませんでした（新規建て停止が解けない）。");
+    }
+
+    // #893, IADR-0354: 口座照会の観測が基準資金として**判定に使える状態になった**まで待つ。
+    // 発行の完了と適用の完了は別である（WaitInformationObservedAsync と同じ理由）。
+    private async Task WaitCapitalBaselineAsync(TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            using (var scope = _riskFactory!.Services.CreateScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<ICapitalBaselineStore>();
+                if (store.GetCurrent() is not null)
+                    return;
+            }
+
+            await Task.Delay(250);
+        }
+
+        throw new TimeoutException(
+            "口座照会の観測が基準資金としてリスク管理へ適用されませんでした（新規建てが CapitalBaselineUnavailable で止まる）。");
     }
 
     // 購読準備の待ち合わせ: 対象キューに consumer が付くまで待つ（付かなければ表明で落とす）。
