@@ -197,12 +197,14 @@ public class ProtectiveStopGuardServiceTests
             .StartAsync();
 
     private static ProtectiveStopGuardService BuildService(
-        IHost host, ProtectiveStopGuardOptions options, ILogger<ProtectiveStopGuardService>? logger = null) =>
+        IHost host, ProtectiveStopGuardOptions options, ILogger<ProtectiveStopGuardService>? logger = null,
+        SoftwareStopLivenessReporter? softwareStopLiveness = null) =>
         new(host.Services.GetRequiredService<IServiceScopeFactory>(),
             // 常駐（singleton）であり、Wolverine の IMessageBus（scoped）は注入できない。
             host.Services.GetRequiredService<IWolverineRuntime>(),
             Options.Create(options),
-            logger ?? NullLogger<ProtectiveStopGuardService>.Instance);
+            logger ?? NullLogger<ProtectiveStopGuardService>.Instance,
+            softwareStopLiveness);
 
     // ---- 巡回結果の発行 ----
 
@@ -362,6 +364,81 @@ public class ProtectiveStopGuardServiceTests
         await service.StopAsync(CancellationToken.None);
 
         logger.Errors.Should().BeEmpty("キャンセルは失敗ではない");
+
+        await host.StopAsync();
+    }
+
+    // ---- S1 の要約（#902, IADR-0365 決定5） ----
+
+    // 指定回数目以降の FindActive を例外に倒すストア。巡回対象が 0 件のガードは FindActive を 1 回だけ呼んで戻るため、
+    // 2 回目は要約の読み出しである（要約の失敗が巡回を失敗させないことを観測する）。
+    private sealed class ThrowFromCallStore(IProtectiveStopOrderStore inner, int throwFromCall) : IProtectiveStopOrderStore
+    {
+        public int Calls { get; private set; }
+
+        public IReadOnlyList<ProtectiveStopOrder> FindActive(int batchSize)
+        {
+            Calls++;
+            if (Calls >= throwFromCall)
+                throw new InvalidOperationException("要約の読み出しに失敗（テスト）");
+            return inner.FindActive(batchSize);
+        }
+
+        public void Save(ProtectiveStopOrder stop) => inner.Save(stop);
+
+        public ProtectiveStopOrder? Find(Guid entryDecisionId) => inner.Find(entryDecisionId);
+
+        public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
+            inner.FindActiveSoftwareStops(symbol, market, entrySide);
+
+        public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
+            string symbol, Market market, TradeSide entrySide, int limit) =>
+            inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);
+    }
+
+    [Fact]
+    public async Task T_10_632_巡回がActiveなS1行の要約を出す()
+    {
+        // T-10-632, FR-10, #902, IADR-0365 決定5: 常駐ガードの巡回から要約が出る（未到達の S1 は従来ログに出なかった）。
+        var stops = new InMemoryProtectiveStopOrderStore();
+        stops.Save(SoftwareStopLivenessReporterTests.SoftwareStop());
+        var broker = new GuardBroker { Positions = [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 707, 350m)] };
+        var livenessLog = new SoftwareStopLivenessReporterTests.RecordingLogger<SoftwareStopLivenessReporter>();
+        var liveness = new SoftwareStopLivenessReporter(
+            new SoftwareStopLivenessReporterTests.MutableClock(Now), livenessLog, TimeSpan.FromMinutes(5));
+
+        using var host = await BuildHostAsync(broker, stops);
+        var service = BuildService(host, new ProtectiveStopGuardOptions(), softwareStopLiveness: liveness);
+
+        await service.RunOnceAsync(CancellationToken.None);
+        await service.RunOnceAsync(CancellationToken.None); // 間隔内の 2 巡目は重ねない
+
+        livenessLog.Informations.Should().ContainSingle()
+            .Which.Should().Contain("Active 1 件").And.Contain("トリガー=338.51").And.Contain("未到達");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task T_10_632b_要約の読み出しが失敗しても巡回は失敗しない()
+    {
+        // T-10-632, FR-10, #902, IADR-0365 決定5: 観測の失敗でガードを止めない（Warning に落とす）。
+        var stops = new ThrowFromCallStore(new InMemoryProtectiveStopOrderStore(), throwFromCall: 2);
+        var logger = new RecordingLogger();
+        var liveness = new SoftwareStopLivenessReporter(
+            new SoftwareStopLivenessReporterTests.MutableClock(Now),
+            new SoftwareStopLivenessReporterTests.RecordingLogger<SoftwareStopLivenessReporter>(),
+            TimeSpan.FromMinutes(5));
+
+        using var host = await BuildHostAsync(new GuardBroker(), stops);
+        var service = BuildService(host, new ProtectiveStopGuardOptions(), logger, liveness);
+
+        var result = await service.RunOnceAsync(CancellationToken.None);
+
+        result.Should().Be(ProtectiveStopGuardResult.Empty);
+        stops.Calls.Should().Be(2, "2 回目は要約の読み出し");
+        logger.Warnings.Should().ContainSingle(m => m.Contains("S1）の要約の記録に失敗"));
+        logger.Errors.Should().BeEmpty();
 
         await host.StopAsync();
     }

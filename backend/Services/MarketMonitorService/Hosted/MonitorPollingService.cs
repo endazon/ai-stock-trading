@@ -17,7 +17,8 @@ public sealed class MonitorPollingService(
     IMarketSchedule schedule,
     IClock clock,
     IOptions<MonitorOptions> options,
-    ILogger<MonitorPollingService> logger) : BackgroundService
+    ILogger<MonitorPollingService> logger,
+    StopLossLivenessReporter? liveness = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -68,6 +69,20 @@ public sealed class MonitorPollingService(
         foreach (var movement in result.PriceMovements)
         {
             await publish.PublishAsync(movement).ConfigureAwait(false);
+        }
+
+        // FR-10, #902, IADR-0365 決定4: 評価の生存要約・価格欠落の Warning（観測のみ）。発行の**後**に置き、
+        // 要約の失敗は巡回を失敗させない（到達の発行・監視の継続に一切影響させない）。
+        if (liveness is not null)
+        {
+            try
+            {
+                liveness.Observe(result.StopLossEvaluations, clock.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "損切り評価の生存要約の記録に失敗しました（監視・発行には影響しません）。");
+            }
         }
     }
 }

@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-19
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0365]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #902]
 -->
 
 
@@ -1200,6 +1200,32 @@ row11: FR-10, FR-19
 （`実建玉に満たない決済は…` / `ショート建玉の決済も…` / `再処理では建玉を照会せず…` / `ブローカーに建玉が無い決済は…` /
 `反対方向の建玉しか無い決済は…` / `建玉を照会できないときの決済は…`。残り 11 件は判定そのものの単体であり
 是正前も緑）。赤の内容は「売り注文が出てはならないのに出た」であり、**穴の再現そのもの**である。
+
+## ソフトウェア逆指値の保有中に損切り評価の生存を観測できるようにする（#902。間隔に 1 回の要約と価格欠落の警告）
+
+稼働中の SIMULATE 環境で、ソフトウェア逆指値（S1）の行が有効なまま 1.5 時間、評価が回っている証拠がログに無かった。
+価格とラインの比較は市場監視の巡回が行い、発注執行は到達を受けてから行を見る。どちらも「何も起きない巡回」を記録しない。
+本節は**観測だけ**を固定する。**到達の判定・発行・決済は変えない**（T-10-627 / T-10-628 が従来どおりであることを確かめる）。
+
+`StopLossLivenessReporterTests` / `MarketMonitorServiceTests` / `MonitorPollingServiceTests`（市場監視）、
+`SoftwareStopLivenessReporterTests` / `ProtectiveStopGuardServiceTests`（発注執行）。時刻は偽時計で進め、実時間の待ちを使わない。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-622** | 保有 1 件（AAPL 707 株・ライン 338.51）・価格 340.12 | 最初の巡回を評価する | 件数・銘柄・株数・現在値・ライン・評価時刻を含む **Information の要約が 1 行**出る。Warning は出ない | 生存の可視化 | 自動（単体） |
+| **T-10-623** | 同上 | 60 秒ごとに巡回（間隔 300 秒の内側）→ 300 秒後に巡回 | 間隔内は**重ねない**。ちょうど間隔に達した巡回で再び出る（境界の両側） | 低頻度 | 自動（単体・境界） |
+| **T-10-624** | 最後に価格が取れてから欠落が続く／一度も取れていない | 巡回を続ける | しきい値（300 秒）**ちょうどでは出さず、超えたら Warning を 1 回**。連続中は要約間隔に 1 回まで。🔴 **建玉を自動で決済しない**ことを文言で明示する | fail-loud | 自動（単体・境界） |
+| **T-10-625** | 欠落の Warning を出した後 | 価格が取れる | **回復の Information を 1 回**出し、欠落の起点を解く（次の欠落は新しい取得時刻から数え直す） | 回復の可視化 | 自動（単体） |
+| **T-10-626** | 保有 0 件／保有が消えて再び現れる／保有から外れた銘柄 | 巡回する | 保有 0 件では**何も出さない**。新しい保有は間隔内でも**即時に**要約する。外れた銘柄は要約から消える | 低ノイズ | 自動（単体） |
+| **T-10-627** | 未到達・到達・価格欠落の保有が 1 件ずつ | 1 巡回を評価する | 評価記録は 3 件（欠落は価格なし）。**到達イベントは到達した 1 件だけ**（従来どおり） | 挙動を変えない | 自動（単体） |
+| **T-10-628** | 市場監視の常駐に要約を配線 | 開場中に巡回 → 閉場にして間隔後に巡回 | 到達イベントの発行は従来どおり・要約が 1 行出る。**閉場中は出さない** | 配線 | 自動（常駐） |
+| **T-10-629** | 有効な S1 行 2 件（未到達・到達済み）と S0 行 1 件 | 要約する | 件数・銘柄・方向・残保護数量（未確定なら「未確定」）・トリガー・到達状態を含む Information が出る。**S0 行は含めない** | 生存の可視化 | 自動（単体） |
+| **T-10-630** | S1 行 1 件 | 30 秒ごとに要約を試みる（間隔 5 分の内側）→ 5 分後 | 間隔内は**ストアを読まず・出さない**。間隔に達すると再び読んで出す | 低頻度・負荷 | 自動（単体・境界） |
+| **T-10-631** | S0 行だけ | 要約を試みる | 出さない。S1 が無くても**ストアは間隔に 1 回しか読まない** | 低ノイズ・負荷 | 自動（単体） |
+| **T-10-632** | 常駐ガードに要約を配線 | 巡回する／要約の読み出しを失敗させる | S1 行の要約が出る（2 巡目は重ねない）。**読み出しの失敗は Warning に落ち、巡回は失敗しない**（Error なし） | 配線・巡回を止めない | 自動（常駐） |
+
+**変異注入の実測**: 要約の間隔判定を「常に出す」へ、欠落の判定を「しきい値ちょうどで出す」へ変えると、
+T-10-623 と T-10-624 が赤になることを確かめた。
 
 ## 未カバー・実施予定
 
