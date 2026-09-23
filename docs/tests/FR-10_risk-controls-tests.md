@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857]
 -->
 
 
@@ -35,6 +35,7 @@ issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374,
 - [統制状態参照画面の強制買戻し発生回数の供給（#470。当月が観測の届いた取引日で覆われているときに限り供給する）](#統制状態参照画面の強制買戻し発生回数の供給470当月が観測の届いた取引日で覆われているときに限り供給する)
 - [損切りのブローカー側逆指値への一本化（#331。保護逆指値の同時発注・建玉解消・失効ガード・見送り）](#損切りのブローカー側逆指値への一本化331保護逆指値の同時発注建玉解消失効ガード見送り)
 - [情報収集の縮退による新規建て停止の耐久化（#564。供給が途切れたら止める側へ倒す）](#情報収集の縮退による新規建て停止の耐久化564供給が途切れたら止める側へ倒す)
+- [確認できた拒否を「手仕舞い済み」と扱わない（#857。保護喪失時の成行手仕舞い）](#確認できた拒否を手仕舞い済みと扱わない857保護喪失時の成行手仕舞い)
 - [手仕舞いの過剰決済ガードから終端になった承認を除く（#848。取り消した注文が建玉をロックしない）](#手仕舞いの過剰決済ガードから終端になった承認を除く848取り消した注文が建玉をロックしない)
 - [手仕舞いの出口（#847。成行・取消の口・失効の通知）](#手仕舞いの出口847成行取消の口失効の通知)
 - [台帳とブローカーの乖離の取り込み（#849。利用者の承認つきで観測値へ数量だけ合わせる）](#台帳とブローカーの乖離の取り込み849利用者の承認つきで観測値へ数量だけ合わせる)
@@ -1469,3 +1470,43 @@ row22: FR-21
 | T-10-319 | 現況を受け取り済み | 止めているものが変わった現況が届く | **全量で置き換わる**（差分ではない。取りこぼした回復が残り続けない） | ① | 自動 |
 
 > **対応受け入れ基準**は #564 の 3 つ —— ①復元される ②復元できないときは止める側へ倒す ③決済は止まらない。
+
+
+## 確認できた拒否を「手仕舞い済み」と扱わない（#857。保護喪失時の成行手仕舞い）
+
+`ProtectiveStopGuardRejectedCloseTests` / `OrderExecutionServiceProtectiveStopTests`
+（`OrderExecutionService.Tests`）・`NotificationFormatterTests`（`NotificationService.Tests`）・
+`AuditEntryFactoryTests`（`AuditService.Tests`）・`ProtectiveStopEventPayloadTests`
+（`AiStockTrading.Shared.Contracts.Tests`）。
+
+**是正前は、成行手仕舞いの戻り値の状態を見ずに「手仕舞い済み」を主張していた**（発注前検証の棄却・
+証券会社の非成功コードは**終端の拒否を返す**。例外にならない）。壊れ方は静かである ——
+通知は Critical で出るが内容が事実の逆であり、保護記録が完了して**逆指値なしの建玉が巡回対象から消える**。
+よって「完了しない」「巡回に残る」「台帳へ決済レグを運ばない」を**否定形で**固定する。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-634** | 逆指値が失効・再発注も拒否され、成行手仕舞いが**確認できた拒否**で返る | 巡回を 2 回まわす | 🔴 **記録は `Active` のまま**（完了させない＝建玉が巡回対象から外れない）。試行番号だけ進み、残保護数量は動かない。撃ち直しは**試行ごとに別の決済 ID** で送る | ① | 自動（単体・否定形） |
+| **T-10-635** | 同上 | 1 巡回の発行イベントを見る | 対処は**手仕舞い済みではない**値になり、🔴 **決済意図を運ばない**（台帳が在庫を押さえない）。相関のため決済 ID だけ載る。予約は**確定**し、拒否の発注記録が残る | ①② | 自動（単体） |
+| **T-10-636** | 同じ理由で拒否され続ける | 巡回を 5 回、さらに時計を 1 時間進めて 1 回 | 成行の送信は**上限 3 回で止まる**（上限の値そのものも固定する）。**記録は閉じない**。上限後の巡回は無音だが、**1 時間ごとに改めて Critical が出る**（その通知は決済 ID を持たない＝1 本も送っていない） | ③ | 自動（単体・注入時計） |
+| **T-10-637** | 送信は済み、拒否の**発注記録だけ**が残って保護記録の更新が失われた（クラッシュ窓） | 巡回する | **記録があっても完了させない**（成行は重ねて送らない）。「記録がある＝手仕舞い済み」は拒否の記録では成り立たない | ① | 自動（単体・否定形） |
+| **T-10-638** | 拒否が 2 回続いた後、逆指値の再発注が受理される | 巡回する → 再び失効させて 4 回まわす | 再発注で**保護が戻り**、撃ち直しの数えが 0 へ戻る（また 3 回まで撃てる）。上限は**出口だけ**に掛かり、再発注は止めない | ③ | 自動（単体） |
+| **T-10-639** | エントリー同時の逆指値が未受理 → 成行手仕舞いが**確認できた拒否**で返る（発注側） | 承認済み注文を執行する | **手仕舞い済みを主張しない**。決済意図を運ばず、予約は確定し、拒否の発注記録が残る | ① | 自動（単体・否定形） |
+| **T-10-640** | 拒否の対処を運ぶ保護喪失イベント | 通知・監査要約を組み立てる／JSON を往復する | 通知は Critical のまま「**手仕舞いました**」とも「**届いたか不明**」とも言わず、建玉が残っていることと確認手順が読める。監査要約は「拒否・無保護で残存・要人手対応」。往復で**決済意図は null・決済 ID は非 null**のまま（非対称が意図であることの固定）。列挙の序数は動かない | ①② | 自動（単体・ゴールデン相当） |
+| **T-10-684** | **エントリー時**の拒否を運ぶ保護喪失イベント（この経路には保護記録が無い） | 通知を組み立てる | 🔴 **巡回を続ける・約 1 時間ごとに繰り返す・3 回で打ち切る、のどれも約束しない**（どれも無い）。「この 1 回だけ」「手で手仕舞う」が読める。滞留側の通知はその約束を残す（対の表明） | ② | 自動（単体・否定形） |
+| **T-10-685** | 拒否が上限 3 回に達した巡回の Critical の**発行が失敗**した | 常駐の発行を失敗させ、30 秒後に巡回する | 通知済みと覚えず**次の巡回で出し直す**（1 時間黙らない）。**拒否の数えは残り、成行は重ねて送らない**。発行できた後は 1 時間重ねない | ③ | 自動（単体・注入時計） |
+
+<!-- trace-table:
+row1: FR-10
+row2: FR-10, FR-11
+row3: FR-10
+row4: FR-10
+row5: FR-10
+row6: FR-10
+row7: FR-10, FR-11
+row8: FR-10
+row9: FR-10
+-->
+
+> **対応受け入れ基準**は #857 の 3 つ —— ①拒否された建玉が「手仕舞い済み」にならず巡回に残る
+> ②台帳・通知が事実と食い違わない ③撃ち直しに上限があり、それでも無音にならない。

@@ -81,10 +81,17 @@ public static class NotificationFormatter
     // 🔴 #848, IADR-0117（2026-09-19 追記・改定 7）: CloseDispatchIndeterminate は**「解消に失敗」とは言わない**。
     // 成行手仕舞いは送信済みで、証券会社側で生きているかもしれない。「失敗した」と読んだ人は手で成行を重ね、
     // 二重決済でショート化する。伝えるのは「送った・届いたか分からない・重ねる前に確かめよ」である。
+    // 🔴 #857, IADR-0369: CloseRejected は**「手仕舞いました」と言ってはならない**。
+    // 証券会社が確認できる形で拒否しており、**建玉は残っている**。件名も本文も「解消した」と読ませない。
     public static NotificationMessage From(ProtectiveStopCoverageLost e) => new(
-        e.Remediation == ProtectiveStopRemediation.CloseDispatchIndeterminate
-            ? "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認"
-            : "リスク統制: 保護逆指値が成立せず建玉を解消",
+        e.Remediation switch
+        {
+            ProtectiveStopRemediation.CloseDispatchIndeterminate =>
+                "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認",
+            ProtectiveStopRemediation.CloseRejected =>
+                "リスク統制: 保護逆指値が成立せず、成行手仕舞いも拒否（建玉が残存）",
+            _ => "リスク統制: 保護逆指値が成立せず建玉を解消",
+        },
         $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"
             + $"{(e.Cause == ProtectiveStopLossCause.RejectedAtEntry ? "エントリー時に未受理" : "滞留中に失効（再発注不可）")}のため、"
             + e.Remediation switch
@@ -100,6 +107,25 @@ public static class NotificationFormatter
                     + "この通知は予約が解決されるまで約 1 時間ごと（と再起動のたび）に繰り返します。"
                     + "**同じ CloseDecisionId の通知は同じ 1 本の成行であり、新しい発注ではありません。**"
                     + $"CloseDecisionId={e.CloseDecisionId}",
+                // 🔴 #857, IADR-0369: 「確認できた拒否」——送った成行は**生きていない**（届いたか不明とは別である）。
+                // 二重決済の心配なく手で手仕舞える一方、**建玉は無保護のまま残っている**。
+                // 🔴 PR #916 監査 F1, IADR-0369（2026-09-24 追記）: 後半の約束は**原因（Cause）で分ける**。
+                // 巡回・撃ち直し・上限・再通知は滞留側（LapsedInFlight・ProtectiveStopGuard）だけが持つ。
+                // エントリー同時の経路（RejectedAtEntry・ResolveUnprotectedEntryAsync）は保護記録を作らない
+                // （protectiveStops.Save は受理の側だけ）——巡回も撃ち直しも再通知も無く、この通知は 1 回きりである。
+                // 無い約束を書くと、読んだ人は「システムが見ている」と信じて待つ（#857 と同じ壊れ方）。
+                ProtectiveStopRemediation.CloseRejected =>
+                    "建玉の成行手仕舞いを**証券会社が拒否しました（確認できた拒否）。建玉は残っています**。"
+                    + (e.Cause == ProtectiveStopLossCause.RejectedAtEntry
+                        ? "**逆指値なしの建玉が残っているため、証券会社の画面で建玉を確認し、手で手仕舞ってください**"
+                            + "（時間外・数量の制約などで拒否されます）。"
+                            + "**エントリー時の経路には保護記録が無く、システムはこの建玉を巡回しません。"
+                            + "手仕舞いの撃ち直しも行わず、この通知も繰り返しません（届くのはこの 1 回だけです）。**"
+                            + "原因を取り除いてもシステムは再試行しないため、手で手仕舞うまで無保護のままです。"
+                        : "**逆指値なしの建玉が残っているため、証券会社の画面で建玉を確認し、手で手仕舞うか原因を取り除いてください**"
+                            + "（時間外・数量の制約などで拒否されます）。"
+                            + "システムは同じ理由での撃ち直しを 3 回で打ち切りますが、**保護記録は閉じず巡回を続けます**"
+                            + "（この通知は解決するまで約 1 時間ごと（と再起動のたび）に繰り返します）。"),
                 _ => "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。直ちに確認してください。**",
             },
         NotificationSeverity.Critical);
