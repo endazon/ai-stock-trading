@@ -257,6 +257,80 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             "実機の正常な見え方を警告として鳴らし続けない（本物の警告が埋もれる）");
     }
 
+    // T-10-658, T-10-659, T-10-660, T-10-661, FR-10, #899, ADR-0041 決定2, IADR-0373:
+    // 🔴 **通貨の「反証」——非 USD だと示す積極的な証拠があるときだけ採らない。**
+    //
+    // 応答が `currency` を載せないのは実機の正常な見え方であり、そこから USD を前提として採るのは**近似**である
+    // （IADR-0354 決定1 の ［2026-09-19 追記 / #897］）。近似が破れるのは**非 USD の単一市場口座**
+    // （米国株の取扱権限を持つ JP 口座）で、そのとき全比率上限が約 150 倍緩む。
+    //
+    // 🔴 **「確証」（USD だと確かめられたときだけ採る）にしてはならない。** 実機は欄を載せないため、
+    // 確証は**常に成立せず**、稼働環境で新規建てが一日中止まる（#874 → #897 の実害そのもの）。
+    // したがって歯止めは反証であり、**証拠が無いときは何もしない**。
+    //
+    // 🔴 **T-10-659 が本件の主眼である**（否定形）——`cashInfoList` が無い／空の応答は**従来どおり採る**。
+    // 実機がこの欄を載せるかどうかは確認できていない（#397 の probe は記録していない）ため、
+    // 「載っているはず」を前提にした設計は #897 の再生産になる。
+    [Theory]
+    // T-10-658: JPY の行だけ＝この口座は USD 建てではない → 採らない（本件が塞ぐケース）
+    [InlineData("jpy-only", null)]
+    // T-10-659: 🔴 欄が無い（空）＝証拠なし → **従来どおり採る**（新たな fail-closed を作らない）
+    [InlineData("absent", 3_000)]
+    // T-10-660: JPY と USD の混在＝USD の行がある → 採る（反証が効かない範囲。IADR-0373 §結果）
+    [InlineData("jpy-and-usd", 3_000)]
+    // T-10-661: 通貨を名乗らない行・Unknown の行しかない＝証拠にならない → 採る
+    [InlineData("unnamed-and-unknown", 3_000)]
+    public async Task 現金の内訳が非USDだけを名乗るときに限り基準資金を採らない(string breakdown, int? expected)
+    {
+        using var opend = new FakeOpenD { EquityInBase = 3_000m };
+        // 🔴 応答は通貨を明示しない（＝実機と同じ見え方。反証が効くのはこの経路だけである）。
+        opend.FundsCurrency.Should().BeNull();
+        foreach (var row in CashRows(breakdown))
+        {
+            opend.FundsCashInfoCurrencies.Add(row);
+        }
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state.Should().NotBeNull("口座種別は確認できている（評価額の可否で種別まで捨てない）");
+        state!.AccountType.Should().Be(AccountType.Margin);
+        state.EquityInBase.Should().Be(expected is { } e ? e : null);
+    }
+
+    // T-10-662, FR-10, #899, IADR-0373 決定B:
+    // 🔴 **応答が通貨を「明示」した経路には反証を適用しない。**
+    //
+    // 明示された `Funds.currency` は moomoo が documented に定めた一次情報である。universal 口座へ USD を
+    // 要求すれば `currency=USD`・`TotalAssets` は換算後の USD で返る一方、**内訳は JPY だけということがあり得る**。
+    // そこで内訳を優先すると、**正しく USD と名乗っている応答を落とす新しい fail-closed** になる。
+    [Fact]
+    public async Task 応答がUSDを明示していれば現金の内訳がJPYだけでも基準資金を採る()
+    {
+        using var opend = new FakeOpenD
+        {
+            EquityInBase = 3_000m,
+            FundsCurrency = (int)TrdCommon.Currency.Currency_USD,
+        };
+        opend.FundsCashInfoCurrencies.Add((int)TrdCommon.Currency.Currency_JPY);
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state!.EquityInBase.Should().Be(3_000m, "明示された通貨を内訳で上書きしない（決定B）");
+    }
+
+    private static IReadOnlyList<int?> CashRows(string breakdown) => breakdown switch
+    {
+        "jpy-only" => [(int)TrdCommon.Currency.Currency_JPY],
+        "jpy-and-usd" => [(int)TrdCommon.Currency.Currency_JPY, (int)TrdCommon.Currency.Currency_USD],
+        // 🔴 行は載るが通貨を名乗らない／「決められなかった」と名乗る。どちらも**非 USD の証拠ではない**。
+        "unnamed-and-unknown" => [null, (int)TrdCommon.Currency.Currency_Unknown],
+        _ => [],
+    };
+
     // #754 陰性対照, FR-05, IADR-0211: OpenD が受け付けないなら**注文は 1 度も送られない**。
     [Fact]
     public async Task 陰性対照_OpenDが応答しないと発注は1度もブローカーへ届かない()
@@ -367,6 +441,19 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         /// </para>
         /// </summary>
         public int? FundsCurrency { get; set; }
+
+        /// <summary>
+        /// FR-10, #899, IADR-0373: 口座照会（GetFunds）の応答が載せる<b>現金の内訳</b>（<c>cashInfoList</c>）。
+        /// 各要素が 1 行の通貨で、<c>null</c> は<b>その行が通貨を名乗らない</b>ことを表す。
+        /// <para>
+        /// 🔴 <b>既定は空である（＝欄を載せない）。</b> <c>cashInfoList</c> も <c>currency</c> と同じ optional であり、
+        /// <b>実機がこれを載せるかどうかは確認できていない</b>（#397 の probe は記録していない）。
+        /// 既定を「載せる」にすると、#897 と同型の事故 —— <b>偽物が本物より多くを語るせいで、
+        /// 実機でだけ効かない／実機でだけ止まる守りに気づけない</b> —— を作り込むことになる。
+        /// 既定のままで基準資金が供給されることは T-10-659 が固定する。
+        /// </para>
+        /// </summary>
+        public List<int?> FundsCashInfoCurrencies { get; } = [];
 
         public IMoomooTradeConnection Create()
         {
@@ -548,6 +635,17 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                 if (opend.FundsCurrency is { } currency)
                 {
                     fundsBuilder = fundsBuilder.SetCurrency(currency);
+                }
+                // FR-10, #899, IADR-0373: 現金の内訳（cashInfoList）。**既定は空＝欄を載せない。**
+                // 行ごとの null は「その行が通貨を名乗らない」を再現する（行そのものは載る）。
+                foreach (var rowCurrency in opend.FundsCashInfoCurrencies)
+                {
+                    var rowBuilder = TrdCommon.AccCashInfo.CreateBuilder();
+                    if (rowCurrency is { } c)
+                    {
+                        rowBuilder = rowBuilder.SetCurrency(c);
+                    }
+                    fundsBuilder = fundsBuilder.AddCashInfoList(rowBuilder.BuildPartial());
                 }
                 var funds = fundsBuilder.BuildPartial();
                 var response = TrdGetFunds.Response.CreateBuilder()
