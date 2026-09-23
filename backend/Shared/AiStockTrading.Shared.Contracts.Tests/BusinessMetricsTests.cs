@@ -92,12 +92,6 @@ public class BusinessMetricsTests
             .Should().Equal(BusinessMetrics.TriggerScheduled);
     }
 
-    // T-10-668, FR-10, #889, IADR-0372: 🔴 **基準資金を読んだ帰結は outcome タグで読み分けられる。**
-    // どの値も固有のタグ値で出る（語彙が増えたときに既定値へ黙って落ちない）。
-    [Fact]
-    public void 基準資金の読み出しはすべての帰結が固有のタグ値として計上される()
-    {
-        foreach (var outcome in Enum.GetValues<CapitalBaselineReadOutcome>())
     // T-10-663, FR-04, FR-10, #891, IADR-0374: 🔴 **見送りは理由タグつきで数えられる。**
     //
     // 従来は「方針なし・Hold・鮮度切れ・数量 0・採算不成立・裸の新規売り・保有不明」のすべてが
@@ -128,13 +122,6 @@ public class BusinessMetricsTests
             using var capture = new MeterCapture(BusinessMetricNames.MeterName);
             using var metrics = new BusinessMetrics();
 
-            metrics.RecordCapitalBaselineRead(outcome);
-
-            capture.TagValuesOf(BusinessMetricNames.RiskCapitalBaselineReads, BusinessMetricNames.TagOutcome)
-                .Should().Equal(outcome.ToString());
-        }
-    }
-
             metrics.RecordTradeDecisionSkipped(BusinessMetrics.TriggerScheduled, reason);
 
             capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisionSkips, BusinessMetricNames.TagReason)
@@ -163,6 +150,23 @@ public class BusinessMetricsTests
             // 既存の action=no-trade は従来どおり 1 件だけ出る（ダッシュボードのパネルが空にならない）。
             .Should().Equal(BusinessMetrics.ActionNoTrade);
         capture.SumOf(BusinessMetricNames.TradeCycleDecisionSkips).Should().Be(1);
+    }
+
+    // T-10-668, FR-10, #889, IADR-0372: 🔴 **基準資金を読んだ帰結は outcome タグで読み分けられる。**
+    // どの値も固有のタグ値で出る（語彙が増えたときに既定値へ黙って落ちない）。
+    [Fact]
+    public void 基準資金の読み出しはすべての帰結が固有のタグ値として計上される()
+    {
+        foreach (var outcome in Enum.GetValues<CapitalBaselineReadOutcome>())
+        {
+            using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+            using var metrics = new BusinessMetrics();
+
+            metrics.RecordCapitalBaselineRead(outcome);
+
+            capture.TagValuesOf(BusinessMetricNames.RiskCapitalBaselineReads, BusinessMetricNames.TagOutcome)
+                .Should().Equal(outcome.ToString());
+        }
     }
 
     // FR-10, FR-19（境界値テーブル）: 拒否理由の列挙は**全要素**が 1 件ずつ計上される。
