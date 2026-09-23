@@ -13,4 +13,10 @@ public sealed class ProtectiveStopGuardOptions
 
     /// <summary>1 巡回で評価する Active 記録の最大件数（保有建玉数上限 3 に対し十分大きい既定）。</summary>
     public int BatchSize { get; init; } = 50;
+
+    /// <summary>
+    /// FR-10, #902, IADR-0365 決定5: Active なソフトウェア逆指値（S1）の要約（Information）を出す間隔。
+    /// ストアもこの間隔に 1 回だけ読む（S1 が無いときも同じ）。
+    /// </summary>
+    public TimeSpan SoftwareStopSummaryInterval { get; init; } = TimeSpan.FromMinutes(5);
 }
