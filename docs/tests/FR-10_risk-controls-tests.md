@@ -1134,8 +1134,8 @@ row13: FR-10, FR-19
 row14: FR-10, FR-19
 row15: FR-10, FR-19
 row16: FR-10, FR-19
-row12: FR-10, FR-19, NFR-07
-row13: FR-10, FR-19, NFR-07
+row17: FR-10, FR-19, NFR-07
+row18: FR-10, FR-19, NFR-07
 -->
 
 **対照実験（実走した実測）**: 守りを 1 つずつ外して赤を確かめた。
