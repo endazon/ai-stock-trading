@@ -23,4 +23,22 @@ public static class MonthlyBootstrap
             PolicySummary = $"初回月報ブートストラップ: 当月の初期監視銘柄を選定する。候補: {symbols}。確定前は取引に適用されない。",
         };
     }
+
+    /// <summary>
+    /// FR-06, FR-09, UC-03, #839, IADR-0382: 提示通知（Discord）の要約。
+    /// <para>
+    /// 🔴 <b><see cref="PnlSummary"/> を使わない。</b> ブートストラップは集計を 1 つも持たない ——
+    /// ゼロの <c>PnlSummary</c> で <see cref="ReportSummary.Build"/> を呼ぶと
+    /// 「実現損益 0 USD ／ 取引 0 件」と<b>騙る</b>ことになる（本サービスが全節で避けている取り違えである）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>方針文（<paramref name="policySummary"/>）はコード定数から組み立てた文字列であり</b>、
+    /// LLM 出力も利用者入力も含まない（<see cref="BuildDraft"/>）。したがってサニタイズの対象にならない
+    /// ——構成の監視銘柄だけが差し込まれる。
+    /// </para>
+    /// </summary>
+    public static string PresentationSummary(string periodLabel, string policySummary) =>
+        $"月報 {periodLabel}（承認待ち・初回ブートストラップ）\n"
+        + "数値の集計・散文はありません（方針の起点だけを持つドラフトです。**集計 0 ではありません**）。\n"
+        + policySummary;
 }
