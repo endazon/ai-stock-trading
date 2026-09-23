@@ -13,6 +13,9 @@ namespace MarketMonitorService.Tests;
 // fake HttpMessageHandler で検証する（実ネットワーク不使用）。未取得系は空列（＝損切り検知対象なし）へ倒す。
 public class HttpPositionStoreTests
 {
+    // 打ち切りが効かなくなったときに、黙って固まる代わりに理由付きで赤くするための上限（合否の基準ではない）。
+    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
+
     private static HttpPositionStore Store(HttpMessageHandler handler) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://risk") },
             NullLogger<HttpPositionStore>.Instance);
@@ -66,15 +69,23 @@ public class HttpPositionStoreTests
     [Fact]
     public async Task タイムアウト_応答遅延_は空列_損切り検知対象なし()
     {
-        // HttpClient のタイムアウトを短くし、ハンドラを遅延させてタイムアウトを起こす（呼び出し側キャンセルではない）。
-        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(2)))
+        // #885, IADR-0379: 従来は「壁時計 50 ms の HttpClient.Timeout」対「壁時計 2 秒のハンドラ遅延」という
+        // **時刻どうしの競争**で合否が決まっていた（#900 / #901 と同型。機序は IADR-0367）。
+        // 🔴 本ケースは遅延が勝っても空列になるため赤くはならなかったが、その代わり**打ち切り経路を黙って
+        // 検査しなくなる**（変異注入で実測: 遅延を勝たせても緑のままだった）。応答が返らない上流に変え、
+        // 打ち切りで終わったことを観測して確定させる。**上限値（50 ms）は動かしていない。**
+        var handler = new NeverRespondingHandler();
+        var http = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://risk"),
             Timeout = TimeSpan.FromMilliseconds(50),
         };
         var store = new HttpPositionStore(http, NullLogger<HttpPositionStore>.Instance);
 
-        (await store.GetOpenPositionsAsync()).Should().BeEmpty();
+        // Guard は「打ち切りが効かない」ときに黙って固まらないための上限であり、合否の基準ではない。
+        (await store.GetOpenPositionsAsync().WaitAsync(Guard)).Should().BeEmpty();
+        (await handler.Cancellation.WaitAsync(Guard)).Should()
+            .BeTrue("上限に達した要求は打ち切られる（応答は返っていない）");
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
@@ -94,13 +105,27 @@ public class HttpPositionStoreTests
             throw new HttpRequestException("リスク管理サービス不達");
     }
 
-    // 指定時間待機してから応答するハンドラ（HttpClient のタイムアウトを起こすため）。
-    private sealed class DelayingHandler(TimeSpan delay) : HttpMessageHandler
+    // #885, IADR-0379: 時間では応答しない上流。終わり方は打ち切り（＝要求トークンの発火）だけであり、
+    // 「遅延が上限に勝つ」という競争そのものが存在しない。
+    private sealed class NeverRespondingHandler : HttpMessageHandler
     {
+        private readonly TaskCompletionSource<bool> _cancellation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 要求が打ち切られたか（true＝上限で切られた）。テストはこれで「応答で終わっていない」ことを確定させる。
+        public Task<bool> Cancellation => _cancellation.Task;
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _cancellation.TrySetResult(cancellationToken.IsCancellationRequested);
+            }
+
+            throw new InvalidOperationException("到達しない（無期限待ちは打ち切りでしか終わらない）。");
         }
     }
 }

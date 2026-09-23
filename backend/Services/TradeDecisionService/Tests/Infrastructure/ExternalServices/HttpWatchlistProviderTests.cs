@@ -14,6 +14,9 @@ namespace TradeDecisionService.Tests;
 // 供給不達（非 2xx・timeout・例外・不正応答）は fallback（既定 watchlist）へ委譲する。
 public class HttpWatchlistProviderTests
 {
+    // 打ち切りが効かなくなったときに、黙って固まる代わりに理由付きで赤くするための上限（合否の基準ではない）。
+    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
+
     private static HttpWatchlistProvider Provider(HttpMessageHandler handler, IWatchlistProvider fallback) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://monitor") },
             fallback,
@@ -98,8 +101,12 @@ public class HttpWatchlistProviderTests
     [Fact]
     public async Task タイムアウト_応答遅延_は既定_watchlist_へフォールバックする()
     {
-        // HttpClient のタイムアウトを短くし、ハンドラを遅延させてタイムアウトを起こす（呼び出し側キャンセルではない）。
-        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(2)))
+        // #885, IADR-0379: 従来は「壁時計 50 ms の HttpClient.Timeout」対「壁時計 2 秒のハンドラ遅延」という
+        // **時刻どうしの競争**で合否が決まっていた（#900 / #901 と同型。機序は IADR-0367）。
+        // 🔴 遅延が勝つと 200 応答（本文 `[]`）が採られて既定へ倒れず**実際に赤くなる**（変異注入で実測）。
+        // 応答が返らない上流に変え、打ち切りで終わったことを観測して確定させる。**上限値（50 ms）は動かしていない。**
+        var handler = new NeverRespondingHandler();
+        var http = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://monitor"),
             Timeout = TimeSpan.FromMilliseconds(50),
@@ -107,9 +114,12 @@ public class HttpWatchlistProviderTests
         var provider = new HttpWatchlistProvider(
             http, new FakeFallback(FallbackSymbols), NullLogger<HttpWatchlistProvider>.Instance);
 
-        var result = await provider.GetWatchlistAsync();
+        // Guard は「打ち切りが効かない」ときに黙って固まらないための上限であり、合否の基準ではない。
+        var result = await provider.GetWatchlistAsync().WaitAsync(Guard);
 
         result.Should().BeEquivalentTo(FallbackSymbols);
+        (await handler.Cancellation.WaitAsync(Guard)).Should()
+            .BeTrue("上限に達した要求は打ち切られる（応答は返っていない）");
     }
 
     private sealed class FakeFallback(IReadOnlyList<WatchedSymbol> symbols) : IWatchlistProvider
@@ -135,13 +145,27 @@ public class HttpWatchlistProviderTests
             throw new HttpRequestException("市場監視サービス不達");
     }
 
-    // 指定時間待機してから応答するハンドラ（HttpClient のタイムアウトを起こすため）。
-    private sealed class DelayingHandler(TimeSpan delay) : HttpMessageHandler
+    // #885, IADR-0379: 時間では応答しない上流。終わり方は打ち切り（＝要求トークンの発火）だけであり、
+    // 「遅延が上限に勝つ」という競争そのものが存在しない。
+    private sealed class NeverRespondingHandler : HttpMessageHandler
     {
+        private readonly TaskCompletionSource<bool> _cancellation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 要求が打ち切られたか（true＝上限で切られた）。テストはこれで「応答で終わっていない」ことを確定させる。
+        public Task<bool> Cancellation => _cancellation.Task;
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _cancellation.TrySetResult(cancellationToken.IsCancellationRequested);
+            }
+
+            throw new InvalidOperationException("到達しない（無期限待ちは打ち切りでしか終わらない）。");
         }
     }
 }
