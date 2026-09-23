@@ -17,12 +17,52 @@ const {
 } = require('./check-commit-messages.js');
 const { applyOverride, hashMatches } = require('./gen-changelog.js');
 
-let passed = 0;
-function ok(name, fn) {
-  fn();
-  passed++;
-  process.stdout.write(`  ok  ${name}\n`);
+// --- 実行ハーネス（#888） -----------------------------------------------------------
+//
+// 🔴 **1 件の例外でスイート全体を止めない。**
+// 旧実装は `ok()` が `fn()` の例外をそのまま抜けさせていたため、**その後ろに定義された
+// テストは一度も実行されなかった**。中断したスイートは以降について「通った」とも
+// 「落ちた」とも言わない —— **「走っていない」が出力から読めない**のが実害である。
+// 実測（Windows・`spawnSync bash ENOENT`）: `setup.sh` 系 4 件で中断し、**その後ろの
+// 数十件が一度も実行されていなかった**（例外を捕捉するハーネスで走らせ直して初めて判った）。
+//
+// **失敗の扱いは変えない**（1 件でも fail なら終了コード 1）。変わるのは「どこで止まるか」だけである。
+//
+// 🔴 **ハーネスは工場関数にする。** そうしないとハーネス自身の回帰テストが書けない ——
+// 本物の `ok()` へ「わざと落ちるテスト」を通せば、その失敗がスイートの失敗として残ってしまう。
+// 独立した実体を作れれば、**記録した内容**を通常のテストとして検査できる。
+function createHarness(write = (s) => process.stdout.write(s)) {
+  const h = { passed: 0, failures: [], skipped: [] };
+
+  h.ok = (name, fn) => {
+    try {
+      fn();
+    } catch (e) {
+      h.failures.push({ name, error: e });
+      write(`  FAIL ${name}\n`);
+      return;
+    }
+    h.passed++;
+    write(`  ok  ${name}\n`);
+  };
+
+  /**
+   * そのテストを実行しないことを**明示して**記録する。
+   * 🔴 **黙って飛ばさない。** 理由を 1 行出し、末尾の件数にも載せる ——
+   * 黙った skip は「通った」と区別できず、中断と同じ穴（走っていないことが読めない）を作る。
+   */
+  h.skip = (name, reason) => {
+    h.skipped.push({ name, reason });
+    write(`  SKIP ${name}\n       理由: ${reason}\n`);
+  };
+
+  h.total = () => h.passed + h.failures.length + h.skipped.length;
+  return h;
 }
+
+const harness = createHarness();
+const ok = (name, fn) => harness.ok(name, fn);
+const skip = (name, reason) => harness.skip(name, reason);
 
 // git を best-effort で実行する。失敗時は null（テストはスキップ判断に使い、落とさない）。
 function gitTry(args) {
@@ -985,8 +1025,12 @@ const COMPANION_LEGACY = 'scripts.local.test.js';
  * ディレクトリを引数に取るのは、受け口自体を実ファイルに触らず検証できるようにするため
  * （実 companion がある環境でだけ検証が skip される、という穴を作らない）。
  * 返り値の registered は companion が登録したテスト件数。
+ *
+ * 🔴 **`skip` も渡す**（#888）。渡さないと companion は「走らせられないテスト」を
+ * 黙って落とすか、例外でスイートを止めるかの二択になる。**既定は何もしない関数**にして、
+ * `skip` を受け取らない呼び出し（受け口の回帰テスト）でも壊れないようにする。
  */
-function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
+function loadCompanionTests(dir, { ok: okFn, skip: skipFn = () => {}, assert: assertObj }) {
   const fsx = require('fs');
   const pathx = require('path');
   const warnings = [];
@@ -1029,7 +1073,13 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
     registered++;
     return okFn(name, fn);
   };
-  require(file)({ ok: countingOk, assert: assertObj });
+  // skip も「登録された」と数える。数えないと、companion が全件 skip したときに
+  // 「1 件も登録していない（export 忘れ・空実装）」と区別できない。
+  const countingSkip = (name, reason) => {
+    registered++;
+    return skipFn(name, reason);
+  };
+  require(file)({ ok: countingOk, skip: countingSkip, assert: assertObj });
   return { file, registered, warnings };
 }
 
@@ -1090,11 +1140,107 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
     const r = loadCompanionTests(d, { ok: run, assert });
     assert.match(r.warnings.join(' '), /追跡されていない/);
   });
+
+  // --- ハーネス自体の回帰テスト（#888） ---------------------------------------------
+  //
+  // 🔴 **これが無いと、次の是正が「また中断する形」へ戻しても誰も気づかない。**
+  // 実測（Windows）: 是正前は 323 件目で中断し、**残り 39 件（うち setup.sh 系 4 件）が
+  // 一度も実行されていなかった**。中断は「落ちた」とも「通った」とも言わないため、
+  // **件数だけを見ていても気づけない**。
+  //
+  // 本物の `ok()` へ「わざと落ちるテスト」を通すとスイートが赤くなるので、
+  // `createHarness()` で独立した実体を作り、**記録した内容**を検査する。
+  {
+    const silent = () => createHarness(() => {});
+
+    ok('🔴 ハーネス: 例外を投げたテストは fail として記録し、**次のテストへ進む**', () => {
+      const h = silent();
+      h.ok('落ちる', () => {
+        throw new Error('boom');
+      });
+      h.ok('その次', () => assert.ok(true));
+      assert.strictEqual(h.failures.length, 1, '失敗が記録されていない');
+      assert.strictEqual(h.passed, 1, '**中断して後続が走っていない**（本 issue の本題）');
+      assert.strictEqual(h.failures[0].name, '落ちる');
+      assert.match(String(h.failures[0].error.message), /boom/);
+    });
+
+    ok('ハーネス: 通ったテストだけが passed に載る', () => {
+      const h = silent();
+      h.ok('a', () => {});
+      h.ok('b', () => {});
+      assert.strictEqual(h.passed, 2);
+      assert.strictEqual(h.failures.length, 0);
+    });
+
+    ok('ハーネス: skip は pass でも fail でもなく skip として数える', () => {
+      const h = silent();
+      h.skip('走らせられない', '理由');
+      assert.strictEqual(h.passed, 0);
+      assert.strictEqual(h.failures.length, 0);
+      assert.deepStrictEqual(h.skipped, [{ name: '走らせられない', reason: '理由' }]);
+    });
+
+    ok('🔴 ハーネス: skip は黙らない（名前と理由を出力へ書く）', () => {
+      let out = '';
+      const h = createHarness((s) => {
+        out += s;
+      });
+      h.skip('名前', '理由A');
+      assert.match(out, /SKIP 名前/);
+      assert.match(out, /理由A/);
+    });
+
+    ok('ハーネス: total は pass ＋ fail ＋ skip の合計である', () => {
+      const h = silent();
+      h.ok('p', () => {});
+      h.ok('f', () => {
+        throw new Error('x');
+      });
+      h.skip('s', 'r');
+      assert.strictEqual(h.total(), 3);
+    });
+
+    ok('🔴 受け口: 例外を投げる companion のテストでも読み込みは中断しない', () => {
+      const d = mkTmp();
+      fsx.writeFileSync(
+        pathx.join(d, COMPANION),
+        "module.exports = ({ ok }) => { ok('落ちる', () => { throw new Error('boom'); }); ok('その次', () => {}); };\n"
+      );
+      const h = silent();
+      const r = loadCompanionTests(d, { ok: h.ok, skip: h.skip, assert });
+      assert.strictEqual(r.registered, 2, '**中断して 2 件目が登録されていない**');
+      assert.strictEqual(h.failures.length, 1);
+      assert.strictEqual(h.passed, 1);
+    });
+
+    ok('受け口: companion へ skip を渡し、登録件数に数える', () => {
+      const d = mkTmp();
+      fsx.writeFileSync(
+        pathx.join(d, COMPANION),
+        "module.exports = ({ ok, skip }) => { ok('a', () => {}); skip('b', '理由'); };\n"
+      );
+      const h = silent();
+      const r = loadCompanionTests(d, { ok: h.ok, skip: h.skip, assert });
+      assert.strictEqual(r.registered, 2, 'skip を登録件数に数えていない（全件 skip と空実装が区別できなくなる）');
+      assert.strictEqual(h.skipped.length, 1);
+    });
+
+    ok('受け口: skip を渡さない呼び出しでも壊れない（既定は no-op）', () => {
+      const d = mkTmp();
+      fsx.writeFileSync(
+        pathx.join(d, COMPANION),
+        "module.exports = ({ ok, skip }) => { ok('a', () => {}); skip('b', '理由'); };\n"
+      );
+      const r = loadCompanionTests(d, { ok: run, assert });
+      assert.strictEqual(r.registered, 2);
+    });
+  }
 }
 
 // 実ツリーの companion を読み込む。
 {
-  const res = loadCompanionTests(__dirname, { ok, assert });
+  const res = loadCompanionTests(__dirname, { ok, skip, assert });
   for (const w of res.warnings) warn(w, { stream: process.stderr, prefix: 'warning: ' });
 
   if (res.file) {
@@ -1283,8 +1429,31 @@ function loadCompanionTests(dir, { ok: okFn, assert: assertObj }) {
 }
 
 // **テストを足すときは、必ずこの行より前に書くこと。**
-// 後ろへ足すと `ok()` は走るが `passed` の集計に載らず、**報告件数が実行件数より少なくなる**
+// 後ろへ足すと `ok()` は走るが集計に載らず、**報告件数が実行件数より少なくなる**
 // （実測: 4 件を後ろへ足して「124 件」と報告し、実際は 128 件走っていた。planning#318 のレビューが
-// CI ログを読んで検出した）。**失敗は依然として検出される**（`ok()` は例外でプロセスを落とす）が、
-// **「何件通ったか」の報告が事実とずれる。**
-process.stdout.write(`\n✓ ${passed} tests passed\n`);
+// CI ログを読んで検出した）。**失敗は依然として検出される**が、**「何件走ったか」の報告が事実とずれる。**
+//
+// 🔴 **件数は 4 つとも出す**（#888）。「通った件数」だけでは、**落ちた／飛ばした／そもそも走っていない**
+// を読み分けられない。失敗は**末尾へまとめて再掲する** —— 途中に混ざると後続の出力に押し流される。
+{
+  const { passed: pass, failures, skipped } = harness;
+  process.stdout.write(
+    `\n総数 ${harness.total()} / 成功 ${pass} / 失敗 ${failures.length} / skip ${skipped.length}\n`
+  );
+  if (skipped.length) {
+    process.stdout.write('\nskip したテスト:\n');
+    for (const s of skipped) process.stdout.write(`  - ${s.name}\n      ${s.reason}\n`);
+  }
+  if (failures.length) {
+    process.stderr.write('\n失敗したテスト:\n');
+    for (const f of failures) {
+      process.stderr.write(`  ✗ ${f.name}\n`);
+      const msg = f.error && f.error.stack ? f.error.stack : String(f.error);
+      process.stderr.write(`${msg.split('\n').map((l) => `      ${l}`).join('\n')}\n`);
+    }
+    process.stderr.write(`\n✗ ${failures.length} tests failed\n`);
+    process.exitCode = 1;
+  } else {
+    process.stdout.write(`\n✓ ${pass} tests passed\n`);
+  }
+}
