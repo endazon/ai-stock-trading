@@ -11,6 +11,9 @@ namespace InformationCollectionService.Tests;
 // 検証する（実ネットワーク不使用）。未取得系は Normal（停止せず・1×）へ倒す。
 public class HttpCostControlGateTests
 {
+    // 打ち切りが効かなくなったときに、黙って固まる代わりに理由付きで赤くするための上限（合否の基準ではない）。
+    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
+
     private static HttpCostControlGate Gate(HttpMessageHandler handler) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://cost") },
             NullLogger<HttpCostControlGate>.Instance);
@@ -64,17 +67,28 @@ public class HttpCostControlGateTests
         (await Gate(new StubHandler(HttpStatusCode.OK, "")).GetAsync()).Should().Be(CostControlGateNormal());
     }
 
+    // NFR（費用）, IADR-0031: 費用統制の応答が上限に間に合わなければ、情報収集は止めず Normal（1×）へ倒す。
+    //
+    // #901, IADR-0367: 従来は「壁時計 50 ms の `HttpClient.Timeout`」対「壁時計 2 秒のハンドラ遅延」という
+    // **時刻どうしの競争**で合否が決まっていた。全ソリューション実行では稀に遅延が勝ち、ハンドラの本文 `{}` が
+    // そのまま写って `IntervalMultiplier = 0`（＝Normal ではない）になって落ちた（機序は IADR-0367）。
+    // 遅延をやめ、**打ち切られるまで決して応答しない**ハンドラにする。上流が上限より遅いことは変わらず、
+    // 「遅い上流でも Normal へ倒す」という固定したい性質は同じで、応答が勝つ余地だけが消える。
     [Fact]
     public async Task タイムアウト_応答遅延_は_Normal_停止せず()
     {
-        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(2)))
+        var handler = new NeverRespondingHandler();
+        var http = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://cost"),
             Timeout = TimeSpan.FromMilliseconds(50),
         };
         var gate = new HttpCostControlGate(http, NullLogger<HttpCostControlGate>.Instance);
 
-        (await gate.GetAsync()).Should().Be(CostControlGateNormal());
+        // Guard は「打ち切りが効かない」ときに黙って固まらないための上限であり、合否の基準ではない。
+        (await gate.GetAsync().WaitAsync(Guard)).Should().Be(CostControlGateNormal());
+        // 応答ではなく**打ち切り**で終わったことを、ハンドラ側の観測で確定させる。
+        (await handler.Cancellation.WaitAsync(Guard)).Should().BeTrue("上限に達した要求は打ち切られる（応答は返っていない）");
     }
 
     private static InformationCollectionService.Features.InformationCollection.CostControlGate CostControlGateNormal() =>
@@ -97,12 +111,27 @@ public class HttpCostControlGateTests
             throw new HttpRequestException("費用統制サービス不達");
     }
 
-    private sealed class DelayingHandler(TimeSpan delay) : HttpMessageHandler
+    // #901, IADR-0367: 時間では応答しない上流。終わり方は打ち切り（＝要求トークンの発火）だけで、
+    // 「遅延が上限に勝つ」という競争そのものが存在しない。
+    private sealed class NeverRespondingHandler : HttpMessageHandler
     {
+        private readonly TaskCompletionSource<bool> _cancellation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 要求が打ち切られたか（true＝上限で切られた）。テストはこれで「応答で終わっていない」ことを確定させる。
+        public Task<bool> Cancellation => _cancellation.Task;
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _cancellation.TrySetResult(cancellationToken.IsCancellationRequested);
+            }
+
+            throw new InvalidOperationException("到達しない（無期限待ちは打ち切りでしか終わらない）。");
         }
     }
 }
