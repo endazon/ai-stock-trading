@@ -542,6 +542,13 @@ jobs:
           check "既定 + --set global.authAuthority 差し替え" \
             "$(helm template ast "$CHART" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
             "http://kc:8080/realms/zzsentinel"
+          # #781: **values-local と --set の組み合わせ**。上の 4 面はどれもこの組み合わせを踏んでおらず、
+          # values-local が置いていたレルムのリテラル 4 件（KnowledgeBase__Auth__Authority ×2 /
+          # LlmGateway__Auth__Authority ×2）は**どの面からも見えていなかった** —— IADR-0324 の 2026-09-11 追記が
+          # 「残った負債」と名指ししたのがこの隙間である。経路B の描画にもリテラルを残さない。
+          check "values-local + --set global.authAuthority 差し替え" \
+            "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
+            "http://kc:8080/realms/zzsentinel"
           echo "ok: 配備される全経路（Deployment/CronJob/Job の env）が単一レルムを指す（ADR-0038 決定2）"
       # #279 / IADR-0114 決定4: Helm は**リストを置換する**ため、values-local が extraEnv を上書きしている
       # サービスでは、本番 values.yaml 側にキーが増えたときに写し忘れると**当該 env が消える**（有効化のつもりで
