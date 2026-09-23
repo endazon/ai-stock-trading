@@ -2,7 +2,7 @@
 title: IADR-0379 壁時計どうしの競争で合否が決まる試験の判別軸を定め、上限の試験は「応答しない上流」で固定する
 type: impl-adr
 status: Accepted
-related_ids: [FR-01, FR-04, FR-06, NFR, IADR-0031, IADR-0168, IADR-0364]
+related_ids: [FR-01, FR-04, FR-06, NFR, IADR-0031, IADR-0168, IADR-0364, IADR-0366]
 author: claude (Claude Code)
 created: 2026-09-23
 updated: 2026-09-23
@@ -20,7 +20,8 @@ plan_refs:
 
 - 起票: [#885](https://github.com/endazon/ai-stock-trading/issues/885)（集約 issue）。
 - 先行: [IADR-0364](IADR-0364_grpc-deadline-test-excludes-connect-from-budget.md)（#885 本体・PR #896）／
-  IADR-0366（#900・PR #906）／IADR-0367（#901・PR #907）。**いずれも 1 本ずつの是正**であり、
+  [IADR-0366](IADR-0366_per-kind-timeout-test-uses-synchronization-point.md)（#900・PR #906）／
+  IADR-0367（#901・PR #907。本作業時点で未マージ）。**いずれも 1 ケースずつの是正**であり、
   本 IADR は**残りの同型を一括で扱う規律**を定める。3 者の決定を覆さない。
 - 関連する実装仕様書: `.ai-context/specs/20260923_885_wall-clock-timeout-test-inventory.md`
 
@@ -67,7 +68,7 @@ await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(fal
 
 ### 決定 3 — 「赤くならない同型」も是正する
 
-変異注入（遅延を勝たせる）で分けたところ、同型 10 件のうち **4 件は遅延が勝っても緑**だった
+変異注入（遅延を勝たせる）で分けたところ、同型 10 ファイルのうち **4 件は遅延が勝っても緑**だった
 （上流の応答本文が、打ち切り時の安全既定と同じ値に写るため）。
 
 **これらも是正する。** 偽の赤は出ないが、代わりに**「タイムアウトを検査している」という名前が嘘になる**
@@ -86,10 +87,10 @@ await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(fal
 - **allowlist の形**: `check-tracked-session-timeout.js` の `ALLOWED_FILES` と同じく、
   **ファイル単位＋理由＋起票 ID** の定数表とする。**本決定の時点で登録すべき項目は無い**
   （本 PR ＋ #906 ＋ #907 で 12 件すべてが消える）。
-- 🔴 **今は入れない。** 12 件のうち 2 件は**未マージ**の PR が直す。先に入れると develop が赤くなり、
-  それを避けるために allowlist へ先回りで登録するのは
-  `check-banned-libraries.js` が明示的に採らないと書いている運用（「移行前に登録して検査を無効化する」）である。
-  **3 本が揃った時点で、allowlist 無しで入れる。**
+- 🔴 **今は入れない。** 本 IADR の変換を当てた後も **1 件**（`HttpCostControlGateTests.cs`）が残り、
+  これは**未マージ**の PR #907 が直す。先に入れると develop が赤くなり、それを避けるために
+  allowlist へ先回りで登録するのは `check-banned-libraries.js` が明示的に採らないと書いている運用
+  （「移行前に登録して検査を無効化する」）である。**#907 と本 PR が揃った時点で、allowlist 無しで入れる。**
 - **形 (c)（Wolverine の `IServiceProvider.ExecuteAndWaitAsync`＝既定 5 秒）は別物として扱う。**
   既存の `check-tracked-session-timeout.js` が素の `TrackActivity()` だけを禁じており、この overload は素通りする。
   同スクリプトの拡張として別 issue で扱う（#357 が 5 秒をスケジューリング遅延だけで超えた実測を持つ）。
@@ -116,8 +117,11 @@ await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(fal
 
 ## 結果
 
-- 良い影響: 形 (a) の同型が**リポジトリから消える**（本 PR 10 件 ＋ #906 / #907 の 2 件）。
+- 良い影響: 形 (a) の同型が**リポジトリから消える**（本 PR 11 ファイル ＋ #907 の 1 ファイル）。
   4 件は「黙って打ち切り経路を検査しなくなる」状態からも抜ける。
+- 🔴 **走査は「1 ケース直したファイル」を『済み』と数えない。** 作業中に #906 が develop へ入ったが、
+  同 PR が直したのは `HttpReportNarrativeDrafterTests` の**1 ケースだけ**で、同ファイルに同型が 3 ケース残っていた
+  （走査の出力で気付いた。issue の記述を信じて数えていたら取りこぼしていた）。本 IADR の変換に含める。
 - 代償: 各テストに `Guard` と打ち切りの観測が 1 行ずつ増える。**打ち切りが壊れた場合の所要は 30 秒**になる
   （従来は 2 秒で誤って緑になっていた）。
 - 🔴 残余リスク: 形 (c)（5 秒の追跡窓・約 30 テスト）は**手つかず**である。別 issue で扱う。

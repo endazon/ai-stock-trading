@@ -2,7 +2,7 @@
 title: 壁時計どうしの競争で合否が決まる試験の棚卸しと、同型 10 本の一括変換（#885）
 type: spec
 status: accepted
-related_ids: [FR-01, FR-04, FR-06, FR-17, NFR, IADR-0031, IADR-0168, IADR-0364, IADR-0379]
+related_ids: [FR-01, FR-04, FR-06, FR-17, NFR, IADR-0031, IADR-0168, IADR-0364, IADR-0366, IADR-0379]
 author: claude (Claude Code)
 created: 2026-09-23
 updated: 2026-09-23
@@ -15,7 +15,8 @@ plan_refs:
 ## 起点
 
 - **#885**（集約 issue）。個別の是正はすでに 3 本走っている:
-  **#885 本体＝PR #896（IADR-0364）／#900＝PR #906（IADR-0366）／#901＝PR #907（IADR-0367）**。
+  **#885 本体＝PR #896（IADR-0364・マージ済み）／#900＝PR #906（IADR-0366・本作業中にマージ）／
+  #901＝PR #907（IADR-0367・本作業時点で未マージ）**。
 - 本作業の射程は #885 に残った **(a) 全走査と一覧、(b) 検査器を足すかの判断、(c) 明らかに安全な変換だけの実施**である。
 
 ## 判別の軸（#885 が自ら訂正した軸を使う）
@@ -54,8 +55,8 @@ plan_refs:
 
 | # | ファイル | 是正 |
 | --- | --- | --- |
-| 1 | `InformationCollectionService/Tests/.../HttpCostControlGateTests.cs` | **PR #907**（#901）。本 PR では触らない |
-| 2 | `ReportService/Tests/.../HttpReportNarrativeDrafterTests.cs` | **PR #906**（#900）。本 PR では触らない |
+| 1 | `InformationCollectionService/Tests/.../HttpCostControlGateTests.cs` | **PR #907**（#901。作業中に未マージ）。本 PR では触らない |
+| 2 | `ReportService/Tests/.../HttpReportNarrativeDrafterTests.cs` | 🔴 **PR #906（#900）は同ファイルの 1 ケースだけを是正しており、残り 3 ケースは同型のまま残っていた**（下記）。**本 PR で残りを是正する** |
 | 3 | `MarketMonitorService/Tests/.../HttpPositionStoreTests.cs` | **本 PR** |
 | 4 | `ReportService/Tests/.../HttpBuyInInferenceRecordSourceTests.cs` | **本 PR** |
 | 5 | `ReportService/Tests/.../HttpOpenDUptimeSourceTests.cs` | **本 PR** |
@@ -67,8 +68,24 @@ plan_refs:
 | 11 | `TradeDecisionService/Tests/.../HttpWatchlistProviderTests.cs` | **本 PR** |
 | 12 | `TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/ClientCredentialsTokenProviderTests.cs` | **本 PR** |
 
-12 件はすべて **`HttpClient.Timeout = 50 ms` 対 `DelayingHandler(2〜5 秒)`** という同一の形である
-（1 件は 5 秒）。**同型の複製が 12 コピーあった。**
+12 件のほとんどは **`HttpClient.Timeout = 50 ms` 対 `DelayingHandler(2〜5 秒)`** という同一の形である。
+**同型の複製が 12 ファイルにあった。**
+
+### 🔴 作業中に #906 が develop へマージされ、母集合を引き直した
+
+`HttpReportNarrativeDrafterTests.cs` は **#906 のマージ後も走査に当たり続けた**。読み直すと、
+**#906 が是正したのは同ファイルの「種別ごとの打ち切り」1 ケースだけ**で、同型が 3 ケース残っていた。
+
+| 残っていたケース | 形 |
+| --- | --- |
+| `タイムアウト_応答遅延_は_プレースホルダ散文へ倒す` | 50 ms 対 2 秒 |
+| `タイムアウト縮退のログに種別と発火した秒数を残す` | 種別ごと 500 ms 対 30 秒 |
+| `呼び出し側のキャンセルは縮退せず伝播する` | 即時キャンセル 対 20 秒／30 秒（余裕は大きいが実時間どうし） |
+
+**本 PR でこの 3 件も同じ形へ移す。** 走査はファイル単位のため、**「1 ケース直したファイル」を
+『済み』と数えると取りこぼす**——issue の記述ではなく走査の出力で数え直した結果である。
+
+**是正後、走査に当たるのは `HttpCostControlGateTests.cs`（PR #907）の 1 件だけになった**（実測）。
 
 ## 変異注入で分けた「赤くなる」と「黙って検査しなくなる」
 
@@ -101,9 +118,10 @@ plan_refs:
 - 条件は満たしている。**同型の事故は実際に 3 回観測されている**（#885 / #900 / #901）。
 - 形 (a) は**機械的に検出できる**（同一ファイル内で 有限の打ち切り ＜ 実時間の遅延）。試作の的中率は
   **632 ファイル中 12 件**で、**12 件すべてが真陽性**（偽陽性 0）。
-- 🔴 **今入れると develop が赤くなる。** 12 件のうち 2 件は #906 / #907 の**未マージ**の PR が直す。
-  「マージ前に allowlist へ登録して無効化する」運用は `check-banned-libraries.js` が明示的に採らない形である。
-- したがって **#906 / #907 / 本 PR が揃ってマージされた時点で、allowlist を空にして入れる**。追随 issue を起票する。
+- 🔴 **今入れると develop が赤くなる。** 本 PR を当てた後も **`HttpCostControlGateTests.cs` の 1 件**が残り、
+  これは**未マージ**の PR #907 が直す。「マージ前に allowlist へ登録して無効化する」運用は
+  `check-banned-libraries.js` が明示的に採らないと書いている形である。
+- したがって **#907 と本 PR が揃ってマージされた時点で、allowlist を空にして入れる**。追随 issue を起票する。
 
 ## 射程外（一覧には載せるが本 PR では直さない）
 
@@ -119,8 +137,9 @@ plan_refs:
 
 ## 受け入れ基準
 
-- [ ] 形 (a) の 12 件を走査で列挙し、**#906 / #907 の 2 件を除く 10 件**を変換する
-- [ ] 変換後、10 本すべてが緑
+- [ ] 形 (a) を走査で列挙し、**PR #907 が直す 1 ファイルを除く 11 ファイル**を変換する
+- [ ] 変換後、走査に当たるのが `HttpCostControlGateTests.cs`（#907）の 1 件だけになる
+- [ ] 変換したテストがすべて緑
 - [ ] 変換で**弱まっていない**ことを変異注入で示す（上限を無効化したら赤くなる）
 - [ ] `dotnet build backend/backend.slnx` / `dotnet test backend/backend.slnx` / `dotnet format --verify-no-changes`
 - [ ] 一覧を #885 へコメントとして投稿する
@@ -135,5 +154,5 @@ plan_refs:
 
 ## 未決事項
 
-- 検査器の投入は #906 / #907 のマージ後（追随 issue）。
+- 検査器の投入は #907 のマージ後（追随 issue）。
 - 形 (c) の 5 秒の窓は別 issue。
