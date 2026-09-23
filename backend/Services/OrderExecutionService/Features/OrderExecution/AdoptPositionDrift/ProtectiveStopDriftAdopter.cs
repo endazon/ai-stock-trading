@@ -91,8 +91,6 @@ public sealed class ProtectiveStopDriftAdopter(
             .ThenBy(s => s.CreatedAt)
             .ThenBy(s => s.EntryDecisionId))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
             var take = takes[row.EntryDecisionId];
             if (row.IsSoftwareStop)
             {
@@ -100,24 +98,36 @@ public sealed class ProtectiveStopDriftAdopter(
                 ReduceBooks(row, take, adopted);
                 events.Add(Reduced(row, take));
                 reduced++;
-                continue;
             }
-
-            // 実注文を持つ行（S0）: **全部か 0 か**でしか減らない（割り当ての規則）。ブローカーの逆指値を取り消す。
-            if (await TryCancelAsync(row, adopted, cancellationToken).ConfigureAwait(false) is { } cancelled)
+            else if (await TryCancelAsync(row, adopted, cancellationToken).ConfigureAwait(false) is { } cancelled)
             {
+                // 実注文を持つ行（S0）: **全部か 0 か**でしか減らない（割り当ての規則）。ブローカーの逆指値を取り消す。
                 ReduceBooks(row, take, adopted);
                 events.Add(cancelled);
                 events.Add(Reduced(row, take));
                 reduced++;
-                continue;
+            }
+            else
+            {
+                unconfirmed++;
+                events.Add(new SoftwareStopExecuted(
+                    row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.StopCancelUnconfirmed,
+                    row.ProtectedQuantity, row.TriggerPrice, row.TriggerPrice, row.Attempt,
+                    CloseDecisionId: null, CloseOrderId: row.StopOrderId, CloseIntent: null, clock.UtcNow));
             }
 
-            unconfirmed++;
-            events.Add(new SoftwareStopExecuted(
-                row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.StopCancelUnconfirmed,
-                row.ProtectedQuantity, row.TriggerPrice, row.TriggerPrice, row.Attempt,
-                CloseDecisionId: null, CloseOrderId: row.StopOrderId, CloseIntent: null, clock.UtcNow));
+            // 🔴 停止要求は**行の処理を終えてから**見る（PR #918 の自動レビューの指摘）。
+            // 行の先頭で投げると、直前の行で**既に保存した帳簿・既にブローカーへ送った取消**に対応するイベントが
+            // events ごと握り潰され（発行は呼び出し側）、記録の状態と監査・通知が食い違う無音の穴になる。
+            // 打ち切った残りの行は Active のままであり、次の観測・ガードの巡回・次の取り込みが引き続き見る。
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "停止要求のため乖離の取り込みの追随を打ち切ります（ここまでの結果は発行します）: "
+                    + "銘柄={Symbol}/{Market} 減らした={Reduced} 取消を確認できない={Unconfirmed}",
+                    adopted.Symbol, adopted.Market, reduced, unconfirmed);
+                break;
+            }
         }
 
         return new ProtectiveStopDriftAdoptionResult(group.Count, reduced, unconfirmed, events);

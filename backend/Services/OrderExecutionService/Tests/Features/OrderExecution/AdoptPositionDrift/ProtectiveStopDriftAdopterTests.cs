@@ -42,6 +42,12 @@ public class ProtectiveStopDriftAdopterTests
         /// <summary>建玉照会の応答（null＝照会不能＝不明）。</summary>
         public IReadOnlyList<BrokerPositionSnapshot>? Positions { get; set; } = [];
 
+        /// <summary>建玉照会が例外で落ちる（OpenD の応答異常など）。</summary>
+        public bool PositionsThrow { get; set; }
+
+        /// <summary>取消を 1 本送った時点で呼ばれる（停止要求の注入に使う）。</summary>
+        public Action? OnCancelSent { get; set; }
+
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
             throw new NotSupportedException("本テストは発注しない");
 
@@ -54,11 +60,14 @@ public class ProtectiveStopDriftAdopterTests
         {
             CancelCount++;
             CancelledOrderIds.Add(orderId);
+            OnCancelSent?.Invoke();
             return cancelThrows ? throw new InvalidOperationException("取消に失敗（テスト）") : Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
-            Task.FromResult(Positions);
+            PositionsThrow
+                ? throw new InvalidOperationException("建玉照会に失敗（テスト）")
+                : Task.FromResult(Positions);
     }
 
     private static OrderIntent CloseIntent() =>
@@ -266,6 +275,47 @@ public class ProtectiveStopDriftAdopterTests
         h.Broker.CancelCount.Should().Be(1);
         h.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
         result.Reduced.Should().Be(1);
+    }
+
+    // 建玉照会が**例外で落ちた**ときも「不明」と同じ側へ倒す（照会できない構成と区別しない）。
+    [Fact]
+    public async Task 建玉照会が例外で落ちても取り込みの観測に従う()
+    {
+        var h = NewHarness();
+        h.Broker.PositionsThrow = true;
+        var stop = AddBrokerStop(h);
+
+        var result = await h.Adopter.ApplyAsync(Adopted());
+
+        h.Broker.CancelCount.Should().Be(1, "何もしないと孤立した逆指値が残る");
+        h.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        result.Reduced.Should().Be(1);
+    }
+
+    // 🔴 停止要求は**行の処理を終えてから**見る。1 行目の取消を送った直後に停止されても、
+    // その行の結果（取消・保護減少）は返って発行される（無音にしない）。残りの行は Active のまま。
+    [Fact]
+    public async Task 停止要求で打ち切っても処理済みの行の結果は握り潰さない_否定形()
+    {
+        var h = NewHarness();
+        using var cts = new CancellationTokenSource();
+        h.Broker.OnCancelSent = cts.Cancel;
+        var first = AddBrokerStop(h, quantity: 10, orderId: "stop-a");
+        var second = AddBrokerStop(h, quantity: 10, orderId: "stop-b");
+
+        var result = await h.Adopter.ApplyAsync(Adopted(before: 20, after: 0), cts.Token);
+
+        h.Broker.CancelCount.Should().Be(1, "停止要求の後は次の行へ進まない");
+        result.Reduced.Should().Be(1);
+        result.Events.OfType<OrderCancelled>().Should().ContainSingle("送った取消の結果を握り潰さない");
+        result.Events.OfType<SoftwareStopExecuted>().Should().ContainSingle()
+            .Which.Outcome.Should().Be(SoftwareStopOutcome.ProtectionReduced);
+
+        var processed = h.Stops.Find(first.EntryDecisionId)!.State == ProtectiveStopState.Completed ? first : second;
+        var untouched = processed == first ? second : first;
+        h.Stops.Find(processed.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        h.Stops.Find(untouched.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active,
+            "打ち切った残りは Active のまま＝次の観測・巡回・取り込みが引き続き見る");
     }
 
     [Fact]
