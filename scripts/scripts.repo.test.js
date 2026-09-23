@@ -759,7 +759,10 @@ module.exports = ({ ok, assert }) => {
       for (const kind of ['tests', 'functional']) {
         const specDir = pathTt.join(root, 'docs', kind);
         fsTt.mkdirSync(specDir, { recursive: true });
-        fsTt.writeFileSync(pathTt.join(specDir, `${id}_x.md`), '');
+        // テスト仕様書には**採番行を 1 行置く**。検査 4（T2）は「採番行を 1 件も走査できない」を
+        // fail-closed にするため（#887 / IADR-0376）、空のままだと T1 の模擬ツリーが T2 で落ちる。
+        const body = kind === 'tests' ? `| ID | 観点 |\n| --- | --- |\n| T-${n}-1 | 模擬 |\n` : '';
+        fsTt.writeFileSync(pathTt.join(specDir, `${id}_x.md`), body);
       }
     }
   };
@@ -814,6 +817,121 @@ module.exports = ({ ok, assert }) => {
     const r = runTraceability(root);
     assert.strictEqual(r.code, 0, `新樹形に中身があるのに T1 が誤発火している:\n${r.out}`);
   });
+
+  // --- check-test-traceability.js: 検査 4（T2）＝テスト ID の一意性（#887 / IADR-0376） ---
+  //
+  // **正の確認と同数以上の否定形を置く。** 模擬ツリーへ書いて関数を直接呼ぶ形にし、
+  // 実ツリーに対しては「現状が緑であること」だけを 1 件固定する（件数はここに書かない —— 腐る）。
+  {
+    const mkTestDocs = (rows, baseline) => {
+      const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-testid-'));
+      fsTt.mkdirSync(pathTt.join(root, 'docs', 'tests'), { recursive: true });
+      for (const [name, body] of Object.entries(rows)) {
+        fsTt.writeFileSync(pathTt.join(root, 'docs', 'tests', name), body);
+      }
+      if (baseline !== undefined) {
+        fsTt.mkdirSync(pathTt.join(root, 'scripts'), { recursive: true });
+        fsTt.writeFileSync(
+          pathTt.join(root, 'scripts', 'test-id-duplicate-baseline.json'),
+          JSON.stringify({ duplicates: baseline }, null, 2)
+        );
+      }
+      return root;
+    };
+    const table = (...cells) => `| ID | 観点 |\n| --- | --- |\n${cells.join('\n')}\n`;
+
+    ok('check-test-traceability[T2]: 一意なら緑', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| **T-10-2** | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.strictEqual(r.summary.assignments.size, 2);
+      assert.strictEqual(r.summary.maxByFr[10], 2);
+    });
+
+    ok('🔴 check-test-traceability[T2]: baseline に無い重複は落とす', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1 | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.strictEqual(r.errors.length, 1, r.errors.join('\n'));
+      assert.match(r.errors[0], /T-10-1 が重複/);
+    });
+
+    ok('check-test-traceability[T2]: baseline に記載した重複は通す', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1 | b |') }, [
+        { id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' },
+      ]);
+      assert.deepStrictEqual(tt.checkTestIdUniqueness(root).errors, []);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 解消した重複が baseline に残っていたら落とす（ラチェット）', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |') }, [
+        { id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' },
+      ]);
+      const r = tt.checkTestIdUniqueness(root);
+      assert.strictEqual(r.errors.length, 1, r.errors.join('\n'));
+      assert.match(r.errors[0], /解消しています/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 重複件数が baseline より増えたら落とす', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1 | b |', '| T-10-1 | c |') }, [
+        { id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' },
+      ]);
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /重複件数が baseline と違います/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 重複の在り処が baseline と違えば落とす（取り違えの検出）', () => {
+      const root = mkTestDocs(
+        { 'FR-10_a.md': table('| T-10-1 | a |'), 'FR-10_b.md': table('| T-10-1 | b |') },
+        [{ id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' }]
+      );
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /在り処が baseline と食い違います/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 採番空間はファイルを横断する（別ファイルの同番号も重複）', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-9 | a |'), 'FR-10_b.md': table('| T-10-9 | b |') });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /T-10-9 が重複/);
+    });
+
+    ok('check-test-traceability[T2]: 参照行（`（否定形）`）は採番として数えない', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1（否定形） | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.strictEqual(r.summary.references.length, 1);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 参照行が指す ID が採番されていなければ落とす', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-999（否定形） | b |') });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /どのテスト仕様書にも採番されていません/);
+    });
+
+    ok('check-test-traceability[T2]: 枝番（`T-15-40b`）は別の採番として数える', () => {
+      const root = mkTestDocs({ 'FR-15_a.md': table('| T-15-40 | a |', '| T-15-40b | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.strictEqual(r.summary.assignments.size, 2);
+    });
+
+    ok('check-test-traceability[T2]: ゼロ埋めの揺れを同一視する（`T-10-01` と `T-10-1`）', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-01 | a |', '| T-10-1 | b |') });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /T-10-1 が重複/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 採番行を 1 件も走査できなければ落とす（0 件走査で緑を返さない）', () => {
+      const root = mkTestDocs({ 'README.md': '# 採番行を持たない\n' });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /1 件も走査できていません/);
+    });
+
+    ok('check-test-traceability[T2]: 実ツリーは緑である（既知の重複はすべて baseline 記載済み）', () => {
+      const r = tt.checkTestIdUniqueness();
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+    });
+
+    ok('check-test-traceability[T2]: baseline の各エントリが理由を持つ（「とりあえず足して通す」の抑止）', () => {
+      for (const d of tt.loadDuplicateBaseline().duplicates) {
+        assert.ok(typeof d.reason === 'string' && d.reason.length > 20, `${d.id} の reason が薄い`);
+        assert.ok(Array.isArray(d.files) && d.files.length > 0, `${d.id} の files が無い`);
+      }
+    });
+  }
 
   // --- check-coverage.js: カバレッジ floor / ratchet（#343） ---
   const cov = require('./check-coverage.js');

@@ -318,6 +318,163 @@ function missingSpecs(root) {
   return missing;
 }
 
+// --- 検査 4: テスト ID（`T-<FR>-<N>`）の一意性 -----------------------------------------
+//
+// `docs/tests/*.md` は **T-ID 採番の単一情報源**である（新しいテストを足す人が「既存の最大値」を
+// 測る先）。重複があると**採番の衝突を検知できない**（#887）。
+//
+// ■ 何を「採番」と数えるか（実データから引いた 3 形）
+//   採番行  `| T-10-450 |` / `| **T-10-450** |`          → 採番
+//   枝番    `| T-15-40b |`（英小文字 1 文字）             → **別の**採番（実在する。T-15-40 の枝）
+//   参照行  `| T-10-127（否定形） |`（全角括弧の注記）    → **参照であって採番ではない**
+//           —— 同じテストの別観点を指す行であり、別番号を振ると 1 つのテストが 2 つの ID を持つ。
+//   🔴 #887 のコメントが指摘した「厳格 20 件 / 緩い 23 件」の差は、この参照行を数えるか否かで生じた。
+//
+// ■ 採番空間は FR ごと・**ファイル横断**である
+//   T-10 は `FR-10_risk-controls-tests.md`（127〜621）と `FR-10_risk-guard-core-tests.md`（01〜21 / 70〜95）の
+//   **2 ファイルに跨る**。片方だけを見て「最大値＋1」を採ると衝突するため、横断で集める。
+//
+// ■ 既存の重複は改番しない（IADR-0376）
+//   改番は `backend/**/Tests/*.cs` と `.ai-context/`（凍結記録）の参照追随を要求し、
+//   しかも**どちらの出現を指しているかが外部参照からは決まらない**（`T-10-197` は両方から参照されている）。
+//   本リポジトリが IADR 採番で既に採っている「欠番は許す・再利用禁止・改番しない」（IADR-0280）へ揃え、
+//   既知の重複は `scripts/test-id-duplicate-baseline.json` へ**ラチェット**として固定する。
+//   **解消したら baseline から消す**（消さないと赤くなる）。
+
+const TEST_DOC_DIR = path.join('docs', 'tests');
+const DUP_BASELINE_FILE = path.join('scripts', 'test-id-duplicate-baseline.json');
+
+/** 表の 1 行目のセルを取り出す（`| <cell> | …`）。セルが無ければ null。 */
+function firstCell(line) {
+  const m = /^\|([^|]*)\|/.exec(String(line));
+  return m === null ? null : m[1].replace(/\*\*/g, '').trim();
+}
+
+/**
+ * 行頭セルを採番行 / 枝番 / 参照行のいずれかへ割る。テスト ID でなければ null。
+ * 戻り値の `key` は**ゼロ埋めを正規化**した突合用のキー（`T-10-01` と `T-10-1` を同一視する）。
+ */
+function parseTestIdCell(line) {
+  const cell = firstCell(line);
+  if (cell === null) return null;
+  const m = /^(T-(\d+)-(\d+)([a-z]?))(.*)$/.exec(cell);
+  if (m === null) return null;
+  const [, raw, fr, num, letter, rest] = m;
+  const key = `T-${Number(fr)}-${Number(num)}${letter}`;
+  if (rest === '') return { kind: 'assign', key, raw, fr: Number(fr), num: Number(num), letter };
+  // 全角括弧の注記だけを参照行として認める。それ以外の残りかす（`T-10-1 の続き` 等）は
+  // **採番でも参照でもない**ものとして無視する —— 素朴に「何か付いていれば参照」とすると、
+  // 書きかけの行が黙って採番の母集合から落ちる。
+  if (/^（[^）]*）$/.test(rest)) return { kind: 'ref', key, raw: cell, fr: Number(fr), num: Number(num), letter };
+  return null;
+}
+
+/** `docs/tests/*.md` から採番・参照・FR ごとの最大値を集める。 */
+function collectTestIds(root = REPO_ROOT) {
+  const dir = path.join(root, TEST_DOC_DIR);
+  const assignments = new Map(); // key -> { raw, places: [{ file, line }] }
+  const references = [];
+  const maxByFr = {};
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : [];
+  for (const f of files) {
+    const rel = `${TEST_DOC_DIR.replace(/\\/g, '/')}/${f}`;
+    const lines = fs.readFileSync(path.join(dir, f), 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      const hit = parseTestIdCell(line);
+      if (hit === null) return;
+      if (hit.kind === 'ref') {
+        references.push({ key: hit.key, raw: hit.raw, file: rel, line: i + 1 });
+        return;
+      }
+      const rec = assignments.get(hit.key) || { raw: hit.raw, places: [] };
+      rec.places.push({ file: rel, line: i + 1 });
+      assignments.set(hit.key, rec);
+      maxByFr[hit.fr] = Math.max(maxByFr[hit.fr] || 0, hit.num);
+    });
+  }
+  return { files: files.map((f) => `${TEST_DOC_DIR.replace(/\\/g, '/')}/${f}`), assignments, references, maxByFr };
+}
+
+/** 既知の重複（ラチェット）を読む。無ければ空。壊れていれば例外（黙って 0 件へ落とさない）。 */
+function loadDuplicateBaseline(root = REPO_ROOT) {
+  const p = path.join(root, DUP_BASELINE_FILE);
+  if (!fs.existsSync(p)) return { duplicates: [] };
+  const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+  if (!Array.isArray(parsed.duplicates)) {
+    throw new Error(`${DUP_BASELINE_FILE.replace(/\\/g, '/')} に duplicates 配列がありません`);
+  }
+  return parsed;
+}
+
+/**
+ * テスト ID の一意性を検査する。返り値は `{ errors, summary }`。
+ *
+ * 🔴 **0 件走査で緑を返さない。** 採番行が 1 件も取れなければ fail する（T1 と同じ fail-closed）。
+ */
+function checkTestIdUniqueness(root = REPO_ROOT, baseline = null) {
+  const collected = collectTestIds(root);
+  const bl = baseline || loadDuplicateBaseline(root);
+  const errors = [];
+
+  if (collected.assignments.size === 0) {
+    errors.push(
+      `[T2] ${TEST_DOC_DIR.replace(/\\/g, '/')}/ からテスト ID の採番行を 1 件も走査できていません`
+        + '（表の行頭セルが `T-<FR>-<連番>` の行）。書式が変わったか、走査対象が空です。'
+    );
+    return { errors, summary: collected };
+  }
+
+  const found = new Map(); // key -> sorted unique files
+  for (const [key, rec] of collected.assignments) {
+    if (rec.places.length > 1) found.set(key, rec);
+  }
+  const declared = new Map(bl.duplicates.map((d) => [d.id, d]));
+
+  for (const [key, rec] of [...found].sort()) {
+    const d = declared.get(key);
+    const where = rec.places.map((p) => `${p.file}:${p.line}`).join(' / ');
+    if (!d) {
+      errors.push(
+        `[T2] テスト ID ${key} が重複して採番されています（${where}）。`
+          + '**既存 ID の改番はしない**（IADR-0376）。新しいテストには採番の最大値＋1 を使い、'
+          + `既に重複しているなら ${DUP_BASELINE_FILE.replace(/\\/g, '/')} へ理由付きで記録すること。`
+      );
+      continue;
+    }
+    const files = [...new Set(rec.places.map((p) => p.file))].sort();
+    const declaredFiles = [...new Set(d.files || [])].sort();
+    if (files.join(',') !== declaredFiles.join(',')) {
+      errors.push(
+        `[T2] ${key} の重複の在り処が baseline と食い違います（実測 ${files.join(' / ')} / `
+          + `baseline ${declaredFiles.join(' / ') || '（記載なし）'}）。別の重複と取り違えている可能性があります。`
+      );
+    }
+    if (typeof d.count === 'number' && d.count !== rec.places.length) {
+      errors.push(
+        `[T2] ${key} の重複件数が baseline と違います（実測 ${rec.places.length} / baseline ${d.count}）。`
+          + '増えているなら新しい衝突、減っているなら解消の記録が要ります。'
+      );
+    }
+  }
+
+  for (const d of bl.duplicates) {
+    if (found.has(d.id)) continue;
+    errors.push(
+      `[T2] baseline に記載された重複 ${d.id} は解消しています。`
+        + `${DUP_BASELINE_FILE.replace(/\\/g, '/')} から当該エントリを削除してください（ラチェット）。`
+    );
+  }
+
+  for (const r of collected.references) {
+    if (collected.assignments.has(r.key)) continue;
+    errors.push(
+      `[T2] 参照行 ${r.raw}（${r.file}:${r.line}）が指す ${r.key} は、どのテスト仕様書にも採番されていません。`
+    );
+  }
+
+  return { errors, summary: collected };
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const files = testFiles(REPO_ROOT);
@@ -355,6 +512,10 @@ function main() {
     }
   }
 
+  // 4（T2）. テスト仕様書の T-<FR>-<N> が一意であること（#887 / IADR-0376）
+  const testIds = checkTestIdUniqueness(REPO_ROOT);
+  for (const e of testIds.errors) errors.push(e);
+
   // 3. 参照 ID が計画書に実在すること
   const ids = planIds(REPO_ROOT);
   let skipNote = '';
@@ -375,11 +536,23 @@ function main() {
     }
   }
 
+  // 次の採番者が読む値。**ここが T-ID 採番の単一情報源の出力口である**（docs/tests/README.md の規約）。
+  const dupCount = [...testIds.summary.assignments.values()].filter((r) => r.places.length > 1).length;
+  const maxLine = Object.keys(testIds.summary.maxByFr)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((fr) => `T-${fr}-${testIds.summary.maxByFr[fr]}`)
+    .join(' / ');
+
   if (errors.length === 0) {
     console.log(
       `[check-test-traceability] OK: テスト ${files.length} ファイル・起点 ID ${refs.size} 種を検査しました${skipNote}。`
         + `\n  サービス配下テスト: 旧樹形 ${testLayoutCounts.old} 件 / 新樹形 ${testLayoutCounts.new} 件`
         + `（サービスディレクトリ: 旧 ${testDirs.old} 件 / 新 ${testDirs.new} 件）。`
+        + `\n  テスト ID: 採番 ${testIds.summary.assignments.size} 件 / 参照行 ${testIds.summary.references.length} 件`
+        + ` / 重複 ${dupCount} 件（すべて baseline 記載済み）。`
+        + `\n  採番の最大値: ${maxLine}`
+        + '\n  🔴 新規採番は「最大値＋1」。並行レーンが develop 未反映の帯を確保していることがあるため、'
+        + '着手時に互いに素な帯を宣言して確保すること（docs/tests/README.md）。'
     );
     process.exit(0);
   }
@@ -402,6 +575,14 @@ module.exports = {
   collectReferences,
   planIds,
   missingSpecs,
+  // #887 / IADR-0376: テスト ID の一意性（検査 4＝T2）。
+  TEST_DOC_DIR,
+  DUP_BASELINE_FILE,
+  firstCell,
+  parseTestIdCell,
+  collectTestIds,
+  loadDuplicateBaseline,
+  checkTestIdUniqueness,
   // #532: キット check-commit-messages.js が探す拡張点と、その部品。
   RULES_FILE,
   PLAN_RANGE_HEADING,
