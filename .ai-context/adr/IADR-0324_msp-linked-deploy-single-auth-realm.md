@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-13, FR-17, FR-19, FR-20, UC-06, SC-01, SC-02, SC-03, ADR-0038, IADR-0011, IADR-0050, IADR-0051, IADR-0093, IADR-0098, IADR-0176, IADR-0283]
 author: endazon (with Claude Code)
 created: 2026-09-10
-updated: 2026-09-23
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/05_screens/01_screens.md
@@ -141,9 +141,19 @@ IADR-0098 は「owner クライアントを MSP レルムに置く」案を「�
 >   （既定 / values-local / CronJob 込み / 既定＋`--set`）は**どれもこの組み合わせを踏んでおらず**、
 >   だからこそリテラル 4 件は「赤で捕まえる」と書きながら**どの面からも見えていなかった**。
 >   変更前の描画に 5 面目を当てると、4 件を名指しして落ちることを実測した。
+> - 🔴 **ただし「違うレルムが無いこと」だけでは導出そのものを守れない**（PR #927 の監査で実測）。値が空の経路は
+>   `/realms/` を含まず母集合から落ちるだけで、件数下限 10 も割らない —— 導出の 2 行を消しても（values-local 描画
+>   17 → 13 件）、導出をレルム名で条件付けても、全面が緑のままだった。そこで BaseUrl を配線する 3 面
+>   （`values-local` / 全フラグ ON / `values-local`＋`--set`）では、**env 名が `KnowledgeBase__Auth__Authority` /
+>   `LlmGateway__Auth__Authority` で値が非空の行がちょうど 4 件**であることを要求する（少なければ導出の欠落、
+>   多ければ導出条件が配線の有無から外れた＝未配線の trade-decision の KB Authority まで埋まった）。
+>   両変異（導出行の削除／レルム名での条件付け）がこの件数検査で赤になることを実測した。
 > - 実測（`helm template`）: 既定 / `values-local` / 全フラグ ON / 既定＋`--set` の 4 描画は**バイト等価**、
 >   `values-local`＋`--set` は `realms/platform` 0 件（変更前 4 件）。**稼働中の経路B へは何も当てていない**
->   （取り込みは運用者の通常の `helm upgrade`。描画が等価なので Pod の再作成も再起動も起きない）。
+>   （取り込みは運用者の通常の配備。**素の `helm upgrade` だけなら**描画が等価なので Pod テンプレートは変わらず、
+>   Pod の再作成も再起動も起きない。ただし経路B の標準手順 `scripts/k8s-local-deploy.sh` は手順 [5/5] で
+>   **OpenD（`opend`）を除く全 Deployment へ無条件に `kubectl rollout restart` を打つ**（#673。イメージ更新を
+>   Pod へ届けるため）ので、同スクリプト経由の取り込みでは描画の等価性と無関係に opend 以外の Pod は再起動する）。
 >   作業仕様書は [`../specs/20260923_781_kb-llm-authority-derivation.md`](../specs/20260923_781_kb-llm-authority-derivation.md)。
 > - 残余: 「BaseUrl を設定したうえで Authority を意図的に空にする」構成は作れなくなる（導出が埋める）。
 >   現況に該当は無く、KB / LLM はいずれも匿名では 401 なので実害は想定しない。必要になれば明示の opt-out を足す。

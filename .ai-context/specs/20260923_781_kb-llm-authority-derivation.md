@@ -5,7 +5,7 @@ status: accepted
 related_ids: [NFR-06, FR-08, ADR-0038, IADR-0093, IADR-0283, IADR-0323, IADR-0324]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0038_linked-deploy-auth-realm-is-the-platform-realm.md
 ---
@@ -89,6 +89,13 @@ Discord OwnerAuth と**同一ソース**）。実装は既存の `$envOverrides`
 （既定 / values-local / CronJob 込み / 既定＋`--set`）に掛かっているが、**values-local と `--set` を
 組み合わせた面が無い** —— まさに #781 が生きていた隙間である。その 1 面を足す。
 
+🔴 **それだけでは導出そのものを守れない**（PR #927 の監査で実測）。この検査は「違うレルムを指す経路が無いこと」を
+見るだけなので、値が空の経路は `/realms/` を含まず母集合から**黙って落ちる**（件数下限 10 も割らない）。導出の 2 行を
+消しても、導出をレルム名で条件付けても全面が緑だった。そこで BaseUrl を配線する 3 面（`values-local` / 全フラグ ON /
+`values-local`＋`--set`）には、**env 名が `KnowledgeBase__Auth__Authority` / `LlmGateway__Auth__Authority` で値が非空の
+行がちょうど 4 件**であることを追加で要求する（下限ではなく正確な件数。多い側＝未配線の trade-decision の KB Authority
+まで埋まる変異も落とす）。
+
 ### 記録
 
 [IADR-0324](../adr/IADR-0324_msp-linked-deploy-single-auth-realm.md) へ日付つき追記（`［2026-09-23 追記 / #781］`）。
@@ -115,13 +122,19 @@ Discord OwnerAuth と**同一ソース**）。実装は既存の `$envOverrides`
       変更前の描画へ当てると 4 経路を名指しして落ちる**（＝番人であることの実測）。
 - [x] AC9: 本番描画の env 名 261 件が values-local 描画からも 1 件も失われていない
       （`Assert values-local drops no env from prod default` 相当）。
+- [x] AC10: realm 検査の配線 3 面が「非空の KB / LLM `Auth__Authority` ＝ちょうど 4 件」を要求し、PR head で緑・
+      (b) 導出 2 行を削除した chart で赤（values-local 面が 0 件）・(c) 導出を `contains "/realms/platform"` で
+      条件付けた chart で赤（`values-local`＋`--set` 面が 0 件。条件をレルム名だけにした形は values-local 面が 5 件で赤）。
+      変更前の検査はこの 3 変異すべてで緑だった。
 
 ## 運用者の取り込み手順（🔴 適用はしない）
 
 **本 PR はリポジトリ上の変更だけで、クラスタへは何も当てない。** 稼働中の経路B クラスタが本変更を取り込むには
-運用者が通常どおり `scripts/k8s-local-deploy.sh`（= `helm upgrade -f values-local.yaml`）を実行する。
-AC2 / AC3 が示すとおり**描画はバイト等価**なので、その `helm upgrade` は Deployment の spec を変えず
-**Pod の再作成も再起動も起こさない**（差分ゼロ）。取り込まなくても現状の挙動は変わらない。
+運用者が通常どおり `scripts/k8s-local-deploy.sh`（手順 [4/5] が `helm upgrade -f values-local.yaml`）を実行する。
+AC2 / AC3 が示すとおり**描画はバイト等価**なので、`helm upgrade` 自体は Deployment の spec を変えない（素の
+`helm upgrade` だけなら Pod の再作成も再起動も起きない）。🔴 **ただし同スクリプトは手順 [5/5] で OpenD（`opend`）を
+除く全 Deployment へ無条件に `kubectl rollout restart` を打つ**（#673。イメージ更新を Pod へ届けるため）ので、
+スクリプト経由の取り込みでは描画の等価性と無関係に opend 以外の Pod は再起動する。取り込まなくても現状の挙動は変わらない。
 
 ## 未決事項
 
