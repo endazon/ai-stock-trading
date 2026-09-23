@@ -59,4 +59,22 @@ public enum ProtectiveStopRemediation
     /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
     /// </summary>
     CloseDispatchIndeterminate,
+
+    /// <summary>
+    /// 🔴 #857, IADR-0369: 成行手仕舞いを送り、証券会社が**確認できる形で拒否した**
+    /// （<c>Rejected</c> / <c>Cancelled</c> / <c>Expired</c> が<b>返った</b>＝未約定残は二度と約定しない）。
+    /// <para>
+    /// <b>建玉は残っている。</b>「手仕舞い済み（<see cref="PositionClosed"/>）」と混同してはならない
+    /// ——混同すると通知が事実と逆になり、保護記録が完了して<b>逆指値なしの建玉が巡回対象から外れる</b>。
+    /// <see cref="CloseDispatchIndeterminate"/> とも別である（あちらは<b>不明</b>、こちらは<b>確定した拒否</b>）。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>手仕舞いレグ（<c>CloseIntent</c>）は運ばない</b>——送った成行は生きていないため、取引台帳に
+    /// 処理中の決済として在庫を押さえさせてはならない（押さえると利用者の手仕舞いが通らなくなる）。
+    /// <c>CloseDecisionId</c> は拒否された発注記録との相関のために<b>載せる</b>（この非対称は意図的である）。
+    /// 記録は <c>Active</c> のまま残り、次の巡回が改めて評価する。人手対応を要する（Critical）。
+    /// </para>
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    CloseRejected,
 }

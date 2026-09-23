@@ -71,6 +71,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Gauge<double> _llmCostLimitRatioPercent;
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
+    private readonly Counter<long> _riskCapitalBaselineReads;
 
     /// <summary>
     /// 本番の構築点。Meter 名は <see cref="BusinessMetricNames.MeterName"/> 固定である。
@@ -170,6 +171,12 @@ public sealed class BusinessMetrics : IDisposable
         _finnhubDailyVolumeLimitRatioPercent = _meter.CreateGauge<double>(
             BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent,
             description: "Finnhub 日次要求見積りが暫定上限に占める割合（%）。100 超で警告（ADR-0031 決定3）");
+
+        // FR-10, #889, IADR-0372: 基準資金を読んだ結果の内訳。**門ではなく観測である**
+        // （どの帰結でも返す値は従来どおり）。
+        _riskCapitalBaselineReads = _meter.CreateCounter<long>(
+            BusinessMetricNames.RiskCapitalBaselineReads,
+            description: "統制上限の基準資金を読んだ結果の内訳（outcome 別。FR-10）");
     }
 
     /// <summary>FR-01, FR-02: 1 巡回で収集できたアイテム数を計上する。</summary>
@@ -309,6 +316,19 @@ public sealed class BusinessMetrics : IDisposable
         _finnhubDailyVolumeEstimate.Record(estimatedDailyRequests);
         _finnhubDailyVolumeLimitRatioPercent.Record(limitRatioPercent);
     }
+
+    /// <summary>
+    /// FR-10, #889, IADR-0372: 基準資金を読んだ 1 回を帰結つきで計上する。
+    /// <para>
+    /// 🔴 <b>「供給できた」の中を割るためにある。</b> 残高 0 を観測した日は行が書かれず、読み出しは
+    /// 前取引日の値を返し続ける ——<b>値が返っている以上、統制は平常どおり動いて見える</b>。
+    /// <see cref="CapitalBaselineReadOutcome.SuppliedWithGap"/> はその状態を数える唯一の手段である。
+    /// </para>
+    /// </summary>
+    public void RecordCapitalBaselineRead(CapitalBaselineReadOutcome outcome) =>
+        _riskCapitalBaselineReads.Add(
+            1,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome.ToString()));
 
     public void Dispose() => _meter.Dispose();
 }

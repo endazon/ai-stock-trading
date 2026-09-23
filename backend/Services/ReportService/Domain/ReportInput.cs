@@ -53,6 +53,22 @@ public enum ReportInput
     /// ——実在しない建玉の評価損益が出得る。**空列（該当なし）へ倒さない。**
     /// </summary>
     DriftAdoptions,
+
+    /// <summary>
+    /// FR-07, UC-03, #839, IADR-0382: <b>上位方針</b>（方針階層の親の直近確定済み報告書。
+    /// 日報→週報 / 週報→月報 / 月報→前月の月報）。
+    /// 🔴 未供給＝<b>方針の連鎖が切れている</b>。方針文は「上位方針（…）は確定済みのものがないため
+    /// 参照していません。」と書くが、それは本文を読まないと分からなかった（#839 の主訴）。
+    /// 🔴 <b>見送り（リトライ）の対象にしない</b>——供給元は自リポジトリのストアであり、待っても増えない。
+    /// </summary>
+    ParentPolicy,
+
+    /// <summary>
+    /// FR-07, UC-03, #839, IADR-0382: <b>前期の確定済み方針</b>（同種別の直近確定済み。継続案の素）。
+    /// 未供給＝継続する方針の実体が無い（方針文は「参照できる確定済みの…方針がありません。」になる）。
+    /// 🔴 <b>月報は上位＝前期</b>（<c>ParentKind(Monthly) == Monthly</c>）であり、同じ事実を 2 回数えない。
+    /// </summary>
+    PreviousPolicy,
 }
 
 // FR-06, #840, IADR-0352 決定 5: 入力の表示名・種別ごとの適用・永続化形式（純関数）。
@@ -72,6 +88,8 @@ public static class ReportInputs
         // 🔴 日報 §2-b を描くのは日報だけだが、**在庫の畳み込みは全種別が行う**（欠けると週報・月報も
         // 実在しない建玉の評価損益を出す）。したがって全種別が使う入力である。
         ReportInput.DriftAdoptions => true,
+        // 🔴 #839: 方針連鎖（月報 → 週報 → 日報）は全種別が持つ。月報の上位は前月の月報である。
+        ReportInput.ParentPolicy or ReportInput.PreviousPolicy => true,
         // 日報 §2 の明細・週報 §3 のハイライトが根拠を転記する。月報の内訳は根拠を描かない。
         ReportInput.TradeRationales => kind is ReportKind.Daily or ReportKind.Weekly,
         // 日報 §3 だけが建玉を持つ。
@@ -105,6 +123,8 @@ public static class ReportInputs
         ReportInput.PeriodEndFxRate => "為替差損益の期末レート",
         ReportInput.Narrative => "散文（LLM）",
         ReportInput.DriftAdoptions => "手動売買の取り込み",
+        ReportInput.ParentPolicy => "上位方針（親の確定済み報告書）",
+        ReportInput.PreviousPolicy => "前期の確定済み方針",
         _ => input.ToString(),
     };
 
