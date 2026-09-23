@@ -5,7 +5,7 @@ status: accepted
 related_ids: [FR-10, FR-12, UC-02, ADR-0040, ADR-0016, IADR-0344, IADR-0113, IADR-0210, IADR-0118, IADR-0057, IADR-0389]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 損切り)
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1 の S1)
@@ -83,7 +83,7 @@ moomoo の模擬取引の注文は**当日限り**であり、0 約定のまま�
   - `Shared.Contracts/Events/SoftwareStopExecuted.cs` — `CloseUnfilled` の追加（**序数は末尾**。IADR-0134 決定2）。
   - `NotificationService/Features/Notifications/NotificationFormatter.cs` — 文面（Critical）。
   - `AuditService/Domain/AuditEntryFactory.cs` — 監査の結末文。
-  - `docs/tests/FR-10_risk-controls-tests.md` — テスト ID 表（T-10-700..T-10-711）。
+  - `docs/tests/FR-10_risk-controls-tests.md` — テスト ID 表（T-10-700..T-10-711・T-10-730..T-10-731）。
 - **除外**:
   - `GuardProtectiveStops/ProtectiveStopGuard.cs` — 再武装後の行は既存の巡回にそのまま載るので変更不要。
     **PR [#916](https://github.com/endazon/ai-stock-trading/pull/916) が同ファイルを編集中**であり、触らないことで衝突も避ける。
@@ -139,19 +139,31 @@ moomoo の模擬取引の注文は**当日限り**であり、0 約定のまま�
 | A8 | S1 以外の注文（エントリー・S0 の手仕舞い）の終端化では保護記録に触らない |
 | A9 | 再武装は到達の記録（`TriggeredAt`）を消さない＝ガードが次の巡回で決済を撃ち直す |
 | A10 | 再武装の失敗（ストア例外）は約定追跡の巡回を止めず、Critical を残す |
+| A11 | A6 の `CloseUnfilled` は常駐（`OrderFillPollingService`）が**メッセージ基盤へ実際に発行する**（結果に載るだけでは満たさない） |
+| A12 | 同じ銘柄に S1 の行が複数あっても、戻すのは**失効した決済レグを出した行だけ**で、他の行には触らない |
 
 ## テスト
 
-`docs/tests/FR-10_risk-controls-tests.md` に **T-10-700..T-10-711**（＋枝番 T-10-703b）を追加した
-（622..699 は他レーンが保持）。実体は `SoftwareStopReArmerTests`（14 ケース）。
+`docs/tests/FR-10_risk-controls-tests.md` に **T-10-700..T-10-711**（＋枝番 T-10-703b）と **T-10-730..T-10-731** を追加した
+（622..699 は他レーンが保持。730..733 はフレッシュ文脈の監査が挙げた 2 つの穴のために割り当てられ、730・731 を使った）。
+実体は `SoftwareStopReArmerTests`（16 ケース）と `OrderFillPollingServiceTests` の T-10-730（1 ケース）。
 xUnit・注入した時計のみ（壁時計の待ちを作らない）。
 
-🔴 **変異確認（2026-09-23 実測）**:
+🔴 **変異確認（2026-09-24 実測。`OrderExecutionService.Tests` 全 725 件で実行）**:
 
-1. 約定追跡のフック（`reArmer?.OnCloseTerminalized(...)`）を外す → **7 件が赤**
-   （T-10-700 / T-10-701 ×2 / T-10-702 / T-10-705 / T-10-708 / T-10-709。13 件中 6 件合格）。
-   このとき T-10-703 / T-10-704 / T-10-706 / T-10-707 / T-10-710 / T-10-711 は緑のまま
+1. 約定追跡のフック（`reArmer?.OnCloseTerminalized(...)`）を外す → **10 件が赤**（725 件中 715 件合格）。
+   `SoftwareStopReArmerTests` では T-10-700 / T-10-701 ×2 / T-10-702 / T-10-705 / T-10-708 / T-10-709 / T-10-731 ×2 の
+   9 件（16 件中 7 件合格）、残る 1 件は T-10-730。
+   このとき T-10-703 / T-10-703b / T-10-704 / T-10-706 / T-10-707 / T-10-710 / T-10-711 は緑のまま
    —— **否定形（何も起きないこと）と、実行器を直接叩くケースはこの変異では動かない**。
-2. 判定を `AbandonsUnfilledRemainder` → `IsTerminal` へ広げる → **T-10-703b が赤**（14 件中 13 件合格）。
+   （2026-09-23 に記録した「13 件中 6 件合格」は T-10-703b を足す前の数えで、足した後は 14 件中 7 件合格だった。）
+2. 判定を `AbandonsUnfilledRemainder` → `IsTerminal` へ広げる → **T-10-703b だけが赤**（725 件中 724 件合格）。
    1 巡目の実装では T-10-703（全量約定）だけを置いていたため**この変異が素通りした**ので、
    「`Filled` と申告しつつ約定数量が足りない応答」のケース（T-10-703b）を足して判定を固定した。
+3. 常駐の `CloseUnfilled` の発行（`OrderFillPollingService` の `bus.PublishAsync(reArmed)`）を外す
+   → **T-10-730 だけが赤**（725 件中 724 件合格）。T-10-730 を足す前は、この変異が 722 件すべて緑のまま素通りした
+   （`SoftwareStopReArmerTests` は結果の `SoftwareStopEvents` までしか見ない）。
+4. 決済レグの持ち主の特定を「試行番号まで一致した行」から「候補の先頭の行」へ緩める
+   → **T-10-731（A が先頭の並び）が赤**。「候補の末尾の行」へ緩めると他方の並びが赤になる（いずれも 725 件中 724 件合格）。
+   稼働 PoC は AAPL に S1 の行を 2 本（715 株・ライン 330.88 と 713 株・ライン 331.67）持っており、
+   この変異は B の失効で A を戻し、B を無保護のまま残す。T-10-731 を足す前は素通りした。

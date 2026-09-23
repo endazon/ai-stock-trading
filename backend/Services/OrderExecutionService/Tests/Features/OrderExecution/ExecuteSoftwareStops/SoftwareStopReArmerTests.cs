@@ -14,7 +14,7 @@ using Xunit;
 namespace OrderExecutionService.Tests;
 
 // 🔴 FR-10, FR-12, UC-02, ADR-0040 決定1（S1）, #833 項目1, IADR-0389:
-// **受理だけで完了させた保護記録の再武装**（T-10-700..T-10-711）。
+// **受理だけで完了させた保護記録の再武装**（T-10-700..T-10-711・T-10-731）。
 //
 // SoftwareStopExecutor.Settle は決済の Accepted を約定と同じように扱って行を Completed にする。
 // moomoo の模擬取引の注文は当日限りで、受理された決済が 0 約定のまま失効し得る——そのとき建玉は無保護で、
@@ -416,5 +416,78 @@ public class SoftwareStopReArmerTests
         var reArmed = f.Stops.Find(stop.EntryDecisionId)!;
         reArmed.State.Should().Be(ProtectiveStopState.Active);
         reArmed.RemainingProtected.Should().Be(707);
+    }
+
+    // 🔴 T-10-731: **同じ銘柄に S1 の行が 2 本**あり、片方（B）の決済だけが未約定で失効した。
+    // 戻すのは**その決済レグを出した行（B）だけ**で、もう片方（A）には 1 株も足さない。
+    //
+    // 稼働 PoC の配置そのもの（AAPL 715 株・ライン 330.88 と 713 株・ライン 331.67。合計 1,428 株）。
+    // 持ち主の特定を「銘柄・市場・方向で最初に見つかった行」へ緩めると、A が再武装されて B が無保護のまま残り、
+    // しかも A は自分のエントリーの約定数量まで主張できてしまう。
+    // 候補の並び（完了行は更新が新しい順）に依存しないことを、両方の並びで固定する。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_731_同じ銘柄に2本あるとき失効した決済を出した行だけを未約定残へ戻す(bool aUpdatedLater)
+    {
+        var f = NewFixture();
+        var entryA = Guid.NewGuid();
+        var entryB = Guid.NewGuid();
+        var created = Now.AddHours(-6);
+        var updatedA = aUpdatedLater ? Now.AddMinutes(-5) : Now.AddMinutes(-15);
+        var updatedB = aUpdatedLater ? Now.AddMinutes(-15) : Now.AddMinutes(-5);
+
+        void Place(Guid entryId, int filled, decimal line, DateTimeOffset updatedAt, string entryOrderId)
+        {
+            f.Stops.Save(new ProtectiveStopOrder(
+                entryId, ProtectiveStopIds.SoftwareStopId(entryId), string.Empty, "AAPL", Market.UnitedStates,
+                TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, filled, line, 1m, 1,
+                ProtectiveStopState.Completed, created, updatedAt, StopLossExecutionMethod.SoftwareStop,
+                TriggeredAt: updatedAt, TriggeredPrice: line - 0.30m, RemainingProtected: 0));
+            f.Store.Save(new ExecutionRecord(
+                entryId, entryOrderId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                PositionEffect.Open, filled, 335m, filled, 335m, OrderStatus.Filled, 0m, created));
+        }
+
+        Place(entryA, 715, 330.88m, updatedA, "entry-A");
+        Place(entryB, 713, 331.67m, updatedB, "entry-B");
+
+        // 両方の決済レグが受理・未約定で追跡中。A のレグはまだ非終端、B のレグは 200 株だけ約定して失効した。
+        var closeA = ProtectiveStopIds.SoftwareCloseDecisionId(entryA, 1);
+        var closeB = ProtectiveStopIds.SoftwareCloseDecisionId(entryB, 1);
+        f.Store.Save(new ExecutionRecord(
+            closeA, "close-A", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, 715, 330.58m, 0, 0m, OrderStatus.Accepted, 0m, updatedA));
+        f.Store.Save(new ExecutionRecord(
+            closeB, "close-B", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, 713, 331.37m, 0, 0m, OrderStatus.Accepted, 0m, updatedB));
+        f.Broker.Respond("close-A", new BrokerOrder("close-A",
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 715, 330.58m, PositionEffect.Close),
+            OrderStatus.Accepted, 0, 0m, updatedA, Now));
+        f.Broker.Respond("close-B", new BrokerOrder("close-B",
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 713, 331.37m, PositionEffect.Close),
+            OrderStatus.Expired, 200, 331.30m, updatedB, Now));
+
+        var result = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
+
+        result.Terminalized.Should().Be(1);
+
+        // B だけが未約定残（713 − 200 = 513 株）へ戻る。
+        var b = f.Stops.Find(entryB)!;
+        b.State.Should().Be(ProtectiveStopState.Active);
+        b.RemainingProtected.Should().Be(513);
+        var evt = result.SoftwareStopEvents.Should().ContainSingle().Which;
+        evt.EntryDecisionId.Should().Be(entryB);
+        evt.Quantity.Should().Be(513);
+        evt.StopLossPrice.Should().Be(331.67m);
+        evt.CloseDecisionId.Should().Be(closeB);
+
+        // A には 1 株も足さない（自分の決済はまだ結果待ちである）。
+        var a = f.Stops.Find(entryA)!;
+        a.State.Should().Be(ProtectiveStopState.Completed);
+        a.RemainingProtected.Should().Be(0);
+        a.UpdatedAt.Should().Be(updatedA);
     }
 }
