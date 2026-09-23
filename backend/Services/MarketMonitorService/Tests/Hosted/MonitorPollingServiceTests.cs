@@ -12,6 +12,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Wolverine;
@@ -60,6 +61,8 @@ public class MonitorPollingServiceTests
                     opts.Services.AddSingleton<ICooldownStore>(Cooldowns);
                     opts.Services.AddSingleton<IMarketDataSource>(Market);
                     opts.Services.AddSingleton<IClock>(Clock);
+                    // #909, IADR-0380 決定2: 巡回の評価は市場ごとの開場判定を持つ（AppSvc も同じ実体を見る）。
+                    opts.Services.AddSingleton<IMarketSchedule>(Schedule);
                     opts.Services.AddScoped<AppSvc>();
 
                     opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
@@ -184,5 +187,43 @@ public class MonitorPollingServiceTests
         await service.RunOnceAsync(CancellationToken.None);
 
         log.Informations.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task T_10_696_全市場が閉場の巡回は何も発行せず_保護の空白を1回だけ出す()
+    {
+        // T-10-696, FR-03, FR-10, #909, IADR-0380 決定2・決定3
+        await using var h = new Harness(Settings(Aapl));
+        var log = new StopLossLivenessReporterTests.RecordingLogger<StopLossLivenessReporter>();
+        h.Liveness = new StopLossLivenessReporter(Options.Create(new MonitorOptions()), log);
+        h.Positions.Set([new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m)]);
+        h.Market.Set("AAPL", Market.UnitedStates, 330m); // 到達しているが閉場なので出してはならない
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
+        h.Market.Set("AAPL", Market.UnitedStates, 330m);
+        var (service, host) = await h.StartAsync();
+
+        // まず開場中に 1 巡回して、引け際の最終観測値を持たせる。
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
+        session.Sent.MessagesOf<StopLossTriggered>().Should().ContainSingle();
+        var requestsWhileOpen = h.Market.Requested.Count;
+
+        // 閉場（全市場）。次の開場時刻を添えて 1 回だけ出す。
+        h.Schedule.Open = false;
+        h.Schedule.NextOpenAt = Now.AddHours(17);
+        h.Clock.UtcNow = Now.AddMinutes(1);
+        var closedSession = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
+
+        closedSession.Sent.MessagesOf<StopLossTriggered>().Should().BeEmpty("閉場中は照会も判定もしない");
+        h.Market.Requested.Should().HaveCount(requestsWhileOpen, "閉場中の巡回は 1 件も照会を増やさない");
+
+        var closed = log.Entries.Where(e => e.Message.Contains("市場が閉場しました", StringComparison.Ordinal)).ToList();
+        closed.Should().ContainSingle().Which.Level.Should().Be(LogLevel.Critical, "最終観測値がラインを越えていた");
+
+        // 60 秒ごとの巡回で重ねない。
+        h.Clock.UtcNow = Now.AddMinutes(2);
+        await service.RunOnceAsync(CancellationToken.None);
+        log.Entries.Count(e => e.Message.Contains("市場が閉場しました", StringComparison.Ordinal)).Should().Be(1);
     }
 }

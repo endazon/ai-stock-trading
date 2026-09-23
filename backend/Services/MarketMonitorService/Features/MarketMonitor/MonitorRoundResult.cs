@@ -13,4 +13,12 @@ public record MonitorRoundResult(
     /// 生存要約（StopLossLivenessReporter）だけが読む。到達の判定・発行には使わない。
     /// </summary>
     public IReadOnlyList<StopLossEvaluation> StopLossEvaluations { get; init; } = [];
+
+    /// <summary>
+    /// FR-03, FR-10, #909, IADR-0380 決定2・決定3: この巡回で**市場が閉場していたため評価しなかった**保有ポジション。
+    /// <see cref="StopLossEvaluation.Price"/> は常に <c>null</c> である（価格照会そのものを行っていない。
+    /// 「照会したが取れなかった」＝<see cref="StopLossEvaluations"/> 側の欠落とは別の事実）。
+    /// 保護の空白を声に出すため（StopLossLivenessReporter）だけに使う。到達の判定・発行には使わない。
+    /// </summary>
+    public IReadOnlyList<StopLossEvaluation> ClosedMarketPositions { get; init; } = [];
 }

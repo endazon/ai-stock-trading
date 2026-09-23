@@ -1,4 +1,6 @@
+using AiStockTrading.Shared.Contracts.Trading;
 using MarketMonitorService.Common.Abstractions;
+using MarketMonitorService.Domain;
 using MarketMonitorService.Features.MarketMonitor;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -45,12 +47,20 @@ public sealed class MonitorPollingService(
     }
 
     // 1 巡回。市場開場時のみ評価・発行する。単体テスト可能な単位として公開する。
+    //
+    // #909, IADR-0380 決定2: 開場判定は**市場ごと**である。どの市場も開いていない巡回は何もしない（従来どおり）。
+    // 1 つでも開いていれば巡回し、閉場している市場の銘柄は評価の中で飛ばす（MarketMonitorAppService）。
     public async Task RunOnceAsync(CancellationToken cancellationToken)
     {
-        if (!schedule.IsOpen(clock.UtcNow))
+        var now = clock.UtcNow;
+        var markets = Enum.GetValues<Market>();
+        var closedMarkets = Array.FindAll(markets, m => !schedule.IsOpen(m, now));
+
+        if (closedMarkets.Length == markets.Length)
         {
             // #902, IADR-0365 決定4: 閉場中は評価しないので、欠落の起点を持ち越さない（#904 監査 N2）。
-            liveness?.OnMarketClosed();
+            // #909, IADR-0380 決定3: あわせて、保護が働かないことを閉場ごとに 1 回だけ声に出す。
+            ReportClosedMarkets(closedMarkets, [], now);
             return; // 閉場中は監視停止（04_workflows/02）
         }
 
@@ -79,12 +89,33 @@ public sealed class MonitorPollingService(
         {
             try
             {
-                liveness.Observe(result.StopLossEvaluations, clock.UtcNow);
+                // #909, IADR-0380 決定3: **閉場の報告を先に出す。** 保有 0 件の Observe は観測状態を捨てるため、
+                // 後に置くと「引け際の最終観測値」が消えてから報告することになる。
+                ReportClosedMarkets(closedMarkets, result.ClosedMarketPositions, now);
+                liveness.Observe(result.StopLossEvaluations, now);
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "損切り評価の生存要約の記録に失敗しました（監視・発行には影響しません）。");
             }
+        }
+    }
+
+    // #909, IADR-0380 決定3: 閉場している市場ごとに、保護の空白を 1 回だけ報告する。
+    // 次の開場時刻はカレンダーに尋ねる（見通せなければ null のまま渡し、報告側が時刻を伏せる）。
+    private void ReportClosedMarkets(
+        IReadOnlyList<Market> closedMarkets, IReadOnlyList<StopLossEvaluation> closedPositions, DateTimeOffset now)
+    {
+        if (liveness is null)
+            return;
+
+        foreach (var market in closedMarkets)
+        {
+            liveness.OnMarketClosed(
+                market,
+                closedPositions.Where(p => p.Market == market).ToArray(),
+                now,
+                schedule.NextOpen(market, now));
         }
     }
 }

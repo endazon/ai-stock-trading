@@ -1,9 +1,9 @@
-using TradeDecisionService.Domain;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
 
-namespace TradeDecisionService.Tests;
+namespace AiStockTrading.Shared.Kernel.Tests.Trading;
 
 // FR-02, UC-01, #337, IADR-0245: 市場の時刻構造（純関数）の境界テーブル。
 // タイムゾーン変換は持たない（現地時刻を入力とする）ため、ここでは時間帯の境界だけを固定する。
