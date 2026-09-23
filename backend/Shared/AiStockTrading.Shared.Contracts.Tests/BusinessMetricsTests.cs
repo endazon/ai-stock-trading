@@ -92,6 +92,23 @@ public class BusinessMetricsTests
             .Should().Equal(BusinessMetrics.TriggerScheduled);
     }
 
+    // T-10-668, FR-10, #889, IADR-0372: 🔴 **基準資金を読んだ帰結は outcome タグで読み分けられる。**
+    // どの値も固有のタグ値で出る（語彙が増えたときに既定値へ黙って落ちない）。
+    [Fact]
+    public void 基準資金の読み出しはすべての帰結が固有のタグ値として計上される()
+    {
+        foreach (var outcome in Enum.GetValues<CapitalBaselineReadOutcome>())
+        {
+            using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+            using var metrics = new BusinessMetrics();
+
+            metrics.RecordCapitalBaselineRead(outcome);
+
+            capture.TagValuesOf(BusinessMetricNames.RiskCapitalBaselineReads, BusinessMetricNames.TagOutcome)
+                .Should().Equal(outcome.ToString());
+        }
+    }
+
     // FR-10, FR-19（境界値テーブル）: 拒否理由の列挙は**全要素**が 1 件ずつ計上される。
     // 1 注文に複数の統制が同時に効き得るため、先頭 1 件だけを数えると内訳が過少になる。
     [Theory]
@@ -366,6 +383,7 @@ public class BusinessMetricsTests
         metrics.RecordOrderDispatchForgone(OrderDispatchForgoneReason.BrokerUnavailable);
         metrics.RecordLlmCost(nameof(CostCategoryLabels.Llm), 100m, 5m);
         metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
+        metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。
