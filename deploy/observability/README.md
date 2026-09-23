@@ -12,6 +12,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | --- | --- |
 | `dashboards/ai-stock-trading-overview.json` | AST 10 Worker の RPS/エラー率/P99/CPU/ログを俯瞰する Grafana ダッシュボード（**技術指標**） |
 | `dashboards/ai-stock-trading-business.json` | 取引サイクル・統制・発注・費用を 1 画面で見る Grafana ダッシュボード（**業務指標**。#287） |
+| `alerts/ai-stock-trading-alerts.yaml` | Prometheus のアラートルール（`PrometheusRule`。**人が見ていなくても働く側**。#891） |
 
 ### 業務ダッシュボードが引く系列（#287 / IADR-0255）
 
@@ -22,6 +23,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | --- | --- | --- |
 | `ast_information_items_collected_total` | — | 収集件数（サイクルの起点が動いているか。**空巡回も 0 として出る**） |
 | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
+| `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | **見送りの理由**の内訳（#891）。上の `action=no-trade` を**置き換えない**——1 回の見送りで両方が 1 ずつ増える |
 | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム） |
 | `ast_risk_screenings_total` | `outcome` | 発注前審査（**承認も拒否も数える**） |
 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳 |
@@ -39,6 +41,34 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 > そのため `node scripts/check-observability-assets.js` が CI で、ダッシュボードが引く系列とコード側の
 > レジストリの**双方向の一致**（実在しない系列を引いていないか／誰も引いていない計器が無いか）を検査する。
 > **ダッシュボードを編集したら、このコマンドをローカルでも走らせること。**
+
+### アラートルール（#891 / [IADR-0374](../../.ai-context/adr/IADR-0374_decision-skip-reasons-and-first-alert-rule.md)）
+
+🔴 **ダッシュボードは人が見たときにしか働かない。** 本ディレクトリに長らくダッシュボードしか無かったため、
+`RiskManagement:BaseUrl` の誤設定などで**新規建てだけが静かに止まり続けても誰も気付かない**状態だった
+（手仕舞いは通るので「取引が全部止まった」形にはならない）。`alerts/` はその穴を埋める 1 件目である。
+
+前例がゼロ件だったため、規約も同 IADR 決定 D で決めた。
+
+| 項目 | 規約 |
+| --- | --- |
+| 置き場所 | `alerts/ai-stock-trading-alerts.yaml`（1 ファイル・複数 group 可） |
+| 種別 | `monitoring.coreos.com/v1` の `PrometheusRule`（kube-prometheus-stack が拾う形） |
+| group 名 | `ai-stock-trading.<領域>` |
+| alert 名 | **PascalCase の英字**（`AstEntriesBlockedByUnknownHoldings`）。アラート名は識別子であり日本語を入れない |
+| 重大度 | `severity: warning` から始める。**実測が無いまま `critical` を置かない**（最初の 1 件で狼少年になる） |
+| 本文 | `summary`（1 行）と `description`（何が起きているか・最初に見る場所）を日本語で。`runbook_url` は対応手順を書いてから足す |
+
+> 🔴 **系列名がずれたアラートはエラーを出さず、ただ永久に鳴らない。** 空のグラフと同じ失敗の形だが、
+> **人が見に行かない前提の仕組みである分だけ気付きにくい**。`node scripts/check-observability-assets.js` が
+> 本ファイルの `expr` もコード側のレジストリへ突き合わせる（検査 A1・A2）。**編集したらローカルでも走らせること。**
+
+- **投入**: 実 stand-up（Prometheus / Alertmanager）は MSP 側の共有 overlay である。本リポジトリは
+  ダッシュボードと同じく**資産を置くところまで**を持つ。配備する側は本 YAML を `kubectl apply` するか、
+  Helm の追加 manifest として同梱する（`metadata.labels.release` が overlay の `ruleSelector` と一致すること）。
+- **閾値の置き方**: 「N 分間に M 件」という形の閾値は**実測してから**決める
+  （[`../../docs/observability/observability.md`](../../docs/observability/observability.md)）。
+  1 件目のルールが実測なしで置けるのは、**平常時の期待値が 0 件**の事象だけを見ているからである。
 
 ## 使い方
 

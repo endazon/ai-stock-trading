@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-09-17
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, MSP#266, MSP#635, planning#54]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -111,9 +111,22 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 
 ## 監視・アラート
 
+アラートルールの実体は [`deploy/observability/alerts/ai-stock-trading-alerts.yaml`](../../deploy/observability/alerts/ai-stock-trading-alerts.yaml)
+にあり、置き場所・命名・重大度の規約は
+[`deploy/observability/README.md`](../../deploy/observability/README.md) が正本である（ここへ複写しない）。
+
 | 監視対象 | 指標 | 閾値 | 通知先 |
 | --- | --- | --- | --- |
-|  |  |  |  |
+| 保有状況が不明なための新規建て見送り（`AstEntriesBlockedByUnknownHoldings`） | `ast_trade_cycle_decision_skips_total{reason="HoldingsUnknownOpen"}` | 15 分窓で 1 件以上が **30 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
+
+- 🔴 **この閾値は実測を要しない。** 対象の見送りは保有照会が**実結線のときにしか立たず**、
+  **平常時の期待値が 0 件**だからである。「N 分間に M 件」という形の閾値は実測してから決める
+  （[`../observability/observability.md`](../observability/observability.md)）。
+- 🔴 **なぜこの 1 件目なのか**: 照会先の誤設定や恒久的な失敗が起きると、**手仕舞いは通るまま新規建てだけが
+  静かに止まり続ける**。「取引が全部止まった」形にならないため、ログを読みに行かない限り誰も気付かない（`#891`）。
+- **最初に見る場所**: 取引判断サービスの WARN ログ（「保有状況が不明なため新規建てを見送る」）と、
+  リスク管理サービスの `GET /risk-controls/open-positions`。設定では `RiskManagement:BaseUrl` を疑う。
+- 内訳の読み分けは業務ダッシュボードのパネル「取引サイクル: 見送りの理由の内訳」で行う。
 
 ## バックアップ・リストア
 

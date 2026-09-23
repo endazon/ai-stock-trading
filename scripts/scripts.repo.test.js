@@ -2208,6 +2208,43 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       const readme = fsOa.readFileSync(pathOa.join(REPO_ROOT_OA, 'scripts', 'README.md'), 'utf8');
       assert.match(readme, /check-observability-assets\.js/, 'scripts/README.md に記載が無い');
     });
+
+    // T-10-665, FR-10, #891, IADR-0374: 🔴 **アラート資産が実在し、引く系列がコード側に実在する。**
+    // ダッシュボードは人が見たときにしか働かない。アラートは人が見ていなくても働くが、
+    // **系列名がずれていればエラーも出さずただ永久に鳴らない** —— 空のグラフより気付きにくい失敗である。
+    ok('check-observability-assets: アラートルールが 1 件以上あり、引く系列がレジストリに実在する', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      assert.ok(fsOa.existsSync(alertDir), 'deploy/observability/alerts/ が無い');
+      const files = fsOa.readdirSync(alertDir).filter((f) => /\.ya?ml$/.test(f));
+      assert.ok(files.length >= 1, 'アラートルールのファイルが 1 件も無い');
+      const rules = files.flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      assert.ok(rules.length >= 1, 'アラートルールが 1 件も読めない（書式が変わったなら検査器も直す）');
+      const names = oa.parseRegistry(fsOa.readFileSync(
+        pathOa.join(REPO_ROOT_OA, 'backend', 'Shared', 'AiStockTrading.Shared.Contracts',
+          'Observability', 'BusinessMetricNames.cs'),
+        'utf8'));
+      for (const rule of rules) {
+        assert.deepStrictEqual(oa.checkAlertShape('alerts', rule), [], `形の違反: ${rule.alert}`);
+        for (const series of (rule.expr.match(/\bast_[a-z0-9_]+/g) || [])) {
+          assert.ok(oa.resolveSeries(series, names) !== null,
+            `alert ${rule.alert} が引く ${series} に対応する計器が無い（鳴らないアラートになる）`);
+        }
+      }
+    });
+
+    // T-10-665（続き）: 保有不明による見送りを見張るルールが**実在する**こと。
+    // #891 の受け入れ基準 2（「その状態が続いたときに能動的に通知される」）の写像である。
+    ok('アラート: 保有不明による新規建ての見送りが続く状態を見張るルールがある', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      const target = rules.find((r) => r.expr.includes('HoldingsUnknownOpen'));
+      assert.ok(target, '保有不明（HoldingsUnknownOpen）を見張るルールが無い');
+      assert.ok(target.expr.includes('ast_trade_cycle_decision_skips_total'),
+        `引く系列が見送りカウンタでない: ${target.expr}`);
+      assert.ok(target.for, '一過性の照会失敗で鳴らないための for が無い');
+    });
   }
 
   // --- summarize-test-failures: backend-test の失敗を TRX から名指しする（NFR / #596 / IADR-0277） ---
