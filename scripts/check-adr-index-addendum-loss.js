@@ -44,7 +44,18 @@
  *                         「マージベースに行が無い」は**統合ブランチ側が足した**場合にも起きる
  *                         （初版はこれを取り違え、在庫の PR を 4/10 赤にした。findLosses の注記）。
  *
+ * ■ 併せて出す観測（**赤にしない**。#895 / IADR-0375）
+ *   規則 1〜3 は**追記ブロック**しか見ない。索引行の中の**追記ブロックではない句**が衝突解決で
+ *   置換・消失しても素通りする（#873 で実際に起きた。詳細は `findShrunkRows` の注記）。
+ *   機械で測れるのは「**短くなった**」ことだけなので、触った行が theirs より短くなっていれば
+ *   `notice` を 1 行出す。**exit コードは変えない。** 赤にすると要約の短縮が軒並み止まり、
+ *   偽陽性が検査そのものを外させる。
+ *
  * ■ 🔴 何を見ないか（明示する）
+ *   - **非追記句が「短くならずに」置換されたこと。** 言い換え・要約の改善と区別できない
+ *     （`check-adr-index-sync.js` が「索引行の内容が本文と一致しているか」を機械では判定
+ *     できないとして見ないと決めたのと同じ壁である）。**規約**（`.ai-context/adr/README.md`
+ *     運用ルール「索引行も原文を残して追記を足す」）と人のレビューで受ける。
  *   - **`.ai-context/adr/IADR-XXXX_*.md` 本体**の追記ブロック、および **`docs/` の trace ブロック**。
  *     同じ弱さはあるが、**まずは索引行だけ**に絞る（#875。広げるかは別 issue）。
  *   - **印の中身が正しいか。** 機械では判定できない。見るのは「在ったものが在るか」だけである。
@@ -227,6 +238,19 @@ function isDeclared(declared, id, mark) {
 }
 
 /**
+ * **我々がその行を触ったか**を ours 起点で読む（規則 3。findLosses の長い注記が根拠）。
+ *
+ *   ours に在る → base に無ければ「我々が足した」、在れば行文字列の差で判定
+ *   ours に無い → base に在れば「我々が消した」、base にも無ければ**我々は無関係**
+ *
+ * 🔴 **縮みの観測（findShrunkRows）と共用する。** 判定を 2 か所に書くと、片方だけ緩めた
+ * ときに「消失は規則 3 を守るが縮みは守らない」という非対称が黙って生まれる。
+ */
+function isTouched(baseRow, oursRow) {
+  return oursRow ? !baseRow || oursRow.line !== baseRow.line : !!baseRow;
+}
+
+/**
  * 消失を洗い出す。返り値は `{ id, mark, from }[]`（`from` は 'base' | 'theirs'）。
  * `theirs` 由来は**我々が触った行だけ**（規則 2・3）。
  */
@@ -266,7 +290,7 @@ function findLosses({ base, theirs, ours }) {
     // 正しくは **ours を起点に読む**:
     //   ours に在る → base に無ければ「我々が足した」、在れば行文字列の差で判定
     //   ours に無い → base に在れば「我々が消した」、base にも無ければ**我々は無関係**
-    const touched = oursRow ? !baseRow || oursRow.line !== baseRow.line : !!baseRow;
+    const touched = isTouched(baseRow, oursRow);
     if (!touched) continue;
     for (const [mark, count] of row.marks) {
       const have = oursRow ? oursRow.marks.get(mark) || 0 : 0;
@@ -276,6 +300,48 @@ function findLosses({ base, theirs, ours }) {
 
   losses.sort((a, b) => (a.id === b.id ? a.mark.localeCompare(b.mark) : a.id.localeCompare(b.id)));
   return losses;
+}
+
+/**
+ * 索引行が**短くなった**ことだけを観測する（#895 / IADR-0375 決定 1）。**赤にしない。**
+ *
+ * ■ なぜ要るか
+ *   本検査器が見るのは `［YYYY-MM-DD 追記 …］` の形をした**追記ブロックだけ**である。
+ *   したがって索引行の中の**追記ブロックではない句**が衝突解決で置換・消失しても素通りする。
+ *   実例（#873。監査の指摘で直した）:
+ *
+ *     theirs: …（対策は #864。**台帳とブローカーの一致を確認してから稼働環境へ反映する**）／…
+ *     ours  : …（［2026-09-19 追記 / #864］**IADR-0355 が…塞いだ**。…）／…
+ *
+ *   追記ブロックは**増えている**ので規則 1・2 は緑。しかし theirs 側に在った句が消えている。
+ *   **索引行は 1 行が数千文字あり、`git diff` は「1 行削除・1 行追加」としか出さない** ——
+ *   追記ブロックの消失とまったく同じ理由で、非追記句の消失も差分としては読めない。
+ *
+ * ■ 🔴 なぜ `notice` 止まりなのか（赤にしない理由）
+ *   索引行は本文の散文要約であり、**句の言い換え・短縮は正当な編集としてありふれている。**
+ *   「theirs の全語が ours にある」を要求すれば要約の改善が軒並み赤になり、
+ *   **偽陽性は検査そのものを外させる**（本ファイルが繰り返し書いている教訓であり、
+ *   初版が実際に在庫の PR を 4/10 赤にして学んだ）。**測れるのは「短くなった」ことだけ**である。
+ *   規約の側（`.ai-context/adr/README.md` 運用ルール「索引行も原文を残して追記を足す」）で
+ *   置換を減らし、**残った置換が「短くなった」として現れやすくする**——規約と notice の組で受ける。
+ *
+ * ■ 何と比べるか
+ *   我々が触った行だけ（`isTouched`。規則 3 を緩めない）を、**theirs の同 ID の行**と比べる。
+ *   theirs に無ければ base の行と比べる。長さは**バイト長**で測る（文字数では全角・半角で揺れる）。
+ */
+function findShrunkRows({ base, theirs, ours }) {
+  const shrunk = [];
+  for (const [id, oursRow] of ours) {
+    const baseRow = base.get(id);
+    if (!isTouched(baseRow, oursRow)) continue;
+    const ref = theirs.get(id) || baseRow;
+    if (!ref) continue;
+    const before = Buffer.byteLength(ref.line, 'utf8');
+    const after = Buffer.byteLength(oursRow.line, 'utf8');
+    if (after < before) shrunk.push({ id, before, after, from: theirs.has(id) ? 'theirs' : 'base' });
+  }
+  shrunk.sort((a, b) => a.id.localeCompare(b.id));
+  return shrunk;
 }
 
 /** 行が途中で切れている兆候（`［` が `］` より多い）。事故 1 の「最長共通接頭辞で切断」を言い当てるため。 */
@@ -323,6 +389,21 @@ function main(opts = {}) {
 
   const losses = findLosses({ base, theirs, ours });
   const baseMarkCount = [...base.values()].reduce((n, r) => n + [...r.marks.values()].reduce((a, b) => a + b, 0), 0);
+
+  // 🔴 縮みの観測（#895）。**終了コードを変えない。**
+  // 追記ブロックの消失として既に報告する行は重ねて出さない（同じ事故を 2 度読ませない。
+  // `[remove-adr-addendum]` で意図的に撤去した行も、縮んで当然なので除く）。
+  const reportedIds = new Set(losses.map((l) => l.id));
+  const shrunk = findShrunkRows({ base, theirs, ours }).filter((s) => !reportedIds.has(s.id));
+  if (shrunk.length) {
+    notice(
+      `[check-adr-index-addendum-loss] 触った索引行のうち ${shrunk.length} 行が短くなっている: ` +
+        shrunk.map((s) => `${s.id}（${s.before} → ${s.after} バイト）`).join(' / ') +
+        '。**赤ではない**（要約の短縮は正当な編集である）。ただし本検査器は追記ブロックしか見ないため、' +
+        '**置換・消失した非追記句は捕まえられない**。衝突解決をしたのなら、両側の索引行を全文で' +
+        '突き合わせて**項目単位の和集合**になっているかを人が確かめること。',
+    );
+  }
 
   if (losses.length === 0) {
     console.log(
@@ -693,6 +774,68 @@ function selfTest() {
     }) === 0,
   );
 
+  // ---- 🔴 索引行の縮み（#895 / IADR-0375 決定 1）。**notice であって赤ではない** ----
+  //
+  // 実データを模した固定: #886 で復元した IADR-0327 の行は 2,473 → 2,037 バイトへ縮んでいた。
+  // 追記ブロックが丸ごと消えた形は規則 1 が既に赤にするので、ここで固定するのは
+  // **追記ブロックは動かさず、非追記句だけが消えた（＝規則 1〜3 が素通りする）形**である。
+  const shrinkFixture = {
+    theirsContent:
+      '| IADR-0351 | **要約**（対策は #864。**台帳とブローカーの一致を確認してから稼働環境へ反映する**）／末尾［2026-09-19 追記 / #865］x | Accepted |',
+    oursContent: '| IADR-0351 | **要約**（［2026-09-19 追記 / #865］x | Accepted |',
+  };
+  t('🔴 #873 の実例: 追記ブロックは残っているのに非追記句が消えて行が縮むと notice が出る', (() => {
+    const r = capture({
+      baseContent: '| IADR-0351 | **要約** | Accepted |',
+      ...shrinkFixture,
+    });
+    return r.code === 0 && r.out.includes('notice: ') && r.out.includes('短くなっている') && r.out.includes('IADR-0351');
+  })());
+  t('🔴 縮みは赤にしない（exit 0 のままである）', (() => {
+    const r = capture({ baseContent: '| IADR-0351 | **要約** | Accepted |', ...shrinkFixture });
+    return r.code === 0;
+  })());
+  t('縮んでいなければ何も出さない（無音を保つ）', (() => {
+    const r = capture({
+      baseContent: '| IADR-0351 | **要約** | Accepted |',
+      theirsContent: '| IADR-0351 | **要約** | Accepted |',
+      oursContent: '| IADR-0351 | **要約**を伸ばした | Accepted |',
+    });
+    return r.code === 0 && !r.out.includes('短くなっている');
+  })());
+  t('🔴 触っていない行は縮んでいても出さない（規則 3 を縮み側でも緩めない）', (() => {
+    // ours == base（我々は触っていない）。theirs だけが長い＝統合ブランチが先へ進んだだけ。
+    const r = capture({
+      baseContent: '| IADR-0351 | **要約** | Accepted |',
+      theirsContent: '| IADR-0351 | **要約**（統合ブランチが足した長い句） | Accepted |',
+      oursContent: '| IADR-0351 | **要約** | Accepted |',
+    });
+    return r.code === 0 && !r.out.includes('短くなっている');
+  })());
+  t('🔴 追記ブロックの消失で既に赤の行に、縮みを重ねて出さない', (() => {
+    const r = capture({ baseContent: FIX.case2Base, oursContent: FIX.case2Ours });
+    return r.code === 1 && !r.out.includes('短くなっている');
+  })());
+  t('`[remove-adr-addendum]` で意図的に撤去した行にも縮みを重ねて出さない', (() => {
+    const r = capture({
+      baseContent: FIX.case2Base,
+      oursContent: FIX.case2Ours,
+      commitBodies: `chore: x\n\n${REMOVE_TOKEN} IADR-0118 ［2026-09-19 追記 / #849］\n`,
+    });
+    return r.code === 0 && !r.out.includes('短くなっている');
+  })());
+  t('findShrunkRows: 比較相手は theirs、theirs に行が無ければ base', (() => {
+    const base = parseIndex('| IADR-0351 | **長い長い長い要約** | Accepted |');
+    const ours = parseIndex('| IADR-0351 | **短い** | Accepted |');
+    const a = findShrunkRows({ base, theirs: parseIndex(''), ours });
+    const b = findShrunkRows({
+      base,
+      theirs: parseIndex('| IADR-0351 | **もっと長い長い長い長い要約** | Accepted |'),
+      ours,
+    });
+    return a.length === 1 && a[0].from === 'base' && b.length === 1 && b[0].from === 'theirs' && b[0].before > a[0].before;
+  })());
+
   // ---- 範囲の割り方 ----
   // ---- 逃げ道の告知の強さ（名指しは notice / `*` は warn） ----
   t('名指しの撤去は notice で告知する', (() => {
@@ -756,6 +899,8 @@ module.exports = {
   parseRange,
   parseRemovals,
   findLosses,
+  findShrunkRows,
+  isTouched,
   looksTruncated,
   resolveRange,
   INDEX_PATH,
