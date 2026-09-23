@@ -212,10 +212,151 @@ public class OrderReservationReconciliationServiceTests
         logger.Entries.Should().Contain(
             e => e.Level == LogLevel.Critical && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal),
             "発行が落ちても、保護レグ不在の Critical は既に出ていなければならない");
-        logger.Entries.Should().Contain(
-            e => e.Level == LogLevel.Information && e.Message.Contains("滞留 1 件を走査", StringComparison.Ordinal));
+
+        // ［2026-09-23 追記 / #890・IADR-0371］**巡回サマリは出ない**（是正前は出ていた）。
+        // 記録と発行を 1 件ごと（確定の直後）へ移した結果、発行が落ちるとその位置で巡回が終わるため、
+        // 巡回全体の件数を言える地点に到達しない。**これは意図した取り引きである** ——
+        // サマリは「巡回が回りきって初めて言えること」であり、回りきっていない巡回の件数は部分値にすぎない。
+        // 永久に失われる側（確定済み 1 件の Critical）は上で出ていることが本テストの主張である。
+        logger.Entries.Should().NotContain(
+            e => e.Message.Contains("滞留 1 件を走査", StringComparison.Ordinal),
+            "巡回サマリは巡回が最後まで回ったときだけ出す（1 件ごとの明細と二重に出さないための位置でもある）");
         reservations.Find(decisionId)!.State.Should().Be(
             OrderDispatchState.Completed, "予約は確定済み＝次回巡回の走査対象に入らない（だから記録が最後の砦である）");
+    }
+
+    // ---- 🔴 #890, IADR-0371: 巡回の中断で、確定済みの所見と OrderExecuted を失わない ----
+
+    // 照会のたびに任意の副作用を差し込めるプローブ（中断を決定的に起こすために使う。実時間の sleep は使わない）。
+    private sealed class CancellingProbe(Action<Guid> onProbe, Func<Guid, ReservationProbeResult> fn)
+        : IReservationBrokerProbe
+    {
+        public Task<ReservationProbeResult> ProbeAsync(
+            OrderDispatchReservation reservation, CancellationToken cancellationToken = default)
+        {
+            onProbe(reservation.DecisionId);
+            return Task.FromResult(fn(reservation.DecisionId));
+        }
+    }
+
+    [Fact]
+    public async Task 巡回が中断されても確定済みの保護レグ不在のCriticalは出る()
+    {
+        // 🔴 T-10-650（否定形・#890。#882 監査 PROBE5 と同じ形）: 本番の合成（常駐 → scope → リコンサイラ）で、
+        // 2 件目の手前で停止要求が来た場合。**1 件目は既に MarkCompleted を commit 済みで次回巡回の
+        // FindStalledReserved に載らない**ため、ここで出さなければその Critical は永久に失われる。
+        // 是正前はループ先頭の ThrowIfCancellationRequested が記録より手前にあり、ログは 1 行も出なかった。
+        var reservations = new InMemoryOrderReservationStore();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        reservations.TryReserve(first, StalledAt);
+        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+
+        using var cts = new CancellationTokenSource();
+        using var host = await BuildHostAsync(
+            new CancellingProbe(_ => cts.Cancel(), _ => ReservationProbeResult.Placed(Placed("BRK-STOP"))),
+            reservations);
+
+        var logger = new RecordingLogger();
+        var service = new OrderReservationReconciliationService(
+            host.Services.GetRequiredService<IServiceScopeFactory>(),
+            host.Services.GetRequiredService<IWolverineRuntime>(),
+            host.Services.GetRequiredService<IClock>(),
+            Options.Create(new ReconciliationOptions { Enabled = true }),
+            logger);
+
+        var reconcile = async () => await service.ReconcileOnceAsync(cts.Token);
+        await reconcile.Should().ThrowAsync<OperationCanceledException>();
+
+        logger.Entries.Where(
+            e => e.Level == LogLevel.Critical && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal))
+            .Should().ContainSingle("確定済み 1 件の Critical が、ちょうど 1 行出ていなければならない")
+            .Which.Message.Should().Contain(first.ToString());
+        reservations.Find(first)!.State.Should().Be(
+            OrderDispatchState.Completed, "確定済み＝次回巡回の走査対象に入らない（だからここが最後の砦である）");
+        reservations.Find(second)!.State.Should().Be(OrderDispatchState.Reserved);
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 巡回が中断されても確定済みのOrderExecutedは発行済みである()
+    {
+        // 🔴 T-10-651（否定形・#890）: 失われるのは所見だけではない。確定済み予約の `OrderExecuted` が出ないと、
+        // **監査・リスク管理・通知は突合が確定させた約定を二度と受け取らない**（台帳に約定が載らない）。
+        // 発行も確定の直後（1 件ごと）へ移したことを、本番と同じ Wolverine 配線で固定する。
+        var reservations = new InMemoryOrderReservationStore();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        reservations.TryReserve(first, StalledAt);
+        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+
+        using var cts = new CancellationTokenSource();
+        using var host = await BuildHostAsync(
+            new CancellingProbe(_ => cts.Cancel(), _ => ReservationProbeResult.Placed(Placed("BRK-STOP"))),
+            reservations);
+        var service = BuildService(host, new ReconciliationOptions { Enabled = true });
+
+        var cancelled = false;
+        Func<IMessageContext, Task> reconcile = async _ =>
+        {
+            try
+            {
+                await service.ReconcileOnceAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+            }
+        };
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcile);
+
+        cancelled.Should().BeTrue("2 件目の手前で中断されること自体は変えていない");
+        session.Sent.MessagesOf<OrderExecuted>().Should().ContainSingle()
+            .Which.DecisionId.Should().Be(first, "確定した 1 件目だけが発行され、据え置きの 2 件目は発行されない");
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task 中断された巡回の後続巡回でも同じ予約は二重発行されない()
+    {
+        // 🔴 T-10-652（否定形・#890）: 是正が二重発行の側へ倒れていないこと。中断で 1 件目を発行したあと
+        // 次の巡回を回しても、1 件目は Completed で走査されないため発行は 1 通のままである。
+        var reservations = new InMemoryOrderReservationStore();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        reservations.TryReserve(first, StalledAt);
+        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+
+        using var cts = new CancellationTokenSource();
+        using var host = await BuildHostAsync(
+            new CancellingProbe(id => { if (id == first) cts.Cancel(); },
+                _ => ReservationProbeResult.Placed(Placed("BRK-STOP"))),
+            reservations);
+        var service = BuildService(host, new ReconciliationOptions { Enabled = true });
+
+        Func<IMessageContext, Task> reconcileTwice = async _ =>
+        {
+            try
+            {
+                await service.ReconcileOnceAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // 中断された巡回。1 件目は確定済み・発行済みである。
+            }
+
+            await service.ReconcileOnceAsync(CancellationToken.None);
+        };
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcileTwice);
+
+        var sent = session.Sent.MessagesOf<OrderExecuted>().ToList();
+        sent.Should().HaveCount(2);
+        sent.Count(m => m.DecisionId == first).Should().Be(1, "確定済みの 1 件目は二重に発行されない");
+        sent.Count(m => m.DecisionId == second).Should().Be(1, "据え置かれた 2 件目は次回巡回で発行される");
+
+        await host.StopAsync();
     }
 
     // 記録の実物を見るための最小のスパイ（本リポジトリはモックライブラリを持たない）。
@@ -240,5 +381,41 @@ public class OrderReservationReconciliationServiceTests
     {
         await service.StartAsync(CancellationToken.None);
         await service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task 中断しない巡回では確定ごとのCriticalがちょうど1行ずつ出る()
+    {
+        // 🔴 T-10-653（否定形・#890。PR #914 監査 M3）: 是正が「1 件ごとの出口」へ移したあと、
+        // 巡回の末尾に明細のループを**戻す**と二重に出る。中断を含む T-10-650 / T-10-652 は
+        // 巡回が最後まで行かないためこれを捕まえられない。**完走する巡回**で 1 件ずつであることを固定する。
+        var reservations = new InMemoryOrderReservationStore();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        reservations.TryReserve(first, StalledAt);
+        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+
+        using var host = await BuildHostAsync(
+            new StubProbe(ReservationProbeResult.Placed(Placed("BRK-STOP"))), reservations);
+
+        var logger = new RecordingLogger();
+        var service = new OrderReservationReconciliationService(
+            host.Services.GetRequiredService<IServiceScopeFactory>(),
+            host.Services.GetRequiredService<IWolverineRuntime>(),
+            host.Services.GetRequiredService<IClock>(),
+            Options.Create(new ReconciliationOptions { Enabled = true }),
+            logger);
+
+        await service.ReconcileOnceAsync(CancellationToken.None);
+
+        var criticals = logger.Entries
+            .Where(e => e.Level == LogLevel.Critical
+                && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal))
+            .ToList();
+        criticals.Should().HaveCount(2, "確定 2 件ぶん・1 件につき 1 行だけ（末尾の明細ループを戻すと 4 行になる）");
+        criticals.Count(e => e.Message.Contains(first.ToString(), StringComparison.Ordinal)).Should().Be(1);
+        criticals.Count(e => e.Message.Contains(second.ToString(), StringComparison.Ordinal)).Should().Be(1);
+
+        await host.StopAsync();
     }
 }
