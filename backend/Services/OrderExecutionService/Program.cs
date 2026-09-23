@@ -173,7 +173,22 @@ builder.Services.AddHostedService<OrderReservationReconciliationService>();
 builder.Services.Configure<FillPollingOptions>(builder.Configuration.GetSection(FillPollingOptions.SectionName));
 if (brokerSelection.IsMoomoo)
 {
-    builder.Services.AddScoped<OrderFillPoller>();
+    // 🔴 FR-10, #833 項目1, IADR-0389: 受理だけで完了させた S1 の保護記録の再武装。約定追跡が「確認できた
+    // 終端かつ未約定」を観測したときだけ働く（新しい常駐は足さない）。据え置き（照会不能）の通知の記憶は
+    // 巡回をまたぐため singleton・非永続（再起動後の最初の巡回で必ず鳴る）。
+    builder.Services.AddSingleton<UnresolvedCloseNotificationTracker>();
+    builder.Services.AddScoped(sp => new SoftwareStopReArmer(
+        sp.GetRequiredService<IProtectiveStopOrderStore>(),
+        sp.GetRequiredService<IExecutedOrderStore>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopReArmer>(),
+        sp.GetRequiredService<UnresolvedCloseNotificationTracker>()));
+    builder.Services.AddScoped(sp => new OrderFillPoller(
+        sp.GetRequiredService<IBrokerAdapter>(),
+        sp.GetRequiredService<IExecutedOrderStore>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<SoftwareStopReArmer>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>()));
     builder.Services.AddHostedService<OrderFillPollingService>();
 }
 

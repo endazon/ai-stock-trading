@@ -463,6 +463,9 @@ public class NotificationFormatterTests
     // T-10-492（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: どの保護記録も主張していない建玉の**検知**。
     // 🔴 是正ではないので Critical ではなく Warning であり、「決済しません」と明記する。
     [InlineData(SoftwareStopOutcome.UnattributedPosition, NotificationSeverity.Warning, "どの保護記録も主張していません")]
+    // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した。
+    // **これが今日まで無音だった唯一の失敗様式**であり、運用者の唯一のシグナルなので Critical である。
+    [InlineData(SoftwareStopOutcome.CloseUnfilled, NotificationSeverity.Critical, "その株数は建玉に残っています")]
     public void ソフトウェア逆指値の発動結果は結末ごとの重みと文言になる(
         SoftwareStopOutcome outcome, NotificationSeverity severity, string expected)
     {

@@ -963,6 +963,8 @@ public class AuditEntryFactoryTests
     [InlineData(SoftwareStopOutcome.ProtectionSuspended, "1 株も決済できない状態が猶予を過ぎても続いている")]
     // T-10-493（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: 帰属不明の建玉の**検知**（是正ではない）。
     [InlineData(SoftwareStopOutcome.UnattributedPosition, "どの保護記録も主張していない建玉がある")]
+    // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端し、保護記録を再武装した。
+    [InlineData(SoftwareStopOutcome.CloseUnfilled, "受理された成行決済が約定しないまま終了")]
     public void ソフトウェア逆指値の発動結果は結末が読める(SoftwareStopOutcome outcome, string expected)
     {
         var entryDecisionId = Guid.NewGuid();
