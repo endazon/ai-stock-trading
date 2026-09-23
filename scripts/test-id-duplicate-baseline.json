@@ -1,0 +1,205 @@
+{
+  "$comment": [
+    "テスト ID（T-<FR>-<連番>）の既知の重複採番。scripts/check-test-traceability.js の検査 4（T2）が読む。",
+    "🔴 これはラチェットである — 新しい重複を足すことは許さず、解消した重複は本ファイルから消さないと赤くなる。",
+    "🔴 既存 ID は改番しない（IADR-0376）。改番は backend のテストコードと .ai-context/（凍結記録）の",
+    "   参照追随を要求し、しかも「どちらの出現を指しているか」が外部参照からは決まらない場合がある。",
+    "新しいテストの採番は `node scripts/check-test-traceability.js` が出す「採番の最大値」＋1。規約は docs/tests/README.md。"
+  ],
+  "measuredAt": "2026-09-23",
+  "measuredFrom": "origin/develop 03737bd3",
+  "duplicates": [
+    {
+      "id": "T-10-172",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は空売りの拒否理由 9 種の写像（#374）、2 つ目は三統制の優先度（`TradingControlPriorityTests`）。まったく別のテストに同じ番号が付いている。外部参照は `.ai-context/specs/20260804_374_short-sell-rejection-reasons-nine.md`（凍結記録・1 つ目を指す）にあり、改番するとその記録が別のテストを指す。"
+    },
+    {
+      "id": "T-10-173",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は空売りの拒否理由 9 種の写像（#374）、2 つ目は三統制の優先度（`TradingControlPriorityTests`）。まったく別のテストに同じ番号が付いている。外部参照は `.ai-context/specs/20260804_374_short-sell-rejection-reasons-nine.md`（凍結記録・1 つ目を指す）にあり、改番するとその記録が別のテストを指す。"
+    },
+    {
+      "id": "T-10-174",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は空売りの拒否理由 9 種の写像（#374）、2 つ目は三統制の優先度（`TradingControlPriorityTests`）。まったく別のテストに同じ番号が付いている。外部参照は `.ai-context/specs/20260804_374_short-sell-rejection-reasons-nine.md`（凍結記録・1 つ目を指す）にあり、改番するとその記録が別のテストを指す。"
+    },
+    {
+      "id": "T-10-175",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は空売りの拒否理由 9 種の写像（#374）、2 つ目は三統制の優先度（`TradingControlPriorityTests`）。まったく別のテストに同じ番号が付いている。外部参照は `.ai-context/specs/20260804_374_short-sell-rejection-reasons-nine.md`（凍結記録・1 つ目を指す）にあり、改番するとその記録が別のテストを指す。"
+    },
+    {
+      "id": "T-10-191",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-192",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-193",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-194",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-195",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-196",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-197",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-198",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は基準通貨と FX レート（`MarketCurrencyTests` / `FredFxRateSourceTests` / `CachingFxRateSourceTests`）、2 つ目は維持率の自動縮小（`MaintenanceMarginAutoReduceTests` / `MaintenanceMarginReductionServiceTests`）。外部参照は `backend/**/Tests/*.cs`（2 つ目）に在り、T-10-197 は `.ai-context/adr/IADR-0174`（1 つ目）からも参照されている——**どちらを改番しても残った側の参照が別のテストを指す**。"
+    },
+    {
+      "id": "T-10-258",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は供給可否の宣言（空売り状況の `NotSupplied` / `NotApplicable` / 正当な 0 の描き分け）、2 つ目は強制買戻し件数の照会と観測の表。外部参照は `backend/**/GetShortSellingStatus/ShortSellingStatusServiceTests.cs`（実測 5 箇所）と `.ai-context/adr/IADR-0186`。"
+    },
+    {
+      "id": "T-10-259",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は供給可否の宣言（空売り状況の `NotSupplied` / `NotApplicable` / 正当な 0 の描き分け）、2 つ目は強制買戻し件数の照会と観測の表。外部参照は `backend/**/GetShortSellingStatus/ShortSellingStatusServiceTests.cs`（実測 5 箇所）と `.ai-context/adr/IADR-0186`。"
+    },
+    {
+      "id": "T-10-260",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は供給可否の宣言（空売り状況の `NotSupplied` / `NotApplicable` / 正当な 0 の描き分け）、2 つ目は強制買戻し件数の照会と観測の表。外部参照は `backend/**/GetShortSellingStatus/ShortSellingStatusServiceTests.cs`（実測 5 箇所）と `.ai-context/adr/IADR-0186`。"
+    },
+    {
+      "id": "T-10-261",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は供給可否の宣言（空売り状況の `NotSupplied` / `NotApplicable` / 正当な 0 の描き分け）、2 つ目は強制買戻し件数の照会と観測の表。外部参照は `backend/**/GetShortSellingStatus/ShortSellingStatusServiceTests.cs`（実測 5 箇所）と `.ai-context/adr/IADR-0186`。"
+    },
+    {
+      "id": "T-10-262",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は供給可否の宣言（空売り状況の `NotSupplied` / `NotApplicable` / 正当な 0 の描き分け）、2 つ目は強制買戻し件数の照会と観測の表。外部参照は `backend/**/GetShortSellingStatus/ShortSellingStatusServiceTests.cs`（実測 5 箇所）と `.ai-context/adr/IADR-0186`。"
+    },
+    {
+      "id": "T-10-263",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は供給可否の宣言（空売り状況の `NotSupplied` / `NotApplicable` / 正当な 0 の描き分け）、2 つ目は強制買戻し件数の照会と観測の表。外部参照は `backend/**/GetShortSellingStatus/ShortSellingStatusServiceTests.cs`（実測 5 箇所）と `.ai-context/adr/IADR-0186`。"
+    },
+    {
+      "id": "T-10-410",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は保護記録ガードの巡回（確定の門・観測の失効）、2 つ目は発注執行が決済の承認を見送った理由の全通り。**外部参照が最も多い**（実測 9 ファイル 37 箇所。`backend/**/Tests/*.cs` 6 ファイル ＋ `.ai-context/specs/` 2 ファイル）。"
+    },
+    {
+      "id": "T-10-450",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は発注応答の非成功コードの分類（タイムアウト -100 / 切断 -200 等）、2 つ目は乖離の取り込みで理由が空・空白のみなら拒否する否定形。外部参照は実測 5 ファイル 15 箇所。"
+    },
+    {
+      "id": "T-10-451",
+      "files": [
+        "docs/tests/FR-10_risk-controls-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は常駐ガードの成行手仕舞いの据え置き、2 つ目は取り込みの冪等（二度取り込んでも台帳が二重に減らない）。外部参照は実測 5 ファイル 9 箇所。"
+    },
+    {
+      "id": "T-15-69",
+      "files": [
+        "docs/tests/FR-15_backtest-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は費用モデルへの借株料の非接続と空売り観測（`BacktestCostModelTests` 系）、2 つ目は Stage 0 評価の駆動経路（`Stage0EvaluationServiceTests`）。**#887 の射程外だった（issue は FR-10 だけを見ていた）が、`docs/tests/` 全件を走査して見つかった**（規則 9）。"
+    },
+    {
+      "id": "T-15-70",
+      "files": [
+        "docs/tests/FR-15_backtest-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は費用モデルへの借株料の非接続と空売り観測（`BacktestCostModelTests` 系）、2 つ目は Stage 0 評価の駆動経路（`Stage0EvaluationServiceTests`）。**#887 の射程外だった（issue は FR-10 だけを見ていた）が、`docs/tests/` 全件を走査して見つかった**（規則 9）。"
+    },
+    {
+      "id": "T-15-71",
+      "files": [
+        "docs/tests/FR-15_backtest-tests.md"
+      ],
+      "count": 2,
+      "reason": "1 つ目は費用モデルへの借株料の非接続と空売り観測（`BacktestCostModelTests` 系）、2 つ目は Stage 0 評価の駆動経路（`Stage0EvaluationServiceTests`）。**#887 の射程外だった（issue は FR-10 だけを見ていた）が、`docs/tests/` 全件を走査して見つかった**（規則 9）。"
+    }
+  ]
+}
