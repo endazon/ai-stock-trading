@@ -87,10 +87,14 @@ await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(fal
 - **allowlist の形**: `check-tracked-session-timeout.js` の `ALLOWED_FILES` と同じく、
   **ファイル単位＋理由＋起票 ID** の定数表とする。**本決定の時点で登録すべき項目は無い**
   （本 PR ＋ #906 ＋ #907 で 12 件すべてが消える）。
-- 🔴 **今は入れない。** 本 IADR の変換を当てた後も **1 件**（`HttpCostControlGateTests.cs`）が残り、
-  これは**未マージ**の PR #907 が直す。先に入れると develop が赤くなり、それを避けるために
-  allowlist へ先回りで登録するのは `check-banned-libraries.js` が明示的に採らないと書いている運用
-  （「移行前に登録して検査を無効化する」）である。**#907 と本 PR が揃った時点で、allowlist 無しで入れる。**
+- 🔴 **本 IADR の PR には入れない。** 起案時点では `HttpCostControlGateTests.cs` が未マージの #907 待ちであり、
+  先に入れれば develop が赤くなる ―― それを避けて allowlist へ先回りで登録するのは
+  `check-banned-libraries.js` が明示的に採らないと書いている運用（「移行前に登録して検査を無効化する」）である。
+- > 🔴 ［2026-09-23 追記 / #885］**作業中に #907 が develop へマージされ、取り込み後の走査は 0 件になった**
+  > （633 テストファイル。実測）。**「allowlist を空で入れられる」条件は本 PR のマージで揃う。**
+  > それでも本 PR には入れない —— 新しい CI ゲートの追加はワークフローと必須 check 名の表
+  > （`docs/ai-workflow.md`）に及び、**是正の diff とは別に読まれるべき変更**だからである。
+  > **追随は #921**（検出規則・的中率・allowlist の形・着手条件を記載して起票済み）。
 - **形 (c)（Wolverine の `IServiceProvider.ExecuteAndWaitAsync`＝既定 5 秒）は別物として扱う。**
   既存の `check-tracked-session-timeout.js` が素の `TrackActivity()` だけを禁じており、この overload は素通りする。
   同スクリプトの拡張として別 issue **#922** で扱う（#357 が 5 秒をスケジューリング遅延だけで超えた実測を持つ）。
