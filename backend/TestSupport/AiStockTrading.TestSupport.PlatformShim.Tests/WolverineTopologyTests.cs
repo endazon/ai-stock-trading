@@ -65,6 +65,9 @@ public class WolverineTopologyTests
         using var host = await Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                // #816: 本テストが固定するのは経路の向き先であって読み込み方式ではない。
+                // 周囲の WOLVERINE_TYPE_LOAD_MODE に結果を左右させない（WolverineTestOptions の注記）。
+                opts.PinDynamicTypeLoadMode();
                 opts.UseAiStockTradingRabbitMq(CostControl, "amqp://guest:guest@localhost:5672");
                 // 実ブローカへ接続しない（ローカル・CI ともに RabbitMQ を要求しない）。
                 opts.StubAllExternalTransports();

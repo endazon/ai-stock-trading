@@ -134,6 +134,9 @@ public class FoundationRegistrationTests
         using var host = await Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                // #816: 本テストが固定するのは再試行方針であって読み込み方式ではない。
+                // 周囲の WOLVERINE_TYPE_LOAD_MODE に結果を左右させない（WolverineTestOptions の注記）。
+                opts.PinDynamicTypeLoadMode();
                 opts.UseAiStockTradingRabbitMq(
                     "ai-stock-trading.foundation-smoke", "amqp://guest:guest@localhost:5672");
                 // 実ブローカへ接続しない（ローカル・CI ともに RabbitMQ を要求しない）。
