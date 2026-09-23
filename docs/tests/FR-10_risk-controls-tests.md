@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833]
 -->
 
 
@@ -39,6 +39,7 @@ issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374,
 - [手仕舞いの出口（#847。成行・取消の口・失効の通知）](#手仕舞いの出口847成行取消の口失効の通知)
 - [台帳とブローカーの乖離の取り込み（#849。利用者の承認つきで観測値へ数量だけ合わせる）](#台帳とブローカーの乖離の取り込み849利用者の承認つきで観測値へ数量だけ合わせる)
 - [突合が確定させた 1 件の記録と発行（#890。巡回が途中で止まっても、確定済みの所見と約定の通知を失わない）](#突合が確定させた-1-件の記録と発行890巡回が途中で止まっても確定済みの所見と約定の通知を失わない)
+- [受理だけで完了させた保護記録の再武装（#833 項目 1。決済が受理のまま失効したら未約定残を戻す）](#受理だけで完了させた保護記録の再武装833-項目-1決済が受理のまま失効したら未約定残を戻す)
 - [未カバー・実施予定](#未カバー実施予定)
 - [関連仕様](#関連仕様)
 - [未決事項](#未決事項)
@@ -1264,6 +1265,47 @@ T-10-623 と T-10-624 が赤になることを確かめた。
 （T-10-646 / T-10-647 / T-10-650 / T-10-651 / T-10-652。合計 702 件中 697 件合格）。
 T-10-648 / T-10-649 は緑のまま —— 中断を含まない安全側・境界のケースであり、この変異では動かない。
 **「否定形が緑のまま」は守りが無いことを意味しない**が、**この変異が捕まえているのは中断の 5 件だけ**である。
+
+## 受理だけで完了させた保護記録の再武装（#833 項目 1。決済が受理のまま失効したら未約定残を戻す）
+
+`SoftwareStopReArmerTests`（`OrderExecutionService.Tests`）・`NotificationFormatterTests`（`NotificationService.Tests`）・
+`AuditEntryFactoryTests`（`AuditService.Tests`）・`StopLossMethodContractTests`（`AiStockTrading.Shared.Contracts.Tests`）。
+
+ソフトウェア逆指値（S1）の決済は**受理（`Accepted`）の時点で**保護記録の残保護数量を減らし、0 になった行を
+`Completed` にする。moomoo の模擬取引の注文は**当日限り**であり、受理された決済が **0 約定のまま失効・取消**され得る。
+そのとき建玉は 1 株も減っていないのに行は `Completed` で、`FindActive` にも `FindActiveSoftwareStops` にも載らない
+——**ガードも到達ハンドラも二度と見ず、通知も 1 本も出ない**。有効な保護記録が 0 件になった口座では
+帰属不明建玉の検知も走らない（ガードが巡回対象ゼロで建玉を照会しない）。
+
+是正は「**確認できた終端かつ未約定**を約定追跡（`OrderFillPoller`）が観測した時点で、未約定残ぶんを行へ戻す」である。
+🔴 **根拠は「自分が出した注文 1 件の終端状態」だけで、建玉照会の純額は見ない**——純額から復元する経路は
+3 巡にわたって不可逆な売り過ぎを作ったため撤去済みであり、復活させていない。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-700** | 受理で `Completed` になった行（AAPL 707 株・ライン 338.51＝稼働 PoC の配置）と、その決済レグ（受理・未約定） | 約定追跡を 1 巡回走らせ、レグが 0 約定で `Expired` を返す | 🔴 行が `Active` へ戻り残保護数量が 707 に戻る。巡回対象（`FindActiveSoftwareStops`）に再び載り、`CloseUnfilled`（Critical）が 1 回出る | 無音で保護を失わない | 自動（**否定形・最重要**） |
+| **T-10-701** | 同上 | レグが `Cancelled` / `Rejected` を返す | T-10-700 と同じ（3 状態はいずれも「未約定残が二度と約定しない」） | 終端の種類で漏らさない | 自動（単体） |
+| **T-10-702** | 同上 | レグが 300 株だけ約定して `Cancelled` | **未約定残 407 株だけ**が戻る（売れた 300 株は戻さない） | 売った建玉を二度売らない | 自動（境界） |
+| **T-10-703** | 同上 | レグが全量 `Filled` | **何も起きない**（再武装なし・イベントなし・行は `Completed`） | 約定を巻き戻さない | 自動（**否定形**） |
+| **T-10-703b** | 同上 | `Filled` だが約定数量が発注数量に足りない応答 | **戻さない**。判定は状態で行う（`IsTerminal` に広げると赤） | 応答の数量の揺れで売り増さない | 自動（**否定形・境界**） |
+| **T-10-704** | 同上 | レグの照会が `null`（不明）に倒れる | 🔴 **再武装も完了もしない**。行は `Completed`・記録は非終端のまま（次巡回で引き直す）で、Critical ログが出る | 不明を未約定と取り違えない | 自動（**否定形・最重要**） |
+| **T-10-705** | 同上 | レグが `Expired` | イベントがエントリー・銘柄・損切りライン・検知価格・`CloseDecisionId` / `CloseOrderId` を運ぶ（`CloseIntent` は null＝決済を出していない） | 運用者が追える | 自動（単体） |
+| **T-10-706** | 同上 | 同じレグの終端を**二度**観測させる | 主張は 707 株のまま（エントリーの約定数量が上限） | 主張が建玉を超えない | 自動（**否定形**） |
+| **T-10-707** | エントリー（`Open`）と S0 の手仕舞いレグ（`protective-close:` 名前空間）も混ぜる | 3 件を終端化させる | S1 の決済レグ以外では**保護記録に触らない**（一致しないのが通常である） | 他の注文を巻き込まない | 自動（**否定形**） |
+| **T-10-708** | 到達済み・据え置きを通知済みの行 | レグが `Expired` | 到達の記録（`TriggeredAt` / `TriggeredPrice`）は残り、試行番号も動かない。据え置きの通知済みだけ落ちる | 到達を失わない・再通知できる | 自動（単体） |
+| **T-10-709** | 保護記録の保存が必ず失敗する | 1 巡回走らせる | 巡回は完走し記録は終端化される（次巡回で二度目の再武装をしない）。**再武装の失敗は Critical で残る** | 巡回を止めず無音にしない | 自動（**否定形**） |
+| **T-10-710** | 照会が `null` に倒れ続ける | 30 秒間隔で 2 巡回 → 間隔（1 時間）後にもう 1 巡回 | Critical は 2 巡回で 1 回だけ。間隔を過ぎたら鳴らし直す | 本当に見るべき通知を埋もれさせない | 自動（境界） |
+| **T-10-711** | 部分決済で `Active` のまま残り、その後ガードが次の試行を送って試行番号が進んでいる行 | **過去の試行**のレグが `Expired` | その試行ぶん（300 株）が戻り、合計 707 株になる | 試行番号が進んでも引ける | 自動（境界） |
+
+🔴 **本節が固定していない残余リスク**:
+- **受理 → 失効 → 再武装 → 受理 → 失効 のループに上限が無い。** 試行上限（`MaxCloseAttemptsPerTrigger = 3`）は
+  **拒否**の分岐にしか無い。行ごとの待ち時間（#833 項目 2）が入るまで残る。
+- **追跡上限（既定 24 時間）を過ぎた決済レグは照会対象から外れる**——その 1 件は再武装も Critical も受け取れない。
+- **終端を書き込んだ後・再武装の前にプロセスが落ちる窓**は残る（T-10-709 が固定しているのは例外の側だけである）。
+
+**変異注入の実測（2026-09-23）**: 約定追跡のフック（`reArmer?.OnCloseTerminalized(...)`）を外すと **7 件が赤**
+（T-10-700 / T-10-701 ×2 / T-10-702 / T-10-705 / T-10-708 / T-10-709。合計 13 件中 6 件合格）。
+判定を `AbandonsUnfilledRemainder` から `IsTerminal` へ広げると **T-10-703b が赤**（14 件中 13 件合格）。
 
 ## 未カバー・実施予定
 
