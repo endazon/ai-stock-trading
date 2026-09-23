@@ -382,4 +382,40 @@ public class OrderReservationReconciliationServiceTests
         await service.StartAsync(CancellationToken.None);
         await service.StopAsync(CancellationToken.None);
     }
+
+    [Fact]
+    public async Task 中断しない巡回では確定ごとのCriticalがちょうど1行ずつ出る()
+    {
+        // 🔴 T-10-653（否定形・#890。PR #914 監査 M3）: 是正が「1 件ごとの出口」へ移したあと、
+        // 巡回の末尾に明細のループを**戻す**と二重に出る。中断を含む T-10-650 / T-10-652 は
+        // 巡回が最後まで行かないためこれを捕まえられない。**完走する巡回**で 1 件ずつであることを固定する。
+        var reservations = new InMemoryOrderReservationStore();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        reservations.TryReserve(first, StalledAt);
+        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+
+        using var host = await BuildHostAsync(
+            new StubProbe(ReservationProbeResult.Placed(Placed("BRK-STOP"))), reservations);
+
+        var logger = new RecordingLogger();
+        var service = new OrderReservationReconciliationService(
+            host.Services.GetRequiredService<IServiceScopeFactory>(),
+            host.Services.GetRequiredService<IWolverineRuntime>(),
+            host.Services.GetRequiredService<IClock>(),
+            Options.Create(new ReconciliationOptions { Enabled = true }),
+            logger);
+
+        await service.ReconcileOnceAsync(CancellationToken.None);
+
+        var criticals = logger.Entries
+            .Where(e => e.Level == LogLevel.Critical
+                && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal))
+            .ToList();
+        criticals.Should().HaveCount(2, "確定 2 件ぶん・1 件につき 1 行だけ（末尾の明細ループを戻すと 4 行になる）");
+        criticals.Count(e => e.Message.Contains(first.ToString(), StringComparison.Ordinal)).Should().Be(1);
+        criticals.Count(e => e.Message.Contains(second.ToString(), StringComparison.Ordinal)).Should().Be(1);
+
+        await host.StopAsync();
+    }
 }

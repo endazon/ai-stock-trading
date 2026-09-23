@@ -214,6 +214,7 @@ foreach (reservation in stalled)
 | T-10-650 | 常駐 | **否定形**（PROBE5 の形） | 巡回が中断されても、確定済み 1 件の Critical が**ちょうど 1 行**出る |
 | T-10-651 | 常駐 | **否定形** | 巡回が中断されても、確定済み 1 件の `OrderExecuted` は発行済みである（2 件目は出ない） |
 | T-10-652 | 常駐 | **否定形** | 中断のあと次の巡回を回しても、同じ `DecisionId` の `OrderExecuted` は 1 通のままである |
+| T-10-653 | 完走する巡回では確定ごとの Critical がちょうど 1 行ずつ（末尾の明細ループを戻すと赤。PR #914 監査 M3） | `OrderReservationReconciliationServiceTests` |
 
 既存の緑を保つこと（受け入れ基準）:
 T-10-402 / T-10-403 / T-10-406 / T-10-407 / T-10-408 / T-10-409（二重発注・二重決済の否定形）、
