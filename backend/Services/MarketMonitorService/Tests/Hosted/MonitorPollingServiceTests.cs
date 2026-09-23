@@ -41,6 +41,10 @@ public class MonitorPollingServiceTests
         public InMemoryPositionStore Positions { get; } = new();
         public InMemoryPriceBaselineStore Baselines { get; } = new();
         public InMemoryCooldownStore Cooldowns { get; } = new();
+
+        // #902, IADR-0365: 生存要約（null なら配線しない＝従来の構成）。
+        public StopLossLivenessReporter? Liveness { get; set; }
+
         private IHost? _host;
 
         public Harness(MarketMonitorSettings settings) => Settings = new InMemoryMonitoredSymbolStore(settings);
@@ -66,7 +70,7 @@ public class MonitorPollingServiceTests
             var service = new MonitorPollingService(
                 _host.Services.GetRequiredService<IServiceScopeFactory>(),
                 Schedule, Clock, Options.Create(new MonitorOptions()),
-                NullLogger<MonitorPollingService>.Instance);
+                NullLogger<MonitorPollingService>.Instance, Liveness);
 
             return (service, _host);
         }
@@ -149,5 +153,36 @@ public class MonitorPollingServiceTests
 
         session.Sent.MessagesOf<StopLossTriggered>().Should().NotBeEmpty();
         session.Sent.MessagesOf<PriceMovementDetected>().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task T_10_628_巡回が生存要約を出し_到達の発行は変わらず_閉場中は出さない()
+    {
+        // T-10-628, FR-10, #902, IADR-0365 決定4: 要約は発行の後に置く観測であり、到達の発行を変えない。
+        await using var h = new Harness(Settings());
+        var log = new StopLossLivenessReporterTests.RecordingLogger<StopLossLivenessReporter>();
+        h.Liveness = new StopLossLivenessReporter(Options.Create(new MonitorOptions()), log);
+        h.Positions.Set(
+        [
+            new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m),
+            new HeldPosition("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m),
+        ]);
+        h.Market.Set("AAPL", Market.UnitedStates, 340.12m);
+        h.Market.Set("MSFT", Market.UnitedStates, 1_850m); // 到達
+        var (service, host) = await h.StartAsync();
+
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
+
+        session.Sent.MessagesOf<StopLossTriggered>().Should().ContainSingle().Which.Symbol.Should().Be("MSFT");
+        log.Informations.Should().ContainSingle()
+            .Which.Should().Contain("保有 2 件").And.Contain("現在値=340.12").And.Contain("ライン=338.51");
+
+        // 閉場中は評価しない＝要約も出さない（間隔が過ぎていても）。
+        h.Schedule.Open = false;
+        h.Clock.UtcNow = Now.AddMinutes(10);
+        await service.RunOnceAsync(CancellationToken.None);
+
+        log.Informations.Should().HaveCount(1);
     }
 }
