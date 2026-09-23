@@ -338,6 +338,12 @@ StageCapitalCapExceeded, PerOrderAmountExceeded, DailyOrderAmountExceeded, Daily
       塞ぎ方は **#899** へ切り出した —— **「確証」ではなく「反証」**（`cashInfoList` が存在し USD の行を
       1 つも含まないなら採らない／`Trd_Common.Position.currency` でも同型）であれば、
       **新たな fail-closed を生まずに**歯止めを置ける。
+    - 🔴 ［2026-09-23 追記 / #899］**反証を [IADR-0373](IADR-0373_currency-disproof-for-non-usd-single-market-account.md)
+      で入れた**（決定 1 は覆っていない。近似の**範囲が狭まった**だけである）。ただし
+      **本残余リスクは解消していない** —— 反証が効くのは「`cashInfoList` が通貨を名乗る行を持ち、
+      そのどれも USD でない」ときだけであり、**JP 建て口座が米国株のために USD 現金も持つ場合**と
+      **実機が `cashInfoList` を載せてこない場合**は今までどおり通る。
+      `Position.currency` は採らなかった（建玉の通貨は口座の基準通貨ではない。IADR-0373 決定 3）。
 - フォローアップ:
   1. **実弾 / SIMULATE で `TrdGetFunds` の応答形を 1 回観測する**（`TotalAssets` の有無・`Currency` の値）。
      本 PR は SIMULATE 固定（IADR-0016）であり、**live 実測は行っていない**。応答に値が無ければ基準資金は未供給＝
