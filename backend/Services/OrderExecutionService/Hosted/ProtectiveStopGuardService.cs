@@ -21,7 +21,8 @@ public sealed class ProtectiveStopGuardService(
     IServiceScopeFactory scopeFactory,
     IWolverineRuntime runtime,
     IOptions<ProtectiveStopGuardOptions> options,
-    ILogger<ProtectiveStopGuardService> logger) : BackgroundService
+    ILogger<ProtectiveStopGuardService> logger,
+    SoftwareStopLivenessReporter? softwareStopLiveness = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -90,6 +91,21 @@ public sealed class ProtectiveStopGuardService(
                     + " / 手仕舞い {ClosedOut} / 据え置き（照会不能・送信結果不明） {Unknown} / 失敗 {Failed}）。",
                 result.Scanned, result.StillActive, result.Completed, result.Replaced,
                 result.ClosedOut, result.Unknown, result.Failed);
+
+        // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ）。ストアは間隔に 1 回だけ読む。
+        // 要約の失敗は巡回を失敗させない（ガードの結果・発行に一切影響させない）。
+        if (softwareStopLiveness is not null)
+        {
+            try
+            {
+                var stops = scope.ServiceProvider.GetRequiredService<IProtectiveStopOrderStore>();
+                softwareStopLiveness.ReportIfDue(() => stops.FindActive(options.Value.BatchSize));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "ソフトウェア逆指値（S1）の要約の記録に失敗しました（ガードの巡回には影響しません）。");
+            }
+        }
 
         return result;
     }
