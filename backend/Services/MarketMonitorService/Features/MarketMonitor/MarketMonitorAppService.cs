@@ -25,6 +25,7 @@ public sealed class MarketMonitorAppService(
 
         var stopLosses = new List<StopLossTriggered>();
         var movements = new List<PriceMovementDetected>();
+        var evaluations = new List<StopLossEvaluation>();
 
         // (1) 損切りライン検知（保有銘柄）。変動判定・クールダウンと独立に常に評価する（フェイルセーフ）。
         // 保有ポジションはリスク管理（#63 台帳）を同期照会する（IADR-0030）。照会失敗は空列（＝検知対象なし）。
@@ -34,9 +35,15 @@ public sealed class MarketMonitorAppService(
             var quote = await marketData
                 .GetLatestQuoteAsync(position.Symbol, position.Market, cancellationToken)
                 .ConfigureAwait(false);
+
+            // FR-10, #902, IADR-0365 決定1: 評価の記録を残す（価格欠落も含む）。判定・発行は下の従来の経路のまま。
+            evaluations.Add(new StopLossEvaluation(
+                position.Symbol, position.Market, position.Side, position.Quantity,
+                position.StopLossPrice, quote?.Price, now));
+
             if (quote is null)
             {
-                continue; // 取得失敗はスキップ（監視継続）
+                continue; // 取得失敗はスキップ（監視継続）。欠落の継続は StopLossLivenessReporter が Warning にする
             }
 
             if (StopLossEvaluator.IsTriggered(position, quote.Price))
@@ -81,7 +88,7 @@ public sealed class MarketMonitorAppService(
             cooldownStore.SetLastTriggered(monitored.Symbol, monitored.Market, now);
         }
 
-        return new MonitorRoundResult(stopLosses, movements);
+        return new MonitorRoundResult(stopLosses, movements) { StopLossEvaluations = evaluations };
     }
 
     private bool IsInCooldown(string symbol, Market market, DateTimeOffset now, TimeSpan cooldown)
