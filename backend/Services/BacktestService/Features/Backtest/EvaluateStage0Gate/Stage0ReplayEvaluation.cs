@@ -13,8 +13,12 @@ namespace BacktestService.Features.Backtest.EvaluateStage0Gate;
 // `Stage0GateContext` を作る。**合否判定そのものは行わない**（判定器は Stage0GateService が単一情報源）。
 //
 // 🔴 **整合しない記録では判定を組まない。** 記録が無い・期間が評価期間を覆っていない・銘柄集合が違う・
-// カットオフ日が違う／未構成、のいずれかなら `BlockingChecks` を返して**判定器を呼ばせない**
-// （IADR-0310 決定2 が空バーに対して置いた fail-closed と同じ向き）。
+// カットオフ日が違う／未構成・**as-of 入力の再構成可否が未申告**・**除外の結果 母集団が空**、のいずれかなら
+// `BlockingChecks` を返して**判定器を呼ばせない**（IADR-0310 決定2 が空バーに対して置いた fail-closed と同じ向き）。
+//
+// 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387: 記録が整合していても、**再構成できなかった as-of 入力に依存する
+// 判断は判定母集団から外す**（`RecordedDecisionReplayStrategy` が注文を写さない）。外した件数は
+// `Stage0ExclusionSummary` として verdict まで運ぶ ——「**0 件だった**」と「**数えられなかった**」を分ける。
 
 /// <summary>評価文脈を組むための入力。</summary>
 /// <param name="LlmTrainingCutoff">
@@ -103,6 +107,20 @@ public static class Stage0ReplayEvaluation
             return new Stage0ReplayPreparation(blocking, recordSet.StrategyId, null, null);
 
         var strategy = new RecordedDecisionReplayStrategy(recordSet);
+
+        // 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387: **外した結果、判定母集団が空になったら判定を組まない。**
+        // 同決定「**外した結果 Stage 0 の対象が実質的に成立しなくなった場合は、合格としない。範囲を狭めて
+        // 通すのではなく、通らないことを報告する**」。全件を外した走行は 1 件も発注しないため成績が動かず、
+        // 判定器へ通すと「損失が無い」ように見え得る —— 走らせる前に断つ。
+        if (strategy.EvaluatedDecisionCount == 0)
+        {
+            return new Stage0ReplayPreparation(
+                [Stage0GateCheck.AllDecisionsExcluded], recordSet.StrategyId, null, null);
+        }
+
+        var exclusions = new Stage0ExclusionSummary.Counted(
+            strategy.ExcludedDecisionCount, strategy.EvaluatedDecisionCount, strategy.ExcludedInputKinds);
+
         var baseline = Run(request, strategy, CostSensitivity.Baseline, request.From, request.To);
         var doubled = Run(request, strategy, CostSensitivity.Doubled, request.From, request.To);
 
@@ -142,6 +160,8 @@ public static class Stage0ReplayEvaluation
             Bars: request.DataSource.GetBars(request.From, request.To),
             LlmTrainingCutoff: request.LlmTrainingCutoff!.Value,
             Criteria: request.Criteria,
+            // ADR-0036 決定1: 何を合否から外したかを verdict まで運ぶ（**0 件も実測として運ぶ**）。
+            Exclusions: exclusions,
             // ADR-0033 決定3: 汚染対策はカットオフ後データを原則とし、**匿名化は合否判定の根拠に用いない**。
             // ここを true にできる口を作らない（作れば匿名化経路で合格が出る）。
             DataAnonymized: false);
@@ -176,6 +196,13 @@ public static class Stage0ReplayEvaluation
 
         if (mismatch)
             blocking.Add(Stage0GateCheck.RecordingMismatch);
+
+        // 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387: **1 件でも as-of 入力の再構成可否を申告していない記録が
+        // あれば判定を組まない。** 申告が無ければ「外すべき判断があったか」そのものが読めず、痩せた入力での
+        // 結果がそのまま合格根拠になり得る。**「申告が無い＝痩せていない」と読む口を作らない**
+        // （3 種を覆わない部分申告も未申告として扱う。抜けた種別が黙って充足側へ倒れるため）。
+        if ((recordSet.Records ?? []).Any(r => !Stage0AsOfInputs.IsDeclared(r.AsOfInputs)))
+            blocking.Add(Stage0GateCheck.InputCompletenessNotDeclared);
 
         return blocking;
     }

@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-09-11
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
 adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #777]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777]
 -->
 
 
@@ -291,6 +291,38 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | --- | --- |
 | 評価不能を「PBO 0（＝測った値）」へ潰す | **4 件が赤**（T-15-96 の 2 件・T-15-87・T-15-94） |
 | 試行 1 本の経路にも下限 20 を適用する | **6 件が赤**（T-15-96 の 2 件・T-15-98・T-15-87・T-15-94・駆動の到達確認） |
+
+### 再構成できなかった as-of 入力は合否から外す（2026-09-09 の計画裁定・#749）
+
+> 計画は「過去時点の情報が復元できない項目があれば、その項目に依存する判断を Stage 0 の合否から外す」
+> 「**外した範囲は記録に残す**」と定めた。🔴 **本節の核心は 2 つの区別である** ——
+> **「入力が無かった」と「入力を再構成できなかった」**、および **「除外 0 件」と「件数を数えていない」**。
+> どちらも同じ値で表せてしまうと、記録は嘘になる。陽性・陰性を**対で**置く。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-104 | 記録の入力は 3 種すべての可否を申告する／**参考情報 0 件は「その時点に不在」**であり再構成不可ではない（ニュースの無い平常日が合否から落ちない）／供給側が申告した種別は再構成不可になる | `AsOfDecisionInputTests.再構成可否は3種そろい参考情報0件は不在として申告される` / `供給側の申告した種別は再構成不可になる`（Theory 2 ケース） | 自動 |
+| T-15-105 | 🔴 **陽性/陰性対照の対**: 発行時刻不明を落としたなら参考情報は再構成不可へ倒れる／**未来を落としただけでは倒さない**（as-of の正しい振る舞いを痩せと数えない） | `AsOfDecisionInputTests.発行時刻不明を落としたなら参考情報は再構成不可になる` / `未来の参考情報を落としただけでは再構成不可にしない` | 自動 |
+| T-15-106 | 記録器は申告を記録へ載せる／🔴 **再構成できない入力があっても記録は止まらない**（「外す」は「走らせない」ではない。LLM は呼ばれ、記録は残り、印だけがつく） | `Stage0DecisionRecorderTests.記録はas_of入力の再構成可否を3種そろえて持つ` / `再構成できない入力があっても記録は残り除外対象として印がつく` | 自動 |
+| T-15-107 | 申告は JSON 往復で落ちない／**申告の無い旧記録は未申告へ復元され充足へ倒れない**／判断列が同じでも申告が違えば戦略識別子が変わる（記録器の実走でも確かめる） | `Stage0DecisionRecordTests.as_of入力の再構成可否は往復で落ちない` / `申告の無い旧記録は未申告へ復元され充足へ倒れない` / `再構成可否が違えば戦略IDが変わる` / `Stage0DecisionRecorderTests.戦略IDは再構成可否の申告を含む` | 自動 |
+| T-15-108 | 🔴 **陽性（最重要）**: 再構成できない入力に依存する判断は注文を出さず除外に数えられる／**見送り（数量 0）の記録も除外として数える**／重複は畳んだ後の 1 件として数える／一部だけが外れた場合は残りで判定器へ到達し件数が verdict へ載る | `RecordedDecisionReplayStrategyTests.再構成できない入力に依存する判断は注文を出さず除外に数えられる` / `見送りの記録でも再構成できなければ除外として数える` / `重複記録は畳んだ後の1件として除外を数える` / `Stage0ReplayEvaluationTests.再構成できない判断だけが母集団から外れ件数が載る` | 自動 |
+| T-15-109 | 🔴 **陰性対照（最重要）**: 全入力が再構成できていれば**除外は 0 件**であり、判定は従来どおり本物の判定器へ到達する（本変更が既存の合否経路を塞いでいない） | `RecordedDecisionReplayStrategyTests.すべて再構成できていれば除外は0件である` / `Stage0ReplayEvaluationTests.すべて再構成できていれば除外0件で判定器へ到達する` | 自動 |
+| T-15-110 | 🔴 **否定形（0 件と未供給の区別）**: 未申告・部分申告の記録では判定を組まず、verdict は**件数を名乗らず理由を運ぶ**／部分申告は申告として成立しない | `Stage0ReplayEvaluationTests.再構成可否が未申告の記録では判定を組まない_failclosed` / `部分申告の記録でも判定を組まない_failclosed` / `AsOfDecisionInputTests.部分申告は申告として成立しない` | 自動 |
+| T-15-111 | 🔴 **否定形（最重要）**: 全件が除外されたら判定を組まず不合格を報告する（範囲を狭めて通さない）／痩せた記録からはどの入口でも合格 verdict が出ない | `Stage0ReplayEvaluationTests.全件が除外されたら判定を組まない_failclosed` / `痩せた記録から合格verdictは出ない`（Theory 2 ケース） | 自動 |
+| T-15-112 | 契約・台帳への写像: 数えた件数（0 件を含む）はそのまま運ばれる／**数えていない除外は評価済みとして載らず理由を運ぶ**／監査要約は数えていない除外を「0 件」と書かず、理由が空でも件数へ倒さない | `BacktestEvaluatedFactoryTests.数えた除外件数は契約へそのまま載る`（Theory 2 ケース） / `数えていない除外は評価済みとして契約へ載らない`（Theory 2 ケース） / `AuditEntryFactoryTests.BacktestEvaluated_は数えていない除外を0件と書かない`（Theory 2 ケース） / `BacktestEvaluated_は数えた除外を件数と母集団で記録する` / `BacktestEvaluated_は除外が不明で理由が空でも件数へ倒さない` | 自動 |
+
+**突然変異による証跡**（実装を壊して赤くなることを実測した。いずれも復元済み）:
+
+| 壊し方 | 結果 |
+| --- | --- |
+| 未申告（欄なし・部分申告）を「申告した」と読む | **3 件が赤**（T-15-110 の 3 メソッド。欄なしと部分申告を別々に固定していないと片方が緑で通る） |
+| 参考情報 0 件を「その時点に不在」ではなく「再構成できなかった」へ倒す | **5 件が赤**（T-15-104 の 3 ケース・T-15-106 の 2 件） |
+| 未来を落としただけでも「再構成できなかった」へ倒す | **6 件が赤**（T-15-105 の陰性対照を含む） |
+| 全件除外の遮断を外す（母集団が空でも判定器へ進める） | **2 件が赤**（T-15-111） |
+| 除外を数えるが注文は出す（母集団から外さない） | **6 件が赤**（T-15-108 の 4 件・T-15-111 の 2 件） |
+| 見送り（数量 0）の記録を母集団に数え直す | **1 件が赤**（T-15-109） |
+| 数えていない除外を「数えた」として契約へ載せる | **2 件が赤**（T-15-112） |
+| 戦略識別子から申告を落とす | **2 件が赤**（T-15-107） |
 
 ### 合格基準の閾値較正（#208。Stage 0 の最小試行数を 1 → 20 へ較正する）
 

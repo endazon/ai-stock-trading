@@ -24,7 +24,8 @@ namespace BacktestService.Hosted;
 //   - `placeholder`（**既定**）: IADR-0310 のまま。verdict は不合格固定で、go-live の判断材料にならない。
 //   - `recorded-replay`: ADR-0033 の記録・再生。**記録が構成と整合するときだけ**本物の Stage0GateService へ進む。
 //     整合しなければ判定を走らせず、理由（NoDecisionRecords / RecordingMismatch / DataCutoff /
-//     InsufficientEvaluationSample）を載せた不合格 verdict を出す。
+//     InsufficientEvaluationSample / **InputCompletenessNotDeclared** / **AllDecisionsExcluded**）を
+//     載せた不合格 verdict を出す（末尾 2 つは #749, IADR-0387。計画 ADR-0036 決定1）。
 // **どちらの経路にも合格を作る口は無い**——合格を出せるのは Stage0GateService（7 条件）だけである。
 public sealed class Stage0EvaluationService(
     IServiceScopeFactory scopeFactory,
@@ -240,9 +241,9 @@ public sealed class Stage0EvaluationService(
         // 読み分けられる形で出す。** 評価不能のとき数値は出さない（PboVerdict.Format() が表示の単一情報源）。
         logger.LogInformation(
             "Stage 0: 記録再生戦略 {StrategyId} を評価しました（期間 {From}〜{To}・欠測 {Gaps} 件・"
-            + "合格 {Passed}・PBO {Pbo}・未達 {Failed}）。",
+            + "合格 {Passed}・PBO {Pbo}・as-of 除外 {Exclusions}・未達 {Failed}）。",
             preparation.StrategyId, from, to, snapshot.Gaps.Count, decision.Gate.Passed,
-            decision.Pbo.Format(), decision.Gate.FormatFailedChecks());
+            decision.Pbo.Format(), decision.Exclusions.Format(), decision.Gate.FormatFailedChecks());
 
         // IADR-0089: backtestMaxDrawdownRatio は評価に用いた同一走行の最大 DD から導出する（乖離させない）。
         // IADR-0304: 「空売りを含む戦略か」は同じ走行の約定列から観測する（申告させない）。

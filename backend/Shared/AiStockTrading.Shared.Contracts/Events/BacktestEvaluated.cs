@@ -23,6 +23,17 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // 意味づけを追加項目で与える。
 // 🔴 **既定値を置かない。** 省略できる口を作ると、書き忘れが「PBO を測った」と名乗る。旧メッセージが
 // JSON から復元されたときは PboEvaluated=false へ倒れる＝**数値を名乗らない側**であり fail-safe である。
+// FR-15, ADR-0036 決定1, #749, IADR-0387: **判定母集団から外した判断を運ぶ 5 項目を足した。**
+//   ExclusionCountKnown     — 除外件数を数えたか。🔴 **false のとき件数 2 項目の値は意味を持たない。**
+//                             計画 ADR-0036 決定1 は「**外した範囲は記録に残す** ——『何を外したか』が
+//                             分からないと、**合格が何についての合格なのかが読めない**」と定めた。
+//                             読み手は必ず本項目を先に見ること（PBO の PboEvaluated と同じ読み方）。
+//   ExcludedDecisionCount   — 再構成できなかった as-of 入力に依存するため合否から外した判断の件数。
+//   EvaluatedDecisionCount  — 判定母集団に残った判断の件数（**合格の射程を読む分母**）。
+//   ExcludedInputKinds      — 外す理由になった入力の種別（FailedChecks と同じく enum 名の連結。無ければ空文字）。
+//   ExclusionUnknownReason  — 数えられなかった理由（数えたなら空文字）。
+// 🔴 **既定値を置かない。** 省略できる口を作ると、書き忘れが「除外を数えた」と名乗る。旧メッセージが
+// JSON から復元されたときは ExclusionCountKnown=false へ倒れる＝**件数を名乗らない側**であり fail-safe である。
 public record BacktestEvaluated(
     bool Passed,
     decimal MaxDrawdownRatio,
@@ -33,4 +44,9 @@ public record BacktestEvaluated(
     bool IncludesShortSelling,
     string StrategyId,
     bool PboEvaluated,
-    string PboNotEvaluableReason);
+    string PboNotEvaluableReason,
+    bool ExclusionCountKnown,
+    int ExcludedDecisionCount,
+    int EvaluatedDecisionCount,
+    string ExcludedInputKinds,
+    string ExclusionUnknownReason);

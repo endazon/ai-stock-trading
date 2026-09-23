@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Backtest;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace TradeDecisionService.Features.TradeDecision.RecordStage0Decisions;
@@ -29,13 +30,26 @@ public sealed class AsOfDecisionInput
     /// 基準通貨への換算レート（FR-10 / IADR-0107）。基準通貨の市場では定義から 1 である。
     /// 非基準通貨の市場では**その時点のレート**を供給側が渡す（渡せなければ記録は本番と単位が食い違う）。
     /// </param>
+    /// <param name="notReconstructable">
+    /// FR-15, ADR-0036 決定1, #749, IADR-0387: **当時の値を再構成できなかった入力の種別**（供給側の申告）。
+    /// <para>
+    /// 🔴 **「渡さなかった」ことと「再構成できなかった」ことを分けるための引数である。** 日報方針は必須引数、
+    /// 換算レートは既定 1 であり、**型の側からは痩せを観測できない** —— 供給側が明示しない限り、記録は
+    /// 「当時の方針で判断した」「基準通貨だから 1 だった」と読まれる。ADR-0036 決定1 はその読み違いを禁じている。
+    /// </para>
+    /// <para>
+    /// 参考情報（(b)）については**型の側でも倒れる** —— 発行時刻が不明で落としたものがあれば、
+    /// その日の参考情報は「無かった」ではなく「再構成できなかった」である（下の導出を参照）。
+    /// </para>
+    /// </param>
     public AsOfDecisionInput(
         DateOnly asOf,
         DailyPolicy policy,
         SizingContext sizing,
         DatedPrice? price = null,
         IEnumerable<RetrievedContext>? references = null,
-        decimal rateToBase = 1m)
+        decimal rateToBase = 1m,
+        IEnumerable<Stage0AsOfInputKind>? notReconstructable = null)
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(sizing);
@@ -81,6 +95,53 @@ public sealed class AsOfDecisionInput
         References = kept;
         DroppedFutureReferenceCount = droppedFuture;
         DroppedUndatedReferenceCount = droppedUndated;
+        AsOfInputs = DeriveAvailability(notReconstructable, kept.Count, droppedUndated);
+    }
+
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: 3 種すべての再構成可否を導出する（**部分申告を作らない**）。
+    //
+    // 導出の規則:
+    //   - 供給側が申告した種別は `NotReconstructable`（申告は無条件に効く。供給側だけが情報源の射程を知る）。
+    //   - (b) は**発行時刻が不明で落としたものがあれば自動で `NotReconstructable`** —— 時点に置けなかった資料が
+    //     現にあった以上、その日の参考情報は「無かった」ではなく「当時の集合を再構成できなかった」である。
+    //     🔴 **未来を落としただけでは倒さない** —— AsOf より後の資料を除くのは as-of の**正しい**振る舞いであり、
+    //     入力が痩せたのではない（落とさなければルックアヘッドになる）。
+    //   - (b) が 0 件で落としたものも無ければ `AbsentAtAsOf`（**当時ニュースが無かったという事実**。
+    //     本番の AI 判断も同じ入力で動くため、除外の理由にならない）。
+    //   - (c)(d) は値の有無から痩せを観測できないため、申告が無ければ `Reconstructed`。
+    private static IReadOnlyList<Stage0AsOfInputStatus> DeriveAvailability(
+        IEnumerable<Stage0AsOfInputKind>? notReconstructable, int keptReferenceCount, int droppedUndatedCount)
+    {
+        var declared = notReconstructable is null
+            ? new HashSet<Stage0AsOfInputKind>()
+            : [.. notReconstructable];
+
+        var statuses = new List<Stage0AsOfInputStatus>(Stage0AsOfInputs.RequiredKinds.Count);
+        foreach (var kind in Stage0AsOfInputs.RequiredKinds)
+        {
+            if (declared.Contains(kind))
+            {
+                statuses.Add(new Stage0AsOfInputStatus(
+                    kind, Stage0AsOfInputAvailability.NotReconstructable, "供給側が再構成不可と申告した"));
+                continue;
+            }
+
+            if (kind == Stage0AsOfInputKind.NewsAndDisclosures && droppedUndatedCount > 0)
+            {
+                statuses.Add(new Stage0AsOfInputStatus(
+                    kind,
+                    Stage0AsOfInputAvailability.NotReconstructable,
+                    $"発行時刻が不明な参考情報 {droppedUndatedCount} 件を時点に置けなかった"));
+                continue;
+            }
+
+            var availability = kind == Stage0AsOfInputKind.NewsAndDisclosures && keptReferenceCount == 0
+                ? Stage0AsOfInputAvailability.AbsentAtAsOf
+                : Stage0AsOfInputAvailability.Reconstructed;
+            statuses.Add(new Stage0AsOfInputStatus(kind, availability));
+        }
+
+        return statuses;
     }
 
     public DateOnly AsOf { get; }
@@ -103,6 +164,18 @@ public sealed class AsOfDecisionInput
 
     /// <summary>発行時刻が不明だったため落とした参考情報の件数。</summary>
     public int DroppedUndatedReferenceCount { get; }
+
+    /// <summary>
+    /// FR-15, ADR-0036 決定1, #749, IADR-0387: as-of 入力 3 種の再構成可否（**常に 3 件そろう**）。
+    /// 記録（<c>Stage0DecisionRecord.AsOfInputs</c>）へそのまま載る。
+    /// </summary>
+    public IReadOnlyList<Stage0AsOfInputStatus> AsOfInputs { get; }
+
+    /// <summary>
+    /// 再構成できなかった種別（安定順・空なら痩せていない）。**この判断は Stage 0 の判定母集団から外れる。**
+    /// </summary>
+    public IReadOnlyList<Stage0AsOfInputKind> NotReconstructableKinds =>
+        Stage0AsOfInputs.NotReconstructableKinds(AsOfInputs);
 }
 
 // FR-04, FR-15, ADR-0033 決定2, #632, IADR-0318: as-of 入力の供給ポート。
@@ -113,8 +186,14 @@ public sealed class AsOfDecisionInput
 public interface IAsOfDecisionInputProvider
 {
     /// <summary>
-    /// 指定銘柄の AsOf 時点の入力を返す。**非取引日・情報が復元できない日は null**
+    /// 指定銘柄の AsOf 時点の入力を返す。**非取引日・入力を 1 つも組めない日は null**
     /// （呼び出し元はその日をスキップする）。
+    /// <para>
+    /// 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387: **一部の入力だけが再構成できない場合は null を返さない。**
+    /// 入力を組み、再構成できなかった種別を <c>notReconstructable</c> で申告する ——
+    /// 同決定は「**『外す』は『走らせない』ではない。痩せた入力での実行はしてよい。その結果を合格根拠として
+    /// 引かないことだけを定める**」と明記しており、記録ごと消すと**何を外したのかが記録から読めなくなる**。
+    /// </para>
     /// </summary>
     Task<AsOfDecisionInput?> GetAsync(
         string symbol, Market market, DateOnly asOf, CancellationToken cancellationToken = default);

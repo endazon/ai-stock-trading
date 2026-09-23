@@ -63,6 +63,18 @@ public sealed record Stage0RawDecision(
 /// <c>BacktestOrder</c> へ写す（再生側でサイジングを再計算しない＝決定性を保つ）。
 /// </param>
 /// <param name="CostJpy">この判断時点で実際に発生した LLM 費用（円）。多数決の全回分の合計。</param>
+/// <param name="AsOfInputs">
+/// FR-15, ADR-0036 決定1, #749, IADR-0387: **as-of 入力の再構成可否の申告**（3 種すべてを覆うこと）。
+/// <para>
+/// 🔴 **`null` は「未申告」であり「すべて再構成できた」ではない。** 未申告の記録は判定を組ませない
+/// （`Stage0ReplayEvaluation` が `InputCompletenessNotDeclared` で遮断する）。既定を `null` にしているのは、
+/// **旧記録・手書きの記録が黙って充足側へ倒れないようにする**ためである（fail-closed 側の既定）。
+/// </para>
+/// <para>
+/// 再構成できなかった項目を 1 つでも持つ判断は、**Stage 0 の判定母集団から除かれる**（ADR-0036 決定1）。
+/// 除くのは合否の集計からであって、記録することそのものは止めない（同決定「『外す』は『走らせない』ではない」）。
+/// </para>
+/// </param>
 public sealed record Stage0DecisionRecord(
     string Symbol,
     Market Market,
@@ -76,7 +88,8 @@ public sealed record Stage0DecisionRecord(
     int SignedQuantity,
     decimal CostJpy,
     int InputTokens,
-    int OutputTokens);
+    int OutputTokens,
+    IReadOnlyList<Stage0AsOfInputStatus>? AsOfInputs = null);
 
 /// <summary>記録集合が対象とした銘柄。</summary>
 public sealed record Stage0RecordedSymbol(string Symbol, Market Market);

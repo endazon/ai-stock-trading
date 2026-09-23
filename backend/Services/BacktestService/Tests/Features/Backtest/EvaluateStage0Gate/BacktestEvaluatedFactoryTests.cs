@@ -1,6 +1,7 @@
 using BacktestService.Features.Backtest;
 using BacktestService.Features.Backtest.EvaluateStage0Gate;
 using BacktestService.Domain;
+using AiStockTrading.Shared.Contracts.Backtest;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -19,11 +20,13 @@ public class BacktestEvaluatedFactoryTests
     private static readonly DateOnly Day = new(2026, 7, 17);
 
     private static Stage0Decision Decision(Stage0GateResult gate, double dsr, double pbo, bool cutoff) =>
-        new(gate, Stage0Promotion.Evaluate(gate), dsr, new PboVerdict.Evaluated(pbo), cutoff);
+        new(gate, Stage0Promotion.Evaluate(gate), dsr, new PboVerdict.Evaluated(pbo), cutoff,
+            new Stage0ExclusionSummary.Counted(Excluded: 0, Evaluated: 12, Kinds: []));
 
     // ADR-0039 決定1, #777, IADR-0337: PBO を測っていない判定（探索なし／判定を走らせていない）。
     private static Stage0Decision NotEvaluableDecision(Stage0GateResult gate, PboNotEvaluableReason reason) =>
-        new(gate, Stage0Promotion.Evaluate(gate), 1.23, new PboVerdict.NotEvaluable(reason), true);
+        new(gate, Stage0Promotion.Evaluate(gate), 1.23, new PboVerdict.NotEvaluable(reason), true,
+            new Stage0ExclusionSummary.Counted(Excluded: 0, Evaluated: 12, Kinds: []));
 
     // 約定列だけを差し替えた走行。エクイティ曲線・指標は本テストの関心事ではないため最小で埋める。
     private static BacktestRun Run(params BacktestFill[] fills) =>
@@ -133,6 +136,51 @@ public class BacktestEvaluatedFactoryTests
         e.PboNotEvaluableReason.Should().Be(reason.ToString());
         // 数値の口は互換のため残るが、**評価済みを名乗らない**ことで読み手が区別できる。
         e.ProbabilityOfBacktestOverfitting.Should().Be(0d);
+    }
+
+    // ---- T-15-112 FR-15, ADR-0036 決定1, #749, IADR-0387: 除外の写像 ----
+
+    private static Stage0Decision WithExclusions(Stage0ExclusionSummary exclusions) =>
+        new(new Stage0GateResult(true, []), Stage0Promotion.Evaluate(new Stage0GateResult(true, [])),
+            1.23, new PboVerdict.Evaluated(0.1), true, exclusions);
+
+    // 🔴 **陽性・陰性対照の対（つい）**: 数えた件数はそのまま運ばれる。除外 0 件も**実測として**運ばれ、
+    // 「数えていない」とは別の値になる（ExclusionCountKnown=true）。
+    [Theory]
+    [InlineData(0, 12)]
+    [InlineData(3, 9)]
+    public void 数えた除外件数は契約へそのまま載る(int excluded, int evaluatedCount)
+    {
+        var kinds = excluded == 0
+            ? Array.Empty<Stage0AsOfInputKind>()
+            : [Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputKind.FxRateToBase];
+
+        var e = BacktestEvaluatedFactory.From(
+            WithExclusions(new Stage0ExclusionSummary.Counted(excluded, evaluatedCount, kinds)),
+            0.08m, EvaluatedAt, Run(Fill(+10)), "ai-decision-replay/x");
+
+        e.ExclusionCountKnown.Should().BeTrue();
+        e.ExcludedDecisionCount.Should().Be(excluded);
+        e.EvaluatedDecisionCount.Should().Be(evaluatedCount);
+        e.ExclusionUnknownReason.Should().BeEmpty();
+        e.ExcludedInputKinds.Should().Be(string.Join(", ", kinds));
+    }
+
+    // 🔴 **否定形（最重要）**: 数えていない除外は**件数を名乗らない**。0 を読んで「痩せた入力に依存する
+    // 判断は 1 件も無かった」と誤読させない —— 計画 ADR-0036 決定1 が「何を外したか」を記録に求めた以上、
+    // 「分からない」を 0 で表した瞬間に記録は嘘になる（PBO と同じ形）。
+    [Theory]
+    [InlineData(Stage0ExclusionUnknownReason.CompletenessNotDeclared)]
+    [InlineData(Stage0ExclusionUnknownReason.NotEvaluated)]
+    public void 数えていない除外は評価済みとして契約へ載らない(Stage0ExclusionUnknownReason reason)
+    {
+        var e = BacktestEvaluatedFactory.From(
+            WithExclusions(new Stage0ExclusionSummary.Unknown(reason)),
+            0.08m, EvaluatedAt, Run(Fill(+10)), "ai-decision-replay/x");
+
+        e.ExclusionCountKnown.Should().BeFalse();
+        e.ExclusionUnknownReason.Should().Be(reason.ToString());
+        e.ExcludedInputKinds.Should().BeEmpty();
     }
 
     [Fact]

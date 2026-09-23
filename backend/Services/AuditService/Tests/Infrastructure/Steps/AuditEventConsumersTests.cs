@@ -201,7 +201,9 @@ public class AuditEventConsumersTests
             Passed: true, MaxDrawdownRatio: 0.08m, DeflatedSharpe: 1.2,
             ProbabilityOfBacktestOverfitting: 0.1, FailedChecks: string.Empty, DateTimeOffset.UtcNow,
             IncludesShortSelling: false, StrategyId: "baseline-v1",
-            PboEvaluated: true, PboNotEvaluableReason: ""));
+            PboEvaluated: true, PboNotEvaluableReason: "",
+            ExclusionCountKnown: true, ExcludedDecisionCount: 0, EvaluatedDecisionCount: 20,
+            ExcludedInputKinds: "", ExclusionUnknownReason: ""));
         session0.Executed.MessagesOf<BacktestEvaluated>().Should().NotBeEmpty();
 
         var stageCorr = AuditEntryFactory

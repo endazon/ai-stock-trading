@@ -27,12 +27,25 @@ public class Stage0ReplayEvaluationTests
             return new PriceBar(symbol, Market.UnitedStates, From.AddDays(i), close, close + 1m, close - 1m, close, 1_000);
         })];
 
-    private static Stage0DecisionRecord Record(DateOnly asOf, string symbol, int signedQuantity) =>
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: as-of 入力 3 種すべてを「再構成できた」と申告した記録。
+    // 🔴 **申告の無い記録は判定を組ませない**ため、既存の肯定形はここを通る形でしか成立しない。
+    private static IReadOnlyList<Stage0AsOfInputStatus> AllReconstructed =>
+    [
+        new(Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputAvailability.Reconstructed),
+        new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
+        new(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputAvailability.Reconstructed),
+    ];
+
+    private static Stage0DecisionRecord Record(
+        DateOnly asOf,
+        string symbol,
+        int signedQuantity,
+        IReadOnlyList<Stage0AsOfInputStatus>? asOfInputs = null) =>
         new(symbol, Market.UnitedStates, asOf, "fp", "claude-sonnet-5", VoteCount: 3,
             RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
             MajorityAction: signedQuantity > 0 ? Stage0DecisionAction.Buy : Stage0DecisionAction.Hold,
             MajorityRationale: "根拠", SignedQuantity: signedQuantity, CostJpy: 1m,
-            InputTokens: 300, OutputTokens: 60);
+            InputTokens: 300, OutputTokens: 60, AsOfInputs: asOfInputs ?? AllReconstructed);
 
     private static Stage0DecisionRecordSet SetOf(
         DateOnly? from = null,
@@ -262,5 +275,145 @@ public class Stage0ReplayEvaluationTests
         preparation.IsReady.Should().Be(expectedReady);
         preparation.BlockingChecks.Contains(Stage0GateCheck.InsufficientEvaluationSample)
             .Should().Be(!expectedReady);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: **再構成できなかった as-of 入力の扱い**（フォローアップ 2 の履行）
+    // ------------------------------------------------------------------------------------------------
+
+    private static IReadOnlyList<Stage0AsOfInputStatus> Thin(Stage0AsOfInputKind kind) =>
+    [
+        .. Stage0AsOfInputs.RequiredKinds.Select(k => new Stage0AsOfInputStatus(
+            k,
+            k == kind
+                ? Stage0AsOfInputAvailability.NotReconstructable
+                : Stage0AsOfInputAvailability.Reconstructed)),
+    ];
+
+    // 申告の欄そのものを持たない記録（旧記録・手書きの JSON が復元される形）。
+    private static Stage0DecisionRecord Undeclared(DateOnly asOf, string symbol, int signedQuantity) =>
+        Record(asOf, symbol, signedQuantity) with { AsOfInputs = null };
+
+    // 記録を評価期間いっぱいに敷き詰める（日次リターンの標本不足で先に落ちないようにする）。
+    private static Stage0DecisionRecord[] Daily(
+        int count, IReadOnlyList<Stage0AsOfInputStatus>? asOfInputs = null, int signedQuantity = 10) =>
+        [.. Enumerable.Range(1, count).Select(i => Record(From.AddDays(i), "AAPL", signedQuantity, asOfInputs))];
+
+    // 🔴 T-15-109 **陰性対照（最重要）**: 全入力が再構成できていれば**除外は 0 件**で、
+    // 判定は従来どおり本物の判定器へ到達する（本変更が既存の合否経路を塞いでいないことを固定する）。
+    [Fact]
+    public void すべて再構成できていれば除外0件で判定器へ到達する()
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: Daily(3))));
+
+        preparation.IsReady.Should().BeTrue();
+        preparation.GateContext!.Exclusions.Should().BeOfType<Stage0ExclusionSummary.Counted>()
+            .Which.Should().BeEquivalentTo(new { Excluded = 0, Evaluated = 3 });
+
+        // 🔴 **「除外 0 件」は実測であり、「数えていない」ではない**（verdict まで区別して運ばれる）。
+        var decision = new Stage0GateService().Evaluate(preparation.GateContext!);
+        decision.Exclusions.IsCounted.Should().BeTrue();
+        decision.Exclusions.Format().Should().Contain("除外なし");
+    }
+
+    // 🔴 T-15-108 **陽性**: 一部が再構成できなければ、その判断だけが母集団から外れ、件数が verdict へ載る。
+    // 残りの判断では判定器へ到達する（**全部を止めるのではなく、外した範囲を明示して進む**）。
+    [Fact]
+    public void 再構成できない判断だけが母集団から外れ件数が載る()
+    {
+        var records = Daily(3).Concat(
+            [Record(From.AddDays(4), "AAPL", 10, Thin(Stage0AsOfInputKind.FxRateToBase))]).ToArray();
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.IsReady.Should().BeTrue();
+        var counted = preparation.GateContext!.Exclusions.Should()
+            .BeOfType<Stage0ExclusionSummary.Counted>().Subject;
+        counted.Excluded.Should().Be(1);
+        counted.Evaluated.Should().Be(3);
+        counted.Kinds.Should().Equal(Stage0AsOfInputKind.FxRateToBase);
+    }
+
+    // 🔴 T-15-110 **否定形（最重要・0 件と未供給の区別）**: 記録が再構成可否を申告していなければ
+    // 判定を組まない。**「申告が無い＝痩せていない」と読む口を作らない** ——
+    // 読めば、痩せた入力での結果がそのまま Stage 0 の合格根拠になり得る（ADR-0036 決定1 が禁じたこと）。
+    //
+    // 🔴 **`null`（欄そのものが無い旧 JSON）と空の申告を対で見る。** 記録はファイルで持ち込まれる資材であり、
+    // 実際に来るのは前者である —— 片方だけ固定すると、`null` を充足へ倒す変異が緑のまま通る。
+    [Theory]
+    [InlineData(true)]   // 欄が無い（旧記録・手書き）
+    [InlineData(false)]  // 欄はあるが空
+    public void 再構成可否が未申告の記録では判定を組まない_failclosed(bool absentField)
+    {
+        // 1 件でも未申告があれば止める（残りが申告済みでも通さない）。
+        var undeclared = absentField
+            ? Undeclared(From.AddDays(4), "AAPL", 10)
+            : Record(From.AddDays(4), "AAPL", 10, asOfInputs: []);
+        var records = Daily(3).Concat([undeclared]).ToArray();
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.IsReady.Should().BeFalse();
+        preparation.BlockingChecks.Should().Contain(Stage0GateCheck.InputCompletenessNotDeclared);
+        preparation.GateContext.Should().BeNull();
+
+        // 🔴 **verdict は「除外 0 件」を名乗らない。** 数えていないことが理由つきで読める。
+        var decision = Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks);
+        decision.Gate.Passed.Should().BeFalse();
+        decision.Exclusions.IsCounted.Should().BeFalse();
+        decision.Exclusions.Should().BeOfType<Stage0ExclusionSummary.Unknown>()
+            .Which.Reason.Should().Be(Stage0ExclusionUnknownReason.CompletenessNotDeclared);
+        decision.Exclusions.Format().Should().NotContain("0");
+    }
+
+    // 🔴 T-15-110 **否定形**: 3 種を覆わない部分申告も未申告として止める
+    // （抜けた種別が黙って「再構成できた」側へ倒れる口を塞ぐ）。
+    [Fact]
+    public void 部分申告の記録でも判定を組まない_failclosed()
+    {
+        IReadOnlyList<Stage0AsOfInputStatus> partial =
+        [
+            new(Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputAvailability.Reconstructed),
+            new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
+        ];
+
+        Stage0ReplayEvaluation.Prepare(Request(SetOf(records: Daily(3, partial))))
+            .BlockingChecks.Should().Contain(Stage0GateCheck.InputCompletenessNotDeclared);
+    }
+
+    // 🔴 T-15-111 **否定形（最重要）**: 外した結果、母集団が 1 件も残らなければ判定を組まない。
+    // 計画 ADR-0036 決定1「**外した結果 Stage 0 の対象が実質的に成立しなくなった場合は、合格としない。
+    // 範囲を狭めて通すのではなく、通らないことを報告する**」。全件を外した走行は 1 件も発注しないため
+    // 成績が動かず、判定器へ通すと「損失が無い」ように見え得る。
+    [Fact]
+    public void 全件が除外されたら判定を組まない_failclosed()
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(
+            Request(SetOf(records: Daily(3, Thin(Stage0AsOfInputKind.DailyPolicy)))));
+
+        preparation.IsReady.Should().BeFalse();
+        preparation.BlockingChecks.Should().Equal(Stage0GateCheck.AllDecisionsExcluded);
+        preparation.GateContext.Should().BeNull();
+
+        var decision = Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks);
+        decision.Gate.Passed.Should().BeFalse();
+        decision.Gate.FormatFailedChecks().Should().Contain(nameof(Stage0GateCheck.AllDecisionsExcluded));
+    }
+
+    // 🔴 T-15-111 **否定形**: 除外の遮断は**合格を作らない**（本変更で新たに通る経路が生まれていない）。
+    // 記録が痩せている限り、どの入口からも Passed=true は出ない。
+    [Theory]
+    [InlineData(true)]   // 未申告
+    [InlineData(false)]  // 全件除外
+    public void 痩せた記録から合格verdictは出ない(bool undeclared)
+    {
+        var records = undeclared
+            ? Daily(3, [])
+            : Daily(3, Thin(Stage0AsOfInputKind.NewsAndDisclosures));
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.IsReady.Should().BeFalse();
+        Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks).Gate.Passed.Should().BeFalse();
     }
 }
