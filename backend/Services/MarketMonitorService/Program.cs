@@ -115,6 +115,8 @@ builder.Services.AddScoped<MonitorSettingsService>();
 
 // FR-03: ポーリング構成（監視間隔）。
 builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection(MonitorOptions.SectionName));
+// FR-10, #902, IADR-0365: 損切り評価の生存要約・価格欠落の Warning（観測のみ・巡回をまたいで状態を持つため singleton）。
+builder.Services.AddSingleton<StopLossLivenessReporter>();
 // FR-03: 監視間隔ごとのポーリング（市場開場時に評価・発行）。
 builder.Services.AddHostedService<MonitorPollingService>();
 
