@@ -172,7 +172,27 @@ public static class ReportRenderer
         sb.Append("- 「取引数」は**約定件数**（決済に至らない新規建てを含む）です。"
             + "合計は §1 の「取引回数（買/売/決済）」の 買＋売 に一致します。\n");
         sb.Append("- 「主な要因」は**当日の実現損益への寄与が最大の決済を機械的に選んだ事実**であり、"
-            + "要因の説明（散文）ではありません。**散文の要因を持つ記録源がありません。**\n\n");
+            + "要因の説明（散文）ではありません。**散文の要因を持つ記録源がありません。**\n");
+        AppendUnvaluedSettlementNote(sb, entries);
+        sb.Append('\n');
+    }
+
+    // FR-06, FR-16, #892, IADR-0381: 🔴 **算入しなかった決済を黙って落とさない。**
+    // 期間より前に建てた建玉の決済は取得原価を持たず実現損益を計算できないため、どの内訳にも算入していない。
+    // 件数を出さないと、読み手は「その日・その週は決済が無かった」「損益 0 だった」と読む
+    //（三者比較の「発注先が記録されていない約定」と同じ作法）。
+    private static void AppendUnvaluedSettlementNote(StringBuilder sb, IReadOnlyList<FillPnlAttribution> entries)
+    {
+        var unvalued = entries.Count(e => e.Unvalued);
+        if (unvalued == 0)
+            return;
+
+        // 標識・注記は定数のため、補間ハンドラと非補間リテラルを `+` で混ぜられない（TradeHistoryRenderer と同じ制約）。
+        sb.Append(string.Format(CultureInfo.InvariantCulture,
+            "- **期間より前に建てた建玉の決済が {0} 件あり、実現損益・勝率へ算入していません**"
+                + "（報告書の在庫は当期間の約定だけから組み立てられ、その建玉の**取得原価を持っていません**）。"
+                + "**「決済が無かった」「損益 0 だった」ではありません。**\n",
+            unvalued));
     }
 
     // 「主な要因」セル。**決済が無い日を「未供給」と書かない**（新規建てのみという事実である）。
@@ -201,7 +221,10 @@ public static class ReportRenderer
         {
             sb.Append("（当週に決済取引はありません）\n\n");
             sb.Append("- 決済が無いことは**事実**です（**「損益 0」でも未供給でもありません**）——"
-                + "新規建てのみの週・約定が 1 件も無い週が該当します。\n\n");
+                + "新規建てのみの週・約定が 1 件も無い週が該当します。\n");
+            // #892: 「決済が無い」と書いた直後に、算入しなかった決済があることを明示する（両立する）。
+            AppendUnvaluedSettlementNote(sb, entries);
+            sb.Append('\n');
             return;
         }
 
@@ -213,7 +236,8 @@ public static class ReportRenderer
         // **同一の取引が両方に出ることを隠さない**（2 件あったように読める）。理由は 2 通りある。
         if (best.Sequence == worst.Sequence)
         {
-            sb.Append(entries.Count(e => e.Realizing) == 1
+            // #892: 母集合は Highlights と同じ（算定できなかった決済は入っていない）。
+            sb.Append(entries.Count(e => e is { Realizing: true, Unvalued: false }) == 1
                 ? "- **当週の決済は 1 件のみ**のため、最良と最悪は**同一の取引**です。\n"
                 : "- **当週の決済はすべて同額**のため、最良と最悪に**同一の取引**を選んでいます（同値の決定規則による）。\n");
         }
@@ -225,7 +249,9 @@ public static class ReportRenderer
             + "当該日の日報が生成されていない場合、対応する報告書はありません。\n");
         sb.Append(CultureInfo.InvariantCulture,
             $"- 「判断の要点」「原因」は**取引判断の記録をそのまま転記**しています"
-                + $"（報告書生成時に文章を作っていません）。相関できなかった決済は `{UnsuppliedCell}` です。\n\n");
+                + $"（報告書生成時に文章を作っていません）。相関できなかった決済は `{UnsuppliedCell}` です。\n");
+        AppendUnvaluedSettlementNote(sb, entries);
+        sb.Append('\n');
     }
 
     // ハイライト 1 件の見出し部（銘柄・市場・損益・決済日・該当日報の自然キー）。
@@ -278,7 +304,11 @@ public static class ReportRenderer
         sb.Append(CultureInfo.InvariantCulture, $"| 源泉徴収税額 | {Amount(review.TaxWithheld)} |\n");
         sb.Append('\n');
 
-        sb.Append(CultureInfo.InvariantCulture, $"- 損益に対する費用率: {CostRatioCell(review)}\n");
+        // #892, IADR-0381: 🔴 **分母（実現損益）が部分値のときは費用率を出さない。**
+        // 期間より前に建てた建玉の決済は取得原価を持たず実現損益へ算入できないため、分母が実際より小さく、
+        // 費用率だけが跳ね上がる。**既存の「算出不能」と同じ語**で、理由を分けて書く。
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- 損益に対する費用率: {(view.Pnl.UnvaluedSettlementCount > 0 ? UnvaluedCell(view.Pnl) : CostRatioCell(review))}\n");
         sb.Append("- **「取引諸費用」（米国株の SEC Fee・TAF 等）は記録源がありません。**"
             + "全体前提条件に設定点が無く、概算費用関数も手数料と為替スプレッドしか計算していません——"
             + "**費用合計は諸費用のぶんだけ過小です。**\n");
@@ -341,7 +371,9 @@ public static class ReportRenderer
         sb.Append("- **借株料は「費用」の列に含めていません**（別掲）。"
             + "本サービスの費用合計は**売買手数料と為替スプレッド相当額だけ**であり、借株料はそこに入っていません"
             + "——足すと本節の費用の合計が §1 の「費用合計」と一致しなくなります。"
-            + "借株コストの明細は §6.1 にあります。\n\n");
+            + "借株コストの明細は §6.1 にあります。\n");
+        AppendUnvaluedSettlementNote(sb, entries);
+        sb.Append('\n');
     }
 
     // 月報 §2 表 1: 週別。**約定のあった週だけ**が行になる。
@@ -1069,6 +1101,15 @@ public static class ReportRenderer
             sb.Append(CultureInfo.InvariantCulture,
                 $"- 発注先が記録されていない約定が {c.UnattributedTradeCount} 件あり、**どの列にも算入していません**（推定で寄せると、その列の実績が水増しされるため）。\n");
         }
+
+        // #892, IADR-0381: 🔴 **勝率・平均損益へ算入できなかった決済を黙って落とさない**（同上の作法）。
+        if (c.UnvaluedSettlementCount > 0)
+        {
+            sb.Append(string.Format(CultureInfo.InvariantCulture,
+                "- 期間より前に建てた建玉の決済が {0} 件あり、**勝率・平均損益に算入していません**"
+                    + "（報告書の在庫は当期間の約定だけから組み立てられ、その建玉の取得原価を持っていません）。\n",
+                c.UnvaluedSettlementCount));
+        }
     }
 
     private enum MetricFormat { Ratio, BaseAmount, Count }
@@ -1249,15 +1290,15 @@ public static class ReportRenderer
         switch (view.Kind)
         {
             case ReportKind.Weekly:
-                yield return ("週間実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
-                yield return ("勝率（勝ち取引/全決済取引）", WinRate(p));
+                yield return ("週間実現損益（税引後・費用込み）", AmountOrUnvalued(p, p.RealizedPnlNet));
+                yield return ("勝率（勝ち取引/全決済取引）", WinRateCell(p));
                 yield return ("取引回数（買/売/決済）", counts);
                 yield return ("費用合計（手数料・諸費用・為替）", Amount(p.TotalCost));
                 yield return ("週次目標に対する達成", Pending);
                 break;
 
             case ReportKind.Monthly:
-                yield return ("月間実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
+                yield return ("月間実現損益（税引後・費用込み）", AmountOrUnvalued(p, p.RealizedPnlNet));
                 // #338, 04_report-templates §数値の定義: **為替差損益は取引損益と混ぜず独立した行**で出す。
                 yield return ("為替差損益（独立表示）", FxTranslationCell(view));
                 yield return ("総資産（月初 → 月末）", Pending); // 04_report-templates の表記に一致（矢印前後に半角スペース）
@@ -1267,13 +1308,13 @@ public static class ReportRenderer
                 break;
 
             default: // Daily
-                yield return ("実現損益（税引後・費用込み）", Amount(p.RealizedPnlNet));
+                yield return ("実現損益（税引後・費用込み）", AmountOrUnvalued(p, p.RealizedPnlNet));
                 // #338, 04_report-templates 日報 §1: 為替差損益は独立行。
                 yield return ("為替差損益（独立表示）", FxTranslationCell(view));
-                yield return ("評価損益（税引前・参考）", Amount(p.UnrealizedPnl));
+                yield return ("評価損益（税引前・参考）", AmountOrUnvalued(p, p.UnrealizedPnl));
                 yield return ("取引回数（買/売/決済）", counts);
                 yield return ("費用合計（手数料・諸費用・為替）", Amount(p.TotalCost));
-                yield return ("源泉徴収税額", Amount(p.TaxWithheld));
+                yield return ("源泉徴収税額", AmountOrUnvalued(p, p.TaxWithheld));
                 // INDEX 決定34: 当日の稼働率と Stage 1 日数への算入可否。
                 yield return ("OpenD 稼働率（当日の通常取引時間に対する比率）", DailyUptimeCell(view));
                 // ADR-0017 決定2: **障害ではなく設計上の正常な結果**。沈黙のスキップにしない。
@@ -1340,6 +1381,25 @@ public static class ReportRenderer
                 string.Join(" / ", u.SkipsByReason.Select(e =>
                     string.Format(CultureInfo.InvariantCulture, "{0}: {1} 件", e.Reason, e.Count))));
     }
+
+    // FR-06, FR-16, #892, IADR-0381: 🔴 **期間より前に建てた建玉の決済がある期間は、取得原価を要する数値が
+    // すべて部分値になる**（報告書の在庫は当期間の約定だけから畳まれ、その建玉の取得原価を持たない）。
+    //
+    // 🔴 **部分値を数字として出さない。** 幻の建玉の評価損益を出すことと同じ誤りであり、読み手は
+    // 「これがこの期間の実現損益だ」と読む。既存の「算出不能」（費用率の分母 0）と**同じ語**を使う
+    //（新しい語彙を増やさない。セル内の `不明` は日報 §2 の行単位の標識であり、こちらは期間の集計値である）。
+    private const string UnvaluedCellFormat =
+        "**算出不能**（期間より前に建てた建玉の決済が {0} 件あり、その取得原価が当期間の約定に含まれていません）。"
+        + "**0 ではありません。**";
+
+    private static string UnvaluedCell(PnlSummary p) =>
+        string.Format(CultureInfo.InvariantCulture, UnvaluedCellFormat, p.UnvaluedSettlementCount);
+
+    private static string AmountOrUnvalued(PnlSummary p, decimal amount) =>
+        p.UnvaluedSettlementCount > 0 ? UnvaluedCell(p) : Amount(amount);
+
+    private static string WinRateCell(PnlSummary p) =>
+        p.UnvaluedSettlementCount > 0 ? UnvaluedCell(p) : WinRate(p);
 
     // 勝率（04_report-templates: 週報「<n%（n/n）>」形式）。決済ゼロなら "-（0/0）"。パーセントは文化非依存で整数表記する。
     private static string WinRate(PnlSummary p) => WinRateOf(p.WinningTradeCount, p.RealizingTradeCount);

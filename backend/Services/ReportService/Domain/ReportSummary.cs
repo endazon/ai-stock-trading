@@ -33,10 +33,23 @@ public static class ReportSummary
 
         var sb = new StringBuilder();
         sb.Append(CultureInfo.InvariantCulture, $"{KindLabel(kind)} {periodLabel}（承認待ち）\n");
+        // FR-06, FR-16, #892, IADR-0381: 🔴 **部分値を数字として出さない。** 期間より前に建てた建玉の決済が
+        // あると実現損益・決済件数・勝ち件数は部分値になる（報告書の在庫は当期間の約定だけから畳まれる）。
+        // 要約だけを見て確定する利用者に、部分値を「この期間の実現損益」として見せない。
+        // 費用は約定ごとに掛かり取得原価を要さないため、そのまま出す。
+        var realizedCell = pnl.UnvaluedSettlementCount > 0
+            ? string.Format(CultureInfo.InvariantCulture,
+                "算出不能（期間より前に建てた建玉の決済 {0} 件）", pnl.UnvaluedSettlementCount)
+            : ReportAmountFormat.Base(pnl.RealizedPnlNet);
+        var settlementCell = pnl.UnvaluedSettlementCount > 0
+            ? "決済・勝ちは算出不能"
+            : string.Format(CultureInfo.InvariantCulture,
+                "決済 {0}・勝ち {1}", pnl.RealizingTradeCount, pnl.WinningTradeCount);
+
         sb.Append(CultureInfo.InvariantCulture,
-            $"実現損益（税引後・費用込み）: {ReportAmountFormat.Base(pnl.RealizedPnlNet)}"
+            $"実現損益（税引後・費用込み）: {realizedCell}"
             + $" ／ 費用: {ReportAmountFormat.Base(pnl.TotalCost)}"
-            + $" ／ 取引: {pnl.TradeCount} 件（決済 {pnl.RealizingTradeCount}・勝ち {pnl.WinningTradeCount}）");
+            + $" ／ 取引: {pnl.TradeCount} 件（{settlementCell}）");
 
         // FR-06, FR-09, #840, IADR-0352 決定 5: **入力が欠けたまま出来上がった報告書であることを、確定の前に見せる。**
         // 本文は節ごとに「照会できませんでした」と書いているが、通知の要約は数値と散文しか運ばないため、

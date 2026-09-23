@@ -197,8 +197,10 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         if (marketData is null || fills.Count == 0)
             return null;
 
-        // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
+        // IADR-0033, #892, IADR-0381: 畳み込みは PnlAggregator と**同じ純関数**（PeriodInventory）を単一情報源とする。
         // ここでは建玉の有無（数量 ≠ 0）だけが要るため、符号付き在庫のみを畳み込む。
+        // 🔴 素の SignedInventory.Apply を使うと、期間より前に建てた建玉の決済で**幻のショート**が開き、
+        // その銘柄の相場を市場データ源へ取りに行ったうえで**実在しない建玉の評価損益**を出すことになる。
         var inventory = new Dictionary<(string Symbol, Market Market), InventoryLot>();
         foreach (var entry in PeriodLedgerTimeline.Merge(fills, adoptions))
         {
@@ -214,7 +216,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             var key = (fill.Symbol, fill.Market);
             var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             inventory.TryGetValue(key, out var lot);
-            inventory[key] = SignedInventory.Apply(lot, signedQ, fill.Price).Lot;
+            inventory[key] = PeriodInventory.Apply(lot, fill.PositionEffect, signedQ, fill.Price).Lot;
         }
 
         var open = inventory.Where(e => e.Value.Quantity != 0).Select(e => e.Key).ToList();

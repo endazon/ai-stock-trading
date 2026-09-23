@@ -28,11 +28,14 @@ public class FillPnlAttributionTests
         CostLimits = new MonthlyCostLimits(20_000m, 15_000m, 5_000m, 0m),
     };
 
+    // 🔴 #892: `effect` の既定（買い＝新規建て／売り＝手仕舞い）が正しいのは**ロングの往復だけ**である。
+    // ショートは「売りで建てて買いで決済する」ため、ショートの列は **`effect` を明示して渡す**
+    //（省略すると「在庫 0 への手仕舞い」＝期間より前に建てた建玉の決済と読まれ、建玉が開かない）。
     private static PeriodTradeFill Fill(
         TradeSide side, int quantity, decimal price, int minutes, Guid decisionId = default,
-        Market market = Market.Japan, string symbol = "7203") =>
+        Market market = Market.Japan, string symbol = "7203", PositionEffect? effect = null) =>
         new(symbol, market, side,
-            side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close,
+            effect ?? (side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close),
             quantity, price, T0.AddMinutes(minutes), decisionId);
 
     // 週をまたいで建てた玉を期間内で決済する形（**期間を切って畳み込み直すと壊れる唯一の場所**）。
@@ -145,8 +148,10 @@ public class FillPnlAttributionTests
         [
             Fill(TradeSide.Buy, 100, 2_500m, 0),
             Fill(TradeSide.Sell, 100, 2_600m, 60),
-            Fill(TradeSide.Sell, 10, 300m, 120, market: Market.UnitedStates, symbol: "AAPL"),
-            Fill(TradeSide.Buy, 10, 280m, 180, market: Market.UnitedStates, symbol: "AAPL"),
+            Fill(TradeSide.Sell, 10, 300m, 120, market: Market.UnitedStates, symbol: "AAPL",
+                effect: PositionEffect.Open),
+            Fill(TradeSide.Buy, 10, 280m, 180, market: Market.UnitedStates, symbol: "AAPL",
+                effect: PositionEffect.Close),
         ], Assumptions(), null);
 
         // 決済のうち Sell はロングの決済、Buy はショートの決済である（再畳み込み不要）。

@@ -53,6 +53,15 @@ public enum ReportInput
     /// ——実在しない建玉の評価損益が出得る。**空列（該当なし）へ倒さない。**
     /// </summary>
     DriftAdoptions,
+
+    /// <summary>
+    /// FR-06, FR-16, #892, IADR-0381: <b>期間開始時点の在庫</b>（期間より前に建てた建玉）。
+    /// 🔴 <b>供給元が存在しない入力である</b>——リスク管理の <c>ProjectOpenPositions</c> は<b>現在</b>の台帳を畳む口で、
+    /// 過去時点の射影を返す口が無い。したがって<b>取りに行かず</b>、期間より前に建てた建玉の決済を
+    /// 実際に検出した回だけ未供給として記録する（<see cref="PnlSummary.UnvaluedSettlementCount"/>）。
+    /// 🔴 <b>見送り（リトライ）の対象にしない</b>——待っても供給されない。
+    /// </summary>
+    OpeningInventory,
 }
 
 // FR-06, #840, IADR-0352 決定 5: 入力の表示名・種別ごとの適用・永続化形式（純関数）。
@@ -72,6 +81,8 @@ public static class ReportInputs
         // 🔴 日報 §2-b を描くのは日報だけだが、**在庫の畳み込みは全種別が行う**（欠けると週報・月報も
         // 実在しない建玉の評価損益を出す）。したがって全種別が使う入力である。
         ReportInput.DriftAdoptions => true,
+        // 🔴 #892: 在庫の畳み込みは全種別が行う（日報・週報・月報のいずれも同じ幻のショートを作り得た）。
+        ReportInput.OpeningInventory => true,
         // 日報 §2 の明細・週報 §3 のハイライトが根拠を転記する。月報の内訳は根拠を描かない。
         ReportInput.TradeRationales => kind is ReportKind.Daily or ReportKind.Weekly,
         // 日報 §3 だけが建玉を持つ。
@@ -105,6 +116,7 @@ public static class ReportInputs
         ReportInput.PeriodEndFxRate => "為替差損益の期末レート",
         ReportInput.Narrative => "散文（LLM）",
         ReportInput.DriftAdoptions => "手動売買の取り込み",
+        ReportInput.OpeningInventory => "期間開始時点の在庫",
         _ => input.ToString(),
     };
 

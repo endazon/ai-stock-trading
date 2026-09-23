@@ -72,13 +72,19 @@ public static class PeriodBreakdownBuilder
     /// <summary>
     /// 🔴 <b>建玉の方向を帰属から導く（列を足さない）。</b>
     /// <para>
-    /// <see cref="SignedInventory.Apply"/> は<b>在庫 0 か同符号なら <c>Reduced=false</c>／反対符号のときだけ
-    /// <c>Reduced=true</c></b> を返す。したがって
+    /// <see cref="PeriodInventory.Apply"/>（内部は <see cref="SignedInventory.Apply"/>）は
+    /// <b>在庫 0 か同符号なら <c>Reduced=false</c>／反対符号のときだけ <c>Reduced=true</c></b> を返す。したがって
     /// </para>
     /// <list type="bullet">
     /// <item><c>Realizing</c> ⇒ 直前の在庫は約定と<b>反対符号</b> ⇒ 決済された建玉は Sell ならロング・Buy ならショート。</item>
     /// <item><c>!Realizing</c> ⇒ 直前の在庫は 0 か<b>同符号</b> ⇒ 建てた建玉は Buy ならロング・Sell ならショート。</item>
     /// </list>
+    /// <para>
+    /// 🔴 <b>#892, IADR-0381: <c>Unvalued</c>（期間より前に建てた建玉の決済）は <c>Realizing</c> と同じ側へ数える。</b>
+    /// 期間の在庫を 1 株も減らせなかった手仕舞いは <c>Realizing=false</c> になるが、<b>建てた約定ではない</b>
+    /// ——素朴に「<c>!Realizing</c> なら建て」と読むと、ロングの手仕舞い（Sell）が<b>ショートの新規建て</b>として
+    /// 方向別の内訳に載る（幻のショートを在庫から消したのに、内訳の行には残る）。
+    /// </para>
     /// <para>
     /// 反転（ロングに対する大きな売り）は 1 約定で「ロングの全決済＋ショートの新規建て」を兼ねるが、
     /// <c>Realizing</c> かつ Sell なので<b>ロング側に数える</b>——<b>1 約定を 2 行へ割らない</b>
@@ -88,7 +94,9 @@ public static class PeriodBreakdownBuilder
     public static bool IsLong(FillPnlAttribution entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
-        return entry.Realizing ? entry.Side == TradeSide.Sell : entry.Side == TradeSide.Buy;
+        return entry.Realizing || entry.Unvalued
+            ? entry.Side == TradeSide.Sell
+            : entry.Side == TradeSide.Buy;
     }
 
     /// <summary>

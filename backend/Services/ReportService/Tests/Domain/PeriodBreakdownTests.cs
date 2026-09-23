@@ -18,9 +18,14 @@ public class PeriodBreakdownTests
     // JST 月曜 09:05（UTC 00:05）。**固定値のみ**（テストが決定的である）。
     private static readonly DateTimeOffset Mon = new(2026, 8, 24, 0, 5, 0, TimeSpan.Zero);
 
+    // 🔴 #892: `effect` の既定（買い＝新規建て／売り＝手仕舞い）が正しいのは**ロングの往復だけ**である。
+    // ショートは「売りで建てて買いで決済する」ため、ショートの列は **`effect` を明示して渡す**
+    //（省略すると「在庫 0 への手仕舞い」＝期間より前に建てた建玉の決済と読まれ、建玉が開かない）。
     private static PeriodTradeFill Fill(
-        string symbol, Market market, TradeSide side, int qty, decimal price, int minutes) =>
-        new(symbol, market, side, side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close,
+        string symbol, Market market, TradeSide side, int qty, decimal price, int minutes,
+        PositionEffect? effect = null) =>
+        new(symbol, market, side,
+            effect ?? (side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close),
             qty, price, Mon.AddMinutes(minutes));
 
     private static IReadOnlyList<FillPnlAttribution> Attributions(IReadOnlyList<PeriodTradeFill> fills) =>
@@ -194,8 +199,8 @@ public class PeriodBreakdownTests
     {
         var fills = new[]
         {
-            Fill("AAPL", Market.UnitedStates, TradeSide.Sell, 10, 1_200m, 0),
-            Fill("AAPL", Market.UnitedStates, TradeSide.Buy, 10, 1_000m, 60),
+            Fill("AAPL", Market.UnitedStates, TradeSide.Sell, 10, 1_200m, 0, PositionEffect.Open),
+            Fill("AAPL", Market.UnitedStates, TradeSide.Buy, 10, 1_000m, 60, PositionEffect.Close),
         };
 
         var rows = PeriodBreakdownBuilder.ByDirection(Attributions(fills));
@@ -231,8 +236,8 @@ public class PeriodBreakdownTests
         {
             Fill("AAPL", Market.UnitedStates, TradeSide.Buy, 10, 1_000m, 0),
             Fill("AAPL", Market.UnitedStates, TradeSide.Sell, 10, 1_200m, 60),   // ロングの勝ち決済
-            Fill("TSLA", Market.UnitedStates, TradeSide.Sell, 10, 1_000m, 120),
-            Fill("TSLA", Market.UnitedStates, TradeSide.Buy, 10, 1_200m, 180),   // ショートの負け決済
+            Fill("TSLA", Market.UnitedStates, TradeSide.Sell, 10, 1_000m, 120, PositionEffect.Open),
+            Fill("TSLA", Market.UnitedStates, TradeSide.Buy, 10, 1_200m, 180, PositionEffect.Close),   // ショートの負け決済
         };
 
         var rows = PeriodBreakdownBuilder.ByDirection(Attributions(fills));
