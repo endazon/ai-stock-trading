@@ -192,7 +192,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `plan-id-qualification` | `check-plan-id-qualification.js`（他プロジェクトの計画 ID の `<PROJ>/<ID>` 修飾。`PLAN_ID_PREFIXES` を明示） |
 | `cross-repo-refs`（#712 で新設。**#487 実装時は `scripts.repo.test.js` の中でしか本走していなかった**） | `check-cross-repo-refs.js --self-test` と本検査（他リポジトリの issue / PR 番号の修飾。`CROSS_REPO_NAMES` / `CROSS_REPO_SELF_NAMES` / `CROSS_REPO_EXCLUDES` を明示。実データ本走は違反 0 件・exit 0） |
 | `reading-budget` | `check-reading-budget.js --self-test` と本検査（必読規約の総量予算。エージェントごとに判定・合算しない。#524） |
-| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有） |
+| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有）。**検査 4（T2）でテスト ID（`T-<機能要求番号>-<連番>`）の一意性も見る**（#887 / IADR-0376。既知の重複は `scripts/test-id-duplicate-baseline.json` のラチェットで固定し、**新規の衝突だけを落とす**。採番の最大値を毎回出力し、これが次の採番者の単一情報源になる。規約は `docs/tests/README.md`） |
 | `banned-libraries` | `check-banned-libraries.js`（不採用ライブラリの再混入。本リポ固有） |
 | `tracked-session-timeout` | `check-tracked-session-timeout.js`（本リポ固有） |
 | `trace-blocks` | `check-trace-blocks.js --self-test` と本検査（docs/ の trace ブロック規約。ADR-0029 決定4・本リポ固有） |
