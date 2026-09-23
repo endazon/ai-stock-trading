@@ -24,6 +24,11 @@ namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservatio
 //
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 //
+// 🔴 #890, IADR-0371: **記録と発行は「確定した 1 件」ごとに、その場（commit の直後）で行う。**
+// 確定した予約は次の巡回の FindStalledReserved（State=Reserved のみ）に載らないため、
+// 出口を巡回の末尾に置くと、巡回が途中で中断されただけで確定済みの所見と OrderExecuted が永久に失われる
+// （#890。ローリングデプロイ・Pod 再起動が巡回に重なるだけで起きる）。出口は IReservationReconciliationSink。
+//
 // FR-20, #386, IADR-0149 決定1: 発行する OrderExecuted には**実際に発注したアダプタの発注先**を載せる。
 // 本リコンサイラが扱うのは自プロセスが出した（または出しかけた）注文だけであり、broker は発注時と同一である。
 public sealed class OrderReservationReconciler(
@@ -39,10 +44,18 @@ public sealed class OrderReservationReconciler(
 
     /// <summary>
     /// <paramref name="stallCutoff"/> より古い滞留 Reserved を最大 <paramref name="batchSize"/> 件リコンサイルする。
-    /// 終端化した予約に対して発行すべき <see cref="OrderExecuted"/> を結果に載せて返す（発行は呼び出し側＝Worker）。
+    ///
+    /// 終端化した予約は、その予約の確定（<c>MarkCompleted</c>）を commit した**直後**に
+    /// <paramref name="sink"/> へ 1 件ずつ渡す（#890 / IADR-0371。記録と発行は Worker 層が担う）。
+    /// 結果にも同じ明細（<see cref="ReservationReconciliationResult.Executed"/> /
+    /// <see cref="ReservationReconciliationResult.ProbeTerminalized"/>）を載せて返すが、
+    /// 🔴 **それは巡回サマリと表明のためであり、呼び出し側が再度出力する口ではない**（二重に出る）。
     /// </summary>
     public async Task<ReservationReconciliationResult> ReconcileAsync(
-        DateTimeOffset stallCutoff, int batchSize, CancellationToken cancellationToken = default)
+        DateTimeOffset stallCutoff,
+        int batchSize,
+        IReservationReconciliationSink? sink = null,
+        CancellationToken cancellationToken = default)
     {
         var stalled = reservations.FindStalledReserved(stallCutoff, batchSize);
 
@@ -58,6 +71,10 @@ public sealed class OrderReservationReconciler(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // #890, IADR-0371: この 1 件が確定したときの出口ぶん。確定しなかった予約（据え置き・不確定・例外）は
+            // null のままであり、出口へは渡らない（＝予約は Reserved のままで次回巡回が拾い直せる）。
+            ReservationTerminalizationEmission? emission = null;
+
             // 各予約は独立して処理する。1 件の失敗（照会例外・保存例外等）でバッチ全体を止めない
             // （最大 batchSize 件の巻き添えを避ける）。失敗は件数のみ集計し、Worker がログして次回巡回で再試行する。
             // 未処理のまま残る予約は Reserved のまま＝据え置き（fail-safe）で、二重発注は起きない。
@@ -70,75 +87,94 @@ public sealed class OrderReservationReconciler(
                 if (record is not null)
                 {
                     reservations.MarkCompleted(decisionId, record.OrderId, clock.UtcNow);
-                    executed.Add(ToOrderExecuted(record));
+                    var selfHealed = ToOrderExecuted(record);
+                    executed.Add(selfHealed);
                     terminalized++;
-                    continue;
+                    // 🔴 phase-4 自己修復は突合ではない（ブローカへ照会していない）。所見は載せない（IADR-0362 決定 3）。
+                    emission = new ReservationTerminalizationEmission(selfHealed, ProbeFinding: null);
                 }
-
-                // 2. 記録なし: ブローカへ実状態を照会する。実照会は履歴窓を予約の ReservedAt で覆う必要があるため
-                //    予約そのものを渡す（IADR-0092）。DecisionId 単体では健全な NotPlaced 判定ができない。
-                var result = await probe.ProbeAsync(reservation, cancellationToken).ConfigureAwait(false);
-                switch (result.Outcome)
+                else
                 {
-                    case ReservationProbeOutcome.Placed:
-                        var order = result.Order
-                            ?? throw new InvalidOperationException("Placed は BrokerOrder を伴わなければならない。");
+                    // 2. 記録なし: ブローカへ実状態を照会する。実照会は履歴窓を予約の ReservedAt で覆う必要があるため
+                    //    予約そのものを渡す（IADR-0092）。DecisionId 単体では健全な NotPlaced 判定ができない。
+                    var result = await probe.ProbeAsync(reservation, cancellationToken).ConfigureAwait(false);
+                    switch (result.Outcome)
+                    {
+                        case ReservationProbeOutcome.Placed:
+                            var order = result.Order
+                                ?? throw new InvalidOperationException("Placed は BrokerOrder を伴わなければならない。");
 
-                        // 照会（ProbeAsync）は実装次第で有意な待ち時間を持つ非同期になり得る。その待機中に通常フロー
-                        // （OrderApprovedHandler）が同一 DecisionId を確定していないか、Save の直前に再確認する
-                        // （TOCTOU 対策）。確定済みなら二重 Save（executed_orders 主キー競合）を避け自己修復に倒す。
-                        var raced = executedOrders.FindByDecisionId(decisionId);
-                        ExecutionRecord confirmed;
-                        if (raced is not null)
-                        {
-                            reservations.MarkCompleted(decisionId, raced.OrderId, clock.UtcNow);
-                            confirmed = raced;
-                        }
-                        else
-                        {
-                            // 発注済みが確定 → 記録を保存し確定する。OrderExecuted は既存イベント
-                            // （監査済み・Risk/Notification が冪等消費）を再利用する。
-                            confirmed = BuildRecord(decisionId, order, clock.UtcNow);
-                            executedOrders.Save(confirmed);
-                            reservations.MarkCompleted(decisionId, order.OrderId, clock.UtcNow);
-                        }
+                            // 照会（ProbeAsync）は実装次第で有意な待ち時間を持つ非同期になり得る。その待機中に通常フロー
+                            // （OrderApprovedHandler）が同一 DecisionId を確定していないか、Save の直前に再確認する
+                            // （TOCTOU 対策）。確定済みなら二重 Save（executed_orders 主キー競合）を避け自己修復に倒す。
+                            var raced = executedOrders.FindByDecisionId(decisionId);
+                            ExecutionRecord confirmed;
+                            if (raced is not null)
+                            {
+                                reservations.MarkCompleted(decisionId, raced.OrderId, clock.UtcNow);
+                                confirmed = raced;
+                            }
+                            else
+                            {
+                                // 発注済みが確定 → 記録を保存し確定する。OrderExecuted は既存イベント
+                                // （監査済み・Risk/Notification が冪等消費）を再利用する。
+                                confirmed = BuildRecord(decisionId, order, clock.UtcNow);
+                                executedOrders.Save(confirmed);
+                                reservations.MarkCompleted(decisionId, order.OrderId, clock.UtcNow);
+                            }
 
-                        executed.Add(ToOrderExecuted(confirmed));
-                        // 🔴 #856, IADR-0362: **ブローカ照会で確定した**終端化だけを載せる（phase-4 自己修復は載せない
-                        // ——自己修復は通常フローが作った記録の追認であり、保護レグの有無も通常フローが決めている）。
-                        probeTerminalized.Add(new ReservationReconciliationFinding(
-                            confirmed.DecisionId, confirmed.OrderId, confirmed.Symbol,
-                            confirmed.Quantity, confirmed.Status));
-                        terminalized++;
-                        break;
-
-                    case ReservationProbeOutcome.NotPlaced:
-                        // 🔴 #856, IADR-0362: 未発注が確定 → 予約を解放する（＝再発注を許可する）。
-                        // **解放の門が閉じているあいだは行わない。** 照会が「未発注」と答える根拠は remark 突合であり、
-                        // remark が往復しなければ発注済みの注文も「一致ゼロ」に見える＝全件解放＝二重発注になる。
-                        // 門を開けてよいのは実機で偽陽性が無いことを示した後だけである（#856 の受け入れ基準）。
-                        if (!_options.ReleaseOnNotPlaced)
-                        {
-                            // 据え置くが**無音にしない**。Worker 層が警告でログし、運用が門を開ける判断の入力にする。
-                            heldNotPlaced.Add(decisionId);
+                            var placedExecuted = ToOrderExecuted(confirmed);
+                            executed.Add(placedExecuted);
+                            // 🔴 #856, IADR-0362: **ブローカ照会で確定した**終端化だけを載せる（phase-4 自己修復は載せない
+                            // ——自己修復は通常フローが作った記録の追認であり、保護レグの有無も通常フローが決めている）。
+                            var finding = new ReservationReconciliationFinding(
+                                confirmed.DecisionId, confirmed.OrderId, confirmed.Symbol,
+                                confirmed.Quantity, confirmed.Status);
+                            probeTerminalized.Add(finding);
+                            terminalized++;
+                            emission = new ReservationTerminalizationEmission(placedExecuted, finding);
                             break;
-                        }
 
-                        // 解放後は元の OrderApproved 再配送が改めて予約→発注できる。
-                        if (reservations.Release(decisionId))
-                            released++;
-                        break;
+                        case ReservationProbeOutcome.NotPlaced:
+                            // 🔴 #856, IADR-0362: 未発注が確定 → 予約を解放する（＝再発注を許可する）。
+                            // **解放の門が閉じているあいだは行わない。** 照会が「未発注」と答える根拠は remark 突合であり、
+                            // remark が往復しなければ発注済みの注文も「一致ゼロ」に見える＝全件解放＝二重発注になる。
+                            // 門を開けてよいのは実機で偽陽性が無いことを示した後だけである（#856 の受け入れ基準）。
+                            //
+                            // 🔴 #890, IADR-0371: 本経路は**確定していない**（MarkCompleted を commit していない）。
+                            // したがって出口（sink）へは渡さない —— 据え置いた予約は Reserved のまま次回巡回に載るため、
+                            // 巡回が中断されても警告は失われない（失われるのは「確定済み」のものだけである）。
+                            if (!_options.ReleaseOnNotPlaced)
+                            {
+                                // 据え置くが**無音にしない**。Worker 層が警告でログし、運用が門を開ける判断の入力にする。
+                                heldNotPlaced.Add(decisionId);
+                                break;
+                            }
 
-                    default:
-                        // Indeterminate（照会不達・判定不能）: 二重発注を招かないため据え置く（fail-safe）。
-                        indeterminate++;
-                        break;
+                            // 解放後は元の OrderApproved 再配送が改めて予約→発注できる。
+                            if (reservations.Release(decisionId))
+                                released++;
+                            break;
+
+                        default:
+                            // Indeterminate（照会不達・判定不能）: 二重発注を招かないため据え置く（fail-safe）。
+                            indeterminate++;
+                            break;
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 failed++;
             }
+
+            // 🔴 #890, IADR-0371: **出口は per-item の try/catch の外に置く。**
+            // 中に入れると発行の失敗が failed++ に吸い込まれ、「発行の失敗は握り潰さない」（T-10-609）が壊れる。
+            // しかも予約は既に Completed であり、failed（＝据え置き・次回巡回で再試行）に数えるのは事実として誤りである。
+            // 出口が落ちたときの挙動は是正前と同じ（巡回はそこで止まり、常駐が拾って次回巡回で再試行する）。
+            // 残りの滞留は Reserved のままなので拾い直せる。
+            if (emission is not null && sink is not null)
+                await sink.EmitAsync(emission).ConfigureAwait(false);
         }
 
         return new ReservationReconciliationResult(
