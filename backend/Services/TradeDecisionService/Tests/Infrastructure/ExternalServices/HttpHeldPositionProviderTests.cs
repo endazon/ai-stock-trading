@@ -178,6 +178,80 @@ public class HttpHeldPositionProviderTests
         held.Should().BeNull();
     }
 
+    // --- FR-04, FR-10, #934, IADR-0390 決定2: 未約定の新規建て注文（GET /risk-controls/working-entry-orders） ---
+    // T-10-719: 一致する行だけを採る／空＝無い／失敗・不正応答＝不明（null）。不明を「無い」へ倒すと「保有なし」の前提で重ね買いする。
+
+    // WorkingEntryOrderView（RiskManagement）の web 既定 JSON（camelCase・列挙は数値）。
+    private const string WorkingOrders = """
+        [
+          {"decisionId":"6d3c4a5e-0000-0000-0000-000000000001","symbol":"AAPL","market":1,"side":0,"remainingQuantity":715,"price":337.63,"approvedAt":"2026-09-23T13:46:45+00:00"},
+          {"decisionId":"6d3c4a5e-0000-0000-0000-000000000002","symbol":"AAPL","market":1,"side":0,"remainingQuantity":100,"price":338.1,"approvedAt":"2026-09-23T13:56:45+00:00"},
+          {"decisionId":"6d3c4a5e-0000-0000-0000-000000000003","symbol":"7203","market":0,"side":0,"remainingQuantity":100,"price":2500,"approvedAt":"2026-09-23T01:00:00+00:00"}
+        ]
+        """;
+
+    [Fact]
+    public async Task 未約定の新規建ては銘柄と市場が一致する行だけを残数量つきで返す()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, WorkingOrders);
+
+        var working = await Provider(handler).GetWorkingEntryOrdersAsync("AAPL", Market.UnitedStates);
+
+        handler.LastPath.Should().Be("/risk-controls/working-entry-orders");
+        working.Should().NotBeNull();
+        working!.Orders.Should().Equal(
+            new WorkingEntryOrder(TradeSide.Buy, 715, 337.63m, new DateTimeOffset(2026, 9, 23, 13, 46, 45, TimeSpan.Zero)),
+            new WorkingEntryOrder(TradeSide.Buy, 100, 338.1m, new DateTimeOffset(2026, 9, 23, 13, 56, 45, TimeSpan.Zero)));
+    }
+
+    [Theory]
+    [InlineData("[]", "AAPL", Market.UnitedStates)]
+    [InlineData(WorkingOrders, "MSFT", Market.UnitedStates)]
+    [InlineData(WorkingOrders, "7203", Market.UnitedStates)] // 同一コードの別市場は数えない
+    public async Task 該当が無ければ未約定は無いであり不明ではない(string body, string symbol, Market market)
+    {
+        var working = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetWorkingEntryOrdersAsync(symbol, market);
+
+        working.Should().Be(WorkingEntryOrders.None);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task 未約定の照会が非2xxなら不明(HttpStatusCode status)
+    {
+        var working = await Provider(new StubHandler(status, "")).GetWorkingEntryOrdersAsync("AAPL", Market.UnitedStates);
+
+        working.Should().BeNull("失敗を「無い」へ倒すと、板に残った指値を知らないまま重ねて買う");
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("""[{"symbol":"AAPL","market":1,"side":0,"remainingQuantity":0,"price":337.63,"approvedAt":"2026-09-23T13:46:45+00:00"}]""")]
+    public async Task 未約定の応答が解釈できなければ不明(string body)
+    {
+        var working = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetWorkingEntryOrdersAsync("AAPL", Market.UnitedStates);
+
+        working.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 未約定の照会の例外は不明()
+    {
+        var working = await Provider(new ThrowingHandler()).GetWorkingEntryOrdersAsync("AAPL", Market.UnitedStates);
+
+        working.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task 未結線のNoOpでは未約定は不明()
+    {
+        var working = await new NoOpHeldPositionProvider().GetWorkingEntryOrdersAsync("AAPL", Market.UnitedStates);
+
+        working.Should().BeNull("未結線は「照会していない」であり「無い」ではない");
+    }
+
     // --- 配線（RiskManagement:BaseUrl の有無で切り替わる） ---
 
     [Fact]

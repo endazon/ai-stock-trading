@@ -159,6 +159,11 @@ public sealed class TradeDecisionAppService(
         // 本判断・一次スクリーニングの両プロンプトへ渡す。null＝不明（プロンプトは「不明」と明示し、保有なしとは書かない）。
         var heldPosition = await GetHeldPositionSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
 
+        // 🔴 FR-04, FR-10, ADR-0003, #934, IADR-0390 決定2/決定4: 当日の未約定の新規建て注文（約定済みの保有とは別の第 3 の状態）。
+        // 実測: 指値 715 株が板に残っている間に、判断は「保有なし」を前提に同じ銘柄を重ねて買った。null＝不明
+        // （プロンプトは「保有なし」と書かない。実結線なら下で新規建てを見送る）。
+        var workingEntries = await GetWorkingEntryOrdersSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+
         int? preFetchedHeldQuantity = null;
         if (!fxReading.UsableForEntry)
         {
@@ -191,7 +196,7 @@ public sealed class TradeDecisionAppService(
         // FR-17, IADR-0076 決定5: 採算ゲート有効時のみプロンプトに採算節を注入する（無効の既定は現行動作のプロンプトと一致）。
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
-            currentPrice: currentPrice, held: heldPosition);
+            currentPrice: currentPrice, held: heldPosition, working: workingEntries);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -205,9 +210,10 @@ public sealed class TradeDecisionAppService(
             // 🔴 縮退制御なしの経路でも現在値を渡す（#860 の監査の指摘）。渡さないと、定時トリガー（価格を持たない）では
             // 一次の保有状況が常に「到達したかは不明」になり、門である一次だけが損切りライン到達を知らない。
             () => screening is null
-                ? TradeDecisionPromptBuilder.BuildScreening(trigger, policy, context, currentPrice, held: heldPosition)
+                ? TradeDecisionPromptBuilder.BuildScreening(
+                    trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries)
                 : TradeDecisionPromptBuilder.BuildScreening(
-                    trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition),
+                    trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries),
             decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
@@ -269,6 +275,18 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "保有建玉が無い、または不明な売り判断のため見送り（裸の新規売りを出さない・IADR-0119）: {Symbol} held={Held}",
                 trigger.Symbol, heldQuantity.HasValue ? heldQuantity.Value : "不明");
+            return null;
+        }
+
+        // 🔴 FR-04, FR-10, ADR-0003, #934, IADR-0390 決定5: 実結線のもとで未約定の新規建て注文が**不明**なら新規建てを見送る
+        // （#865 / IADR-0358 と同じ形）。不明を「無い」と読めば、板に残った指値を知らないまま同じ銘柄を重ねて買う。
+        // 手仕舞い（Close）は止めない —— 決済の数量は約定済みの保有だけで決まり、未約定の照会とは独立である。
+        if (!effect.IsClose && _heldPosition.IsEnabled && workingEntries is null)
+        {
+            logger.LogWarning(
+                "未約定の新規建て注文が不明なため新規建てを見送る（照会先は結線済み・手仕舞いは止めない・IADR-0390）: " +
+                "{Symbol} side={Side}",
+                trigger.Symbol, side);
             return null;
         }
 
@@ -466,6 +484,25 @@ public sealed class TradeDecisionAppService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "保有状況の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
+            return null;
+        }
+    }
+
+    // FR-04, FR-10, #934, IADR-0390 決定2: 未約定の新規建て注文の照会（fail-safe ラッパ）。
+    // 例外・キャンセル以外の失敗は **null（不明）** に縮退する。「無い」へ倒すと、判断は板に残った指値を知らないまま
+    // 「保有なし」を前提に同じ銘柄を重ねて買う（#934 の実測そのもの）。
+    private async Task<WorkingEntryOrders?> GetWorkingEntryOrdersSafeAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _heldPosition
+                .GetWorkingEntryOrdersAsync(trigger.Symbol, trigger.Market, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "未約定の新規建て注文の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
             return null;
         }
     }

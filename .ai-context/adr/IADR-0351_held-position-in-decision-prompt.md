@@ -2,10 +2,10 @@
 title: IADR-0351 取引判断のプロンプトへ保有状況（保有あり／保有なし／不明）を載せ、方針に出口の基準が無いときは保有継続を既定としつつ、記録上の損切りラインに達した建玉はリスク制約に基づいて手仕舞いを選べるとする
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-10, FR-03, FR-11, UC-01, UC-02, ADR-0003, ADR-0040, IADR-0029, IADR-0030, IADR-0035, IADR-0039, IADR-0119, IADR-0247, IADR-0297, IADR-0318, IADR-0342, IADR-0343, IADR-0358]
+related_ids: [FR-04, FR-10, FR-03, FR-11, UC-01, UC-02, ADR-0003, ADR-0040, IADR-0029, IADR-0030, IADR-0035, IADR-0039, IADR-0119, IADR-0247, IADR-0297, IADR-0318, IADR-0342, IADR-0343, IADR-0358, IADR-0390]
 author: endazon (with Claude Code)
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -76,6 +76,11 @@ LLM に「自動の損切りが効く」という偽の前提を与える。
   含み損益率の除算が `DivideByZeroException` になる。本番の供給元が弾くので現状は到達不能。#860 の監査・レビューの指摘を反映）。
 - 照会の例外は null（不明）へ縮退する（`GetHeldPositionSafeAsync`）。コード側の既存の安全網（不明・保有なしの `Sell` は
   見送り＝IADR-0119 決定2）は変えない。
+- ［2026-09-24 追記 / [#934](https://github.com/endazon/ai-stock-trading/issues/934)］**本決定の「保有」は約定済みの建玉だけであり、
+  未約定の新規建て注文が見えていなかった**（稼働 PoC で、指値 715 株が板に残っている間に判断が 2 本とも「保有なし」と書いて
+  同じ銘柄を重ねて買った）。[IADR-0390](IADR-0390_working-entries-in-decision-input.md) が**未約定を約定済みの保有とは別の第 3 の状態として、別の型・別の行で**
+  渡し、`保有: なし` を出す条件を「約定済み 0 株**かつ**未約定が無いと判っている」へ狭めた（未約定が不明なら保有を「不明」と書く）。
+  本決定の 3 状態の書き分けと `held` の意味（約定済み）は変えていない。
 
 ### 決定3: 方針は書き換えない。出口の基準が方針に無いときは保有継続を既定とし、損切りラインに達した建玉はリスク制約に基づいて手仕舞いを選べる
 

@@ -233,6 +233,8 @@ builder.Services.AddScoped<ISizingContextProvider>(sp =>
 // #854, IADR-0351: 同じ実装が判断プロンプトの保有状況も供給する（NoOp のもとではプロンプトは「保有: 不明」と明示する）。
 // #865, IADR-0358: 実装の選択が IHeldPositionProvider.IsEnabled を決める。Http（実結線）のもとで照会が不明を返したら
 // 新規建て（Open）を見送る。NoOp（未結線）は「照会していない」であり、従来どおり新規建てを通す。
+// #934, IADR-0390: 同じ実装が当日の未約定の新規建て注文も GET /risk-controls/working-entry-orders から供給する
+// （保有とは別の第 3 の状態。上の「新規エンドポイントは作らない」は保有建玉の照会についての記述）。
 builder.Services.AddSingleton<NoOpHeldPositionProvider>();
 builder.Services.AddScoped<IHeldPositionProvider>(sp =>
 {

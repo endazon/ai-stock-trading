@@ -553,7 +553,7 @@ public class TradeDecisionPromptBuilderTests
     {
         var prompt = TradeDecisionPromptBuilder.Build(
             ScheduledAapl(), Policy, ContextWith(StopLossExecutionMethod.NoProtectiveStop),
-            currentPrice: 217.5m, held: LongAapl);
+            currentPrice: 217.5m, held: LongAapl, working: WorkingEntryOrders.None);
 
         // 節の末尾の空行（次の見出しとの区切り）は比較から外す。
         Normalize(ExtractSection(prompt, HeldHeading)).TrimEnd().Should().Be(Normalize(GoldenHeldSection));
@@ -663,7 +663,7 @@ public class TradeDecisionPromptBuilderTests
     [Fact]
     public void 保有なしと不明はプロンプト上で区別できる()
     {
-        var none = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, held: HeldPosition.None);
+        var none = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, held: HeldPosition.None, working: WorkingEntryOrders.None);
         var unknown = TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, held: null);
 
         var noneSection = ExtractSection(none, HeldHeading);
@@ -699,7 +699,7 @@ public class TradeDecisionPromptBuilderTests
     public void 保有なしのプロンプトは保有状況節を除けば従来のプロンプトと一致する()
     {
         var prompt = TradeDecisionPromptBuilder.Build(
-            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: HeldPosition.None);
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: HeldPosition.None, working: WorkingEntryOrders.None);
 
         var noneSection = $"{HeldHeading}{Environment.NewLine}- {TradeDecisionPromptBuilder.HeldNoneLine}{Environment.NewLine}{Environment.NewLine}";
         prompt.Should().Contain(noneSection);
@@ -825,7 +825,7 @@ public class TradeDecisionPromptBuilderTests
     public void スクリーニングプロンプトでも保有なしと不明を区別する()
     {
         var none = ExtractSection(
-            TradeDecisionPromptBuilder.BuildScreening(ScheduledAapl(), Policy, Context, held: HeldPosition.None), HeldHeading);
+            TradeDecisionPromptBuilder.BuildScreening(ScheduledAapl(), Policy, Context, held: HeldPosition.None, working: WorkingEntryOrders.None), HeldHeading);
         var unknown = ExtractSection(
             TradeDecisionPromptBuilder.BuildScreening(ScheduledAapl(), Policy, Context), HeldHeading);
 
@@ -834,6 +834,109 @@ public class TradeDecisionPromptBuilderTests
         unknown.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
         unknown.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownRule);
         unknown.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // FR-04, FR-10, ADR-0003, #934, IADR-0390: 未約定の新規建て注文（約定済みの保有とは別の第 3 の状態）
+    //
+    // 実測（2026-09-23）: 指値 715 株 @337.63 が板に残っている間に、判断は根拠に「保有なし」と書いて同じ AAPL を
+    // 重ねて買った。リスク管理は未約定を数えていた（IADR-0346）が、判断の入力には約定済みの建玉しか無かった。
+    // ------------------------------------------------------------------------------------------------
+
+    // 実測の 1 本目（2026-09-23 22:46:45 JST ＝ 13:46:45 UTC 承認）。
+    private static readonly WorkingEntryOrders Working715 = new(
+        [new WorkingEntryOrder(TradeSide.Buy, 715, 337.63m, new DateTimeOffset(2026, 9, 23, 13, 46, 45, TimeSpan.Zero))]);
+
+    // T-10-712: 約定済みの建玉が 0 株でも、未約定の新規建てが在れば「保有: なし」とは書かない。
+    [Fact]
+    public void 未約定の新規建てがあれば約定済みが0株でも保有なしと書かず未約定を別の行で載せる()
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: 337.9m, held: HeldPosition.None, working: Working715);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+        section.Should().NotContain("保有: なし");
+        section.Should().Contain(TradeDecisionPromptBuilder.FilledNoneButWorkingLine);
+        section.Should().Contain(
+            $"- {TradeDecisionPromptBuilder.WorkingEntryLinePrefix}: 買い（Buy） 715 株 / 承認価格: 337.63 / 承認時刻: 2026-09-23 13:46 UTC");
+        section.Should().Contain(TradeDecisionPromptBuilder.WorkingEntriesRule);
+        // 🔴 「受理済み」とは断定しない（供給元は受理済みと発注処理中・結果未着を区別しない）。
+        section.Should().NotContain("受理済み");
+    }
+
+    // T-10-713: 一次スクリーニング（門）も同じ区別をする（要約 1 行）。
+    [Fact]
+    public void スクリーニングプロンプトも未約定の新規建てがあれば保有なしと書かない()
+    {
+        var section = ExtractSection(
+            TradeDecisionPromptBuilder.BuildScreening(
+                ScheduledAapl(), Policy, Context, currentPrice: 337.9m, held: HeldPosition.None, working: Working715),
+            HeldHeading);
+
+        section.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+        section.Should().NotContain("保有: なし");
+        section.Should().Contain(TradeDecisionPromptBuilder.FilledNoneButWorkingLine);
+        section.Should().Contain($"- {TradeDecisionPromptBuilder.WorkingEntryLinePrefix}: 買い（Buy） 715 株（1 件）");
+    }
+
+    // T-10-714: 🔴 未約定は約定済みの保有に混ぜない（数量・平均取得単価・含み損益は約定済みだけ）。
+    [Fact]
+    public void 保有中に未約定があっても数量と取得単価と含み損益は約定済みだけで書き未約定は別の行に出る()
+    {
+        var withWorking = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl, working: Working715);
+        var withoutWorking = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl, working: WorkingEntryOrders.None);
+
+        var section = ExtractSection(withWorking, HeldHeading);
+        section.Should().Contain("- 保有: ロング 3378 株 / 平均取得単価: 229.5");
+        section.Should().Contain("- 含み損益: -40536（-5.23%・現在値 217.5 で評価）");
+        section.Should().NotContain("4093 株"); // 3,378 + 715 を合算しない
+        section.Should().Contain($"- {TradeDecisionPromptBuilder.WorkingEntryLinePrefix}: 買い（Buy） 715 株");
+        section.Should().Contain(TradeDecisionPromptBuilder.WorkingEntriesRule);
+
+        // 約定済みの行は未約定の有無で一字も変わらない（未約定は節の末尾に足されるだけ）。
+        var withoutSection = ExtractSection(withoutWorking, HeldHeading);
+        withoutSection.Should().NotContain(TradeDecisionPromptBuilder.WorkingEntryLinePrefix);
+        Normalize(section).Should().StartWith(Normalize(withoutSection).TrimEnd());
+
+        var screening = ExtractSection(
+            TradeDecisionPromptBuilder.BuildScreening(
+                ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl, working: Working715),
+            HeldHeading);
+        screening.Should().Contain("- 保有: ロング 3378 株 / 平均取得単価: 229.5");
+        screening.Should().Contain($"- {TradeDecisionPromptBuilder.WorkingEntryLinePrefix}: 買い（Buy） 715 株（1 件）");
+    }
+
+    // T-10-715: 🔴 未約定を照会できないとき、約定済みが 0 株でも「保有なし」とは書かず「不明」と書く。
+    [Fact]
+    public void 未約定が不明なら約定済みが0株でも保有を不明と書き保有なしと書かない()
+    {
+        var main = ExtractSection(
+            TradeDecisionPromptBuilder.Build(
+                ScheduledAapl(), Policy, Context, currentPrice: 337.9m, held: HeldPosition.None, working: null),
+            HeldHeading);
+        var screening = ExtractSection(
+            TradeDecisionPromptBuilder.BuildScreening(
+                ScheduledAapl(), Policy, Context, currentPrice: 337.9m, held: HeldPosition.None, working: null),
+            HeldHeading);
+
+        foreach (var section in new[] { main, screening })
+        {
+            section.Should().Contain(TradeDecisionPromptBuilder.WorkingUnknownNoFillsLine);
+            section.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownRule);
+            section.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+            section.Should().NotContain("保有: なし");
+        }
+
+        // 保有中で未約定が不明なら、保有の行は残したまま（手仕舞いの判断材料を消さない）、買い増しを選ばないと述べる。
+        var held = ExtractSection(
+            TradeDecisionPromptBuilder.Build(ScheduledAapl(), Policy, Context, currentPrice: 217.5m, held: LongAapl, working: null),
+            HeldHeading);
+        held.Should().Contain("- 保有: ロング 3378 株 / 平均取得単価: 229.5");
+        held.Should().Contain(TradeDecisionPromptBuilder.WorkingUnknownLine);
+        held.Should().Contain(TradeDecisionPromptBuilder.WorkingUnknownWithHeldRule);
     }
 
     // 保有あり（AAPL ロング 3,378 株・S2・現在値 217.5）の保有状況節の全文（IADR-0351 決定1〜3）。
