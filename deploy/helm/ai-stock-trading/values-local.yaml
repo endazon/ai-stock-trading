@@ -105,6 +105,11 @@ services:
       - { name: Fx__Provider, value: "boj" }                      # ← 認識時レート源（日銀第一・#686/IADR-0308）
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      # FR-20, FR-11, UC-06, #868, IADR-0383: 段階遷移の onBehalfOf を信じてよいクライアント。
+      # 値は本番既定と同一（helm はリストを置換するため、写し忘れると env が消える）。
+      # report の Reports__DelegatedActor__TrustedClientIds と同じ秘密鍵＝単一情報源。
+      - name: RiskControls__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:

@@ -83,8 +83,13 @@ public sealed class StageGateCommandHandler(
 
             case BotCommandKind.StagePromote or BotCommandKind.StageDemote when command.TargetStage is { } target:
                 {
-                    // 承認者は Risk 側が認証済みトークン（owner マップ）から取る（要求本文は targetStage のみ）。
-                    var result = await controller.RequestTransitionAsync(target, cancellationToken).ConfigureAwait(false);
+                    // FR-20, FR-11, UC-06, #868, IADR-0240 決定11, IADR-0383: **多層認証が解決した操作者を
+                    // 承認者として運ぶ**（`auth.Actor`＝Keycloak 利用者名。コマンド文字列からは採らない）。
+                    // Bot のトークンは owner マップ機密クライアントのもので人を表さないため、これを渡さないと
+                    // 実資金ゲートの承認記録が `unknown`／`service-account-<clientId>` のまま 7 年残る。
+                    var result = await controller
+                        .RequestTransitionAsync(target, auth.Actor!, cancellationToken)
+                        .ConfigureAwait(false);
 
                     // FR-20, FR-11, SC-02, #466, §4.1 追補3（質問票 第15回 Q13-a）, IADR-0180:
                     // **昇格承認（`/stage promote`）にだけ**最小取引件数の引き下げ警告を足す。

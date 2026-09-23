@@ -3,15 +3,15 @@ title: 段階ゲートと発注先の 2 軸分離（FR-20）テスト仕様書
 type: test-spec
 status: draft
 created: 2026-08-03
-updated: 2026-08-29
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0018]
-iadrs: [IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304]
-specs: [20260803_343_regression-test-foundation, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
-issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #434, #466, #569]
+iadrs: [IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304, IADR-0062, IADR-0240, IADR-0383]
+specs: [20260803_343_regression-test-foundation, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260923_868_stage-transition-approver-on-behalf-of, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
+issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #434, #466, #569, #774, #861, #868]
 -->
 
 
@@ -276,6 +276,34 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 
 **ミューテーション（実施済み）**: `UpdateStage` の allow-list 検証を削除 → **T-105 が 3 パラメータとも赤**（18 件中 3 件失敗）。復元後に `md5sum` のバイト一致を確認した。
 
+### 段階遷移の承認者（代理の構造化欄と、承認者不明の拒否）
+
+> Discord Bot は人ではないトークン（機密クライアントの `client_credentials`）で承認を呼ぶ。承認者は Bot が
+> 要求本文の構造化欄で運び、権威側はトークンの `azp` が信頼一覧に載るときだけそれを採る。
+> **承認者をまったく特定できない要求は拒否する** —— 実資金ゲートの承認記録は 7 年残るためである。
+>
+> テストクラス: `StageTransitionApproverTests`（権威側）／`StageGateCommandHandlerTests`・
+> `HttpStageGateControllerTests`（窓口側）／`DelegatedActorNameTests`・`DiscordBotUserMappingWarningTests`（値域）／
+> `StageTransitionedContractTests`（契約の後方互換）／`AuditEntryFactoryTests`（監査要約）。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| T-129 | 信頼一覧に載るクライアントのトークン（名前クレーム無し） | 代理される利用者を添えて昇格を要求する | 台帳と発行イベントの**承認者が利用者**、イベントの**認可の主体がクライアント ID**。監査要約は「利用者・代理 クライアント」 | 台帳・通知・監査に正しい承認者が残る | 自動（エンドポイント） |
+| T-130 | 同上 | 差し戻し（安全方向）を要求する | 昇格と同じく承認者・認可の主体の両方が残る（**安全方向でも省かない**） | 同上 | 自動（エンドポイント） |
+| **T-131** | 利用者本人のトークン（名前つき） | 他人の名前を代理指定して要求する | 🔴 **代理指定は無視**。承認者はトークンの主体・認可の主体は空。警告ログが残る | なりすましの否定形 | 自動（**否定形**） |
+| **T-132** | 信頼一覧に**載らない**クライアント | 代理指定して要求する | 🔴 無視。承認者は `client:<azp>`（人は不明でも資格は残る） | 同上 | 自動（**否定形**） |
+| **T-133** | `azp` を持たないトークン | 同上 | 🔴 無視。承認者はトークンの名前 | 同上 | 自動（**否定形**） |
+| **T-134** | `azp` が信頼一覧と**大文字違い** | 同上 | 🔴 一致しない（比較は Ordinal）。無視される | 同上 | 自動（**否定形**） |
+| **T-135** | 信頼一覧が**未設定・空・空白** | 同上 | 🔴 誰の代理も信じない（設定漏れで信頼を開かない） | 同上 | 自動（**否定形**・境界） |
+| **T-136** | 信頼クライアントのトークン | 値域外（非 ASCII・空白入り・改行・空・65 文字）を代理指定する | 🔴 **400。台帳 0 行・イベント 0 通**。値域の内側（1 文字・64 文字・メール形式）は受理される | 承認者を記録できない承認は行わない | 自動（**否定形**・境界） |
+| **T-137** | 名前クレームも `azp` も無いトークン | 昇格を要求する／空売り実弾解禁の verdict を要求する | 🔴 **どちらも 400。台帳 0 行・イベント 0 通**（`unknown` を実資金ゲートの台帳へ残さない。**相乗りの経路も同じ閂**） | 同上 | 自動（**否定形・最重要**） |
+| T-138 | 多層認証を通る着信 | `/stage promote` / `/stage demote` を実行する | 窓口が**対応付けの利用者名**を本文へ載せる（コマンド文字列・表示名からは採らない）。許可外は Risk を呼ばない。代理が空なら**呼ぶ前に例外**。400 の説明はそのまま利用者へ返る | 窓口が操作者を運ぶ | 自動（単体・**否定形**） |
+| T-139 | 対応付けの値が値域外（`山田` / `dev owner` / 改行入り） | Bot を起動する | 値域外の対応付けを**1 件ずつ**警告する。**起動は止めない**。値域内・空では警告しない | 値域外で起動時に警告が出る | 自動（単体・境界） |
+| T-140 | 旧形式（認可の主体を持たない）の遷移イベント JSON | 新しい購読側で読む | `AuthorizedBy` は null。位置引数の並びは変わらず、追加は**末尾の任意引数** | 契約の後方互換 | 自動（契約） |
+
+🔴 **実資金ゲートは緩まない。** 本節が増やすのは拒否（T-136 / T-137）だけであり、昇格の合格基準・確認ボタン・
+飛び級禁止・Stage 1 の引き下げ警告はいずれも変えていない。
+
 ## テストデータ
 
 - 営業日カレンダー・現在時刻・equity はすべて注入可能にし、実時刻・実口座に依存させない。
@@ -368,6 +396,7 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 | T-61〜T-74 | #385 | 実装済み（`Stage1SessionUptimeTests` / `BrokerAvailabilityObservedConsumerTests` / `EfStage1TradingDayObservationStoreTests` / `StageGateServiceTests` / `BrokerAvailabilityProbeServiceTests`）。**供給元は本 issue で実装済み**（OpenD へ到達できる限り営業日が積まれる）。**T-74 のとおり市場の祝日は判別しない —— 裁定どおりである**（2026-08-07・#407。「除外しない」と決まった。**祝日表を足すことは裁定違反**） |
 | T-13・T-14・T-39・T-40 | #333 | 実装済み（`RiskEvaluatorTests` / `EquityRatioRiskLimitsTests` / `SimulatorProfileWiringTests`） |
 | T-15〜T-18・T-34〜T-38 | #333 | 実装済み（`StageProductPolicyTests` / `RiskEvaluatorTests`）。**T-18 相当（Stage 0 再充足）は供給元が無く常に拒否側** |
+| T-129〜T-140 | #868 | 実装済み（`StageTransitionApproverTests` / `StageGateCommandHandlerTests` / `HttpStageGateControllerTests` / `DelegatedActorNameTests` / `DiscordBotUserMappingWarningTests` / `StageTransitionedContractTests` / `AuditEntryFactoryTests`）。**代理の値域は 3 サービスに同じ形で存在し、機械検査は無い**（片方だけ変えると送り手と受け手が割れる） |
 
 ## 変更履歴
 
@@ -380,6 +409,7 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 | 2026-08-05 | #386（取引件数の供給）の実装に合わせて T-54〜T-60 を追加。**計上単位**（分割約定・再送・手仕舞い）と**発注先の出どころ**（実発注したアダプタの値）を否定形で固定した |
 | 2026-08-05 | #385（稼働営業日の供給）の実装に合わせて T-61〜T-74 を追加。**稼働分数の積み方**（落とした区間・冪等・上限）と**カレンダー不在の構造的証明**（T-70）を固定し、**祝日を判別しないこと**（T-74）を可視化した（**2026-08-07 の裁定でこれが正式な設計となった**。#407） |
 | 2026-08-07 | #434（`Stage.Mode` の書き込み経路 allow-list）の実装に合わせて T-105〜T-108 を追加。**読み書きの非対称**（書き込みは拒否・読み取りは倒す）を両方向で固定した |
+| 2026-09-23 | #868（段階遷移の承認者）の実装に合わせて T-129〜T-140 を追加。**なりすましの否定形**（利用者トークン直叩き・一覧外クライアント・`azp` の欠落と大文字違い・一覧未設定）と**承認者不明の拒否**（相乗りの経路を含む）を固定した |
 
 <!-- trace-table:
 row1: FR-20
