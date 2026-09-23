@@ -7,7 +7,7 @@ updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
 iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0373]
 specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_899_currency-disproof-non-usd-account]
@@ -1114,6 +1114,8 @@ row49: FR-06, FR-11
 | **T-10-660** | 同上で内訳が **JPY と米ドルの混在** | 同上 | **採る**（米ドルの行が 1 つでもあれば反証にならない）。**反証が効かない範囲**であり、意図した限界である | ④ | 自動（結合・限界の固定） |
 | **T-10-661** | 同上で内訳の行が**通貨を名乗らない／「決められない」と名乗る** | 同上 | **採る**（どちらも「米ドルではない」の**証拠にならない**。応答全体が「決められない」と**明示**した場合に採らない T-10-514 とは向きが違う） | ④ | 自動（結合・否定形） |
 | **T-10-662** | 応答が**米ドルを明示**しており、内訳は **JPY の行だけ** | 同上 | 🔴 **採る**（明示された通貨を内訳で上書きしない）。汎用証券口座へ米ドルを要求すれば換算後の値が返り、**内訳は JPY だけということがあり得る** —— ここで内訳を優先すると、**正しく名乗っている応答を落とす新しい fail-closed** になる | ④ | 自動（結合・否定形） |
+| **T-10-668** | 前取引日の行がある／**2 取引日前の行しかない**／行が無い／鮮度切れ／最新行が 0 以下（5 通り） | 基準資金を読む | 🔴 **帰結が 5 つに区別して数えられる**（供給／**観測の欠落つき供給**／行なし／鮮度切れ／0 以下）。**返す値は従来と同じ**（門は変えていない）。**欠落つきの供給は警告としても残り**、平常の読み出しは**ログを出さない**（審査のたびに起きるため鳴らすと本物の警告が埋もれる）。🔴 **欠落は「値が返っているのに壊れている」唯一の印である** —— 値が返る以上、他のどの指標にも異常は現れない | ④ | 自動（単体・否定形つき） |
+| **T-10-669** | 評価額のある観測／**無い観測** | 口座観測を処理する | 🔴 **評価額の無い観測では「この取引日の行は書かない＝前取引日の値が使われ続ける」が警告として残る**（行を書かない判断そのものは従来どおり）。**残高 0 と照会不能はここでは区別できない**（供給側が両方を未供給へ畳むため。区別するかは裁定の対象） | ④ | 自動（単体・対の否定形） |
 
 <!-- trace-table:
 row1: FR-10, FR-19
@@ -1132,6 +1134,8 @@ row13: FR-10, FR-19
 row14: FR-10, FR-19
 row15: FR-10, FR-19
 row16: FR-10, FR-19
+row17: FR-10, FR-19, NFR-07
+row18: FR-10, FR-19, NFR-07
 -->
 
 **対照実験（実走した実測）**: 守りを 1 つずつ外して赤を確かめた。
@@ -1178,6 +1182,11 @@ row16: FR-10, FR-19
 - 🔴 **受け入れた残余リスク**: **残高 0 が続いても、鮮度（既定 4 日）が切れるまで前取引日の正の値で
   新規建てが通る**（供給側の門は 0 の日に行を書かないため）。**止めるかどうかは別 issue（`#889`）**であり、
   本書は**現在の向きを T-10-516 で固定する**に留める（「いずれ止まる」と読み違えないため）。
+  🔴 **［2026-09-23 追記 / `#889`］向きは変えていない。見えるようにしただけである**（T-10-668・T-10-669）。
+  「値は返っているが直前の取引日の観測が届いていない」状態が指標とログに出る。
+  **止めるかどうかは未裁定**であり、選択肢と害（一過性の 0 で丸一日止まる／買付余力を統制へ引き込む／
+  気づけなければ止まらない）は実装 ADR に整理した。**先に必要なのは「実口座が残高 0 で何を返すか」の観測**で、
+  それは本書の写像では取れない（接続は模擬取引口座に固定してある）。
 
 ## 決済の発注前にブローカーの実建玉と突き合わせる（#864。台帳が乖離していても裸のショートを出さない）
 

@@ -4,9 +4,12 @@ using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Infrastructure.Persistence;
 using RiskManagementService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Metrics;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -46,6 +49,13 @@ public class CapitalBaselineTests
         DailyRealizedPnl = 0m,
         UnrealizedPnl = 0m,
     };
+
+    // FR-10, #889, IADR-0372: ストアは読み出しの帰結を計器へ出す。**計器は観測であって門ではない**ため、
+    // 既存のテストは計器を見ない（帰結そのものは T-10-668 が見る）。
+    private static EfCapitalBaselineStore NewStore(
+        RiskManagementDbContext db, BusinessMetrics? metrics = null, ILogger<EfCapitalBaselineStore>? logger = null) =>
+        new(db, new FakeClock(Now, Today), new CapitalBaselineOptions(),
+            logger ?? NullLogger<EfCapitalBaselineStore>.Instance, metrics ?? new BusinessMetrics());
 
     private static RiskManagementDbContext NewContext(string dbName) =>
         new(new DbContextOptionsBuilder<RiskManagementDbContext>().UseInMemoryDatabase(dbName).Options);
@@ -144,8 +154,7 @@ public class CapitalBaselineTests
         var dbName = Guid.NewGuid().ToString();
         var observedAt = Now.AddDays(-daysAgo);
         using var db = NewContext(dbName);
-        var store = new EfCapitalBaselineStore(
-            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        var store = NewStore(db);
 
         store.Record(3_000m, observedAt);
 
@@ -162,8 +171,7 @@ public class CapitalBaselineTests
     public void 評価額が0以下の行は未供給として扱う(int equity)
     {
         using var db = NewContext(Guid.NewGuid().ToString());
-        var store = new EfCapitalBaselineStore(
-            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        var store = NewStore(db);
 
         store.Record(equity, Now.AddDays(-1));
 
@@ -176,8 +184,7 @@ public class CapitalBaselineTests
     public void 評価額が0のとき日次損失上限に達したと記録しない()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
-        var store = new EfCapitalBaselineStore(
-            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        var store = NewStore(db);
         store.Record(0m, Now.AddDays(-1));
 
         // 損益ゼロ・枠未使用の平常状態で審査する。
@@ -217,8 +224,7 @@ public class CapitalBaselineTests
     public void 供給側が0を弾いた日は前取引日の正の値が使われ続ける_新規建ては止まらない()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
-        var store = new EfCapitalBaselineStore(
-            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        var store = NewStore(db);
 
         // 前取引日に 100,000 を観測。翌日は口座が空になり、アダプタは 0 を未供給へ倒す＝Record は呼ばれない。
         store.Record(100_000m, Now.AddDays(-1));
@@ -238,8 +244,7 @@ public class CapitalBaselineTests
     public void 人手で0の行を入れた場合は読み出し側の門が止める_供給側とは帰結が逆()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
-        var store = new EfCapitalBaselineStore(
-            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        var store = NewStore(db);
 
         store.Record(100_000m, Now.AddDays(-2)); // 一昨日の正の行
         store.Record(0m, Now.AddDays(-1));       // 前取引日に人手で 0 を投入（Runbook 経路）
@@ -248,14 +253,108 @@ public class CapitalBaselineTests
             "最新行が 0 なら読み出し側の門が未供給へ倒す。供給側の門（行を書かない）とは帰結が逆である");
     }
 
+    // 🔴 T-10-668, FR-10, NFR-07, #889, IADR-0372 決定A: **読み出しの帰結が 5 つに区別して数えられる。**
+    //
+    // 従来、上の 2 本が固定した「非対称」は**外から一切見えなかった** —— 供給側の 0 は値が返るので統制は
+    // 平常どおり動いて見え、人手投入の 0 は黙って `null` になるだけだった。**気づけなければ止まらない**
+    // （issue の方向 3 の害そのもの）ため、裁定がどちらへ転んでも観測は前提条件である。
+    //
+    // 🔴 **門は変えない。** どの帰結でも `GetCurrent()` が返す値は従来と同じであることを併せて表明する。
+    [Theory]
+    // 前取引日（1 日前）の行がある＝平常。
+    [InlineData("previous-day", nameof(CapitalBaselineReadOutcome.Supplied), true)]
+    // 🔴 2 日前の行しかない＝直前の取引日の観測が 1 件も届いていない（残高 0 の日・照会障害・プロセス停止）。
+    //    **値は返るので新規建ては通り続ける。** #889 の症状そのものである。
+    [InlineData("gap", nameof(CapitalBaselineReadOutcome.SuppliedWithGap), true)]
+    [InlineData("none", nameof(CapitalBaselineReadOutcome.UnavailableNoRow), false)]
+    [InlineData("stale", nameof(CapitalBaselineReadOutcome.UnavailableStale), false)]
+    [InlineData("non-positive", nameof(CapitalBaselineReadOutcome.UnavailableNonPositive), false)]
+    public void 基準資金を読んだ帰結が区別して数えられる(string setup, string expectedOutcome, bool supplied)
+    {
+        // #695: 否定形（「他の帰結は数えない」）を含むため Meter をこのテストへ隔離する。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var store = NewStore(db, metrics);
+
+        switch (setup)
+        {
+            case "previous-day":
+                store.Record(100_000m, Now.AddDays(-1));
+                break;
+            case "gap":
+                // 前取引日には 1 件も届かなかった（＝行が書かれていない）。
+                store.Record(100_000m, Now.AddDays(-2));
+                break;
+            case "stale":
+                store.Record(100_000m, Now.AddDays(-5));
+                break;
+            case "non-positive":
+                store.Record(0m, Now.AddDays(-1));
+                break;
+        }
+
+        var baseline = store.GetCurrent();
+
+        (baseline is not null).Should().Be(supplied, "本変更は観測だけで、門（返す値）は変えていない");
+        capture.TagValuesOf(BusinessMetricNames.RiskCapitalBaselineReads, BusinessMetricNames.TagOutcome)
+            .Should().Equal(expectedOutcome);
+    }
+
+    // T-10-668（続き）: 🔴 **観測の欠落は警告として残る。** 計器だけだと、ダッシュボードを見ていない間は
+    // 「古い分母で統制が回っている」ことに気づけない。値が返っている状態なので、他に異常の兆候が出ない。
+    [Fact]
+    public void 観測に欠落があるまま供給したときは警告が残る()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var logger = new RecordingLogger<EfCapitalBaselineStore>();
+        var store = NewStore(db, logger: logger);
+        store.Record(100_000m, Now.AddDays(-3));
+
+        store.GetCurrent()!.EquityInBase.Should().Be(100_000m, "門は変えていない（値は返る）");
+
+        logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("直前の取引日の観測ではありません"));
+    }
+
+    // T-10-668（続き・否定形）: **平常の読み出しではログを出さない。**
+    // 読み出しは審査のたびに起きるため、ここで毎回ログを出すと本物の警告が埋もれる（#897 の教訓）。
+    [Fact]
+    public void 平常の読み出しではログを出さない()
+    {
+        using var db = NewContext(Guid.NewGuid().ToString());
+        var logger = new RecordingLogger<EfCapitalBaselineStore>();
+        var store = NewStore(db, logger: logger);
+        store.Record(100_000m, Now.AddDays(-1));
+
+        store.GetCurrent().Should().NotBeNull();
+
+        logger.Entries.Should().BeEmpty("平常の読み出しで鳴らし続けると、本物の警告が埋もれる");
+    }
+
+    /// <summary>ログの水準と本文を実測するための <see cref="ILogger{TCategoryName}"/>（#889 / T-10-668・T-10-669）。</summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
+    }
+
     // T-10-512: **当日の観測は基準資金を動かさない。** 計画 §5 注記は「日中の評価損益で上限を動かすと、
     // 含み益で上限が緩み含み損で締まるという逆方向の作用が起きる」として明示的に禁じている。
     [Fact]
     public void 当日中に届いた観測は基準資金を動かさない()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
-        var store = new EfCapitalBaselineStore(
-            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        var store = NewStore(db);
 
         store.Record(3_000m, Now.AddDays(-1));   // 前取引日の終わり
         store.Record(9_999m, Now);               // 当日のセッション中（含み益で膨らんだ値）
@@ -271,8 +370,7 @@ public class CapitalBaselineTests
     public void 同一取引日では最後の観測を保ち逆行する観測は無視する()
     {
         using var db = NewContext(Guid.NewGuid().ToString());
-        var store = new EfCapitalBaselineStore(
-            db, new FakeClock(Now, Today), new CapitalBaselineOptions());
+        var store = NewStore(db);
         var yesterday = Now.AddDays(-1);
 
         store.Record(3_000m, yesterday.AddHours(-6));
@@ -302,6 +400,36 @@ public class CapitalBaselineTests
             Now));
 
         (baseline.LastRecorded is not null).Should().Be(recorded);
+    }
+
+    // 🔴 T-10-669, FR-10, NFR-07, #889, IADR-0372 決定B: **書かないことの帰結を名指しする警告が残る。**
+    //
+    // 行を書かないのは正しい（直前の値を書き直すと「今日も照会できた」という起きていない事実を記録する）。
+    // 問題は**その事実がどこにも現れないこと**だった —— 行が書かれない日が続くと、読み出しは前取引日の
+    // 正の値を鮮度が切れるまで返し続け、**新規建ては止まらない**。
+    //
+    // 🔴 **「残高 0 を観測した」と「照会できなかった」はここでは区別できない**（供給側が両方を null へ畳む）。
+    // 区別するには供給側の契約を変える必要があり、それは #889 の裁定の対象である。
+    [Theory]
+    [InlineData(3_000, false)]
+    [InlineData(null, true)]
+    public void 評価額の無い観測は行を書かないことを警告として残す(int? equity, bool warned)
+    {
+        var baseline = FakeCapitalBaseline.NotObserved();
+        var logger = new RecordingLogger<BrokerAccountObservedHandler>();
+        var handler = new BrokerAccountObservedHandler(
+            FakeBrokerAccountObservations.NotObserved(), baseline, logger);
+
+        handler.Handle(new BrokerAccountObserved(
+            BrokerProvider.MoomooSimulate,
+            new BrokerAccountState(AccountType.Margin, EquityInBase: equity),
+            Now));
+
+        logger.Entries.Any(e =>
+                e.Level == LogLevel.Warning && e.Message.Contains("基準資金の行は書きません"))
+            .Should().Be(warned);
+        // 対の不変条件: 警告を足しても**書く／書かない**の判断は変わっていない。
+        (baseline.LastRecorded is not null).Should().Be(equity is not null);
     }
 
     // 合成: スナップショットの基準資金は**口座照会のストアだけ**から来る（台帳射影は供給しない）。
