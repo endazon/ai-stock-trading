@@ -244,6 +244,37 @@ public class DecisionSkipReasonTests
         ]);
     }
 
+    /// <summary>計上のたびに例外を投げる偽物（将来 I/O を持つ実装が挿さった場合の代役）。</summary>
+    private sealed class ThrowingSkipReporter : IDecisionSkipReporter
+    {
+        public int Calls { get; private set; }
+
+        public void Report(string trigger, DecisionSkipReason reason)
+        {
+            Calls++;
+            throw new InvalidOperationException("計上先が壊れている");
+        }
+    }
+
+    // 🔴 T-10-672, PR #919 監査, IADR-0374: **計上の失敗で見送りを壊さない**（兄弟ポートの ...SafeAsync と同じ規律）。
+    // 例外が DecideAsync から漏れると、呼び出し元は decisions{action=no-trade} を計上せず、
+    // 見送りが「判断の失敗」へ化ける。見送りは従来どおり null で返り、計上は試みられたことを併せて表明する
+    // （try/catch ごと計上を消す改変を「呼ばれていない」で捕まえる）。
+    [Fact]
+    public async Task 見送り理由の計上が例外を投げても見送りはそのまま返る()
+    {
+        var reporter = new ThrowingSkipReporter();
+        var service = new AppSvc(
+            new FakeLlm(HoldJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance,
+            skipReporter: reporter);
+
+        var act = async () => await service.DecideAsync(Trigger(), TestContext.Current.CancellationToken);
+
+        (await act.Should().NotThrowAsync()).Subject.Should().BeNull("計上の失敗は見送りの判定を変えない");
+        reporter.Calls.Should().Be(1);
+    }
+
     // 🔴 否定形: **判断が成立したときは 1 件も計上しない。**
     // 見送りカウンタが「判断の回数」になってしまうと、アラートが常時鳴って意味を失う。
     [Fact]

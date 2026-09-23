@@ -99,9 +99,26 @@ public sealed class TradeDecisionAppService(
     // 端点間レイテンシの計上が RecordCycleLatency の 1 か所に判断を集めているのと同じ規律である。
     //
     // 🔴 **呼び出し元の挙動は変わらない。** 本メソッドは観測だけを行い、見送るかどうかの判定には一切関与しない。
+    //
+    // 🔴 PR #919 監査, IADR-0374: **計上の失敗で見送りを壊さない**（兄弟ポートの ...SafeAsync と同じ規律）。
+    // 現行の MetricsDecisionSkipReporter は Counter.Add だけで例外を出さないが、ポートである以上いつか別実装が
+    // 挿さる。ここで例外が漏れると DecideAsync が throw し、呼び出し元は decisions{action=no-trade} を
+    // 計上しない（＝見送りが「判断の失敗」へ化け、判断回数の内訳が歪む）。観測はクリティカルパス外である。
+    // Report は CancellationToken を取らないため、ここで捕まる OperationCanceledException は本判断の
+    // キャンセルではない。よって例外の種類で除外しない。
     private TradeDecisionMade? Skip(DecisionTrigger trigger, DecisionSkipReason reason)
     {
-        _skipReporter.Report(trigger.MetricTrigger, reason);
+        try
+        {
+            _skipReporter.Report(trigger.MetricTrigger, reason);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex, "見送り理由の計上に失敗しました（見送りは継続します）: {Symbol} reason={Reason}",
+                trigger.Symbol, reason);
+        }
+
         return null;
     }
 

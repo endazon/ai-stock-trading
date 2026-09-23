@@ -5,7 +5,7 @@ status: accepted
 related_ids: [FR-04, FR-10, NFR-07, UC-01, UC-02, ADR-0003, IADR-0119, IADR-0255, IADR-0351, IADR-0358, IADR-0374]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-04, FR-10, NFR-07)
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_llm-trade-decision.md (不確実なら Hold)
@@ -160,6 +160,17 @@ for: 30m
 | ① 見送り 1 地点の `Skip(...)` を素の `return null` へ戻す | **T-10-667 が赤**（その理由の計上が消える） |
 | ② 新カウンタの計上で既存の `decisions` 計上を置き換える | **T-10-666 が赤**（既存ダッシュボードが無言で空になる形） |
 | ③ アラートの系列名を存在しないものへ変える | **T-10-665 が赤**（`check-observability-assets`） |
+
+［2026-09-24 追記 / PR #919 監査］フレッシュな文脈の監査の指摘（ブロッキング 1 件 M3 ほか）を受けて、次を足した。
+
+| 変異 | 期待（実測） |
+| --- | --- |
+| ④ `Program.cs` の `AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter>()` を消す | **T-10-671（`DecisionSkipReporterRegistrationTests` の 3 本）が赤**。是正前は**全テスト緑のまま**カウンタ・パネル・アラートが無言になっていた（IADR-0163 決定2 が禁じる形） |
+| ⑤ `Skip()` の try/catch を外す | **T-10-672 が赤**（計上の例外が `DecideAsync` の外へ漏れ、呼び出し元が `decisions{action=no-trade}` を数えない） |
+
+- `LlmHold` が 3 つの帰結（実際の Hold・スクリーニングの門前払い・票の解析不能）を畳んでいることは
+  IADR-0374 §結果 の同日追記に記録した（語彙は増やさない）。
+- ダッシュボードの新パネルは PR #925（`id: 15`・`y: 35`）と衝突しないよう `id: 16`・`y: 42` へ改番した。
 
 ## 検証
 
