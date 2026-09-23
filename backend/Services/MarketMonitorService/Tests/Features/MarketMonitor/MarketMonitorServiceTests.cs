@@ -158,4 +158,29 @@ public class MarketMonitorServiceTests
 
         result.PriceMovements.Should().ContainSingle(m => m.Symbol == "MSFT");
     }
+
+    [Fact]
+    public async Task T_10_627_評価記録は価格の取れなかった保有も含み_到達判定は従来どおり()
+    {
+        // T-10-627, FR-10, #902, IADR-0365 決定1: 評価記録は観測の材料であり、到達の判定・発行は変えない。
+        var h = new Harness(Settings());
+        h.Positions.Set(
+        [
+            new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m),
+            new HeldPosition("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m),
+            new HeldPosition("NVDA", Market.UnitedStates, TradeSide.Buy, 3, 150m, 140m), // 価格未登録（取得失敗）
+        ]);
+        h.Market.Set("AAPL", Market.UnitedStates, 340.12m); // 未到達
+        h.Market.Set("MSFT", Market.UnitedStates, 1_850m); // 到達
+
+        var result = await h.Service().EvaluateRoundAsync();
+
+        result.StopLossEvaluations.Should().BeEquivalentTo(
+        [
+            new StopLossEvaluation("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 338.51m, 340.12m, Now),
+            new StopLossEvaluation("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 1_900m, 1_850m, Now),
+            new StopLossEvaluation("NVDA", Market.UnitedStates, TradeSide.Buy, 3, 140m, null, Now),
+        ]);
+        result.StopLosses.Should().ContainSingle().Which.Symbol.Should().Be("MSFT");
+    }
 }
