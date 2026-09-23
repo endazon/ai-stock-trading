@@ -3,15 +3,15 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-09-11
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0307, IADR-0335]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics]
-issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, MSP#446]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering]
+issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, MSP#446]
 -->
 
 
@@ -39,6 +39,41 @@ CI の `test-traceability` ジョブ（`scripts/check-test-traceability.js`）�
 1. **必須範囲の機能要求**（網羅裁定 [#211](https://github.com/endazon/ai-stock-trading/issues/211): リスク統制・ペーパートレード・バックテスト・取引ガード・段階ゲート）が、それぞれ 1 本以上のテストから参照されていること
 2. 必須範囲の機能要求に機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）が存在すること
 3. テストが参照する機能要求・ユースケース・画面の ID が計画書に実在すること（PR CI では planning submodule を取得しないため skip し、夜間の `doc-links-planning` が担う）
+4. **テスト ID（`T-…`）が一意であること**（次節）
+
+### テスト ID（`T-<機能要求番号>-<連番>`）の採番規約
+
+テスト仕様書（`docs/tests/*.md`）の表は、テスト 1 件に `T-10-450` のような ID を振る。
+**この採番の単一情報源は本節と `docs/tests/*.md` の実物であり、ほかに台帳は持たない。**
+重複があると「既存の最大値」を測れず、**採番の衝突を検知できない**（[#887](https://github.com/endazon/ai-stock-trading/issues/887)）。
+
+**行頭セルの形で 3 つを区別する。**
+
+| 種別 | 行頭セルの形 | 扱い |
+| --- | --- | --- |
+| **採番行** | `\| T-10-450 \|` / `\| **T-10-450** \|`（ID がセル全体） | **採番**。一意でなければならない |
+| **枝番** | `\| T-15-40b \|`（ID ＋ 英小文字 1 文字） | **別の採番**として扱う |
+| **参照行** | `\| T-10-127（否定形） \|`（ID ＋ 全角括弧の注記） | **参照であって採番ではない**。同じテストの別観点を指す |
+
+- 🔴 **採番空間は機能要求ごとであり、ファイルを横断する。** 例えば `T-10-…` は
+  リスク統制のテスト仕様書とリスクガード中核のテスト仕様書の**2 ファイルに跨って**採番されている。
+  **1 ファイルだけを見て最大値を測ると衝突する。**
+- **再利用しない・改番しない・欠番は許す。** 実装 ADR の採番と同じ思想である（改番のコストは参照数に
+  比例して肥大化し、テスト ID は `backend/**/Tests/*.cs` のコメントと `.ai-context/` の凍結記録から参照される）。
+- **新規採番は「その時点の最大値 ＋ 1」。** 最大値は検査器が出す。
+
+  ```
+  $ node scripts/check-test-traceability.js
+    テスト ID: 採番 662 件 / 参照行 3 件 / 重複 24 件（すべて baseline 記載済み）。
+    採番の最大値: T-10-621 / T-12-4 / T-15-103 / T-17-4 / T-19-323 / T-20-3
+  ```
+
+- 🔴 **並行レーンが `develop` に載っていない帯を確保していることがある。** 最大値だけを見て採ると
+  **複数のレーンが同じ番号を採る**（実際に起きている）。並行で着手するときは**互いに素な帯を宣言して確保**し、
+  その帯から採ること。**確保中の帯は本書に書かない**（書いた瞬間から腐る。宣言は issue と PR で行う）。
+- **既に重複している番号は改番しない。** `scripts/test-id-duplicate-baseline.json` へ
+  「どの ID が・どのファイルで・何件・なぜ改番しないか」を記録する。**解消したら baseline から消す**
+  （消さない限り検査が赤くなる＝ラチェット）。
 
 ## 2. 統制系の網羅方式（3 点セット）
 
@@ -125,5 +160,6 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 
 | 日付 | 内容 |
 | --- | --- |
+| 2026-09-23 | テスト ID の採番規約を新設（[#887](https://github.com/endazon/ai-stock-trading/issues/887)）。採番行・枝番・参照行の区別、機能要求ごと・ファイル横断の採番空間、再利用と改番の禁止、並行レーンでの帯の確保、既知の重複のラチェット（`scripts/test-id-duplicate-baseline.json`）。検査は `scripts/check-test-traceability.js` の検査 4 |
 | 2026-09-11 | 「性能ゲート」行の追跡先を是正（#637）。#203 は 2026-08-02 に DUPLICATE でクローズされ後継が無いまま残っていた。計器の新設は #689 で完了済み、実測（実 LLM＋開場中）は #690 が引き継ぐ |
 | 2026-08-03 | 初版作成（#343・全面再実装の退行防止テスト基盤） |
