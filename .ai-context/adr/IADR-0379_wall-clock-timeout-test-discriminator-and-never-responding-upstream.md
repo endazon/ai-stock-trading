@@ -93,7 +93,8 @@ await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(fal
   （「移行前に登録して検査を無効化する」）である。**#907 と本 PR が揃った時点で、allowlist 無しで入れる。**
 - **形 (c)（Wolverine の `IServiceProvider.ExecuteAndWaitAsync`＝既定 5 秒）は別物として扱う。**
   既存の `check-tracked-session-timeout.js` が素の `TrackActivity()` だけを禁じており、この overload は素通りする。
-  同スクリプトの拡張として別 issue で扱う（#357 が 5 秒をスケジューリング遅延だけで超えた実測を持つ）。
+  同スクリプトの拡張として別 issue **#922** で扱う（#357 が 5 秒をスケジューリング遅延だけで超えた実測を持つ）。
+  **形 (a) の検査器そのものは #921** に、検出規則・的中率・allowlist の形・着手条件つきで起票した。
 
 ## 検討した選択肢
 

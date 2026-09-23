@@ -121,14 +121,15 @@ plan_refs:
 - 🔴 **今入れると develop が赤くなる。** 本 PR を当てた後も **`HttpCostControlGateTests.cs` の 1 件**が残り、
   これは**未マージ**の PR #907 が直す。「マージ前に allowlist へ登録して無効化する」運用は
   `check-banned-libraries.js` が明示的に採らないと書いている形である。
-- したがって **#907 と本 PR が揃ってマージされた時点で、allowlist を空にして入れる**。追随 issue を起票する。
+- したがって **#907 と本 PR が揃ってマージされた時点で、allowlist を空にして入れる**。
+  追随 issue は **#921**（検出規則・的中率・allowlist の形・着手条件を記載済み）。
 
 ## 射程外（一覧には載せるが本 PR では直さない）
 
 - 形 (c) の **`IServiceProvider.ExecuteAndWaitAsync`（既定 5 秒・約 30 テスト）**。
   `scripts/check-tracked-session-timeout.js`（#357 / IADR-0168）は素の `TrackActivity()` だけを禁じており、
   **この overload は素通りする**。#357 は 5 秒をスケジューリング遅延だけで超えた実測（6 秒）を持つ。
-  **別 issue**（原因も是正も本件と違う）。
+  **別 issue（#922）**（原因も是正も本件と違う）。
 - gRPC の `GrpcAssumptionsClientIntegrationTests`（#885 本体・PR #896 で是正済み。残る経過時間の上界は
   変異検出のために必要で、IADR-0364 決定 5 が据え置きを決めている）。
 - `backend/Tests/AiStockTrading.IntegrationTests/`（`Category=Integration`。既定 CI から除外され、
@@ -154,5 +155,5 @@ plan_refs:
 
 ## 未決事項
 
-- 検査器の投入は #907 のマージ後（追随 issue）。
-- 形 (c) の 5 秒の窓は別 issue。
+- 検査器の投入は #907 のマージ後（追随 issue **#921**）。
+- 形 (c) の 5 秒の窓は別 issue **#922**。
