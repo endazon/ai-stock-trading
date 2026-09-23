@@ -223,6 +223,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         opend.FundsCurrency.Should().BeNull(
             "実機の OpenD は TrdGetFunds の応答に currency（protobuf の optional）を載せない。"
                 + "偽物の既定を本物より行儀良くしない");
+        // ［PR #913 監査 指摘 4］内訳の既定も同じ理由で「載せない」に固定する。実機が載せるかは未確認であり、
+        // 既定を USD の行にすると #899 の反証が常に無効な世界で全ケースが緑になる。
+        opend.FundsCashInfoCurrencies.Should().BeEmpty(
+            "実機が cashInfoList を載せるかは未確認である。載せる前提の既定を置かない");
 
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
@@ -297,6 +301,28 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         state.Should().NotBeNull("口座種別は確認できている（評価額の可否で種別まで捨てない）");
         state!.AccountType.Should().Be(AccountType.Margin);
         state.EquityInBase.Should().Be(expected is { } e ? e : null);
+    }
+
+    // T-10-670, FR-10, #899, IADR-0373（PR #913 監査 指摘 1）:
+    // 🔴 **反証で採らなかったことは Warning で、この文言で残る。**
+    // 配備直後の運用手順（IADR-0373・Runbook）は「初回の巡回でこの 1 行が**出ていない**こと」を
+    // 確認して可否を決める。文言と水準を固定していなければ、手順のほうが先に腐る
+    //（水準を Information へ落とす変異はどの試験も赤にしなかった＝監査 M7）。
+    [Fact]
+    public async Task 反証で採らなかったことはWarningで残る()
+    {
+        using var opend = new FakeOpenD { EquityInBase = 3_000m };
+        opend.FundsCashInfoCurrencies.Add((int)TrdCommon.Currency.Currency_JPY);
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
+
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+
+        state!.EquityInBase.Should().BeNull();
+        logger.Entries.Should().Contain(
+            e => e.Level == LogLevel.Warning && e.Message.Contains("現金の内訳"),
+            "運用手順はこの 1 行の有無で配備の可否を決める（文言と水準を固定する）");
     }
 
     // T-10-662, FR-10, #899, IADR-0373 決定B:
