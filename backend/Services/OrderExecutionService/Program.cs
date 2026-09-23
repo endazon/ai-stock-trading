@@ -218,6 +218,13 @@ if (brokerSelection.IsMoomoo)
                 OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>(),
             // #820, IADR-0344 決定6: 到達済み S1 行の決済再試行はガードが実行器へ委ねる。
             sp.GetRequiredService<SoftwareStopExecutor>()));
+    // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
+    builder.Services.AddSingleton(sp =>
+        new SoftwareStopLivenessReporter(
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopLivenessReporter>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>()
+                .Value.SoftwareStopSummaryInterval));
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }
