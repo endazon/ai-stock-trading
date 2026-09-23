@@ -68,7 +68,7 @@ issue が挙げた 3 方向（①0 を観測した取引日を未供給として
 | `deploy/observability/README.md` | **直す**（系列の表） |
 | `docs/tests/FR-10_risk-controls-tests.md` | **直す**（T-10-668・T-10-669 と、T-10-516 の節への追記） |
 | `docs/operations/capital-baseline-seed-runbook.md` | **直す**（気づき方＝新しい系列とログを足す。**手順そのものは変えない**） |
-| 各テスト（`CapitalBaselineTests` / `BrokerAccountObservedConsumerTests`） | **直す** |
+| `backend/Services/RiskManagementService/Tests/Features/RiskManagement/CapitalBaselineTests.cs` | **直す**（T-10-668・T-10-669 の両方をここへ置く。**基準資金の供給と読み出しは 1 本の筋**であり、ハンドラ側の写像も同じ節にある〔`口座観測から基準資金が記録される_評価額が無い観測は書かない`〕ため、`BrokerAccountObservedConsumerTests` は**触らない**） |
 | `.ai-context/adr/IADR-0354_capital-baseline-from-broker-account.md` | **直す**（§結果 フォローアップ 5 に後継 IADR を併記。**決定 7 は変えない**） |
 | `.ai-context/adr/IADR-0372_*.md` / `.ai-context/adr/README.md` | **新設 / 直す** |
 | `backend/Services/RiskManagementService/Features/RiskManagement/PortfolioProjection.cs` ほか読み出し側 | **直さない**。基準資金の値の扱いは変えない（本作業は観測だけ） |
@@ -117,6 +117,12 @@ issue が挙げた 3 方向（①0 を観測した取引日を未供給として
 🔴 **ここは「0 を観測した」と「照会できなかった」を区別できない**（供給側が両方を `null` へ畳むため）。
 区別するには供給側の契約を変える必要があり、**それは裁定の対象である**（IADR-0372 選択肢 1 の一部）。
 本作業では**区別しないことを明記して**警告する。
+
+🔴 **抑制（サンプリング・間隔集約）は置かない。読み出し側が平常時に無言なのと非対称なのは意図である。**
+#897 の教訓は「毎回鳴らすな」ではなく **「正常な見え方で鳴らすな」**である。読み出しは審査のたびに起き
+その大半が正常だが、**ここは評価額を取れていない異常のときにしか鳴らない**（正常時は 1 件も出ない）。
+異常が続けば 1 日最大 288 件出るが、それは「288 回分の巡回が値を取れなかった」という事実そのものであり、
+間引くと**継続していること**が読めなくなる。件数で読むなら指標を見る。
 
 ### 決定 C: 計器は 1 本だけ足す（末尾へ）
 
