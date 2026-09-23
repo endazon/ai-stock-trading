@@ -912,6 +912,22 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotContain("解消にも失敗");
     }
 
+    // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
+    // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
+    [Fact]
+    public void 保護喪失の成行手仕舞いが拒否なら_建玉が無保護で残っていると読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseRejected,
+                10, Guid.NewGuid(), CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopCoverageLost));
+        entry.Summary.Should().Contain("拒否").And.Contain("無保護で残っている").And.Contain("要人手対応");
+        entry.Summary.Should().NotContain("解消にも失敗").And.NotContain("結果未確認");
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 免除は保護喪失と別の EventType で残り、
     // 要約から「手法 S2・ペーパーで免除・逆指値なしの建玉を保持」が読める。
     [Fact]

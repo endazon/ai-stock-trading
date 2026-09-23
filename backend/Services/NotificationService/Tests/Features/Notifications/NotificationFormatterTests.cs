@@ -356,6 +356,26 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("約 1 時間ごと").And.Contain("新しい発注ではありません");
     }
 
+    // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、
+    // 「手仕舞いました」とも「届いたか不明」とも言ってはならない。**建玉は残っており、成行は生きていない**
+    // ——読んだ人が取るべき行動（証券会社の画面で建玉を確認し、手で手仕舞う）が読み取れること。
+    [Fact]
+    public void 保護喪失の成行手仕舞いが拒否されたら_手仕舞い済みと言わず建玉が残ることを伝えるCriticalになる()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseRejected,
+            10, Guid.NewGuid(), CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("拒否").And.Contain("建玉が残存").And.NotContain("建玉を解消");
+        msg.Content.Should().Contain("拒否しました").And.Contain("建玉は残っています").And.Contain("証券会社の画面");
+        msg.Content.Should().NotContain("手仕舞いました", "事実と逆のことを言わない（本 issue の中心）");
+        msg.Content.Should().NotContain("届いたか不明", "確認できた拒否は『不明』ではない");
+        msg.Content.Should().NotContain("解消にも失敗しました。逆指値なしの建玉が残っている可能性",
+            "既定の腕（None の文面）へ落ちていない");
+    }
+
     [Fact]
     public void 保護喪失の建玉解消は解消内容が読めるCriticalになる()
     {

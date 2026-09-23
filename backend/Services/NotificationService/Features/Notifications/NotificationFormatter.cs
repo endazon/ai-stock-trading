@@ -81,10 +81,17 @@ public static class NotificationFormatter
     // 🔴 #848, IADR-0117（2026-09-19 追記・改定 7）: CloseDispatchIndeterminate は**「解消に失敗」とは言わない**。
     // 成行手仕舞いは送信済みで、証券会社側で生きているかもしれない。「失敗した」と読んだ人は手で成行を重ね、
     // 二重決済でショート化する。伝えるのは「送った・届いたか分からない・重ねる前に確かめよ」である。
+    // 🔴 #857, IADR-0369: CloseRejected は**「手仕舞いました」と言ってはならない**。
+    // 証券会社が確認できる形で拒否しており、**建玉は残っている**。件名も本文も「解消した」と読ませない。
     public static NotificationMessage From(ProtectiveStopCoverageLost e) => new(
-        e.Remediation == ProtectiveStopRemediation.CloseDispatchIndeterminate
-            ? "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認"
-            : "リスク統制: 保護逆指値が成立せず建玉を解消",
+        e.Remediation switch
+        {
+            ProtectiveStopRemediation.CloseDispatchIndeterminate =>
+                "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認",
+            ProtectiveStopRemediation.CloseRejected =>
+                "リスク統制: 保護逆指値が成立せず、成行手仕舞いも拒否（建玉が残存）",
+            _ => "リスク統制: 保護逆指値が成立せず建玉を解消",
+        },
         $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"
             + $"{(e.Cause == ProtectiveStopLossCause.RejectedAtEntry ? "エントリー時に未受理" : "滞留中に失効（再発注不可）")}のため、"
             + e.Remediation switch
@@ -100,6 +107,14 @@ public static class NotificationFormatter
                     + "この通知は予約が解決されるまで約 1 時間ごと（と再起動のたび）に繰り返します。"
                     + "**同じ CloseDecisionId の通知は同じ 1 本の成行であり、新しい発注ではありません。**"
                     + $"CloseDecisionId={e.CloseDecisionId}",
+                // 🔴 #857, IADR-0369: 「確認できた拒否」——送った成行は**生きていない**（届いたか不明とは別である）。
+                // 二重決済の心配なく手で手仕舞える一方、**建玉は無保護のまま残っている**。
+                ProtectiveStopRemediation.CloseRejected =>
+                    "建玉の成行手仕舞いを**証券会社が拒否しました（確認できた拒否）。建玉は残っています**。"
+                    + "**逆指値なしの建玉が残っているため、証券会社の画面で建玉を確認し、手で手仕舞うか原因を取り除いてください**"
+                    + "（時間外・数量の制約などで拒否されます）。"
+                    + "システムは同じ理由での撃ち直しを 3 回で打ち切りますが、**保護記録は閉じず巡回を続けます**"
+                    + "（この通知は解決するまで約 1 時間ごと（と再起動のたび）に繰り返します）。",
                 _ => "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。直ちに確認してください。**",
             },
         NotificationSeverity.Critical);

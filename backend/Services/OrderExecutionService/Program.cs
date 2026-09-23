@@ -203,6 +203,10 @@ if (brokerSelection.IsMoomoo)
     // ガードは巡回ごとに作られる scoped なので、記憶は外に置く。再起動で消えることが「再起動後に必ず再通知する」仕組み。
     builder.Services.AddSingleton<
         OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>();
+    // #857, IADR-0369: 「確認できた拒否」で終わった成行手仕舞いの数え（撃ち直しの上限）と再通知の記憶
+    //（singleton・非永続。再起動で数えが消える＝もう一度手仕舞いを試みる側へ倒れる）。
+    builder.Services.AddSingleton<
+        OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.CloseRejectionTracker>();
     builder.Services.AddScoped<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(sp =>
         new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard(
             sp.GetRequiredService<IBrokerAdapter>(),
@@ -217,7 +221,10 @@ if (brokerSelection.IsMoomoo)
             sp.GetRequiredService<
                 OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>(),
             // #820, IADR-0344 決定6: 到達済み S1 行の決済再試行はガードが実行器へ委ねる。
-            sp.GetRequiredService<SoftwareStopExecutor>()));
+            sp.GetRequiredService<SoftwareStopExecutor>(),
+            // #857, IADR-0369: 確認できた拒否の数え（撃ち直しの上限）。
+            sp.GetRequiredService<
+                OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.CloseRejectionTracker>()));
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }

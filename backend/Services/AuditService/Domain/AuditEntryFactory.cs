@@ -446,6 +446,9 @@ public static class AuditEntryFactory
                     "——**解消にも失敗。逆指値なしの建玉が残っている可能性（要人手対応）**",
                 ProtectiveStopRemediation.CloseDispatchIndeterminate =>
                     "——**成行手仕舞いは送信済みだが結果未確認（届いたか不明）。注文は重ねていない（要人手確認）**",
+                // #857, IADR-0369: 確認できた拒否。「解消した」とも「不明」とも書かない——建玉は残っている。
+                ProtectiveStopRemediation.CloseRejected =>
+                    "——**成行手仕舞いは拒否された（確認できた拒否）。建玉が無保護で残っている（要人手対応）**",
                 _ => string.Empty,
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

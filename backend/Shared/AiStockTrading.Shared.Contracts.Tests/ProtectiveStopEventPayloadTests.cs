@@ -91,6 +91,25 @@ public class ProtectiveStopEventPayloadTests
         restored.CloseIntent!.Quantity.Should().Be(10);
     }
 
+    // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: **確認できた拒否**は非対称な形で運ぶ。
+    //   - CloseIntent は null —— 送った成行は生きていない。**運ぶと取引台帳が在庫を押さえ**、利用者の手仕舞いが通らない。
+    //   - CloseDecisionId は非 null —— 拒否された発注記録（executed_orders）との相関に要る。
+    // この非対称は意図であり、往復で崩れないことをここで固定する（片方だけ落ちると意味が反転する）。
+    [Fact]
+    public void 拒否された手仕舞いは決済意図を運ばずDecisionIdだけを往復する()
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var evt = new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+            ProtectiveStopRemediation.CloseRejected, 10, closeDecisionId, CloseIntent: null, T0);
+
+        var restored = RoundTrip(evt);
+
+        restored.Should().Be(evt);
+        restored.CloseIntent.Should().BeNull("生きていない成行を処理中の決済として在庫から引かせない");
+        restored.CloseDecisionId.Should().Be(closeDecisionId);
+    }
+
     // 🔴 列挙は末尾へ足す（既存値の序数を動かさない）。序数で永続化・送受信されても過去の記録の意味が変わらない。
     [Fact]
     public void 保護喪失への対処の列挙は既存値の序数を動かさない()
@@ -99,6 +118,8 @@ public class ProtectiveStopEventPayloadTests
         ((int)ProtectiveStopRemediation.PositionClosed).Should().Be(1);
         ((int)ProtectiveStopRemediation.None).Should().Be(2);
         ((int)ProtectiveStopRemediation.CloseDispatchIndeterminate).Should().Be(3);
+        // #857, IADR-0369: 確認できた拒否（建玉が残っている）。
+        ((int)ProtectiveStopRemediation.CloseRejected).Should().Be(4);
     }
 
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由が往復で欠落しないこと**。
