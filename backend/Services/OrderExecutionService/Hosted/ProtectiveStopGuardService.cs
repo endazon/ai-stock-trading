@@ -82,7 +82,8 @@ public sealed class ProtectiveStopGuardService(
         var bus = new MessageBus(runtime);
         await PublishAllAsync(
                 result.Events, evt => bus.PublishAsync(evt),
-                scope.ServiceProvider.GetService<HeldCloseNotificationTracker>())
+                scope.ServiceProvider.GetService<HeldCloseNotificationTracker>(),
+                scope.ServiceProvider.GetService<CloseRejectionTracker>())
             .ConfigureAwait(false);
 
         if (result.Replaced > 0 || result.ClosedOut > 0 || result.Unknown > 0 || result.Failed > 0
@@ -120,8 +121,15 @@ public sealed class ProtectiveStopGuardService(
     // ここで発行に失敗したのに記憶が残ると、Critical も台帳の押さえ（CloseIntent）も出ないまま 1 時間黙る。
     // 未発行分の記憶を消してから投げ直す＝次の巡回（既定 30 秒）が入口で発行し直す。
     // プロセスごと落ちた場合は記憶そのものが消えるので、同じく再起動後の最初の巡回が発行する。
+    // 🔴 PR #916 監査 F2, #857, IADR-0369（2026-09-24 追記）: **確認できた拒否（CloseRejected）も同じ形で補償する。**
+    // ガードは RejectedClose / HoldRejectedClose で発行の前に MarkNotified する。上限に達した行の通知が落ちたまま
+    // 記憶が残ると、次の再通知まで最大 1 時間、無保護の建玉について黙る。消すのは**通知の記憶だけ**で、
+    // 拒否の数えは残す（数えまで消すと、通知の失敗が成行の撃ち直しへ化ける）。
     public static async Task PublishAllAsync(
-        IReadOnlyList<object> events, Func<object, ValueTask> publish, HeldCloseNotificationTracker? tracker)
+        IReadOnlyList<object> events,
+        Func<object, ValueTask> publish,
+        HeldCloseNotificationTracker? tracker,
+        CloseRejectionTracker? rejections = null)
     {
         for (var i = 0; i < events.Count; i++)
         {
@@ -140,6 +148,14 @@ public sealed class ProtectiveStopGuardService(
                         })
                     {
                         tracker?.Forget(closeDecisionId);
+                    }
+                    else if (events[j] is ProtectiveStopCoverageLost
+                    {
+                        Remediation: ProtectiveStopRemediation.CloseRejected,
+                        EntryDecisionId: var entryDecisionId,
+                    })
+                    {
+                        rejections?.ForgetNotification(entryDecisionId);
                     }
                 }
 

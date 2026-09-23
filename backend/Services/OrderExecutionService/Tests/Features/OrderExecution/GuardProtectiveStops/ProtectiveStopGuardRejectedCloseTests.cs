@@ -2,6 +2,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
+using OrderExecutionService.Hosted;
 using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -102,7 +103,8 @@ public class ProtectiveStopGuardRejectedCloseTests
         InMemoryExecutedOrderStore Store,
         InMemoryOrderReservationStore Reservations,
         FakeClock Clock,
-        ProtectiveStopOrder Stop)
+        ProtectiveStopOrder Stop,
+        CloseRejectionTracker Rejections)
     {
         /// <summary>試行 <paramref name="attempt"/> の成行手仕舞いレグの決定的な DecisionId。</summary>
         public Guid CloseDecisionId(int attempt) => ProtectiveStopIds.CloseDecisionId(Stop.EntryDecisionId, attempt);
@@ -122,8 +124,10 @@ public class ProtectiveStopGuardRejectedCloseTests
         stops.Save(stop);
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
-        var guard = new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock);
-        return new Harness(guard, broker, stops, store, reservations, clock, stop);
+        // 本番と同じく数えの記憶は外から渡す（常駐の発行が補償に使う・PR #916 監査 F2）。
+        var rejections = new CloseRejectionTracker();
+        var guard = new ProtectiveStopGuard(broker, broker, stops, store, reservations, clock, closeRejections: rejections);
+        return new Harness(guard, broker, stops, store, reservations, clock, stop, rejections);
     }
 
     // ---- 🔴 本 issue そのもの ----
@@ -177,6 +181,10 @@ public class ProtectiveStopGuardRejectedCloseTests
     [Fact]
     public async Task 拒否が続いても成行は上限3回で止まり_それでもCriticalは1時間ごとに出続ける()
     {
+        // 🔴 PR #916 監査 F3: 上限の値そのものを固定する。以下の表明は定数を参照するため、
+        // 3 → 4 の書き換えはこの 1 行が無いと緑のまま通る（通知文面の「3 回で打ち切」とも食い違う）。
+        ProtectiveStopGuard.MaxConfirmedCloseRejections.Should().Be(3, "IADR-0369 決定3 の上限は 3 回");
+
         var h = NewHarness();
 
         for (var i = 0; i < 5; i++)
@@ -250,6 +258,44 @@ public class ProtectiveStopGuardRejectedCloseTests
             await h.Guard.RunOnceAsync(10);
 
         h.Broker.MarketCloseCount.Should().Be(2 + ProtectiveStopGuard.MaxConfirmedCloseRejections);
+    }
+
+    // 🔴 T-10-685, FR-10, UC-06, #857, IADR-0369（2026-09-24 追記・PR #916 監査 F2）:
+    // **発行できなかった拒否の通知を「通知済み」と覚えない。** ガードは発行の前に MarkNotified する。
+    // 上限に達した巡回の Critical が発行で落ちたまま記憶が残ると、次の再通知まで最大 1 時間、無保護の建玉について黙る。
+    // 常駐（PublishAllAsync）は未発行分の通知の記憶を消す。**拒否の数えは消さない**（通知の失敗を成行の撃ち直しへ化けさせない）。
+    [Fact]
+    public async Task 拒否の通知の発行に失敗したら通知済みと覚えず_次の巡回で成行を重ねずに発行し直す()
+    {
+        var h = NewHarness();
+
+        await h.Guard.RunOnceAsync(10);
+        await h.Guard.RunOnceAsync(10);
+        var reachedCap = await h.Guard.RunOnceAsync(10); // 3 回目の拒否＝上限に達した巡回。
+        h.Broker.MarketCloseCount.Should().Be(3);
+        reachedCap.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().Be(ProtectiveStopRemediation.CloseRejected);
+
+        var publish = async () => await ProtectiveStopGuardService.PublishAllAsync(
+            reachedCap.Events, _ => throw new InvalidOperationException("メッセージ基盤へ発行できない（テスト）"),
+            tracker: null, h.Rejections);
+        await publish.Should().ThrowAsync<InvalidOperationException>("発行の失敗は握りつぶさない");
+
+        h.Clock.Advance(TimeSpan.FromSeconds(30));
+        var retried = await h.Guard.RunOnceAsync(10);
+
+        var lost = retried.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle(
+            "落ちた Critical を 1 時間待たずに次の巡回で出し直す").Which;
+        lost.Remediation.Should().Be(ProtectiveStopRemediation.CloseRejected);
+        lost.CloseDecisionId.Should().BeNull("この巡回では成行を送っていない");
+        h.Broker.MarketCloseCount.Should().Be(3,
+            "拒否の数えは残る——通知の失敗で上限が戻り、成行を撃ち直してはならない");
+
+        // 今度は発行できた → 以後 1 時間は重ねない。
+        await ProtectiveStopGuardService.PublishAllAsync(
+            retried.Events, _ => ValueTask.CompletedTask, tracker: null, h.Rejections);
+        h.Clock.Advance(TimeSpan.FromSeconds(30));
+        (await h.Guard.RunOnceAsync(10)).Events.Should().BeEmpty();
     }
 
     // ---- 変えない側 ----

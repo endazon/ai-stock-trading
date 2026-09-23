@@ -8,8 +8,11 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //
 // 「確認できた拒否」は**不明ではない**——送った成行は生きていない。したがってガードは次の巡回で
 // 撃ち直してよい（据え置きの HeldCloseNotificationTracker とはここが決定的に違う）。ただし
-// **同じ理由で拒否され続ける成行を 30 秒ごとに送り続けない**ため、到達 1 回あたりの上限を持つ
-// S1（SoftwareStopExecutor.MaxCloseAttemptsPerTrigger）と同じ 3 回で打ち切る。
+// **同じ理由で拒否され続ける成行を 30 秒ごとに送り続けない**ため、3 回で打ち切る。
+// 🔴 回数は S1（SoftwareStopExecutor.MaxCloseAttemptsPerTrigger）と同じ 3 だが、**性質は違う**
+// （IADR-0369 の 2026-09-24 追記）: S1 の上限は**到達 1 回あたり**で、使い切ると TriggeredAt を消して
+// 次に損切りラインへ到達したとき自ら再武装する。こちらは**保護記録ごとの累計**で、市場の事象による
+// 再武装は無い——数えが戻るのは再起動・逆指値の再発注の成功・手仕舞いの約定だけである。
 //
 // 🔴 **永続化しないことが設計である。**
 //   - 消える向きが安全側である: 再起動すると数えが 0 に戻り、**もう一度手仕舞いを試みる**。
@@ -39,6 +42,17 @@ public sealed class CloseRejectionTracker
         !_lastNotifiedAt.TryGetValue(entryDecisionId, out var last) || now - last >= RenotifyInterval;
 
     public void MarkNotified(Guid entryDecisionId, DateTimeOffset now) => _lastNotifiedAt[entryDecisionId] = now;
+
+    /// <summary>
+    /// 🔴 PR #916 監査 F2, IADR-0369（2026-09-24 追記）: <b>発行できなかった</b>通知を「通知済み」として覚えない
+    /// （<see cref="MarkNotified"/> の取り消し）。ガードは発行の<b>前</b>に記憶するため、発行が失敗したまま
+    /// 記憶が残ると、上限に達した行は次の再通知まで最大 1 時間、無保護の建玉について黙る。
+    /// <para>
+    /// <b>拒否の数えは消さない</b>（<see cref="Forget"/> とはここが違う）。落ちたのは通知であって手仕舞いの事実ではない
+    /// ——数えまで消すと、通知基盤の不調が証券会社への成行の撃ち直し（最大 3 本）へ化ける。
+    /// </para>
+    /// </summary>
+    public void ForgetNotification(Guid entryDecisionId) => _lastNotifiedAt.TryRemove(entryDecisionId, out _);
 
     /// <summary>
     /// 解決した（逆指値を張り直せた・手仕舞いが通った・記録が完了した）。数えも通知の記憶も捨てる

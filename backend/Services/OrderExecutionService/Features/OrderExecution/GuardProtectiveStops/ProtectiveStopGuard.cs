@@ -50,8 +50,10 @@ public sealed class ProtectiveStopGuard(
 {
     /// <summary>
     /// 🔴 #857, IADR-0369 決定3: <b>確認できた拒否</b>で終わった成行手仕舞いを撃ち直す上限
-    /// （同じ理由で拒否され続ける成行を 30 秒ごとに送り続けない）。到達 1 回あたりの上限を持つ S1
-    /// （<c>SoftwareStopExecutor.MaxCloseAttemptsPerTrigger</c>）と同じ 3 回にする。
+    /// （同じ理由で拒否され続ける成行を 30 秒ごとに送り続けない）。回数は S1
+    /// （<c>SoftwareStopExecutor.MaxCloseAttemptsPerTrigger</c>）と同じ 3 だが、S1 の上限は到達 1 回あたりで
+    /// 次の到達で自ら再武装するのに対し、こちらは<b>保護記録ごとの累計で再武装が無い</b>
+    /// （戻るのは再起動・逆指値の再発注の成功・手仕舞いの約定だけ。IADR-0369 の 2026-09-24 追記）。
     /// <b>上限に達しても記録は閉じない</b>（閉じると巡回から外れ、無保護の建玉が無音で残る）。
     /// </summary>
     public const int MaxConfirmedCloseRejections = 3;

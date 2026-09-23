@@ -376,6 +376,44 @@ public class NotificationFormatterTests
             "既定の腕（None の文面）へ落ちていない");
     }
 
+    // 🔴 T-10-684, FR-10, FR-11, UC-06, #857, IADR-0369（2026-09-24 追記・PR #916 監査 F1）:
+    // **エントリー時の拒否（RejectedAtEntry）に、滞留側の約束を書かない。** この経路は保護記録を作らない
+    // （ResolveUnprotectedEntryAsync は受理されなかった側の分岐）ため、巡回・撃ち直し・上限・再通知は**どれも無く**、
+    // 通知は 1 回きりである。「巡回を続けます」「約 1 時間ごとに繰り返します」と書けば、読んだ人は
+    // システムが見ていると信じて待ち、無保護の建玉が黙って残る（#857 と同じ壊れ方）。
+    [Fact]
+    public void エントリー時の成行手仕舞いが拒否されたら_巡回も再通知も約束せず1回きりで手で手仕舞うよう伝える_否定形()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.CloseRejected,
+            10, Guid.NewGuid(), CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("拒否").And.Contain("建玉が残存");
+        msg.Content.Should().Contain("エントリー時に未受理").And.Contain("建玉は残っています");
+        msg.Content.Should().Contain("手で手仕舞ってください", "取るべき行動が読める");
+        msg.Content.Should().Contain("巡回しません").And.Contain("この通知も繰り返しません")
+            .And.Contain("この 1 回だけ");
+        msg.Content.Should().NotContain("巡回を続けます", "エントリー時の経路には保護記録が無く、巡回は無い");
+        msg.Content.Should().NotContain("1 時間ごと", "再通知は無い（通知は 1 回きり）");
+        msg.Content.Should().NotContain("3 回で打ち切", "撃ち直しも上限も無い");
+        msg.Content.Should().NotContain("手仕舞いました");
+    }
+
+    // T-10-684 の対（変えない側）: 滞留側（LapsedInFlight）は巡回と再通知を実際に持つので、その約束は残す。
+    [Fact]
+    public void 滞留中の成行手仕舞いが拒否されたら_巡回を続け再通知することを伝える()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseRejected,
+            10, Guid.NewGuid(), CloseIntent: null, StopT0));
+
+        msg.Content.Should().Contain("巡回を続けます").And.Contain("1 時間ごと").And.Contain("3 回で打ち切");
+        msg.Content.Should().NotContain("巡回しません").And.NotContain("この 1 回だけ");
+    }
+
     [Fact]
     public void 保護喪失の建玉解消は解消内容が読めるCriticalになる()
     {
