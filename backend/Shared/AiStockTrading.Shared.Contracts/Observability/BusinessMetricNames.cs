@@ -112,6 +112,17 @@ public static class BusinessMetricNames
     /// <summary>FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが暫定日次上限（既定300）に占める割合（%）。100 超で警告。</summary>
     public const string FinnhubDailyVolumeLimitRatioPercent = "ast.finnhub.daily_request_limit_ratio_percent";
 
+    /// <summary>
+    /// FR-10, #889, IADR-0372: <b>統制上限の基準資金（equity）を読んだ結果の内訳。</b>
+    /// タグ <c>outcome</c>（<see cref="CapitalBaselineReadOutcome"/> の各値）。
+    /// <para>
+    /// 🔴 <b>「供給できた」の中を割るためにある。</b> 口座照会が残高 0 を返した日はその取引日の行が
+    /// 1 行も書かれず、読み出しは<b>前取引日の正の値を鮮度が切れるまで返し続ける</b>。
+    /// 値が返っている以上、統制は平常どおり動いて見え、<b>この状態は外から一切見えなかった</b>。
+    /// </para>
+    /// </summary>
+    public const string RiskCapitalBaselineReads = "ast.risk.capital_baseline_reads";
+
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";
 

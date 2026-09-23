@@ -94,4 +94,22 @@ public enum SoftwareStopOutcome
     /// </para>
     /// </summary>
     UnattributedPosition = 7,
+
+    // 序数 8 は並行 PR #918（IADR-0370 決定5 の StopCancelUnconfirmed）が採っている。動かさない。
+
+    /// <summary>
+    /// 🔴 #833 項目1, IADR-0389 決定7: <b>受理だけで完了させた成行決済が、1 株も（または一部しか）約定しないまま
+    /// 終端した</b>（<c>Cancelled</c> / <c>Rejected</c> / <c>Expired</c>）。
+    /// <para>
+    /// moomoo の模擬取引の注文は<b>当日限り</b>であり、受理された決済が 0 約定のまま失効し得る。
+    /// 受理の時点で保護記録は <c>Completed</c> になっているため、このイベントが無ければ
+    /// <b>建玉が無保護のまま、どの巡回にも載らず、通知も 1 本も出ない</b>。
+    /// </para>
+    /// <para>
+    /// <see cref="SoftwareStopExecuted.Quantity"/> は<b>約定しなかった株数</b>＝保護記録へ戻した株数である。
+    /// 記録は <c>Active</c> へ戻り（再武装）、次のガード巡回が新しい試行 ID で決済を撃ち直す。
+    /// 🔴 <b>「送ったが結果が不明」ではこのイベントを出さない</b>——確認できた終端だけが根拠である（決定3）。
+    /// </para>
+    /// </summary>
+    CloseUnfilled = 9,
 }
