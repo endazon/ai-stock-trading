@@ -467,6 +467,9 @@ public static class AuditEntryFactory
                     "——**解消にも失敗。逆指値なしの建玉が残っている可能性（要人手対応）**",
                 ProtectiveStopRemediation.CloseDispatchIndeterminate =>
                     "——**成行手仕舞いは送信済みだが結果未確認（届いたか不明）。注文は重ねていない（要人手確認）**",
+                // #857, IADR-0369: 確認できた拒否。「解消した」とも「不明」とも書かない——建玉は残っている。
+                ProtectiveStopRemediation.CloseRejected =>
+                    "——**成行手仕舞いは拒否された（確認できた拒否）。建玉が無保護で残っている（要人手対応）**",
                 _ => string.Empty,
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
@@ -515,6 +518,10 @@ public static class AuditEntryFactory
                 // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: どの保護記録も主張していない建玉の検知（是正はしない）。
                 SoftwareStopOutcome.UnattributedPosition =>
                     "——**どの保護記録も主張していない建玉がある（検知のみ。ソフトウェア逆指値は決済しない・要人手確認）**",
+                // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（保護記録を再武装した）。
+                SoftwareStopOutcome.CloseUnfilled =>
+                    $"——**受理された成行決済が約定しないまま終了（OrderId={e.CloseOrderId}）。"
+                        + "その株数は建玉に残っており、保護記録を再武装した（次の巡回で撃ち直す・要人手確認）**",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

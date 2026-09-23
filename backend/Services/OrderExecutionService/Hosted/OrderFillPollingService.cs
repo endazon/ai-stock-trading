@@ -101,6 +101,11 @@ public sealed class OrderFillPollingService(
             await RecordTradeExpensesAsync(tradeExpenses, bus, executed, cancellationToken).ConfigureAwait(false);
         }
 
+        // 🔴 FR-10, #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端し、保護記録を
+        // 再武装した事実は**必ず知らせる**（Critical）。これが今日まで無音だった唯一の失敗様式である。
+        foreach (var reArmed in result.SoftwareStopEvents ?? [])
+            await bus.PublishAsync(reArmed).ConfigureAwait(false);
+
         if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogInformation(
                 "約定追跡: 非終端 {Scanned} 件を照会（更新 {Updated} / 終端化 {Terminalized} / 変化なし {Unchanged}"

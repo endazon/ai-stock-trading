@@ -114,16 +114,23 @@ public class HttpReportNarrativeDrafterTests
         (await Drafter(new StubHandler(HttpStatusCode.OK, "not-json")).DraftNarrativeAsync(Ctx)).Should().Be(ReportNarrativeDefaults.PlaceholderText);
     }
 
+    // #885, IADR-0379: #900（IADR-0366）は同ファイルの**種別ごとの打ち切り**だけを是正した。本ケースも
+    // 「壁時計 50 ms の HttpClient.Timeout」対「壁時計 2 秒のハンドラ遅延」という同型であり、同じ形で是正する。
+    // 応答が返らない上流に変え、打ち切りで終わったことを観測して確定させる。**上限値（50 ms）は動かしていない。**
     [Fact]
     public async Task タイムアウト_応答遅延_は_プレースホルダ散文へ倒す()
     {
-        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(2)))
+        var handler = new NeverRespondingHandler();
+        var http = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://llm-gateway"),
             Timeout = TimeSpan.FromMilliseconds(50),
         };
         var drafter = new HttpReportNarrativeDrafter(http, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", "report-narrative");
-        (await drafter.DraftNarrativeAsync(Ctx)).Should().Be(ReportNarrativeDefaults.PlaceholderText);
+
+        (await drafter.DraftNarrativeAsync(Ctx).WaitAsync(Guard)).Should().Be(ReportNarrativeDefaults.PlaceholderText);
+        (await handler.Cancellation.WaitAsync(Guard)).Should()
+            .BeTrue("上限に達した要求は打ち切られる（応答は返っていない）");
     }
 
     // T-5, FR-06/16, IADR-0123 決定1, #308: タイムアウトは**種別ごとに**効く。従来はサービス共通の 1 本だったため、
@@ -176,17 +183,23 @@ public class HttpReportNarrativeDrafterTests
     [Fact]
     public async Task タイムアウト縮退のログに種別と発火した秒数を残す()
     {
+        // #885, IADR-0379: 「壁時計 500 ms の種別ごとの打ち切り」対「壁時計 30 秒のハンドラ遅延」も同型である
+        //（#900 が直したのは同ファイルの別ケース）。応答が返らない上流に変える。**上限値（500 ms）は動かしていない。**
         var logger = new RecordingLogger();
-        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(30)))
+        var handler = new NeverRespondingHandler();
+        var http = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://llm-gateway"),
-            Timeout = TimeSpan.FromSeconds(60),
+            Timeout = Timeout.InfiniteTimeSpan,
         };
         var drafter = new HttpReportNarrativeDrafter(
             http, logger, "internal", null, logPrompts: false,
             timeoutFor: _ => TimeSpan.FromMilliseconds(500));
 
-        await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Monthly, PeriodKey = MonthlyPeriod });
+        await drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Monthly, PeriodKey = MonthlyPeriod })
+            .WaitAsync(Guard);
+        (await handler.Cancellation.WaitAsync(Guard)).Should()
+            .BeTrue("種別ごとの上限に達した要求は打ち切られる（応答は返っていない）");
 
         var log = string.Join("\n", logger.Messages);
         log.Should().Contain("タイムアウト");
@@ -198,11 +211,13 @@ public class HttpReportNarrativeDrafterTests
     [Fact]
     public async Task 呼び出し側のキャンセルは縮退せず伝播する()
     {
+        // #885, IADR-0379: 上流は応答しない（終わり方は呼び出し側のキャンセルだけ）。
+        // 従来の「30 秒の遅延」は、20 秒の種別上限と 60 秒の HttpClient 上限に対する壁時計の余裕に頼っていた。
         using var cts = new CancellationTokenSource();
-        var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(30)))
+        var http = new HttpClient(new NeverRespondingHandler())
         {
             BaseAddress = new Uri("http://llm-gateway"),
-            Timeout = TimeSpan.FromSeconds(60),
+            Timeout = Timeout.InfiniteTimeSpan,
         };
         var drafter = new HttpReportNarrativeDrafter(
             http, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", null, logPrompts: false,
@@ -211,7 +226,10 @@ public class HttpReportNarrativeDrafterTests
         var draft = drafter.DraftNarrativeAsync(Ctx, cts.Token);
         await cts.CancelAsync();
 
-        await FluentActions.Awaiting(() => draft).Should().ThrowAsync<OperationCanceledException>();
+        // 🔴 Guard で束ねる（PR #920 監査）。ここだけ束ねが無く、取り消しの配線が壊れた変異で
+        // **赤にならず CI のジョブ上限まで刺さる**ことを実測した（本文の応答は永久に返らないため）。
+        // 束ねれば同じ回帰が有限時間で落ちる（原因が分かる形）。
+        await FluentActions.Awaiting(() => draft.WaitAsync(Guard)).Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
@@ -460,12 +478,27 @@ public class HttpReportNarrativeDrafterTests
             throw new HttpRequestException("LLM ゲートウェイ不達");
     }
 
-    private sealed class DelayingHandler(TimeSpan delay) : HttpMessageHandler
+    // #885, IADR-0379: 時間では応答しない上流。終わり方は打ち切り（＝要求トークンの発火）だけであり、
+    // 「遅延が上限に勝つ」という競争そのものが存在しない。
+    private sealed class NeverRespondingHandler : HttpMessageHandler
     {
+        private readonly TaskCompletionSource<bool> _cancellation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 要求が打ち切られたか（true＝上限で切られた）。テストはこれで「応答で終わっていない」ことを確定させる。
+        public Task<bool> Cancellation => _cancellation.Task;
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _cancellation.TrySetResult(cancellationToken.IsCancellationRequested);
+            }
+
+            throw new InvalidOperationException("到達しない（無期限待ちは打ち切りでしか終わらない）。");
         }
     }
 
