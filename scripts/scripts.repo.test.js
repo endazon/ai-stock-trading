@@ -12,7 +12,9 @@
  */
 const { execSync } = require('child_process');
 
-module.exports = ({ ok, assert }) => {
+// `skip` は受け口（scripts.test.js）が渡す（#888）。古い受け口から読まれても壊れないよう
+// **既定を「黙らない no-op」ではなく ok 相当の記録**にはせず、最低限の出力を出すスタブにする。
+module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${name}（${reason}）\n`), assert }) => {
 
   // --- check-doc-links.js: parseArgs（資料再編 ADR-0029 で docs/ ・ .ai-context/ の 2 系統走査へ） ---
   const fsDl = require('fs');
@@ -2497,12 +2499,34 @@ module.exports = ({ ok, assert }) => {
       return dir;
     })();
 
+    // 🔴 **toolbox に `bash` が入ったかを実際に確かめる**（#888）。
+    //
+    // 上の toolbox は `/usr/bin` `/bin` からの symlink で作る。**Windows にはそのパスが実在しない**ため
+    // toolbox は空になり、`PATH` を toolbox で**上書き**して `bash` を起動する 4 件が
+    // `spawnSync bash ENOENT` を投げる。旧ハーネスではこれが未捕捉例外となり、
+    // **スイート全体がそこで中断して以降のテストが一度も実行されなかった**（本 issue の本題）。
+    //
+    // 🔴 **呼び出し側が Git Bash を PATH へ足しても解消しない** —— `env.PATH` を toolbox で
+    // 上書きしているからである。そして PATH を絞るのは**必要**である（CI の ubuntu イメージは
+    // `/usr/bin/dotnet` を持つため、絞らないと自己修復の分岐へ入らず本試験が意味を失う。
+    // run 34288592460 で実測）。**つまりこれは「直せる skip」ではなく、環境の違いである。**
+    // CI（ubuntu-latest）では toolbox に `bash` が入るので **skip は発火しない**。
+    const toolboxBash = ['bash', 'bash.exe'].some((n) => fsSs.existsSync(pathSs.join(toolboxPathSs, n)));
+    const SKIP_REASON =
+      'toolbox（setup.sh が使う外部コマンドだけを symlink で集めた一時ディレクトリ）に bash が入らなかった。'
+      + 'このテストは env.PATH を toolbox で上書きするため、呼び出し側の PATH に Git Bash があっても届かない。'
+      + 'PATH を絞ること自体は必要（絞らないと CI イメージの /usr/bin/dotnet が見えて自己修復の分岐へ入らない）。'
+      + 'CI（ubuntu-latest）では bash が入るため、この skip は発火しない。';
+    /** toolbox の bash が要るテスト。無ければ**理由つきで** skip する（黙って飛ばさない）。 */
+    const okNeedsToolboxBash = (name, fn) => (toolboxBash ? ok(name, fn) : skip(name, SKIP_REASON));
+
     ok('setup.sh: 構文エラーが無い（bash -n）', () => {
+      // この 1 件だけは PATH を上書きしないため、`bash` が PATH にあれば toolbox の有無に関わらず走る。
       execFileSyncSs('bash', ['-n', pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], { stdio: 'pipe' });
     });
 
     // dry-run: 実ネットワークを叩かず channel 導出だけを固定する。global.json を優先する経路。
-    ok('setup.sh: DOTNET_INSTALL_DRY_RUN=1 は global.json の sdk.version から channel を導出する（10.0.100 → 10.0）', () => {
+    okNeedsToolboxBash('setup.sh: DOTNET_INSTALL_DRY_RUN=1 は global.json の sdk.version から channel を導出する（10.0.100 → 10.0）', () => {
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
         const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
@@ -2519,7 +2543,7 @@ module.exports = ({ ok, assert }) => {
     });
 
     // global.json が無いツリーでは Directory.Build.props の TargetFramework から導出する。
-    ok('setup.sh: global.json が無ければ Directory.Build.props の TargetFramework から channel を導出する', () => {
+    okNeedsToolboxBash('setup.sh: global.json が無ければ Directory.Build.props の TargetFramework から channel を導出する', () => {
       const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
@@ -2545,7 +2569,7 @@ module.exports = ({ ok, assert }) => {
     });
 
     // 否定形: channel も導出できないツリーでは既定 10.0 へ倒れる（例外を投げて落ちない）。
-    ok('setup.sh: global.json も Directory.Build.props も無ければ既定 channel 10.0 へ倒れる', () => {
+    okNeedsToolboxBash('setup.sh: global.json も Directory.Build.props も無ければ既定 channel 10.0 へ倒れる', () => {
       const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
@@ -2569,7 +2593,7 @@ module.exports = ({ ok, assert }) => {
     // 実効性の証拠: dotnet が PATH に無くても $HOME/.dotnet/dotnet があれば PATH へ足す経路。
     // 実 SDK を新たに用意すると重いため、実行可能ファイルのスタブで代用する（PATH 追加の判定
     // ロジック自体を固定するのが目的であり、本物の dotnet の挙動はここでは検証しない）。
-    ok('setup.sh: $HOME/.dotnet/dotnet が実在すれば PATH へ追加する（スタブで実証）', () => {
+    okNeedsToolboxBash('setup.sh: $HOME/.dotnet/dotnet が実在すれば PATH へ追加する（スタブで実証）', () => {
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
         const dotnetDir = pathSs.join(emptyHome, '.dotnet');
