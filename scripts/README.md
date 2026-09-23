@@ -19,7 +19,7 @@
 | `lib/ci-annotate.js` | 検査器共通。警告を GitHub Actions のアノテーション（`::warning::` / `::notice::`）として出す。素の出力は緑ジョブのログに埋もれて読まれないため。ローカル実行時の見た目は従来どおり | — |
 | `check-commit-messages.js` | コミット件名（`種別(起点ID): 要約`）の規約適合と ADR/IADR の実在性を検査。除外は `commit-allowlist.json`。**置換点**: 計画 ADR の名前空間は `PLAN_PROJECT`（既定 `ai-stock-trading`・環境変数で上書き可）が決める | 標準出力（レポート） |
 | `validate-pipeline-config.js` | 宣言的パイプライン構成のスキーマ検証（`--self-test` で検証器自体も試験） | 標準出力（判定） |
-| `scripts.test.js` | 上記スクリプト群と本リポジトリ固有スクリプトの単体テスト | 標準出力（判定） |
+| `scripts.test.js` | 上記スクリプト群と本リポジトリ固有スクリプトの単体テスト。**1 件の例外でスイートを中断しない**（#888 / IADR-0377）——`ok()` は例外を捕捉して fail として記録し次へ進み、末尾に **総数 / 成功 / 失敗 / skip** と失敗の詳細を出す。**失敗が 1 件でもあれば exit 1**（CI の赤/緑の意味は変わらない。変わるのは止まる位置だけ）。`skip(name, reason)` は**黙って飛ばさず**理由を出し件数にも載せる（companion へも渡る）。ハーネスは工場関数 `createHarness()` で、**ハーネス自身の回帰テストが独立した実体に対して書ける** | 標準出力（判定） |
 | `setup.sh` | 開発環境セットアップ（SessionStart hook / devcontainer から実行） | — |
 | `apply-profile.sh` | `AI_SETUP.md` で宣言したプロファイルに応じてキットを構成（`.example` 有効化等） | `.ai-profile` |
 
