@@ -3,7 +3,7 @@
 # 🔴 **本リポジトリで最初のアラートルールである。** これまで deploy/observability/ には
 # ダッシュボードしか無く、**人が見ているときにしか働かなかった**。
 #
-# 置き場所・種別・命名・重大度の規約は IADR-0374 決定 D が定める（前例がゼロ件だったため本件で決めた）。
+# 置き場所・種別・命名・重大度の規約は IADR-0374 決定 4 が定める（前例がゼロ件だったため本件で決めた）。
 #   - 種別: monitoring.coreos.com/v1 の PrometheusRule（kube-prometheus-stack が拾う形）
 #   - group 名: ai-stock-trading.<領域>
 #   - alert 名: PascalCase の英語（Prometheus のアラート名は識別子であり日本語を入れない）
