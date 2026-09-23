@@ -92,6 +92,8 @@ public sealed class MonitorPollingService(
                 // #909, IADR-0380 決定3: **閉場の報告を先に出す。** 保有 0 件の Observe は観測状態を捨てるため、
                 // 後に置くと「引け際の最終観測値」が消えてから報告することになる。
                 ReportClosedMarkets(closedMarkets, result.ClosedMarketPositions, now);
+                foreach (var market in markets.Except(closedMarkets))
+                    liveness.OnMarketOpen(market); // 監査 F3: 次の閉場期間でまた「閉場と判定」を出せるようにする
                 liveness.Observe(result.StopLossEvaluations, now);
             }
             catch (Exception ex)

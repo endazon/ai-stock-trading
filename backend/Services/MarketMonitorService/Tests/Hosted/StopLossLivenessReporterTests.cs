@@ -242,14 +242,15 @@ public class StopLossLivenessReporterTests
     }
 
     [Fact]
-    public void T_10_697_保有を何も知らない閉場では何も出さず_知った時点で出せる()
+    public void T_10_697_保有を何も知らない閉場では保有の報告を出さず_知った時点で出せる()
     {
         // T-10-697, FR-03, #909, IADR-0380 決定3: 再起動直後は保有を照会していない。
-        // 「保有 0 件」と「照会していない」を混同させないため**何も出さず**、既出にも数えない。
+        // 「保有 0 件」と「照会していない」を混同させないため**保有の報告（Warning / Critical）を出さず**、既出にも数えない。
+        // （「閉場と判定している」Information は別に 1 行出る。IADR-0380［2026-09-24 追記 / PR #929 監査］F3 / T-10-726）
         var (reporter, log) = Create();
 
         reporter.OnMarketClosed(Market.UnitedStates, [], T0, nextOpen: null);
-        log.Entries.Should().BeEmpty();
+        log.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
 
         reporter.OnMarketClosed(Market.UnitedStates, [Aapl(null, T0)], T0.AddMinutes(1), nextOpen: null);
         log.Warnings.Should().ContainSingle()
@@ -295,5 +296,32 @@ public class StopLossLivenessReporterTests
         reporter.Observe([toyota], T0.AddSeconds(60));
         reporter.OnMarketClosed(Market.UnitedStates, [Aapl(null, T0.AddSeconds(60))], T0.AddSeconds(60), T0.AddHours(17));
         log.Entries.Count(e => e.Message.Contains("市場が閉場しました", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public void T_10_726_何も知らない閉場でも閉場と判定したことを閉場期間ごとに1回だけ出す()
+    {
+        // T-10-726, FR-03, FR-10, #909, IADR-0380［2026-09-24 追記 / PR #929 監査］F3: 再起動直後・誤って閉場と読んだ日を
+        // 無音にしない。保有は知らないので書かず、「閉場と判定している・次の開場はいつか」だけを Information で 1 行出す。
+        var (reporter, log) = Create();
+        var nextOpen = T0.AddHours(17);
+
+        reporter.OnMarketClosed(Market.UnitedStates, [], T0, nextOpen);
+        reporter.OnMarketClosed(Market.UnitedStates, [], T0.AddMinutes(1), nextOpen); // 60 秒後の巡回
+
+        log.Entries.Should().ContainSingle();
+        log.Entries[0].Level.Should().Be(LogLevel.Information);
+        log.Entries[0].Message.Should().Contain("閉場と判定しています").And.Contain("UnitedStates")
+            .And.Contain(nextOpen.ToString("O", CultureInfo.InvariantCulture));
+
+        // 開場を挟めば、次の閉場期間でまた 1 回出す（保有が無く Observe に評価が来なくても解ける）。
+        reporter.OnMarketOpen(Market.UnitedStates);
+        reporter.OnMarketClosed(Market.UnitedStates, [], T0.AddDays(1), nextOpen.AddDays(1));
+        log.Informations.Count(m => m.Contains("閉場と判定しています", StringComparison.Ordinal)).Should().Be(2);
+
+        // 他の市場の開場は印を解かない（市場ごとに数える）。
+        reporter.OnMarketOpen(Market.Japan);
+        reporter.OnMarketClosed(Market.UnitedStates, [], T0.AddDays(1).AddMinutes(1), nextOpen.AddDays(1));
+        log.Informations.Count(m => m.Contains("閉場と判定しています", StringComparison.Ordinal)).Should().Be(2);
     }
 }

@@ -25,6 +25,10 @@ public sealed class StopLossLivenessReporter(
 
     // #909, IADR-0380 決定3: 保護の空白を既に声に出した市場（閉場のたびに 1 回だけ出す）。
     private readonly HashSet<Market> _closedReported = [];
+
+    // IADR-0380［2026-09-24 追記 / PR #929 監査］F3: 「閉場と読んでいる」ことを閉場期間ごとに市場ごと 1 回出した印
+    // （OnMarketOpen で解く）。保有を知らなくても出す —— 再起動直後・誤って閉場と読んだ日を無音にしない。
+    private readonly HashSet<Market> _closedAnnounced = [];
     private DateTimeOffset? _lastSummaryAt;
 
     private TimeSpan SummaryInterval => TimeSpan.FromSeconds(Math.Max(1, options.Value.StopLossSummaryIntervalSeconds));
@@ -44,8 +48,10 @@ public sealed class StopLossLivenessReporter(
     /// 捨てないと、閉場をまたいだ最初の欠落が「引け前の最終取得からの経過」として即座に警告される。
     /// </para>
     /// <para>
-    /// 何も知らない（保有を照会していない・再起動直後）ときは**何も出さない**。「保有 0 件」と
+    /// 何も知らない（保有を照会していない・再起動直後）ときは**保有の報告を出さない**。「保有 0 件」と
     /// 「照会していない」を混同させないためであり、次に保有を知った巡回で出し直せるよう既出にも数えない。
+    /// ただし「閉場と判定している・次の開場はいつか」の Information は閉場期間ごとに 1 回出す
+    /// （IADR-0380［2026-09-24 追記 / PR #929 監査］F3。無音だと誤って閉場と読んだ日が見えない）。
     /// </para>
     /// </summary>
     /// <param name="market">閉場している市場。</param>
@@ -69,12 +75,27 @@ public sealed class StopLossLivenessReporter(
 
             ForgetMarket(market);
 
-            if (lines.Count == 0 || !_closedReported.Add(market))
-                return; // 知らないことは書かない／同じ閉場で二度目は出さない
-
             var until = nextOpen is { } open
                 ? open.ToString("O", CultureInfo.InvariantCulture)
                 : "不明（カレンダーが次の開場を見通せません）";
+
+            if (lines.Count == 0)
+            {
+                // 保有は知らないので書かない（既出にも数えない）。閉場と読んでいることだけを 1 回出す（監査 F3）。
+                if (_closedAnnounced.Add(market))
+                {
+                    logger.LogInformation(
+                        "市場を閉場と判定しています（{Market}）。次の開場は {NextOpen} です。"
+                            + "閉場中は損切り（S1）の到達を評価しません。",
+                        market, until);
+                }
+
+                return;
+            }
+
+            _closedAnnounced.Add(market);
+            if (!_closedReported.Add(market))
+                return; // 同じ閉場で二度目は出さない
             var breached = lines.Count(l => l.Breached);
             var details = string.Join(" / ", lines.Select(l => l.Text));
 
@@ -96,6 +117,16 @@ public sealed class StopLossLivenessReporter(
                     + "閉場中は到達を検知せず、成行を出しても翌寄りまで約定しません: {Details}",
                 market, lines.Count, until, details);
         }
+    }
+
+    /// <summary>
+    /// IADR-0380［2026-09-24 追記 / PR #929 監査］F3: その市場を開場と読んだ巡回で呼ぶ。「閉場と判定しています」の印を解き、
+    /// 次の閉場期間でまた 1 回出せるようにする（保有が無く <see cref="Observe"/> に評価が来ない市場でも解けるように分けてある）。
+    /// </summary>
+    public void OnMarketOpen(Market market)
+    {
+        lock (_gate)
+            _closedAnnounced.Remove(market);
     }
 
     /// <summary>1 巡回の評価記録を受け取り、必要なら要約・欠落の Warning・回復を記録する。</summary>

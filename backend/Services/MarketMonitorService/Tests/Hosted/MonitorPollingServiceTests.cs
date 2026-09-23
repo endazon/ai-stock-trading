@@ -186,7 +186,8 @@ public class MonitorPollingServiceTests
         h.Clock.UtcNow = Now.AddMinutes(10);
         await service.RunOnceAsync(CancellationToken.None);
 
-        log.Informations.Should().HaveCount(1);
+        // #909 以降、閉場の巡回は「閉場と判定しています」（保有を知らない東証の側）を別に出すので、要約だけを数える。
+        log.Informations.Count(m => m.Contains("損切り評価は稼働中", StringComparison.Ordinal)).Should().Be(1);
     }
 
     [Fact]
@@ -225,5 +226,38 @@ public class MonitorPollingServiceTests
         h.Clock.UtcNow = Now.AddMinutes(2);
         await service.RunOnceAsync(CancellationToken.None);
         log.Entries.Count(e => e.Message.Contains("市場が閉場しました", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task T_10_727_閉場中に起動した最初の巡回と_開場を挟んだ次の閉場で閉場の判定を1行ずつ出す()
+    {
+        // T-10-727, FR-03, FR-10, #909, IADR-0380［2026-09-24 追記 / PR #929 監査］F3: 保有が無くても
+        // 「閉場と判定している・次の開場」を閉場期間ごとに 1 回出す。開場の巡回が印を解く配線（OnMarketOpen）を固定する。
+        await using var h = new Harness(Settings(Aapl)); // 保有なし（Observe に評価が来ない）
+        var log = new StopLossLivenessReporterTests.RecordingLogger<StopLossLivenessReporter>();
+        h.Liveness = new StopLossLivenessReporter(Options.Create(new MonitorOptions()), log);
+        h.Market.Set("AAPL", Market.UnitedStates, 100m);
+        h.Schedule.Open = false; // 閉場中に起動した
+        h.Schedule.NextOpenAt = Now.AddHours(17);
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+        h.Clock.UtcNow = Now.AddMinutes(1);
+        await service.RunOnceAsync(CancellationToken.None);
+
+        int ClosedLines(Market m) => log.Informations.Count(x =>
+            x.Contains("閉場と判定しています", StringComparison.Ordinal) && x.Contains(m.ToString(), StringComparison.Ordinal));
+        ClosedLines(Market.UnitedStates).Should().Be(1, "起動直後の最初の巡回で 1 回・次の巡回では重ねない");
+        log.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning, "保有を知らないので無保護の報告は出さない");
+
+        // 開場（保有なし）→ 再び閉場。次の閉場期間の最初の巡回でまた 1 回出す。
+        h.Schedule.Open = true;
+        h.Clock.UtcNow = Now.AddHours(17);
+        await service.RunOnceAsync(CancellationToken.None);
+        h.Schedule.Open = false;
+        h.Clock.UtcNow = Now.AddHours(24);
+        await service.RunOnceAsync(CancellationToken.None);
+
+        ClosedLines(Market.UnitedStates).Should().Be(2);
     }
 }
