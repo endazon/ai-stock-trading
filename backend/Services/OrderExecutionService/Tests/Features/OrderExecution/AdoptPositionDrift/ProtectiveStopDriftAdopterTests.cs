@@ -8,11 +8,12 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-641〜T-10-645, FR-10, FR-05, FR-11, UC-02, UC-06, #858, IADR-0370, IADR-0350 決定5:
+// 🔴 T-10-641〜T-10-645・T-10-734〜T-10-738, FR-10, FR-05, FR-11, UC-02, UC-06, #858, IADR-0370, IADR-0350 決定5:
 // **利用者が承認した乖離の取り込みに、発注執行側の保護記録とブローカー側の保護注文を追随させる。**
 //
 // 取り込み（#849）は取引台帳だけを観測値へ合わせるため、保護記録は何も知らされないまま残っていた。
@@ -20,6 +21,7 @@ namespace OrderExecutionService.Tests;
 //
 // 本クラスは「消えた建玉の保護を取り消して終端化する」「取り消せたと確認できなければ黙って閉じない」
 // 「無関係な銘柄に触らない」「再送で二重に取り消さない」「保護を消しすぎない」を固定する。
+// 🔴 PR #918 の監査（IADR-0370 2026-09-24 追記）: 「建玉照会が不明・失敗なら帳簿もブローカーも変えない」を加える。
 public class ProtectiveStopDriftAdopterTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 23, 7, 0, 0, TimeSpan.Zero);
@@ -64,10 +66,16 @@ public class ProtectiveStopDriftAdopterTests
             return cancelThrows ? throw new InvalidOperationException("取消に失敗（テスト）") : Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
-            PositionsThrow
+        /// <summary>建玉照会が呼ばれた回数。</summary>
+        public int PositionQueryCount { get; private set; }
+
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
+        {
+            PositionQueryCount++;
+            return PositionsThrow
                 ? throw new InvalidOperationException("建玉照会に失敗（テスト）")
                 : Task.FromResult(Positions);
+        }
     }
 
     private static OrderIntent CloseIntent() =>
@@ -80,7 +88,9 @@ public class ProtectiveStopDriftAdopterTests
         InMemoryProtectiveStopOrderStore Stops,
         InMemoryExecutedOrderStore Store);
 
-    private static Harness NewHarness(ScriptedBroker? broker = null, bool withPositionSource = true)
+    private static Harness NewHarness(
+        ScriptedBroker? broker = null, bool withPositionSource = true,
+        SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopDriftAdopter>? logger = null)
     {
         broker ??= new ScriptedBroker();
         var stops = new InMemoryProtectiveStopOrderStore();
@@ -88,7 +98,7 @@ public class ProtectiveStopDriftAdopterTests
         var amendments = new OrderAmendmentService(
             broker, store, new InMemoryOrderLifecycleStore(), new FakeClock());
         var adopter = new ProtectiveStopDriftAdopter(
-            stops, amendments, new FakeClock(), logger: null, positions: withPositionSource ? broker : null);
+            stops, amendments, new FakeClock(), logger, positions: withPositionSource ? broker : null);
         return new Harness(adopter, broker, stops, store);
     }
 
@@ -111,13 +121,14 @@ public class ProtectiveStopDriftAdopterTests
     }
 
     /// <summary>ソフトウェア逆指値（S1）の行（ブローカーに注文が無い＝帳簿だけの行）。</summary>
-    private static ProtectiveStopOrder AddSoftwareStop(Harness h, int quantity = 4)
+    private static ProtectiveStopOrder AddSoftwareStop(Harness h, int quantity = 4, DateTimeOffset? createdAt = null)
     {
+        var created = createdAt ?? Now.AddMinutes(-20);
         var entryDecisionId = Guid.NewGuid();
         var stop = new ProtectiveStopOrder(
             entryDecisionId, Guid.NewGuid(), string.Empty, "AAPL", Market.UnitedStates, TradeSide.Buy,
             ProductType.Cash, BrokerProvider.MoomooSimulate, quantity, 950m, 1m, Attempt: 0,
-            ProtectiveStopState.Active, Now.AddMinutes(-20), Now.AddMinutes(-20),
+            ProtectiveStopState.Active, created, created,
             Mechanism: StopLossExecutionMethod.SoftwareStop, RemainingProtected: quantity);
         h.Stops.Save(stop);
         return stop;
@@ -277,19 +288,66 @@ public class ProtectiveStopDriftAdopterTests
         result.Reduced.Should().Be(1);
     }
 
-    // 建玉照会が**例外で落ちた**ときも「不明」と同じ側へ倒す（照会できない構成と区別しない）。
+    // ---- T-10-734: 建玉照会が例外で落ちたら、帳簿もブローカーも変えない（PR #918 監査で反転） ----
+    // 🔴 旧版はここで「取り込みの観測（最大 60 分前）に従って取り消す」を固定していた。
+    // 建玉が消えたと**確かめられない**まま保護を消すと、その間に買い戻した実在の建玉が無保護になる。
+    // 照会ができる構成で照会が落ちたのは「照会できない構成」とは違う —— 再試行で照会をやり直す。
     [Fact]
-    public async Task 建玉照会が例外で落ちても取り込みの観測に従う()
+    public async Task 建玉照会が例外で落ちたら帳簿もブローカーも変えずCriticalを出して再試行へ回す_否定形()
     {
-        var h = NewHarness();
+        var logger = new SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopDriftAdopter>();
+        var h = NewHarness(logger: logger);
         h.Broker.PositionsThrow = true;
         var stop = AddBrokerStop(h);
 
-        var result = await h.Adopter.ApplyAsync(Adopted());
+        var thrown = await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(
+            () => h.Adopter.ApplyAsync(Adopted()));
 
-        h.Broker.CancelCount.Should().Be(1, "何もしないと孤立した逆指値が残る");
-        h.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
-        result.Reduced.Should().Be(1);
+        h.Broker.CancelCount.Should().Be(0, "建玉が消えたと確かめられないまま保護を取り消さない");
+        var current = h.Stops.Find(stop.EntryDecisionId)!;
+        current.State.Should().Be(ProtectiveStopState.Active);
+        current.RemainingProtected.Should().Be(10);
+        thrown.InnerException.Should().BeOfType<InvalidOperationException>("照会の失敗の原因を運ぶ");
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("変えません").And.Contain("AAPL");
+    }
+
+    // ---- T-10-735: 建玉照会が不明（null）でも同じ（0 株と読まない） ----
+    [Fact]
+    public async Task 建玉照会が不明なら0株と読まず帳簿もブローカーも変えない_否定形()
+    {
+        var logger = new SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopDriftAdopter>();
+        var h = NewHarness(logger: logger);
+        h.Broker.Positions = null;
+        var brokerStop = AddBrokerStop(h, quantity: 10);
+        var softwareStop = AddSoftwareStop(h, quantity: 4);
+
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(
+            () => h.Adopter.ApplyAsync(Adopted(before: 14, after: 0)));
+
+        h.Broker.CancelCount.Should().Be(0, "不明は「建玉が無い」ではない");
+        h.Stops.Find(brokerStop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        h.Stops.Find(brokerStop.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+        h.Stops.Find(softwareStop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        h.Stops.Find(softwareStop.EntryDecisionId)!.RemainingProtected.Should().Be(4, "帳簿だけの行も削らない");
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    // ---- T-10-736: 減らすものが無いなら照会せず、照会の失敗で再試行を作らない ----
+    [Fact]
+    public async Task 主張が取り込みの目標以下なら照会せず_照会が落ちていても投げない()
+    {
+        var h = NewHarness();
+        h.Broker.PositionsThrow = true;
+        var stop = AddSoftwareStop(h, quantity: 4);
+
+        // 台帳 10 株 → 6 株。主張は 4 株しかない（目標 6 株以下）＝照会の答えに依らず減らすものは無い。
+        var result = await h.Adopter.ApplyAsync(Adopted(before: 10, after: 6));
+
+        h.Broker.PositionQueryCount.Should().Be(0);
+        result.Reduced.Should().Be(0);
+        result.Events.Should().BeEmpty();
+        h.Stops.Find(stop.EntryDecisionId)!.RemainingProtected.Should().Be(4);
     }
 
     // 🔴 停止要求は**行の処理を終えてから**見る。1 行目の取消を送った直後に停止されても、
@@ -331,5 +389,54 @@ public class ProtectiveStopDriftAdopterTests
         reversed.Events.Should().BeEmpty();
         h.Broker.CancelCount.Should().Be(0);
         h.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    // ---- T-10-737: 方向の検査は帳簿だけの行（S1）で効いていることを固定する ----
+    // 上の S0 だけの試験は「全部か 0 か」が結果を覆い隠す（反転 10→−3 の目標 3 株では 10 株の S0 に届かない）。
+    // S1 は部分的に削れるので、検査が無ければ実際に削られる。主張 15 株は台帳 10 株を上回る（古い主張が残った状態）。
+    [Theory]
+    [InlineData(10, 12)]   // 増える方向
+    [InlineData(10, -3)]   // 方向の反転
+    [InlineData(-10, 3)]   // 方向の反転（売り建て側から）
+    public async Task 増加や反転の取り込みでは帳簿だけの行も削らない_否定形(int before, int after)
+    {
+        var h = NewHarness();
+        var stop = AddSoftwareStop(h, quantity: 15);
+        if (before < 0)
+        {
+            stop = stop with { EntrySide = TradeSide.Sell };
+            h.Stops.Save(stop);
+        }
+
+        var result = await h.Adopter.ApplyAsync(Adopted(before, after));
+
+        result.Events.Should().BeEmpty();
+        result.Reduced.Should().Be(0);
+        h.Stops.Find(stop.EntryDecisionId)!.RemainingProtected.Should().Be(15);
+        h.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    // ---- T-10-738: 同じ銘柄の S1 が 2 行（稼働環境の AAPL 715 株・713 株）。古い行から使い切る ----
+    [Fact]
+    public async Task 同じ銘柄の帳簿だけの行が2行なら部分的な取り込みは古い行から使い切る()
+    {
+        var h = NewHarness();
+        var older = AddSoftwareStop(h, quantity: 715, createdAt: Now.AddHours(-3));
+        var newer = AddSoftwareStop(h, quantity: 713, createdAt: Now.AddHours(-1));
+        h.Broker.Positions = [new("AAPL", Market.UnitedStates, 500, 1_000m)];
+
+        // 台帳 1,428 株 → 500 株（928 株がシステム外で売られた）。
+        var result = await h.Adopter.ApplyAsync(Adopted(before: 1_428, after: 500));
+
+        var olderNow = h.Stops.Find(older.EntryDecisionId)!;
+        var newerNow = h.Stops.Find(newer.EntryDecisionId)!;
+        olderNow.RemainingProtected.Should().Be(0, "作成の古い行から使い切る（巡回と同じ規則）");
+        olderNow.State.Should().Be(ProtectiveStopState.Completed);
+        newerNow.RemainingProtected.Should().Be(500, "残りの 213 株だけを新しい行から減らす");
+        newerNow.State.Should().Be(ProtectiveStopState.Active);
+        h.Broker.CancelCount.Should().Be(0);
+        result.Reduced.Should().Be(2);
+        result.Events.OfType<SoftwareStopExecuted>().Select(e => (e.EntryDecisionId, e.Quantity))
+            .Should().Equal((older.EntryDecisionId, 715), (newer.EntryDecisionId, 213));
     }
 }

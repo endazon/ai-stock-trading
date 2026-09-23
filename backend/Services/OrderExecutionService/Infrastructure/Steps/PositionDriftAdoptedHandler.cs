@@ -18,6 +18,11 @@ namespace OrderExecutionService.Infrastructure.Steps;
 //   ① 記録が Active のまま残る（ガードが巡回を続ける）② Critical のイベントを出す
 // の 2 つで必ず可視化される。全体を投げ直すと、成功した行の処理まで捨てて再配送することになる
 // （冪等なので壊れはしないが、成功と失敗が混ざった 1 通を丸ごと DLQ へ送ると、取り消せた側の記録が読みにくい）。
+//
+// 🔴 **ただし建玉照会が不明・失敗のときは投げる**（ProtectiveStopDriftPositionsUnknownException。
+// IADR-0370 2026-09-24 追記 / PR #918 監査）。このときは**どの行にも触る前に**打ち切っているので捨てる成功は無く、
+// 「建玉が消えたと確かめられないまま保護を消さない」ために、再試行（2s/10s/30s）で照会をやり直す。
+// 使い切れば _error キューに残る（Critical は業務クラスがログ済み。投げた処理中の発行は Wolverine が捨てるため、ここでは発行しない）。
 public sealed class PositionDriftAdoptedHandler(
     ProtectiveStopDriftAdopter adopter,
     ILogger<PositionDriftAdoptedHandler> logger)

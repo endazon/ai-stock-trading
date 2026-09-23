@@ -24,7 +24,10 @@ namespace OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 //     ——「取り消せた」と誤って主張すると、生きた逆指値が誰の巡回からも外れる。
 //   - 🔴 **取り消す前に新しい建玉照会で裏を取る**（取り込みが許す観測は最大 60 分古い。IADR-0350 決定1）。
 //     照会できるなら「その純額と取り込みの目標の**大きい方**」を目標に採り、**保護を消しすぎない側**へ倒す。
-//     照会が不明（null）なら取り込みの観測に従う——何もしないと孤立した逆指値が残る（本 issue が閉じる穴そのもの）。
+//   - 🔴 **照会が不明（null）・例外なら、帳簿もブローカーも 1 つも変えない**（IADR-0370 2026-09-24 追記 / PR #918 監査）。
+//     Critical をログし ProtectiveStopDriftPositionsUnknownException を投げて、メッセージングの再試行に照会をやり直させる。
+//     ——保護の取消は「建玉が消えたと確かめられたとき」にしか許さない。最大 60 分古い観測は確かめたことにならない。
+//     空の一覧（照会は成功・0 株）は「確かめた」であり、信じる。建玉照会を持たない構成（null 注入）は従来どおり観測に従う。
 public sealed class ProtectiveStopDriftAdopter(
     IProtectiveStopOrderStore stops,
     OrderAmendmentService amendments,
@@ -68,9 +71,20 @@ public sealed class ProtectiveStopDriftAdopter(
         if (group.Count == 0)
             return new ProtectiveStopDriftAdoptionResult(0, 0, 0, events);
 
-        var target = await ResolveTargetAsync(adopted, entrySide, Math.Abs(after), cancellationToken)
-            .ConfigureAwait(false);
         var claimed = group.Sum(s => s.ProtectedQuantity);
+        var adoptedTarget = Math.Abs(after);
+        if (claimed <= adoptedTarget)
+        {
+            // 目標は照会の純額と取り込みの目標の大きい方なので、主張が取り込みの目標以下なら照会の答えに依らず
+            // 減らすものは無い。照会せずに終える（照会が落ちているときに無用な再試行・_error を作らない）。
+            _logger.LogInformation(
+                "乖離の取り込みで減らす保護はありません（主張 {Claimed} ≦ 目標 {Target}）: 銘柄={Symbol}/{Market}",
+                claimed, adoptedTarget, adopted.Symbol, adopted.Market);
+            return new ProtectiveStopDriftAdoptionResult(group.Count, 0, 0, events);
+        }
+
+        var target = await ResolveTargetAsync(adopted, entrySide, adoptedTarget, cancellationToken)
+            .ConfigureAwait(false);
         var budget = claimed - target;
         if (budget <= 0)
         {
@@ -134,7 +148,9 @@ public sealed class ProtectiveStopDriftAdopter(
     }
 
     // 🔴 IADR-0370 決定3: 取り込みの観測は最大 60 分古い。新しい建玉照会が使えるなら、その純額と取り込みの目標の
-    // **大きい方**を採る（保護を消しすぎない側へ倒す）。照会が不明（null）なら取り込みの観測に従う。
+    // **大きい方**を採る（保護を消しすぎない側へ倒す）。
+    // 🔴 IADR-0370（2026-09-24 追記 / PR #918 監査）: 照会が不明（null）・例外なら**何も変えずに投げる**
+    // （帳簿にもブローカーにも触る前にここを通る）。建玉照会を持たない構成（positions が null）だけは観測に従う。
     private async Task<int> ResolveTargetAsync(
         PositionDriftAdopted adopted, TradeSide entrySide, int adoptedTarget, CancellationToken cancellationToken)
     {
@@ -148,20 +164,31 @@ public sealed class ProtectiveStopDriftAdopter(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            snapshot = null;
-            _logger.LogWarning(ex, "乖離の取り込みの追随で建玉を照会できませんでした（取り込みの観測に従います）。");
+            throw PositionsUnknown(adopted, ex);
         }
 
         if (snapshot is null)
-        {
-            _logger.LogWarning(
-                "建玉が不明なため、取り込みの観測（最大 60 分前・利用者が承認済み）を目標にします: 銘柄={Symbol}/{Market} 目標={Target}",
-                adopted.Symbol, adopted.Market, adoptedTarget);
-            return adoptedTarget;
-        }
+            throw PositionsUnknown(adopted, innerException: null);
 
         var net = ProtectiveStopNetting.DirectionalNet(adopted.Symbol, adopted.Market, entrySide, snapshot);
         return Math.Max(adoptedTarget, net);
+    }
+
+    // 🔴 無音にしない: Critical をログしてから投げる。発行（PublishAsync）では知らせない ——
+    // Wolverine はハンドラが投げた時点で、その処理中に発行したメッセージを捨てる（Executor の失敗経路の ClearAllAsync）。
+    // 再試行を使い切ったメッセージは _error キューに残る（OrderDispatchReservationConflictException と同じ作法）。
+    private ProtectiveStopDriftPositionsUnknownException PositionsUnknown(
+        PositionDriftAdopted adopted, Exception? innerException)
+    {
+        _logger.LogCritical(innerException,
+            "乖離の取り込みの追随で建玉を照会できませんでした（不明または失敗）。**建玉が消えたと確かめられないため、"
+            + "保護記録もブローカー側の保護注文も変えません。**再試行で照会をやり直します（使い切ると _error キュー）。"
+            + "照会が回復しないあいだ、保護逆指値は残ったままです——建玉が本当に無いなら発火で意図しないショートが建ち得るので、"
+            + "証券会社の画面で建玉と未約定の逆指値を確認してください: 取り込み={AdoptionId} 銘柄={Symbol}/{Market}"
+            + " 台帳 {Before}→{After} 依頼者={Actor}",
+            adopted.AdoptionId, adopted.Symbol, adopted.Market,
+            adopted.LedgerQuantityBefore, adopted.LedgerQuantityAfter, adopted.Actor);
+        return new ProtectiveStopDriftPositionsUnknownException(adopted.AdoptionId, adopted.Symbol, innerException);
     }
 
     // 主張（残保護数量）を減らし、0 になった行を終端化する。

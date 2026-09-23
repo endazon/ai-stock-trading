@@ -13,13 +13,14 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-641・T-10-642, FR-10, FR-05, FR-11, UC-06, #858, IADR-0370, IADR-0350 決定5:
+// 🔴 T-10-641・T-10-642・T-10-739, FR-10, FR-05, FR-11, UC-06, #858, IADR-0370, IADR-0350 決定5:
 // **発注執行が PositionDriftAdopted を購読していること**（サービス間は直接参照しない）と、
 // 追随の結果が実際に発行されることを、本番のハンドラ型そのもので固定する。
 //
@@ -36,7 +37,8 @@ public class PositionDriftAdoptedHandlerTests
     }
 
     // 建玉は空（取り込みの観測どおり消えている）。取消後の照会が返す状態だけ注入する。
-    private sealed class ScriptedBroker(OrderStatus? afterCancel) : IBrokerAdapter, IBrokerPositionSource
+    private sealed class ScriptedBroker(OrderStatus? afterCancel, bool positionsUnknown = false)
+        : IBrokerAdapter, IBrokerPositionSource
     {
         public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
 
@@ -57,7 +59,7 @@ public class PositionDriftAdoptedHandlerTests
         }
 
         public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<BrokerPositionSnapshot>?>([]);
+            Task.FromResult<IReadOnlyList<BrokerPositionSnapshot>?>(positionsUnknown ? null : []);
     }
 
     private static OrderIntent Intent() =>
@@ -144,5 +146,33 @@ public class PositionDriftAdoptedHandlerTests
         session.Sent.MessagesOf<SoftwareStopExecuted>().Should().ContainSingle()
             .Which.Outcome.Should().Be(SoftwareStopOutcome.StopCancelUnconfirmed);
         stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+    }
+
+    // ---- T-10-739: 建玉照会が不明なら、ハンドラは例外を投げて再試行へ回し、何も発行しない ----
+    // 🔴 PR #918 の監査（IADR-0370 2026-09-24 追記）: 例外を握って正常終了すると、メッセージは消費され
+    // 「建玉が確かめられたら取り消す」機会が失われる。投げれば Wolverine の再試行（2s/10s/30s → _error）が照会をやり直す。
+    [Fact]
+    public async Task 建玉照会が不明なら例外を投げて再試行へ回し_取消も発行もしない_否定形()
+    {
+        var broker = new ScriptedBroker(OrderStatus.Cancelled, positionsUnknown: true);
+        var executedOrders = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        using var host = await BuildHostAsync(broker, executedOrders, stops);
+        var stop = SeedStop(stops, executedOrders);
+
+        // ハンドラの例外が呼び出し側（受信経路では共通の再試行ポリシー。IADR-0129 決定 5）へ届くこと。
+        // 🔴 Wolverine の受信経路へ流すと、再試行の待ち（2s/10s/30s）を壁時計で待つことになる。
+        // ここで固定するのは「ハンドラが握らずに投げる」ことであり、再試行ポリシーは全ハンドラ共通の配線が持つ。
+        // 依存は本番と同じ DI の組み立てから取り出す（発行先も Wolverine の本物の IMessageBus）。
+        using var scope = host.Services.CreateScope();
+        var handler = new PositionDriftAdoptedHandler(
+            scope.ServiceProvider.GetRequiredService<ProtectiveStopDriftAdopter>(),
+            NullLogger<PositionDriftAdoptedHandler>.Instance);
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(() =>
+            handler.Handle(Adopted(), scope.ServiceProvider.GetRequiredService<IMessageBus>(), CancellationToken.None));
+
+        broker.CancelCount.Should().Be(0, "建玉が消えたと確かめられないまま保護を取り消さない");
+        stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        stops.Find(stop.EntryDecisionId)!.RemainingProtected.Should().Be(10);
     }
 }
