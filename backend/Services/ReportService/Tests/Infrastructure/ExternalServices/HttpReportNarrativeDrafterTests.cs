@@ -148,7 +148,10 @@ public class HttpReportNarrativeDrafterTests
         };
         var drafter = new HttpReportNarrativeDrafter(
             http, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", null, logPrompts: false,
-            timeoutFor: kind => kind == ReportKind.Daily ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(20));
+            // 週報の上限は Guard（30 秒）より長く採る（#906 監査）。20 秒だと、20〜30 秒の停止で週報のトークンが
+            // 先に落ち、「種別ごとの打ち切りが壊れている」という誤った失敗になる。長く採れば停止は Guard の
+            // タイムアウト（原因が分かる形）で落ちる。判別力は変わらない（単一の上限へ潰すと依然として赤）。
+            timeoutFor: kind => kind == ReportKind.Daily ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromMinutes(5));
 
         // ① 週報を飛行中にする（ハンドラは解放されるまで応答しない）。
         var weeklyDraft = drafter.DraftNarrativeAsync(Ctx with { Kind = ReportKind.Weekly, PeriodKey = WeeklyPeriod });
