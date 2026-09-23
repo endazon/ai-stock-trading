@@ -226,7 +226,10 @@ public class HttpReportNarrativeDrafterTests
         var draft = drafter.DraftNarrativeAsync(Ctx, cts.Token);
         await cts.CancelAsync();
 
-        await FluentActions.Awaiting(() => draft).Should().ThrowAsync<OperationCanceledException>();
+        // 🔴 Guard で束ねる（PR #920 監査）。ここだけ束ねが無く、取り消しの配線が壊れた変異で
+        // **赤にならず CI のジョブ上限まで刺さる**ことを実測した（本文の応答は永久に返らないため）。
+        // 束ねれば同じ回帰が有限時間で落ちる（原因が分かる形）。
+        await FluentActions.Awaiting(() => draft.WaitAsync(Guard)).Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
