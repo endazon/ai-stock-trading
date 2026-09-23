@@ -94,4 +94,15 @@ public enum SoftwareStopOutcome
     /// </para>
     /// </summary>
     UnattributedPosition = 7,
+
+    /// <summary>
+    /// 🔴 #858, IADR-0370 決定5: <b>乖離の取り込みで建玉が消えたのに、ブローカー側の保護注文を
+    /// 取り消せたと確認できなかった</b>（取消の送信に失敗した・照会が不明・まだ終端でない）。
+    /// <para>
+    /// <b>決済は出していない。</b><see cref="SoftwareStopExecuted.Quantity"/> は取り消せていない保護の株数である。
+    /// 🔴 <b>建玉が無いのに売りの逆指値が生きていると、発火して意図しないショートが建つ。</b>
+    /// 記録は <c>Active</c> のまま残し（ガードが巡回を続ける）、無音にしないために必ず 1 回発行する（Critical）。
+    /// </para>
+    /// </summary>
+    StopCancelUnconfirmed = 8,
 }

@@ -1,5 +1,6 @@
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
@@ -137,6 +138,19 @@ if (!brokerSelection.IsMoomoo)
 
 builder.Services.AddScoped<OrderAmendmentService>();
 builder.Services.AddScoped<OrderAmendmentDispatcher>();
+
+// 🔴 FR-10, FR-05, #858, IADR-0370, IADR-0350 決定5: 利用者が承認した乖離の取り込み（PositionDriftAdopted）に
+// 保護記録とブローカー側の保護注文を追随させる。
+// 🔴 **構成を問わず登録する**——購読ハンドラは規約発見で常に配線され、ビルド時 codegen も既定（内蔵 paper）構成で
+// ホストを組むため、依存が解決できないとハンドラが組めない（SoftwareStopExecutor と同じ理由）。
+// 建玉照会（IBrokerPositionSource）は moomoo 構成でだけ登録されており、内蔵 paper では null
+// （取り込みの観測だけを目標にする。IADR-0370 決定3）。
+builder.Services.AddScoped(sp => new ProtectiveStopDriftAdopter(
+    sp.GetRequiredService<IProtectiveStopOrderStore>(),
+    sp.GetRequiredService<OrderAmendmentService>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<ProtectiveStopDriftAdopter>(),
+    sp.GetService<IBrokerPositionSource>()));
 
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。

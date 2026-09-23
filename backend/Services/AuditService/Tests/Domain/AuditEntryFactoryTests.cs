@@ -963,6 +963,8 @@ public class AuditEntryFactoryTests
     [InlineData(SoftwareStopOutcome.ProtectionSuspended, "1 株も決済できない状態が猶予を過ぎても続いている")]
     // T-10-493（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: 帰属不明の建玉の**検知**（是正ではない）。
     [InlineData(SoftwareStopOutcome.UnattributedPosition, "どの保護記録も主張していない建玉がある")]
+    // T-10-642（#858, IADR-0370 決定5）: 取り込みで消えた建玉の保護注文を取り消せたと確認できていない。
+    [InlineData(SoftwareStopOutcome.StopCancelUnconfirmed, "取り消せたと確認できていない")]
     public void ソフトウェア逆指値の発動結果は結末が読める(SoftwareStopOutcome outcome, string expected)
     {
         var entryDecisionId = Guid.NewGuid();
