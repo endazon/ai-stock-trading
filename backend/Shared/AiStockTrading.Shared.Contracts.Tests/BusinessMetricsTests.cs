@@ -92,6 +92,66 @@ public class BusinessMetricsTests
             .Should().Equal(BusinessMetrics.TriggerScheduled);
     }
 
+    // T-10-663, FR-04, FR-10, #891, IADR-0374: 🔴 **見送りは理由タグつきで数えられる。**
+    //
+    // 従来は「方針なし・Hold・鮮度切れ・数量 0・採算不成立・裸の新規売り・保有不明」のすべてが
+    // `decisions{action=no-trade}` の**同じ 1 値**に落ち、事実は構造化 WARN ログにしか残らなかった。
+    // 区別できないと、**保有照会が壊れて新規建てだけが静かに止まっている**状態が「今日は Hold が多い」に埋もれる。
+    [Fact]
+    public void 見送りは理由タグつきで計上される()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+
+        metrics.RecordTradeDecisionSkipped(
+            BusinessMetrics.TriggerPriceMovement, DecisionSkipReason.HoldingsUnknownOpen);
+
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisionSkips, BusinessMetricNames.TagReason)
+            .Should().Equal(nameof(DecisionSkipReason.HoldingsUnknownOpen));
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisionSkips, BusinessMetricNames.TagTrigger)
+            .Should().Equal(BusinessMetrics.TriggerPriceMovement);
+    }
+
+    // T-10-664, FR-04, FR-10, #891（プロパティベース）: **どの見送り理由でも**固有のタグ値として計上される。
+    // 語彙が増えたときに既定値へ黙って落ちる（＝内訳が欠ける）ことが無いことを、全要素で確かめる。
+    [Fact]
+    public void すべての見送り理由が固有のタグ値として計上される()
+    {
+        foreach (var reason in Enum.GetValues<DecisionSkipReason>())
+        {
+            using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+            using var metrics = new BusinessMetrics();
+
+            metrics.RecordTradeDecisionSkipped(BusinessMetrics.TriggerScheduled, reason);
+
+            capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisionSkips, BusinessMetricNames.TagReason)
+                // 理由ごとに固有のタグ値で出ること（既定値へ黙って落ちない）。
+                .Should().Equal(reason.ToString());
+        }
+    }
+
+    // 🔴 T-10-666, FR-04, #891 受け入れ基準 3（否定形）: **既存の集計を壊さない。**
+    //
+    // 理由を足すために `decisions` のタグを増やす／置き換えると、既存ダッシュボードのパネル
+    // （`sum by (action) (increase(ast_trade_cycle_decisions_total[1h]))`）が**無言で空になる**。
+    // 1 回の見送りで両方が 1 ずつ増えることを固定する（合計の突き合わせで計上漏れも検出できる）。
+    [Fact]
+    public void 見送りの計上は既存の判断カウンタを置き換えない()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+
+        // 呼び出し元（ハンドラ＋判断サービス）が行う 1 回の見送りぶんの計上。
+        metrics.RecordTradeDecision(BusinessMetrics.TriggerScheduled, side: null);
+        metrics.RecordTradeDecisionSkipped(BusinessMetrics.TriggerScheduled, DecisionSkipReason.LlmHold);
+
+        capture.SumOf(BusinessMetricNames.TradeCycleDecisions).Should().Be(1);
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisions, BusinessMetricNames.TagAction)
+            // 既存の action=no-trade は従来どおり 1 件だけ出る（ダッシュボードのパネルが空にならない）。
+            .Should().Equal(BusinessMetrics.ActionNoTrade);
+        capture.SumOf(BusinessMetricNames.TradeCycleDecisionSkips).Should().Be(1);
+    }
+
     // FR-10, FR-19（境界値テーブル）: 拒否理由の列挙は**全要素**が 1 件ずつ計上される。
     // 1 注文に複数の統制が同時に効き得るため、先頭 1 件だけを数えると内訳が過少になる。
     [Theory]
@@ -360,6 +420,7 @@ public class BusinessMetricsTests
     {
         metrics.RecordInformationCollected(1);
         metrics.RecordTradeDecision(BusinessMetrics.TriggerScheduled, TradeSide.Buy);
+        metrics.RecordTradeDecisionSkipped(BusinessMetrics.TriggerScheduled, DecisionSkipReason.LlmHold);
         metrics.RecordTradeDecisionDuration(BusinessMetrics.TriggerScheduled, 12.5);
         metrics.RecordOrderScreening(approved: false, [RejectionReason.KillSwitchActive]);
         metrics.RecordOrderExecuted(OrderStatus.Filled, BrokerProvider.InternalPaper);

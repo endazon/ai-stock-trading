@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-19
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06]
+ids: [FR-01, FR-02, FR-04, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-02, UC-06, NFR-07]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0374]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_891_decision-skip-reasons-and-first-alert]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #891]
 -->
 
 
@@ -1200,6 +1200,52 @@ row11: FR-10, FR-19
 （`実建玉に満たない決済は…` / `ショート建玉の決済も…` / `再処理では建玉を照会せず…` / `ブローカーに建玉が無い決済は…` /
 `反対方向の建玉しか無い決済は…` / `建玉を照会できないときの決済は…`。残り 11 件は判定そのものの単体であり
 是正前も緑）。赤の内容は「売り注文が出てはならないのに出た」であり、**穴の再現そのもの**である。
+
+## 見送りの理由を区別して観測し、アラートの 1 件目を置く（#891。ログにしか残らない状態を終わらせる）
+
+コードで確認した穴: 取引判断が見送るとき、呼び出し元は「発注意図が無い」しか知らない。結果として
+**方針なし・様子見・鮮度切れ・数量 0・採算不成立・裸の新規売り・保有不明のすべてが、同じ 1 本のカウンタの
+同じタグ値**に落ちる。事実は構造化 WARN ログにしか残らず、アラートルールは 1 件も無かった。
+
+🔴 **帰結の形が悪い。** 保有状況の照会先の誤設定や恒久的な失敗では、**手仕舞いは通ったまま新規建てだけが
+静かに止まり続ける**。「取引が全部止まった」という分かりやすい形にならないため、
+ログを読みに行かない限り誰も気付かない。
+
+写像の要点は 3 つある。**(1) 理由が付くことだけを見る** —— 見送るかどうかの判定は 1 ミリも変えていないため、
+どのケースも従来どおり「見送り」であることを併せて表明する。**(2) 既存の集計を壊さないことを否定形で固定する**
+（タグを増やすと既存パネルが無言で空になる）。**(3) アラートは「鳴らない形」を機械で止める** ——
+系列名がずれたルールはエラーを出さず、ただ永久に鳴らない。
+`DecisionSkipReasonTests`（取引判断）、`BusinessMetricsTests`（計器）、`scripts.repo.test.js`（資産の検査）。
+
+| ID | 前提 | 操作 | 期待 | 不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-663** | 保有状況の照会先が**実結線**で、保有が不明 | 買いの判断を回す | 🔴 **見送りが専用の理由で 1 件数えられる**（起動契機のタグも付く）。**平常時の期待値は 0 件**であり、出ていること自体が「新規建てだけが静かに止まっている」印である | 見送りの向きは従来どおり | 自動（単体） |
+| **T-10-664** | 見送り理由の語彙（12 値） | すべての値で計上する | **どの値も固有のタグ値で出る**（既定値へ黙って落ちない＝内訳が欠けない） | — | 自動（単体・網羅） |
+| **T-10-665** | アラート資産（`deploy/observability/alerts/`） | 資産を読み、引く系列を計器の登録簿と突き合わせる | 🔴 **ルールが 1 件以上あり、形（英字の名前・空でない条件・既知の重大度・要約）が整い、引く系列が実在する**。保有不明を見張るルールが実在し、一過性の失敗で鳴らないための継続時間を持つ。**綴りがずれたルールはエラーを出さず、ただ永久に鳴らない** | — | 自動（検査器・否定形） |
+| **T-10-666** | 1 回の見送り | 既存カウンタと新カウンタの両方を読む | 🔴 **既存の「見送り」の集計は従来どおり 1 件出る**（新カウンタは**置き換えではなく並置**）。壊すと既存ダッシュボードのパネルが**無言で空になる** | 既存の集計 | 自動（単体・否定形） |
+| **T-10-667** | 到達可能な見送り 9 地点（方針なし・現在値なし・レート解決不能・鮮度切れかつ保有なし・様子見・保有不明の新規建て・裸の新規売り・鮮度切れの新規建て・数量 0） | 順に判断を回す | **地点ごとに異なる理由が報告される**（重複なし）。判断が成立したときは**1 件も計上しない**（否定形） | 見送りの向きは従来どおり | 自動（単体・網羅） |
+
+<!-- trace-table:
+row1: FR-10, FR-04, NFR-07
+row2: FR-10, FR-04, NFR-07
+row3: FR-10, NFR-07
+row4: FR-04, NFR-07
+row5: FR-10, FR-04, NFR-07
+-->
+
+**変異注入（実走した実測）**:
+
+| 変異 | 赤くなったテスト |
+| --- | --- |
+| 見送り 1 地点を素の「理由なしの見送り」へ戻す | **2 件**（T-10-663・T-10-667）。理由の計上が消える |
+| 見送りのとき既存カウンタを数えないようにする（「新カウンタが持つから二重に数えない」という改変） | **2 件**（T-10-666 と既存の `action` タグの行）。既存パネルが空になる形 |
+| アラートが引く系列名を 1 文字変える | **1 件**（T-10-665）。実バックエンドでは**エラーも出ずに鳴らなくなる**変更である |
+
+- 🔴 **未カバー**: **アラートの発火そのもの**（実 Prometheus / Alertmanager が要る）。固定したのは
+  「ルールが実在し、形が正しく、引く系列がコード側に実在する」までである。継続時間の妥当性は実運用でしか測れない。
+- 🔴 **未カバー**: 語彙 12 値のうち**振る舞いで固定したのは 9 値**である。残る 3 値（参照価格の不正・
+  損切り幅の不正・採算不成立）は到達に判断出力の不正か採算ゲートの構成が要るため、**語彙の側だけ**を固定した。
+- **監査台帳・通知には載せていない**（射程外）。見送りの事実はメトリクスとログにある。
 
 ## 未カバー・実施予定
 

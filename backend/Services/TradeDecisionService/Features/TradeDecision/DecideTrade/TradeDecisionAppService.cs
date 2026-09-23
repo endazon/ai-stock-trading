@@ -5,6 +5,7 @@ using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using Microsoft.Extensions.Logging;
@@ -32,7 +33,8 @@ public sealed class TradeDecisionAppService(
     IHeldPositionProvider? heldPosition = null,
     RetrievalSourcePolicy? retrievalSourcePolicy = null,
     IFxSourceStatusNotifier? statusNotifier = null,
-    IScreeningReductionReporter? screeningReporter = null)
+    IScreeningReductionReporter? screeningReporter = null,
+    IDecisionSkipReporter? skipReporter = null)
 {
     // FR-04, ADR-0003, #252, IADR-0169 決定2: RAG 取得文脈の出典限定。
     // **未指定は「限定しない」ではなく Default（＝安全側の許可リスト）である。**
@@ -50,6 +52,10 @@ public sealed class TradeDecisionAppService(
     // 実発行（PublishingScreeningReductionReporter）は Worker が配線する。
     private readonly IScreeningReductionReporter _screeningReporter =
         screeningReporter ?? new NoOpScreeningReductionReporter();
+
+    // FR-04, FR-10, NFR-07, #891, IADR-0374: 見送りの理由を観測経路へ渡すポート。未指定＝NoOp（計上しない）。
+    // 実計上（MetricsDecisionSkipReporter）は Worker が配線する。
+    private readonly IDecisionSkipReporter _skipReporter = skipReporter ?? new NoOpDecisionSkipReporter();
 
     // UC-01, FR-09, IADR-0096: 日報未確定（policy-null）で見送った際に確定を促す通知を促す出力ポート。
     // 未指定＝NoOp（何もしない＝現行のログのみ）。実発行（DailyPolicyUnconfirmed の publish・営業日 dedup）は Worker が
@@ -85,6 +91,20 @@ public sealed class TradeDecisionAppService(
     // 実照会（HttpHeldPositionProvider）は Worker が RiskManagement:BaseUrl 設定時に差し替える。
     private readonly IHeldPositionProvider _heldPosition = heldPosition ?? new NoOpHeldPositionProvider();
 
+    // 🔴 FR-04, FR-10, NFR-07, #891, IADR-0374: **見送りの唯一の出口。**
+    //
+    // 判断が発注意図を作らないときは、必ずここを通して理由を計上する（戻り値は従来どおり null）。
+    // **計上点を見送り地点へ散らさない** —— 散らすと、次に見送りを足した人が計上を忘れても誰も気づかず、
+    // その見送りは再び「ログにしか残らない」状態へ戻る（#891 の症状そのもの）。
+    // 端点間レイテンシの計上が RecordCycleLatency の 1 か所に判断を集めているのと同じ規律である。
+    //
+    // 🔴 **呼び出し元の挙動は変わらない。** 本メソッドは観測だけを行い、見送るかどうかの判定には一切関与しない。
+    private TradeDecisionMade? Skip(DecisionTrigger trigger, DecisionSkipReason reason)
+    {
+        _skipReporter.Report(trigger.MetricTrigger, reason);
+        return null;
+    }
+
     // 価格変動イベント（イベント駆動系統）の起点。DecisionTrigger へ写像して合流する。
     public Task<TradeDecisionMade?> DecideAsync(
         PriceMovementDetected trigger, CancellationToken cancellationToken = default)
@@ -107,7 +127,7 @@ public sealed class TradeDecisionAppService(
             // UC-01, FR-09, IADR-0096: 日報未確定による見送りを通知（確定を促す）。営業日単位の重複抑止は notifier 側。
             // fail-safe: 通知は取引判断のクリティカルパス外。発行失敗・例外で見送り（null 返却）を壊さない。キャンセルは伝播。
             await NotifyDailyPolicyUnconfirmedSafeAsync(cancellationToken).ConfigureAwait(false);
-            return null;
+            return Skip(trigger, DecisionSkipReason.DailyPolicyUnconfirmed);
         }
 
         var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
@@ -122,7 +142,7 @@ public sealed class TradeDecisionAppService(
         if (_currentPrice.IsEnabled && currentPrice is null)
         {
             logger.LogInformation("現在値が取得できない/鮮度切れのため見送り（発注抑止・安全側）: {Symbol}", trigger.Symbol);
-            return null;
+            return Skip(trigger, DecisionSkipReason.CurrentPriceUnavailable);
         }
 
         // FR-10, FR-17, #257, #364, IADR-0107 決定2/3: 発注意図を作る前に基準通貨（USD）への換算レートを確定させる。
@@ -137,7 +157,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market={Market}",
                 trigger.Symbol, trigger.Market);
-            return null;
+            return Skip(trigger, DecisionSkipReason.FxRateUnresolved);
         }
 
         var rateToBase = fxReading.Rate.Rate;
@@ -171,7 +191,7 @@ public sealed class TradeDecisionAppService(
                     "換算レートが鮮度切れで保有も無いため見送り（新規建てのみ停止・手仕舞いは対象外）: " +
                     "{Symbol} market={Market} asOf={AsOf}",
                     trigger.Symbol, trigger.Market, fxReading.Rate.AsOf);
-                return null;
+                return Skip(trigger, DecisionSkipReason.FxRateStaleNoHolding);
             }
 
             logger.LogWarning(
@@ -230,7 +250,7 @@ public sealed class TradeDecisionAppService(
 
         if (decision.Action == TradeAction.Hold)
         {
-            return null; // 見送り
+            return Skip(trigger, DecisionSkipReason.LlmHold); // 見送り
         }
 
         var side = decision.Action == TradeAction.Buy ? TradeSide.Buy : TradeSide.Sell;
@@ -261,7 +281,7 @@ public sealed class TradeDecisionAppService(
                     "保有状況が不明なため新規建てを見送る（照会先は結線済み・手仕舞いは止めない・IADR-0358）: " +
                     "{Symbol} side={Side}",
                     trigger.Symbol, side);
-                return null;
+                return Skip(trigger, DecisionSkipReason.HoldingsUnknownOpen);
             }
 
             // 保有なし・不明での売り＝裸の新規ショート建て。現物のみ有効な段階では成立せず、取引ガードは方向を
@@ -269,7 +289,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "保有建玉が無い、または不明な売り判断のため見送り（裸の新規売りを出さない・IADR-0119）: {Symbol} held={Held}",
                 trigger.Symbol, heldQuantity.HasValue ? heldQuantity.Value : "不明");
-            return null;
+            return Skip(trigger, DecisionSkipReason.NakedShortOpen);
         }
 
         // FR-02, FR-10, IADR-0099 決定2: 発注に用いる参照価格を権威ある現在値へアンカリングする。現在値ありのときは
@@ -281,7 +301,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "参照価格が不正のため見送り: {Symbol} referencePrice={ReferencePrice}",
                 trigger.Symbol, referencePrice);
-            return null;
+            return Skip(trigger, DecisionSkipReason.ReferencePriceInvalid);
         }
 
         // #292, IADR-0119: 決済（手仕舞い）はここで確定する。数量は保有数の全量で、以下は**通さない**。
@@ -299,7 +319,7 @@ public sealed class TradeDecisionAppService(
                 "換算レートが鮮度切れのため新規建てを見送る（手仕舞いは止めない・ADR-0022 決定5）: " +
                 "{Symbol} effect={Effect} asOf={AsOf}",
                 trigger.Symbol, effect.Effect, fxReading.Rate.AsOf);
-            return null;
+            return Skip(trigger, DecisionSkipReason.FxRateStaleOpen);
         }
 
         if (effect.IsClose)
@@ -342,7 +362,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "損切り幅が不正、または現在値以上のため見送り: {Symbol} referencePrice={ReferencePrice} stopLossDistance={StopLossDistance}",
                 trigger.Symbol, referencePrice, decision.StopLossDistancePerShare);
-            return null;
+            return Skip(trigger, DecisionSkipReason.StopLossDistanceInvalid);
         }
 
         // FR-10, FR-17, #257, #364, IADR-0107 決定1/2: サイジングの入力を基準通貨（USD）へ揃える。資金・上限・残枠は基準通貨、
@@ -372,7 +392,7 @@ public sealed class TradeDecisionAppService(
         if (quantity <= 0)
         {
             logger.LogInformation("サイジングで数量 0 のため見送り: {Symbol}", trigger.Symbol);
-            return null;
+            return Skip(trigger, DecisionSkipReason.SizingZeroQuantity);
         }
 
         // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（opt-in・既定無効＝現行挙動）。
@@ -383,7 +403,7 @@ public sealed class TradeDecisionAppService(
             !await IsProfitableAsync(
                 trigger, decision, referencePriceBase, rateToBase, quantity, cancellationToken).ConfigureAwait(false))
         {
-            return null; // 採算不成立・見積り不能（安全側で見送り）
+            return Skip(trigger, DecisionSkipReason.ProfitabilityNotViable); // 採算不成立・見積り不能（安全側で見送り）
         }
 
         // FR-03/04, IADR-0035, IADR-0099: 損切り価格を算出して発注意図に載せる（#63 台帳へ永続化し市場監視の損切り検知に実値供給）。

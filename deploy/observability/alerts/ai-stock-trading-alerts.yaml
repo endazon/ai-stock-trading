@@ -1,0 +1,56 @@
+# AST アラートルール（#891 / IADR-0374）
+#
+# 🔴 **本リポジトリで最初のアラートルールである。** これまで deploy/observability/ には
+# ダッシュボードしか無く、**人が見ているときにしか働かなかった**。
+#
+# 置き場所・種別・命名・重大度の規約は IADR-0374 決定 D が定める（前例がゼロ件だったため本件で決めた）。
+#   - 種別: monitoring.coreos.com/v1 の PrometheusRule（kube-prometheus-stack が拾う形）
+#   - group 名: ai-stock-trading.<領域>
+#   - alert 名: PascalCase の英語（Prometheus のアラート名は識別子であり日本語を入れない）
+#   - severity: warning から始める（実測が無いまま critical を置くと最初の 1 件で狼少年になる）
+#   - summary / description は日本語。runbook_url は置かない（対応手順がまだ 1 件も無い）
+#
+# 🔴 **実 stand-up は MSP 側の共有 overlay である**（ダッシュボードと同じ扱い）。本リポジトリは
+# 資産を置くところまでを持ち、Prometheus / Alertmanager 自体はここでは立てない。
+# 投入手順は ../README.md を参照。
+#
+# 🔴 **系列名はコード側のレジストリ（BusinessMetricNames）と一致していなければならない。**
+# ずれたアラートはエラーを出さず、**ただ永久に鳴らない**（空のグラフと同じ失敗の形である）。
+# node scripts/check-observability-assets.js が CI で本ファイルの expr を突き合わせる。
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ai-stock-trading-alerts
+  labels:
+    app.kubernetes.io/name: ai-stock-trading
+    app.kubernetes.io/component: observability
+    # kube-prometheus-stack の ruleSelector が拾うためのラベル（MSP 側 overlay の既定に合わせる）。
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: ai-stock-trading.trade-cycle
+      rules:
+        # 🔴 保有状況の照会が壊れていると、**新規建てだけが静かに止まり続ける**。
+        # 手仕舞いは通るため「取引が全部止まった」形にはならず、WARN ログを読みに行かない限り誰も気付かない
+        # （#891 の起点そのもの）。原因は RiskManagement:BaseUrl の誤設定や
+        # GET /risk-controls/open-positions の恒久的な失敗である。
+        #
+        # 🔴 **この閾値は実測を要しない。** HoldingsUnknownOpen は照会先が実結線のときにしか立たず
+        # （未結線の既定構成では IHeldPositionProvider.IsEnabled が false でこの見送りは発生しない）、
+        # **平常時の期待値が 0 件**だからである。「N 分間に M 件」という実測が要る形の閾値ではない。
+        # for: 30m は一過性の照会失敗（再試行で回復するもの）を鳴らさないための猶予であり、
+        # 30 分続くのは「恒久的に新規建てが止まっている」側の事象である。
+        - alert: AstEntriesBlockedByUnknownHoldings
+          expr: sum(increase(ast_trade_cycle_decision_skips_total{reason="HoldingsUnknownOpen"}[15m])) > 0
+          for: 30m
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 保有状況が不明なため新規建てが 30 分以上見送られ続けている
+            description: >-
+              取引判断が「保有状況の照会先は結線済みだが保有が不明」を理由に新規建てを見送り続けている。
+              手仕舞いは通るため取引が完全に止まる形にはならず、気付きにくい。
+              最初に見る場所: 取引判断サービスの WARN ログ（「保有状況が不明なため新規建てを見送る」）と、
+              リスク管理サービスの GET /risk-controls/open-positions の応答。
+              設定では RiskManagement:BaseUrl を疑う。
