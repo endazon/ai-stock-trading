@@ -213,6 +213,17 @@ public static class NotificationFormatter
                 + "（この銘柄ではソフトウェア逆指値の新規建ても見送られます）"
                 + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Warning),
+        // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（保護記録を再武装した）。
+        // moomoo の模擬取引の注文は当日限りで、受理された決済が 0 約定のまま失効し得る。
+        SoftwareStopOutcome.CloseUnfilled => new(
+            "リスク統制: ソフトウェア逆指値の決済が約定しないまま終了しました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 受理された成行の決済注文が {e.Quantity} 株を約定しないまま"
+                + "取消・失効・拒否で終了しました（模擬取引の注文は当日限りです）。"
+                + "**その株数は建玉に残っています。保護記録を再武装し、次の巡回で決済を撃ち直します**"
+                + "——撃ち直しが通らない場合は手動で決済してください"
+                + $"（試行 {e.Attempt}・OrderId={e.CloseOrderId}・損切りライン {Invariant(e.StopLossPrice)}"
+                + $"・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"

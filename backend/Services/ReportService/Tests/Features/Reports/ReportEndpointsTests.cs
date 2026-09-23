@@ -397,6 +397,54 @@ public class ReportEndpointsTests
         (await client.GetAsync("/reports/monthly-bootstrap")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // T-06-013 (#839, IADR-0382): 初回月報ブートストラップの**起動**（保存＋提示）。
+    // 🔴 GET（下見）は変えていない。POST だけが承認待ちへ並べる。
+    [Fact]
+    public async Task 初回月報ブートストラップの起動は_保存して承認待ちへ並べる()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Reports:Bootstrap:Watchlist:0"] = "AAPL",
+            })));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, OwnerRole);
+
+        var created = await client.PostAsync("/reports/monthly-bootstrap", content: null);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var body = await created.Content.ReadFromJsonAsync<BootstrapStartDto>();
+        body!.Presented.Should().BeTrue();
+        body.Version.Should().BeGreaterThan(0);
+
+        // 承認待ちに並んでいる＝Discord の `/report show` / `/report approve` の対象になる。
+        var review = await client.GetFromJsonAsync<ReviewStateDto>($"/reports/{body.PeriodKey}/review");
+        review!.State.Should().Be("PendingApproval");
+
+        // 2 回目は当月の行が既にあるため 409（上書きしない）。
+        (await client.PostAsync("/reports/monthly-bootstrap", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task 初回月報ブートストラップの起動は_未認証は_401_ロール無しは_403()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        (await factory.CreateClient().PostAsync("/reports/monthly-bootstrap", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var noRole = factory.CreateClient();
+        noRole.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "other");
+        (await noRole.PostAsync("/reports/monthly-bootstrap", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private sealed record BootstrapStartDto(string PeriodKey, int Version, bool Presented, bool NotificationFailed);
+
+    private sealed record ReviewStateDto(string PeriodKey, string State, int Version);
+
     // FR-08, IADR-0069/0071 決定3: 確定遷移で確定報告書が KB へ保存される（既定 no-op を記録用に差し替えて検証）。
     [Fact]
     public async Task 確定すると確定報告書が_KB_へ保存される()

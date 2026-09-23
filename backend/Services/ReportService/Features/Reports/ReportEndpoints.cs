@@ -11,6 +11,7 @@ using ReportService.Features.Reports.GetReportReview;
 using ReportService.Features.Reports.ListReports;
 using ReportService.Features.Reports.PresentReport;
 using ReportService.Features.Reports.RequestReportChanges;
+using ReportService.Features.Reports.StartMonthlyBootstrap;
 using ReportService.Features.Reports.SummarizePnl;
 using ReportService.Features.Reports.UpsertReportDraft;
 
@@ -65,6 +66,8 @@ internal static class ReportEndpoints
 
         owner.MapListReports();
         owner.MapGetMonthlyBootstrap();
+        // FR-07, UC-03, #839, IADR-0382: 初回月報ブートストラップの**起動**（保存＋提示）。GET は下見用のまま。
+        owner.MapStartMonthlyBootstrap();
         owner.MapSummarizePnl();
         owner.MapDraftReport();
         owner.MapGetReport();
