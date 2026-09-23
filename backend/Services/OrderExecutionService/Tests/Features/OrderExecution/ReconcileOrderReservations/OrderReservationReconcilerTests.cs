@@ -368,6 +368,163 @@ public class OrderReservationReconcilerTests
         options.ReleaseOnNotPlaced.Should().BeFalse();
     }
 
+    // ---- 🔴 #890, IADR-0371: 確定した 1 件は、その場で出口へ渡す（巡回の中断で失われない） ----
+
+    // 出口（記録＋発行）の代わりに受け取ったものを並べるだけのスパイ。本リポジトリはモックライブラリを持たない。
+    private sealed class RecordingSink : IReservationReconciliationSink
+    {
+        public List<ReservationTerminalizationEmission> Emissions { get; } = [];
+
+        public Task EmitAsync(ReservationTerminalizationEmission emission)
+        {
+            Emissions.Add(emission);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task 二件目の手前で中断されても一件目の所見と発行は出口へ渡っている()
+    {
+        // 🔴 T-10-646（否定形・本 issue #890 の幾何。#882 監査 PROBE5 と同じ形）:
+        // 確定（MarkCompleted を commit）した予約は次回巡回の FindStalledReserved に**載らない**。
+        // したがって出口を巡回の末尾に置くと、2 件目の手前で中断されただけで
+        // **1 件目の所見（保護レグ不在の Critical）と OrderExecuted が永久に失われる**
+        // ——「次の巡回で拾い直す」は成立しない（拾い直す対象がもう無い）。
+        // 到達性は発行の失敗より高い: ローリングデプロイ・Pod 再起動が巡回に重なるだけで起きる。
+        var reservations = new InMemoryOrderReservationStore();
+        var executedStore = new InMemoryExecutedOrderStore();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        reservations.TryReserve(first, StalledAt);              // ReservedAt 昇順で先頭
+        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+
+        // 実時間の sleep は使わない。1 件目の照会の中で停止要求を立て、2 件目のループ先頭で確実に投げさせる。
+        using var cts = new CancellationTokenSource();
+        var probe = new CallbackProbe(_ =>
+        {
+            cts.Cancel();
+            return ReservationProbeResult.Placed(Placed("BRK-CANCEL"));
+        });
+        var reconciler = new OrderReservationReconciler(
+            reservations, executedStore, probe, new PaperBrokerAdapter(), new FakeClock(), Options(false));
+        var sink = new RecordingSink();
+
+        var reconcile = async () =>
+            await reconciler.ReconcileAsync(Cutoff, batchSize: 50, sink, cts.Token);
+
+        await reconcile.Should().ThrowAsync<OperationCanceledException>("2 件目の手前で中断される");
+
+        // 幾何の確認: 1 件目は確定済み（＝二度と走査されない）／2 件目は据え置き（＝次回巡回が拾う）。
+        reservations.Find(first)!.State.Should().Be(OrderDispatchState.Completed);
+        reservations.Find(second)!.State.Should().Be(OrderDispatchState.Reserved);
+        reservations.FindStalledReserved(Cutoff, 50).Should().ContainSingle()
+            .Which.DecisionId.Should().Be(second, "次回巡回が拾えるのは 2 件目だけである");
+
+        // 🔴 是正の核心: それでも 1 件目の所見と発行は既に出口へ渡っている。
+        var emission = sink.Emissions.Should().ContainSingle().Subject;
+        emission.Executed.DecisionId.Should().Be(first);
+        emission.ProbeFinding.Should().NotBeNull("突合で確定した＝保護レグ不在の Critical を出す対象である");
+        emission.ProbeFinding!.DecisionId.Should().Be(first);
+    }
+
+    [Fact]
+    public async Task 中断した巡回の後続巡回でも確定済みの一件は二度と出口へ渡らない()
+    {
+        // 🔴 T-10-647（否定形）: 是正が**二重に出す**側へ倒れていないこと。中断で確定済みの 1 件を
+        // 出したあと次の巡回を回しても、その 1 件はもう走査されない（Completed）ため出口へは渡らない。
+        // 下流（監査・Risk・通知）は冪等に消費するが、二重発行は運用の読み違いを誘う。
+        var reservations = new InMemoryOrderReservationStore();
+        var executedStore = new InMemoryExecutedOrderStore();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        reservations.TryReserve(first, StalledAt);
+        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+
+        using var cts = new CancellationTokenSource();
+        var probe = new CallbackProbe(id =>
+        {
+            if (id == first)
+                cts.Cancel();
+            return ReservationProbeResult.Placed(Placed($"BRK-{(id == first ? "1" : "2")}"));
+        });
+        var reconciler = new OrderReservationReconciler(
+            reservations, executedStore, probe, new PaperBrokerAdapter(), new FakeClock(), Options(false));
+        var sink = new RecordingSink();
+
+        var aborted = async () => await reconciler.ReconcileAsync(Cutoff, batchSize: 50, sink, cts.Token);
+        await aborted.Should().ThrowAsync<OperationCanceledException>();
+
+        // 次の巡回（新しいトークン＝中断していない）。
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50, sink);
+
+        result.Scanned.Should().Be(1, "確定済みの 1 件目はもう走査されない");
+        sink.Emissions.Should().HaveCount(2);
+        sink.Emissions.Select(e => e.Executed.DecisionId).Should().Equal(first, second);
+        sink.Emissions.Count(e => e.Executed.DecisionId == first).Should().Be(1, "二重に出さない");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task 確定していない予約は出口へ渡らない(bool releaseOnNotPlaced)
+    {
+        // 🔴 T-10-648（否定形・安全側）: 出口へ渡るのは **MarkCompleted を commit した予約だけ**である。
+        // 門が閉じた `NotPlaced`（＝据え置き）・`Indeterminate`（＝送ったが不明）・例外は 1 件も渡さない。
+        // 「確実に未発注」と「送ったが不明」の区別に本是正は一切触れていないことを固定する（#856 / IADR-0362）。
+        var reservations = new InMemoryOrderReservationStore();
+        var executedStore = new InMemoryExecutedOrderStore();
+        var held = Guid.NewGuid();
+        var unknown = Guid.NewGuid();
+        var broken = Guid.NewGuid();
+        reservations.TryReserve(held, StalledAt);
+        reservations.TryReserve(unknown, StalledAt.AddSeconds(1));
+        reservations.TryReserve(broken, StalledAt.AddSeconds(2));
+        var probe = new CallbackProbe(id =>
+            id == held ? ReservationProbeResult.NotPlaced
+            : id == unknown ? ReservationProbeResult.Indeterminate
+            : throw new InvalidOperationException("照会失敗"));
+        var reconciler = new OrderReservationReconciler(
+            reservations, executedStore, probe, new PaperBrokerAdapter(), new FakeClock(),
+            Options(releaseOnNotPlaced));
+        var sink = new RecordingSink();
+
+        var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50, sink);
+
+        sink.Emissions.Should().BeEmpty("確定していない予約は出口へ渡さない");
+        result.Terminalized.Should().Be(0);
+        result.Indeterminate.Should().Be(1);
+        result.Failed.Should().Be(1);
+        reservations.Find(unknown)!.State.Should().Be(OrderDispatchState.Reserved, "不明は据え置く");
+        reservations.Find(broken)!.State.Should().Be(OrderDispatchState.Reserved, "失敗は据え置く");
+        if (releaseOnNotPlaced)
+            reservations.Find(held).Should().BeNull("門を開ければ未発注は解放される（従来どおり）");
+        else
+            reservations.Find(held)!.State.Should().Be(OrderDispatchState.Reserved, "門が閉じていれば据え置く");
+    }
+
+    [Fact]
+    public async Task 自己修復も出口へ渡るが保護レグ不在の所見は伴わない()
+    {
+        // T-10-649: phase-4 自己修復（記録があるのに予約が Reserved のまま）も**確定済み**なので
+        // 出口へ渡す（OrderExecuted を失わない）。ただし所見（ProbeFinding）は伴わない ——
+        // ブローカへ照会していない＝突合ではなく、記録も保護レグの有無も通常フローが決めている
+        //（IADR-0362 決定 3 の「phase-4 自己修復は載せない」）。
+        var (reconciler, reservations, executedStore, probe) = Build(ReservationProbeResult.Indeterminate);
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+        executedStore.Save(new ExecutionRecord(
+            decisionId, "BRK-HEAL", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, 10, 100m, 10, 101m, OrderStatus.Filled, 0.01m, StalledAt));
+        var sink = new RecordingSink();
+
+        await reconciler.ReconcileAsync(Cutoff, batchSize: 50, sink);
+
+        probe.Calls.Should().Be(0);
+        var emission = sink.Emissions.Should().ContainSingle().Subject;
+        emission.Executed.OrderId.Should().Be("BRK-HEAL");
+        emission.ProbeFinding.Should().BeNull("突合ではないので保護レグ不在の Critical は出さない");
+    }
+
     [Fact]
     public async Task 完了済み予約は走査対象に含まれない()
     {
