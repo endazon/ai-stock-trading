@@ -301,7 +301,9 @@ public static class ReportRenderer
         sb.Append(CultureInfo.InvariantCulture, $"| 取引諸費用 | {UnsuppliedCell} |\n");
         sb.Append(CultureInfo.InvariantCulture, $"| 為替スプレッド相当額 | {Amount(review.FxSpread)} |\n");
         sb.Append(CultureInfo.InvariantCulture, $"| 費用合計（§1 と同じ値） | {Amount(review.TotalCost)} |\n");
-        sb.Append(CultureInfo.InvariantCulture, $"| 源泉徴収税額 | {Amount(review.TaxWithheld)} |\n");
+        // #892, IADR-0381: 🔴 **税は実現損益（部分値）から算出されるため、日報 §1 と同じく数字として出さない。**
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| 源泉徴収税額 | {AmountOrUnvalued(view.Pnl, review.TaxWithheld)} |\n");
         sb.Append('\n');
 
         // #892, IADR-0381: 🔴 **分母（実現損益）が部分値のときは費用率を出さない。**

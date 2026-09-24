@@ -13,7 +13,7 @@ namespace ReportService.Tests;
 // 🔴 本ファイルは #892 の実測（issue 本文の 2 例）をそのまま写している。是正前はいずれも
 // **実在しない建玉の評価損益**を出していた（取り込みの有無に関わらず再現した）。
 //
-// テスト ID は **T-16-001〜014**（本作業で新設した帯。走査の結果、本リポジトリに `T-16` 帯は
+// テスト ID は **T-16-001〜023**（本作業で新設した帯。T-16-016〜023 は監査の指摘で足した。走査の結果、本リポジトリに `T-16` 帯は
 // 1 件も存在しなかった。作業仕様書 `20260923_892_period-scoped-inventory-explicit-unknown` 参照）。
 public class PeriodInventoryPhantomShortTests
 {
@@ -322,6 +322,297 @@ public class PeriodInventoryPhantomShortTests
 
         // 期間の在庫は残らない（幻のショートを開かない）ため、相場照会そのものが起きない。
         marketData.RequestedSymbols.Should().BeEmpty();
+    }
+
+    // --- T-16-016: 散文プロンプト（LLM へ部分値を権威として渡さない） ---
+
+    // 🔴 本文・要約は「算出不能」と描くのに、プロンプトだけが部分値を「コードで確定済みの集計値」として渡すと、
+    // 散文が「当期は決済が無かった」「損益 0 だった」と書ける（数字を黙って出すより悪い）。
+    private static PnlSummary PartialPnl(int unvalued) => new(
+        RealizedPnlGross: 777m, TotalCost: 56m, TaxWithheld: 131m, RealizedPnlNet: 590m,
+        UnrealizedPnl: -4321m, TradeCount: 5, RealizingTradeCount: 3, WinningTradeCount: 2,
+        UnvaluedSettlementCount: unvalued);
+
+    private static ReportNarrativeContext NarrativeContext(int unvalued) => new(
+        ReportKind.Daily, "daily-2026-09-18", "2026-09-18", ["US"], PartialPnl(unvalued), "方針");
+
+    [Fact]
+    public void T16_016_散文プロンプトは部分値を渡さず言及しないよう指示する()
+    {
+        var prompt = ReportNarrativePromptBuilder.Build(NarrativeContext(unvalued: 1));
+
+        prompt.Should().Contain("- 実現損益(税引前): 算出不能（1件）");
+        prompt.Should().Contain("- 源泉徴収税額: 算出不能（1件）");
+        prompt.Should().Contain("- 実現損益(税引後): 算出不能（1件）");
+        prompt.Should().Contain("- 評価損益(参考): 算出不能（1件）");
+        prompt.Should().Contain("- 約定件数: 5 / 決済件数: 算出不能（1件） / 勝ち決済: 算出不能（1件）");
+        // 部分値そのものがプロンプトのどこにも現れない。
+        foreach (var partial in new[] { "777", "590", "131", "4321", "決済件数: 3", "勝ち決済: 2" })
+            prompt.Should().NotContain(partial);
+        // 言及しない指示（「決済が無かった」「損益 0」の否定を含む）。
+        prompt.Should().Contain("散文で一切言及しないでください");
+        prompt.Should().Contain("「決済が無かった」「損益は 0 だった」");
+        // 取得原価を要さない費用・約定件数はそのまま渡す。
+        prompt.Should().Contain("- 費用合計: 56");
+
+        // 対の肯定形: 算定できない決済が無ければ従来どおり数値を渡し、指示も付けない。
+        var normal = ReportNarrativePromptBuilder.Build(NarrativeContext(unvalued: 0));
+        normal.Should().Contain("- 実現損益(税引前): 777");
+        normal.Should().Contain("決済件数: 3 / 勝ち決済: 2");
+        normal.Should().NotContain("算出不能");
+        normal.Should().NotContain("一切言及しないでください");
+    }
+
+    // --- T-16-017: 週報 §5 の源泉徴収税額 ---
+
+    private static ReportView WeeklyWithCostReview(PnlSummary pnl, IReadOnlyList<FillPnlAttribution>? entries = null) => new()
+    {
+        Kind = ReportKind.Weekly,
+        PeriodKey = "weekly-2026-W38",
+        PeriodLabel = "2026-W38",
+        Markets = ["US"],
+        AssumptionsVersion = 2,
+        Pnl = pnl,
+        PolicySummary = "方針",
+        Narrative = "散文",
+        FillAttributions = entries,
+        CostReview = new PeriodCostReview(
+            Commission: 40m, FxSpread: 16m, TotalCost: 56m, TaxWithheld: 131m, RealizedPnlGross: 777m, CostRatio: 0.0721m),
+    };
+
+    private static string RiskCostSection(string md)
+    {
+        var start = md.IndexOf("## 5. リスク・費用レビュー", StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0);
+        var end = md.IndexOf("## 6.", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start);
+        return md[start..end];
+    }
+
+    [Fact]
+    public void T16_017_週報の費用レビューは部分値の源泉徴収税額を数字として出さない()
+    {
+        var section = RiskCostSection(ReportRenderer.RenderMarkdown(WeeklyWithCostReview(PartialPnl(1))));
+
+        section.Should().Contain("| 源泉徴収税額 | **算出不能**（期間より前に建てた建玉の決済が 1 件あり");
+        section.Should().NotContain("131");
+        // 費用は約定ごとに掛かり取得原価を要さない（出し続ける）。
+        section.Should().Contain("| 費用合計（§1 と同じ値） | +56.00 USD |");
+
+        // 対の肯定形: 算定できない決済が無ければ税額を出す。
+        RiskCostSection(ReportRenderer.RenderMarkdown(WeeklyWithCostReview(PartialPnl(0))))
+            .Should().Contain("| 源泉徴収税額 | +131.00 USD |");
+    }
+
+    // --- T-16-018: 週報 §5 の費用率 ---
+
+    [Fact]
+    public void T16_018_週報の費用率は分母が部分値なら算出不能と描く()
+    {
+        var section = RiskCostSection(ReportRenderer.RenderMarkdown(WeeklyWithCostReview(PartialPnl(1))));
+
+        section.Should().Contain("- 損益に対する費用率: **算出不能**（期間より前に建てた建玉の決済が 1 件あり");
+        // 部分値の分母から計算した比率（7.2%）を出さない。
+        section.Should().NotContain("7.2%");
+        section.Should().NotContain("+777.00 USD");
+
+        RiskCostSection(ReportRenderer.RenderMarkdown(WeeklyWithCostReview(PartialPnl(0))))
+            .Should().Contain("- 損益に対する費用率: 7.2%");
+    }
+
+    // --- T-16-019: 期間開始時点の在庫が未供給として**記録される**（結線） ---
+
+    // T-16-013 は語彙だけを見る。🔴 **記録する側（自動生成）が 1 行消えても T-16-013 は緑のまま**なので、
+    // 保存された報告書の未供給入力を見る。
+    [Fact]
+    public async Task T16_019_期間前の建玉の決済を検出したら期間開始時点の在庫を未供給として記録する()
+    {
+        // 2026-07-08（水）16:00 JST ＝ 07:00 UTC。日報だけが生成境界を越えている時刻。
+        var now = new DateTimeOffset(2026, 7, 8, 7, 0, 0, TimeSpan.Zero);
+        var at = new DateTimeOffset(2026, 7, 8, 14, 30, 0, TimeSpan.Zero);
+
+        async Task<IReadOnlyList<ReportInput>> UnsuppliedFor(params PeriodTradeFill[] fills)
+        {
+            var store = new ReportService.Infrastructure.Persistence.InMemoryReportStore();
+            await new ReportAutoGenerator(
+                store,
+                new ReportDraftService(new StubDrafter()),
+                new StubFillSource(fills),
+                new FixedClock(now),
+                new ReportAutoGenerationSettings()).RunOnceAsync();
+            return store.List().Single(r => r.Kind == ReportKind.Daily).UnsuppliedInputs;
+        }
+
+        (await UnsuppliedFor(new PeriodTradeFill(
+                "AAPL", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, 100, 250m, at)))
+            .Should().Contain(ReportInput.OpeningInventory);
+
+        // 対の否定形: 期間内で建てて決済しただけなら記録しない（常に立つ警告は警告にならない）。
+        (await UnsuppliedFor(
+                new PeriodTradeFill("AAPL", Market.UnitedStates, TradeSide.Buy, PositionEffect.Open, 10, 200m, at),
+                new PeriodTradeFill(
+                    "AAPL", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, 10, 250m, at.AddMinutes(30))))
+            .Should().NotContain(ReportInput.OpeningInventory);
+    }
+
+    // --- T-16-020: Discord 要約 ---
+
+    [Fact]
+    public void T16_020_通知の要約は部分値の実現損益と決済件数を数字として出さない()
+    {
+        var summary = ReportSummary.Build(ReportKind.Daily, "2026-09-18", PartialPnl(1), "所感");
+
+        summary.Should().Contain("実現損益（税引後・費用込み）: 算出不能（期間より前に建てた建玉の決済 1 件）");
+        summary.Should().Contain("取引: 5 件（決済・勝ちは算出不能）");
+        summary.Should().NotContain("590");
+        summary.Should().NotContain("決済 3");
+        summary.Should().NotContain("勝ち 2");
+        // 費用は出し続ける。
+        summary.Should().Contain("費用: +56.00 USD");
+
+        var normal = ReportSummary.Build(ReportKind.Daily, "2026-09-18", PartialPnl(0), "所感");
+        normal.Should().Contain("取引: 5 件（決済 3・勝ち 2）");
+        normal.Should().NotContain("算出不能");
+    }
+
+    // --- T-16-021: ハイライト・主な要因（一部だけ賄えた決済） ---
+
+    // 🔴 T-16-009 は「全量を賄えない決済」（部分値 0）だけを見る。**一部だけ賄えた決済は `Realizing` かつ
+    // `Unvalued`** であり、部分値（多くは 0 でない）で最良・最悪・寄与最大に並び得る。
+    [Fact]
+    public void T16_021_一部だけ賄えた決済は部分値でハイライトと寄与最大に並ばない()
+    {
+        var entries = FillPnlAttributionBuilder.Build(
+        [
+            Fill(TradeSide.Buy, PositionEffect.Open, 5, 200m, 0),                      // 当期に 5 株建てる
+            Fill(TradeSide.Sell, PositionEffect.Close, 10, 250m, 60),                  // 10 株を決済（5 株は期間より前の建玉）
+            Fill(TradeSide.Buy, PositionEffect.Open, 10, 200m, 120, symbol: "MSFT"),
+            Fill(TradeSide.Sell, PositionEffect.Close, 10, 210m, 180, symbol: "MSFT"), // +100（全量を算定）
+        ], Assumptions(), rationales: null);
+
+        // 前提: 一部だけ賄えた決済は「決済」かつ「算定できない」であり、部分値（+250）は MSFT（+100）より大きい。
+        entries[1].Realizing.Should().BeTrue();
+        entries[1].Unvalued.Should().BeTrue();
+        entries[1].RealizedPnlGross.Should().Be(250m);
+
+        var highlights = FillPnlAttributionBuilder.Highlights(entries);
+        highlights.Best!.Symbol.Should().Be("MSFT");
+        highlights.Worst!.Symbol.Should().Be("MSFT");
+
+        var day = FillPnlAttributionBuilder.ByDay(entries).Should().ContainSingle().Subject;
+        day.LargestContributor!.Symbol.Should().Be("MSFT");
+        day.UnvaluedCount.Should().Be(1);
+    }
+
+    // --- T-16-022: 三者比較の算入できなかった件数 ---
+
+    [Fact]
+    public void T16_022_三者比較は到達済みの列ごとに算入できなかった決済を合算して明記する()
+    {
+        PeriodTradeFill PreviousClose(BrokerProvider provider, int minutes) =>
+            new("AAPL", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, 10, 120m,
+                T0.AddMinutes(minutes), Guid.NewGuid(), provider);
+
+        IReadOnlyList<PeriodTradeFill> fills =
+        [
+            PreviousClose(BrokerProvider.MoomooSimulate, 0),
+            PreviousClose(BrokerProvider.MoomooSimulate, 10),
+            PreviousClose(ThreeWayComparisonAggregator.LiveProvider, 20),
+        ];
+
+        // 両列に到達: SIMULATE 2 件 ＋ 実弾 1 件。
+        var live = ThreeWayComparisonAggregator.Aggregate(fills, Assumptions(), TradingStage.Stage2MinimalLive);
+        live!.UnvaluedSettlementCount.Should().Be(3);
+
+        // 実弾列は未到達（空欄）: 空欄の列の分は数えない。
+        ThreeWayComparisonAggregator.Aggregate(fills, Assumptions(), TradingStage.Stage1Simulate)!
+            .UnvaluedSettlementCount.Should().Be(2);
+
+        // 出口（月報 §5）に件数が出る。
+        var md = ReportRenderer.RenderMarkdown(new ReportView
+        {
+            Kind = ReportKind.Monthly,
+            PeriodKey = "monthly-2026-09",
+            PeriodLabel = "2026-09",
+            Markets = ["US"],
+            AssumptionsVersion = 2,
+            Pnl = PartialPnl(3),
+            PolicySummary = "方針",
+            Narrative = "散文",
+            ThreeWayComparison = live,
+        });
+        md.Should().Contain("- 期間より前に建てた建玉の決済が 3 件あり、**勝率・平均損益に算入していません**");
+    }
+
+    // --- T-16-023: 内訳の節の注記 ---
+
+    private const string SectionNote = "- **期間より前に建てた建玉の決済が 1 件あり、実現損益・勝率へ算入していません**";
+
+    private static int Occurrences(string text, string value)
+    {
+        var count = 0;
+        for (var i = text.IndexOf(value, StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf(value, i + value.Length, StringComparison.Ordinal))
+            count++;
+        return count;
+    }
+
+    [Fact]
+    public void T16_023_内訳の各節は算入しなかった決済の件数を注記する()
+    {
+        var onlyPrevious = FillPnlAttributionBuilder.Build(
+            [Fill(TradeSide.Sell, PositionEffect.Close, 100, 250m, 0)], Assumptions(), rationales: null);
+        var withRoundTrip = FillPnlAttributionBuilder.Build(
+        [
+            Fill(TradeSide.Sell, PositionEffect.Close, 100, 250m, 0),
+            Fill(TradeSide.Buy, PositionEffect.Open, 10, 200m, 60, symbol: "MSFT"),
+            Fill(TradeSide.Sell, PositionEffect.Close, 10, 210m, 120, symbol: "MSFT"),
+        ], Assumptions(), rationales: null);
+
+        // 週報: §2 日別推移と §3 ハイライト（決済の無い経路・有る経路の両方）にそれぞれ 1 回ずつ。
+        foreach (var entries in new[] { onlyPrevious, withRoundTrip })
+        {
+            var weekly = ReportRenderer.RenderMarkdown(WeeklyWithCostReview(PartialPnl(1), entries));
+            Occurrences(weekly, SectionNote).Should().Be(2);
+            weekly.IndexOf("## 3. ハイライト取引", StringComparison.Ordinal)
+                .Should().BeLessThan(weekly.LastIndexOf(SectionNote, StringComparison.Ordinal));
+        }
+
+        // 月報: §2 内訳に 1 回。
+        var monthly = ReportRenderer.RenderMarkdown(new ReportView
+        {
+            Kind = ReportKind.Monthly,
+            PeriodKey = "monthly-2026-09",
+            PeriodLabel = "2026-09",
+            Markets = ["US"],
+            AssumptionsVersion = 2,
+            Pnl = PartialPnl(1),
+            PolicySummary = "方針",
+            Narrative = "散文",
+            FillAttributions = withRoundTrip,
+        });
+        Occurrences(monthly, SectionNote).Should().Be(1);
+
+        // 対の否定形: 算定できない決済が無ければ注記しない。
+        var clean = FillPnlAttributionBuilder.Build(
+        [
+            Fill(TradeSide.Buy, PositionEffect.Open, 10, 200m, 60, symbol: "MSFT"),
+            Fill(TradeSide.Sell, PositionEffect.Close, 10, 210m, 120, symbol: "MSFT"),
+        ], Assumptions(), rationales: null);
+        ReportRenderer.RenderMarkdown(WeeklyWithCostReview(PartialPnl(0), clean))
+            .Should().NotContain("期間より前に建てた建玉の決済");
+    }
+
+    private sealed class FixedClock(DateTimeOffset now) : ReportService.Common.Abstractions.IClock
+    {
+        public DateTimeOffset UtcNow { get; } = now;
+    }
+
+    private sealed class StubFillSource(IReadOnlyList<PeriodTradeFill> fills) : IPeriodFillSource
+    {
+        public Task<IReadOnlyList<PeriodTradeFill>> GetFillsAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
+            Task.FromResult(fills);
     }
 
     private sealed class RecordingMarketDataSource : AiStockTrading.Shared.Contracts.Ports.IMarketDataSource
