@@ -303,19 +303,20 @@ public class PortfolioProjectionTests
         positions.Should().BeEmpty();
     }
 
-    // FR-03/04/10, IADR-0035: 損切り価格（最新の同方向エントリー・一部決済で保持・反転で更新・欠損は null）。
+    // FR-03/04/10, IADR-0035・#936, IADR-0393: 損切り価格（保有中のエントリーのうち最も保護的なライン・一部決済で保持・
+    // 反転で更新・欠損は null）。複数エントリーの配置は PortfolioProjectionStopLossLotTests が固定する。
     private static LedgerFill FillSl(TradeSide side, int qty, decimal price, decimal? stop, int hour, string symbol = "AAPL") =>
         new(symbol, Market.UnitedStates, side, side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close,
             qty, price, TodayAt(hour), stop);
 
     [Fact]
-    public void 保有射影の損切りは最新の建て増しエントリーを採る()
+    public void 保有射影の損切りは建て増しのより保護的なラインを採る()
     {
         var positions = PortfolioProjection.ProjectOpenPositions(
             new[]
             {
                 FillSl(TradeSide.Buy, 10, 1_000m, 970m, 9),
-                FillSl(TradeSide.Buy, 10, 1_400m, 1_358m, 10), // 建て増し → 最新の損切りに更新
+                FillSl(TradeSide.Buy, 10, 1_400m, 1_358m, 10), // 建て増し → より高い（保護的な）1,358 を採る
             });
 
         positions.Single().StopLossPrice.Should().Be(1_358m);

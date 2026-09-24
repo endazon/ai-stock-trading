@@ -12,7 +12,10 @@ public sealed class OrderDispatchReservationRow
 
     public DateTimeOffset ReservedAt { get; set; }
 
-    /// <summary>確定時刻（Reserved の間は null）。</summary>
+    /// <summary>
+    /// 確定時刻（Reserved の間は null）。🔴 #876, IADR-0398: Forgone では<b>見送りを記録した時刻</b>
+    /// （予約を取る前の見送りでは <see cref="ReservedAt"/> も同じ時刻＝行を作った時刻である）。
+    /// </summary>
     public DateTimeOffset? CompletedAt { get; set; }
 
     /// <summary>ブローカ注文 ID（確定時に記録する。Reserved の間は null）。</summary>

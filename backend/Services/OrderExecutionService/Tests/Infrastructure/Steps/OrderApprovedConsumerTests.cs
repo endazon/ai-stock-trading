@@ -356,7 +356,8 @@ public class OrderApprovedConsumerTests
         forgone.Reason.Should().Be(OrderDispatchForgoneReason.BrokerUnavailable);
         session.Sent.MessagesOf<OrderExecuted>().Should().BeEmpty("発注していないため注文状態は存在しない");
         store.GetAll().Should().BeEmpty("発注していない注文の記録を残さない");
-        reservations.Find(approved.DecisionId).Should().BeNull("確実に未発注のため予約は解放される");
+        reservations.Find(approved.DecisionId)!.State.Should().Be(
+            OrderDispatchState.Forgone, "確実に未発注でも予約は削除せず見送りの終端にする（#876。再配送で送らない）");
 
         await host.StopAsync();
     }
@@ -403,7 +404,8 @@ public class OrderApprovedConsumerTests
         var drift = session.Sent.MessagesOf<PositionReconciliationDrift>().Should().ContainSingle().Which;
         drift.Drifts.Should().ContainSingle().Which.BrokerQuantity.Should().Be(0);
         store.GetAll().Should().BeEmpty();
-        reservations.Find(approved.DecisionId).Should().BeNull("送らないと決めた注文は予約も取らない");
+        reservations.Find(approved.DecisionId)!.State.Should().Be(
+            OrderDispatchState.Forgone, "送らないと決めた注文は予約を取らず、見送りの記録だけを残す（#876）");
 
         await host.StopAsync();
     }

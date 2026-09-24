@@ -111,7 +111,9 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
                 // #569, IADR-0271: **実際に発注したアダプタの発注先**（不明は null）。intent.Mode へ倒さない。
                 fill.Provider,
                 // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）。未記録は null のまま（既定へ倒さない）。
-                approval.FxRateBaseToDisplay));
+                approval.FxRateBaseToDisplay,
+                // #936, IADR-0393（2026-09-25 追記）: 射影がロットを発注の順に並べる鍵（EfPortfolioLedgerStore と同一の意味論）。
+                EntryOrderedAt: approval.ApprovedAt));
         }
 
         // #849, IADR-0350 決定 2: 乖離の取り込み行を合流させる（EfPortfolioLedgerStore と同一の意味論）。
