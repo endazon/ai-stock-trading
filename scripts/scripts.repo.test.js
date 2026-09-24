@@ -3108,6 +3108,62 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       });
     }
 
+    // ---- 規則 4（重複）と、重複を畳む是正を消失と数えないこと（#955 / IADR-0400） ----
+    ok('check-adr-index-addendum-loss[規則 4]: findDuplicateRows は同じ IADR 番号の索引行が複数ある ID だけを返す', () => {
+      const rows = al.parseIndex(
+        [
+          rowOf('IADR-0369', 'a'),
+          rowOf('IADR-0354', 'b'),
+          rowOf('IADR-0369', 'c'),
+          rowOf('IADR-0354', 'd'),
+          rowOf('IADR-0354', 'e'),
+          rowOf('IADR-0118', 'f'),
+          '> 注: IADR-0118 は索引行の外の言及であり、行数に数えない',
+        ].join('\n'),
+      );
+      assert.deepStrictEqual(al.findDuplicateRows(rows), [
+        { id: 'IADR-0354', lines: 3 },
+        { id: 'IADR-0369', lines: 2 },
+      ]);
+    });
+
+    ok('check-adr-index-addendum-loss[#955]: 重複 2 行に 1 回ずつ在った印は、1 行へ畳んでも消失としない', () => {
+      const base = al.parseIndex(
+        `${rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #899］')}\n` +
+          rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #889］'),
+      );
+      assert.strictEqual(base.get('IADR-0354').marks.get('［2026-09-19 追記 / #874］'), 1, '行ごとの最大値で持つ');
+      const folded = al.parseIndex(
+        rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #889］［2026-09-23 追記 / #899］'),
+      );
+      assert.deepStrictEqual(al.findLosses({ base, theirs: base, ours: folded }), []);
+      // 片方の行だけが持っていた印を落として畳めば、本当の消失として残る。
+      const lossy = al.parseIndex(rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #899］'));
+      const losses = al.findLosses({ base, theirs: base, ours: lossy });
+      assert.deepStrictEqual(losses.map((l) => l.mark), ['［2026-09-23 追記 / #889］']);
+    });
+
+    // 実データ: f703843（#945）の索引は IADR-0354・IADR-0369 が 2 本ずつ。6dcc7b5（#954）が畳んだ。
+    // 6dcc7b5 のコミット本文には `[remove-adr-addendum]` の宣言が**無い**（スカッシュで落ちた）ため、
+    // 旧比較（合算）では 4 件の「消失」として赤になっていた。
+    ok('check-adr-index-addendum-loss[#955 実データ]: 重複を持つ f703843 は赤、畳んだ 6dcc7b5 は宣言なしで緑', () => {
+      if (!revAl('f703843') || !revAl('6dcc7b5')) {
+        process.stdout.write('      (skip) f703843 / 6dcc7b5 が履歴に無い\n');
+        return;
+      }
+      const at = (sha) =>
+        execAl(`git show ${sha}:${al.INDEX_PATH}`, { cwd: REPO_AL, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const before = at('f703843');
+      const after = at('6dcc7b5');
+      assert.deepStrictEqual(
+        al.findDuplicateRows(al.parseIndex(before)).map((d) => d.id),
+        ['IADR-0354', 'IADR-0369'],
+      );
+      assert.deepStrictEqual(al.findDuplicateRows(al.parseIndex(after)), []);
+      const b = al.parseIndex(before);
+      assert.deepStrictEqual(al.findLosses({ base: b, theirs: b, ours: al.parseIndex(after) }), []);
+    });
+
     // 配線の退行テスト（`check-cross-repo-refs` と同じ趣旨）: CI に載っていない検査器は
     // 「誰かが手で叩いたときだけ走る検査器」であり、規約を守らせない。
     ok('check-adr-index-addendum-loss: ci.yml の static-checks から本走されている（配線の退行防止）', () => {

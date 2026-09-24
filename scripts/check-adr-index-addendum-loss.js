@@ -29,7 +29,8 @@
  *
  * ■ 何を見るか（印の単位で持つ）
  *   行の再構成の仕方（語順・言い換え・分割）に依らず「**消えたこと**」だけを確実に捕まえるため、
- *   索引行を**印の多重集合**として持つ。3 つの版を比べる:
+ *   索引行を**印の多重集合**として持つ（同じ IADR 番号の行が複数あれば、印ごとに**行ごとの出現回数の
+ *   最大値**を採る。#955 / IADR-0400 決定 2。下の規則 4 を参照）。3 つの版を比べる:
  *
  *     base   = マージベース   theirs = 統合ブランチの先端   ours = HEAD
  *
@@ -43,6 +44,11 @@
  *                         検査そのものが外される**）。**「触った」は ours を起点に読む** ——
  *                         「マージベースに行が無い」は**統合ブランチ側が足した**場合にも起きる
  *                         （初版はこれを取り違え、在庫の PR を 4/10 赤にした。findLosses の注記）。
+ *     規則 4（重複）      ours の索引に**同じ IADR 番号の行が 2 本以上**あれば fail（#955 / IADR-0400 決定 1）。
+ *                         **状態の検査**であり base・theirs は見ない。範囲を決められなくても作業ツリーで検査する。
+ *                         衝突を「両側の行を並べる」和集合で解くと生じる（IADR-0354・IADR-0369 が 2 本ずつ
+ *                         並んだまま develop へ入った。是正は PR #954）。規則 1〜3 は印の**消失**しか見ないので
+ *                         重複は素通りしていた。逃げ道は用意しない（同じ ID の行を 2 本持つ正当な理由が無い）。
  *
  * ■ 併せて出す観測（**赤にしない**。#895 / IADR-0375）
  *   規則 1〜3 は**追記ブロック**しか見ない。索引行の中の**追記ブロックではない句**が衝突解決で
@@ -82,6 +88,13 @@
  * ■ 同一の印が複数行に現れる
  *   `［2026-09-19 追記 / #866］` は 3 行にある。ファイル全体で集合を比べると**行を跨いだ相殺**が
  *   起きるため、**行（IADR 番号）ごとの多重集合**で持つ。
+ *
+ * ■ 同じ IADR 番号の行が複数ある（重複。規則 4 で赤にする状態）
+ *   印の数は**その ID の全行の合計ではなく、行ごとの出現回数の最大値**で持つ（#955 / IADR-0400 決定 2）。
+ *   合計で数えると、重複した 2 行に 1 回ずつ在った印を 1 行へ畳む**正しい是正**が「2 → 1 の消失」として
+ *   赤になる（PR #954 で実際に起きた。`--range=f703843..6dcc7b5` が 4 件の消失を報告した）。
+ *   「ID ごとの印の集合」まで落とすと、**1 行に同じ印が 2 つあって 1 つ消えた**形（IADR-0363 決定 1 が
+ *   多重集合を選んだ理由）を見逃す。最大値は両方を満たす。
  */
 
 const { execSync } = require('child_process');
@@ -198,9 +211,12 @@ function readAt(rev, { preferWorktree = false } = {}) {
 }
 
 /**
- * 索引ファイルの中身を「IADR 番号 → { line, marks, sample }」へ畳む。
- * `marks` は **正規化した印 → 出現回数** の多重集合、`sample` は表示用の原文。
- * 同じ IADR の行が複数ある場合は合算する。
+ * 索引ファイルの中身を「IADR 番号 → { line, lines, marks, sample }」へ畳む。
+ * `marks` は **正規化した印 → 出現回数** の多重集合、`sample` は表示用の原文、`lines` はその ID の行数。
+ *
+ * 🔴 同じ IADR の行が複数ある場合、`line` は改行で連結するが、**`marks` は合算しない。行ごとの出現回数の
+ * 最大値**を採る（#955 / IADR-0400 決定 2。冒頭「同じ IADR 番号の行が複数ある」）。合算すると、重複を
+ * 1 行へ畳む是正が消失として赤になる。重複そのものは規則 4（`findDuplicateRows`）が赤にする。
  */
 function parseIndex(content) {
   const rows = new Map();
@@ -208,16 +224,44 @@ function parseIndex(content) {
     const m = ROW_RE.exec(line);
     if (!m) continue;
     const id = m[1];
-    const row = rows.get(id) || { line: null, marks: new Map(), sample: new Map() };
+    const row = rows.get(id) || { line: null, lines: 0, marks: new Map(), sample: new Map() };
     row.line = row.line === null ? line : `${row.line}\n${line}`;
+    row.lines += 1;
+    const inLine = new Map();
     for (const hit of extractMarks(line)) {
       const key = normalizeMark(hit);
-      row.marks.set(key, (row.marks.get(key) || 0) + 1);
+      inLine.set(key, (inLine.get(key) || 0) + 1);
       if (!row.sample.has(key)) row.sample.set(key, hit);
     }
+    for (const [key, count] of inLine) row.marks.set(key, Math.max(row.marks.get(key) || 0, count));
     rows.set(id, row);
   }
   return rows;
+}
+
+/**
+ * 規則 4（重複）: 同じ IADR 番号の索引行が 2 本以上ある ID を返す（`{ id, lines }[]`、ID 昇順）。
+ * #955 / IADR-0400 決定 1。**状態の検査**なので ours だけに当てる。
+ */
+function findDuplicateRows(rows) {
+  const dups = [];
+  for (const [id, row] of rows) if (row.lines > 1) dups.push({ id, lines: row.lines });
+  dups.sort((a, b) => a.id.localeCompare(b.id));
+  return dups;
+}
+
+/** 規則 4 の報告。重複があれば 1（赤）、無ければ 0。 */
+function reportDuplicates(dups) {
+  if (dups.length === 0) return 0;
+  console.error(
+    `[check-adr-index-addendum-loss] ${INDEX_PATH} に、同じ IADR 番号の索引行が複数あります（${dups.length} 件）:`,
+  );
+  for (const d of dups) console.error(`    ${d.id}  ${d.lines} 行`);
+  console.error('');
+  console.error('  衝突を「両側の行を並べる」和集合で解くと生じます（IADR-0354・IADR-0369 の実例。是正は PR #954）。');
+  console.error('  直し方: 同じ ID の行を 1 行へ畳み、**両方の行に在った追記ブロックをすべて残して**ください。');
+  console.error('  畳むこと自体は消失と数えません（印は ID ごとに行ごとの出現回数の最大値で比べます）。');
+  return 1;
 }
 
 /** コミット本文から「意図的な撤去の宣言」を集める。IADR 番号 → 印の集合（`*` はワイルドカード）。 */
@@ -338,7 +382,9 @@ function findShrunkRows({ base, theirs, ours }) {
     if (!isTouched(baseRow, oursRow)) continue;
     const ref = theirs.get(id) || baseRow;
     if (!ref) continue;
-    const before = Buffer.byteLength(ref.line, 'utf8');
+    // 比較相手に同じ ID の行が複数ある（重複。規則 4）なら、**最も長い 1 行**と比べる。連結した長さと比べると、
+    // 重複を 1 行へ畳む是正が必ず「縮んだ」と読まれる（#955。f703843..6dcc7b5 で実測）。
+    const before = Math.max(...ref.line.split('\n').map((l) => Buffer.byteLength(l, 'utf8')));
     const after = Buffer.byteLength(oursRow.line, 'utf8');
     if (after < before) shrunk.push({ id, before, after, from: theirs.has(id) ? 'theirs' : 'base' });
   }
@@ -351,6 +397,16 @@ function looksTruncated(line) {
   const open = (String(line).match(/［/g) || []).length;
   const close = (String(line).match(/］/g) || []).length;
   return open > close;
+}
+
+/**
+ * 範囲を決められない・版を読めないときの規則 4 だけの検査（#955）。重複は範囲が要らない状態の検査なので、
+ * 消失の検査を skip しても作業ツリーの索引だけは見る。
+ */
+function worktreeDuplicatesOnly() {
+  const p = path.join(REPO, INDEX_PATH);
+  if (!fs.existsSync(p)) return 0;
+  return reportDuplicates(findDuplicateRows(parseIndex(fs.readFileSync(p, 'utf8'))));
 }
 
 function main(opts = {}) {
@@ -374,7 +430,7 @@ function main(opts = {}) {
         '[check-adr-index-addendum-loss] 検査範囲を決められなかったため skip した（浅いクローン等）。' +
           'この範囲は検査されていない。',
       );
-      return 0;
+      return worktreeDuplicatesOnly();
     }
     let revs;
     try {
@@ -385,9 +441,12 @@ function main(opts = {}) {
       ours = parseIndex(oursRaw);
     } catch (e) {
       warn(`[check-adr-index-addendum-loss] 版を取得できなかったため skip した（${range}）: ${e.message}`);
-      return 0;
+      return worktreeDuplicatesOnly();
     }
   }
+
+  // 規則 4（重複）。消失の報告と独立に出し、最後に終了コードへ畳む（両方あれば両方読ませる）。
+  const dupCode = reportDuplicates(findDuplicateRows(ours));
 
   const losses = findLosses({ base, theirs, ours });
   const baseMarkCount = [...base.values()].reduce((n, r) => n + [...r.marks.values()].reduce((a, b) => a + b, 0), 0);
@@ -408,9 +467,10 @@ function main(opts = {}) {
   }
 
   if (losses.length === 0) {
+    if (dupCode) return dupCode;
     console.log(
       `[check-adr-index-addendum-loss] OK: ${INDEX_PATH} の索引行にあった追記ブロック ` +
-        `${baseMarkCount} 件は、すべて残っています。`,
+        `${baseMarkCount} 件は、すべて残っています。索引行の IADR 番号の重複はありません。`,
     );
     return 0;
   }
@@ -443,6 +503,7 @@ function main(opts = {}) {
   }
 
   if (silent.length === 0) {
+    if (dupCode) return dupCode;
     console.log(
       `[check-adr-index-addendum-loss] OK: 消えた追記 ${intentional.length} 件はすべて意図的な撤去として宣言済みです。`,
     );
@@ -712,6 +773,60 @@ function selfTest() {
     run({ baseContent: FIX.case2Base, oursContent: '' }) === 1,
   );
 
+  // ---- 🔴 規則 4（重複）と、重複を畳む是正（#955 / IADR-0400） ----
+  //
+  // 実例: IADR-0354・IADR-0369 の行が 2 本ずつ並んだまま develop へ入り（f703843）、
+  // 畳んだ是正（6dcc7b5。PR #954）が旧比較（合算）では 4 件の「消失」として赤になった。
+  const dupA = '| IADR-0354 | **要約**［2026-09-19 追記 / #874］x［2026-09-23 追記 / #899］ | Accepted |';
+  const dupB = '| IADR-0354 | **要約**［2026-09-19 追記 / #874］x［2026-09-23 追記 / #889］ | Accepted |';
+  const folded =
+    '| IADR-0354 | **要約**［2026-09-19 追記 / #874］x［2026-09-23 追記 / #889］y［2026-09-23 追記 / #899］ | Accepted |';
+  t(
+    '🔴 規則 4: 同じ IADR 番号の索引行が 2 本あれば赤（印の消失が無くても）',
+    run({ baseContent: dupA, oursContent: `${dupA}\n${dupB}` }) === 1,
+  );
+  t(
+    '🔴 規則 4: base に既に重複があっても、ours に残っていれば赤（状態の検査）',
+    run({ baseContent: `${dupA}\n${dupB}`, oursContent: `${dupA}\n${dupB}` }) === 1,
+  );
+  t(
+    '🔴 規則 4: 重複で赤のとき、報告に ID と行数が出る',
+    (() => {
+      // quiet は console.error を捨てるので、報告（console.error）だけを集めて読む。
+      const e = console.error;
+      let buf = '';
+      console.error = (...a) => {
+        buf += `${a.join(' ')}\n`;
+      };
+      try {
+        quiet(() => {
+          console.error = (...a) => {
+            buf += `${a.join(' ')}\n`;
+          };
+          return main({ range: null, commitBodies: '', baseContent: dupA, oursContent: `${dupA}\n${dupB}` });
+        });
+      } finally {
+        console.error = e;
+      }
+      return buf.includes('IADR-0354') && buf.includes('2 行');
+    })(),
+  );
+  t(
+    '🔴 重複を 1 行へ畳む是正（両行の印の和集合）は、宣言なしで緑（消失と数えない）',
+    run({ baseContent: `${dupA}\n${dupB}`, oursContent: folded }) === 0,
+  );
+  t(
+    '🔴 重複を畳むときに片方の行だけが持っていた印を落とせば、赤のまま（本当の消失）',
+    run({ baseContent: `${dupA}\n${dupB}`, oursContent: dupA }) === 1,
+  );
+  t(
+    '索引行の外で同じ IADR 番号に触れても重複に数えない',
+    run({
+      baseContent: dupA,
+      oursContent: `> 注: IADR-0354 は …\n- | IADR-0354 | ではない（行頭が表でない）\n${dupA}`,
+    }) === 0,
+  );
+
   // ---- 印の形（issue 番号を必須にしない） ----
   for (const mark of [
     '［2026-09-03 追記］',
@@ -826,6 +941,10 @@ function selfTest() {
     });
     return r.code === 0 && !r.out.includes('短くなっている');
   })());
+  t('🔴 重複を畳んだ行は、重複の最も長い 1 行より短くならない限り縮みとして出さない（#955）', (() => {
+    const r = capture({ baseContent: `${dupA}\n${dupB}`, oursContent: folded });
+    return r.code === 0 && !r.out.includes('短くなっている');
+  })());
   t('findShrunkRows: 比較相手は theirs、theirs に行が無ければ base', (() => {
     const base = parseIndex('| IADR-0351 | **長い長い長い要約** | Accepted |');
     const ours = parseIndex('| IADR-0351 | **短い** | Accepted |');
@@ -902,6 +1021,7 @@ module.exports = {
   parseRemovals,
   findLosses,
   findShrunkRows,
+  findDuplicateRows,
   isTouched,
   looksTruncated,
   resolveRange,
