@@ -426,6 +426,23 @@ public class BusinessMetricsTests
         a.Should().NotBe(BusinessMetricNames.MeterName);
     }
 
+    // T-10-842, FR-03, FR-10, #957, IADR-0399: 市場監視の「評価できなかった行」は reason つきで件数ぶん足し、0 件は計上しない
+    // （0 を 1 系列として出すと「計上した」が平常時にも立ち、アラートの「平常時 0 件」が崩れる）。否定形を含むため隔離した Meter 名。
+    [Fact]
+    public void 市場監視の評価できなかった行は理由つきで件数ぶん計上され_0件は計上しない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing, 2);
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowStopLineApproximated, 0);
+
+        capture.SumOf(BusinessMetricNames.MarketMonitorPositionRowsDegraded).Should().Be(2);
+        capture.TagValuesOf(BusinessMetricNames.MarketMonitorPositionRowsDegraded, BusinessMetricNames.TagReason)
+            .Should().Equal("identity-missing");
+    }
+
     // ---- T-10-787, FR-10, NFR-07, #942, IADR-0395: 追随の打ち切りのカウンタは 0 から始められ、語彙の外の理由を拒む ----
     // 🔴 起動時の 0 は「系列が在る」ことを作るためだけにあり、件数を 1 つも足さない（足すと平常時に鳴る）。
     [Fact]
@@ -494,6 +511,7 @@ public class BusinessMetricsTests
         metrics.RecordLlmCost(nameof(CostCategoryLabels.Llm), 100m, 5m);
         metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
         metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
         metrics.RecordDriftAdoptionFollowUpAbandoned(BusinessMetrics.DriftFollowUpPositionsUnknown);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——

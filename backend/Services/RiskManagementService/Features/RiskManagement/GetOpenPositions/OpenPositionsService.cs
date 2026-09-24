@@ -1,5 +1,4 @@
-using RiskManagementService.Domain;
-using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace RiskManagementService.Features.RiskManagement.GetOpenPositions;
 
@@ -22,9 +21,8 @@ public sealed class OpenPositionsService(IPortfolioLedgerStore ledger)
         {
             // IADR-0035: 取引判断が決めた損切り価格（権威データ）があれば実値を用いる。無い建玉（レガシー/欠損）は
             // 既定比率の近似にフォールバックする（IADR-0030）。近似はロングが取得単価より下、ショートが上。
-            var approximated = p.Side == TradeSide.Buy
-                ? p.AverageEntryPrice * (1m - TradingDefaults.DefaultStopLossRatio)
-                : p.AverageEntryPrice * (1m + TradingDefaults.DefaultStopLossRatio);
+            // #957, IADR-0399: 市場監視（応答にラインが無い行）と同じ式を使う（共有の StopLossApproximation）。
+            var approximated = StopLossApproximation.Approximate(p.Side, p.AverageEntryPrice);
             var stopLoss = p.StopLossPrice is not { } known
                 ? approximated
                 : p.StopLossUnknown
