@@ -354,6 +354,37 @@ public class NotificationFormatterTests
         // T-10-451, IADR-0117（改定 9）: 据え置きが続くあいだ約 1 時間ごとに再通知する。
         // 再通知を「もう 1 本送った」と読ませない（同じ CloseDecisionId＝同じ 1 本の成行）。
         msg.Content.Should().Contain("約 1 時間ごと").And.Contain("新しい発注ではありません");
+        // T-10-750 の対（変えない側）: 滞留側（LapsedInFlight）はガードが巡回し再通知するので、エントリー時の文は出ない。
+        msg.Content.Should().NotContain("巡回しません").And.NotContain("この 1 回だけ");
+    }
+
+    // 🔴 T-10-750, FR-10, FR-11, UC-06, #941, IADR-0369（2026-09-25 追記）, IADR-0117（改定 9）:
+    // **エントリー時（RejectedAtEntry）の「届いたか不明」に、滞留側の再通知を約束させない。**
+    // 1 時間ごと（と再起動のたび）の再通知は T-10-451 が固定する**ガードの**仕組みであり、保護記録を巡回する
+    // ProtectiveStopGuard だけが持つ。エントリー同時の経路は保護記録を作らないため、この通知は 1 回きりである
+    // （根拠をコードで固定したのが T-10-751）。「繰り返します」と書けば、次の通知を待つ人には沈黙しか届かない
+    // （PR #916 監査 F1・T-10-684 と同じ壊れ方）。上の T-10-409 のテストが対（滞留側の約束は残る）である。
+    [Fact]
+    public void エントリー時の成行手仕舞いが届いたか不明なら_再通知も巡回も約束せず1回きりで手で確かめて手仕舞うよう伝える_否定形()
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.CloseDispatchIndeterminate,
+            10, closeDecisionId, StopIntent(PositionEffect.Close), StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("未確認").And.NotContain("建玉を解消");
+        // 前半（送った・届いたか不明・重ねない・重ねる前に確かめる）は経路に依らず残る。
+        msg.Content.Should().Contain("エントリー時に未受理").And.Contain("届いたか不明").And.Contain("重ねません")
+            .And.Contain("証券会社の画面").And.Contain(closeDecisionId.ToString());
+        msg.Content.Should().Contain("巡回しません").And.Contain("この通知も繰り返しません")
+            .And.Contain("この 1 回だけ").And.Contain("手で手仕舞ってください");
+        msg.Content.Should().NotContain("1 時間ごと", "エントリー時の経路に再通知は無い（通知は 1 回きり）");
+        msg.Content.Should().NotContain("再起動のたび", "再起動・再配送でも出し直さない");
+        msg.Content.Should().NotContain("予約が解決されるまで", "解決を待って鳴り続ける仕組みは無い");
+        msg.Content.Should().NotContain("新しい発注ではありません", "繰り返さない通知に再通知の読み方を添えない");
+        msg.Content.Should().NotContain("解消にも失敗", "届いたか不明を失敗と言わない（T-10-409 の規律は経路に依らない）");
     }
 
     // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、

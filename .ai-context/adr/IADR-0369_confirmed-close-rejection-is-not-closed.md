@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-11, UC-02, UC-06, ADR-0003, ADR-0040, IADR-0057, IADR-0113, IADR-0117, IADR-0210, IADR-0344]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10「逆指値が未受理・失効した場合は建玉を持たない」)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md (業務フロー 02「逆指値が成立しない場合の扱い」)
@@ -115,6 +115,21 @@ SIMULATE は公式に「指値・成行のみ」だが、時間外の成行や�
   常駐の `PublishAllAsync` が改定 9 と同じ形で未発行分の**通知の記憶だけ**を消す（拒否の数えは消さない——消すと通知の失敗が
   成行の撃ち直しへ化ける）（T-10-685）。
 - 上限の値そのものを T-10-636 で固定した（従来の表明は定数を参照しており、3 → 4 の書き換えが緑のまま通った）。
+
+［2026-09-25 追記 / #941］ 決定は変えず、次の 2 点を是正した（作業仕様書 `20260925_941_entry-indeterminate-close-no-repeat-promise`）。
+
+- **上の表「数えが戻る契機」の「手仕舞いの約定」は「手仕舞いの受理」が正しい。** 数えを捨てる `CompleteAsClosed` は、
+  成行の戻り値が `Cancelled` / `Rejected` / `Expired` でない（`Accepted` / `PartiallyFilled` / `Filled`）とき、
+  および記録済みの手仕舞いレグが同じく終端でないときに呼ばれ、約定を待たない（受理の時点で保護記録も完了し、以後この記録は巡回されない）。
+  `CloseRejectionTracker` の冒頭と `ProtectiveStopGuard.MaxConfirmedCloseRejections` の注記も同じく直した。
+- **上の F1 と同型の偽りの約束が `CloseDispatchIndeterminate` にも残っていた。** その本文は `Cause` を見ず
+  「予約が解決されるまで約 1 時間ごと（と再起動のたび）に繰り返します」と書いていたが、1 時間ごとの再通知
+  （IADR-0117 改定 9）は `HeldCloseNotificationTracker` が持ち、それを使うのは保護記録を巡回する `ProtectiveStopGuard` だけである。
+  エントリー同時の経路（`RejectedAtEntry`・`OrderExecutionAppService.IndeterminateClose`）は保護記録を作らず、
+  同じ承認の再配送も相 1 で返って保護喪失を出し直さない（IADR-0117 改定 9 の「塞がないもの」のとおり）。
+  F1 と同じく後半を `Cause` で分け、エントリー時は「巡回しない・この通知も繰り返さない（この 1 回だけ）・
+  証券会社の画面で手仕舞いの注文と建玉を確かめ、手で手仕舞う」と書く（T-10-750）。根拠（保護記録が無い・
+  1 時間後の巡回がイベントを出さない・再配送が出し直さない）はコードの側でも固定した（T-10-751）。
 
 ### 決定 4: 出口を入口のガードで塞がない
 

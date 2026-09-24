@@ -12,7 +12,7 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 // 🔴 回数は S1（SoftwareStopExecutor.MaxCloseAttemptsPerTrigger）と同じ 3 だが、**性質は違う**
 // （IADR-0369 の 2026-09-24 追記）: S1 の上限は**到達 1 回あたり**で、使い切ると TriggeredAt を消して
 // 次に損切りラインへ到達したとき自ら再武装する。こちらは**保護記録ごとの累計**で、市場の事象による
-// 再武装は無い——数えが戻るのは再起動・逆指値の再発注の成功・手仕舞いの約定だけである。
+// 再武装は無い——数えが戻るのは再起動・逆指値の再発注の成功・手仕舞いの受理（CompleteAsClosed。約定は待たない・#941）だけである。
 //
 // 🔴 **永続化しないことが設計である。**
 //   - 消える向きが安全側である: 再起動すると数えが 0 に戻り、**もう一度手仕舞いを試みる**。
