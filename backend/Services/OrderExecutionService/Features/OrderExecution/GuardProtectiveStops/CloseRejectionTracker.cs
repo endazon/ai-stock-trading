@@ -13,6 +13,7 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 // （IADR-0369 の 2026-09-24 追記）: S1 の上限は**到達 1 回あたり**で、使い切ると TriggeredAt を消して
 // 次に損切りラインへ到達したとき自ら再武装する。こちらは**保護記録ごとの累計**で、市場の事象による
 // 再武装は無い——数えが戻るのは再起動・逆指値の再発注の成功・手仕舞いの受理（CompleteAsClosed。約定は待たない・#941）だけである。
+// （#938: 記録が完了したときも捨てる。完了した記録へ成行を撃ち直すことは無いので、残しても使われず辞書が太るだけである。）
 //
 // 🔴 **永続化しないことが設計である。**
 //   - 消える向きが安全側である: 再起動すると数えが 0 に戻り、**もう一度手仕舞いを試みる**。
@@ -55,8 +56,17 @@ public sealed class CloseRejectionTracker
     public void ForgetNotification(Guid entryDecisionId) => _lastNotifiedAt.TryRemove(entryDecisionId, out _);
 
     /// <summary>
+    /// 🔴 #938（PR #916 監査 F4）, IADR-0369（2026-09-25 追記）: 数えか通知の記憶を持っている保護記録の一覧。
+    /// ガードは巡回の冒頭でこれを引き直し、<b>Active の記録が無い</b>ものを捨てる（ガードの外——乖離の取り込み——で
+    /// 完了した記録の記憶を、プロセスの寿命のあいだ持ち続けない）。
+    /// </summary>
+    public IReadOnlyCollection<Guid> TrackedEntryDecisionIds =>
+        _rejections.Keys.Union(_lastNotifiedAt.Keys).ToArray();
+
+    /// <summary>
     /// 解決した（逆指値を張り直せた・手仕舞いが通った・記録が完了した）。数えも通知の記憶も捨てる
     /// ——次に拒否されたら、また最初から 3 回試す。
+    /// #938: 記録を完了させる<b>全経路</b>で呼ばれる（ガードの <c>MarkCompleted</c> と、ガードの外で完了した記録の引き直し）。
     /// </summary>
     public void Forget(Guid entryDecisionId)
     {

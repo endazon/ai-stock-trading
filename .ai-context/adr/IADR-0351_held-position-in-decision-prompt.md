@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-10, FR-03, FR-11, UC-01, UC-02, ADR-0003, ADR-0040, IADR-0029, IADR-0030, IADR-0035, IADR-0039, IADR-0119, IADR-0247, IADR-0297, IADR-0318, IADR-0342, IADR-0343, IADR-0358, IADR-0390]
 author: endazon (with Claude Code)
 created: 2026-09-19
-updated: 2026-09-24
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -226,3 +226,14 @@ LLM 後に 0 → **見送り**／LLM 後に不明 → **見送り**／LLM 後に
   コードで止める（到達中の Open を見送る）かどうかは本 PR では決めていない。
 - 記録上の損切りラインは、権威データを持たない建玉（レガシー等）では既定比率の近似である（IADR-0030）。応答はどちらかを
   区別しないため、プロンプトも区別していない。
+
+## ［2026-09-25 追記 / #936・IADR-0393］「買い増しで記録上のラインが下がる」は、先に建てたロットが残る限り起きなくなった
+
+決定3 の 4 の理由文「リスク管理の `PortfolioProjection` は、建玉と同方向の約定のたびに記録上の損切りラインを**最新エントリーの値へ更新する**
+（IADR-0035）」と、残る制約の「LLM が従わずに買い増せば、…記録上の損切りラインを最新エントリーの値へ更新し、到達の表示は
+『達していません』へ戻る」は、[IADR-0393](IADR-0393_most-protective-stop-line-per-entry-lot.md) で**前提が変わった**（本文は凍結記録として残す）。
+
+- 記録上の損切りラインは**保有中のエントリーのうち最も保護的な値**になった。含み損の中で低いラインの買い増しが入っても、
+  先に建てたロットが残る限りラインは下がらず、「達しています」は「達していません」へ戻らない。
+- **規則 4（到達中の建玉へは買い増ししない）は残す。** 買い増しが到達中の建玉を膨らませることに変わりはない。
+  コード注記（`TradeDecisionPromptBuilder.NoAddAtStopLossLineRule` の上）も同じ形へ書き直した。プロンプトの文言は変えていない。

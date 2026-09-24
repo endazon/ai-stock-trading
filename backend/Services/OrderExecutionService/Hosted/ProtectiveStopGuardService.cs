@@ -87,15 +87,18 @@ public sealed class ProtectiveStopGuardService(
             .ConfigureAwait(false);
 
         if (result.Replaced > 0 || result.ClosedOut > 0 || result.Unknown > 0 || result.Failed > 0
-            || result.CloseRejected > 0)
+            || result.CloseRejected > 0 || result.CloseFailed > 0)
         {
             logger.LogWarning(
                 "保護逆指値ガード: Active {Scanned} 件を評価（維持 {StillActive} / 完了 {Completed} / 再発注 {Replaced}"
                     + " / 手仕舞い {ClosedOut} / 据え置き（照会不能・送信結果不明） {Unknown}"
                     // #857, IADR-0369: 「拒否（建玉が残っている）」は据え置き（不明）と別枠で数える。
-                    + " / 手仕舞い拒否（建玉残存） {CloseRejected} / 失敗 {Failed}）。",
+                    + " / 手仕舞い拒否（建玉残存） {CloseRejected}"
+                    // #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: 確実に未発注の手仕舞い失敗（Remediation=None）を
+                    // 「手仕舞い」に混ぜない。条件にも足す——分けた後に、この巡回の警告そのものが出なくならないように。
+                    + " / 手仕舞い失敗（未発注・建玉残存） {CloseFailed} / 失敗 {Failed}）。",
                 result.Scanned, result.StillActive, result.Completed, result.Replaced,
-                result.ClosedOut, result.Unknown, result.CloseRejected, result.Failed);
+                result.ClosedOut, result.Unknown, result.CloseRejected, result.CloseFailed, result.Failed);
         }
 
         // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ）。ストアは間隔に 1 回だけ読む。

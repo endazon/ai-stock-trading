@@ -238,7 +238,10 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 a.FxRateBaseToDisplay,
                 // #849, #870, IADR-0350, IADR-0360 決定 1: 約定行の由来はシステムである
                 // （式ツリーは省略可能引数を許さないため明示する）。
-                TradeOrigin.System);
+                TradeOrigin.System,
+                // #936, IADR-0393（2026-09-25 追記）: 射影がロットを発注の順に並べる鍵（承認時刻）。
+                // 🔴 **ここで明示して射影する**——省くと既定 null になり、射影は約定時刻の順へ黙って戻る。
+                a.ApprovedAt);
 
         var fills = query.ToList();
 
