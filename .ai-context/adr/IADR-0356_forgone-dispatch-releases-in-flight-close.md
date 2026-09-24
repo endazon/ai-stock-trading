@@ -2,10 +2,10 @@
 title: IADR-0356 見送り（発注していない）は取引台帳でも終端として記録し「処理中の決済」から外す — ただし解放の引き金は「確実に未発注」と実測できた理由だけの allowlist で、注文状態は捏造しない
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0003, ADR-0013, ADR-0024, IADR-0018, IADR-0057, IADR-0067, IADR-0113, IADR-0117, IADR-0129, IADR-0210, IADR-0211, IADR-0342, IADR-0346, IADR-0347]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0003, ADR-0013, ADR-0024, IADR-0018, IADR-0057, IADR-0067, IADR-0113, IADR-0117, IADR-0129, IADR-0210, IADR-0211, IADR-0342, IADR-0346, IADR-0347, IADR-0398]
 author: claude (Claude Code)
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-05 発注執行「拒否」の定義 / FR-10 リスク統制)
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md (UC-06 利用者による建玉の手仕舞い)
@@ -263,6 +263,15 @@ reason switch
   - **是正の方向は #876 で裁定する**（`MarkForgone` を戻す経路を持つ／再配送を見送り済みの `DecisionId` で弾く／
     予約を解放せず別状態で残す／露出を受容する、のいずれか）。**どれも台帳の単調性・予約の 3 相・
     見送りの定義のどれかを触る**ため、本 PR では決めない。
+  - 🔴 **［2026-09-25 追記 / [#876](https://github.com/endazon/ai-stock-trading/issues/876)・
+    [IADR-0398](IADR-0398_forgone-decision-never-redispatched.md)］解消した。** 「予約を解放せず別状態で残す」を採り、
+    「見送り済みの `DecisionId` で弾く」の判定位置（相 1 の直後）を併用した。発注執行は見送りを予約表へ
+    **終端（`Forgone`）として記録してから**発行し、同じ承認の再配送ではブローカーに触れずに戻る。
+    **台帳の単調性・予約の 3 相は触っていない**（見送りの定義は IADR-0211 決定 3(a) の「解放」だけを改めた）。
+    🔴 **上の再現順序は接続確立の失敗だけを挙げていたが、予約前の見送り（`BrokerPositionsIndeterminate` /
+    `BrokerPositionAbsent`）にも同じ穴があった**——予約行をそもそも作らないので、照会が回復した後の再配送で送れた
+    （本 allowlist はこの 2 理由も `true`）。是正前のコードでテストが赤になることを実測したうえで併せて閉じた。
+    残るのは「記録の後・発行の前にプロセスが落ちると見送りイベントが出ない」（台帳は窓のあいだ押さえる＝安全側）である。
 - 🔴 **残余リスク 5（TOCTOU。`MarkTerminal` と同型で、#881 の並行トークンが入れば解消する）**:
   `EfPortfolioLedgerStore.MarkForgone` は **「`Find` → `TerminalAt is not null` を検査 → 代入 → `SaveChanges`」**
   であり、`ApprovedOrderRow` に並行トークンが無い現状では**検査と書き込みのあいだが TOCTOU である**。

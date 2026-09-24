@@ -26,16 +26,23 @@ public static class OrderDispatchForgoneLifecycle
     /// </para>
     /// <para>
     /// 列挙の根拠（<c>OrderExecutionAppService.ExecuteAsync</c> を読んで実測した。いずれも
-    /// <c>reservations.TryReserve</c> より<b>前</b>・ブローカーへの送信より<b>前</b>に <c>return</c> する）:
+    /// ブローカーへの送信より<b>前</b>に見送りを返す。<c>BrokerUnavailable</c> だけは予約（<c>reservations.TryReserve</c>）の
+    /// <b>後</b>・送信の試み（接続確立）で失敗した場合であり、それ以外は予約より<b>前</b>である）:
     /// <list type="bullet">
     /// <item><see cref="OrderDispatchForgoneReason.BrokerUnavailable"/>: 接続確立の失敗。
-    /// IADR-0211 決定 1 が「注文がブローカーへ届き得ない段階の失敗だけ」と限定しており、
-    /// 発注執行も予約を解放している（＝二重発注の窓が無いと判断している）。</item>
+    /// IADR-0211 決定 1 が「注文がブローカーへ届き得ない段階の失敗だけ」と限定している。</item>
     /// <item><see cref="OrderDispatchForgoneReason.StopLossPriceMissing"/> /
     /// <see cref="OrderDispatchForgoneReason.StopOrderUnsupported"/> /
     /// <see cref="OrderDispatchForgoneReason.StopLossMethodNotPermitted"/>:
     /// いずれも Open の<b>発注前</b>判定（fail-closed で建玉を作らない）。</item>
     /// </list>
+    /// 🔴 FR-05, FR-10, #876, IADR-0398: <b>在庫を戻してよいのは「その DecisionId はもう送られない」からでもある。</b>
+    /// 発注執行は見送りを発行する<b>前に</b>予約表へ見送りの終端（<c>Forgone</c>）を記録し、同じ承認の再配送では発注しない
+    /// （是正前は接続確立の失敗で予約を削除し、予約前の見送りは何も残さなかったため、再配送が本物の注文を出し得た。
+    /// 本述語が在庫を戻した承認の決済が、台帳の押さえの外で生きる＝二重決済でショート化）。
+    /// 別の配送が予約を持っている（送ったか不明）DecisionId では、発注執行は見送りそのものを発行しない。
+    /// </para>
+    /// <para>
     /// 🔴 <b>「送信は済んだが結果が確認できない」は見送りではない</b>——それは
     /// <c>BrokerDispatchIndeterminateException</c> として伝播し、見送りイベントを作らない
     /// （IADR-0117 改定 6 / IADR-0211 の 2026-09-19 追記）。したがって本列挙に不明は入らない。
@@ -50,15 +57,16 @@ public static class OrderDispatchForgoneLifecycle
             OrderDispatchForgoneReason.StopLossMethodNotPermitted => true,
             // #873, IADR-0355: 決済の発注前にブローカーの実建玉と突き合わせる門。**どちらも送信前**である
             // （`OrderExecutionAppService.ExecuteAsync` を実測: 建玉照会は読み取りの
-            // `GetPositionsAsync` だけで、この 2 分岐は L112 / L123 で `return` する。
-            // `reservations.TryReserve` は L178＝**後**。#873 側のコメントも「予約はまだ取っていない」と書いている）。
+            // `GetPositionsAsync` だけで、この 2 分岐は `switch (verdict.Outcome)` の中で `return` する。
+            // `reservations.TryReserve` はその**後**。#873 側のコメントも「予約はまだ取っていない」と書いている）。
+            // 🔴 #876, IADR-0398: 行番号で引くのをやめた（当時 L112 / L123 / L178 と書いていたが、上流の変更のたびに腐る）。
             // 🔴 `BrokerPositionsIndeterminate` の「不明」は***建玉照会*の不明**であり、
             // ***発注*の不明**（送ったか分からない）ではない —— 下の注記を参照。
             OrderDispatchForgoneReason.BrokerPositionAbsent => true,
             OrderDispatchForgoneReason.BrokerPositionsIndeterminate => true,
             // #820, IADR-0344 追記(8) 決定4: S1 の武装の前提条件（帰属不明の建玉がある／確かめられない）。
-            // **送信前**である（`OrderExecutionAppService.ExecuteAsync` を実測: この分岐は **L194** で `return` し、
-            // `reservations.TryReserve` は **L223**・ブローカーへの送信は **L233/234**＝いずれも後）。
+            // **送信前**である（`OrderExecutionAppService.ExecuteAsync` を実測: この分岐は `HasUnattributedPositionAsync` の
+            // 直後で `return` し、`reservations.TryReserve` とブローカーへの送信は**いずれも後**。当時は行番号で書いていた）。
             // 判定の中で叩く `GetPositionsAsync` は**読み取りの建玉照会だけ**で、注文は 1 バイトも送らない。
             // 🔴 「不明」の 3 つ目の文脈である——**建玉照会の能力が無い／照会が `null`** のときも
             // この理由で見送るが、それは***建玉照会*の不明**であって***発注*の不明**ではない（下の注記）。

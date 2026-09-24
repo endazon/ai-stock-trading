@@ -71,6 +71,48 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
         }
     }
 
+    // 🔴 FR-05, FR-10, #876, IADR-0398: 予約を取る前の見送りを Forgone で記録する。既に在る行は変えない（EF 実装と同じ意味論）。
+    public ForgoneRecordOutcome TryRecordForgone(Guid decisionId, DateTimeOffset forgoneAt)
+    {
+        lock (_gate)
+        {
+            if (_reservations.TryGetValue(decisionId, out var existing))
+                return OutcomeOf(existing.State);
+
+            _reservations[decisionId] = new OrderDispatchReservation(
+                decisionId, OrderDispatchState.Forgone, forgoneAt, BrokerOrderId: null, CompletedAt: forgoneAt);
+            return ForgoneRecordOutcome.Recorded;
+        }
+    }
+
+    // 🔴 FR-05, FR-10, #876, IADR-0398: 自分が取った Reserved を Forgone へ移す。Completed は決して上書きしない。
+    public ForgoneRecordOutcome MarkReservationForgone(Guid decisionId, DateTimeOffset forgoneAt)
+    {
+        lock (_gate)
+        {
+            if (!_reservations.TryGetValue(decisionId, out var reservation))
+            {
+                _reservations[decisionId] = new OrderDispatchReservation(
+                    decisionId, OrderDispatchState.Forgone, forgoneAt, BrokerOrderId: null, CompletedAt: forgoneAt);
+                return ForgoneRecordOutcome.Recorded;
+            }
+
+            if (reservation.State != OrderDispatchState.Reserved)
+                return OutcomeOf(reservation.State);
+
+            _reservations[decisionId] = reservation with { State = OrderDispatchState.Forgone, CompletedAt = forgoneAt };
+            return ForgoneRecordOutcome.Recorded;
+        }
+    }
+
+    // 🔴 未定義の状態は「発注済み」の側へ倒す（見送りを主張させない）。EF 実装と同じ。
+    private static ForgoneRecordOutcome OutcomeOf(OrderDispatchState state) => state switch
+    {
+        OrderDispatchState.Forgone => ForgoneRecordOutcome.AlreadyForgone,
+        OrderDispatchState.Reserved => ForgoneRecordOutcome.HeldByReservation,
+        _ => ForgoneRecordOutcome.AlreadyCompleted,
+    };
+
     // NFR（運用）, #137, IADR-0059: 終端（Completed）かつ cutoff より古い行のみをバッチ削除する。
     // Reserved は「発注済みか不明」であり、どれだけ古くても対象にしない（二重発注の防止が最優先）。
     public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize)
