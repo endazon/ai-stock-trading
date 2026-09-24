@@ -2336,6 +2336,32 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.ok(/reason=~"[^"]*\bHoldingsUnknownOpen\b[^"]*"/.test(target.expr),
         `HoldingsUnknownOpen を見なくなった: ${target.expr}`);
     });
+
+    // NFR-07, #939, IADR-0374（2026-09-25 追記）: 🔴 実資産のダッシュボードは、パネル id が一意で配置が重ならない。
+    // 並行 PR が末尾へ同じ id・同じ位置のパネルを足してマージすると、Grafana は 1 枚を黙って落とす（PR #919 / #925）。
+    ok('check-observability-assets: 実ダッシュボードのパネル id は一意で gridPos は重ならない（D4・D5）', () => {
+      const dir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'dashboards');
+      for (const f of fsOa.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+        const dash = JSON.parse(fsOa.readFileSync(pathOa.join(dir, f), 'utf8'));
+        assert.deepStrictEqual(oa.checkPanelIdsAndLayout(f, dash.panels), [], `${f} の id・配置が壊れている`);
+      }
+    });
+
+    // NFR-07, #939: 実アラートは、`for:` を持つか、「for は置かない」の印で不在の理由を明示している。
+    // 印の読み取りが壊れると、意図して for を置かないルールが赤になり、検査ごと外される（逆に印を無視して
+    // 通すと黙った欠落が止まらない）。印を持つ既存ルールが印つきとして読めることを固定する。
+    ok('check-observability-assets: 実アラートの for は、置くか「置かない」理由の印がある（A1）', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      for (const rule of rules) {
+        assert.ok(rule.for !== null || rule.noForReason, `${rule.alert} に for も印も無い`);
+      }
+      const stopLoss = rules.find((r) => r.alert === 'AstStopLossPositionRowsDegraded');
+      assert.ok(stopLoss, 'AstStopLossPositionRowsDegraded が無い');
+      assert.ok(stopLoss.noForReason, `印の読み取りが壊れた: ${JSON.stringify(stopLoss)}`);
+    });
   }
 
   // --- summarize-test-failures: backend-test の失敗を TRX から名指しする（NFR / #596 / IADR-0277） ---
