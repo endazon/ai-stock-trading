@@ -4,6 +4,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 
@@ -28,23 +29,47 @@ namespace OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 //     Critical をログし ProtectiveStopDriftPositionsUnknownException を投げて、メッセージングの再試行に照会をやり直させる。
 //     ——保護の取消は「建玉が消えたと確かめられたとき」にしか許さない。最大 60 分古い観測は確かめたことにならない。
 //     空の一覧（照会は成功・0 株）は「確かめた」であり、信じる。建玉照会を持たない構成（null 注入）は従来どおり観測に従う。
+//
+// 🔴 #942, IADR-0395: 打ち切りが**最後の配送**（再試行を使い切り、この失敗で _error へ送られる）なら、業務メトリクス
+// ast.order.drift_adoption_followup_abandoned を理由つきで 1 増やす（PrometheusRule AstDriftAdoptionFollowUpAbandoned が引く）。
+// それまでは Critical ログと _error キューの滞留にしか現れず、人が見ていないあいだは無音だった。
+// 途中の配送では数えない（再試行で回復し得る。数えると一過性の照会失敗 1 回で鳴るルールになる）。
 public sealed class ProtectiveStopDriftAdopter(
     IProtectiveStopOrderStore stops,
     OrderAmendmentService amendments,
     IClock clock,
     ILogger<ProtectiveStopDriftAdopter>? logger = null,
-    IBrokerPositionSource? positions = null)
+    IBrokerPositionSource? positions = null,
+    BusinessMetrics? metrics = null)
 {
     // 群の走査上限。保有建玉数上限（既定 3）に対して十分大きい（ProtectiveStopNetting と同じ値）。
     private const int ScanLimit = 500;
 
     private readonly ILogger _logger = logger ?? NullLogger<ProtectiveStopDriftAdopter>.Instance;
 
+    // 🔴 #942, IADR-0395: 省略可能だが、本番（Program.cs）は必ず DI のシングルトンを渡す。渡さないと打ち切りを数えず、
+    // アラートは**エラーを出さずに永久に鳴らない**。T-10-785 が Program.cs そのものを組んで保持を確かめる（フィールド名を変えない）。
+    private readonly BusinessMetrics? _metrics = metrics;
+
+    /// <summary>
+    /// 取り込み 1 件を保護記録へ反映する。発行すべきイベントを返す（発行は呼び出し側＝ハンドラ）。
+    /// 最後の配送かどうかを知らない呼び出し（試験・手動の再実行）用であり、打ち切っても計上しない。
+    /// </summary>
+    public Task<ProtectiveStopDriftAdoptionResult> ApplyAsync(
+        PositionDriftAdopted adopted, CancellationToken cancellationToken = default) =>
+        ApplyAsync(adopted, finalDeliveryAttempt: false, cancellationToken);
+
     /// <summary>
     /// 取り込み 1 件を保護記録へ反映する。発行すべきイベントを返す（発行は呼び出し側＝ハンドラ）。
     /// </summary>
+    /// <param name="adopted">取り込み。</param>
+    /// <param name="finalDeliveryAttempt">
+    /// #942, IADR-0395: この配送が最後か（ここで投げるとメッセージが <c>_error</c> へ送られるか）。ハンドラが
+    /// Wolverine の配送回数から決める。<c>true</c> のときだけ、建玉照会の不明・失敗による打ち切りを業務メトリクスへ数える。
+    /// </param>
+    /// <param name="cancellationToken">停止要求。</param>
     public async Task<ProtectiveStopDriftAdoptionResult> ApplyAsync(
-        PositionDriftAdopted adopted, CancellationToken cancellationToken = default)
+        PositionDriftAdopted adopted, bool finalDeliveryAttempt, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(adopted);
 
@@ -83,7 +108,7 @@ public sealed class ProtectiveStopDriftAdopter(
             return new ProtectiveStopDriftAdoptionResult(group.Count, 0, 0, events);
         }
 
-        var target = await ResolveTargetAsync(adopted, entrySide, adoptedTarget, cancellationToken)
+        var target = await ResolveTargetAsync(adopted, entrySide, adoptedTarget, finalDeliveryAttempt, cancellationToken)
             .ConfigureAwait(false);
         var budget = claimed - target;
         if (budget <= 0)
@@ -152,7 +177,8 @@ public sealed class ProtectiveStopDriftAdopter(
     // 🔴 IADR-0370（2026-09-24 追記 / PR #918 監査）: 照会が不明（null）・例外なら**何も変えずに投げる**
     // （帳簿にもブローカーにも触る前にここを通る）。建玉照会を持たない構成（positions が null）だけは観測に従う。
     private async Task<int> ResolveTargetAsync(
-        PositionDriftAdopted adopted, TradeSide entrySide, int adoptedTarget, CancellationToken cancellationToken)
+        PositionDriftAdopted adopted, TradeSide entrySide, int adoptedTarget, bool finalDeliveryAttempt,
+        CancellationToken cancellationToken)
     {
         if (positions is null)
             return adoptedTarget;
@@ -164,11 +190,12 @@ public sealed class ProtectiveStopDriftAdopter(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            throw PositionsUnknown(adopted, ex);
+            throw PositionsUnknown(adopted, ex, finalDeliveryAttempt);
         }
 
+        // 🔴 null（不明）と空の一覧（照会は成功・0 株）を混ぜない。後者は「確かめた」であり、下の純額 0 として追随が進む。
         if (snapshot is null)
-            throw PositionsUnknown(adopted, innerException: null);
+            throw PositionsUnknown(adopted, innerException: null, finalDeliveryAttempt);
 
         var net = ProtectiveStopNetting.DirectionalNet(adopted.Symbol, adopted.Market, entrySide, snapshot);
         return Math.Max(adoptedTarget, net);
@@ -177,17 +204,37 @@ public sealed class ProtectiveStopDriftAdopter(
     // 🔴 無音にしない: Critical をログしてから投げる。発行（PublishAsync）では知らせない ——
     // Wolverine はハンドラが投げた時点で、その処理中に発行したメッセージを捨てる（Executor の失敗経路の ClearAllAsync）。
     // 再試行を使い切ったメッセージは _error キューに残る（OrderDispatchReservationConflictException と同じ作法）。
+    // 🔴 #942, IADR-0395: 最後の配送なら業務メトリクスへ理由つきで 1 件数える（アラートが引く系列）。**発行と違い、
+    // 計器への記録はハンドラが投げても捨てられない**（プロセス内の Meter へ即時に積まれる）。
     private ProtectiveStopDriftPositionsUnknownException PositionsUnknown(
-        PositionDriftAdopted adopted, Exception? innerException)
+        PositionDriftAdopted adopted, Exception? innerException, bool finalDeliveryAttempt)
     {
-        _logger.LogCritical(innerException,
-            "乖離の取り込みの追随で建玉を照会できませんでした（不明または失敗）。**建玉が消えたと確かめられないため、"
-            + "保護記録もブローカー側の保護注文も変えません。**再試行で照会をやり直します（使い切ると _error キュー）。"
-            + "照会が回復しないあいだ、保護逆指値は残ったままです——建玉が本当に無いなら発火で意図しないショートが建ち得るので、"
-            + "証券会社の画面で建玉と未約定の逆指値を確認してください: 取り込み={AdoptionId} 銘柄={Symbol}/{Market}"
-            + " 台帳 {Before}→{After} 依頼者={Actor}",
-            adopted.AdoptionId, adopted.Symbol, adopted.Market,
-            adopted.LedgerQuantityBefore, adopted.LedgerQuantityAfter, adopted.Actor);
+        if (finalDeliveryAttempt)
+        {
+            _metrics?.RecordDriftAdoptionFollowUpAbandoned(innerException is null
+                ? BusinessMetrics.DriftFollowUpPositionsUnknown
+                : BusinessMetrics.DriftFollowUpPositionsQueryFailed);
+            _logger.LogCritical(innerException,
+                "乖離の取り込みの追随で建玉を照会できませんでした（不明または失敗）。**再試行を使い切ったため、"
+                + "このメッセージは _error キューへ送られます。**保護記録もブローカー側の保護注文も変えていません。"
+                + "保護逆指値は残ったままです——建玉が本当に無いなら発火で意図しないショートが建ち得るので、"
+                + "証券会社の画面で建玉と未約定の逆指値を確認し、照会の回復後に _error から元のキューへ戻してください:"
+                + " 取り込み={AdoptionId} 銘柄={Symbol}/{Market} 台帳 {Before}→{After} 依頼者={Actor}",
+                adopted.AdoptionId, adopted.Symbol, adopted.Market,
+                adopted.LedgerQuantityBefore, adopted.LedgerQuantityAfter, adopted.Actor);
+        }
+        else
+        {
+            _logger.LogCritical(innerException,
+                "乖離の取り込みの追随で建玉を照会できませんでした（不明または失敗）。**建玉が消えたと確かめられないため、"
+                + "保護記録もブローカー側の保護注文も変えません。**再試行で照会をやり直します（使い切ると _error キュー）。"
+                + "照会が回復しないあいだ、保護逆指値は残ったままです——建玉が本当に無いなら発火で意図しないショートが建ち得るので、"
+                + "証券会社の画面で建玉と未約定の逆指値を確認してください: 取り込み={AdoptionId} 銘柄={Symbol}/{Market}"
+                + " 台帳 {Before}→{After} 依頼者={Actor}",
+                adopted.AdoptionId, adopted.Symbol, adopted.Market,
+                adopted.LedgerQuantityBefore, adopted.LedgerQuantityAfter, adopted.Actor);
+        }
+
         return new ProtectiveStopDriftPositionsUnknownException(adopted.AdoptionId, adopted.Symbol, innerException);
     }
 

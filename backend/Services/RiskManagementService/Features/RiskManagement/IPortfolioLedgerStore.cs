@@ -17,11 +17,29 @@ public interface IPortfolioLedgerStore
     /// 既定を与えるのは既存の呼び出しを非破壊で通すためであり、書き忘れは「未供給側」（報告書が未記録件数を明記する）へ倒れる。
     /// <b>推定で埋めない。</b>
     /// </param>
+    /// <param name="source">
+    /// FR-10, #935, IADR-0394 決定6: 承認行の<b>由来</b>（どの経路が書いたか）。決済が損切りだったかを後から見分ける鍵。
+    /// 🔴 <b>既定 <c>null</c> ＝由来が記録されていない（不明）</b>。本番の書き手 4 経路はすべて明示する。
+    /// 既定を与えるのは既存の呼び出し（テスト）を非破壊で通すためであり、書き忘れは「不明」＝
+    /// 同方向の新規建てを止める側へ倒れる（損切りではない、にはならない）。
+    /// </param>
     void AppendApproval(
         Guid decisionId,
         OrderIntent intent,
         DateTimeOffset approvedAt,
-        decimal? fxRateBaseToDisplay = null);
+        decimal? fxRateBaseToDisplay = null,
+        ApprovalSource? source = null);
+
+    /// <summary>
+    /// FR-10, #935, IADR-0394: 指定銘柄の<b>決済（Close）の承認</b>のうち、<paramref name="activitySince"/> 以降に
+    /// <b>承認された</b>もの、または<b>約定が付いた</b>ものを、由来と約定時刻つきで返す。
+    /// <para>
+    /// S0 の決済レグは武装（承認）が何日も前でも、約定（＝損切りの成立）が当日なら対象になるため、
+    /// 承認時刻だけで絞ってはならない。当日の判定はしない（呼び出し側の純関数が市場の現地取引日で行う）。
+    /// 下限は走査量の上限にすぎない。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<LedgerCloseApproval> GetCloseApprovals(string symbol, Market market, DateTimeOffset activitySince);
 
     /// <summary>
     /// 約定を OrderId で記録する。DecisionId で承認 Intent を相関して補完する。

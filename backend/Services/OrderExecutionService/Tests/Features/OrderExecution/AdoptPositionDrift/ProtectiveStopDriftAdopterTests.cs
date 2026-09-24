@@ -5,8 +5,10 @@ using OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Metrics;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -22,6 +24,7 @@ namespace OrderExecutionService.Tests;
 // 本クラスは「消えた建玉の保護を取り消して終端化する」「取り消せたと確認できなければ黙って閉じない」
 // 「無関係な銘柄に触らない」「再送で二重に取り消さない」「保護を消しすぎない」を固定する。
 // 🔴 PR #918 の監査（IADR-0370 2026-09-24 追記）: 「建玉照会が不明・失敗なら帳簿もブローカーも変えない」を加える。
+// 🔴 T-10-780〜T-10-782, NFR-07, #942, IADR-0395: 最後の配送の打ち切りだけを業務メトリクスへ理由つきで数える（末尾の節）。
 public class ProtectiveStopDriftAdopterTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 23, 7, 0, 0, TimeSpan.Zero);
@@ -90,7 +93,8 @@ public class ProtectiveStopDriftAdopterTests
 
     private static Harness NewHarness(
         ScriptedBroker? broker = null, bool withPositionSource = true,
-        SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopDriftAdopter>? logger = null)
+        SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopDriftAdopter>? logger = null,
+        BusinessMetrics? metrics = null)
     {
         broker ??= new ScriptedBroker();
         var stops = new InMemoryProtectiveStopOrderStore();
@@ -98,7 +102,7 @@ public class ProtectiveStopDriftAdopterTests
         var amendments = new OrderAmendmentService(
             broker, store, new InMemoryOrderLifecycleStore(), new FakeClock());
         var adopter = new ProtectiveStopDriftAdopter(
-            stops, amendments, new FakeClock(), logger, positions: withPositionSource ? broker : null);
+            stops, amendments, new FakeClock(), logger, positions: withPositionSource ? broker : null, metrics);
         return new Harness(adopter, broker, stops, store);
     }
 
@@ -438,5 +442,102 @@ public class ProtectiveStopDriftAdopterTests
         result.Reduced.Should().Be(2);
         result.Events.OfType<SoftwareStopExecuted>().Select(e => (e.EntryDecisionId, e.Quantity))
             .Should().Equal((older.EntryDecisionId, 715), (newer.EntryDecisionId, 213));
+    }
+
+    // ==== #942, IADR-0395: 再試行を使い切った打ち切りを業務メトリクスへ数える（アラートが引く系列） ====
+    // 🔴 Meter はプロセス全体で観測されるため、本節はすべて**テストごとに一意な Meter 名**で組む（否定形を含むため。#695）。
+
+    private static (MeterCapture Capture, BusinessMetrics Metrics) IsolatedMetrics(
+        [System.Runtime.CompilerServices.CallerMemberName] string? caller = null)
+    {
+        var name = MeterCapture.NewIsolatedMeterName(caller);
+        return (new MeterCapture(name), BusinessMetrics.WithMeterName(name));
+    }
+
+    // ---- T-10-780: 最後の配送で照会が不明（null）→ reason=positions-unknown を 1 件。何も変えずに投げる ----
+    [Fact]
+    public async Task 最後の配送で建玉照会が不明なら打ち切りを不明の理由で1件数えて投げる()
+    {
+        var (capture, metrics) = IsolatedMetrics();
+        using var _c = capture;
+        using var _m = metrics;
+        var logger = new SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopDriftAdopter>();
+        var h = NewHarness(logger: logger, metrics: metrics);
+        h.Broker.Positions = null;
+        var stop = AddBrokerStop(h);
+
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(
+            () => h.Adopter.ApplyAsync(Adopted(), finalDeliveryAttempt: true));
+
+        capture.ValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().ContainSingle()
+            .Which.Should().Match<MeterCapture.Measurement>(m =>
+                m.Value == 1 && m.Tags[BusinessMetricNames.TagReason] == BusinessMetrics.DriftFollowUpPositionsUnknown);
+        h.Broker.CancelCount.Should().Be(0, "数えても保護は変えない（建玉が消えたと確かめられていない）");
+        h.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("_error キューへ送られます", "最後の配送だと運用者がログからも読める");
+    }
+
+    // ---- T-10-781: 最後の配送で照会が例外 → reason=positions-query-failed（不明と失敗を混ぜない） ----
+    [Fact]
+    public async Task 最後の配送で建玉照会が例外なら打ち切りを照会失敗の理由で1件数える()
+    {
+        var (capture, metrics) = IsolatedMetrics();
+        using var _c = capture;
+        using var _m = metrics;
+        var h = NewHarness(metrics: metrics);
+        h.Broker.PositionsThrow = true;
+        AddBrokerStop(h);
+
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(
+            () => h.Adopter.ApplyAsync(Adopted(), finalDeliveryAttempt: true));
+
+        capture.TagValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned, BusinessMetricNames.TagReason)
+            .Should().Equal(BusinessMetrics.DriftFollowUpPositionsQueryFailed);
+        capture.SumOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().Be(1);
+    }
+
+    // ---- T-10-782: 数えない場合（否定形）。途中の配送・空の一覧（0 株）・建玉あり・照会を持たない構成 ----
+    // 🔴 途中の配送を数えると、再試行で回復する一過性の照会失敗 1 回でアラートが鳴る。
+    // 🔴 空の一覧は「不明」ではなく「確かめた・建玉なし」であり、追随は進む（不明・なし・ありを混ぜない）。
+    [Fact]
+    public async Task 最後でない配送の打ち切りは数えない_否定形()
+    {
+        var (capture, metrics) = IsolatedMetrics();
+        using var _c = capture;
+        using var _m = metrics;
+        var h = NewHarness(metrics: metrics);
+        h.Broker.Positions = null;
+        AddBrokerStop(h);
+
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(
+            () => h.Adopter.ApplyAsync(Adopted(), finalDeliveryAttempt: false));
+        h.Broker.PositionsThrow = true;
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(
+            () => h.Adopter.ApplyAsync(Adopted(), finalDeliveryAttempt: false));
+
+        capture.ValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("none")] // 照会は成功・0 株（確かめた）→ 追随して取り消す
+    [InlineData("present")] // 照会は成功・建玉あり → 保護を消さない
+    [InlineData("no-source")] // 建玉照会を持たない構成（内蔵 paper）→ 取り込みの観測に従う
+    public async Task 最後の配送でも打ち切らなければ数えない_否定形(string positions)
+    {
+        var (capture, metrics) = IsolatedMetrics();
+        using var _c = capture;
+        using var _m = metrics;
+        var h = NewHarness(withPositionSource: positions != "no-source", metrics: metrics);
+        h.Broker.Positions = positions == "present"
+            ? [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 10, 1_000m)]
+            : [];
+        AddBrokerStop(h);
+
+        var result = await h.Adopter.ApplyAsync(Adopted(), finalDeliveryAttempt: true);
+
+        capture.ValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().BeEmpty();
+        h.Broker.CancelCount.Should().Be(positions == "present" ? 0 : 1, "前提: 打ち切らずに追随が進んだ");
+        result.Scanned.Should().Be(1);
     }
 }

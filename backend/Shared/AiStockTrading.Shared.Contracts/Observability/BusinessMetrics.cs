@@ -57,6 +57,15 @@ public sealed class BusinessMetrics : IDisposable
     public const string UnobservedNegativeElapsed = "negative-elapsed";
 
     /// <summary>
+    /// FR-10, #942, IADR-0395: 追随を打ち切った理由タグ値。建玉照会が**不明（<c>null</c>）**を返した。
+    /// 🔴 空の一覧（照会は成功・0 株）はこれに当たらない —— それは「確かめた」であり、追随は進む。
+    /// </summary>
+    public const string DriftFollowUpPositionsUnknown = "positions-unknown";
+
+    /// <summary>FR-10, #942, IADR-0395: 追随を打ち切った理由タグ値。建玉照会が**例外**で落ちた。</summary>
+    public const string DriftFollowUpPositionsQueryFailed = "positions-query-failed";
+
+    /// <summary>
     /// FR-03, FR-10, #957, IADR-0399: 保有の行を評価に渡せなかった（識別項目が無い・列挙が未定義・数量が正でない・null の行）。
     /// </summary>
     public const string PositionRowIdentityMissing = "identity-missing";
@@ -82,6 +91,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _riskRejections;
     private readonly Counter<long> _orderExecutions;
     private readonly Counter<long> _orderDispatchForgone;
+    private readonly Counter<long> _driftAdoptionFollowUpAbandoned;
     private readonly Counter<double> _llmCostJpy;
     private readonly Gauge<double> _llmCostLimitRatioPercent;
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
@@ -177,6 +187,11 @@ public sealed class BusinessMetrics : IDisposable
         _orderDispatchForgone = _meter.CreateCounter<long>(
             BusinessMetricNames.OrderDispatchForgone,
             description: "発注せずに見送った件数（reason 別。FR-05/FR-10）");
+
+        // FR-10, #942, IADR-0395: 乖離の取り込みの追随を、建玉照会の不明・失敗のまま再試行を使い切って打ち切った件数。
+        _driftAdoptionFollowUpAbandoned = _meter.CreateCounter<long>(
+            BusinessMetricNames.DriftAdoptionFollowUpAbandoned,
+            description: "乖離の取り込みの追随を建玉照会の不明・失敗で再試行を使い切って打ち切った件数（reason 別。FR-10）");
 
         _llmCostJpy = _meter.CreateCounter<double>(
             BusinessMetricNames.LlmCostJpy,
@@ -336,6 +351,43 @@ public sealed class BusinessMetrics : IDisposable
         _orderDispatchForgone.Add(
             1,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason.ToString()));
+
+    /// <summary>
+    /// FR-10, #942, IADR-0395: 乖離の取り込みの追随を、建玉照会の不明・失敗のまま<b>再試行を使い切って</b>打ち切った 1 件を計上する。
+    /// <paramref name="reason"/> は <see cref="DriftFollowUpPositionsUnknown"/> か <see cref="DriftFollowUpPositionsQueryFailed"/>。
+    /// </summary>
+    /// <exception cref="ArgumentException">上の 2 値以外。語彙の外の値で系列を増やさない（基数の規律）。</exception>
+    public void RecordDriftAdoptionFollowUpAbandoned(string reason)
+    {
+        if (reason is not (DriftFollowUpPositionsUnknown or DriftFollowUpPositionsQueryFailed))
+        {
+            throw new ArgumentException(
+                $"追随を打ち切った理由は {DriftFollowUpPositionsUnknown} / {DriftFollowUpPositionsQueryFailed} のいずれかである（実値: '{reason}'）。",
+                nameof(reason));
+        }
+
+        _driftAdoptionFollowUpAbandoned.Add(
+            1, new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
+    }
+
+    /// <summary>
+    /// FR-10, #942, IADR-0395: 上のカウンタを<b>理由ごとに 0 で計上し、系列を先に作る</b>。発注執行が起動完了時に 1 度呼ぶ。
+    /// <para>
+    /// 🔴 <b>なぜ要るか</b>: この事象の平常時の件数は 0 である。系列が最初の打ち切りで初めて現れると、その時点の値は 1 で、
+    /// Prometheus の <c>increase()</c> は 1 点目を増分に数えない（前の点が無い）。<b>プロセスの起動から最初の打ち切りを
+    /// アラートが取りこぼす</b>——稀な事象ほど、その「最初」が唯一の 1 回になる。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>OTel の MeterProvider が立った後に呼ぶこと。</b> それより前の計上は誰も聞いておらず、何も残らない。
+    /// </para>
+    /// </summary>
+    public void PrimeDriftAdoptionFollowUpAbandoned()
+    {
+        _driftAdoptionFollowUpAbandoned.Add(
+            0, new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, DriftFollowUpPositionsUnknown));
+        _driftAdoptionFollowUpAbandoned.Add(
+            0, new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, DriftFollowUpPositionsQueryFailed));
+    }
 
     /// <summary>
     /// NFR-13: LLM 費用の計上と、当月の上限消費率を記録する。
