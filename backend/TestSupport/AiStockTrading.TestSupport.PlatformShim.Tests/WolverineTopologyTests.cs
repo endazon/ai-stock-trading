@@ -3,6 +3,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Wolverine;
+using Wolverine.ErrorHandling;
 using Wolverine.Runtime;
 using Xunit;
 
@@ -125,5 +126,33 @@ public class WolverineTopologyTests
             typeof(WolverineExtensions).Assembly,
             "shim 自身へ固定すると、各サービスが自分のハンドラを発見できなくなる");
         options.ApplicationAssembly.Should().BeSameAs(typeof(WolverineTopologyTests).Assembly);
+    }
+
+    // 🔴 T-10-784, FR-10, #942, IADR-0395, IADR-0129 決定 5: **最大配送回数は共通の失敗規則と一致する。**
+    // 発注執行のハンドラは Envelope.Attempts をこの値と比べて「この失敗で _error へ送られるか」を決め、そのときだけ
+    // 乖離の取り込みの追随の打ち切りを業務メトリクスへ数える（アラートが引く系列）。値が規則とずれると、
+    // 計上が途中の配送へずれて一過性の失敗で鳴るか、最後の配送を取りこぼして**エラーを出さずに永久に鳴らない**。
+    // 運用仕様書は「初回＋再試行 3 回＝4 回」と書いているため、その数も固定する。
+    [Fact]
+    public void 最大配送回数は共通の失敗規則の再試行とエラーキュー送りの枠に一致する()
+    {
+        var options = new WolverineOptions();
+
+        options.UseAiStockTradingRabbitMq(CostControl, "amqp://guest:guest@localhost:5672");
+
+        // Wolverine は失敗した例外に**最初に一致した規則**を使う（FailureRuleCollection.DetermineExecutionContinuation）。
+        // 既定の規則（重複受信の破棄など）は特定の例外型だけに一致するので、業務の例外（発注執行の打ち切りは
+        // InvalidOperationException の派生）に最初に一致するのが共通配線の OnAnyException であることを確かめる。
+        var rule = ((IWithFailurePolicies)options).Failures
+            .First(r => r.Match.Matches(new InvalidOperationException("業務の例外（試験）")));
+        rule.Match.Description.Should().Be("All exceptions", "業務の例外は共通配線の OnAnyException の規則で扱われる");
+        var slots = rule.ToList();
+        var max = WolverineExtensions.MaxDeliveryAttempts;
+
+        max.Should().Be(4, "運用仕様書の「初回＋再試行 2s/10s/30s の 3 回」と一致する");
+        slots.Select(s => s.Attempt).Should().Equal(Enumerable.Range(1, max));
+        slots.Take(max - 1).Should().AllSatisfy(s => s.Describe().Should().StartWith("Retry inline"));
+        slots[max - 1].Describe().Should().Be("Move to error queue", "最大配送回数目の失敗で _error へ送られる");
+        rule.ToString().Should().NotContain("repeat", "枠の外は既定（_error へ送る）であり、繰り返しの規則は無い");
     }
 }

@@ -6,9 +6,11 @@ using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Infrastructure.Steps;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Messaging;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +22,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-641・T-10-642・T-10-739, FR-10, FR-05, FR-11, UC-06, #858, IADR-0370, IADR-0350 決定5:
+// 🔴 T-10-641・T-10-642・T-10-739・T-10-783, FR-10, FR-05, FR-11, UC-06, #858, IADR-0370, IADR-0350 決定5:
 // **発注執行が PositionDriftAdopted を購読していること**（サービス間は直接参照しない）と、
 // 追随の結果が実際に発行されることを、本番のハンドラ型そのもので固定する。
 //
@@ -67,10 +69,13 @@ public class PositionDriftAdoptedHandlerTests
             10, 950m, PositionEffect.Close);
 
     private static Task<IHost> BuildHostAsync(
-        IBrokerAdapter broker, InMemoryExecutedOrderStore executedOrders, InMemoryProtectiveStopOrderStore stops) =>
+        IBrokerAdapter broker, InMemoryExecutedOrderStore executedOrders, InMemoryProtectiveStopOrderStore stops,
+        BusinessMetrics? metrics = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                // #942: 業務メトリクスは試験ごとに隔離した Meter 名のものを渡す（否定形の表明があるため。#695）。
+                if (metrics is not null) opts.Services.AddSingleton(metrics);
                 opts.Services.AddSingleton<IClock, FakeClock>();
                 opts.Services.AddSingleton(broker);
                 opts.Services.AddSingleton<IExecutedOrderStore>(executedOrders);
@@ -172,10 +177,55 @@ public class PositionDriftAdoptedHandlerTests
             scope.ServiceProvider.GetRequiredService<ProtectiveStopDriftAdopter>(),
             NullLogger<PositionDriftAdoptedHandler>.Instance);
         await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(() =>
-            handler.Handle(Adopted(), scope.ServiceProvider.GetRequiredService<IMessageBus>(), CancellationToken.None));
+            handler.Handle(
+                Adopted(), scope.ServiceProvider.GetRequiredService<IMessageBus>(), new Envelope { Attempts = 1 },
+                CancellationToken.None));
 
         broker.CancelCount.Should().Be(0, "建玉が消えたと確かめられないまま保護を取り消さない");
         stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
         stops.Find(stop.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+    }
+
+    // ---- T-10-783: ハンドラは配送回数から「最後の配送か」を決めて業務クラスへ渡す（#942, IADR-0395） ----
+    // 🔴 最後の配送（この失敗で _error へ送られる）だけが打ち切りのカウンタを増やす。途中の配送で数えると
+    // 一過性の照会失敗 1 回でアラートが鳴り、最後を渡し損ねると**エラーを出さずに永久に鳴らない**。
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(4, true)]
+    [InlineData(5, true)] // _error から attempts ヘッダを引き継いで戻された場合など。規則の枠の外で再び _error へ行く
+    public void 配送回数が最大配送回数に達した配送だけを最後とみなす(int attempts, bool expected)
+    {
+        PositionDriftAdoptedHandler.IsFinalDeliveryAttempt(attempts).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(3, 0)]
+    [InlineData(4, 1)]
+    public async Task 建玉照会が不明なまま最後の配送で打ち切ったときだけ打ち切りを数える(int attempts, int expectedCount)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var broker = new ScriptedBroker(OrderStatus.Cancelled, positionsUnknown: true);
+        var executedOrders = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        using var host = await BuildHostAsync(broker, executedOrders, stops, metrics);
+        SeedStop(stops, executedOrders);
+
+        // 受信経路へ流すと再試行の待ち（2s/10s/30s）を壁時計で待つため、配送回数を持つ封筒を直接渡す
+        //（Wolverine が受信のたびにハンドラの前で Attempts を 1 増やすことは IADR-0395 に逆コンパイルの根拠を記録した）。
+        using var scope = host.Services.CreateScope();
+        var handler = new PositionDriftAdoptedHandler(
+            scope.ServiceProvider.GetRequiredService<ProtectiveStopDriftAdopter>(),
+            NullLogger<PositionDriftAdoptedHandler>.Instance);
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(() =>
+            handler.Handle(
+                Adopted(), scope.ServiceProvider.GetRequiredService<IMessageBus>(),
+                new Envelope { Attempts = attempts }, CancellationToken.None));
+
+        capture.SumOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().Be(expectedCount);
+        broker.CancelCount.Should().Be(0);
     }
 }
