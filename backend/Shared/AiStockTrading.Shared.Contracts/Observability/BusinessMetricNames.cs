@@ -123,6 +123,19 @@ public static class BusinessMetricNames
     /// </summary>
     public const string RiskCapitalBaselineReads = "ast.risk.capital_baseline_reads";
 
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: <b>市場監視が保有照会（<c>GET /risk-controls/open-positions</c>）の応答を
+    /// そのまま評価できなかった行の件数。</b>タグ <c>reason</c>（identity-missing / stop-line-approximated /
+    /// stop-line-unknown / response-unreadable）。
+    /// <para>
+    /// 🔴 <b>平常時の期待値は 0 件である。</b> 送り手は識別項目と損切りラインを常に載せる（送り手の応答型は非 nullable で、ラインの記録が無ければ
+    /// 送り手自身が近似する）。出ているのは送り手と受け手の契約の食い違い（片方だけ先に配備した等）か送り手の値の異常の印であり、
+    /// その行の損切り保護は欠けているか近似になっている。巡回そのものは止めない（他の行は評価を続ける）ため、
+    /// ログを読みに行かない限り見えない —— だから数える。
+    /// </para>
+    /// </summary>
+    public const string MarketMonitorPositionRowsDegraded = "ast.market_monitor.position_rows_degraded";
+
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";
 

@@ -235,7 +235,7 @@ public sealed class StopLossLivenessReporter(
         return (
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"{e.Symbol}/{e.Market} {e.Side} {e.Quantity}株 ライン={e.StopLossPrice} {observed} {verdict}"),
+                $"{e.Symbol}/{e.Market} {e.Side} {e.Quantity}株 ライン={e.StopLossPrice}{ApproximatedMark(e)} {observed} {verdict}"),
             breached);
     }
 
@@ -259,8 +259,12 @@ public sealed class StopLossLivenessReporter(
                 + $" @ {state.LastPricedAt?.ToString("O", CultureInfo.InvariantCulture) ?? "なし"}）";
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{e.Symbol}/{e.Market} {e.Side} {e.Quantity}株 {price} ライン={e.StopLossPrice} 評価={e.EvaluatedAt:O}");
+            $"{e.Symbol}/{e.Market} {e.Side} {e.Quantity}株 {price} ライン={e.StopLossPrice}{ApproximatedMark(e)} 評価={e.EvaluatedAt:O}");
     }
+
+    // #957, IADR-0399 決定2: 近似のライン（応答にラインが無く、平均取得単価から既定比率で見積もった値）を実値と並べて書かない。
+    private static string ApproximatedMark(StopLossEvaluation e) =>
+        e.StopLossApproximated ? "（近似: 応答に損切りラインが無く平均取得単価から見積もった値）" : string.Empty;
 
     private sealed class SymbolState
     {

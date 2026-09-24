@@ -100,7 +100,9 @@ builder.Services.AddScoped<IPositionStore>(sp =>
 
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
     http.BaseAddress = uri;
-    return new HttpPositionStore(http, sp.GetRequiredService<ILogger<HttpPositionStore>>());
+    // #957, IADR-0399: 行ごとの不正（識別できない・損切りラインが無い）を計器 ast.market_monitor.position_rows_degraded で数える。
+    return new HttpPositionStore(
+        http, sp.GetRequiredService<BusinessMetrics>(), sp.GetRequiredService<ILogger<HttpPositionStore>>());
 });
 // FR-02, FR-13, #286, IADR-0282: watchlist 初回シード（構成 Monitor:SeedSymbols）。空既定（未設定）は
 // MonitorDefaults が従来どおり空でシードする（現行挙動のバイト等価）。

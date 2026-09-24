@@ -324,4 +324,25 @@ public class StopLossLivenessReporterTests
         reporter.OnMarketClosed(Market.UnitedStates, [], T0.AddDays(1).AddMinutes(1), nextOpen.AddDays(1));
         log.Informations.Count(m => m.Contains("閉場と判定しています", StringComparison.Ordinal)).Should().Be(2);
     }
+
+    // T-10-839, FR-03, FR-10, #957, IADR-0399 決定2: 近似のライン（応答にラインが無く平均取得単価から見積もった値）は、生存要約と
+    // 閉場の報告で実値と並べて書かない（「近似」と付ける）。実値のラインには付けない。
+    [Fact]
+    public void T_10_839_近似のラインは生存要約と閉場の報告で近似と示し_実値のラインには付けない()
+    {
+        var (reporter, log) = Create();
+        var approximated = Aapl(340.12m, T0) with { StopLossApproximated = true };
+        var real = new StopLossEvaluation("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 1_900m, 1_950m, T0);
+
+        reporter.Observe([approximated, real], T0);
+
+        var summary = log.Informations.Single(m => m.Contains("損切り評価は稼働中", StringComparison.Ordinal));
+        summary.Should().Contain("ライン=338.51（近似");
+        summary.Should().Contain("ライン=1900 評価=", "実値のラインには印を付けない");
+
+        reporter.OnMarketClosed(
+            Market.UnitedStates, [approximated with { Price = null }], T0.AddHours(2), T0.AddHours(17));
+        log.Entries.Single(e => e.Message.Contains("市場が閉場しました", StringComparison.Ordinal))
+            .Message.Should().Contain("ライン=338.51（近似");
+    }
 }

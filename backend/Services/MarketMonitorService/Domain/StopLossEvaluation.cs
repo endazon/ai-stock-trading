@@ -11,4 +11,8 @@ public sealed record StopLossEvaluation(
     int Quantity,
     decimal StopLossPrice,
     decimal? Price,
-    DateTimeOffset EvaluatedAt);
+    DateTimeOffset EvaluatedAt)
+{
+    /// <summary>#957, IADR-0399 決定2: <see cref="StopLossPrice"/> が近似のラインか（<see cref="HeldPosition.StopLossApproximated"/> の写し）。</summary>
+    public bool StopLossApproximated { get; init; }
+}
