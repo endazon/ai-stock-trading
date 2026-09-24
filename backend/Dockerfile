@@ -30,8 +30,14 @@ RUN dotnet build "${SERVICE_PROJECT}" -c Release --no-restore
 # 付けない）が再コンパイルして DLL に取り込む。`dotnet run --project` はプロジェクト直下を作業ディレクトリに
 # するので、ContentRootPath 由来の出力先がプロジェクト直下になる。
 # Wolverine を配線しないサービス（opend-auth-gateway。同じ Dockerfile で作る）は ICodeFileCollection が無く
-# `codegen` が失敗するため、Program.cs の `UseWolverine(` の有無（check-consumer-endpoint-names.js と同じ信号）で分岐する。
-RUN if grep -q 'UseWolverine(' "$(dirname "${SERVICE_PROJECT}")/Program.cs"; then \
+# `codegen` が失敗するため、Program.cs の `UseWolverine(` の有無で分岐する。
+# #816: 判定は `scripts/check-consumer-endpoint-names.js` の `wiringOf()` と**同じ 2 段の規則**を写したものである
+# （①行頭が `//` / `*` / `/*` の行を落とす ②残りに `UseWolverine\s*\(` を当てる）。素の `grep -q 'UseWolverine('`
+# だとコメント中の言及に反応し、`UseWolverine (` のような空白入りの実呼び出しを取りこぼした（#816 起票時の実態）。
+# 🔴 **写しなので黙ってずれ得る。** `scripts/scripts.repo.test.js` が本行を実ファイルから抜き出して実走し、
+# `wiringOf()` の判定と突き合わせる（ずれたら赤くなる）。パイプの終了コードは後段のものなので、
+# 前段が 0 行を出したとき（＝全行がコメント）も else 枝へ落ちる。
+RUN if grep -Ev '^[[:space:]]*(//|\*|/\*)' "$(dirname "${SERVICE_PROJECT}")/Program.cs" | grep -Eq 'UseWolverine[[:space:]]*\('; then \
       dotnet run --project "${SERVICE_PROJECT}" -c Release --no-build -- codegen write; \
     else \
       echo "skip codegen: $(dirname "${SERVICE_PROJECT}")/Program.cs does not wire Wolverine"; \
