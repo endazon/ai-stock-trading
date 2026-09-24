@@ -62,13 +62,21 @@ public static class TradeDecisionPromptBuilder
     public const string ExitFollowsPolicyRule =
         "出口の基準（利確・損切り・保有期間など）が方針にあれば、それに従います。方針に出口の基準が無ければ、保有継続（Hold）を既定とします。";
 
+    // FR-04, FR-10, #936, IADR-0393（2026-09-25 追記）: 記録上の損切りライン（open-positions の StopLossPrice）は、
+    // 建て増しした建玉では**エントリーのうち最も保護的なライン 1 本**であり、保有の全量に効くラインではない。
+    // 数量と並べて 1 本だけ見せるため、全量のラインと読まれないよう限定を 1 行だけ足す（本判断の保有状況節）。
+    public const string StopLossLineScopeNote =
+        "記録上の損切りラインは、建て増しした建玉ではエントリーのうち最も保護的なラインです（全量のラインではありません）。";
+
     public const string StopLossLineIsRiskConstraintRule =
         "記録上の損切りラインはリスク制約の一部です。現在値が損切りラインに達している建玉は、方針に出口の基準が無くても、リスク制約に基づいて手仕舞いを選べます。";
 
     // FR-04, FR-10, #854, IADR-0351 決定3 の 4（#860 の監査の指摘）: 損切りライン到達中の建玉へは買い増ししない。
-    // 🔴 これが無いと上の出口が消える —— リスク管理の射影（PortfolioProjection）は建玉と同方向の約定のたびに記録上の
-    // 損切りラインを**最新エントリーの値へ更新する**（IADR-0035）。含み損の中で買い増すとラインが下がり、「達しています」が
-    // 「達していません」へ戻って既定が Hold へ戻る。方針が「押し目買い」なら含み損が買い増しの根拠として読まれ得る。
+    // 🔴 これが無いと上の出口が消える —— 含み損の中で買い増すと、方針が「押し目買い」なら含み損が買い増しの根拠として
+    // 読まれ得る。［2026-09-25 / #936, IADR-0393］リスク管理の射影（PortfolioProjection）の記録上の損切りラインは
+    // 「最新エントリーの値」（IADR-0035）から「保有中のエントリーのうち最も保護的な値」へ改めた。買い増しで**ラインが
+    // 下がって「達しています」が「達していません」へ戻る**ことは、先に建てたロットが残っている限り起きなくなったが、
+    // 買い増しが到達中の建玉を膨らませることに変わりはないため、本規則は残す。
     // 出口の規則と同じくリスク制約（FR-10 の銘柄別損切りライン）由来であり、方針（PolicySummary）は書き換えない。
     // プロンプト上の歯止めであってコードの統制ではない（IADR-0351 残る制約）。
     public const string NoAddAtStopLossLineRule =
@@ -336,6 +344,7 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine($"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice}");
         sb.AppendLine($"- 含み損益: {view.UnrealizedPnl}");
         sb.AppendLine($"- 記録上の損切りライン: {view.StopLossLine}");
+        sb.AppendLine($"- {StopLossLineScopeNote}");
         sb.AppendLine($"- 保護の状態: {DescribeProtection(stopLossMethod)}");
         sb.AppendLine(
             $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
