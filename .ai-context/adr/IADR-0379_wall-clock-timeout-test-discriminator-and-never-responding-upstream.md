@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-01, FR-04, FR-06, NFR, IADR-0031, IADR-0168, IADR-0364, IADR-0366]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-01 / FR-04 / FR-06)
 ---
@@ -131,3 +131,14 @@ await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(fal
   （従来は 2 秒で誤って緑になっていた）。
 - 🔴 残余リスク: 形 (c)（5 秒の追跡窓・約 30 テスト）は**手つかず**である。別 issue で扱う。
 - 🔴 残余リスク: 検査器が入るまでの間、**新しい同型は止まらない**。
+  > ［2026-09-25 追記 / #921］**検査器を入れた**（`scripts/check-wall-clock-timeout-tests.js`・CI の `static-checks`。
+  > 作業仕様書 `20260925_921_wall-clock-race-checker`）。**allowlist は空**で、develop（661 テストファイル）の検出は 0 件、
+  > #907 前・#920 前の木では 12 件・11 件をファイル名まで一致して検出した（偽陽性 0）。決定 4 の規則を機械化する際の解釈:
+  > ①期間は**定数だけ**を読む（`TimeSpan.FromXxx(<数値>)` と、`Task.Delay` / `Thread.Sleep` / `CancelAfter` /
+  > `new CancellationTokenSource` の裸のミリ秒）。変数・式は読まない（再現率より的中率）
+  > ②`Timeout =` / `Deadline =` は語境界で照合する（`ReplyTimeout =` / `readyDeadline =` は当たらない）
+  > ③判定は「ファイル内の最小の打ち切り ＜ 最大の遅延」（「どれか 1 組でも」と同値）
+  > ④コメント・文字列の潰しは `check-tracked-session-timeout.js` の `stripComments` を共用する
+  > ⑤母集合の「ディレクトリ名が `Tests` で終わる」には `backend/Tests/AiStockTrading.IntegrationTests/` も入る
+  > ⑥検出は形ごとの表（`SHAPES`）で持ち、形 (c)（#922）はそこへ 1 行足せる。
+  > **本項の残余リスクは解消した**（形 (c) の残余リスクは残る）。
