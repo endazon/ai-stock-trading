@@ -33,10 +33,19 @@ public sealed record ThreeWayMetric(decimal? Backtest, decimal? Simulate, decima
 /// 件数を出さないと、読み手は「その段では 1 件も取引していない」と読んでしまう。
 /// </para>
 /// </param>
+/// <param name="UnvaluedSettlementCount">
+/// FR-06, FR-16, #892, IADR-0381: 当期間の約定のうち<b>期間より前に建てた建玉の決済</b>で、
+/// 取得原価が当期間に無いため<b>勝率・平均損益へ算入できなかった</b>件数（<see cref="PeriodInventory"/>）。
+/// <para>
+/// 🔴 <b>0 件として黙って落とさない。</b> 落とすと、勝率・平均損益が「その段の実績」に見えるが実際は部分値である
+/// （<see cref="UnattributedTradeCount"/> と同じ理由・同じ作法で件数を明記する）。
+/// </para>
+/// </param>
 public sealed record ThreeWayComparison(
     ThreeWayMetric WinRate,
     ThreeWayMetric AveragePnlUsd,
     ThreeWayMetric MaxDrawdown,
     ThreeWayMetric TradeCount,
     string? DivergenceNote = null,
-    int UnattributedTradeCount = 0);
+    int UnattributedTradeCount = 0,
+    int UnvaluedSettlementCount = 0);
