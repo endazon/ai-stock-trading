@@ -67,6 +67,51 @@ public class HttpCostControlGateTests
         (await Gate(new StubHandler(HttpStatusCode.OK, "")).GetAsync()).Should().Be(CostControlGateNormal());
     }
 
+    // FR-01, NFR（費用）, #915, IADR-0031: 200 OK でも項目が無い本文は、既定値（false / 0）ではなく Normal（1×）へ倒す。
+    // 是正前は本文 {} が (Halted=false, IntervalMultiplier=0) として写っていた（消費側の下限 1 で隠れていただけ）。
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"isHalted":false}""")]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":null}""")]
+    [InlineData("""{"state":"Throttled","isHalted":false}""")]
+    public async Task 不正_200_OK_で_intervalMultiplier_欠落_は_Normal(string body)
+    {
+        (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Should().Be(CostControlGateNormal());
+    }
+
+    // FR-01, NFR（費用）, #915: 停止していない応答の倍率が 0・負なら 0× / 負倍で写さず Normal（1×）。
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("-0.5")]
+    public async Task 不正_200_OK_で_intervalMultiplier_が非正_は_Normal(string multiplier)
+    {
+        var gate = await Gate(new StubHandler(HttpStatusCode.OK,
+            $$"""{"isHalted":false,"intervalMultiplier":{{multiplier}}}""")).GetAsync();
+
+        gate.Should().Be(CostControlGateNormal());
+    }
+
+    // FR-01, NFR（費用）, #915: isHalted が無い応答は停止か否かを判定できない。倍率があっても写さず Normal。
+    [Theory]
+    [InlineData("""{"intervalMultiplier":2.0}""")]
+    [InlineData("""{"isHalted":null,"intervalMultiplier":2.0}""")]
+    public async Task 不正_200_OK_で_isHalted_欠落_は_Normal(string body)
+    {
+        (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Should().Be(CostControlGateNormal());
+    }
+
+    // FR-01, NFR（費用）, #915: 停止が明示されていれば、倍率が欠落・0 でも停止を尊重する（Normal へ落とさない）。
+    // 送り手は Halted で倍率 0（無効値）を返すのが正常であり、倍率の検査を停止より先に当てると費用上限を無視して収集を続ける。
+    [Theory]
+    [InlineData("""{"isHalted":true}""")]
+    [InlineData("""{"isHalted":true,"intervalMultiplier":0}""")]
+    [InlineData("""{"isHalted":true,"intervalMultiplier":null}""")]
+    public async Task 停止_Halted_明示は_intervalMultiplier_が欠落_0_でも停止する(string body)
+    {
+        (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Halted.Should().BeTrue();
+    }
+
     // NFR（費用）, IADR-0031: 費用統制の応答が上限に間に合わなければ、情報収集は止めず Normal（1×）へ倒す。
     //
     // #901, IADR-0367: 従来は「壁時計 50 ms の `HttpClient.Timeout`」対「壁時計 2 秒のハンドラ遅延」という

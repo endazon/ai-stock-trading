@@ -90,7 +90,7 @@
 | IADR-0028 | 取引判断は確定済み日報方針を報告書サービスから同期 API で照会する | Accepted |
 | IADR-0029 | サイジング文脈はリスク管理が導出・所有し、取引判断は同期 API で照会する | Accepted |
 | IADR-0030 | 保有ポジションはリスク管理が #63 台帳から射影・所有し、市場監視は同期 API で照会する | Accepted |
-| IADR-0031 | 費用統制の間隔延長/停止は定時サイクル poller が同期照会して適用する | Accepted |
+| IADR-0031 | 費用統制の間隔延長/停止は定時サイクル poller が同期照会して適用する。［2026-09-25 追記 / [#915](https://github.com/endazon/ai-stock-trading/issues/915)］`200 OK` でも `isHalted` が欠落・null、または `isHalted:false` で `intervalMultiplier` が欠落・null・非正なら **Normal（1×）**（本文 `{}` を `0×` と写していた）。**`isHalted:true` は倍率が欠落・0 でも停止を尊重する**（是正前は倍率 null で例外→Normal になり停止が落ちていた）。`isHalted` の改名で停止が落ちる残余と契約テストは #957 | Accepted |
 | IADR-0032 | 報告書生成は数値をコード集計・純関数でテンプレート化し、散文のみ LLM ドラフトに委ねる | Accepted |
 | IADR-0033 | 符号付き在庫・平均取得単価法の畳み込みを Shared.Contracts.Trading の純関数へ集約する | Accepted |
 | IADR-0034 | 費用計上の並行 RMW は原子的な台帳メソッド＋月単位アドバイザリロックで直列化する | Accepted |
