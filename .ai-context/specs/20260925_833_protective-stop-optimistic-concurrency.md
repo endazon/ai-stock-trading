@@ -65,7 +65,8 @@ plan_refs:
 - **`ProtectiveStopGuard` の直接の保存（S0 の再発注・手仕舞い・完了、S1 の未到達の完了）は無条件の `Save` のまま。**
   ブローカーへの操作（逆指値の再発注・取消）の**後**に書く経路であり、保存を落とすと実在する注文と記録が食い違う
   （次の巡回が同じ試行 ID で逆指値を出し直し得る）。楽観並行に切り替えるなら「読み直して当て直す」形が要る。
-  **同ファイルは並行 PR #945 が編集中**のため本 PR では触らない（IADR-0396 の残る制約・追随が要る）。
+  着手時は**同ファイルを並行 PR #945 が編集中**だった（#945 はマージ済み）。切り替えは逆指値と記録の食い違いの検証を伴うので
+  本 PR では触らない（IADR-0396 の残る制約・後続の作業）。
 - `docs/` の機能仕様書の変更（保存の方式は利用者に見える挙動ではない。見える挙動＝ClosePlaced が二重に出ない は既存の記述どおりになる）。
 
 ## 🔴 母集合（走査したファイルと除外理由）
@@ -78,7 +79,7 @@ plan_refs:
   `OrderExecutionDbContext.cs`・`ProtectiveStopOrder.cs`・migration（生成）。
 - **除外**: `ProtectiveStopGuard.cs`（3 箇所。上の射程外）。`Hosted/ProtectiveStopGuardService.cs`（読むだけ）。
   試験の包み型（`ProtectiveStopGuardServiceTests.cs` の 3 つ・`SoftwareStopReArmerTests.cs` の 1 つ）は `TrySave` の既定実装
-  （読んで比べてから書く・非原子）で動く——**PR #945 が `ProtectiveStopGuardServiceTests.cs` を編集中**のため触らない。
+  （読んで比べてから書く・非原子）で動く——着手時は **PR #945 が `ProtectiveStopGuardServiceTests.cs` を編集中**だったため触らない。
 
 ## 受け入れ基準（テスト ID は T-10-795..T-10-799）
 
