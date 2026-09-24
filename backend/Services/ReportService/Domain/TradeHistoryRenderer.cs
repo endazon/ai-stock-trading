@@ -45,11 +45,11 @@ public static class TradeHistoryRenderer
             {
                 // 自由記述（銘柄名・判断根拠）は Markdown 表セルとして安全化する（パイプ/改行で表が崩れるのを防ぐ）。
                 sb.Append(CultureInfo.InvariantCulture,
-                    $"| {l.Index} | {Time(l.Time)} | {MarketLabel(l.Market)} | {SymbolCell(l)} | {SideLabel(l.Side)} | {Num(l.Quantity)} | {Num(l.FillPrice)} | {Num(l.Cost)} | {NumOrUnsupplied(l.Tax)} | {Signed(l.RealizedPnl)} | {TriggerLabel(l.Trigger)} | {TextOrUnsupplied(l.RationaleSummary)} |\n");
+                    $"| {l.Index} | {Time(l.Time)} | {MarketLabel(l.Market)} | {SymbolCell(l)} | {SideLabel(l.Side)} | {Num(l.Quantity)} | {Num(l.FillPrice)} | {Num(l.Cost)} | {NumOrUnsupplied(l.Tax)} | {RealizedPnlCell(l)} | {TriggerLabel(l.Trigger)} | {TextOrUnsupplied(l.RationaleSummary)} |\n");
             }
 
             sb.Append('\n');
-            AppendLegend(sb);
+            AppendLegend(sb, view.Lines.Any(l => l.RealizedPnlUnvalued));
         }
 
         // 🔴 §2-b は §2 の直後・取引詳細の**前**である（計画テンプレートの節順。ADR-0030「節番号と並び順は計画が正」）。
@@ -62,7 +62,7 @@ public static class TradeHistoryRenderer
     }
 
     // 表の読み方。**セルごとに長文を書くと 12 列 × N 行が読めなくなる**ため、標識の意味は 1 箇所で定義する。
-    private static void AppendLegend(StringBuilder sb)
+    private static void AppendLegend(StringBuilder sb, bool hasUnvaluedRealizedPnl)
     {
         sb.Append("- 時刻は **JST**（報告期間の基準時刻）。**手数料・費用は前提条件からの概算**であり、"
             + "ブローカの請求実額ではありません。\n");
@@ -74,6 +74,16 @@ public static class TradeHistoryRenderer
         sb.Append("  - **トリガー**: 判断の起点（定時 / 変動 / 損切り）が記録されていません。\n");
         sb.Append("  - **判断根拠（要約）**: 取引判断の記録を相関できなかった約定のみ。"
             + "**記録がある約定は、記録された根拠をそのまま転記しています**（報告書生成時に文章を作っていません）。\n");
+
+        // #892, IADR-0381: **`不明` の行があるときだけ**説明を出す（無い日の凡例を膨らませない）。
+        if (hasUnvaluedRealizedPnl)
+        {
+            sb.Append("- 実現損益が `**" + UnknownPnl + "**` の行は、**期間より前に建てた建玉の決済**です。"
+                + "報告書の在庫は**当期間の約定だけ**から組み立てられ、その建玉の**取得原価を持っていません**"
+                + "——したがって実現損益を**計算できません**（`0` ではありません）。"
+                + "**§1 サマリの実現損益・勝率・評価損益にも算入していません。**\n");
+        }
+
         sb.Append('\n');
     }
 
@@ -234,4 +244,12 @@ public static class TradeHistoryRenderer
 
     // 実現損益（符号付き・千区切り。既存 ReportRenderer の Yen と同形式）。
     private static string Signed(decimal value) => value.ToString("+#,##0;-#,##0;0", CultureInfo.InvariantCulture);
+
+    // FR-06, FR-16, #892, IADR-0381: 実現損益のセル。
+    //
+    // 🔴 **期間より前に建てた建玉の決済は `不明`（計算できない）である。** 報告書の在庫は当期間の約定だけから
+    // 畳まれるため取得原価を持たず、`0` と書けば「損得が無かった」と読める（§2-b と**同じ語**を使う——
+    // 「計算できない」という事実が同じであり、新しい語彙を増やさない）。
+    private static string RealizedPnlCell(TradeHistoryLine line) =>
+        line.RealizedPnlUnvalued ? $"**{UnknownPnl}**" : Signed(line.RealizedPnl);
 }

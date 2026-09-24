@@ -511,7 +511,30 @@ jobs:
           # 抽出が壊れると「1 件も違わない＝緑」で静かに壊れるため、下限件数で破綻を検出する
           # （既定描画の実測は 13 件・values-local は 17 件・CronJob を含む描画は 18 件。2026-09-11）。
           FLOOR=10
-          check() { # $1=ラベル $2=描画 $3=期待 authority
+          # #781: KB / LLM ゲートウェイの s2s Authority（KnowledgeBase__Auth__Authority / LlmGateway__Auth__Authority）を
+          # env 名で拾い、「kind/workload/env名<TAB>値」を出す（値は引用符を外す。空なら空）。
+          # 🔴 上の「違うレルムが無いこと」は**欠けた経路を検出しない**（値が空なら /realms/ を含まず母集合から落ちる
+          # だけで、件数下限 10 も割らない）。導出の 2 行を消しても、導出をレルム名で条件付けしても（IADR-0324 の
+          # 2026-09-23 追記が退けた形）全面が緑のままだった。そこで配線済みの面では**非空の件数を正確に**要求する。
+          s2s_authorities() {
+            printf '%s' "$1" | awk '
+              BEGIN{RS="---"}
+              /(^|\n)kind: (Deployment|CronJob|Job)\n/ {
+                kind=""; wl="";
+                if (match($0,/(^|\n)kind: [A-Za-z]+/)) { kind=substr($0,RSTART,RLENGTH); sub(/.*kind: /,"",kind) }
+                if (match($0,/\n  name: [A-Za-z0-9.-]+/)) { wl=substr($0,RSTART+9,RLENGTH-9) }
+                n=split($0,L,"\n");
+                for(i=1;i<=n;i++){
+                  if (L[i] ~ /^[ \t]*-[ \t]+name:[ \t]*"?(KnowledgeBase|LlmGateway)__Auth__Authority"?[ \t\r]*$/) {
+                    env=L[i]; sub(/^[^:]*:[ \t]*/,"",env); gsub(/["\r ]/,"",env);
+                    v="";
+                    if (i<n && L[i+1] ~ /^[ \t]*value:/) { v=L[i+1]; sub(/^[ \t]*value:[ \t]*/,"",v); gsub(/["\r]/,"",v); gsub(/^[ \t]+|[ \t]+$/,"",v) }
+                    printf "%s/%s/%s\t%s\n", kind, wl, env, v
+                  }
+                }
+              }'
+          }
+          check() { # $1=ラベル $2=描画 $3=期待 authority [$4=非空の s2s Authority の期待件数（#781。省略時は検査しない）]
             exp="$(realm_of "$3")"
             [ -n "$exp" ] || { echo "::error::$1: global.authAuthority から realm を取り出せない（値: 「$3」）。values の書式が変わった可能性がある。"; exit 1; }
             rows="$(enumerate "$2")"
@@ -529,19 +552,41 @@ jobs:
               exit 1
             fi
             echo "ok: $1 は $cnt 件すべてが realm=$exp を指す"
+            if [ -n "${4:-}" ]; then
+              s2s="$(s2s_authorities "$2")"
+              filled="$(printf '%s\n' "$s2s" | awk -F'\t' 'NF && $2!=""')"
+              fcnt="$(printf '%s' "$filled" | grep -c . || true)"
+              echo "--- $1: KB / LLM の s2s Authority（非空 $fcnt 件・期待 $4 件） ---"
+              printf '%s\n' "$s2s"
+              if [ "$fcnt" -ne "$4" ]; then
+                echo "::error::$1: 非空の KnowledgeBase__Auth__Authority / LlmGateway__Auth__Authority が $fcnt 件（期待 $4 件）。少なければ BaseUrl を配線したサービスで global.authAuthority からの導出が効いていない（空の Authority は匿名呼び出しになり 401 で止まる）。多ければ導出の条件が BaseUrl の配線ではなくなっている（#781 / IADR-0324）。"
+                exit 1
+              fi
+              echo "ok: $1 は KB / LLM の s2s Authority が $4 件とも埋まっている"
+            fi
           }
           check "既定（本番）" "$(helm template ast "$CHART")" "$(authority_of "$CHART/values.yaml")"
           check "values-local（経路B・連結配備）" \
             "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")" \
-            "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")"
+            "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")" \
+            4
           # 既定 false のフラグを ON にしないと CronJob は描画されない＝#456 で破れた当の経路が検査の外に落ちる。
           check "values-local + 全フラグ ON（CronJob を含む）" \
             "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set tradingCycle.cronjob.enabled=true --set opend.enabled=true --set moomoo.enabled=true)" \
-            "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")"
+            "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")" \
+            4
           # 本番描画にレルムのリテラルが 1 つも無いこと（--set に全経路が追随する）。
           check "既定 + --set global.authAuthority 差し替え" \
             "$(helm template ast "$CHART" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
             "http://kc:8080/realms/zzsentinel"
+          # #781: **values-local と --set の組み合わせ**。上の 4 面はどれもこの組み合わせを踏んでおらず、
+          # values-local が置いていたレルムのリテラル 4 件（KnowledgeBase__Auth__Authority ×2 /
+          # LlmGateway__Auth__Authority ×2）は**どの面からも見えていなかった** —— IADR-0324 の 2026-09-11 追記が
+          # 「残った負債」と名指ししたのがこの隙間である。経路B の描画にもリテラルを残さない。
+          check "values-local + --set global.authAuthority 差し替え" \
+            "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
+            "http://kc:8080/realms/zzsentinel" \
+            4
           echo "ok: 配備される全経路（Deployment/CronJob/Job の env）が単一レルムを指す（ADR-0038 決定2）"
       # #279 / IADR-0114 決定4: Helm は**リストを置換する**ため、values-local が extraEnv を上書きしている
       # サービスでは、本番 values.yaml 側にキーが増えたときに写し忘れると**当該 env が消える**（有効化のつもりで

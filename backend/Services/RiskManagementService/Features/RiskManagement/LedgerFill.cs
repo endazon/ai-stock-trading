@@ -44,7 +44,13 @@ public sealed record LedgerFill(
     // ——同経路は PeriodFillQuery が取り込み行そのものを除外するため、ManualAdoption の行は 1 件も通らない。
     // **監査で由来を読む手段は GET /risk-controls/drift-adoptions（DriftAdoptionView.Origin）が担う。**
     // ここで wire へ出す意味は「由来が 1 級の列である」という軸の表明に留まる（IADR-0360 決定 1・2026-09-19 の監査）。
-    TradeOrigin Origin = TradeOrigin.System)
+    TradeOrigin Origin = TradeOrigin.System,
+    // FR-10, FR-03, #936, IADR-0393（2026-09-25 追記）: この約定が属する**承認の時刻**（承認 Intent の ApprovedAt）。
+    // 射影が保有中のエントリー（ロット）を並べる鍵である —— 発注執行は外部要因の減少を S1 の行の**作成時刻**
+    // （＝承認を受けて発注した時刻）の古い順に割り当てるため、台帳も約定時刻ではなく発注の順でロットを並べる。
+    // 🔴 **既定 null＝承認時刻が分からない**（乖離の取り込み行など承認を持たない行）。射影は約定時刻で代える。
+    // **wire へは出さない**（射影の内部の鍵であり、報告書の入力ではない）。
+    [property: System.Text.Json.Serialization.JsonIgnore] DateTimeOffset? EntryOrderedAt = null)
 {
     /// <summary>基準通貨（USD）建ての約定単価。金額集計・実現損益・エクイティはこの単価で積む。**永続化しない計算値**である。</summary>
     public decimal PriceInBase => Price * FxRateToBase;

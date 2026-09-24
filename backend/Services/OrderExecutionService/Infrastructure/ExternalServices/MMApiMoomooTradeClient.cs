@@ -457,7 +457,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // ---- 接続・口座 ----
 
     // #331, IADR-0211: 接続確立の失敗は BrokerUnavailableException に分類する——この段階の失敗は
-    // **注文がブローカーへ届き得ない**（確実に未発注）ため、発注執行は予約を解放して「見送り」にできる。
+    // **注文がブローカーへ届き得ない**（確実に未発注）ため、発注執行は「見送り」にできる
+    // （予約は削除せず見送りの終端へ移す。#876, IADR-0398）。
     // 発注**送信後**の失敗（SendAsync のタイムアウト等）は届いたか不明であり、本分類の対象外
     // （アダプタが BrokerDispatchIndeterminateException へ包んで伝播し、予約とリコンサイル
     // 〔IADR-0057/0092〕が守る。**拒否へ畳まない**——#848 / IADR-0117 改定 6）。
@@ -567,6 +568,16 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         {
             if (acc.TrdEnv == (int)TrdCommon.TrdEnv.TrdEnv_Simulate)
             {
+                // 🔴 FR-10, #899, IADR-0373 決定D: 取扱市場を**記録するが、門にはしない。**
+                // API から口座の基準通貨は読めず（`TrdAcc` の 12 欄に通貨欄は無い）、取扱市場が唯一の手掛かりである。
+                // 実機の口座が何を返すかを後から証跡で確かめられるよう、選んだ口座の取扱市場を残す。
+                // **止める条件にはしない** —— 取扱市場は通貨の証拠ではなく、「JP を含むなら止める」は
+                // universal 口座（JP と US の両方を扱い `currency` を明示する）を通貨と無関係に落とす。
+                _logger.LogInformation(
+                    "SIMULATE 口座を選びました accId={AccId} accType={AccType} trdMarketAuthList={TrdMarketAuthList}",
+                    acc.AccID,
+                    acc.AccType,
+                    string.Join(",", acc.TrdMarketAuthListList));
                 return (acc.AccID, MapAccountType(acc.AccType));
             }
         }
@@ -685,6 +696,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         // `TrdGetAccList` の `TrdAcc`〔12 欄〕にも通貨欄は無い）。
         if (!funds.HasCurrency)
         {
+            // 🔴 FR-10, #899, IADR-0373: **近似の範囲を「反証」で狭める。**
+            // 近似が破れるのは**非 USD の単一市場口座**（米国株の取扱権限を持つ JP 口座など）であり、
+            // そのとき全比率上限が約 150 倍緩む。`cashInfoList` が非 USD だけを名乗るなら採らない。
+            if (IsDisprovedByCashBreakdown(funds))
+            {
+                return null;
+            }
+
             _logger.LogInformation(
                 "口座照会の応答が通貨を明示していないため、要求した通貨（currency={RequestedCurrency}・USD）を"
                     + "前提として基準資金を採ります（近似）。",
@@ -715,6 +734,48 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         }
 
         return totalAssets;
+    }
+
+    // 🔴 FR-10, #899, ADR-0041 決定2, IADR-0373: 応答が通貨を明示しないときに、**現金の内訳（`cashInfoList`）で
+    // 「この口座は USD 建てではない」を反証できるか**を判定する。
+    //
+    // 🔴 **「確証」ではなく「反証」である。この向きが本メソッドの存在理由そのものである。**
+    //   - 確証（「USD だと確かめられたときだけ採る」）は、**実機の OpenD に対して常に成立しない** ——
+    //     欄が無いのが実機の正常な見え方であり、#874 がその形を入れて稼働環境で新規建てが一日中止まった（#897）。
+    //   - 反証なら、**証拠が無いときは何もしない**ので新たな fail-closed を生まない。
+    //
+    // したがって **true（＝採らない）を返すのは、次がすべて成り立つときだけ**である。
+    //   1. `cashInfoList` に**通貨を名乗る行が 1 つ以上ある**（`HasCurrency` かつ `Currency_Unknown` ではない）。
+    //      🔴 `Currency_Unknown(0)` は「決められなかった」であり、**非 USD である証拠ではない**（採らない理由にしない）。
+    //   2. **そのどの行も USD ではない。**
+    // 欄が無い・空・通貨を名乗る行が 1 つも無い、はいずれも false（＝従来どおり採る）である。
+    //
+    // 🔴 **呼ぶのは「応答が通貨を明示していない」経路だけである**（決定 B）。明示された `Funds.currency` は
+    // moomoo が documented に定めた一次情報であり、universal 口座へ USD を要求すれば
+    // `currency=USD`・`TotalAssets` は換算後の USD で返る一方、**内訳は JPY だけということがあり得る**。
+    // そこで内訳を優先すると、正しく USD と名乗っている応答を落とす**新しい fail-closed** になる。
+    //
+    // **反証が効かない範囲**（IADR-0373 §結果）: JP 建て口座が米国株のために USD 現金も持てば USD の行が現れ、
+    // ここは止まらない。実機が `cashInfoList` を載せてこない場合も止まらない。**狭いが意図された歯止め**であり、
+    // 非 USD 口座を網羅的に排除する手段ではない。
+    private bool IsDisprovedByCashBreakdown(TrdCommon.Funds funds)
+    {
+        var declaredCurrencies = funds.CashInfoListList
+            .Where(row => row.HasCurrency && row.Currency != (int)TrdCommon.Currency.Currency_Unknown)
+            .Select(row => row.Currency)
+            .ToList();
+
+        if (declaredCurrencies.Count == 0 || declaredCurrencies.Contains(RequestedCurrency))
+        {
+            return false;
+        }
+
+        // 止めるのは異常事態である（実機の正常な見え方ではない）ため Warning で残す。
+        _logger.LogWarning(
+            "口座照会の応答は通貨を明示していないが、現金の内訳（cashInfoList）が USD の行を 1 つも持たない"
+                + "（currencies={Currencies}）。この口座は USD 建てではないため、基準資金は未供給として扱います。",
+            string.Join(",", declaredCurrencies));
+        return true;
     }
 
     private TrdCommon.TrdHeader BuildHeader(int trdMarket) =>

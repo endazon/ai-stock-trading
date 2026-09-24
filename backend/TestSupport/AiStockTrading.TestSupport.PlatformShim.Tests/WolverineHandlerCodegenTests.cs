@@ -42,6 +42,10 @@ public class WolverineHandlerCodegenTests
                 services.AddScoped<IInternalDependencyProbe, InternalDependencyProbe>())
             .UseWolverine(opts =>
             {
+                // #816: 本テストが固定するのは「生成コードが組み立てられること」であり、その生成を
+                // 実行時に行う dev/test の既定（Dynamic）が前提である。周囲の WOLVERINE_TYPE_LOAD_MODE に
+                // 結果を左右させない（WolverineTestOptions の注記）。
+                opts.PinDynamicTypeLoadMode();
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
                 // 実ブローカへ接続しない（ローカル・CI ともに RabbitMQ を要求しない）。
                 opts.StubAllExternalTransports();

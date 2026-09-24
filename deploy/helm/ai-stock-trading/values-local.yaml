@@ -29,7 +29,8 @@
 # セッションの MSP レルムのトークンを上流へ転送するため、AST サービスが chart 既定の AST レルムで検証すると issuer
 # 不一致の 401 になり、SPA が再ログインの無限ループに陥る（2026-09-10 実測）。認証レルムはここで 1 つに統一する。
 # template は inbound の Auth__Authority・ServiceAuth の token エンドポイント・run-once CronJob（IADR-0176）・
-# Discord OwnerAuth（IADR-0098）をすべてこの 1 値から導出するので、s2s も揃って MSP レルムへ移る（片側だけ移らない）。
+# Discord OwnerAuth（IADR-0098）・**KB / LLM ゲートウェイの s2s Authority（#781）**をすべてこの 1 値から導出するので、
+# s2s も揃って MSP レルムへ移る（片側だけ移らない）。**このファイルにレルムのリテラルは 1 つも置かない。**
 # 要る客体（trading-service ロール・ai-stock-trading-svc / -owner クライアント）は MSP レルム側が持つ（MSP#1372）。
 # 反映順は MSP レルム（MSP#1372）→ 本値。chart 既定（values.yaml＝本番描画）と AST レルム（infra/keycloak/
 # realm-export.json＝単体 E2E 用）は不変。
@@ -105,6 +106,11 @@ services:
       - { name: Fx__Provider, value: "boj" }                      # ← 認識時レート源（日銀第一・#686/IADR-0308）
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      # FR-20, FR-11, UC-06, #868, IADR-0383: 段階遷移の onBehalfOf を信じてよいクライアント。
+      # 値は本番既定と同一（helm はリストを置換するため、写し忘れると env が消える）。
+      # report の Reports__DelegatedActor__TrustedClientIds と同じ秘密鍵＝単一情報源。
+      - name: RiskControls__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
 
   # ① 損切り検知の時価＋建玉源。FR-10, IADR-0066/0068。
   market-monitor:
@@ -176,10 +182,14 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - { name: KnowledgeBase__Search__BaseUrl, value: "" }
-      # #626, IADR-0283: realm id は `platform`（`microservices-platform` という realm は存在しない）。
-      # 根拠: 隣接クローン ../microservices-platform の deploy/keycloak/microservices-platform-realm.json
-      # 2 行目 `"realm": "platform"`、および MSP 自身の Helm chart 既定値 global.auth.authority も同じ realm。
-      - { name: KnowledgeBase__Auth__Authority, value: "http://keycloak:8080/realms/platform" }       # ← ③（MSP レルム）
+      # #781, ADR-0038 決定2, IADR-0324: **値はここに書かない。** templates/deployment.yaml が上の
+      # global.authAuthority（＝MSP レルム。realm id が `platform` である根拠は冒頭の global ブロックと
+      # #626 / IADR-0283）から導出して埋める。Auth__Authority・ServiceAuth__TokenEndpoint・CronJob の
+      # TOKEN_ENDPOINT・Discord OwnerAuth と同一ソースになり、`--set global.authAuthority` にも追随する。
+      # 🔴 リテラルを置くと追随せず、この経路だけ別レルムを指して issuer 不一致の 401 で止まる
+      # （#456 / #736 と同型。#776 の描画検査が「ずれを赤で捕まえる」だけだった負債が本キーである）。
+      # 導出は KnowledgeBase__Documents__BaseUrl / __Search__BaseUrl のどちらかが非空のときだけ効く。
+      - { name: KnowledgeBase__Auth__Authority, value: "" }                                           # ← ③（template が導出）
       - name: KnowledgeBase__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
@@ -208,7 +218,9 @@ services:
       # realm ロール platform-service）。KB（③）の kb-writer は platform-operator しか持たず、基盤の ServiceCaller
       # （MSP#1365）では 403 になるため別主体にする。鍵は ast-secrets の llm-auth-*（k8s-local-deploy.sh が入れる）。
       # 🔴 realm 側で当該 service account へ `platform-service` を付与するまでは 403 になる（IADR-0323 決定6・MSP 所有）。
-      - { name: LlmGateway__Auth__Authority, value: "http://keycloak:8080/realms/platform" }           # ← ②（MSP レルム）
+      # #781: Authority の**値はここに書かない**（template が global.authAuthority から導出する。上の
+      # KnowledgeBase__Auth__Authority と同じ理由。導出は LlmGateway__BaseUrl が非空のときだけ効く）。
+      - { name: LlmGateway__Auth__Authority, value: "" }                                              # ← ②（template が導出）
       - name: LlmGateway__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
       - name: LlmGateway__Auth__ClientSecret
@@ -247,10 +259,14 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
-      # #626, IADR-0283: realm id は `platform`（`microservices-platform` という realm は存在しない）。
-      # 根拠: 隣接クローン ../microservices-platform の deploy/keycloak/microservices-platform-realm.json
-      # 2 行目 `"realm": "platform"`、および MSP 自身の Helm chart 既定値 global.auth.authority も同じ realm。
-      - { name: KnowledgeBase__Auth__Authority, value: "http://keycloak:8080/realms/platform" }       # ← ③（MSP レルム）
+      # #781, ADR-0038 決定2, IADR-0324: **値はここに書かない。** templates/deployment.yaml が上の
+      # global.authAuthority（＝MSP レルム。realm id が `platform` である根拠は冒頭の global ブロックと
+      # #626 / IADR-0283）から導出して埋める。Auth__Authority・ServiceAuth__TokenEndpoint・CronJob の
+      # TOKEN_ENDPOINT・Discord OwnerAuth と同一ソースになり、`--set global.authAuthority` にも追随する。
+      # 🔴 リテラルを置くと追随せず、この経路だけ別レルムを指して issuer 不一致の 401 で止まる
+      # （#456 / #736 と同型。#776 の描画検査が「ずれを赤で捕まえる」だけだった負債が本キーである）。
+      # 導出は KnowledgeBase__Documents__BaseUrl / __Search__BaseUrl のどちらかが非空のときだけ効く。
+      - { name: KnowledgeBase__Auth__Authority, value: "" }                                           # ← ③（template が導出）
       - name: KnowledgeBase__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
@@ -294,7 +310,9 @@ services:
       # NFR-05, #724, IADR-0323: ②の s2s（report と同じ設定点・同じ client）。匿名では 401 になり、
       # **その 401 は「割当モデル不可」ではなく「認可の失敗」として記録される**（IADR-0323 決定3）。
       # 🔴 realm 側で service account へ `platform-service` を付与するまでは 403 になる（決定6・MSP 所有）。
-      - { name: LlmGateway__Auth__Authority, value: "http://keycloak:8080/realms/platform" }           # ← ②（MSP レルム）
+      # #781: Authority の**値はここに書かない**（template が global.authAuthority から導出する。
+      # 導出は LlmGateway__BaseUrl が非空のときだけ効く）。
+      - { name: LlmGateway__Auth__Authority, value: "" }                                              # ← ②（template が導出）
       - name: LlmGateway__Auth__ClientId
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-id, optional: true }
       - name: LlmGateway__Auth__ClientSecret

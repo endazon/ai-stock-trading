@@ -1,5 +1,9 @@
+extern alias RiskManagementWorker;
+
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using ReportService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -47,6 +51,32 @@ public class HttpOpenPositionSourceTests
         p.Quantity.Should().Be(5);
         p.AverageEntryPrice.Should().Be(240m);
         p.StopLossPrice.Should().Be(252m);
+    }
+
+    // 🔴 T-10-804, FR-06, FR-10, #943, IADR-0390（T-10-744 の同型）: **送り手の本物の型（`OpenPositionView`）を直列化した応答**を読めることを固定する。
+    // 上の肯定形は手書きの JSON であり、リスク管理側で項目名を変えても（例: `Symbol` → `Ticker`）緑のままになる
+    // （#943 の実測: ReportService.Tests 1101 件がすべて緑）。実行時は銘柄が null の行として逆シリアル化され、下の
+    // 「銘柄が空の行は落とす」で全行が落ちて**空列＝「建玉なし」**になる —— 未供給（null）ではなく、日報 §3 が
+    // 「今は何も持っていない」と書く。本テストは改名を赤で止める（変異注入で実測）。
+    [Fact]
+    public async Task 送り手の本物の型を直列化した応答から建玉を読める()
+    {
+        IReadOnlyList<OpenPositionView> views =
+        [
+            new("AAPL", Market.UnitedStates, TradeSide.Buy, 3_378, 337.63m, 320.75m),
+            new("TSLA", Market.UnitedStates, TradeSide.Sell, 5, 240m, 252m),
+        ];
+        // リスク管理の Minimal API（Results.Ok）と同じ web 既定（camelCase・列挙は数値）。送り手の Program.cs がこの既定のまま
+        // 出していることはリスク管理側の T-10-805 が固定する。
+        var body = JsonSerializer.Serialize(views, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        var positions = await Source(new StubHandler(HttpStatusCode.OK, body)).GetOpenPositionsAsync();
+
+        positions.Should().NotBeNull();
+        positions!.Select(p => (p.Symbol, p.Market, p.Side, p.Quantity, p.AverageEntryPrice, p.StopLossPrice))
+            .Should().Equal(
+                ("AAPL", Market.UnitedStates, TradeSide.Buy, 3_378, 337.63m, 320.75m),
+                ("TSLA", Market.UnitedStates, TradeSide.Sell, 5, 240m, 252m));
     }
 
     // 本経路が運ばない項目は未供給のまま返す（後段が現在値だけを埋める）。

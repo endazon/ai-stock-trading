@@ -1,5 +1,6 @@
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
@@ -138,6 +139,19 @@ if (!brokerSelection.IsMoomoo)
 builder.Services.AddScoped<OrderAmendmentService>();
 builder.Services.AddScoped<OrderAmendmentDispatcher>();
 
+// 🔴 FR-10, FR-05, #858, IADR-0370, IADR-0350 決定5: 利用者が承認した乖離の取り込み（PositionDriftAdopted）に
+// 保護記録とブローカー側の保護注文を追随させる。
+// 🔴 **構成を問わず登録する**——購読ハンドラは規約発見で常に配線され、ビルド時 codegen も既定（内蔵 paper）構成で
+// ホストを組むため、依存が解決できないとハンドラが組めない（SoftwareStopExecutor と同じ理由）。
+// 建玉照会（IBrokerPositionSource）は moomoo 構成でだけ登録されており、内蔵 paper では null
+// （取り込みの観測だけを目標にする。IADR-0370 決定3）。
+builder.Services.AddScoped(sp => new ProtectiveStopDriftAdopter(
+    sp.GetRequiredService<IProtectiveStopOrderStore>(),
+    sp.GetRequiredService<OrderAmendmentService>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<ProtectiveStopDriftAdopter>(),
+    sp.GetService<IBrokerPositionSource>()));
+
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
@@ -173,7 +187,22 @@ builder.Services.AddHostedService<OrderReservationReconciliationService>();
 builder.Services.Configure<FillPollingOptions>(builder.Configuration.GetSection(FillPollingOptions.SectionName));
 if (brokerSelection.IsMoomoo)
 {
-    builder.Services.AddScoped<OrderFillPoller>();
+    // 🔴 FR-10, #833 項目1, IADR-0389: 受理だけで完了させた S1 の保護記録の再武装。約定追跡が「確認できた
+    // 終端かつ未約定」を観測したときだけ働く（新しい常駐は足さない）。据え置き（照会不能）の通知の記憶は
+    // 巡回をまたぐため singleton・非永続（再起動後の最初の巡回で必ず鳴る）。
+    builder.Services.AddSingleton<UnresolvedCloseNotificationTracker>();
+    builder.Services.AddScoped(sp => new SoftwareStopReArmer(
+        sp.GetRequiredService<IProtectiveStopOrderStore>(),
+        sp.GetRequiredService<IExecutedOrderStore>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopReArmer>(),
+        sp.GetRequiredService<UnresolvedCloseNotificationTracker>()));
+    builder.Services.AddScoped(sp => new OrderFillPoller(
+        sp.GetRequiredService<IBrokerAdapter>(),
+        sp.GetRequiredService<IExecutedOrderStore>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<SoftwareStopReArmer>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>()));
     builder.Services.AddHostedService<OrderFillPollingService>();
 }
 
@@ -203,6 +232,10 @@ if (brokerSelection.IsMoomoo)
     // ガードは巡回ごとに作られる scoped なので、記憶は外に置く。再起動で消えることが「再起動後に必ず再通知する」仕組み。
     builder.Services.AddSingleton<
         OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>();
+    // #857, IADR-0369: 「確認できた拒否」で終わった成行手仕舞いの数え（撃ち直しの上限）と再通知の記憶
+    //（singleton・非永続。再起動で数えが消える＝もう一度手仕舞いを試みる側へ倒れる）。
+    builder.Services.AddSingleton<
+        OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.CloseRejectionTracker>();
     builder.Services.AddScoped<OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard>(sp =>
         new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard(
             sp.GetRequiredService<IBrokerAdapter>(),
@@ -217,7 +250,17 @@ if (brokerSelection.IsMoomoo)
             sp.GetRequiredService<
                 OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.HeldCloseNotificationTracker>(),
             // #820, IADR-0344 決定6: 到達済み S1 行の決済再試行はガードが実行器へ委ねる。
-            sp.GetRequiredService<SoftwareStopExecutor>()));
+            sp.GetRequiredService<SoftwareStopExecutor>(),
+            // #857, IADR-0369: 確認できた拒否の数え（撃ち直しの上限）。
+            sp.GetRequiredService<
+                OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.CloseRejectionTracker>()));
+    // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
+    builder.Services.AddSingleton(sp =>
+        new SoftwareStopLivenessReporter(
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopLivenessReporter>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>()
+                .Value.SoftwareStopSummaryInterval));
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }

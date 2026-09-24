@@ -292,7 +292,8 @@ public class SoftwareStopExecutorTests
     [Fact]
     public async Task 行自身の損切りラインに達していなければ決済しない()
     {
-        // 台帳の損切りラインは銘柄単位で最新エントリーの値。別エントリーのライン（930）はまだ割れていない。
+        // 市場監視が比べる台帳のラインは保有中のエントリーのうち最も保護的な値（#936, IADR-0393）であり、
+        // 別エントリーのラインで到達が出ることがある。この行のライン（930）はまだ割れていない。
         var f = NewFixture();
         var stop = SoftwareStop(line: 930m);
         f.Stops.Save(stop);
@@ -812,5 +813,69 @@ public class SoftwareStopExecutorTests
             "AAPL", Market.UnitedStates, TradeSide.Buy, [Long(20)], f.Stops.FindActive(100), f.Stops, f.Store, Now);
         f.Stops.Find(first.EntryDecisionId)!.PendingExternalReduction.Should().Be(5);
         f.Stops.Find(first.EntryDecisionId)!.RemainingProtected.Should().Be(10);
+    }
+
+    // ---- 🔴 T-10-767・T-10-768, FR-10, FR-03, UC-02, ADR-0040 決定1（S1）, #936, IADR-0393 ----
+    // 稼働 PoC の AAPL（DB の順）: A＝715 株・ライン 330.88 を**先に**発注し（13:46:45。板に残る指値で、約定は後）、
+    // B＝713 株・ライン 331.67 を後に発注した（13:51:48。先に約定）。行の作成時刻は発注の時刻なので A の行が古い。
+    // 市場監視は台帳の最も保護的なライン 331.67 で到達を 1 件出す（数量は建玉全体の 1,428 株）。
+    // 発注執行は**行ごとに自分のラインで**判定し、達していない行には触らない。二重に売らない仕組みは変えていない。
+
+    private static StopLossTriggered LiveTrigger(decimal price, DateTimeOffset detectedAt) =>
+        new(Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 1_428, price, 331.67m, detectedAt);
+
+    private static (ProtectiveStopOrder A715, ProtectiveStopOrder B713) LiveTwoRecordLayout(Fixture f)
+    {
+        var a715 = SoftwareStop(line: 330.88m, quantity: 715, createdAt: Now.AddHours(-3));
+        var b713 = SoftwareStop(line: 331.67m, quantity: 713, createdAt: Now.AddHours(-3).AddMinutes(5));
+        f.Stops.Save(a715);
+        f.Stops.Save(b713);
+        Entry(f, a715, OrderStatus.Filled, 715, orderId: "entry-715");
+        Entry(f, b713, OrderStatus.Filled, 713, orderId: "entry-713");
+        f.Broker.Positions = [Long(1_428)];
+        return (a715, b713);
+    }
+
+    [Fact]
+    public async Task 稼働中の2行に331_67のラインで到達が出たら713株の行だけを決済し715株の行には触らない()
+    {
+        // T-10-767: 331.40 は 331.67 には達し 330.88 には達していない。古い行（A）が先に並んでいても A には触らない。
+        var f = NewFixture();
+        var (a715, b713) = LiveTwoRecordLayout(f);
+
+        var result = await f.Executor.OnTriggeredAsync(LiveTrigger(331.40m, Now));
+
+        result.Matched.Should().Be(1, "自分のラインに達した行は 713 株の行だけ");
+        var close = f.Broker.MarketCloses.Should().ContainSingle().Which;
+        close.DecisionId.Should().Be(ProtectiveStopIds.SoftwareCloseDecisionId(b713.EntryDecisionId, 1));
+        close.Intent.Quantity.Should().Be(713, "到達した行の持ち分だけ。建玉全体（1,428 株）ではない");
+
+        var untouched = f.Stops.Find(a715.EntryDecisionId)!;
+        untouched.State.Should().Be(ProtectiveStopState.Active);
+        untouched.TriggeredAt.Should().BeNull("330.88 には達していない");
+        untouched.Attempt.Should().Be(0);
+        f.Stops.Find(b713.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    [Fact]
+    public async Task 稼働中の2行は続く到達で715株の行も決済され合計1428株を超えず以後は1株も出さない()
+    {
+        // T-10-768: 1 本目の決済は受理・未約定のまま（建玉照会は 1,428 株のまま＝未反映）。
+        // 2 本目の到達（330.50）で 715 株の行を決済する。未反映の決済を数えずに配分すると 1,428 株を再び主張し得るが、
+        // 既存の突き合わせ（残保護数量・送信済みで未反映の決済）がそれを塞ぐ。以後の到達では 1 株も出さない。
+        var f = NewFixture();
+        var (a715, b713) = LiveTwoRecordLayout(f);
+
+        await f.Executor.OnTriggeredAsync(LiveTrigger(331.40m, Now));
+        var second = await f.Executor.OnTriggeredAsync(LiveTrigger(330.50m, Now));
+        var third = await f.Executor.OnTriggeredAsync(LiveTrigger(330.00m, Now));
+
+        f.Broker.MarketCloses.Select(c => (c.DecisionId, c.Intent.Quantity)).Should().Equal(
+            (ProtectiveStopIds.SoftwareCloseDecisionId(b713.EntryDecisionId, 1), 713),
+            (ProtectiveStopIds.SoftwareCloseDecisionId(a715.EntryDecisionId, 1), 715));
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(1_428, "建玉を超えて売らない");
+        second.Matched.Should().Be(1);
+        third.Candidates.Should().Be(0, "両方の行が完了している");
+        third.Events.Should().BeEmpty();
     }
 }

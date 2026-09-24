@@ -18,7 +18,9 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // FR-10, #331, IADR-0210: 損切りはブローカー側逆指値へ一本化した。エントリー（Open）には保護逆指値を
 // **同時発注**し、逆指値を張れない Open では建玉を持たない（見送り／取消／成行手仕舞い＝fail-closed）。
 // FR-05, #331, IADR-0211: OpenD へ確実に届いていない発注（BrokerUnavailableException）は Rejected へ丸めず、
-// 予約を解放して「見送り」（OrderDispatchForgone）で正常終了する（キューイングしない）。
+// 「見送り」（OrderDispatchForgone）で正常終了する（キューイングしない）。
+// 🔴 FR-05, FR-10, UC-06, #876, IADR-0398: 見送りは**発行する前に予約表へ Forgone として記録し**、同じ承認の再配送では
+// 発注しない（予約の解放＝削除はやめた。削除すると再配送が予約を取り直し、台帳が押さえていない決済が生きる）。
 //
 // FR-10, FR-12, ADR-0040 決定1, #819, IADR-0342: 損切りの実行機構は承認が運ぶ（既定 S0）。解釈は
 // StopLossMethodPolicy だけが行う。**S2（moomoo SIMULATE の新規買いに限る）では保護逆指値を発注せず建玉を保持し、
@@ -80,6 +82,21 @@ public sealed class OrderExecutionAppService(
                 approved.CycleTrigger, approved.CycleStartedAt));
         }
 
+        // 🔴 FR-05, FR-10, UC-06, #876, IADR-0398: **見送った DecisionId は、再配送されても発注しない。**
+        // 見送り（OrderDispatchForgone）を受けたリスク管理は取引台帳の承認を終端にし、在庫を戻す（IADR-0356）。
+        // ここで同じ承認を送り直すと、その注文は台帳の「処理中の決済」に数えられず（台帳の終端は単調で戻らない）、
+        // 利用者の 2 本目の手仕舞いが通る＝同じ株数に 2 本の決済が並ぶ。再発注は次の取引判断からのみ（IADR-0211 決定 3）。
+        // **ブローカーには一切触れない**（建玉照会もしない）。見送りの理由は記録していないため、見送りイベントは再発行しない。
+        if (reservations.Find(approved.DecisionId) is { State: OrderDispatchState.Forgone } forgoneEarlier)
+        {
+            _logger.LogWarning(
+                "見送り済みの承認が再配送されました。発注しません（再発注は次の取引判断からのみ）: "
+                + "DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity} 見送りを記録した時刻={ForgoneAt}。"
+                + "見送りイベントは再発行しません（理由を記録していないため）。この承認の注文はブローカーへ送られていません。",
+                approved.DecisionId, approved.Intent.Symbol, approved.Intent.Quantity, forgoneEarlier.CompletedAt);
+            return OrderDispatchResult.FromForgoneReplaySuppressed();
+        }
+
         var intent = approved.Intent;
 
         // 🔴 FR-10, FR-05, ADR-0016, UC-06, #864, IADR-0355: **決済（Close）はブローカーの実建玉と突き合わせてから送る。**
@@ -120,7 +137,7 @@ public sealed class OrderExecutionAppService(
                         + "保有 0 からの売り（裸のショート）になり得るため送りません。証券会社の画面で建玉を確認してください: "
                         + "DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity}",
                         approved.DecisionId, intent.Symbol, intent.Quantity);
-                    return Forgone(approved, OrderDispatchForgoneReason.BrokerPositionsIndeterminate);
+                    return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.BrokerPositionsIndeterminate);
 
                 case BrokerHeldPositionOutcome.NoPosition:
                     // 🔴 IADR-0355 決定2: 決済方向の実建玉が 0。送れば**裸の新規ショート**である（1 株も送らない）。
@@ -129,7 +146,7 @@ public sealed class OrderExecutionAppService(
                         + "（台帳 {Ledger} 株 / ブローカーのネット建玉 {Broker} 株）。"
                         + "送れば保有 0 からの売り（裸のショート）になります: DecisionId={DecisionId} 銘柄={Symbol}",
                         intent.Quantity, verdict.BrokerNetQuantity, approved.DecisionId, intent.Symbol);
-                    return Forgone(
+                    return RecordForgoneBeforeReservation(
                         approved,
                         OrderDispatchForgoneReason.BrokerPositionAbsent,
                         DriftOf(intent, verdict.BrokerNetQuantity, verdict.ClosableQuantity));
@@ -156,7 +173,7 @@ public sealed class OrderExecutionAppService(
             : StopLossMethodDisposition.BrokerStopOrder;
         if (disposition == StopLossMethodDisposition.Refused)
         {
-            return Forgone(approved, OrderDispatchForgoneReason.StopLossMethodNotPermitted);
+            return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopLossMethodNotPermitted);
         }
 
         // FR-10, #331, IADR-0210 決定1: 逆指値を張れない Open は**発注せず**見送る（建玉を作らない側へ倒す）。
@@ -165,12 +182,12 @@ public sealed class OrderExecutionAppService(
         {
             if (intent.StopLossPrice is not { } stopLoss || stopLoss <= 0m)
             {
-                return Forgone(approved, OrderDispatchForgoneReason.StopLossPriceMissing);
+                return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopLossPriceMissing);
             }
 
             if (broker is not IProtectiveOrderBroker)
             {
-                return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
+                return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
 
             // #820, IADR-0344 決定3: S1 はソフトウェア逆指値の記録先が要る（無ければ建玉を守れないため建てない）。
@@ -179,7 +196,7 @@ public sealed class OrderExecutionAppService(
                 _logger.LogError(
                     "損切りの実行機構 S1 の記録先（保護記録ストア）が構成されていないため発注しません（DecisionId={DecisionId}）。",
                     approved.DecisionId);
-                return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
+                return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
 
             // 🔴 #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: **S1 は帰属不明の建玉がある銘柄では武装しない。**
@@ -191,7 +208,7 @@ public sealed class OrderExecutionAppService(
                 && protectiveStops!.Find(approved.DecisionId) is null
                 && await HasUnattributedPositionAsync(approved, cancellationToken).ConfigureAwait(false))
             {
-                return Forgone(approved, OrderDispatchForgoneReason.UnattributedPosition);
+                return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.UnattributedPosition);
             }
 
             // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: S3 の能力が無い発注先へ S3 が届いたら**発注しない**
@@ -199,7 +216,7 @@ public sealed class OrderExecutionAppService(
             if (disposition == StopLossMethodDisposition.AlternativeBrokerOrderType
                 && broker is not IAlternativeProtectiveOrderBroker)
             {
-                return Forgone(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
+                return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
         }
 
@@ -247,12 +264,16 @@ public sealed class OrderExecutionAppService(
         catch (BrokerUnavailableException)
         {
             // FR-05, ADR-0002（SPOF・再起動中は発注不可）, #331, IADR-0211: 接続確立の失敗＝**確実に未発注**。
-            // 予約を解放し（二重発注の窓は無い）、キューイングせず見送りで正常終了する（Rejected へ丸めない）。
+            // キューイングせず見送りで正常終了する（Rejected へ丸めない）。
+            // 🔴 #876, IADR-0398: 予約は**解放（削除）せず Forgone へ移す**。削除すると同じ承認の再配送が予約を取り直して
+            // 発注できてしまい、見送りを受けて在庫を戻した台帳が押さえていない決済が生きる（IADR-0356 の残余リスク 3）。
             // 送信後の失敗（届いたか不明）は本例外の契約外であり、BrokerDispatchIndeterminateException として
-            // 伝播する（次の catch。予約を解放せず据え置く＝再配送で二重発注しない。#848・IADR-0117 改定 6）。
-            reservations.Release(approved.DecisionId);
-            CompleteSoftwareStopWithoutPosition(approved, disposition);
-            return Forgone(approved, OrderDispatchForgoneReason.BrokerUnavailable);
+            // 伝播する（次の catch。予約は Reserved のまま据え置く＝再配送で二重発注しない。#848・IADR-0117 改定 6）。
+            var recorded = reservations.MarkReservationForgone(approved.DecisionId, clock.UtcNow);
+            if (recorded is ForgoneRecordOutcome.Recorded or ForgoneRecordOutcome.AlreadyForgone)
+                CompleteSoftwareStopWithoutPosition(approved, disposition);
+
+            return ForgoneIfRecorded(approved, OrderDispatchForgoneReason.BrokerUnavailable, recorded);
         }
         catch (BrokerDispatchIndeterminateException ex)
         {
@@ -391,6 +412,45 @@ public sealed class OrderExecutionAppService(
         }
 
         return disposition;
+    }
+
+    // 🔴 FR-05, FR-10, UC-06, #876, IADR-0398: 予約を取る**前**の見送り。**記録してから**結果を作る。
+    // 予約前の見送りは従来、予約表に何も残さなかった——台帳は見送りを受けて在庫を戻すのに、照会が回復した後の
+    // 再配送は同じ承認を送れてしまう（建玉照会の不明・建玉なしで実測）。記録は見送りの発行より先にコミットされる。
+    // 🔴 見送りの結果（OrderDispatchResult.Forgone）は**本メソッドか ForgoneIfRecorded を通してだけ**作ること
+    // （下の Forgone を直接呼ぶと記録が抜け、この穴が戻る。T-10-826 が理由ごとに固定する）。
+    private OrderDispatchResult RecordForgoneBeforeReservation(
+        OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null) =>
+        ForgoneIfRecorded(approved, reason, reservations.TryRecordForgone(approved.DecisionId, clock.UtcNow), drift);
+
+    // 🔴 FR-05, #876, IADR-0398: **見送りを主張してよいのは、この DecisionId を Forgone として記録できたときだけである。**
+    // 予約（Reserved）や確定（Completed）がある DecisionId は、別の配送が送った・送ったかもしれない——
+    // ここで見送りを発行すると台帳が生きている注文の在庫の押さえを解く（「確実に未発注」と「送ったか不明」を混ぜない）。
+    private OrderDispatchResult ForgoneIfRecorded(
+        OrderApproved approved, OrderDispatchForgoneReason reason, ForgoneRecordOutcome recorded,
+        PositionReconciliationDrift? drift = null)
+    {
+        switch (recorded)
+        {
+            case ForgoneRecordOutcome.Recorded:
+            case ForgoneRecordOutcome.AlreadyForgone:
+                return Forgone(approved, reason, drift);
+
+            case ForgoneRecordOutcome.HeldByReservation:
+                // 並行した配送が発注に着手している（送ったか不明）。従来の予約競合と同じ扱いで再発注も見送りもしない
+                // （再試行のあいだに相手が確定すれば相 1 が既存結果を再発行する）。
+                _logger.LogWarning(
+                    "見送りを発行しません: 同じ承認の別の配送が発注に着手しています（予約あり・送ったか不明）。"
+                    + "DecisionId={DecisionId} 銘柄={Symbol} この配送での見送り理由={Reason}",
+                    approved.DecisionId, approved.Intent.Symbol, reason);
+                throw new OrderDispatchReservationConflictException(approved.DecisionId);
+
+            default:
+                // AlreadyCompleted（発注結果を確定済み＝発注済み）と未定義値。**見送りを主張しない**側へ倒す。
+                throw new InvalidOperationException(
+                    $"DecisionId={approved.DecisionId} は発注予約表で確定済み（または未知の状態 {recorded}）のため、"
+                    + $"見送り（理由 {reason}）を主張しません。発注済みの注文を見送りと記録すると在庫の押さえが解けます。");
+        }
     }
 
     // 🔴 FR-10, ADR-0040 決定1（S1）, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4:
@@ -668,6 +728,25 @@ public sealed class OrderExecutionAppService(
             closeOrder.FilledQuantity, closeOrder.AveragePrice, closeOrder.Status,
             SlippageCalculator.Compute(closeIntent.Price, closeOrder.AveragePrice, closeIntent.Side), now));
         reservations.MarkCompleted(closeDecisionId, closeOrder.OrderId, now);
+
+        // 🔴 FR-10, FR-11, UC-06, #857, IADR-0369 決定1: **確認できた拒否**を「手仕舞い済み」と扱わない。
+        // 未約定残を二度と約定させない終端（Rejected / Cancelled / Expired）が**返った**なら、建玉は残っている。
+        // ここで PositionClosed を主張すると、通知が事実と逆になり（「建玉を成行で手仕舞いました」）、
+        // 取引台帳には送られてもいない決済の承認行が足されて 30 分ぶんの在庫が押さえられる。
+        // 🔴 CloseIntent は運ばない（生きていない成行を台帳に押さえさせない）。CloseDecisionId は相関のために載せる。
+        if (OrderStatusLifecycle.AbandonsUnfilledRemainder(closeOrder.Status))
+        {
+            _logger.LogError(
+                "保護逆指値を張れなかった建玉の成行手仕舞いが拒否されました（確認できた拒否・状態 {Status}）。"
+                + "**建玉は残っています。**手仕舞い済みとしては扱いません。証券会社の画面で建玉を確認してください: "
+                + "EntryDecisionId={EntryDecisionId} CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                closeOrder.Status, approved.DecisionId, closeDecisionId, intent.Symbol, quantity);
+
+            return new ProtectiveStopCoverageLost(
+                approved.DecisionId, intent.Symbol, intent.Market,
+                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.CloseRejected,
+                quantity, closeDecisionId, CloseIntent: null, now);
+        }
 
         return new ProtectiveStopCoverageLost(
             approved.DecisionId, intent.Symbol, intent.Market,

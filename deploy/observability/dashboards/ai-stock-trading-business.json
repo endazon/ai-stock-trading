@@ -215,6 +215,42 @@
           "legendFormat": "未観測 {{stage}}/{{reason}}"
         }
       ]
+    },
+    {
+      "id": 15,
+      "title": "統制: 基準資金を読んだ帰結の内訳（1h あたり）",
+      "description": "🔴 SuppliedWithGap は『値は返っているが、直前の取引日の観測が 1 件も届いていない』状態である。口座照会が残高 0 を返した日は行が書かれないため、前取引日の正の値が鮮度（既定 4 日）まで使われ続け、新規建ては止まらない —— 値が返っている以上、他のパネルには何も現れない。UnavailableNonPositive は人手で 0 を 1 行入れた場合で、こちらは止まる（2 つの門の帰結は非対称であり、止めるかどうかは裁定待ちである）。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (outcome) (increase(ast_risk_capital_baseline_reads_total[1h]))",
+        "legendFormat": "{{outcome}}"
+      }]
+    },
+    {
+      "id": 16,
+      "title": "取引サイクル: 見送りの理由の内訳（1h あたり）",
+      "description": "reason タグ別。decisions{action=no-trade} は「何回見送ったか」しか語らない —— LLM が Hold を返した（平常・最も多い）と、保有照会が壊れていて新規建てだけが静かに止まっている（異常）をここで読み分ける。HoldingsUnknownOpen は平常時 0 件であり、出ていること自体が異常である（同名のアラートが 30 分継続で鳴る）。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 42, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (reason) (increase(ast_trade_cycle_decision_skips_total[1h]))",
+        "legendFormat": "{{reason}}"
+      }]
+    },
+    {
+      "id": 17,
+      "title": "損切り検知: 保有照会をそのまま評価できなかった行（1h あたり）",
+      "description": "🔴 平常時 0 件。市場監視がリスク管理の保有照会（open-positions）の応答を行ごとに読み、そのまま損切り判定へ渡せなかった行を reason 別に数える。identity-missing と stop-line-unknown はその建玉の損切り（S1）の到達を検知していない。stop-line-approximated は平均取得単価から既定比率で見積もった近似のラインで評価している（実際のラインではない）。response-unreadable は 200 の本文が一覧として読めず、その巡回はどの建玉も評価していない。出ていれば送り手と受け手の契約が食い違っている（片方だけ先に配備した等）。同名のアラートが鳴る。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 49, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (reason) (increase(ast_market_monitor_position_rows_degraded_total[1h]))",
+        "legendFormat": "{{reason}}"
+      }]
     }
   ]
 }

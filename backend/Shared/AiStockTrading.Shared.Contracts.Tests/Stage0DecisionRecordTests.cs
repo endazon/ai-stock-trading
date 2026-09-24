@@ -20,9 +20,18 @@ public class Stage0DecisionRecordTests
 
     private static Stage0DecisionRecord Record(
         DateOnly asOf, Stage0DecisionAction majority, int signedQuantity, params Stage0RawDecision[] raws) =>
+        RecordWith(asOf, majority, signedQuantity, null, raws);
+
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: 申告つきの記録（null は**未申告**＝旧記録の形）。
+    private static Stage0DecisionRecord RecordWith(
+        DateOnly asOf,
+        Stage0DecisionAction majority,
+        int signedQuantity,
+        IReadOnlyList<Stage0AsOfInputStatus>? asOfInputs,
+        params Stage0RawDecision[] raws) =>
         new("AAPL", Market.UnitedStates, asOf, "fingerprint-1", "claude-sonnet-5",
             VoteCount: raws.Length, raws, majority, "多数決の根拠", signedQuantity,
-            CostJpy: 12.5m, InputTokens: 3_600, OutputTokens: 540);
+            CostJpy: 12.5m, InputTokens: 3_600, OutputTokens: 540, AsOfInputs: asOfInputs);
 
     private static Stage0DecisionRecordSet SetOf(params Stage0DecisionRecord[] records)
     {
@@ -141,6 +150,76 @@ public class Stage0DecisionRecordTests
             new DateOnly(2026, 3, 31), "claude-sonnet-5", [second, first]);
 
         descending.Should().Be(ascending);
+    }
+
+    // ---- T-15-107 FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成可否は記録の一部である ----
+
+    private static IReadOnlyList<Stage0AsOfInputStatus> Declared(
+        Stage0AsOfInputAvailability news = Stage0AsOfInputAvailability.Reconstructed) =>
+    [
+        new(Stage0AsOfInputKind.NewsAndDisclosures, news, news == Stage0AsOfInputAvailability.Reconstructed
+            ? string.Empty
+            : "情報源が過去分を提供しない"),
+        new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
+        new(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputAvailability.Reconstructed),
+    ];
+
+    // 🔴 **肯定形（最重要）**: 申告は JSON 往復で落ちない。記録はファイルで別サービスへ渡るため、
+    // ここが落ちると再生側では全件が**未申告**に見え、判定が組めなくなる（安全側だが Stage 0 が進まない）。
+    [Fact]
+    public void as_of入力の再構成可否は往復で落ちない()
+    {
+        var original = SetOf(RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10,
+            Declared(Stage0AsOfInputAvailability.NotReconstructable), Raw(1, Stage0DecisionAction.Buy)));
+
+        var restored = Stage0DecisionRecordJson.TryDeserialize(Stage0DecisionRecordJson.Serialize(original))!;
+
+        var inputs = restored.Records.Should().ContainSingle().Which.AsOfInputs;
+        Stage0AsOfInputs.IsDeclared(inputs).Should().BeTrue();
+        Stage0AsOfInputs.NotReconstructableKinds(inputs)
+            .Should().ContainSingle().Which.Should().Be(Stage0AsOfInputKind.NewsAndDisclosures);
+        // 列挙は文字列で残る（宣言順が変わっても意味が動かない）。
+        Stage0DecisionRecordJson.Serialize(original).Should().Contain("NotReconstructable");
+    }
+
+    // 🔴 **否定形（最重要・0 件と未供給の区別）**: 申告の欄を持たない JSON は **null（未申告）**へ復元され、
+    // 「すべて再構成できた」へは倒れない。旧記録・手書きの記録が黙って充足側へ入る口を塞ぐ。
+    [Fact]
+    public void 申告の無い旧記録は未申告へ復元され充足へ倒れない()
+    {
+        var json = Stage0DecisionRecordJson.Serialize(SetOf(RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, null, Raw(1, Stage0DecisionAction.Buy))));
+
+        json.Should().NotContain("asOfInputs\":[");
+        var restored = Stage0DecisionRecordJson.TryDeserialize(json)!;
+
+        var record = restored.Records.Should().ContainSingle().Subject;
+        record.AsOfInputs.Should().BeNull();
+        Stage0AsOfInputs.IsDeclared(record.AsOfInputs).Should().BeFalse();
+        // 🔴 「未申告」を「除外すべきものが無い」と読めてはならない。
+        Stage0AsOfInputs.IsExcluded(record.AsOfInputs).Should().BeFalse();
+    }
+
+    // 🔴 **否定形**: 判断列が同じでも申告が違えば別の戦略である（評価する母集団が違うため）。
+    // ここが同一 ID になると、**別の母集団で採った合格が生き残る**（IADR-0281 決定3 の無効化契機が効かない）。
+    [Fact]
+    public void 再構成可否が違えば戦略IDが変わる()
+    {
+        IReadOnlyList<Stage0RecordedSymbol> symbols = [new("AAPL", Market.UnitedStates)];
+        var complete = RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(), Raw(1, Stage0DecisionAction.Buy));
+        var thin = RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10,
+            Declared(Stage0AsOfInputAvailability.NotReconstructable), Raw(1, Stage0DecisionAction.Buy));
+        var undeclared = RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, null, Raw(1, Stage0DecisionAction.Buy));
+
+        string Hash(Stage0DecisionRecord r) => Stage0StrategyIdentity.ComputeContentHash(
+            new DateOnly(2026, 6, 1), new DateOnly(2026, 8, 31), symbols,
+            new DateOnly(2026, 3, 31), "claude-sonnet-5", [r]);
+
+        new[] { Hash(complete), Hash(thin), Hash(undeclared) }.Distinct().Should().HaveCount(3);
     }
 
     // 🔴 **否定形**（ADR-0033 決定3）: カットオフ日が違えば別の記録である。

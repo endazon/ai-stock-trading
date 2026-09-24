@@ -354,6 +354,95 @@ public class NotificationFormatterTests
         // T-10-451, IADR-0117（改定 9）: 据え置きが続くあいだ約 1 時間ごとに再通知する。
         // 再通知を「もう 1 本送った」と読ませない（同じ CloseDecisionId＝同じ 1 本の成行）。
         msg.Content.Should().Contain("約 1 時間ごと").And.Contain("新しい発注ではありません");
+        // T-10-750 の対（変えない側）: 滞留側（LapsedInFlight）はガードが巡回し再通知するので、エントリー時の文は出ない。
+        msg.Content.Should().NotContain("巡回しません").And.NotContain("この 1 回だけ");
+    }
+
+    // 🔴 T-10-750, FR-10, FR-11, UC-06, #941, IADR-0369（2026-09-25 追記）, IADR-0117（改定 9）:
+    // **エントリー時（RejectedAtEntry）の「届いたか不明」に、滞留側の再通知を約束させない。**
+    // 1 時間ごと（と再起動のたび）の再通知は T-10-451 が固定する**ガードの**仕組みであり、保護記録を巡回する
+    // ProtectiveStopGuard だけが持つ。エントリー同時の経路は保護記録を作らないため、この通知は 1 回きりである
+    // （根拠をコードで固定したのが T-10-751）。「繰り返します」と書けば、次の通知を待つ人には沈黙しか届かない
+    // （PR #916 監査 F1・T-10-684 と同じ壊れ方）。上の T-10-409 のテストが対（滞留側の約束は残る）である。
+    [Fact]
+    public void エントリー時の成行手仕舞いが届いたか不明なら_再通知も巡回も約束せず1回きりで手で確かめて手仕舞うよう伝える_否定形()
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.CloseDispatchIndeterminate,
+            10, closeDecisionId, StopIntent(PositionEffect.Close), StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("未確認").And.NotContain("建玉を解消");
+        // 前半（送った・届いたか不明・重ねない・重ねる前に確かめる）は経路に依らず残る。
+        msg.Content.Should().Contain("エントリー時に未受理").And.Contain("届いたか不明").And.Contain("重ねません")
+            .And.Contain("証券会社の画面").And.Contain(closeDecisionId.ToString());
+        msg.Content.Should().Contain("巡回しません").And.Contain("この通知も繰り返しません")
+            .And.Contain("この 1 回だけ").And.Contain("手で手仕舞ってください");
+        msg.Content.Should().NotContain("1 時間ごと", "エントリー時の経路に再通知は無い（通知は 1 回きり）");
+        msg.Content.Should().NotContain("再起動のたび", "再起動・再配送でも出し直さない");
+        msg.Content.Should().NotContain("予約が解決されるまで", "解決を待って鳴り続ける仕組みは無い");
+        msg.Content.Should().NotContain("新しい発注ではありません", "繰り返さない通知に再通知の読み方を添えない");
+        msg.Content.Should().NotContain("解消にも失敗", "届いたか不明を失敗と言わない（T-10-409 の規律は経路に依らない）");
+    }
+
+    // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、
+    // 「手仕舞いました」とも「届いたか不明」とも言ってはならない。**建玉は残っており、成行は生きていない**
+    // ——読んだ人が取るべき行動（証券会社の画面で建玉を確認し、手で手仕舞う）が読み取れること。
+    [Fact]
+    public void 保護喪失の成行手仕舞いが拒否されたら_手仕舞い済みと言わず建玉が残ることを伝えるCriticalになる()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseRejected,
+            10, Guid.NewGuid(), CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("拒否").And.Contain("建玉が残存").And.NotContain("建玉を解消");
+        msg.Content.Should().Contain("拒否しました").And.Contain("建玉は残っています").And.Contain("証券会社の画面");
+        msg.Content.Should().NotContain("手仕舞いました", "事実と逆のことを言わない（本 issue の中心）");
+        msg.Content.Should().NotContain("届いたか不明", "確認できた拒否は『不明』ではない");
+        msg.Content.Should().NotContain("解消にも失敗しました。逆指値なしの建玉が残っている可能性",
+            "既定の腕（None の文面）へ落ちていない");
+    }
+
+    // 🔴 T-10-684, FR-10, FR-11, UC-06, #857, IADR-0369（2026-09-24 追記・PR #916 監査 F1）:
+    // **エントリー時の拒否（RejectedAtEntry）に、滞留側の約束を書かない。** この経路は保護記録を作らない
+    // （ResolveUnprotectedEntryAsync は受理されなかった側の分岐）ため、巡回・撃ち直し・上限・再通知は**どれも無く**、
+    // 通知は 1 回きりである。「巡回を続けます」「約 1 時間ごとに繰り返します」と書けば、読んだ人は
+    // システムが見ていると信じて待ち、無保護の建玉が黙って残る（#857 と同じ壊れ方）。
+    [Fact]
+    public void エントリー時の成行手仕舞いが拒否されたら_巡回も再通知も約束せず1回きりで手で手仕舞うよう伝える_否定形()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.CloseRejected,
+            10, Guid.NewGuid(), CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("拒否").And.Contain("建玉が残存");
+        msg.Content.Should().Contain("エントリー時に未受理").And.Contain("建玉は残っています");
+        msg.Content.Should().Contain("手で手仕舞ってください", "取るべき行動が読める");
+        msg.Content.Should().Contain("巡回しません").And.Contain("この通知も繰り返しません")
+            .And.Contain("この 1 回だけ");
+        msg.Content.Should().NotContain("巡回を続けます", "エントリー時の経路には保護記録が無く、巡回は無い");
+        msg.Content.Should().NotContain("1 時間ごと", "再通知は無い（通知は 1 回きり）");
+        msg.Content.Should().NotContain("3 回で打ち切", "撃ち直しも上限も無い");
+        msg.Content.Should().NotContain("手仕舞いました");
+    }
+
+    // T-10-684 の対（変えない側）: 滞留側（LapsedInFlight）は巡回と再通知を実際に持つので、その約束は残す。
+    [Fact]
+    public void 滞留中の成行手仕舞いが拒否されたら_巡回を続け再通知することを伝える()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseRejected,
+            10, Guid.NewGuid(), CloseIntent: null, StopT0));
+
+        msg.Content.Should().Contain("巡回を続けます").And.Contain("1 時間ごと").And.Contain("3 回で打ち切");
+        msg.Content.Should().NotContain("巡回しません").And.NotContain("この 1 回だけ");
     }
 
     [Fact]
@@ -446,6 +535,9 @@ public class NotificationFormatterTests
         msg.Severity.Should().Be(NotificationSeverity.Warning);
         msg.Title.Should().Contain("S1");
         msg.Content.Should().Contain("システム停止中は決済されません").And.Contain("950").And.Contain("MoomooSimulate");
+        // T-10-699, FR-03, #909, IADR-0380 決定6 / IADR-0344 追記(13): S1 が**通常取引時間しか保護しない**ことを開示する。
+        msg.Content.Should().Contain("通常取引時間（米東 9:30–16:00）のあいだだけ")
+            .And.Contain("夜間・寄り前の急落からは守られません");
     }
 
     // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: 決済の発注・取消は Warning、拒否の打ち切りだけが Critical。
@@ -463,6 +555,14 @@ public class NotificationFormatterTests
     // T-10-492（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: どの保護記録も主張していない建玉の**検知**。
     // 🔴 是正ではないので Critical ではなく Warning であり、「決済しません」と明記する。
     [InlineData(SoftwareStopOutcome.UnattributedPosition, NotificationSeverity.Warning, "どの保護記録も主張していません")]
+    // 🔴 T-10-642（#858, IADR-0370 決定5）: 取り込みで消えた建玉の保護注文を取り消せたと確認できていない。
+    // 建玉が無いのに逆指値が生きていると**発火して意図しないショート**になるため Critical で、
+    // 利用者が取るべき行動（証券会社の画面で未約定の注文を確認して取り消す）が読めること。
+    [InlineData(SoftwareStopOutcome.StopCancelUnconfirmed, NotificationSeverity.Critical,
+        "取り消せたと確認できませんでした")]
+    // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した。
+    // **これが今日まで無音だった唯一の失敗様式**であり、運用者の唯一のシグナルなので Critical である。
+    [InlineData(SoftwareStopOutcome.CloseUnfilled, NotificationSeverity.Critical, "その株数は建玉に残っています")]
     public void ソフトウェア逆指値の発動結果は結末ごとの重みと文言になる(
         SoftwareStopOutcome outcome, NotificationSeverity severity, string expected)
     {

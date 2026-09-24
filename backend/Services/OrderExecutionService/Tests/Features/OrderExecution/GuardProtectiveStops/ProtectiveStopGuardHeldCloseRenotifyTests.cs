@@ -256,8 +256,8 @@ public class ProtectiveStopGuardHeldCloseRenotifyTests
         ProtectiveStopCoverageLost Held(Guid closeDecisionId) => new(
             Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
             ProtectiveStopRemediation.CloseDispatchIndeterminate, 10, closeDecisionId, intent, Start);
-        tracker.MarkNotified(publishedId, Start);
-        tracker.MarkNotified(failedId, Start);
+        tracker.MarkNotified(publishedId, Guid.NewGuid(), Start);
+        tracker.MarkNotified(failedId, Guid.NewGuid(), Start);
         var calls = 0;
 
         var publish = async () => await ProtectiveStopGuardService.PublishAllAsync(

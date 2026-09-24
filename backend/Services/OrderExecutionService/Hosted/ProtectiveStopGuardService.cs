@@ -21,7 +21,8 @@ public sealed class ProtectiveStopGuardService(
     IServiceScopeFactory scopeFactory,
     IWolverineRuntime runtime,
     IOptions<ProtectiveStopGuardOptions> options,
-    ILogger<ProtectiveStopGuardService> logger) : BackgroundService
+    ILogger<ProtectiveStopGuardService> logger,
+    SoftwareStopLivenessReporter? softwareStopLiveness = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -81,15 +82,39 @@ public sealed class ProtectiveStopGuardService(
         var bus = new MessageBus(runtime);
         await PublishAllAsync(
                 result.Events, evt => bus.PublishAsync(evt),
-                scope.ServiceProvider.GetService<HeldCloseNotificationTracker>())
+                scope.ServiceProvider.GetService<HeldCloseNotificationTracker>(),
+                scope.ServiceProvider.GetService<CloseRejectionTracker>())
             .ConfigureAwait(false);
 
-        if (result.Replaced > 0 || result.ClosedOut > 0 || result.Unknown > 0 || result.Failed > 0)
+        if (result.Replaced > 0 || result.ClosedOut > 0 || result.Unknown > 0 || result.Failed > 0
+            || result.CloseRejected > 0 || result.CloseFailed > 0)
+        {
             logger.LogWarning(
                 "保護逆指値ガード: Active {Scanned} 件を評価（維持 {StillActive} / 完了 {Completed} / 再発注 {Replaced}"
-                    + " / 手仕舞い {ClosedOut} / 据え置き（照会不能・送信結果不明） {Unknown} / 失敗 {Failed}）。",
+                    + " / 手仕舞い {ClosedOut} / 据え置き（照会不能・送信結果不明） {Unknown}"
+                    // #857, IADR-0369: 「拒否（建玉が残っている）」は据え置き（不明）と別枠で数える。
+                    + " / 手仕舞い拒否（建玉残存） {CloseRejected}"
+                    // #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: 確実に未発注の手仕舞い失敗（Remediation=None）を
+                    // 「手仕舞い」に混ぜない。条件にも足す——分けた後に、この巡回の警告そのものが出なくならないように。
+                    + " / 手仕舞い失敗（未発注・建玉残存） {CloseFailed} / 失敗 {Failed}）。",
                 result.Scanned, result.StillActive, result.Completed, result.Replaced,
-                result.ClosedOut, result.Unknown, result.Failed);
+                result.ClosedOut, result.Unknown, result.CloseRejected, result.CloseFailed, result.Failed);
+        }
+
+        // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ）。ストアは間隔に 1 回だけ読む。
+        // 要約の失敗は巡回を失敗させない（ガードの結果・発行に一切影響させない）。
+        if (softwareStopLiveness is not null)
+        {
+            try
+            {
+                var stops = scope.ServiceProvider.GetRequiredService<IProtectiveStopOrderStore>();
+                softwareStopLiveness.ReportIfDue(() => stops.FindActive(options.Value.BatchSize));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "ソフトウェア逆指値（S1）の要約の記録に失敗しました（ガードの巡回には影響しません）。");
+            }
+        }
 
         return result;
     }
@@ -99,8 +124,15 @@ public sealed class ProtectiveStopGuardService(
     // ここで発行に失敗したのに記憶が残ると、Critical も台帳の押さえ（CloseIntent）も出ないまま 1 時間黙る。
     // 未発行分の記憶を消してから投げ直す＝次の巡回（既定 30 秒）が入口で発行し直す。
     // プロセスごと落ちた場合は記憶そのものが消えるので、同じく再起動後の最初の巡回が発行する。
+    // 🔴 PR #916 監査 F2, #857, IADR-0369（2026-09-24 追記）: **確認できた拒否（CloseRejected）も同じ形で補償する。**
+    // ガードは RejectedClose / HoldRejectedClose で発行の前に MarkNotified する。上限に達した行の通知が落ちたまま
+    // 記憶が残ると、次の再通知まで最大 1 時間、無保護の建玉について黙る。消すのは**通知の記憶だけ**で、
+    // 拒否の数えは残す（数えまで消すと、通知の失敗が成行の撃ち直しへ化ける）。
     public static async Task PublishAllAsync(
-        IReadOnlyList<object> events, Func<object, ValueTask> publish, HeldCloseNotificationTracker? tracker)
+        IReadOnlyList<object> events,
+        Func<object, ValueTask> publish,
+        HeldCloseNotificationTracker? tracker,
+        CloseRejectionTracker? rejections = null)
     {
         for (var i = 0; i < events.Count; i++)
         {
@@ -119,6 +151,14 @@ public sealed class ProtectiveStopGuardService(
                         })
                     {
                         tracker?.Forget(closeDecisionId);
+                    }
+                    else if (events[j] is ProtectiveStopCoverageLost
+                    {
+                        Remediation: ProtectiveStopRemediation.CloseRejected,
+                        EntryDecisionId: var entryDecisionId,
+                    })
+                    {
+                        rejections?.ForgetNotification(entryDecisionId);
                     }
                 }
 

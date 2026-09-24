@@ -12,7 +12,9 @@
  */
 const { execSync } = require('child_process');
 
-module.exports = ({ ok, assert }) => {
+// `skip` は受け口（scripts.test.js）が渡す（#888）。古い受け口から読まれても壊れないよう
+// **既定を「黙らない no-op」ではなく ok 相当の記録**にはせず、最低限の出力を出すスタブにする。
+module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${name}（${reason}）\n`), assert }) => {
 
   // --- check-doc-links.js: parseArgs（資料再編 ADR-0029 で docs/ ・ .ai-context/ の 2 系統走査へ） ---
   const fsDl = require('fs');
@@ -483,6 +485,81 @@ module.exports = ({ ok, assert }) => {
     assert.strictEqual(isProductionServiceFile('backend/Tests/AiStockTrading.Architecture.Tests/X.cs'), false);
   });
 
+  // --- backend/Dockerfile の codegen 分岐と wiringOf() の突合（NFR-01 / #816 / IADR-0129 決定 6-4） ---
+  //
+  // 稼働イメージは Wolverine を配線するサービスだけ `codegen write` を通す（配線しないサービスは
+  // `ICodeFileCollection` が無く codegen が失敗する）。その判定は Dockerfile の `grep` と検査器の
+  // `wiringOf()` に**二重に実装されている**。
+  //
+  // 🔴 実際にずれていた（#816 起票時）: Dockerfile は `grep -q 'UseWolverine('` で、コメント中の言及に
+  // 反応し `UseWolverine (` のような空白入りの実呼び出しを取りこぼした。**その間、Dockerfile のコメント
+  // だけが「同じ信号」と主張していた。** 手で写した規則は、突き合わせる相手が無ければ黙ってずれる。
+  //
+  // ここでは Dockerfile の**実ファイルから**検出コマンドを抜き出し、`sh` で実走して `wiringOf()` と
+  // 同じ判定になることを確かめる。文字列の一致ではなく**挙動**で突き合わせる。
+  const fsDf = require('fs');
+  const osDf = require('os');
+  const pathDf = require('path');
+  const DOCKERFILE_PATH = pathDf.join(__dirname, '..', 'backend', 'Dockerfile');
+
+  /** backend/Dockerfile の `RUN if <検出コマンド>; then \` から検出コマンドだけを取り出す。 */
+  function wolverineDetectionCommand() {
+    const text = fsDf.readFileSync(DOCKERFILE_PATH, 'utf8');
+    const line = text.split(/\r?\n/).find((l) => /^RUN if .*; then \\$/.test(l));
+    assert.ok(line, 'backend/Dockerfile の codegen 分岐（RUN if …; then \\）が見つからない');
+    return line.replace(/^RUN if /, '').replace(/; then \\$/, '');
+  }
+
+  // 素の呼び出し / 空白入り / 行コメント / ブロックコメントの継続行 / 呼び出しなし。
+  const DETECTION_FIXTURES = [
+    ['builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(ServiceName, null));', true],
+    ['builder.Host.UseWolverine (opts => opts.UseAiStockTradingRabbitMq(ServiceName, null));', true],
+    ['// builder.Host.UseWolverine( を呼ぶ（説明）', false],
+    [' * builder.Host.UseWolverine( を呼ぶ（説明）', false],
+    ['var app = builder.Build();', false],
+  ];
+
+  ok('backend/Dockerfile: codegen 分岐の検出規則が wiringOf() と同じ判定になる（#816）', () => {
+    const command = wolverineDetectionCommand();
+    // 規則の 2 段（コメント行の除外 ＋ 空白許容）が両方在ること。どちらを落としても #816 に戻る。
+    assert.match(command, /grep -Ev/, 'コメント行を除外する段が無い（素の grep に戻っている）');
+    assert.match(command, /UseWolverine\[\[:space:\]\]\*\\\(/, '空白を許容するパターンになっていない');
+
+    let sh = true;
+    const root = fsDf.mkdtempSync(pathDf.join(osDf.tmpdir(), 'df-codegen-'));
+    for (const [code, expected] of DETECTION_FIXTURES) {
+      // wiringOf()（検査器側）の判定。
+      assert.strictEqual(
+        wiringOf(code).wiresWolverine, expected,
+        `wiringOf() の判定が前提と違う: ${JSON.stringify(code)}`
+      );
+      if (!sh) continue;
+      // Dockerfile 側の判定。`dirname "${SERVICE_PROJECT}"` を通すため SERVICE_PROJECT を与える。
+      fsDf.writeFileSync(pathDf.join(root, 'Program.cs'), `${code}\n`);
+      let status = 0;
+      try {
+        execSync(command, {
+          shell: 'sh',
+          env: { ...process.env, SERVICE_PROJECT: pathDf.join(root, 'Service.csproj') },
+          stdio: ['ignore', 'ignore', 'ignore'],
+        });
+      } catch (e) {
+        // sh 自体が居ない環境（PATH に無い素の Windows）は挙動の突合だけを諦める。
+        // 🔴 黙って緑にしない —— 上の文字列レベルの表明は残るうえ、CI（ubuntu）では必ず実走する。
+        if (e.code === 'ENOENT') {
+          process.stdout.write('  ! sh が無いため Dockerfile 側の実走は省略した（CI では実走する）\n');
+          sh = false;
+          continue;
+        }
+        status = e.status;
+      }
+      assert.strictEqual(
+        status === 0, expected,
+        `Dockerfile の検出が wiringOf() と食い違う: ${JSON.stringify(code)}`
+      );
+    }
+  });
+
   // --- validate-runtime-scaffold: hostDir の 3 通り（NFR / IADR-0258） ---------
   //
   // 実ツリーは候補 1（`<Svc>.Api`）でしかヒットしないため、**統合後の候補 3 は実ツリーでは
@@ -759,7 +836,10 @@ module.exports = ({ ok, assert }) => {
       for (const kind of ['tests', 'functional']) {
         const specDir = pathTt.join(root, 'docs', kind);
         fsTt.mkdirSync(specDir, { recursive: true });
-        fsTt.writeFileSync(pathTt.join(specDir, `${id}_x.md`), '');
+        // テスト仕様書には**採番行を 1 行置く**。検査 4（T2）は「採番行を 1 件も走査できない」を
+        // fail-closed にするため（#887 / IADR-0376）、空のままだと T1 の模擬ツリーが T2 で落ちる。
+        const body = kind === 'tests' ? `| ID | 観点 |\n| --- | --- |\n| T-${n}-1 | 模擬 |\n` : '';
+        fsTt.writeFileSync(pathTt.join(specDir, `${id}_x.md`), body);
       }
     }
   };
@@ -814,6 +894,121 @@ module.exports = ({ ok, assert }) => {
     const r = runTraceability(root);
     assert.strictEqual(r.code, 0, `新樹形に中身があるのに T1 が誤発火している:\n${r.out}`);
   });
+
+  // --- check-test-traceability.js: 検査 4（T2）＝テスト ID の一意性（#887 / IADR-0376） ---
+  //
+  // **正の確認と同数以上の否定形を置く。** 模擬ツリーへ書いて関数を直接呼ぶ形にし、
+  // 実ツリーに対しては「現状が緑であること」だけを 1 件固定する（件数はここに書かない —— 腐る）。
+  {
+    const mkTestDocs = (rows, baseline) => {
+      const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-testid-'));
+      fsTt.mkdirSync(pathTt.join(root, 'docs', 'tests'), { recursive: true });
+      for (const [name, body] of Object.entries(rows)) {
+        fsTt.writeFileSync(pathTt.join(root, 'docs', 'tests', name), body);
+      }
+      if (baseline !== undefined) {
+        fsTt.mkdirSync(pathTt.join(root, 'scripts'), { recursive: true });
+        fsTt.writeFileSync(
+          pathTt.join(root, 'scripts', 'test-id-duplicate-baseline.json'),
+          JSON.stringify({ duplicates: baseline }, null, 2)
+        );
+      }
+      return root;
+    };
+    const table = (...cells) => `| ID | 観点 |\n| --- | --- |\n${cells.join('\n')}\n`;
+
+    ok('check-test-traceability[T2]: 一意なら緑', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| **T-10-2** | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.strictEqual(r.summary.assignments.size, 2);
+      assert.strictEqual(r.summary.maxByFr[10], 2);
+    });
+
+    ok('🔴 check-test-traceability[T2]: baseline に無い重複は落とす', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1 | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.strictEqual(r.errors.length, 1, r.errors.join('\n'));
+      assert.match(r.errors[0], /T-10-1 が重複/);
+    });
+
+    ok('check-test-traceability[T2]: baseline に記載した重複は通す', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1 | b |') }, [
+        { id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' },
+      ]);
+      assert.deepStrictEqual(tt.checkTestIdUniqueness(root).errors, []);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 解消した重複が baseline に残っていたら落とす（ラチェット）', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |') }, [
+        { id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' },
+      ]);
+      const r = tt.checkTestIdUniqueness(root);
+      assert.strictEqual(r.errors.length, 1, r.errors.join('\n'));
+      assert.match(r.errors[0], /解消しています/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 重複件数が baseline より増えたら落とす', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1 | b |', '| T-10-1 | c |') }, [
+        { id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' },
+      ]);
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /重複件数が baseline と違います/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 重複の在り処が baseline と違えば落とす（取り違えの検出）', () => {
+      const root = mkTestDocs(
+        { 'FR-10_a.md': table('| T-10-1 | a |'), 'FR-10_b.md': table('| T-10-1 | b |') },
+        [{ id: 'T-10-1', files: ['docs/tests/FR-10_a.md'], count: 2, reason: 'x' }]
+      );
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /在り処が baseline と食い違います/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 採番空間はファイルを横断する（別ファイルの同番号も重複）', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-9 | a |'), 'FR-10_b.md': table('| T-10-9 | b |') });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /T-10-9 が重複/);
+    });
+
+    ok('check-test-traceability[T2]: 参照行（`（否定形）`）は採番として数えない', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-1（否定形） | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.strictEqual(r.summary.references.length, 1);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 参照行が指す ID が採番されていなければ落とす', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-1 | a |', '| T-10-999（否定形） | b |') });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /どのテスト仕様書にも採番されていません/);
+    });
+
+    ok('check-test-traceability[T2]: 枝番（`T-15-40b`）は別の採番として数える', () => {
+      const root = mkTestDocs({ 'FR-15_a.md': table('| T-15-40 | a |', '| T-15-40b | b |') });
+      const r = tt.checkTestIdUniqueness(root);
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.strictEqual(r.summary.assignments.size, 2);
+    });
+
+    ok('check-test-traceability[T2]: ゼロ埋めの揺れを同一視する（`T-10-01` と `T-10-1`）', () => {
+      const root = mkTestDocs({ 'FR-10_a.md': table('| T-10-01 | a |', '| T-10-1 | b |') });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /T-10-1 が重複/);
+    });
+
+    ok('🔴 check-test-traceability[T2]: 採番行を 1 件も走査できなければ落とす（0 件走査で緑を返さない）', () => {
+      const root = mkTestDocs({ 'README.md': '# 採番行を持たない\n' });
+      assert.match(tt.checkTestIdUniqueness(root).errors.join('\n'), /1 件も走査できていません/);
+    });
+
+    ok('check-test-traceability[T2]: 実ツリーは緑である（既知の重複はすべて baseline 記載済み）', () => {
+      const r = tt.checkTestIdUniqueness();
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+    });
+
+    ok('check-test-traceability[T2]: baseline の各エントリが理由を持つ（「とりあえず足して通す」の抑止）', () => {
+      for (const d of tt.loadDuplicateBaseline().duplicates) {
+        assert.ok(typeof d.reason === 'string' && d.reason.length > 20, `${d.id} の reason が薄い`);
+        assert.ok(Array.isArray(d.files) && d.files.length > 0, `${d.id} の files が無い`);
+      }
+    });
+  }
 
   // --- check-coverage.js: カバレッジ floor / ratchet（#343） ---
   const cov = require('./check-coverage.js');
@@ -2088,6 +2283,59 @@ module.exports = ({ ok, assert }) => {
       const readme = fsOa.readFileSync(pathOa.join(REPO_ROOT_OA, 'scripts', 'README.md'), 'utf8');
       assert.match(readme, /check-observability-assets\.js/, 'scripts/README.md に記載が無い');
     });
+
+    // T-10-665, FR-10, #891, IADR-0374: 🔴 **アラート資産が実在し、引く系列がコード側に実在する。**
+    // ダッシュボードは人が見たときにしか働かない。アラートは人が見ていなくても働くが、
+    // **系列名がずれていればエラーも出さずただ永久に鳴らない** —— 空のグラフより気付きにくい失敗である。
+    ok('check-observability-assets: アラートルールが 1 件以上あり、引く系列がレジストリに実在する', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      assert.ok(fsOa.existsSync(alertDir), 'deploy/observability/alerts/ が無い');
+      const files = fsOa.readdirSync(alertDir).filter((f) => /\.ya?ml$/.test(f));
+      assert.ok(files.length >= 1, 'アラートルールのファイルが 1 件も無い');
+      const rules = files.flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      assert.ok(rules.length >= 1, 'アラートルールが 1 件も読めない（書式が変わったなら検査器も直す）');
+      const names = oa.parseRegistry(fsOa.readFileSync(
+        pathOa.join(REPO_ROOT_OA, 'backend', 'Shared', 'AiStockTrading.Shared.Contracts',
+          'Observability', 'BusinessMetricNames.cs'),
+        'utf8'));
+      for (const rule of rules) {
+        assert.deepStrictEqual(oa.checkAlertShape('alerts', rule), [], `形の違反: ${rule.alert}`);
+        for (const series of (rule.expr.match(/\bast_[a-z0-9_]+/g) || [])) {
+          assert.ok(oa.resolveSeries(series, names) !== null,
+            `alert ${rule.alert} が引く ${series} に対応する計器が無い（鳴らないアラートになる）`);
+        }
+      }
+    });
+
+    // T-10-665（続き）: 保有不明による見送りを見張るルールが**実在する**こと。
+    // #891 の受け入れ基準 2（「その状態が続いたときに能動的に通知される」）の写像である。
+    ok('アラート: 保有不明による新規建ての見送りが続く状態を見張るルールがある', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      const target = rules.find((r) => r.expr.includes('HoldingsUnknownOpen'));
+      assert.ok(target, '保有不明（HoldingsUnknownOpen）を見張るルールが無い');
+      assert.ok(target.expr.includes('ast_trade_cycle_decision_skips_total'),
+        `引く系列が見送りカウンタでない: ${target.expr}`);
+      assert.ok(target.for, '一過性の照会失敗で鳴らないための for が無い');
+    });
+
+    // T-10-748, FR-04, FR-10, #934, IADR-0390 決定5（PR #940 監査）: 未約定の新規建て注文が不明なときの見送り
+    // （WorkingEntriesUnknownOpen）も同じルールが見る。見送りを Skip() へ通しても、ルールが見ていなければ
+    // 「新規建てだけが静かに止まる」状態は誰にも届かない（#891 の症状）。
+    ok('アラート: 未約定が不明による新規建ての見送りも同じルールが見張る', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      const target = rules.find((r) => r.alert === 'AstEntriesBlockedByUnknownHoldings');
+      assert.ok(target, 'AstEntriesBlockedByUnknownHoldings が無い');
+      assert.ok(/reason=~"[^"]*\bWorkingEntriesUnknownOpen\b[^"]*"/.test(target.expr),
+        `WorkingEntriesUnknownOpen を見ていない: ${target.expr}`);
+      assert.ok(/reason=~"[^"]*\bHoldingsUnknownOpen\b[^"]*"/.test(target.expr),
+        `HoldingsUnknownOpen を見なくなった: ${target.expr}`);
+    });
   }
 
   // --- summarize-test-failures: backend-test の失敗を TRX から名指しする（NFR / #596 / IADR-0277） ---
@@ -2497,12 +2745,34 @@ module.exports = ({ ok, assert }) => {
       return dir;
     })();
 
+    // 🔴 **toolbox に `bash` が入ったかを実際に確かめる**（#888）。
+    //
+    // 上の toolbox は `/usr/bin` `/bin` からの symlink で作る。**Windows にはそのパスが実在しない**ため
+    // toolbox は空になり、`PATH` を toolbox で**上書き**して `bash` を起動する 4 件が
+    // `spawnSync bash ENOENT` を投げる。旧ハーネスではこれが未捕捉例外となり、
+    // **スイート全体がそこで中断して以降のテストが一度も実行されなかった**（本 issue の本題）。
+    //
+    // 🔴 **呼び出し側が Git Bash を PATH へ足しても解消しない** —— `env.PATH` を toolbox で
+    // 上書きしているからである。そして PATH を絞るのは**必要**である（CI の ubuntu イメージは
+    // `/usr/bin/dotnet` を持つため、絞らないと自己修復の分岐へ入らず本試験が意味を失う。
+    // run 34288592460 で実測）。**つまりこれは「直せる skip」ではなく、環境の違いである。**
+    // CI（ubuntu-latest）では toolbox に `bash` が入るので **skip は発火しない**。
+    const toolboxBash = ['bash', 'bash.exe'].some((n) => fsSs.existsSync(pathSs.join(toolboxPathSs, n)));
+    const SKIP_REASON =
+      'toolbox（setup.sh が使う外部コマンドだけを symlink で集めた一時ディレクトリ）に bash が入らなかった。'
+      + 'このテストは env.PATH を toolbox で上書きするため、呼び出し側の PATH に Git Bash があっても届かない。'
+      + 'PATH を絞ること自体は必要（絞らないと CI イメージの /usr/bin/dotnet が見えて自己修復の分岐へ入らない）。'
+      + 'CI（ubuntu-latest）では bash が入るため、この skip は発火しない。';
+    /** toolbox の bash が要るテスト。無ければ**理由つきで** skip する（黙って飛ばさない）。 */
+    const okNeedsToolboxBash = (name, fn) => (toolboxBash ? ok(name, fn) : skip(name, SKIP_REASON));
+
     ok('setup.sh: 構文エラーが無い（bash -n）', () => {
+      // この 1 件だけは PATH を上書きしないため、`bash` が PATH にあれば toolbox の有無に関わらず走る。
       execFileSyncSs('bash', ['-n', pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], { stdio: 'pipe' });
     });
 
     // dry-run: 実ネットワークを叩かず channel 導出だけを固定する。global.json を優先する経路。
-    ok('setup.sh: DOTNET_INSTALL_DRY_RUN=1 は global.json の sdk.version から channel を導出する（10.0.100 → 10.0）', () => {
+    okNeedsToolboxBash('setup.sh: DOTNET_INSTALL_DRY_RUN=1 は global.json の sdk.version から channel を導出する（10.0.100 → 10.0）', () => {
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
         const out = execFileSyncSs('bash', [pathSs.join(REPO_ROOT_SS, 'scripts', 'setup.sh')], {
@@ -2519,7 +2789,7 @@ module.exports = ({ ok, assert }) => {
     });
 
     // global.json が無いツリーでは Directory.Build.props の TargetFramework から導出する。
-    ok('setup.sh: global.json が無ければ Directory.Build.props の TargetFramework から channel を導出する', () => {
+    okNeedsToolboxBash('setup.sh: global.json が無ければ Directory.Build.props の TargetFramework から channel を導出する', () => {
       const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
@@ -2545,7 +2815,7 @@ module.exports = ({ ok, assert }) => {
     });
 
     // 否定形: channel も導出できないツリーでは既定 10.0 へ倒れる（例外を投げて落ちない）。
-    ok('setup.sh: global.json も Directory.Build.props も無ければ既定 channel 10.0 へ倒れる', () => {
+    okNeedsToolboxBash('setup.sh: global.json も Directory.Build.props も無ければ既定 channel 10.0 へ倒れる', () => {
       const tmpRepo = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-repo-'));
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
@@ -2569,7 +2839,7 @@ module.exports = ({ ok, assert }) => {
     // 実効性の証拠: dotnet が PATH に無くても $HOME/.dotnet/dotnet があれば PATH へ足す経路。
     // 実 SDK を新たに用意すると重いため、実行可能ファイルのスタブで代用する（PATH 追加の判定
     // ロジック自体を固定するのが目的であり、本物の dotnet の挙動はここでは検証しない）。
-    ok('setup.sh: $HOME/.dotnet/dotnet が実在すれば PATH へ追加する（スタブで実証）', () => {
+    okNeedsToolboxBash('setup.sh: $HOME/.dotnet/dotnet が実在すれば PATH へ追加する（スタブで実証）', () => {
       const emptyHome = fsSs.mkdtempSync(pathSs.join(osSs.tmpdir(), 'setup-sh-home-'));
       try {
         const dotnetDir = pathSs.join(emptyHome, '.dotnet');

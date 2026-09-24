@@ -338,6 +338,12 @@ StageCapitalCapExceeded, PerOrderAmountExceeded, DailyOrderAmountExceeded, Daily
       塞ぎ方は **#899** へ切り出した —— **「確証」ではなく「反証」**（`cashInfoList` が存在し USD の行を
       1 つも含まないなら採らない／`Trd_Common.Position.currency` でも同型）であれば、
       **新たな fail-closed を生まずに**歯止めを置ける。
+    - 🔴 ［2026-09-23 追記 / #899］**反証を [IADR-0373](IADR-0373_currency-disproof-for-non-usd-single-market-account.md)
+      で入れた**（決定 1 は覆っていない。近似の**範囲が狭まった**だけである）。ただし
+      **本残余リスクは解消していない** —— 反証が効くのは「`cashInfoList` が通貨を名乗る行を持ち、
+      そのどれも USD でない」ときだけであり、**JP 建て口座が米国株のために USD 現金も持つ場合**と
+      **実機が `cashInfoList` を載せてこない場合**は今までどおり通る。
+      `Position.currency` は採らなかった（建玉の通貨は口座の基準通貨ではない。IADR-0373 決定 3）。
 - フォローアップ:
   1. **実弾 / SIMULATE で `TrdGetFunds` の応答形を 1 回観測する**（`TotalAssets` の有無・`Currency` の値）。
      本 PR は SIMULATE 固定（IADR-0016）であり、**live 実測は行っていない**。応答に値が無ければ基準資金は未供給＝
@@ -354,6 +360,11 @@ StageCapitalCapExceeded, PerOrderAmountExceeded, DailyOrderAmountExceeded, Daily
      考え得る方向は「0 を観測した取引日を未供給として latch する」「`Power` 等で残高 0 を確証してから止める」
      「人手の Runbook に委ねる（現状）」の 3 つで、**本 IADR ではどれも選ばない**——
      実口座が残高 0 のときに何を返すかを先に観測する必要がある。
+     🔴 ［2026-09-23 追記 / #889］**選択肢と害を
+     [IADR-0372](IADR-0372_zero-equity-observation-and-open-gate-decision.md)（状態 **Proposed**）へ切り出し、
+     観測だけを先に入れた**（読み出しの帰結を 5 値で数える／評価額の無い観測を警告にする）。
+     **本決定 7 は変えていない**（門も非対称もそのままである）。**裁定は依然として未了**であり、
+     先に必要なのは「実口座が残高 0 で何を返すか」の観測である。
   7. 🔴 **［2026-09-19 追記 / #897］OpenD の更新時、および口座の追加・種別変更・取扱市場の変更時に、
      `TrdGetFunds` の応答が `currency` を載せるようになっていないかを再確認する。**
      決定 1 の「欠落は要求した通貨として採る」は**近似**であり、その根拠は

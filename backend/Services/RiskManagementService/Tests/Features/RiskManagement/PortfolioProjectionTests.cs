@@ -303,19 +303,20 @@ public class PortfolioProjectionTests
         positions.Should().BeEmpty();
     }
 
-    // FR-03/04/10, IADR-0035: 損切り価格（最新の同方向エントリー・一部決済で保持・反転で更新・欠損は null）。
+    // FR-03/04/10, IADR-0035・#936, IADR-0393: 損切り価格（保有中のエントリーのうち最も保護的なライン・一部決済で保持・
+    // 反転で更新・欠損は null）。複数エントリーの配置は PortfolioProjectionStopLossLotTests が固定する。
     private static LedgerFill FillSl(TradeSide side, int qty, decimal price, decimal? stop, int hour, string symbol = "AAPL") =>
         new(symbol, Market.UnitedStates, side, side == TradeSide.Buy ? PositionEffect.Open : PositionEffect.Close,
             qty, price, TodayAt(hour), stop);
 
     [Fact]
-    public void 保有射影の損切りは最新の建て増しエントリーを採る()
+    public void 保有射影の損切りは建て増しのより保護的なラインを採る()
     {
         var positions = PortfolioProjection.ProjectOpenPositions(
             new[]
             {
                 FillSl(TradeSide.Buy, 10, 1_000m, 970m, 9),
-                FillSl(TradeSide.Buy, 10, 1_400m, 1_358m, 10), // 建て増し → 最新の損切りに更新
+                FillSl(TradeSide.Buy, 10, 1_400m, 1_358m, 10), // 建て増し → より高い（保護的な）1,358 を採る
             });
 
         positions.Single().StopLossPrice.Should().Be(1_358m);
@@ -646,5 +647,53 @@ public class PortfolioProjectionTests
 
         withNull.DailyOrderedAmount.Should().Be(10_000m);
         withEmpty.Should().BeEquivalentTo(withNull);
+    }
+
+    // ── FR-04, FR-10, #934, IADR-0390 決定1: 判断の入力が読む未約定（統制と同じ定義の純関数） ──
+
+    // T-10-720: 残数量＝承認数量 − 同じ DecisionId の約定累計。当日（市場の現地取引日）だけ。残 0 は落とす。
+    [Fact]
+    public void 判断へ渡す未約定は当日の残数量が正の注文だけを残数量つきで返す()
+    {
+        var partial = Guid.NewGuid();
+        var filled = Guid.NewGuid();
+        var untouched = Guid.NewGuid();
+        var yesterday = Guid.NewGuid();
+        var fills = new[]
+        {
+            FillOf(partial, 4, 990m, TodayAt(11)),
+            FillOf(filled, 10, 990m, TodayAt(11)),
+            FillOf(Guid.NewGuid(), 7, 990m, TodayAt(11)), // 別の注文の約定は差し引かない
+        };
+        var working = new[]
+        {
+            Working(partial, 10, 1_000m, TodayAt(10)),
+            Working(filled, 10, 1_000m, TodayAt(10)),
+            Working(untouched, 715, 337.63m, TodayAt(10)),
+            Working(yesterday, 5, 1_000m, Now.AddDays(-1)),
+        };
+
+        var result = PortfolioProjection.ProjectWorkingEntries(fills, Now, working);
+
+        result.Select(w => (w.Order.DecisionId, w.Remaining)).Should().Equal((partial, 6), (untouched, 715));
+    }
+
+    // T-10-720（統制と判断の一致）: Project の算入は ProjectWorkingEntries の残数量 × 承認価格の合計そのものである。
+    [Fact]
+    public void 統制の算入額は判断へ渡す未約定の残数量から導いた額と一致する()
+    {
+        var decisionId = Guid.NewGuid();
+        var fills = new[] { FillOf(decisionId, 4, 990m, TodayAt(11)) };
+        var working = new[]
+        {
+            Working(decisionId, 10, 1_000m, TodayAt(10)),
+            Working(Guid.NewGuid(), 5, 500m, TodayAt(10), symbol: "MSFT"),
+        };
+
+        var state = PortfolioProjection.Project(fills, Now, InitialCapital, workingEntries: working);
+        var fromView = PortfolioProjection.ProjectWorkingEntries(fills, Now, working).Sum(w => w.Remaining * w.Order.PriceInBase);
+
+        state.DailyOrderedAmount.Should().Be(3_960m + fromView);
+        fromView.Should().Be(6_000m + 2_500m);
     }
 }

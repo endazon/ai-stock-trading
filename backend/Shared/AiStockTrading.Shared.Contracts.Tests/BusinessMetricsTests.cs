@@ -92,6 +92,83 @@ public class BusinessMetricsTests
             .Should().Equal(BusinessMetrics.TriggerScheduled);
     }
 
+    // T-10-663, FR-04, FR-10, #891, IADR-0374: 🔴 **見送りは理由タグつきで数えられる。**
+    //
+    // 従来は「方針なし・Hold・鮮度切れ・数量 0・採算不成立・裸の新規売り・保有不明」のすべてが
+    // `decisions{action=no-trade}` の**同じ 1 値**に落ち、事実は構造化 WARN ログにしか残らなかった。
+    // 区別できないと、**保有照会が壊れて新規建てだけが静かに止まっている**状態が「今日は Hold が多い」に埋もれる。
+    [Fact]
+    public void 見送りは理由タグつきで計上される()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+
+        metrics.RecordTradeDecisionSkipped(
+            BusinessMetrics.TriggerPriceMovement, DecisionSkipReason.HoldingsUnknownOpen);
+
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisionSkips, BusinessMetricNames.TagReason)
+            .Should().Equal(nameof(DecisionSkipReason.HoldingsUnknownOpen));
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisionSkips, BusinessMetricNames.TagTrigger)
+            .Should().Equal(BusinessMetrics.TriggerPriceMovement);
+    }
+
+    // T-10-664, FR-04, FR-10, #891（プロパティベース）: **どの見送り理由でも**固有のタグ値として計上される。
+    // 語彙が増えたときに既定値へ黙って落ちる（＝内訳が欠ける）ことが無いことを、全要素で確かめる。
+    [Fact]
+    public void すべての見送り理由が固有のタグ値として計上される()
+    {
+        foreach (var reason in Enum.GetValues<DecisionSkipReason>())
+        {
+            using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+            using var metrics = new BusinessMetrics();
+
+            metrics.RecordTradeDecisionSkipped(BusinessMetrics.TriggerScheduled, reason);
+
+            capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisionSkips, BusinessMetricNames.TagReason)
+                // 理由ごとに固有のタグ値で出ること（既定値へ黙って落ちない）。
+                .Should().Equal(reason.ToString());
+        }
+    }
+
+    // 🔴 T-10-666, FR-04, #891 受け入れ基準 3（否定形）: **既存の集計を壊さない。**
+    //
+    // 理由を足すために `decisions` のタグを増やす／置き換えると、既存ダッシュボードのパネル
+    // （`sum by (action) (increase(ast_trade_cycle_decisions_total[1h]))`）が**無言で空になる**。
+    // 1 回の見送りで両方が 1 ずつ増えることを固定する（合計の突き合わせで計上漏れも検出できる）。
+    [Fact]
+    public void 見送りの計上は既存の判断カウンタを置き換えない()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        using var metrics = new BusinessMetrics();
+
+        // 呼び出し元（ハンドラ＋判断サービス）が行う 1 回の見送りぶんの計上。
+        metrics.RecordTradeDecision(BusinessMetrics.TriggerScheduled, side: null);
+        metrics.RecordTradeDecisionSkipped(BusinessMetrics.TriggerScheduled, DecisionSkipReason.LlmHold);
+
+        capture.SumOf(BusinessMetricNames.TradeCycleDecisions).Should().Be(1);
+        capture.TagValuesOf(BusinessMetricNames.TradeCycleDecisions, BusinessMetricNames.TagAction)
+            // 既存の action=no-trade は従来どおり 1 件だけ出る（ダッシュボードのパネルが空にならない）。
+            .Should().Equal(BusinessMetrics.ActionNoTrade);
+        capture.SumOf(BusinessMetricNames.TradeCycleDecisionSkips).Should().Be(1);
+    }
+
+    // T-10-668, FR-10, #889, IADR-0372: 🔴 **基準資金を読んだ帰結は outcome タグで読み分けられる。**
+    // どの値も固有のタグ値で出る（語彙が増えたときに既定値へ黙って落ちない）。
+    [Fact]
+    public void 基準資金の読み出しはすべての帰結が固有のタグ値として計上される()
+    {
+        foreach (var outcome in Enum.GetValues<CapitalBaselineReadOutcome>())
+        {
+            using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+            using var metrics = new BusinessMetrics();
+
+            metrics.RecordCapitalBaselineRead(outcome);
+
+            capture.TagValuesOf(BusinessMetricNames.RiskCapitalBaselineReads, BusinessMetricNames.TagOutcome)
+                .Should().Equal(outcome.ToString());
+        }
+    }
+
     // FR-10, FR-19（境界値テーブル）: 拒否理由の列挙は**全要素**が 1 件ずつ計上される。
     // 1 注文に複数の統制が同時に効き得るため、先頭 1 件だけを数えると内訳が過少になる。
     [Theory]
@@ -349,6 +426,23 @@ public class BusinessMetricsTests
         a.Should().NotBe(BusinessMetricNames.MeterName);
     }
 
+    // T-10-842, FR-03, FR-10, #957, IADR-0399: 市場監視の「評価できなかった行」は reason つきで件数ぶん足し、0 件は計上しない
+    // （0 を 1 系列として出すと「計上した」が平常時にも立ち、アラートの「平常時 0 件」が崩れる）。否定形を含むため隔離した Meter 名。
+    [Fact]
+    public void 市場監視の評価できなかった行は理由つきで件数ぶん計上され_0件は計上しない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing, 2);
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowStopLineApproximated, 0);
+
+        capture.SumOf(BusinessMetricNames.MarketMonitorPositionRowsDegraded).Should().Be(2);
+        capture.TagValuesOf(BusinessMetricNames.MarketMonitorPositionRowsDegraded, BusinessMetricNames.TagReason)
+            .Should().Equal("identity-missing");
+    }
+
     /// <summary>本テスト内でのみ用いる費用カテゴリの表示名（CostControl の enum は別プロジェクトにある）。</summary>
     private static class CostCategoryLabels
     {
@@ -360,12 +454,15 @@ public class BusinessMetricsTests
     {
         metrics.RecordInformationCollected(1);
         metrics.RecordTradeDecision(BusinessMetrics.TriggerScheduled, TradeSide.Buy);
+        metrics.RecordTradeDecisionSkipped(BusinessMetrics.TriggerScheduled, DecisionSkipReason.LlmHold);
         metrics.RecordTradeDecisionDuration(BusinessMetrics.TriggerScheduled, 12.5);
         metrics.RecordOrderScreening(approved: false, [RejectionReason.KillSwitchActive]);
         metrics.RecordOrderExecuted(OrderStatus.Filled, BrokerProvider.InternalPaper);
         metrics.RecordOrderDispatchForgone(OrderDispatchForgoneReason.BrokerUnavailable);
         metrics.RecordLlmCost(nameof(CostCategoryLabels.Llm), 100m, 5m);
         metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
+        metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。

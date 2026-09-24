@@ -82,7 +82,9 @@ public sealed class SoftwareStopExecutor(
             if (candidate.CreatedAt > triggered.DetectedAt)
                 continue;
 
-            // 行自身の損切りラインで判定する（台帳の損切りラインは銘柄単位で最新エントリーの値に丸められる。IADR-0344 決定4）。
+            // 行自身の損切りラインで判定する（IADR-0344 決定4）。台帳の損切りラインは銘柄単位に 1 本で、保有中のエントリーの
+            // うち最も保護的な値である（#936, IADR-0393）。到達はそのラインで出るので、同じ銘柄の他の行（ラインが低い）は
+            // ここで外す——外さないと、まだ自分のラインに達していない建玉を売る。
             if (!Reached(candidate, triggered.Price))
                 continue;
 
@@ -297,6 +299,11 @@ public sealed class SoftwareStopExecutor(
         var now = clock.UtcNow;
         var triggeredPrice = stop.TriggeredPrice ?? stop.TriggerPrice;
 
+        // 🔴 #833 項目1, IADR-0389 決定1: **受理（Accepted）は約定ではない。** ここで帳簿を減らして行を閉じるのは
+        // 取引台帳の押さえ（ClosePlaced → AppendApproval）を受理の時点で取るためであり、その判断は変えない
+        //（約定まで押さえないと同じ建玉を二重に売れる。#848 で塞いだ穴が開く）。
+        // 受理された決済が **0 約定のまま失効・取消**された場合は、約定追跡（OrderFillPoller）が終端を確認した時点で
+        // SoftwareStopReArmer が未約定残ぶんを**この行へ戻す**（State を Active に復帰させる）。
         if (status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
         {
             // 🔴 #820 の 7 巡目監査, IADR-0344 追記(7): 判定の基準は「この巡回で動かしてよい株数」である。

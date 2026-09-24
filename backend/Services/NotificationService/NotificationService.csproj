@@ -12,6 +12,11 @@
     <None Remove="Tests/**" />
   </ItemGroup>
   <ItemGroup>
+    <!-- FR-14, #868: 常駐（DiscordBotHostedService）など internal の実装型をテストから直接組み立てる
+         （ConfigurationService / CostControlService / TradeDecisionService と同じ作法）。 -->
+    <InternalsVisibleTo Include="NotificationService.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />

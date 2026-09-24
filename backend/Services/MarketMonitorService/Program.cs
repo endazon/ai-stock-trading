@@ -1,3 +1,4 @@
+using System.Globalization;
 using MarketMonitorService.Common.Abstractions;
 using MarketMonitorService.Features.MarketMonitor;
 using MarketMonitorService.Infrastructure.ExternalServices;
@@ -6,6 +7,7 @@ using MarketMonitorService.Infrastructure.Steps;
 using MarketMonitorService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -45,7 +47,13 @@ builder.Services.AddAiStockTradingHealthChecks()
 
 // --- 市場監視のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();
-builder.Services.AddSingleton<IMarketSchedule, WeekdayMarketSchedule>();
+// FR-03, FR-01, UC-02, #909, #21, IADR-0380 決定1・決定4: 市場カレンダー（市場ローカル時刻の取引時間＋休場日）。
+// 休場日・半日取引日は共有カーネルの規則計算が基礎で、構成（Monitor:Holidays:<Market> / Monitor:HalfDays:<Market>、
+// いずれも ["yyyy-MM-dd", ...]）は臨時休場を**足す**ためだけに使う（規則は外せない）。取引判断サービスの
+// MarketCalendar と同じ実体（MarketHours）を引く —— 2 つのサービスが「今は開場か」で食い違わないようにする。
+builder.Services.AddSingleton<IMarketSchedule>(_ => new MarketHoursSchedule(
+    LoadMarketDates(builder.Configuration, $"{MonitorOptions.SectionName}:Holidays"),
+    LoadMarketDates(builder.Configuration, $"{MonitorOptions.SectionName}:HalfDays")));
 // FR-03, #158, IADR-0066/0068: 現在値ソースは構成 MarketData:Provider で選択（既定・空・未知は no-op＝実接続しない・
 // 従来挙動）。finnhub 指定＋API キーありのときだけ実市況になる。構成は解決時に読む（起動時読み取りだと
 // WebApplicationFactory の構成上書きに追随しないため。IPositionStore と同じ規約）。
@@ -92,7 +100,9 @@ builder.Services.AddScoped<IPositionStore>(sp =>
 
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
     http.BaseAddress = uri;
-    return new HttpPositionStore(http, sp.GetRequiredService<ILogger<HttpPositionStore>>());
+    // #957, IADR-0399: 行ごとの不正（識別できない・損切りラインが無い）を計器 ast.market_monitor.position_rows_degraded で数える。
+    return new HttpPositionStore(
+        http, sp.GetRequiredService<BusinessMetrics>(), sp.GetRequiredService<ILogger<HttpPositionStore>>());
 });
 // FR-02, FR-13, #286, IADR-0282: watchlist 初回シード（構成 Monitor:SeedSymbols）。空既定（未設定）は
 // MonitorDefaults が従来どおり空でシードする（現行挙動のバイト等価）。
@@ -115,6 +125,8 @@ builder.Services.AddScoped<MonitorSettingsService>();
 
 // FR-03: ポーリング構成（監視間隔）。
 builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection(MonitorOptions.SectionName));
+// FR-10, #902, IADR-0365: 損切り評価の生存要約・価格欠落の Warning（観測のみ・巡回をまたいで状態を持つため singleton）。
+builder.Services.AddSingleton<StopLossLivenessReporter>();
 // FR-03: 監視間隔ごとのポーリング（市場開場時に評価・発行）。
 builder.Services.AddHostedService<MonitorPollingService>();
 
@@ -160,6 +172,31 @@ app.MapMonitorSettingsEndpoints();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);
+
+// FR-03, #909, IADR-0380 決定4: 市場別の日付集合（臨時休場 Monitor:Holidays:<Market> / 臨時の半日取引日
+// Monitor:HalfDays:<Market>、いずれも ["yyyy-MM-dd", ...]）を構成から読み込む。**既定は空**であり、
+// 通常の休場日・半日取引日は共有カーネルの規則計算（MarketHolidays）が持つ（構成で外せない）。
+// 取引判断サービス Program.cs の LoadMarketDates と同型（各サービスが自分の構成節を自己所有する）。
+static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadMarketDates(IConfiguration configuration, string sectionPrefix)
+{
+    var result = new Dictionary<Market, IReadOnlySet<DateOnly>>();
+    foreach (var market in Enum.GetValues<Market>())
+    {
+        var dates = configuration.GetSection($"{sectionPrefix}:{market}").Get<string[]>() ?? [];
+        var set = new HashSet<DateOnly>();
+        foreach (var d in dates)
+        {
+            // IADR-0380［2026-09-24 追記 / PR #929 監査］: ISO の yyyy-MM-dd だけを受ける（"10/09/2026" を月先で読まない）。
+            if (DateOnly.TryParseExact(d, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                set.Add(date);
+        }
+
+        if (set.Count > 0)
+            result[market] = set;
+    }
+
+    return result;
+}
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
 public partial class Program { }

@@ -40,9 +40,12 @@ public static class NotificationFormatter
     // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは**建玉ごとの損切りの実行機構**で決まるが、
     // 到達を検知する市場監視は手法を知らない。🔴 「ブローカーの逆指値が決済する」と断定すると S1 / S2 の建玉で誤りになるため、
     // 手法ごとの帰結を列挙する（S1 の決済・拒否は SoftwareStopExecuted、S2 は免除の通知が建玉を特定して伝える）。
+    // FR-10, #936, IADR-0393（2026-09-25 追記）: SL（市場監視が比べたライン）は、建て増しした建玉では取引台帳が返す
+    // **エントリーのうち最も保護的なライン 1 本**であり、数量（建玉全体）の全部に効くラインではない。限定を 1 文だけ足す。
     public static NotificationMessage From(StopLossTriggered e) => new(
         "リスク統制: 損切りライン到達",
         $"{e.Symbol} 損切り SL={e.StopLossPrice}（現在 {e.Price}・数量 {e.Quantity}・建玉 {e.PositionSide}）。"
+            + "SL は建て増しした建玉ではエントリーのうち最も保護的なラインで、全量のラインではありません。"
             + "決済は建玉の損切りの実行機構によります: S0＝ブローカー側の逆指値が実行（システムは発注しない）／"
             + "S1＝システムが成行で決済（別途「ソフトウェア逆指値」の通知）／"
             + "S2＝**システムもブローカーも決済しない（手動で決済してください）**。",
@@ -81,10 +84,17 @@ public static class NotificationFormatter
     // 🔴 #848, IADR-0117（2026-09-19 追記・改定 7）: CloseDispatchIndeterminate は**「解消に失敗」とは言わない**。
     // 成行手仕舞いは送信済みで、証券会社側で生きているかもしれない。「失敗した」と読んだ人は手で成行を重ね、
     // 二重決済でショート化する。伝えるのは「送った・届いたか分からない・重ねる前に確かめよ」である。
+    // 🔴 #857, IADR-0369: CloseRejected は**「手仕舞いました」と言ってはならない**。
+    // 証券会社が確認できる形で拒否しており、**建玉は残っている**。件名も本文も「解消した」と読ませない。
     public static NotificationMessage From(ProtectiveStopCoverageLost e) => new(
-        e.Remediation == ProtectiveStopRemediation.CloseDispatchIndeterminate
-            ? "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認"
-            : "リスク統制: 保護逆指値が成立せず建玉を解消",
+        e.Remediation switch
+        {
+            ProtectiveStopRemediation.CloseDispatchIndeterminate =>
+                "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認",
+            ProtectiveStopRemediation.CloseRejected =>
+                "リスク統制: 保護逆指値が成立せず、成行手仕舞いも拒否（建玉が残存）",
+            _ => "リスク統制: 保護逆指値が成立せず建玉を解消",
+        },
         $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"
             + $"{(e.Cause == ProtectiveStopLossCause.RejectedAtEntry ? "エントリー時に未受理" : "滞留中に失効（再発注不可）")}のため、"
             + e.Remediation switch
@@ -95,11 +105,39 @@ public static class NotificationFormatter
                     "建玉の成行手仕舞いを**送信しましたが、結果を確認できていません（届いたか不明）**。"
                     + "システムは注文を重ねません。**手で決済を重ねる前に、証券会社の画面で注文と建玉を確認してください**"
                     + "（手仕舞いが生きていれば二重決済になります）。"
-                    // #848, IADR-0117（改定 9）: 据え置きが続くあいだ約 1 時間ごとに再通知する。再通知を
-                    // 「もう 1 本送った」と読ませない（同じ CloseDecisionId＝同じ 1 本の成行）。
-                    + "この通知は予約が解決されるまで約 1 時間ごと（と再起動のたび）に繰り返します。"
-                    + "**同じ CloseDecisionId の通知は同じ 1 本の成行であり、新しい発注ではありません。**"
+                    // 🔴 #941, IADR-0369（2026-09-25 追記）: 後半の約束は**原因（Cause）で分ける**（CloseRejected と同じ形）。
+                    // 1 時間ごとの再通知は HeldCloseNotificationTracker が持ち、それを使うのは保護記録を巡回する
+                    // ProtectiveStopGuard だけである。エントリー同時の経路（RejectedAtEntry・IndeterminateClose）は
+                    // 保護記録を作らず、承認の再配送も相 1 で返って保護喪失を出し直さない——この通知は 1 回きりである。
+                    + (e.Cause == ProtectiveStopLossCause.RejectedAtEntry
+                        ? "**エントリー時の経路には保護記録が無く、システムはこの建玉を巡回しません。"
+                            + "この通知も繰り返しません（届くのはこの 1 回だけです）。**"
+                            + "証券会社の画面で手仕舞いの注文と建玉を確かめ、手仕舞いの注文が生きておらず建玉が残っていれば、"
+                            + "**手で手仕舞ってください**。"
+                        // #848, IADR-0117（改定 9）: 据え置きが続くあいだ約 1 時間ごとに再通知する（T-10-451）。再通知を
+                        // 「もう 1 本送った」と読ませない（同じ CloseDecisionId＝同じ 1 本の成行）。
+                        : "この通知は予約が解決されるまで約 1 時間ごと（と再起動のたび）に繰り返します。"
+                            + "**同じ CloseDecisionId の通知は同じ 1 本の成行であり、新しい発注ではありません。**")
                     + $"CloseDecisionId={e.CloseDecisionId}",
+                // 🔴 #857, IADR-0369: 「確認できた拒否」——送った成行は**生きていない**（届いたか不明とは別である）。
+                // 二重決済の心配なく手で手仕舞える一方、**建玉は無保護のまま残っている**。
+                // 🔴 PR #916 監査 F1, IADR-0369（2026-09-24 追記）: 後半の約束は**原因（Cause）で分ける**。
+                // 巡回・撃ち直し・上限・再通知は滞留側（LapsedInFlight・ProtectiveStopGuard）だけが持つ。
+                // エントリー同時の経路（RejectedAtEntry・ResolveUnprotectedEntryAsync）は保護記録を作らない
+                // （protectiveStops.Save は受理の側だけ）——巡回も撃ち直しも再通知も無く、この通知は 1 回きりである。
+                // 無い約束を書くと、読んだ人は「システムが見ている」と信じて待つ（#857 と同じ壊れ方）。
+                ProtectiveStopRemediation.CloseRejected =>
+                    "建玉の成行手仕舞いを**証券会社が拒否しました（確認できた拒否）。建玉は残っています**。"
+                    + (e.Cause == ProtectiveStopLossCause.RejectedAtEntry
+                        ? "**逆指値なしの建玉が残っているため、証券会社の画面で建玉を確認し、手で手仕舞ってください**"
+                            + "（時間外・数量の制約などで拒否されます）。"
+                            + "**エントリー時の経路には保護記録が無く、システムはこの建玉を巡回しません。"
+                            + "手仕舞いの撃ち直しも行わず、この通知も繰り返しません（届くのはこの 1 回だけです）。**"
+                            + "原因を取り除いてもシステムは再試行しないため、手で手仕舞うまで無保護のままです。"
+                        : "**逆指値なしの建玉が残っているため、証券会社の画面で建玉を確認し、手で手仕舞うか原因を取り除いてください**"
+                            + "（時間外・数量の制約などで拒否されます）。"
+                            + "システムは同じ理由での撃ち直しを 3 回で打ち切りますが、**保護記録は閉じず巡回を続けます**"
+                            + "（この通知は解決するまで約 1 時間ごと（と再起動のたび）に繰り返します）。"),
                 _ => "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。直ちに確認してください。**",
             },
         NotificationSeverity.Critical);
@@ -119,13 +157,17 @@ public static class NotificationFormatter
             + $"EntryDecisionId={e.EntryDecisionId}）。",
         NotificationSeverity.Warning);
 
-    // FR-10, FR-12, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置。
-    // 🔴 **Warning。** 本番の機構（ブローカー側逆指値）ではなく、**システムが止まっている間は決済されない**ことを読み落とさせない。
+    // FR-10, FR-12, FR-11, FR-03, ADR-0040 決定1（S1）, #820, #909, IADR-0344 決定8・追記(13), IADR-0380 決定6:
+    // ソフトウェア逆指値の配置。
+    // 🔴 **Warning。** 本番の機構（ブローカー側逆指値）ではなく、**システムが止まっている間は決済されない**ことと、
+    // **保護が通常取引時間しか働かない**ことを読み落とさせない（閉場中の建玉は次の寄りまで無保護である）。
     public static NotificationMessage From(SoftwareStopArmed e) => new(
         "リスク統制: ソフトウェア逆指値を配置（S1）",
         $"{e.Symbol}/{e.Market} {e.Side} 数量{e.Quantity}: 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれているため、"
             + $"{e.Provider} へ保護逆指値を発注せず、損切りライン {Invariant(e.StopLossPrice)} への到達で"
             + "システムが成行で決済します。**ブローカー側に保護は無く、システム停止中は決済されません**"
+            + "。🔴 **保護が働くのは通常取引時間（米東 9:30–16:00）のあいだだけです** —— 閉場中は到達を検知せず、"
+            + "夜間・寄り前の急落からは守られません（#909・IADR-0380）"
             + $"（実弾口座では選べない手法です・EntryDecisionId={e.EntryDecisionId}）。",
         NotificationSeverity.Warning);
 
@@ -187,6 +229,28 @@ public static class NotificationFormatter
                 + "（この銘柄ではソフトウェア逆指値の新規建ても見送られます）"
                 + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Warning),
+        // 🔴 #858, IADR-0370 決定5: 取り込みで建玉が消えたのに、ブローカー側の保護注文を取り消せたと確認できなかった。
+        // **建玉が無いのに売りの逆指値が生きていると、発火して意図しないショートが建つ。**
+        SoftwareStopOutcome.StopCancelUnconfirmed => new(
+            "リスク統制: 取り込みで消えた建玉の保護注文を取り消せていません",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 乖離の取り込みで台帳の建玉が減りましたが、"
+                + "**ブローカー側の保護注文（逆指値）を取り消せたと確認できませんでした**（決済は出していません）。"
+                + "🔴 **建玉が無いのに逆指値が残っていると、発火したとき意図しないショートが建ちます。"
+                + "証券会社の画面で未約定の注文を確認し、残っていれば取り消してください**"
+                + $"（記録は巡回に残したまま再確認します・損切りライン {Invariant(e.StopLossPrice)}"
+                + $"・OrderId={e.CloseOrderId}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
+        // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（保護記録を再武装した）。
+        // moomoo の模擬取引の注文は当日限りで、受理された決済が 0 約定のまま失効し得る。
+        SoftwareStopOutcome.CloseUnfilled => new(
+            "リスク統制: ソフトウェア逆指値の決済が約定しないまま終了しました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 受理された成行の決済注文が {e.Quantity} 株を約定しないまま"
+                + "取消・失効・拒否で終了しました（模擬取引の注文は当日限りです）。"
+                + "**その株数は建玉に残っています。保護記録を再武装し、次の巡回で決済を撃ち直します**"
+                + "——撃ち直しが通らない場合は手動で決済してください"
+                + $"（試行 {e.Attempt}・OrderId={e.CloseOrderId}・損切りライン {Invariant(e.StopLossPrice)}"
+                + $"・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"

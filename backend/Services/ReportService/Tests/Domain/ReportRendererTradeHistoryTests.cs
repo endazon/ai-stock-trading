@@ -55,6 +55,28 @@ public class ReportRendererTradeHistoryTests
         md.Should().Contain("## 3. ポジション一覧（当日終了時点）");
     }
 
+    [Fact]
+    public void T_10_699_持ち越した建玉の一覧に保護が通常取引時間だけであることを出す()
+    {
+        // T-10-699, FR-10, FR-03, UC-02, #909, IADR-0380 決定6 / IADR-0344 追記(13):
+        // **S1 の残余リスクをコードのコメントではなく利用者の日報へ出す。** §3 に載るのは持ち越した建玉そのものである。
+        var md = ReportRenderer.RenderMarkdown(Daily(History(), [Position()]));
+
+        md.Should().Contain("損切りラインの保護が働くのは、その市場の通常取引時間だけです")
+            .And.Contain("米東 9:30–16:00")
+            .And.Contain("閉場中は到達を検知せず決済もしません");
+    }
+
+    [Fact]
+    public void T_10_699_建玉が無ければ保護の注記は出さない()
+    {
+        // T-10-699（対の否定形）: 守るものが無い日に警告文だけが並ぶと、注記そのものが読み飛ばされる。
+        var md = ReportRenderer.RenderMarkdown(Daily(History(), []));
+
+        md.Should().Contain("（当日終了時点の建玉なし）")
+            .And.NotContain("損切りラインの保護が働くのは");
+    }
+
     // 供給した明細の中身が**そのまま出口へ届く**こと（節の見出しだけ出ていても結線とは言えない）。
     [Fact]
     public void 供給した明細の行と建玉の行が本文へ届く()

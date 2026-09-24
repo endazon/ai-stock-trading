@@ -8,13 +8,14 @@ namespace ReportService.Domain;
 // その約定へ結び付ける。日・週・市場・方向のどの軸へも、ここから**再畳み込みなしに**集計できる。
 //
 // 🔴 **期間を切って PnlAggregator.Aggregate を呼び直してはならない。**
-// PnlAggregator は期間全体を SignedInventory.Apply（IADR-0033）で畳み込む。日・週・市場でスライスして
+// PnlAggregator は期間全体を PeriodInventory.Apply（IADR-0033 / #892・IADR-0381）で畳み込む。
+// 日・週・市場でスライスして
 // 呼び直すと、**持ち越し建玉の平均取得単価がスライス内に存在しない**ため、内訳の合計が §1 サマリの合計と
 // 一致しなくなる。しかも**各スライスは自分の中では整合しているため、全テストが緑のままそうなる。**
 //
 // 🔴 **数値はコード集計値・文章は記録の転記であり、いずれも LLM に作らせない**（FR-16・IADR-0251）。
 // 費用は `CostCalculator.EstimateOneWayCost`（PnlAggregator と**同じ関数**）、実現損益は
-// `SignedInventory.Apply`（PnlAggregator と**同じ畳み込み**）、判断根拠は監査台帳の記録の転記である。
+// `PeriodInventory.Apply`（PnlAggregator と**同じ畳み込み**）、判断根拠は監査台帳の記録の転記である。
 public sealed record FillPnlAttribution(
     /// <summary>畳み込み順（1 起点）。同値の並び替えを入力順へ依存させないための最終キー。</summary>
     int Sequence,
@@ -35,6 +36,10 @@ public sealed record FillPnlAttribution(
     /// 売買方向。<b>方向別（ロング/ショート）の集計キーはこの列から一意に決まる</b>——決済は必ず反対方向の
     /// 約定であるため、<c>Realizing &amp;&amp; Side == Sell</c> ⇒ ロングの決済、<c>Realizing &amp;&amp; Side == Buy</c> ⇒
     /// ショートの決済である。<b>後続の集計が畳み込みをやり直す必要は無い。</b>
+    /// <para>
+    /// 🔴 <b>#892: <see cref="Unvalued"/> の約定も「決済」側である</b>（期間の在庫を減らせなかっただけで、
+    /// 建てた約定ではない）。方向の導出は <c>PeriodBreakdownBuilder.IsLong</c> が単一情報源として持つ。
+    /// </para>
     /// </summary>
     TradeSide Side,
 
@@ -61,7 +66,18 @@ public sealed record FillPnlAttribution(
     /// 記録された判断根拠（<c>DecisionId</c> 引き）。<c>null</c>＝相関できなかった（未供給）。
     /// <b>報告書生成時に文章を作らない</b>（TradeHistoryViewBuilder と同じ規則）。
     /// </summary>
-    string? Rationale);
+    string? Rationale,
+
+    /// <summary>
+    /// FR-06, FR-16, #892, IADR-0381: この約定は<b>期間より前に建てた建玉の決済</b>を含み、
+    /// その分の実現損益を<b>算定できなかった</b>か（<see cref="PeriodInventory"/>）。
+    /// <para>
+    /// 🔴 <c>true</c> のとき <see cref="RealizedPnlGross"/> は<b>賄えた分だけの部分値</b>（全部賄えなければ 0）であり、
+    /// <b>「損益 0 の約定」ではない</b>。日別推移・ハイライト・内訳・勝率は本列で除外・明記する。
+    /// </para>
+    /// <para>既定 <c>false</c>＝全量を算定できた（既存の呼び出しは非破壊で通る）。</para>
+    /// </summary>
+    bool Unvalued = false);
 
 // 04_report-templates 週報 §2「日別推移」の 1 行。**約定が 1 件も無い日は行そのものが存在しない**
 //（休場日と「実現損益 0 の営業日」を区別できる記録源が無いため。IADR-0301 決定2）。
@@ -84,7 +100,14 @@ public sealed record DailyPnlRow(
     /// 当日の実現損益への<b>寄与が最大の決済</b>（絶対値が最大のもの）。<c>null</c>＝当日は決済が無い。
     /// <b>要因の説明（散文）ではない</b>——散文の記録源は存在しない。
     /// </summary>
-    FillPnlAttribution? LargestContributor)
+    FillPnlAttribution? LargestContributor,
+
+    /// <summary>
+    /// FR-06, FR-16, #892, IADR-0381: 当日の約定のうち、<b>期間より前に建てた建玉の決済で
+    /// 実現損益を算定できなかった件数</b>。0 より大きければ当日の実現損益は部分値であり、
+    /// レンダラが件数を明記する（<b>黙って落とさない</b>）。
+    /// </summary>
+    int UnvaluedCount = 0)
 {
     /// <summary>当日の実現損益（<b>税引前・費用込み</b>）。税は期間合計にのみ課されるため日へ配分しない。</summary>
     public decimal RealizedPnlAfterCost => RealizedPnlGross - Cost;
@@ -144,7 +167,9 @@ public static class FillPnlAttributionBuilder
             var key = (fill.Symbol, fill.Market);
             var signedQuantity = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             positions.TryGetValue(key, out var lot);
-            var applied = SignedInventory.Apply(lot, signedQuantity, fill.Price);
+            // 🔴 #892, IADR-0381: 畳み込みの規則は PnlAggregator と**同じ純関数**（PeriodInventory）で引く
+            // ——期間より前に建てた建玉の決済で幻のショートを開かない／賄えない分を建てない。
+            var applied = PeriodInventory.Apply(lot, fill.PositionEffect, signedQuantity, fill.Price);
             positions[key] = applied.Lot;
 
             entries.Add(new FillPnlAttribution(
@@ -160,7 +185,8 @@ public static class FillPnlAttributionBuilder
                 // 在庫が減らない約定の実現損益は 0（事実）。未供給ではない。
                 applied.Reduced ? applied.RealizedPnl : 0m,
                 applied.Reduced,
-                Rationale(rationales, fill.DecisionId)));
+                Rationale(rationales, fill.DecisionId),
+                applied.Unvalued));
         }
 
         return entries;
@@ -186,10 +212,12 @@ public static class FillPnlAttributionBuilder
                     g.Count(),
                     g.Count(e => e.Realizing),
                     // 寄与が最大の決済＝実現損益の絶対値が最大のもの。同値は全順序（Rank）で決める。
-                    g.Where(e => e.Realizing)
+                    // 🔴 #892: 算定できなかった決済は「寄与最大」の母集合に入れない（部分値で順位を付けない）。
+                    g.Where(e => e is { Realizing: true, Unvalued: false })
                         .OrderByDescending(e => Math.Abs(e.RealizedPnlGross))
                         .ThenBy(e => e, TieBreak)
-                        .FirstOrDefault())),
+                        .FirstOrDefault(),
+                    g.Count(e => e.Unvalued))),
         ];
     }
 
@@ -201,7 +229,9 @@ public static class FillPnlAttributionBuilder
     {
         ArgumentNullException.ThrowIfNull(entries);
 
-        var realizing = entries.Where(e => e.Realizing).ToList();
+        // 🔴 #892, IADR-0381: **算定できなかった決済は母集合から外す。** 部分値（多くは 0）で「最良／最悪」を
+        // 選ぶと、期間より前に建てた建玉の決済が「損益 0 の取引」として順位に入る。
+        var realizing = entries.Where(e => e is { Realizing: true, Unvalued: false }).ToList();
         if (realizing.Count == 0)
             return new TradeHighlights(null, null);
 

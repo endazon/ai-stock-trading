@@ -56,9 +56,24 @@ public sealed class BusinessMetrics : IDisposable
     /// </summary>
     public const string UnobservedNegativeElapsed = "negative-elapsed";
 
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: 保有の行を評価に渡せなかった（識別項目が無い・列挙が未定義・数量が正でない・null の行）。
+    /// </summary>
+    public const string PositionRowIdentityMissing = "identity-missing";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 損切りラインが無い／正でない行を、平均取得単価からの近似のラインで評価した。</summary>
+    public const string PositionRowStopLineApproximated = "stop-line-approximated";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 損切りラインも平均取得単価も無く、評価に渡せなかった。</summary>
+    public const string PositionRowStopLineUnknown = "stop-line-unknown";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 200 の応答の本文が保有の一覧として読めなかった（壊れた JSON・<c>null</c> 等）。</summary>
+    public const string PositionRowsResponseUnreadable = "response-unreadable";
+
     private readonly Meter _meter;
     private readonly Counter<long> _informationItemsCollected;
     private readonly Counter<long> _tradeCycleDecisions;
+    private readonly Counter<long> _tradeCycleDecisionSkips;
     private readonly Histogram<double> _tradeCycleDecisionDurationMs;
     private readonly Histogram<double> _tradeCycleOrderCompletionLatencyMs;
     private readonly Histogram<double> _tradeCycleRecordCompletionLatencyMs;
@@ -71,6 +86,8 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Gauge<double> _llmCostLimitRatioPercent;
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
+    private readonly Counter<long> _riskCapitalBaselineReads;
+    private readonly Counter<long> _marketMonitorPositionRowsDegraded;
 
     /// <summary>
     /// 本番の構築点。Meter 名は <see cref="BusinessMetricNames.MeterName"/> 固定である。
@@ -119,6 +136,12 @@ public sealed class BusinessMetrics : IDisposable
         _tradeCycleDecisions = _meter.CreateCounter<long>(
             BusinessMetricNames.TradeCycleDecisions,
             description: "取引判断の回数（action=buy/sell/no-trade・trigger 別。FR-04）");
+
+        // FR-04, FR-10, #891, IADR-0374: 見送りの理由の内訳。**上の decisions を置き換えない**
+        // （タグを増やすと既存ダッシュボードの集計が割れる。別カウンタとして並べる）。
+        _tradeCycleDecisionSkips = _meter.CreateCounter<long>(
+            BusinessMetricNames.TradeCycleDecisionSkips,
+            description: "発注意図を作らなかった判断の理由の内訳（reason・trigger 別。FR-04/FR-10）");
 
         _tradeCycleDecisionDurationMs = _meter.CreateHistogram<double>(
             BusinessMetricNames.TradeCycleDecisionDurationMs,
@@ -170,6 +193,17 @@ public sealed class BusinessMetrics : IDisposable
         _finnhubDailyVolumeLimitRatioPercent = _meter.CreateGauge<double>(
             BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent,
             description: "Finnhub 日次要求見積りが暫定上限に占める割合（%）。100 超で警告（ADR-0031 決定3）");
+
+        // FR-10, #889, IADR-0372: 基準資金を読んだ結果の内訳。**門ではなく観測である**
+        // （どの帰結でも返す値は従来どおり）。
+        _riskCapitalBaselineReads = _meter.CreateCounter<long>(
+            BusinessMetricNames.RiskCapitalBaselineReads,
+            description: "統制上限の基準資金を読んだ結果の内訳（outcome 別。FR-10）");
+
+        // FR-03, FR-10, #957, IADR-0399: 市場監視が保有照会の応答をそのまま評価できなかった行（平常時 0 件）。
+        _marketMonitorPositionRowsDegraded = _meter.CreateCounter<long>(
+            BusinessMetricNames.MarketMonitorPositionRowsDegraded,
+            description: "市場監視が保有照会の応答をそのまま評価できなかった行の件数（reason 別。FR-03/FR-10）");
     }
 
     /// <summary>FR-01, FR-02: 1 巡回で収集できたアイテム数を計上する。</summary>
@@ -186,6 +220,20 @@ public sealed class BusinessMetrics : IDisposable
             new KeyValuePair<string, object?>(
                 BusinessMetricNames.TagAction,
                 side is null ? ActionNoTrade : side.Value.ToString().ToLowerInvariant()),
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagTrigger, trigger));
+
+    /// <summary>
+    /// FR-04, FR-10, #891, IADR-0374: <b>見送り 1 回を理由つきで計上する。</b>
+    /// <para>
+    /// 🔴 <b><see cref="RecordTradeDecision"/> の代わりではない。両方を呼ぶ。</b>
+    /// 1 回の見送りで <c>decisions{action=no-trade}</c> と <c>decision_skips{reason=…}</c> が
+    /// 1 ずつ増える。合計が一致することで、どちらかの計上漏れを突き合わせで検出できる。
+    /// </para>
+    /// </summary>
+    public void RecordTradeDecisionSkipped(string trigger, DecisionSkipReason reason) =>
+        _tradeCycleDecisionSkips.Add(
+            1,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason.ToString()),
             new KeyValuePair<string, object?>(BusinessMetricNames.TagTrigger, trigger));
 
     /// <summary>FR-04: 取引判断 1 回の所要を計上する。</summary>
@@ -308,6 +356,33 @@ public sealed class BusinessMetrics : IDisposable
     {
         _finnhubDailyVolumeEstimate.Record(estimatedDailyRequests);
         _finnhubDailyVolumeLimitRatioPercent.Record(limitRatioPercent);
+    }
+
+    /// <summary>
+    /// FR-10, #889, IADR-0372: 基準資金を読んだ 1 回を帰結つきで計上する。
+    /// <para>
+    /// 🔴 <b>「供給できた」の中を割るためにある。</b> 残高 0 を観測した日は行が書かれず、読み出しは
+    /// 前取引日の値を返し続ける ——<b>値が返っている以上、統制は平常どおり動いて見える</b>。
+    /// <see cref="CapitalBaselineReadOutcome.SuppliedWithGap"/> はその状態を数える唯一の手段である。
+    /// </para>
+    /// </summary>
+    public void RecordCapitalBaselineRead(CapitalBaselineReadOutcome outcome) =>
+        _riskCapitalBaselineReads.Add(
+            1,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome.ToString()));
+
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: 市場監視が保有照会の応答の行（または応答全体）をそのまま評価できなかった 1 件を計上する。
+    /// <paramref name="count"/> は同じ理由の件数（1 巡回ぶんをまとめて足す）。0 以下は計上しない。
+    /// </summary>
+    public void RecordMarketMonitorPositionRowsDegraded(string reason, int count = 1)
+    {
+        if (count <= 0)
+            return;
+
+        _marketMonitorPositionRowsDegraded.Add(
+            count,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
     }
 
     public void Dispose() => _meter.Dispose();

@@ -19,7 +19,7 @@
 | `lib/ci-annotate.js` | 検査器共通。警告を GitHub Actions のアノテーション（`::warning::` / `::notice::`）として出す。素の出力は緑ジョブのログに埋もれて読まれないため。ローカル実行時の見た目は従来どおり | — |
 | `check-commit-messages.js` | コミット件名（`種別(起点ID): 要約`）の規約適合と ADR/IADR の実在性を検査。除外は `commit-allowlist.json`。**置換点**: 計画 ADR の名前空間は `PLAN_PROJECT`（既定 `ai-stock-trading`・環境変数で上書き可）が決める | 標準出力（レポート） |
 | `validate-pipeline-config.js` | 宣言的パイプライン構成のスキーマ検証（`--self-test` で検証器自体も試験） | 標準出力（判定） |
-| `scripts.test.js` | 上記スクリプト群と本リポジトリ固有スクリプトの単体テスト | 標準出力（判定） |
+| `scripts.test.js` | 上記スクリプト群と本リポジトリ固有スクリプトの単体テスト。**1 件の例外でスイートを中断しない**（#888 / IADR-0377）——`ok()` は例外を捕捉して fail として記録し次へ進み、末尾に **総数 / 成功 / 失敗 / skip** と失敗の詳細を出す。**失敗が 1 件でもあれば exit 1**（CI の赤/緑の意味は変わらない。変わるのは止まる位置だけ）。`skip(name, reason)` は**黙って飛ばさず**理由を出し件数にも載せる（companion へも渡る）。ハーネスは工場関数 `createHarness()` で、**ハーネス自身の回帰テストが独立した実体に対して書ける** | 標準出力（判定） |
 | `setup.sh` | 開発環境セットアップ（SessionStart hook / devcontainer から実行） | — |
 | `apply-profile.sh` | `AI_SETUP.md` で宣言したプロファイルに応じてキットを構成（`.example` 有効化等） | `.ai-profile` |
 
@@ -192,7 +192,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `plan-id-qualification` | `check-plan-id-qualification.js`（他プロジェクトの計画 ID の `<PROJ>/<ID>` 修飾。`PLAN_ID_PREFIXES` を明示） |
 | `cross-repo-refs`（#712 で新設。**#487 実装時は `scripts.repo.test.js` の中でしか本走していなかった**） | `check-cross-repo-refs.js --self-test` と本検査（他リポジトリの issue / PR 番号の修飾。`CROSS_REPO_NAMES` / `CROSS_REPO_SELF_NAMES` / `CROSS_REPO_EXCLUDES` を明示。実データ本走は違反 0 件・exit 0） |
 | `reading-budget` | `check-reading-budget.js --self-test` と本検査（必読規約の総量予算。エージェントごとに判定・合算しない。#524） |
-| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有） |
+| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有）。**検査 4（T2）でテスト ID（`T-<機能要求番号>-<連番>`）の一意性も見る**（#887 / IADR-0376。既知の重複は `scripts/test-id-duplicate-baseline.json` のラチェットで固定し、**新規の衝突だけを落とす**。採番の最大値を毎回出力し、これが次の採番者の単一情報源になる。規約は `docs/tests/README.md`） |
 | `banned-libraries` | `check-banned-libraries.js`（不採用ライブラリの再混入。本リポ固有） |
 | `tracked-session-timeout` | `check-tracked-session-timeout.js`（本リポ固有） |
 | `trace-blocks` | `check-trace-blocks.js --self-test` と本検査（docs/ の trace ブロック規約。ADR-0029 決定4・本リポ固有） |

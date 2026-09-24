@@ -233,6 +233,8 @@ builder.Services.AddScoped<ISizingContextProvider>(sp =>
 // #854, IADR-0351: 同じ実装が判断プロンプトの保有状況も供給する（NoOp のもとではプロンプトは「保有: 不明」と明示する）。
 // #865, IADR-0358: 実装の選択が IHeldPositionProvider.IsEnabled を決める。Http（実結線）のもとで照会が不明を返したら
 // 新規建て（Open）を見送る。NoOp（未結線）は「照会していない」であり、従来どおり新規建てを通す。
+// #934, IADR-0390: 同じ実装が当日の未約定の新規建て注文も GET /risk-controls/working-entry-orders から供給する
+// （保有とは別の第 3 の状態。上の「新規エンドポイントは作らない」は保有建玉の照会についての記述）。
 builder.Services.AddSingleton<NoOpHeldPositionProvider>();
 builder.Services.AddScoped<IHeldPositionProvider>(sp =>
 {
@@ -286,6 +288,12 @@ builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Co
 // 最大 1,160 文字）では材料が予算に届かないため、実際の publish はまだ発生しない（同 決定5 の安全網）。
 // 無効化する場合は Decision:ScreeningContextBudgetChars=0（または "off"）を明示する。
 builder.Services.AddScoped<IScreeningReductionReporter, PublishingScreeningReductionReporter>();
+
+// FR-04, FR-10, NFR-07, #891, IADR-0374: 見送りの理由を業務メトリクスへ計上する経路。
+// 🔴 **配線しないと、見送りは従来どおり構造化ログにしか残らない**（`action=no-trade` の 1 値に畳まれ、
+// 「LLM が Hold を返した」と「保有照会が壊れていて新規建てだけが静かに止まっている」を区別できない）。
+// 既定（NoOp）はテストが判断サービスを直接組む場合のためであり、本番では必ずここを通す。
+builder.Services.AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter>();
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
 // 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。
@@ -439,7 +447,8 @@ static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadMarketDates(IConf
         var set = new HashSet<DateOnly>();
         foreach (var d in dates)
         {
-            if (DateOnly.TryParse(d, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            // IADR-0380［2026-09-24 追記 / PR #929 監査］: ISO の yyyy-MM-dd だけを受ける（"10/09/2026" を月先で読まない）。
+            if (DateOnly.TryParseExact(d, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
                 set.Add(date);
         }
 
