@@ -260,7 +260,15 @@ public class Stage0EvaluationServiceTests
             symbol, Market.UnitedStates, ReplayFrom.AddDays(1), "fp", "claude-sonnet-5", VoteCount: 3,
             RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
             MajorityAction: Stage0DecisionAction.Buy, MajorityRationale: "根拠", SignedQuantity: 10,
-            CostJpy: 1m, InputTokens: 300, OutputTokens: 60);
+            CostJpy: 1m, InputTokens: 300, OutputTokens: 60,
+            // FR-15, ADR-0036 決定1, #749, IADR-0387: 申告の無い記録は判定を組ませないため、
+            // 「本物の判定器へ到達する」肯定形は 3 種すべての再構成可を申告した記録でしか成立しない。
+            AsOfInputs:
+            [
+                new(Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputAvailability.Reconstructed),
+                new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
+                new(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputAvailability.Reconstructed),
+            ]);
 
         return new Stage0DecisionRecordSet(
             from ?? ReplayFrom, to ?? ReplayTo, [new Stage0RecordedSymbol(symbol, Market.UnitedStates)],

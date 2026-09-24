@@ -235,7 +235,14 @@ public class Stage0DriverToRiskProjectionTests
             "AAPL", Market.UnitedStates, ReplayFrom.AddDays(1), "fp", "claude-sonnet-5", VoteCount: 3,
             RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
             MajorityAction: Stage0DecisionAction.Buy, MajorityRationale: "根拠", SignedQuantity: 10,
-            CostJpy: 1m, InputTokens: 300, OutputTokens: 60);
+            CostJpy: 1m, InputTokens: 300, OutputTokens: 60,
+            // FR-15, ADR-0036 決定1, #749, IADR-0387: 3 種すべて再構成可の申告（陰性対照側）。
+            AsOfInputs:
+            [
+                new(Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputAvailability.Reconstructed),
+                new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
+                new(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputAvailability.Reconstructed),
+            ]);
 
         return new Stage0DecisionRecordSet(
             ReplayFrom, ReplayTo, [new Stage0RecordedSymbol("AAPL", Market.UnitedStates)],

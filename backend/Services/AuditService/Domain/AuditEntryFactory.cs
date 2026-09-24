@@ -204,7 +204,8 @@ public static class AuditEntryFactory
     public static AuditEntry From(BacktestEvaluated e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(BacktestEvaluated), AuditCorrelation.From("stage-gate"), Symbol: null,
         Truncate($"バックテスト verdict: {(e.Passed ? "合格" : "不合格")}"
-            + $"（最大DD {e.MaxDrawdownRatio:P2}・DSR {e.DeflatedSharpe:F2}・PBO {FormatPbo(e)}）"
+            + $"（最大DD {e.MaxDrawdownRatio:P2}・DSR {e.DeflatedSharpe:F2}・PBO {FormatPbo(e)}"
+            + $"・as-of除外 {FormatExclusions(e)}）"
             + (e.Passed ? string.Empty : $" 未達: {e.FailedChecks}")),
         AuditSerialization.Serialize(e), e.EvaluatedAt, recordedAt);
 
@@ -214,6 +215,26 @@ public static class AuditEntryFactory
         e.PboEvaluated
             ? e.ProbabilityOfBacktestOverfitting.ToString("F2", CultureInfo.InvariantCulture)
             : $"評価不能({(string.IsNullOrEmpty(e.PboNotEvaluableReason) ? "理由不明" : e.PboNotEvaluableReason)})";
+
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: 判定母集団から外した判断の表示。
+    // 🔴 **数えていないときに 0 を書かない** —— 「痩せた入力に依存する判断は 1 件も無かった」と読めてしまう。
+    // 計画 ADR-0036 決定1 は「外した範囲は記録に残す ——『何を外したか』が分からないと、合格が何についての
+    // 合格なのかが読めない」と定めており、台帳はその読みを残す最後の面である（発行側ドメインは参照できないため、
+    // 契約の 5 項目から同じ表現を組み直す）。
+    private static string FormatExclusions(BacktestEvaluated e)
+    {
+        if (!e.ExclusionCountKnown)
+        {
+            var reason = string.IsNullOrEmpty(e.ExclusionUnknownReason) ? "理由不明" : e.ExclusionUnknownReason;
+            return $"不明({reason})";
+        }
+
+        return e.ExcludedDecisionCount == 0
+            ? $"なし(母集団 {e.EvaluatedDecisionCount.ToString(CultureInfo.InvariantCulture)} 件)"
+            : $"{e.ExcludedDecisionCount.ToString(CultureInfo.InvariantCulture)} 件"
+                + $"/母集団 {e.EvaluatedDecisionCount.ToString(CultureInfo.InvariantCulture)} 件"
+                + $"({(string.IsNullOrEmpty(e.ExcludedInputKinds) ? "種別不明" : e.ExcludedInputKinds)})";
+    }
 
     // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
     // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。
