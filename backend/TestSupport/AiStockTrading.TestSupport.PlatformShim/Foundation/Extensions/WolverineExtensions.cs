@@ -38,6 +38,18 @@ public static class WolverineExtensions
     private static readonly TimeSpan[] RetryIntervals =
         [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)];
 
+    /// <summary>
+    /// FR-10, #942, IADR-0395, IADR-0129 決定 5: 1 通のメッセージをハンドラへ渡す最大回数（初回＋再試行）。
+    /// <b>この回数目の失敗でメッセージは <c>&lt;queue&gt;_error</c> へ送られる。</b>
+    /// <para>
+    /// ハンドラは Wolverine の <c>Envelope.Attempts</c>（受信のたびにハンドラの前で 1 増える。1 始まり）を本値と比べ、
+    /// 「この失敗で再試行を使い切るか」を判定する。🔴 <b>再試行間隔の配列から導出し、数字を 2 箇所に持たない</b>
+    /// ——間隔を 1 つ足したのに判定側が 4 のままだと、打ち切りの計上が 1 回目の再試行へずれて静かに鳴り損ねる。
+    /// 失敗規則との一致は WolverineTopologyTests（T-10-784）が固定する。
+    /// </para>
+    /// </summary>
+    public static int MaxDeliveryAttempts => RetryIntervals.Length + 1;
+
     // 既定の RabbitMQ 接続文字列（dev/test/CI のローカル単体実行用。IADR-0013）。
     public const string DefaultRabbitMqConnectionString = "amqp://guest:guest@rabbitmq:5672";
 

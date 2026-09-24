@@ -12,7 +12,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | --- | --- |
 | `dashboards/ai-stock-trading-overview.json` | AST 10 Worker の RPS/エラー率/P99/CPU/ログを俯瞰する Grafana ダッシュボード（**技術指標**） |
 | `dashboards/ai-stock-trading-business.json` | 取引サイクル・統制・発注・費用を 1 画面で見る Grafana ダッシュボード（**業務指標**。#287） |
-| `alerts/ai-stock-trading-alerts.yaml` | Prometheus のアラートルール（`PrometheusRule`。**人が見ていなくても働く側**。#891） |
+| `alerts/ai-stock-trading-alerts.yaml` | Prometheus のアラートルール（`PrometheusRule`。**人が見ていなくても働く側**。#891 / #942） |
 
 ### 業務ダッシュボードが引く系列（#287 / IADR-0255）
 
@@ -30,6 +30,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | `ast_risk_capital_baseline_reads_total` | `outcome` | 統制上限の**基準資金を読んだ帰結**（#889）。🔴 `SuppliedWithGap` は「値は返っているが直前の取引日の観測が届いていない」＝**古い分母で統制が回っている**印である |
 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り（ブローカーの拒否とは別） |
+| `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 乖離の取り込みの追随を、建玉照会の不明（`positions-unknown`）・失敗（`positions-query-failed`）のまま**再試行を使い切って**打ち切った件数（#942）。🔴 発注執行の起動完了時に 0 で作られる（最初の打ち切りを `increase()` が取りこぼさないため）。ダッシュボードには載せず、アラート `AstDriftAdoptionFollowUpAbandoned` が引く |
 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率（80 で間隔延長・100 で停止） |
 | `ast_market_monitor_position_rows_degraded_total` | `reason` | 市場監視が保有照会の応答を**そのまま損切り判定へ渡せなかった行**（#957）。🔴 平常時 0 件。`identity-missing` / `stop-line-unknown` はその建玉の損切りを検知していない、`stop-line-approximated` は近似のラインで評価している、`response-unreadable` はその巡回で 1 件も評価していない |
@@ -71,6 +72,11 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 - **閾値の置き方**: 「N 分間に M 件」という形の閾値は**実測してから**決める
   （[`../../docs/observability/observability.md`](../../docs/observability/observability.md)）。
   1 件目のルールが実測なしで置けるのは、**平常時の期待値が 0 件**の事象だけを見ているからである。
+  2 件目（`AstDriftAdoptionFollowUpAbandoned`。#942）も同じ性質である（再試行を使い切った打ち切りだけを数える）。
+- **`_error` キューの滞留そのものは見ていない。** RabbitMQ のキュー長（`rabbitmq_queue_messages*`）は
+  どこからも scrape されておらず（本リポジトリの otel-collector は OTLP しか受けず、基盤側の Prometheus の scrape 対象は
+  otel-collector だけ）、その系列を引くルールは永久に鳴らない。🔴 **`check-observability-assets.js` はこれを止めない**
+  （突き合わせるのは `ast_*` の系列だけ）。`_error` 全般の監視は未解決であり、2 件目は業務メトリクスで 1 つの経路だけを覆う。
 
 ## 使い方
 
