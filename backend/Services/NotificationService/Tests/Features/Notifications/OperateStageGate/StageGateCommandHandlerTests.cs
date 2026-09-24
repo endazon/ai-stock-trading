@@ -26,6 +26,9 @@ public class StageGateCommandHandlerTests
 
         public int? LastTargetStage { get; private set; }
 
+        // FR-20, FR-11, #868, IADR-0383: ハンドラが**多層認証で解決した操作者**を承認者として渡すこと（T-138）。
+        public string? LastOnBehalfOf { get; private set; }
+
         public Task<StageGateStatusResult> GetStatusAsync(CancellationToken cancellationToken = default)
         {
             StatusCalls++;
@@ -33,10 +36,11 @@ public class StageGateCommandHandlerTests
         }
 
         public Task<StageTransitionCommandResult> RequestTransitionAsync(
-            int targetStage, CancellationToken cancellationToken = default)
+            int targetStage, string onBehalfOf, CancellationToken cancellationToken = default)
         {
             TransitionCalls++;
             LastTargetStage = targetStage;
+            LastOnBehalfOf = onBehalfOf;
             return Task.FromResult(new StageTransitionCommandResult(true, true, $"段階を Stage {targetStage} へ遷移しました。"));
         }
 
@@ -89,6 +93,37 @@ public class StageGateCommandHandlerTests
         result.Accepted.Should().BeTrue();
         controller.TransitionCalls.Should().Be(1);
         controller.LastTargetStage.Should().Be(2);
+    }
+
+    // ---- T-138, FR-20, FR-11, UC-06, #868, IADR-0240 決定11, IADR-0383 ----
+    //
+    // 🔴 **多層認証が解決した操作者を承認者として運ぶ。** Bot のトークンは owner マップ機密クライアントのもので
+    // 人を表さないため、これを渡さないと実資金ゲートの承認記録（7 年保持）が `unknown` のまま残る（#868 の症状）。
+    [Theory]
+    [InlineData("/stage promote 2")]
+    [InlineData("/stage demote 1")]
+    public async Task T138_段階遷移は多層認証が解決した操作者を承認者として渡す(string command)
+    {
+        var controller = new FakeStageGateController();
+
+        await Handler(controller, FullyConfigured()).HandleAsync(Context(command));
+
+        // 対応付け（UserMapping）の値であり、コマンド文字列や Discord の表示名ではない。
+        controller.LastOnBehalfOf.Should().Be("endazon");
+    }
+
+    [Fact]
+    public async Task T138_許可外の利用者は遷移を呼ばないので承認者も運ばれない()
+    {
+        // **否定形**: 拒否された着信で Risk を呼ばない（承認者だけ運ばれる経路を作らない）。
+        var controller = new FakeStageGateController();
+
+        var result = await Handler(controller, FullyConfigured())
+            .HandleAsync(Context("/stage promote 2", user: "intruder"));
+
+        result.WasExecuted.Should().BeFalse();
+        controller.TransitionCalls.Should().Be(0);
+        controller.LastOnBehalfOf.Should().BeNull();
     }
 
     [Fact]

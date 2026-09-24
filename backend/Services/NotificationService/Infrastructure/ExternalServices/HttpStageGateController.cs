@@ -97,13 +97,18 @@ public sealed class HttpStageGateController(
     }
 
     public async Task<StageTransitionCommandResult> RequestTransitionAsync(
-        int targetStage, CancellationToken cancellationToken = default)
+        int targetStage, string onBehalfOf, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(onBehalfOf);
+
         try
         {
-            // 承認者は要求本文ではなく Risk 側が認証済みトークン（owner マップ）から取る（承認なりすまし防止）。
+            // FR-20, FR-11, UC-06, #868, IADR-0240 決定11, IADR-0383: 本文に**代理される利用者**（onBehalfOf）を載せる。
+            // Risk はこれを**信頼するクライアントのトークンに限って**承認者として採る（利用者トークン直叩き・
+            // 一覧外のクライアントでは無視される）。名前そのものが承認の資格になるわけではない。
             using var response = await httpClient
-                .PostAsJsonAsync("/risk-controls/stage-gate/transition", new { targetStage }, cancellationToken)
+                .PostAsJsonAsync(
+                    "/risk-controls/stage-gate/transition", new { targetStage, onBehalfOf }, cancellationToken)
                 .ConfigureAwait(false);
 
             // 200＝受理・422＝受理不能（未充足基準／飛び級／現段階指定）。どちらも本文に結果 JSON を持つ。
@@ -134,7 +139,18 @@ public sealed class HttpStageGateController(
                     : new StageTransitionCommandResult(true, false, FormatRejection(result.RejectionReasons), warning);
             }
 
-            // 400（不正な targetStage）・401/403（owner 設定不備）・その他は失敗として返す。
+            // FR-20, #868, IADR-0383: 400 は Risk が**明確に応答した**拒否である（不正な targetStage／
+            // 代理される利用者の値域外／承認者を特定できない）。本文の説明をそのまま利用者へ返す
+            // ——「HTTP 400」だけでは、Discord が唯一の承認窓口であるのに**直し方が分からない**。
+            // 失敗として扱う点は変えない（`Succeeded=false`。失敗を成功に見せない）。
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                var error = await ReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+                logger.LogWarning("段階遷移が受理されませんでした（400）。");
+                return new StageTransitionCommandResult(false, false, error);
+            }
+
+            // 401/403（owner 設定不備）・その他は失敗として返す。
             var status = Fail("段階遷移", response.StatusCode);
             return new StageTransitionCommandResult(false, false, status.Message);
         }
@@ -183,6 +199,21 @@ public sealed class HttpStageGateController(
         {
             logger.LogWarning(ex, "撤退評価で例外が発生しました。");
             return new StageGateStatusResult(false, $"撤退評価に失敗しました（{ex.GetType().Name}）");
+        }
+    }
+
+    // #868: Risk の 400 応答（`{ "error": "…" }`）から説明を取り出す。本文が読めなくても
+    // 「受理されなかった」ことは伝える（黙って成功に見せない。GFV アダプタと同型）。
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<ErrorView>(ct).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(body?.Error) ? "段階遷移は受理されませんでした。" : body!.Error;
+        }
+        catch (Exception)
+        {
+            return "段階遷移は受理されませんでした。";
         }
     }
 
@@ -356,6 +387,9 @@ public sealed class HttpStageGateController(
         string Reason);
 
     internal sealed record PromotionAssessmentView(int? TargetStage, bool Eligible, IReadOnlyList<int>? UnmetCriteria);
+
+    // #868: Risk の 400 応答の本文（`{ "error": "…" }`）。
+    internal sealed record ErrorView(string? Error);
 
     internal sealed record WithdrawalAssessmentView(bool Triggered, int? Reason, bool HaltNewEntries, int? ProposedStage);
 

@@ -15,9 +15,15 @@ public interface IStageGateController
     // 段階ゲートの現況（現段階・モード・資金上限・昇格可否＋未充足基準・撤退評価・直近履歴）を取得する（表示専用）。
     Task<StageGateStatusResult> GetStatusAsync(CancellationToken cancellationToken = default);
 
-    // 段階遷移（昇格・差し戻し）を要求する。承認者は Risk 側が認証済みトークンから取る（要求本文は targetStage のみ）。
-    // 受理（200）と拒否（422・未充足基準／飛び級／現段階指定）を整形して返す。
-    Task<StageTransitionCommandResult> RequestTransitionAsync(int targetStage, CancellationToken cancellationToken = default);
+    // 段階遷移（昇格・差し戻し）を要求する。受理（200）と拒否（422・未充足基準／飛び級／現段階指定）を整形して返す。
+    //
+    // FR-20, FR-11, UC-06, #868, IADR-0240 決定11, IADR-0383: **onBehalfOf は多層認証が解決した操作者**
+    // （Keycloak 利用者名＝`AuthorizationResult.Actor`）。Bot のトークンは owner マップ機密クライアントのもので
+    // **人を表さない**ため、承認者を本文で運ぶ（kill switch / pause / GFV が理由欄で運ぶのと同じ作法を、
+    // 理由欄を持たない段階遷移では構造化した欄で行う）。**省略できない引数にしてある**——渡し忘れると
+    // 実資金ゲートの承認記録（7 年保持）の承認者がクライアント主体へ落ちる。
+    Task<StageTransitionCommandResult> RequestTransitionAsync(
+        int targetStage, string onBehalfOf, CancellationToken cancellationToken = default);
 
     // 撤退基準の評価（安全側＝HaltNewEntries 成立時に Risk が kill switch を自動起動）。実降格は行わず提案のみ返る。
     Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default);

@@ -183,7 +183,7 @@ public class DiscordSettingsAreReadOnlyTests
             }
 
             public Task<StageTransitionCommandResult> RequestTransitionAsync(
-                int targetStage, CancellationToken cancellationToken = default)
+                int targetStage, string onBehalfOf, CancellationToken cancellationToken = default)
             {
                 owner.Record();
                 return Task.FromResult(new StageTransitionCommandResult(true, true, "遷移"));

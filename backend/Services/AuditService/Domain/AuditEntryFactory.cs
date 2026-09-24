@@ -133,11 +133,24 @@ public static class AuditEntryFactory
     // （常時添えると要約が長くなり、警告そのものが埋もれる）。
     public static AuditEntry From(StageTransitioned e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(StageTransitioned), AuditCorrelation.From("stage-gate"), Symbol: null,
-        Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{e.ApprovedBy}）: {e.Reason}"
+        Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{ApproverOf(e)}）: {e.Reason}"
             + (e.Stage1BelowStatisticalBasis
                 ? $"（⚠ 最小取引件数 {e.Stage1MinimumTradeCount} 件・統計的根拠を満たさない設定のまま遷移）"
                 : string.Empty)),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 承認者の要約。**実際に操作した利用者と、
+    // 認可の主体であるクライアントの両方を残す**（Discord Bot 経由の承認は owner マップ機密クライアントの
+    // トークンで行われる）。生の値（ApprovedBy / AuthorizedBy）はペイロードにそのまま残る。要約だけ、
+    // 承認者が分からないことを内部の既定値 `unknown` ではなく「承認者不明」と書く（ReportConfirmed と同型）。
+    //
+    // 🔴 **`unknown` の遷移はいま Risk が 400 で拒否するため新たには増えない**（#868）。既に台帳へ入っている
+    // 過去の記録が監査照会に載るため、表示側の倒し方はここに残す。
+    private static string ApproverOf(StageTransitioned e)
+    {
+        var actor = string.IsNullOrWhiteSpace(e.ApprovedBy) || e.ApprovedBy == "unknown" ? "承認者不明" : e.ApprovedBy;
+        return string.IsNullOrWhiteSpace(e.AuthorizedBy) ? actor : $"{actor}・代理 {e.AuthorizedBy}";
+    }
 
     // FR-19, FR-10, FR-11, #464, ADR-0028 決定2, IADR-0182: GFV 違反による停止の**解除**。
     //
