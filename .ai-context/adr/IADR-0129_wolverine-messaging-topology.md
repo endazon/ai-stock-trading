@@ -17,7 +17,7 @@ related_ids:
   - IADR-0128
 author: claude
 created: 2026-08-03
-updated: 2026-09-17
+updated: 2026-09-23
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md
   - planning:projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md
@@ -389,6 +389,36 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
   コメント中の `UseWolverine(` にも一致するが、`scripts/check-consumer-endpoint-names.js` はコメント行を除いて判定する（同 Dockerfile の
   コメント「同じ信号」は厳密には同一ではない）。どちらへずれても黙っては通らない —— Wolverine を配線しないサービスのコメントに
   一致すれば `codegen write` がイメージビルドで失敗し、配線するサービスは実呼び出しで必ず一致する（取りこぼしは起きない）。
+
+## ［2026-09-23 追記 / #816］上の (iii) の言い過ぎを正し、Dockerfile の検出を `wiringOf()` と同じ規則へ寄せた
+
+上の追記は書き換えず、ここで是正する（#816 は PR #815 の監査で出た非ブロッキング指摘 3 点）。
+
+- **(iii) の「配線するサービスは実呼び出しで必ず一致する（取りこぼしは起きない）」は言い過ぎだった。**
+  `grep -q 'UseWolverine('` は固定文字列であり、**`UseWolverine (` のように呼び出し名と括弧の間へ空白を挟めば一致しない**
+  （C# としては正当な呼び出しである）。そのサービスは `codegen write` を通らずにイメージが焼かれ得た。
+  **ただし無音ではない** —— そのイメージは runtime 段の `ENV WOLVERINE_TYPE_LOAD_MODE=Static` を読むため、
+  決定 6-3 の表明（`WolverinePreGeneratedCodeAssertion`）が**起動時に** `MissingTypeException` で落ちる
+  （Pod の起動失敗＝欠けた生成型の名前つき。**メッセージだけが静かに処理されない形にはならない**）。
+  正しい言い方は「**取りこぼしは起き得たが、起きれば Pod の起動失敗として表に出る**」である。
+- **是正: `backend/Dockerfile` の検出を `scripts/check-consumer-endpoint-names.js` の `wiringOf()` と同じ 2 段へ寄せた。**
+  ①行頭が `//` / `*` / `/*` の行を落とす ②残りに `UseWolverine\s*\(` を当てる。
+  これで (iii) が指摘したずれ（コメントへの反応・空白入りの取りこぼし）は両方向とも消える。
+  現行ツリーの全 12 `Program.cs` に対する判定は新旧で一致する（11 サービスが codegen・opend-auth-gateway が skip）。
+- **🔴 規則は 2 箇所に写されたままである**（Dockerfile は Node を持たないビルド段で判定するため、検査器を呼べない）。
+  写しは黙ってずれるので、`scripts/scripts.repo.test.js` が **Dockerfile の実ファイルから検出コマンドを抜き出して
+  `sh` で実走し**、同じ入力に対する `wiringOf()` の判定と突き合わせる（5 入力。ずれたら赤くなる）。
+  **#816 そのものが「突き合わせる相手の無い写しは黙ってずれる」の実例である。**
+- **同時に、環境変数に依存していたテスト 3 件を独立させた**（PR #815 が直した 1 件と同型の残り）。
+  `WOLVERINE_TYPE_LOAD_MODE=Static` を置いたまま `AiStockTrading.TestSupport.PlatformShim.Tests` を走らせると、
+  ホストを起動する 3 件（`FoundationRegistrationTests.共通再試行を適用したメッセージ基盤は解決できる` /
+  `WolverineHandlerCodegenTests.内部実装に依存するハンドラも生成コードから実行できる` /
+  `WolverineTopologyTests.自分が購読している型の発行もブローカの共有_exchange_へ向かう`）が
+  `MissingTypeException` で落ちていた。**解決順①（呼び出し側の明示設定）を使って `Dynamic` を固定する**形に改めた
+  （`WolverineTestOptions.PinDynamicTypeLoadMode`）。プロセス環境変数の退避・復元は採らない ——
+  プロセス全体の状態を触るため使うクラスを並列化なしのコレクションへ入れる必要があり、射程が広い。
+  退避・復元が要るのは**環境変数を読む枝そのもの**を固定する `WolverineTypeLoadModeTests.共通配線の既定は_Dynamic_である`
+  だけで、そちらは据え置く。作業仕様書は `../specs/20260923_816_wolverine-static-codegen-followups.md`。
 
 ## 関連
 

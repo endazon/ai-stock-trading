@@ -1,5 +1,8 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
+using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 
@@ -18,9 +21,21 @@ namespace OrderExecutionService.Features.OrderExecution.PollOrderFills;
 //   - 例外 → 件数のみ集計して据え置き（1 件の失敗でバッチ全体を止めない＝OrderReservationReconciler と同じ流儀）。
 //   - 約定数は巻き戻さない（部分列挙・順序前後で数量が減る応答を採らない）。
 //
+// 🔴 FR-10, #833 項目1, IADR-0389 決定2: **ここが「決済が未約定で終わった」を確認できる唯一の点である。**
+// ソフトウェア逆指値（S1）の決済は受理の時点で保護記録を完了させており（IADR-0344 決定5-5）、その注文が
+// 0 約定のまま失効・取消されると建玉が無保護のまま誰の巡回にも載らない。終端化を観測したこの場で保護記録を
+// 再武装する（reArmer。未構成なら従来どおり何もしない）。**新しい常駐を足さない。**
+//
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
-public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore store, IClock clock)
+public sealed class OrderFillPoller(
+    IBrokerAdapter broker,
+    IExecutedOrderStore store,
+    IClock clock,
+    SoftwareStopReArmer? reArmer = null,
+    ILogger<OrderFillPoller>? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger<OrderFillPoller>.Instance;
+
     /// <summary>
     /// 1 巡回。発注から <paramref name="maxTracking"/> 以内の非終端記録を最大 <paramref name="batchSize"/> 件追跡し、
     /// 発行すべき <see cref="OrderExecuted"/> を結果に載せて返す（発行は呼び出し側＝Worker）。
@@ -34,6 +49,7 @@ public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore s
         var pending = store.FindPendingSince(now - maxTracking, batchSize);
 
         var executed = new List<OrderExecuted>();
+        var softwareStopEvents = new List<SoftwareStopExecuted>();
         var updated = 0;
         var terminalized = 0;
         var unchanged = 0;
@@ -51,6 +67,10 @@ public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore s
                 {
                     // 「不明」を「未約定」と取り違えない。記録は非終端のまま残り、次回巡回で再試行される。
                     unknown++;
+                    // 🔴 #833 項目1, IADR-0389 決定8: ただし S1 の決済レグの不明は**無音にしない**
+                    //（受理の時点で保護記録は完了しており、黙って据え置くと建玉が誰の巡回にも載らない）。
+                    // 再武装も完了もせず、一定間隔で 1 回 Critical を出すだけである。
+                    reArmer?.OnCloseUnresolved(record);
                     continue;
                 }
 
@@ -90,7 +110,29 @@ public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore s
                     broker.Provider));
                 updated++;
                 if (terminal)
+                {
                     terminalized++;
+
+                    // 🔴 #833 項目1, IADR-0389 決定2・9: 記録を終端化した**後**に再武装する。
+                    // 先に再武装すると UpdateOutcome が失敗した巡回で記録が非終端のまま残り、
+                    // 次の巡回が同じレグで**二度目の再武装**をする（主張が二重に増える）。
+                    // 再武装の失敗で巡回を止めない（1 件の失敗でバッチ全体を落とさない＝既存の流儀）が、
+                    // 無音にもしない——終端化はこの 1 回しか観測できないため、失敗は必ず Critical で残す。
+                    try
+                    {
+                        var reArmed = reArmer?.OnCloseTerminalized(record, snapshot.Status, filledQuantity);
+                        if (reArmed is not null)
+                            softwareStopEvents.Add(reArmed);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError(ex,
+                            "🔴 ソフトウェア逆指値の再武装に失敗しました（決済は {Status} で終端化済み・保護記録は完了のままです）。"
+                                + "**建玉が無保護で残っている可能性があります。直ちに確認してください。**"
+                                + "CloseDecisionId={DecisionId} OrderId={OrderId}",
+                            snapshot.Status, record.DecisionId, record.OrderId);
+                    }
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -98,12 +140,16 @@ public sealed class OrderFillPoller(IBrokerAdapter broker, IExecutedOrderStore s
             }
         }
 
-        return new OrderFillPollResult(pending.Count, updated, terminalized, unchanged, unknown, failed, executed);
+        return new OrderFillPollResult(
+            pending.Count, updated, terminalized, unchanged, unknown, failed, executed, softwareStopEvents);
     }
 }
 
 // #270, IADR-0113: 1 巡回の結果。件数サマリ（可観測性）と、発行すべき OrderExecuted の一覧を持つ。
 // Updated は記録を更新した件数（うち終端化が Terminalized）。Unknown は照会できず据え置いた件数。
+//
+// #833 項目1, IADR-0389: SoftwareStopEvents は再武装で発行すべき SoftwareStopExecuted（CloseUnfilled）。
+// 既定 null で足すのは、既存の呼び出し（テスト・集計）を壊さないためである。
 public sealed record OrderFillPollResult(
     int Scanned,
     int Updated,
@@ -111,4 +157,5 @@ public sealed record OrderFillPollResult(
     int Unchanged,
     int Unknown,
     int Failed,
-    IReadOnlyList<OrderExecuted> Executed);
+    IReadOnlyList<OrderExecuted> Executed,
+    IReadOnlyList<SoftwareStopExecuted>? SoftwareStopEvents = null);

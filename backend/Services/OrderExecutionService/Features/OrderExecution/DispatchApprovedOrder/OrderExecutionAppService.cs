@@ -669,6 +669,25 @@ public sealed class OrderExecutionAppService(
             SlippageCalculator.Compute(closeIntent.Price, closeOrder.AveragePrice, closeIntent.Side), now));
         reservations.MarkCompleted(closeDecisionId, closeOrder.OrderId, now);
 
+        // 🔴 FR-10, FR-11, UC-06, #857, IADR-0369 決定1: **確認できた拒否**を「手仕舞い済み」と扱わない。
+        // 未約定残を二度と約定させない終端（Rejected / Cancelled / Expired）が**返った**なら、建玉は残っている。
+        // ここで PositionClosed を主張すると、通知が事実と逆になり（「建玉を成行で手仕舞いました」）、
+        // 取引台帳には送られてもいない決済の承認行が足されて 30 分ぶんの在庫が押さえられる。
+        // 🔴 CloseIntent は運ばない（生きていない成行を台帳に押さえさせない）。CloseDecisionId は相関のために載せる。
+        if (OrderStatusLifecycle.AbandonsUnfilledRemainder(closeOrder.Status))
+        {
+            _logger.LogError(
+                "保護逆指値を張れなかった建玉の成行手仕舞いが拒否されました（確認できた拒否・状態 {Status}）。"
+                + "**建玉は残っています。**手仕舞い済みとしては扱いません。証券会社の画面で建玉を確認してください: "
+                + "EntryDecisionId={EntryDecisionId} CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                closeOrder.Status, approved.DecisionId, closeDecisionId, intent.Symbol, quantity);
+
+            return new ProtectiveStopCoverageLost(
+                approved.DecisionId, intent.Symbol, intent.Market,
+                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.CloseRejected,
+                quantity, closeDecisionId, CloseIntent: null, now);
+        }
+
         return new ProtectiveStopCoverageLost(
             approved.DecisionId, intent.Symbol, intent.Market,
             ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.PositionClosed,

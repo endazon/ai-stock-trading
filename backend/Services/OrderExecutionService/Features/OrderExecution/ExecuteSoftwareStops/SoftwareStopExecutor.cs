@@ -297,6 +297,11 @@ public sealed class SoftwareStopExecutor(
         var now = clock.UtcNow;
         var triggeredPrice = stop.TriggeredPrice ?? stop.TriggerPrice;
 
+        // 🔴 #833 項目1, IADR-0389 決定1: **受理（Accepted）は約定ではない。** ここで帳簿を減らして行を閉じるのは
+        // 取引台帳の押さえ（ClosePlaced → AppendApproval）を受理の時点で取るためであり、その判断は変えない
+        //（約定まで押さえないと同じ建玉を二重に売れる。#848 で塞いだ穴が開く）。
+        // 受理された決済が **0 約定のまま失効・取消**された場合は、約定追跡（OrderFillPoller）が終端を確認した時点で
+        // SoftwareStopReArmer が未約定残ぶんを**この行へ戻す**（State を Active に復帰させる）。
         if (status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
         {
             // 🔴 #820 の 7 巡目監査, IADR-0344 追記(7): 判定の基準は「この巡回で動かしてよい株数」である。

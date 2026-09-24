@@ -5,7 +5,13 @@ namespace ReportService.Features.Reports;
 
 // FR-06/07, UC-03〜05, ADR-0003: 報告書のドラフト管理・版番号付き冪等確定・確定済み日報方針の照会。
 // 確定は利用者のみ（アクター必須）。確定前の方針は取引に適用されない（ADR-0003）。数値集計・LLM ドラフトは後続スライス。
-public sealed class ReportAppService(IReportStore store, IClock clock)
+//
+// FR-06, FR-07, UC-03, #839, IADR-0382: bootstrapNotifier は初回月報ブートストラップの提示通知（FR-09・IADR-0116）。
+// **未注入は「通知経路が構成されていない」**＝提示はするが通知しない（自動生成の notifier と同じ扱い）。
+public sealed class ReportAppService(
+    IReportStore store,
+    IClock clock,
+    IReportDraftPresentedNotifier? bootstrapNotifier = null)
 {
     public VersionedReport? Get(string periodKey) => store.Get(periodKey);
 
@@ -86,4 +92,93 @@ public sealed class ReportAppService(IReportStore store, IClock clock)
         var month = DateOnly.FromDateTime(clock.UtcNow.UtcDateTime);
         return MonthlyBootstrap.BuildDraft(month, watchlist, assumptionsVersion);
     }
+
+    /// <summary>
+    /// FR-06, FR-07, UC-03, #839, IADR-0382: 初回月報ブートストラップを<b>保存して提示する</b>
+    /// （承認待ちへ並べる）。確定は従来どおり利用者のみ（ADR-0003）——ここでは確定しない。
+    /// <para>
+    /// 🔴 <b>これが「初回の月報を作る導線」である。</b> <see cref="BuildMonthlyBootstrap"/>（<c>GET</c>）は
+    /// ドラフトを返すだけで保存も提示もしないため、承認待ちに並ばず <c>/report approve</c> の対象にもならなかった
+    /// （#839 の原因 2）。提示まで進めれば Discord の既存コマンドがそのまま使える。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>既存の行は踏まない。</b> 確定済み月報があれば不要（<see cref="MonthlyBootstrapOutcome.NotNeeded"/>）、
+    /// 当月の行が既にあれば上書きしない（<see cref="MonthlyBootstrapOutcome.PeriodOccupied"/>）
+    /// ——利用者が手で作ったドラフト・差し戻し中のドラフトを踏まないという自動生成の規則（IADR-0115 決定3）に揃える。
+    /// </para>
+    /// </summary>
+    public async Task<MonthlyBootstrapResult> StartMonthlyBootstrapAsync(
+        IReadOnlyList<string> watchlist,
+        int assumptionsVersion,
+        string actor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(watchlist);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+
+        if (BuildMonthlyBootstrap(watchlist, assumptionsVersion) is not { } draft)
+            return new MonthlyBootstrapResult(MonthlyBootstrapOutcome.NotNeeded, null, 0, false, false);
+
+        if (store.Get(draft.PeriodKey) is not null)
+            return new MonthlyBootstrapResult(MonthlyBootstrapOutcome.PeriodOccupied, null, 0, false, false);
+
+        var version = store.UpsertDraft(draft with { State = ReportState.Draft, ConfirmedAt = null }, expectedVersion: 0);
+
+        // 提示（Drafting→PendingApproval）。自動生成と同じく**提示までで止める**（ADR-0003・IADR-0115 決定1）。
+        var decision = store.ApplyReview(draft.PeriodKey, new ReviewCommand(ReviewAction.Present, actor, version));
+        var presented = decision is { Accepted: true } && decision.Review.State == ReviewState.PendingApproval;
+
+        // FR-09, IADR-0116: 提示まで到達したものだけ通知する（承認待ちに無いものを「確認してください」と言わない）。
+        var notificationFailed = false;
+        if (presented && bootstrapNotifier is not null)
+        {
+            try
+            {
+                await bootstrapNotifier.NotifyAsync(
+                    new PresentedReportNotice(
+                        draft.PeriodKey,
+                        ReportKind.Monthly,
+                        ReportPeriod.Label(ReportKind.Monthly, draft.PeriodStart),
+                        MonthlyBootstrap.PresentationSummary(
+                            ReportPeriod.Label(ReportKind.Monthly, draft.PeriodStart), draft.PolicySummary),
+                        version),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 通知は best-effort。失敗しても保存・提示は巻き戻さない（自動生成と同じ規律）。
+                notificationFailed = true;
+            }
+        }
+
+        return new MonthlyBootstrapResult(
+            MonthlyBootstrapOutcome.Started, draft, version, presented, notificationFailed);
+    }
 }
+
+// FR-06, FR-07, UC-03, #839, IADR-0382: 初回月報ブートストラップの起動結果。
+public enum MonthlyBootstrapOutcome
+{
+    /// <summary>保存し、提示（承認待ち）まで進めた。</summary>
+    Started,
+
+    /// <summary>確定済み月報が既にある＝ブートストラップは不要である。</summary>
+    NotNeeded,
+
+    /// <summary>当月の月報の行が既にある（手で作ったドラフト・差し戻し中）。<b>上書きしない。</b></summary>
+    PeriodOccupied,
+}
+
+/// <param name="Outcome">結果の種別。</param>
+/// <param name="Report">保存したドラフト（<see cref="MonthlyBootstrapOutcome.Started"/> のときだけ非 null）。</param>
+/// <param name="Version">保存後の版番号（確定要求に添える <c>expectedVersion</c>）。</param>
+/// <param name="Presented">承認待ちへ並んだか。<c>false</c> なら <c>/report approve</c> の対象にならない。</param>
+/// <param name="NotificationFailed">
+/// 提示はできたが通知を発行できなかったか。🔴 <b>成功に見せない</b>——利用者には「届かない」ことが見えている必要がある。
+/// </param>
+public sealed record MonthlyBootstrapResult(
+    MonthlyBootstrapOutcome Outcome,
+    TradingReport? Report,
+    int Version,
+    bool Presented,
+    bool NotificationFailed);

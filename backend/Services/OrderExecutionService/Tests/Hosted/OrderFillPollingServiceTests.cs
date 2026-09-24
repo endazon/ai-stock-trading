@@ -1,5 +1,6 @@
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using OrderExecutionService.Common.Abstractions;
@@ -14,6 +15,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Wolverine;
@@ -69,14 +71,36 @@ public class OrderFillPollingServiceTests
     private const string ServiceName = "ai-stock-trading.order-execution-service";
 
     // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
-    private static Task<IHost> BuildHostAsync(IBrokerAdapter broker, IExecutedOrderStore store) =>
+    // stops を渡したときは、Program.cs（moomoo 選択時）と同じ形で S1 の再武装（#833 項目1, IADR-0389）を配線する。
+    private static Task<IHost> BuildHostAsync(
+        IBrokerAdapter broker, IExecutedOrderStore store, IProtectiveStopOrderStore? stops = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
                 opts.Services.AddSingleton<IClock, FakeClock>();
                 opts.Services.AddSingleton(broker);
                 opts.Services.AddSingleton(store);
-                opts.Services.AddScoped<OrderFillPoller>();
+                if (stops is null)
+                {
+                    opts.Services.AddScoped<OrderFillPoller>();
+                }
+                else
+                {
+                    opts.Services.AddSingleton(stops);
+                    opts.Services.AddSingleton<UnresolvedCloseNotificationTracker>();
+                    opts.Services.AddScoped(sp => new SoftwareStopReArmer(
+                        sp.GetRequiredService<IProtectiveStopOrderStore>(),
+                        sp.GetRequiredService<IExecutedOrderStore>(),
+                        sp.GetRequiredService<IClock>(),
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopReArmer>(),
+                        sp.GetRequiredService<UnresolvedCloseNotificationTracker>()));
+                    opts.Services.AddScoped(sp => new OrderFillPoller(
+                        sp.GetRequiredService<IBrokerAdapter>(),
+                        sp.GetRequiredService<IExecutedOrderStore>(),
+                        sp.GetRequiredService<IClock>(),
+                        sp.GetRequiredService<SoftwareStopReArmer>(),
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>()));
+                }
                 // FR-11, #633, IADR-0300: 約定を観測したら経費も記録する（既定は常に「取得できない」）。
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
                 opts.Services.AddScoped<TradeExpenseRecordingService>();
@@ -194,6 +218,62 @@ public class OrderFillPollingServiceTests
         second.Executed.Should().ContainSingle(e => e.Status == OrderStatus.Filled && e.FilledQuantity == 1_000);
 
         store.FindByDecisionId(decisionId)!.Status.Should().Be(OrderStatus.Filled);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-730 — FR-10, #833 項目1, IADR-0389 決定7: 常駐（OrderFillPollingService）が再武装の
+    // CloseUnfilled を**実際にメッセージ基盤へ発行する**。
+    //
+    // 受理だけで完了させた S1 の決済が 0 約定で失効したことを運用者が知る手段は、この Critical 1 本しかない。
+    // 約定追跡（OrderFillPoller）が結果へ載せても、常駐が発行しなければ無音のまま建玉が無保護で残る
+    // ——SoftwareStopReArmerTests は結果（SoftwareStopEvents）までしか見ないため、発行の 1 行を外しても緑だった。
+    [Fact]
+    public async Task T_10_730_再武装したCloseUnfilledを常駐が実際に発行する()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var entryId = Guid.NewGuid();
+        var created = Now.AddHours(-6);
+
+        // 受理で Completed にされた S1 の行（残保護 0）と、エントリー（約定済み 707 株）。
+        stops.Save(new ProtectiveStopOrder(
+            entryId, ProtectiveStopIds.SoftwareStopId(entryId), string.Empty, "AAPL", Market.UnitedStates,
+            TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 707, 338.51m, 1m, 1,
+            ProtectiveStopState.Completed, created, Now.AddMinutes(-10), StopLossExecutionMethod.SoftwareStop,
+            TriggeredAt: Now.AddMinutes(-10), TriggeredPrice: 338.20m, RemainingProtected: 0));
+        store.Save(new ExecutionRecord(
+            entryId, "entry-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, 707, 340m, 707, 340m, OrderStatus.Filled, 0m, created));
+
+        // その決済レグ（受理・未約定のまま追跡の対象）。ブローカーは 0 約定の Expired を返す。
+        var closeDecisionId = ProtectiveStopIds.SoftwareCloseDecisionId(entryId, 1);
+        store.Save(new ExecutionRecord(
+            closeDecisionId, "close-1", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, 707, 338.20m, 0, 0m, OrderStatus.Accepted, 0m, Now.AddMinutes(-10)));
+        var broker = new SequenceBroker(new BrokerOrder(
+            "close-1",
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 707, 338.20m, PositionEffect.Close),
+            OrderStatus.Expired, 0, 0m, Now.AddMinutes(-10), Now));
+
+        using var host = await BuildHostAsync(broker, store, stops);
+        var service = BuildService(host, new FillPollingOptions());
+
+        OrderFillPollResult result = null!;
+        Func<IMessageContext, Task> poll = async _ => result = await service.PollOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
+
+        result.Terminalized.Should().Be(1);
+        stops.Find(entryId)!.State.Should().Be(ProtectiveStopState.Active);
+
+        // 🔴 結果に載るだけでは足りない。メッセージ基盤へ出たことを発行の側で固定する。
+        var published = session.Sent.MessagesOf<SoftwareStopExecuted>().Should().ContainSingle().Which;
+        published.Outcome.Should().Be(SoftwareStopOutcome.CloseUnfilled);
+        published.EntryDecisionId.Should().Be(entryId);
+        published.Quantity.Should().Be(707);
+        published.CloseDecisionId.Should().Be(closeDecisionId);
+        published.CloseOrderId.Should().Be("close-1");
 
         await host.StopAsync();
     }

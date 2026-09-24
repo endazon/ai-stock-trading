@@ -170,10 +170,14 @@ builder.Services.AddSingleton<IBrokerAccountObservationStore>(sp =>
 // DbContext が scoped のため本ストアも scoped。
 builder.Services.Configure<CapitalBaselineOptions>(
     builder.Configuration.GetSection(CapitalBaselineOptions.SectionName));
+// FR-10, NFR-07, #889, IADR-0372: 読み出しの帰結（供給／観測の欠落／未供給の 3 理由）を観測する。
+// **門は変えない**——「残高 0 で新規建てを止めるか」は裁定待ちであり、まず見えるようにする。
 builder.Services.AddScoped<ICapitalBaselineStore>(sp => new EfCapitalBaselineStore(
     sp.GetRequiredService<RiskManagementDbContext>(),
     sp.GetRequiredService<IClock>(),
-    sp.GetRequiredService<IOptions<CapitalBaselineOptions>>().Value));
+    sp.GetRequiredService<IOptions<CapitalBaselineOptions>>().Value,
+    sp.GetRequiredService<ILogger<EfCapitalBaselineStore>>(),
+    sp.GetRequiredService<BusinessMetrics>()));
 // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165: GFV 発生回数の**自前計数**の台帳。
 // **永続（EF）でなければならない**——違反記録をプロセス内に持つと再起動で消え、「2 件で新規建てを止める」
 // 統制が再起動 1 回で解ける（fail-open）。口座種別の観測（上・非永続）と設計が違うのは「集計 vs 現在値」の
