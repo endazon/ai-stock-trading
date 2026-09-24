@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-03, UC-02, ADR-0040, ADR-0003, IADR-0344, IADR-0210, IADR-0014]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-03 / FR-10)
   - planning:projects/ai-stock-trading/07_adr/ADR-0040 (決定1 S1)
@@ -69,3 +69,10 @@ plan_refs:
 - 残余: 到達イベントを受けたが行のトリガーに達していない（`Matched=0`）ときの無音は残る（IADR-0344 決定4 の仕様）。
   要約で台帳ラインと行トリガーの両方が見えるので、観測は可能になった。
 - 残余: 要約の状態はプロセス内で持つ（再起動で消え、再起動後の最初の巡回で即時に要約が出る）。
+
+## ［2026-09-25 追記 / #936・IADR-0393］台帳のラインは最も保護的な値になった
+
+決定5 の「台帳のライン（市場監視が比べる値。**銘柄単位で最新エントリーに丸められる**。IADR-0344 決定4）」は、
+[IADR-0393](IADR-0393_most-protective-stop-line-per-entry-lot.md) で**保有中のエントリーのうち最も保護的な値**へ改めた（本文は凍結記録として残す）。
+#936 は、本 IADR の要約に両サービスの値（ライン 330.88 と行のトリガー 331.67）が並んだことで見つかった。
+`SoftwareStopLivenessReporter` のコード注記も同じ形へ書き直した。要約の出し方は変えていない。

@@ -1,3 +1,4 @@
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
@@ -170,7 +171,8 @@ public class OrderExecutionServiceStopLossMethodTests
         result.Forgone.DecisionId.Should().Be(approved.DecisionId);
         store.GetAll().Should().BeEmpty();
         stops.FindActive(100).Should().BeEmpty();
-        reservations.Find(approved.DecisionId).Should().BeNull("発注に着手しないため予約も取らない");
+        reservations.Find(approved.DecisionId)!.State.Should().Be(
+            OrderDispatchState.Forgone, "発注に着手しないため予約は取らず、見送りの記録だけが残る（#876）");
     }
 
     // 空売りでも実弾の拒否が先に効く（S0 以外の設定が有効なこと自体が不正な状態である）。
@@ -255,7 +257,8 @@ public class OrderExecutionServiceStopLossMethodTests
         result.StopAttempted.Should().BeNull();
         result.Forgone!.Reason.Should().Be(OrderDispatchForgoneReason.StopOrderUnsupported);
         store.GetAll().Should().BeEmpty();
-        reservations.Find(approved.DecisionId).Should().BeNull("発注に着手しないため予約も取らない");
+        reservations.Find(approved.DecisionId)!.State.Should().Be(
+            OrderDispatchState.Forgone, "発注に着手しないため予約は取らず、見送りの記録だけが残る（#876）");
     }
 
     // ---- 受け入れ基準 1: S0 は発注先を問わず現行挙動 ----

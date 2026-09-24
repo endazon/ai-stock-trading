@@ -2,10 +2,10 @@
 title: IADR-0211 OpenD へ確実に届いていない発注は「見送り」とし、キューイングも Rejected への丸め込みもしない
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0210, IADR-0362]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0210, IADR-0362, IADR-0398]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-09-19
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-05)
   - planning:projects/ai-stock-trading/07_adr/ADR-0002_broker-selection.md (OpenD 常駐・SPOF・INDEX 決定 33)
@@ -96,6 +96,16 @@ issue #331 の要求と食い違う。
    を残さず（注文は存在しない）、(c) 新イベント `OrderDispatchForgone`（DecisionId・Intent・理由・時刻）を
    発行して正常終了する。** ハンドラが例外を投げないため Wolverine の再試行・error キュー滞留は発生しない。
    **再発注は次の取引判断からのみ**（見送った注文の自動リプレイ経路を作らない）。
+
+   ［2026-09-25 追記 / [#876](https://github.com/endazon/ai-stock-trading/issues/876)・[IADR-0398](IADR-0398_forgone-decision-never-redispatched.md)］
+   🔴 **(a) の「予約を解放」は改めた。** 解放（予約行の削除）の時点で二重発注の窓が無いのは正しいが、
+   解放は**同じ `OrderApproved` の再配送に予約の取り直しと発注を許す**——本決定の末文が禁じた
+   「見送った注文の自動リプレイ」そのものだった。IADR-0356 が見送りを受けて台帳の在庫を戻すようになってから、
+   そのリプレイは**台帳が押さえていない決済**になる（二重決済でショート化）。
+   いまは予約を削除せず**見送りの終端（`OrderDispatchState.Forgone`）へ移し**、予約前の見送り（決定 4 の各理由）も
+   `Forgone` を記録してから発行する。見送った DecisionId の再配送は発注しない。**(b)(c) と末文は不変**で、末文の趣旨はむしろ強まった。
+   下の「理由」の「予約を解放してよいのは接続確立前の失敗に限られる」は、**予約を手放してよい（Reserved のまま据え置かなくてよい）のは
+   接続確立前の失敗に限られる**と読み替える（限定そのもの＝送信後の失敗に使わない、は不変）。
 4. **見送りの理由は列挙 `OrderDispatchForgoneReason` で持つ**: `BrokerUnavailable`（OpenD 切断）／
    `StopLossPriceMissing`・`StopOrderUnsupported`（IADR-0210 決定 1 の fail-closed。逆指値を張れない Open は
    建玉を作らない）。いずれも**発注前**に確定する見送りである。

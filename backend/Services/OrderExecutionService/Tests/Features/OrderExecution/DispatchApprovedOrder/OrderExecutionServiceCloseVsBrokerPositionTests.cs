@@ -3,6 +3,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AwesomeAssertions;
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
@@ -105,7 +106,8 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         result.Executed.Should().BeNull();
         result.Forgone!.Reason.Should().Be(OrderDispatchForgoneReason.BrokerPositionAbsent);
         store.GetAll().Should().BeEmpty();
-        reservations.Find(approved.DecisionId).Should().BeNull("送らないと決めた注文は予約も取らない");
+        reservations.Find(approved.DecisionId)!.State.Should().Be(
+            OrderDispatchState.Forgone, "送らないと決めた注文は予約を取らず、見送りの記録だけを残す（#876。再配送で送らない）");
 
         // 監査・通知は既存の乖離検知と同じイベントで残す（新しい経路を作らない）。
         var drift = result.Drift!.Drifts.Should().ContainSingle().Subject;
@@ -151,7 +153,7 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         result.Forgone.Intent.Quantity.Should().Be(300, "見送りは承認が運んだ数量のまま記録する");
         result.Drift.Should().BeNull("乖離を確認できていない（不明を乖離として報告しない）");
         store.GetAll().Should().BeEmpty();
-        reservations.Find(approved.DecisionId).Should().BeNull();
+        reservations.Find(approved.DecisionId)!.State.Should().Be(OrderDispatchState.Forgone); // #876
     }
 
     // T-10-497（是正で**変えてはいけない**側）: 台帳とブローカーが一致している通常時は挙動が変わらない。
