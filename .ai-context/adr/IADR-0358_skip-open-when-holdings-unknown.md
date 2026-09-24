@@ -2,10 +2,10 @@
 title: IADR-0358 実結線のもとで保有状況が不明なら新規建て（Open）を見送る — 手仕舞い（Close）は止めず、未結線の既定構成は変えない
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-10, FR-05, FR-11, UC-01, UC-02, ADR-0003, IADR-0119, IADR-0351, IADR-0099, IADR-0163, IADR-0197]
+related_ids: [FR-04, FR-10, FR-05, FR-11, UC-01, UC-02, ADR-0003, IADR-0119, IADR-0351, IADR-0099, IADR-0163, IADR-0197, IADR-0390]
 author: endazon (with Claude Code)
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -136,5 +136,8 @@ related_specs:
   ダッシュボードしか無く**アラートルールが 1 件も無い**——見送りの理由を区別して観測・通知できるようにする）。
 - 🔴 **不明の判定は台帳の射影に対するものであり、ブローカーの事実ではない**（IADR-0351 決定6 の残る制約と同じ）。
   台帳が答えれば「判っている」として Open を通す。台帳とブローカーの乖離は #849 / #864 の射程である。
+  ［2026-09-24 追記 / [#934](https://github.com/endazon/ai-stock-trading/issues/934)］**「判っている」は約定済みの建玉についてであり、
+  未約定の新規建て注文は含んでいなかった。** [IADR-0390](IADR-0390_working-entries-in-decision-input.md) 決定5 が同じ形の判定を
+  未約定にも足した——実結線のもとで未約定の照会が不明なら Open を見送る（手仕舞いは止めない・未結線は従来どおり）。
 - **損切りライン到達中の買い増しはコードでは止めていない**（IADR-0351 決定3 の 4 のまま）。本 IADR が
   止めるのは「保有が**不明**のときの Open」だけであり、「保有が**判っていて**到達中のときの Open」ではない。
