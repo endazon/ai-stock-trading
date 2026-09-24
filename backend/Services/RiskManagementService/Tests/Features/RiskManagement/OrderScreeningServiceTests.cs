@@ -53,7 +53,7 @@ public class OrderScreeningServiceTests
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
         return (service, clock, portfolio, killSwitch, lockout);
     }
 
@@ -210,7 +210,7 @@ public class OrderScreeningServiceTests
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
 
         service.Screen(Decision(EntryIntent())); // 金曜に到達
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 13)); // 月曜
@@ -242,7 +242,7 @@ public class OrderScreeningServiceTests
             FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
 
         service.Screen(Decision(EntryIntent()));
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 10)); // 翌営業日（ET 基準）

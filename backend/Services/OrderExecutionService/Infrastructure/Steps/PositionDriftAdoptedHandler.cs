@@ -1,5 +1,6 @@
 using OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.Extensions.Logging;
 using Wolverine;
 
@@ -23,22 +24,35 @@ namespace OrderExecutionService.Infrastructure.Steps;
 // IADR-0370 2026-09-24 追記 / PR #918 監査）。このときは**どの行にも触る前に**打ち切っているので捨てる成功は無く、
 // 「建玉が消えたと確かめられないまま保護を消さない」ために、再試行（2s/10s/30s）で照会をやり直す。
 // 使い切れば _error キューに残る（Critical は業務クラスがログ済み。投げた処理中の発行は Wolverine が捨てるため、ここでは発行しない）。
+//
+// 🔴 #942, IADR-0395: **この配送が最後か**（ここで投げると _error へ送られるか）を Wolverine の配送回数から決めて業務クラスへ渡す。
+// 最後の配送の打ち切りだけが業務メトリクス ast.order.drift_adoption_followup_abandoned を増やし、アラートが鳴る。
+// 配送回数（Envelope.Attempts）は受信のたびにハンドラの前で 1 増える（1 始まり。WolverineFx 6.24.5 の Executor.ExecuteAsync）。
+// 共通の失敗規則は 1〜3 回目を再試行、4 回目を _error へ移す（WolverineExtensions.MaxDeliveryAttempts）。
+// `>=` で比べるのは、配送回数が上限を超えて届いた場合（例: _error から戻したメッセージが attempts ヘッダを引き継いでいた場合）も、
+// その失敗は規則の枠（1〜4 回目）の外であり、Wolverine の既定（FailureRule が枠を見つけられないときの MoveToErrorQueue）で
+// 再び _error へ送られるため。
 public sealed class PositionDriftAdoptedHandler(
     ProtectiveStopDriftAdopter adopter,
     ILogger<PositionDriftAdoptedHandler> logger)
 {
-    public async Task Handle(PositionDriftAdopted message, IMessageBus bus, CancellationToken cancellationToken)
+    public async Task Handle(
+        PositionDriftAdopted message, IMessageBus bus, Envelope envelope, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(bus);
+        ArgumentNullException.ThrowIfNull(envelope);
+
+        var finalDeliveryAttempt = IsFinalDeliveryAttempt(envelope.Attempts);
 
         logger.LogInformation(
             "乖離の取り込みを受けて保護記録を追随させます: 取り込み={AdoptionId} 銘柄={Symbol}/{Market}"
-            + " 台帳 {Before}→{After}（観測 {Broker}・依頼者 {Actor}）",
+            + " 台帳 {Before}→{After}（観測 {Broker}・依頼者 {Actor}）配送 {Attempt}/{MaxAttempts} 回目",
             message.AdoptionId, message.Symbol, message.Market,
-            message.LedgerQuantityBefore, message.LedgerQuantityAfter, message.BrokerQuantity, message.Actor);
+            message.LedgerQuantityBefore, message.LedgerQuantityAfter, message.BrokerQuantity, message.Actor,
+            envelope.Attempts, WolverineExtensions.MaxDeliveryAttempts);
 
-        var result = await adopter.ApplyAsync(message, cancellationToken).ConfigureAwait(false);
+        var result = await adopter.ApplyAsync(message, finalDeliveryAttempt, cancellationToken).ConfigureAwait(false);
 
         // ADR-0013, IADR-0129, #354: Wolverine の PublishAsync は CancellationToken を取らない。
         foreach (var evt in result.Events)
@@ -52,4 +66,10 @@ public sealed class PositionDriftAdoptedHandler(
                 result.Scanned, result.Reduced, result.CancelUnconfirmed, message.Symbol, message.Market);
         }
     }
+
+    /// <summary>
+    /// #942, IADR-0395: 配送回数 <paramref name="attempts"/>（1 始まり）の失敗で、メッセージが <c>_error</c> へ送られるか。
+    /// </summary>
+    public static bool IsFinalDeliveryAttempt(int attempts) =>
+        attempts >= WolverineExtensions.MaxDeliveryAttempts;
 }

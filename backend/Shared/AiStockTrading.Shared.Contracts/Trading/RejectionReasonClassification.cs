@@ -60,6 +60,9 @@ public static class RejectionReasonClassification
             or RejectionReason.BrokerAccountTypeUnverified
             or RejectionReason.InformationSourceDegraded
             or RejectionReason.CapitalBaselineUnavailable
+            // #935, IADR-0394: 当日に損切りしたかを確かめられない状態も「取引を止めている状態そのものの記録」。
+            // 確かめられた損切り（StoppedOutSameDay）は下の既定＝クラス A（統制の正常作動）へ落ちる。
+            or RejectionReason.StopOutStatusUnknown
             or RejectionReason.MarketDisabled => RejectionReasonClass.B,
 
         // クラス A: 統制の正常作動（金額・件数・損失の上限、差金決済防止、空売り統制の 8 規則＝拒否理由 9 種、

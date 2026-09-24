@@ -14,6 +14,7 @@ using OrderExecutionService.Hosted;
 using OrderExecutionService.Infrastructure.ExternalServices;
 using OrderExecutionService.Infrastructure.Steps;
 using OrderExecutionService.Infrastructure.Persistence;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -145,12 +146,16 @@ builder.Services.AddScoped<OrderAmendmentDispatcher>();
 // ホストを組むため、依存が解決できないとハンドラが組めない（SoftwareStopExecutor と同じ理由）。
 // 建玉照会（IBrokerPositionSource）は moomoo 構成でだけ登録されており、内蔵 paper では null
 // （取り込みの観測だけを目標にする。IADR-0370 決定3）。
+// 🔴 #942, IADR-0395: 業務メトリクス（BusinessMetrics。AddAiStockTradingObservability が登録するシングルトン）を**必ず**渡す。
+// 引数は省略可能なので、ここで落とすとコンパイルも既存の試験も通ったまま、再試行を使い切った打ち切りが 1 件も数えられず、
+// アラート AstDriftAdoptionFollowUpAbandoned は**エラーを出さずに永久に鳴らない**（T-10-785 が Program.cs そのもので固定する）。
 builder.Services.AddScoped(sp => new ProtectiveStopDriftAdopter(
     sp.GetRequiredService<IProtectiveStopOrderStore>(),
     sp.GetRequiredService<OrderAmendmentService>(),
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<ProtectiveStopDriftAdopter>(),
-    sp.GetService<IBrokerPositionSource>()));
+    sp.GetService<IBrokerPositionSource>(),
+    sp.GetRequiredService<BusinessMetrics>()));
 
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
@@ -304,6 +309,13 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b.AddPort("broker", brokerSelection.Tier));
 
 var app = builder.Build();
+
+// 🔴 FR-10, #942, IADR-0395: 追随の打ち切りのカウンタを**起動完了後に 0 で計上して系列を先に作る**。
+// 最初の打ち切りで系列が初めて現れると、Prometheus の increase() はその 1 点目を数えず、起動後の最初の打ち切りを
+// アラートが取りこぼす。ApplicationStarted を待つのは、OTel の MeterProvider（ホストの開始時に立つ）より前の計上が
+// 誰にも聞かれずに消えるためである（T-10-786 が OTel の exporter まで届くことを Program.cs そのもので固定する）。
+app.Lifetime.ApplicationStarted.Register(() =>
+    app.Services.GetRequiredService<BusinessMetrics>().PrimeDriftAdoptionFollowUpAbandoned());
 
 // 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
 // #811 / IADR-0129 追記: `codegen write` 等の JasperFx コマンドで起動したときは DB に触らない（ホスト稼働時だけ移行する）。

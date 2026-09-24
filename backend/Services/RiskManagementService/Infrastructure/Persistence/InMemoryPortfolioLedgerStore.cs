@@ -19,11 +19,47 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         Guid decisionId,
         OrderIntent intent,
         DateTimeOffset approvedAt,
-        decimal? fxRateBaseToDisplay = null)
+        decimal? fxRateBaseToDisplay = null,
+        ApprovalSource? source = null)
     {
         ArgumentNullException.ThrowIfNull(intent);
         // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）を承認時点で固定する（EfPortfolioLedgerStore と同一の意味論）。
-        _approvals.TryAdd(decisionId, new ApprovalRecord(intent, approvedAt, fxRateBaseToDisplay));
+        // #935, IADR-0394 決定6: 由来も承認時点で固定する（null＝記録されていない＝不明のまま）。
+        _approvals.TryAdd(decisionId, new ApprovalRecord(intent, approvedAt, fxRateBaseToDisplay) { Source = source });
+    }
+
+    // FR-10, #935, IADR-0394: 決済の承認と約定時刻（EfPortfolioLedgerStore と同一の意味論）。
+    public IReadOnlyList<LedgerCloseApproval> GetCloseApprovals(
+        string symbol, Market market, DateTimeOffset activitySince)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        var fillTimes = new Dictionary<Guid, List<DateTimeOffset>>();
+        foreach (var fill in _fills.Values)
+        {
+            if (fill.FilledQuantity <= 0)
+                continue;
+            if (!fillTimes.TryGetValue(fill.DecisionId, out var times))
+                fillTimes[fill.DecisionId] = times = [];
+            times.Add(fill.ExecutedAt);
+        }
+
+        var result = new List<LedgerCloseApproval>();
+        foreach (var (decisionId, approval) in _approvals)
+        {
+            var intent = approval.Intent;
+            if (intent.PositionEffect != PositionEffect.Close || intent.Symbol != symbol || intent.Market != market)
+                continue;
+
+            var times = fillTimes.GetValueOrDefault(decisionId) ?? [];
+            if (approval.ApprovedAt < activitySince && !times.Any(t => t >= activitySince))
+                continue;
+
+            result.Add(new LedgerCloseApproval(
+                decisionId, intent.Symbol, intent.Market, intent.Side, approval.Source, approval.ApprovedAt, times));
+        }
+
+        return result;
     }
 
     public bool AppendFill(
@@ -215,6 +251,9 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         public DateTimeOffset? TerminalAt { get; init; }
 
         public OrderStatus? TerminalStatus { get; init; }
+
+        // #935, IADR-0394 決定6: 承認行の由来（ApprovedOrderRow.Source と同じ意味論。null＝記録されていない＝不明）。
+        public ApprovalSource? Source { get; init; }
     }
 
     private sealed record FillRecord(
