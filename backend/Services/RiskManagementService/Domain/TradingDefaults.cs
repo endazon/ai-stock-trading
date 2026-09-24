@@ -42,8 +42,10 @@ public static class TradingDefaults
     /// 既定損切り幅比率 3%（前提条件 05_trading-assumptions §5 の「損切り幅3%」目安）。
     /// FR-03/FR-10, IADR-0030: 損切り価格の権威データ（取引判断の ATR 連動 stopLossDistancePerShare）が
     /// 発注/約定パイプラインに永続化されるまで、平均取得単価からの近似導出に用いる過渡的既定値。
+    /// #957, IADR-0399: 市場監視も応答にラインが無い行を同じ式で見積もるため、値と式の実体は共有の
+    /// <see cref="StopLossApproximation"/> に置く（ここはその値を指す）。
     /// </summary>
-    public const decimal DefaultStopLossRatio = 0.03m;
+    public const decimal DefaultStopLossRatio = StopLossApproximation.DefaultRatio;
 
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。

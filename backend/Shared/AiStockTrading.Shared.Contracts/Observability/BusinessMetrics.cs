@@ -56,6 +56,20 @@ public sealed class BusinessMetrics : IDisposable
     /// </summary>
     public const string UnobservedNegativeElapsed = "negative-elapsed";
 
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: 保有の行を評価に渡せなかった（識別項目が無い・列挙が未定義・数量が正でない・null の行）。
+    /// </summary>
+    public const string PositionRowIdentityMissing = "identity-missing";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 損切りラインが無い／正でない行を、平均取得単価からの近似のラインで評価した。</summary>
+    public const string PositionRowStopLineApproximated = "stop-line-approximated";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 損切りラインも平均取得単価も無く、評価に渡せなかった。</summary>
+    public const string PositionRowStopLineUnknown = "stop-line-unknown";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 200 の応答の本文が保有の一覧として読めなかった（壊れた JSON・<c>null</c> 等）。</summary>
+    public const string PositionRowsResponseUnreadable = "response-unreadable";
+
     private readonly Meter _meter;
     private readonly Counter<long> _informationItemsCollected;
     private readonly Counter<long> _tradeCycleDecisions;
@@ -73,6 +87,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
     private readonly Counter<long> _riskCapitalBaselineReads;
+    private readonly Counter<long> _marketMonitorPositionRowsDegraded;
 
     /// <summary>
     /// 本番の構築点。Meter 名は <see cref="BusinessMetricNames.MeterName"/> 固定である。
@@ -184,6 +199,11 @@ public sealed class BusinessMetrics : IDisposable
         _riskCapitalBaselineReads = _meter.CreateCounter<long>(
             BusinessMetricNames.RiskCapitalBaselineReads,
             description: "統制上限の基準資金を読んだ結果の内訳（outcome 別。FR-10）");
+
+        // FR-03, FR-10, #957, IADR-0399: 市場監視が保有照会の応答をそのまま評価できなかった行（平常時 0 件）。
+        _marketMonitorPositionRowsDegraded = _meter.CreateCounter<long>(
+            BusinessMetricNames.MarketMonitorPositionRowsDegraded,
+            description: "市場監視が保有照会の応答をそのまま評価できなかった行の件数（reason 別。FR-03/FR-10）");
     }
 
     /// <summary>FR-01, FR-02: 1 巡回で収集できたアイテム数を計上する。</summary>
@@ -350,6 +370,20 @@ public sealed class BusinessMetrics : IDisposable
         _riskCapitalBaselineReads.Add(
             1,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome.ToString()));
+
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: 市場監視が保有照会の応答の行（または応答全体）をそのまま評価できなかった 1 件を計上する。
+    /// <paramref name="count"/> は同じ理由の件数（1 巡回ぶんをまとめて足す）。0 以下は計上しない。
+    /// </summary>
+    public void RecordMarketMonitorPositionRowsDegraded(string reason, int count = 1)
+    {
+        if (count <= 0)
+            return;
+
+        _marketMonitorPositionRowsDegraded.Add(
+            count,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
+    }
 
     public void Dispose() => _meter.Dispose();
 }
