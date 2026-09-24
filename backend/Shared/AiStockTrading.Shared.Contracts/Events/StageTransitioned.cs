@@ -21,4 +21,12 @@ public record StageTransitioned(
     //
     // **設定値から後で導出しない。** 統計的根拠（100）が将来改訂されると、導出では過去の記録の解釈が
     // 黙って書き換わる。「当時警告が出ていたか」は当時の事実であり、当時の判定で凍結して記録する。
-    bool Stage1BelowStatisticalBasis);
+    bool Stage1BelowStatisticalBasis,
+    // FR-20, FR-11, FR-14, UC-06, #868, IADR-0240 決定11, IADR-0383: **代理承認のときの認可の主体**
+    // （owner マップ機密クライアントの ID＝トークンの `azp`）。
+    //
+    // Discord Bot は `client_credentials` のトークンで承認を呼ぶ。そのトークンの主体は人ではないため、
+    // ApprovedBy には Bot が本文（`onBehalfOf`）で運んだ**操作した利用者**が入り、本項目に**誰の資格で
+    // 通ったか**が入る。利用者本人のトークンでの承認は ApprovedBy＝本人・本項目＝null。
+    // 追加は末尾・任意（既定 null）。旧形式（AuthorizedBy 無し）の JSON はそのまま読める（IADR-0079 / IADR-0134 決定2）。
+    string? AuthorizedBy = null);
