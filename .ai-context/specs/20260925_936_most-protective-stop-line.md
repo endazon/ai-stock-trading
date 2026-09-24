@@ -1,0 +1,157 @@
+---
+title: 市場監視が比べる損切りラインを「保有中のエントリーのうち最も保護的なライン」にし、同じ銘柄の後から建てた S1 のラインが実質使われない状態を解く
+type: spec
+status: accepted
+related_ids: [FR-10, FR-03, UC-02, ADR-0040, ADR-0003, IADR-0393, IADR-0344, IADR-0365, IADR-0380, IADR-0035, IADR-0351, IADR-0370]
+author: claude (Claude Code)
+created: 2026-09-25
+updated: 2026-09-25
+plan_refs:
+  - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-03 / FR-10)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0040 (決定1 S1)
+---
+
+# 仕様書: 市場監視が比べる損切りラインを保有中のエントリーのうち最も保護的なラインにする（#936）
+
+## 起点
+
+- [#936](https://github.com/endazon/ai-stock-trading/issues/936)。稼働 PoC（2026-09-23 JST・SIMULATE・`stopLossMethod=1`）の運用観測。
+- AAPL の S1 記録が 2 件ある: 713 株・トリガー **331.67**（先に建てた）／715 株・トリガー **330.88**（後に建てた）。
+- 市場監視の生存要約（#902 / IADR-0365）: `AAPL/UnitedStates Buy 1428株 現在値=337.9 ライン=330.88`。
+  **713 株の記録のライン 331.67 は比較に使われず、損切りが 0.79 ドル遅れる**（価格が 331.67〜330.88 の間にある間は発火しない）。
+
+## 🔴 実測（コードで確認・`origin/develop` = `3d9b91c2`）
+
+| 役割 | 場所 | 事実 |
+| --- | --- | --- |
+| 市場監視が比べるライン | `RiskManagementService/Features/RiskManagement/PortfolioProjection.cs` `ProjectOpenPositions` | 同方向の約定のたびに `stops[key] = fill.StopLossPrice`（**最新の同方向エントリーのライン**。一部決済では保持）。`OpenPositionsService` が `GET /risk-controls/open-positions` で返し、市場監視の `HttpPositionStore` → `HeldPosition.StopLossPrice` になる |
+| 到達の判定 | `MarketMonitorService/Features/MarketMonitor/MarketMonitorAppService.cs` → `StopLossEvaluator.IsTriggered` | 銘柄・方向ごとに 1 件、そのラインと現在値を比べ、達したら `StopLossTriggered`（`Price`＝検知価格）を 1 件出す |
+| 到達の受け手（S1） | `OrderExecutionService/Features/OrderExecution/ExecuteSoftwareStops/SoftwareStopExecutor.OnTriggeredAsync` | 同じ銘柄・市場・方向の Active な S1 行ごとに、**行自身の `TriggerPrice` と `triggered.Price`** で判定する（`Reached`。`triggered.StopLossPrice` は使わない）。達した行だけを既存の決済経路（残保護数量・`ReconcileShares`・予約・建玉照会）へ渡す |
+| 行のライン | `OrderExecutionAppService`（S1 の武装） | `TriggerPrice = intent.StopLossPrice`。台帳の承認行も同じ `intent.StopLossPrice` を持つ（`EfPortfolioLedgerStore.AppendApproval`）＝**同じ値** |
+
+→ **欠陥は市場監視側の「発火の閾値」だけにある。** 発注執行は既に行ごとに正しく判定しているが、
+市場監視が 330.88 まで到達を出さないため、331.67 の行へ判定の機会が届かない。
+
+`open-positions` の `StopLossPrice` の読み手（`grep -rn "open-positions" backend --include=*.cs`）:
+市場監視（到達の判定）・報告書（日報 §3 の表示）・取引判断（プロンプトの「記録上の損切りライン」と到達表示）。
+`OpenPosition.StopLossPrice` を読むのはリスク管理内では `OpenPositionsService` だけ（`grep -rn "\.StopLossPrice" backend/Services/RiskManagementService`）。
+
+## 射程
+
+- **台帳の射影（`ProjectOpenPositions`）が、保有中の建玉を「エントリーごとのロット」として持つ。**
+  - 同方向の約定（新規・建て増し）→ ロットを足す（数量・その約定の損切りライン）。
+  - 反対方向で符号が変わらない約定（一部決済・取り込み）→ **古いロットから**数量を減らす（FIFO。約定時刻の順）。
+  - 反転 → 反転後の残りを 1 ロットにする。全決済 → ロットを捨てる。
+- **公開するラインは、残っているロットのうち最も保護的なライン**（ロング: 最も高い／ショート: 最も低い）。
+- **ラインを持たないロット（不明）は「無い」と読まない。** 既存の近似（既定損切り比率×平均取得単価）を
+  そのロットのラインの見積りとして候補に入れ、最も保護的な値を採る（`OpenPositionsService`）。
+  すべてのロットがラインを持たなければ従来どおり近似だけになる。
+- **発注執行・契約・市場監視の判定コードは変えない。** 市場監視は最も保護的なラインで 1 件の到達を出し、
+  発注執行は従来どおり**行ごとに自分のラインで**判定する（達していない行は触らない）。
+  二重に売らない仕組み（残保護数量・`ReconcileShares`・予約・建玉照会）は 1 行も触らない。
+
+### 射程外（残るもの）
+
+- 🔴 **ロットの帰属は推定である。** 台帳は「どの決済がどのエントリーを閉じたか」を持たない。FIFO は
+  発注執行の外部要因の割り当て（古い行から）と同じ規則だが、**S1 の決済そのもの**（行が特定されている）とは
+  一致しないことがある。一致しないときの倒れ方は「**ラインが実際より保護的**」側だけである（下の不変条件）。
+  その場合、市場監視は発注執行のどの行も達していないのに到達を出し続ける（`Matched=0`・通知は Critical）。
+  **これは従来（最新エントリー）でも同じ配置で起きていた**（新しいエントリーのラインの方が高く、そちらが先に売れた配置）。
+- 約定時刻の順（台帳）と記録の作成順（発注執行）が食い違う配置（2 本の発注の約定が入れ替わる）では、
+  上の不変条件の前提が崩れ得る（その行の損切りが遅れ得る）。出口は塞がれない（残るロットのうち最も保護的なラインで必ず発火し、発注執行は達した行をすべて対象にする）。
+- 市場監視が行ごとのラインを直接知る経路（発注執行への照会）は作らない（下の「採らない案」）。
+
+## 🔴 守る不変条件（テストで固定する）
+
+1. **遅らせない**: 台帳のロット順と発注執行の行の順が一致する限り、**発注執行の Active な S1 行のラインは、
+   公開するライン以下（ロング）である**——行の損切りは自分のラインより遅れて発火しない。
+   - 外部要因の減少（手動決済・取り込み）: 発注執行は S1 の行を古い順に削る。台帳は全ロットを古い順に削る。
+     台帳が削った S1 の株数は発注執行が削った株数以下なので、**発注執行に残る S1 の株は台帳にも残る**。
+   - S1 の決済（到達した行＝ラインが検知価格以上の行を売る）: 台帳が未到達のロットを削った分だけ、
+     到達済みのロット（検知価格以上のライン）が台帳に残る。したがって公開するラインは、未到達の行のラインより高いか等しい。
+2. **出口を塞がない**: 保有がある限り、公開するラインは必ずある（ロットにラインが無くても近似が入る）。
+   価格が下がり続ければ必ず発火し、発注執行はその価格に達した行をすべて対象にする。
+3. **二重に売らない**: 発注執行の決済経路は変えない（到達の数が増えても、`Reached` を満たさない行は候補から外れ、
+   満たす行は既存の残保護数量・予約・建玉照会の突き合わせを通る）。
+4. **不明 ≠ 無い**: ラインを持たないロットは近似で見積もって候補に入れる。保有 0 は射影に載らない（従来どおり）。
+
+## 🔴 母集合（走査したファイルと除外理由）
+
+`grep -rn "最新エントリー\|最新の同方向エントリー\|最新の建て増し\|最新エントリーの値" --include=*.cs --include=*.md .`
+（`CHANGELOG.md`・`.ai-context/specs/`・`.ai-context/superpowers/` を除く）と、`open-positions` の読み手を走査した。
+
+- 採る（コード）: `PortfolioProjection.cs`（射影）/ `OpenPosition.cs`（注記）/ `OpenPositionsService.cs`・`OpenPositionView.cs`（近似の合成と注記）/
+  `PortfolioProjectionTests.cs` / `OpenPositionsServiceTests.cs`。
+- 採る（注記のみ・挙動は変えない）: `SoftwareStopExecutor.cs:85`・`SoftwareStopLivenessReporter.cs:13`・
+  `SoftwareStopExecutorTests.cs:295`（「台帳のラインは最新エントリーに丸められる」が偽になる）/
+  `TradeDecisionPromptBuilder.cs:70`（「建て増しで記録上のラインが下がる」が偽になる）/
+  `MarketMonitorService/Domain/HeldPosition.cs`（ラインの意味）。
+- 採る（凍結記録への日付つき追記）: IADR-0035（射影の規則を改める）/ IADR-0344 決定4 の理由文 / IADR-0351 決定3 の 4 の理由文 /
+  IADR-0365 決定5 の注記。本文は書き換えない。
+- 採る（`docs/`）: `docs/functional/FR-10_risk-controls.md`（S1 の動作の表へ 1 行）/ `docs/tests/FR-10_risk-controls-tests.md`（新節）。
+- 除外: `IADR-0038`（索引の説明句で IADR-0035 を要約しているだけ。追記は IADR-0035 側に置く）/
+  `TradeDecisionPromptBuilderTests.cs:548`（テスト内の注記。プロンプトの判定そのもの〔現在値とラインの比較〕は変えない）/
+  `.ai-context/specs/` の確定済み仕様書（凍結）/ `NotificationFormatter`（到達通知の文面は線を名指ししない列挙であり偽にならない）。
+
+## 決めたこと
+
+実装判断は [IADR-0393](../adr/IADR-0393_most-protective-stop-line-per-entry-lot.md) に記録する。要点:
+
+- A: 「記録ごとに評価する」ではなく「**最も保護的なラインで 1 件の到達を出し、行ごとの判定は発注執行に任せる**」を採る。
+  発注執行は既に行自身のラインで判定しているので、市場監視が到達を出す閾値を上げるだけで足りる。
+- B: ラインは**台帳の射影**に持たせる（既存の経路 `open-positions` を通す）。市場監視・発注執行・契約は変えない。
+- C: 減少は**古いロットから**割り当てる（発注執行の外部要因の割り当てと同じ向き）。取り違えは「保護的すぎる」側へ倒れる。
+- D: ラインの無いロットは近似で見積もって候補に入れる（不明を無いと読まない）。
+
+### 採らない案
+
+- **市場監視が記録ごとに評価して到達を複数出す**: 契約に記録の識別子が無く、発注執行は到達ごとに全行を見直すため
+  同じ判定を N 回繰り返すだけになる。行ごとの判定は既に発注執行にある。
+- **市場監視が発注執行から S1 の行のラインを照会する**: 新しいサービス間依存・認可・接続先の構成（配備値）が要り、
+  照会できないときの縮退（不明）をもう 1 つ設計することになる。S1 以外（S0・S2）の建玉にも同じ規則が要る。
+- **一部決済でもラインを捨てない（全決済まで最も保護的なラインを持ち続ける）**: 稼働中の配置（古い方が高いライン）で
+  713 株が売れた後も 331.67 が残り、330.88 の行しか無いのに毎巡回 Critical の到達通知が出る。FIFO なら正確に 330.88 へ下がる。
+- **最も保護的なロットから削る**: 損切りによる減少には正確だが、手動決済・取り込み（発注執行は古い行から削る）では
+  発注執行に残った行のラインを台帳が捨て、**損切りを遅らせる**側へ倒れる。
+
+## 受け入れ基準 → テスト
+
+テスト ID は依頼で予約された **T-10-760〜T-10-769** から採る（`git grep -n "T-10-76[0-9]" origin/develop` で未使用を確認）。
+
+| ID | 受け入れ基準 | テスト |
+| --- | --- | --- |
+| T-10-760 | 稼働中の配置（713 株 331.67 を先に・715 株 330.88 を後に建てた）で、公開するラインは 331.67 | `PortfolioProjectionStopLossLotTests` |
+| T-10-761 | 同じ配置で 713 株が売れた後は 330.88（古いロットから削る） | 同上 |
+| T-10-762 | 逆の配置（低いラインを先に建て、高いラインの 713 株が先に売れた）では、ラインは保護的な側（331.67）に残り 330.88 へは下がらない | 同上 |
+| T-10-763 | ショートは最も低いライン。反転は反転後の約定のラインだけ。全決済でロットを捨てる | 同上 |
+| T-10-764 | 🔴 無作為な建て・S1 の決済・外部の減少の列で、**台帳のラインは発注執行に残る S1 の行のどのラインよりも保護的か等しい**（遅らせない） | 同上（決定的な乱数の掃き） |
+| T-10-765 | 稼働中の配置を `OpenPositionsService` で組むと 331.67 が返る | `OpenPositionsServiceTests` |
+| T-10-766 | ラインの無いロットは近似で見積もって候補に入れる（不明を無いと読まない）。ラインのあるロットだけなら近似は入らない | 同上 |
+| T-10-767 | 発注執行: 稼働中の 2 行に対し 331.40 の到達 → 713 株の行だけを決済し、715 株の行は触らない | `SoftwareStopExecutorTests` |
+| T-10-768 | 発注執行: 続けて 330.50 の到達 → 715 株の行を決済。合計 1,428 株で、以後の到達では 1 株も出さない（建玉照会が未反映でも二重に売らない） | 同上 |
+
+## 検証
+
+- `dotnet build` / `dotnet test` を `RiskManagementService.Tests`・`OrderExecutionService.Tests`・`MarketMonitorService.Tests`・
+  `TradeDecisionService.Tests` で実行（注記だけのサービスもビルドする）。
+- `dotnet format backend/backend.slnx --verify-no-changes`。
+- `node scripts/check-test-traceability.js` / `check-trace-blocks.js` / `check-adr-index-sync.js` / `check-commit-messages.js` ほか `scripts/` の文書系検査。
+- 各テストに変異を入れて赤になることを確かめ、結果を下の「変異注入の実測」へ残す。
+- 🔴 クラスタへは配備しない（稼働中の PoC。kubectl を使わない）。
+
+## 変異注入の実測
+
+（2026-09-25。変異を 1 つずつ入れ、`RiskManagementService.Tests` は `PortfolioProjection*` と `OpenPositionsServiceTests` の 51 件、
+`OrderExecutionService.Tests` は `SoftwareStopExecutorTests` の 33 件で実行した。変異は実行ごとに元へ戻した）
+
+| 変異 | 結果 | 赤になった新規テスト |
+| --- | --- | --- |
+| 射影のラインを「最新エントリー」へ戻す（従来の規則） | 51 件中 3 件赤 | T-10-760 / T-10-764 / T-10-765 |
+| 減少を新しいロットから削る（LIFO） | 5 件赤 | T-10-761 / T-10-762 / T-10-763 / T-10-764 / T-10-766 |
+| 減少を最も保護的なロットから削る | 4 件赤 | T-10-762 / T-10-763 / T-10-764 / T-10-766（**T-10-764 は外部要因の減少で行の損切りが遅れることを検出**） |
+| 減少でロットを削らない（全決済まで保持） | 3 件赤 | T-10-761 / T-10-763 / T-10-766 |
+| 反転でロットを捨てない | 2 件赤 | T-10-763（既存の反転テストも赤） |
+| 記録の無いロットを無視する（近似を入れない） | 1 件赤 | T-10-766 |
+| 常に近似を候補に入れる | 2 件赤 | T-10-766（既存「損切り価格があれば実値を用いる」も赤） |
+| 発注執行の `Reached` による行の選別を外す | 33 件中 3 件赤 | T-10-767 / T-10-768（既存「行自身の損切りラインに達していなければ決済しない」も赤） |
+| 決済を受理した行を完了させず残保護数量も減らさない | 9 件赤 | T-10-767 / T-10-768 ほか既存 7 件 |
