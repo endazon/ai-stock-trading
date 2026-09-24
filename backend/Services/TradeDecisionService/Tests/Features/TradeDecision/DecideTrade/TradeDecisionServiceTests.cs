@@ -49,13 +49,19 @@ public class TradeDecisionServiceTests
     // #854, IADR-0351: 保有状況（数量・取得単価・損切りライン）も同じ偽物が供給する。数量だけを与えた場合は
     // 取得単価 1,000・損切りライン 970（ロング）/ 1,030（ショート）の建玉として返す。
     // 🔴 この偽物は LLM の前後で同じ値を返す。「LLM 判断の後に引き直す」（IADR-0351 決定6）は下の MovingHeld が固定する。
+    // #934, IADR-0390: 未約定の新規建て注文は既定で「無い」（WorkingEntryOrders.None）。workingUnknown=true で不明（null）。
     private sealed class FakeHeld(
-        int? signedQuantity, decimal? entryPrice = 1_000m, decimal? stopLossPrice = null, bool enabled = true)
+        int? signedQuantity, decimal? entryPrice = 1_000m, decimal? stopLossPrice = null, bool enabled = true,
+        WorkingEntryOrders? working = null, bool workingUnknown = false)
         : IHeldPositionProvider
     {
         // #865, IADR-0358: 偽物は**実結線**を既定とする（本物の HttpHeldPositionProvider と同じ）。
         // 未結線（NoOp＝IsEnabled=false）の既定構成は heldPosition を渡さない Create が持つ。
         public bool IsEnabled => enabled;
+
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+            string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult(workingUnknown ? null : working ?? WorkingEntryOrders.None);
 
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
             Task.FromResult(signedQuantity);
@@ -79,6 +85,10 @@ public class TradeDecisionServiceTests
 
         public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
             throw new InvalidOperationException("建玉照会の擬似障害");
+
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+            string symbol, Market market, CancellationToken ct = default) =>
+            throw new InvalidOperationException("未約定照会の擬似障害");
     }
 
     // 本判断プロンプトを捕捉して RAG 文脈の注入を検証するための LLM スタブ。
@@ -1078,6 +1088,10 @@ public class TradeDecisionServiceTests
 
         public int? Current { get; set; } = beforeLlm;
 
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+            string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<WorkingEntryOrders?>(WorkingEntryOrders.None);
+
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default)
         {
             events.Add("held:quantity");
@@ -1565,5 +1579,134 @@ public class TradeDecisionServiceTests
         llm.Calls.Should().HaveCount(2, "一次（門）を通過して本判断まで進んだうえで止まることを固定する");
         llm.Calls[0].Prompt.Should().Contain(TradeDecisionPromptBuilder.HeldUnknownLine);
         decision.Should().BeNull();
+    }
+
+    // --- FR-04, FR-10, ADR-0003, #934, IADR-0390: 未約定の新規建て注文を判断の入力へ（約定済みの保有とは別の第 3 の状態） ---
+    //
+    // 実測（2026-09-23）: 指値 715 株 @337.63 が板に残っている間に、判断は 2 本とも根拠に「保有なし」と書いて AAPL を重ねて買った
+    // （1,428 株・資金の約 50%）。リスク管理は未約定を数えていた（IADR-0346）が、判断の入力には約定済みの建玉しか無かった。
+
+    private static readonly WorkingEntryOrders Working715 = new(
+        [new WorkingEntryOrder(TradeSide.Buy, 715, 337.63m, new DateTimeOffset(2026, 9, 23, 13, 46, 45, TimeSpan.Zero))]);
+
+    // T-10-712 / T-10-713（アプリケーション経由）: 照会した未約定が本判断・一次の両プロンプトへ届き、「保有: なし」が出ない。
+    // 🔴 変異注入「判断の入力から未約定を落とす」（プロンプトへ渡さない）で赤になるのはこのテストである。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 未約定の新規建てがあれば本判断と一次のプロンプトは保有なしと書かない(bool withContextBudget)
+    {
+        var llm = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+        var options = new DecisionOrchestrationOptions
+        {
+            EnableScreening = true,
+            ScreeningContextBudgetChars = withContextBudget ? 150_000 : null,
+        };
+        var screeningPasses = new RecordingLlm(BuyJson);
+
+        // 一次は Hold だと本判断が走らないため、一次の確認と本判断の確認を分けて走らせる。
+        await CreateRecording(llm, new FakeHeld(0, working: Working715), options: options).DecideAsync(Trigger());
+        await CreateRecording(screeningPasses, new FakeHeld(0, working: Working715), options: options).DecideAsync(Trigger());
+
+        llm.Calls[0].Purpose.Should().Be(LlmPurposes.TradeDecisionScreening);
+        var prompts = new[] { llm.Calls[0].Prompt, screeningPasses.Calls[1].Prompt };
+        foreach (var prompt in prompts)
+        {
+            prompt.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+            prompt.Should().NotContain("保有: なし");
+            prompt.Should().Contain(TradeDecisionPromptBuilder.FilledNoneButWorkingLine);
+            prompt.Should().Contain($"{TradeDecisionPromptBuilder.WorkingEntryLinePrefix}: 買い（Buy） 715 株");
+        }
+    }
+
+    // T-10-716: 🔴 実結線のもとで未約定が**不明**なら、LLM が Buy を返しても新規建てを出さない（#865 と同じ形）。
+    // 変異注入「不明を無いとして扱う」（null を None へ倒す）で赤になるのはこのテストと T-10-715 である。
+    [Fact]
+    public async Task 実結線で未約定の新規建てが不明ならLLMがBuyを返しても新規建てを発注しない()
+    {
+        var logger = new RecordingLogger();
+        var llm = new RecordingLlm(BuyJson);
+        var service = new AppSvc(
+            llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), logger, heldPosition: new FakeHeld(0, workingUnknown: true));
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().BeNull("未約定を知らないまま同じ銘柄を重ねて買わない");
+        logger.Messages.Should().Contain(m => m.Contains("未約定の新規建て注文が不明なため新規建てを見送る"));
+        // プロンプトも「保有なし」とは書かない（T-10-715 のアプリケーション経由）。
+        llm.Calls.Single().Prompt.Should().Contain(TradeDecisionPromptBuilder.WorkingUnknownNoFillsLine);
+        llm.Calls.Single().Prompt.Should().NotContain(TradeDecisionPromptBuilder.HeldNoneLine);
+    }
+
+    // T-10-716（例外）: 照会の例外も不明である（fail-safe ラッパが null へ縮退する）。
+    [Fact]
+    public async Task 未約定の照会が例外なら不明として新規建てを見送る()
+    {
+        var decision = await CreateWithHeld(BuyJson, new ThrowingWorkingHeld(held: 0)).DecideAsync(Trigger());
+
+        decision.Should().BeNull();
+    }
+
+    // T-10-717: 🔴 未約定が不明でも手仕舞い（Close）は止めない。決済の数量は約定済みの保有だけで決まる。
+    [Fact]
+    public async Task 実結線で未約定の新規建てが不明でも保有があれば手仕舞いは通る()
+    {
+        var decision = await CreateWithHeld(SellJson, new FakeHeld(3_378, workingUnknown: true)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Quantity.Should().Be(3_378, "未約定は決済数量に混ぜない");
+    }
+
+    // 🔴 T-10-746, FR-04, FR-10, #934, IADR-0390 決定3（PR #940 監査）: 未約定が**判っていて在る**ときも、手仕舞いの数量は
+    // 約定済みの保有だけで決まる。稼働 PoC の配置（約定済み 3,378 株＋板に残った買い 715 株）で LLM が Sell を返したら、
+    // 決済は 3,378 株であって 4,093 株ではない —— 未約定を混ぜると、持っていない 715 株を売る（ロングを裸のショートへ反転させる）。
+    // 変異注入「保有数量へ未約定の残数量を足す」で赤になる（T-10-717 は未約定が不明の経路なのでこの変異では動かない）。
+    [Fact]
+    public async Task 未約定が在っても手仕舞いの数量は約定済みの保有だけで決まる()
+    {
+        var decision = await CreateWithHeld(SellJson, new FakeHeld(3_378, working: Working715)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Side.Should().Be(TradeSide.Sell);
+        decision.Intent.Quantity.Should().Be(3_378, "未約定の 715 株は約定していない —— 足すと 4,093 株を売り、持っていない株を売る");
+    }
+
+    // T-10-718: 未約定が「無い」と判っていれば従来どおり（「保有: なし」・Open が出る）。
+    [Fact]
+    public async Task 未約定が無いと判っていれば保有なしと書き新規建ては従来どおり通る()
+    {
+        var llm = new RecordingLlm(BuyJson);
+
+        var decision = await CreateRecording(llm, new FakeHeld(0, working: WorkingEntryOrders.None)).DecideAsync(Trigger());
+
+        llm.Calls.Single().Prompt.Should().Contain(TradeDecisionPromptBuilder.HeldNoneLine);
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+    }
+
+    // T-10-749: 未約定が在っても新規建てそのものはコードでは止めない（重ね買いの統制＝クールダウンは #935・裁定待ち）。
+    // 本件が正すのは判断の**前提**であり、金額の統制は IADR-0346 の算入が担う。
+    [Fact]
+    public async Task 未約定が在ってもLLMがBuyを返せば新規建ては従来どおり出る_統制は935の範囲()
+    {
+        var decision = await CreateWithHeld(BuyJson, new FakeHeld(0, working: Working715)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
+    }
+
+    // 未約定の照会だけが例外を出す偽物（保有の照会は成功する）。
+    private sealed class ThrowingWorkingHeld(int held) : IHeldPositionProvider
+    {
+        public bool IsEnabled => true;
+
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<int?>(held);
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<HeldPosition?>(held == 0 ? HeldPosition.None : new HeldPosition(held, 1_000m, 970m));
+
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+            string symbol, Market market, CancellationToken ct = default) =>
+            throw new InvalidOperationException("未約定照会の擬似障害");
     }
 }

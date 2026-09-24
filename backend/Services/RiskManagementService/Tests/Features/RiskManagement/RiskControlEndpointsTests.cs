@@ -151,6 +151,26 @@ public class RiskControlEndpointsTests(RiskWorkerWebApplicationFactory factory)
         res.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    // T-10-721, FR-04, FR-10, #934, IADR-0390 決定1: 当日の未約定の新規建て注文は OwnerOrService（判断が s2s で読む）。
+    [Fact]
+    public async Task 未認証の_working_entry_orders_取得は401()
+    {
+        var res = await factory.CreateClient().GetAsync("/risk-controls/working-entry-orders");
+
+        res.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task サービスロールは_working_entry_orders_を配列で取得できる()
+    {
+        var res = await ClientWithRoles(Service).GetAsync("/risk-controls/working-entry-orders");
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadFromJsonAsync<List<System.Text.Json.JsonElement>>()).Should().NotBeNull();
+        (await ClientWithRoles("viewer").GetAsync("/risk-controls/working-entry-orders"))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
     [Fact]
     public async Task サービスロールは_open_positions_を取得できる()
     {
