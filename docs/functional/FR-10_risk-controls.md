@@ -3,15 +3,15 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-09-19
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #909, planning#292]
 -->
 
 
@@ -905,6 +905,20 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 S1 は、2026-07-31 の裁定が一本化で消した「システムが決済注文を出す」経路を **SIMULATE に限って**戻す。
 **ブローカー側に保護は無く、発注執行・市場監視・メッセージ基盤のいずれかが止まっている間は決済されない**（配置の通知が明記する）。
 中心の要求は**二重決済を作らないこと**である。
+
+> 🔴 **残余リスク: S1 が保護するのは通常取引時間だけである**（#909）。
+> 損切りラインへの到達は市場監視の巡回が検知するが、巡回は**その市場の取引時間**（米国株は米東 9:30–16:00。
+> 休場日と半日取引日の午後を除く）しか回らない。したがって**閉場中の建玉は次の寄り付きまで無保護**であり、
+> **夜間・寄り前の急落からは守られない**。
+>
+> これは縮退ではなく S1 の性質である —— **閉場中に成行を出してもその場では約定せず、翌寄りまで持ち越されて
+> 寄り値が終値と乖離し得る**ため、閉場中に発動させないことが正しい。ブローカー側の逆指値（S0）も約定は寄り付き以降で、
+> 「閉場中に守られる」機構は存在しない。違いは、S0 が**寄り付きに発注済み**であるのに対し、
+> S1 は**寄り付き後の最初の巡回（既定 60 秒周期）を待つ**点である。
+>
+> **黙って通り過ぎさせない。** 閉場したとき、市場監視は市場ごとに 1 回だけ「保有・損切りライン・最終観測値・
+> 次の開場時刻」を記録し、**最終観測値が既にラインを越えていた建玉があれば Critical** で出す
+> （開場して最初に評価できた巡回で保護の再開も 1 回記録する）。**日報のポジション一覧にも同じ注記が出る。**
 
 | 場面 | 動作 |
 | --- | --- |

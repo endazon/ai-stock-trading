@@ -31,13 +31,16 @@ public class MarketMonitorServiceTests
         public InMemoryPriceBaselineStore Baselines { get; } = new();
         public InMemoryCooldownStore Cooldowns { get; } = new();
 
+        // #909, IADR-0380 決定2: 既定は全市場が開場（従来の表明はそのまま）。市場別の閉場は個別テストが設定する。
+        public FakeSchedule Schedule { get; } = new(open: true);
+
         public Harness(MarketMonitorSettings settings)
         {
             Settings = new InMemoryMonitoredSymbolStore(settings);
         }
 
         public AppSvc Service() =>
-            new(Settings, Positions, Baselines, Cooldowns, Market, Clock);
+            new(Settings, Positions, Baselines, Cooldowns, Market, Schedule, Clock);
     }
 
     [Fact]
@@ -182,5 +185,52 @@ public class MarketMonitorServiceTests
             new StopLossEvaluation("NVDA", Market.UnitedStates, TradeSide.Buy, 3, 140m, null, Now),
         ]);
         result.StopLosses.Should().ContainSingle().Which.Symbol.Should().Be("MSFT");
+    }
+
+    [Fact]
+    public async Task T_10_695_閉場している市場の銘柄は照会も評価も到達もされず_保護の空白として残る()
+    {
+        // T-10-695, FR-03, FR-10, FR-01, #909, IADR-0380 決定2・決定3:
+        // 閉場中の価格は終値で凍っており、そこで出した成行は翌寄りまで約定しない。**照会そのものを行わない。**
+        var h = new Harness(Settings(Aapl, new MonitoredSymbol("7203", Market.Japan)));
+        h.Schedule.ClosedMarkets.Add(Market.UnitedStates);
+        h.Positions.Set(
+        [
+            new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m),
+            new HeldPosition("7203", Market.Japan, TradeSide.Buy, 100, 3_000m, 2_900m),
+        ]);
+        h.Market.Set("AAPL", Market.UnitedStates, 330m); // 到達しているが閉場中なので出してはならない
+        h.Market.Set("7203", Market.Japan, 2_800m);      // 開場中なので到達する
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
+        h.Baselines.SetBaseline("7203", Market.Japan, 1_000m);
+
+        var result = await h.Service().EvaluateRoundAsync();
+
+        h.Market.Requested.Should().NotContain(("AAPL", Market.UnitedStates), "閉場中の市場は 1 回も照会しない");
+        result.StopLosses.Should().ContainSingle().Which.Market.Should().Be(Market.Japan);
+        result.PriceMovements.Should().OnlyContain(m => m.Market == Market.Japan);
+        result.StopLossEvaluations.Should().OnlyContain(e => e.Market == Market.Japan);
+
+        // 🔴 黙って飛ばさない: 閉場していた市場の保有は保護の空白として残り、価格は「照会していない」ので null。
+        result.ClosedMarketPositions.Should().BeEquivalentTo(
+        [
+            new StopLossEvaluation("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 338.51m, null, Now),
+        ]);
+    }
+
+    [Fact]
+    public async Task T_10_695_開場している市場の銘柄は従来どおり照会され保護の空白に入らない()
+    {
+        // T-10-695（対の肯定形）, FR-03, #909, IADR-0380 決定2:
+        // 全市場を閉場にする実装でも上のテストは緑になるため、開場側を別に固定する。
+        var h = new Harness(Settings(Aapl));
+        h.Positions.Set([new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m)]);
+        h.Market.Set("AAPL", Market.UnitedStates, 330m);
+
+        var result = await h.Service().EvaluateRoundAsync();
+
+        h.Market.Requested.Should().Contain(("AAPL", Market.UnitedStates));
+        result.StopLosses.Should().ContainSingle();
+        result.ClosedMarketPositions.Should().BeEmpty();
     }
 }

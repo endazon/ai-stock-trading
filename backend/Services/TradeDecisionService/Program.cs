@@ -445,7 +445,8 @@ static IReadOnlyDictionary<Market, IReadOnlySet<DateOnly>> LoadMarketDates(IConf
         var set = new HashSet<DateOnly>();
         foreach (var d in dates)
         {
-            if (DateOnly.TryParse(d, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            // IADR-0380［2026-09-24 追記 / PR #929 監査］: ISO の yyyy-MM-dd だけを受ける（"10/09/2026" を月先で読まない）。
+            if (DateOnly.TryParseExact(d, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
                 set.Add(date);
         }
 
