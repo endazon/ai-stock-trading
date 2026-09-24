@@ -1658,6 +1658,20 @@ public class TradeDecisionServiceTests
         decision.Intent.Quantity.Should().Be(3_378, "未約定は決済数量に混ぜない");
     }
 
+    // 🔴 T-10-746, FR-04, FR-10, #934, IADR-0390 決定3（PR #940 監査）: 未約定が**判っていて在る**ときも、手仕舞いの数量は
+    // 約定済みの保有だけで決まる。稼働 PoC の配置（約定済み 3,378 株＋板に残った買い 715 株）で LLM が Sell を返したら、
+    // 決済は 3,378 株であって 4,093 株ではない —— 未約定を混ぜると、持っていない 715 株を売る（ロングを裸のショートへ反転させる）。
+    // 変異注入「保有数量へ未約定の残数量を足す」で赤になる（T-10-717 は未約定が不明の経路なのでこの変異では動かない）。
+    [Fact]
+    public async Task 未約定が在っても手仕舞いの数量は約定済みの保有だけで決まる()
+    {
+        var decision = await CreateWithHeld(SellJson, new FakeHeld(3_378, working: Working715)).DecideAsync(Trigger());
+
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        decision.Intent.Side.Should().Be(TradeSide.Sell);
+        decision.Intent.Quantity.Should().Be(3_378, "未約定の 715 株は約定していない —— 足すと 4,093 株を売り、持っていない株を売る");
+    }
+
     // T-10-718: 未約定が「無い」と判っていれば従来どおり（「保有: なし」・Open が出る）。
     [Fact]
     public async Task 未約定が無いと判っていれば保有なしと書き新規建ては従来どおり通る()

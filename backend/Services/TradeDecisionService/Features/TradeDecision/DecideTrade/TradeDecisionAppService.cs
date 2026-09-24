@@ -324,7 +324,8 @@ public sealed class TradeDecisionAppService(
                 "未約定の新規建て注文が不明なため新規建てを見送る（照会先は結線済み・手仕舞いは止めない・IADR-0390）: " +
                 "{Symbol} side={Side}",
                 trigger.Symbol, side);
-            return null;
+            // 🔴 PR #940 監査, IADR-0374: 見送りは唯一の出口 Skip を通す（素の null は decision_skips にもアラートにも出ない）。
+            return Skip(trigger, DecisionSkipReason.WorkingEntriesUnknownOpen);
         }
 
         // FR-02, FR-10, IADR-0099 決定2: 発注に用いる参照価格を権威ある現在値へアンカリングする。現在値ありのときは

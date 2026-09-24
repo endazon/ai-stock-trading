@@ -117,15 +117,16 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 
 | 監視対象 | 指標 | 閾値 | 通知先 |
 | --- | --- | --- | --- |
-| 保有状況が不明なための新規建て見送り（`AstEntriesBlockedByUnknownHoldings`） | `ast_trade_cycle_decision_skips_total{reason="HoldingsUnknownOpen"}` | 15 分窓で 1 件以上が **30 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
+| 保有状況が不明なための新規建て見送り（`AstEntriesBlockedByUnknownHoldings`） | `ast_trade_cycle_decision_skips_total{reason=~"HoldingsUnknownOpen\|WorkingEntriesUnknownOpen"}` | 15 分窓で 1 件以上が **30 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
 
 - 🔴 **この閾値は実測を要しない。** 対象の見送りは保有照会が**実結線のときにしか立たず**、
   **平常時の期待値が 0 件**だからである。「N 分間に M 件」という形の閾値は実測してから決める
   （[`../observability/observability.md`](../observability/observability.md)）。
 - 🔴 **なぜこの 1 件目なのか**: 照会先の誤設定や恒久的な失敗が起きると、**手仕舞いは通るまま新規建てだけが
   静かに止まり続ける**。「取引が全部止まった」形にならないため、ログを読みに行かない限り誰も気付かない（`#891`）。
-- **最初に見る場所**: 取引判断サービスの WARN ログ（「保有状況が不明なため新規建てを見送る」）と、
-  リスク管理サービスの `GET /risk-controls/open-positions`。設定では `RiskManagement:BaseUrl` を疑う。
+- **最初に見る場所**: 取引判断サービスの WARN ログ（「保有状況が不明なため新規建てを見送る」／
+  「未約定の新規建て注文が不明なため新規建てを見送る」）と、リスク管理サービスの
+  `GET /risk-controls/open-positions`・`GET /risk-controls/working-entry-orders`。設定では `RiskManagement:BaseUrl` を疑う。
 - 内訳の読み分けは業務ダッシュボードのパネル「取引サイクル: 見送りの理由の内訳」で行う。
 
 ## バックアップ・リストア

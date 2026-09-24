@@ -116,21 +116,33 @@ public sealed class HttpHeldPositionProvider(
                 return null;
             }
 
+            // 🔴 PR #940 監査（契約の fail-open）: 銘柄・市場を持たない行は「一致しない」と読まない。
+            // WorkingEntryOrderView の項目名が変わると、ここは既定値（null）で逆シリアル化され、一致する行が 0 件＝「無い」へ
+            // 黙って倒れる —— 板に指値が残っているのにプロンプトは「保有: なし」と書く（#934 の実測そのもの）。
+            // その行が判断対象の銘柄かどうか判らないので、応答全体を解釈できない（不明）とする。
+            if (orders.Any(o => o is null || string.IsNullOrEmpty(o.Symbol) || o.Market is null))
+            {
+                logger.LogWarning("未約定の新規建て注文の応答に銘柄・市場の無い行があります。不明として扱います。");
+                return null;
+            }
+
             var matched = orders
                 .Where(o => string.Equals(o.Symbol, symbol, StringComparison.Ordinal) && o.Market == market)
                 .ToList();
 
-            // 🔴 残数量が正でない行は「無い」と読まない —— リスク管理は残 0 を返さない契約であり、それを破る応答は解釈できない。
-            if (matched.Any(o => o.RemainingQuantity <= 0))
+            // 🔴 残数量が正でない行・方向／価格／承認時刻の無い行は「無い」と読まない —— リスク管理は残 0 を返さない契約であり、
+            // それを破る応答（項目名の変更で既定値に落ちた場合を含む）は解釈できない。
+            if (matched.Any(o => o.RemainingQuantity is not > 0 || o.Side is null || o.Price is null || o.ApprovedAt is null))
             {
-                logger.LogWarning("未約定の新規建て注文の応答に残数量が正でない行があります。不明として扱います。");
+                logger.LogWarning("未約定の新規建て注文の応答に残数量が正でない、または項目の欠けた行があります。不明として扱います。");
                 return null;
             }
 
             return matched.Count == 0
                 ? WorkingEntryOrders.None
                 : new WorkingEntryOrders(
-                    [.. matched.Select(o => new WorkingEntryOrder(o.Side, o.RemainingQuantity, o.Price, o.ApprovedAt))]);
+                    [.. matched.Select(o => new WorkingEntryOrder(
+                        o.Side!.Value, o.RemainingQuantity!.Value, o.Price!.Value, o.ApprovedAt!.Value))]);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -145,8 +157,10 @@ public sealed class HttpHeldPositionProvider(
     }
 
     // WorkingEntryOrderView（RiskManagement・#934）の必要フィールドのみ。camelCase・列挙は数値で往復する。
+    // 🔴 PR #940 監査: 全項目を nullable で受ける —— 非 nullable だと項目の欠落（送り手の改名）が既定値（銘柄 null・
+    // 市場 0＝日本・方向 0＝買い・数量 0）に化けて「無い」と区別できない。契約は T-10-744 が本物の型で固定する。
     private sealed record WorkingEntryOrderDto(
-        string Symbol, Market Market, TradeSide Side, int RemainingQuantity, decimal Price, DateTimeOffset ApprovedAt);
+        string? Symbol, Market? Market, TradeSide? Side, int? RemainingQuantity, decimal? Price, DateTimeOffset? ApprovedAt);
 
     // OpenPositionView（RiskManagement）の必要フィールドのみ。camelCase・列挙は数値で往復する。
     // 価格 2 項目は nullable（項目を持たない応答を 0 と読まない）。
