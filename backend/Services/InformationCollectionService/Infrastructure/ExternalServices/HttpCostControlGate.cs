@@ -17,7 +17,9 @@ public sealed class HttpCostControlGate(
     : ICostControlGate
 {
     // CostControlDecision（費用統制）の JSON 受け皿。CostControlService.Domain を参照せず isHalted/intervalMultiplier で疎結合に読む。
-    private sealed record CostStateDto(bool IsHalted, decimal IntervalMultiplier);
+    // FR-01, NFR（費用）, #915, IADR-0031: 両項目を nullable にし、「項目が無い」を既定値（false / 0）と区別する。
+    // 非 nullable だと本文 {} が (false, 0) になり、0× のまま写っていた（消費側の下限 1 で隠れていただけ）。
+    private sealed record CostStateDto(bool? IsHalted, decimal? IntervalMultiplier);
 
     public async Task<CostControlGate> GetAsync(CancellationToken cancellationToken = default)
     {
@@ -37,7 +39,7 @@ public sealed class HttpCostControlGate(
             if (dto is null)
                 return CostControlGate.Normal;
 
-            return new CostControlGate(dto.IsHalted, dto.IntervalMultiplier);
+            return Map(dto);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -49,5 +51,31 @@ public sealed class HttpCostControlGate(
             logger.LogWarning(ex, "費用統制の照会で例外。Normal（停止せず）に倒します。");
             return CostControlGate.Normal;
         }
+    }
+
+    // FR-01, NFR（費用）, #915, IADR-0031（2026-09-25 追記）: 200 OK の本文を統制ゲートへ写す。
+    // - isHalted が明示的に true: 停止を尊重する（倍率は見ない）。送り手は Halted で倍率 0（無効値）を返すのが正常であり、
+    //   倍率の欠落・非正を理由に停止を Normal へ落とすと「費用上限 100% でも収集を続ける」側へ倒れるため。
+    // - isHalted が欠落: 停止か否かを判定できない不正応答として Normal（不達・非 2xx と同じ安全既定）。
+    // - isHalted が false で倍率が欠落・非正: 「費用統制は何も言っていない」を 0× と読まず Normal（1×）。
+    private CostControlGate Map(CostStateDto dto)
+    {
+        if (dto.IsHalted is not bool isHalted)
+        {
+            logger.LogWarning("費用統制の応答に isHalted がありません。Normal（停止せず）に倒します。");
+            return CostControlGate.Normal;
+        }
+
+        if (isHalted)
+            return new CostControlGate(true, dto.IntervalMultiplier ?? 0m);
+
+        if (dto.IntervalMultiplier is not decimal multiplier || multiplier <= 0m)
+        {
+            logger.LogWarning("費用統制の応答の intervalMultiplier が欠落または非正（{Multiplier}）。Normal（1×）に倒します。",
+                dto.IntervalMultiplier);
+            return CostControlGate.Normal;
+        }
+
+        return new CostControlGate(false, multiplier);
     }
 }
