@@ -156,6 +156,16 @@ public sealed class ApprovedOrderRow
     /// </para>
     /// </summary>
     public AiStockTrading.Shared.Contracts.Trading.OrderStatus? TerminalStatus { get; set; }
+
+    /// <summary>
+    /// FR-10, #935, IADR-0394 決定6: この承認行の<b>由来</b>（どの経路が書いたか）。決済が<b>損切り</b>
+    /// （S0 の約定・S1 の発動）だったかを見分ける鍵であり、損切りした銘柄の同日・同方向の新規建てを止める統制の入力。
+    /// <para>
+    /// 🔴 <b><c>null</c> ＝由来が記録されていない</b>（本列の追加前に記録された行）。<b>「損切りではない」ではない。</b>
+    /// 当日の決済が <c>null</c> なら、その銘柄の同方向の新規建ては「確かめられない」理由で止まる。
+    /// </para>
+    /// </summary>
+    public RiskManagementService.Features.RiskManagement.ApprovalSource? Source { get; set; }
 }
 
 // FR-10, FR-05, IADR-0018: 約定（OrderExecuted）を OrderId で保持する追記専用行（取引台帳の一部）。
