@@ -5,7 +5,7 @@ status: accepted
 related_ids: [FR-10, FR-11, UC-02, UC-06, ADR-0003, ADR-0040, IADR-0057, IADR-0117, IADR-0210, IADR-0344, IADR-0369]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10「逆指値が未受理・失効した場合は建玉を持たない」)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md (業務フロー 02「逆指値が成立しない場合の扱い」)
@@ -105,6 +105,10 @@ plan_refs:
 ［2026-09-24 追記 / PR #916 監査］ 同じなのは**回数だけ**である。S1 の上限は到達 1 回あたりで、使い切ると
 `TriggeredAt` を消して次の到達で自ら再武装する。本作業の上限は保護記録ごとの累計で再武装が無い
 （戻るのは再起動・逆指値の再発注の成功・手仕舞いの約定だけ）。詳細は IADR-0369 決定 3 の同日追記。
+
+［2026-09-25 追記 / #941］ 上の「手仕舞いの約定」は「手仕舞いの**受理**」が正しい。数えを捨てる `CompleteAsClosed` は
+成行の戻り値（または記録済みの手仕舞いレグ）が `Cancelled` / `Rejected` / `Expired` でなければ呼ばれ、約定を待たない。
+詳細は IADR-0369 決定 3 の同日追記。
 
 - 数えは `CloseRejectionTracker`（singleton・**非永続**）が `EntryDecisionId` ごとに持つ。
   既存の `HeldCloseNotificationTracker`（IADR-0117 改定 9）と同じ作法であり、**再起動で数えが消える＝

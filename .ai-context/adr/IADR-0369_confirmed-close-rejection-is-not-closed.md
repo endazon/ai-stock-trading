@@ -2,10 +2,10 @@
 title: IADR-0369 成行手仕舞いの「確認できた拒否」は手仕舞い済みとして扱わず、記録を巡回に残したまま上限つきで撃ち直す
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-11, UC-02, UC-06, ADR-0003, ADR-0040, IADR-0057, IADR-0113, IADR-0117, IADR-0210, IADR-0344]
+related_ids: [FR-10, FR-11, UC-02, UC-06, ADR-0003, ADR-0040, IADR-0057, IADR-0113, IADR-0117, IADR-0210, IADR-0344, IADR-0370]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10「逆指値が未受理・失効した場合は建玉を持たない」)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md (業務フロー 02「逆指値が成立しない場合の扱い」)
@@ -116,6 +116,21 @@ SIMULATE は公式に「指値・成行のみ」だが、時間外の成行や�
   成行の撃ち直しへ化ける）（T-10-685）。
 - 上限の値そのものを T-10-636 で固定した（従来の表明は定数を参照しており、3 → 4 の書き換えが緑のまま通った）。
 
+［2026-09-25 追記 / #941］ 決定は変えず、次の 2 点を是正した（作業仕様書 `20260925_941_entry-indeterminate-close-no-repeat-promise`）。
+
+- **上の表「数えが戻る契機」の「手仕舞いの約定」は「手仕舞いの受理」が正しい。** 数えを捨てる `CompleteAsClosed` は、
+  成行の戻り値が `Cancelled` / `Rejected` / `Expired` でない（`Accepted` / `PartiallyFilled` / `Filled`）とき、
+  および記録済みの手仕舞いレグが同じく終端でないときに呼ばれ、約定を待たない（受理の時点で保護記録も完了し、以後この記録は巡回されない）。
+  `CloseRejectionTracker` の冒頭と `ProtectiveStopGuard.MaxConfirmedCloseRejections` の注記も同じく直した。
+- **上の F1 と同型の偽りの約束が `CloseDispatchIndeterminate` にも残っていた。** その本文は `Cause` を見ず
+  「予約が解決されるまで約 1 時間ごと（と再起動のたび）に繰り返します」と書いていたが、1 時間ごとの再通知
+  （IADR-0117 改定 9）は `HeldCloseNotificationTracker` が持ち、それを使うのは保護記録を巡回する `ProtectiveStopGuard` だけである。
+  エントリー同時の経路（`RejectedAtEntry`・`OrderExecutionAppService.IndeterminateClose`）は保護記録を作らず、
+  同じ承認の再配送も相 1 で返って保護喪失を出し直さない（IADR-0117 改定 9 の「塞がないもの」のとおり）。
+  F1 と同じく後半を `Cause` で分け、エントリー時は「巡回しない・この通知も繰り返さない（この 1 回だけ）・
+  証券会社の画面で手仕舞いの注文と建玉を確かめ、手で手仕舞う」と書く（T-10-750）。根拠（保護記録が無い・
+  1 時間後の巡回がイベントを出さない・再配送が出し直さない）はコードの側でも固定した（T-10-751）。
+
 ### 決定 4: 出口を入口のガードで塞がない
 
 上限は**成行手仕舞い（出口）だけ**に掛ける。逆指値の再発注・建玉消滅時の取消・S1 の決済・利用者の手仕舞いには
@@ -126,6 +141,23 @@ SIMULATE は公式に「指値・成行のみ」だが、時間外の成行や�
 `ProtectiveStopGuardResult` に `CloseRejected` 件数を**末尾へ**足し、`Unknown`（据え置き＝不明）とも
 `ClosedOut`（解消した）とも混ぜない。通知・監査の文面も 3 者を書き分ける
 （「手仕舞いました」／「送ったが届いたか不明」／「拒否された・建玉が残っている」）。
+
+［2026-09-25 追記 / #938］ PR #916 監査の F4・F5 を是正した（決定は変えない。作業仕様書 `20260925_938_guard-tracker-completion-and-close-failed-count`）。
+
+- **F5（本決定の取りこぼし）**: 成行手仕舞いも**確実に未発注**で失敗した巡回（`Remediation=None`。記録は `Active` のまま次の巡回で撃ち直す）が
+  `ClosedOut` を返し、巡回ログの「手仕舞い」に数えられていた（本 IADR より前から同じ）。本決定と同じ理由で混ぜない ——
+  `Outcome.CloseFailed` を足し、`ProtectiveStopGuardResult` の**末尾**へ `CloseFailed` を足して、巡回ログは
+  「手仕舞い失敗（未発注・建玉残存）」を別枠で出す。警告を出す条件にも足した（分けた後にその巡回の行が出なくならないように）（T-10-756・T-10-757）。
+- **F4（決定 3 の記憶の後始末）**: `CloseRejectionTracker` の記憶は `Replaced` と `CompleteAsClosed` でしか捨てず、ガードが記録を完了させる
+  他の経路（建玉消滅→残存逆指値の取消・逆指値の `Filled`・失効かつ建玉 0）では再起動まで残った。`HeldCloseNotificationTracker`
+  （IADR-0117 改定 9）にも同型の残りがあった（据え置き中の完了・据え置いたレグが突合で拒否と確定・解放後の再発注）。
+  **記録を完了させる出口 `MarkCompleted` で両方を捨てる**ことにし、拒否と再発注では試行が進んで二度と引かれないレグの据え置きを捨てる（T-10-752・T-10-753）。
+  さらに監査が挙げていない経路として、**ガードの外**で記録を完了させる乖離の取り込み（IADR-0370・`ProtectiveStopDriftAdopter`）がある。
+  ガードは巡回の冒頭（巡回対象が 0 件で戻るより前）で、記憶に載っている記録だけを引き直し、`Active` の記録が無い（行が無い・`Completed`）ものを捨てる（T-10-754）。
+  🔴 **引き直しが例外で失敗したら捨てない**（不明は「無い」ではない。捨てると数えが 0 へ戻り、まだ `Active` かもしれない記録へ成行を撃ち直す側へ倒れる）（T-10-755）。
+  依存は変えていない（ガードは既にストアと両方の記憶を持つ）。据え置きの記憶は `CloseDecisionId` から保護記録を逆に引けないため、
+  `EntryDecisionId` も併せて覚えるようにした。
+- あわせて上の表「数えが戻る契機」には、#938 以降「記録の完了」も加わる（完了した記録へ撃ち直すことは無いので、数えの意味が無くなる）。
 
 ## 理由
 
