@@ -22,7 +22,7 @@ namespace RiskManagementService.Tests;
 // 承認者として採る。機密クライアントのトークンは TestAuthHandler の "X-Test-Azp"（azp）＋
 // "X-Test-Name"（NoName＝名前クレーム無し）で模す。
 //
-// テスト ID: T-129〜T-137, T-140（`docs/tests/FR-20_staged-gates-tests.md`）。
+// テスト ID: T-129〜T-137, T-140, T-141（`docs/tests/FR-20_staged-gates-tests.md`）。
 public class StageTransitionApproverTests
 {
     private const string OwnerRole = "trading-owner";
@@ -260,6 +260,7 @@ public class StageTransitionApproverTests
     [InlineData("山田")]                                     // 非 ASCII（#861 の監査が実測）
     [InlineData("dev owner")]                                // 空白入り（同上）
     [InlineData("owner\n@everyone")]                         // 改行の注入
+    [InlineData("owner\n")]                                  // 末尾 LF だけ（`$` なら LF の直前で一致してしまう）
     [InlineData("")]                                         // 空
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")] // 65 文字
     public async Task T136_信頼クライアントの値域外の_onBehalfOf_は400で遷移しない(string onBehalfOf)
@@ -331,6 +332,33 @@ public class StageTransitionApproverTests
 
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         published.Should().BeEmpty();
+    }
+
+    // ---- T-141: 空売り実弾解禁の verdict（相乗りの経路）も代理の承認者を台帳とイベントへ残す ----
+    [Fact]
+    public async Task T141_Bot経由の空売り実弾解禁_verdict_は_代理される利用者を承認者に_クライアントを認可の主体に残す()
+    {
+        // **相乗りの経路（IADR-0281 決定1）も同じ解決を通る。** verdict の分岐だけトークンの主体
+        // （`ActorOf(http)` 相当）へ戻すと、Bot 経由の verdict は `client:<azp>` で台帳に残り、
+        // 「誰が実弾解禁を確認したか」が失われる（T-137 の拒否だけでは検出できない）。
+        using var baseFactory = new RiskWorkerWebApplicationFactory();
+        await using var factory = WithTrustedClients(baseFactory, OwnerClientId);
+
+        var (res, published) = await TransitionAsync(factory, BotClient(factory), new
+        {
+            approval = 1, // StageApprovalKind.ShortSellReleaseVerdict
+            onBehalfOf = "developer",
+        });
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var e = published.Should().ContainSingle().Subject;
+        e.Kind.Should().Be(nameof(StageTransitionKind.ShortSellReleaseVerdict));
+        e.ApprovedBy.Should().Be("developer");
+        e.AuthorizedBy.Should().Be(OwnerClientId);
+
+        var history = await HistoryAsync(UserClient(factory));
+        history.Should().ContainSingle().Which.ApprovedBy.Should().Be("developer");
     }
 
     // ---- 後方互換: onBehalfOf を添えない旧版 Bot／画面は従来どおり ----

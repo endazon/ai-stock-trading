@@ -5,7 +5,7 @@ status: accepted
 related_ids: [FR-20, FR-11, FR-14, UC-06, ADR-0003, ADR-0008, IADR-0062, IADR-0240, IADR-0098, IADR-0134, IADR-0079, IADR-0383]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-20 段階ゲート / FR-11 監査 / FR-14 対話)
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md (確定・承認は利用者のみ)
@@ -109,6 +109,13 @@ grep -rn "onBehalfOf|OnBehalfOf|DelegatedActor|TrustedClientIds"  backend deploy
 | T-138 | Bot が操作者を運ぶ | `StageGateCommandHandler` ⇒ `RequestTransitionAsync(target, actor)`・本文に `onBehalfOf` が載る |
 | T-139 | UserMapping の値域外で起動時に警告 | 非 ASCII（`山田`）・空白入り（`dev owner`）・64 字超で Warning。正常値では出ない |
 | T-140 | 契約の後方互換 | `StageTransitioned` の旧形式 JSON が `AuthorizedBy=null` で読める／位置引数の並びが変わらない |
+
+［2026-09-24 追記 / #868］レビューの変異試験で生き残った 2 件を殺すため **T-141** を足し、T-136 に値を 1 つ足した。
+
+| ID | 受け入れ基準 | 固定する内容 |
+| --- | --- | --- |
+| T-141 | 相乗りの経路でも正しい承認者が残る | 信頼クライアントのトークン＋`onBehalfOf` で**空売り実弾解禁の verdict** ⇒ 台帳・イベントの `ApprovedBy` が利用者・`AuthorizedBy` がクライアント（変異「verdict の分岐だけ `ActorOf(http)` へ戻す」を殺す） |
+| T-136（追加値） | 値域は `\A…\z` | `"owner\n"`（末尾 LF だけ）も 400（変異「`\A…\z` → `^…$`」を殺す。.NET の `$` は末尾 LF の直前にも一致する） |
 
 ## 否定形の 3 点セット（`docs/tests/README.md` §2）
 
