@@ -443,6 +443,55 @@ public class BusinessMetricsTests
             .Should().Equal("identity-missing");
     }
 
+    // ---- T-10-787, FR-10, NFR-07, #942, IADR-0395: 追随の打ち切りのカウンタは 0 から始められ、語彙の外の理由を拒む ----
+    // 🔴 起動時の 0 は「系列が在る」ことを作るためだけにあり、件数を 1 つも足さない（足すと平常時に鳴る）。
+    [Fact]
+    public void 追随の打ち切りのカウンタは2つの理由とも0で計上でき_件数は増えない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.PrimeDriftAdoptionFollowUpAbandoned();
+
+        capture.TagValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned, BusinessMetricNames.TagReason)
+            .Should().BeEquivalentTo(
+                [BusinessMetrics.DriftFollowUpPositionsUnknown, BusinessMetrics.DriftFollowUpPositionsQueryFailed]);
+        capture.SumOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(BusinessMetrics.DriftFollowUpPositionsUnknown)]
+    [InlineData(BusinessMetrics.DriftFollowUpPositionsQueryFailed)]
+    public void 追随の打ち切りは理由つきで1件ずつ数える(string reason)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordDriftAdoptionFollowUpAbandoned(reason);
+
+        capture.ValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().ContainSingle()
+            .Which.Should().Match<MeterCapture.Measurement>(m =>
+                m.Value == 1 && m.Tags[BusinessMetricNames.TagReason] == reason);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("positions-empty")] // 空の一覧（0 株）は「確かめた」であり、打ち切りの理由ではない
+    [InlineData("AAPL")] // 銘柄をタグへ入れない（基数の規律）
+    public void 追随の打ち切りは語彙の外の理由を拒み系列を増やさない(string reason)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        var act = () => metrics.RecordDriftAdoptionFollowUpAbandoned(reason);
+
+        act.Should().Throw<ArgumentException>();
+        capture.ValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().BeEmpty();
+    }
+
     /// <summary>本テスト内でのみ用いる費用カテゴリの表示名（CostControl の enum は別プロジェクトにある）。</summary>
     private static class CostCategoryLabels
     {
@@ -463,6 +512,7 @@ public class BusinessMetricsTests
         metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
         metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
         metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
+        metrics.RecordDriftAdoptionFollowUpAbandoned(BusinessMetrics.DriftFollowUpPositionsUnknown);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。
