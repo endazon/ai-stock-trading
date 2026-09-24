@@ -11,7 +11,7 @@ ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-2
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
 iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0394, IADR-0369]
 specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_935_stop-out-same-day-reentry, 20260925_941_entry-indeterminate-close-no-repeat-promise]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #909, #935, planning#292, #941]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #909, #935, #941, planning#292]
 -->
 
 
@@ -861,8 +861,11 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 - 判断側（取引判断サービス）は変えていない。見送りの理由の計器（判断が自分で見送った件数）には出ず、
   **発注前審査の拒否理由の計器**に出る。
 - 🔴 **導入日の過剰拘束**: 導入前に記録された当日の決済は由来が空であり、その銘柄の同じ方向の新規建ては
-  導入当日のうち「分からない」理由で止まる。翌取引日には解ける。
+  導入当日のうち「分からない」理由で止まる。翌取引日には解ける。**ブローカー側逆指値の武装の行もこれに含まれる**
+  （武装は決済の承認として記録される）ため、導入前の当日に逆指値つきで建てた銘柄は、損切りしていなくても止まる。
 - **ブローカー側逆指値の約定は約定追跡の巡回で台帳へ届く**。届く前の審査はその損切りをまだ知らない。
+- 🔴 **武装から 24 時間を超えて約定したブローカー側逆指値は数えられない**（既存の欠落）。約定追跡の巡回は
+  記録から追跡上限（既定 24 時間）を過ぎた未約定の注文を照会せず、逆指値の記録の時刻は武装の時刻だからである。
 
 ### 損切りの実行機構 — ブローカー側逆指値への一本化（#331）
 
