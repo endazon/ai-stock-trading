@@ -571,6 +571,14 @@ services:
       - { name: Fx__Provider, value: "boj" }
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      # FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 段階遷移の要求の onBehalfOf
+      # （代理される利用者）を信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントの
+      # トークンで承認を呼ぶため、トークンからは人を解決できない（実資金ゲートの承認者が unknown になっていた）。
+      # **notification の Notifications__Discord__OwnerAuth__ClientId と同じ秘密鍵から採る**（単一情報源。
+      # report の Reports__DelegatedActor__TrustedClientIds と同じ鍵）。
+      # fail-safe: 未設定/空=誰の onBehalfOf も信じない（承認者はトークンの主体へ倒れる）。
+      - name: RiskControls__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   trade-decision:
     image: ai-stock-trading/trade-decision-service
     extraEnv:

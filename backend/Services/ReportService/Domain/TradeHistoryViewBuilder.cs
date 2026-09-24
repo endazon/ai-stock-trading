@@ -8,7 +8,8 @@ namespace ReportService.Domain;
 //
 // 🔴 **数値はコード集計値・文章は記録の転記であり、いずれも LLM に作らせない**（FR-16・IADR-0251）。
 //   - 手数料・費用: `CostCalculator.EstimateOneWayCost`（`PnlAggregator` と**同じ関数**）
-//   - 実現損益: `SignedInventory.Apply`（`PnlAggregator` と**同じ畳み込み**）——在庫が減る約定でのみ計上する
+//   - 実現損益: `PeriodInventory.Apply`（`PnlAggregator` と**同じ畳み込み**）——在庫が減る約定でのみ計上する
+//     （🔴 #892: 期間より前に建てた建玉の決済は算定できないため `RealizedPnlUnvalued` を立て、値を描かせない）
 //   - 判断根拠: 監査台帳 `TradeDecisionMade.Rationale` を `DecisionId` で引いて**そのまま**載せる
 //
 // 🔴 **引けなかったものは `null`（未供給）にする。** 推測で埋めない（レンダラが `**未供給**` と描く）。
@@ -60,7 +61,8 @@ public static class TradeHistoryViewBuilder
             var key = (fill.Symbol, fill.Market);
             var signedQuantity = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             positions.TryGetValue(key, out var lot);
-            var applied = SignedInventory.Apply(lot, signedQuantity, fill.Price);
+            // 🔴 #892, IADR-0381: 畳み込みの規則は PnlAggregator と**同じ純関数**（PeriodInventory）で引く。
+            var applied = PeriodInventory.Apply(lot, fill.PositionEffect, signedQuantity, fill.Price);
             positions[key] = applied.Lot;
 
             lines.Add(new TradeHistoryLine(
@@ -82,7 +84,9 @@ public static class TradeHistoryViewBuilder
                 applied.Reduced ? applied.RealizedPnl : 0m,
                 // 🔴 判断の起点は記録されていない（DecisionTriggerKind は取引判断サービスのプロセス内にしか無い）。
                 Trigger: null,
-                Rationale(rationales, fill.DecisionId)));
+                Rationale(rationales, fill.DecisionId),
+                // 🔴 #892: 期間より前に建てた建玉の決済は実現損益を算定できない（0 と書かない）。
+                applied.Unvalued));
         }
 
         return new TradeHistoryView

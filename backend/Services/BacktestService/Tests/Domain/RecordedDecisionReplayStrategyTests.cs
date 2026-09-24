@@ -18,7 +18,20 @@ public class RecordedDecisionReplayStrategyTests
     private static readonly DateOnly From = new(2026, 6, 1);
     private static readonly DateOnly To = new(2026, 6, 30);
 
-    private static Stage0DecisionRecord Record(DateOnly asOf, string symbol, int signedQuantity) =>
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: as-of 入力 3 種すべてを「再構成できた」と申告した記録。
+    // 🔴 **申告の無い記録は判定を組ませない**ため、既存の肯定形はここを通る形でしか成立しない。
+    private static IReadOnlyList<Stage0AsOfInputStatus> AllReconstructed =>
+    [
+        new(Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputAvailability.Reconstructed),
+        new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
+        new(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputAvailability.Reconstructed),
+    ];
+
+    private static Stage0DecisionRecord Record(
+        DateOnly asOf,
+        string symbol,
+        int signedQuantity,
+        IReadOnlyList<Stage0AsOfInputStatus>? asOfInputs = null) =>
         new(symbol, Market.UnitedStates, asOf, "fp", "claude-sonnet-5", VoteCount: 3,
             RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
             MajorityAction: signedQuantity switch
@@ -28,7 +41,8 @@ public class RecordedDecisionReplayStrategyTests
                 _ => Stage0DecisionAction.Hold,
             },
             MajorityRationale: "根拠", SignedQuantity: signedQuantity,
-            CostJpy: 1m, InputTokens: 300, OutputTokens: 60);
+            CostJpy: 1m, InputTokens: 300, OutputTokens: 60,
+            AsOfInputs: asOfInputs ?? AllReconstructed);
 
     private static Stage0DecisionRecordSet SetOf(params Stage0DecisionRecord[] records) =>
         new(From, To, [new Stage0RecordedSymbol("AAPL", Market.UnitedStates)],
@@ -141,4 +155,81 @@ public class RecordedDecisionReplayStrategyTests
     [Fact]
     public void 戦略IDは記録集合の値を名乗る() =>
         new RecordedDecisionReplayStrategy(SetOf()).StrategyId.Should().Be("strategy-id");
+
+    // ---- FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成不可に依存する判断を判定母集団から外す ----
+
+    private static IReadOnlyList<Stage0AsOfInputStatus> NotReconstructable(Stage0AsOfInputKind kind) =>
+    [
+        new(Stage0AsOfInputKind.NewsAndDisclosures,
+            kind == Stage0AsOfInputKind.NewsAndDisclosures
+                ? Stage0AsOfInputAvailability.NotReconstructable
+                : Stage0AsOfInputAvailability.Reconstructed),
+        new(Stage0AsOfInputKind.DailyPolicy,
+            kind == Stage0AsOfInputKind.DailyPolicy
+                ? Stage0AsOfInputAvailability.NotReconstructable
+                : Stage0AsOfInputAvailability.Reconstructed),
+        new(Stage0AsOfInputKind.FxRateToBase,
+            kind == Stage0AsOfInputKind.FxRateToBase
+                ? Stage0AsOfInputAvailability.NotReconstructable
+                : Stage0AsOfInputAvailability.Reconstructed),
+    ];
+
+    // 🔴 T-15-108 **陽性（最重要）**: 再構成できなかった as-of 入力に依存する判断は**注文を出さない**。
+    // 注文が出ないことで、その判断は成績（DSR・最大 DD・コスト 2 倍感度・ウォークフォワード）の
+    // どこにも寄与しない —— 計画 ADR-0036 決定1 が求めた「合否から外す」の実体である。
+    [Fact]
+    public void 再構成できない入力に依存する判断は注文を出さず除外に数えられる()
+    {
+        var strategy = new RecordedDecisionReplayStrategy(SetOf(
+            Record(new DateOnly(2026, 6, 2), "AAPL", 10),
+            Record(new DateOnly(2026, 6, 3), "AAPL", 10,
+                NotReconstructable(Stage0AsOfInputKind.NewsAndDisclosures))));
+
+        strategy.DecideOrders(Context(new DateOnly(2026, 6, 2))).Should().ContainSingle();
+        strategy.DecideOrders(Context(new DateOnly(2026, 6, 3))).Should().BeEmpty();
+        strategy.ExcludedDecisionCount.Should().Be(1);
+        strategy.EvaluatedDecisionCount.Should().Be(1);
+        strategy.ExcludedInputKinds.Should().Equal(Stage0AsOfInputKind.NewsAndDisclosures);
+    }
+
+    // 🔴 T-15-108 **陽性**: **見送り（数量 0）の記録も除外として数える。**
+    // 数量 0 は注文を作らない点で除外後と同じ振る舞いになるが、母集団から外れたという事実は数量と無関係であり、
+    // 混ぜると「AI が見送った」と「合否から外した」が件数の上で区別できなくなる。
+    [Fact]
+    public void 見送りの記録でも再構成できなければ除外として数える()
+    {
+        var strategy = new RecordedDecisionReplayStrategy(SetOf(
+            Record(new DateOnly(2026, 6, 2), "AAPL", 0,
+                NotReconstructable(Stage0AsOfInputKind.DailyPolicy))));
+
+        strategy.ExcludedDecisionCount.Should().Be(1);
+        strategy.EvaluatedDecisionCount.Should().Be(0);
+    }
+
+    // 🔴 T-15-109 **陰性対照（最重要）**: 全入力が再構成できていれば**除外は 0 件**であり、
+    // 判断はすべて母集団に残る（本変更が既存の評価を痩せさせていないことを固定する）。
+    [Fact]
+    public void すべて再構成できていれば除外は0件である()
+    {
+        var strategy = new RecordedDecisionReplayStrategy(SetOf(
+            Record(new DateOnly(2026, 6, 2), "AAPL", 10),
+            Record(new DateOnly(2026, 6, 3), "AAPL", 0)));
+
+        strategy.ExcludedDecisionCount.Should().Be(0);
+        strategy.EvaluatedDecisionCount.Should().Be(2);
+        strategy.ExcludedInputKinds.Should().BeEmpty();
+    }
+
+    // 重複を畳んだ**後**の記録で除外を数える（同一 (銘柄, 市場, AsOf) を二重に数えない）。
+    [Fact]
+    public void 重複記録は畳んだ後の1件として除外を数える()
+    {
+        var strategy = new RecordedDecisionReplayStrategy(SetOf(
+            Record(new DateOnly(2026, 6, 2), "AAPL", 10),
+            Record(new DateOnly(2026, 6, 2), "AAPL", 10,
+                NotReconstructable(Stage0AsOfInputKind.FxRateToBase))));
+
+        strategy.ExcludedDecisionCount.Should().Be(1);
+        strategy.EvaluatedDecisionCount.Should().Be(0);
+    }
 }

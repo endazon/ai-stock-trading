@@ -277,6 +277,50 @@ public class AuditEntryFactoryTests
         entry.CorrelationId.Should().Be(other.CorrelationId);
     }
 
+    // ---- T-129, FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383 ----
+    //
+    // **実際に操作した利用者と、認可の主体であるクライアントの両方を要約に残す。**
+    // Discord Bot 経由の承認は owner マップ機密クライアントのトークンで行われるため、承認者だけでは
+    // 「誰の資格で通ったか」が、認可の主体だけでは「誰が承認したか」が失われる。
+
+    [Fact]
+    public void StageTransitioned_の代理承認は承認者と認可の主体の両方を要約に出す()
+    {
+        var e = new StageTransitioned(
+            3, 1, 2, "Promotion", "developer", "利用者承認による昇格", RecordedAt, 100, false,
+            AuthorizedBy: "ai-stock-trading-owner");
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("developer").And.Contain("代理 ai-stock-trading-owner");
+        // 生の値はペイロードにも残る。
+        entry.Detail.Should().Contain("AuthorizedBy");
+    }
+
+    [Fact]
+    public void StageTransitioned_の承認者不明は内部の既定値を生で出さない()
+    {
+        // 🔴 過去の台帳には `unknown` の遷移が残っている（#868 の是正は新規の発生を止めるだけである）。
+        // 要約に内部の既定値を生で出すと、読み手は「unknown という利用者が承認した」と読み得る。
+        var e = new StageTransitioned(
+            3, 0, 1, "Promotion", "unknown", "利用者承認による昇格", RecordedAt, 100, false);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("承認者不明").And.NotContain("unknown");
+    }
+
+    [Fact]
+    public void StageTransitioned_の本人承認は代理を書かない()
+    {
+        var e = new StageTransitioned(
+            3, 0, 1, "Promotion", "owner", "利用者承認による昇格", RecordedAt, 100, false);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("owner").And.NotContain("代理");
+    }
+
     // FR-20, FR-11, SC-02, #466, 06_daytrading-review §4.1 追補3（質問票 第15回 Q13-b）, IADR-0180:
     // **警告を無視して昇格した事実を記録に残す。** 設定変更の履歴には「下げた事実」が残るが、
     // **その設定で昇格した事実**は本イベント以外に残らない。
@@ -338,7 +382,10 @@ public class AuditEntryFactoryTests
             // FR-20, ADR-0016 決定14, #388, IADR-0281: 空売り解禁の判定入力（監査は素通しで payload へ載せる）。
             IncludesShortSelling: false, StrategyId: "baseline-v1",
             // FR-15, ADR-0039, #777, IADR-0337: PBO を測ったかどうかを運ぶ 2 項目（本ケースは評価済み）。
-            PboEvaluated: true, PboNotEvaluableReason: "");
+            PboEvaluated: true, PboNotEvaluableReason: "",
+            // FR-15, ADR-0036 決定1, #749, IADR-0387: 判定母集団から外した判断を運ぶ 5 項目（本ケースは数えた・除外 0 件）。
+            ExclusionCountKnown: true, ExcludedDecisionCount: 0, EvaluatedDecisionCount: 12,
+            ExcludedInputKinds: "", ExclusionUnknownReason: "");
 
         var entry = AuditEntryFactory.From(e, Id, RecordedAt);
 
@@ -371,7 +418,9 @@ public class AuditEntryFactoryTests
             // 契約は互換のため数値の口を残すが、評価済みを名乗らないため値に意味は無い。
             ProbabilityOfBacktestOverfitting: 0d, FailedChecks: "DeflatedSharpe", RecordedAt,
             IncludesShortSelling: false, StrategyId: "ai-decision-replay/x",
-            PboEvaluated: false, PboNotEvaluableReason: reason);
+            PboEvaluated: false, PboNotEvaluableReason: reason,
+            ExclusionCountKnown: false, ExcludedDecisionCount: 0, EvaluatedDecisionCount: 0,
+            ExcludedInputKinds: "", ExclusionUnknownReason: "NotEvaluated");
 
         var entry = AuditEntryFactory.From(e, Id, RecordedAt);
 
@@ -386,9 +435,66 @@ public class AuditEntryFactoryTests
         var e = new BacktestEvaluated(
             Passed: false, MaxDrawdownRatio: 0.05m, DeflatedSharpe: 0.42,
             ProbabilityOfBacktestOverfitting: 0d, FailedChecks: "DeflatedSharpe", RecordedAt,
-            IncludesShortSelling: false, StrategyId: "", PboEvaluated: false, PboNotEvaluableReason: "");
+            IncludesShortSelling: false, StrategyId: "", PboEvaluated: false, PboNotEvaluableReason: "",
+            ExclusionCountKnown: false, ExcludedDecisionCount: 0, EvaluatedDecisionCount: 0,
+            ExcludedInputKinds: "", ExclusionUnknownReason: "");
 
         AuditEntryFactory.From(e, Id, RecordedAt).Summary.Should().Contain("PBO 評価不能(理由不明)");
+    }
+
+    // 🔴 **T-15-112 否定形（台帳）・FR-15, ADR-0036 決定1, #749, IADR-0387**:
+    // **数えていない除外を「0 件」と書かない。** 計画 ADR-0036 決定1 は「外した範囲は記録に残す ——
+    // 『何を外したか』が分からないと、合格が何についての合格なのかが読めない」と定めた。
+    // 台帳が 0 を書くと、**痩せた入力に依存する判断が無かった**と読めてしまう（PBO と同じ誤読の型）。
+    [Theory]
+    [InlineData("CompletenessNotDeclared")]
+    [InlineData("NotEvaluated")]
+    public void BacktestEvaluated_は数えていない除外を0件と書かない(string reason)
+    {
+        var e = new BacktestEvaluated(
+            Passed: false, MaxDrawdownRatio: 0.05m, DeflatedSharpe: 0.42,
+            ProbabilityOfBacktestOverfitting: 0d, FailedChecks: "InputCompletenessNotDeclared", RecordedAt,
+            IncludesShortSelling: false, StrategyId: "ai-decision-replay/x",
+            PboEvaluated: false, PboNotEvaluableReason: "NotEvaluated",
+            ExclusionCountKnown: false, ExcludedDecisionCount: 0, EvaluatedDecisionCount: 0,
+            ExcludedInputKinds: "", ExclusionUnknownReason: reason);
+
+        var summary = AuditEntryFactory.From(e, Id, RecordedAt).Summary;
+
+        summary.Should().Contain($"as-of除外 不明({reason})");
+        summary.Should().NotContain("as-of除外 0");
+        summary.Should().NotContain("as-of除外 なし");
+    }
+
+    // 陽性対照: 数えた除外は件数・母集団・種別が 1 行で読める。
+    // 🔴 **除外 0 件は「なし」と書ける** —— 数えたうえでの 0 は実測であり、上の「不明」とは別の事実である。
+    [Fact]
+    public void BacktestEvaluated_は数えた除外を件数と母集団で記録する()
+    {
+        var e = new BacktestEvaluated(
+            Passed: false, MaxDrawdownRatio: 0.05m, DeflatedSharpe: 0.42,
+            ProbabilityOfBacktestOverfitting: 0.3, FailedChecks: "DeflatedSharpe", RecordedAt,
+            IncludesShortSelling: false, StrategyId: "ai-decision-replay/x",
+            PboEvaluated: true, PboNotEvaluableReason: "",
+            ExclusionCountKnown: true, ExcludedDecisionCount: 2, EvaluatedDecisionCount: 18,
+            ExcludedInputKinds: "NewsAndDisclosures", ExclusionUnknownReason: "");
+
+        AuditEntryFactory.From(e, Id, RecordedAt).Summary
+            .Should().Contain("as-of除外 2 件/母集団 18 件(NewsAndDisclosures)");
+    }
+
+    // 理由が空で届いても数値へ倒さない（旧メッセージの復元・発行側の取りこぼしを想定した fail-safe）。
+    [Fact]
+    public void BacktestEvaluated_は除外が不明で理由が空でも件数へ倒さない()
+    {
+        var e = new BacktestEvaluated(
+            Passed: false, MaxDrawdownRatio: 0.05m, DeflatedSharpe: 0.42,
+            ProbabilityOfBacktestOverfitting: 0d, FailedChecks: "DeflatedSharpe", RecordedAt,
+            IncludesShortSelling: false, StrategyId: "", PboEvaluated: false, PboNotEvaluableReason: "",
+            ExclusionCountKnown: false, ExcludedDecisionCount: 0, EvaluatedDecisionCount: 0,
+            ExcludedInputKinds: "", ExclusionUnknownReason: "");
+
+        AuditEntryFactory.From(e, Id, RecordedAt).Summary.Should().Contain("as-of除外 不明(理由不明)");
     }
 
     [Fact]
@@ -912,6 +1018,22 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotContain("解消にも失敗");
     }
 
+    // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
+    // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
+    [Fact]
+    public void 保護喪失の成行手仕舞いが拒否なら_建玉が無保護で残っていると読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseRejected,
+                10, Guid.NewGuid(), CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopCoverageLost));
+        entry.Summary.Should().Contain("拒否").And.Contain("無保護で残っている").And.Contain("要人手対応");
+        entry.Summary.Should().NotContain("解消にも失敗").And.NotContain("結果未確認");
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S2）, #819, IADR-0342 決定6: 免除は保護喪失と別の EventType で残り、
     // 要約から「手法 S2・ペーパーで免除・逆指値なしの建玉を保持」が読める。
     [Fact]
@@ -963,6 +1085,10 @@ public class AuditEntryFactoryTests
     [InlineData(SoftwareStopOutcome.ProtectionSuspended, "1 株も決済できない状態が猶予を過ぎても続いている")]
     // T-10-493（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: 帰属不明の建玉の**検知**（是正ではない）。
     [InlineData(SoftwareStopOutcome.UnattributedPosition, "どの保護記録も主張していない建玉がある")]
+    // T-10-642（#858, IADR-0370 決定5）: 取り込みで消えた建玉の保護注文を取り消せたと確認できていない。
+    [InlineData(SoftwareStopOutcome.StopCancelUnconfirmed, "取り消せたと確認できていない")]
+    // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端し、保護記録を再武装した。
+    [InlineData(SoftwareStopOutcome.CloseUnfilled, "受理された成行決済が約定しないまま終了")]
     public void ソフトウェア逆指値の発動結果は結末が読める(SoftwareStopOutcome outcome, string expected)
     {
         var entryDecisionId = Guid.NewGuid();

@@ -141,6 +141,20 @@ public sealed class ReportAutoGenerator(
         using var observation = _probe.Begin();
         var unsupplied = new HashSet<ReportInput>();
 
+        // FR-07, UC-03, #839, IADR-0382: **方針の連鎖が切れていることを、確定の前に見せる。**
+        // 上位方針（親の直近確定済み）・前期方針（同種別の直近確定済み）が無いまま生成された報告書は、
+        // 方針文が空（注記だけ）になるが、それは本文を全部読まないと分からなかった。
+        //
+        // 🔴 **見送り（リトライ）の対象にしない。** 供給元は自リポジトリのストアであり HTTP を出さない
+        // ——観測が無いので TryDefer は反応しない。**待っても確定済みの上位は増えない**（確定は利用者の行為である）。
+        if (parent is null)
+            unsupplied.Add(ReportInput.ParentPolicy);
+
+        // 🔴 月報は上位＝前期（前月の月報）と**同一**である（ParentKind(Monthly) == Monthly）。
+        // 両方を数えると、同じ事実を 2 つの表示名で 2 回警告することになる。
+        if (previous is null && parentKind != due.Kind)
+            unsupplied.Add(ReportInput.PreviousPolicy);
+
         observation.Enter(ReportInput.Fills);
         var (fills, fillsFailed) = await SafeFillsAsync(due, cancellationToken).ConfigureAwait(false);
         // 約定だけは不達でも空列へ倒れる（IADR-0115 決定5）ため、値からは欠落が分からない。観測から判定する。
@@ -242,6 +256,14 @@ public sealed class ReportAutoGenerator(
                 PeriodEndFxRate: periodEndFxRate,
                 DriftAdoptions: driftAdoptions),
             cancellationToken).ConfigureAwait(false);
+
+        // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
+        // **期間開始時点の在庫**を未供給として記録する（IADR-0352 の既存経路＝記録・提示通知の警告・
+        // `/report show`・版番号なしの `/report approve` の警告へそのまま乗る）。
+        // 🔴 **見送り（リトライ）には掛けない。** 供給元が存在しない入力であり、待っても変わらない
+        //（TryDefer は上で終わっており、ここから先で見送りへ入る経路は散文だけである）。
+        if (draft.Pnl.UnvaluedSettlementCount > 0)
+            unsupplied.Add(ReportInput.OpeningInventory);
 
         // 散文の未供給＝プレースホルダ散文（LLM 未接続・縮退のいずれも。数値には関与しない）。
         if (string.Equals(draft.Narrative, ReportNarrativeDefaults.PlaceholderText, StringComparison.Ordinal))

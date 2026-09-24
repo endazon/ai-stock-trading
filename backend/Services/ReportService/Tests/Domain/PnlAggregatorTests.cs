@@ -110,10 +110,18 @@ public class PnlAggregatorTests
         PnlAggregator.Aggregate(fills, Assumptions()).RealizedPnlGross.Should().Be(2_000m);
     }
 
+    // T-16-006 (#892, IADR-0381): 🔴 **手仕舞い（Close）が期間の在庫を超える分は「反転」ではない。**
+    //
+    // 是正前はここで `SignedInventory.Apply` の反転分岐が働き、余りを**新しいショート建玉**にしていた
+    //（旧テスト名「反転_ロングからショート_は決済分の実現損益と残ショートの評価損益を扱う」）。
+    // しかし手仕舞いは**台帳の建玉を減らす約定**であり、決済数量は保有数（全量）から決まる
+    //（`PositionEffectResolver`。ゼロを跨ぐ分割は起きない）。報告書の在庫が足りないのは
+    // **期間より前に建てた建玉があるから**であって、反転したからではない。
+    // 余りを建てると**幻のショート**が開き、実在しない建玉の評価損益が §1 に出る（#892 の主訴）。
     [Fact]
-    public void 反転_ロングからショート_は決済分の実現損益と残ショートの評価損益を扱う()
+    public void 手仕舞いが期間の在庫を超える分は幻のショートにせず算定できない決済として数える()
     {
-        // ロング10株保有中に15株売却 → 10株を決済（実現 +2,000）、残5株はショートへ転換（取得単価=1,200）。
+        // 期間の在庫はロング 10 株。手仕舞い 15 株のうち 10 株は当期間で建てた玉、5 株は期間より前の玉である。
         var fills = new[]
         {
             Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 0),
@@ -123,9 +131,10 @@ public class PnlAggregatorTests
 
         var s = PnlAggregator.Aggregate(fills, Assumptions(), prices);
 
-        s.RealizedPnlGross.Should().Be(2_000m);       // (1200-1000)*10
+        s.RealizedPnlGross.Should().Be(2_000m);       // 賄えた 10 株ぶんだけ (1200-1000)*10
         s.RealizingTradeCount.Should().Be(1);
-        s.UnrealizedPnl.Should().Be(500m);            // ショート5 @1200・現在値1100 → (1100-1200)*(-5)=500
+        s.UnvaluedSettlementCount.Should().Be(1);     // 賄えなかった 5 株を持つ約定が 1 件
+        s.UnrealizedPnl.Should().Be(0m);              // 🔴 幻のショートを建てない（是正前は +500 が出ていた）
     }
 
     [Fact]

@@ -171,10 +171,14 @@ builder.Services.AddSingleton<IBrokerAccountObservationStore>(sp =>
 // DbContext が scoped のため本ストアも scoped。
 builder.Services.Configure<CapitalBaselineOptions>(
     builder.Configuration.GetSection(CapitalBaselineOptions.SectionName));
+// FR-10, NFR-07, #889, IADR-0372: 読み出しの帰結（供給／観測の欠落／未供給の 3 理由）を観測する。
+// **門は変えない**——「残高 0 で新規建てを止めるか」は裁定待ちであり、まず見えるようにする。
 builder.Services.AddScoped<ICapitalBaselineStore>(sp => new EfCapitalBaselineStore(
     sp.GetRequiredService<RiskManagementDbContext>(),
     sp.GetRequiredService<IClock>(),
-    sp.GetRequiredService<IOptions<CapitalBaselineOptions>>().Value));
+    sp.GetRequiredService<IOptions<CapitalBaselineOptions>>().Value,
+    sp.GetRequiredService<ILogger<EfCapitalBaselineStore>>(),
+    sp.GetRequiredService<BusinessMetrics>()));
 // FR-19, FR-10, FR-11, #425, ADR-0025 決定2, IADR-0165: GFV 発生回数の**自前計数**の台帳。
 // **永続（EF）でなければならない**——違反記録をプロセス内に持つと再起動で消え、「2 件で新規建てを止める」
 // 統制が再起動 1 回で解ける（fail-open）。口座種別の観測（上・非永続）と設計が違うのは「集計 vs 現在値」の
@@ -220,6 +224,13 @@ builder.Services.AddSingleton(RiskManagementService.Domain.TradingDefaults.Creat
 // 正しい表現。供給が結線された瞬間に値が変わり、既存 verdict は自動で失効する）。
 builder.Services.AddSingleton<ShortSellReleaseSourceInventory>();
 builder.Services.AddScoped<StageGateService>();
+// FR-20, FR-11, FR-14, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 段階遷移の要求の本文で運ばれる
+// 「代理される利用者」（onBehalfOf）を信じてよいクライアント（Discord Bot の owner マップ機密クライアント）の一覧。
+// **既定は空＝誰も信じない**（fail-safe）。構成は解決時に読む（起動コードの途中で読むと、後から積まれた構成源を
+// 見落とす。報告書サービスの `Reports:DelegatedActor:TrustedClientIds` と同じ形）。
+builder.Services.AddSingleton(sp => new DelegatedActorOptions(
+    DelegatedActorResolver.ParseTrustedClientIds(
+        sp.GetRequiredService<IConfiguration>()[DelegatedActorOptions.TrustedClientIdsKey])));
 // FR-20, FR-11, FR-09, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバ。EvaluateWithdrawal を定時駆動し、新規に
 // 自動停止したときだけ WithdrawalTriggered を発行する。既定は無効（opt-in・安全側）。有効化しても実 DD 未供給の
 // 既定実績では発火しない（QuoteRefreshService と同じく副作用を伴う背景処理は既定起動しない）。

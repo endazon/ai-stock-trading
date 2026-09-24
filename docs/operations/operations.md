@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-09-17
+updated: 2026-09-24
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13]
+ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13, FR-10]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, MSP#266, MSP#635, planning#54]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -111,9 +111,22 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 
 ## 監視・アラート
 
+アラートルールの実体は [`deploy/observability/alerts/ai-stock-trading-alerts.yaml`](../../deploy/observability/alerts/ai-stock-trading-alerts.yaml)
+にあり、置き場所・命名・重大度の規約は
+[`deploy/observability/README.md`](../../deploy/observability/README.md) が正本である（ここへ複写しない）。
+
 | 監視対象 | 指標 | 閾値 | 通知先 |
 | --- | --- | --- | --- |
-|  |  |  |  |
+| 保有状況が不明なための新規建て見送り（`AstEntriesBlockedByUnknownHoldings`） | `ast_trade_cycle_decision_skips_total{reason="HoldingsUnknownOpen"}` | 15 分窓で 1 件以上が **30 分継続** | Alertmanager（配備は基盤側の共有 overlay） |
+
+- 🔴 **この閾値は実測を要しない。** 対象の見送りは保有照会が**実結線のときにしか立たず**、
+  **平常時の期待値が 0 件**だからである。「N 分間に M 件」という形の閾値は実測してから決める
+  （[`../observability/observability.md`](../observability/observability.md)）。
+- 🔴 **なぜこの 1 件目なのか**: 照会先の誤設定や恒久的な失敗が起きると、**手仕舞いは通るまま新規建てだけが
+  静かに止まり続ける**。「取引が全部止まった」形にならないため、ログを読みに行かない限り誰も気付かない（`#891`）。
+- **最初に見る場所**: 取引判断サービスの WARN ログ（「保有状況が不明なため新規建てを見送る」）と、
+  リスク管理サービスの `GET /risk-controls/open-positions`。設定では `RiskManagement:BaseUrl` を疑う。
+- 内訳の読み分けは業務ダッシュボードのパネル「取引サイクル: 見送りの理由の内訳」で行う。
 
 ## バックアップ・リストア
 
@@ -324,6 +337,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | **再デプロイ後に外部連携（実市況・為替・KB・Discord）が静かに止まる**（#263。`ast-secrets` は差分パッチで同期し、明示的な空上書きだけを中断で防ぐ） | デプロイは成功するのに各アダプタが no-op 警告を出し、`GET /internal/introspection` の該当ポートが `none` を申告する。`kubectl -n ai-stock-trading get secret ast-secrets -o go-template='{{range $k,$v := .data}}{{if not $v}}{{$k}}{{"\n"}}{{end}}{{end}}'` で**空値のキー名**を列挙できる（値は出さない） | `ast-secrets` の値が空で上書きされている。現行の `scripts/k8s-local-deploy.sh` は **env 未設定のキーに触れない**ため再発しないが、旧版で潰された値は戻らない。当該 env を `export` して再実行し、値を入れ直す | 鍵の実値はリポジトリ・ログ・チャットに残さない（端末外へ出さない）。**明示的に空を指定した場合のみ**スクリプトはキー名を列挙して中断する（意図した消去は `--force-empty-secrets`）。Vault（ESO）同期を有効化した環境では `ast-secrets` は ExternalSecret が所有するため、値の投入は [Vault 秘匿 runbook](vault-secrets-runbook.md) 側で行う |
 | **KB 保存が未登録タグで 400 になり全件失敗する**（#705。基盤のタグ辞書検証が未登録タグを拒否する） | 収集サイクル・報告確定のログに `KB 保存: 0/N` が継続出力される | 監視銘柄コードのような**運用中に増える動的な値をタグへ載せていないか**を確認する（属性へは載せてよい。単値完全一致フィルタで絞り込める）。登録すべき静的タグ一覧の生成は [KB タグ辞書登録 Runbook](kb-tag-dictionary-runbook.md) の手順に従う | タグ辞書への実登録操作は基盤（document-service）側の所有物であり、本リポジトリからは登録 API の有無を確認できない。実 KB での `N/N`（N=N）確認は接続性の残件（[ブロック中のタスク](../blocked-tasks.md) A-12）に依存する |
 | **新規建てだけが一切通らない**（#869。自己資金の供給元はブローカーの口座照会であり、照会できないときは新規建てを拒否する） | 発注審査が拒否理由 **`CapitalBaselineUnavailable`** を返し、`/status` の資金が「取得できていません」と表示される。**手仕舞い・損切りは通る** | **不具合ではなく設計どおりの fail-closed**である。まず巡回（口座照会）が生きているかをログで確認する。🔴 **当日より前の取引日の観測が 1 件も無い場合（平日の日中に配備した直後など）は、その日は一日中止まる**——急ぐなら[基準資金の供給が無いときの Runbook](capital-baseline-seed-runbook.md) の手順で 1 行を投入する | 口座照会そのものが通らない（OpenD 不達・口座状態）場合は発注経路の問題であり、[発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md) 側の切り分けへ移る |
+| **乖離の取り込みが保護注文に追随しないまま `_error` キューに残る**（#858。取り込みで消えた建玉の保護逆指値を取り消す前に、発注執行はブローカーの建玉を照会し直す。照会が不明・失敗なら何も変えずに打ち切る） | キュー **`ai-stock-trading.order-execution-service.PositionDriftAdopted_error`** にメッセージが溜まる。入るのは「利用者が承認した乖離の取り込み」のうち、**建玉照会が 4 回（初回＋再試行 2s/10s/30s の 3 回）続けて不明または失敗した**ものだけである。🔴 **見えるのは発注執行サービスの Critical ログ 4 行だけ**（「乖離の取り込みの追随で建玉を照会できませんでした（不明または失敗）…」。取り込み ID・銘柄・台帳の前後が載る）で、**Discord には何も届かない**（打ち切った処理の発行は Wolverine が捨てるため、通知も監査も出ない）。**このキューにも Critical ログにもアラートは無い**（追加は #942 で提案中） | 保護記録もブローカー側の保護逆指値も**取り込み前のまま**である（建玉が消えたと確かめられないまま保護を消さない、が設計）。まず**証券会社の画面で建玉と未約定の逆指値を確認する**——🔴 **建玉が本当に 0 なのに売りの逆指値が残っていると、発火したとき意図しないショートが建つ**ので、急ぐなら画面から逆指値を取り消す。次に建玉照会（OpenD）が回復したことを発注執行のログで確かめてから、`_error` キューのメッセージを元のキュー `ai-stock-trading.order-execution-service.PositionDriftAdopted` へ戻す（RabbitMQ 管理画面）。**再投入は何度行っても安全**である——目標は取り込み後の数量（絶対値）で差分ではなく、二重に取り消さない。追随は再投入の時点で建玉を照会し直し、その時点で建玉があれば保護を消さない。画面から先に逆指値を取り消していた場合、再投入の取消が「取り消せた」と確認できれば記録は終端化され、確認できなければ Discord に「取り込みで消えた建玉の保護注文を取り消せていません」（Critical）が出て記録は巡回に残る——どちらも保護を失う側には倒れない（後者は画面で逆指値が無いことを確かめ済みなら既知として扱う） | 照会が回復しない（OpenD 不達・口座状態）なら[発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md) 側の切り分けへ移る。メッセージを**消さない**——消すと保護記録が `Active` のまま残り、ガードの巡回が実在しない建玉の保護を見続ける |
 
 > **`Reserved` 滞留の発生条件**: ブローカ発注の前後でプロセスが落ちる／DB が書けない場合に限る。moomoo の
 > API 瞬断・不達そのものは `MoomooBrokerAdapter` が終端 `Rejected` へ倒すため、滞留にはならない。

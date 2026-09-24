@@ -40,7 +40,10 @@ public static class BacktestEvaluatedFactory
         ArgumentNullException.ThrowIfNull(decision);
         ArgumentNullException.ThrowIfNull(decision.Gate);
         ArgumentNullException.ThrowIfNull(decision.Pbo);
+        ArgumentNullException.ThrowIfNull(decision.Exclusions);
         ArgumentNullException.ThrowIfNull(run);
+
+        var counted = decision.Exclusions as Stage0ExclusionSummary.Counted;
 
         return new BacktestEvaluated(
             Passed: decision.Gate.Passed,
@@ -58,6 +61,16 @@ public static class BacktestEvaluatedFactory
             PboEvaluated: decision.Pbo.IsEvaluated,
             // 理由は FailedChecks と同じく enum 名で運ぶ（受け手は BacktestService.Domain を参照できない）。
             PboNotEvaluableReason:
-                decision.Pbo is PboVerdict.NotEvaluable notEvaluable ? notEvaluable.Reason.ToString() : string.Empty);
+                decision.Pbo is PboVerdict.NotEvaluable notEvaluable ? notEvaluable.Reason.ToString() : string.Empty,
+            // FR-15, ADR-0036 決定1, #749, IADR-0387: 🔴 **数えていないときの 0 は意味を持たない。**
+            // 読み手は ExclusionCountKnown を先に見る（0 を読むと「痩せた入力は無かった」と誤読する）。
+            ExclusionCountKnown: counted is not null,
+            ExcludedDecisionCount: counted?.Excluded ?? 0,
+            EvaluatedDecisionCount: counted?.Evaluated ?? 0,
+            // 種別は FailedChecks と同じく enum 名で運ぶ（受け手は BacktestService.Domain を参照できない）。
+            ExcludedInputKinds: counted is null ? string.Empty : string.Join(", ", counted.Kinds),
+            ExclusionUnknownReason: decision.Exclusions is Stage0ExclusionSummary.Unknown unknown
+                ? unknown.Reason.ToString()
+                : string.Empty);
     }
 }

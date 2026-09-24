@@ -225,7 +225,7 @@ public class SecretRedactionTests
             Task.FromResult(new StageGateStatusResult(true, "段階ゲート"));
 
         public Task<StageTransitionCommandResult> RequestTransitionAsync(
-            int targetStage, CancellationToken cancellationToken = default) =>
+            int targetStage, string onBehalfOf, CancellationToken cancellationToken = default) =>
             Task.FromResult(new StageTransitionCommandResult(true, true, "遷移"));
 
         public Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default) =>

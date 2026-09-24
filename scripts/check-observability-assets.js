@@ -21,7 +21,11 @@
  *       （**宣言はあるが誰も見ていない計器**＝計上コストだけ払って価値を生まない状態を検出する）
  *   E1. dev の otel-collector 構成が metrics を `debug`（標準出力のみ）にしか出さない
  *       ＝**既定では計装が有効でも外部へ送らない**（IADR-0094 の opt-in の作法）
- *   M1. 走査したダッシュボード数・レジストリの計器数が下限を下回らない
+ *   A1. アラートルールが形を満たす（英字の alert 名・空でない expr・既知の severity・summary あり）
+ *   A2. アラートの expr が引く `ast_*` 系列が、コード側のレジストリに実在する（R1 と同じ規則）
+ *       🔴 **ずれたアラートはエラーを出さず、ただ永久に鳴らない。** 空のグラフと同じ失敗の形であり、
+ *       しかもダッシュボードより悪い——**人が見に行かない前提の仕組みだから**である（#891 / IADR-0374）。
+ *   M1. 走査したダッシュボード数・レジストリの計器数・アラートルール数が下限を下回らない
  *       （探索が壊れて 0 件になると、検査は緑のまま何も守らなくなる）
  *
  * ── 🔴 何を見ないか（明示する）
@@ -42,6 +46,8 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DASHBOARD_DIR = path.join('deploy', 'observability', 'dashboards');
+// #891, IADR-0374: アラートルールの置き場所（1 件目を本ディレクトリに置いた）。
+const ALERT_DIR = path.join('deploy', 'observability', 'alerts');
 const REGISTRY_FILE = path.join(
   'backend', 'Shared', 'AiStockTrading.Shared.Contracts', 'Observability', 'BusinessMetricNames.cs');
 const COLLECTOR_CONFIG = path.join('infra', 'otel', 'otel-collector-config.yaml');
@@ -49,6 +55,12 @@ const COLLECTOR_CONFIG = path.join('infra', 'otel', 'otel-collector-config.yaml'
 // M1: 下限（実測 2 ダッシュボード / 9 計器）。探索が壊れて 0 件になると無条件に緑になる。
 const MIN_DASHBOARDS = 2;
 const MIN_INSTRUMENTS = 9;
+// M1: アラートは 1 件目を置いた（#891）。**0 件へ戻ることを検査で止める** —— ルールを全部消しても
+// 緑のままなら、「アラートがある」という前提だけが文書に残り、実体が消えたことに誰も気付かない。
+const MIN_ALERT_RULES = 1;
+
+// A1: 許す severity。増やすときは deploy/observability/README.md の規約も同時に直す。
+const ALLOWED_ALERT_SEVERITIES = ['warning', 'critical'];
 
 // E1: dev の metrics パイプラインで許すエクスポータ。外部へ送るものを足すときは本配列と
 // docs/observability/observability.md を同時に直す（既定の送出方針の変更であるため）。
@@ -125,6 +137,56 @@ function checkDashboardShape(name, dashboard) {
   return errors;
 }
 
+/**
+ * #891, IADR-0374: PrometheusRule の YAML から alert ルールを読む（**行走査。YAML ライブラリは足さない** ——
+ * 本検査器は外部依存ゼロであり、読むのは自分たちが書く定型の一部だけである）。
+ * 読み取れる形を保つのは書き手の責任で、読めなければ下の A1 が fail-loud で落とす。
+ */
+function parseAlertRules(yaml) {
+  const rules = [];
+  let current = null;
+  for (const line of yaml.split(/\r?\n/)) {
+    if (/^\s*#/.test(line)) continue;
+    const started = /^\s*-\s+alert:\s*(.+?)\s*$/.exec(line);
+    if (started !== null) {
+      current = { alert: started[1], expr: '', for: null, severity: null, summary: null };
+      rules.push(current);
+      continue;
+    }
+    if (current === null) continue;
+    const expr = /^\s*expr:\s*(.+?)\s*$/.exec(line);
+    if (expr !== null) { current.expr = expr[1]; continue; }
+    const forClause = /^\s*for:\s*(\S+)\s*$/.exec(line);
+    if (forClause !== null) { current.for = forClause[1]; continue; }
+    const severity = /^\s*severity:\s*(\S+)\s*$/.exec(line);
+    if (severity !== null) { current.severity = severity[1]; continue; }
+    const summary = /^\s*summary:\s*(.+?)\s*$/.exec(line);
+    if (summary !== null) { current.summary = summary[1]; continue; }
+  }
+  return rules;
+}
+
+/** アラートルール 1 本の形（A1）。 */
+function checkAlertShape(name, rule) {
+  const errors = [];
+  const label = `${name}: alert \`${rule.alert}\``;
+  if (!/^[A-Z][A-Za-z0-9]*$/.test(rule.alert)) {
+    errors.push(`[A1] ${label}: アラート名は PascalCase の英字にする（Prometheus のアラート名は識別子である）。`);
+  }
+  if (rule.expr.trim().length === 0) {
+    errors.push(`[A1] ${label}: \`expr\` が空である。条件の無いルールは永久に鳴らない。`);
+  }
+  if (rule.severity === null || !ALLOWED_ALERT_SEVERITIES.includes(rule.severity)) {
+    errors.push(`[A1] ${label}: \`severity\` が ${ALLOWED_ALERT_SEVERITIES.join(' / ')} のいずれでもない`
+      + `（読めた値: ${rule.severity ?? 'なし'}）。重大度が無いと通知の振り分けができない。`);
+  }
+  if (rule.summary === null || rule.summary.length === 0) {
+    errors.push(`[A1] ${label}: \`annotations.summary\` が無い。`
+      + '受け取った人が「何が起きたか」を 1 行で読めないアラートは無視される。');
+  }
+  return errors;
+}
+
 /** dev の otel-collector 構成が metrics を外部へ送らないこと（E1）。 */
 function checkCollectorMetricsExporters(yaml) {
   const errors = [];
@@ -151,7 +213,7 @@ function checkCollectorMetricsExporters(yaml) {
 }
 
 /** 収集済みの入力に対する検査本体（自己試験からも呼ぶ）。 */
-function checkAssets({ dashboards, instrumentNames, collectorYaml }) {
+function checkAssets({ dashboards, instrumentNames, collectorYaml, alerts = [] }) {
   const errors = [];
 
   if (instrumentNames.length < MIN_INSTRUMENTS) {
@@ -188,9 +250,29 @@ function checkAssets({ dashboards, instrumentNames, collectorYaml }) {
     }
   }
 
+  // #891, IADR-0374: アラートも「系列名の一致」を守る対象である（R1 と同じ規則を適用する）。
+  const alertRules = alerts.flatMap(({ name, rules }) => rules.map((rule) => ({ name, rule })));
+  if (alertRules.length < MIN_ALERT_RULES) {
+    errors.push(`[M1] アラートルールが ${alertRules.length} 件しかない（下限 ${MIN_ALERT_RULES}）。`
+      + '0 件へ戻ると「アラートがある」という前提だけが文書に残る。');
+  }
+  for (const { name, rule } of alertRules) {
+    errors.push(...checkAlertShape(name, rule));
+    for (const series of (rule.expr.match(/\bast_[a-z0-9_]+/g) ?? [])) {
+      const instrument = resolveSeries(series, instrumentNames);
+      if (instrument === null) {
+        errors.push(`[A2] ${name}: alert \`${rule.alert}\` が引く系列 \`${series}\` に対応する計器がコード側に無い。`
+          + '🔴 綴りの違うアラートはエラーを出さず、**ただ永久に鳴らない**'
+          + '（人が見に行かない前提の仕組みなので、空のグラフより気付きにくい）。');
+      } else {
+        usedInstruments.add(instrument);
+      }
+    }
+  }
+
   for (const instrument of instrumentNames) {
     if (!usedInstruments.has(instrument)) {
-      errors.push(`[R2] 計器 \`${instrument}\` をどのダッシュボードも引いていない。`
+      errors.push(`[R2] 計器 \`${instrument}\` をどのダッシュボードもアラートも引いていない。`
         + '計上のコストだけ払って誰も見ない計器になっている（不要なら計器ごと消す）。');
     }
   }
@@ -215,8 +297,17 @@ function collectFromTree() {
     }
     dashboards.push({ name: file, dashboard });
   }
+  // #891, IADR-0374: アラート資産（ディレクトリが無ければ 0 件。下限検査が落とす）。
+  const alertDir = path.join(REPO_ROOT, ALERT_DIR);
+  const alerts = [];
+  if (fs.existsSync(alertDir)) {
+    for (const file of fs.readdirSync(alertDir).filter((f) => /\.ya?ml$/.test(f)).sort()) {
+      alerts.push({ name: file, rules: parseAlertRules(fs.readFileSync(path.join(alertDir, file), 'utf8')) });
+    }
+  }
   return {
     dashboards,
+    alerts,
     instrumentNames: parseRegistry(fs.readFileSync(path.join(REPO_ROOT, REGISTRY_FILE), 'utf8')),
     collectorYaml: fs.readFileSync(path.join(REPO_ROOT, COLLECTOR_CONFIG), 'utf8'),
   };
@@ -231,6 +322,7 @@ function main() {
   if (errors.length === 0) {
     console.log(
       `[check-observability-assets] OK: ダッシュボード ${input.dashboards.length} 枚 / `
+        + `アラート ${input.alerts.reduce((n, a) => n + a.rules.length, 0)} 件 / `
         + `計器 ${input.instrumentNames.length} 件を突き合わせました。`
         + `\n  計器: ${input.instrumentNames.join(', ')}`
         + '\n  dev の otel-collector は metrics を debug（標準出力のみ）にしか出していません（外部送信なし）。');
@@ -358,13 +450,84 @@ function selfTest() {
     assert(errors.some((e) => e.startsWith('[E1]')), errors.join('\n'));
   });
 
-  ok('M1: 下限を下回る入力を違反として上げる', () => {
+  ok('M1: 下限を下回る入力を違反として上げる（ダッシュボード・計器・アラートの 3 本）', () => {
     const errors = checkAssets({
       dashboards: [],
       instrumentNames: [],
       collectorYaml: 'service:\n  pipelines:\n    metrics:\n      exporters: [debug]\n',
     });
-    assert(errors.filter((e) => e.startsWith('[M1]')).length === 2, errors.join('\n'));
+    assert(errors.filter((e) => e.startsWith('[M1]')).length === 3, errors.join('\n'));
+  });
+
+  // ── #891, IADR-0374: アラート資産 ──────────────────────────────────────────
+  const alertYaml = [
+    'spec:',
+    '  groups:',
+    '    - name: ai-stock-trading.trade-cycle',
+    '      rules:',
+    '        - alert: AstSomethingBroke',
+    '          expr: sum(increase(ast_foo_bar_total[15m])) > 0',
+    '          for: 30m',
+    '          labels:',
+    '            severity: warning',
+    '          annotations:',
+    '            summary: 何かが壊れている',
+    '',
+  ].join('\n');
+  const alertsOf = (yaml) => [{ name: 'a.yaml', rules: parseAlertRules(yaml) }];
+  const withAlerts = (yaml, instrumentNames = ['ast.foo.bar']) => checkAssets({
+    dashboards: [
+      { name: 'a.json', dashboard: { ...panel('sum(ast_foo_bar_total)'), uid: 'a' } },
+      { name: 'b.json', dashboard: { ...panel('sum(ast_foo_bar_total)'), uid: 'b' } },
+    ],
+    instrumentNames,
+    alerts: alertsOf(yaml),
+    collectorYaml: 'service:\n  pipelines:\n    metrics:\n      exporters: [debug]\n',
+  });
+
+  ok('アラート YAML から alert 名・expr・for・severity・summary を読む', () => {
+    const rules = parseAlertRules(alertYaml);
+    assert(rules.length === 1, `件数: ${rules.length}`);
+    assert(rules[0].alert === 'AstSomethingBroke', rules[0].alert);
+    assert(rules[0].expr.includes('ast_foo_bar_total'), rules[0].expr);
+    assert(rules[0].for === '30m', String(rules[0].for));
+    assert(rules[0].severity === 'warning', String(rules[0].severity));
+    assert(rules[0].summary === '何かが壊れている', String(rules[0].summary));
+  });
+
+  ok('A1: 形の整ったアラートは違反にしない', () => {
+    const errors = withAlerts(alertYaml).filter((e) => e.startsWith('[A1]') || e.startsWith('[A2]'));
+    assert(errors.length === 0, errors.join('\n'));
+  });
+
+  ok('A2: 綴り違いの系列を引くアラートを違反として上げる（鳴らないアラートを止める）', () => {
+    const errors = withAlerts(alertYaml.replace('ast_foo_bar_total', 'ast_typo_total'));
+    assert(errors.some((e) => e.startsWith('[A2]')), errors.join('\n'));
+  });
+
+  ok('A1: 未知の severity・日本語のアラート名・summary 欠落を違反として上げる', () => {
+    const broken = alertYaml
+      .replace('AstSomethingBroke', '保有不明アラート')
+      .replace('severity: warning', 'severity: info')
+      .replace('            summary: 何かが壊れている\n', '');
+    const errors = withAlerts(broken).filter((e) => e.startsWith('[A1]'));
+    assert(errors.length === 3, errors.join('\n'));
+  });
+
+  ok('R2: アラートだけが引く計器は「誰も見ていない」に数えない', () => {
+    const errors = withAlerts(alertYaml, ['ast.foo.bar', 'ast.alert.only']).filter((e) => e.startsWith('[R2]'));
+    // ast.alert.only はどこからも引かれていないので上がる。ast.foo.bar はパネルとアラートの両方が引く。
+    assert(errors.length === 1 && errors[0].includes('ast.alert.only'), errors.join('\n'));
+    const alertOnly = checkAssets({
+      dashboards: [
+        { name: 'a.json', dashboard: { ...panel('sum(ast_foo_bar_total)'), uid: 'a' } },
+        { name: 'b.json', dashboard: { ...panel('sum(ast_foo_bar_total)'), uid: 'b' } },
+      ],
+      instrumentNames: ['ast.foo.bar'],
+      alerts: alertsOf(alertYaml),
+      collectorYaml: 'service:\n  pipelines:\n    metrics:\n      exporters: [debug]\n',
+    });
+    assert(!alertOnly.some((e) => e.startsWith('[R2]')), alertOnly.join('\n'));
   });
 
   const failed = results.filter(([pass]) => !pass);
@@ -382,5 +545,7 @@ module.exports = {
   resolveSeries,
   checkDashboardShape,
   checkCollectorMetricsExporters,
+  parseAlertRules,
+  checkAlertShape,
   checkAssets,
 };

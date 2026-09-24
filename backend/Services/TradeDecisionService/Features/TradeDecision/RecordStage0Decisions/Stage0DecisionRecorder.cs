@@ -260,6 +260,18 @@ public sealed class Stage0DecisionRecorder(
                 symbol, input.AsOf, input.DroppedFutureReferenceCount, input.DroppedUndatedReferenceCount);
         }
 
+        // 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387: **再構成できなかった入力があれば Warning を出す。**
+        // 記録は止めない（同決定「『外す』は『走らせない』ではない」）が、この判断は **Stage 0 の合否から外れる**。
+        // 上の除外件数の Information とは別立てにする —— あちらは as-of の正常な振る舞い（未来を落とした）を
+        // 含むが、こちらは**合格の射程が狭まる**という統制上の事実であり、運用が気づくべき水準が違う。
+        if (input.NotReconstructableKinds.Count > 0)
+        {
+            logger.LogWarning(
+                "Stage 0 記録: {Symbol} {AsOf} は as-of 入力 {Kinds} を再構成できませんでした。"
+                + "記録は残しますが、**この判断は Stage 0 の判定母集団から除かれます**（計画 ADR-0036 決定1）。",
+                symbol, input.AsOf, string.Join(", ", input.NotReconstructableKinds));
+        }
+
         var raws = new List<Stage0RawDecision>(options.VoteCount);
         var votes = new List<LlmDecision>(options.VoteCount);
         var calls = 0;
@@ -307,7 +319,9 @@ public sealed class Stage0DecisionRecorder(
         return (new Stage0DecisionRecord(
             symbol, market, input.AsOf, fingerprint, options.Model ?? string.Empty, options.VoteCount,
             raws, ToRecordAction(aggregated.Decision.Action), MajorityRationale(aggregated.Decision, signedQuantity),
-            signedQuantity, cost, inputTokens, outputTokens), calls, cost);
+            signedQuantity, cost, inputTokens, outputTokens,
+            // FR-15, ADR-0036 決定1, #749, IADR-0387: 入力ごとの再構成可否を記録へ残す（**外した範囲が読めるようにする**）。
+            input.AsOfInputs), calls, cost);
     }
 
     // FR-04, FR-11, ADR-0040 決定5, #822, IADR-0343 決定3: 記録の多数決根拠も本番の発行と同じ突合を掛ける

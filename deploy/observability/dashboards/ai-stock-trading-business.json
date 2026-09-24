@@ -215,6 +215,30 @@
           "legendFormat": "未観測 {{stage}}/{{reason}}"
         }
       ]
+    },
+    {
+      "id": 15,
+      "title": "統制: 基準資金を読んだ帰結の内訳（1h あたり）",
+      "description": "🔴 SuppliedWithGap は『値は返っているが、直前の取引日の観測が 1 件も届いていない』状態である。口座照会が残高 0 を返した日は行が書かれないため、前取引日の正の値が鮮度（既定 4 日）まで使われ続け、新規建ては止まらない —— 値が返っている以上、他のパネルには何も現れない。UnavailableNonPositive は人手で 0 を 1 行入れた場合で、こちらは止まる（2 つの門の帰結は非対称であり、止めるかどうかは裁定待ちである）。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (outcome) (increase(ast_risk_capital_baseline_reads_total[1h]))",
+        "legendFormat": "{{outcome}}"
+      }]
+    },
+    {
+      "id": 16,
+      "title": "取引サイクル: 見送りの理由の内訳（1h あたり）",
+      "description": "reason タグ別。decisions{action=no-trade} は「何回見送ったか」しか語らない —— LLM が Hold を返した（平常・最も多い）と、保有照会が壊れていて新規建てだけが静かに止まっている（異常）をここで読み分ける。HoldingsUnknownOpen は平常時 0 件であり、出ていること自体が異常である（同名のアラートが 30 分継続で鳴る）。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 42, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (reason) (increase(ast_trade_cycle_decision_skips_total[1h]))",
+        "legendFormat": "{{reason}}"
+      }]
     }
   ]
 }

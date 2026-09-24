@@ -1,6 +1,6 @@
 using AiStockTrading.Shared.Contracts.Trading;
 
-namespace TradeDecisionService.Domain;
+namespace AiStockTrading.Shared.Kernel.Trading;
 
 // FR-02, UC-01, #337, IADR-0245: 市場の時刻構造（計画 04_workflows/01「市場の時刻構造への対応」の対比表を写像）。
 //
@@ -45,5 +45,27 @@ public static class MarketSessions
 
         // 未知の市場は安全側（場外＝サイクルを起動しない）。ADR-0003「不確実なら取引しない」と同じ向き。
         _ => false,
+    };
+
+    /// <summary>
+    /// FR-03, #909, IADR-0380 決定3: 同じ日のうち、<paramref name="localTime"/> より**後**に始まる最初のセッションの
+    /// 開始時刻。無ければ <c>null</c>（＝その日はもう始まらない）。**次の開場時刻を出すためだけの補助**であり、
+    /// 場中判定は <see cref="IsWithinSession"/> が持つ（境界の定義を 2 か所に置かない）。
+    /// </summary>
+    /// <param name="market">市場。</param>
+    /// <param name="localTime">市場ローカルの時刻。</param>
+    /// <param name="isHalfDay">半日取引日か。**開始時刻は前倒しされない**（前倒しされるのは終了時刻だけ）。</param>
+    public static TimeOnly? NextSessionStart(Market market, TimeOnly localTime, bool isHalfDay) => market switch
+    {
+        // 半日取引日でも寄り付きは 9:30 のまま。既に 9:30 を過ぎていればその日はもう始まらない。
+        Market.UnitedStates => localTime < UsOpen ? UsOpen : null,
+
+        // 前場 → 後場の 2 段。昼休み中（11:30–12:30）は後場の寄り付きが「次の開場」である。
+        Market.Japan =>
+            localTime < JpMorningOpen ? JpMorningOpen
+            : localTime < JpAfternoonOpen ? JpAfternoonOpen
+            : null,
+
+        _ => null,
     };
 }

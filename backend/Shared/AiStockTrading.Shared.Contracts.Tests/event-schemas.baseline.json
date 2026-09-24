@@ -22,6 +22,11 @@
   "BacktestEvaluated": {
     "DeflatedSharpe": "Double",
     "EvaluatedAt": "DateTimeOffset",
+    "EvaluatedDecisionCount": "Int32",
+    "ExcludedDecisionCount": "Int32",
+    "ExcludedInputKinds": "String",
+    "ExclusionCountKnown": "Boolean",
+    "ExclusionUnknownReason": "String",
     "FailedChecks": "String",
     "IncludesShortSelling": "Boolean",
     "MaxDrawdownRatio": "Decimal",
