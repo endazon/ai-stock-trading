@@ -266,6 +266,9 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<IBusinessCalendar>(),
     sp.GetRequiredService<IBuyInInferenceStore>(),
+    // FR-10, #935, IADR-0394 決定7: 損切りした銘柄の同日・同方向の新規建てを止める統制の入力（決済の承認と由来）。
+    // 必須引数であり、削るとコンパイルが通らない。配線の実効は StopOutReentryWiringTests（T-10-778）が固定する。
+    sp.GetRequiredService<IPortfolioLedgerStore>(),
     sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>()));
 // FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。
 // 損切りの実行はブローカー側の逆指値が担い、StopLossTriggered の購読は検知の記録のみを行う（二重決済の防止）。

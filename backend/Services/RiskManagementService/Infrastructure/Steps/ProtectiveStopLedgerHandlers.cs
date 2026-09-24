@@ -29,7 +29,11 @@ public sealed class ProtectiveStopPlacedLedgerHandler(
         var fxRateBaseToDisplay = await recognitionFxRate
             .ResolveBaseToDisplayAsync(cancellationToken).ConfigureAwait(false);
 
-        ledger.AppendApproval(message.StopDecisionId, message.CloseIntent, message.PlacedAt, fxRateBaseToDisplay);
+        // FR-10, #935, IADR-0394 決定1: S0 の決済レグ。承認は**武装した時点**であり、損切りが成立するのは
+        // このレグに約定が付いたとき（損切りの射影は約定の時刻で数える）。
+        ledger.AppendApproval(
+            message.StopDecisionId, message.CloseIntent, message.PlacedAt, fxRateBaseToDisplay,
+            ApprovalSource.ProtectiveStopS0);
         logger.LogDebug(
             "台帳に保護逆指値レグの承認を記録: EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId}"
                 + " 銘柄={Symbol} トリガー={Trigger} 試行={Attempt}",
@@ -58,7 +62,10 @@ public sealed class SoftwareStopExecutedLedgerHandler(
         var fxRateBaseToDisplay = await recognitionFxRate
             .ResolveBaseToDisplayAsync(cancellationToken).ConfigureAwait(false);
 
-        ledger.AppendApproval(closeDecisionId, closeIntent, message.OccurredAt, fxRateBaseToDisplay);
+        // FR-10, #935, IADR-0394 決定1: S1 の成行決済。承認は**発動した時点**（損切りラインへの到達）であり、
+        // 約定を待たずに損切りとして数える（2026-09-23 は発動の 3 分後に同じ銘柄を買い直した）。
+        ledger.AppendApproval(
+            closeDecisionId, closeIntent, message.OccurredAt, fxRateBaseToDisplay, ApprovalSource.SoftwareStopS1);
         logger.LogDebug(
             "台帳にソフトウェア逆指値の決済レグの承認を記録: EntryDecisionId={EntryDecisionId}"
                 + " CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",
@@ -86,7 +93,10 @@ public sealed class ProtectiveStopCoverageLostLedgerHandler(
             var fxRateBaseToDisplay = await recognitionFxRate
                 .ResolveBaseToDisplayAsync(cancellationToken).ConfigureAwait(false);
 
-            ledger.AppendApproval(closeDecisionId, closeIntent, message.OccurredAt, fxRateBaseToDisplay);
+            // FR-10, #935, IADR-0394 決定1: 保護の維持に失敗した対処であり、損切りラインへの到達ではない（数えない）。
+            ledger.AppendApproval(
+                closeDecisionId, closeIntent, message.OccurredAt, fxRateBaseToDisplay,
+                ApprovalSource.ProtectionLostClose);
             logger.LogDebug(
                 "台帳に保護喪失の手仕舞いレグの承認を記録: EntryDecisionId={EntryDecisionId}"
                     + " CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",

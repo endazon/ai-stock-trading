@@ -12,7 +12,8 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
         Guid decisionId,
         OrderIntent intent,
         DateTimeOffset approvedAt,
-        decimal? fxRateBaseToDisplay = null)
+        decimal? fxRateBaseToDisplay = null,
+        ApprovalSource? source = null)
     {
         ArgumentNullException.ThrowIfNull(intent);
 
@@ -37,8 +38,48 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             // #611, IADR-0286 決定1: 認識時レート（1 USD あたりの円）を承認時点で固定する。null＝未記録（推定で埋めない）。
             FxRateBaseToDisplay = fxRateBaseToDisplay,
             ApprovedAt = approvedAt,
+            // #935, IADR-0394 決定6: 由来。null＝記録されていない（不明）のまま書く（推定で埋めない）。
+            Source = source,
         });
         db.SaveChanges();
+    }
+
+    // FR-10, #935, IADR-0394: 決済の承認と約定時刻（InMemoryPortfolioLedgerStore と同一の意味論）。
+    // 承認時刻が下限以降、**または**約定（数量 > 0）の時刻が下限以降の決済を返す——S0 は武装が何日も前でも
+    // 約定（損切りの成立）が当日なら対象である。発注審査の新規建てごとに呼ばれるため変更追跡はしない。
+    public IReadOnlyList<LedgerCloseApproval> GetCloseApprovals(
+        string symbol, Market market, DateTimeOffset activitySince)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        var approvals = db.ApprovedOrders.AsNoTracking()
+            .Where(a => a.Symbol == symbol
+                     && a.Market == market
+                     && a.PositionEffect == PositionEffect.Close
+                     && (a.ApprovedAt >= activitySince
+                         || db.TradeFills.Any(f => f.DecisionId == a.DecisionId
+                                                && f.FilledQuantity > 0
+                                                && f.ExecutedAt >= activitySince)))
+            .Select(a => new { a.DecisionId, a.Side, a.Source, a.ApprovedAt })
+            .ToList();
+
+        if (approvals.Count == 0)
+            return [];
+
+        var decisionIds = approvals.Select(a => a.DecisionId).ToList();
+        var fillTimes = db.TradeFills.AsNoTracking()
+            .Where(f => decisionIds.Contains(f.DecisionId) && f.FilledQuantity > 0)
+            .Select(f => new { f.DecisionId, f.ExecutedAt })
+            .AsEnumerable()
+            .GroupBy(f => f.DecisionId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<DateTimeOffset>)[.. g.Select(f => f.ExecutedAt)]);
+
+        return
+        [
+            .. approvals.Select(a => new LedgerCloseApproval(
+                a.DecisionId, symbol, market, a.Side, a.Source, a.ApprovedAt,
+                fillTimes.GetValueOrDefault(a.DecisionId) ?? [])),
+        ];
     }
 
     // FR-20, #386, IADR-0149 決定2: 承認済み注文の建玉効果を DecisionId で引く（未承認は null＝不明）。
