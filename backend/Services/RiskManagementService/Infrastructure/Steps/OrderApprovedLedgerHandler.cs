@@ -34,7 +34,10 @@ public sealed class OrderApprovedLedgerHandler(
             .ResolveBaseToDisplayAsync(cancellationToken).ConfigureAwait(false);
 
         // 冪等（同一 DecisionId の再送は無視）はストア側で担保する。
-        ledger.AppendApproval(message.DecisionId, message.Intent, message.ApprovedAt, fxRateBaseToDisplay);
+        // FR-10, #935, IADR-0394 決定1/6: 由来を明示する。OrderApproved の発行元（審査・owner の手仕舞い・維持率の
+        // 自動縮小）はいずれも損切りではない。**省略すると不明（null）になり、同方向の新規建てを止める側へ倒れる。**
+        ledger.AppendApproval(
+            message.DecisionId, message.Intent, message.ApprovedAt, fxRateBaseToDisplay, ApprovalSource.OrderApproved);
         logger.LogDebug(
             "台帳に承認を記録: DecisionId={DecisionId} 銘柄={Symbol} 効果={Effect} 認識時レート(JPY/USD)={FxRateBaseToDisplay}",
             message.DecisionId, message.Intent.Symbol, message.Intent.PositionEffect, fxRateBaseToDisplay);

@@ -69,7 +69,7 @@ public class OrderScreeningManipulationTests
         // （`null!` を渡すと必須化の意味が消える）。
         return new OrderScreeningService(
             settingsStore, builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore(), detector);
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(), detector);
     }
 
     [Fact]

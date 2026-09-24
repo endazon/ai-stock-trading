@@ -368,7 +368,8 @@ public class BuyInInferenceTests
 
         return new OrderScreeningService(
             settingsStore, builder, new InMemoryLockoutStore(), new FixedClock(),
-            new WeekendBusinessCalendar(), buyInInferences: store, patternDetector: null);
+            new WeekendBusinessCalendar(), buyInInferences: store, ledger: new InMemoryPortfolioLedgerStore(),
+            patternDetector: null);
     }
 
     private static OrderIntent ShortEntryIntent() =>
