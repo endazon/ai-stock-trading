@@ -23,7 +23,8 @@ public class ShortSellingStatusServiceTests
 
     private sealed class FakeLedger(params LedgerFill[] fills) : IPortfolioLedgerStore
     {
-        public void AppendApproval(Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt, decimal? fxRateBaseToDisplay = null) { }
+        public void AppendApproval(Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt, decimal? fxRateBaseToDisplay = null, ApprovalSource? source = null) { }
+        public IReadOnlyList<LedgerCloseApproval> GetCloseApprovals(string symbol, Market market, DateTimeOffset activitySince) => [];
         public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt, BrokerProvider? provider = null) => true;
         public IReadOnlyList<LedgerFill> GetFills() => fills;
         public PositionEffect? FindApprovedPositionEffect(Guid decisionId) => null;

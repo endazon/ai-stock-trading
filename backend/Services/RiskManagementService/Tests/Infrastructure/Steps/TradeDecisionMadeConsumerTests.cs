@@ -71,6 +71,8 @@ public class TradeDecisionMadeConsumerTests
                     sp.GetRequiredService<IBusinessCalendar>(),
                     // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
                     new InMemoryBuyInInferenceStore(),
+                    // #935, IADR-0394: 台帳も必須依存（損切りした銘柄の同日・同方向の新規建ての入力）。空の台帳＝当日の損切りなし。
+                    new InMemoryPortfolioLedgerStore(),
                     null));
 
                 // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。

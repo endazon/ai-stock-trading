@@ -230,7 +230,7 @@ public class StopLossMethodSettingsTests
         var settings = new InMemoryRiskSettingsStore(TradingDefaults.CreateSettings() with { StopLossMethod = method });
         var service = new OrderScreeningService(
             settings, builder, new InMemoryLockoutStore(), clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
         var intent = new OrderIntent(
             "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m,
             PositionEffect.Open);

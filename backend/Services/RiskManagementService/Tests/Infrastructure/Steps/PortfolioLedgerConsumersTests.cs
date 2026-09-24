@@ -470,8 +470,13 @@ public class PortfolioLedgerConsumersTests
         public List<int> InFlightAtAppendFill { get; } = [];
 
         public void AppendApproval(
-            Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt, decimal? fxRateBaseToDisplay = null) =>
-            inner.AppendApproval(decisionId, intent, approvedAt, fxRateBaseToDisplay);
+            Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt, decimal? fxRateBaseToDisplay = null,
+            ApprovalSource? source = null) =>
+            inner.AppendApproval(decisionId, intent, approvedAt, fxRateBaseToDisplay, source);
+
+        // #935, IADR-0394: 本プローブは損切りの読み口を使わないが、委譲しておけば台帳の意味論がずれない。
+        public IReadOnlyList<LedgerCloseApproval> GetCloseApprovals(
+            string s, Market m, DateTimeOffset activitySince) => inner.GetCloseApprovals(s, m, activitySince);
 
         public bool AppendFill(
             Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt,

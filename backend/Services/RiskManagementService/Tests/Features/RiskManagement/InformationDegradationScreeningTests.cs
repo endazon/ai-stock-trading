@@ -49,7 +49,7 @@ public class InformationDegradationScreeningTests
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, new InMemoryLockoutStore(),
             new FakeClock(Now, new DateOnly(2026, 7, 9)), new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
         return (service, degradation);
     }
 
