@@ -108,8 +108,10 @@ public class StopLossMethodContractTests
         ((int)SoftwareStopOutcome.UnattributedPosition).Should().Be(7);
         // 🔴 T-10-641, #858, IADR-0370 決定5: 取り込みで消えた建玉の保護注文を取り消せたと確認できていない（末尾へ追加）。
         ((int)SoftwareStopOutcome.StopCancelUnconfirmed).Should().Be(8);
+        // #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（末尾へ追加）。
+        ((int)SoftwareStopOutcome.CloseUnfilled).Should().Be(9);
         // 🔴 序数だけでなく**値の総数**も固定する（末尾追加なら 1 つ増える。既存値の削除・並べ替えを捕まえる）。
-        Enum.GetValues<SoftwareStopOutcome>().Should().HaveCount(9);
+        Enum.GetValues<SoftwareStopOutcome>().Should().HaveCount(10);
     }
 
     // 見送りの理由は末尾追加であり、既存 3 値の序数を動かさない（メトリクスのタグ・監査 payload の整数）。

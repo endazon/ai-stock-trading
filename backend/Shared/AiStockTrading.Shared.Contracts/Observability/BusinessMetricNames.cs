@@ -28,6 +28,24 @@ public static class BusinessMetricNames
     /// <summary>FR-04: 取引判断の回数。タグ <c>action</c>（buy/sell/no-trade）・<c>trigger</c>（scheduled/price-movement）。</summary>
     public const string TradeCycleDecisions = "ast.trade_cycle.decisions";
 
+    /// <summary>
+    /// FR-04, FR-10, #891, IADR-0374: <b>見送り（発注意図を作らなかった判断）の理由の内訳。</b>
+    /// タグ <c>reason</c>（<see cref="DecisionSkipReason"/> の各値）・<c>trigger</c>。
+    /// <para>
+    /// 🔴 <b><see cref="TradeCycleDecisions"/> の <c>action=no-trade</c> を置き換えない。</b>
+    /// あちらは「判断が何回あり、そのうち何回が発注意図を作らなかったか」を数える系列であり、
+    /// 既存ダッシュボードが引いている。理由を足すためにタグを増やすと**既存の集計が割れる**ため、
+    /// <b>別カウンタとして並べる</b>。1 回の見送りで両方が 1 ずつ増えるので、
+    /// 合計の突き合わせで計上漏れを検出できる。
+    /// </para>
+    /// <para>
+    /// なぜ要るか: 理由が無いと「LLM が Hold を返した（正常・最も多い）」と
+    /// 「保有照会が壊れていて新規建てだけが静かに止まっている」が<b>同じ 1 本の同じタグ値</b>に落ちる。
+    /// 後者は手仕舞いが通るため「取引が全部止まった」形にはならず、**気付きにくい**。
+    /// </para>
+    /// </summary>
+    public const string TradeCycleDecisionSkips = "ast.trade_cycle.decision_skips";
+
     /// <summary>FR-04: 取引判断 1 回の所要（ミリ秒）。タグ <c>trigger</c>。</summary>
     public const string TradeCycleDecisionDurationMs = "ast.trade_cycle.decision_duration_ms";
 
@@ -93,6 +111,17 @@ public static class BusinessMetricNames
 
     /// <summary>FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが暫定日次上限（既定300）に占める割合（%）。100 超で警告。</summary>
     public const string FinnhubDailyVolumeLimitRatioPercent = "ast.finnhub.daily_request_limit_ratio_percent";
+
+    /// <summary>
+    /// FR-10, #889, IADR-0372: <b>統制上限の基準資金（equity）を読んだ結果の内訳。</b>
+    /// タグ <c>outcome</c>（<see cref="CapitalBaselineReadOutcome"/> の各値）。
+    /// <para>
+    /// 🔴 <b>「供給できた」の中を割るためにある。</b> 口座照会が残高 0 を返した日はその取引日の行が
+    /// 1 行も書かれず、読み出しは<b>前取引日の正の値を鮮度が切れるまで返し続ける</b>。
+    /// 値が返っている以上、統制は平常どおり動いて見え、<b>この状態は外から一切見えなかった</b>。
+    /// </para>
+    /// </summary>
+    public const string RiskCapitalBaselineReads = "ast.risk.capital_baseline_reads";
 
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";

@@ -164,8 +164,30 @@ public class ReportAutoGeneratorDependencyRetryTests
         /// <summary>true なら散文も本物の判定器（HttpReportNarrativeDrafter）を本物の鎖越しに使う。</summary>
         public bool UseRealDrafter { get; init; }
 
-        public Rig(int maxDeferrals = ReportDeferralSettings.DefaultMaxDeferrals) =>
+        public Rig(int maxDeferrals = ReportDeferralSettings.DefaultMaxDeferrals)
+        {
             Deferrals = new ReportGenerationDeferralTracker(new ReportDeferralSettings { MaxDeferrals = maxDeferrals });
+
+            // #839, IADR-0382: **方針の連鎖を張っておく。** 本ファイルの検証対象は「依存先が一過性に落ちている
+            // ときの見送り」であり、上位方針・前期方針の欠落（別の未供給）を混ぜると
+            // 「欠けたのは建玉だけ」という否定形が成立しなくなる。
+            SeedConfirmed("weekly-2026-W27", ReportKind.Weekly, new DateOnly(2026, 6, 29));
+            SeedConfirmed("daily-2026-07-07", ReportKind.Daily, new DateOnly(2026, 7, 7));
+        }
+
+        private void SeedConfirmed(string periodKey, ReportKind kind, DateOnly start)
+        {
+            var version = Store.UpsertDraft(
+                new TradingReport
+                {
+                    PeriodKey = periodKey,
+                    Kind = kind,
+                    PeriodStart = start,
+                    PolicySummary = "実質のある方針",
+                },
+                expectedVersion: 0);
+            Store.Confirm(periodKey, version, DateTimeOffset.UnixEpoch);
+        }
 
         private HttpClient Client(
             Upstream upstream, string dependency, IServiceAccessTokenProvider tokens, bool timeoutIsTransient = true) =>
