@@ -39,7 +39,18 @@ public sealed record TradeHistoryLine(
     decimal? Tax,
     decimal RealizedPnl,
     TradeTrigger? Trigger,
-    string? RationaleSummary);
+    string? RationaleSummary,
+
+    /// <summary>
+    /// FR-06, FR-16, #892, IADR-0381: この約定は<b>期間より前に建てた建玉の決済</b>を含み、その分の
+    /// 実現損益を<b>算定できなかった</b>か（<see cref="PeriodInventory"/>）。
+    /// <para>
+    /// 🔴 <c>true</c> のとき <see cref="RealizedPnl"/> は<b>賄えた分だけの部分値</b>であり、
+    /// レンダラは数字ではなく「算定できません」と描く（<b><c>0</c> と書くと「損得が無かった」と読める</b>）。
+    /// <c>Tax</c> 等の <c>null</c>＝未供給とは理由が違うため、<b>別の列</b>で持つ。
+    /// </para>
+    /// </summary>
+    bool RealizedPnlUnvalued = false);
 
 // FR-16, 04_report-templates 日報 §2「取引詳細（選定・売買の判断理由）」の 1 取引＝1 ブロック。
 //

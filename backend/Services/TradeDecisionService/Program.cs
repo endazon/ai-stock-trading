@@ -287,6 +287,12 @@ builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Co
 // 無効化する場合は Decision:ScreeningContextBudgetChars=0（または "off"）を明示する。
 builder.Services.AddScoped<IScreeningReductionReporter, PublishingScreeningReductionReporter>();
 
+// FR-04, FR-10, NFR-07, #891, IADR-0374: 見送りの理由を業務メトリクスへ計上する経路。
+// 🔴 **配線しないと、見送りは従来どおり構造化ログにしか残らない**（`action=no-trade` の 1 値に畳まれ、
+// 「LLM が Hold を返した」と「保有照会が壊れていて新規建てだけが静かに止まっている」を区別できない）。
+// 既定（NoOp）はテストが判断サービスを直接組む場合のためであり、本番では必ずここを通す。
+builder.Services.AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter>();
+
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
 // 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。
 builder.Services.AddSingleton(ProfitabilityGateOptionsLoader.FromConfiguration(builder.Configuration));

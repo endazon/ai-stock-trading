@@ -33,13 +33,33 @@ public static class ReportNarrativePromptBuilder
         sb.AppendLine($"- 対象期間: {context.PeriodLabel}（期間キー: {context.PeriodKey}）");
         sb.AppendLine($"- 対象市場: {markets}");
         sb.AppendLine();
+        // FR-06, FR-16, #892, IADR-0381: 🔴 **部分値を「確定済みの集計値」として LLM へ渡さない。**
+        // 期間より前に建てた建玉の決済があると、実現損益・税・評価損益・決済件数・勝ち件数は部分値である
+        // （報告書の在庫は当期間の約定だけから畳まれ、その建玉の取得原価を持たない）。本文・要約は
+        // 「算出不能」と描くのに、散文だけが部分値を権威として受け取ると「当期は決済が無かった」
+        // 「損益 0 だった」と書けてしまう。**値そのものを渡さず**、言及しないよう指示する。
+        // 費用・約定件数は約定ごとに数え取得原価を要さないため、そのまま渡す。
+        var unvalued = p.UnvaluedSettlementCount > 0
+            ? string.Format(CultureInfo.InvariantCulture, "算出不能（{0}件）", p.UnvaluedSettlementCount)
+            : null;
+
         sb.AppendLine("集計値（参考・再計算不可）:");
-        sb.AppendLine($"- 実現損益(税引前): {Num(p.RealizedPnlGross)}");
+        sb.AppendLine($"- 実現損益(税引前): {unvalued ?? Num(p.RealizedPnlGross)}");
         sb.AppendLine($"- 費用合計: {Num(p.TotalCost)}");
-        sb.AppendLine($"- 源泉徴収税額: {Num(p.TaxWithheld)}");
-        sb.AppendLine($"- 実現損益(税引後): {Num(p.RealizedPnlNet)}");
-        sb.AppendLine($"- 評価損益(参考): {Num(p.UnrealizedPnl)}");
-        sb.AppendLine($"- 約定件数: {p.TradeCount} / 決済件数: {p.RealizingTradeCount} / 勝ち決済: {p.WinningTradeCount}");
+        sb.AppendLine($"- 源泉徴収税額: {unvalued ?? Num(p.TaxWithheld)}");
+        sb.AppendLine($"- 実現損益(税引後): {unvalued ?? Num(p.RealizedPnlNet)}");
+        sb.AppendLine($"- 評価損益(参考): {unvalued ?? Num(p.UnrealizedPnl)}");
+        sb.AppendLine($"- 約定件数: {p.TradeCount} / 決済件数: {unvalued ?? Count(p.RealizingTradeCount)} / 勝ち決済: {unvalued ?? Count(p.WinningTradeCount)}");
+        if (unvalued is not null)
+        {
+            sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                "注意: 当期間には期間より前に建てた建玉の決済が {0} 件あり、その取得原価が当期間の約定に含まれていないため、"
+                    + "実現損益・源泉徴収税額・評価損益・決済件数・勝ち決済は算出できていません（上記の「算出不能」）。",
+                p.UnvaluedSettlementCount));
+            sb.AppendLine("これらの値・増減・勝敗・決済の有無には散文で一切言及しないでください。"
+                + "「決済が無かった」「損益は 0 だった」「勝ち越した／負け越した」等とも書かないでください。");
+        }
+
         sb.AppendLine();
         sb.AppendLine($"翌期間の方針要旨（参考）: {context.PolicySummary}");
         sb.AppendLine();
@@ -77,6 +97,8 @@ public static class ReportNarrativePromptBuilder
     };
 
     private static string Num(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+
+    private static string Count(int value) => value.ToString(CultureInfo.InvariantCulture);
 }
 
 // FR-06/16, IADR-0071 決定1: 散文ドラフトの安全既定文。実 LLM 未接続時（PlaceholderReportNarrativeDrafter）と、

@@ -5,6 +5,12 @@ namespace ReportService.Domain;
 
 // FR-16, 04_report-templates 数値定義, IADR-0025: 損益集計の純関数。約定列を平均取得単価法で畳み込み、
 // 前提条件（手数料/為替/税率）を用いてテンプレート定義どおりに実現損益・費用・税・評価損益を集計する（数値は LLM に計算させない）。
+//
+// 🔴 #892, IADR-0381: **在庫は期間で切られている**（報告書は期間内の約定しか受け取らない）。期間より前に建てた
+// 建玉の決済は、取得原価が当期間に無いため**実現損益を算定できない**——畳み込みの規則（幻のショートを開かない・
+// 賄えない分を建てない）は <see cref="PeriodInventory"/> が単一情報源として持ち、算定できなかった決済の件数は
+// <see cref="PnlSummary.UnvaluedSettlementCount"/> で返す。**件数 > 0 の期間の実現損益・税・勝率・評価損益は
+// 部分値である**（レンダラが数字として出さない）。
 public static class PnlAggregator
 {
     /// <param name="adoptions">
@@ -29,6 +35,9 @@ public static class PnlAggregator
         var totalCost = 0m;
         var realizingCount = 0;
         var winningCount = 0;
+        // #892, IADR-0381: 取得原価が当期間に無く実現損益を算定できなかった決済の件数。
+        // 🔴 **0 へ潰さない。** 部分値になった数値（実現損益・税・勝率・評価損益）を数字として出さないための鍵である。
+        var unvaluedSettlements = 0;
 
         // #870, #859, IADR-0360 決定 4: 約定と取り込みを同じ時系列で畳む（順序の定義は PeriodLedgerTimeline が持つ）。
         foreach (var entry in PeriodLedgerTimeline.Merge(fills, adoptions))
@@ -53,9 +62,15 @@ public static class PnlAggregator
             var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             positions.TryGetValue(key, out var pos);
 
-            // IADR-0033: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とする。
-            var applied = SignedInventory.Apply(new InventoryLot(pos.Qty, pos.AvgCost), signedQ, fill.Price);
+            // IADR-0033, #892, IADR-0381: 平均取得単価法の畳み込みは共有の純関数（SignedInventory）を単一情報源とし、
+            // **期間で切った在庫の規則**（期間前に建てた建玉の決済を幻のショートにしない）を PeriodInventory が持つ。
+            var applied = PeriodInventory.Apply(
+                new InventoryLot(pos.Qty, pos.AvgCost), fill.PositionEffect, signedQ, fill.Price);
             positions[key] = (applied.Lot.Quantity, applied.Lot.AverageCost);
+
+            // 🔴 賄えなかった分は**黙って落とさない**（落とすと「損益 0 の決済」に見える）。
+            if (applied.Unvalued)
+                unvaluedSettlements++;
 
             if (applied.Reduced)
             {
@@ -81,6 +96,8 @@ public static class PnlAggregator
         var tax = taxableGain > 0m ? taxableGain * assumptions.CapitalGainsTaxRate : 0m;
         var net = realizedGross - totalCost - tax;
 
-        return new PnlSummary(realizedGross, totalCost, tax, net, unrealized, fills.Count, realizingCount, winningCount);
+        return new PnlSummary(
+            realizedGross, totalCost, tax, net, unrealized, fills.Count, realizingCount, winningCount,
+            unvaluedSettlements);
     }
 }

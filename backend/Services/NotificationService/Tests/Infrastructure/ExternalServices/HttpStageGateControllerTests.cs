@@ -130,7 +130,7 @@ public class HttpStageGateControllerTests
         """;
         var handler = new FakeHandler(HttpStatusCode.OK, body);
 
-        var result = await Controller(handler).RequestTransitionAsync(2);
+        var result = await Controller(handler).RequestTransitionAsync(2, "owner");
 
         handler.RequestUri.Should().Be("http://risk-management-service/risk-controls/stage-gate/transition");
         handler.Method.Should().Be(HttpMethod.Post);
@@ -140,6 +140,63 @@ public class HttpStageGateControllerTests
         result.Succeeded.Should().BeTrue();
         result.Accepted.Should().BeTrue();
         result.Message.Should().Contain("Stage 2");
+    }
+
+    // ---- T-138, FR-20, FR-11, UC-06, #868, IADR-0240 決定11, IADR-0383 ----
+
+    [Fact]
+    public async Task T138_遷移要求の本文に代理される利用者を載せる()
+    {
+        var body = """
+        { "accepted": true, "transition": null, "resultingSettings": null, "rejectionReasons": [] }
+        """;
+        var handler = new FakeHandler(HttpStatusCode.OK, body);
+
+        await Controller(handler).RequestTransitionAsync(2, "endazon");
+
+        using var doc = JsonDocument.Parse(handler.Body);
+        doc.RootElement.GetProperty("onBehalfOf").GetString().Should().Be("endazon");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task T138_代理される利用者が空なら_Risk_を呼ばない(string? onBehalfOf)
+    {
+        // **否定形**: 渡し忘れを静かに通さない（通すと承認記録がクライアント主体へ落ちる）。
+        var handler = new FakeHandler(HttpStatusCode.OK, "{}");
+
+        var act = async () => await Controller(handler).RequestTransitionAsync(2, onBehalfOf!);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task T138_400_の説明をそのまま利用者へ返す()
+    {
+        // #868: Discord は唯一の承認窓口であり、「HTTP 400」だけでは直し方が分からない。
+        var handler = new FakeHandler(
+            HttpStatusCode.BadRequest,
+            """{"error":"承認者を特定できないため段階遷移を行いません（トークンに利用者名がありません）。"}""");
+
+        var result = await Controller(handler).RequestTransitionAsync(2, "endazon");
+
+        result.Succeeded.Should().BeFalse(); // 失敗を成功に見せない
+        result.Accepted.Should().BeFalse();
+        result.Message.Should().Contain("承認者を特定できない");
+    }
+
+    [Fact]
+    public async Task T138_400_の本文が読めなくても受理されなかったことは伝える()
+    {
+        var handler = new FakeHandler(HttpStatusCode.BadRequest, "not json");
+
+        var result = await Controller(handler).RequestTransitionAsync(2, "endazon");
+
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("受理されませんでした");
     }
 
     // 受け入れ基準4: 422（未充足基準）の拒否理由を整形して返す。Succeeded は true（Risk は明確に応答した）だが Accepted は false。
@@ -152,7 +209,7 @@ public class HttpStageGateControllerTests
         """;
         var handler = new FakeHandler(HttpStatusCode.UnprocessableEntity, body);
 
-        var result = await Controller(handler).RequestTransitionAsync(1);
+        var result = await Controller(handler).RequestTransitionAsync(1, "owner");
 
         result.Succeeded.Should().BeTrue();
         result.Accepted.Should().BeFalse();
@@ -169,7 +226,7 @@ public class HttpStageGateControllerTests
         """;
         var handler = new FakeHandler(HttpStatusCode.UnprocessableEntity, body);
 
-        var result = await Controller(handler).RequestTransitionAsync(1);
+        var result = await Controller(handler).RequestTransitionAsync(1, "owner");
 
         result.Accepted.Should().BeFalse();
         result.Message.Should().Contain("現段階と同じ");
@@ -184,7 +241,7 @@ public class HttpStageGateControllerTests
         """;
         var handler = new FakeHandler(HttpStatusCode.UnprocessableEntity, body);
 
-        var result = await Controller(handler).RequestTransitionAsync(1);
+        var result = await Controller(handler).RequestTransitionAsync(1, "owner");
 
         result.Accepted.Should().BeFalse();
         result.Message.Should().Contain("不明な基準(99)");
@@ -197,7 +254,7 @@ public class HttpStageGateControllerTests
     {
         var handler = new FakeHandler(status, "");
 
-        var result = await Controller(handler).RequestTransitionAsync(2);
+        var result = await Controller(handler).RequestTransitionAsync(2, "owner");
 
         result.Succeeded.Should().BeFalse();
         result.Accepted.Should().BeFalse();
@@ -249,7 +306,7 @@ public class HttpStageGateControllerTests
     {
         var handler = new FakeHandler(new HttpRequestException("接続できません"));
 
-        var result = await Controller(handler).RequestTransitionAsync(2);
+        var result = await Controller(handler).RequestTransitionAsync(2, "owner");
 
         result.Succeeded.Should().BeFalse();
         result.Accepted.Should().BeFalse();
@@ -274,7 +331,7 @@ public class HttpStageGateControllerTests
     {
         var handler = new FakeHandler(HttpStatusCode.OK, TransitionBodyBelowBasis);
 
-        var result = await Controller(handler).RequestTransitionAsync(2);
+        var result = await Controller(handler).RequestTransitionAsync(2, "owner");
 
         result.Accepted.Should().BeTrue();
         // **Message へ混ぜない**——昇格か差し戻しかを知るのはハンドラであり、付加の可否はそちらが決める。
@@ -293,7 +350,7 @@ public class HttpStageGateControllerTests
             .Replace("\"belowStatisticalBasis\": true", "\"belowStatisticalBasis\": false", StringComparison.Ordinal);
         var handler = new FakeHandler(HttpStatusCode.OK, body);
 
-        var result = await Controller(handler).RequestTransitionAsync(2);
+        var result = await Controller(handler).RequestTransitionAsync(2, "owner");
 
         result.Stage1Warning.Should().BeNull();
     }
@@ -312,7 +369,7 @@ public class HttpStageGateControllerTests
         """;
         var handler = new FakeHandler(HttpStatusCode.OK, body);
 
-        var result = await Controller(handler).RequestTransitionAsync(2);
+        var result = await Controller(handler).RequestTransitionAsync(2, "owner");
 
         result.Stage1Warning.Should().BeNull();
     }
@@ -332,7 +389,7 @@ public class HttpStageGateControllerTests
         """;
         var handler = new FakeHandler(HttpStatusCode.UnprocessableEntity, body);
 
-        var result = await Controller(handler).RequestTransitionAsync(2);
+        var result = await Controller(handler).RequestTransitionAsync(2, "owner");
 
         result.Succeeded.Should().BeTrue();
         result.Accepted.Should().BeFalse();
@@ -356,7 +413,7 @@ public class HttpStageGateControllerTests
         """;
         var status = await Controller(new FakeHandler(HttpStatusCode.OK, statusBody)).GetStatusAsync();
         var transition = await Controller(new FakeHandler(HttpStatusCode.OK, TransitionBodyBelowBasis))
-            .RequestTransitionAsync(2);
+            .RequestTransitionAsync(2, "owner");
 
         transition.Stage1Warning.Should().NotBeNull();
         status.Message.Should().Contain(transition.Stage1Warning!);

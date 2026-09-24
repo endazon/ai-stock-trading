@@ -227,6 +227,18 @@
         "expr": "sum by (outcome) (increase(ast_risk_capital_baseline_reads_total[1h]))",
         "legendFormat": "{{outcome}}"
       }]
+    },
+    {
+      "id": 16,
+      "title": "取引サイクル: 見送りの理由の内訳（1h あたり）",
+      "description": "reason タグ別。decisions{action=no-trade} は「何回見送ったか」しか語らない —— LLM が Hold を返した（平常・最も多い）と、保有照会が壊れていて新規建てだけが静かに止まっている（異常）をここで読み分ける。HoldingsUnknownOpen は平常時 0 件であり、出ていること自体が異常である（同名のアラートが 30 分継続で鳴る）。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 42, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (reason) (increase(ast_trade_cycle_decision_skips_total[1h]))",
+        "legendFormat": "{{reason}}"
+      }]
     }
   ]
 }

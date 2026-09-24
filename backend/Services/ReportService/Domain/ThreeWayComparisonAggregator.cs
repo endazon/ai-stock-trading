@@ -55,7 +55,10 @@ public static class ThreeWayComparisonAggregator
             new ThreeWayMetric(null, null, null),
             new ThreeWayMetric(null, simulate.TradeCount, live.TradeCount),
             DivergenceNote: null,
-            UnattributedTradeCount: fills.Count(f => f.Provider is null));
+            UnattributedTradeCount: fills.Count(f => f.Provider is null),
+            // #892, IADR-0381: 列へ算入できなかった決済（期間より前に建てた建玉の決済）の件数。
+            // 🔴 **到達していない段の分は数えない**（その列は空欄であり、算入漏れという話にならない）。
+            UnvaluedSettlementCount: simulate.UnvaluedSettlementCount + live.UnvaluedSettlementCount);
     }
 
     // 1 列ぶん。**到達していない段はすべて null（空欄）**、到達済みなら約定 0 件でも取引件数は 0 を返す。
@@ -66,7 +69,7 @@ public static class ThreeWayComparisonAggregator
         bool reached)
     {
         if (!reached)
-            return new ColumnMetrics(null, null, null);
+            return new ColumnMetrics(null, null, null, 0);
 
         var partition = fills.Where(f => f.Provider == provider).ToList();
         var pnl = PnlAggregator.Aggregate(partition, assumptions);
@@ -80,8 +83,9 @@ public static class ThreeWayComparisonAggregator
             ? (decimal?)null
             : pnl.RealizedPnlNet / pnl.RealizingTradeCount;
 
-        return new ColumnMetrics(winRate, averagePnl, partition.Count);
+        return new ColumnMetrics(winRate, averagePnl, partition.Count, pnl.UnvaluedSettlementCount);
     }
 
-    private sealed record ColumnMetrics(decimal? WinRate, decimal? AveragePnl, decimal? TradeCount);
+    private sealed record ColumnMetrics(
+        decimal? WinRate, decimal? AveragePnl, decimal? TradeCount, int UnvaluedSettlementCount);
 }

@@ -398,6 +398,10 @@ services:
       MarketData__EnableMarkToMarket: ${MARKETDATA_ENABLEMARKTOMARKET:-false}
       MarketData__Provider: ${MARKETDATA_PROVIDER:-none}
       MarketData__Finnhub__ApiKey: ${MARKETDATA_FINNHUB_API_KEY:-}
+      # FR-20, FR-11, UC-06, #868, IADR-0240 決定11, IADR-0383: 段階遷移の要求の onBehalfOf（代理される利用者）を
+      # 信じてよいクライアント。notification-service の Notifications__Discord__OwnerAuth__ClientId と
+      # **同じ変数**から採る（単一情報源。report-service の Reports__DelegatedActor__TrustedClientIds と同じ鍵）。
+      RiskControls__DelegatedActor__TrustedClientIds: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
     depends_on:
       <<: *depends-infra
       postgres:

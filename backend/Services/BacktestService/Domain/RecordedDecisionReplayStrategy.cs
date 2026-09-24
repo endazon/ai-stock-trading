@@ -29,19 +29,51 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
 
         // 同一 (銘柄, 市場, AsOf) の重複は後勝ちで畳む（BacktestSimulator / MaterializedBarDataSource の重複規則と
         // 揃える）。畳む前に安定順へ並べ、記録の列挙順の揺れが再生結果へ漏れないようにする。
-        var deduped = new Dictionary<(DateOnly AsOf, string Symbol, Market Market), int>();
+        var deduped = new Dictionary<(DateOnly AsOf, string Symbol, Market Market), Stage0DecisionRecord>();
         foreach (var record in recordSet.Records ?? [])
         {
-            deduped[(record.AsOf, record.Symbol, record.Market)] = record.SignedQuantity;
+            deduped[(record.AsOf, record.Symbol, record.Market)] = record;
         }
 
+        var excluded = 0;
+        var excludedWithQuantity = 0;
+        var evaluated = 0;
+        var excludedKinds = new HashSet<Stage0AsOfInputKind>();
+
         _ordersByDay = [];
-        foreach (var ((asOf, symbol, market), quantity) in deduped
+        foreach (var ((asOf, symbol, market), record) in deduped
             .OrderBy(e => e.Key.AsOf)
             .ThenBy(e => e.Key.Symbol, StringComparer.Ordinal)
             .ThenBy(e => e.Key.Market))
         {
+            // 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387: **再構成できなかった as-of 入力に依存する判断は
+            // 判定母集団から外す。** 注文を写さないことで、その判断は成績（DSR・最大 DD・コスト 2 倍感度・
+            // ウォークフォワード）のどこにも寄与しない ——「痩せた入力で動く別の判断器」を測った結果を
+            // Stage 0 の合格根拠として引かない、というのが同決定の要求である。
+            // ［2026-09-24 追記 / PR #931 監査］「どこにも寄与しない」は**見送りにしか成り立たない**。数量を持つ判断を
+            // 外すと、差分で積み上がる再生では残した判断の経路が歪む（IADR-0387 決定3 追記。遮断は
+            // `Stage0ReplayEvaluation` の `ExcludedDecisionAltersReplayPath`）。
+            //
+            // 🔴 **見送り（Hold）の記録も除外として数える。** 数量 0 の記録は注文を作らない点で除外後と
+            // 同じ振る舞いになるが、**母集団から外れたという事実は数量と無関係**であり、混ぜると
+            // 「AI が見送った」と「合否から外した」が件数の上で区別できなくなる。
+            var kinds = Stage0AsOfInputs.NotReconstructableKinds(record.AsOfInputs);
+            if (kinds.Count > 0)
+            {
+                excluded++;
+                // IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］: 数量を持つ判断を外すと、差分で積み上がる
+                // 再生では残した判断の経路が歪む。ここでは数えるだけで、遮断は `Stage0ReplayEvaluation` が行う。
+                if (record.SignedQuantity != 0)
+                    excludedWithQuantity++;
+                foreach (var kind in kinds)
+                    excludedKinds.Add(kind);
+                continue;
+            }
+
+            evaluated++;
+
             // 見送り（Hold）は数量 0 であり、注文を作らない（無発注と「0 株の注文」を区別しない）。
+            var quantity = record.SignedQuantity;
             if (quantity == 0)
                 continue;
 
@@ -53,6 +85,11 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
 
             orders.Add(new BacktestOrder(symbol, market, quantity));
         }
+
+        ExcludedDecisionCount = excluded;
+        ExcludedDecisionWithQuantityCount = excludedWithQuantity;
+        EvaluatedDecisionCount = evaluated;
+        ExcludedInputKinds = [.. Stage0AsOfInputs.RequiredKinds.Where(excludedKinds.Contains)];
     }
 
     /// <summary>記録集合が覆う期間の始端（両端含む）。</summary>
@@ -66,6 +103,29 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
     /// （IADR-0281 決定3 の「戦略の変更」を機械判定する鍵）。
     /// </summary>
     public string StrategyId { get; }
+
+    /// <summary>
+    /// FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成できなかった as-of 入力に依存するため
+    /// **判定母集団から外した**判断の件数（重複を畳んだ後の数）。
+    /// </summary>
+    public int ExcludedDecisionCount { get; }
+
+    /// <summary>
+    /// FR-15, ADR-0036 決定1, #749, IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］: 外した判断のうち
+    /// **数量を持つ（見送りでない）**ものの件数（重複を畳んだ後の数）。
+    /// <para>
+    /// 🔴 **1 以上なら、残した判断の再生経路は AI が実際に取った経路ではない。** 注文は差分であり
+    /// `SignedInventory` で積み上がるため、入口を外せば残した出口が裸の空売りを建て、出口を外せば建玉が
+    /// 開いたまま残る。見送り（数量 0）は注文を作らないため、外しても経路は変わらない。
+    /// </para>
+    /// </summary>
+    public int ExcludedDecisionWithQuantityCount { get; }
+
+    /// <summary>判定母集団に残った判断の件数（重複を畳んだ後の数）。**0 なら評価対象が成立していない。**</summary>
+    public int EvaluatedDecisionCount { get; }
+
+    /// <summary>外す理由になった入力の種別（安定順・除外が無ければ空）。</summary>
+    public IReadOnlyList<Stage0AsOfInputKind> ExcludedInputKinds { get; }
 
     /// <summary>
     /// 当日（<c>context.AsOf</c>）の記録を引き、目標注文へ写す。

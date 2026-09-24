@@ -133,11 +133,24 @@ public static class AuditEntryFactory
     // （常時添えると要約が長くなり、警告そのものが埋もれる）。
     public static AuditEntry From(StageTransitioned e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(StageTransitioned), AuditCorrelation.From("stage-gate"), Symbol: null,
-        Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{e.ApprovedBy}）: {e.Reason}"
+        Truncate($"段階遷移 Stage {e.FromStage}→{e.ToStage}（{e.Kind}・{ApproverOf(e)}）: {e.Reason}"
             + (e.Stage1BelowStatisticalBasis
                 ? $"（⚠ 最小取引件数 {e.Stage1MinimumTradeCount} 件・統計的根拠を満たさない設定のまま遷移）"
                 : string.Empty)),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 承認者の要約。**実際に操作した利用者と、
+    // 認可の主体であるクライアントの両方を残す**（Discord Bot 経由の承認は owner マップ機密クライアントの
+    // トークンで行われる）。生の値（ApprovedBy / AuthorizedBy）はペイロードにそのまま残る。要約だけ、
+    // 承認者が分からないことを内部の既定値 `unknown` ではなく「承認者不明」と書く（ReportConfirmed と同型）。
+    //
+    // 🔴 **`unknown` の遷移はいま Risk が 400 で拒否するため新たには増えない**（#868）。既に台帳へ入っている
+    // 過去の記録が監査照会に載るため、表示側の倒し方はここに残す。
+    private static string ApproverOf(StageTransitioned e)
+    {
+        var actor = string.IsNullOrWhiteSpace(e.ApprovedBy) || e.ApprovedBy == "unknown" ? "承認者不明" : e.ApprovedBy;
+        return string.IsNullOrWhiteSpace(e.AuthorizedBy) ? actor : $"{actor}・代理 {e.AuthorizedBy}";
+    }
 
     // FR-19, FR-10, FR-11, #464, ADR-0028 決定2, IADR-0182: GFV 違反による停止の**解除**。
     //
@@ -191,7 +204,8 @@ public static class AuditEntryFactory
     public static AuditEntry From(BacktestEvaluated e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(BacktestEvaluated), AuditCorrelation.From("stage-gate"), Symbol: null,
         Truncate($"バックテスト verdict: {(e.Passed ? "合格" : "不合格")}"
-            + $"（最大DD {e.MaxDrawdownRatio:P2}・DSR {e.DeflatedSharpe:F2}・PBO {FormatPbo(e)}）"
+            + $"（最大DD {e.MaxDrawdownRatio:P2}・DSR {e.DeflatedSharpe:F2}・PBO {FormatPbo(e)}"
+            + $"・as-of除外 {FormatExclusions(e)}）"
             + (e.Passed ? string.Empty : $" 未達: {e.FailedChecks}")),
         AuditSerialization.Serialize(e), e.EvaluatedAt, recordedAt);
 
@@ -201,6 +215,26 @@ public static class AuditEntryFactory
         e.PboEvaluated
             ? e.ProbabilityOfBacktestOverfitting.ToString("F2", CultureInfo.InvariantCulture)
             : $"評価不能({(string.IsNullOrEmpty(e.PboNotEvaluableReason) ? "理由不明" : e.PboNotEvaluableReason)})";
+
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: 判定母集団から外した判断の表示。
+    // 🔴 **数えていないときに 0 を書かない** —— 「痩せた入力に依存する判断は 1 件も無かった」と読めてしまう。
+    // 計画 ADR-0036 決定1 は「外した範囲は記録に残す ——『何を外したか』が分からないと、合格が何についての
+    // 合格なのかが読めない」と定めており、台帳はその読みを残す最後の面である（発行側ドメインは参照できないため、
+    // 契約の 5 項目から同じ表現を組み直す）。
+    private static string FormatExclusions(BacktestEvaluated e)
+    {
+        if (!e.ExclusionCountKnown)
+        {
+            var reason = string.IsNullOrEmpty(e.ExclusionUnknownReason) ? "理由不明" : e.ExclusionUnknownReason;
+            return $"不明({reason})";
+        }
+
+        return e.ExcludedDecisionCount == 0
+            ? $"なし(母集団 {e.EvaluatedDecisionCount.ToString(CultureInfo.InvariantCulture)} 件)"
+            : $"{e.ExcludedDecisionCount.ToString(CultureInfo.InvariantCulture)} 件"
+                + $"/母集団 {e.EvaluatedDecisionCount.ToString(CultureInfo.InvariantCulture)} 件"
+                + $"({(string.IsNullOrEmpty(e.ExcludedInputKinds) ? "種別不明" : e.ExcludedInputKinds)})";
+    }
 
     // UC-01, FR-09, FR-07, FR-11, #210: 日報未確定による取引スキップ。注文/市場相関を持たないため "daily-policy" の
     // 決定的 GUID を相関にする（日報未確定の見送りが同一相関で束ねられ、監査照会でまとめて辿れる）。

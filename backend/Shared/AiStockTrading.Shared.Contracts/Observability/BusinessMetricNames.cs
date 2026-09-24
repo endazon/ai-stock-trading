@@ -28,6 +28,24 @@ public static class BusinessMetricNames
     /// <summary>FR-04: 取引判断の回数。タグ <c>action</c>（buy/sell/no-trade）・<c>trigger</c>（scheduled/price-movement）。</summary>
     public const string TradeCycleDecisions = "ast.trade_cycle.decisions";
 
+    /// <summary>
+    /// FR-04, FR-10, #891, IADR-0374: <b>見送り（発注意図を作らなかった判断）の理由の内訳。</b>
+    /// タグ <c>reason</c>（<see cref="DecisionSkipReason"/> の各値）・<c>trigger</c>。
+    /// <para>
+    /// 🔴 <b><see cref="TradeCycleDecisions"/> の <c>action=no-trade</c> を置き換えない。</b>
+    /// あちらは「判断が何回あり、そのうち何回が発注意図を作らなかったか」を数える系列であり、
+    /// 既存ダッシュボードが引いている。理由を足すためにタグを増やすと**既存の集計が割れる**ため、
+    /// <b>別カウンタとして並べる</b>。1 回の見送りで両方が 1 ずつ増えるので、
+    /// 合計の突き合わせで計上漏れを検出できる。
+    /// </para>
+    /// <para>
+    /// なぜ要るか: 理由が無いと「LLM が Hold を返した（正常・最も多い）」と
+    /// 「保有照会が壊れていて新規建てだけが静かに止まっている」が<b>同じ 1 本の同じタグ値</b>に落ちる。
+    /// 後者は手仕舞いが通るため「取引が全部止まった」形にはならず、**気付きにくい**。
+    /// </para>
+    /// </summary>
+    public const string TradeCycleDecisionSkips = "ast.trade_cycle.decision_skips";
+
     /// <summary>FR-04: 取引判断 1 回の所要（ミリ秒）。タグ <c>trigger</c>。</summary>
     public const string TradeCycleDecisionDurationMs = "ast.trade_cycle.decision_duration_ms";
 

@@ -38,7 +38,7 @@ public class StagePromoteWarningTests
         }
 
         public Task<StageTransitionCommandResult> RequestTransitionAsync(
-            int targetStage, CancellationToken cancellationToken = default)
+            int targetStage, string onBehalfOf, CancellationToken cancellationToken = default)
         {
             TransitionCalls++;
             return Task.FromResult(new StageTransitionCommandResult(

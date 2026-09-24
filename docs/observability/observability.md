@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-09-11
+updated: 2026-09-23
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-01, NFR-02, NFR-03, NFR-07, FR-09]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07, FR-04, FR-09, FR-10]
 adrs: [ADR-0006]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, MSP:IADR-0077]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction]
-issues: [#24, #287, #689, #751]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert]
+issues: [#24, #287, #689, #751, #891]
 -->
 
 
@@ -63,6 +63,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | --- | --- | --- | --- |
 | 取引サイクル | `ast_information_items_collected_total` | — | 収集件数。**空巡回も 0 として出す**（「回って 0 件」と「止まっている」を区別するため） |
 | 取引サイクル | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
+| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明ほか 12 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
 | 取引サイクル | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム）。**1 サービス内の判断 1 回**であり、端点間ではない |
 | 取引サイクル | `ast_trade_cycle_order_completion_latency_ms_*` | `trigger` | **起点イベント → 発注完了**の端点間所要（ヒストグラム）。価格変動検知起点は `trigger=price-movement` の系列で読む（目標 5 分＝300,000 ms） |
 | 取引サイクル | `ast_trade_cycle_record_completion_latency_ms_*` | `trigger` | **起点イベント → 記録完了**（監査台帳へ記録した時点）の端点間所要。定時サイクルは `trigger=scheduled` の系列で読む（目標 10 分＝600,000 ms） |
@@ -134,6 +135,20 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
 
 > **閾値（「判断が N 分間 0 件なら異常」等）は実測してから決める。** 実測が無いまま閾値を置くと、
 > 最初のアラートで狼少年になり、以後の本物も無視される。
+
+## アラートルール（`#891`）
+
+ダッシュボードは**人が見たときにしか働かない**。アラートルールの 1 件目を
+[`deploy/observability/alerts/`](../../deploy/observability/alerts/ai-stock-trading-alerts.yaml) に置いた。
+置き場所・命名・重大度の規約は [`deploy/observability/README.md`](../../deploy/observability/README.md) が正本である。
+
+🔴 **上の「閾値は実測してから決める」と矛盾しない。** 1 件目が実測なしで置けるのは、
+見ている事象（保有照会が実結線のもとで不明を返し、新規建てが見送られ続ける）の**平常時の期待値が 0 件**
+だからである。「N 分間に M 件なら異常」という形の閾値は、これまでどおり実測してから置く。
+
+🔴 **系列名がずれたアラートはエラーを出さず、ただ永久に鳴らない。** 空のグラフと同じ失敗の形であり、
+人が見に行かない前提の仕組みである分だけ気付きにくい。`node scripts/check-observability-assets.js` が
+アラートの参照する系列もコード側のレジストリへ突き合わせる。
 
 ## Tier 3（対象外）
 
