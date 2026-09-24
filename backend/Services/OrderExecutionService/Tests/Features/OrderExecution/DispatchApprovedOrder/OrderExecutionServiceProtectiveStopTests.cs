@@ -1,3 +1,4 @@
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
@@ -478,7 +479,8 @@ public class OrderExecutionServiceProtectiveStopTests
         forgone.Reason.Should().Be(OrderDispatchForgoneReason.StopLossPriceMissing);
         result.Executed.Should().BeNull();
         store.GetAll().Should().BeEmpty("発注していない");
-        reservations.Find(approved.DecisionId).Should().BeNull("発注に着手していないため予約も無い");
+        reservations.Find(approved.DecisionId)!.State.Should().Be(
+            OrderDispatchState.Forgone, "発注に着手していないため予約は無く、見送りの記録だけが残る（#876）");
     }
 
     [Fact]
