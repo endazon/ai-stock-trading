@@ -129,29 +129,11 @@ public static class PortfolioProjection
         var openPositionCount = openPositions.Count;
         if (workingEntries is { Count: > 0 })
         {
-            // 残数量＝承認数量 − 同じ DecisionId の約定累計。約定は**同じ fills** から数える——約定が届くと
-            // 約定側が増えて残数量が同じだけ減るため、合計は変わらない（二重計上も取りこぼしもしない）。
-            var filledByDecision = new Dictionary<Guid, int>();
-            foreach (var fill in fills)
-            {
-                if (fill.DecisionId == Guid.Empty)
-                    continue; // 相関できないレガシー行は注文へ帰属させない
-                filledByDecision[fill.DecisionId] = filledByDecision.GetValueOrDefault(fill.DecisionId) + fill.Quantity;
-            }
-
+            // FR-04, #934, IADR-0390 決定1: 残数量の導出は ProjectWorkingEntries に切り出した（判断の入力も同じ定義を読む）。
             var heldKeys = openPositions.Select(p => (p.Symbol, p.Market)).ToHashSet();
             var pendingNewKeys = new HashSet<(string Symbol, Market Market)>();
-            foreach (var order in workingEntries)
+            foreach (var (order, remaining) in ProjectWorkingEntries(fills, now, workingEntries))
             {
-                // 当日は承認時刻の**市場の現地取引日**で判定する（約定と同じ規則・IADR-0246）。
-                // 終端イベントが届かない行（実測で翌日も Accepted のまま）が翌日以降の枠を食い続けないため。
-                if (TradeDate(order.ApprovedAt, order.Market) != TradeDate(now, order.Market))
-                    continue;
-
-                var remaining = Math.Max(0, order.Quantity - filledByDecision.GetValueOrDefault(order.DecisionId));
-                if (remaining == 0)
-                    continue;
-
                 var notionalInBase = remaining * order.PriceInBase;
                 orderedToday += notionalInBase;
                 invested += notionalInBase;
@@ -185,6 +167,49 @@ public static class PortfolioProjection
             ConsecutiveLosses = consecutiveLosses,
             SymbolsTradedToday = symbolsTradedToday,
         };
+    }
+
+    // FR-10, #829, IADR-0346 決定2 / FR-04, #934, IADR-0390 決定1: 承認済みで生きている新規建て注文のうち、
+    // **当日（承認時刻の市場の現地取引日）**かつ**残数量 > 0** のものを残数量つきで返す純関数。
+    // 統制（Project の日次発注累計・段階資金・保有建玉数）と判断の入力（GET /risk-controls/working-entry-orders）が
+    // **同じ定義**を読むために 1 か所に置く。定義が 2 か所に分かれると「統制は数えるが判断は知らない」（#934）が再発する。
+    //
+    // - 残数量＝承認数量 − 同じ DecisionId の約定累計。約定は**同じ fills** から数える——約定が届くと
+    //   約定側が増えて残数量が同じだけ減るため、合計は変わらない（二重計上も取りこぼしもしない）。
+    // - 当日の判定: 終端イベントが届かない行（実測で翌日も Accepted のまま）が翌日以降に生き続けないため（IADR-0246）。
+    public static IReadOnlyList<(WorkingEntryOrder Order, int Remaining)> ProjectWorkingEntries(
+        IReadOnlyList<LedgerFill> fills,
+        DateTimeOffset now,
+        IReadOnlyList<WorkingEntryOrder> workingEntries)
+    {
+        ArgumentNullException.ThrowIfNull(fills);
+        ArgumentNullException.ThrowIfNull(workingEntries);
+
+        var result = new List<(WorkingEntryOrder Order, int Remaining)>();
+        if (workingEntries.Count == 0)
+            return result;
+
+        var filledByDecision = new Dictionary<Guid, int>();
+        foreach (var fill in fills)
+        {
+            if (fill.DecisionId == Guid.Empty)
+                continue; // 相関できないレガシー行は注文へ帰属させない
+            filledByDecision[fill.DecisionId] = filledByDecision.GetValueOrDefault(fill.DecisionId) + fill.Quantity;
+        }
+
+        foreach (var order in workingEntries)
+        {
+            if (TradeDate(order.ApprovedAt, order.Market) != TradeDate(now, order.Market))
+                continue;
+
+            var remaining = Math.Max(0, order.Quantity - filledByDecision.GetValueOrDefault(order.DecisionId));
+            if (remaining == 0)
+                continue;
+
+            result.Add((order, remaining));
+        }
+
+        return result;
     }
 
     // FR-03, FR-10, IADR-0030: 約定列から銘柄別ネット建玉（数量>0）を射影する純関数。損切りライン検知（市場監視）へ

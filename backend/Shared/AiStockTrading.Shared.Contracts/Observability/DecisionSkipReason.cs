@@ -66,4 +66,14 @@ public enum DecisionSkipReason
 
     /// <summary>FR-17, IADR-0076: 採算ゲートが不成立、または費用見積り不能（安全側で見送り）。</summary>
     ProfitabilityNotViable,
+
+    /// <summary>
+    /// 🔴 FR-04, FR-10, #934, IADR-0390 決定5: <b>保有状況の照会先が実結線なのに当日の未約定の新規建て注文が不明で、
+    /// 新規建てを見送った。</b> <see cref="HoldingsUnknownOpen"/>（約定済みの保有が不明）と同じ形の別地点である。
+    /// <para>
+    /// <b>平常時の期待値は 0 件である</b> —— 立つのは実結線で未約定の照会（<c>GET /risk-controls/working-entry-orders</c>）が
+    /// 失敗したときだけである。したがって <c>AstEntriesBlockedByUnknownHoldings</c> が本値も見る。
+    /// </para>
+    /// </summary>
+    WorkingEntriesUnknownOpen,
 }

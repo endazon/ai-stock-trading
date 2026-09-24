@@ -40,8 +40,11 @@ spec:
         # **平常時の期待値が 0 件**だからである。「N 分間に M 件」という実測が要る形の閾値ではない。
         # for: 30m は一過性の照会失敗（再試行で回復するもの）を鳴らさないための猶予であり、
         # 30 分続くのは「恒久的に新規建てが止まっている」側の事象である。
+        #
+        # #934 / IADR-0390 決定5: 未約定の新規建て注文（GET /risk-controls/working-entry-orders）が不明なときの
+        # 見送り WorkingEntriesUnknownOpen も同じ形（実結線でしか立たず平常時 0 件・手仕舞いは通る）のため、同じルールで見る。
         - alert: AstEntriesBlockedByUnknownHoldings
-          expr: sum(increase(ast_trade_cycle_decision_skips_total{reason="HoldingsUnknownOpen"}[15m])) > 0
+          expr: sum(increase(ast_trade_cycle_decision_skips_total{reason=~"HoldingsUnknownOpen|WorkingEntriesUnknownOpen"}[15m])) > 0
           for: 30m
           labels:
             severity: warning
@@ -51,6 +54,7 @@ spec:
             description: >-
               取引判断が「保有状況の照会先は結線済みだが保有が不明」を理由に新規建てを見送り続けている。
               手仕舞いは通るため取引が完全に止まる形にはならず、気付きにくい。
-              最初に見る場所: 取引判断サービスの WARN ログ（「保有状況が不明なため新規建てを見送る」）と、
-              リスク管理サービスの GET /risk-controls/open-positions の応答。
+              最初に見る場所: 取引判断サービスの WARN ログ（「保有状況が不明なため新規建てを見送る」／
+              「未約定の新規建て注文が不明なため新規建てを見送る」）と、リスク管理サービスの
+              GET /risk-controls/open-positions ・ GET /risk-controls/working-entry-orders の応答。
               設定では RiskManagement:BaseUrl を疑う。

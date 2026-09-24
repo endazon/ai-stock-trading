@@ -81,6 +81,28 @@ public static class TradeDecisionPromptBuilder
 
     public const string CloseQuantityIsWholeRule = "手仕舞いは保有の全量をシステムが決済します（一部だけの決済は選べません）。";
 
+    // FR-04, FR-10, ADR-0003, #934, IADR-0390 決定4: 未約定の新規建て注文（承認済み・終端未確認・残数量 > 0）の文言。
+    // 実測（2026-09-23）: 指値 715 株が板に残っている間に、判断は根拠に「保有なし」と書いて同じ銘柄を重ねて買った。
+    // 🔴 **未約定は約定済みの保有に混ぜない**（数量・平均取得単価・含み損益は約定済みだけ）。別の行で書き、
+    // 約定済みが 0 株でも「保有: なし」の行は出さない。未約定を照会できないときは「無い」と書かず「不明」と書く。
+    // 🔴 「受理済み」とは書かない —— 供給元は受理済みと発注処理中・結果未着を区別しない（IADR-0390「原則 A の扱い」）。
+    // テストがこれらの const を直接参照する（IADR-0297 決定1 と同じ規律）。
+    public const string WorkingEntryLinePrefix = "未約定の新規建て注文（発注済み・終端未確認。約定済みの保有には含めていません）";
+
+    public const string FilledNoneButWorkingLine =
+        "約定済みの建玉は 0 株ですが、未約定の新規建て注文があるため、この銘柄は「保有なし」ではありません";
+
+    public const string WorkingEntriesRule =
+        "未約定の新規建て注文は約定すれば保有になります。同じ方向の新規建てを重ねると、約定後の建玉は上の数量と合算されます。「保有なし」を根拠に新規建てを判断しないでください。";
+
+    public const string WorkingUnknownNoFillsLine =
+        "保有: 不明（約定済みの建玉は 0 株ですが、未約定の新規建て注文の有無を取得できませんでした。「保有なし」とは扱いません）";
+
+    public const string WorkingUnknownLine = "未約定の新規建て注文: 不明（取得できませんでした。「無い」とは扱いません）";
+
+    public const string WorkingUnknownWithHeldRule =
+        "未約定の新規建て注文が不明なため、買い増し・売り増しは選びません（保有継続〔Hold〕か手仕舞いを判断します）。";
+
     // IADR-0351 決定4: 一次スクリーニングは門である（Hold を返すと本判断が走らない）。保有を知らない一次は、新規の関心が
     // 無いという理由で損切りライン到達の建玉を落とし得る＝出口の判断が本判断へ届かない。費用統制のため短縮版に留める。
     public const string ScreeningHeldRule =
@@ -95,12 +117,15 @@ public static class TradeDecisionPromptBuilder
     // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定2: held は判断対象の銘柄の保有状況。🔴 **null（既定）＝不明**であり、
     // 保有なしは HeldPosition.None を明示して渡す（不在が「保有なし」を意味する形にしない）。保有状況節は無条件で出す。
     // 保護の状態は context.StopLossMethod（損切りの実行機構の設定。null＝不明）から書く。
+    // FR-04, FR-10, #934, IADR-0390 決定4: working は当日の未約定の新規建て注文。🔴 **null（既定）＝不明**であり、
+    // 「無い」は WorkingEntryOrders.None を明示して渡す（held と同じ規律。不在が「無い」を意味する形にしない）。
     public static string Build(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         IReadOnlyList<RetrievedContext>? retrieved = null,
         bool includeProfitability = false,
         decimal? currentPrice = null,
-        HeldPosition? held = null)
+        HeldPosition? held = null,
+        WorkingEntryOrders? working = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -143,7 +168,7 @@ public static class TradeDecisionPromptBuilder
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
-        AppendHeldPositionSection(sb, held, markPrice, priceUnit, context.StopLossMethod);
+        AppendHeldPositionSection(sb, held, working, markPrice, priceUnit, context.StopLossMethod);
         sb.AppendLine("# リスク制約");
         // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金はブローカーの口座照会に由来し、**未供給があり得る**。
         // 🔴 **未供給を数値で埋めない**——LLM に「その額の運用資金がある」と読ませることになる。
@@ -223,7 +248,8 @@ public static class TradeDecisionPromptBuilder
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         decimal? currentPrice = null,
         IReadOnlyList<RetrievedContext>? references = null,
-        HeldPosition? held = null)
+        HeldPosition? held = null,
+        WorkingEntryOrders? working = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -253,7 +279,7 @@ public static class TradeDecisionPromptBuilder
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
-        AppendHeldPositionSectionShort(sb, held, markPrice, priceUnit);
+        AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit);
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
         // 二段判断（IADR-0039）の費用統制のため、誘因の詳細説明（本判断側）は省き結論だけを渡す。
         // 無条件で出す（Build と同じく空売り可否のフラグをこのメソッドへ持ち込まない）。
@@ -270,21 +296,40 @@ public static class TradeDecisionPromptBuilder
     // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定2/決定3: 保有状況節（本判断）。
     // 数値はすべてコードが計算して渡す（LLM に損益・到達判定を計算させない。FR-16 と同じ規律）。
     // 🔴 値が無いものは「不明」と書く。0 や空で埋めない（取得単価 0 は含み損益を、損切りライン 0 は「未到達」を捏造する）。
+    // FR-04, FR-10, #934, IADR-0390 決定4: working（未約定の新規建て注文。null＝不明）は約定済みの保有とは別の行で書く。
     private static void AppendHeldPositionSection(
-        StringBuilder sb, HeldPosition? held, decimal? markPrice, string priceUnit, StopLossExecutionMethod? stopLossMethod)
+        StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit,
+        StopLossExecutionMethod? stopLossMethod)
     {
         sb.AppendLine(HeldPositionSectionTitle);
         if (held is null)
         {
             sb.AppendLine($"- {HeldUnknownLine}");
             sb.AppendLine($"- {HeldUnknownRule}");
+            AppendWorkingEntryLines(sb, working, priceUnit);
             sb.AppendLine();
             return;
         }
 
         if (!held.IsHeld)
         {
-            sb.AppendLine($"- {HeldNoneLine}");
+            // 🔴 #934: 約定済みが 0 株でも、未約定が在る／不明なら「保有: なし」とは書かない。
+            if (working is null)
+            {
+                sb.AppendLine($"- {WorkingUnknownNoFillsLine}");
+                sb.AppendLine($"- {HeldUnknownRule}");
+            }
+            else if (working.Any)
+            {
+                sb.AppendLine($"- {FilledNoneButWorkingLine}");
+                AppendWorkingEntryLines(sb, working, priceUnit);
+                sb.AppendLine($"- {WorkingEntriesRule}");
+            }
+            else
+            {
+                sb.AppendLine($"- {HeldNoneLine}");
+            }
+
             sb.AppendLine();
             return;
         }
@@ -300,22 +345,78 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine($"- {StopLossLineIsRiskConstraintRule}");
         sb.AppendLine($"- {NoAddAtStopLossLineRule}");
         sb.AppendLine($"- {AddOnlyWithinPolicyRule}");
+        // #934, IADR-0390 決定4: 保有中でも未約定の建て増しが在り得る。不明なら買い増し・売り増しを選ばない。
+        if (working is null)
+        {
+            sb.AppendLine($"- {WorkingUnknownLine}");
+            sb.AppendLine($"- {WorkingUnknownWithHeldRule}");
+        }
+        else if (working.Any)
+        {
+            AppendWorkingEntryLines(sb, working, priceUnit);
+            sb.AppendLine($"- {WorkingEntriesRule}");
+        }
+
         sb.AppendLine();
     }
 
+    // FR-04, FR-10, #934, IADR-0390 決定4: 未約定の新規建て注文を 1 件 1 行で書く（数値はコードが渡す。LLM に合算させない）。
+    // 不明（null）・無し（空）では何も書かない（呼び出し側がそれぞれの文言を選ぶ）。
+    private static void AppendWorkingEntryLines(StringBuilder sb, WorkingEntryOrders? working, string priceUnit)
+    {
+        if (working is not { Any: true })
+            return;
+
+        var ci = CultureInfo.InvariantCulture;
+        foreach (var order in working.Orders)
+        {
+            sb.AppendLine(
+                $"- {WorkingEntryLinePrefix}: {SideWord(order.Side)} {order.RemainingQuantity.ToString(ci)} 株 / 承認価格: {order.Price.ToString(ci)}{priceUnit} / 承認時刻: {order.ApprovedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm", ci)} UTC");
+        }
+    }
+
+    // 一次スクリーニング用の要約（方向ごとの残数量の合計と件数）。
+    private static string SummarizeWorkingEntries(WorkingEntryOrders working)
+    {
+        var ci = CultureInfo.InvariantCulture;
+        var parts = working.Orders
+            .GroupBy(o => o.Side)
+            .OrderBy(g => g.Key)
+            .Select(g => $"{SideWord(g.Key)} {g.Sum(o => o.RemainingQuantity).ToString(ci)} 株（{g.Count().ToString(ci)} 件）");
+        return $"- {WorkingEntryLinePrefix}: {string.Join(" / ", parts)}";
+    }
+
+    private static string SideWord(TradeSide side) => side == TradeSide.Buy ? "買い（Buy）" : "売り（Sell）";
+
     // FR-04, #854, IADR-0351 決定4: 保有状況節の短縮版（一次スクリーニング）。保護の状態と規則の詳細は本判断側が担う。
+    // FR-04, FR-10, #934, IADR-0390 決定4: 未約定の新規建て注文（null＝不明）は本判断と同じ規則で書き分ける（要約 1 行）。
     private static void AppendHeldPositionSectionShort(
-        StringBuilder sb, HeldPosition? held, decimal? markPrice, string priceUnit)
+        StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit)
     {
         sb.AppendLine(HeldPositionSectionTitle);
         if (held is null)
         {
             sb.AppendLine($"- {HeldUnknownLine}");
             sb.AppendLine($"- {HeldUnknownRule}");
+            if (working is { Any: true })
+                sb.AppendLine(SummarizeWorkingEntries(working));
         }
         else if (!held.IsHeld)
         {
-            sb.AppendLine($"- {HeldNoneLine}");
+            if (working is null)
+            {
+                sb.AppendLine($"- {WorkingUnknownNoFillsLine}");
+                sb.AppendLine($"- {HeldUnknownRule}");
+            }
+            else if (working.Any)
+            {
+                sb.AppendLine($"- {FilledNoneButWorkingLine}");
+                sb.AppendLine(SummarizeWorkingEntries(working));
+            }
+            else
+            {
+                sb.AppendLine($"- {HeldNoneLine}");
+            }
         }
         else
         {
@@ -323,6 +424,10 @@ public static class TradeDecisionPromptBuilder
             sb.AppendLine(
                 $"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice} / 含み損益率: {view.UnrealizedPnlRatio} / 記録上の損切りライン: {view.StopLossLine}");
             sb.AppendLine($"- {ScreeningHeldRule}（この建玉の手仕舞いは {view.CloseAction}）");
+            if (working is null)
+                sb.AppendLine($"- {WorkingUnknownLine}");
+            else if (working.Any)
+                sb.AppendLine(SummarizeWorkingEntries(working));
         }
 
         sb.AppendLine();

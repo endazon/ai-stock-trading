@@ -35,7 +35,38 @@ public interface IHeldPositionProvider
     /// 毎サイクルを新規買いの是非として判断する（#854 の実測そのもの）。
     /// </summary>
     Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-04, FR-10, ADR-0003, #934, IADR-0390 決定2: (銘柄, 市場) の<b>当日の未約定の新規建て注文</b>
+    /// （承認済み・終端イベント未着・残数量 &gt; 0）。判断の入力であり、<see cref="GetPositionAsync"/>（約定済みの保有）とは
+    /// <b>別の第 3 の状態</b>である —— 数量・平均取得単価・含み損益へ混ぜない。
+    ///
+    /// 🔴 照会できない場合は <b>null（＝不明）</b>を返す。空（<see cref="WorkingEntryOrders.None"/>）＝「未約定の注文は無い」と
+    /// 厳格に区別すること。不明を空へ倒すと、指値が板に残っているのに判断は「保有なし」を前提に同じ銘柄を重ねて買う
+    /// （#934 の実測そのもの）。
+    /// </summary>
+    Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+        string symbol, Market market, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// FR-04, FR-10, #934, IADR-0390 決定3: 判断対象の銘柄の<b>未約定の新規建て注文</b>の一覧（リスク管理の
+/// 未約定ビュー〔IADR-0346 と同じ定義〕の射影）。約定済みの保有（<see cref="HeldPosition"/>）とは別の型で運ぶ。
+/// 🔴 「ブローカーが受理した」ことは表さない（承認済みで終端イベントが届いていない注文。受理済み・発注処理中・結果未着を含む）。
+/// </summary>
+public sealed record WorkingEntryOrders(IReadOnlyList<WorkingEntryOrder> Orders)
+{
+    /// <summary>未約定の新規建て注文は無い（照会は成功し、該当が無い）。不明（null）とは別の状態である。</summary>
+    public static WorkingEntryOrders None { get; } = new([]);
+
+    public bool Any => Orders.Count > 0;
+}
+
+/// <summary>
+/// FR-04, FR-10, #934, IADR-0390: 未約定の新規建て注文 1 件。<paramref name="RemainingQuantity"/> は残数量
+/// （承認数量 − 約定済み。約定済みの分は <see cref="HeldPosition"/> 側に入っている）。価格は承認価格（ローカル通貨）。
+/// </summary>
+public sealed record WorkingEntryOrder(TradeSide Side, int RemainingQuantity, decimal Price, DateTimeOffset ApprovedAt);
 
 /// <summary>
 /// FR-04, FR-10, #854, IADR-0351 決定1: 判断対象の銘柄の保有状況（リスク管理の取引台帳の射影）。

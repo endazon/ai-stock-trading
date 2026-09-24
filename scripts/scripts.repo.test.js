@@ -2320,6 +2320,22 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         `引く系列が見送りカウンタでない: ${target.expr}`);
       assert.ok(target.for, '一過性の照会失敗で鳴らないための for が無い');
     });
+
+    // T-10-748, FR-04, FR-10, #934, IADR-0390 決定5（PR #940 監査）: 未約定の新規建て注文が不明なときの見送り
+    // （WorkingEntriesUnknownOpen）も同じルールが見る。見送りを Skip() へ通しても、ルールが見ていなければ
+    // 「新規建てだけが静かに止まる」状態は誰にも届かない（#891 の症状）。
+    ok('アラート: 未約定が不明による新規建ての見送りも同じルールが見張る', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      const target = rules.find((r) => r.alert === 'AstEntriesBlockedByUnknownHoldings');
+      assert.ok(target, 'AstEntriesBlockedByUnknownHoldings が無い');
+      assert.ok(/reason=~"[^"]*\bWorkingEntriesUnknownOpen\b[^"]*"/.test(target.expr),
+        `WorkingEntriesUnknownOpen を見ていない: ${target.expr}`);
+      assert.ok(/reason=~"[^"]*\bHoldingsUnknownOpen\b[^"]*"/.test(target.expr),
+        `HoldingsUnknownOpen を見なくなった: ${target.expr}`);
+    });
   }
 
   // --- summarize-test-failures: backend-test の失敗を TRX から名指しする（NFR / #596 / IADR-0277） ---
