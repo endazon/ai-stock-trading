@@ -51,6 +51,9 @@ public class ProtectiveStopGuardCompletionBookkeepingTests
 
         public CloseBehavior Close { get; set; } = CloseBehavior.Rejected;
 
+        /// <summary>逆指値の再発注が受理されるか（既定は拒否＝成行手仕舞いへ落ちる）。</summary>
+        public bool AcceptStop { get; set; }
+
         /// <summary>元の逆指値（stop-1）の照会結果の状態。既定は失効（Cancelled）＝毎巡回 ReplaceOrClose へ入る。</summary>
         public OrderStatus StopStatus { get; set; } = OrderStatus.Cancelled;
 
@@ -63,8 +66,10 @@ public class ProtectiveStopGuardCompletionBookkeepingTests
 
         public Task<BrokerOrder> PlaceStopOrderAsync(
             OrderIntent closeIntent, decimal triggerPrice, Guid decisionId, CancellationToken ct = default) =>
-            Task.FromResult(new BrokerOrder(
-                "stop-re", closeIntent, OrderStatus.Rejected, 0, 0m, DateTimeOffset.MinValue, DateTimeOffset.MinValue));
+            Task.FromResult(AcceptStop
+                ? new BrokerOrder("stop-re", closeIntent, OrderStatus.Accepted, 0, 0m, DateTimeOffset.MinValue, null)
+                : new BrokerOrder(
+                    "stop-re", closeIntent, OrderStatus.Rejected, 0, 0m, DateTimeOffset.MinValue, DateTimeOffset.MinValue));
 
         public Task<BrokerOrder> PlaceMarketOrderAsync(
             OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default)
@@ -263,6 +268,28 @@ public class ProtectiveStopGuardCompletionBookkeepingTests
         h.Current.State.Should().Be(ProtectiveStopState.Active, "拒否は完了ではない（IADR-0369 決定 1）");
         h.Held.TrackedEntryDecisionIds.Should().BeEmpty("拒否と確定したレグの据え置きの記憶を残さない");
         h.Rejections.Count(h.EntryDecisionId).Should().Be(1, "拒否の数えは残す（記録は Active のまま）");
+    }
+
+    // 🔴 T-10-753（続き）: 据え置いたレグの予約が突合で**解放**された（未発注と確定し、解放の門が開いていた）→ 次の巡回で
+    // 逆指値の再発注に成功して Replaced になり、試行が進む。古い CloseDecisionId の記憶は残さない。
+    [Fact]
+    public async Task 据え置いたレグが解放された後に逆指値を張り直せたら_古いレグの据え置きの記憶は残らない_否定形()
+    {
+        var h = NewHarness();
+        h.Broker.Close = CloseBehavior.Indeterminate;
+        await h.PatrolAsync();
+        var heldLeg = h.CloseDecisionId(2);
+        h.Held.IsDue(heldLeg, h.Clock.UtcNow).Should().BeFalse("前提: 据え置きを通知した");
+
+        h.Reservations.Release(heldLeg).Should().BeTrue("前提: 突合が未発注と確定して解放した");
+        h.Broker.AcceptStop = true;
+        h.Clock.UtcNow += TimeSpan.FromSeconds(30);
+
+        var result = await h.PatrolAsync();
+
+        result.Replaced.Should().Be(1);
+        h.Current.State.Should().Be(ProtectiveStopState.Active);
+        h.Held.TrackedEntryDecisionIds.Should().BeEmpty("試行が進んで二度と引かれないレグの記憶を残さない");
     }
 
     // 🔴 T-10-754, #938 F4: **ガードの外**（乖離の取り込み・ProtectiveStopDriftAdopter。IADR-0370）で記録が完了した。
