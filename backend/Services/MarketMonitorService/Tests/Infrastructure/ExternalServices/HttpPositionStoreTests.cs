@@ -1,5 +1,8 @@
+extern alias RiskManagementWorker;
+
 using System.Net;
 using System.Text.Json;
+using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using MarketMonitorService.Domain;
 using MarketMonitorService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -40,6 +43,38 @@ public class HttpPositionStoreTests
         aapl.Quantity.Should().Be(10);
         aapl.StopLossPrice.Should().Be(970m);
         handler.LastPath.Should().Be("/risk-controls/open-positions");
+    }
+
+    // 🔴 T-10-803, FR-03, FR-10, #943, IADR-0390（T-10-744 の同型）: **送り手の本物の型（`OpenPositionView`）を直列化した応答**を読めることを固定する。
+    // 上の写像テストは**受け手自身の型（HeldPosition）**を直列化しており、リスク管理側で項目名を変えても（例: `StopLossPrice` →
+    // `StopPrice`）緑のままになる。実行時は既定値で逆シリアル化され、損切り価格 0 のロングは現在値が 0 以下にならない限り
+    // 発火しない（`StopLossEvaluator`: price ≦ stop）＝**損切り保護が黙って外れる**。方向の改名は 0＝買いに化け、ショートを
+    // ロングとして判定する。本テストは改名を赤で止める（変異注入で実測）。
+    [Fact]
+    public async Task 送り手の本物の型を直列化した応答から損切り判定に使う建玉を読める()
+    {
+        IReadOnlyList<OpenPositionView> views =
+        [
+            new("AAPL", Market.UnitedStates, TradeSide.Buy, 3_378, 337.63m, 320.75m),
+            new("TSLA", Market.UnitedStates, TradeSide.Sell, 5, 240m, 252m),
+        ];
+        // リスク管理の Minimal API（Results.Ok）と同じ web 既定（camelCase・列挙は数値）。送り手の Program.cs がこの既定のまま
+        // 出していることはリスク管理側の T-10-805 が固定する。
+        var body = JsonSerializer.Serialize(views, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        var positions = await Store(new StubHandler(HttpStatusCode.OK, body)).GetOpenPositionsAsync();
+
+        positions.Should().BeEquivalentTo(
+            [
+                new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 3_378, 337.63m, 320.75m),
+                new HeldPosition("TSLA", Market.UnitedStates, TradeSide.Sell, 5, 240m, 252m),
+            ],
+            o => o.WithStrictOrdering());
+        var aapl = positions.Single(p => p.Symbol == "AAPL");
+        var tsla = positions.Single(p => p.Symbol == "TSLA");
+        StopLossEvaluator.IsTriggered(aapl, 320m).Should().BeTrue("ロングは損切り価格以下で発火する");
+        StopLossEvaluator.IsTriggered(tsla, 253m).Should().BeTrue("ショートは損切り価格以上で発火する");
+        StopLossEvaluator.IsTriggered(tsla, 239m).Should().BeFalse("ショートを買いと読むと、下落で誤って発火する");
     }
 
     [Fact]
