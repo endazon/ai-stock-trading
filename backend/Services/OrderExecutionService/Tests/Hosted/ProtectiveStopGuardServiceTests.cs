@@ -53,6 +53,9 @@ public class ProtectiveStopGuardServiceTests
 
         public bool RejectReplacement { get; set; }
 
+        /// <summary>#938: 成行手仕舞いを接続確立の失敗（確実に未発注）へ倒す。</summary>
+        public bool FailClose { get; set; }
+
         public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
             throw new NotSupportedException("ガードは通常発注を行わない");
 
@@ -64,8 +67,10 @@ public class ProtectiveStopGuardServiceTests
 
         public Task<BrokerOrder> PlaceMarketOrderAsync(
             OrderIntent closeIntent, Guid decisionId, CancellationToken ct = default) =>
-            Task.FromResult(new BrokerOrder(
-                "close-1", closeIntent, OrderStatus.Filled, closeIntent.Quantity, closeIntent.Price, Now, Now));
+            FailClose
+                ? throw new BrokerUnavailableException("OpenD 切断・成行は未発注（テスト）")
+                : Task.FromResult(new BrokerOrder(
+                    "close-1", closeIntent, OrderStatus.Filled, closeIntent.Quantity, closeIntent.Price, Now, Now));
 
         public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
             Task.FromResult(Orders.TryGetValue(orderId, out var order) ? order : null);
@@ -255,6 +260,42 @@ public class ProtectiveStopGuardServiceTests
         session.Sent.MessagesOf<ProtectiveStopCoverageLost>().Should().ContainSingle(m =>
             m.Cause == ProtectiveStopLossCause.LapsedInFlight
             && m.Remediation == ProtectiveStopRemediation.PositionClosed);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-757, FR-10, FR-11, #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）:
+    // 成行手仕舞いも**確実に未発注**で失敗した巡回を、巡回ログの「手仕舞い」の件数に入れない。別枠で出す。
+    // 是正前は ClosedOut（「手仕舞い 1」）と数え、手仕舞えていない建玉が手仕舞えたように読めた。
+    // 条件にも足していることを固定する——CloseFailed だけの巡回でも警告の行そのものが出る（分けた後に黙らない）。
+    [Fact]
+    public async Task 手仕舞いが確実に未発注で失敗した巡回は_手仕舞いではなく手仕舞い失敗として巡回ログに出る()
+    {
+        var stops = new InMemoryProtectiveStopOrderStore();
+        stops.Save(ActiveStop());
+        var broker = new GuardBroker
+        {
+            Positions = [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 10, 1_000m)],
+            RejectReplacement = true,
+            FailClose = true,
+        };
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Rejected);
+        var logger = new RecordingLogger();
+
+        using var host = await BuildHostAsync(broker, stops);
+        var service = BuildService(host, new ProtectiveStopGuardOptions(), logger);
+
+        ProtectiveStopGuardResult result = null!;
+        Func<IMessageContext, Task> run = async _ => result = await service.RunOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(run);
+
+        result.ClosedOut.Should().Be(0);
+        result.CloseFailed.Should().Be(1);
+        session.Sent.MessagesOf<ProtectiveStopCoverageLost>().Should().ContainSingle(m =>
+            m.Remediation == ProtectiveStopRemediation.None, "通知（Critical・解消にも失敗）はこれまでどおり出る");
+        var patrolLine = logger.Warnings.Should().ContainSingle(m => m.Contains("保護逆指値ガード: Active")).Subject;
+        patrolLine.Should().Contain("/ 手仕舞い 0 /", "手仕舞えていない建玉を「手仕舞い」に数えない")
+            .And.Contain("/ 手仕舞い失敗（未発注・建玉残存） 1 /");
 
         await host.StopAsync();
     }

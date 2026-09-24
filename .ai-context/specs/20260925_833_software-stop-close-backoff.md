@@ -87,12 +87,12 @@ issue の提案「1 窓 1 回」ではなく「1 行 1 回」で入っている�
   - `docs/functional/FR-10_risk-controls.md`（「決済が拒否された」行）・`docs/tests/FR-10_risk-controls-tests.md`（T-10-348 の行・新節）。
   - `.ai-context/adr/IADR-0344_s1-software-stop-loss.md`（追記(14)）・`IADR-0389_...md`（追記）・`.ai-context/adr/README.md`（索引）。
 - **除外（理由）**:
-  - `GuardProtectiveStops/ProtectiveStopGuard.cs:50-56` と `CloseRejectionTracker.cs:12-15` の注記
-    （「S1 の上限は到達 1 回あたりで、次の到達で自ら再武装する」）は本 PR で**偽になる**が、**PR #944 / #945 が同ファイルを編集中**のため触らない。
-    挙動には関与しない注記である。両 PR のマージ後に追随する（PR 本文と IADR-0344 追記(14) に明記）。
+  - `GuardProtectiveStops/ProtectiveStopGuard.cs`（`MaxConfirmedCloseRejections` の doc）と `CloseRejectionTracker.cs` 冒頭の注記
+    （「S1 の上限は到達 1 回あたりで、次の到達で自ら再武装する」）は本 PR で**偽になる**。着手時は **PR #944 / #945 が同ファイルを編集中**だったため
+    触らずにおき、［2026-09-25 追記 / 両 PR のマージ後］**注記だけを本 PR で直した**（挙動には関与しない）。
   - `.ai-context/adr/IADR-0369_...md:90,100-102` — 他 IADR の本文（凍結）。IADR-0344 追記(14) が後継の正本。**PR #944 / #945 も編集中。**
   - `.ai-context/specs/20260918_820_*` ほか確定済みの作業仕様書 — 凍結記録。
-  - `Hosted/ProtectiveStopGuardService.cs` — 待ち時間中の据え置きは従来の「据え置き」件数に入る（ガードの `_ => Outcome.Unknown`）。**PR #945 が編集中。**
+  - `Hosted/ProtectiveStopGuardService.cs` — 待ち時間中の据え置きは従来の「据え置き」件数に入る（ガードの `_ => Outcome.Unknown`）。要約の文言（「照会不能・送信結果不明」）は変えていない（着手時は PR #945 が編集中。本 PR の射程外）。
 
 ## 受け入れ基準（テスト ID は T-10-790..T-10-794）
 
