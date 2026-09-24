@@ -59,6 +59,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Meter _meter;
     private readonly Counter<long> _informationItemsCollected;
     private readonly Counter<long> _tradeCycleDecisions;
+    private readonly Counter<long> _tradeCycleDecisionSkips;
     private readonly Histogram<double> _tradeCycleDecisionDurationMs;
     private readonly Histogram<double> _tradeCycleOrderCompletionLatencyMs;
     private readonly Histogram<double> _tradeCycleRecordCompletionLatencyMs;
@@ -120,6 +121,12 @@ public sealed class BusinessMetrics : IDisposable
         _tradeCycleDecisions = _meter.CreateCounter<long>(
             BusinessMetricNames.TradeCycleDecisions,
             description: "取引判断の回数（action=buy/sell/no-trade・trigger 別。FR-04）");
+
+        // FR-04, FR-10, #891, IADR-0374: 見送りの理由の内訳。**上の decisions を置き換えない**
+        // （タグを増やすと既存ダッシュボードの集計が割れる。別カウンタとして並べる）。
+        _tradeCycleDecisionSkips = _meter.CreateCounter<long>(
+            BusinessMetricNames.TradeCycleDecisionSkips,
+            description: "発注意図を作らなかった判断の理由の内訳（reason・trigger 別。FR-04/FR-10）");
 
         _tradeCycleDecisionDurationMs = _meter.CreateHistogram<double>(
             BusinessMetricNames.TradeCycleDecisionDurationMs,
@@ -193,6 +200,20 @@ public sealed class BusinessMetrics : IDisposable
             new KeyValuePair<string, object?>(
                 BusinessMetricNames.TagAction,
                 side is null ? ActionNoTrade : side.Value.ToString().ToLowerInvariant()),
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagTrigger, trigger));
+
+    /// <summary>
+    /// FR-04, FR-10, #891, IADR-0374: <b>見送り 1 回を理由つきで計上する。</b>
+    /// <para>
+    /// 🔴 <b><see cref="RecordTradeDecision"/> の代わりではない。両方を呼ぶ。</b>
+    /// 1 回の見送りで <c>decisions{action=no-trade}</c> と <c>decision_skips{reason=…}</c> が
+    /// 1 ずつ増える。合計が一致することで、どちらかの計上漏れを突き合わせで検出できる。
+    /// </para>
+    /// </summary>
+    public void RecordTradeDecisionSkipped(string trigger, DecisionSkipReason reason) =>
+        _tradeCycleDecisionSkips.Add(
+            1,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason.ToString()),
             new KeyValuePair<string, object?>(BusinessMetricNames.TagTrigger, trigger));
 
     /// <summary>FR-04: 取引判断 1 回の所要を計上する。</summary>

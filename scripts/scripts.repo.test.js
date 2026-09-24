@@ -485,6 +485,81 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(isProductionServiceFile('backend/Tests/AiStockTrading.Architecture.Tests/X.cs'), false);
   });
 
+  // --- backend/Dockerfile の codegen 分岐と wiringOf() の突合（NFR-01 / #816 / IADR-0129 決定 6-4） ---
+  //
+  // 稼働イメージは Wolverine を配線するサービスだけ `codegen write` を通す（配線しないサービスは
+  // `ICodeFileCollection` が無く codegen が失敗する）。その判定は Dockerfile の `grep` と検査器の
+  // `wiringOf()` に**二重に実装されている**。
+  //
+  // 🔴 実際にずれていた（#816 起票時）: Dockerfile は `grep -q 'UseWolverine('` で、コメント中の言及に
+  // 反応し `UseWolverine (` のような空白入りの実呼び出しを取りこぼした。**その間、Dockerfile のコメント
+  // だけが「同じ信号」と主張していた。** 手で写した規則は、突き合わせる相手が無ければ黙ってずれる。
+  //
+  // ここでは Dockerfile の**実ファイルから**検出コマンドを抜き出し、`sh` で実走して `wiringOf()` と
+  // 同じ判定になることを確かめる。文字列の一致ではなく**挙動**で突き合わせる。
+  const fsDf = require('fs');
+  const osDf = require('os');
+  const pathDf = require('path');
+  const DOCKERFILE_PATH = pathDf.join(__dirname, '..', 'backend', 'Dockerfile');
+
+  /** backend/Dockerfile の `RUN if <検出コマンド>; then \` から検出コマンドだけを取り出す。 */
+  function wolverineDetectionCommand() {
+    const text = fsDf.readFileSync(DOCKERFILE_PATH, 'utf8');
+    const line = text.split(/\r?\n/).find((l) => /^RUN if .*; then \\$/.test(l));
+    assert.ok(line, 'backend/Dockerfile の codegen 分岐（RUN if …; then \\）が見つからない');
+    return line.replace(/^RUN if /, '').replace(/; then \\$/, '');
+  }
+
+  // 素の呼び出し / 空白入り / 行コメント / ブロックコメントの継続行 / 呼び出しなし。
+  const DETECTION_FIXTURES = [
+    ['builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(ServiceName, null));', true],
+    ['builder.Host.UseWolverine (opts => opts.UseAiStockTradingRabbitMq(ServiceName, null));', true],
+    ['// builder.Host.UseWolverine( を呼ぶ（説明）', false],
+    [' * builder.Host.UseWolverine( を呼ぶ（説明）', false],
+    ['var app = builder.Build();', false],
+  ];
+
+  ok('backend/Dockerfile: codegen 分岐の検出規則が wiringOf() と同じ判定になる（#816）', () => {
+    const command = wolverineDetectionCommand();
+    // 規則の 2 段（コメント行の除外 ＋ 空白許容）が両方在ること。どちらを落としても #816 に戻る。
+    assert.match(command, /grep -Ev/, 'コメント行を除外する段が無い（素の grep に戻っている）');
+    assert.match(command, /UseWolverine\[\[:space:\]\]\*\\\(/, '空白を許容するパターンになっていない');
+
+    let sh = true;
+    const root = fsDf.mkdtempSync(pathDf.join(osDf.tmpdir(), 'df-codegen-'));
+    for (const [code, expected] of DETECTION_FIXTURES) {
+      // wiringOf()（検査器側）の判定。
+      assert.strictEqual(
+        wiringOf(code).wiresWolverine, expected,
+        `wiringOf() の判定が前提と違う: ${JSON.stringify(code)}`
+      );
+      if (!sh) continue;
+      // Dockerfile 側の判定。`dirname "${SERVICE_PROJECT}"` を通すため SERVICE_PROJECT を与える。
+      fsDf.writeFileSync(pathDf.join(root, 'Program.cs'), `${code}\n`);
+      let status = 0;
+      try {
+        execSync(command, {
+          shell: 'sh',
+          env: { ...process.env, SERVICE_PROJECT: pathDf.join(root, 'Service.csproj') },
+          stdio: ['ignore', 'ignore', 'ignore'],
+        });
+      } catch (e) {
+        // sh 自体が居ない環境（PATH に無い素の Windows）は挙動の突合だけを諦める。
+        // 🔴 黙って緑にしない —— 上の文字列レベルの表明は残るうえ、CI（ubuntu）では必ず実走する。
+        if (e.code === 'ENOENT') {
+          process.stdout.write('  ! sh が無いため Dockerfile 側の実走は省略した（CI では実走する）\n');
+          sh = false;
+          continue;
+        }
+        status = e.status;
+      }
+      assert.strictEqual(
+        status === 0, expected,
+        `Dockerfile の検出が wiringOf() と食い違う: ${JSON.stringify(code)}`
+      );
+    }
+  });
+
   // --- validate-runtime-scaffold: hostDir の 3 通り（NFR / IADR-0258） ---------
   //
   // 実ツリーは候補 1（`<Svc>.Api`）でしかヒットしないため、**統合後の候補 3 は実ツリーでは
@@ -2207,6 +2282,43 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     ok('scripts/README.md: 本リポジトリ固有の表に check-observability-assets.js を記載している', () => {
       const readme = fsOa.readFileSync(pathOa.join(REPO_ROOT_OA, 'scripts', 'README.md'), 'utf8');
       assert.match(readme, /check-observability-assets\.js/, 'scripts/README.md に記載が無い');
+    });
+
+    // T-10-665, FR-10, #891, IADR-0374: 🔴 **アラート資産が実在し、引く系列がコード側に実在する。**
+    // ダッシュボードは人が見たときにしか働かない。アラートは人が見ていなくても働くが、
+    // **系列名がずれていればエラーも出さずただ永久に鳴らない** —— 空のグラフより気付きにくい失敗である。
+    ok('check-observability-assets: アラートルールが 1 件以上あり、引く系列がレジストリに実在する', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      assert.ok(fsOa.existsSync(alertDir), 'deploy/observability/alerts/ が無い');
+      const files = fsOa.readdirSync(alertDir).filter((f) => /\.ya?ml$/.test(f));
+      assert.ok(files.length >= 1, 'アラートルールのファイルが 1 件も無い');
+      const rules = files.flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      assert.ok(rules.length >= 1, 'アラートルールが 1 件も読めない（書式が変わったなら検査器も直す）');
+      const names = oa.parseRegistry(fsOa.readFileSync(
+        pathOa.join(REPO_ROOT_OA, 'backend', 'Shared', 'AiStockTrading.Shared.Contracts',
+          'Observability', 'BusinessMetricNames.cs'),
+        'utf8'));
+      for (const rule of rules) {
+        assert.deepStrictEqual(oa.checkAlertShape('alerts', rule), [], `形の違反: ${rule.alert}`);
+        for (const series of (rule.expr.match(/\bast_[a-z0-9_]+/g) || [])) {
+          assert.ok(oa.resolveSeries(series, names) !== null,
+            `alert ${rule.alert} が引く ${series} に対応する計器が無い（鳴らないアラートになる）`);
+        }
+      }
+    });
+
+    // T-10-665（続き）: 保有不明による見送りを見張るルールが**実在する**こと。
+    // #891 の受け入れ基準 2（「その状態が続いたときに能動的に通知される」）の写像である。
+    ok('アラート: 保有不明による新規建ての見送りが続く状態を見張るルールがある', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      const target = rules.find((r) => r.expr.includes('HoldingsUnknownOpen'));
+      assert.ok(target, '保有不明（HoldingsUnknownOpen）を見張るルールが無い');
+      assert.ok(target.expr.includes('ast_trade_cycle_decision_skips_total'),
+        `引く系列が見送りカウンタでない: ${target.expr}`);
+      assert.ok(target.for, '一過性の照会失敗で鳴らないための for が無い');
     });
   }
 
