@@ -1,6 +1,7 @@
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -310,6 +311,73 @@ public class OrderExecutionServiceProtectiveStopTests
         reservation.Should().NotBeNull();
         reservation!.State.Should().Be(OrderExecutionService.Features.OrderExecution.OrderDispatchState.Reserved);
         store.FindByDecisionId(closeDecisionId).Should().BeNull();
+    }
+
+    private sealed class MutableClock(DateTimeOffset start) : IClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = start;
+    }
+
+    // ガードは巡回対象（Active な保護記録）が 0 件なら建玉を照会しない。照会されたら数える（されないことの表明）。
+    private sealed class CountingPositionSource : IBrokerPositionSource
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<BrokerPositionSnapshot>?>(
+                [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 10, 1_000m)]);
+        }
+    }
+
+    // 🔴 T-10-751, FR-10, FR-11, UC-06, #941, IADR-0369（2026-09-25 追記）, IADR-0117（改定 9「塞がないもの」）:
+    // エントリー時の「届いたか不明」の通知が「この 1 回だけ・巡回しない」と言う（T-10-750）根拠を**コードで**固定する。
+    //   - 保護記録を作らない（ガードの巡回対象に入らない）。
+    //   - 1 時間後（HeldCloseNotificationTracker の再通知間隔）にガードを巡回させても、イベントは 1 件も出ない
+    //     ——1 時間ごとの再通知（T-10-451）はガードが保護記録について行うものである。
+    //   - 同じ承認が再配送されても（再起動後の再処理を含む）、相 1 で返り保護喪失を出し直さない・成行も重ねない。
+    // どれかが変わったら（例えばこの経路に保護記録が足されたら）通知の文面も変えなければならない。そのときに赤になる。
+    [Fact]
+    public async Task エントリー時の成行手仕舞いが届いたか不明なら_保護記録は無く_巡回も再配送も通知を出し直さない_否定形()
+    {
+        var broker = new ScriptedBroker
+        {
+            EntryStatus = OrderStatus.Filled,
+            EntryFilled = 10,
+            Stop = StopBehavior.Reject,
+            MarketClose = RemedyBehavior.Indeterminate,
+        };
+        var (service, store, stops, reservations) = NewService(broker);
+        var approved = Approved(Intent());
+
+        var first = await service.ExecuteAsync(approved);
+
+        first.CoverageLost!.Cause.Should().Be(ProtectiveStopLossCause.RejectedAtEntry);
+        first.CoverageLost.Remediation.Should().Be(ProtectiveStopRemediation.CloseDispatchIndeterminate);
+        stops.Find(approved.DecisionId).Should().BeNull("エントリー時の経路は保護記録を作らない");
+        stops.FindActive(100).Should().BeEmpty("巡回の対象に入る記録が 1 件も無い");
+
+        // 本番と同じ部品（同じストア・予約・再通知の記憶）でガードを 1 時間後に巡回させる。
+        var clock = new MutableClock(Now);
+        var positions = new CountingPositionSource();
+        var held = new HeldCloseNotificationTracker();
+        var guard = new ProtectiveStopGuard(
+            broker, positions, stops, store, reservations, clock, heldCloseNotifications: held,
+            closeRejections: new CloseRejectionTracker());
+        clock.UtcNow = Now + HeldCloseNotificationTracker.RenotifyInterval;
+
+        var patrol = await guard.RunOnceAsync(batchSize: 100);
+
+        patrol.Scanned.Should().Be(0);
+        patrol.Events.Should().BeEmpty("ガードはこの建玉を知らない＝1 時間ごとの再通知は起きない");
+        positions.Calls.Should().Be(0, "巡回対象が無ければ建玉の照会もしない");
+
+        // 同じ承認の再配送（再起動後の再処理を含む）。
+        var redelivered = await service.ExecuteAsync(approved);
+
+        redelivered.CoverageLost.Should().BeNull("相 1 で既存結果を返し、保護喪失は出し直さない");
+        broker.MarketCloseCount.Should().Be(1, "成行も重ねない");
     }
 
     [Fact]

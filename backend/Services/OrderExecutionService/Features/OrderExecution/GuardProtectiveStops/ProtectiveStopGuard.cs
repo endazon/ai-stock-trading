@@ -53,7 +53,8 @@ public sealed class ProtectiveStopGuard(
     /// （同じ理由で拒否され続ける成行を 30 秒ごとに送り続けない）。回数は S1
     /// （<c>SoftwareStopExecutor.MaxCloseAttemptsPerTrigger</c>）と同じ 3 だが、S1 の上限は到達 1 回あたりで
     /// 次の到達で自ら再武装するのに対し、こちらは<b>保護記録ごとの累計で再武装が無い</b>
-    /// （戻るのは再起動・逆指値の再発注の成功・手仕舞いの約定だけ。IADR-0369 の 2026-09-24 追記）。
+    /// （戻るのは再起動・逆指値の再発注の成功・手仕舞いの受理だけ。IADR-0369 の 2026-09-24 追記・#941 で「約定」を「受理」へ是正）。
+    /// #938: 記録が完了したときも数えを捨てる（完了した記録へ撃ち直すことは無い。<c>MarkCompleted</c>）。
     /// <b>上限に達しても記録は閉じない</b>（閉じると巡回から外れ、無保護の建玉が無音で残る）。
     /// </summary>
     public const int MaxConfirmedCloseRejections = 3;
@@ -71,6 +72,10 @@ public sealed class ProtectiveStopGuard(
     public async Task<ProtectiveStopGuardResult> RunOnceAsync(int batchSize, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        // 🔴 #938（PR #916 監査 F4）, IADR-0369（2026-09-25 追記）: **巡回対象が 0 件で戻るより前に**、ガードの外で
+        // 完了した記録（乖離の取り込み・IADR-0370）の記憶を捨てる。最後の Active 行が外で完了した後も漏れないように先に行う。
+        ForgetTrackersOfFinishedRecords();
 
         var scanned = stops.FindActive(batchSize);
         if (scanned.Count == 0)
@@ -114,6 +119,7 @@ public sealed class ProtectiveStopGuard(
         var unknown = 0;
         var failed = 0;
         var closeRejected = 0;
+        var closeFailed = 0;
 
         // #820 の 4 巡目監査, IADR-0344 追記(4) 決定8: S0 → 到達済み S1 → 未到達 S1 の順に評価する（理由は冒頭の注記）。
         foreach (var stop in active
@@ -136,6 +142,8 @@ public sealed class ProtectiveStopGuard(
                     case Outcome.Unknown: unknown++; break;
                     // #857, IADR-0369: 「確認できた拒否」は不明でも完了でもない。件数も混ぜない。
                     case Outcome.CloseRejected: closeRejected++; break;
+                    // #938（PR #916 監査 F5）: 確実に未発注の手仕舞い失敗は「手仕舞い」に数えない。
+                    case Outcome.CloseFailed: closeFailed++; break;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -165,7 +173,7 @@ public sealed class ProtectiveStopGuard(
             snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events);
 
         return new ProtectiveStopGuardResult(
-            active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events, closeRejected);
+            active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events, closeRejected, closeFailed);
     }
 
     // #820, IADR-0344 決定6・追記(4): ソフトウェア逆指値の巡回（ブローカーの注文照会をしない）。
@@ -363,6 +371,8 @@ public sealed class ProtectiveStopGuard(
                 // #857, IADR-0369 決定3: 保護を張り直せた＝手仕舞いを撃ち直す理由が消えた。数えを 0 へ戻す
                 //（次にまた失効して拒否されたら、改めて 3 回試す）。
                 _closeRejections.Forget(stop.EntryDecisionId);
+                // #938: この試行の手仕舞いレグの据え置き（突合が解放した後にここへ来る）は、試行が進むともう引かれない。
+                _heldCloseNotifications.Forget(closeDecisionId);
 
                 events.Add(new ProtectiveStopPlaced(
                     stop.EntryDecisionId, stopDecisionId, newStop.OrderId, closeIntent, stop.TriggerPrice, attempt, now));
@@ -440,7 +450,9 @@ public sealed class ProtectiveStopGuard(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.None,
             quantity, CloseDecisionId: null, CloseIntent: null, clock.UtcNow));
-        return Outcome.ClosedOut;
+        // 🔴 #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: **ClosedOut（解消した）を返さない。** 手仕舞えておらず
+        // 記録は Active のまま（次の巡回で撃ち直す）。決定 5 が拒否を別枠にしたのと同じ理由で、件数でも混ぜない。
+        return Outcome.CloseFailed;
     }
 
     // 成行手仕舞いレグが（今回の送信・以前の送信の記録・突合の解決のいずれかで）確定した: 保護を完了し、
@@ -448,9 +460,9 @@ public sealed class ProtectiveStopGuard(
     private Outcome CompleteAsClosed(
         ProtectiveStopOrder stop, int quantity, Guid closeDecisionId, OrderIntent closeIntent, List<object> events)
     {
+        // 解決した。以後は再通知しない・撃ち直しの数えも捨てる（#857）。#938: 捨てるのは MarkCompleted が行う
+        // （記録を完了させる全経路で同じ出口を通る）。
         MarkCompleted(stop);
-        _heldCloseNotifications.Forget(closeDecisionId); // 解決した。以後は再通知しない。
-        _closeRejections.Forget(stop.EntryDecisionId); // #857: 手仕舞いが通った。撃ち直しの数えも捨てる。
         events.Add(new ProtectiveStopCoverageLost(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.PositionClosed,
@@ -471,6 +483,8 @@ public sealed class ProtectiveStopGuard(
     {
         var now = clock.UtcNow;
         var rejections = _closeRejections.Record(stop.EntryDecisionId);
+        // #938: この手仕舞いレグは拒否と確定した（据え置いていたなら突合が解決した）。試行が進むとこのキーはもう引かれない。
+        _heldCloseNotifications.Forget(closeDecisionId);
 
         stops.Save(stop with { Attempt = attempt, UpdatedAt = now });
 
@@ -559,7 +573,7 @@ public sealed class ProtectiveStopGuard(
             stop.EntryDecisionId, stop.Symbol, stop.Market,
             ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.CloseDispatchIndeterminate,
             quantity, closeDecisionId, closeIntent, now));
-        _heldCloseNotifications.MarkNotified(closeDecisionId, now);
+        _heldCloseNotifications.MarkNotified(closeDecisionId, stop.EntryDecisionId, now);
     }
 
     private void LogHeldClose(ProtectiveStopOrder stop, Guid closeDecisionId) =>
@@ -569,8 +583,51 @@ public sealed class ProtectiveStopGuard(
             + "CloseDecisionId={CloseDecisionId} 銘柄={Symbol}",
             stop.EntryDecisionId, closeDecisionId, stop.Symbol);
 
-    private void MarkCompleted(ProtectiveStopOrder stop) =>
+    // 🔴 #938（PR #916 監査 F4）, IADR-0369（2026-09-25 追記）: **記録を完了させる出口はここ 1 つ**であり、ここでプロセス内の
+    // 記憶（拒否の数えと通知時刻・据え置きの通知時刻）も捨てる。従来は Replaced と CompleteAsClosed でしか捨てず、
+    // 建玉消滅→取消・逆指値の Filled・失効かつ建玉 0 の完了では再起動まで残った（誤動作ではないが辞書が単調に増える）。
+    // 保存の後に捨てる——保存が例外で落ちたら記録は Active のままなので、記憶も残すのが正しい。
+    private void MarkCompleted(ProtectiveStopOrder stop)
+    {
         stops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });
+        _closeRejections.Forget(stop.EntryDecisionId);
+        _heldCloseNotifications.ForgetEntry(stop.EntryDecisionId);
+    }
+
+    // 🔴 #938, IADR-0369（2026-09-25 追記）: **ガードの外で完了した記録**（乖離の取り込み・ProtectiveStopDriftAdopter）の記憶を捨てる。
+    // 記憶に載っている保護記録だけを引き直す（平常時は記憶が空で、照会は 1 回も起きない）。
+    //   - Active の記録がある → 残す（撃ち直しの上限・再通知の間隔はまだ要る）。
+    //   - 行が無い（null）・Completed → 捨てる。null は照会が成功して行が無いという答えである（ストアは行を消さない）。
+    //   - 🔴 **引き直しが例外で失敗 → 捨てない（原則 A: 分からないは「無い」ではない）。** 捨てると拒否の数えが 0 へ戻り、
+    //     まだ Active かもしれない記録へ成行を最大 3 本撃ち直す側へ倒れる。次の巡回で引き直す。
+    private void ForgetTrackersOfFinishedRecords()
+    {
+        var tracked = _closeRejections.TrackedEntryDecisionIds
+            .Union(_heldCloseNotifications.TrackedEntryDecisionIds)
+            .ToList();
+        foreach (var entryDecisionId in tracked)
+        {
+            ProtectiveStopOrder? record;
+            try
+            {
+                record = stops.Find(entryDecisionId);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex,
+                    "保護逆指値ガード: 記憶している保護記録を引き直せませんでした（不明）。記憶は捨てずに次の巡回で引き直します: "
+                    + "EntryDecisionId={EntryDecisionId}",
+                    entryDecisionId);
+                continue;
+            }
+
+            if (record is { State: ProtectiveStopState.Active })
+                continue;
+
+            _closeRejections.Forget(entryDecisionId);
+            _heldCloseNotifications.ForgetEntry(entryDecisionId);
+        }
+    }
 
     // 建玉スナップショットから「エントリー方向の残数量」を求める。数量は符号付き（+ロング/−ショート・IADR-0118）。
     // ロング建玉（Buy 建て）は正の数量、ショート建玉（Sell 建て）は負の数量の絶対値が残である。
@@ -595,6 +652,13 @@ public sealed class ProtectiveStopGuard(
         /// <b>Unknown（不明）でも ClosedOut（解消した）でもない</b>——事実は確定していて、建玉が残っている。
         /// </summary>
         CloseRejected,
+
+        /// <summary>
+        /// #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: 成行手仕舞いも<b>確実に未発注</b>で失敗した
+        /// （または発注先に成行の能力が無い。Remediation=None）。記録は Active のまま次の巡回で撃ち直す。
+        /// <b>ClosedOut（解消した）ではない</b>——手仕舞えていない建玉を「手仕舞い」の件数に入れない。
+        /// </summary>
+        CloseFailed,
     }
 }
 
@@ -612,7 +676,10 @@ public sealed record ProtectiveStopGuardResult(
     // #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わった件数（建玉が残っている）。
     // 🔴 Unknown（不明）にも ClosedOut（解消した）にも混ぜない——混ぜると、可観測性の上でも
     // 「確実に約定していない」と「どうなったか分からない」の区別が消える。**末尾へ足す**（既存の位置を動かさない）。
-    int CloseRejected = 0)
+    int CloseRejected = 0,
+    // #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: 成行手仕舞いも**確実に未発注**で失敗した件数（Remediation=None・
+    // 建玉が残っている）。ClosedOut（解消した）に混ぜない。決定 5 と同じく**末尾へ足す**（既存の位置を動かさない）。
+    int CloseFailed = 0)
 {
     public static readonly ProtectiveStopGuardResult Empty = new(0, 0, 0, 0, 0, 0, 0, []);
 }
