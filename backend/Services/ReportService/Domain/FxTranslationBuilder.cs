@@ -21,8 +21,10 @@ namespace ReportService.Domain;
 // 未記録の約定を落として残りだけ集計すると別の数値になる（先の買いを落とすと後の売りが幻のショートになる）。
 // **黙って落とさない**——未記録の件数を返し、描画が明記する（IADR-0271 決定2 と同じ規律）。既存行は推定で埋めない。
 //
-// 既知の限界（PnlAggregator と同じ）: 報告書は**期間内の約定しか受け取らない**ため、前期間に建てた建玉の決済は
-// 在庫 0 からの反対売買として畳み込まれる。円建て表示は参考値であり（計画 §3）、統制の判定には用いない。
+// 🔴 #892, IADR-0381: 報告書は**期間内の約定しか受け取らない**ため、前期間に建てた建玉の決済は
+// 期間の在庫で賄えない。是正前はそれを在庫 0 からの反対売買（＝幻のショート）として畳んでいた。
+// 現在は PnlAggregator と同じ規則（PeriodInventory）で**建てず・明細も作らない**——賄えない分は
+// 認識時レートを持たず、再測定した値を作れば捏造になる。円建て表示は参考値であり（計画 §3）、統制の判定には用いない。
 public static class FxTranslationBuilder
 {
     /// <summary>報告書の表示通貨（計画 §3「基準通貨〔表示〕= JPY」）。</summary>
@@ -73,7 +75,8 @@ public static class FxTranslationBuilder
             var key = (fill.Symbol, fill.Market);
             var signedQuantity = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
             lots.TryGetValue(key, out var lot);
-            lots[key] = Apply(lot, signedQuantity, fill.Price, fill.FxRateBaseToDisplay!.Value, entries);
+            lots[key] = Apply(
+                lot, fill.PositionEffect, signedQuantity, fill.Price, fill.FxRateBaseToDisplay!.Value, entries);
         }
 
         var open = lots.Values.Where(l => l.Quantity != 0 && l.CostBase > 0m).ToList();
@@ -121,8 +124,28 @@ public static class FxTranslationBuilder
 
     // 符号付き在庫へ 1 約定を適用し、決済分の明細を積む。SignedInventory と同じ分岐（新規建て／建て増し／減少・反転）で、
     // 平均取得単価に加えて**認識時レートの原価加重平均**を持ち回る。
-    private static Lot Apply(Lot current, int signedQuantity, decimal price, decimal rate, List<FxTranslationEntry> entries)
+    //
+    // 🔴 #892, IADR-0381: **期間より前に建てた建玉の決済で幻のショートを開かない。** 規則（賄えない数量）の
+    // 単一情報源は PeriodInventory.UnvaluedQuantity であり、ここで別の判定を書くと為替差損益だけが
+    // 他の畳み込みと違う在庫を持つ。賄えない分は**建てない**——建てると、その幻の建玉が期末レートで
+    // 再測定され、実在しない為替差損益が §1 の独立行に出る。
+    private static Lot Apply(
+        Lot current, PositionEffect effect, int signedQuantity, decimal price, decimal rate,
+        List<FxTranslationEntry> entries)
     {
+        var unvalued = PeriodInventory.UnvaluedQuantity(current.Quantity, effect, signedQuantity);
+        if (unvalued > 0)
+        {
+            var covered = Math.Abs(signedQuantity) - unvalued;
+
+            // 賄える分が無い＝在庫は 1 株も減らせない。**建てない・反転しない・明細も作らない**
+            //（取得原価が当期間に無く、再測定の起点となる認識時レートを持たない）。
+            if (covered == 0)
+                return current;
+
+            signedQuantity = Math.Sign(signedQuantity) * covered;
+        }
+
         if (current.Quantity == 0)
             return new Lot(signedQuantity, price, rate);
 

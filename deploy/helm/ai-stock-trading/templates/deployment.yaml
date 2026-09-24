@@ -50,6 +50,26 @@
 {{- with $bot.userMapping }}{{- $_ := set $envOverrides "Notifications__Discord__Bot__UserMapping" . -}}{{- end -}}
 {{- end -}}
 {{- end -}}
+{{- /* #781, ADR-0038 決定 2, IADR-0324, IADR-0093 / IADR-0323: 基盤（MSP）の KB / LLM ゲートウェイを叩く s2s の
+       Authority も `global.authAuthority` から導出する（inbound の Auth__Authority・ServiceAuth__TokenEndpoint・
+       CronJob の TOKEN_ENDPOINT・Discord OwnerAuth と**同一ソース**）。
+       🔴 values にレルムのリテラルを置くと `--set global.authAuthority` に追随せず、その経路だけ別レルムを指して
+       issuer 不一致の 401 で止まる。同じ壊れ方は #456（CronJob）・#736（s2s 発信者）に続いて 3 回目であり、
+       #776 の描画検査が「ずれを赤で捕まえる」ところまでは来ていたが、**ずれを作れない構造**にはなっていなかった
+       （IADR-0324 の 2026-09-11 追記が「残った負債」として名指ししたもの）。
+       導出するのは**その連携が実際に配線されているとき（対応する BaseUrl が非空）だけ**である。BaseUrl が空＝
+       未構成なら Authority も意味を持たない —— 本番既定はまさにその状態なので、既定描画はバイト等価のまま。
+       🔴 レルム名を条件にしない（`authAuthority` が MSP レルムのときだけ、という形）。それだと `--set` で
+       別レルムを与えたときに env ごと消え、「4 つも追随する」ことを確かめる陰性対照が空振りで緑になる。
+       env は**追加せず** $envOverrides で値を上書きする（同名 env の二重定義も並び順の変化も作らない）。 */ -}}
+{{- $baseUrls := dict -}}
+{{- range $e := $svc.extraEnv }}{{- if $e.value }}{{- $_ := set $baseUrls $e.name $e.value -}}{{- end }}{{- end -}}
+{{- if or (index $baseUrls "KnowledgeBase__Documents__BaseUrl") (index $baseUrls "KnowledgeBase__Search__BaseUrl") -}}
+{{- $_ := set $envOverrides "KnowledgeBase__Auth__Authority" $g.authAuthority -}}
+{{- end -}}
+{{- if index $baseUrls "LlmGateway__BaseUrl" -}}
+{{- $_ := set $envOverrides "LlmGateway__Auth__Authority" $g.authAuthority -}}
+{{- end -}}
 {{- /* #795, IADR-0341: Reloader の注釈に載せる Secret 名を描画時に導出する（手書きの一覧を持たない）。
        env の secretKeyRef ＋ 上の Discord 切り替え分 ＋ moomoo 経路の order-execution がマウントする RSA 鍵。 */ -}}
 {{- $reloadSecrets := list -}}

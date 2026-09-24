@@ -504,6 +504,9 @@ public class NotificationFormatterTests
         msg.Severity.Should().Be(NotificationSeverity.Warning);
         msg.Title.Should().Contain("S1");
         msg.Content.Should().Contain("システム停止中は決済されません").And.Contain("950").And.Contain("MoomooSimulate");
+        // T-10-699, FR-03, #909, IADR-0380 決定6 / IADR-0344 追記(13): S1 が**通常取引時間しか保護しない**ことを開示する。
+        msg.Content.Should().Contain("通常取引時間（米東 9:30–16:00）のあいだだけ")
+            .And.Contain("夜間・寄り前の急落からは守られません");
     }
 
     // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: 決済の発注・取消は Warning、拒否の打ち切りだけが Critical。

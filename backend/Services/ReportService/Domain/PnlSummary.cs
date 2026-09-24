@@ -24,4 +24,18 @@ public sealed record PnlSummary(
     int RealizingTradeCount,
 
     /// <summary>勝ち決済件数（実現損益 &gt; 0 の決済数）。勝率＝勝ち/決済（週報/月報）。</summary>
-    int WinningTradeCount);
+    int WinningTradeCount,
+
+    /// <summary>
+    /// FR-06, FR-16, #892, IADR-0381: <b>取得原価が当期間に無く、実現損益を算定できなかった決済の件数</b>
+    /// （期間より前に建てた建玉の決済。<see cref="PeriodInventory"/>）。
+    /// <para>
+    /// 🔴 <b>0 より大きければ、この期間の実現損益（<see cref="RealizedPnlGross"/> /
+    /// <see cref="RealizedPnlNet"/>）・<see cref="TaxWithheld"/>・勝率（<see cref="WinningTradeCount"/> /
+    /// <see cref="RealizingTradeCount"/>）・<see cref="UnrealizedPnl"/> は部分値である。</b>
+    /// レンダラ・要約は<b>数字として出さず「算定できません」と描く</b>——黙って部分値を出すことは、
+    /// 幻の建玉の評価損益を出すのと同じ誤りである（#892）。
+    /// </para>
+    /// <para>既定 0 ＝算定できなかった決済は無い（既存の呼び出しは非破壊で通る）。</para>
+    /// </summary>
+    int UnvaluedSettlementCount = 0);

@@ -75,6 +75,26 @@ public static class Stage0StrategyIdentity
                   .Append(raw.Unparseable ? '1' : '0').Append(';');
             }
 
+            // FR-15, ADR-0036 決定1, #749, IADR-0387: **as-of 入力の再構成可否も同一性に含める。**
+            // 同じ判断列でも「何を判定母集団から外すか」が違えば、**評価したものが違う** ——
+            // 戦略 ID は verdict の無効化契機「戦略の変更」を機械判定する唯一の鍵であり（IADR-0281 決定3）、
+            // 除外の集合が変わったのに ID が同じままだと、**別の母集団で採った合格が生き残る**。
+            // 未申告（null）は `-` として畳む（申告の有無そのものも同一性の一部である）。
+            sb.Append('#');
+            if (r.AsOfInputs is null)
+            {
+                sb.Append('-');
+            }
+            else
+            {
+                foreach (var kind in Stage0AsOfInputs.RequiredKinds)
+                {
+                    var status = r.AsOfInputs.FirstOrDefault(s => s.Kind == kind);
+                    sb.Append(kind).Append('=')
+                      .Append(status is null ? "?" : status.Availability.ToString()).Append(';');
+                }
+            }
+
             sb.Append('\n');
         }
 

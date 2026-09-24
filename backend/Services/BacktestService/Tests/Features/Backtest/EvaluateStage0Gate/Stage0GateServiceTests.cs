@@ -48,6 +48,11 @@ public class Stage0GateServiceTests
 
     private static readonly DateOnly Cutoff = new(2024, 12, 31);
 
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: 本ファイルの関心は 7 条件の合成であり、as-of 入力の痩せは扱わない。
+    // **「数えたうえで 0 件」を渡す**（`Unknown` を渡すと「数えていない」を混ぜることになる）。
+    private static readonly Stage0ExclusionSummary NoExclusions =
+        new Stage0ExclusionSummary.Counted(Excluded: 0, Evaluated: 4, Kinds: []);
+
     [Fact]
     public void 全条件を満たす戦略はStage0合格しStage1昇格を推奨する()
     {
@@ -60,7 +65,8 @@ public class Stage0GateServiceTests
             WalkForwardOutOfSampleReturn: 0.05m,
             Bars: [BarAfterCutoff(2), BarAfterCutoff(3)],
             LlmTrainingCutoff: Cutoff,
-            Criteria: Stage0GateCriteria.Default);
+            Criteria: Stage0GateCriteria.Default,
+            Exclusions: NoExclusions);
 
         var decision = new Stage0GateService().Evaluate(context);
 
@@ -86,6 +92,7 @@ public class Stage0GateServiceTests
             Bars: [BarBeforeCutoff(2), BarBeforeCutoff(3)], // カットオフ以前だが匿名化済み
             LlmTrainingCutoff: Cutoff,
             Criteria: Stage0GateCriteria.Default,
+            Exclusions: NoExclusions,
             DataAnonymized: true);
 
         var decision = new Stage0GateService().Evaluate(context);
@@ -106,7 +113,8 @@ public class Stage0GateServiceTests
             WalkForwardOutOfSampleReturn: 0.05m,
             Bars: [BarBeforeCutoff(2), BarAfterCutoff(3)], // 1 本がカットオフ前
             LlmTrainingCutoff: Cutoff,
-            Criteria: Stage0GateCriteria.Default);
+            Criteria: Stage0GateCriteria.Default,
+            Exclusions: NoExclusions);
 
         var decision = new Stage0GateService().Evaluate(context);
 
@@ -144,7 +152,8 @@ public class Stage0GateServiceTests
             WalkForwardOutOfSampleReturn: 0m,
             Bars: dataSource.GetBars(new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31)),
             LlmTrainingCutoff: Cutoff,
-            Criteria: Stage0GateCriteria.Default));
+            Criteria: Stage0GateCriteria.Default,
+            Exclusions: NoExclusions));
 
         decision.Gate.Passed.Should().BeFalse();
         decision.Promotion.Recommended.Should().BeFalse();
@@ -174,7 +183,8 @@ public class Stage0GateServiceTests
         WalkForwardOutOfSampleReturn: 0.05m,
         Bars: [BarAfterCutoff(2), BarAfterCutoff(3)],
         LlmTrainingCutoff: Cutoff,
-        Criteria: Stage0GateCriteria.Default);
+        Criteria: Stage0GateCriteria.Default,
+        Exclusions: NoExclusions);
 
     // **陽性**: 試行 1 本（探索なし）なら PBO は評価不能になり、残る条件で合否が決まる。
     // 🔴 **「PBO は 0」ではない** —— 性能行列を渡していても算出しない（測る対象が存在しないため）。

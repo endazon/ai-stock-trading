@@ -106,21 +106,36 @@ public class MarketCalendarTests
     }
 
     [Theory]
-    // 2026-11-27（感謝祭翌日・金曜・EST）を半日取引日に構成: 13:00 ET 終了。
+    // 2026-11-27（感謝祭翌日・金曜・EST）は**規則計算で**半日取引日: 13:00 ET 終了。
+    // 🔴 #909, IADR-0380 決定4: 以前は構成で与えたときだけ半日になった（`deploy/` に設定が無く常に通常日だった）。
     [InlineData(17, 59, true)]  // 12:59 EST 場中
     [InlineData(18, 0, false)]  // 13:00 EST 半日の大引け
     [InlineData(20, 59, false)] // 15:59 EST（通常なら場中だが半日なので閉場）
     public void 半日取引日は13時ETで閉場する(int utcHour, int utcMinute, bool expected)
     {
-        var halfDays = Dates(Market.UnitedStates, new DateOnly(2026, 11, 27));
-        Calendar(halfDays: halfDays).IsOpen(Market.UnitedStates, Utc(2026, 11, 27, utcHour, utcMinute))
-            .Should().Be(expected);
+        Calendar().IsOpen(Market.UnitedStates, Utc(2026, 11, 27, utcHour, utcMinute)).Should().Be(expected);
     }
 
     [Fact]
-    public void 半日構成が無ければ同じ日の午後も通常どおり開場する()
+    public void 半日でない通常日の午後は開場する()
     {
-        // 対の肯定形: 半日を構成しなければ 15:59 EST（20:59 UTC）は場中。
-        Calendar().IsOpen(Market.UnitedStates, Utc(2026, 11, 27, 20, 59)).Should().BeTrue();
+        // 対の肯定形: 2026-11-30（月曜・規則計算でも半日ではない）の 15:59 EST（20:59 UTC）は場中。
+        Calendar().IsOpen(Market.UnitedStates, Utc(2026, 11, 30, 20, 59)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void 構成の半日取引日は規則計算へ足される()
+    {
+        // #909, IADR-0380 決定4: 構成は「足す」側。規則が半日としない日でも、構成に入れれば 13:00 ET で閉場する。
+        var halfDays = Dates(Market.UnitedStates, new DateOnly(2026, 11, 30));
+        Calendar(halfDays: halfDays).IsOpen(Market.UnitedStates, Utc(2026, 11, 30, 20, 59)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void 規則計算の休場日は構成が空でも閉場する()
+    {
+        // 🔴 #909, IADR-0380 決定4 の挙動変更: 従来は `deploy/` に休場日の設定が 1 件も無かったため、
+        // 感謝祭（2026-11-26）にもサイクルが起動していた。14:30 UTC＝9:30 EST は寄り付きだが閉場である。
+        Calendar().IsOpen(Market.UnitedStates, Utc(2026, 11, 26, 15, 0)).Should().BeFalse();
     }
 }

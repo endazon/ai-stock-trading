@@ -58,14 +58,17 @@ public class Stage0DecisionRecorderTests
         };
 
     private static (Stage0DecisionRecorder Recorder, FakeLlmClient Llm, CapturingSink Sink, RecordingReporter Reporter)
-        Build(IReadOnlyList<string> responses, int tokensPerCall = 1_000)
+        Build(
+            IReadOnlyList<string> responses,
+            int tokensPerCall = 1_000,
+            IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
         var llm = new FakeLlmClient(responses, collector, tokensPerCall);
         var sink = new CapturingSink();
         var recorder = new Stage0DecisionRecorder(
-            llm, new StubInputProvider(), sink, collector, Prices(),
+            llm, new StubInputProvider(notReconstructable), sink, collector, Prices(),
             new FixedTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink, reporter);
     }
@@ -234,6 +237,58 @@ public class Stage0DecisionRecorderTests
         sink.Saved!.Records[0].SignedQuantity.Should().Be(0);
     }
 
+    // ---- FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成可否を記録へ残す ----
+
+    // T-15-106 **陰性対照**: すべて再構成できたなら記録は 3 種の申告を持ち、除外対象にならない。
+    [Fact]
+    public async Task 記録はas_of入力の再構成可否を3種そろえて持つ()
+    {
+        var (recorder, _, sink, _) = Build([Decision("Buy")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        var record = sink.Saved!.Records[0];
+        Stage0AsOfInputs.IsDeclared(record.AsOfInputs).Should().BeTrue();
+        Stage0AsOfInputs.IsExcluded(record.AsOfInputs).Should().BeFalse();
+    }
+
+    // 🔴 T-15-106 **陽性（最重要）**: 再構成できなかった項目があっても**記録は止まらない**
+    // （計画 ADR-0036 決定1「『外す』は『走らせない』ではない。痩せた入力での実行はしてよい。
+    // その結果を合格根拠として引かないことだけを定める」）。外れるのは合否の集計からである。
+    [Fact]
+    public async Task 再構成できない入力があっても記録は残り除外対象として印がつく()
+    {
+        var (recorder, llm, sink, _) = Build(
+            [Decision("Buy")], notReconstructable: [Stage0AsOfInputKind.FxRateToBase]);
+
+        var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        llm.CallCount.Should().BeGreaterThan(0); // 走らせないのではない
+        var record = sink.Saved!.Records[0];
+        Stage0AsOfInputs.IsDeclared(record.AsOfInputs).Should().BeTrue();
+        Stage0AsOfInputs.NotReconstructableKinds(record.AsOfInputs)
+            .Should().ContainSingle().Which.Should().Be(Stage0AsOfInputKind.FxRateToBase);
+    }
+
+    // 🔴 T-15-107: **戦略 ID は申告を含む。** 判断列が同じでも「何を合否から外すか」が違えば
+    // 評価する母集団が違う —— 戦略 ID が同じままだと、別の母集団で採った合格が生き残る（IADR-0281 決定3）。
+    [Fact]
+    public async Task 戦略IDは再構成可否の申告を含む()
+    {
+        var (complete, _, completeSink, _) = Build([Decision("Buy")]);
+        await complete.RunAsync(Options(), CancellationToken.None);
+
+        var (thin, _, thinSink, _) = Build(
+            [Decision("Buy")], notReconstructable: [Stage0AsOfInputKind.DailyPolicy]);
+        await thin.RunAsync(Options(), CancellationToken.None);
+
+        // 判断（行動・数量・票）は同一である —— 違うのは申告だけ。
+        thinSink.Saved!.Records[0].SignedQuantity
+            .Should().Be(completeSink.Saved!.Records[0].SignedQuantity);
+        thinSink.Saved!.StrategyId.Should().NotBe(completeSink.Saved!.StrategyId);
+    }
+
     // FR-04, FR-11, ADR-0040 決定5, #822, IADR-0343: 記録の多数決根拠も記録した数量と突合する。
     [Fact]
     public async Task 多数決根拠の株数が記録数量と異なれば注記を追記する()
@@ -372,7 +427,9 @@ public class Stage0DecisionRecorderTests
     }
 
     // as-of 入力の偽装（AsOf 以前の情報だけを渡す）。
-    private sealed class StubInputProvider : IAsOfDecisionInputProvider
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成できなかった種別を申告する経路も張る。
+    private sealed class StubInputProvider(IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null)
+        : IAsOfDecisionInputProvider
     {
         public Task<AsOfDecisionInput?> GetAsync(
             string symbol, Market market, DateOnly asOf, CancellationToken cancellationToken = default) =>
@@ -381,7 +438,8 @@ public class Stage0DecisionRecorderTests
                 new DailyPolicy(asOf, "当日の方針"),
                 new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m,
                     BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
-                new DatedPrice(asOf, 100m)));
+                new DatedPrice(asOf, 100m),
+                notReconstructable: notReconstructable));
     }
 
     private sealed class CapturingSink : IStage0DecisionRecordSink

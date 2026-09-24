@@ -145,13 +145,17 @@ public static class NotificationFormatter
             + $"EntryDecisionId={e.EntryDecisionId}）。",
         NotificationSeverity.Warning);
 
-    // FR-10, FR-12, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置。
-    // 🔴 **Warning。** 本番の機構（ブローカー側逆指値）ではなく、**システムが止まっている間は決済されない**ことを読み落とさせない。
+    // FR-10, FR-12, FR-11, FR-03, ADR-0040 決定1（S1）, #820, #909, IADR-0344 決定8・追記(13), IADR-0380 決定6:
+    // ソフトウェア逆指値の配置。
+    // 🔴 **Warning。** 本番の機構（ブローカー側逆指値）ではなく、**システムが止まっている間は決済されない**ことと、
+    // **保護が通常取引時間しか働かない**ことを読み落とさせない（閉場中の建玉は次の寄りまで無保護である）。
     public static NotificationMessage From(SoftwareStopArmed e) => new(
         "リスク統制: ソフトウェア逆指値を配置（S1）",
         $"{e.Symbol}/{e.Market} {e.Side} 数量{e.Quantity}: 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれているため、"
             + $"{e.Provider} へ保護逆指値を発注せず、損切りライン {Invariant(e.StopLossPrice)} への到達で"
             + "システムが成行で決済します。**ブローカー側に保護は無く、システム停止中は決済されません**"
+            + "。🔴 **保護が働くのは通常取引時間（米東 9:30–16:00）のあいだだけです** —— 閉場中は到達を検知せず、"
+            + "夜間・寄り前の急落からは守られません（#909・IADR-0380）"
             + $"（実弾口座では選べない手法です・EntryDecisionId={e.EntryDecisionId}）。",
         NotificationSeverity.Warning);
 

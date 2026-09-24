@@ -5,6 +5,10 @@ namespace BacktestService.Features.Backtest.EvaluateStage0Gate;
 // FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定オーケストレーションの入力。
 // Slice A/B の集計・試行台帳・性能行列・カットオフ材料を束ねる。
 // DataAnonymized: 銘柄を匿名化して LLM 汚染を排したか。ADR-0008/検証条件①は「カットオフ後 または 匿名化」の OR。
+//
+// FR-15, ADR-0036 決定1, #749, IADR-0387: Exclusions は**判定母集団から外した判断の集計**である。
+// 🔴 **既定値を置かない。** 置けば配線を忘れた評価が「除外を数えた」とも「数えていない」とも名乗れる
+// 状態で通ってしまう。必須引数にして**コンパイルで落とす**（実行時の 8 つ目の条件を足すより強い統制である）。
 public sealed record Stage0GateContext(
     BacktestMetrics BaselineMetrics,
     decimal DoubledCostTotalReturn,
@@ -15,18 +19,24 @@ public sealed record Stage0GateContext(
     IReadOnlyList<PriceBar> Bars,
     DateOnly LlmTrainingCutoff,
     Stage0GateCriteria Criteria,
+    Stage0ExclusionSummary Exclusions,
     bool DataAnonymized = false);
 
 // FR-15, FR-20: Stage 0 判定の結果（ゲート・昇格推奨・算出した DSR・PBO の判定結果・カットオフ充足）。
 //
 // 🔴 ADR-0039 決定1, #777, IADR-0337 決定1: PBO は数値ではなく**判定結果**（PboVerdict）で持つ。
 // `評価不能` は合格ではない —— 合否の根拠から外れたことを、判定結果そのものが明示的に運ぶ。
+//
+// 🔴 ADR-0036 決定1, #749, IADR-0387: Exclusions は「**何を合否から外したか**」を運ぶ。
+// 同決定は「外した範囲は記録に残す ——『何を外したか』が分からないと、**合格が何についての合格なのかが
+// 読めない**」と定めており、verdict はその読みを持って初めて意味を持つ。
 public sealed record Stage0Decision(
     Stage0GateResult Gate,
     StagePromotionRecommendation Promotion,
     double DeflatedSharpe,
     PboVerdict Pbo,
-    bool DataCutoffSatisfied);
+    bool DataCutoffSatisfied,
+    Stage0ExclusionSummary Exclusions);
 
 // FR-15, FR-20, ADR-0008, IADR-0045: Stage 0 合格判定を合成するオーケストレータ。
 // DSR（試行台帳＋標本モーメント）・PBO（CSCV）・データカットオフを算出し、ゲート判定と Stage 1 昇格推奨に落とす。
@@ -53,6 +63,7 @@ public sealed class Stage0GateService
         ArgumentNullException.ThrowIfNull(context.BaselineMetrics);
         ArgumentNullException.ThrowIfNull(context.Trials);
         ArgumentNullException.ThrowIfNull(context.Criteria);
+        ArgumentNullException.ThrowIfNull(context.Exclusions);
 
         // 選択戦略の 1 期間 Sharpe・歪度・尖度から、試行数で補正した DSR を算出する。
         var moments = SampleMomentsCalculator.Compute(context.BaselineMetrics.DailyReturns);
@@ -82,6 +93,8 @@ public sealed class Stage0GateService
         var gate = Stage0GateEvaluator.Evaluate(evaluation, context.Criteria);
         var promotion = Stage0Promotion.Evaluate(gate);
 
-        return new Stage0Decision(gate, promotion, dsr, pbo, cutoffSatisfied);
+        // ADR-0036 決定1, #749, IADR-0387: 除外の集計は判定で作らず、**組み立て側（Stage0ReplayEvaluation）が
+        // 実測した値をそのまま運ぶ**。判定器がここで数え直すと、評価した母集団と verdict の申告がずれ得る。
+        return new Stage0Decision(gate, promotion, dsr, pbo, cutoffSatisfied, context.Exclusions);
     }
 }

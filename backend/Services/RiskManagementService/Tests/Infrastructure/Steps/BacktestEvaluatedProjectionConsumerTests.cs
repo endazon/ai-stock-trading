@@ -37,7 +37,9 @@ public class BacktestEvaluatedProjectionConsumerTests
         bool passed, decimal maxDd, bool includesShortSelling = false, string strategyId = "baseline-v1") =>
         new(passed, maxDd, DeflatedSharpe: 1.2, ProbabilityOfBacktestOverfitting: 0.1,
             FailedChecks: passed ? string.Empty : "DeflatedSharpe", DateTimeOffset.UtcNow,
-            includesShortSelling, strategyId, PboEvaluated: true, PboNotEvaluableReason: "");
+            includesShortSelling, strategyId, PboEvaluated: true, PboNotEvaluableReason: "",
+            ExclusionCountKnown: true, ExcludedDecisionCount: 0, EvaluatedDecisionCount: 20,
+            ExcludedInputKinds: "", ExclusionUnknownReason: "");
 
     [Fact]
     public async Task 合格verdictを段階別実績へ射影し昇格を解錠する()

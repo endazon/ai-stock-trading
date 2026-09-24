@@ -53,12 +53,24 @@ public static class Stage0DriverVerdict
     /// **なぜ評価しなかったのかを受け手（Risk・監査）が文字列で読める**ようにする。
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// FR-15, ADR-0036 決定1, #749, IADR-0387: 本経路には**除外の集計も無い** —— 再生していないのだから
+    /// 「除外 0 件」を名乗らない。理由は記録の側にある（未申告）か、判定を走らせていない（記録なし・不整合）かで、
+    /// <see cref="Stage0ExclusionUnknownReason"/> が読み分ける。
+    /// </remarks>
     public static Stage0Decision RecordingUnusable(IReadOnlyList<Stage0GateCheck> blockingChecks)
     {
         ArgumentNullException.ThrowIfNull(blockingChecks);
         // 空で呼ばれたら「理由の無い不合格」になり、Passed=false の意味が読めなくなる。理由を必ず 1 つは載せる。
         var checks = blockingChecks.Count == 0 ? [Stage0GateCheck.NoDecisionRecords] : blockingChecks;
-        return Build(checks, dataCutoffSatisfied: !checks.Contains(Stage0GateCheck.DataCutoff));
+        return Build(
+            checks,
+            dataCutoffSatisfied: !checks.Contains(Stage0GateCheck.DataCutoff),
+            // 未申告が理由なら「記録が申告していない」、それ以外は「判定を走らせていない」。
+            // 🔴 **どちらでも件数は名乗らない**（0 件は実測でだけ名乗る）。
+            exclusionReason: checks.Contains(Stage0GateCheck.InputCompletenessNotDeclared)
+                ? Stage0ExclusionUnknownReason.CompletenessNotDeclared
+                : Stage0ExclusionUnknownReason.NotEvaluated);
     }
 
     // 不合格固定の組み立て。プレースホルダの走行から意味のある値は出ない（試行台帳も PBO 行列も、
@@ -68,7 +80,14 @@ public static class Stage0DriverVerdict
     // 旧実装はここで 0 を置き、コメントで「算出していないことを表す 0」と断っていたが、**契約へ出た先では
     // ただの 0 である** —— 受け手（Risk・監査）は「測っていない」と「差が無かった」を区別できなかった。
     // DSR は数値のまま 0 を置く（PBO と違い ADR-0039 の射程ではなく、判定結果の型を変えていない）。
-    private static Stage0Decision Build(IReadOnlyList<Stage0GateCheck> failedChecks, bool dataCutoffSatisfied)
+    //
+    // 🔴 ADR-0036 決定1, #749, IADR-0387: **除外件数も 0 では表さない。** 再生していない経路で 0 を置くと
+    // 「痩せた入力に依存する判断は 1 件も無かった」と読める —— 数えていないことと 0 件だったことは別である
+    // （PBO と同じ形。`Stage0ExclusionSummary.Unknown` が理由を運ぶ）。
+    private static Stage0Decision Build(
+        IReadOnlyList<Stage0GateCheck> failedChecks,
+        bool dataCutoffSatisfied,
+        Stage0ExclusionUnknownReason exclusionReason = Stage0ExclusionUnknownReason.NotEvaluated)
     {
         var gate = new Stage0GateResult(Passed: false, FailedChecks: failedChecks);
         return new Stage0Decision(
@@ -76,6 +95,7 @@ public static class Stage0DriverVerdict
             Stage0Promotion.Evaluate(gate),
             DeflatedSharpe: 0d,
             Pbo: new PboVerdict.NotEvaluable(PboNotEvaluableReason.NotEvaluated),
-            DataCutoffSatisfied: dataCutoffSatisfied);
+            DataCutoffSatisfied: dataCutoffSatisfied,
+            Exclusions: new Stage0ExclusionSummary.Unknown(exclusionReason));
     }
 }

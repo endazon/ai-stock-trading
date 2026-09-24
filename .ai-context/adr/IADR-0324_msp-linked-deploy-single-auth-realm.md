@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-13, FR-17, FR-19, FR-20, UC-06, SC-01, SC-02, SC-03, ADR-0038, IADR-0011, IADR-0050, IADR-0051, IADR-0093, IADR-0098, IADR-0176, IADR-0283]
 author: endazon (with Claude Code)
 created: 2026-09-10
-updated: 2026-09-11
+updated: 2026-09-24
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/05_screens/01_screens.md
@@ -124,6 +124,39 @@ IADR-0098 は「owner クライアントを MSP レルムに置く」案を「�
 >
 > **残った負債**: `values-local.yaml` のリテラル 4 件はテンプレート導出ではないため `global.authAuthority` に
 > 追随しない。**本検査はそのずれを赤で捕まえるが、ずれを作らない構造にはしていない**（別 issue）。
+
+> ［2026-09-23 追記 / #781］**上の「残った負債」を解消した（決定 2 の適用範囲を残り 4 経路へ広げる）。**
+> 対象は基盤（MSP）の KB / LLM ゲートウェイを叩く s2s の Authority 4 件
+> （`KnowledgeBase__Auth__Authority` ×2・`LlmGateway__Auth__Authority` ×2。IADR-0093 / IADR-0323）。
+> **新しい IADR は起こさない** —— #456・#736 の是正と同じく、決定 2 の「1 値から導出する」を適用し切る作業である。
+>
+> - **導出の条件はレルム名ではなく「その連携が配線されているか」に採る。** 同一サービスの `extraEnv` に
+>   `KnowledgeBase__{Documents,Search}__BaseUrl` / `LlmGateway__BaseUrl` の**非空**があるときだけ、
+>   `$envOverrides`（#245 / IADR-0102）経由で `$g.authAuthority` を埋める（env は増やさず値だけを上書きする）。
+>   BaseUrl が空＝未構成なら Authority も意味を持たない。**本番既定はまさにその状態なので、既定描画はバイト等価。**
+> - 🔴 **「`authAuthority` が MSP レルムを指すときだけ出す」形は採れない**（起票 #781 の書きぶりはこちら）。
+>   それだと `--set global.authAuthority=…/realms/x` で env ごと消え、「**4 つも追随する**」ことを確かめる
+>   陰性対照が**空振りで緑になる**。条件を配線の有無へ移すと、追随も陰性対照も両方成立する。
+> - **`helm.yml` に 5 面目（`values-local` ＋ `--set` の組み合わせ）を足した。** #776 の 4 面
+>   （既定 / values-local / CronJob 込み / 既定＋`--set`）は**どれもこの組み合わせを踏んでおらず**、
+>   だからこそリテラル 4 件は「赤で捕まえる」と書きながら**どの面からも見えていなかった**。
+>   変更前の描画に 5 面目を当てると、4 件を名指しして落ちることを実測した。
+> - 🔴 **ただし「違うレルムが無いこと」だけでは導出そのものを守れない**（PR #927 の監査で実測）。値が空の経路は
+>   `/realms/` を含まず母集合から落ちるだけで、件数下限 10 も割らない —— 導出の 2 行を消しても（values-local 描画
+>   17 → 13 件）、導出をレルム名で条件付けても、全面が緑のままだった。そこで BaseUrl を配線する 3 面
+>   （`values-local` / 全フラグ ON / `values-local`＋`--set`）では、**env 名が `KnowledgeBase__Auth__Authority` /
+>   `LlmGateway__Auth__Authority` で値が非空の行がちょうど 4 件**であることを要求する（少なければ導出の欠落、
+>   多ければ導出条件が配線の有無から外れた＝未配線の trade-decision の KB Authority まで埋まった）。
+>   両変異（導出行の削除／レルム名での条件付け）がこの件数検査で赤になることを実測した。
+> - 実測（`helm template`）: 既定 / `values-local` / 全フラグ ON / 既定＋`--set` の 4 描画は**バイト等価**、
+>   `values-local`＋`--set` は `realms/platform` 0 件（変更前 4 件）。**稼働中の経路B へは何も当てていない**
+>   （取り込みは運用者の通常の配備。**素の `helm upgrade` だけなら**描画が等価なので Pod テンプレートは変わらず、
+>   Pod の再作成も再起動も起きない。ただし経路B の標準手順 `scripts/k8s-local-deploy.sh` は手順 [5/5] で
+>   **OpenD（`opend`）を除く全 Deployment へ無条件に `kubectl rollout restart` を打つ**（#673。イメージ更新を
+>   Pod へ届けるため）ので、同スクリプト経由の取り込みでは描画の等価性と無関係に opend 以外の Pod は再起動する）。
+>   作業仕様書は [`../specs/20260923_781_kb-llm-authority-derivation.md`](../specs/20260923_781_kb-llm-authority-derivation.md)。
+> - 残余: 「BaseUrl を設定したうえで Authority を意図的に空にする」構成は作れなくなる（導出が埋める）。
+>   現況に該当は無く、KB / LLM はいずれも匿名では 401 なので実害は想定しない。必要になれば明示の opt-out を足す。
 
 ## 検討した選択肢
 
