@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-09-23
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [NFR-01, NFR-02, NFR-03, NFR-07, FR-04, FR-09, FR-10]
 adrs: [ADR-0006]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert]
-issues: [#24, #287, #689, #751, #891]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert]
+issues: [#24, #287, #689, #751, #891, #942]
 -->
 
 
@@ -72,6 +72,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | 統制 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳（上限超過・緊急停止・一時停止・禁止銘柄ほか） |
 | 発注 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | 発注 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り。ブローカーの拒否（`status=Rejected`）と混ぜない |
+| 発注 | `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 🔴 乖離の取り込みの追随を、建玉照会の**不明**（`positions-unknown`）・**失敗**（`positions-query-failed`）のまま再試行を使い切って打ち切った件数。**空の一覧（0 株）は数えない**（確かめた結果であり追随は進む）。途中の配送も数えない。発注執行の起動完了時に 0 で作られる |
 | 費用 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | 費用 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率。80 で間隔延長・100 で停止 |
 
@@ -149,6 +150,21 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
 🔴 **系列名がずれたアラートはエラーを出さず、ただ永久に鳴らない。** 空のグラフと同じ失敗の形であり、
 人が見に行かない前提の仕組みである分だけ気付きにくい。`node scripts/check-observability-assets.js` が
 アラートの参照する系列もコード側のレジストリへ突き合わせる。
+
+### 2 件目: 乖離の取り込みの追随の打ち切り（`#942`）
+
+利用者が承認した乖離の取り込みに保護を追随させる直前の建玉照会が不明・失敗のまま再試行を使い切ると、
+メッセージは発注執行の `PositionDriftAdopted_error` キューに残り、**取り込みで消えたはずの建玉の売りの逆指値が
+ブローカーに残る**。それまで見えたのは Critical ログと `_error` キューの滞留だけだった。
+
+- **`_error` キューの滞留を直接見る案は採らなかった。** RabbitMQ のキュー長はどこからも scrape されていない
+  （本リポジトリの otel-collector は OTLP しか受けず、基盤側の Prometheus の scrape 対象は otel-collector だけである）。
+  存在しない系列へのアラートは永久に鳴らず、しかも検査器は `ast_*` 以外の系列を突き合わせないので**止まらない**。
+- **数えるのは最後の配送だけ**（途中の失敗は再試行で回復し得る）。平常時の期待値は 0 件であり、閾値に実測は要らない。
+- 🔴 **系列は発注執行の起動完了時に 0 で作る。** 系列が最初の打ち切りで初めて現れると、`increase()` はその 1 点目を
+  増分に数えず、起動後の最初の打ち切りを取りこぼす（稀な事象ほど、それが唯一の 1 回になる）。
+- **系列が無いときは鳴らない**（`sum()` が空になる）。無データを異常と読まない代わりに、送出の断はこのアラートでは
+  分からない（`absent()` を置く件は別の課題として残る）。
 
 ## Tier 3（対象外）
 
