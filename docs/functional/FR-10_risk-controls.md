@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0369, IADR-0393]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #909, #941, #936, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0394, IADR-0369, IADR-0393]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_935_stop-out-same-day-reentry, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #909, #935, #941, #936, planning#292]
 -->
 
 
@@ -510,6 +510,10 @@ S + N ≦ (L + S + N) × 0.50   ⇔   S + N ≦ L
 
 `SameDayReentry` は現金口座で**適用範囲が米国株へ広がる**が、分類は理由コードごとであり**クラス A のまま**である。
 
+**損切りした銘柄の同日・同方向の新規建て（#935）で 2 種を追加した**（序数は末尾 30/31）。
+`StoppedOutSameDay` は統制が設計どおり作動した記録で**クラス A**、`StopOutStatusUnknown`（損切りしたかを確かめられない）は
+取引を止めている状態そのものの記録で**クラス B**である。いずれもクラス C（禁止事項への抵触）へは混ぜない。
+
 ## 3 統制の優先順位（#329 第 2 段階）
 
 | 統制 | 発動主体 | 期限 | 解除条件 |
@@ -830,6 +834,38 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 （発注執行は取り込みを購読しておらず保護レグを作らない）である。**これらは建玉照会が不能のあいだ、
 システムからの出口が 1 つも無い**（#879 で追随する）。免除が成立する条件と本突き合わせが有効になる条件は
 重なるため、机上の話ではない。
+
+### 損切りした銘柄は、その取引日のうちは同じ方向の新規建てをしない（#935）
+
+稼働中に**損切りの 3 分後に同じ銘柄を新規に買い直す**事象が実測され、利用者が「損切りした銘柄は、その米国東部の
+取引日のうちは同じ方向の新規建てをしない。統制側で機械的に止める。判断（LLM）には任せない」と裁定した。
+
+既存の同日再エントリー禁止（差金決済防止。取引ガードの機能仕様書）は**現物かつ（日本株または現金口座）**にしか掛からず、
+信用口座の米国株では評価されない。目的も違う（制度・決済の制約。入力は「当日に売買が成立したすべての銘柄」）ため、
+その適用範囲は変えず、**同じ判定コアへ別の拒否理由として**足した。
+
+| 項目 | 規則 |
+| --- | --- |
+| 損切りと数える決済 | **ソフトウェア逆指値の成行決済の発動**（約定を待たない）と、**ブローカー側逆指値の約定**（武装しただけでは数えない） |
+| 数えない決済 | 保護が成立しないときの成行手仕舞い・利用者の手仕舞い・判断由来の決済・維持率割れの自動縮小（いずれも損切りラインへの到達ではない） |
+| 止める新規建て | 損切りした建玉と**同じ方向**だけ（ロングの損切りは買いの新規建て、ショートの損切りは売りの新規建て）。反対方向は止めない |
+| 区切り | **市場の現地取引日**（米国株は米国東部の暦日。夏時間は自動で吸収）。日本時間の日付が変わっても解けない |
+| 拒否理由 | `StoppedOutSameDay`（クラス A）。拒否理由の計器（理由別の拒否件数）・監査・通知にこの名前で出る |
+| 分からないとき | 当日の決済に**由来が記録されていない**（本統制より前に記録された行）なら、損切りかどうか分からないので `StopOutStatusUnknown`（クラス B）で止める。**「損切りではない」として通さない** |
+| 手仕舞い（Close） | **止めない**。判定は新規建てのときだけ行い、決済の審査では台帳の損切りの記録を読みもしない |
+
+判定の入力は取引台帳の**承認行の由来**（どの経路が書いたか）と約定の時刻である。承認行を書く 4 経路
+（発注前審査を通った承認・ブローカー側逆指値の武装・ソフトウェア逆指値の発動・保護喪失の成行手仕舞い）が、
+それぞれ自分の由来を明示して書く。
+
+- 判断側（取引判断サービス）は変えていない。見送りの理由の計器（判断が自分で見送った件数）には出ず、
+  **発注前審査の拒否理由の計器**に出る。
+- 🔴 **導入日の過剰拘束**: 導入前に記録された当日の決済は由来が空であり、その銘柄の同じ方向の新規建ては
+  導入当日のうち「分からない」理由で止まる。翌取引日には解ける。**ブローカー側逆指値の武装の行もこれに含まれる**
+  （武装は決済の承認として記録される）ため、導入前の当日に逆指値つきで建てた銘柄は、損切りしていなくても止まる。
+- **ブローカー側逆指値の約定は約定追跡の巡回で台帳へ届く**。届く前の審査はその損切りをまだ知らない。
+- 🔴 **武装から 24 時間を超えて約定したブローカー側逆指値は数えられない**（既存の欠落）。約定追跡の巡回は
+  記録から追跡上限（既定 24 時間）を過ぎた未約定の注文を照会せず、逆指値の記録の時刻は武装の時刻だからである。
 
 ### 損切りの実行機構 — ブローカー側逆指値への一本化（#331）
 

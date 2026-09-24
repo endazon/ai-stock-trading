@@ -14,7 +14,8 @@ public static class RiskEvaluator
         IManipulativeOrderPatternDetector? patternDetector = null,
         ShortSellOrderContext? shortSellContext = null,
         StageProductPolicy.StageReleaseContext? stageRelease = null,
-        BuyInBanSupply? buyInBan = null)
+        BuyInBanSupply? buyInBan = null,
+        StopOutReentrySupply? stopOuts = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -187,6 +188,33 @@ public static class RiskEvaluator
             && snapshot.SymbolsTradedToday.Contains((intent.Symbol, intent.Market)))
         {
             reasons.Add(RejectionReason.SameDayReentry);
+        }
+
+        // FR-10, #935, IADR-0394: **損切りした銘柄は、その取引日のうちは同じ方向の新規建てをしない**（オーナー裁定）。
+        // 上の差金決済防止とは**別の理由**である——あちらは制度・決済の制約で「当日に売買したすべての銘柄」を止め、
+        // 信用口座の米国株には掛からない（2026-09-23 に S1 の損切りの 3 分後に同じ AAPL を買い直した事象は、
+        // まさにその適用外で起きた）。こちらは口座種別・商品種別に依存せず、「損切りした」事実だけを入力にする。
+        //
+        // 方向は**建玉の方向**で見る（StopOutReentrySupply.ForEntry）。ロングの損切りは買いの新規建てだけを止め、
+        // 反対方向（売りの新規建て）は止めない。
+        //
+        // 🔴 **不明は止める**（決定6）。由来が記録されていない決済が当日にあれば、損切りかどうか分からないので
+        // 別の理由（StopOutStatusUnknown）で止める——「分からない」を「損切りしていない」として通さない。
+        //
+        // **手仕舞い（Close）・損切りは止めない**（isEntry の短絡。ADR-0009 の不変条件）。
+        // stopOuts が null（＝この呼び出し元が供給していない）なら評価しない。本番の唯一の呼び出し元
+        // （OrderScreeningService）は新規建てで**常に**供給する（台帳は必須依存。IADR-0163 決定2）。
+        if (isEntry && stopOuts is { } stopOut)
+        {
+            switch (stopOut.ForEntry(intent.Side))
+            {
+                case StopOutStatus.StoppedOut:
+                    reasons.Add(RejectionReason.StoppedOutSameDay);
+                    break;
+                case StopOutStatus.Unknown:
+                    reasons.Add(RejectionReason.StopOutStatusUnknown);
+                    break;
+            }
         }
 
         // FR-19, #375, ADR-0021 決定4-2/決定4-3: **現金口座でのみ**加わる 2 統制。

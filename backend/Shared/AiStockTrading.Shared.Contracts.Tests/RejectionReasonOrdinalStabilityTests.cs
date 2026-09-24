@@ -47,6 +47,9 @@ public class RejectionReasonOrdinalStabilityTests
         { RejectionReason.InformationSourceDegraded, 28 },
         // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金（equity）の未照会。**末尾へ追加**している。
         { RejectionReason.CapitalBaselineUnavailable, 29 },
+        // FR-10, #935, IADR-0394: 損切りした銘柄の同日・同方向の新規建て（確かめられた／確かめられない）。**末尾へ追加**している。
+        { RejectionReason.StoppedOutSameDay, 30 },
+        { RejectionReason.StopOutStatusUnknown, 31 },
     };
 
     [Theory]

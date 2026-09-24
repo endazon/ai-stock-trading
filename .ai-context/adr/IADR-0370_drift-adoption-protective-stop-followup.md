@@ -2,10 +2,10 @@
 title: IADR-0370 乖離の取り込みは発注執行が購読し、巡回と同じ規則で保護記録を減らし、確認できた取消だけを終端化する
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-05, FR-11, UC-02, UC-06, ADR-0003, ADR-0040, IADR-0057, IADR-0067, IADR-0117, IADR-0118, IADR-0129, IADR-0210, IADR-0344, IADR-0350, IADR-0357]
+related_ids: [FR-10, FR-05, FR-11, UC-02, UC-06, ADR-0003, ADR-0040, IADR-0057, IADR-0067, IADR-0117, IADR-0118, IADR-0129, IADR-0210, IADR-0344, IADR-0350, IADR-0357, IADR-0395]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10「逆指値なしの建玉を持たない」・FR-05 建玉の突合)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md (業務フロー 02 補足・二重決済問題)
@@ -188,3 +188,21 @@ T-10-738（同じ銘柄の S1 が 715 株・713 株の 2 行。古い行から�
 運用仕様書の障害対応表に、この `_error` キューの行（入るもの・見えるもの・再投入の手順と冪等性）を足した。アラートの追加は #942 で提案した。
 併せて、`Program.cs` が moomoo 構成で建玉照会を渡すことを T-10-740（`Program.cs` そのものを組む・「null を渡す」変異を殺す）と
 T-10-741（内蔵 paper では渡さない対照）で固定した ——それまでの試験は照会を自前で注入しており、`Program.cs` が null を渡しても全部緑だった。
+
+### ［2026-09-25 追記 / #942］決定 3′ の代償の「アラートは無い」を改める —— 再試行を使い切った打ち切りは業務メトリクスで数え、アラートにする
+
+**変更した記述**: 上の 2 巡目の追記の「アラートは無い」「人が見ていないあいだは無音である」は、本追記の時点で次のとおりになった（本文と上の追記は書き換えない）。
+
+- 建玉照会の不明・失敗で打ち切り、**それが最後の配送**（4 回目＝この失敗で `PositionDriftAdopted_error` へ送られる）のとき、
+  業務メトリクス `ast.order.drift_adoption_followup_abandoned{reason}` を 1 増やす（`reason`＝`positions-unknown` / `positions-query-failed`）。
+  途中の配送では数えない。空の一覧（0 株）は打ち切りではないので数えない。
+- `deploy/observability/alerts/ai-stock-trading-alerts.yaml` のアラート **`AstDriftAdoptionFollowUpAbandoned`**（warning）が
+  `sum(increase(ast_order_drift_adoption_followup_abandoned_total[15m])) > 0`・`for: 1m` で上がる。
+  系列は発注執行の起動完了時に 0 で作る（最初の打ち切りを `increase()` が取りこぼさないため）。
+- 最後の配送の Critical ログは「再試行を使い切ったため、このメッセージは _error キューへ送られます」と書き、途中の配送のログと区別する。
+
+**なお残るもの**: Discord には依然として何も届かない（投げた処理中の発行は捨てられる。別経路の設計は #942 の射程外）。
+アラートの発火そのものは実バックエンドが要り未確認で、配備は基盤側の共有 overlay の作業である（IADR-0374 決定 4 と同じ状態）。
+アラートの解消は `_error` が空になったことを意味しない。`_error` キューの滞留そのもの（`rabbitmq_queue_messages*`）は
+どこからも scrape されていないため、これを引くルールは置かなかった。判断の詳細は [IADR-0395](IADR-0395_drift-followup-abandoned-metric-and-alert.md)。
+試験は T-10-780〜T-10-787（`Program.cs` そのものを組む T-10-785・T-10-786 を含む）。

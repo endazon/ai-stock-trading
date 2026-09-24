@@ -96,7 +96,7 @@ public class TradingControlPriorityTests
                 Lockout,
                 new FakeClock(Now, Today),
                 new WeekendBusinessCalendar(),
-                new InMemoryBuyInInferenceStore());
+                new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
             var intent = new OrderIntent(
                 "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 10, 1_000m, effect);
