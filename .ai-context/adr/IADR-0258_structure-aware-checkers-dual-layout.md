@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, ADR-0013]
 author: endazon (with AI assistance)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
@@ -190,6 +190,14 @@ M1（サービス数）とは**別の量**であり、M1 が通っても M3 が�
    絶対下限は本検査器には意図的に持たせていない**（必須 FR 参照の有無という既存の検査がその代わりを
    担うと判断した。理由は作業仕様書「残余リスク 3」）。**将来この判断を見直す条件は「同型の事故が
    2 回起きたら」**（検査器・規約の追加を判断する既定の基準。運用ガイド §8 と同じ基準）。
+
+> ［2026-09-25 追記 / #775］**`check-test-traceability.js` の T1 の census（テストファイルと樹形の両方）は
+> `git ls-files`（追跡パス）から取るようにした。** #757 で母数を実エントリ名の完全一致にしたが、大文字小文字を
+> 区別しない FS で旧 `tests/` が残ったまま新 `Tests/` のファイルがその中へ置かれた作業ツリーでは、実名そのものが
+> git と食い違い「旧 334 / 新 142」と出た（git の追跡名では旧 0 / 新 494）。git が使えない模擬ツリーでだけ
+> `fs` 走査へ縮退し、出典を出力する。`check-consumer-endpoint-names.js` は樹形を `src` の有無（小文字のみ）と
+> `tests` の大小無視比較で判定するため同じ食い違いの経路を持たず、変えていない（作業仕様書
+> `20260925_923_775_test-id-baseline-ratchet-and-git-census`）。
 
 ## 関連
 

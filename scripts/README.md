@@ -134,6 +134,13 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 > エントリ名**を `Set` に集め、`===` の文字列完全一致で判定する——OS のパス解決を経由しないため、
 > 大文字小文字を区別する/しない FS のどちらでも同じ結果になる。
 
+> 🔴 **［2026-09-25 変更・#775］T1 の census（テストファイルとサービス配下の樹形の両方）は `git ls-files`
+> （インデックス＝追跡パス）から取る。** 実エントリ名の完全一致でも、**作業ツリーの実名そのものが git と
+> 食い違う**と嘘の数になる（大文字小文字を区別しない FS で旧 `tests/` が残ったまま新 `Tests/` のファイルが
+> その中へ置かれた Windows の作業ツリーで「旧 334 / 新 142」。git の追跡名では旧 0 / 新 494）。
+> `root` が git の作業ツリーの最上位でない（`TEST_TRACE_ROOT` の模擬ツリー）・git が使えないときだけ
+> `fs` 走査へ縮退し、OK 行の `census:` に出典を出す。未追跡（`git add` 前）の `.cs` は数えない。
+
 ### 検査器を書くときの規約（fail-open の閉じ方。裁定 planning#343）
 
 **外部の存在（隣接クローン・実行ログ。かつては submodule も）に依存して skip する検査器は、
@@ -192,7 +199,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `plan-id-qualification` | `check-plan-id-qualification.js`（他プロジェクトの計画 ID の `<PROJ>/<ID>` 修飾。`PLAN_ID_PREFIXES` を明示） |
 | `cross-repo-refs`（#712 で新設。**#487 実装時は `scripts.repo.test.js` の中でしか本走していなかった**） | `check-cross-repo-refs.js --self-test` と本検査（他リポジトリの issue / PR 番号の修飾。`CROSS_REPO_NAMES` / `CROSS_REPO_SELF_NAMES` / `CROSS_REPO_EXCLUDES` を明示。実データ本走は違反 0 件・exit 0） |
 | `reading-budget` | `check-reading-budget.js --self-test` と本検査（必読規約の総量予算。エージェントごとに判定・合算しない。#524） |
-| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有）。**検査 4（T2）でテスト ID（`T-<機能要求番号>-<連番>`）の一意性も見る**（#887 / IADR-0376。既知の重複は `scripts/test-id-duplicate-baseline.json` のラチェットで固定し、**新規の衝突だけを落とす**。採番の最大値を毎回出力し、これが次の採番者の単一情報源になる。規約は `docs/tests/README.md`） |
+| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有）。**検査 4（T2）でテスト ID（`T-<機能要求番号>-<連番>`）の一意性も見る**（#887 / IADR-0376。既知の重複は `scripts/test-id-duplicate-baseline.json` のラチェットで固定し、**新規の衝突だけを落とす**。採番の最大値を毎回出力し、これが次の採番者の単一情報源になる。規約は `docs/tests/README.md`）。**検査 T2b で baseline の「増える側」も止める**（#923。baseline をマージベースの版と比べ、新しい ID・件数の増加・在り処の追加で赤。正当な追加はコミット本文に行単独の `[add-test-id-duplicate] <ID>` を ID ごとに書く。範囲は `--dup-baseline-range=` / `COMMIT_RANGE` / `GITHUB_BASE_REF` / `origin/develop` の順。`fetch-depth: 0` が必要で、**CI の pull_request で基準を取れなければ赤**、それ以外は理由つき skip） |
 | `banned-libraries` | `check-banned-libraries.js`（不採用ライブラリの再混入。本リポ固有） |
 | `tracked-session-timeout` | `check-tracked-session-timeout.js`（本リポ固有） |
 | `trace-blocks` | `check-trace-blocks.js --self-test` と本検査（docs/ の trace ブロック規約。ADR-0029 決定4・本リポ固有） |

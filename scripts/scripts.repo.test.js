@@ -1010,6 +1010,195 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- check-test-traceability.js: 検査 4b（T2b）＝baseline の増加ラチェット（#923 / IADR-0376 追記） ---
+  //
+  // 規則 11: 増える側と減る側の両方のプローブを置き、基準の取り方 3 通りで実測する
+  // （表は作業仕様書 20260925_923_775_test-id-baseline-ratchet-and-git-census）。
+  // 実 git の一時リポジトリを作り、関数を直接呼ぶ（環境変数は明示して CI の値に左右されないようにする）。
+  {
+    const { execFileSync: execG } = require('child_process');
+    const g = (root, ...args) =>
+      execG('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const entry = (id, count = 2) => ({ id, files: ['docs/tests/FR-10_a.md'], count, reason: 'x'.repeat(30) });
+    const writeBl = (root, dups) => {
+      fsTt.mkdirSync(pathTt.join(root, 'scripts'), { recursive: true });
+      fsTt.writeFileSync(
+        pathTt.join(root, 'scripts', 'test-id-duplicate-baseline.json'),
+        JSON.stringify({ duplicates: dups }, null, 2)
+      );
+    };
+    const commit = (root, msg) => {
+      g(root, 'add', '-A');
+      g(root, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', msg);
+    };
+    // develop に baseline（A, B）を置き、feature を分岐した一時リポジトリ。
+    const mkRepo = () => {
+      const root = fsTt.realpathSync(fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t2b-')));
+      g(root, 'init', '-q', '-b', 'develop');
+      writeBl(root, [entry('T-10-1'), entry('T-10-2')]);
+      commit(root, 'chore: baseline');
+      g(root, 'checkout', '-q', '-b', 'feature');
+      return root;
+    };
+    const run = (root, range) => tt.checkBaselineGrowth(root, { range, env: {} });
+
+    // P+: PR 自身が entry を足す（宣言なし）
+    const probePlus = () => {
+      const root = mkRepo();
+      writeBl(root, [entry('T-10-1'), entry('T-10-2'), entry('T-10-3')]);
+      commit(root, 'chore: add');
+      return root;
+    };
+    // P+d: 同上＋宣言
+    const probePlusDeclared = () => {
+      const root = mkRepo();
+      writeBl(root, [entry('T-10-1'), entry('T-10-2'), entry('T-10-3')]);
+      commit(root, 'chore: add\n\n[add-test-id-duplicate] T-10-3');
+      return root;
+    };
+    // P−: 分岐後に develop が B を消した（解消）。feature は rebase していない
+    const probeMinus = () => {
+      const root = mkRepo();
+      fsTt.writeFileSync(pathTt.join(root, 'unrelated.txt'), 'x');
+      commit(root, 'chore: unrelated');
+      g(root, 'checkout', '-q', 'develop');
+      writeBl(root, [entry('T-10-1')]);
+      commit(root, 'chore: resolve B');
+      g(root, 'checkout', '-q', 'feature');
+      return root;
+    };
+    // P+2: 1 コミット目で足し、2 コミット目は無関係
+    const probePlusTwo = () => {
+      const root = probePlus();
+      fsTt.writeFileSync(pathTt.join(root, 'unrelated.txt'), 'y');
+      commit(root, 'chore: unrelated');
+      return root;
+    };
+    const verdict = (r) => {
+      assert.ok(!r.skipped, `skip した: ${r.skipped}`);
+      return r.errors.length ? '赤' : '緑';
+    };
+
+    ok('🔴 [T2b/増える側] baseline に entry を足しただけなら赤（宣言なし）', () => {
+      const r = run(probePlus(), null);
+      assert.strictEqual(verdict(r), '赤');
+      assert.match(r.errors.join('\n'), /T-10-3 がマージベースより増えています/);
+      assert.match(r.errors.join('\n'), /\[add-test-id-duplicate\] T-10-3/);
+    });
+
+    ok('[T2b/増える側] コミット本文の行単独の宣言があれば緑（宣言した増加として返す）', () => {
+      const r = run(probePlusDeclared(), null);
+      assert.strictEqual(verdict(r), '緑');
+      assert.deepStrictEqual(r.declared.map((d) => d.id), ['T-10-3']);
+    });
+
+    ok('🔴 [T2b/増える側] 本文中に埋めた言及では宣言として発動しない', () => {
+      assert.strictEqual(tt.parseDuplicateAdditions('説明: `[add-test-id-duplicate] T-10-3` と書く').size, 0);
+      assert.deepStrictEqual([...tt.parseDuplicateAdditions('x\n  [add-test-id-duplicate] T-10-03  \ny')], ['T-10-3']);
+    });
+
+    ok('[T2b/減る側] 分岐後に develop が消した entry が未 rebase の PR に残っても誤発火しない（3 ドット）', () => {
+      assert.strictEqual(verdict(run(probeMinus(), null)), '緑');
+    });
+
+    ok('🔴 [T2b/増える側] 2 コミット以上の PR でも 1 コミット目の追加を見逃さない', () => {
+      assert.strictEqual(verdict(run(probePlusTwo(), null)), '赤');
+    });
+
+    ok('[T2b/規則 11] 基準の取り方 3 通りの表を実測する（採用はマージベースのみが全列正しい）', () => {
+      const shapes = { '2 ドット': 'develop..HEAD', 'HEAD^1': 'HEAD~1...HEAD', 'マージベース': 'develop...HEAD' };
+      const probes = { 'P+': probePlus, 'P+d': probePlusDeclared, 'P−': probeMinus, 'P+2': probePlusTwo };
+      const expected = { 'P+': '赤', 'P+d': '緑', 'P−': '緑', 'P+2': '赤' };
+      const table = {};
+      for (const [shape, range] of Object.entries(shapes)) {
+        table[shape] = {};
+        for (const [name, mk] of Object.entries(probes)) table[shape][name] = verdict(run(mk(), range));
+      }
+      assert.deepStrictEqual(table['マージベース'], expected, JSON.stringify(table));
+      // 片側だけの形は必ず逆側が空く（表の対角）。
+      assert.strictEqual(table['2 ドット']['P−'], '赤', '2 ドットは減る側を誤読するはず');
+      assert.strictEqual(table['HEAD^1']['P+2'], '緑', 'HEAD^1 は 1 コミット目の追加を見逃すはず');
+    });
+
+    ok('[T2b] 件数の増加・在り処の追加も「増えた」に数える', () => {
+      const base = { duplicates: [entry('T-10-1')] };
+      const more = { duplicates: [{ ...entry('T-10-1', 3), files: ['docs/tests/FR-10_a.md', 'docs/tests/FR-10_b.md'] }] };
+      const g2 = tt.findBaselineGrowth(base, more);
+      assert.strictEqual(g2.length, 1);
+      assert.match(g2[0].reasons.join('・'), /件数 2 → 3/);
+      assert.match(g2[0].reasons.join('・'), /FR-10_b\.md/);
+      assert.deepStrictEqual(tt.findBaselineGrowth(more, base), [], '減る側は増加ではない');
+    });
+
+    ok('[T2b] git の作業ツリーでない模擬ツリーでは理由つきで skip する', () => {
+      const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t2b-nogit-'));
+      assert.match(tt.checkBaselineGrowth(root, { env: {} }).skipped || '', /最上位ではない/);
+    });
+
+    ok('🔴 [T2b] 基準を取れない skip は CI の pull_request 本走でだけ赤へ倒す（fail-loud）', () => {
+      const pr = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'pull_request' };
+      assert.strictEqual(tt.dupBaselineSkipIsFatal(pr), true);
+      assert.strictEqual(tt.dupBaselineSkipIsFatal({ ...pr, GITHUB_EVENT_NAME: 'push' }), false);
+      assert.strictEqual(tt.dupBaselineSkipIsFatal({ ...pr, TEST_TRACE_ROOT: '/tmp/x' }), false);
+      assert.strictEqual(tt.dupBaselineSkipIsFatal({}), false);
+    });
+
+    ok('🔴 [T2b] CI の pull_request で基準が取れなければ本走が exit 1 になる', () => {
+      const env = { ...process.env, GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'pull_request' };
+      delete env.TEST_TRACE_ROOT;
+      let code = 0;
+      let out = '';
+      try {
+        execG(process.execPath, [pathTt.join(__dirname, 'check-test-traceability.js'), '--dup-baseline-range=no-such-ref...HEAD'], {
+          cwd: pathTt.resolve(__dirname, '..'), env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (e) {
+        code = e.status;
+        out = `${e.stdout || ''}${e.stderr || ''}`;
+      }
+      assert.strictEqual(code, 1, '基準が取れないのに緑になった');
+      assert.match(out, /\[T2b\] baseline の増加ラチェットの比較基準を取れません/);
+    });
+
+    // --- #775: census を git の追跡パスから取る ---
+    ok('🔴 [陰性対照/#775] 作業ツリーで Tests/ を小文字 tests/ へ改名しても census は変わらない', () => {
+      const root = fsTt.realpathSync(fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-775-')));
+      g(root, 'init', '-q', '-b', 'develop');
+      const dir = pathTt.join(root, 'backend', 'Services', 'A', 'Tests', 'Features');
+      fsTt.mkdirSync(dir, { recursive: true });
+      fsTt.writeFileSync(pathTt.join(dir, 'X.cs'), '// FR-10\n');
+      commit(root, 'chore: tests');
+      const before = { dirs: tt.serviceTestDirs(root), counts: tt.serviceTestLayoutCounts(root, tt.testFiles(root)) };
+      assert.deepStrictEqual(before, { dirs: { old: 0, new: 1 }, counts: { old: 0, new: 1 } });
+      // git mv を使わずに作業ツリーの実名だけを変える（大文字小文字を区別しない FS で起きた食い違いの再現）。
+      fsTt.renameSync(pathTt.join(root, 'backend', 'Services', 'A', 'Tests'), pathTt.join(root, 'backend', 'Services', 'A', 'tmp__case'));
+      fsTt.renameSync(pathTt.join(root, 'backend', 'Services', 'A', 'tmp__case'), pathTt.join(root, 'backend', 'Services', 'A', 'tests'));
+      const after = { dirs: tt.serviceTestDirs(root), counts: tt.serviceTestLayoutCounts(root, tt.testFiles(root)) };
+      assert.deepStrictEqual(after, before, `census が作業ツリーの実名に引きずられた: ${JSON.stringify(after)}`);
+      // 陽性対照: fs 走査（縮退経路）なら実名どおり旧樹形として数える＝上の不変は git 由来であることの確認。
+      assert.deepStrictEqual(tt.serviceTestDirs(root, { tracked: null }), { old: 1, new: 0 });
+    });
+
+    ok('[#775] isTrackedTestPath はディレクトリ走査と同じ規則をパス要素へ適用する', () => {
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/Tests/X.cs'), true);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/tests/A.Domain.Tests/X.cs'), true);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Tests/AiStockTrading.Architecture.Tests/X.cs'), true);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Tests/X.cs'), false, 'backend/Tests 直下は横断テストのプロジェクト外');
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/Features/Tests/X.cs'), false);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/Tests/obj/X.cs'), false);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/A.csproj'), false);
+    });
+
+    ok('[#775] 実ツリーでは census の出典が git ls-files であり、fs 走査と同じ母集合になる', () => {
+      const root = pathTt.resolve(__dirname, '..');
+      const src = tt.censusSource(root);
+      assert.ok(src.tracked !== null, src.source);
+      const viaGit = tt.testFiles(root, src).sort();
+      const viaFs = tt.testFiles(root, { tracked: null, source: 'fs' }).sort();
+      assert.deepStrictEqual(viaGit, viaFs, '追跡外の .cs が作業ツリーにあると差が出る（git add を忘れていないか）');
+    });
+  }
+
   // --- check-coverage.js: カバレッジ floor / ratchet（#343） ---
   const cov = require('./check-coverage.js');
 

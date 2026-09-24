@@ -195,6 +195,10 @@ jobs:
       # 突合先の planning submodule 自体が撤去されたため恒久的に skip へ倒れる（`planIds()` が
       # null を返す。notice で可視化される）。**本ジョブ自体は存続する** —— 必須 FR のテスト・仕様書の
       # 存在チェック（本検査の主眼）は元から planning 非依存であり、引き続き実効する。
+      #
+      # #923: 検査 T2b（テスト ID 重複 baseline の増加ラチェット）は baseline をマージベースの版と比べる。
+      # 本ジョブの checkout が fetch-depth: 0 であることに依存する（origin/<base> と merge-base を解決する）。
+      # pull_request で基準を取れなければ赤になる（黙って緑にしない）。#775: census は git ls-files から取る。
       - name: Check test traceability
         if: ${{ !cancelled() }}
         run: node scripts/check-test-traceability.js
