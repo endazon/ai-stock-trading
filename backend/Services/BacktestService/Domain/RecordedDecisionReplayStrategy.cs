@@ -36,6 +36,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
         }
 
         var excluded = 0;
+        var excludedWithQuantity = 0;
         var evaluated = 0;
         var excludedKinds = new HashSet<Stage0AsOfInputKind>();
 
@@ -49,6 +50,9 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
             // 判定母集団から外す。** 注文を写さないことで、その判断は成績（DSR・最大 DD・コスト 2 倍感度・
             // ウォークフォワード）のどこにも寄与しない ——「痩せた入力で動く別の判断器」を測った結果を
             // Stage 0 の合格根拠として引かない、というのが同決定の要求である。
+            // ［2026-09-24 追記 / PR #931 監査］「どこにも寄与しない」は**見送りにしか成り立たない**。数量を持つ判断を
+            // 外すと、差分で積み上がる再生では残した判断の経路が歪む（IADR-0387 決定3 追記。遮断は
+            // `Stage0ReplayEvaluation` の `ExcludedDecisionAltersReplayPath`）。
             //
             // 🔴 **見送り（Hold）の記録も除外として数える。** 数量 0 の記録は注文を作らない点で除外後と
             // 同じ振る舞いになるが、**母集団から外れたという事実は数量と無関係**であり、混ぜると
@@ -57,6 +61,10 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
             if (kinds.Count > 0)
             {
                 excluded++;
+                // IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］: 数量を持つ判断を外すと、差分で積み上がる
+                // 再生では残した判断の経路が歪む。ここでは数えるだけで、遮断は `Stage0ReplayEvaluation` が行う。
+                if (record.SignedQuantity != 0)
+                    excludedWithQuantity++;
                 foreach (var kind in kinds)
                     excludedKinds.Add(kind);
                 continue;
@@ -79,6 +87,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
         }
 
         ExcludedDecisionCount = excluded;
+        ExcludedDecisionWithQuantityCount = excludedWithQuantity;
         EvaluatedDecisionCount = evaluated;
         ExcludedInputKinds = [.. Stage0AsOfInputs.RequiredKinds.Where(excludedKinds.Contains)];
     }
@@ -100,6 +109,17 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
     /// **判定母集団から外した**判断の件数（重複を畳んだ後の数）。
     /// </summary>
     public int ExcludedDecisionCount { get; }
+
+    /// <summary>
+    /// FR-15, ADR-0036 決定1, #749, IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］: 外した判断のうち
+    /// **数量を持つ（見送りでない）**ものの件数（重複を畳んだ後の数）。
+    /// <para>
+    /// 🔴 **1 以上なら、残した判断の再生経路は AI が実際に取った経路ではない。** 注文は差分であり
+    /// `SignedInventory` で積み上がるため、入口を外せば残した出口が裸の空売りを建て、出口を外せば建玉が
+    /// 開いたまま残る。見送り（数量 0）は注文を作らないため、外しても経路は変わらない。
+    /// </para>
+    /// </summary>
+    public int ExcludedDecisionWithQuantityCount { get; }
 
     /// <summary>判定母集団に残った判断の件数（重複を畳んだ後の数）。**0 なら評価対象が成立していない。**</summary>
     public int EvaluatedDecisionCount { get; }

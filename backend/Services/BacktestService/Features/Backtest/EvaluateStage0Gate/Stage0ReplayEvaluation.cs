@@ -19,6 +19,8 @@ namespace BacktestService.Features.Backtest.EvaluateStage0Gate;
 // 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387: 記録が整合していても、**再構成できなかった as-of 入力に依存する
 // 判断は判定母集団から外す**（`RecordedDecisionReplayStrategy` が注文を写さない）。外した件数は
 // `Stage0ExclusionSummary` として verdict まで運ぶ ——「**0 件だった**」と「**数えられなかった**」を分ける。
+// ［2026-09-24 追記 / PR #931 監査］ただし外してよいのは**見送り（数量 0）だけ**である。数量を持つ判断を外すと
+// 残した判断の再生経路が歪むため、`ExcludedDecisionAltersReplayPath` で判定を組まない（IADR-0387 決定3 追記）。
 
 /// <summary>評価文脈を組むための入力。</summary>
 /// <param name="LlmTrainingCutoff">
@@ -116,6 +118,21 @@ public static class Stage0ReplayEvaluation
         {
             return new Stage0ReplayPreparation(
                 [Stage0GateCheck.AllDecisionsExcluded], recordSet.StrategyId, null, null);
+        }
+
+        // 🔴 FR-15, ADR-0036 決定1, #749, IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］:
+        // **数量を持つ判断を 1 件でも外したら判定を組まない。** 再生の注文は目標建玉ではなく差分であり、
+        // `BacktestSimulator` が `SignedInventory` で積み上げる。入口を外せば残した出口が裸の空売りを建て、
+        // 出口を外せば買い建てが開いたまま残る —— DSR・最大 DD は AI が実際には取らなかった経路を測り、
+        // それでも合格が出得た（監査の実測: 6/2 の Buy +10 を外し 6/3 の Sell −10 を残すと、フラットから −10）。
+        // 「外した判断はどこにも寄与しない」は、**残した判断の経路が変わらない**ときにしか成り立たない。
+        // 見送り（数量 0）は注文を作らないため、外しても経路は変わらず、ここでは止めない。
+        //
+        // 全件除外（上）を先に判定する —— 残した判断が無ければ、歪む経路そのものが無い。
+        if (strategy.ExcludedDecisionWithQuantityCount > 0)
+        {
+            return new Stage0ReplayPreparation(
+                [Stage0GateCheck.ExcludedDecisionAltersReplayPath], recordSet.StrategyId, null, null);
         }
 
         var exclusions = new Stage0ExclusionSummary.Counted(

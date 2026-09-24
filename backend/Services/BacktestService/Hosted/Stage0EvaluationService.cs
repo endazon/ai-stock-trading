@@ -24,8 +24,9 @@ namespace BacktestService.Hosted;
 //   - `placeholder`（**既定**）: IADR-0310 のまま。verdict は不合格固定で、go-live の判断材料にならない。
 //   - `recorded-replay`: ADR-0033 の記録・再生。**記録が構成と整合するときだけ**本物の Stage0GateService へ進む。
 //     整合しなければ判定を走らせず、理由（NoDecisionRecords / RecordingMismatch / DataCutoff /
-//     InsufficientEvaluationSample / **InputCompletenessNotDeclared** / **AllDecisionsExcluded**）を
-//     載せた不合格 verdict を出す（末尾 2 つは #749, IADR-0387。計画 ADR-0036 決定1）。
+//     InsufficientEvaluationSample / **InputCompletenessNotDeclared** / **AllDecisionsExcluded** /
+//     **ExcludedDecisionAltersReplayPath**）を載せた不合格 verdict を出す（末尾 3 つは #749, IADR-0387。
+//     計画 ADR-0036 決定1。最後の 1 つは IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］）。
 // **どちらの経路にも合格を作る口は無い**——合格を出せるのは Stage0GateService（7 条件）だけである。
 public sealed class Stage0EvaluationService(
     IServiceScopeFactory scopeFactory,

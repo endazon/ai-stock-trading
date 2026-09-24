@@ -72,6 +72,17 @@ public enum Stage0GateCheck
     /// </para>
     /// </summary>
     AllDecisionsExcluded,
+
+    /// <summary>
+    /// FR-04, FR-15, ADR-0036 決定1, #749, IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］:
+    /// **数量を持つ判断（見送り以外）を判定母集団から外した**ため、残した判断の再生経路が歪む。判定を走らせない。
+    /// <para>
+    /// 🔴 再生の注文は目標建玉ではなく**差分**であり、`SignedInventory` で積み上がる。入口を外せば残した出口が
+    /// 裸の空売りを建て、出口を外せば買い建てが開いたまま残る —— DSR・最大 DD は **AI が実際には取らなかった経路**
+    /// を測ることになる。見送り（数量 0）は注文を作らないため、外しても経路は変わらず本理由の対象外である。
+    /// </para>
+    /// </summary>
+    ExcludedDecisionAltersReplayPath,
 }
 
 // FR-15, ADR-0008, 06_daytrading-review §4: Stage 0 合格基準の閾値。

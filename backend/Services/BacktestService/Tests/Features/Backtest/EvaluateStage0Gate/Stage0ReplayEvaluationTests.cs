@@ -318,11 +318,13 @@ public class Stage0ReplayEvaluationTests
 
     // 🔴 T-15-108 **陽性**: 一部が再構成できなければ、その判断だけが母集団から外れ、件数が verdict へ載る。
     // 残りの判断では判定器へ到達する（**全部を止めるのではなく、外した範囲を明示して進む**）。
+    // ［2026-09-24 追記 / PR #931 監査］外してなお進めるのは**見送り（数量 0）**だけである（IADR-0387 決定3 追記）。
+    // 数量を持つ判断を外すと残した判断の再生経路が歪むため、T-15-113 が遮断を固定する。
     [Fact]
     public void 再構成できない判断だけが母集団から外れ件数が載る()
     {
         var records = Daily(3).Concat(
-            [Record(From.AddDays(4), "AAPL", 10, Thin(Stage0AsOfInputKind.FxRateToBase))]).ToArray();
+            [Record(From.AddDays(4), "AAPL", 0, Thin(Stage0AsOfInputKind.FxRateToBase))]).ToArray();
 
         var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
 
@@ -385,11 +387,16 @@ public class Stage0ReplayEvaluationTests
     // 計画 ADR-0036 決定1「**外した結果 Stage 0 の対象が実質的に成立しなくなった場合は、合格としない。
     // 範囲を狭めて通すのではなく、通らないことを報告する**」。全件を外した走行は 1 件も発注しないため
     // 成績が動かず、判定器へ通すと「損失が無い」ように見え得る。
-    [Fact]
-    public void 全件が除外されたら判定を組まない_failclosed()
+    //
+    // ［2026-09-24 追記 / PR #931 監査］数量を持つ判断の除外は `ExcludedDecisionAltersReplayPath` でも止まるため、
+    // **全件が見送りの除外**を対で置く —— こちらは本遮断だけが止める（片方だけだと本遮断を外す変異が緑で通る）。
+    [Theory]
+    [InlineData(10)] // 数量を持つ判断の全件除外（全件除外を先に判定する）
+    [InlineData(0)]  // 見送りの全件除外（経路の歪みは無く、本遮断だけが止める）
+    public void 全件が除外されたら判定を組まない_failclosed(int signedQuantity)
     {
         var preparation = Stage0ReplayEvaluation.Prepare(
-            Request(SetOf(records: Daily(3, Thin(Stage0AsOfInputKind.DailyPolicy)))));
+            Request(SetOf(records: Daily(3, Thin(Stage0AsOfInputKind.DailyPolicy), signedQuantity))));
 
         preparation.IsReady.Should().BeFalse();
         preparation.BlockingChecks.Should().Equal(Stage0GateCheck.AllDecisionsExcluded);
@@ -415,5 +422,87 @@ public class Stage0ReplayEvaluationTests
 
         preparation.IsReady.Should().BeFalse();
         Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks).Gate.Passed.Should().BeFalse();
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // FR-15, ADR-0036 決定1, #749, IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］:
+    // **除外は残した判断の再生経路を歪めてはならない。**
+    //
+    // 再生の注文は目標建玉ではなく**差分**であり、`SignedInventory` で積み上がる（`BacktestSimulator`）。
+    // したがって数量を持つ判断を 1 件でも外すと、残した判断が「AI が実際には取らなかった経路」を走る
+    // —— 入口を外せば残した出口が裸の空売りを建て、出口を外せば買い建てが開いたまま残る。
+    // DSR・最大 DD はその架空の経路を測ることになり、それでも Passed=true が出得た。
+    // ------------------------------------------------------------------------------------------------
+
+    private static BacktestContext FlatContext(DateOnly asOf) =>
+        new(asOf, [], new Dictionary<(string Symbol, Market Market), InventoryLot>(), 0m);
+
+    // 🔴 T-15-113 **否定形（最重要・監査のプローブの再現）**: 数量を持つ判断を外すと、残した判断の経路が
+    // 歪む。**判定を組まず、名前つきの理由で止める**（歪んだ経路の成績を合格根拠にしない）。
+    //
+    // 監査の実測: 6/2 の Buy +10 を外し 6/3 の Sell −10 を残すと、再生はフラットから −10 を出した。
+    [Theory]
+    [InlineData(true)]   // 入口を外し出口を残す（裸の空売りが建つ）
+    [InlineData(false)]  // 入口を残し出口を外す（買い建てが開いたまま残る）
+    public void 数量を持つ判断を外すと残した判断の経路が歪むので判定を組まない_failclosed(bool excludeEntry)
+    {
+        var entryDay = new DateOnly(2026, 6, 2);
+        var exitDay = new DateOnly(2026, 6, 3);
+        var thin = Thin(Stage0AsOfInputKind.NewsAndDisclosures);
+        var entry = Record(entryDay, "AAPL", 10, excludeEntry ? thin : null);
+        var exit = Record(exitDay, "AAPL", -10, excludeEntry ? null : thin);
+        var recordSet = SetOf(records: [entry, exit]);
+
+        if (excludeEntry)
+        {
+            // 前提（歪みの実在）: 再生は入口を外したまま、残した出口をフラットから −10 として出す。
+            new RecordedDecisionReplayStrategy(recordSet).DecideOrders(FlatContext(exitDay))
+                .Should().ContainSingle().Which.SignedQuantity.Should().Be(-10);
+        }
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(recordSet));
+
+        preparation.IsReady.Should().BeFalse();
+        preparation.BlockingChecks.Should().Equal(Stage0GateCheck.ExcludedDecisionAltersReplayPath);
+        preparation.GateContext.Should().BeNull();
+        preparation.BaselineRun.Should().BeNull();
+
+        var decision = Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks);
+        decision.Gate.Passed.Should().BeFalse();
+        decision.Gate.FormatFailedChecks()
+            .Should().Contain(nameof(Stage0GateCheck.ExcludedDecisionAltersReplayPath));
+    }
+
+    // 🔴 T-15-114 **陰性対照**: 外したのが見送り（数量 0）だけなら経路は変わらない。遮断せず判定器へ到達し、
+    // 見送りの除外は件数に載る（決定3「見送りも除外として数える」は維持される）。
+    // **再生の注文列は、見送りの記録を最初から持たない記録集合と一致する**（経路が変わらないことの直接の確認）。
+    [Theory]
+    [InlineData(Stage0AsOfInputKind.NewsAndDisclosures)]
+    [InlineData(Stage0AsOfInputKind.DailyPolicy)]
+    [InlineData(Stage0AsOfInputKind.FxRateToBase)]
+    public void 外したのが見送りだけなら経路は変わらず判定器へ到達する(Stage0AsOfInputKind kind)
+    {
+        var kept = Daily(3);
+        var excludedHold = Record(From.AddDays(4), "AAPL", 0, Thin(kind));
+        var withHold = SetOf(records: [.. kept, excludedHold]);
+        var withoutHold = SetOf(records: kept);
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(withHold));
+
+        preparation.IsReady.Should().BeTrue();
+        preparation.BlockingChecks.Should().BeEmpty();
+        var counted = preparation.GateContext!.Exclusions.Should()
+            .BeOfType<Stage0ExclusionSummary.Counted>().Subject;
+        counted.Excluded.Should().Be(1);
+        counted.Evaluated.Should().Be(3);
+        counted.Kinds.Should().Equal(kind);
+
+        var replayed = new RecordedDecisionReplayStrategy(withHold);
+        var reference = new RecordedDecisionReplayStrategy(withoutHold);
+        for (var day = From; day <= To; day = day.AddDays(1))
+        {
+            replayed.DecideOrders(FlatContext(day))
+                .Should().Equal(reference.DecideOrders(FlatContext(day)));
+        }
     }
 }
