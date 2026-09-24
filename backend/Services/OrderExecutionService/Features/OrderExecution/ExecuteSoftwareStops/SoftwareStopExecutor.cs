@@ -128,7 +128,9 @@ public sealed class SoftwareStopExecutor(
             if (candidate.CreatedAt > triggered.DetectedAt)
                 continue;
 
-            // 行自身の損切りラインで判定する（台帳の損切りラインは銘柄単位で最新エントリーの値に丸められる。IADR-0344 決定4）。
+            // 行自身の損切りラインで判定する（IADR-0344 決定4）。台帳の損切りラインは銘柄単位に 1 本で、保有中のエントリーの
+            // うち最も保護的な値である（#936, IADR-0393）。到達はそのラインで出るので、同じ銘柄の他の行（ラインが低い）は
+            // ここで外す——外さないと、まだ自分のラインに達していない建玉を売る。
             if (!Reached(candidate, triggered.Price))
                 continue;
 

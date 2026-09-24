@@ -20,6 +20,9 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // **この決済で実際に送った株数はどちらでもない**（両建てでは 3 つ目の数になる）。通知を読む人が
 // 「送ったのか・何株送ったのか」を取り違えないよう、**送った株数を結果に添えてログへ出す**
 // （イベントの形は変えない＝監査台帳・通知の受け口は不変）。見送りなら 0 である。
+// 🔴 FR-05, FR-10, #876, IADR-0398: 3 つ目の形として「**見送り済みの承認の再配送を抑止した**」（ForgoneReplaySuppressed）を持つ。
+// このときは Executed も Forgone も null であり、**何も発行しない**（発注していない・見送りの理由を記録していない）。
+// 「発注した」「見送った」「見送り済みなので何もしなかった」を取り違えない（Executed の有無だけで分岐しない）。
 public sealed record OrderDispatchResult(
     OrderExecuted? Executed,
     OrderDispatchForgone? Forgone,
@@ -29,7 +32,8 @@ public sealed record OrderDispatchResult(
     AlternativeProtectiveStopAttempted? StopAttempted = null,
     PositionReconciliationDrift? Drift = null,
     int DriftDispatchedQuantity = 0,
-    SoftwareStopArmed? SoftwareStopArmed = null)
+    SoftwareStopArmed? SoftwareStopArmed = null,
+    bool ForgoneReplaySuppressed = false)
 {
     public static OrderDispatchResult FromExecuted(
         OrderExecuted executed,
@@ -47,4 +51,8 @@ public sealed record OrderDispatchResult(
     public static OrderDispatchResult FromForgone(
         OrderDispatchForgone forgone, PositionReconciliationDrift? drift = null) =>
         new(null, forgone, null, null, null, null, drift);
+
+    // 🔴 #876, IADR-0398: 見送り済みの DecisionId の再配送。発注も見送りの再発行もしない（発行するものが 1 つも無い）。
+    public static OrderDispatchResult FromForgoneReplaySuppressed() =>
+        new(null, null, null, null, ForgoneReplaySuppressed: true);
 }

@@ -193,9 +193,10 @@ public class OrderExecutionServiceIndeterminateDispatchTests
     }
 
     // 🔴 T-10-408（是正で**変えてはいけない**側）: 接続確立の失敗（**確実に未発注**）は従来どおり
-    // 見送りで正常終了し、予約を解放する。不明との扱いの違いがこの 1 対である。
+    // 見送りで正常終了する。不明との扱いの違いがこの 1 対である。
+    // 🔴 #876, IADR-0398: 予約は**解放（削除）せず見送りの終端（Forgone）へ移す**（旧: 解放する）。
     [Fact]
-    public async Task 確実に未発注の接続失敗は従来どおり見送りで予約を解放する()
+    public async Task 確実に未発注の接続失敗は従来どおり見送りで予約を見送りの終端へ移す()
     {
         var store = new InMemoryExecutedOrderStore();
         var reservations = new InMemoryOrderReservationStore();
@@ -206,7 +207,10 @@ public class OrderExecutionServiceIndeterminateDispatchTests
 
         result.Forgone.Should().NotBeNull();
         result.Forgone!.Reason.Should().Be(OrderDispatchForgoneReason.BrokerUnavailable);
-        reservations.Find(approved.DecisionId).Should().BeNull("確実に未発注のため解放してよい");
+        var reservation = reservations.Find(approved.DecisionId)!;
+        reservation.State.Should().Be(
+            OrderDispatchState.Forgone, "#876: 削除すると同じ承認の再配送が予約を取り直して発注できる");
+        reservation.BrokerOrderId.Should().BeNull("注文 ID を捏造しない");
     }
 
     // ---- 🔴 T-10-408: 実アダプタを通した結線（#848 で実際に壊れていた経路そのもの） ----

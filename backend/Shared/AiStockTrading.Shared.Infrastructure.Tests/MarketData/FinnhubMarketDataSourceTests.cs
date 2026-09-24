@@ -123,6 +123,26 @@ public class FinnhubMarketDataSourceTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    // 🔴 T-10-838, FR-03, FR-10, #957, IADR-0399 決定3: 銘柄が無い照会は出さずに取得不可（null）を返し、例外を投げない。
+    // FinnhubQuoteClient は銘柄 null で Uri.EscapeDataString が ArgumentNullException を投げ、それは本クラスの catch の対象外だった
+    // （市場監視の巡回全体が落ち、全建玉の損切り検知が止まった。PR #959 監査の実測）。空・空白も照会しない（レート枠を消費しない）。
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task T_10_838_銘柄が無い照会は要求を出さずに取得不可とし例外を投げない(string? symbol)
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, OkBody);
+        var limiter = new CountingRateLimiter();
+        var source = Create(handler, limiter);
+
+        var quote = await source.GetLatestQuoteAsync(symbol!, Market.UnitedStates);
+
+        quote.Should().BeNull();
+        handler.Requests.Should().Be(0);
+        limiter.Waits.Should().Be(0, "レート枠を消費しない");
+    }
+
     private static FinnhubMarketDataSource Create(HttpMessageHandler handler, IRateLimiter? limiter = null) =>
         new(
             new FinnhubQuoteClient(

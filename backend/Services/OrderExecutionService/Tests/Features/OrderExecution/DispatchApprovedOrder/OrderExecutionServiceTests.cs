@@ -167,6 +167,13 @@ public class OrderExecutionServiceTests
 
         public bool Release(Guid decisionId) => _inner.Release(decisionId);
 
+        // #876, IADR-0398: 見送りの記録も委譲する（本テストの関心事ではない）。
+        public ForgoneRecordOutcome TryRecordForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
+            _inner.TryRecordForgone(decisionId, forgoneAt);
+
+        public ForgoneRecordOutcome MarkReservationForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
+            _inner.MarkReservationForgone(decisionId, forgoneAt);
+
         public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize) =>
             _inner.PurgeCompletedBefore(cutoff, batchSize);
     }

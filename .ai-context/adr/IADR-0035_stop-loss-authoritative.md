@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-03, FR-04, FR-10, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -63,3 +63,16 @@ plan_refs:
 - Supersedes: なし（IADR-0030 の 3% 近似はフォールバックとして残す）
 - Superseded by: なし
 - 関連: [IADR-0018](IADR-0018_portfolio-ledger-projection.md)（契約最小化を当該項目で見直し）、[IADR-0030](IADR-0030_position-store-sync-api.md)（近似→実値化）
+
+## ［2026-09-25 追記 / #936］射影の損切り価格は「最新エントリー」から「保有中のエントリーのうち最も保護的なライン」へ改めた
+
+[IADR-0393](IADR-0393_most-protective-stop-line-per-entry-lot.md) が本 IADR の**射影の規則だけ**を改めた（本文は残す）。
+`ProjectOpenPositions` は保有中の建玉をエントリーごとのロットとして持ち、**残っているロットのうち最も保護的なライン**
+（ロング: 最も高い／ショート: 最も低い）を返す。減少は古いロットから削る。
+
+- 🔴 上の「net 建玉の損切りは『最新エントリーの損切り』を採る」は、同じ銘柄に後から低いラインで建て増すと、先に建てた
+  エントリーのラインで市場監視が到達を出さない（稼働 PoC の AAPL 713 株 331.67／715 株 330.88。0.79 遅れた）。
+- 🔴 「両建て別ロット…では net 1 建玉に単一損切りとなる制約は残る」は、**単一のラインを返す制約**としては残るが、
+  そのラインは最も保護的なロットのものになり、S1 の行ごとの判定は発注執行が行う（IADR-0344 決定4）。
+- 本 IADR の他の決定（`OrderIntent` への搭載・台帳への永続化・欠損時の近似）は変えない。欠損したロットが他のロットと混じるときは、
+  そのロットを近似で見積もって候補に入れる（IADR-0393 決定2）。

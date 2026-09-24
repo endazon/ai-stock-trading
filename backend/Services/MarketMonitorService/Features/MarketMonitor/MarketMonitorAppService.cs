@@ -3,6 +3,8 @@ using MarketMonitorService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MarketMonitorService.Features.MarketMonitor;
 
@@ -15,6 +17,10 @@ namespace MarketMonitorService.Features.MarketMonitor;
 // 凍っていて新しい情報が無く、終値がラインを割った日は閉場中ずっと到達が成立し続ける。そこで出した成行は
 // 翌寄りまで約定しない（寄り値は終値と乖離し得る）。照会そのものが FR-01 の費用でもある。
 // 「到達だけ止めて評価は回す」形は採らない —— 費用が残り、得られる情報はゼロだからである。
+//
+// 🔴 FR-03, FR-10, #957, IADR-0399 決定3: **市況の照会は銘柄ごとに閉じる。** 1 銘柄の照会の例外（呼び出し側の停止要求以外の
+// 打ち切りを含む）はその銘柄の「価格が取れない」として扱い、次の銘柄へ進む。以前は例外が巡回全体を落とし、全建玉の
+// 損切り検知・変動検知・生存要約が止まっていた（実運用の市況源 Finnhub は銘柄 null で ArgumentNullException を投げる）。
 public sealed class MarketMonitorAppService(
     IMonitoredSymbolStore settingsStore,
     IPositionStore positionStore,
@@ -22,8 +28,11 @@ public sealed class MarketMonitorAppService(
     ICooldownStore cooldownStore,
     IMarketDataSource marketData,
     IMarketSchedule schedule,
-    IClock clock)
+    IClock clock,
+    ILogger<MarketMonitorAppService>? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger<MarketMonitorAppService>.Instance;
+
     public async Task<MonitorRoundResult> EvaluateRoundAsync(CancellationToken cancellationToken = default)
     {
         var settings = settingsStore.GetSettings();
@@ -45,18 +54,22 @@ public sealed class MarketMonitorAppService(
             {
                 closedMarketPositions.Add(new StopLossEvaluation(
                     position.Symbol, position.Market, position.Side, position.Quantity,
-                    position.StopLossPrice, null, now));
+                    position.StopLossPrice, null, now)
+                {
+                    StopLossApproximated = position.StopLossApproximated,
+                });
                 continue;
             }
 
-            var quote = await marketData
-                .GetLatestQuoteAsync(position.Symbol, position.Market, cancellationToken)
-                .ConfigureAwait(false);
+            var quote = await GetQuoteOrNullAsync(position.Symbol, position.Market, cancellationToken).ConfigureAwait(false);
 
             // FR-10, #902, IADR-0365 決定1: 評価の記録を残す（価格欠落も含む）。判定・発行は下の従来の経路のまま。
             evaluations.Add(new StopLossEvaluation(
                 position.Symbol, position.Market, position.Side, position.Quantity,
-                position.StopLossPrice, quote?.Price, now));
+                position.StopLossPrice, quote?.Price, now)
+            {
+                StopLossApproximated = position.StopLossApproximated,
+            });
 
             if (quote is null)
             {
@@ -79,9 +92,7 @@ public sealed class MarketMonitorAppService(
                 continue; // #909: 閉場中の変動判定は終値同士の比較にしかならない（照会もしない）
             }
 
-            var quote = await marketData
-                .GetLatestQuoteAsync(monitored.Symbol, monitored.Market, cancellationToken)
-                .ConfigureAwait(false);
+            var quote = await GetQuoteOrNullAsync(monitored.Symbol, monitored.Market, cancellationToken).ConfigureAwait(false);
             if (quote is null)
             {
                 continue;
@@ -115,6 +126,28 @@ public sealed class MarketMonitorAppService(
             StopLossEvaluations = evaluations,
             ClosedMarketPositions = closedMarketPositions,
         };
+    }
+
+    // #957, IADR-0399 決定3: 1 銘柄の照会の失敗をその銘柄に閉じる。呼び出し側の停止要求だけは伝える（監視の停止）。
+    // 打ち切り（HttpClient の上限など、呼び出し側のトークンではないもの）は「価格が取れない」側に倒す。
+    private async Task<Quote?> GetQuoteOrNullAsync(string symbol, Market market, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await marketData.GetLatestQuoteAsync(symbol, market, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "現在値の照会で例外（{Symbol}/{Market}）。この銘柄は価格が取れないものとして扱い、他の銘柄の評価を続けます。",
+                symbol, market);
+            return null;
+        }
     }
 
     private bool IsInCooldown(string symbol, Market market, DateTimeOffset now, TimeSpan cooldown)
