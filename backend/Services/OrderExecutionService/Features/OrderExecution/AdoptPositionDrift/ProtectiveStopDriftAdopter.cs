@@ -109,17 +109,23 @@ public sealed class ProtectiveStopDriftAdopter(
             if (row.IsSoftwareStop)
             {
                 // 帳簿だけの行（S1）: ブローカーに取り消す注文が無い。主張をその場で減らす（取り込みは確定である）。
-                ReduceBooks(row, take, adopted);
-                events.Add(Reduced(row, take));
-                reduced++;
+                // 🔴 #833 項目3, IADR-0396: 並行更新と衝突したら減らさない（下の ReduceBooks）。減らしていない主張を「減らした」と言わない。
+                if (ReduceBooks(row, take, adopted))
+                {
+                    events.Add(Reduced(row, take));
+                    reduced++;
+                }
             }
             else if (await TryCancelAsync(row, adopted, cancellationToken).ConfigureAwait(false) is { } cancelled)
             {
                 // 実注文を持つ行（S0）: **全部か 0 か**でしか減らない（割り当ての規則）。ブローカーの逆指値を取り消す。
-                ReduceBooks(row, take, adopted);
+                // 取消は起きた事実なので必ず残す。帳簿の減算は楽観並行で、衝突したら次の巡回（逆指値の失効検知）に委ねる。
                 events.Add(cancelled);
-                events.Add(Reduced(row, take));
-                reduced++;
+                if (ReduceBooks(row, take, adopted))
+                {
+                    events.Add(Reduced(row, take));
+                    reduced++;
+                }
             }
             else
             {
@@ -194,11 +200,17 @@ public sealed class ProtectiveStopDriftAdopter(
     // 主張（残保護数量）を減らし、0 になった行を終端化する。
     // 🔴 IADR-0370 決定6: 未確定の観測は捨てる——取り込みで確定した減少と**同じ外部要因**であり、
     // 残すと次の巡回が同じ減少をもう一度数えて削る。
-    private void ReduceBooks(ProtectiveStopOrder row, int take, PositionDriftAdopted adopted)
+    //
+    // 🔴 #833 項目3, IADR-0396: 群は建玉照会・逆指値の取消を await で跨いで持っていた写しである。**楽観並行で書く**
+    // ——その間に決済が確定して行が完了・試行番号が進んでいたら、古い写しで Active と古い試行番号を書き戻してしまい、
+    // 次の決済経路が同じ試行を「記録済み」と読んで帳簿を二度減らし ClosePlaced を二度出す。衝突したら**減らさない**
+    // （割り当ては最新の行で計算し直す必要があり、ここで当て直すと減らし過ぎ得る）。減らさない側は保護が残る側であり、
+    // 取り込みで消えた建玉は次の巡回の外部要因の観測（2 巡回で確定）が同じ規則で削る。
+    private bool ReduceBooks(ProtectiveStopOrder row, int take, PositionDriftAdopted adopted)
     {
         var now = clock.UtcNow;
         var remaining = Math.Max(0, row.ProtectedQuantity - take);
-        stops.Save(row with
+        if (!stops.TrySave(row with
         {
             RemainingProtected = remaining,
             State = remaining == 0 ? ProtectiveStopState.Completed : ProtectiveStopState.Active,
@@ -206,12 +218,21 @@ public sealed class ProtectiveStopDriftAdopter(
             ExternalReductionObservations = 0,
             ExternalReductionAbsences = 0,
             UpdatedAt = now,
-        });
+        }))
+        {
+            _logger.LogWarning(
+                "乖離の取り込みの追随で、保護記録が並行に更新されていたため主張を減らしませんでした（古い写しでは上書きしません）。"
+                + "次の巡回の観測が同じ規則で扱います: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}/{Market} 減少={Take}"
+                + " 取り込み={AdoptionId}",
+                row.EntryDecisionId, row.Symbol, row.Market, take, adopted.AdoptionId);
+            return false;
+        }
 
         _logger.LogWarning(
             "乖離の取り込みに追随して保護の主張を減らしました（決済は出していません）: EntryDecisionId={EntryDecisionId}"
             + " 銘柄={Symbol}/{Market} 減少={Take} 残り={Remaining} 取り込み={AdoptionId} 依頼者={Actor}",
             row.EntryDecisionId, row.Symbol, row.Market, take, remaining, adopted.AdoptionId, adopted.Actor);
+        return true;
     }
 
     // ブローカーの保護注文を取り消す。**取り消せたと確認できたときだけ** OrderCancelled を返す（IADR-0357）。

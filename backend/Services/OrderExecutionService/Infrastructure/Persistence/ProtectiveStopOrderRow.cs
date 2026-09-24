@@ -77,4 +77,9 @@ public sealed class ProtectiveStopOrderRow
     public DateTimeOffset? NextCloseAttemptAt { get; set; }
 
     public DateTimeOffset? LastTriggerSeenAt { get; set; }
+
+    // 🔴 FR-10, #833 項目3, IADR-0396: 楽観並行の版番号（アプリ側で加算・EF の並行トークン）。
+    // 更新は「WHERE Version = 読んだ時点の版」で行われ、0 行なら並行更新と衝突した（古い写しでは上書きしない）。
+    // 既存行は 0 で始まる。
+    public int Version { get; set; }
 }

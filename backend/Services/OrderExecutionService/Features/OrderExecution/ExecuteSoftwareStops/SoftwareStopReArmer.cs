@@ -80,10 +80,43 @@ public sealed class SoftwareStopReArmer(
         // 🔴 上限＝エントリーの約定数量（＝この行が守り得る最大の株数）。記録が無ければ行の承認数量。
         // 同じレグを二度観測しても行の主張がエントリーの建玉を超えない（IADR-0389 決定5）。
         var entry = store.FindByDecisionId(stop.EntryDecisionId);
-        var current = stop.RemainingProtected ?? 0;
-        var cap = Math.Max(entry?.FilledQuantity ?? stop.Quantity, current);
-        var restored = Math.Min(current + unfilled, cap);
-        if (restored <= 0)
+        var now = clock.UtcNow;
+
+        // 🔴 #833 項目2, IADR-0344 追記(14): **1 株も約定しなかった**再武装は「続けて売れなかった」1 回として数え、
+        // 行ごとの待ち時間を置く（受理 → 即失効のループが次の巡回ごとに成行を撃ち続けない。IADR-0389 §結果の残余）。
+        // 1 株でも約定していれば前進であり、数えを 0 へ戻す（残りはすぐ撃ってよい）。
+        var progressed = filledQuantity > 0;
+
+        // 🔴 #833 項目3, IADR-0396: 戻す量は**保存先の最新の行**から計算して楽観並行で書く（衝突したら読み直して当て直す）。
+        // 候補の走査で得た写しから書き戻すと、その後に並行に進んだ状態（別の試行の確定・観測・到達の記録）を巻き戻す。
+        // ここで書けないまま諦めると、記録は既に終端化されているので**この再武装は二度と起きない**——だから当て直す。
+        var restored = 0;
+        var failures = 0;
+        DateTimeOffset? nextAttemptAt = null;
+        var reArmed = stops.Update(stop.EntryDecisionId, fresh =>
+        {
+            var remaining = fresh.RemainingProtected ?? 0;
+            var cap = Math.Max(entry?.FilledQuantity ?? fresh.Quantity, remaining);
+            restored = Math.Min(remaining + unfilled, cap);
+            if (restored <= 0)
+                return null;
+
+            failures = progressed ? 0 : fresh.CloseFailures + 1;
+            nextAttemptAt = progressed ? null : now + SoftwareStopExecutor.CloseBackoff(failures);
+            return fresh with
+            {
+                RemainingProtected = restored,
+                State = ProtectiveStopState.Active,
+                // 到達の記録（TriggeredAt / TriggeredPrice）は消さない——一度到達したら価格が戻っても決済する
+                // （IADR-0344 決定4）。待ち時間の後、ガードの巡回が新しい試行 ID で撃ち直す。
+                // 据え置きの通知済みフラグは落とす（再武装した後も決済できなければ、改めて鳴らすべきである）。
+                StalledNotifiedAt = null,
+                CloseFailures = failures,
+                NextCloseAttemptAt = nextAttemptAt,
+                UpdatedAt = now,
+            };
+        });
+        if (reArmed is null)
         {
             // エントリーが 1 株も約定していない（＝守る建玉が無い）。完了のままが正しい。
             _logger.LogWarning(
@@ -92,27 +125,6 @@ public sealed class SoftwareStopReArmer(
                 stop.EntryDecisionId, close.DecisionId);
             return null;
         }
-
-        var now = clock.UtcNow;
-
-        // 🔴 #833 項目2, IADR-0344 追記(14): **1 株も約定しなかった**再武装は「続けて売れなかった」1 回として数え、
-        // 行ごとの待ち時間を置く（受理 → 即失効のループが次の巡回ごとに成行を撃ち続けない。IADR-0389 §結果の残余）。
-        // 1 株でも約定していれば前進であり、数えを 0 へ戻す（残りはすぐ撃ってよい）。
-        var progressed = filledQuantity > 0;
-        var failures = progressed ? 0 : stop.CloseFailures + 1;
-        var nextAttemptAt = progressed ? (DateTimeOffset?)null : now + SoftwareStopExecutor.CloseBackoff(failures);
-        stops.Save(stop with
-        {
-            RemainingProtected = restored,
-            State = ProtectiveStopState.Active,
-            // 到達の記録（TriggeredAt / TriggeredPrice）は消さない——一度到達したら価格が戻っても決済する
-            // （IADR-0344 決定4）。待ち時間の後、ガードの巡回が新しい試行 ID で撃ち直す。
-            // 据え置きの通知済みフラグは落とす（再武装した後も決済できなければ、改めて鳴らすべきである）。
-            StalledNotifiedAt = null,
-            CloseFailures = failures,
-            NextCloseAttemptAt = nextAttemptAt,
-            UpdatedAt = now,
-        });
 
         _logger.LogError(
             "🔴 ソフトウェア逆指値の成行決済が約定しないまま終了しました（状態 {Status}・発注 {Ordered} 株・約定 {Filled} 株）。"
@@ -124,7 +136,7 @@ public sealed class SoftwareStopReArmer(
 
         return new SoftwareStopExecuted(
             stop.EntryDecisionId, stop.Symbol, stop.Market, SoftwareStopOutcome.CloseUnfilled, unfilled,
-            stop.TriggerPrice, stop.TriggeredPrice ?? stop.TriggerPrice, stop.Attempt,
+            reArmed.TriggerPrice, reArmed.TriggeredPrice ?? reArmed.TriggerPrice, reArmed.Attempt,
             close.DecisionId, close.OrderId, CloseIntent: null, now);
     }
 
