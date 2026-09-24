@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-24
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0393]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_936_most-protective-stop-line]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #936]
 -->
 
 
@@ -1449,6 +1449,50 @@ T-10-648 / T-10-649 は緑のまま —— 中断を含まない安全側・境�
   T-10-730 を足す前は、この変異が全件緑のまま素通りした。
 - 決済レグの持ち主の特定を「一致した行」から「候補の先頭の行」へ緩める → **T-10-731（B が先頭でない並び）が赤**。
   「候補の末尾の行」へ緩めると他方の並びが赤になる（いずれも 725 件中 724 件合格）。T-10-731 を足す前は素通りした。
+
+## 市場監視が比べる損切りラインを保有中のエントリーのうち最も保護的な値にする（#936。後から低いラインで建て増しても先の記録の損切りを遅らせない）
+
+`PortfolioProjectionStopLossLotTests`・`OpenPositionsServiceTests`（`RiskManagementService.Tests`）・
+`SoftwareStopExecutorTests`（`OrderExecutionService.Tests`）。
+
+稼働環境の AAPL は S1 の記録が 713 株・ライン 331.67（先に建てた）と 715 株・ライン 330.88（後に建てた）で、
+市場監視は 1,428 株を**最新エントリーのライン 330.88** と比べていた。発注執行は記録自身のラインで判定するが、
+市場監視が 330.88 まで到達を出さないため、713 株の損切りが 0.79 ドル遅れていた。
+是正は取引台帳の射影だけで行う: 保有中の建玉をエントリーごとのロットとして持ち、**残っているロットのうち最も保護的な
+ライン**を返す。減少は古いロットから削る。市場監視・発注執行・契約の判定は変えていない。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-760** | 713 株・331.67 を先に、715 株・330.88 を後に約定（稼働環境の配置） | 射影する | 🔴 1,428 株・ライン **331.67**（最新エントリーの 330.88 ではない）。ラインの記録が無いロットは無い | 先の記録の損切りを遅らせない | 自動（単体・**最重要**） |
+| **T-10-761** | 同上 | 713 株の売りを約定させる | ライン **330.88**（古いロットから削る） | 売れた記録のラインで空振りの到達を出し続けない | 自動（単体） |
+| **T-10-762** | 715 株・330.88 を先に、713 株・331.67 を後に約定（逆の配置） | 713 株の売りを約定させる | ライン **331.67** のまま（台帳は古いロットを削る＝取り違えるが、倒れ方は保護的な側だけ） | 取り違えても遅らせる側へ倒れない | 自動（**境界**） |
+| **T-10-763** | 売り建て 2 本（340・338）／買い建てからの反転／全決済後の建て直し／売り建ての一部買戻し | 射影する | 売り建ては最も低いライン（338）。反転は反転後の約定のラインだけ。全決済で前のラインは消える。一部買戻しも古いロットから削る | 向きと在庫の区切りで取り違えない | 自動（単体） |
+| **T-10-764** | 発注執行の割り当て規則（記録自身のラインで判定・外部要因の減少は S1 → S0 の順に古い記録から）を写したモデル | 無作為な建て・価格の動き（S0 はブローカーが、S1 は台帳のラインで出た到達を受けて売る）・外部の減少を 400 試行 × 40 手 | 🔴 価格が動くたびに「**自分のラインに達しているのに残っている S1 の記録**」が 0 件。台帳のラインは残る S1 の記録のどのラインよりも低くない。掃きは空虚でない（価格の動き 4,000 回超・S1 の決済 500 回超） | どの記録の損切りも遅れない | 自動（**モデルとの掃き・最重要**） |
+| **T-10-765** | T-10-760 と同じ約定を台帳に置く | 公開する保有一覧を組む | 市場監視へ **331.67** を返す | 市場監視が比べる値そのものを固定する | 自動（単体） |
+| **T-10-766** | ラインの記録が無いロット（単価 1,000・10 株）と 950 のロット（単価 1,000・10 株）／前者を売った後／両方に記録がある（940・950） | 公開する保有一覧を組む | 🔴 記録の無いロットは近似（970）で見積もって候補に入れ **970**。そのロットが削られたら **950**。記録が揃っていれば近似は入らず **950** | 不明を無いと読まない・揃っていれば近似で上書きしない | 自動（**否定形**） |
+| **T-10-767** | 発注執行に稼働環境の 2 行（713 株・331.67／715 株・330.88）、建玉 1,428 株 | 331.40 の到達（ライン 331.67・数量 1,428）を届ける | 🔴 **713 株の行だけ**を決済（713 株・その行の決済 ID）。715 株の行は `Active`・到達の記録なし・試行 0 | 自分のラインに達していない建玉を売らない | 自動（**否定形・最重要**） |
+| **T-10-768** | 同上 | 331.40 → 330.50 → 330.00 の到達を順に届ける（1 本目の決済は受理・未約定で、建玉照会は 1,428 株のまま） | 決済は 713 株と 715 株の 2 本だけで合計 **1,428 株**。3 本目の到達は候補 0・何も出さない | 二重に売らない | 自動（**否定形**） |
+
+🔴 **本節が固定していない残余リスク**:
+- **取り違えた配置の空振りの到達**（T-10-762 の後、価格が 331.67 と 330.88 の間にある間）: 市場監視は毎巡回到達を出し、
+  発注執行は何も決済しない。**到達の通知は毎巡回出る。** 最新エントリーのラインを使っていた以前も、この配置は同じだった。
+- **約定の順と発注の順が入れ替わる配置**（同じ銘柄へ 2 本の新規建てが並行して出た場合）は T-10-764 のモデルに入っていない。
+  そこでは外部要因の減少の後に、発注執行に残る記録のラインを台帳が捨て得る（遅れ得るが、出口は塞がれない）。
+
+**変異注入の実測**（2026-09-25。変異を 1 つずつ入れ、`RiskManagementService.Tests` は `PortfolioProjection*` と `OpenPositionsServiceTests` の 51 件、
+`OrderExecutionService.Tests` は `SoftwareStopExecutorTests` の 33 件で実行した。変異は実行ごとに元へ戻した）
+
+| 変異 | 結果 | 赤になった新規テスト |
+| --- | --- | --- |
+| 射影のラインを「最新エントリー」へ戻す（従来の規則） | 51 件中 3 件赤 | T-10-760 / T-10-764 / T-10-765 |
+| 減少を新しいロットから削る（LIFO） | 5 件赤 | T-10-761 / T-10-762 / T-10-763 / T-10-764 / T-10-766 |
+| 減少を最も保護的なロットから削る | 4 件赤 | T-10-762 / T-10-763 / T-10-764 / T-10-766（**T-10-764 は外部要因の減少で行の損切りが遅れることを検出**） |
+| 減少でロットを削らない（全決済まで保持） | 3 件赤 | T-10-761 / T-10-763 / T-10-766 |
+| 反転でロットを捨てない | 2 件赤 | T-10-763（既存の反転テストも赤） |
+| 記録の無いロットを無視する（近似を入れない） | 1 件赤 | T-10-766 |
+| 常に近似を候補に入れる | 2 件赤 | T-10-766（既存「損切り価格があれば実値を用いる」も赤） |
+| 発注執行の `Reached` による行の選別を外す | 33 件中 3 件赤 | T-10-767 / T-10-768（既存「行自身の損切りラインに達していなければ決済しない」も赤） |
+| 決済を受理した行を完了させず残保護数量も減らさない | 9 件赤 | T-10-767 / T-10-768 ほか既存 7 件 |
 
 ## 未カバー・実施予定
 

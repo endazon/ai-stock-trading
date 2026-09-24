@@ -209,7 +209,18 @@ public static class PortfolioProjection
     private static decimal ImpliedRateToBase(decimal averageCost, decimal averageCostInBase) =>
         averageCost > 0m ? averageCostInBase / averageCost : 1m;
 
-    // IADR-0035: 損切り価格は最新の同方向エントリー（新規/建て増し/反転）を採る（一部決済では保持・全決済で消滅）。
+    // FR-10, FR-03, #936, IADR-0393（IADR-0035 の「最新の同方向エントリー」を改める）: 損切り価格は、保有中の建玉を
+    // **エントリーごとのロット**（数量・その約定の損切り価格）として持ち、**残っているロットのうち最も保護的なライン**
+    // （ロング: 最も高い／ショート: 最も低い）を採る。減少（一部決済・取り込み）は**古いロットから**削る（約定時刻の順）。
+    // 反転は反転後の残りを 1 ロットにし、全決済でロットを捨てる。
+    // 🔴 最新エントリーのラインを採ると、同じ銘柄に後から低いラインで建て増したとき、先に建てた記録のラインで
+    // 市場監視が到達を出さない（稼働 PoC の AAPL 713 株 331.67 と 715 株 330.88。損切りが 0.79 遅れた）。
+    // 市場監視はこのラインで到達を 1 件出し、発注執行は S1 の行ごとに自分のラインで判定する（IADR-0344 決定4）ので、
+    // ここが最も保護的なラインであれば、どの行も自分のラインより遅れて判定されない。
+    // 🔴 ロットの帰属は推定である（台帳はどの決済がどのエントリーを閉じたかを持たない）。古い順に削るのは、
+    // 発注執行が外部要因の減少を古い行から割り当てる規則と同じ向きにするためで、取り違えたときは
+    // 「ラインが実際より保護的」側（発注執行の行が 1 件も達していない到達が出る）へだけ倒れる。
+    // ラインを持たないロット（不明）の有無は StopLossUnknown で返す（OpenPositionsService が近似で見積もる）。
     // IADR-0107: 価格（平均取得単価・損切り価格）はローカル通貨のまま返す（損切り検知は現在値と同一通貨で比較する）。
     // 併せて建玉の加重平均約定時レート（FxRateToBase）を載せる。機械執行の決済（維持率割れの自動縮小等）が
     // 決済注文へ引き継ぎ、決済レグの台帳集計が基準通貨で揃うようにするため（Project と同じ二重畳み込み）。
@@ -219,7 +230,7 @@ public static class PortfolioProjection
 
         var positions = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
         var positionsInBase = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
-        var stops = new Dictionary<(string Symbol, Market Market), decimal?>();
+        var lots = new Dictionary<(string Symbol, Market Market), List<StopLossLot>>();
         foreach (var fill in fills.OrderBy(f => f.ExecutedAt))
         {
             var key = (fill.Symbol, fill.Market);
@@ -236,12 +247,9 @@ public static class PortfolioProjection
                 new InventoryLot(posInBase.Qty, posInBase.AvgCost), signedQ, fill.PriceInBase, fill.IsDriftAdoption);
             positionsInBase[key] = (appliedInBase.Lot.Quantity, appliedInBase.Lot.AverageCost);
 
-            // IADR-0035: 建玉が消滅したら損切りも消滅。約定が建玉と同方向（新規/建て増し/反転）なら最新エントリーの損切りに更新。
-            // 一部決済（反対方向で符号は不変）は既存の損切りを保持する。
-            if (applied.Lot.Quantity == 0)
-                stops.Remove(key);
-            else if (Math.Sign(applied.Lot.Quantity) == Math.Sign(signedQ))
-                stops[key] = fill.StopLossPrice;
+            // #936, IADR-0393: 建玉が消滅したらロットも消滅。新規・反転は残りを 1 ロットに、建て増しはロットを足し、
+            // 一部決済・取り込み（反対方向で符号は不変）は古いロットから削る。
+            ApplyToStopLossLots(lots, key, pos.Qty, applied.Lot.Quantity, fill.Quantity, fill.StopLossPrice);
         }
 
         var result = new List<OpenPosition>();
@@ -251,11 +259,83 @@ public static class PortfolioProjection
                 continue; // 全決済済みは保有なし
             var side = pos.Qty > 0 ? TradeSide.Buy : TradeSide.Sell;
             var impliedRate = ImpliedRateToBase(pos.AvgCost, positionsInBase[key].AvgCost);
+            var held = lots.GetValueOrDefault(key) ?? [];
             result.Add(new OpenPosition(
                 key.Symbol, key.Market, side, Math.Abs(pos.Qty), pos.AvgCost,
-                stops.GetValueOrDefault(key), impliedRate));
+                MostProtective(side, held.Select(l => l.StopLossPrice).OfType<decimal>()), impliedRate)
+            {
+                // 🔴 ロットが無い（≠ 0 の建玉に対して起こらないはずの状態）も「不明」に倒す。無いと読むと近似も入らない。
+                StopLossUnknown = held.Count == 0 || held.Any(l => l.StopLossPrice is null),
+            });
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// #936, IADR-0393: 損切りラインのうち最も保護的な値（ロング: 最も高い／ショート: 最も低い）。候補が無ければ null。
+    /// 市場監視は建玉 1 件をこの値と比べ（到達はロング: 現在値 ≦ ライン）、発注執行が行ごとに自分のラインで判定する。
+    /// </summary>
+    public static decimal? MostProtective(TradeSide side, IEnumerable<decimal> lines)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+
+        decimal? best = null;
+        foreach (var line in lines)
+        {
+            if (best is not { } current || (side == TradeSide.Buy ? line > current : line < current))
+                best = line;
+        }
+
+        return best;
+    }
+
+    // #936, IADR-0393: 保有中の建玉を構成するエントリー 1 件ぶん（数量・その約定の損切り価格。null＝記録なし）。
+    private sealed class StopLossLot(int quantity, decimal? stopLossPrice)
+    {
+        public int Quantity { get; set; } = quantity;
+
+        public decimal? StopLossPrice { get; } = stopLossPrice;
+    }
+
+    private static void ApplyToStopLossLots(
+        Dictionary<(string Symbol, Market Market), List<StopLossLot>> lots,
+        (string Symbol, Market Market) key,
+        int previousQuantity,
+        int newQuantity,
+        int fillQuantity,
+        decimal? fillStopLossPrice)
+    {
+        if (newQuantity == 0)
+        {
+            lots.Remove(key); // 全決済: 損切りも消滅
+            return;
+        }
+
+        if (previousQuantity == 0 || Math.Sign(previousQuantity) != Math.Sign(newQuantity))
+        {
+            // 新規・反転: 残りはこの約定だけのロットである（反転前の建玉のラインは引き継がない）。
+            lots[key] = [new StopLossLot(Math.Abs(newQuantity), fillStopLossPrice)];
+            return;
+        }
+
+        var held = lots.TryGetValue(key, out var existing) ? existing : lots[key] = [];
+        if (Math.Abs(newQuantity) > Math.Abs(previousQuantity))
+        {
+            held.Add(new StopLossLot(fillQuantity, fillStopLossPrice)); // 建て増し
+            return;
+        }
+
+        // 一部決済・取り込み: 古いロットから削る（発注執行が外部要因の減少を古い行から割り当てるのと同じ向き）。
+        var toRemove = Math.Abs(previousQuantity) - Math.Abs(newQuantity);
+        while (toRemove > 0 && held.Count > 0)
+        {
+            var oldest = held[0];
+            var taken = Math.Min(oldest.Quantity, toRemove);
+            oldest.Quantity -= taken;
+            toRemove -= taken;
+            if (oldest.Quantity == 0)
+                held.RemoveAt(0);
+        }
     }
 }
