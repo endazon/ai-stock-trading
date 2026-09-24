@@ -27,6 +27,13 @@ namespace OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 //   - 建玉照会の null（不明）・接続断・取消した未約定エントリーがまだ終端でない → 次回（ガードの巡回 or 次の到達）で再試行する。
 //   - 「不明」を「建玉なし」と取り違えて行を完了させない（IADR-0118 と同じ規律）。
 //   - **据え置きが続く行は猶予を過ぎたら Critical を 1 回出す**（無音の失敗を残さない。IADR-0344 追記(4) 決定9）。
+//
+// 🔴 #833 項目2, IADR-0344 追記(14): **決済が続けて売れない行には、行ごとの待ち時間を置く**（永続・ハンドラとガードの両方が守る）。
+//   - 待ち時間が止めるのは**新しい成行を送ること**だけである。記録済みの結果での確定・残保護数量 0 での完了・建玉照会・
+//     持ち分の確定は待ち時間中も行う。
+//   - **到達の記録は消さない**（打ち切りを撤去した）。拒否が何回続いても、待ち時間を置いて撃ち直しを**続ける**——
+//     価格が戻って到達が途絶えてもガードが撃つ（出口を塞がない。IADR-0344 決定4「一度到達したら価格が戻っても決済する」）。
+//   - Critical（CloseRejected）は連続失敗 3 回目で出し、以後 4 回ごと（抑止しない・毎回は鳴らさない）。
 public sealed class SoftwareStopExecutor(
     IBrokerAdapter broker,
     IBrokerPositionSource? positions,
@@ -38,8 +45,32 @@ public sealed class SoftwareStopExecutor(
     TimeSpan? orphanGrace = null,
     TimeSpan? settlementGrace = null)
 {
-    /// <summary>到達 1 回あたりの決済の試行上限（拒否が続いたら打ち切って Critical を出す。IADR-0344 決定5-6）。</summary>
+    /// <summary>
+    /// 決済が続けて売れなかった回数がこの値に達したら Critical（<see cref="SoftwareStopOutcome.CloseRejected"/>）を出す
+    /// （IADR-0344 決定5-6）。
+    /// <para>
+    /// 🔴 #833 項目2, IADR-0344 追記(14): <b>打ち切りではない。</b>かつてはこの回数で到達の記録を消して次の到達まで撃たなかったが、
+    /// それは価格が戻ったときに出口を塞ぐため撤去した。いまは<b>待ち時間（<see cref="CloseBackoff"/>）を置いて撃ち直しを続ける</b>。
+    /// 名前は他の記録（IADR-0369 など）が引いているため変えていない。
+    /// </para>
+    /// </summary>
     public const int MaxCloseAttemptsPerTrigger = 3;
+
+    /// <summary>#833 項目2, IADR-0344 追記(14): Critical を出した後、次に出すまでの連続失敗の回数（毎回は鳴らさない）。</summary>
+    public const int CloseRejectedRenotifyEvery = 4;
+
+    /// <summary>#833 項目2, IADR-0344 追記(14): 連続失敗 1 回目の後の待ち時間（以後倍々）。</summary>
+    public static readonly TimeSpan CloseBackoffBase = TimeSpan.FromSeconds(30);
+
+    /// <summary>#833 項目2, IADR-0344 追記(14): 待ち時間の上限。</summary>
+    public static readonly TimeSpan CloseBackoffMax = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// #833 項目2, IADR-0344 追記(14): 前回の到達からこれ以上空いた到達は<b>新しい窓</b>として扱い、数えと待ち時間を 0 へ戻す。
+    /// 市場監視は開場中・ラインを越えている間は 60 秒ごとに到達を出す（IADR-0380）ため、これより長い空白は
+    /// 閉場を挟んだか価格が一度戻ったことを意味する。60 秒間隔の到達で戻すと待ち時間が毎分消え、拒否連発が再発する。
+    /// </summary>
+    public static readonly TimeSpan TriggerEpisodeGap = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// #820 の監査, IADR-0344 決定5-7: エントリーの発注記録が見つからない行を「孤立」と断じるまでの猶予。
@@ -61,6 +92,21 @@ public sealed class SoftwareStopExecutor(
     private readonly TimeSpan _orphanGrace = orphanGrace ?? DefaultOrphanGrace;
 
     private readonly TimeSpan _settlementGrace = settlementGrace ?? DefaultSettlementGrace;
+
+    /// <summary>
+    /// #833 項目2, IADR-0344 追記(14): 連続失敗 <paramref name="failures"/> 回目の後の待ち時間
+    /// ＝ min(30 秒 × 2^(n−1), 15 分)。0 以下は待ち時間なし。
+    /// </summary>
+    public static TimeSpan CloseBackoff(int failures)
+    {
+        if (failures <= 0)
+            return TimeSpan.Zero;
+
+        // 2^(n−1) の桁あふれを避ける（上限へ達した後は同じ値）。
+        var doublings = Math.Min(failures - 1, 16);
+        var delay = TimeSpan.FromTicks(CloseBackoffBase.Ticks << doublings);
+        return delay < CloseBackoffMax ? delay : CloseBackoffMax;
+    }
 
     /// <summary>
     /// 損切りライン到達を受けて、該当するソフトウェア逆指値を決済する。発行すべきイベントを返す（発行は呼び出し側）。
@@ -89,15 +135,24 @@ public sealed class SoftwareStopExecutor(
             matched++;
 
             // 🔴 決済の前に到達を永続化する（据え置きになっても次の到達を待たずにガードが再試行する。再起動耐性）。
-            var armed = candidate.TriggeredAt is null
-                ? candidate with { TriggeredAt = triggered.DetectedAt, TriggeredPrice = triggered.Price, UpdatedAt = clock.UtcNow }
-                : candidate;
+            // 🔴 #833 項目2, IADR-0344 追記(14): 到達を受けた時刻も残し、**前回から間が空いた到達は新しい窓**として
+            // 数えと待ち時間を 0 へ戻す（閉場を挟んだ・価格が一度戻った後は、待ち時間の残りを持ち越さずすぐ撃つ）。
+            // 再配送・遅れて届いた古い到達（検知時刻が前回より前）は時刻を巻き戻さず、窓も開かない。
+            var armed = Arm(candidate, triggered);
+            if (!ReferenceEquals(armed, candidate))
+                stops.Save(armed);
             if (candidate.TriggeredAt is null)
             {
-                stops.Save(armed);
                 _logger.LogWarning(
                     "ソフトウェア逆指値が損切りライン到達: EntryDecisionId={EntryDecisionId} 銘柄={Symbol} ライン={StopLoss} 検知価格={Price}（成行で決済します）",
                     armed.EntryDecisionId, armed.Symbol, armed.TriggerPrice, triggered.Price);
+            }
+            else if (candidate.CloseFailures > 0 && armed.CloseFailures == 0)
+            {
+                _logger.LogInformation(
+                    "ソフトウェア逆指値: 前回の到達から {Gap} 以上空いた到達のため、決済の待ち時間をやり直します"
+                        + "（連続失敗 {Failures} 回 → 0）。EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                    TriggerEpisodeGap, candidate.CloseFailures, armed.EntryDecisionId, armed.Symbol);
             }
 
             var outcome = await TryCloseAsync(armed, snapshot: null, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -243,6 +298,18 @@ public sealed class SoftwareStopExecutor(
             PositionEffect.Close, StopLossPrice: null, current.FxRateToBase);
 
         var now = clock.UtcNow;
+
+        // 🔴 #833 項目2, IADR-0344 追記(14): 続けて売れていない行は、待ち時間が過ぎるまで**新しい成行を送らない**
+        // （ハンドラ・ガードのどちらから来ても同じ）。待ち時間は撃ち直しを遅らせるだけで、止めはしない。
+        if (current.NextCloseAttemptAt is { } nextAttemptAt && now < nextAttemptAt)
+        {
+            _logger.LogInformation(
+                "ソフトウェア逆指値の決済は待ち時間中です（連続失敗 {Failures} 回・次の試行は {NextAttemptAt} 以降）。"
+                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                current.CloseFailures, nextAttemptAt, current.EntryDecisionId, current.Symbol);
+            return SoftwareStopCloseOutcome.Deferred;
+        }
+
         if (!reservations.TryReserve(closeDecisionId, now))
         {
             // 予約済みで記録が無い＝並行処理が送信中か、送信の成否が不明。重ねて送らない（IADR-0057）。
@@ -331,17 +398,25 @@ public sealed class SoftwareStopExecutor(
                 : new SoftwareStopCloseOutcome(SoftwareStopCloseKind.PartiallyClosed, placed);
         }
 
-        var exhausted = attempt % MaxCloseAttemptsPerTrigger == 0;
-        stops.Save(exhausted
-            ? stop with { Attempt = attempt, TriggeredAt = null, TriggeredPrice = null, UpdatedAt = now }
-            : stop with { Attempt = attempt, UpdatedAt = now });
+        // 🔴 #833 項目2, IADR-0344 追記(14): **到達の記録は消さない**（撃ち直しを止めない）。続けて売れなかった回数を数え、
+        // 行ごとの待ち時間を置く。Critical は連続失敗 3 回目と、以後 4 回ごとに出す（抑止はしない・毎回は鳴らさない）。
+        var failures = stop.CloseFailures + 1;
+        var backoff = CloseBackoff(failures);
+        var notify = failures >= MaxCloseAttemptsPerTrigger
+            && (failures - MaxCloseAttemptsPerTrigger) % CloseRejectedRenotifyEvery == 0;
+        stops.Save(stop with
+        {
+            Attempt = attempt,
+            CloseFailures = failures,
+            NextCloseAttemptAt = now + backoff,
+            UpdatedAt = now,
+        });
         _logger.LogError(
-            "ソフトウェア逆指値の成行決済が受理されませんでした（試行 {Attempt}・状態 {Status}）。{Next} EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
-            attempt, status,
-            exhausted ? "到達 1 回あたりの上限に達したため、次の損切りライン到達まで再試行しません。" : "次回の巡回で再試行します。",
-            stop.EntryDecisionId, stop.Symbol);
+            "ソフトウェア逆指値の成行決済が受理されませんでした（試行 {Attempt}・状態 {Status}・連続失敗 {Failures} 回）。"
+                + "到達の記録は残し、待ち時間 {Backoff} の後（{NextAttemptAt} 以降）に撃ち直します。EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+            attempt, status, failures, backoff, now + backoff, stop.EntryDecisionId, stop.Symbol);
 
-        return exhausted
+        return notify
             ? new SoftwareStopCloseOutcome(SoftwareStopCloseKind.Rejected, new SoftwareStopExecuted(
                 stop.EntryDecisionId, stop.Symbol, stop.Market, SoftwareStopOutcome.CloseRejected, closeIntent.Quantity,
                 stop.TriggerPrice, triggeredPrice, attempt, closeDecisionId, closeOrderId, CloseIntent: null, now))
@@ -453,6 +528,31 @@ public sealed class SoftwareStopExecutor(
             CloseDecisionId: null, CloseOrderId: null, CloseIntent: null, now));
     }
 
+    // 到達を行へ記録する（変わらなければ同じインスタンスを返す）。
+    //   - TriggeredAt / TriggeredPrice は最初の到達だけを残す（IADR-0344 決定4。既に記録済みなら上書きしない）。
+    //   - 🔴 #833 項目2, IADR-0344 追記(14): LastTriggerSeenAt は前へしか進めない。前回から TriggerEpisodeGap 以上空いた到達
+    //     （初めての到達を含む）は新しい窓として CloseFailures / NextCloseAttemptAt を 0 / null へ戻す。
+    private ProtectiveStopOrder Arm(ProtectiveStopOrder candidate, StopLossTriggered triggered)
+    {
+        var lastSeen = candidate.LastTriggerSeenAt;
+        var advances = lastSeen is null || triggered.DetectedAt > lastSeen;
+        var newWindow = lastSeen is null || triggered.DetectedAt - lastSeen.Value >= TriggerEpisodeGap;
+        var resets = newWindow && (candidate.CloseFailures != 0 || candidate.NextCloseAttemptAt is not null);
+
+        if (candidate.TriggeredAt is not null && !advances && !resets)
+            return candidate;
+
+        return candidate with
+        {
+            TriggeredAt = candidate.TriggeredAt ?? triggered.DetectedAt,
+            TriggeredPrice = candidate.TriggeredAt is null ? triggered.Price : candidate.TriggeredPrice,
+            LastTriggerSeenAt = advances ? triggered.DetectedAt : lastSeen,
+            CloseFailures = resets ? 0 : candidate.CloseFailures,
+            NextCloseAttemptAt = resets ? null : candidate.NextCloseAttemptAt,
+            UpdatedAt = clock.UtcNow,
+        };
+    }
+
     private void Complete(ProtectiveStopOrder stop) =>
         stops.Save(stop with
         {
@@ -480,7 +580,10 @@ public enum SoftwareStopCloseKind
     /// <summary>行を完了した（残保護数量が 0 になった・建玉なし・未約定のエントリーを取消）。</summary>
     Completed,
 
-    /// <summary>今は決められない（接続断・建玉不明・取消待ち・送信中）。到達の記録を残して再試行する。</summary>
+    /// <summary>
+    /// 今は決められない（接続断・建玉不明・取消待ち・送信中・続けて売れていない行の待ち時間中〔#833 項目2〕）。
+    /// 到達の記録を残して再試行する。
+    /// </summary>
     Deferred,
 
     /// <summary>決済注文が受理されなかった。</summary>

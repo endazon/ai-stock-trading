@@ -433,10 +433,13 @@ public class SoftwareStopExecutorTests
         f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
     }
 
-    // ---- 受け入れ基準 9: 拒否の打ち切り ----
+    // ---- 受け入れ基準 9: 拒否が続く決済（#833 項目2, IADR-0344 追記(14) で改定）----
+    // かつては「到達 1 回あたり 3 試行で到達の記録を消して打ち切る」だった。価格が戻ると二度と撃たない（出口を塞ぐ）ため撤去し、
+    // 到達の記録を残したまま行ごとの待ち時間を置いて撃ち直しを続ける。待ち時間・Critical の間隔・窓のやり直しは
+    // SoftwareStopCloseBackoffTests（T-10-790..T-10-794）が固定する。
 
     [Fact]
-    public async Task 決済が拒否され続けたら到達1回あたり3試行で打ち切りCriticalを出す()
+    public async Task 決済が拒否されても到達の記録は消さず待ち時間のあいだは撃ち直さない()
     {
         var f = NewFixture();
         var stop = SoftwareStop();
@@ -445,26 +448,20 @@ public class SoftwareStopExecutorTests
         f.Broker.CloseStatus = OrderStatus.Rejected;
 
         var first = await f.Executor.OnTriggeredAsync(Trigger());
-        first.Events.Should().BeEmpty("1 回目の拒否ではまだ打ち切らない");
-        f.Stops.Find(stop.EntryDecisionId)!.TriggeredAt.Should().NotBeNull();
+        first.Events.Should().BeEmpty("1 回目の拒否ではまだ Critical を出さない");
 
-        await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
-        var third = await f.Executor.TryCloseAsync(f.Stops.Find(stop.EntryDecisionId)!, snapshot: null);
-
-        f.Broker.MarketCloses.Select(c => c.DecisionId).Should().OnlyHaveUniqueItems("試行ごとに別の DecisionId");
-        f.Broker.MarketCloses.Should().HaveCount(3);
-        third.Event!.Outcome.Should().Be(SoftwareStopOutcome.CloseRejected);
-        third.Event.Attempt.Should().Be(3);
         var saved = f.Stops.Find(stop.EntryDecisionId)!;
         saved.State.Should().Be(ProtectiveStopState.Active, "建玉は残っている");
-        saved.TriggeredAt.Should().BeNull("次の到達まで再試行しない");
+        saved.TriggeredAt.Should().Be(Now, "打ち切りで到達の記録を消さない");
+        saved.Attempt.Should().Be(1);
+        saved.CloseFailures.Should().Be(1);
+        saved.NextCloseAttemptAt.Should().Be(Now.AddSeconds(30));
 
-        // 次の到達で再開する（試行番号は続きから）。
-        f.Broker.CloseStatus = OrderStatus.Accepted;
-        await f.Executor.OnTriggeredAsync(Trigger(detectedAt: Now.AddMinutes(1)));
-        f.Broker.MarketCloses.Should().HaveCount(4);
-        f.Broker.MarketCloses[3].DecisionId.Should().Be(ProtectiveStopIds.SoftwareCloseDecisionId(stop.EntryDecisionId, 4));
-        f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        // 同じ時刻のガード巡回・続く到達は待ち時間中なので撃たない。
+        var retried = await f.Executor.TryCloseAsync(saved, snapshot: null);
+        await f.Executor.OnTriggeredAsync(Trigger(detectedAt: Now));
+        retried.Kind.Should().Be(SoftwareStopCloseKind.Deferred);
+        f.Broker.MarketCloses.Should().ContainSingle();
     }
 
     // ---- 受け入れ基準 8: 手法混在 ----

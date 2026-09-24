@@ -94,22 +94,32 @@ public sealed class SoftwareStopReArmer(
         }
 
         var now = clock.UtcNow;
+
+        // 🔴 #833 項目2, IADR-0344 追記(14): **1 株も約定しなかった**再武装は「続けて売れなかった」1 回として数え、
+        // 行ごとの待ち時間を置く（受理 → 即失効のループが次の巡回ごとに成行を撃ち続けない。IADR-0389 §結果の残余）。
+        // 1 株でも約定していれば前進であり、数えを 0 へ戻す（残りはすぐ撃ってよい）。
+        var progressed = filledQuantity > 0;
+        var failures = progressed ? 0 : stop.CloseFailures + 1;
+        var nextAttemptAt = progressed ? (DateTimeOffset?)null : now + SoftwareStopExecutor.CloseBackoff(failures);
         stops.Save(stop with
         {
             RemainingProtected = restored,
             State = ProtectiveStopState.Active,
             // 到達の記録（TriggeredAt / TriggeredPrice）は消さない——一度到達したら価格が戻っても決済する
-            // （IADR-0344 決定4）。次のガード巡回が新しい試行 ID で撃ち直す。
+            // （IADR-0344 決定4）。待ち時間の後、ガードの巡回が新しい試行 ID で撃ち直す。
             // 据え置きの通知済みフラグは落とす（再武装した後も決済できなければ、改めて鳴らすべきである）。
             StalledNotifiedAt = null,
+            CloseFailures = failures,
+            NextCloseAttemptAt = nextAttemptAt,
             UpdatedAt = now,
         });
 
         _logger.LogError(
             "🔴 ソフトウェア逆指値の成行決済が約定しないまま終了しました（状態 {Status}・発注 {Ordered} 株・約定 {Filled} 株）。"
-                + "未約定の {Unfilled} 株は建玉に残っています。保護記録を再武装しました（残保護数量 {Restored}・Active）。"
+                + "未約定の {Unfilled} 株は建玉に残っています。保護記録を再武装しました（残保護数量 {Restored}・Active・"
+                + "連続失敗 {Failures} 回・次の撃ち直しは {NextAttemptAt} 以降＝空なら次の巡回）。"
                 + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol} CloseDecisionId={CloseDecisionId} OrderId={OrderId}",
-            status, close.Quantity, filledQuantity, unfilled, restored,
+            status, close.Quantity, filledQuantity, unfilled, restored, failures, nextAttemptAt,
             stop.EntryDecisionId, stop.Symbol, close.DecisionId, close.OrderId);
 
         return new SoftwareStopExecuted(
