@@ -10,8 +10,8 @@ author: endazon (with Claude Code)
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
 iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_943_cross-service-read-contracts]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #943]
 -->
 
 
@@ -1505,6 +1505,46 @@ T-10-648 / T-10-649 は緑のまま —— 中断を含まない安全側・境�
 🔴 **本書が固定していない残余リスク**: 未約定を知ったうえで LLM が同じ銘柄を重ねて買うことは止めていない（#935）。
 承認直後の数秒は射影が未着で未約定として見えない。前取引日に承認され終端イベントが届かない注文は見えない（統制と同じ当日の規則）。
 「ブローカーが受理した」と「承認済みで結果待ち」は区別しない（同じ状態として扱い、「受理済み」とは書かない）。
+
+## リスク統制の読み取り口を他サービスが読む契約（#943。送り手の改名で「保有なし」「損切りなし」へ黙って倒れない）
+
+上の T-10-744 と同じ形の欠落が、約定済みの保有（`/risk-controls/open-positions`）とサイジング文脈（`/risk-controls/sizing-context`）に
+残っていた。送り手 `OpenPositionView.Symbol` を `Ticker` へ改名しても、取引判断 751 件・市場監視 157 件・報告書 1101 件のテストが
+**すべて緑**のままだった（実測）。実行時は各サービスが既定値で逆シリアル化し、取引判断は「保有: なし」、市場監視は損切り価格 0
+（ロングの損切りが発火しない）、日報は「建玉なし」を返す。
+
+写像の要点は 3 つある。**(1) 受け手の契約テストは送り手の本物の型を直列化する**（受け手自身の型や手書きの JSON では送り手の改名を
+検出できない）。**(2) 送り手が web 既定（camelCase・列挙は数値）のまま出していることを送り手の本物の Program.cs で固定する**
+（受け手のテストはその前提に立つ）。**(3) 取引判断の保有は、識別できない行を「一致しない」と読まず不明へ倒す**
+（保有あり／保有なし／不明の 3 状態。不明は新規建ての見送りへ流れる）。
+`RiskManagementReadContractTests` / `HttpHeldPositionProviderTests`（取引判断）、`HttpPositionStoreTests`（市場監視）、
+`HttpOpenPositionSourceTests`（報告書）、`ReadContractWireFormatTests`（リスク管理）。
+
+| ID | 前提 | 操作 | 期待 | 不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-800** | 送り手の本物の型 `OpenPositionView`（AAPL ロング 3,378 株・7203 ショート 100 株）を web 既定 JSON で直列化した応答 | **本番の配線**（`RiskManagement:BaseUrl` あり）で解決した取引判断のアダプタで読む | 🔴 AAPL は数量・平均取得単価・損切りラインがそのまま、7203 は −100、MSFT は「保有なし」。送り手の銘柄・損切りラインを改名すると赤 | 契約のずれを「保有なし」へ倒さない | 自動（**契約・最重要**） |
+| **T-10-801** | 銘柄が無い／null／空／別名（`ticker`）、市場が無い行、一致行で方向・数量の欠落、数量 0、無関係な行の銘柄の欠落、`[null]` | 同上（保有状況・符号付き数量） | 🔴 **不明**（null）。「一致しない＝保有なし」と読まない | 不明を無いと読まない | 自動（**否定形**） |
+| **T-10-802** | 送り手の本物の型 `SizingContextView`（連敗 3・DD 0.07・発注先 SIMULATE・上限・逆指値なし）を直列化した応答 | 本番の配線で解決したサイジング文脈のアダプタで読む | 🔴 全項目がそのまま読める。連敗数・DD 比率・発注先の改名でそれぞれ赤（改名すると 0 に化け、縮小係数が外れる／内蔵 paper を名乗る） | 上限の縮小を黙って外さない | 自動（**契約**） |
+| **T-10-803** | 送り手の本物の型 `OpenPositionView`（AAPL ロング・TSLA ショート）を直列化した応答 | 市場監視の建玉照会で読む | 🔴 建玉がそのまま読め、ロングは損切り価格以下・ショートは以上で発火する。送り手の銘柄・損切り価格を改名すると赤 | 損切り保護を黙って外さない | 自動（**契約・最重要**） |
+| **T-10-804** | 同上 | 報告書の建玉照会で読む | 🔴 建玉がそのまま読める。送り手の銘柄・損切り価格を改名すると赤（改名すると全行が落ちて「建玉なし」になる） | 保有を「無い」と書かない | 自動（**契約**） |
+| **T-10-805** | 台帳に約定済みの建玉 1 件と当日の未約定 1 件 | リスク管理の**本物の Program.cs** に `open-positions`・`sizing-context`・`working-entry-orders` を照会する | 🔴 本文が、同じ DI の応答型を web 既定で直列化したものと JSON の木として一致する（列挙は数値・camelCase） | 受け手の契約テストの前提を送り手側で固定する | 自動（結合） |
+| T-10-806 | — | 変異注入 | 下表 | 守りが実在する | 手動（実測） |
+
+**変異注入の実測（2026-09-25）**。各変異は戻したあとに作業ツリーの差分が消えることを確認した。
+
+| 変異 | 結果 |
+| --- | --- |
+| 🔴 **是正前**に送り手 `OpenPositionView` の `Symbol` を `Ticker` へ改名する | 取引判断 751/751・市場監視 157/157・報告書 1101/1101 が**緑**（fail-open の実測） |
+| 🔴 送り手 `OpenPositionView` の `Symbol` を `Ticker` へ改名する | 取引判断 **1 件が赤**（T-10-800。763 件中 762 件合格。アダプタは保有を「不明」で返す）・市場監視 **1 件**（T-10-803。158 件中 157 件）・報告書 **1 件**（T-10-804。1102 件中 1101 件） |
+| 🔴 送り手 `OpenPositionView` の `StopLossPrice` を `StopPrice` へ改名する | 取引判断・市場監視・報告書で**それぞれ 1 件が赤**（T-10-800 / T-10-803 / T-10-804） |
+| 🔴 アダプタの「銘柄・市場の無い行は不明」を外す | **6 件が赤**（T-10-801 の銘柄なし・null・空・別名・市場なし・無関係な行の銘柄なし）。`[null]` は例外経路で不明のまま |
+| 🔴 アダプタの「一致行の方向・数量の欠落／数量が正でないなら不明」を外す | **2 件が赤**（T-10-801 の方向なし・数量 0）。数量なしは値の取り出しの例外で不明のまま |
+| 🔴 送り手 `SizingContextView` の `ConsecutiveLosses` / `DrawdownRatio` / `Mode` をそれぞれ改名する | **それぞれ 1 件が赤**（T-10-802。763 件中 762 件合格）—— 既存の写像テストは受け手自身の型を直列化しており緑のまま |
+| 🔴 リスク管理の `open-positions` だけを文字列列挙で返す | **1 件が赤**（T-10-805。1914 件中 1913 件合格） |
+
+🔴 **本書が固定していない残余リスク**: 市場監視・報告書・サイジング文脈のアダプタは、改名された応答を実行時には従来どおり既定値で
+読む（契約テストが改名のマージを止めるが、送り手だけを先に配備すると窓が開く）。他のサービス間の読み取り（日報方針・費用統制・
+監視銘柄・報告書の各照会・通知の操作結果）には送り手の型による契約テストが無い。どちらも追随の対象である。
 
 ## 未カバー・実施予定
 
