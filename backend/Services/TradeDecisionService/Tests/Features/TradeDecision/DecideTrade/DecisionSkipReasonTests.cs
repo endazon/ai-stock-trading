@@ -59,7 +59,8 @@ public class DecisionSkipReasonTests
 
     // #292, IADR-0119 / #865, IADR-0358: 保有の供給。null は「不明」（照会不能）であり 0（保有なし）とは別物。
     // 既定は **実結線**（IsEnabled=true）——本物の HttpHeldPositionProvider と同じ側に寄せる。
-    private sealed class FakeHeld(int? signedQuantity) : IHeldPositionProvider
+    // #934, IADR-0390: workingUnknown=true は「未約定の新規建て注文の照会が不明（null）」を表す。
+    private sealed class FakeHeld(int? signedQuantity, bool workingUnknown = false) : IHeldPositionProvider
     {
         public bool IsEnabled => true;
 
@@ -73,6 +74,11 @@ public class DecisionSkipReasonTests
                 0 => HeldPosition.None,
                 { } q => new HeldPosition(q, 1_000m, q > 0 ? 970m : 1_030m),
             });
+
+        // #934, IADR-0390: 既定は未約定の新規建て注文が「無い」（照会は成功）。既存の見送り理由の表を変えないための既定。
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+            string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult(workingUnknown ? null : WorkingEntryOrders.None);
     }
 
     private sealed class FakeCurrentPrice(decimal? price) : ICurrentPriceProvider
@@ -162,6 +168,21 @@ public class DecisionSkipReasonTests
         reporter.Reports[0].Trigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
     }
 
+    // 🔴 T-10-743, FR-04, FR-10, #934, IADR-0390 決定5 / IADR-0374（PR #940 監査）:
+    // **実結線の照会で未約定の新規建て注文が不明なのに新規建て**——この見送りも唯一の出口 Skip を通り、
+    // 専用の理由で数えられる。素の `return null` に戻すと計上が 0 件になり、decision_skips にもアラートにも
+    // 出ない（#891 の症状の再来）。約定済みの保有は「無い」と判っている（0）ので HoldingsUnknownOpen とは別地点である。
+    [Fact]
+    public async Task 未約定の新規建て注文が不明な新規建ての見送りは専用の理由で数えられる()
+    {
+        var reporter = new RecordingSkipReporter();
+        var service = Create(reporter, BuyJson, held: new FakeHeld(0, workingUnknown: true));
+
+        (await SkipReasonOf(service, reporter, Trigger()))
+            .Should().Be(DecisionSkipReason.WorkingEntriesUnknownOpen);
+        reporter.Reports[0].Trigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
+    }
+
     // 🔴 T-10-667, #891 やること 1: **見送りの理由は一度に洗い出した語彙で区別される。**
     // 1 件だけ特別扱いすると読み方が割れるため、到達可能な見送り地点を 1 本の表で固定する。
     [Fact]
@@ -215,6 +236,11 @@ public class DecisionSkipReasonTests
             Create(r9, BuyJson, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(0)),
             r9, Trigger()));
 
+        // 10. 実結線の照会で未約定の新規建て注文が不明なのに新規建て（#934 / IADR-0390 決定5）
+        var r10 = new RecordingSkipReporter();
+        observed.Add(await SkipReasonOf(
+            Create(r10, BuyJson, held: new FakeHeld(0, workingUnknown: true)), r10, Trigger()));
+
         observed.Should().Equal(
             DecisionSkipReason.DailyPolicyUnconfirmed,
             DecisionSkipReason.CurrentPriceUnavailable,
@@ -224,18 +250,20 @@ public class DecisionSkipReasonTests
             DecisionSkipReason.HoldingsUnknownOpen,
             DecisionSkipReason.NakedShortOpen,
             DecisionSkipReason.FxRateStaleOpen,
-            DecisionSkipReason.SizingZeroQuantity);
+            DecisionSkipReason.SizingZeroQuantity,
+            DecisionSkipReason.WorkingEntriesUnknownOpen);
         observed.Should().OnlyHaveUniqueItems("理由が重なると内訳が読めなくなる");
     }
 
-    // 🔴 #891 やること 1（語彙の網羅）: **語彙は 12 値で、洗い出しの結果そのものである。**
+    // 🔴 #891 やること 1（語彙の網羅）: **語彙は 13 値で、洗い出しの結果そのものである**
+    // （#934 / IADR-0390 決定5 が末尾に WorkingEntriesUnknownOpen を足して 12 → 13）。
     // 値を足したのに報告点を足さない／報告点を消したのに値を残す、を気付けるようにする。
-    // 上のテストが 9 値を**振る舞いで**固定し、残る 3 値は到達に LLM 出力の不正（参照価格 0・損切り幅の異常）か
+    // 上のテストが 10 値を**振る舞いで**固定し、残る 3 値は到達に LLM 出力の不正（参照価格 0・損切り幅の異常）か
     // 採算ゲートの構成が要るため、ここでは語彙の側だけを固定する（IADR-0374 §結果 に明記）。
     [Fact]
-    public void 見送り理由の語彙は洗い出した12値である()
+    public void 見送り理由の語彙は洗い出した13値である()
     {
-        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(12);
+        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(13);
         Enum.GetValues<DecisionSkipReason>().Should().Contain(
         [
             DecisionSkipReason.ReferencePriceInvalid,

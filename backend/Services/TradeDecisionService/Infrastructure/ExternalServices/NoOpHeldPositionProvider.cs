@@ -20,4 +20,9 @@ public sealed class NoOpHeldPositionProvider : IHeldPositionProvider
     public Task<HeldPosition?> GetPositionAsync(
         string symbol, Market market, CancellationToken cancellationToken = default) =>
         Task.FromResult<HeldPosition?>(null);
+
+    // #934, IADR-0390 決定2: 未約定の新規建て注文も常に不明（「無い」とは返さない）。
+    public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+        string symbol, Market market, CancellationToken cancellationToken = default) =>
+        Task.FromResult<WorkingEntryOrders?>(null);
 }

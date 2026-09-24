@@ -375,6 +375,8 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().NotBeEmpty();
         llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.HeldNoneLine));
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.HeldUnknownLine));
+        // T-10-722, #934, IADR-0390 決定6: 未約定の新規建ても「無い」を明示する（不明＝保有不明へ倒さない）。
+        llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WorkingUnknownNoFillsLine));
     }
 
     // 🔴 **否定形**: 記録中でなければ計上は素通しである（本番の計上区分を変えない）。
