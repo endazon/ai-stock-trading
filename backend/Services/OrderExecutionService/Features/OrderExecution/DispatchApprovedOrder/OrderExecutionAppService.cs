@@ -578,9 +578,10 @@ public sealed class OrderExecutionAppService(
                         closeIntent, triggerPrice, intent.Price, stopDecisionId, cancellationToken)
                     .ConfigureAwait(false);
                 stopOrder = placement.Order;
+                // #842, IADR-0405: 載せるのはブローカーが採番した ID だけ（拒否で合成された ID は載せない）。
                 attempted = Attempted(
                     approved, stopDecisionId, placement.OrderType, placement.Order.Status,
-                    placement.Order.OrderId, placement.RejectReasonCode, placement.RejectReasonMessage);
+                    placement.BrokerOrderId, placement.RejectReasonCode, placement.RejectReasonMessage);
             }
             else
             {
