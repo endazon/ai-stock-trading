@@ -13,6 +13,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\ReportService.csproj" />
+    <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- ADR-0013, IADR-0129, #354, #335, #347: 本番と同じ Wolverine 配線でホストを起こし、発行アダプタ
          （PublishingLlmUsageReporter / PublishingLlmGovernanceReporter）が実際にイベントを publish することを
          検証するため、共通配線ヘルパと追跡ハーネスを参照する（旧 Infrastructure.Tests から引き継いだ）。 -->
