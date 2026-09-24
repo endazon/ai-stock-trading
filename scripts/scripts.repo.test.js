@@ -1671,6 +1671,183 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.deepStrictEqual(tst.checkTree(pathTst.resolve(__dirname, '..')), []);
   });
 
+  // --- check-wall-clock-timeout-tests.js: 壁時計どうしの競争で合否が決まる試験の遮断（NFR / #921 / IADR-0379 決定 4） ---
+  //
+  // #885 / #900 / #901 の 3 件は「50 ms の HttpClient.Timeout」対「2 秒のハンドラ遅延」のような
+  // **壁時計どうしの競争**で、塞がったスレッドプールが期限切れの 2 つのタイマーの順序を入れ替えて落ちた。
+  // 12 コピーを #907 / #920 で「応答しない上流」へ移したが、**次に書かれる試験は遅い上流を素直に書く**。
+  //
+  // **本検査も「効かない方向」に壊れると CI が緑のまま flake だけが戻る。** よって
+  //   (1) 打ち切り 4 入口・遅延 3 入口の組を実際に検出できること（赤）
+  //   (2) 是正後の形（無期限）・大小が逆・変数・散文・別名を誤検出しないこと（緑）
+  // の両方を置き、模擬ツリーで CLI の終了コードまで確かめる。
+  const fsWc = require('fs');
+  const osWc = require('os');
+  const pathWc = require('path');
+  const wc = require('./check-wall-clock-timeout-tests.js');
+
+  // #920 前の実形（HttpDailyPolicyProviderTests の抜粋）。
+  const WC_RED = [
+    'var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(2)))',
+    '{',
+    '    BaseAddress = new Uri("http://localhost"),',
+    '    Timeout = TimeSpan.FromMilliseconds(50),',
+    '};',
+    '',
+  ].join('\n');
+  // IADR-0379 決定 2 の是正後の形（HttpCostControlGateTests の抜粋）。
+  const WC_GREEN = [
+    'var http = new HttpClient(new NeverRespondingHandler(entered))',
+    '{',
+    '    Timeout = TimeSpan.FromMilliseconds(50),',
+    '};',
+    'await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);',
+    '',
+  ].join('\n');
+
+  ok('check-wall-clock-timeout-tests: #920 前の実形（Timeout 50 ms ＜ DelayingHandler 2 s）を検出する', () => {
+    const hits = wc.findViolations(WC_RED);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].shape, 'a');
+    assert.strictEqual(hits[0].cutoff.ms, 50);
+    assert.strictEqual(hits[0].cutoff.line, 4);
+    assert.strictEqual(hits[0].delay.ms, 2000);
+    assert.strictEqual(hits[0].delay.line, 1);
+  });
+
+  ok('check-wall-clock-timeout-tests: 是正後の形（応答しない上流＝無期限）は素通りする', () => {
+    assert.deepStrictEqual(wc.findViolations(WC_GREEN), []);
+    assert.deepStrictEqual(wc.findViolations('Thread.Sleep(Timeout.Infinite); cts.CancelAfter(50);\n'), []);
+    assert.deepStrictEqual(wc.findViolations('await Task.Delay(-1); cts.CancelAfter(50);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 打ち切りの 4 入口をそれぞれ検出する', () => {
+    const delay = 'await Task.Delay(TimeSpan.FromSeconds(1));\n';
+    for (const cut of [
+      'client.Timeout = TimeSpan.FromMilliseconds(100);\n',
+      'cts.CancelAfter(100);\n',
+      'cts.CancelAfter(TimeSpan.FromMilliseconds(100));\n',
+      'using var cts = new CancellationTokenSource(100);\n',
+      'using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));\n',
+      'var o = new CallOptions { Deadline = DateTime.UtcNow.AddMilliseconds(100) };\n',
+      'var o = new CallOptions { Deadline = DateTime.UtcNow.Add(TimeSpan.FromMilliseconds(100)) };\n',
+    ]) {
+      assert.strictEqual(wc.findViolations(cut + delay).length, 1, cut);
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: 遅延の 3 入口をそれぞれ検出する（裸の数値はミリ秒）', () => {
+    const cut = 'cts.CancelAfter(TimeSpan.FromMilliseconds(100));\n';
+    for (const delay of [
+      'await Task.Delay(600);\n',
+      'await Task.Delay(TimeSpan.FromSeconds(1), ct);\n',
+      'Thread.Sleep(1_000);\n',
+      'Thread.Sleep(TimeSpan.FromSeconds(0.5));\n',
+      'var h = new DelayingHandler(TimeSpan.FromSeconds(2));\n',
+    ]) {
+      assert.strictEqual(wc.findViolations(cut + delay).length, 1, delay);
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: 打ち切りが遅延以上なら検出しない（どちらが先でも同じ判定になる）', () => {
+    assert.deepStrictEqual(
+      wc.findViolations('http.Timeout = TimeSpan.FromSeconds(60);\nvar h = new DelayingHandler(TimeSpan.FromSeconds(30));\n'), []);
+    assert.deepStrictEqual(wc.findViolations('cts.CancelAfter(500);\nawait Task.Delay(500);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 変数・式の期間は読まない（再現率より的中率）', () => {
+    assert.deepStrictEqual(wc.findViolations('cts.CancelAfter(50);\nawait Task.Delay(delay, ct);\n'), []);
+    assert.deepStrictEqual(wc.findViolations('connect.CancelAfter(ConnectTimeout);\nawait Task.Delay(600);\n'), []);
+    assert.deepStrictEqual(
+      wc.findViolations('http.Timeout = TimeSpan.FromMilliseconds(50) * 100;\nawait Task.Delay(600);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 打ち切りだけ・遅延だけのファイルは検出しない', () => {
+    assert.deepStrictEqual(wc.findViolations('http.Timeout = TimeSpan.FromMilliseconds(50);\n'), []);
+    assert.deepStrictEqual(wc.findViolations('await Task.Delay(300);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 別名のプロパティ（ReplyTimeout / readyDeadline）には当たらない', () => {
+    assert.deepStrictEqual(
+      wc.findViolations('o.ReplyTimeout = TimeSpan.FromMilliseconds(200);\nawait Task.Delay(500);\n'), []);
+    assert.deepStrictEqual(
+      wc.findViolations('var readyDeadline = DateTime.UtcNow.AddMilliseconds(10);\nawait Task.Delay(500);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: コメント・文字列中の言及は誤検出しない（禁止の理由を書けること）', () => {
+    assert.deepStrictEqual(wc.findViolations(
+      '// 従来は Timeout = TimeSpan.FromMilliseconds(50) 対 DelayingHandler(TimeSpan.FromSeconds(2)) だった\n'), []);
+    assert.deepStrictEqual(wc.findViolations(
+      '/* cts.CancelAfter(50); */ var s = "await Task.Delay(600);";\n'), []);
+    // 片方だけがコードでも検出しない（両方がコードのときだけ組になる）。
+    assert.deepStrictEqual(wc.findViolations(
+      'http.Timeout = TimeSpan.FromMilliseconds(50);\n// await Task.Delay(600);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 母集合は「ディレクトリ名が Tests で終わる」配下（TestSupport/*.Tests も拾う）', () => {
+    assert.strictEqual(wc.isUnderTestsDir('backend/Services/X/Tests/A/FooTests.cs'), true);
+    assert.strictEqual(
+      wc.isUnderTestsDir('backend/TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/FooTests.cs'), true);
+    assert.strictEqual(wc.isUnderTestsDir('backend/Tests/AiStockTrading.IntegrationTests/E2ETests.cs'), true);
+    assert.strictEqual(wc.isUnderTestsDir('backend/Services/X/Infrastructure/FooTests.cs'), false);
+    assert.strictEqual(wc.isUnderTestsDir('backend/TestSupport/AiStockTrading.TestSupport.Messaging/Foo.cs'), false);
+  });
+
+  ok('check-wall-clock-timeout-tests: 模擬ツリーで赤は exit 1・是正後は exit 0（CLI の終了コード）', () => {
+    const { spawnSync } = require('child_process');
+    const run = (files) => {
+      const root = fsWc.mkdtempSync(pathWc.join(osWc.tmpdir(), 'wc-race-'));
+      try {
+        for (const [rel, text] of Object.entries(files)) {
+          fsWc.mkdirSync(pathWc.dirname(pathWc.join(root, rel)), { recursive: true });
+          fsWc.writeFileSync(pathWc.join(root, rel), text);
+        }
+        return spawnSync(process.execPath, [pathWc.join(__dirname, 'check-wall-clock-timeout-tests.js')], {
+          env: { ...process.env, WALL_CLOCK_RACE_CHECK_ROOT: root },
+          encoding: 'utf8',
+        });
+      } finally {
+        fsWc.rmSync(root, { recursive: true, force: true });
+      }
+    };
+    const red = run({
+      'backend/TestSupport/X.Tests/ATests.cs': WC_RED,
+      'backend/Services/Y/Tests/BTests.cs': WC_GREEN,
+    });
+    assert.strictEqual(red.status, 1, red.stdout + red.stderr);
+    assert.match(red.stderr, /backend\/TestSupport\/X\.Tests\/ATests\.cs:4: \[形 \(a\)\]/);
+    assert.doesNotMatch(red.stderr, /BTests\.cs/);
+    // `Tests` で終わらないディレクトリの同じ形は母集合の外。
+    const outside = run({ 'backend/Services/Y/Infrastructure/CTests.cs': WC_RED });
+    assert.strictEqual(outside.status, 0, outside.stdout + outside.stderr);
+    const green = run({ 'backend/Services/Y/Tests/BTests.cs': WC_GREEN });
+    assert.strictEqual(green.status, 0, green.stdout + green.stderr);
+  });
+
+  ok('check-wall-clock-timeout-tests: allowlist に載せたファイルは検出しない（登録の形の確認）', () => {
+    const root = fsWc.mkdtempSync(pathWc.join(osWc.tmpdir(), 'wc-race-allow-'));
+    try {
+      const rel = 'backend/Services/Y/Tests/ATests.cs';
+      fsWc.mkdirSync(pathWc.dirname(pathWc.join(root, rel)), { recursive: true });
+      fsWc.writeFileSync(pathWc.join(root, rel), WC_RED);
+      assert.strictEqual(wc.checkTree(root, new Map()).length, 1);
+      assert.deepStrictEqual(wc.checkTree(root, new Map([[rel, '模擬（#921）。']])), []);
+    } finally {
+      fsWc.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: allowlist は空である（#921。移行前の先回り登録で検査を無効化しない）', () => {
+    assert.strictEqual(wc.ALLOWED.size, 0);
+  });
+
+  ok('実ツリー: 壁時計どうしの競争で合否が決まる試験が無い（#885 / #900 / #901 の回帰）', () => {
+    const stats = {};
+    const hits = wc.checkTree(pathWc.resolve(__dirname, '..'), wc.ALLOWED, wc.SHAPES, stats);
+    assert.deepStrictEqual(hits.map((h) => `${h.file}:${h.line}`), []);
+    assert.ok(stats.scanned > 0, '母集合が 0 件なら、検査は何も見ていない');
+  });
+
 
   const pathFb = require('path');
 

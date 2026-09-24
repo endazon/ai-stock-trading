@@ -195,6 +195,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有）。**検査 4（T2）でテスト ID（`T-<機能要求番号>-<連番>`）の一意性も見る**（#887 / IADR-0376。既知の重複は `scripts/test-id-duplicate-baseline.json` のラチェットで固定し、**新規の衝突だけを落とす**。採番の最大値を毎回出力し、これが次の採番者の単一情報源になる。規約は `docs/tests/README.md`） |
 | `banned-libraries` | `check-banned-libraries.js`（不採用ライブラリの再混入。本リポ固有） |
 | `tracked-session-timeout` | `check-tracked-session-timeout.js`（本リポ固有） |
+| `wall-clock-timeout-tests` | `check-wall-clock-timeout-tests.js`（壁時計どうしの競争で合否が決まる試験。同一テストファイル内で有限の実時間の打ち切りが実時間の遅延より小さいと落とす。allowlist は `ALLOWED`・空で開始。模擬ツリーは `WALL_CLOCK_RACE_CHECK_ROOT`。本リポ固有） |
 | `trace-blocks` | `check-trace-blocks.js --self-test` と本検査（docs/ の trace ブロック規約。ADR-0029 決定4・本リポ固有） |
 | `knowledge-graph` | `gen-knowledge-graph.js --self-test` と `gen-knowledge-graph.js --check`（in-repo 実在検査。本リポ固有） |
 | `ai-workflow-config` | `check-ai-workflow-config.js --self-test` と本検査、および `check-action-versions.js`（Actions のバージョン退行。`fetch-depth: 0` が必要。**置換点**: `--compare-with-ref` は本リポの統合ブランチ `origin/develop`） |
