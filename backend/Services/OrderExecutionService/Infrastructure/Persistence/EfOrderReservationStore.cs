@@ -110,6 +110,74 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
         }
     }
 
+    // 🔴 FR-05, FR-10, #876, IADR-0398: 予約を取る前の見送りを Forgone で記録する。**既に在る行は変えない**。
+    // 競合の判定は TryReserve と同じく「行が実在するか」で行う（#714, IADR-0317 / IADR-0319）。
+    public ForgoneRecordOutcome TryRecordForgone(Guid decisionId, DateTimeOffset forgoneAt)
+    {
+        if (ExistingOutcome(decisionId) is { } existing)
+            return existing;
+
+        db.DispatchReservations.Add(new OrderDispatchReservationRow
+        {
+            DecisionId = decisionId,
+            State = OrderDispatchState.Forgone,
+            // 予約は取っていないが、列は非 null のため行を作った時刻を入れる（CompletedAt と同じ値）。
+            ReservedAt = forgoneAt,
+            CompletedAt = forgoneAt,
+        });
+
+        try
+        {
+            db.SaveChanges();
+            return ForgoneRecordOutcome.Recorded;
+        }
+        catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
+        {
+            db.ChangeTracker.Clear();
+
+            // 一意制約違反＝並行した配送が先に行を作った。**その行の状態で答える**（Reserved なら見送りを主張させない）。
+            // 行が無い＝競合ではなく本物の書き込み失敗である。握り潰さない（見送りを記録できないまま発行させない）。
+            if (ExistingOutcome(decisionId) is { } raced)
+                return raced;
+
+            throw;
+        }
+    }
+
+    // 🔴 FR-05, FR-10, #876, IADR-0398: 自分が取った Reserved を Forgone へ移す（接続確立の失敗＝確実に未発注）。
+    // 従来の Release（削除）の代わりである。Completed は決して上書きしない（発注済みを見送りと書き換えない）。
+    public ForgoneRecordOutcome MarkReservationForgone(Guid decisionId, DateTimeOffset forgoneAt)
+    {
+        var row = db.DispatchReservations.FirstOrDefault(r => r.DecisionId == decisionId);
+        if (row is null)
+            return TryRecordForgone(decisionId, forgoneAt);
+
+        if (row.State != OrderDispatchState.Reserved)
+            return OutcomeOf(row.State);
+
+        row.State = OrderDispatchState.Forgone;
+        row.CompletedAt = forgoneAt;
+        db.SaveChanges();
+        return ForgoneRecordOutcome.Recorded;
+    }
+
+    private ForgoneRecordOutcome? ExistingOutcome(Guid decisionId)
+    {
+        var state = db.DispatchReservations.AsNoTracking()
+            .Where(r => r.DecisionId == decisionId)
+            .Select(r => (OrderDispatchState?)r.State)
+            .FirstOrDefault();
+        return state is { } s ? OutcomeOf(s) : null;
+    }
+
+    // 🔴 既に在る行の状態 → 結果。**未定義の状態は「発注済み」の側へ倒す**（見送りを主張させない）。
+    private static ForgoneRecordOutcome OutcomeOf(OrderDispatchState state) => state switch
+    {
+        OrderDispatchState.Forgone => ForgoneRecordOutcome.AlreadyForgone,
+        OrderDispatchState.Reserved => ForgoneRecordOutcome.HeldByReservation,
+        _ => ForgoneRecordOutcome.AlreadyCompleted,
+    };
+
     // NFR（運用）, #137, IADR-0059: 終端（Completed）かつ cutoff より古い行のみをバッチ削除する。
     //
     // **Reserved は述語で明示的に除外する**。Reserved＝「ブローカへ発注済みか不明」であり、どれだけ古くても

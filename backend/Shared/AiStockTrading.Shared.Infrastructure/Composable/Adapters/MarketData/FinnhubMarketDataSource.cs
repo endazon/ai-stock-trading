@@ -23,6 +23,17 @@ public sealed class FinnhubMarketDataSource(
 
     public async Task<Quote?> GetLatestQuoteAsync(string symbol, Market market, CancellationToken cancellationToken = default)
     {
+        // 🔴 #957, IADR-0399 決定3: 銘柄が無い照会は出さずに取得不可とする。FinnhubQuoteClient は銘柄 null で
+        // Uri.EscapeDataString が ArgumentNullException を投げ、それは下の catch の対象外（例外が呼び出し側の巡回を落とす）。
+        // 空・空白は照会しても意味のある値が返らない（レート枠を無駄に消費する）。
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            logger.LogWarning(
+                "銘柄が空の現在値照会です（市場 {Market}）。照会せずに取得不可として扱います（呼び出し側の入力を確認してください）。",
+                market);
+            return null;
+        }
+
         // IADR-0068 決定 5: Finnhub 無料枠の /quote は米国株のみ。要求を出さずに取得不可とする
         // （レート枠を無駄に消費しない）。日本株の現在値は引き続き取得不可＝含み 0 に倒れる。
         if (market != Market.UnitedStates)

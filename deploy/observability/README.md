@@ -32,6 +32,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り（ブローカーの拒否とは別） |
 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率（80 で間隔延長・100 で停止） |
+| `ast_market_monitor_position_rows_degraded_total` | `reason` | 市場監視が保有照会の応答を**そのまま損切り判定へ渡せなかった行**（#957）。🔴 平常時 0 件。`identity-missing` / `stop-line-unknown` はその建玉の損切りを検知していない、`stop-line-approximated` は近似のラインで評価している、`response-unreadable` はその巡回で 1 件も評価していない |
 
 > **接尾辞は otel-collector の Prometheus 変換に依存する**（`add_metric_suffixes` 既定 true を前提とする）。
 > コード側の計器には `unit` を与えていないため、変換は「ドットを `_` へ」＋「Counter は `_total`」＋

@@ -53,16 +53,36 @@ public sealed class HttpHeldPositionProvider(
                 return null;
             }
 
+            // 🔴 #943, IADR-0390（PR #940 監査の同型）: 銘柄・市場を持たない行は「一致しない」と読まない。
+            // OpenPositionView の項目名が変わると、ここは既定値（null）で逆シリアル化され、一致する行が 0 件＝「保有なし」へ
+            // 黙って倒れる —— 建玉を持っているのにプロンプトは「保有: なし」と書き、新規建ての見送り（IADR-0358）も効かない。
+            // その行が判断対象の銘柄かどうか判らないので、応答全体を解釈できない（不明）とする。
+            if (positions.Any(p => p is null || string.IsNullOrEmpty(p.Symbol) || p.Market is null))
+            {
+                logger.LogWarning("保有建玉の応答に銘柄・市場の無い行があります。不明として扱います。");
+                return null;
+            }
+
+            var matched = positions
+                .Where(p => string.Equals(p.Symbol, symbol, StringComparison.Ordinal) && p.Market == market)
+                .ToList();
+
+            // 🔴 方向・数量の欠けた一致行、数量が正でない一致行は「保有なし」と読まない —— 台帳の射影は数量 0 の建玉を含めず
+            // 数量は常に正（向きは Side）という契約であり、それを破る応答（項目名の変更で既定値に落ちた場合を含む）は解釈できない。
+            if (matched.Any(p => p.Side is null || p.Quantity is not > 0))
+            {
+                logger.LogWarning("保有建玉の応答に方向・数量の欠けた、または数量が正でない行があります。不明として扱います。");
+                return null;
+            }
+
             // 一覧に無ければ保有なし（0）。台帳の射影は数量 0 の建玉を含めない（PortfolioProjection）。
             // 射影は (銘柄, 市場) ごとに 1 行のため、取得単価・損切りラインは一致した行の値をそのまま採る。
             var signed = 0;
             decimal? entryPrice = null;
             decimal? stopLossPrice = null;
-            foreach (var p in positions)
+            foreach (var p in matched)
             {
-                if (!string.Equals(p.Symbol, symbol, StringComparison.Ordinal) || p.Market != market)
-                    continue;
-                signed += p.Side == TradeSide.Buy ? p.Quantity : -p.Quantity;
+                signed += p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value;
                 entryPrice = p.EntryPrice;
                 stopLossPrice = p.StopLossPrice;
             }
@@ -164,6 +184,8 @@ public sealed class HttpHeldPositionProvider(
 
     // OpenPositionView（RiskManagement）の必要フィールドのみ。camelCase・列挙は数値で往復する。
     // 価格 2 項目は nullable（項目を持たない応答を 0 と読まない）。
+    // 🔴 #943, IADR-0390: 識別・数量の 4 項目も nullable で受ける —— 非 nullable だと項目の欠落（送り手の改名）が既定値
+    // （銘柄 null・市場 0＝日本・方向 0＝買い・数量 0）に化けて「保有なし」と区別できない。契約は T-10-800 が本物の型で固定する。
     private sealed record OpenPositionDto(
-        string Symbol, Market Market, TradeSide Side, int Quantity, decimal? EntryPrice, decimal? StopLossPrice);
+        string? Symbol, Market? Market, TradeSide? Side, int? Quantity, decimal? EntryPrice, decimal? StopLossPrice);
 }

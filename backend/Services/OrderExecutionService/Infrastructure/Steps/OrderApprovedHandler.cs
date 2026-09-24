@@ -35,6 +35,12 @@ public sealed class OrderApprovedHandler(
 
         var result = await executionService.ExecuteAsync(message, cancellationToken).ConfigureAwait(false);
 
+        // 🔴 FR-05, FR-10, #876, IADR-0398: 見送り済みの承認の再配送。**発注していないので何も発行しない**
+        // （OrderExecuted を作らない・見送りの理由は記録していないので OrderDispatchForgone も再発行しない）。
+        // 例外にもしない（投げると共通再試行が同じ承認を再処理するだけで、結論は変わらない）。ログは発注執行が出している。
+        if (result.ForgoneReplaySuppressed)
+            return;
+
         // 🔴 FR-10, FR-05, FR-09, FR-11, ADR-0016, #864, IADR-0355 決定5: 決済をブローカーの実建玉と突き合わせて
         // 見つけた乖離は、**既存の乖離検知（IADR-0118）と同じイベント**で監査台帳と Critical 通知へ流す
         // （新しい通知経路を作らない）。見送りにも、数量を縮めた発注にも付き得るため**先に**出す

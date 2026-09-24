@@ -426,6 +426,23 @@ public class BusinessMetricsTests
         a.Should().NotBe(BusinessMetricNames.MeterName);
     }
 
+    // T-10-842, FR-03, FR-10, #957, IADR-0399: 市場監視の「評価できなかった行」は reason つきで件数ぶん足し、0 件は計上しない
+    // （0 を 1 系列として出すと「計上した」が平常時にも立ち、アラートの「平常時 0 件」が崩れる）。否定形を含むため隔離した Meter 名。
+    [Fact]
+    public void 市場監視の評価できなかった行は理由つきで件数ぶん計上され_0件は計上しない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing, 2);
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowStopLineApproximated, 0);
+
+        capture.SumOf(BusinessMetricNames.MarketMonitorPositionRowsDegraded).Should().Be(2);
+        capture.TagValuesOf(BusinessMetricNames.MarketMonitorPositionRowsDegraded, BusinessMetricNames.TagReason)
+            .Should().Equal("identity-missing");
+    }
+
     /// <summary>本テスト内でのみ用いる費用カテゴリの表示名（CostControl の enum は別プロジェクトにある）。</summary>
     private static class CostCategoryLabels
     {
@@ -445,6 +462,7 @@ public class BusinessMetricsTests
         metrics.RecordLlmCost(nameof(CostCategoryLabels.Llm), 100m, 5m);
         metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
         metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
+        metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。

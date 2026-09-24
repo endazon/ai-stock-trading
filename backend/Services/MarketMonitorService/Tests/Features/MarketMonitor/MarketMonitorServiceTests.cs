@@ -1,8 +1,10 @@
 using MarketMonitorService.Domain;
 using MarketMonitorService.Infrastructure.ExternalServices;
 using MarketMonitorService.Infrastructure.Persistence;
+using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using AppSvc = MarketMonitorService.Features.MarketMonitor.MarketMonitorAppService;
 
@@ -232,5 +234,79 @@ public class MarketMonitorServiceTests
         h.Market.Requested.Should().Contain(("AAPL", Market.UnitedStates));
         result.StopLosses.Should().ContainSingle();
         result.ClosedMarketPositions.Should().BeEmpty();
+    }
+
+    // ---- 🔴 T-10-837, FR-03, FR-10, #957, IADR-0399 決定3: 市況の照会は銘柄ごとに閉じる ----
+    //
+    // 以前は 1 銘柄の照会の例外が巡回全体を落とし、全建玉の損切り検知・変動検知・生存要約が止まった
+    // （実運用の市況源 Finnhub は銘柄 null で ArgumentNullException を投げ、FinnhubMarketDataSource は捕まえない。
+    // HttpClient の上限による打ち切りは OperationCanceledException として再送出される）。
+
+    public static TheoryData<string> QuoteFailures => ["ArgumentNullException", "呼び出し側以外の打ち切り", "InvalidOperationException"];
+
+    private static Exception QuoteFailure(string kind) => kind switch
+    {
+        "ArgumentNullException" => new ArgumentNullException("stringToEscape"),
+        "呼び出し側以外の打ち切り" => new TaskCanceledException("HttpClient.Timeout"),
+        "InvalidOperationException" => new InvalidOperationException("市況源の不具合"),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+    };
+
+    [Theory]
+    [MemberData(nameof(QuoteFailures))]
+    public async Task T_10_837_1銘柄の照会の例外はその銘柄の価格欠落に閉じ_他の保有の到達と変動判定は続く(string kind)
+    {
+        var msft = new MonitoredSymbol("MSFT", Market.UnitedStates);
+        var h = new Harness(Settings(Aapl, msft));
+        h.Positions.Set(
+        [
+            new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m), // 照会が例外になる
+            new HeldPosition("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m),
+        ]);
+        h.Market.Set("MSFT", Market.UnitedStates, 1_850m); // ライン 1,900 を割っている
+        h.Baselines.SetBaseline("MSFT", Market.UnitedStates, 2_000m); // -7.5%
+        var log = new StopLossLivenessReporterTests.RecordingLogger<AppSvc>();
+        var service = new AppSvc(
+            h.Settings, h.Positions, h.Baselines, h.Cooldowns,
+            new ThrowingForSymbol(h.Market, "AAPL", QuoteFailure(kind)), h.Schedule, h.Clock, log);
+
+        var result = await service.EvaluateRoundAsync();
+
+        result.StopLosses.Should().ContainSingle().Which.Symbol.Should().Be("MSFT", "健全な保有の到達は 1 銘柄の例外に巻き込まれない");
+        result.PriceMovements.Should().ContainSingle().Which.Symbol.Should().Be("MSFT", "変動判定も続く");
+        result.StopLossEvaluations.Should().BeEquivalentTo(
+        [
+            new StopLossEvaluation("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 338.51m, null, Now),
+            new StopLossEvaluation("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 1_900m, 1_850m, Now),
+        ], "照会できなかった保有は価格欠落として記録に残る（生存要約の欠落 Warning へ流れる）");
+        log.Entries.Should().Contain(e => e.Level == LogLevel.Error && e.Message.Contains("AAPL/UnitedStates"));
+    }
+
+    [Fact]
+    public async Task T_10_837_呼び出し側の停止要求は従来どおり伝わる()
+    {
+        var h = new Harness(Settings());
+        h.Positions.Set([new HeldPosition("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m)]);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var service = new AppSvc(
+            h.Settings, h.Positions, h.Baselines, h.Cooldowns,
+            new ThrowingForSymbol(h.Market, "AAPL", null), h.Schedule, h.Clock);
+
+        var act = () => service.EvaluateRoundAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>("監視の停止を「価格が取れない」と読み替えない");
+    }
+
+    // 指定の銘柄だけ照会で例外を投げる市況源（他の銘柄は inner に委ねる）。例外が null なら呼び出し側のトークンで打ち切る。
+    private sealed class ThrowingForSymbol(IMarketDataSource inner, string symbol, Exception? failure) : IMarketDataSource
+    {
+        public Task<Quote?> GetLatestQuoteAsync(string requested, Market market, CancellationToken cancellationToken = default)
+        {
+            if (requested != symbol)
+                return inner.GetLatestQuoteAsync(requested, market, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            throw failure ?? new InvalidOperationException("到達しない");
+        }
     }
 }

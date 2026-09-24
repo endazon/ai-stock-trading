@@ -20,6 +20,11 @@
          検証するため、共通配線ヘルパと追跡ハーネスを参照する（旧 Infrastructure.Tests から引き継いだ）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
+    <!-- FR-06, FR-10, #943, IADR-0390: 日報 §3 が読む GET /risk-controls/open-positions の契約テスト（T-10-804）が
+         送り手の本物の型（OpenPositionView）を直列化するためのテスト専用参照。本体（ReportService.csproj）は参照しない。
+         移送先は Web SDK で `public partial class Program` を持つため、`Program` の曖昧（CS0433）を避けて extern alias で参照する
+         （TradeDecisionService.Tests・AiStockTrading.IntegrationTests と同じ別名）。 -->
+    <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
   </ItemGroup>
   <ItemGroup>
     <!-- FR-06, #338: 報告書テンプレートのゴールデンファイル（種別 × 供給あり/なし）。
