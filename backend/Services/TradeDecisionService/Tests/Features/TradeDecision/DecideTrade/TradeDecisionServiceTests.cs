@@ -1684,7 +1684,7 @@ public class TradeDecisionServiceTests
         decision!.Intent.PositionEffect.Should().Be(PositionEffect.Open);
     }
 
-    // 未約定が在っても新規建てそのものはコードでは止めない（重ね買いの統制＝クールダウンは #935・裁定待ち）。
+    // T-10-749: 未約定が在っても新規建てそのものはコードでは止めない（重ね買いの統制＝クールダウンは #935・裁定待ち）。
     // 本件が正すのは判断の**前提**であり、金額の統制は IADR-0346 の算入が担う。
     [Fact]
     public async Task 未約定が在ってもLLMがBuyを返せば新規建ては従来どおり出る_統制は935の範囲()

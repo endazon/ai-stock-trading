@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-10, FR-05, UC-01, UC-02, ADR-0003, IADR-0346, IADR-0351, IADR-0358, IADR-0119, IADR-0163, IADR-0246]
 author: endazon (with Claude Code)
 created: 2026-09-24
-updated: 2026-09-24
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -131,3 +131,25 @@ LLM への依頼であってコードの統制ではない（IADR-0358 の論拠
   - 「受理済み」と「結果待ち」を区別しない（上の限界）。
   - 判断 1 回につきリスク管理への同期照会が 1 本増える（同じ `risk` HttpClient・s2s トークン）。
 - 追随: テスト仕様書 FR-10（T-10-712〜T-10-723）。IADR-0351・IADR-0358 に日付つき追記。
+
+## ［2026-09-25 追記 / PR #940 監査］見送りの計上・契約の fail-open・手仕舞い数量の固定
+
+監査（NO-GO）の指摘 3 件を是正した。決定そのものは変えていない。
+
+1. 🔴 **決定5 の見送りが [IADR-0374](./IADR-0374_decision-skip-reasons-and-first-alert-rule.md) の唯一の出口 `Skip(...)` を通っていなかった**
+   （素の `return null`）。この見送りは `decision_skips` にもアラートにも出ず、#891 の症状（新規建てだけが静かに止まる）を
+   再び作っていた。`DecisionSkipReason` の**末尾**へ `WorkingEntriesUnknownOpen` を足して `Skip(trigger, …)` へ通し
+   （既存値の並べ替えなし。語彙は 12 → 13 値）、`AstEntriesBlockedByUnknownHoldings` の式を
+   `reason=~"HoldingsUnknownOpen|WorkingEntriesUnknownOpen"` へ広げた（同じ形＝実結線でしか立たず平常時 0 件・手仕舞いは通る）。
+   IADR-0374 決定2 の「12 値」は本追記で 13 値になった（IADR-0374 本文は書き換えない）。T-10-743 / T-10-748。
+2. 🔴 **契約の fail-open**: `WorkingEntryOrderView.Symbol` を改名しても両スイートは緑のままで、実行時はアダプタの一致が 0 件＝
+   「無い」になり、板に指値が残っているのにプロンプトは `保有: なし` と書いた（#934 の実測そのもの）。
+   送り手の本物の型を web 既定 JSON で直列化してアダプタに読ませる契約テストを足し（T-10-744）、アダプタの DTO を全項目 nullable にして
+   **銘柄・市場の無い行は応答全体を不明**、**方向・残数量・価格・承認時刻の欠けた一致行も不明**とした（T-10-745）。
+   決定2 の「不正応答は null」の具体化である。
+3. **決定3 の「決済の数量は約定済みだけ」をテストで固定していなかった**（T-10-717 は未約定が不明の経路で、未約定が在る経路は無かった）。
+   約定済み 3,378 株＋未約定 715 株で Sell → Close 3,378 株（4,093 株ではない）を T-10-746 で固定した。
+
+非ブロッカー: 未約定の照会の打ち切り・壊れた JSON・空の本文が不明になることを T-10-747 で固定した。
+変異注入の実測はテスト仕様書 FR-10 の #934 節にある。残余: 約定済みの保有（`/open-positions`）の DTO は同じ形の契約テストを
+持たない（本件の射程外）。

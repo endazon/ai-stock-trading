@@ -128,3 +128,16 @@ plan_refs:
 2. リスク管理: `ProjectWorkingEntries` を切り出し → 読み取り口 → DI。
 3. 判断: ポート → Http / NoOp → プロンプト → アプリケーションサービス → Stage 0。
 4. `dotnet build` / `dotnet test`（両サービス）/ `dotnet format --verify-no-changes` / `node scripts/check-*.js`。
+
+## ［2026-09-25 追記 / PR #940 監査］受け入れ基準の追加
+
+監査（NO-GO）の指摘を受けて足した基準（決定は変えていない。記録は IADR-0390 の同日の追記）。
+
+13. （T-10-743）実結線で未約定が不明な新規建ての見送りは `Skip(trigger, DecisionSkipReason.WorkingEntriesUnknownOpen)` を通り、
+    見送り理由が 1 件だけ計上される（素の `return null` で赤）。`DecisionSkipReason` は末尾への追加だけで 13 値。
+14. （T-10-744）送り手の本物の `WorkingEntryOrderView` を web 既定 JSON で直列化した応答をアダプタが読める（送り手の改名で赤）。
+15. （T-10-745）銘柄・市場の無い行、項目の欠けた一致行は不明（「無い」と読まない）。
+16. （T-10-746）約定済み 3,378 株＋未約定 715 株で LLM が Sell → Close 3,378 株（保有数量へ未約定を足す変異で赤）。
+17. （T-10-747）未約定の照会の空の本文・壊れた JSON・打ち切りは不明。
+18. （T-10-748）`AstEntriesBlockedByUnknownHoldings` が `WorkingEntriesUnknownOpen` も見る（`node scripts/check-observability-assets.js` が緑）。
+19. （T-10-749）未約定が在っても LLM の Buy で新規建ては出る（#935 の射程を越えない。T-10-718 は未約定が「無い」経路）。
