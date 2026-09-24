@@ -2,7 +2,7 @@
 title: IADR-0397 本番の組み立て（Program.cs）を組んで配線の抜けを機械的に止める組み立てガードを全サービスに置く
 type: impl-adr
 status: Accepted
-related_ids: [NFR, IADR-0163, IADR-0335, IADR-0374, IADR-0380, IADR-0370, IADR-0066, IADR-0067, IADR-0153, IADR-0169]
+related_ids: [NFR, IADR-0163, IADR-0335, IADR-0374, IADR-0380, IADR-0370, IADR-0390, IADR-0066, IADR-0067, IADR-0153, IADR-0169]
 author: claude (Claude Code)
 created: 2026-09-25
 updated: 2026-09-25
@@ -22,7 +22,7 @@ plan_refs: []
 - 関連 IADR: [IADR-0163](IADR-0163_allow-list-and-required-dependency-scope.md) 決定2（原則の散文。本 IADR はその機械化）、
   [IADR-0335](IADR-0335_unwired-di-registration-detection.md)（DI 登録の未利用検出。「本番から呼ばれない型」を止める。本 IADR は「呼ばれるが中身が抜ける」側）、
   [IADR-0374](IADR-0374_decision-skip-reasons-and-first-alert-rule.md)（PR #919）、[IADR-0380](IADR-0380_market-session-schedule-and-closed-protection-gap.md)（PR #929）、
-  [IADR-0370](IADR-0370_drift-adoption-protective-stop-followup.md)（PR #918）、PR #940（本 IADR の起草時点で未マージ。その IADR は develop に未着）。
+  [IADR-0370](IADR-0370_drift-adoption-protective-stop-followup.md)（PR #918）、[IADR-0390](IADR-0390_working-entries-in-decision-input.md)（PR #940）。
 - 計画 ID: NFR（メタ作業＝検査器。製品の FR には当たらない）。
 
 ## コンテキストと課題
