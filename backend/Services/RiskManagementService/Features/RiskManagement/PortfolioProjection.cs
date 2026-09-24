@@ -236,7 +236,7 @@ public static class PortfolioProjection
 
     // FR-10, FR-03, #936, IADR-0393（IADR-0035 の「最新の同方向エントリー」を改める）: 損切り価格は、保有中の建玉を
     // **エントリーごとのロット**（数量・その約定の損切り価格）として持ち、**残っているロットのうち最も保護的なライン**
-    // （ロング: 最も高い／ショート: 最も低い）を採る。減少（一部決済・取り込み）は**古いロットから**削る（約定時刻の順）。
+    // （ロング: 最も高い／ショート: 最も低い）を採る。減少（一部決済・取り込み）は**古いロットから**削る（発注の順。下の追記）。
     // 反転は反転後の残りを 1 ロットにし、全決済でロットを捨てる。
     // 🔴 最新エントリーのラインを採ると、同じ銘柄に後から低いラインで建て増したとき、先に建てた記録のラインで
     // 市場監視が到達を出さない（稼働 PoC の AAPL 713 株 331.67 と 715 株 330.88。損切りが 0.79 遅れた）。
@@ -244,8 +244,14 @@ public static class PortfolioProjection
     // ここが最も保護的なラインであれば、どの行も自分のラインより遅れて判定されない。
     // 🔴 ロットの帰属は推定である（台帳はどの決済がどのエントリーを閉じたかを持たない）。古い順に削るのは、
     // 発注執行が外部要因の減少を古い行から割り当てる規則と同じ向きにするためで、取り違えたときは
-    // 「ラインが実際より保護的」側（発注執行の行が 1 件も達していない到達が出る）へだけ倒れる。
+    // 「ラインが実際より保護的」側（発注執行の行が 1 件も達していない到達が出る）へだけ倒れる
+    // （ロットの並びと発注執行の行の並びが一致する限り。並びが食い違う入力は IADR-0393 の残余リスク）。
     // ラインを持たないロット（不明）の有無は StopLossUnknown で返す（OpenPositionsService が近似で見積もる）。
+    // 🔴 ［2026-09-25 追記 / #936 の監査］「古い」は**約定時刻ではなく発注の順**である。ロットは
+    // (EntryOrderedAt＝承認時刻 ?? 約定時刻, DecisionId) の順に並べる —— 発注執行の割り当て (CreatedAt, EntryDecisionId)
+    // と同じ鍵の形である。稼働環境では先に出した 715 株（330.88）の指値が板に残り、後に出した 713 株（331.67）が
+    // 先に約定した。約定時刻の順で削ると、外部要因の減少で発注執行に残る 713 株の 331.67 を台帳が先に捨てる（T-10-769）。
+    // 在庫・平均取得単価の畳み込みは従来どおり約定時刻の順のまま（ここで変えるのはロットの並びだけ）。
     // IADR-0107: 価格（平均取得単価・損切り価格）はローカル通貨のまま返す（損切り検知は現在値と同一通貨で比較する）。
     // 併せて建玉の加重平均約定時レート（FxRateToBase）を載せる。機械執行の決済（維持率割れの自動縮小等）が
     // 決済注文へ引き継ぎ、決済レグの台帳集計が基準通貨で揃うようにするため（Project と同じ二重畳み込み）。
@@ -274,7 +280,7 @@ public static class PortfolioProjection
 
             // #936, IADR-0393: 建玉が消滅したらロットも消滅。新規・反転は残りを 1 ロットに、建て増しはロットを足し、
             // 一部決済・取り込み（反対方向で符号は不変）は古いロットから削る。
-            ApplyToStopLossLots(lots, key, pos.Qty, applied.Lot.Quantity, fill.Quantity, fill.StopLossPrice);
+            ApplyToStopLossLots(lots, key, pos.Qty, applied.Lot.Quantity, fill);
         }
 
         var result = new List<OpenPosition>();
@@ -316,11 +322,20 @@ public static class PortfolioProjection
     }
 
     // #936, IADR-0393: 保有中の建玉を構成するエントリー 1 件ぶん（数量・その約定の損切り価格。null＝記録なし）。
-    private sealed class StopLossLot(int quantity, decimal? stopLossPrice)
+    // OrderedAt・DecisionId はロットの並び（発注の順）の鍵である（2026-09-25 追記）。
+    private sealed class StopLossLot(int quantity, decimal? stopLossPrice, DateTimeOffset orderedAt, Guid decisionId)
     {
         public int Quantity { get; set; } = quantity;
 
         public decimal? StopLossPrice { get; } = stopLossPrice;
+
+        public DateTimeOffset OrderedAt { get; } = orderedAt;
+
+        public Guid DecisionId { get; } = decisionId;
+
+        // 発注執行の ProtectiveStopNetting.Allocate の並び（CreatedAt → EntryDecisionId）と同じ比べ方。
+        public bool IsOrderedAfter(StopLossLot other) =>
+            OrderedAt != other.OrderedAt ? OrderedAt > other.OrderedAt : DecisionId.CompareTo(other.DecisionId) > 0;
     }
 
     private static void ApplyToStopLossLots(
@@ -328,9 +343,11 @@ public static class PortfolioProjection
         (string Symbol, Market Market) key,
         int previousQuantity,
         int newQuantity,
-        int fillQuantity,
-        decimal? fillStopLossPrice)
+        LedgerFill fill)
     {
+        // 🔴 承認時刻が分からない行（取り込み行・承認時刻を持たない入力）は約定時刻で代える。推定で埋めない。
+        var orderedAt = fill.EntryOrderedAt ?? fill.ExecutedAt;
+
         if (newQuantity == 0)
         {
             lots.Remove(key); // 全決済: 損切りも消滅
@@ -340,18 +357,24 @@ public static class PortfolioProjection
         if (previousQuantity == 0 || Math.Sign(previousQuantity) != Math.Sign(newQuantity))
         {
             // 新規・反転: 残りはこの約定だけのロットである（反転前の建玉のラインは引き継がない）。
-            lots[key] = [new StopLossLot(Math.Abs(newQuantity), fillStopLossPrice)];
+            lots[key] = [new StopLossLot(Math.Abs(newQuantity), fill.StopLossPrice, orderedAt, fill.DecisionId)];
             return;
         }
 
         var held = lots.TryGetValue(key, out var existing) ? existing : lots[key] = [];
         if (Math.Abs(newQuantity) > Math.Abs(previousQuantity))
         {
-            held.Add(new StopLossLot(fillQuantity, fillStopLossPrice)); // 建て増し
+            // 建て増し: 発注の順の位置へ差し込む（後から約定した先の発注は、先に約定した後の発注より前に入る）。
+            // 同じ鍵（同じ承認の分割約定）は後ろへ付ける。
+            var lot = new StopLossLot(fill.Quantity, fill.StopLossPrice, orderedAt, fill.DecisionId);
+            var index = held.Count;
+            while (index > 0 && held[index - 1].IsOrderedAfter(lot))
+                index--;
+            held.Insert(index, lot);
             return;
         }
 
-        // 一部決済・取り込み: 古いロットから削る（発注執行が外部要因の減少を古い行から割り当てるのと同じ向き）。
+        // 一部決済・取り込み: 古いロット（発注の順）から削る（発注執行が外部要因の減少を古い行から割り当てるのと同じ向き）。
         var toRemove = Math.Abs(previousQuantity) - Math.Abs(newQuantity);
         while (toRemove > 0 && held.Count > 0)
         {
