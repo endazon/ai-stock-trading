@@ -221,6 +221,13 @@ builder.Services.AddSingleton(RiskManagementService.Domain.TradingDefaults.Creat
 // 正しい表現。供給が結線された瞬間に値が変わり、既存 verdict は自動で失効する）。
 builder.Services.AddSingleton<ShortSellReleaseSourceInventory>();
 builder.Services.AddScoped<StageGateService>();
+// FR-20, FR-11, FR-14, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 段階遷移の要求の本文で運ばれる
+// 「代理される利用者」（onBehalfOf）を信じてよいクライアント（Discord Bot の owner マップ機密クライアント）の一覧。
+// **既定は空＝誰も信じない**（fail-safe）。構成は解決時に読む（起動コードの途中で読むと、後から積まれた構成源を
+// 見落とす。報告書サービスの `Reports:DelegatedActor:TrustedClientIds` と同じ形）。
+builder.Services.AddSingleton(sp => new DelegatedActorOptions(
+    DelegatedActorResolver.ParseTrustedClientIds(
+        sp.GetRequiredService<IConfiguration>()[DelegatedActorOptions.TrustedClientIdsKey])));
 // FR-20, FR-11, FR-09, ADR-0008, IADR-0083, #166: 撤退の定期評価ドライバ。EvaluateWithdrawal を定時駆動し、新規に
 // 自動停止したときだけ WithdrawalTriggered を発行する。既定は無効（opt-in・安全側）。有効化しても実 DD 未供給の
 // 既定実績では発火しない（QuoteRefreshService と同じく副作用を伴う背景処理は既定起動しない）。

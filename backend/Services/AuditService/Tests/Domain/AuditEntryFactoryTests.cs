@@ -277,6 +277,50 @@ public class AuditEntryFactoryTests
         entry.CorrelationId.Should().Be(other.CorrelationId);
     }
 
+    // ---- T-129, FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383 ----
+    //
+    // **実際に操作した利用者と、認可の主体であるクライアントの両方を要約に残す。**
+    // Discord Bot 経由の承認は owner マップ機密クライアントのトークンで行われるため、承認者だけでは
+    // 「誰の資格で通ったか」が、認可の主体だけでは「誰が承認したか」が失われる。
+
+    [Fact]
+    public void StageTransitioned_の代理承認は承認者と認可の主体の両方を要約に出す()
+    {
+        var e = new StageTransitioned(
+            3, 1, 2, "Promotion", "developer", "利用者承認による昇格", RecordedAt, 100, false,
+            AuthorizedBy: "ai-stock-trading-owner");
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("developer").And.Contain("代理 ai-stock-trading-owner");
+        // 生の値はペイロードにも残る。
+        entry.Detail.Should().Contain("AuthorizedBy");
+    }
+
+    [Fact]
+    public void StageTransitioned_の承認者不明は内部の既定値を生で出さない()
+    {
+        // 🔴 過去の台帳には `unknown` の遷移が残っている（#868 の是正は新規の発生を止めるだけである）。
+        // 要約に内部の既定値を生で出すと、読み手は「unknown という利用者が承認した」と読み得る。
+        var e = new StageTransitioned(
+            3, 0, 1, "Promotion", "unknown", "利用者承認による昇格", RecordedAt, 100, false);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("承認者不明").And.NotContain("unknown");
+    }
+
+    [Fact]
+    public void StageTransitioned_の本人承認は代理を書かない()
+    {
+        var e = new StageTransitioned(
+            3, 0, 1, "Promotion", "owner", "利用者承認による昇格", RecordedAt, 100, false);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain("owner").And.NotContain("代理");
+    }
+
     // FR-20, FR-11, SC-02, #466, 06_daytrading-review §4.1 追補3（質問票 第15回 Q13-b）, IADR-0180:
     // **警告を無視して昇格した事実を記録に残す。** 設定変更の履歴には「下げた事実」が残るが、
     // **その設定で昇格した事実**は本イベント以外に残らない。
