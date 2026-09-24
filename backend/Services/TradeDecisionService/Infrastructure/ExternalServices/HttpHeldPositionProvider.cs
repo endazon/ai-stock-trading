@@ -7,6 +7,9 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 
 // FR-04, FR-05, FR-10, #292, IADR-0119: 保有建玉をリスク管理（#12・#63 台帳）の
 // GET /risk-controls/open-positions（既存・OwnerOrService）から同期照会する。新規エンドポイントは作らない。
+// ［2026-09-24 追記 / #934・IADR-0390］未約定の新規建て注文（判断の入力の第 3 の状態）のため、リスク管理に
+// GET /risk-controls/working-entry-orders（OwnerOrService・読み取り専用）を足し、本クラスが読む。上の「作らない」は
+// 保有建玉の照会についての記述である。
 //
 // fail-safe の要: 非 2xx・例外・タイムアウト・不正応答は **null（不明）**。空配列は **0（保有なし）**。
 // 市場監視の HttpPositionStore は失敗を空列へ倒す（損切り検知対象なし＝そちらの安全側）が、ここで同じことをすると
@@ -84,6 +87,80 @@ public sealed class HttpHeldPositionProvider(
             return null;
         }
     }
+
+    // FR-04, FR-10, ADR-0003, #934, IADR-0390 決定2: 当日の未約定の新規建て注文を GET /risk-controls/working-entry-orders から読む
+    // （統制 IADR-0346 と同じ定義。約定済みの保有＝/open-positions とは別の口・別の型）。
+    // 🔴 fail-safe の区別は保有と同じ: 非 2xx・例外・タイムアウト・不正応答は **null（不明）**、一致する行が無ければ **None（無い）**。
+    // 不明を None へ倒すと、指値が板に残っているのに判断は「保有なし」を前提に同じ銘柄を重ねて買う（#934 の実測）。
+    public async Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+        string symbol, Market market, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient
+                .GetAsync("/risk-controls/working-entry-orders", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("未約定の新規建て注文の照会に失敗（{Status}）。不明として扱います。", (int)response.StatusCode);
+                return null;
+            }
+
+            var orders = await response.Content
+                .ReadFromJsonAsync<List<WorkingEntryOrderDto>>(cancellationToken)
+                .ConfigureAwait(false);
+            if (orders is null)
+            {
+                logger.LogWarning("未約定の新規建て注文の応答を解釈できません。不明として扱います。");
+                return null;
+            }
+
+            // 🔴 PR #940 監査（契約の fail-open）: 銘柄・市場を持たない行は「一致しない」と読まない。
+            // WorkingEntryOrderView の項目名が変わると、ここは既定値（null）で逆シリアル化され、一致する行が 0 件＝「無い」へ
+            // 黙って倒れる —— 板に指値が残っているのにプロンプトは「保有: なし」と書く（#934 の実測そのもの）。
+            // その行が判断対象の銘柄かどうか判らないので、応答全体を解釈できない（不明）とする。
+            if (orders.Any(o => o is null || string.IsNullOrEmpty(o.Symbol) || o.Market is null))
+            {
+                logger.LogWarning("未約定の新規建て注文の応答に銘柄・市場の無い行があります。不明として扱います。");
+                return null;
+            }
+
+            var matched = orders
+                .Where(o => string.Equals(o.Symbol, symbol, StringComparison.Ordinal) && o.Market == market)
+                .ToList();
+
+            // 🔴 残数量が正でない行・方向／価格／承認時刻の無い行は「無い」と読まない —— リスク管理は残 0 を返さない契約であり、
+            // それを破る応答（項目名の変更で既定値に落ちた場合を含む）は解釈できない。
+            if (matched.Any(o => o.RemainingQuantity is not > 0 || o.Side is null || o.Price is null || o.ApprovedAt is null))
+            {
+                logger.LogWarning("未約定の新規建て注文の応答に残数量が正でない、または項目の欠けた行があります。不明として扱います。");
+                return null;
+            }
+
+            return matched.Count == 0
+                ? WorkingEntryOrders.None
+                : new WorkingEntryOrders(
+                    [.. matched.Select(o => new WorkingEntryOrder(
+                        o.Side!.Value, o.RemainingQuantity!.Value, o.Price!.Value, o.ApprovedAt!.Value))]);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("未約定の新規建て注文の照会がタイムアウト。不明として扱います。");
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "未約定の新規建て注文の照会で例外。不明として扱います。");
+            return null;
+        }
+    }
+
+    // WorkingEntryOrderView（RiskManagement・#934）の必要フィールドのみ。camelCase・列挙は数値で往復する。
+    // 🔴 PR #940 監査: 全項目を nullable で受ける —— 非 nullable だと項目の欠落（送り手の改名）が既定値（銘柄 null・
+    // 市場 0＝日本・方向 0＝買い・数量 0）に化けて「無い」と区別できない。契約は T-10-744 が本物の型で固定する。
+    private sealed record WorkingEntryOrderDto(
+        string? Symbol, Market? Market, TradeSide? Side, int? RemainingQuantity, decimal? Price, DateTimeOffset? ApprovedAt);
 
     // OpenPositionView（RiskManagement）の必要フィールドのみ。camelCase・列挙は数値で往復する。
     // 価格 2 項目は nullable（項目を持たない応答を 0 と読まない）。

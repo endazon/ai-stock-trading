@@ -249,7 +249,7 @@ public sealed class Stage0DecisionRecorder(
         // 帰結: 記録が検証するのは本番プロンプトの「保有なし」の枝だけである（IADR-0351「残る制約」）。
         var prompt = TradeDecisionPromptBuilder.Build(
             trigger, input.Policy, input.Sizing, input.References, includeProfitability: false,
-            currentPrice: input.ReferencePrice, held: HeldPosition.None);
+            currentPrice: input.ReferencePrice, held: HeldPosition.None, working: WorkingEntryOrders.None);
         var fingerprint = Fingerprint(prompt);
 
         if (input.DroppedFutureReferenceCount > 0 || input.DroppedUndatedReferenceCount > 0)
