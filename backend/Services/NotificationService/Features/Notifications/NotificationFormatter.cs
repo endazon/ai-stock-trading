@@ -217,6 +217,17 @@ public static class NotificationFormatter
                 + "（この銘柄ではソフトウェア逆指値の新規建ても見送られます）"
                 + $"（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Warning),
+        // 🔴 #858, IADR-0370 決定5: 取り込みで建玉が消えたのに、ブローカー側の保護注文を取り消せたと確認できなかった。
+        // **建玉が無いのに売りの逆指値が生きていると、発火して意図しないショートが建つ。**
+        SoftwareStopOutcome.StopCancelUnconfirmed => new(
+            "リスク統制: 取り込みで消えた建玉の保護注文を取り消せていません",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 乖離の取り込みで台帳の建玉が減りましたが、"
+                + "**ブローカー側の保護注文（逆指値）を取り消せたと確認できませんでした**（決済は出していません）。"
+                + "🔴 **建玉が無いのに逆指値が残っていると、発火したとき意図しないショートが建ちます。"
+                + "証券会社の画面で未約定の注文を確認し、残っていれば取り消してください**"
+                + $"（記録は巡回に残したまま再確認します・損切りライン {Invariant(e.StopLossPrice)}"
+                + $"・OrderId={e.CloseOrderId}・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Critical),
         // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（保護記録を再武装した）。
         // moomoo の模擬取引の注文は当日限りで、受理された決済が 0 約定のまま失効し得る。
         SoftwareStopOutcome.CloseUnfilled => new(

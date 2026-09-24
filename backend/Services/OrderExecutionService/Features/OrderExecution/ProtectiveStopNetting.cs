@@ -208,6 +208,22 @@ public static class ProtectiveStopNetting
         return Confirm(group, observed, excess, symbol, market, entrySide, stops, store, events, now);
     }
 
+    /// <summary>
+    /// FR-10, #858, IADR-0370 決定2: <b>確定した減少</b>（利用者が承認した乖離の取り込み）を、
+    /// 巡回と<b>同じ規則</b>で群の各行へ割り当てる（保存しない・純粋な計算）。
+    /// <para>
+    /// 🔴 <b>同じ問いに 2 つの答えを持たない</b>ため、規則そのものは <see cref="Allocate"/>（外部要因の観測が使うもの）
+    /// を再利用する —— 帳簿だけの行（S1）を先に使い切り、実注文を持つ行（S0）は最後・<b>全部か 0 か</b>。
+    /// 違いは「観測を数えるかどうか」だけであり、取り込みは利用者の承認つきで<b>その場で確定する</b>。
+    /// </para>
+    /// </summary>
+    public static IReadOnlyDictionary<Guid, int> AllocateReduction(
+        IEnumerable<ProtectiveStopOrder> group, int budget)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        return Allocate([.. group], Math.Max(0, budget));
+    }
+
     // 超過分を「帳簿だけの行（S1）→ 実注文を持つ行（S0）」の順に割り当てる（保存しない・純粋な計算）。
     private static Dictionary<Guid, int> Allocate(List<ProtectiveStopOrder> group, int budget)
     {

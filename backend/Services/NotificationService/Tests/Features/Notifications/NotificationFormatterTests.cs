@@ -524,6 +524,11 @@ public class NotificationFormatterTests
     // T-10-492（#820 の 10 巡目監査, IADR-0344 追記(9) 決定3）: どの保護記録も主張していない建玉の**検知**。
     // 🔴 是正ではないので Critical ではなく Warning であり、「決済しません」と明記する。
     [InlineData(SoftwareStopOutcome.UnattributedPosition, NotificationSeverity.Warning, "どの保護記録も主張していません")]
+    // 🔴 T-10-642（#858, IADR-0370 決定5）: 取り込みで消えた建玉の保護注文を取り消せたと確認できていない。
+    // 建玉が無いのに逆指値が生きていると**発火して意図しないショート**になるため Critical で、
+    // 利用者が取るべき行動（証券会社の画面で未約定の注文を確認して取り消す）が読めること。
+    [InlineData(SoftwareStopOutcome.StopCancelUnconfirmed, NotificationSeverity.Critical,
+        "取り消せたと確認できませんでした")]
     // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した。
     // **これが今日まで無音だった唯一の失敗様式**であり、運用者の唯一のシグナルなので Critical である。
     [InlineData(SoftwareStopOutcome.CloseUnfilled, NotificationSeverity.Critical, "その株数は建玉に残っています")]

@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858]
 -->
 
 
@@ -35,6 +35,7 @@ issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374,
 - [統制状態参照画面の強制買戻し発生回数の供給（#470。当月が観測の届いた取引日で覆われているときに限り供給する）](#統制状態参照画面の強制買戻し発生回数の供給470当月が観測の届いた取引日で覆われているときに限り供給する)
 - [損切りのブローカー側逆指値への一本化（#331。保護逆指値の同時発注・建玉解消・失効ガード・見送り）](#損切りのブローカー側逆指値への一本化331保護逆指値の同時発注建玉解消失効ガード見送り)
 - [情報収集の縮退による新規建て停止の耐久化（#564。供給が途切れたら止める側へ倒す）](#情報収集の縮退による新規建て停止の耐久化564供給が途切れたら止める側へ倒す)
+- [取り込みで消えた建玉の保護を追随させる（#858。発注執行側の記録とブローカー側の保護注文）](#取り込みで消えた建玉の保護を追随させる858発注執行側の記録とブローカー側の保護注文)
 - [確認できた拒否を「手仕舞い済み」と扱わない（#857。保護喪失時の成行手仕舞い）](#確認できた拒否を手仕舞い済みと扱わない857保護喪失時の成行手仕舞い)
 - [手仕舞いの過剰決済ガードから終端になった承認を除く（#848。取り消した注文が建玉をロックしない）](#手仕舞いの過剰決済ガードから終端になった承認を除く848取り消した注文が建玉をロックしない)
 - [手仕舞いの出口（#847。成行・取消の口・失効の通知）](#手仕舞いの出口847成行取消の口失効の通知)
@@ -1576,6 +1577,57 @@ row22: FR-21
 
 > **対応受け入れ基準**は #564 の 3 つ —— ①復元される ②復元できないときは止める側へ倒す ③決済は止まらない。
 
+
+## 取り込みで消えた建玉の保護を追随させる（#858。発注執行側の記録とブローカー側の保護注文）
+
+`ProtectiveStopDriftAdopterTests` / `PositionDriftAdoptedHandlerTests` / `ProtectiveStopDriftAdopterCompositionTests`（`OrderExecutionService.Tests`）・
+`NotificationFormatterTests`（`NotificationService.Tests`）・`AuditEntryFactoryTests`（`AuditService.Tests`）・
+`StopLossMethodContractTests`（`AiStockTrading.Shared.Contracts.Tests`）。
+
+乖離の取り込みは**取引台帳だけ**を観測値へ合わせるため、発注執行側の保護記録は何も知らされないまま残っていた。
+🔴 **建玉が無いのにブローカーへ売りの逆指値が残ると、発火したとき意図しないショートが建つ。**
+壊れ方は両側にあるので両側を固定する ——「取り消して終端化する」（追随する側）と、
+「取り消せたと確認できないのに閉じない」「無関係な銘柄に触らない」「再送で二重に取り消さない」
+「新しい照会が建玉を示すなら保護を消さない」（**やり過ぎない側**）。
+
+| ID | 前提条件 | 手順 | 期待結果 | 対応受け入れ基準 | 区分 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-641** | 保護記録（ブローカー側逆指値）があり、取り込みで建玉が 0 になる | 取り込みの通知を購読側へ届ける | 保護注文を**取り消し**、確認できたら記録を終端化する。取消と保護減少の 2 つが発行され、監査に残る（購読の配線そのものもハンドラ試験で固定する）。結果の列挙は末尾へ足され序数が動かない | ① | 自動（単体・結合＝ハンドラ） |
+| **T-10-642** | 同上だが、取消後の照会が不明／まだ終端でない／取消の送信が失敗する | 同上 | 🔴 **記録を終端化しない**（`Active` のまま＝巡回が続く）。在庫の押さえを解くイベントは**出さない**。Critical を 1 件出し、**例外は投げない**。通知・監査の文面から「発火すると意図しないショートになり得る」「画面で未約定の注文を確認する」が読める | ③ | 自動（単体・否定形） |
+| **T-10-643** | 別銘柄・別市場・逆方向の保護記録が併存する | 取り込み（1 銘柄・1 方向）を届ける | **対象の 1 件だけ**を取り消す。他の記録は数量も状態も変わらない | ④ | 自動（単体・否定形） |
+| **T-10-644** | 取り込み済み | **同じ通知をもう一度**届ける | **二度取り消さない**（目標は取り込み後の数量＝絶対値であって差分ではない）。2 回目は 1 件も発行しない | ④ | 自動（単体・否定形・冪等） |
+| **T-10-645** | 部分的な取り込み（帳簿だけの行と実注文を持つ行が併存）／取り込みより新しい照会が建玉の存在を示す／建玉を照会できない構成／増加・方向反転の取り込み | それぞれ取り込みを届ける | 部分的な取り込みは**帳簿だけの行から**減らし、**生きている逆指値は取り消さない**。新しい照会が建玉を示すなら**何もしない**（保護を消しすぎない）。照会できない構成では取り込みの観測に従う。増加・反転では何もしない | ②④ | 自動（単体・境界値・否定形） |
+| **T-10-734** | 保護記録（ブローカー側逆指値）があり、建玉照会を持つ構成で照会が**例外で落ちる** | 建玉 0 の取り込みを届ける | 🔴 **取り消さない・記録を変えない**（`Active` のまま・主張も元のまま）。Critical をログし、例外を投げて再試行へ回す（照会の失敗の原因を運ぶ） | ⑤ | 自動（単体・否定形） |
+| **T-10-735** | 帳簿だけの行と実注文を持つ行が併存し、建玉照会が**不明**（応答なし）を返す | 同上 | 🔴 不明を **0 株と読まない**。どちらの行も数量・状態を変えず、取消も出さない。Critical をログして例外 | ⑤ | 自動（単体・否定形） |
+| **T-10-736** | 主張の合計が取り込み後の数量以下で、建玉照会は落ちている | 取り込みを届ける | **照会しない**（答えに依らず減らすものが無い）。例外も出さず、何も発行しない（無用な再試行を作らない） | ④⑤ | 自動（単体・境界値） |
+| **T-10-737** | 帳簿だけの行が台帳を上回る主張を持つ（買い側・売り側） | **増加**・**方向反転**の取り込みを届ける | 帳簿だけの行も**1 株も削らない**（実注文を持つ行だけの試験では「全部か 0 か」が方向の検査を覆い隠す） | ②④ | 自動（単体・否定形） |
+| **T-10-738** | 同じ銘柄に帳簿だけの行が 2 行（715 株・713 株。稼働環境の実例と同じ形） | 部分的な取り込み（1,428 → 500 株）を届ける | **作成の古い行から使い切る**（古い行 0 株で終端化・新しい行 500 株）。取消は出さない。保護減少は古い行 715 株・新しい行 213 株の順 | ① | 自動（単体・境界値） |
+| **T-10-739** | 建玉照会が不明を返す構成でハンドラを試験の DI で組む（本番の `Program.cs` の組み立てではない） | 取り込みの通知をハンドラへ渡す | ハンドラは例外を**握らずに投げる**（受信経路では共通の再試行へ回る）。取消は出さず、記録は `Active` のまま | ⑤ | 自動（結合＝ハンドラ・否定形） |
+| **T-10-740** | `Program.cs` そのものを **moomoo 構成**で組む（差し替えるのはブローカー・DB・常駐だけ）。建玉照会は不明を返す | 取り込み（建玉 0）を追随の部品へ渡す | 🔴 取り消す前に建玉を **1 度照会し**、不明なので**投げる**。取消は出さず、記録は `Active`・主張 10 株のまま。**`Program.cs` が建玉照会の代わりに null を渡す変異はこの試験だけが殺す** | ⑤ | 自動（結合＝本番の組み立て・否定形） |
+| **T-10-741** | 同じ偽のブローカー（建玉照会も実装）で `Program.cs` を**内蔵 paper 構成**で組む | 同上 | 建玉照会は**登録されず**照会も起きない。取り込みの観測に従って保護を取り消し、記録を終端化する（T-10-740 の差が構成分岐から来ることの対照） | ⑤ | 自動（結合＝本番の組み立て・対の肯定形） |
+
+<!-- trace-table:
+row1: FR-10, FR-11
+row2: FR-10, FR-11
+row3: FR-10
+row4: FR-10
+row5: FR-10, FR-05
+row6: FR-10, FR-05
+row7: FR-10, FR-05
+row8: FR-10
+row9: FR-10
+row10: FR-10
+row11: FR-10
+row12: FR-10, FR-05
+row13: FR-10, FR-05
+-->
+
+> **対応受け入れ基準**は #858 の 4 つ —— ①消えた建玉の保護を取り消して終端化し監査に残す
+> ②「二重決済でショート化しない」を壊さない ③取り消せなければ Critical で知らせ黙って残さない
+> ④取り込みと無関係な保護レグに触らない／再送で二重に取り消さない。
+>
+> ⑤ は PR の監査で加えた —— **建玉が消えたと確かめられないまま保護を消さない**（建玉照会が不明・失敗なら帳簿もブローカーも変えず、
+> Critical をログして再試行へ回す。空の一覧＝0 株は信じる。建玉照会を持たない構成は取り込みの観測に従う）。
 
 ## 確認できた拒否を「手仕舞い済み」と扱わない（#857。保護喪失時の成行手仕舞い）
 

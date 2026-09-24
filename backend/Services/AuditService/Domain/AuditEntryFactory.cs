@@ -531,6 +531,10 @@ public static class AuditEntryFactory
                 // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: どの保護記録も主張していない建玉の検知（是正はしない）。
                 SoftwareStopOutcome.UnattributedPosition =>
                     "——**どの保護記録も主張していない建玉がある（検知のみ。ソフトウェア逆指値は決済しない・要人手確認）**",
+                // #858, IADR-0370 決定5: 取り込みで消えた建玉の保護注文を取り消せたと確認できていない。
+                SoftwareStopOutcome.StopCancelUnconfirmed =>
+                    "——**乖離の取り込みで建玉が消えたのに、ブローカー側の保護注文を取り消せたと確認できていない"
+                    + "（発火すると意図しないショートになり得る・要人手対応）**",
                 // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（保護記録を再武装した）。
                 SoftwareStopOutcome.CloseUnfilled =>
                     $"——**受理された成行決済が約定しないまま終了（OrderId={e.CloseOrderId}）。"

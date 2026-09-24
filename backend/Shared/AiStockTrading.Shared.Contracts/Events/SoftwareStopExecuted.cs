@@ -95,7 +95,16 @@ public enum SoftwareStopOutcome
     /// </summary>
     UnattributedPosition = 7,
 
-    // 序数 8 は並行 PR #918（IADR-0370 決定5 の StopCancelUnconfirmed）が採っている。動かさない。
+    /// <summary>
+    /// 🔴 #858, IADR-0370 決定5: <b>乖離の取り込みで建玉が消えたのに、ブローカー側の保護注文を
+    /// 取り消せたと確認できなかった</b>（取消の送信に失敗した・照会が不明・まだ終端でない）。
+    /// <para>
+    /// <b>決済は出していない。</b><see cref="SoftwareStopExecuted.Quantity"/> は取り消せていない保護の株数である。
+    /// 🔴 <b>建玉が無いのに売りの逆指値が生きていると、発火して意図しないショートが建つ。</b>
+    /// 記録は <c>Active</c> のまま残し（ガードが巡回を続ける）、無音にしないために必ず 1 回発行する（Critical）。
+    /// </para>
+    /// </summary>
+    StopCancelUnconfirmed = 8,
 
     /// <summary>
     /// 🔴 #833 項目1, IADR-0389 決定7: <b>受理だけで完了させた成行決済が、1 株も（または一部しか）約定しないまま
