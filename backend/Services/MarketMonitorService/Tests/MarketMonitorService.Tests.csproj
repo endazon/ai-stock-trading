@@ -20,6 +20,8 @@
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
     <!-- #389 / #340, IADR-0146: バックエンド応答↔フロント契約フィクスチャの突合（テスト専用の共有支援）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.ContractFixtures\AiStockTrading.TestSupport.ContractFixtures.csproj" />
+    <!-- #957, IADR-0399: 保有照会の「評価できなかった行」の計器（ast.market_monitor.position_rows_degraded）の発火を表明する。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
     <!-- FR-03, FR-10, #943, IADR-0390: 損切り検知が読む GET /risk-controls/open-positions の契約テスト（T-10-803）が
          送り手の本物の型（OpenPositionView）を直列化するためのテスト専用参照。本体（MarketMonitorService.csproj）は参照しない。
          移送先は Web SDK で `public partial class Program` を持つため、`Program` の曖昧（CS0433）を避けて extern alias で参照する

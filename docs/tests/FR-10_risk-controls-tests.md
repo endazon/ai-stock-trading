@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_943_cross-service-read-contracts, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_936_most-protective-stop-line]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #943, #938, #936]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0399]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_943_cross-service-read-contracts, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_936_most-protective-stop-line, 20260925_957_monitor-position-row-tolerance]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #943, #938, #936, #957]
 -->
 
 
@@ -1605,9 +1605,57 @@ T-10-648 / T-10-649 は緑のまま —— 中断を含まない安全側・境�
 | 🔴 送り手 `SizingContextView` の `ConsecutiveLosses` / `DrawdownRatio` / `Mode` をそれぞれ改名する | **それぞれ 1 件が赤**（T-10-802。763 件中 762 件合格）—— 既存の写像テストは受け手自身の型を直列化しており緑のまま |
 | 🔴 リスク管理の `open-positions` だけを文字列列挙で返す | **1 件が赤**（T-10-805。1914 件中 1913 件合格） |
 
-🔴 **本書が固定していない残余リスク**: 市場監視・報告書・サイジング文脈のアダプタは、改名された応答を実行時には従来どおり既定値で
-読む（契約テストが改名のマージを止めるが、送り手だけを先に配備すると窓が開く）。他のサービス間の読み取り（日報方針・費用統制・
-監視銘柄・報告書の各照会・通知の操作結果）には送り手の型による契約テストが無い。どちらも追随の対象である。
+🔴 **本書が固定していない残余リスク**: 報告書・サイジング文脈のアダプタは、改名された応答を実行時には従来どおり既定値で
+読む（契約テストが改名のマージを止めるが、送り手だけを先に配備すると窓が開く）。市場監視は次節（#957）で行ごとに扱うようにした。
+他のサービス間の読み取り（日報方針・費用統制・監視銘柄・報告書の各照会・通知の操作結果）には送り手の型による契約テストが無い。
+どちらも追随の対象である。
+
+## 市場監視の保有照会を行ごとに扱う（#957。1 行・1 銘柄の不正で巡回全体の損切り検知を止めない）
+
+上節の契約テスト（T-10-803）は改名のマージを止めるが、送り手だけを先に配備した窓では、市場監視は応答を非 nullable の型へ直接読んでいた。
+銘柄の欠落は実運用の市況源（Finnhub）で例外になり**巡回全体が止まり**（全建玉の損切り検知・変動検知・生存要約が出ない）、
+損切りラインの欠落は 0 に化けて**ロングは発火せず、含み益のショートは毎巡回発火した**。
+
+写像の要点は 4 つある。**(1) 応答は行ごとに分類する**（評価する／近似のラインで評価する／評価できない）。**(2) 損切りラインの無い行は
+0 ではなく送り手と同じ近似（平均取得単価 × (1 ∓ 既定比率)）で評価し、近似と示す**（平均取得単価も無ければ評価しない）。
+**(3) 評価できない行・近似の行は Critical（1 巡回 1 行）・計器・アラートで声に出す**。**(4) 市況の照会は銘柄ごとに閉じる**
+（1 銘柄の例外はその銘柄の価格欠落。呼び出し側の停止要求だけは伝える）。
+`HttpPositionStoreTests`・`MarketMonitorServiceTests`・`StopLossLivenessReporterTests`・`PositionRowToleranceCompositionTests`（市場監視）、
+`FinnhubMarketDataSourceTests`（共有の市況源）、`BusinessMetricsTests`（計器）。
+
+| ID | 前提 | 操作 | 期待 | 不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-833** | 送り手の本物の型を直列化した 3 行の応答の 1 行から、銘柄を消す／`ticker` へ改名／空／空白、市場・方向を消す／未定義値、数量を消す／0／負、行を `null` にする | 市場監視の保有照会で読む | 🔴 健全な 2 行はそのまま返り、不正な行は返らない。`identity-missing` が 1、Critical が 1 行 | 1 行の不正で他の行の保護を止めない | 自動（**最重要**） |
+| **T-10-834** | 同上で、ショートとロングの損切りラインを消す／`stopPrice` へ改名／0／負にする | 同上 | 🔴 送り手の既定比率と同じ近似（ショート 240 × 1.03・ロング 400 × 0.97）で `StopLossApproximated` として返り、ライン 0 の行は無い。含み益のショートは発火せず、ロングは近似のラインで発火する | 不明を 0 と読まない | 自動（**最重要**） |
+| **T-10-835** | 1 行はラインと平均取得単価の両方、1 行は平均取得単価だけが無い | 同上 | 前者は返らず `stop-line-unknown`、後者はラインで返り平均取得単価は null（0 ではない） | 見積もれない行を 0 で評価しない | 自動（否定形） |
+| **T-10-836** | 200 で壊れた JSON／`null`／列挙が文字列の本文、および健全な本文 | 同上 | 前者は空列のまま `response-unreadable` と Critical。健全な本文では計器も Warning 以上のログも出ない | 平常時 0 件（アラートの前提） | 自動 |
+| **T-10-837** | 2 保有・2 監視銘柄。1 銘柄の照会が `ArgumentNullException`／呼び出し側以外の打ち切り／`InvalidOperationException` を投げる。別に、呼び出し側の停止要求 | 1 巡回を評価する | 🔴 他の保有の到達と変動判定は出て、例外の銘柄は価格欠落として記録され Error が出る。停止要求は例外として伝わる | 1 銘柄の失敗を巡回全体へ広げない | 自動（**最重要**） |
+| **T-10-838** | 銘柄が null／空／空白 | Finnhub の市況源で照会する | null を返し、HTTP もレート枠も使わず、例外を投げない | 市況源が巡回を落とさない | 自動 |
+| **T-10-839** | 近似のラインの保有と実値のラインの保有 | 生存要約と閉場の報告を出す | 近似のラインにだけ「（近似」が付く | 近似を実値と並べて書かない | 自動 |
+| **T-10-840** | **本番の Program.cs の組み立て**（リスク管理と Finnhub の一次ハンドラだけを差し替え）。送り手の型の 3 行のうち 1 行は銘柄なし、1 行はラインなし | 1 巡回を評価する | 🔴 健全な行の到達が出て、ラインの無いショートは近似 247.20 で評価され、Finnhub へは健全な銘柄しか照会されず、計器と Critical が出る | 配線が実際にこの実装と計器を組む | 自動（**結線**） |
+| **T-10-841** | 同上 | 同じ DI から組んだ常駐の巡回を 1 回回す | 🔴 例外なく終わり、Critical が出たうえで**健全な行の生存要約**（保有 2 件・近似の印つき）が出る | 1 行の不正で生存要約を黙らせない | 自動（**結線**） |
+| **T-10-842** | — | 計器を発火させる／`node scripts/check-observability-assets.js` | 理由つきで件数ぶん計上し 0 件は計上しない。レジストリ・ダッシュボード・アラートの名前が一致する | 空のグラフ・鳴らないアラートを作らない | 自動 |
+| T-10-843 | — | 変異注入 | 下表 | 守りが実在する | 手動（実測） |
+
+**変異注入の実測（2026-09-25）**。1 つずつ入れて `MarketMonitorService.Tests`（市況源の変異は `AiStockTrading.Shared.Infrastructure.Tests` も）を実行し、
+実行ごとに変異前の内容へ書き戻した（書き戻した後、各ファイルに是正の箇所が残っていることを確認した）。市場監視は全 186 件。
+
+| 変異 | 結果 | 赤になったテスト |
+| --- | --- | --- |
+| 🔴 識別できない行を評価へ素通しする（行ごとの分類を外す） | 186 件中 **14 件赤** | T-10-833（12 件）/ T-10-840 / T-10-841 |
+| 🔴 ラインの無い行を近似ではなく 0 で評価する | 186 件中 **6 件赤** | T-10-834（4 件）/ T-10-840 / T-10-841 |
+| 評価できなかった行を計器へ計上しない | 186 件中 18 件赤 | T-10-833（12 件）/ T-10-834（4 件）/ T-10-835 / T-10-840 |
+| 評価できなかった行を Critical ではなく Warning で出す | 186 件中 19 件赤 | T-10-833（12 件）/ T-10-834（4 件）/ T-10-835 / T-10-840 / T-10-841 |
+| 200 の壊れた本文を計器・Critical なしで空列にする | 186 件中 2 件赤 | T-10-836（壊れた JSON・列挙が文字列。`null` の本文は別の経路で計上されるため緑） |
+| 🔴 巡回の銘柄ごとの catch を外す | 186 件中 **3 件赤** | T-10-837（3 件） |
+| 呼び出し側の停止要求も「価格が取れない」として飲み込む | 186 件中 1 件赤 | T-10-837（停止要求） |
+| Finnhub の「銘柄が無い照会は出さない」を外す | 共有の市況源 318 件中 3 件赤（市場監視は 186 件緑） | T-10-838（3 件）。市場監視は行ごとの分類が null の銘柄を先に落とすため緑（多層の守り） |
+| 生存要約・閉場の報告から「近似」の印を外す | 186 件中 2 件赤 | T-10-839 / T-10-841 |
+| 🔴 **是正前の形**（行の素通し＋巡回の catch なし＋Finnhub の門なし）を同時に入れる | 市場監視 186 件中 **17 件赤**・共有の市況源 3 件赤 | T-10-833（12 件）/ T-10-837（3 件）/ **T-10-840 / T-10-841（本番の組み立てで巡回が例外で落ち、生存要約が出ない）** / T-10-838（3 件） |
+
+🔴 **本書が固定していない残余リスク**: 評価できない行の建玉は、アラートで人が気付くまで市場監視の損切り検知が無い。近似のラインは実際のラインでは
+なく、実際より緩ければ到達が遅れ、保護的なら到達の通知が重なる（S1 の行は自分のラインで判定し直されるため決済はされない）。すべての行が
+評価できない巡回では生存要約は出ない（Critical が代わりに出る）。
 
 ## 未カバー・実施予定
 
