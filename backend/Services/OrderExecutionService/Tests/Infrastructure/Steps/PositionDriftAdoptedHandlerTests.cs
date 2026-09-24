@@ -163,7 +163,10 @@ public class PositionDriftAdoptedHandlerTests
         // ハンドラの例外が呼び出し側（受信経路では共通の再試行ポリシー。IADR-0129 決定 5）へ届くこと。
         // 🔴 Wolverine の受信経路へ流すと、再試行の待ち（2s/10s/30s）を壁時計で待つことになる。
         // ここで固定するのは「ハンドラが握らずに投げる」ことであり、再試行ポリシーは全ハンドラ共通の配線が持つ。
-        // 依存は本番と同じ DI の組み立てから取り出す（発行先も Wolverine の本物の IMessageBus）。
+        // 依存はこの試験の DI（BuildHostAsync）から取り出す（発行先は Wolverine の本物の IMessageBus）。
+        // 🔴 **本番の Program.cs の組み立てではない**——ここでは ProtectiveStopDriftAdopter を型ごと登録し、建玉照会も
+        // 自分で登録している。Program.cs が moomoo 構成で建玉照会を渡すことは T-10-740
+        //（ProtectiveStopDriftAdopterCompositionTests）が Program.cs そのものを組んで固定する。
         using var scope = host.Services.CreateScope();
         var handler = new PositionDriftAdoptedHandler(
             scope.ServiceProvider.GetRequiredService<ProtectiveStopDriftAdopter>(),
