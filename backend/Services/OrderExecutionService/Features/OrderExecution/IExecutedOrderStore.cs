@@ -21,6 +21,21 @@ public interface IExecutedOrderStore
     /// </summary>
     IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize);
 
+    /// <summary>
+    /// FR-10, #958, IADR-0406 決定1: 指定した注文 ID のうち非終端（<see cref="OrderStatusLifecycle.IsPending"/>）の記録を
+    /// 古い順に返す。<b>追跡上限は見ない</b>——呼び出し側（約定追跡）が対象を Active な S0 の逆指値レグに絞る。
+    /// 空集合なら何も読まずに空を返す。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds);
+
+    /// <summary>
+    /// FR-10, #958, IADR-0406 決定3: 非終端の記録の<b>追跡の起点</b>（<see cref="ExecutionRecord.ExecutedAt"/>）を
+    /// <paramref name="trackedFrom"/> へ進める（約定追跡の窓へ戻す）。<b>時刻の列だけ</b>を書き、状態・数量・価格には触れない
+    /// （並行に約定追跡が記録を終端にしていても、古い状態で上書きしない）。記録が無い・終端・起点が既に同じか新しいなら
+    /// 何もせず false を返す。
+    /// </summary>
+    bool RenewTracking(string orderId, DateTimeOffset trackedFrom);
+
     // #820 の 4 巡目監査, IADR-0344 追記(4): FindClosesSince（建玉照会がまだ映していない決済の走査）は撤去した。
     // 持ち分を毎巡回引き直す方式そのものをやめ、保護記録が残保護数量を状態として持つ形へ作り直したため、
     // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。

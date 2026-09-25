@@ -4,6 +4,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Trading;
 using TradeDecisionService.Features.TradeDecision;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -83,7 +84,7 @@ public class LlmPurposeWiringTests
         using var factory = new Factory();
         _ = factory.CreateClient();
 
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             using var scope = factory.Services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<Orchestrated.TradeDecisionAppService>()

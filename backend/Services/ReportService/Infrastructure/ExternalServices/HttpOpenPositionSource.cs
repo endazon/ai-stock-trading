@@ -13,6 +13,10 @@ namespace ReportService.Infrastructure.ExternalServices;
 // 同居する `HttpPeriodFillSource`（不達＝空列）とは**向きが逆**であり、`HttpBuyInInferenceRecordSource` と同じ向き。
 // 「建玉ゼロ」は重い事実であり、照会できなかったことと同じに書けば「今は何も持っていない」と読める。
 // **隣に逆向きの前例があるため、後から「揃える」方向の整理で壊されやすい。揃えてはならない。**
+//
+// FR-06, FR-10, #957, IADR-0408: 🔴 **識別できない行・価格の無い行が 1 つでもあれば応答全体を未供給にする。**
+// 送り手の項目名が変わった版だけが先に配備されると、行は既定値（銘柄 null・0 円）で届く。行を落とすと §3 は
+// 実在する建玉を書き漏らしたまま（全行なら「建玉なし」と）確定値として出る。§3 全体を未供給と書くほうが誤読されない。
 public sealed class HttpOpenPositionSource(HttpClient httpClient, ILogger<HttpOpenPositionSource> logger)
     : IOpenPositionSource
 {
@@ -34,7 +38,7 @@ public sealed class HttpOpenPositionSource(HttpClient httpClient, ILogger<HttpOp
             }
 
             var rows = await response.Content
-                .ReadFromJsonAsync<List<OpenPositionDto>>(cancellationToken)
+                .ReadFromJsonAsync<List<OpenPositionDto?>>(cancellationToken)
                 .ConfigureAwait(false);
 
             if (rows is null)
@@ -43,8 +47,23 @@ public sealed class HttpOpenPositionSource(HttpClient httpClient, ILogger<HttpOp
                 return null;
             }
 
-            // 銘柄が空の行は落とす（描画できないうえ、突き合わせの手掛かりにもならない）。
-            return [.. rows.Where(r => !string.IsNullOrWhiteSpace(r.Symbol)).Select(ToPosition)];
+            // #957, IADR-0408: 行を落とさない。1 行でも読めなければ §3 全体を未供給にする（契約の食い違いなので Error）。
+            var positions = new List<ReportPosition>(rows.Count);
+            foreach (var row in rows)
+            {
+                if (ToPosition(row) is not { } position)
+                {
+                    logger.LogError(
+                        "建玉の応答に識別できない行・価格の無い行がありました（{Rows} 行中）。送り手との契約の食い違いとみなし、"
+                            + "**建玉を未供給として扱います**（行を落として「建玉なし」とは書きません）。",
+                        rows.Count);
+                    return null;
+                }
+
+                positions.Add(position);
+            }
+
+            return positions;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -61,16 +80,25 @@ public sealed class HttpOpenPositionSource(HttpClient httpClient, ILogger<HttpOp
     // 権威源の OpenPositionView から報告書の行へ写す。
     // **現在値・評価損益・借株料累計・保有日数は本経路が運ばない**——`null`（未供給）のまま返し、
     // 現在値の解決だけを ReportDraftService（市場データ源を持つ層）が後段で埋める。
-    private static ReportPosition ToPosition(OpenPositionDto r) => new(
-        r.Market, r.Symbol, r.Side, r.Quantity, r.EntryPrice, r.StopLossPrice,
-        CurrentPrice: null, UnrealizedPnl: null, BorrowFeeTotal: null, HoldingDays: null);
+    // #957, IADR-0408: 送り手の射影は数量 0 の建玉を出さず（数量は常に正）、ラインの無いロットも近似で埋める（常に正）。
+    // それを破る行は解釈できないので null（＝応答全体を未供給）にする。
+    private static ReportPosition? ToPosition(OpenPositionDto? r) =>
+        r is
+        {
+            Symbol: { } symbol, Market: { } market, Side: { } side, Quantity: > 0 and { } quantity,
+            EntryPrice: > 0m and { } entryPrice, StopLossPrice: > 0m and { } stopLossPrice
+        }
+            && !string.IsNullOrWhiteSpace(symbol) && Enum.IsDefined(market) && Enum.IsDefined(side)
+            ? new(market, symbol, side, quantity, entryPrice, stopLossPrice,
+                CurrentPrice: null, UnrealizedPnl: null, BorrowFeeTotal: null, HoldingDays: null)
+            : null;
 
-    // 権威源の OpenPositionView と同形（camelCase・列挙は数値で往復する）。
+    // 権威源の OpenPositionView と同形（camelCase・列挙は数値で往復する）。#957, IADR-0408: 欠落を既定値と区別するため全項目 nullable。
     private sealed record OpenPositionDto(
-        string Symbol,
-        Market Market,
-        TradeSide Side,
-        int Quantity,
-        decimal EntryPrice,
-        decimal StopLossPrice);
+        string? Symbol,
+        Market? Market,
+        TradeSide? Side,
+        int? Quantity,
+        decimal? EntryPrice,
+        decimal? StopLossPrice);
 }

@@ -4,6 +4,7 @@ using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Features.RiskManagement.ClosePosition;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
@@ -73,7 +74,7 @@ public class PositionCloseEndpointTests(RiskWorkerWebApplicationFactory factory)
 
         // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
         HttpResponseMessage res = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             res = await OwnerClient().PostAsJsonAsync("/risk-controls/positions/close", Body("CLOSE1"));
         });

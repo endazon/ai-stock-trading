@@ -3,6 +3,7 @@ extern alias RiskManagementWorker;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using ReportService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -56,8 +57,9 @@ public class HttpOpenPositionSourceTests
     // 🔴 T-10-804, FR-06, FR-10, #943, IADR-0390（T-10-744 の同型）: **送り手の本物の型（`OpenPositionView`）を直列化した応答**を読めることを固定する。
     // 上の肯定形は手書きの JSON であり、リスク管理側で項目名を変えても（例: `Symbol` → `Ticker`）緑のままになる
     // （#943 の実測: ReportService.Tests 1101 件がすべて緑）。実行時は銘柄が null の行として逆シリアル化され、下の
-    // 「銘柄が空の行は落とす」で全行が落ちて**空列＝「建玉なし」**になる —— 未供給（null）ではなく、日報 §3 が
-    // 「今は何も持っていない」と書く。本テストは改名を赤で止める（変異注入で実測）。
+    // 「銘柄が空の行は落とす」で全行が落ちて**空列＝「建玉なし」**になっていた —— 未供給（null）ではなく、日報 §3 が
+    // 「今は何も持っていない」と書く。本テストは改名を赤で止める（変異注入で実測）。［2026-09-25 追記 / #957］実行時は
+    // T-10-880 で応答全体を未供給へ倒すようにした（改名はここで赤のまま。読めた建玉が null になるため）。
     [Fact]
     public async Task 送り手の本物の型を直列化した応答から建玉を読める()
     {
@@ -127,17 +129,52 @@ public class HttpOpenPositionSourceTests
         positions!.Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task 銘柄が空の行は落とす()
+    // 🔴 T-10-880, FR-06, FR-10, #957, IADR-0408: **識別できない行・価格の無い行が 1 つでもあれば、応答全体を未供給にする。**
+    // 送り手の項目名が変わった版だけが先に配備されると、行は既定値（銘柄 null・0 円）で届く。行を落とせば §3 は実在する建玉を
+    // 書き漏らしたまま（全行なら「建玉なし」と）確定値として出る。「建玉なし（空列）」とも「健全な 1 行だけ」とも読まない。
+    [Theory]
+    [InlineData("symbol", null)]
+    [InlineData("symbol", "ticker")]
+    [InlineData("symbol", "\"\"")]
+    [InlineData("symbol", "\"  \"")]
+    [InlineData("market", null)]
+    [InlineData("market", "9")]
+    [InlineData("side", null)]
+    [InlineData("side", "7")]
+    [InlineData("quantity", null)]
+    [InlineData("quantity", "0")]
+    [InlineData("entryPrice", null)]
+    [InlineData("entryPrice", "0")]
+    [InlineData("stopLossPrice", null)]
+    [InlineData("stopLossPrice", "0")]
+    [InlineData("row", null)]
+    public async Task 識別できない行や価格の無い行が1つでもあれば未供給へ倒す(string field, string? replacement)
     {
-        var handler = new StubHandler(HttpStatusCode.OK, """
-            [{"symbol":"","market":0,"side":0,"quantity":100,"entryPrice":2500,"stopLossPrice":2375},
-             {"symbol":"7203","market":0,"side":0,"quantity":100,"entryPrice":2500,"stopLossPrice":2375}]
-            """);
+        IReadOnlyList<OpenPositionView> views =
+        [
+            new("AAPL", Market.UnitedStates, TradeSide.Buy, 3_378, 337.63m, 320.75m),
+            new("TSLA", Market.UnitedStates, TradeSide.Sell, 5, 240m, 252m),
+        ];
+        var body = JsonSerializer.SerializeToNode(views, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsArray();
+        if (field == "row")
+        {
+            body[1] = null;
+        }
+        else
+        {
+            var row = body[1]!.AsObject();
+            var value = row[field]!.DeepClone();
+            row.Remove(field);
+            // null＝項目を消す／英字＝その名前へ改名する／それ以外＝値を差し替える。
+            if (replacement is not null && char.IsLetter(replacement[0]))
+                row[replacement] = value;
+            else if (replacement is not null)
+                row[field] = JsonNode.Parse(replacement);
+        }
 
-        var positions = await Source(handler).GetOpenPositionsAsync();
+        var positions = await Source(new StubHandler(HttpStatusCode.OK, body.ToJsonString())).GetOpenPositionsAsync();
 
-        positions.Should().ContainSingle().Which.Symbol.Should().Be("7203");
+        positions.Should().BeNull("識別できない行を落として「建玉なし」や健全な行だけの一覧と書かない");
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

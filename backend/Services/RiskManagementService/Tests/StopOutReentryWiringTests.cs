@@ -6,6 +6,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.Metrics;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,7 +49,7 @@ public class StopOutReentryWiringTests
             services.AddSingleton<IClock>(new FakeClock(BuyAttemptAt, TradingDay.Of(BuyAttemptAt)))));
 
         // 本番の Wolverine 構成が発見した SoftwareStopExecutedLedgerHandler に台帳へ書かせる。
-        await wired.Services.ExecuteAndWaitAsync(async () =>
+        await wired.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             using var scope = wired.Services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync(S1ClosePlaced());
@@ -69,7 +70,7 @@ public class StopOutReentryWiringTests
         }
 
         // 判断イベントの購読（TradeDecisionMadeHandler）を通すと、拒否理由が業務メトリクスに名前で出る。
-        await wired.Services.ExecuteAndWaitAsync(async () =>
+        await wired.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             using var scope = wired.Services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IMessageBus>()

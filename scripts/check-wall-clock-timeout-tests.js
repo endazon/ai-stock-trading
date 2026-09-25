@@ -5,6 +5,8 @@
  *
  * NFR / #921 / IADR-0379 決定 4（2026-09-25 追記）:
  * **壁時計どうしの競争で合否が決まる試験**（#885 の形 (a)）を機械的に止める。
+ * NFR / #922 / IADR-0168（2026-09-25 追記）: 同じ母集合で**形 (c)**（Wolverine の待ちヘルパを予算つきの入口を
+ * 経ずに呼ぶ＝既定 5 秒の窓）も止める。検出規則は `detectShapeC` の注記を参照。
  *
  * 背景（#885 / #900 / #901。実際に落ちるところを捉えた同型が 3 件）:
  *   タイマーのコールバックはスレッドプールが配送する。ソリューション全体の並列実行でプールが塞がると、
@@ -33,7 +35,7 @@
  *   - コメント・文字列リテラル中の言及（`check-tracked-session-timeout.js` の `stripComments` を共用する。
  *     **禁止を説明する散文で検査が自分の目的を殺さない**）。
  *   - `ReplyTimeout = …` のような別名のプロパティ（語境界で `Timeout` だけを見る）。
- *   - 形 (b)（本リポジトリに該当なし）・形 (c)（`ExecuteAndWaitAsync` の既定 5 秒。#922 の担当）。
+ *   - 形 (b)（本リポジトリに該当なし）。形 (c) は下の `SHAPES` の 2 行目（#922）。
  *
  * 母集合: **ディレクトリ名が `Tests` で終わる**ディレクトリ配下の `*.cs`。
  *   🔴 `/Tests/` だけで絞ると `backend/TestSupport/*.Tests/` を取りこぼす（#885 の走査で実際に 1 件）。
@@ -221,6 +223,130 @@ function detectShapeA(stripped) {
   }];
 }
 
+// ---------------------------------------------------------------------------
+// 形 (c): 待ちヘルパの上限が仕事量に対して小さい（Wolverine の短縮入口の既定 5 秒。#922）
+// ---------------------------------------------------------------------------
+
+/**
+ * Wolverine の**短縮入口**（`IServiceProvider` / `IHost` の拡張）と、`TrackedSessionConfiguration` の
+ * 同名メソッド。前者は `timeoutInMilliseconds = 5000` を既定に持ち、`check-tracked-session-timeout.js`
+ * （素の `TrackActivity()` の禁止）を素通りする。後者は `TrackActivityForTest()` の予算（IADR-0168）の中で走る。
+ * **名前では両者を区別できない**ため、受け手（`.` の左の式）を読んで区別する。
+ */
+const WAIT_SHORTCUTS = [
+  'ExecuteAndWaitAsync',
+  'ExecuteAndWaitValueTaskAsync',
+  'InvokeMessageAndWaitAsync',
+  'SendMessageAndWaitAsync',
+  'PublishMessageAndWaitAsync',
+];
+
+/** 予算つきの入口（`AiStockTrading.TestSupport.Messaging`）。受け手の式にこれが現れれば予算の中である。 */
+const BUDGETED_ENTRY = /\bTrackActivityForTest\s*\(/;
+
+const IDENT_CHAR = /[A-Za-z0-9_]/;
+
+/**
+ * `.` の位置（dotIndex）から左へ、メソッド呼び出しの受け手の式を読む。
+ * 識別子・`.`・`?.`・呼び出しの括弧（入れ子を数える）・型引数の山括弧・空白（改行を含む）をたどる。
+ */
+function receiverOf(text, dotIndex) {
+  let i = dotIndex - 1;
+  for (;;) {
+    while (i >= 0 && /\s/.test(text[i])) i -= 1;
+    if (i < 0) break;
+    if (text[i] === ')' || text[i] === '>' || text[i] === ']') {
+      const close = text[i];
+      const open = close === ')' ? '(' : close === '>' ? '<' : '[';
+      let depth = 0;
+      for (; i >= 0; i -= 1) {
+        if (text[i] === close) depth += 1;
+        else if (text[i] === open) {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      i -= 1;
+      continue;
+    }
+    if (IDENT_CHAR.test(text[i])) {
+      while (i >= 0 && IDENT_CHAR.test(text[i])) i -= 1;
+      let j = i;
+      while (j >= 0 && /\s/.test(text[j])) j -= 1;
+      if (j >= 0 && text[j] === '.') {
+        i = j - 1;
+        if (i >= 0 && text[i] === '?') i -= 1;
+        continue;
+      }
+      break;
+    }
+    break;
+  }
+  return text.slice(i + 1, dotIndex).trim();
+}
+
+/**
+ * 受け手が予算の中か。受け手の式が `TrackActivityForTest(` を含むか、受け手が**単独の識別子**で、
+ * 呼び出しより前・**同じスコープ**にあるその識別子への**直近の**代入が `TrackActivityForTest(` を含めば
+ * 予算の中とみなす（`var tracking = host.TrackActivityForTest(); … tracking.ExecuteAndWaitAsync(…)` の形）。
+ * #922 のレビュー: ファイル全体で名前だけを見ると、別メソッドの同名変数（予算つき）に引きずられて
+ * 素の `TrackActivity(…)` を束縛した呼び出しを見逃す。代入の位置から呼び出しまでの間に、代入を含む
+ * ブロックが閉じる（波括弧の深さが代入の位置より浅くなる）ものはスコープ外として採らない。
+ * 同じスコープで後から再代入していれば、呼び出しに近い方（直近）で判定する（自分から派生する再代入は読み飛ばす）。
+ */
+function isBudgeted(receiver, stripped, callIndex = stripped.length) {
+  if (BUDGETED_ENTRY.test(receiver)) return true;
+  const id = /^[A-Za-z_]\w*$/.exec(receiver);
+  if (!id) return false;
+  const assign = new RegExp(String.raw`\b${id[0]}\s*=(?!=)([^;]*)`, 'g');
+  const candidates = [];
+  let a;
+  while ((a = assign.exec(stripped)) !== null && a.index < callIndex) candidates.push(a);
+  const selfDerived = new RegExp(String.raw`^\s*${id[0]}\b`);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    if (!inSameScope(stripped, candidates[i].index, callIndex)) continue;
+    // `tracking = tracking.DoNotAssertOnExceptionsDetected()` のように自分から派生する再代入は、元の束縛を引き継ぐ。
+    if (selfDerived.test(candidates[i][1])) continue;
+    return BUDGETED_ENTRY.test(candidates[i][1]);
+  }
+  return false;
+}
+
+/** from から to までの間に、from の位置を含むブロックが閉じないか（波括弧の深さが 0 を下回らないか）。 */
+function inSameScope(text, from, to) {
+  let depth = 0;
+  for (let i = from; i < to; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}' && --depth < 0) return false;
+  }
+  return true;
+}
+
+/**
+ * 形 (c) の検出。Wolverine の待ちヘルパを、予算つきの入口を経ずに（＝既定 5 秒の窓で）呼んでいれば 1 件。
+ * `timeoutInMilliseconds:` を明示した呼び出しも落とす —— 予算の単一情報源（IADR-0168 決定 2。環境変数で
+ * 上書きできる）を迂回するからである。使うべき入口は `ExecuteAndWaitForTestAsync()` か
+ * `TrackActivityForTest().…AndWaitAsync()`。
+ */
+function detectShapeC(stripped) {
+  const hits = [];
+  const re = new RegExp(String.raw`\.\s*(${WAIT_SHORTCUTS.join('|')})\s*(?:<[^()]*>)?\s*\(`, 'g');
+  let m;
+  while ((m = re.exec(stripped)) !== null) {
+    const receiver = receiverOf(stripped, m.index);
+    if (receiver === '' || isBudgeted(receiver, stripped, m.index)) continue;
+    const line = lineOf(stripped, m.index + m[0].indexOf(m[1]));
+    hits.push({
+      line,
+      detail: `\`${receiver.replace(/\s+/g, ' ')}.${m[1]}(…)\` は予算つきの入口を経ていない`
+        + '（Wolverine の既定 5 秒の窓で打ち切る）',
+      method: m[1],
+      receiver,
+    });
+  }
+  return hits;
+}
+
 /**
  * 形ごとの検出器の表。**#922（形 (c)）などの新しい形はここへ 1 行足す**（母集合・コメント潰し・
  * allowlist・報告の書式を共用する）。
@@ -232,6 +358,14 @@ const SHAPES = [
     remedy: '遅い上流ではなく「応答しない上流」（`Task.Delay(Timeout.InfiniteTimeSpan, ct)`）で上限を固定し、'
       + '打ち切りで終わったことを観測で確定させてください（IADR-0379 決定 2。例: HttpCostControlGateTests）。',
     detect: detectShapeA,
+  },
+  {
+    id: 'c',
+    title: '待ちヘルパの上限が仕事量に対して小さい（Wolverine の短縮入口の既定 5 秒）',
+    remedy: '`services.ExecuteAndWaitForTestAsync(…)` か `host.TrackActivityForTest().ExecuteAndWaitAsync(…)`'
+      + '（AiStockTrading.TestSupport.Messaging）を使い、壁時計の予算（既定 30 秒・環境変数で上書き可）の中で待ってください'
+      + '（IADR-0168。#357 は 5 秒をスケジューリング遅延だけで超えた実測を持つ）。',
+    detect: detectShapeC,
   },
 ];
 
@@ -275,14 +409,14 @@ function main() {
   if (violations.length === 0) {
     console.log(
       `[check-wall-clock-timeout-tests] OK: テストファイル ${stats.scanned} 件に`
-      + ' 壁時計どうしの競争で合否が決まる形はありません'
+      + ' 壁時計に合否を委ねる形（(a) 打ち切りと遅延の競争・(c) 既定 5 秒の待ちヘルパ）はありません'
       + `（allowlist ${ALLOWED.size} 件）。`
     );
     process.exit(0);
   }
 
   console.error(
-    `[check-wall-clock-timeout-tests] 壁時計どうしの競争で合否が決まる形を ${violations.length} 件検出しました:`
+    `[check-wall-clock-timeout-tests] 壁時計に合否を委ねる形を ${violations.length} 件検出しました:`
   );
   for (const v of violations) {
     console.error(`  ${v.file}:${v.line}: [形 (${v.shape})] ${v.detail}`);
@@ -292,10 +426,12 @@ function main() {
     console.error(`  形 (${shape.id}) ${shape.title}`);
     console.error(`  → ${shape.remedy}`);
   }
-  console.error(
-    '  塞がったスレッドプールは、既に期限の切れた 2 つのタイマーの順序を入れ替えます。比を広げても、'
-  );
-  console.error('  待ちを延ばしても消えません（#885 / #900 / #901 で実測・IADR-0379）。');
+  if (violations.some((v) => v.shape === 'a')) {
+    console.error(
+      '  塞がったスレッドプールは、既に期限の切れた 2 つのタイマーの順序を入れ替えます。比を広げても、'
+    );
+    console.error('  待ちを延ばしても消えません（#885 / #900 / #901 で実測・IADR-0379）。');
+  }
   console.error(
     '  実時間の経過そのものが命題である試験だけは、ALLOWED に理由と起票 ID を添えて登録してください。'
   );
@@ -309,11 +445,14 @@ if (require.main === module) {
 module.exports = {
   ALLOWED,
   SHAPES,
+  WAIT_SHORTCUTS,
   CUTOFF_RULES,
   DELAY_RULES,
   isUnderTestsDir,
   readDuration,
   detectShapeA,
+  detectShapeC,
+  receiverOf,
   findViolations,
   checkTree,
 };

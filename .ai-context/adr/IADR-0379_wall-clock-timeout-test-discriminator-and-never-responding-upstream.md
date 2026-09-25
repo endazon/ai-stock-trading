@@ -130,6 +130,13 @@ await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(fal
 - 代償: 各テストに `Guard` と打ち切りの観測が 1 行ずつ増える。**打ち切りが壊れた場合の所要は 30 秒**になる
   （従来は 2 秒で誤って緑になっていた）。
 - 🔴 残余リスク: 形 (c)（5 秒の追跡窓・約 30 テスト）は**手つかず**である。別 issue で扱う。
+  > ［2026-09-25 追記 / #922］**形 (c) を是正し、検査器へ足した**（作業仕様書 `20260925_922_execute-and-wait-tracking-budget`）。
+  > 走査の実数は **15 ファイル・35 か所**（「約 30 テスト」は #885 時点の数えで、否定形・未掲載の 11 か所を含めて全部寄せた）。
+  > 35 か所は予算つきの入口 `IServiceProvider.ExecuteAndWaitForTestAsync`（IADR-0168 の `TrackedSessionBudget`＝既定 30 秒・環境変数で上書き可。
+  > **同じ Wolverine の overload を上限だけ変えて呼ぶ**）へ置換し、表明・引数は変えていない。検出は `check-wall-clock-timeout-tests.js` の
+  > `SHAPES` の 2 行目（形 (c)）: 待ちヘルパ 5 種の呼び出しで、受け手の式が `TrackActivityForTest(` を含まず、そこへ代入された変数でもなければ落とす。
+  > 置換前の木で 35 件をファイル・行まで一致して検出し、予算つきの入口経由の 294 か所は 0 件（偽陽性 0）。allowlist は空のまま。
+  > **本項の残余リスクは解消した。**
 - 🔴 残余リスク: 検査器が入るまでの間、**新しい同型は止まらない**。
   > ［2026-09-25 追記 / #921］**検査器を入れた**（`scripts/check-wall-clock-timeout-tests.js`・CI の `static-checks`。
   > 作業仕様書 `20260925_921_wall-clock-race-checker`）。**allowlist は空**で、develop（661 テストファイル）の検出は 0 件、

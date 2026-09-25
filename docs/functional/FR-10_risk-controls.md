@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, planning#292]
 -->
 
 
@@ -864,8 +864,10 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
   導入当日のうち「分からない」理由で止まる。翌取引日には解ける。**ブローカー側逆指値の武装の行もこれに含まれる**
   （武装は決済の承認として記録される）ため、導入前の当日に逆指値つきで建てた銘柄は、損切りしていなくても止まる。
 - **ブローカー側逆指値の約定は約定追跡の巡回で台帳へ届く**。届く前の審査はその損切りをまだ知らない。
-- 🔴 **武装から 24 時間を超えて約定したブローカー側逆指値は数えられない**（既存の欠落）。約定追跡の巡回は
-  記録から追跡上限（既定 24 時間）を過ぎた未約定の注文を照会せず、逆指値の記録の時刻は武装の時刻だからである。
+- **武装から 24 時間を超えて約定したブローカー側逆指値も数える**。約定追跡の巡回は記録から追跡上限（既定 24 時間）を
+  過ぎた未約定の注文を照会しないが、逆指値の記録の時刻は武装の時刻である。そこで、保護が有効なあいだの逆指値は
+  追跡上限の対象外として照会し、常駐ガードが逆指値の約定・失効を見て（または取り消して）保護を完了させるときは、
+  その前に逆指値の記録を追跡の窓へ戻す。照会が増えるのは保護が有効な逆指値の数だけである。
 
 ### 損切りの実行機構 — ブローカー側逆指値への一本化（#331）
 
@@ -887,7 +889,8 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | 成行手仕舞いを**送信したが結果を確認できない**（届いたか不明） | 🔴 **注文を重ねない**（未発注と仮定して撃ち直すと、巡回ごとに全数量の成行が増えて二重決済でショートになる）。発注前の予約を残して据え置き、逆指値の再発注も重ねない。Critical 通知は「解消に失敗」とは言わず、**重ねる前に証券会社の画面で確認**するよう求める。**据え置きが続くあいだ約 1 時間ごと、および再起動後の最初の巡回で通知を出し直す**（見逃すと逆指値なしの建玉が無期限に残るため。送信中にサービスが止まって通知が 1 通も出ていない場合もここで出る。出し直しは注文を増やさない）。🔴 **出し直すのは常駐ガードが巡回する建玉（逆指値が滞留中に失効した側）だけである。** エントリー直後の建玉解消で起きた場合は保護記録が無く巡回の対象に入らないため、通知は 1 回きりで、その本文も「巡回しない・繰り返さない・証券会社の画面で確かめて手で手仕舞う」と伝える（#941）。決済意図を運ぶので取引台帳は処理中の決済として押さえる（#848） | `ProtectiveStopCoverageLost`（Remediation=CloseDispatchIndeterminate）＋発注前の予約 |
 
 逆指値レグ・手仕舞いレグの約定は発注執行の約定追跡ポーリング経由で取引台帳へ届き、建玉・枠回復・
-報告書は既存経路のまま動く（決済の観測経路を増やさない）。逆指値の受理可否（銘柄・時間帯）の
+報告書は既存経路のまま動く（決済の観測経路を増やさない）。逆指値レグは、保護が有効なあいだ約定追跡の追跡上限
+（既定 24 時間）の対象外であり、武装から何日たって約定しても台帳へ届く。逆指値の受理可否（銘柄・時間帯）の
 実測は PoC（#342）待ちであり、受理されない環境では設計どおり建玉が作られない（安全側）。
 
 ### 口座種別の軸 — moomoo SIMULATE では損切りの実行機構を選べる（#819）
@@ -900,7 +903,7 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | --- | --- | --- |
 | **S0** ブローカー側逆指値（**既定**） | 上表のとおり。SIMULATE では逆指値が拒否されるため建玉を持たない | 実装済み |
 | **S1** ソフトウェア逆指値 | ブローカーへ保護逆指値を出さず、発注執行が損切りラインを記録する。損切りライン到達の検知を購読して**成行で決済する**（下記「S1 の動作」）。**監査台帳（`SoftwareStopArmed` / `SoftwareStopExecuted`）と Discord 通知に配置と決済を残す** | 実装済み |
-| **S2** 逆指値なしの建玉を許容 | 保護逆指値を発注せず建玉を保持する。**監査台帳（`ProtectiveStopWaived`）と Discord 通知（Warning）に「ペーパーで免除」を明示する** | 実装済み |
+| **S2** 逆指値なしの建玉を許容 | 保護逆指値を発注せず建玉を保持する。**監査台帳（`ProtectiveStopWaived`）と Discord 通知（Warning）に「ペーパーで免除」を明示する**。免除はエントリーの受付時点で記録され数量は発注数量である——約定しないまま終端した・一部約定で終端したときは、**監査台帳に打ち消し／数量の確定（`ProtectiveStopWaiverSettled`）を 1 件残す**（到着順に依らない） | 実装済み |
 | **S3** 他のブローカー側注文種別 | 保護レグを**ストップリミット**（または設定で**トレーリングストップ**）で発注し、**注文種別と拒否理由（`retType` / `retMsg`）を監査台帳（`AlternativeProtectiveStopAttempted`）へ受理・拒否のどちらでも残す**。拒否時の扱いは S0 と同じ（建玉を持たない）。受理された場合も S0 と同じ保護レグとして扱う | 実装済み |
 
 - **選択の設定点**: `PUT /risk-controls/settings/stop-loss-method`（本文 `{ "method": 0〜3, "reason": "…" }`）。
@@ -909,6 +912,14 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
   `stopLossMethod`（数値）。既定は S0 で、項目を持たない旧い設定行も S0 として読む（読めない値も S0）。
 - **実弾での拒否（設定側・2 方向）**: 発注先が moomoo REAL の間は S0 以外を選べない（400）。S0 以外が有効なまま
   moomoo REAL へは、確認操作（同意と「REAL」）が揃っていても切り替えられない（400）。
+- **設定上の発注先と実際の発注先（運用で揃える）**: 設定側の判定は**設定上の発注先**（リスク管理の設定値）を見るが、
+  この設定値はまだ発注経路を動かさない——実際に発注するアダプタは発注執行の構成（`Broker:Provider` と環境）が決める。
+  両者が食い違っていると、設定側では保存できた手法が発注執行で見送られる（例: 設定上は moomoo SIMULATE のまま、
+  構成が内蔵 paper → S2 を保存できるが新規建ては全件見送り・Error ログと見送りの通知あり）。**S0 以外を選ぶ前に、
+  設定上の発注先を発注執行の構成と揃える**（逆向きの食い違い〔設定上は内蔵 paper・実際は moomoo SIMULATE〕は
+  選んだ手法どおりに動くが、表示される発注先が実態と違う）。設定側の判定を観測（口座照会の発注先）へ寄せることはしない
+  ——安全は発注執行の承認ごとの判定（実際のアダプタで判定・見送りへ倒す）が担っており、観測が届かない時間帯の
+  扱いを新たに決めると関門の根拠が弱まるためである。
 - **承認への搭載**: 取引判断の承認（`OrderApproved`）は**審査時点で有効な手法**を運ぶ。発注執行は承認が運んだ値で
   保護レグを扱う（走行中の設定変更と承認が競合しない）。手法を持たない旧いメッセージは S0 として読まれる。
 - **発注執行の解決順**（新規建てにのみ適用。手仕舞いは手法に関わらず発注する）:
@@ -927,7 +938,8 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
   起動時の閂が別に止めている。したがって「実弾で S0 以外が有効」は設定側の 2 方向の拒否と、承認ごとの見送りで塞ぐ。
 - **注意（S2 の読み方）**: S2 の建玉が損切りラインへ到達すると市場監視は従来どおり到達を通知するが、
   **システムもブローカーも決済しない**。到達の通知は検知側が建玉ごとの手法を知らないため、
-  「S0＝ブローカー側の逆指値が実行／S1＝システムが成行で決済（別途通知）／S2＝誰も決済しない（手動で決済）」を列挙する。
+  「S0＝ブローカー側の逆指値が実行／S1＝システムが成行で決済（別途通知）／S2＝誰も決済しない（手動で決済）／
+  S3＝ブローカー側の代替注文（ストップリミット／トレーリングストップ）が実行（ストップリミットは約定しないことがある）」を列挙する。
 - **注意（S2 から S0 へ戻したとき）**: 既に建てた S2 の建玉は、S0 へ戻しても保護されない（手動で決済するまで無保護）。
 - **S3 の詳細**: 試す注文種別は発注執行の構成（`Broker:Moomoo:AlternativeStopOrderType`。既定はストップリミット。
   未知の値は起動時に停止する）で選ぶ——**手法そのもの（S0〜S3）の選択は上のとおり利用者の設定**であり、

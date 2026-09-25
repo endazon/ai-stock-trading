@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -66,7 +67,7 @@ public class ReportConfirmActorTests
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         HttpResponseMessage response = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             response = await client.PostAsJsonAsync($"/reports/{PeriodKey}/confirm", body);
         });
@@ -184,7 +185,7 @@ public class ReportConfirmActorTests
     {
         var client = ServiceAccountClient(factory);
         HttpResponseMessage response = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             response = await client.PostAsJsonAsync($"/reports/{PeriodKey}/confirm", body);
         });

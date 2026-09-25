@@ -13,6 +13,10 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // - エントリーが生きている（Accepted / PartiallyFilled / Filled）ときだけ発行する（建玉が生じない注文に免除は無い）。
 // - Method は承認が運んだ手法（現状は常に S2）、Provider は実際に発注したアダプタの発注先（現状は常に moomoo SIMULATE）。
 // - StopLossPrice は判断が付けた損切りライン（ブローカーへは置いていない）。
+// - 🔴 #826 項目 5, IADR-0413 決定2: **Quantity は発注数量**であり、受付時点では建玉の数量ではない（約定で確定する）。
+//   約定しないまま終端（取消・失効・拒否）した、または一部約定で終端した場合の打ち消し・数量の確定は、
+//   監査サービスが同じ相関の終端の約定記録から派生記録（ProtectiveStopWaiverSettled）として台帳へ残す。
+//   本イベントは約定時に発行し直さない（再配送でも再発行しない＝IADR-0342 決定6 のまま）。
 public record ProtectiveStopWaived(
     Guid EntryDecisionId,
     string Symbol,

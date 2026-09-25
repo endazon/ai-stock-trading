@@ -99,7 +99,9 @@ public class OrderFillPollingServiceTests
                         sp.GetRequiredService<IExecutedOrderStore>(),
                         sp.GetRequiredService<IClock>(),
                         sp.GetRequiredService<SoftwareStopReArmer>(),
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>()));
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>(),
+                        // #958, IADR-0406 決定2: Program.cs と同じく保護記録ストアを渡す（Active な S0 のレグを上限の外でも追う）。
+                        sp.GetRequiredService<IProtectiveStopOrderStore>()));
                 }
                 // FR-11, #633, IADR-0300: 約定を観測したら経費も記録する（既定は常に「取得できない」）。
                 opts.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
@@ -137,6 +139,43 @@ public class OrderFillPollingServiceTests
             m.DecisionId == decisionId
             && m.Status == OrderStatus.Filled
             && m.FilledQuantity == 1_000);
+
+        await host.StopAsync();
+    }
+
+    // T-10-865, FR-10, FR-05, #958, IADR-0406 決定2: 武装から 25 時間後に約定した S0 の損切りが、本番と同じ形の配線の常駐から
+    // OrderExecuted として発行される（リスク管理の取引台帳が約定を記録する唯一の入力。IADR-0394 はこの約定で損切りを数える）。
+    // 時計は固定（壁時計の sleep を使わない）。
+    [Fact]
+    public async Task 武装から25時間後に約定したS0はOrderExecutedとして発行される()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var entryDecisionId = Guid.NewGuid();
+        var stopDecisionId = ProtectiveStopIds.StopDecisionId(entryDecisionId, 1);
+        var armedAt = Now.AddHours(-25);
+        stops.Save(new ProtectiveStopOrder(
+            entryDecisionId, stopDecisionId, "ORD-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 1_000, 330m, 1m, 1, ProtectiveStopState.Active, armedAt, armedAt));
+        store.Save(new ExecutionRecord(
+            stopDecisionId, "ORD-1", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Close, 1_000, 330m, 0, 0m, OrderStatus.Accepted, 0m, armedAt));
+        var broker = new SequenceBroker(
+            new BrokerOrder("ORD-1", Intent(), OrderStatus.Filled, 1_000, 329.5m, default, Now));
+        using var host = await BuildHostAsync(broker, store, stops);
+        var service = BuildService(host, new FillPollingOptions()); // 追跡上限は既定の 24 時間
+
+        OrderFillPollResult result = null!;
+        Func<IMessageContext, Task> poll = async _ => result = await service.PollOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
+
+        result.Terminalized.Should().Be(1);
+        session.Sent.MessagesOf<OrderExecuted>().Should().ContainSingle(m =>
+            m.DecisionId == stopDecisionId
+            && m.OrderId == "ORD-1"
+            && m.Status == OrderStatus.Filled
+            && m.FilledQuantity == 1_000
+            && m.ExecutedAt == Now);
 
         await host.StopAsync();
     }
