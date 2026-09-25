@@ -82,6 +82,37 @@ public class HttpPauseControllerTests
         result.Message.Should().Contain("Stage 1");
     }
 
+    // 🔴 T-10-943, FR-14, FR-10, #990, IADR-0408（2026-09-25 追記）: 上限の項目が応答に無い（上限を出さない版の送り手）ときも
+    // 照会は成功し、上限を「不明」と表示する。0 へ倒さない（欠落を既定値 0 で読むと「上限 0」と読める）。
+    [Fact]
+    public async Task 状態照会は日次発注の上限が欠落していても成功し上限を不明と表示する()
+    {
+        var body = """
+        {
+            "killSwitchEngaged": false,
+            "dailyLossLockoutActive": false,
+            "lockoutReleaseOn": null,
+            "tradingPaused": false,
+            "newEntriesBlocked": false,
+            "stage": 1,
+            "dailyRealizedPnl": 0,
+            "unrealizedPnl": 0,
+            "dailyPnl": 0,
+            "dailyOrderedAmount": 0,
+            "drawdownRatio": 0,
+            "maxDrawdownRatio": 0.10,
+            "openPositionCount": 0,
+            "maxOpenPositions": 10
+        }
+        """;
+
+        var result = await Controller(new FakeHandler(HttpStatusCode.OK, body)).GetStatusAsync();
+
+        result.Succeeded.Should().BeTrue(result.Message);
+        result.Message.Should().Contain($"上限 {HttpPauseController.UnknownDailyOrderCap}")
+            .And.NotContain($"/{0m:N0} 円");
+    }
+
     // 401/403 は owner クライアント設定の不備（trading-service トークンでは OwnerOnly を通過できない）。
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized)]

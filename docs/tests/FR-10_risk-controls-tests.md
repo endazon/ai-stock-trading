@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0419, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_984_audit-free-text-linear-redaction, 20260925_957_cross-service-read-contracts-c]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #984]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984]
 -->
 
 
@@ -43,6 +43,7 @@ issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374,
 - [突合が確定させた 1 件の記録と発行（#890。巡回が途中で止まっても、確定済みの所見と約定の通知を失わない）](#突合が確定させた-1-件の記録と発行890巡回が途中で止まっても確定済みの所見と約定の通知を失わない)
 - [受理だけで完了させた保護記録の再武装（#833 項目 1。決済が受理のまま失効したら未約定残を戻す）](#受理だけで完了させた保護記録の再武装833-項目-1決済が受理のまま失効したら未約定残を戻す)
 - [入力補完が読む報告書の軽い一覧の契約（送り手の項目名・JSON 設定の変更をマージ前に止める）](#入力補完が読む報告書の軽い一覧の契約送り手の項目名json-設定の変更をマージ前に止める)
+- [通知の稼働状態の照会は、口座を照会できていない間も使える（上限の未供給を「不明」と表示する）](#通知の稼働状態の照会は口座を照会できていない間も使える上限の未供給を不明と表示する)
 - [見送った承認は再配送されても発注しない（#876。見送りを受けて在庫を戻した台帳の外で決済を生かさない）](#見送った承認は再配送されても発注しない876見送りを受けて在庫を戻した台帳の外で決済を生かさない)
 - [武装から追跡上限を超えて約定したブローカー側逆指値を台帳へ届ける（#958。約定追跡の窓）](#武装から追跡上限を超えて約定したブローカー側逆指値を台帳へ届ける958約定追跡の窓)
 - [未カバー・実施予定](#未カバー実施予定)
@@ -1856,10 +1857,36 @@ Discord の `/report` の入力補完は、報告書の会話キーと開始日�
 
 🔴 **本書が固定していない残余リスク**: 受け手の実行時の挙動は変えていない。送り手だけを先に配備した窓の間は、改名された項目を従来どおり
 既定値で読む（監視銘柄の銘柄の改名は空の監視銘柄になり判断が 1 本も走らない／GFV 解除の残件数の改名は停止の継続を伝えない）。契約テストは
-改名のマージを止めるだけである。🔴 **見つけた欠陥（本書では直していない）**: 稼働状態の送り手は、口座を照会できていない間、1 日の発注上限を
-null で返す（上限の実額を解決できないため）。通知の受け手はこの項目を null を取らない型で受けるので、逆直列化が例外になり、Discord の
-稼働状態の照会は「稼働状態の照会に失敗しました（JsonException）」を返す——**新規建てが止まっている間に稼働状態がまったく見えない**。
-送り手の本物の型で資金を null にした値を直列化して読ませ、この応答を実測した（テストとしては足していない。欠陥を期待値に固定しないため）。
+改名のマージを止めるだけである。**見つけた欠陥（本節の作業では直していない。次節で是正した）**: 稼働状態の送り手は、口座を照会できていない間、
+1 日の発注上限を null で返す（上限の実額を解決できないため）。通知の受け手はこの項目を null を取らない型で受けていたので、逆直列化が例外になり、
+Discord の稼働状態の照会は「稼働状態の照会に失敗しました（JsonException）」を返していた——**新規建てが止まっている間に稼働状態がまったく見えない**。
+送り手の本物の型で資金を null にした値を直列化して読ませ、この応答を実測した。是正と、その応答を読ませる契約テストは次節（T-10-941〜943）。
+
+## 通知の稼働状態の照会は、口座を照会できていない間も使える（上限の未供給を「不明」と表示する）
+
+口座を照会できていない間（基準資金が未供給で、新規建ては止まっている）、リスク管理の稼働状態の応答は 1 日あたりの発注金額上限の実額を null で返す。
+通知（Discord の稼働状態の照会）の受け手はこの項目を非 null で受けていたため、まさにその間、照会そのものが逆直列化の例外で失敗し、
+運用者は状況を確認できなかった。受け手を送り手と揃えて null 許容にし、null は「不明」と表示する（0 と表示しない）。
+契約テストは前節と同じく送り手の本物の型を送り手の実際の JSON 設定（web 既定）で直列化して受け手に読ませる
+（`RiskControlOperationReadContractTests`。項目の欠落は `HttpPauseControllerTests` の手書きの JSON で試す）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-941** | 送り手の本物の稼働状態で、資金・1 注文あたりの上限・1 日あたりの上限がいずれも null | 通知が稼働状態を照会する | 照会は成功し、3 統制・段階・当日損益・ポジションの行と「上限 不明（口座を照会できていません）」を表示する。上限を 0 と表示しない | 資金の未供給の間も稼働状態が見える／未供給を 0 と表示しない | 自動（契約） |
+| **T-10-942** | 同じ型で上限が供給されている | 同上 | 「発注額/上限 円」を表示し「不明」を出さない | 供給されている値の表示を変えない | 自動（契約） |
+| **T-10-943** | 上限の項目を持たない応答（手書きの JSON） | 同上 | 照会は成功し、上限を「不明」と表示する（0 としない） | 欠落を既定値 0 で読まない | 自動（否定形） |
+
+**変異注入の実測**（2026-09-25。`RiskControlOperationReadContractTests` と `HttpPauseControllerTests` の計 16 件＝本節の 3 件と既存の 13 件に対して。
+1 つずつ入れて実行し、実行ごとに変異前の内容へ書き戻した）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| 受け手の上限を非 null に戻す（是正前） | 16 件中 2 件赤（T-10-941 は「稼働状態の照会に失敗しました（JsonException）」） | T-10-941 / T-10-943 |
+| 型は null 許容のまま、null を 0 と表示する | 16 件中 2 件赤 | T-10-941 / T-10-943 |
+
+🔴 **本節が固定していない残余リスク**:
+- 資金（基準資金）と 1 注文あたりの上限は、通知の稼働状態の表示に出していない（受け手が受けない）。未供給であることは上限の「不明」からしか読めない。
+- 旧い通知サービスが残る間は、従来どおり照会が失敗する（受け手だけの是正のため、配備順による新たな窓は無い）。
 
 ## 見送った承認は再配送されても発注しない（#876。見送りを受けて在庫を戻した台帳の外で決済を生かさない）
 

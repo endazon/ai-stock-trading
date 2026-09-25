@@ -22,6 +22,10 @@ namespace NotificationService.Tests;
 // するが、`Engaged`・`Paused` → 操作の結果を「OFF」と報告する／稼働状態の真偽値 → 「kill switch=OFF・新規建て=可能」と表示する／
 // `RemainingCount` → 「停止は継続します」が出ない）。送り手が web 既定のまま出していることはリスク管理側の T-10-805 が、
 // GFV 解除の外側（送り手は匿名型）の項目名は T-10-938 が、それぞれ本物の Program.cs で固定する。
+//
+// 🔴 T-10-941〜942, FR-14, FR-10, ADR-0041 決定2, #990, IADR-0354, IADR-0408（2026-09-25 追記）: 稼働状態の送り手は口座を照会できて
+// いない間（新規建ては止まっている）資金・上限の実額を null で返す。受け手が上限を非 null で受けていたため、まさにその間 `/status` は
+// JsonException で失敗していた。資金・上限が null の送り手の値も読めて、上限を「不明」と表示する（0 と表示しない）ことを固定する。
 public class RiskControlOperationReadContractTests
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
@@ -97,6 +101,61 @@ public class RiskControlOperationReadContractTests
             .And.Contain("統制: kill switch=ON / 日次損失ロックアウト=OFF / 一時停止=ON")
             .And.Contain("段階: Stage 1")
             .And.Contain("ポジション: 3/10 件");
+    }
+
+    // 口座を照会できていないときの送り手の値の形（RiskStatusService と同じく、資金が null なら上限の実額も null）。
+    private static RiskStatus.RiskStatusView StatusWithCapital(decimal? capital, decimal? maxOrder, decimal? maxDaily) => new(
+        KillSwitchEngaged: false,
+        DailyLossLockoutActive: false,
+        LockoutReleaseOn: null,
+        TradingPaused: false,
+        ActiveControl: RiskStatus.ActiveTradingControl.None,
+        NewEntriesBlocked: false,
+        Stage: TradingStage.Stage1Simulate,
+        BrokerProvider: BrokerProvider.MoomooSimulate,
+        DailyRealizedPnl: -500m,
+        UnrealizedPnl: -1_200m,
+        DailyPnl: -1_700m,
+        Capital: capital,
+        DailyOrderedAmount: 40_000m,
+        MaxOrderAmount: maxOrder,
+        MaxDailyOrderAmount: maxDaily,
+        DrawdownRatio: 0.05m,
+        MaxDrawdownRatio: 0.10m,
+        OpenPositionCount: 3,
+        MaxOpenPositions: 10);
+
+    // 🔴 T-10-941: 口座を照会できていない間（資金・上限が null）も稼働状態の照会は成功し、上限を「不明」と表示する（0 と表示しない）。
+    [Fact]
+    public async Task 資金が未供給の稼働状態は送り手の本物の型を直列化した応答から読めて上限を不明と表示する()
+    {
+        var controller = new HttpPauseController(
+            Client(StatusWithCapital(capital: null, maxOrder: null, maxDaily: null)), NullLogger<HttpPauseController>.Instance);
+
+        var result = await controller.GetStatusAsync();
+
+        result.Succeeded.Should().BeTrue(result.Message);
+        result.Message.Should().Contain("統制: kill switch=OFF / 日次損失ロックアウト=OFF / 一時停止=OFF")
+            .And.Contain("段階: Stage 1")
+            .And.Contain($"当日損益: {-1_700m:N0} 円")
+            .And.Contain($"日次発注 {40_000m:N0} 円/上限 {HttpPauseController.UnknownDailyOrderCap}")
+            .And.Contain("ポジション: 3/10 件");
+        // 否定形: 上限を 0 と表示しない（「上限 0」は「上限が分からない」と別の事実）。
+        result.Message.Should().NotContain($"/{0m:N0} 円");
+    }
+
+    // 🔴 T-10-942: 上限が供給されていれば従来どおり「発注額/上限 円」を表示し、「不明」を出さない。
+    [Fact]
+    public async Task 上限が供給された稼働状態は送り手の本物の型を直列化した応答から発注額と上限を読める()
+    {
+        var controller = new HttpPauseController(
+            Client(StatusWithCapital(capital: 1_000_000m, maxOrder: 50_000m, maxDaily: 100_000m)), NullLogger<HttpPauseController>.Instance);
+
+        var result = await controller.GetStatusAsync();
+
+        result.Succeeded.Should().BeTrue(result.Message);
+        result.Message.Should().Contain($"上限使用率: 日次発注 {40_000m:N0}/{100_000m:N0} 円 / DD")
+            .And.NotContain("不明");
     }
 
     // 🔴 T-10-935: GFV 解除（POST /risk-controls/good-faith-violations/clear）。値は送り手の解除の結果の本物の型から作り、
