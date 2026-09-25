@@ -84,6 +84,19 @@ public class ReportTemplateGoldenTests
         BorrowFees = new BorrowFeeRecord(
             [new BorrowFeeAccrued("AAPL", Market.UnitedStates, new DateOnly(2026, 8, 3), 0.06m, 10_000m, 1.64m, T0)],
             [new BorrowFeeAccrualUnavailable("TSLA", Market.UnitedStates, new DateOnly(2026, 8, 4), "料率照会に失敗", T0)]),
+        // T-10-996, FR-06, FR-10, ADR-0040 決定1, #823: 承認時点の損切りの実行機構（日報 §4 の子節。日報以外では描画されない）。
+        // **現在の供給経路（StopLossMethodUsage.From）が実際に組み立てる形**を置く。
+        StopLossMethods = StopLossMethodUsage.From(
+        [
+            new OrderApproved(
+                new Guid("22222222-2222-2222-2222-222222222222"),
+                new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 150m),
+                10, T0),
+            new OrderApproved(
+                new Guid("33333333-3333-3333-3333-333333333333"),
+                new OrderIntent("TSLA", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 5, 200m),
+                5, T0, StopLossMethod: StopLossExecutionMethod.NoProtectiveStop),
+        ]),
         // FR-06, FR-16, #611, IADR-0286 決定5: **現在の供給経路（FxTranslationBuilder）が実際に組み立てる形**を置く
         // （期末に建玉が残る期間は期末レートと観測日を伴う）。
         FxTranslation = new FxTranslationSummary(-1_234m, 5, 159.38m, new DateOnly(2026, 8, 26)),

@@ -7,11 +7,11 @@ updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_871_discord-drift-adopt]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, planning#292]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, planning#292]
 -->
 
 
@@ -910,6 +910,12 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
   **利用者のみ**（`trading-owner`。生成 AI・サービス間呼び出しは変更できない）・**理由必須**・前後値つきで設定の変更履歴に
   残る（種別 `StopLossMethodChanged`）。現在値は `GET /risk-controls/settings` と `GET /risk-controls/status` の
   `stopLossMethod`（数値）。既定は S0 で、項目を持たない旧い設定行も S0 として読む（読めない値も S0）。
+- **画面と日報での表示・変更**: 手法は**リスク設定画面の専用フォーム**（発注先の変更の直後）から選ぶ（理由必須。BFF は
+  `PUT /bff/risk-controls/settings/stop-loss-method` を素通しする）。画面は設定上の発注先が moomoo REAL の間 S1〜S3 を**無効化**し、
+  S0 以外のまま moomoo REAL へ切り替える操作も送信の前に止める（判定式はサーバの受理条件と同じ）。**統制状態参照画面**は選択中の手法を
+  発注先の行の直後に参照表示する。**日報**は §4 の子節「損切りの実行機構（当日）」に、当日の新規建ての承認を**承認時点の手法**
+  （承認が運ぶ値。日報を作る時点の設定値ではない）ごとに数えて書く（監査台帳の承認を引く。照会できなければ「なし」と書かず
+  「照会できませんでした」と書く）。件数は承認の件数であり、見送り・約定の有無・空売りの S0 扱いは反映しない。
 - **実弾での拒否（設定側・2 方向）**: 発注先が moomoo REAL の間は S0 以外を選べない（400）。S0 以外が有効なまま
   moomoo REAL へは、確認操作（同意と「REAL」）が揃っていても切り替えられない（400）。
 - **設定上の発注先と実際の発注先（運用で揃える）**: 設定側の判定は**設定上の発注先**（リスク管理の設定値）を見るが、

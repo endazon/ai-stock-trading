@@ -38,6 +38,8 @@ import {
   METRIC_NOT_SUPPLIED_TEXT,
   ratioPercent,
   stageLabel,
+  STOP_LOSS_METHOD_BROKER_STOP,
+  stopLossMethodLabel,
   transitionKindLabel,
   withdrawalReasonLabel,
 } from '@ai-stock-trading/lib/risk/contracts';
@@ -338,7 +340,20 @@ function StatusView({ view }: { view: RiskStatusView }) {
                 </>
               )}
             </KvItem>
+            {/* SC-03, FR-10, ADR-0040 決定1, #823, IADR-0422 決定4: **選択中の損切りの実行機構**（参照のみ）。
+                計画「どの手法を選んでいるかは SC-03 に出す——いまどれで走っているかが読めなければ観測結果を解釈できない」。
+                発注先と組で読む設定のため、発注先の行の直後に置く（1 行に混ぜない）。 */}
+            <KvItem label={i18n._(msg`損切りの実行機構`)}>
+              {stopLossMethodLabel(view.stopLossMethod)}
+            </KvItem>
           </Kv>
+          {view.stopLossMethod !== STOP_LOSS_METHOD_BROKER_STOP && (
+            <Note>
+              {i18n._(
+                msg`S0 以外の手法は moomoo SIMULATE の新規建てにだけ効きます（空売りの新規建ては S0）。`,
+              )}
+            </Note>
+          )}
           <Note>{i18n._(msg`参照のみ — 変更は「リスク設定」画面（SC-02）`)}</Note>
         </Panel>
 

@@ -3,15 +3,15 @@ title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク�
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-09-12
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
-adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016]
-iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation]
-issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, planning#31, planning#33]
+adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040]
+iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report]
+issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, planning#31, planning#33]
 -->
 
 
@@ -139,6 +139,22 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
    サーバは発注先を **allow-list** で解決して返す（3 値の明示一致のみ。旧行・`null`・未知の序数・未知の文字列・
    別の型は**すべて内蔵 `paper`**）。したがって画面が受け取る `brokerProvider` は常に 3 値のいずれかであり、
    **未知値のフォールバック表示に依存しない**。
+3-4. **損切りの実行機構の変更（変更可・2026-09-25）**: moomoo `SIMULATE` に限り損切りの実行機構を 4 つから選ぶ
+   （計画の手法の表: **S0 ブローカー側逆指値〔既定〕／S1 ソフトウェア逆指値／S2 逆指値なしの建玉を許容／S3 他のブローカー側注文種別**）。
+   **変更操作を持つ画面は本画面だけである**（統制状態参照画面は参照のみ）。**発注先の変更の直後に置く**（実弾の拒否が発注先に依存する組の設定であるため）。
+
+   - 4 値をラジオで選び、各手法に挙動の 1 行説明を添える（S2 は「損切りライン到達でもシステムもブローカーも決済しない」、
+     S1 は「システムの停止中・閉場中は保護されない」など、選ぶ前に読む必要がある帰結）。
+   - **変更理由必須**・変更なしは保存不可。保存は設定の変更履歴（種別「損切りの実行機構」）に前後値つきで残る。
+     生成 AI は変更できない（利用者のみ）。
+   - **実弾（moomoo `REAL`）では S0 以外を選べない。** 設定上の発注先が moomoo `REAL` の間は S1〜S3 のラジオを**無効化**し、
+     理由（「発注先が実弾の間は S0 以外を選べない。S1〜S3 は moomoo SIMULATE でのみ選べる」）を表示する。
+     判定は「S0 か、設定上の発注先が moomoo `REAL` でない」であり、**サーバの受理条件と同じ式**を画面が持つ（片方だけ変えると
+     画面は選ばせるのにサーバが 400 を返す／その逆になる）。
+   - **逆方向**: 手法が S0 以外のまま発注先の変更で moomoo `REAL` を選ぶと、発注先のフォームが警告（「損切りの実行機構が S0 以外のため
+     実弾へ切り替えられない。先に S0 へ戻す」）を出し、切替の確認へ進ませない（サーバも確認操作が揃っていても 400 で拒否する）。
+   - 常設の注記: S1〜S3 が効くのは moomoo `SIMULATE` の新規建てだけ・実際の発注先が moomoo `SIMULATE` でなければ新規建ては見送り
+     （通知あり）・空売りの新規建ては常に S0・変更はそれ以後の承認から効き既存の建玉には及ばない。
 3-3. **内蔵 `paper` 稼働中の警告バナー**: 画面上部に常時表示（必須 2 文言。ペーパートレードの要求・共通規約）。
 4. **変更履歴**: `SettingsChangeEntry[]` を新しい順に一覧（種別・アクター・理由・前後値・日時）。
 5. **監視銘柄（変更可・#196）**: `MonitoredSymbol[]`（銘柄コード・市場）の一覧・追加・削除。データ源は
@@ -190,6 +206,7 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
 | 履歴 | `GET /risk-controls/settings/history` | `SettingsChangeEntry[]`。失敗時は履歴領域のみ縮退 |
 | 上限保存 | `PUT /risk-controls/settings/limits`（`{limits, reason}`。`limits` は **`*Ratio` キー＝比率**。画面の % を送信時に比率へ変換する・#362） | 成功=再取得。**400=値域違反（`{error, details}`。サーバの `RiskLimitBounds` が実効させる）または検証**、409=競合（DbUpdateConcurrency）＋再取得を促す |
 | 発注先の変更 | `PUT /risk-controls/settings/broker-provider`（`{provider, reason, acknowledgedLiveTrading, acknowledgement}`） | 成功=再取得＋段階ゲート飛ばしの警告。**実弾は同意と「REAL」の入力の両方が無ければ 400**（サーバ側も同じ関門）。理由が空も 400 |
+| 損切りの実行機構の変更 | `PUT /risk-controls/settings/stop-loss-method`（`{method, reason}`。`method` は 0〜3） | 成功=再取得。**400=発注先が実弾の間の S0 以外／未知の手法／理由欠如**（`details` を表示）。自動再試行しない |
 | equity・統制値の実額（モーダル③） | `GET /risk-controls/status` | `RiskStatusView`（`capital` / `maxOrderAmount` / `maxDailyOrderAmount` / `maxOpenPositions`）。失敗時は**実弾への切替を許さない** |
 | ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す |
 | 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |

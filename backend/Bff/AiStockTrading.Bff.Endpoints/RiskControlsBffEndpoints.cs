@@ -23,6 +23,7 @@ namespace AiStockTrading.Bff.Endpoints;
 // フロントが叩かないため登録しない＝起こり得ない経路への防御的追加を避ける）。
 // AST #334 で発注先の変更（PUT /settings/broker-provider）を追加した（SC-02 が実消費する）。
 // AST #640 で空売りの現況（GET /short-selling）を追加した（SC-03 が実消費するが登録が漏れていた）。
+// AST #823 で損切りの実行機構の変更（PUT /settings/stop-loss-method）を追加した（SC-02 が実消費する）。
 public static class RiskControlsBffEndpoints
 {
     // 後段の名前付き HTTP クライアント（BaseAddress は Program.cs で Services:RiskManagementService から設定）。
@@ -67,6 +68,14 @@ public static class RiskControlsBffEndpoints
         g.MapPut("/settings/stage1-minimum-trade-count", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/stage1-minimum-trade-count", ct))
             .WithName("BffRiskControlsSettingsStage1MinimumTradeCountPut");
+
+        // AST #823, FR-10, FR-12, SC-02, ADR-0040 決定1・決定3, AST/IADR-0342, AST/IADR-0422 決定1:
+        // 損切りの実行機構（S0〜S3）の変更。SC-02 だけが持つ操作である。
+        // **実弾（moomoo REAL）の間は S0 以外を選べない・理由必須は後段が検証する**（BFF は素通し。
+        // 統制を BFF へ持たせない——発注先の変更と同じ規律）。
+        g.MapPut("/settings/stop-loss-method", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/stop-loss-method", ct))
+            .WithName("BffRiskControlsSettingsStopLossMethodPut");
 
         // SC-03 統制状態参照（表示専用）: 稼働状態の集約・段階ゲートの現況。いずれも後段 OwnerOnly。
         g.MapGet("/status", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
