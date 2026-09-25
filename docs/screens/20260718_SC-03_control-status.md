@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-13, FR-20, SC-03, UC-06]
-adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0019]
-iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162, IADR-0338, IADR-0339, IADR-0346]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens, 20260925_832_rescreen-idempotency]
-issues: [#20, #165, #331, #334, #340, #342, #419, #424, #829, #832, planning#31, planning#33]
+adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0019, ADR-0040]
+iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162, IADR-0338, IADR-0339, IADR-0346, IADR-0342, IADR-0422]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens, 20260925_832_rescreen-idempotency, 20260925_823_stop-method-ui-and-daily-report]
+issues: [#20, #165, #331, #334, #340, #342, #419, #424, #819, #823, #829, #832, planning#31, planning#33]
 -->
 
 
@@ -81,6 +81,11 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
    日次損失ロックアウトはシステム自動発動であり利用者は解除できない）。
    **発注先**: 現在の発注先を運用段階の**隣に行を分けて**表示する（1 行に混ぜない。INDEX 決定 46）。
    **本画面は参照専用であり、変更はリスク設定画面で行う**（導線を置く）。
+   **損切りの実行機構**（2026-09-25）: 選択中の手法（`stopLossMethod`。S0 ブローカー側逆指値〔既定〕／S1 ソフトウェア逆指値／
+   S2 逆指値なしの建玉を許容／S3 他のブローカー側注文種別）を**発注先の行の直後に別の行として**表示する。計画は「どの手法を
+   選んでいるかを本画面と日報に出す——いまどれで走っているかが読めなければ観測結果を解釈できない」と定める。
+   S0 以外のときは「S0 以外の手法は moomoo SIMULATE の新規建てにだけ効く（空売りの新規建ては S0）」を注記する。
+   未知の値は `不明(N)` と出す（S0 と読ませない）。**変更はリスク設定画面で行う**（本画面に操作は置かない）。
    内蔵 `paper` 稼働中は画面上部に警告バナー（必須 2 文言）を出し、統制状態のカード類に `paper・参考値` ラベルを付す。
 2. **段階ゲート現況（`StageGateStatus`）**: 現段階・**段階の既定発注先**、昇格評価（`promotion`: 昇格先・可否・未充足基準）、
    撤退評価（`withdrawal`: 到達・停止提案・降格提案段階）。
@@ -147,6 +152,7 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 | **参照専用性**（入力要素・保存系ボタンが 1 つも存在しない・書き込み API を呼ばない） | `ControlStatusPage.readonly.test.tsx`（4 件）／ E2E `sc03-controls.spec.ts`「変更操作が 1 つも存在しない（参照専用）」 |
 | 応答↔フロント契約（供給可否の宣言そのもの） | xUnit `FrontendContractFixtureTests`「空売り現況応答が…」／ `contracts.contract.test.ts`（実応答の未供給宣言・文言の固定） |
 | `paper` の約定が Stage 1 進捗に算入されない旨の表示 | `ControlStatusPage.brokerProvider.test.tsx`（既存） |
+| 選択中の損切りの実行機構を表示名で出し、S0 以外なら SIMULATE 限定を注記する（変更操作は無い） | `ControlStatusPage.stopLossMethod.test.tsx`（8 件） |
 
 ## スコープ外（後続）
 
