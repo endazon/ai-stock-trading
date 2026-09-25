@@ -26,19 +26,27 @@ namespace OrderExecutionService.Features.OrderExecution.PollOrderFills;
 // 0 約定のまま失効・取消されると建玉が無保護のまま誰の巡回にも載らない。終端化を観測したこの場で保護記録を
 // 再武装する（reArmer。未構成なら従来どおり何もしない）。**新しい常駐を足さない。**
 //
+// 🔴 FR-10, #958, IADR-0406 決定2: **Active な S0（ブローカー側逆指値）の保護記録の現試行の逆指値レグは、追跡上限の対象外**
+// である。S0 のレグの記録は武装の時刻で作られ、逆指値は何日も約定を待ち得る——追跡上限（既定 24 時間）で切ると、
+// 武装から 24 時間を超えて約定した損切りが OrderExecuted として一度も発行されず台帳へ届かない（IADR-0394 の
+// 「S0 は約定で数える」が働かない）。照会件数が増えないよう、足すのは Active な S0 のレグだけ（保有建玉の数で頭打ち）。
+// protectiveStops が未構成なら従来どおり（追跡上限内だけ）。
+//
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 public sealed class OrderFillPoller(
     IBrokerAdapter broker,
     IExecutedOrderStore store,
     IClock clock,
     SoftwareStopReArmer? reArmer = null,
-    ILogger<OrderFillPoller>? logger = null)
+    ILogger<OrderFillPoller>? logger = null,
+    IProtectiveStopOrderStore? protectiveStops = null)
 {
     private readonly ILogger _logger = logger ?? NullLogger<OrderFillPoller>.Instance;
 
     /// <summary>
     /// 1 巡回。発注から <paramref name="maxTracking"/> 以内の非終端記録を最大 <paramref name="batchSize"/> 件追跡し、
     /// 発行すべき <see cref="OrderExecuted"/> を結果に載せて返す（発行は呼び出し側＝Worker）。
+    /// #958, IADR-0406: Active な S0 の逆指値レグは <paramref name="maxTracking"/> を過ぎていても追跡する。
     /// </summary>
     public async Task<OrderFillPollResult> PollOnceAsync(
         TimeSpan maxTracking, int batchSize, CancellationToken cancellationToken = default)
@@ -46,7 +54,7 @@ public sealed class OrderFillPoller(
         cancellationToken.ThrowIfCancellationRequested();
 
         var now = clock.UtcNow;
-        var pending = store.FindPendingSince(now - maxTracking, batchSize);
+        var pending = WithActiveBrokerStopLegs(store.FindPendingSince(now - maxTracking, batchSize), batchSize);
 
         var executed = new List<OrderExecuted>();
         var softwareStopEvents = new List<SoftwareStopExecuted>();
@@ -142,6 +150,38 @@ public sealed class OrderFillPoller(
 
         return new OrderFillPollResult(
             pending.Count, updated, terminalized, unchanged, unknown, failed, executed, softwareStopEvents);
+    }
+
+    // 🔴 FR-10, #958, IADR-0406 決定2: 追跡上限内の記録へ、Active な S0 の保護記録の現試行の逆指値レグ（非終端）を足す。
+    // S1（ソフトウェア逆指値）の行はブローカーに逆指値を持たない（StopOrderId が空）ので足さない。
+    // 保護記録が完了したレグは足さない——ガードは S0 のレグの終端（約定・失効）を観測した・取り消したとき、保護記録を
+    // 完了させる**前に**そのレグの記録の追跡の起点を観測時刻へ進める（IADR-0406 決定3）。完了したレグは窓の内側へ
+    // 戻っているので、ガードと約定追跡のどちらが先に巡回しても、約定はここで拾われる。
+    private IReadOnlyList<ExecutionRecord> WithActiveBrokerStopLegs(
+        IReadOnlyList<ExecutionRecord> withinWindow, int batchSize)
+    {
+        if (protectiveStops is null)
+            return withinWindow;
+
+        try
+        {
+            var stopLegIds = protectiveStops.FindActive(batchSize)
+                .Where(s => !s.IsSoftwareStop && !string.IsNullOrEmpty(s.StopOrderId))
+                .Select(s => s.StopOrderId)
+                .ToHashSet(StringComparer.Ordinal);
+            stopLegIds.ExceptWith(withinWindow.Select(r => r.OrderId));
+            if (stopLegIds.Count == 0)
+                return withinWindow;
+
+            return [.. store.FindPendingByOrderIds(stopLegIds), .. withinWindow];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 足す側の読み取りの失敗で、追跡上限内の通常の追跡まで止めない（S0 のレグは Active のあいだ次の巡回で再び足される）。
+            _logger.LogError(ex,
+                "保護記録が有効なブローカー側逆指値のレグを約定追跡へ足せませんでした。この巡回は追跡上限内の記録だけを追跡します。");
+            return withinWindow;
+        }
     }
 }
 

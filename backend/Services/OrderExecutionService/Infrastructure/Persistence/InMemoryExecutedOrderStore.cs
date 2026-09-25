@@ -48,6 +48,41 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
+    // FR-10, #958, IADR-0406 決定1: 指定した注文 ID の非終端の記録を古い順に返す（追跡上限は見ない）。
+    public IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds)
+    {
+        ArgumentNullException.ThrowIfNull(orderIds);
+        if (orderIds.Count == 0)
+            return [];
+
+        lock (_gate)
+        {
+            return _records
+                .Where(r => OrderStatusLifecycle.IsPending(r.Status) && orderIds.Contains(r.OrderId))
+                .OrderBy(r => r.ExecutedAt)
+                .ToList();
+        }
+    }
+
+    // FR-10, #958, IADR-0406 決定3: 非終端の記録の追跡の起点を進める（時刻だけを書く）。
+    public bool RenewTracking(string orderId, DateTimeOffset trackedFrom)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        lock (_gate)
+        {
+            var index = _records.FindIndex(r => r.OrderId == orderId);
+            if (index < 0
+                || !OrderStatusLifecycle.IsPending(_records[index].Status)
+                || _records[index].ExecutedAt >= trackedFrom)
+            {
+                return false;
+            }
+
+            _records[index] = _records[index] with { ExecutedAt = trackedFrom };
+            return true;
+        }
+    }
 
     // #270, IADR-0113: 観測した最新状態を既存記録へ反映する（無ければ何もしない＝新規に作らない）。
     public bool UpdateOutcome(

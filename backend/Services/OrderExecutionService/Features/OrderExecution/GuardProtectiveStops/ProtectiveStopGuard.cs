@@ -263,6 +263,7 @@ public sealed class ProtectiveStopGuard(
             // 建玉消滅（owner 手仕舞い・自動縮小・強制買戻し等）: 残存逆指値を取り消す。
             // 決済済み建玉に残る注文が発火すると**反対方向の建玉を生む**（業務フロー 02 補足の二重決済問題）。
             await broker.CancelOrderAsync(stop.StopOrderId, cancellationToken).ConfigureAwait(false);
+            RenewStopLegTracking(stop); // #958, IADR-0406 決定3: 取消の直前までの部分約定を約定追跡に拾わせる。
             MarkCompleted(stop);
             return Outcome.Completed;
         }
@@ -271,11 +272,20 @@ public sealed class ProtectiveStopGuard(
         {
             // ブローカー側で損切りが成立した。台帳への反映は既存の約定追跡ポーリング（IADR-0113）が担う
             // （逆指値レグは ExecutionRecord として保存済み）。ここでは保護の完了だけを記録する。
+            //
+            // 🔴 #958, IADR-0406 決定3: 完了させる**前に**、レグの記録の追跡の起点をこの観測の時刻へ進める。
+            // 約定追跡が追跡上限（既定 24 時間）を越えて照会するのは Active な保護記録のレグだけであり（決定2）、
+            // 武装から 24 時間を超えた約定をガードが先に見て完了させると、そのレグは次の巡回で照会対象から外れ、
+            // OrderExecuted が一度も出ずに台帳へ届かない（ガードと約定追跡は別々の巡回で、どちらが先かは決まらない）。
+            // 進めるのは非終端の記録の時刻だけで、約定追跡が既に反映していれば何もしない。
+            RenewStopLegTracking(stop);
             MarkCompleted(stop);
             return Outcome.Completed;
         }
 
         // 失効（Cancelled / Rejected / Expired）。
+        // #958, IADR-0406 決定3: 完了・再発注で保護記録の現試行がこのレグから離れる前に、失効までの部分約定を約定追跡に拾わせる。
+        RenewStopLegTracking(stop);
         if (remaining <= 0)
         {
             // 建玉残が 0 の理由が未確定の外部要因なら据え置く（確定しなければ主張は減らないまま再発注へ回る。追記(7)）。
@@ -583,6 +593,15 @@ public sealed class ProtectiveStopGuard(
             + "逆指値の再発注も成行も重ねずに据え置きます: EntryDecisionId={EntryDecisionId} "
             + "CloseDecisionId={CloseDecisionId} 銘柄={Symbol}",
             stop.EntryDecisionId, closeDecisionId, stop.Symbol);
+
+    // 🔴 FR-10, #958, IADR-0406 決定3: S0 のレグの終端を観測した（または取り消した）時刻を、そのレグの記録の追跡の起点にする。
+    // 記録が無い・既に終端（約定追跡が反映済み）なら何もしない（ストアが判定する）。失敗は例外のまま上げる——
+    // 保護記録を完了させずに次の巡回でやり直す側へ倒す（完了してから失敗すると、そのレグは二度と照会されない）。
+    private void RenewStopLegTracking(ProtectiveStopOrder stop)
+    {
+        if (!string.IsNullOrEmpty(stop.StopOrderId))
+            store.RenewTracking(stop.StopOrderId, clock.UtcNow);
+    }
 
     // 🔴 #938（PR #916 監査 F4）, IADR-0369（2026-09-25 追記）: **記録を完了させる出口はここ 1 つ**であり、ここでプロセス内の
     // 記憶（拒否の数えと通知時刻・据え置きの通知時刻）も捨てる。従来は Replaced と CompleteAsClosed でしか捨てず、

@@ -207,7 +207,9 @@ if (brokerSelection.IsMoomoo)
         sp.GetRequiredService<IExecutedOrderStore>(),
         sp.GetRequiredService<IClock>(),
         sp.GetRequiredService<SoftwareStopReArmer>(),
-        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>()));
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>(),
+        // 🔴 FR-10, #958, IADR-0406 決定2: Active な S0 の逆指値レグを追跡上限の対象外にする（保護記録は読むだけ）。
+        sp.GetRequiredService<IProtectiveStopOrderStore>()));
     builder.Services.AddHostedService<OrderFillPollingService>();
 }
 
