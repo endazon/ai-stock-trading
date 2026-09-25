@@ -538,7 +538,7 @@ public static class AuditEntryFactory
                 // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（保護記録を再武装した）。
                 SoftwareStopOutcome.CloseUnfilled =>
                     $"——**受理された成行決済が約定しないまま終了（OrderId={e.CloseOrderId}）。"
-                        + "その株数は建玉に残っており、保護記録を再武装した（次の巡回で撃ち直す・要人手確認）**",
+                        + "その株数は建玉に残っており、保護記録を再武装した（待ち時間の後に撃ち直す・要人手確認）**",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

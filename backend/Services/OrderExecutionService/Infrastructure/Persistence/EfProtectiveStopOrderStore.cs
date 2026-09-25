@@ -45,6 +45,9 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
         row.ProtectionSuspendedNotifiedAt = stop.ProtectionSuspendedNotifiedAt;
         row.UnattributedNotifiedQuantity = stop.UnattributedNotifiedQuantity;
         row.UnattributedNotifiedAt = stop.UnattributedNotifiedAt;
+        row.CloseFailures = stop.CloseFailures;
+        row.NextCloseAttemptAt = stop.NextCloseAttemptAt;
+        row.LastTriggerSeenAt = stop.LastTriggerSeenAt;
         db.SaveChanges();
     }
 
@@ -99,5 +102,6 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
             r.RemainingProtected, r.StalledNotifiedAt,
             r.PendingExternalReduction, r.ExternalReductionObservations,
             r.ExternalReductionAbsences, r.ProtectionSuspendedSince, r.ProtectionSuspendedNotifiedAt,
-            r.UnattributedNotifiedQuantity, r.UnattributedNotifiedAt);
+            r.UnattributedNotifiedQuantity, r.UnattributedNotifiedAt,
+            r.CloseFailures, r.NextCloseAttemptAt, r.LastTriggerSeenAt);
 }

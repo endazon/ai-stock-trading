@@ -246,17 +246,20 @@ public static class NotificationFormatter
             "リスク統制: ソフトウェア逆指値の決済が約定しないまま終了しました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 受理された成行の決済注文が {e.Quantity} 株を約定しないまま"
                 + "取消・失効・拒否で終了しました（模擬取引の注文は当日限りです）。"
-                + "**その株数は建玉に残っています。保護記録を再武装し、次の巡回で決済を撃ち直します**"
+                + "**その株数は建玉に残っています。保護記録を再武装し、待ち時間（30 秒から倍々・最大 15 分）の後に決済を撃ち直します**"
                 + "——撃ち直しが通らない場合は手動で決済してください"
                 + $"（試行 {e.Attempt}・OrderId={e.CloseOrderId}・損切りライン {Invariant(e.StopLossPrice)}"
                 + $"・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Critical),
+        // 🔴 #833 項目2, IADR-0344 追記(15): 打ち切りは撤去した。到達の記録は残り、待ち時間を置いて撃ち直しを続ける
+        // （「次の到達で再試行」は偽になった——価格が戻って到達が途絶えても撃ち直す）。
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",
             $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 損切りライン {Invariant(e.StopLossPrice)} へ到達しましたが、"
-                + $"成行の決済注文が {e.Attempt} 回目まで受理されませんでした。"
+                + $"試行 {e.Attempt} 回目の成行の決済注文が受理されず、決済が続けて通っていません。"
                 + "**建玉が無保護で残っています。直ちに確認し、必要なら手動で決済してください**"
-                + $"（次の損切りライン到達で再試行します・EntryDecisionId={e.EntryDecisionId}）。",
+                + "（撃ち直しは待ち時間（30 秒から倍々・最大 15 分）を置いて続けます"
+                + $"・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Critical),
     };
 
