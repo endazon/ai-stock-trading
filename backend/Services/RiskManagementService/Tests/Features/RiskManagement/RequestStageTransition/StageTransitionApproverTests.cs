@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -77,7 +78,7 @@ public class StageTransitionApproverTests
         WebApplicationFactory<Program> factory, HttpClient client, object body)
     {
         HttpResponseMessage response = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             response = await client.PostAsJsonAsync(TransitionPath, body);
         });

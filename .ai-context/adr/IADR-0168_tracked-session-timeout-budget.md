@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, IADR-0129]
 author: endazon (with Claude Code)
 created: 2026-08-07
-updated: 2026-08-07
+updated: 2026-09-25
 ---
 
 # IADR-0168: TrackedSession の壁時計予算の単一情報源化
@@ -87,6 +87,16 @@ Activity detected:
 - **コメント・文字列リテラルは誤検出しない**（`check-banned-settled-cash-sources.js` と同じ規則）。**禁止の理由を散文で書けなくなっては、検査が自分の目的を殺す。**
 - **例外は 1 ファイルだけ** —— 予算を適用している当の実装（`WolverineTrackingExtensions.cs`）。ここまで禁じると入口そのものを書けない。
 - **検査自身の効きをテストで固定する**（正・否定形の両方向＋「許可ファイルを外すと実ツリーで検出される」）。**本検査が効かない方向に壊れると、CI は緑のまま flake だけが戻る。**
+
+> ［2026-09-25 追記 / #922］**入口は 2 つになった。** Wolverine の短縮入口 `IServiceProvider.ExecuteAndWaitAsync(action)`
+> （`timeoutInMilliseconds = 5000` が既定）は `TrackActivity` の綴りを持たず、本決定の検査を素通りしていた
+> （`WebApplicationFactory` の `factory.Services` から呼ぶ 35 か所。#885 の走査で判明）。
+> `IHost` を直接持たないテストのために、予算つきの入口 **`services.ExecuteAndWaitForTestAsync(action)`** を `WolverineTrackingExtensions.cs`
+> に足した —— **同じ overload を `TrackedSessionBudget.Current`（ミリ秒へ切り上げ・`int.MaxValue` で頭打ち。`TrackedSessionBudget.ToTimeoutMilliseconds`）で呼ぶ**だけで、
+> 追跡の範囲・例外の扱い・返す `ITrackedSession` は変わらない（決定 4 と同じく入口の置換のみ）。
+> 素の短縮入口の禁止は本スクリプトではなく `scripts/check-wall-clock-timeout-tests.js` の形 (c) が持つ
+> （綴りの禁止ではなく**受け手の式**を読む規則であり、#921 が用意した形ごとの表へ足した）。`timeoutInMilliseconds:` の明示も
+> 本決定 2 の単一情報源（環境変数での上書き）を迂回するので同じく落とす。作業仕様書 `20260925_922_execute-and-wait-tracking-budget`。
 
 ### 決定4: テストの表明・対象は変えない
 

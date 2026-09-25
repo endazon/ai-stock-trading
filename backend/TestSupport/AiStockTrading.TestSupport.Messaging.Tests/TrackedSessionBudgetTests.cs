@@ -63,4 +63,27 @@ public class TrackedSessionBudgetTests
             Thread.CurrentThread.CurrentCulture = previous;
         }
     }
+
+    // NFR, #922: 短縮入口（`IServiceProvider.ExecuteAndWaitAsync`）へ渡すミリ秒。既定の予算がそのまま届くこと。
+    [Fact]
+    public void 既定の予算はミリ秒へそのまま直る()
+    {
+        TrackedSessionBudget.ToTimeoutMilliseconds(TrackedSessionBudget.Default).Should().Be(30_000);
+    }
+
+    // NFR, #922: 予算を縮める向きに倒さない（切り捨てで 0 にしない・キャストで負へ桁あふれさせない）。
+    [Theory]
+    [InlineData(0.5d, 1)]
+    [InlineData(1.2d, 2)]
+    [InlineData(0d, 1)]
+    public void 端数は切り上げ下限は1ミリ秒(double milliseconds, int expected)
+    {
+        TrackedSessionBudget.ToTimeoutMilliseconds(TimeSpan.FromMilliseconds(milliseconds)).Should().Be(expected);
+    }
+
+    [Fact]
+    public void intに収まらない予算はintの最大値で頭打ちにする()
+    {
+        TrackedSessionBudget.ToTimeoutMilliseconds(TimeSpan.FromDays(365)).Should().Be(int.MaxValue);
+    }
 }
