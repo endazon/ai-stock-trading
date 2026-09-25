@@ -3665,12 +3665,215 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.deepStrictEqual(al.findLosses({ base: b, theirs: b, ours: al.parseIndex(after) }), []);
     });
 
+    // 🔴 #1009: 索引 README が 1 MiB（execSync の既定 maxBuffer）を超えた 909241f5 から、本検査器は
+    // `git show` の ENOBUFS を「版を取得できなかったため skip した」として exit 0 で握りつぶしていた
+    // （CI の static-checks も緑のまま検査が止まっていた）。**実 git の一時リポジトリに 1 MiB を超える
+    // 索引を置き、検査器の複製を本走させて**、読めること（消失は赤・無消失は OK）を固定する。
+    // maxBuffer を外すと「消失は赤」が exit 1（読み取り失敗の赤）のまま通ってしまうので、
+    // **無消失の範囲が `OK:` を出すこと**で「実際に読んで判定した」ことを確かめる。
+    ok('check-adr-index-addendum-loss[#1009 e2e]: 1 MiB を超える索引を実 git から読んで判定する（ENOBUFS で skip も赤もしない）', () => {
+      const osAl = require('os');
+      const { execFileSync: execFAl } = require('child_process');
+      const root = fsAl.realpathSync(fsAl.mkdtempSync(pathAl.join(osAl.tmpdir(), 'al-enobufs-')));
+      try {
+        const g = (...args) => execFAl('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+        const commit = (msg) => {
+          g('add', '-A');
+          g('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', msg);
+          return g('rev-parse', 'HEAD').trim();
+        };
+        fsAl.mkdirSync(pathAl.join(root, 'scripts', 'lib'), { recursive: true });
+        for (const f of ['check-adr-index-addendum-loss.js', 'lib/ci-annotate.js', 'lib/git-read.js']) {
+          fsAl.copyFileSync(pathAl.join(__dirname, f), pathAl.join(root, 'scripts', f));
+        }
+        const idxDir = pathAl.join(root, '.ai-context', 'adr');
+        fsAl.mkdirSync(idxDir, { recursive: true });
+        const pad = rowOf('IADR-9999', 'x'.repeat(1100 * 1024)); // 単独で 1 MiB を超える
+        const writeIdx = (rows) => fsAl.writeFileSync(pathAl.join(idxDir, 'README.md'), `${rows.join('\n')}\n`);
+        g('init', '-q');
+        writeIdx([rowOf('IADR-0118', 'a［2026-09-19 追記 / #849］b'), pad]);
+        const base = commit('base');
+        writeIdx([rowOf('IADR-0118', 'a［2026-09-19 追記 / #849］b［2026-09-25 追記 / #1009］'), pad]);
+        const kept = commit('kept');
+        writeIdx([rowOf('IADR-0118', 'ab'), pad]);
+        const lost = commit('lost');
+        assert.ok(
+          fsAl.statSync(pathAl.join(idxDir, 'README.md')).size > 1024 * 1024,
+          '固定データの索引が 1 MiB を超えていない（試験の前提が崩れている）',
+        );
+        const runAl = (range) => {
+          try {
+            const out = execFAl(process.execPath, [pathAl.join(root, 'scripts', 'check-adr-index-addendum-loss.js'), `--range=${range}`], {
+              cwd: root,
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'pipe'],
+              env: { ...process.env, GITHUB_ACTIONS: '' },
+            });
+            return { code: 0, out };
+          } catch (e) {
+            return { code: e.status, out: `${e.stdout || ''}${e.stderr || ''}` };
+          }
+        };
+        const ok1 = runAl(`${base}..${kept}`);
+        assert.strictEqual(ok1.code, 0, `無消失の範囲が緑でない: ${ok1.out}`);
+        assert.match(ok1.out, /OK:/, `読んで判定していない（skip / 読み取り失敗の疑い）: ${ok1.out}`);
+        assert.doesNotMatch(ok1.out, /ENOBUFS|skip/, `ENOBUFS / skip が出ている: ${ok1.out}`);
+        const ng = runAl(`${base}..${lost}`);
+        assert.strictEqual(ng.code, 1, `消失の範囲が赤でない: ${ng.out}`);
+        assert.match(ng.out, /IADR-0118/, `消失した行を名指ししていない: ${ng.out}`);
+        assert.doesNotMatch(ng.out, /ENOBUFS|版を取得できなかった/, `読み取り失敗の赤であって消失の赤ではない: ${ng.out}`);
+      } finally {
+        fsAl.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
     // 配線の退行テスト（`check-cross-repo-refs` と同じ趣旨）: CI に載っていない検査器は
     // 「誰かが手で叩いたときだけ走る検査器」であり、規約を守らせない。
     ok('check-adr-index-addendum-loss: ci.yml の static-checks から本走されている（配線の退行防止）', () => {
       const ci = fsAl.readFileSync(pathAl.join(REPO_AL, '.github', 'workflows', 'ci.yml'), 'utf8');
       assert.match(ci, /node scripts\/check-adr-index-addendum-loss\.js --self-test/, '自己試験の step が無い');
       assert.match(ci, /node scripts\/check-adr-index-addendum-loss\.js\s*$/m, '本走の step が無い');
+    });
+  }
+
+  // --- #1009: git の出力を既定 maxBuffer（1 MiB）で読み、読めなかったことを skip / 成功へ倒す形の是正 ---
+  //
+  // 同じ欠陥の形を scripts/ 全体から引き直し、check-adr-index-addendum-loss.js 以外に
+  // check-adr-index-sync.js（自己試験で固定）・check-commit-messages.js・gen-changelog.js を直した。
+  // ここでは後 2 者を「1 MiB を超える git 出力を実際に読ませる」一時リポジトリで固定する
+  // （両スクリプトとも git は process.cwd() で、設定ファイルは __dirname で読むので、cwd だけ差し替えて本物を走らせる）。
+  {
+    const fs1009 = require('fs');
+    const os1009 = require('os');
+    const path1009 = require('path');
+    const { execFileSync: exec1009 } = require('child_process');
+    const ccm1009 = require('./check-commit-messages.js');
+    const gitRead1009 = require('./lib/git-read.js');
+
+    const failWith = (code) => () => {
+      const err = new Error(`spawnSync /bin/sh ${code || 'fatal: bad revision'}`);
+      if (code) err.code = code;
+      throw err;
+    };
+    // collectCommits は失敗時に stderr へ 1 行書く。テストの出力を汚さないよう塞ぐ。
+    const muted = (fn) => {
+      const w = process.stderr.write.bind(process.stderr);
+      process.stderr.write = () => true;
+      try {
+        return fn();
+      } finally {
+        process.stderr.write = w;
+      }
+    };
+
+    ok('lib/git-read[#1009]: GIT_MAX_BUFFER は既定の 1 MiB より十分大きい', () => {
+      assert.ok(gitRead1009.GIT_MAX_BUFFER >= 64 * 1024 * 1024, `GIT_MAX_BUFFER=${gitRead1009.GIT_MAX_BUFFER}`);
+    });
+    ok('lib/git-read[#1009]: isShallowSkip は ENOBUFS を浅いクローンでも skip としない', () => {
+      const e = new Error('x');
+      e.code = 'ENOBUFS';
+      assert.strictEqual(gitRead1009.isShallowSkip(e, { shallow: () => true }), false);
+      assert.strictEqual(gitRead1009.isShallowSkip(new Error('x'), { shallow: () => true }), true);
+      assert.strictEqual(gitRead1009.isShallowSkip(new Error('x'), { shallow: () => false }), false);
+    });
+
+    ok('check-commit-messages[#1009]: 範囲の git log が ENOBUFS なら例外（浅いクローンでも skip へ倒さない）', () => {
+      assert.throws(() => muted(() => ccm1009.collectCommits('A..B', { readGit: failWith('ENOBUFS'), shallow: () => true })), /ENOBUFS/);
+    });
+    ok('check-commit-messages[#1009]: 浅いクローンでないのに範囲を読めなければ例外（未知 ≠ 無し）', () => {
+      assert.throws(() => muted(() => ccm1009.collectCommits('A..B', { readGit: failWith(), shallow: () => false })));
+    });
+    ok('check-commit-messages[#1009]（否定形）: 浅いクローンで範囲を読めなければ null（設計どおりの skip）', () => {
+      assert.strictEqual(muted(() => ccm1009.collectCommits('A..B', { readGit: failWith(), shallow: () => true })), null);
+    });
+
+    // 1 MiB を超える git 出力を持つ一時リポジトリ（本文 / 件名を巨大にした 1 コミット）。
+    const mkBigRepo = (prefix, message) => {
+      const root = fs1009.realpathSync(fs1009.mkdtempSync(path1009.join(os1009.tmpdir(), prefix)));
+      const g = (...args) => exec1009('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const commit = (msg) => {
+        const msgFile = path1009.join(root, '..', `${path1009.basename(root)}.msg`);
+        fs1009.writeFileSync(msgFile, msg);
+        try {
+          g('add', '-A');
+          g('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '-F', msgFile);
+        } finally {
+          fs1009.rmSync(msgFile, { force: true });
+        }
+        return g('rev-parse', 'HEAD').trim();
+      };
+      g('init', '-q');
+      fs1009.writeFileSync(path1009.join(root, 'a.txt'), 'a');
+      const base = commit('chore(NFR): base');
+      fs1009.writeFileSync(path1009.join(root, 'a.txt'), 'b');
+      const head = commit(message);
+      return { root, base, head };
+    };
+    const runNode = (script, args, cwd) => {
+      // 🔴 PR_TITLE は空文字でも「単一件名モード」へ入る（`!= null` 判定）ので、値を消すのではなく削除する。
+      const env = { ...process.env };
+      for (const k of ['GITHUB_ACTIONS', 'PR_TITLE', 'PR_NUMBER', 'COMMIT_RANGE', 'GITHUB_BASE_REF']) delete env[k];
+      try {
+        const out = exec1009(process.execPath, [path1009.join(__dirname, script), ...args], {
+          cwd,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          maxBuffer: gitRead1009.GIT_MAX_BUFFER,
+          env,
+        });
+        return { code: 0, out };
+      } catch (e) {
+        return { code: e.status, out: `${e.stdout || ''}${e.stderr || ''}` };
+      }
+    };
+
+    ok('check-commit-messages[#1009 e2e]: 本文が 1 MiB を超えるコミットも読んで検査する（旧: ENOBUFS を skip して exit 0）', () => {
+      const body = Array.from({ length: 12 * 1024 }, () => 'y'.repeat(99)).join('\n'); // 約 1.2 MiB
+      const { root, base, head } = mkBigRepo('ccm-enobufs-', `fix(NFR): 1 MiB を超える本文\n\n${body}\n`);
+      try {
+        const r = runNode('check-commit-messages.js', [`--range=${base}..${head}`], root);
+        assert.strictEqual(r.code, 0, `読めていない / 赤: ${r.out.slice(0, 2000)}`);
+        assert.match(r.out, /すべてのコミットが規約に適合/, `検査を実行していない: ${r.out.slice(0, 2000)}`);
+        assert.doesNotMatch(r.out, /スキップする/, `skip している: ${r.out.slice(0, 2000)}`);
+        // 同じ範囲で件名を規約違反にすれば赤になる（＝本当に読んで判定している）。
+        const bad = mkBigRepo('ccm-enobufs-bad-', `規約違反の件名\n\n${body}\n`);
+        try {
+          const rb = runNode('check-commit-messages.js', [`--range=${bad.base}..${bad.head}`], bad.root);
+          assert.strictEqual(rb.code, 1, `規約違反が赤にならない: ${rb.out.slice(0, 2000)}`);
+        } finally {
+          fs1009.rmSync(bad.root, { recursive: true, force: true });
+        }
+      } finally {
+        fs1009.rmSync(root, { recursive: true, force: true });
+      }
+    });
+    ok('check-commit-messages[#1009 e2e]: 浅いクローンでないのに範囲を読めなければ exit 1（旧: skip して exit 0）', () => {
+      const { root } = mkBigRepo('ccm-badrange-', 'fix(NFR): x');
+      try {
+        const r = runNode('check-commit-messages.js', ['--range=deadbeefdeadbeef..HEAD'], root);
+        assert.strictEqual(r.code, 1, `読めない範囲が赤にならない: ${r.out}`);
+      } finally {
+        fs1009.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    ok('gen-changelog[#1009 e2e]: 件名が 1 MiB を超えるコミットも CHANGELOG に載る（旧: ENOBUFS を「0 件」として節を空にした）', () => {
+      const longDesc = 'z'.repeat(1100 * 1024);
+      const { root } = mkBigRepo('gc-enobufs-', `feat(NFR): ${longDesc}\n`);
+      try {
+        const out = path1009.join(root, '..', `${path1009.basename(root)}.CHANGELOG.md`);
+        try {
+          const r = runNode('gen-changelog.js', ['--out', out], root);
+          assert.strictEqual(r.code, 0, `生成に失敗: ${r.out.slice(0, 2000)}`);
+          const text = fs1009.readFileSync(out, 'utf8');
+          assert.ok(text.includes(longDesc), '1 MiB を超える件名のコミットが CHANGELOG に無い（読めずに 0 件扱いの疑い）');
+          assert.ok(text.includes('base'), '同じ範囲の他のコミットが CHANGELOG に無い');
+        } finally {
+          fs1009.rmSync(out, { force: true });
+        }
+      } finally {
+        fs1009.rmSync(root, { recursive: true, force: true });
+      }
     });
   }
 };
