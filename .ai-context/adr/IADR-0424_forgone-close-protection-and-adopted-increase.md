@@ -57,7 +57,10 @@ issue は 2 種類目として「乖離の取り込みでできた建玉（発�
   **`Trading` 名前空間**に置く（`Events` の record はイベントの母集合として検査される。`PositionDriftItem` と同じ置き方）。
   列挙は `Unknown`（序数 0）／`NoneRecorded`／`Recorded`。**序数 0 を `Unknown` にする**——既定値へ落ちた値は「分からない」へ倒れる。
 - 発注執行: 見送りの理由が `BrokerPositionsIndeterminate` のときだけ、決済の反対方向（＝エントリー方向）・同一銘柄・同一市場の
-  **Active な保護記録**を読み、`ProtectedQuantity`（帳簿の主張）をブローカー側（S0・S3＝`!IsSoftwareStop`）と S1 に分けて合計する。
+  **Active な保護記録**を読み、**実効数量** `EffectiveProtectedQuantity`（帳簿の主張 `ProtectedQuantity` からまだ確定していない外部要因の減少
+  `PendingExternalReduction` を引いた値。武装の前提条件の `ClaimedFor` と同じ。IADR-0344 追記(9) 決定1）をブローカー側（S0・S3＝`!IsSoftwareStop`）と
+  S1 に分けて合計する（［PR #999 の再監査 1 で是正］当初は帳簿の主張で数えており、未確定の減少を抱えた行が S1 の株数を過大に、
+  ブローカー側の注文が無い株数を過小に見せた＝危険側。T-10-1013）。
   記録ストアの無い構成・読み取りの例外は `Unknown`（例外は Error ログ。**見送りそのものは変えない**）、行が無ければ `NoneRecorded`。
   ほかの見送りの理由では載せない（null）。
 - 通知: 照会不明の見送りの本文へ分類ごとの文を足す（重大のまま）。
@@ -123,8 +126,9 @@ Warning から **Critical** へ上げ、「送り手は減らす取り込みし�
   `ProtectiveStopDriftAdopter`）・通知（`NotificationFormatter`）。DB スキーマ・マイグレーション・API・Helm/values は**変更なし**。
   監査の payload は見送りの全体を直列化するため `protection` の項目が 1 つ増える（旧い行は無し）。
 - 残る制約:
-  - 数量は**帳簿の主張**であり、ブローカーで注文が生きていることは照会できないので確かめていない（通知もそう書く）。
-  - ［PR #999 の監査 N3］ブローカー側の株数は記録の `ProtectedQuantity`（S0 は残保護数量 `RemainingProtected`、未設定なら記録の数量 `Quantity`）であって、
+  - 数量は**記録の実効数量**であり、ブローカーで注文が生きていることは照会できないので確かめていない（通知もそう書く）。
+  - ［PR #999 の監査 N3・再監査 1］ブローカー側の株数は記録の `EffectiveProtectedQuantity`（S0 は残保護数量 `RemainingProtected`、未設定なら記録の数量
+    `Quantity` から、未確定の外部要因の減少を引いた値。S0 の未確定の減少は全部か 0 か）であって、
     **ブローカーに実在する注文の数量を照会した値ではない**。両者がずれると「記録上ブローカー側の保護注文が無い N 株」もずれる。
     記録の主張が実在の注文より**小さい**向きでは不足が**実際より大きく出る**（過大に知らせる＝安全側の誤差）。
     **大きい**向き（注文は失効・取消済みなのに記録が Active のまま残る窓。例: 取消を確認した後に帳簿の減算が楽観並行の衝突で見送られた場合）では

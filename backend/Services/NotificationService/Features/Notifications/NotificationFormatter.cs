@@ -82,7 +82,7 @@ public static class NotificationFormatter
             : NotificationSeverity.Warning);
 
     // 🔴 #879, IADR-0424 決定1: 分類ごとの文。**書くのは発注執行の記録が言えることだけ**である。
-    //   - ブローカー側の注文の株数は帳簿の主張であり、照会できないので注文が生きていることは確かめていない。
+    //   - ブローカー側の注文の株数は記録の実効数量（帳簿の主張から未確定の外部要因の減少を引いた値）であり、照会できないので注文が生きていることは確かめていない。
     //   - S1（ソフトウェア逆指値）の決済も建玉照会の不明のあいだは据え置かれる（SoftwareStopExecutor の手順 3）。
     //   - 利用者が証券会社のアプリで自分で置いた注文はシステムの記録に無い（見えない）ので、「無い」は記録についての断定に留める。
     private static string IndeterminateCloseProtectionNote(OrderDispatchForgone e)

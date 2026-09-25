@@ -6,7 +6,7 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 /// 🔴 FR-10, #879, IADR-0424 決定1: 建玉照会の不明で決済を見送った時点で、発注執行の保護記録（protective_stop_orders）が
 /// その建玉（決済の反対方向＝エントリー方向・同一銘柄・同一市場の Active な行）について何を言っていたか。
 /// <para>
-/// 数量は<b>帳簿の主張</b>（ProtectedQuantity の合計）であって、ブローカーで注文が生きていることの確認ではない
+/// 数量は記録の<b>実効数量</b>（EffectiveProtectedQuantity＝帳簿の主張から未確定の外部要因の減少を引いた値。ClaimedFor と同じ）の合計であって、ブローカーで注文が生きていることの確認ではない
 /// （照会できないので確かめられない）。<see cref="BrokerSideQuantity"/> はブローカー側の注文（S0・S3）、
 /// <see cref="SoftwareStopQuantity"/> はソフトウェア逆指値（S1）。🔴 S1 の決済も建玉照会の不明のあいだは据え置かれる
 /// （SoftwareStopExecutor）ため、照会不明のあいだに効く保護はブローカー側の注文だけである。

@@ -157,6 +157,15 @@ issue 本文と呼び出し元は `grep -rn PositionDriftAdopted backend/Service
   再生成で `StageTransitioned.AuthorizedBy`（develop 時点で基準から漏れていた既存の項目）も載った。
 - N3: IADR-0424 の残る制約に、ブローカー側の株数は記録の主張であり実在の注文の数量ではないこと（不足が過大・過小に出る向き）を書いた。
 
+［2026-09-25 追記 / #879］PR #999 の再監査（GO-with-nits）を受けて次を直した。
+
+- 再監査 1（安全側）: 保護の記録の株数を帳簿の主張（`ProtectedQuantity`）ではなく**実効数量**（`EffectiveProtectedQuantity`。武装の前提条件の
+  `ClaimedFor` と同じ。IADR-0344 追記(9) 決定1）で数えるよう替えた（上の「設計 1」の `ProtectedQuantity` はこの追記で置き換わる）。
+  未確定の外部要因の減少を抱えた行が S1 の株数を過大に、ブローカー側の注文が無い株数を過小に見せていた（危険側）。T-10-1013 で固定
+  （帳簿の主張へ戻す変異で赤）。
+- 再監査 2: `EfProtectiveStopOrderStore.FindActiveFor` の条件（銘柄・市場・方向・Active のみ・機構を問わない・上限なし・古い順）を EF の
+  InMemory プロバイダで固定した（T-10-1014。方向の条件を外す変異で赤）。
+
 ## 射程外
 
 - 通信仕様書 `docs/api/events-and-ports.md` に `OrderDispatchForgone` の行が元から無いこと（本件で足した項目だけでなくイベント全体が未掲載）。

@@ -561,7 +561,7 @@ public sealed class OrderExecutionAppService(
             new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow, protection), drift);
 
     // 🔴 FR-10, FR-09, UC-06, #879, IADR-0424 決定1: 決済を見送る建玉の**保護の記録**を読む（不明・無し・有りを混ぜない）。
-    // 対象は決済の反対方向（＝エントリー方向）・同一銘柄・同一市場の Active な行。数量は帳簿の主張（ProtectedQuantity）であり、
+    // 対象は決済の反対方向（＝エントリー方向）・同一銘柄・同一市場の Active な行。数量は実効数量（EffectiveProtectedQuantity。下記）であり、
     // ブローカーで注文が生きていることの確認ではない（照会できないので確かめられない。通知もそう書く）。
     //   - 記録ストアの無い構成・読み取りの例外 → Unknown（「分からない」を「無い」と言わない）
     //   - 行が 1 つも無い → NoneRecorded（S2 で建てた建玉など。システムの保護レグは無いと断定できる）
@@ -593,10 +593,14 @@ public sealed class OrderExecutionAppService(
         if (rows.Count == 0)
             return new ForgoneCloseProtection(ForgoneCloseProtectionStatus.NoneRecorded, 0, 0);
 
+        // 🔴 PR #999 の再監査 1（IADR-0344 追記(9) 決定1）: 株数は **ClaimedFor と同じ実効数量**（EffectiveProtectedQuantity＝帳簿の主張から
+        // まだ確定していない外部要因の減少を引いた値）で数える。帳簿の主張（ProtectedQuantity）で数えると、未確定の観測を抱えた行
+        // ——実際にはその分を動かせない行——が保護を多く見せ、通知の「S1 の株数」を過大に、「ブローカー側の注文が無い株数」を過小に
+        // 出す（危険側）。実効数量は主張以下なので、誤差は常に「保護を少なく・不足を多く」知らせる側に倒れる。
         return new ForgoneCloseProtection(
             ForgoneCloseProtectionStatus.Recorded,
-            rows.Where(s => !s.IsSoftwareStop).Sum(s => s.ProtectedQuantity),
-            rows.Where(s => s.IsSoftwareStop).Sum(s => s.ProtectedQuantity));
+            rows.Where(s => !s.IsSoftwareStop).Sum(s => s.EffectiveProtectedQuantity),
+            rows.Where(s => s.IsSoftwareStop).Sum(s => s.EffectiveProtectedQuantity));
     }
 
     // #864, IADR-0355 決定5: 乖離は**既存の検知（IADR-0118）と同じイベント**で人へ知らせる（新しい経路を作らない）。

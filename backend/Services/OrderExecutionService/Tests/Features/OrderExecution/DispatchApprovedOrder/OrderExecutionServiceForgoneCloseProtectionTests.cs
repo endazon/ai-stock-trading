@@ -186,6 +186,27 @@ public class OrderExecutionServiceForgoneCloseProtectionTests
         result.Forgone!.Protection.Should().Be(new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Recorded, 120, 0));
     }
 
+    // 🔴 T-10-1013（PR #999 の再監査 1。IADR-0344 追記(9) 決定1）: **未確定の外部要因の減少を抱えた行**は、帳簿の主張ではなく
+    // 実効数量（EffectiveProtectedQuantity。ClaimedFor と同じ）で数える。帳簿の主張で数えると S1 の株数を過大に、
+    // ブローカー側の注文が無い株数を過小に知らせる（危険側）。
+    //   - S1: 主張 50・未確定の減少 20 → 30 株
+    //   - S0: 主張 100・未確定の減少 100（S0 は全部か 0 か）→ 0 株、もう 1 行の S0 100 株 → 合計 100 株
+    [Fact]
+    public async Task 未確定の外部要因の減少を抱えた行は実効数量で数える()
+    {
+        var broker = new FakePositionAwareBroker(null);
+        var stops = new InMemoryProtectiveStopOrderStore();
+        stops.Save(SoftwareStop(50) with { PendingExternalReduction = 20, ExternalReductionObservations = 1 });
+        stops.Save(BrokerStop(100) with { PendingExternalReduction = 100, ExternalReductionObservations = 1 });
+        stops.Save(BrokerStop(100));
+
+        var result = await NewService(broker, stops).ExecuteAsync(Approved(CloseIntent(qty: 300)));
+
+        result.Forgone!.Protection.Should().Be(
+            new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Recorded, 100, 30),
+            "帳簿の主張（200・50）ではなく実効数量で数える——通知の不足（300−100＝200 株）を過小に出さない");
+    }
+
     // 🔴 T-10-1002: 記録ストアの無い構成／読み取りの例外 → **Unknown**（「分からない」を「無い」と言わない）。
     // 見送りそのものは従来どおり行う（保護の読み取りの失敗で決済を送る側へ倒さない）。
     [Fact]
