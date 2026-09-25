@@ -171,6 +171,13 @@ jobs:
       - name: Test cutover-count-reconcile.sh (retention reconcile)
         if: ${{ !cancelled() }}
         run: bash scripts/cutover-count-reconcile.test.sh
+      # FR-10, #937, IADR-0344 追記（17）: ホスト側の死活監視（クラスタの外から S1 の生存を見張る）の純ロジック
+      # （米国市場の開場判定・生存要約の鮮度・通知の要否・Webhook の URL を出さない）を固定する。
+      # 実クラスタ・kubectl・通知は不要。ubuntu-latest の pwsh（PowerShell 7）で走る。
+      - name: Test host-liveness-monitor.ps1 (out-of-cluster S1 liveness)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./scripts/host-liveness-monitor.test.ps1
 
       # スタック非依存: docs/ ・ .ai-context/ 配下 Markdown の相対リンク切れを検査（再発防止）。
       # scripts/check-doc-links.js は Node 標準モジュールのみで動作し、依存インストール不要。
