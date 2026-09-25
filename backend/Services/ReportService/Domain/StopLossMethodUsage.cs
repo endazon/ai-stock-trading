@@ -15,10 +15,20 @@ namespace ReportService.Domain;
 //   運ぶだけで、手法は効かない（IADR-0342 決定3）。
 // - **同じ DecisionId は 1 件**（先勝ち）。承認の再発行が台帳に 2 行残っても二重に数えない。
 // - 本文を復元できなかった記録は件数に含めず、別に数える（黙って落とさない）。
+//
+// #1002, IADR-0429 決定3: 集計に使った承認の**明細**（DecisionId・手法・承認時刻）も持つ。発注執行の解決結果と
+// DecisionId で突き合わせ（日報の 2 行目）、承認の JST 暦日で日を数える（月報の日数ベースの内訳）ためである。
+// 明細は件数（Counts）と同じ母集合（新規建て・DecisionId で重複を除いたもの）である。
 public sealed record StopLossMethodUsage(
     IReadOnlyList<StopLossMethodCount> Counts,
     int UnreadableCount)
 {
+    /// <summary>
+    /// #1002, IADR-0429 決定3: 数えた承認の明細（<see cref="Counts"/> と同じ母集合・承認時刻の順）。
+    /// 件数だけで作った値（旧い呼び出し）では空である。
+    /// </summary>
+    public IReadOnlyList<StopLossMethodApproval> Approvals { get; init; } = [];
+
     /// <summary>新規建ての承認の総数（手法を問わない）。</summary>
     public int TotalApprovals => Counts.Sum(c => c.Count);
 
@@ -28,6 +38,7 @@ public sealed record StopLossMethodUsage(
 
         var seen = new HashSet<Guid>();
         var byMethod = new Dictionary<StopLossExecutionMethod, int>();
+        var counted = new List<StopLossMethodApproval>();
         foreach (var a in approvals)
         {
             if (a.Intent.PositionEffect != PositionEffect.Open)
@@ -36,13 +47,17 @@ public sealed record StopLossMethodUsage(
                 continue;
 
             byMethod[a.StopLossMethod] = byMethod.GetValueOrDefault(a.StopLossMethod) + 1;
+            counted.Add(new StopLossMethodApproval(a.DecisionId, a.StopLossMethod, a.ApprovedAt));
         }
 
         var counts = byMethod
             .OrderBy(kv => (int)kv.Key)
             .Select(kv => new StopLossMethodCount(kv.Key, kv.Value))
             .ToList();
-        return new StopLossMethodUsage(counts, unreadableCount);
+        return new StopLossMethodUsage(counts, unreadableCount)
+        {
+            Approvals = [.. counted.OrderBy(a => a.ApprovedAt)],
+        };
     }
 
     /// <summary>
@@ -61,3 +76,6 @@ public sealed record StopLossMethodUsage(
 
 /// <summary>手法 1 つぶんの新規建ての承認件数。</summary>
 public sealed record StopLossMethodCount(StopLossExecutionMethod Method, int Count);
+
+/// <summary>#1002, IADR-0429 決定3: 数えた承認 1 件（新規建て・DecisionId で重複を除いたもの）。</summary>
+public sealed record StopLossMethodApproval(Guid DecisionId, StopLossExecutionMethod Method, DateTimeOffset ApprovedAt);

@@ -603,4 +603,34 @@ public class OrderApprovedConsumerTests
 
         await host.StopAsync();
     }
+
+    // 🔴 T-10-1082, FR-10, FR-06, FR-11, #1002, IADR-0429 決定1: 本番と同じ共通配線（キュー名・fan-out・発行）で、
+    // ハンドラが解決結果（StopLossMethodResolved）を**発注した回にも見送った回にも**発行し、宛先がメッセージ型の共有 exchange である。
+    // 見送りの経路はハンドラの途中で return するため、発行の位置を誤ると見送りの回だけ解決結果が消える。
+    [Theory]
+    [InlineData(StopLossExecutionMethod.BrokerStopOrder, false)]
+    [InlineData(StopLossExecutionMethod.NoProtectiveStop, true)]
+    public async Task T_10_1082_ハンドラは解決結果を発注と見送りのどちらの回にも発行する(
+        StopLossExecutionMethod method, bool forgone)
+    {
+        var store = new InMemoryExecutedOrderStore();
+        // 内蔵 paper（SIMULATE ではない）: S0 は発注、S2 は拒否（見送り）になる。
+        using var host = await NewHostAsync(store, new PaperBrokerAdapter());
+        var approved = new OrderApproved(Guid.NewGuid(), NewIntent(), 10, DateTimeOffset.UtcNow, StopLossMethod: method);
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(approved);
+
+        var resolved = session.Sent.MessagesOf<StopLossMethodResolved>().Should().ContainSingle().Which;
+        resolved.DecisionId.Should().Be(approved.DecisionId);
+        resolved.SelectedMethod.Should().Be(method);
+        resolved.Provider.Should().Be(BrokerProvider.InternalPaper);
+        session.Sent.Envelopes().Should().Contain(e =>
+            e.Message is StopLossMethodResolved
+            && e.Destination!.ToString() == "rabbitmq://exchange/AiStockTrading.Shared.Contracts.Events.StopLossMethodResolved");
+        session.Sent.MessagesOf<OrderDispatchForgone>().Should().HaveCount(forgone ? 1 : 0);
+        session.Sent.MessagesOf<OrderExecuted>().Should().HaveCount(forgone ? 0 : 1);
+        resolved.AppliedMethod.Should().Be(forgone ? null : StopLossExecutionMethod.BrokerStopOrder);
+
+        await host.StopAsync();
+    }
 }

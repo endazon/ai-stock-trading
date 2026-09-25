@@ -135,4 +135,33 @@ public class StopLossMethodContractTests
         // 値を増やしたら、見送りを分類し直す側（在庫解放の可否など）も引き直させる。
         Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(7);
     }
+
+    // 🔴 T-10-1084, FR-10, FR-06, #1002, IADR-0429 決定2: 解決の理由の序数は動かさない（イベント本文の整数・監査 payload）。
+    [Fact]
+    public void 解決の理由の序数は末尾追加であり動かない()
+    {
+        ((int)StopLossMethodResolutionReason.AsSelected).Should().Be(0);
+        ((int)StopLossMethodResolutionReason.BrokerNotMoomooSimulate).Should().Be(1);
+        ((int)StopLossMethodResolutionReason.ShortSellEntry).Should().Be(2);
+        ((int)StopLossMethodResolutionReason.UnknownMethod).Should().Be(3);
+        Enum.GetValues<StopLossMethodResolutionReason>().Should().HaveCount(4);
+    }
+
+    // T-10-1084: 解決結果は JSON を往復しても値が変わらない（拒否＝適用なし の null を含む）。発行側（発注執行）と
+    // 購読側（監査）は同じ共有型を使い、監査台帳の本文が報告書の唯一の入力になる。
+    [Theory]
+    [InlineData(StopLossExecutionMethod.NoProtectiveStop, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate)]
+    [InlineData(StopLossExecutionMethod.NoProtectiveStop, StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.ShortSellEntry)]
+    [InlineData(StopLossExecutionMethod.SoftwareStop, StopLossExecutionMethod.SoftwareStop, StopLossMethodResolutionReason.AsSelected)]
+    public void 解決結果はJSONを往復しても値が変わらない(
+        StopLossExecutionMethod selected, StopLossExecutionMethod? applied, StopLossMethodResolutionReason reason)
+    {
+        var evt = new StopLossMethodResolved(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProductType.Cash, selected, applied, reason,
+            BrokerProvider.MoomooSimulate, T0);
+
+        JsonSerializer.Deserialize<StopLossMethodResolved>(JsonSerializer.Serialize(evt)).Should().Be(evt);
+        JsonSerializer.Deserialize<StopLossMethodResolved>(JsonSerializer.Serialize(evt, AuditDetailJson.Options), AuditDetailJson.Options)
+            .Should().Be(evt);
+    }
 }

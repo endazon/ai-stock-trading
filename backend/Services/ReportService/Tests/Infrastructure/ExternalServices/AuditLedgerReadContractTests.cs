@@ -120,6 +120,30 @@ public class AuditLedgerReadContractTests
         usage.UnreadableCount.Should().Be(0);
     }
 
+    // 🔴 T-10-1086, FR-06, FR-10, #1002, IADR-0429 決定4: 発注執行の解決結果。**送り手（監査）の本物の記録の組み立て
+    // （AuditEntryFactory.From(StopLossMethodResolved)）で作った AuditEntry を web 既定で直列化した応答**を読む。
+    // 送り手で EventType を改名すると全行が種別不一致で捨てられ、承認があるのに「解決結果の記録が見つからない」と書かれる。
+    // 送り手が web 既定で出していることは監査側の T-10-922、本番の組み立てで返ることは T-10-1085 が固定する。
+    [Fact]
+    public async Task 解決結果は送り手の本物の型を直列化した応答から読める()
+    {
+        var refused = new StopLossMethodResolved(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProductType.Cash, StopLossExecutionMethod.NoProtectiveStop,
+            AppliedMethod: null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate, BrokerProvider.MoomooReal, T0);
+        var shortSell = new StopLossMethodResolved(
+            Guid.NewGuid(), "TSLA", Market.UnitedStates, ProductType.ShortSell, StopLossExecutionMethod.NoProtectiveStop,
+            StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.ShortSellEntry, BrokerProvider.MoomooSimulate, T0);
+        var source = new HttpStopLossMethodResolutionSource(
+            Ledger(AuditEntryFactory.From(refused, Guid.NewGuid(), T0), AuditEntryFactory.From(shortSell, Guid.NewGuid(), T0)),
+            NullLogger<HttpStopLossMethodResolutionSource>.Instance);
+
+        var feed = await source.GetResolutionsAsync(From, To);
+
+        feed.Should().NotBeNull();
+        feed!.Resolutions.Should().Equal(refused, shortSell);
+        feed.UnreadableCount.Should().Be(0);
+    }
+
     private sealed class StubHandler(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>

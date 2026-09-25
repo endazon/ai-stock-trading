@@ -104,8 +104,106 @@ public class ReportAutoGeneratorStopLossMethodTests
 
         var daily = DailyOf(store);
         daily.Body.Should().Contain(
-            "- **新規建ての承認（承認時点の手法）**: 2 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 1 件");
+            "- **選ばれていた手法（承認時点）**: 計 2 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 1 件");
         daily.UnsuppliedInputs.Should().NotContain(ReportInput.StopLossMethods);
         source.Requested.Should().Contain((new DateOnly(2026, 7, 8), new DateOnly(2026, 7, 8)));
+    }
+
+    // ---- T-10-1091, FR-06, FR-10, #1002, IADR-0429 決定4: 発注執行の解決結果の供給 ------------------------------
+
+    // 2026-07-31（金）17:00 JST。日報・週報・月報のすべてが生成境界を越えている時刻。
+    private static readonly DateTimeOffset MonthEndAfterClose = new(2026, 7, 31, 8, 0, 0, TimeSpan.Zero);
+
+    private sealed class StubResolutionSource(StopLossMethodResolutionFeed? feed) : IStopLossMethodResolutionSource
+    {
+        public List<(DateOnly From, DateOnly To)> Requested { get; } = [];
+
+        public Task<StopLossMethodResolutionFeed?> GetResolutionsAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+        {
+            Requested.Add((from, to));
+            return Task.FromResult(feed);
+        }
+    }
+
+    private sealed class ThrowingResolutionSource : IStopLossMethodResolutionSource
+    {
+        public Task<StopLossMethodResolutionFeed?> GetResolutionsAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
+            throw new HttpRequestException("監査台帳へ到達できません");
+    }
+
+    private static ReportAutoGenerator NewGenerator(
+        IReportStore store, IStopLossMethodUsageSource? usage, IStopLossMethodResolutionSource? resolutions, DateTimeOffset now) =>
+        new(store,
+            new ReportDraftService(new StubDrafter()),
+            new NoOpPeriodFillSource(),
+            new FixedClock(now),
+            new ReportAutoGenerationSettings(),
+            stopLossMethodUsageSource: usage,
+            stopLossMethodResolutionSource: resolutions);
+
+    private static StopLossMethodResolved ResolvedAsSelected(OrderApproved a) => new(
+        a.DecisionId, a.Intent.Symbol, a.Intent.Market, a.Intent.ProductType, a.StopLossMethod, a.StopLossMethod,
+        StopLossMethodResolutionReason.AsSelected, BrokerProvider.MoomooSimulate, a.ApprovedAt.AddSeconds(1));
+
+    // 🔴 否定形: 未注入・照会の失敗はいずれも「照会できませんでした」と書き、未供給の入力として記録する。
+    [Fact]
+    public async Task T_10_1091_解決結果の供給が無い_失敗なら未供給として描き記録する()
+    {
+        var usage = new StubUsageSource(StopLossMethodUsage.From([Approved(StopLossExecutionMethod.NoProtectiveStop)]));
+        foreach (var source in new IStopLossMethodResolutionSource?[] { null, new ThrowingResolutionSource() })
+        {
+            var store = new InMemoryReportStore();
+
+            await NewGenerator(store, usage, source, WedAfterClose).RunOnceAsync();
+
+            var daily = DailyOf(store);
+            daily.Body.Should().Contain("- **発注執行の解決結果を照会できませんでした（要確認）**");
+            daily.UnsuppliedInputs.Should().Contain(ReportInput.StopLossMethodResolutions);
+            daily.UnsuppliedInputs.Should().NotContain(ReportInput.StopLossMethods);
+        }
+    }
+
+    // 対の肯定形: 供給されたら日報の 2 行目に載り、未供給に数えない。照会は当該日報の期間で行う。
+    [Fact]
+    public async Task T_10_1091_供給された解決結果を日報の2行目へ載せ_当日の期間で照会する()
+    {
+        var store = new InMemoryReportStore();
+        var approved = Approved(StopLossExecutionMethod.NoProtectiveStop);
+        var resolutions = new StubResolutionSource(new StopLossMethodResolutionFeed([ResolvedAsSelected(approved)]));
+
+        await NewGenerator(store, new StubUsageSource(StopLossMethodUsage.From([approved])), resolutions, WedAfterClose).RunOnceAsync();
+
+        var daily = DailyOf(store);
+        daily.Body.Should().Contain("- **実際に適用された手法（発注執行の解決結果）**: 計 1 件 — S2 逆指値なしの建玉を許容 1 件");
+        daily.UnsuppliedInputs.Should().NotContain(ReportInput.StopLossMethodResolutions);
+        resolutions.Requested.Should().Contain((new DateOnly(2026, 7, 8), new DateOnly(2026, 7, 8)));
+    }
+
+    // 月報でも両入力を当月の期間で引き、§6 に日数を書く。週報は使わない（未供給にも数えない）。
+    [Fact]
+    public async Task T_10_1091_月報は当月の期間で両入力を引き_週報は未供給に数えない()
+    {
+        var store = new InMemoryReportStore();
+        var approved = Approved(StopLossExecutionMethod.NoProtectiveStop);
+        var usage = new StubUsageSource(StopLossMethodUsage.From([approved]));
+        var resolutions = new StubResolutionSource(new StopLossMethodResolutionFeed([ResolvedAsSelected(approved)]));
+
+        await NewGenerator(store, usage, resolutions, MonthEndAfterClose).RunOnceAsync();
+
+        var monthly = store.List().Single(r => r.Kind == ReportKind.Monthly);
+        monthly.Body.Should().Contain("### 損切りの実行機構（当月）");
+        monthly.Body.Should().Contain("- **選択と実際が食い違った日数: 0 日**");
+        usage.Requested.Should().Contain((new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));
+        resolutions.Requested.Should().Contain((new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));
+
+        var storeWithout = new InMemoryReportStore();
+        await NewGenerator(storeWithout, null, null, MonthEndAfterClose).RunOnceAsync();
+        storeWithout.List().Single(r => r.Kind == ReportKind.Monthly).UnsuppliedInputs
+            .Should().Contain([ReportInput.StopLossMethods, ReportInput.StopLossMethodResolutions]);
+        storeWithout.List().Where(r => r.Kind == ReportKind.Weekly).Should().OnlyContain(r =>
+            !r.UnsuppliedInputs.Contains(ReportInput.StopLossMethods)
+            && !r.UnsuppliedInputs.Contains(ReportInput.StopLossMethodResolutions));
     }
 }

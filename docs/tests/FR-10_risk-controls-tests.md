@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002]
 -->
 
 
@@ -2537,7 +2537,7 @@ Bot 側は緊急停止と同じ閂（多層認証 → 解析 → 確認フレー
 | **T-10-994** | 設定の変更履歴に手法の変更（種別 9）がある | リスク設定画面の変更履歴を見る | 種別を「損切りの実行機構」と表示する（「不明(9)」と出さない） | 手法の変更が履歴で読める | 自動 |
 | **T-10-995** | 統制状態の応答の手法が S0〜S3／未知の値 | 統制状態参照画面を開く | 発注先の行の直後に手法を表示名で出す。S0 以外なら SIMULATE 限定を注記する。未知の値は「不明(N)」。手法を変える操作は無い | 現在の手法が読める・参照専用 | 自動 |
 | **T-10-996** | 当日の承認に S0 と S2 の新規建てが混在（日中に手法を変えた日）・手仕舞いの承認・同じ判断の承認が 2 行 | 日報を作る | §4 の子節「損切りの実行機構（当日）」に承認時点の手法ごとの件数を書く（両方を数える）。手仕舞いの承認は数えない。同じ判断は 1 件。復元できなかった記録は別に件数を書く | 当日に走った手法を生成時点の設定値で塗り潰さない | 自動 |
-| **T-10-997** | 承認の記録を照会できない／承認 0 件／週報・月報 | 日報・週報・月報を作る | 照会不能は「照会できませんでした」と書き「なし」と書かない。0 件は「なし」と明記する。週報・月報には出さない | 未供給を 0 と読ませない | 自動（**否定形**） |
+| **T-10-997** | 承認の記録を照会できない／承認 0 件／週報 | 日報・週報を作る | 照会不能は「照会できませんでした」と書き「なし」と書かない。0 件は「なし」と明記する。週報には出さない（月報は後から §6 に日数ベースの内訳を持つようになった。月報の側は T-10-1089） | 未供給を 0 と読ませない | 自動（**否定形**） |
 | **T-10-998** | 監査台帳の承認（送り手の本物の記録の組み立てで作った応答を含む）・台帳の失敗・構成の欠落 | 日報の供給が承認を引く／自動生成が日報を作る | JST 暦日の半開区間で承認の種別を引き、列挙の文字列表現と手法の項目を持たない旧い行（S0）を読む。非 2xx・例外・null は未供給、壊れた 1 件は除いて数える。台帳の URL が無い・不正なら未供給の実装へ倒し、自動生成は未供給の入力として記録する | 供給不達を「承認なし」へ倒さない | 自動 |
 
 **変異注入の実測**（2026-09-25。1 つずつ入れて実行し、実行ごとに変異前の内容へ書き戻した。報告書側は本節のテストとゴールデンの計 34 件に対して）:
@@ -2677,3 +2677,56 @@ Kubernetes API・Pod の Ready・2 つの生存要約の鮮度を読み、クラ
 - 稼働クラスタでの h2c 往復は未検証（既定は REST のまま。有効化は提供側の gRPC ポートと呼び出し元の宛先を同じ変更で揃える）。
 - 通知サービスの段階ゲートの照会は本節の対象外（利用者の代理のトークンで呼ぶ書き込みと同じ窓口にあり、次の段で移す）。
 - REST の受け手は稼働率の累計算入日数を欠落時に 0 と読む（gRPC は未供給のまま運ぶ）。REST 側の是正は別に扱う。
+
+## 日報に「実際に適用された手法」の行、月報に日数ベースの内訳を足す
+
+日報の「損切りの実行機構（当日）」は承認時点の手法しか数えておらず、発注執行が実際にどう扱ったか（S0 以外を moomoo SIMULATE 以外で拒否した・
+空売りの新規建てを S0 で扱った・未知の手法の値を S0 で扱った）が読めなかった。発注執行の解決結果を記録・照会する経路も無かった。
+修正後は、発注執行が新規建ての承認の手法を解決するたびに解決結果（`StopLossMethodResolved`）を発行し、監査台帳が記録する。報告書はこれを引いて
+承認と判断 ID で突き合わせ、日報に「選ばれていた手法（承認時点）」と「実際に適用された手法（発注執行の解決結果）」の 2 行と食い違いの理由を、
+月報 §6 に実際に適用された手法ごとの日数と食い違った日数を書く。日は日報と同じ JST の暦日（承認の時刻）で数える。週報には出さない。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-1080** | 手法（S0〜S3・未知）× 発注先 3 × 商品種別 3 の全組み合わせ | 手法を解決する | 解決結果は従来の解決と同じで、理由は判定の順序どおり（S0 → 発注先 → 空売り → 既知の手法 → 未知）。適用した手法が選択と同じなのは理由が「選択どおり」のときだけ。拒否は「適用なし」 | 解決と理由を 1 か所で決める・拒否を S0 と書かない | 自動 |
+| **T-10-1081** | 新規建ての承認（一致・拒否・空売り・未知）／解決の後の見送り／手仕舞い・完了済みの再配送・見送り済みの再配送 | 発注執行が承認を処理する | 解決した回には承認と実際のアダプタから作った解決結果が載る（見送りの回も）。解決しない回には載らない | 解決結果を承認ごとに 1 回だけ出す | 自動 |
+| **T-10-1082** | 本番と同じ共通配線のハンドラ・内蔵 paper／解決結果の発行だけが失敗するバス（同期の例外・失敗した非同期の結果） | S0 の承認（発注）と S2 の承認（拒否＝見送り）を流す | どちらの回も解決結果が発行され、宛先はメッセージ型の共有 exchange。解決結果の発行が失敗しても例外にならず、見送り・発注結果・保護逆指値は発行される | 見送りの経路でも解決結果を失わない・報告のための発行が統制の発行を止めない | 自動（**否定形**） |
+| **T-10-1083** | 発注執行の本番の組み立て（外界だけ差し替え） | 承認を流す | 解決結果が `rabbitmq://exchange/…StopLossMethodResolved` へ送られる（値つき） | 本番の配線で発行される | 自動 |
+| **T-10-1084** | 契約 | 型名・スキーマ基準・理由の序数・JSON の往復 | 型名とスキーマ基準を固定し、理由の序数は動かず、往復で値が変わらない（拒否の null を含む） | 送り手と受け手が同じ契約を読む | 自動 |
+| **T-10-1085** | 監査の写像／監査の本番の組み立て | 解決結果を記録し、種別期間照会で引く | 相関は承認の判断 ID・時刻は解決の時刻・要約は「選択 → 適用（理由）」で拒否は「適用なし（発注しない）」。本番の組み立ては共通配線の命名のキューを持ち、発見したハンドラで記録し、照会で元のイベントへ戻る本文を返す | 監査台帳に記録され報告書の照会で返る | 自動 |
+| **T-10-1086** | 監査台帳（送り手の本物の記録の組み立てで作った応答を含む）・台帳の失敗 | 報告書の供給が解決結果を引く | 報告期間の前後 1 日を含む JST 暦日の半開区間で種別を引き、本文を復元する。非 2xx・例外・null は未供給、壊れた 1 件は除いて数を返す。構成なしは未供給 | 供給不達を「記録なし」へ倒さない | 自動 |
+| **T-10-1087** | 承認と解決結果（期間外・重複・JST 0 時を跨ぐ解決・記録なし） | 突き合わせる | 判断 ID で結び、同じ承認の解決結果は時刻の遅いほうを採る。日は承認の JST 暦日。記録の無い承認は別に数える。手法ごとの日数・複数の手法の日・食い違った日・未解決の日を数える | 母集合は承認・不明を一致とも食い違いとも言わない | 自動 |
+| **T-10-1088** | 日報（食い違いあり・一致・承認 0 件・解決結果の照会不能・承認の照会不能・記録の無い承認） | 日報を描く | 2 行を並べ、食い違いを「選択 → 適用 件数（理由）」で書く。一致は「なし」。0 件は両行「なし」。照会不能はどちらの側でも「なし」と書かない。記録の無い承認は件数を書き「なし」と言い切らない | 未供給・不明・0 を区別する | 自動（**否定形**） |
+| **T-10-1089** | 月報（重複日・食い違い・記録なし・承認なしの月・照会不能）／週報 | 月報・週報を描く | 月報 §6（§6.1 の前）に手法ごとの日数（重複日の併記）と食い違った日数を書き、理由は書かない。承認なしの月は「なし」。照会不能は「なし」「0 日」と書かない。承認はあるのに解決結果が 1 件も見つからない月は、食い違った日数を「0 日」と書かず「判定できていません」と書く。週報には出さない | 月報は日数だけ・明細は日報 | 自動（**否定形**） |
+| **T-10-1090** | 入力の語彙 | 種別ごとの適用を見る | 承認の記録と解決結果はどちらも日報・月報に適用し、週報には適用しない。表示名がある | 使う入力の欠落だけを警告する | 自動 |
+| **T-10-1091** | 自動生成（解決結果の供給なし・失敗・あり／月末） | 日報・月報を作る | 未供給・失敗は「照会できませんでした」と描き未供給の入力に記録する。供給は当日・当月の期間で引き、日報の 2 行目・月報 §6 に載る。週報では未供給に数えない | 供給不達を記録する | 自動 |
+| **T-10-1092** | 報告書の本番の組み立て（台帳の最下層と時計だけ差し替え）・JST 0 時を跨いで解決された承認 | 自動生成で日報を作る | 台帳が返す解決結果（送り手の本物の型）が日報の 2 行目と食い違いの行に載り、境界際の承認も記録なしにならない | 本番の配線で供給される | 自動 |
+| **T-10-1093** | ゴールデン（日報・月報 × 供給あり／なし） | 全文を描く | 日報の 2 行と食い違い、月報 §6 の日数の行を含む全文が一致する | 出口まで出ている | 自動 |
+
+**変異注入の実測**（2026-09-25。1 つずつ入れて実行し、実行ごとに変異前の内容へ書き戻した）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| ハンドラが解決結果を発行しない | 発注執行 63 件中 4 件赤 | T-10-1082 / T-10-1083 |
+| 発注執行が解決結果を結果へ載せない | 発注執行 63 件中 12 件赤 | T-10-1081 / T-10-1082 / T-10-1083 |
+| 空売りの理由を「選択どおり」と返す | 発注執行 63 件中 5 件赤 | T-10-1080 / T-10-1081 |
+| 監査のハンドラを発見されない形にする | 監査 11 件中 3 件赤 | T-10-1085 と監査の全数の試験 2 本 |
+| 監査の要約で拒否を「適用 S0」と書く | 監査 4 件中 1 件赤 | T-10-1085 |
+| 照会の窓の前後 1 日を外す | 報告書 28 件中 2 件赤 | T-10-1086 / T-10-1092 |
+| 組み立てが解決結果の供給を常に未供給にする | 報告書 30 件中 2 件赤 | T-10-1092 と組み立ての試験 1 本 |
+| 同じ承認の解決結果で先のものを採る | 報告書 19 件中 1 件赤 | T-10-1087 |
+| 日を解決の時刻で決める | 報告書 19 件中 1 件赤 | T-10-1087 |
+| 記録の無い承認があっても「食い違いなし」と書く | 報告書 19 件中 1 件赤 | T-10-1088 |
+| 解決結果の照会不能を「なし」と書く | 報告書 25 件中 3 件赤 | T-10-1088 / T-10-1091 |
+| 月報で解決結果の入力を使わない | 報告書 43 件中 2 件赤 | T-10-1090 / T-10-1091 |
+| 自動生成が解決結果の供給を呼ばない | 報告書 19 件中 3 件赤 | T-10-1091 / T-10-1092 |
+| ハンドラが解決結果の発行の失敗を握らない | 発注執行 67 件中 4 件赤 | T-10-1082 |
+| 月報で解決結果が 1 件も無いのに食い違った日数を数字で書く | 報告書 56 件中 1 件赤 | T-10-1089 |
+
+🔴 **本節が固定していない残余リスク**:
+- 日報の日付境界は JST の暦日であり、米国の金曜の取引のうち JST 土曜未明の承認はどの日報にも出ない（既存の日報の全照会に共通する境界）。
+  月報は暦月で引くので、その日も 1 日として数える（該当する日報が無い日が月報に現れ得る）。
+- 解決結果は発注の成否ではない。解決の後の見送り（逆指値価格なし・能力なし・帰属不明の建玉）や S3 の代替注文の拒否、約定の有無は反映しない。
+- 解決結果の記録が無い承認（発注執行が未処理・送信後に届いたか不明で例外に終わった〔再試行も予約の競合で例外になる〕・解決結果の発行に失敗した・監査台帳が記録していない）は判定しない（件数で見せる）。
+- 監査のキューが実際の RabbitMQ で exchange に bind されることは、外部トランスポートを差し替えた試験では見ていない（組み立てが構成する
+  routing convention に型を渡して listener を発見させるところまでを見る）。実ブローカーでの疎通は統合試験の範囲である。

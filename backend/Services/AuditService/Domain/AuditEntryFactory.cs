@@ -573,6 +573,26 @@ public static class AuditEntryFactory
             + (string.IsNullOrWhiteSpace(e.RejectReasonMessage) ? string.Empty : $" 理由: {e.RejectReasonMessage}")),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-10, FR-06, FR-11, ADR-0040 決定1, #1002, IADR-0429 決定1: 発注執行が承認の損切りの実行機構を解決した結果。
+    // 相関は承認の DecisionId（承認・発注・保護レグと 1 本で辿れる）。時刻は解決した時刻。
+    // 日報・月報の「実際に適用された手法」はこの記録を引いて承認と突き合わせる（本文の全量 JSON が読み手の入力）。
+    // 要約は「選択 → 適用（理由）」を書く。**拒否は「適用なし・発注しない」と書く**——S0 へ読み替えたと読ませない。
+    public static AuditEntry From(StopLossMethodResolved e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(StopLossMethodResolved), e.DecisionId, e.Symbol,
+        Truncate($"{e.Symbol} 損切りの実行機構を解決: 選択 {MethodLabel(e.SelectedMethod)} → "
+            + (e.AppliedMethod is { } applied ? $"適用 {MethodLabel(applied)}" : "適用なし（発注しない）")
+            + $"（{ResolutionReasonLabel(e.Reason)}・発注先 {e.Provider}・{e.ProductType}）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    private static string ResolutionReasonLabel(StopLossMethodResolutionReason reason) => reason switch
+    {
+        StopLossMethodResolutionReason.AsSelected => "選択どおり",
+        StopLossMethodResolutionReason.BrokerNotMoomooSimulate => "S0 以外は moomoo SIMULATE でしか適用しない",
+        StopLossMethodResolutionReason.ShortSellEntry => "空売りの新規建ては S0",
+        StopLossMethodResolutionReason.UnknownMethod => "未知の手法のため S0 と同じ扱い",
+        _ => reason.ToString(),
+    };
+
     // #819, IADR-0342: 計画の手法 ID（S0〜S3）で表示する。enum 名だけでは計画の表と突き合わせにくい。
     private static string MethodLabel(StopLossExecutionMethod method) => method switch
     {

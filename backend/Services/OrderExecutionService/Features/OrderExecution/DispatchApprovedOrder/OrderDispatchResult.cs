@@ -23,6 +23,9 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // 🔴 FR-05, FR-10, #876, IADR-0398: 3 つ目の形として「**見送り済みの承認の再配送を抑止した**」（ForgoneReplaySuppressed）を持つ。
 // このときは Executed も Forgone も null であり、**何も発行しない**（発注していない・見送りの理由を記録していない）。
 // 「発注した」「見送った」「見送り済みなので何もしなかった」を取り違えない（Executed の有無だけで分岐しない）。
+// FR-10, FR-06, ADR-0040 決定1, #1002, IADR-0429 決定1: 損切りの実行機構を**解決した回**（Open の承認）には、
+// 解決結果（MethodResolved）が付く。発注（Executed）にも見送り（Forgone）にも付き得るため**排他にしない**（末尾の任意項目）。
+// 解決しなかった回（Close・再配送の抑止・完了済みの再発行）は null である。
 public sealed record OrderDispatchResult(
     OrderExecuted? Executed,
     OrderDispatchForgone? Forgone,
@@ -33,7 +36,8 @@ public sealed record OrderDispatchResult(
     PositionReconciliationDrift? Drift = null,
     int DriftDispatchedQuantity = 0,
     SoftwareStopArmed? SoftwareStopArmed = null,
-    bool ForgoneReplaySuppressed = false)
+    bool ForgoneReplaySuppressed = false,
+    StopLossMethodResolved? MethodResolved = null)
 {
     public static OrderDispatchResult FromExecuted(
         OrderExecuted executed,

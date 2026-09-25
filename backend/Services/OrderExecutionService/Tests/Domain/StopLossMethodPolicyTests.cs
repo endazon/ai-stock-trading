@@ -139,4 +139,58 @@ public class StopLossMethodPolicyTests
                 BrokerProvider.MoomooSimulate)
             .Should().Be(StopLossMethodDisposition.BrokerStopOrder);
     }
+
+    // ---- T-10-1080, FR-10, FR-06, #1002, IADR-0429 決定2: 解決と理由・適用した手法 ----------------------------------
+
+    // 期待する理由は判定の順序（S0 → 発注先 → 空売り → 既知の手法 → 未知）を書き下したもの。
+    private static StopLossMethodResolutionReason ExpectedReason(
+        StopLossExecutionMethod method, BrokerProvider provider, ProductType product)
+    {
+        if (method == StopLossExecutionMethod.BrokerStopOrder)
+            return StopLossMethodResolutionReason.AsSelected;
+        if (provider != BrokerProvider.MoomooSimulate)
+            return StopLossMethodResolutionReason.BrokerNotMoomooSimulate;
+        if (product == ProductType.ShortSell)
+            return StopLossMethodResolutionReason.ShortSellEntry;
+        return Enum.IsDefined(method) ? StopLossMethodResolutionReason.AsSelected : StopLossMethodResolutionReason.UnknownMethod;
+    }
+
+    // 🔴 解決は 1 か所で決まる: 全組み合わせで ResolveWithReason の解決結果は Resolve と同じであり、理由は順序どおり。
+    // 🔴 「適用した手法が承認の手法と同じ」⇔「理由が AsSelected」も全組み合わせで成り立つ（日報の食い違いの定義の土台）。
+    [Theory]
+    [MemberData(nameof(Table))]
+    public void T_10_1080_解決と理由は1か所で決まり全組み合わせで一致の定義と噛み合う(
+        StopLossExecutionMethod method, BrokerProvider provider, ProductType product, StopLossMethodDisposition expected)
+    {
+        var side = product == ProductType.ShortSell ? TradeSide.Sell : TradeSide.Buy;
+
+        var resolution = StopLossMethodPolicy.ResolveWithReason(method, Entry(product, side), provider);
+
+        resolution.Disposition.Should().Be(expected);
+        resolution.Reason.Should().Be(ExpectedReason(method, provider, product));
+        var applied = StopLossMethodPolicy.AppliedMethodOf(resolution.Disposition);
+        (applied == method).Should().Be(resolution.Reason == StopLossMethodResolutionReason.AsSelected,
+            "食い違い（適用 ≠ 選択）は理由が AsSelected でないときに限る");
+    }
+
+    [Theory]
+    [InlineData(StopLossMethodDisposition.BrokerStopOrder, StopLossExecutionMethod.BrokerStopOrder)]
+    [InlineData(StopLossMethodDisposition.NotImplementedFallbackToBrokerStop, StopLossExecutionMethod.BrokerStopOrder)]
+    [InlineData(StopLossMethodDisposition.ProtectiveStopWaived, StopLossExecutionMethod.NoProtectiveStop)]
+    [InlineData(StopLossMethodDisposition.SoftwareStop, StopLossExecutionMethod.SoftwareStop)]
+    [InlineData(StopLossMethodDisposition.AlternativeBrokerOrderType, StopLossExecutionMethod.AlternativeBrokerOrderType)]
+    public void T_10_1080_解決結果から適用した手法を写す(StopLossMethodDisposition disposition, StopLossExecutionMethod applied)
+    {
+        StopLossMethodPolicy.AppliedMethodOf(disposition).Should().Be(applied);
+    }
+
+    // 🔴 否定形: 拒否は S0 へ読み替えない（適用なし）。
+    [Fact]
+    public void T_10_1080_拒否は適用なしでありS0と書かない()
+    {
+        StopLossMethodPolicy.AppliedMethodOf(StopLossMethodDisposition.Refused).Should().BeNull();
+        Enum.GetValues<StopLossMethodDisposition>()
+            .Should().OnlyContain(d => d == StopLossMethodDisposition.Refused || StopLossMethodPolicy.AppliedMethodOf(d) != null,
+                "解決結果を足したら写しも足す（写し漏れは例外になる）");
+    }
 }
