@@ -2030,6 +2030,89 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(wc.ALLOWED.size, 0);
   });
 
+  // --- 形 (c): Wolverine の待ちヘルパを予算つきの入口を経ずに呼ぶ（既定 5 秒の窓。NFR / #922 / IADR-0168） ---
+  //
+  // `IServiceProvider.ExecuteAndWaitAsync(action)` は `TrackedSessionConfiguration.ExecuteAndWaitAsync` と同名であり、
+  // **名前では区別できない**。受け手（`.` の左の式）を読んで区別するので、その読み違いの両方向を固定する。
+  // #922 前の実形（PositionCloseEndpointTests の抜粋）。
+  const WC_C_RED = [
+    'var session = await factory.Services.ExecuteAndWaitAsync(async () =>',
+    '{',
+    '    response = await client.PostAsJsonAsync("/risk-controls/positions/close", body);',
+    '});',
+    '',
+  ].join('\n');
+
+  ok('check-wall-clock-timeout-tests: 形 (c) #922 前の実形（factory.Services.ExecuteAndWaitAsync）を検出する', () => {
+    const hits = wc.findViolations(WC_C_RED);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].shape, 'c');
+    assert.strictEqual(hits[0].line, 1);
+    assert.strictEqual(hits[0].receiver, 'factory.Services');
+  });
+
+  ok('check-wall-clock-timeout-tests: 形 (c) 短縮入口の 5 種と IHost・改行つき受け手・型引数を検出する', () => {
+    for (const code of [
+      'await wired.Services.ExecuteAndWaitAsync(\n    () => Run());\n',
+      'await host.ExecuteAndWaitAsync(_ => Task.CompletedTask);\n',
+      'await host.ExecuteAndWaitValueTaskAsync(_ => ValueTask.CompletedTask);\n',
+      'await host.InvokeMessageAndWaitAsync(message);\n',
+      'await host.InvokeMessageAndWaitAsync<Reply>(message);\n',
+      'await host.SendMessageAndWaitAsync(message);\n',
+      'await host.PublishMessageAndWaitAsync(message);\n',
+      'await factory\n    .Services\n    .ExecuteAndWaitAsync(() => Run());\n',
+      'await GetHost(x).Services.ExecuteAndWaitAsync(() => Run());\n',
+      // 上限を明示しても予算の単一情報源（環境変数で上書き可）を迂回するので落とす。
+      'await factory.Services.ExecuteAndWaitAsync(() => Run(), timeoutInMilliseconds: 30_000);\n',
+    ]) {
+      const hits = wc.findViolations(code);
+      assert.strictEqual(hits.length, 1, code);
+      assert.strictEqual(hits[0].shape, 'c', code);
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: 形 (c) 予算つきの入口（連鎖・改行・代入した変数・専用入口）は誤検出しない', () => {
+    for (const code of [
+      'await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => Run());\n',
+      'await host.TrackActivityForTest().InvokeMessageAndWaitAsync(message);\n',
+      'await host\n    .TrackActivityForTest()\n    .DoNotAssertOnExceptionsDetected()\n    .ExecuteAndWaitAsync(_ => Run());\n',
+      'var tracking = host.TrackActivityForTest();\nif (x) tracking = tracking.DoNotAssertOnExceptionsDetected();\nreturn tracking.ExecuteAndWaitAsync(_ => Run());\n',
+      'await factory.Services.ExecuteAndWaitForTestAsync(async () => await Run());\n',
+      '// 従来は factory.Services.ExecuteAndWaitAsync(() => Run()) だった\n',
+      'var s = "host.InvokeMessageAndWaitAsync(message)";\n',
+    ]) {
+      assert.deepStrictEqual(wc.findViolations(code), [], code);
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: 形 (c) 予算つきの入口を代入していない変数は検出する（名前だけで信用しない）', () => {
+    const code = 'var tracking = host.TrackActivity(TimeSpan.FromSeconds(5));\nawait tracking.ExecuteAndWaitAsync(_ => Run());\n';
+    const hits = wc.findViolations(code);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].line, 2);
+  });
+
+  ok('check-wall-clock-timeout-tests: 形 (c) 模擬ツリーで exit 1 と形 (c) の是正の案内を出す', () => {
+    const { spawnSync } = require('child_process');
+    const root = fsWc.mkdtempSync(pathWc.join(osWc.tmpdir(), 'wc-shape-c-'));
+    try {
+      const rel = 'backend/Services/Y/Tests/ATests.cs';
+      fsWc.mkdirSync(pathWc.dirname(pathWc.join(root, rel)), { recursive: true });
+      fsWc.writeFileSync(pathWc.join(root, rel), WC_C_RED);
+      const r = spawnSync(process.execPath, [pathWc.join(__dirname, 'check-wall-clock-timeout-tests.js')], {
+        env: { ...process.env, WALL_CLOCK_RACE_CHECK_ROOT: root },
+        encoding: 'utf8',
+      });
+      assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /backend\/Services\/Y\/Tests\/ATests\.cs:1: \[形 \(c\)\]/);
+      assert.match(r.stderr, /ExecuteAndWaitForTestAsync/);
+      // 形 (a) だけの説明（タイマーの順序の入れ替わり）は形 (c) には出さない。
+      assert.doesNotMatch(r.stderr, /タイマーの順序/);
+    } finally {
+      fsWc.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   ok('実ツリー: 壁時計どうしの競争で合否が決まる試験が無い（#885 / #900 / #901 の回帰）', () => {
     const stats = {};
     const hits = wc.checkTree(pathWc.resolve(__dirname, '..'), wc.ALLOWED, wc.SHAPES, stats);
