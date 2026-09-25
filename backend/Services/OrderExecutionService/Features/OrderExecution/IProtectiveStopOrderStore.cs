@@ -7,8 +7,39 @@ namespace OrderExecutionService.Features.OrderExecution;
 // （最新試行のみ）。ProtectiveStopGuard の巡回対象（Active）の洗い出しの権威。実運用では PostgreSQL。
 public interface IProtectiveStopOrderStore
 {
-    /// <summary>保存する（EntryDecisionId で upsert。再発注は同キーの上書き＝試行の置き換え）。</summary>
+    /// <summary>
+    /// 保存する（EntryDecisionId で upsert。再発注は同キーの上書き＝試行の置き換え）。
+    /// <para>
+    /// 🔴 #833 項目3, IADR-0396: <b>無条件の上書き</b>である（版は保存先の値から 1 進める）。読んだ写しが古くても書く。
+    /// 並行に進んだ状態を巻き戻してはならない経路は <see cref="TrySave"/>（または <c>Update</c> 拡張）を使う。
+    /// 無条件のまま残しているのは、ブローカーへの操作（逆指値の再発注・取消）の<b>後</b>に書く常駐ガードの経路である
+    /// ——そこで保存を落とすと、実在する注文と記録が食い違う（IADR-0396 の残る制約）。
+    /// </para>
+    /// </summary>
     void Save(ProtectiveStopOrder stop);
+
+    /// <summary>
+    /// 🔴 FR-10, #833 項目3, IADR-0396: <b>楽観並行の保存</b>。保存先の版が <paramref name="stop"/> の
+    /// <see cref="ProtectiveStopOrder.Version"/>（この写しを読んだ時点の版）と一致するときだけ書き、版を 1 進めて true を返す。
+    /// 一致しない（並行に誰かが書いた）・行が無いときは<b>何も書かずに</b> false を返す。
+    /// <para>
+    /// false の後の <see cref="Find"/> は保存先の最新を返す（読み直して判断をやり直すため）。
+    /// </para>
+    /// <para>
+    /// 既定の実装は「読んで比べてから書く」で<b>原子的ではない</b>（試験用の包み型のためのもの）。
+    /// 本番のストア（EF・インメモリ）は原子的に上書きしている。
+    /// </para>
+    /// </summary>
+    bool TrySave(ProtectiveStopOrder stop)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+        var current = Find(stop.EntryDecisionId);
+        if (current is null || current.Version != stop.Version)
+            return false;
+
+        Save(stop);
+        return true;
+    }
 
     /// <summary>EntryDecisionId で引く（無ければ null）。</summary>
     ProtectiveStopOrder? Find(Guid entryDecisionId);
