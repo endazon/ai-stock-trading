@@ -98,6 +98,28 @@ public class AuditLedgerReadContractTests
         rationales!.Should().ContainKey(decisionId).WhoseValue.Should().Be("始値が支持線で反発。");
     }
 
+    // 🔴 T-10-998, FR-06, FR-10, #823, IADR-0422 決定3: 承認（損切りの実行機構の集計）。送り手の本物の記録の組み立てで作る
+    // ——送り手で EventType を改名すると、全行が種別不一致で捨てられ「承認なし」と区別できなくなる。
+    [Fact]
+    public async Task 承認の手法は送り手の本物の型を直列化した応答から読める()
+    {
+        var approved = new OrderApproved(
+            Guid.NewGuid(),
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 200m),
+            10,
+            T0,
+            StopLossMethod: StopLossExecutionMethod.NoProtectiveStop);
+        var source = new HttpStopLossMethodUsageSource(
+            Ledger(AuditEntryFactory.From(approved, Guid.NewGuid(), T0)), NullLogger<HttpStopLossMethodUsageSource>.Instance);
+
+        var usage = await source.GetUsageAsync(From, To);
+
+        usage.Should().NotBeNull();
+        usage!.Counts.Should().ContainSingle()
+            .Which.Should().Be(new ReportService.Domain.StopLossMethodCount(StopLossExecutionMethod.NoProtectiveStop, 1));
+        usage.UnreadableCount.Should().Be(0);
+    }
+
     private sealed class StubHandler(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>

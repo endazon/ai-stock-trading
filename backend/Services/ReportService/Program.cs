@@ -378,6 +378,22 @@ builder.Services.AddSingleton<IBorrowFeeRecordSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpBorrowFeeRecordSource>>());
 });
 
+// FR-06, FR-10, FR-11, ADR-0040 決定1, #823, IADR-0422 決定3: 日報 §4「損切りの実行機構（当日）」。
+// **権威源は監査台帳の承認（`OrderApproved`）**であり、承認が運ぶ手法（審査時点の値）を数える。
+// リスク管理の現在の設定値へ引きに行かない——日中に手法を変えた日を生成時点の 1 値で塗り潰すため。
+// **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした」。**「承認なし」へ倒さない。
+builder.Services.AddSingleton<IStopLossMethodUsageSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedStopLossMethodUsageSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpStopLossMethodUsageSource(
+        http, sp.GetRequiredService<ILogger<HttpStopLossMethodUsageSource>>());
+});
+
 // FR-16, FR-11, #563, IADR-0269: 日報 §2「判断根拠（要約）」。**権威源は監査台帳**であり、
 // GET /audit/events/by-type（OwnerOrService）へ s2s 同期照会して `TradeDecisionMade.Rationale` を
 // **そのまま**明細へ載せる（報告書生成時に LLM へ書かせない・FR-16 / IADR-0251）。

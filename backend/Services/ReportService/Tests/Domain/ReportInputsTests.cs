@@ -23,6 +23,8 @@ public class ReportInputsTests
     [InlineData(ReportInput.BorrowFees, true, false, true)]
     [InlineData(ReportInput.OpenDUptime, true, false, true)]
     [InlineData(ReportInput.PeriodEndFxRate, true, false, true)]
+    // T-10-997, #823: 日報 §4「損切りの実行機構（当日）」だけが使う。
+    [InlineData(ReportInput.StopLossMethods, true, false, false)]
     public void 入力は_それを描く種別にだけ適用される(ReportInput input, bool daily, bool weekly, bool monthly)
     {
         ReportInputs.AppliesTo(input, ReportKind.Daily).Should().Be(daily);
