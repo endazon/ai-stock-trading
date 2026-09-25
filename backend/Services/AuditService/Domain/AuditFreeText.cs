@@ -28,17 +28,32 @@ public static class AuditFreeText
     // URL（scheme://…）／[IPv6]:port／IPv4（任意の :port）／英字を含むドット区切りのホスト名:port／localhost:port。
     // 時刻（10:30）・価格（329.03）・`retType=-1` を拾わないよう、ホスト名は「ドットを含み英字を含む」かつ
     // ポートを伴う場合だけに限る。境界は ASCII だけで判定する（\w は日本語の文字も含み、「接続先127.0.0.1」を取り逃がす）。
-    // 🔴 各選択肢は語の先頭（ASCII の語の途中ではない位置）からしか始まらず、語の中は原子グループで読む——
-    // 任意長の入力（例外メッセージ）でバックトラックが 2 乗に膨らまないようにするため（1 万文字の入力で
-    // 素朴な形がタイムアウトすることを実測して決めた）。
+    //
+    // 🔴 FR-11, #984, IADR-0419（IADR-0405 決定2 の最後の項を置き換える）: 照合は **NonBacktracking**（入力長に線形。
+    // .NET が保証する）で行い、**壁時計の予算を持たない**。旧形は 200 ms のマッチタイムアウトで打ち切り、理由文を定型文へ
+    // 置き換えていたが、CPU が混むと数 ms の仕事でも 200 ms を超え、**台帳から理由文が黙って欠けた**（#984 の実測）。
+    // NonBacktracking は前後読み・原子グループを持てないので、IADR-0405 決定2 の線引きを**同じ意味の形**へ書き換えた
+    // （旧パターンとの差分試験 T-10-980 が固定する）:
+    // - 語の先頭の条件（旧: 後読み）は、直前の 1 文字（または文字列の先頭）を**消費**して表す。伏せるのは組 `e` だけ。
+    // - 語の終わりの条件（旧: 先読み）は、直後の 1〜2 文字（または文字列の末尾）を消費して表す。
+    // - ホスト名の「英字を含む」（旧: 先読み）は、英字が最初のラベルにあるか後のラベルにあるかの 2 通りで表す。
+    // 消費した前後の文字は隣の接続先の境界を兼ね得るため、Replace ではなく MaskEndpoints で照合を繰り返す。
+    private const string UrlWordStart = @"(?:^|[^A-Za-z0-9+.\-])";
+    private const string WordStart = @"(?:^|[^A-Za-z0-9_.\-])";
+    private const string Label = @"[A-Za-z0-9\-]+";
+    private const string HostWithLetter =
+        @"(?:(?:" + Label + @"\.)+[0-9\-]*[A-Za-z][A-Za-z0-9\-]*(?:\." + Label + @")*"
+        + @"|[0-9\-]*[A-Za-z][A-Za-z0-9\-]*(?:\." + Label + @")+)";
+
     private static readonly Regex Endpoint = new(
-        @"(?<![A-Za-z0-9+.\-])[A-Za-z](?>[A-Za-z0-9+.\-]*)://[^\s（）()「」<>""']+"
-        + @"|\[[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*\](?::\d{1,5})?"
-        + @"|(?<![A-Za-z0-9_.\-])\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?![A-Za-z0-9_]|\.\d)"
-        + @"|(?<![A-Za-z0-9_.\-])(?=[A-Za-z0-9.\-]*[A-Za-z])(?>[A-Za-z0-9\-]+)(?:\.(?>[A-Za-z0-9\-]+))+:\d{1,5}(?!\d)"
-        + @"|(?<![A-Za-z0-9_.\-])localhost:\d{1,5}(?!\d)",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
-        TimeSpan.FromMilliseconds(200));
+        UrlWordStart + @"(?<e>[A-Za-z][A-Za-z0-9+.\-]*://[^\s（）()「」<>""']+)"
+        + @"|(?<e>\[[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*\](?::\d{1,5})?)"
+        + @"|" + WordStart + @"(?<e>\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?)(?:$|[^A-Za-z0-9_.]|\.(?:$|\D))"
+        + @"|" + WordStart + @"(?<e>" + HostWithLetter + @":\d{1,5})(?:$|\D)"
+        + @"|" + WordStart + @"(?<e>localhost:\d{1,5})(?:$|\D)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.NonBacktracking,
+        // 既定（未指定）にすると、プロセスに REGEX_DEFAULT_MATCH_TIMEOUT が設定されたとき壁時計の予算が戻る。
+        Regex.InfiniteMatchTimeout);
 
     /// <summary>自由記述欄の文面を整える。null は null のまま返す。</summary>
     public static string? Sanitize(string? text)
@@ -46,19 +61,34 @@ public static class AuditFreeText
         if (text is null)
             return null;
 
-        string masked;
-        try
+        var folded = FoldControlCharacters(MaskEndpoints(text));
+        return Bound(folded);
+    }
+
+    // 接続先を伏せる。照合 1 回は探し始めから見つけた接続先の末尾の付近までを読み、次の照合は伏せた接続先の末尾の
+    // 1 文字手前から始めるので、読む量の合計は入力長に比例する（#984 の実測: 2 万〜32 万文字の反復入力 17 種で比例）。
+    private static string MaskEndpoints(string text)
+    {
+        StringBuilder? builder = null;
+        var copied = 0;
+        var start = 0;
+        while (start < text.Length)
         {
-            masked = Endpoint.Replace(text, EndpointPlaceholder);
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            // 伏せ字を保証できない入力は中身を載せない（台帳へ残せないことだけを残す）。
-            return "（理由文は整形できなかったため記録しない）";
+            var match = Endpoint.Match(text, start);
+            if (!match.Success)
+                break;
+
+            // 次の e は前の e と重ならない: e の最後の文字が次の e の先頭になり得るのは IPv6 の `[` だけで、`[` で終わる e は
+            // URL だけ、URL の直後は区切り（空白・括弧・引用符）か文字列の末尾であり IPv6 の 2 文字目になれない。
+            var endpoint = match.Groups["e"];
+            builder ??= new StringBuilder(text.Length);
+            builder.Append(text, copied, endpoint.Index - copied).Append(EndpointPlaceholder);
+            copied = endpoint.Index + endpoint.Length;
+            // 伏せた接続先の最後の 1 文字は、次の接続先の「直前の 1 文字」を兼ね得る（例 `[::1]1.2.3.4`）。
+            start = copied - 1;
         }
 
-        var folded = FoldControlCharacters(masked);
-        return Bound(folded);
+        return builder is null ? text : builder.Append(text, copied, text.Length - copied).ToString();
     }
 
     private static string FoldControlCharacters(string text)
