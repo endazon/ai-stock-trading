@@ -85,6 +85,22 @@ gh api repos/endazon/ai-stock-trading/rulesets/18662050 \
   このファイルはそのまま「戻し方」の本文になる。
 - 保存したファイルはリポジトリ配下に置かない（誤ってコミットしない）。
 
+**🔴 PUT の前に、本書の本文が現況と食い違っていないことを確かめる。** 手順 1・2 の本文は 2026-09-26 に取得したルールの配列を
+書き写したものであり、更新 API はルールの配列を**丸ごと置き換える**。その後に画面等でルールが変わっていれば、PUT で黙って消える。
+
+```bash
+# 現況のルールの種類（required_status_checks を除く）。手順 1 の本文と同じ 10 種・同じ順であること:
+# deletion non_fast_forward update creation required_linear_history required_signatures
+# pull_request code_scanning code_quality copilot_code_review
+gh api repos/endazon/ai-stock-trading/rulesets/18662050 --jq '[.rules[] | select(.type != "required_status_checks") | .type] | join(" ")'
+
+# 値を持つルールの中身。手順 1 の本文の同じ要素と 1 項目ずつ一致すること
+gh api repos/endazon/ai-stock-trading/rulesets/18662050 \
+  --jq '.rules[] | select(.type == "pull_request" or .type == "code_scanning" or .type == "code_quality" or .type == "copilot_code_review")'
+```
+
+**1 つでも違えば、本書の本文をそのまま送らない。** 現況の値で本文を組み直してから送る（または本書を直す PR を先に出す）。
+
 ### 手順 1: 必須チェックを実際のジョブ名で埋める（低リスク・推奨）
 
 `required_status_checks` だけを差し替える。**ルールセットの更新はルールの配列を丸ごと置き換える**ため、
