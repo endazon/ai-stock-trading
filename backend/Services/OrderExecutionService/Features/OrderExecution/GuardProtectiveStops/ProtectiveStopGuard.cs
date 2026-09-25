@@ -631,9 +631,25 @@ public sealed class ProtectiveStopGuard(
         List<object> events,
         CancellationToken cancellationToken)
     {
-        var (entry, reason) = await ObserveEntryAsync(stop, cancellationToken).ConfigureAwait(false);
+        var (entry, reason, partiallyFilled) = await ObserveEntryAsync(stop, cancellationToken).ConfigureAwait(false);
+
+        // PR #1014 監査 N4: 状態が分かった＝「不明」の据え置きは解けた。通知の記憶（キー＝EntryDecisionId）を捨て、
+        // 後でまた不明になったら間隔を待たずに知らせる（記憶が残ると、再発した不明が最大 1 時間黙る）。
+        if (entry != EntryObservation.Unknown)
+            _heldCloseNotifications.Forget(stop.EntryDecisionId);
+
         switch (entry)
         {
+            case EntryObservation.Working when partiallyFilled:
+                // 🔴 PR #1014 監査 N3: 一部約定したのに建玉が 0 に見える＝約定分が外で消えたか、建玉照会の反映が遅れている。
+                // 逆指値は承認数量のまま残るので、約定分が本当に消えていれば建玉を超える逆指値になる（残余リスク）。Debug では埋もれる。
+                _logger.LogWarning(
+                    "保護逆指値ガード: エントリー注文は一部約定のまま生きていますが、建玉は 0 に見えます。逆指値は取り消さず、記録も閉じません"
+                    + "（逆指値は承認数量のままです。約定分が外で消えていれば建玉を超える逆指値が残ります。証券会社の画面で建玉を確認してください）: "
+                    + "EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol} 数量={Quantity}",
+                    stop.EntryDecisionId, stop.StopOrderId, stop.Symbol, stop.Quantity);
+                return Outcome.StillActive;
+
             case EntryObservation.Working:
                 _logger.LogDebug(
                     "保護逆指値ガード: 建玉は 0 ですがエントリー注文はまだ約定していません。逆指値は取り消さず、記録も閉じません: "
@@ -674,18 +690,19 @@ public sealed class ProtectiveStopGuard(
 
     // #1013: エントリー注文の状態。発注記録（エントリーの DecisionId＝保護記録の EntryDecisionId。発注執行・突合が逆指値より先に保存する）が
     // 終端ならそれを使い（約定追跡が反映済み）、非終端ならブローカーへ照会する（約定追跡は遅れ得るし、追跡上限を過ぎた記録は照会しない）。
-    private async Task<(EntryObservation Kind, string Reason)> ObserveEntryAsync(
+    // PartiallyFilled は Working のときだけ意味を持つ（非終端で 1 株以上約定している）。
+    private async Task<(EntryObservation Kind, string Reason, bool PartiallyFilled)> ObserveEntryAsync(
         ProtectiveStopOrder stop, CancellationToken cancellationToken)
     {
         var record = store.FindByDecisionId(stop.EntryDecisionId);
         if (record is null)
-            return (EntryObservation.Unknown, "エントリーの発注記録が見つからない");
+            return (EntryObservation.Unknown, "エントリーの発注記録が見つからない", false);
 
         if (OrderStatusLifecycle.IsTerminal(record.Status))
-            return (Classify(record.Status, record.FilledQuantity), string.Empty);
+            return (Classify(record.Status, record.FilledQuantity), string.Empty, false);
 
         if (string.IsNullOrEmpty(record.OrderId))
-            return (EntryObservation.Unknown, "エントリーの注文 ID が空");
+            return (EntryObservation.Unknown, "エントリーの注文 ID が空", false);
 
         BrokerOrder? order;
         try
@@ -697,18 +714,21 @@ public sealed class ProtectiveStopGuard(
             _logger.LogWarning(ex,
                 "保護逆指値ガード: エントリー注文の照会に失敗しました: EntryDecisionId={EntryDecisionId} OrderId={OrderId}",
                 stop.EntryDecisionId, record.OrderId);
-            return (EntryObservation.Unknown, "エントリー注文の照会に失敗");
+            return (EntryObservation.Unknown, "エントリー注文の照会に失敗", false);
         }
 
         if (order is null)
-            return (EntryObservation.Unknown, "エントリー注文を照会できない");
+            return (EntryObservation.Unknown, "エントリー注文を照会できない", false);
 
         return OrderStatusLifecycle.IsTerminal(order.Status)
-            ? (Classify(order.Status, order.FilledQuantity), string.Empty)
-            : (EntryObservation.Working, string.Empty);
+            ? (Classify(order.Status, order.FilledQuantity), string.Empty, false)
+            : (EntryObservation.Working, string.Empty,
+                order.Status == OrderStatus.PartiallyFilled || order.FilledQuantity > 0);
     }
 
     // 終端の注文: 約定（Filled）か、終端までに 1 株でも約定していれば建った。約定 0 の取消・失効・拒否は建っていない。
+    // 🔴 PR #1014 監査 N2: 「1 株でも約定」を外すと、一部約定の後に残りが取り消されたエントリーが「建っていない」になり、
+    // 建玉を照会し直さずに生きている逆指値を取り消す（巡回の照会の後に取り消された場合、建玉は実在する。T-10-1136）。
     private static EntryObservation Classify(OrderStatus terminal, int filledQuantity) =>
         terminal == OrderStatus.Filled || filledQuantity > 0 ? EntryObservation.Opened : EntryObservation.NeverOpened;
 

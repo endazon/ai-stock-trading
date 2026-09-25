@@ -7,6 +7,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace OrderExecutionService.Tests;
@@ -24,7 +25,8 @@ namespace OrderExecutionService.Tests;
 //
 // 殺す変異（手で入れて赤を確かめた）: 非終端を「消えた」へ倒す（T-10-1120 / 1121 / 1127 / 1128）／終端・約定 0 を据え置きへ倒す（T-10-1122）／
 // 約定済みの照会し直しを外す（T-10-1125）／照会し直しの null を「消えた」へ倒す（T-10-1126）／不明を「約定済み」へ倒す（T-10-1124）／
-// 通知の間隔を外す（T-10-1124）／終端の記録でもブローカーへ照会する（T-10-1129）／常駐の補償から新しい値を外す（T-10-1130）。
+// 通知の間隔を外す（T-10-1124）／終端の記録でもブローカーへ照会する（T-10-1129）／常駐の補償から新しい値を外す（T-10-1130）／
+// 終端の「1 株でも約定」を外す（T-10-1136）／一部約定の Warning を Debug へ戻す（T-10-1137）／不明が解けても記憶を残す（T-10-1138）。
 public class ProtectiveStopGuardEntryStateTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 26, 14, 0, 0, TimeSpan.Zero);
@@ -114,7 +116,8 @@ public class ProtectiveStopGuardEntryStateTests
 
     // S0 の行（逆指値 stop-1・試行 1）とエントリーの発注記録（DecisionId＝EntryDecisionId）を置く。
     private static Harness NewHarness(
-        OrderStatus? entryRecordStatus = OrderStatus.Accepted, int entryRecordFilled = 0, ProtectiveStopOrder? row = null)
+        OrderStatus? entryRecordStatus = OrderStatus.Accepted, int entryRecordFilled = 0, ProtectiveStopOrder? row = null,
+        ILogger<ProtectiveStopGuard>? logger = null)
     {
         var entry = row?.EntryDecisionId ?? Guid.NewGuid();
         var broker = new EntryStateBroker();
@@ -132,7 +135,7 @@ public class ProtectiveStopGuardEntryStateTests
         var clock = new MutableClock(Now);
         var held = new HeldCloseNotificationTracker();
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, store, reservations, clock,
+            broker, broker, stops, store, reservations, clock, logger,
             heldCloseNotifications: held, closeRejections: new CloseRejectionTracker());
         return new Harness(guard, broker, stops, store, reservations, clock, held, entry);
     }
@@ -432,5 +435,81 @@ public class ProtectiveStopGuardEntryStateTests
         h.Clock.UtcNow = Now.AddSeconds(30);
         var second = await h.PatrolAsync();
         UnknownNotices(second).Should().ContainSingle("次の巡回で出し直す");
+    }
+    // ---- 🔴 T-10-1136（PR #1014 監査 N2）: 一部約定の後に残りが取り消されたエントリーは「建った」——建玉を照会し直す ----
+
+    [Theory]
+    [InlineData(true)]   // 約定追跡が反映済み（発注記録が終端）
+    [InlineData(false)]  // 発注記録は非終端のまま（注文照会が終端を返す）
+    public async Task 一部約定の後に残りが取り消されたエントリーは建玉を照会し直し_建玉があれば取り消さない_否定形(bool recordTerminal)
+    {
+        var h = recordTerminal
+            ? NewHarness(entryRecordStatus: OrderStatus.Cancelled, entryRecordFilled: 5)
+            : NewHarness();
+        h.Broker.Orders[StopOrderId] = StopOrder(OrderStatus.Accepted);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Cancelled, filled: 5);
+        h.Broker.PositionSequence.Enqueue([]);         // 巡回の最初の照会（残りの取消・約定の反映より前）
+        h.Broker.PositionSequence.Enqueue([Long(5)]);  // 照会し直すと約定分 5 株がある
+
+        var result = await h.PatrolAsync();
+
+        h.Broker.Cancelled.Should().BeEmpty("5 株の建玉が実在する——「建っていない」と読んで逆指値を取り消さない");
+        h.Row.State.Should().Be(ProtectiveStopState.Active);
+        result.StillActive.Should().Be(1);
+        h.Broker.PositionCalls.Should().Be(2, "約定 1 株以上の終端は「建った」として建玉を照会し直す");
+    }
+
+    // ---- T-10-1137（PR #1014 監査 N3）: 一部約定のまま生きていて建玉 0 → 取り消さないが Warning で残す ----
+
+    [Fact]
+    public async Task 一部約定のまま生きているエントリーで建玉が0ならWarningを残す()
+    {
+        var logger = new SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopGuard>();
+        var h = NewHarness(logger: logger);
+        h.Broker.Orders[StopOrderId] = StopOrder(OrderStatus.Accepted);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.PartiallyFilled, filled: 4);
+        h.Broker.Positions = [];
+
+        await h.PatrolAsync();
+
+        h.Broker.Cancelled.Should().BeEmpty();
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("一部約定のまま生きています"),
+            "逆指値が承認数量のまま残る状態を Debug に埋もれさせない");
+
+        // 約定 0 の未約定は従来どおり Debug（毎巡回の Warning にしない）。
+        var quiet = new SoftwareStopLivenessReporterTests.RecordingLogger<ProtectiveStopGuard>();
+        var h2 = NewHarness(logger: quiet);
+        h2.Broker.Orders[StopOrderId] = StopOrder(OrderStatus.Accepted);
+        h2.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0);
+        h2.Broker.Positions = [];
+
+        await h2.PatrolAsync();
+
+        quiet.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
+    }
+
+    // ---- T-10-1138（PR #1014 監査 N4）: 不明 → 未約定と分かったら通知の記憶を捨て、再び不明になれば間隔を待たずに知らせる ----
+
+    [Fact]
+    public async Task 不明が解けたら通知の記憶を捨て_再び不明になれば1時間を待たずに知らせる()
+    {
+        var h = NewHarness();
+        h.Broker.Orders[StopOrderId] = StopOrder(OrderStatus.Accepted);
+        h.Broker.Positions = [];
+        // エントリー注文は未登録＝照会が答えない（不明）。
+
+        var first = await h.PatrolAsync();
+        UnknownNotices(first).Should().ContainSingle();
+
+        h.Clock.UtcNow = Now.AddMinutes(5);
+        h.Broker.Orders[EntryOrderId] = EntryOrder(OrderStatus.Accepted, filled: 0); // 照会が戻った（未約定）
+        var second = await h.PatrolAsync();
+        UnknownNotices(second).Should().BeEmpty();
+        second.StillActive.Should().Be(1);
+
+        h.Clock.UtcNow = Now.AddMinutes(10);
+        h.Broker.Orders.Remove(EntryOrderId); // 再び答えない
+        var third = await h.PatrolAsync();
+        UnknownNotices(third).Should().ContainSingle("別の不明の始まりであり、前回の通知から 1 時間を待たせない");
     }
 }
