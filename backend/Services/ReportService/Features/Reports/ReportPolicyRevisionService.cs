@@ -20,6 +20,7 @@ public sealed partial class ReportPolicyRevisionService(
     IReportStore store,
     IClock clock,
     IReportPolicyReviser reviser,
+    PolicyRevisionSchedule schedule,
     ILogger<ReportPolicyRevisionService> logger)
 {
     /// <summary>指示の最大長（文字数）。Discord のスラッシュコマンドの上限と揃える。</summary>
@@ -46,7 +47,7 @@ public sealed partial class ReportPolicyRevisionService(
         var key = string.IsNullOrWhiteSpace(periodKey) ? todaysDailyKey : periodKey.Trim();
         if (!PeriodKeyPattern().IsMatch(key))
             return PolicyRevisionResult.Rejected(
-                PolicyRevisionStatus.InvalidPeriodKey, "会話キーの形式が不正です（例: daily-2026-09-28）。");
+                PolicyRevisionStatus.InvalidPeriodKey, "会話キーの形式が不正です（英数字とハイフンのみ・例: daily-2026-09-28）。");
 
         var target = ResolveTarget(key, todaysDailyKey, today);
         if (target.Rejection is { } rejection)
@@ -66,6 +67,8 @@ public sealed partial class ReportPolicyRevisionService(
         }
 
         // 保存（版 +1。新規は版 1）。並行更新・確定済みは store が例外で拒む（エンドポイントが 409 へ写す）。
+        // 🔴 **LLM を待っている間に報告書が更新されたら（自動生成・別の改訂・確定）、ここで版が合わず保存しない**
+        // ——読んだ時点の版（ExpectedVersion）で楽観排他を掛ける。古い土台から作った案で新しい版を踏まない。
         var nextVersion = target.ExpectedVersion + 1;
         var body = AppendRevisionRecord(target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal);
         var report = target.Base with
@@ -78,8 +81,23 @@ public sealed partial class ReportPolicyRevisionService(
         var version = store.UpsertDraft(report, target.ExpectedVersion);
 
         // 提示（Drafting→PendingApproval）。確定は利用者の確認ボタン（版番号付き）だけが行う（ADR-0003）。
-        var decision = store.ApplyReview(key, new ReviewCommand(ReviewAction.Present, actor, version));
-        var presented = decision is { Accepted: true } && decision.Review.State == ReviewState.PendingApproval;
+        //
+        // 🔴 **保存の後の提示が失敗しても 409 にしない。** 保存と提示の間に別の更新が入ると、提示は版不一致で拒否され
+        // （ReviewDecision）、EF ではまれに並行更新の例外にもなる。ここで例外を上へ投げると、エンドポイントの 409
+        // （「何も保存していない」側の応答）が**保存済みの案**を「失敗」と伝えてしまう。保存は済んでいるので、
+        // 「保存したが承認待ちにできなかった」（Presented=false・確認ボタンを出さない）として返す。
+        bool presented;
+        try
+        {
+            var decision = store.ApplyReview(key, new ReviewCommand(ReviewAction.Present, actor, version));
+            presented = decision is { Accepted: true } && decision.Review.State == ReviewState.PendingApproval;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                "方針の改訂案は保存しましたが、提示に失敗しました（PeriodKey={PeriodKey}・版={Version}）。", key, version);
+            presented = false;
+        }
 
         logger.LogInformation(
             "方針の改訂案を保存し提示しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}・新規={Created}・提示={Presented}・"
@@ -93,11 +111,13 @@ public sealed partial class ReportPolicyRevisionService(
             presented
                 ? "方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。"
                 : "方針の改訂案を保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。",
-            key, version, target.Created, presented, proposal,
-            AutoGenerationSkipped: target.Created && target.Kind == ReportKind.Daily);
+            key, version, target.Created, presented, proposal);
     }
 
     // 対象の決定。既存の未確定の報告書はその方針を土台に改訂する。無ければ当日（JST）の日報だけを新しく作れる。
+    // 🔴 利用者裁定（2026-09-26）: **営業日にまだ自動生成されていない当日の日報は作らない。** 作ると自動生成は
+    // 既存の行を踏まない規則（IADR-0115 決定3）でスキップされ、その日の数値入りの日報が失われる。自動生成の後に
+    // /policy を実行すれば、生成されたドラフトを改訂できる。休場日（自動生成が無い日）は作ってよい。
     private RevisionTarget ResolveTarget(string key, string todaysDailyKey, DateOnly today)
     {
         var existing = store.Get(key);
@@ -118,7 +138,15 @@ public sealed partial class ReportPolicyRevisionService(
                 PolicyRevisionStatus.NotFound,
                 $"報告書 {key} がありません。新しく作れるのは当日（JST）の日報 {todaysDailyKey} だけです。", key));
 
-        // 新規の当日の日報。土台は直近の確定済み日報（方針・上位方針・前提条件の版を引き継ぐ。数値を発明しない）。
+        if (schedule.AutoDailyEnabled && ReportSchedule.IsBusinessDay(today, schedule.Schedule))
+            return RevisionTarget.Reject(PolicyRevisionResult.Rejected(
+                PolicyRevisionStatus.AutoDailyPending,
+                $"本日（{today:yyyy-MM-dd}・営業日）の日報 {key} はまだ自動生成されていません。いま作ると、数値入りの自動生成の日報が"
+                + $"作られなくなるため作りません。自動生成（{schedule.Schedule.DailyAt:HH:mm} JST 以降）の後に /policy を実行すると、"
+                + "そのドラフトを改訂します。", key));
+
+        // 新規の当日の日報（休場日、または自動生成が無効な構成）。土台は直近の確定済み日報
+        // （方針・上位方針・前提条件の版を引き継ぐ。数値を発明しない）。
         var latest = store.GetLatestConfirmed(ReportKind.Daily);
         if (latest is null)
             return RevisionTarget.Reject(PolicyRevisionResult.Rejected(
@@ -231,7 +259,14 @@ public enum PolicyRevisionStatus
     NoBasePolicy,
     WouldNotTakeEffect,
     AiFailed,
+
+    /// <summary>営業日で当日の日報がまだ自動生成されていない（作ると自動生成を止めるため作らない）。</summary>
+    AutoDailyPending,
 }
+
+// FR-07, #1016, IADR-0431 決定 1（2026-09-26 利用者裁定）: 当日の日報を新しく作ってよいかの判定に使う生成境界。
+// AutoDailyEnabled=false（自動生成が無効な構成）では、作っても止める自動生成が無いため営業日でも作ってよい。
+public sealed record PolicyRevisionSchedule(ReportScheduleOptions Schedule, bool AutoDailyEnabled);
 
 /// <param name="Status">結果の種別。</param>
 /// <param name="Message">利用者へ見せる文（コード定数と会話キーだけ）。</param>
@@ -240,7 +275,6 @@ public enum PolicyRevisionStatus
 /// <param name="Created">新しく作った報告書か。</param>
 /// <param name="Presented">承認待ちにできたか。false なら確認ボタンの対象にならない。</param>
 /// <param name="Proposal">案（Proposed のときだけ非 null）。</param>
-/// <param name="AutoGenerationSkipped">当日の日報を新しく作ったため、その日の自動生成が行われないか（既存の行を踏まない規則）。</param>
 public sealed record PolicyRevisionResult(
     PolicyRevisionStatus Status,
     string Message,
@@ -248,8 +282,7 @@ public sealed record PolicyRevisionResult(
     int Version,
     bool Created,
     bool Presented,
-    PolicyRevisionProposal? Proposal,
-    bool AutoGenerationSkipped = false)
+    PolicyRevisionProposal? Proposal)
 {
     public static PolicyRevisionResult Rejected(PolicyRevisionStatus status, string message, string? periodKey = null) =>
         new(status, message, periodKey, 0, false, false, null);

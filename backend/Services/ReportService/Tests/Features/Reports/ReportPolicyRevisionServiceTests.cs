@@ -31,20 +31,28 @@ public class ReportPolicyRevisionServiceTests
     {
         public List<PolicyRevisionContext> Calls { get; } = [];
 
+        // LLM を待っている間に起きる出来事（並行更新）を模す。
+        public Action? DuringCall { get; set; }
+
         public Task<PolicyRevisionOutcome> ReviseAsync(PolicyRevisionContext context, CancellationToken cancellationToken = default)
         {
             Calls.Add(context);
+            DuringCall?.Invoke();
             return Task.FromResult(outcome);
         }
     }
 
+    private static readonly PolicyRevisionSchedule AutoDailyOn = new(new ReportScheduleOptions(), AutoDailyEnabled: true);
+
     private static (ReportPolicyRevisionService Service, InMemoryReportStore Store, FakeReviser Reviser) Create(
-        PolicyRevisionOutcome? outcome = null)
+        PolicyRevisionOutcome? outcome = null, DateTimeOffset? now = null, PolicyRevisionSchedule? schedule = null,
+        IReportStore? storeOverride = null)
     {
         var store = new InMemoryReportStore();
         var reviser = new FakeReviser(outcome ?? PolicyRevisionOutcome.Proposed(Proposal, null));
         var service = new ReportPolicyRevisionService(
-            store, new FixedClock(SundayMorning), reviser, NullLogger<ReportPolicyRevisionService>.Instance);
+            storeOverride ?? store, new FixedClock(now ?? SundayMorning), reviser, schedule ?? AutoDailyOn,
+            NullLogger<ReportPolicyRevisionService>.Instance);
         return (service, store, reviser);
     }
 
@@ -82,8 +90,8 @@ public class ReportPolicyRevisionServiceTests
         var result = await service.ReviseAsync(null, "もっと積極的に", "developer");
 
         result.Status.Should().Be(PolicyRevisionStatus.Proposed);
-        (result.PeriodKey, result.Version, result.Created, result.Presented, result.AutoGenerationSkipped)
-            .Should().Be((TodayKey, 1, true, true, true));
+        (result.PeriodKey, result.Version, result.Created, result.Presented)
+            .Should().Be((TodayKey, 1, true, true));
 
         var context = reviser.Calls.Should().ContainSingle().Which;
         context.CurrentPolicy.Should().Be("積極運用");
@@ -237,5 +245,128 @@ public class ReportPolicyRevisionServiceTests
         var act = () => store.Confirm(TodayKey, first.Version, SundayMorning);
         act.Should().Throw<ReportService.Common.Exceptions.ReportConcurrencyException>();
         store.Get(TodayKey)!.Report.Body.Should().Contain("（版 1）").And.Contain("（版 2）");
+    }
+
+    // 2026-09-28（月）10:00 JST ＝ 01:00 UTC（日報の生成境界 16:00 より前）／17:00 JST ＝ 08:00 UTC（境界の後）。
+    private static readonly DateTimeOffset MondayMorning = new(2026, 9, 28, 1, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset MondayEvening = new(2026, 9, 28, 8, 0, 0, TimeSpan.Zero);
+
+    // T-10-1336（利用者裁定 2026-09-26）: 営業日にまだ自動生成されていない当日の日報は、境界の前でも後でも作らない
+    // （作ると数値入りの自動生成の日報が失われる）。AI も呼ばない。
+    [Theory]
+    [MemberData(nameof(BusinessDayInstants))]
+    public async Task 営業日にまだ自動生成されていない当日の日報は作らない(DateTimeOffset now)
+    {
+        var (service, store, reviser) = Create(now: now);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+
+        result.Status.Should().Be(PolicyRevisionStatus.AutoDailyPending);
+        result.Message.Should().Contain("daily-2026-09-28").And.Contain("自動生成").And.Contain("16:00").And.Contain("/policy");
+        reviser.Calls.Should().BeEmpty();
+        store.Get("daily-2026-09-28").Should().BeNull();
+    }
+
+    public static TheoryData<DateTimeOffset> BusinessDayInstants() => new() { MondayMorning, MondayEvening };
+
+    // T-10-1337: 自動生成の後なら、その日の日報（自動生成のドラフト）を改訂する。
+    [Fact]
+    public async Task 自動生成の後は当日の日報のドラフトを改訂する()
+    {
+        var (service, store, _) = Create(now: MondayEvening);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        store.UpsertDraft(new TradingReport
+        {
+            PeriodKey = "daily-2026-09-28",
+            Kind = ReportKind.Daily,
+            PeriodStart = new DateOnly(2026, 9, 28),
+            PolicySummary = "自動生成の方針",
+            Body = "# 日報（数値入り）",
+        }, 0);
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+
+        (result.Status, result.Created, result.Version).Should().Be((PolicyRevisionStatus.Proposed, false, 2));
+        store.Get("daily-2026-09-28")!.Report.Body.Should().StartWith("# 日報（数値入り）");
+    }
+
+    // T-10-1338: 構成の休場日（自動生成が無い日）と、自動生成が無効な構成では、営業日の曜日でも当日の日報を作ってよい。
+    [Fact]
+    public async Task 休場日と自動生成が無効な構成では当日の日報を作れる()
+    {
+        var holiday = new PolicyRevisionSchedule(
+            new ReportScheduleOptions { Holidays = new HashSet<DateOnly> { new(2026, 9, 28) } }, AutoDailyEnabled: true);
+        var (onHoliday, store1, _) = Create(now: MondayMorning, schedule: holiday);
+        SeedConfirmedDaily(store1, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        (await onHoliday.ReviseAsync(null, "積極的に", "developer")).Status.Should().Be(PolicyRevisionStatus.Proposed);
+
+        var disabled = new PolicyRevisionSchedule(new ReportScheduleOptions(), AutoDailyEnabled: false);
+        var (noAuto, store2, _) = Create(now: MondayMorning, schedule: disabled);
+        SeedConfirmedDaily(store2, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        (await noAuto.ReviseAsync(null, "積極的に", "developer")).Status.Should().Be(PolicyRevisionStatus.Proposed);
+    }
+
+    // T-10-1339: LLM を待つ間に報告書が更新されたら（自動生成・別の改訂）、版が合わず保存しない（新しい版を古い土台の案で踏まない）。
+    [Fact]
+    public async Task LLMを待つ間に更新されたら保存しない()
+    {
+        var (service, store, reviser) = Create();
+        store.UpsertDraft(new TradingReport
+        {
+            PeriodKey = "daily-2026-09-25",
+            Kind = ReportKind.Daily,
+            PeriodStart = new DateOnly(2026, 9, 25),
+            PolicySummary = "元の方針",
+        }, 0);
+        reviser.DuringCall = () => store.UpsertDraft(new TradingReport
+        {
+            PeriodKey = "daily-2026-09-25",
+            Kind = ReportKind.Daily,
+            PeriodStart = new DateOnly(2026, 9, 25),
+            PolicySummary = "並行して書かれた方針",
+        }, 1);
+
+        var act = () => service.ReviseAsync("daily-2026-09-25", "積極的に", "developer");
+
+        await act.Should().ThrowAsync<ReportService.Common.Exceptions.ReportConcurrencyException>("エンドポイントが 409 へ写す");
+        var saved = store.Get("daily-2026-09-25")!;
+        (saved.Version, saved.Report.PolicySummary).Should().Be((2, "並行して書かれた方針"));
+    }
+
+    // T-10-1340: 保存の後の提示が失敗しても 409（何も保存していない側の応答）にせず、保存済み・未提示として返す。
+    [Fact]
+    public async Task 保存の後の提示の失敗は保存済み未提示として返す()
+    {
+        var inner = new InMemoryReportStore();
+        SeedConfirmedDaily(inner, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        var (service, _, _) = Create(storeOverride: new PresentFailingStore(inner));
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+
+        (result.Status, result.Version, result.Presented).Should().Be((PolicyRevisionStatus.Proposed, 1, false));
+        result.Message.Should().Contain("承認待ちにできませんでした");
+        inner.Get(TodayKey)!.Report.PolicySummary.Should().Be("押し目買いを優先する");
+    }
+
+    private sealed class PresentFailingStore(InMemoryReportStore inner) : IReportStore
+    {
+        public VersionedReport? Get(string periodKey) => inner.Get(periodKey);
+
+        public IReadOnlyList<TradingReport> List() => inner.List();
+
+        public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys() => inner.ListPeriodKeys();
+
+        public int UpsertDraft(TradingReport report, int expectedVersion) => inner.UpsertDraft(report, expectedVersion);
+
+        public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
+            inner.Confirm(periodKey, expectedVersion, confirmedAt);
+
+        public VersionedReport? GetLatestConfirmed(ReportKind kind) => inner.GetLatestConfirmed(kind);
+
+        public ReportReview? GetReview(string periodKey) => inner.GetReview(periodKey);
+
+        public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) =>
+            throw new InvalidOperationException("並行更新で提示に失敗した（模擬）");
     }
 }

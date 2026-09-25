@@ -183,6 +183,13 @@ builder.Services.AddSingleton<IReportPolicyReviser>(sp =>
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
 });
 builder.Services.AddScoped<ReportPolicyRevisionService>();
+// IADR-0431 決定 1（2026-09-26 利用者裁定）: 営業日にまだ自動生成されていない当日の日報は /policy で作らない。
+// 判定に使う生成境界・休場日は自動生成と同じ構成（Reports:AutoGeneration）から読む。自動生成が無効なら止める生成が無い。
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value;
+    return new PolicyRevisionSchedule(options.ToSettings().Schedule, options.Enabled);
+});
 
 // FR-16, #81, IADR-0025/0066: 評価損益の現在値。既定は no-op（実市況未接続＝取得不可）のため評価損益は 0 のまま
 // ＝現行挙動。実市況を差し込むとドラフト生成時に建玉ぶんだけ引く。報告書は発注判断を行わない（評価の提示のみ）ため

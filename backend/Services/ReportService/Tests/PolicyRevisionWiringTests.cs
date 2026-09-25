@@ -25,6 +25,10 @@ public class PolicyRevisionWiringTests
     private const string ProposalJson =
         """{"policySummary": "AI の改訂案: 押し目買いを優先する", "watchlistChanges": [{"action": "add", "symbol": "NVDA", "reason": "AI 需要 @everyone"}], "rationale": "指示どおり"}""";
 
+    // 投稿を壊し得る方針（一斉メンション・個別メンション・マスクリンク）と、上限ちょうどの長さの方針。
+    private const string HostilePolicyJson =
+        """{"policySummary": "@everyone 押し目買い <@123> [公式発表](https://evil.example) @here", "watchlistChanges": [], "rationale": "[説明](https://evil.example)"}""";
+
     private static WebApplicationFactory<Program> Configure(
         ReportWorkerWebApplicationFactory baseFactory, RecordingGateway? gateway)
         => baseFactory.WithWebHostBuilder(b =>
@@ -174,5 +178,66 @@ public class PolicyRevisionWiringTests
             });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         }
+    }
+
+    // T-10-1341（監査 BLOCKING 2）: サービス主体（trading-service だけのトークン）は方針の改訂を呼べない（403）。
+    // 改訂は利用者のみ（ADR-0003）。登録を読み取りグループ（OwnerOrService）へ移すとこの試験が赤になる。
+    [Fact]
+    public async Task サービス主体は方針の改訂を呼べない()
+    {
+        var gateway = new RecordingGateway(ProposalJson);
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, gateway);
+        await SeedDraftAsync(factory);
+
+        var service = factory.CreateClient();
+        service.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-service");
+        var response = await service.PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "積極的に", periodKey = PeriodKey });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        gateway.Bodies.Should().BeEmpty("LLM も呼ばない");
+        var report = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}");
+        report.GetProperty("version").GetInt32().Should().Be(1);
+    }
+
+    // T-10-1342: 方針・説明の一斉メンション・個別メンション・マスクリンクは投稿向けに崩して返す。保存する方針は原文のまま。
+    [Fact]
+    public async Task 方針のメンションとマスクリンクは投稿向けに崩して返す()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, new RecordingGateway(HostilePolicyJson));
+        await SeedDraftAsync(factory);
+
+        var response = await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "a", periodKey = PeriodKey, onBehalfOf = "developer" });
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var policy = body.GetProperty("policySummary").GetString()!;
+        policy.Should().NotContain("@everyone").And.NotContain("@here").And.NotContain("<@").And.NotContain("](");
+        policy.Replace(ReportService.Domain.ReportSummarySanitizer.MentionBreaker, string.Empty, StringComparison.Ordinal)
+            .Should().Be("@everyone 押し目買い <@123> [公式発表](https://evil.example) @here", "読める内容は変えない（幅ゼロ空白だけ）");
+        body.GetProperty("rationale").GetString().Should().NotContain("](");
+
+        var report = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}");
+        report.GetProperty("report").GetProperty("policySummary").GetString()
+            .Should().Be("@everyone 押し目買い <@123> [公式発表](https://evil.example) @here", "保存するのは検証済みの原文");
+    }
+
+    // T-10-1343（監査 BLOCKING 1 の送り手側）: 上限ちょうど（2000 文字）の方針を切り詰めずに返す。
+    [Fact]
+    public async Task 上限ちょうどの方針を切り詰めずに返す()
+    {
+        var policy = string.Concat(Enumerable.Range(0, 2000).Select(i => (char)('あ' + (i % 80))));
+        var json = JsonSerializer.Serialize(new { policySummary = policy, watchlistChanges = Array.Empty<object>() });
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, new RecordingGateway(json));
+        await SeedDraftAsync(factory);
+
+        var response = await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "a", periodKey = PeriodKey, onBehalfOf = "developer" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("policySummary").GetString().Should().Be(policy);
     }
 }

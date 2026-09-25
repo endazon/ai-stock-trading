@@ -13,7 +13,9 @@ internal static class RevisePolicyEndpoint
     // 本文の onBehalfOf は信頼クライアントに限って採る。IADR-0240 決定11）。
     //
     // 応答: 200＝案を保存・提示した／400＝指示・会話キー・代理指定の不正／404＝対象なし（新しく作れるのは当日の日報だけ）／
-    // 409＝確定済み・土台なし・確定しても効かない（並行更新の競合も登録表のフィルタが 409）／502＝AI の案を作れなかった。
+    // 409＝確定済み・土台なし・確定しても効かない・営業日で当日の日報がまだ自動生成されていない／502＝AI の案を作れなかった。
+    // 並行更新の競合（LLM を待つ間に報告書が更新された）は保存の時点で版が合わず、登録表のフィルタが 409 にする（保存しない）。
+    // 保存の**後**の提示の失敗は 409 にせず 200・presented=false で返す（ReportPolicyRevisionService の注記）。
     // **200 以外では何も保存していない。**
     public static void MapRevisePolicy(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/policy-revisions", async (RevisePolicyRequest req, ReportPolicyRevisionService svc,
@@ -54,13 +56,16 @@ public sealed record RevisePolicyRequest(string? Instruction, string? PeriodKey 
 
 // FR-07, #1016, IADR-0431 決定 5: 改訂の応答（200 のときだけ）。
 // 🔴 **文字列は発行側で無害化して返す**（IADR-0116 決定3 と同じ位置。Discord へ投稿される本文には LLM の出力が入る）。
-// 方針・説明・理由は ReportSummarySanitizer（制御文字・メンション構文・境界語）を通す。銘柄は検証済みの書式。
+// 方針・説明・理由は ReportSummarySanitizer（制御文字・メンション構文・境界語）を通し、さらに Discord の
+// マスクリンク `[表示](URL)` を崩す（表示文と行き先を食い違わせない。素の URL は URL のまま見えるので崩さない）。
+// 銘柄は検証済みの書式。
+// 🔴 **方針は切り詰めない。** 利用者が確定するのはこの全文である（ADR-0003）。長さの上限は検証（2000 文字）が持ち、
+// ここでの無害化は幅ゼロ空白の挿入と空行の畳み込みだけで、読める内容を変えない。
 public sealed record PolicyRevisionResponse(
     string PeriodKey,
     int Version,
     bool Created,
     bool Presented,
-    bool AutoGenerationSkipped,
     string Message,
     string PolicySummary,
     IReadOnlyList<WatchlistChangeView> WatchlistChanges,
@@ -74,17 +79,19 @@ public sealed record PolicyRevisionResponse(
             result.Version,
             result.Created,
             result.Presented,
-            result.AutoGenerationSkipped,
             result.Message,
-            ReportSummarySanitizer.Sanitize(proposal.PolicySummary, PolicyRevisionProposalParser.MaxPolicySummaryLength),
+            Display(proposal.PolicySummary),
             [.. proposal.WatchlistChanges.Select(c => new WatchlistChangeView(
                 c.Action == WatchlistChangeAction.Add ? "add" : "remove",
                 c.Symbol,
-                ReportSummarySanitizer.Sanitize(c.Reason, PolicyRevisionProposalParser.MaxReasonLength)))],
-            proposal.Rationale is { } rationale
-                ? ReportSummarySanitizer.Sanitize(rationale, PolicyRevisionProposalParser.MaxRationaleLength)
-                : null);
+                Display(c.Reason)))],
+            proposal.Rationale is { } rationale ? Display(rationale) : null);
     }
+
+    // 投稿向けの無害化（切り詰めない。上限は検証が持つ）。
+    internal static string Display(string text) =>
+        ReportSummarySanitizer.Sanitize(text, int.MaxValue)
+            .Replace("](", "]" + ReportSummarySanitizer.MentionBreaker + "(", StringComparison.Ordinal);
 }
 
 // 監視銘柄の入れ替え案の 1 件（提示のみ）。Action は "add" / "remove"（列挙の JSON 表現に結合しない）。
