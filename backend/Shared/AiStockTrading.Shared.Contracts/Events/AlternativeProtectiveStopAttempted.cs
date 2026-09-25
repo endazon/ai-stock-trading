@@ -11,6 +11,9 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //
 // - `OrderType` は実際に送った種別（StopLimit / TrailingStop。構成で決まる）。
 // - `Status` はブローカー注文の状態（拒否は Rejected）。`BrokerOrderId` は発注できたときのブローカー注文 ID。
+//   #842, IADR-0405: **送信しなかった・ブローカーが受理しなかった場合は null**（アダプタが合成した ID を載せない）。
+// - #842, IADR-0405: `RejectReasonMessage` は監査台帳へ入る前に上限（500 文字）と伏せ字（接続先）で整えられる
+//   （AuditService の AuditFreeText）。本イベント自体は整える前の文面を運ぶ（発行側のログは従来どおり）。
 // - `RejectReasonCode` は moomoo の retType、`RejectReasonMessage` は retMsg（送信前棄却・送信後例外はその理由）。
 //   **受理された場合は両方 null** である。
 //

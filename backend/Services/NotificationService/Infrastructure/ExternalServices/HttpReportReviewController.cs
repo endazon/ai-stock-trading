@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
@@ -146,13 +147,15 @@ public sealed class HttpReportReviewController(
     //（IADR-0240 決定4）。**状態 enum も読まない**（同 決定5。数値/文字列いずれの JSON 表現にも結合しない）
     // ——一覧に載る報告書はレビュー待ちも確定済みも等しくレビュー操作の対象であり、絞り込みに状態は要らない。
     //
-    // `periodStart` は**文字列として受けてから**日付として解釈を試みる。解釈できない値で一覧ごと落とさない
-    //（解釈できなければ末尾へ倒し、会話キーの降順で並ぶ）。
+    // `periodStart` は**JSON の値のまま（JsonElement）受け**、文字列で日付として解釈できるときだけ並び替えに使う。
+    // 数値・欠落・解釈不能の 1 件は末尾へ回し（会話キーは残す）、同順位は会話キーの降順で並ぶ（#843 項目3）。
+    // 以前は `string?` で受けていたため、数値で来た 1 件の逆シリアル化失敗が**一覧ごと空**にしていた（実測）。
     //
     // 🟡 **一覧 API は射影もページングも持たず、本文を含む全件を返す**（報告書サービス無改修の受容。#834）。
     // ここで読み捨てても転送コストは掛かっており、**補完は打鍵ごとに発火する**ため件数とともに悪化する。
-    // 軽い一覧（会話キーだけを返す射影）を報告書サービス側へ足すのは別 issue の射程である
-    //（作業仕様書 20260918_834 の「未検証・保留」）。
+    // 軽い一覧（会話キーだけを返す射影）を報告書サービス側へ足す件は、形（専用ルート／`fields=`／ページング）を
+    // 決める根拠が揃わず #843 項目1 に残している（作業仕様書 20260925_843 決定3）。遅い帯は補完の時間予算
+    //（ReportCommandHandler.SuggestionBudget・#843 項目2）が「候補なし」へ倒す。
     public async Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -209,10 +212,12 @@ public sealed class HttpReportReviewController(
         return $"{operation}に失敗しました（HTTP {(int)status}）{hint}";
     }
 
-    // 対象期間の開始日。解釈できない・欠落している値は最小値へ倒す（一覧ごと落とさない）。
-    private static DateTime StartOf(string? periodStart) =>
-        DateTime.TryParse(
-            periodStart, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+    // 対象期間の開始日。文字列で日付として解釈できる値だけを採り、それ以外（数値・null・欠落・解釈不能）は
+    // 最小値へ倒す（その 1 件を末尾へ回すだけで、一覧ごと落とさない。#843 項目3）。
+    private static DateTime StartOf(JsonElement? periodStart) =>
+        periodStart is { ValueKind: JsonValueKind.String } element
+        && DateTime.TryParse(
+            element.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed
             : DateTime.MinValue;
 
@@ -246,6 +251,9 @@ public sealed class HttpReportReviewController(
     private sealed record ReviewCommandRequest(int ExpectedVersion);
 
     // #834: 一覧応答の必要部分だけを受ける射影。**本文（body）・要約（policySummary）・状態（state）は
-    // 受けない**（IADR-0240 決定4/5）。periodStart は表現に結合しないため文字列で受ける。
-    private sealed record ReportListItem(string? PeriodKey, string? PeriodStart);
+    // 受けない**（IADR-0240 決定4/5）。
+    // #843 項目3: periodStart は並び替えにしか使わないため **JSON の表現を問わず受ける**（JsonElement）。`string?` で
+    // 受けると文字列表現に結合し、数値で来た 1 件が逆シリアル化ごと一覧を空にする。periodKey は候補そのもので
+    // あり文字列でなければ契約違反のため `string?` のまま受ける（違反時は一覧ごと空＝従来の fail-safe）。
+    private sealed record ReportListItem(string? PeriodKey, JsonElement? PeriodStart);
 }

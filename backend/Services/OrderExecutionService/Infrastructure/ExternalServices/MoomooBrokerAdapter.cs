@@ -95,7 +95,8 @@ public sealed class MoomooBrokerAdapter(
             .ConfigureAwait(false);
 
         return new AlternativeProtectiveOrderPlacement(
-            placement.Order, orderType, placement.RejectReasonCode, placement.RejectReasonMessage);
+            placement.Order, orderType, placement.RejectReasonCode, placement.RejectReasonMessage,
+            placement.BrokerOrderId);
     }
 
     // #821, IADR-0347: 代替注文種別ごとの送信パラメータ。
@@ -156,7 +157,9 @@ public sealed class MoomooBrokerAdapter(
 
     // #821, IADR-0347: 発注 1 回と、拒否だったときの理由。理由は S3（代替注文種別）だけが読み出す
     // ——従来経路（PlaceCoreAsync）は Order だけを取り出すため、挙動は 1 バイトも変わらない。
-    private async Task<(BrokerOrder Order, int? RejectReasonCode, string? RejectReasonMessage)>
+    // #842, IADR-0405: BrokerOrderId は**ブローカーが採番した ID だけ**を持つ。Terminal（送信前棄却・確認済み拒否）は
+    // 合成 ID しか持たないため null にする——S3 の試行の記録（7 年保持の監査台帳）へ実在しない ID を載せない。
+    private async Task<(BrokerOrder Order, int? RejectReasonCode, string? RejectReasonMessage, string? BrokerOrderId)>
         PlaceWithRejectionDetailAsync(
             OrderIntent intent,
             string? remark,
@@ -178,7 +181,7 @@ public sealed class MoomooBrokerAdapter(
         {
             return (Terminal(intent, OrderStatus.Rejected, now), null,
                 $"発注前検証で棄却しました（種別={kind} 数量={intent.Quantity} 価格={intent.Price} "
-                + $"発火価格={triggerPrice} トレール幅={trailValue}）。OpenD へは送信していません。");
+                + $"発火価格={triggerPrice} トレール幅={trailValue}）。OpenD へは送信していません。", null);
         }
 
         try
@@ -187,7 +190,7 @@ public sealed class MoomooBrokerAdapter(
             var request = new MoomooOrderRequest(intent.Symbol, MapMarket(intent.Market), MapSide(intent.Side),
                 intent.Quantity, intent.Price, remark, kind, triggerPrice, trailValue);
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
-            return (ToBrokerOrder(intent, result, now), null, null);
+            return (ToBrokerOrder(intent, result, now), null, null, result.OrderId);
         }
         catch (MoomooTradeRequestException ex) when (ex.IsConfirmedFailure)
         {
@@ -200,7 +203,7 @@ public sealed class MoomooBrokerAdapter(
             _logger.LogWarning(ex,
                 "moomoo 発注を拒否されました symbol={Symbol} qty={Qty} 種別={Kind} retType={RetType} retMsg={RetMsg}",
                 intent.Symbol, intent.Quantity, kind, ex.RetType, ex.RetMsg);
-            return (Terminal(intent, OrderStatus.Rejected, now), ex.RetType, ex.RetMsg);
+            return (Terminal(intent, OrderStatus.Rejected, now), ex.RetType, ex.RetMsg, null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
         {
