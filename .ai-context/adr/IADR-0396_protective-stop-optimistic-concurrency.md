@@ -109,7 +109,7 @@ ClosePlaced は取引台帳の押さえ（`AppendApproval`・DecisionId で冪�
 
 ## 関連
 
-- [IADR-0344](IADR-0344_s1-software-stop-loss.md) 決定 5 / 追記(4) / 追記(14)
+- [IADR-0344](IADR-0344_s1-software-stop-loss.md) 決定 5 / 追記(4) / 追記(15)
 - [IADR-0389](IADR-0389_rearm-software-stop-on-confirmed-unfilled-close.md) 決定 5
 - [IADR-0370](IADR-0370_drift-adoption-protective-stop-followup.md)
 - [作業仕様書](../specs/20260925_833_protective-stop-optimistic-concurrency.md)
