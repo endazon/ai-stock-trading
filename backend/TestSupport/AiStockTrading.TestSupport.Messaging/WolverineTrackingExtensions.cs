@@ -31,4 +31,25 @@ public static class WolverineTrackingExtensions
         ArgumentNullException.ThrowIfNull(host);
         return host.TrackActivity().Timeout(TrackedSessionBudget.Current);
     }
+
+    /// <summary>
+    /// NFR, #922, IADR-0168: <c>IServiceProvider.ExecuteAndWaitAsync(Func&lt;Task&gt;)</c> の<b>予算つきの入口</b>。
+    /// <para>
+    /// Wolverine の短縮入口 <c>services.ExecuteAndWaitAsync(action)</c> は <c>timeoutInMilliseconds = 5000</c> を既定に持ち、
+    /// 素の <c>TrackActivity()</c> と同じ 5 秒の壁時計で打ち切る（#357 が 5 秒をスケジューリング遅延だけで超えた実測を持つ）。
+    /// <c>WebApplicationFactory</c> の <c>factory.Services</c> のように <c>IHost</c> を直接持たないテストが使う。
+    /// </para>
+    /// <para>
+    /// <b>呼ぶのは同じ overload であり、変わるのは上限だけである</b>（追跡の範囲・例外の扱い・返す
+    /// <c>ITrackedSession</c> は不変。テストの合否の意味を変えない）。素の短縮入口は
+    /// <c>scripts/check-wall-clock-timeout-tests.js</c> の形 (c) が止める。
+    /// </para>
+    /// </summary>
+    public static Task<ITrackedSession> ExecuteAndWaitForTestAsync(this IServiceProvider services, Func<Task> action)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(action);
+        return services.ExecuteAndWaitAsync(
+            action, TrackedSessionBudget.ToTimeoutMilliseconds(TrackedSessionBudget.Current));
+    }
 }

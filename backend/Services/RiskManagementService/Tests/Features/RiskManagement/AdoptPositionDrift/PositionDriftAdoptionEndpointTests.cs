@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using RiskManagementService.Features.RiskManagement;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
@@ -119,7 +120,7 @@ public class PositionDriftAdoptionEndpointTests
         starved!.StageCapitalRemaining.Should().BeLessThan(price, "取り込み前は 1 株も買えない");
 
         HttpResponseMessage res = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             res = await client.PostAsJsonAsync(Path, Body("AAPL"));
         });
@@ -164,7 +165,7 @@ public class PositionDriftAdoptionEndpointTests
         for (var i = 0; i < 2; i++)
         {
             var observed = new BrokerPositionsObserved([], DateTimeOffset.UtcNow.AddMinutes(-2).AddSeconds(i));
-            await factory.Services.ExecuteAndWaitAsync(async () =>
+            await factory.Services.ExecuteAndWaitForTestAsync(async () =>
             {
                 using var scope = factory.Services.CreateScope();
                 await scope.ServiceProvider.GetRequiredService<Wolverine.IMessageBus>().InvokeAsync(observed);
@@ -191,7 +192,7 @@ public class PositionDriftAdoptionEndpointTests
         (await client.PostAsJsonAsync(Path, Body("AAPL"))).StatusCode.Should().Be(HttpStatusCode.OK);
 
         HttpResponseMessage second = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             second = await client.PostAsJsonAsync(Path, Body("AAPL"));
         });

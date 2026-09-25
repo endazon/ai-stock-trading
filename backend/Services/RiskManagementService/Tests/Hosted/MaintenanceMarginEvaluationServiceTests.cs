@@ -5,6 +5,7 @@ using RiskManagementService.Hosted;
 using RiskManagementService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -80,7 +81,7 @@ public class MaintenanceMarginEvaluationServiceTests
         using var wired = WireWith(factory, new FixedSnapshotSource(BreachedSnapshot()));
         wired.CreateClient(); // ホスト（＋ハーネスバス）を起動する。
 
-        var session = await wired.Services.ExecuteAndWaitAsync(
+        var session = await wired.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(wired.Services, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<OrderApproved>().Should().ContainSingle()
@@ -96,7 +97,7 @@ public class MaintenanceMarginEvaluationServiceTests
         using var wired = WireWith(factory, new UnavailableMaintenanceMarginSnapshotSource());
         wired.CreateClient();
 
-        var session = await wired.Services.ExecuteAndWaitAsync(
+        var session = await wired.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(wired.Services, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<OrderApproved>().Should().BeEmpty();
@@ -117,7 +118,7 @@ public class MaintenanceMarginEvaluationServiceTests
         using var wired = WireWith(factory, new FixedSnapshotSource(untrusted));
         wired.CreateClient();
 
-        var session = await wired.Services.ExecuteAndWaitAsync(
+        var session = await wired.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(wired.Services, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<OrderApproved>().Should().BeEmpty();
@@ -132,7 +133,7 @@ public class MaintenanceMarginEvaluationServiceTests
         using var wired = WireWith(factory, new FixedSnapshotSource(BreachedSnapshot()));
         wired.CreateClient();
 
-        var session = await wired.Services.ExecuteAndWaitAsync(
+        var session = await wired.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(wired.Services, SaturdayUtc).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<OrderApproved>().Should().BeEmpty();
@@ -156,7 +157,7 @@ public class MaintenanceMarginEvaluationServiceTests
             scope.ServiceProvider.GetRequiredService<PauseService>().Pause("test", "T-10-326 テスト");
         }
 
-        var session = await wired.Services.ExecuteAndWaitAsync(
+        var session = await wired.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(wired.Services, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         session.Sent.MessagesOf<OrderApproved>().Should().ContainSingle(

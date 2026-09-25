@@ -4,6 +4,7 @@ using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
@@ -105,7 +106,7 @@ public class StageGateEndpointsTests
 
         // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
         HttpResponseMessage res = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
                 new { targetStage = (int)TradingStage.Stage1Simulate });
@@ -138,7 +139,7 @@ public class StageGateEndpointsTests
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
         HttpResponseMessage res = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
                 new { targetStage = (int)TradingStage.Stage1Simulate });
@@ -160,7 +161,7 @@ public class StageGateEndpointsTests
         var client = OwnerClient(factory);
 
         HttpResponseMessage res = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
                 new { targetStage = (int)TradingStage.Stage1Simulate });
@@ -180,7 +181,7 @@ public class StageGateEndpointsTests
         var client = OwnerClient(factory);
 
         HttpResponseMessage res = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             res = await client.PostAsJsonAsync("/risk-controls/stage-gate/transition",
                 new { targetStage = (int)TradingStage.Stage1Simulate });

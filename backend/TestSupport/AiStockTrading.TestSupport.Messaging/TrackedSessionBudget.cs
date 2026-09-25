@@ -52,4 +52,20 @@ public static class TrackedSessionBudget
 
     /// <summary>環境変数を読んだ実効の予算。</summary>
     public static TimeSpan Current => Resolve(Environment.GetEnvironmentVariable(OverrideVariable));
+
+    /// <summary>
+    /// NFR, #922: 予算をミリ秒の整数へ直す。Wolverine の短縮入口（<c>IServiceProvider.ExecuteAndWaitAsync</c> 等）は
+    /// 上限を <c>int timeoutInMilliseconds</c> で受け取るため、<see cref="TimeSpan"/> のままでは渡せない。
+    /// <para>
+    /// <b>端数は切り上げ、<see cref="int.MaxValue"/> で頭打ちにする。</b> 切り捨てると 0.5 ミリ秒のような
+    /// 予算が 0 になり（全テストが即座に落ちる）、キャストをそのまま使うと大きな予算が負へ桁あふれする。
+    /// いずれも「予算を縮める向き」の失敗であり、<see cref="Resolve"/> が既定へ倒すのと同じ向きに倒す。
+    /// </para>
+    /// </summary>
+    public static int ToTimeoutMilliseconds(TimeSpan budget)
+    {
+        var ms = Math.Ceiling(budget.TotalMilliseconds);
+        if (ms < 1) return 1;
+        return ms >= int.MaxValue ? int.MaxValue : (int)ms;
+    }
 }
