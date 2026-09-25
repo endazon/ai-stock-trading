@@ -21,7 +21,7 @@ plan_refs:
   見送り**、項目 6 の受容に「**項目 1 の実装時に再考する**」という条件を付けた。
 - 決定の記録: IADR-0418（新規）と IADR-0240 決定 9 への日付つき追記。
 
-## 🔴 6 件の現状の引き直し（`origin/develop` = `a0d600b7`・`git rev-parse --is-shallow-repository` → `false`）
+## 🔴 6 件の現状の引き直し（`origin/develop` = `a0d600b7`（着手時。途中で `a1826edf` へ rebase）・`git rev-parse --is-shallow-repository` → `false`）
 
 | # | 論点 | develop の現状 | 出典 | 本 PR |
 | ---: | --- | --- | --- | --- |
@@ -108,6 +108,8 @@ B の残余: 退避は 2.5 秒の補完予算（`ReportCommandHandler.Suggestion
 | `NotificationService/Domain/ReportPeriodSuggestions.cs` | 項目 6 の再考の条件 |
 | `NotificationService/Tests/.../HttpReportReviewControllerTests.cs` | 下記 |
 | `docs/data/reports.md` | §照会・操作・trace ブロック |
+| `NotificationService/Tests/.../OperationReadContractTests.cs` / `ReportService/Tests/.../ReadContractWireFormatTests.cs` | 送り手の型による契約テスト（#980 で入った同型の節に並べる。T-10-970・971） |
+| `docs/tests/FR-10_risk-controls-tests.md` | T-10-970〜972（割り当て帯 T-10-970〜979 の中。`git grep` で origin/* 全ブランチに未使用を確認） |
 | `.ai-context/adr/IADR-0418_*.md`（新規）/ `IADR-0240_*.md` / `README.md` | 記録 |
 
 ## 受け入れ基準
@@ -122,6 +124,9 @@ B の残余: 退避は 2.5 秒の補完予算（`ReportCommandHandler.Suggestion
 | 6 | 新ルートが 404 なら `/reports` へ退避して従来どおりの候補を返す（P1） | 単体（ルート別 fake） |
 | 7 | 新ルートが 500 なら退避せず候補なし・要求 1 回（P3） | 単体（ルート別 fake） |
 | 8 | 既存の補完・予算・認可の試験が通る | 既存単体 |
+| 9 | 送り手の本物の型 `ReportPeriodKeyItem` を報告書の設定で直列化した応答から、通知が会話キーを読める（T-10-970） | 契約（通知） |
+| 10 | 報告書の本物の Program.cs の本文が応答型の直列化と一致し、項目は 2 つだけ（T-10-971） | 結合（報告書） |
+| 11 | 上の 2 つが送り手の改名・本文つき一覧への退行で赤になる（T-10-972） | 変異注入（手動実測） |
 
 ## 未検証・保留
 
