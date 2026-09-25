@@ -144,6 +144,744 @@
         }
       }
     },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/riskmanagement/v1/risk_controls_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.riskmanagement.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.RiskManagement.V1",
+      "imports": [],
+      "messages": {
+        "BuyInInferenceRow": {
+          "fields": {
+            "ban_until": {
+              "number": 9,
+              "type": "string",
+              "label": "optional"
+            },
+            "broker_short_quantity": {
+              "number": 5,
+              "type": "int32",
+              "label": "optional"
+            },
+            "id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "in_flight_close_quantity": {
+              "number": 6,
+              "type": "int32",
+              "label": "optional"
+            },
+            "inferred_at": {
+              "number": 12,
+              "type": "string",
+              "label": "optional"
+            },
+            "inferred_on": {
+              "number": 10,
+              "type": "string",
+              "label": "optional"
+            },
+            "ledger_short_quantity": {
+              "number": 4,
+              "type": "int32",
+              "label": "optional"
+            },
+            "market": {
+              "number": 3,
+              "type": "Market",
+              "label": "singular"
+            },
+            "newly_inferred_quantity": {
+              "number": 8,
+              "type": "int32",
+              "label": "optional"
+            },
+            "observed_at": {
+              "number": 11,
+              "type": "string",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "unexplained_quantity": {
+              "number": 7,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "DriftAdoption": {
+          "fields": {
+            "actor": {
+              "number": 9,
+              "type": "string",
+              "label": "optional"
+            },
+            "adopted_at": {
+              "number": 11,
+              "type": "string",
+              "label": "optional"
+            },
+            "adoption_id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "broker_quantity": {
+              "number": 7,
+              "type": "int32",
+              "label": "optional"
+            },
+            "ledger_quantity_before": {
+              "number": 6,
+              "type": "int32",
+              "label": "optional"
+            },
+            "market": {
+              "number": 3,
+              "type": "Market",
+              "label": "singular"
+            },
+            "observed_at": {
+              "number": 8,
+              "type": "string",
+              "label": "optional"
+            },
+            "quantity": {
+              "number": 5,
+              "type": "int32",
+              "label": "optional"
+            },
+            "reason": {
+              "number": 10,
+              "type": "string",
+              "label": "optional"
+            },
+            "side": {
+              "number": 4,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetBuyInInferencesRequest": {
+          "fields": {
+            "from": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "to": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetBuyInInferencesResponse": {
+          "fields": {
+            "inferences": {
+              "number": 3,
+              "type": "BuyInInferenceRow",
+              "label": "repeated"
+            },
+            "observed_trading_days": {
+              "number": 2,
+              "type": "string",
+              "label": "repeated"
+            },
+            "period_covered": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetDriftAdoptionsRequest": {
+          "fields": {
+            "from": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "to": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetDriftAdoptionsResponse": {
+          "fields": {
+            "adoptions": {
+              "number": 1,
+              "type": "DriftAdoption",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetFillsRequest": {
+          "fields": {
+            "from": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "to": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetFillsResponse": {
+          "fields": {
+            "fills": {
+              "number": 1,
+              "type": "PeriodFill",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetOpenPositionsRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetOpenPositionsResponse": {
+          "fields": {
+            "positions": {
+              "number": 1,
+              "type": "OpenPositionRow",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetSessionUptimeRequest": {
+          "fields": {
+            "from": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "to": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetSessionUptimeResponse": {
+          "fields": {
+            "days": {
+              "number": 1,
+              "type": "SessionUptimeDays",
+              "label": "singular"
+            },
+            "stage1_cumulative_counted_days": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetSizingContextRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetSizingContextResponse": {
+          "fields": {
+            "capital": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "consecutive_losses": {
+              "number": 4,
+              "type": "int32",
+              "label": "optional"
+            },
+            "daily_order_remaining": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "drawdown_ratio": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "limits": {
+              "number": 7,
+              "type": "RiskLimits",
+              "label": "singular"
+            },
+            "mode": {
+              "number": 6,
+              "type": "BrokerProvider",
+              "label": "singular"
+            },
+            "stage_capital_remaining": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "stop_loss_method": {
+              "number": 8,
+              "type": "StopLossExecutionMethod",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetStageGateRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetStageGateResponse": {
+          "fields": {
+            "current_stage": {
+              "number": 1,
+              "type": "TradingStage",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetWorkingEntryOrdersRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetWorkingEntryOrdersResponse": {
+          "fields": {
+            "orders": {
+              "number": 1,
+              "type": "WorkingEntryOrderRow",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "OpenPositionRow": {
+          "fields": {
+            "entry_price": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "quantity": {
+              "number": 4,
+              "type": "int32",
+              "label": "optional"
+            },
+            "side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "stop_loss_price": {
+              "number": 6,
+              "type": "string",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "PeriodFill": {
+          "fields": {
+            "decision_id": {
+              "number": 9,
+              "type": "string",
+              "label": "optional"
+            },
+            "executed_at": {
+              "number": 7,
+              "type": "string",
+              "label": "optional"
+            },
+            "fx_rate_base_to_display": {
+              "number": 11,
+              "type": "string",
+              "label": "optional"
+            },
+            "fx_rate_to_base": {
+              "number": 8,
+              "type": "string",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "position_effect": {
+              "number": 4,
+              "type": "PositionEffect",
+              "label": "singular"
+            },
+            "price": {
+              "number": 6,
+              "type": "string",
+              "label": "optional"
+            },
+            "provider": {
+              "number": 10,
+              "type": "BrokerProvider",
+              "label": "singular"
+            },
+            "quantity": {
+              "number": 5,
+              "type": "int32",
+              "label": "optional"
+            },
+            "side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "RiskLimits": {
+          "fields": {
+            "daily_loss_limit_ratio": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "losing_streak_size_factor": {
+              "number": 8,
+              "type": "string",
+              "label": "optional"
+            },
+            "losing_streak_threshold": {
+              "number": 7,
+              "type": "int32",
+              "label": "optional"
+            },
+            "max_daily_order_amount_ratio": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "max_drawdown_ratio": {
+              "number": 6,
+              "type": "string",
+              "label": "optional"
+            },
+            "max_open_positions": {
+              "number": 3,
+              "type": "int32",
+              "label": "optional"
+            },
+            "max_order_amount_ratio": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "per_trade_risk_ratio": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "SessionUptimeDay": {
+          "fields": {
+            "session_date_eastern_time": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "uptime_ratio": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "SessionUptimeDays": {
+          "fields": {
+            "items": {
+              "number": 1,
+              "type": "SessionUptimeDay",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WorkingEntryOrderRow": {
+          "fields": {
+            "approved_at": {
+              "number": 6,
+              "type": "string",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "price": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "remaining_quantity": {
+              "number": 4,
+              "type": "int32",
+              "label": "optional"
+            },
+            "side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {
+        "BrokerProvider": {
+          "values": {
+            "BROKER_PROVIDER_INTERNAL_PAPER": 1,
+            "BROKER_PROVIDER_MOOMOO_REAL": 2,
+            "BROKER_PROVIDER_MOOMOO_SIMULATE": 3,
+            "BROKER_PROVIDER_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "Market": {
+          "values": {
+            "MARKET_JAPAN": 1,
+            "MARKET_UNITED_STATES": 2,
+            "MARKET_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "PositionEffect": {
+          "values": {
+            "POSITION_EFFECT_CLOSE": 2,
+            "POSITION_EFFECT_OPEN": 1,
+            "POSITION_EFFECT_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "StopLossExecutionMethod": {
+          "values": {
+            "STOP_LOSS_EXECUTION_METHOD_ALTERNATIVE_BROKER_ORDER_TYPE": 4,
+            "STOP_LOSS_EXECUTION_METHOD_BROKER_STOP_ORDER": 1,
+            "STOP_LOSS_EXECUTION_METHOD_NO_PROTECTIVE_STOP": 3,
+            "STOP_LOSS_EXECUTION_METHOD_SOFTWARE_STOP": 2,
+            "STOP_LOSS_EXECUTION_METHOD_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "TradeSide": {
+          "values": {
+            "TRADE_SIDE_BUY": 1,
+            "TRADE_SIDE_SELL": 2,
+            "TRADE_SIDE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "TradingStage": {
+          "values": {
+            "TRADING_STAGE_STAGE0_VERIFICATION": 1,
+            "TRADING_STAGE_STAGE1_SIMULATE": 2,
+            "TRADING_STAGE_STAGE2_MINIMAL_LIVE": 3,
+            "TRADING_STAGE_STAGE3_SCALED_LIVE": 4,
+            "TRADING_STAGE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "services": {
+        "RiskControlsRead": {
+          "rpcs": {
+            "GetBuyInInferences": {
+              "request": "GetBuyInInferencesRequest",
+              "response": "GetBuyInInferencesResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetDriftAdoptions": {
+              "request": "GetDriftAdoptionsRequest",
+              "response": "GetDriftAdoptionsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetFills": {
+              "request": "GetFillsRequest",
+              "response": "GetFillsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetOpenPositions": {
+              "request": "GetOpenPositionsRequest",
+              "response": "GetOpenPositionsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetSessionUptime": {
+              "request": "GetSessionUptimeRequest",
+              "response": "GetSessionUptimeResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetSizingContext": {
+              "request": "GetSizingContextRequest",
+              "response": "GetSizingContextResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetStageGate": {
+              "request": "GetStageGateRequest",
+              "response": "GetStageGateResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetWorkingEntryOrders": {
+              "request": "GetWorkingEntryOrdersRequest",
+              "response": "GetWorkingEntryOrdersResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Infrastructure/Protos/platform/llmgateway/v1/completion.proto": {
       "syntax": "proto3",
       "package": "platform.llmgateway.v1",

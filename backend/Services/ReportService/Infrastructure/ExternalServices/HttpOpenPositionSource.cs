@@ -47,23 +47,7 @@ public sealed class HttpOpenPositionSource(HttpClient httpClient, ILogger<HttpOp
                 return null;
             }
 
-            // #957, IADR-0408: 行を落とさない。1 行でも読めなければ §3 全体を未供給にする（契約の食い違いなので Error）。
-            var positions = new List<ReportPosition>(rows.Count);
-            foreach (var row in rows)
-            {
-                if (ToPosition(row) is not { } position)
-                {
-                    logger.LogError(
-                        "建玉の応答に識別できない行・価格の無い行がありました（{Rows} 行中）。送り手との契約の食い違いとみなし、"
-                            + "**建玉を未供給として扱います**（行を落として「建玉なし」とは書きません）。",
-                        rows.Count);
-                    return null;
-                }
-
-                positions.Add(position);
-            }
-
-            return positions;
+            return Interpret(rows, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -75,6 +59,29 @@ public sealed class HttpOpenPositionSource(HttpClient httpClient, ILogger<HttpOp
             logger.LogWarning(ex, "建玉の照会で例外が発生しました。**未供給として扱います**。");
             return null;
         }
+    }
+
+    // NFR, IADR-0427 決定 5, #997: 応答の**解釈**。輸送に依らず 1 つ（GrpcOpenPositionSource も同じ行へ写してから呼ぶ）。
+    // 中身は切り出す前と同じである。
+    internal static IReadOnlyList<ReportPosition>? Interpret(IReadOnlyList<OpenPositionDto?> rows, ILogger logger)
+    {
+        // #957, IADR-0408: 行を落とさない。1 行でも読めなければ §3 全体を未供給にする（契約の食い違いなので Error）。
+        var positions = new List<ReportPosition>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (ToPosition(row) is not { } position)
+            {
+                logger.LogError(
+                    "建玉の応答に識別できない行・価格の無い行がありました（{Rows} 行中）。送り手との契約の食い違いとみなし、"
+                        + "**建玉を未供給として扱います**（行を落として「建玉なし」とは書きません）。",
+                    rows.Count);
+                return null;
+            }
+
+            positions.Add(position);
+        }
+
+        return positions;
     }
 
     // 権威源の OpenPositionView から報告書の行へ写す。
@@ -94,7 +101,7 @@ public sealed class HttpOpenPositionSource(HttpClient httpClient, ILogger<HttpOp
             : null;
 
     // 権威源の OpenPositionView と同形（camelCase・列挙は数値で往復する）。#957, IADR-0408: 欠落を既定値と区別するため全項目 nullable。
-    private sealed record OpenPositionDto(
+    internal sealed record OpenPositionDto(
         string? Symbol,
         Market? Market,
         TradeSide? Side,

@@ -34,21 +34,7 @@ public sealed class HttpStageProgressSource(HttpClient httpClient, ILogger<HttpS
                 .ReadFromJsonAsync<StageGateDto>(cancellationToken)
                 .ConfigureAwait(false);
 
-            if (view?.CurrentStage is not { } stage)
-            {
-                logger.LogWarning("運用段階の応答が不正（null）でした。**未供給として扱います**。");
-                return null;
-            }
-
-            // 🔴 **未定義の列挙値を素通ししない。** 権威源が段階を増やしたとき、
-            // 未知の値を「到達済み」として比較へ流すと、走らせていない段の列が埋まる。
-            if (!Enum.IsDefined(stage))
-            {
-                logger.LogWarning("未知の運用段階（{Stage}）が返りました。**未供給として扱います**。", (int)stage);
-                return null;
-            }
-
-            return stage;
+            return Interpret(view?.CurrentStage, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -60,6 +46,27 @@ public sealed class HttpStageProgressSource(HttpClient httpClient, ILogger<HttpS
             logger.LogWarning(ex, "運用段階の照会で例外が発生しました。**未供給として扱います**。");
             return null;
         }
+    }
+
+    // NFR, IADR-0427 決定 5, #997: 応答の**解釈**。輸送に依らず 1 つ（GrpcStageProgressSource も同じ値へ写してから呼ぶ）。
+    // 中身は切り出す前と同じである。
+    internal static TradingStage? Interpret(TradingStage? currentStage, ILogger logger)
+    {
+        if (currentStage is not { } stage)
+        {
+            logger.LogWarning("運用段階の応答が不正（null）でした。**未供給として扱います**。");
+            return null;
+        }
+
+        // 🔴 **未定義の列挙値を素通ししない。** 権威源が段階を増やしたとき、
+        // 未知の値を「到達済み」として比較へ流すと、走らせていない段の列が埋まる。
+        if (!Enum.IsDefined(stage))
+        {
+            logger.LogWarning("未知の運用段階（{Stage}）が返りました。**未供給として扱います**。", (int)stage);
+            return null;
+        }
+
+        return stage;
     }
 
     // 権威源の StageGateStatus のうち**本アダプタが必要とする 1 項目だけ**を受ける

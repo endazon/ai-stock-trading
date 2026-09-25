@@ -104,6 +104,13 @@ public enum ReportDependencyFailureKind
 
     /// <summary>非 2xx の応答。</summary>
     HttpStatus,
+
+    /// <summary>
+    /// NFR, IADR-0427 決定 6, #997: gRPC の失敗の status（<c>Unavailable</c>＝<see cref="Unreachable"/>・
+    /// <c>DeadlineExceeded</c>＝<see cref="Timeout"/> を除く）。一過性かどうかは HTTP 相当の状態コードへ写して
+    /// REST と同じ判定（<c>ReportDependencyHandler.IsTransient</c>）で決める。
+    /// </summary>
+    GrpcStatus,
 }
 
 public sealed record ReportDependencyFailure(
