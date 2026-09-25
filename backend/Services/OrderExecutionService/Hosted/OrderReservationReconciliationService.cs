@@ -1,5 +1,6 @@
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -18,7 +19,8 @@ namespace OrderExecutionService.Hosted;
 //
 // 🔴 #856, IADR-0362: **配備（deploy/helm/ai-stock-trading/values.yaml）では Enabled / UseBrokerProbe を有効にし、
 // 解放の門（ReleaseOnNotPlaced）だけを閉じたままにしている。** 本常駐は 1 巡回ごとに、人が見なければならない
-// 2 つを明示的にログする——突合で確定した注文（**保護レグを持たない**。#853）と、門が閉じて据え置いた未発注判定。
+// 2 つを明示的にログする——突合で確定した注文（確定の時点では、エントリーなら保護レグが無い）と、門が閉じて据え置いた未発注判定。
+// 🔴 #853, IADR-0428 決定4: 突合で確定したエントリーには、続けて承認時の手法で保護レグを張る（EmitProtectionAsync が結果を出す）。
 //
 // 終端化した予約の OrderExecuted 発行は本 Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 //
@@ -125,16 +127,119 @@ public sealed class OrderReservationReconciliationService(
         await new MessageBus(runtime).PublishAsync(emission.Executed).ConfigureAwait(false);
     }
 
-    // 🔴 FR-05, FR-10, #856, IADR-0362（#853 の 2 番）: 突合で「発注済み」と確定した注文には、
-    // **この経路が保護逆指値を張っていない**。エントリーであれば無保護の建玉が台帳へ載ったということである。
-    // 通知（OrderExecuted）は「約定した」としか言わないので、保護が無い事実はここでしか出ない。**無音にしない。**
+    // 🔴 FR-05, FR-10, #856, IADR-0362: 突合で「発注済み」と確定した注文。確定した**この時点では**、エントリーなら保護レグが無い。
+    // 通知（OrderExecuted）は「約定した」としか言わないので、その事実はここでしか出ない。**無音にしない**（記録は発行より先。#882 監査 N1）。
+    // 🔴 #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定4: 旧文面「この経路は保護逆指値を張りません」は裁定で偽になった
+    // （突合の後に承認時の手法で張る）。Critical は残す——保護の処理はこの行の**後**に走り、発行の失敗・中断で届かないことがある。
+    // その結果は直後の行（EmitProtectionAsync）が種類ごとに出す。直後の行が無ければ、それ自体が「確かめよ」の合図である。
     private void ReportProbeTerminalized(ReservationReconciliationFinding finding) =>
         logger.LogCritical(
             "発注予約リコンサイル: 滞留していた予約を突合で「発注済み」と確定しました"
                 + "（DecisionId={DecisionId} 注文ID={OrderId} 銘柄={Symbol} 数量={Quantity} 状態={Status}）。"
-                + "🔴 **この経路は保護逆指値を張りません。** エントリーであれば無保護の建玉です。"
-                + "証券会社の画面で保護レグの有無を確認してください（張るか否かの裁定は #853）。",
+                + "🔴 エントリーであれば、この時点では保護レグがありません。承認時の手法で続けて張ります"
+                + "（結果は直後の行と通知に出ます）。直後に結果の行が無ければ、証券会社の画面で保護レグの有無を確認してください。",
             finding.DecisionId, finding.OrderId, finding.Symbol, finding.Quantity, finding.Status);
+
+    // 🔴 FR-10, #853, IADR-0428 決定4: 確定した 1 件に保護レグを張った結果の出口。**記録が先・発行が後**（EmitAsync と同じ理由）。
+    // 発行は常駐ガードと同じ補償つきの発行（ProtectiveStopGuardService.PublishAllAsync）を使う——据え置きの通知
+    // （StopDispatchIndeterminate）を発行できなかったのに「通知済み」と覚えると、ガードの再通知が 1 時間黙る。
+    // 発行の失敗は握り潰さない（EmitAsync と同じ）。
+    public async Task EmitProtectionAsync(ReconciledEntryProtectionEmission emission)
+    {
+        ReportProtection(emission);
+
+        if (emission.Outcome is not { Events.Count: > 0 } outcome)
+            return;
+
+        using var scope = scopeFactory.CreateScope();
+        var bus = new MessageBus(runtime);
+        await ProtectiveStopGuardService.PublishAllAsync(
+                outcome.Events, evt => bus.PublishAsync(evt),
+                scope.ServiceProvider.GetService<HeldCloseNotificationTracker>())
+            .ConfigureAwait(false);
+    }
+
+    // #853, IADR-0428 決定4: 保護の結果を種類ごとに記録する。「張った」「据え置いた」「張れない」「要らない」を混ぜない。
+    private void ReportProtection(ReconciledEntryProtectionEmission emission)
+    {
+        var confirmed = emission.Confirmed;
+        if (emission.Failure is { } failure)
+        {
+            logger.LogCritical(failure,
+                "発注予約リコンサイル: 突合で確定した注文に保護レグを張る処理が失敗しました。**エントリーであれば無保護の建玉が"
+                    + "残っている可能性があります。**証券会社の画面で建玉と逆指値を確認してください"
+                    + "（DecisionId={DecisionId} 注文ID={OrderId} 銘柄={Symbol} 数量={Quantity}）。",
+                confirmed.DecisionId, confirmed.OrderId, confirmed.Symbol, confirmed.Quantity);
+            return;
+        }
+
+        if (emission.Outcome is not { } outcome)
+        {
+            if (emission.ProbeConfirmed)
+            {
+                logger.LogCritical(
+                    "発注予約リコンサイル: この構成には、突合で確定したエントリーへ保護レグを張る口がありません。"
+                        + "**エントリーであれば保護レグは張られていません。**証券会社の画面で確認してください"
+                        + "（DecisionId={DecisionId} 注文ID={OrderId} 銘柄={Symbol}）。",
+                    confirmed.DecisionId, confirmed.OrderId, confirmed.Symbol);
+            }
+
+            return;
+        }
+
+        switch (outcome.Kind)
+        {
+            case ReconciledEntryProtectionKind.NoProtectionRecord:
+                // 自己修復（通常フローが記録を作った）では、保護レグの有無も通常フローが決めている（IADR-0362 決定 3）。
+                if (!emission.ProbeConfirmed)
+                    return;
+
+                logger.LogCritical(
+                    "発注予約リコンサイル: 突合で確定した注文には保護の記録がありません。**エントリーであれば保護逆指値は"
+                        + "張られていません**（S2 の免除、または承認時の保護の文脈を残す前に止まった注文）。手仕舞い・保護レグの"
+                        + "突合であれば該当しません。証券会社の画面で建玉と逆指値を確認してください"
+                        + "（DecisionId={DecisionId} 注文ID={OrderId} 銘柄={Symbol} 数量={Quantity}）。",
+                    confirmed.DecisionId, confirmed.OrderId, confirmed.Symbol, confirmed.Quantity);
+                break;
+
+            case ReconciledEntryProtectionKind.BrokerStopPlaced:
+                logger.LogWarning(
+                    "発注予約リコンサイル: 突合で確定したエントリーに、承認時の手法で保護逆指値を張りました"
+                        + "（DecisionId={DecisionId} 銘柄={Symbol}）。",
+                    confirmed.DecisionId, confirmed.Symbol);
+                break;
+
+            case ReconciledEntryProtectionKind.SoftwareStopArmed:
+                logger.LogWarning(
+                    "発注予約リコンサイル: 突合で確定したエントリーはソフトウェア逆指値（S1）で守られています"
+                        + "（記録は発注前に武装済み。DecisionId={DecisionId} 銘柄={Symbol}）。",
+                    confirmed.DecisionId, confirmed.Symbol);
+                break;
+
+            case ReconciledEntryProtectionKind.StopDispatchHeld:
+            case ReconciledEntryProtectionKind.CoverageLost:
+                // 通知（ProtectiveStopCoverageLost・Critical）が人へ届く。ここでは突合との相関だけを残す。
+                logger.LogError(
+                    "発注予約リコンサイル: 突合で確定したエントリーに保護逆指値を張れませんでした（{Kind}）。"
+                        + "続く保護喪失の通知に従ってください（DecisionId={DecisionId} 銘柄={Symbol}）。",
+                    outcome.Kind, confirmed.DecisionId, confirmed.Symbol);
+                break;
+
+            case ReconciledEntryProtectionKind.ProtectiveLeg:
+                logger.LogInformation(
+                    "発注予約リコンサイル: 突合で確定したのは保護レグ（据え置いた逆指値・成行手仕舞い）でした。保護記録の巡回が"
+                        + "結果を引き取ります（DecisionId={DecisionId} 注文ID={OrderId}）。",
+                    confirmed.DecisionId, confirmed.OrderId);
+                break;
+
+            default:
+                // AlreadyHandled（通常フローが既に扱った）・NotRequired（建玉が生じていない）。
+                logger.LogInformation(
+                    "発注予約リコンサイル: 突合で確定した注文の保護は不要か既に扱われています（{Kind}・DecisionId={DecisionId}）。",
+                    outcome.Kind, confirmed.DecisionId);
+                break;
+        }
+    }
 
     // #856, IADR-0362: 1 巡回の要約を記録に落とす。
     // 🔴 #890, IADR-0371: ここには**巡回が最後まで回りきって初めて言えること**しか置かない

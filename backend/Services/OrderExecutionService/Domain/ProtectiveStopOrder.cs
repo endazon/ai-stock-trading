@@ -118,6 +118,13 @@ public record ProtectiveStopOrder(
     /// </summary>
     public bool IsProtectionSuspended => ProtectedQuantity > 0 && EffectiveProtectedQuantity == 0;
 
+    /// <summary>
+    /// 🔴 FR-10, #853, IADR-0428 決定2: <b>ブローカー側の逆指値レグを送ったが、届いたか分かっていない</b>（送信結果待ち）。
+    /// S0 の行で注文 ID が空のとき（S1 は常に空なので含めない）。この行の <see cref="StopDecisionId"/> が据え置いたレグであり、
+    /// その予約が <c>Reserved</c> のまま残っている。ガードは送り直さず、突合の記録が現れたら注文 ID を採用する。
+    /// </summary>
+    public bool IsStopDispatchPending => !IsSoftwareStop && string.IsNullOrEmpty(StopOrderId);
+
     /// <summary>決済方向（エントリーの反対売買）。ロング（Buy 建て）は Sell、ショート（Sell 建て）は Buy。</summary>
     public TradeSide CloseSide => EntrySide == TradeSide.Buy ? TradeSide.Sell : TradeSide.Buy;
 }
@@ -130,4 +137,16 @@ public enum ProtectiveStopState
 
     /// <summary>保護の役目を終えた（逆指値約定・建玉消滅・手仕舞い済み等）。理由は監査イベント側に残る。</summary>
     Completed = 1,
+
+    /// <summary>
+    /// 🔴 FR-10, #853, IADR-0428 決定3: <b>エントリーを送る前に残した「承認時の保護の文脈」</b>（S0 / S3 の新規建て）。
+    /// エントリーの送信結果が不明になり、後から突合（client order id）が発注済みと確定したとき、承認時の手法・損切りライン・
+    /// 数量で保護レグを張るために使う（突合はブローカーの注文しか持たず、承認の文脈を知らない）。
+    /// <para>
+    /// <b>巡回の対象ではない</b>（<see cref="Active"/> ではないので <c>FindActive</c> に載らない）——ガード・約定追跡・純額の計算は
+    /// この行を見ない。保護レグが受理・据え置きになれば <see cref="Active"/> で上書きされ、建玉が生じない・保護を諦めたときは
+    /// <see cref="Completed"/> になる。<b>末尾へ足す</b>（整数列のため Migration 不要）。
+    /// </para>
+    /// </summary>
+    AwaitingEntry = 2,
 }

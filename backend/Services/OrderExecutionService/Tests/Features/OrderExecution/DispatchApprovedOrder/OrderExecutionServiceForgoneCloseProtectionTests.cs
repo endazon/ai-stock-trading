@@ -113,6 +113,24 @@ public class OrderExecutionServiceForgoneCloseProtectionTests
             Mechanism: StopLossExecutionMethod.SoftwareStop, RemainingProtected: remaining);
     }
 
+    // 🔴 T-10-1079, FR-10, #853（PR #1005 監査 2）, IADR-0428 決定2: 送信結果待ち（逆指値を送ったが届いたか不明・注文 ID が空の S0 行）が
+    // あるなら **Unknown**。ブローカー側の注文の株数に数えると、無いかもしれない逆指値を「有る」と知らせる（危険側）。
+    // 同じ銘柄に受理済みの S0 行が並んでいても断定しない（その分だけでは建玉全体の保護を言えない）。
+    [Fact]
+    public async Task 照会不明の決済で送信結果待ちの逆指値があれば_保護を不明として載せる_否定形()
+    {
+        var broker = new FakePositionAwareBroker(null);
+        var stops = new InMemoryProtectiveStopOrderStore();
+        stops.Save(BrokerStop(100) with { StopOrderId = string.Empty }); // 送信結果待ち
+        stops.Save(BrokerStop(50));                                        // 受理済みの逆指値
+
+        var result = await NewService(broker, stops).ExecuteAsync(Approved(CloseIntent()));
+
+        result.Forgone!.Protection.Should().Be(
+            new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Unknown, 0, 0),
+            "届いたか分からない逆指値をブローカー側の保護として数えない（不明を「有る」とも「無い」とも言わない）");
+    }
+
     // 🔴 T-10-1000: 照会不明の決済で、その建玉の Active な保護記録が 1 件も無い（S2 で建てた建玉と同じ状態）
     // → **NoneRecorded**（0/0）。「無い」と断定できるときに「不明」と書かせない。
     [Fact]

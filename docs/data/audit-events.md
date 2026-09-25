@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853]
 -->
 
 
@@ -65,6 +65,13 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002]
   ——注文は証券会社側で生きているかもしれないためである。
   **この記録は同じ手仕舞い（同じ `CloseDecisionId`）について複数回残り得る**——据え置きが続くあいだ約 1 時間ごとと、
   発注執行の再起動後の最初の巡回で出し直されるためである（通知を無音にしないための再発行であり、新しい発注ではない）。
+  `Remediation` が `StopDispatchIndeterminate` のときは、**保護逆指値そのもの**を送信したが結果を確認できていない
+  （届いたか不明）ことを表す。**エントリーの取消も成行手仕舞いもしていない**（据え置き）。この値に限り `CloseDecisionId` は
+  **逆指値レグ**の DecisionId を指す。要約は「失敗」「拒否」とは書かず「保護逆指値は送信済みだが結果未確認・取消・成行はしていない」と書く。
+  据え置きが続くあいだ同じ逆指値レグについて約 1 時間ごと（と再起動後）に複数回残り得る。
+  `Remediation` が `StopReservationFailed` のときは、記録（DB）の障害で保護逆指値の予約を記録できず、**逆指値を送っていない**
+  （取消・成行もしていない）ことを表す。`CloseDecisionId` は送らなかった逆指値レグ、決済意図は運ばない。要約は「予約できず未送信」と書き、
+  「未受理」「失敗」とは書かない。ガードの再発注で起きたときは、障害が続くあいだ約 1 時間ごとに複数回残り得る。
 - moomoo SIMULATE で損切りの実行機構 S2（逆指値なしの建玉を許容）が選ばれていた新規建ては、保護逆指値を発注せず
   **免除の事実（`ProtectiveStopWaived`）**を記録する（#819）。種別は保護喪失（`ProtectiveStopCoverageLost`）と**別**であり、
   相関は同じくエントリーの `DecisionId` である。要約に手法（S2）・発注先・損切りラインと「逆指値なしの建玉を保持する

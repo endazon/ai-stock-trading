@@ -18,9 +18,13 @@ namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservatio
 //                        閉じているあいだは据え置き、DecisionId を HeldNotPlaced に載せる（#856 / IADR-0362）。
 //        Indeterminate → 据え置き（人手/`_error` の現行安全側を壊さない）。門の開閉に依らない。
 //
-// 🔴 FR-05, #856, IADR-0362: **突合で Placed と確定したエントリーに保護逆指値は張らない**（#853 の 2 番）。
-// したがって無保護の建玉が台帳へ載り得る。**黙って通り過ぎさせない**ため、突合で終端化した予約は
-// ProbeTerminalized に載せて返し、Worker 層が 1 件ずつ Critical でログする。保護レグを張るか否かの裁定は #853 が持つ。
+// FR-05, #856, IADR-0362: 突合で終端化した予約は ProbeTerminalized に載せて返し、Worker 層が 1 件ずつ Critical でログする
+// （確定した時点では、エントリーなら保護レグが無い。**黙って通り過ぎさせない**）。
+// 🔴 FR-10, FR-12, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定4: **突合で確定したエントリーには、承認時の手法で保護レグを張る**
+// （オーナー裁定 2026-09-25。旧: 「張らない」〔IADR-0362 決定 3〕）。張るのは発注執行（IReconciledEntryProtection）であり、
+// 呼ぶのは**確定した 1 件の出口（sink.EmitAsync）の後**である——保護の処理（ブローカーへの発注を含む）が落ちても、
+// 確定済みの OrderExecuted と所見は既に出ている（IADR-0371）。結果は sink.EmitProtectionAsync へ渡す。
+// エントリーかどうかは保護記録の有無で判別する（予約・プローブの PositionEffect は当てにならない。IADR-0362 決定 3）。
 //
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 //
@@ -37,7 +41,8 @@ public sealed class OrderReservationReconciler(
     IReservationBrokerProbe probe,
     IBrokerAdapter broker,
     IClock clock,
-    IOptions<ReconciliationOptions>? options = null)
+    IOptions<ReconciliationOptions>? options = null,
+    IReconciledEntryProtection? entryProtection = null)
 {
     // 🔴 #856, IADR-0362: 構成が無いときは**門を閉じた側**へ倒す（未登録＝解放してよい、にしない）。
     private readonly ReconciliationOptions _options = options?.Value ?? new ReconciliationOptions();
@@ -62,6 +67,7 @@ public sealed class OrderReservationReconciler(
         var executed = new List<OrderExecuted>();
         var probeTerminalized = new List<ReservationReconciliationFinding>();
         var heldNotPlaced = new List<Guid>();
+        var protections = new List<ReconciledEntryProtectionEmission>();
         var terminalized = 0;
         var released = 0;
         var indeterminate = 0;
@@ -74,6 +80,10 @@ public sealed class OrderReservationReconciler(
             // #890, IADR-0371: この 1 件が確定したときの出口ぶん。確定しなかった予約（据え置き・不確定・例外）は
             // null のままであり、出口へは渡らない（＝予約は Reserved のままで次回巡回が拾い直せる）。
             ReservationTerminalizationEmission? emission = null;
+
+            // 🔴 #853, IADR-0428 決定4: 確定した発注結果の記録（保護レグを張る対象の候補）。競合（通常フローが確定した）では持たない
+            // ——通常フローが保護レグを張っている最中であり、ここで張ると同じエントリーに 2 つの経路が触る。
+            ExecutionRecord? protectionTarget = null;
 
             // 各予約は独立して処理する。1 件の失敗（照会例外・保存例外等）でバッチ全体を止めない
             // （最大 batchSize 件の巻き添えを避ける）。失敗は件数のみ集計し、Worker がログして次回巡回で再試行する。
@@ -92,6 +102,9 @@ public sealed class OrderReservationReconciler(
                     terminalized++;
                     // 🔴 phase-4 自己修復は突合ではない（ブローカへ照会していない）。所見は載せない（IADR-0362 決定 3）。
                     emission = new ReservationTerminalizationEmission(selfHealed, ProbeFinding: null);
+                    // #853, IADR-0428 決定4: 記録の保存後・確定の前に通常フローが止まった場合、保護レグは張られていない
+                    // （事前記録が AwaitingEntry のまま残る）。張るかどうかは保護記録が決める（Active なら何もしない）。
+                    protectionTarget = record;
                 }
                 else
                 {
@@ -121,6 +134,7 @@ public sealed class OrderReservationReconciler(
                                 confirmed = BuildRecord(decisionId, order, clock.UtcNow);
                                 executedOrders.Save(confirmed);
                                 reservations.MarkCompleted(decisionId, order.OrderId, clock.UtcNow);
+                                protectionTarget = confirmed;
                             }
 
                             var placedExecuted = ToOrderExecuted(confirmed);
@@ -175,11 +189,41 @@ public sealed class OrderReservationReconciler(
             // 残りの滞留は Reserved のままなので拾い直せる。
             if (emission is not null && sink is not null)
                 await sink.EmitAsync(emission).ConfigureAwait(false);
+
+            // 🔴 FR-10, #853, IADR-0428 決定4: 確定済みの 1 件の出口を出した**後**に、承認時の手法で保護レグを張る。
+            // 失敗は握り潰さずに記録として出口へ渡す（保護が無い建玉を無音にしない）が、巡回は止めない——残りの滞留の突合を
+            // 1 件の保護の失敗で止めると、その分の OrderExecuted も遅れる。取消トークンは渡さない（確定後の後始末であり、
+            // 逆指値の送信を途中で打ち切ると「予約だけがあり記録が無い」逆指値を自分で作る）。
+            if (protectionTarget is not null && emission is not null)
+            {
+                var protection = await ProtectAsync(protectionTarget, probeConfirmed: emission.ProbeFinding is not null)
+                    .ConfigureAwait(false);
+                protections.Add(protection);
+                if (sink is not null)
+                    await sink.EmitProtectionAsync(protection).ConfigureAwait(false);
+            }
         }
 
         return new ReservationReconciliationResult(
             stalled.Count, terminalized, released, indeterminate, failed, executed,
-            probeTerminalized, heldNotPlaced);
+            probeTerminalized, heldNotPlaced, protections);
+    }
+
+    // #853, IADR-0428 決定4: 保護の口を 1 件ぶん呼ぶ。口が無い構成は「張れない」として返す（黙って飛ばさない）。
+    private async Task<ReconciledEntryProtectionEmission> ProtectAsync(ExecutionRecord confirmed, bool probeConfirmed)
+    {
+        if (entryProtection is null)
+            return new ReconciledEntryProtectionEmission(confirmed, probeConfirmed, Outcome: null, Failure: null);
+
+        try
+        {
+            var outcome = await entryProtection.ProtectAsync(confirmed, CancellationToken.None).ConfigureAwait(false);
+            return new ReconciledEntryProtectionEmission(confirmed, probeConfirmed, outcome, Failure: null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ReconciledEntryProtectionEmission(confirmed, probeConfirmed, Outcome: null, Failure: ex);
+        }
     }
 
     // ブローカ照会結果（BrokerOrder）から発注結果記録を組み立てる。Intent はブローカが持つ注文実体に由来する。
@@ -218,8 +262,9 @@ public sealed class OrderReservationReconciler(
 // Failed は当該巡回で例外により処理できなかった件数（据え置き＝次回巡回で再試行）。
 //
 // #856, IADR-0362: 件数だけでは「何が起きたか」を人が追えないため、**人が見なければならない 2 つ**を明細で持つ。
-//   ProbeTerminalized —— 突合で発注済みと確定して終端化した注文（🔴 **保護レグは張られていない**。#853）。
+//   ProbeTerminalized —— 突合で発注済みと確定して終端化した注文（確定の時点では、エントリーなら保護レグが無い）。
 //   HeldNotPlaced     —— 照会が未発注と答えたが、解放の門が閉じているため据え置いた予約。
+// 🔴 #853, IADR-0428 決定4: Protections —— 確定した 1 件ごとの保護の結果（張った・据え置いた・張れない・要らない・失敗）。
 public sealed record ReservationReconciliationResult(
     int Scanned,
     int Terminalized,
@@ -228,7 +273,8 @@ public sealed record ReservationReconciliationResult(
     int Failed,
     IReadOnlyList<OrderExecuted> Executed,
     IReadOnlyList<ReservationReconciliationFinding> ProbeTerminalized,
-    IReadOnlyList<Guid> HeldNotPlaced);
+    IReadOnlyList<Guid> HeldNotPlaced,
+    IReadOnlyList<ReconciledEntryProtectionEmission> Protections);
 
 // #856, IADR-0362: 突合で確定した 1 件の要約（ログ・運用手順で人が追える最小限）。
 // 銘柄・数量・状態まで持つのは、運用者が証券会社の画面で突き合わせるのに要るためである。

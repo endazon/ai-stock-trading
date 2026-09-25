@@ -101,6 +101,11 @@ builder.Services.AddScoped(sp => new OrderExecutionAppService(
     sp.GetRequiredService<IProtectiveStopOrderStore>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderExecutionAppService>(),
     sp.GetService<IBrokerPositionSource>()));
+// 🔴 FR-10, FR-12, #853, IADR-0428 決定4: 突合で「発注済み」と確定したエントリーに保護レグを張る口。実体は発注執行そのもの
+// （平常の経路と同じ PlaceProtectiveStopAsync を通す）。下の突合（OrderReservationReconciler）へ渡す——渡し忘れると、
+// 引数は省略可能なのでコンパイルも単体の試験も通ったまま、突合で確定したエントリーは保護レグを持たないまま台帳へ載る
+// （T-10-1073 が Program.cs そのもので固定する）。
+builder.Services.AddScoped<IReconciledEntryProtection>(sp => sp.GetRequiredService<OrderExecutionAppService>());
 
 // FR-10, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定9: ソフトウェア逆指値の発動（StopLossTriggered の購読と、ガードの再試行が共有）。
 // 🔴 **構成を問わず登録する**——購読ハンドラ（StopLossTriggeredHandler）は規約発見で常に配線され、ビルド時 codegen も
@@ -202,7 +207,15 @@ else
 {
     builder.Services.AddSingleton<IReservationBrokerProbe, IndeterminateReservationBrokerProbe>();
 }
-builder.Services.AddScoped<OrderReservationReconciler>();
+// 🔴 #853, IADR-0428 決定4: 保護の口（IReconciledEntryProtection）を**明示して**渡す（省略可能な引数を DI の解決に任せない）。
+builder.Services.AddScoped(sp => new OrderReservationReconciler(
+    sp.GetRequiredService<IOrderReservationStore>(),
+    sp.GetRequiredService<IExecutedOrderStore>(),
+    sp.GetRequiredService<IReservationBrokerProbe>(),
+    sp.GetRequiredService<IBrokerAdapter>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ReconciliationOptions>>(),
+    sp.GetRequiredService<IReconciledEntryProtection>()));
 builder.Services.AddHostedService<OrderReservationReconciliationService>();
 
 // #270, FR-10, IADR-0113: 約定状態の追跡ポーリング（既定有効・短周期）。moomoo は発注時に Accepted（未約定）を

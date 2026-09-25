@@ -144,9 +144,13 @@ public sealed class ProtectiveStopGuardService(
             {
                 for (var j = i; j < events.Count; j++)
                 {
+                    // 🔴 #853, IADR-0428 決定2: 送信結果が不明な逆指値の据え置き（StopDispatchIndeterminate）も同じ記憶を使う
+                    //（キーは逆指値レグの DecisionId）。発行できなかった通知を「通知済み」として 1 時間黙らせない。
                     if (events[j] is ProtectiveStopCoverageLost
                         {
-                            Remediation: ProtectiveStopRemediation.CloseDispatchIndeterminate,
+                            Remediation: ProtectiveStopRemediation.CloseDispatchIndeterminate
+                                or ProtectiveStopRemediation.StopDispatchIndeterminate
+                                or ProtectiveStopRemediation.StopReservationFailed,
                             CloseDecisionId: { } closeDecisionId,
                         })
                     {

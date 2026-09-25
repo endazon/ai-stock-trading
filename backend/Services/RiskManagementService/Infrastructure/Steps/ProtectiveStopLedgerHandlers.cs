@@ -94,9 +94,14 @@ public sealed class ProtectiveStopCoverageLostLedgerHandler(
                 .ResolveBaseToDisplayAsync(cancellationToken).ConfigureAwait(false);
 
             // FR-10, #935, IADR-0394 決定1: 保護の維持に失敗した対処であり、損切りラインへの到達ではない（数えない）。
+            // 🔴 FR-10, #853, IADR-0428 決定2: ただし StopDispatchIndeterminate が運ぶレグは**逆指値そのもの**（送信結果が不明）であり、
+            // 手仕舞いではない。逆指値が武装されたとき（ProtectiveStopPlaced）と同じ由来で残す——生きていて約定すれば損切りの成立として
+            // 数えられ（約定の時刻で数える。IADR-0394 決定1）、後から ProtectiveStopPlaced が届いても承認は DecisionId で冪等に 1 行のまま。
+            var source = message.Remediation == ProtectiveStopRemediation.StopDispatchIndeterminate
+                ? ApprovalSource.ProtectiveStopS0
+                : ApprovalSource.ProtectionLostClose;
             ledger.AppendApproval(
-                closeDecisionId, closeIntent, message.OccurredAt, fxRateBaseToDisplay,
-                ApprovalSource.ProtectionLostClose);
+                closeDecisionId, closeIntent, message.OccurredAt, fxRateBaseToDisplay, source);
             logger.LogDebug(
                 "台帳に保護喪失の手仕舞いレグの承認を記録: EntryDecisionId={EntryDecisionId}"
                     + " CloseDecisionId={CloseDecisionId} 銘柄={Symbol} 数量={Quantity}",

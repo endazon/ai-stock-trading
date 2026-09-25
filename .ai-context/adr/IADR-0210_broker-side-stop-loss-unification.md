@@ -2,10 +2,10 @@
 title: IADR-0210 損切りはブローカー側逆指値へ一本化し、発注執行が保護レグの同時発注・建玉解消・失効ガードまで持つ
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, ADR-0040, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118, IADR-0342, IADR-0344]
+related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, ADR-0040, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118, IADR-0342, IADR-0344, IADR-0428]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-09-19
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md
@@ -217,3 +217,20 @@ P5 entry(Limit):       Kind=Limit Price=329.0265
   develop でも同じ挙動）。「孤立」だけでなく「重複」の穴でもある。本追記では直さない（#853 へ追記した）。
   発注応答の `retType` の不明系（`-100` 等）が「不明」へ分類されたこと（IADR-0117 の改定 8）で、この経路へ入る入力は
   増えるが、分岐は従来の「偽 ID の `Rejected` が返る」場合と同一であり、挙動は変わらない。
+
+## ［2026-09-25 追記 / #853］保護逆指値の「届いたか不明」は取消も成行もせず据え置き、逆指値レグも 3 相に載せる。突合で確定したエントリーに保護レグを張る
+
+**決定 3・決定 4 の「逆指値の未受理 → 取消／成行手仕舞い」は、例外の種類を区別していなかった**（上の #848 追記が成行手仕舞いだけを直し、
+逆指値のレグを射程外に残した）。オーナー裁定（#853・2026-09-25「据え置き・予約・保護レグを張る」）により次のとおり改める。
+詳細・理由・残余リスクは [IADR-0428](IADR-0428_protective-leg-indeterminate-hold-and-reconciled-entry-protection.md)。
+
+- **逆指値レグも送る前に決定的な `StopDecisionId` を予約する**（エントリー同時・ガードの再発注の両方。IADR-0057 の 3 相）。
+  解放してよいのは `BrokerUnavailableException` と**確認できた拒否**（終端が返った）だけで、その 2 つは従来どおり取消・成行へ進む。
+- **届いたか不明・分類できない例外は、取消も成行もせず据え置く**（逆指値が生きていれば、建玉を落とすと孤立して反対建玉を生む）。
+  保護記録は「送信結果待ち」（`Active`・注文 ID が空）で残り、ガードは**同じ逆指値を送り直さない**（#853 追記の 1→2→3 → 1→1→1）。
+  突合の記録が現れたら注文 ID を採用し、予約が解放されたら未発注として扱う。据え置き中に建玉が消えても記録を閉じない。
+- `ProtectiveStopRemediation.StopDispatchIndeterminate` を足す（末尾）。`CloseDecisionId`／`CloseIntent` は**逆指値レグ**を運び、
+  取引台帳は逆指値の武装と同じ由来で承認行にする。通知は Critical で、据え置きが続くあいだ 1 時間ごとにガードが出し直す。
+- **S0 / S3 の新規建ては送る前に承認時の保護の文脈を `AwaitingEntry` で残し**、エントリーの送信結果が不明のまま突合（client order id）が
+  発注済みと確定したら、発注執行が承認時の手法で保護レグを張る（`IReconciledEntryProtection`。S1 は配置の通知だけ・S2 と記録なしは張らない）。
+  決定 1 の fail-closed（逆指値を張れない Open では建玉を持たない）は**確実に未発注**のときにそのまま効き、不明のときは据え置きが優先する。

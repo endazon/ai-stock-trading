@@ -53,7 +53,7 @@ public class OrderReservationReconciliationServiceTests
     // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
     private static Task<IHost> BuildHostAsync(
         IReservationBrokerProbe probe, InMemoryOrderReservationStore reservations,
-        ReconciliationOptions? options = null) =>
+        ReconciliationOptions? options = null, IReconciledEntryProtection? protection = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
@@ -67,6 +67,9 @@ public class OrderReservationReconciliationServiceTests
                 // FR-20, #386, IADR-0149 決定1: リコンサイラが再発行する OrderExecuted には
                 // 実際に発注したアダプタの発注先が載る。本テストの構成は paper（実ブローカへ接続しない）。
                 opts.Services.AddSingleton<IBrokerAdapter>(new PaperBrokerAdapter());
+                // #853, IADR-0428 決定4: 保護の口（任意）。未登録ならリコンサイラの省略可能な引数は null（口が無い構成）。
+                if (protection is not null)
+                    opts.Services.AddSingleton(protection);
                 opts.Services.AddScoped<OrderReservationReconciler>();
 
                 opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
@@ -98,7 +101,8 @@ public class OrderReservationReconciliationServiceTests
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcile);
 
         result.Terminalized.Should().Be(1);
-        // 🔴 T-10-604, #856: 突合で確定した建玉には保護レグが張られない（#853 の 2 番）。結果に載せて可視にする。
+        // 🔴 T-10-604, #856: 突合で確定した建玉は、確定の時点では保護レグを持たない。結果に載せて可視にする
+        //（本番の組み立てでは続けて保護レグを張る。#853・IADR-0428 決定4）。
         result.ProbeTerminalized.Should().ContainSingle().Which.DecisionId.Should().Be(decisionId);
         session.Sent.MessagesOf<OrderExecuted>().Should().Contain(m => m.DecisionId == decisionId);
         reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Completed);
@@ -209,8 +213,10 @@ public class OrderReservationReconciliationServiceTests
         // 例外の型は Wolverine の内部事情（破棄済み端点の扱い）で変わり得るので固定しない。
         // 本テストが固定するのは「発行が落ちること」ではなく「落ちても記録は出ていること」である。
         await publish.Should().ThrowAsync<Exception>("発行の失敗は握り潰さない（常駐が拾って次巡回で再試行する）");
+        // ［2026-09-25 / #853・IADR-0428 決定4］文面は「この経路は保護逆指値を張りません」から「この時点では保護レグがありません
+        //（続けて張る）」へ変わった（突合の後に保護レグを張る裁定）。本テストが固定する「発行より先に Critical が出る」は変わらない。
         logger.Entries.Should().Contain(
-            e => e.Level == LogLevel.Critical && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal),
+            e => e.Level == LogLevel.Critical && e.Message.Contains("この時点では保護レグがありません", StringComparison.Ordinal),
             "発行が落ちても、保護レグ不在の Critical は既に出ていなければならない");
 
         // ［2026-09-23 追記 / #890・IADR-0371］**巡回サマリは出ない**（是正前は出ていた）。
@@ -269,7 +275,7 @@ public class OrderReservationReconciliationServiceTests
         await reconcile.Should().ThrowAsync<OperationCanceledException>();
 
         logger.Entries.Where(
-            e => e.Level == LogLevel.Critical && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal))
+            e => e.Level == LogLevel.Critical && e.Message.Contains("この時点では保護レグがありません", StringComparison.Ordinal))
             .Should().ContainSingle("確定済み 1 件の Critical が、ちょうど 1 行出ていなければならない")
             .Which.Message.Should().Contain(first.ToString());
         reservations.Find(first)!.State.Should().Be(
@@ -410,12 +416,114 @@ public class OrderReservationReconciliationServiceTests
 
         var criticals = logger.Entries
             .Where(e => e.Level == LogLevel.Critical
-                && e.Message.Contains("保護逆指値を張りません", StringComparison.Ordinal))
+                && e.Message.Contains("この時点では保護レグがありません", StringComparison.Ordinal))
             .ToList();
         criticals.Should().HaveCount(2, "確定 2 件ぶん・1 件につき 1 行だけ（末尾の明細ループを戻すと 4 行になる）");
         criticals.Count(e => e.Message.Contains(first.ToString(), StringComparison.Ordinal)).Should().Be(1);
         criticals.Count(e => e.Message.Contains(second.ToString(), StringComparison.Ordinal)).Should().Be(1);
 
         await host.StopAsync();
+    }
+
+    // ---- 🔴 T-10-1078, FR-10, #853, IADR-0428 決定4: 保護の結果を種類ごとに記録し、イベントを発行する ----
+
+    private sealed class StubProtection(Func<Guid, ReconciledEntryProtectionOutcome> fn) : IReconciledEntryProtection
+    {
+        public Task<ReconciledEntryProtectionOutcome> ProtectAsync(
+            OrderExecutionService.Domain.ExecutionRecord confirmed, CancellationToken cancellationToken) =>
+            Task.FromResult(fn(confirmed.DecisionId));
+    }
+
+    private static async Task<(RecordingLogger Logger, ITrackedSession Session, Guid DecisionId)> ReconcileWithAsync(
+        IReconciledEntryProtection? protection)
+    {
+        var reservations = new InMemoryOrderReservationStore();
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+        var host = await BuildHostAsync(
+            new StubProbe(ReservationProbeResult.Placed(Placed("BRK-P"))), reservations, protection: protection);
+        var logger = new RecordingLogger();
+        var service = new OrderReservationReconciliationService(
+            host.Services.GetRequiredService<IServiceScopeFactory>(),
+            host.Services.GetRequiredService<IWolverineRuntime>(),
+            host.Services.GetRequiredService<IClock>(),
+            Options.Create(new ReconciliationOptions { Enabled = true }),
+            logger);
+
+        Func<IMessageContext, Task> reconcile = async _ => await service.ReconcileOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(reconcile);
+        await host.StopAsync();
+        host.Dispose();
+        return (logger, session, decisionId);
+    }
+
+    [Fact]
+    public async Task 突合で確定したエントリーに張った保護逆指値を記録し発行する()
+    {
+        var stopDecisionId = Guid.NewGuid();
+        var (logger, session, decisionId) = await ReconcileWithAsync(new StubProtection(id =>
+            new ReconciledEntryProtectionOutcome(id, ReconciledEntryProtectionKind.BrokerStopPlaced,
+            [
+                new ProtectiveStopPlaced(id, stopDecisionId, "stop-9",
+                    new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                        BrokerProvider.MoomooSimulate, 10, 950m, PositionEffect.Close), 950m, 1, Now),
+            ])));
+
+        session.Sent.MessagesOf<OrderExecuted>().Should().ContainSingle(m => m.DecisionId == decisionId);
+        session.Sent.MessagesOf<ProtectiveStopPlaced>().Should().ContainSingle()
+            .Which.StopDecisionId.Should().Be(stopDecisionId, "保護の結果のイベントは台帳・通知・監査へ発行する");
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning
+            && e.Message.Contains("保護逆指値を張りました", StringComparison.Ordinal)
+            && e.Message.Contains(decisionId.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task 突合で確定したものに保護の記録が無ければCriticalで知らせる_否定形()
+    {
+        var (logger, session, decisionId) = await ReconcileWithAsync(new StubProtection(id =>
+            ReconciledEntryProtectionOutcome.Of(id, ReconciledEntryProtectionKind.NoProtectionRecord)));
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Critical
+            && e.Message.Contains("保護の記録がありません", StringComparison.Ordinal)
+            && e.Message.Contains(decisionId.ToString(), StringComparison.Ordinal));
+        session.Sent.MessagesOf<ProtectiveStopPlaced>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 保護レグの突合は保護の記録が無いとCriticalで言わない()
+    {
+        // T-10-1078（続き・PR #1005 監査 5）: 据え置いた逆指値・ガードの成行手仕舞いの突合を「保護の記録が無い」と誤って知らせない。
+        var (logger, _, decisionId) = await ReconcileWithAsync(new StubProtection(id =>
+            ReconciledEntryProtectionOutcome.Of(id, ReconciledEntryProtectionKind.ProtectiveLeg)));
+
+        logger.Entries.Should().NotContain(e => e.Message.Contains("保護の記録がありません", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Information
+            && e.Message.Contains("保護レグ（据え置いた逆指値・成行手仕舞い）", StringComparison.Ordinal)
+            && e.Message.Contains(decisionId.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task 保護の口が無い構成でも突合で確定したものはCriticalで知らせる_否定形()
+    {
+        var (logger, _, decisionId) = await ReconcileWithAsync(protection: null);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Critical
+            && e.Message.Contains("保護レグを張る口がありません", StringComparison.Ordinal)
+            && e.Message.Contains(decisionId.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task 保護の口が落ちたらCriticalで知らせ巡回は続ける_否定形()
+    {
+        var (logger, session, decisionId) = await ReconcileWithAsync(new StubProtection(
+            _ => throw new InvalidOperationException("保護の口が落ちた（テスト）")));
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Critical
+            && e.Message.Contains("保護レグを張る処理が失敗しました", StringComparison.Ordinal)
+            && e.Message.Contains(decisionId.ToString(), StringComparison.Ordinal));
+        session.Sent.MessagesOf<OrderExecuted>().Should().ContainSingle(m => m.DecisionId == decisionId,
+            "確定済みの OrderExecuted は保護の失敗より先に出ている（IADR-0371）");
+        logger.Entries.Should().Contain(e => e.Message.Contains("滞留 1 件を走査", StringComparison.Ordinal),
+            "巡回は最後まで回る（保護の失敗で残りの突合を止めない）");
     }
 }

@@ -400,6 +400,64 @@ public class NotificationFormatterTests
         msg.Content.Should().NotContain("解消にも失敗", "届いたか不明を失敗と言わない（T-10-409 の規律は経路に依らない）");
     }
 
+    // 🔴 T-10-1074, FR-10, FR-11, UC-02, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定2:
+    // **保護逆指値そのものの送信結果が不明**（StopDispatchIndeterminate）。「未受理」「失敗」「手仕舞いました」のどれも言わない
+    // ——逆指値は証券会社側で生きているかもしれない。取消も成行も重ねないことと、証券会社の画面で逆指値の有無を確かめること、
+    // 逆指値が無ければ手で置く／手仕舞うこと、解決まで約 1 時間ごとに繰り返すこと（原因を問わず保護記録が巡回される）を伝える。
+    [Theory]
+    [InlineData(ProtectiveStopLossCause.RejectedAtEntry, "エントリーと同時に")]
+    [InlineData(ProtectiveStopLossCause.LapsedInFlight, "失効後の再発注として")]
+    public void 保護逆指値の送信結果が不明なら失敗とも未受理とも言わず確認を求める(ProtectiveStopLossCause cause, string when)
+    {
+        var stopDecisionId = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, cause, ProtectiveStopRemediation.StopDispatchIndeterminate,
+            10, stopDecisionId, StopIntent(PositionEffect.Close), StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("未確認").And.NotContain("建玉を解消").And.NotContain("失敗");
+        msg.Content.Should().Contain(when).And.Contain("届いたか不明").And.Contain("取消も成行手仕舞いも行わず")
+            .And.Contain("送り直しません").And.Contain("証券会社の画面").And.Contain("逆指値なしの建玉です")
+            .And.Contain("約 1 時間ごと").And.Contain("新しい発注ではありません").And.Contain(stopDecisionId.ToString());
+        msg.Content.Should().NotContain("未受理", "受理されて生きているかもしれない");
+        msg.Content.Should().NotContain("解消にも失敗", "失敗と読めると手で成行を重ね、逆指値が生きていれば二重決済になる");
+        msg.Content.Should().NotContain("手仕舞いました");
+        msg.Content.Should().NotContain("巡回しません", "送信結果待ちの保護記録は常駐ガードが巡回する");
+    }
+
+    // 🔴 T-10-1074（続き・PR #1005 再監査）, FR-10, #853, IADR-0428: **保護逆指値を予約できず送っていない**（StopReservationFailed）。
+    // 「未受理」「解消にも失敗」とは言わない（送っておらず、手仕舞いも試みていない）。エントリー同時はガードが約 30 秒後に張るので
+    // 手で逆指値を置かせない（二重になる）・来なければ手当てする。ガードの再発注は 1 時間ごとに繰り返す。
+    [Fact]
+    public void 保護逆指値を予約できず送っていないならそう書き_エントリー同時はガードが張ると伝える()
+    {
+        var stopDecisionId = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.RejectedAtEntry,
+            ProtectiveStopRemediation.StopReservationFailed, 10, stopDecisionId, CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().Contain("予約できず未送信").And.NotContain("建玉を解消").And.NotContain("失敗");
+        msg.Content.Should().Contain("逆指値は送っていません").And.Contain("取消も成行手仕舞いも行っていません")
+            .And.Contain("次の巡回（約 30 秒後）").And.Contain("手で逆指値を置かないでください")
+            .And.Contain("「保護逆指値を発注」の通知が来なければ").And.Contain(stopDecisionId.ToString());
+        msg.Content.Should().NotContain("未受理", "送っていない逆指値を「受理されなかった」と言わない");
+        msg.Content.Should().NotContain("解消にも失敗", "手仕舞いは試みていない");
+    }
+
+    [Fact]
+    public void ガードの再発注を予約できなかったなら逆指値なしの建玉が残ると書き1時間ごとに繰り返すと伝える()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+            ProtectiveStopRemediation.StopReservationFailed, 10, Guid.NewGuid(), CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Content.Should().Contain("逆指値は送っていません").And.Contain("逆指値なしの建玉が残っています")
+            .And.Contain("約 1 時間ごと");
+        msg.Content.Should().NotContain("次の巡回（約 30 秒後）").And.NotContain("解消にも失敗");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、
     // 「手仕舞いました」とも「届いたか不明」とも言ってはならない。**建玉は残っており、成行は生きていない**
     // ——読んだ人が取るべき行動（証券会社の画面で建玉を確認し、手で手仕舞う）が読み取れること。

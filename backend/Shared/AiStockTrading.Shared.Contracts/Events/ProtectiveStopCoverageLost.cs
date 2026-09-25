@@ -24,6 +24,10 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //（押さえないと利用者の手仕舞い要求が通り、同じ株数に 2 本の決済が並ぶ＝二重決済でショート化）。
 // None で代用してはならない —— None は手仕舞いレグを運ばない約束であり、通知の文面も
 // 「解消にも失敗した」になって、読んだ人に手で成行を重ねさせる。
+//
+// 🔴 FR-10, #853, IADR-0210（2026-09-25 追記）, IADR-0428: **Remediation=StopDispatchIndeterminate は、CloseDecisionId /
+// CloseIntent に「逆指値レグ」を載せる**（成行手仕舞いではない）。逆指値を送信したが届いたか不明であり、取消も成行も
+// していない（据え置き）。リスク管理は逆指値が武装されたときと同じ由来で承認行を足す（生きていれば約定を相関できる）。
 public record ProtectiveStopCoverageLost(
     Guid EntryDecisionId,
     string Symbol,
@@ -101,4 +105,33 @@ public enum ProtectiveStopRemediation
     /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
     /// </summary>
     CloseRejected,
+
+    /// <summary>
+    /// 🔴 FR-10, #853, IADR-0210（2026-09-25 追記）, IADR-0428: <b>保護逆指値（逆指値レグ）を送信したが結果を確認できていない</b>
+    /// （届いたか不明）。<b>エントリーの取消も成行手仕舞いもしていない</b>——逆指値が証券会社側で生きていれば、建玉を落とすと
+    /// 逆指値が孤立し、発火で反対方向の建玉（ショート）を生むためである。逆指値レグの予約（<c>StopDecisionId</c>）を
+    /// <c>Reserved</c> のまま残し、同じレグを送り直さない。
+    /// <para>
+    /// <c>CloseDecisionId</c> は<b>逆指値レグの DecisionId</b>、<c>CloseIntent</c> は<b>逆指値レグの決済意図</b>である
+    /// （台帳は逆指値の武装と同じ由来で承認行を足す＝生きていれば約定を相関でき、処理中の決済として押さえる）。
+    /// 保護記録は「送信結果待ち」（注文 ID が空の <c>Active</c>）で残り、常駐ガードが巡回する。原因（Cause）を問わず、
+    /// 解決するまで約 1 時間ごと（と再起動のたび）に再発行される。解決は突合（client order id）が発注済みと確定したとき
+    /// （注文 ID を採用する）か、予約が解放されたとき（未発注として扱う）。人手の確認を要する（Critical）。
+    /// </para>
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    StopDispatchIndeterminate,
+
+    /// <summary>
+    /// 🔴 FR-10, #853（PR #1005 監査）, IADR-0428: <b>保護逆指値の予約を記録できなかった（DB 障害）ため、逆指値を送っていない</b>。
+    /// 取消も成行もしていない（記録が不確かなまま注文を重ねない）。「未受理」でも「解消に失敗」でもない。
+    /// <para>
+    /// <c>CloseDecisionId</c> は送らなかった<b>逆指値レグ</b>の DecisionId（相関のため）。<c>CloseIntent</c> は運ばない（生きている注文は無い）。
+    /// 原因で後が分かれる: <see cref="ProtectiveStopLossCause.RejectedAtEntry"/>（エントリー同時）は保護記録を送信結果待ちで残し、
+    /// 常駐ガードが次の巡回（約 30 秒後）で建玉を確かめて張る。<see cref="ProtectiveStopLossCause.LapsedInFlight"/>（ガードの再発注）は
+    /// 記録を変えずに巡回のたびに試み直し、通知は約 1 時間ごとに出し直す。人の確認を要する（Critical）。
+    /// </para>
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    StopReservationFailed,
 }
