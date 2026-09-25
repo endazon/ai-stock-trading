@@ -120,7 +120,7 @@ ContractFixtures は**フロント**（別のツールチェーン。バック�
 | 所見 | 分類 | 対処（本 PR） |
 | --- | --- | --- |
 | 通知 `HttpReportReviewController.RequestChangesAsync` → 報告書 `/reports/*/request-changes` | **本物**。受け手は応答の版を読むが、送り手の型 `ReportReview` の契約テストが無かった（改名で「版 0 を差し戻しました」と表示する。統制は送り手で成立し、表示の誤り） | 契約テスト T-10-944 を足した |
-| 通知 `HttpReportReviewController.ConfirmAsync` → 報告書 `/reports/*/confirm` | **偽陽性**（状態コードだけを見る） | 判定を直した（決定3 の「本文を読まない操作は単位にしない」）。直す前の所見は 4 件 |
+| 通知 `HttpReportReviewController.ConfirmAsync` → 報告書 `/reports/*/confirm` | **偽陽性**（状態コードだけを見る） | 判定を直した（決定3 の「本文を読まない操作は単位にしない」）。直す前の所見は 4 件（同じ判定の試作での実測） |
 | 判断・費用統制 `HttpAssumptionsClient.FetchAsync` → 構成 `/assumptions`（2 件） | **偽陽性**（受け手・送り手とも共有型 `VersionedAssumptions`。#943 の走査表の 6 行） | allowlist（2 行・#943） |
 
 最終の所見は 3 件（本物 1・偽陽性 2）で、本物は本 PR で是正した。allowlist は 2 行（偽陽性だけ）、本リポジトリの外の一覧は 2 行
@@ -135,7 +135,7 @@ ContractFixtures は**フロント**（別のツールチェーン。バック�
 | --- | --- |
 | #940 の変異: 送り手 `WorkingEntryOrderView.Symbol` を `ticker` へ | 判断 779 件中 1 件（T-10-744） |
 | #943 の変異: 送り手 `OpenPositionView.Symbol` を `ticker` へ | 判断 779 件中 1 件（T-10-800）／市場監視 189 件中 21 件（T-10-803 と、送り手の型から本文を組む行の許容のテスト）／報告書 1138 件中 5 件（T-10-804 と T-10-880 の銘柄の 4 行） |
-| #943 の是正前の形: 判断の `/open-positions` の契約テスト（T-10-800）を外す | 検査（T-10-945）: `HttpHeldPositionProvider.GetPositionAsync -> RiskManagementService /risk-controls/open-positions`（同じファイルの T-10-801 は手書きの JSON なので数えない） |
+| #943 の是正前の形: 判断の `/open-positions` の契約テスト（T-10-800）を外す | 検査（T-10-945）: `HttpHeldPositionProvider.GetPositionAsync -> RiskManagementService /risk-controls/open-positions`（同じファイルの手書きの JSON のテストは数えない） |
 | 同上＋サイジング文脈の契約テスト（T-10-802）も外す | 検査: 上に加えて `HttpSizingContextProvider.GetContextAsync`（既存の `HttpSizingContextProviderTests` は数えない） |
 | #940 の是正前の形: T-10-744 を外す | 検査: `HttpHeldPositionProvider.GetWorkingEntryOrdersAsync` |
 | T-10-944 を外す | 検査: `HttpReportReviewController.RequestChangesAsync` |
