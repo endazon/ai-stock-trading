@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13, FR-10]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, MSP#266, MSP#635, planning#54]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -136,6 +136,16 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
   メッセージは再投入するまで残る）。対応は下の障害対応表の「乖離の取り込みが保護注文に追随しないまま `_error` キューに残る」行。
 - **`_error` キュー全般の滞留は監視していない。** RabbitMQ のキュー長はどこからも scrape されていないため、
   `order-approved_error` などほかの `_error` キューは、引き続き RabbitMQ 管理画面とログで見る。
+
+### クラスタの外からの死活監視（ホスト側）
+
+- 🔴 **上のアラートはすべてクラスタの中で動き、クラスタ（ホスト）と一緒に止まる。** ホストの再起動で Rancher Desktop が
+  起動しなかった間、ソフトウェア逆指値（S1）は働かず、そのことはどこからも知らされなかった（#937）。
+- ホストの上で `scripts/host-liveness-monitor.ps1` を 5 分ごとに走らせ、**米国株の通常取引時間だけ** Kubernetes API・
+  市場監視と発注執行の Pod・2 つの生存要約（損切り評価・S1 の保護記録）の鮮度を**読む**。通知はクラスタに依らない経路
+  （Windows の通知・任意の Discord Webhook・ログファイル）だけで行う。**登録・自動起動・Windows Update の設定はオーナーが行う**
+  （[ホスト側の死活監視 Runbook](host-liveness-monitor-runbook.md)）。
+- **ホストそのものが止まっている・ログオンしていない間は、この監視も止まっている**（ホストの外から見張る仕組みは無い）。
 
 ## バックアップ・リストア
 
@@ -364,6 +374,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | [セキュリティ仕様書](../security/security.md) | **認証・認可／データ保護／秘密情報管理／監査ログ／脅威と対策**。運用者が触る統制（`ast-secrets` の投入・Vault 化の充足状況・監査ログの記録項目と**保持期間が未実装であること**）はすべて同書に実測で書いてある。**本書の「データ保持・パージ」は重複排除ストア 2 つだけを対象とし、`audit_events` は対象外である —— それが「7 年保持が担保されている」ことを意味しない点も同書に明記した**（セキュリティ仕様書における「無いこと」の書き分けの決定 3） |
 | [禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) | **建玉を手仕舞えないとき**の手順（一時解除 → 手仕舞い → 再登録）。解除・再登録が監査に残る根拠つき |
 | [KB タグ辞書登録 Runbook](kb-tag-dictionary-runbook.md) | 基盤（document-service）のタグ辞書へ事前登録すべきタグ一覧の生成手順。KB 保存が未登録タグで 400 になる事象への対処 |
+| [ホスト側の死活監視 Runbook](host-liveness-monitor-runbook.md) | **クラスタの外から**損切りの生存を見張るスクリプトの登録、Rancher Desktop の自動起動、場中に Windows Update で再起動しない設定（オーナーが行う） |
 | [基準資金の供給が無いときの Runbook](capital-baseline-seed-runbook.md) | **新規建てが `CapitalBaselineUnavailable` で止まるとき**の手順。供給の条件（当日より前の取引日の観測・鮮度 4 日）と、`account_equity_days` へ 1 行投入する埋め合わせ |
 | [ブロック中のタスク](../blocked-tasks.md) | 基盤・実機待ちで本リポジトリだけでは進められない項目 |
 
