@@ -23,6 +23,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
+const { GIT_MAX_BUFFER, isShallowSkip } = require('./lib/git-read.js');
 const crossRepoRefs = require('./check-cross-repo-refs.js');
 
 // 規約導入前の既存コミットの恒久適用除外リスト（force push 禁止のため件名を書き換えられない）。
@@ -149,9 +150,21 @@ function parseArgs(argv) {
   return a;
 }
 
+/**
+ * git を実行して出力を返す（失敗は例外）。🔴 `maxBuffer` を必ず渡す（#1009）——既定の 1 MiB を
+ * 超えると `ENOBUFS` になり、旧コードは範囲の読み取り失敗として検査を skip（exit 0）していた。
+ */
+function gitRead(args) {
+  return execSync(`git ${args}`, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: GIT_MAX_BUFFER,
+  }).trim();
+}
+
 function tryGit(args) {
   try {
-    return execSync(`git ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return gitRead(args);
   } catch (e) {
     return null;
   }
@@ -182,16 +195,26 @@ function resolveRange(explicit) {
   return 'HEAD';
 }
 
-/** 範囲のコミットを {hash, subject, author} で返す（マージコミットは除外）。 */
-function collectCommits(range) {
+/**
+ * 範囲のコミットを {hash, subject, author} で返す（マージコミットは除外）。
+ *
+ * 🔴 読み取りに失敗したとき（#1009）: **浅いクローン**なら null（設計どおりの skip）。
+ * それ以外（`ENOBUFS` は浅いクローンでも常にこちら）は**例外を投げる**——読めなかった検査が
+ * 成功を報告しないため（未知 ≠ 無し）。`opts.readGit` / `opts.shallow` はテスト用の差し替え。
+ */
+function collectCommits(range, opts = {}) {
+  const read = opts.readGit ?? gitRead;
   // #515: 本文（%B）も取る。**規約が名指しした実害例は footer の `Refs #NNN`** であり、
   // 件名だけ見ていては構造的に取りこぼす。**%B は最後に置く**——改行を含むため、
   // 区切り（US）で分割したときに後続フィールドを飲み込まないようにする。
   const fmt = `%H${US}%s${US}%an${US}%ae${US}%B`;
-  const raw = tryGit(`log ${range} --no-merges --pretty=format:${fmt}${RS}`);
-  if (raw === null) {
-    process.stderr.write(`検査範囲を git log できなかった: ${range}\n`);
-    return null;
+  let raw;
+  try {
+    raw = read(`log ${range} --no-merges --pretty=format:${fmt}${RS}`);
+  } catch (e) {
+    process.stderr.write(`検査範囲を git log できなかった: ${range}（${e.message}）\n`);
+    if (isShallowSkip(e, { shallow: opts.shallow })) return null;
+    throw e;
   }
   if (!raw.trim()) return [];
   return raw
@@ -606,9 +629,18 @@ function main() {
   }
 
   const range = resolveRange(args.range);
-  const commits = collectCommits(range);
+  let commits;
+  try {
+    commits = collectCommits(range);
+  } catch (e) {
+    // 浅いクローン以外の読み取り失敗（#1009）。検査していないことを成功として報告しない。
+    process.stderr.write(
+      '浅いクローンではないのに検査範囲を読めなかったため、赤にする（検査していないことを成功として報告しない。#1009）。\n'
+    );
+    process.exit(1);
+  }
   if (commits === null) {
-    // 範囲解決に失敗（浅いクローン等）。CI をブロックしないため警告終了。
+    // 浅いクローンで範囲を辿れなかった。CI をブロックしないため警告終了（設計どおりの skip）。
     process.stderr.write('検査範囲を特定できなかったため、コミット規約チェックをスキップする。\n');
     process.exit(0);
   }
@@ -714,6 +746,7 @@ module.exports = {
   loadExistingIadrIds,
   loadExistingPlanAdrIds,
   checkSingleTitle,
+  collectCommits,
   isBot,
   isBotLogin,
   isSkippable,
