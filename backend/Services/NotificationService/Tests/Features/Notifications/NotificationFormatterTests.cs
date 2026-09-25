@@ -542,7 +542,8 @@ public class NotificationFormatterTests
 
     // 🔴 否定形（#331）: 損切り到達の通知は「システムが決済した」と読ませない。
     // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは建玉ごとの手法で決まり、検知側は手法を知らない。
-    // **ブローカーの逆指値が決済すると断定しない**（S1 / S2 の建玉で誤りになる）——3 手法の帰結を列挙する。
+    // **ブローカーの逆指値が決済すると断定しない**（S1 / S2 の建玉で誤りになる）——手法ごとの帰結を列挙する。
+    // T-10-896, FR-10, ADR-0040 決定1（S3）, #826 項目 2 の残余, IADR-0347: S3（代替のブローカー側注文）も列挙に入る。
     [Fact]
     public void 損切り到達の通知は手法ごとの帰結を列挙しブローカーが決済すると断定しない()
     {
@@ -552,7 +553,9 @@ public class NotificationFormatterTests
         msg.Severity.Should().Be(NotificationSeverity.Critical);
         msg.Content.Should().Contain("S0＝ブローカー側の逆指値が実行（システムは発注しない）")
             .And.Contain("S1＝システムが成行で決済")
-            .And.Contain("S2＝**システムもブローカーも決済しない（手動で決済してください）**");
+            .And.Contain("S2＝**システムもブローカーも決済しない（手動で決済してください）**")
+            .And.Contain("S3＝ブローカー側の代替注文（ストップリミット／トレーリングストップ）が実行")
+            .And.Contain("ストップリミットは指値のため約定しないことがある");
         msg.Content.Should().NotContain("決済はブローカー側の逆指値が実行します");
     }
 
