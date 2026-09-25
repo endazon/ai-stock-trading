@@ -284,6 +284,35 @@ jobs:
           assert_reconciliation "moomoo-sim" "$(helm template ast "$CHART" --set broker.tier=moomoo-sim)"
           assert_reconciliation "values-local" "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
           echo "ok: 突合は 3 描画とも有効で、解放の門は閉じている（BatchSize も pin 済み）"
+      # #842, IADR-0347 追記: moomoo の調整値は「空（""）・未設定（null）＝アダプタ既定＝env を注入しない」。
+      #    `{{- with }}` は数値の 0 を空と同じに扱い、`--set moomoo.stopLimitOffsetRatio=0` が既定 1% へ黙って戻っていた
+      #    （replyTimeoutSeconds=0 は起動時に停止するはずが 15 秒へ戻っていた）。0 が値として届き、空は届かないことを固定する。
+      - name: Assert moomoo tuning values keep numeric 0 (#842)
+        run: |
+          set -eu
+          fail() { echo "::error::$1"; exit 1; }
+          render() { helm template ast "$CHART" --set broker.tier=moomoo-sim "$@"; }
+          value_of() { printf '%s' "$1" | grep -A1 "name: $2\$" | sed -n 's/^ *value: //p'; }
+          keys="moomoo.opend.replyTimeoutSeconds:Broker__Moomoo__OpenD__ReplyTimeoutSeconds moomoo.alternativeStopOrderType:Broker__Moomoo__AlternativeStopOrderType moomoo.stopLimitOffsetRatio:Broker__Moomoo__StopLimitOffsetRatio"
+          # ① 空（既定）と null は注入しない（アダプタ既定・既定描画のバイト等価）。
+          default_out="$(render)"
+          for kv in $keys; do
+            key="${kv%%:*}"; env="${kv##*:}"
+            if printf '%s' "$default_out" | grep -q "name: $env\$"; then fail "既定（空）で $env が描画された（空＝アダプタ既定のはず）。"; fi
+            if render --set "$key=null" | grep -q "name: $env\$"; then fail "$key=null で $env が描画された（未設定＝アダプタ既定のはず）。"; fi
+          done
+          # ② 数値の 0 は値として届く（既定へ黙って倒さない）。
+          for kv in $keys; do
+            key="${kv%%:*}"; env="${kv##*:}"
+            got="$(value_of "$(render --set "$key=0")" "$env")"
+            [ "$got" = '"0"' ] || fail "$key=0 で $env が \"0\" で描画されない（実測: '${got}'）。数値の 0 を空と取り違えている。"
+          done
+          # ③ 0 以外の値・文字列の 0 は従来どおり。
+          got="$(value_of "$(render --set moomoo.stopLimitOffsetRatio=0.02)" Broker__Moomoo__StopLimitOffsetRatio)"
+          [ "$got" = '"0.02"' ] || fail "stopLimitOffsetRatio=0.02 が \"0.02\" で描画されない（実測: '${got}'）。"
+          got="$(value_of "$(render --set-string moomoo.stopLimitOffsetRatio=0)" Broker__Moomoo__StopLimitOffsetRatio)"
+          [ "$got" = '"0"' ] || fail "--set-string stopLimitOffsetRatio=0 が \"0\" で描画されない（実測: '${got}'）。"
+          echo "ok: moomoo の調整値は空・null を注入せず、数値の 0 を値として注入する"
       # #238 / IADR-0100: 本番バイト等価の担保。ArgoCD は values.yaml のみを描画する（valueFiles 無し）ため、
       # 経路B の有効化（values-local.yaml）が既定描画へ漏れていないことを検査する。既定描画に実 LLM/実市況/Discord の
       # 有効化痕跡が現れたら、本番へ漏れたということなので落とす（fail-safe 既定の反転検出）。

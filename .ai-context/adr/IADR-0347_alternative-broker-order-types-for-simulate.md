@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-11, FR-12, UC-02, ADR-0003, ADR-0016, ADR-0040, IADR-0016, IADR-0060, IADR-0111, IADR-0210, IADR-0211, IADR-0342]
 author: claude (Claude Code)
 created: 2026-09-18
-updated: 2026-09-18
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1 の S3)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 の 3 文〔口座種別の軸〕)
@@ -171,3 +171,28 @@ retType=-1 The precision of Price in Place Order does not meet the specification
 残る制約: 東証の呼値は価格帯で刻みが変わる（1 円・5 円・10 円…）。本追記は**小数桁だけ**を揃えるため、
 高価格帯の日本株では刻みの倍数にならないことがある。米国株の「1 ドル未満は 4 桁」も慣行に基づく前提で、
 ブローカーの仕様書と突き合わせた実測ではない。
+
+## ［2026-09-25 追記 / #842］S3 は実測しない裁定の下で、監査の残論点 3・5 を決着させる
+
+#809 にオーナーの裁定（2026-09-24）が出た: **S3 は測らず、S1（ソフトウェア逆指値）で進める。S3 の実測は将来の課題として
+残す**（再開するときは #809 を参照して新しく起票する）。#842 の論点 3・5 は「S3 の受理を実測してから扱いを決める」と
+保留されていたため、その前提ごと次のとおり決着させる（作業仕様書 `20260925_842_s3-audit-followups-residual`）。
+
+1. **論点 3（受容した制約）: 発火したが約定しない StopLimit を `ProtectiveStopGuard` は検知できない。**
+   ガードは Pending を残量ありなら「保護あり」とみなす（滞留時間の判定は無い）。StopLimit は発火後に指値幅を
+   飛び越えた板では**未約定の Pending のまま残り、保護あり（`StillActive`）と読まれ続ける**。上の残余リスク
+   （指値幅 1% は実測値ではない）とは別の欠落であり、ここへ明記する。
+   - **検知は作らない。** 発火の判定・滞留の閾値・検知後の処置（取消して成行手仕舞いか、通知だけか）は S3 が受理される
+     前提でしか意味を持たず、裁定の下では使われない分岐になる（上の「ガードの再発注が S0」と同じ理由）。
+   - 🔴 **S3 を再開する前提条件**: 受理を実測した時点で本論点は**現実の欠陥に昇格する**。S3 を SIMULATE の常用手法に
+     する前に、(a) 本論点の検知、(b) ガードの再発注を手法どおりにする（上の残余リスク）、(c) 指値幅の実測、の 3 つを扱う。
+2. **論点 5（是正）: helm の調整値で数値の 0 を空と取り違えない。** `moomoo.stopLimitOffsetRatio`・
+   `moomoo.opend.replyTimeoutSeconds`・`moomoo.alternativeStopOrderType` は `{{- with }}` で描画していたため、
+   数値の 0（や `false`）が空と同じに扱われ、**アダプタ既定へ黙って戻っていた**（`--set …=0` で env 0 件を実測）。
+   「空（`""`）・未設定（`null`）＝既定」「それ以外は値として注入し、検証はアプリの起動時に任せる」へ改めた。
+   これは S3 の受理可否と無関係な chart の欠陥であり、裁定を待たずに直せる。
+   - 帰結: `replyTimeoutSeconds=0`・`alternativeStopOrderType=0` は**起動時に停止する**（範囲外・未知の値。記述どおりになった）。
+     `stopLimitOffsetRatio=0` は決定 3 の範囲（0〜10%）内として**受理される**——指値は #844 の丸めで発火価格から
+     最低 1 刻み離れるため、発火価格と同値にはならない。
+   - 0 を起動時に拒むか（下限を開区間にするか）は**変えない**。S3 の保護の形の設計判断であり、S3 を採らない裁定の下で
+     動かす理由が無い。再開時に (c) 指値幅の実測と併せて扱う。
