@@ -3,15 +3,15 @@ title: リスク管理ドメインの集約（設定・スナップショット�
 type: data-spec
 status: draft
 created: 2026-07-09
-updated: 2026-08-29
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-17, FR-19, FR-20]
 adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027]
-iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271, IADR-0286]
+iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271, IADR-0286, IADR-0346]
 specs: []
-issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569, #611]
+issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569, #611, #829, #832]
 -->
 
 
@@ -114,9 +114,9 @@ issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #3
 | 属性 | 型 | 既定 | 説明 |
 | --- | --- | --- | --- |
 | Capital | decimal | 必須 | 判定に用いる自己資金（**equity**）＝当日開始時運用資金（前営業日終値時点・当日中不変）。金額系上限もこの値から解決する |
-| OpenPositionCount | int | 0 | 保有**建玉**数 |
-| InvestedCapital | decimal | 0 | 保有取得額合計（コストベース）。段階資金上限の累計判定 |
-| DailyOrderedAmount | decimal | 0 | 当日発注金額累計。**新規建て（Open）の約定のみ**を積む |
+| OpenPositionCount | int | 0 | 保有**建玉**数。建玉の無い（銘柄, 市場）へ出した**未約定の新規建て注文**も 1 件として数える（建て増しは増やさない） |
+| InvestedCapital | decimal | 0 | 保有取得額合計（コストベース）＋ 当日承認した**未約定の新規建て注文**の残数量の発注代金。段階資金上限の累計判定 |
+| DailyOrderedAmount | decimal | 0 | 当日発注金額累計。**新規建て（Open）**の約定 ＋ 当日承認した**未約定の新規建て注文**の残数量の発注代金（決済は積まない） |
 | DailyRealizedPnl | decimal | 0 | 当日実現損益（負=損失） |
 | UnrealizedPnl | decimal | 0 | 含み損益（日次終値評価）。日次損失上限は実現+含みの合算で判定 |
 | DrawdownRatio | decimal | 0 | 資金ピークからのDD率 |
