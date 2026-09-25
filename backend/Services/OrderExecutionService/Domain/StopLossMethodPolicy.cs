@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace OrderExecutionService.Domain;
@@ -30,34 +31,85 @@ namespace OrderExecutionService.Domain;
 public static class StopLossMethodPolicy
 {
     public static StopLossMethodDisposition Resolve(
+        StopLossExecutionMethod method, OrderIntent entry, BrokerProvider provider) =>
+        ResolveWithReason(method, entry, provider).Disposition;
+
+    /// <summary>
+    /// FR-10, FR-06, #1002, IADR-0429 決定2: 解決結果と、<b>承認の手法と違う扱いになった理由</b>を同時に返す。
+    /// 🔴 <b>判定の順序はここ 1 か所にだけ書く</b>（<see cref="Resolve"/> はこれを呼ぶだけ）。理由を別の関数で
+    /// 導き直すと、順序を変えたときに片方だけが古くなる（例: 空売りかつ SIMULATE 以外は「拒否」であり「空売り」ではない）。
+    /// </summary>
+    public static StopLossMethodResolution ResolveWithReason(
         StopLossExecutionMethod method, OrderIntent entry, BrokerProvider provider)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
         if (method == StopLossExecutionMethod.BrokerStopOrder)
         {
-            return StopLossMethodDisposition.BrokerStopOrder;
+            return new(StopLossMethodDisposition.BrokerStopOrder, StopLossMethodResolutionReason.AsSelected);
         }
 
         if (provider != BrokerProvider.MoomooSimulate)
         {
-            return StopLossMethodDisposition.Refused;
+            return new(StopLossMethodDisposition.Refused, StopLossMethodResolutionReason.BrokerNotMoomooSimulate);
         }
 
         if (entry.ProductType == ProductType.ShortSell)
         {
-            return StopLossMethodDisposition.BrokerStopOrder;
+            return new(StopLossMethodDisposition.BrokerStopOrder, StopLossMethodResolutionReason.ShortSellEntry);
         }
 
         return method switch
         {
-            StopLossExecutionMethod.NoProtectiveStop => StopLossMethodDisposition.ProtectiveStopWaived,
-            StopLossExecutionMethod.SoftwareStop => StopLossMethodDisposition.SoftwareStop,
-            StopLossExecutionMethod.AlternativeBrokerOrderType => StopLossMethodDisposition.AlternativeBrokerOrderType,
-            _ => StopLossMethodDisposition.NotImplementedFallbackToBrokerStop,
+            StopLossExecutionMethod.NoProtectiveStop =>
+                new(StopLossMethodDisposition.ProtectiveStopWaived, StopLossMethodResolutionReason.AsSelected),
+            StopLossExecutionMethod.SoftwareStop =>
+                new(StopLossMethodDisposition.SoftwareStop, StopLossMethodResolutionReason.AsSelected),
+            StopLossExecutionMethod.AlternativeBrokerOrderType =>
+                new(StopLossMethodDisposition.AlternativeBrokerOrderType, StopLossMethodResolutionReason.AsSelected),
+            _ => new(StopLossMethodDisposition.NotImplementedFallbackToBrokerStop, StopLossMethodResolutionReason.UnknownMethod),
         };
     }
+
+    /// <summary>
+    /// FR-10, FR-06, #1002, IADR-0429 決定2: 解決結果が<b>実際に適用する手法</b>。発注しない（<see cref="StopLossMethodDisposition.Refused"/>）
+    /// なら null。未実装の手法の退避は S0 と同じ扱いなので S0 である。
+    /// </summary>
+    public static StopLossExecutionMethod? AppliedMethodOf(StopLossMethodDisposition disposition) => disposition switch
+    {
+        StopLossMethodDisposition.BrokerStopOrder => StopLossExecutionMethod.BrokerStopOrder,
+        StopLossMethodDisposition.NotImplementedFallbackToBrokerStop => StopLossExecutionMethod.BrokerStopOrder,
+        StopLossMethodDisposition.ProtectiveStopWaived => StopLossExecutionMethod.NoProtectiveStop,
+        StopLossMethodDisposition.SoftwareStop => StopLossExecutionMethod.SoftwareStop,
+        StopLossMethodDisposition.AlternativeBrokerOrderType => StopLossExecutionMethod.AlternativeBrokerOrderType,
+        StopLossMethodDisposition.Refused => null,
+        _ => throw new ArgumentOutOfRangeException(nameof(disposition), disposition, "未知の解決結果"),
+    };
+
+    /// <summary>
+    /// FR-10, FR-06, FR-11, #1002, IADR-0429 決定1: 解決結果を監査台帳・報告書へ渡す事実（<see cref="StopLossMethodResolved"/>）にする。
+    /// </summary>
+    public static StopLossMethodResolved ToEvent(
+        OrderApproved approved, StopLossMethodResolution resolution, BrokerProvider provider, DateTimeOffset occurredAt)
+    {
+        ArgumentNullException.ThrowIfNull(approved);
+        ArgumentNullException.ThrowIfNull(resolution);
+
+        return new StopLossMethodResolved(
+            approved.DecisionId,
+            approved.Intent.Symbol,
+            approved.Intent.Market,
+            approved.Intent.ProductType,
+            approved.StopLossMethod,
+            AppliedMethodOf(resolution.Disposition),
+            resolution.Reason,
+            provider,
+            occurredAt);
+    }
 }
+
+/// <summary>#1002, IADR-0429 決定2: 解決結果と、承認の手法と違う扱いになった理由（一致なら AsSelected）。</summary>
+public sealed record StopLossMethodResolution(StopLossMethodDisposition Disposition, StopLossMethodResolutionReason Reason);
 
 /// <summary>#819, IADR-0342 決定4: 手法の解決結果。</summary>
 public enum StopLossMethodDisposition

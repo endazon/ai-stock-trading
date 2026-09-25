@@ -1077,6 +1077,31 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain("発注数量10").And.Contain("建玉は約定した数量で確定する");
     }
 
+    // T-10-1085, FR-10, FR-06, FR-11, #1002, IADR-0429 決定1: 解決結果の記録。相関は承認の DecisionId・時刻は解決の時刻。
+    // 🔴 拒否は「適用なし（発注しない）」と書き、S0 へ読み替えたと読ませない。
+    [Theory]
+    [InlineData(StopLossExecutionMethod.NoProtectiveStop, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate,
+        "選択 S2 → 適用なし（発注しない）（S0 以外は moomoo SIMULATE でしか適用しない・発注先 MoomooReal・Cash）")]
+    [InlineData(StopLossExecutionMethod.NoProtectiveStop, StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.ShortSellEntry,
+        "選択 S2 → 適用 S0（空売りの新規建ては S0・発注先 MoomooReal・Cash）")]
+    [InlineData(StopLossExecutionMethod.SoftwareStop, StopLossExecutionMethod.SoftwareStop, StopLossMethodResolutionReason.AsSelected,
+        "選択 S1 → 適用 S1（選択どおり・発注先 MoomooReal・Cash）")]
+    public void T_10_1085_解決結果は承認の相関で選択と適用と理由が読める(
+        StopLossExecutionMethod selected, StopLossExecutionMethod? applied, StopLossMethodResolutionReason reason, string summary)
+    {
+        var decisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new StopLossMethodResolved(decisionId, "AAPL", Market.UnitedStates, ProductType.Cash, selected, applied, reason,
+                BrokerProvider.MoomooReal, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(StopLossMethodResolved));
+        entry.CorrelationId.Should().Be(decisionId, "承認・発注と 1 本で辿る");
+        entry.Symbol.Should().Be("AAPL");
+        entry.OccurredAt.Should().Be(StopT0);
+        entry.Summary.Should().Be("AAPL 損切りの実行機構を解決: " + summary);
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は「ブローカーへの逆指値なし・システム停止中は決済されない」が読める。
     [Fact]
     public void ソフトウェア逆指値の配置はブローカーに保護が無いことが読める()

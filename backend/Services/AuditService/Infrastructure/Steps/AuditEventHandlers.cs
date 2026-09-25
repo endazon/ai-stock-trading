@@ -546,6 +546,17 @@ internal static class ProtectiveStopWaiverSettlementRecorder
     }
 }
 
+// FR-10, FR-06, FR-11, ADR-0040 決定1, #1002, IADR-0429 決定1: 損切りの実行機構の解決結果を中央監査台帳へ記録する。
+// 日報・月報の「実際に適用された手法」の一次記録であり、報告書は GET /audit/events/by-type でこれを引く。
+public sealed class StopLossMethodResolvedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(StopLossMethodResolved message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置を中央監査台帳へ記録する。
 public sealed class SoftwareStopArmedAuditHandler(IAuditEventStore store, IClock clock)
 {

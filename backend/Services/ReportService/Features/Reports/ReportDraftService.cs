@@ -109,6 +109,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // FR-06, FR-10, ADR-0040 決定1, #823, IADR-0422 決定3: 承認時点の損切りの実行機構（コード集計値。散文に語らせない）。
             // **null（未供給）を「承認なし」へ潰さない。**
             StopLossMethods = request.StopLossMethods,
+            // FR-06, FR-10, #1002, IADR-0429 決定4: 発注執行の解決結果（コード集計の入力。**null を「記録なし」へ潰さない**）。
+            StopLossMethodResolutions = request.StopLossMethodResolutions,
             // #611, IADR-0286: **null（未供給）を 0 円へ潰さない**。未記録の約定があれば件数を明記する（黙って落とさない）。
             FxTranslation = fxTranslation.Summary,
             FxTranslationUnrecordedFillCount = fxTranslation.UnrecordedFillCount,
@@ -303,7 +305,10 @@ public sealed record DraftRequest(
     IReadOnlyList<PeriodDriftAdoption>? DriftAdoptions = null,
     // FR-06, FR-10, ADR-0040 決定1, #823, IADR-0422 決定3: 日報 §4「損切りの実行機構（当日）」の供給
     // （新規建ての承認を承認時点の手法ごとに数えたもの）。**null＝照会できていない**。既定 null で既存の呼び出しは非破壊。
-    StopLossMethodUsage? StopLossMethods = null);
+    StopLossMethodUsage? StopLossMethods = null,
+    // FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定4: 日報の「実際に適用された手法」・月報 §6 の日数ベースの内訳の供給
+    // （発注執行の解決結果）。**null＝照会できていない**。既定 null で既存の呼び出しは非破壊。
+    StopLossMethodResolutionFeed? StopLossMethodResolutions = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

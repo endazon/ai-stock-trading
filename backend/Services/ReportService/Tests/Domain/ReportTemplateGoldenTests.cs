@@ -97,6 +97,19 @@ public class ReportTemplateGoldenTests
                 new OrderIntent("TSLA", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 5, 200m),
                 5, T0, StopLossMethod: StopLossExecutionMethod.NoProtectiveStop),
         ]),
+        // T-10-1093, FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429: 発注執行の解決結果（日報の 2 行目・月報 §6 の日数）。
+        // 一致（AAPL の S0）と食い違い（TSLA の S2 が実際の発注先 moomoo REAL で拒否）の両方を置く。
+        StopLossMethodResolutions = new StopLossMethodResolutionFeed(
+        [
+            new StopLossMethodResolved(
+                new Guid("22222222-2222-2222-2222-222222222222"), "AAPL", Market.UnitedStates, ProductType.Cash,
+                StopLossExecutionMethod.BrokerStopOrder, StopLossExecutionMethod.BrokerStopOrder,
+                StopLossMethodResolutionReason.AsSelected, BrokerProvider.MoomooSimulate, T0),
+            new StopLossMethodResolved(
+                new Guid("33333333-3333-3333-3333-333333333333"), "TSLA", Market.UnitedStates, ProductType.Cash,
+                StopLossExecutionMethod.NoProtectiveStop, null,
+                StopLossMethodResolutionReason.BrokerNotMoomooSimulate, BrokerProvider.MoomooReal, T0),
+        ]),
         // FR-06, FR-16, #611, IADR-0286 決定5: **現在の供給経路（FxTranslationBuilder）が実際に組み立てる形**を置く
         // （期末に建玉が残る期間は期末レートと観測日を伴う）。
         FxTranslation = new FxTranslationSummary(-1_234m, 5, 159.38m, new DateOnly(2026, 8, 26)),

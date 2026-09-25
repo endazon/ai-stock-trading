@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using OrderExecutionService.Common.Abstractions;
@@ -57,7 +58,19 @@ public sealed class OrderExecutionAppService(
     // 明示指定があればそれを使う（テスト・差し替え用）。
     private readonly IBrokerPositionSource? _positions = brokerPositions ?? broker as IBrokerPositionSource;
 
+    // FR-10, FR-06, ADR-0040 決定1, #1002, IADR-0429 決定1: 損切りの実行機構を**解決した回に限り**、解決結果を結果へ載せる
+    // （ハンドラが StopLossMethodResolved として発行し、監査台帳を経て日報・月報の「実際に適用された手法」になる）。
+    // 解決の後の戻り口は多い（見送りの各理由・発注の結果）ため、本体の各戻り口ではなくここで 1 回だけ載せる
+    // ——戻り口を足したときに載せ忘れる形を作らない。本サービスは Singleton なので、回ごとの受け皿は引数で渡す。
     public async Task<OrderDispatchResult> ExecuteAsync(OrderApproved approved, CancellationToken cancellationToken = default)
+    {
+        var resolved = new StrongBox<StopLossMethodResolved?>();
+        var result = await ExecuteCoreAsync(approved, resolved, cancellationToken).ConfigureAwait(false);
+        return resolved.Value is { } methodResolved ? result with { MethodResolved = methodResolved } : result;
+    }
+
+    private async Task<OrderDispatchResult> ExecuteCoreAsync(
+        OrderApproved approved, StrongBox<StopLossMethodResolved?> resolved, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(approved);
 
@@ -177,7 +190,7 @@ public sealed class OrderExecutionAppService(
         // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4: 承認が運ぶ手法を解決する（Open にのみ効く）。
         // S0 は常に S0 であり、以降の分岐は 1 バイトも変わらない。
         var disposition = intent.PositionEffect == PositionEffect.Open
-            ? ResolveStopLossMethod(approved)
+            ? ResolveStopLossMethod(approved, resolved)
             : StopLossMethodDisposition.BrokerStopOrder;
         if (disposition == StopLossMethodDisposition.Refused)
         {
@@ -400,9 +413,13 @@ public sealed class OrderExecutionAppService(
 
     // FR-10, ADR-0040 決定1, #819, IADR-0342 決定4・決定7: 解決とログ。拒否は Error（実弾で S0 以外が
     // 有効＝設定側の関門が 2 方向とも破られた状態であり、放置してはならない）、未実装は Warning。
-    private StopLossMethodDisposition ResolveStopLossMethod(OrderApproved approved)
+    // #1002, IADR-0429 決定1: 解決結果（適用した手法と理由）を受け皿へ残す。発行は ExecuteAsync が結果へ載せて行う。
+    private StopLossMethodDisposition ResolveStopLossMethod(
+        OrderApproved approved, StrongBox<StopLossMethodResolved?> resolved)
     {
-        var disposition = StopLossMethodPolicy.Resolve(approved.StopLossMethod, approved.Intent, broker.Provider);
+        var resolution = StopLossMethodPolicy.ResolveWithReason(approved.StopLossMethod, approved.Intent, broker.Provider);
+        resolved.Value = StopLossMethodPolicy.ToEvent(approved, resolution, broker.Provider, clock.UtcNow);
+        var disposition = resolution.Disposition;
         switch (disposition)
         {
             case StopLossMethodDisposition.Refused:

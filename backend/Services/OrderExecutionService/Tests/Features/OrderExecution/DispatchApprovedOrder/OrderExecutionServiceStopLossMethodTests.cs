@@ -314,4 +314,81 @@ public class OrderExecutionServiceStopLossMethodTests
         second.StopWaived.Should().BeNull();
         second.Executed.Should().NotBeNull();
     }
+
+    // ---- T-10-1081, FR-10, FR-06, #1002, IADR-0429 決定1: 解決結果を結果へ載せる ----------------------------------
+
+    public static TheoryData<BrokerProvider, OrderIntent, StopLossExecutionMethod, StopLossExecutionMethod?, StopLossMethodResolutionReason>
+        Resolutions() => new()
+        {
+            // 一致（S0・S2）。
+            { BrokerProvider.MoomooSimulate, LongEntry(), StopLossExecutionMethod.BrokerStopOrder,
+                StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.AsSelected },
+            { BrokerProvider.MoomooSimulate, LongEntry(), StopLossExecutionMethod.NoProtectiveStop,
+                StopLossExecutionMethod.NoProtectiveStop, StopLossMethodResolutionReason.AsSelected },
+            // 食い違い（拒否＝見送り・空売り・未知）。
+            { BrokerProvider.MoomooReal, LongEntry(), StopLossExecutionMethod.NoProtectiveStop,
+                null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate },
+            { BrokerProvider.InternalPaper, LongEntry(), StopLossExecutionMethod.SoftwareStop,
+                null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate },
+            { BrokerProvider.MoomooSimulate, ShortEntry(), StopLossExecutionMethod.NoProtectiveStop,
+                StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.ShortSellEntry },
+            { BrokerProvider.MoomooSimulate, LongEntry(), (StopLossExecutionMethod)9,
+                StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.UnknownMethod },
+        };
+
+    // 発注した回にも、見送った回（拒否）にも、承認ごとに 1 件の解決結果が載る。値は承認と実際のアダプタから作る。
+    [Theory]
+    [MemberData(nameof(Resolutions))]
+    public async Task T_10_1081_新規建ての承認を処理すると解決結果が載る(
+        BrokerProvider provider, OrderIntent entry, StopLossExecutionMethod selected,
+        StopLossExecutionMethod? applied, StopLossMethodResolutionReason reason)
+    {
+        var broker = new ScriptedBroker(provider) { RejectStop = false };
+        var (service, _, _, _) = NewService(broker);
+        var approved = Approved(entry, selected);
+
+        var result = await service.ExecuteAsync(approved);
+
+        result.MethodResolved.Should().Be(new StopLossMethodResolved(
+            approved.DecisionId, entry.Symbol, entry.Market, entry.ProductType, selected, applied, reason, provider, Now));
+        (result.Executed is null).Should().Be(applied is null, "拒否だけが見送りになる（解決結果はどちらでも載る）");
+    }
+
+    // 解決の後に別の理由で見送った回でも、解決結果は事実として載る（逆指値価格が無い新規建て）。
+    [Fact]
+    public async Task T_10_1081_解決の後の見送りでも解決結果は載る()
+    {
+        var broker = new ScriptedBroker(BrokerProvider.MoomooSimulate);
+        var (service, _, _, _) = NewService(broker);
+        var approved = Approved(LongEntry() with { StopLossPrice = null }, StopLossExecutionMethod.NoProtectiveStop);
+
+        var result = await service.ExecuteAsync(approved);
+
+        result.Forgone!.Reason.Should().Be(OrderDispatchForgoneReason.StopLossPriceMissing);
+        result.MethodResolved!.AppliedMethod.Should().Be(StopLossExecutionMethod.NoProtectiveStop);
+    }
+
+    // 🔴 否定形: 解決しない回（手仕舞い・完了済みの再配送・見送り済みの再配送）には載らない（解決結果を二重に出さない）。
+    [Fact]
+    public async Task T_10_1081_手仕舞いと再配送には解決結果が載らない()
+    {
+        var broker = new ScriptedBroker(BrokerProvider.MoomooSimulate);
+        var (service, _, _, _) = NewService(broker);
+        var close = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 10, 1_000m, PositionEffect.Close);
+        (await service.ExecuteAsync(Approved(close, StopLossExecutionMethod.NoProtectiveStop)))
+            .MethodResolved.Should().BeNull("手法は新規建てにしか効かない");
+
+        var entry = Approved(LongEntry(), StopLossExecutionMethod.NoProtectiveStop);
+        (await service.ExecuteAsync(entry)).MethodResolved.Should().NotBeNull();
+        (await service.ExecuteAsync(entry)).MethodResolved.Should().BeNull("完了済みの再配送は解決しない");
+
+        var real = new ScriptedBroker(BrokerProvider.MoomooReal);
+        var (refusing, _, _, _) = NewService(real);
+        var refused = Approved(LongEntry(), StopLossExecutionMethod.NoProtectiveStop);
+        (await refusing.ExecuteAsync(refused)).MethodResolved.Should().NotBeNull();
+        var replay = await refusing.ExecuteAsync(refused);
+        replay.ForgoneReplaySuppressed.Should().BeTrue();
+        replay.MethodResolved.Should().BeNull("見送り済みの再配送は解決しない");
+    }
 }

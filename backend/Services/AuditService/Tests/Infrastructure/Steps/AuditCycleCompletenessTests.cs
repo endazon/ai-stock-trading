@@ -297,6 +297,10 @@ public class AuditCycleCompletenessTests
             new SoftwareStopExecuted(
                 decisionId, "AAPL", Market.UnitedStates, SoftwareStopOutcome.ClosePlaced, 10, 950m, 940m, 1,
                 Guid.NewGuid(), "CLOSE-1", Intent(), t),
+            // FR-10, #1002, IADR-0429 決定1: 損切りの実行機構の解決結果。
+            new StopLossMethodResolved(
+                decisionId, "AAPL", Market.UnitedStates, ProductType.Cash, StopLossExecutionMethod.NoProtectiveStop,
+                StopLossExecutionMethod.NoProtectiveStop, StopLossMethodResolutionReason.AsSelected, BrokerProvider.MoomooSimulate, t),
             new ScreeningContextReduced(
                 ["AAPL", "MSFT"], 2, Split: true, DroppedRagCount: 1, DroppedNewsCount: 2,
                 UnresolvableOverflow: false, BudgetChars: 8_000, t),

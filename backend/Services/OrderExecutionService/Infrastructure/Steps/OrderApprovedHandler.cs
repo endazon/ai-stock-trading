@@ -41,6 +41,12 @@ public sealed class OrderApprovedHandler(
         if (result.ForgoneReplaySuppressed)
             return;
 
+        // FR-10, FR-06, FR-11, ADR-0040 決定1, #1002, IADR-0429 決定1: 損切りの実行機構の解決結果（承認の手法 → 実際に適用した手法）。
+        // 監査台帳へ記録され、日報・月報の「実際に適用された手法」の一次記録になる。**発注・見送りの結果より先に出す**
+        // ——解決はそれらの手前の事実であり、見送り（下の return）の経路でも失わない。
+        if (result.MethodResolved is { } methodResolved)
+            await bus.PublishAsync(methodResolved).ConfigureAwait(false);
+
         // 🔴 FR-10, FR-05, FR-09, FR-11, ADR-0016, #864, IADR-0355 決定5: 決済をブローカーの実建玉と突き合わせて
         // 見つけた乖離は、**既存の乖離検知（IADR-0118）と同じイベント**で監査台帳と Critical 通知へ流す
         // （新しい通知経路を作らない）。見送りにも、数量を縮めた発注にも付き得るため**先に**出す

@@ -502,8 +502,13 @@ public static class ReportRenderer
         AppendMarginReductions(sb, view);
         AppendFxSourceStatus(sb, view);
         AppendBuyInInferences(sb, view);
+        // #1002, IADR-0429 決定6: 月報は §6 の本文（§6.1 より前）に置く（計画の月報 §6 の並び）。日報は §4 の末尾（計画の日報 §4 の並び）。
+        // 週報には出さない（planning#644 の裁定 2）。
+        if (view.Kind == ReportKind.Monthly)
+            AppendStopLossMethodsMonthly(sb, view);
         AppendShortSelling(sb, view);
-        AppendStopLossMethods(sb, view);
+        if (view.Kind == ReportKind.Daily)
+            AppendStopLossMethodsDaily(sb, view);
         // ADR-0030 決定4: 「当月の OpenD 稼働率分布」は §6.2 のまま。**親節へ昇格させない**——
         // 稼働率は取引システムが動く前提そのものの成否であり、親節（前提条件の見直し）の主題に属する。
         // **親節から切り離すと、稼働率の数字を見て前提を見直すという読みの筋が切れる。**
@@ -973,38 +978,39 @@ public static class ReportRenderer
         }
     }
 
-    // FR-06, FR-10, FR-12, ADR-0040 決定1, #823, IADR-0422 決定3: **損切りの実行機構（当日）**。
+    // FR-06, FR-10, FR-12, ADR-0040 決定1, #823, IADR-0422 決定3, #1002, IADR-0429 決定6: **損切りの実行機構（当日）**。
     //
-    // 計画（ADR-0040 決定1）は「どの手法を選んでいるかは、監査ログ・SC-03・日報に出す」と定めるが、
-    // 日報テンプレート（04_report-templates）はまだ欄を持たない。**§4 の既存の書式**（`### …（当日）` の子節と
-    // `- **項目**: 値` の箇条書き）に合わせて置く（IADR-0422 決定3）。
+    // 計画 04_report-templates 日報 §4（2026-09-25 追加）: 「選ばれていた手法（承認時点）」と「実際に適用された手法
+    // （発注執行の解決結果）」を 2 行で並べ、食い違う日は理由を併記する。数えるのは当日の新規建ての承認だけ（同一の判断 ID は 1 件）。
     //
-    // 🔴 **数えるのは承認時点の手法**（承認が運ぶ値）であり、日報を作る時点の設定値ではない。
-    // 🔴 **照会できなかった場合は「なし」と書かない**——新規建てが無かったのと同じに読めるため区別する。
-    // 🔴 **承認 0 件は「なし」と明記する**（空欄と「なし」を区別する。§4 の他の子節と同じ規律）。
-    private static void AppendStopLossMethods(StringBuilder sb, ReportView view)
+    // 🔴 **1 行目は承認時点の手法**（承認が運ぶ値）であり、日報を作る時点の設定値ではない（IADR-0422）。
+    // 🔴 **2 行目は同じ承認の解決結果**を DecisionId で引き当てたもの（解決した時刻の日付では数えない。IADR-0429 決定3）。
+    // 🔴 **照会できなかった場合は「なし」と書かない**（どちらの行も）。承認 0 件は「なし」と明記する。
+    // 🔴 **解決結果の記録が見つからない承認は、一致とも食い違いとも書かない**（件数を別に書く）。
+    private static void AppendStopLossMethodsDaily(StringBuilder sb, ReportView view)
     {
-        if (view.Kind != ReportKind.Daily)
-            return; // 計画が求めるのは日報である（求められていない節を勝手に増やさない）。
-
         sb.Append("\n### 損切りの実行機構（当日）\n\n");
 
         if (view.StopLossMethods is not { } usage)
         {
+            // 1 行目の文言は #823 のまま変えない。
             sb.Append("- **承認の記録を照会できませんでした（要確認）**: 「承認なし」とは区別しています。\n");
+            sb.Append("- **実際に適用された手法（発注執行の解決結果）**: 照合できません"
+                + "（承認の記録を照会できないため、当日の対象を決められません。要確認）\n");
+            AppendStopLossMethodsDailyNote(sb);
             return;
         }
 
         if (usage.TotalApprovals == 0)
         {
-            sb.Append("- **新規建ての承認（承認時点の手法）**: なし（当日の新規建ての承認は 0 件）\n");
+            sb.Append("- **選ばれていた手法（承認時点）**: なし（当日の新規建ての承認は 0 件）\n");
         }
         else
         {
             var breakdown = string.Join(" / ", usage.Counts.Select(c =>
                 string.Create(CultureInfo.InvariantCulture, $"{StopLossMethodUsage.Label(c.Method)} {c.Count} 件")));
             sb.Append(CultureInfo.InvariantCulture,
-                $"- **新規建ての承認（承認時点の手法）**: {usage.TotalApprovals} 件 — {breakdown}\n");
+                $"- **選ばれていた手法（承認時点）**: 計 {usage.TotalApprovals} 件 — {breakdown}\n");
         }
 
         // 🔴 復元できなかった記録は件数に含めていない。**0 件のときは出さない**（異常時だけの注記）。
@@ -1014,10 +1020,171 @@ public static class ReportRenderer
                 $"- **本文を復元できなかった承認の記録: {usage.UnreadableCount} 件**（上の件数に含めていません）\n");
         }
 
-        // 読み違えを防ぐ固定の注記（FR-10 の機能仕様書の既存の記述の要約）。
-        sb.Append("- 承認の件数であり、発注・約定の件数ではありません。"
-            + "S0 以外の手法が効くのは moomoo SIMULATE の新規建てだけです"
-            + "（実際の発注先が moomoo SIMULATE でなければ発注されず見送られ、空売りの新規建ては S0 で扱われます）。\n");
+        if (view.StopLossMethodResolutions is not { } feed)
+        {
+            sb.Append("- **発注執行の解決結果を照会できませんでした（要確認）**: 「なし」とは区別しています"
+                + "（選択と実際の食い違いも判定できていません）。\n");
+            AppendStopLossMethodsDailyNote(sb);
+            return;
+        }
+
+        var comparison = StopLossMethodComparison.From(usage, feed);
+        if (usage.TotalApprovals == 0)
+        {
+            sb.Append("- **実際に適用された手法（発注執行の解決結果）**: なし（当日の新規建ての承認は 0 件）\n");
+        }
+        else
+        {
+            AppendAppliedRow(sb, comparison);
+            AppendDisagreementRow(sb, comparison);
+        }
+
+        if (comparison.UnresolvedCount > 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **解決結果の記録が見つからない承認: {comparison.UnresolvedCount} 件**"
+                + $"（「実際に適用された手法」と食い違いのどちらにも数えていません。発注執行が処理を終えていない・"
+                + $"処理が失敗した・監査台帳が記録していない、のいずれかです。要確認）\n");
+        }
+
+        if (comparison.UnreadableResolutionCount > 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **本文を復元できなかった解決結果の記録: {comparison.UnreadableResolutionCount} 件**（照合に使っていません）\n");
+        }
+
+        AppendStopLossMethodsDailyNote(sb);
+    }
+
+    private static void AppendAppliedRow(StringBuilder sb, StopLossMethodComparison comparison)
+    {
+        if (comparison.ResolvedCount == 0)
+        {
+            // 🔴 「なし」と書かない——承認はあるのに解決結果が 1 件も見つからない（下の件数の行が理由を書く）。
+            sb.Append("- **実際に適用された手法（発注執行の解決結果）**: 計 0 件（解決結果の記録が見つかった承認がありません）\n");
+            return;
+        }
+
+        var breakdown = string.Join(" / ", comparison.AppliedCounts.Select(c =>
+            string.Create(CultureInfo.InvariantCulture, $"{StopLossMethodComparison.AppliedLabel(c.Applied)} {c.Count} 件")));
+        sb.Append(CultureInfo.InvariantCulture,
+            $"- **実際に適用された手法（発注執行の解決結果）**: 計 {comparison.ResolvedCount} 件 — {breakdown}\n");
+    }
+
+    private static void AppendDisagreementRow(StringBuilder sb, StopLossMethodComparison comparison)
+    {
+        if (comparison.DisagreementCount > 0)
+        {
+            var details = string.Join(" / ", comparison.Disagreements.Select(d => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{StopLossMethodUsage.Label(d.Selected)} → {StopLossMethodComparison.AppliedLabel(d.Applied)} {d.Count} 件"
+                + $"（理由: {StopLossMethodComparison.ReasonLabel(d.Reason, d.Provider)}）")));
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **選択と実際の食い違い: {comparison.DisagreementCount} 件** — {details}\n");
+            return;
+        }
+
+        if (comparison.ResolvedCount == 0)
+        {
+            sb.Append("- **選択と実際の食い違い**: 判定できていません（解決結果の記録が見つかった承認がありません）\n");
+            return;
+        }
+
+        sb.Append(comparison.UnresolvedCount == 0
+            ? "- **選択と実際の食い違い**: なし\n"
+            : "- **選択と実際の食い違い**: 照合できた承認の範囲ではなし（解決結果の記録が見つからない承認は判定できていません）\n");
+    }
+
+    // 読み違えを防ぐ固定の注記（#823 の注記を 2 行並記に合わせて改めた）。
+    private static void AppendStopLossMethodsDailyNote(StringBuilder sb) =>
+        sb.Append("- 件数は当日（JST の暦日）の新規建ての承認の件数であり、発注・約定の件数ではありません。"
+            + "実際に適用された手法は、その承認を発注執行が解決した結果です（解決の後の見送りや約定の有無は反映しません）。"
+            + "S0 以外の手法が効くのは moomoo SIMULATE の新規建てだけです。\n");
+
+    // FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定6: **損切りの実行機構（当月）**（月報 §6）。
+    //
+    // 計画 04_report-templates 月報 §6（2026-09-25 追加）: 「当月の損切りの実行機構: <S0 n 日 / S2 m 日>／選択と実際が
+    // 食い違った日数: <n 日>」。**月報には日数ベースの内訳と食い違った日数だけを置き、個々の日は日報に委ねる**
+    // （維持率割れによる自動縮小と同じ扱い）。§5 の三者比較の SIMULATE 列を、S0 で走った日と S2 で走った日に分けて読むための行である。
+    //
+    // 🔴 **日は日報と同じ JST の暦日**（承認の時刻）。1 日に複数の手法が適用された日は各手法に重複して数え、その日数を併記する。
+    // 🔴 **照会できなかった場合は「なし」と書かない。** 承認が無い月は「なし」と明記する。
+    private static void AppendStopLossMethodsMonthly(StringBuilder sb, ReportView view)
+    {
+        sb.Append("\n### 損切りの実行機構（当月）\n\n");
+
+        if (view.StopLossMethods is not { } usage)
+        {
+            sb.Append("- **承認の記録を照会できませんでした（要確認）**: 「承認なし」とは区別しています"
+                + "（手法の日数と食い違った日数を数えられていません）。\n");
+            return;
+        }
+
+        if (view.StopLossMethodResolutions is not { } feed)
+        {
+            var days = usage.Approvals.Select(a => StopLossMethodComparison.JstDayOf(a.ApprovedAt)).Distinct().Count();
+            sb.Append(usage.TotalApprovals == 0
+                ? "- **新規建ての承認があった日**: なし（当月の新規建ての承認は 0 件）\n"
+                : string.Create(CultureInfo.InvariantCulture, $"- **新規建ての承認があった日**: {days} 日\n"));
+            sb.Append("- **発注執行の解決結果を照会できませんでした（要確認）**: 「なし」とは区別しています"
+                + "（実際に適用された手法の日数と食い違った日数を数えられていません）。\n");
+            AppendUnreadableApprovals(sb, usage);
+            return;
+        }
+
+        var comparison = StopLossMethodComparison.From(usage, feed);
+        if (usage.TotalApprovals == 0)
+        {
+            sb.Append("- **当月の損切りの実行機構**: なし（当月の新規建ての承認は 0 件）\n");
+        }
+        else
+        {
+            if (comparison.ResolvedCount == 0)
+            {
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"- **実際に適用された手法の日数**: 数えられません（解決結果の記録が見つかった承認がありません。"
+                    + $"新規建ての承認があった日 {comparison.ApprovalDays} 日）\n");
+            }
+            else
+            {
+                var breakdown = string.Join(" / ", comparison.AppliedDays.Select(d => string.Create(
+                    CultureInfo.InvariantCulture, $"{StopLossMethodComparison.AppliedLabel(d.Applied)} {d.Days} 日")));
+                var mixed = comparison.MixedDays > 0
+                    ? string.Create(CultureInfo.InvariantCulture,
+                        $"。複数の手法が適用された日 {comparison.MixedDays} 日は各手法に重複して数えています")
+                    : string.Empty;
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"- **実際に適用された手法の日数**: {breakdown}（新規建ての承認があった日 {comparison.ApprovalDays} 日{mixed}）\n");
+            }
+
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **選択と実際が食い違った日数: {comparison.DisagreementDays} 日**（個々の日の内訳と理由は該当日報を参照）\n");
+
+            if (comparison.UnresolvedDays > 0)
+            {
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"- **解決結果の記録が見つからない承認を含む日: {comparison.UnresolvedDays} 日**"
+                    + $"（上の日数は照合できた承認だけで数えています。その日の食い違いは判定しきれていません。要確認）\n");
+            }
+        }
+
+        AppendUnreadableApprovals(sb, usage);
+        if (comparison.UnreadableResolutionCount > 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **本文を復元できなかった解決結果の記録: {comparison.UnreadableResolutionCount} 件**（照合に使っていません）\n");
+        }
+
+        sb.Append("- 日は日報と同じ JST の暦日（承認の時刻）で数えています。\n");
+    }
+
+    private static void AppendUnreadableApprovals(StringBuilder sb, StopLossMethodUsage usage)
+    {
+        if (usage.UnreadableCount > 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **本文を復元できなかった承認の記録: {usage.UnreadableCount} 件**（上の日数に含めていません）\n");
+        }
     }
 
     // FR-06, FR-10, FR-20, #338, IADR-0253, 04_report-templates 月報 §6 / 04_workflows/03 月報 3:

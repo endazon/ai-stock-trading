@@ -106,8 +106,13 @@ public class ReportAutoGeneratorDependencyRetryTests
     private sealed class SuppliedSources :
         IBuyInInferenceRecordSource, IFxSourceStatusSource, ILlmUsageRecordSource, IBorrowFeeRecordSource,
         ITradeRationaleSource, IOpenDUptimeSource, IPeriodEndFxRateSource, IStageProgressSource,
-        IPeriodDriftAdoptionSource, IStopLossMethodUsageSource
+        IPeriodDriftAdoptionSource, IStopLossMethodUsageSource, IStopLossMethodResolutionSource
     {
+        // #1002: 日報・月報の損切りの実行機構（発注執行の解決結果）。空の記録（null＝未供給ではない）。
+        public Task<StopLossMethodResolutionFeed?> GetResolutionsAsync(
+            DateOnly from, DateOnly to, CancellationToken cancellationToken = default) =>
+            Task.FromResult<StopLossMethodResolutionFeed?>(new StopLossMethodResolutionFeed([]));
+
         // #823: 日報 §4 の損切りの実行機構。空の集計＝承認なし（null＝未供給ではない）。
         Task<StopLossMethodUsage?> IStopLossMethodUsageSource.GetUsageAsync(
             DateOnly from, DateOnly to, CancellationToken cancellationToken) =>
@@ -236,7 +241,8 @@ public class ReportAutoGeneratorDependencyRetryTests
                 dependencyProbe: Probe,
                 deferrals: Deferrals,
                 driftAdoptionSource: supplied,
-                stopLossMethodUsageSource: supplied);
+                stopLossMethodUsageSource: supplied,
+                stopLossMethodResolutionSource: supplied);
 
             return generator.RunOnceAsync();
         }
