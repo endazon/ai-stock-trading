@@ -56,11 +56,11 @@ public sealed record RevisePolicyRequest(string? Instruction, string? PeriodKey 
 
 // FR-07, #1016, IADR-0431 決定 5: 改訂の応答（200 のときだけ）。
 // 🔴 **文字列は発行側で無害化して返す**（IADR-0116 決定3 と同じ位置。Discord へ投稿される本文には LLM の出力が入る）。
-// 方針・説明・理由は ReportSummarySanitizer（制御文字・メンション構文・境界語）を通し、さらに Discord の
-// マスクリンク `[表示](URL)` を崩す（表示文と行き先を食い違わせない。素の URL は URL のまま見えるので崩さない）。
-// 銘柄は検証済みの書式。
-// 🔴 **方針は切り詰めない。** 利用者が確定するのはこの全文である（ADR-0003）。長さの上限は検証（2000 文字）が持ち、
-// ここでの無害化は幅ゼロ空白の挿入と空行の畳み込みだけで、読める内容を変えない。
+// 方針・説明・理由は、Discord のメンション構文とマスクリンク `[表示](URL)` を**幅ゼロ空白の挿入だけ**で崩す
+// （表示文と行き先を食い違わせない。素の URL は URL のまま見えるので崩さない）。銘柄は検証済みの書式。
+// 🔴 **表示する方針は、確定される原文と幅ゼロ空白の挿入を除いて同一である（ADR-0003）。** 切り詰めない・空行を畳まない・
+// 文字を落とさない。制御文字の除去と前後の空白の除去は検証（PolicyRevisionProposalParser）が保存の前に済ませており、
+// 収集情報の境界語を含む出力は検証が案ごと捨てる。長さの上限は検証（2000 文字）が持つ。
 public sealed record PolicyRevisionResponse(
     string PeriodKey,
     int Version,
@@ -88,9 +88,10 @@ public sealed record PolicyRevisionResponse(
             proposal.Rationale is { } rationale ? Display(rationale) : null);
     }
 
-    // 投稿向けの無害化（切り詰めない。上限は検証が持つ）。
-    internal static string Display(string text) =>
-        ReportSummarySanitizer.Sanitize(text, int.MaxValue)
+    // 投稿向けの無害化（幅ゼロ空白の挿入だけ。切り詰めない・他の文字を変えない）。
+    // NFR, IADR-0420: 受け手の契約テストが「表示から幅ゼロ空白を除くと保存と一致する」ことを送り手のこの関数で確かめるため public。
+    public static string Display(string text) =>
+        ReportSummarySanitizer.BreakMentions(text)
             .Replace("](", "]" + ReportSummarySanitizer.MentionBreaker + "(", StringComparison.Ordinal);
 }
 

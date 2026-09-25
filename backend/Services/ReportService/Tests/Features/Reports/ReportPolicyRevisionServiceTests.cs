@@ -349,6 +349,23 @@ public class ReportPolicyRevisionServiceTests
         inner.Get(TodayKey)!.Report.PolicySummary.Should().Be("押し目買いを優先する");
     }
 
+    // T-10-1355（再監査 nit 4）: 日付の境界は JST。日曜 23:30 UTC は月曜 08:30 JST（営業日）→ 月曜の日報は作らない。
+    // 日曜 14:30 UTC は日曜 23:30 JST（休場日）→ 日曜の日報を作れる。UTC の日付で判定すると逆になる。
+    [Fact]
+    public async Task 日付の境界はJSTで判定する()
+    {
+        var (mondayJst, store1, reviser1) = Create(now: new DateTimeOffset(2026, 9, 27, 23, 30, 0, TimeSpan.Zero));
+        SeedConfirmedDaily(store1, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        var refused = await mondayJst.ReviseAsync(null, "積極的に", "developer");
+        (refused.Status, refused.PeriodKey).Should().Be((PolicyRevisionStatus.AutoDailyPending, "daily-2026-09-28"));
+        reviser1.Calls.Should().BeEmpty();
+
+        var (sundayJst, store2, _) = Create(now: new DateTimeOffset(2026, 9, 27, 14, 30, 0, TimeSpan.Zero));
+        SeedConfirmedDaily(store2, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        var created = await sundayJst.ReviseAsync(null, "積極的に", "developer");
+        (created.Status, created.PeriodKey, created.Created).Should().Be((PolicyRevisionStatus.Proposed, "daily-2026-09-27", true));
+    }
+
     private sealed class PresentFailingStore(InMemoryReportStore inner) : IReportStore
     {
         public VersionedReport? Get(string periodKey) => inner.Get(periodKey);

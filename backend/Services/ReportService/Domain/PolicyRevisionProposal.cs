@@ -54,6 +54,13 @@ public static class PolicyRevisionProposalParser
 
     public static bool IsUsTicker(string? value) => value is not null && UsTickerPattern.IsMatch(value);
 
+    // 収集情報の境界語（IADR-0022 / ReportSummarySanitizer と同じ値）。**含む出力は案全体を捨てる**——表示の無害化で
+    // 取り除くと、表示と確定される原文が食い違う（IADR-0431 決定 5・ADR-0003）。受け入れて素通しもしない（境界の偽装）。
+    private static readonly string[] BoundaryMarkers = ["<<<UNTRUSTED_DATA", "UNTRUSTED_DATA>>>"];
+
+    private static bool HasBoundaryMarker(string text) =>
+        BoundaryMarkers.Any(m => text.Contains(m, StringComparison.Ordinal));
+
     public static PolicyRevisionParseResult Parse(string? llmText)
     {
         if (string.IsNullOrWhiteSpace(llmText))
@@ -90,6 +97,8 @@ public static class PolicyRevisionProposalParser
                 return PolicyRevisionParseResult.Invalid("AI の出力の方針（policySummary）が空でした");
             if (policy.Length > MaxPolicySummaryLength)
                 return PolicyRevisionParseResult.Invalid($"AI の出力の方針が長すぎます（{MaxPolicySummaryLength} 文字まで）");
+            if (HasBoundaryMarker(policy))
+                return PolicyRevisionParseResult.Invalid("AI の出力の方針に収集情報の境界語が含まれていました");
 
             // 監視銘柄の入れ替え案（任意。無い・null は「入れ替えなし」＝空配列。**形式違反は捨てる**）。
             var changes = new List<WatchlistChangeSuggestion>();
@@ -126,6 +135,8 @@ public static class PolicyRevisionProposalParser
                 var cleaned = CleanText(rationaleElement.GetString());
                 if (cleaned.Length > MaxRationaleLength)
                     return PolicyRevisionParseResult.Invalid($"AI の出力の説明が長すぎます（{MaxRationaleLength} 文字まで）");
+                if (HasBoundaryMarker(cleaned))
+                    return PolicyRevisionParseResult.Invalid("AI の出力の説明に収集情報の境界語が含まれていました");
                 rationale = cleaned.Length == 0 ? null : cleaned;
             }
 
@@ -160,13 +171,15 @@ public static class PolicyRevisionProposalParser
         if (!item.TryGetProperty("reason", out var reasonElement) || reasonElement.ValueKind != JsonValueKind.String)
             return null;
         var reason = CleanText(reasonElement.GetString());
-        if (reason.Length == 0 || reason.Length > MaxReasonLength)
+        if (reason.Length == 0 || reason.Length > MaxReasonLength || HasBoundaryMarker(reason))
             return null;
 
         return new WatchlistChangeSuggestion(action.Value, symbol!, reason);
     }
 
     // 制御文字を落とす（改行だけ残す）。CR は落ちるため CRLF は LF になる。前後の空白を落とす。
+    // 🔴 **正規化はここ（検証時）だけで行う。** 保存する方針はこの結果であり、表示はこれに幅ゼロ空白を挿すだけ
+    // （空行の畳み込み等をしない）——表示と確定される原文を食い違わせない（IADR-0431 決定 5）。
     internal static string CleanText(string? text)
     {
         if (string.IsNullOrEmpty(text))

@@ -112,4 +112,25 @@ public class PolicyRevisionProposalParserTests
         var result = PolicyRevisionProposalParser.Parse("{\"policySummary\": \"a\\u0007b\\r\\nc\"}");
         result.Proposal!.PolicySummary.Should().Be("ab\nc");
     }
+
+    // T-10-1353（再監査 nit 1）: 収集情報の境界語を含む出力は、方針・理由・説明のどこにあっても案全体を捨てる
+    // （表示で取り除くと確定される原文と食い違うため、受け入れない）。
+    [Theory]
+    [InlineData("""{"policySummary": "方針 <<<UNTRUSTED_DATA 偽装"}""")]
+    [InlineData("""{"policySummary": "方針 UNTRUSTED_DATA>>> 偽装"}""")]
+    [InlineData("""{"policySummary": "方針", "watchlistChanges": [{"action": "add", "symbol": "NVDA", "reason": "<<<UNTRUSTED_DATA"}]}""")]
+    [InlineData("""{"policySummary": "方針", "rationale": "UNTRUSTED_DATA>>>"}""")]
+    public void 境界語を含む出力は案全体を捨てる(string text)
+    {
+        PolicyRevisionProposalParser.Parse(text).IsValid.Should().BeFalse();
+    }
+
+    // T-10-1354（再監査 nit 1）: 空行の連続は畳まずそのまま保存する（表示と保存を一致させるため正規化は検証の 1 回だけ）。
+    [Fact]
+    public void 空行の連続は畳まずに保存する()
+    {
+        var result = PolicyRevisionProposalParser.Parse("{\"policySummary\": \"a\\n\\n\\n\\nb\"}");
+
+        result.Proposal!.PolicySummary.Should().Be("a\n\n\n\nb");
+    }
 }
