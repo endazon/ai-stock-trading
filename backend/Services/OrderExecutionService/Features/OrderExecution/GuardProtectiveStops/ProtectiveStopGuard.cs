@@ -656,7 +656,8 @@ public sealed class ProtectiveStopGuard(
 
         /// <summary>
         /// #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: 成行手仕舞いも<b>確実に未発注</b>で失敗した
-        /// （または発注先に成行の能力が無い。Remediation=None）。記録は Active のまま次の巡回で撃ち直す。
+        /// （または発注先に成行の能力が無い。Remediation=None）。記録は Active のまま次の巡回で改めて評価する
+        /// （成行を送れる発注先なら撃ち直す。能力が無ければ撃てない——#948, IADR-0369 2026-09-25 追記）。
         /// <b>ClosedOut（解消した）ではない</b>——手仕舞えていない建玉を「手仕舞い」の件数に入れない。
         /// </summary>
         CloseFailed,

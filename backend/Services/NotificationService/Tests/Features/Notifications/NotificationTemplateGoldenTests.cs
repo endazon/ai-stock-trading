@@ -427,7 +427,8 @@ public class NotificationTemplateGoldenTests
                 Id, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.RejectedAtEntry,
                 ProtectiveStopRemediation.None, 10, null, null, T),
             new NotificationMessage(
-                "リスク統制: 保護逆指値が成立せず建玉を解消",
+                // T-10-854, #948: 件名も「解消した」と読ませない（本文と食い違わない）。
+                "リスク統制: 保護逆指値が成立せず、建玉の解消にも失敗",
                 "AAPL/UnitedStates 数量10: 逆指値がエントリー時に未受理のため、"
                     + "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。"
                     + "直ちに確認してください。**",
