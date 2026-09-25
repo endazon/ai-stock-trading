@@ -75,7 +75,7 @@ public class OperationReadContractTests
         var result = await controller.GetStatusAsync();
 
         result.Succeeded.Should().BeTrue();
-        result.Message.Should().Contain("現段階: Stage 2（少額実弾）").And.Contain("モード: 実弾")
+        result.Message.Should().Contain("現段階: Stage 2（少額実弾）").And.Contain("モード: moomoo REAL（実弾）")
             .And.Contain("実効スリッページ・費用が想定超過").And.Contain("#1 昇格 Stage 1（SIMULATE）→Stage 2（少額実弾）");
         result.Stage1Warning.Should().Contain("50 件");
     }
