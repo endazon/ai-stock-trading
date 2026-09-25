@@ -23,6 +23,10 @@
          送り手の本物の型（ConfirmedDailyPolicy）を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
          （AiStockTrading.IntegrationTests と同じ別名）。 -->
     <ProjectReference Include="..\..\ReportService\ReportService.csproj" Aliases="ReportWorker" />
+    <!-- FR-02, FR-13, #957, IADR-0408（2026-09-25 追記）: 市場監視の監視銘柄（GET /monitor/watchlist）の契約テスト（T-10-930）が
+         送り手の本物の型（MonitoredSymbol）を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
+         （別名は RiskManagementWorker と同じ命名規則）。 -->
+    <ProjectReference Include="..\..\MarketMonitorService\MarketMonitorService.csproj" Aliases="MarketMonitorWorker" />
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、
          共通配線ヘルパを持つ shim をテストからのみ参照する（ハンドラのランタイム生成 RuntimeCompilation も同経路で入る）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
