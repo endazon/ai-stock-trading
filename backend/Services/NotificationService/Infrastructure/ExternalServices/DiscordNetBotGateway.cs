@@ -412,9 +412,21 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
 
         var result = await _policyHandler.HandleAsync(context, instruction).ConfigureAwait(false);
-        if (!result.WasExecuted || result.PeriodKey is not { } key || result.Version is not { } version)
+        if (!result.WasExecuted)
         {
             await command.FollowupTextAsync(PolicyResponseTextOf(result)).ConfigureAwait(false);
+            return;
+        }
+
+        // 🔴 ADR-0003: 方針の全文（分割あり）を**順に送り終えてから**、最後の通にだけ確認ボタンを付ける。
+        // 途中の通が送れなければ例外で抜け、ボタンは出ない（見ていない方針を確定させない）。
+        for (var i = 0; i < result.Messages.Count - 1; i++)
+            await command.FollowupTextAsync(result.Messages[i]).ConfigureAwait(false);
+
+        var last = result.Messages[^1];
+        if (result.PeriodKey is not { } key || result.Version is not { } version)
+        {
+            await command.FollowupTextAsync(last).ConfigureAwait(false);
             return;
         }
 
@@ -424,12 +436,10 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             // 確定は取引方針を有効化する破壊的操作（ADR-0003）のため危険色。
             ButtonStyle.Danger);
 
-        await command.FollowupTextAsync(
-            result.Message + PolicyApprovePrompt,
-            builder.Build()).ConfigureAwait(false);
+        await command.FollowupTextAsync(last + PolicyApprovePrompt, builder.Build()).ConfigureAwait(false);
     }
 
-    // #1016: 確認ボタンの前置き（案の本文〔最大 1800 文字〕の後に付けて 2000 文字に収まる長さ）。
+    // #1016: 確認ボタンの前置き（最後の通〔最大 1800 文字〕の後に付けて 2000 文字に収まる長さ。PolicyRevisionMessage.MaxLength）。
     private const string PolicyApprovePrompt =
         "\n\n確定すると、この版の方針が取引に適用されます。やめる場合は押さずに置くか、/policy で指示し直してください。";
 

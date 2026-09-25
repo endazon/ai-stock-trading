@@ -37,6 +37,13 @@ public sealed class PolicyRevisionCommandHandler(
 
         // 閂2: コマンド解析。`/policy` / `/policy <periodKey>` 以外は実行しない。
         var command = BotCommandParser.Parse(context.RawCommand);
+        if (command.Kind != BotCommandKind.PolicyRevise && IsPolicyCommand(context.RawCommand))
+        {
+            // `/policy` だが period が書式外（空白・記号・長すぎ）。許可の問題ではないので、形式を案内する。
+            logger.LogWarning("方針の改訂の会話キーが書式外のため拒否しました（Actor={Actor}）。", auth.Actor);
+            return PolicyRevisionCommandResult.Failed("会話キー（period）の形式が不正です（英数字とハイフンのみ・例: daily-2026-09-28）。");
+        }
+
         if (command.Kind != BotCommandKind.PolicyRevise)
         {
             logger.LogWarning(
@@ -66,12 +73,12 @@ public sealed class PolicyRevisionCommandHandler(
             return PolicyRevisionCommandResult.Failed(outcome.Message);
         }
 
-        var text = PolicyRevisionMessage.Format(
+        // 🔴 方針は全文を（必要なら複数の通に分けて）見せる。確認ボタンは最後の通にだけ付く（ADR-0003）。
+        var messages = PolicyRevisionMessage.Build(
             proposal.PeriodKey,
             proposal.Version,
             proposal.Presented,
             proposal.Created,
-            proposal.AutoGenerationSkipped,
             proposal.PolicySummary,
             [.. proposal.WatchlistChanges.Select(c => (c.Action, c.Symbol, c.Reason))],
             proposal.Rationale);
@@ -83,24 +90,35 @@ public sealed class PolicyRevisionCommandHandler(
         // 確認ボタンは**承認待ちにできた版に限って**出す（未提示の版は確定 API が受け付けない）。
         // 会話キーは報告書サービスが返した値であり、ボタンの CustomId と確定要求へ載る——値域を再確認する。
         var approvable = proposal.Presented && BotCommandParser.IsPeriodKey(proposal.PeriodKey) && proposal.Version >= 1;
-        return PolicyRevisionCommandResult.Proposed(text, approvable ? proposal.PeriodKey : null, approvable ? proposal.Version : null);
+        return PolicyRevisionCommandResult.Proposed(messages, approvable ? proposal.PeriodKey : null, approvable ? proposal.Version : null);
+    }
+
+    // `/policy` で始まるか（書式外の period を「許可されていない」と読み違えないため）。
+    private static bool IsPolicyCommand(string raw)
+    {
+        var first = raw.TrimStart().Split(' ', 2)[0].ToLowerInvariant();
+        return first is "/policy" or "policy";
     }
 }
 
 // FR-07, #1016: `/policy` の処理結果。
 // WasExecuted=false は案が無い（拒否・検証・報告書サービスの失敗・不明）。IsDenied は多層認証・解析で弾いたこと。
-// PeriodKey / Version は確認ボタンへ載せる値（承認待ちにできたときだけ非 null）。
+// Messages は順に送る通（案のときは見出し・方針の全文〔分割あり〕・入れ替え案と説明。失敗のときは 1 通）。
+// PeriodKey / Version は確認ボタンへ載せる値（承認待ちにできたときだけ非 null）。**ボタンは最後の通にだけ付ける。**
 public sealed record PolicyRevisionCommandResult(
     bool WasExecuted,
-    string Message,
+    IReadOnlyList<string> Messages,
     string? PeriodKey = null,
     int? Version = null,
     bool IsDenied = false)
 {
-    public static PolicyRevisionCommandResult Denied(string reason) => new(false, reason, IsDenied: true);
+    // 1 通にまとめた表示（ログ・失敗の応答用）。
+    public string Message => string.Join("\n\n", Messages);
 
-    public static PolicyRevisionCommandResult Failed(string message) => new(false, message);
+    public static PolicyRevisionCommandResult Denied(string reason) => new(false, [reason], IsDenied: true);
 
-    public static PolicyRevisionCommandResult Proposed(string message, string? periodKey, int? version) =>
-        new(true, message, periodKey, version);
+    public static PolicyRevisionCommandResult Failed(string message) => new(false, [message]);
+
+    public static PolicyRevisionCommandResult Proposed(IReadOnlyList<string> messages, string? periodKey, int? version) =>
+        new(true, messages, periodKey, version);
 }

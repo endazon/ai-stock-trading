@@ -25,7 +25,7 @@ public class HttpPolicyRevisionControllerTests
         new(new HttpClient(handler) { BaseAddress = new Uri("http://report-service") }, NullLogger<HttpPolicyRevisionController>.Instance);
 
     private static ReportRevise.PolicyRevisionResponse SenderResponse() => new(
-        "daily-2026-09-27", 2, Created: false, Presented: true, AutoGenerationSkipped: false,
+        "daily-2026-09-27", 2, Created: false, Presented: true,
         "方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。",
         "押し目買いを優先する",
         [new ReportRevise.WatchlistChangeView("add", "NVDA", "AI 需要")],

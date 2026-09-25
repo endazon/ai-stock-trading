@@ -70,7 +70,6 @@ public sealed class HttpPolicyRevisionController(
                     view.Version,
                     view.Created,
                     view.Presented,
-                    view.AutoGenerationSkipped,
                     view.Message ?? string.Empty,
                     view.PolicySummary,
                     [.. (view.WatchlistChanges ?? [])
@@ -117,8 +116,7 @@ public sealed class HttpPolicyRevisionController(
         int Version,
         bool Created,
         bool Presented,
-        bool AutoGenerationSkipped,
-        string? Message,
+            string? Message,
         string? PolicySummary,
         IReadOnlyList<WatchlistChangeItem?>? WatchlistChanges,
         string? Rationale);

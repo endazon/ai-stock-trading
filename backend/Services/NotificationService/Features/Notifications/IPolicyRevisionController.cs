@@ -28,7 +28,6 @@ public sealed record PolicyRevisionProposalView(
     int Version,
     bool Created,
     bool Presented,
-    bool AutoGenerationSkipped,
     string Message,
     string PolicySummary,
     IReadOnlyList<WatchlistChangeSuggestionView> WatchlistChanges,

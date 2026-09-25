@@ -26,11 +26,13 @@ public class PolicyRevisionCommandHandlerTests
     private static DiscordCommandContext Context(string raw = "/policy", string user = OwnerUser, bool dm = false) =>
         new(Guild, Channel, user, dm, raw);
 
-    private static PolicyRevisionProposalView Proposal(bool presented = true, string periodKey = "daily-2026-09-27", int version = 1) =>
-        new(periodKey, version, Created: true, presented, AutoGenerationSkipped: true, "保存しました",
-            "押し目買いを優先する",
-            [new WatchlistChangeSuggestionView("add", "NVDA", "AI 需要")],
-            "指示どおり");
+    private static PolicyRevisionProposalView Proposal(
+        bool presented = true, string periodKey = "daily-2026-09-27", int version = 1, string policy = "押し目買いを優先する",
+        IReadOnlyList<WatchlistChangeSuggestionView>? changes = null, string? rationale = "指示どおり") =>
+        new(periodKey, version, Created: true, presented, "保存しました",
+            policy,
+            changes ?? [new WatchlistChangeSuggestionView("add", "NVDA", "AI 需要")],
+            rationale);
 
     private sealed class FakeController(PolicyRevisionCommandOutcome outcome) : IPolicyRevisionController
     {
@@ -107,8 +109,6 @@ public class PolicyRevisionCommandHandlerTests
     // T-10-1326: `/policy` 以外・余分な引数・書式外の会話キー・空や長すぎる指示では呼ばない（LLM の費用を使わない）。
     [Theory]
     [InlineData("/report show daily-2026-09-27", "指示")]
-    [InlineData("/policy a b", "指示")]
-    [InlineData("/policy ../x", "指示")]
     [InlineData("/policy", "")]
     [InlineData("/policy", "   ")]
     [InlineData("/policy", null)]
@@ -119,6 +119,22 @@ public class PolicyRevisionCommandHandlerTests
         var result = await handler.HandleAsync(Context(raw), instruction);
 
         result.WasExecuted.Should().BeFalse();
+        controller.Calls.Should().BeEmpty();
+    }
+
+    // T-10-1344（監査 nit）: `/policy` の period が書式外なら、「許可されていない」ではなく形式を案内する（呼ばない）。
+    [Theory]
+    [InlineData("/policy a b")]
+    [InlineData("/policy ../x")]
+    [InlineData("/policy daily_2026")]
+    public async Task 書式外の会話キーは形式を案内し呼ばない(string raw)
+    {
+        var (handler, controller) = Create();
+
+        var result = await handler.HandleAsync(Context(raw), "指示");
+
+        (result.WasExecuted, result.IsDenied).Should().Be((false, false));
+        result.Message.Should().Contain("形式が不正").And.Contain("daily-2026-09-28");
         controller.Calls.Should().BeEmpty();
     }
 
@@ -150,20 +166,60 @@ public class PolicyRevisionCommandHandlerTests
         result.Version.Should().BeNull();
     }
 
-    // T-10-1328: 表示文は Discord の上限に収まり、監視銘柄は表示のみであることを必ず添える。
+    // T-10-1328: どの通も上限に収まり、入れ替え案は表示のみと添え、入れ替えが無ければ「なし」と書く。
     [Fact]
-    public void 表示文は上限に収まり監視銘柄は表示のみと添える()
+    public void どの通も上限に収まり監視銘柄は表示のみと添える()
     {
-        var text = PolicyRevisionMessage.Format(
-            "daily-2026-09-27", 3, presented: true, created: false, autoGenerationSkipped: false,
+        var messages = PolicyRevisionMessage.Build(
+            "daily-2026-09-27", 3, presented: true, created: false,
             new string('方', 5000),
             [.. Enumerable.Range(0, 10).Select(i => ("add", $"SYM{i}", new string('理', 200)))],
             new string('説', 5000));
 
-        text.Length.Should().BeLessThanOrEqualTo(PolicyRevisionMessage.MaxLength);
-        text.Should().Contain(PolicyRevisionMessage.WatchlistNotice);
+        messages.Should().OnlyContain(m => m.Length <= PolicyRevisionMessage.MaxLength);
+        messages[^1].Should().Contain(PolicyRevisionMessage.WatchlistNotice);
 
-        PolicyRevisionMessage.Format("daily-2026-09-27", 1, true, false, false, "方針", [], null)
+        PolicyRevisionMessage.Build("daily-2026-09-27", 1, true, false, "方針", [], null)[^1]
             .Should().Contain("【監視銘柄の入れ替え案】").And.Contain("- なし");
     }
+
+    // T-10-1345（監査 BLOCKING 1・ADR-0003）: **確認ボタンが出るときは、確定される方針の全文が必ず届いている。**
+    // 方針は切り詰めず、1 通に収まらなければ `【方針案 i/n】` の通に分けて、ボタンの付く最後の通より前に送る。
+    // 入れ替え案 10 件×理由 200 文字でも、方針 2000 文字（上限）でも、サロゲートペアを含んでも同じ。
+    [Theory]
+    [MemberData(nameof(Policies))]
+    public async Task 確認ボタンが出るときは方針の全文が届いている(string policy, int changeCount, int reasonLength)
+    {
+        var changes = Enumerable.Range(0, changeCount)
+            .Select(i => new WatchlistChangeSuggestionView(i % 2 == 0 ? "add" : "remove", $"SY{(char)('A' + i)}", new string('理', reasonLength)))
+            .ToList();
+        var (handler, _) = Create(new PolicyRevisionCommandOutcome(
+            true, false, "保存", Proposal(policy: policy, changes: changes, rationale: new string('説', 1000))));
+
+        var result = await handler.HandleAsync(Context(), "指示");
+
+        result.Version.Should().NotBeNull("承認待ちの案には確認ボタンを出す");
+        result.Messages.Should().OnlyContain(m => m.Length <= PolicyRevisionMessage.MaxLength);
+
+        // ボタンは最後の通に付く。方針の通はそれより前にすべて並び、見出しを除いて連結すると全文に一致する。
+        var policyMessages = result.Messages.Take(result.Messages.Count - 1)
+            .Where(m => m.StartsWith("【方針案 ", StringComparison.Ordinal))
+            .ToList();
+        policyMessages.Should().NotBeEmpty();
+        var count = policyMessages.Count;
+        policyMessages.Select((m, i) => m.StartsWith(PolicyRevisionMessage.PolicyHeading(i + 1, count) + "\n", StringComparison.Ordinal))
+            .Should().OnlyContain(ok => ok, "見出しは 1/n から順に並ぶ");
+        string.Concat(policyMessages.Select(m => m[(m.IndexOf('\n') + 1)..])).Should().Be(policy);
+        result.Messages[^1].Should().NotContain("【方針案", "ボタンの付く通に方針の一部を載せない（全文はその前に届いている）");
+    }
+
+    public static TheoryData<string, int, int> Policies() => new()
+    {
+        { "押し目買いを優先する", 0, 0 },
+        { "押し目買いを優先する", 10, 200 },
+        { new string('方', 2000), 0, 0 },
+        { new string('方', 2000), 10, 200 },
+        { string.Concat(Enumerable.Range(0, 1000).Select(_ => "😀")), 10, 200 },
+        { string.Concat(Enumerable.Range(0, 1800).Select(i => (char)('あ' + (i % 80)))), 3, 50 },
+    };
 }
