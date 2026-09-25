@@ -63,10 +63,15 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
 
     // #743, IADR-0327: connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装であり、
     // Program.cs の登録（2 引数）は変更していない。テストはここへフェイクを差す。
+    // #988, FR-15, IADR-0421: replyTimeout は応答待ちを TimeSpan で直接与える口。null（既定）なら構成の
+    // ReplyTimeoutSeconds（整数秒）を使う——**構成キー・型・既定 30 秒は変えない**。Program.cs は渡さない。
+    // 整数秒では無期限（Timeout.InfiniteTimeSpan）を表せず、応答が返ることを表明する試験が有限の打ち切りと
+    // 応答を競走させるしかなかった（IADR-0379 決定 1 の形）。0 以下を無期限と読む案は誤設定を黙ったハングへ変えるため採らない。
     public MMApiMoomooHistoryKLineClient(
         MoomooBarDataOptions options,
         ILogger<MMApiMoomooHistoryKLineClient> logger,
-        IMoomooQotConnectionFactory? connectionFactory = null)
+        IMoomooQotConnectionFactory? connectionFactory = null,
+        TimeSpan? replyTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         // IADR-0060 決定5: **Secret のマウント漏れは起動時に落とす。** 発注経路（MMApiMoomooTradeClient）が
@@ -74,7 +79,7 @@ public sealed class MMApiMoomooHistoryKLineClient : MMSPI_Qot, MMSPI_Conn, IMoom
         // 表面化せず、しかも素の FileNotFoundException として出るため原因が読み取れない。
         MoomooBarDataPreflight.Validate(options, File.Exists);
         _options = options;
-        _replyTimeout = TimeSpan.FromSeconds(options.ReplyTimeoutSeconds);
+        _replyTimeout = replyTimeout ?? TimeSpan.FromSeconds(options.ReplyTimeoutSeconds);
         _logger = logger;
         _connectionFactory = connectionFactory ?? new MMApiQotConnectionFactory();
         lock (InitGate)
