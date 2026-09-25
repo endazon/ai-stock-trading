@@ -5,9 +5,10 @@ status: Accepted
 related_ids: [NFR-01, IADR-0118, IADR-0143, IADR-0145, IADR-0190, IADR-0210, IADR-0327]
 author: claude (Claude Code)
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-25
 related_specs:
   - 20260919_875_adr-index-addendum-loss-check
+  - 20260925_1009_git-read-maxbuffer-fail-closed
 ---
 
 # IADR-0363: ADR 索引行の追記ブロックの消失を、印の単位で機械的に止める
@@ -189,3 +190,34 @@ develop が足した行を丸ごと消す」** —— `base` にも `ours` に�
 - **`[remove-adr-addendum] <IADR> *` は行の印を全部解放する。** 走査範囲は `git log <base>..HEAD`
   ＝PR の全コミットなので、**古いコミットに 1 行書いた `*` がブランチの寿命のあいだ効き続ける**。
   `*` で通ったぶんは `notice` ではなく **`warn`** へ格上げしてあるが、**機械では止めていない。**
+
+## ［2026-09-25 追記 / #1009］索引 README が 1 MiB を超えて検査が黙って止まっていた —— 読めなかったら赤にする
+
+**何が起きたか。** 索引 README が 1,048,651 バイトになった 909241f5（#1001）から、本検査器の `sh()` は
+`git show <rev>:.ai-context/adr/README.md` を Node の既定 `maxBuffer`（1 MiB）で読んで **`ENOBUFS`** になり、
+`main()` の `catch` が「版を取得できなかったため skip した」を `warn` して **exit 0** を返していた。
+CI（run 36141345761・static-checks）でも同じ warning が出てジョブは緑だった —— **本 IADR が守るはずの
+安全網が、配線ごと消えたのと同じ状態で緑を返し続けていた**（未知 ≠ 無し）。
+
+**決定 7（追加）: git を読む exec には上限を渡し、「範囲は決まったのに読めなかった」は浅いクローンの場合だけ skip する。**
+
+- 上限は `scripts/lib/git-read.js` の `GIT_MAX_BUFFER`（256 MiB）。
+- skip してよいかは同 `isShallowSkip`: `git rev-parse --is-shallow-repository` が `true` のときだけ真。
+  **`ENOBUFS` は浅いクローンでも常に偽**（浅さと無関係な「読めなかった」）。浅さを判定できなければ偽。
+- **変えていないもの**: 範囲を決められない（`resolveRange` → null）分岐の skip と、そのときの規則 4（重複）の
+  作業ツリー検査。浅いクローンで版を辿れないときの skip。いずれも本 IADR と ci.yml が設計として明示している。
+- **変えたもの**: 上記以外の読み取り失敗は error（exit 1）。浅いクローンでないのに読めない正当な経路は無い
+  （自動解決の範囲は実在を確かめてから組む。明示した範囲が読めないのは入力の誤り）。
+
+**同じ欠陥の形を併せて直した（母集合は作業仕様書 `20260925_1009_git-read-maxbuffer-fail-closed`）**:
+`check-adr-index-sync.js`（`git diff -U0 … -- README` が同じ既定の上限。同じ判定へ。併せて `revExists` の
+`^{commit}` を引用符で囲み、Windows で常に skip していた手元の実行を直した）、`check-commit-messages.js`
+（範囲の `git log` の失敗を skip していた。同じ判定へ）、`gen-changelog.js`（読めないと `[]` を返して
+CHANGELOG の節を黙って空にしていた。上限を渡し、読めなければ例外で落とす）。
+
+**確認**: 是正後 `--range=d15ec5ff...909241f5` と既定範囲で `OK: … 追記ブロック 149 件は、すべて残っています`。
+`GIT_MAX_BUFFER` を 1 MiB へ戻す変異では、1 MiB 超の一時リポジトリを使う e2e 試験が赤になり、検査器の本走は
+`ENOBUFS` で exit 1 になる（旧: exit 0）。
+
+**残余リスク（追加）**: 256 MiB を超える git 出力は `ENOBUFS` になる —— その場合も**赤**であり、黙って緑にはならない。
+索引 README そのものの分割（1 MiB 超・1 行が数千文字）は別の問いとして扱わない（決定 5 と同じ理由で本追記の射程外）。

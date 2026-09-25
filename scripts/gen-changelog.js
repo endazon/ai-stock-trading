@@ -72,8 +72,11 @@ const TYPE_LABEL = {
 };
 const TYPE_ORDER = ['feat', 'fix', 'perf', 'refactor', 'docs', 'test', 'build', 'ci', 'style', 'chore'];
 
+// 🔴 git の出力を読む exec には `maxBuffer` を必ず渡す（#1009）。既定の 1 MiB を超えると `ENOBUFS` になる。
+const { GIT_MAX_BUFFER } = require('./lib/git-read.js');
+
 function git(args) {
-  return execSync(`git ${args}`, { encoding: 'utf8' }).trim();
+  return execSync(`git ${args}`, { encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER }).trim();
 }
 
 function isGitRepo() {
@@ -97,12 +100,24 @@ function tags() {
   } catch (e) { return []; }
 }
 
-/** 範囲のコミットを {type, scope, desc, hash} で返す */
+/**
+ * 範囲のコミットを {type, scope, desc, hash} で返す。
+ *
+ * 🔴 読めなければ**例外で落とす**（#1009）。旧コードは `[]` を返しており、読み取り失敗（`ENOBUFS` 等）が
+ * 「コミット 0 件」として CHANGELOG の節を黙って空にし、changelog.yml がそれを自動コミットしえた
+ * （読めなかったことが成功として出力される）。`isGitRepo()` を通った後の範囲は実在するタグと HEAD から
+ * 組むので、正当に失敗する経路は無い。
+ */
 function commits(range) {
   let raw = '';
   try {
-    raw = execSync(`git log ${range} --no-merges --pretty=format:%h%x1f%s`, { encoding: 'utf8' });
-  } catch (e) { return []; }
+    raw = execSync(`git log ${range} --no-merges --pretty=format:%h%x1f%s`, {
+      encoding: 'utf8',
+      maxBuffer: GIT_MAX_BUFFER,
+    });
+  } catch (e) {
+    throw new Error(`git log ${range} を読めなかった（CHANGELOG を空の節で上書きしない）: ${e.message}`);
+  }
   if (!raw.trim()) return [];
   return raw.split('\n').map((line) => {
     const [hash, subject = ''] = line.split('\x1f');

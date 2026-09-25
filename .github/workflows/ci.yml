@@ -289,6 +289,7 @@ jobs:
       #
       # fetch-depth: 0 が要る —— 差分の範囲（origin/<base>..HEAD）を解決するため。
       # 浅いクローンでは範囲を決められず skip する（その旨を warn で出す）。
+      # それ以外で差分を読めなかった場合（ENOBUFS 等）は skip せず赤にする（#1009）。
       - name: Self-test ADR index sync checker
         if: ${{ !cancelled() }}
         run: node scripts/check-adr-index-sync.js --self-test
@@ -306,6 +307,8 @@ jobs:
       #
       # fetch-depth: 0 が要る —— base / theirs / ours の 3 版を `git show` で読むため。
       # 浅いクローンでは版を取れず skip する（その旨を warn で出す）。
+      # 🔴 それ以外で版を読めなかった場合は skip せず赤にする（#1009。索引 README が 1 MiB を超えた
+      # 909241f5 から、既定 maxBuffer の ENOBUFS を skip として緑を返し、本 step は検査せずに通っていた）。
       # 意図的な撤去はコミット本文の `[remove-adr-addendum] <IADR> <印>` で 1 件ずつ宣言する
       # （全体スキップは用意しない。宣言したら notice が出る）。
       - name: Self-test ADR index addendum loss checker

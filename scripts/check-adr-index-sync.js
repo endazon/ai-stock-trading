@@ -38,11 +38,21 @@
  *   **偽陰性より偽陽性へ倒す**のは IADR-0190 と同じ判断である
  *   —— **落ちれば人が気付くが、緑の素通りは誰も気付かない。**
  *   **逃げ道は用意する。ただし黙って素通りさせない**（下記 SKIP_TOKEN）。
+ *
+ * ■ 🔴 読めなかったら赤にする（［2026-09-25 追記 / #1009］）
+ *   姉妹検査器 `check-adr-index-addendum-loss.js` が、索引 README が 1 MiB（`execSync` の既定
+ *   `maxBuffer`）を超えた時点から `ENOBUFS` を skip として exit 0 で返していた。本検査器も
+ *   `git diff -U0 <range> -- README` を同じ既定のまま読み、失敗を skip していた（索引行を大量に
+ *   書き換える PR で 1 MiB を超えうる）。是正は同じ 2 つ: `GIT_MAX_BUFFER` を渡し、
+ *   **浅いクローン以外の読み取り失敗は赤**（浅いクローンの skip は ci.yml の設計どおり残す）。
+ *   併せて `revExists` の `^{commit}` を引用符で囲んだ（Windows の `cmd.exe` が `^` を食い、
+ *   手元では範囲が決まらず常に skip していた。姉妹検査器は既に囲んでいた）。
  */
 
 const { execSync } = require('child_process');
 const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
+const { GIT_MAX_BUFFER, isShallowSkip } = require('./lib/git-read.js');
 
 const REPO = path.join(__dirname, '..');
 const INDEX_PATH = '.ai-context/adr/README.md';
@@ -71,12 +81,15 @@ function declaresSkip(text) {
 }
 
 function sh(cmd) {
-  return execSync(cmd, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  // 🔴 `maxBuffer` を必ず渡す（#1009）。既定の 1 MiB では索引 README の差分で `ENOBUFS` になりうる。
+  return execSync(cmd, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_MAX_BUFFER });
 }
 
 function revExists(rev) {
   try {
-    sh(`git rev-parse --verify --quiet ${rev}^{commit}`);
+    // 🔴 `^{commit}` は引用符で囲む。Windows の `cmd.exe` では `^` がエスケープ文字であり、裸だと
+    // 必ず「存在しない」へ倒れて手元では常に skip する（check-adr-index-addendum-loss.js と同じ。#1009）。
+    sh(`git rev-parse --verify --quiet "${rev}^{commit}"`);
     return true;
   } catch {
     return false;
@@ -105,7 +118,8 @@ function resolveRange(explicit) {
  * 「削除＋追加」として現れるため、追加行だけを見ると**行を消しただけの変更を見逃す**。
  */
 function collect(range, opts = {}) {
-  const nameStatus = opts.nameStatus ?? sh(`git diff --name-only ${range}`);
+  const git = opts.readGit ?? sh; // テスト用の差し替え（#1009）
+  const nameStatus = opts.nameStatus ?? git(`git diff --name-only ${range}`);
   const changedAdrs = new Map(); // IADR-XXXX -> path
   let indexTouched = false;
   for (const line of nameStatus.split('\n')) {
@@ -116,7 +130,7 @@ function collect(range, opts = {}) {
     if (m) changedAdrs.set(m[1], f);
   }
 
-  const indexDiff = opts.indexDiff ?? (indexTouched ? sh(`git diff -U0 ${range} -- ${INDEX_PATH}`) : '');
+  const indexDiff = opts.indexDiff ?? (indexTouched ? git(`git diff -U0 ${range} -- ${INDEX_PATH}`) : '');
   const rowsTouched = new Set();
   for (const line of indexDiff.split('\n')) {
     if (!/^[+-]/.test(line) || /^(\+\+\+|---)/.test(line)) continue;
@@ -152,8 +166,17 @@ function main(opts = {}) {
   try {
     collected = collect(range, opts);
   } catch (e) {
-    warn(`[check-adr-index-sync] 差分を取得できなかったため skip した（${range}）: ${e.message}`);
-    return 0;
+    // 🔴 skip してよいのは浅いクローン（設計どおり）だけ。`ENOBUFS` を含むそれ以外は赤（#1009）。
+    if (isShallowSkip(e, { cwd: REPO, shallow: opts.shallow })) {
+      warn(
+        `[check-adr-index-sync] 浅いクローンのため差分を取得できず skip した（${range}）: ${e.message}。` +
+          'この範囲は検査されていない。',
+      );
+      return 0;
+    }
+    console.error(`[check-adr-index-sync] 差分を取得できなかった（${range}）: ${e.message}`);
+    console.error('  浅いクローンではないのに読めなかったため、**検査していないことを成功として報告しない**（赤にする。#1009）。');
+    return 1;
   }
   const { changedAdrs, rowsTouched } = collected;
 
@@ -329,6 +352,41 @@ function selfTest() {
   );
 
   t('索引ファイル自体だけの変更は緑', quiet(() => run({ nameStatus: '.ai-context/adr/README.md\n', indexDiff: '+| IADR-0190 | x |\n' })) === 0);
+
+  // ---- 🔴 読めなかったら赤（#1009）。浅いクローンの skip だけは設計どおり残す ----
+  const failGit = (code) => () => {
+    const err = new Error(`spawnSync /bin/sh ${code || 'EFAKE'}`);
+    if (code) err.code = code;
+    throw err;
+  };
+  t(
+    '🔴 #1009: 差分の読み取りが ENOBUFS で落ちたら赤（旧: warn して exit 0）',
+    quiet(() => run({ readGit: failGit('ENOBUFS'), shallow: () => false })) === 1,
+  );
+  t(
+    '🔴 #1009: ENOBUFS は浅いクローンでも赤',
+    quiet(() => run({ readGit: failGit('ENOBUFS'), shallow: () => true })) === 1,
+  );
+  t(
+    '🔴 #1009: 浅いクローンではないのに差分を読めなければ赤（未知 ≠ 無し）',
+    quiet(() => run({ readGit: failGit(), shallow: () => false })) === 1,
+  );
+  t(
+    '#1009（否定形）: 浅いクローンで差分を読めないときは設計どおり skip する（exit 0）',
+    quiet(() => run({ readGit: failGit(), shallow: () => true })) === 0,
+  );
+  t(
+    '🔴 #1009: 索引の差分（2 回目の読み取り）だけが ENOBUFS でも赤',
+    quiet(() =>
+      run({
+        readGit: (cmd) => {
+          if (cmd.includes('--name-only')) return '.ai-context/adr/README.md\n.ai-context/adr/IADR-0190_x.md\n';
+          return failGit('ENOBUFS')();
+        },
+        shallow: () => false,
+      }),
+    ) === 1,
+  );
 
   let failed = 0;
   for (const c of cases) {

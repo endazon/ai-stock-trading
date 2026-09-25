@@ -95,12 +95,23 @@
  *   赤になる（PR #954 で実際に起きた。`--range=f703843..6dcc7b5` が 4 件の消失を報告した）。
  *   「ID ごとの印の集合」まで落とすと、**1 行に同じ印が 2 つあって 1 つ消えた**形（IADR-0363 決定 1 が
  *   多重集合を選んだ理由）を見逃す。最大値は両方を満たす。
+ *
+ * ■ 🔴 読めなかったら赤にする（［2026-09-25 追記 / #1009］）
+ *   索引 README が 1 MiB（`execSync` の既定 `maxBuffer`）を超えた 909241f5 から、`git show` が
+ *   **`ENOBUFS`** で落ち、旧コードはそれを「版を取得できなかったため skip した」として **exit 0** で
+ *   返していた（手元でも CI でも。ジョブは緑のまま検査が止まっていた）。是正は 2 つ:
+ *     1. git を読む exec に `GIT_MAX_BUFFER`（lib/git-read.js）を渡す。
+ *     2. 版を読めなかったとき、skip してよいのは**浅いクローン**（`--is-shallow-repository` が true）
+ *        の場合だけにする。これは既存の設計（ci.yml「浅いクローンでは版を取れず skip する」）そのもので
+ *        あり、変えていない。**それ以外の読み取り失敗（`ENOBUFS` は浅いクローンでも常にこちら）は赤。**
+ *        読めなかった検査が成功を報告すると、「配線が消えても全部緑」になる（未知 ≠ 無し）。
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { warn, notice } = require('./lib/ci-annotate.js');
+const { GIT_MAX_BUFFER, isShallowSkip } = require('./lib/git-read.js');
 
 const REPO = path.join(__dirname, '..');
 const INDEX_PATH = '.ai-context/adr/README.md';
@@ -154,7 +165,8 @@ const REMOVE_TOKEN = '[remove-adr-addendum]';
 const REMOVE_LINE_RE = /^\[remove-adr-addendum\]\s+(IADR-\d{3,4})\s+(\*|［[^］]*］)$/;
 
 function sh(cmd) {
-  return execSync(cmd, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  // 🔴 `maxBuffer` を必ず渡す（#1009）。既定の 1 MiB では索引 README 1 枚で `ENOBUFS` になる。
+  return execSync(cmd, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_MAX_BUFFER });
 }
 
 function revExists(rev) {
@@ -400,8 +412,9 @@ function looksTruncated(line) {
 }
 
 /**
- * 範囲を決められない・版を読めないときの規則 4 だけの検査（#955）。重複は範囲が要らない状態の検査なので、
- * 消失の検査を skip しても作業ツリーの索引だけは見る。
+ * 範囲を決められない・浅いクローンで版を読めないときの規則 4 だけの検査（#955）。重複は範囲が要らない
+ * 状態の検査なので、消失の検査を skip しても作業ツリーの索引だけは見る。
+ * （浅いクローン以外で版を読めなかった場合は skip せず赤にする。#1009）
  */
 function worktreeDuplicatesOnly() {
   const p = path.join(REPO, INDEX_PATH);
@@ -432,16 +445,31 @@ function main(opts = {}) {
       );
       return worktreeDuplicatesOnly();
     }
+    // `readAt` / `mergeBase` / `shallow` / `worktreeDuplicatesOnly` はテスト用の差し替え（#1009）。
+    const read = opts.readAt ?? readAt;
+    const dupOnly = opts.worktreeDuplicatesOnly ?? worktreeDuplicatesOnly;
     let revs;
     try {
-      revs = parseRange(range);
-      base = parseIndex(readAt(revs.base));
-      theirs = revs.strict ? base : parseIndex(readAt(revs.theirs));
-      oursRaw = readAt(revs.ours, { preferWorktree: true });
+      revs = parseRange(range, { mergeBase: opts.mergeBase });
+      base = parseIndex(read(revs.base));
+      theirs = revs.strict ? base : parseIndex(read(revs.theirs));
+      oursRaw = read(revs.ours, { preferWorktree: true });
       ours = parseIndex(oursRaw);
     } catch (e) {
-      warn(`[check-adr-index-addendum-loss] 版を取得できなかったため skip した（${range}）: ${e.message}`);
-      return worktreeDuplicatesOnly();
+      // 🔴 skip してよいのは浅いクローン（設計どおり）だけ。`ENOBUFS` を含むそれ以外は赤（#1009）。
+      if (isShallowSkip(e, { cwd: REPO, shallow: opts.shallow })) {
+        warn(
+          `[check-adr-index-addendum-loss] 浅いクローンのため版を取得できず skip した（${range}）: ${e.message}。` +
+            'この範囲は検査されていない。',
+        );
+        return dupOnly();
+      }
+      console.error(`[check-adr-index-addendum-loss] 版を取得できなかった（${range}）: ${e.message}`);
+      console.error('');
+      console.error('  浅いクローンではないのに読めなかったため、**検査していないことを成功として報告しない**（赤にする）。');
+      console.error('  以前はここで skip して exit 0 を返しており、索引 README が 1 MiB を超えた時点から');
+      console.error('  `ENOBUFS` で黙って検査が止まっていた（#1009）。');
+      return 1;
     }
   }
 
@@ -992,6 +1020,59 @@ function selfTest() {
     const r = parseRange('13e8e19f..c53876d4', { mergeBase: () => 'MB' });
     return r.base === '13e8e19f' && r.theirs === '13e8e19f' && r.ours === 'c53876d4' && r.strict === true;
   })());
+
+  // ---- 🔴 読めなかったら赤（#1009）。浅いクローンの skip だけは設計どおり残す ----
+  //
+  // 実例: 索引 README が 1,048,651 バイトになった 909241f5 から `git show` が ENOBUFS で落ち、
+  // 旧コードは warn を出して exit 0 を返していた（CI の static-checks も緑のまま）。
+  const failRead = (code) => () => {
+    const err = new Error(`spawnSync /bin/sh ${code || 'EFAKE'}`);
+    if (code) err.code = code;
+    throw err;
+  };
+  const runRead = (o) =>
+    quiet(() =>
+      main({
+        range: 'origin/develop...HEAD',
+        mergeBase: () => 'MB',
+        worktreeDuplicatesOnly: () => 0,
+        commitBodies: '',
+        ...o,
+      }),
+    );
+  t(
+    '🔴 #1009: 版の読み取りが ENOBUFS で落ちたら赤（旧: warn して exit 0）',
+    runRead({ readAt: failRead('ENOBUFS'), shallow: () => false }) === 1,
+  );
+  t(
+    '🔴 #1009: ENOBUFS は浅いクローンでも赤（浅さと無関係な「読めなかった」）',
+    runRead({ readAt: failRead('ENOBUFS'), shallow: () => true }) === 1,
+  );
+  t(
+    '🔴 #1009: 浅いクローンではないのに版を読めなければ赤（未知 ≠ 無し）',
+    runRead({ readAt: failRead(), shallow: () => false }) === 1,
+  );
+  t(
+    '#1009（否定形）: 浅いクローンで版を読めないときは設計どおり skip する（exit 0）',
+    runRead({ readAt: failRead(), shallow: () => true }) === 0,
+  );
+  t(
+    '#1009（否定形）: 浅いクローンの skip でも規則 4（重複）は作業ツリーで見る',
+    runRead({ readAt: failRead(), shallow: () => true, worktreeDuplicatesOnly: () => 1 }) === 1,
+  );
+  t(
+    '#1009（否定形）: merge-base が解決できない浅いクローンも skip（3 ドットの base 解決の失敗）',
+    runRead({ mergeBase: failRead(), readAt: () => '', shallow: () => true }) === 0,
+  );
+  t(
+    '#1009: 版を読めれば 1 MiB を超える索引でも判定する（読めた内容で消失を赤にする）',
+    (() => {
+      const big = `${FIX.case2Base}\n${'| IADR-9999 | ' + 'x'.repeat(1100 * 1024) + ' | Accepted |'}`;
+      const small = `${FIX.case2Ours}\n${'| IADR-9999 | ' + 'x'.repeat(1100 * 1024) + ' | Accepted |'}`;
+      const byRev = { MB: big, 'origin/develop': big, HEAD: small };
+      return runRead({ readAt: (rev) => byRev[rev], shallow: () => false }) === 1;
+    })(),
+  );
 
   let failed = 0;
   for (const c of cases) {
