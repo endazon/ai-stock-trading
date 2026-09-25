@@ -177,7 +177,8 @@ public class OrderApprovedConsumerTests
                     DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
                 AlternativeProtectiveOrderType.StopLimit,
                 1,
-                "Paper trading does not support StopLimit order"));
+                "Paper trading does not support StopLimit order",
+                BrokerOrderId: null));
         }
 
         public Task<BrokerOrder> PlaceMarketOrderAsync(
