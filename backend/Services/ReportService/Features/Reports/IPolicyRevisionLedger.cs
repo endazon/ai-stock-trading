@@ -18,6 +18,17 @@ public interface IPolicyRevisionLedger
 
     /// <summary>試行を引く（無ければ null）。</summary>
     PolicyRevisionAttempt? Find(Guid id);
+
+    /// <summary>
+    /// FR-13, ADR-0042 決定 1, #1025: 会話キーと報告書の版から、その版を作った試行（Proposed）を引く（無ければ null）。
+    /// 確認ボタンで確定した版の入れ替え案を適用するときに使う（**案に載った銘柄だけ**を適用するため、案は台帳から引く）。
+    /// </summary>
+    PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion);
+
+    /// <summary>
+    /// FR-13, ADR-0042 決定 1, #1025: 入れ替え案の適用の内訳を記録する（監査）。**1 回だけ**——既に記録済みなら false（上書きしない）。
+    /// </summary>
+    bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt);
 }
 
 // 試行の結果。Pending は LLM の呼び出し中（または呼び出し中にプロセスが落ちた）。
@@ -37,6 +48,12 @@ public enum PolicyRevisionAttemptOutcome
 /// <param name="Outcome">結果。</param>
 /// <param name="ReportVersion">案を保存した報告書の版（Proposed のときだけ）。</param>
 /// <param name="WatchlistChangesJson">案の監視銘柄の入れ替え（JSON。Proposed のときだけ）。</param>
+/// <param name="WatchlistSnapshotJson">
+/// FR-13, ADR-0042 決定 1, #1025: 案を作った時点の監視銘柄（JSON `[{symbol, market}]`）。適用の楽観排他の基準。
+/// 🔴 <c>null</c> は「照会できなかった（分からない）」であり「監視銘柄が空だった」ではない（空は <c>[]</c>）。分からない案は適用しない。
+/// </param>
+/// <param name="WatchlistApplyJson">入れ替え案の適用の内訳（JSON。適用を試みた後だけ）。</param>
+/// <param name="WatchlistAppliedAt">内訳を記録した時刻。</param>
 public sealed record PolicyRevisionAttempt(
     Guid Id,
     DateTimeOffset AttemptedAt,
@@ -45,4 +62,7 @@ public sealed record PolicyRevisionAttempt(
     string PeriodKey,
     PolicyRevisionAttemptOutcome Outcome = PolicyRevisionAttemptOutcome.Pending,
     int? ReportVersion = null,
-    string? WatchlistChangesJson = null);
+    string? WatchlistChangesJson = null,
+    string? WatchlistSnapshotJson = null,
+    string? WatchlistApplyJson = null,
+    DateTimeOffset? WatchlistAppliedAt = null);

@@ -36,11 +36,14 @@ internal static class RevisePolicyEndpoint
                     LogSanitizer.Sanitize(revising.Actor));
             }
 
-            var result = await svc.ReviseAsync(req.PeriodKey, req.Instruction, revising.Actor, http.RequestAborted);
+            var result = await svc.ReviseAsync(
+                req.PeriodKey, req.Instruction, revising.Actor,
+                req.CurrentWatchlist?.Select(w => new WatchlistSnapshotItem(w.Symbol ?? string.Empty, w.Market ?? string.Empty)).ToList(),
+                http.RequestAborted);
             return result.Status switch
             {
                 PolicyRevisionStatus.Proposed => Results.Ok(PolicyRevisionResponse.From(result)),
-                PolicyRevisionStatus.InvalidInstruction or PolicyRevisionStatus.InvalidPeriodKey =>
+                PolicyRevisionStatus.InvalidInstruction or PolicyRevisionStatus.InvalidPeriodKey or PolicyRevisionStatus.InvalidWatchlist =>
                     Results.BadRequest(new { error = result.Message }),
                 PolicyRevisionStatus.NotFound => Results.NotFound(new { error = result.Message }),
                 PolicyRevisionStatus.AiFailed => Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status502BadGateway),
@@ -55,7 +58,16 @@ internal static class RevisePolicyEndpoint
 // FR-07, #1016, IADR-0431: 改訂の要求。Instruction は利用者の自由文（1000 文字まで）。PeriodKey 省略時は当日（JST）の日報。
 // OnBehalfOf は代理される利用者（Discord Bot が載せる。信頼クライアント以外では無視）。
 // NFR, IADR-0420: 受け手（通知サービス）の契約テストが送り手の本物の型として参照するため public。
-public sealed record RevisePolicyRequest(string? Instruction, string? PeriodKey = null, string? OnBehalfOf = null);
+// FR-13, ADR-0042 決定 1, #1025: CurrentWatchlist は Bot が照会した現在の監視銘柄（案の土台と適用の楽観排他の基準）。
+// null＝照会できなかった（その案の入れ替えは適用しない）。末尾に追加（旧版の Bot は送らない＝null）。
+public sealed record RevisePolicyRequest(
+    string? Instruction,
+    string? PeriodKey = null,
+    string? OnBehalfOf = null,
+    IReadOnlyList<WatchlistSnapshotEntry>? CurrentWatchlist = null);
+
+// 監視銘柄の 1 件（Market は "UnitedStates" / "Japan"）。
+public sealed record WatchlistSnapshotEntry(string? Symbol, string? Market);
 
 // FR-07, #1016, IADR-0431 決定 5: 改訂の応答（200 のときだけ）。
 // 🔴 **文字列は発行側で無害化して返す**（IADR-0116 決定3 と同じ位置。Discord へ投稿される本文には LLM の出力が入る）。

@@ -111,6 +111,18 @@ public class LlmReportPolicyReviserTests
         outcome.Proposal.Should().BeNull();
     }
 
+    // T-10-1386（#1025）: 現在の監視銘柄は 1 行の JSON 配列で渡り、分からなければ null と書く。
+    [Fact]
+    public async Task 現在の監視銘柄は1行のJSON配列で渡る()
+    {
+        var transport = new FakeTransport(Completed(ValidJson));
+        await Reviser(transport).ReviseAsync(Context() with { CurrentUsWatchlist = ["AAPL", "BRK.B"] });
+        await Reviser(transport).ReviseAsync(Context());
+
+        transport.Calls[0].Prompt.Split('\n').Select(l => l.TrimEnd('\r')).Should().Contain("currentWatchlist: [\"AAPL\",\"BRK.B\"]");
+        transport.Calls[1].Prompt.Split('\n').Select(l => l.TrimEnd('\r')).Should().Contain("currentWatchlist: null");
+    }
+
     internal sealed class FakeTransport(LlmCompletionExchange exchange) : ILlmCompletionTransport
     {
         public List<LlmCompletionCall> Calls { get; } = [];

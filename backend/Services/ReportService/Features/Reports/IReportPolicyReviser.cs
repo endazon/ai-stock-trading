@@ -15,12 +15,14 @@ public interface IReportPolicyReviser
 
 // 改訂の文脈。Instruction は利用者の自由文（検証済み・制御文字を落とした原文）。CurrentPolicy は土台の方針
 // （空＝土台なし）。ParentPolicy は上位方針（散文ドラフトと同じ扱い。null＝未確定）。
+// FR-13, ADR-0042 決定 1, #1025: CurrentUsWatchlist は現在の監視銘柄のうち米国の銘柄（入れ替え案の土台）。null＝照会できなかった。
 public sealed record PolicyRevisionContext(
     ReportKind Kind,
     string PeriodKey,
     string CurrentPolicy,
     ParentPolicyReference? ParentPolicy,
-    string Instruction);
+    string Instruction,
+    IReadOnlyList<string>? CurrentUsWatchlist = null);
 
 // 失敗の種別。利用者へ見せる理由（Message）と対にして返す。
 public enum PolicyRevisionFailure

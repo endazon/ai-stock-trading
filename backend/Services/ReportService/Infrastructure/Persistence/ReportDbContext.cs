@@ -39,6 +39,11 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             e.Property(a => a.PeriodKey).HasMaxLength(64);
             // 案の入れ替え（追加 5・除外 5・理由 200 文字まで）の JSON。
             e.Property(a => a.WatchlistChangesJson).HasMaxLength(8192);
+            // #1025: 案を作った時点の監視銘柄（数十銘柄）と適用の内訳。
+            e.Property(a => a.WatchlistSnapshotJson).HasMaxLength(8192);
+            e.Property(a => a.WatchlistApplyJson).HasMaxLength(8192);
+            // #1025: 確定した版の案を引く（会話キー＋版）。
+            e.HasIndex(a => new { a.PeriodKey, a.ReportVersion });
             // 1 日の回数上限の判定（JST の暦日ごとの件数）。
             e.HasIndex(a => a.JstDate);
         });

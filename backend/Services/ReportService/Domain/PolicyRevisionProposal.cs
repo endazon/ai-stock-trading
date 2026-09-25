@@ -21,6 +21,21 @@ public enum WatchlistChangeAction
     Remove,
 }
 
+// FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1: 案を作った時点の監視銘柄の 1 件（Market は市場の名前 "UnitedStates" / "Japan"）。
+// 列挙の JSON 表現（数値／名前）にサービス間で結合しないため、名前の文字列で運ぶ。
+public sealed record WatchlistSnapshotItem(string Symbol, string Market)
+{
+    public const string UnitedStates = "UnitedStates";
+    public const string Japan = "Japan";
+    public const int MaxCount = 200;
+
+    // 銘柄コードの値域（台帳・監視銘柄の表記。英数字・ピリオド・ハイフン 1〜16 文字。Bot の BotCommandParser.IsSymbol と同じ形）。
+    public static bool IsValid(string? symbol, string? market) =>
+        !string.IsNullOrEmpty(symbol) && symbol.Length <= 16
+        && symbol.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-')
+        && market is UnitedStates or Japan;
+}
+
 // 案の検証結果。Proposal が null なら Reason に**なぜ捨てたか**が入る（利用者へそのまま見せる定数文）。
 public sealed record PolicyRevisionParseResult(PolicyRevisionProposal? Proposal, string? Reason)
 {

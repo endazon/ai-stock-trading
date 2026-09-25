@@ -264,4 +264,46 @@ public class PolicyRevisionWiringTests
         var report = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}");
         report.GetProperty("version").GetInt32().Should().Be(2);
     }
+
+    // T-10-1387（ADR-0042 決定 1・#1025）: 本番の組み立てで、改訂の要求が運んだ監視銘柄と案の入れ替えを、確定した版から引ける。
+    // 内訳の記録は 1 回だけ（2 回目は 409）。/policy の案でない版は 404。サービス主体は 403。
+    [Fact]
+    public async Task 確定した版の入れ替え案を引き内訳を一度だけ記録する()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, new RecordingGateway(ProposalJson));
+        await SeedDraftAsync(factory);
+
+        (await BotClient(factory).PostAsJsonAsync("/reports/policy-revisions", new
+        {
+            instruction = "a",
+            periodKey = PeriodKey,
+            onBehalfOf = "developer",
+            currentWatchlist = new[] { new { symbol = "AAPL", market = "UnitedStates" } },
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var proposal = await BotClient(factory).GetFromJsonAsync<JsonElement>(
+            $"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2");
+        proposal.GetProperty("reportVersion").GetInt32().Should().Be(2);
+        proposal.GetProperty("changes").EnumerateArray().Single().GetProperty("symbol").GetString().Should().Be("NVDA");
+        proposal.GetProperty("snapshot").EnumerateArray().Single().GetProperty("market").GetString().Should().Be("UnitedStates");
+        proposal.GetProperty("applyRecorded").GetBoolean().Should().BeFalse();
+        var attemptId = proposal.GetProperty("attemptId").GetGuid();
+
+        (await BotClient(factory).GetAsync($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=1"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound, "版 1 は /policy の案ではない");
+
+        var record = new { outcome = "applied", items = new[] { new { action = "add", symbol = "NVDA", applied = true } }, message = "m", onBehalfOf = "developer" };
+        (await BotClient(factory).PostAsJsonAsync($"/reports/policy-revisions/{attemptId}/watchlist-apply-result", record))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await BotClient(factory).PostAsJsonAsync($"/reports/policy-revisions/{attemptId}/watchlist-apply-result", record))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "内訳は 1 回だけ記録する");
+        (await BotClient(factory).GetFromJsonAsync<JsonElement>($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2"))
+            .GetProperty("applyRecorded").GetBoolean().Should().BeTrue();
+
+        var service = factory.CreateClient();
+        service.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-service");
+        (await service.GetAsync($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2"))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }

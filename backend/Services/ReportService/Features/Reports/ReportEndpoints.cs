@@ -16,6 +16,7 @@ using ReportService.Features.Reports.RevisePolicy;
 using ReportService.Features.Reports.StartMonthlyBootstrap;
 using ReportService.Features.Reports.SummarizePnl;
 using ReportService.Features.Reports.UpsertReportDraft;
+using ReportService.Features.Reports.WatchlistProposal;
 
 namespace ReportService.Features.Reports;
 
@@ -85,6 +86,8 @@ internal static class ReportEndpoints
         owner.MapRequestReportChanges();
         // FR-07, FR-14, #1016, IADR-0431: 利用者の自由文の指示から方針の改訂案を作り、新しい版として保存・提示する（確定はしない）。
         owner.MapRevisePolicy();
+        // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: 確定した版の入れ替え案の照会と、適用の内訳の記録（Bot が適用に使う）。
+        owner.MapWatchlistProposal();
 
         owner.MapConfirmReport();
 

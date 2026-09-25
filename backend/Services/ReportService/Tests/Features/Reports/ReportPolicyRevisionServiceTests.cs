@@ -138,7 +138,7 @@ public class ReportPolicyRevisionServiceTests
             .And.Contain("> 防御的に\n> 現金比率を上げて")
             .And.Contain("- 追加 NVDA（米国）: AI 需要")
             .And.Contain("- 除外 META（米国）: 決算前")
-            .And.Contain("提示のみ。適用は設定画面から");
+            .And.Contain("/policy の確認ボタンで確定したときに適用する");
         saved.UnsuppliedInputs.Should().Equal([ReportInput.OpenPositions], "本文を差し替えても欠けた入力の記録は残す");
     }
 
@@ -422,6 +422,35 @@ public class ReportPolicyRevisionServiceTests
     public void 上限の構成値を読む(string? configured, int expected)
     {
         PolicyRevisionLimit.Read(configured).DailyLimit.Should().Be(expected);
+    }
+
+    // T-10-1385（ADR-0042 決定 1・#1025）: 案を作った時点の監視銘柄を試行に記録し（楽観排他の基準）、米国の銘柄だけを
+    // LLM へ渡す。照会できなかった（null）なら記録も null（「空」と区別する）。形式が崩れた一覧は受け取らず AI も呼ばない。
+    [Fact]
+    public async Task 案を作った時点の監視銘柄を記録し米国の銘柄だけをLLMへ渡す()
+    {
+        var ledger = new InMemoryPolicyRevisionLedger();
+        var (service, store, reviser) = Create(ledger: ledger);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+
+        await service.ReviseAsync(null, "積極的に", "developer",
+            [new WatchlistSnapshotItem("AAPL", "UnitedStates"), new WatchlistSnapshotItem("7203", "Japan")]);
+
+        reviser.Calls.Single().CurrentUsWatchlist.Should().Equal("AAPL");
+        ledger.Attempts.Single().WatchlistSnapshotJson.Should()
+            .Be("""[{"symbol":"AAPL","market":"UnitedStates"},{"symbol":"7203","market":"Japan"}]""");
+
+        var (unknown, store2, reviser2) = Create(ledger: new InMemoryPolicyRevisionLedger());
+        SeedConfirmedDaily(store2, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        await unknown.ReviseAsync(null, "積極的に", "developer");
+        reviser2.Calls.Single().CurrentUsWatchlist.Should().BeNull("照会できなかった");
+
+        var (bad, _, reviser3) = Create();
+        (await bad.ReviseAsync(null, "積極的に", "developer", [new WatchlistSnapshotItem("AA PL", "UnitedStates")]))
+            .Status.Should().Be(PolicyRevisionStatus.InvalidWatchlist);
+        (await bad.ReviseAsync(null, "積極的に", "developer", [new WatchlistSnapshotItem("AAPL", "Moon")]))
+            .Status.Should().Be(PolicyRevisionStatus.InvalidWatchlist);
+        reviser3.Calls.Should().BeEmpty();
     }
 
     private sealed class PresentFailingStore(InMemoryReportStore inner) : IReportStore
