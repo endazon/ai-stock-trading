@@ -122,7 +122,10 @@ plan_refs:
   `NO_HEARTBEAT_UNKNOWN` / `HEARTBEATS_STOPPED` へ到達しなかった（監査の稼働環境の試走で `LOGS_UNREADABLE` を実測）。
   → `{ Ok; Lines }` を返し、空で成功と失敗を分ける。kubectl を関数で差し替えたテスト（T-10-1049）で固定。
 - **B2**: スクリプトの `-Verbose` / `-Debug` が呼び出し先へ伝わり、`Invoke-RestMethod` が Webhook の URL を出し得た。
-  → `-Verbose:$false -Debug:$false -ErrorAction Stop` と、送信関数の中で詳細・デバッグ・情報の既定値を止める。ストリームを捕まえるテスト（T-10-1048）。
+  → `-Verbose:$false -Debug:$false -ErrorAction Stop` と、送信関数の中で詳細・デバッグ・情報の既定値を止め、**送信器の呼び出しを `*> $null` にする**。
+  情報ストリームは既定値 `SilentlyContinue` でも記録が流れて `*>&1` で捕まるため、**漏れを実際に塞いだのは `*> $null` である**（既定値の停止だけでは
+  差し替えた送信器の `Write-Information` が漏れた。CI の T-10-1048 が検出）。副作用: 差し替えた送信器の非終了エラーも飲み込む（既定の送信器は `-ErrorAction Stop`）。
+  ストリームを捕まえるテスト（T-10-1048）。
 - **N1**: 読めない `-ExtraHolidays` / `-ExtraHalfDays` を黙って捨てていた → `SCRIPT_ERROR`（時間外でも。開場を判定できないため）。
 - **N2**: `kubectl get pods` の失敗を `SERVICE_NOT_READY` にしていた → 状態 `UNREADABLE`（Pod の照会の失敗とログの読み取りの失敗をまとめる。旧 `LOGS_UNREADABLE` を置き換え）。
 - **N3**: 前の取引時間に書かれた状態で翌日の最初の実行が偽の「回復」を出した → 状態に確認時刻（`checkedAtMs`）を持ち、寄り付きより前の状態（と確認時刻の無い旧形式）は持ち越さない。

@@ -378,6 +378,7 @@ function Send-DiscordNotification {
   try {
     # 送信器のすべてのストリームを捨てる（情報ストリームは既定値 SilentlyContinue でも記録が流れ、*>&1 で捕まるため
     # 既定値の停止だけでは足りない）。失敗は例外で受ける（既定の送信器は -ErrorAction Stop）。
+    # 🔴 *> $null は差し替えた送信器の非終了エラーも飲み込む（送信扱いになる）。既定の送信器は -ErrorAction Stop で例外にしている。
     & $Invoker $WebhookUrl $body *> $null
     return 'discord=送信'
   }
