@@ -1,4 +1,7 @@
+using System.Reflection;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AuditService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -10,6 +13,8 @@ namespace AuditService.Tests;
 // FR-10, FR-11, NFR（セキュリティ・NFR-10 の 7 年保持）, #842, IADR-0405 決定2:
 // 監査台帳の自由記述欄へ入る理由文の**上限**と**線引き**（接続先を伏せる）。
 // 境界値（T-10-852）・否定形（T-10-851 / T-10-853 の誤検出側）・プロパティ（T-10-853）の 3 点セット。
+// #984, IADR-0419: 伏せ字の照合は線形時間で壁時計の予算を持たない（T-10-981）。書き換えた形が旧パターンと同じ意味で
+// あること（T-10-980）と、長い入力でも結果が入力だけで決まること（T-10-982）を固定する。
 public class AuditFreeTextTests
 {
     private static readonly Guid Id = Guid.NewGuid();
@@ -106,6 +111,10 @@ public class AuditFreeTextTests
     [InlineData("host [::1]:11111 refused", "host ［接続先］ refused")]
     [InlineData("localhost:11111 refused", "［接続先］ refused")]
     [InlineData("OPEND.CLUSTER.LOCAL:1 down", "［接続先］ down")]
+    // T-10-982（#984）: 隣り合う接続先は両方伏せる（前の接続先の最後の文字・直後の区切りが次の境界を兼ねる）。
+    [InlineData("[::1]1.2.3.4", "［接続先］［接続先］")]
+    [InlineData("1.1.1.1 2.2.2.2", "［接続先］ ［接続先］")]
+    [InlineData("a.example:1,b.example:2", "［接続先］,［接続先］")]
     public void 接続先を伏せる(string input, string expected)
     {
         AuditFreeText.Sanitize(input).Should().Be(expected);
@@ -123,22 +132,97 @@ public class AuditFreeTextTests
         AuditFreeText.Sanitize(input).Should().Be(input);
     }
 
-    // 任意長の例外メッセージで正規表現がタイムアウトし、理由文ごと失われないこと（バックトラックの 2 乗化の回帰防止）。
+    // ---- T-10-982（#984 / IADR-0419）: 長い反復入力でも理由文を捨てず、結果は入力だけで決まる ----
+    // 是正前は 200 ms の壁時計の予算で打ち切り、高負荷では正当な入力でも定型文へ置き換わった（#984）。
+    // 表明は「打ち切られなかった」ではなく期待値との一致である（CPU の混み具合で結果が変わらないことの表明）。
     [Theory]
-    [InlineData("x")]
-    [InlineData("a.")]
-    [InlineData("1.")]
-    [InlineData("a-")]
-    [InlineData("ab://")]
-    [InlineData("[f")]
-    public void 長い反復入力でも伏せ字の処理は打ち切られない(string unit)
+    [InlineData("x", false)]
+    [InlineData("a.", false)]
+    [InlineData("1.", false)]
+    [InlineData("a-", false)]
+    [InlineData("ab://", true)] // 反復全体が 1 つの URL（`ab://ab://…`）であり、1 つの伏せ字になる
+    [InlineData("[f", false)]
+    public void 長い反復入力でも伏せ字の処理は打ち切られない(string unit, bool wholeIsEndpoint)
     {
         var input = string.Concat(Enumerable.Repeat(unit, 20_000 / unit.Length));
 
-        var sanitized = AuditFreeText.Sanitize(input)!;
+        var sanitized = AuditFreeText.Sanitize(input);
 
-        sanitized.Should().NotContain("整形できなかった");
-        sanitized.Length.Should().BeLessThanOrEqualTo(AuditFreeText.MaxLength + 1);
+        sanitized.Should().Be(wholeIsEndpoint
+            ? AuditFreeText.EndpointPlaceholder
+            : input[..AuditFreeText.MaxLength] + "…");
+    }
+
+    // ---- T-10-981（#984 / IADR-0419）: 伏せ字の照合は壁時計の予算を持たず、線形時間の照合である ----
+    // 型の中の Regex を名前に依らず全部見る（照合を足した・名前を変えたときも、予算の付いた照合が紛れ込めば赤）。
+    [Fact]
+    public void 伏せ字の照合は壁時計の予算を持たず線形時間である()
+    {
+        var regexes = typeof(AuditFreeText)
+            .GetFields(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
+            .Where(f => f.FieldType == typeof(Regex))
+            .Select(f => (Name: f.Name, Regex: (Regex)f.GetValue(null)!))
+            .ToList();
+
+        regexes.Should().NotBeEmpty();
+        foreach (var (name, regex) in regexes)
+        {
+            regex.MatchTimeout.Should().Be(Regex.InfiniteMatchTimeout, $"{name} は壁時計で打ち切らない");
+            regex.Options.Should().HaveFlag(RegexOptions.NonBacktracking, $"{name} は入力長に線形の照合で行う");
+        }
+    }
+
+    // ---- T-10-980（#984 / IADR-0419）: 書き換えた形は旧パターン（IADR-0405 決定2）と同じ結果を返す（差分） ----
+    // 旧パターン（後読み・先読み・原子グループ）は参照実装としてここだけに残す。試験内では予算を持たせない
+    // （旧パターンも実測で線形であり、差分の判定を壁時計に依らせない）。伏せる形そのものを意図して変えるときは、
+    // この参照実装も同じ変更で改める。
+    private static readonly Regex ReferenceEndpoint = new(
+        @"(?<![A-Za-z0-9+.\-])[A-Za-z](?>[A-Za-z0-9+.\-]*)://[^\s（）()「」<>""']+"
+        + @"|\[[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*\](?::\d{1,5})?"
+        + @"|(?<![A-Za-z0-9_.\-])\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?![A-Za-z0-9_]|\.\d)"
+        + @"|(?<![A-Za-z0-9_.\-])(?=[A-Za-z0-9.\-]*[A-Za-z])(?>[A-Za-z0-9\-]+)(?:\.(?>[A-Za-z0-9\-]+))+:\d{1,5}(?!\d)"
+        + @"|(?<![A-Za-z0-9_.\-])localhost:\d{1,5}(?!\d)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+        Regex.InfiniteMatchTimeout);
+
+    private static readonly Regex ControlRun = new(@"\p{Cc}+", RegexOptions.None, Regex.InfiniteMatchTimeout);
+
+    [Fact]
+    public void 伏せ字は旧パターンと同じ結果を返す_差分()
+    {
+        // 字母は境界になる記号（区切り・語の中の記号）・全角数字（\d に入る）・大文字小文字の等価文字（K の Kelvin 記号等）を含む。
+        string[] alphabets =
+        [
+            "ab1.:-/[]x ", "aZ09.:/[]-_+ （）\"'<>「」", "1.:2 3a", "lh.:1[]f/ ", "localhost:1.2 ",
+            "abcXYZ019 .:-/（）。、あいう接続失敗\n\t", "１２.:a[] \u212Ak\u0130\u017F", "a.b:12345678 [f::]",
+        ];
+        // 接続先の形と、その断片（境界の兼用・長すぎるポート・閉じない括弧）を部品として混ぜる。
+        string[] parts =
+        [
+            "localhost:1", "127.0.0.1", "a.b:1", "http://x", "[::1]:2", "1.2.3.4:5", "opend.svc:11111", "[f", "a://",
+            "1.2.3.4:123456", "x.y:123456",
+        ];
+        var random = new Random(984);
+
+        for (var i = 0; i < 20_000; i++)
+        {
+            var alphabet = alphabets[random.Next(alphabets.Length)];
+            var builder = new StringBuilder();
+            var length = random.Next(0, 25);
+            for (var k = 0; k < length; k++)
+            {
+                if (random.Next(6) == 0)
+                    builder.Append(parts[random.Next(parts.Length)]);
+                else
+                    builder.Append(alphabet[random.Next(alphabet.Length)]);
+            }
+
+            var input = builder.ToString();
+            // 上限（500 文字）に届かない長さに収めてあるので、切り詰めは比べる対象に入らない。
+            var expected = ControlRun.Replace(ReferenceEndpoint.Replace(input, AuditFreeText.EndpointPlaceholder), " ");
+
+            AuditFreeText.Sanitize(input).Should().Be(expected, $"入力 #{i}: [{input}]");
+        }
     }
 
     [Fact]
