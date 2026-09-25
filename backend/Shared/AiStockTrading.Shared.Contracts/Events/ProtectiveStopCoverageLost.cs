@@ -121,4 +121,17 @@ public enum ProtectiveStopRemediation
     /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
     /// </summary>
     StopDispatchIndeterminate,
+
+    /// <summary>
+    /// 🔴 FR-10, #853（PR #1005 監査）, IADR-0428: <b>保護逆指値の予約を記録できなかった（DB 障害）ため、逆指値を送っていない</b>。
+    /// 取消も成行もしていない（記録が不確かなまま注文を重ねない）。「未受理」でも「解消に失敗」でもない。
+    /// <para>
+    /// <c>CloseDecisionId</c> は送らなかった<b>逆指値レグ</b>の DecisionId（相関のため）。<c>CloseIntent</c> は運ばない（生きている注文は無い）。
+    /// 原因で後が分かれる: <see cref="ProtectiveStopLossCause.RejectedAtEntry"/>（エントリー同時）は保護記録を送信結果待ちで残し、
+    /// 常駐ガードが次の巡回（約 30 秒後）で建玉を確かめて張る。<see cref="ProtectiveStopLossCause.LapsedInFlight"/>（ガードの再発注）は
+    /// 記録を変えずに巡回のたびに試み直し、通知は約 1 時間ごとに出し直す。人の確認を要する（Critical）。
+    /// </para>
+    /// 🔴 列挙の**末尾へ足している**（既存値の序数を動かさない）。
+    /// </summary>
+    StopReservationFailed,
 }

@@ -498,6 +498,9 @@ public static class AuditEntryFactory
                 // CloseDecisionId は逆指値レグ（StopDecisionId）を指す。「失敗」「拒否」とは書かない（逆指値は生きているかもしれない）。
                 ProtectiveStopRemediation.StopDispatchIndeterminate =>
                     "——**保護逆指値は送信済みだが結果未確認（届いたか不明）。取消・成行はしていない・逆指値も重ねていない（要人手確認）**",
+                // FR-10, #853（PR #1005 再監査）, IADR-0428: 予約を記録できず逆指値を送っていない。「未受理」「失敗」とは書かない。
+                ProtectiveStopRemediation.StopReservationFailed =>
+                    "——**保護逆指値を予約できず未送信（記録の障害）。取消・成行はしていない（要人手確認）**",
                 _ => string.Empty,
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

@@ -122,6 +122,8 @@ public class ProtectiveStopEventPayloadTests
         ((int)ProtectiveStopRemediation.CloseRejected).Should().Be(4);
         // #853, IADR-0428 決定2: 保護逆指値そのものの送信結果が不明（据え置き）。
         ((int)ProtectiveStopRemediation.StopDispatchIndeterminate).Should().Be(5);
+        // #853（PR #1005 再監査）, IADR-0428: 保護逆指値を予約できず送っていない。
+        ((int)ProtectiveStopRemediation.StopReservationFailed).Should().Be(6);
     }
 
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由が往復で欠落しないこと**。

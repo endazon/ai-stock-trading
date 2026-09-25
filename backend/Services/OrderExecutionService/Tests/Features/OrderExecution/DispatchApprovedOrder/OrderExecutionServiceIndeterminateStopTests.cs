@@ -164,7 +164,12 @@ public class OrderExecutionServiceIndeterminateStopTests
         broker.CancelCount.Should().Be(0);
         broker.MarketCloseCount.Should().Be(0, "DB が不確かなまま予約なしで成行を重ねない");
         result.Executed.Should().NotBeNull();
-        result.CoverageLost!.Remediation.Should().Be(ProtectiveStopRemediation.None, "逆指値なしの建玉が残っている可能性を人へ知らせる");
+        // PR #1005 再監査: 「未受理」「解消にも失敗」（None）ではなく、事実（予約できず送っていない）を運ぶ。
+        var lost = result.CoverageLost!;
+        lost.Remediation.Should().Be(ProtectiveStopRemediation.StopReservationFailed);
+        lost.Cause.Should().Be(ProtectiveStopLossCause.RejectedAtEntry);
+        lost.CloseDecisionId.Should().Be(leg, "送らなかった逆指値レグとの相関");
+        lost.CloseIntent.Should().BeNull("生きている注文は無い（台帳に押さえさせない）");
         var row = stops.Find(approved.DecisionId)!;
         row.State.Should().Be(ProtectiveStopState.Active, "巡回されない AwaitingEntry のまま残さない");
         row.IsStopDispatchPending.Should().BeTrue();

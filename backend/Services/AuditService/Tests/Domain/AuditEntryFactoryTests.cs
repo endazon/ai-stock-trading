@@ -1058,6 +1058,21 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotEndWith("…");
     }
 
+    // T-10-1075（続き・PR #1005 再監査）, FR-10, #853, IADR-0428: 予約できず送っていない。「失敗」「拒否」とは書かない。
+    [Fact]
+    public void 保護逆指値を予約できず送っていないなら_未送信と読め_失敗とも拒否とも書かない()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.StopReservationFailed,
+                10, Guid.NewGuid(), CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("予約できず未送信").And.Contain("取消・成行はしていない").And.Contain("要人手確認");
+        entry.Summary.Should().NotContain("解消にも失敗").And.NotContain("拒否された");
+        entry.Summary.Should().NotEndWith("…");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]

@@ -149,7 +149,8 @@ public sealed class ProtectiveStopGuardService(
                     if (events[j] is ProtectiveStopCoverageLost
                         {
                             Remediation: ProtectiveStopRemediation.CloseDispatchIndeterminate
-                                or ProtectiveStopRemediation.StopDispatchIndeterminate,
+                                or ProtectiveStopRemediation.StopDispatchIndeterminate
+                                or ProtectiveStopRemediation.StopReservationFailed,
                             CloseDecisionId: { } closeDecisionId,
                         })
                     {

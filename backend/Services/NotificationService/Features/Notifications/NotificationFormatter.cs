@@ -149,10 +149,30 @@ public static class NotificationFormatter
     // 二重決済でショート化する。伝えるのは「送った・届いたか分からない・重ねる前に確かめよ」である。
     // 🔴 #857, IADR-0369: CloseRejected は**「手仕舞いました」と言ってはならない**。
     // 証券会社が確認できる形で拒否しており、**建玉は残っている**。件名も本文も「解消した」と読ませない。
-    public static NotificationMessage From(ProtectiveStopCoverageLost e) =>
-        e.Remediation == ProtectiveStopRemediation.StopDispatchIndeterminate
-            ? StopDispatchIndeterminate(e)
-            : CoverageLost(e);
+    public static NotificationMessage From(ProtectiveStopCoverageLost e) => e.Remediation switch
+    {
+        ProtectiveStopRemediation.StopDispatchIndeterminate => StopDispatchIndeterminate(e),
+        ProtectiveStopRemediation.StopReservationFailed => StopReservationFailed(e),
+        _ => CoverageLost(e),
+    };
+
+    // 🔴 FR-10, #853（PR #1005 再監査）, IADR-0428: **保護逆指値の予約を記録できず、逆指値を送っていない**（DB 障害）。
+    // 「未受理」「解消にも失敗」とは言わない——逆指値は送っておらず、取消も成行も試みていない。後は原因で分かれる:
+    //   - RejectedAtEntry（エントリー同時）: 保護記録を送信結果待ちで残した。常駐ガードが次の巡回（約 30 秒後）で建玉を確かめて張る。
+    //     それまで手で逆指値を置かせない（ガードの逆指値と二重になる）。ガードの「保護逆指値を発注」が来なければ手で手当てする。
+    //   - LapsedInFlight（ガードの再発注）: 記録を変えずに巡回のたびに試み直す。通知は約 1 時間ごと。
+    private static NotificationMessage StopReservationFailed(ProtectiveStopCoverageLost e) => new(
+        "リスク統制: 保護逆指値を予約できず未送信",
+        $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 保護逆指値の予約を記録できなかったため（記録の障害）、"
+            + "**逆指値は送っていません**（エントリーの取消も成行手仕舞いも行っていません）。"
+            + (e.Cause == ProtectiveStopLossCause.RejectedAtEntry
+                ? "**常駐ガードが次の巡回（約 30 秒後）で建玉を確かめ、逆指値を張ります。**"
+                    + "それまで手で逆指値を置かないでください（ガードの逆指値と二重になります）。"
+                    + "**数分たっても「保護逆指値を発注」の通知が来なければ**、証券会社の画面で建玉を確認し、手で逆指値を置くか手仕舞ってください。"
+                : "**逆指値なしの建玉が残っています。**常駐ガードは巡回のたびに張り直しを試み、この通知は解決するまで約 1 時間ごとに繰り返します。"
+                    + "障害が続くあいだ建玉を守るには手で手仕舞ってください（手で逆指値を置くと、復旧後にガードの逆指値と二重になります）。")
+            + $"StopDecisionId={e.CloseDecisionId}",
+        NotificationSeverity.Critical);
 
     // 🔴 FR-10, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定2: **保護逆指値そのものの送信結果が不明**（届いたか不明）。
     // 本文を下の「逆指値が未受理／失効のため、〜」へ混ぜない——未受理ではない（受理されて生きているかもしれない）。

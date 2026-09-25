@@ -291,19 +291,34 @@ public class ProtectiveStopGuardIndeterminateStopTests
         stops.Save(row);
         var reservations = new ThrowingReserveStore(
             new InMemoryOrderReservationStore(), ProtectiveStopIds.StopDecisionId(row.EntryDecisionId, attempt: 2));
+        var clock = new MutableClock(Now);
         var guard = new ProtectiveStopGuard(
-            broker, broker, stops, new InMemoryExecutedOrderStore(), reservations, new MutableClock(Now));
+            broker, broker, stops, new InMemoryExecutedOrderStore(), reservations, clock,
+            heldCloseNotifications: new HeldCloseNotificationTracker(), closeRejections: new CloseRejectionTracker());
 
         var result = await guard.RunOnceAsync(batchSize: 10);
 
         broker.StopPlaceCount.Should().Be(0);
         broker.MarketCloseCount.Should().Be(0);
         result.CloseFailed.Should().Be(1, "解消していない（手仕舞いにも完了にも数えない）");
-        result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
-            .Which.Remediation.Should().Be(ProtectiveStopRemediation.None);
+        var lost = result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle().Subject;
+        lost.Remediation.Should().Be(ProtectiveStopRemediation.StopReservationFailed, "予約できず送っていない（「解消にも失敗」ではない）");
+        lost.Cause.Should().Be(ProtectiveStopLossCause.LapsedInFlight);
+        lost.CloseIntent.Should().BeNull();
         var after = stops.Find(row.EntryDecisionId)!;
         after.State.Should().Be(ProtectiveStopState.Active, "巡回に残る");
         after.StopOrderId.Should().Be(StopLegScriptedBroker.LapsedStopOrderId);
+
+        // PR #1005 再監査: 読めるが書けない障害が続いても、通知は巡回（30 秒）ごとに重ねず、1 時間ごとに出し直す。
+        clock.UtcNow = Now.AddSeconds(30);
+        var again = await guard.RunOnceAsync(batchSize: 10);
+        again.CloseFailed.Should().Be(1);
+        again.Events.Should().BeEmpty("1 時間は同じ通知を重ねない");
+        clock.UtcNow = Now + HeldCloseNotificationTracker.RenotifyInterval;
+        (await guard.RunOnceAsync(batchSize: 10)).Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().Be(ProtectiveStopRemediation.StopReservationFailed);
+        broker.StopPlaceCount.Should().Be(0);
+        broker.MarketCloseCount.Should().Be(0);
     }
 
     // ---- T-10-1077: 発行できなかった据え置きの通知を「通知済み」と覚えない ----

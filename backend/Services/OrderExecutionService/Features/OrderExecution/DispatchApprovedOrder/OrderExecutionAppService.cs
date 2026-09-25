@@ -701,7 +701,7 @@ public sealed class OrderExecutionAppService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // 予約そのものが落ちた（DB 障害）。逆指値は送っていない。
-            return (null, StopReservationFailed(approved, stopDecisionId, ex), null);
+            return (null, HoldUnreservedStop(approved, stopDecisionId, ex), null);
         }
 
         if (!reserved)
@@ -840,9 +840,10 @@ public sealed class OrderExecutionAppService(
     // 何もせずに戻ると、建玉は巡回されない AwaitingEntry の行だけを持ち、逆指値も取消も成行も通知も無いまま残る（無音）。
     //   - 保護記録を「送信結果待ち」（Active・注文 ID が空）で残す——**常駐ガードが巡回する**。予約が無ければガードは未発注として
     //     次の試行で逆指値を張り直し、予約が実は書けていた（commit 後に落ちた）なら据え置く（どちらでも送り直しは重ならない）。
-    //   - Critical を残し、保護喪失（Remediation=None＝逆指値なしの建玉が残っている可能性）を返して人へ知らせる
+    //   - Critical を残し、保護喪失（Remediation=StopReservationFailed＝予約できず送っていない）を返して人へ知らせる
     //     （保護記録も書けない＝DB が落ちたままでも、通知はメッセージ基盤を通って届く）。取消も成行もしない（DB が不確かなまま注文を重ねない）。
-    private ProtectiveStopCoverageLost StopReservationFailed(OrderApproved approved, Guid stopDecisionId, Exception cause)
+    //     PR #1005 再監査: None（「未受理」「解消にも失敗」と読める）では事実と違う——逆指値は送っておらず、手仕舞いも試みていない。
+    private ProtectiveStopCoverageLost HoldUnreservedStop(OrderApproved approved, Guid stopDecisionId, Exception cause)
     {
         var intent = approved.Intent;
         var now = clock.UtcNow;
@@ -870,7 +871,10 @@ public sealed class OrderExecutionAppService(
             }
         }
 
-        return CoverageLost(approved, ProtectiveStopRemediation.None, intent.Quantity);
+        return new ProtectiveStopCoverageLost(
+            approved.DecisionId, intent.Symbol, intent.Market,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.StopReservationFailed,
+            intent.Quantity, stopDecisionId, CloseIntent: null, now);
     }
 
     // 🔴 FR-10, #853, IADR-0428 決定3: 承認時の保護の文脈を AwaitingEntry で残す（既に行があれば触らない）。

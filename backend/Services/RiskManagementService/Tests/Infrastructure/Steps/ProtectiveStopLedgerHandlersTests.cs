@@ -124,6 +124,25 @@ public class ProtectiveStopLedgerHandlersTests
             .Should().Be(10, "承認行は 1 本分だけ（二重計上なし）");
     }
 
+    // T-10-1076（続き・PR #1005 再監査）, FR-10, #853, IADR-0428: 予約できず送っていない逆指値（StopReservationFailed）は
+    // 相関のために DecisionId を運ぶが決済意図は運ばない。生きている注文は無いので、処理中の決済として押さえない。
+    [Fact]
+    public async Task 予約できず送っていない逆指値は台帳へ何も書かない_否定形()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var handler = new ProtectiveStopCoverageLostLedgerHandler(
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopCoverageLostLedgerHandler>.Instance);
+        var stopDecisionId = Guid.NewGuid();
+
+        await handler.Handle(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.StopReservationFailed,
+            10, stopDecisionId, CloseIntent: null, Now), CancellationToken.None);
+
+        ledger.FindApprovedIntent(stopDecisionId).Should().BeNull();
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1)).Should().Be(0);
+    }
+
     [Theory]
     [InlineData(ProtectiveStopRemediation.EntryCancelled)]
     [InlineData(ProtectiveStopRemediation.None)]

@@ -368,15 +368,23 @@ public sealed class ProtectiveStopGuard(
                 // 🔴 #853（PR #1005 監査 3）, IADR-0428 決定1: 予約そのものが落ちた（DB 障害）。逆指値は送っていない。
                 // 行は変えずに（失効した元の逆指値を指したまま＝次の巡回で改めて評価する）、無音にしない。
                 // 成行も送らない——DB が不確かなまま予約なしで注文を重ねない。
+                // PR #1005 再監査: 読めるが書けない障害が続くと巡回（30 秒）ごとに同じ Critical が重なるので、通知は据え置きと同じ
+                // 間隔（このプロセスで未通知、または前回から 1 時間）に絞る。ログ（Critical）は巡回ごとに残す。
                 _logger.LogCritical(ex,
                     "保護逆指値ガード: 逆指値の再発注の予約を記録できませんでした（逆指値は送っていません）。成行も送らず、次の巡回で"
                     + "改めて評価します。**逆指値なしの建玉が残っています。**証券会社の画面で確認してください: "
                     + "EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId} 銘柄={Symbol} 数量={Quantity}",
                     stop.EntryDecisionId, stopDecisionId, stop.Symbol, quantity);
-                events.Add(new ProtectiveStopCoverageLost(
-                    stop.EntryDecisionId, stop.Symbol, stop.Market,
-                    ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.None,
-                    quantity, CloseDecisionId: null, CloseIntent: null, clock.UtcNow));
+                var failedAt = clock.UtcNow;
+                if (_heldCloseNotifications.IsDue(stopDecisionId, failedAt))
+                {
+                    events.Add(new ProtectiveStopCoverageLost(
+                        stop.EntryDecisionId, stop.Symbol, stop.Market,
+                        ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.StopReservationFailed,
+                        quantity, stopDecisionId, CloseIntent: null, failedAt));
+                    _heldCloseNotifications.MarkNotified(stopDecisionId, stop.EntryDecisionId, failedAt);
+                }
+
                 return Outcome.CloseFailed;
             }
 
