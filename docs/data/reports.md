@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024]
 -->
 
 
@@ -75,6 +75,23 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016]
   409＝確定済み・土台なし・確定しても効かない・営業日で当日の日報が未生成・並行更新（LLM を待つ間の更新）／502＝AI の案を作れなかった。
   **200 以外では何も保存しない。** 保存の後に提示だけ失敗したときは 200・`presented=false`。 監視銘柄の入れ替え案は提示と記録だけで、監視銘柄は変えない（適用は設定画面）。
   改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
+  **1 日（JST の暦日）の回数上限**は `Reports:PolicyRevision:DailyLimit`（既定 10 回）。上限に達した要求は LLM を呼ばず **429** で断る。
+  数えるのは LLM を呼んだ試行（失敗も含む）で、入力の検証・対象の決定で断った要求は数えない。
+
+## 方針の改訂の試行（policy_revision_attempts）
+
+`/policy` の試行の台帳。LLM を呼ぶ直前に 1 行書き、結果で閉じる。1 日の回数上限の判定と、案の監査記録を兼ねる。
+
+| 列 | 型 | 説明 |
+| --- | --- | --- |
+| Id | uuid（主キー） | 試行の識別子 |
+| AttemptedAt | timestamptz | 試行の時刻 |
+| JstDate | date（索引） | 回数上限を数える JST の暦日 |
+| Actor | varchar(128) | 指示者（代理の解決後） |
+| PeriodKey | varchar(64) | 対象の会話キー |
+| Outcome | int | 0＝Pending（呼び出し中・または途中で落ちた）／1＝Proposed／2＝AiFailed／3＝SaveFailed |
+| ReportVersion | int? | 案を保存した報告書の版（Proposed のときだけ） |
+| WatchlistChangesJson | varchar(8192)? | 案の監視銘柄の入れ替え（`[{action, symbol, reason}]`。Proposed のときだけ） |
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
 - **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。
