@@ -314,6 +314,25 @@ public class HttpReportReviewControllerTests
         keys.Should().Equal("daily-2026-09-18", "monthly-2026-09", "daily-2026-09-17");
     }
 
+    [Fact]
+    public async Task 一覧の開始日が数値でも他の候補を失わない()
+    {
+        // FR-14, #843 項目3: 開始日を `string?` で受けていたときは、数値の 1 件の逆シリアル化失敗が一覧ごと空にしていた
+        // （実測）。開始日は並び替えにしか使わないため表現を問わず受け、解釈できない 1 件を末尾へ回すだけにする。
+        var handler = new FakeHandler(HttpStatusCode.OK, """
+            [
+              {"periodKey":"daily-2026-09-18","periodStart":20260918},
+              {"periodKey":"daily-2026-09-17","periodStart":"2026-09-17"},
+              {"periodKey":"daily-2026-09-16","periodStart":null},
+              {"periodKey":"daily-2026-09-15","periodStart":{"year":2026}}
+            ]
+            """);
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        keys.Should().Equal("daily-2026-09-17", "daily-2026-09-18", "daily-2026-09-16", "daily-2026-09-15");
+    }
+
     // ---- 見つからないときの案内（#834） ----
 
     [Fact]

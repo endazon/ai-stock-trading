@@ -74,10 +74,27 @@ public sealed class ReportCommandHandler(
     //
     // 🔴 **fail-safe**: 一覧の取得に失敗したら候補なしで素通しする（コントローラが空を返す契約）。
     // 補完は入力の補助であって統制ではない——補完が引けないことを理由に `/report` 自体を壊さない。
-    public async Task<IReadOnlyList<string>> SuggestPeriodsAsync(
+    //
+    // FR-14, #843 項目2: 一覧照会には**補完専用の時間予算**（SuggestionBudget）を掛ける。Discord の autocomplete は
+    // 3 秒で応答期限が切れるが、名前付き HttpClient `report-review` の Timeout は 5 秒（照会・確定・差し戻しと共有の
+    // ため変えない）。予算が無いと、一覧が 3〜5 秒かかる帯では毎打鍵で応答期限切れ（Gateway の catch）へ落ちる。
+    public Task<IReadOnlyList<string>> SuggestPeriodsAsync(
         DiscordCommandContext context,
         string? input,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SuggestPeriodsAsync(context, input, SuggestionBudget, cancellationToken);
+
+    // FR-14, #843 項目2: 補完の一覧照会に掛ける予算。Discord の応答期限 3 秒から応答送信の余白 0.5 秒を引いた値。
+    // 数え方は「一覧照会の開始から」である（Discord の着信時刻から数えると Pod との時計ずれが予算に入る。
+    // 形の比較は作業仕様書 20260925_843 の規則 11 の表）。
+    public static readonly TimeSpan SuggestionBudget = TimeSpan.FromMilliseconds(2500);
+
+    // テストが短い予算を与えるための入口（DI の形＝コンストラクタは変えない）。
+    internal async Task<IReadOnlyList<string>> SuggestPeriodsAsync(
+        DiscordCommandContext context,
+        string? input,
+        TimeSpan budget,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -91,7 +108,24 @@ public sealed class ReportCommandHandler(
             return [];
         }
 
-        var periodKeys = await controller.ListPeriodKeysAsync(cancellationToken).ConfigureAwait(false);
+        // #843 項目2: 予算切れはアダプタから見ると「呼び出し側の取り消し」であり、アダプタは空へ丸めず伝播させる
+        // （`Handled` の既存の契約）。**空へ丸めるのはここ**である。呼び出し側自身の取り消しは従来どおり伝播させる。
+        using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budgetCts.CancelAfter(budget);
+
+        IReadOnlyList<string> periodKeys;
+        try
+        {
+            periodKeys = await controller.ListPeriodKeysAsync(budgetCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "報告書一覧の照会が補完の予算（{BudgetMs} ms）内に返りませんでした。候補なしで応答します。",
+                (int)budget.TotalMilliseconds);
+            return [];
+        }
+
         return ReportPeriodSuggestions.Filter(periodKeys, input);
     }
 
