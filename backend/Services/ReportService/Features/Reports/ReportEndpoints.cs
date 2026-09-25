@@ -8,6 +8,7 @@ using ReportService.Features.Reports.GetConfirmedDailyPolicy;
 using ReportService.Features.Reports.GetMonthlyBootstrap;
 using ReportService.Features.Reports.GetReport;
 using ReportService.Features.Reports.GetReportReview;
+using ReportService.Features.Reports.ListReportPeriodKeys;
 using ReportService.Features.Reports.ListReports;
 using ReportService.Features.Reports.PresentReport;
 using ReportService.Features.Reports.RequestReportChanges;
@@ -65,6 +66,8 @@ internal static class ReportEndpoints
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
 
         owner.MapListReports();
+        // FR-14, #843 項目1, IADR-0418: 入力補完の候補用の軽い一覧（会話キーと開始日だけ）。
+        owner.MapListReportPeriodKeys();
         owner.MapGetMonthlyBootstrap();
         // FR-07, UC-03, #839, IADR-0382: 初回月報ブートストラップの**起動**（保存＋提示）。GET は下見用のまま。
         owner.MapStartMonthlyBootstrap();

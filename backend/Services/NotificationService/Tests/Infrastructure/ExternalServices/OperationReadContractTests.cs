@@ -56,6 +56,24 @@ public class OperationReadContractTests
         result.Message.Should().Contain(ReportUnsuppliedNotice.Prefix).And.Contain("建玉").And.Contain("散文（LLM）");
     }
 
+    // 🔴 T-10-970, FR-14, #843 項目1, IADR-0418: 入力補完が読む軽い一覧（GET /reports/period-keys）。送り手の本物の型
+    // `ReportPeriodKeyItem` を報告書の設定で直列化した応答から、会話キーが新しい順に読める（送り手の改名で候補が黙って空にならない）。
+    [Fact]
+    public async Task 入力補完の軽い一覧は送り手の本物の型を直列化した応答から会話キーを読める()
+    {
+        ReportFeatures.ReportPeriodKeyItem[] items =
+        [
+            new("daily-2026-09-17", new DateOnly(2026, 9, 17)),
+            new("daily-2026-09-18", new DateOnly(2026, 9, 18)),
+            new("weekly-2026-W38", new DateOnly(2026, 9, 14)),
+        ];
+        var controller = new HttpReportReviewController(Client(items, ReportWire), NullLogger<HttpReportReviewController>.Instance);
+
+        var keys = await controller.ListPeriodKeysAsync();
+
+        keys.Should().Equal("daily-2026-09-18", "daily-2026-09-17", "weekly-2026-W38");
+    }
+
     // 🔴 T-10-914: 段階ゲートの現況（GET /risk-controls/stage-gate）。
     [Fact]
     public async Task 段階ゲートの現況は送り手の本物の型を直列化した応答から読める()

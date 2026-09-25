@@ -61,6 +61,41 @@ public class ReadContractWireFormatTests
         review!["state"]!.GetValueKind().Should().Be(JsonValueKind.String);
     }
 
+    // 🔴 T-10-971, FR-14, #843 項目1, IADR-0418: 通知の入力補完が読む軽い一覧（`GET /reports/period-keys`）の本文も、応答型
+    // `ReportPeriodKeyItem` の一覧を web 既定で直列化したものと一字一句同じであり、会話キーと開始日の 2 項目だけを持つ
+    // （受け手の契約テスト T-10-970 の前提）。
+    [Fact]
+    public async Task 入力補完が読む軽い一覧の本文は応答型の一覧を直列化したものと同じで_2_項目だけを持つ()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IReportStore>();
+            store.UpsertDraft(new TradingReport
+            {
+                PeriodKey = Key,
+                Kind = ReportKind.Daily,
+                PeriodStart = new DateOnly(2026, 7, 10),
+                AssumptionsVersion = 1,
+                PolicySummary = "翌営業日は押し目買い",
+                Body = "# 日報\n",
+            }, 0);
+        }
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+        var keys = await BodyAsync(client, "/reports/period-keys");
+
+        using var s = factory.Services.CreateScope();
+        var expected = s.ServiceProvider.GetRequiredService<ReportAppService>().ListPeriodKeys();
+        // 空どうしの一致は何も証明しない。
+        expected.Should().ContainSingle();
+
+        JsonNode.DeepEquals(keys, JsonSerializer.SerializeToNode(expected, ReportWire))
+            .Should().BeTrue($"period-keys の本文が異なる: {keys?.ToJsonString()}");
+        keys!.AsArray()[0]!.AsObject().Select(p => p.Key).Should().Equal("periodKey", "periodStart");
+    }
+
     private static async Task<JsonNode?> BodyAsync(HttpClient client, string path)
     {
         var res = await client.GetAsync(path);

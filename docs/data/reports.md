@@ -3,15 +3,15 @@ title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-19
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-06, FR-07, FR-08, FR-16, FR-17, UC-03, UC-04, UC-05]
+ids: [FR-06, FR-07, FR-08, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry]
-issues: [#14, #18, #19, #22, #63, #774, #840]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843]
 -->
 
 
@@ -61,6 +61,7 @@ issues: [#14, #18, #19, #22, #63, #774, #840]
 ## 照会・操作
 
 - `GET /reports`、`GET /reports/{periodKey}`、`GET /reports/daily-policy`（確定済み日報方針＝Date/Summary/AssumptionsVersion・未確定は 404）。
+- `GET /reports/period-keys`（会話キーと開始日だけの軽い一覧＝`[{periodKey, periodStart}]`・開始日の降順、同日は会話キーの降順・ページングなし）。Discord の `/report` の入力補完が打鍵ごとに読むため、本文・要約・状態を載せない。OwnerOnly。`/{periodKey}` より優先される（`daily-policy` と同じくリテラル一致）。
 - `PUT /reports/{periodKey}`（ドラフト upsert・楽観排他）、`POST /reports/{periodKey}/confirm`（版番号付き冪等確定）。すべて OwnerOnly。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
