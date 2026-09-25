@@ -333,6 +333,24 @@ public class StopLossMethodComparisonTests
         noResolutions.Should().NotContain("食い違った日数:");
     }
 
+    // 🔴 否定形（Principle A）: 承認はあるのに解決結果が 1 件も見つからない月（監査の購読が止まっていた等）は、
+    // 食い違った日数を「0 日」と書かず「判定できていません」と書く（日報の食い違いの行と同じ扱い）。
+    [Fact]
+    public void T_10_1089_解決結果が1件も見つからない月は食い違った日数を0日と書かない()
+    {
+        DateTimeOffset Day(int d) => new(2026, 9, d, 14, 0, 0, TimeSpan.Zero);
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly,
+            StopLossMethodUsage.From(
+                [Approved(StopLossExecutionMethod.NoProtectiveStop, Day(1)), Approved(StopLossExecutionMethod.BrokerStopOrder, Day(2))]),
+            new StopLossMethodResolutionFeed([])));
+
+        var section = Section(md, "### 損切りの実行機構（当月）");
+        section.Should().Contain("- **選択と実際が食い違った日数**: 判定できていません（解決結果の記録が見つかった承認がありません）");
+        section.Should().Contain("- **実際に適用された手法の日数**: 数えられません（解決結果の記録が見つかった承認がありません。新規建ての承認があった日 2 日）");
+        section.Should().Contain("- **解決結果の記録が見つからない承認を含む日: 2 日**");
+        section.Should().NotContain("0 日");
+    }
+
     // 🔴 否定形（planning#644 の裁定 2）: 週報には出さない（供給があっても）。
     [Fact]
     public void T_10_1089_週報には出さない()

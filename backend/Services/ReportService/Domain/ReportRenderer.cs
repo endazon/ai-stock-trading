@@ -1157,8 +1157,12 @@ public static class ReportRenderer
                     $"- **実際に適用された手法の日数**: {breakdown}（新規建ての承認があった日 {comparison.ApprovalDays} 日{mixed}）\n");
             }
 
-            sb.Append(CultureInfo.InvariantCulture,
-                $"- **選択と実際が食い違った日数: {comparison.DisagreementDays} 日**（個々の日の内訳と理由は該当日報を参照）\n");
+            // 🔴 解決結果が 1 件も見つからない月は「0 日」と書かない（監査の購読が止まっていた月が「食い違いなし」に読める）。
+            // 日報の AppendDisagreementRow と同じ扱い。
+            sb.Append(comparison.ResolvedCount == 0
+                ? "- **選択と実際が食い違った日数**: 判定できていません（解決結果の記録が見つかった承認がありません）\n"
+                : string.Create(CultureInfo.InvariantCulture,
+                    $"- **選択と実際が食い違った日数: {comparison.DisagreementDays} 日**（個々の日の内訳と理由は該当日報を参照）\n"));
 
             if (comparison.UnresolvedDays > 0)
             {
