@@ -1441,10 +1441,11 @@ public static class ReportRenderer
             + $"| {Stage0RecordingComparison(u.Stage0RecordingCostJpy, view.Stage0RecordingApprovedEstimateJpy)} |\n");
 
         // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 2: 利用者起点の方針改訂（`/policy`）の回数と費用。上限の対象外。
-        // 🔴 当月に呼び出しが無ければ「0 回・0 円」と書かない（Stage 0 記録と同じ規律）。
+        // 🔴 当月に計上が無ければ「0 回・0 円」と書かない（Stage 0 記録と同じ規律）。PR #1026 の監査 6: 数は費用の計上
+        // （応答が返った呼び出し）だけから作るため「呼び出しが無い」とは言えない——「計上が無い」と書く（台帳の試行の数とは別）。
         sb.Append(CultureInfo.InvariantCulture,
-            $"| 利用者起点の方針改訂（`/policy`・`policy-revision`。**上限の対象外**）の回数と費用実績 "
-            + $"| {(u.PolicyRevision is { } pr ? $"{pr.Count} 回 / {ReportAmountFormat.Jpy(pr.CostJpy)}" : "**当月の呼び出しはありません**（0 回・0 円ではありません）")} |\n");
+            $"| 利用者起点の方針改訂（`/policy`・`policy-revision`。**上限の対象外**）の計上件数と費用実績 "
+            + $"| {(u.PolicyRevision is { } pr ? $"{pr.Count} 回 / {ReportAmountFormat.Jpy(pr.CostJpy)}" : "**当月の計上はありません**（0 回・0 円ではありません。回数は応答が返った呼び出しの計上件数）")} |\n");
 
         // 🔴 上限の対象でも報告書でもない用途（情報収集等）を**落とさない**。
         // 落とすと「どこにも現れない費用」ができ、#282 と同じ形が別の用途で再発する。

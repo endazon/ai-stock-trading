@@ -12,7 +12,7 @@ using ReportService.Infrastructure.Persistence;
 namespace ReportService.Infrastructure.Migrations
 {
     [DbContext(typeof(ReportDbContext))]
-    [Migration("20260925202703_AddPolicyRevisionAttempts")]
+    [Migration("20260925220359_AddPolicyRevisionAttempts")]
     partial class AddPolicyRevisionAttempts
     {
         /// <inheritdoc />
@@ -53,8 +53,7 @@ namespace ReportService.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("WatchlistChangesJson")
-                        .HasMaxLength(8192)
-                        .HasColumnType("character varying(8192)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 

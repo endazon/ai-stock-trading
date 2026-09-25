@@ -37,8 +37,11 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             e.Property(a => a.Id).ValueGeneratedNever();
             e.Property(a => a.Actor).HasMaxLength(128);
             e.Property(a => a.PeriodKey).HasMaxLength(64);
-            // 案の入れ替え（追加 5・除外 5・理由 200 文字まで）の JSON。
-            e.Property(a => a.WatchlistChangesJson).HasMaxLength(8192);
+            // 案の入れ替え（追加 5・除外 5・理由 200 文字まで）の JSON。**長さの上限を置かない（Postgres の text）。**
+            // PR #1026 の監査: varchar(8192) では、既定のエンコーダが日本語を \uXXXX（6 文字）へ逃がすため理由 200 字 × 10 件が
+            // 12,476 文字になり溢れた（保存済みのドラフトが 500 になる）。直列化は緩いエスケープ（日本語はそのまま）にしたうえで、
+            // 列の側でも上限で落ちない形にする（監査記録であり、長さで情報を捨てない）。
+            e.Property(a => a.WatchlistChangesJson).HasColumnType("text");
             // 1 日の回数上限の判定（JST の暦日ごとの件数）。
             e.HasIndex(a => a.JstDate);
         });

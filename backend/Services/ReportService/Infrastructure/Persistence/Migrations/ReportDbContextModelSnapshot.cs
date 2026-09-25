@@ -50,8 +50,7 @@ namespace ReportService.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("WatchlistChangesJson")
-                        .HasMaxLength(8192)
-                        .HasColumnType("character varying(8192)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 

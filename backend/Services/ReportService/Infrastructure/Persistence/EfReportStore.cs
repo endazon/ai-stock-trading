@@ -102,7 +102,19 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         row.ReviewState = ReviewState.Drafting;
         row.ConfirmedAt = null;
         row.Version += 1;
-        db.SaveChanges();
+        try
+        {
+            db.SaveChanges();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // FR-14, #1024, IADR-0432（PR #1026 の監査 5）: 並行更新で保存に失敗したら、変更を追跡したまま残さない。
+            // 同じ DbContext を共有する後続の書き込み（方針の改訂の台帳の SaveFailed 等）が、この失敗した行を
+            // もう一度保存しようとして同じ例外で落ちるのを防ぐ。
+            db.ChangeTracker.Clear();
+            throw;
+        }
+
         return row.Version;
     }
 
