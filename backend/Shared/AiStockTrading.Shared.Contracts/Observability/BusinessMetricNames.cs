@@ -97,6 +97,21 @@ public static class BusinessMetricNames
     /// </summary>
     public const string OrderDispatchForgone = "ast.order.dispatch_forgone";
 
+    /// <summary>
+    /// FR-10, NFR-07, #942, IADR-0395: <b>乖離の取り込みの追随を、建玉照会の不明・失敗のまま再試行を使い切って打ち切った件数。</b>
+    /// タグ <c>reason</c>（<c>positions-unknown</c>＝照会が不明 / <c>positions-query-failed</c>＝照会が例外）。
+    /// <para>
+    /// 🔴 <b>数えるのは最後の配送だけである</b>（この失敗でメッセージが <c>PositionDriftAdopted_error</c> へ送られる時点）。
+    /// 途中の失敗は再試行で回復し得るので数えない。このあいだ、取り込みで消えたはずの建玉の**売りの逆指値がブローカーに残る**
+    /// （発火すると意図しないショート）。それまでは Critical ログと <c>_error</c> キューの滞留にしか現れなかった。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>起動時に 0 を計上する</b>（<see cref="BusinessMetrics.PrimeDriftAdoptionFollowUpAbandoned"/>）。
+    /// 系列が最初の打ち切りで初めて現れると、Prometheus の <c>increase()</c> はその 1 点目を増分に数えない。
+    /// </para>
+    /// </summary>
+    public const string DriftAdoptionFollowUpAbandoned = "ast.order.drift_adoption_followup_abandoned";
+
     /// <summary>NFR-13: 計上した LLM 費用（円）。タグ <c>category</c>（Llm＝月次上限の対象 / LlmUncapped＝対象外）。</summary>
     public const string LlmCostJpy = "ast.llm.cost_jpy";
 
@@ -122,6 +137,19 @@ public static class BusinessMetricNames
     /// </para>
     /// </summary>
     public const string RiskCapitalBaselineReads = "ast.risk.capital_baseline_reads";
+
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: <b>市場監視が保有照会（<c>GET /risk-controls/open-positions</c>）の応答を
+    /// そのまま評価できなかった行の件数。</b>タグ <c>reason</c>（identity-missing / stop-line-approximated /
+    /// stop-line-unknown / response-unreadable）。
+    /// <para>
+    /// 🔴 <b>平常時の期待値は 0 件である。</b> 送り手は識別項目と損切りラインを常に載せる（送り手の応答型は非 nullable で、ラインの記録が無ければ
+    /// 送り手自身が近似する）。出ているのは送り手と受け手の契約の食い違い（片方だけ先に配備した等）か送り手の値の異常の印であり、
+    /// その行の損切り保護は欠けているか近似になっている。巡回そのものは止めない（他の行は評価を続ける）ため、
+    /// ログを読みに行かない限り見えない —— だから数える。
+    /// </para>
+    /// </summary>
+    public const string MarketMonitorPositionRowsDegraded = "ast.market_monitor.position_rows_degraded";
 
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";

@@ -67,6 +67,10 @@ public class RejectionReasonClassificationTests
     // FR-01, FR-10, ADR-0020, #337, IADR-0249: 情報源の欠測による限定縮退は「取引を止めている状態そのものの
     // 記録」であり、kill switch / pause と同じクラス B（統制違反に計上しない）。
     [InlineData(RejectionReason.InformationSourceDegraded, RejectionReasonClass.B)]
+    // FR-10, #935, IADR-0394 決定4: 損切りした銘柄の同日・同方向の新規建て。確かめられた損切りは
+    // 統制の正常作動（A）、確かめられない状態は「取引を止めている状態そのものの記録」（B）。どちらもクラス C ではない。
+    [InlineData(RejectionReason.StoppedOutSameDay, RejectionReasonClass.A)]
+    [InlineData(RejectionReason.StopOutStatusUnknown, RejectionReasonClass.B)]
     public void 上限超過と停止中の拒否はクラスAとBに分かれる(
         RejectionReason reason, RejectionReasonClass expected)
     {

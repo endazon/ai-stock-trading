@@ -56,6 +56,29 @@ public sealed class BusinessMetrics : IDisposable
     /// </summary>
     public const string UnobservedNegativeElapsed = "negative-elapsed";
 
+    /// <summary>
+    /// FR-10, #942, IADR-0395: 追随を打ち切った理由タグ値。建玉照会が**不明（<c>null</c>）**を返した。
+    /// 🔴 空の一覧（照会は成功・0 株）はこれに当たらない —— それは「確かめた」であり、追随は進む。
+    /// </summary>
+    public const string DriftFollowUpPositionsUnknown = "positions-unknown";
+
+    /// <summary>FR-10, #942, IADR-0395: 追随を打ち切った理由タグ値。建玉照会が**例外**で落ちた。</summary>
+    public const string DriftFollowUpPositionsQueryFailed = "positions-query-failed";
+
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: 保有の行を評価に渡せなかった（識別項目が無い・列挙が未定義・数量が正でない・null の行）。
+    /// </summary>
+    public const string PositionRowIdentityMissing = "identity-missing";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 損切りラインが無い／正でない行を、平均取得単価からの近似のラインで評価した。</summary>
+    public const string PositionRowStopLineApproximated = "stop-line-approximated";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 損切りラインも平均取得単価も無く、評価に渡せなかった。</summary>
+    public const string PositionRowStopLineUnknown = "stop-line-unknown";
+
+    /// <summary>FR-03, FR-10, #957, IADR-0399: 200 の応答の本文が保有の一覧として読めなかった（壊れた JSON・<c>null</c> 等）。</summary>
+    public const string PositionRowsResponseUnreadable = "response-unreadable";
+
     private readonly Meter _meter;
     private readonly Counter<long> _informationItemsCollected;
     private readonly Counter<long> _tradeCycleDecisions;
@@ -68,11 +91,13 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _riskRejections;
     private readonly Counter<long> _orderExecutions;
     private readonly Counter<long> _orderDispatchForgone;
+    private readonly Counter<long> _driftAdoptionFollowUpAbandoned;
     private readonly Counter<double> _llmCostJpy;
     private readonly Gauge<double> _llmCostLimitRatioPercent;
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
     private readonly Counter<long> _riskCapitalBaselineReads;
+    private readonly Counter<long> _marketMonitorPositionRowsDegraded;
 
     /// <summary>
     /// 本番の構築点。Meter 名は <see cref="BusinessMetricNames.MeterName"/> 固定である。
@@ -163,6 +188,11 @@ public sealed class BusinessMetrics : IDisposable
             BusinessMetricNames.OrderDispatchForgone,
             description: "発注せずに見送った件数（reason 別。FR-05/FR-10）");
 
+        // FR-10, #942, IADR-0395: 乖離の取り込みの追随を、建玉照会の不明・失敗のまま再試行を使い切って打ち切った件数。
+        _driftAdoptionFollowUpAbandoned = _meter.CreateCounter<long>(
+            BusinessMetricNames.DriftAdoptionFollowUpAbandoned,
+            description: "乖離の取り込みの追随を建玉照会の不明・失敗で再試行を使い切って打ち切った件数（reason 別。FR-10）");
+
         _llmCostJpy = _meter.CreateCounter<double>(
             BusinessMetricNames.LlmCostJpy,
             description: "計上した LLM 費用（円。category=Llm は月次上限の対象。NFR-13）");
@@ -184,6 +214,11 @@ public sealed class BusinessMetrics : IDisposable
         _riskCapitalBaselineReads = _meter.CreateCounter<long>(
             BusinessMetricNames.RiskCapitalBaselineReads,
             description: "統制上限の基準資金を読んだ結果の内訳（outcome 別。FR-10）");
+
+        // FR-03, FR-10, #957, IADR-0399: 市場監視が保有照会の応答をそのまま評価できなかった行（平常時 0 件）。
+        _marketMonitorPositionRowsDegraded = _meter.CreateCounter<long>(
+            BusinessMetricNames.MarketMonitorPositionRowsDegraded,
+            description: "市場監視が保有照会の応答をそのまま評価できなかった行の件数（reason 別。FR-03/FR-10）");
     }
 
     /// <summary>FR-01, FR-02: 1 巡回で収集できたアイテム数を計上する。</summary>
@@ -318,6 +353,43 @@ public sealed class BusinessMetrics : IDisposable
             new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason.ToString()));
 
     /// <summary>
+    /// FR-10, #942, IADR-0395: 乖離の取り込みの追随を、建玉照会の不明・失敗のまま<b>再試行を使い切って</b>打ち切った 1 件を計上する。
+    /// <paramref name="reason"/> は <see cref="DriftFollowUpPositionsUnknown"/> か <see cref="DriftFollowUpPositionsQueryFailed"/>。
+    /// </summary>
+    /// <exception cref="ArgumentException">上の 2 値以外。語彙の外の値で系列を増やさない（基数の規律）。</exception>
+    public void RecordDriftAdoptionFollowUpAbandoned(string reason)
+    {
+        if (reason is not (DriftFollowUpPositionsUnknown or DriftFollowUpPositionsQueryFailed))
+        {
+            throw new ArgumentException(
+                $"追随を打ち切った理由は {DriftFollowUpPositionsUnknown} / {DriftFollowUpPositionsQueryFailed} のいずれかである（実値: '{reason}'）。",
+                nameof(reason));
+        }
+
+        _driftAdoptionFollowUpAbandoned.Add(
+            1, new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
+    }
+
+    /// <summary>
+    /// FR-10, #942, IADR-0395: 上のカウンタを<b>理由ごとに 0 で計上し、系列を先に作る</b>。発注執行が起動完了時に 1 度呼ぶ。
+    /// <para>
+    /// 🔴 <b>なぜ要るか</b>: この事象の平常時の件数は 0 である。系列が最初の打ち切りで初めて現れると、その時点の値は 1 で、
+    /// Prometheus の <c>increase()</c> は 1 点目を増分に数えない（前の点が無い）。<b>プロセスの起動から最初の打ち切りを
+    /// アラートが取りこぼす</b>——稀な事象ほど、その「最初」が唯一の 1 回になる。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>OTel の MeterProvider が立った後に呼ぶこと。</b> それより前の計上は誰も聞いておらず、何も残らない。
+    /// </para>
+    /// </summary>
+    public void PrimeDriftAdoptionFollowUpAbandoned()
+    {
+        _driftAdoptionFollowUpAbandoned.Add(
+            0, new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, DriftFollowUpPositionsUnknown));
+        _driftAdoptionFollowUpAbandoned.Add(
+            0, new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, DriftFollowUpPositionsQueryFailed));
+    }
+
+    /// <summary>
     /// NFR-13: LLM 費用の計上と、当月の上限消費率を記録する。
     /// <paramref name="category"/> は上限の対象（<c>Llm</c>）か対象外（<c>LlmUncapped</c>）かを表す文字列。
     /// </summary>
@@ -350,6 +422,20 @@ public sealed class BusinessMetrics : IDisposable
         _riskCapitalBaselineReads.Add(
             1,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome.ToString()));
+
+    /// <summary>
+    /// FR-03, FR-10, #957, IADR-0399: 市場監視が保有照会の応答の行（または応答全体）をそのまま評価できなかった 1 件を計上する。
+    /// <paramref name="count"/> は同じ理由の件数（1 巡回ぶんをまとめて足す）。0 以下は計上しない。
+    /// </summary>
+    public void RecordMarketMonitorPositionRowsDegraded(string reason, int count = 1)
+    {
+        if (count <= 0)
+            return;
+
+        _marketMonitorPositionRowsDegraded.Add(
+            count,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
+    }
 
     public void Dispose() => _meter.Dispose();
 }

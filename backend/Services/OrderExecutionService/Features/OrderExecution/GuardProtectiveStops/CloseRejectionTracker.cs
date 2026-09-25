@@ -12,7 +12,7 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 // 🔴 回数は S1（SoftwareStopExecutor.MaxCloseAttemptsPerTrigger）と同じ 3 だが、**性質は違う**
 // （IADR-0369 の 2026-09-24 追記）: S1 の 3 は**打ち切りではなく Critical を出す連続失敗の回数**で、S1 は
 // 到達の記録を残したまま行ごとの待ち時間（永続・30 秒から倍々・最大 15 分）を置いて撃ち直しを続ける
-// （#833 項目2, IADR-0344 追記(14)。かつての「到達 1 回あたりで使い切ると TriggeredAt を消す」は撤去した）。
+// （#833 項目2, IADR-0344 追記(15)。かつての「到達 1 回あたりで使い切ると TriggeredAt を消す」は撤去した）。
 // こちらは**保護記録ごとの累計**で打ち切り、市場の事象による再武装は無い——数えが戻るのは再起動・逆指値の再発注の成功・手仕舞いの受理（CompleteAsClosed。約定は待たない・#941）だけである。
 // （#938: 記録が完了したときも捨てる。完了した記録へ成行を撃ち直すことは無いので、残しても使われず辞書が太るだけである。）
 //

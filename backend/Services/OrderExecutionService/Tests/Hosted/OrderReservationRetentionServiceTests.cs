@@ -39,6 +39,13 @@ public class OrderReservationRetentionServiceTests
 
         public bool Release(Guid decisionId) => false;
 
+        // #876, IADR-0398: パージの試験では呼ばれない（呼ばれたら落として気付かせる）。
+        public ForgoneRecordOutcome TryRecordForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
+            throw new NotSupportedException();
+
+        public ForgoneRecordOutcome MarkReservationForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
+            throw new NotSupportedException();
+
         public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize)
         {
             Calls.Add((cutoff, batchSize));

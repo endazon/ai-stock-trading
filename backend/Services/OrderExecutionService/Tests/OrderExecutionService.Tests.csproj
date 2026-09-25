@@ -14,6 +14,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\OrderExecutionService.csproj" />
+    <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- ADR-0013, IADR-0129, #354: Wolverine のハンドラをランタイム生成で動かすため（RuntimeCompilation）、
          共通配線ヘルパを持つ shim をテストからのみ参照する。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />

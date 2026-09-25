@@ -58,3 +58,63 @@ spec:
               「未約定の新規建て注文が不明なため新規建てを見送る」）と、リスク管理サービスの
               GET /risk-controls/open-positions ・ GET /risk-controls/working-entry-orders の応答。
               設定では RiskManagement:BaseUrl を疑う。
+
+    - name: ai-stock-trading.stop-loss
+      rules:
+        # 🔴 #957 / IADR-0399: 市場監視がリスク管理の保有照会（GET /risk-controls/open-positions）の応答を
+        # **行ごとに**読み、そのまま損切り判定へ渡せなかった行（識別項目の欠落・損切りラインの欠落・本文が読めない）。
+        # 巡回そのものは止めない（他の行の評価は続く）ため、Critical ログを読みに行かない限り見えない。
+        #
+        # 🔴 **この閾値も実測を要しない。** 送り手は識別項目と損切りラインを常に載せる（送り手の応答型は非 nullable で、ラインの記録が無ければ
+        # 送り手自身が近似する）ため、**平常時の期待値が 0 件**である。出ているのは送り手と受け手の契約の
+        # 食い違い（片方だけ先に配備した等）か送り手の値の異常の印であり、一過性の事象ではないので for は置かない。
+        # 重大度は規約（IADR-0374 決定4: 実測なしに critical を置かない）に従い warning から始める。
+        - alert: AstStopLossPositionRowsDegraded
+          expr: sum(increase(ast_market_monitor_position_rows_degraded_total[15m])) > 0
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 市場監視が保有照会の応答の一部の行をそのまま損切り判定へ渡せていない
+            description: >-
+              市場監視が GET /risk-controls/open-positions の応答に、識別項目（銘柄・市場・方向・数量）や損切りラインの
+              欠けた行、または一覧として読めない本文を受け取っている。identity-missing / stop-line-unknown の行の建玉は
+              損切り（S1）の到達を検知していない。stop-line-approximated の行は平均取得単価から見積もった近似のラインで
+              評価している。最初に見る場所: 市場監視サービスの CRITICAL ログ（「保有照会（GET /risk-controls/open-positions）の
+              応答に、そのまま損切り判定へ渡せない行があります」）の内訳と、リスク管理サービス・市場監視サービスの
+              配備中のイメージの版（片方だけ先に入れ替えていないか）。
+
+    - name: ai-stock-trading.order-execution
+      rules:
+        # 🔴 #942 / IADR-0395: 乖離の取り込み（利用者が承認した PositionDriftAdopted）に保護を追随させる直前の
+        # 建玉照会が不明・失敗のまま、再試行（2s/10s/30s）を使い切った。メッセージは
+        # ai-stock-trading.order-execution-service.PositionDriftAdopted_error に残り、**取り込みで消えたはずの建玉の
+        # 売りの逆指値がブローカーに残る**（建玉が本当に無ければ、発火で意図しないショートが建つ）。
+        # それまで見えたのは Critical ログと _error キューの滞留だけで、Discord にも何も届かなかった。
+        #
+        # 🔴 **この閾値は実測を要しない。** 数えるのは「最後の配送」の打ち切りだけであり（途中の配送は数えない＝
+        # 再試行で回復した一過性の照会失敗では増えない）、**平常時の期待値は 0 件**である。
+        # 系列は発注執行の起動完了時に 0 で作られる（最初の打ち切りを increase() が取りこぼさないため）。
+        # 取引時間に依らない（利用者の承認で起きる事象であり、市場の開閉で 0 へ戻る型の式ではない）。
+        # 系列が無い（サービス停止・送出の断）ときは sum() が空になり**鳴らない**（無データを異常とは読まない）。
+        #
+        # for: 1m は一過性を待つ猶予ではない（事象は既に終端＝再試行を使い切った後である）。評価 1 回の揺れで
+        # 発火させないための最小値であり、15 分窓より十分短いので 1 件の打ち切りでも必ず発火する。
+        # 🔴 **解消（resolved）は「_error が空になった」を意味しない。** 1 件の打ち切りは 15 分窓を抜けると解消に
+        # なるが、メッセージは再投入するまで _error に残る。対応手順は運用仕様書の障害対応表の該当行。
+        - alert: AstDriftAdoptionFollowUpAbandoned
+          expr: sum(increase(ast_order_drift_adoption_followup_abandoned_total[15m])) > 0
+          for: 1m
+          labels:
+            severity: warning
+            service: ai-stock-trading
+          annotations:
+            summary: 乖離の取り込みの追随が建玉照会の不明で打ち切られ、保護逆指値がブローカーに残っている
+            description: >-
+              利用者が承認した乖離の取り込みに保護を追随させる直前の建玉照会が、不明または失敗のまま再試行を使い切った。
+              メッセージは発注執行の PositionDriftAdopted_error キューに残り、保護記録もブローカー側の保護逆指値も取り込み前のまま。
+              建玉が本当に無いなら、残った売りの逆指値が発火して意図しないショートが建ち得る。
+              最初に見る場所: 証券会社の画面の建玉と未約定の逆指値、発注執行サービスの Critical ログ
+              （「再試行を使い切ったため、このメッセージは _error キューへ送られます」。取り込み ID・銘柄が載る）。
+              照会（OpenD）の回復を確かめてから _error のメッセージを元のキューへ戻す（再投入は何度でも安全）。
+              reason ラベルで照会が不明（positions-unknown）か例外（positions-query-failed）かを読み分けられる。

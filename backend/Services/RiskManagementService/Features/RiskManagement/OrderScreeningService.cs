@@ -17,6 +17,10 @@ namespace RiskManagementService.Features.RiskManagement;
 // `BrokerPositionsObservedHandler` は既に依存を必須にしている（IADR-0159）。
 // **`patternDetector` は省略可能のままである**——「検出器を構成していない」は正当な状態であり、
 // `null` の意味が違う（推定台帳の `null` は「30 日禁止が効かない」を意味する）。
+//
+// FR-10, #935, IADR-0394 決定7: **取引台帳（ledger）も同じ理由で必須依存である。** 損切りした銘柄の同日・同方向の
+// 新規建てを止める統制の入力（決済の承認と由来）を読む。省略可能にすると、`Program.cs` から外しても
+// コンパイルが通り、その統制だけが静かに効かなくなる（2026-09-23 の買い直しが戻る）。
 public sealed class OrderScreeningService(
     IRiskSettingsStore settingsStore,
     PortfolioSnapshotBuilder snapshotBuilder,
@@ -24,6 +28,7 @@ public sealed class OrderScreeningService(
     IClock clock,
     IBusinessCalendar businessCalendar,
     IBuyInInferenceStore buyInInferences,
+    IPortfolioLedgerStore ledger,
     IManipulativeOrderPatternDetector? patternDetector = null)
 {
     public ScreeningOutcome Screen(TradeDecisionMade decision)
@@ -46,8 +51,20 @@ public sealed class OrderScreeningService(
         // #428, IADR-0163 決定2: 台帳は必須依存であり、供給は**常に**組む（禁止が無ければ BanUntil が null）。
         var buyInBan = new BuyInBanSupply(clock.Today, buyInInferences.GetBanUntil(intent.Symbol, intent.Market));
 
+        // FR-10, #935, IADR-0394: 当日の損切りの供給（無し／損切り済み／不明を方向ごとに）。
+        // **新規建てのときだけ読む**——手仕舞い（Close）は判定対象外であり、台帳の読み取りの失敗が
+        // 手仕舞いの審査を巻き込まないようにする（ADR-0009）。読み取りが例外で終われば新規建ての審査も例外で終わり、
+        // 承認は出ない（fail-closed）。
+        var stopOuts = isEntry
+            ? StopOutProjection.Project(
+                ledger.GetCloseApprovals(intent.Symbol, intent.Market, clock.UtcNow - StopOutProjection.Lookback),
+                intent.Market,
+                clock.UtcNow)
+            : null;
+
         // 判定コア（決定的）を実行し、違反理由を集約する。
-        var result = RiskEvaluator.Evaluate(intent, settings, snapshot, patternDetector, buyInBan: buyInBan);
+        var result = RiskEvaluator.Evaluate(
+            intent, settings, snapshot, patternDetector, buyInBan: buyInBan, stopOuts: stopOuts);
         var reasons = new List<RejectionReason>(result.Reasons);
 
         // 日次損失上限に「新規到達」したら当日ロックアウトを設定する（翌営業日まで）。

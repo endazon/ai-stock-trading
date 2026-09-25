@@ -274,4 +274,60 @@ public class EfPortfolioLedgerStoreTests
         using var db2 = NewContext(dbName);
         new EfPortfolioLedgerStore(db2).GetFills().Single().FxRateBaseToDisplay.Should().BeNull();
     }
+
+    // ---- 🔴 T-10-810, FR-10, FR-03, #936, IADR-0393（2026-09-25 追記）: ロットを発注の順に並べる鍵を実体の台帳から通す ----
+    // 稼働環境の順: A（715 株・330.88）を先に承認・発注し、B（713 株・331.67）を後に承認・発注した。約定は B が先。
+    // 713 株の減少のあと、発注執行には A が 2 株・B が 713 株残る（作成時刻の古い順に割り当てる）ので、
+    // 市場監視へ返すラインは B の 331.67 でなければならない。台帳が承認時刻を射影へ渡さないと（EntryOrderedAt が null）、
+    // 射影は約定時刻の順へ黙って戻り 330.88 を返す。
+    private static readonly DateTimeOffset LiveDay = new(2026, 9, 23, 0, 0, 0, TimeSpan.Zero);
+
+    private static void AppendLiveLayout(RiskManagementService.Features.RiskManagement.IPortfolioLedgerStore store)
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var close = Guid.NewGuid();
+        store.AppendApproval(a, EntryIntent(715, 330.88m), LiveDay.Add(new TimeSpan(13, 46, 45)));
+        store.AppendApproval(b, EntryIntent(713, 331.67m), LiveDay.Add(new TimeSpan(13, 51, 48)));
+        store.AppendFill(b, "ORD-B", 713, 337.98m, LiveDay.Add(new TimeSpan(13, 51, 49)));
+        store.AppendFill(a, "ORD-A", 715, 337.555m, LiveDay.Add(new TimeSpan(13, 53, 0)));
+        store.AppendApproval(close, new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper, 713, 333m,
+            PositionEffect.Close), LiveDay.Add(new TimeSpan(15, 0, 0)));
+        store.AppendFill(close, "ORD-C", 713, 333m, LiveDay.Add(new TimeSpan(15, 0, 1)));
+    }
+
+    private static OrderIntent EntryIntent(int qty, decimal stopLoss) =>
+        new("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, qty, 338m,
+            PositionEffect.Open, stopLoss);
+
+    [Fact]
+    public void 承認はAが先で約定はBが先の配置を実体の台帳から公開すると331_67を返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var db = NewContext(dbName))
+            AppendLiveLayout(new EfPortfolioLedgerStore(db));
+
+        using var db2 = NewContext(dbName);
+        var store = new EfPortfolioLedgerStore(db2);
+        store.GetFills().Where(f => f.PositionEffect == PositionEffect.Open).Select(f => f.EntryOrderedAt).Should().BeEquivalentTo(
+            new DateTimeOffset?[] { LiveDay.Add(new TimeSpan(13, 46, 45)), LiveDay.Add(new TimeSpan(13, 51, 48)) },
+            "承認の ApprovedAt を約定へ載せる（null＝約定時刻の順へ戻る）");
+
+        var view = new RiskManagementService.Features.RiskManagement.GetOpenPositions.OpenPositionsService(store).Build().Single();
+        view.Quantity.Should().Be(715);
+        view.StopLossPrice.Should().Be(331.67m);
+    }
+
+    // 🔴 2 実装のドリフトを防ぐ（InMemory 実装はテスト・開発の既定である）。
+    [Fact]
+    public void InMemory実装も承認はAが先で約定はBが先の配置で331_67を返す()
+    {
+        var store = new InMemoryPortfolioLedgerStore();
+        AppendLiveLayout(store);
+
+        var view = new RiskManagementService.Features.RiskManagement.GetOpenPositions.OpenPositionsService(store).Build().Single();
+        view.Quantity.Should().Be(715);
+        view.StopLossPrice.Should().Be(331.67m);
+    }
 }

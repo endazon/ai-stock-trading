@@ -1010,6 +1010,195 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- check-test-traceability.js: 検査 4b（T2b）＝baseline の増加ラチェット（#923 / IADR-0376 追記） ---
+  //
+  // 規則 11: 増える側と減る側の両方のプローブを置き、基準の取り方 3 通りで実測する
+  // （表は作業仕様書 20260925_923_775_test-id-baseline-ratchet-and-git-census）。
+  // 実 git の一時リポジトリを作り、関数を直接呼ぶ（環境変数は明示して CI の値に左右されないようにする）。
+  {
+    const { execFileSync: execG } = require('child_process');
+    const g = (root, ...args) =>
+      execG('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const entry = (id, count = 2) => ({ id, files: ['docs/tests/FR-10_a.md'], count, reason: 'x'.repeat(30) });
+    const writeBl = (root, dups) => {
+      fsTt.mkdirSync(pathTt.join(root, 'scripts'), { recursive: true });
+      fsTt.writeFileSync(
+        pathTt.join(root, 'scripts', 'test-id-duplicate-baseline.json'),
+        JSON.stringify({ duplicates: dups }, null, 2)
+      );
+    };
+    const commit = (root, msg) => {
+      g(root, 'add', '-A');
+      g(root, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', msg);
+    };
+    // develop に baseline（A, B）を置き、feature を分岐した一時リポジトリ。
+    const mkRepo = () => {
+      const root = fsTt.realpathSync(fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t2b-')));
+      g(root, 'init', '-q', '-b', 'develop');
+      writeBl(root, [entry('T-10-1'), entry('T-10-2')]);
+      commit(root, 'chore: baseline');
+      g(root, 'checkout', '-q', '-b', 'feature');
+      return root;
+    };
+    const run = (root, range) => tt.checkBaselineGrowth(root, { range, env: {} });
+
+    // P+: PR 自身が entry を足す（宣言なし）
+    const probePlus = () => {
+      const root = mkRepo();
+      writeBl(root, [entry('T-10-1'), entry('T-10-2'), entry('T-10-3')]);
+      commit(root, 'chore: add');
+      return root;
+    };
+    // P+d: 同上＋宣言
+    const probePlusDeclared = () => {
+      const root = mkRepo();
+      writeBl(root, [entry('T-10-1'), entry('T-10-2'), entry('T-10-3')]);
+      commit(root, 'chore: add\n\n[add-test-id-duplicate] T-10-3');
+      return root;
+    };
+    // P−: 分岐後に develop が B を消した（解消）。feature は rebase していない
+    const probeMinus = () => {
+      const root = mkRepo();
+      fsTt.writeFileSync(pathTt.join(root, 'unrelated.txt'), 'x');
+      commit(root, 'chore: unrelated');
+      g(root, 'checkout', '-q', 'develop');
+      writeBl(root, [entry('T-10-1')]);
+      commit(root, 'chore: resolve B');
+      g(root, 'checkout', '-q', 'feature');
+      return root;
+    };
+    // P+2: 1 コミット目で足し、2 コミット目は無関係
+    const probePlusTwo = () => {
+      const root = probePlus();
+      fsTt.writeFileSync(pathTt.join(root, 'unrelated.txt'), 'y');
+      commit(root, 'chore: unrelated');
+      return root;
+    };
+    const verdict = (r) => {
+      assert.ok(!r.skipped, `skip した: ${r.skipped}`);
+      return r.errors.length ? '赤' : '緑';
+    };
+
+    ok('🔴 [T2b/増える側] baseline に entry を足しただけなら赤（宣言なし）', () => {
+      const r = run(probePlus(), null);
+      assert.strictEqual(verdict(r), '赤');
+      assert.match(r.errors.join('\n'), /T-10-3 がマージベースより増えています/);
+      assert.match(r.errors.join('\n'), /\[add-test-id-duplicate\] T-10-3/);
+    });
+
+    ok('[T2b/増える側] コミット本文の行単独の宣言があれば緑（宣言した増加として返す）', () => {
+      const r = run(probePlusDeclared(), null);
+      assert.strictEqual(verdict(r), '緑');
+      assert.deepStrictEqual(r.declared.map((d) => d.id), ['T-10-3']);
+    });
+
+    ok('🔴 [T2b/増える側] 本文中に埋めた言及では宣言として発動しない', () => {
+      assert.strictEqual(tt.parseDuplicateAdditions('説明: `[add-test-id-duplicate] T-10-3` と書く').size, 0);
+      assert.deepStrictEqual([...tt.parseDuplicateAdditions('x\n  [add-test-id-duplicate] T-10-03  \ny')], ['T-10-3']);
+    });
+
+    ok('[T2b/減る側] 分岐後に develop が消した entry が未 rebase の PR に残っても誤発火しない（3 ドット）', () => {
+      assert.strictEqual(verdict(run(probeMinus(), null)), '緑');
+    });
+
+    ok('🔴 [T2b/増える側] 2 コミット以上の PR でも 1 コミット目の追加を見逃さない', () => {
+      assert.strictEqual(verdict(run(probePlusTwo(), null)), '赤');
+    });
+
+    ok('[T2b/規則 11] 基準の取り方 3 通りの表を実測する（採用はマージベースのみが全列正しい）', () => {
+      const shapes = { '2 ドット': 'develop..HEAD', 'HEAD^1': 'HEAD~1...HEAD', 'マージベース': 'develop...HEAD' };
+      const probes = { 'P+': probePlus, 'P+d': probePlusDeclared, 'P−': probeMinus, 'P+2': probePlusTwo };
+      const expected = { 'P+': '赤', 'P+d': '緑', 'P−': '緑', 'P+2': '赤' };
+      const table = {};
+      for (const [shape, range] of Object.entries(shapes)) {
+        table[shape] = {};
+        for (const [name, mk] of Object.entries(probes)) table[shape][name] = verdict(run(mk(), range));
+      }
+      assert.deepStrictEqual(table['マージベース'], expected, JSON.stringify(table));
+      // 片側だけの形は必ず逆側が空く（表の対角）。
+      assert.strictEqual(table['2 ドット']['P−'], '赤', '2 ドットは減る側を誤読するはず');
+      assert.strictEqual(table['HEAD^1']['P+2'], '緑', 'HEAD^1 は 1 コミット目の追加を見逃すはず');
+    });
+
+    ok('[T2b] 件数の増加・在り処の追加も「増えた」に数える', () => {
+      const base = { duplicates: [entry('T-10-1')] };
+      const more = { duplicates: [{ ...entry('T-10-1', 3), files: ['docs/tests/FR-10_a.md', 'docs/tests/FR-10_b.md'] }] };
+      const g2 = tt.findBaselineGrowth(base, more);
+      assert.strictEqual(g2.length, 1);
+      assert.match(g2[0].reasons.join('・'), /件数 2 → 3/);
+      assert.match(g2[0].reasons.join('・'), /FR-10_b\.md/);
+      assert.deepStrictEqual(tt.findBaselineGrowth(more, base), [], '減る側は増加ではない');
+    });
+
+    ok('[T2b] git の作業ツリーでない模擬ツリーでは理由つきで skip する', () => {
+      const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t2b-nogit-'));
+      assert.match(tt.checkBaselineGrowth(root, { env: {} }).skipped || '', /最上位ではない/);
+    });
+
+    ok('🔴 [T2b] 基準を取れない skip は CI の pull_request 本走でだけ赤へ倒す（fail-loud）', () => {
+      const pr = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'pull_request' };
+      assert.strictEqual(tt.dupBaselineSkipIsFatal(pr), true);
+      assert.strictEqual(tt.dupBaselineSkipIsFatal({ ...pr, GITHUB_EVENT_NAME: 'push' }), false);
+      assert.strictEqual(tt.dupBaselineSkipIsFatal({ ...pr, TEST_TRACE_ROOT: '/tmp/x' }), false);
+      assert.strictEqual(tt.dupBaselineSkipIsFatal({}), false);
+    });
+
+    ok('🔴 [T2b] CI の pull_request で基準が取れなければ本走が exit 1 になる', () => {
+      const env = { ...process.env, GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'pull_request' };
+      delete env.TEST_TRACE_ROOT;
+      let code = 0;
+      let out = '';
+      try {
+        execG(process.execPath, [pathTt.join(__dirname, 'check-test-traceability.js'), '--dup-baseline-range=no-such-ref...HEAD'], {
+          cwd: pathTt.resolve(__dirname, '..'), env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (e) {
+        code = e.status;
+        out = `${e.stdout || ''}${e.stderr || ''}`;
+      }
+      assert.strictEqual(code, 1, '基準が取れないのに緑になった');
+      assert.match(out, /\[T2b\] baseline の増加ラチェットの比較基準を取れません/);
+    });
+
+    // --- #775: census を git の追跡パスから取る ---
+    ok('🔴 [陰性対照/#775] 作業ツリーで Tests/ を小文字 tests/ へ改名しても census は変わらない', () => {
+      const root = fsTt.realpathSync(fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-775-')));
+      g(root, 'init', '-q', '-b', 'develop');
+      const dir = pathTt.join(root, 'backend', 'Services', 'A', 'Tests', 'Features');
+      fsTt.mkdirSync(dir, { recursive: true });
+      fsTt.writeFileSync(pathTt.join(dir, 'X.cs'), '// FR-10\n');
+      commit(root, 'chore: tests');
+      const before = { dirs: tt.serviceTestDirs(root), counts: tt.serviceTestLayoutCounts(root, tt.testFiles(root)) };
+      assert.deepStrictEqual(before, { dirs: { old: 0, new: 1 }, counts: { old: 0, new: 1 } });
+      // git mv を使わずに作業ツリーの実名だけを変える（大文字小文字を区別しない FS で起きた食い違いの再現）。
+      fsTt.renameSync(pathTt.join(root, 'backend', 'Services', 'A', 'Tests'), pathTt.join(root, 'backend', 'Services', 'A', 'tmp__case'));
+      fsTt.renameSync(pathTt.join(root, 'backend', 'Services', 'A', 'tmp__case'), pathTt.join(root, 'backend', 'Services', 'A', 'tests'));
+      const after = { dirs: tt.serviceTestDirs(root), counts: tt.serviceTestLayoutCounts(root, tt.testFiles(root)) };
+      assert.deepStrictEqual(after, before, `census が作業ツリーの実名に引きずられた: ${JSON.stringify(after)}`);
+      // 陽性対照: fs 走査（縮退経路）なら実名どおり旧樹形として数える＝上の不変は git 由来であることの確認。
+      assert.deepStrictEqual(tt.serviceTestDirs(root, { tracked: null }), { old: 1, new: 0 });
+    });
+
+    ok('[#775] isTrackedTestPath はディレクトリ走査と同じ規則をパス要素へ適用する', () => {
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/Tests/X.cs'), true);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/tests/A.Domain.Tests/X.cs'), true);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Tests/AiStockTrading.Architecture.Tests/X.cs'), true);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Tests/X.cs'), false, 'backend/Tests 直下は横断テストのプロジェクト外');
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/Features/Tests/X.cs'), false);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/Tests/obj/X.cs'), false);
+      assert.strictEqual(tt.isTrackedTestPath('backend/Services/A/A.csproj'), false);
+    });
+
+    ok('[#775] 実ツリーでは census の出典が git ls-files であり、fs 走査と同じ母集合になる', () => {
+      const root = pathTt.resolve(__dirname, '..');
+      const src = tt.censusSource(root);
+      assert.ok(src.tracked !== null, src.source);
+      const viaGit = tt.testFiles(root, src).sort();
+      const viaFs = tt.testFiles(root, { tracked: null, source: 'fs' }).sort();
+      assert.deepStrictEqual(viaGit, viaFs, '追跡外の .cs が作業ツリーにあると差が出る（git add を忘れていないか）');
+    });
+  }
+
   // --- check-coverage.js: カバレッジ floor / ratchet（#343） ---
   const cov = require('./check-coverage.js');
 
@@ -1669,6 +1858,183 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
 
   ok('実ツリー: 素の TrackActivity() の使用が無い（#357 の回帰）', () => {
     assert.deepStrictEqual(tst.checkTree(pathTst.resolve(__dirname, '..')), []);
+  });
+
+  // --- check-wall-clock-timeout-tests.js: 壁時計どうしの競争で合否が決まる試験の遮断（NFR / #921 / IADR-0379 決定 4） ---
+  //
+  // #885 / #900 / #901 の 3 件は「50 ms の HttpClient.Timeout」対「2 秒のハンドラ遅延」のような
+  // **壁時計どうしの競争**で、塞がったスレッドプールが期限切れの 2 つのタイマーの順序を入れ替えて落ちた。
+  // 12 コピーを #907 / #920 で「応答しない上流」へ移したが、**次に書かれる試験は遅い上流を素直に書く**。
+  //
+  // **本検査も「効かない方向」に壊れると CI が緑のまま flake だけが戻る。** よって
+  //   (1) 打ち切り 4 入口・遅延 3 入口の組を実際に検出できること（赤）
+  //   (2) 是正後の形（無期限）・大小が逆・変数・散文・別名を誤検出しないこと（緑）
+  // の両方を置き、模擬ツリーで CLI の終了コードまで確かめる。
+  const fsWc = require('fs');
+  const osWc = require('os');
+  const pathWc = require('path');
+  const wc = require('./check-wall-clock-timeout-tests.js');
+
+  // #920 前の実形（HttpDailyPolicyProviderTests の抜粋）。
+  const WC_RED = [
+    'var http = new HttpClient(new DelayingHandler(TimeSpan.FromSeconds(2)))',
+    '{',
+    '    BaseAddress = new Uri("http://localhost"),',
+    '    Timeout = TimeSpan.FromMilliseconds(50),',
+    '};',
+    '',
+  ].join('\n');
+  // IADR-0379 決定 2 の是正後の形（HttpCostControlGateTests の抜粋）。
+  const WC_GREEN = [
+    'var http = new HttpClient(new NeverRespondingHandler(entered))',
+    '{',
+    '    Timeout = TimeSpan.FromMilliseconds(50),',
+    '};',
+    'await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);',
+    '',
+  ].join('\n');
+
+  ok('check-wall-clock-timeout-tests: #920 前の実形（Timeout 50 ms ＜ DelayingHandler 2 s）を検出する', () => {
+    const hits = wc.findViolations(WC_RED);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].shape, 'a');
+    assert.strictEqual(hits[0].cutoff.ms, 50);
+    assert.strictEqual(hits[0].cutoff.line, 4);
+    assert.strictEqual(hits[0].delay.ms, 2000);
+    assert.strictEqual(hits[0].delay.line, 1);
+  });
+
+  ok('check-wall-clock-timeout-tests: 是正後の形（応答しない上流＝無期限）は素通りする', () => {
+    assert.deepStrictEqual(wc.findViolations(WC_GREEN), []);
+    assert.deepStrictEqual(wc.findViolations('Thread.Sleep(Timeout.Infinite); cts.CancelAfter(50);\n'), []);
+    assert.deepStrictEqual(wc.findViolations('await Task.Delay(-1); cts.CancelAfter(50);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 打ち切りの 4 入口をそれぞれ検出する', () => {
+    const delay = 'await Task.Delay(TimeSpan.FromSeconds(1));\n';
+    for (const cut of [
+      'client.Timeout = TimeSpan.FromMilliseconds(100);\n',
+      'cts.CancelAfter(100);\n',
+      'cts.CancelAfter(TimeSpan.FromMilliseconds(100));\n',
+      'using var cts = new CancellationTokenSource(100);\n',
+      'using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));\n',
+      'var o = new CallOptions { Deadline = DateTime.UtcNow.AddMilliseconds(100) };\n',
+      'var o = new CallOptions { Deadline = DateTime.UtcNow.Add(TimeSpan.FromMilliseconds(100)) };\n',
+    ]) {
+      assert.strictEqual(wc.findViolations(cut + delay).length, 1, cut);
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: 遅延の 3 入口をそれぞれ検出する（裸の数値はミリ秒）', () => {
+    const cut = 'cts.CancelAfter(TimeSpan.FromMilliseconds(100));\n';
+    for (const delay of [
+      'await Task.Delay(600);\n',
+      'await Task.Delay(TimeSpan.FromSeconds(1), ct);\n',
+      'Thread.Sleep(1_000);\n',
+      'Thread.Sleep(TimeSpan.FromSeconds(0.5));\n',
+      'var h = new DelayingHandler(TimeSpan.FromSeconds(2));\n',
+    ]) {
+      assert.strictEqual(wc.findViolations(cut + delay).length, 1, delay);
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: 打ち切りが遅延以上なら検出しない（どちらが先でも同じ判定になる）', () => {
+    assert.deepStrictEqual(
+      wc.findViolations('http.Timeout = TimeSpan.FromSeconds(60);\nvar h = new DelayingHandler(TimeSpan.FromSeconds(30));\n'), []);
+    assert.deepStrictEqual(wc.findViolations('cts.CancelAfter(500);\nawait Task.Delay(500);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 変数・式の期間は読まない（再現率より的中率）', () => {
+    assert.deepStrictEqual(wc.findViolations('cts.CancelAfter(50);\nawait Task.Delay(delay, ct);\n'), []);
+    assert.deepStrictEqual(wc.findViolations('connect.CancelAfter(ConnectTimeout);\nawait Task.Delay(600);\n'), []);
+    assert.deepStrictEqual(
+      wc.findViolations('http.Timeout = TimeSpan.FromMilliseconds(50) * 100;\nawait Task.Delay(600);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 打ち切りだけ・遅延だけのファイルは検出しない', () => {
+    assert.deepStrictEqual(wc.findViolations('http.Timeout = TimeSpan.FromMilliseconds(50);\n'), []);
+    assert.deepStrictEqual(wc.findViolations('await Task.Delay(300);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 別名のプロパティ（ReplyTimeout / readyDeadline）には当たらない', () => {
+    assert.deepStrictEqual(
+      wc.findViolations('o.ReplyTimeout = TimeSpan.FromMilliseconds(200);\nawait Task.Delay(500);\n'), []);
+    assert.deepStrictEqual(
+      wc.findViolations('var readyDeadline = DateTime.UtcNow.AddMilliseconds(10);\nawait Task.Delay(500);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: コメント・文字列中の言及は誤検出しない（禁止の理由を書けること）', () => {
+    assert.deepStrictEqual(wc.findViolations(
+      '// 従来は Timeout = TimeSpan.FromMilliseconds(50) 対 DelayingHandler(TimeSpan.FromSeconds(2)) だった\n'), []);
+    assert.deepStrictEqual(wc.findViolations(
+      '/* cts.CancelAfter(50); */ var s = "await Task.Delay(600);";\n'), []);
+    // 片方だけがコードでも検出しない（両方がコードのときだけ組になる）。
+    assert.deepStrictEqual(wc.findViolations(
+      'http.Timeout = TimeSpan.FromMilliseconds(50);\n// await Task.Delay(600);\n'), []);
+  });
+
+  ok('check-wall-clock-timeout-tests: 母集合は「ディレクトリ名が Tests で終わる」配下（TestSupport/*.Tests も拾う）', () => {
+    assert.strictEqual(wc.isUnderTestsDir('backend/Services/X/Tests/A/FooTests.cs'), true);
+    assert.strictEqual(
+      wc.isUnderTestsDir('backend/TestSupport/AiStockTrading.TestSupport.PlatformShim.Tests/FooTests.cs'), true);
+    assert.strictEqual(wc.isUnderTestsDir('backend/Tests/AiStockTrading.IntegrationTests/E2ETests.cs'), true);
+    assert.strictEqual(wc.isUnderTestsDir('backend/Services/X/Infrastructure/FooTests.cs'), false);
+    assert.strictEqual(wc.isUnderTestsDir('backend/TestSupport/AiStockTrading.TestSupport.Messaging/Foo.cs'), false);
+  });
+
+  ok('check-wall-clock-timeout-tests: 模擬ツリーで赤は exit 1・是正後は exit 0（CLI の終了コード）', () => {
+    const { spawnSync } = require('child_process');
+    const run = (files) => {
+      const root = fsWc.mkdtempSync(pathWc.join(osWc.tmpdir(), 'wc-race-'));
+      try {
+        for (const [rel, text] of Object.entries(files)) {
+          fsWc.mkdirSync(pathWc.dirname(pathWc.join(root, rel)), { recursive: true });
+          fsWc.writeFileSync(pathWc.join(root, rel), text);
+        }
+        return spawnSync(process.execPath, [pathWc.join(__dirname, 'check-wall-clock-timeout-tests.js')], {
+          env: { ...process.env, WALL_CLOCK_RACE_CHECK_ROOT: root },
+          encoding: 'utf8',
+        });
+      } finally {
+        fsWc.rmSync(root, { recursive: true, force: true });
+      }
+    };
+    const red = run({
+      'backend/TestSupport/X.Tests/ATests.cs': WC_RED,
+      'backend/Services/Y/Tests/BTests.cs': WC_GREEN,
+    });
+    assert.strictEqual(red.status, 1, red.stdout + red.stderr);
+    assert.match(red.stderr, /backend\/TestSupport\/X\.Tests\/ATests\.cs:4: \[形 \(a\)\]/);
+    assert.doesNotMatch(red.stderr, /BTests\.cs/);
+    // `Tests` で終わらないディレクトリの同じ形は母集合の外。
+    const outside = run({ 'backend/Services/Y/Infrastructure/CTests.cs': WC_RED });
+    assert.strictEqual(outside.status, 0, outside.stdout + outside.stderr);
+    const green = run({ 'backend/Services/Y/Tests/BTests.cs': WC_GREEN });
+    assert.strictEqual(green.status, 0, green.stdout + green.stderr);
+  });
+
+  ok('check-wall-clock-timeout-tests: allowlist に載せたファイルは検出しない（登録の形の確認）', () => {
+    const root = fsWc.mkdtempSync(pathWc.join(osWc.tmpdir(), 'wc-race-allow-'));
+    try {
+      const rel = 'backend/Services/Y/Tests/ATests.cs';
+      fsWc.mkdirSync(pathWc.dirname(pathWc.join(root, rel)), { recursive: true });
+      fsWc.writeFileSync(pathWc.join(root, rel), WC_RED);
+      assert.strictEqual(wc.checkTree(root, new Map()).length, 1);
+      assert.deepStrictEqual(wc.checkTree(root, new Map([[rel, '模擬（#921）。']])), []);
+    } finally {
+      fsWc.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  ok('check-wall-clock-timeout-tests: allowlist は空である（#921。移行前の先回り登録で検査を無効化しない）', () => {
+    assert.strictEqual(wc.ALLOWED.size, 0);
+  });
+
+  ok('実ツリー: 壁時計どうしの競争で合否が決まる試験が無い（#885 / #900 / #901 の回帰）', () => {
+    const stats = {};
+    const hits = wc.checkTree(pathWc.resolve(__dirname, '..'), wc.ALLOWED, wc.SHAPES, stats);
+    assert.deepStrictEqual(hits.map((h) => `${h.file}:${h.line}`), []);
+    assert.ok(stats.scanned > 0, '母集合が 0 件なら、検査は何も見ていない');
   });
 
 
@@ -2335,6 +2701,32 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         `WorkingEntriesUnknownOpen を見ていない: ${target.expr}`);
       assert.ok(/reason=~"[^"]*\bHoldingsUnknownOpen\b[^"]*"/.test(target.expr),
         `HoldingsUnknownOpen を見なくなった: ${target.expr}`);
+    });
+
+    // NFR-07, #939, IADR-0374（2026-09-25 追記）: 🔴 実資産のダッシュボードは、パネル id が一意で配置が重ならない。
+    // 並行 PR が末尾へ同じ id・同じ位置のパネルを足してマージすると、Grafana は 1 枚を黙って落とす（PR #919 / #925）。
+    ok('check-observability-assets: 実ダッシュボードのパネル id は一意で gridPos は重ならない（D4・D5）', () => {
+      const dir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'dashboards');
+      for (const f of fsOa.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+        const dash = JSON.parse(fsOa.readFileSync(pathOa.join(dir, f), 'utf8'));
+        assert.deepStrictEqual(oa.checkPanelIdsAndLayout(f, dash.panels), [], `${f} の id・配置が壊れている`);
+      }
+    });
+
+    // NFR-07, #939: 実アラートは、`for:` を持つか、「for は置かない」の印で不在の理由を明示している。
+    // 印の読み取りが壊れると、意図して for を置かないルールが赤になり、検査ごと外される（逆に印を無視して
+    // 通すと黙った欠落が止まらない）。印を持つ既存ルールが印つきとして読めることを固定する。
+    ok('check-observability-assets: 実アラートの for は、置くか「置かない」理由の印がある（A1）', () => {
+      const alertDir = pathOa.join(REPO_ROOT_OA, 'deploy', 'observability', 'alerts');
+      const rules = fsOa.readdirSync(alertDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .flatMap((f) => oa.parseAlertRules(fsOa.readFileSync(pathOa.join(alertDir, f), 'utf8')));
+      for (const rule of rules) {
+        assert.ok(rule.for !== null || rule.noForReason, `${rule.alert} に for も印も無い`);
+      }
+      const stopLoss = rules.find((r) => r.alert === 'AstStopLossPositionRowsDegraded');
+      assert.ok(stopLoss, 'AstStopLossPositionRowsDegraded が無い');
+      assert.ok(stopLoss.noForReason, `印の読み取りが壊れた: ${JSON.stringify(stopLoss)}`);
     });
   }
 
@@ -3107,6 +3499,62 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         assert.match(out, /OK:/, `偽陽性が出ている（旧 touched への退行の疑い）: ${out}`);
       });
     }
+
+    // ---- 規則 4（重複）と、重複を畳む是正を消失と数えないこと（#955 / IADR-0400） ----
+    ok('check-adr-index-addendum-loss[規則 4]: findDuplicateRows は同じ IADR 番号の索引行が複数ある ID だけを返す', () => {
+      const rows = al.parseIndex(
+        [
+          rowOf('IADR-0369', 'a'),
+          rowOf('IADR-0354', 'b'),
+          rowOf('IADR-0369', 'c'),
+          rowOf('IADR-0354', 'd'),
+          rowOf('IADR-0354', 'e'),
+          rowOf('IADR-0118', 'f'),
+          '> 注: IADR-0118 は索引行の外の言及であり、行数に数えない',
+        ].join('\n'),
+      );
+      assert.deepStrictEqual(al.findDuplicateRows(rows), [
+        { id: 'IADR-0354', lines: 3 },
+        { id: 'IADR-0369', lines: 2 },
+      ]);
+    });
+
+    ok('check-adr-index-addendum-loss[#955]: 重複 2 行に 1 回ずつ在った印は、1 行へ畳んでも消失としない', () => {
+      const base = al.parseIndex(
+        `${rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #899］')}\n` +
+          rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #889］'),
+      );
+      assert.strictEqual(base.get('IADR-0354').marks.get('［2026-09-19 追記 / #874］'), 1, '行ごとの最大値で持つ');
+      const folded = al.parseIndex(
+        rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #889］［2026-09-23 追記 / #899］'),
+      );
+      assert.deepStrictEqual(al.findLosses({ base, theirs: base, ours: folded }), []);
+      // 片方の行だけが持っていた印を落として畳めば、本当の消失として残る。
+      const lossy = al.parseIndex(rowOf('IADR-0354', 'a［2026-09-19 追記 / #874］［2026-09-23 追記 / #899］'));
+      const losses = al.findLosses({ base, theirs: base, ours: lossy });
+      assert.deepStrictEqual(losses.map((l) => l.mark), ['［2026-09-23 追記 / #889］']);
+    });
+
+    // 実データ: f703843（#945）の索引は IADR-0354・IADR-0369 が 2 本ずつ。6dcc7b5（#954）が畳んだ。
+    // 6dcc7b5 のコミット本文には `[remove-adr-addendum]` の宣言が**無い**（スカッシュで落ちた）ため、
+    // 旧比較（合算）では 4 件の「消失」として赤になっていた。
+    ok('check-adr-index-addendum-loss[#955 実データ]: 重複を持つ f703843 は赤、畳んだ 6dcc7b5 は宣言なしで緑', () => {
+      if (!revAl('f703843') || !revAl('6dcc7b5')) {
+        process.stdout.write('      (skip) f703843 / 6dcc7b5 が履歴に無い\n');
+        return;
+      }
+      const at = (sha) =>
+        execAl(`git show ${sha}:${al.INDEX_PATH}`, { cwd: REPO_AL, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const before = at('f703843');
+      const after = at('6dcc7b5');
+      assert.deepStrictEqual(
+        al.findDuplicateRows(al.parseIndex(before)).map((d) => d.id),
+        ['IADR-0354', 'IADR-0369'],
+      );
+      assert.deepStrictEqual(al.findDuplicateRows(al.parseIndex(after)), []);
+      const b = al.parseIndex(before);
+      assert.deepStrictEqual(al.findLosses({ base: b, theirs: b, ours: al.parseIndex(after) }), []);
+    });
 
     // 配線の退行テスト（`check-cross-repo-refs` と同じ趣旨）: CI に載っていない検査器は
     // 「誰かが手で叩いたときだけ走る検査器」であり、規約を守らせない。

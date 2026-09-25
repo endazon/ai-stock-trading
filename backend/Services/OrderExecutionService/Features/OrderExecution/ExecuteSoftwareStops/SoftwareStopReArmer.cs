@@ -82,7 +82,7 @@ public sealed class SoftwareStopReArmer(
         var entry = store.FindByDecisionId(stop.EntryDecisionId);
         var now = clock.UtcNow;
 
-        // 🔴 #833 項目2, IADR-0344 追記(14): **1 株も約定しなかった**再武装は「続けて売れなかった」1 回として数え、
+        // 🔴 #833 項目2, IADR-0344 追記(15): **1 株も約定しなかった**再武装は「続けて売れなかった」1 回として数え、
         // 行ごとの待ち時間を置く（受理 → 即失効のループが次の巡回ごとに成行を撃ち続けない。IADR-0389 §結果の残余）。
         // 1 株でも約定していれば前進であり、数えを 0 へ戻す（残りはすぐ撃ってよい）。
         var progressed = filledQuantity > 0;

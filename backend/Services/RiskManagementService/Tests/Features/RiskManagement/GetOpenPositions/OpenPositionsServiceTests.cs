@@ -15,7 +15,8 @@ public class OpenPositionsServiceTests
     // 与えた LedgerFill 列をそのまま返す最小のフェイク台帳（射影入力の供給のみ）。
     private sealed class FakeLedger(params LedgerFill[] fills) : IPortfolioLedgerStore
     {
-        public void AppendApproval(Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt, decimal? fxRateBaseToDisplay = null) { }
+        public void AppendApproval(Guid decisionId, OrderIntent intent, DateTimeOffset approvedAt, decimal? fxRateBaseToDisplay = null, ApprovalSource? source = null) { }
+        public IReadOnlyList<LedgerCloseApproval> GetCloseApprovals(string symbol, Market market, DateTimeOffset activitySince) => [];
         public bool AppendFill(Guid decisionId, string orderId, int filledQuantity, decimal averagePrice, DateTimeOffset executedAt, BrokerProvider? provider = null) => true;
         public IReadOnlyList<LedgerFill> GetFills() => fills;
         public PositionEffect? FindApprovedPositionEffect(Guid decisionId) => null;
@@ -93,5 +94,50 @@ public class OpenPositionsServiceTests
     public void 保有が無ければ空を返す()
     {
         new OpenPositionsService(new FakeLedger()).Build().Should().BeEmpty();
+    }
+
+    // ---- 🔴 T-10-765・T-10-766, FR-10, FR-03, #936, IADR-0393: 同じ銘柄に複数のエントリーがあるとき ----
+
+    // 約定時刻を指定できる約定（エントリーの順が意味を持つ配置用）。
+    private static LedgerFill Timed(TradeSide side, PositionEffect effect, int qty, decimal price, decimal? stop, int minute) =>
+        new("AAPL", Market.UnitedStates, side, effect, qty, price, At.AddMinutes(minute), stop);
+
+    [Fact]
+    public void 稼働中の2本建てでは市場監視へ先に建てた高いライン331_67を返す()
+    {
+        // T-10-765: 稼働 PoC の AAPL（713 株 331.67 を先に・715 株 330.88 を後に建てた）。
+        // 従来は最新エントリーの 330.88 を返し、市場監視は 713 株の行のライン 331.67 で到達を出せなかった（0.79 遅れる）。
+        var service = new OpenPositionsService(new FakeLedger(
+            Timed(TradeSide.Buy, PositionEffect.Open, 713, 337m, 331.67m, 0),
+            Timed(TradeSide.Buy, PositionEffect.Open, 715, 336m, 330.88m, 60)));
+
+        var view = service.Build().Single();
+
+        view.Quantity.Should().Be(1_428);
+        view.StopLossPrice.Should().Be(331.67m);
+    }
+
+    [Fact]
+    public void 損切り価格の記録が無いエントリーは近似で見積もって候補に入れ_記録が揃っていれば近似は入らない()
+    {
+        // T-10-766: 記録の無いロット（レガシー）を「ラインが無い」と読むと、そのロットは 950 でしか守られない。
+        // 不明は無いではない —— 近似（平均取得単価 1,000 × 0.97 = 970）で見積もり、より保護的な 970 を採る。
+        var mixed = new OpenPositionsService(new FakeLedger(
+            Timed(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, null, 0),
+            Timed(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 950m, 60)));
+        mixed.Build().Single().StopLossPrice.Should().Be(1_000m * (1m - TradingDefaults.DefaultStopLossRatio));
+
+        // 記録の無いロットが古いロットから削られて消えたら、近似は候補から外れる（実値 950 だけ）。
+        var trimmed = new OpenPositionsService(new FakeLedger(
+            Timed(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, null, 0),
+            Timed(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 950m, 60),
+            Timed(TradeSide.Sell, PositionEffect.Close, 10, 1_000m, null, 120)));
+        trimmed.Build().Single().StopLossPrice.Should().Be(950m);
+
+        // すべてのロットが記録を持てば近似は入らない（近似 970 の方が高くても実値の 950 を返す）。
+        var known = new OpenPositionsService(new FakeLedger(
+            Timed(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 940m, 0),
+            Timed(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 950m, 60)));
+        known.Build().Single().StopLossPrice.Should().Be(950m);
     }
 }

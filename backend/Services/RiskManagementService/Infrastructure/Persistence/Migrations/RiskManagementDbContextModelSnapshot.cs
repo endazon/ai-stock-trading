@@ -76,6 +76,9 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.Property<int>("Side")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("Source")
+                        .HasColumnType("integer");
+
                     b.Property<decimal?>("StopLossPrice")
                         .HasColumnType("numeric");
 

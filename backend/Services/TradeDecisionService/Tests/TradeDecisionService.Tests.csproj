@@ -12,6 +12,8 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="..\TradeDecisionService.csproj" />
+    <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- NFR/IADR-0259 決定1: リスク管理サービスの単一プロジェクト移送（W11 段 4-11）で、推移参照として入る
          RiskManagementService（Web SDK・`public partial class Program` を持つ）が `Program` を曖昧にする（CS0433）。
          推移参照には Aliases が伝播しないため、ここで同じプロジェクトを明示参照して extern alias を与える

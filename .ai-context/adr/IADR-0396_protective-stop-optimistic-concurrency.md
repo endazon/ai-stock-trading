@@ -20,7 +20,7 @@ plan_refs:
 ## 起点・関連
 
 - 関連する計画書 ID: **ADR-0040 決定 1 の S1**（§結果「S1 は二重決済の経路を SIMULATE に戻す」）、FR-10、FR-12、UC-02。
-- 対象 Issue: [#833](https://github.com/endazon/ai-stock-trading/issues/833) の **項目 3 のみ**（項目 1 は IADR-0389、項目 2 は IADR-0344 追記(14)、項目 4 は着地済み）。
+- 対象 Issue: [#833](https://github.com/endazon/ai-stock-trading/issues/833) の **項目 3 のみ**（項目 1 は IADR-0389、項目 2 は IADR-0344 追記(15)、項目 4 は着地済み）。
 - 関連する実装仕様書: [20260925_833_protective-stop-optimistic-concurrency](../specs/20260925_833_protective-stop-optimistic-concurrency.md)
 - 関連 IADR: [IADR-0344](IADR-0344_s1-software-stop-loss.md)（S1 本体。決定 5 の二重決済の防止を補う）、
   [IADR-0389](IADR-0389_rearm-software-stop-on-confirmed-unfilled-close.md)（再武装）、

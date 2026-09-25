@@ -40,9 +40,12 @@ public static class NotificationFormatter
     // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは**建玉ごとの損切りの実行機構**で決まるが、
     // 到達を検知する市場監視は手法を知らない。🔴 「ブローカーの逆指値が決済する」と断定すると S1 / S2 の建玉で誤りになるため、
     // 手法ごとの帰結を列挙する（S1 の決済・拒否は SoftwareStopExecuted、S2 は免除の通知が建玉を特定して伝える）。
+    // FR-10, #936, IADR-0393（2026-09-25 追記）: SL（市場監視が比べたライン）は、建て増しした建玉では取引台帳が返す
+    // **エントリーのうち最も保護的なライン 1 本**であり、数量（建玉全体）の全部に効くラインではない。限定を 1 文だけ足す。
     public static NotificationMessage From(StopLossTriggered e) => new(
         "リスク統制: 損切りライン到達",
         $"{e.Symbol} 損切り SL={e.StopLossPrice}（現在 {e.Price}・数量 {e.Quantity}・建玉 {e.PositionSide}）。"
+            + "SL は建て増しした建玉ではエントリーのうち最も保護的なラインで、全量のラインではありません。"
             + "決済は建玉の損切りの実行機構によります: S0＝ブローカー側の逆指値が実行（システムは発注しない）／"
             + "S1＝システムが成行で決済（別途「ソフトウェア逆指値」の通知）／"
             + "S2＝**システムもブローカーも決済しない（手動で決済してください）**。",
@@ -248,7 +251,7 @@ public static class NotificationFormatter
                 + $"（試行 {e.Attempt}・OrderId={e.CloseOrderId}・損切りライン {Invariant(e.StopLossPrice)}"
                 + $"・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Critical),
-        // 🔴 #833 項目2, IADR-0344 追記(14): 打ち切りは撤去した。到達の記録は残り、待ち時間を置いて撃ち直しを続ける
+        // 🔴 #833 項目2, IADR-0344 追記(15): 打ち切りは撤去した。到達の記録は残り、待ち時間を置いて撃ち直しを続ける
         // （「次の到達で再試行」は偽になった——価格が戻って到達が途絶えても撃ち直す）。
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",

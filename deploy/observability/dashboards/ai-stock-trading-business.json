@@ -239,6 +239,18 @@
         "expr": "sum by (reason) (increase(ast_trade_cycle_decision_skips_total[1h]))",
         "legendFormat": "{{reason}}"
       }]
+    },
+    {
+      "id": 17,
+      "title": "損切り検知: 保有照会をそのまま評価できなかった行（1h あたり）",
+      "description": "🔴 平常時 0 件。市場監視がリスク管理の保有照会（open-positions）の応答を行ごとに読み、そのまま損切り判定へ渡せなかった行を reason 別に数える。identity-missing と stop-line-unknown はその建玉の損切り（S1）の到達を検知していない。stop-line-approximated は平均取得単価から既定比率で見積もった近似のラインで評価している（実際のラインではない）。response-unreadable は 200 の本文が一覧として読めず、その巡回はどの建玉も評価していない。出ていれば送り手と受け手の契約が食い違っている（片方だけ先に配備した等）。同名のアラートが鳴る。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 49, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (reason) (increase(ast_market_monitor_position_rows_degraded_total[1h]))",
+        "legendFormat": "{{reason}}"
+      }]
     }
   ]
 }

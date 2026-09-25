@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace OrderExecutionService.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    // FR-10, ADR-0040 決定1（S1）, #833 項目2, IADR-0344 追記(14): S1 の決済が続けて売れないときの**行ごとの待ち時間**。
+    // FR-10, ADR-0040 決定1（S1）, #833 項目2, IADR-0344 追記(15): S1 の決済が続けて売れないときの**行ごとの待ち時間**。
     // CloseFailures（連続失敗の回数）・NextCloseAttemptAt（次の成行を送ってよい最早時刻）・
     // LastTriggerSeenAt（最後に受けた到達の検知時刻。間が空いた到達を新しい窓として扱う）。
     // **列の追加だけ**である。既存行は 0 / null / null（待ち時間なし・次の到達は新しい窓）で読まれ、行の書き換えは無い。

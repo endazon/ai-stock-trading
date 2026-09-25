@@ -154,6 +154,29 @@ public class HttpHeldPositionProviderTests
         msft.Should().Be(new HeldPosition(5, null, null));
     }
 
+    // 🔴 T-10-801, FR-04, FR-10, #943, IADR-0390（T-10-745 の同型）: **銘柄・市場の無い行は「一致しない」と読まない。**
+    // その行が判断対象かどうか判らないため、応答全体を不明（null）にする。一致行の方向・数量の欠落、数量が正でない一致行も同じ
+    // （台帳の射影は数量 0 の建玉を含めず、数量は常に正）。送り手の改名は実行時にこの形で届く（契約は T-10-800）。
+    [Theory]
+    [InlineData("""[{"market":1,"side":0,"quantity":10,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"symbol":null,"market":1,"side":0,"quantity":10,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"symbol":"","market":1,"side":0,"quantity":10,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"ticker":"AAPL","market":1,"side":0,"quantity":10,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"symbol":"AAPL","side":0,"quantity":10,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":1,"quantity":10,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":1,"side":0,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":1,"side":0,"quantity":0,"entryPrice":20.5,"stopLossPrice":19.0}]""")]
+    [InlineData("""[{"symbol":"MSFT","market":1,"side":0,"quantity":5},{"market":1,"side":0,"quantity":10}]""")]
+    [InlineData("""[null]""")]
+    public async Task 保有建玉の行に銘柄や必要な項目が無ければ不明であり保有なしではない(string body)
+    {
+        var held = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetPositionAsync("AAPL", Market.UnitedStates);
+        var signed = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetSignedQuantityAsync("AAPL", Market.UnitedStates);
+
+        held.Should().BeNull("項目の欠落を「保有なし」と読むと、建玉を持ったまま「保有: なし」を前提に判断する");
+        signed.Should().BeNull("決済の数量の出所も同じ応答であり、欠落を 0 株と読まない");
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.NotFound)]
     [InlineData(HttpStatusCode.Unauthorized)]

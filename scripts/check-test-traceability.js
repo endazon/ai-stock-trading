@@ -12,6 +12,9 @@
  *      （planning submodule が未 populate の環境では本検査のみ skip。check-doc-links.js と同じ扱い）。
  *   T1. サービス配下の新旧テスト樹形のうち、**実在するほうの走査件数が 0 でない**こと
  *       （NFR / IADR-0258。下の「プロジェクト構成への依存」参照）。
+ *   T2. テスト仕様書のテスト ID（`T-<FR>-<N>`）が一意であること（#887 / IADR-0376。既知の重複は baseline）。
+ *   T2b. その baseline の entry が**マージベースの版より増えていない**こと（#923 / IADR-0376 追記。
+ *       増やすならコミット本文で ID ごとに宣言する。下の「検査 4b」参照）。
  *
  * 「テストが 1 本もない FR」を CI で止めることが目的であり、テストの中身の妥当性は見ない。
  * 中身は 3 点セット（境界値・プロパティベース・否定形。docs/tests/README.md）と人手レビューが担う。
@@ -32,10 +35,18 @@
  * サービスディレクトリが実在するのに、その樹形からテストファイルを 1 件も走査できていなければ
  * 落とす（`check-consumer-endpoint-names.js` の M4 と同じ設計）。
  *
- * 外部依存ゼロ（Node 標準モジュールのみ）。違反があれば終了コード 1。
+ * ── census の出典（#775 / IADR-0258 追記）
+ * テストファイルと樹形の census は **`git ls-files`（インデックス＝追跡パス）** から取る。作業ツリーの
+ * 実名（`fs.readdirSync`）で数えると、大文字小文字を区別しない FS で旧樹形 `tests/` が残ったまま新樹形
+ * `Tests/` のファイルがその中へ置かれた作業ツリーでは、git と食い違った数（旧 334 / 新 142）になる。
+ * `root` が git の作業ツリーの最上位でない（模擬ツリー）・git が使えないときだけ `fs` 走査へ縮退し、
+ * その旨を出力する。
+ *
+ * 外部依存ゼロ（Node 標準モジュール＋ git コマンドのみ）。違反があれば終了コード 1。
  *
  * 使い方:
  *   node scripts/check-test-traceability.js
+ *   node scripts/check-test-traceability.js --dup-baseline-range=origin/develop...HEAD  # T2b の比較範囲を明示
  *   node scripts/check-test-traceability.js --require-planning   # 計画書実在検査の skip を許さない
  *     🔴 ADR-0029 以降、本リポジトリに `planning` submodule は存在しない（撤去済み）ため、
  *     このフラグは環境に関わらず恒久的に exit 1 になる（#712）。CI・ローカルとも付けないこと
@@ -44,6 +55,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { notice } = require('./lib/ci-annotate.js');
 
 const REPO_ROOT = process.env.TEST_TRACE_ROOT
@@ -60,11 +72,72 @@ const REQUIRED_FRS = [10, 12, 15, 19, 20];
 const ID_PATTERN = /\b(FR|UC|SC)-(\d{1,3})\b/g;
 
 function parseArgs(argv) {
-  const a = { requirePlanning: false };
+  const a = { requirePlanning: false, dupBaselineRange: null };
   for (const x of argv) {
     if (x === '--require-planning') a.requirePlanning = true;
+    else if (x.startsWith('--dup-baseline-range=')) a.dupBaselineRange = x.slice('--dup-baseline-range='.length) || null;
   }
   return a;
+}
+
+// --- git の呼び出し（#775 の census と #923 の T2b が共用する） -------------------------
+
+/** `root` を cwd に git を呼ぶ。失敗は例外（呼び出し側が縮退・skip を決める）。 */
+function git(root, args) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+/**
+ * `root` が git 作業ツリーの**最上位**かを返す。模擬ツリー（`TEST_TRACE_ROOT` の一時ディレクトリ）が
+ * たまたま別の git リポジトリの配下にあっても、その親リポジトリのパスを数えないため最上位まで見る。
+ */
+function isGitTopLevel(root) {
+  try {
+    const top = git(root, ['rev-parse', '--show-toplevel']).trim();
+    return fs.realpathSync(top) === fs.realpathSync(root);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 樹形 census の出典を決める（#775）。
+ * 戻り値: `{ tracked: string[] | null, source: string }`。`tracked` は `backend/` 配下の追跡パス
+ * （`/` 区切り・root 相対）。取れなければ null で、`source` に縮退の理由を書く。
+ *
+ * 🔴 `--others`（未追跡）は含めない。issue の指示どおり**追跡パス**に限る——作業ツリーの実名を
+ * 混ぜると、#775 が塞ごうとしている「git と作業ツリーの食い違い」が census へ戻ってくる。
+ */
+function censusSource(root) {
+  if (!isGitTopLevel(root)) {
+    return { tracked: null, source: 'fs 走査（縮退: git の作業ツリーの最上位ではない）' };
+  }
+  try {
+    const out = git(root, ['ls-files', '-z', '--cached', '--', 'backend']);
+    return { tracked: out.split('\0').filter(Boolean), source: 'git ls-files（追跡パス）' };
+  } catch (e) {
+    return { tracked: null, source: `fs 走査（縮退: git ls-files が失敗した: ${e.message.split('\n')[0]}）` };
+  }
+}
+
+/**
+ * 追跡パス 1 本がテストファイルかを返す（`testFiles()` のディレクトリ走査と同じ規則をパス要素へ適用する）。
+ * `backend/` 配下のいずれかのディレクトリ要素が `tests` / `*.Tests` / `backend/Services/<Svc>/Tests` の位置の
+ * `Tests` であり、かつ `bin` / `obj` をどこにも含まない `.cs`。
+ */
+function isTrackedTestPath(rel) {
+  const seg = String(rel).split('/');
+  if (seg[0] !== 'backend' || seg.length < 3 || !seg[seg.length - 1].endsWith('.cs')) return false;
+  const dirs = seg.slice(1, -1);
+  if (dirs.some((d) => d === 'bin' || d === 'obj')) return false;
+  return dirs.some(
+    (d, i) => d === 'tests' || d.endsWith('.Tests') || (i === 2 && dirs[0] === 'Services' && d === 'Tests')
+  );
 }
 
 /** planning submodule が populate されているか。 */
@@ -85,8 +158,14 @@ function isNewLayoutServiceTestsDir(root, absDir) {
   return /^backend\/Services\/[^/]+\/Tests$/.test(rel);
 }
 
-/** backend 配下の tests ディレクトリにある .cs を集める（新旧両樹形。NFR / IADR-0258）。 */
-function testFiles(root) {
+/**
+ * backend 配下の tests ディレクトリにある .cs を集める（新旧両樹形。NFR / IADR-0258）。
+ * 出典は `git ls-files`（#775）。取れないときだけ下のディレクトリ走査へ縮退する。
+ */
+function testFiles(root, src = censusSource(root)) {
+  if (src.tracked !== null) {
+    return src.tracked.filter(isTrackedTestPath).map((rel) => path.join(root, ...rel.split('/')));
+  }
   const out = [];
   const walk = (dir) => {
     let entries;
@@ -139,9 +218,26 @@ function testFiles(root) {
  * にも一致し、`old`/`new` の両方が誤って真になる。`fs.readdirSync` が返す**実エントリ名**を
  * `Set` に集め、`===` の文字列完全一致で判定すれば OS のパス解決を経由しないため、大文字小文字を
  * 区別する/しない FS のどちらでも同じ結果になる。
+ *
+ * 🔴 ［2026-09-25 追記 / #775］実名の完全一致でも、**作業ツリーの実名そのものが git と食い違う**
+ * （大文字小文字を区別しない FS で旧 `tests/` の中へ新 `Tests/` のファイルが置かれた）と嘘の数になる。
+ * 現在は `censusSource()` の追跡パスから数え、`fs` 走査は git が使えないときの縮退に限る。
  */
-function serviceTestDirs(root) {
+function serviceTestDirs(root, src = censusSource(root)) {
   const dirs = { old: 0, new: 0 };
+  if (src.tracked !== null) {
+    // #775: 追跡パスの要素名で数える。git の追跡名は作業ツリーの FS の大文字小文字に左右されない。
+    // 空ディレクトリは git に載らないため、ファイルを 1 件以上持つディレクトリだけが「実在」になる。
+    const olds = new Set();
+    const news = new Set();
+    for (const rel of src.tracked) {
+      const seg = rel.split('/');
+      if (seg.length < 5 || seg[0] !== 'backend' || seg[1] !== 'Services') continue;
+      if (seg[3] === 'tests') olds.add(seg[2]);
+      if (seg[3] === 'Tests') news.add(seg[2]);
+    }
+    return { old: olds.size, new: news.size };
+  }
   const services = path.join(root, 'backend', 'Services');
   if (!fs.existsSync(services)) return dirs;
   for (const e of fs.readdirSync(services, { withFileTypes: true })) {
@@ -475,9 +571,177 @@ function checkTestIdUniqueness(root = REPO_ROOT, baseline = null) {
   return { errors, summary: collected };
 }
 
+// --- 検査 4b（T2b）: baseline の「増える側」のラチェット（#923 / IADR-0376 追記） -------------
+//
+// T2 は baseline に**記載された**重複を通す。したがって「新しい重複を作り、baseline へ 1 件足す」と
+// 緑になる（PR #912 の監査が実測: 24 → 25 件で exit 0）。減る側（解消したのに残す）は T2 が止めるので、
+// 片側だけのラチェットだった。T2b は **baseline をマージベースの版と比べ、entry が増えていたら赤**にする。
+//
+// ■ 「増えた」の定義: HEAD の baseline に在ってマージベースの版に無い ID／`count` が増えた ID／
+//   `files` に新しいファイルが加わった ID。
+// ■ 比較の基準は**マージベース**（3 ドット）。2 ドット（develop の先端）は未 rebase のブランチで
+//   「develop が分岐後に消した entry」を PR が足したと誤読し、`HEAD^1` は 2 コミット以上の PR で
+//   1 コミット目の追加を見逃す（規則 11 の 3 通りの表は作業仕様書 20260925_923_775 に在る）。
+// ■ 正当な増加（並行レーンの採番衝突が develop 上で起き、既存 ID を改番しないと決めた等）は、
+//   範囲内の**コミット本文に行単独で** `[add-test-id-duplicate] T-10-633` と ID ごとに宣言する。
+//   🔴 全体スキップは用意しない。🔴 本文中の言及では発動しない（トリムした行の完全一致のみ。
+//   `check-adr-index-addendum-loss.js` の `[remove-adr-addendum]` と同じ作法）。
+// ■ 基準が取れないとき: CI の pull_request 実行では**赤**（fail-loud。`static-checks` は
+//   `fetch-depth: 0` なので取れるはずで、取れないのはワークフローの退行である）。それ以外は理由つき skip。
+
+const ADD_DUP_TOKEN = '[add-test-id-duplicate]';
+const ADD_DUP_LINE_RE = /^\[add-test-id-duplicate\]\s+(T-\d+-\d+[a-z]?)$/;
+
+/** `T-10-01` と `T-10-1` を同一視する（T2 の突合キーと同じ正規化）。書式外はそのまま返す。 */
+function normalizeTestId(raw) {
+  const m = /^T-(\d+)-(\d+)([a-z]?)$/.exec(String(raw).trim());
+  return m === null ? String(raw).trim() : `T-${Number(m[1])}-${Number(m[2])}${m[3]}`;
+}
+
+/** コミット本文から `[add-test-id-duplicate] <ID>` の宣言を集める（正規化済み ID の Set）。 */
+function parseDuplicateAdditions(text) {
+  const out = new Set();
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const m = ADD_DUP_LINE_RE.exec(line.trim());
+    if (m) out.add(normalizeTestId(m[1]));
+  }
+  return out;
+}
+
+/**
+ * 2 つの版の baseline を比べ、増えた entry を返す（純関数）。
+ * 戻り値: `[{ id, reasons: string[] }]`（ID 昇順）。
+ */
+function findBaselineGrowth(baseBaseline, headBaseline) {
+  const countOf = (d) => (typeof d.count === 'number' ? d.count : 0);
+  const baseMap = new Map(((baseBaseline && baseBaseline.duplicates) || []).map((d) => [normalizeTestId(d.id), d]));
+  const growth = [];
+  for (const h of (headBaseline && headBaseline.duplicates) || []) {
+    const id = normalizeTestId(h.id);
+    const b = baseMap.get(id);
+    const reasons = [];
+    if (!b) {
+      reasons.push('マージベースの baseline に無い entry');
+    } else {
+      if (countOf(h) > countOf(b)) reasons.push(`件数 ${countOf(b)} → ${countOf(h)}`);
+      const baseFiles = new Set(b.files || []);
+      const added = [...new Set(h.files || [])].filter((f) => !baseFiles.has(f)).sort();
+      if (added.length) reasons.push(`在り処の追加 ${added.join(' / ')}`);
+    }
+    if (reasons.length) growth.push({ id, reasons });
+  }
+  return growth.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+}
+
+/**
+ * 増えた entry と宣言を突き合わせる（純関数）。戻り値: `{ errors, declared }`。
+ * `declared` は宣言によって許した増加（notice に出す）。
+ */
+function evaluateBaselineGrowth({ base, head, commitBodies }) {
+  const declaredIds = parseDuplicateAdditions(commitBodies);
+  const errors = [];
+  const declared = [];
+  for (const g of findBaselineGrowth(base, head)) {
+    if (declaredIds.has(g.id)) {
+      declared.push(g);
+      continue;
+    }
+    errors.push(
+      `[T2b] ${DUP_BASELINE_FILE.replace(/\\/g, '/')} の ${g.id} がマージベースより増えています（${g.reasons.join('・')}）。`
+        + '**baseline へ足して新しい重複を通すことはできない**（ラチェット）。新しいテストには採番の最大値＋1 を使うこと。'
+        + '既存 ID を改番しない理由があって足すなら、コミット本文に行単独で'
+        + ` \`${ADD_DUP_TOKEN} ${g.id}\` と宣言し、PR で理由を説明すること（IADR-0376）。`
+    );
+  }
+  return { errors, declared };
+}
+
+/** T2b の比較範囲を決める（`check-adr-index-addendum-loss.js` と同じ優先順）。決められなければ null。 */
+function resolveDupBaselineRange(root, explicit = null, env = process.env) {
+  if (explicit) return explicit;
+  if (env.COMMIT_RANGE) return env.COMMIT_RANGE;
+  const revExists = (rev) => {
+    try {
+      git(root, ['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const baseRef = env.GITHUB_BASE_REF;
+  if (baseRef) {
+    if (revExists(`origin/${baseRef}`)) return `origin/${baseRef}...HEAD`;
+    if (revExists(baseRef)) return `${baseRef}...HEAD`;
+  }
+  if (revExists('origin/develop')) return 'origin/develop...HEAD';
+  if (revExists('develop')) return 'develop...HEAD';
+  return null;
+}
+
+/** 浅いクローンかどうか（skip 理由の説明用。判定に失敗したら null）。 */
+function isShallow(root) {
+  try {
+    return git(root, ['rev-parse', '--is-shallow-repository']).trim() === 'true';
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * T2b を git 上で実行する。戻り値は `{ skipped: 理由 }` か `{ errors, declared, range, base }`。
+ * `opts.range` で範囲を明示でき、`opts.env` で環境変数を差し替えられる（自己テスト用）。
+ */
+function checkBaselineGrowth(root = REPO_ROOT, opts = {}) {
+  const env = opts.env || process.env;
+  if (!isGitTopLevel(root)) return { skipped: 'git の作業ツリーの最上位ではない（模擬ツリー・git 不在）' };
+  const range = resolveDupBaselineRange(root, opts.range || null, env);
+  const shallowNote = () => (isShallow(root) ? '。浅いクローンである（fetch-depth: 0 が要る）' : '');
+  if (!range) return { skipped: `比較の基準（origin/<base> / origin/develop / develop）を解決できない${shallowNote()}` };
+  const three = range.includes('...');
+  const [leftRaw, rightRaw] = range.split(three ? '...' : '..');
+  const left = leftRaw || 'HEAD';
+  const right = rightRaw || 'HEAD';
+  let baseRev;
+  try {
+    baseRev = three ? git(root, ['merge-base', left, right]).trim() : git(root, ['rev-parse', '--verify', `${left}^{commit}`]).trim();
+  } catch {
+    return { skipped: `範囲 ${range} の基準コミットを取れない${shallowNote()}` };
+  }
+  const rel = DUP_BASELINE_FILE.replace(/\\/g, '/');
+  let base;
+  try {
+    git(root, ['cat-file', '-e', `${baseRev}:${rel}`]);
+    base = JSON.parse(git(root, ['show', `${baseRev}:${rel}`]));
+  } catch {
+    // 基準の版に baseline が無い（導入より前に分岐した）＝基準は空。全件が「増加」になり、宣言を求める。
+    base = { duplicates: [] };
+  }
+  let head;
+  try {
+    head = right === 'HEAD' ? loadDuplicateBaseline(root) : JSON.parse(git(root, ['show', `${right}:${rel}`]));
+  } catch (e) {
+    return { skipped: `${right} の baseline を読めない: ${e.message.split('\n')[0]}` };
+  }
+  let commitBodies = '';
+  try {
+    commitBodies = git(root, ['log', '--format=%B', `${baseRev}..${right}`]);
+  } catch {
+    commitBodies = '';
+  }
+  return { ...evaluateBaselineGrowth({ base, head, commitBodies }), range, base: baseRev };
+}
+
+/**
+ * T2b の skip を赤へ倒すべき実行かを返す（fail-loud）。CI の pull_request で、模擬ツリーでない本走のとき。
+ */
+function dupBaselineSkipIsFatal(env = process.env) {
+  return env.GITHUB_ACTIONS === 'true' && /^pull_request/.test(env.GITHUB_EVENT_NAME || '') && !env.TEST_TRACE_ROOT;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const files = testFiles(REPO_ROOT);
+  const census = censusSource(REPO_ROOT);
+  const files = testFiles(REPO_ROOT, census);
   const refs = collectReferences(files, REPO_ROOT);
   const errors = [];
 
@@ -497,7 +761,7 @@ function main() {
   // T1: サービス配下の新旧テスト樹形のうち、実在するほうが 0 件走査になっていないこと
   // （NFR / IADR-0258）。**静的な下限ではなく、樹形の実在から動的に導く**——旧樹形が全滅するのは
   // 移行完了時の正常な帰結であり、新樹形が 0 件のまま静的な門を置くと移行着手前から赤くなる。
-  const testDirs = serviceTestDirs(REPO_ROOT);
+  const testDirs = serviceTestDirs(REPO_ROOT, census);
   const testLayoutCounts = serviceTestLayoutCounts(REPO_ROOT, files);
   for (const [layout, label, shape] of [
     ['old', '旧樹形', 'backend/Services/<Svc>/tests/**'],
@@ -515,6 +779,34 @@ function main() {
   // 4（T2）. テスト仕様書の T-<FR>-<N> が一意であること（#887 / IADR-0376）
   const testIds = checkTestIdUniqueness(REPO_ROOT);
   for (const e of testIds.errors) errors.push(e);
+
+  // 4b（T2b）. baseline の entry がマージベースより増えていないこと（#923 / IADR-0376 追記）
+  const growth = checkBaselineGrowth(REPO_ROOT, { range: args.dupBaselineRange });
+  let growthLine;
+  if (growth.skipped) {
+    if (dupBaselineSkipIsFatal()) {
+      errors.push(
+        `[T2b] baseline の増加ラチェットの比較基準を取れません（${growth.skipped}）。`
+          + 'CI の pull_request では黙って緑にしない。static-checks の checkout が fetch-depth: 0 のままか確かめること。'
+      );
+    } else {
+      notice(
+        `check-test-traceability[T2b]: baseline の増加ラチェットを skip しました（${growth.skipped}）。`
+          + 'この実行では baseline への entry の追加は検査されていない'
+      );
+    }
+    growthLine = `skip（${growth.skipped}）`;
+  } else {
+    for (const e of growth.errors) errors.push(e);
+    for (const g of growth.declared) {
+      notice(
+        `check-test-traceability[T2b]: ${g.id} の baseline への追加（${g.reasons.join('・')}）は`
+          + ` コミット本文の \`${ADD_DUP_TOKEN} ${g.id}\` で宣言されています。PR で理由が説明されているか人が確かめること`
+      );
+    }
+    growthLine = `増加なし（範囲 ${growth.range}・基準 ${growth.base.slice(0, 8)}`
+      + `${growth.declared.length ? `・宣言つきの追加 ${growth.declared.length} 件` : ''}）`;
+  }
 
   // 3. 参照 ID が計画書に実在すること
   const ids = planIds(REPO_ROOT);
@@ -547,9 +839,10 @@ function main() {
     console.log(
       `[check-test-traceability] OK: テスト ${files.length} ファイル・起点 ID ${refs.size} 種を検査しました${skipNote}。`
         + `\n  サービス配下テスト: 旧樹形 ${testLayoutCounts.old} 件 / 新樹形 ${testLayoutCounts.new} 件`
-        + `（サービスディレクトリ: 旧 ${testDirs.old} 件 / 新 ${testDirs.new} 件）。`
+        + `（サービスディレクトリ: 旧 ${testDirs.old} 件 / 新 ${testDirs.new} 件・census: ${census.source}）。`
         + `\n  テスト ID: 採番 ${testIds.summary.assignments.size} 件 / 参照行 ${testIds.summary.references.length} 件`
         + ` / 重複 ${dupCount} 件（すべて baseline 記載済み）。`
+        + `\n  baseline の増加（T2b）: ${growthLine}。`
         + `\n  採番の最大値: ${maxLine}`
         + '\n  🔴 新規採番は「最大値＋1」。並行レーンが develop 未反映の帯を確保していることがあるため、'
         + '着手時に互いに素な帯を宣言して確保すること（docs/tests/README.md）。'
@@ -583,6 +876,19 @@ module.exports = {
   collectTestIds,
   loadDuplicateBaseline,
   checkTestIdUniqueness,
+  // #923 / IADR-0376 追記: baseline の増加ラチェット（検査 4b＝T2b）。
+  ADD_DUP_TOKEN,
+  normalizeTestId,
+  parseDuplicateAdditions,
+  findBaselineGrowth,
+  evaluateBaselineGrowth,
+  resolveDupBaselineRange,
+  checkBaselineGrowth,
+  dupBaselineSkipIsFatal,
+  // #775: census の出典（git ls-files）。
+  censusSource,
+  isGitTopLevel,
+  isTrackedTestPath,
   // #532: キット check-commit-messages.js が探す拡張点と、その部品。
   RULES_FILE,
   PLAN_RANGE_HEADING,
