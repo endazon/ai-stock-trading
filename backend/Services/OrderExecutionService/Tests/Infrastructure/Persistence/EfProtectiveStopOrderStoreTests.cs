@@ -315,4 +315,37 @@ public class EfProtectiveStopOrderStoreTests
             .Should().Equal([completedQty, activeAt], "印のある行だけを、更新が新しい順に返す");
         store.FindUnattributedNotified(1).Select(s => s.EntryDecisionId).Should().Equal([completedQty]);
     }
+
+    // 🔴 T-10-1014（PR #999 の再監査 2）, FR-10, #879, IADR-0424 決定1: FindActiveFor の問い合わせの条件を EF（InMemory プロバイダ）で固定する
+    // ——銘柄・市場・エントリー方向の一致、Active だけ、機構を問わない、件数の上限なし（上限つきの FindActive の 500 件を超えても返す）、古い順。
+    [Fact]
+    public void FindActiveForは銘柄市場方向が一致するActive行だけを機構を問わず上限なしで古い順に返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var expected = new List<Guid>();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfProtectiveStopOrderStore(db);
+            // 一致する Active 行 501 件（S0 と S1 を交互に。上限つきの FindActive の 500 件を超える）。
+            for (var i = 0; i < 501; i++)
+            {
+                var id = Guid.NewGuid();
+                var row = Stop(id, createdAt: Now.AddMinutes(i));
+                store.Save(i % 2 == 0 ? row : row with { Mechanism = StopLossExecutionMethod.SoftwareStop, StopOrderId = string.Empty, RemainingProtected = 10 });
+                expected.Add(id);
+            }
+
+            // 一致しない行（1 条件ずつ外す）。
+            store.Save(Stop(Guid.NewGuid(), createdAt: Now.AddMinutes(-1)) with { Symbol = "MSFT" });
+            store.Save(Stop(Guid.NewGuid(), createdAt: Now.AddMinutes(-2)) with { Market = Market.Japan });
+            store.Save(Stop(Guid.NewGuid(), createdAt: Now.AddMinutes(-3)) with { EntrySide = TradeSide.Sell });
+            store.Save(Stop(Guid.NewGuid(), state: ProtectiveStopState.Completed, createdAt: Now.AddMinutes(-4)));
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfProtectiveStopOrderStore(db2).FindActiveFor("AAPL", Market.UnitedStates, TradeSide.Buy);
+
+        found.Select(s => s.EntryDecisionId).Should().Equal(expected, "一致する Active 行だけを、上限なしで古い順に返す");
+        found.Should().Contain(s => s.IsSoftwareStop).And.Contain(s => !s.IsSoftwareStop, "機構を問わない");
+    }
 }

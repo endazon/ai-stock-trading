@@ -19,6 +19,9 @@
     <!-- FR-10, FR-14, FR-19, #957, IADR-0408（2026-09-25 追記・C）: 次のリスク管理への参照は、kill switch・一時停止・稼働状態・
          GFV 解除の契約テスト（T-10-932〜935）も送り手の本物の型の直列化に使う。 -->
     <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
+    <!-- FR-10, FR-09, #879, IADR-0424: 見送り（OrderDispatchForgone）の越境の契約テスト（T-10-1007）が、送り手（発注執行）の
+         本物の OrderExecutionAppService で見送りを作るためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する。 -->
+    <ProjectReference Include="..\..\OrderExecutionService\OrderExecutionService.csproj" Aliases="OrderExecutionWorker" />
     <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- ADR-0013, IADR-0129, #354: Wolverine のハンドラをランタイム生成で動かすため（RuntimeCompilation）、

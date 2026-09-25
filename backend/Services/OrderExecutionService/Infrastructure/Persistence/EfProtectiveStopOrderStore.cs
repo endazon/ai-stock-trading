@@ -120,6 +120,18 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
             .Select(ToDomain)
             .ToList();
 
+    // 🔴 FR-10, #879, IADR-0424 決定1: 照会不明で見送る決済の建玉の保護の記録（機構を問わず・上限なし。PR #999 の監査 N1）。
+    public IReadOnlyList<ProtectiveStopOrder> FindActiveFor(string symbol, Market market, TradeSide entrySide) =>
+        db.ProtectiveStopOrders
+            .Where(r => r.State == ProtectiveStopState.Active
+                && r.Symbol == symbol
+                && r.Market == market
+                && r.EntrySide == entrySide)
+            .OrderBy(r => r.CreatedAt)
+            .ToList()
+            .Select(ToDomain)
+            .ToList();
+
     // #820, IADR-0344 決定1・決定4: 損切りライン到達の突き合わせ対象（Active な S1 の同一銘柄・同一方向）。
     public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
         db.ProtectiveStopOrders

@@ -82,6 +82,24 @@ public sealed class ProtectiveStopDriftAdopter(
         if (before == 0 || Math.Abs(after) >= Math.Abs(before)
             || (after != 0 && Math.Sign(after) != Math.Sign(before)))
         {
+            // 🔴 FR-10, #879, IADR-0424 決定2: **建玉を生む・増やす・反転させる形**は、送り手が発行しない契約の外の入力である
+            // （計画 ADR-0041 決定3「取り込めるのは台帳の建玉を減らす乖離だけ」。送り手は UnsupportedDirection で拒否する）。
+            // 仮に届いたら、増えた分の約定価格はこのイベントに無く（システム外の約定は価格が分からない）損切りラインを導けない。
+            // **線を作って保護記録を作らない**（原則 A: 導けないものは「不明」であり、作った線は偽の保護になる）。
+            // 何も書かないので、再配送されても保護記録は増えない。**黙って飛ばさず Critical で知らせる。**
+            var added = AddedQuantity(before, after);
+            if (added > 0)
+            {
+                _logger.LogCritical(
+                    "乖離の取り込みで建玉が生じる・増える形のイベントを受けました（契約外の入力）。リスク管理は台帳の建玉を"
+                    + "減らす取り込みしか発行しません（台帳に無い建玉・増加・方向の反転は拒否する）。"
+                    + "**増えた {Added} 株の約定価格はイベントに無く損切りラインを導けないため、保護記録を作りません"
+                    + "——この {Added} 株はシステムの保護を持ちません。**証券会社の画面で建玉と逆指値を確認してください:"
+                    + " 取り込み={AdoptionId} 銘柄={Symbol}/{Market} 取り込み前={Before} 取り込み後={After} 依頼者={Actor}",
+                    added, added, adopted.AdoptionId, adopted.Symbol, adopted.Market, before, after, adopted.Actor);
+                return new ProtectiveStopDriftAdoptionResult(0, 0, 0, events);
+            }
+
             _logger.LogWarning(
                 "乖離の取り込みが減少ではないため、保護記録を追随させません: 銘柄={Symbol}/{Market} 取り込み前={Before} 取り込み後={After}",
                 adopted.Symbol, adopted.Market, before, after);
@@ -176,6 +194,17 @@ public sealed class ProtectiveStopDriftAdopter(
         }
 
         return new ProtectiveStopDriftAdoptionResult(group.Count, reduced, unconfirmed, events);
+    }
+
+    // 🔴 #879, IADR-0424 決定2: 取り込みで**新しく生じた株数**（符号付きの取り込み前後から）。
+    // 同じ方向で増えた分・台帳に無かった建玉の全部・方向の反転で生じた反対方向の建玉の全部。減る・変わらないなら 0。
+    private static int AddedQuantity(int before, int after)
+    {
+        if (after == 0)
+            return 0;
+        if (before == 0 || Math.Sign(after) != Math.Sign(before))
+            return Math.Abs(after);
+        return Math.Max(0, Math.Abs(after) - Math.Abs(before));
     }
 
     // 🔴 IADR-0370 決定3: 取り込みの観測は最大 60 分古い。新しい建玉照会が使えるなら、その純額と取り込みの目標の
