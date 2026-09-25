@@ -7,17 +7,20 @@
 
 裸の ID は**本リポジトリ（ai-stock-trading）の計画書**を指す。レンジは
 `FR-01..21` / `UC-01..07` / `SC-01..04`（#532。**2026-09-09 に SC を 03→04 へ更新**
-〔SC-04 OpenD 認証操作画面。planning#594 の利用者裁定で新設〕）、計画 ADR は `ADR-0001..0041`（欠番なし。
+〔SC-04 OpenD 認証操作画面。planning#594 の利用者裁定で新設〕）、計画 ADR は `ADR-0001..0042`（欠番なし。
 project-planning `projects/ai-stock-trading/07_adr/` の実ファイルと一致。**2026-09-09 に 0032→0035→0037 へ更新**
 〔0035 まで: ADR-0033 Stage 0 の評価対象／ADR-0034 空売り「含む」の判定／ADR-0035 費用率の分母。#688 / #710。
 0037 まで: ADR-0036 Stage 0 入力の完全性／ADR-0037 sonnet-5 単価の是正。planning#591 Q2 裁定〕。
 **2026-09-11 に 0037→0039 へ更新**〔ADR-0038 連結配備の認証レルムは基盤レルム。環流は planning#597 で本リポの追随は #776／
 ADR-0039 探索なしでは PBO を評価できない〕。**2026-09-17 に 0040 へ**〔ADR-0040 SIMULATE の損切り機構・散文は数量を拘束しない。#822 / #819〕。
 **2026-09-19 に 0041 へ**〔ADR-0041 システム外の売買は数量だけを取り込み、基準資金は口座照会へ寄せる。planning#642。本リポの追随は #869 / #870〕。
+**2026-09-26 に 0042 へ**〔ADR-0042 利用者が確定した AI の監視銘柄の入れ替え案は Discord の確認ボタンで適用してよい（FR-14 の例外）・`/policy` に 1 日の回数上限。planning#663〕。
 🔴 **転記元は計画 ADR の本文ではなく、計画リポの `node tools/doc-checks/gen-plan-ranges.js --check` の実測である**
 （ADR 本文の数値は、その ADR 自身が加わった時点で古くなる。実測 2026-09-11: `git ls-tree origin/main
 projects/ai-stock-trading/07_adr/` が 39 件・`ADR-0001`〜`ADR-0039` で欠番なし。2026-09-17: `--check` が ADR [1, 40]・40 件。**2026-09-19 実測**: 隣接クローン
-`../project-planning` で `node tools/doc-checks/gen-plan-ranges.js --check` が ADR **[1, 41]・41 件・欠番なし**）。
+`../project-planning` で `node tools/doc-checks/gen-plan-ranges.js --check` が ADR **[1, 41]・41 件・欠番なし**。**2026-09-26 実測**: 隣接クローンの作業ツリーが
+`origin/main` より古いため 2026-09-11 と同じ手段で測った——`git ls-tree --name-only origin/main projects/ai-stock-trading/07_adr/`（`8b44bba`）が
+`ADR-0001`〜`ADR-0042` の 42 件・欠番なし）。
 trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 
 - **この節は機械の単一情報源である。** `scripts/check-test-traceability.js` の `readPlanIds()` が
