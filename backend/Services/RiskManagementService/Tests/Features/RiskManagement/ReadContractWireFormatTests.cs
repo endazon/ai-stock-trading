@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
@@ -85,6 +87,70 @@ public class ReadContractWireFormatTests
         body["periodCovered"]!.GetValueKind().Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
         JsonNode.DeepEquals(body["inferences"], JsonSerializer.SerializeToNode(new[] { record }, Web))
             .Should().BeTrue($"inferences の本文が web 既定と異なる: {body["inferences"]?.ToJsonString()}");
+    }
+
+    // 🔴 T-10-938, FR-19, FR-14, #957, ADR-0028, IADR-0182, IADR-0408（2026-09-25 追記。T-10-885 の同型）: GFV 解除
+    // （POST /risk-controls/good-faith-violations/clear）の応答は**匿名型**であり、受け手の契約テスト（通知 T-10-935）は項目名を
+    // 送り手の型から得られない。その名前をここで固定する。`remainingCount` が改名されると、受け手は 0 と読んで
+    // 「なお N 件が残っており停止は継続します」を出さない（表示の誤り）。受理不能（422）の本文の `error` も同様に固定する。
+    [Fact]
+    public async Task GFV_解除の本文は外側の項目名を_web_既定で出す()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+
+        var nothing = await client.PostAsJsonAsync("/risk-controls/good-faith-violations/clear", new { reason = "原因を是正した" });
+        nothing.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var error = JsonNode.Parse(await nothing.Content.ReadAsStringAsync())!.AsObject();
+        error.Select(p => p.Key).Should().BeEquivalentTo(["error"]);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<IGoodFaithViolationStore>().Append(new GoodFaithViolationRecord(
+                Guid.NewGuid(), "ord-1", Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                PurchaseAmountInBase: 1000m, SettledCashInBase: 0m, OccurredOn: new DateOnly(2026, 8, 8),
+                ExecutedAt: DateTimeOffset.UtcNow, RecordedAt: DateTimeOffset.UtcNow));
+        }
+
+        var res = await client.PostAsJsonAsync("/risk-controls/good-faith-violations/clear", new { reason = "原因を是正した" });
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonNode.Parse(await res.Content.ReadAsStringAsync())!.AsObject();
+
+        body.Select(p => p.Key).Should().BeEquivalentTo(["clearedOrderIds", "clearedAt", "remainingCount"]);
+        body["clearedOrderIds"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal("ord-1");
+        body["remainingCount"]!.GetValue<int>().Should().Be(0);
+    }
+
+    // 🔴 T-10-939, FR-06, FR-20, #957, IADR-0271, IADR-0408（2026-09-25 追記。T-10-885 の同型）: OpenD 稼働率
+    // （GET /risk-controls/session-uptime）の応答型 `SessionUptimeView` は **internal** であり、受け手の契約テスト（報告書 T-10-936）は
+    // 外側を送り手の型から組めない。外側の項目名をここで固定し、行は本物の型 `OpenDSessionUptimeDay` を web 既定で直列化したものと
+    // 一致することを表明する。`days` が改名されると受け手は未供給、`stage1CumulativeCountedDays` が改名されると 0 と読む。
+    [Fact]
+    public async Task OpenD_稼働率の本文は外側の項目名と行の型を_web_既定で出す()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        var day = new DateOnly(2026, 9, 23);
+        using (var scope = factory.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<IStage1TradingDayObservationStore>()
+                .CreditUptime(day, BrokerProvider.MoomooSimulate, observedMinuteOfDayEasternTime: 600, coveredMinutes: 30);
+        }
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, Service);
+        var body = (await BodyAsync(client, $"/risk-controls/session-uptime?from={day:yyyy-MM-dd}&to={day:yyyy-MM-dd}"))!.AsObject();
+
+        using var s = factory.Services.CreateScope();
+        var expectedDays = OpenDUptimeReporting.Days(
+            s.ServiceProvider.GetRequiredService<IStage1TradingDayObservationStore>().GetSessionUptimesBetween(day, day));
+        // 空の配列どうしの一致は何も証明しない。
+        expectedDays.Should().ContainSingle();
+
+        body.Select(p => p.Key).Should().BeEquivalentTo(["days", "stage1CumulativeCountedDays"]);
+        body["stage1CumulativeCountedDays"]!.GetValueKind().Should().Be(JsonValueKind.Number);
+        JsonNode.DeepEquals(body["days"], JsonSerializer.SerializeToNode(expectedDays, Web))
+            .Should().BeTrue($"days の本文が web 既定と異なる: {body["days"]?.ToJsonString()}");
     }
 
     private static async Task<JsonNode?> BodyAsync(HttpClient client, string path)
