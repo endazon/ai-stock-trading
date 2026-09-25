@@ -323,6 +323,19 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain("決済しません").And.Contain("950").And.Contain("MoomooSimulate");
     }
 
+    // T-10-902, FR-10, FR-11, #826 項目 5, IADR-0413 決定2: 免除は受付時点で発行されるため、数量は発注数量であり
+    // 建玉は約定で確定する（約定しないまま取消・失効すれば生じない）ことが読める。「数量10 の建玉がある」と断定しない。
+    [Fact]
+    public void 保護逆指値の免除は数量が発注数量で建玉は約定で確定することが読める()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopWaived(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
+            StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, StopT0));
+
+        msg.Content.Should().Contain("発注数量10")
+            .And.Contain("建玉は約定した数量で確定し、約定しないまま取消・失効した場合は生じません");
+    }
+
     [Fact]
     public void 保護喪失のNoneは直ちに確認を求めるCriticalになる()
     {

@@ -78,6 +78,12 @@ public sealed class OrderExecutedAuditHandler(IAuditEventStore store, IClock clo
 
         var recordedAt = clock.UtcNow;
         store.Append(AuditEntryFactory.From(message, envelope.Id, recordedAt));
+
+        // FR-10, FR-11, #826 項目 5, IADR-0413 決定2: 終端の約定記録が、先に届いた免除（S2）を打ち消す／数量を確定する。
+        // 相関の照会は終端のときだけ行う（非終端は約定が増え得るため確定しない）。
+        if (ProtectiveStopWaiverSettlement.IsTerminal(message.Status))
+            ProtectiveStopWaiverSettlementRecorder.AppendIfDue(store, message.DecisionId, recordedAt);
+
         metrics.RecordRecordCompletionLatency(message.CycleTrigger, message.CycleStartedAt, recordedAt);
     }
 }
@@ -518,7 +524,25 @@ public sealed class ProtectiveStopWaivedAuditHandler(IAuditEventStore store, ICl
     public void Handle(ProtectiveStopWaived message, Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+        ArgumentNullException.ThrowIfNull(message);
+        var recordedAt = clock.UtcNow;
+        store.Append(AuditEntryFactory.From(message, envelope.Id, recordedAt));
+
+        // FR-10, FR-11, #826 項目 5, IADR-0413 決定2: 免除より先に終端の約定記録が届いていた場合も打ち消しを残す
+        // （到着順に依らず 1 件。Id は相関から決定的に導くため、両経路から追記しても畳まれる）。
+        ProtectiveStopWaiverSettlementRecorder.AppendIfDue(store, message.EntryDecisionId, recordedAt);
+    }
+}
+
+// FR-10, FR-11, #826 項目 5, IADR-0413 決定2: 免除の打ち消し（派生記録）の追記。判定は純関数
+// ProtectiveStopWaiverSettlement に置き、ここは相関の照会と追記だけを行う。
+internal static class ProtectiveStopWaiverSettlementRecorder
+{
+    public static void AppendIfDue(IAuditEventStore store, Guid entryDecisionId, DateTimeOffset recordedAt)
+    {
+        var settled = ProtectiveStopWaiverSettlement.TryCreate(store.GetByCorrelation(entryDecisionId), recordedAt);
+        if (settled is not null)
+            store.Append(settled);
     }
 }
 

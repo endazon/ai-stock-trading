@@ -352,8 +352,9 @@ public class NotificationTemplateGoldenTests
                 StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, T),
             new NotificationMessage(
                 "リスク統制: 保護逆指値をペーパーで免除（S2）",
-                "AAPL/UnitedStates Buy 数量10: 損切りの実行機構 S2（逆指値なしの建玉を許容）が選ばれているため、"
-                    + "MoomooSimulate で保護逆指値を発注せず建玉を保持します。損切りライン 950 に到達しても"
+                "AAPL/UnitedStates Buy 発注数量10: 損切りの実行機構 S2（逆指値なしの建玉を許容）が選ばれているため、"
+                    + "MoomooSimulate で保護逆指値を発注せず建玉を保持します"
+                    + "（建玉は約定した数量で確定し、約定しないまま取消・失効した場合は生じません）。損切りライン 950 に到達しても"
                     + "**システムもブローカーも決済しません**（実弾口座では選べない手法です・"
                     + "EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
                 NotificationSeverity.Warning)),

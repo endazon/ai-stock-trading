@@ -156,10 +156,13 @@ public static class NotificationFormatter
     // ただし Info にもしない——**逆指値なしの建玉が実在する**ことは読み落とされてはならない。
     // 🔴 本文に「損切りライン到達でもシステムは決済しない」を書く。書かないと、損切り到達の通知
     // （決済はブローカー側の逆指値が実行します）を読んだ利用者が「逆指値で切られる」と誤解する。
+    // 🔴 FR-10, FR-11, #826 項目 5, IADR-0413 決定2: 免除は**エントリーの受付時点**で発行され、数量は**発注数量**である。
+    // 建玉は約定で確定し、約定しないまま取消・失効すれば生じない——「この数量の建玉がある」と断定しない。
     public static NotificationMessage From(ProtectiveStopWaived e) => new(
         "リスク統制: 保護逆指値をペーパーで免除（" + StopLossMethodLabel(e.Method) + "）",
-        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.Quantity}: 損切りの実行機構 {StopLossMethodLabel(e.Method)}"
-            + $"（逆指値なしの建玉を許容）が選ばれているため、{e.Provider} で保護逆指値を発注せず建玉を保持します。"
+        $"{e.Symbol}/{e.Market} {e.Side} 発注数量{e.Quantity}: 損切りの実行機構 {StopLossMethodLabel(e.Method)}"
+            + $"（逆指値なしの建玉を許容）が選ばれているため、{e.Provider} で保護逆指値を発注せず建玉を保持します"
+            + "（建玉は約定した数量で確定し、約定しないまま取消・失効した場合は生じません）。"
             + $"損切りライン {(e.StopLossPrice is { } price ? price.ToString(CultureInfo.InvariantCulture) : "なし")}"
             + " に到達しても**システムもブローカーも決済しません**（実弾口座では選べない手法です・"
             + $"EntryDecisionId={e.EntryDecisionId}）。",
