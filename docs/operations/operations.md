@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-09-25
+updated: 2026-09-26
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13, FR-10]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
 iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, MSP#266, MSP#635, planning#54]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -149,7 +149,58 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 
 ## バックアップ・リストア
 
-<!-- 対象・頻度・保管期間・リストア手順・RPO/RTO -->
+> 🔴 **未裁定の案である。** 保管先・保管期間・リストア試験の頻度は利用者が決める（再実装版への切替の移行仕様書 §承認事項 2）。
+> **現状（2026-09-26 実測）: バックアップは 1 本も無い。** クラスタに CronJob は無く、業務台帳の入った `postgres-data`
+> （local-path・PV の回収方針 `Delete`）はクラスタや namespace を作り直すと消える。**7 年保持の台帳が 1 回の作り直しで全損する状態である。**
+
+| 項目 | 案（利用者が決める） |
+| --- | --- |
+| 対象 | 本システムの 7 DB（`audit_svc` `configuration_svc` `cost_control_svc` `market_monitor_svc` `order_execution_svc` `report_svc` `risk_management_svc`）。全数表は移行仕様書 §保全対象の全数表。**秘密情報（Vault の `ai-stock-trading/*`）も対象**だが方式は基盤の Vault の構成に依る（下記） |
+| 頻度 | 日次（米国市場の引け後・日本の寄り前。JST 07:00 前後）＋切替・スキーマを変える配備の前 |
+| 保管期間 | 日次の世代は 30 日。**月初の世代と切替前の世代は 7 年**（業務台帳・監査証跡の保持要件） |
+| 保管先 | **クラスタの外に 2 か所**（例: ホストの暗号化された置き場＋外部のオブジェクトストレージ）。dump は監査ログの本文（銘柄・判断根拠）を含むため**暗号化して置く**。リポジトリ配下には置かない |
+| RPO / RTO | RPO 24 時間・RTO 1 時間（案） |
+| リストア試験 | 四半期に 1 回と切替の前。**別名の DB へ戻して件数を突き合わせる**（本番の DB は触らない） |
+
+取得（利用者が実行する。値の出力先はクラスタの外）:
+
+```bash
+ts=$(date -u +%Y%m%dT%H%M%SZ); out="<クラスタ外の保管先>/ast-$ts"; mkdir -p "$out"
+for d in audit_svc configuration_svc cost_control_svc market_monitor_svc order_execution_svc report_svc risk_management_svc; do
+  kubectl -n platform-infra exec deploy/postgres -- pg_dump -U ai -Fc "$d" > "$out/$d.dump"
+done
+( cd "$out" && sha256sum *.dump > SHA256SUMS )
+AST_PSQL="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai" \
+  bash scripts/cutover-count-reconcile.sh snapshot "$out/counts.tsv"   # 取得時点の件数と指紋（リストア試験の基準）
+```
+
+リストア試験（別名の DB `restore_test_<db>` へ戻し、同じ manifest で測って比べる。**このブロックだけで完結する**——取得のブロックの変数は使わない）:
+
+```bash
+# 試験する世代のディレクトリ（取得のブロックが作った ast-<時刻>。中に <db>.dump・SHA256SUMS・counts.tsv がある）
+src="<クラスタ外の保管先>/ast-<試験する世代の時刻>"
+dbs="audit_svc configuration_svc cost_control_svc market_monitor_svc order_execution_svc report_svc risk_management_svc"
+psql_cmd="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai"
+
+( cd "$src" && sha256sum -c SHA256SUMS )                 # 保管中に壊れていないこと
+for d in $dbs; do
+  kubectl -n platform-infra exec deploy/postgres -- createdb -U ai -O ai "restore_test_$d"
+  kubectl -n platform-infra exec -i deploy/postgres -- pg_restore -U ai -d "restore_test_$d" < "$src/$d.dump"
+done
+AST_PSQL="$psql_cmd" AST_DB_PREFIX=restore_test_ bash scripts/cutover-count-reconcile.sh snapshot restored.tsv
+bash scripts/cutover-count-reconcile.sh compare "$src/counts.tsv" restored.tsv   # exit 0 で合格（下の注意を参照）
+for d in $dbs; do
+  kubectl -n platform-infra exec deploy/postgres -- dropdb -U ai "restore_test_$d"   # 試験用の別名 DB だけを消す
+done
+```
+
+- **`compare` が FAIL 0 で通るのは、凍結中（移行仕様書の手順 1: kill switch と `replicas=0`）に取った dump だけである。**
+  稼働中に取ると、件数の snapshot と dump のあいだに監査ログが増え、統制状態の行も更新されるため、`compare` は件数・指紋の差を FAIL にする
+  （2026-09-03 のリハーサルで実測: 監査が 2 行増えただけで FAIL 3 件）。日次の稼働中の取得を試験するときは、
+  **FAIL の内訳が「取得中に書かれ得るテーブル」の件数の増加・指紋の差だけで、減少と `order_dispatch_reservations` の未確定件数の減少が無い**ことを目で確かめる。
+- **Vault**: 値を平文で書き出す方式（`vault kv get` の JSON をファイルへ落とす等）は採らない。基盤の Vault のストレージ種別に合った
+  スナップショット（または `vault-data` のボリュームの暗号化されたコピー）を基盤と揃えて決める（未決）。
+- 本番の DB へのリストアは切替のロールバック（移行仕様書 §ロールバック・リスク）でだけ行う。**リストアの前に現状も dump する。**
 
 ## メッセージング（RabbitMQ のキュー）
 
