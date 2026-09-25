@@ -387,7 +387,8 @@ $ExtraHolidays = @(); $ExtraHalfDays = @('2026/09/25')
 $code = Invoke-Case $tradingAt $null
 Assert-Equal 2 $code 'T-10-1049 読めない臨時半日も exit 2'
 $ExtraHalfDays = @()
-Assert-Equal 0 @(ConvertTo-DateList @('', '  ')).Count 'T-10-1049 空・空白だけの指定は無視する'
+$emptyDates = ConvertTo-DateList @('', '  ')
+Assert-Equal 0 $emptyDates.Count 'T-10-1049 空・空白だけの指定は無視する（空の配列が返る）'
 
 # 監査 N3: 前日の警報の状態を持ったまま今日の最初の実行が平常なら「回復」を通知しない
 $prevDir = New-StateDir

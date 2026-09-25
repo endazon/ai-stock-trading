@@ -376,7 +376,9 @@ function Send-DiscordNotification {
   $content = if ($Text.Length -gt 1900) { $Text.Substring(0, 1900) + '…' } else { $Text }
   $body = @{ content = $content; allowed_mentions = @{ parse = @() } } | ConvertTo-Json -Depth 3 -Compress
   try {
-    & $Invoker $WebhookUrl $body | Out-Null
+    # 送信器のすべてのストリームを捨てる（情報ストリームは既定値 SilentlyContinue でも記録が流れ、*>&1 で捕まるため
+    # 既定値の停止だけでは足りない）。失敗は例外で受ける（既定の送信器は -ErrorAction Stop）。
+    & $Invoker $WebhookUrl $body *> $null
     return 'discord=送信'
   }
   catch {
