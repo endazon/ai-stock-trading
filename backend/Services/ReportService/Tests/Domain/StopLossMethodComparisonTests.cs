@@ -140,10 +140,11 @@ public class StopLossMethodComparisonTests
             ]));
 
         comparison.ApprovalDays.Should().Be(3);
+        // #1006: 日数の内訳は S0〜S3 だけ（見送りは ForgoneDays に別に数える）。
         comparison.AppliedDays.Should().Equal(
             new StopLossAppliedDays(StopLossExecutionMethod.BrokerStopOrder, 2),
-            new StopLossAppliedDays(StopLossExecutionMethod.NoProtectiveStop, 1),
-            new StopLossAppliedDays(null, 1));
+            new StopLossAppliedDays(StopLossExecutionMethod.NoProtectiveStop, 1));
+        comparison.ForgoneDays.Should().Be(1);
         comparison.MixedDays.Should().Be(1);
         comparison.DisagreementDays.Should().Be(1);
         comparison.UnresolvedDays.Should().Be(1);
@@ -173,10 +174,10 @@ public class StopLossMethodComparisonTests
         section.Should().Contain(
             "- **選ばれていた手法（承認時点）**: 計 4 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 2 件 / 不明(9) 1 件");
         section.Should().Contain(
-            "- **実際に適用された手法（発注執行の解決結果）**: 計 4 件 — S0 ブローカー側逆指値 3 件 / 発注せず（拒否） 1 件");
+            "- **実際に適用された手法（発注執行の解決結果）**: 計 4 件 — S0 ブローカー側逆指値 3 件 / 見送り（実際の発注先が SIMULATE でない） 1 件");
         section.Should().Contain("- **選択と実際の食い違い: 3 件** — "
             + "S2 逆指値なしの建玉を許容 → S0 ブローカー側逆指値 1 件（理由: 空売りの新規建ては S0 で扱う） / "
-            + "S2 逆指値なしの建玉を許容 → 発注せず（拒否） 1 件（理由: S0 以外の手法は moomoo SIMULATE でしか適用しないため発注しなかった。実際の発注先: moomoo REAL） / "
+            + "S2 逆指値なしの建玉を許容 → 見送り（実際の発注先が SIMULATE でない） 1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: moomoo REAL） / "
             + "不明(9) → S0 ブローカー側逆指値 1 件（理由: 未知の手法の値のため S0 と同じ扱いにした）");
         section.Should().NotContain("解決結果の記録が見つからない承認");
         // 2 行目は 1 行目の直後（計画の並び）。
@@ -283,9 +284,10 @@ public class StopLossMethodComparisonTests
             ])));
 
         var section = Section(md, "### 損切りの実行機構（当月）");
-        section.Should().Contain("- **実際に適用された手法の日数**: S0 ブローカー側逆指値 1 日 / S2 逆指値なしの建玉を許容 1 日 / "
-            + "発注せず（拒否） 1 日（新規建ての承認があった日 3 日。複数の手法が適用された日 1 日は各手法に重複して数えています）");
-        section.Should().Contain("- **選択と実際が食い違った日数: 1 日**（個々の日の内訳と理由は該当日報を参照）");
+        // #1006: 計画の 1 行（当月の損切りの実行機構: …／選択と実際が食い違った日数: …）。見送りは内訳に含めない。
+        section.Should().Contain("- **当月の損切りの実行機構: S0 ブローカー側逆指値 1 日 / S2 逆指値なしの建玉を許容 1 日"
+            + "／選択と実際が食い違った日数: 1 日**（新規建ての承認があった日 3 日。複数の手法が適用された日 1 日は各手法に重複して数えています。"
+            + "見送り（実際の発注先が SIMULATE でない）の承認は内訳に含めていません。個々の日の内訳と理由は該当日報を参照）");
         section.Should().Contain("- **解決結果の記録が見つからない承認を含む日: 1 日**");
         section.Should().Contain("- 日は日報と同じ JST の暦日（承認の時刻）で数えています。");
         // 明細（個々の日の内訳・理由）は月報に出さない。
@@ -307,9 +309,10 @@ public class StopLossMethodComparisonTests
         var s0 = Approved(StopLossExecutionMethod.BrokerStopOrder);
         var matched = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly,
             StopLossMethodUsage.From([s0]), new StopLossMethodResolutionFeed([AsSelected(s0)])));
-        matched.Should().Contain("- **実際に適用された手法の日数**: S0 ブローカー側逆指値 1 日（新規建ての承認があった日 1 日）");
-        matched.Should().Contain("- **選択と実際が食い違った日数: 0 日**");
+        matched.Should().Contain("- **当月の損切りの実行機構: S0 ブローカー側逆指値 1 日／選択と実際が食い違った日数: 0 日**"
+            + "（新規建ての承認があった日 1 日。個々の日の内訳と理由は該当日報を参照）");
         matched.Should().NotContain("重複して数えています");
+        matched.Should().NotContain("内訳に含めていません");
     }
 
     // 🔴 否定形: どちらかを照会できなければ「なし」「0 日」と書かない。
@@ -345,8 +348,8 @@ public class StopLossMethodComparisonTests
             new StopLossMethodResolutionFeed([])));
 
         var section = Section(md, "### 損切りの実行機構（当月）");
-        section.Should().Contain("- **選択と実際が食い違った日数**: 判定できていません（解決結果の記録が見つかった承認がありません）");
-        section.Should().Contain("- **実際に適用された手法の日数**: 数えられません（解決結果の記録が見つかった承認がありません。新規建ての承認があった日 2 日）");
+        section.Should().Contain("- **当月の損切りの実行機構**: 数えられません／**選択と実際が食い違った日数**: 判定できていません"
+            + "（解決結果の記録が見つかった承認がありません。新規建ての承認があった日 2 日）");
         section.Should().Contain("- **解決結果の記録が見つからない承認を含む日: 2 日**");
         section.Should().NotContain("0 日");
     }
@@ -361,5 +364,214 @@ public class StopLossMethodComparisonTests
                 StopLossMethodUsage.From([s2]), new StopLossMethodResolutionFeed([AsSelected(s2)])))
             .Should().NotContain("損切りの実行機構");
         ReportInputs.AppliesTo(ReportInput.StopLossMethodResolutions, ReportKind.Weekly).Should().BeFalse();
+    }
+
+    // ---- 改定後のテンプレート（#1006・planning#646 の裁定。T-10-1110〜T-10-1112） --------------------------
+
+    private static OrderApproved ApprovedFor(
+        StopLossExecutionMethod method, ProductType productType, DateTimeOffset at) => new(
+        Guid.NewGuid(),
+        new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, productType, BrokerProvider.MoomooSimulate, 10, 200m),
+        10,
+        at,
+        StopLossMethod: method);
+
+    // 計画 04_report-templates 日報 §4（2026-09-25 訂正）: 2 行目は S0〜S3 に「見送り（実際の発注先が SIMULATE でない）」を加える。
+    // 食い違いの理由は「実際の発注先が SIMULATE でないための見送り」の語で書く。S1・S3 は選択どおりに執行される（IADR-0344・IADR-0347）。
+    [Fact]
+    public void T_10_1110_日報は見送りの区分名と理由をテンプレートの語で書き_S1とS3を選択どおりに数える()
+    {
+        var s0 = Approved(StopLossExecutionMethod.BrokerStopOrder);
+        var s1 = Approved(StopLossExecutionMethod.SoftwareStop);
+        var s1Real = Approved(StopLossExecutionMethod.SoftwareStop);
+        var s2 = Approved(StopLossExecutionMethod.NoProtectiveStop);
+        var s3 = Approved(StopLossExecutionMethod.AlternativeBrokerOrderType);
+        var s3Paper = Approved(StopLossExecutionMethod.AlternativeBrokerOrderType);
+
+        var md = ReportRenderer.RenderMarkdown(View(ReportKind.Daily,
+            StopLossMethodUsage.From([s0, s1, s1Real, s2, s3, s3Paper]),
+            new StopLossMethodResolutionFeed(
+            [
+                AsSelected(s0), AsSelected(s1), AsSelected(s2), AsSelected(s3),
+                Resolved(s1Real, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate, BrokerProvider.MoomooReal),
+                Resolved(s3Paper, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate, BrokerProvider.InternalPaper),
+            ])));
+
+        var section = Section(md, "### 損切りの実行機構（当日）");
+        section.Should().Contain("- **選ばれていた手法（承認時点）**: 計 6 件 — S0 ブローカー側逆指値 1 件 / S1 ソフトウェア逆指値 2 件 / "
+            + "S2 逆指値なしの建玉を許容 1 件 / S3 他のブローカー側注文種別 2 件\n");
+        section.Should().Contain("- **実際に適用された手法（発注執行の解決結果）**: 計 6 件 — S0 ブローカー側逆指値 1 件 / S1 ソフトウェア逆指値 1 件 / "
+            + "S2 逆指値なしの建玉を許容 1 件 / S3 他のブローカー側注文種別 1 件 / 見送り（実際の発注先が SIMULATE でない） 2 件\n");
+        section.Should().Contain("- **選択と実際の食い違い: 2 件** — "
+            + "S1 ソフトウェア逆指値 → 見送り（実際の発注先が SIMULATE でない） 1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: moomoo REAL） / "
+            + "S3 他のブローカー側注文種別 → 見送り（実際の発注先が SIMULATE でない） 1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: 内蔵 paper）\n");
+        // 🔴 否定形: 旧い区分名・旧い理由の語を出さない。固定の注記で「見送り」の 2 つの意味を書き分ける。
+        section.Should().NotContain("発注せず（拒否）");
+        section.Should().NotContain("発注しなかった。");
+        section.Should().Contain("（「見送り（実際の発注先が SIMULATE でない）」は解決の時点で発注しなかった承認です。"
+            + "解決の後に発注を見送った場合〔逆指値価格が無い等〕や約定の有無は反映しません）");
+    }
+
+    // 計画 04_report-templates 月報 §6（2026-09-25 訂正）: 「当月の損切りの実行機構: <S0 a 日 / S1 b 日 / S2 c 日 / S3 d 日>
+    // ／選択と実際が食い違った日数: <n 日>」の 1 行。内訳は S0〜S3 の 4 区分（見送りは内訳に数えない）。
+    [Fact]
+    public void T_10_1111_月報は1行で_内訳はS0からS3の4区分であり見送りを数えない()
+    {
+        DateTimeOffset Day(int d) => new(2026, 9, d, 14, 0, 0, TimeSpan.Zero);
+
+        // 4 区分がすべて現れる月（並びは S0→S3。入力の順に依らない）＋ 見送りの日。
+        var s3 = Approved(StopLossExecutionMethod.AlternativeBrokerOrderType, Day(1));
+        var s2 = Approved(StopLossExecutionMethod.NoProtectiveStop, Day(2));
+        var s1 = Approved(StopLossExecutionMethod.SoftwareStop, Day(3));
+        var s0 = Approved(StopLossExecutionMethod.BrokerStopOrder, Day(4));
+        var s1Real = Approved(StopLossExecutionMethod.SoftwareStop, Day(5));
+        var all = Section(ReportRenderer.RenderMarkdown(View(ReportKind.Monthly,
+            StopLossMethodUsage.From([s3, s2, s1, s0, s1Real]),
+            new StopLossMethodResolutionFeed(
+            [
+                AsSelected(s3), AsSelected(s2), AsSelected(s1), AsSelected(s0),
+                Resolved(s1Real, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate, BrokerProvider.MoomooReal),
+            ]))), "### 損切りの実行機構（当月）");
+
+        all.Should().Contain("- **当月の損切りの実行機構: S0 ブローカー側逆指値 1 日 / S1 ソフトウェア逆指値 1 日 / "
+            + "S2 逆指値なしの建玉を許容 1 日 / S3 他のブローカー側注文種別 1 日／選択と実際が食い違った日数: 1 日**"
+            + "（新規建ての承認があった日 5 日。見送り（実際の発注先が SIMULATE でない）の承認は内訳に含めていません。"
+            + "個々の日の内訳と理由は該当日報を参照）\n");
+        // 🔴 否定形: 見送りを日数の区分として出さない。旧い行名（2 行構成）も出さない。
+        all.Should().NotContain("SIMULATE でない） 1 日");
+        all.Should().NotContain("実際に適用された手法の日数");
+        all.Should().NotContain("- **選択と実際が食い違った日数");
+
+        // 解決結果はあるがすべて見送りの月: 空の内訳を出さず、その旨を書く。
+        var forgone = Approved(StopLossExecutionMethod.NoProtectiveStop, Day(6));
+        var allForgone = Section(ReportRenderer.RenderMarkdown(View(ReportKind.Monthly,
+            StopLossMethodUsage.From([forgone]),
+            new StopLossMethodResolutionFeed(
+                [Resolved(forgone, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate, BrokerProvider.MoomooReal)]))),
+            "### 損切りの実行機構（当月）");
+
+        allForgone.Should().Contain("- **当月の損切りの実行機構: S0〜S3 のいずれも適用されませんでした（解決結果はすべて見送り）"
+            + "／選択と実際が食い違った日数: 1 日**（新規建ての承認があった日 1 日。個々の日の内訳と理由は該当日報を参照）\n");
+        allForgone.Should().NotContain("実行機構: ／");
+    }
+
+    // 計画の記載要件「内訳の合計は『計 n 件』と一致させる」を、日報の 2 行それぞれについて多数の組合せで確かめる
+    // （S0〜S3・未知の値 × 現物／空売り × 発注先 3 × 解決結果の有無。種固定で決定的）。月報の内訳は S0〜S3 だけで、並びは S0→S3。
+    [Fact]
+    public void T_10_1112_日報の2行はそれぞれ内訳の合計が計と一致し_月報の内訳はS0からS3だけ()
+    {
+        var methods = new[]
+        {
+            StopLossExecutionMethod.BrokerStopOrder, StopLossExecutionMethod.SoftwareStop,
+            StopLossExecutionMethod.NoProtectiveStop, StopLossExecutionMethod.AlternativeBrokerOrderType,
+            (StopLossExecutionMethod)9,
+        };
+        var providers = new[] { BrokerProvider.MoomooSimulate, BrokerProvider.MoomooReal, BrokerProvider.InternalPaper };
+        string[] knownLabels = [.. methods.Take(4).Select(StopLossMethodUsage.Label)];
+        string[] selectedOrder = [.. knownLabels, StopLossMethodUsage.Label((StopLossExecutionMethod)9)];
+        string[] appliedOrder = [.. knownLabels, StopLossMethodComparison.ForgoneLabel];
+
+        var random = new Random(1006);
+        var checkedDays = 0;
+        for (var run = 0; run < 300; run++)
+        {
+            var approvals = new List<OrderApproved>();
+            var resolutions = new List<StopLossMethodResolved>();
+            var count = random.Next(0, 13);
+            for (var i = 0; i < count; i++)
+            {
+                var method = methods[random.Next(methods.Length)];
+                var product = random.Next(4) == 0 ? ProductType.ShortSell : ProductType.Cash;
+                var approved = ApprovedFor(method, product, T0.AddDays(random.Next(0, 5)));
+                approvals.Add(approved);
+                if (random.Next(6) == 0)
+                    continue; // 解決結果の記録が見つからない承認
+                var provider = providers[random.Next(providers.Length)];
+                var (applied, reason) = ResolveLikePolicy(method, product, provider);
+                resolutions.Add(Resolved(approved, applied, reason, provider));
+            }
+
+            var usage = StopLossMethodUsage.From(approvals);
+            var feed = new StopLossMethodResolutionFeed(resolutions);
+            var daily = Section(ReportRenderer.RenderMarkdown(View(ReportKind.Daily, usage, feed)), "### 損切りの実行機構（当日）");
+            var comparison = StopLossMethodComparison.From(usage, feed);
+
+            if (count == 0)
+            {
+                daily.Should().Contain("選ばれていた手法（承認時点）**: なし");
+                continue;
+            }
+
+            var (selectedTotal, selectedItems) = ParseRow(daily, "選ばれていた手法（承認時点）");
+            selectedTotal.Should().Be(count);
+            selectedItems.Sum(x => x.Count).Should().Be(selectedTotal, $"1 行目の内訳の合計は計と一致する（run {run}）:\n{daily}");
+            AssertCategories(selectedItems, selectedOrder, run, daily);
+
+            if (comparison.ResolvedCount > 0)
+            {
+                var (appliedTotal, appliedItems) = ParseRow(daily, "実際に適用された手法（発注執行の解決結果）");
+                appliedTotal.Should().Be(comparison.ResolvedCount);
+                appliedItems.Sum(x => x.Count).Should().Be(appliedTotal, $"2 行目の内訳の合計は計と一致する（run {run}）:\n{daily}");
+                AssertCategories(appliedItems, appliedOrder, run, daily);
+                // 1 行目と 2 行目の計の差は「解決結果の記録が見つからない承認」の件数（別の行）が説明する。
+                (selectedTotal - appliedTotal).Should().Be(comparison.UnresolvedCount);
+            }
+
+            var monthly = Section(ReportRenderer.RenderMarkdown(View(ReportKind.Monthly, usage, feed)), "### 損切りの実行機構（当月）");
+            if (comparison.AppliedDays.Count > 0)
+            {
+                var line = monthly.Split('\n').Single(l => l.StartsWith("- **当月の損切りの実行機構: ", StringComparison.Ordinal));
+                var body = line["- **当月の損切りの実行機構: ".Length..line.IndexOf('／', StringComparison.Ordinal)];
+                var days = body.Split(" / ").Select(item =>
+                {
+                    var cut = item.LastIndexOf(' ', item.Length - " 日".Length - 1);
+                    item.Should().EndWith(" 日");
+                    return (Label: item[..cut], Count: int.Parse(item[(cut + 1)..^" 日".Length], System.Globalization.CultureInfo.InvariantCulture));
+                }).ToList();
+                AssertCategories(days, knownLabels, run, monthly);
+                checkedDays++;
+            }
+        }
+
+        checkedDays.Should().BeGreaterThan(100, "月報の内訳を検査した回が十分にある");
+
+        static (StopLossExecutionMethod? Applied, StopLossMethodResolutionReason Reason) ResolveLikePolicy(
+            StopLossExecutionMethod method, ProductType product, BrokerProvider provider)
+        {
+            // 発注執行の解決規則（StopLossMethodPolicy.ResolveWithReason）の順序を写した試験データの生成器。
+            if (method == StopLossExecutionMethod.BrokerStopOrder)
+                return (method, StopLossMethodResolutionReason.AsSelected);
+            if (provider != BrokerProvider.MoomooSimulate)
+                return (null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate);
+            if (product == ProductType.ShortSell)
+                return (StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.ShortSellEntry);
+            return Enum.IsDefined(method)
+                ? (method, StopLossMethodResolutionReason.AsSelected)
+                : (StopLossExecutionMethod.BrokerStopOrder, StopLossMethodResolutionReason.UnknownMethod);
+        }
+
+        static (int Total, List<(string Label, int Count)> Items) ParseRow(string section, string label)
+        {
+            var prefix = $"- **{label}**: 計 ";
+            var line = section.Split('\n').Single(l => l.StartsWith(prefix, StringComparison.Ordinal));
+            var rest = line[prefix.Length..];
+            var total = int.Parse(rest[..rest.IndexOf(' ', StringComparison.Ordinal)], System.Globalization.CultureInfo.InvariantCulture);
+            var items = rest[(rest.IndexOf(" — ", StringComparison.Ordinal) + " — ".Length)..].Split(" / ").Select(item =>
+            {
+                item.Should().EndWith(" 件");
+                var cut = item.LastIndexOf(' ', item.Length - " 件".Length - 1);
+                return (item[..cut], int.Parse(item[(cut + 1)..^" 件".Length], System.Globalization.CultureInfo.InvariantCulture));
+            }).ToList();
+            return (total, items);
+        }
+
+        static void AssertCategories(List<(string Label, int Count)> items, string[] order, int run, string text)
+        {
+            // 区分は既知の名前だけ・件数 0 の区分は出さない・重複なし・並びは計画の順。
+            var positions = items.Select(x => Array.IndexOf(order, x.Label)).ToList();
+            positions.Should().NotContain(-1, $"区分名は計画の区分に限る（run {run}）:\n{text}");
+            positions.Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
+            items.Should().OnlyContain(x => x.Count > 0);
+        }
     }
 }

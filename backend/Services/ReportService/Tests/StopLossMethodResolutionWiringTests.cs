@@ -108,9 +108,9 @@ public class StopLossMethodResolutionWiringTests(ReportWorkerWebApplicationFacto
         daily.Body.Should().Contain(
             "- **選ばれていた手法（承認時点）**: 計 3 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 2 件");
         daily.Body.Should().Contain(
-            "- **実際に適用された手法（発注執行の解決結果）**: 計 3 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 1 件 / 発注せず（拒否） 1 件");
-        daily.Body.Should().Contain("- **選択と実際の食い違い: 1 件** — S2 逆指値なしの建玉を許容 → 発注せず（拒否） 1 件"
-            + "（理由: S0 以外の手法は moomoo SIMULATE でしか適用しないため発注しなかった。実際の発注先: moomoo REAL）");
+            "- **実際に適用された手法（発注執行の解決結果）**: 計 3 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 1 件 / 見送り（実際の発注先が SIMULATE でない） 1 件");
+        daily.Body.Should().Contain("- **選択と実際の食い違い: 1 件** — S2 逆指値なしの建玉を許容 → 見送り（実際の発注先が SIMULATE でない） 1 件"
+            + "（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: moomoo REAL）");
         daily.Body.Should().NotContain("解決結果の記録が見つからない承認", "境界際の承認の解決結果も窓で拾えている");
         daily.UnsuppliedInputs.Should().NotContain(ReportInput.StopLossMethods);
         daily.UnsuppliedInputs.Should().NotContain(ReportInput.StopLossMethodResolutions);

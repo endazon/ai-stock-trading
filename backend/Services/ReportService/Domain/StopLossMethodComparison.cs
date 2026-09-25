@@ -30,7 +30,7 @@ public sealed record StopLossMethodComparison(
     /// <summary>解決結果の記録が見つからない承認の数（2 行目・食い違いのどちらにも数えない）。</summary>
     public int UnresolvedCount => Outcomes.Count(o => o.Resolution is null);
 
-    /// <summary>実際に適用された手法ごとの件数。手法の序数順で、拒否（適用なし＝ null）は最後。</summary>
+    /// <summary>実際に適用された手法ごとの件数。手法の序数順（S0→S3）で、見送り（適用なし＝ null）は最後。</summary>
     public IReadOnlyList<StopLossAppliedCount> AppliedCounts =>
     [
         .. Outcomes
@@ -65,21 +65,32 @@ public sealed record StopLossMethodComparison(
     /// <summary>新規建ての承認が 1 件以上あった JST 暦日の数。</summary>
     public int ApprovalDays => Outcomes.Select(o => o.Day).Distinct().Count();
 
-    /// <summary>実際に適用された手法ごとに、それが 1 件以上あった JST 暦日の数（手法の序数順・拒否は最後）。</summary>
+    /// <summary>
+    /// 実際に適用された手法（S0〜S3）ごとに、それが 1 件以上あった JST 暦日の数（手法の序数順）。
+    /// #1006, IADR-0429（2026-09-25 追記）: **見送りは数えない**——計画の月報 §6 の内訳は S0〜S3 の 4 区分であり、
+    /// 見送りは実行機構が働かなかった承認である（食い違った日数には数える。<see cref="ForgoneDays"/>）。
+    /// </summary>
     public IReadOnlyList<StopLossAppliedDays> AppliedDays =>
     [
         .. Outcomes
-            .Where(o => o.Resolution is not null)
-            .GroupBy(o => o.Resolution!.AppliedMethod)
-            .OrderBy(g => g.Key is null ? int.MaxValue : (int)g.Key.Value)
+            .Where(o => o.Resolution?.AppliedMethod is not null)
+            .GroupBy(o => o.Resolution!.AppliedMethod!.Value)
+            .OrderBy(g => (int)g.Key)
             .Select(g => new StopLossAppliedDays(g.Key, g.Select(o => o.Day).Distinct().Count())),
     ];
 
-    /// <summary>実際に適用された手法（拒否を含む）が 2 種類以上あった日の数（<see cref="AppliedDays"/> では各手法に重複して数える）。</summary>
+    /// <summary>実際に適用された手法（S0〜S3。見送りは除く）が 2 種類以上あった日の数（<see cref="AppliedDays"/> では各手法に重複して数える）。</summary>
     public int MixedDays => Outcomes
-        .Where(o => o.Resolution is not null)
+        .Where(o => o.Resolution?.AppliedMethod is not null)
         .GroupBy(o => o.Day)
         .Count(g => g.Select(o => o.Resolution!.AppliedMethod).Distinct().Count() > 1);
+
+    /// <summary>#1006: 見送り（実際の発注先が SIMULATE でない）の承認が 1 件以上あった日の数（<see cref="AppliedDays"/> には現れない）。</summary>
+    public int ForgoneDays => Outcomes
+        .Where(o => o.Resolution is { AppliedMethod: null })
+        .Select(o => o.Day)
+        .Distinct()
+        .Count();
 
     /// <summary>食い違いが 1 件以上あった日の数。</summary>
     public int DisagreementDays => Outcomes.Where(o => o.Disagrees).Select(o => o.Day).Distinct().Count();
@@ -109,15 +120,22 @@ public sealed record StopLossMethodComparison(
     public static DateOnly JstDayOf(DateTimeOffset instant) =>
         DateOnly.FromDateTime(instant.ToOffset(ReportSchedule.JstOffset).DateTime);
 
-    /// <summary>実際に適用された手法の表示名。拒否（null）は「発注せず（拒否）」。</summary>
+    /// <summary>
+    /// 実際に適用された手法の表示名。発注しない解決（null）は計画の日報 §4 の区分名
+    /// 「見送り（実際の発注先が SIMULATE でない）」（#1006・planning#646 の裁定。解決規則上 null はこの分岐だけから生じる）。
+    /// </summary>
     public static string AppliedLabel(StopLossExecutionMethod? applied) =>
-        applied is { } method ? StopLossMethodUsage.Label(method) : "発注せず（拒否）";
+        applied is { } method ? StopLossMethodUsage.Label(method) : ForgoneLabel;
+
+    /// <summary>#1006: 見送りの区分名（計画 04_report-templates 日報 §4 の 2 行目の欄名そのまま）。</summary>
+    public const string ForgoneLabel = "見送り（実際の発注先が SIMULATE でない）";
 
     /// <summary>食い違いの理由の表示名（発注執行の解決規則の分岐に対応する）。</summary>
     public static string ReasonLabel(StopLossMethodResolutionReason reason, BrokerProvider? provider) => reason switch
     {
+        // #1006: 計画の理由の列挙の語（「実際の発注先が SIMULATE でないための見送り」）。
         StopLossMethodResolutionReason.BrokerNotMoomooSimulate =>
-            "S0 以外の手法は moomoo SIMULATE でしか適用しないため発注しなかった"
+            "実際の発注先が SIMULATE でないための見送り"
             + (provider is { } p ? $"。実際の発注先: {ProviderLabel(p)}" : string.Empty),
         StopLossMethodResolutionReason.ShortSellEntry => "空売りの新規建ては S0 で扱う",
         StopLossMethodResolutionReason.UnknownMethod => "未知の手法の値のため S0 と同じ扱いにした",
@@ -145,8 +163,8 @@ public sealed record StopLossMethodOutcome(StopLossMethodApproval Approval, Date
 /// <summary>#1002: 実際に適用された手法（拒否は null）ごとの件数。</summary>
 public sealed record StopLossAppliedCount(StopLossExecutionMethod? Applied, int Count);
 
-/// <summary>#1002: 実際に適用された手法（拒否は null）ごとの日数。</summary>
-public sealed record StopLossAppliedDays(StopLossExecutionMethod? Applied, int Days);
+/// <summary>#1002, #1006: 実際に適用された手法（S0〜S3。見送りは含めない）ごとの日数。</summary>
+public sealed record StopLossAppliedDays(StopLossExecutionMethod Applied, int Days);
 
 /// <summary>#1002: 同じ形の食い違い（選択 → 適用・理由・拒否なら発注先）の件数。</summary>
 public sealed record StopLossMethodDisagreement(
