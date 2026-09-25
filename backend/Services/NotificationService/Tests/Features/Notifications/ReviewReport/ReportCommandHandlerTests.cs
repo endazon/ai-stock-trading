@@ -94,10 +94,17 @@ public class ReportCommandHandlerTests
 
         public int ListCalls { get; private set; }
 
-        public Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
+        // #843 項目2: 一覧照会の遅延を模す。実アダプタ（HttpClient）と同じく、渡されたトークンの取り消しで
+        // OperationCanceledException を投げる（アダプタは呼び出し側＝ハンドラの取り消しを空へ丸めず伝播させる）。
+        public TimeSpan ListDelay { get; set; } = TimeSpan.Zero;
+
+        public async Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
         {
             ListCalls++;
-            return Task.FromResult<IReadOnlyList<string>>(PeriodKeys);
+            if (ListDelay > TimeSpan.Zero)
+                await Task.Delay(ListDelay, cancellationToken);
+
+            return PeriodKeys;
         }
     }
 
@@ -518,5 +525,64 @@ public class ReportCommandHandlerTests
 
         suggestions.Should().BeEmpty();
         show.WasExecuted.Should().BeTrue("補完の失敗は照会に影響しない");
+    }
+
+    // ---- ⑤ 補完の時間予算（#843 項目2。Discord の応答期限 3 秒に間に合わない一覧は候補なしで静かに終わる） ----
+
+    [Fact]
+    public async Task 一覧が補完の予算を超えたら例外を投げず候補なしで終わる()
+    {
+        // FR-14, #843 項目2（増える側のプローブ）: 一覧が遅い帯で、毎打鍵が Gateway の catch
+        // （「入力補完の応答に失敗しました」）へ落ちるのではなく、予算内に候補なしで応答する。
+        var controller = new FakeReportReviewController { ListDelay = TimeSpan.FromSeconds(30) };
+        controller.PeriodKeys.Add("daily-2026-09-18");
+        var handler = Handler(controller, FullyConfigured());
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var suggestions = await handler.SuggestPeriodsAsync(
+            Context("/report autocomplete"), input: null, TimeSpan.FromMilliseconds(50), CancellationToken.None);
+        started.Stop();
+
+        suggestions.Should().BeEmpty();
+        controller.ListCalls.Should().Be(1);
+        started.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "予算で打ち切り、一覧の遅延を待たない");
+    }
+
+    [Fact]
+    public async Task 予算内に返った一覧は予算で切られない()
+    {
+        // FR-14, #843 項目2（減る側のプローブ）: 予算は遅い一覧だけを切り、間に合った候補は捨てない。
+        var controller = new FakeReportReviewController { ListDelay = TimeSpan.FromMilliseconds(10) };
+        controller.PeriodKeys.AddRange(["daily-2026-09-18", "daily-2026-09-17"]);
+        var handler = Handler(controller, FullyConfigured());
+
+        var suggestions = await handler.SuggestPeriodsAsync(
+            Context("/report autocomplete"), input: null, TimeSpan.FromSeconds(10), CancellationToken.None);
+
+        suggestions.Should().Equal("daily-2026-09-18", "daily-2026-09-17");
+    }
+
+    [Fact]
+    public async Task 呼び出し側の取り消しは予算切れと区別して伝播する()
+    {
+        // 否定形（#843 項目2）: 停止要求まで「候補なし」に丸めない（アダプタの `Handled` と同じ分担）。
+        var controller = new FakeReportReviewController { ListDelay = TimeSpan.FromSeconds(30) };
+        var handler = Handler(controller, FullyConfigured());
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+
+        var act = async () => await handler.SuggestPeriodsAsync(
+            Context("/report autocomplete"), input: null, TimeSpan.FromSeconds(30), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public void 補完の予算は_Discord_の応答期限と_HttpClient_の_Timeout_より短い()
+    {
+        // FR-14, #843 項目2: Discord の autocomplete の応答期限は 3 秒、`report-review` の HttpClient.Timeout は 5 秒
+        // （Program.cs）。予算がどちらかを超えると、遅い帯で応答期限切れへ落ちる元の形に戻る。
+        ReportCommandHandler.SuggestionBudget.Should().BeGreaterThan(TimeSpan.Zero);
+        ReportCommandHandler.SuggestionBudget.Should().BeLessThan(TimeSpan.FromSeconds(3));
     }
 }
