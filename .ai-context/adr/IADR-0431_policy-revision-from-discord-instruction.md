@@ -2,7 +2,7 @@
 title: IADR-0431 Discord の自由文の指示から AI が方針の改訂案を作り、報告書の新しい版として提示する（確定は利用者・監視銘柄は案の表示のみ）
 type: impl-adr
 status: Accepted
-related_ids: [FR-07, FR-14, FR-13, FR-04, UC-03, UC-04, UC-05, ADR-0003, IADR-0240, IADR-0115, IADR-0120, IADR-0116, IADR-0169, IADR-0420, IADR-0062, IADR-0359]
+related_ids: [FR-07, FR-14, FR-13, FR-04, UC-03, UC-04, UC-05, ADR-0003, IADR-0240, IADR-0115, IADR-0120, IADR-0116, IADR-0169, IADR-0420, IADR-0062, IADR-0359, IADR-0433, ADR-0042]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-26
@@ -81,6 +81,12 @@ LLM の未構成・失敗・タイムアウト・送信拒否・拒否・禁止�
 案の入れ替え案は Discord の表示と報告書の本文にだけ現れる。**通知サービスに監視銘柄を変える口を置かない**
 （`IPolicyRevisionController` は `ReviseAsync` 1 つ・監視銘柄のポートを持たないことを `DiscordSettingsAreReadOnlyTests` が固定）。
 適用は設定画面（SC-02。FR-13: 理由必須・監査・楽観排他）で利用者が行う。Discord からの適用は計画の改定（planning への環流）を待つ。
+
+> ［2026-09-26 追記 / #1025］**本決定は改められた。** 計画 ADR-0042 決定 1・2（planning#663 の利用者裁定）が、`/policy` の入れ替え案に限り
+> Discord の確認ボタンでの適用を FR-14 の唯一の例外として認めた。実装は [IADR-0433](IADR-0433_policy-watchlist-proposal-apply-from-discord.md)
+> （`/policy` 専用の確認ボタンで確定できたときだけ、台帳に記録した案の銘柄を、案を作った時点の監視銘柄を期待値として市場監視で一括適用する。
+> `/report approve` は確定だけ）。「通知サービスに監視銘柄を変える口を置かない」は「口は案の適用と照会の 1 つのポートだけ」へ改め、
+> `DiscordSettingsAreReadOnlyTests` をその形へ改めた。
 
 ### 決定 5: Discord は `/policy instruction:<自由文> period:<任意>`。投稿本文は発行側で無害化する
 
