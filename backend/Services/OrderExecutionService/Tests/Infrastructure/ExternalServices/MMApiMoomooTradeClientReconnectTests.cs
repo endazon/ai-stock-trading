@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using AiStockTrading.Shared.Contracts.Ports;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
@@ -16,29 +15,45 @@ namespace OrderExecutionService.Tests;
 // 応答待ちのタイムアウトを繰り返すだけで、Pod を入れ直すまで発注経路が死ぬ。
 //
 // 実 OpenD は使わない（IMoomooTradeConnectionFactory にフェイクを差す）。
+//
+// 🔴 #981, IADR-0379 決定 1・2: **応答が返ることを表明する試験に、有限の応答待ち（ReplyTimeout）を置かない。**
+// フェイクの応答は実 SDK と同じく別スレッド（スレッドプール）から返り、応答待ちの打ち切りもスレッドプールが配送する。
+// プールが塞がると「200ms の打ち切り」と「すぐ返るはずの応答」は空いた瞬間に両方とも期限切れで、どちらが先に
+// 走るかは保証されない（並列・高負荷で 24 回中 8 回赤。応答を 300ms 遅らせると決定的に赤）。
+// よって、回復（応答が返る）を表明する試験は応答待ちを無期限にし、1 回目の失敗は**接続拒否の通知**で起こす。
+// 打ち切り（応答が返らない）で据え置くことは、打ち切りだけが完了の口である試験（下の 2 件）で固定する。
 public class MMApiMoomooTradeClientReconnectTests
 {
-    private static MoomooBrokerOptions Options() =>
-        new("opend", 11111) { ReplyTimeout = TimeSpan.FromMilliseconds(200) };
+    // 打ち切りだけが完了の口である試験の応答待ち（応答と競走しない）。
+    private static readonly TimeSpan StuckReplyTimeout = TimeSpan.FromMilliseconds(200);
+
+    // 合否の基準ではない。回復が壊れたときに黙って固まる代わりに、理由つきで赤くするための上限（IADR-0379 決定 2）。
+    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
+
+    private static MoomooBrokerOptions Options(TimeSpan replyTimeout) =>
+        new("opend", 11111) { ReplyTimeout = replyTimeout };
 
     // FR-05, #732 受け入れ基準 1: 失敗した後の次の試行が**新しい接続オブジェクト**を張り、接続に成功する。
+    // #981: 応答待ちは無期限（応答と打ち切りを競走させない）。打ち切りで失敗した後の作り直しは
+    // 「接続できないままなら毎回_BrokerUnavailable_で据え置きハングしない」が固定する（接続オブジェクトが 3 本）。
     [Fact]
     public async Task 接続に失敗した次の試行は接続オブジェクトを作り直して接続できる()
     {
-        var factory = new FakeConnectionFactory(FakeConnectBehavior.NeverCompletes);
+        var factory = new FakeConnectionFactory(FakeConnectBehavior.Refuses);
         var logger = new RecordingLogger<MMApiMoomooTradeClient>();
-        using var client = new MMApiMoomooTradeClient(Options(), logger, factory);
+        using var client = new MMApiMoomooTradeClient(Options(Timeout.InfiniteTimeSpan), logger, factory);
 
-        // 1 回目: OpenD が落ちている（接続完了が返ってこない）。
+        // 1 回目: OpenD が落ちている（接続の失敗が通知される）。
         await Assert.ThrowsAsync<BrokerUnavailableException>(
-            () => client.GetPositionsAsync(TestContext.Current.CancellationToken));
+            () => client.GetPositionsAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken));
         factory.Created.Should().HaveCount(1, "起動時に作った 1 本目で試行する");
 
         // OpenD が復旧した。
         factory.Behavior = FakeConnectBehavior.Succeeds;
 
-        // 2 回目: **入れ直さずに**回復する。
-        var positions = await client.GetPositionsAsync(TestContext.Current.CancellationToken);
+        // 2 回目: **入れ直さずに**回復する。1 本目は拒否を返し続けるので、作り直さなければここで赤くなる。
+        var positions = await client.GetPositionsAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         positions.Should().BeEmpty();
         factory.Created.Should().HaveCount(2, "失敗した接続オブジェクトを捨てて作り直す");
@@ -48,19 +63,21 @@ public class MMApiMoomooTradeClientReconnectTests
     }
 
     // FR-11, #732 受け入れ基準 3: 固着を切り分けられるログが出る（秘匿情報を含まない）。
+    // #981: 応答待ちは無期限（上の試験と同じ理由）。
     [Fact]
     public async Task 接続オブジェクトを作り直したことがログで区別できる()
     {
-        var factory = new FakeConnectionFactory(FakeConnectBehavior.NeverCompletes);
+        var factory = new FakeConnectionFactory(FakeConnectBehavior.Refuses);
         var logger = new RecordingLogger<MMApiMoomooTradeClient>();
-        using var client = new MMApiMoomooTradeClient(Options(), logger, factory);
+        using var client = new MMApiMoomooTradeClient(Options(Timeout.InfiniteTimeSpan), logger, factory);
 
         await Assert.ThrowsAsync<BrokerUnavailableException>(
-            () => client.GetPositionsAsync(TestContext.Current.CancellationToken));
+            () => client.GetPositionsAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken));
         logger.Records.Should().NotContain(r => r.Message.Contains("作り直しました"), "1 回目は作り直していない");
 
         factory.Behavior = FakeConnectBehavior.Succeeds;
-        await client.GetPositionsAsync(TestContext.Current.CancellationToken);
+        await client.GetPositionsAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         var recreated = logger.Records.Where(r => r.Message.Contains("作り直しました")).ToList();
         recreated.Should().ContainSingle();
@@ -70,23 +87,23 @@ public class MMApiMoomooTradeClientReconnectTests
 
     // #732 受け入れ基準 2（陰性対照）: OpenD が不達のままなら fail-safe に据え置く。
     // **作り直しは復旧の口であって、再試行の口ではない**——回数は呼び出し回数を超えず、ハングしない。
+    // 打ち切り（応答待ち 200ms）で失敗した試行の後も作り直す（2・3 本目）ことを、ここで固定する。
+    // #981, IADR-0379 決定 1: 再試行していないことは**回数**で押さえる（壁時計の所要〔旧: 10 秒未満〕では押さえない。
+    // 打ち切りの配送はスレッドプールを待つため、所要はプールの混み具合で伸びる）。ハングは Guard が理由つきで赤くする。
     [Fact]
     public async Task 接続できないままなら毎回_BrokerUnavailable_で据え置きハングしない()
     {
         var factory = new FakeConnectionFactory(FakeConnectBehavior.NeverCompletes);
         var logger = new RecordingLogger<MMApiMoomooTradeClient>();
-        using var client = new MMApiMoomooTradeClient(Options(), logger, factory);
+        using var client = new MMApiMoomooTradeClient(Options(StuckReplyTimeout), logger, factory);
 
-        var elapsed = Stopwatch.StartNew();
         for (var i = 0; i < 3; i++)
         {
-            await Assert.ThrowsAsync<BrokerUnavailableException>(
-                () => client.GetPositionsAsync(TestContext.Current.CancellationToken));
+            var failure = await Assert.ThrowsAsync<BrokerUnavailableException>(
+                () => client.GetPositionsAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken));
+            failure.InnerException.Should().BeOfType<TimeoutException>("接続の完了を待つ応答待ちの打ち切りで据え置く");
         }
-        elapsed.Stop();
 
-        // 応答待ちは 200ms × 3。無限ループ・指数的な再試行になっていないことを上限で押さえる。
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
         factory.Created.Should().HaveCount(3, "作り直しは 1 呼び出しにつき高々 1 回");
         factory.Created.Should().AllSatisfy(c => c.InitConnectCalls.Should().Be(1));
     }
@@ -97,7 +114,7 @@ public class MMApiMoomooTradeClientReconnectTests
     {
         var factory = new FakeConnectionFactory(FakeConnectBehavior.NeverCompletes);
         var logger = new RecordingLogger<MMApiMoomooTradeClient>();
-        using var client = new MMApiMoomooTradeClient(Options(), logger, factory);
+        using var client = new MMApiMoomooTradeClient(Options(StuckReplyTimeout), logger, factory);
 
         var request = new MoomooOrderRequest("AAPL", MoomooMarket.UnitedStates, MoomooSide.Buy, 1, 100m);
         await Assert.ThrowsAsync<BrokerUnavailableException>(
@@ -110,6 +127,9 @@ public class MMApiMoomooTradeClientReconnectTests
     {
         /// <summary>接続完了通知を返さない（OpenD 停止中・固着した SDK と同じ見え方）。</summary>
         NeverCompletes,
+
+        /// <summary>接続の失敗を通知する（OpenD 停止中に接続を拒否された見え方）。#981: 打ち切りに頼らずに失敗させる。</summary>
+        Refuses,
 
         /// <summary>接続完了通知を返し、口座一覧に SIMULATE 口座を 1 件返す。</summary>
         Succeeds,
@@ -162,6 +182,10 @@ public class MMApiMoomooTradeClientReconnectTests
             {
                 // 実 SDK と同じく別スレッドから返す（呼び出しの内側で完了させない）。
                 _ = Task.Run(() => _connCallback?.OnInitConnect(_handle, 0, string.Empty));
+            }
+            else if (behavior == FakeConnectBehavior.Refuses)
+            {
+                _ = Task.Run(() => _connCallback?.OnInitConnect(_handle, -1, "Connection refused"));
             }
             return true;
         }
