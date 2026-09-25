@@ -12,6 +12,7 @@ using ReportService.Features.Reports.ListReportPeriodKeys;
 using ReportService.Features.Reports.ListReports;
 using ReportService.Features.Reports.PresentReport;
 using ReportService.Features.Reports.RequestReportChanges;
+using ReportService.Features.Reports.RevisePolicy;
 using ReportService.Features.Reports.StartMonthlyBootstrap;
 using ReportService.Features.Reports.SummarizePnl;
 using ReportService.Features.Reports.UpsertReportDraft;
@@ -82,6 +83,8 @@ internal static class ReportEndpoints
         owner.MapGetReportReview();
         owner.MapPresentReport();
         owner.MapRequestReportChanges();
+        // FR-07, FR-14, #1016, IADR-0431: 利用者の自由文の指示から方針の改訂案を作り、新しい版として保存・提示する（確定はしない）。
+        owner.MapRevisePolicy();
 
         owner.MapConfirmReport();
 
