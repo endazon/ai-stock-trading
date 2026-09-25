@@ -2,7 +2,7 @@
 title: IADR-0211 OpenD へ確実に届いていない発注は「見送り」とし、キューイングも Rejected への丸め込みもしない
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0210, IADR-0362, IADR-0398]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0024, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0210, IADR-0346, IADR-0362, IADR-0398]
 author: claude (Claude Code)
 created: 2026-08-28
 updated: 2026-09-25
@@ -92,6 +92,13 @@ issue #331 の要求と食い違う。
    決定 1 の言う「発注送信後の失敗＝届いたか不明」そのものである。これらは `BrokerDispatchIndeterminateException` で
    伝播させる。稼働環境で実測した拒否 2 件（#844 の価格精度・#809 の `Paper trading does not support Stop order`）は
    どちらも `retType=-1` であり `Rejected` のままである。詳細は IADR-0117 の改定 8。
+   ［2026-09-25 追記 / [#832](https://github.com/endazon/ai-stock-trading/issues/832)・[IADR-0346](IADR-0346_count-working-entry-orders-in-risk-limits.md) 決定 5］
+   🔴 **上の「`Rejected` に限定される 2 事象」は、FR-05 の注文状態（`OrderExecuted.Status`・監査台帳・FR-05 の拒否の別集計）の話である。**
+   リスク管理の内部射影 `order_activity`（相場操縦検知の窓と、未約定の新規建ての算入の注文源だけが読む）は、
+   **見送り（`OrderDispatchForgone`）を `Rejected` で終端化する**（IADR-0346 決定 5。`Cancelled` にすると短命の約定なし取消として
+   見せ玉の嫌疑を積むため）。この `Rejected` は証券会社の拒否を意味せず、`OrderExecuted` として発行もされない。
+   FR-05 の集計面は `order_activity` を読まないため、本決定の分離（見送りを拒否と別集計にする）は崩れていない。
+   `OrderStatus.Rejected` の XML doc も同旨へ追随させた。
 3. **発注執行は同例外を捕捉し、(a) 予約を解放（確実に未発注のため二重発注の窓は無い）、(b) `ExecutionRecord`
    を残さず（注文は存在しない）、(c) 新イベント `OrderDispatchForgone`（DecisionId・Intent・理由・時刻）を
    発行して正常終了する。** ハンドラが例外を投げないため Wolverine の再試行・error キュー滞留は発生しない。
