@@ -8,6 +8,9 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
 {
     public DbSet<ReportRow> Reports => Set<ReportRow>();
 
+    // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の試行の台帳（1 日の回数上限・案の監査）。
+    public DbSet<PolicyRevisionAttemptRow> PolicyRevisionAttempts => Set<PolicyRevisionAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<ReportRow>(e =>
@@ -25,6 +28,19 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             e.Property(r => r.Version).IsConcurrencyToken();
             // 最新の確定済み日報の照会（種別・状態・期間）に用いるインデックス。
             e.HasIndex(r => new { r.Kind, r.State, r.PeriodStart });
+        });
+
+        mb.Entity<PolicyRevisionAttemptRow>(e =>
+        {
+            e.ToTable("policy_revision_attempts");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Id).ValueGeneratedNever();
+            e.Property(a => a.Actor).HasMaxLength(128);
+            e.Property(a => a.PeriodKey).HasMaxLength(64);
+            // 案の入れ替え（追加 5・除外 5・理由 200 文字まで）の JSON。
+            e.Property(a => a.WatchlistChangesJson).HasMaxLength(8192);
+            // 1 日の回数上限の判定（JST の暦日ごとの件数）。
+            e.HasIndex(a => a.JstDate);
         });
     }
 }

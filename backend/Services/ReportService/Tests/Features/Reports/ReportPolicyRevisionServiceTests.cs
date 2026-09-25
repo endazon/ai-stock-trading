@@ -46,12 +46,13 @@ public class ReportPolicyRevisionServiceTests
 
     private static (ReportPolicyRevisionService Service, InMemoryReportStore Store, FakeReviser Reviser) Create(
         PolicyRevisionOutcome? outcome = null, DateTimeOffset? now = null, PolicyRevisionSchedule? schedule = null,
-        IReportStore? storeOverride = null)
+        IReportStore? storeOverride = null, IPolicyRevisionLedger? ledger = null, int dailyLimit = 10)
     {
         var store = new InMemoryReportStore();
         var reviser = new FakeReviser(outcome ?? PolicyRevisionOutcome.Proposed(Proposal, null));
         var service = new ReportPolicyRevisionService(
             storeOverride ?? store, new FixedClock(now ?? SundayMorning), reviser, schedule ?? AutoDailyOn,
+            ledger ?? new InMemoryPolicyRevisionLedger(), new PolicyRevisionLimit(dailyLimit),
             NullLogger<ReportPolicyRevisionService>.Instance);
         return (service, store, reviser);
     }
@@ -364,6 +365,63 @@ public class ReportPolicyRevisionServiceTests
         SeedConfirmedDaily(store2, "daily-2026-09-26", new DateOnly(2026, 9, 26));
         var created = await sundayJst.ReviseAsync(null, "積極的に", "developer");
         (created.Status, created.PeriodKey, created.Created).Should().Be((PolicyRevisionStatus.Proposed, "daily-2026-09-27", true));
+    }
+
+    // T-10-1356（ADR-0042 決定 3）: 本日（JST）の試行が上限に達したら LLM を呼ばず、上限・回数を返す。何も保存しない。
+    // 失敗した試行（AI の失敗）も上限に数える（費用が掛かり得るため）。前日の試行は数えない。
+    [Fact]
+    public async Task 一日の上限に達したらLLMを呼ばない()
+    {
+        var ledger = new InMemoryPolicyRevisionLedger();
+        ledger.Begin(new PolicyRevisionAttempt(Guid.NewGuid(), SundayMorning.AddDays(-1), new DateOnly(2026, 9, 26), "developer", "x"));
+        var (failing, store, _) = Create(
+            PolicyRevisionOutcome.Failed(PolicyRevisionFailure.CallFailed, "失敗"), ledger: ledger, dailyLimit: 2);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+
+        (await failing.ReviseAsync(null, "1 回目", "developer")).Status.Should().Be(PolicyRevisionStatus.AiFailed);
+        (await failing.ReviseAsync(null, "2 回目", "developer")).Status.Should().Be(PolicyRevisionStatus.AiFailed);
+
+        var (service, store2, reviser) = Create(ledger: ledger, dailyLimit: 2, storeOverride: store);
+        var result = await service.ReviseAsync(null, "3 回目", "developer");
+
+        result.Status.Should().Be(PolicyRevisionStatus.DailyLimitReached);
+        result.Message.Should().Contain("上限の 2 回").And.Contain("2 回実行済み").And.Contain("方針は変わっていません");
+        reviser.Calls.Should().BeEmpty("上限に達したら LLM を呼ばない（費用を使わない）");
+        store.Get(TodayKey).Should().BeNull();
+        ledger.CountOn(new DateOnly(2026, 9, 27)).Should().Be(2, "断った試行は数えない");
+    }
+
+    // T-10-1357: 試行は LLM を呼ぶ前に記録され、結果（案の版・入れ替え案）で閉じる（案の監査記録）。検証で断った要求は記録しない。
+    [Fact]
+    public async Task 試行は呼ぶ前に記録され結果と入れ替え案で閉じる()
+    {
+        var ledger = new InMemoryPolicyRevisionLedger();
+        var (service, store, reviser) = Create(ledger: ledger);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        reviser.DuringCall = () => ledger.CountOn(new DateOnly(2026, 9, 27)).Should().Be(1, "呼ぶ前に 1 行書く");
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+        (await service.ReviseAsync(null, "", "developer")).Status.Should().Be(PolicyRevisionStatus.InvalidInstruction);
+
+        result.Message.Should().Contain("本日の /policy: 1/10 回目");
+        ledger.CountOn(new DateOnly(2026, 9, 27)).Should().Be(1);
+        var row = ledger.Attempts.Should().ContainSingle().Subject;
+        (row.Outcome, row.ReportVersion, row.Actor, row.PeriodKey)
+            .Should().Be((PolicyRevisionAttemptOutcome.Proposed, 1, "developer", TodayKey));
+        row.WatchlistChangesJson.Should().Contain("\"action\":\"add\"").And.Contain("NVDA").And.Contain("\"action\":\"remove\"");
+    }
+
+    // T-10-1358: 上限の構成値の読み方（空・未設定・不正・0 以下は既定 10 へ倒す。上限を無効にする値を作らない）。
+    [Theory]
+    [InlineData(null, 10)]
+    [InlineData("", 10)]
+    [InlineData("abc", 10)]
+    [InlineData("0", 10)]
+    [InlineData("-3", 10)]
+    [InlineData("3", 3)]
+    public void 上限の構成値を読む(string? configured, int expected)
+    {
+        PolicyRevisionLimit.Read(configured).DailyLimit.Should().Be(expected);
     }
 
     private sealed class PresentFailingStore(InMemoryReportStore inner) : IReportStore

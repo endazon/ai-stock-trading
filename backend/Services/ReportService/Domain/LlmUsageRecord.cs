@@ -53,6 +53,11 @@ public sealed record ScreeningDegradationCounts(
 /// 計上が 1 件でもあれば合計を返す（合計が 0 円でも <c>0</c> であり <c>null</c> ではない）。
 /// </para>
 /// </param>
+/// <param name="PolicyRevision">
+/// FR-14, ADR-0042 決定 3, #1024: 利用者起点の方針改訂（<c>/policy</c>・<c>policy-revision</c>）の回数と費用。上限の対象外。
+/// 🔴 <c>null</c> は「当月に <c>/policy</c> の LLM 呼び出しが無かった」であり「0 回・0 円」とは書かない（Stage 0 記録と同じ規律）。
+/// 回数は計上（応答が返った呼び出し）の件数である。
+/// </param>
 /// <param name="OtherCostJpy">
 /// 上限の対象でも報告書でも Stage 0 記録でもない用途の費用（情報収集等）。
 /// </param>
@@ -66,7 +71,11 @@ public sealed record LlmUsageSummary(
     decimal OtherCostJpy,
     IReadOnlyList<(string Purpose, string Outcome, int Count)> FallbacksByPurposeAndOutcome,
     int SkipCount,
-    IReadOnlyList<(string Reason, int Count)> SkipsByReason);
+    IReadOnlyList<(string Reason, int Count)> SkipsByReason,
+    PolicyRevisionUsage? PolicyRevision = null);
+
+/// <summary>FR-14, ADR-0042 決定 3, #1024: <c>/policy</c> の LLM 利用実績（回数＝計上の件数・費用）。</summary>
+public sealed record PolicyRevisionUsage(int Count, decimal CostJpy);
 
 // FR-06, FR-16, #338, 04_report-templates 月報 §7, 05_trading-assumptions §6.1, IADR-0251:
 // LLM 利用実績の集計（純関数・決定的・副作用なし）。
@@ -102,6 +111,7 @@ public static class LlmUsageAggregator
         // 🔴 **null のまま始める。** 計上が 1 件も無いことを 0 円と書かないための状態であり、
         // 0m で初期化すると「実行しなかった」と「実行して 0 円だった」が潰れる（計画注記が禁じた向き）。
         decimal? stage0Recording = null;
+        PolicyRevisionUsage? policyRevision = null;
 
         foreach (var cost in record.Costs)
         {
@@ -129,6 +139,14 @@ public static class LlmUsageAggregator
                 continue;
             }
 
+            // FR-14, ADR-0042 決定 3, #1024: `/policy` は上限の対象外だが独立区分（回数と費用を別の行で載せる）。
+            if (LlmPurposes.IsPolicyRevision(cost.Purpose))
+            {
+                policyRevision = new PolicyRevisionUsage(
+                    (policyRevision?.Count ?? 0) + 1, (policyRevision?.CostJpy ?? 0m) + cost.Amount);
+                continue;
+            }
+
             // 情報収集など、上限の対象でも報告書でもない用途。**捨てない**——
             // 落とすと「どこにも現れない費用」ができ、#282 と同じ形になる。
             other += cost.Amount;
@@ -148,7 +166,8 @@ public static class LlmUsageAggregator
             [.. record.Skips
                 .GroupBy(s => s.Reason, StringComparer.Ordinal)
                 .OrderBy(g => g.Key, StringComparer.Ordinal)
-                .Select(g => (g.Key, g.Count()))]);
+                .Select(g => (g.Key, g.Count()))],
+            policyRevision);
     }
 
     /// <summary>

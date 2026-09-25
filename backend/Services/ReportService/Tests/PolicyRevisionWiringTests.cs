@@ -240,4 +240,28 @@ public class PolicyRevisionWiringTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("policySummary").GetString().Should().Be(policy);
     }
+
+    // T-10-1361（ADR-0042 決定 3・#1024）: 本番の組み立て（EF の台帳・構成 Reports:PolicyRevision:DailyLimit）で、上限を超えた
+    // `/policy` は 429 で断られ、LLM は呼ばれず、報告書の版も進まない。
+    [Fact]
+    public async Task 一日の上限を超えた改訂は429でLLMを呼ばない()
+    {
+        var gateway = new RecordingGateway(ProposalJson);
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, gateway).WithWebHostBuilder(b =>
+            b.UseSetting("Reports:PolicyRevision:DailyLimit", "1"));
+        await SeedDraftAsync(factory);
+
+        (await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "a", periodKey = PeriodKey, onBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var refused = await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "b", periodKey = PeriodKey, onBehalfOf = "developer" });
+
+        refused.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("上限の 1 回");
+        gateway.Bodies.Should().ContainSingle("2 回目は LLM を呼ばない");
+        var report = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}");
+        report.GetProperty("version").GetInt32().Should().Be(2);
+    }
 }

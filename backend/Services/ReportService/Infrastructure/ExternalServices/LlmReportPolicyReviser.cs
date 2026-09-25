@@ -79,10 +79,14 @@ public sealed class LlmReportPolicyReviser(
                     dto.Model, dto.StopReason, LogSanitizer.Sanitize(dto.Text));
 
             // 費用の計上（best-effort。失敗しても改訂は続ける）。
+            // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 2: 計上区分は `policy-revision` へ付け替える（用途キーは
+            // 報告書と同じ＝モデル割当は変えない）。月次 LLM 上限の対象外で、月報 §7 に回数と費用を別の行で載せる。
             try
             {
                 await usageReporter
-                    .ReportAsync(new LlmUsage(purpose, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model), timeoutCts.Token)
+                    .ReportAsync(
+                        new LlmUsage(LlmPurposes.PolicyRevision, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model),
+                        timeoutCts.Token)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

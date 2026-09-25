@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using ReportService.Common.Abstractions;
@@ -21,6 +22,8 @@ public sealed partial class ReportPolicyRevisionService(
     IClock clock,
     IReportPolicyReviser reviser,
     PolicyRevisionSchedule schedule,
+    IPolicyRevisionLedger ledger,
+    PolicyRevisionLimit limit,
     ILogger<ReportPolicyRevisionService> logger)
 {
     /// <summary>指示の最大長（文字数）。Discord のスラッシュコマンドの上限と揃える。</summary>
@@ -53,12 +56,39 @@ public sealed partial class ReportPolicyRevisionService(
         if (target.Rejection is { } rejection)
             return rejection;
 
-        var outcome = await reviser.ReviseAsync(
-            new PolicyRevisionContext(target.Kind, key, target.CurrentPolicy, target.Parent, cleanedInstruction),
-            cancellationToken).ConfigureAwait(false);
+        // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: 1 日の回数上限（JST の暦日）。**LLM を呼ぶ前に数え、
+        // 呼ぶ前に 1 行書く**——応答が返らなかった呼び出しも費用が掛かり得るため上限に数える。上限に達したら LLM を呼ばない。
+        var used = ledger.CountOn(today);
+        if (used >= limit.DailyLimit)
+        {
+            logger.LogWarning(
+                "方針の改訂の 1 日の上限に達しています（Actor={Actor}・本日={Used}・上限={Limit}）。LLM を呼びません。",
+                actor, used, limit.DailyLimit);
+            return PolicyRevisionResult.Rejected(
+                PolicyRevisionStatus.DailyLimitReached,
+                $"本日（{today:yyyy-MM-dd}・JST）の /policy は上限の {limit.DailyLimit} 回に達しています（{used} 回実行済み）。"
+                + "方針は変わっていません。明日（JST）以降に実行してください。", key);
+        }
+
+        var attemptId = ledger.Begin(new PolicyRevisionAttempt(Guid.NewGuid(), clock.UtcNow, today, actor, key));
+        var attemptNumber = used + 1;
+
+        PolicyRevisionOutcome outcome;
+        try
+        {
+            outcome = await reviser.ReviseAsync(
+                new PolicyRevisionContext(target.Kind, key, target.CurrentPolicy, target.Parent, cleanedInstruction),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.AiFailed, null, null);
+            throw;
+        }
 
         if (outcome.Proposal is not { } proposal)
         {
+            ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.AiFailed, null, null);
             logger.LogWarning(
                 "方針の改訂案を作れませんでした（Actor={Actor}・PeriodKey={PeriodKey}・理由={Failure}）。何も保存していません。",
                 actor, key, outcome.Failure);
@@ -78,7 +108,18 @@ public sealed partial class ReportPolicyRevisionService(
             State = ReportState.Draft,
             ConfirmedAt = null,
         };
-        var version = store.UpsertDraft(report, target.ExpectedVersion);
+        int version;
+        try
+        {
+            version = store.UpsertDraft(report, target.ExpectedVersion);
+        }
+        catch
+        {
+            ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.SaveFailed, null, null);
+            throw;
+        }
+
+        ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.Proposed, version, SerializeChanges(proposal.WatchlistChanges));
 
         // 提示（Drafting→PendingApproval）。確定は利用者の確認ボタン（版番号付き）だけが行う（ADR-0003）。
         //
@@ -106,11 +147,12 @@ public sealed partial class ReportPolicyRevisionService(
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Add),
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Remove));
 
+        var usage = $"（本日の /policy: {attemptNumber}/{limit.DailyLimit} 回目）";
         return new PolicyRevisionResult(
             PolicyRevisionStatus.Proposed,
             presented
-                ? "方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。"
-                : "方針の改訂案を保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。",
+                ? $"方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。{usage}"
+                : $"方針の改訂案を保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。{usage}",
             key, version, target.Created, presented, proposal);
     }
 
@@ -226,6 +268,15 @@ public sealed partial class ReportPolicyRevisionService(
         return sb.ToString();
     }
 
+    // 案の入れ替えの記録（監査）。列挙は名前で書く（序数に結合しない）。
+    internal static string SerializeChanges(IReadOnlyList<WatchlistChangeSuggestion> changes) =>
+        JsonSerializer.Serialize(changes.Select(c => new
+        {
+            action = c.Action == WatchlistChangeAction.Add ? "add" : "remove",
+            symbol = c.Symbol,
+            reason = c.Reason,
+        }));
+
     public static string ActionLabel(WatchlistChangeAction action) => action switch
     {
         WatchlistChangeAction.Add => "追加",
@@ -262,6 +313,24 @@ public enum PolicyRevisionStatus
 
     /// <summary>営業日で当日の日報がまだ自動生成されていない（作ると自動生成を止めるため作らない）。</summary>
     AutoDailyPending,
+
+    /// <summary>FR-14, ADR-0042 決定 3: 本日（JST）の /policy の回数上限に達している（LLM を呼ばない）。</summary>
+    DailyLimitReached,
+}
+
+// FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の 1 日（JST）の回数上限。構成 `Reports:PolicyRevision:DailyLimit`。
+public sealed record PolicyRevisionLimit(int DailyLimit)
+{
+    public const string ConfigKey = "Reports:PolicyRevision:DailyLimit";
+
+    /// <summary>既定の上限（回/日）。根拠（1 回あたりの費用の見積り）は IADR-0432 決定 1。</summary>
+    public const int DefaultDailyLimit = 10;
+
+    /// <summary>構成から読む。空・未設定・不正値・1 未満は既定へ倒す（上限を無効にする値を作らない）。</summary>
+    public static PolicyRevisionLimit Read(string? configured) =>
+        new(int.TryParse(configured, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 1
+            ? parsed
+            : DefaultDailyLimit);
 }
 
 // FR-07, #1016, IADR-0431 決定 1（2026-09-26 利用者裁定）: 当日の日報を新しく作ってよいかの判定に使う生成境界。
