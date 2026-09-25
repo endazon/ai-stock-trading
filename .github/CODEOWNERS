@@ -1,0 +1,15 @@
+# CODEOWNERS — 全ファイルのレビュアを利用者本人に指名する
+#
+# NFR, #501: AI が実装し AI がレビューする運用で、必須レビュアが不在だと
+# 「AI の実装を AI が承認して同一人物がマージする」ループになる（AI_SETUP.md 共通セットアップ 4）。
+# 指名は利用者の決定である（#501 (b)）。利用者は 2026-09-26 に blocked:human の引き取りを指示し、
+# #501 の再検証コメントが「@endazon 本人を指名して構わない」と定めていたため、その値で配置した。
+#
+# 🔴 このファイルを置いただけでは関門にならない。効くかどうかは develop のルールセット側で決まる
+# （「Require review from Code Owners」は既に有効だが、管理者ロールが exempt で素通りする）。
+# 手順と現況は docs/operations/branch-protection-runbook.md。
+#
+# 書式: <パスパターン> <@ユーザー名 または @org/チーム名>（後の行が優先される）
+# 参考: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+
+*       @endazon

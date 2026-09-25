@@ -3,7 +3,7 @@ ids: []
 adrs: []
 iadrs: [IADR-0058, IADR-0170, IADR-0184, IADR-0185, IADR-0188]
 specs: []
-issues: [planning#315, planning#317, planning#364, planning#408]
+issues: [#501, #644, planning#315, planning#317, planning#364, planning#408]
 -->
 
 # AI 駆動の実装ワークフロー（Runbook）
@@ -146,6 +146,13 @@ bash scripts/apply-profile.sh copilot
 > 承認レビュー無し・claude-review が赤のままの PR がマージできている。`docs/blocked-tasks.md` B-2 に
 > **blocked:human** として記録済み）。**配備までの暫定手段**: マージ操作は人間が行い、マージ前に
 > PR の Checks タブで `build-and-test` と `claude-review` の完走（green）を目視確認する。
+>
+> 🔴 **［2026-09-26 訂正］「未配備」は旧来のブランチ保護 API だけを見た判定だった。** develop には
+> **ルールセット `develop-rule` が 2026-07-08 から有効**で、PR 必須・承認 1 件・コードオーナーの承認・必須チェック
+> （`pr-title` の 1 件のみ）を持つ。ただし**管理者ロールが `exempt`（ルールが評価されない）**であり、利用者と、
+> 利用者のトークンで動く AI のマージには何も効いていない——上の「赤いまま・承認なしでマージできた」はこれで説明が付く。
+> 実測・必須チェックの投入コマンド・バイパスの選択肢は [develop のルールセット Runbook](operations/branch-protection-runbook.md)。
+> 誤りは消さず訂正として残す。
 
 GitHub の **ブランチ保護ルール**（Settings → Branches → Add rule）で以下を推奨設定する。
 
