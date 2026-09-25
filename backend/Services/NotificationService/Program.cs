@@ -6,6 +6,7 @@ using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
 using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
+using NotificationService.Features.Notifications.RevisePolicy;
 using NotificationService.Infrastructure.ExternalServices;
 using NotificationService.Infrastructure.Steps;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -153,6 +154,22 @@ builder.Services.AddSingleton<IReportReviewController>(sp =>
 builder.Services.AddSingleton<VersionedConfirmationGuard>();
 builder.Services.AddSingleton<ReportCommandHandler>();
 
+// FR-07, FR-14, UC-03〜05, ADR-0003, #1016, IADR-0431: 方針の改訂（`/policy`）。報告書サービスの OwnerOnly エンドポイントを
+// owner マップ機密クライアントのトークンで呼ぶ（報告書レビューと同じ資格情報）。LLM の所要時間（報告書サービス側の上限は
+// 既定 60 秒）を見込み、**専用の名前付き HttpClient** で上限を 90 秒に取る（既存の `report-review` の 5 秒は変えない）。
+builder.Services.AddHttpClient("report-policy-revision", c => c.Timeout = TimeSpan.FromSeconds(90))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IPolicyRevisionController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-policy-revision");
+    var baseUrl = builder.Configuration["Reports:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpPolicyRevisionController(http, sp.GetRequiredService<ILogger<HttpPolicyRevisionController>>());
+});
+builder.Services.AddSingleton<PolicyRevisionCommandHandler>();
+
 builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory.Create(
     discordBotOptions,
     sp.GetRequiredService<KillSwitchCommandHandler>(),
@@ -161,6 +178,7 @@ builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory
     sp.GetRequiredService<GoodFaithViolationCommandHandler>(),
     sp.GetRequiredService<ReportCommandHandler>(),
     sp.GetRequiredService<PositionDriftAdoptionCommandHandler>(),
+    sp.GetRequiredService<PolicyRevisionCommandHandler>(),
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 

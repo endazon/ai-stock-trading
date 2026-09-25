@@ -6,6 +6,7 @@ using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
 using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
+using NotificationService.Features.Notifications.RevisePolicy;
 using Microsoft.Extensions.Logging;
 
 namespace NotificationService.Infrastructure.ExternalServices;
@@ -34,6 +35,8 @@ public static class DiscordBotGatewayFactory
         ReportCommandHandler reportHandler,
         // FR-10, FR-11, #871, ADR-0041 決定 4, IADR-0423: 乖離の取り込み（窓口は REST API と Discord Bot の両方）。
         PositionDriftAdoptionCommandHandler driftAdoptionHandler,
+        // FR-07, FR-14, #1016, IADR-0431: 方針の改訂（AI の案を承認待ちの版にする。確定はしない）。
+        PolicyRevisionCommandHandler policyRevisionHandler,
         ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(typeof(DiscordBotGatewayFactory).FullName!);
@@ -60,7 +63,7 @@ public static class DiscordBotGatewayFactory
         }
 
         return new DiscordNetBotGateway(
-            handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, reportHandler, driftAdoptionHandler, options,
+            handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, reportHandler, driftAdoptionHandler, policyRevisionHandler, options,
             loggerFactory.CreateLogger<DiscordNetBotGateway>());
     }
 

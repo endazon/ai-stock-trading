@@ -6,6 +6,7 @@ using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
 using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
+using NotificationService.Features.Notifications.RevisePolicy;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -82,6 +83,10 @@ public class DiscordSettingsAreReadOnlyTests
         var drift = await new PositionDriftAdoptionCommandHandler(
             probes.Drift, options, NullLogger<PositionDriftAdoptionCommandHandler>.Instance)
             .HandleAsync(context, "STOP TRADING", "理由");
+        // T-10-1334, #1016, IADR-0431: 方針の改訂も、設定変更の試みでは起動しない（指示の本文に同じ語を入れても同じ）。
+        var policy = await new PolicyRevisionCommandHandler(
+            probes.Policy, options, NullLogger<PolicyRevisionCommandHandler>.Instance)
+            .HandleAsync(context, raw);
 
         killSwitch.WasExecuted.Should().BeFalse();
         pause.WasExecuted.Should().BeFalse();
@@ -89,6 +94,7 @@ public class DiscordSettingsAreReadOnlyTests
         gfv.WasExecuted.Should().BeFalse();
         report.WasExecuted.Should().BeFalse();
         drift.WasExecuted.Should().BeFalse();
+        policy.WasExecuted.Should().BeFalse();
         probes.Calls.Should().Be(0, "設定変更の試みでは、どの下流サービスも呼ばれてはならない");
     }
 
@@ -112,6 +118,20 @@ public class DiscordSettingsAreReadOnlyTests
     public void 参照系は解釈される(string raw, BotCommandKind expected)
     {
         BotCommandParser.Parse(raw).Kind.Should().Be(expected);
+    }
+
+    // T-10-1335, FR-14, #1016, IADR-0431: 方針の改訂の窓口（`/policy`）は**報告書の改訂案を作らせる口だけ**を持ち、
+    // 監視銘柄（設定値）を変える口を持たない。案に含まれる監視銘柄の入れ替え案は表示されるだけである。
+    // 口が増えれば（例: 案の入れ替えを確定時に適用する）本テストが落ちる——FR-14 の例外を広げるには計画の改定が要る。
+    [Fact]
+    public void 方針の改訂の窓口は改訂案を作らせる口だけを持つ()
+    {
+        typeof(IPolicyRevisionController).GetMethods().Select(m => m.Name)
+            .Should().Equal(nameof(IPolicyRevisionController.ReviseAsync));
+
+        typeof(PolicyRevisionCommandHandler).Assembly.GetTypes()
+            .Where(t => t.IsInterface && t.Name.Contains("Watchlist", StringComparison.OrdinalIgnoreCase))
+            .Should().BeEmpty("通知サービスに監視銘柄を扱うポートを置かない（Discord から設定値を変えない）");
     }
 
     private static DiscordBotOptions FullyConfigured()
@@ -143,6 +163,8 @@ public class DiscordSettingsAreReadOnlyTests
         public IReportReviewController Report => new ReportProbe(this);
 
         public IPositionDriftAdoptionController Drift => new DriftProbe(this);
+
+        public IPolicyRevisionController Policy => new PolicyProbe(this);
 
         private void Record() => Calls++;
 
@@ -222,6 +244,16 @@ public class DiscordSettingsAreReadOnlyTests
             {
                 owner.Record();
                 return Task.FromResult(new PositionDriftAdoptionResult(true, true, "取り込み"));
+            }
+        }
+
+        private sealed class PolicyProbe(Probes owner) : IPolicyRevisionController
+        {
+            public Task<PolicyRevisionCommandOutcome> ReviseAsync(
+                string? periodKey, string instruction, string onBehalfOf, CancellationToken cancellationToken = default)
+            {
+                owner.Record();
+                return Task.FromResult(new PolicyRevisionCommandOutcome(true, false, "改訂"));
             }
         }
 

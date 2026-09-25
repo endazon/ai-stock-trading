@@ -6,6 +6,7 @@ using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
 using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
+using NotificationService.Features.Notifications.RevisePolicy;
 using NotificationService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -55,8 +56,11 @@ public class DiscordBotGatewayFactoryTests
         var driftHandler = new PositionDriftAdoptionCommandHandler(
             new StubPositionDriftAdoptionController(), options,
             NullLogger<PositionDriftAdoptionCommandHandler>.Instance);
+        // #1016, IADR-0431: 方針の改訂も同じ Gateway に載る。
+        var policyHandler = new PolicyRevisionCommandHandler(
+            new StubPolicyRevisionController(), options, NullLogger<PolicyRevisionCommandHandler>.Instance);
         return DiscordBotGatewayFactory.Create(
-            options, handler, pauseHandler, stageGateHandler, gfvHandler, reportHandler, driftHandler,
+            options, handler, pauseHandler, stageGateHandler, gfvHandler, reportHandler, driftHandler, policyHandler,
             NullLoggerFactory.Instance);
     }
 
@@ -185,6 +189,14 @@ public class DiscordBotGatewayFactoryTests
     }
 
     // #871: Gateway の生成ではリスク管理（乖離の取り込み）を呼ばない（呼ばれたら設計の誤りである）。
+    // #1016, IADR-0431: 本テストは Gateway の生成だけを見るため、報告書サービスの方針の改訂は呼ばれない。
+    private sealed class StubPolicyRevisionController : IPolicyRevisionController
+    {
+        public Task<PolicyRevisionCommandOutcome> ReviseAsync(
+            string? periodKey, string instruction, string onBehalfOf, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
+    }
+
     private sealed class StubPositionDriftAdoptionController : IPositionDriftAdoptionController
     {
         public Task<PositionDriftAdoptionResult> AdoptAsync(
