@@ -37,7 +37,13 @@ ESO 所有の現構成では次の同期で Vault の値へ戻され、**新旧 
 ## 変更
 
 - `docs/operations/discord-webhook-rotation-runbook.md` を新設（配線の実測・新規作成 → Vault → 旧削除の順・確認 5 点・蓄積先の棚卸しと既定の扱い・失敗時の分岐・限界）。
-- `docs/operations/operations.md` 関連文書に行を追加。`docs/security/security.md` のローテーション行に日付つき追記。
+- `docs/operations/operations.md` 関連文書に行を追加。
+- **監査の指摘で是正（2026-09-26）**: `ClusterSecretStore/vault-backend` の実測（`kubectl get clustersecretstore vault-backend -o jsonpath='{.spec.provider.vault}'`
+  → `server: http://vault.platform-infra:8200`・`path: secret`・`version: v2`）に合わせ、フォールバックを
+  `read -rs U; printf '%s' "$U" | vault kv patch -mount=secret ai-stock-trading/app-secrets discord-webhook-url=-` とした（末尾改行を入れない）。
+  Vault への届き方（Pod 内 exec／port-forward）とトークンの出所（dev モードの `VAULT_DEV_ROOT_TOKEN_ID` ← Secret `platform-infra/vault-dev-token` の `token`。値は表示しない）を書いた。
+  `=-` は Vault CLI の「値を標準入力から読む」であり、`@-` への置換提案は採らない。同じ誤り（`-mount` 欠落）を持つ
+  `docs/operations/vault-secrets-runbook.md` 手順 1 の 3 行も同じ PR で直した（規則 9: `vault kv (put|patch) ai-stock-trading` で全文書を走査し、該当はこの 2 文書だけ）。`docs/security/security.md` のローテーション行に日付つき追記。
 
 ## 蓄積分の判断（利用者へ提示する既定）
 

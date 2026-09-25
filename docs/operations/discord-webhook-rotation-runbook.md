@@ -65,11 +65,36 @@ issues: [#318, #289, #311, #313, #751, #760, #795]
 1. 基盤の**「秘密情報・接続設定の管理」画面**を開き、ai-stock-trading の `discord-webhook-url` を選ぶ。
 2. 手順 1 の URL を貼って保存する。保存すると基盤の BFF が ExternalSecret `ast-secrets` を即時同期させ、Reloader が notification-service を再起動する。
 
-**画面が使えないときのフォールバック**（Vault CLI。値は標準入力から渡し、コマンド行と履歴に残さない）:
+**画面が使えないときのフォールバック**（Vault CLI。値は標準入力から渡し、コマンド行・履歴・画面に残さない）。
+
+- **どこを書くか**: `ClusterSecretStore/vault-backend` は Vault `http://vault.platform-infra:8200` の**マウント `secret`（KV v2）**を読む
+  （2026-09-26 実測）。書く先は `-mount=secret` のパス `ai-stock-trading/app-secrets`、キー `discord-webhook-url`。
+- **🔴 `put` ではなく `patch`。** `put` は同じパスの他のキー（API 鍵群）を全部消す。
+- **末尾の改行を入れない。** `read -rs` で受けて `printf '%s'` で渡す（`echo` や貼り付け＋Enter だと改行まで値に入り、URL が壊れる）。
+- `discord-webhook-url=-` の `-` は「値を標準入力から読む」の意味である（`@-` ではない）。
+
+**経路 A: Vault の Pod の中で実行する**（ローカルの基盤の Vault は dev モードで、Pod の環境変数 `VAULT_DEV_ROOT_TOKEN_ID`〔Secret
+`platform-infra/vault-dev-token` の `token` から注入〕がルートトークンである。Pod 内の `VAULT_ADDR` は `http://127.0.0.1:8200`）:
 
 ```bash
-# 🔴 put ではなく patch。put は ai-stock-trading/app-secrets の他のキー（API 鍵群）を全部消す
-vault kv patch ai-stock-trading/app-secrets discord-webhook-url=-    # ← 実行後に URL を貼って Enter、Ctrl-D
+read -rs U && printf '%s' "$U" | kubectl -n platform-infra exec -i deploy/vault -- \
+  sh -c 'VAULT_TOKEN="$VAULT_DEV_ROOT_TOKEN_ID" vault kv patch -mount=secret ai-stock-trading/app-secrets discord-webhook-url=-'
+unset U
+```
+
+**経路 B: 手元の `vault` CLI から port-forward で届く**（トークンは Secret から環境変数へ直接入れ、表示しない）:
+
+```bash
+kubectl -n platform-infra port-forward svc/vault 8200:8200 &    # 終わったら kill %1
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN="$(kubectl -n platform-infra get secret vault-dev-token -o jsonpath='{.data.token}' | base64 -d)"
+read -rs U && printf '%s' "$U" | vault kv patch -mount=secret ai-stock-trading/app-secrets discord-webhook-url=-
+unset U VAULT_TOKEN
+```
+
+どちらの経路でも、書いた後に同期を促す:
+
+```bash
 kubectl -n ai-stock-trading annotate externalsecret ast-secrets force-sync="$(date +%s)" --overwrite
 ```
 
