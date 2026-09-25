@@ -101,3 +101,16 @@ plan_refs:
   不利側へずらす比率を設定（既定 1%）に持たせた。これは実装判断であり IADR-0347 決定 3 に記録した。
 - TrailingStop のトレール幅は発火価格だけからは決まらない（「エントリーからどれだけ離すか」が要る）。
   能力ポートへ**エントリーの判断価格**を渡す形にした（`OrderIntent.Price`）。
+
+## ［2026-09-25 追記 / #842］受け入れ基準表のテスト名 3 件は実在しない —— 実体への対応
+
+上の「受け入れ基準 → テスト」表の 3 件は、実装中にテストを分割・改名したため**リポジトリに存在しない名前**を引いている
+（#842 論点 4。`git grep` で 3 語とも本仕様書 1 ファイルだけに現れることを確認）。カバレッジ自体は存在する。
+本文（表）は凍結記録として書き換えず、実体への対応をここに置く。
+
+| 表の行 | 表が引く（不在） | 実体（`OrderExecutionService.Tests`） |
+| --- | --- | --- |
+| 1（T-10-363） | `MoomooBrokerAdapterAlternativeStopTests.StopLimitの拒否はretTypeとretMsgを戻り値へ載せる` | `MoomooBrokerAdapterAlternativeStopTests.代替注文種別の拒否はretTypeとretMsgを戻り値へ載せる` |
+| 3（T-10-362） | `OrderExecutionServiceAlternativeStopTests.S3の拒否は未約定なら取消し約定済みなら成行手仕舞いする` | `OrderExecutionServiceAlternativeStopTests.S3の拒否は未約定ならエントリーを取り消す` ＋ `…S3の拒否は約定済みなら成行で手仕舞う` ＋ `…エントリーが生きていなければS3の試行は行われない` |
+| 4（T-10-364） | `MoomooBrokerOptionsTests.代替の保護注文種別は設定で選べ未知の値は起動時に停止する` | `MoomooBrokerOptionsTests.代替の保護注文種別は未設定なら_StopLimit_で指値幅は_1_パーセント` ＋ `…代替の保護注文種別を構成から読む` ＋ `…未知の代替注文種別は起動時に停止する` ＋ `…StopLimit_の指値幅を構成から読む` ＋ `…範囲外の指値幅は起動時に停止する` |
+

@@ -93,6 +93,10 @@ public static class NotificationFormatter
                 "リスク統制: 保護逆指値が成立せず、成行手仕舞いの結果が未確認",
             ProtectiveStopRemediation.CloseRejected =>
                 "リスク統制: 保護逆指値が成立せず、成行手仕舞いも拒否（建玉が残存）",
+            // 🔴 T-10-854, #948, IADR-0369（2026-09-25 追記）: None は既定の腕（「建玉を解消」）へ落とさない。
+            // 本文は「解消にも失敗しました」なのに件名だけ読むと解消済みと読め、逆指値なしの建玉が残る側を見落とす。
+            ProtectiveStopRemediation.None =>
+                "リスク統制: 保護逆指値が成立せず、建玉の解消にも失敗",
             _ => "リスク統制: 保護逆指値が成立せず建玉を解消",
         },
         $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 逆指値が"

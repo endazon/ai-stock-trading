@@ -76,10 +76,12 @@ public class OrderExecutionServiceAlternativeStopTests
             return Task.FromResult(AcceptAlternative
                 ? new AlternativeProtectiveOrderPlacement(
                     new BrokerOrder("alt-1", closeIntent, OrderStatus.Accepted, 0, 0m, Now, null),
-                    AlternativeProtectiveOrderType, null, null)
+                    AlternativeProtectiveOrderType, null, null, BrokerOrderId: "alt-1")
                 : new AlternativeProtectiveOrderPlacement(
-                    new BrokerOrder("alt-1", closeIntent, OrderStatus.Rejected, 0, 0m, Now, Now),
-                    AlternativeProtectiveOrderType, 1, "Paper trading does not support StopLimit order"));
+                    // #842, IADR-0405: 拒否ではアダプタが合成した ID しか無い（ブローカーは採番していない）。
+                    new BrokerOrder("synthesized-1", closeIntent, OrderStatus.Rejected, 0, 0m, Now, Now),
+                    AlternativeProtectiveOrderType, 1, "Paper trading does not support StopLimit order",
+                    BrokerOrderId: null));
         }
 
         public Task<BrokerOrder> PlaceMarketOrderAsync(
@@ -139,7 +141,8 @@ public class OrderExecutionServiceAlternativeStopTests
         attempted.Market.Should().Be(Market.UnitedStates);
         attempted.OrderType.Should().Be(AlternativeProtectiveOrderType.StopLimit);
         attempted.Status.Should().Be(OrderStatus.Rejected);
-        attempted.BrokerOrderId.Should().Be("alt-1");
+        // T-10-850, #842, IADR-0405: 拒否ではブローカー注文 ID を載せない（合成 ID を台帳へ残さない）。
+        attempted.BrokerOrderId.Should().BeNull("ブローカーが受理しなかった注文に実在する ID は無い");
         // 🔴 これが #821 の目的そのもの: 拒否理由（retType / retMsg）が監査へ運ばれること。
         attempted.RejectReasonCode.Should().Be(1);
         attempted.RejectReasonMessage.Should().Be("Paper trading does not support StopLimit order");
@@ -196,6 +199,7 @@ public class OrderExecutionServiceAlternativeStopTests
         result.StopAttempted!.Status.Should().Be(OrderStatus.Accepted);
         result.StopAttempted.RejectReasonCode.Should().BeNull();
         result.StopAttempted.RejectReasonMessage.Should().BeNull();
+        result.StopAttempted.BrokerOrderId.Should().Be("alt-1", "T-10-850: 受理ではブローカーが採番した ID を残す");
 
         // S0 とまったく同じ記録: 逆指値レグの ExecutionRecord ＋ protective_stop_orders（ガードの巡回対象）。
         store.GetAll().Should().ContainSingle(r => r.DecisionId == stopDecisionId);
