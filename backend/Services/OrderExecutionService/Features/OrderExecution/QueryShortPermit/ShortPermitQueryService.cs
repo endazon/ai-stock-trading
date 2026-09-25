@@ -80,10 +80,13 @@ public sealed class ShortPermitQueryService(
         await Task.Yield();
 
         var (symbol, market) = key;
-        ShortPermitView view;
-        TimeSpan ttl;
+        // 既定は「照会の失敗」。下のどこで例外が出ても（ログ出力を含む）、finally がこの値をキャッシュし相乗りの登録を解く
+        // （#967, PR #1001 監査: 失敗したタスクが _inFlight に残り続け、以後の要求がそれを待ち続ける形を作らない）。
+        var view = Unknown(symbol, market, ShortPermitUnknownReasons.QueryFailed);
+        var ttl = FailureBackoff;
         try
         {
+            // 🔴 ブローカーへは呼び出し側の打ち切りを渡さない（相乗りした他の要求の照会を、先に待ちをやめた要求が止めない）。
             var permit = await source!.GetShortPermitAsync(symbol, market, CancellationToken.None).ConfigureAwait(false);
             (view, ttl) = permit switch
             {
@@ -98,13 +101,14 @@ public sealed class ShortPermitQueryService(
             logger.LogWarning(ex,
                 "借株可否の照会に失敗しました symbol={Symbol}。{Backoff} 秒は照会し直さず、借株可否は不明として扱います。",
                 symbol, FailureBackoff.TotalSeconds);
-            (view, ttl) = (Unknown(symbol, market, ShortPermitUnknownReasons.QueryFailed), FailureBackoff);
         }
-
-        lock (_gate)
+        finally
         {
-            _cache[key] = (view, now + ttl);
-            _inFlight.Remove(key);
+            lock (_gate)
+            {
+                _cache[key] = (view, now + ttl);
+                _inFlight.Remove(key);
+            }
         }
 
         return view;

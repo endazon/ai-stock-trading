@@ -127,6 +127,7 @@ public class ShortPermitQueryServiceTests
     /// <summary>
     /// T-10-1036: 同じ銘柄の照会が走っている間の要求は相乗りし、照会は 1 回だけ（予算も 1 回）。
     /// 先に待ちをやめた要求（打ち切り）があっても照会は止めず、相乗りした要求は答えを受け取る。
+    /// 偽のブローカーは渡された打ち切りに従って照会をやめる——呼び出し側の打ち切りをブローカーへ渡す変異はここで赤になる。
     /// </summary>
     [Fact]
     public async Task 走っている照会には相乗りし照会は1回だけ()
@@ -143,21 +144,67 @@ public class ShortPermitQueryServiceTests
 
         await FluentActions.Awaiting(() => first).Should().ThrowAsync<OperationCanceledException>();
         (await second).Status.Should().Be(ShortPermitStatus.Permitted);
+        source.Cancelled.Should().BeFalse("先に待ちをやめた要求の打ち切りは、相乗りした他の要求の照会を止めない");
         source.Calls.Should().Be(1);
         (await service.QueryAsync("AAPL", Market.UnitedStates, TestContext.Current.CancellationToken)).Status
             .Should().Be(ShortPermitStatus.Permitted, "打ち切った要求の照会の結果もキャッシュされる");
         source.Calls.Should().Be(1);
     }
 
+    /// <summary>
+    /// T-10-1037: 失敗のログ出力そのものが例外を投げても、相乗りの登録は解かれ失敗はキャッシュされる
+    /// （失敗したタスクが残って以後の要求がそれを待ち続ける形を作らない）。
+    /// </summary>
+    [Fact]
+    public async Task 失敗のログ出力が例外を投げても相乗りの登録は残らない()
+    {
+        var source = new CountingSource(_ => throw new InvalidOperationException("照会の失敗"));
+        var service = new ShortPermitQueryService(new MutableClock(T0), new ThrowingLogger(), source);
+        var ct = TestContext.Current.CancellationToken;
+
+        await FluentActions.Awaiting(() => service.QueryAsync("AAPL", Market.UnitedStates, ct))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("ログ出力の失敗");
+
+        var next = await service.QueryAsync("AAPL", Market.UnitedStates, ct);
+        next.UnknownReason.Should().Be(ShortPermitUnknownReasons.QueryFailed, "失敗は 30 秒キャッシュされ、失敗したタスクを待たない");
+        source.Calls.Should().Be(1);
+    }
+
+    // 渡された打ち切りに従う偽のブローカー（本物の OpenD クライアントも打ち切りで応答待ちをやめる）。
     private sealed class GatedSource(Task<bool?> answer) : IShortPermitSource
     {
         public int Calls { get; private set; }
 
-        public Task<bool?> GetShortPermitAsync(string symbol, Market market, CancellationToken cancellationToken = default)
+        public bool Cancelled { get; private set; }
+
+        public async Task<bool?> GetShortPermitAsync(string symbol, Market market, CancellationToken cancellationToken = default)
         {
             Calls++;
-            return answer;
+            try
+            {
+                // 照会が打ち切りより後に始まっても（答えが既に出ていても）打ち切りに従う——WaitAsync は完了済みのタスクなら
+                // 打ち切りを見ずに返すため、先に確かめる（照会の開始と打ち切りの順序に依らず決定的にする）。
+                cancellationToken.ThrowIfCancellationRequested();
+                return await answer.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Cancelled = true;
+                throw;
+            }
         }
+    }
+
+    private sealed class ThrowingLogger : Microsoft.Extensions.Logging.ILogger<ShortPermitQueryService>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter) =>
+            throw new InvalidOperationException("ログ出力の失敗");
     }
 
     private sealed class CountingSource(Func<string, bool?> answer) : IShortPermitSource
