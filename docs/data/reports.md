@@ -3,15 +3,15 @@ title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-25
+updated: 2026-09-26
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016]
 -->
 
 
@@ -63,6 +63,15 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843]
 - `GET /reports`、`GET /reports/{periodKey}`、`GET /reports/daily-policy`（確定済み日報方針＝Date/Summary/AssumptionsVersion・未確定は 404）。
 - `GET /reports/period-keys`（会話キーと開始日だけの軽い一覧＝`[{periodKey, periodStart}]`・開始日の降順、同日は会話キーの降順・ページングなし）。Discord の `/report` の入力補完が打鍵ごとに読むため、本文・要約・状態を載せない。OwnerOnly。`/{periodKey}` より優先される（`daily-policy` と同じくリテラル一致）。
 - `PUT /reports/{periodKey}`（ドラフト upsert・楽観排他）、`POST /reports/{periodKey}/confirm`（版番号付き冪等確定）。すべて OwnerOnly。
+- `POST /reports/policy-revisions`（方針の改訂案。OwnerOnly）: 要求は `{instruction, periodKey?, onBehalfOf?}`。利用者の自由文の指示（1000 文字まで）から
+  AI が方針の改訂案を作り、対象の報告書へ**新しい版のドラフト**として保存して提示（承認待ち）する。**確定はしない**（確定は上の確定 API）。
+  対象は `periodKey` 省略時に当日（JST）の日報。既存の未確定の報告書は改訂し、確定済みは 409。存在しない会話キーで新しく作れるのは当日の日報だけで、
+  土台は直近の確定済み日報（方針・`BasedOn`・`AssumptionsVersion`）。確定済み日報が無い・より新しい確定済み日報がある場合は 409。
+  改訂の記録（指示者・時刻・指示の原文・案・監視銘柄の入れ替え案・説明）は本文（Body）の末尾へ追記する。
+  応答は 200＝`{periodKey, version, created, presented, autoGenerationSkipped, message, policySummary, watchlistChanges[{action, symbol, reason}], rationale}`
+  （文字列は投稿向けに無害化済み）／400＝指示・会話キー・代理指定の不正／404＝対象なし／409＝確定済み・土台なし・確定しても効かない・並行更新／
+  502＝AI の案を作れなかった。**200 以外では何も保存しない。** 監視銘柄の入れ替え案は提示と記録だけで、監視銘柄は変えない（適用は設定画面）。
+  改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
 - **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。
