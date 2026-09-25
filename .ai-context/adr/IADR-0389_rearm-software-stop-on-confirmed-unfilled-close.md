@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-12, UC-02, ADR-0040, ADR-0016, IADR-0344, IADR-0113, IADR-0210, IADR-0118, IADR-0057, IADR-0357]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1 の S1)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10)
@@ -121,3 +121,17 @@ moomoo の模擬取引の注文は**当日限り**で、0 約定のまま失効�
 - [IADR-0344](IADR-0344_s1-software-stop-loss.md) 決定 5-5 / 追記(7) / 追記(9)
 - [IADR-0113](IADR-0113_moomoo-fill-polling.md) / [IADR-0357](IADR-0357_owner-close-market-order-cancel-path-and-expiry-notice.md)
 - [作業仕様書](../specs/20260923_833_rearm-accepted-close-not-filled.md)
+
+## ［2026-09-25 追記 / #833 項目2］受理 → 失効 → 再武装のループに待ち時間を掛けた
+
+§結果の「**受理 → 失効 → 再武装 → 受理 → 失効 のループに上限が無い**」は、[IADR-0344](IADR-0344_s1-software-stop-loss.md)
+追記(15) の行ごとの待ち時間で塞いだ。**本 IADR の決定は 1 つも覆らない**（再武装の条件・量・上限・通知は同じ）。変わったのは 2 点である。
+
+1. **1 株も約定しなかった再武装は「続けて売れなかった」1 回として数える**（`CloseFailures` を 1 増やし、
+   `NextCloseAttemptAt` を「今＋待ち時間」にする）。待ち時間は min(30 秒 × 2^(n−1), 15 分)。
+   ループは止まらないが、撃ち直しの間隔が育つ（出口は塞がない）。
+2. **1 株でも約定した再武装は前進として数えを 0 へ戻す**（残りはすぐ撃ってよい）。
+
+決定 5 の「次のガード巡回が新しい試行 ID で撃ち直す」は、0 約定の再武装では**待ち時間の後の巡回**になる。
+`CloseUnfilled` の通知文・監査の結末文も「待ち時間の後に撃ち直す」へ改めた（「次の巡回で撃ち直す」は偽になるため）。
+作業仕様書 [20260925_833_software-stop-close-backoff](../specs/20260925_833_software-stop-close-backoff.md)。

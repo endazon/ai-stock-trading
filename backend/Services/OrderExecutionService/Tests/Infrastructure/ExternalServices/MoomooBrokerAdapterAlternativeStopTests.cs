@@ -194,6 +194,47 @@ public class MoomooBrokerAdapterAlternativeStopTests
         placement.RejectReasonMessage.Should().Contain("発注前検証");
     }
 
+    // 🔴 T-10-850, FR-10, FR-11, #842, IADR-0405: 拒否された代替レグ（送信前棄却・確認済み拒否 retType=-1）には
+    // **ブローカー注文 ID を載せない**（否定形）。Order.OrderId はアダプタが合成した値であり、moomoo へ問い合わせても
+    // 存在しない——7 年保持の監査台帳へ残してはならない。
+    [Theory]
+    [InlineData("confirmed-failure")]
+    [InlineData("pre-send-validation")]
+    public async Task 拒否された代替レグにはブローカー注文IDを載せない_否定形(string rejection)
+    {
+        var client = rejection == "confirmed-failure"
+            ? new FakeClient
+            {
+                ThrowOnPlace = () => new MoomooTradeRequestException(
+                    "PlaceOrder", MoomooRetType.Failed, "Paper trading does not support StopLimit order"),
+            }
+            : new FakeClient();
+        var orderType = rejection == "confirmed-failure"
+            ? AlternativeProtectiveOrderType.StopLimit
+            : AlternativeProtectiveOrderType.TrailingStop;
+
+        // 送信前棄却はトレール幅 0（発火価格＝エントリーの判断価格）で起こす。
+        var placement = await Adapter(client, orderType)
+            .PlaceAlternativeStopOrderAsync(CloseIntent(), triggerPrice: 1_000m, entryReferencePrice: 1_000m, Guid.NewGuid());
+
+        placement.Order.Status.Should().Be(OrderStatus.Rejected);
+        placement.BrokerOrderId.Should().BeNull("ブローカーは注文を採番していない");
+        placement.Order.OrderId.Should().NotBeNullOrEmpty("BrokerOrder の契約（非 null）は従来どおり満たす");
+    }
+
+    // T-10-850（対の肯定形）: 受理されたらブローカーが採番した ID をそのまま持ち帰る。
+    [Fact]
+    public async Task 受理された代替レグはブローカーが採番した注文IDを持ち帰る()
+    {
+        var client = new FakeClient { Result = new("mo-77", MoomooOrderState.Submitted, 0, 0m) };
+
+        var placement = await Adapter(client, AlternativeProtectiveOrderType.StopLimit)
+            .PlaceAlternativeStopOrderAsync(CloseIntent(), 950m, 1_000m, Guid.NewGuid());
+
+        placement.BrokerOrderId.Should().Be("mo-77");
+        placement.Order.OrderId.Should().Be("mo-77");
+    }
+
     [Fact]
     public void 代替注文種別は構成で決まり発注前に読める()
     {

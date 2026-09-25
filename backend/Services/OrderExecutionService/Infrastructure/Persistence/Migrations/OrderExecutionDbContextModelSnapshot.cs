@@ -158,6 +158,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                     b.Property<int>("Attempt")
                         .HasColumnType("integer");
 
+                    b.Property<int>("CloseFailures")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -173,6 +176,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                     b.Property<decimal>("FxRateToBase")
                         .HasColumnType("numeric");
 
+                    b.Property<DateTimeOffset?>("LastTriggerSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Market")
                         .HasColumnType("integer");
 
@@ -181,6 +187,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
 
                     b.Property<int>("Mode")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("NextCloseAttemptAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("PendingExternalReduction")
                         .HasColumnType("integer");
@@ -236,6 +245,10 @@ namespace OrderExecutionService.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
 
                     b.HasKey("EntryDecisionId");
 

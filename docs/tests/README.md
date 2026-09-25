@@ -3,15 +3,15 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-09-23
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
 iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering]
-issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, MSP#446]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census]
+issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, MSP#446]
 -->
 
 
@@ -78,6 +78,11 @@ CI の `test-traceability` ジョブ（`scripts/check-test-traceability.js`）�
 - **既に重複している番号は改番しない。** `scripts/test-id-duplicate-baseline.json` へ
   「どの ID が・どのファイルで・何件・なぜ改番しないか」を記録する。**解消したら baseline から消す**
   （消さない限り検査が赤くなる＝ラチェット）。
+- 🔴 **baseline へ entry を足すこと自体も検査が止める**（増える側のラチェット）。検査器は baseline を
+  マージベースの版と比べ、新しい ID・件数の増加・在り処の追加があれば赤にする。新しいテストには
+  最大値＋1 を使うのが原則である。並行レーンの採番衝突が `develop` 上で起きた等で既存 ID を改番せずに
+  足すと決めたときだけ、コミット本文に行単独で `[add-test-id-duplicate] T-<FR>-<N>` を ID ごとに書き、
+  PR 本文で理由を説明する（レビューで人が承認する）。
 
 ## 2. 統制系の網羅方式（3 点セット）
 
@@ -164,6 +169,7 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 
 | 日付 | 内容 |
 | --- | --- |
+| 2026-09-25 | 既知の重複の baseline に「増える側」のラチェットを追加（[#923](https://github.com/endazon/ai-stock-trading/issues/923)）。entry をマージベースより増やすと赤になり、足すときはコミット本文での ID ごとの宣言と PR での説明を要する。 |
 | 2026-09-23 | テスト ID の採番規約を新設（[#887](https://github.com/endazon/ai-stock-trading/issues/887)）。採番行・枝番・参照行の区別、機能要求ごと・ファイル横断の採番空間、再利用と改番の禁止、並行レーンでの帯の確保、既知の重複のラチェット（`scripts/test-id-duplicate-baseline.json`）。検査は `scripts/check-test-traceability.js` の検査 4 |
 | 2026-09-11 | 「性能ゲート」行の追跡先を是正（#637）。#203 は 2026-08-02 に DUPLICATE でクローズされ後継が無いまま残っていた。計器の新設は #689 で完了済み、実測（実 LLM＋開場中）は #690 が引き継ぐ |
 | 2026-08-03 | 初版作成（#343・全面再実装の退行防止テスト基盤） |

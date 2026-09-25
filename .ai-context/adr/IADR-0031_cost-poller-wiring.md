@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, FR-01, FR-02, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -43,6 +43,18 @@ plan_refs:
 - **フェイルセーフ**: 費用統制不達・非 2xx・タイムアウト・不正応答は **Normal（停止せず・1×）** に倒す。
 - **安全既定でゲート**: `CostControl:BaseUrl` 未設定/不正 URI は `PlaceholderCostControlGate`（Normal）。構成で有効化時のみ実照会（解決時に構成を読む・5s タイムアウト）。
 - **適用範囲**: 本スライスは定時サイクルの起点＝情報収集 poller に限定する。市場監視 poller（価格駆動・別系統）への適用は対象外。
+
+## 追記（2026-09-25・#915）: 「不正応答」に 200 OK の項目欠落・非正の倍率を含め、明示された停止は尊重する
+
+- 背景: `HttpCostControlGate` の受け皿が非 nullable だったため、`200 OK` ＋本文 `{}` が `(Halted=false, IntervalMultiplier=0)` として写っていた
+  （IADR-0367 が発見。消費側 `EffectiveInterval` の下限 1 で隠れていただけ）。また `{"isHalted":true,"intervalMultiplier":null}` は
+  逆シリアル化の例外で Normal になり、明示された停止が落ちていた。
+- 決定: 受け皿を `bool? IsHalted, decimal? IntervalMultiplier` とし、次のとおり写す。
+  - `isHalted` が `true` → **停止**（倍率は見ない。送り手は Halted で倍率 0 を返すのが正常であり、倍率の検査を先に当てると費用上限を無視して収集を続ける側へ倒れる）。
+  - `isHalted` が `false` で倍率が欠落・null・0・負 → **Normal（1×）**（「費用統制は何も言っていない」を 0× と読まない）。
+  - `isHalted` が欠落・null → **Normal**（停止か否かを判定できない不正応答。本 IADR「フェイルセーフ」の適用）。
+- 残余: `isHalted` の改名・欠落で停止が落ちる（fail open・費用）ことは残る。送り手の型による契約テストは #957。
+  作業仕様書 `20260925_915_cost-gate-missing-multiplier`。
 
 ## 理由
 

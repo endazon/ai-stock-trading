@@ -8,8 +8,9 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // - Outcome=ClosePlaced: 成行の決済注文をブローカーが受理した。CloseDecisionId / CloseOrderId / CloseIntent を持ち、
 //   リスク管理が台帳の承認行へ結線する（約定は約定追跡の OrderExecuted が台帳へ届ける。ProtectiveStopCoverageLost と同じ作法）。
 // - Outcome=EntryCancelled: 到達時にエントリーが未約定のまま取り消された（建玉は生じていない）。Quantity=0。
-// - Outcome=CloseRejected: 決済注文が到達 1 回あたりの試行上限まで拒否された。**建玉が無保護で残っている**（人手対応・Critical）。
-//   次の到達で再試行する。
+// - Outcome=CloseRejected: 決済が続けて通っていない（連続失敗 3 回目と、以後 4 回ごと）。**建玉が無保護で残っている**（人手対応・Critical）。
+//   🔴 #833 項目2, IADR-0344 追記(15): 打ち切りではない。到達の記録は残り、行ごとの待ち時間（30 秒から倍々・最大 15 分）を置いて
+//   撃ち直しを続ける（かつての「到達 1 回あたり 3 試行で打ち切り・次の到達で再試行」は撤去した）。
 // - Outcome=CloseStalled: 到達したのに猶予を過ぎても決済できていない（据え置きが続いている）。再試行は続くが、
 //   無音のまま損切りが出ない状態を残さないため 1 件につき 1 回だけ知らせる（人手対応・Critical）。
 //
@@ -37,7 +38,10 @@ public enum SoftwareStopOutcome
     /// <summary>未約定のエントリーを取り消した（建玉は生じていない）。</summary>
     EntryCancelled = 1,
 
-    /// <summary>決済注文が試行上限まで拒否された。建玉が無保護で残っている（人手対応）。</summary>
+    /// <summary>
+    /// 決済が続けて通っていない（連続失敗 3 回目と、以後 4 回ごと）。建玉が無保護で残っている（人手対応）。
+    /// 撃ち直しは待ち時間を置いて続く（#833 項目2, IADR-0344 追記(15)）。
+    /// </summary>
     CloseRejected = 2,
 
     /// <summary>
@@ -116,7 +120,8 @@ public enum SoftwareStopOutcome
     /// </para>
     /// <para>
     /// <see cref="SoftwareStopExecuted.Quantity"/> は<b>約定しなかった株数</b>＝保護記録へ戻した株数である。
-    /// 記録は <c>Active</c> へ戻り（再武装）、次のガード巡回が新しい試行 ID で決済を撃ち直す。
+    /// 記録は <c>Active</c> へ戻り（再武装）、ガードの巡回が新しい試行 ID で決済を撃ち直す——
+    /// 1 株も約定しなかった再武装は続けて売れなかった 1 回として数え、行ごとの待ち時間の後になる（#833 項目2, IADR-0344 追記(15)）。
     /// 🔴 <b>「送ったが結果が不明」ではこのイベントを出さない</b>——確認できた終端だけが根拠である（決定3）。
     /// </para>
     /// </summary>

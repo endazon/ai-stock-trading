@@ -399,9 +399,10 @@ public class NotificationTemplateGoldenTests
             new NotificationMessage(
                 "リスク統制: ソフトウェア逆指値の決済が拒否されました",
                 "AAPL/UnitedStates 数量10: 損切りライン 950 へ到達しましたが、"
-                    + "成行の決済注文が 3 回目まで受理されませんでした。"
+                    + "試行 3 回目の成行の決済注文が受理されず、決済が続けて通っていません。"
                     + "**建玉が無保護で残っています。直ちに確認し、必要なら手動で決済してください**"
-                    + "（次の損切りライン到達で再試行します・EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
+                    + "（撃ち直しは待ち時間（30 秒から倍々・最大 15 分）を置いて続けます"
+                    + "・EntryDecisionId=11111111-1111-1111-1111-111111111111）。",
                 NotificationSeverity.Critical)),
 
         // 🔴 同じイベント型でも**対処の結末で本文が変わる**（FxRateStale と同じ扱いで分岐ごとに 1 行）。
@@ -426,7 +427,8 @@ public class NotificationTemplateGoldenTests
                 Id, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.RejectedAtEntry,
                 ProtectiveStopRemediation.None, 10, null, null, T),
             new NotificationMessage(
-                "リスク統制: 保護逆指値が成立せず建玉を解消",
+                // T-10-854, #948: 件名も「解消した」と読ませない（本文と食い違わない）。
+                "リスク統制: 保護逆指値が成立せず、建玉の解消にも失敗",
                 "AAPL/UnitedStates 数量10: 逆指値がエントリー時に未受理のため、"
                     + "**建玉の解消にも失敗しました。逆指値なしの建玉が残っている可能性があります。"
                     + "直ちに確認してください。**",

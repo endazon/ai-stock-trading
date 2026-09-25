@@ -51,7 +51,18 @@ public record ProtectiveStopOrder(
     // #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: 群に「帰属不明の建玉」があることを最後に知らせた株数と時刻
     // （群につき 1 行＝S1 の行のうち作成が最も新しいもの——が代表して持つ。同じ状態で毎巡回鳴らさないための記録）。
     int? UnattributedNotifiedQuantity = null,
-    DateTimeOffset? UnattributedNotifiedAt = null)
+    DateTimeOffset? UnattributedNotifiedAt = null,
+    // FR-10, #833 項目2, IADR-0344 追記(15): S1 の決済が**続けて 1 株も売れなかった**回数（拒否・0 約定のまま終端した再武装）と、
+    // 次の成行を送ってよい最早時刻（行ごとの待ち時間）。ハンドラとガードの両方が守る。null＝待ち時間なし。
+    // LastTriggerSeenAt は市場監視の到達を最後に受けた検知時刻——前回から間が空いた到達（閉場を挟んだ・価格が一度戻った）を
+    // 新しい窓として扱い、数えと待ち時間をやり直すために使う。
+    int CloseFailures = 0,
+    DateTimeOffset? NextCloseAttemptAt = null,
+    DateTimeOffset? LastTriggerSeenAt = null,
+    // 🔴 FR-10, #833 項目3, IADR-0396: 楽観並行の版番号（アプリ側で加算）。**この写しを読んだ時点の版**であり、
+    // IProtectiveStopOrderStore.TrySave は保存先の版がこの値と一致するときだけ書き、版を 1 進める。
+    // 古い写しから全列を書き戻して、並行に進んだ状態（完了・再武装・試行番号）を巻き戻さないための印である。
+    int Version = 0)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;

@@ -69,4 +69,17 @@ public sealed class ProtectiveStopOrderRow
     public int? UnattributedNotifiedQuantity { get; set; }
 
     public DateTimeOffset? UnattributedNotifiedAt { get; set; }
+
+    // FR-10, #833 項目2, IADR-0344 追記(15): S1 の決済の連続失敗回数・次の成行を送ってよい最早時刻・最後に受けた到達の検知時刻
+    // （行ごとの待ち時間。既存行は 0 / null / null＝待ち時間なし）。
+    public int CloseFailures { get; set; }
+
+    public DateTimeOffset? NextCloseAttemptAt { get; set; }
+
+    public DateTimeOffset? LastTriggerSeenAt { get; set; }
+
+    // 🔴 FR-10, #833 項目3, IADR-0396: 楽観並行の版番号（アプリ側で加算・EF の並行トークン）。
+    // 更新は「WHERE Version = 読んだ時点の版」で行われ、0 行なら並行更新と衝突した（古い写しでは上書きしない）。
+    // 既存行は 0 で始まる。
+    public int Version { get; set; }
 }

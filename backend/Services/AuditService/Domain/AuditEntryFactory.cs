@@ -538,7 +538,7 @@ public static class AuditEntryFactory
                 // 🔴 #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（保護記録を再武装した）。
                 SoftwareStopOutcome.CloseUnfilled =>
                     $"——**受理された成行決済が約定しないまま終了（OrderId={e.CloseOrderId}）。"
-                        + "その株数は建玉に残っており、保護記録を再武装した（次の巡回で撃ち直す・要人手確認）**",
+                        + "その株数は建玉に残っており、保護記録を再武装した（待ち時間の後に撃ち直す・要人手確認）**",
                 _ => "——**決済が受理されず。建玉が無保護で残っている（要人手対応）**",
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
@@ -547,7 +547,12 @@ public static class AuditEntryFactory
     // **試した**記録。🔴 **拒否理由（retType / retMsg）を台帳へ残すことが本記録の目的そのものである**
     // ——公式は模擬取引を「指値・成行のみ」としており、断られた理由がここに無ければ
     // 「なぜ S3 が使えないのか」を後から誰も説明できない。受理された場合も種別を残す（実測の一次証跡）。
-    public static AuditEntry From(AlternativeProtectiveStopAttempted e, Guid id, DateTimeOffset recordedAt) => new(
+    // #842, IADR-0405 決定2: 理由文は任意長の例外メッセージが入り得る自由記述欄である。**要約と全量 JSON の両方**を
+    // 整えた写し（上限 500 文字・接続先を伏せる）から作る——要約だけ切っても Detail には全量が 7 年残る。
+    public static AuditEntry From(AlternativeProtectiveStopAttempted e, Guid id, DateTimeOffset recordedAt) =>
+        FromBounded(e with { RejectReasonMessage = AuditFreeText.Sanitize(e.RejectReasonMessage) }, id, recordedAt);
+
+    private static AuditEntry FromBounded(AlternativeProtectiveStopAttempted e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(AlternativeProtectiveStopAttempted), e.EntryDecisionId, e.Symbol,
         Truncate($"{e.Symbol} 保護レグを代替注文種別 {e.OrderType} で試行（損切りの実行機構 {MethodLabel(e.Method)}"
             + $"・発注先 {e.Provider}）→ {e.Status}"

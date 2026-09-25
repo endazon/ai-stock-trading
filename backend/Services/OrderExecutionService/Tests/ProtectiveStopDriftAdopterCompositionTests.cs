@@ -13,11 +13,16 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Wolverine;
 using OrderExecutionService.Infrastructure.Persistence;
+using System.Reflection;
+using AiStockTrading.Shared.Contracts.Observability;
+using AiStockTrading.TestSupport.Metrics;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
 using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 T-10-740・T-10-741, FR-10, FR-05, #858, IADR-0370（2026-09-24 追記 / PR #918 監査）:
+// 🔴 T-10-740・T-10-741・T-10-785・T-10-786, FR-10, FR-05, #858, #942, IADR-0370（2026-09-24 追記 / PR #918 監査）, IADR-0395:
 // **本番の Program.cs の組み立て**が、moomoo 構成でだけ ProtectiveStopDriftAdopter へ建玉照会（IBrokerPositionSource）を渡すことを固定する。
 //
 // 追随の規律（照会が不明・失敗なら保護を 1 つも変えない）は建玉照会が注入されているときにしか働かない。
@@ -65,7 +70,8 @@ public class ProtectiveStopDriftAdopterCompositionTests
     }
 
     // Program.cs を指定の発注先で組む。外界だけを差し替える（ブローカー・DB・自前の常駐）。
-    private sealed class ProgramFactory(string provider, ScriptedBroker broker) : WebApplicationFactory<Program>
+    private sealed class ProgramFactory(
+        string provider, ScriptedBroker broker, Action<IServiceCollection>? observe = null) : WebApplicationFactory<Program>
     {
         private readonly string _dbName = Guid.NewGuid().ToString();
 
@@ -106,6 +112,9 @@ public class ProtectiveStopDriftAdopterCompositionTests
                 foreach (var d in ownHosted) services.Remove(d);
 
                 services.DisableAllExternalWolverineTransports();
+
+                // 観測の口だけを足す（#942: OTel の exporter を 1 つ足す）。Program.cs の登録は置き換えない。
+                observe?.Invoke(services);
             });
         }
     }
@@ -179,5 +188,86 @@ public class ProtectiveStopDriftAdopterCompositionTests
             .Which.Outcome.Should().Be(SoftwareStopOutcome.ProtectionReduced);
         scope.ServiceProvider.GetRequiredService<IProtectiveStopOrderStore>().Find(stop.EntryDecisionId)!
             .State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // ---- T-10-785: Program.cs が業務クラスへ DI のシングルトンの BusinessMetrics を渡し、最後の配送の打ち切りを数える ----
+    // 🔴 #942, IADR-0395: 引数は省略可能なので、Program.cs が渡し忘れてもコンパイルも他の試験も通る。そのときアラート
+    // AstDriftAdoptionFollowUpAbandoned は**エラーを出さずに永久に鳴らない**（PR #919 / #918 の監査が実測した形と同じ）。
+    // 殺す変異: ①Program.cs で BusinessMetrics を渡さない（保持が null）②BusinessMetrics の登録を消す（解決が落ちる）。
+    [Fact]
+    public async Task ProgramはBusinessMetricsのシングルトンを業務クラスへ渡し_最後の配送の打ち切りを数える()
+    {
+        using var capture = new MeterCapture(BusinessMetricNames.MeterName);
+        var broker = new ScriptedBroker();
+        await using var factory = new ProgramFactory("moomoo", broker);
+        using var scope = factory.Services.CreateScope();
+        var singleton = scope.ServiceProvider.GetRequiredService<BusinessMetrics>();
+        SeedStop(scope.ServiceProvider);
+        var adopter = scope.ServiceProvider.GetRequiredService<ProtectiveStopDriftAdopter>();
+
+        var held = typeof(ProtectiveStopDriftAdopter)
+            .GetField("_metrics", BindingFlags.Instance | BindingFlags.NonPublic);
+        held.Should().NotBeNull("業務クラスは業務メトリクスをフィールドで保持する");
+        held!.GetValue(adopter).Should().BeSameAs(singleton, "Program.cs は DI のシングルトン（OTel が載せている Meter）を渡す");
+
+        var adopted = Adopted();
+        await Assert.ThrowsAsync<ProtectiveStopDriftPositionsUnknownException>(
+            () => adopter.ApplyAsync(adopted, finalDeliveryAttempt: true));
+
+        // 肯定形だけを書く（既定の Meter 名はプロセス全体で観測される。否定形は単体試験 T-10-782 が隔離して持つ）。
+        capture.ValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().Contain(m =>
+            m.Value == 1 && m.Tags[BusinessMetricNames.TagReason] == BusinessMetrics.DriftFollowUpPositionsUnknown);
+        broker.CancelCount.Should().Be(0);
+    }
+
+    // ---- T-10-786: Program.cs が起動完了後に打ち切りのカウンタを 0 で計上し、それが OTel の exporter まで届く ----
+    // 🔴 #942, IADR-0395: 系列が最初の打ち切りで初めて現れると、Prometheus の increase() はその 1 点目を数えない
+    //（起動後の最初の打ち切りをアラートが取りこぼす）。0 は **MeterProvider が立った後**に計上しないと誰にも聞かれない。
+    // 殺す変異: ①起動時の計上を消す ②計上を ApplicationStarted より前（ホストの開始前）へ動かす。
+    [Theory]
+    [InlineData("paper")]
+    [InlineData("moomoo")]
+    public async Task Programは起動完了後に打ち切りのカウンタを0で計上し_OTelのexporterまで届く(string provider)
+    {
+        var exported = new List<(string Name, long Value, string? Reason)>();
+        await using var factory = new ProgramFactory(provider, new ScriptedBroker(), services =>
+            services.ConfigureOpenTelemetryMeterProvider(b =>
+                b.AddReader(new BaseExportingMetricReader(new SumCapturingExporter(exported)))));
+
+        _ = factory.Services; // ホストを開始する（ApplicationStarted が発火する）。
+        var meterProvider = factory.Services.GetRequiredService<MeterProvider>();
+
+        // 戻り値は見ない（OTLP exporter は otel-collector が居ないため失敗する。BusinessMetricsWiringTests と同じ理由）。
+        meterProvider.ForceFlush(10_000);
+
+        var points = exported.Where(e => e.Name == BusinessMetricNames.DriftAdoptionFollowUpAbandoned).ToList();
+        points.Select(p => p.Reason).Should().Contain(
+            [BusinessMetrics.DriftFollowUpPositionsUnknown, BusinessMetrics.DriftFollowUpPositionsQueryFailed],
+            "起動しただけで 2 つの理由の系列が既に在る（0 から始まるので最初の打ち切りを increase() が拾える）");
+        points.Should().OnlyContain(p => p.Value == 0, "起動しただけでは打ち切りは 1 件も起きていない");
+    }
+
+    /// <summary>export された long の合計値を（計器名・値・reason タグ）で集める最小の exporter。</summary>
+    private sealed class SumCapturingExporter(List<(string Name, long Value, string? Reason)> sink) : BaseExporter<Metric>
+    {
+        public override ExportResult Export(in Batch<Metric> batch)
+        {
+            foreach (var metric in batch)
+            {
+                if (metric.MetricType != MetricType.LongSum) continue;
+                foreach (ref readonly var point in metric.GetMetricPoints())
+                {
+                    string? reason = null;
+                    foreach (var tag in point.Tags)
+                    {
+                        if (tag.Key == BusinessMetricNames.TagReason) reason = tag.Value?.ToString();
+                    }
+
+                    lock (sink) sink.Add((metric.Name, point.GetSumLong(), reason));
+                }
+            }
+
+            return ExportResult.Success;
+        }
     }
 }

@@ -1,0 +1,17 @@
+<!-- NFR, #947, IADR-0397, IADR-0163 決定2: 本番の組み立て（Program.cs）を組んだホストを検査し、
+     「配線が消えても全テストが緑のまま」の形（PR #919 / #929 / #918）を機械的に赤にする共有エンジン。
+     **テスト専用**であり本番アセンブリからは参照しない。各サービスのテストが同じエンジンを通る
+     （サービスごとに写経すると規則が 12 通りにずれる）。 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AiStockTrading.TestSupport.Composition</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Wolverine のハンドラ一覧（HandlerGraph）を本番の組み立てから読むため。DI 抽象も推移的に入る。 -->
+    <PackageReference Include="WolverineFx" />
+    <!-- 各サービスの既存ファクトリ（WebApplicationFactory<Program>）から組み立てを組む入口のため。 -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+</Project>
