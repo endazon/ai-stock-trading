@@ -494,8 +494,10 @@ public static class AuditEntryFactory
     public static AuditEntry From(ProtectiveStopWaived e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(ProtectiveStopWaived), e.EntryDecisionId, e.Symbol,
         Truncate($"{e.Symbol} 保護逆指値をペーパーで免除（損切りの実行機構 {MethodLabel(e.Method)}・発注先 {e.Provider}）"
-            + $" {e.Side} 数量{e.Quantity} 損切りライン{(e.StopLossPrice is { } price ? price.ToString(CultureInfo.InvariantCulture) : "なし")}"
-            + "——**逆指値なしの建玉を保持する（システムは決済しない）**"),
+            + $" {e.Side} 発注数量{e.Quantity} 損切りライン{(e.StopLossPrice is { } price ? price.ToString(CultureInfo.InvariantCulture) : "なし")}"
+            + "——**逆指値なしの建玉を保持する（システムは決済しない）**"
+            // #826 項目 5, IADR-0413 決定2: 受付時点の記録であり、建玉は約定で確定する（打ち消しは ProtectiveStopWaiverSettled）。
+            + "。建玉は約定した数量で確定する（約定しないまま終端すれば別記録で打ち消す）"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置。
