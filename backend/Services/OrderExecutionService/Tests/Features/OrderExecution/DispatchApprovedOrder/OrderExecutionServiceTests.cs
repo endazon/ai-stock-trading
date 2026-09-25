@@ -133,6 +133,12 @@ public class OrderExecutionServiceTests
         public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize)
             => _inner.FindPendingSince(since, batchSize);
 
+        public IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds)
+            => _inner.FindPendingByOrderIds(orderIds);
+
+        public bool RenewTracking(string orderId, DateTimeOffset trackedFrom)
+            => _inner.RenewTracking(orderId, trackedFrom);
+
         public bool UpdateOutcome(
             string orderId, OrderStatus status, int filledQuantity, decimal averagePrice,
             decimal slippageRatio, DateTimeOffset executedAt)

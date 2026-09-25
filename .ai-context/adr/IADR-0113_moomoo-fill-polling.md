@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-05, FR-10, FR-12, ADR-0002]
 author: endazon (with Claude Code)
 created: 2026-07-29
-updated: 2026-07-29
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/03_moomoo-integration.md
@@ -138,6 +138,9 @@ moomoo の `FillQty` / `FillAvgPrice` は注文に対する**累積値**であ�
   日跨ぎで約定した注文の当日帰属は終端化時刻に依存する。
 - moomoo の当日照会（`GetOrderList`）で見つからない注文（翌日以降に履歴へ移動した等）は `null` となり、
   `MaxTrackingHours` 経過後に追跡対象から外れる。以降は滞留として人手／リコンサイルの領分に戻る。
+- ［2026-09-25 追記 / #958］**例外: 保護記録が Active な S0（ブローカー側逆指値）のレグは `MaxTrackingHours` の対象外**である
+  （S0 のレグの記録は武装の時刻で作られ、24 時間を超えて約定し得る）。ガードが S0 のレグの終端を観測したときは、保護記録を
+  完了させる前にレグの記録の追跡の起点（`ExecutedAt`）を観測の時刻へ進める。[IADR-0406](IADR-0406_s0-stop-leg-fill-tracking-beyond-window.md)。
 
 ## 代替案を採らなかった理由
 
