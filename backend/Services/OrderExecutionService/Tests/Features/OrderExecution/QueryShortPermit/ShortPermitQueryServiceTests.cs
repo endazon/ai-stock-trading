@@ -124,6 +124,42 @@ public class ShortPermitQueryServiceTests
         source.Calls.Should().Be(10);
     }
 
+    /// <summary>
+    /// T-10-1036: 同じ銘柄の照会が走っている間の要求は相乗りし、照会は 1 回だけ（予算も 1 回）。
+    /// 先に待ちをやめた要求（打ち切り）があっても照会は止めず、相乗りした要求は答えを受け取る。
+    /// </summary>
+    [Fact]
+    public async Task 走っている照会には相乗りし照会は1回だけ()
+    {
+        var gate = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new GatedSource(gate.Task);
+        var service = Service(source, new MutableClock(T0));
+        using var abandon = new CancellationTokenSource();
+
+        var first = service.QueryAsync("AAPL", Market.UnitedStates, abandon.Token);
+        var second = service.QueryAsync("AAPL", Market.UnitedStates, TestContext.Current.CancellationToken);
+        abandon.Cancel();
+        gate.SetResult(true);
+
+        await FluentActions.Awaiting(() => first).Should().ThrowAsync<OperationCanceledException>();
+        (await second).Status.Should().Be(ShortPermitStatus.Permitted);
+        source.Calls.Should().Be(1);
+        (await service.QueryAsync("AAPL", Market.UnitedStates, TestContext.Current.CancellationToken)).Status
+            .Should().Be(ShortPermitStatus.Permitted, "打ち切った要求の照会の結果もキャッシュされる");
+        source.Calls.Should().Be(1);
+    }
+
+    private sealed class GatedSource(Task<bool?> answer) : IShortPermitSource
+    {
+        public int Calls { get; private set; }
+
+        public Task<bool?> GetShortPermitAsync(string symbol, Market market, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return answer;
+        }
+    }
+
     private sealed class CountingSource(Func<string, bool?> answer) : IShortPermitSource
     {
         public int Calls { get; private set; }

@@ -46,7 +46,7 @@ plan_refs:
    IADR-0111（環境 1 軸）の部分改定と実弾の閂に触れる別の判断であり、本件の裁定の射程外（裁定は「SIMULATE では成功しない見込み・そのとき拒否」）。
    → SIMULATE では照会が失敗し Unknown ＝ 今と同じく拒否。
 3. **照会の節約**（IADR-0144 決定 5）: 発注執行が (銘柄, 市場) ごとに成功は 60 秒・失敗は 30 秒キャッシュし（失敗時に即時リトライしない）、
-   30 秒あたり 9 回の予算（ブローカーの上限 10 回より 1 回少なく）を失敗も含めて数える。予算切れは照会せず Unknown。米国株以外は照会せず Unknown。
+   30 秒あたり 9 回の予算（ブローカーの上限 10 回より 1 回少なく）を失敗も含めて数える。予算切れは照会せず Unknown。米国株以外は照会せず Unknown。同じ銘柄の照会が走っている間の要求は相乗りする。
 4. **リスク管理の受け手** `HttpShortSellBorrowSource`（`OrderExecution:BaseUrl`・サービストークン・5 秒）。非 2xx・例外・タイムアウト・欠落・未定義値・
    銘柄／市場の食い違いは Unknown。BaseUrl 未設定・不正は `UnavailableShortSellBorrowSource`（常に Unknown）。
 5. **文脈の組み立て** `ShortSellContextSupplier`（必須依存として `OrderScreeningService` へ）。新規の売り建て（`Sell`×`Open`）の審査でだけ呼ぶ。
@@ -89,7 +89,7 @@ plan_refs:
 
 - 発注執行: `IMoomooTradeConnection.GetMarginRatio`・`IMoomooShortPermitClient`（`MMApiMoomooTradeClient` が実装）・`ShortPermitQueryService`・エンドポイント・認証の登録
 - リスク管理: `IShortSellBorrowSource`・`HttpShortSellBorrowSource`・`UnavailableShortSellBorrowSource`・`ShortExposureProjection`・`ShortSellContextSupplier`・`OrderScreeningService.ScreenAsync`・`TradeDecisionMadeHandler`・`Program.cs`
-- 配備: `values.yaml` に order-execution の `auth: true` と risk-management の `OrderExecution__BaseUrl`（**空＝未結線**）を足す（挙動は変えない）
+- 配備: `values.yaml` に order-execution の `auth: true` と risk-management の `OrderExecution__BaseUrl`（**空＝未結線**）を足し、`values-local.yaml` の risk-management にも同じ空の値を写す（helm はリストを置換する。挙動は変えない）
 - 文書: 機能仕様書・テスト仕様書・blocked-tasks・IADR-0425・索引
 
 ## 対象外
@@ -115,3 +115,5 @@ plan_refs:
 | T-10-1032 | 送り手: 30 秒あたり 9 回の予算を失敗も含めて数え、超えたら照会せず Unknown |
 | T-10-1033 | 送り手: 本物の `Program.cs` の本文が応答型の web 既定の直列化と一致する。匿名は 401・値域外は 400 |
 | T-10-1034 | 送り手: `MMApiMoomooTradeClient` が `TrdGetMarginRatio` を発注と同じ口座のヘッダで送り、非成功は例外 |
+| T-10-1035 | 送り手: moomoo 構成の本番の組み立てで、照会サービスが照会ポート（OpenD クライアント）を受け取る（PR #1001 監査 N1） |
+| T-10-1036 | 送り手: 同じ銘柄の照会が走っている間の要求は相乗りし、照会は 1 回（PR #1001 監査 N2） |

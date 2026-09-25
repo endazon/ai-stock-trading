@@ -15,6 +15,7 @@ namespace OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 //     達したら照会せず「分からない（rate-limited）」を返す（キャッシュしない＝窓が空けば次の要求で照会する）。
 //     上限 10 回より 1 回少なく置くのは、ブローカー側の窓の起点と本プロセスの時計がずれても枠を超えないためである。
 //   - 米国株以外は照会しない（ADR-0016 決定13。空売りの対象市場ではない）。発注先が照会を持たない（内蔵 paper）ときも照会しない。
+//   - 同じ (銘柄, 市場) の照会が走っている間の要求は相乗りする（照会は 1 回・結果は同じ）。
 // **どの「分からない」も受け手の側で拒否になる**（照会できないなら空売りしない＝決定3）。ここで許可へ倒す経路は無い。
 public sealed class ShortPermitQueryService(
     IClock clock,
@@ -28,6 +29,7 @@ public sealed class ShortPermitQueryService(
 
     private readonly object _gate = new();
     private readonly Dictionary<(string Symbol, Market Market), (ShortPermitView View, DateTimeOffset ExpiresAt)> _cache = new();
+    private readonly Dictionary<(string Symbol, Market Market), Task<ShortPermitView>> _inFlight = new();
     private readonly Queue<DateTimeOffset> _attempts = new();
 
     public async Task<ShortPermitView> QueryAsync(string symbol, Market market, CancellationToken cancellationToken = default)
@@ -41,39 +43,54 @@ public sealed class ShortPermitQueryService(
 
         var key = (symbol, market);
         var now = clock.UtcNow;
+        Task<ShortPermitView> pending;
         lock (_gate)
         {
             if (_cache.TryGetValue(key, out var cached) && cached.ExpiresAt > now)
                 return cached.View;
 
-            while (_attempts.Count > 0 && _attempts.Peek() <= now - BudgetWindow)
-                _attempts.Dequeue();
-            if (_attempts.Count >= BudgetPerWindow)
+            // #967, PR #1001 監査 N2: 同じ (銘柄, 市場) の照会が走っている間の要求は、その照会の結果を待つ
+            // （キャッシュの取りこぼしのたびに照会を重ねない＝予算を 1 回で済ませる）。
+            if (!_inFlight.TryGetValue(key, out pending!))
             {
-                logger.LogWarning(
-                    "借株可否の照会の予算（{Window} 秒あたり {Budget} 回）を使い切ったため照会しません symbol={Symbol}。借株可否は不明として扱います。",
-                    BudgetWindow.TotalSeconds, BudgetPerWindow, symbol);
-                return Unknown(symbol, market, ShortPermitUnknownReasons.RateLimited);
-            }
+                while (_attempts.Count > 0 && _attempts.Peek() <= now - BudgetWindow)
+                    _attempts.Dequeue();
+                if (_attempts.Count >= BudgetPerWindow)
+                {
+                    logger.LogWarning(
+                        "借株可否の照会の予算（{Window} 秒あたり {Budget} 回）を使い切ったため照会しません symbol={Symbol}。借株可否は不明として扱います。",
+                        BudgetWindow.TotalSeconds, BudgetPerWindow, symbol);
+                    return Unknown(symbol, market, ShortPermitUnknownReasons.RateLimited);
+                }
 
-            _attempts.Enqueue(now);
+                _attempts.Enqueue(now);
+                pending = QueryAndCacheAsync(key, now);
+                _inFlight[key] = pending;
+            }
         }
 
+        // 照会そのものは呼び出し側の打ち切りで止めない（相乗りした他の要求のために結果を作り、キャッシュする）。
+        // 呼び出し側は自分の打ち切りで待つのをやめるだけである。
+        return await pending.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ShortPermitView> QueryAndCacheAsync((string Symbol, Market Market) key, DateTimeOffset now)
+    {
+        // 呼び出し元が _gate を保持したまま本タスクを _inFlight へ登録し終えるまで、完了処理（登録の解除）を走らせない。
+        await Task.Yield();
+
+        var (symbol, market) = key;
         ShortPermitView view;
         TimeSpan ttl;
         try
         {
-            var permit = await source.GetShortPermitAsync(symbol, market, cancellationToken).ConfigureAwait(false);
+            var permit = await source!.GetShortPermitAsync(symbol, market, CancellationToken.None).ConfigureAwait(false);
             (view, ttl) = permit switch
             {
                 true => (new ShortPermitView(symbol, market, ShortPermitStatus.Permitted, null, now), SuccessCacheTtl),
                 false => (new ShortPermitView(symbol, market, ShortPermitStatus.NotPermitted, null, now), SuccessCacheTtl),
                 null => (Unknown(symbol, market, ShortPermitUnknownReasons.FieldMissing), FailureBackoff),
             };
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw; // 呼び出し側の打ち切り（要求の中断）。結果を作らない・キャッシュしない。
         }
         catch (Exception ex)
         {
@@ -87,6 +104,7 @@ public sealed class ShortPermitQueryService(
         lock (_gate)
         {
             _cache[key] = (view, now + ttl);
+            _inFlight.Remove(key);
         }
 
         return view;
