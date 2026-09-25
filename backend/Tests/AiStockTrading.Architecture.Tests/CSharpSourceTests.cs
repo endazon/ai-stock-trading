@@ -149,4 +149,26 @@ public class CSharpSourceTests
     {
         CSharpSource.IsSimpleIdentifier(value).Should().Be(expected);
     }
+
+    // NFR, #952, IADR-0420: 文字列リテラルの抽出（サービス間のルートを読む）。コメントの中の「ルートらしい文字列」は数えない。
+    [Fact]
+    public void 文字列リテラルはコードの中のものだけを原文で返す()
+    {
+        const string source = "// \"/in-comment\"\n/* \"/in-block\" */\nvar a = \"/risk-controls/open-positions\";\n"
+            + "var b = $\"/reports/{key}/review\"; var c = @\"/x\"; var d = '\"';";
+
+        CSharpSource.StringLiterals(source).Select(l => l.Text).Should().Equal(
+            "\"/risk-controls/open-positions\"", "$\"/reports/{key}/review\"", "@\"/x\"");
+    }
+
+    [Fact]
+    public void 文字列リテラルの開始位置は接頭辞を含む()
+    {
+        const string source = "x($\"/a/{b}\");";
+
+        var literal = CSharpSource.StringLiterals(source).Single();
+
+        literal.Start.Should().Be(2);
+        source.Substring(literal.Start, literal.Text.Length).Should().Be(literal.Text);
+    }
 }
