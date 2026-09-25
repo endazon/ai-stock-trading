@@ -42,6 +42,15 @@ Bot を経由せずに代行しない。
 `EfReportStore.Confirm` は確定済みなら版を見ずに `Transitioned: false`（200）を返し、Bot は成功時に同じ文面を返すため、
 #570 の 2026-09-23 コメントの「2 回目が『既に確定済み』で弾かれれば合格」は文面の予想として正確でない。
 
+**［2026-09-26 監査の指摘で是正］** 上の段落の「Bot は成功時に同じ文面を返す」は誤りだった。確認ボタンは 1 回目の押下で
+`DisableComponentsAsync` により無効化される（2 回目は押せない）。無効化より先に 2 回目が届いた場合は、窓口の版番号ガード
+（`ReportCommandHandler.ApproveAsync` の `guard.TryConfirm` → `AlreadyConfirmed`）が確定 API を呼ばずに
+`報告書 <キー>（版 <N>）は確定済みです。` を返し、`報告書の二重確定を窓口で吸収しました` を INF で記録する。
+store 側の冪等（`Transitioned: false`）はその下の層である。合否の判定（通知 1 通）は変えない。あわせて:
+- 手順 4・5 は、確認ボタン → 理由と確認フレーズの 2 欄のモーダル → 送信、の順であり、リスク管理を呼ぶのは送信時（ボタンは対象の有無に関係なく出る）と改めた。
+  確認フレーズは kill switch と同じ語（`discord-bot-killswitch-phrase`。GFV・乖離の取り込みとも `KillSwitchConfirmation.Verify` を通す）。
+- ログ確認のコメント「会話キーで絞る」は誤り（ReportConfirmed の処理ログに会話キーは出ない）。件数で数えることと、PeriodKey の出る吸収ログを並べた。
+
 ## 受け入れ基準
 
 - [x] 利用者が打つコマンド・期待する応答・記録することが 1 枚で分かる
