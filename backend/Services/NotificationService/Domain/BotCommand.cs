@@ -58,6 +58,13 @@ public enum BotCommandKind
     // 🔴 **設定値の変更ではない**（台帳の是正。ADR-0041 決定 4 が Discord の窓口を明示した）。**数量は取らない**
     // （目標は最新の観測が決める。API と同じ）。Symbol / Market に対象を運ぶ。
     PositionDriftAdopt,
+
+    // FR-07, FR-14, UC-03〜05, ADR-0003, #1016, IADR-0431: /policy [<periodKey>]。
+    // 利用者の自由文の指示から AI が**方針の改訂案**を作り、報告書の新しい版として保存・提示する（**確定はしない**）。
+    // 🔴 **設定値の変更ではない**（報告書の修正指示＝FR-14 が Discord に認めた対話）。監視銘柄の入れ替え案は表示だけで、
+    // 適用は設定画面（SC-02）で行う。指示の本文は RawCommand に載せない（大小文字の変換・空白での分割を受けないよう、
+    // ハンドラへ別の引数で渡す）。PeriodKey は省略可（省略時は報告書サービスが当日〔JST〕の日報を選ぶ）。
+    PolicyRevise,
 }
 
 // FR-14: 解析済みコマンド。TargetStage は段階遷移（StagePromote/StageDemote）の遷移先（0〜3）。

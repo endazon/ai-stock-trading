@@ -6,6 +6,7 @@ using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
 using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
+using NotificationService.Features.Notifications.RevisePolicy;
 using NotificationService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
@@ -191,6 +192,8 @@ public class SecretRedactionTests
             new PositionDriftAdoptionCommandHandler(
                 new StubPositionDriftAdoptionController(), options,
                 factory.CreateLogger<PositionDriftAdoptionCommandHandler>()),
+            new PolicyRevisionCommandHandler(
+                new StubPolicyRevisionController(), options, factory.CreateLogger<PolicyRevisionCommandHandler>()),
             factory);
     }
 
@@ -234,6 +237,14 @@ public class SecretRedactionTests
 
         public Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new StageGateStatusResult(true, "撤退評価"));
+    }
+
+    // #1016, IADR-0431: 本テストは Gateway の生成だけを見るため、報告書サービスの方針の改訂は呼ばれない。
+    private sealed class StubPolicyRevisionController : IPolicyRevisionController
+    {
+        public Task<PolicyRevisionCommandOutcome> ReviseAsync(
+            string? periodKey, string instruction, string onBehalfOf, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
     }
 
     private sealed class StubPositionDriftAdoptionController : IPositionDriftAdoptionController

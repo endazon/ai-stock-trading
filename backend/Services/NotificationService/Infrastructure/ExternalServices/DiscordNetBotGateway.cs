@@ -7,6 +7,7 @@ using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
 using NotificationService.Features.Notifications.OperateTradingPause;
 using NotificationService.Features.Notifications.ReviewReport;
+using NotificationService.Features.Notifications.RevisePolicy;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Logging;
@@ -64,7 +65,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // **版番号を CustomId に載せる**（押下時に復元する）——詳細設計07 は「確定要求は 対象ID＋版番号 を必須とする」と
     // 定めており、ボタンを出した時点の版を運ばなければ、押すまでの間にドラフトが更新されたときに
     // **利用者が見ていない版を確定してしまう**。書式: "ast-report-approve-<periodKey>-<version>"。
-    private const string ReportApproveButtonPrefix = "ast-report-approve-";
+    internal const string ReportApproveButtonPrefix = "ast-report-approve-";
 
     // FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み。**kill switch・GFV 解除と同水準**
     // （確認ボタン → 理由＋確認フレーズのモーダル）。対象（市場と銘柄コード）はボタンとモーダルの CustomId に載せ、
@@ -83,6 +84,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     private readonly GoodFaithViolationCommandHandler _gfvHandler;
     private readonly ReportCommandHandler _reportHandler;
     private readonly PositionDriftAdoptionCommandHandler _driftHandler;
+    private readonly PolicyRevisionCommandHandler _policyHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
 
@@ -93,6 +95,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         GoodFaithViolationCommandHandler gfvHandler,
         ReportCommandHandler reportHandler,
         PositionDriftAdoptionCommandHandler driftHandler,
+        PolicyRevisionCommandHandler policyHandler,
         DiscordBotOptions options,
         ILogger<DiscordNetBotGateway> logger)
     {
@@ -102,6 +105,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         _gfvHandler = gfvHandler;
         _reportHandler = reportHandler;
         _driftHandler = driftHandler;
+        _policyHandler = policyHandler;
         _options = options;
         _logger = logger;
 
@@ -261,9 +265,30 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 .AddChoice("米国", "us"))
             .Build();
 
+        // FR-07, FR-14, UC-03〜05, ADR-0003, #1016, IADR-0431: 方針の改訂（自由文の指示から AI が案を作る）。
+        // **確定はしない**（案は承認待ちの新しい版になり、確定は確認ボタン＝版番号付き確定だけが行う）。
+        // 🔴 **監視銘柄は変えない**（入れ替え案は表示のみ。FR-14 `DiscordSettingsAreReadOnlyTests`）。
+        var policy = new SlashCommandBuilder()
+            .WithName("policy")
+            .WithDescription("指示から AI が方針の改訂案を作ります（確定は確認ボタンで。監視銘柄は変わりません）")
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("instruction")
+                .WithDescription("改訂の指示（自由文・1000 文字まで）")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true)
+                .WithMaxLength(PolicyRevisionCommandHandler.MaxInstructionLength))
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("period")
+                .WithDescription("改訂する報告書の会話キー（省略時は当日〔JST〕の日報）")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(false)
+                .WithAutocomplete(true))
+            .Build();
+
         try
         {
             await guild.CreateApplicationCommandAsync(killSwitch).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(policy).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(gfv).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(drift).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(report).ConfigureAwait(false);
@@ -307,6 +332,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 return;
             case "drift":
                 await OnDriftSlashAsync(command).ConfigureAwait(false);
+                return;
+            case "policy":
+                await OnPolicySlashAsync(command).ConfigureAwait(false);
                 return;
             default:
                 return;
@@ -362,6 +390,37 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             builder.Build()).ConfigureAwait(false);
     }
 
+    // FR-07, FR-14, UC-03〜05, ADR-0003, #1016, IADR-0431: /policy → AI の改訂案を表示し、承認待ちにできた版だけ
+    // 既存の確定の確認ボタン（`ast-report-approve-<periodKey>-<version>`）を出す。確定はボタン押下で
+    // ReportCommandHandler が版番号付きで行う（OnBehalfOf つき）。LLM の所要時間があるため先に Defer する。
+    private async Task OnPolicySlashAsync(SocketSlashCommand command)
+    {
+        var instruction = command.Data.Options.FirstOrDefault(o => o.Name == "instruction")?.Value as string;
+        var period = command.Data.Options.FirstOrDefault(o => o.Name == "period")?.Value as string;
+
+        // RawCommand には指示を載せない（解析の対象外・ログへ流さない）。
+        var context = ContextOf(command, string.IsNullOrWhiteSpace(period) ? "/policy" : $"/policy {period}");
+        var auth = DiscordCommandAuthorizer.Authorize(context, _options);
+        if (!auth.IsAllowed)
+        {
+            _logger.LogWarning(
+                "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
+            await command.RespondTextAsync("この操作は許可されていません。").ConfigureAwait(false);
+            return;
+        }
+
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
+
+        var result = await _policyHandler.HandleAsync(context, instruction).ConfigureAwait(false);
+
+        // 🔴 ADR-0003: 方針の全文（分割あり）を**順に送り終えてから**、最後の通にだけ確認ボタンを付ける。
+        // 送り順・ボタンの位置・途中失敗の知らせは PolicyRevisionReplySender が持つ（試験できる形に切り出した）。
+        await PolicyRevisionReplySender.SendAsync(
+            result,
+            (text, components) => command.FollowupTextAsync(text, components),
+            _logger).ConfigureAwait(false);
+    }
+
     // FR-07, FR-14, UC-03〜05, #834: `/report` の period の入力補完。判断（多層認証・絞り込み・上限）は
     // すべて ReportCommandHandler / ReportPeriodSuggestions が持ち、ここは変換に徹する。
     //
@@ -374,7 +433,8 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         try
         {
             // 対象は /report の period だけ。他のコマンド・他のオプションには候補を出さない。
-            if (interaction.Data.CommandName == "report" && interaction.Data.Current.Name == "period")
+            // #1016: `/policy` の period も同じ候補（会話キー）を出す。
+            if (interaction.Data.CommandName is "report" or "policy" && interaction.Data.Current.Name == "period")
             {
                 // 許可判定は handler が行う（許可外には候補を返さない）。RawCommand に利用者の入力は載せない
                 // ——補完は解析しないため不要であり、ログへ外部由来の文字列を混ぜない。

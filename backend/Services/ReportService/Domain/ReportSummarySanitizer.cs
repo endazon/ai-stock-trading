@@ -47,11 +47,7 @@ public static class ReportSummarySanitizer
 
         // 3. Discord のメンション構文を壊す。@everyone/@here は一斉通知、<@ <@! <@& <# は個別メンション。
         //    幅ゼロ空白を差し込むだけなので、読み手には同じ文字列に見える。冪等（挿入後は再び一致しない）。
-        result = result
-            .Replace("@everyone", $"@{MentionBreaker}everyone", StringComparison.Ordinal)
-            .Replace("@here", $"@{MentionBreaker}here", StringComparison.Ordinal)
-            .Replace("<@", $"<{MentionBreaker}@", StringComparison.Ordinal)
-            .Replace("<#", $"<{MentionBreaker}#", StringComparison.Ordinal);
+        result = BreakMentions(result);
 
         // 4. 空行の連続を畳む（境界語の除去で生じた空白も含めて整える）。
         result = CollapseBlankLines(result).Trim();
@@ -60,6 +56,21 @@ public static class ReportSummarySanitizer
         return result.Length <= maxLength
             ? result
             : result[..Math.Max(0, maxLength - 1)] + "…";
+    }
+
+    /// <summary>
+    /// Discord のメンション構文だけを壊す（幅ゼロ空白の挿入のみ。他の文字は 1 つも変えない）。
+    /// FR-07, #1016, IADR-0431 決定 5: 方針の改訂案の表示は、確定される原文と「幅ゼロ空白の挿入を除いて同一」でなければ
+    /// ならない（ADR-0003）。<see cref="Sanitize"/> は制御文字・境界語の除去と空行の畳み込みも行うため使えず、この部分だけを使う。
+    /// </summary>
+    public static string BreakMentions(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return text
+            .Replace("@everyone", $"@{MentionBreaker}everyone", StringComparison.Ordinal)
+            .Replace("@here", $"@{MentionBreaker}here", StringComparison.Ordinal)
+            .Replace("<@", $"<{MentionBreaker}@", StringComparison.Ordinal)
+            .Replace("<#", $"<{MentionBreaker}#", StringComparison.Ordinal);
     }
 
     // 3 行以上の連続改行を 2 行（＝空行 1 つ）へ畳む。

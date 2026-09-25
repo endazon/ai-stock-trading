@@ -11,6 +11,8 @@ namespace NotificationService.Domain;
 // （IADR-0062 決定6 が #14 交差のため保留していた分。#14 側は版番号付き冪等の確定 API を実装済み）。
 // FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み（/drift adopt <symbol> <market>）も扱う
 // （台帳の是正であり設定値の変更ではない。数量は取らない）。
+// FR-07, FR-14, UC-03〜05, #1016, IADR-0431: 方針の改訂（/policy [<periodKey>]）も扱う（報告書の修正指示であり
+// 設定値の変更ではない。指示の本文は解析しない）。
 // 未知のコマンドは Unknown に倒し、呼び出し側で拒否する（暗黙に何かを実行しない）。
 //
 // 🔴 **設定値の変更コマンドは、ここに 1 つも生やさない。** FR-14 は「設定値の変更は Discord からは参照のみ」と
@@ -101,6 +103,11 @@ public static class BotCommandParser
             "/report" or "report" => ParseReport(tokens, rawTokens),
             // FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み。
             "/drift" or "drift" => ParseDrift(tokens, rawTokens),
+            // FR-07, FR-14, UC-03〜05, #1016, IADR-0431: 方針の改訂（指示の本文は別の引数で運ぶ）。
+            // `/policy` か `/policy <periodKey>` だけ。余分な引数・書式外の会話キーは Unknown（誤起動させない）。
+            "/policy" or "policy" when tokens.Length == 1 => new BotCommand(BotCommandKind.PolicyRevise),
+            "/policy" or "policy" when tokens.Length == 2 && IsPeriodKey(rawTokens[1]) =>
+                new BotCommand(BotCommandKind.PolicyRevise, PeriodKey: rawTokens[1]),
             _ => BotCommand.Unknown,
         };
     }

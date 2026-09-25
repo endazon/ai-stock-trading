@@ -136,27 +136,13 @@ builder.Services.AddSingleton<ILlmGovernanceReporter>(sp => new PublishingLlmGov
 builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
-    var baseUrl = cfg["LlmGateway:BaseUrl"];
     var timeouts = NarrativeTimeouts(cfg);
 
     // NFR, IADR-0332 決定 2, #746: 輸送の選択。**gRPC が構成されていればそれを使い、無ければ REST**。
     // どちらも無ければ安全既定（プレースホルダ＝定型散文）に倒す。判定器は輸送に依らず 1 つである。
-    var grpcClient = sp.GetService<LlmCompletion.LlmCompletionClient>();
-    ILlmCompletionTransport? transport = grpcClient is not null
-        // IADR-0123 / IADR-0332 決定 4: 種別別の上限は要求単位で渡す（下の timeoutFor）。ここに置く既定は
-        // REST の HttpClient.Timeout（＝解決値の最大）に相当する多層防御の上限である。
-        ? new GrpcLlmCompletionTransport(grpcClient, timeouts.Max)
-        : null;
-
-    if (transport is null)
-    {
-        if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-            return sp.GetRequiredService<PlaceholderReportNarrativeDrafter>();
-
-        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-llm");
-        http.BaseAddress = uri;
-        transport = new RestLlmCompletionTransport(http);
-    }
+    // #1016, IADR-0431: 選択は方針の改訂（IReportPolicyReviser）と共用する（ResolveReportLlmTransport）。
+    if (ResolveReportLlmTransport(sp, cfg, timeouts) is not { } transport)
+        return sp.GetRequiredService<PlaceholderReportNarrativeDrafter>();
 
     return new HttpReportNarrativeDrafter(transport,
         sp.GetRequiredService<ILogger<HttpReportNarrativeDrafter>>(),
@@ -176,6 +162,35 @@ builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
         // REST では HttpClient.Timeout がこの値だった（＝解決値の最大）。
         transportTimeout: timeouts.Max);
 });
+// FR-07, FR-14, UC-03〜05, ADR-0003, #1016, IADR-0431: 利用者の自由文の指示から方針の改訂案を作る（Discord `/policy`）。
+// 輸送は散文ドラフトと共用（ResolveReportLlmTransport）。**未構成なら「案なし」を返す実装**に倒す（定型の方針文を作らない）。
+// 上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒。REST では HttpClient.Timeout〔散文の上限の最大〕も効く）。
+builder.Services.AddSingleton<IReportPolicyReviser>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    if (ResolveReportLlmTransport(sp, cfg, NarrativeTimeouts(cfg)) is not { } transport)
+        return new UnavailableReportPolicyReviser();
+
+    var timeoutSeconds = int.TryParse(cfg[PolicyRevisionTimeoutKey], out var parsed) && parsed > 0 ? parsed : 60;
+    return new LlmReportPolicyReviser(
+        transport,
+        sp.GetRequiredService<ILogger<LlmReportPolicyReviser>>(),
+        cfg["LlmGateway:Confidentiality"] ?? "internal",
+        cfg["LlmGateway:Purpose"],
+        TimeSpan.FromSeconds(timeoutSeconds),
+        sp.GetRequiredService<ILlmUsageReporter>(),
+        sp.GetRequiredService<ILlmGovernanceReporter>(),
+        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
+});
+builder.Services.AddScoped<ReportPolicyRevisionService>();
+// IADR-0431 決定 1（2026-09-26 利用者裁定）: 営業日にまだ自動生成されていない当日の日報は /policy で作らない。
+// 判定に使う生成境界・休場日は自動生成と同じ構成（Reports:AutoGeneration）から読む。自動生成が無効なら止める生成が無い。
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<ReportAutoGenerationOptions>>().Value;
+    return new PolicyRevisionSchedule(options.ToSettings().Schedule, options.Enabled);
+});
+
 // FR-16, #81, IADR-0025/0066: 評価損益の現在値。既定は no-op（実市況未接続＝取得不可）のため評価損益は 0 のまま
 // ＝現行挙動。実市況を差し込むとドラフト生成時に建玉ぶんだけ引く。報告書は発注判断を行わない（評価の提示のみ）ため
 // リスク管理のような有効化ゲートは持たず、ソース差し替えがそのまま有効化になる。
@@ -624,6 +639,27 @@ static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
 // IADR-0123, #308: 報告書散文 LLM のタイムアウト（種別別）。解決順は
 // LlmGateway:TimeoutSecondsByKind:{Daily,Weekly,Monthly} → LlmGateway:TimeoutSeconds（全種別）→ 組込既定。
 // 空・非数値・非正値はいずれの段でも「未設定」として次段へ倒す（fail-safe）。
+// NFR, IADR-0332 決定 2, #746: 報告書の LLM 輸送の選択。gRPC が構成されていればそれ、無ければ REST（`LlmGateway:BaseUrl`）。
+// どちらも無ければ null（呼び出し側が安全既定へ倒す: 散文はプレースホルダ、方針の改訂は「案なし」）。
+// #1016, IADR-0431: 散文ドラフトと方針の改訂の両方が使う（輸送・資格情報・上限を 1 か所で決める）。
+static ILlmCompletionTransport? ResolveReportLlmTransport(
+    IServiceProvider sp, IConfiguration cfg, ReportNarrativeTimeouts timeouts)
+{
+    var grpcClient = sp.GetService<LlmCompletion.LlmCompletionClient>();
+    if (grpcClient is not null)
+        // IADR-0123 / IADR-0332 決定 4: 種別別の上限は要求単位で渡す。ここに置く既定は
+        // REST の HttpClient.Timeout（＝解決値の最大）に相当する多層防御の上限である。
+        return new GrpcLlmCompletionTransport(grpcClient, timeouts.Max);
+
+    var baseUrl = cfg["LlmGateway:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return null;
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-llm");
+    http.BaseAddress = uri;
+    return new RestLlmCompletionTransport(http);
+}
+
 static ReportNarrativeTimeouts NarrativeTimeouts(IConfiguration cfg) => new(
     cfg["LlmGateway:TimeoutSeconds"],
     cfg["LlmGateway:TimeoutSecondsByKind:Daily"],
@@ -635,4 +671,7 @@ public partial class Program
 {
     // #840, IADR-0352 決定 1: 報告書散文 LLM（MSP レルム）のトークン供給元を DI で引くキー。
     internal const string ReportLlmTokenProviderKey = "report-llm";
+
+    // #1016, IADR-0431: 方針の改訂の LLM 上限（秒）。
+    internal const string PolicyRevisionTimeoutKey = "Reports:PolicyRevision:TimeoutSeconds";
 }

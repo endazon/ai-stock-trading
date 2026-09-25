@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016]
 -->
 
 
@@ -2942,3 +2942,109 @@ Kubernetes API・Pod の Ready・2 つの生存要約の鮮度を読み、クラ
 🔴 **本節が固定していない残余リスク**:
 - 監査台帳の要約は「適用なし（発注しない）」のままで、報告書の「見送り（実際の発注先が SIMULATE でない）」と語が違う（報告書テンプレートの射程外）。
 - 月報の内訳から見送りの日数が消える。見送りがあった日は「選択と実際が食い違った日数」と括弧の注記、該当日報で読む。
+
+## Discord の自由文の指示から AI が方針の改訂案を作り、利用者が確定する
+
+利用者が Discord の `/policy` で自由文の指示を送ると、報告書サービスが LLM に方針の改訂案（方針・監視銘柄の入れ替え案・説明の厳格な JSON）を作らせ、
+検証を通った案だけを報告書の新しい版として保存・提示（承認待ち）する。確定は既存の確認ボタン（版番号付き確定）だけが行う。
+監視銘柄の入れ替え案は表示と本文への記録だけで、監視銘柄は変えない（Discord から設定値を変えない）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-1300** | 正しい出力（素・フェンスと前置き付き） | 案を検証する | 方針・入れ替え案 2 件・説明を読む | 形式どおりの案は採る | 自動 |
+| **T-10-1301** | 方針だけの出力・未知の項目（注文の形）付き | 同上 | 入れ替えなし・説明なしで採る。未知の項目は使わない | スキーマ外の操作を表現されても実行経路が無い | 自動 |
+| **T-10-1302** | 空・JSON でない・方針なし・方針が空 | 同上 | 案なし（理由つき） | 案が無いことを空の案に見せない | 自動（否定形） |
+| **T-10-1303** | 入れ替え案の 1 件だけが形式違反（操作・小文字・日本株コード・長すぎ・改行・理由なし 等） | 同上 | 案全体を捨てる | 部分採用しない | 自動（否定形） |
+| **T-10-1304** | 追加 6 件・追加 5 件・同じ銘柄の追加と除外 | 同上 | 6 件は捨てる・5 件は採る・重複は捨てる | 件数の上限と矛盾の排除 | 自動（境界値） |
+| **T-10-1305** | 長すぎる方針・制御文字を含む方針 | 同上 | 前者は捨てる・後者は制御文字を落として採る | 投稿と本文を壊さない | 自動 |
+| **T-10-1306** | 改行・見出し記法・JSON・行区切り U+2028 を含む指示 | LLM へ送る | 指示は 1 行の JSON 文字列で渡り、行頭に見出しを作れない。purpose は日報 | 指示で節を偽装できない | 自動（否定形） |
+| **T-10-1307** | 正しい応答 | 同上 | 案になり、費用を 1 回計上する | 費用の計上を落とさない | 自動 |
+| **T-10-1308** | 呼び出し失敗・認可拒否・解釈不能・送信拒否・拒否・形式違反・上限到達の途中切れ | 同上 | すべて案なしで種別を区別する。定型の方針文を作らない。送信が成立した応答は費用を計上する | 失敗を案に化けさせない | 自動（否定形） |
+| **T-10-1309** | 上限時間を超える応答・呼び出し側の取り消し | 同上 | 前者はタイムアウトとして案なし、後者は取り消しを伝播 | 待ち続けない | 自動 |
+| **T-10-1310** | LLM 未構成 | 同上 | 案なし（未構成） | 未構成を案に化けさせない | 自動 |
+| **T-10-1311** | 当日（JST）の日報が無く、前日の確定済み日報がある | 会話キーを省略して改訂する | 当日の日報を前日の方針・上位・前提条件の版から作り、承認待ちにする。確定済み日報の方針は変わらない | 確定するまで取引に効かない | 自動 |
+| **T-10-1312** | 自動生成の本文と欠けた入力の記録を持つ承認待ちの日報 | 改訂する | 版を 1 進め、本文の末尾へ指示者・指示の原文・入れ替え案を追記し、既存の本文と欠けた入力の記録を残す | 改訂の監査記録を残す | 自動 |
+| **T-10-1313** | AI がタイムアウト | 改訂する | 案なし・当日の日報を作らない | 案が無ければ何も保存しない | 自動（否定形） |
+| **T-10-1314** | 確定済みの日報 | 改訂する | 改訂せず AI も呼ばない | 確定済みは変えない・費用を使わない | 自動（否定形） |
+| **T-10-1315** | 未来日・週報・過去日の存在しない会話キー | 改訂する | 作らない（当日の日報のキーを案内する） | 自動生成と衝突する報告書を作らない | 自動（否定形） |
+| **T-10-1316** | 確定済み日報が無い・より新しい日付の確定済み日報がある | 会話キーを省略して改訂する | 作らない | 確定しても効かない報告書を作らない | 自動（否定形） |
+| **T-10-1317** | 空・制御文字だけ・長すぎる指示、空白やパスを含む会話キー | 改訂する | 検証で拒否し AI を呼ばない | 費用を使わない | 自動（否定形） |
+| **T-10-1318** | 当日の日報を 2 回改訂 | 前の版で確定する | 版が進み、前の版では確定できない。本文に両方の記録が残る | 古い確認ボタンで確定しない | 自動 |
+| **T-10-1319** | 本番の組み立て・LLM 未構成・未確定の日報 | 改訂を要求する | 502「構成されていない」「方針は変わっていません」。版も方針も変わらない | 本番の組み立てでも失敗で保存しない | 自動（結線） |
+| **T-10-1320** | 本番の組み立て・LLM ゲートウェイだけ差し替え | 改訂 → 確定前の方針の照会 → 利用者の確定 → 方針の照会 | 案は承認待ちになり、確定前は取引判断の方針源に出ず、確定後に出る。投稿向けにメンションを無害化して返す | 確定するまで取引に効かない | 自動（結線） |
+| **T-10-1321** | 本番の組み立て | Bot の代理・利用者トークンの代理指定・値域外の代理指定で改訂する | 前者は代理される利用者、中は利用者本人を指示者として本文に残す。値域外は 400 で保存しない | 改訂者を偽れない | 自動（結線） |
+| **T-10-1322** | 多層認証を通る利用者 | `/policy` に指示を送る | 表示文に方針・入れ替え案（表示のみの注記）を載せ、承認待ちの会話キーと版を確認ボタン用に返す。操作者を代理で渡す | 確定はボタンだけ | 自動 |
+| **T-10-1323** | 会話キーつき | 同上 | 会話キーを大小文字のまま渡す | 週報のキーを潰さない | 自動 |
+| **T-10-1324** | 承認待ちにできなかった案 | 同上 | 確認ボタンを出さない | 未提示の版を確定させない | 自動（否定形） |
+| **T-10-1325** | 許可外の利用者・DM・別チャンネル | 同上 | 報告書サービスを呼ばない | 窓口の認可水準を下げない | 自動（否定形） |
+| **T-10-1326** | 別のコマンド・余分な引数・書式外の会話キー・空の指示 | 同上 | 呼ばない | 費用を使わない・誤起動しない | 自動（否定形） |
+| **T-10-1327** | 報告書サービスの失敗・不明 | 同上 | 文言をそのまま見せ、確認ボタンを出さない | 失敗と不明を混ぜない | 自動 |
+| **T-10-1328** | 長い方針・入れ替え案 10 件・長い説明／入れ替えなし | 表示の通を作る | どの通も 1800 文字以内・最後の通に表示のみの注記がある／「なし」と書く | 投稿を壊さない | 自動（境界値） |
+| **T-10-1329** | 報告書サービスが 502・409・404・400（`error` あり）／403（本文なし） | 改訂を呼ぶ | 案なし。`error` をそのまま、または状態番号と設定の手掛かりを見せる | 保存されていないことを伝える | 自動 |
+| **T-10-1330** | タイムアウト・接続断・呼び出し側の取り消し | 同上 | 前 2 つは「結果が分からない」（`/report show` へ誘導）。取り消しは伝播 | 保存された可能性を「失敗」と言わない | 自動（否定形） |
+| **T-10-1331** | 2xx だが解釈できない本文（null・会話キーなし・版 0） | 同上 | 不明 | 同上 | 自動（否定形） |
+| **T-10-1332** | 送り手の本物の応答型を送り手の設定で直列化した本文 | 同上 | 会話キー・版・提示・方針・入れ替え案・説明を読める | 送り手の改名で黙って壊れない | 自動（**契約**） |
+| **T-10-1333** | 同上 | 受け手が送る要求本文を送り手の本物の要求型で読む | 指示・会話キー・代理が一致する | 同上 | 自動（**契約**） |
+| **T-10-1334** | 設定変更を試みるコマンド 16 種（指示の本文にも同じ語） | `/policy` の処理に渡す | 実行しない・どの下流も呼ばない | Discord から設定値を変えない | 自動（否定形） |
+| **T-10-1335** | 通知サービスのアセンブリ | 方針の改訂の窓口の口を数える | 改訂案を作らせる 1 つだけ。監視銘柄のポートが無い | 入れ替え案を Discord から適用する口を作らない | 自動（否定形） |
+| **T-10-1336** | 営業日（月曜）の 10:00 JST と 17:00 JST・当日の日報がまだ無い・自動生成が有効 | 会話キーを省略して改訂する | 作らず 409 相当。会話キー・「自動生成」・境界時刻・/policy の案内を返す。AI を呼ばない | 数値入りの自動生成の日報を失わない（利用者裁定 2026-09-26） | 自動（否定形） |
+| **T-10-1337** | 営業日・自動生成の日報（数値入りの本文）が承認待ち | 会話キーを省略して改訂する | その日報を改訂し（版 2）、本文を残す | 自動生成の後はそのドラフトを直す | 自動 |
+| **T-10-1338** | 構成の休場日（月曜）／自動生成が無効な構成 | 会話キーを省略して改訂する | 当日の日報を作る | 止める自動生成が無い日は作れる | 自動 |
+| **T-10-1339** | LLM を待つ間に同じ報告書が別に更新された | 改訂する | 版が合わず保存しない（並行して書かれた方針が残る） | 古い土台の案で新しい版を踏まない | 自動（否定形） |
+| **T-10-1340** | 保存の後の提示が例外で失敗する | 改訂する | 保存済み・未提示（`presented=false`）として返す | 保存した案を「何も保存していない」側の応答で伝えない | 自動 |
+| **T-10-1341** | 本番の組み立て・trading-service だけのトークン | 改訂を要求する | 403。LLM を呼ばず版も変わらない | 改訂は利用者のみ（読み取りグループへ移すと赤） | 自動（結線・否定形） |
+| **T-10-1342** | 本番の組み立て・方針と説明に一斉メンション・個別メンション・マスクリンク | 改訂を要求する | 応答では崩れている（幅ゼロ空白を除けば原文と同じ）。保存する方針は原文のまま | 投稿で一斉通知・偽装リンクを作らない | 自動（結線） |
+| **T-10-1343** | 本番の組み立て・上限ちょうど（2000 文字）の方針 | 改訂を要求する | 切り詰めずに返す | 確定される方針の全文を届ける | 自動（結線・境界値） |
+| **T-10-1344** | `/policy` の period が空白・記号・下線を含む | `/policy` に指示を送る | 「許可されていない」ではなく形式を案内し、呼ばない | 利用者が直せる理由を返す | 自動 |
+| **T-10-1346** | 方針の上位サロゲートが 1 通目の割り目（奇数の位置 1787）にちょうど掛かる | 割る | 1 通目は 1787 文字で終わり、2 通目が絵文字で始まる。どの通も孤立したサロゲートを持たない | 各通の表示で絵文字を壊さない | 自動（境界値） |
+| **T-10-1347** | 承認待ちにできなかった案 | `/policy` に指示を送る | 見出しに報告書サービスの案内を添え、確認ボタンを出さない | 保存済み・未提示を利用者に伝える | 自動 |
+| **T-10-1348** | 見出し・方針 2 通・入れ替え案の 4 通 | 応答を送る | 順に送り、確認ボタン（版を運ぶ）は最後の通にだけ付く | 全文を見せてから確定させる | 自動 |
+| **T-10-1349** | 方針の 2 通目／ボタンの通の送信が失敗 | 同上 | ボタンを出さず、版・承認待ち・まだ確定していない・`/report approve period:…`・`/policy` を知らせる | 見ていない方針を確定させない・保存済みを「何も起きていない」と伝えない | 自動（否定形） |
+| **T-10-1350** | 知らせの送信も失敗 | 同上 | 例外を返さない | Bot を落とさない | 自動（否定形） |
+| **T-10-1351** | 未提示の案・失敗・拒否 | 同上 | ボタンを出さない。拒否は理由を一般化する | 同上 | 自動（否定形） |
+| **T-10-1352** | 前後の空白・CRLF・3 行以上の空行・メンション・マスクリンク・`@here` 400 個・上限の長さの方針 | 送り手の検証 → 送り手の無害化 → 本物の応答型 → 受け手の解釈 → 分割 | 表示（分割の通を連結）から幅ゼロ空白を除くと、保存される方針に一致する | 表示と確定される原文を食い違わせない | 自動（**契約**） |
+| **T-10-1353** | 方針・理由・説明のいずれかに収集情報の境界語 | 案を検証する | 案全体を捨てる | 取り除いて食い違わせない・境界を偽装させない | 自動（否定形） |
+| **T-10-1354** | 4 連続の改行を含む方針 | 案を検証する | 畳まずそのまま保存する | 正規化は検証の 1 回だけ | 自動 |
+| **T-10-1355** | 日曜 23:30 UTC（月曜 08:30 JST・営業日）／日曜 14:30 UTC（日曜 23:30 JST） | 会話キーを省略して改訂する | 前者は月曜の日報を作らない、後者は日曜の日報を作る | 日付は JST で判定する | 自動（境界値） |
+| **T-10-1345** | 方針（短い・2000 文字・絵文字 1000 個・1800 文字）×入れ替え案（0 件・10 件×理由 200 文字 等） | `/policy` に指示を送る | 確認ボタンが出るとき、ボタンの付く最後の通より前の `【方針案 i/n】` の通を連結すると方針の全文に一致する。どの通も 1800 文字以内 | 確定される方針を全部見せてから確定させる（監査 BLOCKING 1） | 自動（否定形・境界値） |
+
+**変異注入の実測**（2026-09-26。1 つずつ入れて対象のテストクラスを実行し、実行ごとに変異前の内容へ書き戻した）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| 確定済みの報告書を改訂の対象から外さない | 報告書 14 件中 1 件赤 | T-10-1314 |
+| 入れ替え案の形式違反を読み飛ばす（部分採用） | 報告書 22 件中 9 件赤 | T-10-1303 |
+| 改訂のエンドポイントを登録しない | 報告書 3 件中 3 件赤 | T-10-1319〜T-10-1321 |
+| 指示を JSON 文字列にせず素で埋め込む | 報告書 11 件中 1 件赤 | T-10-1306 |
+| タイムアウトを「不明」ではなく「失敗」と伝える | 通知 11 件中 1 件赤 | T-10-1330 |
+| 承認待ちでない案にも確認ボタンを出す | 通知 16 件中 1 件赤 | T-10-1324 |
+
+**変異注入の追加の実測**（2026-09-26・PR #1020 の監査の是正後。手順は同じ）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| 改訂のエンドポイントを読み取りグループ（OwnerOrService）へ移す | 報告書 6 件中 1 件赤 | T-10-1341 |
+| 営業日の自動生成前の判定を外す | 報告書 20 件中 2 件赤 | T-10-1336 |
+| 応答の方針を 1800 文字で切り詰める | 報告書 6 件中 1 件赤 | T-10-1343 |
+| マスクリンクを崩さない | 報告書 6 件中 1 件赤 | T-10-1342 |
+| 保存の後の提示の失敗を上へ投げる | 報告書 20 件中 1 件赤 | T-10-1340 |
+| 方針の通を 1 通目だけ送る（2 通目以降を落とす） | 通知 23 件中 4 件赤 | T-10-1345 |
+| 書式外の period を「許可されていない」に倒す | 通知 23 件中 3 件赤 | T-10-1344 |
+
+**変異注入の再追加の実測**（2026-09-26・PR #1020 の再監査の是正後。手順は同じ）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| 表示を従来の無害化（空行の畳み込み・境界語の除去）へ戻す | 通知 16 件中 1 件赤 | T-10-1352 |
+| 割り目のサロゲートペアのガードを外す | 通知 26 件中 2 件赤 | T-10-1345 / T-10-1346 |
+| 方針の境界語の検査を外す | 報告書 27 件中 2 件赤 | T-10-1353 |
+| 方針の通にもボタンを付ける | 通知 5 件中 4 件赤 | T-10-1348〜T-10-1351 |
+| 途中の送信失敗を捕まえない | 通知 5 件中 3 件赤 | T-10-1349 / T-10-1350 |
+| 日付を UTC で判定する | 報告書 21 件中 1 件赤 | T-10-1355 |
+| 未提示の案に報告書サービスの案内を添えない | 通知 26 件中 1 件赤 | T-10-1347 |
+
+🔴 **本節が固定していない残余リスク**:
+- 実 Discord での `/policy` の登録・入力補完・長い応答の疎通（AI セッションでは確かめられない）。
+- 改訂の回数に上限が無い（報告書の LLM 費用は月次上限の対象外。多層認証を通った本人だけが呼べる）。
+- 自動生成が見送り続けると、営業日は `/policy` で当日の日報を作れない（既存の未確定の報告書は period で指定して改訂できる）。
+- ゲートウェイ（Discord.Net）の送信順（方針の通を送り終えてからボタンの通）は実 Discord でしか確かめられない。
