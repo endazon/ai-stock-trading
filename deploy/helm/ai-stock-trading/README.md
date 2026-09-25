@@ -566,6 +566,8 @@ helm upgrade --install ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 （`stoplimit` 既定 / `trailingstop`）、ストップリミットの指値を発火価格から不利側へずらす比率は
 `moomoo.stopLimitOffsetRatio`（既定 `0.01`＝1%・0〜0.1）で与える（#821）。いずれも**空ならアダプタ既定**で
 env を注入せず、**未知の値・範囲外は `order-execution` が起動時に停止する**（既定へ黙って倒さない）。
+「空」は `""` と未設定（`null`）だけであり、**数値の `0` は値として注入する**（`moomoo.opend.replyTimeoutSeconds` も同じ）。
+以前は `--set moomoo.stopLimitOffsetRatio=0` が env を 1 件も描かず、既定の 1% へ黙って戻っていた（#842）。
 ⚠️ **手法（S0〜S3）そのものの選択は chart ではない** —— リスク管理の利用者専用 API
 （`PUT /risk-controls/settings/stop-loss-method`）で選ぶ。本 chart 値はその下位の探索パラメータである。
 
