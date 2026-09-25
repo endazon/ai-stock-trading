@@ -278,19 +278,25 @@ spec:
               value: {{ $.Values.moomoo.opend.port | quote }}
             - name: Broker__Moomoo__OpenD__RsaPrivateKeyPath
               value: {{ printf "%s/%s" $.Values.moomoo.opend.rsaMountPath $.Values.moomoo.opend.rsaSecretKey | quote }}
-            {{- /* #132: OpenD 応答待ち（秒）。空=アダプタ既定（15 秒）＝env を注入しない。 */}}
-            {{- with $.Values.moomoo.opend.replyTimeoutSeconds }}
+            {{- /* #842: 以下の moomoo 調整値は「空（""）・未設定（null）＝アダプタ既定＝env を注入しない」。
+                   `with` は数値の 0（や false）を空と同じに扱い、既定へ黙って倒していた（`--set …=0` で env 0 件を実測）。
+                   0 を含むそれ以外は値として注入し、検証はアプリの起動時に任せる（範囲外・未知の値は停止）。 */}}
+            {{- /* #132: OpenD 応答待ち（秒）。空=アダプタ既定（15 秒）。 */}}
+            {{- $replyTimeout := $.Values.moomoo.opend.replyTimeoutSeconds }}
+            {{- if not (or (kindIs "invalid" $replyTimeout) (eq (toString $replyTimeout) "")) }}
             - name: Broker__Moomoo__OpenD__ReplyTimeoutSeconds
-              value: {{ . | quote }}
+              value: {{ $replyTimeout | quote }}
             {{- end }}
-            {{- /* #821: S3（代替注文種別）の設定。空=アダプタ既定（stoplimit / 1%）＝env を注入しない。 */}}
-            {{- with $.Values.moomoo.alternativeStopOrderType }}
+            {{- /* #821: S3（代替注文種別）の設定。空=アダプタ既定（stoplimit / 1%）。 */}}
+            {{- $altStopType := $.Values.moomoo.alternativeStopOrderType }}
+            {{- if not (or (kindIs "invalid" $altStopType) (eq (toString $altStopType) "")) }}
             - name: Broker__Moomoo__AlternativeStopOrderType
-              value: {{ . | quote }}
+              value: {{ $altStopType | quote }}
             {{- end }}
-            {{- with $.Values.moomoo.stopLimitOffsetRatio }}
+            {{- $stopLimitOffset := $.Values.moomoo.stopLimitOffsetRatio }}
+            {{- if not (or (kindIs "invalid" $stopLimitOffset) (eq (toString $stopLimitOffset) "")) }}
             - name: Broker__Moomoo__StopLimitOffsetRatio
-              value: {{ . | quote }}
+              value: {{ $stopLimitOffset | quote }}
             {{- end }}
             {{- end }}
             {{- end }}
