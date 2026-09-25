@@ -287,15 +287,39 @@ function receiverOf(text, dotIndex) {
 
 /**
  * 受け手が予算の中か。受け手の式が `TrackActivityForTest(` を含むか、受け手が**単独の識別子**で、
- * 同じファイルでその識別子へ `TrackActivityForTest(` を含む式が代入されていれば予算の中とみなす
- * （`var tracking = host.TrackActivityForTest(); … tracking.ExecuteAndWaitAsync(…)` の形）。
+ * 呼び出しより前・**同じスコープ**にあるその識別子への**直近の**代入が `TrackActivityForTest(` を含めば
+ * 予算の中とみなす（`var tracking = host.TrackActivityForTest(); … tracking.ExecuteAndWaitAsync(…)` の形）。
+ * #922 のレビュー: ファイル全体で名前だけを見ると、別メソッドの同名変数（予算つき）に引きずられて
+ * 素の `TrackActivity(…)` を束縛した呼び出しを見逃す。代入の位置から呼び出しまでの間に、代入を含む
+ * ブロックが閉じる（波括弧の深さが代入の位置より浅くなる）ものはスコープ外として採らない。
+ * 同じスコープで後から再代入していれば、呼び出しに近い方（直近）で判定する（自分から派生する再代入は読み飛ばす）。
  */
-function isBudgeted(receiver, stripped) {
+function isBudgeted(receiver, stripped, callIndex = stripped.length) {
   if (BUDGETED_ENTRY.test(receiver)) return true;
   const id = /^[A-Za-z_]\w*$/.exec(receiver);
   if (!id) return false;
-  const assigned = new RegExp(String.raw`\b${id[0]}\s*=(?!=)[^;]*\bTrackActivityForTest\s*\(`);
-  return assigned.test(stripped);
+  const assign = new RegExp(String.raw`\b${id[0]}\s*=(?!=)([^;]*)`, 'g');
+  const candidates = [];
+  let a;
+  while ((a = assign.exec(stripped)) !== null && a.index < callIndex) candidates.push(a);
+  const selfDerived = new RegExp(String.raw`^\s*${id[0]}\b`);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    if (!inSameScope(stripped, candidates[i].index, callIndex)) continue;
+    // `tracking = tracking.DoNotAssertOnExceptionsDetected()` のように自分から派生する再代入は、元の束縛を引き継ぐ。
+    if (selfDerived.test(candidates[i][1])) continue;
+    return BUDGETED_ENTRY.test(candidates[i][1]);
+  }
+  return false;
+}
+
+/** from から to までの間に、from の位置を含むブロックが閉じないか（波括弧の深さが 0 を下回らないか）。 */
+function inSameScope(text, from, to) {
+  let depth = 0;
+  for (let i = from; i < to; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}' && --depth < 0) return false;
+  }
+  return true;
 }
 
 /**
@@ -310,7 +334,7 @@ function detectShapeC(stripped) {
   let m;
   while ((m = re.exec(stripped)) !== null) {
     const receiver = receiverOf(stripped, m.index);
-    if (receiver === '' || isBudgeted(receiver, stripped)) continue;
+    if (receiver === '' || isBudgeted(receiver, stripped, m.index)) continue;
     const line = lineOf(stripped, m.index + m[0].indexOf(m[1]));
     hits.push({
       line,

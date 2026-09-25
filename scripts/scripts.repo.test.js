@@ -2092,6 +2092,32 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.strictEqual(hits[0].line, 2);
   });
 
+  ok('check-wall-clock-timeout-tests: 形 (c) 別メソッドの同名変数（予算つき）に引きずられず、素の束縛を検出する（#922 レビュー）', () => {
+    const code = [
+      'public class A {',
+      '  public async Task M1() {',
+      '    var tracking = host.TrackActivity(TimeSpan.FromSeconds(5));',
+      '    await tracking.ExecuteAndWaitAsync(_ => Run());',
+      '  }',
+      '  public async Task M2() {',
+      '    var tracking = host.TrackActivityForTest();',
+      '    await tracking.ExecuteAndWaitAsync(_ => Run());',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const hits = wc.findViolations(code);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].line, 4);
+  });
+
+  ok('check-wall-clock-timeout-tests: 形 (c) 同じスコープで素の入口へ再代入した変数は、直近の代入で判定して検出する', () => {
+    const code = 'var tracking = host.TrackActivityForTest();\ntracking = host.TrackActivity(TimeSpan.FromSeconds(5));\nawait tracking.ExecuteAndWaitAsync(_ => Run());\n';
+    const hits = wc.findViolations(code);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].line, 3);
+  });
+
   ok('check-wall-clock-timeout-tests: 形 (c) 模擬ツリーで exit 1 と形 (c) の是正の案内を出す', () => {
     const { spawnSync } = require('child_process');
     const root = fsWc.mkdtempSync(pathWc.join(osWc.tmpdir(), 'wc-shape-c-'));
