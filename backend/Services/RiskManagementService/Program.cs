@@ -15,6 +15,7 @@ using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
@@ -263,6 +264,36 @@ builder.Services.AddScoped<RiskManagementService.Domain.IManipulativeOrderPatter
 // OrderScreeningService は検出器を GetService（null 許容）で受けるため、上の登録により相場操縦判定が有効になる。
 // FR-10, #428, IADR-0163 決定2: 推定台帳は**必須引数**であり、下の行を削るとコンパイルが通らない
 // （省略可能引数のままだと、削っても全緑のまま 30 日禁止だけが静かに効かなくなる）。
+// FR-10, UC-06, ADR-0016 決定3, #967, IADR-0425 決定4: 借株可否（空売りの一次ゲート）の供給元＝発注執行の
+// GET /order-execution/short-permit。OrderExecution:BaseUrl 未設定/不正 URI は常に「分からない」（UnavailableShortSellBorrowSource）
+// ＝新規の売り建ては今と同じく BorrowUnavailable で拒否される（照会できないなら空売りしない）。選択は解決時に構成を読む
+// （WebApplicationFactory の構成上書きに追随させるため・市場監視の建玉照会と同じ形）。
+// IADR-0051: 照会の口は OwnerOrService のため client_credentials のサービストークンを伝播する（未設定なら 401 → 分からない）。
+builder.Services.AddHttpClient("order-execution", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton<UnavailableShortSellBorrowSource>();
+builder.Services.AddScoped<IShortSellBorrowSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["OrderExecution:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<UnavailableShortSellBorrowSource>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
+    http.BaseAddress = uri;
+    return new HttpShortSellBorrowSource(http, sp.GetRequiredService<ILogger<HttpShortSellBorrowSource>>());
+});
+// FR-10, ADR-0016 決定2(a)・決定9, #967, IADR-0425 決定5・6: 空売り文脈の組み立て（借株可否＋エクスポージャ）。
+// エクスポージャは統制の射影と同じ入力（台帳の約定＋当日承認・未終端の新規建て）から出し、保有建玉は時価で評価する。
+// 現在値ソースは**構成を問わず渡す**——時価評価が無効なら手元の値が補充されず、保有建玉があればエクスポージャは
+// 「分からない」＝文脈を組まない（拒否）。建玉が無ければ 0（無いことを台帳で確かめた値）で組める。
+builder.Services.AddScoped(sp => new ShortSellContextSupplier(
+    sp.GetRequiredService<IShortSellBorrowSource>(),
+    sp.GetRequiredService<IPortfolioLedgerStore>(),
+    sp.GetRequiredService<IWorkingEntryOrderSource>(),
+    sp.GetRequiredService<ICurrentPriceSource>(),
+    sp.GetRequiredService<IMaintenanceMarginSnapshotSource>(),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILogger<ShortSellContextSupplier>>()));
 builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IRiskSettingsStore>(),
     sp.GetRequiredService<PortfolioSnapshotBuilder>(),
@@ -273,6 +304,8 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     // FR-10, #935, IADR-0394 決定7: 損切りした銘柄の同日・同方向の新規建てを止める統制の入力（決済の承認と由来）。
     // 必須引数であり、削るとコンパイルが通らない。配線の実効は StopOutReentryWiringTests（T-10-778）が固定する。
     sp.GetRequiredService<IPortfolioLedgerStore>(),
+    // FR-10, #967, IADR-0425 決定5: 空売り文脈の供給（必須引数）。配線の実効は ShortSellContextWiringTests（T-10-1027〜1029）が固定する。
+    sp.GetRequiredService<ShortSellContextSupplier>(),
     sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>()));
 // FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。
 // 損切りの実行はブローカー側の逆指値が担い、StopLossTriggered の購読は検知の記録のみを行う（二重決済の防止）。

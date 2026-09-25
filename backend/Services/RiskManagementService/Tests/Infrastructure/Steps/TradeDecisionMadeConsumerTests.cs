@@ -75,6 +75,8 @@ public class TradeDecisionMadeConsumerTests
                     // #935, IADR-0394: 台帳も必須依存（損切りした銘柄の同日・同方向の新規建ての入力）。空の台帳＝当日の損切りなし。
                     // #832, IADR-0407: 承認済みの判断の再配送を見分ける入力でもある（既定は空＝承認済みの判断なし）。
                     ledger ?? new InMemoryPortfolioLedgerStore(),
+                    // #967, IADR-0425: 空売り文脈の供給も必須依存。本テストは空売りを関心に持たない（借株可否は常に分からない）。
+                    TestShortSellContexts.Unavailable(sp.GetRequiredService<IClock>()),
                     null));
 
                 // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。

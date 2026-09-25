@@ -434,6 +434,8 @@ services:
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc
+    # FR-10, #967, IADR-0425: 借株可否の照会の口（GET /order-execution/short-permit・OwnerOrService）を守る認証の Authority を注入する。
+    auth: true
     # Broker__Provider / Broker__Environment は template が broker.tier から決定する
     # （既定 paper・moomoo-sim は OpenD 経由 SIMULATE・moomoo-live は描画時 fail＝実弾は未解禁・#13 / IADR-0111）。
     extraEnv:
@@ -574,6 +576,11 @@ services:
       - { name: Fx__Provider, value: "boj" }
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      # FR-10, ADR-0016 決定3, #967, IADR-0425: 借株可否（空売りの一次ゲート）の照会先＝発注執行。
+      # fail-safe: 空=未結線＝借株可否は常に「分からない」＝新規の売り建ては BorrowUnavailable で拒否（今と同じ）。
+      # 結線しても、発注執行は発注と同じ SIMULATE 口座のヘッダで照会し SIMULATE では照会が失敗するため結果は変わらない（#1000）。
+      # 結線するときは order-execution 側の auth（上）と本サービスの ServiceAuth__*（trading-service）が要る。
+      - { name: OrderExecution__BaseUrl, value: "" }
       # FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 段階遷移の要求の onBehalfOf
       # （代理される利用者）を信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントの
       # トークンで承認を呼ぶため、トークンからは人を解決できない（実資金ゲートの承認者が unknown になっていた）。

@@ -44,6 +44,9 @@ public interface IMoomooTradeConnection : IDisposable
 
     // FR-10, #869, ADR-0041 決定2, IADR-0354: 口座の評価額（資産純値・USD）の照会。統制上限の基準資金の供給元。
     uint GetFunds(TrdGetFunds.Request request);
+
+    // FR-10, ADR-0016 決定3, #967, IADR-0425: 借株可否（`MarginRatioInfo.IsShortPermit`）の照会。空売り文脈の一次ゲートの供給元。
+    uint GetMarginRatio(TrdGetMarginRatio.Request request);
 }
 
 // #732, IADR-0327: 接続オブジェクトの生成点。接続試行が失敗するたびに Create() し直す。
@@ -88,6 +91,8 @@ public sealed class MMApiTradeConnectionFactory : IMoomooTradeConnectionFactory
         public uint GetPositionList(TrdGetPositionList.Request request) => _trd.GetPositionList(request);
 
         public uint GetFunds(TrdGetFunds.Request request) => _trd.GetFunds(request);
+
+        public uint GetMarginRatio(TrdGetMarginRatio.Request request) => _trd.GetMarginRatio(request);
 
         public void Dispose() => _trd.Dispose();
     }

@@ -83,7 +83,8 @@ public class ApprovedDecisionReplayRegressionTests
             FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(TradingDefaults.InitialCapital));
         return new OrderScreeningService(
             new InMemoryRiskSettingsStore(OnePosition()), snapshotBuilder, lockout, clock,
-            new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger);
+            new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
+            TestShortSellContexts.Unavailable(clock, stores.Ledger));
     }
 
     // 審査 → 承認の発行 → 自分の射影（本番の順序）。承認された判断を返す。
@@ -91,7 +92,7 @@ public class ApprovedDecisionReplayRegressionTests
         IHost host, OrderScreeningService screening, OrderIntent intent)
     {
         var decision = new TradeDecisionMade(Guid.NewGuid(), intent, "最初の配送", Now);
-        var first = screening.Screen(decision);
+        var first = await screening.ScreenAsync(decision);
         first.IsApproved.Should().BeTrue("前提: 最初の審査は承認される");
         await host.TrackActivityForTest().InvokeMessageAndWaitAsync(first.Approved!);
         return decision;
@@ -107,7 +108,7 @@ public class ApprovedDecisionReplayRegressionTests
         var screening = BuildScreening(stores, new InMemoryLockoutStore());
         var decision = await ApproveAndProjectAsync(host, screening, Entry());
 
-        var replay = screening.Screen(decision);
+        var replay = await screening.ScreenAsync(decision);
 
         replay.Rejected?.Reasons.Should().BeEmpty("承認済みの判断を拒否へ反転させない（是正前は MaxPositionsExceeded）");
         replay.Rejected.Should().BeNull("承認済みの判断を拒否へ反転させない");
@@ -129,7 +130,7 @@ public class ApprovedDecisionReplayRegressionTests
         var screening = BuildScreening(stores, new InMemoryLockoutStore());
         await ApproveAndProjectAsync(host, screening, Entry());
 
-        var other = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry("MSFT"), "別の判断", Now));
+        var other = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry("MSFT"), "別の判断", Now));
 
         other.IsApprovedReplay.Should().BeFalse();
         other.IsApproved.Should().BeFalse("未終端の新規建て 1 件で保有建玉数の上限 1 に達している");
@@ -149,7 +150,7 @@ public class ApprovedDecisionReplayRegressionTests
         var decision = await ApproveAndProjectAsync(host, screening, Close());
         stores.Ledger.FindApprovedPositionEffect(decision.DecisionId).Should().Be(PositionEffect.Close, "前提: 射影済み");
 
-        var replay = screening.Screen(decision);
+        var replay = await screening.ScreenAsync(decision);
 
         replay.IsApprovedReplay.Should().BeFalse("手仕舞いは抑止の対象外");
         replay.IsApproved.Should().BeTrue();
@@ -161,14 +162,14 @@ public class ApprovedDecisionReplayRegressionTests
     // T-10-873（減る側 c・窓の手前）: 射影の前（台帳に承認行が無い）に届いた再配送は通常の審査を受ける。
     // 自分はまだ枠に数えられていないので、最初と同じく承認される（発注執行の予約が DecisionId で 2 本目を止める）。
     [Fact]
-    public void 射影の前に届いた再配送は通常の審査を受ける()
+    public async Task 射影の前に届いた再配送は通常の審査を受ける()
     {
         var stores = NewStores();
         var screening = BuildScreening(stores, new InMemoryLockoutStore());
         var decision = new TradeDecisionMade(Guid.NewGuid(), Entry(), "最初の配送", Now);
-        screening.Screen(decision).IsApproved.Should().BeTrue();
+        (await screening.ScreenAsync(decision)).IsApproved.Should().BeTrue();
 
-        var replay = screening.Screen(decision);
+        var replay = await screening.ScreenAsync(decision);
 
         replay.IsApprovedReplay.Should().BeFalse("承認行が無ければ承認済みとは言えない（推測で抑止しない）");
         replay.IsApproved.Should().BeTrue();

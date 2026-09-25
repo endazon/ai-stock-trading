@@ -25,5 +25,9 @@
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
     <!-- NFR-07, #287, IADR-0255: 業務メトリクスが実際に発火することを MeterListener で観測する共有支援。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Metrics\AiStockTrading.TestSupport.Metrics.csproj" />
+    <!-- FR-10, #967, IADR-0420, IADR-0425: 借株可否の照会の受け手（HttpShortSellBorrowSource）の契約テストが、送り手（発注執行）の
+         本物の応答型（ShortPermitView）を直列化して読ませるための参照。送り手も Web SDK で `public partial class Program` を持つため、
+         `Program` の曖昧（CS0433）を避けて extern alias で参照する（他サービスのテストと同じ形）。 -->
+    <ProjectReference Include="..\..\OrderExecutionService\OrderExecutionService.csproj" Aliases="OrderExecutionWorker" />
   </ItemGroup>
 </Project>

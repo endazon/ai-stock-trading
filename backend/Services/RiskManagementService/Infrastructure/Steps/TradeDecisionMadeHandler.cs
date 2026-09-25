@@ -21,12 +21,13 @@ public sealed class TradeDecisionMadeHandler(
     BusinessMetrics metrics,
     ILogger<TradeDecisionMadeHandler> logger)
 {
-    public async Task Handle(TradeDecisionMade message, IMessageBus bus)
+    public async Task Handle(TradeDecisionMade message, IMessageBus bus, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(bus);
 
-        var outcome = screeningService.Screen(message);
+        // FR-10, #967, IADR-0425 決定7: 審査は非同期（新規の売り建てでは借株可否を発注執行へ照会する）。
+        var outcome = await screeningService.ScreenAsync(message, cancellationToken).ConfigureAwait(false);
 
         // FR-10, #832, IADR-0407: 承認済みの新規建ての判断の再配送。**何も発行しない**（承認を発行し直さない・拒否へ反転させない）。
         // 観測は最初の審査が発行より先に記録済みであり、審査メトリクスも新しい審査ではないので刻まない。

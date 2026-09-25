@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, planning#292, planning#644]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, planning#292, planning#644]
 -->
 
 
@@ -271,8 +271,29 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
   `BorrowRateAnnual` へ写像せず、全体前提条件の費用計算・バックテストの費用モデルへも接続しない**。
   **同じ値が単位の読み方ひとつで「何も弾かない」から「全部弾く」へ反転する**（1.5 を年率と読めば上限 0.20 を
   7.5 倍超過し全銘柄が拒否される）。接続は構造テスト（公開面に `Borrow` / `ShortFee` が生えたら赤くなる）で塞ぐ。
-- **借株照会の供給元は未実装**（実弾ヘッダでの `TrdGetMarginRatio`・レート制限 30 秒 10 回・失敗した照会も
-  枠を消費する）。したがって**現状は空売りが 1 件も通らない**——`blocked-tasks.md`「実装済みだが発動しない機能」を参照。
+- **借株照会の供給元は入ったが、現状は空売りが 1 件も通らない。** 新規の売り建ての審査は発注執行へ借株可否を照会し
+  （`GET /order-execution/short-permit`。発注と同じ SIMULATE 口座のヘッダで `TrdGetMarginRatio` を送る）、借株可否と
+  エクスポージャが分かったときだけ空売り文脈を組む（下の「空売り文脈の供給」）。ところが
+  **この照会は SIMULATE 口座では失敗する**（実弾口座のヘッダでのみ成功する）ため、借株可否は「分からない」＝文脈は組まれず
+  `BorrowUnavailable` で拒否される。**借株が許可されても、料率が単位未確定で供給されない限り `BorrowUnavailable` は立ち続ける。**
+  実弾ヘッダでの照会を足すかは裁定待ち（#1000）——`blocked-tasks.md`「実装済みだが発動しない機能」を参照。
+
+#### 空売り文脈の供給
+
+新規の売り建て（売り × 新規建て）の審査でだけ組む。**分からないものを 0 や「借りられない」で埋めない**（埋めると、
+観測していない値の上で上限を判定したことになる）。
+
+| 入力 | 供給 | 分からないとき |
+| --- | --- | --- |
+| 借株可否（一次ゲート） | 発注執行の照会（(銘柄, 市場) ごとに答えは 60 秒・失敗は 30 秒キャッシュ。照会は失敗も含めて 30 秒あたり 9 回まで。同じ銘柄の照会が走っている間は相乗りする。米国株以外は照会しない） | 文脈を組まない → `BorrowUnavailable` |
+| 借株料（年率） | **供給しない**（単位未確定） | 常に空 → `BorrowUnavailable` |
+| 1 銘柄の空売り建玉・空売り建玉の合計・建玉総額 | 保有は**時価**（現在値 × 数量 × 建玉の加重平均約定時レート）、当日承認・未終端の新規建ては**残数量 × 承認価格**（約定分は保有へ・残りだけを数える＝二重計上しない）。売り建ては空売り、買い建てはロングとして建玉総額へ入る | 保有建玉に現在値が 1 件でも無ければ文脈を組まない → `BorrowUnavailable`。建玉も未約定も無ければ 0 |
+| 維持率の束 | 既存の維持率の供給（現状は供給なし） | 空のまま渡す（空売り建玉があれば `MaintenanceMarginBreach`） |
+| 権利確定日 | **供給元が無い** | 空（型は「判明していれば」であり、不明と「無し」を区別しない。料率の供給を始める前に手当てが要る） |
+| 強制買戻しの禁止期限 | 推定台帳 | — |
+
+**未約定の空売りを数えるのは、日次枠・段階資金・保有建玉数と同じ理由である**——約定だけで数えると、指値が溜まっている間に
+上限を超えて承認し続ける。
 
 ### 規則 8 の供給 — 強制買戻しは**事後推定**する（#419。空売り段階解禁の計画 ADR の決定 4 の 2026-08-06 改訂）
 
@@ -326,8 +347,8 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
 | 日報・月報 | **`NotSupplied`（未供給）**と明示。**0 件と書かない** | 決定 15（後述） |
 
 推定が動かない間は fail-open だが、**同じ銘柄で空売りを繰り返す経路そのものが今は存在しない**——
-借株照会の供給元が無い以上、すべての新規売り建ては `BorrowUnavailable` で拒否される。
-**この依存関係は借株照会が実装された日に消える**ため、そのとき本設計を再評価する（事後推定の実装 ADR の決定 4）。
+借株照会は SIMULATE 口座では失敗し、借株が許可されても料率が供給されないため、すべての新規売り建ては `BorrowUnavailable` で拒否される。
+**この依存関係は借株照会が成功し料率が供給された日に消える**ため、そのとき本設計を再評価する（事後推定の実装 ADR の決定 4）。
 
 #### 30 日禁止の登録と消費
 
@@ -335,7 +356,7 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
   （プロセス内に持つと再起動で禁止が消える）。禁止期限は当該銘柄の行の `BanUntil` の最大値である。
 - 判定式は `BuyInBanPolicy.IsBanned` を**単一情報源**とし、文脈経由（`ShortSellOrderContext.BuyInBanUntil`）と
   単独供給（`BuyInBanSupply`）で共有する。
-- **文脈は借株照会が無いため今も組めない。** そこで**禁止期限だけを単独で供給**する（事後推定の実装 ADR の決定 5）。
+- **文脈は借株可否が分からない間は組まれない**（いまの常態）。そこで**禁止期限だけを単独でも供給**する（事後推定の実装 ADR の決定 5）。
   維持率・エクスポージャを 0 で埋めた偽の文脈は作らない（**値を発明しない**）。両方から立っても理由は 1 件である。
 - **推定台帳は `OrderScreeningService` の必須依存である**（#428。必須にすべき依存の見分け方の決定 2）。省略可能引数で受けていると、
   **配線を削ってもコンパイルが通りテストは全緑のまま 30 日禁止だけが静かに効かなくなる**——
@@ -1237,8 +1258,8 @@ flowchart TD
   安全側の縮退。画面の作り直しは #340 と併走）。
 - リスク設定画面・統制状態参照画面は「比率」と「現在 equity での実額」を併記する必要がある。統制状態参照画面は空売り比率・
   維持率・借株料の累計も表示対象である（空売り段階解禁の計画 ADR の決定 15。**維持率は最上位**に置く）。
-- 空売り文脈（借株照会・空売り建玉・権利確定日）の供給元が無いため、現状は**すべての新規売り建てが
-  拒否される**（フェイルクローズ）。Stage 1 の検証には供給元が要る。
+- 空売り文脈の供給元（借株照会・空売り建玉の射影）は入ったが、借株照会が SIMULATE 口座では失敗し、料率と権利確定日の供給元も無いため、
+  現状は**すべての新規売り建てが拒否される**（フェイルクローズ）。Stage 1 の検証には、借株照会が成功する照会の環境と料率の単位の確定が要る。
 - ~~**維持率の算式・複数建玉時の適用閾値・信用買いの規制維持率**は計画に記述が無く、実装が安全側で仮置き
   している~~ → **計画側の裁定（空売り段階解禁の計画 ADR の決定 7 の 2026-08-07 追記）で確定し、
   [#420](https://github.com/endazon/ai-stock-trading/issues/420) の適用閾値の口座単位化で取り込んだ**
