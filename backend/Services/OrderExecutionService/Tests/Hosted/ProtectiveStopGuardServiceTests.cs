@@ -117,6 +117,10 @@ public class ProtectiveStopGuardServiceTests
         public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
             string symbol, Market market, TradeSide entrySide, int limit) =>
             inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);
+
+        // FR-10, #880, IADR-0412 決定2: 帰属不明の通知済みの印を持つ行。
+        public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) =>
+            inner.FindUnattributedNotified(limit);
     }
 
     // 巡回の最中に停止要求が伝播した状況（キャンセル）を再現するストア。
@@ -140,6 +144,8 @@ public class ProtectiveStopGuardServiceTests
 
         public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
             string symbol, Market market, TradeSide entrySide, int limit) => [];
+
+        public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) => [];
     }
 
     // ログを記録するロガー。常駐（BackgroundService）の ExecuteAsync は StartAsync とは別のタスクで
@@ -435,6 +441,10 @@ public class ProtectiveStopGuardServiceTests
         public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
             string symbol, Market market, TradeSide entrySide, int limit) =>
             inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);
+
+        // FR-10, #880, IADR-0412 決定2: 帰属不明の通知済みの印を持つ行。
+        public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) =>
+            inner.FindUnattributedNotified(limit);
     }
 
     [Fact]

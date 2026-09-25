@@ -2,7 +2,7 @@
 title: IADR-0344 S1 ソフトウェア逆指値 — 保護記録に機構列を足して永続化し、発注執行が損切り到達を購読して到達を先に記録し、予約つき固定 DecisionId の成行で 1 回だけ決済する
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-12, FR-11, FR-09, UC-02, ADR-0040, ADR-0016, IADR-0014, IADR-0030, IADR-0035, IADR-0057, IADR-0113, IADR-0118, IADR-0129, IADR-0210, IADR-0342]
+related_ids: [FR-10, FR-12, FR-11, FR-09, UC-02, ADR-0040, ADR-0016, IADR-0014, IADR-0030, IADR-0035, IADR-0057, IADR-0113, IADR-0118, IADR-0129, IADR-0210, IADR-0342, IADR-0412]
 author: claude (Claude Code)
 created: 2026-09-18
 updated: 2026-09-25
@@ -1077,3 +1077,16 @@ T-10-506 も変異注入で非空虚と確認された。**決定 1〜4・7〜9�
   **本追記で偽になった**ため、並行 PR（#944 / #945）のマージを待って同じ PR で直した（挙動には関与しない注記である）。
   IADR-0369 の本文（S1 と S0 の比較表）も同じ記述を持つが、他 IADR の凍結本文であり、**射程は本追記が正本**とする。
 - **同じ行を並行に書く経路の last-writer-wins**（#833 項目 3）は本追記の射程外。待ち時間の列も古い写しで上書きされ得る。
+
+## ［2026-09-25 追記（16） / #880・IADR-0412］帰属不明の検知を建玉観測の常駐へ相乗りさせ、NB-1・NB-2 を解消した
+
+追記(10)・追記(11) の残る制約のうち、**帰属不明の検知に関する 2 行**（「Active な行が 1 件も無い巡回では走らない」＝NB-2、
+「通知済みの記録は、その銘柄が建玉照会から消えた巡回ではリセットされない」＝NB-1）は、[IADR-0412](IADR-0412_unattributed-position-detection-on-position-snapshot.md) で解消した。
+**本文（追記(9)〜(11)）は書き換えない。射程は本追記と IADR-0412 が正本である。**
+
+- NB-2: 建玉観測の常駐（`Hosted/BrokerPositionSnapshotService`・既定 600 秒）が、観測で取ったスナップショットで同じ検知を走らせる（照会は増やさない）。
+  **ガードの「巡回対象ゼロなら照会しない」不変条件は変えていない。** 「気づける唯一の経路は次の武装の見送り」は、
+  `Reconciliation:Positions:Enabled=false` の構成と内蔵 paper 構成に限って成り立つ記述になった。
+- NB-1: 検知が「通知済みの印を持つ行の群」（`IProtectiveStopOrderStore.FindUnattributedNotified`）も訪れ、純額 0 ならリセットする。
+- 照会不能（null）では検知しない（印も消さない）。
+- 追記(10)・追記(11) の他の残る制約（NB-3・到達済みの行の観測の単調性・`SentCloseScanLimit` の走査上限・受容した残余 BLK-10-1）は変わらない。

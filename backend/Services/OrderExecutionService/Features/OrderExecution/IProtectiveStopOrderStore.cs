@@ -67,4 +67,16 @@ public interface IProtectiveStopOrderStore
     /// </summary>
     IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
         string symbol, Market market, TradeSide entrySide, int limit);
+
+    /// <summary>
+    /// 🔴 FR-10, #880, IADR-0412 決定2: <b>帰属不明の建玉を通知済み</b>の印
+    /// （<see cref="ProtectiveStopOrder.UnattributedNotifiedQuantity"/> / <see cref="ProtectiveStopOrder.UnattributedNotifiedAt"/>
+    /// のいずれか）を持つ行を、<b>状態を問わず</b>更新が新しい順に最大 <paramref name="limit"/> 件返す。
+    /// <para>
+    /// 用途は帰属不明の検知（<see cref="ProtectiveStopNetting.DetectUnattributedPositions"/>）が
+    /// <b>建玉照会から消えた（純額 0 の）群も訪れて印をリセットする</b>ことだけである。
+    /// 建玉スナップショットの側だけを回すと、解消したあと再発した同数の帰属不明が再通知の間隔（60 分）のあいだ黙る。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit);
 }

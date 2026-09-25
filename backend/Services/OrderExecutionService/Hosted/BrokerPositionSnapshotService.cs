@@ -2,6 +2,8 @@ using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Trading;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -19,12 +21,21 @@ namespace OrderExecutionService.Hosted;
 // fail-safe:
 //   - 照会が null（不明）→ **何も発行しない**。空列（建玉ゼロ）とは意味が異なる。
 //   - 例外 → 警告ログのみ。常駐は落とさず次回巡回で再試行する。
+//
+// 🔴 FR-10, UC-02, #880, IADR-0412 決定1: 同じスナップショットで**帰属不明の建玉の検知**も走らせる（相乗り）。
+// 常駐ガードは Active な保護記録が 0 件の巡回では建玉を照会しないため、有効な記録が 1 件も無い口座では検知が走らなかった。
+// こちらは保護記録の有無に依らず照会しているので、**照会（OpenD への往復）を 1 回も増やさずに**塞げる。
+//   - unknown（null）→ 観測も検知もしない（「帰属不明なし」と読まない・通知済みの印も触らない）。
+//   - none（空列）  → 観測を発行し、検知も走らせる（純額 0 の群の通知済みの印をリセットする）。
+//   - present       → 観測を発行し、検知を走らせる。
+//   - 検知の失敗は観測の発行を巻き戻さない（観測はリスク管理の突合の供給元）。エラーログを残して次回巡回で再試行する。
 public sealed class BrokerPositionSnapshotService(
     IBrokerPositionSource positions,
     IWolverineRuntime runtime,
     TimeProvider timeProvider,
     IOptions<PositionReconciliationOptions> options,
-    ILogger<BrokerPositionSnapshotService> logger) : BackgroundService
+    ILogger<BrokerPositionSnapshotService> logger,
+    IServiceScopeFactory scopeFactory) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -82,10 +93,32 @@ public sealed class BrokerPositionSnapshotService(
 
         // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
-        await new MessageBus(runtime)
+        var bus = new MessageBus(runtime);
+        await bus
             .PublishAsync(new BrokerPositionsObserved(snapshot, timeProvider.GetUtcNow()))
             .ConfigureAwait(false);
         logger.LogDebug("ブローカ建玉 {Count} 件を観測として発行しました。", snapshot.Count);
+
+        await DetectUnattributedAsync(snapshot, bus).ConfigureAwait(false);
         return true;
+    }
+
+    // 🔴 FR-10, #880, IADR-0412 決定1: 観測の発行の**後**に、同じスナップショットで帰属不明の建玉を検知して発行する。
+    // 建玉照会はしない（上で取ったものを使う）。失敗は観測の発行を巻き戻さず、エラーログに留める。
+    private async Task DetectUnattributedAsync(IReadOnlyList<BrokerPositionSnapshot> snapshot, MessageBus bus)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var detector = scope.ServiceProvider.GetRequiredService<UnattributedPositionDetector>();
+            foreach (var evt in detector.Detect(snapshot))
+                await bus.PublishAsync(evt).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(
+                ex,
+                "帰属不明の建玉の検知に失敗しました（建玉の観測は発行済み）。次回巡回で再試行します。");
+        }
     }
 }
