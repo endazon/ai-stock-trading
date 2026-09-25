@@ -137,6 +137,16 @@ export function useSaveBrokerProvider() {
   }>('/risk-controls/settings/broker-provider');
 }
 
+/**
+ * FR-10, FR-12, SC-02, ADR-0040 決定1・決定3, #823, IADR-0422 決定2: 損切りの実行機構の変更（利用者のみ・理由必須）。
+ * 実弾（moomoo REAL）の間の S0 以外はサーバが 400 で拒否する（画面の無効化と同じ規則）。
+ */
+export function useSaveStopLossMethod() {
+  return useRiskSettingsMutation<{ method: number; reason: string }>(
+    '/risk-controls/settings/stop-loss-method',
+  );
+}
+
 /** FR-20, #423, IADR-0164: Stage 1 の最小取引件数の変更。 */
 export function useSaveStage1MinimumTradeCount() {
   return useRiskSettingsMutation<{ minimumTradeCount: number; reason: string }>(
