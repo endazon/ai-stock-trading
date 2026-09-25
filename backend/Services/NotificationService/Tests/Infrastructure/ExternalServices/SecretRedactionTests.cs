@@ -1,5 +1,6 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.AdoptPositionDrift;
 using NotificationService.Features.Notifications.ClearGoodFaithViolations;
 using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
@@ -187,6 +188,9 @@ public class SecretRedactionTests
             new ReportCommandHandler(
                 new StubReportReviewController(), new VersionedConfirmationGuard(), options,
                 factory.CreateLogger<ReportCommandHandler>()),
+            new PositionDriftAdoptionCommandHandler(
+                new StubPositionDriftAdoptionController(), options,
+                factory.CreateLogger<PositionDriftAdoptionCommandHandler>()),
             factory);
     }
 
@@ -230,6 +234,14 @@ public class SecretRedactionTests
 
         public Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new StageGateStatusResult(true, "撤退評価"));
+    }
+
+    private sealed class StubPositionDriftAdoptionController : IPositionDriftAdoptionController
+    {
+        public Task<PositionDriftAdoptionResult> AdoptAsync(
+            string symbol, AiStockTrading.Shared.Contracts.Trading.Market market, string reason, string onBehalfOf,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PositionDriftAdoptionResult(true, true, "取り込み"));
     }
 
     private sealed class StubGoodFaithViolationController : IGoodFaithViolationController

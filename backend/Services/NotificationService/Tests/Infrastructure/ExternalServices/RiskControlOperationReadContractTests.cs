@@ -10,6 +10,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using RiskFeatures = RiskManagementWorker::RiskManagementService.Features.RiskManagement;
+using RiskAdopt = RiskManagementWorker::RiskManagementService.Features.RiskManagement.AdoptPositionDrift;
 using RiskGfv = RiskManagementWorker::RiskManagementService.Features.RiskManagement.ClearGoodFaithViolations;
 using RiskStatus = RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetRiskStatus;
 
@@ -26,6 +27,12 @@ namespace NotificationService.Tests;
 // 🔴 T-10-941〜942, FR-14, FR-10, ADR-0041 決定2, #990, IADR-0354, IADR-0408（2026-09-25 追記）: 稼働状態の送り手は口座を照会できて
 // いない間（新規建ては止まっている）資金・上限の実額を null で返す。受け手が上限を非 null で受けていたため、まさにその間 `/status` は
 // JsonException で失敗していた。資金・上限が null の送り手の値も読めて、上限を「不明」と表示する（0 と表示しない）ことを固定する。
+//
+// 🔴 T-10-989, FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0350, IADR-0423: 乖離の取り込み
+// （POST /risk-controls/position-drift/adopt）の受理（200）・受理不能（422）の本文も、送り手の本物の型
+// （`PositionDriftAdoptionResponse`・`PositionDriftAdoptionRejectionBody`）を web 既定で直列化したものを読ませる。
+// 送り手がその設定で出していることはリスク管理側の T-10-985 が本物の Program.cs で固定する。逆向き（Bot が送る本文を
+// 送り手の本物の要求型 `PositionDriftAdoptionRequest` で読めること＝操作者の onBehalfOf が届くこと）も同じ所で固定する。
 public class RiskControlOperationReadContractTests
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
@@ -184,9 +191,86 @@ public class RiskControlOperationReadContractTests
         ng.Message.Should().Be(nothing.error);
     }
 
+    // 🔴 T-10-989: 受理（200）は前後の数量・観測・記録した操作者を、送り手の本物の型を直列化した応答から読める。
+    // 「実現損益は記録していない」ことを必ず伝える。
+    [Fact]
+    public async Task 乖離の取り込みの受理は送り手の本物の型を直列化した応答から前後の数量と操作者を読める()
+    {
+        var adopted = new RiskAdopt.PositionDriftAdoptionResponse(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, LedgerQuantityBefore: 3_381, LedgerQuantityAfter: 0, BrokerQuantity: 0,
+            ObservedAt: T0, RealizedPnlRecorded: false, ReferencePrice: null, EstimatedPnlInBase: null,
+            AdoptedAt: T0.AddMinutes(1), Actor: "endazon");
+        var controller = new HttpPositionDriftAdoptionController(
+            Client(adopted), NullLogger<HttpPositionDriftAdoptionController>.Instance);
+
+        var result = await controller.AdoptAsync("AAPL", Market.UnitedStates, "証券会社のアプリで売却した", "endazon");
+
+        (result.Succeeded, result.Adopted).Should().Be((true, true));
+        result.Message.Should().Contain("AAPL（米国市場）の建玉を 3381 → 0 へ合わせました")
+            .And.Contain("ブローカーの観測 0・観測 2026-09-25 01:00:00Z")
+            .And.Contain("操作者 endazon として記録しました")
+            .And.Contain("実現損益は記録していません");
+        result.Message.Should().NotContain(HttpPositionDriftAdoptionController.ActorUnconfirmed);
+    }
+
+    // 🔴 T-10-989: 受理不能（422）は、送り手の本物の型の本文から**拒否の理由の文言をそのまま**利用者へ返し、
+    // 台帳が変わっていないことを伝える（観測が古い・乖離が無い・減らす乖離だけ、の 3 つで確かめる）。
+    [Theory]
+    [InlineData("ブローカ建玉の最新の観測が古すぎます（60 分超）。", "ObservationStale")]
+    [InlineData("当該銘柄に取り込む乖離がありません（最新の観測と台帳は一致しています。取り込み済みを含む）。", "NoDrift")]
+    [InlineData("取り込めるのは台帳の建玉を減らす乖離だけです。", "UnsupportedDirection")]
+    public async Task 乖離の取り込みの拒否は送り手の本物の型から理由の文言を読める(string error, string code)
+    {
+        var body = new RiskAdopt.PositionDriftAdoptionRejectionBody(error, code);
+        var controller = new HttpPositionDriftAdoptionController(
+            Client(body, HttpStatusCode.UnprocessableEntity), NullLogger<HttpPositionDriftAdoptionController>.Instance);
+
+        var result = await controller.AdoptAsync("AAPL", Market.UnitedStates, "理由", "endazon");
+
+        (result.Succeeded, result.Adopted).Should().Be((true, false));
+        result.Message.Should().Be($"取り込みは行いませんでした（台帳は変わっていません）: {error}");
+    }
+
+    // 🔴 T-10-989（逆向き）: Bot が送る本文は、送り手の本物の要求型で読むと銘柄・市場・理由・**代理される利用者**が
+    // そのまま届く（`onBehalfOf` の改名で操作者が黙って `client:<azp>` へ落ちない）。数量は送らない。
+    [Fact]
+    public async Task 取り込みの要求本文は送り手の本物の要求型で銘柄と市場と理由と操作者を読める()
+    {
+        var capture = new CapturingHandler();
+        var controller = new HttpPositionDriftAdoptionController(
+            new HttpClient(capture) { BaseAddress = new Uri("http://risk-management-service") },
+            NullLogger<HttpPositionDriftAdoptionController>.Instance);
+
+        await controller.AdoptAsync("7203", Market.Japan, "証券会社のアプリで売却した", "endazon");
+
+        capture.Path.Should().Be("/risk-controls/position-drift/adopt");
+        var request = JsonSerializer.Deserialize<RiskAdopt.PositionDriftAdoptionRequest>(capture.Body, Web)!;
+        request.Should().Be(new RiskAdopt.PositionDriftAdoptionRequest("7203", Market.Japan, "証券会社のアプリで売却した", "endazon"));
+        using var doc = JsonDocument.Parse(capture.Body);
+        doc.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["symbol", "market", "reason", "onBehalfOf"]);
+    }
+
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+    }
+
+    // 要求本文を捕まえ、422（受理不能）で応える。
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        public string? Path { get; private set; }
+
+        public string Body { get; private set; } = string.Empty;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Path = request.RequestUri?.AbsolutePath;
+            Body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.UnprocessableEntity)
+            {
+                Content = new StringContent("""{"error":"x","code":"NoDrift"}""", Encoding.UTF8, "application/json"),
+            };
+        }
     }
 }

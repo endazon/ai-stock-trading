@@ -1,5 +1,6 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.AdoptPositionDrift;
 using NotificationService.Features.Notifications.ClearGoodFaithViolations;
 using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
@@ -77,12 +78,17 @@ public class DiscordSettingsAreReadOnlyTests
         var report = await new ReportCommandHandler(
             probes.Report, new VersionedConfirmationGuard(), options,
             NullLogger<ReportCommandHandler>.Instance).HandleAsync(context);
+        // #871, IADR-0423: 乖離の取り込み（台帳の是正）も、設定変更の試みでは起動しない。
+        var drift = await new PositionDriftAdoptionCommandHandler(
+            probes.Drift, options, NullLogger<PositionDriftAdoptionCommandHandler>.Instance)
+            .HandleAsync(context, "STOP TRADING", "理由");
 
         killSwitch.WasExecuted.Should().BeFalse();
         pause.WasExecuted.Should().BeFalse();
         stage.WasExecuted.Should().BeFalse();
         gfv.WasExecuted.Should().BeFalse();
         report.WasExecuted.Should().BeFalse();
+        drift.WasExecuted.Should().BeFalse();
         probes.Calls.Should().Be(0, "設定変更の試みでは、どの下流サービスも呼ばれてはならない");
     }
 
@@ -135,6 +141,8 @@ public class DiscordSettingsAreReadOnlyTests
         public IGoodFaithViolationController Gfv => new GfvProbe(this);
 
         public IReportReviewController Report => new ReportProbe(this);
+
+        public IPositionDriftAdoptionController Drift => new DriftProbe(this);
 
         private void Record() => Calls++;
 
@@ -203,6 +211,17 @@ public class DiscordSettingsAreReadOnlyTests
             {
                 owner.Record();
                 return Task.FromResult(new GoodFaithViolationClearResult(true, true, "解除"));
+            }
+        }
+
+        private sealed class DriftProbe(Probes owner) : IPositionDriftAdoptionController
+        {
+            public Task<PositionDriftAdoptionResult> AdoptAsync(
+                string symbol, AiStockTrading.Shared.Contracts.Trading.Market market, string reason, string onBehalfOf,
+                CancellationToken cancellationToken = default)
+            {
+                owner.Record();
+                return Task.FromResult(new PositionDriftAdoptionResult(true, true, "取り込み"));
             }
         }
 
