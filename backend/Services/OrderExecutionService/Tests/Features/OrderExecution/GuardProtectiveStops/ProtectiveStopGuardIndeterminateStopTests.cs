@@ -280,6 +280,32 @@ public class ProtectiveStopGuardIndeterminateStopTests
         h.Broker.MarketCloseCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task 再発注の予約そのものが落ちたら送らず成行も送らず人へ知らせ記録は巡回に残す_否定形()
+    {
+        // T-10-1068（続き・PR #1005 監査 3）: 予約表が落ちた（DB 障害）。逆指値も成行も送らず、Critical の保護喪失（None）を出し、
+        // 行は変えない（失効した元の逆指値を指したまま＝次の巡回で改めて評価する）。
+        var row = LapsedRow(Guid.NewGuid());
+        var broker = new StopLegScriptedBroker { Stop = Behavior.Accept };
+        var stops = new InMemoryProtectiveStopOrderStore();
+        stops.Save(row);
+        var reservations = new ThrowingReserveStore(
+            new InMemoryOrderReservationStore(), ProtectiveStopIds.StopDecisionId(row.EntryDecisionId, attempt: 2));
+        var guard = new ProtectiveStopGuard(
+            broker, broker, stops, new InMemoryExecutedOrderStore(), reservations, new MutableClock(Now));
+
+        var result = await guard.RunOnceAsync(batchSize: 10);
+
+        broker.StopPlaceCount.Should().Be(0);
+        broker.MarketCloseCount.Should().Be(0);
+        result.CloseFailed.Should().Be(1, "解消していない（手仕舞いにも完了にも数えない）");
+        result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle()
+            .Which.Remediation.Should().Be(ProtectiveStopRemediation.None);
+        var after = stops.Find(row.EntryDecisionId)!;
+        after.State.Should().Be(ProtectiveStopState.Active, "巡回に残る");
+        after.StopOrderId.Should().Be(StopLegScriptedBroker.LapsedStopOrderId);
+    }
+
     // ---- T-10-1077: 発行できなかった据え置きの通知を「通知済み」と覚えない ----
 
     [Fact]

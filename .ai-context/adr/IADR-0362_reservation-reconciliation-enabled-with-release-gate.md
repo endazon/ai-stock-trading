@@ -2,10 +2,10 @@
 title: IADR-0362 滞留 Reserved の自動突合は配備で有効化し、解放（NotPlaced）だけを別の門で閉じたままにする
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0003, ADR-0016, IADR-0057, IADR-0058, IADR-0074, IADR-0092, IADR-0111, IADR-0113, IADR-0114, IADR-0117, IADR-0210, IADR-0211]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0003, ADR-0016, IADR-0057, IADR-0058, IADR-0074, IADR-0092, IADR-0111, IADR-0113, IADR-0114, IADR-0117, IADR-0210, IADR-0211, IADR-0428]
 author: endazon (with Claude Code)
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-05 発注執行)
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md (UC-06 利用者による建玉の手仕舞い)
@@ -110,6 +110,14 @@ plan_refs:
 （門が黙って開くのを CI で止める）。
 
 ### 決定 3: 突合で `Placed` と確定した終端化は「黙って通り過ぎさせない」。保護レグを張るかは #853 が持つ
+
+> **［2026-09-25 追記 / #853］本決定が #853 へ預けた「保護レグを張るか」は、オーナー裁定（2026-09-25）で「張る」に決まった。**
+> 突合は確定した 1 件の出口の後に、発注執行（`IReconciledEntryProtection`）を呼び、エントリーを送る前に残した承認時の保護の文脈
+> （`ProtectiveStopState.AwaitingEntry` / S1 の Active 行）で承認時の手法の保護レグを張る。エントリーの判別は予約・プローブの
+> `PositionEffect` ではなく**保護記録の有無**で行い（下の「予約行だけからは区別できない」は変わらない）、保護レグ（据え置いた逆指値・ガードの成行手仕舞い）
+> と判別できたものは張らない。確定の Critical は残し、文面を「この時点では保護レグがありません。続けて張ります」へ改めた。
+> 下の本文の「保護逆指値を発注しない」「この経路は保護逆指値を張りません」は当時の記述である。詳細は
+> [IADR-0428](IADR-0428_protective-leg-indeterminate-hold-and-reconciled-entry-protection.md) 決定 4。
 
 `OrderReservationReconciler` は保護逆指値を発注しない。有効化するとこの経路が実際に踏まれるため、
 **無保護の建玉が台帳へ載り得る**（#853 の 2 番）。本 ADR は挙動を変えず、**見えるようにするだけ**にする。

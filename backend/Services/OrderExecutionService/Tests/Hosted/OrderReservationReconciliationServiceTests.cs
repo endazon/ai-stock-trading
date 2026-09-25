@@ -490,6 +490,19 @@ public class OrderReservationReconciliationServiceTests
     }
 
     [Fact]
+    public async Task 保護レグの突合は保護の記録が無いとCriticalで言わない()
+    {
+        // T-10-1078（続き・PR #1005 監査 5）: 据え置いた逆指値・ガードの成行手仕舞いの突合を「保護の記録が無い」と誤って知らせない。
+        var (logger, _, decisionId) = await ReconcileWithAsync(new StubProtection(id =>
+            ReconciledEntryProtectionOutcome.Of(id, ReconciledEntryProtectionKind.ProtectiveLeg)));
+
+        logger.Entries.Should().NotContain(e => e.Message.Contains("保護の記録がありません", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Information
+            && e.Message.Contains("保護レグ（据え置いた逆指値・成行手仕舞い）", StringComparison.Ordinal)
+            && e.Message.Contains(decisionId.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task 保護の口が無い構成でも突合で確定したものはCriticalで知らせる_否定形()
     {
         var (logger, _, decisionId) = await ReconcileWithAsync(protection: null);

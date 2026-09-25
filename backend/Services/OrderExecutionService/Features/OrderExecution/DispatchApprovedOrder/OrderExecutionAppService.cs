@@ -636,6 +636,17 @@ public sealed class OrderExecutionAppService(
         if (rows.Count == 0)
             return new ForgoneCloseProtection(ForgoneCloseProtectionStatus.NoneRecorded, 0, 0);
 
+        // 🔴 FR-10, #853（PR #1005 監査 2）, IADR-0428 決定2: **送信結果待ち**（逆指値を送ったが届いたか不明）の行があれば、保護の有無は
+        // 分からない（Unknown）。ブローカー側の注文の株数に数えると、無いかもしれない逆指値を「有る」と知らせる（#879 の向きの逆＝危険側）。
+        // 数えずに Recorded を返すと、生きているかもしれない逆指値を「無い」と断定する（原則 A: 不明を「無い」と言わない）。
+        if (rows.Any(s => s.IsStopDispatchPending))
+        {
+            _logger.LogWarning(
+                "見送る決済の建玉に、送信結果が不明な保護逆指値があります（保護の有無は不明として知らせます）: DecisionId={DecisionId} 銘柄={Symbol}",
+                approved.DecisionId, intent.Symbol);
+            return new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Unknown, 0, 0);
+        }
+
         // 🔴 PR #999 の再監査 1（IADR-0344 追記(9) 決定1）: 株数は **ClaimedFor と同じ実効数量**（EffectiveProtectedQuantity＝帳簿の主張から
         // まだ確定していない外部要因の減少を引いた値）で数える。帳簿の主張（ProtectedQuantity）で数えると、未確定の観測を抱えた行
         // ——実際にはその分を動かせない行——が保護を多く見せ、通知の「S1 の株数」を過大に、「ブローカー側の注文が無い株数」を過小に
@@ -682,7 +693,18 @@ public sealed class OrderExecutionAppService(
         var closeIntent = BuildCloseIntent(intent, intent.Quantity, triggerPrice);
 
         // 🔴 #853, IADR-0428 決定1: 相 2（発注着手の権威）。取れなければ送らない。
-        if (!reservations.TryReserve(stopDecisionId, clock.UtcNow))
+        bool reserved;
+        try
+        {
+            reserved = reservations.TryReserve(stopDecisionId, clock.UtcNow);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 予約そのものが落ちた（DB 障害）。逆指値は送っていない。
+            return (null, StopReservationFailed(approved, stopDecisionId, ex), null);
+        }
+
+        if (!reserved)
             return (null, HoldIndeterminateStop(approved, stopDecisionId, closeIntent, cause: null), null);
 
         BrokerOrder? stopOrder = null;
@@ -814,6 +836,43 @@ public sealed class OrderExecutionAppService(
             intent.Quantity, stopDecisionId, closeIntent, now);
     }
 
+    // 🔴 FR-10, #853（PR #1005 監査 3）, IADR-0428 決定1: 逆指値レグの予約そのものが例外で落ちた（DB 障害）。逆指値は送っていない。
+    // 何もせずに戻ると、建玉は巡回されない AwaitingEntry の行だけを持ち、逆指値も取消も成行も通知も無いまま残る（無音）。
+    //   - 保護記録を「送信結果待ち」（Active・注文 ID が空）で残す——**常駐ガードが巡回する**。予約が無ければガードは未発注として
+    //     次の試行で逆指値を張り直し、予約が実は書けていた（commit 後に落ちた）なら据え置く（どちらでも送り直しは重ならない）。
+    //   - Critical を残し、保護喪失（Remediation=None＝逆指値なしの建玉が残っている可能性）を返して人へ知らせる
+    //     （保護記録も書けない＝DB が落ちたままでも、通知はメッセージ基盤を通って届く）。取消も成行もしない（DB が不確かなまま注文を重ねない）。
+    private ProtectiveStopCoverageLost StopReservationFailed(OrderApproved approved, Guid stopDecisionId, Exception cause)
+    {
+        var intent = approved.Intent;
+        var now = clock.UtcNow;
+        _logger.LogCritical(cause,
+            "保護逆指値の予約を記録できませんでした（逆指値は送っていません）。取消も成行もせず、保護記録を送信結果待ちで残して"
+            + "常駐ガードに張り直させます。**逆指値なしの建玉が残っている可能性があります。**証券会社の画面で確認してください: "
+            + "EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId} 銘柄={Symbol} 数量={Quantity}",
+            approved.DecisionId, stopDecisionId, intent.Symbol, intent.Quantity);
+
+        if (protectiveStops is not null)
+        {
+            try
+            {
+                protectiveStops.Save(new ProtectiveStopOrder(
+                    approved.DecisionId, stopDecisionId, StopOrderId: string.Empty, intent.Symbol, intent.Market,
+                    intent.Side, intent.ProductType, intent.Mode, intent.Quantity, intent.StopLossPrice!.Value,
+                    intent.FxRateToBase, Attempt: 1, ProtectiveStopState.Active, now, now));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogCritical(ex,
+                    "保護記録も保存できませんでした。**常駐ガードはこの建玉を巡回しません。**証券会社の画面で建玉と逆指値を確認してください: "
+                    + "EntryDecisionId={EntryDecisionId}",
+                    approved.DecisionId);
+            }
+        }
+
+        return CoverageLost(approved, ProtectiveStopRemediation.None, intent.Quantity);
+    }
+
     // 🔴 FR-10, #853, IADR-0428 決定3: 承認時の保護の文脈を AwaitingEntry で残す（既に行があれば触らない）。
     // **書けなくても発注は止めない**（事前記録の失敗で平常の発注を止めない。失うのは「送信結果が不明のまま突合で確定したとき」の
     // 文脈だけであり、そのとき突合は「保護の記録が無い」を Critical で知らせる）。
@@ -878,9 +937,21 @@ public sealed class OrderExecutionAppService(
         ArgumentNullException.ThrowIfNull(confirmed);
         var decisionId = confirmed.DecisionId;
 
-        // 記録が無い: エントリーと判別できない（手仕舞い・保護レグの突合）か、張れないエントリー（S2・文脈の記録前に停止）。
-        if (protectiveStops?.Find(decisionId) is not { } row)
+        if (protectiveStops is null)
             return ReconciledEntryProtectionOutcome.Of(decisionId, ReconciledEntryProtectionKind.NoProtectionRecord);
+
+        if (protectiveStops.Find(decisionId) is not { } row)
+        {
+            // 🔴 #853（PR #1005 監査 5）: Active な保護記録の保護レグ（据え置いた逆指値＝行の StopDecisionId、ガードの成行手仕舞い＝
+            // この試行の CloseDecisionId）なら、ガードの巡回が結果を引き取る。「保護の記録が無い」の Critical を出させない。
+            // 見つからなければ、張れないエントリー（S2・文脈の記録前に停止）か、判別できない注文（エントリー同時の成行手仕舞い等）。
+            var isLeg = protectiveStops.FindActive(ArmingScanLimit).Any(r =>
+                r.StopDecisionId == decisionId
+                || (!r.IsSoftwareStop && ProtectiveStopIds.CloseDecisionId(r.EntryDecisionId, r.Attempt + 1) == decisionId));
+            return ReconciledEntryProtectionOutcome.Of(
+                decisionId,
+                isLeg ? ReconciledEntryProtectionKind.ProtectiveLeg : ReconciledEntryProtectionKind.NoProtectionRecord);
+        }
 
         var alive = confirmed.Status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled;
         var filled = confirmed.FilledQuantity;

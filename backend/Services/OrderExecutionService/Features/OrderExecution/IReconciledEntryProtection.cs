@@ -41,6 +41,12 @@ public enum ReconciledEntryProtectionKind
 
     /// <summary>S1: ソフトウェア逆指値の記録は武装済み。配置の事実を通知する。</summary>
     SoftwareStopArmed = 6,
+
+    /// <summary>
+    /// #853（PR #1005 監査 5）: エントリーではなく、Active な保護記録の<b>保護レグ</b>（据え置いた逆指値・ガードの成行手仕舞い）の突合だった。
+    /// 保護記録の巡回（常駐ガード）が結果を引き取るので、ここでは何もしない（「保護の記録が無い」とは言わない）。
+    /// </summary>
+    ProtectiveLeg = 7,
 }
 
 /// <summary>#853, IADR-0428 決定4: 突合で確定した 1 件の保護の結果。<paramref name="Events"/> は発行する順に並ぶ。</summary>

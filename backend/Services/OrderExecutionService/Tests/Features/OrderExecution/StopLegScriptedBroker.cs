@@ -137,3 +137,33 @@ public sealed class StopLegScriptedBroker
         new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.MoomooSimulate,
             quantity, 950m, PositionEffect.Close);
 }
+
+// FR-10, #853（PR #1005 監査 3）, IADR-0428 決定1: 指定した DecisionId の予約だけが例外で落ちる予約表（DB 障害の再現）。他は委譲する。
+public sealed class ThrowingReserveStore(
+    OrderExecutionService.Features.OrderExecution.IOrderReservationStore inner, Guid throwFor)
+    : OrderExecutionService.Features.OrderExecution.IOrderReservationStore
+{
+    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt) =>
+        decisionId == throwFor
+            ? throw new InvalidOperationException("予約表へ書けない（テスト）")
+            : inner.TryReserve(decisionId, reservedAt);
+
+    public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt) =>
+        inner.MarkCompleted(decisionId, brokerOrderId, completedAt);
+
+    public OrderExecutionService.Features.OrderExecution.OrderDispatchReservation? Find(Guid decisionId) =>
+        inner.Find(decisionId);
+
+    public IReadOnlyList<OrderExecutionService.Features.OrderExecution.OrderDispatchReservation> FindStalledReserved(
+        DateTimeOffset reservedBefore, int batchSize) => inner.FindStalledReserved(reservedBefore, batchSize);
+
+    public bool Release(Guid decisionId) => inner.Release(decisionId);
+
+    public OrderExecutionService.Features.OrderExecution.ForgoneRecordOutcome TryRecordForgone(
+        Guid decisionId, DateTimeOffset forgoneAt) => inner.TryRecordForgone(decisionId, forgoneAt);
+
+    public OrderExecutionService.Features.OrderExecution.ForgoneRecordOutcome MarkReservationForgone(
+        Guid decisionId, DateTimeOffset forgoneAt) => inner.MarkReservationForgone(decisionId, forgoneAt);
+
+    public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize) => inner.PurgeCompletedBefore(cutoff, batchSize);
+}

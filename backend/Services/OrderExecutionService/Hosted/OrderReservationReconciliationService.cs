@@ -225,6 +225,13 @@ public sealed class OrderReservationReconciliationService(
                     outcome.Kind, confirmed.DecisionId, confirmed.Symbol);
                 break;
 
+            case ReconciledEntryProtectionKind.ProtectiveLeg:
+                logger.LogInformation(
+                    "発注予約リコンサイル: 突合で確定したのは保護レグ（据え置いた逆指値・成行手仕舞い）でした。保護記録の巡回が"
+                        + "結果を引き取ります（DecisionId={DecisionId} 注文ID={OrderId}）。",
+                    confirmed.DecisionId, confirmed.OrderId);
+                break;
+
             default:
                 // AlreadyHandled（通常フローが既に扱った）・NotRequired（建玉が生じていない）。
                 logger.LogInformation(

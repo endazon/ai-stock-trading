@@ -144,6 +144,40 @@ public class OrderExecutionServiceIndeterminateStopTests
         result.CoverageLost!.Remediation.Should().Be(ProtectiveStopRemediation.StopDispatchIndeterminate);
     }
 
+    [Fact]
+    public async Task 逆指値の予約そのものが落ちたら送らず巡回される送信結果待ちを残しガードが張り直す_否定形()
+    {
+        // T-10-1062（続き・PR #1005 監査 3）: 予約表が落ちた（DB 障害）。何もせずに戻ると、建玉は巡回されない AwaitingEntry の行だけを持ち、
+        // 逆指値も取消も成行も通知も無いまま残る。送らずに保護記録を送信結果待ちで残し（ガードが巡回する）、保護喪失（None）で知らせる。
+        var broker = new StopLegScriptedBroker { Stop = Behavior.Accept };
+        var store = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var reservations = new InMemoryOrderReservationStore();
+        var approved = Approved();
+        var leg = ProtectiveStopIds.StopDecisionId(approved.DecisionId, attempt: 1);
+        var service = new AppSvc(
+            broker, store, new ThrowingReserveStore(reservations, leg), new FakeClock(), stops, brokerPositions: broker);
+
+        var result = await service.ExecuteAsync(approved);
+
+        broker.StopPlaceCount.Should().Be(0, "予約を記録できないまま逆指値を送らない");
+        broker.CancelCount.Should().Be(0);
+        broker.MarketCloseCount.Should().Be(0, "DB が不確かなまま予約なしで成行を重ねない");
+        result.Executed.Should().NotBeNull();
+        result.CoverageLost!.Remediation.Should().Be(ProtectiveStopRemediation.None, "逆指値なしの建玉が残っている可能性を人へ知らせる");
+        var row = stops.Find(approved.DecisionId)!;
+        row.State.Should().Be(ProtectiveStopState.Active, "巡回されない AwaitingEntry のまま残さない");
+        row.IsStopDispatchPending.Should().BeTrue();
+
+        // 常駐ガードは「予約も記録も無い送信結果待ち」を未発注として扱い、次の試行の新しいレグで逆指値を張り直す。
+        var guard = new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard(
+            broker, broker, stops, store, reservations, new FakeClock());
+        var patrol = await guard.RunOnceAsync(batchSize: 10);
+
+        patrol.Replaced.Should().Be(1);
+        broker.StopDecisionIds.Should().Equal([ProtectiveStopIds.StopDecisionId(approved.DecisionId, attempt: 2)]);
+    }
+
     // ---- S3（代替注文種別）でも同じ ----
 
     [Fact]

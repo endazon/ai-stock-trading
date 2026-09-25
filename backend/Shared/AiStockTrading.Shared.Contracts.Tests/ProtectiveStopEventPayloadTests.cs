@@ -120,6 +120,8 @@ public class ProtectiveStopEventPayloadTests
         ((int)ProtectiveStopRemediation.CloseDispatchIndeterminate).Should().Be(3);
         // #857, IADR-0369: 確認できた拒否（建玉が残っている）。
         ((int)ProtectiveStopRemediation.CloseRejected).Should().Be(4);
+        // #853, IADR-0428 決定2: 保護逆指値そのものの送信結果が不明（据え置き）。
+        ((int)ProtectiveStopRemediation.StopDispatchIndeterminate).Should().Be(5);
     }
 
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由が往復で欠落しないこと**。

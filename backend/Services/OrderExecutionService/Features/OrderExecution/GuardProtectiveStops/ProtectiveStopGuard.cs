@@ -358,7 +358,29 @@ public sealed class ProtectiveStopGuard(
             // 🔴 FR-10, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定1: **逆指値レグも送る前に決定的な StopDecisionId を予約する**
             // （成行手仕舞いの 3 相〔IADR-0117 改定 7〕と同じ形）。取れない＝以前の巡回で送信に着手した（送信中に止まった・
             // 行の更新だけ失われた）。送らずに送信結果待ちへ移す——ここで送り直すのが #853 追記の「巡回ごとの送り直し」である。
-            if (!reservations.TryReserve(stopDecisionId, now))
+            bool reserved;
+            try
+            {
+                reserved = reservations.TryReserve(stopDecisionId, now);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 🔴 #853（PR #1005 監査 3）, IADR-0428 決定1: 予約そのものが落ちた（DB 障害）。逆指値は送っていない。
+                // 行は変えずに（失効した元の逆指値を指したまま＝次の巡回で改めて評価する）、無音にしない。
+                // 成行も送らない——DB が不確かなまま予約なしで注文を重ねない。
+                _logger.LogCritical(ex,
+                    "保護逆指値ガード: 逆指値の再発注の予約を記録できませんでした（逆指値は送っていません）。成行も送らず、次の巡回で"
+                    + "改めて評価します。**逆指値なしの建玉が残っています。**証券会社の画面で確認してください: "
+                    + "EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId} 銘柄={Symbol} 数量={Quantity}",
+                    stop.EntryDecisionId, stopDecisionId, stop.Symbol, quantity);
+                events.Add(new ProtectiveStopCoverageLost(
+                    stop.EntryDecisionId, stop.Symbol, stop.Market,
+                    ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.None,
+                    quantity, CloseDecisionId: null, CloseIntent: null, clock.UtcNow));
+                return Outcome.CloseFailed;
+            }
+
+            if (!reserved)
                 return HoldIndeterminateStop(stop, quantity, attempt, stopDecisionId, closeIntent, events, cause: null);
 
             BrokerOrder? newStop = null;

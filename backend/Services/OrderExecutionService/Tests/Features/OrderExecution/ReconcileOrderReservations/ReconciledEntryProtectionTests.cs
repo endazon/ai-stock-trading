@@ -241,6 +241,32 @@ public class ReconciledEntryProtectionTests
         h.Broker.MarketCloseCount.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task 据え置いた逆指値やガードの成行手仕舞いの突合は保護レグとして扱い張らない(bool stopLeg)
+    {
+        // T-10-1071（続き・PR #1005 監査 5）: 突合が確定したのは Active な保護記録の保護レグ（据え置いた逆指値＝行の StopDecisionId／
+        // ガードの成行手仕舞い＝この試行の CloseDecisionId）。「保護の記録が無い」とは言わず（Critical を出させない）、何も送らない。
+        var entry = Guid.NewGuid();
+        var h = NewHarness(new StopLegScriptedBroker { Stop = Behavior.Accept },
+            _ => ReservationProbeResult.Placed(EntryAtBroker("leg-9", OrderStatus.Accepted, 0)));
+        var pending = new ProtectiveStopOrder(
+            entry, ProtectiveStopIds.StopDecisionId(entry, 2), string.Empty, "AAPL", Market.UnitedStates, TradeSide.Buy,
+            ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, 2, ProtectiveStopState.Active, StalledAt, StalledAt,
+            RemainingProtected: 10);
+        h.Stops.Save(stopLeg ? pending : pending with { StopOrderId = StopLegScriptedBroker.LapsedStopOrderId });
+        var leg = stopLeg ? ProtectiveStopIds.StopDecisionId(entry, 2) : ProtectiveStopIds.CloseDecisionId(entry, 3);
+        h.Reservations.TryReserve(leg, StalledAt);
+
+        var result = await h.Reconciler.ReconcileAsync(Cutoff, 50, h.Sink);
+
+        result.Protections.Single().Outcome!.Kind.Should().Be(ReconciledEntryProtectionKind.ProtectiveLeg);
+        h.Broker.StopPlaceCount.Should().Be(0);
+        h.Broker.CancelCount.Should().Be(0);
+        h.Broker.MarketCloseCount.Should().Be(0);
+    }
+
     [Fact]
     public async Task 約定0で終端したエントリーには張らず承認時の文脈を閉じる()
     {
