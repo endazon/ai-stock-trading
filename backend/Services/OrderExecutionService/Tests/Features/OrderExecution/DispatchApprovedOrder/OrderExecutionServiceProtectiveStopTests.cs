@@ -189,7 +189,9 @@ public class OrderExecutionServiceProtectiveStopTests
         lost.Cause.Should().Be(ProtectiveStopLossCause.RejectedAtEntry);
         lost.Remediation.Should().Be(ProtectiveStopRemediation.EntryCancelled);
         result.StopPlaced.Should().BeNull();
-        stops.Find(approved.DecisionId).Should().BeNull("保護は成立していない");
+        // #853, IADR-0428 決定3: 送る前に残した承認時の保護の文脈（AwaitingEntry）は、保護を諦めた時点で閉じる（巡回の対象に入らない）。
+        stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.Completed, "保護は成立していない");
+        stops.FindActive(100).Should().BeEmpty();
     }
 
     [Theory]
@@ -356,7 +358,10 @@ public class OrderExecutionServiceProtectiveStopTests
 
         first.CoverageLost!.Cause.Should().Be(ProtectiveStopLossCause.RejectedAtEntry);
         first.CoverageLost.Remediation.Should().Be(ProtectiveStopRemediation.CloseDispatchIndeterminate);
-        stops.Find(approved.DecisionId).Should().BeNull("エントリー時の経路は保護記録を作らない");
+        // #853, IADR-0428 決定3: 送る前に残す承認時の保護の文脈（AwaitingEntry）は、保護を諦めた時点で Completed に閉じる。
+        // 巡回の対象（Active）ではない——通知が「巡回しない・繰り返さない」と言う根拠は変わらない（下のガードの巡回が 0 件）。
+        stops.Find(approved.DecisionId)!.State.Should().Be(
+            ProtectiveStopState.Completed, "エントリー時の経路は巡回される保護記録を作らない");
         stops.FindActive(100).Should().BeEmpty("巡回の対象に入る記録が 1 件も無い");
 
         // 本番と同じ部品（同じストア・予約・再通知の記憶）でガードを 1 時間後に巡回させる。
@@ -434,8 +439,9 @@ public class OrderExecutionServiceProtectiveStopTests
         store.FindByDecisionId(closeDecisionId)!.Status.Should().Be(OrderStatus.Rejected);
     }
 
+    // #853, IADR-0428 決定1: 「未受理と同じ分岐」に入ってよいのは**確実に未発注**の例外（接続確立の失敗）だけである。
+    // 分類できない例外（Throw）は届いたか不明の側へ倒れ、取消も成行もせず据え置く（T-10-1060 が固定する）。
     [Theory]
-    [InlineData(StopBehavior.Throw)]
     [InlineData(StopBehavior.Unavailable)]
     public async Task 逆指値の発注例外も未受理と同じ分岐に入る(StopBehavior stop)
     {
@@ -579,9 +585,11 @@ public class OrderExecutionServiceProtectiveStopTests
                 // 人手対応である（通知の重大度は NotificationFormatterTests が固定する）。
                 // #857, IADR-0369: **確認できた拒否**（CloseRejected）も同じく Critical の人手対応である
                 //（黙って「手仕舞い済み」にしない、が本 issue の中心）。
+                // #853, IADR-0428 決定1・決定2: 逆指値そのものの送信結果が不明（StopDispatchIndeterminate）も Critical の人手確認であり、
+                // 保護記録は送信結果待ちで巡回に残る（取消も成行もしない＝建玉は残り得るが、黙ってはいない）。
                 var humanAlerted = result.CoverageLost?.Remediation
                     is ProtectiveStopRemediation.None or ProtectiveStopRemediation.CloseDispatchIndeterminate
-                    or ProtectiveStopRemediation.CloseRejected;
+                    or ProtectiveStopRemediation.CloseRejected or ProtectiveStopRemediation.StopDispatchIndeterminate;
 
                 (protectedByStop || humanAlerted).Should().BeTrue(
                     $"逆指値なしの建玉が黙って残ってはならない（case {i}: entry={entryStatus}/{filled}"

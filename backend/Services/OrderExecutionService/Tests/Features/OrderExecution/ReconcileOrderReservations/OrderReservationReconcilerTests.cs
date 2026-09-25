@@ -322,8 +322,10 @@ public class OrderReservationReconcilerTests
     [Fact]
     public async Task 突合で発注済みと確定した終端化は結果に載る()
     {
-        // 🔴 T-10-604: 突合が `Placed` で終端化したエントリーには**保護逆指値が張られない**（#853 の 2 番）。
+        // 🔴 T-10-604: 突合が `Placed` で終端化したエントリーは、確定した時点では**保護逆指値を持たない**。
         // 有効化するとこの経路が実際に踏まれるので、**黙って通り過ぎない**——結果に載せ、常駐が Critical でログする。
+        // ［2026-09-25 / #853・IADR-0428 決定4］保護の口を持つ組み立て（本番）では、続けて承認時の手法で張る
+        // （ReconciledEntryProtectionTests が固定する）。ここは口を持たない組み立てで、確定の可視化だけを固定する。
         var (reconciler, reservations, _, _) = Build(ReservationProbeResult.Placed(Placed("BRK-P1")));
         var decisionId = Guid.NewGuid();
         reservations.TryReserve(decisionId, StalledAt);
@@ -375,9 +377,22 @@ public class OrderReservationReconcilerTests
     {
         public List<ReservationTerminalizationEmission> Emissions { get; } = [];
 
+        // #853, IADR-0428 決定4: 保護の結果の出口（確定の出口の後に呼ばれる）。順序の検査のため、同じ並びにも記録する。
+        public List<ReconciledEntryProtectionEmission> Protections { get; } = [];
+
+        public List<object> Order { get; } = [];
+
         public Task EmitAsync(ReservationTerminalizationEmission emission)
         {
             Emissions.Add(emission);
+            Order.Add(emission);
+            return Task.CompletedTask;
+        }
+
+        public Task EmitProtectionAsync(ReconciledEntryProtectionEmission emission)
+        {
+            Protections.Add(emission);
+            Order.Add(emission);
             return Task.CompletedTask;
         }
     }

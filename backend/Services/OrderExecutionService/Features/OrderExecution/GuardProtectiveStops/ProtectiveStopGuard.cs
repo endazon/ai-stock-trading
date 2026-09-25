@@ -23,6 +23,9 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //   - 🔴 #848, IADR-0117（2026-09-19 追記・改定 9）: **据え置きを無音にしない。** 予約だけが残っている成行手仕舞いは、
 //     このプロセスが未通知のとき（再起動後の最初の巡回・送信中／発行前にプロセスが止まった後）と、前回の通知から
 //     1 時間たったときに CloseDispatchIndeterminate（Critical・CloseIntent つき）を発行し直す。成行も逆指値も送らない。
+//   - 🔴 #853, IADR-0210（2026-09-25 追記）, IADR-0428: **逆指値の再発注も 3 相で送り、「届いたか不明」なら成行へ倒さず据え置く。**
+//     行は送信結果待ち（注文 ID が空）へ移り、次の巡回は同じ逆指値を送り直さない（#853 追記の 1→2→3 を 1→1→1 へ）。
+//     突合の記録が現れたら注文 ID を採用し、予約が解放されたら未発注として扱う。据え置きの通知は 1 時間ごと（StopDispatchIndeterminate）。
 //
 // 発行（イベントの Publish）は Worker 層（ProtectiveStopGuardService）が担う。
 //
@@ -240,6 +243,11 @@ public sealed class ProtectiveStopGuard(
         List<object> events,
         CancellationToken cancellationToken)
     {
+        // 🔴 FR-10, #853, IADR-0428 決定2: 送信結果待ち（逆指値を送ったが届いたか不明・注文 ID が空）の行は、注文を照会できない
+        // （照会する ID が無い）。送り直しも成行もせず、突合の結果で解決する。
+        if (stop.IsStopDispatchPending)
+            return await EvaluatePendingStopLegAsync(stop, snapshot, active, events, cancellationToken).ConfigureAwait(false);
+
         var order = await broker.GetOrderAsync(stop.StopOrderId, cancellationToken).ConfigureAwait(false);
         if (order is null)
         {
@@ -347,6 +355,12 @@ public sealed class ProtectiveStopGuard(
 
         if (protective is not null)
         {
+            // 🔴 FR-10, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定1: **逆指値レグも送る前に決定的な StopDecisionId を予約する**
+            // （成行手仕舞いの 3 相〔IADR-0117 改定 7〕と同じ形）。取れない＝以前の巡回で送信に着手した（送信中に止まった・
+            // 行の更新だけ失われた）。送らずに送信結果待ちへ移す——ここで送り直すのが #853 追記の「巡回ごとの送り直し」である。
+            if (!reservations.TryReserve(stopDecisionId, now))
+                return HoldIndeterminateStop(stop, quantity, attempt, stopDecisionId, closeIntent, events, cause: null);
+
             BrokerOrder? newStop = null;
             try
             {
@@ -354,11 +368,17 @@ public sealed class ProtectiveStopGuard(
                     .PlaceStopOrderAsync(closeIntent, stop.TriggerPrice, stopDecisionId, cancellationToken)
                     .ConfigureAwait(false);
             }
+            catch (BrokerUnavailableException)
+            {
+                // 接続確立の失敗＝**確実に未発注**。予約を解放し、従来どおり成行の手仕舞いへ進む（次の巡回は同じレグを送り直せる）。
+                reservations.Release(stopDecisionId);
+                newStop = null;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // 再発注不可→手仕舞いへ。「届いたか不明」もここへ落ちる（IADR-0117 改定 6 の前後で同一の分岐。
-                // 逆指値が生きていた場合に孤立する件は #853）。成行手仕舞いの側は下で 3 相に載せている。
-                newStop = null;
+                // 🔴 #853, IADR-0428 決定1: **届いたか不明**・分類できない例外は未発注と言い切れない。成行手仕舞いへ倒さず据え置く
+                // （逆指値が生きていれば、成行で建玉を落とすと逆指値が孤立して反対建玉を生む）。予約は Reserved のまま。
+                return HoldIndeterminateStop(stop, quantity, attempt, stopDecisionId, closeIntent, events, ex);
             }
 
             if (newStop is not null && newStop.Status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
@@ -367,6 +387,8 @@ public sealed class ProtectiveStopGuard(
                     stopDecisionId, newStop.OrderId, stop.Symbol, stop.Market, stop.CloseSide,
                     stop.ProductType, PositionEffect.Close, quantity, stop.TriggerPrice,
                     newStop.FilledQuantity, newStop.AveragePrice, newStop.Status, SlippageRatio: 0m, now));
+                // #853, IADR-0428 決定1: 相 4（確定）。結果を保存してから予約を確定する。
+                reservations.MarkCompleted(stopDecisionId, newStop.OrderId, now);
 
                 stops.Save(stop with
                 {
@@ -390,6 +412,10 @@ public sealed class ProtectiveStopGuard(
                     stop.EntryDecisionId, stopDecisionId, newStop.OrderId, closeIntent, stop.TriggerPrice, attempt, now));
                 return Outcome.Replaced;
             }
+
+            // #853, IADR-0428 決定1: 確認できた拒否（終端が返った）＝受理されていない。予約を解放し、従来どおり成行へ進む。
+            if (newStop is not null)
+                reservations.Release(stopDecisionId);
         }
 
         // 再発注できない: 成行で手仕舞う（逆指値なしの建玉を持たない）。
@@ -465,6 +491,122 @@ public sealed class ProtectiveStopGuard(
         // 🔴 #938（PR #916 監査 F5）, IADR-0369（2026-09-25 追記）: **ClosedOut（解消した）を返さない。** 手仕舞えておらず
         // 記録は Active のまま（次の巡回で撃ち直す）。決定 5 が拒否を別枠にしたのと同じ理由で、件数でも混ぜない。
         return Outcome.CloseFailed;
+    }
+
+    // 🔴 FR-10, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定2: 送信結果待ちの行（逆指値レグの予約だけがあり、注文 ID が分からない）。
+    //   1. 発注結果の記録がある → 突合（client order id）が発注済みと確定した（または行の更新だけ失われた）。注文 ID を採用する。
+    //      生きていれば保護を張り直せた（ProtectiveStopPlaced）。生きていなければ採用した行で通常の評価（失効→再発注・約定→完了）へ。
+    //   2. 記録なし・予約あり → **据え置く**。送り直さない・成行もしない。**建玉が消えていても完了させない**
+    //      （逆指値が生きていれば、記録を閉じた瞬間に誰も取り消さない孤立注文になり、発火で反対建玉を生む）。
+    //      このプロセスが未通知、または前回から 1 時間で StopDispatchIndeterminate を発行し直す（改定 9 と同じ作法）。
+    //   3. 記録も予約も無い（突合の門を開けて解放された・人が解放した）→ 確実に未発注。通常の失効と同じく、建玉残に応じて
+    //      完了または再発注（次の試行＝別の StopDecisionId）。
+    private async Task<Outcome> EvaluatePendingStopLegAsync(
+        ProtectiveStopOrder stop,
+        IReadOnlyList<BrokerPositionSnapshot> snapshot,
+        IReadOnlyList<ProtectiveStopOrder> active,
+        List<object> events,
+        CancellationToken cancellationToken)
+    {
+        var now = clock.UtcNow;
+        var record = store.FindByDecisionId(stop.StopDecisionId);
+        if (record is { OrderId.Length: > 0 })
+        {
+            var adopted = stop with { StopOrderId = record.OrderId, UpdatedAt = now };
+            stops.Save(adopted);
+            _heldCloseNotifications.Forget(stop.StopDecisionId);
+
+            if (record.Status is OrderStatus.Accepted or OrderStatus.PartiallyFilled or OrderStatus.Filled)
+            {
+                _logger.LogWarning(
+                    "保護逆指値ガード: 送信結果が不明だった逆指値を、発注結果の記録（突合）で確認しました。注文 ID を採用します: "
+                    + "EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId} StopOrderId={StopOrderId} 状態={Status} 銘柄={Symbol}",
+                    stop.EntryDecisionId, stop.StopDecisionId, record.OrderId, record.Status, stop.Symbol);
+                events.Add(new ProtectiveStopPlaced(
+                    stop.EntryDecisionId, stop.StopDecisionId, record.OrderId,
+                    BuildCloseIntent(stop, stop.Quantity, stop.TriggerPrice), stop.TriggerPrice, stop.Attempt, now));
+                return Outcome.Replaced;
+            }
+
+            // 突合が見つけた注文は生きていない（拒否・取消・失効）。採用した行で通常の評価へ（失効→再発注・建玉なし→完了）。
+            return await EvaluateAsync(stops.Find(stop.EntryDecisionId) ?? adopted, snapshot, active, events, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (reservations.Find(stop.StopDecisionId) is { State: OrderDispatchState.Reserved or OrderDispatchState.Completed })
+        {
+            _logger.LogWarning(
+                "保護逆指値ガード: 逆指値の送信結果が未確定です（予約あり・記録なし）。送り直しも成行もせず据え置きます"
+                + "（建玉が消えていても記録は閉じません）: EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId} 銘柄={Symbol}",
+                stop.EntryDecisionId, stop.StopDecisionId, stop.Symbol);
+            if (_heldCloseNotifications.IsDue(stop.StopDecisionId, now))
+            {
+                AddHeldStopNotification(
+                    stop, stop.Quantity, stop.StopDecisionId,
+                    BuildCloseIntent(stop, stop.Quantity, stop.TriggerPrice), events);
+            }
+
+            return Outcome.Unknown;
+        }
+
+        // 予約が無い（解放された）・見送り: この逆指値は証券会社へ届いていないと確定した。通常の失効と同じに扱う。
+        _heldCloseNotifications.Forget(stop.StopDecisionId);
+        var remaining = ProtectiveStopNetting.RemainingPositionFor(stop, snapshot, active);
+        if (remaining <= 0)
+        {
+            if (stop.HasUnconfirmedExternalReduction)
+                return Outcome.Unknown;
+
+            MarkCompleted(stop);
+            return Outcome.Completed;
+        }
+
+        return await ReplaceOrCloseAsync(stop, Math.Min(remaining, stop.Quantity), events, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // 🔴 FR-10, #853, IADR-0428 決定1・決定2: 逆指値の再発注を送ったが届いたか分からない（または予約が既にある）。
+    //   - 予約を**解放も確定もしない**（Reserved のまま）。発注結果は保存しない（実在しない注文 ID を作らない）。
+    //   - **成行手仕舞いへ進まない**（逆指値が生きていれば、建玉を落とすと逆指値が孤立して反対建玉を生む）。
+    //   - 行を送信結果待ち（注文 ID が空・StopDecisionId＝このレグ・Attempt＝この試行）へ移す。次の巡回は入口の
+    //     EvaluatePendingStopLegAsync に入り、**同じ逆指値を送り直さない**（#853 追記: 3 巡回で 1→2→3 → 1→1→1）。
+    //   - 無音にしない: StopDispatchIndeterminate（Critical・CloseIntent＝逆指値レグ）を発行する。
+    private Outcome HoldIndeterminateStop(
+        ProtectiveStopOrder stop, int quantity, int attempt, Guid stopDecisionId, OrderIntent closeIntent,
+        List<object> events, Exception? cause)
+    {
+        _logger.LogError(cause,
+            "保護逆指値ガード: 逆指値の再発注の結果を確認できませんでした（送信済み・届いたか不明、または発注に着手済み）。"
+            + "成行手仕舞いへは進まず（逆指値が生きていれば孤立して反対方向の建玉を生むため）、同じ逆指値も送り直しません。"
+            + "予約は Reserved のまま据え置きます。証券会社の画面で逆指値の注文と建玉を確認してください: "
+            + "EntryDecisionId={EntryDecisionId} StopDecisionId={StopDecisionId} 銘柄={Symbol} 数量={Quantity}",
+            stop.EntryDecisionId, stopDecisionId, stop.Symbol, quantity);
+
+        var pending = stop with
+        {
+            StopDecisionId = stopDecisionId,
+            StopOrderId = string.Empty,
+            Quantity = quantity,
+            RemainingProtected = quantity,
+            Attempt = attempt,
+            UpdatedAt = clock.UtcNow,
+        };
+        stops.Save(pending);
+        AddHeldStopNotification(pending, quantity, stopDecisionId, closeIntent, events);
+        return Outcome.Unknown;
+    }
+
+    private void AddHeldStopNotification(
+        ProtectiveStopOrder stop, int quantity, Guid stopDecisionId, OrderIntent closeIntent, List<object> events)
+    {
+        var now = clock.UtcNow;
+        // 原因: 試行 1＝エントリーと同時に送った逆指値（発注執行が据え置いた）。2 以降＝失効後の再発注（ガードが据え置いた）。
+        events.Add(new ProtectiveStopCoverageLost(
+            stop.EntryDecisionId, stop.Symbol, stop.Market,
+            stop.Attempt <= 1 ? ProtectiveStopLossCause.RejectedAtEntry : ProtectiveStopLossCause.LapsedInFlight,
+            ProtectiveStopRemediation.StopDispatchIndeterminate,
+            quantity, stopDecisionId, closeIntent, now));
+        _heldCloseNotifications.MarkNotified(stopDecisionId, stop.EntryDecisionId, now);
     }
 
     // 成行手仕舞いレグが（今回の送信・以前の送信の記録・突合の解決のいずれかで）確定した: 保護を完了し、

@@ -95,6 +95,35 @@ public class ProtectiveStopLedgerHandlersTests
             .Should().Be(10, "不明のあいだは押さえたまま（終端が確認できるか、時間窓が満了するまで）");
     }
 
+    // 🔴 T-10-1076, FR-10, #853, IADR-0428 決定2: 送信結果が不明な**逆指値**（StopDispatchIndeterminate）が運ぶレグは逆指値そのものである。
+    // 逆指値が武装されたとき（ProtectiveStopPlaced）と同じ由来（S0）で承認行にする——生きていて約定すれば約定を相関でき、
+    // 損切りの成立として数えられる（保護喪失の手仕舞いの由来にすると損切りに数えない）。後から ProtectiveStopPlaced が届いても 1 行のまま。
+    [Fact]
+    public async Task 送信結果が不明な逆指値は逆指値の由来で承認行にし後着の武装で二重にならない()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var lost = new ProtectiveStopCoverageLostLedgerHandler(
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopCoverageLostLedgerHandler>.Instance);
+        var placed = new ProtectiveStopPlacedLedgerHandler(
+            ledger, new StubRecognitionFxRateResolver(150m), NullLogger<ProtectiveStopPlacedLedgerHandler>.Instance);
+        var entry = Guid.NewGuid();
+        var stopDecisionId = Guid.NewGuid();
+
+        await lost.Handle(new ProtectiveStopCoverageLost(
+            entry, "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.StopDispatchIndeterminate,
+            10, stopDecisionId, CloseIntent(), Now), CancellationToken.None);
+        await placed.Handle(
+            new ProtectiveStopPlaced(entry, stopDecisionId, "stop-found", CloseIntent(), 950m, 1, Now.AddHours(3)),
+            CancellationToken.None);
+
+        ledger.GetCloseApprovals("AAPL", Market.UnitedStates, Now.AddMinutes(-1))
+            .Should().ContainSingle(a => a.DecisionId == stopDecisionId)
+            .Which.Source.Should().Be(RiskManagementService.Features.RiskManagement.ApprovalSource.ProtectiveStopS0);
+        ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1))
+            .Should().Be(10, "承認行は 1 本分だけ（二重計上なし）");
+    }
+
     [Theory]
     [InlineData(ProtectiveStopRemediation.EntryCancelled)]
     [InlineData(ProtectiveStopRemediation.None)]

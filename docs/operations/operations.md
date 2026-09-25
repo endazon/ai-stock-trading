@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13, FR-10]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, MSP#266, MSP#635, planning#54]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -283,8 +283,10 @@ Reconciliation:
     門を開ける判断（実機での誤判定の確認）が滞っているということである。
     ⚠️ この内訳名は門を開けても変わらない（そのときは値が 0 になるだけである）。
     `失敗` が継続的に出る場合は照会・保存の恒常障害（DB 権限・接続・プローブ実装の不具合）を疑う。
-  - 🔴 **Critical** `…突合で「発注済み」と確定しました…この経路は保護逆指値を張りません…`。
-    エントリーであれば**無保護の建玉**が台帳に載ったということである。証券会社の画面で保護レグの有無を確認する。
+  - 🔴 **Critical** `…突合で「発注済み」と確定しました…この時点では保護レグがありません。承認時の手法で続けて張ります…`。
+    確定した時点では、エントリーであれば保護レグが無い。**直後の行**が結果である——`…保護逆指値を張りました…` /
+    `…ソフトウェア逆指値（S1）で守られています…` なら対応不要、`…保護の記録がありません…` / `…保護レグを張る処理が失敗しました…`
+    （Critical）や直後の行が無いときは、証券会社の画面で保護レグの有無を確認する（詳細は発注経路の Runbook）。
   - **Warning** `…照会は「未発注」と答えましたが、解放の門が閉じているため据え置きます…`。
     滞留は解消していない。Runbook の人手手順で解決する。
 - **停止**: `Reconciliation__Enabled=false` に戻して再デプロイすれば次回巡回から走査しない。

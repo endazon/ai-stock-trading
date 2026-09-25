@@ -1039,6 +1039,25 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotContain("解消にも失敗");
     }
 
+    // 🔴 T-10-1075, FR-10, FR-11, #853, IADR-0428 決定2: 保護逆指値そのものの送信結果が不明。監査要約だけを読んで
+    // 「逆指値は送った・届いたか分からない・取消も成行もしていない」と分かること。「失敗」「拒否」とは書かない。
+    [Fact]
+    public void 保護逆指値の送信結果が未確認なら_取消も成行もしていないと読め_失敗とも拒否とも書かない()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.RejectedAtEntry, ProtectiveStopRemediation.StopDispatchIndeterminate,
+                10, Guid.NewGuid(), Intent(PositionEffect.Close), StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ProtectiveStopCoverageLost));
+        entry.Summary.Should().Contain("保護逆指値は送信済み").And.Contain("結果未確認").And.Contain("取消・成行はしていない")
+            .And.Contain("要人手確認");
+        entry.Summary.Should().NotContain("解消にも失敗").And.NotContain("拒否された");
+        entry.Summary.Length.Should().BeLessThanOrEqualTo(201, "要約の上限（200 字＋省略記号）に収まり、結論が切れない");
+        entry.Summary.Should().NotEndWith("…");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]

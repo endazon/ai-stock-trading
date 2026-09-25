@@ -39,7 +39,10 @@ public class ProtectiveStopGuardTests
         /// <summary>この StopOrderId の注文照会は例外になる（ブローカ側の異常。その 1 件の評価が落ちる）。</summary>
         public HashSet<string> ThrowOnGetOrderIds { get; } = [];
 
-        /// <summary>再発注の送信が例外になる（接続断など）。</summary>
+        /// <summary>
+        /// 再発注の送信が例外になる（接続断＝接続確立の失敗。確実に未発注）。
+        /// #853, IADR-0428 決定1: 届いたか不明・分類できない例外は成行へ倒れず据え置く（ProtectiveStopGuardIndeterminateStopTests が固定する）。
+        /// </summary>
         public bool ThrowOnStopPlace { get; set; }
 
         public List<string> Cancelled { get; } = [];
@@ -57,7 +60,7 @@ public class ProtectiveStopGuardTests
             StopPlaceCount++;
             LastStopIntent = closeIntent;
             if (ThrowOnStopPlace)
-                throw new InvalidOperationException("再発注の送信に失敗（テスト）");
+                throw new BrokerUnavailableException("OpenD 切断・再発注は未発注（テスト）");
             return Task.FromResult(new BrokerOrder(
                 $"stop-re-{StopPlaceCount}", closeIntent,
                 RejectReplacement ? OrderStatus.Rejected : OrderStatus.Accepted, 0, 0m, Now,

@@ -223,7 +223,9 @@ public class OrderExecutionServiceAlternativeStopTests
         result.CoverageLost.Remediation.Should().Be(ProtectiveStopRemediation.EntryCancelled);
         broker.CancelCount.Should().Be(1);
         broker.MarketCloseCount.Should().Be(0);
-        stops.Find(approved.DecisionId).Should().BeNull("未受理の保護レグは記録しない");
+        // #853, IADR-0428 決定3: 送る前に残した承認時の保護の文脈は閉じる（巡回の対象に入らない）。
+        stops.Find(approved.DecisionId)!.State.Should().Be(ProtectiveStopState.Completed, "未受理の保護レグは記録しない");
+        stops.FindActive(100).Should().BeEmpty();
     }
 
     [Fact]

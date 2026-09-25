@@ -149,7 +149,30 @@ public static class NotificationFormatter
     // 二重決済でショート化する。伝えるのは「送った・届いたか分からない・重ねる前に確かめよ」である。
     // 🔴 #857, IADR-0369: CloseRejected は**「手仕舞いました」と言ってはならない**。
     // 証券会社が確認できる形で拒否しており、**建玉は残っている**。件名も本文も「解消した」と読ませない。
-    public static NotificationMessage From(ProtectiveStopCoverageLost e) => new(
+    public static NotificationMessage From(ProtectiveStopCoverageLost e) =>
+        e.Remediation == ProtectiveStopRemediation.StopDispatchIndeterminate
+            ? StopDispatchIndeterminate(e)
+            : CoverageLost(e);
+
+    // 🔴 FR-10, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定2: **保護逆指値そのものの送信結果が不明**（届いたか不明）。
+    // 本文を下の「逆指値が未受理／失効のため、〜」へ混ぜない——未受理ではない（受理されて生きているかもしれない）。
+    // 伝えるのは (1) 逆指値を送った・届いたか分からない、(2) システムは取消も成行も重ねない（生きていれば二重決済・孤立）、
+    // (3) 証券会社の画面で逆指値の有無を確かめる、(4) 解決まで約 1 時間ごとに繰り返す（原因を問わず保護記録が巡回される）。
+    private static NotificationMessage StopDispatchIndeterminate(ProtectiveStopCoverageLost e) => new(
+        "リスク統制: 保護逆指値の発注結果が未確認（据え置き中）",
+        $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 保護逆指値を"
+            + (e.Cause == ProtectiveStopLossCause.RejectedAtEntry ? "エントリーと同時に" : "失効後の再発注として")
+            + "**送信しましたが、結果を確認できていません（届いたか不明）**。"
+            + "**システムはエントリーの取消も成行手仕舞いも行わず、同じ逆指値も送り直しません**"
+            + "（逆指値が生きていれば、建玉を落とすと逆指値だけが残り、発火で反対方向の建玉になります）。"
+            + "**証券会社の画面で、この銘柄の逆指値の注文と建玉を確認してください。** 逆指値が生きていれば何もする必要はありません。"
+            + "逆指値が無く建玉が残っていれば**逆指値なしの建玉です**——手で逆指値を置くか手仕舞ってください。"
+            + "システムは注文照会の突合で結果が確定するまで据え置き、この通知を約 1 時間ごと（と再起動のたび）に繰り返します。"
+            + "**同じ StopDecisionId の通知は同じ 1 本の逆指値であり、新しい発注ではありません。**"
+            + $"StopDecisionId={e.CloseDecisionId}",
+        NotificationSeverity.Critical);
+
+    private static NotificationMessage CoverageLost(ProtectiveStopCoverageLost e) => new(
         e.Remediation switch
         {
             ProtectiveStopRemediation.CloseDispatchIndeterminate =>
