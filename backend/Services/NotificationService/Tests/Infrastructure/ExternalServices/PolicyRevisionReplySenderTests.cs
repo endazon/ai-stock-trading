@@ -48,7 +48,7 @@ public class PolicyRevisionReplySenderTests
         recorder.Sent.Select(s => s.Text).Should().Equal(
             "見出し", "【方針案 1/2】\n前半", "【方針案 2/2】\n後半", "【監視銘柄の入れ替え案】…" + PolicyRevisionReplySender.ApprovePrompt);
         recorder.Sent.Take(3).Should().OnlyContain(s => !ButtonIds(s.Components).Any());
-        ButtonIds(recorder.Sent[^1].Components).Should().Equal("ast-report-approve-daily-2026-09-27-3");
+        ButtonIds(recorder.Sent[^1].Components).Should().Equal("ast-policy-approve-daily-2026-09-27-3");
     }
 
     // T-10-1349: 途中（方針の 2 通目・ボタンの通）で送れなければボタンは出ず、版が承認待ちで保存されていること・確定と
@@ -97,5 +97,21 @@ public class PolicyRevisionReplySenderTests
         var denied = new Recorder();
         await PolicyRevisionReplySender.SendAsync(PolicyRevisionCommandResult.Denied("許可リスト外"), denied.Followup, NullLogger.Instance);
         denied.Sent.Should().ContainSingle().Which.Text.Should().Be("この操作は実行されませんでした（許可されていません）。");
+    }
+
+    // T-10-1408（#1025）: `/policy` の確認ボタンは専用の接頭辞（`/report approve` のボタンと分ける）で、入れ替えの件数を文言に出す。
+    [Fact]
+    public async Task 確認ボタンは入れ替えの件数を出し専用の接頭辞を持つ()
+    {
+        var recorder = new Recorder();
+
+        await PolicyRevisionReplySender.SendAsync(
+            PolicyRevisionCommandResult.Proposed(["見出し", "末尾"], "daily-2026-09-27", 3, WatchlistChangeCount: 2),
+            recorder.Followup, NullLogger.Instance);
+
+        var button = recorder.Sent[^1].Components!.Components.OfType<ActionRowComponent>().SelectMany(r => r.Components)
+            .OfType<ButtonComponent>().Single();
+        button.Label.Should().Contain("監視銘柄の入れ替え 2 件も適用");
+        button.CustomId.Should().StartWith("ast-policy-approve-").And.NotStartWith("ast-report-approve-");
     }
 }

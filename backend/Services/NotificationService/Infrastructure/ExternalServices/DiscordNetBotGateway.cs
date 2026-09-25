@@ -67,6 +67,10 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // **利用者が見ていない版を確定してしまう**。書式: "ast-report-approve-<periodKey>-<version>"。
     internal const string ReportApproveButtonPrefix = "ast-report-approve-";
 
+    // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433 決定 5: `/policy` の確認ボタン（確定＋その版の入れ替え案の適用）。
+    // 書式は `/report` と同じ "<prefix><periodKey>-<version>"。**`ast-report-approve-` で始まらない**（前方一致で取り違えない）。
+    internal const string PolicyApproveButtonPrefix = "ast-policy-approve-";
+
     // FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み。**kill switch・GFV 解除と同水準**
     // （確認ボタン → 理由＋確認フレーズのモーダル）。対象（市場と銘柄コード）はボタンとモーダルの CustomId に載せ、
     // 押下・送信の時点で復元してハンドラが再解析する（書式: "<prefix><market>-<symbol>"。市場の語はハイフンを含まない）。
@@ -85,6 +89,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     private readonly ReportCommandHandler _reportHandler;
     private readonly PositionDriftAdoptionCommandHandler _driftHandler;
     private readonly PolicyRevisionCommandHandler _policyHandler;
+    private readonly PolicyApprovalCommandHandler _policyApprovalHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
 
@@ -96,6 +101,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         ReportCommandHandler reportHandler,
         PositionDriftAdoptionCommandHandler driftHandler,
         PolicyRevisionCommandHandler policyHandler,
+        PolicyApprovalCommandHandler policyApprovalHandler,
         DiscordBotOptions options,
         ILogger<DiscordNetBotGateway> logger)
     {
@@ -106,6 +112,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         _reportHandler = reportHandler;
         _driftHandler = driftHandler;
         _policyHandler = policyHandler;
+        _policyApprovalHandler = policyApprovalHandler;
         _options = options;
         _logger = logger;
 
@@ -270,7 +277,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         // 🔴 **監視銘柄は変えない**（入れ替え案は表示のみ。FR-14 `DiscordSettingsAreReadOnlyTests`）。
         var policy = new SlashCommandBuilder()
             .WithName("policy")
-            .WithDescription("指示から AI が方針の改訂案を作ります（確定は確認ボタンで。監視銘柄は変わりません）")
+            .WithDescription("指示から AI が方針と監視銘柄の入れ替えの案を作ります（確認ボタンで確定したときだけ適用）")
             .AddOption(new SlashCommandOptionBuilder()
                 .WithName("instruction")
                 .WithDescription("改訂の指示（自由文・1000 文字まで）")
@@ -764,6 +771,13 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                     return;
                 }
 
+                // FR-13, ADR-0042 決定 1, #1025: `/policy` の確認ボタン（確定＋入れ替え案の適用）。
+                if (component.Data.CustomId.StartsWith(PolicyApproveButtonPrefix, StringComparison.Ordinal))
+                {
+                    await OnPolicyApproveButtonAsync(component).ConfigureAwait(false);
+                    return;
+                }
+
                 // FR-07, IADR-0240: 報告書の確定の確認ボタン（CustomId に periodKey と版番号を載せる）。
                 if (component.Data.CustomId.StartsWith(ReportApproveButtonPrefix, StringComparison.Ordinal))
                 {
@@ -799,6 +813,25 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             .HandleAsync(ContextOf(component, $"/report approve {periodKey} {version}"))
             .ConfigureAwait(false);
         await DisableComponentsAsync(component, ReportResponseTextOf(result)).ConfigureAwait(false);
+    }
+
+    // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: `/policy` の確認ボタンの押下 → 確定 → （確定できたときだけ）入れ替え案の適用。
+    // 判断（多層認証・版番号ガード・案の照会・適用・内訳の記録）はすべて PolicyApprovalCommandHandler が持つ。
+    private async Task OnPolicyApproveButtonAsync(SocketMessageComponent component)
+    {
+        var payload = component.Data.CustomId[PolicyApproveButtonPrefix.Length..];
+        var separator = payload.LastIndexOf('-');
+        if (separator <= 0 || separator == payload.Length - 1)
+            return;
+
+        var periodKey = payload[..separator];
+        var version = payload[(separator + 1)..];
+
+        await component.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        var result = await _policyApprovalHandler
+            .HandleAsync(ContextOf(component, $"/policy approve {periodKey} {version}"))
+            .ConfigureAwait(false);
+        await DisableComponentsAsync(component, result.Message).ConfigureAwait(false);
     }
 
     // FR-20, UC-06: 段階遷移確認ボタンの押下。CustomId のプレフィックスで昇格/差し戻しを判別し、末尾の遷移先を復元する。

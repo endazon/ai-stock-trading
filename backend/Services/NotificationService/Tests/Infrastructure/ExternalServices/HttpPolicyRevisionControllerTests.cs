@@ -42,7 +42,7 @@ public class HttpPolicyRevisionControllerTests
     {
         var handler = new FakeHandler(status, """{"error":"AI の案を作れませんでした（x）。方針は変わっていません。"}""");
 
-        var outcome = await Controller(handler).ReviseAsync(null, "指示", "developer");
+        var outcome = await Controller(handler).ReviseAsync(null, "指示", "developer", null);
 
         (outcome.Succeeded, outcome.Indeterminate).Should().Be((false, false));
         outcome.Message.Should().Be("AI の案を作れませんでした（x）。方針は変わっていません。");
@@ -52,7 +52,7 @@ public class HttpPolicyRevisionControllerTests
     [Fact]
     public async Task 本文の無い非2xxは状態番号で案なしを伝える()
     {
-        var outcome = await Controller(new FakeHandler(HttpStatusCode.Forbidden, "")).ReviseAsync(null, "指示", "developer");
+        var outcome = await Controller(new FakeHandler(HttpStatusCode.Forbidden, "")).ReviseAsync(null, "指示", "developer", null);
 
         outcome.Succeeded.Should().BeFalse();
         outcome.Indeterminate.Should().BeFalse();
@@ -63,16 +63,16 @@ public class HttpPolicyRevisionControllerTests
     [Fact]
     public async Task タイムアウトと例外は不明として伝える()
     {
-        var timeout = await Controller(new ThrowingHandler(new TaskCanceledException("timeout"))).ReviseAsync(null, "指示", "developer");
+        var timeout = await Controller(new ThrowingHandler(new TaskCanceledException("timeout"))).ReviseAsync(null, "指示", "developer", null);
         (timeout.Succeeded, timeout.Indeterminate).Should().Be((false, true));
         timeout.Message.Should().Contain("/report show");
 
-        var broken = await Controller(new ThrowingHandler(new HttpRequestException("reset"))).ReviseAsync(null, "指示", "developer");
+        var broken = await Controller(new ThrowingHandler(new HttpRequestException("reset"))).ReviseAsync(null, "指示", "developer", null);
         broken.Indeterminate.Should().BeTrue();
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
-        var act = () => Controller(new ThrowingHandler(new TaskCanceledException())).ReviseAsync(null, "指示", "developer", cts.Token);
+        var act = () => Controller(new ThrowingHandler(new TaskCanceledException())).ReviseAsync(null, "指示", "developer", null, cts.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -83,7 +83,7 @@ public class HttpPolicyRevisionControllerTests
     [InlineData("""{"periodKey":"daily-2026-09-27","version":0,"policySummary":"p"}""")]
     public async Task 解釈できない2xxは不明(string body)
     {
-        var outcome = await Controller(new FakeHandler(HttpStatusCode.OK, body)).ReviseAsync(null, "指示", "developer");
+        var outcome = await Controller(new FakeHandler(HttpStatusCode.OK, body)).ReviseAsync(null, "指示", "developer", null);
 
         (outcome.Succeeded, outcome.Indeterminate).Should().Be((false, true));
     }
@@ -95,7 +95,7 @@ public class HttpPolicyRevisionControllerTests
         ReportRevise.PolicyRevisionResponse sent = SenderResponse();
         var handler = new FakeHandler(HttpStatusCode.OK, JsonSerializer.Serialize(sent, ReportWire));
 
-        var outcome = await Controller(handler).ReviseAsync("daily-2026-09-27", "指示", "developer");
+        var outcome = await Controller(handler).ReviseAsync("daily-2026-09-27", "指示", "developer", null);
 
         outcome.Succeeded.Should().BeTrue();
         var proposal = outcome.Proposal!;
@@ -112,7 +112,7 @@ public class HttpPolicyRevisionControllerTests
     {
         var handler = new FakeHandler(HttpStatusCode.OK, JsonSerializer.Serialize(SenderResponse(), ReportWire));
 
-        await Controller(handler).ReviseAsync("daily-2026-09-27", "もっと積極的に", "developer");
+        await Controller(handler).ReviseAsync("daily-2026-09-27", "もっと積極的に", "developer", null);
 
         handler.Method.Should().Be(HttpMethod.Post);
         handler.RequestUri.Should().Be("http://report-service/reports/policy-revisions");
@@ -135,7 +135,7 @@ public class HttpPolicyRevisionControllerTests
 
         ReportRevise.PolicyRevisionResponse sent = SenderResponse() with { PolicySummary = ReportRevise.PolicyRevisionResponse.Display(stored) };
         var outcome = await Controller(new FakeHandler(HttpStatusCode.OK, JsonSerializer.Serialize(sent, ReportWire)))
-            .ReviseAsync("daily-2026-09-27", "指示", "developer");
+            .ReviseAsync("daily-2026-09-27", "指示", "developer", null);
         var proposal = outcome.Proposal!;
         var messages = NotificationService.Domain.PolicyRevisionMessage.Build(
             proposal.PeriodKey, proposal.Version, proposal.Presented, proposal.Created, proposal.Message,

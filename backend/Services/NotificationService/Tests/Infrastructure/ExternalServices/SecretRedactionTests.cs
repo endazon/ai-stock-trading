@@ -175,6 +175,9 @@ public class SecretRedactionTests
     private static void CreateGateway(DiscordBotOptions options, RecordingLoggerProvider recorder)
     {
         using var factory = LoggerFactoryOf(recorder);
+        var reportHandler = new ReportCommandHandler(
+            new StubReportReviewController(), new VersionedConfirmationGuard(), options,
+            factory.CreateLogger<ReportCommandHandler>());
         DiscordBotGatewayFactory.Create(
             options,
             new KillSwitchCommandHandler(
@@ -186,14 +189,16 @@ public class SecretRedactionTests
             new GoodFaithViolationCommandHandler(
                 new StubGoodFaithViolationController(), options,
                 factory.CreateLogger<GoodFaithViolationCommandHandler>()),
-            new ReportCommandHandler(
-                new StubReportReviewController(), new VersionedConfirmationGuard(), options,
-                factory.CreateLogger<ReportCommandHandler>()),
+            reportHandler,
             new PositionDriftAdoptionCommandHandler(
                 new StubPositionDriftAdoptionController(), options,
                 factory.CreateLogger<PositionDriftAdoptionCommandHandler>()),
             new PolicyRevisionCommandHandler(
-                new StubPolicyRevisionController(), options, factory.CreateLogger<PolicyRevisionCommandHandler>()),
+                new FakePolicyRevisionController(), new FakeWatchlistController(), options,
+                factory.CreateLogger<PolicyRevisionCommandHandler>()),
+            new PolicyApprovalCommandHandler(
+                reportHandler, new FakePolicyRevisionController(), new FakeWatchlistController(), options,
+                factory.CreateLogger<PolicyApprovalCommandHandler>()),
             factory);
     }
 
@@ -239,13 +244,6 @@ public class SecretRedactionTests
             Task.FromResult(new StageGateStatusResult(true, "撤退評価"));
     }
 
-    // #1016, IADR-0431: 本テストは Gateway の生成だけを見るため、報告書サービスの方針の改訂は呼ばれない。
-    private sealed class StubPolicyRevisionController : IPolicyRevisionController
-    {
-        public Task<PolicyRevisionCommandOutcome> ReviseAsync(
-            string? periodKey, string instruction, string onBehalfOf, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("Gateway の生成では報告書サービスを呼ばない。");
-    }
 
     private sealed class StubPositionDriftAdoptionController : IPositionDriftAdoptionController
     {

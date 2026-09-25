@@ -47,6 +47,11 @@ public class DiscordSettingsAreReadOnlyTests
         "/pause forever",
         "/resume all",
         "/report approve-all",
+        // FR-13, ADR-0042 決定 2, #1025: `/policy approve` は**銘柄を取らない**。銘柄を添えた形・版の無い形は解釈されない。
+        "/policy approve daily-2026-09-28 3 NVDA",
+        "/policy approve daily-2026-09-28",
+        "/policy add NVDA",
+        "/policy watchlist add NVDA",
     ];
 
     [Theory]
@@ -85,8 +90,13 @@ public class DiscordSettingsAreReadOnlyTests
             .HandleAsync(context, "STOP TRADING", "理由");
         // T-10-1334, #1016, IADR-0431: 方針の改訂も、設定変更の試みでは起動しない（指示の本文に同じ語を入れても同じ）。
         var policy = await new PolicyRevisionCommandHandler(
-            probes.Policy, options, NullLogger<PolicyRevisionCommandHandler>.Instance)
+            probes.Policy, probes.Watchlist, options, NullLogger<PolicyRevisionCommandHandler>.Instance)
             .HandleAsync(context, raw);
+        // FR-13, ADR-0042 決定 1・2, #1025: 入れ替え案の適用（唯一の例外）も、設定変更の試みでは起動しない。
+        var approval = await new PolicyApprovalCommandHandler(
+            new ReportCommandHandler(probes.Report, new VersionedConfirmationGuard(), options, NullLogger<ReportCommandHandler>.Instance),
+            probes.Policy, probes.Watchlist, options, NullLogger<PolicyApprovalCommandHandler>.Instance)
+            .HandleAsync(context);
 
         killSwitch.WasExecuted.Should().BeFalse();
         pause.WasExecuted.Should().BeFalse();
@@ -95,17 +105,21 @@ public class DiscordSettingsAreReadOnlyTests
         report.WasExecuted.Should().BeFalse();
         drift.WasExecuted.Should().BeFalse();
         policy.WasExecuted.Should().BeFalse();
+        approval.ConfirmedNow.Should().BeFalse();
+        approval.WatchlistApplyStatus.Should().BeNull();
         probes.Calls.Should().Be(0, "設定変更の試みでは、どの下流サービスも呼ばれてはならない");
     }
 
     [Theory]
-    // 🔴 **例外はこの 2 系統だけである**（FR-14「kill switch と一時停止/再開のみを例外とする」）。
-    // 例外の範囲が広がれば（＝新しい破壊的コマンドが解釈されるようになれば）本テストが落ちる。
+    // 🔴 **例外はこの 3 系統だけである**（FR-14「kill switch と一時停止/再開のみを例外とする」＋計画 ADR-0042 決定 2
+    // 「決定 1 の入れ替え案の適用だけを足す」）。例外の範囲が広がれば（＝新しい破壊的コマンドが解釈されるようになれば）本テストが落ちる。
     [InlineData("/killswitch", BotCommandKind.KillSwitchEngage)]
     [InlineData("/killswitch off", BotCommandKind.KillSwitchDisengage)]
     [InlineData("/pause", BotCommandKind.Pause)]
     [InlineData("/resume", BotCommandKind.Resume)]
-    public void 参照のみの例外は_kill_switch_と一時停止_再開だけである(string raw, BotCommandKind expected)
+    // T-10-1362, FR-13, ADR-0042 決定 1・2, #1025: 利用者が確定した `/policy` の案の入れ替えの適用（銘柄は取らない）。
+    [InlineData("/policy approve daily-2026-09-28 3", BotCommandKind.PolicyApprove)]
+    public void 参照のみの例外は_kill_switch_と一時停止_再開と方針案の入れ替えの適用だけである(string raw, BotCommandKind expected)
     {
         BotCommandParser.Parse(raw).Kind.Should().Be(expected);
     }
@@ -120,18 +134,32 @@ public class DiscordSettingsAreReadOnlyTests
         BotCommandParser.Parse(raw).Kind.Should().Be(expected);
     }
 
-    // T-10-1335, FR-14, #1016, IADR-0431: 方針の改訂の窓口（`/policy`）は**報告書の改訂案を作らせる口だけ**を持ち、
-    // 監視銘柄（設定値）を変える口を持たない。案に含まれる監視銘柄の入れ替え案は表示されるだけである。
-    // 口が増えれば（例: 案の入れ替えを確定時に適用する）本テストが落ちる——FR-14 の例外を広げるには計画の改定が要る。
+    // T-10-1335（#1025 で改訂）, FR-14, ADR-0042 決定 1・2, IADR-0433: 監視銘柄を変え得る口は**市場監視の 1 つのポートだけ**で、
+    // 持つのは「現在の監視銘柄の照会」と「案の適用」の 2 つに限る（銘柄を自由に追加・削除する口は無い）。
+    // その口を持つハンドラは `/policy` の 2 つだけ（照会＝案の土台、適用＝確定した案）。口やハンドラが増えれば本テストが落ちる
+    // ——FR-14 の例外を広げるには計画の改定が要る。
     [Fact]
-    public void 方針の改訂の窓口は改訂案を作らせる口だけを持つ()
+    public void 監視銘柄を変え得る口は案の適用だけで_持つのは方針の改訂のハンドラだけである()
     {
-        typeof(IPolicyRevisionController).GetMethods().Select(m => m.Name)
-            .Should().Equal(nameof(IPolicyRevisionController.ReviseAsync));
+        var assembly = typeof(PolicyRevisionCommandHandler).Assembly;
 
-        typeof(PolicyRevisionCommandHandler).Assembly.GetTypes()
-            .Where(t => t.IsInterface && t.Name.Contains("Watchlist", StringComparison.OrdinalIgnoreCase))
-            .Should().BeEmpty("通知サービスに監視銘柄を扱うポートを置かない（Discord から設定値を変えない）");
+        assembly.GetTypes().Where(t => t.IsInterface && t.Name.Contains("Watchlist", StringComparison.OrdinalIgnoreCase))
+            .Should().Equal(typeof(IMarketMonitorWatchlistController));
+        typeof(IMarketMonitorWatchlistController).GetMethods().Select(m => m.Name).Order()
+            .Should().Equal(nameof(IMarketMonitorWatchlistController.ApplyProposalAsync), nameof(IMarketMonitorWatchlistController.GetWatchlistAsync));
+        typeof(IPolicyRevisionController).GetMethods().Select(m => m.Name).Order()
+            .Should().Equal(
+                nameof(IPolicyRevisionController.GetWatchlistProposalAsync),
+                nameof(IPolicyRevisionController.RecordWatchlistApplyAsync),
+                nameof(IPolicyRevisionController.ReviseAsync));
+
+        var holders = assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract && t.Namespace?.StartsWith("NotificationService.Features", StringComparison.Ordinal) == true)
+            .Where(t => t.GetConstructors().Any(c => c.GetParameters().Any(p => p.ParameterType == typeof(IMarketMonitorWatchlistController))))
+            .Select(t => t.Name)
+            .Order()
+            .ToList();
+        holders.Should().Equal(nameof(PolicyApprovalCommandHandler), nameof(PolicyRevisionCommandHandler));
     }
 
     private static DiscordBotOptions FullyConfigured()
@@ -165,6 +193,8 @@ public class DiscordSettingsAreReadOnlyTests
         public IPositionDriftAdoptionController Drift => new DriftProbe(this);
 
         public IPolicyRevisionController Policy => new PolicyProbe(this);
+
+        public IMarketMonitorWatchlistController Watchlist => new WatchlistProbe(this);
 
         private void Record() => Calls++;
 
@@ -250,10 +280,43 @@ public class DiscordSettingsAreReadOnlyTests
         private sealed class PolicyProbe(Probes owner) : IPolicyRevisionController
         {
             public Task<PolicyRevisionCommandOutcome> ReviseAsync(
-                string? periodKey, string instruction, string onBehalfOf, CancellationToken cancellationToken = default)
+                string? periodKey, string instruction, string onBehalfOf, IReadOnlyList<WatchlistSnapshotItemView>? currentWatchlist,
+                CancellationToken cancellationToken = default)
             {
                 owner.Record();
                 return Task.FromResult(new PolicyRevisionCommandOutcome(true, false, "改訂"));
+            }
+
+            public Task<WatchlistProposalLookup> GetWatchlistProposalAsync(
+                string periodKey, int version, CancellationToken cancellationToken = default)
+            {
+                owner.Record();
+                return Task.FromResult(new WatchlistProposalLookup(true, false, null, "案なし"));
+            }
+
+            public Task<bool> RecordWatchlistApplyAsync(
+                Guid attemptId, string outcome, IReadOnlyList<WatchlistApplyItemView> items, string message, string onBehalfOf,
+                CancellationToken cancellationToken = default)
+            {
+                owner.Record();
+                return Task.FromResult(true);
+            }
+        }
+
+        private sealed class WatchlistProbe(Probes owner) : IMarketMonitorWatchlistController
+        {
+            public Task<WatchlistSnapshotResult> GetWatchlistAsync(CancellationToken cancellationToken = default)
+            {
+                owner.Record();
+                return Task.FromResult(new WatchlistSnapshotResult(true, [], "照会"));
+            }
+
+            public Task<WatchlistApplyOutcome> ApplyProposalAsync(
+                IReadOnlyList<WatchlistSnapshotItemView> expected, IReadOnlyList<WatchlistChangeSuggestionView> changes,
+                string proposalRef, string onBehalfOf, CancellationToken cancellationToken = default)
+            {
+                owner.Record();
+                return Task.FromResult(new WatchlistApplyOutcome(WatchlistApplyStatus.Applied, [], null, "適用"));
             }
         }
 
