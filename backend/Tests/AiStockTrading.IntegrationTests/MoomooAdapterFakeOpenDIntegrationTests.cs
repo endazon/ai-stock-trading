@@ -36,8 +36,23 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
     // 先頭を拾う実装になっていれば実弾口座のヘッダで発注してしまう——それを試験で捕まえるためである。
     private const ulong RealAccId = 284852705357372276UL;
 
+    // 🔴 #988, IADR-0379 決定 1・2: **応答が返ることを表明する試験に、有限の応答待ち（ReplyTimeout）を置かない。**
+    // 偽 OpenD の応答は実 SDK と同じく別スレッド（スレッドプール）から返り（`Reply` の `Task.Run`）、応答待ちの打ち切りも
+    // スレッドプールが配送する。プールが塞がると「500 ms の打ち切り」と「すぐ返るはずの応答」は空いた瞬間に両方とも
+    // 期限切れで、どちらが先に走るかは保証されない（応答を 1 秒遅らせると陰性対照以外の 17 件が決定的に赤。#981 と同じ機序）。
+    // よって応答が返る試験は応答待ちを無期限にし、打ち切りで据え置くことは OpenD が応答しない陰性対照（打ち切りだけが
+    // 完了の口）で固定する。
     private static MoomooBrokerOptions Options() =>
-        new("opend", 11111) { ReplyTimeout = TimeSpan.FromMilliseconds(500) };
+        new("opend", 11111) { ReplyTimeout = Timeout.InfiniteTimeSpan };
+
+    // 打ち切りだけが完了の口である陰性対照（`Refusing`＝接続完了通知が返らない）の応答待ち。応答と競走しない。
+    private static readonly TimeSpan StuckReplyTimeout = TimeSpan.FromMilliseconds(500);
+
+    private static MoomooBrokerOptions StuckOptions() =>
+        new("opend", 11111) { ReplyTimeout = StuckReplyTimeout };
+
+    // 合否の基準ではない。応答が返らなくなったときに黙って固まる代わりに、理由つきで赤くするための上限（IADR-0379 決定 2）。
+    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
 
     // 発注先の選択は運用と同じ語彙（Helm の broker.tier=moomoo-sim / env Broker__Provider・Broker__Environment）
     // から組む。**テスト専用の近道を作らない**——閂 0（LiveTradingGate）と Provider の写像もこの経路に乗る。
@@ -70,7 +85,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = CreateAdapter(client, out var selection);
 
-        var placed = await adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken);
+        var placed = await adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         // 接続 → 口座照会が済んでいる（偽 OpenD 側の実測）。
         opend.Connections.Should().ContainSingle("接続は 1 本で足りる（作り直しは失敗時のみ）");
@@ -83,7 +98,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         opend.PlacedOrders.Should().ContainSingle();
 
         // 約定照会（GetOrderList 経由）でブローカ側の約定が読める。
-        var queried = await adapter.GetOrderAsync(placed.OrderId, TestContext.Current.CancellationToken);
+        var queried = await adapter.GetOrderAsync(placed.OrderId, TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         queried.Should().NotBeNull();
         queried!.Status.Should().Be(OrderStatus.Filled);
@@ -104,7 +119,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = CreateAdapter(client, out _);
 
-        await adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken);
+        await adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         var sent = opend.PlacedOrders.Should().ContainSingle().Subject;
         sent.Header.TrdEnv.Should().Be((int)TrdCommon.TrdEnv.TrdEnv_Simulate, "実弾（TrdEnv_Real）は撃たない");
@@ -128,14 +143,14 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var positions = await adapter.GetPositionsAsync(TestContext.Current.CancellationToken);
+        var positions = await adapter.GetPositionsAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         positions.Should().NotBeNull("照会不能（null）と建玉ゼロ（空列）は別物である");
         // 対応市場は US / JP の 2 つ。偽 OpenD は US にだけ建玉を返す。
         positions!.Should().ContainSingle();
         positions[0].Symbol.Should().Be("AAPL");
         positions[0].Quantity.Should().Be(10);
-        (await adapter.IsOperationalAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
+        (await adapter.IsOperationalAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken)).Should().BeTrue();
     }
 
     // T-10-508, T-10-514, FR-10, #869, #897, ADR-0041 決定2, IADR-0354 決定1:
@@ -183,7 +198,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         state.Should().NotBeNull("口座種別は確認できている（評価額の可否で種別まで捨てない）");
         state!.AccountType.Should().Be(AccountType.Margin);
@@ -202,7 +217,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         state.Should().NotBeNull();
         state!.AccountType.Should().Be(AccountType.Margin);
@@ -231,7 +246,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         state.Should().NotBeNull();
         state!.EquityInBase.Should().Be(3_000m, "要求した通貨（USD）を前提として採る");
@@ -251,7 +266,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         state!.EquityInBase.Should().Be(3_000m);
         logger.Entries.Should().ContainSingle(e =>
@@ -296,7 +311,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         state.Should().NotBeNull("口座種別は確認できている（評価額の可否で種別まで捨てない）");
         state!.AccountType.Should().Be(AccountType.Margin);
@@ -317,7 +332,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         state!.EquityInBase.Should().BeNull();
         logger.Entries.Should().Contain(
@@ -343,7 +358,7 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = (MoomooBrokerAdapter)CreateAdapter(client, out _);
 
-        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken);
+        var state = await adapter.GetAccountStateAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         state!.EquityInBase.Should().Be(3_000m, "明示された通貨を内訳で上書きしない（決定B）");
     }
@@ -358,15 +373,19 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
     };
 
     // #754 陰性対照, FR-05, IADR-0211: OpenD が受け付けないなら**注文は 1 度も送られない**。
+    // #988, IADR-0379 決定 2: 完了の口は応答待ちの打ち切りだけ（StuckOptions）。応答ではなく打ち切りで終わったことを
+    // InnerException で観測する。
     [Fact]
     public async Task 陰性対照_OpenDが応答しないと発注は1度もブローカーへ届かない()
     {
         using var opend = new FakeOpenD { Refusing = true };
-        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        using var client = new MMApiMoomooTradeClient(StuckOptions(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = CreateAdapter(client, out _);
 
-        await Assert.ThrowsAsync<BrokerUnavailableException>(
-            () => adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken));
+        var thrown = await Assert.ThrowsAsync<BrokerUnavailableException>(
+            () => adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken));
+
+        thrown.InnerException.Should().BeOfType<TimeoutException>("接続の完了を待つ応答待ちの打ち切りで据え置く");
 
         opend.PlacedOrders.Should().BeEmpty("接続が確立していない間は注文を組み立てもしない");
         opend.Connections.Should().AllSatisfy(c => c.PlaceOrderCalls.Should().Be(0));
@@ -375,21 +394,22 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
     // #754 陰性対照, IADR-0211: 不達を Rejected へ**丸めない**。
     // Rejected は「証券会社が受理しなかった状態」（FR-05）であり、届いてすらいない事象を混ぜると
     // 拒否件数の集計が接続障害で汚染される。
+    // #988: 完了の口は応答待ちの打ち切りだけ（StuckOptions。上の陰性対照と同じ）。
     [Fact]
     public async Task 陰性対照_OpenD不達はRejectedへ丸めずBrokerUnavailableのまま伝播する()
     {
         using var opend = new FakeOpenD { Refusing = true };
-        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        using var client = new MMApiMoomooTradeClient(StuckOptions(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
         var adapter = CreateAdapter(client, out _);
 
         var thrown = await Assert.ThrowsAsync<BrokerUnavailableException>(
-            () => adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken));
+            () => adapter.PlaceOrderAsync(BuyIntent(), TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken));
 
         thrown.Should().NotBeNull();
         // 建玉照会は「不明（null）」へ倒れる——こちらは丸めてよい（乖離報告を止める安全側）。
-        (await ((MoomooBrokerAdapter)adapter).GetPositionsAsync(TestContext.Current.CancellationToken))
+        (await ((MoomooBrokerAdapter)adapter).GetPositionsAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken))
             .Should().BeNull();
-        (await ((MoomooBrokerAdapter)adapter).IsOperationalAsync(TestContext.Current.CancellationToken))
+        (await ((MoomooBrokerAdapter)adapter).IsOperationalAsync(TestContext.Current.CancellationToken).WaitAsync(Guard, TestContext.Current.CancellationToken))
             .Should().BeFalse();
     }
 
