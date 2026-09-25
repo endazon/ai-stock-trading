@@ -11,7 +11,7 @@ ids: [FR-02, FR-08, FR-10, FR-11, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, N
 adrs: [ADR-0003, ADR-0004, ADR-0012, MSP:ADR-0004, MSP:ADR-0024]
 iadrs: [IADR-0011, IADR-0019, IADR-0324, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316]
 specs: [20260807_450_security-spec-from-measurement, 20260910_727_msp-linked-realm-unification, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization]
-issues: [#24, #346, #450, #456, #627, #708, #727, MSP#445, MSP#1015, MSP#1372]
+issues: [#24, #318, #346, #450, #456, #627, #708, #727, MSP#445, MSP#1015, MSP#1372]
 -->
 
 
@@ -158,7 +158,7 @@ issues: [#24, #346, #450, #456, #627, #708, #727, MSP#445, MSP#1015, MSP#1372]
 | Vault（External Secrets Operator） | 🔴 **受け口のテンプレートはあるが既定 `externalSecrets.enabled: false`。ストア（Vault / ESO）は本リポジトリに無く [#24](https://github.com/endazon/ai-stock-trading/issues/24) の管掌である。** テンプレート自身が「**受け口の用意は Vault 化の充足ではない**」と明記している |
 | 実弾解禁との関係 | 実アダプタ実装の実装 ADR §3 が実弾解禁の前提に挙げる「**秘匿情報の Vault 化**」は**未充足のまま**である |
 | moomoo のパスワード | **平文を置かない。MD5（小文字 hex）を格納**し、entrypoint が `OpenD.xml` へ書く |
-| ローテーション | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。`refreshInterval: 1h` は Vault → Secret の**同期間隔**であって、**鍵そのものの更新ではない**。鍵の再発行手順は文書化されていない |
+| ローテーション | **未実装**（担当 [#24](https://github.com/endazon/ai-stock-trading/issues/24)）。`refreshInterval: 1h` は Vault → Secret の**同期間隔**であって、**鍵そのものの更新ではない**。鍵の再発行手順は文書化されていない。**［2026-09-26 追記］Discord Webhook に限り、再発行（漏洩時の失効）と蓄積分の後始末の手順を [Discord Webhook 再発行 Runbook](../operations/discord-webhook-rotation-runbook.md) に置いた**（値は Vault 側で変える。ExternalSecret が所有する環境で `ast-secrets` を直接書き換えると次の同期で戻る）。他の鍵の手順は未整備のまま |
 
 ### コミット防止 — **2 段**
 

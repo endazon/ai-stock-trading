@@ -3,7 +3,7 @@ title: Vault 秘匿参照（External Secrets）opt-in 手順 Runbook
 type: runbook
 status: draft
 created: 2026-07-19
-updated: 2026-09-15
+updated: 2026-09-26
 author: endazon (with Claude Code)
 ---
 <!-- trace:
@@ -11,7 +11,7 @@ ids: [NFR-05, SC-04]
 adrs: [ADR-0006, ADR-0022]
 iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, IADR-0308, IADR-0341, MSP:IADR-0077]
 specs: [20260915_795_screen-only-eso-wiring]
-issues: [#24, #262, #263, #364, #686, #795, MSP#1477]
+issues: [#24, #318, #262, #263, #364, #686, #795, MSP#1477]
 -->
 
 
@@ -89,11 +89,17 @@ issues: [#24, #262, #263, #364, #686, #795, MSP#1477]
 1. Vault へ鍵を投入（例・値はダミー禁止／実値は端末外に出さない）:
 
    ```sh
-   vault kv put ai-stock-trading/app-secrets \
+   vault kv put -mount=secret ai-stock-trading/app-secrets \
      finnhub-api-key=... service-auth-client-id=... service-auth-client-secret=... # 以下必要な鍵のみ
-   vault kv put ai-stock-trading/moomoo login-account=... login-pwd-md5=...
-   vault kv put ai-stock-trading/moomoo-rsa opend_rsa.pem=@opend_rsa.pem
+   vault kv put -mount=secret ai-stock-trading/moomoo login-account=... login-pwd-md5=...
+   vault kv put -mount=secret ai-stock-trading/moomoo-rsa opend_rsa.pem=@opend_rsa.pem
    ```
+
+   **［2026-09-26 訂正 / #318］** 従前の例は `-mount` を欠いていた。稼働中の `ClusterSecretStore/vault-backend` は
+   **マウント `secret`（KV v2）**を読むため、上表の「Vault KV パス」はそのマウントの中のパスである
+   （`-mount` 無しでは `ai-stock-trading` というマウントを探して失敗する）。
+   🔴 `put` は**そのパスの全キーを置き換える**。値が入っているパスの 1 キーだけを足す・変えるときは `vault kv patch -mount=secret …` を使う
+   （Vault への届き方とトークンの出所は [Discord Webhook 再発行 Runbook](discord-webhook-rotation-runbook.md) 手順 2 のフォールバック）。
 
 2. チャートの opt-in を有効化（`secretStoreRef.name` は導入済みストア名に合わせる）:
 
