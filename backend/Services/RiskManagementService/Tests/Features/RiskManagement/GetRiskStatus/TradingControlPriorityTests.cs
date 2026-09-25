@@ -87,7 +87,7 @@ public class TradingControlPriorityTests
             new InMemoryPortfolioLedgerStore(),
             new FakeClock(Now, Today)).Build();
 
-        public ScreeningOutcome Screen(PositionEffect effect)
+        public async Task<ScreeningOutcome> ScreenAsync(PositionEffect effect)
         {
             // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
             var service = new OrderScreeningService(
@@ -96,11 +96,12 @@ public class TradingControlPriorityTests
                 Lockout,
                 new FakeClock(Now, Today),
                 new WeekendBusinessCalendar(),
-                new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
+                new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
+                TestShortSellContexts.Unavailable(new FakeClock(Now, Today)));
             var intent = new OrderIntent(
                 "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
                 10, 1_000m, effect);
-            return service.Screen(new TradeDecisionMade(Guid.NewGuid(), intent, "テスト判断", Now));
+            return await service.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), intent, "テスト判断", Now));
         }
     }
 
@@ -177,9 +178,9 @@ public class TradingControlPriorityTests
     // **手仕舞い（Close）と損切りは止めない**」。8 通りすべてで成立する。
     [Theory]
     [MemberData(nameof(AllCombinations))]
-    public void どの統制が成立していても手仕舞いは止まらない(bool killSwitch, bool lockout, bool paused)
+    public async Task どの統制が成立していても手仕舞いは止まらない(bool killSwitch, bool lockout, bool paused)
     {
-        var outcome = new Fixture(killSwitch, lockout, paused).Screen(PositionEffect.Close);
+        var outcome = await new Fixture(killSwitch, lockout, paused).ScreenAsync(PositionEffect.Close);
 
         outcome.IsApproved.Should().BeTrue();
         outcome.Rejected.Should().BeNull();
@@ -194,10 +195,10 @@ public class TradingControlPriorityTests
     // 抜けが無いことを、成立の組み合わせすべてで固定する。
     [Theory]
     [MemberData(nameof(AllCombinations))]
-    public void 統制がひとつでも成立していれば新規建ては通らない(
+    public async Task 統制がひとつでも成立していれば新規建ては通らない(
         bool killSwitch, bool lockout, bool paused)
     {
-        var outcome = new Fixture(killSwitch, lockout, paused).Screen(PositionEffect.Open);
+        var outcome = await new Fixture(killSwitch, lockout, paused).ScreenAsync(PositionEffect.Open);
 
         outcome.IsApproved.Should().Be(!(killSwitch || lockout || paused));
     }
@@ -205,7 +206,7 @@ public class TradingControlPriorityTests
     // FR-10, UC-06, ADR-0009:「再開（resume）は一時停止のみを解除する。kill switch と
     // 日次損失ロックアウトは解除しない」。resume を迂回路にして停止を抜けられないことを固定する。
     [Fact]
-    public void 再開は一時停止のみを解除し他の二統制を解除しない()
+    public async Task 再開は一時停止のみを解除し他の二統制を解除しない()
     {
         var f = new Fixture(killSwitch: true, lockout: true, paused: true);
 
@@ -216,13 +217,13 @@ public class TradingControlPriorityTests
         status.KillSwitchEngaged.Should().BeTrue();
         status.DailyLossLockoutActive.Should().BeTrue();
         status.ActiveControl.Should().Be(ActiveTradingControl.KillSwitch);
-        f.Screen(PositionEffect.Open).IsApproved.Should().BeFalse();
+        (await f.ScreenAsync(PositionEffect.Open)).IsApproved.Should().BeFalse();
     }
 
     // FR-10, UC-06, IADR-0008: 日次損失ロックアウトは**機械的解除のみ**（翌営業日まで）。
     // 一時停止を解除しても、kill switch を解除しても、ロックアウトは残り新規建ては通らない。
     [Fact]
-    public void 日次損失ロックアウトは他統制の解除では抜けられない()
+    public async Task 日次損失ロックアウトは他統制の解除では抜けられない()
     {
         var f = new Fixture(killSwitch: true, lockout: true, paused: true);
 
@@ -233,7 +234,7 @@ public class TradingControlPriorityTests
         status.ActiveControl.Should().Be(ActiveTradingControl.DailyLossLockout);
         status.NewEntriesBlocked.Should().BeTrue();
 
-        var outcome = f.Screen(PositionEffect.Open);
+        var outcome = await f.ScreenAsync(PositionEffect.Open);
         outcome.IsApproved.Should().BeFalse();
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
     }
@@ -243,10 +244,10 @@ public class TradingControlPriorityTests
     // 「統制違反 0 件」（クラス C 限定）には計上しない。停止統制の作動を AI の違反として数えると、
     // 段階昇格ゲートが恒久ブロックになる。
     [Fact]
-    public void 三統制による拒否は統制違反に計上しない()
+    public async Task 三統制による拒否は統制違反に計上しない()
     {
-        var outcome = new Fixture(killSwitch: true, lockout: true, paused: true)
-            .Screen(PositionEffect.Open);
+        var outcome = await new Fixture(killSwitch: true, lockout: true, paused: true)
+            .ScreenAsync(PositionEffect.Open);
 
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.KillSwitchActive);
         outcome.Rejected.Reasons.Should().Contain(RejectionReason.TradingPaused);

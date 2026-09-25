@@ -703,6 +703,9 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                 return serial;
             }
 
+            // FR-10, #967, IADR-0425: 本結合試験は借株可否の照会を経路に含めない（応答しない）。
+            public uint GetMarginRatio(TrdGetMarginRatio.Request request) => ++_serial;
+
             public void Dispose() { }
 
             // 応答は送信の登録が済んだ後で返す必要がある（SendAsync が _sendGate 内で採番・登録する）。

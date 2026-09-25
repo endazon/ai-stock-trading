@@ -53,17 +53,18 @@ public class OrderScreeningServiceTests
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
+            TestShortSellContexts.Unavailable(clock));
         return (service, clock, portfolio, killSwitch, lockout);
     }
 
     [Fact]
-    public void 統制を通過する新規建ては承認され承認数量を伴う()
+    public async Task 統制を通過する新規建ては承認され承認数量を伴う()
     {
         var (service, _, _, _, _) = CreateService();
         var intent = EntryIntent();
 
-        var outcome = service.Screen(Decision(intent));
+        var outcome = await service.ScreenAsync(Decision(intent));
 
         outcome.IsApproved.Should().BeTrue();
         outcome.Approved.Should().NotBeNull();
@@ -76,14 +77,14 @@ public class OrderScreeningServiceTests
     // 🔴 審査時刻（clock.UtcNow）で上書きすると、審査より前の区間（検知・収集・LLM 判断）が計測から消え、
     // 端点間レイテンシが実際より短く出る。統制の判定には一切使わない（読まない）。
     [Fact]
-    public void 承認は判断が運んできた取引サイクルの起点をそのまま中継する()
+    public async Task 承認は判断が運んできた取引サイクルの起点をそのまま中継する()
     {
         var (service, _, _, _, _) = CreateService();
         var startedAt = Now.AddMinutes(-4);
         var decision = new TradeDecisionMade(
             Guid.NewGuid(), EntryIntent(), "テスト判断", Now, BusinessMetrics.TriggerPriceMovement, startedAt);
 
-        var outcome = service.Screen(decision);
+        var outcome = await service.ScreenAsync(decision);
 
         outcome.IsApproved.Should().BeTrue();
         outcome.Approved!.CycleTrigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
@@ -92,49 +93,49 @@ public class OrderScreeningServiceTests
 
     // NFR-01, NFR-02, #689, IADR-0307 決定4: 起点を持たない判断は起点なしのまま通す（**作らない**）。
     [Fact]
-    public void 起点を持たない判断の承認には起点を作らない()
+    public async Task 起点を持たない判断の承認には起点を作らない()
     {
         var (service, _, _, _, _) = CreateService();
 
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.Approved!.CycleTrigger.Should().BeNull();
         outcome.Approved.CycleStartedAt.Should().BeNull();
     }
 
     [Fact]
-    public void kill_switch_起動中の新規建ては拒否される()
+    public async Task kill_switch_起動中の新規建ては拒否される()
     {
         // FR-10, ADR-0003: kill switch 起動後、新規発注（エントリー）は一切通らない。
         var (service, _, _, killSwitch, _) = CreateService();
         killSwitch.SetState(new KillSwitchState(true, "user", "緊急停止", Now));
 
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.IsApproved.Should().BeFalse();
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.KillSwitchActive);
     }
 
     [Fact]
-    public void kill_switch_起動中でも手仕舞いは承認される()
+    public async Task kill_switch_起動中でも手仕舞いは承認される()
     {
         // ADR-0003 フェイルセーフ: 保有ポジションの手仕舞い（損切り含む）は kill switch でも止めない。
         var (service, _, _, killSwitch, _) = CreateService();
         killSwitch.SetState(new KillSwitchState(true, "user", "緊急停止", Now));
 
-        var outcome = service.Screen(Decision(EntryIntent(PositionEffect.Close)));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent(PositionEffect.Close)));
 
         outcome.IsApproved.Should().BeTrue();
     }
 
     [Fact]
-    public void 日次損失上限到達で拒否されロックアウトが設定される()
+    public async Task 日次損失上限到達で拒否されロックアウトが設定される()
     {
         // IADR-0008: 実現 -2,000 円 = 資金 10 万の 2%。到達で当日ロックアウト（翌営業日まで）。
         var state = HealthyState with { DailyRealizedPnl = -2_000m };
         var (service, _, _, _, lockout) = CreateService(state);
 
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.IsApproved.Should().BeFalse();
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
@@ -143,58 +144,58 @@ public class OrderScreeningServiceTests
     }
 
     [Fact]
-    public void ロックアウトは損益が回復しても当日中は新規建てを止め続ける()
+    public async Task ロックアウトは損益が回復しても当日中は新規建てを止め続ける()
     {
         // デイリーストップ: 一度到達したら含み損・実現損が回復しても当日は翌営業日までロックする。
         var state = HealthyState with { DailyRealizedPnl = -2_000m };
         var (service, _, portfolio, _, _) = CreateService(state);
 
         // 1 回目で到達 → ロックアウト設定。
-        service.Screen(Decision(EntryIntent())).IsApproved.Should().BeFalse();
+        (await service.ScreenAsync(Decision(EntryIntent()))).IsApproved.Should().BeFalse();
 
         // 損益が回復（実現ゼロ）しても、同日中の新規建ては拒否され続ける。
         portfolio.State = HealthyState;
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.IsApproved.Should().BeFalse();
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
     }
 
     [Fact]
-    public void ロックアウト中でも手仕舞いは承認される()
+    public async Task ロックアウト中でも手仕舞いは承認される()
     {
         // フェイルセーフ: 損失局面での手仕舞い（損切り）はロックアウト中でも止めない。
         var state = HealthyState with { DailyRealizedPnl = -2_000m };
         var (service, _, portfolio, _, _) = CreateService(state);
-        service.Screen(Decision(EntryIntent())); // ロックアウト設定
+        await service.ScreenAsync(Decision(EntryIntent())); // ロックアウト設定
 
         portfolio.State = HealthyState;
-        var outcome = service.Screen(Decision(EntryIntent(PositionEffect.Close)));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent(PositionEffect.Close)));
 
         outcome.IsApproved.Should().BeTrue();
     }
 
     [Fact]
-    public void ロックアウトは翌営業日に解除され新規建てが再び可能になる()
+    public async Task ロックアウトは翌営業日に解除され新規建てが再び可能になる()
     {
         // IADR-0008: 翌営業日（IBusinessCalendar）に達したらロックアウトは失効する。
         var state = HealthyState with { DailyRealizedPnl = -2_000m };
         var (service, clock, portfolio, _, lockout) = CreateService(state);
-        service.Screen(Decision(EntryIntent())); // 7/9 に到達 → 7/10 解除予定
+        await service.ScreenAsync(Decision(EntryIntent())); // 7/9 に到達 → 7/10 解除予定
 
         // 翌営業日（7/10）へ進め、損益は回復済み。#249 / IADR-0246: 当日は clock.UtcNow から
         // 注文の市場（米国東部時間）の現地取引日として導出されるため、UtcNow を進める。
         clock.UtcNow = new DateTimeOffset(2026, 7, 10, 15, 0, 0, TimeSpan.Zero); // ET 7/10 金 11:00
         clock.Today = new DateOnly(2026, 7, 10);
         portfolio.State = HealthyState;
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.IsApproved.Should().BeTrue();
         lockout.Get().Should().BeNull(); // 失効時に掃除される
     }
 
     [Fact]
-    public void 金曜到達のロックアウトは翌月曜まで継続する()
+    public async Task 金曜到達のロックアウトは翌月曜まで継続する()
     {
         // 週末スキップ: 金曜（7/10）到達なら解除は翌営業日の月曜（7/13）。土日は新規建て不可。
         var clock = new FakeClock(new DateTimeOffset(2026, 7, 10, 6, 0, 0, TimeSpan.Zero), new DateOnly(2026, 7, 10));
@@ -210,28 +211,29 @@ public class OrderScreeningServiceTests
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
+            TestShortSellContexts.Unavailable(clock));
 
-        service.Screen(Decision(EntryIntent())); // 金曜に到達
+        await service.ScreenAsync(Decision(EntryIntent())); // 金曜に到達
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 13)); // 月曜
 
         // 土曜に回復しても継続（#249: 当日は UtcNow から市場現地取引日で導出する）。
         clock.UtcNow = new DateTimeOffset(2026, 7, 11, 15, 0, 0, TimeSpan.Zero); // ET 7/11 土
         clock.Today = new DateOnly(2026, 7, 11);
         portfolio.State = HealthyState;
-        service.Screen(Decision(EntryIntent())).IsApproved.Should().BeFalse();
+        (await service.ScreenAsync(Decision(EntryIntent()))).IsApproved.Should().BeFalse();
 
         // 月曜に解除。
         clock.UtcNow = new DateTimeOffset(2026, 7, 13, 15, 0, 0, TimeSpan.Zero); // ET 7/13 月
         clock.Today = new DateOnly(2026, 7, 13);
-        service.Screen(Decision(EntryIntent())).IsApproved.Should().BeTrue();
+        (await service.ScreenAsync(Decision(EntryIntent()))).IsApproved.Should().BeTrue();
     }
 
     // #337（#249 吸収）, IADR-0246 の否定形: JST の日付が変わっても、米国市場の**同一セッション中**は
     // 日次損失ロックアウトが解除されない。JST 固定の従来実装では ET 10-11 時（JST 0 時）に
     // 「翌日」となり、デイリーストップが同一セッションの途中で外れていた。
     [Fact]
-    public void 米国セッション中にJSTの日付が変わってもロックアウトは解除されない()
+    public async Task 米国セッション中にJSTの日付が変わってもロックアウトは解除されない()
     {
         // ET 7/9（木）10:00 = JST 7/9 23:00 に日次損失上限へ到達。
         var clock = new FakeClock(new DateTimeOffset(2026, 7, 9, 14, 0, 0, TimeSpan.Zero), new DateOnly(2026, 7, 9));
@@ -242,9 +244,10 @@ public class OrderScreeningServiceTests
             FakeBrokerAccountObservations.NotObserved(), FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         var service = new OrderScreeningService(
             new InMemoryRiskSettingsStore(), builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
+            TestShortSellContexts.Unavailable(clock));
 
-        service.Screen(Decision(EntryIntent()));
+        await service.ScreenAsync(Decision(EntryIntent()));
         lockout.Get()!.ReleaseOn.Should().Be(new DateOnly(2026, 7, 10)); // 翌営業日（ET 基準）
 
         // 90 分後 = ET 7/9 11:30（同一セッション）。JST では 7/10 0:30 ＝ 日付が既に変わっている。
@@ -253,16 +256,16 @@ public class OrderScreeningServiceTests
         portfolio.State = HealthyState;
 
         // それでも米国市場の現地取引日は 7/9 のままであり、新規建ては拒否され続ける。
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
         outcome.IsApproved.Should().BeFalse();
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.DailyLossLimitReached);
 
         // 手仕舞いは同じ状況でも止まらない（ADR-0009 の不変条件）。
-        service.Screen(Decision(EntryIntent(PositionEffect.Close))).IsApproved.Should().BeTrue();
+        (await service.ScreenAsync(Decision(EntryIntent(PositionEffect.Close)))).IsApproved.Should().BeTrue();
     }
 
     [Fact]
-    public void 拒否イベントは判断ID_注文意図_理由_日時を伴う()
+    public async Task 拒否イベントは判断ID_注文意図_理由_日時を伴う()
     {
         // FR-11: 監査・通知のため拒否イベントに必要な情報を載せる。
         var (service, clock, _, killSwitch, _) = CreateService();
@@ -270,7 +273,7 @@ public class OrderScreeningServiceTests
         var intent = EntryIntent();
         var decision = Decision(intent);
 
-        var outcome = service.Screen(decision);
+        var outcome = await service.ScreenAsync(decision);
 
         var rejected = outcome.Rejected!;
         rejected.DecisionId.Should().Be(decision.DecisionId);
@@ -282,12 +285,12 @@ public class OrderScreeningServiceTests
     // FR-20, FR-11, #387, IADR-0148 決定3: 審査結果は**承認でも拒否でも**観測を伴う。
     // 拒否だけを観測すると「違反 0 件」を主張する根拠が無くなり、未供給と区別できない。
     [Fact]
-    public void 承認された審査も観測を伴う()
+    public async Task 承認された審査も観測を伴う()
     {
         var (service, _, _, _, _) = CreateService();
         var decision = Decision(EntryIntent());
 
-        var outcome = service.Screen(decision);
+        var outcome = await service.ScreenAsync(decision);
 
         outcome.IsApproved.Should().BeTrue();
         outcome.Observation.DecisionId.Should().Be(decision.DecisionId);
@@ -298,7 +301,7 @@ public class OrderScreeningServiceTests
     // FR-20, FR-11, #387: クラス C（禁止銘柄）の拒否が観測から 1 件として集計される。
     // 発注先は**その注文が向いていた先**であり、算入対象（moomoo SIMULATE）なら件数に入る。
     [Fact]
-    public void 禁止銘柄の拒否はクラスC統制違反1件として集計される()
+    public async Task 禁止銘柄の拒否はクラスC統制違反1件として集計される()
     {
         var (service, _, _, _, _) = CreateService();
         // 既定の禁止銘柄「6457」（Market.Japan）。TradingDefaults が単一情報源。
@@ -306,7 +309,7 @@ public class OrderScreeningServiceTests
             "6457", Market.Japan, TradeSide.Buy, ProductType.Cash,
             BrokerProvider.MoomooSimulate, 1, 1_000m);
 
-        var outcome = service.Screen(Decision(intent));
+        var outcome = await service.ScreenAsync(Decision(intent));
 
         outcome.IsApproved.Should().BeFalse();
         outcome.Observation.RejectionReasons.Should().Contain(RejectionReason.BannedSymbol);
@@ -319,7 +322,7 @@ public class OrderScreeningServiceTests
     // **否定形**（§4.1）: クラス B（緊急停止中）の拒否は件数を増やさない。
     // ただし審査は動いている＝**集計は供給されている**（0 件を主張できる）。
     [Fact]
-    public void 緊急停止による拒否は供給を作るが件数は増やさない()
+    public async Task 緊急停止による拒否は供給を作るが件数は増やさない()
     {
         var (service, _, _, killSwitch, _) = CreateService();
         killSwitch.SetState(new KillSwitchState(true, "user", "緊急停止", Now));
@@ -327,7 +330,7 @@ public class OrderScreeningServiceTests
             "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
             BrokerProvider.MoomooSimulate, 10, 1_000m);
 
-        var outcome = service.Screen(Decision(intent));
+        var outcome = await service.ScreenAsync(Decision(intent));
 
         outcome.IsApproved.Should().BeFalse();
         var tally = ControlViolationAggregation.Tally([outcome.Observation]);

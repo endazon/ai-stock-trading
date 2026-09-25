@@ -69,35 +69,36 @@ public class OrderScreeningManipulationTests
         // （`null!` を渡すと必須化の意味が消える）。
         return new OrderScreeningService(
             settingsStore, builder, lockout, clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(), detector);
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
+            TestShortSellContexts.Unavailable(clock), detector);
     }
 
     [Fact]
-    public void ガード有効かつ該当履歴の注文は相場操縦で拒否される()
+    public async Task ガード有効かつ該当履歴の注文は相場操縦で拒否される()
     {
         var source = new InMemoryOrderActivitySource();
         SeedManipulativeActivity(source);
         var service = CreateService(source, new InMemoryRiskSettingsStore());
 
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.IsApproved.Should().BeFalse();
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.ManipulativeOrderPattern);
     }
 
     [Fact]
-    public void 該当履歴がなければ承認される()
+    public async Task 該当履歴がなければ承認される()
     {
         // 検出器は注入されているが窓が空（該当なし）→ 相場操縦では拒否しない。
         var service = CreateService(new InMemoryOrderActivitySource(), new InMemoryRiskSettingsStore());
 
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.IsApproved.Should().BeTrue();
     }
 
     [Fact]
-    public void ガード無効時は該当履歴でも相場操縦ではスキップする()
+    public async Task ガード無効時は該当履歴でも相場操縦ではスキップする()
     {
         // ProhibitManipulativeOrderPatterns = false のとき検出器を呼ばない（IADR-0006）。
         var source = new InMemoryOrderActivitySource();
@@ -110,7 +111,7 @@ public class OrderScreeningManipulationTests
         });
         var service = CreateService(source, settingsStore);
 
-        var outcome = service.Screen(Decision(EntryIntent()));
+        var outcome = await service.ScreenAsync(Decision(EntryIntent()));
 
         outcome.Rejected?.Reasons.Should().NotContain(RejectionReason.ManipulativeOrderPattern);
         outcome.IsApproved.Should().BeTrue();

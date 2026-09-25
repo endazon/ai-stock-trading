@@ -106,6 +106,9 @@ services:
       - { name: Fx__Provider, value: "boj" }                      # ← 認識時レート源（日銀第一・#686/IADR-0308）
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      # FR-10, #967, IADR-0425: 借株可否の照会先（発注執行）。値は本番既定と同一＝空（未結線＝借株可否は常に「分からない」＝
+      # 新規の売り建ては BorrowUnavailable で拒否）。helm はリストを置換するため写す。SIMULATE では結線しても結果は変わらない（#1000）。
+      - { name: OrderExecution__BaseUrl, value: "" }
       # FR-20, FR-11, UC-06, #868, IADR-0383: 段階遷移の onBehalfOf を信じてよいクライアント。
       # 値は本番既定と同一（helm はリストを置換するため、写し忘れると env が消える）。
       # report の Reports__DelegatedActor__TrustedClientIds と同じ秘密鍵＝単一情報源。

@@ -8,6 +8,7 @@ using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
+using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using OrderExecutionService.Hosted;
@@ -45,6 +46,10 @@ builder.Services.AddDbContext<OrderExecutionDbContext>(opt => opt.UseNpgsql(conn
 
 builder.Services.AddAiStockTradingHealthChecks()
     .AddNpgSql(connStr, tags: ["ready"]);
+
+// FR-10, #967, IADR-0425 決定1: 借株可否の照会の口（GET /order-execution/short-permit・OwnerOrService）を守る認証・認可。
+// それまで本サービスの HTTP 面はヘルスと自己申告（いずれも無認可・メッシュ内部限定）だけで、認証を登録していなかった。
+builder.Services.AddAiStockTradingAuth(builder.Configuration);
 
 // IADR-0016, IADR-0111, #13: ブローカ選択（構成 Broker:Provider × Broker:Environment・既定 paper/sim）。
 // 未知の provider / environment・paper と live の矛盾指定は起動時に安全停止（実弾防止・fail-safe は発注抑止側）。
@@ -156,6 +161,20 @@ builder.Services.AddScoped(sp => new ProtectiveStopDriftAdopter(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<ProtectiveStopDriftAdopter>(),
     sp.GetService<IBrokerPositionSource>(),
     sp.GetRequiredService<BusinessMetrics>()));
+
+// FR-10, UC-06, ADR-0016 決定3, #967, IADR-0144 決定5, IADR-0425 決定1・3: 借株可否の照会（空売り文脈の一次ゲートの供給元）。
+// 照会の予算とキャッシュを持つため singleton。照会ポート（IShortPermitSource）は **moomoo 構成でだけ登録する**
+// （発注と同じ OpenD 接続・同じ SIMULATE 口座のヘッダ）。内蔵 paper では null ＝ 常に「分からない」を返し、
+// リスク管理はそれを拒否へ倒す（照会できないなら空売りしない）。
+if (brokerSelection.IsMoomoo)
+{
+    builder.Services.AddSingleton<IShortPermitSource>(sp =>
+        (IShortPermitSource)sp.GetRequiredService<IMoomooTradeClient>());
+}
+builder.Services.AddSingleton(sp => new ShortPermitQueryService(
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<ShortPermitQueryService>(),
+    sp.GetService<IShortPermitSource>()));
 
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
@@ -336,8 +355,14 @@ if (JasperFxCommandLine.IsHostRun(args))
         await db.Database.MigrateAsync();
 }
 
+// 相関ID・認証・認可のミドルウェア（#967: 借株可否の照会の口を守る）。
+app.UseAiStockTradingMiddleware();
+
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
+
+// FR-10, #967, IADR-0425 決定1: 借株可否の照会（リスク管理の審査が新規の売り建てで呼ぶ）。
+app.MapShortPermitEndpoint();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

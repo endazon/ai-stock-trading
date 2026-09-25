@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 using Moomoo.OpenApi;
 using Moomoo.OpenApi.Pb;
+using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 
 namespace OrderExecutionService.Infrastructure.ExternalServices;
 
@@ -13,7 +15,7 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // OpenD（常駐・#124）へ TCP protobuf で接続し、非同期コールバック（nSerialNo 相関）で応答を待つ。
 // MMSPI_Conn（接続）と MMSPI_Trd（取引・全 OnReply_* 実装が必要）の両インターフェースを実装する。
 // 未使用のコールバックは no-op。接続/口座取得は初回利用時に遅延実行する（起動をブロックしない）。
-public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTradeClient, IDisposable
+public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTradeClient, IShortPermitSource, IDisposable
 {
     private static readonly object InitGate = new();
     private static bool _apiInitialized;
@@ -778,6 +780,55 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         return true;
     }
 
+    // FR-10, UC-06, ADR-0016 決定3（2026-08-06 改訂）, #967, IADR-0425 決定1・2: 借株可否（`MarginRatioInfo.IsShortPermit`）の照会。
+    //
+    // 🔴 **ヘッダは発注と同じ（SIMULATE・発注に使う口座）である。** 実弾ヘッダ（TrdEnv_Real）の照会経路は作らない
+    // （IADR-0425 決定2。実弾の閂と IADR-0111 の環境 1 軸に触れる別の判断）。moomoo はこの照会を SIMULATE 口座では
+    // `Get Margin Trading Data does not support Stocks in US Market` で失敗させる（IADR-0144 決定3 の実測。本件では実 OpenD で
+    // 再確認していない）ため、実測どおりなら EnsureSucceeded が例外を投げる——呼び出し側（ShortPermitQueryService）はそれを「分からない」へ倒す。
+    // `ShortFeeRate` は読まない（単位が未確定。IADR-0158 決定3）。契約は IShortPermitSource。
+    public async Task<bool?> GetShortPermitAsync(
+        string symbol, Market market, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+
+        var moomooMarket = MoomooBrokerAdapter.MapMarket(market);
+        var (trdMarket, _) = MapMarket(moomooMarket);
+        var security = QotCommon.Security.CreateBuilder()
+            .SetMarket(MapSecurityMarket(moomooMarket))
+            .SetCode(symbol)
+            .Build();
+        var c2s = TrdGetMarginRatio.C2S.CreateBuilder()
+            .SetHeader(BuildHeader(trdMarket))
+            .AddSecurityList(security)
+            .Build();
+        var req = TrdGetMarginRatio.Request.CreateBuilder().SetC2S(c2s).Build();
+        var rsp = (TrdGetMarginRatio.Response)await SendAsync(() => _connection.GetMarginRatio(req), cancellationToken)
+            .ConfigureAwait(false);
+        EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetMarginRatio");
+
+        // 当該銘柄の行が無い・欄が載っていない、は「分からない」（null）。false（不許可）と取り違えない（Principle A）。
+        var row = rsp.S2C.MarginRatioInfoListList
+            .FirstOrDefault(info => string.Equals(info.Security.Code, symbol, StringComparison.OrdinalIgnoreCase));
+        if (row is null || !row.HasIsShortPermit)
+        {
+            _logger.LogWarning(
+                "借株可否の照会の応答に当該銘柄の行または IsShortPermit の欄がありません symbol={Symbol}。借株可否は不明として扱います。",
+                symbol);
+            return null;
+        }
+
+        return row.IsShortPermit;
+    }
+
+    // MoomooMarket → QotMarket（銘柄の市場）。照会に使う Security の市場。
+    private static int MapSecurityMarket(MoomooMarket market) => market switch
+    {
+        MoomooMarket.Japan => (int)QotCommon.QotMarket.QotMarket_JP_Security,
+        _ => (int)QotCommon.QotMarket.QotMarket_US_Security,
+    };
+
     private TrdCommon.TrdHeader BuildHeader(int trdMarket) =>
         TrdCommon.TrdHeader.CreateBuilder()
             .SetTrdEnv((int)TrdCommon.TrdEnv.TrdEnv_Simulate) // SIMULATE 固定（実弾を撃たない）
@@ -909,7 +960,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     public void OnReply_GetComboMaxTrdQtys(MMAPI_Conn client, uint nSerialNo, TrdGetComboMaxTrdQtys.Response rsp) { }
     public void OnReply_GetOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFillList.Response rsp) { }
     public void OnReply_GetHistoryOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetHistoryOrderFillList.Response rsp) { }
-    public void OnReply_GetMarginRatio(MMAPI_Conn client, uint nSerialNo, TrdGetMarginRatio.Response rsp) { }
+    public void OnReply_GetMarginRatio(MMAPI_Conn client, uint nSerialNo, TrdGetMarginRatio.Response rsp) => Complete(nSerialNo, rsp);
     public void OnReply_GetOrderFee(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFee.Response rsp) { }
     public void OnReply_GetFlowSummary(MMAPI_Conn client, uint nSerialNo, TrdFlowSummary.Response rsp) { }
     public void OnReply_PlaceComboOrder(MMAPI_Conn client, uint nSerialNo, TrdPlaceComboOrder.Response rsp) { }

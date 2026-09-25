@@ -212,7 +212,7 @@ public class StopLossMethodSettingsTests
     [Theory]
     [InlineData(StopLossExecutionMethod.BrokerStopOrder)]
     [InlineData(StopLossExecutionMethod.NoProtectiveStop)]
-    public void 承認は審査時点で有効な損切りの実行機構を運ぶ(StopLossExecutionMethod method)
+    public async Task 承認は審査時点で有効な損切りの実行機構を運ぶ(StopLossExecutionMethod method)
     {
         var clock = new FakeClock(Now, new DateOnly(2026, 9, 17));
         var portfolio = new FakePortfolioStateProvider(new PortfolioState
@@ -230,12 +230,13 @@ public class StopLossMethodSettingsTests
         var settings = new InMemoryRiskSettingsStore(TradingDefaults.CreateSettings() with { StopLossMethod = method });
         var service = new OrderScreeningService(
             settings, builder, new InMemoryLockoutStore(), clock, new WeekendBusinessCalendar(),
-            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore());
+            new InMemoryBuyInInferenceStore(), new InMemoryPortfolioLedgerStore(),
+            TestShortSellContexts.Unavailable(clock));
         var intent = new OrderIntent(
             "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 1_000m,
             PositionEffect.Open);
 
-        var outcome = service.Screen(new TradeDecisionMade(Guid.NewGuid(), intent, "テスト判断", Now));
+        var outcome = await service.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), intent, "テスト判断", Now));
 
         outcome.IsApproved.Should().BeTrue();
         outcome.Approved!.StopLossMethod.Should().Be(method);

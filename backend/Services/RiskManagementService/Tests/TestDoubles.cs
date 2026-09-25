@@ -129,3 +129,52 @@ internal sealed class FakeCapitalBaseline : ICapitalBaselineStore
 
     public CapitalBaseline? GetCurrent() => Baseline;
 }
+
+// FR-10, #967, IADR-0425: 空売り文脈の供給の既定のテスト用組み立て。**借株可否は常に「分からない」**
+// （本番で照会先を構成していないときと同じ UnavailableShortSellBorrowSource）＝文脈は組まれず、空売りは従来どおり
+// BorrowUnavailable で拒否される。空売り文脈を関心に持たない審査のテストはこれを渡す。
+internal static class TestShortSellContexts
+{
+    public static ShortSellContextSupplier Unavailable(IClock clock, IPortfolioLedgerStore? ledger = null) =>
+        Supplier(new RiskManagementService.Infrastructure.ExternalServices.UnavailableShortSellBorrowSource(), clock, ledger);
+
+    public static ShortSellContextSupplier Supplier(
+        IShortSellBorrowSource borrow,
+        IClock clock,
+        IPortfolioLedgerStore? ledger = null,
+        IWorkingEntryOrderSource? workingEntries = null,
+        ICurrentPriceSource? prices = null) =>
+        new(
+            borrow,
+            ledger ?? new RiskManagementService.Infrastructure.Persistence.InMemoryPortfolioLedgerStore(),
+            workingEntries ?? new NoWorkingEntryOrders(),
+            prices ?? new FixedCurrentPrices(new Dictionary<(string Symbol, Market Market), decimal>()),
+            new RiskManagementService.Infrastructure.ExternalServices.UnavailableMaintenanceMarginSnapshotSource(),
+            clock,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ShortSellContextSupplier>.Instance);
+
+    private sealed class NoWorkingEntryOrders : IWorkingEntryOrderSource
+    {
+        public IReadOnlyList<WorkingEntryOrder> GetWorkingEntryOrders(DateTimeOffset approvedAtOrAfter) => [];
+    }
+}
+
+// #967: 固定の現在値（無い銘柄はキーを含めない＝その建玉の現在値は取れない）。
+internal sealed class FixedCurrentPrices(IReadOnlyDictionary<(string Symbol, Market Market), decimal> prices) : ICurrentPriceSource
+{
+    public IReadOnlyDictionary<(string Symbol, Market Market), decimal> GetCurrentPrices(IReadOnlyList<OpenPosition> positions) =>
+        positions.Where(p => prices.ContainsKey((p.Symbol, p.Market)))
+            .ToDictionary(p => (p.Symbol, p.Market), p => prices[(p.Symbol, p.Market)]);
+}
+
+// #967: 固定の借株可否の観測を返す供給（呼ばれた回数を数える＝売り建て以外で照会しないことの確認用）。
+internal sealed class FixedShortSellBorrowSource(ShortSellBorrowObservation observation) : IShortSellBorrowSource
+{
+    public int Calls { get; private set; }
+
+    public Task<ShortSellBorrowObservation> GetAsync(string symbol, Market market, CancellationToken cancellationToken = default)
+    {
+        Calls++;
+        return Task.FromResult(observation);
+    }
+}
