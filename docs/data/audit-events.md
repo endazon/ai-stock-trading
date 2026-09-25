@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-19
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-04, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
+ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002]
 -->
 
 
@@ -96,6 +96,11 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849]
   「なぜその種別が使えないのか」を後から誰も説明できない。相関はエントリーの `DecisionId`。
   結果の扱いは逆指値（既定の手法）と同一であり、試行の記録は `ProtectiveStopPlaced` / `ProtectiveStopCoverageLost` と
   **排他ではなく重ねて**残る。
+- 発注執行が新規建ての承認の**損切りの実行機構を解決した結果**（`StopLossMethodResolved`・#1002）を、承認 1 件の解決ごとに 1 件記録する
+  （解決の後に見送った回にも残る。手仕舞い・完了済み／見送り済みの承認の再配送では解決しないので残らない）。相関は承認の `DecisionId`、
+  時刻は解決した時刻。要約に「選択 → 適用（理由・発注先・商品種別）」を書き、🔴 **拒否は「適用なし（発注しない）」と書く**
+  —— S0 へ読み替えたと読ませない。日報の「実際に適用された手法」と月報の日数ベースの内訳は、報告書がこの記録を種別と期間で引いて
+  承認と突き合わせて作る（台帳が唯一の供給元）。
 - 利用者が承認した**台帳とブローカーの乖離の取り込み**（`PositionDriftAdopted`・#849）は、取引台帳が**約定以外で動く唯一の操作**
   である。相関はブローカー建玉の観測（`BrokerPositionsObserved`）・乖離の報告（`PositionReconciliationDrift`）と**同じ**決定的 GUID
   であり、「何を観測し、いつ乖離と報告し、誰がなぜ取り込んだか」を 1 本で辿れる。要約に取り込み前後の数量・観測値と観測時刻・

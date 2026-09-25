@@ -126,9 +126,10 @@ public class StopLossMethodUsageTests
         ])));
 
         md.Should().Contain("### 損切りの実行機構（当日）");
+        // #1002, IADR-0429 決定6: 表示名は計画 04_report-templates 日報 §4 の書式（「選ばれていた手法（承認時点）」・「計 n 件」）へ揃えた。
         md.Should().Contain(
-            "- **新規建ての承認（承認時点の手法）**: 3 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 2 件");
-        md.Should().Contain("承認の件数であり、発注・約定の件数ではありません。");
+            "- **選ばれていた手法（承認時点）**: 計 3 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 2 件");
+        md.Should().Contain("新規建ての承認の件数であり、発注・約定の件数ではありません。");
         // 子節は §4（リスク統制の記録）の中にあり、§5 より前である。
         md.IndexOf("### 損切りの実行機構（当日）", StringComparison.Ordinal)
             .Should().BeGreaterThan(md.IndexOf("## 4. リスク統制の記録", StringComparison.Ordinal))
@@ -144,7 +145,7 @@ public class StopLossMethodUsageTests
 
         md.Should().Contain("### 損切りの実行機構（当日）");
         md.Should().Contain("- **承認の記録を照会できませんでした（要確認）**: 「承認なし」とは区別しています。");
-        md.Should().NotContain("新規建ての承認（承認時点の手法）");
+        md.Should().NotContain("選ばれていた手法（承認時点）");
     }
 
     // 承認 0 件は「なし」と明記する（空欄と「なし」を区別する）。
@@ -153,7 +154,7 @@ public class StopLossMethodUsageTests
     {
         var md = ReportRenderer.RenderMarkdown(View(ReportKind.Daily, StopLossMethodUsage.From([])));
 
-        md.Should().Contain("- **新規建ての承認（承認時点の手法）**: なし（当日の新規建ての承認は 0 件）");
+        md.Should().Contain("- **選ばれていた手法（承認時点）**: なし（当日の新規建ての承認は 0 件）");
         md.Should().NotContain("照会できませんでした（要確認）**: 「承認なし」");
     }
 
@@ -163,23 +164,22 @@ public class StopLossMethodUsageTests
         var md = ReportRenderer.RenderMarkdown(View(ReportKind.Daily, StopLossMethodUsage.From(
             [Approved(StopLossExecutionMethod.SoftwareStop)], unreadableCount: 2)));
 
-        md.Should().Contain("- **新規建ての承認（承認時点の手法）**: 1 件 — S1 ソフトウェア逆指値 1 件");
+        md.Should().Contain("- **選ばれていた手法（承認時点）**: 計 1 件 — S1 ソフトウェア逆指値 1 件");
         md.Should().Contain("- **本文を復元できなかった承認の記録: 2 件**（上の件数に含めていません）");
     }
 
-    // 🔴 否定形（T-10-997）: 計画が求めるのは日報である。週報・月報には出さない（未供給でも出さない）。
-    [Theory]
-    [InlineData(ReportKind.Weekly)]
-    [InlineData(ReportKind.Monthly)]
-    public void 週報と月報には出さない(ReportKind kind)
+    // 🔴 否定形（T-10-997）: 週報には出さない（未供給でも出さない）。
+    // #1002（planning#644 の裁定 2）で月報 §6 は日数ベースの内訳を持つようになった——月報の側は T-10-1089 が固定する。
+    [Fact]
+    public void 週報には出さない()
     {
-        var withData = ReportRenderer.RenderMarkdown(View(kind, StopLossMethodUsage.From(
+        var withData = ReportRenderer.RenderMarkdown(View(ReportKind.Weekly, StopLossMethodUsage.From(
             [Approved(StopLossExecutionMethod.NoProtectiveStop)])));
-        var unsupplied = ReportRenderer.RenderMarkdown(View(kind, null));
+        var unsupplied = ReportRenderer.RenderMarkdown(View(ReportKind.Weekly, null));
 
         withData.Should().NotContain("損切りの実行機構");
         unsupplied.Should().NotContain("損切りの実行機構");
-        ReportInputs.AppliesTo(ReportInput.StopLossMethods, kind).Should().BeFalse();
+        ReportInputs.AppliesTo(ReportInput.StopLossMethods, ReportKind.Weekly).Should().BeFalse();
         ReportInputs.AppliesTo(ReportInput.StopLossMethods, ReportKind.Daily).Should().BeTrue();
     }
 }

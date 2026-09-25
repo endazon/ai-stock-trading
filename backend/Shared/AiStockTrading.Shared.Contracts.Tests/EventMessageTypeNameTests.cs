@@ -69,6 +69,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(SoftwareStopExecuted), "AiStockTrading.Shared.Contracts.Events.SoftwareStopExecuted")]
         // FR-10, ADR-0040 決定1（S3）, #821, IADR-0347: 代替注文種別での保護レグ試行（種別と拒否理由）。
         [InlineData(typeof(AlternativeProtectiveStopAttempted), "AiStockTrading.Shared.Contracts.Events.AlternativeProtectiveStopAttempted")]
+        // T-10-1084, FR-10, FR-06, #1002, IADR-0429 決定1: 損切りの実行機構の解決結果（発注執行 → 監査台帳 → 報告書）。
+        [InlineData(typeof(StopLossMethodResolved), "AiStockTrading.Shared.Contracts.Events.StopLossMethodResolved")]
         [InlineData(typeof(PositionCloseRequested), "AiStockTrading.Shared.Contracts.Events.PositionCloseRequested")]
         // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による手仕舞いの取消要求と、
         // 未約定残を残して終わった手仕舞い（失効・取消・拒否）。

@@ -414,6 +414,17 @@
     "Stage1MinimumTradeCount": "Int32",
     "ToStage": "Int32"
   },
+  "StopLossMethodResolved": {
+    "AppliedMethod": "StopLossExecutionMethod?",
+    "DecisionId": "Guid",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "ProductType": "ProductType",
+    "Provider": "BrokerProvider",
+    "Reason": "StopLossMethodResolutionReason",
+    "SelectedMethod": "StopLossExecutionMethod",
+    "Symbol": "String"
+  },
   "StopLossTriggered": {
     "DetectedAt": "DateTimeOffset",
     "EventId": "Guid",

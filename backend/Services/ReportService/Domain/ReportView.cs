@@ -122,9 +122,16 @@ public sealed record ReportView
 
     /// <summary>
     /// FR-06, FR-10, ADR-0040 決定1, #823, IADR-0422 決定3, 日報 §4: 当日の新規建ての承認を<b>承認時点の手法</b>ごとに数えたもの。
-    /// <para>🔴 <c>null</c> は「照会できていない」であり「承認なし」ではない。日報だけが描く。</para>
+    /// <para>🔴 <c>null</c> は「照会できていない」であり「承認なし」ではない。日報と月報（#1002）が描く。</para>
     /// </summary>
     public StopLossMethodUsage? StopLossMethods { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定4: 発注執行が承認の手法を解決した結果（監査台帳）。
+    /// 日報の「実際に適用された手法」と月報 §6 の日数ベースの内訳は、これを <see cref="StopLossMethods"/> の承認と DecisionId で突き合わせて作る。
+    /// <para>🔴 <c>null</c> は「照会できていない」であり「記録なし」ではない。</para>
+    /// </summary>
+    public StopLossMethodResolutionFeed? StopLossMethodResolutions { get; init; }
 
     /// <summary>
     /// FR-06, FR-16, #338, 04_report-templates §数値の定義・日報 §1・月報 §1: <b>為替差損益</b>（独立表示）。

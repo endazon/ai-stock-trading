@@ -408,6 +408,21 @@ builder.Services.AddSingleton<IStopLossMethodUsageSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpStopLossMethodUsageSource>>());
 });
 
+// FR-06, FR-10, FR-11, ADR-0040 決定1, #1002, IADR-0429 決定4: 日報の「実際に適用された手法（発注執行の解決結果）」と
+// 月報 §6 の日数ベースの内訳。**権威源は監査台帳の `StopLossMethodResolved`**（発注執行が承認ごとに発行する）。
+// **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした」。**「記録なし」へ倒さない。
+builder.Services.AddSingleton<IStopLossMethodResolutionSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedStopLossMethodResolutionSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpStopLossMethodResolutionSource(
+        http, sp.GetRequiredService<ILogger<HttpStopLossMethodResolutionSource>>());
+});
+
 // FR-16, FR-11, #563, IADR-0269: 日報 §2「判断根拠（要約）」。**権威源は監査台帳**であり、
 // GET /audit/events/by-type（OwnerOrService）へ s2s 同期照会して `TradeDecisionMade.Rationale` を
 // **そのまま**明細へ載せる（報告書生成時に LLM へ書かせない・FR-16 / IADR-0251）。

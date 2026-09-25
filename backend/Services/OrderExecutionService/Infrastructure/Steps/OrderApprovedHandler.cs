@@ -41,6 +41,17 @@ public sealed class OrderApprovedHandler(
         if (result.ForgoneReplaySuppressed)
             return;
 
+        // FR-10, FR-06, FR-11, ADR-0040 決定1, #1002, IADR-0429 決定1: 損切りの実行機構の解決結果（承認の手法 → 実際に適用した手法）。
+        // 監査台帳へ記録され、日報・月報の「実際に適用された手法」の一次記録になる。**発注・見送りの結果より先に出す**
+        // ——解決はそれらの手前の事実であり、見送り（下の return）の経路でも失わない。
+        // 🔴 **報告のためだけの事実であり、統制の発行（見送り・発注・保護逆指値）の前に立たせない。** 発行に失敗しても
+        // 例外を握ってログに残し、後続の発行へ進む（経費の記録 RecordTradeExpensesAsync と同じ形）。ここで投げると
+        // 後続の発行（見送り・発注結果・保護逆指値）が出ないまま再配送になり、再配送は見送りと保護逆指値のイベントを
+        // 再発行しない（見送り済みは何も発行せず、完了済みは発注結果と経費の記録だけを出し直す）。
+        // 握った回の承認は、日報・月報で「解決結果の記録が見つからない」として件数に出る（黙って消えない）。
+        if (result.MethodResolved is { } methodResolved)
+            await PublishMethodResolvedAsync(methodResolved, bus).ConfigureAwait(false);
+
         // 🔴 FR-10, FR-05, FR-09, FR-11, ADR-0016, #864, IADR-0355 決定5: 決済をブローカーの実建玉と突き合わせて
         // 見つけた乖離は、**既存の乖離検知（IADR-0118）と同じイベント**で監査台帳と Critical 通知へ流す
         // （新しい通知経路を作らない）。見送りにも、数量を縮めた発注にも付き得るため**先に**出す
@@ -145,6 +156,22 @@ public sealed class OrderApprovedHandler(
                 coverageLost.EntryDecisionId, coverageLost.Symbol, coverageLost.Cause,
                 coverageLost.Remediation, coverageLost.Quantity);
             await bus.PublishAsync(coverageLost).ConfigureAwait(false);
+        }
+    }
+
+    // FR-10, FR-06, #1002, IADR-0429 決定1: 解決結果の発行。**失敗しても発注執行の発行を止めない**（例外は握ってログに残す）。
+    private async Task PublishMethodResolvedAsync(StopLossMethodResolved methodResolved, IMessageBus bus)
+    {
+        try
+        {
+            await bus.PublishAsync(methodResolved).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                "損切りの実行機構の解決結果を発行できませんでした（発注執行は継続します。日報・月報では"
+                + "「解決結果の記録が見つからない承認」に数えられます）。DecisionId={DecisionId}",
+                methodResolved.DecisionId);
         }
     }
 

@@ -47,7 +47,10 @@ public sealed class ReportAutoGenerator(
     IPeriodDriftAdoptionSource? driftAdoptionSource = null,
     // FR-06, FR-10, ADR-0040 決定1, #823, IADR-0422 決定3: 日報 §4「損切りの実行機構（当日）」（承認時点の手法の集計）。
     // 未注入は「供給元が構成されていない」＝常に未供給（「承認なし」へ倒さない）。
-    IStopLossMethodUsageSource? stopLossMethodUsageSource = null)
+    IStopLossMethodUsageSource? stopLossMethodUsageSource = null,
+    // FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定4: 発注執行の損切りの実行機構の解決結果（日報の 2 行目・月報 §6）。
+    // 未注入は「供給元が構成されていない」＝常に未供給（「記録なし」「食い違いなし」へ倒さない）。
+    IStopLossMethodResolutionSource? stopLossMethodResolutionSource = null)
 {
     // 観測点が未注入（単体テスト・旧構成）なら誰も記録しない観測になり、見送りは起きない＝従来挙動。
     private readonly ReportDependencyProbe _probe = dependencyProbe ?? new ReportDependencyProbe();
@@ -214,6 +217,11 @@ public sealed class ReportAutoGenerator(
         if (stopLossMethods is null)
             unsupplied.Add(ReportInput.StopLossMethods);
 
+        observation.Enter(ReportInput.StopLossMethodResolutions);
+        var stopLossMethodResolutions = await SafeStopLossMethodResolutionsAsync(due, cancellationToken).ConfigureAwait(false);
+        if (stopLossMethodResolutions is null)
+            unsupplied.Add(ReportInput.StopLossMethodResolutions);
+
         observation.Enter(ReportInput.CurrentStage);
         var currentStage = await SafeCurrentStageAsync(cancellationToken).ConfigureAwait(false);
         if (currentStage is null)
@@ -263,7 +271,8 @@ public sealed class ReportAutoGenerator(
                 CurrentStage: currentStage,
                 PeriodEndFxRate: periodEndFxRate,
                 DriftAdoptions: driftAdoptions,
-                StopLossMethods: stopLossMethods),
+                StopLossMethods: stopLossMethods,
+                StopLossMethodResolutions: stopLossMethodResolutions),
             cancellationToken).ConfigureAwait(false);
 
         // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
@@ -712,6 +721,30 @@ public sealed class ReportAutoGenerator(
         {
             return await stopLossMethodUsageSource
                 .GetUsageAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定4: 発注執行の損切りの実行機構の解決結果。
+    // **未注入・照会失敗のいずれも null（未供給）**——空の記録は「承認はあるのに解決結果が無い」と読める。
+    private async Task<StopLossMethodResolutionFeed?> SafeStopLossMethodResolutionsAsync(
+        DueReport due, CancellationToken cancellationToken)
+    {
+        if (stopLossMethodResolutionSource is null)
+            return null;
+
+        try
+        {
+            return await stopLossMethodResolutionSource
+                .GetResolutionsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
