@@ -15,7 +15,7 @@ public class HttpReportReviewControllerTests
 {
     private const string PeriodKey = "daily-2026-08-28";
 
-    private static HttpReportReviewController Controller(FakeHandler handler) =>
+    private static HttpReportReviewController Controller(HttpMessageHandler handler) =>
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://report-service") },
             NullLogger<HttpReportReviewController>.Instance);
@@ -227,9 +227,11 @@ public class HttpReportReviewControllerTests
     // ---- 一覧（入力補完の候補・#834） ----
 
     [Fact]
-    public async Task 一覧は_reports_へ_GET_し会話キーを新しい順に返す()
+    public async Task 一覧は軽い一覧_reports_period_keys_へ_GET_し会話キーを新しい順に返す()
     {
         // FR-14, #834: 並びは対象期間の開始日の降順（同日は会話キーの降順）。
+        // #843 項目1, IADR-0418: 読むのは本文を含む `/reports` ではなく会話キーと開始日だけの軽い一覧である
+        // （本文つきの応答でも受け口は余分な項目を読み飛ばす——退避先の従来の一覧と受け口を共用するため）。
         var handler = new FakeHandler(HttpStatusCode.OK, """
             [
               {"periodKey":"daily-2026-09-15","kind":0,"periodStart":"2026-09-15","state":0,"body":"本文"},
@@ -240,7 +242,7 @@ public class HttpReportReviewControllerTests
 
         var keys = await Controller(handler).ListPeriodKeysAsync();
 
-        handler.RequestUri.Should().Be("http://report-service/reports");
+        handler.RequestUri.Should().Be("http://report-service/reports/period-keys");
         handler.Method.Should().Be(HttpMethod.Get);
         keys.Should().Equal("daily-2026-09-18", "daily-2026-09-15", "weekly-2026-W38");
     }
@@ -333,6 +335,84 @@ public class HttpReportReviewControllerTests
         keys.Should().Equal("daily-2026-09-17", "daily-2026-09-18", "daily-2026-09-16", "daily-2026-09-15");
     }
 
+    // ---- 軽い一覧と配備順の窓（#843 項目1・IADR-0418 決定3） ----
+
+    [Fact]
+    public async Task 軽い一覧が_404_なら従来の一覧へ退避して候補を返す()
+    {
+        // 規則 11 の P1（増える側）: 通知サービスだけが新しく、報告書サービスに `/reports/period-keys` が無い窓。
+        // 古い報告書サービスでは `/{periodKey}` に当たって 404 になる。**補完を黙って死なせない**。
+        var handler = new RoutingHandler(new()
+        {
+            ["/reports/period-keys"] = (HttpStatusCode.NotFound, "{}"),
+            ["/reports"] = (HttpStatusCode.OK, """
+                [
+                  {"periodKey":"daily-2026-09-17","periodStart":"2026-09-17","body":"本文"},
+                  {"periodKey":"daily-2026-09-18","periodStart":"2026-09-18","body":"本文"}
+                ]
+                """),
+        });
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        handler.Paths.Should().Equal("/reports/period-keys", "/reports");
+        keys.Should().Equal("daily-2026-09-18", "daily-2026-09-17");
+    }
+
+    [Fact]
+    public async Task 軽い一覧が返れば従来の一覧は呼ばない()
+    {
+        // 規則 11 の P2: 配備が揃った後は 1 往復だけ（本文を含む全件を読まない）。
+        var handler = new RoutingHandler(new()
+        {
+            ["/reports/period-keys"] = (HttpStatusCode.OK, """
+                [{"periodKey":"daily-2026-09-18","periodStart":"2026-09-18"}]
+                """),
+            ["/reports"] = (HttpStatusCode.OK, "[]"),
+        });
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        handler.Paths.Should().Equal("/reports/period-keys");
+        keys.Should().Equal("daily-2026-09-18");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    public async Task 軽い一覧が_404_以外で失敗したら退避せず候補なし(HttpStatusCode status)
+    {
+        // 規則 11 の P3（否定形）: 障害中の報告書サービスへ、より重い全件照会を重ねない。退避は 404 に限る。
+        var handler = new RoutingHandler(new()
+        {
+            ["/reports/period-keys"] = (status, "{}"),
+            ["/reports"] = (HttpStatusCode.OK, """
+                [{"periodKey":"daily-2026-09-18","periodStart":"2026-09-18"}]
+                """),
+        });
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        handler.Paths.Should().Equal("/reports/period-keys");
+        keys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task 退避先も失敗したら候補なし()
+    {
+        var handler = new RoutingHandler(new()
+        {
+            ["/reports/period-keys"] = (HttpStatusCode.NotFound, "{}"),
+            ["/reports"] = (HttpStatusCode.InternalServerError, "{}"),
+        });
+
+        var keys = await Controller(handler).ListPeriodKeysAsync();
+
+        handler.Paths.Should().Equal("/reports/period-keys", "/reports");
+        keys.Should().BeEmpty();
+    }
+
     // ---- 見つからないときの案内（#834） ----
 
     [Fact]
@@ -368,6 +448,25 @@ public class HttpReportReviewControllerTests
         var result = await Controller(handler).GetReviewAsync(PeriodKey);
 
         result.Message.Should().Contain("レビュー局面の照会").And.Contain("HTTP 500");
+    }
+
+    // #843 項目1: 要求先のパスごとに応答を返し分ける fake（退避の有無を要求の列で表明する）。
+    private sealed class RoutingHandler(Dictionary<string, (HttpStatusCode Status, string Body)> routes)
+        : HttpMessageHandler
+    {
+        public List<string> Paths { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            Paths.Add(path);
+            var (status, body) = routes.TryGetValue(path, out var route) ? route : (HttpStatusCode.NotFound, "{}");
+            return Task.FromResult(new HttpResponseMessage(status)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
+        }
     }
 
     private sealed class FakeHandler : HttpMessageHandler

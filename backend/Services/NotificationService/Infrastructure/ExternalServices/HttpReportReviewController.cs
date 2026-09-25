@@ -151,18 +151,17 @@ public sealed class HttpReportReviewController(
     // 数値・欠落・解釈不能の 1 件は末尾へ回し（会話キーは残す）、同順位は会話キーの降順で並ぶ（#843 項目3）。
     // 以前は `string?` で受けていたため、数値で来た 1 件の逆シリアル化失敗が**一覧ごと空**にしていた（実測）。
     //
-    // 🟡 **一覧 API は射影もページングも持たず、本文を含む全件を返す**（報告書サービス無改修の受容。#834）。
-    // ここで読み捨てても転送コストは掛かっており、**補完は打鍵ごとに発火する**ため件数とともに悪化する。
-    // 軽い一覧（会話キーだけを返す射影）を報告書サービス側へ足す件は、形（専用ルート／`fields=`／ページング）を
-    // 決める根拠が揃わず #843 項目1 に残している（作業仕様書 20260925_843 決定3）。遅い帯は補完の時間予算
-    //（ReportCommandHandler.SuggestionBudget・#843 項目2）が「候補なし」へ倒す。
+    // #843 項目1, IADR-0418: 読むのは報告書サービスの**軽い一覧**（`GET /reports/period-keys`＝会話キーと開始日だけ）で
+    // ある。以前は本文を含む全件（`GET /reports`）を読み捨てており、**補完は打鍵ごとに発火する**ため件数とともに悪化した。
+    // **新しいルートが 404 のときだけ**従来の `GET /reports` へ退避する——配備順の窓（通知サービスだけが新しい）で
+    // 補完が黙って死なないため。500・例外・タイムアウトでは退避しない（障害中の報告書サービスへより重い全件照会を
+    // 重ねない）。応答の受け口（ReportListItem）は両ルートで共用する（どちらも periodKey / periodStart を持つ）。
+    // 遅い帯は補完の時間予算（ReportCommandHandler.SuggestionBudget・#843 項目2）が「候補なし」へ倒す（退避も予算の内側）。
     public async Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            using var response = await httpClient
-                .GetAsync("/reports", cancellationToken)
-                .ConfigureAwait(false);
+            using var response = await GetPeriodKeyListAsync(cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -192,6 +191,24 @@ public sealed class HttpReportReviewController(
             logger.LogWarning(ex, "報告書一覧の照会で例外が発生しました。補完の候補なしで続行します。");
             return [];
         }
+    }
+
+    // #843 項目1, IADR-0418: 補完が読む軽い一覧と、配備順の窓でだけ使う従来の一覧。
+    private const string PeriodKeysPath = "/reports/period-keys";
+    private const string LegacyListPath = "/reports";
+
+    // 軽い一覧を読み、**404 のときだけ**従来の一覧へ退避する（上のコメント・IADR-0418 決定3）。
+    private async Task<HttpResponseMessage> GetPeriodKeyListAsync(CancellationToken cancellationToken)
+    {
+        var response = await httpClient.GetAsync(PeriodKeysPath, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode != HttpStatusCode.NotFound)
+            return response;
+
+        response.Dispose();
+        logger.LogInformation(
+            "報告書サービスに {Path} がありません（配備が揃う前の旧版）。従来の一覧 {Fallback} で続行します。",
+            PeriodKeysPath, LegacyListPath);
+        return await httpClient.GetAsync(LegacyListPath, cancellationToken).ConfigureAwait(false);
     }
 
     private string FailureMessage(string operation, HttpStatusCode status)
@@ -251,7 +268,8 @@ public sealed class HttpReportReviewController(
     private sealed record ReviewCommandRequest(int ExpectedVersion);
 
     // #834: 一覧応答の必要部分だけを受ける射影。**本文（body）・要約（policySummary）・状態（state）は
-    // 受けない**（IADR-0240 決定4/5）。
+    // 受けない**（IADR-0240 決定4/5）。軽い一覧（#843 項目1）はこの 2 つしか返さず、従来の一覧（退避先）は
+    // 余分な項目を読み飛ばす。
     // #843 項目3: periodStart は並び替えにしか使わないため **JSON の表現を問わず受ける**（JsonElement）。`string?` で
     // 受けると文字列表現に結合し、数値で来た 1 件が逆シリアル化ごと一覧を空にする。periodKey は候補そのもので
     // あり文字列でなければ契約違反のため `string?` のまま受ける（違反時は一覧ごと空＝従来の fail-safe）。

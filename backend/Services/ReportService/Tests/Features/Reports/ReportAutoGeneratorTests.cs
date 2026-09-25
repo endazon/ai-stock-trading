@@ -68,6 +68,7 @@ public class ReportAutoGeneratorTests
 
         public VersionedReport? Get(string periodKey) => _inner.Get(periodKey);
         public IReadOnlyList<TradingReport> List() => _inner.List();
+        public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys() => _inner.ListPeriodKeys();
         public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
             _inner.Confirm(periodKey, expectedVersion, confirmedAt);
         public VersionedReport? GetLatestConfirmed(ReportKind kind) => _inner.GetLatestConfirmed(kind);
@@ -85,6 +86,7 @@ public class ReportAutoGeneratorTests
 
         public VersionedReport? Get(string periodKey) => _inner.Get(periodKey);
         public IReadOnlyList<TradingReport> List() => _inner.List();
+        public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys() => _inner.ListPeriodKeys();
         public int UpsertDraft(TradingReport report, int expectedVersion) => _inner.UpsertDraft(report, expectedVersion);
         public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
             _inner.Confirm(periodKey, expectedVersion, confirmedAt);

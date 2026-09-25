@@ -17,6 +17,13 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
     public IReadOnlyList<TradingReport> List() =>
         [.. db.Reports.OrderByDescending(r => r.PeriodStart).Select(r => ToReport(r))];
 
+    // FR-14, #843 項目1, IADR-0418: **SELECT で 2 列だけを射影する**（本文の列を読まない）。
+    public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys() =>
+        [.. db.Reports
+            .OrderByDescending(r => r.PeriodStart)
+            .ThenByDescending(r => r.PeriodKey)
+            .Select(r => new ReportPeriodKeyItem(r.PeriodKey, r.PeriodStart))];
+
     public int UpsertDraft(TradingReport report, int expectedVersion)
     {
         ArgumentNullException.ThrowIfNull(report);

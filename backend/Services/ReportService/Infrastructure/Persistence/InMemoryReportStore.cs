@@ -27,6 +27,18 @@ public sealed class InMemoryReportStore : IReportStore
         }
     }
 
+    // FR-14, #843 項目1, IADR-0418: EfReportStore と同じ並び（開始日の降順・同日は会話キーの降順）。
+    public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys()
+    {
+        lock (_gate)
+        {
+            return [.. _rows.Values
+                .Select(r => new ReportPeriodKeyItem(r.Report.PeriodKey, r.Report.PeriodStart))
+                .OrderByDescending(r => r.PeriodStart)
+                .ThenByDescending(r => r.PeriodKey, StringComparer.Ordinal)];
+        }
+    }
+
     public int UpsertDraft(TradingReport report, int expectedVersion)
     {
         ArgumentNullException.ThrowIfNull(report);

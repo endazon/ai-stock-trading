@@ -17,6 +17,9 @@ public sealed class ReportAppService(
 
     public IReadOnlyList<TradingReport> List() => store.List();
 
+    // FR-14, #843 項目1, IADR-0418: 入力補完の候補用の軽い一覧（本文を読まない）。
+    public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys() => store.ListPeriodKeys();
+
     /// <summary>ドラフトを作成/更新し、確定後の Version を返す。</summary>
     public int UpsertDraft(TradingReport report, int expectedVersion)
     {

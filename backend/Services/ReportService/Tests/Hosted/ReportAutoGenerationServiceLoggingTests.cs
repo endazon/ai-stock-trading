@@ -105,6 +105,7 @@ public class ReportAutoGenerationServiceLoggingTests
 
         public VersionedReport? Get(string periodKey) => _inner.Get(periodKey);
         public IReadOnlyList<TradingReport> List() => _inner.List();
+        public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys() => _inner.ListPeriodKeys();
         public int UpsertDraft(TradingReport report, int expectedVersion) => _inner.UpsertDraft(report, expectedVersion);
         public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
             _inner.Confirm(periodKey, expectedVersion, confirmedAt);

@@ -11,6 +11,12 @@ public interface IReportStore
     IReadOnlyList<TradingReport> List();
 
     /// <summary>
+    /// FR-14, #843 項目1, IADR-0418: 会話キーと開始日だけの一覧（開始日の降順・同日は会話キーの降順）。
+    /// 本文を読まない（入力補完が打鍵ごとに読むため）。
+    /// </summary>
+    IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys();
+
+    /// <summary>
     /// ドラフトを作成/更新する。新規は expectedVersion=0。既存ドラフトは expectedVersion 一致時のみ更新し Version を +1 する。
     /// 確定済み報告書は不変のため更新しようとすると例外（呼び出し側で防ぐ）。不一致は <see cref="ReportConcurrencyException"/>。
     /// </summary>
