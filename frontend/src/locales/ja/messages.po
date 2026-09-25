@@ -259,6 +259,14 @@ msgstr "OpenD 認証操作"
 msgid "paper 稼働により"
 msgstr "paper 稼働により"
 
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "S0 以外の手法は moomoo SIMULATE の新規建てにだけ効きます（空売りの新規建ては S0）。"
+msgstr "S0 以外の手法は moomoo SIMULATE の新規建てにだけ効きます（空売りの新規建ては S0）。"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "S1〜S3 が効くのは moomoo SIMULATE の新規建てだけです。実際の発注先が moomoo SIMULATE でなければ、新規建ては発注されず見送られます（通知あり）。空売りの新規建ては常に S0 で扱います。変更はこれ以後の承認から効き、既に持っている建玉には及びません。変更理由は必須で、設定の変更履歴に残ります。"
+msgstr "S1〜S3 が効くのは moomoo SIMULATE の新規建てだけです。実際の発注先が moomoo SIMULATE でなければ、新規建ては発注されず見送られます（通知あり）。空売りの新規建ては常に S0 で扱います。変更はこれ以後の承認から効き、既に持っている建玉には及びません。変更理由は必須で、設定の変更履歴に残ります。"
+
 #: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
 msgid "SMS の再送を要求しました。"
 msgstr "SMS の再送を要求しました。"
@@ -485,6 +493,10 @@ msgstr "ドローダウン"
 msgid "なし"
 msgstr "なし"
 
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "のため、実弾（moomoo REAL）へ切り替えられません。先に損切りの実行機構を S0（ブローカー側逆指値）へ戻してください。"
+msgstr "のため、実弾（moomoo REAL）へ切り替えられません。先に損切りの実行機構を S0（ブローカー側逆指値）へ戻してください。"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "の使用率"
 msgstr "の使用率"
@@ -616,6 +628,7 @@ msgstr "保存しました。"
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
 msgid "保存に失敗しました。"
 msgstr "保存に失敗しました。"
 
@@ -684,6 +697,7 @@ msgstr "入力できない値があります:"
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "入力内容に誤りがあります。"
 msgstr "入力内容に誤りがあります。"
@@ -893,6 +907,7 @@ msgstr "変動閾値を保存中…"
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "変更する権限がありません。"
 msgstr "変更する権限がありません。"
@@ -1074,6 +1089,14 @@ msgstr "必要証拠金が最も大きい建玉から"
 msgid "成立中で最優先の統制:"
 msgstr "成立中で最優先の統制:"
 
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "手法の変更理由"
+msgstr "手法の変更理由"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "手法は変更されていません。"
+msgstr "手法は変更されていません。"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "承認者"
 msgstr "承認者"
@@ -1081,6 +1104,35 @@ msgstr "承認者"
 #: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
 msgid "接続状態"
 msgstr "接続状態"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "損切りの実行機構"
+msgstr "損切りの実行機構"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "損切りの実行機構（変更）"
+msgstr "損切りの実行機構（変更）"
+
+#: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
+msgid "損切りの実行機構が"
+msgstr "損切りの実行機構が"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "損切りの実行機構の変更"
+msgstr "損切りの実行機構の変更"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "損切りの実行機構を保存"
+msgstr "損切りの実行機構を保存"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "損切りの実行機構を保存しました。"
+msgstr "損切りの実行機構を保存しました。"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "損切りの実行機構を保存中…"
+msgstr "損切りの実行機構を保存中…"
 
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "撤退基準に到達（"
@@ -1342,6 +1394,10 @@ msgstr "現在のバージョン:"
 msgid "現在の変動閾値"
 msgstr "現在の変動閾値"
 
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "現在の手法:"
+msgstr "現在の手法:"
+
 #: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
 msgid "現在の発注先"
 msgstr "現在の発注先"
@@ -1414,6 +1470,10 @@ msgstr "発注先"
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "発注先（変更）"
 msgstr "発注先（変更）"
+
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
+msgid "発注先が実弾（moomoo REAL）の間は、S0（ブローカー側逆指値）以外を選べません。S1〜S3 は moomoo SIMULATE でのみ選べます。"
+msgstr "発注先が実弾（moomoo REAL）の間は、S0（ブローカー側逆指値）以外を選べません。S1〜S3 は moomoo SIMULATE でのみ選べます。"
 
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "発注先の変更"
@@ -1594,6 +1654,7 @@ msgstr "空欄/非数値は保存無効化（黙って 0 を送らない）。�
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
+#: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "競合が発生しました。最新を取得して再試行してください。"
 msgstr "競合が発生しました。最新を取得して再試行してください。"

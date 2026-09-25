@@ -44,6 +44,7 @@ import {
   formatAt,
   isEquityRatioField,
   isLiveProvider,
+  isStopLossMethodPermittedOn,
   LIMIT_FIELDS,
   LIMIT_FIELD_KEYS,
   limitInputToWire,
@@ -54,6 +55,7 @@ import {
   RISKY_PRODUCT_TYPES,
   PRODUCT_TYPE_OPTIONS,
   stageLabel,
+  stopLossMethodLabel,
   validateLimitInput,
   wireToLimitInput,
 } from '@ai-stock-trading/lib/risk/contracts';
@@ -70,6 +72,7 @@ import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
 import { ScreenHeader, ScreenLink } from '@ai-stock-trading/components/ScreenHeader';
 import { MonitorParametersForm } from './MonitorParametersForm';
 import { Stage1TradeCountForm } from './Stage1TradeCountForm';
+import { StopLossMethodForm } from './StopLossMethodForm';
 import { WatchlistForm } from './WatchlistForm';
 
 // SC-02, FR-13, FR-19, FR-20, UC-06, ADR-0007, ADR-0008, IADR-0084, IADR-0086: リスク設定画面（リスク上限・ガードの閲覧/変更）。
@@ -334,6 +337,13 @@ export function RiskSettingsPage() {
                     stageMode={loaded.stage.mode}
                     stage={loaded.stage.stage}
                     status={riskStatus}
+                    stopLossMethod={loaded.stopLossMethod}
+                  />
+                  {/* SC-02, FR-10, ADR-0040 決定1・決定3, #823, IADR-0422 決定2: 損切りの実行機構。
+                      発注先と組で読む設定であるため、発注先フォームの直後に置く。 */}
+                  <StopLossMethodForm
+                    current={loaded.stopLossMethod}
+                    provider={loaded.brokerProvider}
                   />
                 </div>
               </div>
@@ -805,10 +815,17 @@ function BrokerProviderForm({
   stageMode,
   stage,
   status,
+  stopLossMethod,
 }: {
   current: number;
   stageMode: number;
   stage: number;
+  /**
+   * FR-10, ADR-0040 決定1, #823, IADR-0422 決定2: 現在の損切りの実行機構。**S0 以外のまま実弾へは切り替えられない**
+   * （サーバの `BrokerProviderChangeRejection.StopLossMethodNotBrokerStop`。確認操作が揃っていても 400）。
+   * 画面は送信する前に同じ条件で止め、対処（先に S0 へ戻す）を示す。
+   */
+  stopLossMethod: number;
   /**
    * ③ の提示に用いる equity と統制値の実額。**ページが 1 回取得したものを受け取る**（#362）。
    * 以前は本フォームが独自に `/risk-controls/status` を叩いていたが、リスク上限の実額併記でも同じ値が
@@ -849,6 +866,8 @@ function BrokerProviderForm({
   const equityUnavailable = status === null;
   // ② Stage 1 のまま実弾＝段階ゲートを飛ばしている。**保存は妨げない**（計画）。警告として提示する。
   const skipsStageGate = live && !isLiveProvider(stageMode);
+  // FR-10, ADR-0040 決定1, #823: S0 以外の手法のまま実弾へは切り替えられない（判定式はサーバの IsPermittedOn と同じ）。
+  const blockedByStopLossMethod = !isStopLossMethodPermittedOn(stopLossMethod, selected);
 
   async function submit(): Promise<void> {
     setSaveError(null);
@@ -873,7 +892,7 @@ function BrokerProviderForm({
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    if (unchanged || reasonMissing || save.isPending) return;
+    if (unchanged || reasonMissing || blockedByStopLossMethod || save.isPending) return;
     if (live) {
       // 実弾は直接保存しない。**必ず警告モーダルを経由する。**
       setModalOpen(true);
@@ -930,11 +949,22 @@ function BrokerProviderForm({
           </p>
         )}
 
+        {/* FR-10, ADR-0040 決定1, #823: 利用者が実弾を選んだことに対する**危険の提示**（サーバの 400 と同じ対処を書く）。 */}
+        {blockedByStopLossMethod && (
+          <p role="alert" className="mt-2 text-[11px] text-danger">
+            {i18n._(msg`損切りの実行機構が`)}
+            {stopLossMethodLabel(stopLossMethod)}
+            {i18n._(
+              msg`のため、実弾（moomoo REAL）へ切り替えられません。先に損切りの実行機構を S0（ブローカー側逆指値）へ戻してください。`,
+            )}
+          </p>
+        )}
+
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <Button
             type="submit"
             variant="primary"
-            disabled={unchanged || reasonMissing || save.isPending}
+            disabled={unchanged || reasonMissing || blockedByStopLossMethod || save.isPending}
           >
             {live ? i18n._(msg`実弾への切替を確認する`) : i18n._(msg`保存`)}
           </Button>

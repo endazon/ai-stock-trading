@@ -67,7 +67,7 @@ export interface RiskManagementSettings {
   stage1MinimumTradeCount: number;
   // FR-10, FR-12, SC-02, ADR-0040 決定1・決定3, #819, IADR-0342: **損切りの実行機構**
   // （StopLossExecutionMethod enum・数値。0=S0 ブローカー側逆指値〔既定〕/ 1=S1 / 2=S2 逆指値なしの建玉を許容 / 3=S3）。
-  // 変更は `PUT /risk-controls/settings/stop-loss-method`（利用者のみ）。入力・表示は #823。
+  // 変更は `PUT /risk-controls/settings/stop-loss-method`（利用者のみ）。SC-02 の入力は `StopLossMethodForm`（#823・IADR-0422）。
   stopLossMethod: number;
 }
 
@@ -109,7 +109,8 @@ export interface RiskStatusView {
   maxDrawdownRatio: number;
   openPositionCount: number;
   maxOpenPositions: number;
-  // FR-10, SC-03, ADR-0040 決定1, #819, IADR-0342: 選択中の**損切りの実行機構**（参照専用・数値）。表示は #823。
+  // FR-10, SC-03, ADR-0040 決定1, #819, IADR-0342: 選択中の**損切りの実行機構**（参照専用・数値）。
+  // SC-03 の「現 Stage ／ 発注先」に表示する（#823・IADR-0422）。
   stopLossMethod: number;
   // FR-11, SC-03, ADR-0041 決定1, #870, IADR-0360: **当日のシステム外売買の取り込み件数**（参照専用）。
   //
@@ -378,6 +379,9 @@ const CHANGE_TYPE_LABELS: Record<number, string> = {
   6: '再開',
   7: '発注先',
   8: 'Stage 1 最小取引件数',
+  // FR-10, SC-02, #823: 9 は #819 で末尾追加された（StopLossMethodChanged）が写像が追随しておらず、
+  // 手法の変更が履歴に「不明(9)」と出ていた。
+  9: '損切りの実行機構',
 };
 
 // FR-13, SC-03, #334: 発注先の変更履歴を絞り込むための種別値（SettingsChangeType.BrokerProviderChanged）。
@@ -435,6 +439,40 @@ export const isLiveProvider = (v: number): boolean => v === BROKER_PROVIDER_MOOM
 // 内蔵 paper（外部へ一度も発注しない擬似約定）か。FR-12 の警告バナー・paper ラベルの判定に用いる。
 export const isInternalPaper = (v: number | null | undefined): boolean =>
   v === BROKER_PROVIDER_INTERNAL_PAPER;
+
+// FR-10, FR-12, SC-02, SC-03, ADR-0040 決定1, #823, IADR-0422 決定2: **損切りの実行機構**
+// （StopLossExecutionMethod・数値。序数はバックエンド enum と一致させる）。表示名は計画の手法の表
+// （ID ＋ 手法）であり、日報（ReportService の `StopLossMethodUsage.Label`）と同じ語を使う。
+// 用語: S2 を「ペーパー」と呼ばない（免除が効くのは moomoo SIMULATE であり、内蔵 paper ではない）。
+const STOP_LOSS_METHOD_LABELS: Record<number, string> = {
+  0: 'S0 ブローカー側逆指値（既定）',
+  1: 'S1 ソフトウェア逆指値',
+  2: 'S2 逆指値なしの建玉を許容',
+  3: 'S3 他のブローカー側注文種別',
+};
+
+// 各手法の挙動の 1 行説明（計画の手法の表の「挙動」列と FR-10 の機能仕様書の要約）。SC-02 の選択肢に添える。
+export const STOP_LOSS_METHOD_DESCRIPTIONS: Record<number, string> = {
+  0: '建玉と同時にブローカーへ逆指値を発注します（実弾と同じ）。moomoo SIMULATE では逆指値が拒否されるため建玉を持ちません。',
+  1: 'ブローカーへ逆指値を出さず、損切りライン到達でシステムが成行で決済します。システムの停止中・閉場中は保護されません。',
+  2: '保護逆指値を置かずに建玉を持ちます。損切りライン到達でもシステムもブローカーも決済しません（手動で決済します）。',
+  3: '別の注文種別（ストップリミット等）で保護レグを発注します。拒否される見込みで、拒否理由を記録することが目的です。',
+};
+
+// FR-10, #823: 手法の序数（バックエンド StopLossExecutionMethod と一致）。
+export const STOP_LOSS_METHOD_BROKER_STOP = 0;
+
+// FR-10, SC-02, #823: 選択肢（既知の 4 値のみ）。未知値は選択肢に出さないが、現在値の表示は labelOf が安全側に倒す。
+export const STOP_LOSS_METHOD_OPTIONS: EnumOption[] = optionsOf(STOP_LOSS_METHOD_LABELS);
+
+export const stopLossMethodLabel = (v: number): string => labelOf(STOP_LOSS_METHOD_LABELS, v);
+
+// FR-10, ADR-0040 決定1, #819, #823, IADR-0342 決定2: その手法を今の発注先の設定で選べるか。
+// **サーバの `StopLossMethodChange.IsPermittedOn` と同じ式である**（S0 か、発注先が実弾でない）——
+// 片方だけ変えると、画面は選ばせるのにサーバが 400 を返す／その逆になる。実弾の判定は `isLiveProvider` だけを通す。
+export const isStopLossMethodPermittedOn = (method: number, provider: number): boolean =>
+  method === STOP_LOSS_METHOD_BROKER_STOP || !isLiveProvider(provider);
+
 // ProductType の信用買い・空売り。新規有効化を「危険な緩和」と判定するための定数（IADR-0086 決定 3）。
 // **空売りは損失に上限が無い**ため（ADR-0016）、信用買いと同様に危険な緩和として確認を求める。
 export const PRODUCT_TYPE_MARGIN_LONG = 1;

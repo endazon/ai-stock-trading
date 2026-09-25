@@ -503,6 +503,7 @@ public static class ReportRenderer
         AppendFxSourceStatus(sb, view);
         AppendBuyInInferences(sb, view);
         AppendShortSelling(sb, view);
+        AppendStopLossMethods(sb, view);
         // ADR-0030 決定4: 「当月の OpenD 稼働率分布」は §6.2 のまま。**親節へ昇格させない**——
         // 稼働率は取引システムが動く前提そのものの成否であり、親節（前提条件の見直し）の主題に属する。
         // **親節から切り離すと、稼働率の数字を見て前提を見直すという読みの筋が切れる。**
@@ -970,6 +971,53 @@ public static class ReportRenderer
             sb.Append(CultureInfo.InvariantCulture,
                 $"| {symbol} | {ReportAmountFormat.Base(amount)} | {Percent(rate)} |\n");
         }
+    }
+
+    // FR-06, FR-10, FR-12, ADR-0040 決定1, #823, IADR-0422 決定3: **損切りの実行機構（当日）**。
+    //
+    // 計画（ADR-0040 決定1）は「どの手法を選んでいるかは、監査ログ・SC-03・日報に出す」と定めるが、
+    // 日報テンプレート（04_report-templates）はまだ欄を持たない。**§4 の既存の書式**（`### …（当日）` の子節と
+    // `- **項目**: 値` の箇条書き）に合わせて置く（IADR-0422 決定3）。
+    //
+    // 🔴 **数えるのは承認時点の手法**（承認が運ぶ値）であり、日報を作る時点の設定値ではない。
+    // 🔴 **照会できなかった場合は「なし」と書かない**——新規建てが無かったのと同じに読めるため区別する。
+    // 🔴 **承認 0 件は「なし」と明記する**（空欄と「なし」を区別する。§4 の他の子節と同じ規律）。
+    private static void AppendStopLossMethods(StringBuilder sb, ReportView view)
+    {
+        if (view.Kind != ReportKind.Daily)
+            return; // 計画が求めるのは日報である（求められていない節を勝手に増やさない）。
+
+        sb.Append("\n### 損切りの実行機構（当日）\n\n");
+
+        if (view.StopLossMethods is not { } usage)
+        {
+            sb.Append("- **承認の記録を照会できませんでした（要確認）**: 「承認なし」とは区別しています。\n");
+            return;
+        }
+
+        if (usage.TotalApprovals == 0)
+        {
+            sb.Append("- **新規建ての承認（承認時点の手法）**: なし（当日の新規建ての承認は 0 件）\n");
+        }
+        else
+        {
+            var breakdown = string.Join(" / ", usage.Counts.Select(c =>
+                string.Create(CultureInfo.InvariantCulture, $"{StopLossMethodUsage.Label(c.Method)} {c.Count} 件")));
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **新規建ての承認（承認時点の手法）**: {usage.TotalApprovals} 件 — {breakdown}\n");
+        }
+
+        // 🔴 復元できなかった記録は件数に含めていない。**0 件のときは出さない**（異常時だけの注記）。
+        if (usage.UnreadableCount > 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- **本文を復元できなかった承認の記録: {usage.UnreadableCount} 件**（上の件数に含めていません）\n");
+        }
+
+        // 読み違えを防ぐ固定の注記（FR-10 の機能仕様書の既存の記述の要約）。
+        sb.Append("- 承認の件数であり、発注・約定の件数ではありません。"
+            + "S0 以外の手法が効くのは moomoo SIMULATE の新規建てだけです"
+            + "（実際の発注先が moomoo SIMULATE でなければ発注されず見送られ、空売りの新規建ては S0 で扱われます）。\n");
     }
 
     // FR-06, FR-10, FR-20, #338, IADR-0253, 04_report-templates 月報 §6 / 04_workflows/03 月報 3:

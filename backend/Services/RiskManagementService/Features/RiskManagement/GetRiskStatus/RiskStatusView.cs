@@ -47,7 +47,7 @@ public sealed record RiskStatusView(
     int MaxOpenPositions,
     // FR-10, SC-03, ADR-0040 決定1, #819, IADR-0342 決定2: **損切りの実行機構**（S0〜S3）。計画は「どの手法を
     // 選んでいるかを SC-03 に出す」と定める（どの手法で走ったかが読めなければ観測結果を解釈できない）。
-    // 表示は #823。末尾の既定値つき項目として足し、既存の生成箇所を変えない。
+    // SC-03 の表示は #823（IADR-0422 決定4）。末尾の既定値つき項目として足し、既存の生成箇所を変えない。
     StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder,
     // FR-11, FR-06, SC-03, ADR-0041 決定 1, #870, IADR-0360 決定 5: **当日のシステム外売買の取り込み件数**。
     // 計画は「統制状態の参照に、当期の取り込みの件数を出す」と定める（参照のみ。本画面から取り込みは行わない）。
