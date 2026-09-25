@@ -74,6 +74,21 @@ public class OperationReadContractTests
         keys.Should().Equal("daily-2026-09-18", "daily-2026-09-17", "weekly-2026-W38");
     }
 
+    // 🔴 T-10-944, FR-14, FR-09, UC-03, NFR, #952, IADR-0420: 差し戻し（POST /reports/{periodKey}/request-changes）。送り手は受理の本文に
+    // 状態機械の記録（`ReportReview`）を返し、受け手は版を読んで利用者へ示す。サービス間の読み取り契約の検査（T-10-945）が develop で
+    // 最初に挙げた所見（本物）で、送り手の `Version` を改名しても両サービスの試験が緑のまま「版 0 を差し戻しました」と表示していた。
+    [Fact]
+    public async Task 差し戻しの結果は送り手の本物の型を直列化した応答から版を読める()
+    {
+        var review = new ReportDomain.ReportReview("daily-2026-09-01", ReportDomain.ReviewState.ChangesRequested, 4);
+        var controller = new HttpReportReviewController(Client(review, ReportWire), NullLogger<HttpReportReviewController>.Instance);
+
+        var result = await controller.RequestChangesAsync("daily-2026-09-01", 4);
+
+        (result.Succeeded, result.Version).Should().Be((true, 4));
+        result.Message.Should().Contain("版 4");
+    }
+
     // 🔴 T-10-914: 段階ゲートの現況（GET /risk-controls/stage-gate）。
     [Fact]
     public async Task 段階ゲートの現況は送り手の本物の型を直列化した応答から読める()

@@ -51,6 +51,33 @@ internal static class CSharpSource
         return new string(buffer);
     }
 
+    /// <summary>
+    /// NFR, #952, IADR-0420: コードに現れる<b>文字列リテラル</b>（コメントの中は数えない）の開始位置と原文。
+    /// 原文は接頭辞（<c>$</c> / <c>@</c>）と引用符を含む。補間ホールの中の入れ子リテラルは外側の 1 つに含める。
+    /// 字句の規則は <see cref="BlankCommentsAndLiterals"/> と同じ（同じ走査で潰す範囲を記録する）。
+    /// </summary>
+    public static IReadOnlyList<(int Start, string Text)> StringLiterals(string source)
+    {
+        var buffer = source.ToCharArray();
+        var literals = new List<(int Start, string Text)>();
+        var i = 0;
+        while (i < buffer.Length)
+        {
+            var c = buffer[i];
+            if (c == '/' && i + 1 < buffer.Length && buffer[i + 1] == '/') { i = BlankToEndOfLine(buffer, i); continue; }
+            if (c == '/' && i + 1 < buffer.Length && buffer[i + 1] == '*') { i = BlankBlockComment(buffer, i); continue; }
+            if (c == '\'') { i = BlankCharLiteral(buffer, i); continue; }
+            if (c != '"') { i++; continue; }
+
+            var start = i;
+            while (start > 0 && source[start - 1] is '$' or '@') start--;
+            i = BlankStringLiteral(buffer, i);
+            literals.Add((start, source[start..i]));
+        }
+
+        return literals;
+    }
+
     /// <summary>指定した範囲を空白へ潰す（改行は残す）。<b>長さは変えない</b>。</summary>
     public static string BlankRanges(string source, IEnumerable<(int Start, int End)> ranges)
     {
