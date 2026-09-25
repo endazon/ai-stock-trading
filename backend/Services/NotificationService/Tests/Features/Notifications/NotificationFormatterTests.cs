@@ -639,6 +639,21 @@ public class NotificationFormatterTests
         msg.Content.Should().NotContain("unknown");
     }
 
+    // 🔴 T-10-986, FR-11, FR-14, ADR-0041 決定 4, #871, IADR-0423: Discord Bot 経由（代理）の乖離の取り込みは、通知に操作した
+    // 利用者と認可の主体の両方を出す。利用者本人の取り込み（AuthorizedBy=null）は従来どおり操作者だけ。理由文は窓口で変わらない。
+    [Theory]
+    [InlineData("developer", "ai-stock-trading-owner", "操作者 developer・ai-stock-trading-owner 経由・理由: 手動売却。")]
+    [InlineData("endazon", null, "操作者 endazon・理由: 手動売却。")]
+    public void 乖離の取り込みの通知は操作者と代理の主体を表示する(string actor, string? authorizedBy, string expected)
+    {
+        var e = new PositionDriftAdopted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, 3_381, 0, 0, ConfirmedAt, 335m,
+            RealizedPnlRecorded: false, ReferencePrice: null, EstimatedPnlInBase: null,
+            actor, "手動売却", ConfirmedAt, authorizedBy);
+
+        NotificationFormatter.From(e).Content.Should().Contain(expected);
+    }
+
     [Fact]
     public void 利用者本人の確定は従来どおり確定者だけを表示する()
     {

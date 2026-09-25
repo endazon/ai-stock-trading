@@ -102,6 +102,8 @@ internal static class RiskControlEndpoints
         owner.MapCancelPositionClose();
         // FR-10, FR-11, UC-06, ADR-0003, #849, IADR-0350: 台帳とブローカーの乖離の取り込み（利用者のみ・理由必須）。
         // **サービスへは開かない**——生成AI・自動処理が台帳を書き換えられないようにする。
+        // FR-14, ADR-0041 決定 4, #871, IADR-0423: Discord Bot（`/drift adopt`）も owner マップ機密クライアントで本口を呼ぶ
+        // （操作者は本文の onBehalfOf を DelegatedActorResolver が解決する。窓口は 2 つ・記録の内容は 1 つ）。
         owner.MapAdoptPositionDrift();
         owner.MapClearGoodFaithViolations();
         owner.MapGetRiskStatus();

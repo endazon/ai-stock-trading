@@ -467,7 +467,7 @@ public static class NotificationFormatter
         "リスク統制: 建玉の乖離を台帳へ取り込み",
         $"{e.Symbol}/{e.Market} の台帳の建玉を {e.LedgerQuantityBefore} → {e.LedgerQuantityAfter} へ合わせました"
             + $"（ブローカの観測 {e.BrokerQuantity}・観測 {e.ObservedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}Z）。"
-            + $"操作者 {e.Actor}・理由: {e.Reason}。"
+            + $"操作者 {AdopterOf(e)}・理由: {e.Reason}。"
             + "システム外の売買の約定価格は分からないため、**実現損益は記録していません**"
             + "（当日損益・連敗・段階ゲートの実績には入りません）。"
             + (e.EstimatedPnlInBase is { } estimate && e.ReferencePrice is { } reference
@@ -476,6 +476,11 @@ public static class NotificationFormatter
                 : "現在値を取得できなかったため、参考の推定損益もありません。")
             + "当該銘柄にブローカー側の保護注文（逆指値）が残っていないか、証券会社のアプリで確認してください。",
         NotificationSeverity.Critical);
+
+    // FR-11, FR-14, ADR-0041 決定 4, #871, IADR-0423: 取り込みの操作者。Discord Bot 経由（代理）では認可の主体も添える
+    // （ReportConfirmed の確定者と同じ書き方）。利用者本人のトークンでの取り込みは従来どおり操作者だけ。
+    private static string AdopterOf(PositionDriftAdopted e) =>
+        string.IsNullOrWhiteSpace(e.AuthorizedBy) ? e.Actor : $"{e.Actor}・{e.AuthorizedBy} 経由";
 
     // FR-09, FR-10, UC-06, #330, IADR-0133: 維持率割れによる建玉の自動縮小。
     // 利用者の承認を待たずシステムが決済したため **Critical**。本文には計画が日報へ求めた項目

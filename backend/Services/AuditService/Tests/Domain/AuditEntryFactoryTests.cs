@@ -603,6 +603,27 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain("実現損益は未記録");
     }
 
+    // 🔴 T-10-986, FR-11, FR-14, ADR-0041 決定 4, #871, IADR-0383, IADR-0423: Discord Bot 経由（代理）の取り込みは、要約に
+    // 操作した利用者と認可の主体の両方を出す。利用者本人のトークン（AuthorizedBy=null）は従来どおり操作者だけ。
+    // 過去の `unknown` は内部の既定値を生で出さず「操作者不明」と書く。理由文は窓口で変わらない。
+    [Theory]
+    [InlineData("developer", "ai-stock-trading-owner", "（developer・代理 ai-stock-trading-owner）: 手動売却")]
+    [InlineData("endazon", null, "（endazon）: 手動売却")]
+    [InlineData("unknown", null, "（操作者不明）: 手動売却")]
+    public void PositionDriftAdopted_の要約は操作者と代理の主体を残す(string actor, string? authorizedBy, string expected)
+    {
+        var e = new PositionDriftAdopted(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, 3_381, 0, 0, RecordedAt.AddMinutes(-5), 335m,
+            RealizedPnlRecorded: false, ReferencePrice: null, EstimatedPnlInBase: null,
+            actor, "手動売却", RecordedAt, authorizedBy);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().EndWith(expected);
+        // 生の値はペイロードにそのまま残る（要約だけが読み替える）。
+        entry.Detail.Should().Contain(actor);
+    }
+
     // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れの自動縮小（**記録先 1: 監査ログ**）。
     // 利用者の承認も AI も介在しない自動決済であるため、この記録が「なぜ建玉が減ったか」の一次証跡になる。
     [Fact]

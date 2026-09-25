@@ -33,4 +33,13 @@ public record PositionDriftAdopted(
     decimal? EstimatedPnlInBase,
     string Actor,
     string Reason,
-    DateTimeOffset AdoptedAt);
+    DateTimeOffset AdoptedAt,
+    // FR-14, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0383, IADR-0423: **代理で取り込んだときの認可の主体**
+    // （owner マップ機密クライアントの ID＝トークンの `azp`）。
+    //
+    // 取り込みの窓口は REST API と Discord Bot の両方である（ADR-0041 決定 4）。Bot は `client_credentials` の
+    // トークンで呼ぶため、Actor には Bot が本文（`onBehalfOf`）で運んだ**操作した利用者**が入り、本項目に
+    // **誰の資格で通ったか**が入る。利用者本人のトークンでの取り込みは Actor＝本人・本項目＝null。
+    // 🔴 **それ以外の項目（Actor・Reason・数量・観測）は窓口に依らず同じ内容である**（決定 4「記録の内容は同じ」）。
+    // 追加は末尾・任意（既定 null）。旧形式（AuthorizedBy 無し）の JSON はそのまま読める（IADR-0079 / IADR-0134 決定2）。
+    string? AuthorizedBy = null);
