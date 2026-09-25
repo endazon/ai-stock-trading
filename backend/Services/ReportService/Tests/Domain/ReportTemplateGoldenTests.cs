@@ -96,11 +96,29 @@ public class ReportTemplateGoldenTests
                 new Guid("33333333-3333-3333-3333-333333333333"),
                 new OrderIntent("TSLA", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 5, 200m),
                 5, T0, StopLossMethod: StopLossExecutionMethod.NoProtectiveStop),
+            // T-10-1113, #1006: S1・S3 は選択どおりに執行される（IADR-0344・IADR-0347）。4 区分の並びを固定する。
+            new OrderApproved(
+                new Guid("44444444-4444-4444-4444-444444444444"),
+                new OrderIntent("MSFT", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 3, 400m),
+                3, T0, StopLossMethod: StopLossExecutionMethod.SoftwareStop),
+            new OrderApproved(
+                new Guid("55555555-5555-5555-5555-555555555555"),
+                new OrderIntent("NVDA", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 4, 120m),
+                4, T0, StopLossMethod: StopLossExecutionMethod.AlternativeBrokerOrderType),
         ]),
         // T-10-1093, FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429: 発注執行の解決結果（日報の 2 行目・月報 §6 の日数）。
-        // 一致（AAPL の S0）と食い違い（TSLA の S2 が実際の発注先 moomoo REAL で拒否）の両方を置く。
+        // 一致（AAPL の S0）と食い違い（TSLA の S2 が実際の発注先 moomoo REAL で見送り）の両方を置く。
+        // T-10-1113, #1006: S1（MSFT）・S3（NVDA）の一致を足し、S1＋S3＋見送りが同じ日に並ぶ形を固定する。
         StopLossMethodResolutions = new StopLossMethodResolutionFeed(
         [
+            new StopLossMethodResolved(
+                new Guid("44444444-4444-4444-4444-444444444444"), "MSFT", Market.UnitedStates, ProductType.Cash,
+                StopLossExecutionMethod.SoftwareStop, StopLossExecutionMethod.SoftwareStop,
+                StopLossMethodResolutionReason.AsSelected, BrokerProvider.MoomooSimulate, T0),
+            new StopLossMethodResolved(
+                new Guid("55555555-5555-5555-5555-555555555555"), "NVDA", Market.UnitedStates, ProductType.Cash,
+                StopLossExecutionMethod.AlternativeBrokerOrderType, StopLossExecutionMethod.AlternativeBrokerOrderType,
+                StopLossMethodResolutionReason.AsSelected, BrokerProvider.MoomooSimulate, T0),
             new StopLossMethodResolved(
                 new Guid("22222222-2222-2222-2222-222222222222"), "AAPL", Market.UnitedStates, ProductType.Cash,
                 StopLossExecutionMethod.BrokerStopOrder, StopLossExecutionMethod.BrokerStopOrder,
