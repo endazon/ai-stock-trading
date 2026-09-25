@@ -251,7 +251,7 @@ public static class NotificationFormatter
                 + $"（試行 {e.Attempt}・OrderId={e.CloseOrderId}・損切りライン {Invariant(e.StopLossPrice)}"
                 + $"・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Critical),
-        // 🔴 #833 項目2, IADR-0344 追記(14): 打ち切りは撤去した。到達の記録は残り、待ち時間を置いて撃ち直しを続ける
+        // 🔴 #833 項目2, IADR-0344 追記(15): 打ち切りは撤去した。到達の記録は残り、待ち時間を置いて撃ち直しを続ける
         // （「次の到達で再試行」は偽になった——価格が戻って到達が途絶えても撃ち直す）。
         _ => new(
             "リスク統制: ソフトウェア逆指値の決済が拒否されました",

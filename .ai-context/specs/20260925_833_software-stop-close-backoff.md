@@ -66,7 +66,7 @@ plan_refs:
 `LogError` ＋ `SoftwareStopOutcome.CloseStalled`（Critical・`SoftwareStopExecuted.cs:56`）を出し、行は Active のまま。
 重複は `StalledNotifiedAt`（`:434` / `:443`）で抑止。試験 `SoftwareStopExecutorTests.到達済みで決済できない状態が猶予を過ぎたらCriticalを一度だけ出す`。
 issue の提案「1 窓 1 回」ではなく「1 行 1 回」で入っている。**無期限の据え置きが無音で続く経路は閉じている**ので項目 4 は完了とみなす。
-残余（1 行 1 回のため、長期の据え置きで再通知しない）は IADR-0344 追記(14) に記録する。
+残余（1 行 1 回のため、長期の据え置きで再通知しない）は IADR-0344 追記(15) に記録する。
 
 ## 🔴 母集合（走査したファイルと除外理由）
 
@@ -85,12 +85,12 @@ issue の提案「1 窓 1 回」ではなく「1 行 1 回」で入っている�
   - `AuditService/Domain/AuditEntryFactory.cs` — `CloseUnfilled` の結末文（「次の巡回で撃ち直す」）。
   - `Tests/.../SoftwareStopExecutorTests.cs` — 打ち切りを固定していた試験（`決済が拒否され続けたら到達1回あたり3試行で打ち切りCriticalを出す`）。
   - `docs/functional/FR-10_risk-controls.md`（「決済が拒否された」行）・`docs/tests/FR-10_risk-controls-tests.md`（T-10-348 の行・新節）。
-  - `.ai-context/adr/IADR-0344_s1-software-stop-loss.md`（追記(14)）・`IADR-0389_...md`（追記）・`.ai-context/adr/README.md`（索引）。
+  - `.ai-context/adr/IADR-0344_s1-software-stop-loss.md`（追記(15)）・`IADR-0389_...md`（追記）・`.ai-context/adr/README.md`（索引）。
 - **除外（理由）**:
   - `GuardProtectiveStops/ProtectiveStopGuard.cs`（`MaxConfirmedCloseRejections` の doc）と `CloseRejectionTracker.cs` 冒頭の注記
     （「S1 の上限は到達 1 回あたりで、次の到達で自ら再武装する」）は本 PR で**偽になる**。着手時は **PR #944 / #945 が同ファイルを編集中**だったため
     触らずにおき、［2026-09-25 追記 / 両 PR のマージ後］**注記だけを本 PR で直した**（挙動には関与しない）。
-  - `.ai-context/adr/IADR-0369_...md:90,100-102` — 他 IADR の本文（凍結）。IADR-0344 追記(14) が後継の正本。**PR #944 / #945 も編集中。**
+  - `.ai-context/adr/IADR-0369_...md:90,100-102` — 他 IADR の本文（凍結）。IADR-0344 追記(15) が後継の正本。**PR #944 / #945 も編集中。**
   - `.ai-context/specs/20260918_820_*` ほか確定済みの作業仕様書 — 凍結記録。
   - `Hosted/ProtectiveStopGuardService.cs` — 待ち時間中の据え置きは従来の「据え置き」件数に入る（ガードの `_ => Outcome.Unknown`）。要約の文言（「照会不能・送信結果不明」）は変えていない（着手時は PR #945 が編集中。本 PR の射程外）。
 

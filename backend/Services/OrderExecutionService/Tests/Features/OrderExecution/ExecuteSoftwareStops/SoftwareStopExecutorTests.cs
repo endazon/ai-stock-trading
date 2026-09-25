@@ -434,7 +434,7 @@ public class SoftwareStopExecutorTests
         f.Stops.Find(stop.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Active);
     }
 
-    // ---- 受け入れ基準 9: 拒否が続く決済（#833 項目2, IADR-0344 追記(14) で改定）----
+    // ---- 受け入れ基準 9: 拒否が続く決済（#833 項目2, IADR-0344 追記(15) で改定）----
     // かつては「到達 1 回あたり 3 試行で到達の記録を消して打ち切る」だった。価格が戻ると二度と撃たない（出口を塞ぐ）ため撤去し、
     // 到達の記録を残したまま行ごとの待ち時間を置いて撃ち直しを続ける。待ち時間・Critical の間隔・窓のやり直しは
     // SoftwareStopCloseBackoffTests（T-10-790..T-10-794）が固定する。
