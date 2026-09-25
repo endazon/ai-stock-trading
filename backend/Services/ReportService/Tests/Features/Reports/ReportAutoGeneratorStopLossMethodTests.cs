@@ -194,7 +194,7 @@ public class ReportAutoGeneratorStopLossMethodTests
 
         var monthly = store.List().Single(r => r.Kind == ReportKind.Monthly);
         monthly.Body.Should().Contain("### 損切りの実行機構（当月）");
-        monthly.Body.Should().Contain("- **選択と実際が食い違った日数: 0 日**");
+        monthly.Body.Should().Contain("- **当月の損切りの実行機構: S2 逆指値なしの建玉を許容 1 日／選択と実際が食い違った日数: 0 日**");
         usage.Requested.Should().Contain((new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));
         resolutions.Requested.Should().Contain((new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));
 
