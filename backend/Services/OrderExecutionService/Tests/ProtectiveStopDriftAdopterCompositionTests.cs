@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Wolverine;
 using OrderExecutionService.Infrastructure.Persistence;
+using System.Diagnostics.Metrics;
 using System.Reflection;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.TestSupport.Metrics;
@@ -224,27 +225,100 @@ public class ProtectiveStopDriftAdopterCompositionTests
     // 🔴 #942, IADR-0395: 系列が最初の打ち切りで初めて現れると、Prometheus の increase() はその 1 点目を数えない
     //（起動後の最初の打ち切りをアラートが取りこぼす）。0 は **MeterProvider が立った後**に計上しないと誰にも聞かれない。
     // 殺す変異: ①起動時の計上を消す ②計上を ApplicationStarted より前（ホストの開始前）へ動かす。
+    //
+    // 🔴 IADR-0395（2026-09-25 追記）: 本試験は並列・高負荷で赤（exporter が空）になることがあった。原因は本番ではなく
+    // **試験側の 2 つの競走**である。1 つ目は同期:WebApplicationFactory の `factory.Services` は、ホストの ApplicationStarted が**発火した瞬間**に
+    // 戻る（ファクトリ側の登録が発火を受けて待ちを解くだけで、Program.cs が同じトークンへ登録したコールバックの
+    // **完了は待たない**。トークンのコールバックは後に登録したものから走るため、ファクトリの解放が Program.cs の計上より
+    // 先に来る）。試験のスレッドが ForceFlush まで進むのと、起動のスレッドが 0 を計上するのとが競走し、負荷で前者が勝つと
+    // exporter に点が 1 つも届かない。**計上そのものを見届けてから**吐き出させる（下の PrimeLatch）。
+    // 2 つ目は期限: MeterProvider.ForceFlush(10_000) の期限を先に回る OTLP の reader が食い切ると、足した reader が export
+    // されずに同じ文面で赤になる（下の reader.Collect() のコメント）。足した reader だけを期限なしで吐き出させる。
+    // あわせて Meter 名を試験ごとに隔離する。既定名はプロセス全体で共有され、並走する別の Program ホストの 0 が
+    // この試験の provider にも届くため、「自分のホストの計上を見届けた」も「exporter に届いた」も他人の計上で満たされ得る。
+    // 差し替えるのは BusinessMetrics の Meter 名だけで、計上の呼び出し（Program.cs の ApplicationStarted）は本番のまま通す。
     [Theory]
     [InlineData("paper")]
     [InlineData("moomoo")]
     public async Task Programは起動完了後に打ち切りのカウンタを0で計上し_OTelのexporterまで届く(string provider)
     {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var primed = new PrimeLatch(meterName);
         var exported = new List<(string Name, long Value, string? Reason)>();
+        var reader = new BaseExportingMetricReader(new SumCapturingExporter(exported));
         await using var factory = new ProgramFactory(provider, new ScriptedBroker(), services =>
-            services.ConfigureOpenTelemetryMeterProvider(b =>
-                b.AddReader(new BaseExportingMetricReader(new SumCapturingExporter(exported)))));
+        {
+            services.RemoveAll<BusinessMetrics>();
+            services.AddSingleton(_ => BusinessMetrics.WithMeterName(meterName));
+            services.ConfigureOpenTelemetryMeterProvider(b => b.AddMeter(meterName).AddReader(reader));
+        });
 
-        _ = factory.Services; // ホストを開始する（ApplicationStarted が発火する）。
-        var meterProvider = factory.Services.GetRequiredService<MeterProvider>();
+        _ = factory.Services; // ホストを開始する（ApplicationStarted が発火する。コールバックの完了は待たない）。
 
-        // 戻り値は見ない（OTLP exporter は otel-collector が居ないため失敗する。BusinessMetricsWiringTests と同じ理由）。
-        meterProvider.ForceFlush(10_000);
+        // 起動のスレッドが 0 を計上し終えるまで待つ（再試行ではない。計上という 1 つの出来事を待つ）。
+        // 変異①（計上を消す）はここで落ちる。変異②（開始前へ動かす）はここを通り、下の exporter の表明で落ちる。
+        primed.Wait(TimeSpan.FromSeconds(30)).Should().BeTrue(
+            "Program.cs は起動完了の通知で 2 つの理由の系列を 0 で計上する");
+
+        // 🔴 足した reader だけを期限なしで吐き出させる。MeterProvider.ForceFlush(期限) は reader を登録順に回し、
+        // 残り時間を次へ渡す——先に回る OTLP の reader（otel-collector が居ないので失敗する送信）が高負荷で期限を食うと、
+        // 足した reader は残り 0 で「集めたが export しない」（OTel 1.16 MetricReader.ProcessMetricsCollection）になり、
+        // exporter が空のまま赤になる（実測: 高負荷で ForceFlush 1 回に最大 4.7 秒、期限 1 ms で決定的に空）。
+        reader.Collect().Should().BeTrue("足した exporter は常に成功を返す（OTLP の送信の成否とは切り離す）");
 
         var points = exported.Where(e => e.Name == BusinessMetricNames.DriftAdoptionFollowUpAbandoned).ToList();
         points.Select(p => p.Reason).Should().Contain(
             [BusinessMetrics.DriftFollowUpPositionsUnknown, BusinessMetrics.DriftFollowUpPositionsQueryFailed],
             "起動しただけで 2 つの理由の系列が既に在る（0 から始まるので最初の打ち切りを increase() が拾える）");
         points.Should().OnlyContain(p => p.Value == 0, "起動しただけでは打ち切りは 1 件も起きていない");
+    }
+
+    /// <summary>
+    /// 隔離した Meter 名の打ち切りのカウンタに、2 つの理由の計上が両方とも届いたら開く門（T-10-786）。
+    /// OTel とは独立の <see cref="MeterListener"/> で、ホストの開始より前から聞く。
+    /// </summary>
+    private sealed class PrimeLatch : IDisposable
+    {
+        private readonly MeterListener _listener = new();
+        private readonly HashSet<string> _reasons = [];
+        private readonly ManualResetEventSlim _both = new();
+
+        public PrimeLatch(string meterName)
+        {
+            _listener.InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == meterName
+                    && instrument.Name == BusinessMetricNames.DriftAdoptionFollowUpAbandoned)
+                {
+                    listener.EnableMeasurementEvents(instrument);
+                }
+            };
+            _listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (tag.Key != BusinessMetricNames.TagReason || tag.Value is not string reason) continue;
+                    lock (_reasons)
+                    {
+                        _reasons.Add(reason);
+                        if (_reasons.Contains(BusinessMetrics.DriftFollowUpPositionsUnknown)
+                            && _reasons.Contains(BusinessMetrics.DriftFollowUpPositionsQueryFailed))
+                        {
+                            _both.Set();
+                        }
+                    }
+                }
+            });
+            _listener.Start();
+        }
+
+        public bool Wait(TimeSpan timeout) => _both.Wait(timeout);
+
+        public void Dispose()
+        {
+            _listener.Dispose();
+            _both.Dispose();
+        }
     }
 
     /// <summary>export された long の合計値を（計器名・値・reason タグ）で集める最小の exporter。</summary>
