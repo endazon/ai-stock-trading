@@ -16,6 +16,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -367,6 +368,10 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
         MarketDataSourceFactory.EstimateDailyVolume(
             introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds).ToString()));
 
+// NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0427, #997 (#753): east-west gRPC の h2c 専用ポート。
+// **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない）。`AddGrpc()` は常に呼ばれる。
+builder.AddAiStockTradingGrpcListener();
+
 var app = builder.Build();
 
 // IADR-0012: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
@@ -388,6 +393,8 @@ app.MapAiStockTradingIntrospection();
 
 // FR-10, FR-19, UC-06, ADR-0003, ADR-0007: kill switch 操作・設定変更（利用者のみ）。
 app.MapRiskControlEndpoints();
+// NFR, IADR-0427 決定2, #997 (#753): 読み取りの gRPC 面（REST の read 群と同じサービス・同じ OwnerOrService）。
+app.MapGrpcService<RiskControlsReadGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

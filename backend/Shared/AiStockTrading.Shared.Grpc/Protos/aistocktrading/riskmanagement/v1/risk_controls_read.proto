@@ -1,0 +1,298 @@
+// NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定 5（段 2）, IADR-0328 決定 4,
+// IADR-0331 決定 7, IADR-0427, #997 (#753):
+// リスク管理の**読み取り**（OwnerOrService）の同期照会の gRPC 契約。REST の `GET /risk-controls/…` と同じ意味論であり、
+// 提供側は REST と同じサービス・純関数を呼ぶ（評価器を 2 つにしない）。
+//
+// ■ 置き場と所有（IADR-0328 決定 4 / IADR-0331 決定 7）
+//   所有者は呼び出される側（RiskManagementService）。置き場は共有プロジェクト `AiStockTrading.Shared.Grpc`。
+//
+// ■ 🔴 原則 A（不明・無し・有りを取り違えない。IADR-0427 決定 3）
+//   REST の受け手は、項目が欠けた応答（送り手の改名など）を既定値で読まないよう **nullable の DTO** で受けていた
+//   （#943 / #957）。proto3 の暗黙の既定値（0 / "" / false / 列挙 0）はその区別を消すので、ここでは次の形で運ぶ。
+//   - スカラーは**すべて `optional`**（存在を持つ）。欠落は「不明」であり、0・false・空として読まない。
+//   - 列挙は**すべて `*_UNSPECIFIED = 0`** を持つ。C# の列挙とは番号が 1 ずれる（C# の 0 は `Japan` / `Buy` 等の実在値）ため、
+//     両端で**名前で明示的に**写す。未指定・未知の番号は「不明」。
+//   - 金額・率は**不変文化の 10 進文字列**（IADR-0331 決定 2 と同じ理由）。🔴 **空・欠落は 0 ではなく不明**である
+//     （段 1 の `"" → 0` とは違う。ここで運ぶ金額は REST の受け手が nullable で受けていたもの）。
+//   - 日付は `yyyy-MM-dd`、時刻は往復書式（`O`・オフセットを保つ）の文字列。
+//   - REST が「一覧が null（未供給）」と「一覧が空」を分けていた箇所は、存在を持つ入れ物 message で運ぶ。
+//
+// ■ 運ぶ項目（IADR-0427 決定 4）
+//   **移した呼び出し元が読む項目だけ**を運ぶ（REST の応答はより多くを持つ）。足すのはフィールド追加＝非破壊である。
+//
+// ■ 🔴 message 名を送り手（RiskManagementService）の C# の型名と同じにしない（`OpenPosition` ではなく `OpenPositionRow` 等）
+//   生成型は受け手の本番コードに現れる。送り手の型名が受け手の本番コードに現れると、送り手の型による契約テストの判定
+//   （IADR-0420 決定 3 の ⑤「送り手が宣言し、受け手の本番コードが宣言も参照もしない型を使う」）が効かなくなる
+//   （実測: 当初 `LedgerFill` と名付けて報告書の約定の契約テストが「無い」と判定された）。
+//
+// ■ s2s（IADR-0328 決定 2）
+//   `authorization` メタデータには呼び出し側サービス自身の client credentials JWT を載せる。利用者のトークンは載せない。
+//   本 service の rpc は利用者の文脈を取らない（REST の読み取りも主体を読まない）。
+syntax = "proto3";
+
+package aistocktrading.riskmanagement.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Grpc.RiskManagement.V1";
+
+// リスク管理の読み取り。REST の読み取り群（`/risk-controls/*`・OwnerOrService）と同じ認可・同じ評価器を通る。
+// - 呼び出し側サービスの資格情報が無い → UNAUTHENTICATED、ロールが無い → PERMISSION_DENIED
+// - 期間の必須引数が無い（REST の 400）→ INVALID_ARGUMENT
+// - 提供側が不調・不達 → UNAVAILABLE、deadline 超過 → DEADLINE_EXCEEDED
+//   （いずれも呼び出し元は REST と同じ安全側既定へ倒す）
+service RiskControlsRead {
+  // GET /risk-controls/open-positions（建玉の射影。数量は常に正・向きは side）。
+  rpc GetOpenPositions(GetOpenPositionsRequest) returns (GetOpenPositionsResponse);
+  // GET /risk-controls/working-entry-orders（当日の未約定の新規建て注文）。
+  rpc GetWorkingEntryOrders(GetWorkingEntryOrdersRequest) returns (GetWorkingEntryOrdersResponse);
+  // GET /risk-controls/sizing-context（サイジング文脈）。
+  rpc GetSizingContext(GetSizingContextRequest) returns (GetSizingContextResponse);
+  // GET /risk-controls/stage-gate（段階ゲートの現況。本 rpc は現段階だけを運ぶ）。
+  rpc GetStageGate(GetStageGateRequest) returns (GetStageGateResponse);
+  // GET /risk-controls/fills?from&to（期間の約定。取り込み行は含まない）。
+  rpc GetFills(GetFillsRequest) returns (GetFillsResponse);
+  // GET /risk-controls/drift-adoptions?from&to（期間の乖離の取り込み）。
+  rpc GetDriftAdoptions(GetDriftAdoptionsRequest) returns (GetDriftAdoptionsResponse);
+  // GET /risk-controls/buy-in-inferences?from&to（強制買戻しの推定と観測の到達）。
+  rpc GetBuyInInferences(GetBuyInInferencesRequest) returns (GetBuyInInferencesResponse);
+  // GET /risk-controls/session-uptime?from&to（OpenD 稼働率）。
+  rpc GetSessionUptime(GetSessionUptimeRequest) returns (GetSessionUptimeResponse);
+}
+
+// ---- 列挙（C# の列挙とは名前で写す。未指定・未知は「不明」） ----
+
+enum Market {
+  MARKET_UNSPECIFIED = 0;
+  MARKET_JAPAN = 1;
+  MARKET_UNITED_STATES = 2;
+}
+
+enum TradeSide {
+  TRADE_SIDE_UNSPECIFIED = 0;
+  TRADE_SIDE_BUY = 1;
+  TRADE_SIDE_SELL = 2;
+}
+
+enum PositionEffect {
+  POSITION_EFFECT_UNSPECIFIED = 0;
+  POSITION_EFFECT_OPEN = 1;
+  POSITION_EFFECT_CLOSE = 2;
+}
+
+enum BrokerProvider {
+  BROKER_PROVIDER_UNSPECIFIED = 0;
+  BROKER_PROVIDER_INTERNAL_PAPER = 1;
+  BROKER_PROVIDER_MOOMOO_REAL = 2;
+  BROKER_PROVIDER_MOOMOO_SIMULATE = 3;
+}
+
+enum StopLossExecutionMethod {
+  STOP_LOSS_EXECUTION_METHOD_UNSPECIFIED = 0;
+  STOP_LOSS_EXECUTION_METHOD_BROKER_STOP_ORDER = 1;
+  STOP_LOSS_EXECUTION_METHOD_SOFTWARE_STOP = 2;
+  STOP_LOSS_EXECUTION_METHOD_NO_PROTECTIVE_STOP = 3;
+  STOP_LOSS_EXECUTION_METHOD_ALTERNATIVE_BROKER_ORDER_TYPE = 4;
+}
+
+enum TradingStage {
+  TRADING_STAGE_UNSPECIFIED = 0;
+  TRADING_STAGE_STAGE0_VERIFICATION = 1;
+  TRADING_STAGE_STAGE1_SIMULATE = 2;
+  TRADING_STAGE_STAGE2_MINIMAL_LIVE = 3;
+  TRADING_STAGE_STAGE3_SCALED_LIVE = 4;
+}
+
+// ---- 建玉 ----
+
+message GetOpenPositionsRequest {}
+
+// REST の OpenPositionView と同じ形。
+message OpenPositionRow {
+  optional string symbol = 1;
+  Market market = 2;
+  TradeSide side = 3;
+  optional int32 quantity = 4;
+  // 平均取得単価（ローカル通貨・10 進文字列）。
+  optional string entry_price = 5;
+  // 保有中のエントリーのうち最も保護的な損切りライン（10 進文字列）。
+  optional string stop_loss_price = 6;
+}
+
+message GetOpenPositionsResponse {
+  // 空は「保有なし」。照会できないことは rpc の失敗（status）で表す。
+  repeated OpenPositionRow positions = 1;
+}
+
+// ---- 未約定の新規建て注文 ----
+
+message GetWorkingEntryOrdersRequest {}
+
+// REST の WorkingEntryOrderView のうち、判断が読む項目。
+message WorkingEntryOrderRow {
+  optional string symbol = 1;
+  Market market = 2;
+  TradeSide side = 3;
+  // 残数量（承認数量 − 約定済み）。
+  optional int32 remaining_quantity = 4;
+  // 承認価格（ローカル通貨・10 進文字列）。
+  optional string price = 5;
+  // 承認時刻（往復書式の文字列）。
+  optional string approved_at = 6;
+}
+
+message GetWorkingEntryOrdersResponse {
+  repeated WorkingEntryOrderRow orders = 1;
+}
+
+// ---- サイジング文脈 ----
+
+message GetSizingContextRequest {}
+
+// REST の RiskLimitSettings と同じ形（比率は 10 進文字列）。
+message RiskLimits {
+  optional string max_order_amount_ratio = 1;
+  optional string max_daily_order_amount_ratio = 2;
+  optional int32 max_open_positions = 3;
+  optional string daily_loss_limit_ratio = 4;
+  optional string per_trade_risk_ratio = 5;
+  optional string max_drawdown_ratio = 6;
+  optional int32 losing_streak_threshold = 7;
+  optional string losing_streak_size_factor = 8;
+}
+
+// REST の SizingContextView と同じ形。
+message GetSizingContextResponse {
+  // 🔴 欠落は「口座を照会できていない」（残枠も解決できない）。0 ではない。
+  optional string capital = 1;
+  optional string stage_capital_remaining = 2;
+  optional string daily_order_remaining = 3;
+  optional int32 consecutive_losses = 4;
+  optional string drawdown_ratio = 5;
+  BrokerProvider mode = 6;
+  RiskLimits limits = 7;
+  StopLossExecutionMethod stop_loss_method = 8;
+}
+
+// ---- 段階ゲート ----
+
+message GetStageGateRequest {}
+
+// REST の StageGateStatus のうち、移した呼び出し元が読む項目（現段階）だけ。
+message GetStageGateResponse {
+  TradingStage current_stage = 1;
+}
+
+// ---- 期間の約定 ----
+
+message GetFillsRequest {
+  // 取引日の期間（yyyy-MM-dd・両端を含む）。欠落は INVALID_ARGUMENT。
+  string from = 1;
+  string to = 2;
+}
+
+// REST の LedgerFill のうち、報告書が読む項目（名前は冒頭の 🔴 のとおり送り手の型名と変えてある）。
+message PeriodFill {
+  optional string symbol = 1;
+  Market market = 2;
+  TradeSide side = 3;
+  PositionEffect position_effect = 4;
+  optional int32 quantity = 5;
+  // 約定単価（ローカル通貨・10 進文字列）。
+  optional string price = 6;
+  // 約定時刻（往復書式の文字列）。
+  optional string executed_at = 7;
+  // 基準通貨への同伴レート（10 進文字列）。欠落は REST と同じく 1。
+  optional string fx_rate_to_base = 8;
+  // 判断 ID（GUID 文字列）。欠落は REST と同じく空の GUID（相関できない）。
+  optional string decision_id = 9;
+  // 実際に発注したアダプタの発注先。未指定は「不明」（REST の null）。
+  BrokerProvider provider = 10;
+  // 承認時点の認識時レート（1 USD あたりの円・10 進文字列）。欠落は「未記録」（REST の null）。
+  optional string fx_rate_base_to_display = 11;
+}
+
+message GetFillsResponse {
+  repeated PeriodFill fills = 1;
+}
+
+// ---- 期間の乖離の取り込み ----
+
+message GetDriftAdoptionsRequest {
+  string from = 1;
+  string to = 2;
+}
+
+// REST の DriftAdoptionView のうち、報告書が読む項目（価格は持たない）。
+message DriftAdoption {
+  optional string adoption_id = 1;
+  optional string symbol = 2;
+  Market market = 3;
+  TradeSide side = 4;
+  optional int32 quantity = 5;
+  optional int32 ledger_quantity_before = 6;
+  optional int32 broker_quantity = 7;
+  optional string observed_at = 8;
+  optional string actor = 9;
+  optional string reason = 10;
+  optional string adopted_at = 11;
+}
+
+message GetDriftAdoptionsResponse {
+  repeated DriftAdoption adoptions = 1;
+}
+
+// ---- 強制買戻しの推定 ----
+
+message GetBuyInInferencesRequest {
+  string from = 1;
+  string to = 2;
+}
+
+// REST の BuyInInferenceRecord と同じ形。
+message BuyInInferenceRow {
+  optional string id = 1;
+  optional string symbol = 2;
+  Market market = 3;
+  optional int32 ledger_short_quantity = 4;
+  optional int32 broker_short_quantity = 5;
+  optional int32 in_flight_close_quantity = 6;
+  optional int32 unexplained_quantity = 7;
+  optional int32 newly_inferred_quantity = 8;
+  // 新規空売り禁止の期限（yyyy-MM-dd）。欠落は REST の null。
+  optional string ban_until = 9;
+  optional string inferred_on = 10;
+  optional string observed_at = 11;
+  optional string inferred_at = 12;
+}
+
+message GetBuyInInferencesResponse {
+  // 🔴 欠落・false は「報告期間が観測に覆われていない」。推定が 0 件でも 0 件と読んではならない。
+  optional bool period_covered = 1;
+  // 診断用（どの日が欠けているか）。判定には使わない。
+  repeated string observed_trading_days = 2;
+  repeated BuyInInferenceRow inferences = 3;
+}
+
+// ---- OpenD 稼働率 ----
+
+message GetSessionUptimeRequest {
+  string from = 1;
+  string to = 2;
+}
+
+message SessionUptimeDay {
+  optional string session_date_eastern_time = 1;
+  // 稼働率（0〜1・10 進文字列）。
+  optional string uptime_ratio = 2;
+}
+
+// REST の Days（null ＝未供給 / [] ＝行なし）を分けるための入れ物。
+message SessionUptimeDays {
+  repeated SessionUptimeDay items = 1;
+}
+
+message GetSessionUptimeResponse {
+  // 🔴 欠落は「未供給」。空の入れ物は「行なし」（欠けた日を 0% とは描かない）。
+  SessionUptimeDays days = 1;
+  // 累計の算入日数（発注先の許可制まで含む権威判定）。欠落は「未供給」。
+  optional int32 stage1_cumulative_counted_days = 2;
+}
