@@ -763,15 +763,10 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             rawCommand);
     }
 
-    private static string? GuildIdOf(SocketInteraction interaction) => interaction switch
-    {
-        SocketSlashCommand c => c.GuildId?.ToString(),
-        SocketMessageComponent c => c.GuildId?.ToString(),
-        SocketModal m => m.GuildId?.ToString(),
-        // #834: 入力補完も多層認証を通すため、専用サーバーの判定に GuildId が要る（欠けると DM 扱いで全拒否）。
-        SocketAutocompleteInteraction a => a.GuildId?.ToString(),
-        _ => null,
-    };
+    // #843 項目5: `GuildId` は基底 `SocketInteraction` のプロパティであり、スラッシュコマンド・ボタン・モーダル・
+    // 入力補完のいずれも同じ値を返す（派生型での再宣言は無い。Discord.Net 3.20.1 で実測）。型ごとの分岐は要らず、
+    // 新しい種類の interaction を足しても「GuildId が欠けて DM 扱いになる」ことは起きない。
+    private static string? GuildIdOf(SocketInteraction interaction) => interaction.GuildId?.ToString();
 
     private Task OnLogAsync(LogMessage message)
     {

@@ -269,7 +269,7 @@ public static class ProtectiveStopNetting
             if (take <= row.PendingExternalReduction)
                 continue;
 
-            Replace(
+            if (Replace(
                 group,
                 row with
                 {
@@ -278,7 +278,19 @@ public static class ProtectiveStopNetting
                     ExternalReductionAbsences = 0,
                     UpdatedAt = now,
                 },
-                stops);
+                stops))
+            {
+                continue;
+            }
+
+            // 🔴 #833 項目3, IADR-0396: 並行更新と衝突して観測を**書けなかった**。群の行は最新へ差し替わっているが、
+            // その最新には今の観測が載っていない——そのまま返すと、決済経路が観測前の主張で数量を決めて**建玉より多く売る**。
+            // この呼び出しの上限にだけ効かせる（保存はしない。決済経路はこの写しを保存せず、確定は最新を読み直して行う）。
+            // 観測は増やす向きにしか効かせないので、保護を外す向きには倒れない。記録は次の巡回で改めて行う。
+            var index = group.FindIndex(s => s.EntryDecisionId == row.EntryDecisionId);
+            var latest = group[index];
+            if (latest.State == ProtectiveStopState.Active && take > latest.PendingExternalReduction)
+                group[index] = latest with { PendingExternalReduction = take };
         }
     }
 
@@ -353,7 +365,9 @@ public static class ProtectiveStopNetting
 
             // 確定: ここではじめて帳簿を減らす（0 になった行はガードが完了させる）。
             var reduction = row.PendingExternalReduction;
-            Replace(
+            // 🔴 #833 項目3, IADR-0396: 並行更新と衝突して書けなかったら、通知も出さない（書いていない減少を「減らした」と言わない）。
+            // 行は保存先の最新へ差し替わり、次の巡回が観測からやり直す。
+            if (!Replace(
                 group,
                 row with
                 {
@@ -363,7 +377,10 @@ public static class ProtectiveStopNetting
                     ExternalReductionAbsences = 0,
                     UpdatedAt = now,
                 },
-                stops);
+                stops))
+            {
+                continue;
+            }
 
             // 🔴 無音にしない。外部要因で保護対象を減らしたことを必ず 1 回残す（S0 の行を 0 にして
             // 逆指値を取り消す場合は、この記録が唯一の痕跡になる）。
@@ -468,7 +485,10 @@ public static class ProtectiveStopNetting
             if (row.ProtectionSuspendedNotifiedAt is not null || now - since < ProtectionSuspendedGrace)
                 continue;
 
-            Replace(group, row with { ProtectionSuspendedNotifiedAt = now, UpdatedAt = now }, stops);
+            // #833 項目3, IADR-0396: 通知済みの印を書けなかったら通知しない（次の巡回で改めて判定する）。
+            if (!Replace(group, row with { ProtectionSuspendedNotifiedAt = now, UpdatedAt = now }, stops))
+                continue;
+
             events?.Add(new SoftwareStopExecuted(
                 row.EntryDecisionId, row.Symbol, row.Market, SoftwareStopOutcome.ProtectionSuspended,
                 row.ProtectedQuantity, row.TriggerPrice, row.TriggeredPrice ?? row.TriggerPrice, row.Attempt,
@@ -561,7 +581,8 @@ public static class ProtectiveStopNetting
             {
                 if (anchor.UnattributedNotifiedQuantity is not null || anchor.UnattributedNotifiedAt is not null)
                 {
-                    stops.Save(anchor with
+                    // #833 項目3, IADR-0396: 楽観並行。衝突したら書かない（次の巡回で改めて判定する）。
+                    stops.TrySave(anchor with
                     {
                         UnattributedNotifiedQuantity = null,
                         UnattributedNotifiedAt = null,
@@ -579,12 +600,18 @@ public static class ProtectiveStopNetting
                 continue;
             }
 
-            stops.Save(anchor with
+            // 🔴 #833 項目3, IADR-0396: 代表行は完了済みでもよい＝受理で完了・再武装が並行に書き得る行である。
+            // 古い写しで書き戻さない。書けなければ通知もしない（印が残らないまま鳴らすと、次の巡回で重ねて鳴る）。
+            if (!stops.TrySave(anchor with
             {
                 UnattributedNotifiedQuantity = unattributed,
                 UnattributedNotifiedAt = now,
                 UpdatedAt = now,
-            });
+            }))
+            {
+                continue;
+            }
+
             events?.Add(new SoftwareStopExecuted(
                 anchor.EntryDecisionId, symbol, market, SoftwareStopOutcome.UnattributedPosition,
                 unattributed, anchor.TriggerPrice, anchor.TriggeredPrice ?? anchor.TriggerPrice, anchor.Attempt,
@@ -647,11 +674,21 @@ public static class ProtectiveStopNetting
         return sent + unconfirmedEntryFills;
     }
 
-    private static void Replace(
+    // 🔴 FR-10, #833 項目3, IADR-0396: 群の写しは呼び出し側が await を跨いで持っていたものであり得る（決済経路・乖離の取り込み）。
+    // **楽観並行で書き**、衝突したら何も書かずに群の行を保存先の最新へ差し替えて false を返す
+    // （古い写しで、並行に進んだ完了・再武装・試行番号を巻き戻さない。観測は次の巡回でやり直せる）。
+    private static bool Replace(
         List<ProtectiveStopOrder> group, ProtectiveStopOrder updated, IProtectiveStopOrderStore stops)
     {
-        stops.Save(updated);
-        group[group.FindIndex(s => s.EntryDecisionId == updated.EntryDecisionId)] = updated;
+        var index = group.FindIndex(s => s.EntryDecisionId == updated.EntryDecisionId);
+        if (stops.TrySave(updated))
+        {
+            group[index] = updated with { Version = updated.Version + 1 };
+            return true;
+        }
+
+        group[index] = stops.Find(updated.EntryDecisionId) ?? group[index];
+        return false;
     }
 
     /// <summary>
@@ -684,9 +721,11 @@ public static class ProtectiveStopNetting
             if (entry is null || !OrderStatusLifecycle.IsTerminal(entry.Status))
                 continue; // 記録が無い・これから約定し得る → 未確定のまま（主張 0）。
 
+            // 🔴 #833 項目3, IADR-0396: 楽観並行。衝突したら保存先の最新を採る（並行に確定・完了したならその値が正しい）。
             var confirmed = row with { RemainingProtected = Math.Max(0, entry.FilledQuantity), UpdatedAt = now };
-            stops.Save(confirmed);
-            rows[i] = confirmed;
+            rows[i] = stops.TrySave(confirmed)
+                ? confirmed with { Version = confirmed.Version + 1 }
+                : stops.Find(row.EntryDecisionId) ?? row;
         }
 
         return rows;

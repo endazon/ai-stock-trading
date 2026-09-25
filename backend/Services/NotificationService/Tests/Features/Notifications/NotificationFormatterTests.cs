@@ -445,6 +445,38 @@ public class NotificationFormatterTests
         msg.Content.Should().NotContain("巡回しません").And.NotContain("この 1 回だけ");
     }
 
+    // 🔴 T-10-854, FR-10, FR-11, UC-02, #948, IADR-0369（2026-09-25 追記）: **解消にも失敗した（None）通知の件名を
+    // 「建玉を解消」にしない。** 是正前は None が件名の既定の腕へ落ち、本文は「解消にも失敗しました」なのに
+    // 件名だけ読むと解消済みと読めた（通知一覧で件名しか見ない運用者は、逆指値なしの建玉が残る側を見落とす）。
+    // 原因（Cause）によらず同じ件名である（件名は対処の結末を言い、その後の約束は書かない）。
+    [Theory]
+    [InlineData(ProtectiveStopLossCause.RejectedAtEntry)]
+    [InlineData(ProtectiveStopLossCause.LapsedInFlight)]
+    public void 保護喪失で解消にも失敗したら_件名で解消したと読ませない_否定形(ProtectiveStopLossCause cause)
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            cause, ProtectiveStopRemediation.None, 10, null, null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Critical);
+        msg.Title.Should().NotContain("建玉を解消", "解消できていない建玉を件名で解消済みと読ませない");
+        msg.Title.Should().Contain("解消にも失敗");
+        msg.Content.Should().Contain("解消にも失敗しました", "本文と件名が同じ事実を言う");
+    }
+
+    // T-10-854 の対（変えない側）: 手仕舞いに成功した側（PositionClosed）の件名は「建玉を解消」のまま。
+    [Fact]
+    public void 保護喪失で建玉を手仕舞えたら_件名は建玉を解消のまま()
+    {
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.PositionClosed,
+            10, Guid.NewGuid(), StopIntent(PositionEffect.Close), StopT0));
+
+        msg.Title.Should().Be("リスク統制: 保護逆指値が成立せず建玉を解消");
+        msg.Title.Should().NotContain("失敗");
+    }
+
     [Fact]
     public void 保護喪失の建玉解消は解消内容が読めるCriticalになる()
     {

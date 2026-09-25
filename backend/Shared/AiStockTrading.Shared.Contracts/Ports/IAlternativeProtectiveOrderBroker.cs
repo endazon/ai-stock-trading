@@ -41,9 +41,15 @@ public interface IAlternativeProtectiveOrderBroker
 /// <c>RejectReasonMessage</c> は <c>retMsg</c>（または送信前棄却・送信後例外の理由）。
 /// **受理された場合は両方 null** である。
 /// </para>
+/// <para>
+/// #842, IADR-0405: <c>BrokerOrderId</c> は**ブローカーが採番した注文 ID** である。送信前に棄却した場合と、
+/// ブローカーが受理しなかった（<c>retType=-1</c>）場合は **null** —— <c>Order.OrderId</c> はアダプタが合成した値であり、
+/// 7 年保持の監査台帳へ「証券会社へ問い合わせても存在しない注文 ID」を残さないために分けて持つ。
+/// </para>
 /// </summary>
 public sealed record AlternativeProtectiveOrderPlacement(
     BrokerOrder Order,
     AlternativeProtectiveOrderType OrderType,
     int? RejectReasonCode,
-    string? RejectReasonMessage);
+    string? RejectReasonMessage,
+    string? BrokerOrderId);

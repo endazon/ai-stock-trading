@@ -58,7 +58,11 @@ public record ProtectiveStopOrder(
     // 新しい窓として扱い、数えと待ち時間をやり直すために使う。
     int CloseFailures = 0,
     DateTimeOffset? NextCloseAttemptAt = null,
-    DateTimeOffset? LastTriggerSeenAt = null)
+    DateTimeOffset? LastTriggerSeenAt = null,
+    // 🔴 FR-10, #833 項目3, IADR-0396: 楽観並行の版番号（アプリ側で加算）。**この写しを読んだ時点の版**であり、
+    // IProtectiveStopOrderStore.TrySave は保存先の版がこの値と一致するときだけ書き、版を 1 進める。
+    // 古い写しから全列を書き戻して、並行に進んだ状態（完了・再武装・試行番号）を巻き戻さないための印である。
+    int Version = 0)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;
