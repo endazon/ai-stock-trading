@@ -7,14 +7,17 @@ using AwesomeAssertions;
 using Grpc.Core;
 using MarketMonitorService.Domain;
 using MarketMonitorService.Features.MarketMonitor;
+using MarketMonitorService.Hosted;
 using MarketMonitorService.Infrastructure.ExternalServices;
 using MarketMonitorService.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using Wolverine;
@@ -295,6 +298,20 @@ public class RiskManagementGrpcTests
                 services.DisableAllExternalWolverineTransports();
                 services.AddAuthentication(TestAuthHandler.SchemeName)
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+            });
+
+            // 🔴 #1010: 常駐の巡回（MonitorPollingService）はテストの外で勝手に回さない（PositionRowToleranceCompositionTests と同じ）。
+            // 巡回は起動直後に 1 回回り、**本物の時計でどれかの市場が開いていれば** IPositionStore を照会する。
+            // 外さないと、開場中（米国 13:30 UTC〜・日本 00:00 UTC〜）だけ偽の提供側への呼び出しが 1 回増え、
+            // 「実際に呼んだ回数」の表明が壁時計の時刻で赤になる（develop の CI で実測）。
+            // 組み立ての選択（IPositionStore の実装・輸送）は巡回に依らないので、外しても配線の検証は変わらない。
+            builder.ConfigureTestServices(services =>
+            {
+                var hosted = services.Where(d => d.ServiceType == typeof(IHostedService)
+                    && d.ImplementationType == typeof(MonitorPollingService)).ToList();
+                hosted.Should().ContainSingle("本物の Program.cs が巡回を登録している（外す対象が消えたら前提を見直す）");
+                foreach (var d in hosted)
+                    services.Remove(d);
             });
         }
     }
