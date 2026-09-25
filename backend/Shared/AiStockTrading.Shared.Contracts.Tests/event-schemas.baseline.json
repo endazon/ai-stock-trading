@@ -217,6 +217,7 @@
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
     "OccurredAt": "DateTimeOffset",
+    "Protection": "ForgoneCloseProtection",
     "Reason": "OrderDispatchForgoneReason"
   },
   "OrderExecuted": {
@@ -403,6 +404,7 @@
   },
   "StageTransitioned": {
     "ApprovedBy": "String",
+    "AuthorizedBy": "String",
     "FromStage": "Int32",
     "Kind": "String",
     "OccurredAt": "DateTimeOffset",

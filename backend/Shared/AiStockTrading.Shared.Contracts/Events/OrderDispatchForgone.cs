@@ -9,11 +9,18 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // - **キューイングしない**: 見送った注文は破棄され、自動では再発注されない（再発注は次の取引判断からのみ）。
 // - **「拒否」と別集計**: OrderStatus.Rejected は「証券会社が受理しなかった状態」であり（FR-05・planning#60）、
 //   見送り（届いてすらいない）を混ぜると集計が接続障害で汚染される。監査台帳の EventType も別になる。
+//
+// 🔴 FR-10, FR-09, UC-06, #879, IADR-0424 決定1: Protection は**建玉照会の不明で決済を見送ったとき**（理由
+// BrokerPositionsIndeterminate）にだけ発注執行が載せる、その建玉の保護の記録である（通知が「保護レグを持たない
+// 可能性」と断定を書き分けるため）。null＝発注執行が判別を試みていない（ほかの理由・旧い送り手）であり、
+// 受け手は Unknown と同じく「分からない」と読む。追加は末尾・任意（既定 null）。旧形式の JSON はそのまま読める
+// （IADR-0079 / IADR-0134 決定2）。
 public record OrderDispatchForgone(
     Guid DecisionId,
     OrderIntent Intent,
     OrderDispatchForgoneReason Reason,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    ForgoneCloseProtection? Protection = null);
 
 // #331, IADR-0210 決定1 / IADR-0211: 見送りの理由。いずれも**発注前**に確定する。
 public enum OrderDispatchForgoneReason
