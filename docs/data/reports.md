@@ -14,7 +14,6 @@ specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-beh
 issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024]
 -->
 
-
 # データ仕様書: 報告書（reports）
 
 > 報告書サービス（`ReportService`）が所有する報告書（日報/週報/月報）の永続化。取引方針の階層管理と対話的確定、
@@ -77,6 +76,15 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024]
   改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
   **1 日（JST の暦日）の回数上限**は `Reports:PolicyRevision:DailyLimit`（既定 10 回）。上限に達した要求は LLM を呼ばず **429** で断る。
   数えるのは LLM を呼んだ試行（失敗も含む）で、入力の検証・対象の決定で断った要求は数えない。
+- **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
+  既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
+- **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。
+  Discord Bot は機密クライアント（`client_credentials`）のトークンで確定を呼ぶため、トークンからは人を解決できない。
+  `onBehalfOf` は **トークンの `azp` が構成 `Reports:DelegatedActor:TrustedClientIds`（カンマ区切り・既定は空＝誰も信じない）に
+  一致するときだけ**確定者として採り、`ReportConfirmed` には `Actor`＝操作した利用者と `AuthorizedBy`＝認可の主体（クライアント ID）の
+  両方を載せる。利用者本人のトークンや一覧外のクライアントが送った `onBehalfOf` は**無視**する（確定は通り、確定者はトークンの主体）。
+  信頼クライアントが値域外（`[A-Za-z0-9._@+-]` の 1〜64 文字以外）の値を送ると 400 で確定しない。
+  操作者が取れないとき（名前クレームの無いトークンで `onBehalfOf` も無い）は `client:<azp>` を確定者にする。
 
 ## 方針の改訂の試行（policy_revision_attempts）
 
@@ -91,16 +99,12 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024]
 | PeriodKey | varchar(64) | 対象の会話キー |
 | Outcome | int | 0＝Pending（呼び出し中・または途中で落ちた）／1＝Proposed／2＝AiFailed／3＝SaveFailed |
 | ReportVersion | int? | 案を保存した報告書の版（Proposed のときだけ） |
-| WatchlistChangesJson | varchar(8192)? | 案の監視銘柄の入れ替え（`[{action, symbol, reason}]`。Proposed のときだけ） |
-- **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
-  既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
-- **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。
-  Discord Bot は機密クライアント（`client_credentials`）のトークンで確定を呼ぶため、トークンからは人を解決できない。
-  `onBehalfOf` は **トークンの `azp` が構成 `Reports:DelegatedActor:TrustedClientIds`（カンマ区切り・既定は空＝誰も信じない）に
-  一致するときだけ**確定者として採り、`ReportConfirmed` には `Actor`＝操作した利用者と `AuthorizedBy`＝認可の主体（クライアント ID）の
-  両方を載せる。利用者本人のトークンや一覧外のクライアントが送った `onBehalfOf` は**無視**する（確定は通り、確定者はトークンの主体）。
-  信頼クライアントが値域外（`[A-Za-z0-9._@+-]` の 1〜64 文字以外）の値を送ると 400 で確定しない。
-  操作者が取れないとき（名前クレームの無いトークンで `onBehalfOf` も無い）は `client:<azp>` を確定者にする。
+| WatchlistChangesJson | text? | 案の監視銘柄の入れ替え（`[{action, symbol, reason}]`。Proposed のときだけ） |
+
+- 数えることと書くことは 1 つの排他区間で行う（Postgres では JST の暦日を鍵にした勧告ロック `pg_advisory_xact_lock` を
+  トランザクションで取る）。同時の要求で上限を超えない。
+- JSON は日本語を逃がさずに書く（`\uXXXX` にしない）。列は長さの上限を持たない `text`。
+- 保存の後に台帳の書き込みが失敗しても、保存済みのドラフトは 200 で返す（行は Pending のまま残り、上限には数えられる）。
 
 ## 整合性・制約ルール
 
