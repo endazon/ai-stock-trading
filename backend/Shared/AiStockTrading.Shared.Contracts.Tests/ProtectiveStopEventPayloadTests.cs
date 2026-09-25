@@ -124,6 +124,24 @@ public class ProtectiveStopEventPayloadTests
         ((int)ProtectiveStopRemediation.StopDispatchIndeterminate).Should().Be(5);
         // #853（PR #1005 再監査）, IADR-0428: 保護逆指値を予約できず送っていない。
         ((int)ProtectiveStopRemediation.StopReservationFailed).Should().Be(6);
+        // T-10-1134, #1013, IADR-0428（2026-09-26 追記）: 建玉 0 だがエントリー注文の状態が不明（ガードが据え置き）。
+        ((int)ProtectiveStopRemediation.EntryStateUnknown).Should().Be(7);
+    }
+
+    // T-10-1134, FR-10, #1013, IADR-0428（2026-09-26 追記）: エントリーの状態が不明な据え置きは何も送っていない。
+    // 往復しても CloseDecisionId / CloseIntent は null のまま（台帳に処理中の決済を押さえさせない）。
+    [Fact]
+    public void エントリーの状態が不明な据え置きは往復しても保護レグを運ばない()
+    {
+        var evt = new ProtectiveStopCoverageLost(
+            Guid.NewGuid(), "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+            ProtectiveStopRemediation.EntryStateUnknown, 10, CloseDecisionId: null, CloseIntent: null, T0);
+
+        var restored = RoundTrip(evt);
+
+        restored.Should().Be(evt);
+        restored.CloseDecisionId.Should().BeNull();
+        restored.CloseIntent.Should().BeNull();
     }
 
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由が往復で欠落しないこと**。

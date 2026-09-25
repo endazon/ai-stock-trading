@@ -501,6 +501,10 @@ public static class AuditEntryFactory
                 // FR-10, #853（PR #1005 再監査）, IADR-0428: 予約を記録できず逆指値を送っていない。「未受理」「失敗」とは書かない。
                 ProtectiveStopRemediation.StopReservationFailed =>
                     "——**保護逆指値を予約できず未送信（記録の障害）。取消・成行はしていない（要人手確認）**",
+                // FR-10, #1013, IADR-0428（2026-09-26 追記）: 建玉 0 だがエントリー注文の状態が不明。逆指値は取り消さず記録も閉じていない。
+                // 「成立せず」の前置きは共通だが、実際には何も送っておらず何も取り消していない——要約でそう書く。
+                ProtectiveStopRemediation.EntryStateUnknown =>
+                    "——**建玉 0 だがエントリー注文の状態が不明。逆指値の取消・記録の完了はせず据え置き（要人手確認）**",
                 _ => string.Empty,
             }),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);

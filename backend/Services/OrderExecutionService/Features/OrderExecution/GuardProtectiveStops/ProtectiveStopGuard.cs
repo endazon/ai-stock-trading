@@ -26,6 +26,10 @@ namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 //   - 🔴 #853, IADR-0210（2026-09-25 追記）, IADR-0428: **逆指値の再発注も 3 相で送り、「届いたか不明」なら成行へ倒さず据え置く。**
 //     行は送信結果待ち（注文 ID が空）へ移り、次の巡回は同じ逆指値を送り直さない（#853 追記の 1→2→3 を 1→1→1 へ）。
 //     突合の記録が現れたら注文 ID を採用し、予約が解放されたら未発注として扱う。据え置きの通知は 1 時間ごと（StopDispatchIndeterminate）。
+//   - 🔴 #1013, IADR-0428（2026-09-26 追記）: **「建玉残 0」を建玉消滅と読む前にエントリー注文の状態を確かめる**（HoldUnlessPositionGoneAsync）。
+//     指値のエントリーが未約定のあいだ建玉は 0 であり、そこで逆指値を取り消す・記録を閉じると約定後の建玉が無保護で残る。
+//     未約定なら据え置き、約定 0 で終端なら従来どおり、約定済みなら建玉を照会し直して 0 のときだけ従来どおり、分からなければ据え置く
+//     （EntryStateUnknown を 1 時間ごと）。
 //
 // 発行（イベントの Publish）は Worker 層（ProtectiveStopGuardService）が担う。
 //
@@ -269,6 +273,11 @@ public sealed class ProtectiveStopGuard(
             if (stop.HasUnconfirmedExternalReduction)
                 return Outcome.Unknown;
 
+            // 🔴 FR-10, #1013, IADR-0428（2026-09-26 追記）: 建玉 0 は「エントリーがまだ約定していない」でもあり得る（指値の既定）。
+            // エントリーが生きている・状態が分からないなら**生きている逆指値を取り消さない**（取り消すと約定後に無保護の建玉が残る）。
+            if (await HoldUnlessPositionGoneAsync(stop, active, events, cancellationToken).ConfigureAwait(false) is { } held)
+                return held;
+
             // 建玉消滅（owner 手仕舞い・自動縮小・強制買戻し等）: 残存逆指値を取り消す。
             // 決済済み建玉に残る注文が発火すると**反対方向の建玉を生む**（業務フロー 02 補足の二重決済問題）。
             await broker.CancelOrderAsync(stop.StopOrderId, cancellationToken).ConfigureAwait(false);
@@ -300,6 +309,11 @@ public sealed class ProtectiveStopGuard(
             // 建玉残が 0 の理由が未確定の外部要因なら据え置く（確定しなければ主張は減らないまま再発注へ回る。追記(7)）。
             if (stop.HasUnconfirmedExternalReduction)
                 return Outcome.Unknown;
+
+            // 🔴 #1013: エントリーが未約定なら記録を閉じない（閉じると約定後の巡回が何もせず、無保護の建玉が残る）。
+            // Active のまま残せば、約定して建玉が現れた巡回で上の再発注へ進む。
+            if (await HoldUnlessPositionGoneAsync(stop, active, events, cancellationToken).ConfigureAwait(false) is { } held)
+                return held;
 
             MarkCompleted(stop); // 建玉も無い: 保護対象が消えている。
             return Outcome.Completed;
@@ -587,12 +601,158 @@ public sealed class ProtectiveStopGuard(
             if (stop.HasUnconfirmedExternalReduction)
                 return Outcome.Unknown;
 
+            // 🔴 #1013: #853 の経路（逆指値の予約が落ちた・解放された）でも、エントリーが未約定なら記録を閉じない。
+            // 約定して建玉が現れた巡回で逆指値を張る（下の ReplaceOrCloseAsync）。
+            if (await HoldUnlessPositionGoneAsync(stop, active, events, cancellationToken).ConfigureAwait(false) is { } held)
+                return held;
+
             MarkCompleted(stop);
             return Outcome.Completed;
         }
 
         return await ReplaceOrCloseAsync(stop, Math.Min(remaining, stop.Quantity), events, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    // 🔴 FR-10, #1013, IADR-0428（2026-09-26 追記）, IADR-0210（2026-09-26 追記）: **「建玉残 0」を建玉消滅と読んでよいか**を、
+    // エントリー注文の状態で確かめる（原則 A: まだ建っていない・建って消えた・分からない を分ける）。
+    // null を返したら呼び出し側は従来どおり（取消・完了）へ進む。値を返したらその結果で据え置く（取消も完了もしない）。
+    //
+    //   - エントリーが非終端（受理済み・部分約定）→ StillActive。約定して建玉が現れた巡回で通常の評価に戻る。
+    //   - 終端・約定 0（取消・失効・拒否）→ null（建玉は生じなかった。従来どおり）。
+    //   - 約定あり → **建玉を照会し直す**。巡回の建玉照会はエントリーの状態を見る「前」に取っており、その間に約定した
+    //     エントリーは「約定済み・建玉 0」に見える。建って消えたと言ってよいのは、約定を知った「後」の照会でも 0 のときだけ。
+    //   - 分からない（記録が無い・注文 ID が空・照会が null／例外）→ Unknown。巡回ごとに Warning、通知は 1 時間ごと。
+    //
+    // S1 の行はここを通らない（残保護数量はエントリーの記録が終端のときだけ確定し、未確定では完了しない。IADR-0344 追記(4)）。
+    private async Task<Outcome?> HoldUnlessPositionGoneAsync(
+        ProtectiveStopOrder stop,
+        IReadOnlyList<ProtectiveStopOrder> active,
+        List<object> events,
+        CancellationToken cancellationToken)
+    {
+        var (entry, reason, partiallyFilled) = await ObserveEntryAsync(stop, cancellationToken).ConfigureAwait(false);
+
+        // PR #1014 監査 N4: 状態が分かった＝「不明」の据え置きは解けた。通知の記憶（キー＝EntryDecisionId）を捨て、
+        // 後でまた不明になったら間隔を待たずに知らせる（記憶が残ると、再発した不明が最大 1 時間黙る）。
+        if (entry != EntryObservation.Unknown)
+            _heldCloseNotifications.Forget(stop.EntryDecisionId);
+
+        switch (entry)
+        {
+            case EntryObservation.Working when partiallyFilled:
+                // 🔴 PR #1014 監査 N3: 一部約定したのに建玉が 0 に見える＝約定分が外で消えたか、建玉照会の反映が遅れている。
+                // 逆指値は承認数量のまま残るので、約定分が本当に消えていれば建玉を超える逆指値になる（残余リスク）。Debug では埋もれる。
+                _logger.LogWarning(
+                    "保護逆指値ガード: エントリー注文は一部約定のまま生きていますが、建玉は 0 に見えます。逆指値は取り消さず、記録も閉じません"
+                    + "（逆指値は承認数量のままです。約定分が外で消えていれば建玉を超える逆指値が残ります。証券会社の画面で建玉を確認してください）: "
+                    + "EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol} 数量={Quantity}",
+                    stop.EntryDecisionId, stop.StopOrderId, stop.Symbol, stop.Quantity);
+                return Outcome.StillActive;
+
+            case EntryObservation.Working:
+                _logger.LogDebug(
+                    "保護逆指値ガード: 建玉は 0 ですがエントリー注文はまだ約定していません。逆指値は取り消さず、記録も閉じません: "
+                    + "EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                    stop.EntryDecisionId, stop.Symbol);
+                return Outcome.StillActive;
+
+            case EntryObservation.Unknown:
+                HoldUnknownEntry(stop, reason, events);
+                return Outcome.Unknown;
+
+            case EntryObservation.NeverOpened:
+                return null;
+        }
+
+        // 約定あり: 約定を知った後の建玉で判定し直す（照会は取消・完了へ進む直前の 1 回だけ）。
+        var fresh = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        if (fresh is null)
+        {
+            _logger.LogWarning(
+                "保護逆指値ガード: エントリーは約定していますが、建玉を照会し直せませんでした（不明）。逆指値を取り消さず、"
+                + "記録も閉じずに次の巡回で改めて評価します: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                stop.EntryDecisionId, stop.Symbol);
+            return Outcome.Unknown;
+        }
+
+        if (ProtectiveStopNetting.RemainingPositionFor(stop, fresh, active) > 0)
+        {
+            _logger.LogInformation(
+                "保護逆指値ガード: 巡回の建玉照会より後にエントリーが約定していました（照会し直すと建玉があります）。"
+                + "逆指値は取り消さず、記録も閉じません: EntryDecisionId={EntryDecisionId} 銘柄={Symbol}",
+                stop.EntryDecisionId, stop.Symbol);
+            return Outcome.StillActive;
+        }
+
+        return null;
+    }
+
+    // #1013: エントリー注文の状態。発注記録（エントリーの DecisionId＝保護記録の EntryDecisionId。発注執行・突合が逆指値より先に保存する）が
+    // 終端ならそれを使い（約定追跡が反映済み）、非終端ならブローカーへ照会する（約定追跡は遅れ得るし、追跡上限を過ぎた記録は照会しない）。
+    // PartiallyFilled は Working のときだけ意味を持つ（非終端で 1 株以上約定している）。
+    private async Task<(EntryObservation Kind, string Reason, bool PartiallyFilled)> ObserveEntryAsync(
+        ProtectiveStopOrder stop, CancellationToken cancellationToken)
+    {
+        var record = store.FindByDecisionId(stop.EntryDecisionId);
+        if (record is null)
+            return (EntryObservation.Unknown, "エントリーの発注記録が見つからない", false);
+
+        if (OrderStatusLifecycle.IsTerminal(record.Status))
+            return (Classify(record.Status, record.FilledQuantity), string.Empty, false);
+
+        if (string.IsNullOrEmpty(record.OrderId))
+            return (EntryObservation.Unknown, "エントリーの注文 ID が空", false);
+
+        BrokerOrder? order;
+        try
+        {
+            order = await broker.GetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "保護逆指値ガード: エントリー注文の照会に失敗しました: EntryDecisionId={EntryDecisionId} OrderId={OrderId}",
+                stop.EntryDecisionId, record.OrderId);
+            return (EntryObservation.Unknown, "エントリー注文の照会に失敗", false);
+        }
+
+        if (order is null)
+            return (EntryObservation.Unknown, "エントリー注文を照会できない", false);
+
+        return OrderStatusLifecycle.IsTerminal(order.Status)
+            ? (Classify(order.Status, order.FilledQuantity), string.Empty, false)
+            : (EntryObservation.Working, string.Empty,
+                order.Status == OrderStatus.PartiallyFilled || order.FilledQuantity > 0);
+    }
+
+    // 終端の注文: 約定（Filled）か、終端までに 1 株でも約定していれば建った。約定 0 の取消・失効・拒否は建っていない。
+    // 🔴 PR #1014 監査 N2: 「1 株でも約定」を外すと、一部約定の後に残りが取り消されたエントリーが「建っていない」になり、
+    // 建玉を照会し直さずに生きている逆指値を取り消す（巡回の照会の後に取り消された場合、建玉は実在する。T-10-1136）。
+    private static EntryObservation Classify(OrderStatus terminal, int filledQuantity) =>
+        terminal == OrderStatus.Filled || filledQuantity > 0 ? EntryObservation.Opened : EntryObservation.NeverOpened;
+
+    // 🔴 #1013: エントリーの状態が分からないまま「建玉 0」を建玉消滅と読まない。据え置きを無音にしない
+    // （このプロセスで未通知、または前回から 1 時間で EntryStateUnknown を発行し直す。改定 9 と同じ作法・キーは EntryDecisionId）。
+    // 何も送っていないので CloseDecisionId / CloseIntent は運ばない（台帳は押さえない）。
+    private void HoldUnknownEntry(ProtectiveStopOrder stop, string reason, List<object> events)
+    {
+        _logger.LogWarning(
+            "保護逆指値ガード: 建玉は 0 に見えますが、エントリー注文の状態を確認できません（{Reason}）。まだ約定していないのか、"
+            + "建って消えたのか分からないため、逆指値を取り消さず、記録も閉じずに据え置きます。"
+            + "証券会社の画面でエントリー注文・建玉・逆指値を確認してください: "
+            + "EntryDecisionId={EntryDecisionId} StopOrderId={StopOrderId} 銘柄={Symbol} 数量={Quantity}",
+            reason, stop.EntryDecisionId, stop.StopOrderId, stop.Symbol, stop.Quantity);
+
+        var now = clock.UtcNow;
+        if (!_heldCloseNotifications.IsDue(stop.EntryDecisionId, now))
+            return;
+
+        events.Add(new ProtectiveStopCoverageLost(
+            stop.EntryDecisionId, stop.Symbol, stop.Market,
+            ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.EntryStateUnknown,
+            stop.Quantity, CloseDecisionId: null, CloseIntent: null, now));
+        _heldCloseNotifications.MarkNotified(stop.EntryDecisionId, stop.EntryDecisionId, now);
     }
 
     // 🔴 FR-10, #853, IADR-0428 決定1・決定2: 逆指値の再発注を送ったが届いたか分からない（または予約が既にある）。
@@ -853,6 +1013,22 @@ public sealed class ProtectiveStopGuard(
         /// <b>ClosedOut（解消した）ではない</b>——手仕舞えていない建玉を「手仕舞い」の件数に入れない。
         /// </summary>
         CloseFailed,
+    }
+
+    // #1013: 「建玉 0」の解釈に使うエントリー注文の状態（原則 A の 3 値＋終端の 2 値）。
+    private enum EntryObservation
+    {
+        /// <summary>非終端（受理済み・部分約定）。これから約定し得る。</summary>
+        Working,
+
+        /// <summary>終端・約定 0（取消・失効・拒否）。建玉は生じなかった。</summary>
+        NeverOpened,
+
+        /// <summary>約定した（終端までに 1 株以上）。</summary>
+        Opened,
+
+        /// <summary>分からない（記録が無い・注文 ID が空・照会が null／例外）。</summary>
+        Unknown,
     }
 }
 

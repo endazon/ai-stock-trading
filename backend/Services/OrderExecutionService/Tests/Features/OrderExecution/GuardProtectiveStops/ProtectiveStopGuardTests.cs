@@ -114,6 +114,12 @@ public class ProtectiveStopGuardTests
         var stops = new InMemoryProtectiveStopOrderStore();
         stops.Save(stop);
         var store = new InMemoryExecutedOrderStore();
+        // #1013, IADR-0428（2026-09-26 追記）: エントリーは約定済み（発注記録が終端）。この表は「建って消えた」側の分岐を固定する。
+        // 未約定・不明の側は ProtectiveStopGuardEntryStateTests が固定する（建玉 0 でも取り消さない・完了させない）。
+        store.Save(new ExecutionRecord(
+            stop.EntryDecisionId, $"entry-{stop.EntryDecisionId:N}", stop.Symbol, stop.Market, stop.EntrySide,
+            stop.ProductType, PositionEffect.Open, stop.Quantity, 1_000m, stop.Quantity, 1_000m, OrderStatus.Filled, 0m,
+            Now.AddMinutes(-5)));
         return (new ProtectiveStopGuard(
             broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock()), broker, stops, store);
     }

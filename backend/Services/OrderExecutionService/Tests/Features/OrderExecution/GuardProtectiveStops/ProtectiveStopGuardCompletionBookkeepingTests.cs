@@ -159,6 +159,10 @@ public class ProtectiveStopGuardCompletionBookkeepingTests
             ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 950m, 1m, Attempt: 1,
             ProtectiveStopState.Active, Start.AddMinutes(-5), Start.AddMinutes(-5)));
         var store = new InMemoryExecutedOrderStore();
+        // #1013, IADR-0428（2026-09-26 追記）: エントリーは約定済み（建って消えた側の完了を固定する。未約定なら完了させない）。
+        store.Save(new ExecutionRecord(
+            entryDecisionId, "entry-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, PositionEffect.Open,
+            10, 1_000m, 10, 1_000m, OrderStatus.Filled, 0m, Start.AddMinutes(-5)));
         var reservations = new InMemoryOrderReservationStore();
         // 本番と同じく記憶は外から渡す（singleton。ガードは巡回ごとに作られる）。
         var rejections = new CloseRejectionTracker();

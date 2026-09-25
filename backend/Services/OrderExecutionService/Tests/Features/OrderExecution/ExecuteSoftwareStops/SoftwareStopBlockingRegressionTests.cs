@@ -364,6 +364,8 @@ public class SoftwareStopBlockingRegressionTests
         f.Stops.Save(alive);
         f.Stops.Save(software);
         Entry(f, software, OrderStatus.Filled, 5);
+        // #1013, IADR-0428（2026-09-26 追記）: S0 のエントリーも約定済み（建って消えた）。未約定なら建玉 0 でも取り消さない。
+        Entry(f, alive, OrderStatus.Filled, 10);
         f.Broker.Orders["stop-s0"] = new BrokerOrder(
             "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
                 BrokerProvider.MoomooSimulate, 10, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);

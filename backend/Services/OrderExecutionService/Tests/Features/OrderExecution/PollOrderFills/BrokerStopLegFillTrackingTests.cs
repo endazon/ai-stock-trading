@@ -84,6 +84,13 @@ public class BrokerStopLegFillTrackingTests
             PositionEffect.Close, 10, 950m, FilledQuantity: 0, AveragePrice: 0m, OrderStatus.Accepted,
             SlippageRatio: 0m, ExecutedAt: at ?? ArmedAt);
 
+    // #1013, IADR-0428（2026-09-26 追記）: エントリーの発注記録（約定済み・終端）。ガードは建玉 0 を建玉消滅と読む前にこれを見る
+    // （未約定なら取り消さない）。この試験は「建って消えた」側を固定するので約定済みで置く。
+    private static ExecutionRecord FilledEntry(ProtectiveStopOrder stop) =>
+        new(stop.EntryDecisionId, $"entry-{stop.EntryDecisionId:N}", "AAPL", Market.UnitedStates, TradeSide.Buy,
+            ProductType.Cash, PositionEffect.Open, 10, 1_000m, FilledQuantity: 10, AveragePrice: 1_000m, OrderStatus.Filled,
+            SlippageRatio: 0m, ExecutedAt: ArmedAt);
+
     private static BrokerOrder StopState(string orderId, OrderStatus status, int filled = 0, DateTimeOffset? at = null) =>
         new(orderId, CloseIntent, status, filled, filled > 0 ? 949.5m : 0m, PlacedAt: default,
             CompletedAt: OrderStatusLifecycle.IsTerminal(status) ? at ?? FilledAt : null);
@@ -276,6 +283,7 @@ public class BrokerStopLegFillTrackingTests
         var stop = S0(Guid.NewGuid());
         f.Stops.Save(stop);
         f.Store.Save(Leg(stop));
+        f.Store.Save(FilledEntry(stop));
         f.Broker.Orders["stop-1"] = StopState("stop-1", observed, filled: observed == OrderStatus.Filled ? 10 : 3);
         f.Broker.Positions = []; // 逆指値の約定・失効で建玉は 0
 
@@ -297,6 +305,7 @@ public class BrokerStopLegFillTrackingTests
         var stop = S0(Guid.NewGuid());
         f.Stops.Save(stop);
         f.Store.Save(Leg(stop));
+        f.Store.Save(FilledEntry(stop));
         f.Broker.Orders["stop-1"] = StopState("stop-1", OrderStatus.PartiallyFilled, filled: 3);
         f.Broker.Positions = [];
 

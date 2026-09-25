@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-05, FR-10, UC-01, UC-02, ADR-0002, ADR-0016, ADR-0040, IADR-0015, IADR-0057, IADR-0113, IADR-0117, IADR-0118, IADR-0342, IADR-0344, IADR-0428]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-09-25
+updated: 2026-09-26
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10)
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md
@@ -234,3 +234,11 @@ P5 entry(Limit):       Kind=Limit Price=329.0265
 - **S0 / S3 の新規建ては送る前に承認時の保護の文脈を `AwaitingEntry` で残し**、エントリーの送信結果が不明のまま突合（client order id）が
   発注済みと確定したら、発注執行が承認時の手法で保護レグを張る（`IReconciledEntryProtection`。S1 は配置の通知だけ・S2 と記録なしは張らない）。
   決定 1 の fail-closed（逆指値を張れない Open では建玉を持たない）は**確実に未発注**のときにそのまま効き、不明のときは据え置きが優先する。
+
+## ［2026-09-26 追記 / #1013］決定 4 (b) の「建玉消滅」は、エントリー注文が約定していたか約定しないまま終わったときだけ
+
+決定 4 の (b)「建玉消滅かつ逆指値が滞留 → 取り消す」と、失効かつ建玉 0 の完了は、**未約定の指値エントリー**の建玉 0 も「消滅」と読んでいた
+（取り消す・閉じると、約定後の建玉が逆指値なしで残る）。ガードは取消・完了へ進む直前にエントリー注文の状態を確かめ、まだ約定していなければ
+取り消さず閉じない、約定しないまま終わったなら従来どおり、約定していれば建玉を照会し直して 0 のときだけ従来どおり、分からなければ据え置いて
+`ProtectiveStopRemediation.EntryStateUnknown`（Warning・1 時間ごと）で知らせる。(c)「照会不能は据え置き」の規律をエントリー注文にも広げたものである。
+詳細・理由・残余リスクは [IADR-0428](IADR-0428_protective-leg-indeterminate-hold-and-reconciled-entry-protection.md) の同日の追記。
