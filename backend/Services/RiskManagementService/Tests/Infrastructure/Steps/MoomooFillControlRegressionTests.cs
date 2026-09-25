@@ -93,7 +93,8 @@ public class MoomooFillControlRegressionTests
         var settingsStore = new InMemoryRiskSettingsStore(settings);
         // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
         return (new OrderScreeningService(settingsStore, snapshotBuilder, new InMemoryLockoutStore(), clock,
-                new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger),
+                new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
+                TestShortSellContexts.Unavailable(clock, stores.Ledger)),
             new SizingContextService(snapshotBuilder, settingsStore));
     }
 
@@ -122,7 +123,7 @@ public class MoomooFillControlRegressionTests
         var dailyRemainingBefore = sizing.Build().DailyOrderRemaining;
 
         // 1 回目の判断は承認される（保有なし・当日取引なし）。
-        var first = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(), "1 回目", Now));
+        var first = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(), "1 回目", Now));
         first.IsApproved.Should().BeTrue();
         var decisionId = first.Approved!.DecisionId;
         await ApproveAsync(host, decisionId, Entry());
@@ -134,7 +135,7 @@ public class MoomooFillControlRegressionTests
         // FR-10, #829, IADR-0346: 約定を待たず、発注代金（10 株 × ¥1,000 × 0.01 ＝ $100）が枠を消費する。
         sizing.Build().DailyOrderRemaining.Should().Be(dailyRemainingBefore - 100m, "未約定でも発注代金は枠を消費する");
         // IADR-0346 決定4: 同日再エントリーの入力は約定だけ（決済は約定でしか成立しない）。
-        screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(), "未約定中", Now))
+        (await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(), "未約定中", Now)))
             .IsApproved.Should().BeTrue("未約定の新規建ては同日再エントリーの入力に算入しない");
 
         // 追跡ポーラーが終端化を観測して再発行した約定。
@@ -142,7 +143,7 @@ public class MoomooFillControlRegressionTests
         stores.Ledger.GetFills().Should().ContainSingle().Which.Quantity.Should().Be(10);
 
         // FR-10: 同日再エントリーの禁止が効く（paper 経路と同一の挙動）。
-        var reentry = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(), "同日再エントリー", Now));
+        var reentry = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(), "同日再エントリー", Now));
         reentry.IsApproved.Should().BeFalse();
         reentry.Rejected!.Reasons.Should().Contain(RejectionReason.SameDayReentry);
 
@@ -200,7 +201,7 @@ public class MoomooFillControlRegressionTests
         var ids = new List<Guid>();
         for (var i = 0; i < 2; i++)
         {
-            var outcome = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(70), $"{i + 1} 件目", Now));
+            var outcome = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(70), $"{i + 1} 件目", Now));
             outcome.IsApproved.Should().BeTrue();
             var decisionId = outcome.Approved!.DecisionId;
             await ApproveAsync(host, decisionId, Entry(70));
@@ -221,7 +222,7 @@ public class MoomooFillControlRegressionTests
 
         stores.Ledger.GetFills().Should().BeEmpty("約定は 1 件も無い（未約定の発注代金だけで拘束する）");
 
-        var third = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(70), "3 件目", Now));
+        var third = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(70), "3 件目", Now));
 
         third.IsApproved.Should().BeFalse();
         third.Rejected!.Reasons.Should().Contain(RejectionReason.DailyOrderAmountExceeded);
@@ -241,7 +242,7 @@ public class MoomooFillControlRegressionTests
 
         await ExecutedAsync(host, first, OrderStatus.Cancelled, 0);
 
-        screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(70), "取消後の 3 件目", Now))
+        (await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(70), "取消後の 3 件目", Now)))
             .IsApproved.Should().BeTrue("取消で約定しなかった発注代金は枠へ戻る");
 
         await host.StopAsync();
@@ -259,7 +260,7 @@ public class MoomooFillControlRegressionTests
             new OrderDispatchForgone(second, Entry(70), OrderDispatchForgoneReason.BrokerUnavailable, Now));
         session.Executed.MessagesOf<OrderDispatchForgone>().Should().NotBeEmpty();
 
-        screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Entry(70), "見送り後の 3 件目", Now))
+        (await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Entry(70), "見送り後の 3 件目", Now)))
             .IsApproved.Should().BeTrue("発注されなかった承認は枠を消費しない");
 
         await host.StopAsync();

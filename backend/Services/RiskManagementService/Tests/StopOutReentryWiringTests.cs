@@ -60,11 +60,11 @@ public class StopOutReentryWiringTests
         {
             var screening = scope.ServiceProvider.GetRequiredService<OrderScreeningService>();
 
-            screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Buy("AAPL"), "判断", BuyAttemptAt))
+            (await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Buy("AAPL"), "判断", BuyAttemptAt)))
                 .Rejected!.Reasons.Should().Contain(RejectionReason.StoppedOutSameDay);
 
             // 対照: 損切りしていない銘柄には立たない（理由が銘柄の損切りに由来することの確認）。
-            var other = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), Buy("MSFT"), "判断", BuyAttemptAt));
+            var other = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), Buy("MSFT"), "判断", BuyAttemptAt));
             (other.Rejected?.Reasons ?? []).Should().NotContain(RejectionReason.StoppedOutSameDay);
             (other.Rejected?.Reasons ?? []).Should().NotContain(RejectionReason.StopOutStatusUnknown);
         }
@@ -162,7 +162,8 @@ public class StopOutReentryWiringTests
         Exception? thrown = null;
         try
         {
-            await handler.Handle(new TradeDecisionMade(Guid.NewGuid(), intent, "判断", DateTimeOffset.UtcNow), bus);
+            await handler.Handle(
+                new TradeDecisionMade(Guid.NewGuid(), intent, "判断", DateTimeOffset.UtcNow), bus, CancellationToken.None);
         }
         catch (Exception e)
         {

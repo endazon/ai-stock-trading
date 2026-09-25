@@ -21,6 +21,12 @@ namespace RiskManagementService.Features.RiskManagement;
 // FR-10, #935, IADR-0394 決定7: **取引台帳（ledger）も同じ理由で必須依存である。** 損切りした銘柄の同日・同方向の
 // 新規建てを止める統制の入力（決済の承認と由来）を読む。省略可能にすると、`Program.cs` から外しても
 // コンパイルが通り、その統制だけが静かに効かなくなる（2026-09-23 の買い直しが戻る）。
+//
+// FR-10, ADR-0016 決定2(a)・決定3・決定9, #967, IADR-0425 決定5・7: **空売り文脈の供給（shortSellContexts）も必須依存である。**
+// 新規の売り建ての審査で空売り文脈（借株可否・エクスポージャ）を組み、判定コアへ渡す。不在は「文脈なし＝拒否」へ倒れて
+// 安全側ではあるが、10% / 50% の上限が**一度も評価されない状態**（#967 の起点）へ黙って戻る——省略可能にしない。
+// 供給元（借株可否の照会）はネットワークを渡るため審査は非同期（ScreenAsync）であり、**同期の入口は持たない**
+// （供給元を通らない審査の経路を作らない）。
 public sealed class OrderScreeningService(
     IRiskSettingsStore settingsStore,
     PortfolioSnapshotBuilder snapshotBuilder,
@@ -29,9 +35,10 @@ public sealed class OrderScreeningService(
     IBusinessCalendar businessCalendar,
     IBuyInInferenceStore buyInInferences,
     IPortfolioLedgerStore ledger,
+    ShortSellContextSupplier shortSellContexts,
     IManipulativeOrderPatternDetector? patternDetector = null)
 {
-    public ScreeningOutcome Screen(TradeDecisionMade decision)
+    public async Task<ScreeningOutcome> ScreenAsync(TradeDecisionMade decision, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(decision);
 
@@ -59,11 +66,19 @@ public sealed class OrderScreeningService(
         var snapshot = snapshotBuilder.Build();
 
         // FR-10, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5:
-        // 強制買戻し由来の 30 日禁止を判定コアへ供給する。**借株照会の供給元が無いため空売り文脈
-        // （ShortSellOrderContext）は今も組めない**が、禁止期限だけは推定台帳から供給できる。
+        // 強制買戻し由来の 30 日禁止を判定コアへ供給する。**空売り文脈が組めないとき（下の供給が null）でも**
+        // 禁止期限だけは推定台帳から単独で供給できる（#967 で文脈の供給元は入ったが、借株可否が分からない間は文脈を組まない）。
         // 供給できない値（維持率・エクスポージャ）を 0 で埋めた偽の文脈は作らない（値を発明しない）。
         // #428, IADR-0163 決定2: 台帳は必須依存であり、供給は**常に**組む（禁止が無ければ BanUntil が null）。
-        var buyInBan = new BuyInBanSupply(clock.Today, buyInInferences.GetBanUntil(intent.Symbol, intent.Market));
+        var banUntil = buyInInferences.GetBanUntil(intent.Symbol, intent.Market);
+        var buyInBan = new BuyInBanSupply(clock.Today, banUntil);
+
+        // FR-10, ADR-0016 決定2(a)・決定3・決定9, #967, IADR-0425 決定5: **新規の売り建て（空売り）のときだけ**空売り文脈を組む
+        // （借株可否の照会はブローカーの枠を使うため、それ以外の注文では照会しない）。借株可否・エクスポージャのどちらかが
+        // 分からなければ null であり、判定コアは BorrowUnavailable で拒否する（今と同じ）。判定日は注文の市場の現地取引日。
+        var shortSellContext = isEntry && ShortSellEvaluator.IsShortEntry(intent)
+            ? await shortSellContexts.SupplyAsync(intent, tradingDay, banUntil, cancellationToken).ConfigureAwait(false)
+            : null;
 
         // FR-10, #935, IADR-0394: 当日の損切りの供給（無し／損切り済み／不明を方向ごとに）。
         // **新規建てのときだけ読む**——手仕舞い（Close）は判定対象外であり、台帳の読み取りの失敗が
@@ -78,7 +93,8 @@ public sealed class OrderScreeningService(
 
         // 判定コア（決定的）を実行し、違反理由を集約する。
         var result = RiskEvaluator.Evaluate(
-            intent, settings, snapshot, patternDetector, buyInBan: buyInBan, stopOuts: stopOuts);
+            intent, settings, snapshot, patternDetector,
+            shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts);
         var reasons = new List<RejectionReason>(result.Reasons);
 
         // 日次損失上限に「新規到達」したら当日ロックアウトを設定する（翌営業日まで）。

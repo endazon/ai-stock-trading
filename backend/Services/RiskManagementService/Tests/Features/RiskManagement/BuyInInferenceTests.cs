@@ -294,14 +294,14 @@ public class BuyInInferenceTests
     // #374 で実装した `BuyInBanned` は供給経路が無く一度も発動し得なかった（blocked-tasks の
     //「実装済みだが発動しない機能」）。推定台帳を審査へ結線したことで、推定した銘柄の新規空売りが止まる。
     [Fact]
-    public void 推定した銘柄の新規空売りは発注審査で拒否される()
+    public async Task 推定した銘柄の新規空売りは発注審査で拒否される()
     {
         var store = new InMemoryBuyInInferenceStore();
         var service = NewService(LedgerWithShort(100, closedQuantity: 0), store);
         service.Observe([], At).Should().ContainSingle();
 
         var screening = NewScreeningService(store);
-        var outcome = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), ShortEntryIntent(), "テスト判断", At));
+        var outcome = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), ShortEntryIntent(), "テスト判断", At));
 
         outcome.IsApproved.Should().BeFalse();
         outcome.Rejected!.Reasons.Should().Contain(RejectionReason.BuyInBanned);
@@ -313,11 +313,11 @@ public class BuyInInferenceTests
     // T-10-245（**否定形**）: 推定が無い銘柄の新規空売りに `BuyInBanned` は立たない。
     // 立てば、日報・月報の「強制買戻しの発生有無」（決定15）が起きていない事象で水増しされる。
     [Fact]
-    public void 推定が無い銘柄には強制買戻しの拒否理由が立たない()
+    public async Task 推定が無い銘柄には強制買戻しの拒否理由が立たない()
     {
         var screening = NewScreeningService(new InMemoryBuyInInferenceStore());
 
-        var outcome = screening.Screen(new TradeDecisionMade(Guid.NewGuid(), ShortEntryIntent(), "テスト判断", At));
+        var outcome = await screening.ScreenAsync(new TradeDecisionMade(Guid.NewGuid(), ShortEntryIntent(), "テスト判断", At));
 
         outcome.Rejected!.Reasons.Should().NotContain(RejectionReason.BuyInBanned);
         outcome.Rejected.Reasons.Should().Contain(
@@ -369,6 +369,7 @@ public class BuyInInferenceTests
         return new OrderScreeningService(
             settingsStore, builder, new InMemoryLockoutStore(), new FixedClock(),
             new WeekendBusinessCalendar(), buyInInferences: store, ledger: new InMemoryPortfolioLedgerStore(),
+            shortSellContexts: TestShortSellContexts.Unavailable(new FixedClock()),
             patternDetector: null);
     }
 

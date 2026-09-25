@@ -76,7 +76,8 @@ public class StopOutReentryRegressionTests
             FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(100_000m));
         return new OrderScreeningService(
             new InMemoryRiskSettingsStore(), snapshotBuilder, new InMemoryLockoutStore(), clock,
-            new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger);
+            new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
+            TestShortSellContexts.Unavailable(clock, stores.Ledger));
     }
 
     private static async Task InvokeAsync<T>(IHost host, T message)
@@ -115,19 +116,19 @@ public class StopOutReentryRegressionTests
         var clock = new MutableClock(BuyAttemptAt);
         var screening = BuildScreening(stores, clock);
 
-        var rejected = screening.Screen(Decision(Buy(), BuyAttemptAt));
+        var rejected = await screening.ScreenAsync(Decision(Buy(), BuyAttemptAt));
         rejected.IsApproved.Should().BeFalse();
         rejected.Rejected!.Reasons.Should().ContainSingle().Which.Should().Be(RejectionReason.StoppedOutSameDay);
 
         // 5 分後の 2 本目も止まる。JST の日付が変わった後（ET はまだ 9/23）も止まる。
         clock.UtcNow = BuyAttemptAt.AddMinutes(5);
-        screening.Screen(Decision(Buy(), clock.UtcNow)).IsApproved.Should().BeFalse();
+        (await screening.ScreenAsync(Decision(Buy(), clock.UtcNow))).IsApproved.Should().BeFalse();
         clock.UtcNow = new DateTimeOffset(2026, 9, 23, 15, 30, 0, TimeSpan.Zero);
-        screening.Screen(Decision(Buy(), clock.UtcNow)).IsApproved.Should().BeFalse();
+        (await screening.ScreenAsync(Decision(Buy(), clock.UtcNow))).IsApproved.Should().BeFalse();
 
         // 翌 ET 日（9/24 00:00 EDT 以降）は通る。
         clock.UtcNow = new DateTimeOffset(2026, 9, 24, 13, 43, 33, TimeSpan.Zero);
-        screening.Screen(Decision(Buy(), clock.UtcNow)).IsApproved.Should().BeTrue();
+        (await screening.ScreenAsync(Decision(Buy(), clock.UtcNow))).IsApproved.Should().BeTrue();
 
         await host.StopAsync();
     }
@@ -146,7 +147,7 @@ public class StopOutReentryRegressionTests
 
         var screening = BuildScreening(stores, new MutableClock(BuyAttemptAt));
 
-        screening.Screen(Decision(Buy(), BuyAttemptAt)).Rejected!.Reasons
+        (await screening.ScreenAsync(Decision(Buy(), BuyAttemptAt))).Rejected!.Reasons
             .Should().Contain(RejectionReason.StoppedOutSameDay);
 
         await host.StopAsync();
@@ -168,8 +169,8 @@ public class StopOutReentryRegressionTests
         await InvokeAsync(host, new OrderExecuted(
             closeId, "S1-CLOSE", OrderStatus.Filled, 7, 337.455m, StopOutAt.AddSeconds(4), BrokerProvider.MoomooSimulate));
 
-        var outcome = BuildScreening(stores, new MutableClock(BuyAttemptAt))
-            .Screen(Decision(SellClose(), BuyAttemptAt));
+        var outcome = await BuildScreening(stores, new MutableClock(BuyAttemptAt))
+            .ScreenAsync(Decision(SellClose(), BuyAttemptAt));
 
         outcome.IsApproved.Should().BeTrue();
 
@@ -191,13 +192,13 @@ public class StopOutReentryRegressionTests
 
         var clock = new MutableClock(StopOutAt.AddMinutes(-1));
         var screening = BuildScreening(stores, clock);
-        screening.Screen(Decision(Buy(), clock.UtcNow)).IsApproved.Should().BeTrue("武装しただけでは損切りは成立していない");
+        (await screening.ScreenAsync(Decision(Buy(), clock.UtcNow))).IsApproved.Should().BeTrue("武装しただけでは損切りは成立していない");
 
         await InvokeAsync(host, new OrderExecuted(
             stopId, "S0-STOP", OrderStatus.Filled, 7, 337.45m, StopOutAt, BrokerProvider.MoomooSimulate));
 
         clock.UtcNow = BuyAttemptAt;
-        screening.Screen(Decision(Buy(), clock.UtcNow)).Rejected!.Reasons
+        (await screening.ScreenAsync(Decision(Buy(), clock.UtcNow))).Rejected!.Reasons
             .Should().ContainSingle().Which.Should().Be(RejectionReason.StoppedOutSameDay);
 
         await host.StopAsync();
@@ -223,23 +224,23 @@ public class StopOutReentryRegressionTests
         await InvokeAsync(host, new OrderExecuted(
             ownerCloseId, "OWNER-CLOSE", OrderStatus.Filled, 7, 337.3m, StopOutAt.AddSeconds(12), BrokerProvider.MoomooSimulate));
 
-        BuildScreening(stores, new MutableClock(BuyAttemptAt))
-            .Screen(Decision(Buy(), BuyAttemptAt)).IsApproved.Should().BeTrue();
+        (await BuildScreening(stores, new MutableClock(BuyAttemptAt))
+            .ScreenAsync(Decision(Buy(), BuyAttemptAt))).IsApproved.Should().BeTrue();
 
         await host.StopAsync();
     }
 
     // T-10-773: 由来が記録されていない当日の決済（本変更より前に書かれた承認行の形）は不明として止める。
     [Fact]
-    public void 由来の無い当日の決済があれば同方向の新規建ては不明の理由で止まる()
+    public async Task 由来の無い当日の決済があれば同方向の新規建ては不明の理由で止まる()
     {
         var stores = new Stores(new InMemoryPortfolioLedgerStore(), new InMemoryOrderActivityStore());
         var closeId = Guid.NewGuid();
         stores.Ledger.AppendApproval(closeId, SellClose(), StopOutAt); // 由来を渡さない＝列追加前の行と同じ
         stores.Ledger.AppendFill(closeId, "LEGACY", 7, 337.455m, StopOutAt.AddSeconds(4));
 
-        BuildScreening(stores, new MutableClock(BuyAttemptAt))
-            .Screen(Decision(Buy(), BuyAttemptAt)).Rejected!.Reasons
+        (await BuildScreening(stores, new MutableClock(BuyAttemptAt))
+            .ScreenAsync(Decision(Buy(), BuyAttemptAt))).Rejected!.Reasons
             .Should().ContainSingle().Which.Should().Be(RejectionReason.StopOutStatusUnknown);
     }
 }

@@ -314,6 +314,8 @@ public class MMApiMoomooTradeClientPositionCollectionTests
 
         public uint PlaceOrder(TrdPlaceOrder.Request request) => ++_serial;
 
+        public uint GetMarginRatio(TrdGetMarginRatio.Request request) => ++_serial;
+
         public uint ModifyOrder(TrdModifyOrder.Request request) => ++_serial;
 
         public uint GetOrderList(TrdGetOrderList.Request request) => ++_serial;

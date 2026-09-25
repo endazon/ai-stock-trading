@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Infrastructure.ExternalServices;
 using OrderExecutionService.Infrastructure.Persistence;
 using Wolverine;
@@ -81,6 +82,9 @@ public class CompositionWiringGuardTests(ITestOutputHelper output)
             {
                 services.RemoveAll<IMoomooTradeClient>();
                 services.AddSingleton(TransportStub.Create<IMoomooTradeClient>());
+                // FR-10, #967, IADR-0425: 借株可否の照会ポートも同じ OpenD クライアントの別の面であり、伝送の境界として差し替える。
+                services.RemoveAll<IShortPermitSource>();
+                services.AddSingleton(TransportStub.Create<IShortPermitSource>());
 
                 var toRemove = services
                     .Where(d => d.ServiceType == typeof(DbContextOptions<OrderExecutionDbContext>)

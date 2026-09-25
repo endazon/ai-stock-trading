@@ -344,8 +344,9 @@ public static class RiskEvaluator
             // FR-10, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5: 強制買戻し由来の 30 日禁止は
             // **文脈が組めなくても単独で判定できる唯一の統制**である（供給されるのは期限という 1 つの日付だけであり、
             // 借株可否・維持率・エクスポージャのような未供給の値を発明する必要が無い）。
-            // 借株照会の供給元が無い現況では shortSellContext が null であり、上の Evaluate は
-            // BorrowUnavailable を立てて**そこで打ち切る**ため、禁止期間中であることが監査ログに残らない。
+            // 借株可否が分からない間（#967 で供給元は入ったが、SIMULATE 口座では照会が失敗する）は shortSellContext が
+            // null であり、上の Evaluate は BorrowUnavailable を立てて**そこで打ち切る**ため、禁止期間中であることが
+            // 監査ログに残らない。
             // **二重計上しない**——文脈が組める日が来て両方から立っても理由は 1 件である。
             if (buyInBan is { } ban
                 && BuyInBanPolicy.IsBanned(ban.Today, ban.BanUntil)
