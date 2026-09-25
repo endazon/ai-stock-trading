@@ -65,14 +65,73 @@ public static class NotificationFormatter
     // ことを意味し、他に鳴る通知が 1 本も無い（乖離イベントは「乖離を確認できたとき」しか出ない）。
     // 建玉が無いことを確認して見送った側（BrokerPositionAbsent）は Warning のまま —— 同時に乖離の
     // Critical が鳴るので、二重に Critical を立てると本当に止まった事象が埋もれる。
+    //
+    // 🔴 FR-10, FR-09, UC-06, #879, IADR-0424 決定1: 照会できずに見送った決済には、**その建玉の保護の記録**を書き足す。
+    // 「損切りはブローカー側の逆指値が担うので見送っても消えない」はブローカー側の注文を持つ建玉にしか当てはまらない。
+    // 「可能性」と書くのは発注執行が判別できなかったとき（Unknown・項目なし）だけで、判別できたときは断定する。
     public static NotificationMessage From(OrderDispatchForgone e) => new(
         "発注見送り: " + ReasonLabel(e.Reason),
         $"{e.Intent.Symbol}/{e.Intent.Market} {e.Intent.Side} 数量{e.Intent.Quantity} の発注を見送りました"
             + $"（理由: {ReasonLabel(e.Reason)}・DecisionId={e.DecisionId}）。"
-            + "**この注文は再試行されません**（キューイングしない・再発注は次の取引判断から）。",
+            + "**この注文は再試行されません**（キューイングしない・再発注は次の取引判断から）。"
+            + (e.Reason == OrderDispatchForgoneReason.BrokerPositionsIndeterminate
+                ? IndeterminateCloseProtectionNote(e)
+                : string.Empty),
         e.Reason == OrderDispatchForgoneReason.BrokerPositionsIndeterminate
             ? NotificationSeverity.Critical
             : NotificationSeverity.Warning);
+
+    // 🔴 #879, IADR-0424 決定1: 分類ごとの文。**書くのは発注執行の記録が言えることだけ**である。
+    //   - ブローカー側の注文の株数は帳簿の主張であり、照会できないので注文が生きていることは確かめていない。
+    //   - S1（ソフトウェア逆指値）の決済も建玉照会の不明のあいだは据え置かれる（SoftwareStopExecutor の手順 3）。
+    //   - 利用者が証券会社のアプリで自分で置いた注文はシステムの記録に無い（見えない）ので、「無い」は記録についての断定に留める。
+    private static string IndeterminateCloseProtectionNote(OrderDispatchForgone e)
+    {
+        var p = e.Protection;
+        if (p is null || p.Status == ForgoneCloseProtectionStatus.Unknown
+            || !Enum.IsDefined(p.Status))
+        {
+            return "**この建玉は保護レグを持たない可能性があります**（見送りの時点で保護の記録を確認できませんでした）。"
+                + "照会できないあいだは、手仕舞いを出し直しても同じ理由で見送られます。証券会社の画面で建玉と逆指値を確認してください。";
+        }
+
+        if (p.Status == ForgoneCloseProtectionStatus.NoneRecorded)
+        {
+            return "**この建玉にはシステムの保護の記録（ブローカー側の逆指値・ソフトウェア逆指値）が 1 件もありません"
+                + "——保護レグを持たない建玉です**（損切りの実行機構 S2 で建てた建玉など）。"
+                + "システムはこの建玉を自動で損切りせず、照会できないあいだは手仕舞いを出し直しても同じ理由で見送られます"
+                + "（証券会社のアプリで自分で置いた注文はシステムからは見えません）。証券会社の画面で建玉を確認してください。";
+        }
+
+        var note = new System.Text.StringBuilder();
+        if (p.BrokerSideQuantity > 0)
+        {
+            note.Append(
+                $"記録上、この建玉にはブローカー側の保護注文（逆指値など）が {p.BrokerSideQuantity} 株分あります"
+                + "（ブローカー側で執行されるため、この見送りの影響は受けません。ただし照会できないため、注文が生きていることは確認できていません）。");
+        }
+
+        if (p.SoftwareStopQuantity > 0)
+        {
+            note.Append(
+                $"ソフトウェア逆指値の記録が {p.SoftwareStopQuantity} 株分ありますが、"
+                + "**ソフトウェア逆指値の決済も、建玉を照会できないあいだは据え置かれます**。");
+        }
+
+        if (p.BrokerSideQuantity == 0 && p.SoftwareStopQuantity == 0)
+            note.Append("保護の記録はありますが、記録上いま守っている株数は 0 株です。");
+
+        var uncovered = e.Intent.Quantity - p.BrokerSideQuantity;
+        if (uncovered > 0)
+        {
+            note.Append(
+                $"**決済しようとした {e.Intent.Quantity} 株のうち {uncovered} 株には、記録上ブローカー側の保護注文がありません**"
+                + "（照会できないあいだは、手仕舞いを出し直しても同じ理由で見送られます）。");
+        }
+
+        note.Append("証券会社の画面で建玉と逆指値を確認してください。");
+        return note.ToString();
+    }
 
     // FR-10, UC-02, #331, IADR-0210: 保護逆指値の発注（エントリー同時 or 失効後の再発注）。
     // 統制が設計どおり働いた記録であり Info。

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-05, FR-09, FR-11, UC-02, UC-06, ADR-0003, ADR-0016, IADR-0004, IADR-0057, IADR-0118, IADR-0119, IADR-0210, IADR-0211, IADR-0117, IADR-0350, IADR-0351]
 author: endazon (with Claude Code)
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0016_broker-adapter-and-paper-trading.md
@@ -179,6 +179,12 @@ moomoo 限定の登録（`IBrokerPositionSource`）はそのまま使う。
   これらの建玉に対して照会不能のもとで Close を流すと、`BrokerPositionsIndeterminate` で見送られ、
   **システムからの出口が 1 つも無い状態になる**（2026-09-18 に実測された「下落局面で手仕舞えない」と同じ形）。
   決定3 そのものは覆さない —— 覆すと裸のショートを許すことになり、どちらを採るかは裁定が要るためである（#879）。
+
+  ［2026-09-25 追記 / #879］ 裁定 2026-09-25 を [IADR-0424](IADR-0424_forgone-close-protection-and-adopted-increase.md) で実装した。
+  照会不明の見送り（`OrderDispatchForgone`）はその建玉の保護の記録（ブローカー側の注文・S1 の株数／無し／読めない）を運び、
+  通知は判別できないときだけ「保護レグを持たない可能性」と書く。🔴 上の 2 種類目の記述「発注執行は `PositionDriftAdopted` を
+  購読していない」は **#858（[IADR-0370](IADR-0370_drift-adoption-protective-stop-followup.md)）以降は誤り**であり、そもそも取り込みは
+  減らす方向だけ（計画 ADR-0041 決定3）なので**取り込みで建玉は生じない**（IADR-0424 決定2）。決定3 そのものは本追記でも覆さない。
 - **両建て（同一銘柄にロングとショートが同時にある）では、判定と報告で数え方が違う**
   （#873 の監査 N1）。判定は**方向ごと**（ネットで数えると正当な決済を止める。実測: ロング +300・ショート −100 で
   ショート 100 株の買い戻しが「建玉なし」になり、ロング 300 株の売り決済が 200 株へ縮む）。

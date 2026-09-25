@@ -9,8 +9,8 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions]
 issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, planning#292]
 -->
 
@@ -829,11 +829,25 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 損切りはこの経路では実行されない**（建玉と同時にブローカーへ置いた逆指値が担う。下記「損切りの実行機構」）ため、
 見送っても損切りは消えない。選ばなかった側の害を含む理由は実装の意思決定記録に残した。
 
-🔴 **ただしこの限定は外せない。** 逆指値を持たない建玉が 2 種類ある —— **保護逆指値を免除して建てた建玉**
-（逆指値レグを作らないため失効ガードの巡回対象にも入らない）と、**乖離の取り込みでできた建玉**
-（発注執行は取り込みを購読しておらず保護レグを作らない）である。**これらは建玉照会が不能のあいだ、
-システムからの出口が 1 つも無い**（#879 で追随する）。免除が成立する条件と本突き合わせが有効になる条件は
-重なるため、机上の話ではない。
+🔴 **ただしこの限定は外せない。** ブローカー側の注文を持たない建玉がある —— **保護逆指値を免除して建てた建玉**
+（逆指値レグを作らないため保護の記録が無く、失効ガードの巡回対象にも入らない）である。**ソフトウェア逆指値の建玉も、
+建玉照会が不能のあいだは決済が据え置かれる**。これらは建玉照会が不能のあいだ、システムからの出口が無い。
+免除が成立する条件と本突き合わせが有効になる条件は重なるため、机上の話ではない。
+（乖離の取り込みでは建玉は生じない —— 取り込めるのは台帳の建玉を減らす乖離だけである〔下記「台帳とブローカーの乖離の取り込み」〕。
+発注執行は取り込みを受けて保護の主張を減らすが、残る建玉の株数を下回らせない。）
+
+そこで、**照会できずに見送った決済の通知には、その建玉の保護の記録を書く**（#879）。発注執行が見送りの時点で、
+決済の反対方向・同一銘柄・同一市場の有効な保護の記録を読み、見送りに載せる。
+
+| 見送りに載る記録 | 通知の文 |
+| --- | --- |
+| 読めなかった（記録先の無い構成・読み取りの失敗）／記録が載っていない（旧い発注執行） | **「この建玉は保護レグを持たない可能性があります」**（保護の記録を確認できなかった） |
+| 有効な保護の記録が 1 件も無い | **「保護レグを持たない建玉です」**と断定する（保護逆指値を免除して建てた建玉など）。断定はシステムの記録についてであり、証券会社のアプリで利用者が自分で置いた注文は見えない、と添える |
+| 有効な保護の記録がある | ブローカー側の保護注文の株数（照会できないので注文が生きていることは確認できていない）・ソフトウェア逆指値の株数（照会できないあいだは決済が据え置かれる）・決済しようとした株数のうち記録上ブローカー側の保護注文が無い株数を書く |
+
+「可能性」と書くのは判別できなかったときだけである。株数は記録の主張であり、銘柄・方向ごとに合算する（建玉ごとの帰属は区別しない）。
+いずれの場合も重大（Critical）のままで、対処は「照会できないあいだは、手仕舞いを出し直しても同じ理由で見送られる」と書く
+（見送った承認は再配送されても送らないため、「照会が回復したら送られる」とは書かない）。
 
 ### 損切りした銘柄は、その取引日のうちは同じ方向の新規建てをしない（#935）
 
@@ -1089,7 +1103,10 @@ owner の手仕舞いには**過剰決済ガード**がある。取引台帳は�
 
 🔴 **残る制約**: システム外の損益は統制へ入らない。取り込み前に数えていた含み損は実現へ振り替わらずに消えるため、
 売却が当日の損失だった場合は**日次損失上限の判定が実態より緩む**。基準資金も実際の口座残高からずれたままになる。
-発注執行側の保護記録（保護逆指値の記録）の追随（#858）と、報告書での「システム外の決済・損益不明」の明示（#859）は後続である ——
+発注執行側の保護記録（保護逆指値の記録）の追随（#858）は実装済みである —— 発注執行は取り込みを購読し、取り込みで消えた建玉の
+保護を取り消して記録を終端化する（残る建玉の株数は下回らせない）。取り込みの形が建玉を生む・増やす・反転させるもの
+（送り手は発行しない契約の外の入力）なら、増えた分の約定価格が分からず損切りラインを導けないため保護を作らず、
+「増えた分はシステムの保護を持たない」と重大（Critical）のログに出す（#879）。報告書での「システム外の決済・損益不明」の明示（#859）は後続である ——
 それまでは、取り込みの通知が「ブローカー側に保護注文が残っていないか確認する」よう案内する。
 
 ### 判定基準の確定（Issue #31）

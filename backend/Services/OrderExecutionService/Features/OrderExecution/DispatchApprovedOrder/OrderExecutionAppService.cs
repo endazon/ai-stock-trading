@@ -132,12 +132,20 @@ public sealed class OrderExecutionAppService(
                     // 選ばなかった側（不明でも送る）の害は、台帳が乖離していたときに裸のショートが出ること——
                     // 不可逆であり、買い戻すまで損失が限定されない。選んだ側の害（手仕舞いが出ない）は
                     // 建玉が残るだけで可逆であり、**損切りはブローカー側の逆指値が担う**ため本経路の見送りで消えない。
+                    //
+                    // 🔴 FR-10, FR-09, #879, IADR-0424 決定1: 上の「損切りはブローカー側の逆指値が担う」は**ブローカー側の注文を
+                    // 持つ建玉にしか当てはまらない**（S2 の建玉は保護記録が無く、S1 の決済も照会の不明のあいだは据え置かれる）。
+                    // 通知が「保護レグを持たない（可能性がある）」を書き分けられるよう、その建玉の保護の記録を見送りに載せる。
+                    var protection = DescribeProtectionForClose(approved);
                     _logger.LogError(
                         "決済を見送りました: ブローカーの建玉を照会できません（不明）。台帳の建玉だけを根拠に売ると"
                         + "保有 0 からの売り（裸のショート）になり得るため送りません。証券会社の画面で建玉を確認してください: "
-                        + "DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity}",
-                        approved.DecisionId, intent.Symbol, intent.Quantity);
-                    return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.BrokerPositionsIndeterminate);
+                        + "DecisionId={DecisionId} 銘柄={Symbol} 数量={Quantity} 保護の記録={ProtectionStatus}"
+                        + "（ブローカー側の注文 {BrokerSideQuantity} 株・ソフトウェア逆指値 {SoftwareStopQuantity} 株）",
+                        approved.DecisionId, intent.Symbol, intent.Quantity, protection.Status,
+                        protection.BrokerSideQuantity, protection.SoftwareStopQuantity);
+                    return RecordForgoneBeforeReservation(
+                        approved, OrderDispatchForgoneReason.BrokerPositionsIndeterminate, protection: protection);
 
                 case BrokerHeldPositionOutcome.NoPosition:
                     // 🔴 IADR-0355 決定2: 決済方向の実建玉が 0。送れば**裸の新規ショート**である（1 株も送らない）。
@@ -420,21 +428,23 @@ public sealed class OrderExecutionAppService(
     // 🔴 見送りの結果（OrderDispatchResult.Forgone）は**本メソッドか ForgoneIfRecorded を通してだけ**作ること
     // （下の Forgone を直接呼ぶと記録が抜け、この穴が戻る。T-10-826 が理由ごとに固定する）。
     private OrderDispatchResult RecordForgoneBeforeReservation(
-        OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null) =>
-        ForgoneIfRecorded(approved, reason, reservations.TryRecordForgone(approved.DecisionId, clock.UtcNow), drift);
+        OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null,
+        ForgoneCloseProtection? protection = null) =>
+        ForgoneIfRecorded(
+            approved, reason, reservations.TryRecordForgone(approved.DecisionId, clock.UtcNow), drift, protection);
 
     // 🔴 FR-05, #876, IADR-0398: **見送りを主張してよいのは、この DecisionId を Forgone として記録できたときだけである。**
     // 予約（Reserved）や確定（Completed）がある DecisionId は、別の配送が送った・送ったかもしれない——
     // ここで見送りを発行すると台帳が生きている注文の在庫の押さえを解く（「確実に未発注」と「送ったか不明」を混ぜない）。
     private OrderDispatchResult ForgoneIfRecorded(
         OrderApproved approved, OrderDispatchForgoneReason reason, ForgoneRecordOutcome recorded,
-        PositionReconciliationDrift? drift = null)
+        PositionReconciliationDrift? drift = null, ForgoneCloseProtection? protection = null)
     {
         switch (recorded)
         {
             case ForgoneRecordOutcome.Recorded:
             case ForgoneRecordOutcome.AlreadyForgone:
-                return Forgone(approved, reason, drift);
+                return Forgone(approved, reason, drift, protection);
 
             case ForgoneRecordOutcome.HeldByReservation:
                 // 並行した配送が発注に着手している（送ったか不明）。従来の予約競合と同じ扱いで再発注も見送りもしない
@@ -545,9 +555,48 @@ public sealed class OrderExecutionAppService(
     }
 
     private OrderDispatchResult Forgone(
-        OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null) =>
+        OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null,
+        ForgoneCloseProtection? protection = null) =>
         OrderDispatchResult.FromForgone(
-            new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow), drift);
+            new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow, protection), drift);
+
+    // 🔴 FR-10, FR-09, UC-06, #879, IADR-0424 決定1: 決済を見送る建玉の**保護の記録**を読む（不明・無し・有りを混ぜない）。
+    // 対象は決済の反対方向（＝エントリー方向）・同一銘柄・同一市場の Active な行。数量は帳簿の主張（ProtectedQuantity）であり、
+    // ブローカーで注文が生きていることの確認ではない（照会できないので確かめられない。通知もそう書く）。
+    //   - 記録ストアの無い構成・読み取りの例外 → Unknown（「分からない」を「無い」と言わない）
+    //   - 行が 1 つも無い → NoneRecorded（S2 で建てた建玉など。システムの保護レグは無いと断定できる）
+    //   - 行がある → Recorded（S0・S3＝ブローカー側の注文／S1＝ソフトウェア逆指値に分けて合計）
+    private ForgoneCloseProtection DescribeProtectionForClose(OrderApproved approved)
+    {
+        if (protectiveStops is null)
+            return new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Unknown, 0, 0);
+
+        var intent = approved.Intent;
+        var entrySide = intent.Side == TradeSide.Sell ? TradeSide.Buy : TradeSide.Sell;
+        List<ProtectiveStopOrder> rows;
+        try
+        {
+            rows = protectiveStops.FindActive(ArmingScanLimit)
+                .Where(s => s.State == ProtectiveStopState.Active
+                    && s.Symbol == intent.Symbol && s.Market == intent.Market && s.EntrySide == entrySide)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex,
+                "見送る決済の建玉の保護記録を読めませんでした（保護の有無は不明として知らせます）: DecisionId={DecisionId} 銘柄={Symbol}",
+                approved.DecisionId, intent.Symbol);
+            return new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Unknown, 0, 0);
+        }
+
+        if (rows.Count == 0)
+            return new ForgoneCloseProtection(ForgoneCloseProtectionStatus.NoneRecorded, 0, 0);
+
+        return new ForgoneCloseProtection(
+            ForgoneCloseProtectionStatus.Recorded,
+            rows.Where(s => !s.IsSoftwareStop).Sum(s => s.ProtectedQuantity),
+            rows.Where(s => s.IsSoftwareStop).Sum(s => s.ProtectedQuantity));
+    }
 
     // #864, IADR-0355 決定5: 乖離は**既存の検知（IADR-0118）と同じイベント**で人へ知らせる（新しい経路を作らない）。
     // 観測時刻は照会した今である（発注執行は台帳を持たないため、台帳側の数量はこの決済が消そうとした数量を載せる）。
