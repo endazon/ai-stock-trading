@@ -16,6 +16,11 @@ public class MMApiMoomooTradeClientPositionCollectionTests
     private const int Us = (int)TrdCommon.TrdMarket.TrdMarket_US;
     private const int Jp = (int)TrdCommon.TrdMarket.TrdMarket_JP;
 
+    // #981, IADR-0379 決定 1・2: 照会経路の試験は応答が返ることを表明するので、応答待ち（ReplyTimeout）を無期限にする。
+    // 有限の応答待ちは、スレッドプールが塞がると「すぐ返るはずの応答」と打ち切りの順序を保証しない。
+    // Guard は合否の基準ではない（応答が返らなくなったときに黙って固まる代わりに理由つきで赤くするための上限）。
+    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
+
     // #827 受け入れ基準 1: 稼働クラスタで観測した形そのもの。
     [Fact]
     public void 同じUS建玉がUSとJPの両ヘッダで返っても1件に数える()
@@ -161,11 +166,12 @@ public class MMApiMoomooTradeClientPositionCollectionTests
     {
         var factory = new SimulateLikeConnectionFactory();
         using var client = new MMApiMoomooTradeClient(
-            new MoomooBrokerOptions("opend", 11111) { ReplyTimeout = TimeSpan.FromSeconds(5) },
+            new MoomooBrokerOptions("opend", 11111) { ReplyTimeout = Timeout.InfiniteTimeSpan },
             NullLogger<MMApiMoomooTradeClient>.Instance,
             factory);
 
-        var positions = await client.GetPositionsAsync(TestContext.Current.CancellationToken);
+        var positions = await client.GetPositionsAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         factory.Connection.QueriedMarkets.Should().Equal(new[] { Us, Jp }, "全対応市場を照会する契約は不変");
         positions.Should().ContainSingle()
@@ -182,11 +188,12 @@ public class MMApiMoomooTradeClientPositionCollectionTests
             new FakePosition("AAPL", 348, 340, PositionId: 1002UL));
         var logger = new CapturingLogger();
         using var client = new MMApiMoomooTradeClient(
-            new MoomooBrokerOptions("opend", 11111) { ReplyTimeout = TimeSpan.FromSeconds(5) },
+            new MoomooBrokerOptions("opend", 11111) { ReplyTimeout = Timeout.InfiniteTimeSpan },
             logger,
             factory);
 
-        var positions = await client.GetPositionsAsync(TestContext.Current.CancellationToken);
+        var positions = await client.GetPositionsAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(Guard, TestContext.Current.CancellationToken);
 
         positions.Should().HaveCount(2);
         positions.Sum(p => p.Quantity).Should().Be(848);
