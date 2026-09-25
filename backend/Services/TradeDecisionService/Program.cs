@@ -216,9 +216,16 @@ builder.Services.AddScoped<IDailyPolicyProvider>(sp =>
 // RiskManagement:BaseUrl 未設定/不正 URI は従来プレースホルダ（既定値）＝安全既定でゲート。選択は解決時に構成を読む。
 builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 2）, IADR-0427, #997 (#753): east-west gRPC（`RiskControlsRead`）。
+// **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば
+// 下のサイジング文脈・保有建玉のポートが gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderSizingContextProvider>();
 builder.Services.AddScoped<ISizingContextProvider>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcSizingContextProvider(riskGrpc, sp.GetRequiredService<ILogger<GrpcSizingContextProvider>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<PlaceholderSizingContextProvider>();
@@ -238,6 +245,10 @@ builder.Services.AddScoped<ISizingContextProvider>(sp =>
 builder.Services.AddSingleton<NoOpHeldPositionProvider>();
 builder.Services.AddScoped<IHeldPositionProvider>(sp =>
 {
+    // NFR, IADR-0427, #997: gRPC が宣言されていればそれ（実結線＝IsEnabled も true）、無ければ従来どおり。
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcHeldPositionProvider(riskGrpc, sp.GetRequiredService<ILogger<GrpcHeldPositionProvider>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<NoOpHeldPositionProvider>();

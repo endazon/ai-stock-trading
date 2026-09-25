@@ -15,9 +15,10 @@ related_ids:
   - IADR-0259
   - IADR-0264
   - IADR-0328
+  - IADR-0427
 author: endazon (with Claude Code)
 created: 2026-09-03
-updated: 2026-09-11
+updated: 2026-09-25
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0029_grpc-rest-usage-criteria.md
   - planning:projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md
@@ -215,6 +216,22 @@ versioning・h2c ポート・s2s トークンの 4 点を規約表で持つ）�
 - 決定 5 の「fail-safe 写像の共通方針」のうち **`Unauthenticated` / `PermissionDenied` は
   「各クライアントの既存の安全側既定」へ倒すだけでは足りない**ことが分かった —— 倒れ先は同じ Hold でも、
   **記録の原因**を分けないと `IADR-0323` が閉じた誤帰属が復活する。IADR-0332 決定 3 がこれを具体化した。
+
+## ［2026-09-25 追記 / #997］段 2（Risk 読み取り）を実装した。決定 5 の段 2 行の読み方を 2 点確定する
+
+段 2 を #997 として起票し実装した（具体の置き方は [IADR-0427](IADR-0427_risk-read-grpc-stage2.md)）。**決定 1・2・4 と、決定 5 の
+段の順序・切り方は変わらない。** 決定 5 の段 2 行（「open-positions ×3・sizing-context・stage-gate ×2・fills・buy-in-inferences・
+session-uptime｜提供側 1・消費側 3 サービス」）の読み方だけを、実装時の実測で 2 点確定した。
+
+- **stage-gate の 2 つ目の呼び出し元（Notification）は段 5 で移す。** 同じ行の「消費側 3 サービス」と食い違う（Notification を
+  入れると 4）。同クラスは OwnerOnly の書き込み 2 本と owner マップ機密クライアントのトークンを持ち、gRPC での owner トークンの
+  運び方は段 5 の設計事項である。提供側の `GetStageGate` は段 2 で出した。
+- **射程表（2026-09-03）より後に追加された OwnerOrService の読み取り 2 本を段 2 に入れた**: `GET /risk-controls/working-entry-orders`
+  （#934）・`GET /risk-controls/drift-adoptions`（#870）。決定 1 の境界基準に該当し、段 3〜6 に入る場所が無いため段 2 で持つ。
+- 🔴 **決定 2 の「26 本」は 2026-09-03 時点の数えであり、その後に呼び出し元が増えている。** 段 2 の引き直しの過程で、段 2 以外に
+  属するものも見えた —— 報告書の `HttpStopLossMethodUsageSource`（Audit `GET /audit/events/by-type`・#823。段 3）、
+  通知の `HttpPositionDriftAdoptionController`（Risk `POST /risk-controls/position-drift/adopt`・OwnerOnly・#871。段 5）。
+  **各段は着手時に母集合を引き直す**（本表を転記しない）。
 
 ## 関連
 

@@ -51,28 +51,7 @@ public sealed class HttpBuyInInferenceRecordSource(
                 return null;
             }
 
-            // FR-21: **報告期間が観測の届いた取引日で覆われていなければ、台帳が空でも未供給である。**
-            //
-            // **［2026-08-08 改定］判定は期間ごとである**（計画 FR-21・裁定 planning#292）。
-            // 従前は「最終観測時刻が非 null か」だったため、**初回観測より前の期間**（初回観測が 8/20 で
-            // 7 月分の月報を作る場合）や**観測が途中で止まった期間**が「正当な 0」として報告されていた。
-            //
-            // 台帳は推定が起きたときにしか行を書かない——行数 0 は「観測が届いていない（＝この統制が
-            // 働いていない）」と「観測して 0 件だった（正常）」を区別できない。前者を 0 件と描けば
-            // 「強制買戻しは起きていない」と読める。
-            //
-            // **`periodCovered` を欠く応答（旧版 Risk）は未供給に倒す**——項目の欠落を「覆っている」と読まない。
-            if (body.PeriodCovered is not true)
-            {
-                logger.LogWarning(
-                    "報告期間がブローカ建玉の観測に覆われていません（{From}〜{To}・観測日 {Days} 日）。"
-                        + "**推定台帳が空でも 0 件とは表示しません**（FR-21）。",
-                    fromInclusive, toInclusive, body.ObservedTradingDays?.Count ?? 0);
-                return null;
-            }
-
-            // ここから先は**正当な 0** を返し得る（期間は観測に覆われており、推定が無かったという事実である）。
-            return [.. (body.Inferences ?? []).Select(ToEvent)];
+            return Interpret(body, fromInclusive, toInclusive, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -90,6 +69,35 @@ public sealed class HttpBuyInInferenceRecordSource(
         }
     }
 
+    // NFR, IADR-0427 決定 5, #997: 応答の**解釈**（期間の被覆の判定と写し）。輸送に依らず 1 つであり、
+    // gRPC（GrpcBuyInInferenceRecordSource）も proto を同じ DTO へ写してからここを呼ぶ。中身は切り出す前と同じである。
+    internal static IReadOnlyList<BuyInInferred>? Interpret(
+        BuyInInferenceQueryDto body, DateOnly fromInclusive, DateOnly toInclusive, ILogger logger)
+    {
+        // FR-21: **報告期間が観測の届いた取引日で覆われていなければ、台帳が空でも未供給である。**
+        //
+        // **［2026-08-08 改定］判定は期間ごとである**（計画 FR-21・裁定 planning#292）。
+        // 従前は「最終観測時刻が非 null か」だったため、**初回観測より前の期間**（初回観測が 8/20 で
+        // 7 月分の月報を作る場合）や**観測が途中で止まった期間**が「正当な 0」として報告されていた。
+        //
+        // 台帳は推定が起きたときにしか行を書かない——行数 0 は「観測が届いていない（＝この統制が
+        // 働いていない）」と「観測して 0 件だった（正常）」を区別できない。前者を 0 件と描けば
+        // 「強制買戻しは起きていない」と読める。
+        //
+        // **`periodCovered` を欠く応答（旧版 Risk）は未供給に倒す**——項目の欠落を「覆っている」と読まない。
+        if (body.PeriodCovered is not true)
+        {
+            logger.LogWarning(
+                "報告期間がブローカ建玉の観測に覆われていません（{From}〜{To}・観測日 {Days} 日）。"
+                    + "**推定台帳が空でも 0 件とは表示しません**（FR-21）。",
+                fromInclusive, toInclusive, body.ObservedTradingDays?.Count ?? 0);
+            return null;
+        }
+
+        // ここから先は**正当な 0** を返し得る（期間は観測に覆われており、推定が無かったという事実である）。
+        return [.. (body.Inferences ?? []).Select(ToEvent)];
+    }
+
     // 権威源の BuyInInferenceRecord から報告書が使う BuyInInferred へ写す。
     //
     // **台帳は根拠（CoveringFills）を持たない**——推定の根拠は発行済みイベントと監査台帳（FR-11）に残っており、
@@ -101,7 +109,7 @@ public sealed class HttpBuyInInferenceRecordSource(
         r.BanUntil ?? r.InferredOn, r.ObservedAt, r.InferredAt);
 
     // 応答の受け皿（camelCase・列挙は数値で往復する）。
-    private sealed record BuyInInferenceQueryDto(
+    internal sealed record BuyInInferenceQueryDto(
         // false / 欠落＝報告期間が観測に覆われていない（FR-21・2026-08-08 改定）。
         // **`bool?` で受ける**——非 nullable にすると旧版応答の欠落が `false` と区別できず、
         // 「覆われていない」と「そもそも判定していない版」を同じに扱ってしまう
@@ -111,7 +119,7 @@ public sealed class HttpBuyInInferenceRecordSource(
         IReadOnlyList<DateOnly>? ObservedTradingDays,
         IReadOnlyList<BuyInInferenceRecordDto>? Inferences);
 
-    private sealed record BuyInInferenceRecordDto(
+    internal sealed record BuyInInferenceRecordDto(
         Guid Id,
         string Symbol,
         Market Market,

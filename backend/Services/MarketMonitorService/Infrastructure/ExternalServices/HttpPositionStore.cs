@@ -32,6 +32,9 @@ public sealed class HttpPositionStore(
 {
     private static readonly IReadOnlyCollection<HeldPosition> Empty = [];
 
+    // NFR, IADR-0427 決定 5, #997: ログに載せる照会元（gRPC 実装は自分の照会元を渡す）。
+    internal const string RestSource = "GET /risk-controls/open-positions";
+
     public async Task<IReadOnlyCollection<HeldPosition>> GetOpenPositionsAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -57,17 +60,17 @@ public sealed class HttpPositionStore(
             }
             catch (JsonException ex)
             {
-                ReportUnreadableResponse(ex.Message);
+                ReportUnreadableResponse(metrics, logger, RestSource, ex.Message);
                 return Empty;
             }
 
             if (rows is null)
             {
-                ReportUnreadableResponse("本文が null です");
+                ReportUnreadableResponse(metrics, logger, RestSource, "本文が null です");
                 return Empty;
             }
 
-            return Classify(rows);
+            return Classify(rows, metrics, logger, RestSource);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -82,7 +85,11 @@ public sealed class HttpPositionStore(
     }
 
     // #957, IADR-0399 決定1: 行ごとに「評価する／近似のラインで評価する／評価できない」へ分ける。
-    private IReadOnlyCollection<HeldPosition> Classify(List<OpenPositionDto?> rows)
+    // NFR, IADR-0427 決定 5, #997: 輸送に依らず 1 つ（GrpcPositionStore も proto を同じ nullable の行へ写してから呼ぶ）。
+    // 切り出しで変えたのは、照会元をログの引数にしたことと、読めない応答の文面の「200 応答」を輸送に依らない「成功応答」に
+    // したことだけである（判定・計器は不変）。
+    internal static IReadOnlyCollection<HeldPosition> Classify(
+        IReadOnlyList<OpenPositionDto?> rows, BusinessMetrics metrics, ILogger logger, string source)
     {
         var positions = new List<HeldPosition>(rows.Count);
         var degraded = new List<string>();
@@ -135,25 +142,25 @@ public sealed class HttpPositionStore(
             metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowStopLineApproximated, approximated);
             metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowStopLineUnknown, stopUnknown);
             logger.LogCritical(
-                "🔴 保有照会（GET /risk-controls/open-positions）の応答に、そのまま損切り判定へ渡せない行があります"
+                "🔴 保有照会（{Source}）の応答に、そのまま損切り判定へ渡せない行があります"
                     + "（{Degraded} / {Total} 行。評価しない {Dropped} 行・近似のラインで評価する {Approximated} 行）。"
                     + "送り手（リスク管理）と市場監視の契約が食い違っている可能性があります（片方だけ先に配備した等）: {Details}。"
                     + " **評価しない行の建玉は、この巡回で損切り（S1）の到達を検知しません。** 近似のラインは平均取得単価から"
                     + "既定比率で見積もった値であり、実際のラインではありません。他の行の評価は続けます。",
-                degraded.Count, rows.Count, identityMissing + stopUnknown, approximated, string.Join(" / ", degraded));
+                source, degraded.Count, rows.Count, identityMissing + stopUnknown, approximated, string.Join(" / ", degraded));
         }
 
         return positions;
     }
 
-    private void ReportUnreadableResponse(string reason)
+    internal static void ReportUnreadableResponse(BusinessMetrics metrics, ILogger logger, string source, string reason)
     {
         metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowsResponseUnreadable);
         logger.LogCritical(
-            "🔴 保有照会（GET /risk-controls/open-positions）の 200 応答を保有の一覧として読めません（{Reason}）。"
+            "🔴 保有照会（{Source}）の成功応答を保有の一覧として読めません（{Reason}）。"
                 + "送り手（リスク管理）と市場監視の契約が食い違っている可能性があります。空列に倒すため、"
                 + "**この巡回ではどの建玉の損切り（S1）の到達も検知しません。**",
-            reason);
+            source, reason);
     }
 
     private static string Describe(OpenPositionDto? row) => row is null
@@ -172,7 +179,7 @@ public sealed class HttpPositionStore(
     };
 
     // 🔴 #957, IADR-0399: 送り手 OpenPositionView と同じ項目を**全項目 nullable** で受ける（欠けた項目を既定値に化けさせない）。
-    private sealed record OpenPositionDto(
+    internal sealed record OpenPositionDto(
         string? Symbol,
         Market? Market,
         TradeSide? Side,
