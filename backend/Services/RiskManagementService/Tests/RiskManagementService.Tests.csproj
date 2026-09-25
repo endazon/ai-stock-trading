@@ -15,6 +15,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\RiskManagementService.csproj" />
+    <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- #389 / #340, IADR-0146: バックエンド応答↔フロント契約フィクスチャの突合（テスト専用の共有支援）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.ContractFixtures\AiStockTrading.TestSupport.ContractFixtures.csproj" />
     <!-- ADR-0013, IADR-0129, #354: キュー名規則（QueueNameFor）と Wolverine のランタイム生成（RuntimeCompilation）を

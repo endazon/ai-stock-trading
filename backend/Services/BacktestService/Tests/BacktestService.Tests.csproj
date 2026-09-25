@@ -12,6 +12,8 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="..\BacktestService.csproj" />
+    <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
+    <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- ADR-0013, IADR-0129, #688, IADR-0310: Wolverine のテストハーネス（予算つきの唯一の入口）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Messaging\AiStockTrading.TestSupport.Messaging.csproj" />
     <!-- NFR, IADR-0260: Stage 0 の許容 DD が運用の DD 停止ライン（TradingDefaults）と同値であることを

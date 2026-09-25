@@ -29,3 +29,14 @@ OTel・Keycloak 認証）は現状この shim の実装だけで動く。した�
 この shim のコードそのもの** である。「TestSupport」「本番非使用」という名前だけを見て「このフォルダは削除・変更しても
 デプロイ後の挙動に影響しない」と誤解しないこと。本 shim が「本番非使用」になるのは **#22 で platform 本体の Foundation へ
 差し替えた後** である。それまでは実行時の振る舞いを担う本番相当の配線として扱う。
+
+## AiStockTrading.TestSupport.Composition
+
+**本番の組み立て（各サービスの `Program.cs`）を組み、配線の抜けを機械的に検査する**テスト専用のエンジン
+（[IADR-0397](../../.ai-context/adr/IADR-0397_composition-wiring-guard.md) / #947）。
+
+- 各サービスのテストの `CompositionWiringGuardTests` が、既存のファクトリ（外界は伝送の境界だけ差し替え）から
+  `InspectComposition(...)` で組み立てを組み、`AssertNoUnexpectedFindings(allowlist)` で判定する。
+- 規則は W0 組めない／W1 省略可能依存の未解決／W2 渡し忘れ／W3 偽物の陰の本物。所見への対処は IADR-0397 決定6。
+- **新しいサービスを足したらガードも足す**（`AiStockTrading.Architecture.Tests` の `CompositionWiringGuardPresenceTests` が止める）。
+- 伝送の境界（外界へ出る最下層のクライアント）だけを差し替えるときは `TransportStub.Create<T>()` を使う。
