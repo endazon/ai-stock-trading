@@ -107,6 +107,13 @@ describe('ControlStatusPage (SC-03, FR-10/FR-20)', () => {
     expect(within(table).getByText('50.0%')).toBeInTheDocument();
   });
 
+  // T-10-876, FR-10, SC-03, #832, IADR-0346 決定2: 発注額と保有数は未約定の新規建て注文を含む（約定だけと読ませない）。
+  it('notes that daily order amount and position count include unfilled entry orders', async () => {
+    renderWithProviders(<ControlStatusPage />);
+    await screen.findByRole('table', { name: '上限使用率' });
+    expect(screen.getByText(/約定前の新規建て注文.*も含まれます/)).toBeInTheDocument();
+  });
+
   it('renders stage-gate promotion assessment with unmet criteria labels', async () => {
     renderWithProviders(<ControlStatusPage />);
     await screen.findByRole('heading', { name: '統制状態' });

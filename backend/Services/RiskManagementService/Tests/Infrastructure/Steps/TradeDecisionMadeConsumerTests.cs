@@ -31,7 +31,8 @@ public class TradeDecisionMadeConsumerTests
     // ADR-0013, IADR-0129, #354: MassTransit のテストハーネスから Wolverine.Tracking へ移行した。
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
     // （テストの対象範囲を旧テストと同一に保つ）。実ブローカへは接続しない。
-    private static Task<IHost> BuildHostAsync(IKillSwitchStore killSwitch) =>
+    private static Task<IHost> BuildHostAsync(
+        IKillSwitchStore killSwitch, InMemoryPortfolioLedgerStore? ledger = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
@@ -72,7 +73,8 @@ public class TradeDecisionMadeConsumerTests
                     // #428: 推定台帳は必須依存。本テストは強制買戻しを関心に持たないため空の台帳を渡す。
                     new InMemoryBuyInInferenceStore(),
                     // #935, IADR-0394: 台帳も必須依存（損切りした銘柄の同日・同方向の新規建ての入力）。空の台帳＝当日の損切りなし。
-                    new InMemoryPortfolioLedgerStore(),
+                    // #832, IADR-0407: 承認済みの判断の再配送を見分ける入力でもある（既定は空＝承認済みの判断なし）。
+                    ledger ?? new InMemoryPortfolioLedgerStore(),
                     null));
 
                 // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
@@ -174,6 +176,33 @@ public class TradeDecisionMadeConsumerTests
 
         capture.TagValuesOf(BusinessMetricNames.RiskScreenings, BusinessMetricNames.TagOutcome)
             .Should().Contain(BusinessMetrics.OutcomeApproved);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-874, T-10-875, FR-10, FR-20, #832, IADR-0407: 承認済み（自分の OrderApproved を台帳へ射影済み）の
+    // 新規建ての判断が再配送されたら、本番と同じ配線のハンドラは**何も発行しない**（承認も拒否も）・例外にしない・
+    // 観測ログを書かない。観測は最初の審査が発行より先に記録済みであり、再配送で書くと観測の件数が審査の件数を超える。
+    // kill switch を起動した状態で流す——再審査していれば KillSwitchActive で OrderRejected が出る形であり、
+    // 「何も発行しない」が再審査の抑止によることを示す（抑止が外れると拒否が出て赤になる）。
+    [Fact]
+    public async Task 承認済みの新規建ての判断の再配送では何も発行せず観測も記録しない()
+    {
+        var killSwitch = new InMemoryKillSwitchStore();
+        killSwitch.SetState(new KillSwitchState(true, "user", "停止", DateTimeOffset.UtcNow));
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var decisionId = Guid.NewGuid();
+        ledger.AppendApproval(decisionId, Entry(), DateTimeOffset.UtcNow, source: ApprovalSource.OrderApproved);
+        using var host = await BuildHostAsync(killSwitch, ledger);
+        var violations = host.Services.GetRequiredService<IControlViolationObservationStore>();
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new TradeDecisionMade(decisionId, Entry(), "再配送", DateTimeOffset.UtcNow));
+
+        session.Executed.MessagesOf<TradeDecisionMade>().Should().NotBeEmpty();
+        session.Sent.MessagesOf<OrderApproved>().Should().BeEmpty("承認を発行し直さない");
+        session.Sent.MessagesOf<OrderRejected>().Should().BeEmpty("承認済みの判断を拒否へ反転させない");
+        violations.GetTally().Should().BeNull("再配送は新しい審査ではないので観測を書かない");
 
         await host.StopAsync();
     }

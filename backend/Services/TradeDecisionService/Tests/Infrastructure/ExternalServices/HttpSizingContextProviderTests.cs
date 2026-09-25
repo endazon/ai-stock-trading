@@ -2,7 +2,9 @@ extern alias RiskManagementWorker;
 
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RiskManagementWorker::RiskManagementService.Domain;
+using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetSizingContext;
 using AiStockTrading.Shared.Contracts.Trading;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.ExternalServices;
@@ -119,6 +121,7 @@ public class HttpSizingContextProviderTests
         // #885, IADR-0379: 従来は「壁時計 50 ms の HttpClient.Timeout」対「壁時計 2 秒のハンドラ遅延」という
         // **時刻どうしの競争**で合否が決まっていた（#900 / #901 と同型。機序は IADR-0367）。
         // 🔴 遅延が勝つと 200 応答（本文 `{}`）が写って残枠が null になり**実際に赤くなる**（変異注入で実測）。
+        // ［2026-09-25 追記 / #957・IADR-0408］いまは `{}` も項目の欠落として安全既定へ倒れる（T-10-881）ため、その競争では赤くならない。
         // 応答が返らない上流に変え、打ち切りで終わったことを観測して確定させる。**上限値（50 ms）は動かしていない。**
         var handler = new NeverRespondingHandler();
         var http = new HttpClient(handler)
@@ -136,6 +139,62 @@ public class HttpSizingContextProviderTests
         (await handler.Cancellation.WaitAsync(Guard)).Should()
             .BeTrue("上限に達した要求は打ち切られる（応答は返っていない）");
     }
+
+    // 🔴 T-10-881, FR-04, FR-10, #957, IADR-0408: **送り手の項目名が変わった版だけが先に配備された窓で、欠けた項目を既定値で読まない。**
+    // 連敗数・DD 比率が 0 に化けると縮小係数が外れ（上限側への fail-open）、動作モードは InternalPaper を名乗り、上限の欠落は判断の中で
+    // NullReferenceException になる。いずれも残枠 0 の安全既定（資金 null・残枠 0＝取引しない）へ倒す。
+    [Theory]
+    [InlineData("consecutiveLosses", null)]
+    [InlineData("consecutiveLosses", "losingStreak")]
+    [InlineData("drawdownRatio", null)]
+    [InlineData("drawdownRatio", "drawdown")]
+    [InlineData("mode", null)]
+    [InlineData("mode", "brokerProvider")]
+    [InlineData("mode", "99")]
+    [InlineData("limits", null)]
+    [InlineData("limits", "riskLimits")]
+    public async Task 連敗数やDD比率や動作モードや上限が欠けた応答は残枠0の安全既定(string field, string? replacement)
+    {
+        var body = SenderBody();
+        var value = body[field]!.DeepClone();
+        body.Remove(field);
+        // null＝項目を消す／英字＝その名前へ改名する／それ以外＝値を差し替える。
+        if (replacement is not null && char.IsLetter(replacement[0]))
+            body[replacement] = value;
+        else if (replacement is not null)
+            body[field] = JsonNode.Parse(replacement);
+
+        var context = await Provider(new StubHandler(HttpStatusCode.OK, body.ToJsonString())).GetContextAsync();
+
+        context.Capital.Should().BeNull("安全既定は資金を名乗らない");
+        context.StageCapitalRemaining.Should().Be(0m);
+        context.DailyOrderRemaining.Should().Be(0m);
+    }
+
+    // T-10-881（否定形と対）: 資金・残枠の null は「未供給」であり契約の食い違いではない（従来どおりそのまま読む）。
+    // 損切りの実行機構の未定義値は S0 と読まず不明（null）にする。
+    [Fact]
+    public async Task 資金と残枠だけが無い応答はそのまま読み未定義の損切りの実行機構は不明()
+    {
+        var body = SenderBody();
+        body["capital"] = null;
+        body["stageCapitalRemaining"] = null;
+        body["dailyOrderRemaining"] = null;
+        body["stopLossMethod"] = 42;
+
+        var context = await Provider(new StubHandler(HttpStatusCode.OK, body.ToJsonString())).GetContextAsync();
+
+        (context.Capital, context.StageCapitalRemaining, context.DailyOrderRemaining).Should().Be((null, null, null));
+        (context.ConsecutiveLosses, context.DrawdownRatio, context.Mode).Should().Be((3, 0.07m, BrokerProvider.MoomooSimulate));
+        context.StopLossMethod.Should().BeNull();
+    }
+
+    // 送り手の本物の型を web 既定で直列化した本文（連敗 3・DD 0.07・SIMULATE・逆指値なし）。
+    private static JsonObject SenderBody() => JsonSerializer.SerializeToNode(
+        new SizingContextView(
+            120_000m, 45_000m, 22_000m, 3, 0.07m, BrokerProvider.MoomooSimulate, TradingDefaults.CreateRiskLimits(),
+            StopLossExecutionMethod.NoProtectiveStop),
+        new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {

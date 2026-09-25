@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
@@ -76,7 +77,7 @@ public class CostControlEndpointsTests
         // LLM 上限 15,000 の 80% = 12,000 を計上。
         // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
         HttpResponseMessage recorded = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             recorded = await client.PostAsJsonAsync("/costs/record", Record("Llm", 12_000m));
         });

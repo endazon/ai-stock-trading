@@ -224,6 +224,10 @@ msgid "1日発注金額"
 msgstr "1日発注金額"
 
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
+msgid "1日発注金額と保有銘柄数には、約定前の新規建て注文（当日発注し、取消・失効・見送りで終わっていないもの）も含まれます。"
+msgstr "1日発注金額と保有銘柄数には、約定前の新規建て注文（当日発注し、取消・失効・見送りで終わっていないもの）も含まれます。"
+
+#: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "3 統制はいずれも"
 msgstr "3 統制はいずれも"
 

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -66,7 +67,7 @@ public class ReportEndpointsTests
         // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する
         // （確定の処理中に外へ出たメッセージが収束するまで待つ）。
         HttpResponseMessage confirm = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             confirm = await client.PostAsJsonAsync("/reports/daily-2026-07-10/confirm", new { ExpectedVersion = 1 });
         });

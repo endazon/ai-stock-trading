@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using RiskManagementService.Features.RiskManagement;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
@@ -68,7 +69,7 @@ public class PositionCloseCancellationEndpointTests(RiskWorkerWebApplicationFact
         var decisionId = SeedPendingClose("XCAN1");
 
         HttpResponseMessage res = null!;
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             res = await OwnerClient().PostAsJsonAsync(Path, Body(decisionId));
         });
