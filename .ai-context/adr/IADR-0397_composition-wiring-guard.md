@@ -170,4 +170,6 @@ W3 が共有物の本物を「未参照」と読んだもの 7 件（`NoOpMarket
 - **Wolverine のハンドラは `ActivatorUtilities` で構築する。** Wolverine 自身のコード生成と構築子の選び方が
   異なる場合、その差は見えない。
 - **サービス間 DTO の契約（#940 / #943 の形）は射程外**。[#952](https://github.com/endazon/ai-stock-trading/issues/952) で扱う。
+  ［2026-09-25 追記 / #952］規約と機械検査は [IADR-0420](IADR-0420_cross-service-read-contract-convention-and-guard.md)
+  （Architecture.Tests の `CrossServiceReadContractTests`）が持つ。
 - `backend/TestSupport/AiStockTrading.TestSupport.PlatformShim`（README が「de facto な配線」と明記する shim）は本番型に数えていない。
