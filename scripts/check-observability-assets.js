@@ -16,12 +16,18 @@
  *   D1. ダッシュボード JSON が JSON として妥当で、title / uid / panels を持つ
  *   D2. 各パネルが targets と expr を持ち、expr が空でない
  *   D3. uid がダッシュボード間で一意である（Grafana は uid で同一性を決める）
+ *   D4. パネルの id が同一ダッシュボード内で一意である（#939）。Grafana は同じ id のパネルを 1 枚として扱い、
+ *       並行 PR が同じ id を足したマージでは**パネルが 1 枚黙って消える**
+ *   D5. パネルの gridPos の矩形が同一ダッシュボード内で重ならない（#939）。重なった配置は片方を覆い隠す
  *   R1. expr が引く `ast_*` 系列が、コード側のレジストリ（BusinessMetricNames）に実在する
  *   R2. レジストリの各計器が、少なくとも 1 つのパネルから引かれている
  *       （**宣言はあるが誰も見ていない計器**＝計上コストだけ払って価値を生まない状態を検出する）
  *   E1. dev の otel-collector 構成が metrics を `debug`（標準出力のみ）にしか出さない
  *       ＝**既定では計装が有効でも外部へ送らない**（IADR-0094 の opt-in の作法）
- *   A1. アラートルールが形を満たす（英字の alert 名・空でない expr・既知の severity・summary あり）
+ *   A1. アラートルールが形を満たす（英字の alert 名・空でない expr・既知の severity・summary あり・
+ *       `for:` が正の期間であるか、`for` を置かない理由がルール直前のコメントに印 `for は置かない` で明示されている。#939）
+ *       expr はブロック／折り畳みスカラー（`|` / `|-` / `>` / `>-` 等）でも本文まで読む。読めなければ空として落とす
+ *       （**黙って 0 系列で A2 を素通りさせない**。#939）
  *   A2. アラートの expr が引く `ast_*` 系列が、コード側のレジストリに実在する（R1 と同じ規則）
  *       🔴 **ずれたアラートはエラーを出さず、ただ永久に鳴らない。** 空のグラフと同じ失敗の形であり、
  *       しかもダッシュボードより悪い——**人が見に行かない前提の仕組みだから**である（#891 / IADR-0374）。
@@ -134,23 +140,103 @@ function checkDashboardShape(name, dashboard) {
       }
     });
   });
+  errors.push(...checkPanelIdsAndLayout(name, dashboard.panels));
   return errors;
+}
+
+/**
+ * #939: パネル id の一意性（D4）と gridPos の非重複（D5）。
+ * 🔴 どちらも Grafana はエラーを出さない —— 同じ id は 1 枚として扱われ、重なった配置は片方を覆い隠す。
+ * 並行 PR がダッシュボード末尾へ同じ id・同じ位置のパネルを足し、両方を残してマージすると、
+ * **パネルが 1 枚黙って消える**（PR #919 / #925 で実測）。
+ * 読めない id・gridPos は fail-loud で上げる（読めないものを「重なりなし」と扱わない）。
+ */
+function checkPanelIdsAndLayout(name, panels) {
+  const errors = [];
+  const ids = new Map();
+  const rects = [];
+  panels.forEach((panel, i) => {
+    const label = `${name} panel[${i}]（${panel.title ?? '無題'}）`;
+    if (!Number.isInteger(panel.id)) {
+      errors.push(`[D4] ${label}: \`id\` が整数でない（読めた値: ${JSON.stringify(panel.id)}）。`
+        + '重複を検査できないため、明示の整数 id を付ける。');
+    } else if (ids.has(panel.id)) {
+      errors.push(`[D4] ${label}: パネル id ${panel.id} が ${ids.get(panel.id)} と重複している。`
+        + 'Grafana は同じ id のパネルを 1 枚として扱うため、片方が黙って消える（末尾の最大 id＋1 を振り直す）。');
+    } else {
+      ids.set(panel.id, label);
+    }
+    const g = panel.gridPos;
+    const valid = g !== null && typeof g === 'object'
+      && ['x', 'y', 'w', 'h'].every((k) => Number.isInteger(g[k]) && g[k] >= 0)
+      && g.w > 0 && g.h > 0;
+    if (!valid) {
+      errors.push(`[D5] ${label}: \`gridPos\`（x / y / w / h の非負整数、w・h は正）を読めない`
+        + `（読めた値: ${JSON.stringify(g)}）。配置の重なりを検査できない。`);
+      return;
+    }
+    for (const other of rects) {
+      if (rectsOverlap(g, other.g)) {
+        errors.push(`[D5] ${label}: gridPos ${JSON.stringify(g)} が ${other.label} の ${JSON.stringify(other.g)} と重なっている。`
+          + '重なった配置は片方を覆い隠す（末尾の y を既存の最下端より下へずらす）。');
+      }
+    }
+    rects.push({ label, g });
+  });
+  return errors;
+}
+
+/** 2 つの矩形（gridPos）が面積を持って重なるか（辺が接するだけは重なりに数えない）。 */
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
 /**
  * #891, IADR-0374: PrometheusRule の YAML から alert ルールを読む（**行走査。YAML ライブラリは足さない** ——
  * 本検査器は外部依存ゼロであり、読むのは自分たちが書く定型の一部だけである）。
  * 読み取れる形を保つのは書き手の責任で、読めなければ下の A1 が fail-loud で落とす。
+ *
+ * #939: ブロック／折り畳みスカラー（`key: |` / `|-` / `>` / `>-` 等）は、続く「キーより深く字下げされた行」を
+ * 本文として読む（expr・summary は本文を空白 1 つで連結した値にする。PromQL は空白を区別しない）。
+ * それ以外のキー（description 等）の本文は読み飛ばす —— 本文の中の `for:` 等の文字列をキーと取り違えないため。
+ * また、ルール直前に連続するコメント行（`- alert:` の直前の、コメントと空行だけの並び）に印 `for は置かない` が
+ * あれば `noForReason` を立てる（`for:` を意図して置かないルールの明示。A1 が読む）。
  */
+const NO_FOR_MARKER = 'for は置かない';
 function parseAlertRules(yaml) {
   const rules = [];
   let current = null;
+  let leadingComments = [];
+  let block = null; // { key, indent, lines } —— ブロックスカラーの本文を読んでいる途中
+  const finishBlock = () => {
+    if (block !== null && current !== null && (block.key === 'expr' || block.key === 'summary')) {
+      current[block.key] = block.lines.map((l) => l.trim()).filter(Boolean).join(' ');
+    }
+    block = null;
+  };
   for (const line of yaml.split(/\r?\n/)) {
-    if (/^\s*#/.test(line)) continue;
+    const indent = /^\s*/.exec(line)[0].length;
+    if (block !== null) {
+      if (line.trim().length === 0 || indent > block.indent) { block.lines.push(line); continue; }
+      finishBlock();
+    }
+    if (line.trim().length === 0) continue;
+    if (/^\s*#/.test(line)) { leadingComments.push(line); continue; }
     const started = /^\s*-\s+alert:\s*(.+?)\s*$/.exec(line);
     if (started !== null) {
-      current = { alert: started[1], expr: '', for: null, severity: null, summary: null };
+      current = {
+        alert: started[1], expr: '', for: null, severity: null, summary: null,
+        noForReason: leadingComments.some((c) => c.includes(NO_FOR_MARKER)),
+      };
       rules.push(current);
+      leadingComments = [];
+      continue;
+    }
+    leadingComments = [];
+    const blockStart = /^(\s*)(?:-\s+)?([A-Za-z_][A-Za-z0-9_]*):\s*[|>][-+0-9]*\s*$/.exec(line);
+    if (blockStart !== null) {
+      // キーの字下げは「- 」を含めた位置で数える（本文はそれより深い）。
+      block = { key: blockStart[2], indent: line.indexOf(blockStart[2]), lines: [] };
       continue;
     }
     if (current === null) continue;
@@ -163,7 +249,15 @@ function parseAlertRules(yaml) {
     const summary = /^\s*summary:\s*(.+?)\s*$/.exec(line);
     if (summary !== null) { current.summary = summary[1]; continue; }
   }
+  finishBlock();
   return rules;
+}
+
+/** Prometheus の期間（`30m` / `1h30m` 等）が正の長さか。0 や読めない値は偽。 */
+function isPositiveDuration(value) {
+  const m = /^(?:\d+(?:ms|[smhdwy]))+$/.exec(value);
+  if (m === null) return false;
+  return /[1-9]/.test(value.replace(/ms|[smhdwy]/g, ' '));
 }
 
 /** アラートルール 1 本の形（A1）。 */
@@ -179,6 +273,21 @@ function checkAlertShape(name, rule) {
   if (rule.severity === null || !ALLOWED_ALERT_SEVERITIES.includes(rule.severity)) {
     errors.push(`[A1] ${label}: \`severity\` が ${ALLOWED_ALERT_SEVERITIES.join(' / ')} のいずれでもない`
       + `（読めた値: ${rule.severity ?? 'なし'}）。重大度が無いと通知の振り分けができない。`);
+  }
+  // #939: `for:` が無いと、一過性の照会失敗 1 回で鳴るルールになる。意図して置かないなら、
+  // 理由を書いたコメントに印 `for は置かない` を入れる（黙った欠落と意図した不在を読み分けるため）。
+  if (rule.for === null) {
+    if (!rule.noForReason) {
+      errors.push(`[A1] ${label}: \`for:\` が無い。無いと一過性の失敗 1 回で鳴る。`
+        + `意図して置かないなら、ルール直前のコメントに理由と印「${NO_FOR_MARKER}」を書く。`);
+    }
+  } else if (!isPositiveDuration(rule.for)) {
+    errors.push(`[A1] ${label}: \`for:\` が正の期間でない（読めた値: ${rule.for}）。`
+      + '`30m` のような Prometheus の期間で書く（0 は置かないのと同じで、理由の印も無い）。');
+  }
+  if (/^[|>]/.test(rule.expr.trim())) {
+    errors.push(`[A1] ${label}: \`expr\` の本文を読めていない（読めた値: ${rule.expr}）。`
+      + 'ブロックスカラーの本文はキーより深く字下げする。読めないまま通すと A2 が 0 系列で素通りする。');
   }
   if (rule.summary === null || rule.summary.length === 0) {
     errors.push(`[A1] ${label}: \`annotations.summary\` が無い。`
@@ -354,7 +463,9 @@ function selfTest() {
     public const string B = "ast.llm.cost_jpy";
     public const string TagAction = "action";
   `;
-  const panel = (expr) => ({ panels: [{ title: 't', targets: [{ expr }] }], title: 'T', uid: 'u' });
+  const panel = (expr) => ({
+    panels: [{ id: 1, title: 't', gridPos: { x: 0, y: 0, w: 8, h: 7 }, targets: [{ expr }] }], title: 'T', uid: 'u',
+  });
 
   ok('レジストリから ast. 始まりの定数だけを読む', () => {
     assert(JSON.stringify(parseRegistry(registry)) === JSON.stringify(['ast.foo.bar', 'ast.llm.cost_jpy']),
@@ -530,6 +641,149 @@ function selfTest() {
     assert(!alertOnly.some((e) => e.startsWith('[R2]')), alertOnly.join('\n'));
   });
 
+  // ── #939: パネル id の重複・gridPos の重なり（D4・D5） ─────────────────────
+  const p = (id, gridPos) => ({ id, title: `p${id}`, gridPos, targets: [{ expr: 'sum(ast_foo_bar_total)' }] });
+  const dashOf = (...panels) => ({ title: 'T', uid: 'u', panels });
+
+  ok('D4/D5: id が一意で配置が重ならない（辺が接するだけ）なら違反にしない', () => {
+    const errors = checkDashboardShape('d.json', dashOf(
+      p(1, { x: 0, y: 0, w: 8, h: 7 }), p(2, { x: 8, y: 0, w: 8, h: 7 }), p(3, { x: 0, y: 7, w: 24, h: 7 })));
+    assert(errors.length === 0, errors.join('\n'));
+  });
+
+  ok('D4: 同じダッシュボード内のパネル id の重複を違反として上げる（PR #919 / #925 の実測の形）', () => {
+    const errors = checkDashboardShape('d.json', dashOf(
+      p(15, { x: 0, y: 35, w: 24, h: 7 }), p(15, { x: 0, y: 42, w: 24, h: 7 })));
+    assert(errors.some((e) => e.startsWith('[D4]') && e.includes('15')), errors.join('\n'));
+    assert(!errors.some((e) => e.startsWith('[D5]')), errors.join('\n'));
+  });
+
+  ok('D5: 同じダッシュボード内で gridPos の矩形が重なれば違反として上げる', () => {
+    const errors = checkDashboardShape('d.json', dashOf(
+      p(15, { x: 0, y: 35, w: 24, h: 7 }), p(16, { x: 12, y: 40, w: 12, h: 7 })));
+    assert(errors.some((e) => e.startsWith('[D5]')), errors.join('\n'));
+    assert(!errors.some((e) => e.startsWith('[D4]')), errors.join('\n'));
+  });
+
+  ok('D4/D5: id と配置が両方ぶつかる実測の形は両方上げる', () => {
+    const same = { x: 0, y: 35, w: 24, h: 7 };
+    const errors = checkDashboardShape('d.json', dashOf(p(15, same), p(15, { ...same })));
+    assert(errors.some((e) => e.startsWith('[D4]')) && errors.some((e) => e.startsWith('[D5]')), errors.join('\n'));
+  });
+
+  ok('D4/D5: id・gridPos が読めないパネルは fail-loud で上げる（重なりなしと扱わない）', () => {
+    const errors = checkDashboardShape('d.json', dashOf(p(undefined, undefined), p(2, { x: 0, y: 0, w: 0, h: 7 })));
+    assert(errors.filter((e) => e.startsWith('[D4]')).length === 1, errors.join('\n'));
+    assert(errors.filter((e) => e.startsWith('[D5]')).length === 2, errors.join('\n'));
+  });
+
+  ok('D4/D5: ダッシュボード間では id・配置の重複を問わない（Grafana の同一性はダッシュボード内）', () => {
+    const errors = checkAssets({
+      dashboards: [
+        { name: 'a.json', dashboard: { ...panel('sum(ast_foo_bar_total)'), uid: 'a' } },
+        { name: 'b.json', dashboard: { ...panel('sum(ast_foo_bar_total)'), uid: 'b' } },
+      ],
+      instrumentNames: ['ast.foo.bar'],
+      collectorYaml: 'service:\n  pipelines:\n    metrics:\n      exporters: [debug]\n',
+    });
+    assert(!errors.some((e) => e.startsWith('[D4]') || e.startsWith('[D5]')), errors.join('\n'));
+  });
+
+  // ── #939: アラートの for:（A1） ─────────────────────────────────────────────
+  const a1Of = (yaml) => parseAlertRules(yaml).flatMap((r) => checkAlertShape('a.yaml', r));
+
+  ok('A1: for: を消したアラートを違反として上げる', () => {
+    const errors = a1Of(alertYaml.replace('          for: 30m\n', ''));
+    assert(errors.length === 1 && errors[0].includes('for:'), errors.join('\n'));
+  });
+
+  ok('A1: 直前のコメントに「for は置かない」の印があれば for の無いルールを通す（既存の意図した形）', () => {
+    const yaml = alertYaml
+      .replace('        - alert: AstSomethingBroke',
+        '        # 平常時 0 件で一過性の事象ではないので for は置かない。\n        - alert: AstSomethingBroke')
+      .replace('          for: 30m\n', '');
+    const rules = parseAlertRules(yaml);
+    assert(rules[0].noForReason === true, JSON.stringify(rules[0]));
+    assert(a1Of(yaml).length === 0, a1Of(yaml).join('\n'));
+  });
+
+  ok('A1: 別のルールの前にある印は次のルールへ持ち越さない', () => {
+    const second = [
+      '        - alert: AstOtherBroke',
+      '          expr: sum(increase(ast_foo_bar_total[15m])) > 0',
+      '          labels:',
+      '            severity: warning',
+      '          annotations:',
+      '            summary: 別のものが壊れている',
+      '',
+    ].join('\n');
+    const yaml = alertYaml
+      .replace('        - alert: AstSomethingBroke',
+        '        # for は置かない（理由）。\n        - alert: AstSomethingBroke')
+      .replace('          for: 30m\n', '') + second;
+    const rules = parseAlertRules(yaml);
+    assert(rules.length === 2 && rules[0].noForReason && !rules[1].noForReason, JSON.stringify(rules));
+    const errors = a1Of(yaml);
+    assert(errors.length === 1 && errors[0].includes('AstOtherBroke'), errors.join('\n'));
+  });
+
+  ok('A1: for: 1m（PR #951 の形）・1h30m は通し、0s・読めない値は上げる', () => {
+    for (const v of ['1m', '30m', '1h30m', '90s']) {
+      const errors = a1Of(alertYaml.replace('for: 30m', `for: ${v}`));
+      assert(errors.length === 0, `${v}: ${errors.join('\n')}`);
+    }
+    for (const v of ['0s', '0m', '30', 'thirty']) {
+      const errors = a1Of(alertYaml.replace('for: 30m', `for: ${v}`));
+      assert(errors.length === 1 && errors[0].includes('正の期間'), `${v}: ${errors.join('\n')}`);
+    }
+  });
+
+  // ── #939: 折り畳み・ブロックスカラーの expr（A1・A2） ─────────────────────────
+  const foldedExpr = (header, body) => alertYaml.replace(
+    '          expr: sum(increase(ast_foo_bar_total[15m])) > 0',
+    `          expr: ${header}\n${body.map((l) => `            ${l}`).join('\n')}`);
+
+  ok('折り畳みスカラー（>-）の expr の本文を読む', () => {
+    const rules = parseAlertRules(foldedExpr('>-', ['sum(increase(ast_foo_bar_total[15m]))', '  > 0']));
+    assert(rules[0].expr === 'sum(increase(ast_foo_bar_total[15m])) > 0', rules[0].expr);
+    assert(rules[0].for === '30m', String(rules[0].for));
+    assert(a1Of(foldedExpr('>-', ['sum(increase(ast_foo_bar_total[15m])) > 0'])).length === 0);
+  });
+
+  ok('ブロックスカラー（| / |- / >）の expr の本文も読む', () => {
+    for (const h of ['|', '|-', '>', '>+']) {
+      const rules = parseAlertRules(foldedExpr(h, ['sum(', '  increase(ast_foo_bar_total[15m])', ') > 0']));
+      assert(rules[0].expr.includes('ast_foo_bar_total') && !rules[0].expr.startsWith(h), `${h}: ${rules[0].expr}`);
+    }
+  });
+
+  ok('A2: 折り畳みスカラーの中の綴り違いを上げる（issue の実測の形: >- ＋ 綴り違い ＋ for 欠落）', () => {
+    const yaml = foldedExpr('>-', ['sum(increase(ast_foo_baz_total[15m])) > 0']).replace('          for: 30m\n', '');
+    const errors = withAlerts(yaml);
+    assert(errors.some((e) => e.startsWith('[A2]') && e.includes('ast_foo_baz_total')), errors.join('\n'));
+    assert(errors.some((e) => e.startsWith('[A1]') && e.includes('for:')), errors.join('\n'));
+  });
+
+  ok('A1: 本文の無いブロックスカラーの expr は空として上げる（黙って 0 系列で通さない）', () => {
+    const yaml = alertYaml.replace('sum(increase(ast_foo_bar_total[15m])) > 0', '>-');
+    const errors = a1Of(yaml);
+    assert(errors.some((e) => e.includes('`expr` が空')), errors.join('\n'));
+  });
+
+  ok('A1: 本文の字下げが浅いブロックスカラーは「読めていない」として上げる', () => {
+    const rules = [{ alert: 'AstX', expr: '>-', for: '30m', severity: 'warning', summary: 's', noForReason: false }];
+    const errors = rules.flatMap((r) => checkAlertShape('a.yaml', r));
+    assert(errors.some((e) => e.includes('読めていない')), errors.join('\n'));
+  });
+
+  ok('description の折り畳み本文の中の「for:」「severity:」をキーと取り違えない', () => {
+    const yaml = alertYaml.replace('            summary: 何かが壊れている',
+      '            summary: 何かが壊れている\n            description: >-\n              for: 5m のように見える行\n'
+      + '              severity: critical と書いた説明');
+    const rules = parseAlertRules(yaml);
+    assert(rules[0].for === '30m' && rules[0].severity === 'warning', JSON.stringify(rules[0]));
+  });
+
   const failed = results.filter(([pass]) => !pass);
   for (const [pass, name] of results) console.log(`${pass ? 'ok  ' : 'FAIL'} ${name}`);
   console.log(`\n[check-observability-assets --self-test] ${results.length - failed.length}/${results.length} 件成功`);
@@ -544,8 +798,11 @@ module.exports = {
   referencedSeries,
   resolveSeries,
   checkDashboardShape,
+  checkPanelIdsAndLayout,
+  rectsOverlap,
   checkCollectorMetricsExporters,
   parseAlertRules,
   checkAlertShape,
+  isPositiveDuration,
   checkAssets,
 };
