@@ -333,8 +333,19 @@ public static class AuditEntryFactory
             + (e.EstimatedPnlInBase is { } estimate
                 ? $"・推定 {estimate.ToString("0.##", CultureInfo.InvariantCulture)} USD（推定・未記録）"
                 : "・推定なし")
-            + $"（{e.Actor}）: {e.Reason}"),
+            + $"（{AdopterOf(e)}）: {e.Reason}"),
         AuditSerialization.Serialize(e), e.AdoptedAt, recordedAt);
+
+    // FR-11, FR-14, ADR-0041 決定 4, #871, IADR-0383, IADR-0423: 取り込みの操作者の要約。**実際に操作した利用者と、
+    // 認可の主体であるクライアントの両方を残す**（Discord Bot 経由の取り込みは owner マップ機密クライアントのトークンで
+    // 行われる）。生の値（Actor / AuthorizedBy）はペイロードにそのまま残る。要約だけ、操作者が分からないことを
+    // 内部の既定値 `unknown` ではなく「操作者不明」と書く（StageTransitioned・ReportConfirmed と同型）。
+    // 🔴 `unknown` の取り込みはいま Risk が 400 で拒否するため新たには増えない。過去の記録のため倒し方を残す。
+    private static string AdopterOf(PositionDriftAdopted e)
+    {
+        var actor = string.IsNullOrWhiteSpace(e.Actor) || e.Actor == "unknown" ? "操作者不明" : e.Actor;
+        return string.IsNullOrWhiteSpace(e.AuthorizedBy) ? actor : $"{actor}・代理 {e.AuthorizedBy}";
+    }
 
     // FR-10, FR-11, UC-06, #330, IADR-0133 決定7: 維持率割れによる建玉の自動縮小。
     // **システムが自ら決済した唯一の統制**であり、この記録が「なぜ建玉が減ったか」の一次証跡になる。

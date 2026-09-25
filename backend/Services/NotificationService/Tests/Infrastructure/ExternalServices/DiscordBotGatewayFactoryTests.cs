@@ -1,5 +1,6 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.AdoptPositionDrift;
 using NotificationService.Features.Notifications.ClearGoodFaithViolations;
 using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
@@ -50,8 +51,12 @@ public class DiscordBotGatewayFactoryTests
         var reportHandler = new ReportCommandHandler(
             new StubReportReviewController(), new VersionedConfirmationGuard(), options,
             NullLogger<ReportCommandHandler>.Instance);
+        // #871, IADR-0423: 乖離の取り込みも同じ Gateway に載る（GFV 解除と同水準）。
+        var driftHandler = new PositionDriftAdoptionCommandHandler(
+            new StubPositionDriftAdoptionController(), options,
+            NullLogger<PositionDriftAdoptionCommandHandler>.Instance);
         return DiscordBotGatewayFactory.Create(
-            options, handler, pauseHandler, stageGateHandler, gfvHandler, reportHandler,
+            options, handler, pauseHandler, stageGateHandler, gfvHandler, reportHandler, driftHandler,
             NullLoggerFactory.Instance);
     }
 
@@ -177,6 +182,15 @@ public class DiscordBotGatewayFactoryTests
 
         public Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new StageGateStatusResult(true, "撤退評価"));
+    }
+
+    // #871: Gateway の生成ではリスク管理（乖離の取り込み）を呼ばない（呼ばれたら設計の誤りである）。
+    private sealed class StubPositionDriftAdoptionController : IPositionDriftAdoptionController
+    {
+        public Task<PositionDriftAdoptionResult> AdoptAsync(
+            string symbol, AiStockTrading.Shared.Contracts.Trading.Market market, string reason, string onBehalfOf,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Gateway の生成では Risk を呼ばない。");
     }
 
     // #464: 本テストは Gateway の接続可否だけを見るため、Risk は呼ばれない（呼ばれたら設計の誤りである）。

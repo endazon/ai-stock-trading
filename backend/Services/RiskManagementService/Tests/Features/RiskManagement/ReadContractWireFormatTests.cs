@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
+using RiskManagementService.Features.RiskManagement.AdoptPositionDrift;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
@@ -120,6 +121,63 @@ public class ReadContractWireFormatTests
         body.Select(p => p.Key).Should().BeEquivalentTo(["clearedOrderIds", "clearedAt", "remainingCount"]);
         body["clearedOrderIds"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal("ord-1");
         body["remainingCount"]!.GetValue<int>().Should().Be(0);
+    }
+
+    // 🔴 T-10-985, FR-10, FR-11, FR-14, ADR-0041 決定 4, #871, IADR-0350, IADR-0408 決定3, IADR-0423: 乖離の取り込み
+    // （POST /risk-controls/position-drift/adopt）の受理（200）と受理不能（422）の本文は、応答型 `PositionDriftAdoptionResponse`・
+    // `PositionDriftAdoptionRejectionBody` を web 既定（camelCase・列挙は数値）で直列化したものと一字一句同じである。
+    // 受け手（通知の Discord Bot。T-10-989）は同じ型を同じ設定で直列化した応答で契約テストをしており、その前提をここで結ぶ。
+    // `error` が改名されると Bot は拒否の理由を利用者へ返せず、`ledgerQuantityBefore` 等が改名されると 0 と表示する。
+    [Fact]
+    public async Task 乖離の取り込みの本文は応答型を_web_既定で直列化したものと同じ()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+        var request = new { symbol = "AAPL", market = (int)Market.UnitedStates, reason = "証券会社のアプリで売却した" };
+
+        // 422: 観測がまだ届いていない。
+        var rejected = await client.PostAsJsonAsync("/risk-controls/position-drift/adopt", request);
+        rejected.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var rejection = JsonNode.Parse(await rejected.Content.ReadAsStringAsync())!.AsObject();
+        rejection.Select(p => p.Key).Should().BeEquivalentTo(["error", "code"]);
+        JsonNode.DeepEquals(rejection, JsonSerializer.SerializeToNode(
+                rejection.Deserialize<PositionDriftAdoptionRejectionBody>(Web), Web))
+            .Should().BeTrue($"422 の本文が web 既定と異なる: {rejection.ToJsonString()}");
+        rejection["code"]!.GetValue<string>().Should().Be(nameof(PositionDriftAdoptionRejection.ObservationUnavailable));
+
+        // 200: 建玉 100 株・全株が消えた観測を 2 回（報告済み）。
+        using (var scope = factory.Services.CreateScope())
+        {
+            var ledger = scope.ServiceProvider.GetRequiredService<IPortfolioLedgerStore>();
+            var id = Guid.NewGuid();
+            var at = DateTimeOffset.UtcNow.AddDays(-1);
+            ledger.AppendApproval(id, new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 100, 1m, PositionEffect.Open, StopLossPrice: 0.95m), at);
+            ledger.AppendFill(id, $"open-{id:N}", 100, 1m, at);
+        }
+
+        for (var i = 0; i < 2; i++)
+        {
+            using var scope = factory.Services.CreateScope();
+            var sp = scope.ServiceProvider;
+            BrokerPositionSnapshot[] none = [];
+            sp.GetRequiredService<IBrokerPositionObservationStore>().Record(none, DateTimeOffset.UtcNow.AddMinutes(-2).AddSeconds(i));
+            sp.GetRequiredService<PositionDriftTracker>().ShouldReport(PositionDriftDetector.Detect(
+                PortfolioProjection.ProjectOpenPositions(sp.GetRequiredService<IPortfolioLedgerStore>().GetFills()), none));
+        }
+
+        var accepted = await client.PostAsJsonAsync("/risk-controls/position-drift/adopt", request);
+        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonNode.Parse(await accepted.Content.ReadAsStringAsync())!.AsObject();
+        body.Select(p => p.Key).Should().BeEquivalentTo([
+            "adoptionId", "symbol", "market", "ledgerQuantityBefore", "ledgerQuantityAfter", "brokerQuantity", "observedAt",
+            "realizedPnlRecorded", "referencePrice", "estimatedPnlInBase", "adoptedAt", "actor"]);
+        var typed = body.Deserialize<PositionDriftAdoptionResponse>(Web)!;
+        JsonNode.DeepEquals(body, JsonSerializer.SerializeToNode(typed, Web))
+            .Should().BeTrue($"200 の本文が web 既定と異なる: {body.ToJsonString()}");
+        body["market"]!.GetValue<int>().Should().Be((int)Market.UnitedStates);
+        (typed.LedgerQuantityBefore, typed.LedgerQuantityAfter, typed.Actor).Should().Be((100, 0, "test-owner"));
     }
 
     // 🔴 T-10-939, FR-06, FR-20, #957, IADR-0271, IADR-0408（2026-09-25 追記。T-10-885 の同型）: OpenD 稼働率

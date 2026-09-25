@@ -290,6 +290,7 @@
     "Actor": "String",
     "AdoptedAt": "DateTimeOffset",
     "AdoptionId": "Guid",
+    "AuthorizedBy": "String",
     "BrokerQuantity": "Int32",
     "CostBasisPrice": "Decimal",
     "EstimatedPnlInBase": "Decimal?",

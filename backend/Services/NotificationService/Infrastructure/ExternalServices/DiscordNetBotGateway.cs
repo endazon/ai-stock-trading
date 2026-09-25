@@ -1,6 +1,7 @@
 using AiStockTrading.Shared.Contracts.Logging;
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.AdoptPositionDrift;
 using NotificationService.Features.Notifications.ClearGoodFaithViolations;
 using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
@@ -16,7 +17,8 @@ namespace NotificationService.Infrastructure.ExternalServices;
 // 詳細設計07 が採用した接続方式（アウトバウンドのみ・受信ポートを外部公開しない）。
 //
 // 本クラスは Discord.Net と Application の純粋コアを繋ぐ**変換層**に徹する。判断（多層認証・確認ステップ・
-// 冪等）は一切持たず、すべて KillSwitchCommandHandler に委ねる（判断ロジックを実 Discord 非依存に保つため）。
+// 冪等）は一切持たず、すべて KillSwitchCommandHandler ほか各コマンドハンドラに委ねる（判断ロジックを実 Discord 非依存に
+// 保つため。#871 の乖離の取り込みは PositionDriftAdoptionCommandHandler）。
 //
 // Intents は最小構成（Guilds のみ）。MessageContent Intent は要求しない（本 PR はスラッシュコマンドのみ。
 // 自然文リプライの中継は #14 交差のため対象外・IADR-0062 決定2）。
@@ -64,12 +66,23 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // **利用者が見ていない版を確定してしまう**。書式: "ast-report-approve-<periodKey>-<version>"。
     private const string ReportApproveButtonPrefix = "ast-report-approve-";
 
+    // FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み。**kill switch・GFV 解除と同水準**
+    // （確認ボタン → 理由＋確認フレーズのモーダル）。対象（市場と銘柄コード）はボタンとモーダルの CustomId に載せ、
+    // 押下・送信の時点で復元してハンドラが再解析する（書式: "<prefix><market>-<symbol>"。市場の語はハイフンを含まない）。
+    // モーダル ID を専用に分けることで、送信ハンドラが ID の接頭辞だけで種別を確定でき、誤って別操作を実行する余地が無い
+    // （IADR-0097 の規律）。
+    private const string DriftAdoptButtonPrefix = "ast-drift-adopt-confirm-";
+    private const string DriftAdoptModalPrefix = "ast-drift-adopt-modal-";
+    private const string DriftAdoptPhraseInputId = "ast-drift-adopt-phrase";
+    private const string DriftAdoptReasonInputId = "ast-drift-adopt-reason";
+
     private readonly DiscordSocketClient _client;
     private readonly KillSwitchCommandHandler _handler;
     private readonly PauseCommandHandler _pauseHandler;
     private readonly StageGateCommandHandler _stageGateHandler;
     private readonly GoodFaithViolationCommandHandler _gfvHandler;
     private readonly ReportCommandHandler _reportHandler;
+    private readonly PositionDriftAdoptionCommandHandler _driftHandler;
     private readonly DiscordBotOptions _options;
     private readonly ILogger<DiscordNetBotGateway> _logger;
 
@@ -79,6 +92,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         StageGateCommandHandler stageGateHandler,
         GoodFaithViolationCommandHandler gfvHandler,
         ReportCommandHandler reportHandler,
+        PositionDriftAdoptionCommandHandler driftHandler,
         DiscordBotOptions options,
         ILogger<DiscordNetBotGateway> logger)
     {
@@ -87,6 +101,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         _stageGateHandler = stageGateHandler;
         _gfvHandler = gfvHandler;
         _reportHandler = reportHandler;
+        _driftHandler = driftHandler;
         _options = options;
         _logger = logger;
 
@@ -221,10 +236,36 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 .WithAutocomplete(true))
             .Build();
 
+        // FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: 台帳とブローカーの乖離の取り込み（窓口は REST API と Bot の両方）。
+        // 副コマンドを adopt の 1 つに絞る。**数量のオプションは持たない**（目標は最新の観測が決める。API と同じ）。
+        var drift = new SlashCommandBuilder()
+            .WithName("drift")
+            .WithDescription("台帳とブローカーの乖離を取り込みます（台帳を観測へ合わせる・確認ボタンと確認フレーズが必要です）")
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("action")
+                .WithDescription("操作")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true)
+                .AddChoice("adopt", "adopt"))
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("symbol")
+                .WithDescription("銘柄コード（台帳と同じ表記。例: 7203 / AAPL）")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true))
+            .AddOption(new SlashCommandOptionBuilder()
+                .WithName("market")
+                .WithDescription("市場")
+                .WithType(ApplicationCommandOptionType.String)
+                .WithRequired(true)
+                .AddChoice("日本", "japan")
+                .AddChoice("米国", "us"))
+            .Build();
+
         try
         {
             await guild.CreateApplicationCommandAsync(killSwitch).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(gfv).ConfigureAwait(false);
+            await guild.CreateApplicationCommandAsync(drift).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(report).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(pause).ConfigureAwait(false);
             await guild.CreateApplicationCommandAsync(resume).ConfigureAwait(false);
@@ -263,6 +304,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 return;
             case "report":
                 await OnReportSlashAsync(command).ConfigureAwait(false);
+                return;
+            case "drift":
+                await OnDriftSlashAsync(command).ConfigureAwait(false);
                 return;
             default:
                 return;
@@ -386,6 +430,48 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             "GFV 違反による停止を解除しますか？"
             + "**この操作は違反記録を消しません**（記録は監査証跡として残ります）。解除されるのは**停止**です。"
             + "原因の是正が済んでいることを確認したうえで実行してください。",
+            builder.Build()).ConfigureAwait(false);
+    }
+
+    // FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: /drift adopt → 確認ボタンを提示する。
+    // **ここではリスク管理を呼ばない。** 認証・確認フレーズ・理由はモーダル送信時にハンドラが評価する（GFV 解除と同型）。
+    private async Task OnDriftSlashAsync(SocketSlashCommand command)
+    {
+        var action = command.Data.Options.FirstOrDefault(o => o.Name == "action")?.Value as string;
+        var symbol = command.Data.Options.FirstOrDefault(o => o.Name == "symbol")?.Value as string;
+        var market = command.Data.Options.FirstOrDefault(o => o.Name == "market")?.Value as string;
+
+        // 許可外にはボタンすら出さない（kill switch / gfv と同水準。**台帳を書き換える窓口を許可外へ露出しない**）。
+        var context = ContextOf(command, $"/drift {action} {symbol} {market}");
+        var auth = DiscordCommandAuthorizer.Authorize(context, _options);
+        if (!auth.IsAllowed)
+        {
+            _logger.LogWarning(
+                "Discord コマンドを拒否しました（User={UserId}・理由={Reason}）。", context.UserId, auth.Reason);
+            await command.RespondTextAsync("この操作は許可されていません。").ConfigureAwait(false);
+            return;
+        }
+
+        // 書式外の銘柄コード・未知の市場はボタンを出さない（CustomId へ載せる値を parser の値域に限る）。
+        var parsed = BotCommandParser.Parse(context.RawCommand);
+        if (parsed is not { Kind: BotCommandKind.PositionDriftAdopt, Symbol: { } target, Market: { } targetMarket })
+        {
+            await command.RespondTextAsync(
+                "銘柄コード（英数字・ピリオド・ハイフンの 1〜16 文字）と市場（日本／米国）を指定してください。").ConfigureAwait(false);
+            return;
+        }
+
+        var payload = $"{BotCommandParser.MarketToken(targetMarket)}-{target}";
+        var builder = new ComponentBuilder().WithButton(
+            "台帳を観測へ合わせる", DriftAdoptButtonPrefix + payload, ButtonStyle.Danger);
+
+        // 🔴 **確認の文面に、この操作が何をし何をしないかを明示する**（数量は選べない・減らす乖離だけ・実現損益は記録しない）。
+        await command.RespondTextAsync(
+            $"{target}（{HttpPositionDriftAdoptionController.MarketLabel(targetMarket)}）の台帳の建玉を、"
+            + "最新のブローカー建玉の観測へ合わせますか？\n"
+            + "・取り込めるのは台帳の建玉を**減らす**乖離だけです（数量は最新の観測で決まり、指定できません）。\n"
+            + "・システム外の売買の約定価格は分からないため、**実現損益は記録しません**。\n"
+            + "・この操作は取引台帳を書き換え、操作者と理由が監査台帳に残ります。",
             builder.Build()).ConfigureAwait(false);
     }
 
@@ -603,6 +689,21 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 }
 
             default:
+                // FR-10, #871, IADR-0423: 乖離の取り込みの確認ボタン → 理由＋確認フレーズのモーダル（確認ボタンのみでは取り込まない）。
+                if (component.Data.CustomId.StartsWith(DriftAdoptButtonPrefix, StringComparison.Ordinal))
+                {
+                    var modal = new ModalBuilder()
+                        .WithTitle("乖離の取り込み")
+                        .WithCustomId(DriftAdoptModalPrefix + component.Data.CustomId[DriftAdoptButtonPrefix.Length..])
+                        // API の reason と同じ欄。なぜ台帳を合わせるのかを利用者に書かせ、監査へそのまま残す。
+                        .AddTextInput("なぜ台帳を合わせるのか（監査に残ります）", DriftAdoptReasonInputId,
+                            TextInputStyle.Paragraph, required: true)
+                        .AddTextInput("確認フレーズを入力してください", DriftAdoptPhraseInputId, required: true)
+                        .Build();
+                    await component.RespondWithModalAsync(modal).ConfigureAwait(false);
+                    return;
+                }
+
                 // FR-07, IADR-0240: 報告書の確定の確認ボタン（CustomId に periodKey と版番号を載せる）。
                 if (component.Data.CustomId.StartsWith(ReportApproveButtonPrefix, StringComparison.Ordinal))
                 {
@@ -674,6 +775,13 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
             return;
         }
 
+        // FR-10, #871, IADR-0423: 乖離の取り込みも別のハンドラが扱う（呼ぶエンドポイントも結果の型も違う）。
+        if (modal.Data.CustomId.StartsWith(DriftAdoptModalPrefix, StringComparison.Ordinal))
+        {
+            await OnDriftAdoptModalAsync(modal).ConfigureAwait(false);
+            return;
+        }
+
         var rawCommand = modal.Data.CustomId switch
         {
             KillSwitchEngageModalId => "/killswitch",
@@ -713,6 +821,38 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         var text = result.WasExecuted ? result.Message : "この操作は許可されていません。";
         await modal.FollowupTextAsync(text).ConfigureAwait(false);
     }
+
+    // FR-10, FR-11, #871, IADR-0423: 理由＋確認フレーズの送信 → 取り込みの実行。認証・解析・フレーズ・理由の検証はハンドラが行う。
+    private async Task OnDriftAdoptModalAsync(SocketModal modal)
+    {
+        // CustomId の "<market>-<symbol>" を復元する（市場の語はハイフンを含まないため最初のハイフンで分ける）。
+        // 値域の検証はハンドラの解析が改めて行う（ここでは組み立てるだけ）。
+        var payload = modal.Data.CustomId[DriftAdoptModalPrefix.Length..];
+        var separator = payload.IndexOf('-', StringComparison.Ordinal);
+        if (separator <= 0 || separator == payload.Length - 1)
+            return; // 書式外（他機能のモーダル）。
+
+        await modal.DeferAsync(ephemeral: true).ConfigureAwait(false);
+
+        var phrase = modal.Data.Components
+            .FirstOrDefault(c => c.CustomId == DriftAdoptPhraseInputId)?.Value;
+        var reason = modal.Data.Components
+            .FirstOrDefault(c => c.CustomId == DriftAdoptReasonInputId)?.Value;
+
+        var result = await _driftHandler
+            .HandleAsync(ContextOf(modal, $"/drift adopt {payload[(separator + 1)..]} {payload[..separator]}"), phrase, reason)
+            .ConfigureAwait(false);
+
+        await modal.FollowupTextAsync(DriftResponseTextOf(result)).ConfigureAwait(false);
+    }
+
+    // FR-10, #871: 取り込みの結果文言。**拒否（閂で止まった＝リスク管理を呼んでいない）と、リスク管理の応答を読み分ける。**
+    // 閂の内部の層名は返さないが、台帳が変わっていないことは明示する。リスク管理の拒否（422）の理由はそのまま返す
+    // （利用者が次に何をすればよいかが書いてある）。
+    private static string DriftResponseTextOf(PositionDriftAdoptionCommandResult result) =>
+        result.WasExecuted
+            ? result.Message
+            : "この操作は実行されませんでした（許可・確認フレーズ・理由の入力のいずれかを満たしていません）。台帳は変わっていません。";
 
     // 実行結果の文言。拒否理由（内部の層名）はそのまま出さず、一般化した文言にする。
     private static string ResponseTextOf(KillSwitchCommandResult result) =>

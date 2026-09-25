@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace NotificationService.Domain;
 
@@ -8,6 +9,8 @@ namespace NotificationService.Domain;
 // GFV 違反による停止の解除（/gfv clear・#464・ADR-0028 決定3）。
 // FR-07, UC-03〜05, IADR-0240: 報告書レビュー（/report show・/report approve・/report request-changes）も扱う
 // （IADR-0062 決定6 が #14 交差のため保留していた分。#14 側は版番号付き冪等の確定 API を実装済み）。
+// FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み（/drift adopt <symbol> <market>）も扱う
+// （台帳の是正であり設定値の変更ではない。数量は取らない）。
 // 未知のコマンドは Unknown に倒し、呼び出し側で拒否する（暗黙に何かを実行しない）。
 //
 // 🔴 **設定値の変更コマンドは、ここに 1 つも生やさない。** FR-14 は「設定値の変更は Discord からは参照のみ」と
@@ -33,6 +36,34 @@ public static class BotCommandParser
 
     // 版番号は 1 以上（報告書サービスの版番号は 1 起点。0 以下・数値でないものは Unknown へ倒す）。
     private const int MinVersion = 1;
+
+    // FR-10, FR-14, #871, IADR-0423: 取り込みの銘柄コード（例 `7203` / `AAPL` / `BRK.B`）。**確認ボタンの CustomId と
+    // リスク管理への要求本文へ載る**ため、英数字・ピリオド・ハイフンの 1〜16 文字に限る（空白・改行・記号を parser の段階で消す）。
+    // 大小文字は**変えない**——台帳の銘柄コードと突き合わせる値であり、推測で補正しない（会話キーと同じ規律）。
+    // アンカーは `\A…\z`（.NET の `$` は末尾 LF の直前にもマッチする。#837）。
+    private static readonly Regex SymbolPattern =
+        new(@"\A[A-Za-z0-9.-]{1,16}\z", RegexOptions.CultureInvariant);
+
+    // FR-10, #871: 取り込みの銘柄コードとして受け付けられる値か（Gateway の確認ボタンの復元と共用する）。
+    public static bool IsSymbol(string? value) =>
+        !string.IsNullOrEmpty(value) && SymbolPattern.IsMatch(value);
+
+    // FR-10, #871, IADR-0423: 市場の語（`japan`/`jp` と `us`/`unitedstates`。大小文字は吸収する）。それ以外は null
+    // （Unknown へ倒す。既定の市場へ暗黙に束縛しない＝API が市場の省略を 400 にするのと同じ向き）。
+    public static Market? ParseMarket(string? token) => token?.ToLowerInvariant() switch
+    {
+        "japan" or "jp" => Market.Japan,
+        "us" or "unitedstates" => Market.UnitedStates,
+        _ => null,
+    };
+
+    // FR-10, #871: 市場を解析できる語へ戻す（確認ボタンの CustomId・コマンド文字列の組み立てに使う。ParseMarket と往復する）。
+    public static string MarketToken(Market market) => market switch
+    {
+        Market.Japan => "japan",
+        Market.UnitedStates => "us",
+        _ => throw new ArgumentOutOfRangeException(nameof(market), market, "未知の市場です。"),
+    };
 
     // FR-07, #834: 会話キーとして受け付けられる値か（入力補完の候補側と共用する）。
     // **受け付けない値を候補に出すと、選んだ結果が `Unknown` へ倒れる**ため、値域の判定を 1 箇所に保つ。
@@ -68,8 +99,27 @@ public static class BotCommandParser
                 new BotCommand(BotCommandKind.GoodFaithViolationClear),
             // FR-07, FR-14, UC-03〜05, IADR-0240: 報告書レビュー。
             "/report" or "report" => ParseReport(tokens, rawTokens),
+            // FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み。
+            "/drift" or "drift" => ParseDrift(tokens, rawTokens),
             _ => BotCommand.Unknown,
         };
+    }
+
+    // FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込みの副コマンド。
+    //   /drift adopt <symbol> <market>   … 取り込み（数量は取らない。観測が決める）
+    // 副コマンドは adopt の 1 つだけ。引数の過不足・書式外の銘柄コード・未知の市場はすべて Unknown へ倒す
+    // （**台帳を書き換える操作を曖昧一致で起動させない**）。
+    private static BotCommand ParseDrift(string[] tokens, string[] rawTokens)
+    {
+        if (tokens.Length != 4 || tokens[1] != "adopt")
+            return BotCommand.Unknown;
+
+        // 銘柄コードは**原文の大小文字のまま**採る（台帳の値と突き合わせるため）。
+        var symbol = rawTokens[2];
+        if (!IsSymbol(symbol) || ParseMarket(tokens[3]) is not { } market)
+            return BotCommand.Unknown;
+
+        return new BotCommand(BotCommandKind.PositionDriftAdopt, Symbol: symbol, Market: market);
     }
 
     // FR-07, FR-14, UC-03〜05, IADR-0240: 報告書レビューの副コマンド。

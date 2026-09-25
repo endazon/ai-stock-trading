@@ -1,5 +1,6 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.AdoptPositionDrift;
 using NotificationService.Features.Notifications.ClearGoodFaithViolations;
 using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
@@ -31,6 +32,8 @@ public static class DiscordBotGatewayFactory
         GoodFaithViolationCommandHandler goodFaithViolationHandler,
         // FR-07, FR-14, UC-03〜05, #341, IADR-0240: 報告書レビュー（版番号の照会・冪等確定・差し戻し）。
         ReportCommandHandler reportHandler,
+        // FR-10, FR-11, #871, ADR-0041 決定 4, IADR-0423: 乖離の取り込み（窓口は REST API と Discord Bot の両方）。
+        PositionDriftAdoptionCommandHandler driftAdoptionHandler,
         ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(typeof(DiscordBotGatewayFactory).FullName!);
@@ -57,7 +60,7 @@ public static class DiscordBotGatewayFactory
         }
 
         return new DiscordNetBotGateway(
-            handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, reportHandler, options,
+            handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, reportHandler, driftAdoptionHandler, options,
             loggerFactory.CreateLogger<DiscordNetBotGateway>());
     }
 

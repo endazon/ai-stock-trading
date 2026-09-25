@@ -1,5 +1,6 @@
 using NotificationService.Domain;
 using NotificationService.Features.Notifications;
+using NotificationService.Features.Notifications.AdoptPositionDrift;
 using NotificationService.Features.Notifications.ClearGoodFaithViolations;
 using NotificationService.Features.Notifications.OperateKillSwitch;
 using NotificationService.Features.Notifications.OperateStageGate;
@@ -114,6 +115,23 @@ builder.Services.AddSingleton<IGoodFaithViolationController>(sp =>
 });
 builder.Services.AddSingleton<GoodFaithViolationCommandHandler>();
 
+// FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: 台帳とブローカーの乖離の取り込み（`/drift adopt`）。
+// **窓口は REST API と Discord Bot の両方**（決定 4）。GFV 解除と同じく Risk の OwnerOnly エンドポイントを owner マップ
+// 機密クライアントのトークンで呼び、多層認証が解決した操作者を本文の onBehalfOf で運ぶ。
+builder.Services.AddHttpClient("risk-position-drift", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IPositionDriftAdoptionController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-position-drift");
+    var baseUrl = builder.Configuration["RiskManagement:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpPositionDriftAdoptionController(
+        http, sp.GetRequiredService<ILogger<HttpPositionDriftAdoptionController>>());
+});
+builder.Services.AddSingleton<PositionDriftAdoptionCommandHandler>();
+
 // FR-07, FR-14, UC-03〜05, ADR-0003, #341, IADR-0240: 報告書レビュー（版番号の照会・冪等確定・差し戻し）。
 // kill switch と同じく報告書サービス（#14）の OwnerOnly エンドポイントを owner マップ機密クライアントの
 // トークンで呼ぶ（trading-service では 403）。報告書サービス側は無改修。
@@ -142,6 +160,7 @@ builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory
     sp.GetRequiredService<StageGateCommandHandler>(),
     sp.GetRequiredService<GoodFaithViolationCommandHandler>(),
     sp.GetRequiredService<ReportCommandHandler>(),
+    sp.GetRequiredService<PositionDriftAdoptionCommandHandler>(),
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 

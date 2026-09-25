@@ -7,11 +7,11 @@ updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
-adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0422]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_823_stop-method-ui-and-daily-report]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #823, planning#292]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
+adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, planning#292]
 -->
 
 
@@ -1066,8 +1066,10 @@ owner の手仕舞いには**過剰決済ガード**がある。取引台帳は�
 
 | 項目 | 内容 |
 | --- | --- |
-| 操作 | `POST /risk-controls/position-drift/adopt`（OwnerOnly・理由必須）。本文は `symbol`・`market`・`reason` のみ |
+| 操作 | `POST /risk-controls/position-drift/adopt`（OwnerOnly・理由必須）。本文は `symbol`・`market`・`reason` と、代理のときだけ `onBehalfOf`（数量は含めない） |
+| 窓口 | **この API と Discord Bot の `/drift adopt`（銘柄コード・市場）の 2 つ**。Bot は確認ボタン → 理由と確認フレーズ（緊急停止と同じ設定値）の入力を経てからこの API を呼ぶ。許可外の利用者にはボタンも出さない。**どちらの窓口でも記録の内容は同じ**（下記） |
 | 誰が | 利用者のみ。**サービストークンでは 403**（生成 AI・自動処理は台帳を書き換えられない） |
+| 操作者の記録 | 利用者本人のトークンでは本人。Discord Bot（利用者の代理として動く機密クライアントのトークン）からは、Bot が多層認証で解決した利用者を `onBehalfOf` で運び、**信頼するクライアントのトークンに限って**それを操作者として採る（利用者本人のトークンで他人の名前を送っても無視される）。代理の名前が書式外、または操作者をまったく特定できないトークンは **400** で台帳は動かない。理由文は窓口で加工しない |
 | 何へ合わせるか | **最新の観測**のブローカー建玉。**数量は受け取らない**（利用者が任意の数量で台帳を書き換える操作ではない） |
 | 取り込める乖離 | 台帳の建玉を**減らす**もの（同じ向きのまま数量が減る・0 になる）で、**連続観測を経て報告済み**のもの |
 | 拒否（422・台帳は動かない） | 観測が無い（照会不能を含む）／60 分より古い・当該銘柄に乖離が無い（取り込み済みを含む＝冪等）・未報告の乖離・台帳に無い建玉／数量の増加／方向の反転・観測より後に台帳が動いた・処理中の決済がある |
@@ -1079,7 +1081,10 @@ owner の手仕舞いには**過剰決済ガード**がある。取引台帳は�
 **期間約定の照会（報告書の入力）へは返さない** —— 返すと「平均取得単価で売った損益 0 の決済」が確定値として集計される。
 
 取り込みは `PositionDriftAdopted`（操作者・理由・取り込み前後の数量・観測値と観測時刻・実現損益が未記録であること）として
-発行され、監査台帳（観測・乖離の報告と同一相関）と通知（Critical）に残る。取り込み時点の現在値が取れた場合に限り、
+発行され、監査台帳（観測・乖離の報告と同一相関）と通知（Critical）に残る。Discord Bot 経由のときは、これに加えて
+**認可の主体**（Bot のクライアント ID）を運び、監査の要約は「操作者・代理 クライアント」、通知は「操作者・クライアント 経由」と書く
+（それ以外の項目は API 経由と同じ）。Bot は受理の応答に前後の数量・観測・記録した操作者を、拒否（422）の応答にはこの API の
+拒否の文言をそのまま出す。取り込み時点の現在値が取れた場合に限り、
 参考の**推定損益**を載せるが、「推定・未記録」と明示し、台帳のどの数値にも入れない。
 
 🔴 **残る制約**: システム外の損益は統制へ入らない。取り込み前に数えていた含み損は実現へ振り替わらずに消えるため、

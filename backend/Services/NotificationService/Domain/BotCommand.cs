@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace NotificationService.Domain;
 
 // FR-14, UC-06, ADR-0009: 受け付けるコマンド種別。詳細設計07 のコマンド体系のうち kill switch と
@@ -50,6 +52,12 @@ public enum BotCommandKind
 
     // /report request-changes <periodKey> <version>: 差し戻し（修正指示）。安全方向・可逆。
     ReportRequestChanges,
+
+    // FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: /drift adopt <symbol> <market>。
+    // 台帳とブローカーの乖離の**取り込み**（台帳を書き換える＝破壊的。確認ボタン＋理由＋確認フレーズを要する）。
+    // 🔴 **設定値の変更ではない**（台帳の是正。ADR-0041 決定 4 が Discord の窓口を明示した）。**数量は取らない**
+    // （目標は最新の観測が決める。API と同じ）。Symbol / Market に対象を運ぶ。
+    PositionDriftAdopt,
 }
 
 // FR-14: 解析済みコマンド。TargetStage は段階遷移（StagePromote/StageDemote）の遷移先（0〜3）。
@@ -58,11 +66,15 @@ public enum BotCommandKind
 // FR-07, UC-03〜05, IADR-0240: PeriodKey / Version は報告書レビュー系（ReportShow / ReportApprove /
 // ReportRequestChanges）でのみ意味を持つ。**Version が null の ReportApprove は「確認前」**であり、
 // 確定を実行してよいのは版番号が確定している要求だけである。
+//
+// FR-10, FR-14, #871, IADR-0423: Symbol / Market は乖離の取り込み（PositionDriftAdopt）でのみ意味を持つ（末尾に追加）。
 public sealed record BotCommand(
     BotCommandKind Kind,
     int? TargetStage = null,
     string? PeriodKey = null,
-    int? Version = null)
+    int? Version = null,
+    string? Symbol = null,
+    Market? Market = null)
 {
     public static readonly BotCommand Unknown = new(BotCommandKind.Unknown);
 }

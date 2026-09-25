@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Trading;
 using NotificationService.Domain;
 using AwesomeAssertions;
 using Xunit;
@@ -209,5 +210,71 @@ public class BotCommandParserTests
 
         command.Kind.Should().Be(BotCommandKind.ReportShow);
         command.PeriodKey.Should().Be("daily-2026-08-28");
+    }
+
+    // ---- 🔴 T-10-987, FR-10, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み（/drift adopt <symbol> <market>） ----
+
+    [Theory]
+    [InlineData("/drift adopt AAPL us", "AAPL", Market.UnitedStates)]
+    [InlineData("/drift adopt 7203 japan", "7203", Market.Japan)]
+    [InlineData("drift adopt 7203 JP", "7203", Market.Japan)]
+    [InlineData("/Drift ADOPT BRK.B UnitedStates", "BRK.B", Market.UnitedStates)]
+    [InlineData("  /drift   adopt   BF-B   us  ", "BF-B", Market.UnitedStates)]
+    public void drift_adopt_は銘柄コードと市場つきで解析される(string raw, string symbol, Market market)
+    {
+        var command = BotCommandParser.Parse(raw);
+
+        command.Kind.Should().Be(BotCommandKind.PositionDriftAdopt);
+        command.Symbol.Should().Be(symbol);
+        command.Market.Should().Be(market);
+    }
+
+    [Fact]
+    public void drift_adopt_の銘柄コードは大小文字を変えない()
+    {
+        // 台帳の値と突き合わせる値であり、推測で補正しない（会話キーと同じ規律）。
+        BotCommandParser.Parse("/drift adopt aapl us").Symbol.Should().Be("aapl");
+    }
+
+    // 🔴 否定形: 台帳を書き換える操作を曖昧一致で起動させない。数量の指定も受け付けない（目標は観測が決める）。
+    [Theory]
+    [InlineData("/drift")]
+    [InlineData("/drift adopt")]
+    [InlineData("/drift adopt AAPL")]
+    [InlineData("/drift adopt AAPL us 100")]
+    [InlineData("/drift adopt AAPL 100 us")]
+    [InlineData("/drift adopt AAPL hk")]
+    [InlineData("/drift adopt AAPL 1")]
+    [InlineData("/drift adopt-all AAPL us")]
+    [InlineData("/drift clear AAPL us")]
+    [InlineData("/drift adopt AA;PL us")]
+    [InlineData("/drift adopt AAPL/../x us")]
+    [InlineData("/drift adopt ABCDEFGHIJKLMNOPQ us")]
+    public void drift_adopt_の書式外は_Unknown_に倒れる(string raw)
+    {
+        var command = BotCommandParser.Parse(raw);
+
+        command.Kind.Should().Be(BotCommandKind.Unknown);
+        command.Symbol.Should().BeNull();
+        command.Market.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("AAPL\n")]
+    [InlineData("AAPL\r\n")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void 改行を含む値や空は銘柄コードとして受け付けない(string? value)
+    {
+        BotCommandParser.IsSymbol(value).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(Market.Japan)]
+    [InlineData(Market.UnitedStates)]
+    public void 市場の語は解析と往復する(Market market)
+    {
+        // Gateway は確認ボタンの CustomId に MarketToken を載せ、押下時に ParseMarket で戻す。
+        BotCommandParser.ParseMarket(BotCommandParser.MarketToken(market)).Should().Be(market);
     }
 }
