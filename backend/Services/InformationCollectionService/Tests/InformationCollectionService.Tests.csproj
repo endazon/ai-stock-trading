@@ -12,6 +12,10 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <ProjectReference Include="..\InformationCollectionService.csproj" />
+    <!-- FR-01, NFR（費用）, #957, IADR-0408（2026-09-25 追記）: 費用統制（GET /costs/state）の契約テスト（T-10-911）が
+         送り手の本物の型（CostControlDecision）を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
+         （AiStockTrading.IntegrationTests と同じ別名）。 -->
+    <ProjectReference Include="..\..\CostControlService\CostControlService.csproj" Aliases="CostControlWorker" />
     <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、

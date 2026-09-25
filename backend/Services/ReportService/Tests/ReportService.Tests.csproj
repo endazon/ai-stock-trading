@@ -25,6 +25,9 @@
          移送先は Web SDK で `public partial class Program` を持つため、`Program` の曖昧（CS0433）を避けて extern alias で参照する
          （TradeDecisionService.Tests・AiStockTrading.IntegrationTests と同じ別名）。 -->
     <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
+    <!-- FR-06, FR-11, #957, IADR-0408（2026-09-25 追記）: 監査台帳（GET /audit/events/by-type）の契約テスト（T-10-917〜920）が
+         送り手の本物の型（AuditEntry）と記録の組み立て（AuditEntryFactory）を使うためのテスト専用参照。 -->
+    <ProjectReference Include="..\..\AuditService\AuditService.csproj" Aliases="AuditWorker" />
   </ItemGroup>
   <ItemGroup>
     <!-- FR-06, #338: 報告書テンプレートのゴールデンファイル（種別 × 供給あり/なし）。

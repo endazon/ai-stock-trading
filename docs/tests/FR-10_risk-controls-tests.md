@@ -7,7 +7,7 @@ updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
 iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413]
 specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups]
@@ -1648,8 +1648,9 @@ T-10-648 / T-10-649 は緑のまま —— 中断を含まない安全側・境�
 | 🔴 リスク管理の `open-positions` だけを文字列列挙で返す | **1 件が赤**（T-10-805。1914 件中 1913 件合格） |
 
 🔴 **本書が固定していない残余リスク**: 契約テストは改名のマージを止めるが、送り手だけを先に配備すると窓が開く。その窓で既定値を
-読まないようにしたのは、市場監視（次節）と報告書・サイジング文脈（次々節）である。日報方針・費用統制・監視銘柄・報告書のレビュー・
-段階遷移・監査台帳・通知の操作結果の読み取りには、送り手の型による契約テストがまだ無い（追随の対象）。
+読まないようにしたのは、市場監視（次節）と報告書・サイジング文脈（次々節）である。日報方針・費用統制・報告書のレビュー・段階遷移・
+監査台帳の読み取りには、送り手の型による契約テストを後の節（T-10-910〜923）で足した（受け手の実行時の挙動は変えていない）。監視銘柄・
+通知の操作結果・報告書の稼働／段階の照会には、送り手の型による契約テストがまだ無い（追随の対象）。
 
 ## 市場監視の保有照会を行ごとに扱う（#957。1 行・1 銘柄の不正で巡回全体の損切り検知を止めない）
 
@@ -1736,6 +1737,52 @@ Program.cs で固定する**。
 🔴 **本書が固定していない残余リスク**: 窓の間、日報の建玉一覧は全体が未供給になり（健全な行も出ない）、取引判断は新規建てを出さない。
 どちらも Error ログで気付く（計器・アラートは足していない）。約定・取り込みの照会は改名を実行時には「該当なし」で読む（契約テストが改名の
 マージを止めるだけ）。
+
+## 日報方針・費用統制・報告書のレビュー・段階ゲート・監査台帳の読み取りの契約（#957。送り手の項目名・JSON 設定の変更をマージ前に止める）
+
+前節までで保有・サイジング文脈・報告書の期間照会には送り手の型による契約テストがあったが、判断が読む日報方針、情報収集が読む費用統制、
+通知が読む報告書のレビューと段階ゲート、報告書が読む監査台帳は、手書きの JSON だけで試していた。送り手で項目名を変えても受け手の全テストが
+緑のまま、実行時は既定値で読む（方針が空のままプロンプトが組まれる／費用上限の停止を無視して収集を続ける／確定前の「入力が未供給」の警告が
+出ない／受理された段階遷移を「拒否」と報告する／監査の事象 0 件と区別できない）。
+
+写像の要点は 2 つある。**(1) 送り手の本物の型を送り手の実際の JSON 設定で直列化する**（報告書・費用統制は列挙を文字列で、監査・リスク管理は
+web 既定で出す。監査台帳の外側は送り手の記録の組み立てで作る）。**(2) 送り手側でその設定を本物の Program.cs で固定する**（リスク管理は
+T-10-805 が全エンドポイント共通の設定を固定済み）。
+`ReportReadContractTests`（取引判断）、`CostControlReadContractTests`（情報収集）、`OperationReadContractTests`（通知）、
+`AuditLedgerReadContractTests`（報告書）、`ReadContractWireFormatTests`（費用統制・報告書・監査）。
+
+| ID | 前提 | 操作 | 期待 | 不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-910** | 送り手の本物の型 `ConfirmedDailyPolicy` を報告書の設定で直列化した応答 | 取引判断の日報方針の照会で読む | 日付と方針がそのまま読める | 送り手の改名で赤 | 自動（**契約**） |
+| **T-10-911** | 送り手の本物の型 `CostControlDecision`（通常・間隔延長・停止）を費用統制の設定で直列化した応答 | 情報収集の費用統制の照会で読む | 通常は 1 倍、間隔延長は 2 倍、🔴 停止は停止として読める | 同上 | 自動（**契約**） |
+| **T-10-912** | 費用統制の**本物の Program.cs** | 状態を照会する | 🔴 本文は応答型を web 既定＋文字列列挙で直列化したものと一致し、`state`（文字列）・`intervalMultiplier`・`isHalted` の 3 項目 | 受け手の前提と結ぶ | 自動（結合） |
+| **T-10-913** | 送り手の本物の型 `ReportReviewView` を報告書の設定で直列化した応答（未供給の入力 2 件） | 通知のレビュー局面の照会で読む | 版番号と、🔴 未供給の入力の警告が読める | 送り手の改名で赤 | 自動（**契約**） |
+| **T-10-914** | 送り手の本物の型 `StageGateStatus` を web 既定で直列化した応答（最小取引件数 50 件） | 通知の段階ゲートの現況の照会で読む | 現段階・モード・未充足の基準・履歴と、引き下げの警告が読める | 同上 | 自動（**契約**） |
+| **T-10-915** | 送り手の本物の型 `StageTransitionResult` の受理（200）と受理不能（422） | 通知の段階遷移で読む | 🔴 受理は受理、拒否は拒否理由つきの拒否として読める | 同上 | 自動（**契約**） |
+| **T-10-916** | 送り手の本物の型 `WithdrawalAssessment`（抵触・自動停止・降格提案） | 通知の撤退評価で読む | 撤退理由と、🔴 新規建ての自動停止と降格提案が読める | 同上 | 自動（**契約**） |
+| **T-10-917〜920** | 送り手の記録の組み立てで作った `AuditEntry`（借株料の計上と未計上／為替の情報源のフォールバックと使用記録／LLM の費用・フォールバック・判断の見送り／判断の記録）を web 既定で直列化した応答 | 報告書の監査台帳の各照会で読む | それぞれの事象がそのまま読める（0 件にならない） | 同上 | 自動（**契約**） |
+| **T-10-921** | 確定済みの日報（未供給の入力 1 件）を置いた報告書の**本物の Program.cs** | 日報方針とレビュー局面を照会する | 🔴 本文は応答型を web 既定＋文字列列挙で直列化したものと一致し、状態は文字列 | 受け手の前提と結ぶ | 自動（結合） |
+| **T-10-922** | 借株料の記録 1 件を置いた監査の**本物の Program.cs** | 種別と期間で照会する | 🔴 本文は `AuditEntry` の一覧を web 既定で直列化したものと一致し、`eventType` と文字列の `detail` を持つ | 同上 | 自動（結合） |
+| T-10-923 | — | 変異注入 | 下表 | 守りが実在する | 手動（実測） |
+
+**変異注入の実測（2026-09-25）**。1 つずつ入れて該当するテストプロジェクトを実行し、実行ごとに変異前の内容へ書き戻した
+（書き戻した後、作業ツリーの差分が変異前と同じであることを確認した）。
+
+| 変異 | 結果 | 赤になったテスト |
+| --- | --- | --- |
+| 🔴 送り手 `ConfirmedDailyPolicy` の `Summary` を通信路の名前 `policy` へ変える | 取引判断 778 件中 1 件赤 | T-10-910 |
+| 🔴 送り手 `CostControlDecision` の `IsHalted` を通信路の名前 `halted` へ変える | 情報収集 496 件中 2 件赤 | T-10-911（停止・間隔延長の 2 行。通常の行は Normal への縮退と同じ値で緑） |
+| 🔴 費用統制の Program.cs から文字列列挙を外す | 費用統制 147 件中 4 件赤 | T-10-912 と、状態を文字列で読む既存のエンドポイントテスト 3 件 |
+| 送り手 `ReportReviewView` の `UnsuppliedInputs` を通信路の名前 `missing` へ変える | 通知 578 件中 1 件赤 | T-10-913 |
+| 🔴 送り手 `StageTransitionResult` の `Accepted` を通信路の名前 `ok` へ変える | 通知 578 件中 1 件赤 | T-10-915 |
+| 🔴 送り手 `WithdrawalAssessment` の `HaltNewEntries` を通信路の名前 `halt` へ変える | 通知 578 件中 1 件赤 | T-10-916 |
+| 🔴 送り手 `AuditEntry` の `EventType` を通信路の名前 `type` へ変える | 報告書 1130 件中 4 件赤 | T-10-917〜920 |
+| 報告書の Program.cs から文字列列挙を外す | 報告書 1130 件中 27 件赤 | T-10-921 と、状態を文字列で読む既存のテスト |
+| 監査の Program.cs の命名規則を外す（PascalCase で出す） | 監査 187 件中 1 件赤 | T-10-922 |
+
+🔴 **本書が固定していない残余リスク**: 受け手の実行時の挙動は変えていない。送り手だけを先に配備した窓の間は、改名された項目を従来どおり
+既定値で読む（契約テストは改名のマージを止めるだけ）。段階ゲートの現況のうち T-10-914 が試していない項目（空売り実弾解禁の現況・Stage 1 の進捗）は
+通知が読んでいない。通知の段階ゲートの表示は、動作モードが moomoo の SIMULATE のとき「不明(2)」と出す（表示の誤り。追随の対象）。
 
 ## 見送った承認は再配送されても発注しない（#876。見送りを受けて在庫を戻した台帳の外で決済を生かさない）
 

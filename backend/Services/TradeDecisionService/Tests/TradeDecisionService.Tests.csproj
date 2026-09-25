@@ -19,6 +19,10 @@
          推移参照には Aliases が伝播しないため、ここで同じプロジェクトを明示参照して extern alias を与える
          （IADR-0050 決定1 と同じ機構。別名は本リポジトリ共通の RiskManagementWorker）。 -->
     <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
+    <!-- FR-04, FR-07, #957, IADR-0408（2026-09-25 追記）: 報告書の日報方針（GET /reports/daily-policy）の契約テスト（T-10-910）が
+         送り手の本物の型（ConfirmedDailyPolicy）を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
+         （AiStockTrading.IntegrationTests と同じ別名）。 -->
+    <ProjectReference Include="..\..\ReportService\ReportService.csproj" Aliases="ReportWorker" />
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、
          共通配線ヘルパを持つ shim をテストからのみ参照する（ハンドラのランタイム生成 RuntimeCompilation も同経路で入る）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
