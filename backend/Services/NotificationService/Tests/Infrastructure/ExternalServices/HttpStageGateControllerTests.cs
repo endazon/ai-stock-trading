@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Trading;
 using NotificationService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -43,11 +44,67 @@ public class HttpStageGateControllerTests
         result.Succeeded.Should().BeTrue();
         // 現段階・モード・昇格可否（未充足基準）・撤退・履歴が数値 enum から整形される。
         result.Message.Should().Contain("Stage 1（SIMULATE）");
-        result.Message.Should().Contain("ペーパー");
+        result.Message.Should().Contain("モード: 内蔵 paper（擬似約定・外部へ発注しない）"); // mode 0（#982）
         result.Message.Should().Contain("昇格");
         result.Message.Should().Contain("統制違反あり"); // criterion 2
         result.Message.Should().Contain("直近の遷移");
         result.Message.Should().Contain("endazon");
+    }
+
+    // ---- #982, FR-20, FR-12, IADR-0140: 発注先（BrokerProvider）の表示ラベル ----
+    //
+    // 以前は 0/1 だけを扱い、Stage 1 の moomoo SIMULATE（2）を「不明(2)」と出した。**全列挙値を網羅**し、
+    // 列挙値が増えてラベルを足し忘れたら赤になる形で固定する。表記は画面の BROKER_PROVIDER_LABELS と同一。
+
+    [Fact]
+    public void 発注先の全列挙値にラベルがあり_不明に倒れない()
+    {
+        foreach (var provider in Enum.GetValues<BrokerProvider>())
+        {
+            HttpStageGateController.ModeLabel((int)provider)
+                .Should().NotStartWith("不明", $"{provider}（{(int)provider}）にラベルが無い");
+        }
+    }
+
+    [Theory]
+    [InlineData(BrokerProvider.InternalPaper, "内蔵 paper（擬似約定・外部へ発注しない）")]
+    [InlineData(BrokerProvider.MoomooReal, "moomoo REAL（実弾）")]
+    [InlineData(BrokerProvider.MoomooSimulate, "moomoo SIMULATE（デモ環境）")]
+    public void 発注先のラベルは画面と同じ表記(BrokerProvider provider, string expected)
+    {
+        HttpStageGateController.ModeLabel((int)provider).Should().Be(expected);
+    }
+
+    [Fact]
+    public void 発注先のラベルはペーパーの語を使わない()
+    {
+        // 用語規約（計画 05_screens 表示規約・用語集）: SIMULATE を「ペーパー」と呼ばない。「ペーパー」を単独で使わない。
+        foreach (var provider in Enum.GetValues<BrokerProvider>())
+        {
+            HttpStageGateController.ModeLabel((int)provider).Should().NotContain("ペーパー");
+        }
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(-1)]
+    public void 未知の発注先は不明と数値で出す(int mode)
+    {
+        HttpStageGateController.ModeLabel(mode).Should().Be($"不明({mode})");
+    }
+
+    [Fact]
+    public async Task Stage1_の_SIMULATE_は現況照会で_moomoo_SIMULATE_と出る()
+    {
+        var body = StatusBody.Replace("\"mode\": 0", "\"mode\": 2", StringComparison.Ordinal);
+        body.Should().Contain("\"mode\": 2");
+        var handler = new FakeHandler(HttpStatusCode.OK, body);
+
+        var result = await Controller(handler).GetStatusAsync();
+
+        result.Succeeded.Should().BeTrue();
+        result.Message.Should().Contain("Stage 1（SIMULATE）（モード: moomoo SIMULATE（デモ環境）");
+        result.Message.Should().NotContain("不明(");
     }
 
     // ---- AST #423, FR-20, SC-02, §4.1 条件 3 / §4.3, IADR-0164 決定6 ----

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using AiStockTrading.Shared.Contracts.Trading;
 using NotificationService.Features.Notifications;
 using Microsoft.Extensions.Logging;
 
@@ -307,11 +308,16 @@ public sealed class HttpStageGateController(
         _ => $"Stage {stage}",
     };
 
-    // BrokerProvider（0=Paper・1=Live）。
-    private static string ModeLabel(int mode) => mode switch
+    // FR-20, FR-12, IADR-0140, #982: BrokerProvider（0=内蔵 paper・1=moomoo REAL・2=moomoo SIMULATE。append-only）。
+    // **全列挙値にラベルを与え、未知値だけを「不明(n)」とする**（以前は 0/1 だけを扱い、Stage 1 の SIMULATE を「不明(2)」と出した）。
+    // 表記は画面の BROKER_PROVIDER_LABELS（frontend/src/lib/risk/contracts.ts）と同一文字列——片方を変えたらもう片方も変える。
+    // 用語: SIMULATE を「ペーパー」と呼ばない。「ペーパー」を単独で使わない（計画 05_screens 表示規約・用語集）。
+    // 列挙値が増えたら HttpStageGateControllerTests の全値網羅の試験が赤になる。
+    internal static string ModeLabel(int mode) => (BrokerProvider)mode switch
     {
-        0 => "ペーパー",
-        1 => "実弾",
+        BrokerProvider.InternalPaper => "内蔵 paper（擬似約定・外部へ発注しない）",
+        BrokerProvider.MoomooReal => "moomoo REAL（実弾）",
+        BrokerProvider.MoomooSimulate => "moomoo SIMULATE（デモ環境）",
         _ => $"不明({mode})",
     };
 
