@@ -179,7 +179,7 @@ issues: [#526, #584, #745, #753, #997]
 | gRPC status | 条件 | 呼び出し側の対応 |
 | --- | --- | --- |
 | `UNAUTHENTICATED` / `PERMISSION_DENIED` | サービストークン無し／ロール不足 | 上表の扱いへ縮退。**再試行しない** |
-| `INVALID_ARGUMENT` | 期間の `from`・`to` の欠落・書式違い（REST の 400）。強制買戻し・稼働率は逆順も（REST と同じ） | 同上 |
+| `INVALID_ARGUMENT` | 期間の `from`・`to` の欠落・書式違い（REST の 400）。強制買戻し・稼働率は逆順も（REST と同じ）。処理中の引数の検証失敗も（REST の 400 と同じ。`UNKNOWN` にしない） | 同上 |
 | `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 同上。**再試行の対象** |
 
 ### 🔴 「不明」「無し」「有り」を取り違えない写し

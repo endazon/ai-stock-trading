@@ -40,6 +40,15 @@ plan_refs:
 | 3（登録の側） | `AddHttpClient("risk` | TD `risk`（5 秒）・MM `risk`（5 秒）・Report `risk-ledger`（10 秒・**依存先の門と観測つき**）・Notification 5（owner トークン） |
 | 4（提供側の側） | `RiskControlEndpoints.cs` の `read.`（OwnerOrService）群 | 8 ルート: sizing-context・open-positions・working-entry-orders・fills・drift-adoptions・buy-in-inferences・session-uptime・stage-gate |
 
+［2026-09-25 追記 / #997］**軸 1 の件数を訂正する。** 上表の「11 ファイル・21 箇所」は同じ行の内訳（Report 6・TradeDecision 2・
+MarketMonitor 1・Notification 5 ＝ 14 ファイル）と矛盾していた（PR #1003 の監査が develop で 14 ファイルを実測）。引き直した値:
+`MSYS_NO_PATHCONV=1 git grep -c -F '"/risk-controls/' origin/develop -- backend/Services` をテスト以外の
+`Infrastructure/ExternalServices/` へ絞って **14 ファイル・20 箇所**（Report 6 ファイル・6 箇所／TradeDecision 2・3／MarketMonitor 1・1／
+Notification 5・10）。数えたのは要求のパスを書く文字列リテラル（`"/risk-controls/…"` と `$"/risk-controls/…"`）であり、
+ログ文言中の `GET /risk-controls/…` は含めない。🔴 当初の値は検索の出力と突き合わせずに書いた誤りである。なお Git Bash では
+`MSYS_NO_PATHCONV=1` を付けないとこの検索語が書き換えられて 0 件になる（本追記の引き直しで実測）。移す／除外する経路の一覧
+（下表と除外表）は変わらない。
+
 ### 段 2 で移すもの（決定 5 の 9 本のうち 8 本 ＋ 引き直しで見つかった 2 本）
 
 | 射程表の行 | 呼び出し元 | クライアント | Risk のルート | rpc |

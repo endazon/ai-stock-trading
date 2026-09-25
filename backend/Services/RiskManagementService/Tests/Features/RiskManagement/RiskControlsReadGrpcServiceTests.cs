@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -6,6 +7,8 @@ using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
@@ -32,7 +35,7 @@ public class RiskControlsReadGrpcServiceTests
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
     // WebApplicationFactory の TestServer 越しに h2c を張る（実ポートを開かずに gRPC を通す。段 1 と同じ）。
-    private static GrpcChannel ChannelFor(RiskWorkerWebApplicationFactory factory, string? roles)
+    private static GrpcChannel ChannelFor(WebApplicationFactory<Program> factory, string? roles)
     {
         var handler = factory.Server.CreateHandler();
         if (roles is not null)
@@ -218,6 +221,31 @@ public class RiskControlsReadGrpcServiceTests
         };
 
         (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    // 🔴 処理中の ArgumentException は REST では群のフィルタが 400 へ写す。gRPC で素通しすると UNKNOWN になり、
+    // 報告書の観測は HTTP 相当 500 ＝**一過性**と記録する（REST の 400 は恒常）。INVALID_ARGUMENT へ揃える（監査の指摘）。
+    [Fact]
+    public async Task T_10_1051_処理中の_ArgumentException_は_REST_の_400_と同じく_INVALID_ARGUMENT()
+    {
+        await using var baseFactory = new RiskWorkerWebApplicationFactory();
+        using var factory = baseFactory.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+            s.AddScoped(_ => DispatchProxy.Create<IStage1TradingDayObservationStore, ThrowsArgumentException>())));
+        using var channel = ChannelFor(factory, Service);
+
+        var act = async () => await new Proto.RiskControlsRead.RiskControlsReadClient(channel)
+            .GetSessionUptimeAsync(new Proto.GetSessionUptimeRequest { From = "2026-09-01", To = "2026-09-30" });
+
+        var ex = (await act.Should().ThrowAsync<RpcException>()).Which;
+        ex.StatusCode.Should().Be(StatusCode.InvalidArgument, "UNKNOWN（＝一過性）に化けさせない");
+        ex.Status.Detail.Should().Contain("壊れた入力");
+    }
+
+    // どのメンバーを呼んでも ArgumentException を投げる（ストアの実装に依らず「処理中の検証失敗」を再現する）。
+    public class ThrowsArgumentException : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            throw new ArgumentException("壊れた入力");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -58,6 +59,48 @@ public class RiskManagementGrpcWiringTests
         behavior.Calls.Should().Be(2, "組み立てた実装が実際に偽の提供側を呼んだ");
     }
 
+    // 🔴 監査の指摘（IADR-0427 決定 4 の固定）: 段 1 の全体前提条件（`Configuration:Grpc`）と段 2 のリスク管理
+    // （`RiskManagement:Grpc`）を**別々の宛先**に宣言しても、それぞれの照会が**自分の宛先にだけ**届く。
+    // 誰かが後で `GrpcChannel` を DI へ裸で登録すると、前提条件の照会（`GetRequiredService<GrpcChannel>()`）が後勝ちで
+    // リスク管理の宛先へ飛び、UNIMPLEMENTED → 既定値（未解決）へ黙って倒れる。その形をここで赤にする。
+    [Fact]
+    public async Task T_10_1057_前提条件とリスク管理の_gRPC_は別々の宛先に並存し互いの照会が混ざらない()
+    {
+        await using var configurationHost = await GrpcStubHost.StartAsync(StubAssumptions.AlwaysOk());
+        var riskBehavior = new RiskReadStubBehavior
+        {
+            OpenPositions = (_, _) =>
+            {
+                var r = new Proto.GetOpenPositionsResponse();
+                r.Positions.Add(new Proto.OpenPositionRow
+                {
+                    Symbol = "AAPL",
+                    Market = Proto.Market.UnitedStates,
+                    Side = Proto.TradeSide.Buy,
+                    Quantity = 4,
+                    EntryPrice = "200",
+                    StopLossPrice = "190",
+                });
+                return Task.FromResult(r);
+            },
+        };
+        await using var riskHost = await RiskReadStubHost.StartAsync(riskBehavior);
+        using var factory = new Factory(grpc: riskHost.Address, riskBaseUrl: null, configurationGrpc: configurationHost.Address);
+        _ = factory.CreateClient();
+
+        using var scope = factory.Services.CreateScope();
+        var assumptions = await scope.ServiceProvider.GetRequiredService<IAssumptionsProvider>().GetCurrentAsync();
+        var held = await scope.ServiceProvider.GetRequiredService<IHeldPositionProvider>()
+            .GetSignedQuantityAsync("AAPL", Market.UnitedStates);
+        await scope.ServiceProvider.GetRequiredService<ISizingContextProvider>().GetContextAsync();
+
+        assumptions.IsResolved.Should().BeTrue("前提条件の照会は設定管理の宛先へ届いて解決する");
+        assumptions.Version.Should().Be(3);
+        held.Should().Be(4, "保有建玉の照会はリスク管理の宛先へ届く");
+        configurationHost.Stub.Calls.Should().Be(1, "設定管理の宛先には前提条件の照会だけが届く");
+        riskBehavior.Calls.Should().Be(2, "リスク管理の宛先にはリスク管理の読み取り（保有建玉・サイジング文脈）だけが届く");
+    }
+
     // 陰性対照 1: 宣言が無ければ従来どおり REST（輸送そのものが登録されない＝バイト等価）。
     [Fact]
     public void T_10_1057_宣言が無ければ_REST_のまま()
@@ -97,13 +140,16 @@ public class RiskManagementGrpcWiringTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*RiskManagement:Grpc*");
     }
 
-    private sealed class Factory(string? grpc, string? riskBaseUrl) : WebApplicationFactory<Program>
+    private sealed class Factory(string? grpc, string? riskBaseUrl, string? configurationGrpc = null)
+        : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
             if (grpc is not null)
                 builder.UseSetting("RiskManagement:Grpc", grpc);
+            if (configurationGrpc is not null)
+                builder.UseSetting("Configuration:Grpc", configurationGrpc);
             builder.ConfigureAppConfiguration((_, cfg) =>
             {
                 var settings = new Dictionary<string, string?>
