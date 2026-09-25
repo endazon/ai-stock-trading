@@ -226,7 +226,7 @@ function Format-BeatAge([object]$Beat, [DateTimeOffset]$Now) {
 <#
   Observation（hashtable）:
     Now, SessionOpen（$null 可）, StaleAfter, ApiReachable, ApiDetail,
-    NotReadyServices（string[]）, UnreadableLogs（string[]）,
+    NotReadyServices（string[]）, Unreadable（string[]。Pod の照会かログの読み取りに失敗したもの。「空で成功」は含めない）,
     MonitorBeat / ExecutionBeat（Get-LatestHeartbeat の戻り・$null 可）,
     MonitorStartedAt / ExecutionStartedAt（$null 可）, HoldingSeenAt（前回までに保有を見た時刻・$null 可）
   戻り: Status / Severity（ok|warn|alert）/ Holding（yes|unknown）/ HoldingObserved / MonitorState / ExecutionState / Message
@@ -253,10 +253,11 @@ function Get-HostLivenessVerdict([hashtable]$Observation) {
     return & $verdict 'SERVICE_NOT_READY' 'alert' 'unknown' $false $null $null (
       "Ready の Pod がありません: $($notReady -join ', ')。止まっている間、S1 は損切りを検知・実行できません。")
   }
-  $unreadable = @($o.UnreadableLogs | Where-Object { $_ })
+  # PR #998 監査 N2: Pod の照会の失敗を「Ready でない」と混ぜない（読めないことと止まっていることは別）。
+  $unreadable = @($o.Unreadable | Where-Object { $_ })
   if ($unreadable.Count -gt 0) {
-    return & $verdict 'LOGS_UNREADABLE' 'alert' 'unknown' $false $null $null (
-      "ログを読めません: $($unreadable -join ', ')。S1 の生存を確かめられません（確かめられないことを平常とは読みません）。")
+    return & $verdict 'UNREADABLE' 'alert' 'unknown' $false $null $null (
+      "読み取りに失敗しました: $($unreadable -join ', ')。S1 の生存を確かめられません（確かめられないことを平常とは読みません）。")
   }
 
   $stale = [TimeSpan]$o.StaleAfter
@@ -336,7 +337,19 @@ function Get-NextState {
   elseif ($null -ne $Previous) { $Previous.LastAlertAt }
   else { $null }
   $holdingSeenAt = if ($Verdict.HoldingObserved) { $Now } elseif ($null -ne $Previous) { $Previous.HoldingSeenAt } else { $null }
-  [pscustomobject]@{ Status = $Verdict.Status; Severity = $Verdict.Severity; LastAlertAt = $lastAlertAt; HoldingSeenAt = $holdingSeenAt }
+  [pscustomobject]@{
+    Status = $Verdict.Status; Severity = $Verdict.Severity; LastAlertAt = $lastAlertAt; HoldingSeenAt = $holdingSeenAt; CheckedAt = $Now
+  }
+}
+
+# PR #998 監査 N3: 前の取引時間に書かれた状態は持ち越さない（翌日の最初の実行で偽の「回復」を出さない。
+# 前日の警報を今日の鳴らし直しの間隔に数えない）。寄り付きが分からない（試走で休場日）ときは持ち越す。
+function Select-SessionState {
+  param([object]$Previous, [object]$SessionOpen)
+  if ($null -eq $Previous) { return $null }
+  if ($null -eq $SessionOpen) { return $Previous }
+  if ($null -eq $Previous.CheckedAt -or [DateTimeOffset]$Previous.CheckedAt -lt [DateTimeOffset]$SessionOpen) { return $null }
+  return $Previous
 }
 
 # ---- 通知（クラスタに依らない経路だけ） ------------------------------------------------------------------------
@@ -349,14 +362,21 @@ function Send-DiscordNotification {
     [string]$WebhookUrl,
     [scriptblock]$Invoker = {
       param($uri, $body)
-      Invoke-RestMethod -Method Post -Uri $uri -ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec 10 | Out-Null
+      # PR #998 監査 B2: -Verbose / -Debug で起動されても Invoke-RestMethod に「POST <URL>」を出させない。
+      Invoke-RestMethod -Method Post -Uri $uri -ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec 10 `
+        -ErrorAction Stop -Verbose:$false -Debug:$false | Out-Null
     }
   )
+  # PR #998 監査 B2: スクリプトの -Verbose / -Debug は呼び出し先へ既定値として伝わる。この関数の中では詳細・デバッグの出力を止める
+  # （Invoker が差し替えられても、URL を含み得る出力が流れないように）。
+  $VerbosePreference = 'SilentlyContinue'
+  $DebugPreference = 'SilentlyContinue'
+  $InformationPreference = 'SilentlyContinue'
   if ([string]::IsNullOrWhiteSpace($WebhookUrl)) { return 'discord=未設定' }
   $content = if ($Text.Length -gt 1900) { $Text.Substring(0, 1900) + '…' } else { $Text }
   $body = @{ content = $content; allowed_mentions = @{ parse = @() } } | ConvertTo-Json -Depth 3 -Compress
   try {
-    & $Invoker $WebhookUrl $body
+    & $Invoker $WebhookUrl $body | Out-Null
     return 'discord=送信'
   }
   catch {
@@ -398,32 +418,42 @@ function ConvertTo-Instant([object]$Value) {
   return [DateTimeOffset]::Parse("$Value", [Globalization.CultureInfo]::InvariantCulture)
 }
 
+# 戻り: Readable（照会できたか）/ Ready / StartedAt。
+# PR #998 監査 N2: 照会の失敗（exit≠0・JSON を読めない）は Readable=$false とし、「Ready でない」と混ぜない。
 function Get-ServicePods([string]$Deployment) {
   $json = & kubectl --context $Context --request-timeout=15s -n $Namespace get pods -l "app=$Deployment" -o json 2>$null
-  if ($LASTEXITCODE -ne 0) { return [pscustomobject]@{ Ready = $false; StartedAt = $null } }
-  $items = @((($json -join "`n") | ConvertFrom-Json).items)
+  if ($LASTEXITCODE -ne 0) { return [pscustomobject]@{ Readable = $false; Ready = $false; StartedAt = $null } }
+  try { $parsed = ($json -join "`n") | ConvertFrom-Json -ErrorAction Stop }
+  catch { return [pscustomobject]@{ Readable = $false; Ready = $false; StartedAt = $null } }
+  if ($null -eq $parsed -or $null -eq $parsed.PSObject.Properties['items']) {
+    return [pscustomobject]@{ Readable = $false; Ready = $false; StartedAt = $null }
+  }
+  $items = @($parsed.items)
   $ready = @($items | Where-Object {
       $_.status.phase -eq 'Running' -and $null -ne $_.status.PSObject.Properties['containerStatuses'] -and
       @($_.status.containerStatuses | Where-Object { -not $_.ready }).Count -eq 0
     })
-  if ($ready.Count -eq 0) { return [pscustomobject]@{ Ready = $false; StartedAt = $null } }
+  if ($ready.Count -eq 0) { return [pscustomobject]@{ Readable = $true; Ready = $false; StartedAt = $null } }
   $started = @($ready | ForEach-Object {
       $running = $_.status.containerStatuses[0].state.PSObject.Properties['running']
       if ($null -ne $running) { ConvertTo-Instant $running.Value.startedAt }
     } | Where-Object { $null -ne $_ } | Sort-Object -Descending)
-  return [pscustomobject]@{ Ready = $true; StartedAt = ($started.Count -gt 0 ? $started[0] : $null) }
+  return [pscustomobject]@{ Readable = $true; Ready = $true; StartedAt = ($started.Count -gt 0 ? $started[0] : $null) }
 }
 
+# 戻り: Ok（読めたか）/ Lines（string[]。空でもよい）。
+# 🔴 PR #998 監査 B1: **「空で成功」と「失敗」を区別する。** 市場監視は保有 0 件・閉場中は何も出さないため、
+# 空のログは平常である。配列を素で返すと空配列が $null へ展開され、失敗と読まれていた（保有の無い日に毎日警報）。
 function Get-ServiceLogs([string]$Deployment, [int]$SinceMinutes) {
   $lines = & kubectl --context $Context --request-timeout=30s -n $Namespace logs "deploy/$Deployment" --since="$($SinceMinutes)m" --timestamps 2>$null
-  if ($LASTEXITCODE -ne 0) { return $null }
-  return @($lines | ForEach-Object { "$_" })
+  if ($LASTEXITCODE -ne 0) { return [pscustomobject]@{ Ok = $false; Lines = [string[]]@() } }
+  return [pscustomobject]@{ Ok = $true; Lines = [string[]]@($lines | Where-Object { $null -ne $_ } | ForEach-Object { "$_" }) }
 }
 
 function Get-ClusterObservation([DateTimeOffset]$Now, [object]$SessionOpen, [TimeSpan]$StaleAfter, [object]$HoldingSeenAt) {
   $obs = @{
     Now = $Now; SessionOpen = $SessionOpen; StaleAfter = $StaleAfter; HoldingSeenAt = $HoldingSeenAt
-    ApiReachable = $false; ApiDetail = ''; NotReadyServices = @(); UnreadableLogs = @()
+    ApiReachable = $false; ApiDetail = ''; NotReadyServices = @(); Unreadable = @()
     MonitorBeat = $null; ExecutionBeat = $null; MonitorStartedAt = $null; ExecutionStartedAt = $null
   }
   $readyz = & kubectl --context $Context --request-timeout=10s get --raw /readyz 2>&1
@@ -438,11 +468,13 @@ function Get-ClusterObservation([DateTimeOffset]$Now, [object]$SessionOpen, [Tim
   foreach ($pair in @(@($script:MonitorDeployment, 'Monitor', $script:MonitorHeartbeatPattern), @($script:ExecutionDeployment, 'Execution', $script:ExecutionHeartbeatPattern))) {
     $deployment, $key, $pattern = $pair
     $pods = Get-ServicePods $deployment
+    if (-not $pods.Readable) { $obs.Unreadable += "$deployment（Pod の照会）"; continue }
     if (-not $pods.Ready) { $obs.NotReadyServices += $deployment; continue }
     $obs["$($key)StartedAt"] = $pods.StartedAt
-    $lines = Get-ServiceLogs $deployment $since
-    if ($null -eq $lines) { $obs.UnreadableLogs += $deployment; continue }
-    $obs["$($key)Beat"] = Get-LatestHeartbeat $lines $pattern
+    # 🔴 kubectl logs deploy/<名前> は Pod を 1 つだけ選ぶ。ロールアウト中は旧 Pod のログを読むことがある（Runbook の限界）。
+    $logs = Get-ServiceLogs $deployment $since
+    if (-not $logs.Ok) { $obs.Unreadable += "$deployment（ログ）"; continue }
+    $obs["$($key)Beat"] = Get-LatestHeartbeat $logs.Lines $pattern
   }
   return $obs
 }
@@ -456,9 +488,12 @@ function Read-MonitorState([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { return $null }
   try {
     $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json
+    $checkedAt = $null
+    if ($null -ne $raw.PSObject.Properties['checkedAtMs']) { $checkedAt = ConvertFrom-UnixMs $raw.checkedAtMs }
     return [pscustomobject]@{
       Status = $raw.status; Severity = $raw.severity
       LastAlertAt = ConvertFrom-UnixMs $raw.lastAlertAtMs; HoldingSeenAt = ConvertFrom-UnixMs $raw.holdingSeenAtMs
+      CheckedAt = $checkedAt
     }
   }
   catch { return $null } # 壊れた状態ファイルは「前回なし」と読む（最悪でも 1 回多く鳴るだけ）
@@ -468,6 +503,7 @@ function Write-MonitorState([string]$Path, [object]$State) {
   @{
     status = $State.Status; severity = $State.Severity
     lastAlertAtMs = ConvertTo-UnixMs $State.LastAlertAt; holdingSeenAtMs = ConvertTo-UnixMs $State.HoldingSeenAt
+    checkedAtMs = ConvertTo-UnixMs $State.CheckedAt
   } | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
 }
 
@@ -479,23 +515,44 @@ function Add-MonitorLog([string]$Path, [string]$Line) {
   }
 }
 
+# PR #998 監査 N1: 読めない日付を黙って捨てない（捨てると臨時休場日に「要約が無い」と鳴り続ける／臨時半日の午後を場中と読む）。
+# 空・空白だけの要素は無視し、それ以外で yyyy-MM-dd として読めないものがあれば例外にする（呼び出し側が SCRIPT_ERROR にする）。
 function ConvertTo-DateList([string[]]$Values) {
-  @($Values | Where-Object { $_ } | ForEach-Object {
-      [datetime]::ParseExact($_.Trim(), 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
-    })
+  $result = [System.Collections.Generic.List[datetime]]::new()
+  foreach ($v in @($Values)) {
+    if ([string]::IsNullOrWhiteSpace($v)) { continue }
+    $parsed = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($v.Trim(), 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+      throw "臨時休場日・臨時半日の指定 '$v' を yyyy-MM-dd として読めません。"
+    }
+    $result.Add($parsed)
+  }
+  return , $result.ToArray()
 }
 
 # ---- 本体 -----------------------------------------------------------------------------------------------------
 
+# -At はテスト用（既定は現在時刻）。他の設定はスクリプトの引数（同じスコープの変数）を読む。
 function Invoke-HostLivenessCheck {
+  param([object]$At = $null)
   # kubectl の出力（UTF-8）を日本語の照合語と突き合わせるため、ネイティブ出力の復号を UTF-8 に固定する。
   # 既定（日本語 Windows は CP932）のままだと照合語が一致せず、要約が「無い」と読まれる。
   [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-  $now = [DateTimeOffset]::UtcNow
-  $holidays = ConvertTo-DateList $ExtraHolidays
-  $halfDays = ConvertTo-DateList $ExtraHalfDays
+  $current = if ($null -ne $At) { [DateTimeOffset]$At } else { [DateTimeOffset]::UtcNow }
 
-  if (-not $IgnoreMarketHours -and -not (Test-UsMarketOpen -Instant $now -ExtraHolidays $holidays -ExtraHalfDays $halfDays)) {
+  $configError = $null
+  $holidays = [datetime[]]@()
+  $halfDays = [datetime[]]@()
+  try {
+    $holidays = ConvertTo-DateList $ExtraHolidays
+    $halfDays = ConvertTo-DateList $ExtraHalfDays
+  }
+  catch { $configError = $_.Exception.Message }
+
+  # 設定の誤り（N1）は開場を判定できないので、時間に依らず SCRIPT_ERROR として知らせる。
+  if ($null -eq $configError -and -not $IgnoreMarketHours -and
+    -not (Test-UsMarketOpen -Instant $current -ExtraHolidays $holidays -ExtraHalfDays $halfDays)) {
     Write-Verbose '米国株の通常取引時間外のため何もしません。'
     return 0
   }
@@ -507,13 +564,14 @@ function Invoke-HostLivenessCheck {
   $logPath = Join-Path $dir 'host-liveness.log'
   if (-not $DryRun -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
-  $previous = Read-MonitorState $statePath
   $staleAfter = [TimeSpan]::FromMinutes($StaleAfterMinutes)
-  $sessionOpen = Get-UsSessionOpen -Instant $now -ExtraHolidays $holidays
+  $sessionOpen = if ($null -eq $configError) { Get-UsSessionOpen -Instant $current -ExtraHolidays $holidays } else { $null }
+  $previous = Select-SessionState -Previous (Read-MonitorState $statePath) -SessionOpen $sessionOpen
 
   try {
+    if ($null -ne $configError) { throw $configError }
     if ($null -eq (Get-Command kubectl -ErrorAction SilentlyContinue)) { throw 'kubectl が PATH にありません。' }
-    $observation = Get-ClusterObservation $now $sessionOpen $staleAfter ($null -ne $previous ? $previous.HoldingSeenAt : $null)
+    $observation = Get-ClusterObservation $current $sessionOpen $staleAfter ($null -ne $previous ? $previous.HoldingSeenAt : $null)
     $verdict = Get-HostLivenessVerdict $observation
   }
   catch {
@@ -524,8 +582,8 @@ function Invoke-HostLivenessCheck {
     }
   }
 
-  $action = Get-NotificationAction -Previous $previous -Verdict $verdict -Now $now -ReAlertInterval ([TimeSpan]::FromMinutes($ReAlertMinutes))
-  $stamp = $now.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+  $action = Get-NotificationAction -Previous $previous -Verdict $verdict -Now $current -ReAlertInterval ([TimeSpan]::FromMinutes($ReAlertMinutes))
+  $stamp = $current.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
   $line = "$stamp status=$($verdict.Status) severity=$($verdict.Severity) holding=$($verdict.Holding) " +
   "monitor=$($verdict.MonitorState) execution=$($verdict.ExecutionState) action=$action $($verdict.Message)"
 
@@ -545,7 +603,7 @@ function Invoke-HostLivenessCheck {
       $delivery = " delivery=[$toast; $discord]"
     }
     Add-MonitorLog $logPath ($line + $delivery)
-    Write-MonitorState $statePath (Get-NextState -Previous $previous -Verdict $verdict -Action $action -Now $now)
+    Write-MonitorState $statePath (Get-NextState -Previous $previous -Verdict $verdict -Action $action -Now $current)
     if ($action -ne 'none') { Write-Host ($line + $delivery) }
   }
 

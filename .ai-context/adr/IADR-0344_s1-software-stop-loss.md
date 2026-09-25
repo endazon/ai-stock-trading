@@ -1120,7 +1120,7 @@ Rancher Desktop が自動起動しなかった。Kubernetes API（127.0.0.1:6443
   - 🔴 **要約が両方無いことを「保有なし」と読まない。** 保有の有無を外から確かめる手段は要約しか無い（HTTP は認可つき）。
     この取引時間中に保有を見ていたときだけ 1 回警告し、それ以外は「不明」として記録する。
   - 平常時は鳴らさず、遷移で鳴らし、警報は 30 分ごとに鳴らし直し、回復を 1 回知らせる。
-  - 判定・通知の要否は純関数で、`scripts/host-liveness-monitor.test.ps1`（T-10-1040〜T-10-1048）が CI で固定する。
+  - 判定・通知の要否は純関数で、`scripts/host-liveness-monitor.test.ps1`（T-10-1040〜T-10-1049。kubectl を関数で差し替えた観測の層を含む）が CI で固定する。
     設計の詳細は作業仕様書 [20260925_937_host-liveness-monitor](../specs/20260925_937_host-liveness-monitor.md)。
 - **オーナーの操作**（手順は `docs/operations/host-liveness-monitor-runbook.md`。**AI は登録・設定変更をしない**）:
   タスクスケジューラへの登録、Rancher Desktop のログオン時の自動起動、Windows Update のアクティブ時間（場中に自動の再起動をしない）、スリープの無効化。

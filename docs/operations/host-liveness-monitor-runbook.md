@@ -78,9 +78,9 @@ issues: [#937, #909, #902]
 | --- | --- | --- |
 | `CLUSTER_UNREACHABLE` | Kubernetes API に届かない（Rancher Desktop が止まっている） | 🔴 鳴らす |
 | `SERVICE_NOT_READY` | 市場監視か発注執行に Ready の Pod が無い | 🔴 鳴らす |
-| `LOGS_UNREADABLE` | ログを読めない（確かめられないことを平常とは読まない） | 🔴 鳴らす |
+| `UNREADABLE` | Pod の照会かログの読み取りに**失敗**した（確かめられないことを平常とは読まない。ログが空なのは失敗ではない） | 🔴 鳴らす |
 | `EVALUATION_SILENT` | **S1 の保護記録があるのに、損切り評価の生存要約が 10 分を超えて出ていない**（到達を検知できていない恐れ） | 🔴 鳴らす |
-| `SCRIPT_ERROR` | スクリプト自身の失敗（`kubectl` が見つからない等） | 🔴 鳴らす |
+| `SCRIPT_ERROR` | スクリプト自身の失敗（`kubectl` が見つからない・`-ExtraHolidays` / `-ExtraHalfDays` の日付を読めない等。日付の誤りは時間外でも鳴る） | 🔴 鳴らす |
 | `HEARTBEATS_STOPPED` | この取引時間中は保有を見ていたのに、生存要約が両方止まった。建玉を閉じた（損切りが約定した）なら正常 | ⚠️ 1 回だけ鳴らす |
 | `PROTECTED` | S1 の保護記録があり、損切り評価も稼働中 | 鳴らさない |
 | `EVALUATING` | 損切り評価は稼働中。S1 の保護記録の要約は出ていない（S1 以外の手法か、発注執行が内蔵 paper 構成） | 鳴らさない |
@@ -101,9 +101,17 @@ issues: [#937, #909, #902]
 pwsh -NoProfile -File <repo>\scripts\host-liveness-monitor.ps1 -DryRun -IgnoreMarketHours
 ```
 
-期待: `[dry-run] … status=PROTECTED …`（保有していて S1 を使っている場合）か `status=EVALUATING` / `status=NO_HEARTBEAT_UNKNOWN`。
-時間外に試走した場合、市場監視は閉場中に要約を出さないため `EVALUATION_SILENT` と出ることがある——**これは時間外の試走に固有の表示**で、
-場中の登録運用では起きない（場中にこれが出たら異常である）。
+期待（どれも読み取りに成功した表示である。ログが空なのは失敗ではない）:
+
+| 試走した時間 | S1 の保護記録 | 出る状態 |
+| --- | --- | --- |
+| 場中 | あり | `PROTECTED`（市場監視の初回の要約を待っていれば `WARMING_UP`） |
+| 場中 | なし・保有あり | `EVALUATING` |
+| 場中 | なし・保有なし | `NO_HEARTBEAT_UNKNOWN` |
+| 時間外 | あり | `EVALUATION_SILENT`——市場監視は閉場中に要約を出さないため。**時間外の試走に固有の表示**で、登録した運用（場中だけ判定する）では起きない。場中にこれが出たら異常である |
+| 時間外 | なし | `NO_HEARTBEAT_UNKNOWN` |
+
+`UNREADABLE` / `SERVICE_NOT_READY` / `CLUSTER_UNREACHABLE` / `SCRIPT_ERROR` が出たら、時間に依らず「失敗したときの分岐」へ進む。
 
 ### 2. 通知の経路を試す（クラスタに触らない）
 
@@ -128,7 +136,8 @@ Webhook の URL はスクリプトの表示・ログには出ない。**チャ�
 ```
 
 - 値はユーザーのレジストリ（`HKCU\Environment`）に平文で残る。ホストのユーザーアカウントを守ることが前提である。
-- 設定後に登録するタスクは新しい値を読む（登録済みのタスクは、次にログオンし直した後の実行から読む）。
+- ユーザー環境変数の変更は、その後に起動したプロセスから見える。**登録済みのタスクがログオンし直さずに新しい値を読むかは確かめていない**
+  ——確実にするには、設定した後に一度サインアウトしてサインインし直し、手順 2 で Discord に届くことを確かめる。
 - 未設定なら Discord へは送らない（Windows の通知とログファイルだけ）。
 
 ### 4. タスクスケジューラへ登録する
@@ -205,8 +214,8 @@ Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 1074, 6008, 41 } -MaxE
 | `SERVICE_NOT_READY` が届いた | 市場監視・発注執行の Pod が再起動中・起動に失敗 | `kubectl -n ai-stock-trading get pods` と該当 Pod のログを見る。数分で戻らなければ証券会社の画面で建玉を守る |
 | `EVALUATION_SILENT` が届いた | 市場監視の巡回が止まった・価格の取得で詰まっている・ログの文言が変わった | 市場監視のログを見る（`kubectl -n ai-stock-trading logs deploy/market-monitor-service --since=15m`）。巡回が止まっていれば、到達を検知できないので証券会社の画面で建玉を守る |
 | `HEARTBEATS_STOPPED` が届いた | 建玉を閉じた（損切りが約定した）／両サービスが無音 | 証券会社の画面か日報で建玉が無いことを確かめる。建玉が残っていれば停止を疑い、上の 2 行と同じ手順で調べる |
-| `LOGS_UNREADABLE` が届いた | `kubectl logs` が失敗（API の一時的な不調・権限） | 同じコマンドを手で実行して原因を見る |
-| `SCRIPT_ERROR` が届いた | `kubectl` が PATH に無い・スクリプトの不具合 | 手順 1 の試走で原因を表示させる。直らなければ issue を起票する |
+| `UNREADABLE` が届いた | `kubectl get pods` / `kubectl logs` が失敗（API の一時的な不調・権限） | 本文に出る対象（Pod の照会かログか）について、同じコマンドを手で実行して原因を見る |
+| `SCRIPT_ERROR` が届いた | `kubectl` が PATH に無い・臨時休場日 / 臨時半日の書式が `yyyy-MM-dd` でない・スクリプトの不具合 | 手順 1 の試走で原因を表示させる。直らなければ issue を起票する |
 | 通知が一度も来ない（試走では来た） | ログオンしていない・タスクが無効・`pwsh` のパスが違う | タスクスケジューラの履歴と「前回の実行結果」を見る |
 | 休場日に要約が無いと警告された | その日の臨時休場をスクリプトに渡していない | `-ExtraHolidays yyyy-MM-dd` をタスクの引数へ足す |
 
@@ -225,6 +234,8 @@ Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 1074, 6008, 41 } -MaxE
 - **保有の有無は外から確かめられない。** 生存要約が両方出ていないとき、「保有なし」と「両方が無音」を区別できない（`NO_HEARTBEAT_UNKNOWN`）。
   この取引時間中に保有を見ていた場合だけ `HEARTBEATS_STOPPED` として 1 回知らせる。
 - **発注執行の生存要約は moomoo 構成でだけ出る**（内蔵 paper 構成では常駐そのものが無い）。paper では評価の停止を `EVALUATION_SILENT` として検知できない。
+- **ログは Pod を 1 つだけ読む**（`kubectl logs deploy/<名前>` が 1 つを選ぶ）。ロールアウト中は旧 Pod のログを読み、新 Pod の要約を見落としたり、
+  止まりかけの旧 Pod の要約を新しいと読んだりすることがある。Ready の判定は全 Pod を見るが、ログは見ない。
 - **東証の取引時間は見ない**（米国株だけ）。
 - 本スクリプトは**知らせるだけ**で、Rancher Desktop の起動・Pod の再起動・建玉の手当ては行わない。
 - 閉場中の建玉は、クラスタが生きていても次の寄り付きまで無保護である（S1 の性質。運用仕様書と機能仕様書の注記を参照）。

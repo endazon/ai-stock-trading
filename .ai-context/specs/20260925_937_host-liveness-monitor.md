@@ -45,7 +45,7 @@ plan_refs:
    - **遷移で鳴らし、続く間は間隔を空けて鳴らし直し、回復を 1 回知らせる。** 平常時は何も出さない（ログファイルへ 1 行だけ）。
 2. **手順書** `docs/operations/host-liveness-monitor-runbook.md`: タスクスケジューラの登録・Rancher Desktop の自動起動・Windows Update のアクティブ時間と場中の再起動抑止（**オーナーが行う**）。
 3. **IADR-0344 の追記（17）** と索引行の更新（既存の追記はすべて残す）。**新しい IADR は起こさない**（予約 IADR-0426 は使わない）——決定は S1 の射程の開示であり、スクリプトの内部設計は本仕様書に置けば足りる。
-4. **テスト** `scripts/host-liveness-monitor.test.ps1`（T-10-1040〜T-10-1048）。**フレームワークを足さない**——既存の `*.test.sh` と同じ「素のスクリプト＋アサート関数＋失敗があれば exit 1」の形を PowerShell で写す。関数だけを読み込む idiom も `AST_CUTOVER_LIB=1` と同じ（`AST_HOST_LIVENESS_LIB=1`）。CI の `static-checks` へ 1 ステップ足す（ubuntu-latest は `pwsh` を持つ）。
+4. **テスト** `scripts/host-liveness-monitor.test.ps1`（T-10-1040〜T-10-1049）。**フレームワークを足さない**——既存の `*.test.sh` と同じ「素のスクリプト＋アサート関数＋失敗があれば exit 1」の形を PowerShell で写す。関数だけを読み込む idiom も `AST_CUTOVER_LIB=1` と同じ（`AST_HOST_LIVENESS_LIB=1`）。CI の `static-checks` へ 1 ステップ足す（ubuntu-latest は `pwsh` を持つ）。
 5. 文書の追随: 運用仕様書の監視節と関連文書表、FR-10 機能仕様書の S1 残余リスク、FR-10 テスト仕様書（T-10-1040〜1048）、`scripts/README.md`。
 
 ### 判定（状態）
@@ -60,7 +60,7 @@ plan_refs:
 | --- | --- | --- | --- |
 | 1 | API に届かない | `CLUSTER_UNREACHABLE` | alert |
 | 2 | 市場監視か発注執行に Ready の Pod が無い | `SERVICE_NOT_READY` | alert |
-| 3 | どちらかのログを読めない | `LOGS_UNREADABLE` | alert |
+| 3 | どちらかの Pod の照会かログの読み取りに**失敗**した（exit≠0・JSON を読めない。**空で成功は失敗ではない**） | `UNREADABLE` | alert |
 | 4 | 発注執行が Fresh（S1 行が Active）・市場監視が Fresh | `PROTECTED` | ok |
 | 5 | 発注執行が Fresh・市場監視が Warmup | `WARMING_UP` | ok |
 | 6 | 発注執行が Fresh・市場監視が Silent | `EVALUATION_SILENT`（**保有を知っているのに評価が止まっている＝S1 の監視が死んでいる**） | alert |
@@ -114,3 +114,18 @@ plan_refs:
 - [ ] Discord Webhook の URL を表示・ログに出さない（送信失敗の例外文言に URL が含まれても出さない）。
 - [ ] 手順書にオーナーの操作（タスク登録・自動起動・Windows Update）と限界を書く。AI は登録・設定変更をしない。
 - [ ] IADR-0344 追記（17）・索引行を足し、既存の追記を 1 つも落とさない。
+
+## ［2026-09-25 追記 / PR #998 監査］監査 NO-GO の是正
+
+- **B1**: `Get-ServiceLogs` が配列を素で返していたため、**kubectl が空で成功した**ときに PowerShell が空配列を `$null` へ展開し、
+  呼び出し側が「ログを読めない」と読んでいた。市場監視は保有 0 件・閉場中は何も出さないので、**保有の無い日に毎日警報**になり、
+  `NO_HEARTBEAT_UNKNOWN` / `HEARTBEATS_STOPPED` へ到達しなかった（監査の稼働環境の試走で `LOGS_UNREADABLE` を実測）。
+  → `{ Ok; Lines }` を返し、空で成功と失敗を分ける。kubectl を関数で差し替えたテスト（T-10-1049）で固定。
+- **B2**: スクリプトの `-Verbose` / `-Debug` が呼び出し先へ伝わり、`Invoke-RestMethod` が Webhook の URL を出し得た。
+  → `-Verbose:$false -Debug:$false -ErrorAction Stop` と、送信関数の中で詳細・デバッグ・情報の既定値を止める。ストリームを捕まえるテスト（T-10-1048）。
+- **N1**: 読めない `-ExtraHolidays` / `-ExtraHalfDays` を黙って捨てていた → `SCRIPT_ERROR`（時間外でも。開場を判定できないため）。
+- **N2**: `kubectl get pods` の失敗を `SERVICE_NOT_READY` にしていた → 状態 `UNREADABLE`（Pod の照会の失敗とログの読み取りの失敗をまとめる。旧 `LOGS_UNREADABLE` を置き換え）。
+- **N3**: 前の取引時間に書かれた状態で翌日の最初の実行が偽の「回復」を出した → 状態に確認時刻（`checkedAtMs`）を持ち、寄り付きより前の状態（と確認時刻の無い旧形式）は持ち越さない。
+- **N4**: 観測の層と本体のテストを足した（T-10-1049。kubectl のスタブ・通知のスタブ・一時フォルダの状態ファイル。kubectl は get / logs だけを呼ぶことも見る）。
+- **N6**: `kubectl logs deploy/<名前>` は Pod を 1 つだけ読む（ロールアウト中の見落とし）を Runbook の限界に書いた。
+- **N7**: 「登録済みのタスクはログオンし直した後に新しい環境変数を読む」は未確認だったので、未確認と書き直した。
