@@ -79,6 +79,7 @@ public sealed class PolicyRevisionCommandHandler(
             proposal.Version,
             proposal.Presented,
             proposal.Created,
+            proposal.Message,
             proposal.PolicySummary,
             [.. proposal.WatchlistChanges.Select(c => (c.Action, c.Symbol, c.Reason))],
             proposal.Rationale);

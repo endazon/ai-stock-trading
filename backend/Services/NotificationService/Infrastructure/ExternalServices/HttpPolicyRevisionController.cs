@@ -116,7 +116,7 @@ public sealed class HttpPolicyRevisionController(
         int Version,
         bool Created,
         bool Presented,
-            string? Message,
+        string? Message,
         string? PolicySummary,
         IReadOnlyList<WatchlistChangeItem?>? WatchlistChanges,
         string? Rationale);

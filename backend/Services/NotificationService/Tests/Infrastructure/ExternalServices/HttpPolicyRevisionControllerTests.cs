@@ -8,6 +8,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NotificationService.Infrastructure.ExternalServices;
 using Xunit;
+using ReportDomain = ReportWorker::ReportService.Domain;
 using ReportRevise = ReportWorker::ReportService.Features.Reports.RevisePolicy;
 
 namespace NotificationService.Tests;
@@ -118,6 +119,43 @@ public class HttpPolicyRevisionControllerTests
         var request = JsonSerializer.Deserialize<ReportRevise.RevisePolicyRequest>(handler.Body!, ReportWire)!;
         request.Should().Be(new ReportRevise.RevisePolicyRequest("もっと積極的に", "daily-2026-09-27", "developer"));
     }
+
+    // 🔴 T-10-1352（再監査 nit 1・ADR-0003）: **Discord に表示される方針から幅ゼロ空白を除くと、確定される（保存される）方針と
+    // 完全に一致する**——分割された通をまたいでも。保存される方針は送り手の本物の検証（PolicyRevisionProposalParser）の結果、
+    // 表示は送り手の本物の無害化（PolicyRevisionResponse.Display）→ 本物の応答型の直列化 → 受け手の解釈 → 分割の順に作る。
+    // 3 行以上の改行・前後の空白・メンション・マスクリンク・上限ちょうどの長さを含める（旧実装は空行を畳み境界語を落としていた）。
+    [Theory]
+    [MemberData(nameof(StoredPolicies))]
+    public async Task 表示される方針は幅ゼロ空白を除けば保存される方針と一致する(string llmPolicy)
+    {
+        var parsed = ReportDomain.PolicyRevisionProposalParser.Parse(
+            JsonSerializer.Serialize(new { policySummary = llmPolicy, watchlistChanges = Array.Empty<object>() }));
+        parsed.IsValid.Should().BeTrue(parsed.Reason);
+        var stored = parsed.Proposal!.PolicySummary;
+
+        ReportRevise.PolicyRevisionResponse sent = SenderResponse() with { PolicySummary = ReportRevise.PolicyRevisionResponse.Display(stored) };
+        var outcome = await Controller(new FakeHandler(HttpStatusCode.OK, JsonSerializer.Serialize(sent, ReportWire)))
+            .ReviseAsync("daily-2026-09-27", "指示", "developer");
+        var proposal = outcome.Proposal!;
+        var messages = NotificationService.Domain.PolicyRevisionMessage.Build(
+            proposal.PeriodKey, proposal.Version, proposal.Presented, proposal.Created, proposal.Message,
+            proposal.PolicySummary, [], proposal.Rationale);
+
+        var displayed = string.Concat(messages
+            .Where(m => m.StartsWith("【方針案 ", StringComparison.Ordinal))
+            .Select(m => m[(m.IndexOf('\n') + 1)..]));
+        displayed.Replace(ReportDomain.ReportSummarySanitizer.MentionBreaker, string.Empty, StringComparison.Ordinal)
+            .Should().Be(stored);
+    }
+
+    public static TheoryData<string> StoredPolicies() => new()
+    {
+        "押し目買いを優先する",
+        "  前後の空白\r\n\r\n\r\n\r\n3 行以上の空行\n\n\n\n末尾  ",
+        "@everyone @here <@123> <#456> [公式発表](https://evil.example) 素の https://example.com",
+        string.Concat(Enumerable.Range(0, 400).Select(_ => "@here")),
+        new string('方', 1998) + "\n\n",
+    };
 
     private sealed class FakeHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {

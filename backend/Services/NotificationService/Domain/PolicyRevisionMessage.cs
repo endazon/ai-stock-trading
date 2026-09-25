@@ -22,6 +22,9 @@ public static class PolicyRevisionMessage
 
     public const string WatchlistNotice = "（表示のみ。監視銘柄は変わっていません。適用する場合は設定画面から変更してください）";
 
+    /// <summary>方針の 1 通の本文の最大長（見出しの行を差し引いた値）。</summary>
+    public static readonly int PolicyChunkSize = MaxLength - PolicyHeading(99, 99).Length - 1;
+
     /// <summary>方針の分割の見出し（`【方針案 1/2】`）。本文はこの行の次から。</summary>
     public static string PolicyHeading(int index, int count) => $"【方針案 {index}/{count}】";
 
@@ -34,6 +37,7 @@ public static class PolicyRevisionMessage
         int version,
         bool presented,
         bool created,
+        string serviceMessage,
         string policySummary,
         IReadOnlyList<(string Action, string Symbol, string Reason)> watchlistChanges,
         string? rationale)
@@ -47,11 +51,14 @@ public static class PolicyRevisionMessage
         header.Append($"方針の改訂案を作成しました（{periodKey}・版 {version}・{(presented ? "承認待ち" : "未提示")}）。");
         if (created)
             header.Append($"\n{periodKey} を新しく作りました。");
+        // 承認待ちにできなかったときは、報告書サービスの案内（何が保存され、どう確かめるか）をそのまま見せる。
+        if (!presented && !string.IsNullOrWhiteSpace(serviceMessage))
+            header.Append('\n').Append(serviceMessage);
         header.Append("\n確定するまで取引には適用されません。方針案は全文を次に送ります。");
         messages.Add(header.ToString());
 
         // 方針（全文）。見出し＋改行を差し引いた長さで割る（サロゲートペアの途中では割らない）。
-        var chunks = Split(policySummary, MaxLength - PolicyHeading(99, 99).Length - 1);
+        var chunks = Split(policySummary, PolicyChunkSize);
         for (var i = 0; i < chunks.Count; i++)
             messages.Add($"{PolicyHeading(i + 1, chunks.Count)}\n{chunks[i]}");
 

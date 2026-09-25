@@ -171,7 +171,7 @@ public class PolicyRevisionCommandHandlerTests
     public void どの通も上限に収まり監視銘柄は表示のみと添える()
     {
         var messages = PolicyRevisionMessage.Build(
-            "daily-2026-09-27", 3, presented: true, created: false,
+            "daily-2026-09-27", 3, presented: true, created: false, "保存しました",
             new string('方', 5000),
             [.. Enumerable.Range(0, 10).Select(i => ("add", $"SYM{i}", new string('理', 200)))],
             new string('説', 5000));
@@ -179,7 +179,7 @@ public class PolicyRevisionCommandHandlerTests
         messages.Should().OnlyContain(m => m.Length <= PolicyRevisionMessage.MaxLength);
         messages[^1].Should().Contain(PolicyRevisionMessage.WatchlistNotice);
 
-        PolicyRevisionMessage.Build("daily-2026-09-27", 1, true, false, "方針", [], null)[^1]
+        PolicyRevisionMessage.Build("daily-2026-09-27", 1, true, false, "保存しました", "方針", [], null)[^1]
             .Should().Contain("【監視銘柄の入れ替え案】").And.Contain("- なし");
     }
 
@@ -210,6 +210,9 @@ public class PolicyRevisionCommandHandlerTests
         policyMessages.Select((m, i) => m.StartsWith(PolicyRevisionMessage.PolicyHeading(i + 1, count) + "\n", StringComparison.Ordinal))
             .Should().OnlyContain(ok => ok, "見出しは 1/n から順に並ぶ");
         string.Concat(policyMessages.Select(m => m[(m.IndexOf('\n') + 1)..])).Should().Be(policy);
+        // 各通は単独で表示されるため、割り目で絵文字（サロゲートペア）を割らない。
+        policyMessages.Select(m => m[(m.IndexOf('\n') + 1)..]).Where(c => c.Length > 0)
+            .Should().OnlyContain(c => !char.IsHighSurrogate(c[c.Length - 1]) && !char.IsLowSurrogate(c[0]));
         result.Messages[^1].Should().NotContain("【方針案", "ボタンの付く通に方針の一部を載せない（全文はその前に届いている）");
     }
 
@@ -221,5 +224,40 @@ public class PolicyRevisionCommandHandlerTests
         { new string('方', 2000), 10, 200 },
         { string.Concat(Enumerable.Range(0, 1000).Select(_ => "😀")), 10, 200 },
         { string.Concat(Enumerable.Range(0, 1800).Select(i => (char)('あ' + (i % 80)))), 3, 50 },
+        // 🔴 T-10-1346（再監査 nit 3）: サロゲートペア（絵文字）の上位が 1 通目の割り目（奇数の位置 1787＝1 通の本文 1788 文字の最後）に
+        // ちょうど掛かる。割り目のガードが無いと絵文字が 2 通に割れ、連結は一致しても各通に孤立したサロゲートが残る。
+        { new string('あ', PolicyRevisionMessage.PolicyChunkSize - 1) + "😀" + new string('い', 100), 0, 0 },
     };
+
+    // T-10-1346: 割り目にサロゲートペアが掛かるとき、どの通も孤立したサロゲートで始まらず終わらない（絵文字を壊さない）。
+    [Fact]
+    public void 割り目のサロゲートペアを割らない()
+    {
+        var size = PolicyRevisionMessage.PolicyChunkSize;
+        (size % 2).Should().Be(0, "1 通の本文の長さが偶数なので、上位サロゲートは奇数の位置 size-1 に来る");
+        var policy = new string('あ', size - 1) + "😀" + new string('い', 100);
+        char.IsHighSurrogate(policy[size - 1]).Should().BeTrue("前提: 割り目の直前が上位サロゲート");
+
+        var chunks = PolicyRevisionMessage.Split(policy, size);
+
+        chunks.Should().HaveCount(2);
+        chunks[0].Should().HaveLength(size - 1);
+        chunks[1].Should().StartWith("😀");
+        chunks.Should().OnlyContain(c => !char.IsHighSurrogate(c[c.Length - 1]) && !char.IsLowSurrogate(c[0]));
+        string.Concat(chunks).Should().Be(policy);
+    }
+
+    // T-10-1347（再監査 nit 5）: 承認待ちにできなかった案では、報告書サービスの案内をそのまま見せ、確認ボタンを出さない。
+    [Fact]
+    public async Task 承認待ちにできなかった案は報告書サービスの案内を見せる()
+    {
+        const string guidance = "方針の改訂案を保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。";
+        var view = Proposal(presented: false) with { Message = guidance };
+        var (handler, _) = Create(new PolicyRevisionCommandOutcome(true, false, guidance, view));
+
+        var result = await handler.HandleAsync(Context(), "指示");
+
+        result.Version.Should().BeNull();
+        result.Messages[0].Should().Contain("未提示").And.Contain(guidance);
+    }
 }

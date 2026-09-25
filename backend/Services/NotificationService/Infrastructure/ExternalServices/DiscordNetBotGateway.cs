@@ -65,7 +65,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // **版番号を CustomId に載せる**（押下時に復元する）——詳細設計07 は「確定要求は 対象ID＋版番号 を必須とする」と
     // 定めており、ボタンを出した時点の版を運ばなければ、押すまでの間にドラフトが更新されたときに
     // **利用者が見ていない版を確定してしまう**。書式: "ast-report-approve-<periodKey>-<version>"。
-    private const string ReportApproveButtonPrefix = "ast-report-approve-";
+    internal const string ReportApproveButtonPrefix = "ast-report-approve-";
 
     // FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み。**kill switch・GFV 解除と同水準**
     // （確認ボタン → 理由＋確認フレーズのモーダル）。対象（市場と銘柄コード）はボタンとモーダルの CustomId に載せ、
@@ -412,36 +412,14 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
 
         var result = await _policyHandler.HandleAsync(context, instruction).ConfigureAwait(false);
-        if (!result.WasExecuted)
-        {
-            await command.FollowupTextAsync(PolicyResponseTextOf(result)).ConfigureAwait(false);
-            return;
-        }
 
         // 🔴 ADR-0003: 方針の全文（分割あり）を**順に送り終えてから**、最後の通にだけ確認ボタンを付ける。
-        // 途中の通が送れなければ例外で抜け、ボタンは出ない（見ていない方針を確定させない）。
-        for (var i = 0; i < result.Messages.Count - 1; i++)
-            await command.FollowupTextAsync(result.Messages[i]).ConfigureAwait(false);
-
-        var last = result.Messages[^1];
-        if (result.PeriodKey is not { } key || result.Version is not { } version)
-        {
-            await command.FollowupTextAsync(last).ConfigureAwait(false);
-            return;
-        }
-
-        var builder = new ComponentBuilder().WithButton(
-            $"版 {version} を確定する",
-            ReportApproveButtonPrefix + $"{key}-{version}",
-            // 確定は取引方針を有効化する破壊的操作（ADR-0003）のため危険色。
-            ButtonStyle.Danger);
-
-        await command.FollowupTextAsync(last + PolicyApprovePrompt, builder.Build()).ConfigureAwait(false);
+        // 送り順・ボタンの位置・途中失敗の知らせは PolicyRevisionReplySender が持つ（試験できる形に切り出した）。
+        await PolicyRevisionReplySender.SendAsync(
+            result,
+            (text, components) => command.FollowupTextAsync(text, components),
+            _logger).ConfigureAwait(false);
     }
-
-    // #1016: 確認ボタンの前置き（最後の通〔最大 1800 文字〕の後に付けて 2000 文字に収まる長さ。PolicyRevisionMessage.MaxLength）。
-    private const string PolicyApprovePrompt =
-        "\n\n確定すると、この版の方針が取引に適用されます。やめる場合は押さずに置くか、/policy で指示し直してください。";
 
     // FR-07, FR-14, UC-03〜05, #834: `/report` の period の入力補完。判断（多層認証・絞り込み・上限）は
     // すべて ReportCommandHandler / ReportPeriodSuggestions が持ち、ここは変換に徹する。
@@ -961,12 +939,6 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // 拒否理由（内部の層名）は返さないが、**失敗はそのまま返す**——利用者が対処できる情報
     //（「最新ドラフトを確認してください」「HTTP 409」）であり、伏せると確定できない理由が分からなくなる。
     private static string ReportResponseTextOf(ReportCommandResult result) =>
-        result.IsDenied
-            ? "この操作は実行されませんでした（許可されていません）。"
-            : result.Message;
-
-    // FR-07, #1016: 方針の改訂の結果文言。拒否（多層認証・解釈不能）は理由を出さず一般化し、失敗・不明はそのまま返す。
-    private static string PolicyResponseTextOf(PolicyRevisionCommandResult result) =>
         result.IsDenied
             ? "この操作は実行されませんでした（許可されていません）。"
             : result.Message;
