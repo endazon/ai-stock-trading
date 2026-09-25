@@ -36,13 +36,27 @@ public sealed class OrderScreeningService(
         ArgumentNullException.ThrowIfNull(decision);
 
         var intent = decision.Intent;
+        var isEntry = intent.PositionEffect == PositionEffect.Open;
+
+        // FR-10, #832, IADR-0407: **承認済みの新規建ての判断の再配送は再審査しない。**
+        // 台帳の承認行は自分の OrderApproved の射影であり、行があれば同じ判断の承認を発行済みである。
+        // 再審査すると、射影済みの自分自身が未終端の新規建て（IADR-0346）として保有建玉数・日次枠・段階資金へ算入され、
+        // 承認済みの判断が拒否へ反転する（同じ DecisionId の OrderRejected が監査・通知へ流れ、審査メトリクスも二重に刻まれる）。
+        // **新規建てに限る**——手仕舞い（Close）は再審査して承認を発行し直しても発注執行が DecisionId で止める一方、
+        // 抑止すると最初の発行が届かなかった手仕舞いが出ない側へ倒れる（ADR-0009）。読み取りも新規建てだけにして、
+        // 台帳の読み取りの失敗が手仕舞いの審査を新たに巻き込まないようにする（損切りの供給と同じ規律）。
+        if (isEntry && ledger.FindApprovedPositionEffect(decision.DecisionId) is not null)
+        {
+            return ScreeningOutcome.ApprovedReplay(
+                new OrderScreeningObservation(decision.DecisionId, intent.Mode, []));
+        }
+
         // #337（#249 吸収）, IADR-0246: 日次損失ロックアウトの「当日」は**注文の市場の現地取引日**で解釈する。
         // JST 固定（clock.Today）では ET 10-11 時（セッション中）に日付が変わり、同一の米国セッションの
         // 途中でデイリーストップが解除されていた。導出は TradingDay.Of（単一情報源）。
         var tradingDay = TradingDay.Of(clock.UtcNow, intent.Market);
         var settings = settingsStore.GetCurrent();
         var snapshot = snapshotBuilder.Build();
-        var isEntry = intent.PositionEffect == PositionEffect.Open;
 
         // FR-10, UC-06, ADR-0016 決定4（2026-08-06 改訂）, #419, IADR-0159 決定5:
         // 強制買戻し由来の 30 日禁止を判定コアへ供給する。**借株照会の供給元が無いため空売り文脈
