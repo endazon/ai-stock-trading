@@ -129,6 +129,20 @@ builder.Services.AddScoped<MarketMonitorAppService>();
 // IClock は上で singleton 登録済み。変更履歴は DbContext 依存のため scoped。
 builder.Services.AddScoped<IMonitorSettingsChangeLog, EfMonitorSettingsChangeLog>();
 builder.Services.AddScoped<MonitorWatchlistService>();
+// FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433 決定 3: `/policy` の入れ替え案の適用で変更者を本人として残すため、
+// 代理（OnBehalfOf）を信じてよいクライアントの一覧。**既定は空＝誰も信じない**（構成は解決時に読む）。
+builder.Services.AddSingleton(sp => new DelegatedActorOptions(
+    DelegatedActorResolver.ParseTrustedClientIds(
+        sp.GetRequiredService<IConfiguration>()[DelegatedActorOptions.TrustedClientIdsKey])));
+// ADR-0031, ADR-0042 決定 1, IADR-0433 決定 4: 適用後の Finnhub の日次要求の推定（警告のみ・適用を止めない）。
+builder.Services.AddSingleton(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    return new WatchlistVolumeEstimator(
+        cfg["MarketData:Provider"],
+        sp.GetRequiredService<IOptions<MonitorOptions>>().Value.PollIntervalSeconds,
+        FinnhubDailyVolumeGuardOptions.Read(cfg).ProvisionalDailyLimit);
+});
 // FR-03/FR-11/FR-13, UC-06, SC-01 §2, #340, IADR-0155: 収集パラメータ（変動閾値・クールダウン）の部分更新。
 // 全置換 PUT（/settings）と違い、他の項目（監視銘柄）を巻き込まない。
 builder.Services.AddScoped<MonitorSettingsService>();

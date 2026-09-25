@@ -17,6 +17,11 @@ public sealed class TestAuthHandler(
     public const string SchemeName = "Test";
     public const string RolesHeader = "X-Test-Roles";
 
+    // FR-13, #1025, IADR-0433: 機密クライアントのトークン（`azp`・名前クレーム無し）を模す任意のヘッダ。無ければ従来どおり。
+    public const string AzpHeader = "X-Test-Azp";
+    public const string NameHeader = "X-Test-Name";
+    public const string NoName = "(none)";
+
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue(RolesHeader, out var header))
@@ -25,7 +30,12 @@ public sealed class TestAuthHandler(
         var roles = header.ToString()
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var claims = new List<Claim> { new(ClaimTypes.Name, "test-owner") };
+        var name = Request.Headers.TryGetValue(NameHeader, out var nameHeader) ? nameHeader.ToString() : "test-owner";
+        var claims = new List<Claim>();
+        if (name != NoName)
+            claims.Add(new Claim(ClaimTypes.Name, name));
+        if (Request.Headers.TryGetValue(AzpHeader, out var azp) && azp.ToString().Length > 0)
+            claims.Add(new Claim("azp", azp.ToString()));
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 
         var identity = new ClaimsIdentity(claims, SchemeName, ClaimTypes.Name, ClaimTypes.Role);

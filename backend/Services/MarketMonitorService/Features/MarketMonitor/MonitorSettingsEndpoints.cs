@@ -2,6 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.EntityFrameworkCore;
 using MarketMonitorService.Features.MarketMonitor.AddWatchlistSymbol;
+using MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal;
 using MarketMonitorService.Features.MarketMonitor.GetMonitorSettings;
 using MarketMonitorService.Features.MarketMonitor.GetMonitorSettingsHistory;
 using MarketMonitorService.Features.MarketMonitor.GetWatchlist;
@@ -71,6 +72,8 @@ internal static class MonitorSettingsEndpoints
         read.MapGetWatchlist();
         owner.MapAddWatchlistSymbol();
         owner.MapRemoveWatchlistSymbol();
+        // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: `/policy` の入れ替え案の一括適用（利用者のみ・代理の変更者・楽観排他）。
+        owner.MapApplyWatchlistProposal();
         owner.MapGetWatchlistHistory();
 
         return app;

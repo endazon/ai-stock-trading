@@ -52,6 +52,55 @@ public sealed class MonitorWatchlistService(
         return updated.MonitoredSymbols;
     }
 
+    /// <summary>
+    /// FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433 決定 2: `/policy` の入れ替え案（利用者が Discord で確定した案）を適用する。
+    /// 案を作った時点の監視銘柄（<paramref name="expected"/>）と現在が違えば 1 件も適用しない（Stale）。各銘柄は SC-02 と同じ規則で
+    /// 検証し、通った銘柄だけを<b>1 回の保存</b>で適用する（保存の楽観排他競合は例外で上へ＝409・1 件も適用されない）。
+    /// 適用した銘柄は SC-02 の変更と同じ形で変更履歴へ 1 件ずつ記録する（FR-13。理由は案の理由＋出所）。
+    /// </summary>
+    public WatchlistApplyPlan ApplyProposal(
+        IReadOnlyList<MonitoredSymbol>? expected,
+        IReadOnlyList<ProposedWatchlistChange>? changes,
+        string actor,
+        string proposalRef)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        if (WatchlistProposalPlan.ValidateShape(changes, expected) is { } invalid)
+            throw new ArgumentException(invalid, nameof(changes));
+
+        var current = store.GetSettings();
+        var plan = WatchlistProposalPlan.Plan(current.MonitoredSymbols, expected!, changes!);
+        if (plan.Stale || !plan.AnyApplied)
+            return plan;
+
+        store.Save(current with { MonitoredSymbols = [.. plan.Resulting] });
+
+        // 変更履歴は 1 件ずつ（SC-02 の追加・削除と同じ種別・前後値の形）。前後値は適用順に積み上げる。
+        var running = current.MonitoredSymbols.ToList();
+        foreach (var item in plan.Items.Where(i => i.Applied))
+        {
+            var before = running.ToList();
+            var target = new MonitoredSymbol(item.Change.Symbol, Market.UnitedStates);
+            MonitorSettingsChangeType type;
+            if (item.Change.Action == ProposedWatchlistAction.Add)
+            {
+                running.Add(target);
+                type = MonitorSettingsChangeType.WatchlistSymbolAdded;
+            }
+            else
+            {
+                running.RemoveAll(s => Same(s, target));
+                type = MonitorSettingsChangeType.WatchlistSymbolRemoved;
+            }
+
+            changeLog.Record(new MonitorSettingsChangeEntry(
+                actor, type, $"{item.Change.Reason}（/policy の案 {proposalRef} を Discord の確認ボタンで適用）", clock.UtcNow,
+                Before: Render(before), After: Render(running)));
+        }
+
+        return plan;
+    }
+
     public IReadOnlyList<MonitorSettingsChangeEntry> GetHistory() => changeLog.GetHistory();
 
     private void Save(
