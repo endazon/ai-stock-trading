@@ -78,6 +78,12 @@ public enum ReportInput
     /// 🔴 <b>月報は上位＝前期</b>（<c>ParentKind(Monthly) == Monthly</c>）であり、同じ事実を 2 回数えない。
     /// </summary>
     PreviousPolicy,
+
+    /// <summary>
+    /// FR-06, FR-10, ADR-0040 決定1, #823, IADR-0422 決定3: <b>損切りの実行機構（承認の記録）</b>（監査台帳の <c>OrderApproved</c>）。
+    /// 日報 §4「損切りの実行機構（当日）」の供給元。🔴 未供給を「承認なし」へ倒さない。
+    /// </summary>
+    StopLossMethods,
 }
 
 // FR-06, #840, IADR-0352 決定 5: 入力の表示名・種別ごとの適用・永続化形式（純関数）。
@@ -105,6 +111,8 @@ public static class ReportInputs
         ReportInput.TradeRationales => kind is ReportKind.Daily or ReportKind.Weekly,
         // 日報 §3 だけが建玉を持つ。
         ReportInput.OpenPositions => kind == ReportKind.Daily,
+        // #823: 日報 §4 の「損切りの実行機構（当日）」だけが使う（計画 ADR-0040 決定1 が求めるのは日報）。
+        ReportInput.StopLossMethods => kind == ReportKind.Daily,
         // 月報 §5 の三者比較だけが段階を使う。
         ReportInput.CurrentStage => kind == ReportKind.Monthly,
         // リスク統制の記録の子節・サマリの独立行は日報と月報にだけ出る（週報は計画が求めていない）。
@@ -137,6 +145,7 @@ public static class ReportInputs
         ReportInput.OpeningInventory => "期間開始時点の在庫",
         ReportInput.ParentPolicy => "上位方針（親の確定済み報告書）",
         ReportInput.PreviousPolicy => "前期の確定済み方針",
+        ReportInput.StopLossMethods => "損切りの実行機構（承認の記録）",
         _ => input.ToString(),
     };
 

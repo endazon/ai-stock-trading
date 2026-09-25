@@ -7,7 +7,8 @@ namespace RiskManagementService.Features.RiskManagement.UpdateStopLossMethod;
 // moomoo SIMULATE に限り損切りの実行機構を S0（既定・ブローカー側逆指値）/ S1 / S2 / S3 から選べる。
 // **変更は利用者のみ**（OwnerOnly。生成 AI・サービス間呼び出しは変更できない）・**理由必須**・前後値つきで履歴に残す。
 // **発注先が実弾（moomoo REAL）の間は S0 以外を選べない**（400・設定も履歴も変えない）。
-// 現在値は `GET /settings` の `stopLossMethod`（SC-02 / SC-03 の読み取り。表示は #823）。
+// 現在値は `GET /settings` の `stopLossMethod`（SC-02 / SC-03 の読み取り）。画面からの変更は BFF
+// `PUT /bff/risk-controls/settings/stop-loss-method` 経由（#823, IADR-0422 決定1・決定2）。
 internal static class UpdateStopLossMethodEndpoint
 {
     public static void MapUpdateStopLossMethod(this IEndpointRouteBuilder owner) =>

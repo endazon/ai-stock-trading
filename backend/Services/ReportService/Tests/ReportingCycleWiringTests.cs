@@ -26,6 +26,9 @@ public class ReportingCycleWiringTests(ReportWorkerWebApplicationFactory factory
             .Should().BeOfType<UnsuppliedLlmUsageRecordSource>();
         factory.Services.GetRequiredService<IBorrowFeeRecordSource>()
             .Should().BeOfType<UnsuppliedBorrowFeeRecordSource>();
+        // T-10-998, FR-06, FR-10, #823: 日報 §4「損切りの実行機構（当日）」の承認の記録も同じ向きに倒す。
+        factory.Services.GetRequiredService<IStopLossMethodUsageSource>()
+            .Should().BeOfType<UnsuppliedStopLossMethodUsageSource>();
     }
 
     // 🔴 **対の肯定形**: 監査台帳を設定した本番形では、**HTTP 実装が組み上がる**。
@@ -40,6 +43,8 @@ public class ReportingCycleWiringTests(ReportWorkerWebApplicationFactory factory
             .Should().NotBeOfType<UnsuppliedLlmUsageRecordSource>();
         configured.Services.GetRequiredService<IBorrowFeeRecordSource>()
             .Should().NotBeOfType<UnsuppliedBorrowFeeRecordSource>();
+        configured.Services.GetRequiredService<IStopLossMethodUsageSource>()
+            .Should().BeOfType<HttpStopLossMethodUsageSource>();
     }
 
     [Theory]
@@ -53,6 +58,8 @@ public class ReportingCycleWiringTests(ReportWorkerWebApplicationFactory factory
             .Should().BeOfType<UnsuppliedLlmUsageRecordSource>();
         configured.Services.GetRequiredService<IBorrowFeeRecordSource>()
             .Should().BeOfType<UnsuppliedBorrowFeeRecordSource>();
+        configured.Services.GetRequiredService<IStopLossMethodUsageSource>()
+            .Should().BeOfType<UnsuppliedStopLossMethodUsageSource>();
     }
 
     // FR-15, ADR-0033 決定5, ADR-0037 決定3, #750: 見積り承認額の供給は**構成から読む唯一のポート**である。

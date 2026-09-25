@@ -23,7 +23,7 @@ namespace AiStockTrading.Bff.Endpoints.Tests;
 // 後段は StubHandler で差し替え、実サービスに依存しない。
 public class BffPassThroughTests
 {
-    // すべての BFF ルート（3 モジュール・計 20 ルート）が期待どおり登録され、グループが認証必須であることの
+    // すべての BFF ルート（4 モジュール・下の表の全ルート）が期待どおり登録され、グループが認証必須であることの
     // 最小固定（ルート脱落・改名・メソッド変更・RequireAuthorization 抜けを検知）。
     public static IEnumerable<object[]> AllRoutes =>
     [
@@ -38,6 +38,8 @@ public class BffPassThroughTests
         ["PUT", "/bff/risk-controls/settings/broker-provider"],
         // AST #423, FR-20, SC-02: Stage 1 の最小取引件数（既定 100・値域 1〜1000）。
         ["PUT", "/bff/risk-controls/settings/stage1-minimum-trade-count"],
+        // T-10-990, AST #823, FR-10, SC-02, ADR-0040 決定1: 損切りの実行機構の変更（SC-02 だけが持つ操作）。
+        ["PUT", "/bff/risk-controls/settings/stop-loss-method"],
         ["GET", "/bff/risk-controls/status"],
         ["GET", "/bff/risk-controls/stage-gate"],
         // AST #640, SC-03, FR-10, FR-19: 空売りの現況（維持率等）。後段は実装済みだが BFF 登録が漏れていた。
@@ -280,6 +282,28 @@ public class BffPassThroughTests
         host.Downstream.LastRequestBody.Should().Be(body);
         host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Delete);
         host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/monitor/watchlist");
+    }
+
+    // T-10-990, AST #823, FR-10, SC-02, ADR-0040 決定1・決定3, AST/IADR-0422 決定1:
+    // 損切りの実行機構の変更は本文（手法・理由）を後段へそのまま転送し、後段の拒否（実弾の間の S0 以外＝400）を
+    // 書き換えずに透過する。**統制は後段が実効する**（BFF は判定しない）。
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.BadRequest)]
+    public async Task 損切りの実行機構の変更は_本文を後段へ転送し_後段の応答を透過する(HttpStatusCode downstreamStatus)
+    {
+        await using var host = await BffTestHost.StartAsync();
+        const string body = """{"method":2,"reason":"SIMULATE で建玉を観測する"}""";
+        host.Downstream.Status = downstreamStatus;
+        host.Downstream.ResponseBody = """{"error":"x"}""";
+
+        var resp = await host.SendAuthed(HttpMethod.Put, "/bff/risk-controls/settings/stop-loss-method", body);
+
+        resp.StatusCode.Should().Be(downstreamStatus);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"error":"x"}""");
+        host.Downstream.LastRequestBody.Should().Be(body);
+        host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Put);
+        host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls/settings/stop-loss-method");
     }
 }
 

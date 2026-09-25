@@ -121,6 +121,12 @@ public sealed record ReportView
     public BorrowFeeRecord? BorrowFees { get; init; }
 
     /// <summary>
+    /// FR-06, FR-10, ADR-0040 決定1, #823, IADR-0422 決定3, 日報 §4: 当日の新規建ての承認を<b>承認時点の手法</b>ごとに数えたもの。
+    /// <para>🔴 <c>null</c> は「照会できていない」であり「承認なし」ではない。日報だけが描く。</para>
+    /// </summary>
+    public StopLossMethodUsage? StopLossMethods { get; init; }
+
+    /// <summary>
     /// FR-06, FR-16, #338, 04_report-templates §数値の定義・日報 §1・月報 §1: <b>為替差損益</b>（独立表示）。
     /// <para>
     /// 🔴 <c>null</c> は「供給されていない」であり「為替差損益 0 円」ではない。
