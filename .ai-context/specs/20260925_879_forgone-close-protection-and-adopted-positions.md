@@ -148,6 +148,15 @@ issue 本文と呼び出し元は `grep -rn PositionDriftAdopted backend/Service
 | T-10-1010 | 越境の契約（発注執行のテスト）: 本物の送り手の取り込み → Wolverine シリアライザ → 受け手の業務クラスが減らす。同じ送り手は増加を発行しない |
 | T-10-1011 | 経路: 発注執行の本番 Program.cs が `PositionDriftAdopted` のハンドラを組み規約のキューで購読する／リスク管理の本番 Program.cs が共有 exchange へ発行する |
 
+［2026-09-25 追記 / #879］PR #999 の監査（GO-with-nits）を受けて次を直した。オーナーは決定2 の扱い（重大のログだけ）を #879 で受け入れた。
+
+- N1（原則 A）: 保護の記録を古い順・上限 500 件の `FindActive` から絞っていたため、Active 行が上限を超えるとこの銘柄の新しい行が落ち、
+  「保護レグを持たない」と断定し得た。`IProtectiveStopOrderStore.FindActiveFor(symbol, market, entrySide)`（上限なし・EF とインメモリは条件つきの
+  問い合わせで上書き、既定の実装は全件を読んでから絞る）へ替え、T-10-1012 で固定した（是正前の形へ戻すと 887 件中 1 件赤）。
+- N2: イベントの形の基準（`event-schemas.baseline.json`）を `UPDATE_EVENT_BASELINE=1` で再生成し、`OrderDispatchForgone.Protection` を載せた。
+  再生成で `StageTransitioned.AuthorizedBy`（develop 時点で基準から漏れていた既存の項目）も載った。
+- N3: IADR-0424 の残る制約に、ブローカー側の株数は記録の主張であり実在の注文の数量ではないこと（不足が過大・過小に出る向き）を書いた。
+
 ## 射程外
 
 - 通信仕様書 `docs/api/events-and-ports.md` に `OrderDispatchForgone` の行が元から無いこと（本件で足した項目だけでなくイベント全体が未掲載）。

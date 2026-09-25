@@ -56,6 +56,21 @@ public interface IProtectiveStopOrderStore
     IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide);
 
     /// <summary>
+    /// 🔴 FR-10, #879, IADR-0424 決定1: Active な記録のうち、銘柄・市場・エントリー方向が一致するものを<b>機構を問わず・件数の上限なしで</b>
+    /// 古い順に返す（照会不明で見送る決済の建玉の保護の記録）。
+    /// <para>
+    /// <see cref="FindActive"/>（古い順に上限つき）を絞り込んで使うと、Active 行が上限を超えたとき<b>この銘柄の新しい行が落ち</b>、
+    /// 保護の記録が「無い」「少ない」と読まれる（PR #999 の監査 N1）。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// 既定の実装（試験用の包み型のためのもの）は上限なしで全件を読んでから絞る。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<ProtectiveStopOrder> FindActiveFor(string symbol, Market market, TradeSide entrySide) =>
+        FindActive(int.MaxValue)
+            .Where(s => s.State == ProtectiveStopState.Active
+                && s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+            .ToList();
+
+    /// <summary>
     /// FR-10, #820 の 6 巡目監査・7 巡目監査, IADR-0344 追記(6)・追記(7): <b>完了済み</b>のソフトウェア逆指値（S1）のうち、
     /// 銘柄・市場・エントリー方向が一致するものを<b>更新が新しい順</b>に最大 <paramref name="limit"/> 件返す。
     /// <para>

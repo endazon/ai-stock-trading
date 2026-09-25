@@ -576,9 +576,10 @@ public sealed class OrderExecutionAppService(
         List<ProtectiveStopOrder> rows;
         try
         {
-            rows = protectiveStops.FindActive(ArmingScanLimit)
-                .Where(s => s.State == ProtectiveStopState.Active
-                    && s.Symbol == intent.Symbol && s.Market == intent.Market && s.EntrySide == entrySide)
+            // 🔴 PR #999 の監査 N1: 上限つきの FindActive（古い順 500 件）を絞ると、Active 行が上限を超えたときこの銘柄の
+            // 新しい行が落ち、「保護レグを持たない」と断定してしまう（原則 A 違反）。銘柄・市場・方向で絞った上限なしの問い合わせを使う。
+            rows = protectiveStops.FindActiveFor(intent.Symbol, intent.Market, entrySide)
+                .Where(s => s.State == ProtectiveStopState.Active)
                 .ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

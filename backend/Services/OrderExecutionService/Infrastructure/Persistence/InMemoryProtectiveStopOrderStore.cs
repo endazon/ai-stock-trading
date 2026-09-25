@@ -49,6 +49,16 @@ public sealed class InMemoryProtectiveStopOrderStore : IProtectiveStopOrderStore
             .Take(batchSize)
             .ToList();
 
+    // 🔴 FR-10, #879, IADR-0424 決定1: 機構を問わず・上限なし（PR #999 の監査 N1）。
+    public IReadOnlyList<ProtectiveStopOrder> FindActiveFor(string symbol, Market market, TradeSide entrySide) =>
+        _stops.Values
+            .Where(s => s.State == ProtectiveStopState.Active
+                && s.Symbol == symbol
+                && s.Market == market
+                && s.EntrySide == entrySide)
+            .OrderBy(s => s.CreatedAt)
+            .ToList();
+
     // #820, IADR-0344 決定1・決定4。
     public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
         _stops.Values

@@ -92,13 +92,14 @@ public class OrderExecutionServiceForgoneCloseProtectionTests
     // S0（ブローカー側の逆指値）の行。RemainingProtected を指定しなければ Quantity を主張する。
     private static ProtectiveStopOrder BrokerStop(
         int quantity, TradeSide entrySide = TradeSide.Buy, string symbol = "AAPL", Market market = Market.UnitedStates,
-        ProtectiveStopState state = ProtectiveStopState.Active, int? remaining = null)
+        ProtectiveStopState state = ProtectiveStopState.Active, int? remaining = null, DateTimeOffset? createdAt = null)
     {
         var entry = Guid.NewGuid();
+        var created = createdAt ?? Now.AddHours(-1);
         return new ProtectiveStopOrder(
             entry, ProtectiveStopIds.StopDecisionId(entry, 1), "STOP-" + entry.ToString("N")[..6], symbol, market,
             entrySide, ProductType.Cash, BrokerProvider.MoomooSimulate, quantity, 95m, 1m, 1, state,
-            Now.AddHours(-1), Now.AddHours(-1), RemainingProtected: remaining);
+            created, created, RemainingProtected: remaining);
     }
 
     // S1（ソフトウェア逆指値）の行。主張は確定済みの残保護数量。
@@ -165,6 +166,24 @@ public class OrderExecutionServiceForgoneCloseProtectionTests
         var result = await NewService(broker, stops).ExecuteAsync(Approved(CloseIntent(qty: 60, side: TradeSide.Buy)));
 
         result.Forgone!.Protection.Should().Be(new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Recorded, 60, 0));
+    }
+
+    // 🔴 T-10-1012（PR #999 の監査 N1）: Active 行が走査の上限（500）を超え、**この銘柄の行がいちばん新しい**。
+    // 古い順・上限つきの読み（FindActive）を絞ると、この銘柄の行が落ちて「保護レグを持たない」と断定してしまう（原則 A 違反）。
+    // 銘柄・市場・方向で絞った上限なしの読みで、記録どおり Recorded を載せる。
+    [Fact]
+    public async Task Active行が走査の上限を超えてもこの銘柄の新しい行を落とさない()
+    {
+        var broker = new FakePositionAwareBroker(null);
+        var stops = new InMemoryProtectiveStopOrderStore();
+        for (var i = 0; i < 501; i++)
+            stops.Save(BrokerStop(10, symbol: "MSFT", createdAt: Now.AddDays(-2).AddMinutes(i)));
+        stops.Save(BrokerStop(120, createdAt: Now.AddMinutes(-1))); // この銘柄の行（最も新しい）
+        stops.FindActive(500).Should().NotContain(s => s.Symbol == "AAPL", "前提: 上限つきの古い順の読みではこの銘柄の行が落ちる");
+
+        var result = await NewService(broker, stops).ExecuteAsync(Approved(CloseIntent(qty: 300)));
+
+        result.Forgone!.Protection.Should().Be(new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Recorded, 120, 0));
     }
 
     // 🔴 T-10-1002: 記録ストアの無い構成／読み取りの例外 → **Unknown**（「分からない」を「無い」と言わない）。
