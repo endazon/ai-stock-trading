@@ -532,7 +532,16 @@ public sealed class OrderExecutionAppService(
         if (disposition != StopLossMethodDisposition.SoftwareStop || protectiveStops?.Find(approved.DecisionId) is not { } stop)
             return;
 
-        protectiveStops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });
+        // 🔴 #833 項目3, IADR-0396: 楽観並行。読んでから書くまでのあいだに到達の記録・決済が並行に書かれていたら、その行を
+        // 古い写しで Completed へ上書きしない（到達の記録や試行番号を巻き戻さない）。書けなかった行は Active のまま残り、
+        // 常駐ガード（未到達なら残保護数量 0 の確定で完了・到達済みなら決済経路が約定 0 の終端を見て完了）が閉じる。
+        if (!protectiveStops.TrySave(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow }))
+        {
+            _logger.LogWarning(
+                "建玉が生じなかったソフトウェア逆指値の記録を、並行に更新されていたため完了にしませんでした（ガードが確かめて閉じます）。"
+                + "EntryDecisionId={EntryDecisionId}",
+                approved.DecisionId);
+        }
     }
 
     private OrderDispatchResult Forgone(

@@ -10,10 +10,33 @@ public sealed class InMemoryProtectiveStopOrderStore : IProtectiveStopOrderStore
 {
     private readonly ConcurrentDictionary<Guid, ProtectiveStopOrder> _stops = new();
 
+    // #833 項目3, IADR-0396: 版の比較と書き込みを 1 つの区間で行う（TrySave を原子的にする）。
+    private readonly Lock _gate = new();
+
+    // 無条件の上書き。新規は写しの版のまま、既存は保存先の版から 1 進める（EF 実装と同じ）。
     public void Save(ProtectiveStopOrder stop)
     {
         ArgumentNullException.ThrowIfNull(stop);
-        _stops[stop.EntryDecisionId] = stop;
+        lock (_gate)
+        {
+            _stops[stop.EntryDecisionId] = _stops.TryGetValue(stop.EntryDecisionId, out var current)
+                ? stop with { Version = current.Version + 1 }
+                : stop;
+        }
+    }
+
+    // 🔴 #833 項目3, IADR-0396: 保存先の版が写しの版と一致するときだけ書き、版を 1 進める。
+    public bool TrySave(ProtectiveStopOrder stop)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+        lock (_gate)
+        {
+            if (!_stops.TryGetValue(stop.EntryDecisionId, out var current) || current.Version != stop.Version)
+                return false;
+
+            _stops[stop.EntryDecisionId] = stop with { Version = stop.Version + 1 };
+            return true;
+        }
     }
 
     public ProtectiveStopOrder? Find(Guid entryDecisionId) =>

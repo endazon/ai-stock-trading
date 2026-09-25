@@ -175,7 +175,8 @@ public class OrderExecutionServiceSoftwareStopTests
 
         broker.PlaceCount.Should().Be(1);
         again.SoftwareStopArmed.Should().BeNull();
-        stops.Find(approved.DecisionId).Should().Be(triggered);
+        // #833 項目3, IADR-0396: 版は試験自身の Save で 1 進むだけ（再配送が行を書き直していれば 2 進む）。
+        stops.Find(approved.DecisionId).Should().Be(triggered with { Version = triggered.Version + 1 });
     }
 
     [Fact]
