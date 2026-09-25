@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine.Tracking;
@@ -69,7 +70,7 @@ public class AssumptionsEndpointsTests
         HttpResponseMessage put = null!;
         // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する
         // （PUT の処理中に外へ出たメッセージが収束するまで待つ）。
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             put = await client.PutAsJsonAsync("/assumptions", UpdateBody(modified, 1, "為替スプレッド登録"));
         });

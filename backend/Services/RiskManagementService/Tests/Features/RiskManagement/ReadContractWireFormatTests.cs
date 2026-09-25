@@ -63,6 +63,30 @@ public class ReadContractWireFormatTests
         sizingContext!["mode"]!.GetValueKind().Should().Be(JsonValueKind.Number);
     }
 
+    // 🔴 T-10-885, FR-06, FR-10, FR-21, #957, IADR-0408: 強制買戻しの推定（GET /risk-controls/buy-in-inferences）の外側は
+    // **匿名型**であり、受け手の契約テスト（報告書 T-10-884）は外側の項目名を送り手の型から得られない。その名前をここで固定する。
+    // 外側の `inferences` が改名されると、受け手は `?? []` で「強制買戻し 0 件」と書く（fail-open の表示）。
+    [Fact]
+    public async Task 強制買戻しの推定の本文は外側の項目名と行の型を_web_既定で出す()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        var day = DateOnly.FromDateTime(DateTime.UtcNow);
+        var record = new BuyInInferenceRecord(
+            Guid.NewGuid(), "TSLA", Market.UnitedStates, 10, 4, 1, 5, 5, day.AddDays(30), day,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        using (var scope = factory.Services.CreateScope())
+            scope.ServiceProvider.GetRequiredService<IBuyInInferenceStore>().Append(record);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, Service);
+
+        var body = (await BodyAsync(client, $"/risk-controls/buy-in-inferences?from={day:yyyy-MM-dd}&to={day:yyyy-MM-dd}"))!.AsObject();
+
+        body.Select(p => p.Key).Should().BeEquivalentTo(["periodCovered", "observedTradingDays", "inferences"]);
+        body["periodCovered"]!.GetValueKind().Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        JsonNode.DeepEquals(body["inferences"], JsonSerializer.SerializeToNode(new[] { record }, Web))
+            .Should().BeTrue($"inferences の本文が web 既定と異なる: {body["inferences"]?.ToJsonString()}");
+    }
+
     private static async Task<JsonNode?> BodyAsync(HttpClient client, string path)
     {
         var res = await client.GetAsync(path);

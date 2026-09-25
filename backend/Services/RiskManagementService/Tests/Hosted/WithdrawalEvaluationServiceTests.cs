@@ -6,6 +6,7 @@ using RiskManagementService.Hosted;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -133,7 +134,7 @@ public class WithdrawalEvaluationServiceTests
         SeedStage(factory, TradingStage.Stage2MinimalLive);
         SeedPerformance(factory, DrawdownBreach());
 
-        var session = await factory.Services.ExecuteAndWaitAsync(
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeTrue();
@@ -153,7 +154,7 @@ public class WithdrawalEvaluationServiceTests
         SeedPerformance(factory, DrawdownBreach());
         var driver = BuildDriver(factory, FridayUtc);
 
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規停止 → 発行
             await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 起動済み → 非発行
@@ -173,7 +174,7 @@ public class WithdrawalEvaluationServiceTests
         SeedStage(factory, TradingStage.Stage2MinimalLive);
         SeedPerformance(factory, DrawdownBreach());
 
-        var session = await factory.Services.ExecuteAndWaitAsync(
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(factory, SaturdayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeFalse();
@@ -187,7 +188,7 @@ public class WithdrawalEvaluationServiceTests
         using var factory = new RiskWorkerWebApplicationFactory();
         factory.CreateClient();
 
-        var session = await factory.Services.ExecuteAndWaitAsync(
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeFalse();
@@ -208,7 +209,7 @@ public class WithdrawalEvaluationServiceTests
         SeedUptimeDays(factory, 120);
         SeedFills(factory, 99);
 
-        var session = await factory.Services.ExecuteAndWaitAsync(
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(
             () => BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None));
 
         KillSwitchEngaged(factory).Should().BeFalse("Stage 1 の打ち切りは停止させず降格提案に留める");
@@ -230,7 +231,7 @@ public class WithdrawalEvaluationServiceTests
         SeedFills(factory, 99);
         var driver = BuildDriver(factory, FridayUtc);
 
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             await driver.RunOnceAsync(CancellationToken.None); // 1 回目: 新規乖離 → 発行
             await driver.RunOnceAsync(CancellationToken.None); // 2 回目: 同一シグネチャ → 非発行
@@ -251,7 +252,7 @@ public class WithdrawalEvaluationServiceTests
         SeedUptimeDays(factory, 120);
         SeedFills(factory, 99);
 
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 1
             await BuildDriver(factory, FridayUtc).RunOnceAsync(CancellationToken.None); // インスタンス 2（別構築・同一 DB）
@@ -272,7 +273,7 @@ public class WithdrawalEvaluationServiceTests
         SeedPerformance(factory, Stage1Period());
         SeedUptimeDays(factory, 120);
 
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             SeedFills(factory, 99);
             await driver.RunOnceAsync(CancellationToken.None); // 打ち切り → 発行（1）
@@ -297,7 +298,7 @@ public class WithdrawalEvaluationServiceTests
         SeedPerformance(factory, DrawdownBreach());
         var driver = BuildDriver(factory, FridayUtc);
 
-        var session = await factory.Services.ExecuteAndWaitAsync(async () =>
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(async () =>
         {
             await driver.RunOnceAsync(CancellationToken.None);
             await driver.RunOnceAsync(CancellationToken.None);
