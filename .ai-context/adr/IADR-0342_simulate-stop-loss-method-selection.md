@@ -2,10 +2,10 @@
 title: IADR-0342 SIMULATE の損切り実行機構を選択式にする — 設定点は risk-management の利用者専用設定、手法は承認に載せ、発注執行が SIMULATE 限定・空売り除外で解決し、S2 は免除の事実を別イベントで残す
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-11, FR-12, UC-02, UC-06, SC-02, SC-03, ADR-0003, ADR-0016, ADR-0040, IADR-0016, IADR-0111, IADR-0134, IADR-0141, IADR-0161, IADR-0210, IADR-0211, IADR-0344]
+related_ids: [FR-10, FR-11, FR-12, UC-02, UC-06, SC-02, SC-03, ADR-0003, ADR-0016, ADR-0040, IADR-0016, IADR-0111, IADR-0134, IADR-0141, IADR-0161, IADR-0210, IADR-0211, IADR-0344, IADR-0413]
 author: claude (Claude Code)
 created: 2026-09-17
-updated: 2026-09-18
+updated: 2026-09-25
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1・決定2・決定3・決定6)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 の 3 文〔口座種別の軸〕)
@@ -37,6 +37,17 @@ plan_refs:
 > 本 IADR の残余リスクのうち「損切り到達通知の文言が S2 建玉に当たらない」は IADR-0344 決定 7（手法ごとの帰結の列挙）で解消した。
 > 「同一銘柄の S0・S2 併存時のガード」は**残る**——IADR-0344 決定 6 の按分は保護記録を持つ手法どうし（S0 と S1）にしか効かず、
 > S2 は記録を持たないため差し引けない。
+
+> **［2026-09-25 追記 / #826］監査の残り 5 件の行き先。**
+> - **S2 から S0 へ戻しても、既に建てた S2 の建玉は保護されない**（手動で決済するまで無保護）。手法は承認ごとに運ばれ
+>   新規建てにしか効かない（決定 3・決定 4）ため、戻した後の承認から S0 になるだけで、既存の建玉へ保護逆指値を後付けする経路は無い。
+>   FR-10 の機能仕様書の注意にも同じ記述がある。
+> - 損切り到達の通知・リスク管理の検知ログの列挙に **S3（代替のブローカー側注文）を足した**（IADR-0344 決定 7 の列挙は S0〜S2 だけだった）。
+> - 決定 2 の設定側の判定（設定上の発注先）と決定 4-2 の発注執行の判定（実アダプタ）の食い違いは、**観測へ寄せず運用で揃える**
+>   （[IADR-0413](IADR-0413_stop-method-settings-provider-and-waiver-settlement.md) 決定 1）。
+> - 決定 6 の免除は受付時点・発注数量のままとし、約定しないまま（または一部約定で）終端したときの**打ち消し・数量の確定は
+>   監査台帳の派生記録 `ProtectiveStopWaiverSettled` で残す**（IADR-0413 決定 2）。再配送で再発行しない規律は不変。
+> - 「同一銘柄の S0・S2 併存時のガード」は**引き続き残る**（上の 2026-09-18 追記のとおり。実弾・S3 常用の前に扱う）。
 
 ## コンテキストと課題
 

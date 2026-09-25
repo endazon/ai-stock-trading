@@ -40,6 +40,8 @@ public static class NotificationFormatter
     // FR-10, ADR-0040 決定1, #820（#826 項目 2）, IADR-0344 決定7: 決済するかは**建玉ごとの損切りの実行機構**で決まるが、
     // 到達を検知する市場監視は手法を知らない。🔴 「ブローカーの逆指値が決済する」と断定すると S1 / S2 の建玉で誤りになるため、
     // 手法ごとの帰結を列挙する（S1 の決済・拒否は SoftwareStopExecuted、S2 は免除の通知が建玉を特定して伝える）。
+    // FR-10, ADR-0040 決定1（S3）, #826 項目 2 の残余, IADR-0347: S3（代替のブローカー側注文種別）も列挙に入れる。
+    // S3 は IADR-0347 で実装済みで、列挙から落ちていると S3 の建玉の利用者が帰結を読めない。
     // FR-10, #936, IADR-0393（2026-09-25 追記）: SL（市場監視が比べたライン）は、建て増しした建玉では取引台帳が返す
     // **エントリーのうち最も保護的なライン 1 本**であり、数量（建玉全体）の全部に効くラインではない。限定を 1 文だけ足す。
     public static NotificationMessage From(StopLossTriggered e) => new(
@@ -48,7 +50,9 @@ public static class NotificationFormatter
             + "SL は建て増しした建玉ではエントリーのうち最も保護的なラインで、全量のラインではありません。"
             + "決済は建玉の損切りの実行機構によります: S0＝ブローカー側の逆指値が実行（システムは発注しない）／"
             + "S1＝システムが成行で決済（別途「ソフトウェア逆指値」の通知）／"
-            + "S2＝**システムもブローカーも決済しない（手動で決済してください）**。",
+            + "S2＝**システムもブローカーも決済しない（手動で決済してください）**／"
+            + "S3＝ブローカー側の代替注文（ストップリミット／トレーリングストップ）が実行"
+            + "（システムは発注しない。ストップリミットは指値のため約定しないことがある）。",
         NotificationSeverity.Critical);
 
     // FR-05, ADR-0002（OpenD 常駐・SPOF）, #331, IADR-0211: 発注の見送り。
@@ -152,10 +156,13 @@ public static class NotificationFormatter
     // ただし Info にもしない——**逆指値なしの建玉が実在する**ことは読み落とされてはならない。
     // 🔴 本文に「損切りライン到達でもシステムは決済しない」を書く。書かないと、損切り到達の通知
     // （決済はブローカー側の逆指値が実行します）を読んだ利用者が「逆指値で切られる」と誤解する。
+    // 🔴 FR-10, FR-11, #826 項目 5, IADR-0413 決定2: 免除は**エントリーの受付時点**で発行され、数量は**発注数量**である。
+    // 建玉は約定で確定し、約定しないまま取消・失効すれば生じない——「この数量の建玉がある」と断定しない。
     public static NotificationMessage From(ProtectiveStopWaived e) => new(
         "リスク統制: 保護逆指値をペーパーで免除（" + StopLossMethodLabel(e.Method) + "）",
-        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.Quantity}: 損切りの実行機構 {StopLossMethodLabel(e.Method)}"
-            + $"（逆指値なしの建玉を許容）が選ばれているため、{e.Provider} で保護逆指値を発注せず建玉を保持します。"
+        $"{e.Symbol}/{e.Market} {e.Side} 発注数量{e.Quantity}: 損切りの実行機構 {StopLossMethodLabel(e.Method)}"
+            + $"（逆指値なしの建玉を許容）が選ばれているため、{e.Provider} で保護逆指値を発注せず建玉を保持します"
+            + "（建玉は約定した数量で確定し、約定しないまま取消・失効した場合は生じません）。"
             + $"損切りライン {(e.StopLossPrice is { } price ? price.ToString(CultureInfo.InvariantCulture) : "なし")}"
             + " に到達しても**システムもブローカーも決済しません**（実弾口座では選べない手法です・"
             + $"EntryDecisionId={e.EntryDecisionId}）。",

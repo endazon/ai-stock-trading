@@ -1052,6 +1052,8 @@ public class AuditEntryFactoryTests
         entry.OccurredAt.Should().Be(StopT0);
         entry.Summary.Should().Contain("S2").And.Contain("ペーパーで免除").And.Contain("逆指値なしの建玉を保持")
             .And.Contain("MoomooSimulate").And.Contain("950");
+        // T-10-902, #826 項目 5, IADR-0413 決定2: 受付時点の記録であり、数量は発注数量・建玉は約定で確定すると読める。
+        entry.Summary.Should().Contain("発注数量10").And.Contain("建玉は約定した数量で確定する");
     }
 
     // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は「ブローカーへの逆指値なし・システム停止中は決済されない」が読める。
