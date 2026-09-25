@@ -250,6 +250,10 @@ public class ProtectiveStopGuardIndeterminateStopTests
     {
         var entry = Guid.NewGuid();
         var h = NewHarness(Behavior.Accept, seed: PendingRow(entry));
+        // #1013, IADR-0428（2026-09-26 追記）: エントリーは約定済み（建って消えた）。未約定なら完了させない（T-10-1128）。
+        h.Store.Save(new ExecutionRecord(
+            entry, "entry-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, PositionEffect.Open,
+            10, 1_000m, 10, 1_000m, OrderStatus.Filled, 0m, Now.AddMinutes(-10)));
         h.Broker.Positions = [];
 
         var result = await h.Guard.RunOnceAsync(batchSize: 10);

@@ -143,9 +143,12 @@ public class ProtectiveStopLedgerHandlersTests
         ledger.GetInFlightCloseQuantity("AAPL", Market.UnitedStates, Now.AddMinutes(-1)).Should().Be(0);
     }
 
+    // T-10-1133, FR-10, #1013, IADR-0428（2026-09-26 追記）: EntryStateUnknown（建玉 0 だがエントリーの状態が不明・据え置き）も
+    // 何も送っていない。台帳へ承認行を書かない（書くと存在しない決済が在庫を控除する）。
     [Theory]
     [InlineData(ProtectiveStopRemediation.EntryCancelled)]
     [InlineData(ProtectiveStopRemediation.None)]
+    [InlineData(ProtectiveStopRemediation.EntryStateUnknown)]
     public async Task 手仕舞いレグの無い保護喪失は台帳へ何も書かない_否定形(ProtectiveStopRemediation remediation)
     {
         // EntryCancelled / None に決済レグは無い。無い承認行を書くと、存在しない決済が在庫を控除する。

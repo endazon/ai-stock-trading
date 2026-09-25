@@ -156,6 +156,15 @@ public sealed class ProtectiveStopGuardService(
                     {
                         tracker?.Forget(closeDecisionId);
                     }
+                    // 🔴 #1013, IADR-0428（2026-09-26 追記）: エントリーの状態が不明な据え置きの通知もキー＝EntryDecisionId で覚えている。
+                    else if (events[j] is ProtectiveStopCoverageLost
+                    {
+                        Remediation: ProtectiveStopRemediation.EntryStateUnknown,
+                        EntryDecisionId: var unknownEntryDecisionId,
+                    })
+                    {
+                        tracker?.Forget(unknownEntryDecisionId);
+                    }
                     else if (events[j] is ProtectiveStopCoverageLost
                     {
                         Remediation: ProtectiveStopRemediation.CloseRejected,

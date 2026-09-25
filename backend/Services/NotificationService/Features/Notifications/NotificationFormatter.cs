@@ -153,8 +153,25 @@ public static class NotificationFormatter
     {
         ProtectiveStopRemediation.StopDispatchIndeterminate => StopDispatchIndeterminate(e),
         ProtectiveStopRemediation.StopReservationFailed => StopReservationFailed(e),
+        ProtectiveStopRemediation.EntryStateUnknown => EntryStateUnknown(e),
         _ => CoverageLost(e),
     };
+
+    // 🔴 FR-10, #1013, IADR-0428（2026-09-26 追記）: **建玉は 0 に見えるが、エントリー注文の状態を確認できない**ため、常駐ガードが
+    // 保護逆指値を取り消さず、保護記録も閉じずに据え置いている。「成立せず」「解消」「未受理」とは言わない——何も送っておらず、何も取り消していない。
+    // 伝えるのは (1) まだ約定していないのか建って消えたのか分からない、(2) 取消も完了もしていない、(3) 証券会社の画面で確かめる
+    // 観点（エントリーが生きていれば何もしない／建玉が無く逆指値だけが残っていれば手で取り消す）、(4) 約 1 時間ごとに繰り返す。
+    private static NotificationMessage EntryStateUnknown(ProtectiveStopCoverageLost e) => new(
+        "リスク統制: エントリー注文の状態が不明なため保護逆指値を据え置き",
+        $"{e.Symbol}/{e.Market} 数量{e.Quantity}: 証券会社の建玉は 0 に見えますが、エントリー注文の状態を確認できません"
+            + "（まだ約定していないのか、約定した後に建玉が消えたのか分かりません）。"
+            + "**システムは保護逆指値を取り消さず、保護記録も閉じずに据え置いています**（新しい注文も出していません）。"
+            + "**証券会社の画面で、この銘柄のエントリー注文・建玉・逆指値を確認してください。**"
+            + "エントリー注文が生きていれば何もする必要はありません（約定すればこの逆指値が建玉を守ります）。"
+            + "エントリー注文が終わっていて建玉も無いのに逆指値だけが残っていれば、発火すると反対方向の建玉になるため手で取り消してください。"
+            + "状態を確認できるまで、この通知を約 1 時間ごと（と再起動のたび）に繰り返します。"
+            + $"EntryDecisionId={e.EntryDecisionId}",
+        NotificationSeverity.Warning);
 
     // 🔴 FR-10, #853（PR #1005 再監査）, IADR-0428: **保護逆指値の予約を記録できず、逆指値を送っていない**（DB 障害）。
     // 「未受理」「解消にも失敗」とは言わない——逆指値は送っておらず、取消も成行も試みていない。後は原因で分かれる:

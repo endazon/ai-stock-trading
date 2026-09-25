@@ -458,6 +458,27 @@ public class NotificationFormatterTests
         msg.Content.Should().NotContain("次の巡回（約 30 秒後）").And.NotContain("解消にも失敗");
     }
 
+    // 🔴 T-10-1131, FR-10, #1013, IADR-0428（2026-09-26 追記）: **建玉 0 だがエントリー注文の状態が不明**で、ガードが逆指値を取り消さず
+    // 記録も閉じずに据え置いている（EntryStateUnknown）。何も送らず何も取り消していないので、「成立せず」「解消」「未受理」とは言わない。
+    // 人が取る行動（証券会社の画面でエントリー注文・建玉・逆指値を確かめる。建玉が無く逆指値だけ残るなら手で取り消す）が読み取れること。
+    [Fact]
+    public void エントリー注文の状態が不明な据え置きは取消も完了もしていないと書き_確かめる観点を伝えるWarningになる()
+    {
+        var entry = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new ProtectiveStopCoverageLost(
+            entry, "AAPL", Market.UnitedStates, ProtectiveStopLossCause.LapsedInFlight,
+            ProtectiveStopRemediation.EntryStateUnknown, 10, CloseDecisionId: null, CloseIntent: null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Title.Should().Contain("エントリー注文の状態が不明").And.Contain("据え置き")
+            .And.NotContain("成立せず").And.NotContain("解消");
+        msg.Content.Should().Contain("エントリー注文の状態を確認できません").And.Contain("取り消さず")
+            .And.Contain("保護記録も閉じず").And.Contain("証券会社の画面").And.Contain("手で取り消してください")
+            .And.Contain("約 1 時間ごと").And.Contain(entry.ToString());
+        msg.Content.Should().NotContain("未受理", "逆指値は送っていない（生きている逆指値を据え置いている）");
+        msg.Content.Should().NotContain("手仕舞いました").And.NotContain("解消にも失敗");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, UC-06, #857, IADR-0369: 成行手仕舞いが**確認できた拒否**で終わったとき、
     // 「手仕舞いました」とも「届いたか不明」とも言ってはならない。**建玉は残っており、成行は生きていない**
     // ——読んだ人が取るべき行動（証券会社の画面で建玉を確認し、手で手仕舞う）が読み取れること。

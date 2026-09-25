@@ -1073,6 +1073,23 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().NotEndWith("…");
     }
 
+    // T-10-1132, FR-10, #1013, IADR-0428（2026-09-26 追記）: 建玉 0 だがエントリー注文の状態が不明。逆指値は取り消さず記録も閉じていない。
+    // 要約だけを読んで「何も取り消していない・据え置いている・人が確かめる」と分かること。「解消」「拒否」とは書かない。
+    [Fact]
+    public void エントリー注文の状態が不明な据え置きは_取消も完了もしていないと読める()
+    {
+        var entry = AuditEntryFactory.From(
+            new ProtectiveStopCoverageLost(Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                ProtectiveStopLossCause.LapsedInFlight, ProtectiveStopRemediation.EntryStateUnknown,
+                10, CloseDecisionId: null, CloseIntent: null, StopT0),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("エントリー注文の状態が不明").And.Contain("逆指値の取消・記録の完了はせず据え置き")
+            .And.Contain("要人手確認");
+        entry.Summary.Should().NotContain("解消にも失敗").And.NotContain("拒否された");
+        entry.Summary.Should().NotEndWith("…", "要約の上限に収まり、結論が切れない");
+    }
+
     // 🔴 T-10-640, FR-10, FR-11, #857, IADR-0369: 確認できた拒否は「解消した」とも「不明」とも書かない。
     // 監査要約だけを読んで「建玉が無保護で残っている」と分かること（一次証跡の役目）。
     [Fact]

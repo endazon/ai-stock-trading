@@ -241,6 +241,8 @@ public class ProtectiveStopGuardSoftwareStopTests
         f.Stops.Save(s0);
         f.Stops.Save(s1);
         EntryRecord(f, s1, OrderStatus.Filled, 10);
+        // #1013, IADR-0428（2026-09-26 追記）: S0 のエントリーも約定済み（建って消えた）。未約定なら取り消さない。
+        EntryRecord(f, s0, OrderStatus.Filled, 5);
         f.Broker.Orders["stop-s0"] = new BrokerOrder(
             "stop-s0", new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
                 BrokerProvider.MoomooSimulate, 5, 900m, PositionEffect.Close), OrderStatus.Accepted, 0, 0m, Now, null);
