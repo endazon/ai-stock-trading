@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
-adrs: [ADR-0001, ADR-0003]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024]
+adrs: [ADR-0001, ADR-0003, ADR-0042]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025]
 -->
 
 
@@ -73,7 +73,14 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024]
   応答は 200＝`{periodKey, version, created, presented, message, policySummary, watchlistChanges[{action, symbol, reason}], rationale}`
   （文字列は投稿向けに無害化済み＝メンション構文とマスクリンクを幅ゼロ空白の挿入だけで崩す。方針は保存される方針と幅ゼロ空白を除いて同一）／400＝指示・会話キー・代理指定の不正／404＝対象なし／
   409＝確定済み・土台なし・確定しても効かない・営業日で当日の日報が未生成・並行更新（LLM を待つ間の更新）／502＝AI の案を作れなかった。
-  **200 以外では何も保存しない。** 保存の後に提示だけ失敗したときは 200・`presented=false`。 監視銘柄の入れ替え案は提示と記録だけで、監視銘柄は変えない（適用は設定画面）。
+  **200 以外では何も保存しない。** 保存の後に提示だけ失敗したときは 200・`presented=false`。
+  監視銘柄の入れ替え案は、Discord の `/policy` 専用の確認ボタンで確定できたときだけ市場監視サービスで適用される（`/report approve` では適用しない）。
+  要求の `currentWatchlist`（`[{symbol, market}]`・market は `UnitedStates` / `Japan`）は Bot が照会した現在の監視銘柄で、米国の銘柄を AI へ渡し、
+  試行の台帳に記録する（入れ替え案の適用の楽観排他の基準）。null は「照会できなかった」（その案の入れ替えは適用しない）。形式違反は 400。
+- `GET /reports/policy-revisions/watchlist-proposal?periodKey=&version=`（OwnerOnly）: 確定した版を作った `/policy` の試行の案
+  （`{attemptId, periodKey, reportVersion, changes[], snapshot[] | null, applyRecorded}`）。その版が `/policy` の案でなければ 404。
+- `POST /reports/policy-revisions/{attemptId}/watchlist-apply-result`（OwnerOnly）: 入れ替え案の適用の内訳の記録（`{outcome, items[], message, onBehalfOf}`）。
+  **1 回だけ**（2 回目は 409）。適用そのものは市場監視サービスが行う（`/policy` 専用の確認ボタンで確定できたときだけ）。
   改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
   **1 日（JST の暦日）の回数上限**は `Reports:PolicyRevision:DailyLimit`（既定 10 回）。上限に達した要求は LLM を呼ばず **429** で断る。
   数えるのは LLM を呼んだ試行（失敗も含む）で、入力の検証・対象の決定で断った要求は数えない。
@@ -92,6 +99,11 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024]
 | Outcome | int | 0＝Pending（呼び出し中・または途中で落ちた）／1＝Proposed／2＝AiFailed／3＝SaveFailed |
 | ReportVersion | int? | 案を保存した報告書の版（Proposed のときだけ） |
 | WatchlistChangesJson | varchar(8192)? | 案の監視銘柄の入れ替え（`[{action, symbol, reason}]`。Proposed のときだけ） |
+| WatchlistSnapshotJson | varchar(8192)? | 案を作った時点の監視銘柄（`[{symbol, market}]`）。NULL＝照会できなかった（空の一覧は `[]`） |
+| WatchlistApplyJson | varchar(8192)? | 入れ替え案の適用の内訳（`{outcome, recordedBy, items[], message}`）。適用を試みた後だけ |
+| WatchlistAppliedAt | timestamptz? | 内訳を記録した時刻（記録は 1 回だけ） |
+
+- 索引: `JstDate`（回数上限）、`(PeriodKey, ReportVersion)`（確定した版の案を引く）。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
 - **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。

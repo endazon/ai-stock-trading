@@ -397,11 +397,20 @@ services:
       # 実際の監視銘柄数（DB）に近い値を設定すると、日次要求見積り（警告ログ・業務メトリクス）が有効になる。
       - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
+      # FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: `/policy` の入れ替え案の適用（POST /monitor/watchlist/proposal-apply）で、
+      # Discord Bot が運ぶ「代理される利用者」（onBehalfOf）を信じてよいクライアント。**notification の
+      # Notifications__Discord__OwnerAuth__ClientId と同じ秘密鍵から採る**（report / risk-management と同じ単一情報源）。
+      # fail-safe: 未設定/空=誰の onBehalfOf も信じない（変更者は `client:<azp>` へ倒れる）。
+      - name: Monitor__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   notification:
     image: ai-stock-trading/notification-service
     extraEnv:
       # #772, UC-03, IADR-0240: Discord Bot の /report が照会・承認する報告書サービス。fail-safe: 空=未設定=照会失敗（Succeeded=false）。
       - { name: Reports__BaseUrl, value: "" }
+      # FR-13, ADR-0042 決定 1, #1025, IADR-0433: Discord Bot の /policy が監視銘柄を照会し、確定した案の入れ替えを適用する市場監視サービス。
+      # fail-safe: 空=未設定=照会失敗（案は「適用できない案」として作られ、確定しても入れ替えは適用しない）。
+      - { name: MarketMonitor__BaseUrl, value: "" }
       # fail-safe: 空=NoOp（外部送信しない。実 Discord は #15）。
       - { name: Notifications__Provider, value: "" }
       - name: Notifications__Discord__WebhookUrl

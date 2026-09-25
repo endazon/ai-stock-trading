@@ -136,6 +136,13 @@ services:
       #     減らないことを保証する。初回のみ有効（利用者が SC-02 等で全削除した後は再投入されない）。
       - { name: Monitor__SeedSymbols__0__Symbol, value: "AAPL" }
       - { name: Monitor__SeedSymbols__0__Market, value: "UnitedStates" }
+      # 値は本番既定と同一（helm はリストを置換するため、写し忘れると env が消える）。
+      # FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: `/policy` の入れ替え案の適用（POST /monitor/watchlist/proposal-apply）で、
+      # Discord Bot が運ぶ「代理される利用者」（onBehalfOf）を信じてよいクライアント。**notification の
+      # Notifications__Discord__OwnerAuth__ClientId と同じ秘密鍵から採る**（report / risk-management と同じ単一情報源）。
+      # fail-safe: 未設定/空=誰の onBehalfOf も信じない（変更者は `client:<azp>` へ倒れる）。
+      - name: Monitor__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
 
   # ============ ③ 実KB保存（収集情報）＋ 収集起動（サイクル配線）============
   # FR-01/08, #9/#18, IADR-0064/0069/0073/0093: 収集を finnhub＋AAPL で起動し（Count>0 で InformationCollected 発行）、
@@ -468,3 +475,5 @@ services:
       # #772 / UC-03 / IADR-0240: Discord `/report`（照会・承認・差し戻し）の報告書サービス。Bot 有効なのにこれが無いと
       # BaseAddress 未設定＝照会失敗（InvalidOperationException）で日報の確定が Discord からできない。
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }
+      # FR-13, ADR-0042 決定 1, #1025, IADR-0433: /policy の監視銘柄の照会と、確定した案の入れ替えの適用先。
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
