@@ -113,6 +113,15 @@ plan_refs:
   （JsonException）」を返す——**口座を照会できていない間（新規建てが止まっている間）に稼働状態がまったく見えない**。送り手の本物の型で実測した
   （テスト仕様書 FR-10 の T-10-940）。欠陥を期待値として固定するテストは足していない。
 
+［2026-09-25 追記 / #990］上の追記の「見つけた欠陥（本件では直していない）」を是正した。通知の稼働状態の受け手（`HttpPauseController.RiskStatusView`）は、送り手（リスク管理 `GetRiskStatus.RiskStatusView`）が
+`decimal?` で返す `MaxDailyOrderAmount` を `decimal` で受けていた。口座を照会できていない間（[IADR-0354](IADR-0354_capital-baseline-from-broker-account.md)。
+新規建ては止まっている）送り手は null を返すため、逆直列化が `JsonException` になり、Discord の `/status` は「稼働状態の照会に失敗しました
+（JsonException）」を返していた。**新しい決定は無い**——受け手を送り手と揃えて null 許容にし、null（と項目の欠落）は
+「上限 不明（口座を照会できていません）」と表示する（0 と表示しない。IADR-0354・[IADR-0162](IADR-0162_unsupplied-metric-display-convention-all-screens.md) の規律）。
+契約テストは決定3 と同じ形（送り手の本物の型を web 既定で直列化。T-10-941〜943。作業仕様書 `20260925_990_status-nullable-daily-amount`）。
+通知・判断・報告書・市場監視・情報収集の他の受け手 DTO を送り手の型と 1 項目ずつ突き合わせ、「送り手が null 許容・受け手が非 null」のずれは本件の 1 件だけであることを
+確かめた（走査表は同作業仕様書）。残余: 旧い通知サービスが残る間は従来どおり失敗する（受け手だけの是正で、配備順による新たな窓は無い）。
+
 ## 関連
 
 - 作業仕様書: `20260925_957_cross-service-read-contracts-rest`

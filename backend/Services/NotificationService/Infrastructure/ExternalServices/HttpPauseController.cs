@@ -131,9 +131,18 @@ public sealed class HttpPauseController(
             $"統制: kill switch={OnOff(v.KillSwitchEngaged)} / 日次損失ロックアウト={OnOff(v.DailyLossLockoutActive)} / 一時停止={OnOff(v.TradingPaused)}",
             $"段階: Stage {v.Stage}",
             $"当日損益: {v.DailyPnl:N0} 円（実現 {v.DailyRealizedPnl:N0} / 含み {v.UnrealizedPnl:N0}）",
-            $"上限使用率: 日次発注 {v.DailyOrderedAmount:N0}/{v.MaxDailyOrderAmount:N0} 円 / DD {v.DrawdownRatio:P1}（上限 {v.MaxDrawdownRatio:P1}）",
+            $"上限使用率: {DailyOrderUsage(v)} / DD {v.DrawdownRatio:P1}（上限 {v.MaxDrawdownRatio:P1}）",
             $"ポジション: {v.OpenPositionCount}/{v.MaxOpenPositions} 件");
     }
+
+    // FR-14, FR-10, ADR-0041 決定2, #990, IADR-0354, IADR-0408（2026-09-25 追記）: 日次発注の上限は equity から解決した実額であり、
+    // 口座を照会できていない間（新規建ては止まっている）は送り手が null を返す。**null を 0 と表示しない**——
+    // 「上限 0」と「上限が分からない」は別の事実である（IADR-0162 と同じ規律）。
+    private static string DailyOrderUsage(RiskStatusView v) => v.MaxDailyOrderAmount is { } max
+        ? $"日次発注 {v.DailyOrderedAmount:N0}/{max:N0} 円"
+        : $"日次発注 {v.DailyOrderedAmount:N0} 円/上限 {UnknownDailyOrderCap}";
+
+    internal const string UnknownDailyOrderCap = "不明（口座を照会できていません）";
 
     private static string OnOff(bool on) => on ? "ON" : "OFF";
 
@@ -145,6 +154,8 @@ public sealed class HttpPauseController(
 
     // Risk 側 RiskStatusView の必要部分。ActiveControl（enum）は真偽値から導出するため受けない
     // （数値/文字列いずれの JSON 表現にも結合しないため）。Stage は数値でそのまま受ける。
+    // 🔴 #990: 送り手が null 許容の項目は受け手も null 許容で受ける。値型を非 null で受けると null が来たとき
+    // 逆直列化が JsonException になり、`/status` そのものが失敗する（口座を照会できていない間に稼働状態が見えなくなる）。
     internal sealed record RiskStatusView(
         bool KillSwitchEngaged,
         bool DailyLossLockoutActive,
@@ -156,7 +167,8 @@ public sealed class HttpPauseController(
         decimal UnrealizedPnl,
         decimal DailyPnl,
         decimal DailyOrderedAmount,
-        decimal MaxDailyOrderAmount,
+        // FR-10, ADR-0041 決定2, #869, #990: 送り手は equity を照会できていない間 null を返す（未供給）。
+        decimal? MaxDailyOrderAmount,
         decimal DrawdownRatio,
         decimal MaxDrawdownRatio,
         int OpenPositionCount,
