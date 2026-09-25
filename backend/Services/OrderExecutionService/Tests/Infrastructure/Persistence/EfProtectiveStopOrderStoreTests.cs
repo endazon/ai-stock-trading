@@ -285,4 +285,34 @@ public class EfProtectiveStopOrderStoreTests
         store2.Find(s1)!.IsEntryFillConfirmed.Should().BeFalse();
         store2.Find(s0)!.ProtectedQuantity.Should().Be(10, "S0 はブローカーに実在する逆指値が覆う数量を主張する");
     }
+
+    // T-10-895, FR-10, #880, IADR-0412 決定2: 帰属不明の通知済みの印を持つ行を、状態を問わず更新が新しい順・上限つきで返す
+    // （純額 0 になった群も検知が訪れてリセットするための問い合わせ）。EF（InMemory プロバイダ）とインメモリで同じ契約。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void 帰属不明の通知済みの行を状態を問わず新しい順に上限つきで返す(bool ef)
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using var db = NewContext(dbName);
+        OrderExecutionService.Features.OrderExecution.IProtectiveStopOrderStore store = ef
+            ? new EfProtectiveStopOrderStore(db)
+            : new InMemoryProtectiveStopOrderStore();
+
+        var plain = Guid.NewGuid();
+        var completedQty = Guid.NewGuid();
+        var activeAt = Guid.NewGuid();
+        store.Save(Stop(plain));
+        store.Save(Stop(completedQty, state: ProtectiveStopState.Completed) with
+        {
+            UnattributedNotifiedQuantity = 10,
+            UpdatedAt = Now.AddMinutes(2),
+        });
+        // 片方の列だけが残った行も「通知済み」として返す（どちらか一方でも印である）。
+        store.Save(Stop(activeAt) with { UnattributedNotifiedAt = Now, UpdatedAt = Now.AddMinutes(1) });
+
+        store.FindUnattributedNotified(50).Select(s => s.EntryDecisionId)
+            .Should().Equal([completedQty, activeAt], "印のある行だけを、更新が新しい順に返す");
+        store.FindUnattributedNotified(1).Select(s => s.EntryDecisionId).Should().Equal([completedQty]);
+    }
 }

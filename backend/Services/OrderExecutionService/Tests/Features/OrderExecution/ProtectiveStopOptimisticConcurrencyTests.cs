@@ -137,6 +137,10 @@ public class ProtectiveStopOptimisticConcurrencyTests
         public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
             string symbol, Market market, TradeSide entrySide, int limit) =>
             inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);
+
+        // FR-10, #880, IADR-0412 決定2: 帰属不明の通知済みの印を持つ行。
+        public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) =>
+            inner.FindUnattributedNotified(limit);
     }
 
     private sealed class RecordingLogger<T> : ILogger<T>

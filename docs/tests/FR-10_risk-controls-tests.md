@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0406, IADR-0396, IADR-0405, IADR-0407, IADR-0408, IADR-0413]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_958_s0-fill-tracking-window, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #958, #948, #842, #832, #826]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826]
 -->
 
 
@@ -1812,6 +1812,45 @@ Program.cs で固定する**。
 - **常駐ガードの直接の保存（ブローカー側逆指値の再発注・手仕舞い・完了、S1 の未到達の完了）は無条件の上書きのまま**である。
   ブローカーへ注文を出した後に書く経路で、保存を落とすと実在する注文と記録が食い違うため、読み直して当て直す形への切り替えは別途行う。
 - 衝突で書けなかった観測・通知の印は次の巡回（既定 30 秒）でやり直す。観測の確定（2 巡回連続）が 1 巡回ぶん遅れ得る。
+
+## 有効な保護記録が無い口座でも帰属不明の建玉を知らせる（#880。建玉観測の常駐への相乗り・純額 0 での記録の消去）
+
+`BrokerPositionSnapshotUnattributedDetectionTests` / `UnattributedDetectionCompositionTests` / `EfProtectiveStopOrderStoreTests`（`OrderExecutionService.Tests`）。
+
+常駐ガードは有効な保護記録が 1 件も無い巡回では建玉を照会しない（無駄な往復を避ける既存の規律）。そのため、
+**受理後に 0 約定で取り消された決済の残り**がその口座で唯一のソフトウェア逆指値の痕跡なら、帰属不明の検知が一度も走らなかった
+（1 銘柄しか持たない口座で無音）。加えて、検知は建玉照会に現れる銘柄しか回らず、**純額 0 の巡回で通知済みの記録が消えない**ため、
+解消したあと再発した同数の帰属不明が再通知の間隔（60 分）のあいだ黙った。
+
+是正は「**建玉観測の常駐（既定 600 秒・保護記録の有無に依らず照会する）が、観測で取ったスナップショットで同じ検知を走らせる**」
+「**通知済みの記録を持つ銘柄も 1 度訪れ、純額 0 なら記録を消す**」の 2 点である。建玉照会の回数は増やさない。
+照会不能（不明）・建玉なし・建玉ありを区別し、不明を「帰属不明なし」と読まない。時刻は注入時計で進める。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-887** | 有効な記録 0 件。完了済みのソフトウェア逆指値の記録（AAPL 10 株）と、受理後に 0 約定で取り消された決済。建玉 10 株 | 建玉観測の 1 巡回 → 10 分後にもう 1 巡回 | 帰属不明の建玉（10 株）を **1 回**だけ発行する。2 巡回目は鳴らさない。記録の状態・主張は動かない | 有効な記録が無い口座でも無保護の建玉を黙らせない | 自動（**最重要**） |
+| **T-10-888** | 同上 | 建玉観測の 1 巡回 → 同じ記録で常駐ガードの巡回 | 建玉照会は **1 回**（相乗り）。ガードは建玉を照会せず何も出さない | 照会を増やさない・ガードの既存の規律を壊さない | 自動（**否定形**） |
+| **T-10-889** | 同上で 1 度通知済み | 建玉なしの巡回 → 20 分後に同じ 10 株が再び現れる。関数を直接（別銘柄だけのスナップショット）と、代表が新しい記録へ入れ替わった後でも | 純額 0 の巡回で通知済みの記録が消え、再発を**60 分待たずに**知らせる。群の古い記録も残さない | 解消後の再発を黙らせない | 自動（**否定形・窓の増える側**） |
+| **T-10-890** | 同上で 1 度通知済み | 照会不能（不明）の巡回 → 照会できた同じ状態 → 建玉なし | 不明では観測も検知もせず、記録は残る（直後に同じ状態が見えても重ねて鳴らさない）。建玉なしでは観測を発行し記録を消す | 不明を「無い」と読まない | 自動（**否定形・窓の減る側**） |
+| **T-10-891** | 同上に加え、別銘柄の有効な記録（主張どおりの建玉） | 常駐ガードの巡回 → 1 分後に建玉観測の巡回 | ガードが 1 回知らせ、建玉観測は重ねて鳴らさない | 2 か所から検知しても 1 回 | 自動（**否定形**） |
+| **T-10-892** | 建玉観測を無効にした構成 | 常駐を起動して止める | 建玉照会 0 回・検知も記録の書き込みも無い | 無効化は従来どおり（残る制約として明記） | 自動 |
+| **T-10-893** | 本番の組み立て（moomoo 構成／内蔵 paper 構成）。外界（ブローカー・DB）だけ差し替え | 組み立ての登録どおりに作った建玉観測の常駐を 1 巡回 | moomoo: 検知が実際に走り記録を書く・照会 1 回。paper: 建玉観測の常駐も検知も登録されない | 組み立てで検知の配線が抜けていない | 自動（**結線**） |
+| **T-10-894** | 保護記録の読み出しが例外で失敗する | 建玉観測の 1 巡回 | 観測は発行され巡回は成功扱い。エラーログを残す | 検知の失敗で観測（突合の供給元）を止めない | 自動（**否定形**） |
+| **T-10-895** | 通知済みの記録（完了・有効）と通知していない記録。DB（インメモリ提供）と試験用の保存先の両方 | 通知済みの記録の問い合わせ（上限 50／1） | 状態を問わず通知済みの記録だけを、更新が新しい順・上限つきで返す（片方の項目だけ残った記録も含む） | 純額 0 の銘柄を訪れる入口 | 自動 |
+
+変異の再注入（本 PR で実測）:
+
+| 変異 | 赤になる試験 |
+| --- | --- |
+| 建玉観測の常駐から検知の呼び出しを外す | T-10-887 / T-10-888 / T-10-889（常駐）/ T-10-890 / T-10-893 / T-10-894 |
+| 組み立てから検知の登録を外す（常駐はエラーログを出すだけ） | T-10-893 |
+| 通知済みの記録を持つ銘柄を訪れない（純額 0 で記録を消さない） | T-10-889（3 件）/ T-10-890 |
+| 照会不能を「建玉なし」として検知する | T-10-890 |
+
+🔴 **本節が固定していない残余リスク**:
+- 建玉観測を無効にした構成・内蔵 paper 構成では、有効な記録が無い口座の帰属不明を能動的に知らせる経路が無い（気づける経路は次の新規建ての見送り）。
+- 気づくまでの遅れは最大で建玉観測の間隔（既定 600 秒）。照会不能が続くあいだはさらに遅れる。
+- 帰属不明の通知の発行に失敗しても通知済みの記録は残る（常駐ガードの経路と同じ性質。最大 60 分黙る）。
 
 ## 未カバー・実施予定
 

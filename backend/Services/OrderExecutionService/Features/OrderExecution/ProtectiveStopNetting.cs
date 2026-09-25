@@ -498,15 +498,17 @@ public static class ProtectiveStopNetting
 
     /// <summary>
     /// FR-10, #820 の 10 巡目監査, IADR-0344 追記(9) 決定3: <b>どの保護記録も主張していない建玉</b>を検知して
-    /// <see cref="SoftwareStopOutcome.UnattributedPosition"/> を<b>1 回だけ</b>積む
-    /// （🔴 <b>走るのは呼び出し元のガードが建玉を照会した巡回だけ</b>＝Active な行が 1 件以上ある巡回。下の残る制約）。
+    /// <see cref="SoftwareStopOutcome.UnattributedPosition"/> を<b>1 回だけ</b>積む。
+    /// 呼び出し元は 2 つ——常駐ガード（Active な行が 1 件以上ある巡回だけ建玉を照会する）と、
+    /// 🔴 <b>#880, IADR-0412 決定1: 建玉観測の常駐</b>（<c>Hosted/BrokerPositionSnapshotService</c>。保護記録の有無に依らず
+    /// 既定 600 秒ごとに照会する）。後者へ相乗りしたことで、<b>有効な記録が 1 件も無い口座でも検知が走る</b>。
     /// <para>
     /// 🔴 <b>これは検知であって是正ではない。</b>建玉を売らず・記録も作らず・主張も動かさない。
     /// 武装の前提条件（<c>OrderExecutionAppService</c>）は<b>武装の時点しか見ない</b>ため、
     /// 武装より後に他人の建玉（S2・人手）が現れる経路は、これまでどのイベントも出さないまま建玉が無保護で残っていた。
     /// 材料（純額と保護記録）はガードが巡回のたびに持っている。
-    /// 🔴 <b>「受理後に 0 約定で取り消された決済の残り」は、他に Active な行が無ければこの検知でも出ない</b>
-    /// （下の残る制約 (2)）。走査の形としては拾えるが、ガードがその巡回で建玉を照会しない。
+    /// 「受理後に 0 約定で取り消された決済の残り」は、他に Active な行が無ければガードからは出ないが、
+    /// 建玉観測の常駐からは出る（#880, IADR-0412 決定1）。
     /// </para>
     /// <para>
     /// 🔴 <b>走査は建玉の側から行う。</b> 決済が受理された時点で行は完了するため、
@@ -523,12 +525,12 @@ public static class ProtectiveStopNetting
     /// 帰属不明が消えたら両方を <c>null</c> へ戻す（再発したら改めて知らせる）。
     /// </para>
     /// <para>
-    /// 🔴 <b>#820 の 11 巡目監査, IADR-0344 追記(10) の残る制約（NB-1・NB-2。追随は #880）</b>:
-    /// (1) 外側のループは<b>建玉スナップショットの側</b>を回すため、<b>その銘柄が純額 0 になった巡回では
-    /// リセット分岐に到達しない</b>——一度解消したあと<b>再発した同数</b>の帰属不明は
-    /// <see cref="UnattributedRenotifyInterval"/> のあいだ黙る。
-    /// (2) 呼び出し元のガードは<b>Active な行が 1 件も無い巡回では建玉を照会しない</b>ため、
-    /// 「受理後に 0 約定で取り消された決済の残り」がその口座で唯一の S1 の痕跡なら検知が走らない。
+    /// 🔴 <b>#880, IADR-0412 決定2（#820 の 11 巡目監査 NB-1 の解消）</b>: 走査の対象は
+    /// 「建玉スナップショットの非 0 の群」に<b>「通知済みの印を持つ行の群」</b>
+    /// （<see cref="IProtectiveStopOrderStore.FindUnattributedNotified"/>）を足したものである。
+    /// 純額 0 になった群もリセット分岐に到達するため、解消したあと再発した同数の帰属不明は次の呼び出しで知らせる。
+    /// 🔴 <b>照会不能（null）のスナップショットで呼んではならない</b>——不明を「建玉なし」と読んで印を消すと、
+    /// 次の照会で同じ状態を重ねて鳴らす。
     /// </para>
     /// </summary>
     public static void DetectUnattributedPositions(
@@ -546,43 +548,61 @@ public static class ProtectiveStopNetting
 
         var active = activeStops.Where(s => s.State == ProtectiveStopState.Active).ToList();
 
+        // 🔴 FR-10, #880, IADR-0412 決定2（#820 の 11 巡目監査 NB-1）: **通知済みの印を持つ群も 1 度訪れる**。
+        // 建玉スナップショットの側だけを回すと、その銘柄が建玉照会から消えた（純額 0 の）巡回ではリセット分岐に
+        // 到達せず、一度解消したあと再発した同数の帰属不明が再通知の間隔（60 分）のあいだ黙る。
+        // 🔴 呼び出し側は**照会できた（null でない）スナップショットでしか呼ばない**——照会不能を「建玉なし」と読んで
+        // 印を消すと、次の照会で同じ状態を重ねて鳴らす（仕様書の規則 11 の表の形 (b)）。
+        var notified = stops.FindUnattributedNotified(SentCloseScanLimit);
+
         foreach (var (symbol, market, entrySide) in snapshot
             .Where(p => p.Quantity != 0)
             .Select(p => (p.Symbol, p.Market, EntrySide: p.Quantity > 0 ? TradeSide.Buy : TradeSide.Sell))
+            .Concat(notified.Select(s => (s.Symbol, s.Market, s.EntrySide)))
             .Distinct())
         {
+            // #880: 純額が 0（その方向に 0）の群は帰属不明 0 として下のリセット分岐へ入れる（かつては continue で素通りした）。
             var net = DirectionalNet(symbol, market, entrySide, snapshot);
-            if (net <= 0)
-                continue;
 
             var group = active
                 .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
                 .ToList();
             var completed = stops.FindCompletedSoftwareStops(symbol, market, entrySide, SentCloseScanLimit);
+            var notifiedInGroup = notified
+                .Where(s => s.Symbol == symbol && s.Market == market && s.EntrySide == entrySide)
+                .ToList();
 
             // S1 の足跡が無い群（実弾・S0 のみ）には触れない。
-            if (!group.Any(s => s.IsSoftwareStop) && completed.Count == 0)
+            if (!group.Any(s => s.IsSoftwareStop) && completed.Count == 0 && notifiedInGroup.Count == 0)
                 continue;
 
             // 群を代表して記録を持つ行（作成が最も新しい S1 行）。完了済みでも構わない（状態は変えない）。
             var anchor = group
                 .Where(s => s.IsSoftwareStop)
                 .Concat(completed)
+                .Concat(notifiedInGroup)
                 .OrderByDescending(s => s.CreatedAt)
                 .ThenByDescending(s => s.EntryDecisionId)
                 .First();
 
             // 帳簿の主張（一時的な観測で揺れない側）で引き、さらに「純額に含まれるが帳簿に現れない株数」を除く。
-            var unattributed = net
-                - group.Sum(s => s.ProtectedQuantity)
-                - SharesAccountedElsewhere(symbol, market, entrySide, group, stops, store);
+            var unattributed = net <= 0
+                ? 0
+                : net
+                    - group.Sum(s => s.ProtectedQuantity)
+                    - SharesAccountedElsewhere(symbol, market, entrySide, group, stops, store);
 
             if (unattributed <= 0)
             {
-                if (anchor.UnattributedNotifiedQuantity is not null || anchor.UnattributedNotifiedAt is not null)
+                // #880, IADR-0412 決定2: 代表に加え、群の通知済みの行もすべて消す（代表が入れ替わった後の古い印を残さない。
+                // 残すと FindUnattributedNotified がその群を訪れ続ける）。写しの重複は EntryDecisionId で 1 つに畳む。
+                foreach (var row in notifiedInGroup
+                    .Prepend(anchor)
+                    .Where(s => s.UnattributedNotifiedQuantity is not null || s.UnattributedNotifiedAt is not null)
+                    .DistinctBy(s => s.EntryDecisionId))
                 {
                     // #833 項目3, IADR-0396: 楽観並行。衝突したら書かない（次の巡回で改めて判定する）。
-                    stops.TrySave(anchor with
+                    stops.TrySave(row with
                     {
                         UnattributedNotifiedQuantity = null,
                         UnattributedNotifiedAt = null,

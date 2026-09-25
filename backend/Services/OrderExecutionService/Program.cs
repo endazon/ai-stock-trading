@@ -224,6 +224,13 @@ if (brokerSelection.IsMoomoo)
         (IBrokerPositionSource)sp.GetRequiredService<IBrokerAdapter>());
     // TimeProvider は既定では DI に登録されないため明示的に入れる（観測時刻の供給元）。
     builder.Services.AddSingleton(TimeProvider.System);
+    // 🔴 FR-10, #880, IADR-0412 決定1: 建玉観測の常駐が同じスナップショットで帰属不明の建玉も検知する（相乗り。照会は増やさない）。
+    // 巡回ごとのスコープで解決する（EF のストアが scoped）。Active の読み出し件数はガードの巡回と同じ上限を使う。
+    builder.Services.AddScoped(sp => new UnattributedPositionDetector(
+        sp.GetRequiredService<IProtectiveStopOrderStore>(),
+        sp.GetRequiredService<IExecutedOrderStore>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value.BatchSize));
     builder.Services.AddHostedService<BrokerPositionSnapshotService>();
 }
 

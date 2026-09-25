@@ -73,4 +73,12 @@ public sealed class InMemoryProtectiveStopOrderStore : IProtectiveStopOrderStore
             .OrderByDescending(s => s.UpdatedAt)
             .Take(limit)
             .ToList();
+
+    // FR-10, #880, IADR-0412 決定2: 帰属不明の通知済みの印を持つ行（状態を問わない・更新が新しい順）。
+    public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) =>
+        _stops.Values
+            .Where(s => s.UnattributedNotifiedQuantity is not null || s.UnattributedNotifiedAt is not null)
+            .OrderByDescending(s => s.UpdatedAt)
+            .Take(limit)
+            .ToList();
 }

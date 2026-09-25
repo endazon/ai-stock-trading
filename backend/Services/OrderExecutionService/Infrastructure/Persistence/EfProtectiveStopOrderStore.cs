@@ -149,6 +149,16 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
             .Select(ToDomain)
             .ToList();
 
+    // FR-10, #880, IADR-0412 決定2: 帰属不明の通知済みの印を持つ行（状態を問わない・更新が新しい順・上限つき）。
+    public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) =>
+        db.ProtectiveStopOrders
+            .Where(r => r.UnattributedNotifiedQuantity != null || r.UnattributedNotifiedAt != null)
+            .OrderByDescending(r => r.UpdatedAt)
+            .Take(limit)
+            .ToList()
+            .Select(ToDomain)
+            .ToList();
+
     private static ProtectiveStopOrder ToDomain(ProtectiveStopOrderRow r) =>
         new(r.EntryDecisionId, r.StopDecisionId, r.StopOrderId, r.Symbol, r.Market, r.EntrySide,
             r.ProductType, r.Mode, r.Quantity, r.TriggerPrice, r.FxRateToBase, r.Attempt, r.State,

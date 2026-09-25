@@ -1,6 +1,7 @@
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using OrderExecutionService.Hosted;
+using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -68,7 +69,11 @@ public class BrokerPositionSnapshotServiceTests
             host.Services.GetRequiredService<IWolverineRuntime>(),
             new FixedTimeProvider(Now),
             Options.Create(new PositionReconciliationOptions { Enabled = enabled }),
-            NullLogger<BrokerPositionSnapshotService>.Instance);
+            NullLogger<BrokerPositionSnapshotService>.Instance,
+            // #880, IADR-0412: 帰属不明の検知の相乗り。本ファイルは観測の発行だけを見るので、保護記録の無い空のストアで組む
+            //（検知の振る舞いは BrokerPositionSnapshotUnattributedDetectionTests が固定する）。
+            BrokerPositionSnapshotUnattributedDetectionTests.DetectorScopes(
+                new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(), () => Now));
 
     private static async Task<(bool Published, ITrackedSession Session, FakePositionSource Source)> RunOnceAsync(
         IReadOnlyList<BrokerPositionSnapshot>? result, Func<Exception>? throws = null, bool enabled = true)
