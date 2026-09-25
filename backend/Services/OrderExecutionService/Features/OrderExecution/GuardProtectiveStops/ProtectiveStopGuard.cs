@@ -594,10 +594,6 @@ public sealed class ProtectiveStopGuard(
             + "CloseDecisionId={CloseDecisionId} 銘柄={Symbol}",
             stop.EntryDecisionId, closeDecisionId, stop.Symbol);
 
-    // 🔴 #938（PR #916 監査 F4）, IADR-0369（2026-09-25 追記）: **記録を完了させる出口はここ 1 つ**であり、ここでプロセス内の
-    // 記憶（拒否の数えと通知時刻・据え置きの通知時刻）も捨てる。従来は Replaced と CompleteAsClosed でしか捨てず、
-    // 建玉消滅→取消・逆指値の Filled・失効かつ建玉 0 の完了では再起動まで残った（誤動作ではないが辞書が単調に増える）。
-    // 保存の後に捨てる——保存が例外で落ちたら記録は Active のままなので、記憶も残すのが正しい。
     // 🔴 FR-10, #958, IADR-0406 決定3: S0 のレグの終端を観測した（または取り消した）時刻を、そのレグの記録の追跡の起点にする。
     // 記録が無い・既に終端（約定追跡が反映済み）なら何もしない（ストアが判定する）。失敗は例外のまま上げる——
     // 保護記録を完了させずに次の巡回でやり直す側へ倒す（完了してから失敗すると、そのレグは二度と照会されない）。
@@ -607,6 +603,10 @@ public sealed class ProtectiveStopGuard(
             store.RenewTracking(stop.StopOrderId, clock.UtcNow);
     }
 
+    // 🔴 #938（PR #916 監査 F4）, IADR-0369（2026-09-25 追記）: **記録を完了させる出口はここ 1 つ**であり、ここでプロセス内の
+    // 記憶（拒否の数えと通知時刻・据え置きの通知時刻）も捨てる。従来は Replaced と CompleteAsClosed でしか捨てず、
+    // 建玉消滅→取消・逆指値の Filled・失効かつ建玉 0 の完了では再起動まで残った（誤動作ではないが辞書が単調に増える）。
+    // 保存の後に捨てる——保存が例外で落ちたら記録は Active のままなので、記憶も残すのが正しい。
     private void MarkCompleted(ProtectiveStopOrder stop)
     {
         stops.Save(stop with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow });

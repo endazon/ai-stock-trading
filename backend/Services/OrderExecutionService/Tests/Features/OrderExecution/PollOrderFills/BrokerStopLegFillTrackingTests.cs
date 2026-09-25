@@ -1,5 +1,6 @@
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Domain;
@@ -211,6 +212,55 @@ public class BrokerStopLegFillTrackingTests
 
         result.Scanned.Should().Be(0);
         result.Executed.Should().BeEmpty();
+    }
+
+    // 注文 ID 指定の抽出だけが失敗する発注結果ストア（足す側の読み取りの失敗を再現する）。
+    private sealed class FailingStopLegLookupStore(InMemoryExecutedOrderStore inner) : IExecutedOrderStore
+    {
+        public void Save(ExecutionRecord record) => inner.Save(record);
+
+        public IReadOnlyList<ExecutionRecord> GetAll() => inner.GetAll();
+
+        public ExecutionRecord? FindByDecisionId(Guid decisionId) => inner.FindByDecisionId(decisionId);
+
+        public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize) =>
+            inner.FindPendingSince(since, batchSize);
+
+        public IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds) =>
+            throw new InvalidOperationException("DB 障害（テスト）");
+
+        public bool RenewTracking(string orderId, DateTimeOffset trackedFrom) =>
+            inner.RenewTracking(orderId, trackedFrom);
+
+        public bool UpdateOutcome(
+            string orderId, OrderStatus status, int filledQuantity, decimal averagePrice,
+            decimal slippageRatio, DateTimeOffset executedAt) =>
+            inner.UpdateOutcome(orderId, status, filledQuantity, averagePrice, slippageRatio, executedAt);
+    }
+
+    [Fact]
+    public async Task 上限を越えたレグを足す読み取りが失敗しても上限内の追跡は続く()
+    {
+        // T-10-863, #958, IADR-0406 決定2: 足す側の失敗で通常の追跡を止めない（次の巡回で再び足す）。
+        var inner = new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var broker = new StopBroker();
+        var poller = new OrderFillPoller(
+            broker, new FailingStopLegLookupStore(inner), new MutableClock(FilledAt), protectiveStops: stops);
+        var stop = S0(Guid.NewGuid());
+        stops.Save(stop);
+        inner.Save(Leg(stop));
+        var entryDecisionId = Guid.NewGuid();
+        inner.Save(new ExecutionRecord(
+            entryDecisionId, "entry-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, 10, 1_000m, 0, 0m, OrderStatus.Accepted, 0m, FilledAt.AddMinutes(-3)));
+        broker.Orders["entry-1"] = new BrokerOrder(
+            "entry-1", CloseIntent, OrderStatus.Filled, 10, 1_000m, PlacedAt: default, CompletedAt: FilledAt);
+
+        var result = await poller.PollOnceAsync(MaxTracking, batchSize: 100);
+
+        result.Executed.Should().ContainSingle().Which.DecisionId.Should().Be(entryDecisionId);
+        broker.Queried.Should().Equal("entry-1");
     }
 
     // ---- T-10-864: ガードは S0 のレグの終端を観測したら、完了させる前に追跡の起点を進める ----

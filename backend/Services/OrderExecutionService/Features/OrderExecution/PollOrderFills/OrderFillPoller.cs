@@ -163,19 +163,25 @@ public sealed class OrderFillPoller(
         if (protectiveStops is null)
             return withinWindow;
 
-        var stopLegIds = protectiveStops.FindActive(batchSize)
-            .Where(s => !s.IsSoftwareStop && !string.IsNullOrEmpty(s.StopOrderId))
-            .Select(s => s.StopOrderId)
-            .ToHashSet(StringComparer.Ordinal);
-        if (stopLegIds.Count == 0)
-            return withinWindow;
+        try
+        {
+            var stopLegIds = protectiveStops.FindActive(batchSize)
+                .Where(s => !s.IsSoftwareStop && !string.IsNullOrEmpty(s.StopOrderId))
+                .Select(s => s.StopOrderId)
+                .ToHashSet(StringComparer.Ordinal);
+            stopLegIds.ExceptWith(withinWindow.Select(r => r.OrderId));
+            if (stopLegIds.Count == 0)
+                return withinWindow;
 
-        var known = withinWindow.Select(r => r.OrderId).ToHashSet(StringComparer.Ordinal);
-        stopLegIds.ExceptWith(known);
-        if (stopLegIds.Count == 0)
+            return [.. store.FindPendingByOrderIds(stopLegIds), .. withinWindow];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 足す側の読み取りの失敗で、追跡上限内の通常の追跡まで止めない（S0 のレグは Active のあいだ次の巡回で再び足される）。
+            _logger.LogError(ex,
+                "保護記録が有効なブローカー側逆指値のレグを約定追跡へ足せませんでした。この巡回は追跡上限内の記録だけを追跡します。");
             return withinWindow;
-
-        return [.. store.FindPendingByOrderIds(stopLegIds), .. withinWindow];
+        }
     }
 }
 

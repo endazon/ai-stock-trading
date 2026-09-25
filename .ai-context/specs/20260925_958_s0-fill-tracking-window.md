@@ -124,7 +124,7 @@ S0 の約定で減った建玉を S1 の行から先に割り当て、2 巡回�
 3. `OrderFillPoller` に省略可能な `IProtectiveStopOrderStore? protectiveStops` を足す。巡回のたびに
    `protectiveStops.FindActive(batchSize)` から **S0（`!IsSoftwareStop`）かつ `StopOrderId` が空でない行**の
    `StopOrderId` を集め、`FindPendingByOrderIds` で得た記録を `FindPendingSince` の結果へ（注文 ID で重複を除いて）足す。
-   以降の処理（照会・更新・発行）は既存と同一。
+   以降の処理（照会・更新・発行）は既存と同一。足す側の読み取りが失敗したら、その巡回は上限内だけを追跡し Error ログを残す。
 4. `ProtectiveStopGuard.EvaluateAsync`（S0）: `Filled`・建玉消滅での取消の直後・失効の観測の 3 箇所で、`MarkCompleted`・
    再発注より前に `store.RenewTracking(stop.StopOrderId, now)` を呼ぶ。例外は上げる（保護記録を完了させずに次の巡回でやり直す）。
 5. `Program.cs`: 約定追跡に保護記録ストアを渡す。
@@ -149,7 +149,7 @@ T-10-860〜T-10-866（割り当て T-10-860〜T-10-869 のうち 7 件）。
 - T-10-860: `FindPendingByOrderIds` の EF / インメモリ（`OrderReservationForgoneStoreTests` の 2 実装 Theory の形に倣う）
 - T-10-861: `RenewTracking` の EF / インメモリ（同上）と、EF の「別のコンテキストが先に終端を書いても巻き戻さない」
 - T-10-862: 約定追跡が Active な S0 のレグを追跡上限を越えて照会し、`OrderExecuted` を返す（武装 25 時間後）
-- T-10-863: 追跡上限を越えた記録のうち、対象外（エントリー・完了済み保護記録のレグ・S1・保護記録ストア未構成）は照会しない
+- T-10-863: 追跡上限を越えた記録のうち、対象外（エントリー・完了済み保護記録のレグ・S1・保護記録ストア未構成）は照会しない。足す側の読み取りが失敗しても上限内の追跡は続く
 - T-10-864: ガードは `Filled` / `Expired` / `Cancelled` の観測と建玉消滅の取消で、完了の前にレグの記録を窓へ戻す（状態・数量は書かない）。終端の記録は触らない
 - T-10-865: 常駐（`OrderFillPollingService`）経由で、武装 25 時間後の S0 の約定が `OrderExecuted` として発行される（Wolverine のテストハーネス）
 - T-10-866: ガードと約定追跡を実ストアで組み、巡回の順序を 2 通り入れ替えて、どちらでも `OrderExecuted` が 1 回だけ出て保護記録が完了する（規則 11 のプローブ）
