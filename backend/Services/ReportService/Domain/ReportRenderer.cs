@@ -1066,9 +1066,19 @@ public static class ReportRenderer
         }
 
         var breakdown = string.Join(" / ", comparison.AppliedCounts.Select(c =>
-            string.Create(CultureInfo.InvariantCulture, $"{StopLossMethodComparison.AppliedLabel(c.Applied)} {c.Count} 件")));
+            AppliedCountText(c.Applied, c.Count)));
         sb.Append(CultureInfo.InvariantCulture,
             $"- **実際に適用された手法（発注執行の解決結果）**: 計 {comparison.ResolvedCount} 件 — {breakdown}\n");
+    }
+
+    // #1006: 実際に適用された手法の「区分名 件数 件」。計画の日報 §4 の書式どおり、全角の閉じ括弧で終わる見送りの区分名には
+    // 半角空白を挟まない（「…でない）<e> 件」）。S0〜S3 は区分名と件数の間に半角空白を置く（「S0 ブローカー側逆指値 <a> 件」）。
+    private static string AppliedCountText(StopLossExecutionMethod? applied, int count)
+    {
+        var label = StopLossMethodComparison.AppliedLabel(applied);
+        return label.EndsWith('）')
+            ? string.Create(CultureInfo.InvariantCulture, $"{label}{count} 件")
+            : string.Create(CultureInfo.InvariantCulture, $"{label} {count} 件");
     }
 
     private static void AppendDisagreementRow(StringBuilder sb, StopLossMethodComparison comparison)
@@ -1077,7 +1087,7 @@ public static class ReportRenderer
         {
             var details = string.Join(" / ", comparison.Disagreements.Select(d => string.Create(
                 CultureInfo.InvariantCulture,
-                $"{StopLossMethodUsage.Label(d.Selected)} → {StopLossMethodComparison.AppliedLabel(d.Applied)} {d.Count} 件"
+                $"{StopLossMethodUsage.Label(d.Selected)} → {AppliedCountText(d.Applied, d.Count)}"
                 + $"（理由: {StopLossMethodComparison.ReasonLabel(d.Reason, d.Provider)}）")));
             sb.Append(CultureInfo.InvariantCulture,
                 $"- **選択と実際の食い違い: {comparison.DisagreementCount} 件** — {details}\n");
@@ -1180,8 +1190,11 @@ public static class ReportRenderer
     private static void AppendStopLossMethodsMonthlyLine(StringBuilder sb, StopLossMethodComparison comparison)
     {
         // 解決結果はあるが S0〜S3 のどれも適用されなかった月（すべて見送り）は、空の内訳を出さずにその旨を書く。
+        // 🔴 記録の無い承認がある月は「照合できた承認では」と限定する（不明を「適用なし」へ潰さない。#1006 の監査）。
         var breakdown = comparison.AppliedDays.Count == 0
-            ? "S0〜S3 のいずれも適用されませんでした（解決結果はすべて見送り）"
+            ? comparison.UnresolvedCount > 0
+                ? "照合できた承認では S0〜S3 のいずれも適用されませんでした（照合できた解決結果はすべて見送り）"
+                : "S0〜S3 のいずれも適用されませんでした（解決結果はすべて見送り）"
             : string.Join(" / ", comparison.AppliedDays.Select(d => string.Create(
                 CultureInfo.InvariantCulture, $"{StopLossMethodUsage.Label(d.Applied)} {d.Days} 日")));
 

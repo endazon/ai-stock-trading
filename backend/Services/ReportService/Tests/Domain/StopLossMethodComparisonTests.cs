@@ -174,11 +174,11 @@ public class StopLossMethodComparisonTests
         section.Should().Contain(
             "- **選ばれていた手法（承認時点）**: 計 4 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 2 件 / 不明(9) 1 件");
         section.Should().Contain(
-            "- **実際に適用された手法（発注執行の解決結果）**: 計 4 件 — S0 ブローカー側逆指値 3 件 / 見送り（実際の発注先が SIMULATE でない） 1 件");
+            "- **実際に適用された手法（発注執行の解決結果）**: 計 4 件 — S0 ブローカー側逆指値 3 件 / 見送り（実際の発注先が SIMULATE でない）1 件");
         section.Should().Contain("- **選択と実際の食い違い: 3 件** — "
             + "S2 逆指値なしの建玉を許容 → S0 ブローカー側逆指値 1 件（理由: 空売りの新規建ては S0 で扱う） / "
-            + "S2 逆指値なしの建玉を許容 → 見送り（実際の発注先が SIMULATE でない） 1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: moomoo REAL） / "
-            + "不明(9) → S0 ブローカー側逆指値 1 件（理由: 未知の手法の値のため S0 と同じ扱いにした）");
+            + "S2 逆指値なしの建玉を許容 → 見送り（実際の発注先が SIMULATE でない）1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: moomoo REAL） / "
+            + "不明(9) → S0 ブローカー側逆指値 1 件（理由: 未知の値のため S0 と同じ扱いにした）");
         section.Should().NotContain("解決結果の記録が見つからない承認");
         // 2 行目は 1 行目の直後（計画の並び）。
         section.IndexOf("実際に適用された手法", StringComparison.Ordinal)
@@ -401,13 +401,15 @@ public class StopLossMethodComparisonTests
         section.Should().Contain("- **選ばれていた手法（承認時点）**: 計 6 件 — S0 ブローカー側逆指値 1 件 / S1 ソフトウェア逆指値 2 件 / "
             + "S2 逆指値なしの建玉を許容 1 件 / S3 他のブローカー側注文種別 2 件\n");
         section.Should().Contain("- **実際に適用された手法（発注執行の解決結果）**: 計 6 件 — S0 ブローカー側逆指値 1 件 / S1 ソフトウェア逆指値 1 件 / "
-            + "S2 逆指値なしの建玉を許容 1 件 / S3 他のブローカー側注文種別 1 件 / 見送り（実際の発注先が SIMULATE でない） 2 件\n");
+            + "S2 逆指値なしの建玉を許容 1 件 / S3 他のブローカー側注文種別 1 件 / 見送り（実際の発注先が SIMULATE でない）2 件\n");
         section.Should().Contain("- **選択と実際の食い違い: 2 件** — "
-            + "S1 ソフトウェア逆指値 → 見送り（実際の発注先が SIMULATE でない） 1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: moomoo REAL） / "
-            + "S3 他のブローカー側注文種別 → 見送り（実際の発注先が SIMULATE でない） 1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: 内蔵 paper）\n");
+            + "S1 ソフトウェア逆指値 → 見送り（実際の発注先が SIMULATE でない）1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: moomoo REAL） / "
+            + "S3 他のブローカー側注文種別 → 見送り（実際の発注先が SIMULATE でない）1 件（理由: 実際の発注先が SIMULATE でないための見送り。実際の発注先: 内蔵 paper）\n");
         // 🔴 否定形: 旧い区分名・旧い理由の語を出さない。固定の注記で「見送り」の 2 つの意味を書き分ける。
         section.Should().NotContain("発注せず（拒否）");
         section.Should().NotContain("発注しなかった。");
+        // 計画の書式は「…でない）<e> 件」（閉じ括弧と件数の間に半角空白を置かない）。
+        section.Should().NotContain("SIMULATE でない） ");
         section.Should().Contain("（「見送り（実際の発注先が SIMULATE でない）」は解決の時点で発注しなかった承認です。"
             + "解決の後に発注を見送った場合〔逆指値価格が無い等〕や約定の有無は反映しません）");
     }
@@ -453,6 +455,24 @@ public class StopLossMethodComparisonTests
         allForgone.Should().Contain("- **当月の損切りの実行機構: S0〜S3 のいずれも適用されませんでした（解決結果はすべて見送り）"
             + "／選択と実際が食い違った日数: 1 日**（新規建ての承認があった日 1 日。個々の日の内訳と理由は該当日報を参照）\n");
         allForgone.Should().NotContain("実行機構: ／");
+        allForgone.Should().NotContain("照合できた承認では");
+
+        // 🔴 否定形（Principle A）: 照合できた解決結果はすべて見送りだが、記録の無い承認もある月。
+        // 記録の無い承認は S0〜S3 のどれかで執行されたかもしれない——「いずれも適用されませんでした」と言い切らない。
+        var forgoneDay = Approved(StopLossExecutionMethod.SoftwareStop, Day(7));
+        var unresolvedDay = Approved(StopLossExecutionMethod.BrokerStopOrder, Day(8));
+        var partly = Section(ReportRenderer.RenderMarkdown(View(ReportKind.Monthly,
+            StopLossMethodUsage.From([forgoneDay, unresolvedDay]),
+            new StopLossMethodResolutionFeed(
+                [Resolved(forgoneDay, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate, BrokerProvider.MoomooReal)]))),
+            "### 損切りの実行機構（当月）");
+
+        partly.Should().Contain("- **当月の損切りの実行機構: 照合できた承認では S0〜S3 のいずれも適用されませんでした"
+            + "（照合できた解決結果はすべて見送り）／選択と実際が食い違った日数: 1 日**（新規建ての承認があった日 2 日。"
+            + "個々の日の内訳と理由は該当日報を参照）\n");
+        partly.Should().Contain("- **解決結果の記録が見つからない承認を含む日: 1 日**");
+        partly.Should().NotContain("実行機構: S0〜S3 のいずれも適用されませんでした");
+        partly.Should().NotContain("（解決結果はすべて見送り）");
     }
 
     // 計画の記載要件「内訳の合計は『計 n 件』と一致させる」を、日報の 2 行それぞれについて多数の組合せで確かめる
@@ -556,11 +576,14 @@ public class StopLossMethodComparisonTests
             var line = section.Split('\n').Single(l => l.StartsWith(prefix, StringComparison.Ordinal));
             var rest = line[prefix.Length..];
             var total = int.Parse(rest[..rest.IndexOf(' ', StringComparison.Ordinal)], System.Globalization.CultureInfo.InvariantCulture);
+            // 区分名と件数の間の半角空白は、全角の閉じ括弧で終わる見送りの区分名だけ無い（計画の書式「…でない）<e> 件」）。
             var items = rest[(rest.IndexOf(" — ", StringComparison.Ordinal) + " — ".Length)..].Split(" / ").Select(item =>
             {
-                item.Should().EndWith(" 件");
-                var cut = item.LastIndexOf(' ', item.Length - " 件".Length - 1);
-                return (item[..cut], int.Parse(item[(cut + 1)..^" 件".Length], System.Globalization.CultureInfo.InvariantCulture));
+                var m = System.Text.RegularExpressions.Regex.Match(item, @"^(?<label>.*?)(?<sep> ?)(?<n>\d+) 件$");
+                m.Success.Should().BeTrue($"「区分名 件数 件」の形であること: {item}");
+                var label = m.Groups["label"].Value;
+                m.Groups["sep"].Value.Should().Be(label.EndsWith('）') ? string.Empty : " ", $"区分名と件数の区切り: {item}");
+                return (label, int.Parse(m.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture));
             }).ToList();
             return (total, items);
         }

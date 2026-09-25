@@ -138,7 +138,7 @@ public sealed record StopLossMethodComparison(
             "実際の発注先が SIMULATE でないための見送り"
             + (provider is { } p ? $"。実際の発注先: {ProviderLabel(p)}" : string.Empty),
         StopLossMethodResolutionReason.ShortSellEntry => "空売りの新規建ては S0 で扱う",
-        StopLossMethodResolutionReason.UnknownMethod => "未知の手法の値のため S0 と同じ扱いにした",
+        StopLossMethodResolutionReason.UnknownMethod => "未知の値のため S0 と同じ扱いにした",
         StopLossMethodResolutionReason.AsSelected => "選択どおり",
         _ => $"不明な理由({(int)reason})",
     };
