@@ -375,6 +375,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | --- | --- |
 | [セキュリティ仕様書](../security/security.md) | **認証・認可／データ保護／秘密情報管理／監査ログ／脅威と対策**。運用者が触る統制（`ast-secrets` の投入・Vault 化の充足状況・監査ログの記録項目と**保持期間が未実装であること**）はすべて同書に実測で書いてある。**本書の「データ保持・パージ」は重複排除ストア 2 つだけを対象とし、`audit_events` は対象外である —— それが「7 年保持が担保されている」ことを意味しない点も同書に明記した**（セキュリティ仕様書における「無いこと」の書き分けの決定 3） |
 | [禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) | **建玉を手仕舞えないとき**の手順（一時解除 → 手仕舞い → 再登録）。解除・再登録が監査に残る根拠つき |
+| [Discord Webhook 再発行 Runbook](discord-webhook-rotation-runbook.md) | Webhook の URL が漏れたときの失効（新規作成 → Vault へ書く → 旧い方を削除）と、ログ・トレース等の蓄積分の扱い。**値は Vault 側で変える**（`ast-secrets` は ExternalSecret が所有する） |
 | [KB タグ辞書登録 Runbook](kb-tag-dictionary-runbook.md) | 基盤（document-service）のタグ辞書へ事前登録すべきタグ一覧の生成手順。KB 保存が未登録タグで 400 になる事象への対処 |
 | [ホスト側の死活監視 Runbook](host-liveness-monitor-runbook.md) | **クラスタの外から**損切りの生存を見張るスクリプトの登録、Rancher Desktop の自動起動、場中に Windows Update で再起動しない設定（オーナーが行う） |
 | [基準資金の供給が無いときの Runbook](capital-baseline-seed-runbook.md) | **新規建てが `CapitalBaselineUnavailable` で止まるとき**の手順。供給の条件（当日より前の取引日の観測・鮮度 4 日）と、`account_equity_days` へ 1 行投入する埋め合わせ |
