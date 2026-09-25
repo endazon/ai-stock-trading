@@ -76,6 +76,18 @@ IADR-0370 決定 3′ により、乖離の取り込みに保護を追随させ�
   **プロセスの起動から最初の打ち切りをアラートが取りこぼす**——稀な事象ほど、その最初が唯一の 1 回になる。
 - 🔴 **`ApplicationStarted` を待つ理由**: OTel の MeterProvider はホストの開始時に立つ。それより前の `Add(0)` は誰も聞いておらず残らない。
   T-10-786 は `Program.cs` そのものを組み、0 が OTel の exporter まで届くことを確かめる。
+- **［2026-09-25 追記 / #942 T-10-786 の不安定］** T-10-786 が並列・高負荷で赤（exporter が空）になった（本件の実測は全 815 件 × 8 回で 1 回）。
+  🔴 **原因は本番ではなく試験の同期である。** `WebApplicationFactory` の `factory.Services` は `ApplicationStarted` が**発火した瞬間**に
+  待ちを解き（`DeferredHost.StartAsync` の `UnsafeRegister(... TrySetResult)`）、Program.cs が同じトークンへ載せた計上の**完了は待たない**
+  （トークンのコールバックは後に登録したものから走るので、ファクトリの解放が計上より先に来る）。試験の `ForceFlush` と起動のスレッドの計上が
+  競走していた（計上のコールバックを 500ms 遅らせると決定的に赤になることで実測）。本番では計上は `NotifyStarted` の中で、MeterProvider を
+  立てる `TelemetryHostedService.StartAsync` の後に同期で走るので、本決定の性質は成り立つ（本番コードは変えない）。
+  試験は ①OTel と独立の `MeterListener` で計上そのものを見届けてから `ForceFlush` し ②`BusinessMetrics.WithMeterName` で Meter 名を
+  試験ごとに隔離する（既定名はプロセス全体で共有され、並走する別ホストの 0 がこの試験の provider にも届き、変異②を見逃す偽の緑になり得る）。
+  🔴 **原因はもう 1 つあった。** `MeterProvider.ForceFlush(10_000)` は reader を登録順に回して残り時間を次へ渡し、残り 0 の reader は
+  集めたが export しない（OTel 1.16 `ProcessMetricsCollection`）。先に回る OTLP の reader（otel-collector が居ないので失敗する送信）が
+  高負荷で期限を食うと（実測で 1 回最大 4.7 秒）、足した reader が空のまま赤になる。試験は ③足した reader だけを期限なしで `Collect()` する。
+  変異①（計上を消す）・②（ホストの開始前へ動かす）はどちらも引き続き赤。作業仕様書 `20260925_942_t10786-otel-prime-test-sync`。
 
 ### 決定 4: アラート `AstDriftAdoptionFollowUpAbandoned`（IADR-0374 決定 4 の規約どおり）
 
