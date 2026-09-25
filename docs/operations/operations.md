@@ -174,17 +174,22 @@ AST_PSQL="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai" \
   bash scripts/cutover-count-reconcile.sh snapshot "$out/counts.tsv"   # 取得時点の件数と指紋（リストア試験の基準）
 ```
 
-リストア試験（別名の DB `restore_test_<db>` へ戻し、同じ manifest で測って比べる）:
+リストア試験（別名の DB `restore_test_<db>` へ戻し、同じ manifest で測って比べる。**このブロックだけで完結する**——取得のブロックの変数は使わない）:
 
 ```bash
-for d in audit_svc configuration_svc cost_control_svc market_monitor_svc order_execution_svc report_svc risk_management_svc; do
+# 試験する世代のディレクトリ（取得のブロックが作った ast-<時刻>。中に <db>.dump・SHA256SUMS・counts.tsv がある）
+src="<クラスタ外の保管先>/ast-<試験する世代の時刻>"
+dbs="audit_svc configuration_svc cost_control_svc market_monitor_svc order_execution_svc report_svc risk_management_svc"
+psql_cmd="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai"
+
+( cd "$src" && sha256sum -c SHA256SUMS )                 # 保管中に壊れていないこと
+for d in $dbs; do
   kubectl -n platform-infra exec deploy/postgres -- createdb -U ai -O ai "restore_test_$d"
-  kubectl -n platform-infra exec -i deploy/postgres -- pg_restore -U ai -d "restore_test_$d" < "$out/$d.dump"
+  kubectl -n platform-infra exec -i deploy/postgres -- pg_restore -U ai -d "restore_test_$d" < "$src/$d.dump"
 done
-AST_PSQL="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai" AST_DB_PREFIX=restore_test_ \
-  bash scripts/cutover-count-reconcile.sh snapshot restored.tsv
-bash scripts/cutover-count-reconcile.sh compare "$out/counts.tsv" restored.tsv   # exit 0 で合格
-for d in audit_svc configuration_svc cost_control_svc market_monitor_svc order_execution_svc report_svc risk_management_svc; do
+AST_PSQL="$psql_cmd" AST_DB_PREFIX=restore_test_ bash scripts/cutover-count-reconcile.sh snapshot restored.tsv
+bash scripts/cutover-count-reconcile.sh compare "$src/counts.tsv" restored.tsv   # exit 0 で合格（下の注意を参照）
+for d in $dbs; do
   kubectl -n platform-infra exec deploy/postgres -- dropdb -U ai "restore_test_$d"   # 試験用の別名 DB だけを消す
 done
 ```

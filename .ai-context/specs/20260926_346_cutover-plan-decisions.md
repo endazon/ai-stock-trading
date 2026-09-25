@@ -2,7 +2,7 @@
 title: 再実装版への切替計画の再測定と、利用者の判断事項への推奨（#346）
 type: spec
 status: accepted
-related_ids: [NFR, FR-08, FR-11, IADR-0287, IADR-0341, MSP:IADR-0459]
+related_ids: [NFR-09, NFR-10, FR-08, FR-11, IADR-0287, IADR-0341, MSP:IADR-0459]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-26
@@ -26,7 +26,7 @@ plan_refs: []
 | 保全対象 | `bash scripts/cutover-count-reconcile.sh manifest` | 7 DB・38 テーブル（ledger 24／state 12／reserved 1／dedup 1）。移行仕様書と一致 |
 | バックアップ | `kubectl get cronjob -A`・`kubectl get pv`・PVC `postgres-data` | CronJob 無し。`postgres-data` は 2Gi・local-path・回収方針 Delete・2026-09-15 作成 |
 | 秘密情報 | `kubectl get externalsecret -n ai-stock-trading` | `ast-secrets` / `moomoo-credentials` / `moomoo-rsa` は ExternalSecret（vault-backend）所有 |
-| 基盤の切替 | MSP の `docs/migration/cutover-discard-and-rebuild.md`（読み取り専用の隣接クローン） | 基盤アプリ DB（文書 DB を含む）・Qdrant・MinIO・Wiki.js・可観測性データを破棄。Postgres / Keycloak / Vault の PVC は残し、AST の DB と realm と namespace は触らない。realm `platform` の作り直しで AST の 4 クライアントの secret は宣言値へ戻る |
+| 基盤の切替 | MSP の `docs/migration/cutover-discard-and-rebuild.md`（読み取り専用の隣接クローン） | 基盤アプリ DB（文書 DB を含む）・Qdrant・MinIO・Wiki.js・可観測性データを破棄。Postgres / Keycloak / Vault の PVC は残し、AST の DB と realm と namespace は触らない。realm `platform` の作り直しで AST の 4 クライアントの secret は宣言値へ戻り、実行時に付けたロールの付与（`trading-owner` など）は失われる |
 | ブランチ | `git ls-remote --heads origin` | 6 本（develop・main・automation/changelog-update-develop・作業中 PR 3 本） |
 | 依存 issue | `gh issue view` | #204 open・#342 open（blocked:env）・#24 open・#344 open |
 | KB への再投入経路 | `ReportKnowledgeMapper.ToDocument` の呼び出し元 | 確定エンドポイント（`ConfirmReport/Endpoint.cs`）の 1 か所だけ。確定済み報告書を後から KB へ入れ直す経路は無い |
@@ -38,6 +38,14 @@ plan_refs: []
 - 運用仕様書 §バックアップ・リストア（空欄だった）に、未裁定の案（対象・頻度・保管期間・保管先・RPO/RTO・取得とリストア試験のコマンド）を書いた。
   リストア試験は `AST_DB_PREFIX=restore_test_` で同じ manifest を測る。稼働中の取得では `compare` が FAIL 0 にならないことを明記した
   （compare は件数・指紋の差をすべて FAIL にするため）。
+
+## 監査の指摘による是正（2026-09-26）
+
+- リストア試験のブロックを、取得のブロックの変数（`$out`）に頼らない自己完結の形にした（`src` を先頭で定め、`sha256sum -c` で保管中の破損を先に確かめる）。
+- 基盤の realm の作り直しで失われるのは client secret だけでなく、**実行時に付けたロールの付与（宣言に無い利用者への `trading-owner` など）**もである
+  （MSP の移行仕様書 §破棄の境界。MSP/IADR-0459）。移行仕様書の再測定の表・帰結・推奨 4 の 3 か所に足した。
+- `related_ids` の `NFR` を計画の要求一覧（`02_requirements/01_requirements.md`）で確かめ、`NFR-09`（未確定データの無期限保持）と
+  `NFR-10`（業務台帳・監査証跡の 7 年保持）へ具体化した。
 
 ## 利用者の判断に残したもの
 
