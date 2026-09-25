@@ -30,6 +30,8 @@ public sealed record RiskStatusView(
     // 🔴 **null は「口座を照会できていない」を意味する**（新規建ては止まっている）。
     // 画面は 0 や「—」ではなく**未供給の表示**を出す（05_screens「供給が無い値の表示規約」・IADR-0162）。
     decimal? Capital,
+    // FR-10, SC-03, #829, #832, IADR-0346 決定2: 当日の新規建ての**発注代金**の合計。約定に加えて、当日承認した
+    // **未約定の新規建て注文**（取消・失効・見送りで終端していないもの）の残数量を承認価格で含む（計画 FR-10 の定義）。
     decimal DailyOrderedAmount,
     // FR-10, FR-20, SC-02, #334: 1 注文あたりの発注金額上限（equity から解決した実額）。
     // 実弾切替の警告モーダル③「現在の equity と、それに対する統制値の実額」の提示に用いる。
@@ -39,6 +41,8 @@ public sealed record RiskStatusView(
     decimal DrawdownRatio,
     decimal MaxDrawdownRatio,
     // --- ポジション ---
+    // FR-10, SC-03, #829, #832, IADR-0346 決定2: 保有建玉数。約定済みの建玉に加えて、**建玉の無い（銘柄, 市場）へ出した
+    // 未約定の新規建て注文**も 1 件として含む（既存建玉への建て増しは数を増やさない）。
     int OpenPositionCount,
     int MaxOpenPositions,
     // FR-10, SC-03, ADR-0040 決定1, #819, IADR-0342 決定2: **損切りの実行機構**（S0〜S3）。計画は「どの手法を

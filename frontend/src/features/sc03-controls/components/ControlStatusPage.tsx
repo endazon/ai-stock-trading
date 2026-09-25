@@ -397,6 +397,13 @@ function StatusView({ view }: { view: RiskStatusView }) {
               />
             </TableBody>
           </Table>
+          {/* FR-10, SC-03, #829, #832, IADR-0346 決定2: 統制は約定を待たず、発注済みで終わっていない新規建て注文も枠に数える。
+              画面の「1日発注金額」「保有銘柄数」も同じ入力を表示するため、その意味をここで明示する（約定だけと読ませない）。 */}
+          <Note>
+            {i18n._(
+              msg`1日発注金額と保有銘柄数には、約定前の新規建て注文（当日発注し、取消・失効・見送りで終わっていないもの）も含まれます。`,
+            )}
+          </Note>
           <Note>
             {i18n._(msg`資金:`)}{' '}
             {view.capital === null ? METRIC_NOT_SUPPLIED_TEXT : formatAmount(view.capital)}

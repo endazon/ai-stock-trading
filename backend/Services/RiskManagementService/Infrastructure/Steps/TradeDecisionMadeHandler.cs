@@ -28,6 +28,16 @@ public sealed class TradeDecisionMadeHandler(
 
         var outcome = screeningService.Screen(message);
 
+        // FR-10, #832, IADR-0407: 承認済みの新規建ての判断の再配送。**何も発行しない**（承認を発行し直さない・拒否へ反転させない）。
+        // 観測は最初の審査が発行より先に記録済みであり、審査メトリクスも新しい審査ではないので刻まない。
+        // 例外にもしない（投げると共通再試行が同じ判断を再処理するだけで、結論は変わらない）。
+        if (outcome.IsApprovedReplay)
+        {
+            logger.LogInformation(
+                "承認済みの判断の再配送のため再審査しません: DecisionId={DecisionId}", message.DecisionId);
+            return;
+        }
+
         // FR-20, FR-11, #387, IADR-0148: 審査結果を段階ゲートの観測ログへ記録する（承認・拒否のいずれも）。
         // **イベント発行より先に記録する**——発行が失敗して再送されても DecisionId で冪等であり、
         // 逆順にすると「発行できたが観測が落ちた」拒否が生まれ、違反件数が過小になる（緩い側）。

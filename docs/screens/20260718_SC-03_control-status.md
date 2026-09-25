@@ -3,15 +3,15 @@ title: 画面仕様書（素案） — SC-03 承認・統制状態参照画面
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-09-12
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-13, FR-20, SC-03, UC-06]
 adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0019]
-iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162, IADR-0338, IADR-0339]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens]
-issues: [#20, #165, #331, #334, #340, #342, #419, #424, planning#31, planning#33]
+iadrs: [IADR-0084, IADR-0140, IADR-0142, IADR-0154, IADR-0159, IADR-0162, IADR-0338, IADR-0339, IADR-0346]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260805_334_broker-provider-axis, 20260806_340_screens-reimplementation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0140_broker-provider-axis, IADR-0142_stage1-simulate-only-aggregation, IADR-0154_supply-availability-declared-by-server, IADR-0162_unsupplied-metric-display-convention-all-screens, 20260925_832_rescreen-idempotency]
+issues: [#20, #165, #331, #334, #340, #342, #419, #424, #829, #832, planning#31, planning#33]
 -->
 
 
@@ -74,6 +74,8 @@ platform SPA 認証済みレイアウト配下に feature `sc03-controls` とし
 1. **統制状態（`RiskStatusView`）**: 3 統制（kill switch・日次損失ロックアウト・一時停止）の on/off、成立中で最優先の統制
    （`activeControl`）、新規建て停止（`newEntriesBlocked`）、ロックアウト解除日、運用段階、当日損益（実現＋含み＋合計）、
    上限使用率の入力（発注額/上限・DD/上限・保有数/上限）。
+   **発注額と保有数には、約定前の新規建て注文（当日承認し、取消・失効・見送りで終わっていないもの）も含まれる**
+   （統制は約定を待たずに発注済みの注文で枠を数えるため、画面の値も同じ入力を表示する）。上限使用率パネルにこの旨の注記を置く。
    **3 統制は優先順位つきの表**（1: kill switch ＞ 2: 日次損失ロックアウト ＞ 3: 一時停止）で描き、
    **優先統制**（`activeControl`）を明示する。各行に**発動主体**と**解除条件**を併記する（一時停止とロックアウトを別状態とし 3 統制の優先順位を定めた計画 ADR による。
    日次損失ロックアウトはシステム自動発動であり利用者は解除できない）。
