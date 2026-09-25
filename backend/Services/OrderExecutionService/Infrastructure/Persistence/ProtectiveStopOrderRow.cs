@@ -69,4 +69,12 @@ public sealed class ProtectiveStopOrderRow
     public int? UnattributedNotifiedQuantity { get; set; }
 
     public DateTimeOffset? UnattributedNotifiedAt { get; set; }
+
+    // FR-10, #833 項目2, IADR-0344 追記(15): S1 の決済の連続失敗回数・次の成行を送ってよい最早時刻・最後に受けた到達の検知時刻
+    // （行ごとの待ち時間。既存行は 0 / null / null＝待ち時間なし）。
+    public int CloseFailures { get; set; }
+
+    public DateTimeOffset? NextCloseAttemptAt { get; set; }
+
+    public DateTimeOffset? LastTriggerSeenAt { get; set; }
 }
