@@ -45,7 +45,7 @@ public sealed class HttpPeriodDriftAdoptionSource(HttpClient httpClient, ILogger
                 return null;
             }
 
-            return [.. rows.Where(r => !string.IsNullOrWhiteSpace(r.Symbol)).Select(ToAdoption)];
+            return Interpret(rows);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -61,7 +61,12 @@ public sealed class HttpPeriodDriftAdoptionSource(HttpClient httpClient, ILogger
         }
     }
 
-    private static PeriodDriftAdoption ToAdoption(DriftAdoptionDto r) => new(
+    // NFR, IADR-0427 決定 5, #997: 応答の解釈（銘柄の無い行を落として写す）。輸送に依らず 1 つ
+    // （GrpcPeriodDriftAdoptionSource も proto を同じ行へ写してから呼ぶ）。中身は切り出す前と同じ式である。
+    internal static IReadOnlyList<PeriodDriftAdoption> Interpret(IEnumerable<DriftAdoptionDto> rows) =>
+        [.. rows.Where(r => !string.IsNullOrWhiteSpace(r.Symbol)).Select(ToAdoption)];
+
+    internal static PeriodDriftAdoption ToAdoption(DriftAdoptionDto r) => new(
         r.AdoptionId, r.Symbol, r.Market, r.Side, r.Quantity,
         r.LedgerQuantityBefore, r.BrokerQuantity, r.ObservedAt, r.Actor ?? string.Empty, r.Reason ?? string.Empty,
         r.AdoptedAt);
@@ -69,7 +74,7 @@ public sealed class HttpPeriodDriftAdoptionSource(HttpClient httpClient, ILogger
     // 権威源の DriftAdoptionView と同形（camelCase・列挙は数値で往復する）。
     // 🔴 **価格を持たない。** 権威源も返さない——取り込み行の単価は「取り込み時点の平均取得単価」であって
     // 約定価格ではなく、運ぶと受け手が約定単価として扱い得る（IADR-0360 決定 2）。
-    private sealed record DriftAdoptionDto(
+    internal sealed record DriftAdoptionDto(
         Guid AdoptionId,
         string Symbol,
         Market Market,

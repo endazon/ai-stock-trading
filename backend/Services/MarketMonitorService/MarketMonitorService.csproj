@@ -34,6 +34,9 @@
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Kernel\AiStockTrading.Shared.Kernel.csproj" />
     <!-- IADR-0066: 現在値ソース（既定 no-op・前回値フォールバック）は共有物を用いる。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
+    <!-- NFR, IADR-0331 決定7, IADR-0427, #997 (#753): east-west gRPC（段 2・リスク管理の読み取り）の proto 契約と生成物。
+         Shared.Contracts へは置けない（Domain 到達可能・外部ライブラリ依存ゼロの制約）。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Grpc\AiStockTrading.Shared.Grpc.csproj" />
     <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
     <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>

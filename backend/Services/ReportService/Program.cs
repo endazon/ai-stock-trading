@@ -225,8 +225,16 @@ builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
 builder.Services.AddHttpClient("risk-ledger", c => c.Timeout = TimeSpan.FromSeconds(10))
     .AddReportDependencyGate("risk-ledger", sp => sp.GetService<IServiceAccessTokenProvider>())
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 2）, IADR-0427, #997 (#753): east-west gRPC（`RiskControlsRead`）。
+// **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば
+// 下の取引台帳の 6 つの供給元（約定・取り込み・強制買戻し・建玉・稼働率・段階）が gRPC 実装を選ぶ（BaseUrl より優先）。
+// 🔴 risk-ledger の門と観測（#840）は輸送が同じ判定で持つ（IADR-0427 決定 6）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
 builder.Services.AddSingleton<IPeriodFillSource>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcPeriodFillSource(riskGrpc, sp.GetRequiredService<ILogger<GrpcPeriodFillSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new NoOpPeriodFillSource();
@@ -242,6 +250,9 @@ builder.Services.AddSingleton<IPeriodFillSource>(sp =>
 // 🔴 **未構成・照会失敗はいずれも null（未供給）へ倒す。空列（該当なし）へ倒さない。**
 builder.Services.AddSingleton<IPeriodDriftAdoptionSource>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcPeriodDriftAdoptionSource(riskGrpc, sp.GetRequiredService<ILogger<GrpcPeriodDriftAdoptionSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedPeriodDriftAdoptionSource();
@@ -293,6 +304,9 @@ builder.Services.AddSingleton<IMarginReductionRecordSource, NoMarginReductionRec
 // 欠測を 0 件と描くと統制が働いていない状態が正常に見える。**揃えてはならない。**
 builder.Services.AddSingleton<IBuyInInferenceRecordSource>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcBuyInInferenceRecordSource(riskGrpc, sp.GetRequiredService<ILogger<GrpcBuyInInferenceRecordSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedBuyInInferenceRecordSource();
@@ -423,6 +437,9 @@ builder.Services.AddSingleton<ITradeRationaleSource>(sp =>
 // 取引回数 0 と整合する事実だからであり、状況が違う。**揃えてはならない**）。
 builder.Services.AddSingleton<IOpenPositionSource>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcOpenPositionSource(riskGrpc, sp.GetRequiredService<ILogger<GrpcOpenPositionSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedOpenPositionSource();
@@ -443,6 +460,9 @@ builder.Services.AddSingleton<IOpenPositionSource>(sp =>
 // **揃えてはならない**）。
 builder.Services.AddSingleton<IOpenDUptimeSource>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcOpenDUptimeSource(riskGrpc, sp.GetRequiredService<ILogger<GrpcOpenDUptimeSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedOpenDUptimeSource();
@@ -461,6 +481,9 @@ builder.Services.AddSingleton<IOpenDUptimeSource>(sp =>
 // Stage 0 等の既定へ倒さない——到達済みの段の列を静かに空欄にしてしまう。
 builder.Services.AddSingleton<IStageProgressSource>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcStageProgressSource(riskGrpc, sp.GetRequiredService<ILogger<GrpcStageProgressSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedStageProgressSource();

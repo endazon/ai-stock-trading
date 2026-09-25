@@ -3,15 +3,15 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-09-25
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-17, UC-06, NFR]
+ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21]
 adrs: [ADR-0001, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc]
-issues: [#526, #584, #745]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read]
+issues: [#526, #584, #745, #753, #997]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -25,9 +25,9 @@ issues: [#526, #584, #745]
 
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
-- **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面）である。
-  基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。**並走中の正は REST** であり、
-  gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
+- **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面・§5）と
+  **リスク管理の読み取り**（§6）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
+  **並走中の正は REST** であり、gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
 
@@ -154,6 +154,61 @@ issues: [#526, #584, #745]
 🔴 **不正な宛先を黙って REST へ戻さない**のは、`Configuration:BaseUrl` の不正値が既定プロバイダへ倒れる
 （凍結済みの安全既定）のとは**わざと非対称**にしている —— 新しい鍵で黙って戻ると「切り替えたつもりで
 切り替わっていない」が綴り誤りと区別できないためである。
+
+## 6. 面: リスク管理の読み取り（`aistocktrading.riskmanagement.v1.RiskControlsRead`）
+
+- 概要: 報告書・取引判断・市場監視の 3 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
+  あるときだけ gRPC で照会し、無ければ REST `GET /risk-controls/*` で照会する。**並走中の正は REST。**
+- 認証・認可: 読み取りの面と同じ（利用者またはサービス）。REST の読み取り群と同じポリシーを service のクラス属性で持つ。
+- 評価器: REST と**同じ**サービス・純関数を呼ぶ（評価器を 2 つにしない）。
+- 運ぶ項目: **移した呼び出し元が読む項目だけ**（REST の応答はより多くを持つ）。追加はフィールド追加＝非破壊である。
+
+| rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
+| --- | --- | --- | --- |
+| `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書 | 不明／空列（損切り検知対象なし）／未供給 |
+| `GetWorkingEntryOrders` | `GET /risk-controls/working-entry-orders` | 取引判断 | 不明 |
+| `GetSizingContext` | `GET /risk-controls/sizing-context` | 取引判断 | 残枠 0 の安全既定 |
+| `GetStageGate` | `GET /risk-controls/stage-gate`（現段階だけ） | 報告書 | 未供給 |
+| `GetFills` | `GET /risk-controls/fills?from&to` | 報告書 | 空列（数値 0 の報告書） |
+| `GetDriftAdoptions` | `GET /risk-controls/drift-adoptions?from&to` | 報告書 | 未供給 |
+| `GetBuyInInferences` | `GET /risk-controls/buy-in-inferences?from&to` | 報告書 | 未供給 |
+| `GetSessionUptime` | `GET /risk-controls/session-uptime?from&to` | 報告書 | 未供給 |
+
+エラー:
+
+| gRPC status | 条件 | 呼び出し側の対応 |
+| --- | --- | --- |
+| `UNAUTHENTICATED` / `PERMISSION_DENIED` | サービストークン無し／ロール不足 | 上表の扱いへ縮退。**再試行しない** |
+| `INVALID_ARGUMENT` | 期間の `from`・`to` の欠落・書式違い（REST の 400）。強制買戻し・稼働率は逆順も（REST と同じ）。処理中の引数の検証失敗も（REST の 400 と同じ。`UNKNOWN` にしない） | 同上 |
+| `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 同上。**再試行の対象** |
+
+### 🔴 「不明」「無し」「有り」を取り違えない写し
+
+REST の受け手は、項目が欠けた応答（送り手の改名など）を既定値で読まないよう nullable で受けている。
+**proto3 の暗黙の既定値（0・空文字・false・列挙の 0）はこの区別を消す**ので、§5 とは違う写しを使う。
+
+| 契約 | 線上 | 写し |
+| --- | --- | --- |
+| 数量・連敗数・真偽 | `optional` のスカラー | **存在しなければ不明**（0・false と読まない） |
+| 金額・率 | `optional string`（不変文化の 10 進） | 🔴 **空・欠落は不明**（§5 の「空＝0」とは違う）。資金・残枠の欠落を 0 と読むと「枠を使い切った」になる |
+| 日付・時刻 | `optional string`（`yyyy-MM-dd`／往復書式） | 欠落は不明。時刻は**オフセットごと**運ぶ |
+| 列挙（市場・方向・発注先・手法・段階） | `*_UNSPECIFIED = 0` を持つ列挙 | **名前で**写す。未指定・未知は不明。🔴 C# の 0（日本・買い・内蔵 paper など）は線上で 1 以上 |
+| 稼働率の日次の一覧 | 存在を持つ入れ物 | 入れ物が無ければ未供給、空の入れ物は「観測された取引日が無かった」 |
+
+提供側は値の無い項目を**設定しない**・在る 0 は**設定する**。行の検証（識別できない行・数量が正でない行・ラインの無い行の扱い）は
+REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型名と同じにしない（送り手の型による契約テストの判定を壊すため）。
+
+### 呼び出し元の設定（呼び出し元ごとに置く）
+
+| 構成キー | 既定 | 意味 |
+| --- | --- | --- |
+| `RiskManagement:Grpc` | 未設定（＝REST） | gRPC の宛先。**宣言してあるのに使えない値は起動時に落とす**。宣言があれば `RiskManagement:BaseUrl` より優先 |
+| `RiskManagement:GrpcTimeoutSeconds` | 報告書 10・取引判断 5・市場監視 5 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
+| `RiskManagement:GrpcMaxAttempts` | 1 | 試行回数。**既定は再試行しない** |
+
+- チャネルは呼び出し元の輸送が所有する（同じサービスの別の面が引く型と衝突させない）。
+- 報告書は REST の依存先の門と観測を gRPC でも同じに行う —— 資格情報が整っているのにトークンを取れなければ**送信しない**、
+  失敗は HTTP 相当の状態コードへ写して REST と同じ判定で一過性／恒常に分けて記録する（依存先の名前は REST と同じ `risk-ledger`）。
 
 ## シーケンス
 

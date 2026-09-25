@@ -91,9 +91,19 @@ builder.Services.AddSingleton<IMarketDataSource>(sp =>
 // ServiceAuth:ClientId/ClientSecret 未設定なら no-op（認証なし → 401 → 空列の安全既定）＝現行挙動を保持する。
 builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 2）, IADR-0427, #997 (#753): east-west gRPC（`RiskControlsRead`）。
+// **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば
+// 保有ポジションは gRPC で照会する（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderPositionStore>();
 builder.Services.AddScoped<IPositionStore>(sp =>
 {
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+    {
+        return new GrpcPositionStore(
+            riskGrpc, sp.GetRequiredService<BusinessMetrics>(), sp.GetRequiredService<ILogger<GrpcPositionStore>>());
+    }
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<PlaceholderPositionStore>();

@@ -43,7 +43,7 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
                 return [];
             }
 
-            return [.. rows.Where(r => !string.IsNullOrWhiteSpace(r.Symbol)).Select(ToFill)];
+            return Interpret(rows);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -73,12 +73,17 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
     // #611, IADR-0286: FxRateBaseToDisplay（承認時点の認識時レート＝1 USD あたりの円）もそのまま通す。
     // **欠落した応答（旧版 Risk・列追加前の行・未解決の行）は null のままにする**——FxRateToBase の `1` と違い、
     // 既定へ倒す正当な値が無い（1 円/ドルは事実ではない）。未記録は報告書が件数つきで明記する。
-    private static PeriodTradeFill ToFill(LedgerFillDto r) => new(
+    // NFR, IADR-0427 決定 5, #997: 応答の解釈（銘柄の無い行を落として写す）。輸送に依らず 1 つ
+    // （GrpcPeriodFillSource も proto を同じ行へ写してから呼ぶ）。中身は切り出す前と同じ式である。
+    internal static IReadOnlyList<PeriodTradeFill> Interpret(IEnumerable<LedgerFillDto> rows) =>
+        [.. rows.Where(r => !string.IsNullOrWhiteSpace(r.Symbol)).Select(ToFill)];
+
+    internal static PeriodTradeFill ToFill(LedgerFillDto r) => new(
         r.Symbol, r.Market, r.Side, r.PositionEffect, r.Quantity, r.Price * r.FxRateToBase, r.ExecutedAt,
         r.DecisionId, r.Provider, r.FxRateBaseToDisplay);
 
     // 権威源の LedgerFill と同形（camelCase・列挙は数値で往復する）。StopLossPrice は報告書の集計に不要のため持たない。
-    private sealed record LedgerFillDto(
+    internal sealed record LedgerFillDto(
         string Symbol,
         Market Market,
         TradeSide Side,
