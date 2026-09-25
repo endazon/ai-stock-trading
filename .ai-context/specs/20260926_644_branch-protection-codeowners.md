@@ -29,6 +29,7 @@ plan_refs: []
 | バイパス | 同上 `bypass_actors` | Admin ロール（id 5）**`exempt`**、Integration 29110（dependabot）/ 1236702（claude）/ 1143301（copilot-swe-agent）/ 946600（未特定）が `always` |
 | check 名の実在 | PR #1014 の head `593136af` の check-runs | `build-and-test` `lint` `commit-messages` `pr-title` `Secret scan (gitleaks)` `Dependency review` `claude-review` すべて report（`Analyze (csharp)` `backend-test (1..4)` `static-checks` `scripts-tests` `frontend` `frontend-e2e` `pr-size` ほか） |
 | bot PR | PR #715 の head の check-runs | 7 件は success または skipped（skipped は必須上合格） |
+| 自動更新 PR（監査で是正） | `gh secret list`・PR #798 の head の check-runs | Secret は `CLAUDE_CODE_OAUTH_TOKEN` と `PLANNING_REPO_TOKEN` だけで `AUTOMATION_PR_TOKEN` は未登録。**#798 の check-run は 0 件**。初版の Runbook の「changelog は PAT で PR を作る」は誤りで、CHANGELOG も OpenAPI と同じく `--admin` が要る（#715 に check-run があった経緯は未調査） |
 | 起動条件 | `ci.yml` / `security.yml` / `pr-title.yml` / `claude-code-review.yml` の `on:` | いずれも `paths:` 無し・`reopened` あり |
 | GitHub Actions の App ID | `gh api apps/github-actions --jq .id` | 15368 |
 
@@ -48,6 +49,11 @@ AI に別アカウントを持たせたとき（Runbook 案 C）だけであり�
    ルール配列は取得値そのまま＋差し替え 1 要素）・手順 2（案 A/B/C と案 B の完全な本文）・確認・戻し方・限界。
 3. `docs/ai-workflow.md` の「未配備」に日付つき訂正。`docs/blocked-tasks.md` B-1・B-2 に再測定を追記。
    `AI_SETUP.md` 共通セットアップ 4 に配置済みの注記。`docs/operations/operations.md` 関連文書に行を追加。
+
+## 監査の指摘による是正（2026-09-26）
+
+- 失敗時の分岐: 自動更新 PR は CHANGELOG・OpenAPI とも check が付かないため `--admin` が要る、と改めた（上表）。
+- 手順 0 で取得値を更新 API が受け取る 6 項目に絞って保存し、そのまま戻し方の本文にする。管理者はバイパス設定と無関係にルールセットを編集・無効化できる（戻せなくなることは無い）ことを明記した。
 
 ## 母集合（規則 9）
 

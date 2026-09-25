@@ -77,10 +77,13 @@ $ gh api repos/endazon/ai-stock-trading/rulesets --jq '.[] | "\(.id) \(.name) \(
 ### 手順 0: 現状を保存する（戻すときの正本になる）
 
 ```bash
-gh api repos/endazon/ai-stock-trading/rulesets/18662050 > ruleset-develop.before.json
+gh api repos/endazon/ai-stock-trading/rulesets/18662050 \
+  --jq '{name, target, enforcement, conditions, rules, bypass_actors}' > ruleset-develop.before.json
 ```
 
-保存したファイルはリポジトリ配下に置かない（誤ってコミットしない）。
+- **更新 API が受け取る 6 項目だけに絞って保存する**（`id`・`_links`・`created_at`・`current_user_can_bypass` 等の読み取り専用の項目を落とす）。
+  このファイルはそのまま「戻し方」の本文になる。
+- 保存したファイルはリポジトリ配下に置かない（誤ってコミットしない）。
 
 ### 手順 1: 必須チェックを実際のジョブ名で埋める（低リスク・推奨）
 
@@ -144,7 +147,7 @@ JSON
 - **7 件の名前は実物から引いた。** 2026-09-26 にマージ済み PR の head の check-run を列挙し、7 件すべてが
   report されていることを確かめた（`gh api repos/endazon/ai-stock-trading/commits/<head SHA>/check-runs --jq '.check_runs[].name'`）。
   いずれも `paths:` を持たず全 PR で起動する（`ci.yml` / `security.yml` / `pr-title.yml` / `claude-code-review.yml` の `on:`）。
-  bot の PR で `skipped` になるものは合格として扱われる。
+  bot の PR で `skipped` になるものは合格として扱われる。ただし **CHANGELOG・OpenAPI の自動更新 PR には現状そもそも check が 1 つも付かない**（下の「失敗したときの分岐」）。
 - `integration_id: 15368` は GitHub Actions の App ID である（`gh api apps/github-actions --jq .id`）。
   **同じ名前のコミットステータスを別の経路から偽装されても合格にしない**ための固定である。
 - `strict_required_status_checks_policy: true` は「develop の最新に rebase 済みであること」を求める。
@@ -274,7 +277,7 @@ gh api repos/endazon/ai-stock-trading/rulesets/18662050 --jq '[.rules[].type]'
 | --- | --- | --- |
 | すべての PR が「Expected — Waiting for status to be reported」のまま | 必須にした名前が check として存在しない（ワークフロー名を書いた・ジョブを改名した） | 実際の PR の check-run 名を引き直し（[`docs/ai-workflow.md`](../ai-workflow.md) §check 名は「読む」のではなく「引く」）、配列を直す |
 | `claude-review` だけが永久に来ない | AI 基盤の停止・トークン失効・利用枠超過 | 利用者が `--admin` で越える（案 B）か、一時的に配列から外す。**全 PR が止まる副作用は必須化の代償である** |
-| OpenAPI 自動更新の PR にチェックが付かない | `openapi.yml` は `GITHUB_TOKEN` で PR を作るため、他のワークフローが起動しない | 利用者が `--admin` で越える。恒久策は `changelog.yml` と同じく PAT で PR を作ること |
+| **CHANGELOG・OpenAPI の自動更新 PR にチェックが 1 つも付かない** | 両ワークフローとも実質 `GITHUB_TOKEN` で PR を作るため、他のワークフローが起動しない。`changelog.yml` は `secrets.AUTOMATION_PR_TOKEN` を先に試すが、**その Secret は登録されていない**（2026-09-26 実測: 登録済みは `CLAUDE_CODE_OAUTH_TOKEN` と `PLANNING_REPO_TOKEN` だけ）。実際に CHANGELOG の PR #798 の head の check-run は **0 件** | 必須チェックを入れた後は、**両方とも利用者が `--admin` で越える**（案 B・C でも Admin のバイパスは `pull_request` で残す理由の 1 つ）。恒久策は PAT（または App トークン）を `AUTOMATION_PR_TOKEN` として登録し、`openapi.yml` にも同じ `token:` を使うこと（**資格情報の作成は利用者の操作**） |
 | 手順 1 の後にバイパスや他のルールが変わっていた | 更新 API が省いた項目を既定値へ戻す挙動だった | 下の「戻し方」で before へ戻し、`bypass_actors` も並べた完全な本文で送り直す |
 
 ### 戻し方
@@ -283,8 +286,12 @@ gh api repos/endazon/ai-stock-trading/rulesets/18662050 --jq '[.rules[].type]'
 gh api -X PUT repos/endazon/ai-stock-trading/rulesets/18662050 --input ruleset-develop.before.json
 ```
 
-（取得した JSON は読み取り専用の項目も含むが、更新 API は未知の項目を無視する。心配なら `name` / `target` /
-`enforcement` / `conditions` / `rules` / `bypass_actors` だけを残してから送る。）
+- `ruleset-develop.before.json` は手順 0 で 6 項目（`name` / `target` / `enforcement` / `conditions` / `rules` / `bypass_actors`）に
+  絞って保存したものである。絞らずに保存してしまったときは、送る前に同じ `--jq` の式で絞る
+  （`gh api repos/endazon/ai-stock-trading/rulesets/18662050 --jq '{name, target, enforcement, conditions, rules, bypass_actors}'` の形）。
+- **戻せなくなることは無い。** ルールセットの編集はリポジトリの管理者の権限であり、ルールセット自身のバイパス設定
+  （案 B・C で Admin を `pull_request` に下げる・外す）とは関係なく、管理者はいつでもルールセットを編集・無効化できる。
+  最悪の場合も Settings → Rules → Rulesets → develop-rule の画面で `Enforcement status` を `Disabled` にすれば、すべてのルールが止まる。
 
 ## 記録
 
