@@ -2,10 +2,10 @@
 title: IADR-0117 建玉の手仕舞いは利用者専用の同期経路で受け、統制を通さず既存の注文パスへ載せる
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, FR-19, UC-02, UC-06, ADR-0003, ADR-0013, IADR-0018, IADR-0057, IADR-0067, IADR-0074, IADR-0092, IADR-0113, IADR-0129, IADR-0210, IADR-0211, IADR-0346, IADR-0362]
+related_ids: [FR-05, FR-10, FR-11, FR-19, UC-02, UC-06, ADR-0003, ADR-0013, IADR-0018, IADR-0057, IADR-0067, IADR-0074, IADR-0092, IADR-0113, IADR-0129, IADR-0210, IADR-0211, IADR-0346, IADR-0362, IADR-0428, IADR-0439, IADR-0441]
 author: endazon (with Claude Code)
 created: 2026-07-30
-updated: 2026-09-19
+updated: 2026-09-26
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -194,6 +194,14 @@ plan_refs:
     なお下記「残余リスク」の**「突合で発注済みと確定したエントリーに保護レグは張られない」は解消していない**
     （#853 が裁定を持つ）。有効化でこの経路が実際に踏まれるようになったため、常駐が 1 件ずつ Critical でログし、
     runbook にも確認手順を書いた（**黙って通り過ぎないことだけ**を先に成立させた）。
+    🔴 ［2026-09-26 追記 / [#856](https://github.com/endazon/ai-stock-trading/issues/856)・IADR-0441］
+    **上の 9/19 追記の「突合で発注済みと確定したエントリーに保護レグは張られない は解消していない（#853 が裁定を持つ）」は偽になった。**
+    #853 のオーナー裁定（2026-09-25）で「張る」に決まり（IADR-0428 決定4・IADR-0210 の 2026-09-25 追記）、突合は確定した 1 件の後に
+    承認時の手法で保護レグを張る——**このとき突合を起点に、逆指値（S0 / S3）・エントリーの取消・成行手仕舞いがブローカーへ送られ得る**。
+    送られ得るのは照会が発注済みと確定した（または記録がある）1 件だけであり、不明・未発注（門が閉）・照会の例外・門を開けた解放では
+    何も送らない（T-10-1550〜T-10-1556）。また「配備では有効」は values の事実としては 9/19 から真だが、helm のリリースが更新されて
+    いなかったため、**稼働中の発注執行に届いたのは 2026-09-25（helm の 7〜8 版）**である（#1022・IADR-0439）。
+    解放の門（`Reconciliation__ReleaseOnNotPlaced`）は閉じたままであり、`NotPlaced` の実機検証と門を開ける判断は #856 に残る。
   - **変えない側**: 発注執行で `Rejected` を作る箇所は 3 つあり、誤っていたのは包括 catch だけである。
     **発注前検証での棄却**（確実に未送信）と **`MoomooTradeRequestException`**（`retType != 0`＝
     **確認できた**非受理）は `Rejected` のままとする（確認できた拒否による在庫解放は #848 の射程内）。
