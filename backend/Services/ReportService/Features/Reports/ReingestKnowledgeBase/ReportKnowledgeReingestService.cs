@@ -134,7 +134,7 @@ public sealed class ReportKnowledgeReingestService(
     // periodKey・kind の一致（索引で絞り済み）に加えて、次のどちらか:
     //   - `project=ai-stock-trading` を持つ（#665・2026-09-03 以降の保存）。
     //   - `project` を持たず、表題が確定時の写像の表題（ReportKnowledgeMapper.TitleOf）と完全に一致する（#665 より前の保存。
-    //     #565 の本文なしの写しはすべてこちら）。🔴 これを外すと旧い写しの隣に 2 つ目を作る。
+    //     #665 より前の本文なしの写しはこちら。以降の手動確定の本文なしの写しは project を持つ）。🔴 これを外すと旧い写しの隣に 2 つ目を作る。
     // 別のプロジェクトの値を持つ文書は写しに数えない。
     internal static bool IsCopyOf(KnowledgeCatalogEntry entry, TradingReport report)
     {
@@ -176,6 +176,10 @@ public sealed class ReportKnowledgeReingestService(
 
         // 本文を入れる相手は、同じ段（本文あり／なし）の写しを順に試す。基盤は所有者でない写しへの投入を 404 で拒否するので、
         // 404 なら次の写しへ進み（AST が所有する写しを採る）、それ以外の失敗・不明はそこで止める。
+        // 🔴 不明（タイムアウト・5xx）で次の写しへ進まない —— 最初の写しに入ったかもしれず、2 つの写しへ書くことになる。
+        // 🔴 段を跨がない —— `refreshExisting` で本文ありの写しがすべて 404 でも、本文なしの写しへは入れない（入れ直しの指定は
+        //    「本文のある写しの索引を作り直す」であり、別の写しを検索に出す操作ではない。本文ありの写しが別の主体の所有なら、
+        //    管理者がそれを削除すれば、次の実行が本文なしの写しへ入れる）。T-10-1501 が固定する。
         var success = first.HasStoredBody ? ReportKnowledgeReingestOutcome.BodyRefreshed : ReportKnowledgeReingestOutcome.BodyAttached;
         foreach (var candidate in ordered.Where(m => m.HasStoredBody == first.HasStoredBody))
         {

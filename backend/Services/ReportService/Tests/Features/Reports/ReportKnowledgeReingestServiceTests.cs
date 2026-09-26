@@ -269,7 +269,7 @@ public class ReportKnowledgeReingestServiceTests
     }
 
     // T-10-1509（PR #1038 の監査 1）: project 属性（#665・2026-09-03）より前の保存で作られた写しは project を持たない
-    // （#565 の本文なしの写しはすべてこの形）。表題が確定時の写像の表題と完全に一致すれば写しとして扱い、**隣に 2 つ目を作らない**。
+    // （#665 より前に本文なしで入った写しはこの形。以降の手動確定の本文なしの写しは project を持つ）。表題が確定時の写像の表題と完全に一致すれば写しとして扱い、**隣に 2 つ目を作らない**。
     // AST が所有していれば本文を入れ、所有していなければ（owner=system 等で基盤が 404）失敗として管理者の削除を案内する。
     [Fact]
     public async Task 旧い形の写しは表題で見つけ_本文を入れるか失敗にして作らない()
@@ -378,6 +378,65 @@ public class ReportKnowledgeReingestServiceTests
         var audit = audits.Should().ContainSingle().Subject;
         audit.BodyRefreshed.Should().Be(1);
         audit.RefreshExisting.Should().BeTrue();
+    }
+
+    // T-10-1501（PR #1038 の差分監査 M4）: 入れ直しの指定で本文ありの写しがすべて別の主体の所有（404）でも、段を跨いで
+    // 本文なしの写しへは入れない（Failed・作らない）。本文なしの写しは AST の所有でも触らない。
+    [Fact]
+    public async Task 入れ直しで本文ありの写しがすべて所有外でも本文なしの写しへは入れない()
+    {
+        var kb = new FakeKnowledgeCatalog();
+        var now = DateTimeOffset.UtcNow;
+        var withBodyA = kb.AddExisting("daily-2026-07-10", "Daily", "# 旧い本文 A", ownedByAst: false, updatedAt: now);
+        var withBodyB = kb.AddExisting("daily-2026-07-10", "Daily", "# 旧い本文 B", ownedByAst: false, updatedAt: now.AddDays(-1));
+        var bodylessOwned = kb.AddExisting("daily-2026-07-10", "Daily", body: null, updatedAt: now.AddDays(1));
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = WithCatalog(baseFactory, kb);
+        Seed(factory.Services, "daily-2026-07-10", ReportKind.Daily, D1, "# 日報 07-10");
+
+        var (_, result, _) = await RunAsync(factory, new { all = true, refreshExisting = true });
+
+        var item = result!.Items.Should().ContainSingle().Subject;
+        item.Outcome.Should().Be(ReportKnowledgeReingestOutcome.Failed);
+        item.Reason.Should().Contain("別の主体が所有");
+        item.DocumentId.Should().Be(withBodyA.Id);
+        item.MatchedCopies.Should().Be(3);
+        kb.PutCalls.Should().Be(2, "本文ありの 2 件だけを試す");
+        bodylessOwned.Body.Should().BeNull("段を跨いで本文なしの写しへ入れない");
+        withBodyA.Body.Should().Be("# 旧い本文 A");
+        withBodyB.Body.Should().Be("# 旧い本文 B");
+        kb.CreateCalls.Should().Be(0);
+    }
+
+    // T-10-1497（PR #1038 の差分監査 M1）: 本文の投入の結果が不明（タイムアウト・5xx）なら行は Unknown で、次の写しへ進まない
+    // （最初の写しに入ったかもしれない。2 つの写しへ書かない）。写しが 1 件でも不明は Unknown。作らない。
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task 本文の投入が不明なら行は不明で次の写しへ進まない(int copies)
+    {
+        var kb = new FakeKnowledgeCatalog();
+        var now = DateTimeOffset.UtcNow;
+        var firstCopy = kb.AddExisting("daily-2026-07-10", "Daily", body: null, updatedAt: now);
+        var secondCopy = copies == 2 ? kb.AddExisting("daily-2026-07-10", "Daily", body: null, updatedAt: now.AddDays(-1)) : null;
+        kb.PutOverride[firstCopy.Id] = KnowledgeCatalogWriteResult.Unknown(
+            "KB の文書への本文の投入がタイムアウトしました（結果が分かりません。保存された可能性があります）。");
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = WithCatalog(baseFactory, kb);
+        Seed(factory.Services, "daily-2026-07-10", ReportKind.Daily, D1, "# 日報 07-10");
+
+        var (_, result, audits) = await RunAsync(factory, new { all = true });
+
+        var item = result!.Items.Should().ContainSingle().Subject;
+        item.Outcome.Should().Be(ReportKnowledgeReingestOutcome.Unknown);
+        item.DocumentId.Should().Be(firstCopy.Id);
+        item.Reason.Should().Contain("タイムアウト");
+        kb.PutCalls.Should().Be(1, "不明の後に次の写しを試さない");
+        secondCopy?.Body.Should().BeNull("2 つ目の写しは触らない");
+        kb.CreateCalls.Should().Be(0);
+        result.Unknown.Should().Be(1);
+        result.Sent.Should().Be(0);
+        audits.Should().ContainSingle().Which.Unknown.Should().Be(1);
     }
 
     // T-10-1508: 監査の内訳は 200 件まで。超えた件数は BreakdownOmitted に残す（件数そのものは全数）。
