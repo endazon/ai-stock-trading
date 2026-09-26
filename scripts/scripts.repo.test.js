@@ -3876,4 +3876,208 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       }
     });
   }
+
+  // --- helm-release-drift.js: 稼働中の helm リリースとチャートの描画の差（NFR, #1022, IADR-0439）---
+  //
+  // Pod の入れ替え（rollout restart）では values・テンプレートの変更が入らず、`Reconciliation__*` が 8 日間届いていなかった。
+  // 差の計算（env の追加・変更・削除、資源の追加・削除）・秘密の伏せ方・OpenD の判定・読み取り専用の閂を固定する。
+  // 🔴 ここではクラスタにも helm にも触れない（manifest は文字列・helm は偽の runner）。T-10-1526〜T-10-1534。
+  {
+    const drift = require('./helm-release-drift.js');
+    const fsHd = require('fs');
+    const pathHd = require('path');
+    const { spawnSync: spawnHd } = require('child_process');
+
+    const deployment = (name, envLines, { image = 'img:1', extra = '' } = {}) => [
+      'apiVersion: apps/v1',
+      'kind: Deployment',
+      'metadata:',
+      `  name: ${name}`,
+      '  namespace: ai-stock-trading',
+      'spec:',
+      '  template:',
+      '    spec:',
+      '      containers:',
+      `        - name: ${name}`,
+      `          image: "${image}"`,
+      '          env:',
+      ...envLines.map((l) => `            ${l}`),
+      ...(extra ? [extra] : []),
+    ].join('\n');
+    const docs = (...d) => d.map((x) => `---\n${x}`).join('\n');
+    const opend = deployment('opend', ['- name: OPEND_API_PORT', '  value: "11111"']);
+
+    ok('helm-release-drift[T-10-1526]: チャートにだけ在る env を「追加」として値つきで出す', () => {
+      const live = docs(deployment('order-execution-service', ['- name: A', '  value: "1"']), opend);
+      const rendered = docs(deployment('order-execution-service', ['- name: A', '  value: "1"', '- name: Reconciliation__Enabled', '  value: "true"']), opend);
+      const r = drift.compareManifests(live, rendered);
+      const env = r.changed[0].containers[0].env;
+      assert.deepStrictEqual(env.map((e) => [e.type, e.name]), [['added', 'Reconciliation__Enabled']]);
+      assert.match(drift.formatReport(r), /env 追加: Reconciliation__Enabled = "true"/);
+      assert.strictEqual(drift.exitCodeOf(r), 1);
+    });
+
+    ok('helm-release-drift[T-10-1527]: env の値の変更を「前 → 後」で出す（削除も拾う）', () => {
+      const live = docs(deployment('order-execution-service', ['- name: Reconciliation__IntervalHours', '  value: "6"', '- name: Old', '  value: x']), opend);
+      const rendered = docs(deployment('order-execution-service', ['- name: Reconciliation__IntervalHours', '  value: "1"']), opend);
+      const text = drift.formatReport(drift.compareManifests(live, rendered));
+      assert.match(text, /env 変更: Reconciliation__IntervalHours: "6" → "1"/);
+      assert.match(text, /env 削除: Old（リリースでの値: "x"）/);
+    });
+
+    ok('helm-release-drift[T-10-1528]: 資源の追加・削除を種類と名前で出す', () => {
+      const svc = (n) => `apiVersion: v1\nkind: Service\nmetadata:\n  name: ${n}\n  namespace: ai-stock-trading\nspec:\n  ports:\n    - port: 8080`;
+      const r = drift.compareManifests(docs(svc('old-svc'), opend), docs(svc('new-svc'), opend));
+      assert.deepStrictEqual(r.added.map((x) => `${x.kind}/${x.name}`), ['Service/new-svc']);
+      assert.deepStrictEqual(r.removed.map((x) => `${x.kind}/${x.name}`), ['Service/old-svc']);
+      const text = drift.formatReport(r);
+      assert.match(text, /\+ Service new-svc（ai-stock-trading）（チャートにだけ在る＝配備で作られる）/);
+      assert.match(text, /- Service old-svc（ai-stock-trading）（リリースにだけ在る＝配備で消える）/);
+    });
+
+    ok('helm-release-drift[T-10-1529]: 秘密を出さない（Secret の中身・secretKeyRef の参照先・機密らしい平文・資格情報入りの URL）', () => {
+      const sentinel = 'SENTINEL-DO-NOT-PRINT';
+      const secret = (v) => `apiVersion: v1\nkind: Secret\nmetadata:\n  name: s\n  namespace: ai-stock-trading\ndata:\n  k: ${v}`;
+      const live = docs(secret(Buffer.from(sentinel).toString('base64')), deployment('svc', [
+        '- name: ServiceAuth__ClientSecret',
+        '  valueFrom:',
+        `    secretKeyRef: { name: ${sentinel}-a, key: ${sentinel}-k }`,
+        '- name: Bus__Url',
+        `  value: "amqp://guest:${sentinel}@rabbitmq:5672"`,
+        '- name: Gone__Token',
+        `  value: "${sentinel}"`,
+      ]), opend);
+      const rendered = docs(secret(`${sentinel}-2`), deployment('svc', [
+        '- name: ServiceAuth__ClientSecret',
+        '  valueFrom:',
+        '    secretKeyRef:',
+        `      name: ${sentinel}-b`,
+        `      key: ${sentinel}-k`,
+        '- name: Bus__Url',
+        `  value: "amqp://guest:${sentinel}2@rabbitmq:5672"`,
+        '- name: New__ApiKey',
+        `  value: "${sentinel}"`,
+        '- name: ServiceAuth__TokenEndpoint',
+        '  value: "http://keycloak:8080/realms/platform/protocol/openid-connect/token"',
+      ]), opend);
+      const text = drift.formatReport(drift.compareManifests(live, rendered));
+      assert.ok(!text.includes(sentinel), `秘密の値・参照先が出力に出た:\n${text}`);
+      assert.ok(!text.includes(Buffer.from(sentinel).toString('base64')), 'Secret の base64 が出力に出た');
+      assert.match(text, /~ Secret s（ai-stock-trading）（Secret。内容は表示しない）/);
+      assert.match(text, /env 変更: ServiceAuth__ClientSecret（secretKeyRef を含むため、値と参照先は表示しない）/);
+      assert.match(text, /env 変更: Bus__Url（平文の value。機密らしいため値は表示しない）/);
+      assert.match(text, /env 追加: New__ApiKey = 平文の value（機密らしいため値は表示しない）/);
+      assert.match(text, /env 削除: Gone__Token（リリースでの値: 平文の value（機密らしいため値は表示しない））/);
+      // トークンを取りに行く URL は資格情報ではない（突合で見たい設定）ので伏せない。
+      assert.match(text, /env 追加: ServiceAuth__TokenEndpoint = "http:\/\/keycloak:8080\/realms\/platform\/protocol\/openid-connect\/token"/);
+    });
+
+    ok('helm-release-drift[T-10-1530]: OpenD の Deployment は必ず 1 行で示し、変わるなら exit 3（変わらなければ差があっても exit 1）', () => {
+      const svc = deployment('svc', ['- name: A', '  value: "1"']);
+      const svc2 = deployment('svc', ['- name: A', '  value: "2"']);
+      const unchanged = drift.compareManifests(docs(svc, opend), docs(svc2, opend));
+      assert.strictEqual(unchanged.opend.status, 'unchanged');
+      assert.match(drift.formatReport(unchanged), /OpenD の Deployment（opend）: 変化なし/);
+      assert.strictEqual(drift.exitCodeOf(unchanged), 1);
+
+      const opend2 = deployment('opend', ['- name: OPEND_API_PORT', '  value: "22222"']);
+      const changed = drift.compareManifests(docs(svc, opend), docs(svc, opend2));
+      assert.strictEqual(changed.opend.status, 'changed');
+      assert.match(drift.formatReport(changed), /OpenD の Deployment（opend）: 🔴 変化あり/);
+      assert.strictEqual(drift.exitCodeOf(changed), 3);
+
+      assert.strictEqual(drift.exitCodeOf(drift.compareManifests(docs(svc, opend), docs(svc))), 3, 'OpenD が消えるのも exit 3');
+      const absent = drift.compareManifests(docs(svc), docs(svc2));
+      assert.strictEqual(absent.opend.status, 'absent');
+      assert.strictEqual(drift.exitCodeOf(absent), 1);
+      assert.strictEqual(drift.compareManifests(docs(svc, opend2), docs(svc2, opend2), { opendName: 'svc' }).opend.status, 'changed',
+        '--opend-name で名前を変えられる');
+    });
+
+    ok('helm-release-drift[T-10-1531]: コメント・空行・行末の空白・書き方（フロー／ブロック）だけの違いは差にしない（exit 0）', () => {
+      const live = docs(deployment('svc', ['- name: S', '  valueFrom:', '    secretKeyRef: { name: ast-secrets, key: k, optional: true }', '- name: A', '  value: "1"']), opend);
+      const rendered = `# Source: x\n${docs(
+        deployment('svc', ['- name: S', '  valueFrom:', '    secretKeyRef:', '      name: ast-secrets', '      key: k', '      optional: true',
+          '# 説明', '- { name: A, value: "1" }   ']),
+        `${opend}\n\n`)}`;
+      const r = drift.compareManifests(live, rendered);
+      assert.strictEqual(r.drift, false, drift.formatReport(r));
+      assert.strictEqual(drift.exitCodeOf(r), 0);
+      assert.match(drift.formatReport(r), /OK: 稼働中のリリースとチャートの描画に差はありません/);
+    });
+
+    ok('helm-release-drift[T-10-1532]: helm は読み取り専用のサブコマンドだけを呼び、リリースの values は表示せず一時ファイルも残さない', () => {
+      for (const args of [['upgrade', 'ast', '.'], ['install', 'ast', '.'], ['rollback', 'ast', '6'], ['uninstall', 'ast'], ['apply'],
+        ['template', 'ast', '.', '--dry-run=server'], ['template', 'ast', '.', '--validate'], ['get', 'all', 'ast']]) {
+        assert.throws(() => drift.assertReadOnly(args), /読み取り専用|使いません/, `拒まれない: helm ${args.join(' ')}`);
+      }
+      for (const args of [['get', 'manifest', 'ast'], ['get', 'values', 'ast'], ['template', 'ast', '.'], ['version']]) drift.assertReadOnly(args);
+
+      const calls = [];
+      let valuesFile = null;
+      const runner = (args, opts = {}) => {
+        drift.assertReadOnly(args);
+        calls.push({ args: [...args], quiet: Boolean(opts.quiet) });
+        if (args[1] === 'manifest') return docs(opend);
+        if (args[1] === 'values') return 'sampleValue: USER-VALUES-SENTINEL\n';
+        valuesFile = args[args.indexOf('-f') + 1];
+        assert.strictEqual(fsHd.readFileSync(valuesFile, 'utf8'), 'sampleValue: USER-VALUES-SENTINEL\n', '描画にリリースの values を渡す');
+        return docs(opend);
+      };
+      const { live, rendered } = drift.collectFromHelm(
+        { release: 'ast', namespace: 'ai-stock-trading', chart: 'chart-dir', values: ['values-local.yaml'] }, runner);
+      assert.deepStrictEqual(calls.map((c) => c.args.slice(0, 2).join(' ')), ['get manifest', 'get values', 'template ast']);
+      assert.strictEqual(calls[1].quiet, true, 'get values の失敗時に stderr を出さない');
+      const tpl = calls[2].args;
+      assert.ok(tpl.indexOf(valuesFile) < tpl.indexOf('values-local.yaml'), '追加の values はリリースの values の後に重ねる');
+      assert.ok(tpl.includes('--is-upgrade') && tpl.includes('--no-hooks'), 'get manifest と同じ条件で描く');
+      assert.strictEqual(fsHd.existsSync(valuesFile), false, 'リリースの values の一時ファイルが残った');
+      const text = drift.formatReport(drift.compareManifests(live, rendered));
+      assert.ok(!text.includes('USER-VALUES-SENTINEL'), 'リリースの values が出力に出た');
+    });
+
+    ok('helm-release-drift[T-10-1533]: --self-test は fixture だけで通り helm を呼ばない（helm が無い環境でも exit 0）。CI の scripts-tests が走らせる', () => {
+      const env = { ...process.env, HELM_RELEASE_DRIFT_HELM: pathHd.join(__dirname, 'no-such-helm-binary') };
+      const script = pathHd.join(__dirname, 'helm-release-drift.js');
+      const self = spawnHd(process.execPath, [script, '--self-test'], { encoding: 'utf8', env });
+      assert.strictEqual(self.status, 0, `${self.stdout}${self.stderr}`);
+      assert.match(self.stdout, /self-test OK/);
+      for (const s of drift.SELF_TEST_SENTINELS) assert.ok(!self.stdout.includes(s), `自己試験の出力に秘密の見張り値 ${s} が出た`);
+
+      const fx = pathHd.join(__dirname, 'fixtures', 'helm-release-drift');
+      const cmp = spawnHd(process.execPath, [script, '--live', pathHd.join(fx, 'live.yaml'), '--rendered', pathHd.join(fx, 'rendered.yaml')],
+        { encoding: 'utf8', env });
+      assert.strictEqual(cmp.status, 1, cmp.stdout + cmp.stderr);
+      for (const s of drift.SELF_TEST_SENTINELS) assert.ok(!cmp.stdout.includes(s), `比較の出力に秘密の見張り値 ${s} が出た`);
+
+      const usage = spawnHd(process.execPath, [script, '--release', 'ast'], { encoding: 'utf8', env });
+      assert.strictEqual(usage.status, 2, '名前空間の無い呼び出しは使い方の誤り');
+      const noHelm = spawnHd(process.execPath, [script, '--release', 'ast', '--namespace', 'x'], { encoding: 'utf8', env });
+      assert.strictEqual(noHelm.status, 2, 'helm を呼べなければ exit 2（差なしの 0 にしない）');
+    });
+
+    ok('helm-release-drift[T-10-1534]: YAML の読み（フロー形式の env・引用符の中のカンマ・ブロックスカラー・initContainers・CronJob の入れ子）', () => {
+      assert.deepStrictEqual(drift.parseFlow('{ name: A, value: "x, y", n: { k: v } }'), { name: 'A', value: 'x, y', n: { k: 'v' } });
+      const flow = drift.compareManifests(docs(deployment('svc', ['- { name: A, value: "x, y" }']), opend),
+        docs(deployment('svc', ['- { name: A, value: "x, z" }']), opend));
+      assert.match(drift.formatReport(flow), /env 変更: A: "x, y" → "x, z"/);
+
+      const block = drift.compareManifests(docs(deployment('svc', ['- name: SCRIPT', '  value: |', '    line1', '    line2'])),
+        docs(deployment('svc', ['- name: SCRIPT', '  value: |', '    line1', '    line3'])));
+      assert.match(drift.formatReport(block), /env 変更: SCRIPT: "line1⏎line2" → "line1⏎line3"/);
+
+      const init = (v) => deployment('svc', ['- name: A', '  value: "1"'],
+        { extra: `      initContainers:\n        - name: migrate\n          image: m:1\n          env:\n            - name: B\n              value: "${v}"` });
+      const initR = drift.compareManifests(docs(init('1')), docs(init('2')));
+      assert.deepStrictEqual(initR.changed[0].containers.map((c) => c.key), ['initContainers/migrate']);
+
+      const cron = (v) => [
+        'apiVersion: batch/v1', 'kind: CronJob', 'metadata:', '  name: cycle', 'spec:', '  jobTemplate:', '    spec:', '      template:',
+        '        spec:', '          containers:', '            - name: trigger', '              image: c:1', '              env:',
+        '                - name: TOKEN_ENDPOINT', `                  value: "${v}"`,
+      ].join('\n');
+      const cronText = drift.formatReport(drift.compareManifests(docs(cron('http://a')), docs(cron('http://b'))));
+      assert.match(cronText, /~ CronJob cycle\n\s+コンテナ containers\/trigger:\n\s+env 変更: TOKEN_ENDPOINT: "http:\/\/a" → "http:\/\/b"/);
+    });
+  }
 };

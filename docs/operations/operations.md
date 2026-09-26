@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13, FR-10]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, MSP#266, MSP#635, planning#54]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -41,6 +41,7 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 | スケジューラ | 取引サイクルは既定 in-process。本番は `tradingCycle.cronjob.enabled=true` で K8s CronJob 駆動 |
 | 発注経路（ブローカ階層） | 単一スイッチ `broker.tier`（`paper` ＜ `moomoo-sim` ＜ `moomoo-live`・#267。ブローカー選択は provider × environment の直交 2 軸で表現する）。**既定 `paper` ＝プロセス内蔵の擬似約定で moomoo へは接続しない**。`moomoo-sim` は OpenD 経由で moomoo 模擬口座へ実発注する別経路であり、**約定の主体・残高・注文履歴の所在が別**である（取り違え防止・識別手順は [発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md)・#268）。`moomoo-live`（実弾）は未解禁＝描画時 `fail` |
 | moomoo OpenD | 常駐モデル。dev は `deploy/opend/k8s` の生 manifest、**本番は chart の `opend.enabled=true`**。**初回のみ**有人のデバイス検証が要り、以降は「デバイス信頼の永続化＋egress IP の安定（＝ノード固定）」で無人再ログインが成立する。#13 は `opend:11111` へ **SIMULATE** 接続（実弾は撃たない） |
+| リリースとチャートの差（設定の未反映） | **Pod の入れ替え（`kubectl rollout restart`・イメージの焼き直し・Reloader の再起動）では values・テンプレートの変更は入らない**。入れるのは `helm upgrade`（`k8s-local-deploy.sh`）だけである。配備の**前後**に `node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading --values deploy/helm/ai-stock-trading/values-local.yaml`（**読み取り専用**・秘密の値を出さない）で差を出し、前は「入る差が意図どおりか」、後は「差が無い（終了コード 0）」を確かめる。🔴 **OpenD の Deployment は変わってはならない**（出力の 1 行目が「変化なし」。終了コード 3 なら配備しない）。手順と読み方は [chart README「配備の前後でリリースとチャートの差を確かめる」](../../deploy/helm/ai-stock-trading/README.md) |
 | ロールバック | `helm rollback ast <revision>` もしくは Git revert（GitOps・#24） |
 | GitOps（ArgoCD） | AST チャートの宣言的同期は [`deploy/argocd`](../../deploy/argocd/README.md)（Application/AppProject・#24。ローカル経路の GitOps は AST リポ内の opt-in manifest として整備する）。ブートストラップのみ kubectl・以降 Git 同期。ArgoCD 本体 install は MSP 共有 stand-up、実同期は Tier 3 |
 | 秘匿情報 | 既定は k8s Secret 直（`ast-secrets` 手動）。Vault 化は opt-in（[Vault 秘匿 runbook](vault-secrets-runbook.md)・#24）。実充足は MSP stand-up＋Tier 3。**`k8s-local-deploy.sh` の再実行は env 未設定のキーに触れない**（投入済みの値を保持する。明示的な空指定だけはキー名を列挙して中断・#263。`ast-secrets` は差分パッチで同期する） |
@@ -355,7 +356,8 @@ Reconciliation:
 - **配備での実値**は `deploy/helm/ai-stock-trading/values.yaml` の `services.order-execution.extraEnv` が持つ。
   アプリ側の既定を反転させていないのは、docker-compose・単体開発環境の挙動を変えないためである。
   無効のまま起動するとログに「発注予約の自動リコンサイルは無効です（Reconciliation:Enabled=false）」が出る
-  ——**配備でこの行が出たら、構成が Pod に届いていない**ということである。
+  ——**配備でこの行が出たら、構成が Pod に届いていない**ということである。values を変えた後に Pod の入れ替えだけで済ませると
+  こうなる（values は `helm upgrade` でしか入らない。実際に 8 日間届いていなかった）。配備の前後に上の「リリースとチャートの差」の手順で確かめる。
 - 🔴 **`ReleaseOnNotPlaced`（解放の門）は閉じたままにする。** 解放は予約行を消して**再発注を許可する**操作であり、
   誤判定は二重発注に直結する。「未発注」の根拠は備考の突合であって証券会社が「無い」と答えた事実ではなく、
   SIMULATE が備考を往復させるかは**実機未検証**である（往復していなければ発注済みの注文も「一致ゼロ」に見える）。

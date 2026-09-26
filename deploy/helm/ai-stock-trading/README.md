@@ -84,6 +84,51 @@ MSP 連結のローカル配備では、秘密情報・接続設定を**画面�
 > Pod が古いまま残るため（実測: OpenD Pod が Helm revision 13→14 を跨いで 25 時間生存）。OpenD は
 > SMS/画像認証済みの moomoo セッションを持つため対象から除外する。
 
+### 配備の前後でリリースとチャートの差を確かめる（#1022 / [IADR-0439](../../../.ai-context/adr/IADR-0439_helm-release-drift-read-only-check.md)）
+
+> 🔴 **Pod の入れ替えでは values・テンプレートの変更は入らない。** `kubectl rollout restart`・イメージの焼き直し
+> （`scripts/k8s-local-images.sh`）・Reloader による再起動は、**リリースが保存している古い Pod テンプレートのまま** Pod を
+> 作り直すだけである。values（`values.yaml` / `values-local.yaml`）やテンプレートの変更を稼働へ入れるのは **`helm upgrade`
+> （＝`scripts/k8s-local-deploy.sh` の手順 4/5）だけ**である。実際に、リリース `ast` が 9/17 の版のまま更新されず、以降の配備が
+> `rollout restart` だけだったため、values に入れた `Reconciliation__*` の 6 項目が **8 日間**稼働中の発注執行に届いていなかった。
+
+差は `scripts/helm-release-drift.js` で出す（**読み取り専用**。helm は `get manifest` / `get values` / `template` しか呼ばず、
+upgrade・apply はしない。kubectl も呼ばない）。`helm get manifest`（稼働中のリリース）と、`helm get values`（リリースの利用者の値）を
+与えた `helm template`（今のチャート）を比べ、追加・削除・変更された資源と、コンテナごとの env のキーの差・image の差を出す。
+
+```bash
+# 配備の前（何が入るかを見る）。values-local.yaml はリリースの値の「後」に重なる＝今のプロファイルが勝つ。
+node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading \
+  --values deploy/helm/ai-stock-trading/values-local.yaml
+echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり（OpenD の Deployment が変わる）/ 2 使い方の誤り・helm の失敗
+```
+
+運用者の手順:
+
+1. **配備の前に走らせる。** 出た差が、この配備（`helm upgrade`）で稼働へ入るものである。意図した変更（今回の PR の values・
+   テンプレート）だけが出ていることを確かめる。意図しない差（他人の未配備の変更・手で入れた設定）が出たら、配備の前に理由を確かめる。
+2. 🔴 **OpenD の Deployment は変わってはならない。** 出力の 1 行目 `OpenD の Deployment（opend）:` が **「変化なし」**
+   （OpenD を立てない構成なら「どちらにも無い」）であることを必ず確かめる。**終了コード 3（変化あり・作られる・消える）なら配備しない。**
+   OpenD の Pod が作り直されると SMS / 画像で認証した moomoo のセッションが切れ、有人の再認証（SC-04）まで発注経路が止まる。
+   OpenD の Deployment を変える必要がある変更は、有人の再認証ができる時間帯を決めてから別に行う（`BROKER_TIER` / `OPEND_ENABLED` を
+   export し忘れても前回の値は引き継がれる。上記「前回リリースの値が引き継がれる」）。
+3. 配備する（`scripts/k8s-local-deploy.sh`。helm upgrade を含む）。**`kubectl rollout restart` だけで済ませない。**
+4. **配備の後にもう一度走らせ、終了コード 0（`OK: 稼働中のリリースとチャートの描画に差はありません`）を確かめる。**
+   差が残るなら、helm upgrade が失敗したか、`--set` で上書きした値が values-local.yaml と食い違っている（下の注意）。
+
+出力の読み方と注意:
+
+- **秘密の値は出さない。** manifest の行はそのまま出さない。Secret は「変わった」ことだけを示す。env は secretKeyRef を参照先ごと伏せ、
+  平文の value でも名前が機密らしいもの（Password・Secret・Token・ApiKey・ConnectionString 等。`…TokenEndpoint` は伏せない）と
+  資格情報入りの URL は伏せる。リリースの values は 0600 の一時ファイルにだけ書いて描画に使い、表示せず、終わったら消す。
+- **`--set` で渡した値**（`k8s-local-deploy.sh` が前回リリースから引き継ぐ `broker.tier` / `opend.enabled` / `discord.bot.*` 等）は
+  リリースの値に入っている。values-local.yaml が同じ項目を持つと、描画では values-local.yaml が勝つため、実際の配備（`--set` が勝つ）と
+  食い違う差が出ることがある。その項目は `helm get values ast -n ai-stock-trading` の値と見比べて判断する（値を画面へ出すときは秘密に注意）。
+- env の並びだけの違い・コメント行だけの違い・フロー形式とブロック形式の書き方だけの違いは差として数えない。
+  env・image 以外の差（probe・resources・注釈等）は行数だけを出す。中身は `helm get manifest` と `helm template` を手元で比べて確かめる。
+- 検査器の自己試験は `node scripts/helm-release-drift.js --self-test`（同梱の fixture だけ・helm もクラスタも使わない。CI の
+  `scripts-tests` が走らせる）。
+
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
 > 起点: [IADR-0100](../../../.ai-context/adr/IADR-0100_route-b-values-local-standing-config.md) /

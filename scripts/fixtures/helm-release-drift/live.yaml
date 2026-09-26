@@ -1,0 +1,105 @@
+# 自己試験用の fixture（稼働側 = `helm get manifest` の形）。実在のクラスタ・値ではない。
+# 秘密の値はすべて見張り用の偽値（FIXTURE-SECRET-SENTINEL 等）であり、出力に現れたら自己試験が落ちる。
+# Secret は stringData で書く（data の base64 は gitleaks の kubernetes-secret-yaml 規則に当たり、偽値でも秘密の走査が赤になる）。
+---
+# Source: ai-stock-trading/templates/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-stock-trading
+---
+# Source: ai-stock-trading/templates/external-secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ast-fixture-secret
+  namespace: ai-stock-trading
+type: Opaque
+stringData:
+  sample: FIXTURE-SECRET-SENTINEL
+---
+# Source: ai-stock-trading/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-execution-service
+  namespace: ai-stock-trading
+spec:
+  selector:
+    app: order-execution-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# Source: ai-stock-trading/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-execution-service
+  namespace: ai-stock-trading
+  labels:
+    app: order-execution-service
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: order-execution-service
+          image: "k3d-local/ai-stock-trading/order-execution-service:v1"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: Reconciliation__IntervalHours
+              value: "6"
+            - name: Legacy__Flag
+              value: "true"
+            - name: Notifications__Discord__WebhookUrl
+              value: "https://discord.example/api/webhooks/1/fixture-webhook-token-old"
+            - name: ServiceAuth__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: ast-secrets
+                  key: service-auth-client-secret
+                  optional: true
+          resources:
+            limits:
+              memory: 512Mi
+---
+# Source: ai-stock-trading/templates/cronjob.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: old-cycle
+  namespace: ai-stock-trading
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: trigger
+              image: curlimages/curl:8.8.0
+---
+# Source: ai-stock-trading/templates/opend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opend
+  namespace: ai-stock-trading
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: opend
+          image: "k3d-local/opend:latest"
+          ports:
+            - { containerPort: 11111, name: api }
+          env:
+            - name: OPEND_API_PORT
+              value: "11111"
+            - name: OPEND_LOGIN_PWD_MD5
+              valueFrom:
+                secretKeyRef: { name: moomoo-credentials, key: login-pwd-md5 }
