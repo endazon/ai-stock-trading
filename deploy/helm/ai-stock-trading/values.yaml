@@ -334,9 +334,11 @@ services:
       # FR-01/13, #1015, IADR-0435: Finnhub の対象銘柄の出所＝市場監視の GET /monitor/watchlist（取引判断と同じ口・s2s）。
       # 設定すると巡回ごとに監視銘柄（米国の銘柄）を読み、下の固定リストは**監視銘柄を一度も読めていないときのフォールバックだけ**になる
       # （読めなければ直前に読めた対象を使い続ける＝不明を空と扱わない）。1 巡回の要求は巡回間隔に収める（計画 ADR-0043 決定2 (b)）。
-      # fail-safe: 空=未結線＝下の固定リストが対象（従来どおり）。本番既定では実 URL を投入しない（取引判断の同名設定と足並みを揃える）。
-      - { name: MarketMonitor__BaseUrl, value: "" }
-      # 構成の固定リスト。上の MarketMonitor__BaseUrl を結線したら**フォールバック専用**（一度も読めていないときだけ使う）。
+      # FR-02, FR-13, ADR-0044, #1050, IADR-0095 追記: **本番既定でも結線する**（取引判断・通知の同名設定と同じ宛先）。宛先は本チャートの
+      # templates/service.yaml が描く同じ namespace の `<サービス名>-service:8080`。照会の s2s は下の ServiceAuth__*（trading-service）。
+      # 空にすると未結線＝下の固定リストが対象（従来の挙動）。Collection__Source__Provider が空（本番既定）の間は Finnhub を呼ばないので照会もしない。
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
+      # 構成の固定リスト。上の MarketMonitor__BaseUrl を結線している（本番既定）ので**フォールバック専用**（一度も読めていないときだけ使う）。
       - { name: Collection__Source__Finnhub__Symbols__0, value: "" }
       # ADR-0020 §結果 / IADR-0224 / IADR-0275: 日次上限は空=未実測（銘柄数上限を逆算しない）のまま。
       # 分次は実測済みだが、日次は実測セッションでも確定できなかった（継続観察が要る）。
@@ -420,7 +422,10 @@ services:
       - { name: Reports__BaseUrl, value: "" }
       # FR-13, ADR-0042 決定 1, #1025, IADR-0433: Discord Bot の /policy が監視銘柄を照会し、確定した案の入れ替えを適用する市場監視サービス。
       # fail-safe: 空=未設定=照会失敗（案は「適用できない案」として作られ、確定しても入れ替えは適用しない）。
-      - { name: MarketMonitor__BaseUrl, value: "" }
+      # FR-02, FR-13, ADR-0044, #1050, IADR-0095 追記: **本番既定でも結線する**（取引判断・情報収集の同名設定と同じ宛先）。
+      # 照会・適用のトークンは下の Notifications__Discord__OwnerAuth__*（owner マップ機密クライアント。適用が OwnerOnly のため
+      # ServiceAuth__* ではない）。Bot が無効（本番既定）の間は /policy が走らないので呼ばれない。
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       # fail-safe: 空=NoOp（外部送信しない。実 Discord は #15）。
       - { name: Notifications__Provider, value: "" }
       - name: Notifications__Discord__WebhookUrl
@@ -614,9 +619,15 @@ services:
       - { name: Reports__BaseUrl, value: "" }
       - { name: RiskManagement__BaseUrl, value: "" }
       # FR-02/13, UC-06, SC-02, IADR-0088/0095: 監視銘柄（watchlist）の権威源＝市場監視の GET /monitor/watchlist を s2s 同期照会。
-      # fail-safe: 空=構成ベース（TradeCycle:Watchlist）＝現行挙動。実結線時は市場監視サービス URL（例: http://market-monitor-service:8080）を入れると
-      # SC-02 での監視銘柄変更が定時サイクルの判断対象に反映される。本 PR では実 URL を投入しない（他 s2s と足並みを揃える）。
-      - { name: MarketMonitor__BaseUrl, value: "" }
+      # FR-02, FR-13, ADR-0044, #1050, IADR-0095 追記: **本番既定でも結線する**。SC-02・Discord の /policy での監視銘柄の変更が
+      # 定時サイクルの判断対象に届く（空のままだと届かず、ADR-0044 決定 2 の監視銘柄の節も常に「不明」になる）。
+      # 宛先は本チャートの templates/service.yaml が描く同じ namespace の `market-monitor-service:8080`。照会の s2s は下の
+      # ServiceAuth__*（trading-service。token エンドポイントは template が global.authAuthority から導出）。
+      # 構成の固定リスト（TradeCycle:Watchlist）は**照会に失敗した巡回だけのフォールバック**になる（非 2xx・timeout・例外・不正応答）。
+      # 200 ＋空の一覧は利用者の選択として尊重し、固定リストへは倒さない（IADR-0095 / IADR-0282）。本番既定は固定リストも
+      # 市場監視の初回シード（Monitor:SeedSymbols）も持たないので、監視銘柄は SC-02 か /policy で登録するまで空（結線前と同じ）。
+      # 空にすると未結線＝固定リストだけが対象（従来の挙動）。
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日。
       # 🔴 **バックテスト側（Backtest__Stage0__LlmTrainingCutoff）と必ず同値にする** —— 食い違うと
       # 記録再生の評価は `RecordingMismatch` で fail-closed し、原因が構成の不一致だと読み取りにくい。

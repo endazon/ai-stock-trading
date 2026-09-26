@@ -169,7 +169,9 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   **#611 / [IADR-0286](../../../.ai-context/adr/IADR-0286_fx-translation-supply-recognition-rate-and-period-end-rate.md) で
   risk-management（承認記録時の認識時レート＝1 USD あたりの円）と report（為替差損益の期末レート）にも同じ `Fx__*` を置いた。**
   空だと承認の認識時レートが未記録になり、報告書の為替差損益は「供給されていません（0 円ではありません）」のまま（推定で埋めない）。
-- **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の `Reports`/`RiskManagement`/`MarketMonitor` BaseUrl。
+- **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の `Reports`/`RiskManagement` BaseUrl。
+  **［2026-09-27 / #1050］** `MarketMonitor__BaseUrl`（trade-decision・information-collection・notification）は**本番既定でも結線した**
+  ため経路B 固有の有効化ではない（同じ値の写し。下記「監視銘柄の権威源への結線」）。
   監視銘柄（watchlist）は権威源（market-monitor）を `Monitor__SeedSymbols__0__*` で初回シードし
   （AAPL/UnitedStates）、trade-decision 側の `TradeCycle__Watchlist__0__*` は同じ銘柄をフォールバック用に
   据える（#286 / IADR-0282。詳細は下記「監視銘柄（watchlist）の初回シードと全削除の尊重」）。
@@ -274,8 +276,8 @@ Finnhub の 429 のうち、`X-Ratelimit-Remaining` が残っているのに拒�
 
 ### 情報収集の Finnhub の対象銘柄（監視銘柄への追随。#1015 / IADR-0435）
 
-- `MarketMonitor__BaseUrl`（`information-collection`。本番既定は空、`values-local` は `http://market-monitor-service:8080`）を
-  結線すると、情報収集は**巡回ごとに**市場監視の `GET /monitor/watchlist` を `trading-service` のトークン（`ServiceAuth__*`）で照会し、
+- `MarketMonitor__BaseUrl`（`information-collection`。本番既定・`values-local` とも `http://market-monitor-service:8080`。
+  **［2026-09-27 / #1050］** 以前は本番既定が空だった）を結線すると、情報収集は**巡回ごとに**市場監視の `GET /monitor/watchlist` を `trading-service` のトークン（`ServiceAuth__*`）で照会し、
   監視銘柄のうち**米国の銘柄**を監視銘柄の順で Finnhub の対象にする。SC-02・Discord の `/policy` で監視銘柄を変えると、次の巡回から
   収集対象も変わる。空なら従来どおり `Collection__Source__Finnhub__Symbols__*` が対象。
 - **固定リストはフォールバック専用**になる: 監視銘柄を**一度も読めていない**ときだけ使う。一度読めた後に読めなくなったら、
@@ -457,6 +459,26 @@ ADR-0008（計画リポ） の撤退基準に該当すると、
 撤退評価を止めたい場合は `values-local.yaml` の `WithdrawalEvaluation__Enabled` を `"false"` に戻す
 （実DD の供給＝観測・記録だけは続き、自動停止のみ起きなくなる）。
 
+### 監視銘柄の権威源への結線（本番既定。#1050 / IADR-0095 追記 / 計画 ADR-0044 実測 4）
+
+本番既定（`values.yaml`）でも、監視銘柄を読む 3 つの消費側の `MarketMonitor__BaseUrl` を market-monitor へ結線する。
+宛先は `templates/service.yaml` が描く同じ namespace の Service `market-monitor-service`（ポート 8080）である（`values-local.yaml` と同じ値）。
+
+| 消費側 | 使い道 | 照会の資格情報（本番既定の参照先） | 構成の固定リストの扱い |
+| --- | --- | --- | --- |
+| trade-decision | 定時サイクルの判断対象（IADR-0095） | `ServiceAuth__ClientId` / `__ClientSecret`（`ast-secrets` の `service-auth-client-id` / `-secret`）。token エンドポイントは template が `global.authAuthority` から導出 | `TradeCycle:Watchlist` は**照会に失敗した巡回だけ**のフォールバック（非 2xx・timeout・例外・不正応答）。200 ＋空の一覧は利用者の選択として尊重し、倒さない |
+| information-collection | Finnhub の対象銘柄（IADR-0435） | 同上（`ServiceAuth__*`） | `Collection__Source__Finnhub__Symbols__*` は**一度も読めていないときだけ**のフォールバック。読めた後に読めなくなったら直前の対象を使い続ける |
+| notification | Discord `/policy` の照会と入れ替えの適用（IADR-0433） | `Notifications__Discord__OwnerAuth__ClientId` / `__ClientSecret`（`ast-secrets` の `discord-owner-auth-client-id` / `-secret`。適用が OwnerOnly のため `ServiceAuth__*` ではない）。token エンドポイントは template が導出 | 固定リストは無い（未結線なら照会失敗＝「適用できない案」） |
+
+- 資格情報の Secret キーはいずれも**結線の前から本番既定に在った**（`optional: true`）。本件で足した鍵は無い。
+  Secret が空なら照会は 401 になり、上表のフォールバック（取引判断・情報収集）または照会失敗（通知）へ倒れる。
+- **本番既定で挙動が変わる範囲**: 取引判断は毎巡回 `GET /monitor/watchlist` を照会するようになる。本番既定は固定リストも
+  初回シードも持たないので、監視銘柄は SC-02 か `/policy` で登録するまで空で、判断対象ゼロは結線前と同じである。
+  情報収集は `Collection__Source__Provider` が空、通知は Bot が無効（いずれも本番既定）の間は照会しない。
+- CI（`helm.yml` の `Assert market-monitor watchlist consumers are wired in prod default`）が、既定と `values-local` の描画で
+  3 つとも空でなく描画された Service と一致すること、上表の資格情報が揃うことを検査する。
+- 結線を外す（空にする）と、判断対象・収集対象は構成の固定リストだけになり、SC-02・`/policy` での変更は届かない。
+
 ### 監視銘柄（watchlist）の初回シードと全削除の尊重（#286 / IADR-0282）
 
 trade-decision の `MarketMonitor__BaseUrl` を market-monitor へ結線すると、定時サイクルの監視銘柄は
@@ -475,8 +497,10 @@ watchlist）と同じ銘柄を投入しており、結線しても判断対象�
 - **全削除した状態は再シードで巻き戻らない。** watchlist の最後の 1 件を削除する、または全置換 PUT で
   空にすると、その意思が記録され、Pod 再作成やサービス再起動を挟んでも空のまま維持される
   （再び 1 件でも追加すれば、以後また通常どおり増減できる）。
-- 本番 `values.yaml` には `Monitor:SeedSymbols` の設定点自体を置かない（既定は空リスト＝
-  `MarketMonitor__BaseUrl` を結線しない限りこの経路は関与しない・現行挙動のバイト等価）。
+- 本番 `values.yaml` には `Monitor:SeedSymbols` の設定点自体を置かない（既定は空リスト）。
+  **［2026-09-27 / #1050］** 本番既定でも `MarketMonitor__BaseUrl` を結線したので、本番の監視銘柄は空から始まり、
+  利用者が SC-02 か `/policy` で登録する（取引判断の構成の固定リストも本番既定では空なので、結線前より判断対象が減ることは無い）。
+  旧記述「結線しない限りこの経路は関与しない・現行挙動のバイト等価」は本番既定では成り立たなくなった。
 
 ### LLM 費用の単価（#303 / IADR-0122 ／ #279 / IADR-0114 決定6）
 
