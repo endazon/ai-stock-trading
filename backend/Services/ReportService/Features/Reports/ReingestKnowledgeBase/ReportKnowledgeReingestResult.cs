@@ -33,13 +33,14 @@ public enum ReportKnowledgeReingestOutcome
     NotAttempted,
 }
 
-// FR-08, #1028: 報告書 1 件の行。
+// FR-08, #1028: 報告書 1 件の行。MatchedCopies は KB 上で一致した写しの数（2 以上＝重複があり、どれを使ったかは DocumentId）。
 public sealed record ReportKnowledgeReingestItem(
     string PeriodKey,
     ReportKind Kind,
     ReportKnowledgeReingestOutcome Outcome,
     Guid? DocumentId,
-    string? Reason);
+    string? Reason,
+    int MatchedCopies = 0);
 
 // FR-08, #1028, IADR-0436 決定 3: 入れ直しの応答。Status は "Completed" / "Aborted" / "Cancelled"。
 // Sent = Created + BodyAttached + BodyRefreshed、Skipped = SkippedEmptyBody + SkippedBodyTooLarge。

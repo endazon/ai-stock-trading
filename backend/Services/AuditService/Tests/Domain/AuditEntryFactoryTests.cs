@@ -1240,10 +1240,11 @@ public class AuditEntryFactoryTests
     }
 
     private static ReportKnowledgeReingested Reingested(
-        string actor = "owner", string status = "Completed", string? abortReason = null) => new(
+        string actor = "owner", string status = "Completed", string? abortReason = null, int notAttempted = 0) => new(
         Guid.NewGuid(), actor, "all", RefreshExisting: false, status, abortReason,
-        Targeted: 10, Created: 3, BodyAttached: 2, BodyRefreshed: 1, AlreadyPresent: 1,
-        SkippedEmptyBody: 1, SkippedBodyTooLarge: 0, Failed: 1, Unknown: 1, DuplicatesInKb: 0,
+        Targeted: 10 + notAttempted, Created: 3, BodyAttached: 2, BodyRefreshed: 1, AlreadyPresent: 1,
+        SkippedEmptyBody: 1, SkippedBodyTooLarge: 0, Failed: 1, Unknown: 1, NotAttempted: notAttempted,
+        DuplicatesInKb: 1, DuplicatePeriodKeys: ["daily-2026-07-14"],
         [new AiStockTrading.Shared.Contracts.Operations.ReportKnowledgeReingestEntry("daily-2026-07-10", "Failed", "HTTP 400", null)],
         BreakdownOmitted: 0, new DateTimeOffset(2026, 9, 26, 3, 0, 0, TimeSpan.Zero));
 
@@ -1268,7 +1269,7 @@ public class AuditEntryFactoryTests
             .And.Contain("送信 6 件（作成 3・本文の投入 2・入れ直し 1）").And.Contain("既に在る 1 件")
             .And.Contain("送らず 1 件").And.Contain("失敗 1 件").And.Contain("不明 1 件");
         entry.Summary.Should().NotContain("中止").And.NotContain("打ち切り");
-        entry.Detail.Should().Contain("daily-2026-07-10").And.Contain("HTTP 400");
+        entry.Detail.Should().Contain("daily-2026-07-10").And.Contain("HTTP 400").And.Contain("daily-2026-07-14");
     }
 
     // T-10-1505: 中止（1 件も書いていない）は理由を書き、件数の並びを出さない。打ち切りは明示する。操作者不明は「操作者不明」。
@@ -1281,7 +1282,7 @@ public class AuditEntryFactoryTests
         aborted.Summary.Should().Contain("操作者不明").And.Contain("中止（1 件も書いていません）: KB が構成されていません。");
         aborted.Summary.Should().NotContain("送信");
 
-        var cancelled = AuditEntryFactory.From(Reingested("owner", "Cancelled"), Id, RecordedAt);
-        cancelled.Summary.Should().Contain("途中で打ち切り").And.Contain("送信 6 件");
+        var cancelled = AuditEntryFactory.From(Reingested("owner", "Cancelled", notAttempted: 4), Id, RecordedAt);
+        cancelled.Summary.Should().Contain("途中で打ち切り（未試行 4 件）").And.Contain("対象 14 件").And.Contain("送信 6 件");
     }
 }

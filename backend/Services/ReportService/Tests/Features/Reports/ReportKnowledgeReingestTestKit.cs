@@ -91,6 +91,7 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
     public sealed class Doc
     {
         public Guid Id { get; init; } = Guid.NewGuid();
+        public string Title { get; init; } = "t";
         public Dictionary<string, string> Attributes { get; init; } = new(StringComparer.Ordinal);
         public string? Body { get; set; }
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -106,14 +107,22 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
     // 期間キーごとの作成の振る舞い（"saved-unknown"＝保存したのに結果は不明／"failed"＝400 で拒否）。
     public Dictionary<string, string> CreateBehavior { get; } = new(StringComparer.Ordinal);
 
+    // 文書ごとの本文の投入の結果の差し込み（404 以外の失敗・不明）。
+    public Dictionary<Guid, KnowledgeCatalogWriteResult> PutOverride { get; } = [];
+
     public Func<Task>? BeforeList { get; set; }
 
-    public Doc AddExisting(string periodKey, string kind, string? body, bool ownedByAst = true, string project = "ai-stock-trading",
-        DateTimeOffset? updatedAt = null)
+    // project が null なら project 属性を持たない（#665 より前の保存の形）。表題の既定は確定時の写像の表題。
+    public Doc AddExisting(string periodKey, string kind, string? body, bool ownedByAst = true, string? project = "ai-stock-trading",
+        DateTimeOffset? updatedAt = null, string? title = null)
     {
+        var attributes = new Dictionary<string, string>(StringComparer.Ordinal) { ["periodKey"] = periodKey, ["kind"] = kind };
+        if (project is not null)
+            attributes["project"] = project;
         var doc = new Doc
         {
-            Attributes = new(StringComparer.Ordinal) { ["project"] = project, ["periodKey"] = periodKey, ["kind"] = kind },
+            Title = title ?? $"確定報告書 {kind} {periodKey}",
+            Attributes = attributes,
             Body = body,
             OwnedByAst = ownedByAst,
             UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow,
@@ -127,7 +136,7 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
         if (BeforeList is not null)
             await BeforeList();
         return ListOverride ?? KnowledgeCatalogListResult.Ok([.. Docs.Select(d => new KnowledgeCatalogEntry(
-            d.Id, "t", new Dictionary<string, string>(d.Attributes, StringComparer.Ordinal), d.Body is not null, d.UpdatedAt))]);
+            d.Id, d.Title, new Dictionary<string, string>(d.Attributes, StringComparer.Ordinal), d.Body is not null, d.UpdatedAt))]);
     }
 
     public Task<KnowledgeCatalogWriteResult> CreateAsync(KnowledgeDocument document, CancellationToken cancellationToken = default)
@@ -136,10 +145,11 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
         var periodKey = document.Attributes!["periodKey"];
         CreateBehavior.TryGetValue(periodKey, out var behavior);
         if (behavior == "failed")
-            return Task.FromResult(KnowledgeCatalogWriteResult.Failed("KB への文書の作成を拒否されました（HTTP 400: 辞書に無いタグです: report）。"));
+            return Task.FromResult(KnowledgeCatalogWriteResult.Failed("KB への文書の作成を拒否されました（HTTP 400: 辞書に無いタグです: report）。", 400));
 
         var doc = new Doc
         {
+            Title = document.Title,
             Attributes = new(document.Attributes!, StringComparer.Ordinal) { ["project"] = "ai-stock-trading" },
             Body = document.Content,
         };
@@ -152,10 +162,12 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
     public Task<KnowledgeCatalogWriteResult> PutBodyAsync(Guid documentId, string body, CancellationToken cancellationToken = default)
     {
         PutCalls++;
+        if (PutOverride.TryGetValue(documentId, out var injected))
+            return Task.FromResult(injected);
         var doc = Docs.SingleOrDefault(d => d.Id == documentId);
         if (doc is null || !doc.OwnedByAst)
             return Task.FromResult(KnowledgeCatalogWriteResult.Failed(
-                "KB の文書への本文の投入を拒否されました（文書が無いか、AST の KB 用クライアントが所有者ではありません）（HTTP 404）。"));
+                "KB の文書への本文の投入を拒否されました（文書が無いか、AST の KB 用クライアントが所有者ではありません）（HTTP 404）。", 404));
         doc.Body = body;
         doc.UpdatedAt = DateTimeOffset.UtcNow;
         return Task.FromResult(KnowledgeCatalogWriteResult.Ok(documentId));

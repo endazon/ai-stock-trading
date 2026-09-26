@@ -681,7 +681,7 @@ public static class AuditEntryFactory
         Truncate($"確定報告書の KB への入れ直し（{ReingestActorOf(e)}・範囲 {e.Scope}）: "
             + (e.Status == "Aborted"
                 ? $"中止（1 件も書いていません）: {e.AbortReason}"
-                : $"{(e.Status == "Cancelled" ? "途中で打ち切り・" : string.Empty)}対象 {e.Targeted} 件・"
+                : $"{(e.Status == "Cancelled" ? $"途中で打ち切り（未試行 {e.NotAttempted} 件）・" : string.Empty)}対象 {e.Targeted} 件・"
                     + $"送信 {e.Created + e.BodyAttached + e.BodyRefreshed} 件（作成 {e.Created}・本文の投入 {e.BodyAttached}・入れ直し {e.BodyRefreshed}）・"
                     + $"既に在る {e.AlreadyPresent} 件・送らず {e.SkippedEmptyBody + e.SkippedBodyTooLarge} 件・"
                     + $"失敗 {e.Failed} 件・不明 {e.Unknown} 件")),

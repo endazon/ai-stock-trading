@@ -170,6 +170,8 @@ public class HttpKnowledgeDocumentCatalogTests
         result.Outcome.Should().Be(KnowledgeCatalogOutcome.Failed);
         result.DocumentId.Should().BeNull();
         result.Reason.Should().Contain("HTTP 400").And.Contain("辞書に無いタグです");
+        result.StatusCode.Should().Be(400);
+        result.IsNotFoundOrNotOwner.Should().BeFalse();
         result.Reason.Should().NotContain("\u001b").And.NotContain("\n");
         result.Reason!.Length.Should().BeLessThan(HttpKnowledgeDocumentCatalog.MaxReasonExcerptLength + 100);
     }
@@ -240,8 +242,12 @@ public class HttpKnowledgeDocumentCatalogTests
         notFound.Outcome.Should().Be(KnowledgeCatalogOutcome.Failed);
         notFound.Reason.Should().Contain("所有者").And.Contain("HTTP 404");
 
-        (await Catalog(new Handler((_, _) => new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge))).PutBodyAsync(id, "b"))
-            .Outcome.Should().Be(KnowledgeCatalogOutcome.Failed);
+        notFound.StatusCode.Should().Be(404);
+        notFound.IsNotFoundOrNotOwner.Should().BeTrue("呼び出し側は 404 のときだけ次の写しを試す");
+
+        var tooLarge = await Catalog(new Handler((_, _) => new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge))).PutBodyAsync(id, "b");
+        tooLarge.Outcome.Should().Be(KnowledgeCatalogOutcome.Failed);
+        tooLarge.IsNotFoundOrNotOwner.Should().BeFalse("413 は所有者の問題ではない（呼び出し側は次の写しを試さない）");
         (await Catalog(new Handler((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))).PutBodyAsync(id, "b"))
             .Outcome.Should().Be(KnowledgeCatalogOutcome.Unknown);
         (await Catalog(Throwing(new TaskCanceledException("timeout"))).PutBodyAsync(id, "b"))

@@ -85,6 +85,11 @@ public sealed partial record ReportKnowledgeReingestScope(
             return false;
 
         var rest = match.Groups["rest"].Value;
+
+        // ［2026-09-26 PR #1038 の監査］9999 年は期間の末日の計算（月の翌月・週の +6 日）が DateOnly の範囲を超えて例外になり、
+        // 500 を返していた。年の 4 桁の先頭で弾いて 400 にする（報告書の期間として意味のある年ではない）。
+        if (rest.Length >= 4 && rest.StartsWith("9999", StringComparison.Ordinal))
+            return false;
         switch (match.Groups["kind"].Value)
         {
             case "daily":

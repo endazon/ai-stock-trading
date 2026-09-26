@@ -137,7 +137,7 @@ public class ReportKnowledgeReingestServiceTests
         attached.DocumentId.Should().Be(owned.Id);
         var failed = result.Items.Single(i => i.PeriodKey == "daily-2026-07-13");
         failed.Outcome.Should().Be(ReportKnowledgeReingestOutcome.Failed);
-        failed.Reason.Should().Contain("所有者");
+        failed.Reason.Should().Contain("別の主体が所有").And.Contain("管理者が写しを削除");
         failed.DocumentId.Should().Be(notOwned.Id);
         notOwned.Body.Should().BeNull();
         result.Sent.Should().Be(1);
@@ -218,6 +218,7 @@ public class ReportKnowledgeReingestServiceTests
         audit.Status.Should().Be("Aborted");
         audit.AbortReason.Should().Be(kb.ListOverride.Reason);
         audit.Targeted.Should().Be(3);
+        audit.NotAttempted.Should().Be(3, "中止では全件が試していない（Targeted と件数の合計が一致する）");
     }
 
     [Fact]
@@ -257,10 +258,104 @@ public class ReportKnowledgeReingestServiceTests
         chosen.Outcome.Should().Be(ReportKnowledgeReingestOutcome.AlreadyPresent);
         chosen.DocumentId.Should().Be(withBody.Id);
         result.DuplicatesInKb.Should().Be(1);
-        audits.Should().ContainSingle().Which.DuplicatesInKb.Should().Be(1);
+        var dupAudit = audits.Should().ContainSingle().Subject;
+        dupAudit.DuplicatesInKb.Should().Be(1);
+        dupAudit.DuplicatePeriodKeys.Should().Equal("daily-2026-07-10");
+        chosen.MatchedCopies.Should().Be(2, "どの報告書の写しが重複しているかを行で返す");
+        result.Items.Where(i => i.PeriodKey != "daily-2026-07-10").Should().OnlyContain(i => i.MatchedCopies == 0);
         kb.PutCalls.Should().Be(0);
         result.Items.Single(i => i.PeriodKey == "daily-2026-07-13").Outcome.Should().Be(ReportKnowledgeReingestOutcome.Created);
         result.Items.Single(i => i.PeriodKey == "daily-2026-07-14").Outcome.Should().Be(ReportKnowledgeReingestOutcome.Created);
+    }
+
+    // T-10-1509（PR #1038 の監査 1）: project 属性（#665・2026-09-03）より前の保存で作られた写しは project を持たない
+    // （#565 の本文なしの写しはすべてこの形）。表題が確定時の写像の表題と完全に一致すれば写しとして扱い、**隣に 2 つ目を作らない**。
+    // AST が所有していれば本文を入れ、所有していなければ（owner=system 等で基盤が 404）失敗として管理者の削除を案内する。
+    [Fact]
+    public async Task 旧い形の写しは表題で見つけ_本文を入れるか失敗にして作らない()
+    {
+        var kb = new FakeKnowledgeCatalog();
+        var legacyOwned = kb.AddExisting("daily-2026-07-10", "Daily", body: null, project: null);
+        var legacyOther = kb.AddExisting("daily-2026-07-13", "Daily", body: null, ownedByAst: false, project: null);
+        var legacyWithBody = kb.AddExisting("daily-2026-07-14", "Daily", "# 旧い本文", project: null);
+        kb.AddExisting("daily-2026-07-15", "Daily", body: null, project: null, title: "確定報告書 Daily daily-2026-07-15（利用者の複製）");
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = WithCatalog(baseFactory, kb);
+        foreach (var day in new[] { 10, 13, 14, 15 })
+            Seed(factory.Services, $"daily-2026-07-{day}", ReportKind.Daily, new DateOnly(2026, 7, day), $"# 日報 07-{day}");
+
+        var (_, first, _) = await RunAsync(factory, new { all = true });
+
+        var attached = first!.Items.Single(i => i.PeriodKey == "daily-2026-07-10");
+        attached.Outcome.Should().Be(ReportKnowledgeReingestOutcome.BodyAttached);
+        attached.DocumentId.Should().Be(legacyOwned.Id);
+        attached.MatchedCopies.Should().Be(1);
+        legacyOwned.Body.Should().Be("# 日報 07-10");
+
+        var notOwned = first.Items.Single(i => i.PeriodKey == "daily-2026-07-13");
+        notOwned.Outcome.Should().Be(ReportKnowledgeReingestOutcome.Failed);
+        notOwned.DocumentId.Should().Be(legacyOther.Id);
+        notOwned.Reason.Should().Contain("別の主体が所有").And.Contain("新しい写しは作りません").And.Contain("管理者が写しを削除");
+
+        var present = first.Items.Single(i => i.PeriodKey == "daily-2026-07-14");
+        present.Outcome.Should().Be(ReportKnowledgeReingestOutcome.AlreadyPresent);
+        present.DocumentId.Should().Be(legacyWithBody.Id);
+
+        // 表題の違う project なしの文書は AST の写しと言い切れない（作る）。
+        first.Items.Single(i => i.PeriodKey == "daily-2026-07-15").Outcome.Should().Be(ReportKnowledgeReingestOutcome.Created);
+        kb.CreateCalls.Should().Be(1, "旧い形の写しの隣には作らない");
+        kb.Docs.Count(d => d.Attributes["periodKey"] == "daily-2026-07-13").Should().Be(1);
+
+        var (_, second, _) = await RunAsync(factory, new { all = true });
+        kb.CreateCalls.Should().Be(1, "何度実行しても所有者でない写しの隣に作らない");
+        second!.Items.Single(i => i.PeriodKey == "daily-2026-07-13").Outcome.Should().Be(ReportKnowledgeReingestOutcome.Failed);
+        second.Items.Single(i => i.PeriodKey == "daily-2026-07-10").Outcome.Should().Be(ReportKnowledgeReingestOutcome.AlreadyPresent);
+    }
+
+    // T-10-1500（PR #1038 の監査 2）: 本文なしの写しが複数あれば、project を持つ写しを先に試し、所有者でない（404）なら
+    // 次の写しへ進んで AST が所有する写しに本文を入れる。404 以外の失敗はそこで止める（次を試さず・作らない）。
+    [Fact]
+    public async Task 本文なしの写しが複数なら所有する写しを採り_404以外の失敗では止まる()
+    {
+        var kb = new FakeKnowledgeCatalog();
+        var now = DateTimeOffset.UtcNow;
+        // A: 新しいが所有者でない → B: 古いが AST の所有。
+        var a = kb.AddExisting("daily-2026-07-10", "Daily", body: null, ownedByAst: false, updatedAt: now);
+        var b = kb.AddExisting("daily-2026-07-10", "Daily", body: null, updatedAt: now.AddDays(-3));
+        // project を持つ写し（古い）を旧い形（新しい）より先に試す。
+        var modern = kb.AddExisting("daily-2026-07-13", "Daily", body: null, updatedAt: now.AddDays(-3));
+        var legacy = kb.AddExisting("daily-2026-07-13", "Daily", body: null, project: null, updatedAt: now);
+        // 先に試す写しが 413（404 以外）で拒否される。
+        var rejected = kb.AddExisting("daily-2026-07-14", "Daily", body: null, updatedAt: now);
+        var untouched = kb.AddExisting("daily-2026-07-14", "Daily", body: null, updatedAt: now.AddDays(-3));
+        kb.PutOverride[rejected.Id] = KnowledgeCatalogWriteResult.Failed("本文の投入を拒否されました（HTTP 413）。", 413);
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = WithCatalog(baseFactory, kb);
+        foreach (var day in new[] { 10, 13, 14 })
+            Seed(factory.Services, $"daily-2026-07-{day}", ReportKind.Daily, new DateOnly(2026, 7, day), $"# 日報 07-{day}");
+
+        var (_, result, _) = await RunAsync(factory, new { all = true });
+
+        var first = result!.Items.Single(i => i.PeriodKey == "daily-2026-07-10");
+        first.Outcome.Should().Be(ReportKnowledgeReingestOutcome.BodyAttached);
+        first.DocumentId.Should().Be(b.Id);
+        first.MatchedCopies.Should().Be(2);
+        a.Body.Should().BeNull();
+        b.Body.Should().Be("# 日報 07-10");
+
+        var second = result.Items.Single(i => i.PeriodKey == "daily-2026-07-13");
+        second.DocumentId.Should().Be(modern.Id);
+        modern.Body.Should().Be("# 日報 07-13");
+        legacy.Body.Should().BeNull("project を持つ写しに入れられたら旧い形は試さない");
+
+        var third = result.Items.Single(i => i.PeriodKey == "daily-2026-07-14");
+        third.Outcome.Should().Be(ReportKnowledgeReingestOutcome.Failed);
+        third.Reason.Should().Contain("HTTP 413");
+        untouched.Body.Should().BeNull("404 以外の失敗では次の写しを試さない");
+
+        kb.PutCalls.Should().Be(2 + 1 + 1);
+        kb.CreateCalls.Should().Be(0);
+        result.DuplicatesInKb.Should().Be(3);
     }
 
     // T-10-1501: refreshExisting は本文のある写しにも本文を入れ直す（索引の作り直し）。文書は増えない。

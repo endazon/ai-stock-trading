@@ -22,7 +22,7 @@ public class ReportKnowledgeReingestWiringTests
     // 基盤 DocumentService の 3 口（GET /documents・POST /documents・PUT /documents/{id}/body）の模造。
     private sealed class DocumentServiceStub : HttpMessageHandler
     {
-        private sealed record StoredDoc(Guid Id, Dictionary<string, string> Attributes, string? Body, DateTimeOffset UpdatedAt);
+        private sealed record StoredDoc(Guid Id, string Title, Dictionary<string, string> Attributes, string? Body, DateTimeOffset UpdatedAt);
 
         private readonly ConcurrentDictionary<Guid, StoredDoc> _docs = new();
 
@@ -44,7 +44,7 @@ public class ReportKnowledgeReingestWiringTests
                 return JsonResponse(HttpStatusCode.OK, _docs.Values.Select(d => new
                 {
                     id = d.Id,
-                    title = "t",
+                    title = d.Title,
                     markdownUri = d.Body is null ? null : $"storage://docs/{d.Id}.md",
                     hasBody = true,
                     attributes = d.Attributes,
@@ -59,7 +59,7 @@ public class ReportKnowledgeReingestWiringTests
                 var attributes = json.RootElement.GetProperty("attributes").EnumerateObject()
                     .ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.Ordinal);
                 var body = json.RootElement.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
-                var doc = new StoredDoc(Guid.NewGuid(), attributes, body, DateTimeOffset.UtcNow);
+                var doc = new StoredDoc(Guid.NewGuid(), json.RootElement.GetProperty("title").GetString()!, attributes, body, DateTimeOffset.UtcNow);
                 _docs[doc.Id] = doc;
                 return JsonResponse(HttpStatusCode.Created, new { id = doc.Id });
             }
@@ -158,7 +158,7 @@ public class ReportKnowledgeReingestWiringTests
         await RunAsync(factory, new { all = true });
         stub.Documents.Should().BeEmpty("本文の空の報告書は作らない");
 
-        // 本文なしの写しを基盤側へ置く（旧経路で入った #565 の写し）。
+        // 本文なしの写しを基盤側へ置く（#565 の時期の写し: #665 より前なので project 属性を持たず、owner=system で AST は書けない）。
         using (var scope = factory.Services.CreateScope())
         {
             var http = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("kb-documents-maintenance");
@@ -166,7 +166,7 @@ public class ReportKnowledgeReingestWiringTests
             (await http.PostAsJsonAsync("/documents", new
             {
                 title = "確定報告書 Daily daily-2026-07-13",
-                attributes = new Dictionary<string, string> { ["project"] = "ai-stock-trading", ["periodKey"] = "daily-2026-07-13", ["kind"] = "Daily" },
+                attributes = new Dictionary<string, string> { ["periodKey"] = "daily-2026-07-13", ["kind"] = "Daily" },
                 tags = new[] { "report" },
             })).StatusCode.Should().Be(HttpStatusCode.Created);
         }
@@ -177,7 +177,7 @@ public class ReportKnowledgeReingestWiringTests
 
         var item = result!.Items.Single(i => i.PeriodKey == "daily-2026-07-13");
         item.Outcome.Should().Be(ReportKnowledgeReingestOutcome.Failed);
-        item.Reason.Should().Contain("所有者").And.Contain("HTTP 404");
+        item.Reason.Should().Contain("別の主体が所有").And.Contain("管理者が写しを削除");
         stub.Puts.Should().Be(1);
         stub.Posts.Should().Be(postsBefore, "拒否されても別の文書を作らない");
         audits.Should().ContainSingle().Which.Failed.Should().Be(1);

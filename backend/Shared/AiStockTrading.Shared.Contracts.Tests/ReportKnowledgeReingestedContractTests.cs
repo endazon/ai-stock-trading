@@ -12,8 +12,9 @@ public class ReportKnowledgeReingestedContractTests
 {
     private static ReportKnowledgeReingested Sample() => new(
         Guid.NewGuid(), "owner", "daily-2026-07-01..monthly-2026-08", RefreshExisting: true, "Completed", AbortReason: null,
-        Targeted: 5, Created: 1, BodyAttached: 1, BodyRefreshed: 0, AlreadyPresent: 0,
-        SkippedEmptyBody: 1, SkippedBodyTooLarge: 0, Failed: 1, Unknown: 1, DuplicatesInKb: 2,
+        Targeted: 6, Created: 1, BodyAttached: 1, BodyRefreshed: 0, AlreadyPresent: 0,
+        SkippedEmptyBody: 1, SkippedBodyTooLarge: 0, Failed: 1, Unknown: 1, NotAttempted: 1,
+        DuplicatesInKb: 2, DuplicatePeriodKeys: ["daily-2026-07-14", "weekly-2026-W29"],
         [
             new ReportKnowledgeReingestEntry("daily-2026-07-10", "SkippedEmptyBody", "本文が空です。", null),
             new ReportKnowledgeReingestEntry("daily-2026-07-13", "Unknown", "タイムアウト", Guid.NewGuid()),
@@ -32,6 +33,8 @@ public class ReportKnowledgeReingestedContractTests
 
         back.Should().BeEquivalentTo(original);
         back.Breakdown.Should().Equal(original.Breakdown);
+        back.DuplicatePeriodKeys.Should().Equal(original.DuplicatePeriodKeys);
+        back.NotAttempted.Should().Be(1);
     }
 
     [Fact]

@@ -37,6 +37,12 @@ public sealed class ReportKnowledgeReingestService(
 
     internal const string EmptyBodyReason = "本文が空です（手動確定など自動生成を経ていない報告書）。KB へは送りません。";
 
+    // 一致する写しがすべて別の主体の所有（基盤が本文の投入を 404 で拒否した）。#665 より前の保存は owner を持たないか
+    // owner=system のことがある。AST の資格では消せず、作れば重複になる。
+    internal const string NotOwnedReason =
+        "KB の写しは別の主体が所有しているため本文を入れられません（AST の KB 用クライアントの所有ではない旧い写しの可能性）。"
+        + "重複を作らないため新しい写しは作りません。基盤の管理者が写しを削除してから入れ直してください。";
+
     internal static readonly string BodyTooLargeReason =
         $"本文が上限（{KnowledgeBodyLimits.MaxBytes} バイト・UTF-8）を超えるため送りません（基盤が拒否します）。";
 
@@ -76,8 +82,7 @@ public sealed class ReportKnowledgeReingestService(
             logger.LogWarning("KB への入れ直しを中止しました（1 件も書いていません）: {Reason}", reason);
             var aborted = Summarize(runId, scope, refreshExisting, StatusAborted, reason, targets.Count,
                 [.. targets.Select(r => new ReportKnowledgeReingestItem(
-                    r.PeriodKey, r.Kind, ReportKnowledgeReingestOutcome.NotAttempted, null, null))],
-                duplicates: 0);
+                    r.PeriodKey, r.Kind, ReportKnowledgeReingestOutcome.NotAttempted, null, null))]);
             var abortedResult = aborted with { AuditPublished = await PublishAuditAsync(aborted, actor).ConfigureAwait(false) };
             var httpStatus = listing.Outcome == KnowledgeCatalogOutcome.NotConfigured
                 ? StatusCodes.Status503ServiceUnavailable
@@ -86,14 +91,12 @@ public sealed class ReportKnowledgeReingestService(
         }
 
         var index = listing.Entries
-            .Where(e => AttributeEquals(e, KnowledgeAttributeDefaults.ProjectKey, KnowledgeAttributeDefaults.RequiredProject))
             .Where(e => e.Attributes.ContainsKey(ReportKnowledgeMapper.PeriodKeyAttribute)
                 && e.Attributes.ContainsKey(ReportKnowledgeMapper.KindAttribute))
             .GroupBy(e => (e.Attributes[ReportKnowledgeMapper.PeriodKeyAttribute], e.Attributes[ReportKnowledgeMapper.KindAttribute]))
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var items = new List<ReportKnowledgeReingestItem>(targets.Count);
-        var duplicates = 0;
         var status = StatusCompleted;
 
         foreach (var report in targets)
@@ -105,30 +108,44 @@ public sealed class ReportKnowledgeReingestService(
                 continue;
             }
 
-            index.TryGetValue((report.PeriodKey, report.Kind.ToString()), out var matches);
-            if (matches is { Count: > 1 })
-                duplicates++;
+            index.TryGetValue((report.PeriodKey, report.Kind.ToString()), out var sameKey);
+            var matches = sameKey?.Where(e => IsCopyOf(e, report)).ToList() ?? [];
 
             try
             {
-                items.Add(await ReingestOneAsync(report, matches, refreshExisting, cancellationToken).ConfigureAwait(false));
+                var item = await ReingestOneAsync(report, matches, refreshExisting, cancellationToken).ConfigureAwait(false);
+                items.Add(item with { MatchedCopies = matches.Count });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // 呼び出し元が切れた。送った要求の結果は分からない。以降は試さない。
                 status = StatusCancelled;
                 items.Add(new ReportKnowledgeReingestItem(report.PeriodKey, report.Kind, ReportKnowledgeReingestOutcome.Unknown, null,
-                    "呼び出しが打ち切られました（この報告書の送信の結果は分かりません）。"));
+                    "呼び出しが打ち切られました（この報告書の送信の結果は分かりません）。", matches.Count));
             }
         }
 
-        var summary = Summarize(runId, scope, refreshExisting, status, null, targets.Count, items, duplicates);
+        var summary = Summarize(runId, scope, refreshExisting, status, null, targets.Count, items);
         var result = summary with { AuditPublished = await PublishAuditAsync(summary, actor).ConfigureAwait(false) };
         return new ReportKnowledgeReingestRun(result, StatusCodes.Status200OK);
     }
 
+    // FR-08, #1028, IADR-0436 決定 2［2026-09-26 PR #1038 の監査で改めた］: KB の文書がこの報告書の写しか。
+    // periodKey・kind の一致（索引で絞り済み）に加えて、次のどちらか:
+    //   - `project=ai-stock-trading` を持つ（#665・2026-09-03 以降の保存）。
+    //   - `project` を持たず、表題が確定時の写像の表題（ReportKnowledgeMapper.TitleOf）と完全に一致する（#665 より前の保存。
+    //     #565 の本文なしの写しはすべてこちら）。🔴 これを外すと旧い写しの隣に 2 つ目を作る。
+    // 別のプロジェクトの値を持つ文書は写しに数えない。
+    internal static bool IsCopyOf(KnowledgeCatalogEntry entry, TradingReport report)
+    {
+        if (entry.Attributes.TryGetValue(KnowledgeAttributeDefaults.ProjectKey, out var project) && !string.IsNullOrEmpty(project))
+            return string.Equals(project, KnowledgeAttributeDefaults.RequiredProject, StringComparison.Ordinal);
+
+        return string.Equals(entry.Title, ReportKnowledgeMapper.TitleOf(report.Kind, report.PeriodKey), StringComparison.Ordinal);
+    }
+
     private async Task<ReportKnowledgeReingestItem> ReingestOneAsync(
-        TradingReport report, List<KnowledgeCatalogEntry>? matches, bool refreshExisting, CancellationToken cancellationToken)
+        TradingReport report, List<KnowledgeCatalogEntry> matches, bool refreshExisting, CancellationToken cancellationToken)
     {
         // #565 と同じ扱い: 空の本文は送らない（本文なしの写しを作らない・既存の写しを空で上書きしない）。
         if (string.IsNullOrEmpty(report.Body))
@@ -139,25 +156,35 @@ public sealed class ReportKnowledgeReingestService(
         if (KnowledgeBodyLimits.Exceeds(report.Body))
             return Item(report, ReportKnowledgeReingestOutcome.SkippedBodyTooLarge, null, BodyTooLargeReason);
 
-        // 本文のある写しを優先し、同じなら更新の新しいものを採る。
-        var existing = matches?
-            .OrderByDescending(m => m.HasStoredBody)
-            .ThenByDescending(m => m.UpdatedAt)
-            .FirstOrDefault();
-
-        if (existing is null)
+        // 🔴 作るのは一致する写しが 1 件も無いときだけ。一致する写しがあれば、書けなくても作らない（重複させない）。
+        if (matches.Count == 0)
         {
             var created = await catalog.CreateAsync(ReportKnowledgeMapper.ToDocument(report), cancellationToken).ConfigureAwait(false);
             return FromWrite(report, created, ReportKnowledgeReingestOutcome.Created, null);
         }
 
-        if (existing.HasStoredBody && !refreshExisting)
-            return Item(report, ReportKnowledgeReingestOutcome.AlreadyPresent, existing.DocumentId, null);
+        // 並び: 本文のある写し → project を持つ写し（AST の KB 用クライアントが所有者として作った形）→ 更新の新しい写し。
+        var ordered = matches
+            .OrderByDescending(m => m.HasStoredBody)
+            .ThenByDescending(m => m.Attributes.ContainsKey(KnowledgeAttributeDefaults.ProjectKey))
+            .ThenByDescending(m => m.UpdatedAt)
+            .ToList();
+        var first = ordered[0];
 
-        var put = await catalog.PutBodyAsync(existing.DocumentId, report.Body, cancellationToken).ConfigureAwait(false);
-        return FromWrite(report, put,
-            existing.HasStoredBody ? ReportKnowledgeReingestOutcome.BodyRefreshed : ReportKnowledgeReingestOutcome.BodyAttached,
-            existing.DocumentId);
+        if (first.HasStoredBody && !refreshExisting)
+            return Item(report, ReportKnowledgeReingestOutcome.AlreadyPresent, first.DocumentId, null);
+
+        // 本文を入れる相手は、同じ段（本文あり／なし）の写しを順に試す。基盤は所有者でない写しへの投入を 404 で拒否するので、
+        // 404 なら次の写しへ進み（AST が所有する写しを採る）、それ以外の失敗・不明はそこで止める。
+        var success = first.HasStoredBody ? ReportKnowledgeReingestOutcome.BodyRefreshed : ReportKnowledgeReingestOutcome.BodyAttached;
+        foreach (var candidate in ordered.Where(m => m.HasStoredBody == first.HasStoredBody))
+        {
+            var put = await catalog.PutBodyAsync(candidate.DocumentId, report.Body, cancellationToken).ConfigureAwait(false);
+            if (!put.IsNotFoundOrNotOwner)
+                return FromWrite(report, put, success, candidate.DocumentId);
+        }
+
+        return Item(report, ReportKnowledgeReingestOutcome.Failed, first.DocumentId, NotOwnedReason);
     }
 
     private static ReportKnowledgeReingestItem FromWrite(
@@ -174,12 +201,10 @@ public sealed class ReportKnowledgeReingestService(
         TradingReport report, ReportKnowledgeReingestOutcome outcome, Guid? documentId, string? reason) =>
         new(report.PeriodKey, report.Kind, outcome, documentId, reason);
 
-    private static bool AttributeEquals(KnowledgeCatalogEntry entry, string key, string value) =>
-        entry.Attributes.TryGetValue(key, out var actual) && string.Equals(actual, value, StringComparison.Ordinal);
 
     private static ReportKnowledgeReingestResult Summarize(
         Guid runId, ReportKnowledgeReingestScope scope, bool refreshExisting, string status, string? abortReason,
-        int targeted, IReadOnlyList<ReportKnowledgeReingestItem> items, int duplicates)
+        int targeted, IReadOnlyList<ReportKnowledgeReingestItem> items)
     {
         int Count(ReportKnowledgeReingestOutcome o) => items.Count(i => i.Outcome == o);
         var created = Count(ReportKnowledgeReingestOutcome.Created);
@@ -201,7 +226,7 @@ public sealed class ReportKnowledgeReingestService(
             Failed: Count(ReportKnowledgeReingestOutcome.Failed),
             Unknown: Count(ReportKnowledgeReingestOutcome.Unknown),
             NotAttempted: Count(ReportKnowledgeReingestOutcome.NotAttempted),
-            DuplicatesInKb: duplicates,
+            DuplicatesInKb: items.Count(i => i.MatchedCopies > 1),
             Items: items,
             AuditPublished: false);
     }
@@ -220,7 +245,9 @@ public sealed class ReportKnowledgeReingestService(
         var evt = new ReportKnowledgeReingested(
             result.RunId, actor, result.Scope, result.RefreshExisting, result.Status, result.AbortReason,
             result.Targeted, result.Created, result.BodyAttached, result.BodyRefreshed, result.AlreadyPresent,
-            result.SkippedEmptyBody, result.SkippedBodyTooLarge, result.Failed, result.Unknown, result.DuplicatesInKb,
+            result.SkippedEmptyBody, result.SkippedBodyTooLarge, result.Failed, result.Unknown, result.NotAttempted,
+            result.DuplicatesInKb,
+            [.. result.Items.Where(i => i.MatchedCopies > 1).Select(i => i.PeriodKey).Take(MaxAuditBreakdown)],
             [.. breakdown.Take(MaxAuditBreakdown)],
             Math.Max(0, breakdown.Count - MaxAuditBreakdown),
             clock.UtcNow);

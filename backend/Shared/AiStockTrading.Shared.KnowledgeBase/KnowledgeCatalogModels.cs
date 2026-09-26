@@ -51,14 +51,19 @@ public sealed record KnowledgeCatalogListResult(
 public sealed record KnowledgeCatalogWriteResult(
     KnowledgeCatalogOutcome Outcome,
     Guid? DocumentId,
-    string? Reason)
+    string? Reason,
+    int? StatusCode = null)
 {
     public static KnowledgeCatalogWriteResult Ok(Guid documentId) => new(KnowledgeCatalogOutcome.Succeeded, documentId, null);
 
     public static readonly KnowledgeCatalogWriteResult NotConfigured =
         new(KnowledgeCatalogOutcome.NotConfigured, null, "KB（KnowledgeBase:Documents:BaseUrl）が構成されていません。");
 
-    public static KnowledgeCatalogWriteResult Failed(string reason) => new(KnowledgeCatalogOutcome.Failed, null, reason);
+    public static KnowledgeCatalogWriteResult Failed(string reason, int? statusCode = null) =>
+        new(KnowledgeCatalogOutcome.Failed, null, reason, statusCode);
+
+    // 基盤が 404 で拒否した（文書が無いか、呼び出し元が所有者ではない。基盤は両者を区別しない）。
+    public bool IsNotFoundOrNotOwner => Outcome == KnowledgeCatalogOutcome.Failed && StatusCode == 404;
 
     public static KnowledgeCatalogWriteResult Unknown(string reason) => new(KnowledgeCatalogOutcome.Unknown, null, reason);
 }

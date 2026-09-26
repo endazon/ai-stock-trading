@@ -50,6 +50,10 @@ public class ReportKnowledgeReingestScopeTests
     [InlineData("weekly-2026-28")]
     [InlineData("monthly-2026-13")]
     [InlineData("quarterly-2026-Q1")]
+    // PR #1038 の監査 3: 9999 年は期間の末日の計算が DateOnly の範囲を超える（旧実装は例外で 500）。
+    [InlineData("monthly-9999-12")]
+    [InlineData("weekly-9999-W52")]
+    [InlineData("daily-9999-12-31")]
     [InlineData("Daily-2026-07-10")]
     [InlineData("daily-2026-07-10\n")]
     [InlineData("")]
@@ -115,6 +119,11 @@ public class ReportKnowledgeReingestScopeTests
         bad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         badAudits.Should().BeEmpty();
         kb.CreateCalls.Should().Be(0);
+
+        // PR #1038 の監査 3: 末日の計算が溢れる期間キーは 500 ではなく 400。
+        var (overflow, _, overflowAudits) = await RunAsync(factory, new { toPeriodKey = "monthly-9999-12" });
+        overflow.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        overflowAudits.Should().BeEmpty();
 
         var (ok, result, audits) = await RunAsync(factory, new { fromPeriodKey = "monthly-2026-08", toPeriodKey = "monthly-2026-08" });
         ok.StatusCode.Should().Be(HttpStatusCode.OK);

@@ -149,7 +149,7 @@ internal sealed class HttpKnowledgeDocumentCatalog(
                     : $"{operation}を拒否されました";
                 var reason = await DescribeStatusAsync(prefix, response, cancellationToken).ConfigureAwait(false);
                 logger.LogWarning("{Operation}: {Reason}", operation, reason);
-                return KnowledgeCatalogWriteResult.Failed(reason);
+                return KnowledgeCatalogWriteResult.Failed(reason, (int)response.StatusCode);
             }
 
             if (!readId)
