@@ -34,8 +34,19 @@ public sealed class TradeDecisionAppService(
     RetrievalSourcePolicy? retrievalSourcePolicy = null,
     IFxSourceStatusNotifier? statusNotifier = null,
     IScreeningReductionReporter? screeningReporter = null,
-    IDecisionSkipReporter? skipReporter = null)
+    IDecisionSkipReporter? skipReporter = null,
+    IWatchlistProvider? watchlist = null)
 {
+    // FR-04, #1034, IADR-0440 決定 2: 判断のプロンプトへ載せる監視銘柄の供給口（定時サイクルが判断対象を決める口と同じ登録）。
+    // 未指定＝null＝プロンプトは「監視銘柄: 不明」と書く（空の一覧は渡さない）。本番は Program.cs の IWatchlistProvider が注入される。
+    private readonly IWatchlistProvider? _watchlist = watchlist;
+
+    // #1034, PR #1041 の監査 F5, IADR-0440 決定 2（2026-09-26 追記）: このインスタンスで監視銘柄を一度読めなかったら、以後の判断では
+    // 照会せず不明とする。本サービスはスコープ登録で、Wolverine はメッセージ 1 件ごとにスコープを作るため、状態は**そのメッセージ
+    // （定時サイクルなら 1 巡回）の中だけ**で持つ。市場監視が止まっているとき、1 巡回の銘柄ごとに照会の打ち切り（5 秒）を待たない。
+    // 読めた一覧は覚えない（判断ごとに引き直す。巡回の途中の変更を所属の判定へ反映する）。
+    private bool _watchlistUnavailable;
+
     // FR-04, ADR-0003, #252, IADR-0169 決定2: RAG 取得文脈の出典限定。
     // **未指定は「限定しない」ではなく Default（＝安全側の許可リスト）である。**
     // 不在が統制の無効を意味する形にはしない（IADR-0163 決定2 の規律）。
@@ -227,30 +238,38 @@ public sealed class TradeDecisionAppService(
         //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
         var retrieved = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
 
+        // 🔴 FR-04, FR-02, #1034, IADR-0440 決定 2/6: 判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。null＝不明
+        // （プロンプトは「不明」と明示し、「監視銘柄なし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
+        // ——判断の可否は従来どおりで、変わるのはプロンプトの文言だけである。見送りの判定の後に引く（見送る判断で照会しない）。
+        var watchlist = await GetWatchlistForPromptSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+
         // IADR-0039: 本判断プロンプトを構築し、多数決・二段をオーケストレータへ委譲する。一次スクリーニングプロンプトは
         // スクリーニング有効時のみ構築されるよう遅延ファクトリで渡す（既定＝無効の経路で無駄な構築をしない）。
         // IADR-0072 決定2: RAG 文脈は本判断のみに載せ、一次スクリーニング（費用統制）には載せない。
         // FR-17, IADR-0076 決定5: 採算ゲート有効時のみプロンプトに採算節を注入する（無効の既定は現行動作のプロンプトと一致）。
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
-            currentPrice: currentPrice, held: heldPosition, working: workingEntries);
+            currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
         // 未設定（既定）は従来プロンプト（参考情報なし・IADR-0072 決定2）＝現行挙動。
+        // #1034, IADR-0440 決定 5: 監視銘柄節（保護分）の長さも見積りへ入れる。
         var screening = _options is { EnableScreening: true, ScreeningContextBudgetChars: { } budget }
-            ? ScreeningContextAssembler.Assemble(trigger, policy, retrieved, currentPrice, budget)
+            ? ScreeningContextAssembler.Assemble(trigger, policy, retrieved, currentPrice, budget, watchlist)
             : null;
 
         var orchestrated = await _orchestrator.DecideAsync(
             // #854, IADR-0351 決定4: 一次は門である（Hold で本判断が走らない）ため、保有状況は一次にも渡す。
             // 🔴 縮退制御なしの経路でも現在値を渡す（#860 の監査の指摘）。渡さないと、定時トリガー（価格を持たない）では
             // 一次の保有状況が常に「到達したかは不明」になり、門である一次だけが損切りライン到達を知らない。
+            // #1034, IADR-0440 決定 1: 一次（門）にも監視銘柄を渡す（所属を誤読して落とすと本判断へ届かない）。
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
-                    trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries)
+                    trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist)
                 : TradeDecisionPromptBuilder.BuildScreening(
-                    trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries),
+                    trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
+                    watchlist),
             decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
@@ -541,6 +560,31 @@ public sealed class TradeDecisionAppService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "未約定の新規建て注文の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
+            return null;
+        }
+    }
+
+    // FR-04, #1034, IADR-0440 決定 2: 判断のプロンプトへ載せる監視銘柄の照会（fail-safe ラッパ）。
+    // 未配線・権威源から読めない・例外は **null（不明）** に縮退する。空の一覧（＝監視銘柄なし）へ倒すと、LLM に
+    // 「この銘柄は対象外」と読ませることになる（#1034 の誤読をシステムが作る）。キャンセルは伝播させる。
+    private async Task<IReadOnlyList<WatchedSymbol>?> GetWatchlistForPromptSafeAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken)
+    {
+        if (_watchlist is null || _watchlistUnavailable)
+            return null;
+
+        try
+        {
+            var read = await _watchlist.GetAuthoritativeWatchlistAsync(cancellationToken).ConfigureAwait(false);
+            _watchlistUnavailable = read is null;
+            return read;
+        }
+        // 🔴 PR #1041 の監査 F6: 供給口自身の打ち切り（呼び出し側が止めていないのに出る OperationCanceledException）も不明へ縮退する。
+        // 種類で除外すると、市場監視の遅延だけで判断全体が中断される。止めるのは呼び出し側のキャンセルのときだけである。
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "監視銘柄の照会に失敗しました（プロンプトには不明と書きます）: {Symbol}", trigger.Symbol);
+            _watchlistUnavailable = true;
             return null;
         }
     }

@@ -39,13 +39,14 @@ public class Stage0DecisionRecorderTests
         string from = "2026-06-01",
         string to = "2026-06-02",
         string? cutoff = "2026-03-31",
-        string? outputPath = "records.json") => new()
+        string? outputPath = "records.json",
+        IReadOnlyList<Stage0RecordingOptions.SymbolEntry>? symbols = null) => new()
         {
             Enabled = enabled,
             From = from,
             To = to,
             LlmTrainingCutoff = cutoff,
-            Symbols = [new Stage0RecordingOptions.SymbolEntry { Symbol = "AAPL", Market = Market.UnitedStates }],
+            Symbols = symbols ?? [new Stage0RecordingOptions.SymbolEntry { Symbol = "AAPL", Market = Market.UnitedStates }],
             VoteCount = voteCount,
             DecisionsPerDay = 1,
             InputTokensPerDecision = 1_000,
@@ -61,14 +62,15 @@ public class Stage0DecisionRecorderTests
         Build(
             IReadOnlyList<string> responses,
             int tokensPerCall = 1_000,
-            IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null)
+            IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null,
+            IReadOnlyList<WatchedSymbol>? asOfWatchlist = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
         var llm = new FakeLlmClient(responses, collector, tokensPerCall);
         var sink = new CapturingSink();
         var recorder = new Stage0DecisionRecorder(
-            llm, new StubInputProvider(notReconstructable), sink, collector, Prices(),
+            llm, new StubInputProvider(notReconstructable, asOfWatchlist), sink, collector, Prices(),
             new FixedTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink, reporter);
     }
@@ -239,11 +241,11 @@ public class Stage0DecisionRecorderTests
 
     // ---- FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成可否を記録へ残す ----
 
-    // T-15-106 **陰性対照**: すべて再構成できたなら記録は 3 種の申告を持ち、除外対象にならない。
+    // T-15-106 **陰性対照**: すべて再構成できたなら記録は 4 種（ADR-0044 決定 3 の (e) を含む）の申告を持ち、除外対象にならない。
     [Fact]
-    public async Task 記録はas_of入力の再構成可否を3種そろえて持つ()
+    public async Task 記録はas_of入力の再構成可否を4種そろえて持つ()
     {
-        var (recorder, _, sink, _) = Build([Decision("Buy")]);
+        var (recorder, _, sink, _) = Build([Decision("Buy")], asOfWatchlist: [new("AAPL", Market.UnitedStates)]);
 
         await recorder.RunAsync(Options(), CancellationToken.None);
 
@@ -259,7 +261,8 @@ public class Stage0DecisionRecorderTests
     public async Task 再構成できない入力があっても記録は残り除外対象として印がつく()
     {
         var (recorder, llm, sink, _) = Build(
-            [Decision("Buy")], notReconstructable: [Stage0AsOfInputKind.FxRateToBase]);
+            [Decision("Buy")], notReconstructable: [Stage0AsOfInputKind.FxRateToBase],
+            asOfWatchlist: [new("AAPL", Market.UnitedStates)]);
 
         var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
 
@@ -379,6 +382,61 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WorkingUnknownNoFillsLine));
     }
 
+    // 🔴 T-10-1547 **否定形（最重要）**, FR-04, ADR-0044 決定 3・4, #1034, IADR-0440 決定 7（2026-09-27 改訂）:
+    // 記録の対象銘柄を監視銘柄の代わりに渡さない。当時の監視銘柄が無い（再構成の供給口が無い）あいだ、監視銘柄の節は
+    // 「不明」であり、記録は (e) を再構成不可と申告して Stage 0 の合否から外れる（記録そのものは残す）。
+    [Fact]
+    public async Task 記録の対象銘柄は監視銘柄の節に流れ込まず不明と書き記録は合否から外れる()
+    {
+        var (recorder, llm, sink, _) = Build([Decision("Buy")]);
+
+        var outcome = await recorder.RunAsync(
+            Options(
+                approvedJpy: 8m,
+                symbols:
+                [
+                    new Stage0RecordingOptions.SymbolEntry { Symbol = "AAPL", Market = Market.UnitedStates },
+                    new Stage0RecordingOptions.SymbolEntry { Symbol = "MSFT", Market = Market.UnitedStates },
+                ]),
+            CancellationToken.None);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.WatchlistSectionTitle));
+        llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
+        // 記録の対象銘柄（AAPL・MSFT）が一覧の行・件数・所属の行として出ない。
+        llm.Prompts.Should().OnlyContain(p => !p.Contains("""{"symbol":"""));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains("- 監視銘柄: 2 件") && !p.Contains("- 監視銘柄: 1 件"));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistContainsSuffix));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistNotContainsSuffix));
+
+        sink.Saved!.Records.Should().HaveCount(4).And.OnlyContain(r =>
+            Stage0AsOfInputs.IsDeclared(r.AsOfInputs)
+            && Stage0AsOfInputs.NotReconstructableKinds(r.AsOfInputs).SequenceEqual(new[] { Stage0AsOfInputKind.Watchlist }));
+    }
+
+    // T-10-1547 肯定形, ADR-0044 決定 3: 当時の監視銘柄が供給されたら、記録器はそれ（だけ）を節へ載せる。
+    // 記録の対象（AAPL）と違う一覧（META・NVDA）を渡し、節が記録の対象ではなく当時の一覧に従うことを確かめる。
+    [Fact]
+    public async Task 当時の監視銘柄が供給されればそれを監視銘柄の節に載せる()
+    {
+        var (recorder, llm, sink, _) = Build(
+            [Decision("Buy")],
+            asOfWatchlist: [new("META", Market.UnitedStates), new("NVDA", Market.UnitedStates)]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p => p.Contains("""{"symbol":"META","market":"UnitedStates"}"""));
+        llm.Prompts.Should().OnlyContain(p => p.Contains("""{"symbol":"NVDA","market":"UnitedStates"}"""));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains("""{"symbol":"AAPL","""));
+        llm.Prompts.Should().OnlyContain(p => p.Contains("- 監視銘柄: 2 件"));
+        llm.Prompts.Should().OnlyContain(p =>
+            p.Contains($"判断対象の AAPL（市場: UnitedStates）{TradeDecisionPromptBuilder.WatchlistNotContainsSuffix}"));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
+        Stage0AsOfInputs.IsExcluded(sink.Saved!.Records[0].AsOfInputs).Should().BeFalse();
+    }
+
     // 🔴 **否定形**: 記録中でなければ計上は素通しである（本番の計上区分を変えない）。
     [Fact]
     public async Task 記録中でなければ計上は素通しである()
@@ -430,7 +488,10 @@ public class Stage0DecisionRecorderTests
 
     // as-of 入力の偽装（AsOf 以前の情報だけを渡す）。
     // FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成できなかった種別を申告する経路も張る。
-    private sealed class StubInputProvider(IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null)
+    // FR-04, ADR-0044 決定 3, #1034: 当時の監視銘柄（(e)）を供給する経路も張る（null＝再構成できなかった）。
+    private sealed class StubInputProvider(
+        IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null,
+        IReadOnlyList<WatchedSymbol>? asOfWatchlist = null)
         : IAsOfDecisionInputProvider
     {
         public Task<AsOfDecisionInput?> GetAsync(
@@ -441,7 +502,8 @@ public class Stage0DecisionRecorderTests
                 new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m,
                     BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
                 new DatedPrice(asOf, 100m),
-                notReconstructable: notReconstructable));
+                notReconstructable: notReconstructable,
+                watchlist: asOfWatchlist));
     }
 
     private sealed class CapturingSink : IStage0DecisionRecordSink

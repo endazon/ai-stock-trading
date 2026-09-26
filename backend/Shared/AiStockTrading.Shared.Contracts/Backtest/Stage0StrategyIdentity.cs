@@ -93,6 +93,15 @@ public static class Stage0StrategyIdentity
                     sb.Append(kind).Append('=')
                       .Append(status is null ? "?" : status.Availability.ToString()).Append(';');
                 }
+
+                // FR-04, ADR-0044 決定 3, #1034, IADR-0440 決定 7: 必須でない種別（(e) 当時の監視銘柄）は**申告があるときだけ**含める。
+                // 申告の無い記録（ADR-0044 より前の記録）の戦略 ID を変えないためである。申告があれば、その可否も同一性の一部である。
+                foreach (var kind in Stage0AsOfInputs.DeclarableKinds.Except(Stage0AsOfInputs.RequiredKinds))
+                {
+                    var status = r.AsOfInputs.FirstOrDefault(s => s.Kind == kind);
+                    if (status is not null)
+                        sb.Append(kind).Append('=').Append(status.Availability.ToString()).Append(';');
+                }
             }
 
             sb.Append('\n');

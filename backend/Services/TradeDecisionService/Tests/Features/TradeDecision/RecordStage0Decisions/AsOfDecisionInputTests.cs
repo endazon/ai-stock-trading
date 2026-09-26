@@ -99,19 +99,25 @@ public class AsOfDecisionInputTests
     private static Stage0AsOfInputAvailability Of(AsOfDecisionInput input, Stage0AsOfInputKind kind) =>
         input.AsOfInputs.Single(s => s.Kind == kind).Availability;
 
+    // FR-04, ADR-0044 決定 3, #1034, IADR-0440 決定 7: 当時の監視銘柄を再構成できた前提（(e) を除外の理由にしない対照）。
+    private static IReadOnlyList<WatchedSymbol> AsOfWatchlist() => [new("AAPL", Market.UnitedStates)];
+
     // T-15-104 肯定形: 3 種すべての可否を申告し、**参考情報 0 件は「不在」**（再構成不可ではない）。
     // 🔴 その時点にニュースが無かったことは**当時の事実**であり、本番の AI 判断も同じ入力で動く。
     // ここを `NotReconstructable` にすると、ニュースの無い平常日がすべて合否から外れる。
     [Fact]
-    public void 再構成可否は3種そろい参考情報0件は不在として申告される()
+    public void 再構成可否は4種そろい参考情報0件は不在として申告される()
     {
-        var input = new AsOfDecisionInput(AsOf, new DailyPolicy(AsOf, "方針"), Sizing());
+        var input = new AsOfDecisionInput(
+            AsOf, new DailyPolicy(AsOf, "方針"), Sizing(), watchlist: AsOfWatchlist());
 
-        input.AsOfInputs.Select(s => s.Kind).Should().BeEquivalentTo(Stage0AsOfInputs.RequiredKinds);
+        // ADR-0044 決定 3: (e) 当時の監視銘柄を加えた 4 種（T-10-1620）。
+        input.AsOfInputs.Select(s => s.Kind).Should().BeEquivalentTo(Stage0AsOfInputs.DeclarableKinds);
         Stage0AsOfInputs.IsDeclared(input.AsOfInputs).Should().BeTrue();
         Of(input, Stage0AsOfInputKind.NewsAndDisclosures).Should().Be(Stage0AsOfInputAvailability.AbsentAtAsOf);
         Of(input, Stage0AsOfInputKind.DailyPolicy).Should().Be(Stage0AsOfInputAvailability.Reconstructed);
         Of(input, Stage0AsOfInputKind.FxRateToBase).Should().Be(Stage0AsOfInputAvailability.Reconstructed);
+        Of(input, Stage0AsOfInputKind.Watchlist).Should().Be(Stage0AsOfInputAvailability.Reconstructed);
         input.NotReconstructableKinds.Should().BeEmpty();
         Stage0AsOfInputs.IsExcluded(input.AsOfInputs).Should().BeFalse();
     }
@@ -123,7 +129,7 @@ public class AsOfDecisionInputTests
     public void 供給側の申告した種別は再構成不可になる(Stage0AsOfInputKind kind)
     {
         var input = new AsOfDecisionInput(
-            AsOf, new DailyPolicy(AsOf, "方針"), Sizing(), notReconstructable: [kind]);
+            AsOf, new DailyPolicy(AsOf, "方針"), Sizing(), notReconstructable: [kind], watchlist: AsOfWatchlist());
 
         Of(input, kind).Should().Be(Stage0AsOfInputAvailability.NotReconstructable);
         input.NotReconstructableKinds.Should().ContainSingle().Which.Should().Be(kind);
@@ -156,7 +162,8 @@ public class AsOfDecisionInputTests
             [
                 Reference("翌日のニュース", new DateTimeOffset(2026, 6, 16, 0, 0, 0, TimeSpan.Zero)),
                 Reference("当日のニュース", new DateTimeOffset(2026, 6, 15, 0, 0, 0, TimeSpan.Zero)),
-            ]);
+            ],
+            watchlist: AsOfWatchlist());
 
         input.DroppedFutureReferenceCount.Should().Be(1);
         input.DroppedUndatedReferenceCount.Should().Be(0);
@@ -180,6 +187,55 @@ public class AsOfDecisionInputTests
         // 未申告のとき「再構成不可は無い」と読めてはならない（呼び出し元は IsDeclared を先に見る）。
         Stage0AsOfInputs.NotReconstructableKinds(partial).Should().BeEmpty();
         Stage0AsOfInputs.IsExcluded(partial).Should().BeFalse();
+    }
+
+    // ---- FR-04, ADR-0044 決定 3・4, #1034, IADR-0440 決定 7: (e) 当時の監視銘柄 ----
+
+    // 🔴 T-10-1620 **陽性（最重要・暫定の門）**: 当時の監視銘柄を渡さなければ (e) は「再構成不可」と申告され、
+    // この判断は Stage 0 の合否から外れる。再構成の供給口（#1049）が入るまで、供給側は一覧を渡さない（ADR-0044 決定 4）。
+    // ここを `Reconstructed` へ倒すと、プロンプトの監視銘柄の節が「不明」の記録が合格根拠になる。
+    [Fact]
+    public void 当時の監視銘柄を渡さなければ再構成不可と申告し合否から外れる()
+    {
+        var input = new AsOfDecisionInput(AsOf, new DailyPolicy(AsOf, "方針"), Sizing());
+
+        input.Watchlist.Should().BeNull();
+        Of(input, Stage0AsOfInputKind.Watchlist).Should().Be(Stage0AsOfInputAvailability.NotReconstructable);
+        input.AsOfInputs.Single(s => s.Kind == Stage0AsOfInputKind.Watchlist).Reason.Should().NotBeNullOrWhiteSpace();
+        input.NotReconstructableKinds.Should().Equal(Stage0AsOfInputKind.Watchlist);
+        Stage0AsOfInputs.IsDeclared(input.AsOfInputs).Should().BeTrue();
+        Stage0AsOfInputs.IsExcluded(input.AsOfInputs).Should().BeTrue();
+    }
+
+    // T-10-1620 境界値: 当時 0 件だった（空の一覧）は**事実**であり、再構成できなかったのではない（不明 ≠ 無し）。
+    [Fact]
+    public void 当時の監視銘柄が0件なら再構成できたと申告する()
+    {
+        var input = new AsOfDecisionInput(AsOf, new DailyPolicy(AsOf, "方針"), Sizing(), watchlist: []);
+
+        input.Watchlist.Should().NotBeNull().And.BeEmpty();
+        Of(input, Stage0AsOfInputKind.Watchlist).Should().Be(Stage0AsOfInputAvailability.Reconstructed);
+        Stage0AsOfInputs.IsExcluded(input.AsOfInputs).Should().BeFalse();
+    }
+
+    // 🔴 T-10-1620 **否定形**: (e) は申告の成立に求めない —— ADR-0044 より前の記録（(b)(c)(d) の 3 種だけ）は
+    // 遡って「未申告」にならず、除外にもならない。申告された (e) の再構成不可は除外の理由として読む。
+    [Fact]
+    public void 監視銘柄の申告が無い旧記録は申告として成立し申告された再構成不可は除外の理由になる()
+    {
+        IReadOnlyList<Stage0AsOfInputStatus> legacy =
+        [
+            new(Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputAvailability.Reconstructed),
+            new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
+            new(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputAvailability.Reconstructed),
+        ];
+        IReadOnlyList<Stage0AsOfInputStatus> withWatchlistUnknown =
+            [.. legacy, new(Stage0AsOfInputKind.Watchlist, Stage0AsOfInputAvailability.NotReconstructable)];
+
+        Stage0AsOfInputs.IsDeclared(legacy).Should().BeTrue();
+        Stage0AsOfInputs.IsExcluded(legacy).Should().BeFalse();
+        Stage0AsOfInputs.IsExcluded(withWatchlistUnknown).Should().BeTrue();
+        Stage0AsOfInputs.NotReconstructableKinds(withWatchlistUnknown).Should().Equal(Stage0AsOfInputKind.Watchlist);
     }
 
     // 既定の供給ポートは常に「入力なし」を返す（実供給を構成するまで記録は 1 件も作られない）。

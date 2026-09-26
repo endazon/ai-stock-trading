@@ -281,9 +281,10 @@ public class Stage0ReplayEvaluationTests
     // FR-15, ADR-0036 決定1, #749, IADR-0387: **再構成できなかった as-of 入力の扱い**（フォローアップ 2 の履行）
     // ------------------------------------------------------------------------------------------------
 
+    // ADR-0044 決定 3: (e) 当時の監視銘柄を含む 4 種で申告する（T-10-1622）。
     private static IReadOnlyList<Stage0AsOfInputStatus> Thin(Stage0AsOfInputKind kind) =>
     [
-        .. Stage0AsOfInputs.RequiredKinds.Select(k => new Stage0AsOfInputStatus(
+        .. Stage0AsOfInputs.DeclarableKinds.Select(k => new Stage0AsOfInputStatus(
             k,
             k == kind
                 ? Stage0AsOfInputAvailability.NotReconstructable
@@ -407,6 +408,23 @@ public class Stage0ReplayEvaluationTests
         decision.Gate.FormatFailedChecks().Should().Contain(nameof(Stage0GateCheck.AllDecisionsExcluded));
     }
 
+    // 🔴 T-10-1622 **否定形（最重要・暫定の門）**, FR-04, ADR-0044 決定 3・4, #1034, IADR-0440 決定 7:
+    // 当時の監視銘柄を再構成できなかった記録（再構成の供給口が入るまでの全記録）だけの集合からは判定を組まない。
+    // (b)(c)(d) がすべて再構成できていても、(e) の再構成不可だけで合格根拠から外れる。
+    [Theory]
+    [InlineData(10)]
+    [InlineData(0)]
+    public void 当時の監視銘柄を再構成できない記録だけなら判定を組まない_failclosed(int signedQuantity)
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(
+            Request(SetOf(records: Daily(3, Thin(Stage0AsOfInputKind.Watchlist), signedQuantity))));
+
+        preparation.IsReady.Should().BeFalse();
+        preparation.BlockingChecks.Should().Equal(Stage0GateCheck.AllDecisionsExcluded);
+        preparation.GateContext.Should().BeNull();
+        Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks).Gate.Passed.Should().BeFalse();
+    }
+
     // 🔴 T-15-111 **否定形**: 除外の遮断は**合格を作らない**（本変更で新たに通る経路が生まれていない）。
     // 記録が痩せている限り、どの入口からも Passed=true は出ない。
     [Theory]
@@ -480,6 +498,7 @@ public class Stage0ReplayEvaluationTests
     [InlineData(Stage0AsOfInputKind.NewsAndDisclosures)]
     [InlineData(Stage0AsOfInputKind.DailyPolicy)]
     [InlineData(Stage0AsOfInputKind.FxRateToBase)]
+    [InlineData(Stage0AsOfInputKind.Watchlist)] // T-10-1622, ADR-0044 決定 3: (e) も同じ規則で外す
     public void 外したのが見送りだけなら経路は変わらず判定器へ到達する(Stage0AsOfInputKind kind)
     {
         var kept = Daily(3);

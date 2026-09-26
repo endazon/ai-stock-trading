@@ -15,6 +15,10 @@ public class ScreeningContextAssemblerTests
     private static readonly DailyPolicy Policy = new(new DateOnly(2026, 8, 29), "方針");
     private static readonly DecisionTrigger Trigger = DecisionTrigger.Scheduled("AAPL", AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates);
 
+    // #1034, IADR-0440 決定 5: 監視銘柄節（ここでは不明の形）は共有保護分に実際の文字数で入る。下の予算は従来の値にこの長さを足してずらした
+    // （削る件数・残る材料は従来と同じになる）。
+    private static readonly int WatchlistUnknownChars = TradeDecisionPromptBuilder.WatchlistSection(Trigger, null).Length;
+
     // 本文 100 文字で概算サイズを揃える（TradeDecisionService.Tests.ScreeningContextDegradationTests と同じ作法）。
     private static RetrievedContext News(string title, double score, DateTimeOffset? publishedAt) =>
         new(title, new string('あ', 100), SourceUri: null, score, ["google-news"], publishedAt);
@@ -27,7 +31,7 @@ public class ScreeningContextAssemblerTests
     {
         var retrieved = new[] { News("記事", 0.5, Old) };
 
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 10_000);
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 10_000, watchlist: null);
 
         assembled.Plan.Batches.Should().ContainSingle();
         assembled.Plan.Batches[0].Materials.Should().ContainSingle().Which.PublishedAt.Should().Be(Old);
@@ -46,7 +50,7 @@ public class ScreeningContextAssemblerTests
         // 1495 > 予算 1330 のため 1 件だけ削れば収まる（1152+172=1324 ≤ 1330）。
         // IADR-0297: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ。
         // #854, IADR-0351 決定4: 銘柄行は保有状況の短縮版ぶん 120→400 へ底上げ（予算も同幅 +280 シフト）。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330);
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + WatchlistUnknownChars, watchlist: null);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1, "予算内に収まらない 1 件が削られる");
         var retainedTitles = assembled.RetainedReferences.Select(r => r.Title).ToList();
@@ -66,7 +70,7 @@ public class ScreeningContextAssemblerTests
         // 保護分 1152（骨格 750 + 方針 2 文字 + 銘柄行 400）＋材料 2 件（176+175=351）=1503 > 予算 1330 のため
         // 1 件だけ削れば収まる（1152+175=1327 ≤ 1330）。発行時刻不明（HasValue=false）は関連度に関わらずソート順の先頭に来る。
         // #854, IADR-0351 決定4: 銘柄行 120→400 の底上げぶん、保護分と予算を同幅（+280）でずらした（上のテストと同じ）。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330);
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + WatchlistUnknownChars, watchlist: null);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1);
         var retainedTitles = assembled.RetainedReferences.Select(r => r.Title).ToList();

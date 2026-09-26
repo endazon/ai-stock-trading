@@ -704,7 +704,14 @@ public class TradeDecisionPromptBuilderTests
         var noneSection = $"{HeldHeading}{Environment.NewLine}- {TradeDecisionPromptBuilder.HeldNoneLine}{Environment.NewLine}{Environment.NewLine}";
         prompt.Should().Contain(noneSection);
 
-        Normalize(prompt.Replace(noneSection, string.Empty, StringComparison.Ordinal)).Should().Be(Normalize(LegacyScheduledPrompt));
+        // #1034, IADR-0440 決定 1: 監視銘柄節（ここでは既定＝不明の形）も後から足した節である。両方を除けば #854 以前と一字も変わらない。
+        var watchlistSection = TradeDecisionPromptBuilder.WatchlistSection(ScheduledAapl(), watchlist: null);
+        prompt.Should().Contain(watchlistSection);
+
+        Normalize(prompt
+                .Replace(noneSection, string.Empty, StringComparison.Ordinal)
+                .Replace(watchlistSection, string.Empty, StringComparison.Ordinal))
+            .Should().Be(Normalize(LegacyScheduledPrompt));
     }
 
     [Fact]
