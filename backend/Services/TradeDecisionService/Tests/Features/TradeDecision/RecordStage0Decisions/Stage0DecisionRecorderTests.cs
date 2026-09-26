@@ -379,6 +379,24 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WorkingUnknownNoFillsLine));
     }
 
+    // T-10-1547, FR-04, ADR-0033, #1034, IADR-0440 決定 7: 記録器は記録の対象銘柄を監視銘柄として渡し、本番の「読めた」枝で組む
+    // （既定の不明へ倒すと、本番と違う枝のプロンプトを記録することになる）。
+    [Fact]
+    public async Task 記録器のプロンプトは記録の対象銘柄を監視銘柄として載せ不明へ倒れない()
+    {
+        var (recorder, llm, _, _) = Build([Decision("Buy")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.WatchlistSectionTitle));
+        llm.Prompts.Should().OnlyContain(p => p.Contains("""{"symbol":"AAPL","market":"UnitedStates"}"""));
+        llm.Prompts.Should().OnlyContain(p => p.Contains("- 監視銘柄: 1 件"));
+        llm.Prompts.Should().OnlyContain(p =>
+            p.Contains($"判断対象の AAPL（市場: UnitedStates）{TradeDecisionPromptBuilder.WatchlistContainsSuffix}"));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
+    }
+
     // 🔴 **否定形**: 記録中でなければ計上は素通しである（本番の計上区分を変えない）。
     [Fact]
     public async Task 記録中でなければ計上は素通しである()

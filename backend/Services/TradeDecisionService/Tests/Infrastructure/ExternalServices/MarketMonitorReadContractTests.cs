@@ -48,6 +48,12 @@ public class MarketMonitorReadContractTests
             Called = true;
             return Task.FromResult<IReadOnlyList<WatchedSymbol>>([new WatchedSymbol("FALLBACK", Market.Japan)]);
         }
+
+        public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default)
+        {
+            Called = true;
+            return Task.FromResult<IReadOnlyList<WatchedSymbol>?>(null);
+        }
     }
 
     private sealed class StubHandler(string body) : HttpMessageHandler

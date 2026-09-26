@@ -40,7 +40,8 @@ public class InformationCollectedConsumerTests
     {
         public Task<string> CompleteAsync(
             string prompt, string? model = null, string? purpose = null, CancellationToken ct = default) =>
-            prompt.Contains(badSymbol, StringComparison.Ordinal)
+            // #1034, IADR-0440: プロンプトは監視銘柄の全件を載せるため、銘柄名の出現ではなく「判断対象」の行で見分ける。
+            prompt.Contains($"判断対象の {badSymbol}（", StringComparison.Ordinal)
                 ? throw new InvalidOperationException($"LLM 障害（{badSymbol}）")
                 : Task.FromResult(output);
     }
@@ -58,6 +59,10 @@ public class InformationCollectedConsumerTests
     {
         public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<WatchedSymbol>>(symbols);
+
+        // #1034, IADR-0440 決定 2: 権威源から読めた状態を模す（判断のプロンプトにも同じ一覧が載る）。
+        public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<WatchedSymbol>?>(symbols);
     }
     private sealed class CalendarStub(bool open) : IMarketCalendar
     {

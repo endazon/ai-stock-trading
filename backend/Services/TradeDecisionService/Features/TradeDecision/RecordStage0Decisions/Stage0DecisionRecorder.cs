@@ -247,9 +247,13 @@ public sealed class Stage0DecisionRecorder(
         // （BacktestService）のシミュレーションでしか決まらない——記録器は知り得ない。既定（null＝不明）のままでは
         // プロンプトが「不明なら Hold」と述べ、全件が Hold へ倒れて Stage 0 が成立しない。
         // 帰結: 記録が検証するのは本番プロンプトの「保有なし」の枝だけである（IADR-0351「残る制約」）。
+        // FR-04, ADR-0033, #1034, IADR-0440 決定 7: 監視銘柄は**記録の対象銘柄（Stage0Recording:Symbols）**を渡す。記録が組むのは
+        // 定時サイクル相当の判断であり、その巡回の対象がこの集合である（本番の定時サイクルが監視銘柄を巡回するのと同じ関係）。
+        // 既定（null＝不明）のままでは、本番の「読めた」枝ではなく「不明」の枝を記録することになる。
         var prompt = TradeDecisionPromptBuilder.Build(
             trigger, input.Policy, input.Sizing, input.References, includeProfitability: false,
-            currentPrice: input.ReferencePrice, held: HeldPosition.None, working: WorkingEntryOrders.None);
+            currentPrice: input.ReferencePrice, held: HeldPosition.None, working: WorkingEntryOrders.None,
+            watchlist: [.. options.ResolveSymbols().Select(s => new WatchedSymbol(s.Symbol, s.Market))]);
         var fingerprint = Fingerprint(prompt);
 
         if (input.DroppedFutureReferenceCount > 0 || input.DroppedUndatedReferenceCount > 0)
