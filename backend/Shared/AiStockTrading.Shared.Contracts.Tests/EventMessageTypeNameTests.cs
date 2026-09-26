@@ -82,6 +82,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(PriceMovementDetected), "AiStockTrading.Shared.Contracts.Events.PriceMovementDetected")]
         [InlineData(typeof(ReportConfirmed), "AiStockTrading.Shared.Contracts.Events.ReportConfirmed")]
         [InlineData(typeof(ReportDraftPresented), "AiStockTrading.Shared.Contracts.Events.ReportDraftPresented")]
+        // T-10-1507, FR-08, FR-11, #1028, IADR-0436 決定 4: 確定報告書の KB への入れ直し（報告書 → 監査台帳）。
+        [InlineData(typeof(ReportKnowledgeReingested), "AiStockTrading.Shared.Contracts.Events.ReportKnowledgeReingested")]
         [InlineData(typeof(StageTransitioned), "AiStockTrading.Shared.Contracts.Events.StageTransitioned")]
         // #464, ADR-0028 決定2: GFV 違反による停止の解除（誰が・いつ・どの記録に対して）。
         [InlineData(typeof(GoodFaithViolationsCleared), "AiStockTrading.Shared.Contracts.Events.GoodFaithViolationsCleared")]

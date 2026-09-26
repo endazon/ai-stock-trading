@@ -301,6 +301,11 @@ public class AuditCycleCompletenessTests
             new StopLossMethodResolved(
                 decisionId, "AAPL", Market.UnitedStates, ProductType.Cash, StopLossExecutionMethod.NoProtectiveStop,
                 StopLossExecutionMethod.NoProtectiveStop, StopLossMethodResolutionReason.AsSelected, BrokerProvider.MoomooSimulate, t),
+            // T-10-1506, FR-08, FR-11, #1028, IADR-0436 決定 4: 確定報告書の KB への入れ直し（所有者の操作）。
+            new ReportKnowledgeReingested(
+                Guid.NewGuid(), "endazon", "all", false, "Completed", null, 2, 1, 0, 0, 0, 1, 0, 0, 0, 0,
+                [new AiStockTrading.Shared.Contracts.Operations.ReportKnowledgeReingestEntry("2026-08-28", "SkippedEmptyBody", "本文が空です。", null)],
+                0, t),
             new ScreeningContextReduced(
                 ["AAPL", "MSFT"], 2, Split: true, DroppedRagCount: 1, DroppedNewsCount: 2,
                 UnresolvableOverflow: false, BudgetChars: 8_000, t),

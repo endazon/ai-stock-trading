@@ -7,11 +7,11 @@ updated: 2026-09-26
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-06, FR-07, FR-08, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
+ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0042]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -84,6 +84,19 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025]
   改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
   **1 日（JST の暦日）の回数上限**は `Reports:PolicyRevision:DailyLimit`（既定 10 回）。上限に達した要求は LLM を呼ばず **429** で断る。
   数えるのは LLM を呼んだ試行（失敗も含む）で、入力の検証・対象の決定で断った要求は数えない。
+- `POST /reports/knowledge-base/reingest`（**確定済みの報告書を KB へ入れ直す**。OwnerOnly）: 基盤の切替で消えた KB 上の写しの復旧と、
+  本文なしで入った写しの修復に使う。要求は `{all?, fromPeriodKey?, toPeriodKey?, refreshExisting?}`。全件は `all: true` で明示する
+  （範囲との併用・指定なしは 400）。範囲は期間キーを期間へ直して読む（日報＝その日・週報＝ISO 週の月〜日・月報＝その月。
+  `from` の期間の初日 ≦ 開始日 ≦ `to` の期間の末日・種別を問わない・片側だけも可・逆順と形の違いは 400）。対象は確定済みだけ。
+  基盤には外部 ID での照会・upsert が無いため、**KB の文書一覧を先に 1 回だけ引き**、属性（`project`・`periodKey`・`kind`）の一致で既存の写しを探す。
+  無ければ本文つきで作る／本文が無ければ本文を入れる（文書は増えない）／本文があれば何もしない（`refreshExisting: true` のときだけ本文を入れ直す＝索引の作り直し）。
+  **2 回実行しても KB の件数は変わらない。** 一覧を引けなければ 1 件も書かない。報告書ごとの結果（`items[].outcome`）は
+  `Created`・`BodyAttached`・`BodyRefreshed`（送った）／`AlreadyPresent`／`SkippedEmptyBody`・`SkippedBodyTooLarge`（送らなかった。本文が空・1 MB 超）／
+  `Failed`（拒否された・届かなかった。理由つき）／`Unknown`（タイムアウト等で結果が分からない。次の実行は一覧で見つければ作り直さない）／`NotAttempted`。
+  所有者でない本文なしの写しは直せない（`Failed`。管理者が削除してから入れ直す）。同じ報告書の写しが複数あれば本文のあるほうを採り、件数を `duplicatesInKb` で返す。
+  応答は 200＝実行した（個別の失敗・不明を含み得る）／503＝KB が構成されていない／502＝KB の文書一覧を引けなかった（**503・502 では 1 件も書いていない**）／
+  409＝実行中（同時に 1 本だけ）。200・503・502 は監査台帳へ `ReportKnowledgeReingested`（操作者・範囲・件数・内訳）を残す。
+  宛先・資格は確定時の保存と同じ構成（`KnowledgeBase:Documents:BaseUrl`・`KnowledgeBase:Auth`）で、1 回の呼び出しのタイムアウトは 30 秒。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
   応答は報告書の項目に `transitioned`（この要求で確定したか）と `version`（確定後の版）を足したもの。確定は版を 1 進めるため、

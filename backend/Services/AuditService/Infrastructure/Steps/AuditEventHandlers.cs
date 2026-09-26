@@ -637,3 +637,13 @@ public sealed class ScreeningContextReducedAuditHandler(IAuditEventStore store, 
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
+
+// FR-08, FR-11, #1028, IADR-0436 決定 4: 確定報告書の KB への入れ直し（誰が・何件・失敗の内訳）を中央監査台帳へ記録する。
+public sealed class ReportKnowledgeReingestedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ReportKnowledgeReingested message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

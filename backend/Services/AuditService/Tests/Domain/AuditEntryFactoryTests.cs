@@ -1238,4 +1238,50 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain("TrailingStop").And.Contain("Accepted");
         entry.Summary.Should().NotContain("retType").And.NotContain("理由:");
     }
+
+    private static ReportKnowledgeReingested Reingested(
+        string actor = "owner", string status = "Completed", string? abortReason = null) => new(
+        Guid.NewGuid(), actor, "all", RefreshExisting: false, status, abortReason,
+        Targeted: 10, Created: 3, BodyAttached: 2, BodyRefreshed: 1, AlreadyPresent: 1,
+        SkippedEmptyBody: 1, SkippedBodyTooLarge: 0, Failed: 1, Unknown: 1, DuplicatesInKb: 0,
+        [new AiStockTrading.Shared.Contracts.Operations.ReportKnowledgeReingestEntry("daily-2026-07-10", "Failed", "HTTP 400", null)],
+        BreakdownOmitted: 0, new DateTimeOffset(2026, 9, 26, 3, 0, 0, TimeSpan.Zero));
+
+    // T-10-1505, FR-08, FR-11, #1028, IADR-0436 決定 4: 入れ直しの監査は「誰が・範囲・送った件数・送らなかった／失敗／不明」を要約に書き、
+    // 不明を失敗にも送信にも混ぜない。相関は固定（種別 × 期間で引く）。内訳の全量はペイロードに残る。
+    [Fact]
+    public void ReportKnowledgeReingested_は操作者と範囲と結果ごとの件数を要約に書く()
+    {
+        var e = Reingested();
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(ReportKnowledgeReingested));
+        entry.CorrelationId.Should().NotBe(Guid.Empty);
+        AuditEntryFactory.From(Reingested("other"), Guid.NewGuid(), RecordedAt).CorrelationId
+            .Should().Be(entry.CorrelationId, "実行をまたいで同じ相関（種別 × 期間で引く）");
+        entry.CorrelationId.Should().NotBe(
+            AuditEntryFactory.From(new ReportConfirmed("all", "Daily", "owner", 1, RecordedAt), Guid.NewGuid(), RecordedAt).CorrelationId);
+        entry.Symbol.Should().BeNull();
+        entry.OccurredAt.Should().Be(e.OccurredAt);
+        entry.Summary.Should().Contain("owner").And.Contain("範囲 all").And.Contain("対象 10 件")
+            .And.Contain("送信 6 件（作成 3・本文の投入 2・入れ直し 1）").And.Contain("既に在る 1 件")
+            .And.Contain("送らず 1 件").And.Contain("失敗 1 件").And.Contain("不明 1 件");
+        entry.Summary.Should().NotContain("中止").And.NotContain("打ち切り");
+        entry.Detail.Should().Contain("daily-2026-07-10").And.Contain("HTTP 400");
+    }
+
+    // T-10-1505: 中止（1 件も書いていない）は理由を書き、件数の並びを出さない。打ち切りは明示する。操作者不明は「操作者不明」。
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("")]
+    public void ReportKnowledgeReingested_の中止と操作者不明と打ち切り(string actor)
+    {
+        var aborted = AuditEntryFactory.From(Reingested(actor, "Aborted", "KB が構成されていません。"), Id, RecordedAt);
+        aborted.Summary.Should().Contain("操作者不明").And.Contain("中止（1 件も書いていません）: KB が構成されていません。");
+        aborted.Summary.Should().NotContain("送信");
+
+        var cancelled = AuditEntryFactory.From(Reingested("owner", "Cancelled"), Id, RecordedAt);
+        cancelled.Summary.Should().Contain("途中で打ち切り").And.Contain("送信 6 件");
+    }
 }

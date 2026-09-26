@@ -14,6 +14,11 @@ namespace ReportService.Infrastructure.ExternalServices;
 // （IADR-0274［2026-09-03 追記］）。機密区分は internal（取引の判断根拠は社外秘扱いが妥当）。
 public static class ReportKnowledgeMapper
 {
+    // FR-08, #1028, IADR-0436 決定 2: 報告書の写しを KB の一覧から探す鍵（project と併せて外部 ID の代わりにする）。
+    // 基盤に外部 ID での照会・upsert が無いため、入れ直し（ReportKnowledgeReingestService）が同じ名前で突き合わせる。
+    public const string PeriodKeyAttribute = "periodKey";
+    public const string KindAttribute = "kind";
+
     public static KnowledgeDocument ToDocument(TradingReport report, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(report);
@@ -21,8 +26,8 @@ public static class ReportKnowledgeMapper
         var kind = report.Kind.ToString();
         var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["periodKey"] = report.PeriodKey,
-            ["kind"] = kind,
+            [PeriodKeyAttribute] = report.PeriodKey,
+            [KindAttribute] = kind,
             ["assumptionsVersion"] = report.AssumptionsVersion.ToString(CultureInfo.InvariantCulture),
         };
         if (report.ConfirmedAt is { } confirmedAt)

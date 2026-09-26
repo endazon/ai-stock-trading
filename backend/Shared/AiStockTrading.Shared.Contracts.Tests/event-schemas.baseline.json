@@ -366,6 +366,27 @@
     "Summary": "String",
     "Version": "Int32"
   },
+  "ReportKnowledgeReingested": {
+    "AbortReason": "String",
+    "Actor": "String",
+    "AlreadyPresent": "Int32",
+    "BodyAttached": "Int32",
+    "BodyRefreshed": "Int32",
+    "Breakdown": "IReadOnlyList\u003CReportKnowledgeReingestEntry\u003E",
+    "BreakdownOmitted": "Int32",
+    "Created": "Int32",
+    "DuplicatesInKb": "Int32",
+    "Failed": "Int32",
+    "OccurredAt": "DateTimeOffset",
+    "RefreshExisting": "Boolean",
+    "RunId": "Guid",
+    "Scope": "String",
+    "SkippedBodyTooLarge": "Int32",
+    "SkippedEmptyBody": "Int32",
+    "Status": "String",
+    "Targeted": "Int32",
+    "Unknown": "Int32"
+  },
   "ScreeningContextReduced": {
     "BatchCount": "Int32",
     "BudgetChars": "Int32",

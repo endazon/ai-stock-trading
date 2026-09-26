@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-10, NFR-11, NFR-13, FR-10]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, MSP#266, MSP#635, planning#54]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, MSP#266, MSP#635, planning#54]
 -->
 
 
@@ -201,6 +201,37 @@ done
 - **Vault**: 値を平文で書き出す方式（`vault kv get` の JSON をファイルへ落とす等）は採らない。基盤の Vault のストレージ種別に合った
   スナップショット（または `vault-data` のボリュームの暗号化されたコピー）を基盤と揃えて決める（未決）。
 - 本番の DB へのリストアは切替のロールバック（移行仕様書 §ロールバック・リスク）でだけ行う。**リストアの前に現状も dump する。**
+
+## 基盤の切替の後の KB への入れ直し
+
+基盤は自分の切替で文書 DB と索引を破棄する。確定報告書の KB 上の写しも消えるが、正は `report_svc` の `reports`（本文つき）に残る。
+基盤の切替の後に、報告書サービスの所有者専用の操作で**確定済みの報告書を KB へ入れ直す**（本文なしで入った古い写しの修復にも使える）。
+
+1. **先に基盤のタグ辞書を登録する**（[KB タグ辞書登録 Runbook](kb-tag-dictionary-runbook.md)）。文書 DB と一緒にタグ辞書が消えていると、
+   作成は未登録タグの 400 で `Failed` になる（理由に基盤の応答が出る）。
+2. 所有者（`trading-owner`）のトークンで 1 回呼ぶ。全件は `all: true` を明示する（範囲なら `fromPeriodKey` / `toPeriodKey`。期間キーは
+   `daily-yyyy-MM-dd` / `weekly-yyyy-Www` / `monthly-yyyy-MM`）。
+
+   ```bash
+   curl -sS -X POST "<報告書サービスの URL>/reports/knowledge-base/reingest" \
+     -H "Authorization: Bearer <所有者のアクセストークン>" -H "Content-Type: application/json" \
+     -d '{"all": true}'
+   ```
+
+3. 応答を読む。**200 以外（503＝KB 未構成・502＝KB の文書一覧を引けなかった）は 1 件も書いていない**ので、原因を直してそのまま再実行する。
+   200 でも報告書ごとの結果（`items[].outcome`）を確かめる。
+
+   | 結果 | 意味 | 次の手 |
+   | --- | --- | --- |
+   | `Created` / `BodyAttached` / `BodyRefreshed` | 送った（作った・本文の無い写しに本文を入れた・本文を入れ直した） | なし |
+   | `AlreadyPresent` | 本文つきの写しが既に在る | なし |
+   | `SkippedEmptyBody` / `SkippedBodyTooLarge` | 送らなかった（本文が空＝手動確定など・本文が 1 MB 超） | 必要なら本文を持つ版を作り直す |
+   | `Failed` | 拒否された・届かなかった（理由つき） | 理由を直して再実行する。所有者でない本文なしの写しは基盤の管理者が削除してから再実行する |
+   | `Unknown` | タイムアウト等で結果が分からない | **そのまま再実行する**（入っていれば一覧で見つかるので作り直さない） |
+
+4. **何度実行しても KB の件数は増えない**（既存の写しを一覧から属性で探してから書く）。索引だけが消えて文書が残った場合は
+   `refreshExisting: true` で本文を入れ直す（文書は増えない）。同じ報告書の写しが複数あると `duplicatesInKb` に出る（本システムの資格では消せない）。
+5. 実行は監査台帳に `ReportKnowledgeReingested`（操作者・範囲・件数・送らなかった／失敗／不明の内訳）として残る。同時に 2 本は走らない（409）。
 
 ## メッセージング（RabbitMQ のキュー）
 

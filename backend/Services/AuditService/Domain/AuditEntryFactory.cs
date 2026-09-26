@@ -672,6 +672,24 @@ public static class AuditEntryFactory
             + (e.UnresolvableOverflow ? "。**保護対象（方針・市況）だけで予算超過**（削らずに呼び出した）" : string.Empty)),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-08, FR-11, #1028, IADR-0436 決定 4: 確定報告書の KB への入れ直し（所有者の操作・1 回の実行につき 1 件）。
+    // 実行ごとに束ねる相関は要らず、「いつ誰が入れ直したか」を種別 × 期間で引ければ足りるため、固定の "report-kb-reingest" を相関にする。
+    // 要約は「誰が・範囲・送った件数・送らなかった／失敗／不明」を書く（原則 A: 不明を失敗にも成功にも混ぜない）。
+    // 中止（KB の一覧を引けず 1 件も書いていない）は理由を添える。内訳の全量はペイロード（Breakdown）に残る。
+    public static AuditEntry From(ReportKnowledgeReingested e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ReportKnowledgeReingested), AuditCorrelation.From("report-kb-reingest"), Symbol: null,
+        Truncate($"確定報告書の KB への入れ直し（{ReingestActorOf(e)}・範囲 {e.Scope}）: "
+            + (e.Status == "Aborted"
+                ? $"中止（1 件も書いていません）: {e.AbortReason}"
+                : $"{(e.Status == "Cancelled" ? "途中で打ち切り・" : string.Empty)}対象 {e.Targeted} 件・"
+                    + $"送信 {e.Created + e.BodyAttached + e.BodyRefreshed} 件（作成 {e.Created}・本文の投入 {e.BodyAttached}・入れ直し {e.BodyRefreshed}）・"
+                    + $"既に在る {e.AlreadyPresent} 件・送らず {e.SkippedEmptyBody + e.SkippedBodyTooLarge} 件・"
+                    + $"失敗 {e.Failed} 件・不明 {e.Unknown} 件")),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    private static string ReingestActorOf(ReportKnowledgeReingested e) =>
+        string.IsNullOrWhiteSpace(e.Actor) || e.Actor == "unknown" ? "操作者不明" : e.Actor;
+
     // 期間は日・時間・分のうち意味のある単位まで。秒まで書くと読み手が桁を数えることになる。
     private static string FormatDuration(TimeSpan d) =>
         d.TotalDays >= 1 ? $"{d.TotalDays:0.#} 日"
