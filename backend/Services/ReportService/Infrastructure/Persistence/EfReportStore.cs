@@ -106,12 +106,13 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         {
             db.SaveChanges();
         }
-        catch (DbUpdateException)
+        catch
         {
-            // FR-14, #1024, IADR-0432（PR #1026 の監査 5・再監査 F2）: 保存に失敗したら（並行更新に限らずどの DbUpdateException でも）、
-            // 変更を追跡したまま残さない。残すと、後続の台帳の SaveFailed の書き込みが**失敗したはずの下書きを保存してしまう**。
-            // 同じ DbContext を共有する後続の書き込み（方針の改訂の台帳の SaveFailed 等）が、この失敗した行を
-            // もう一度保存しようとして同じ例外で落ちるのを防ぐ。
+            // FR-14, #1024, IADR-0432（PR #1026 の監査 5・再監査 F2、#1029 の追記・#1026 の差分監査 N1）: 保存に失敗したら、
+            // **例外の種類を問わず**（並行更新・その他の DbUpdateException・接続の失敗で上がる NpgsqlException 等）変更を追跡したまま残さない
+            // （台帳の SaveOrDetach と同じ規律）。Npgsql は接続を開くときの失敗を DbUpdateException に包まないため、型で絞るとその経路だけ
+            // Modified の行が残る。残すと、同じ DbContext を共有する後続の書き込み（方針の改訂の台帳の SaveFailed 等）が
+            // **失敗したはずの下書きを保存してしまう**か、この失敗した行をもう一度保存しようとして同じ例外で落ちる。
             db.ChangeTracker.Clear();
             throw;
         }

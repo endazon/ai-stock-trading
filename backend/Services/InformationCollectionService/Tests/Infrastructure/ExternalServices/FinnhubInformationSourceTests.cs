@@ -1,4 +1,5 @@
 using System.Net;
+using InformationCollectionService.Features.InformationCollection;
 using InformationCollectionService.Domain;
 using InformationCollectionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
@@ -19,7 +20,7 @@ public class FinnhubInformationSourceTests
     {
         var handler = new StubHandler(HttpStatusCode.OK,
             """{"c":150.25,"h":151.0,"l":149.0,"o":149.5,"pc":148.0,"t":1720000000}""");
-        var source = new FinnhubInformationSource(Client(handler, new CountingRateLimiter()), ["AAPL"]);
+        var source = new FinnhubInformationSource(Client(handler, new CountingRateLimiter()), new FixedFinnhubSymbolSet(["AAPL"]));
 
         var items = await source.FetchAsync();
 
@@ -43,7 +44,7 @@ public class FinnhubInformationSourceTests
     public async Task 取得失敗の銘柄はスキップされる()
     {
         var handler = new StubHandler(HttpStatusCode.TooManyRequests, "rate limited");
-        var source = new FinnhubInformationSource(Client(handler, new CountingRateLimiter()), ["AAPL"]);
+        var source = new FinnhubInformationSource(Client(handler, new CountingRateLimiter()), new FixedFinnhubSymbolSet(["AAPL"]));
 
         var items = await source.FetchAsync();
 
@@ -56,7 +57,7 @@ public class FinnhubInformationSourceTests
         var handler = new StubHandler(HttpStatusCode.OK,
             """{"c":150.25,"h":151.0,"l":149.0,"o":149.5,"pc":148.0,"t":1720000000}""");
         var limiter = new CountingRateLimiter();
-        var source = new FinnhubInformationSource(Client(handler, limiter), ["AAPL", "MSFT"]);
+        var source = new FinnhubInformationSource(Client(handler, limiter), new FixedFinnhubSymbolSet(["AAPL", "MSFT"]));
 
         await source.FetchAsync();
 
