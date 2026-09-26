@@ -45,6 +45,7 @@ public class MarketDataSourceFactoryDailyVolumeTests
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle(m => m.Value == 1);
     }
 
+    // ［2026-09-26 / #1030・ADR-0043 決定 1］暫定の 300 回/日は撤回。比べるのは日次上限を実測して設定したときだけ（ここでは 300 を設定）。
     [Fact]
     public void 暫定上限を超える申告銘柄数は警告を出しメトリクスへ超過比率を記録する()
     {
@@ -55,7 +56,7 @@ public class MarketDataSourceFactoryDailyVolumeTests
         var options = new MarketDataOptions { Finnhub = new FinnhubMarketDataOptions { EstimatedSymbolCount = 1 } };
 
         MarketDataSourceFactory.EvaluateDailyVolume(
-            options, pollIntervalSeconds: 60, new FinnhubDailyVolumeGuardOptions(), metrics, logs);
+            options, pollIntervalSeconds: 60, new FinnhubDailyVolumeGuardOptions { ProvisionalDailyLimit = 300 }, metrics, logs);
 
         logs.Warnings.Should().ContainSingle(m =>
             m.Contains("1440", StringComparison.Ordinal) && m.Contains("300", StringComparison.Ordinal));

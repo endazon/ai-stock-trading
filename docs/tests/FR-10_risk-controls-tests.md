@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09, FR-08]
-adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0042, ADR-0031, ADR-0043]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0435, IADR-0436]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1015, #1028, #1039]
+adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0042, ADR-0043, ADR-0031]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0437, IADR-0435, IADR-0436]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1030, #1015, #1028, #1039]
 -->
 
 
@@ -3175,6 +3175,97 @@ T-10-1363〜T-10-1375 は欠番（予約した帯の未使用分）。
 | 変更履歴の経路をいつも Discord と書く | 市場監視 23 件中 2 件赤 | T-10-1419 |
 | 別の型が監視銘柄の API のパスを持つ | 通知 100 件中 1 件赤 | T-10-1423 |
 
+## Finnhub の監視銘柄数を分次の予算と「1 巡回が巡回間隔に収まること」で統制する
+
+監視銘柄を増やす 3 つの口（設定画面の追加・全置換・Discord の入れ替え案の適用）は、1 巡回（保有 ＋ 監視銘柄）の要求数 ÷ 自制レートが
+巡回間隔を超える追加を適用しない（除外は止めない）。1 日の要求数の見積りは開場中の巡回で数え、撤回された暫定の日次上限とは比べない。
+分次の窓で説明できない 429 は日次上限の手がかりとして別のイベントで記録する。PR #1037 の監査の是正で T-10-1458・T-10-1459 を足し、T-10-1436・T-10-1439・T-10-1443・T-10-1444・T-10-1446〜T-10-1449 の期待を改めた。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-1430** | 米国・東証・未知の市場 | 通常日の場中の長さを求める | 390／330／0 分。場中判定を 1 分刻みで数えた長さと一致 | 境界の定義を 2 か所に置かない | 自動（境界値） |
+| **T-10-1431** | 巡回間隔 60／120／7 秒・巡回する時間 390／1／0 分・既定 | 1 日の巡回回数を求める | 390／195／8（切り捨て）／0、既定は 1440。負・1441 分は拒否 | 開場中の巡回だけで数える | 自動（境界値） |
+| **T-10-1432** | 日次上限の構成が空・未設定・不正・0 以下／正の整数 | 構成を読む | 未設定（比べない）／その値。空文字で落ちない | 推測値を既定に置かない | 自動（否定形） |
+| **T-10-1433** | 日次上限なし／あり（300 ちょうど・301） | 見積りを判定する | 比べない（比率なし）／以内・超過 | 上限は実測して設定したときだけ | 自動（境界値） |
+| **T-10-1434** | 申告 6 銘柄・60 秒・日次上限なし・開場中 390 分 | 見積る | 見積り 2,340（24 時間なら 8,640）を記録、情報ログ 1 件、警告なし、比率を記録しない | 推測の分母で割った比率を出さない | 自動（否定形） |
+| **T-10-1435** | 比率が無い | 見積りを計上する | 見積りだけを記録し比率は記録しない | 同上 | 自動（否定形） |
+| **T-10-1436** | 自制レート・巡回間隔・保有・監視銘柄の組（既定の組の 5／6 銘柄、稼働構成の 12 要求、90 秒の切り捨て、レート 0） | 収まるかを判定する | (保有＋監視)×60 ≤ レート×間隔（秒）のときだけ収まる。0 以下のレートは 1 回/分 | 1 巡回が巡回間隔に収まる | 自動（境界値） |
+| **T-10-1437** | 上限 3 要求・保有 1・AAPL 監視中 | NVDA 追加・AMZN 追加・AAPL 除外・META 追加の案を当てる／予算超過中に除外と追加 | 除外を先に当て NVDA・AMZN を適用、META は理由つきで適用しない／除外は適用し追加は適用しない／検査しない構成は全部適用 | 除外は止めない・収まらない追加は理由つき | 自動 |
+| **T-10-1438** | 上限 3 要求・保有 1・監視 2 | 設定画面の追加・除外 | 追加は検証エラー（保存も履歴も無い）、収まる追加は通る、除外は通る | 設定画面も同じ検査 | 自動（否定形） |
+| **T-10-1439** | 上限 2 要求・監視 3（予算超過中） | 全置換（入れ替え・並べ替え・除外・収まる追加） | 増やして収まらない置換だけ検証エラー（文言に収まらない追加の銘柄と「除外だけなら追加を含めずに送れば適用される」）。並べ替え・除外・収まる追加は通る | 画面を通らない口も塞ぐ | 自動（否定形） |
+| **T-10-1440** | 本番の組み立て・Finnhub・自制 3 回/分・保有 AAPL（リスク管理の照会） | 設定画面の追加を 3 回・除外 | 2 回目まで 200、3 回目は 400（理由に「保有 1」）、除外は 200 | 保有も数える | 自動（結線） |
+| **T-10-1441** | 同上・監視 MSFT | 入れ替え案（追加 3・除外 1）を適用する | 200。NVDA・AMZN・MSFT 除外を適用、META は `skipReason` つきで適用しない | 一部適用の内訳に理由 | 自動（結線） |
+| **T-10-1442** | Finnhub を使わない構成・自制 1 回/分・保有 1 | 追加を 3 回 | すべて 200 | 自制レートの無い構成では検査しない | 自動（否定形） |
+| **T-10-1443** | 本番の組み立て・自制 2 回/分・保有 1 | 全置換で 2 銘柄／1 銘柄 | 400／200 | 画面を通らない口も塞ぐ | 自動（結線） |
+| **T-10-1444** | 米国 2・東証 1、60 秒・上限なし／120 秒・上限 300 | 見積る | 390＋390（東証は要求を使わないので 0）・比べない／195＋195＝390・超過 | 市場ごとの場中と要求数で数え、上限は設定したときだけ | 自動 |
+| **T-10-1445** | 本番の組み立て・保有 1・自制 12 回/分 | 入れ替え案で 1 銘柄を足す | 推定 780（監視 1 ＋ 保有 1、各 390 巡回）・上限 null・超過 false | 開場中の巡回で数え、保有も数える | 自動（結線） |
+| **T-10-1446** | 429・残り 1／59（直前の要求から 1 秒以上／999 ms） | 分類する | 残りがあるのに拒否（日次の手がかり）／秒次の余地（手がかりにしない） | 分次で説明できない 429 を見張り、秒次を取り違えない | 自動（境界値） |
+| **T-10-1447** | 429・この応答のリセットが 3 秒前／この応答にリセットが無く前回の 429 のリセットが 3 秒前／それぞれ 1 秒前 | 分類する | リセットの後も拒否が続く（手がかり）／猶予の内側は分次の窓 | 時計のずれで誤って鳴らさない | 自動（境界値） |
+| **T-10-1448** | 429・残り 0・リセットは未来（前回の 429 のリセットを過ぎていても）／ヘッダ無し | 分類する | 分次の窓／判別できない（どちらも手がかりにしない） | 説明できる 429 を手がかりにしない | 自動（否定形） |
+| **T-10-1449** | クライアント・偽の応答（分次の 429 → リセット後の新しい窓の 429 → ヘッダ無しの 429 → 成功 → 窓内の 429 → 2 秒後の残りありの 429 → 200 ms 後の残りありの 429） | 取得する | 取得はすべて null／成功のみ値。専用イベント（4301）は 2 回だけ（ヘッダ無し・2 秒後の残りあり）、成功で記憶を消す | 送出は変えず記録だけ分ける | 自動 |
+| **T-10-1450** | 日次上限が無い推定・巡回に収まらず適用しなかった追加 | 内訳を作る | 「推定 780 回/日（開場中の巡回で数えた値）」だけで上限の文言を出さない。追加は理由つき | 撤回した上限を表示しない | 自動（否定形） |
+| **T-10-1451** | 市場監視の本物の応答型（上限 null） | 適用の応答を読む | 適用済みとして読め、推定は上限 null、理由も読める | 越境の契約（null で「不明」に化けない） | 自動（**契約**） |
+| **T-10-1452** | 情報収集・finnhub と finnhub-news・構成の固定リスト 1 件 | 銘柄数を与えて／省略して見積る。上限なしで起動時の見積りを記録する | 与えた数（6 → 576）／固定リストの数。24 時間の巡回で数える。情報ログだけで警告なし・比率なし | 追随する構成では固定リストで数えない | 自動 |
+| **T-10-1453** | Provider（空・none・他のソースだけ・finnhub・finnhub-news・両方・大小文字と空白・重複） | 1 銘柄あたりの要求数を求める | 0／0／0／1／1／2／2／1 | 1 巡回の要求数の分子 | 自動（境界値） |
+| **T-10-1454** | 本番の組み立て・市場監視に結線・固定リスト ZZZZ・監視銘柄の米国 2 件 | 起動する → 1 巡回取得する | 起動時の見積りは 1 巡回の上限（1,800 銘柄 × 24 巡回）、巡回後は 2 × 24 で記録し直す | 巡回ごとの対象で数える | 自動（結線） |
+| **T-10-1455** | 本番の組み立て（情報収集） | 名前付き HttpClient `monitor` を作る | タイムアウト 5 秒 | 市場監視の照会で巡回を長く塞がない | 自動（結線） |
+| **T-10-1456** | 本番の組み立て（取引判断） | 同上 | タイムアウト 5 秒 | 定時サイクルを長く塞がない | 自動（結線） |
+| **T-10-1457** | 情報収集・日次上限（`Collection:Source:Finnhub:DailyRequestLimit`）が未設定 | ソースを作る | 日次の警告を出さず、情報ログ | 未実測は平常 | 自動（否定形） |
+| **T-10-1458** | 全置換・`[AAPL, aapl, AAPL × 10]`／前後空白の重複・検査なし／市場違いの同じコード | 置換する（サービス・本番の組み立て） | 重複は検査の有無に関係なく 400（1 件も保存しない）。市場が違えば通る | 重複で「新しい銘柄なし」に見せかけて要求数を増やさない | 自動（否定形・結線） |
+| **T-10-1459** | 上限 1 要求・米国 1 件を監視中／東証の銘柄／米国と東証の建玉 | 1 銘柄あたりの要求数・拒否の判定・設定画面の追加・入れ替え案・全置換・見積り・ガードの保有 | 米国 1・東証 0。東証の追加は予算を超えていても拒否しない。米国の追加は拒否。見積りは東証を 0。ガードは米国の建玉だけを数える | Finnhub が要求を出さない銘柄を数えない | 自動 |
+
+既存の試験を改めた（ADR の改定による期待の変更）: T-10-1381・T-10-1382（推定を開場中の巡回で数え、超過とは判定しない）、T-10-1396・T-10-1404
+（表示を「日次上限」に）、共有の日次上限の読み取り（既定を未設定へ）と見積りの超過（上限を明示して設定）、情報収集の見積りの超過（同）。
+
+**変異注入の実測**（2026-09-26。1 つずつ入れて対象の試験クラスを実行し、実行ごとに変異前の内容へ書き戻した）:
+
+| 変異 | 結果 | 殺したテスト |
+| --- | --- | --- |
+| 収まる判定の `≤` を `<` にする | 市場監視 41 件中 9 件赤 | T-10-1436 / T-10-1437 / T-10-1438 / T-10-1439 / T-10-1440 / T-10-1441 / T-10-1443 |
+| 保有を数えない | 市場監視 41 件中 7 件赤 | T-10-1436 / T-10-1437 / T-10-1438 / T-10-1440 / T-10-1441 / T-10-1443 |
+| 入れ替え案で巡回の検査を外す | 市場監視 41 件中 2 件赤 | T-10-1437 / T-10-1441 |
+| 入れ替え案で除外が枠を空けない（除外を先に当てない相当） | 市場監視 41 件中 2 件赤 | T-10-1437 / T-10-1441 |
+| 設定画面の追加で検査を外す | 市場監視 41 件中 2 件赤 | T-10-1438 / T-10-1440 |
+| 全置換で検査を外す | 市場監視 41 件中 2 件赤 | T-10-1439 / T-10-1443 |
+| 全置換で追加を含まない置換も検査する | 市場監視 41 件中 1 件赤 | T-10-1439 |
+| ガードが保有を 0 と数える | 市場監視 41 件中 3 件赤 | T-10-1440 / T-10-1441 / T-10-1443 |
+| ガードが Finnhub 以外の構成でも検査する | 市場監視 41 件中 1 件赤 | T-10-1442 |
+| 追加の口がガードの判定を渡さない | 市場監視 41 件中 1 件赤 | T-10-1440 |
+| 入れ替え案の見積りを 24 時間で数える | 市場監視 41 件中 4 件赤 | T-10-1381 / T-10-1382 / T-10-1444 / T-10-1445 |
+| 入れ替え案の見積りに保有を足さない | 市場監視 41 件中 1 件赤 | T-10-1445 |
+| 巡回回数が巡回する時間を無視する（24 時間） | 共有 62 件中 2 件赤 | T-10-1431 / T-10-1434 |
+| 日次上限の既定を 300 に戻す | 共有 62 件中 9 件赤 | T-10-1432 / T-10-1433 / T-10-1434 |
+| 上限が無くても比率に 0 を記録する | 契約 44 件中 1 件赤 | T-10-1435 |
+| 東証の場中を 300 分にする | カーネル 3 件中 1 件赤 | T-10-1430 |
+| 残りがあるのに拒否を手がかりにしない | 共有 62 件中 3 件赤 | T-10-1446 / T-10-1449 |
+| 前回の 429 のリセットを見ない | 共有 62 件中 2 件赤 | T-10-1447 / T-10-1449 |
+| リセットの猶予を 0 にする | 共有 62 件中 1 件赤 | T-10-1447 |
+| 成功で前回の 429 の記憶を消さない | 共有 62 件中 1 件赤 | T-10-1449 |
+| 手がかりを専用のイベントで記録しない | 共有 62 件中 1 件赤 | T-10-1449 |
+| 表示が上限の有無を見ない | 通知 34 件中 1 件赤 | T-10-1450 |
+| 受け手の上限を `int` に戻す | 通知 34 件中 1 件赤 | T-10-1451 |
+| 1 銘柄あたりの要求数で finnhub-news を数えない | 情報収集 24 件中 5 件赤 | T-10-1453 ほか既存の見積りの試験 |
+| 情報収集の `monitor` のタイムアウトを外す | 情報収集 24 件中 1 件赤 | T-10-1455 |
+| 取引判断の `monitor` のタイムアウトを外す | 取引判断 1 件中 1 件赤 | T-10-1456 |
+| 追随する構成でも起動時の見積りを固定リストで数える | 情報収集 24 件中 1 件赤 | T-10-1454 |
+| 巡回ごとに見積りを記録し直さない | 情報収集 24 件中 1 件赤 | T-10-1454 |
+| 見積りが与えた銘柄数を無視する | 情報収集 24 件中 2 件赤 | T-10-1452 / T-10-1454 |
+| 日次上限が未設定を警告に戻す | 情報収集 24 件中 1 件赤 | T-10-1457 |
+| （PR #1037 の監査）全置換の重複検査を外す | 市場監視 43 件中 2 件赤 | T-10-1458 / T-10-1443 |
+| 1 銘柄あたりの要求数を市場に依らず 1 にする | 市場監視 43 件中 2 件赤 | T-10-1459 / T-10-1444 |
+| 要求を使わない追加も予算超過で拒否する | 市場監視 43 件中 1 件赤 | T-10-1459 |
+| ガードが東証の建玉も数える | 市場監視 43 件中 1 件赤 | T-10-1459 |
+| 見積りで東証を数える | 市場監視 43 件中 2 件赤 | T-10-1459 / T-10-1444 |
+| 応答にリセットがあっても前回のリセットで手がかりにする（旧挙動） | 共有 62 件中 2 件赤 | T-10-1448 / T-10-1449 |
+| 秒次の余地（1 秒以内）を見ない | 共有 62 件中 3 件赤 | T-10-1446 / T-10-1449 |
+| クライアントが直前の要求からの間隔を渡さない | 共有 62 件中 1 件赤 | T-10-1449 |
+| 全置換の拒否の文言から収まらない追加を外す | 市場監視 43 件中 1 件赤 | T-10-1439 |
+| 全置換で米国の追加を含まない置換も予算で拒否する | 市場監視 43 件中 1 件赤 | T-10-1439 |
+
+🔴 **本節が固定していない残余リスク**:
+- 保有が増えて予算を超えるのは拒否では防げない（追加ではない）。運用者が確かめる。
+- 保有の照会が失敗している間は保有を 0 と数える（そのとき巡回も保有を照会しない）。
+- 実 Finnhub での 429 の判別は確かめていない（ヘッダの形は分次の実測に拠る）。
 **情報収集の Finnhub の対象銘柄を監視銘柄から決める試験**（2026-09-26。監視銘柄を増やしても収集対象が配備の固定値のままだった件）:
 
 | ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |

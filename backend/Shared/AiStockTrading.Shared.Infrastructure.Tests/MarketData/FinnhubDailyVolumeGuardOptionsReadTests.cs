@@ -6,7 +6,8 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Infrastructure.Tests.MarketData;
 
-// FR-01, ADR-0031（計画）決定3, NFR, #679: 暫定日次上限を構成から読む際の型変換の規律。
+// FR-01, ADR-0031（計画）決定3, NFR, #679: 日次上限を構成から読む際の型変換の規律。
+// ［2026-09-26 / #1030・ADR-0043 決定 1・IADR-0437］既定は 300 ではなく未設定（null＝未実測・比べない）。T-10-1432。
 //
 // 🔴 **本テスト群は、実配備でしか出なかった欠陥の再発を止めるためにある。**
 // chart の設定点は「キーは書くが値は空」で既定へ委ねる規約であり（`values.yaml` の多数のキーが
@@ -33,7 +34,7 @@ public class FinnhubDailyVolumeGuardOptionsReadTests
         // 🔴 これが #679 の本体。chart が `value: ""` を渡しても落ちてはならない。
         var options = FinnhubDailyVolumeGuardOptions.Read(ConfigWith(string.Empty));
 
-        options.ProvisionalDailyLimit.Should().Be(300);
+        options.ProvisionalDailyLimit.Should().BeNull();
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public class FinnhubDailyVolumeGuardOptionsReadTests
     {
         var options = FinnhubDailyVolumeGuardOptions.Read(ConfigWith(null));
 
-        options.ProvisionalDailyLimit.Should().Be(300);
+        options.ProvisionalDailyLimit.Should().BeNull();
     }
 
     [Theory]
@@ -62,7 +63,7 @@ public class FinnhubDailyVolumeGuardOptionsReadTests
     {
         var options = FinnhubDailyVolumeGuardOptions.Read(ConfigWith(raw));
 
-        options.ProvisionalDailyLimit.Should().Be(300);
+        options.ProvisionalDailyLimit.Should().BeNull();
     }
 
     [Theory]
@@ -72,6 +73,6 @@ public class FinnhubDailyVolumeGuardOptionsReadTests
     {
         var options = FinnhubDailyVolumeGuardOptions.Read(ConfigWith(raw));
 
-        options.ProvisionalDailyLimit.Should().Be(300);
+        options.ProvisionalDailyLimit.Should().BeNull();
     }
 }

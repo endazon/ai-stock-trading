@@ -287,6 +287,20 @@ public class BusinessMetricsTests
             .Should().ContainSingle().Which.Value.Should().Be(160);
     }
 
+    // T-10-1435（ADR-0043 決定 1, #1030, IADR-0437）: 日次上限が未設定（比率 null）なら、見積りだけを記録し比率は記録しない。
+    [Fact]
+    public void Finnhub日次上限が未設定なら比率を記録しない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 2340, limitRatioPercent: null);
+
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(2340);
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent).Should().BeEmpty();
+    }
+
     // NFR-01, #689, IADR-0307: 起点イベント → 発注完了の端点間所要が、trigger タグつきで刻まれる。
     [Theory]
     [InlineData(BusinessMetrics.TriggerPriceMovement, 42_000)]
