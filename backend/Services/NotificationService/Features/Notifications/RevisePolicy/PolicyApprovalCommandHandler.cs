@@ -26,7 +26,7 @@ public sealed class PolicyApprovalCommandHandler(
     /// <summary>この押下では確定を確かめられず、入れ替えの適用を試みなかったときの文言（#1029）。</summary>
     internal const string NotAttemptedText =
         "監視銘柄の入れ替えは適用していません（この操作では確定していないため）。"
-        + "この版を既に確定していて入れ替えがまだなら、設定画面から変更してください。";
+        + "この版を既に確定していて入れ替えがまだ適用されていないなら、設定画面から変更してください。";
 
     public async Task<PolicyApprovalResult> HandleAsync(DiscordCommandContext context, CancellationToken cancellationToken = default)
     {
