@@ -11,7 +11,7 @@ namespace OrderExecutionService.Tests;
 // 同じ銘柄・方向に S0（ブローカー側逆指値）の建玉と S2（逆指値なしの建玉）が併存すると、S2 は保護記録を持たないため
 // S0 の行から見た建玉残から差し引けない（S1 の行は差し引く）。S0 の建玉が消えても S2 の数量が残っていれば、ガードは
 // 「建玉あり」と読んで S0 の逆指値を取り消さない。直し方は未決（利用者への問い）。直したら本試験の期待を改めること。
-// 今は起きない: SIMULATE ではブローカーが逆指値を受け付けず S0 の建玉が残らない（手法を途中で切り替えた場合にだけ理論上あり得る）。
+// 今は起きない: SIMULATE ではブローカーが逆指値を受け付けず S0 の建玉が残らず、S2 は SIMULATE でしか選べない。
 public class ProtectiveStopNettingS2CoexistenceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 26, 14, 0, 0, TimeSpan.Zero);
