@@ -10,7 +10,7 @@ namespace MarketMonitorService.Features.MarketMonitor;
 // - Finnhub を使わない構成（MarketData:Provider が finnhub 以外）では自制レートが無いため null（検査しない）。
 // - 自制レートは現在値ソースと同じ構成（MarketData:Finnhub:RequestsPerMinute）、巡回間隔は巡回と同じ構成（Monitor:PollIntervalSeconds）を
 //   Program.cs が渡す（値の出所を巡回・送出と 1 つにする）。
-// - 保有は巡回と同じ `IPositionStore` から数える。照会の失敗は空列（0 件）になるが、そのとき巡回も保有を照会しないため、
+// - 保有は巡回と同じ `IPositionStore` から、Finnhub の要求を使う（米国の）建玉だけを数える（#1037 の監査）。照会の失敗は空列（0 件）になるが、そのとき巡回も保有を照会しないため、
 //   その瞬間の 1 巡回の要求数とは一致する（残余リスクは IADR-0437）。
 public sealed class WatchlistCycleFitGuard(
     string? provider,
@@ -28,7 +28,7 @@ public sealed class WatchlistCycleFitGuard(
 
         var held = await positions.GetOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
         return new WatchlistCycleFitSnapshot(
-            new WatchlistCycleFit(requestsPerMinute, pollIntervalSeconds, held.Count),
+            new WatchlistCycleFit(requestsPerMinute, pollIntervalSeconds, held.Sum(p => WatchlistCycleFit.RequestsPerSymbol(p.Market))),
             [.. held.Select(p => p.Market)]);
     }
 }

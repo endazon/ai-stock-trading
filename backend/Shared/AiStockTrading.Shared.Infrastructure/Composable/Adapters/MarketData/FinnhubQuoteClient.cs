@@ -41,11 +41,19 @@ public sealed class FinnhubQuoteClient(
     // 複数の呼び出しが共有し得るため Interlocked で読み書きする。
     private long _lastRejectedResetUnix;
 
+    // #1037 の監査: 直前に要求を送った時刻（UTC ticks。0＝まだ送っていない）。秒次（30 回/秒）の 429 を日次の手がかりと
+    // 取り違えないため、直前の要求からの間隔を分類へ渡す。
+    private long _lastRequestTicks;
+
     /// <summary>1 銘柄の現在値スナップショットを取得する。非成功応答・空応答なら null。</summary>
     public async Task<FinnhubQuoteSnapshot?> GetQuoteAsync(string symbol, CancellationToken cancellationToken = default)
     {
         // IADR-0064: 429 を受けてから対処するのでは規約違反そのものを防げないため、送信前に自制する。
         await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        var sentAt = _time.GetUtcNow();
+        var previousTicks = Interlocked.Exchange(ref _lastRequestTicks, sentAt.UtcTicks);
+        TimeSpan? sincePreviousRequest = previousTicks > 0 ? sentAt - new DateTimeOffset(previousTicks, TimeSpan.Zero) : null;
 
         // API キーはヘッダー（X-Finnhub-Token）で渡す。URL クエリに入れると OTel の HttpClient 計装が
         // リクエスト URL（クエリ含む）をトレースへ出力し、キーが可観測性基盤に漏えいするため。
@@ -56,7 +64,7 @@ public sealed class FinnhubQuoteClient(
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
-            LogRateLimited(symbol, response);
+            LogRateLimited(symbol, response, sincePreviousRequest);
             return null;
         }
 
@@ -78,7 +86,7 @@ public sealed class FinnhubQuoteClient(
     }
 
     // ADR-0043 決定 1: 429 を分次で説明できるかで分けて記録する。前回の 429 のリセット時刻は、この応答のリセットで置き換える。
-    private void LogRateLimited(string symbol, HttpResponseMessage response)
+    private void LogRateLimited(string symbol, HttpResponseMessage response, TimeSpan? sincePreviousRequest)
     {
         var remaining = ReadLong(response, FinnhubRateLimitClassifier.RemainingHeader);
         var resetUnix = ReadLong(response, FinnhubRateLimitClassifier.ResetHeader);
@@ -87,7 +95,7 @@ public sealed class FinnhubQuoteClient(
         var previous = previousUnix > 0 ? DateTimeOffset.FromUnixTimeSeconds(previousUnix) : (DateTimeOffset?)null;
         var remainingInt = remaining is { } r ? (int)Math.Clamp(r, int.MinValue, int.MaxValue) : (int?)null;
 
-        var kind = FinnhubRateLimitClassifier.Classify(remainingInt, reset, previous, _time.GetUtcNow());
+        var kind = FinnhubRateLimitClassifier.Classify(remainingInt, reset, previous, _time.GetUtcNow(), sincePreviousRequest);
         if (FinnhubRateLimitClassifier.IsDailyLimitClue(kind))
         {
             logger.LogWarning(

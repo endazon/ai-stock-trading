@@ -83,6 +83,13 @@ public class FinnhubDailyPremiseWithdrawnTests
 
         kind.Should().Be(FinnhubRateLimitClassifier.Kind.RemainingNotExhausted);
         FinnhubRateLimitClassifier.IsDailyLimitClue(kind).Should().BeTrue();
+
+        // #1037 の監査: 直前の要求から 1 秒以内なら秒次（30 回/秒）の 429 の余地がある＝手がかりにしない。ちょうど 1 秒からは手がかり。
+        var burst = FinnhubRateLimitClassifier.Classify(remaining, now.AddSeconds(30), null, now, TimeSpan.FromMilliseconds(999));
+        burst.Should().Be(FinnhubRateLimitClassifier.Kind.PossibleBurst);
+        FinnhubRateLimitClassifier.IsDailyLimitClue(burst).Should().BeFalse();
+        FinnhubRateLimitClassifier.Classify(remaining, now.AddSeconds(30), null, now, TimeSpan.FromSeconds(1))
+            .Should().Be(FinnhubRateLimitClassifier.Kind.RemainingNotExhausted);
     }
 
     // T-10-1447: リセットの時刻を過ぎても続く拒否は分次では説明できない（その応答のリセットが過去／前回の 429 のリセットを過ぎた）。
@@ -94,11 +101,13 @@ public class FinnhubDailyPremiseWithdrawnTests
 
         FinnhubRateLimitClassifier.Classify(0, now.AddSeconds(-3), null, now)
             .Should().Be(FinnhubRateLimitClassifier.Kind.PersistsAfterReset, "この応答のリセットが既に過去");
-        FinnhubRateLimitClassifier.Classify(0, now.AddSeconds(40), previousRejectionReset: now.AddSeconds(-3), now)
-            .Should().Be(FinnhubRateLimitClassifier.Kind.PersistsAfterReset, "前回の 429 のリセットを過ぎて成功を挟まずにまた 429");
+        FinnhubRateLimitClassifier.Classify(0, null, previousRejectionReset: now.AddSeconds(-3), now)
+            .Should().Be(FinnhubRateLimitClassifier.Kind.PersistsAfterReset, "この応答にリセットが無く、前回の 429 のリセットを過ぎて成功を挟まずにまた 429");
+        FinnhubRateLimitClassifier.Classify(null, null, previousRejectionReset: now.AddSeconds(-3), now)
+            .Should().Be(FinnhubRateLimitClassifier.Kind.PersistsAfterReset, "ヘッダが無くても前回のリセットを過ぎていれば");
         FinnhubRateLimitClassifier.Classify(0, now.AddSeconds(-1), null, now)
             .Should().Be(FinnhubRateLimitClassifier.Kind.MinuteWindow, "猶予の内側");
-        FinnhubRateLimitClassifier.Classify(0, now.AddSeconds(40), previousRejectionReset: now.AddSeconds(-1), now)
+        FinnhubRateLimitClassifier.Classify(0, null, previousRejectionReset: now.AddSeconds(-1), now)
             .Should().Be(FinnhubRateLimitClassifier.Kind.MinuteWindow, "猶予の内側");
     }
 
@@ -111,6 +120,10 @@ public class FinnhubDailyPremiseWithdrawnTests
         var window = FinnhubRateLimitClassifier.Classify(0, now.AddSeconds(20), previousRejectionReset: now.AddSeconds(20), now);
         window.Should().Be(FinnhubRateLimitClassifier.Kind.MinuteWindow);
         FinnhubRateLimitClassifier.IsDailyLimitClue(window).Should().BeFalse();
+
+        // #1037 の監査: この応答が「残り 0・リセットは未来」なら、前回の 429 のリセットを過ぎていても新しい窓を使い切った 429（分次で説明できる）。
+        FinnhubRateLimitClassifier.Classify(0, now.AddSeconds(20), previousRejectionReset: now.AddSeconds(-40), now)
+            .Should().Be(FinnhubRateLimitClassifier.Kind.MinuteWindow);
 
         var missing = FinnhubRateLimitClassifier.Classify(null, null, null, now);
         missing.Should().Be(FinnhubRateLimitClassifier.Kind.HeadersMissing);
@@ -134,9 +147,15 @@ public class FinnhubDailyPremiseWithdrawnTests
         (await client.GetQuoteAsync("AAPL")).Should().BeNull();
         logs.Entries.Should().ContainSingle().Which.EventId.Should().NotBe(FinnhubQuoteClient.DailyLimitClueEvent);
 
-        // 2) リセットを過ぎ、成功を挟まずにまた 429 → 日次の手がかり。
+        // 2a) リセットを過ぎたが、この応答は「残り 0・リセットは未来」＝新しい窓を使い切った 429（分次で説明できる。#1037 の監査）。
         clock.Advance(TimeSpan.FromSeconds(35));
         handler.Next = Rejected(remaining: 0, clock.GetUtcNow().AddSeconds(25).ToUnixTimeSeconds());
+        (await client.GetQuoteAsync("AAPL")).Should().BeNull();
+        logs.Entries[^1].EventId.Should().NotBe(FinnhubQuoteClient.DailyLimitClueEvent);
+
+        // 2b) そのリセットも過ぎ、成功を挟まずにヘッダの無い 429 → 前回のリセットで判定して日次の手がかり。
+        clock.Advance(TimeSpan.FromSeconds(30));
+        handler.Next = new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent("{}") };
         (await client.GetQuoteAsync("AAPL")).Should().BeNull();
         logs.Entries[^1].EventId.Should().Be(FinnhubQuoteClient.DailyLimitClueEvent);
         logs.Entries[^1].Message.Should().Contain("分次の窓では説明できません").And.Contain("AAPL");
@@ -152,10 +171,18 @@ public class FinnhubDailyPremiseWithdrawnTests
         (await client.GetQuoteAsync("AAPL")).Should().BeNull();
         logs.Entries[^1].EventId.Should().NotBe(FinnhubQuoteClient.DailyLimitClueEvent);
 
-        // 4) 残りがあるのに 429 → 日次の手がかり。
+        // 4) 直前の要求から 2 秒後に、残りがあるのに 429 → 日次の手がかり。
+        clock.Advance(TimeSpan.FromSeconds(2));
         handler.Next = Rejected(remaining: 12, clock.GetUtcNow().AddSeconds(30).ToUnixTimeSeconds());
         (await client.GetQuoteAsync("MSFT")).Should().BeNull();
         logs.Entries[^1].EventId.Should().Be(FinnhubQuoteClient.DailyLimitClueEvent);
+
+        // 5) 直前の要求から 1 秒以内に、残りがあるのに 429 → 秒次（30 回/秒）の余地があるので手がかりにしない（#1037 の監査）。
+        clock.Advance(TimeSpan.FromMilliseconds(200));
+        handler.Next = Rejected(remaining: 11, clock.GetUtcNow().AddSeconds(30).ToUnixTimeSeconds());
+        (await client.GetQuoteAsync("NVDA")).Should().BeNull();
+        logs.Entries[^1].EventId.Should().NotBe(FinnhubQuoteClient.DailyLimitClueEvent);
+        logs.Entries[^1].Message.Should().Contain("PossibleBurst");
         logs.Entries.Count(e => e.EventId == FinnhubQuoteClient.DailyLimitClueEvent).Should().Be(2);
     }
 

@@ -34,10 +34,11 @@ public sealed class MonitorWatchlistService(
             throw new ArgumentException($"銘柄 {target.Symbol}（{market}）は既に監視対象です。", nameof(symbol));
         }
 
-        if (cycleFit is not null && !cycleFit.Fits(symbols.Count + 1))
+        List<MonitoredSymbol> after = [.. symbols, target];
+        if (cycleFit is not null && cycleFit.Refuses(target, after))
         {
             throw new ArgumentException(
-                $"銘柄 {target.Symbol}（{market}）を足すと Finnhub の巡回に収まりません（{cycleFit.Describe(symbols.Count + 1)}）。"
+                $"銘柄 {target.Symbol}（{market}）を足すと Finnhub の巡回に収まりません（{cycleFit.Describe(after)}）。"
                 + "先に他の銘柄を外すか、自制レート・巡回間隔の設定を見直してください。",
                 nameof(symbol));
         }

@@ -96,9 +96,10 @@ public static partial class WatchlistProposalPlan
                 continue;
             }
 
-            if (cycleFit is not null && !cycleFit.Fits(working.Count + 1))
+            List<MonitoredSymbol> after = [.. working, target];
+            if (cycleFit is not null && cycleFit.Refuses(target, after))
             {
-                items[i] = new(change, Applied: false, $"Finnhub の巡回に収まりません（{cycleFit.Describe(working.Count + 1)}）");
+                items[i] = new(change, Applied: false, $"Finnhub の巡回に収まりません（{cycleFit.Describe(after)}）");
                 continue;
             }
 

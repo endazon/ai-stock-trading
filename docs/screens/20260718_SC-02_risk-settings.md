@@ -211,7 +211,7 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
 | ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す |
 | 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |
 | 監視銘柄 履歴 | `GET /monitor/watchlist/history` | `MonitorSettingsChangeEntry[]`。失敗時は履歴領域のみ縮退。Discord の `/policy` の確認ボタンで確定した入れ替え案の適用も同じ形で並ぶ（理由の末尾に「/policy の案 … を Discord の確認ボタンで適用」） |
-| 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market／足すと Finnhub の 1 巡回（保有＋監視銘柄）が巡回間隔に収まらない（除外は止めない。Finnhub を使わない構成では検査しない）、409=競合＋再取得を促す |
+| 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market／足すと Finnhub の 1 巡回（米国の保有＋米国の監視銘柄。東証の銘柄は要求を使わないので数えない）が巡回間隔に収まらない（除外は止めない。Finnhub を使わない構成では検査しない）、409=競合＋再取得を促す |
 | 監視銘柄 削除 | `DELETE /monitor/watchlist`（body `{symbol, market, reason}`） | 明示確認（削除理由必須）後に実行。成功=再取得。400=不在、409=競合＋再取得を促す |
 | 市場監視パラメータ 取得 | `GET /monitor/settings`（別サービス MarketMonitor・OwnerOnly） | `MarketMonitorSettings`。失敗=独立縮退。**取得失敗も「供給が無い」状態の 1 つ**として規約の文言で述べる（「市場監視パラメータを**取得できていません（供給元がありません）**。値が無いのではなく、確認できていません。」#424） |
 | 市場監視パラメータ 履歴 | `GET /monitor/settings/history` | `MonitorSettingsChangeEntry[]` を種別 2（変動閾値）・3（クールダウン）で絞る |

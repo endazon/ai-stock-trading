@@ -126,6 +126,21 @@ IADR-0437 決定 1〜4 のとおり。要点:
 - 🔴 **開場中の巡回だけで数える指示には従わなかった**: 情報収集の in-process の巡回は開場に関係なく 24 時間回るため、開場中だけで数えると
   実際より少なく見せる。ADR-0043 決定 3 の 3 点目（巡回しない時間の扱いに数え方を合わせる）に従い 24 時間で数える（IADR-0437 決定 5）。
 
+### ［2026-09-26 追記 / PR #1037 の監査］是正（IADR-0437 決定 6）
+
+- 母集合（誤りの側から引いた）:
+  - 市場を問わず銘柄を数える箇所: `git grep -n "Fits(\|RequestsPerCycle\|held.Count\|CyclesPerDay(interval" -- backend/Services/MarketMonitorService` →
+    `WatchlistCycleFit`・`WatchlistProposalPlan.Plan`・`MonitorWatchlistService.Add`・`MonitorSettingsService.Replace`・`WatchlistCycleFitGuard`（保有）・
+    `WatchlistVolumeEstimator`。起動時の見積り（申告値）は市場を持たないので**除外**（IADR-0437 の残余に書いた）。
+  - 重複を通す口: `git grep -n "MonitoredSymbols = " -- backend/Services/MarketMonitorService/Features` → 全置換だけ（追加は重複を拒否済み・入れ替え案は形の検証で重複を拒否済み）。
+  - 429 の分類の呼び出し: `FinnhubQuoteClient` 1 箇所（共有）。
+- 受け入れ基準:
+  - [x] 全置換の重複（大小文字を無視・同じ市場）は 400。要求数が増えるのは新しい米国の銘柄を含むときだけになる — T-10-1458・T-10-1443
+  - [x] 1 銘柄あたりの要求数は米国 1・それ以外 0（3 つの口・保有・見積り）— T-10-1459・T-10-1444
+  - [x] 前回のリセットはこの応答にリセットが無いときだけ。直前の要求から 1 秒以内の残りありの 429 は秒次として手がかりにしない（他のプロセスの送出は見えない＝文書化）— T-10-1446〜T-10-1449
+  - [x] 全置換は一部適用しない方を選び、拒否の文言に収まらない追加と「除外だけなら送り直す」— T-10-1439
+  - [x] 配備の順序を chart README に・初回シードは検査しないことを IADR に
+
 ## 配備（coordinator）
 
 - `values-local.yaml` を反映して market-monitor の Deployment を更新する（env の追加なので Pod の再起動だけでは入らない。#1022）。
