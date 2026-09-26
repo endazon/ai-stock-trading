@@ -84,6 +84,9 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
 
     public PolicyRevisionAttempt? Find(Guid id) => db.PolicyRevisionAttempts.Find(id)?.ToAttempt();
 
+    // #1029, IADR-0432（追記）: WatchlistAppliedAt が同時実行のトークンのため、読んでから書くまでの間に内訳が記録されると
+    // DbUpdateConcurrencyException を上げ得る（確定の遷移の直後に書くので実運用では起きない）。呼び手は best-effort として扱うこと
+    // （現在の唯一の呼び手 ConfirmReport は例外を警告に留める）。
     public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt)
     {
         var row = db.PolicyRevisionAttempts.Find(id);
