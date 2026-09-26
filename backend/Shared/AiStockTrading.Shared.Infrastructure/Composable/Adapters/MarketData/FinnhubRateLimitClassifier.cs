@@ -44,7 +44,8 @@ public static class FinnhubRateLimitClassifier
 
     /// <summary>
     /// 429 を分類する。<paramref name="previousRejectionReset"/> は、成功を挟まずに直前に受けた 429 のリセット時刻（無ければ null）。
-    /// <paramref name="sincePreviousRequest"/> は、このクライアントが直前に要求を送ってからこの要求を送るまでの間隔（初回は null）。
+    /// <paramref name="sincePreviousRequest"/> は、同じ鍵の送り手（<see cref="FinnhubLastRequestTracker"/> を共有する送り手。#1044）が
+    /// 直前に要求を送ってからこの要求を送るまでの間隔（初回は null）。
     /// </summary>
     /// <remarks>
     /// #1037 の監査で改めた 2 点:

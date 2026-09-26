@@ -55,7 +55,8 @@ public static class InformationSourceFactory
         var finnhub = new FinnhubFamily(
             finnhubSymbols ?? new FixedFinnhubSymbolSet(options.Finnhub.Symbols),
             FollowsDynamicSet: finnhubSymbols is not null,
-            new Lazy<IRateLimiter>(() => Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider)));
+            new Lazy<IRateLimiter>(() => Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider)),
+            new FinnhubLastRequestTracker(timeProvider));
 
         foreach (var provider in ParseProviders(options.Provider))
         {
@@ -319,11 +320,14 @@ public static class InformationSourceFactory
 
                 // IADR-0068: HTTP は共有の FinnhubQuoteClient。レート制限は構成値（既定は公称 60 回/分の 1/2）。
                 // #1015, IADR-0435: バケットは企業ニュースと共有し、銘柄は巡回ごとの集合から取る。
+                // #1044, IADR-0437 決定 7: 直前の要求の時刻も企業ニュースと共有する（429 の分類が企業ニュースの送出を数える）。
                 return new FinnhubInformationSource(
                     new FinnhubQuoteClient(
                         httpClient, options.Finnhub.ApiKey!,
                         finnhub.Limiter.Value,
-                        loggerFactory.CreateLogger<FinnhubQuoteClient>()),
+                        loggerFactory.CreateLogger<FinnhubQuoteClient>(),
+                        timeProvider: timeProvider,
+                        lastRequestTracker: finnhub.LastRequest),
                     finnhub.Symbols);
 
             case FinnhubNews:
@@ -336,7 +340,8 @@ public static class InformationSourceFactory
                     finnhub.Limiter.Value,
                     clock,
                     loggerFactory.CreateLogger<FinnhubCompanyNewsSource>(),
-                    options.Finnhub.NewsLookbackDays);
+                    options.Finnhub.NewsLookbackDays,
+                    finnhub.LastRequest);
 
             case GoogleNews:
                 if (options.GoogleNews.Queries.Length == 0)
@@ -411,8 +416,10 @@ public static class InformationSourceFactory
     }
 
     // #1015, IADR-0435: Finnhub 系（現在値・企業ニュース）で共有するもの —— 巡回ごとの銘柄の集合と、1 つのバケット（遅延生成）。
+    // #1044, IADR-0437 決定 7: 加えて直前の要求の時刻（同じ鍵の送り手の送出をすべて数え、秒次の 429 を 4301 と取り違えない）。
     // 有効化の条件: 鍵があり、かつ銘柄の出所がある（構成の固定リストが空でない、または巡回ごとに決まる集合を与えられた）。
-    private sealed record FinnhubFamily(IFinnhubSymbolSet Symbols, bool FollowsDynamicSet, Lazy<IRateLimiter> Limiter)
+    private sealed record FinnhubFamily(
+        IFinnhubSymbolSet Symbols, bool FollowsDynamicSet, Lazy<IRateLimiter> Limiter, FinnhubLastRequestTracker LastRequest)
     {
         public bool IsConfigured(CollectionSourceOptions options) =>
             !string.IsNullOrWhiteSpace(options.Finnhub.ApiKey) && (FollowsDynamicSet || options.Finnhub.Symbols.Length > 0);

@@ -186,6 +186,44 @@ public class FinnhubDailyPremiseWithdrawnTests
         logs.Entries.Count(e => e.EventId == FinnhubQuoteClient.DailyLimitClueEvent).Should().Be(2);
     }
 
+    // T-10-1573（#1044 項目 3, IADR-0437 決定 7）: 追跡器を共有すると、クライアントを通らない同じ鍵の送り手（情報収集の企業ニュース）の
+    // 送出も「直前の要求」に数える。その直後 1 秒以内の「残りがあるのに拒否」は秒次の余地（4301 にしない）。追跡器を共有しない
+    // クライアントは同じ並びで 4301 を記録する（是正前の挙動＝陽性対照）。
+    [Fact]
+    public async Task 共有の追跡器は他の送り手の要求も直前の要求に数える()
+    {
+        async Task<CapturingLoggerFactory> Run(bool share)
+        {
+            var clock = new ManualClock(DateTimeOffset.FromUnixTimeSeconds(1_800_000_000));
+            var handler = new ScriptedHandler();
+            var logs = new CapturingLoggerFactory();
+            var tracker = new FinnhubLastRequestTracker(clock);
+            var client = new FinnhubQuoteClient(
+                new HttpClient(handler), "key", new NoWaitLimiter(), logs.CreateLogger("finnhub"), timeProvider: clock,
+                lastRequestTracker: share ? tracker : null);
+
+            handler.Next = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"c":1,"h":1,"l":1,"pc":1,"t":1800000000}"""),
+            };
+            (await client.GetQuoteAsync("AAPL")).Should().NotBeNull();
+
+            clock.Advance(TimeSpan.FromSeconds(5));
+            tracker.MarkSent().SincePrevious.Should().Be(share ? TimeSpan.FromSeconds(5) : null, "他の送り手（企業ニュース）の送出");
+            clock.Advance(TimeSpan.FromMilliseconds(200));
+            handler.Next = Rejected(remaining: 7, clock.GetUtcNow().AddSeconds(30).ToUnixTimeSeconds());
+            (await client.GetQuoteAsync("MSFT")).Should().BeNull();
+            return logs;
+        }
+
+        var shared = await Run(share: true);
+        shared.Entries.Should().NotContain(e => e.EventId == FinnhubQuoteClient.DailyLimitClueEvent);
+        shared.Entries[^1].Message.Should().Contain("PossibleBurst");
+
+        var own = await Run(share: false);
+        own.Entries[^1].EventId.Should().Be(FinnhubQuoteClient.DailyLimitClueEvent, "自分の送出だけを数えると直前は 5.2 秒前");
+    }
+
     private static HttpResponseMessage Rejected(int remaining, long resetUnix)
     {
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent("{}") };
