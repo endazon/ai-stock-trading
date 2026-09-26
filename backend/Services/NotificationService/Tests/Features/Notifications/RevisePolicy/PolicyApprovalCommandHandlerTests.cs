@@ -133,6 +133,43 @@ public class PolicyApprovalCommandHandlerTests
         watchlist.Applies.Should().ContainSingle();
     }
 
+    // T-10-1480（#1029, IADR-0433 の 2026-09-26 追記）: 同じプロセスで先に `/report approve` した版の `/policy` のボタンは、窓口の
+    // 二重押下の吸収（層1）で確定を確かめられない。案を引かず適用せず、確定済みで未適用なら設定画面から変えられると案内する。
+    [Fact]
+    public async Task 先にreport_approveした版のボタンでは適用せず設定画面を案内する()
+    {
+        var reports = new Reports();
+        var guard = new VersionedConfirmationGuard();
+        var reportHandler = new ReportCommandHandler(reports, guard, Options(), NullLogger<ReportCommandHandler>.Instance);
+        var policies = new FakePolicyRevisionController { Lookup = new WatchlistProposalLookup(true, true, Proposal, "照会しました") };
+        var watchlist = new FakeWatchlistController();
+        var handler = new PolicyApprovalCommandHandler(
+            reportHandler, policies, watchlist, Options(), NullLogger<PolicyApprovalCommandHandler>.Instance);
+
+        (await reportHandler.HandleAsync(Context($"/report approve {Key} 3"))).ConfirmedNow.Should().BeTrue("前提: /report approve で確定した");
+        var result = await handler.HandleAsync(Context());
+
+        result.ConfirmedNow.Should().BeFalse();
+        result.Message.Should().Contain("適用していません").And.Contain("設定画面から変更してください");
+        (reports.Confirms, policies.TotalCalls, watchlist.TotalCalls).Should().Be((1, 0, 0));
+    }
+
+    // T-10-1481（#1029）: 案の照会が一時的に失敗した後の押し直しも、同じプロセスでは確定を確かめられない。2 回目は照会も適用もせず、
+    // 設定画面を案内する（1 回目の応答も設定画面を案内している）。
+    [Fact]
+    public async Task 照会の失敗の後の押し直しでは適用せず設定画面を案内する()
+    {
+        var (handler, reports, policies, watchlist) = Create(lookup: new WatchlistProposalLookup(false, false, null, "HTTP 503"));
+
+        var first = await handler.HandleAsync(Context());
+        var second = await handler.HandleAsync(Context());
+
+        first.Message.Should().Contain("照会できなかったため、適用していません").And.Contain("設定画面から変更してください");
+        second.ConfirmedNow.Should().BeFalse();
+        second.Message.Should().Contain("適用していません").And.Contain("設定画面から変更してください");
+        (reports.Confirms, policies.Lookups.Count, watchlist.TotalCalls).Should().Be((1, 1, 0));
+    }
+
     // T-10-1399: 案の照会の失敗・/policy の案でない版・入れ替え無し・記録済みでは適用しない（照会の失敗は失敗と伝える）。
     [Theory]
     [MemberData(nameof(NoApplyLookups))]

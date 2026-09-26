@@ -98,6 +98,32 @@ IADR-0431 の実装は `/policy` を報告書と同じ用途（`report-daily` �
   試験は InMemory の経路（プロセス内の錠）で同じ「数えて書く」の排他を固定している。配備後に Postgres で同時要求を確かめるのは運用の確認に委ねる。
 - 試験: T-10-1424〜T-10-1426。
 
+## ［2026-09-26 追記 / #1029］適用の内訳の記録の原子性と、失敗の片付けの統一
+
+#1027 の再監査（非ブロック）と #1026 の差分監査（N1・N2）の是正。IADR-0433 が同じ台帳に足した書き込みも、本 IADR の規律に揃える。
+
+- **適用の内訳は 1 回だけ記録する（原子的に）**: 従来の `RecordWatchlistApply` は読んでから書く形で、2 つの書き手（Bot のプロセスが 2 つ・
+  別の DbContext）がどちらも「まだ記録が無い」と読むと、両方が true を返し、後の方が先の監査 JSON を上書きし得た。
+  `WatchlistAppliedAt` を**同時実行のトークン**にし、保存は「まだ記録が無い」行だけを更新させる（`UPDATE … WHERE "Id" = @id AND
+  "WatchlistAppliedAt" IS NULL`）。後の書き手は `DbUpdateConcurrencyException` になり、`SaveOrDetach` が行を切り離したうえで
+  **上書きせず** false（エンドポイントは 409「記録済み」）を返す。衝突以外の失敗は従来どおり例外で上げる（「記録済み」に偽らない）。
+- **一意制約（PeriodKey, ReportVersion）を採らない理由**: 競合は同じ行（同じ試行 ID）への 2 つの UPDATE であり、行をまたぐ一意制約では
+  止まらない（どちらも同じ 1 行を書き換える）。同じ会話キー・版の案（Proposed）の試行が 2 行できる経路も無い（版は報告書の行の
+  楽観排他で 1 つずつ進む）ため、行をまたぐ制約が守るものが無い。加えて InMemory は一意制約を強制しないが、同時実行のトークンは
+  InMemory でも効くので試験で固定できる。
+- **マイグレーション** `PolicyRevisionWatchlistApplyConcurrency` は**スキーマを変えない**（トークンは WHERE 句の問題で、列・索引は同じ）。
+  モデルのスナップショットを進めるためだけに置く。
+- **トークンの副作用**: 同じ行の他の書き込み（`Complete`・`MarkProposalConfirmed`）も WHERE に記録時刻の元の値を持つ。`Complete` は
+  案が確定される前、`MarkProposalConfirmed` は確定の遷移の直後（適用の記録より前。best-effort で失敗は警告）に書くため、実運用では衝突しない。
+  トークンは記録時刻の 1 列だけに限る（試験で固定）。
+- **`SaveOrDetach` の統一**: `RecordWatchlistApply`・`MarkProposalConfirmed`・`Begin` も通す（台帳の書き込みはすべて）。
+- **N1**: `EfReportStore.UpsertDraft` の改訂の保存は、**例外の種類を問わず**変更の追跡を消してから上げる。Npgsql は接続を開くときの失敗を
+  `DbUpdateException` に包まず `NpgsqlException` のまま上げるため、型で絞るとその経路だけ、台帳の SaveFailed の保存が失敗した下書きを
+  一緒に保存し得た（F2 と同じ食い違い）。
+- **N2**: `TryBegin` の切り離し（防御的な経路）を試験で固定した。
+- F3 と同じく、Postgres の実 DB では試験していない（トークンの SQL は EF が生成し、元の値が null なら `IS NULL` を出す）。
+- 試験: T-10-1482〜T-10-1489（`PolicyRevisionLedgerTests`）。変異注入の実測は `docs/tests/FR-10_risk-controls-tests.md`。
+
 ## 残余リスク
 
 - ~~同時に 2 つの `/policy` が走ると、数えてから書くまでの間に上限を 1 回超え得る~~ ［2026-09-26 追記 / PR #1026 の監査］

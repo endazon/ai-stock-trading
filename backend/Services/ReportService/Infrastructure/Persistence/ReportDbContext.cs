@@ -45,6 +45,10 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             // #1025（PR #1027 の監査 L2）: 案を作った時点の監視銘柄（最大 200 件）と適用の内訳も同じく text（上限で落ちない）。
             e.Property(a => a.WatchlistSnapshotJson).HasColumnType("text");
             e.Property(a => a.WatchlistApplyJson).HasColumnType("text");
+            // #1029, IADR-0432（追記）: 適用の内訳は 1 回だけ記録する。記録時刻を同時実行のトークンにし、保存は「まだ記録が無い」行
+            // （WHERE "WatchlistAppliedAt" IS NULL）だけを更新させる。読んでから書くまでの間に別の書き手が記録していれば衝突になり、
+            // 後の書き手は先の内訳を上書きしない（EfPolicyRevisionLedger.RecordWatchlistApply が「記録済み」へ写す）。
+            e.Property(a => a.WatchlistAppliedAt).IsConcurrencyToken();
             // #1025: 確定した版の案を引く（会話キー＋版）。
             e.HasIndex(a => new { a.PeriodKey, a.ReportVersion });
             // 1 日の回数上限の判定（JST の暦日ごとの件数）。
