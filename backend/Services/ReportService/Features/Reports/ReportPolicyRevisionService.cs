@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Logging;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using ReportService.Common.Abstractions;
@@ -70,22 +72,24 @@ public sealed partial class ReportPolicyRevisionService(
 
         // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: 1 日の回数上限（JST の暦日）。**LLM を呼ぶ前に数え、
         // 呼ぶ前に 1 行書く**——応答が返らなかった呼び出しも費用が掛かり得るため上限に数える。上限に達したら LLM を呼ばない。
-        var used = ledger.CountOn(today);
-        if (used >= limit.DailyLimit)
+        // 🔴 数えることと書くことは台帳の 1 つの排他区間で行う（TryBegin。同時の要求で上限を超えない）。
+        var attempt = new PolicyRevisionAttempt(
+            Guid.NewGuid(), clock.UtcNow, today, actor, key,
+            WatchlistSnapshotJson: currentWatchlist is null ? null : SerializeSnapshot(currentWatchlist));
+        var begin = ledger.TryBegin(attempt, limit.DailyLimit);
+        if (!begin.Begun)
         {
             logger.LogWarning(
                 "方針の改訂の 1 日の上限に達しています（Actor={Actor}・本日={Used}・上限={Limit}）。LLM を呼びません。",
-                actor, used, limit.DailyLimit);
+                LogSanitizer.Sanitize(actor), begin.UsedBefore, limit.DailyLimit);
             return PolicyRevisionResult.Rejected(
                 PolicyRevisionStatus.DailyLimitReached,
-                $"本日（{today:yyyy-MM-dd}・JST）の /policy は上限の {limit.DailyLimit} 回に達しています（{used} 回実行済み）。"
+                $"本日（{today:yyyy-MM-dd}・JST）の /policy は上限の {limit.DailyLimit} 回に達しています（{begin.UsedBefore} 回実行済み）。"
                 + "方針は変わっていません。明日（JST）以降に実行してください。", key);
         }
 
-        var attemptId = ledger.Begin(new PolicyRevisionAttempt(
-            Guid.NewGuid(), clock.UtcNow, today, actor, key,
-            WatchlistSnapshotJson: currentWatchlist is null ? null : SerializeSnapshot(currentWatchlist)));
-        var attemptNumber = used + 1;
+        var attemptId = attempt.Id;
+        var attemptNumber = begin.UsedBefore + 1;
 
         PolicyRevisionOutcome outcome;
         try
@@ -98,13 +102,13 @@ public sealed partial class ReportPolicyRevisionService(
         }
         catch
         {
-            ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.AiFailed, null, null);
+            CompleteBestEffort(attemptId, PolicyRevisionAttemptOutcome.AiFailed, null, null);
             throw;
         }
 
         if (outcome.Proposal is not { } proposal)
         {
-            ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.AiFailed, null, null);
+            CompleteBestEffort(attemptId, PolicyRevisionAttemptOutcome.AiFailed, null, null);
             logger.LogWarning(
                 "方針の改訂案を作れませんでした（Actor={Actor}・PeriodKey={PeriodKey}・理由={Failure}）。何も保存していません。",
                 actor, key, outcome.Failure);
@@ -131,11 +135,14 @@ public sealed partial class ReportPolicyRevisionService(
         }
         catch
         {
-            ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.SaveFailed, null, null);
+            CompleteBestEffort(attemptId, PolicyRevisionAttemptOutcome.SaveFailed, null, null);
             throw;
         }
 
-        ledger.Complete(attemptId, PolicyRevisionAttemptOutcome.Proposed, version, SerializeChanges(proposal.WatchlistChanges));
+        // 🔴 PR #1026 の監査 1: **保存の後の台帳の書き込みを失敗させて、保存済みのドラフトを 500 にしない。**
+        // ドラフトは既に保存されている（確定されるまで取引に効かない）。ここで例外を上へ投げると「200 以外では何も保存しない」
+        // 契約が破れ、利用者には保存済みの案が見えない。台帳の失敗は記録して続ける（行は Pending のまま残り、上限には数えられる）。
+        CompleteBestEffort(attemptId, PolicyRevisionAttemptOutcome.Proposed, version, SerializeChanges(proposal.WatchlistChanges));
 
         // 提示（Drafting→PendingApproval）。確定は利用者の確認ボタン（版番号付き）だけが行う（ADR-0003）。
         //
@@ -286,16 +293,34 @@ public sealed partial class ReportPolicyRevisionService(
 
     // 案を作った時点の監視銘柄の記録（楽観排他の基準）。
     internal static string SerializeSnapshot(IReadOnlyList<WatchlistSnapshotItem> snapshot) =>
-        JsonSerializer.Serialize(snapshot.Select(w => new { symbol = w.Symbol, market = w.Market }));
+        JsonSerializer.Serialize(snapshot.Select(w => new { symbol = w.Symbol, market = w.Market }), LedgerJson);
+
+    // 台帳の完了の書き込み（失敗しても元の結果・例外を上書きしない）。
+    private void CompleteBestEffort(Guid attemptId, PolicyRevisionAttemptOutcome outcome, int? version, string? changesJson)
+    {
+        try
+        {
+            ledger.Complete(attemptId, outcome, version, changesJson);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex,
+                "方針の改訂の台帳を閉じられませんでした（試行={AttemptId}・結果={Outcome}）。行は Pending のまま残ります（上限には数えられます）。",
+                attemptId, outcome);
+        }
+    }
+
+    // 台帳の JSON は日本語をそのまま書く（既定のエンコーダは \uXXXX の 6 文字へ逃がし、列の長さと監査の読みやすさを損なう）。
+    internal static readonly JsonSerializerOptions LedgerJson = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     // 案の入れ替えの記録（監査）。列挙は名前で書く（序数に結合しない）。
-    internal static string SerializeChanges(IReadOnlyList<WatchlistChangeSuggestion> changes) =>
+    public static string SerializeChanges(IReadOnlyList<WatchlistChangeSuggestion> changes) =>
         JsonSerializer.Serialize(changes.Select(c => new
         {
             action = c.Action == WatchlistChangeAction.Add ? "add" : "remove",
             symbol = c.Symbol,
             reason = c.Reason,
-        }));
+        }), LedgerJson);
 
     public static string ActionLabel(WatchlistChangeAction action) => action switch
     {

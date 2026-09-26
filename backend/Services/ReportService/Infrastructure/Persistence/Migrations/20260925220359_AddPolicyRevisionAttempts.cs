@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ReportService.Infrastructure.Migrations
 {
     // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の試行の台帳（1 日の回数上限・案の監査）。
+    // PR #1026 の監査: 入れ替えの JSON は text（長さの上限で監査記録を落とさない）。
     /// <inheritdoc />
     public partial class AddPolicyRevisionAttempts : Migration
     {
@@ -23,7 +24,7 @@ namespace ReportService.Infrastructure.Migrations
                     PeriodKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     Outcome = table.Column<int>(type: "integer", nullable: false),
                     ReportVersion = table.Column<int>(type: "integer", nullable: true),
-                    WatchlistChangesJson = table.Column<string>(type: "character varying(8192)", maxLength: 8192, nullable: true)
+                    WatchlistChangesJson = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace ReportService.Infrastructure.Migrations
 {
-    // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1: 案を作った時点の監視銘柄・適用の内訳・記録時刻と、会話キー＋版の索引。
+    // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1: 案を作った時点の監視銘柄・適用の内訳・記録時刻（text）と、会話キー＋版の索引。
     /// <inheritdoc />
     public partial class AddPolicyRevisionWatchlistApply : Migration
     {
@@ -21,15 +21,13 @@ namespace ReportService.Infrastructure.Migrations
             migrationBuilder.AddColumn<string>(
                 name: "WatchlistApplyJson",
                 table: "policy_revision_attempts",
-                type: "character varying(8192)",
-                maxLength: 8192,
+                type: "text",
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
                 name: "WatchlistSnapshotJson",
                 table: "policy_revision_attempts",
-                type: "character varying(8192)",
-                maxLength: 8192,
+                type: "text",
                 nullable: true);
 
             migrationBuilder.CreateIndex(

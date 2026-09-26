@@ -495,7 +495,7 @@ public class ReportRendererReportingCycleTests
     [Fact]
     public void 月報に方針改訂の回数と費用が載る()
     {
-        const string Row = "| 利用者起点の方針改訂（`/policy`・`policy-revision`。**上限の対象外**）の回数と費用実績 | ";
+        const string Row = "| 利用者起点の方針改訂（`/policy`・`policy-revision`。**上限の対象外**）の計上件数と費用実績 | ";
 
         var used = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
         {
@@ -506,7 +506,7 @@ public class ReportRendererReportingCycleTests
         used.Should().Contain(Row + "2 回 / +7 JPY |");
 
         var unused = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with { LlmUsage = new LlmUsageRecord([], [], []) });
-        unused.Should().Contain(Row + "**当月の呼び出しはありません**（0 回・0 円ではありません） |");
+        unused.Should().Contain(Row + "**当月の計上はありません**（0 回・0 円ではありません。回数は応答が返った呼び出しの計上件数） |");
     }
 
     // 🔴 **否定形**: Stage 0 記録の費用が「その他の用途」へ混ざらない（混ざると対比が対比でなくなる）。

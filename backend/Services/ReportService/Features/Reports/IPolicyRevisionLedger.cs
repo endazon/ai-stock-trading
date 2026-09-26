@@ -10,8 +10,20 @@ public interface IPolicyRevisionLedger
     /// <summary>指定した JST の暦日に記録された試行の数。</summary>
     int CountOn(DateOnly jstDate);
 
-    /// <summary>試行を記録する（結果は <see cref="PolicyRevisionAttemptOutcome.Pending"/>）。</summary>
+    /// <summary>
+    /// 試行を無条件に記録する（結果は <see cref="PolicyRevisionAttemptOutcome.Pending"/>）。**上限を見ない**——本番の経路は
+    /// <see cref="TryBegin"/> を使う（試験の前提づくり用）。
+    /// </summary>
     Guid Begin(PolicyRevisionAttempt attempt);
+
+    /// <summary>
+    /// FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1（PR #1026 の監査で改訂）: その JST の暦日の試行の数が
+    /// <paramref name="dailyLimit"/> 未満なら 1 行書く。**数えることと書くことを 1 つの排他区間で行う**——
+    /// 数えてから書くまでの間に別の要求が割り込むと、同時の N 要求で上限を N−1 回超える（監査が実測）。
+    /// Postgres では JST の暦日を鍵にした勧告ロック（<c>pg_advisory_xact_lock</c>）をトランザクションで取り、
+    /// それ以外（InMemory）ではプロセス内の排他で同じ区間を作る。
+    /// </summary>
+    PolicyRevisionBeginResult TryBegin(PolicyRevisionAttempt attempt, int dailyLimit);
 
     /// <summary>試行を結果で閉じる。</summary>
     void Complete(Guid id, PolicyRevisionAttemptOutcome outcome, int? reportVersion, string? watchlistChangesJson);
@@ -30,6 +42,9 @@ public interface IPolicyRevisionLedger
     /// </summary>
     bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt);
 }
+
+// TryBegin の結果。Begun=false なら書いていない（上限に達していた）。UsedBefore は書く前のその日の試行の数。
+public sealed record PolicyRevisionBeginResult(bool Begun, int UsedBefore);
 
 // 試行の結果。Pending は LLM の呼び出し中（または呼び出し中にプロセスが落ちた）。
 public enum PolicyRevisionAttemptOutcome

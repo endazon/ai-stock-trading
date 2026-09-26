@@ -50,3 +50,8 @@ plan_refs:
 | 4 | 計上区分は独立（上限・報告書・その他に入らない）・回数と費用 | `LlmUsageAggregatorTests`（T-10-1359）・`LlmReportPolicyReviserTests`（T-10-1307 の改訂） |
 | 5 | 月報 §7 の行（あり／なし） | `ReportRendererReportingCycleTests`（T-10-1360）・ゴールデン |
 | 6 | 本番の組み立てで 429・LLM を呼ばない・版が進まない | `PolicyRevisionWiringTests`（T-10-1361） |
+
+［2026-09-26 追記 / PR #1026 の監査］是正: ①入れ替えの JSON の列を `text`・緩いエスケープ・保存後の台帳の失敗は記録して続ける
+②数えることと書くことを `TryBegin` の 1 つの排他区間へ（Postgres は勧告ロック）③JST の暦日の境界（14:59 / 15:00 UTC）の試験
+④EF の台帳が失敗も数える試験 ⑤並行更新の例外で変更の追跡を消し SaveFailed を記録できるようにする ⑥§7 の「無し」を「計上はありません」へ
+⑦文書（試験仕様書の古い残余・データ仕様書の節の位置）とログの `actor` の無害化。試験は T-10-1409〜T-10-1414。
