@@ -89,6 +89,8 @@ META の判断で LLM が「META は対象の 6 銘柄に含まれていない�
 **触らないもの（並行作業との境界）**: `Program.cs` の `monitor` クライアントのタイムアウト・`WatchlistProviderSelectionTests`（#1037 が触る）、
 `InformationCollectedHandler` の巡回の出所（定時の判断対象の決め方は本件の射程外）。
 
-## テスト（T-10-1535〜）
+## テスト（T-10-1535〜T-10-1549）
 
 `docs/tests/FR-10_risk-controls-tests.md` に節を足す。実 LLM は呼ばない（既存の偽の LLM 客でプロンプトを捕まえる）。
+
+［2026-09-26 追記 / PR #1041 の CI］新しい読み取りの口は越境の読み取り契約の検査（IADR-0420。`CrossServiceReadContractTests`）の対象になるため、送り手の本物の型で読む契約テスト（T-10-1549）を足した。

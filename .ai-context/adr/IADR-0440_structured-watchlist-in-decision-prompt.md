@@ -25,7 +25,7 @@ plan_refs:
 - 関連 IADR: [IADR-0351](IADR-0351_held-position-in-decision-prompt.md)（保有状況節。決定 2「不明」と「無い」を分ける・決定 3「方針は書き換えない」・決定 7 Stage 0 は明示の値で組む）、
   [IADR-0095](IADR-0095_watchlist-authoritative-wiring.md)（監視銘柄の権威源は市場監視・構成は fail-safe の既定）、
   [IADR-0313](IADR-0313_screening-context-budget-default.md) / IADR-0247（一次スクリーニングの入力予算と縮退）、
-  [IADR-0169](IADR-0169_rag-prompt-injection-defense.md)（フェンス内 1 件 1 行 JSON）、IADR-0297（文言の const をテストが直接参照する規律）、
+  [IADR-0169](IADR-0169_rag-context-injection-defense.md)（フェンス内 1 件 1 行 JSON）、IADR-0297（文言の const をテストが直接参照する規律）、
   IADR-0318（Stage 0 の記録器）、[IADR-0435](IADR-0435_watchlist-driven-finnhub-collection-symbols.md)（#1015 本体）
 
 ## コンテキスト

@@ -39,6 +39,26 @@ public class MarketMonitorReadContractTests
         fallback.Called.Should().BeFalse("供給できた応答は既定 watchlist へ倒さない");
     }
 
+    // 🔴 T-10-1549, FR-04, #1034, IADR-0440 決定 2, IADR-0420: 判断のプロンプト用の口（GetAuthoritativeWatchlistAsync）も同じ応答を
+    // 送り手の本物の型で読む。送り手で項目名が変わると全行が「銘柄が空」で落ち、プロンプトに**空の一覧（0 件・対象外）**が載る
+    // ＝不明を 0 件と書く事故になる。
+    [Fact]
+    public async Task 判断のプロンプト用の監視銘柄は送り手の本物の型を直列化した応答から読める()
+    {
+        IReadOnlyCollection<MonitoredSymbol> watchlist =
+            [new MonitoredSymbol("AAPL", Market.UnitedStates), new MonitoredSymbol("META", Market.UnitedStates)];
+        var fallback = new RecordingFallback();
+        var provider = new HttpWatchlistProvider(
+            new HttpClient(new StubHandler(JsonSerializer.Serialize(watchlist, Web))) { BaseAddress = new Uri("http://monitor") },
+            fallback,
+            NullLogger<HttpWatchlistProvider>.Instance);
+
+        var read = await provider.GetAuthoritativeWatchlistAsync();
+
+        read.Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("META", Market.UnitedStates));
+        fallback.Called.Should().BeFalse("プロンプト用の口は既定 watchlist を使わない");
+    }
+
     private sealed class RecordingFallback : IWatchlistProvider
     {
         public bool Called { get; private set; }
