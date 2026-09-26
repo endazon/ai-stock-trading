@@ -126,6 +126,12 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
+      # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434: 自制レートを 5→12 回/分へ。1 巡回（保有＋監視銘柄。別々に照会する）が
+      # 巡回間隔 60 秒に収まる要求数は「自制レート × 間隔（分）」＝12。既定 5 では 6 銘柄＋保有 1 の 7 要求が 84 秒かかり (b) を破っていた。
+      # (a) 同一鍵の合計は 情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3（risk-management / report / trade-decision）＝ 57 ≤ 60 回/分。
+      # 🔴 他のプロセスのレートを上げるときは合計 60 を超えないこと（予算表は IADR-0434）。巡回間隔（Monitor__PollIntervalSeconds）は
+      # 損切り判定の遅れになるため延ばさない（既定 60 秒のまま）。
+      - { name: MarketData__Finnhub__RequestsPerMinute, value: "12" }
       # ADR-0031（計画）決定2〜4, IADR-0292: 監視銘柄数の申告（経路B は AAPL 1 銘柄・既定 0＝本番既定）。
       - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "1" }
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
