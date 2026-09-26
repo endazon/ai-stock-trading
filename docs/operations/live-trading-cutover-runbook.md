@@ -3,15 +3,15 @@ title: 実弾（live trading・TrdEnv_Real）解禁 Runbook
 type: runbook
 status: draft
 created: 2026-07-19
-updated: 2026-08-21
+updated: 2026-09-26
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-20]
 adrs: [ADR-0002]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0074, IADR-0111]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0074, IADR-0111, IADR-0428, IADR-0441]
 specs: []
-issues: [#20, #24, #131, #132, #141, #204, #268]
+issues: [#20, #24, #131, #132, #141, #204, #268, #853, #856]
 -->
 
 
@@ -112,7 +112,7 @@ OpenD 本番化の実装 ADR 決定 6 に定義される。詳細な状態表（
 | --- | --- | --- | --- |
 | 1 | **段階ゲート（Stage）が実弾段まで進んでいる** | 段階ゲートの要求 / [#20](https://github.com/endazon/ai-stock-trading/issues/20) | バックテスト（Stage 0→1）・ペーパー実績（Stage 1→）を経て、撤退（kill switch）が発火していないこと。Stage が戻っていないこと |
 | 2 | **秘匿情報の Vault / External Secrets 化** | 実アダプタ実装の実装 ADR §3 / OpenD 本番化の実装 ADR 決定 4 | `externalSecrets.enabled=true` で実 Vault/ESO から同期されていること。**受け口の存在は充足ではない**（ストアは #24 管掌） |
-| 3 | **発注予約 `Reserved` 滞留の監視＋自動リコンサイル** | [#141](https://github.com/endazon/ai-stock-trading/issues/141) / 自動リコンサイルの実装 ADR | `Reconciliation__Enabled=true` かつ**実照会プローブが配線済み**であること（配備の values は充足済み）。🔴 **さらに実弾では、解放の門（`Reconciliation__ReleaseOnNotPlaced`）を開けてよいかを実機の記録で判定すること**——閉じたままなら「未発注」の滞留は人手解決のままである。突合が「発注済み」と確定した建玉に**保護逆指値は張られない**点も、実弾前に扱いを決めること。滞留＝「発注済みか不明な建玉」で実弾では実損リスク |
+| 3 | **発注予約 `Reserved` 滞留の監視＋自動リコンサイル** | [#141](https://github.com/endazon/ai-stock-trading/issues/141) / 自動リコンサイルの実装 ADR | `Reconciliation__Enabled=true` かつ**実照会プローブが配線済み**であること（配備の values は充足済み）。🔴 **さらに実弾では、解放の門（`Reconciliation__ReleaseOnNotPlaced`）を開けてよいかを実機の記録で判定すること**——閉じたままなら「未発注」の滞留は人手解決のままである。突合が「発注済み」と確定したエントリーには承認時の手法で保護レグを張る（2026-09-25 のオーナー裁定。旧: 張らなかった）——**このとき突合を起点にブローカーへ逆指値・取消・成行が送られ得る**ことを、実弾前に確認しておくこと。滞留＝「発注済みか不明な建玉」で実弾では実損リスク |
 | 4 | **無人 OpenD 常駐の成立** | [#132](https://github.com/endazon/ai-stock-trading/issues/132) / OpenD 本番化の実装 ADR | 安定ノード固定（egress IP 安定）・デバイス信頼の永続化で無人再ログインが成立。`securityContext`（非 root）実動作確認。**readiness 通過≠ログイン完了**に注意 |
 | 5 | **Hetzner（海外 IP）接続・ToS の確認** | 証券会社連携の計画 ADR の未決事項 / OpenD 本番化の実装 ADR | 人手の接続確認・契約判断 |
 | 6 | **`TradingDefaults`（リスク統制・上限）の実弾向け再確認** | 実アダプタ実装の実装 ADR §3 | 全体前提条件 §5 と一致し、実弾向けに保守的であることを再確認。少額上限から始めること |
