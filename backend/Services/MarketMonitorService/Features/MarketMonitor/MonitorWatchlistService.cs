@@ -62,7 +62,8 @@ public sealed class MonitorWatchlistService(
         IReadOnlyList<MonitoredSymbol>? expected,
         IReadOnlyList<ProposedWatchlistChange>? changes,
         string actor,
-        string proposalRef)
+        string proposalRef,
+        string via = "経路の申告なし")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         if (WatchlistProposalPlan.ValidateShape(changes, expected) is { } invalid)
@@ -94,7 +95,7 @@ public sealed class MonitorWatchlistService(
             }
 
             changeLog.Record(new MonitorSettingsChangeEntry(
-                actor, type, $"{item.Change.Reason}（/policy の案 {proposalRef} を Discord の確認ボタンで適用）", clock.UtcNow,
+                actor, type, $"{item.Change.Reason}（/policy の案 {proposalRef} を{via}）", clock.UtcNow,
                 Before: Render(before), After: Render(running)));
         }
 

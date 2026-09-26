@@ -15,6 +15,8 @@ using MonitorApply = MarketMonitorWorker::MarketMonitorService.Features.MarketMo
 using MonitorDomain = MarketMonitorWorker::MarketMonitorService.Domain;
 using ReportRevise = ReportWorker::ReportService.Features.Reports.RevisePolicy;
 using ReportWatchlist = ReportWorker::ReportService.Features.Reports.WatchlistProposal;
+using ReportConfirm = ReportWorker::ReportService.Features.Reports.ConfirmReport;
+using ReportDomainTypes = ReportWorker::ReportService.Domain;
 
 namespace NotificationService.Tests;
 
@@ -182,6 +184,67 @@ public class WatchlistApplyContractTests
         JsonSerializer.Deserialize<MonitorApply.WatchlistProposalApplyRequest>(handler.Body!, MonitorWire)!
             .ExpectedWatchlist!.Single().Market.Should().BeNull();
         outcome.Status.Should().Be(WatchlistApplyStatus.Rejected);
+    }
+
+    private static ReportConfirm.ConfirmReportResponse Confirmed(bool transitioned, int version) => new(
+        "daily-2026-09-28", ReportDomainTypes.ReportKind.Daily, new DateOnly(2026, 9, 28), ReportDomainTypes.ReportState.Confirmed,
+        null, 1, "方針", "", [], DateTimeOffset.UnixEpoch, transitioned, version);
+
+    private static HttpReportReviewController Review(HttpMessageHandler handler) =>
+        new(new HttpClient(handler) { BaseAddress = new Uri("http://report") }, NullLogger<HttpReportReviewController>.Instance);
+
+    // T-10-1420（PR #1027 の監査 H1・IADR-0420）: 確定の応答を、報告書の本物の型（ConfirmReportResponse・報告書の JSON 設定）から読み、
+    // 遷移した／この版で確定済み（version == 要求の版 + 1）だけを確定として扱う。別の版で確定済みは「確定していない」。
+    // 項目の無い旧版の応答（本物の TradingReport）は従来どおり確定として扱う（配備順の窓）。
+    [Theory]
+    [InlineData(true, 4, true, "を確定しました")]
+    [InlineData(false, 4, true, "確定済みです（この版で確定されています）")]
+    [InlineData(false, 5, false, "別の版で確定済み")]
+    public async Task 確定の応答は送り手の本物の型から遷移と版を読む(bool transitioned, int version, bool confirmed, string message)
+    {
+        var handler = new FakeHandler(HttpStatusCode.OK, JsonSerializer.Serialize(Confirmed(transitioned, version), ReportWire));
+
+        var result = await Review(handler).ConfirmAsync("daily-2026-09-28", 3, "developer");
+
+        (result.Succeeded, result.Confirmed).Should().Be((true, confirmed));
+        result.Message.Should().Contain(message);
+        if (!confirmed)
+            result.Message.Should().Contain("版 3 は確定していません").And.NotContain("を確定しました");
+    }
+
+    [Fact]
+    public async Task 項目の無い旧版の確定の応答は従来どおり確定として扱う()
+    {
+        var legacy = new ReportDomainTypes.TradingReport
+        {
+            PeriodKey = "daily-2026-09-28",
+            Kind = ReportDomainTypes.ReportKind.Daily,
+            PeriodStart = new DateOnly(2026, 9, 28),
+            State = ReportDomainTypes.ReportState.Confirmed,
+        };
+
+        var result = await Review(new FakeHandler(HttpStatusCode.OK, JsonSerializer.Serialize(legacy, ReportWire)))
+            .ConfirmAsync("daily-2026-09-28", 3, "developer");
+
+        result.Confirmed.Should().BeTrue();
+    }
+
+    // T-10-1421 の対（PR #1027 の監査 H1・L3）: 案の照会の 409 は「この版で確定されていない」（照会の失敗ではない）。
+    // 監視銘柄の一覧に 1 件でも欠けた項目があれば、黙って落とさず一覧ごと null（分からない）にする。
+    [Fact]
+    public async Task 照会の409は未確定で欠けた監視銘柄は一覧ごと不明()
+    {
+        var notConfirmed = await Report(new FakeHandler(HttpStatusCode.Conflict, "{}")).GetWatchlistProposalAsync("k", 2);
+        (notConfirmed.Succeeded, notConfirmed.Found).Should().Be((true, false));
+        notConfirmed.Message.Should().Contain("確定されていない");
+
+        var body = $$"""
+            {"attemptId":"{{Guid.NewGuid()}}","periodKey":"k","reportVersion":2,
+             "changes":[{"action":"add","symbol":"NVDA","reason":"r"}],
+             "snapshot":[{"symbol":"AAPL","market":"UnitedStates"},{"symbol":null,"market":"Japan"}],"applyRecorded":false}
+            """;
+        var malformed = await Report(new FakeHandler(HttpStatusCode.OK, body)).GetWatchlistProposalAsync("k", 2);
+        malformed.Proposal!.Snapshot.Should().BeNull("欠けた 1 件を落とした一覧を期待値にしない");
     }
 
     private sealed class FakeHandler(HttpStatusCode status, string body) : HttpMessageHandler

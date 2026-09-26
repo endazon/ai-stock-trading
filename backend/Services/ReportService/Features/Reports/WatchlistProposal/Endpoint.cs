@@ -17,14 +17,21 @@ internal static partial class WatchlistProposalEndpoints
 
     public static void MapWatchlistProposal(this IEndpointRouteBuilder owner)
     {
-        // 照会: 200＝案（入れ替え・案を作った時点の監視銘柄〔null＝照会できなかった〕・適用の記録の有無）／404＝その版の案が無い。
-        owner.MapGet("/policy-revisions/watchlist-proposal", (string? periodKey, int? version, IPolicyRevisionLedger ledger) =>
+        // 照会: 200＝案（入れ替え・案を作った時点の監視銘柄〔null＝照会できなかった〕・適用の記録の有無）／404＝その版の案が無い／
+        // 409＝その版で確定されていない。
+        // 🔴 PR #1027 の監査 H1: **報告書がこの版で確定されているときだけ案を返す**（確定済みかつ現在の版＝版＋1）。Bot の窓口の
+        // 版番号ガードはプロセス内にしかなく、再起動の後に古い確認ボタン（別の版）が押されると、冪等な再確定の 200 を「確定した」と
+        // 読んで確定されていない案を適用していた（監査が実測）。適用の可否の権威をこの照会（報告書サービス）へ置く。
+        owner.MapGet("/policy-revisions/watchlist-proposal", (string? periodKey, int? version, IPolicyRevisionLedger ledger, IReportStore store) =>
         {
             if (periodKey is null || !PeriodKeyPattern().IsMatch(periodKey) || version is not >= 1)
                 return Results.BadRequest(new { error = "会話キー（periodKey）と版（version）が必要です。" });
 
             if (ledger.FindProposed(periodKey, version.Value) is not { } attempt)
                 return Results.NotFound(new { error = $"報告書 {periodKey}（版 {version}）は /policy の案ではありません。" });
+
+            if (store.Get(periodKey) is not { } report || !report.IsConfirmedAtDraftVersion(version.Value))
+                return Results.Conflict(new { error = $"報告書 {periodKey} は版 {version} で確定されていません。入れ替えは適用しません。" });
 
             return Results.Ok(new WatchlistProposalView(
                 attempt.Id,
@@ -35,9 +42,11 @@ internal static partial class WatchlistProposalEndpoints
                 attempt.WatchlistAppliedAt is not null));
         });
 
-        // 記録: 200＝記録した／409＝既に記録済み（1 回だけ）／404＝試行が無い。適用そのものは市場監視サービスが行う。
+        // 記録: 200＝記録した／409＝既に記録済み（1 回だけ）・案でない・その版で確定されていない／404＝試行が無い。
+        // 🔴 PR #1027 の監査 L1: 記録は 1 回だけで、書くとその案の適用を永久に塞ぐ。したがって**確定された案の試行にだけ**受け付ける
+        // （照会と同じ条件）。任意の試行 ID で適用を塞げないようにする。
         owner.MapPost("/policy-revisions/{attemptId:guid}/watchlist-apply-result",
-            (Guid attemptId, WatchlistApplyResultRequest req, IPolicyRevisionLedger ledger, IClock clock,
+            (Guid attemptId, WatchlistApplyResultRequest req, IPolicyRevisionLedger ledger, IReportStore store, IClock clock,
                 DelegatedActorOptions delegated, HttpContext http) =>
             {
                 var recording = ConfirmingActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
@@ -45,8 +54,11 @@ internal static partial class WatchlistProposalEndpoints
                     return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
                 if (string.IsNullOrWhiteSpace(req.Outcome) || req.Outcome.Length > 32)
                     return Results.BadRequest(new { error = "適用の結果（outcome）が必要です。" });
-                if (ledger.Find(attemptId) is null)
+                if (ledger.Find(attemptId) is not { } attempt)
                     return Results.NotFound();
+                if (attempt is not { Outcome: PolicyRevisionAttemptOutcome.Proposed, ReportVersion: { } draftVersion }
+                    || store.Get(attempt.PeriodKey) is not { } report || !report.IsConfirmedAtDraftVersion(draftVersion))
+                    return Results.Conflict(new { error = "確定された /policy の案ではないため、適用の内訳を記録しません。" });
 
                 var json = JsonSerializer.Serialize(new
                 {
@@ -54,8 +66,9 @@ internal static partial class WatchlistProposalEndpoints
                     recordedBy = recording.Actor,
                     items = req.Items ?? [],
                     message = req.Message,
-                });
-                if (json.Length > 8192)
+                }, ReportPolicyRevisionService.LedgerJson);
+                // 列は text（上限なし）だが、要求の大きさは抑える（入れ替え 10 件の内訳に十分な量）。
+                if (json.Length > 65536)
                     return Results.BadRequest(new { error = "適用の内訳が長すぎます。" });
 
                 return ledger.RecordWatchlistApply(attemptId, json, clock.UtcNow)

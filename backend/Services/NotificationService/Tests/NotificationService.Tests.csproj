@@ -11,6 +11,8 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- FR-13, #1025, IADR-0433 決定 7（PR #1027 の監査 H1）: 本物の報告書サービスを InMemory DB で組み、Bot の再起動を挟んだ確認ボタンの流れを通す試験用。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\NotificationService.csproj" />
     <!-- FR-07, FR-14, FR-20, #957, IADR-0408（2026-09-25 追記）: 報告書のレビュー照会・リスク管理の段階ゲートの契約テスト
          （T-10-913〜916）が送り手の本物の型を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する

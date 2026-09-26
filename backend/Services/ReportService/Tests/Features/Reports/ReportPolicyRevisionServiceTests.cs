@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ReportService.Common.Abstractions;
 using ReportService.Domain;
@@ -451,6 +452,40 @@ public class ReportPolicyRevisionServiceTests
         (await bad.ReviseAsync(null, "積極的に", "developer", [new WatchlistSnapshotItem("AAPL", "Moon")]))
             .Status.Should().Be(PolicyRevisionStatus.InvalidWatchlist);
         reviser3.Calls.Should().BeEmpty();
+    }
+
+    // T-10-1417（PR #1027 の監査 L2）: 上限（200 件）を超える監視銘柄は `/policy` を失敗させず「分からない」（null）として扱う。
+    // 200 件ちょうどは記録する。最大の一覧の JSON は台帳の列（text）に収まる。
+    [Fact]
+    public async Task 上限を超える監視銘柄は分からないとして扱う()
+    {
+        var ledger = new InMemoryPolicyRevisionLedger();
+        var (service, store, reviser) = Create(ledger: ledger);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        var tooMany = Enumerable.Range(0, WatchlistSnapshotItem.MaxCount + 1)
+            .Select(i => new WatchlistSnapshotItem($"S{i:D4}", "UnitedStates")).ToList();
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer", tooMany);
+
+        result.Status.Should().Be(PolicyRevisionStatus.Proposed);
+        reviser.Calls.Single().CurrentUsWatchlist.Should().BeNull();
+        ledger.Attempts.Single().WatchlistSnapshotJson.Should().BeNull();
+
+        var max = Enumerable.Range(0, WatchlistSnapshotItem.MaxCount)
+            .Select(i => new WatchlistSnapshotItem(new string('A', 12) + $"{i:D4}", "UnitedStates")).ToList();
+        var json = ReportPolicyRevisionService.SerializeSnapshot(max);
+        using var npgsql = new ReportService.Infrastructure.Persistence.ReportDbContext(
+            new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<ReportService.Infrastructure.Persistence.ReportDbContext>()
+                .UseNpgsql("Host=localhost;Database=report_svc").Options);
+        var entity = npgsql.Model.FindEntityType(typeof(ReportService.Infrastructure.Persistence.PolicyRevisionAttemptRow))!;
+        foreach (var column in new[] { "WatchlistSnapshotJson", "WatchlistApplyJson" })
+        {
+            var property = entity.FindProperty(column)!;
+            property.GetColumnType().Should().Be("text", column);
+            (property.GetMaxLength() ?? int.MaxValue).Should().BeGreaterThanOrEqualTo(json.Length, column);
+        }
+
+        json.Length.Should().BeGreaterThan(8192, "前提: 旧 varchar(8192) では溢れた長さ");
     }
 
     private sealed class PresentFailingStore(InMemoryReportStore inner) : IReportStore

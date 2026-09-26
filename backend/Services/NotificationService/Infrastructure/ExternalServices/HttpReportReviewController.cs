@@ -98,7 +98,38 @@ public sealed class HttpReportReviewController(
             if (!response.IsSuccessStatusCode)
                 return new ReportConfirmResult(false, false, FailureMessage("報告書の確定", response.StatusCode));
 
-            return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）を確定しました。");
+            // FR-07, FR-13, #1025, IADR-0433 決定 7（PR #1027 の監査 H1）: 確定済みの報告書への再確定は、どの版を送っても冪等な 200
+            // （IADR-0024 の「再確定は版非依存で冪等」は変えない）。**200 を「版 N を確定した」と読まない。** 応答の transitioned と
+            // version（確定後の版）で見分ける: 遷移した／この版で確定済み（version == expectedVersion + 1）だけを確定として扱い、
+            // 別の版で確定済みなら「確定していない」と返す（窓口の版番号ガードは再起動で空になるため、古いボタンがここへ届く）。
+            ConfirmView? view = null;
+            try
+            {
+                view = await response.Content.ReadFromJsonAsync<ConfirmView>(cancellationToken).ConfigureAwait(false);
+            }
+            catch (JsonException)
+            {
+                view = null;
+            }
+
+            if (view?.Transitioned is not { } transitioned || view.Version is not { } confirmedVersion)
+            {
+                // 項目を返さない旧版の報告書サービス（配備順の窓）。従来どおりの扱い（入れ替えの適用は報告書サービスの照会が確定の版を検査する）。
+                return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）を確定しました。");
+            }
+
+            if (transitioned)
+                return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）を確定しました。");
+
+            if (confirmedVersion == expectedVersion + 1)
+                return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）は確定済みです（この版で確定されています）。");
+
+            logger.LogWarning(
+                "報告書は別の版で確定済みです（PeriodKey={PeriodKey}・要求の版={Version}・確定後の版={ConfirmedVersion}）。",
+                periodKey, expectedVersion, confirmedVersion);
+            return new ReportConfirmResult(
+                true, false,
+                $"報告書 {periodKey} は既に別の版で確定済みです（確定後の版 {confirmedVersion}）。版 {expectedVersion} は確定していません。");
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
@@ -264,6 +295,9 @@ public sealed class HttpReportReviewController(
     // 報告書サービス側 ConfirmReportRequest / ReviewCommandRequest と同形（版番号付き）。
     // OnBehalfOf は #774 で末尾に追加（旧版の報告書サービスは未知のプロパティとして読み飛ばす）。
     private sealed record ConfirmRequest(int ExpectedVersion, string OnBehalfOf);
+
+    // 報告書サービス側 ConfirmReportResponse の必要部分（#1025 で足された 2 項目）。欠落は null＝旧版。
+    private sealed record ConfirmView(bool? Transitioned, int? Version);
 
     private sealed record ReviewCommandRequest(int ExpectedVersion);
 

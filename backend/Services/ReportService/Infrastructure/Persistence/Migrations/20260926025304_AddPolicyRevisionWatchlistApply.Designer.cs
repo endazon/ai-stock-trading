@@ -12,7 +12,7 @@ using ReportService.Infrastructure.Persistence;
 namespace ReportService.Infrastructure.Migrations
 {
     [DbContext(typeof(ReportDbContext))]
-    [Migration("20260926024454_AddPolicyRevisionWatchlistApply")]
+    [Migration("20260926025304_AddPolicyRevisionWatchlistApply")]
     partial class AddPolicyRevisionWatchlistApply
     {
         /// <inheritdoc />
@@ -48,6 +48,9 @@ namespace ReportService.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("ProposalConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("ReportVersion")
                         .HasColumnType("integer");

@@ -63,7 +63,10 @@ public sealed class PolicyApprovalCommandHandler(
                 + "適用する場合は設定画面から変更してください。", null);
         }
 
-        if (lookup.Proposal is not { } proposal || proposal.Changes.Count == 0)
+        // 案が無い（/policy の案でない）・この版で確定されていない（PR #1027 の監査 H1。報告書サービスが 409）・入れ替え無し。
+        if (lookup.Proposal is not { } proposal)
+            return Done(confirm.Message, $"監視銘柄の入れ替え案はありません（{lookup.Message}）。", null);
+        if (proposal.Changes.Count == 0)
             return Done(confirm.Message, "監視銘柄の入れ替え案はありません。", null);
 
         if (proposal.ApplyRecorded)

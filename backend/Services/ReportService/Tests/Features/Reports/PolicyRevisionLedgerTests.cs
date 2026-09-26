@@ -242,5 +242,7 @@ public class PolicyRevisionLedgerTests
 
         public bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt) =>
             _inner.RecordWatchlistApply(id, resultJson, recordedAt);
+
+        public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt) => _inner.MarkProposalConfirmed(id, confirmedAt);
     }
 }

@@ -82,7 +82,7 @@ public sealed class InMemoryReportStore : IReportStore
 
             // 既に確定済みなら冪等（状態変化なし・イベント発行なし）。
             if (existing.Report.State == ReportState.Confirmed)
-                return new ConfirmResult(existing.Report, Transitioned: false);
+                return new ConfirmResult(existing.Report, Transitioned: false, existing.Version);
 
             if (expectedVersion != existing.Version)
                 throw new ReportConcurrencyException(periodKey, expectedVersion, existing.Version);
@@ -98,7 +98,7 @@ public sealed class InMemoryReportStore : IReportStore
             };
             // 承認（対話的確定の Approve）でレビュー局面は Confirmed（終端）へ（IADR-0071 決定5）。
             _rows[periodKey] = (confirmed, existing.Version + 1, ReviewState.Confirmed);
-            return new ConfirmResult(confirmed, Transitioned: true);
+            return new ConfirmResult(confirmed, Transitioned: true, existing.Version + 1);
         }
     }
 

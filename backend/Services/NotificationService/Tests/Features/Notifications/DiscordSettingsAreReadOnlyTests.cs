@@ -162,6 +162,29 @@ public class DiscordSettingsAreReadOnlyTests
         holders.Should().Equal(nameof(PolicyApprovalCommandHandler), nameof(PolicyRevisionCommandHandler));
     }
 
+    // T-10-1423（PR #1027 の監査 Info）: 名前だけでなく**文字列**でも固定する——市場監視の監視銘柄の API のパス
+    // （`/monitor/watchlist`）を持つのはアダプタ HttpMarketMonitorWatchlistController だけ、名前付き HttpClient
+    // `"market-monitor-watchlist"` を扱うのは組み立て（Program.cs）だけ。別の型が同じ API を直接叩くようになれば赤。
+    [Fact]
+    public void 監視銘柄のAPIのパスと名前付きクライアントは決まった場所にしか無い()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NotificationService.csproj")))
+            dir = dir.Parent;
+        dir.Should().NotBeNull("NotificationService.csproj の場所が見つからない");
+        var sources = Directory.EnumerateFiles(dir!.FullName, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}Tests{Path.DirectorySeparatorChar}")
+                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .ToList();
+        sources.Count.Should().BeGreaterThan(40, "母集合を読めている");
+
+        sources.Where(f => File.ReadAllText(f).Contains("/monitor/watchlist", StringComparison.Ordinal)).Select(Path.GetFileName)
+            .Should().Equal("HttpMarketMonitorWatchlistController.cs");
+        sources.Where(f => File.ReadAllText(f).Contains("\"market-monitor-watchlist\"", StringComparison.Ordinal)).Select(Path.GetFileName)
+            .Should().Equal("Program.cs");
+    }
+
     private static DiscordBotOptions FullyConfigured()
     {
         var options = new DiscordBotOptions

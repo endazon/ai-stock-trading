@@ -237,7 +237,9 @@ public sealed class ReportCommandHandler(
 // WasExecuted=false は報告書サービスを呼んでいない（または呼んで失敗した）ことを意味する。
 //
 // Version は確認ボタンへ載せる版番号（照会に成功したときのみ非 null）。
-// ConfirmedNow は**この要求で実際に確定が起きた**か——二重送信の 2 回目（AlreadyConfirmed）では false になる。
+// ConfirmedNow は**この要求で報告書サービスに確定を問い合わせ、この版で確定されていると確かめた**か（今回の遷移、または
+// 同じ版の冪等な再確定〔再起動の後の押し直し＝IADR-0433 決定 7〕）。窓口の二重送信の 2 回目（AlreadyConfirmed・API を呼ばない）
+// と、別の版で確定済み（報告書サービスが version で示す）では false になる。
 //
 // **IsDenied は「多層認証・解析で弾いた」ことを表し、Failed（呼び出しの失敗）と区別する。**
 // 拒否理由（内部の層名）は利用者へ返さないが、失敗の理由は返す（利用者が対処できる情報である）。

@@ -77,7 +77,8 @@ public class WatchlistProposalApplyTests
         var log = new InMemoryMonitorSettingsChangeLog();
         var svc = new MonitorWatchlistService(store, log, new FakeClock(DateTimeOffset.UnixEpoch));
 
-        var plan = svc.ApplyProposal([Aapl, Msft], [Add("NVDA", "AI 需要"), Remove("MSFT", "値動きが小さい"), Add("AAPL")], "developer", "daily-2026-09-28-v3");
+        var plan = svc.ApplyProposal([Aapl, Msft], [Add("NVDA", "AI 需要"), Remove("MSFT", "値動きが小さい"), Add("AAPL")], "developer", "daily-2026-09-28-v3",
+            "Discord の確認ボタンで適用・代理 ai-stock-trading-owner");
 
         plan.Items.Count(i => i.Applied).Should().Be(2);
         store.GetSettings().MonitoredSymbols.Select(s => s.Symbol).Should().BeEquivalentTo(["AAPL", "NVDA"]);
@@ -178,7 +179,8 @@ public class WatchlistProposalApplyTests
 
         var history = await owner.GetFromJsonAsync<JsonElement>("/monitor/watchlist/history");
         history.EnumerateArray().Should().Contain(h =>
-            h.GetProperty("actor").GetString() == "developer" && h.GetProperty("reason").GetString()!.StartsWith("AI 需要"));
+            h.GetProperty("actor").GetString() == "developer" && h.GetProperty("reason").GetString()!.StartsWith("AI 需要")
+            && h.GetProperty("reason").GetString()!.Contains("Discord の確認ボタンで適用・代理 ai-stock-trading-owner"));
     }
 
     // T-10-1383: 案の作成後に変わっていれば 409 で 1 件も適用しない。形の違反・代理の値域外は 400。
@@ -216,5 +218,56 @@ public class WatchlistProposalApplyTests
             [], [new { Action = "add", Symbol = "NVDA", Reason = "r" }]));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    // T-10-1418（PR #1027 の監査 M2）: 代理（onBehalfOf）を信じるのは信頼クライアントのトークンだけ。一覧外のクライアント・利用者の
+    // トークン・一覧が空のときは無視して変更者はトークンの主体になる。信頼クライアントの値域外は拒否。
+    [Theory]
+    [InlineData("ai-stock-trading-owner", null, "ai-stock-trading-owner", "developer", false)]
+    [InlineData("other-client", null, "ai-stock-trading-owner", "client:other-client", true)]
+    [InlineData("ai-stock-trading-dev", "owner", "ai-stock-trading-owner", "owner", true)]
+    [InlineData("ai-stock-trading-owner", null, "", "client:ai-stock-trading-owner", true)]
+    public void 代理は信頼クライアントのトークンに限る(string azp, string? name, string trusted, string expectedActor, bool ignored)
+    {
+        var claims = new List<System.Security.Claims.Claim> { new("azp", azp) };
+        if (name is not null)
+            claims.Add(new(System.Security.Claims.ClaimTypes.Name, name));
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(claims, "Test", System.Security.Claims.ClaimTypes.Name, System.Security.Claims.ClaimTypes.Role));
+
+        var actor = DelegatedActorResolver.Resolve(user, "developer", DelegatedActorResolver.ParseTrustedClientIds(trusted));
+
+        (actor.Actor, actor.IgnoredOnBehalfOf, actor.Rejected).Should().Be((expectedActor, ignored, false));
+        DelegatedActorResolver.Resolve(user, "bad name!", DelegatedActorResolver.ParseTrustedClientIds(trusted)).Rejected
+            .Should().Be(!ignored, "値域外を拒否するのは信じる場合だけ（信じない場合は無視）");
+    }
+
+    // T-10-1419（PR #1027 の監査 M2・L1 任意）: 本番の組み立てで、一覧外のクライアント・利用者のトークンの代理指定は無視され、
+    // 変更履歴の変更者はトークンの主体・理由の経路は「利用者のトークンで直接適用」になる（Discord の代理と偽らない）。
+    [Theory]
+    [InlineData("other-client", true, "client:other-client")]
+    [InlineData("ai-stock-trading-dev", false, "test-owner")]
+    public async Task 信頼クライアント以外の代理は変更履歴に残らない(string azp, bool noName, string expectedActor)
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        await using var factory = Configured(baseFactory);
+        var owner = factory.CreateClient();
+        owner.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+        var before = (await owner.GetFromJsonAsync<JsonElement>("/monitor/watchlist")).EnumerateArray().Select(e => e.GetProperty("symbol").GetString()!).ToList();
+
+        var caller = factory.CreateClient();
+        caller.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+        caller.DefaultRequestHeaders.Add(TestAuthHandler.AzpHeader, azp);
+        if (noName)
+            caller.DefaultRequestHeaders.Add(TestAuthHandler.NameHeader, TestAuthHandler.NoName);
+        var response = await caller.PostAsJsonAsync("/monitor/watchlist/proposal-apply", Body(
+            before, [new { Action = "add", Symbol = "NVDA", Reason = "AI 需要" }], onBehalfOf: "developer"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("actor").GetString().Should().Be(expectedActor);
+        var history = await owner.GetFromJsonAsync<JsonElement>("/monitor/watchlist/history");
+        var entry = history.EnumerateArray().Single(h => h.GetProperty("reason").GetString()!.StartsWith("AI 需要"));
+        entry.GetProperty("actor").GetString().Should().Be(expectedActor).And.NotBe("developer");
+        entry.GetProperty("reason").GetString().Should().Contain("利用者のトークンで直接適用").And.NotContain("Discord");
     }
 }

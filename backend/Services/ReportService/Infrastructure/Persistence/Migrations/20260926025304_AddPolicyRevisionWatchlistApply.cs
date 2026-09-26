@@ -5,13 +5,20 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace ReportService.Infrastructure.Migrations
 {
-    // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1: 案を作った時点の監視銘柄・適用の内訳・記録時刻（text）と、会話キー＋版の索引。
+    // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1・7: 案を作った時点の監視銘柄・適用の内訳（text）・記録時刻・
+    // この版で確定された時刻（PR #1027 の監査 M1）と、会話キー＋版の索引。
     /// <inheritdoc />
     public partial class AddPolicyRevisionWatchlistApply : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "ProposalConfirmedAt",
+                table: "policy_revision_attempts",
+                type: "timestamp with time zone",
+                nullable: true);
+
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "WatchlistAppliedAt",
                 table: "policy_revision_attempts",
@@ -41,6 +48,10 @@ namespace ReportService.Infrastructure.Migrations
         {
             migrationBuilder.DropIndex(
                 name: "IX_policy_revision_attempts_PeriodKey_ReportVersion",
+                table: "policy_revision_attempts");
+
+            migrationBuilder.DropColumn(
+                name: "ProposalConfirmedAt",
                 table: "policy_revision_attempts");
 
             migrationBuilder.DropColumn(

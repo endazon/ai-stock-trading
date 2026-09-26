@@ -46,11 +46,19 @@ public sealed partial class ReportPolicyRevisionService(
 
         // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1: 案を作った時点の監視銘柄（Bot が照会して運ぶ）。null＝照会できなかった。
         // 形式が崩れた一覧は受け取らない（楽観排他の基準になるため、推測で直さない）。
-        if (currentWatchlist is not null
-            && (currentWatchlist.Count > WatchlistSnapshotItem.MaxCount
-                || currentWatchlist.Any(w => w is null || !WatchlistSnapshotItem.IsValid(w.Symbol, w.Market))))
+        if (currentWatchlist is not null && currentWatchlist.Any(w => w is null || !WatchlistSnapshotItem.IsValid(w.Symbol, w.Market)))
             return PolicyRevisionResult.Rejected(
                 PolicyRevisionStatus.InvalidWatchlist, "現在の監視銘柄（currentWatchlist）の形式が不正です。");
+
+        // PR #1027 の監査 L2: 上限（200 件）を超える一覧は `/policy` を失敗させず「分からない」（null）へ倒す
+        // ——その案の入れ替えは確定しても適用しない（基準を切り詰めて持つと楽観排他が偽の一致を起こす）。
+        if (currentWatchlist is not null && currentWatchlist.Count > WatchlistSnapshotItem.MaxCount)
+        {
+            logger.LogWarning(
+                "現在の監視銘柄が {Count} 件で上限 {Max} 件を超えるため、案を作った時点の監視銘柄は「分からない」として扱います。",
+                currentWatchlist.Count, WatchlistSnapshotItem.MaxCount);
+            currentWatchlist = null;
+        }
 
         var cleanedInstruction = PolicyRevisionProposalParser.CleanText(instruction);
         if (cleanedInstruction.Length == 0)
@@ -292,7 +300,7 @@ public sealed partial class ReportPolicyRevisionService(
     }
 
     // 案を作った時点の監視銘柄の記録（楽観排他の基準）。
-    internal static string SerializeSnapshot(IReadOnlyList<WatchlistSnapshotItem> snapshot) =>
+    public static string SerializeSnapshot(IReadOnlyList<WatchlistSnapshotItem> snapshot) =>
         JsonSerializer.Serialize(snapshot.Select(w => new { symbol = w.Symbol, market = w.Market }), LedgerJson);
 
     // 台帳の完了の書き込み（失敗しても元の結果・例外を上書きしない）。

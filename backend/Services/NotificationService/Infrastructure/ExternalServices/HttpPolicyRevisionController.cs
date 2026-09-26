@@ -112,6 +112,9 @@ public sealed class HttpPolicyRevisionController(
                 .ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.NotFound)
                 return new WatchlistProposalLookup(true, false, null, "この版は /policy の案ではありません");
+            // PR #1027 の監査 H1: 報告書がこの版で確定されていない（別の版で確定済み・未確定）。適用しない。
+            if (response.StatusCode == HttpStatusCode.Conflict)
+                return new WatchlistProposalLookup(true, false, null, "この版では確定されていないため、入れ替えは適用しません");
             if (!response.IsSuccessStatusCode)
                 return new WatchlistProposalLookup(false, false, null, $"入れ替え案を照会できませんでした（HTTP {(int)response.StatusCode}）");
 
@@ -124,8 +127,11 @@ public sealed class HttpPolicyRevisionController(
                 view.PeriodKey ?? periodKey,
                 view.ReportVersion,
                 [.. view.Changes.Select(c => new WatchlistChangeSuggestionView(c!.Action!, c.Symbol!, c.Reason ?? string.Empty))],
-                view.Snapshot?.Where(e => e is not null && e.Symbol is not null && e.Market is not null)
-                    .Select(e => new WatchlistSnapshotItemView(e!.Symbol!, e.Market!)).ToList(),
+                // PR #1027 の監査 L3: 1 件でも欠けた項目があれば、黙って落とさず一覧ごと「分からない」（null）にする
+                // （落とした一覧を期待値にすると、楽観排他が偽の不一致・偽の一致を起こす）。
+                view.Snapshot is { } snapshot && snapshot.All(e => e is { Symbol: not null, Market: not null })
+                    ? [.. snapshot.Select(e => new WatchlistSnapshotItemView(e!.Symbol!, e.Market!))]
+                    : null,
                 view.ApplyRecorded), "照会しました");
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)

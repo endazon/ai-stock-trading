@@ -39,9 +39,14 @@ internal static partial class ApplyWatchlistProposalEndpoint
                 return Results.BadRequest(new { error = "入れ替え（changes）の操作は add / remove に限ります。" });
 
             // 期待値・入れ替えの欠落は ApplyProposal の検証が 400 にする（1 件も適用しない）。
+            // PR #1027 の監査 L1（任意）: 変更履歴の理由に、どの経路で適用されたかを事実どおりに書く
+            // （信頼クライアント＝Discord Bot の代理か、利用者のトークンで直接呼ばれたか）。
+            var via = applying.AuthorizedBy is { } client
+                ? $"Discord の確認ボタンで適用・代理 {client}"
+                : "利用者のトークンで直接適用";
             var plan = svc.ApplyProposal(
                 expected?.Cast<MonitoredSymbol>().ToList(), changes?.Cast<ProposedWatchlistChange>().ToList(),
-                applying.Actor, proposalRef);
+                applying.Actor, proposalRef, via);
             if (plan.Stale)
             {
                 logger.LogWarning("入れ替え案 {ProposalRef} は案の作成後に監視銘柄が変わったため適用しませんでした。", proposalRef);
@@ -63,7 +68,8 @@ internal static partial class ApplyWatchlistProposalEndpoint
                 estimator.Estimate(plan.Resulting.Count)));
         });
 
-    // 案は米国のティッカーだけ（報告書サービスの検証）。市場の省略は米国として受け、他の市場は形式違反（null）とする。
+    // 期待値（案を作った時点の監視銘柄）の 1 件。銘柄が空・市場の省略は形式違反（null＝400）。期待値は現在の監視銘柄の写しであり、
+    // 日本株も含み得る（入れ替え〔changes〕が米国のティッカーに限られるのは案の形の検証〔WatchlistProposalPlan〕の側）。
     private static MonitoredSymbol? ToSymbol(WatchlistSymbolRef s) =>
         string.IsNullOrWhiteSpace(s.Symbol) || s.Market is null ? null : new MonitoredSymbol(s.Symbol.Trim(), s.Market.Value);
 

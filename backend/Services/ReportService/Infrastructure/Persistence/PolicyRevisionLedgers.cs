@@ -65,6 +65,15 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
 
     public PolicyRevisionAttempt? Find(Guid id) => db.PolicyRevisionAttempts.Find(id)?.ToAttempt();
 
+    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt)
+    {
+        var row = db.PolicyRevisionAttempts.Find(id);
+        if (row is null || row.ProposalConfirmedAt is not null)
+            return;
+        row.ProposalConfirmedAt = confirmedAt;
+        db.SaveChanges();
+    }
+
     public PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion) =>
         db.PolicyRevisionAttempts
             .Where(a => a.PeriodKey == periodKey && a.ReportVersion == reportVersion
@@ -150,6 +159,15 @@ public sealed class InMemoryPolicyRevisionLedger : IPolicyRevisionLedger
         }
     }
 
+    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt)
+    {
+        lock (_gate)
+        {
+            if (_rows.TryGetValue(id, out var row) && row.ProposalConfirmedAt is null)
+                _rows[id] = row with { ProposalConfirmedAt = confirmedAt };
+        }
+    }
+
     // 試験が記録の中身を見るための一覧。
     public IReadOnlyList<PolicyRevisionAttempt> Attempts
     {
@@ -187,6 +205,9 @@ public sealed class PolicyRevisionAttemptRow
 
     public DateTimeOffset? WatchlistAppliedAt { get; set; }
 
+    // #1025（PR #1027 の監査 M1）: 報告書がこの試行の版で確定された時刻。
+    public DateTimeOffset? ProposalConfirmedAt { get; set; }
+
     internal static PolicyRevisionAttemptRow From(PolicyRevisionAttempt a) => new()
     {
         Id = a.Id,
@@ -200,9 +221,10 @@ public sealed class PolicyRevisionAttemptRow
         WatchlistSnapshotJson = a.WatchlistSnapshotJson,
         WatchlistApplyJson = a.WatchlistApplyJson,
         WatchlistAppliedAt = a.WatchlistAppliedAt,
+        ProposalConfirmedAt = a.ProposalConfirmedAt,
     };
 
     internal PolicyRevisionAttempt ToAttempt() =>
         new(Id, AttemptedAt, JstDate, Actor, PeriodKey, Outcome, ReportVersion, WatchlistChangesJson,
-            WatchlistSnapshotJson, WatchlistApplyJson, WatchlistAppliedAt);
+            WatchlistSnapshotJson, WatchlistApplyJson, WatchlistAppliedAt, ProposalConfirmedAt);
 }

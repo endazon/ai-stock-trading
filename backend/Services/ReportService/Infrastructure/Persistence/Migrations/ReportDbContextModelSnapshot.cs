@@ -46,6 +46,9 @@ namespace ReportService.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<DateTimeOffset?>("ProposalConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int?>("ReportVersion")
                         .HasColumnType("integer");
 

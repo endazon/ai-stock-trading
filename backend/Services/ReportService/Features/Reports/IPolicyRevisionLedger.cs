@@ -41,6 +41,14 @@ public interface IPolicyRevisionLedger
     /// FR-13, ADR-0042 決定 1, #1025: 入れ替え案の適用の内訳を記録する（監査）。**1 回だけ**——既に記録済みなら false（上書きしない）。
     /// </summary>
     bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt);
+
+    /// <summary>
+    /// FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 7（PR #1027 の監査 M1）: 報告書が<b>その試行の版で確定された</b>時刻を記録する
+    /// （確定の遷移のときに報告書サービスが書く）。適用の内訳（<see cref="PolicyRevisionAttempt.WatchlistAppliedAt"/>）が無いまま
+    /// これだけがある行が「確定されたが入れ替えの適用を試みていない（Bot が落ちた・照会に失敗した）」であり、台帳で見える。
+    /// 既に記録済みなら上書きしない。
+    /// </summary>
+    void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt);
 }
 
 // TryBegin の結果。Begun=false なら書いていない（上限に達していた）。UsedBefore は書く前のその日の試行の数。
@@ -69,6 +77,7 @@ public enum PolicyRevisionAttemptOutcome
 /// </param>
 /// <param name="WatchlistApplyJson">入れ替え案の適用の内訳（JSON。適用を試みた後だけ）。</param>
 /// <param name="WatchlistAppliedAt">内訳を記録した時刻。</param>
+/// <param name="ProposalConfirmedAt">報告書がこの試行の版で確定された時刻（確定されていなければ null）。</param>
 public sealed record PolicyRevisionAttempt(
     Guid Id,
     DateTimeOffset AttemptedAt,
@@ -80,4 +89,5 @@ public sealed record PolicyRevisionAttempt(
     string? WatchlistChangesJson = null,
     string? WatchlistSnapshotJson = null,
     string? WatchlistApplyJson = null,
-    DateTimeOffset? WatchlistAppliedAt = null);
+    DateTimeOffset? WatchlistAppliedAt = null,
+    DateTimeOffset? ProposalConfirmedAt = null);
