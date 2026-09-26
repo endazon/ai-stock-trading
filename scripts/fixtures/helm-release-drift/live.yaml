@@ -1,5 +1,6 @@
 # 自己試験用の fixture（稼働側 = `helm get manifest` の形）。実在のクラスタ・値ではない。
 # 秘密の値はすべて見張り用の偽値（FIXTURE-SECRET-SENTINEL 等）であり、出力に現れたら自己試験が落ちる。
+# Secret は stringData で書く（data の base64 は gitleaks の kubernetes-secret-yaml 規則に当たり、偽値でも秘密の走査が赤になる）。
 ---
 # Source: ai-stock-trading/templates/namespace.yaml
 apiVersion: v1
@@ -14,8 +15,8 @@ metadata:
   name: ast-fixture-secret
   namespace: ai-stock-trading
 type: Opaque
-data:
-  sample: RklYVFVSRS1TRUNSRVQtU0VOVElORUw=
+stringData:
+  sample: FIXTURE-SECRET-SENTINEL
 ---
 # Source: ai-stock-trading/templates/service.yaml
 apiVersion: v1
