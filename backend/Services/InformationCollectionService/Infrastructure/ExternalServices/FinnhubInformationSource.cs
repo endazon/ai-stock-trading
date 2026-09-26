@@ -11,16 +11,19 @@ namespace InformationCollectionService.Infrastructure.ExternalServices;
 // IADR-0068: HTTP 呼び出し・応答解析は共有の FinnhubQuoteClient へ抽出した（市況（FR-10）の FinnhubMarketDataSource と
 // 同じ呼び出しが 2 実装に割れないようにするため）。本クラスに残るのはスナップショット → RawInformationItem の写像のみで、
 // 収集内容（high/low/prevClose を含む）は抽出前から不変。
+//
+// #1015, IADR-0435: 対象銘柄は構成の固定値ではなく巡回ごとに決まる集合（IFinnhubSymbolSet）から取る
+// （市場監視に結線していれば監視銘柄の米国の銘柄。FinnhubSymbolSelector）。
 public sealed class FinnhubInformationSource(
     FinnhubQuoteClient client,
-    IReadOnlyList<string> symbols)
+    IFinnhubSymbolSet symbols)
     : IInformationSource
 {
     public async Task<IReadOnlyList<RawInformationItem>> FetchAsync(CancellationToken cancellationToken = default)
     {
         var items = new List<RawInformationItem>();
 
-        foreach (var symbol in symbols)
+        foreach (var symbol in symbols.Current)
         {
             var quote = await client.GetQuoteAsync(symbol, cancellationToken).ConfigureAwait(false);
             if (quote is null)
