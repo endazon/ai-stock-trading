@@ -77,14 +77,17 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025]
   要求の `currentWatchlist`（`[{symbol, market}]`・market は `UnitedStates` / `Japan`）は Bot が照会した現在の監視銘柄で、米国の銘柄を AI へ渡し、
   試行の台帳に記録する（入れ替え案の適用の楽観排他の基準）。null は「照会できなかった」（その案の入れ替えは適用しない）。形式違反は 400。
 - `GET /reports/policy-revisions/watchlist-proposal?periodKey=&version=`（OwnerOnly）: 確定した版を作った `/policy` の試行の案
-  （`{attemptId, periodKey, reportVersion, changes[], snapshot[] | null, applyRecorded}`）。その版が `/policy` の案でなければ 404。
+  （`{attemptId, periodKey, reportVersion, changes[], snapshot[] | null, applyRecorded}`）。その版が `/policy` の案でなければ 404、
+  報告書が**その版で確定されていなければ 409**（確定済みかつ現在の版＝要求の版＋1 のときだけ返す）。
 - `POST /reports/policy-revisions/{attemptId}/watchlist-apply-result`（OwnerOnly）: 入れ替え案の適用の内訳の記録（`{outcome, items[], message, onBehalfOf}`）。
-  **1 回だけ**（2 回目は 409）。適用そのものは市場監視サービスが行う（`/policy` 専用の確認ボタンで確定できたときだけ）。
+  **1 回だけ**（2 回目は 409）。確定された案の試行（Proposed かつ報告書がその版で確定済み）以外も 409。適用そのものは市場監視サービスが行う（`/policy` 専用の確認ボタンで確定できたときだけ）。
   改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
   **1 日（JST の暦日）の回数上限**は `Reports:PolicyRevision:DailyLimit`（既定 10 回）。上限に達した要求は LLM を呼ばず **429** で断る。
   数えるのは LLM を呼んだ試行（失敗も含む）で、入力の検証・対象の決定で断った要求は数えない。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
+  応答は報告書の項目に `transitioned`（この要求で確定したか）と `version`（確定後の版）を足したもの。確定は版を 1 進めるため、
+  冪等な再確定では `version == expectedVersion + 1` のときだけ「その版で確定されている」（別の版で確定済みを取り違えない）。
 - **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。
   Discord Bot は機密クライアント（`client_credentials`）のトークンで確定を呼ぶため、トークンからは人を解決できない。
   `onBehalfOf` は **トークンの `azp` が構成 `Reports:DelegatedActor:TrustedClientIds`（カンマ区切り・既定は空＝誰も信じない）に
@@ -110,6 +113,7 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025]
 | WatchlistSnapshotJson | text? | 案を作った時点の監視銘柄（`[{symbol, market}]`）。NULL＝照会できなかった（空の一覧は `[]`） |
 | WatchlistApplyJson | text? | 入れ替え案の適用の内訳（`{outcome, recordedBy, items[], message}`）。適用を試みた後だけ |
 | WatchlistAppliedAt | timestamptz? | 内訳を記録した時刻（記録は 1 回だけ） |
+| ProposalConfirmedAt | timestamptz? | 報告書がこの試行の版で確定された時刻（確定の遷移で書く）。これがあって `WatchlistAppliedAt` が無い行は「確定されたが入れ替えの適用を試みていない」 |
 
 - 数えることと書くことは 1 つの排他区間で行う（Postgres では JST の暦日を鍵にした勧告ロック `pg_advisory_xact_lock` を
   トランザクションで取る）。同時の要求で上限を超えない。
