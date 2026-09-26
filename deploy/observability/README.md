@@ -34,6 +34,8 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率（80 で間隔延長・100 で停止） |
 | `ast_market_monitor_position_rows_degraded_total` | `reason` | 市場監視が保有照会の応答を**そのまま損切り判定へ渡せなかった行**（#957）。🔴 平常時 0 件。`identity-missing` / `stop-line-unknown` はその建玉の損切りを検知していない、`stop-line-approximated` は近似のラインで評価している、`response-unreadable` はその巡回で 1 件も評価していない |
+| `ast_information_collection_finnhub_symbol_set_resolutions_total` | `outcome` | 情報収集が Finnhub の対象銘柄を**どこから決めたか**（#1015。市場監視に結線したときだけ、巡回ごとに 1 件）。`watchlist` 以外（`last-known`＝直前に読めた対象 / `configured-fallback`＝構成の固定リスト）は**監視銘柄の変更が収集に届いていない**印である |
+| `ast_information_collection_finnhub_symbols_deferred` | — | 1 巡回の要求が巡回間隔に収まらず**後回しにした Finnhub の対象銘柄数**（#1015）。🔴 平常時 0。出ていれば自制レートか巡回間隔の見直しが要る |
 
 > **接尾辞は otel-collector の Prometheus 変換に依存する**（`add_metric_suffixes` 既定 true を前提とする）。
 > コード側の計器には `unit` を与えていないため、変換は「ドットを `_` へ」＋「Counter は `_total`」＋

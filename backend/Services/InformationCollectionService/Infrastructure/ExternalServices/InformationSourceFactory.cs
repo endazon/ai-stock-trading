@@ -30,12 +30,18 @@ public static class InformationSourceFactory
     public const string Fred = "fred";
     public const string Finra = "finra-short";
 
+    /// <param name="finnhubSymbols">
+    /// #1015, IADR-0435: Finnhub 系（現在値・企業ニュース）が巡回ごとに問い合わせる銘柄の集合。<c>null</c> なら構成の固定リスト
+    /// （<c>Finnhub:Symbols</c>）をそのまま使い、固定リストが空なら Finnhub 系を有効化しない（従来どおり）。与えたときは
+    /// 固定リストが空でも有効化する（集合は市場監視の監視銘柄から決まる）。
+    /// </param>
     public static IReadOnlyList<NamedInformationSource> Create(
         CollectionSourceOptions options,
         HttpClient httpClient,
         IClock clock,
         TimeProvider timeProvider,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IFinnhubSymbolSet? finnhubSymbols = null)
     {
         // 環境変数の空指定（例: Collection__Source__SecEdgar__Ciks__0=""）は「未設定」として扱う。
         // 空要素を持つ配列を「設定あり」と見なすと、実体のない構成でソースが有効化されてしまう（安全既定に反する）。
@@ -44,9 +50,16 @@ public static class InformationSourceFactory
         var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
         var sources = new List<NamedInformationSource>();
 
+        // #1015, IADR-0435, ADR-0031 決定4（計画 ADR-0043 決定2 (a)）: 同じ鍵で叩く現在値と企業ニュースは**1 つのバケットを共有する**。
+        // ソースごとに作ると、両方有効なときに同じ鍵へ自制値の 2 倍を送り得た（プロセスの自制レートが 1 つに定まらない）。
+        var finnhub = new FinnhubFamily(
+            finnhubSymbols ?? new FixedFinnhubSymbolSet(options.Finnhub.Symbols),
+            FollowsDynamicSet: finnhubSymbols is not null,
+            new Lazy<IRateLimiter>(() => Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider)));
+
         foreach (var provider in ParseProviders(options.Provider))
         {
-            var source = CreateSingle(provider, options, httpClient, clock, timeProvider, loggerFactory, logger);
+            var source = CreateSingle(provider, options, httpClient, clock, timeProvider, loggerFactory, logger, finnhub);
             if (source is not null)
                 sources.Add(new NamedInformationSource(provider, source));
         }
@@ -83,6 +96,17 @@ public static class InformationSourceFactory
             "Finnhub Free の日次上限 {Limit} 回から逆算した監視銘柄数の上限は {Cap} 銘柄です"
             + "（1 日 {Cycles} 巡回 × 1 銘柄あたり {PerSymbol} 要求）。現在の構成は {Configured} 銘柄。",
             options.Finnhub.DailyRequestLimit, cap, CyclesPerDay, requestsPerSymbol, options.Finnhub.Symbols.Length);
+    }
+
+    /// <summary>
+    /// #1015, IADR-0435: 1 銘柄あたりの Finnhub の要求数（Provider に列挙された finnhub・finnhub-news の数。0〜2）。
+    /// 両者は有効化の条件〔鍵〕が同じなので、列挙の数がそのまま 1 巡回・1 銘柄あたりの要求数になる。
+    /// </summary>
+    public static int FinnhubRequestsPerSymbol(CollectionSourceOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var providers = ParseProviders(options.Provider).ToHashSet();
+        return new[] { Finnhub, FinnhubNews }.Count(providers.Contains);
     }
 
     /// <summary>
@@ -243,30 +267,32 @@ public static class InformationSourceFactory
         IClock clock,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
-        ILogger logger)
+        ILogger logger,
+        FinnhubFamily finnhub)
     {
         switch (provider)
         {
             case Finnhub:
-                if (string.IsNullOrWhiteSpace(options.Finnhub.ApiKey) || options.Finnhub.Symbols.Length == 0)
-                    return Skip(logger, provider, "APIキー（Finnhub:ApiKey）と銘柄（Finnhub:Symbols）");
+                if (!finnhub.IsConfigured(options))
+                    return Skip(logger, provider, "APIキー（Finnhub:ApiKey）と銘柄（Finnhub:Symbols または市場監視の監視銘柄）");
 
                 // IADR-0068: HTTP は共有の FinnhubQuoteClient。レート制限は構成値（既定は公称 60 回/分の 1/2）。
+                // #1015, IADR-0435: バケットは企業ニュースと共有し、銘柄は巡回ごとの集合から取る。
                 return new FinnhubInformationSource(
                     new FinnhubQuoteClient(
-                        httpClient, options.Finnhub.ApiKey,
-                        Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider),
+                        httpClient, options.Finnhub.ApiKey!,
+                        finnhub.Limiter.Value,
                         loggerFactory.CreateLogger<FinnhubQuoteClient>()),
-                    options.Finnhub.Symbols);
+                    finnhub.Symbols);
 
             case FinnhubNews:
-                if (string.IsNullOrWhiteSpace(options.Finnhub.ApiKey) || options.Finnhub.Symbols.Length == 0)
-                    return Skip(logger, provider, "APIキー（Finnhub:ApiKey）と銘柄（Finnhub:Symbols）");
+                if (!finnhub.IsConfigured(options))
+                    return Skip(logger, provider, "APIキー（Finnhub:ApiKey）と銘柄（Finnhub:Symbols または市場監視の監視銘柄）");
 
-                // ADR-0020 決定2: ニュース系の第一。市況面と同じ無料枠を共用する。
+                // ADR-0020 決定2: ニュース系の第一。市況面と同じ無料枠（同じバケット）を共用する。
                 return new FinnhubCompanyNewsSource(
-                    httpClient, options.Finnhub.ApiKey, options.Finnhub.Symbols,
-                    Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider),
+                    httpClient, options.Finnhub.ApiKey!, finnhub.Symbols,
+                    finnhub.Limiter.Value,
                     clock,
                     loggerFactory.CreateLogger<FinnhubCompanyNewsSource>(),
                     options.Finnhub.NewsLookbackDays);
@@ -341,6 +367,14 @@ public static class InformationSourceFactory
             "Collection:Source:Provider に {Provider} が指定されていますが、{Required} が未設定のため、この情報源は" +
             "収集しません（安全既定・IADR-0022）。", provider, required);
         return null;
+    }
+
+    // #1015, IADR-0435: Finnhub 系（現在値・企業ニュース）で共有するもの —— 巡回ごとの銘柄の集合と、1 つのバケット（遅延生成）。
+    // 有効化の条件: 鍵があり、かつ銘柄の出所がある（構成の固定リストが空でない、または巡回ごとに決まる集合を与えられた）。
+    private sealed record FinnhubFamily(IFinnhubSymbolSet Symbols, bool FollowsDynamicSet, Lazy<IRateLimiter> Limiter)
+    {
+        public bool IsConfigured(CollectionSourceOptions options) =>
+            !string.IsNullOrWhiteSpace(options.Finnhub.ApiKey) && (FollowsDynamicSet || options.Finnhub.Symbols.Length > 0);
     }
 
     private static IRateLimiter Limiter(int capacity, TimeSpan refillInterval, TimeProvider timeProvider) =>

@@ -161,7 +161,14 @@ services:
       - { name: Collection__Source__Provider, value: "finnhub,sec-edgar,fred" }  # ← 収集起動（既定 ""）
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
-      - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }         # ← watchlist と揃える
+      # FR-01/13, #1015, IADR-0435: Finnhub の対象銘柄は市場監視の監視銘柄（米国の銘柄）に追随する（取引判断の
+      # MarketMonitor__BaseUrl と同じ宛先・同じ s2s〔下の ServiceAuth__*〕）。SC-02・/policy で監視銘柄を変えると次の巡回から収集対象も変わる。
+      # 自制レートは Collection__Source__Finnhub__RateLimitPerMinute（既定 30・finnhub と finnhub-news で共有）。巡回間隔 300 秒
+      # （appsettings.Development.json）・finnhub だけなら 1 巡回 150 銘柄まで収まる（計画 ADR-0043 決定2 (b)。超えた分は後回しにして警告）。
+      - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
+      # **フォールバック専用**: 監視銘柄を一度も読めていない（起動直後から市場監視に届かない）ときだけ使う。
+      # 一度読めた後に読めなくなったら、直前に読めた対象を使い続ける（不明を空と扱わない）。
+      - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }
       # 日次上限は**未実測**のため空にする（IADR-0224）。空＝逆算しない＝監視銘柄数の上限を返さない。
       # IADR-0275: 分次（60回/60秒固定ウィンドウ）は実クラスタで実測確認済みだが、日次は実測セッションでも
       # 確定できなかった（持続的ブロックを観測できず）。推測値を焼き込まないこと。

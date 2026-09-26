@@ -40,9 +40,17 @@ public sealed class FinnhubOptions
 {
     public string? ApiKey { get; set; }
 
+    /// <summary>
+    /// 構成の固定の銘柄リスト。#1015, IADR-0435: <c>MarketMonitor:BaseUrl</c> を結線すると対象は市場監視の監視銘柄（米国の銘柄）になり、
+    /// 本リストは<b>監視銘柄を一度も読めていないときのフォールバックだけ</b>になる。未結線なら従来どおり本リストが対象である。
+    /// </summary>
     public string[] Symbols { get; set; } = [];
 
-    /// <summary>送信前に自制する 1 分あたりの要求数（既定 30 ＝ 実測確認済み上限 60 回/60 秒の 1/2。IADR-0275）。</summary>
+    /// <summary>
+    /// 送信前に自制する 1 分あたりの要求数（既定 30 ＝ 実測確認済み上限 60 回/60 秒の 1/2。IADR-0275）。
+    /// #1015, IADR-0435: 現在値と企業ニュースは<b>この 1 つのレートを共有する</b>（同じ鍵）。1 巡回に問い合わせる銘柄数は
+    /// 本値 × 巡回間隔 ÷ 1 銘柄あたりの要求数までに抑える（計画 ADR-0043 決定2 (b)）。
+    /// </summary>
     public int RateLimitPerMinute { get; set; } = 30;
 
     /// <summary>
