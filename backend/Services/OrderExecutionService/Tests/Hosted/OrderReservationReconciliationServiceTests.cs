@@ -5,10 +5,12 @@ using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Hosted;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Broker;
 using AiStockTrading.TestSupport.Messaging;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,12 +80,14 @@ public class OrderReservationReconciliationServiceTests
             .StartAsync();
 
     private static OrderReservationReconciliationService BuildService(
-        IHost host, ReconciliationOptions options) =>
+        IHost host, ReconciliationOptions options, BusinessMetrics? metrics = null) =>
         new(host.Services.GetRequiredService<IServiceScopeFactory>(),
             // 常駐（singleton）であり、Wolverine の IMessageBus（scoped）は注入できない。
             host.Services.GetRequiredService<IWolverineRuntime>(),
             host.Services.GetRequiredService<IClock>(),
             Options.Create(options),
+            // #856, IADR-0441: 判定の計数。計数を表明しない試験は既定名の計器でよい（肯定形の表明は他人の測定値に壊されない）。
+            metrics ?? new BusinessMetrics(),
             NullLogger<OrderReservationReconciliationService>.Instance);
 
     [Fact]
@@ -206,6 +210,7 @@ public class OrderReservationReconciliationServiceTests
             deadRuntime,
             live.Services.GetRequiredService<IClock>(),
             Options.Create(new ReconciliationOptions { Enabled = true }),
+            new BusinessMetrics(),
             logger);
 
         var publish = async () => await service.ReconcileOnceAsync(CancellationToken.None);
@@ -269,6 +274,7 @@ public class OrderReservationReconciliationServiceTests
             host.Services.GetRequiredService<IWolverineRuntime>(),
             host.Services.GetRequiredService<IClock>(),
             Options.Create(new ReconciliationOptions { Enabled = true }),
+            new BusinessMetrics(),
             logger);
 
         var reconcile = async () => await service.ReconcileOnceAsync(cts.Token);
@@ -410,6 +416,7 @@ public class OrderReservationReconciliationServiceTests
             host.Services.GetRequiredService<IWolverineRuntime>(),
             host.Services.GetRequiredService<IClock>(),
             Options.Create(new ReconciliationOptions { Enabled = true }),
+            new BusinessMetrics(),
             logger);
 
         await service.ReconcileOnceAsync(CancellationToken.None);
@@ -448,6 +455,7 @@ public class OrderReservationReconciliationServiceTests
             host.Services.GetRequiredService<IWolverineRuntime>(),
             host.Services.GetRequiredService<IClock>(),
             Options.Create(new ReconciliationOptions { Enabled = true }),
+            new BusinessMetrics(),
             logger);
 
         Func<IMessageContext, Task> reconcile = async _ => await service.ReconcileOnceAsync(CancellationToken.None);
@@ -525,5 +533,97 @@ public class OrderReservationReconciliationServiceTests
             "確定済みの OrderExecuted は保護の失敗より先に出ている（IADR-0371）");
         logger.Entries.Should().Contain(e => e.Message.Contains("滞留 1 件を走査", StringComparison.Ordinal),
             "巡回は最後まで回る（保護の失敗で残りの突合を止めない）");
+    }
+
+    // ---- FR-05, NFR-09, #856, IADR-0441: 判定の内訳を業務メトリクスで数える（ログの grep ではなく Prometheus で数えられるように） ----
+
+    // 予約ごとに照会の答えを変えるプローブ（未登録の予約は Indeterminate。例外を投げる答えも差し込める）。
+    private sealed class MapProbe(Dictionary<Guid, Func<ReservationProbeResult>> answers) : IReservationBrokerProbe
+    {
+        public Task<ReservationProbeResult> ProbeAsync(
+            OrderDispatchReservation reservation, CancellationToken cancellationToken = default) =>
+            Task.FromResult(answers.TryGetValue(reservation.DecisionId, out var answer)
+                ? answer()
+                : ReservationProbeResult.Indeterminate);
+    }
+
+    private static Dictionary<string, double> SumByOutcome(MeterCapture capture) =>
+        capture.ValuesOf(BusinessMetricNames.OrderReservationReconciliations)
+            .GroupBy(m => m.Tags[BusinessMetricNames.TagOutcome])
+            .ToDictionary(g => g.Key, g => g.Sum(m => m.Value));
+
+    [Fact]
+    public async Task 巡回は判定を内訳ごとに数え_確定は1件ずつ_据え置きと不確定と失敗は件数で数える()
+    {
+        // T-10-1560: 巡回サマリの内訳と 1 対 1（①自己修復と②照会で確定は分ける）。解放は門が閉じているので 0（計上しない）。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        var reservations = new InMemoryOrderReservationStore();
+        var placed = Guid.NewGuid();
+        var selfHealed = Guid.NewGuid();
+        var notPlaced = Guid.NewGuid();
+        var indeterminate = Guid.NewGuid();
+        var failing = Guid.NewGuid();
+        foreach (var id in new[] { placed, selfHealed, notPlaced, indeterminate, failing })
+            reservations.TryReserve(id, StalledAt);
+
+        using var host = await BuildHostAsync(new MapProbe(new()
+        {
+            [placed] = () => ReservationProbeResult.Placed(Placed("BRK-M1")),
+            [notPlaced] = () => ReservationProbeResult.NotPlaced,
+            [failing] = () => throw new InvalidOperationException("照会が落ちた（テスト）"),
+        }), reservations);
+        host.Services.GetRequiredService<IExecutedOrderStore>().Save(new OrderExecutionService.Domain.ExecutionRecord(
+            selfHealed, "BRK-M2", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, PositionEffect.Open,
+            10, 100m, 10, 100m, OrderStatus.Filled, 0m, StalledAt));
+        var service = BuildService(host, new ReconciliationOptions { Enabled = true }, metrics);
+
+        var result = await service.ReconcileOnceAsync(CancellationToken.None);
+
+        result.Scanned.Should().Be(5, "前提: 5 件とも滞留として走査される");
+        SumByOutcome(capture).Should().BeEquivalentTo(new Dictionary<string, double>
+        {
+            [BusinessMetrics.ReservationReconciliationProbePlaced] = 1,
+            [BusinessMetrics.ReservationReconciliationSelfHealed] = 1,
+            [BusinessMetrics.ReservationReconciliationHeldNotPlaced] = 1,
+            [BusinessMetrics.ReservationReconciliationIndeterminate] = 1,
+            [BusinessMetrics.ReservationReconciliationFailed] = 1,
+        }, "解放の門が閉じているので released は 1 件も計上されない");
+    }
+
+    [Fact]
+    public async Task 発行が落ちても確定した1件の計数は発行より先に残る()
+    {
+        // 🔴 T-10-1561（否定形）: 確定した予約は次の巡回に載らない（IADR-0371）。計数を発行の後ろに置くと、
+        // 発行が落ちた 1 件は永久に数えられない。記録（Critical）と同じく発行より先に数える。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+
+        var reservations = new InMemoryOrderReservationStore();
+        reservations.TryReserve(Guid.NewGuid(), StalledAt);
+        using var live = await BuildHostAsync(
+            new StubProbe(ReservationProbeResult.Placed(Placed("BRK-M3"))), reservations);
+        var brokenBus = await BuildHostAsync(
+            new IndeterminateReservationBrokerProbe(), new InMemoryOrderReservationStore());
+        var deadRuntime = brokenBus.Services.GetRequiredService<IWolverineRuntime>();
+        await brokenBus.StopAsync();
+        brokenBus.Dispose();
+
+        var service = new OrderReservationReconciliationService(
+            live.Services.GetRequiredService<IServiceScopeFactory>(),
+            deadRuntime,
+            live.Services.GetRequiredService<IClock>(),
+            Options.Create(new ReconciliationOptions { Enabled = true }),
+            BusinessMetrics.WithMeterName(meterName),
+            NullLogger<OrderReservationReconciliationService>.Instance);
+
+        var publish = async () => await service.ReconcileOnceAsync(CancellationToken.None);
+
+        await publish.Should().ThrowAsync<Exception>("前提: 発行は落ちる");
+        SumByOutcome(capture).Should().BeEquivalentTo(
+            new Dictionary<string, double> { [BusinessMetrics.ReservationReconciliationProbePlaced] = 1 },
+            "確定した 1 件は発行の前に数えられている（巡回サマリの件数は巡回が回りきらないので計上されない）");
     }
 }

@@ -358,6 +358,14 @@ var app = builder.Build();
 app.Lifetime.ApplicationStarted.Register(() =>
     app.Services.GetRequiredService<BusinessMetrics>().PrimeDriftAdoptionFollowUpAbandoned());
 
+// FR-05, NFR-09, #856, IADR-0441: 発注予約の自動リコンサイルの判定の内訳も、起動完了後に 0 で系列を先に作る（理由は上と同じ）。
+// 🔴 リコンサイルが有効な構成でだけ作る——無効な構成で 0 の系列があると「巡回して 0 件だった」と読める。
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    if (app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<ReconciliationOptions>>().Value.Enabled)
+        app.Services.GetRequiredService<BusinessMetrics>().PrimeOrderReservationReconciliations();
+});
+
 // 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
 // #811 / IADR-0129 追記: `codegen write` 等の JasperFx コマンドで起動したときは DB に触らない（ホスト稼働時だけ移行する）。
 if (JasperFxCommandLine.IsHostRun(args))
