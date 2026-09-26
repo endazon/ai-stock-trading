@@ -488,6 +488,106 @@ public class ReportPolicyRevisionServiceTests
         json.Length.Should().BeGreaterThan(8192, "前提: 旧 varchar(8192) では溢れた長さ");
     }
 
+    // ---- FR-14, FR-09, #1039: 確定済みに当たったときの返答に「いつ・どうすれば改訂できるか」を書く（T-10-1520〜1523）----
+    // 🔴 状態（AlreadyConfirmed＝409）・AI を呼ばない・何も保存しないは変えない。文の日付と手段は実際の規則から導く（推測しない）。
+
+    // T-10-1520: 当日の日報が確定済みで、明日（JST）が営業日・自動生成が有効なら、生成境界の時刻（構成値）の後に自動生成の
+    // ドラフトができて改訂できると伝える。明日の境界の前の /policy は実際に AutoDailyPending になる（文と規則が一致する）。
+    [Fact]
+    public async Task 確定済みの当日の日報は明日が営業日なら自動生成の後に改訂できると伝える()
+    {
+        var schedule = new PolicyRevisionSchedule(new ReportScheduleOptions { DailyAt = new TimeOnly(16, 30) }, AutoDailyEnabled: true);
+        var (service, store, reviser) = Create(schedule: schedule);
+        SeedConfirmedDaily(store, TodayKey, new DateOnly(2026, 9, 27));
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+
+        result.Status.Should().Be(PolicyRevisionStatus.AlreadyConfirmed, "409 の意味は変えない");
+        result.Message.Should().StartWith($"報告書 {TodayKey} は確定済みのため改訂できません（確定済みの方針は変えられません）。")
+            .And.Contain("明日（2026-09-28・JST・営業日）は 16:30 JST 以降に")
+            .And.Contain("直近の確定済み日報の方針を引き継いだ日報 daily-2026-09-28 のドラフトが自動生成され")
+            .And.Contain("その後の /policy で改訂できます")
+            .And.Contain("自動生成の日報のドラフトがある日は、確定するまでそのドラフトを /policy で改訂できます")
+            .And.Contain("監視銘柄はいまでもリスク設定画面から変更できます");
+        reviser.Calls.Should().BeEmpty("費用を使わない");
+        store.Get(TodayKey)!.Version.Should().Be(2, "確定時の版のまま");
+
+        // 文と規則の一致: 明日（月曜）の境界の前は、実際に自動生成を待つよう返る。
+        var (monday, _, _) = Create(now: new DateTimeOffset(2026, 9, 28, 1, 0, 0, TimeSpan.Zero), schedule: schedule, storeOverride: store);
+        (await monday.ReviseAsync(null, "積極的に", "developer")).Status.Should().Be(PolicyRevisionStatus.AutoDailyPending);
+    }
+
+    // T-10-1521: #1039 の事象（2026-09-26 土曜に当日の日報が確定済み）。明日（日曜・休場日）は /policy の実行時に直近の確定済み
+    // 日報を土台にドラフトを作ると伝える。明日になって実際に /policy を打つと、その日報が確定済みの方針を土台に作られる。
+    [Fact]
+    public async Task 確定済みの当日の日報は明日が休場日なら明日の実行時に作って改訂できると伝える()
+    {
+        var saturdayMorning = new DateTimeOffset(2026, 9, 26, 1, 0, 0, TimeSpan.Zero);
+        var (service, store, reviser) = Create(now: saturdayMorning);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+
+        result.Status.Should().Be(PolicyRevisionStatus.AlreadyConfirmed);
+        result.Message.Should().StartWith("報告書 daily-2026-09-26 は確定済みのため改訂できません")
+            .And.Contain("明日（2026-09-27・JST）に /policy を実行すると、直近の確定済み日報を土台に日報 daily-2026-09-27 のドラフトを作り、それを改訂できます")
+            .And.Contain("リスク設定画面")
+            .And.NotContain("営業日");
+        reviser.Calls.Should().BeEmpty();
+
+        // 文と規則の一致: 明日（日曜）に /policy を打つと、確定済みの方針を土台に当日の日報を作って案を出す。
+        var (sunday, _, sundayReviser) = Create(now: SundayMorning, storeOverride: store);
+        var next = await sunday.ReviseAsync(null, "積極的に", "developer");
+        (next.Status, next.PeriodKey, next.Created).Should().Be((PolicyRevisionStatus.Proposed, "daily-2026-09-27", true));
+        sundayReviser.Calls.Single().CurrentPolicy.Should().Be("積極運用");
+    }
+
+    // T-10-1522: 「明日」は JST の暦日で数える。2026-09-26 15:30 UTC は 09-27 00:30 JST なので、明日は 09-28（UTC の翌日 09-27 ではない）。
+    [Fact]
+    public async Task 明日はJSTの暦日で数える()
+    {
+        var (service, store, _) = Create(now: new DateTimeOffset(2026, 9, 26, 15, 30, 0, TimeSpan.Zero));
+        SeedConfirmedDaily(store, TodayKey, new DateOnly(2026, 9, 27));
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+
+        result.Status.Should().Be(PolicyRevisionStatus.AlreadyConfirmed);
+        result.Message.Should().Contain("明日（2026-09-28・JST・営業日）").And.Contain("daily-2026-09-28")
+            .And.NotContain("明日（2026-09-27");
+    }
+
+    // T-10-1523: 自動生成が無効な構成では、明日が営業日でも /policy の実行時に作ると伝え、自動生成のドラフトには触れない。
+    // 当日以外の確定済みの会話キーでは、period を省略した /policy の対象（当日の日報）を示す。会話キーが上限の 32 文字でも、
+    // 通知サービスが切る 300 文字（HttpPolicyRevisionController.MaxErrorLength）に収まる。
+    [Fact]
+    public async Task 自動生成が無効な構成と当日以外の会話キーでも改訂の手段を示す()
+    {
+        var disabled = new PolicyRevisionSchedule(new ReportScheduleOptions(), AutoDailyEnabled: false);
+        var (service, store, _) = Create(schedule: disabled);
+        SeedConfirmedDaily(store, TodayKey, new DateOnly(2026, 9, 27));
+
+        var noAuto = await service.ReviseAsync(null, "積極的に", "developer");
+        noAuto.Status.Should().Be(PolicyRevisionStatus.AlreadyConfirmed);
+        noAuto.Message.Should().Contain("明日（2026-09-28・JST）に /policy を実行すると")
+            .And.NotContain("営業日").And.NotContain("自動生成").And.Contain("リスク設定画面");
+
+        var (other, otherStore, otherReviser) = Create();
+        SeedConfirmedDaily(otherStore, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        var past = await other.ReviseAsync("daily-2026-09-26", "積極的に", "developer");
+        past.Status.Should().Be(PolicyRevisionStatus.AlreadyConfirmed);
+        past.Message.Should().Contain($"period を省略した /policy は当日（JST）の日報 {TodayKey} を対象にします")
+            .And.NotContain("明日").And.Contain("自動生成の日報のドラフトがある日は").And.Contain("リスク設定画面");
+        otherReviser.Calls.Should().BeEmpty();
+
+        var longKey = new string('a', 32);
+        var today = new DateOnly(2026, 9, 27);
+        foreach (var schedule in new[] { AutoDailyOn, disabled })
+        {
+            ReportPolicyRevisionService.AlreadyConfirmedMessage(longKey, longKey, today, schedule).Length.Should().BeLessThanOrEqualTo(300);
+            ReportPolicyRevisionService.AlreadyConfirmedMessage(longKey, TodayKey, today, schedule).Length.Should().BeLessThanOrEqualTo(300);
+        }
+    }
+
     private sealed class PresentFailingStore(InMemoryReportStore inner) : IReportStore
     {
         public VersionedReport? Get(string periodKey) => inner.Get(periodKey);

@@ -10,6 +10,7 @@ using NotificationService.Infrastructure.ExternalServices;
 using Xunit;
 using ReportDomain = ReportWorker::ReportService.Domain;
 using ReportRevise = ReportWorker::ReportService.Features.Reports.RevisePolicy;
+using ReportFeatures = ReportWorker::ReportService.Features.Reports;
 
 namespace NotificationService.Tests;
 
@@ -47,6 +48,27 @@ public class HttpPolicyRevisionControllerTests
         (outcome.Succeeded, outcome.Indeterminate).Should().Be((false, false));
         outcome.Message.Should().Be("AI の案を作れませんでした（x）。方針は変わっていません。");
         outcome.Proposal.Should().BeNull();
+    }
+
+    // T-10-1525（FR-14, FR-09, #1039・IADR-0420 の越境の契約）: 確定済みの 409 に報告書サービスが載せる改訂の手段は、
+    // 会話キーが上限（32 文字）でも Discord の返答で切れない（本クラスは `error` を 300 文字で切る）。送り手の**本物の関数**で作る。
+    [Fact]
+    public async Task 確定済みの409の改訂の手段は切らずに見せる()
+    {
+        var longKey = new string('a', 32);
+        var schedule = new ReportFeatures.PolicyRevisionSchedule(new ReportDomain.ReportScheduleOptions(), AutoDailyEnabled: true);
+        foreach (var todaysKey in new[] { longKey, "daily-2026-09-27" })
+        {
+            var message = ReportFeatures.ReportPolicyRevisionService.AlreadyConfirmedMessage(
+                longKey, todaysKey, new DateOnly(2026, 9, 27), schedule);
+            var handler = new FakeHandler(HttpStatusCode.Conflict, JsonSerializer.Serialize(new { error = message }, ReportWire));
+
+            var outcome = await Controller(handler).ReviseAsync(longKey, "指示", "developer", null);
+
+            (outcome.Succeeded, outcome.Indeterminate).Should().Be((false, false));
+            outcome.Message.Should().Be(message, "改訂の手段を途中で切らない");
+            outcome.Message.Should().Contain("リスク設定画面");
+        }
     }
 
     [Fact]
