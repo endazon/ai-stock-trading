@@ -103,4 +103,47 @@ public class ProtectiveStopWaiverSettlementTests
     {
         ProtectiveStopWaiverSettlement.TryCreate([Waived(Guid.NewGuid())], RecordedAt).Should().BeNull();
     }
+
+    // T-10-1577（#826 の 2 回目の再検証）: 打ち消しの時刻は終端の約定記録の時刻。ただしそれが免除より前（時計のずれ・発注執行の
+    // 受付より先に取消を観測した等）なら免除の時刻を使う（打ち消しが打ち消す対象より前に並ばない）。
+    [Fact]
+    public void 終端の約定記録が免除より前なら免除の時刻で記録する()
+    {
+        var decisionId = Guid.NewGuid();
+
+        var settled = ProtectiveStopWaiverSettlement.TryCreate(
+            [Waived(decisionId), Executed(decisionId, OrderStatus.Cancelled, 0, minutes: -3)], RecordedAt);
+
+        settled!.OccurredAt.Should().Be(T0, "免除の時刻（終端の記録は 3 分前）");
+    }
+
+    // T-10-1578（#826 の 2 回目の再検証）: 終端の約定記録が複数あれば最大の約定数を採る（約定数は累積値。並びの順に依らない）。
+    [Fact]
+    public void 終端の約定記録が複数あれば最大の約定数で確定する()
+    {
+        var decisionId = Guid.NewGuid();
+        var laterZero = Executed(decisionId, OrderStatus.Cancelled, 0, minutes: 9);
+        var partial = Executed(decisionId, OrderStatus.Cancelled, 4, minutes: 6);
+
+        foreach (var chain in new[] { new[] { Waived(decisionId), partial, laterZero }, [Waived(decisionId), laterZero, partial] })
+        {
+            var settled = ProtectiveStopWaiverSettlement.TryCreate(chain, RecordedAt);
+            settled!.Summary.Should().Contain("約定数4").And.NotContain("建玉は生じなかった");
+            settled.Detail.Should().Contain("\"FilledQuantity\":4");
+        }
+    }
+
+    // T-10-1579（#826 の 2 回目の再検証）: 読めない免除の行（Detail が JSON でない）は「無い」として扱い、読める行を使う。
+    // 読める免除が 1 件も無ければ打ち消しを作らない（捏造しない）。例外も投げない。
+    [Fact]
+    public void 読めない免除の行は無視し読める行だけで判定する()
+    {
+        var decisionId = Guid.NewGuid();
+        var broken = Waived(decisionId) with { Detail = "{not json" };
+        var cancelled = Executed(decisionId, OrderStatus.Cancelled, 0);
+
+        ProtectiveStopWaiverSettlement.TryCreate([broken, Waived(decisionId), cancelled], RecordedAt)!
+            .Summary.Should().Contain("免除を打ち消し");
+        ProtectiveStopWaiverSettlement.TryCreate([broken, cancelled], RecordedAt).Should().BeNull();
+    }
 }
