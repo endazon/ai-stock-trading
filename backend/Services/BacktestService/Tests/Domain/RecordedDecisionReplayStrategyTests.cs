@@ -220,6 +220,28 @@ public class RecordedDecisionReplayStrategyTests
         strategy.ExcludedInputKinds.Should().BeEmpty();
     }
 
+    // 🔴 T-10-1622, FR-04, ADR-0044 決定 3, #1034, IADR-0440 決定 7: (e) 当時の監視銘柄の再構成不可も除外の理由として読み、
+    // 外した種別は安定順（(b)(c)(d)(e)）で載る。(e) を申告しない旧記録は除外しない（遡って母集団を痩せさせない）。
+    [Fact]
+    public void 当時の監視銘柄を再構成できない判断は除外され種別は安定順で載る()
+    {
+        IReadOnlyList<Stage0AsOfInputStatus> watchlistUnknown =
+            [.. AllReconstructed, new(Stage0AsOfInputKind.Watchlist, Stage0AsOfInputAvailability.NotReconstructable)];
+        IReadOnlyList<Stage0AsOfInputStatus> fxAndWatchlistUnknown =
+            [.. NotReconstructable(Stage0AsOfInputKind.FxRateToBase),
+             new(Stage0AsOfInputKind.Watchlist, Stage0AsOfInputAvailability.NotReconstructable)];
+
+        var strategy = new RecordedDecisionReplayStrategy(SetOf(
+            Record(new DateOnly(2026, 6, 2), "AAPL", 10), // 旧記録（(e) の申告なし）
+            Record(new DateOnly(2026, 6, 3), "AAPL", 0, watchlistUnknown),
+            Record(new DateOnly(2026, 6, 4), "AAPL", 0, fxAndWatchlistUnknown)));
+
+        strategy.ExcludedDecisionCount.Should().Be(2);
+        strategy.EvaluatedDecisionCount.Should().Be(1);
+        strategy.ExcludedInputKinds.Should().Equal(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputKind.Watchlist);
+        strategy.DecideOrders(Context(new DateOnly(2026, 6, 2))).Should().ContainSingle();
+    }
+
     // 重複を畳んだ**後**の記録で除外を数える（同一 (銘柄, 市場, AsOf) を二重に数えない）。
     [Fact]
     public void 重複記録は畳んだ後の1件として除外を数える()

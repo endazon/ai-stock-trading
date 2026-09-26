@@ -64,7 +64,8 @@ public sealed record Stage0RawDecision(
 /// </param>
 /// <param name="CostJpy">この判断時点で実際に発生した LLM 費用（円）。多数決の全回分の合計。</param>
 /// <param name="AsOfInputs">
-/// FR-15, ADR-0036 決定1, #749, IADR-0387: **as-of 入力の再構成可否の申告**（3 種すべてを覆うこと）。
+/// FR-15, ADR-0036 決定1, #749, IADR-0387: **as-of 入力の再構成可否の申告**（必須の 3 種すべてを覆うこと。
+/// FR-04, ADR-0044 決定 3, #1034: 監視銘柄の節を含む記録は (e) 当時の監視銘柄も申告する。`Stage0AsOfInputs.DeclarableKinds`）。
 /// <para>
 /// 🔴 **`null` は「未申告」であり「すべて再構成できた」ではない。** 未申告の記録は判定を組ませない
 /// （`Stage0ReplayEvaluation` が `InputCompletenessNotDeclared` で遮断する）。既定を `null` にしているのは、

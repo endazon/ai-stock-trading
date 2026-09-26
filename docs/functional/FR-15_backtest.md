@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-09-23
+updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-15, FR-17, FR-20, UC-06]
-adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777]
+ids: [FR-15, FR-17, FR-20, UC-06, FR-04]
+adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034]
 -->
 
 
@@ -188,8 +188,12 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 | その時点に不在 | **当時そもそも無かった**（当日ニュースなし等） | 判定母集団に**残る**（欠如そのものが当時の事実である） |
 | 再構成できなかった | 当時の値が不明（情報源が過去分を提供しない・発行時刻が不明で時点に置けない） | **判定母集団から外す**（注文を再生しない） |
 
-- 申告の対象は 3 種（ニュース・開示／当時の確定日報方針／非基準通貨市場のその時点の為替レート）であり、
+- 申告の対象は 4 種（ニュース・開示／当時の確定日報方針／非基準通貨市場のその時点の為替レート／当時の監視銘柄）であり、
   **過去日の終値は対象外**である（裁定がそう定めている）。
+- 🔴 **当時の監視銘柄は、判断のプロンプトの「監視銘柄」の節の入力である。** 記録の対象銘柄の集合を代わりに渡さない
+  （当時の方針が挙げる銘柄と食い違うことがある）。再構成の供給口がまだ無いため、いまの記録ではこの節は「不明」であり、
+  記録は「再構成できなかった」と申告して**合格根拠にならない**。この種別は申告の成立には求めない ——
+  監視銘柄の節を持たなかった以前の記録を、遡って「未申告」にせず、戦略識別子も変えないためである。
 - 🔴 **「外す」は「走らせない」ではない。** 痩せた入力での記録は残す —— 消すと、何を外したのかが記録から読めなくなる。
 - 🔴 **見送り（数量 0）の記録も除外として数える。** 母集団から外れた事実は数量と無関係であり、混ぜると
   「AI が見送った」と「合否から外した」が件数で区別できなくなる。

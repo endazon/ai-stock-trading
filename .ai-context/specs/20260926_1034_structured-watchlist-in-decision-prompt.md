@@ -2,14 +2,16 @@
 title: 判断のプロンプトへ判断時点の監視銘柄の一覧と「判断対象がその中にあるか」を構造化して渡し、読めなければ不明と書く（#1034）
 type: spec
 status: accepted
-related_ids: [FR-04, FR-02, FR-13, UC-01, UC-02, ADR-0003, ADR-0033, IADR-0440, IADR-0351, IADR-0095, IADR-0313, IADR-0247, IADR-0169, IADR-0435]
+related_ids: [FR-04, FR-02, FR-13, FR-15, UC-01, UC-02, ADR-0003, ADR-0044, ADR-0036, ADR-0033, IADR-0440, IADR-0387, IADR-0351, IADR-0095, IADR-0313, IADR-0247, IADR-0169, IADR-0435]
 author: claude (Claude Code)
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-09-27
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-02・FR-04・FR-13)
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md (判断入力の限定・追補 2026-08-10 の構造分離)
   - planning:projects/ai-stock-trading/07_adr/ADR-0033_stage0-evaluation-target-is-ai-decision-replay.md (決定 2・決定 4。Stage 0 の記録)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0044_watchlist-in-decision-prompt-and-stage0-asof.md (決定 1〜4。planning#673 の利用者裁定)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0036_stage0-input-completeness-and-split-fixation.md (決定 1。ADR-0044 決定 3 が (e) を加えた)
 ---
 
 # 仕様書: 判断のプロンプトへ監視銘柄の一覧を構造化して渡す（#1034）
@@ -18,7 +20,7 @@ plan_refs:
 
 - 機能要求（FR）: FR-04（方針とリスク制約の範囲内でのみ判断する）、FR-02（定時の取引サイクル）、FR-13（監視銘柄は利用者が SC-02 で変える設定）
 - ユースケース（UC）: UC-01（定時サイクル）、UC-02（価格変動サイクル）
-- 関連 ADR: ADR-0003（判断入力の限定・データ／命令の構造分離〔追補 2026-08-10〕）、ADR-0033（Stage 0 の記録）
+- 関連 ADR: ADR-0044（判断入力の限定の射程の確認・監視銘柄の節・Stage 0 の当時の監視銘柄。planning#673 の裁定）、ADR-0003（判断入力の限定・データ／命令の構造分離〔追補 2026-08-10〕。ADR-0044 が補完）、ADR-0036 決定 1（as-of 入力。ADR-0044 決定 3 が (e) を加えた）、ADR-0033（Stage 0 の記録）
 - 関連 IADR: IADR-0440（本件）、IADR-0351（保有状況節。決定 3「方針は書き換えない」・「不明」と「無い」を分ける作法）、
   IADR-0095（監視銘柄の権威源は市場監視・構成は fail-safe の既定）、IADR-0313 / IADR-0247（一次スクリーニングの入力予算）、
   IADR-0169（外部由来の文字列はフェンス内 1 件 1 行 JSON）、IADR-0435（#1015 本体。やること 3 を本件へ切り出した）
@@ -58,8 +60,10 @@ META の判断で LLM が「META は対象の 6 銘柄に含まれていない�
    （IADR-0313 の予算 150,000 文字の内側に収める。上限 50 件で節は数千文字以内）。
 9. 一覧は `IWatchlistProvider` の新しい口 `GetAuthoritativeWatchlistAsync`（権威源から読めたときだけ一覧、それ以外は `null`）で、判断 1 回ごとに引く。
    `HttpWatchlistProvider` は照会の実体を `GetWatchlistAsync`（従来どおり構成へ倒す）と共有し、`ConfigurationWatchlistProvider` は常に `null`。
-10. **Stage 0 の記録器**（ADR-0033）は記録の対象銘柄（`Stage0Recording:Symbols`）を監視銘柄の一覧として渡す
-    （記録が組むのは定時サイクル相当の判断であり、その巡回の対象がこの集合である。既定の不明へ倒すと本番と違う枝を記録する）。
+10. ［2026-09-27 改訂 / planning#673 の裁定（ADR-0044 決定 3・4）。初版は「記録の対象銘柄を監視銘柄の一覧として渡す」だった］
+    **Stage 0 の記録器**（ADR-0033）は、監視銘柄を **as-of 入力の当時の監視銘柄（(e)）からだけ**取り、記録の対象銘柄（`Stage0Recording:Symbols`）を
+    監視銘柄の節へ流さない。当時の監視銘柄が無い（再構成の供給口〔#1049〕が入るまでは常に無い）ときは節を「不明」と書き、記録は (e) を
+    再構成不可と申告して Stage 0 の合否から外れる（記録そのものは残す）。(e) を申告しない既存の記録は遡って未申告にせず、戦略 ID も変えない。
 11. プロンプトの版を記録する規約はリポジトリに無い（`PromptVersion` 等は無い）。Stage 0 の記録は入力の指紋（プロンプトの SHA-256）と
     その指紋を含む内容ハッシュ（戦略 ID）を持つため、文言の変化は新しい戦略 ID として区別される。新たな版番号は設けない。
 
@@ -102,3 +106,21 @@ META の判断で LLM が「META は対象の 6 銘柄に含まれていない�
 - F5: 同じ巡回（同じインスタンス）で一度読めなければ以後は照会せず不明とする。
 - F3・F4: ADR-0003 の判断入力の列挙の射程と、Stage 0 の監視銘柄（ADR-0036 決定 1）を planning#673 へ環流した。裁定まで PR はマージしない。
 テストは既存の ID（T-10-1540・T-10-1543・T-10-1545）へ観点を足した（新しい ID は使っていない）。
+
+［2026-09-27 追記 / planning#673 の裁定（ADR-0044）］利用者裁定が下りた（ADR-0044。2026-09-26）。
+- 決定 1・2: ADR-0003 の判断入力の限定は外部由来の情報源についての限定であり、監視銘柄の一覧と所属は新しい判断入力に当たらない（確認であり改定ではない）。
+  方針の直後に渡す本 PR の形（受け入れ基準 1〜9）がそのまま認められた。IADR-0440 を Accepted とし、根拠を ADR-0044 決定 1・2 へ書き改めた。
+- 決定 3・4: 受け入れ基準 10 を改めた（上記）。実装: `AsOfDecisionInput` に `watchlist`（null＝再構成できない・既定）を足し、as-of の申告を常に 4 種
+  （(b)(c)(d)(e)）そろえる。契約に `Stage0AsOfInputKind.Watchlist` と `Stage0AsOfInputs.DeclarableKinds` を足し、除外の判定と再生の種別の並びは
+  `DeclarableKinds` で読む。(e) は申告の成立（`RequiredKinds`）には求めず、戦略 ID は (e) を申告しているときだけ含める。
+- 母集合の引き直し（規則 9・10。「記録の対象銘柄」「3 種」「RequiredKinds」「裁定待ち」「planning#673」を全文で引いた）:
+
+| 軸 | 結果 | 扱い |
+| --- | --- | --- |
+| 記録の対象銘柄を監視銘柄として渡す記述 | IADR-0440 決定 7・残る制約、ADR README の IADR-0440 行、本書の受け入れ基準 10、テスト仕様書の T-10-1547・残余、記録器のコメント | すべて改めた |
+| as-of 入力を「3 種」と書く記述 | `Stage0AsOfInputCompleteness.cs`（種別の説明）・`AsOfDecisionInput.cs`（`AsOfInputs` の説明・導出）・`Stage0DecisionRecord.cs`（`AsOfInputs` の説明）・`docs/functional/FR-15_backtest.md`（申告の対象）・既存の試験の名前（T-15-104・T-15-106） | 4 種へ改めた。`IsDeclared`・`Stage0Gate.cs`・`Stage0ReplayEvaluation.cs` の「3 種を覆わない部分申告」は申告の成立（必須の 3 種）の話で正しいまま → 変えない |
+| `RequiredKinds` の読み手 | 契約の `NotReconstructableKinds`・戦略 ID、再生の `ExcludedInputKinds`、`AsOfDecisionInput` の導出、試験 | 除外と並びと導出は `DeclarableKinds` へ。戦略 ID は必須の 3 種を従来どおり＋(e) は申告があるときだけ |
+| 「裁定待ち」「planning#673」 | IADR-0440（状態・関係の節）・ADR README・テスト仕様書の残余・PR 本文 | 裁定済みへ改めた。確定済みの他の記録（`20260927_1052_…`・範囲の別紙）は ADR-0044 の存在を書いているだけ → 変えない |
+
+- テスト: T-10-1547 を改めた（記録の対象銘柄が節に流れ込まない否定形・当時の一覧が供給されればそれを載せる肯定形）。T-10-1620（as-of の (e) の導出と申告の読み）・
+  T-10-1621（戦略 ID と JSON 往復）・T-10-1622（再生の除外と判定の遮断）を足した（T-10-1620〜T-10-1639 は本作業者の予約）。

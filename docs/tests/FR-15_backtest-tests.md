@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-09-23
+updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06]
-adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777]
+ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04]
+adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034]
 -->
 
 
@@ -301,9 +301,9 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 
 | ID | 受け入れ基準 | テストメソッド | 区分 |
 | --- | --- | --- | --- |
-| T-15-104 | 記録の入力は 3 種すべての可否を申告する／**参考情報 0 件は「その時点に不在」**であり再構成不可ではない（ニュースの無い平常日が合否から落ちない）／供給側が申告した種別は再構成不可になる | `AsOfDecisionInputTests.再構成可否は3種そろい参考情報0件は不在として申告される` / `供給側の申告した種別は再構成不可になる`（Theory 2 ケース） | 自動 |
+| T-15-104 | 記録の入力は 4 種（当時の監視銘柄を含む）すべての可否を申告する／**参考情報 0 件は「その時点に不在」**であり再構成不可ではない（ニュースの無い平常日が合否から落ちない）／供給側が申告した種別は再構成不可になる | `AsOfDecisionInputTests.再構成可否は4種そろい参考情報0件は不在として申告される` / `供給側の申告した種別は再構成不可になる`（Theory 2 ケース） | 自動 |
 | T-15-105 | 🔴 **陽性/陰性対照の対**: 発行時刻不明を落としたなら参考情報は再構成不可へ倒れる／**未来を落としただけでは倒さない**（as-of の正しい振る舞いを痩せと数えない） | `AsOfDecisionInputTests.発行時刻不明を落としたなら参考情報は再構成不可になる` / `未来の参考情報を落としただけでは再構成不可にしない` | 自動 |
-| T-15-106 | 記録器は申告を記録へ載せる／🔴 **再構成できない入力があっても記録は止まらない**（「外す」は「走らせない」ではない。LLM は呼ばれ、記録は残り、印だけがつく） | `Stage0DecisionRecorderTests.記録はas_of入力の再構成可否を3種そろえて持つ` / `再構成できない入力があっても記録は残り除外対象として印がつく` | 自動 |
+| T-15-106 | 記録器は申告を記録へ載せる／🔴 **再構成できない入力があっても記録は止まらない**（「外す」は「走らせない」ではない。LLM は呼ばれ、記録は残り、印だけがつく） | `Stage0DecisionRecorderTests.記録はas_of入力の再構成可否を4種そろえて持つ` / `再構成できない入力があっても記録は残り除外対象として印がつく` | 自動 |
 | T-15-107 | 申告は JSON 往復で落ちない／**申告の無い旧記録は未申告へ復元され充足へ倒れない**／判断列が同じでも申告が違えば戦略識別子が変わる（記録器の実走でも確かめる） | `Stage0DecisionRecordTests.as_of入力の再構成可否は往復で落ちない` / `申告の無い旧記録は未申告へ復元され充足へ倒れない` / `再構成可否が違えば戦略IDが変わる` / `Stage0DecisionRecorderTests.戦略IDは再構成可否の申告を含む` | 自動 |
 | T-15-108 | 🔴 **陽性（最重要）**: 再構成できない入力に依存する判断は注文を出さず除外に数えられる／**見送り（数量 0）の記録も除外として数える**／重複は畳んだ後の 1 件として数える／一部だけが外れた場合（**外したのが見送りのとき**）は残りで判定器へ到達し件数が verdict へ載る | `RecordedDecisionReplayStrategyTests.再構成できない入力に依存する判断は注文を出さず除外に数えられる` / `見送りの記録でも再構成できなければ除外として数える` / `重複記録は畳んだ後の1件として除外を数える` / `Stage0ReplayEvaluationTests.再構成できない判断だけが母集団から外れ件数が載る` | 自動 |
 | T-15-109 | 🔴 **陰性対照（最重要）**: 全入力が再構成できていれば**除外は 0 件**であり、判定は従来どおり本物の判定器へ到達する（本変更が既存の合否経路を塞いでいない） | `RecordedDecisionReplayStrategyTests.すべて再構成できていれば除外は0件である` / `Stage0ReplayEvaluationTests.すべて再構成できていれば除外0件で判定器へ到達する` | 自動 |
