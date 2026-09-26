@@ -2,7 +2,7 @@
 title: IADR-0437 監視銘柄を増やす 3 つの口（SC-02 の追加・全置換・Discord の入れ替え案の適用）は「1 巡回（保有＋監視銘柄）が巡回間隔に収まること」を満たさない追加を適用せず、1 日の見積りは開場中の巡回で数えて 300 回/日と比べず、分次で説明できない 429 を日次の手がかりとして別に記録する
 type: impl-adr
 status: Accepted
-related_ids: [FR-03, FR-01, FR-13, FR-14, SC-02, ADR-0031, ADR-0042, IADR-0434, IADR-0433, IADR-0294, IADR-0275, IADR-0224, IADR-0164, IADR-0380]
+related_ids: [FR-03, FR-01, FR-13, FR-14, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0433, IADR-0294, IADR-0275, IADR-0224, IADR-0164, IADR-0380]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-26
@@ -21,8 +21,8 @@ related_specs:
 - 決定者: claude（起票 [#1030](https://github.com/endazon/ai-stock-trading/issues/1030)。計画 ADR-0043 決定 1〜4〔planning#667 の利用者裁定 2026-09-26〕の実装。
   利用者レビューは PR で受ける）
 
-> 計画 ADR-0043 は本 IADR の作成時点で宣言レンジ（`ADR-0001..0042`）の外にあるため、frontmatter の `related_ids` には入れず
-> `plan_refs` と本文で引く（IADR-0434 と同じ扱い）。
+> 計画 ADR-0043 は起草時点で宣言レンジ（`ADR-0001..0042`）の外にあり、コミット件名には入れていない。本 PR の作業中に
+> レンジが `ADR-0001..0043` へ引き直された（#1031）ため、frontmatter の `related_ids` には入れた。
 
 ## 起点・関連
 

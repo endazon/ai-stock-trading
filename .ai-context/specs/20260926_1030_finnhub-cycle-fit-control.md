@@ -2,7 +2,7 @@
 title: Finnhub の監視銘柄数を分次の予算と「1 巡回が巡回間隔に収まること」で統制する（300 回/日の撤回・開場中の見積り・分次で説明できない 429）（#1030）
 type: spec
 status: accepted
-related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0031, ADR-0042, IADR-0434, IADR-0275, IADR-0224, IADR-0294, IADR-0433]
+related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0437, IADR-0275, IADR-0224, IADR-0294, IADR-0433]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-26
@@ -22,7 +22,7 @@ plan_refs:
 - 画面: SC-02（監視銘柄の追加）
 - 関連 IADR: IADR-0434（PR 1）、IADR-0437（PR 2・予定）、IADR-0275・IADR-0224（前提）、IADR-0294（見積りを改める）、IADR-0433（Discord の適用）
 
-> ADR-0043 は着手時点で宣言レンジ（`ADR-0001..0042`）の外。frontmatter の `related_ids` とコミット件名には入れず、`plan_refs`・本文・コミット本文で引く。
+> ADR-0043 は着手時点で宣言レンジ（`ADR-0001..0042`）の外だったため、コミット件名には入れず本文で引いた。**［2026-09-26 追記 / #1031］** レンジが `ADR-0001..0043` へ引き直されたので、PR 2 で frontmatter の `related_ids` と docs の trace ブロックに足した。
 
 ## 分割（2 PR）
 
