@@ -142,7 +142,7 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 
 | 環境変数 | `ast-secrets` キー | 用途 | 既定 |
 | --- | --- | --- | --- |
-| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない）。**同一の Finnhub アカウント鍵を両方へ設定するとレート予算を共有する**（IADR-0275 実測で確認済みの構成。既定のレート予算〔情報収集30/分＋市況5/分×4サービス=50/分〕はこの共有を前提に実測上限〔60/分・固定60秒ウィンドウ〕内へ調整済み。別アカウントの鍵を使うなら市況側の `RequestsPerMinute` を引き上げてよい） | 空=NoOp |
+| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない）。**同一の Finnhub アカウント鍵を両方へ設定するとレート予算を共有する**（IADR-0275 実測で確認済みの構成。コードの既定のレート予算〔情報収集30/分＋市況5/分×4サービス=50/分〕はこの共有を前提に実測上限〔60/分・固定60秒ウィンドウ〕内へ調整済み。**chart は市場監視だけ `MarketData__Finnhub__RequestsPerMinute=12` を与え、合計 57/分**〔1 巡回が巡回間隔 60 秒に収まる要求数を 12 にするため。ADR-0043 決定2・IADR-0434。下記「巡回が間隔に収まること」〕。別アカウントの鍵を使うなら市況側の `RequestsPerMinute` を引き上げてよい） | 空=NoOp |
 | `FRED_API_KEY` | `fred-api-key` | 為替レートの**フォールバック**（第一は日銀・認証不要。#686 / IADR-0308）＋収集ソース（FRED）。基準通貨〔USD〕への換算は FRED `DEXJPUS` の**逆数**（IADR-0107 / IADR-0152） | **空=冗長化なし**（日銀単独で動く。起動時に警告 1 回）。下記「為替換算」参照 |
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
@@ -150,6 +150,20 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 | `LLM_AUTH_CLIENTSECRET` | `llm-auth-client-secret` | ②実 LLM の s2s（`llm-auth-client-id` は dev 既定 `ai-stock-trading-llm-caller`。基盤の LlmGateway が `platform-service` を要求するため KB 書き込みの kb-writer とは別主体） | 空=トークン無し（基盤側で 401） |
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |
+
+### Finnhub の巡回が間隔に収まること（ADR-0043〔計画〕決定2 / IADR-0434）
+
+監視銘柄を増やしてよいのは、次の 2 つを両方満たす範囲だけである。
+
+- **(a) 同一鍵の予算**: 同じ鍵を使うすべてのプロセスの `RequestsPerMinute`（情報収集は `RateLimitPerMinute`）の合計 ≤ 60 回/分。
+  chart の現況は 情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3（`risk-management` / `report` / `trade-decision`）＝ **57**。
+- **(b) 1 巡回が巡回間隔に収まる**: `market-monitor` は 1 巡回で**保有銘柄と監視銘柄を別々に**照会する（同じ銘柄でも 2 要求）。
+  **保有数 ＋ 監視銘柄数 ≤ `MarketData__Finnhub__RequestsPerMinute` × `Monitor__PollIntervalSeconds` ÷ 60** を満たすこと
+  （chart の現況は 12 × 60 ÷ 60 ＝ **12 要求**）。満たさないと 1 銘柄あたりの価格の確認が遅れ、損切りの判定が遅れる。
+  巡回間隔を延ばして収めることは、損切りの判定の遅れになるので避ける。
+
+> 追加の拒否（SC-02 と Discord の入れ替え案の適用の両方）が配備されるまでは、**監視銘柄を増やす前に運用者が (b) を確かめる**
+> （ADR-0043 決定 5 の暫定手段）。
 
 ### Finnhub の日次要求量の見積り（ADR-0031〔計画〕決定2〜4 / IADR-0292）
 
