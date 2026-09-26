@@ -130,7 +130,7 @@ public sealed class HttpMarketMonitorWatchlistController(
 
     private sealed record ItemView(string? Action, string? Symbol, bool Applied, string? SkipReason);
 
-    private sealed record EstimateView(long EstimatedDailyRequests, int ProvisionalDailyLimit, bool Exceeds);
+    private sealed record EstimateView(long EstimatedDailyRequests, int? ProvisionalDailyLimit, bool Exceeds);
 
     private sealed record ErrorView(string? Error);
 }

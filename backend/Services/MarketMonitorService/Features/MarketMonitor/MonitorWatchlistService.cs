@@ -16,7 +16,12 @@ public sealed class MonitorWatchlistService(
 {
     public IReadOnlyCollection<MonitoredSymbol> GetWatchlist() => store.GetSettings().MonitoredSymbols;
 
-    public IReadOnlyCollection<MonitoredSymbol> Add(string symbol, Market market, string actor, string reason)
+    /// <summary>
+    /// 監視銘柄を 1 件足す（SC-02）。FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: <paramref name="cycleFit"/> があれば、
+    /// 足した後に 1 巡回が巡回間隔に収まらないなら検証エラー（400）にする（Discord の入れ替え案の適用と同じ検査）。
+    /// </summary>
+    public IReadOnlyCollection<MonitoredSymbol> Add(
+        string symbol, Market market, string actor, string reason, WatchlistCycleFit? cycleFit = null)
     {
         RequireActorAndReason(actor, reason);
         var target = Normalize(symbol, market);
@@ -27,6 +32,14 @@ public sealed class MonitorWatchlistService(
         if (symbols.Any(s => Same(s, target)))
         {
             throw new ArgumentException($"銘柄 {target.Symbol}（{market}）は既に監視対象です。", nameof(symbol));
+        }
+
+        if (cycleFit is not null && !cycleFit.Fits(symbols.Count + 1))
+        {
+            throw new ArgumentException(
+                $"銘柄 {target.Symbol}（{market}）を足すと Finnhub の巡回に収まりません（{cycleFit.Describe(symbols.Count + 1)}）。"
+                + "先に他の銘柄を外すか、自制レート・巡回間隔の設定を見直してください。",
+                nameof(symbol));
         }
 
         var updated = current with { MonitoredSymbols = [.. symbols, target] };
@@ -58,19 +71,24 @@ public sealed class MonitorWatchlistService(
     /// 検証し、通った銘柄だけを<b>1 回の保存</b>で適用する（保存の楽観排他競合は例外で上へ＝409・1 件も適用されない）。
     /// 適用した銘柄は SC-02 の変更と同じ形で変更履歴へ 1 件ずつ記録する（FR-13。理由は案の理由＋出所）。
     /// </summary>
+    /// <remarks>
+    /// ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: <paramref name="cycleFit"/> があれば、1 巡回が巡回間隔に収まらなくなる追加は
+    /// 適用せず、内訳に理由を載せる（ADR-0042 決定 1 の「一部だけ適用したときの報告」）。除外は止めない。
+    /// </remarks>
     public WatchlistApplyPlan ApplyProposal(
         IReadOnlyList<MonitoredSymbol>? expected,
         IReadOnlyList<ProposedWatchlistChange>? changes,
         string actor,
         string proposalRef,
-        string via = "経路の申告なし")
+        string via = "経路の申告なし",
+        WatchlistCycleFit? cycleFit = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         if (WatchlistProposalPlan.ValidateShape(changes, expected) is { } invalid)
             throw new ArgumentException(invalid, nameof(changes));
 
         var current = store.GetSettings();
-        var plan = WatchlistProposalPlan.Plan(current.MonitoredSymbols, expected!, changes!);
+        var plan = WatchlistProposalPlan.Plan(current.MonitoredSymbols, expected!, changes!, cycleFit);
         if (plan.Stale || !plan.AnyApplied)
             return plan;
 

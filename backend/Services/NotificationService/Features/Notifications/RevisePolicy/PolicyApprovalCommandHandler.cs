@@ -120,12 +120,17 @@ public sealed class PolicyApprovalCommandHandler(
             sb.Append(item.Applied ? "適用しました" : $"適用しませんでした（{item.SkipReason ?? "理由不明"}）");
         }
 
+        // ADR-0043（計画）決定 1・3, #1030, IADR-0437: 推定は開場中の巡回で数えた値。暫定の 300 回/日は撤回したため、
+        // 日次上限は実測して設定されたときだけ比べて見せる（未設定なら比べない）。
         if (apply.Estimate is { } e)
         {
-            sb.Append($"\nFinnhub の推定 {e.EstimatedDailyRequests:N0} 回/日");
-            sb.Append(e.Exceeds
-                ? $"（暫定上限 {e.ProvisionalDailyLimit:N0} 回/日を超過・警告のみ）"
-                : $"（暫定上限 {e.ProvisionalDailyLimit:N0} 回/日以内）");
+            sb.Append($"\nFinnhub の推定 {e.EstimatedDailyRequests:N0} 回/日（開場中の巡回で数えた値）");
+            if (e.ProvisionalDailyLimit is { } limit)
+            {
+                sb.Append(e.Exceeds
+                    ? $"・日次上限 {limit:N0} 回/日を超過（警告のみ）"
+                    : $"・日次上限 {limit:N0} 回/日以内");
+            }
         }
 
         return sb.ToString();

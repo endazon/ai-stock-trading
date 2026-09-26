@@ -102,7 +102,7 @@ public class PolicyApprovalCommandHandlerTests
         record.Items.Should().HaveCount(2);
         result.Message.Should().Contain("を確定しました").And.Contain("適用 1 件・適用せず 1 件")
             .And.Contain("追加 NVDA: 適用しました").And.Contain("除外 META: 適用しませんでした（銘柄 META は監視対象にありません）")
-            .And.Contain("推定 2,880 回/日（暫定上限 300 回/日を超過・警告のみ）");
+            .And.Contain("推定 2,880 回/日（開場中の巡回で数えた値）・日次上限 300 回/日を超過（警告のみ）");
     }
 
     // T-10-1397: 確定できなかった（版落ち）なら案を引かず、適用しない。
@@ -232,6 +232,22 @@ public class PolicyApprovalCommandHandlerTests
 
         result.Message.Length.Should().BeLessThanOrEqualTo(PolicyApprovalCommandHandler.MaxLength);
         PolicyApprovalCommandHandler.Breakdown(new WatchlistApplyOutcome(
-            WatchlistApplyStatus.Applied, [], new FinnhubEstimateView(1, 300, false), "m")).Should().Contain("暫定上限 300 回/日以内");
+            WatchlistApplyStatus.Applied, [], new FinnhubEstimateView(1, 300, false), "m")).Should().Contain("日次上限 300 回/日以内");
+    }
+
+    // T-10-1450（ADR-0043 決定 1・3, #1030, IADR-0437）: 日次上限が未設定（未実測・既定）なら、推定は開場中の巡回で数えた値として
+    // 見せるだけで、上限（撤回した 300 回/日）とは比べない。巡回に収まらず適用しなかった追加は理由つきで見せる。
+    [Fact]
+    public void 日次上限が未設定なら推定だけを見せ上限とは比べない()
+    {
+        var text = PolicyApprovalCommandHandler.Breakdown(new WatchlistApplyOutcome(
+            WatchlistApplyStatus.Applied,
+            [new WatchlistApplyItemView("add", "META", false, "Finnhub の巡回に収まりません（1 巡回 13 要求…）")],
+            new FinnhubEstimateView(780, null, false),
+            "m"));
+
+        text.Should().Contain("Finnhub の推定 780 回/日（開場中の巡回で数えた値）")
+            .And.Contain("追加 META: 適用しませんでした（Finnhub の巡回に収まりません")
+            .And.NotContain("上限");
     }
 }

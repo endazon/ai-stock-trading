@@ -3,15 +3,15 @@ title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク�
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-09-25
+updated: 2026-09-26
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
 adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040, ADR-0042]
-iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply]
-issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, planning#31, planning#33]
+iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control]
+issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, planning#31, planning#33]
 -->
 
 
@@ -211,7 +211,7 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
 | ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す |
 | 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |
 | 監視銘柄 履歴 | `GET /monitor/watchlist/history` | `MonitorSettingsChangeEntry[]`。失敗時は履歴領域のみ縮退。Discord の `/policy` の確認ボタンで確定した入れ替え案の適用も同じ形で並ぶ（理由の末尾に「/policy の案 … を Discord の確認ボタンで適用」） |
-| 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market、409=競合＋再取得を促す |
+| 監視銘柄 追加 | `POST /monitor/watchlist`（`{symbol, market, reason}`） | 成功=再取得。理由必須。400=重複/空/未定義 market／足すと Finnhub の 1 巡回（保有＋監視銘柄）が巡回間隔に収まらない（除外は止めない。Finnhub を使わない構成では検査しない）、409=競合＋再取得を促す |
 | 監視銘柄 削除 | `DELETE /monitor/watchlist`（body `{symbol, market, reason}`） | 明示確認（削除理由必須）後に実行。成功=再取得。400=不在、409=競合＋再取得を促す |
 | 市場監視パラメータ 取得 | `GET /monitor/settings`（別サービス MarketMonitor・OwnerOnly） | `MarketMonitorSettings`。失敗=独立縮退。**取得失敗も「供給が無い」状態の 1 つ**として規約の文言で述べる（「市場監視パラメータを**取得できていません（供給元がありません）**。値が無いのではなく、確認できていません。」#424） |
 | 市場監視パラメータ 履歴 | `GET /monitor/settings/history` | `MonitorSettingsChangeEntry[]` を種別 2（変動閾値）・3（クールダウン）で絞る |

@@ -166,7 +166,7 @@ services:
       # IADR-0275: 分次（60回/60秒固定ウィンドウ）は実クラスタで実測確認済みだが、日次は実測セッションでも
       # 確定できなかった（持続的ブロックを観測できず）。推測値を焼き込まないこと。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
-      # ADR-0031（計画）決定2〜3, IADR-0292: 暫定日次上限（既定300回/日。第三者観測の前提値）。
+      # ADR-0031（計画）決定2〜3, IADR-0292: 日次上限。ADR-0043 決定1・IADR-0437 で暫定の 300 回/日は撤回＝空は未実測（比べない）。実測したら設定する。
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # ============ ニュース源（FR-01 の必須条件は finnhub-news ∨ google-news）============
       # ローカルでは Provider に finnhub-news / google-news を含めていないため**未構成**である

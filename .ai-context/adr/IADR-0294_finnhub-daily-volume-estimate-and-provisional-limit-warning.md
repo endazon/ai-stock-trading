@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-01, ADR-0020, IADR-0068, IADR-0224, IADR-0275]
 author: claude (Claude Code)
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-26
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0031_finnhub-rate-limit-minute-confirmed-daily-open.md
 related_specs:
@@ -145,3 +145,7 @@ IADR-0275 決定5 が示した懸念（「銘柄数さえ上限内なら安全�
 - Superseded by: なし
 - 計画への環流: なし（本 IADR は計画 ADR-0031 の決定2〜4 に忠実な実装であり、計画側への新たな
   指摘・差異は無い）
+
+> **［2026-09-26 追記 / #1030］** 計画 ADR-0043 決定 1・3 により、見積りの数え方と比較先を [IADR-0437](IADR-0437_finnhub-cycle-fit-control-and-daily-premise-withdrawal.md) が改めた。
+> 暫定の 300 回/日は撤回され、`Finnhub:ProvisionalDailyLimit` の既定は未設定（比べない。実測したら設定する）。市場監視は開場中の巡回（米国 390 分）で数える。
+> 本文の「暫定上限 300」を前提にした記述は当時の記録として残す。

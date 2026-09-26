@@ -87,7 +87,13 @@ public sealed class MonitorSettingsService(
     /// 「いつ変わったのか」が読めなくなる）。
     /// </para>
     /// </summary>
-    public MarketMonitorSettings Replace(MarketMonitorSettings settings, string actor, string reason)
+    /// <remarks>
+    /// FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 全置換も監視銘柄を増やし得るため、SC-02 の追加と同じ検査を通す。
+    /// <paramref name="cycleFit"/> があり、置換後の一覧に<b>今は無い銘柄が含まれ</b>、かつ 1 巡回が巡回間隔に収まらないなら 400。
+    /// 追加を含まない置換（除外だけ・並べ替えだけ）は止めない（除外は予算を減らす向き）。
+    /// </remarks>
+    public MarketMonitorSettings Replace(
+        MarketMonitorSettings settings, string actor, string reason, WatchlistCycleFit? cycleFit = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         RequireActorAndReason(actor, reason);
@@ -102,6 +108,14 @@ public sealed class MonitorSettingsService(
         }
 
         var current = store.GetSettings();
+        var adds = settings.MonitoredSymbols.Any(s => !current.MonitoredSymbols.Any(c => Same(c, s)));
+        if (cycleFit is not null && adds && !cycleFit.Fits(settings.MonitoredSymbols.Count))
+        {
+            throw new ArgumentException(
+                $"監視銘柄を増やす置換は Finnhub の巡回に収まりません（{cycleFit.Describe(settings.MonitoredSymbols.Count)}）。",
+                nameof(settings));
+        }
+
         // 永続化を先に確定させる（fail-safe）。競合はここで送出され、履歴は 1 件も残らない。
         store.Save(settings);
 

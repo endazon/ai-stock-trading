@@ -146,8 +146,9 @@ public static class InformationSourceFactory
             var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
             logger.LogWarning(
                 "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）が"
-                + "暫定日次上限 {Limit} 回/日（第三者観測の前提値。実測ではない。ADR-0031 決定3）を超えています。"
-                + "収集は継続します（統制は現時点では警告のみ）。監視銘柄数・巡回頻度を上げる前に日次上限の実測を検討してください。",
+                // ADR-0043（計画）決定 1, #1030, IADR-0437: 暫定の 300 回/日は撤回。ここへ来るのは日次上限を実測して設定したときだけ。
+                + "設定された日次上限 {Limit} 回/日（ADR-0031 決定3）を超えています。"
+                + "収集は継続します（統制は警告のみ）。銘柄数・巡回頻度を見直してください。",
                 result.EstimatedDailyRequests, normalized.Finnhub.Symbols.Length, requestsPerSymbol, cyclesPerDay,
                 dailyVolumeGuard.ProvisionalDailyLimit);
         }

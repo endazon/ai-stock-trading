@@ -39,11 +39,20 @@ public static partial class WatchlistProposalPlan
         return null;
     }
 
-    /// <summary>現在の監視銘柄に案を当てた結果（適用後の一覧と銘柄ごとの結果）。期待値と違えば <see cref="WatchlistApplyPlan.Stale"/>。</summary>
+    /// <summary>
+    /// 現在の監視銘柄に案を当てた結果（適用後の一覧と銘柄ごとの結果）。期待値と違えば <see cref="WatchlistApplyPlan.Stale"/>。
+    /// </summary>
+    /// <remarks>
+    /// FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: <paramref name="cycleFit"/> があれば、追加は「1 巡回が巡回間隔に
+    /// 収まること」を満たす範囲だけ適用し、満たさない追加は理由つきで適用しない。<b>除外はこの検査で止めない</b>（予算を減らす向き）。
+    /// 除外を先に当ててから追加を案の順に当てる（同じ案の除外で空いた枠を追加に使う）。案の中で同じ銘柄は重複しない
+    /// （<see cref="ValidateShape"/>）ため、当てる順は重複・不在の判定に影響しない。内訳は案の順のまま返す。
+    /// </remarks>
     public static WatchlistApplyPlan Plan(
         IReadOnlyCollection<MonitoredSymbol> current,
         IReadOnlyList<MonitoredSymbol> expected,
-        IReadOnlyList<ProposedWatchlistChange> changes)
+        IReadOnlyList<ProposedWatchlistChange> changes,
+        WatchlistCycleFit? cycleFit = null)
     {
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(expected);
@@ -53,28 +62,48 @@ public static partial class WatchlistProposalPlan
             return new WatchlistApplyPlan(Stale: true, current, []);
 
         var working = current.ToList();
-        var items = new List<WatchlistApplyItem>(changes.Count);
-        foreach (var change in changes)
+        var items = new WatchlistApplyItem[changes.Count];
+
+        // 1 周目: 除外（検査で止めない）。
+        for (var i = 0; i < changes.Count; i++)
         {
+            var change = changes[i];
+            if (change.Action != ProposedWatchlistAction.Remove)
+                continue;
+
             var target = new MonitoredSymbol(change.Symbol, Market.UnitedStates);
-            var exists = working.Any(s => Same(s, target));
-            switch (change.Action)
+            if (!working.Any(s => Same(s, target)))
             {
-                case ProposedWatchlistAction.Add when exists:
-                    items.Add(new(change, Applied: false, $"銘柄 {change.Symbol} は既に監視対象です"));
-                    break;
-                case ProposedWatchlistAction.Add:
-                    working.Add(target);
-                    items.Add(new(change, Applied: true, null));
-                    break;
-                case ProposedWatchlistAction.Remove when !exists:
-                    items.Add(new(change, Applied: false, $"銘柄 {change.Symbol} は監視対象にありません"));
-                    break;
-                default:
-                    working.RemoveAll(s => Same(s, target));
-                    items.Add(new(change, Applied: true, null));
-                    break;
+                items[i] = new(change, Applied: false, $"銘柄 {change.Symbol} は監視対象にありません");
+                continue;
             }
+
+            working.RemoveAll(s => Same(s, target));
+            items[i] = new(change, Applied: true, null);
+        }
+
+        // 2 周目: 追加（案の順。1 巡回に収まらなくなる追加は適用しない）。
+        for (var i = 0; i < changes.Count; i++)
+        {
+            var change = changes[i];
+            if (change.Action != ProposedWatchlistAction.Add)
+                continue;
+
+            var target = new MonitoredSymbol(change.Symbol, Market.UnitedStates);
+            if (working.Any(s => Same(s, target)))
+            {
+                items[i] = new(change, Applied: false, $"銘柄 {change.Symbol} は既に監視対象です");
+                continue;
+            }
+
+            if (cycleFit is not null && !cycleFit.Fits(working.Count + 1))
+            {
+                items[i] = new(change, Applied: false, $"Finnhub の巡回に収まりません（{cycleFit.Describe(working.Count + 1)}）");
+                continue;
+            }
+
+            working.Add(target);
+            items[i] = new(change, Applied: true, null);
         }
 
         return new WatchlistApplyPlan(Stale: false, working, items);

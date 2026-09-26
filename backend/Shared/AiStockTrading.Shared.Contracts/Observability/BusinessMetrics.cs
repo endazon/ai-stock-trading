@@ -207,7 +207,7 @@ public sealed class BusinessMetrics : IDisposable
 
         _finnhubDailyVolumeLimitRatioPercent = _meter.CreateGauge<double>(
             BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent,
-            description: "Finnhub 日次要求見積りが暫定上限に占める割合（%）。100 超で警告（ADR-0031 決定3）");
+            description: "Finnhub 日次要求見積りが、実測して設定した日次上限に占める割合（%）。100 超で警告。上限が未設定（既定）なら記録しない（ADR-0043 決定1）");
 
         // FR-10, #889, IADR-0372: 基準資金を読んだ結果の内訳。**門ではなく観測である**
         // （どの帰結でも返す値は従来どおり）。
@@ -402,12 +402,15 @@ public sealed class BusinessMetrics : IDisposable
     }
 
     /// <summary>
-    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスの Finnhub 日次要求見積りと、暫定上限に対する比率を記録する。
+    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスの Finnhub 日次要求見積りと、日次上限に対する比率を記録する。
+    /// ADR-0043（計画）決定 1, #1030, IADR-0437: 日次上限は既定で未設定（未実測）であり、そのときは比率を記録しない
+    /// （<paramref name="limitRatioPercent"/> が null）。推測の分母で割った比率を出さない。
     /// </summary>
-    public void RecordFinnhubDailyVolumeEstimate(long estimatedDailyRequests, double limitRatioPercent)
+    public void RecordFinnhubDailyVolumeEstimate(long estimatedDailyRequests, double? limitRatioPercent)
     {
         _finnhubDailyVolumeEstimate.Record(estimatedDailyRequests);
-        _finnhubDailyVolumeLimitRatioPercent.Record(limitRatioPercent);
+        if (limitRatioPercent is { } ratio)
+            _finnhubDailyVolumeLimitRatioPercent.Record(ratio);
     }
 
     /// <summary>

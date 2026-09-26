@@ -162,24 +162,33 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
   （chart の現況は 12 × 60 ÷ 60 ＝ **12 要求**）。満たさないと 1 銘柄あたりの価格の確認が遅れ、損切りの判定が遅れる。
   巡回間隔を延ばして収めることは、損切りの判定の遅れになるので避ける。
 
-> 追加の拒否（SC-02 と Discord の入れ替え案の適用の両方）が配備されるまでは、**監視銘柄を増やす前に運用者が (b) を確かめる**
-> （ADR-0043 決定 5 の暫定手段）。
+- **市場監視は (b) を満たさない追加を拒否する**（IADR-0437）。SC-02 の追加（`POST /monitor/watchlist`）と全置換
+  （`PUT /monitor/settings`）は 400、Discord の入れ替え案の適用（`POST /monitor/watchlist/proposal-apply`）はその銘柄だけを
+  適用せず内訳に理由を載せる。保有は巡回と同じリスク管理の照会で数える。除外は止めない。Finnhub を使わない構成では検査しない。
+  🔴 **保有が増えて (b) を超えた場合は拒否では防げない**（追加ではないため）。運用者が上の式で確かめる。
+
+### 分次で説明できない 429（ADR-0043〔計画〕決定1 / IADR-0437）
+
+Finnhub の 429 のうち、`X-Ratelimit-Remaining` が残っているのに拒否されたもの、`X-Ratelimit-Reset` の時刻を過ぎても
+（成功を挟まずに）拒否が続くものは、分次の窓では説明できない。**日次上限の手がかり**として EventId
+`4301 FinnhubDailyLimitClue` の警告で記録する（取得はその銘柄をスキップするだけで、送出は変えない）。運用ログで見つけたら計画へ環流する。
 
 ### Finnhub の日次要求量の見積り（ADR-0031〔計画〕決定2〜4 / IADR-0292）
 
 分次の自制レート（上表）は瞬間的な要求レートしか保証せず、**1 日の総量**（銘柄数 × 1 巡回あたりの要求数 ×
-1 日の巡回回数）は別の制約である。日次上限は未実測のため、暫定手段として第三者観測「約 300 回/日」を
-`Finnhub:ProvisionalDailyLimit`（既定 300）で前提値として扱う。
+1 日の巡回回数）は別の制約である。**日次上限は公式に記載が無く、未実測**である（ADR-0043 決定1。暫定の前提値
+「約 300 回/日」は撤回した）。見積りは数えて見せるが、**既定では何とも比べない**。市場監視の 1 日の巡回回数は
+**開場中の巡回だけ**（米国 390 分 ÷ 巡回間隔）で数える（ADR-0043 決定3。全市場が閉じている間は巡回しないため）。
 
 - `MarketData:Finnhub:EstimatedSymbolCount`（`market-monitor` / `risk-management` / `report` / `trade-decision`
   の各 `MarketData` 節。既定 **0＝未申告**）: 当該サービスが 1 巡回で問い合わせる銘柄数（監視銘柄数・保有建玉数等）の
   運用者による申告値。実際の銘柄数は DB・台帳等の動的な値のため、起動時に確定させず運用者が実態に近い値を明示する。
   **既定 0 は挙動中立**（日次見積りへ寄与しない・警告もメトリクスも出ない）。
-- `Finnhub:ProvisionalDailyLimit`（`information-collection` と上記 4 サービス共通。既定 **300**）: 暫定日次上限。
-  日次上限が実測されたら実測値で上書きする（推測値の既定を残したまま「実測済み」の顔をさせない）。
-- 見積りが上限を超えると**警告ログ＋業務メトリクス**（`ast.finnhub.daily_request_estimate` /
-  `ast.finnhub.daily_request_limit_ratio_percent`。Grafana ダッシュボード「統制: Finnhub 日次要求見積り」）を
-  出す。**送出は止めない**——現時点の統制は可視化であり、確定した数値上限による強制ではない。
+- `Finnhub:ProvisionalDailyLimit`（`information-collection` と上記 4 サービス共通。既定 **未設定＝比べない**）: 日次上限。
+  **実測した値だけを設定する**（推測値を入れない）。キー名の「暫定」は歴史的な呼び名である。
+- 見積りは**業務メトリクス**（`ast.finnhub.daily_request_estimate`）と起動時の情報ログで見せる。上限を設定したときだけ、
+  超過を**警告ログ**と比率（`ast.finnhub.daily_request_limit_ratio_percent`）で出す（未設定なら比率は記録しない）。
+  Grafana ダッシュボード「統制: Finnhub 日次要求見積り」。**送出は止めない**。
   各プロセスの見積り値は `GET /internal/introspection` の自己申告（`finnhub-daily-request-estimate`）でも読める。
 - 情報収集（`information-collection`）は `Collection:Source:Finnhub:Symbols` の実銘柄数から**厳密に**算出する
   （申告不要）。上記 4 サービスは動的な実数を持たないため運用者申告に依る。

@@ -51,7 +51,8 @@ public static class MarketDataSourceFactory
                         loggerFactory.CreateLogger<FinnhubQuoteClient>(),
                         string.IsNullOrWhiteSpace(options.Finnhub.BaseUrl)
                             ? FinnhubQuoteClient.DefaultBaseUrl
-                            : options.Finnhub.BaseUrl),
+                            : options.Finnhub.BaseUrl,
+                        timeProvider),
                     loggerFactory.CreateLogger<FinnhubMarketDataSource>());
 
             default:
@@ -66,15 +67,20 @@ public static class MarketDataSourceFactory
     /// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 当プロセスぶんの Finnhub 日次要求見積り（回/日）。
     /// <see cref="FinnhubMarketDataOptions.EstimatedSymbolCount"/>（既定 0＝未申告）が 0 なら 0（挙動中立）。
     /// introspection 自己申告（数値のみ・ログ副作用なし）から使う軽量版。
+    /// ADR-0043（計画）決定 3, #1030, IADR-0437: <paramref name="activeMinutesPerDay"/> は 1 日のうち巡回する時間（分）。
+    /// 既定は 24 時間（開場に関係なく巡回する）。閉場中は巡回しない市場監視は場中の長さ（米国 390 分）を渡す。
     /// </summary>
-    public static long EstimateDailyVolume(MarketDataOptions options, int pollIntervalSeconds)
+    public static long EstimateDailyVolume(
+        MarketDataOptions options,
+        int pollIntervalSeconds,
+        int activeMinutesPerDay = FinnhubDailyVolumeEstimator.MinutesPerDay)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         if (options.Finnhub.EstimatedSymbolCount <= 0)
             return 0;
 
-        var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
+        var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds), activeMinutesPerDay);
         return new FinnhubDailyVolumeEstimator.ProcessVolume(
             "market-data-consumer", "self", options.Finnhub.EstimatedSymbolCount, 1, cyclesPerDay)
             .EstimatedDailyRequests;
@@ -83,27 +89,30 @@ public static class MarketDataSourceFactory
     /// <summary>
     /// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 当プロセスぶんの Finnhub 日次要求量を見積もり、
     /// 業務メトリクスへ記録する。<see cref="FinnhubMarketDataOptions.EstimatedSymbolCount"/>（既定 0 ＝未申告）が
-    /// 0 のときは見積らない（挙動中立）。暫定日次上限（既定 300。ADR-0031 決定3）を超えても<b>送出は止めない</b>
-    /// ——現時点の統制は「見積もりの可視化」であり、確定した数値上限による強制ではない。
+    /// 0 のときは見積らない（挙動中立）。<b>送出は止めない</b>——日次の統制は「見積もりの可視化」と 429 の見張りである。
+    /// ADR-0043（計画）決定 1・3, #1030, IADR-0437: 暫定の 300 回/日は撤回。日次上限は既定で未設定（未実測）であり、
+    /// そのときは見積りを記録するだけで比べない。上限を実測して設定したときだけ、超過を警告する。
     /// </summary>
     /// <param name="options">MarketData 構成（Finnhub.EstimatedSymbolCount を読む）。</param>
     /// <param name="pollIntervalSeconds">当サービスの実際の巡回間隔（秒）。1 日の巡回回数の算出に使う。</param>
-    /// <param name="dailyVolumeGuard">暫定日次上限の構成。</param>
+    /// <param name="dailyVolumeGuard">日次上限の構成（既定は未設定）。</param>
     /// <param name="metrics">記録先の業務メトリクス。</param>
     /// <param name="loggerFactory">警告ログの出力先。</param>
+    /// <param name="activeMinutesPerDay">1 日のうち巡回する時間（分）。既定 24 時間。</param>
     public static void EvaluateDailyVolume(
         MarketDataOptions options,
         int pollIntervalSeconds,
         FinnhubDailyVolumeGuardOptions dailyVolumeGuard,
         BusinessMetrics metrics,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        int activeMinutesPerDay = FinnhubDailyVolumeEstimator.MinutesPerDay)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(dailyVolumeGuard);
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        var estimatedDailyRequests = EstimateDailyVolume(options, pollIntervalSeconds);
+        var estimatedDailyRequests = EstimateDailyVolume(options, pollIntervalSeconds, activeMinutesPerDay);
         if (estimatedDailyRequests == 0)
             return; // 未申告（既定）は見積らない＝挙動中立。
 
@@ -112,16 +121,22 @@ public static class MarketDataSourceFactory
 
         metrics.RecordFinnhubDailyVolumeEstimate(result.EstimatedDailyRequests, result.ExceedRatio * 100);
 
+        var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds), activeMinutesPerDay);
+        var logger = loggerFactory.CreateLogger(typeof(MarketDataSourceFactory).FullName!);
         if (result.Verdict == FinnhubDailyVolumeEstimator.Verdict.Exceeds)
         {
-            var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
-            var logger = loggerFactory.CreateLogger(typeof(MarketDataSourceFactory).FullName!);
             logger.LogWarning(
                 "Finnhub の日次要求見積り {Estimated} 回/日（申告銘柄数 {Symbols} × 1 巡回 1 要求 × 1 日 {Cycles} 巡回）が"
-                + "暫定日次上限 {Limit} 回/日（第三者観測の前提値。実測ではない。ADR-0031 決定3）を超えています。"
-                + "送出は継続します（統制は現時点では警告のみ）。監視銘柄数・巡回頻度を上げる前に日次上限の実測を検討してください。",
+                + "設定された日次上限 {Limit} 回/日を超えています（ADR-0031 決定3）。送出は継続します（統制は警告のみ）。",
                 result.EstimatedDailyRequests, options.Finnhub.EstimatedSymbolCount, cyclesPerDay,
                 dailyVolumeGuard.ProvisionalDailyLimit);
+        }
+        else if (result.Verdict == FinnhubDailyVolumeEstimator.Verdict.NotCompared)
+        {
+            logger.LogInformation(
+                "Finnhub の日次要求見積り {Estimated} 回/日（申告銘柄数 {Symbols} × 1 巡回 1 要求 × 1 日 {Cycles} 巡回）。"
+                + "日次上限は未実測のため比べません（ADR-0043 決定1）。日次は 429 で見張ります。",
+                result.EstimatedDailyRequests, options.Finnhub.EstimatedSymbolCount, cyclesPerDay);
         }
     }
 

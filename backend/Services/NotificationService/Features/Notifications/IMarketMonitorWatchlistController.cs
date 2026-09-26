@@ -44,7 +44,8 @@ public enum WatchlistApplyStatus
 
 public sealed record WatchlistApplyItemView(string Action, string Symbol, bool Applied, string? SkipReason);
 
-public sealed record FinnhubEstimateView(long EstimatedDailyRequests, int ProvisionalDailyLimit, bool Exceeds);
+// ADR-0043（計画）決定 1・3, #1030, IADR-0437: 推定は開場中の巡回で数えた値。日次上限は実測して設定したときだけ値を持つ（既定 null＝比べない）。
+public sealed record FinnhubEstimateView(long EstimatedDailyRequests, int? ProvisionalDailyLimit, bool Exceeds);
 
 public sealed record WatchlistApplyOutcome(
     WatchlistApplyStatus Status,

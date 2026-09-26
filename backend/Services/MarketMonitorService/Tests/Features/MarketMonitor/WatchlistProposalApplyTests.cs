@@ -109,14 +109,16 @@ public class WatchlistProposalApplyTests
     }
 
     // T-10-1381（利用者裁定 2026-09-26・ADR-0031）: Finnhub の推定は警告だけ（適用を止めない）。Finnhub を使わない構成では出さない。
+    // ［2026-09-26 / #1030・ADR-0043 決定 1・3］推定は開場中の巡回で数え（米国 390 分 ÷ 60 秒 ＝ 390 巡回）、暫定の 300 回/日とは比べない。
     [Fact]
     public void Finnhubの推定は警告だけで対象外の構成では出さない()
     {
-        var finnhub = new WatchlistVolumeEstimator("finnhub", pollIntervalSeconds: 60, provisionalDailyLimit: 300);
-        finnhub.Estimate(3).Should().Be(new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.FinnhubDailyVolumeEstimateView(4320, 300, true));
-        new WatchlistVolumeEstimator("finnhub", 86400, 300).Estimate(1)!.Exceeds.Should().BeFalse();
-        new WatchlistVolumeEstimator(null, 60, 300).Estimate(3).Should().BeNull();
-        new WatchlistVolumeEstimator("moomoo", 60, 300).Estimate(3).Should().BeNull();
+        Market[] three = [Market.UnitedStates, Market.UnitedStates, Market.UnitedStates];
+        var finnhub = new WatchlistVolumeEstimator("finnhub", pollIntervalSeconds: 60, dailyLimit: null);
+        finnhub.Estimate(three).Should().Be(
+            new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.FinnhubDailyVolumeEstimateView(1170, null, false));
+        new WatchlistVolumeEstimator(null, 60, null).Estimate(three).Should().BeNull();
+        new WatchlistVolumeEstimator("moomoo", 60, null).Estimate(three).Should().BeNull();
     }
 
     // ---- 本番の組み立て（Program.cs）を通す ----
@@ -174,8 +176,9 @@ public class WatchlistProposalApplyTests
         body.GetProperty("items").EnumerateArray().Select(i => (i.GetProperty("symbol").GetString(), i.GetProperty("applied").GetBoolean()))
             .Should().Equal(("NVDA", true), ("MSFT", false));
         var estimate = body.GetProperty("estimate");
-        estimate.GetProperty("estimatedDailyRequests").GetInt64().Should().Be((before.Count + 2) * 1440L);
-        estimate.GetProperty("exceeds").GetBoolean().Should().BeTrue("推定は警告だけで、適用は止めていない");
+        // ［2026-09-26 / #1030・ADR-0043 決定 1・3］開場中の巡回（米国 390 分 ÷ 60 秒）で数え、暫定の 300 回/日とは比べない。
+        estimate.GetProperty("estimatedDailyRequests").GetInt64().Should().Be((before.Count + 2) * 390L);
+        estimate.GetProperty("exceeds").GetBoolean().Should().BeFalse("日次上限は未設定（未実測）なので比べない");
 
         var history = await owner.GetFromJsonAsync<JsonElement>("/monitor/watchlist/history");
         history.EnumerateArray().Should().Contain(h =>

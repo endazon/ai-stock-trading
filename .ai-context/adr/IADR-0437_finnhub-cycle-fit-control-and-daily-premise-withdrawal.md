@@ -1,0 +1,115 @@
+---
+title: IADR-0437 監視銘柄を増やす 3 つの口（SC-02 の追加・全置換・Discord の入れ替え案の適用）は「1 巡回（保有＋監視銘柄）が巡回間隔に収まること」を満たさない追加を適用せず、1 日の見積りは開場中の巡回で数えて 300 回/日と比べず、分次で説明できない 429 を日次の手がかりとして別に記録する
+type: impl-adr
+status: Accepted
+related_ids: [FR-03, FR-01, FR-13, FR-14, SC-02, ADR-0031, ADR-0042, IADR-0434, IADR-0433, IADR-0294, IADR-0275, IADR-0224, IADR-0164, IADR-0380]
+author: claude (Claude Code)
+created: 2026-09-26
+updated: 2026-09-26
+plan_refs:
+  - planning:projects/ai-stock-trading/07_adr/ADR-0043_finnhub-daily-premise-withdrawn-and-cycle-fit-control.md (決定 1〜4)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0031_finnhub-rate-limit-minute-confirmed-daily-open.md (決定 2〜4)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0042_discord-apply-ai-watchlist-proposal-and-revision-limit.md (決定 1)
+related_specs:
+  - ../specs/20260926_1030_finnhub-cycle-fit-control.md
+---
+
+# IADR-0437: 巡回が間隔に収まらない追加を適用せず、日次の前提値を撤回し、分次で説明できない 429 を見張る
+
+- 状態: Accepted
+- 日付: 2026-09-26
+- 決定者: claude（起票 [#1030](https://github.com/endazon/ai-stock-trading/issues/1030)。計画 ADR-0043 決定 1〜4〔planning#667 の利用者裁定 2026-09-26〕の実装。
+  利用者レビューは PR で受ける）
+
+> 計画 ADR-0043 は本 IADR の作成時点で宣言レンジ（`ADR-0001..0042`）の外にあるため、frontmatter の `related_ids` には入れず
+> `plan_refs` と本文で引く（IADR-0434 と同じ扱い）。
+
+## 起点・関連
+
+- 対象 Issue: #1030（PR 2＝本 IADR。PR 1 は IADR-0434＝稼働構成の自制レート 12 回/分）
+- 関連する実装仕様書: [20260926_1030_finnhub-cycle-fit-control](../specs/20260926_1030_finnhub-cycle-fit-control.md)
+- 関連 IADR: [IADR-0434](IADR-0434_finnhub-cycle-fit-budget-market-monitor-rate.md)（予算表）、[IADR-0433](IADR-0433_policy-watchlist-proposal-apply-from-discord.md)（入れ替え案の適用。決定 4 の「見積りでの拒否はしない」は維持し、本 IADR は別の検査〔巡回が間隔に収まるか〕で拒否する）、
+  [IADR-0294](IADR-0294_finnhub-daily-volume-estimate-and-provisional-limit-warning.md)（日次の見積り。数え方と比較先を本 IADR が改める）、
+  [IADR-0275](IADR-0275_finnhub-effective-rate-limit-measurement.md)（分次 60 回/60 秒の固定ウィンドウ・ヘッダの挙動の実測）、
+  [IADR-0164](IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation.md)（全置換も部分更新と同じ規律）
+
+## コンテキスト
+
+計画 ADR-0043 は、Finnhub の暫定日次上限「300 回/日」を撤回し（決定 1）、監視銘柄数を (a) 同一鍵の自制レートの合計 ≤ 60 回/分 と
+(b) 1 巡回の要求数 ÷ 自制レート ≤ 巡回間隔 で統制し（決定 2）、1 日の見積りを開場中の巡回で数え（決定 3）、(b) を満たさない追加は
+SC-02 と Discord の両方で適用しない（決定 4）と定めた。(a) は IADR-0434 が構成で守った。本 IADR はコードの統制を入れる。
+
+着手時の実装（`origin/develop` = `7a7a8a1`）:
+
+- 追加の経路は 3 つ: SC-02 の `POST /monitor/watchlist`、全置換 `PUT /monitor/settings`（画面は使わないが監視銘柄を置き換える）、
+  入れ替え案の `POST /monitor/watchlist/proposal-apply`。どれも巡回の予算を見ない。
+- 見積り（`FinnhubDailyVolumeEstimator.CyclesPerDay`）は 24 時間で数え、`Finnhub:ProvisionalDailyLimit`（既定 300）と比べて警告する。
+  入れ替え案の応答と Discord は「暫定上限 300 回/日を超過・警告のみ」を出す。
+- `FinnhubQuoteClient` は 429 を他の非成功応答と同じ「取得失敗」の警告にしていた。
+
+## 決定
+
+### 決定 1: 「1 巡回が巡回間隔に収まること」を純関数で判定する（`WatchlistCycleFit`）
+
+- **収まる ⇔ (保有数 ＋ 監視銘柄数) × 60 ≤ 自制レート × 巡回間隔（秒）**。整数で比べる（分へ割ると丸めで境界がずれる）。
+  自制レート・巡回間隔の 0 以下は実装（`MarketDataSourceFactory.Limiter`・`MonitorPollingService`）と同じく 1 へ寄せる。
+- **保有も数える。** 巡回（`MarketMonitorAppService`）は保有と監視銘柄を別々のループで照会し重複を除かない（同じ銘柄でも 2 要求）。
+- **市場を問わず全銘柄を数える**（保守側）。米国と東証の場中は重ならないが、判定を市場ごとに割らない。
+
+### 決定 2: 3 つの口で同じ検査を通す（`WatchlistCycleFitGuard`）
+
+| 口 | 収まらないとき | 除外 |
+| --- | --- | --- |
+| SC-02 の追加 `POST /monitor/watchlist` | 400（理由を `error` に） | —（別の口） |
+| 全置換 `PUT /monitor/settings` | **今は無い銘柄を含み**かつ収まらないなら 400。追加を含まない置換（除外・並べ替え）は止めない | 止めない |
+| 入れ替え案 `POST /monitor/watchlist/proposal-apply` | その追加だけ適用せず、内訳（`skipReason`）に理由。**除外を先に当ててから**追加を案の順に当てる（同じ案の除外で空いた枠を使う） | 止めない |
+
+- 判定材料はガードが揃える: 自制レートは現在値ソースと同じ `MarketData:Finnhub:RequestsPerMinute`、巡回間隔は巡回と同じ
+  `Monitor:PollIntervalSeconds`、保有は巡回と同じ `IPositionStore`（リスク管理の照会）。**Finnhub を使わない構成（`MarketData:Provider` が
+  finnhub 以外）では検査しない**（自制レートが無い）。
+- 全置換を塞ぐのは IADR-0164 決定 3 と同じ理由（画面から使わない経路だからこそ塞ぐ。API を直接叩けば予算を超えられる状態を作らない）。
+- 入れ替え案の内訳は ADR-0042 決定 1 の「一部だけ適用したときの報告」にそのまま載る（Discord と報告書の試行の台帳。通知サービスの変更は不要）。
+
+### 決定 3: 1 日の見積りは開場中の巡回で数え、既定では何とも比べない
+
+- `FinnhubDailyVolumeEstimator.CyclesPerDay(pollIntervalSeconds, activeMinutesPerDay = 1440)`。**巡回の形に合わせて数える**:
+  市場監視は全市場が閉じている間は巡回しないため場中の長さ（`MarketSessions.RegularSessionMinutes`＝米国 390 分・東証 330 分。
+  場中判定と同じ時刻の定数から導く）を渡す。開場に関係なく 24 時間巡回するプロセス（リスク管理の現在値の補充・情報収集）は既定の 24 時間のまま。
+  - 市場監視の起動時の見積りと自己申告（申告銘柄数 × 390 分 ÷ 巡回間隔）は米国の 390 分で数える（申告値は市場を持たない）。
+  - 入れ替え案の応答の見積りは、適用後の監視銘柄 ＋ 保有を**銘柄ごとにその市場の場中**で数える。
+- **`Finnhub:ProvisionalDailyLimit` の既定を 300 から未設定（null）に変える。** 未設定なら比べない（`Verdict.NotCompared`・比率を記録しない・
+  起動時は情報ログ）。日次上限を実測して設定したときだけ、従来どおり超過を警告し比率を記録する（ADR-0031 決定 3 の「統制（確定）」の文は有効）。
+  構成キー名は chart の 5 サービスが既に持つため据え置く（名前の「暫定」は歴史的な呼び名）。
+- 入れ替え案の応答の `estimate.provisionalDailyLimit` を `int?` にし、通知サービスの受け手と Discord の表示を追随させる
+  （未設定なら「推定 N 回/日（開場中の巡回で数えた値）」だけを出し、上限の文言を出さない）。
+
+### 決定 4: 分次の窓で説明できない 429 を日次の手がかりとして別に記録する（`FinnhubRateLimitClassifier`）
+
+- 分次の窓は 60 回 / 60 秒の固定ウィンドウで、`X-Ratelimit-Remaining` は 0 で 429、`X-Ratelimit-Reset` を過ぎると満額へ戻る（IADR-0275）。
+  次の 429 は分次では説明できない:
+  - **残りがあるのに拒否**（`X-Ratelimit-Remaining` > 0）
+  - **リセットの後も拒否が続く**（その応答のリセットが既に過去／前回の 429 のリセットを過ぎて、成功を挟まずにまた 429）
+- 時計のずれ・秒の丸めで誤って鳴らさないよう、リセットの判定に 2 秒の猶予を置く。成功を受けたら前回の 429 の記憶を消す。
+- `FinnhubQuoteClient` が EventId `4301 FinnhubDailyLimitClue` の警告で記録する（分次の 429 は従来どおりの警告）。取得は従来どおり null
+  （その銘柄をスキップ）で、**送出の挙動は変えない**。クライアントは共有物なので情報収集の Finnhub の quote にも効く。
+
+## 検討した選択肢
+
+| 論点 | 案 | 採否 |
+| --- | --- | --- |
+| 保有の数え方 | 保有と監視銘柄の重複を 1 つに数える | 不採用。巡回は重複を除かず 2 回照会する（数えるのは実際の要求数） |
+| 入れ替え案の当て方 | 案の順に逐次当てる | 不採用。除外が後ろにあると、空くはずの枠を使えずに追加が落ちる（案の中で同じ銘柄は重複しないので、先に除外しても判定は変わらない） |
+| 全置換 | 検査しない（画面が使わない） | 不採用（IADR-0164 決定 3） |
+| 検査の失敗 | 保有の照会に失敗したら追加を拒否する | 不採用。`IPositionStore` は失敗を空列に畳む契約で、区別できない。そのとき巡回も保有を照会しないため、その瞬間の要求数とは一致する（残余リスク） |
+| 日次の既定 | 実測の下限（環流の約 450 回）を既定にする | 不採用（ADR-0043 選択肢 2。上限そのものではない） |
+| 日次の比較 | 比較の仕組みごと消す | 不採用。ADR-0031 決定 3 の統制の文は有効で、実測したら比べる。既定で比べないことで ADR-0043 決定 3 の「比べる数値の上限は置かない」を満たす |
+| 429 の記録 | メトリクスも足す | 保留。ADR-0043 決定 1 は「記録し、環流する」。ログの EventId で足りる（同型が 2 回出たら計器を足す） |
+
+## 結果・残余リスク
+
+- 🔴 **保有が増えて (b) を超えるのは拒否では防げない**（追加ではない）。運用者が chart README の式で確かめる。
+- 保有の照会が失敗している間は保有を 0 と数える（上の表）。
+- 市場監視の起動時の見積りは申告値（`EstimatedSymbolCount`）を米国の 390 分で数える。東証の銘柄を申告した場合は 60 分ぶん多めに出る（保守側）。
+- 半日取引日は通常日の場中で数える（上振れ側）。
+- 変更履歴の前後値は従来どおり案の順に積み上げる（除外を先に当てても、履歴の並びは案の順）。
+- 実 Finnhub での 429 の判別は確かめていない（実 API を叩かない。ヘッダの形は IADR-0275 の実測に拠る）。
