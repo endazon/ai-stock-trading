@@ -3,15 +3,15 @@ title: 取引ドメインの通信契約（イベント・ポート）通信仕�
 type: api-spec
 status: draft
 created: 2026-07-09
-updated: 2026-09-25
+updated: 2026-09-26
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06]
+ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-08, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0040, ADR-0041]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, MSP:IADR-0049]
-specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, MSP:IADR-0049]
+specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028]
 -->
 
 
@@ -76,6 +76,7 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 | `CostThresholdReached` | 費用統制 | Month, Category, Percent, State, OccurredAt | 費用しきい値到達で統制状態が上方遷移（Normal→Throttled→Halted）。通知が購読 |
 | `AssumptionsChanged` | 設定管理 | Version, Actor, Reason, ChangedAt | 全体前提条件が利用者により変更（バージョンつき）。監査・通知が購読。消費側は前提条件キャッシュの無効化に購読（`AssumptionsChangedConsumer`。共有クライアントのイベント無効化経路） |
 | `ReportConfirmed` | 報告書 | PeriodKey, Kind, Actor, AssumptionsVersion, ConfirmedAt, AuthorizedBy（任意） | 報告書の確定（Draft→Confirmed 遷移時のみ）。監査・通知が購読。`Actor` は確定を操作した利用者、`AuthorizedBy` は代理確定（Discord Bot 経由）のときの認可の主体＝owner マップ機密クライアントの ID（利用者本人のトークンでは null） |
+| `ReportKnowledgeReingested` | 報告書 | RunId, Actor, Scope, RefreshExisting, Status（Completed/Aborted/Cancelled）, AbortReason, Targeted, Created, BodyAttached, BodyRefreshed, AlreadyPresent, SkippedEmptyBody, SkippedBodyTooLarge, Failed, Unknown, NotAttempted, DuplicatesInKb, DuplicatePeriodKeys[], Breakdown[{PeriodKey, Outcome, Reason, DocumentId}], BreakdownOmitted, OccurredAt | 所有者が確定済みの報告書を KB へ入れ直した実行（1 回につき 1 件・中止も含む）。監査が購読する。`Actor` はトークンの主体。不明（結果が分からない書き込み）は送ったにも失敗にも数えない。内訳は送らなかった／失敗／不明の報告書だけで 200 件まで。`Targeted` は件数（NotAttempted を含む）の合計と等しい。DuplicatePeriodKeys は KB 上の写しが 2 件以上あった期間キー |
 
 - これら 4 件は通知サービスが購読して Discord 送信するが、各サービスは Discord を直接呼ばない。
 - `InformationCollected` は取引サイクル配線（#21）で定時起動の合図になる。
@@ -104,6 +105,7 @@ sequenceDiagram
 | `IProtectiveOrderBroker` | PaperBrokerAdapter / moomoo | PlaceStopOrderAsync / PlaceMarketOrderAsync | 保護レグ（逆指値）の同時発注と、成立しない場合の成行手仕舞い。実装しないブローカーでは新規建てを見送る |
 | `IAlternativeProtectiveOrderBroker` | moomoo のみ | AlternativeProtectiveOrderType / PlaceAlternativeStopOrderAsync | 保護レグを代替注文種別で発注する（手法 S3）。戻り値が**注文種別と拒否理由（`retType` / `retMsg`）**を持ち帰る。接続確立の失敗は丸めずに伝播（#821） |
 | `IMarketDataSource` | 各情報源 | GetLatestQuoteAsync(symbol, market) | 現在値取得。取得不可は null |
+| `IKnowledgeDocumentCatalog` | 基盤の文書管理（HTTP）／未構成 | ListAsync / CreateAsync / PutBodyAsync | 基盤の文書台帳を**保守の操作**（確定報告書の入れ直し）から使う。一覧（全件）・本文つきの作成・既存文書への本文の投入。結果は成功／未構成／失敗（拒否・未送信）／**不明**（送った後のタイムアウト・5xx・切断）の 4 つに分け、例外を投げない。業務経路の保存ポート（結果を 1 値に潰す）とは別。宛先・資格は保存と同じ構成で、タイムアウトは 30 秒 |
 
 ## 同期 API（未実装・追記予定）
 

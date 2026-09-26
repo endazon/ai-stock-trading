@@ -11,6 +11,7 @@ using ReportService.Features.Reports.GetReportReview;
 using ReportService.Features.Reports.ListReportPeriodKeys;
 using ReportService.Features.Reports.ListReports;
 using ReportService.Features.Reports.PresentReport;
+using ReportService.Features.Reports.ReingestKnowledgeBase;
 using ReportService.Features.Reports.RequestReportChanges;
 using ReportService.Features.Reports.RevisePolicy;
 using ReportService.Features.Reports.StartMonthlyBootstrap;
@@ -88,6 +89,8 @@ internal static class ReportEndpoints
         owner.MapRevisePolicy();
         // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: 確定した版の入れ替え案の照会と、適用の内訳の記録（Bot が適用に使う）。
         owner.MapWatchlistProposal();
+        // FR-08, FR-11, #1028, IADR-0436: 確定済みの報告書を KB へ入れ直す（基盤の切替の後の復旧・本文なしの写しの修復・冪等）。
+        owner.MapReingestKnowledgeBase();
 
         owner.MapConfirmReport();
 

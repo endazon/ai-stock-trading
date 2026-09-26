@@ -234,6 +234,12 @@ builder.Services.AddScoped<ReportDraftService>();
 // FR-08, IADR-0069/0071 決定3: 確定報告書の KB 保存（共有クライアント）。既定は no-op（KnowledgeBase:Documents:BaseUrl
 // 未設定＝保存しない＝現行挙動）、設定時のみ実 platform 文書管理へ opt-in。保存は fail-safe（確定を壊さない）。
 builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
+// FR-08, FR-11, #1028, IADR-0436: 確定済みの報告書を KB へ入れ直す所有者専用の操作（基盤の切替の後の復旧・本文なしの写しの修復）。
+// 宛先・資格は上と同じ構成（KnowledgeBase:Documents:BaseUrl・KnowledgeBase:Auth）。未構成なら 503 で何も送らない。
+// 同時に 1 本だけ（ゲートは singleton）。
+builder.Services.AddAiStockTradingKnowledgeDocumentCatalog(builder.Configuration);
+builder.Services.AddSingleton<ReportService.Features.Reports.ReingestKnowledgeBase.ReportKnowledgeReingestGate>();
+builder.Services.AddScoped<ReportService.Features.Reports.ReingestKnowledgeBase.ReportKnowledgeReingestService>();
 
 // FR-06/16, IADR-0115 決定5, #280: 集計対象期間の約定。権威源はリスク管理（#12）の取引台帳であり、
 // GET /risk-controls/fills（OwnerOrService・IADR-0051）へ s2s 同期照会する（IADR-0095 と同型）。

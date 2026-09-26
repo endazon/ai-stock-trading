@@ -14,6 +14,16 @@ namespace ReportService.Infrastructure.ExternalServices;
 // （IADR-0274［2026-09-03 追記］）。機密区分は internal（取引の判断根拠は社外秘扱いが妥当）。
 public static class ReportKnowledgeMapper
 {
+    // FR-08, #1028, IADR-0436 決定 2: 報告書の写しを KB の一覧から探す鍵（project と併せて外部 ID の代わりにする）。
+    // 基盤に外部 ID での照会・upsert が無いため、入れ直し（ReportKnowledgeReingestService）が同じ名前で突き合わせる。
+    public const string PeriodKeyAttribute = "periodKey";
+    public const string KindAttribute = "kind";
+
+    // FR-08, #1028, IADR-0436 決定 2［2026-09-26 PR #1038 の監査］: KB 文書の表題。2026-07-18（#169）から変わっていない。
+    // project 属性（#665・2026-09-03）より前の写しは project を持たないため、入れ直しはこの表題との完全一致を
+    // 「AST が書いた写し」の目印に使う（表題を変えると旧い写しを見失い、重複を作る）。
+    public static string TitleOf(ReportKind kind, string periodKey) => $"確定報告書 {kind} {periodKey}";
+
     public static KnowledgeDocument ToDocument(TradingReport report, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(report);
@@ -21,8 +31,8 @@ public static class ReportKnowledgeMapper
         var kind = report.Kind.ToString();
         var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["periodKey"] = report.PeriodKey,
-            ["kind"] = kind,
+            [PeriodKeyAttribute] = report.PeriodKey,
+            [KindAttribute] = kind,
             ["assumptionsVersion"] = report.AssumptionsVersion.ToString(CultureInfo.InvariantCulture),
         };
         if (report.ConfirmedAt is { } confirmedAt)
@@ -40,7 +50,7 @@ public static class ReportKnowledgeMapper
         }
 
         return new KnowledgeDocument(
-            Title: $"確定報告書 {kind} {report.PeriodKey}",
+            Title: TitleOf(report.Kind, report.PeriodKey),
             Content: hasBody ? report.Body : null,
             Confidentiality: KnowledgeConfidentiality.Internal,
             Tags: ["report", kind.ToLowerInvariant()],

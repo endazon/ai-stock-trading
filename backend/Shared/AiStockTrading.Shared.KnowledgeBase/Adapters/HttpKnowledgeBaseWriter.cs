@@ -40,7 +40,8 @@ internal sealed class HttpKnowledgeBaseWriter(
     // platform CreateDocumentRequest と JSON 互換の送信形状（Knowledge.Contracts に依存しない）。
     // #565: Body は末尾へ追加する（platform 側 CreateDocumentRequest.Body と同じ理由。位置引数の
     // 呼び出しを壊さない）。
-    private sealed record CreateDocumentBody(
+    // #1028, IADR-0436 決定 2: 入れ直しの台帳（HttpKnowledgeDocumentCatalog）も同じ形・同じ属性の補完で作成するため internal。
+    internal sealed record CreateDocumentBody(
         string Title,
         string? OriginalUri,
         string? ContentType,
@@ -148,7 +149,7 @@ internal sealed class HttpKnowledgeBaseWriter(
     }
 
     // 機密区分を必ず補完する（microservices-platform IADR-0047 必須検証。未指定・空は既定 internal）。
-    private static Dictionary<string, string> BuildAttributes(KnowledgeDocument document)
+    internal static Dictionary<string, string> BuildAttributes(KnowledgeDocument document)
     {
         var attributes = document.Attributes is null
             ? new Dictionary<string, string>(StringComparer.Ordinal)
