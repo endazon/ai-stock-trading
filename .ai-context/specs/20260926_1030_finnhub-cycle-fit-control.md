@@ -2,7 +2,7 @@
 title: Finnhub の監視銘柄数を分次の予算と「1 巡回が巡回間隔に収まること」で統制する（300 回/日の撤回・開場中の見積り・分次で説明できない 429）（#1030）
 type: spec
 status: accepted
-related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0437, IADR-0275, IADR-0224, IADR-0294, IADR-0433]
+related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0437, IADR-0435, IADR-0275, IADR-0224, IADR-0294, IADR-0433]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-26
@@ -111,6 +111,20 @@ IADR-0437 決定 1〜4 のとおり。要点:
 | `POST /monitor/watchlist`（SC-02） | 400（`error` に「Finnhub の巡回に収まりません（1 巡回 N 要求（保有 h ＋ 監視銘柄 w）が、自制 r 回/分・巡回間隔 i 秒で収まる c 要求を超えます）」） | — |
 | `PUT /monitor/settings`（全置換） | 今は無い銘柄を含み収まらなければ 400 | 止めない |
 | `POST /monitor/watchlist/proposal-apply` | その追加だけ適用せず、内訳の `skipReason` に同じ理由 | 止めない（先に当てる） |
+
+### ［2026-09-26 追記 / #1036 の監査］情報収集の見積りの追随（IADR-0437 決定 5）
+
+- 母集合（#1036 のマージ後に引き直した）: `git grep -n "EstimateDailyVolume\|EvaluateDailyVolumeEstimate\|FinnhubRequestsPerSymbol\|DailyRequestLimit\|AddHttpClient(\"monitor\"" -- backend/Services` →
+  情報収集の自己申告（`Program.cs` の `AddMetric`）・起動時の見積り（`ISourceFetcher` の登録）・`LogFinnhubQuota`（日次上限の未設定の警告）・
+  `FinnhubRequestsPerSymbol`（試験なし）・`monitor` の名前付き HttpClient（情報収集・取引判断。タイムアウトの試験なし）。
+  市場監視・リスク管理・報告書は自分の `IPositionStore` / `risk` クライアント等で、`monitor` クライアントを持たない（**除外**）。
+- 受け入れ基準:
+  - [x] 追随する構成では、起動時は 1 巡回の上限、巡回ごとは対象の数で見積りを記録する（固定リストで数えない）— T-10-1452・T-10-1454
+  - [x] 日次上限は比べない・未設定を警告しない — T-10-1452・T-10-1457
+  - [x] 1 銘柄あたりの要求数の `[Theory]` — T-10-1453
+  - [x] `monitor` の 5 秒のタイムアウト（情報収集・取引判断）— T-10-1455・T-10-1456
+- 🔴 **開場中の巡回だけで数える指示には従わなかった**: 情報収集の in-process の巡回は開場に関係なく 24 時間回るため、開場中だけで数えると
+  実際より少なく見せる。ADR-0043 決定 3 の 3 点目（巡回しない時間の扱いに数え方を合わせる）に従い 24 時間で数える（IADR-0437 決定 5）。
 
 ## 配備（coordinator）
 

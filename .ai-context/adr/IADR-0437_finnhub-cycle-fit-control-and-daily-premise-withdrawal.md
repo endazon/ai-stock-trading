@@ -2,7 +2,7 @@
 title: IADR-0437 監視銘柄を増やす 3 つの口（SC-02 の追加・全置換・Discord の入れ替え案の適用）は「1 巡回（保有＋監視銘柄）が巡回間隔に収まること」を満たさない追加を適用せず、1 日の見積りは開場中の巡回で数えて 300 回/日と比べず、分次で説明できない 429 を日次の手がかりとして別に記録する
 type: impl-adr
 status: Accepted
-related_ids: [FR-03, FR-01, FR-13, FR-14, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0433, IADR-0294, IADR-0275, IADR-0224, IADR-0164, IADR-0380]
+related_ids: [FR-03, FR-01, FR-13, FR-14, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0435, IADR-0433, IADR-0294, IADR-0275, IADR-0224, IADR-0164, IADR-0380]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-26
@@ -92,6 +92,24 @@ SC-02 と Discord の両方で適用しない（決定 4）と定めた。(a) �
 - 時計のずれ・秒の丸めで誤って鳴らさないよう、リセットの判定に 2 秒の猶予を置く。成功を受けたら前回の 429 の記憶を消す。
 - `FinnhubQuoteClient` が EventId `4301 FinnhubDailyLimitClue` の警告で記録する（分次の 429 は従来どおりの警告）。取得は従来どおり null
   （その銘柄をスキップ）で、**送出の挙動は変えない**。クライアントは共有物なので情報収集の Finnhub の quote にも効く。
+
+### 決定 5: 情報収集の見積りは、監視銘柄に追随するなら巡回ごとの対象の数で数える（#1036 の監査の残り）
+
+#1036（#1015 / IADR-0435）で情報収集の Finnhub の対象は市場監視の監視銘柄に追随するようになったが、起動時の見積りと自己申告は
+構成の固定リスト（フォールバック。稼働構成では 1 件）で数えたままだった。
+
+- `InformationSourceFactory.EstimateDailyVolume` / `EvaluateDailyVolumeEstimate` に銘柄数の引数を足す。**監視銘柄に追随する構成では、
+  起動時（自己申告・起動時の見積り）は 1 巡回に収まる対象の数（`FinnhubMaxSymbolsPerCycle`＝選択器と同じ `FinnhubCycleFit` の式）で数え**、
+  巡回ごとに対象を決め直した後の数で業務メトリクスを記録し直す（`WatchlistFollowingSourceFetcher` の `onRefreshed` →
+  `RecordCycleDailyVolumeEstimate`。ログは出さない）。未結線なら従来どおり構成の固定リスト。
+- **1 日の巡回回数は 24 時間のまま数える。** 情報収集の in-process の巡回は開場に関係なく回る（`CollectionPollingService` に開場の判定は無い）。
+  決定 3 の原則は「巡回の形に合わせて数える」であり、開場中だけで数えると実際より少なく見せる（ADR-0043 決定 3 の 3 点目）。
+  External（CronJob）で回す構成は CronJob の周期に `Collection:PollIntervalSeconds` を揃える既存の規約のまま（24 時間で数えると多めに出る＝保守側）。
+- 日次上限の比較は決定 3 と同じく既定で行わない（共有の既定を未設定にしたため）。起動時は情報ログを出す。
+- `Collection:Source:Finnhub:DailyRequestLimit` が未設定のときの「監視銘柄数の上限を逆算していません」の**警告を情報ログに下げる**
+  （未実測は平常。監視銘柄数は分次の予算と巡回が間隔に収まることで統制する）。設定したときの逆算の情報ログは残す。
+- 試験の穴を塞ぐ（監査の指摘）: 1 銘柄あたりの要求数（`FinnhubRequestsPerSymbol`）の `[Theory]`、市場監視の照会の名前付き HttpClient
+  `monitor` の 5 秒のタイムアウト（情報収集・取引判断）。
 
 ## 検討した選択肢
 
