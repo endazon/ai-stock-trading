@@ -37,6 +37,8 @@ public static class DiscordBotGatewayFactory
         PositionDriftAdoptionCommandHandler driftAdoptionHandler,
         // FR-07, FR-14, #1016, IADR-0431: 方針の改訂（AI の案を承認待ちの版にする。確定はしない）。
         PolicyRevisionCommandHandler policyRevisionHandler,
+        // FR-13, ADR-0042 決定 1, #1025: `/policy` の確認ボタン（確定＋入れ替え案の適用）。
+        PolicyApprovalCommandHandler policyApprovalHandler,
         ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(typeof(DiscordBotGatewayFactory).FullName!);
@@ -63,7 +65,7 @@ public static class DiscordBotGatewayFactory
         }
 
         return new DiscordNetBotGateway(
-            handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, reportHandler, driftAdoptionHandler, policyRevisionHandler, options,
+            handler, pauseHandler, stageGateHandler, goodFaithViolationHandler, reportHandler, driftAdoptionHandler, policyRevisionHandler, policyApprovalHandler, options,
             loggerFactory.CreateLogger<DiscordNetBotGateway>());
     }
 

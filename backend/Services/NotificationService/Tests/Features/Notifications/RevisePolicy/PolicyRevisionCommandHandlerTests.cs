@@ -34,22 +34,12 @@ public class PolicyRevisionCommandHandlerTests
             changes ?? [new WatchlistChangeSuggestionView("add", "NVDA", "AI 需要")],
             rationale);
 
-    private sealed class FakeController(PolicyRevisionCommandOutcome outcome) : IPolicyRevisionController
+    private static (PolicyRevisionCommandHandler Handler, FakePolicyRevisionController Controller) Create(
+        PolicyRevisionCommandOutcome? outcome = null, FakeWatchlistController? watchlist = null)
     {
-        public List<(string? PeriodKey, string Instruction, string OnBehalfOf)> Calls { get; } = [];
-
-        public Task<PolicyRevisionCommandOutcome> ReviseAsync(
-            string? periodKey, string instruction, string onBehalfOf, CancellationToken cancellationToken = default)
-        {
-            Calls.Add((periodKey, instruction, onBehalfOf));
-            return Task.FromResult(outcome);
-        }
-    }
-
-    private static (PolicyRevisionCommandHandler Handler, FakeController Controller) Create(PolicyRevisionCommandOutcome? outcome = null)
-    {
-        var controller = new FakeController(outcome ?? new PolicyRevisionCommandOutcome(true, false, "保存しました", Proposal()));
-        return (new PolicyRevisionCommandHandler(controller, Options(), NullLogger<PolicyRevisionCommandHandler>.Instance), controller);
+        var controller = new FakePolicyRevisionController(outcome ?? new PolicyRevisionCommandOutcome(true, false, "保存しました", Proposal()));
+        return (new PolicyRevisionCommandHandler(
+            controller, watchlist ?? new FakeWatchlistController(), Options(), NullLogger<PolicyRevisionCommandHandler>.Instance), controller);
     }
 
     // T-10-1322: 案が承認待ちになれば、表示文と確認ボタンの会話キー・版を返す。操作者を代理として渡す。
@@ -62,9 +52,10 @@ public class PolicyRevisionCommandHandlerTests
 
         result.WasExecuted.Should().BeTrue();
         (result.PeriodKey, result.Version).Should().Be(("daily-2026-09-27", 1));
-        result.Message.Should().Contain("押し目買いを優先する").And.Contain("追加 NVDA: AI 需要")
-            .And.Contain(PolicyRevisionMessage.WatchlistNotice).And.Contain("確定するまで取引には適用されません");
-        controller.Calls.Should().ContainSingle().Which.Should().Be(((string?)null, "もっと積極的に", "developer"));
+        result.Message.Should().Contain("押し目買いを優先する").And.Contain("追加 NVDA（米国）: AI 需要")
+            .And.Contain(PolicyRevisionMessage.WatchlistWillApplyNotice).And.Contain("確定するまで取引には適用されません");
+        var call = controller.Calls.Should().ContainSingle().Subject;
+        (call.PeriodKey, call.Instruction, call.OnBehalfOf).Should().Be(((string?)null, "もっと積極的に", "developer"));
     }
 
     // T-10-1323: 会話キーを指定すればそれを渡す（大小文字を保つ）。
@@ -177,7 +168,7 @@ public class PolicyRevisionCommandHandlerTests
             new string('説', 5000));
 
         messages.Should().OnlyContain(m => m.Length <= PolicyRevisionMessage.MaxLength);
-        messages[^1].Should().Contain(PolicyRevisionMessage.WatchlistNotice);
+        messages.Should().Contain(m => m.Contains(PolicyRevisionMessage.WatchlistWillApplyNotice));
 
         PolicyRevisionMessage.Build("daily-2026-09-27", 1, true, false, "保存しました", "方針", [], null)[^1]
             .Should().Contain("【監視銘柄の入れ替え案】").And.Contain("- なし");
@@ -259,5 +250,53 @@ public class PolicyRevisionCommandHandlerTests
 
         result.Version.Should().BeNull();
         result.Messages[0].Should().Contain("未提示").And.Contain(guidance);
+    }
+
+    // T-10-1405（ADR-0042 決定 1・#1025）: 案を作る前に現在の監視銘柄を照会して報告書サービスへ運ぶ。確定で入れ替えを適用する旨と件数を返す。
+    [Fact]
+    public async Task 現在の監視銘柄を運び確定で適用する旨を見せる()
+    {
+        var watchlist = new FakeWatchlistController();
+        var (handler, controller) = Create(watchlist: watchlist);
+
+        var result = await handler.HandleAsync(Context(), "指示");
+
+        watchlist.Gets.Should().Be(1);
+        controller.Calls.Single().Watchlist.Should().Equal(watchlist.Snapshot.Items);
+        result.WatchlistChangeCount.Should().Be(1);
+        result.Messages.Should().Contain(m => m.Contains(PolicyRevisionMessage.WatchlistWillApplyNotice));
+    }
+
+    // T-10-1406: 監視銘柄を照会できなければ「空」ではなく null を運び、確定しても入れ替えは適用しない旨を見せる（ボタンの件数は 0）。
+    [Fact]
+    public async Task 監視銘柄を照会できなければ分からないとして運ぶ()
+    {
+        var watchlist = new FakeWatchlistController { Snapshot = new WatchlistSnapshotResult(false, [], "HTTP 503") };
+        var (handler, controller) = Create(watchlist: watchlist);
+
+        var result = await handler.HandleAsync(Context(), "指示");
+
+        controller.Calls.Single().Watchlist.Should().BeNull();
+        result.WatchlistChangeCount.Should().Be(0);
+        result.Messages.Should().Contain(m => m.Contains(PolicyRevisionMessage.WatchlistUnknownNotice));
+        result.Messages.Should().NotContain(m => m.Contains(PolicyRevisionMessage.WatchlistWillApplyNotice));
+    }
+
+    // T-10-1407（ADR-0042 決定 1「確認ボタンの前に、銘柄とその理由を表示する」）: 入れ替え 10 件×理由 200 文字でも理由を切り詰めず、
+    // すべての理由がボタンの付く最後の通までに届く。どの通も上限内。
+    [Fact]
+    public async Task 入れ替えの理由は切り詰めず全文を見せる()
+    {
+        var changes = Enumerable.Range(0, 10)
+            .Select(i => new WatchlistChangeSuggestionView(i % 2 == 0 ? "add" : "remove", $"SY{(char)('A' + i)}", new string((char)('あ' + i), 200)))
+            .ToList();
+        var (handler, _) = Create(new PolicyRevisionCommandOutcome(true, false, "保存", Proposal(changes: changes, rationale: new string('説', 1000))));
+
+        var result = await handler.HandleAsync(Context(), "指示");
+
+        result.Messages.Should().OnlyContain(m => m.Length <= PolicyRevisionMessage.MaxLength);
+        var all = string.Join('\n', result.Messages);
+        foreach (var c in changes)
+            all.Should().Contain($"{c.Symbol}（米国）: {c.Reason}");
     }
 }

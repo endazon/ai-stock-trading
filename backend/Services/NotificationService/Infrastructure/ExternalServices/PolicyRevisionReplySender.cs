@@ -15,7 +15,9 @@ public static class PolicyRevisionReplySender
     public const string ApprovePrompt =
         "\n\n確定すると、この版の方針が取引に適用されます。やめる場合は押さずに置くか、/policy で指示し直してください。";
 
-    public const string ApproveButtonPrefix = DiscordNetBotGateway.ReportApproveButtonPrefix;
+    // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 5: `/policy` の確認ボタンは**専用の接頭辞**を持つ（`/report approve` の
+    // ボタンと分ける）。押すと確定し、確定できたときだけその版の入れ替え案を適用する。`/report approve` のボタンは確定だけ。
+    public const string ApproveButtonPrefix = DiscordNetBotGateway.PolicyApproveButtonPrefix;
 
     /// <summary>
     /// 応答を順に送る。<paramref name="followup"/> は 1 通を送る関数（本文・ボタン）。
@@ -49,8 +51,11 @@ public static class PolicyRevisionReplySender
                 return;
             }
 
+            var label = result.WatchlistChangeCount > 0
+                ? $"版 {result.Version} を確定する（監視銘柄の入れ替え {result.WatchlistChangeCount} 件も適用）"
+                : $"版 {result.Version} を確定する";
             var button = new ComponentBuilder().WithButton(
-                $"版 {result.Version} を確定する",
+                label,
                 ApproveButtonPrefix + $"{result.PeriodKey}-{result.Version}",
                 // 確定は取引方針を有効化する破壊的操作（ADR-0003）のため危険色。
                 ButtonStyle.Danger).Build();
@@ -65,7 +70,8 @@ public static class PolicyRevisionReplySender
             var notice = approvable
                 ? $"方針案の表示が途中で失敗したため、確認ボタンを出していません。版 {result.Version}（{result.PeriodKey}）は"
                   + "承認待ちのまま保存されています（まだ確定していません・取引には適用されていません）。"
-                  + $"全文を見てから確定するには /policy で指示し直してください。内容を把握済みなら /report approve period:{result.PeriodKey} でも確定できます。"
+                  + $"全文を見てから確定するには /policy で指示し直してください。内容を把握済みなら /report approve period:{result.PeriodKey} でも確定できます"
+                  + "（/report approve では監視銘柄の入れ替えは適用されません）。"
                 : "方針案の表示が途中で失敗しました。案は保存されていますが承認待ちではありません。/report show で状態を確認してください。";
             try
             {

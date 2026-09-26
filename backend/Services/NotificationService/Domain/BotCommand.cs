@@ -65,6 +65,11 @@ public enum BotCommandKind
     // 適用は設定画面（SC-02）で行う。指示の本文は RawCommand に載せない（大小文字の変換・空白での分割を受けないよう、
     // ハンドラへ別の引数で渡す）。PeriodKey は省略可（省略時は報告書サービスが当日〔JST〕の日報を選ぶ）。
     PolicyRevise,
+
+    // FR-13, FR-14, ADR-0042 決定 1・2, #1025, IADR-0433: /policy approve <periodKey> <version>（`/policy` の確認ボタンの押下）。
+    // 報告書の版を確定し、**確定できたときだけ**その版の入れ替え案（報告書サービスの台帳に記録された案）を監視銘柄へ適用する。
+    // 🔴 **FR-14 の例外はこれだけ**（ADR-0042 決定 2）。銘柄は引数に取らない——打ち込まれた値で監視銘柄を変える経路を作らない。
+    PolicyApprove,
 }
 
 // FR-14: 解析済みコマンド。TargetStage は段階遷移（StagePromote/StageDemote）の遷移先（0〜3）。

@@ -81,6 +81,33 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
     }
 
     public PolicyRevisionAttempt? Find(Guid id) => db.PolicyRevisionAttempts.Find(id)?.ToAttempt();
+
+    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt)
+    {
+        var row = db.PolicyRevisionAttempts.Find(id);
+        if (row is null || row.ProposalConfirmedAt is not null)
+            return;
+        row.ProposalConfirmedAt = confirmedAt;
+        db.SaveChanges();
+    }
+
+    public PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion) =>
+        db.PolicyRevisionAttempts
+            .Where(a => a.PeriodKey == periodKey && a.ReportVersion == reportVersion
+                && a.Outcome == PolicyRevisionAttemptOutcome.Proposed)
+            .OrderByDescending(a => a.AttemptedAt)
+            .FirstOrDefault()?.ToAttempt();
+
+    public bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt)
+    {
+        var row = db.PolicyRevisionAttempts.Find(id);
+        if (row is null || row.WatchlistAppliedAt is not null)
+            return false;
+        row.WatchlistApplyJson = resultJson;
+        row.WatchlistAppliedAt = recordedAt;
+        db.SaveChanges();
+        return true;
+    }
 }
 
 // 単体テスト用の台帳（プロセス内）。
@@ -128,6 +155,36 @@ public sealed class InMemoryPolicyRevisionLedger : IPolicyRevisionLedger
             return _rows.GetValueOrDefault(id);
     }
 
+    public PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion)
+    {
+        lock (_gate)
+            return _rows.Values
+                .Where(a => a.PeriodKey == periodKey && a.ReportVersion == reportVersion
+                    && a.Outcome == PolicyRevisionAttemptOutcome.Proposed)
+                .OrderByDescending(a => a.AttemptedAt)
+                .FirstOrDefault();
+    }
+
+    public bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt)
+    {
+        lock (_gate)
+        {
+            if (!_rows.TryGetValue(id, out var row) || row.WatchlistAppliedAt is not null)
+                return false;
+            _rows[id] = row with { WatchlistApplyJson = resultJson, WatchlistAppliedAt = recordedAt };
+            return true;
+        }
+    }
+
+    public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt)
+    {
+        lock (_gate)
+        {
+            if (_rows.TryGetValue(id, out var row) && row.ProposalConfirmedAt is null)
+                _rows[id] = row with { ProposalConfirmedAt = confirmedAt };
+        }
+    }
+
     // 試験が記録の中身を見るための一覧。
     public IReadOnlyList<PolicyRevisionAttempt> Attempts
     {
@@ -158,6 +215,16 @@ public sealed class PolicyRevisionAttemptRow
 
     public string? WatchlistChangesJson { get; set; }
 
+    // FR-13, ADR-0042 決定 1, #1025: 案を作った時点の監視銘柄（null＝照会できなかった）・適用の内訳・記録時刻。
+    public string? WatchlistSnapshotJson { get; set; }
+
+    public string? WatchlistApplyJson { get; set; }
+
+    public DateTimeOffset? WatchlistAppliedAt { get; set; }
+
+    // #1025（PR #1027 の監査 M1）: 報告書がこの試行の版で確定された時刻。
+    public DateTimeOffset? ProposalConfirmedAt { get; set; }
+
     internal static PolicyRevisionAttemptRow From(PolicyRevisionAttempt a) => new()
     {
         Id = a.Id,
@@ -168,8 +235,13 @@ public sealed class PolicyRevisionAttemptRow
         Outcome = a.Outcome,
         ReportVersion = a.ReportVersion,
         WatchlistChangesJson = a.WatchlistChangesJson,
+        WatchlistSnapshotJson = a.WatchlistSnapshotJson,
+        WatchlistApplyJson = a.WatchlistApplyJson,
+        WatchlistAppliedAt = a.WatchlistAppliedAt,
+        ProposalConfirmedAt = a.ProposalConfirmedAt,
     };
 
     internal PolicyRevisionAttempt ToAttempt() =>
-        new(Id, AttemptedAt, JstDate, Actor, PeriodKey, Outcome, ReportVersion, WatchlistChangesJson);
+        new(Id, AttemptedAt, JstDate, Actor, PeriodKey, Outcome, ReportVersion, WatchlistChangesJson,
+            WatchlistSnapshotJson, WatchlistApplyJson, WatchlistAppliedAt, ProposalConfirmedAt);
 }

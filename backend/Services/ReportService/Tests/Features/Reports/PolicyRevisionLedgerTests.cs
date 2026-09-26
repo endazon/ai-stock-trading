@@ -340,5 +340,12 @@ public class PolicyRevisionLedgerTests
             throw new InvalidOperationException("台帳の DB が落ちた（模擬）");
 
         public PolicyRevisionAttempt? Find(Guid id) => _inner.Find(id);
+
+        public PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion) => _inner.FindProposed(periodKey, reportVersion);
+
+        public bool RecordWatchlistApply(Guid id, string resultJson, DateTimeOffset recordedAt) =>
+            _inner.RecordWatchlistApply(id, resultJson, recordedAt);
+
+        public void MarkProposalConfirmed(Guid id, DateTimeOffset confirmedAt) => _inner.MarkProposalConfirmed(id, confirmedAt);
     }
 }

@@ -36,7 +36,9 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPort("notifier", string.IsNullOrWhiteSpace(builder.Configuration["Notifications:Provider"]) ? "noop" : builder.Configuration["Notifications:Provider"]!)
     .AddPortFromBaseUrl("risk-control", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
     // #341, IADR-0240: 報告書レビュー（確定）の実効経路。未設定なら placeholder＝Discord からの確定は失敗する。
-    .AddPortFromBaseUrl("report-review", builder.Configuration["Reports:BaseUrl"], "http", "placeholder"));
+    .AddPortFromBaseUrl("report-review", builder.Configuration["Reports:BaseUrl"], "http", "placeholder")
+    // FR-13, ADR-0042 決定 1, #1025: `/policy` の入れ替え案の適用先。未設定なら placeholder＝適用できない。
+    .AddPortFromBaseUrl("market-monitor-watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "placeholder"));
 
 // FR-09, IADR-0020: 送信手段の選択（安全既定 no-op）。実 Discord 送信は Notifications:Provider=discord-webhook で明示有効化する。
 // #289: Webhook URL は資格情報のため、送信専用クライアントの既定リクエストログ（URI を平文で出す）を抑止する。
@@ -170,6 +172,23 @@ builder.Services.AddSingleton<IPolicyRevisionController>(sp =>
 });
 builder.Services.AddSingleton<PolicyRevisionCommandHandler>();
 
+// FR-13, FR-14, ADR-0042 決定 1・2, #1025, IADR-0433: 市場監視サービスの監視銘柄の照会と `/policy` の入れ替え案の適用。
+// 適用は OwnerOnly のため owner マップ機密クライアントのトークンを付与する（報告書レビューと同じ資格情報）。
+// MarketMonitor:BaseUrl 未設定/不正 URI は BaseAddress 未設定＝照会は失敗（案は「適用できない案」として作られ、確定しても適用しない）。
+builder.Services.AddHttpClient("market-monitor-watchlist", c => c.Timeout = TimeSpan.FromSeconds(10))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IMarketMonitorWatchlistController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("market-monitor-watchlist");
+    var baseUrl = builder.Configuration["MarketMonitor:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return new HttpMarketMonitorWatchlistController(
+        http, sp.GetRequiredService<ILogger<HttpMarketMonitorWatchlistController>>());
+});
+builder.Services.AddSingleton<PolicyApprovalCommandHandler>();
+
 builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory.Create(
     discordBotOptions,
     sp.GetRequiredService<KillSwitchCommandHandler>(),
@@ -179,6 +198,7 @@ builder.Services.AddSingleton<IDiscordBotGateway>(sp => DiscordBotGatewayFactory
     sp.GetRequiredService<ReportCommandHandler>(),
     sp.GetRequiredService<PositionDriftAdoptionCommandHandler>(),
     sp.GetRequiredService<PolicyRevisionCommandHandler>(),
+    sp.GetRequiredService<PolicyApprovalCommandHandler>(),
     sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<DiscordBotHostedService>();
 

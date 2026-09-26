@@ -18,7 +18,7 @@ internal static class ConfirmReportEndpoint
     public static void MapConfirmReport(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/{periodKey}/confirm", async (string periodKey, ConfirmReportRequest req, AppSvc svc,
             IMessageBus bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, DelegatedActorOptions delegated,
-            HttpContext http) =>
+            IPolicyRevisionLedger policyLedger, HttpContext http) =>
         {
             var confirming = ConfirmingActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
             var actorLogger = loggerFactory.CreateLogger("ReportConfirmingActor");
@@ -65,9 +65,26 @@ internal static class ConfirmReportEndpoint
                 {
                     kbLogger.LogWarning(ex, "確定報告書 {PeriodKey} の KB 保存に失敗しました（確定は継続）。", r.PeriodKey);
                 }
+
+                // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 7（PR #1027 の監査 M1）: 確定された版が `/policy` の案なら、
+                // 台帳に「この版で確定された」時刻を残す（適用の内訳が無いままなら「確定されたが適用を試みていない」が台帳で見える）。
+                // best-effort（確定を壊さない）。
+                try
+                {
+                    if (policyLedger.FindProposed(r.PeriodKey, result.Version - 1) is { } attempt)
+                        policyLedger.MarkProposalConfirmed(attempt.Id, r.ConfirmedAt ?? DateTimeOffset.UtcNow);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    loggerFactory.CreateLogger("ReportPolicyRevisionLedger")
+                        .LogWarning(ex, "確定した版の方針の改訂の試行に確定の時刻を残せませんでした（{PeriodKey}）。", LogSanitizer.Sanitize(r.PeriodKey));
+                }
             }
 
-            return Results.Ok(result.Report);
+            // FR-07, FR-13, #1025, IADR-0433 決定 7（PR #1027 の監査 H1）: 報告書の項目に `transitioned`（この要求で確定したか）と
+            // `version`（確定後の版）を足して返す（項目の追加だけ＝既存の読み手は壊れない）。冪等な再確定を「版 N を確定した」と
+            // 読み違えないため、呼び出し側は version == expectedVersion + 1 で「この版で確定されている」を見分ける。
+            return Results.Ok(ConfirmReportResponse.From(result));
         });
 }
 
@@ -75,3 +92,27 @@ internal static class ConfirmReportEndpoint
 // OnBehalfOf（任意・末尾に追加）: 呼び出し元が**代理している利用者**（Keycloak 利用者名）。Discord Bot が載せる。
 // 信頼するクライアントのトークン以外では無視される（ConfirmingActorResolver）。
 internal sealed record ConfirmReportRequest(int ExpectedVersion, string? OnBehalfOf = null);
+
+// FR-07, FR-13, #1025, IADR-0433 決定 7: 確定の応答（従来の TradingReport の項目＋ Transitioned ＋ Version）。
+// NFR, IADR-0420: 受け手（通知サービス）の契約テストが送り手の本物の型として参照するため public。
+public sealed record ConfirmReportResponse(
+    string PeriodKey,
+    ReportService.Domain.ReportKind Kind,
+    DateOnly PeriodStart,
+    ReportService.Domain.ReportState State,
+    string? BasedOn,
+    int AssumptionsVersion,
+    string PolicySummary,
+    string Body,
+    IReadOnlyList<ReportService.Domain.ReportInput> UnsuppliedInputs,
+    DateTimeOffset? ConfirmedAt,
+    bool Transitioned,
+    int Version)
+{
+    public static ConfirmReportResponse From(ConfirmResult result)
+    {
+        var r = result.Report;
+        return new(r.PeriodKey, r.Kind, r.PeriodStart, r.State, r.BasedOn, r.AssumptionsVersion, r.PolicySummary, r.Body,
+            r.UnsuppliedInputs, r.ConfirmedAt, result.Transitioned, result.Version);
+    }
+}

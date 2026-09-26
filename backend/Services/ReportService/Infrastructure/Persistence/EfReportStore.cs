@@ -127,7 +127,7 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
 
         // 既に確定済みなら冪等（状態変化なし・イベント発行なし）。
         if (row.State == ReportState.Confirmed)
-            return new ConfirmResult(ToReport(row), Transitioned: false);
+            return new ConfirmResult(ToReport(row), Transitioned: false, row.Version);
 
         if (expectedVersion != row.Version)
             throw new ReportConcurrencyException(periodKey, expectedVersion, row.Version);
@@ -143,7 +143,7 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         row.Body = ReportBodyStatus.MarkConfirmed(row.Body, confirmedAt);
         row.Version += 1;
         db.SaveChanges();
-        return new ConfirmResult(ToReport(row), Transitioned: true);
+        return new ConfirmResult(ToReport(row), Transitioned: true, row.Version);
     }
 
     public ReportReview? GetReview(string periodKey)

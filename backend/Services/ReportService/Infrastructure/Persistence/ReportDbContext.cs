@@ -42,6 +42,11 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             // 12,476 文字になり溢れた（保存済みのドラフトが 500 になる）。直列化は緩いエスケープ（日本語はそのまま）にしたうえで、
             // 列の側でも上限で落ちない形にする（監査記録であり、長さで情報を捨てない）。
             e.Property(a => a.WatchlistChangesJson).HasColumnType("text");
+            // #1025（PR #1027 の監査 L2）: 案を作った時点の監視銘柄（最大 200 件）と適用の内訳も同じく text（上限で落ちない）。
+            e.Property(a => a.WatchlistSnapshotJson).HasColumnType("text");
+            e.Property(a => a.WatchlistApplyJson).HasColumnType("text");
+            // #1025: 確定した版の案を引く（会話キー＋版）。
+            e.HasIndex(a => new { a.PeriodKey, a.ReportVersion });
             // 1 日の回数上限の判定（JST の暦日ごとの件数）。
             e.HasIndex(a => a.JstDate);
         });

@@ -11,6 +11,8 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- FR-13, #1025, IADR-0433 決定 7（PR #1027 の監査 H1）: 本物の報告書サービスを InMemory DB で組み、Bot の再起動を挟んだ確認ボタンの流れを通す試験用。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <ProjectReference Include="..\NotificationService.csproj" />
     <!-- FR-07, FR-14, FR-20, #957, IADR-0408（2026-09-25 追記）: 報告書のレビュー照会・リスク管理の段階ゲートの契約テスト
          （T-10-913〜916）が送り手の本物の型を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
@@ -22,6 +24,9 @@
     <!-- FR-10, FR-09, #879, IADR-0424: 見送り（OrderDispatchForgone）の越境の契約テスト（T-10-1007）が、送り手（発注執行）の
          本物の OrderExecutionAppService で見送りを作るためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する。 -->
     <ProjectReference Include="..\..\OrderExecutionService\OrderExecutionService.csproj" Aliases="OrderExecutionWorker" />
+    <!-- FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: `/policy` の入れ替え案の適用（市場監視の proposal-apply・watchlist 照会）の
+         契約テストが、送り手の本物の型を送り手の JSON 設定で直列化するためのテスト専用参照（extern alias）。 -->
+    <ProjectReference Include="..\..\MarketMonitorService\MarketMonitorService.csproj" Aliases="MarketMonitorWorker" />
     <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- ADR-0013, IADR-0129, #354: Wolverine のハンドラをランタイム生成で動かすため（RuntimeCompilation）、

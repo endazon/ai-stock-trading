@@ -1,0 +1,139 @@
+---
+title: IADR-0433 /policy の監視銘柄の入れ替え案は、/policy の確認ボタンで確定できたときだけ、台帳に記録した案の銘柄を、案を作った時点の監視銘柄を期待値として市場監視で一括適用する（FR-14 の唯一の例外）
+type: impl-adr
+status: Accepted
+related_ids: [FR-13, FR-14, FR-07, FR-03, UC-03, UC-06, SC-02, ADR-0042, ADR-0031, ADR-0003, IADR-0431, IADR-0432, IADR-0088, IADR-0240, IADR-0383, IADR-0294, IADR-0420, IADR-0062]
+author: claude (Claude Code)
+created: 2026-09-26
+updated: 2026-09-26
+plan_refs:
+  - planning:projects/ai-stock-trading/07_adr/ADR-0042_discord-apply-ai-watchlist-proposal-and-revision-limit.md (決定 1・2)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0031_finnhub-rate-limit-minute-confirmed-daily-open.md (決定 2・3)
+  - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-13・FR-14)
+  - planning:projects/ai-stock-trading/05_screens/01_screens.md (SC-02 監視銘柄)
+---
+
+# IADR-0433: `/policy` の監視銘柄の入れ替え案を Discord の確認ボタンで適用する
+
+- 状態: Accepted
+- 日付: 2026-09-26
+- 決定者: claude（起票 [#1025](https://github.com/endazon/ai-stock-trading/issues/1025)。計画 ADR-0042 決定 1・2〔planning#663 の利用者裁定〕の実装。
+  ADR-0031 の条件は利用者裁定 2026-09-26〔警告のみ〕。利用者レビューは PR で受ける）
+
+## 起点・関連
+
+- 対象 Issue: #1025（前提: #1016 / IADR-0431、#1024 / IADR-0432）
+- 関連する実装仕様書: [20260926_1025_policy-watchlist-apply](../specs/20260926_1025_policy-watchlist-apply.md)
+- 関連 IADR: [IADR-0431](IADR-0431_policy-revision-from-discord-instruction.md)（`/policy`。決定 4 を本 IADR が改める）、
+  [IADR-0432](IADR-0432_policy-revision-daily-limit-and-cost-accounting.md)（試行の台帳）、[IADR-0088](IADR-0088_watchlist-settings-api.md)（監視銘柄 API・変更履歴）、
+  [IADR-0240](IADR-0240_discord-report-review-window-and-idempotent-confirm.md)（版番号付き確定・OnBehalfOf）、[IADR-0294](IADR-0294_finnhub-daily-volume-estimate-and-provisional-limit-warning.md)（Finnhub の日次要求の見積り）、
+  [IADR-0420](IADR-0420_cross-service-read-contract-convention-and-guard.md)（越境の契約テスト）
+
+## コンテキスト
+
+ADR-0042 決定 1 は、`/policy` が作った監視銘柄の入れ替え案に限り、利用者が Discord の確認ボタンで適用してよいと定めた（FR-14 の例外。
+決定 2: 例外はこの 1 つ）。条件: 案の銘柄だけ・確認前に銘柄と理由を表示・FR-13 と同じ監査・楽観排他・SC-02 と同じ検証と ADR-0031 の統制・
+一部適用の内訳を Discord と監査ログへ。IADR-0431 決定 4 は入れ替え案を表示だけに留めていた。
+
+ADR-0031 の統制（1 日の要求数が暫定上限 300 回/日を超えないこと）は、現行の巡回（既定 60 秒＝1 日 1,440 巡回）では 1 銘柄でも超える。
+**利用者は 2026-09-26、既存の見積り（IADR-0294）と同じく警告に留め、追加を拒否しないと裁定した**（300 回/日の未実測の前提の見直しは計画側へ環流）。
+
+## 決定
+
+### 決定 1: 案の銘柄と「案を作った時点の監視銘柄」を報告書サービスの試行の台帳に記録し、確定した版から引く
+
+- Bot は `/policy` を受けたら、案を作る前に市場監視の `GET /monitor/watchlist` を照会し、改訂の要求（`currentWatchlist`）で運ぶ。
+  報告書サービスは、米国の銘柄だけを LLM へ渡し（除外は現在の中から・追加は現在に無い銘柄から）、一覧を試行の台帳（`policy_revision_attempts`）の
+  `WatchlistSnapshotJson` に記録する。**照会できなかったときは null（「空」ではない）**——その案の入れ替えは確定しても適用しない。
+- 報告書サービスに `GET /reports/policy-revisions/watchlist-proposal?periodKey&version`（確定した版を作った試行の案・監視銘柄・記録の有無）と
+  `POST /reports/policy-revisions/{attemptId}/watchlist-apply-result`（適用の内訳の記録。**1 回だけ**・2 回目は 409）を置く（OwnerOnly）。
+  EF マイグレーション `AddPolicyRevisionWatchlistApply`（列 3 つ＋会話キー・版の索引）。
+- 🔴 **適用する銘柄は台帳から取る**。Bot のボタンも利用者の入力も銘柄を運ばない（`/policy approve <periodKey> <version>` は銘柄を取らない）。
+
+### 決定 2: 市場監視に一括適用の口を置き、期待値と違えば 1 件も適用しない。銘柄ごとに SC-02 と同じ規則で検証する
+
+- `POST /monitor/watchlist/proposal-apply`（OwnerOnly）。要求は案を作った時点の監視銘柄（`expectedWatchlist`）・入れ替え（`changes`）・
+  出所（`proposalRef` 例 `daily-2026-09-28-v3`）・代理（`onBehalfOf`）。
+- 案の形（追加 5・除外 5・米国のティッカー・理由 1〜200 文字・重複なし・期待値あり）を外れたら 400（1 件も適用しない）。
+- **現在の監視銘柄が期待値と集合として違えば 409（1 件も適用しない）**——ADR-0042 決定 1「案を作った後に監視銘柄が変わっていれば、適用しない」。
+  監視設定の版（行の Version）ではなく**監視銘柄の集合**で比べる（同じ行の変動閾値・クールダウンの変更で誤って止めない）。
+- 各銘柄は SC-02 の `Add` / `Remove` と同じ規則（追加の重複・除外の不在は適用しない）。通らない銘柄は理由つきで「適用しない」とし、
+  通った銘柄だけを **1 回の保存**で適用する（行の楽観排他の競合は 409・1 件も適用されない）。
+- 変更履歴（FR-13 の監査）は SC-02 と同じ種別・前後値で**適用した銘柄 1 件ずつ**。理由は「案の理由（/policy の案 <出所> を Discord の確認ボタンで適用）」。
+  適用しなかった銘柄は変更ではないため変更履歴には書かず、内訳として報告書サービスの台帳へ記録する（決定 1）。
+
+### 決定 3: 変更者は本人（代理）として残す
+
+市場監視に `Monitor:DelegatedActor:TrustedClientIds`（報告書・リスク管理と同じ規律の写し `DelegatedActorResolver`・同じ秘密鍵
+`discord-owner-auth-client-id`）を置き、信頼クライアントのトークンに限って本文の `onBehalfOf` を変更者とする。値域外は 400。
+
+### 決定 4: ADR-0031 の統制は警告のみ（利用者裁定 2026-09-26）
+
+適用後の監視銘柄の数 × 1 日の巡回回数（`Monitor:PollIntervalSeconds` から。既存の見積りと同じ式）を暫定上限
+（`Finnhub:ProvisionalDailyLimit`・既定 300）と比べ、応答に `estimate`（推定・上限・超過）を載せる。**適用は止めない。**
+Discord の内訳に「Finnhub の推定 N 回/日（暫定上限 300 回/日を超過・警告のみ）」と出す。Finnhub を使わない構成（`MarketData:Provider` が
+`finnhub` 以外）では出さない。申告値（`EstimatedSymbolCount`）ではなく**実際の監視銘柄の数**を使う。
+
+### 決定 5: Discord は `/policy` 専用の確認ボタンで「確定 → 適用 → 内訳」。`/report approve` は確定だけ
+
+- `/policy` の応答は、方針の全文に続けて**入れ替えの銘柄と理由を全文で**（切り詰めない。収まらなければ通を分ける）表示し、
+  「確定すると、案を作った時点から監視銘柄が変わっていなければ、この入れ替えも適用します（/report approve では適用しません）」と添える。
+  照会できなかった案は「確定しても入れ替えは適用しません」と添える。
+- 確認ボタンは専用の接頭辞 `ast-policy-approve-<periodKey>-<version>`（`ast-report-approve-` と分ける）。文言に入れ替えの件数を出す。
+- 押下（`PolicyApprovalCommandHandler`）: 多層認証 → 解析 → **既存の `ReportCommandHandler` で確定**（版番号ガード・OnBehalfOf）→
+  **この要求で確定できたときだけ**台帳の案を引き → 監視銘柄が分からなければ適用しない → 市場監視で適用 → 内訳を台帳へ記録し Discord に出す。
+  確定できなかった（版落ち・二重押下・失敗）ときは案を引かず適用しない。記録済みの案は二重に適用しない。
+- 原則 A: 市場監視のタイムアウト・例外・解釈できない 2xx は「適用しなかった」ではなく**不明**（設定画面での確認を促す）。
+  照会の失敗は「案が無い」と区別する。内訳の記録に失敗しても適用は巻き戻さず、利用者に記録の失敗を見せる。
+- 配備: notification に `MarketMonitor__BaseUrl`、market-monitor に `Monitor__DelegatedActor__TrustedClientIds` を足す（helm の values.yaml・values-local.yaml）。
+
+### 決定 6: FR-14 の例外はこの 1 つだけ（`DiscordSettingsAreReadOnlyTests`）
+
+監視銘柄を変え得るポートは `IMarketMonitorWatchlistController` の 1 つだけで、持つのは照会と案の適用の 2 つに限る。そのポートを持つハンドラは
+`PolicyRevisionCommandHandler`（照会）と `PolicyApprovalCommandHandler`（適用）だけ。解釈される破壊的コマンドは kill switch・一時停止／再開と
+`/policy approve <periodKey> <version>` だけ（銘柄を添えた形・版の無い形は解釈しない）。いずれも試験で固定する。
+［2026-09-26 追記 / PR #1027 の監査 Info］名前だけでなく文字列でも固定する: 市場監視の API のパス（`/monitor/watchlist`）を持つのは
+`HttpMarketMonitorWatchlistController` だけ、名前付き HttpClient `market-monitor-watchlist` を扱うのは `Program.cs` だけ。
+
+### 決定 7（［2026-09-26 追記 / PR #1027 の監査 H1・M1・L1］）: 適用の可否の権威は報告書サービスの「この版で確定されたか」に置く
+
+**監査の実測**: 確定済みの報告書への再確定は、どの版を送っても 200（`Transitioned=false`）を返す（IADR-0024 の「再確定は版非依存で
+冪等」）。Bot の窓口の版番号ガードはプロセス内にしか無いため、**Bot の再起動の後に古い版（版 2）の確認ボタンが押されると**、
+版 3 で確定済みの報告書に対して「（版 2）を確定しました」と偽って言い、確定されていない版 2 の案を適用していた（止めるのは
+監視銘柄の 409 だけで、監視銘柄が変わっていなければ素通りした）。
+
+- **報告書サービスが照会の段階で止める**: 案の照会（`GET …/watchlist-proposal`）と内訳の記録（`POST …/watchlist-apply-result`）は、
+  報告書が**その試行の版で確定されている**（確定済みかつ現在の版＝試行の版＋1。確定は版を 1 進める）ときだけ受け付け、他は 409。
+  記録は 1 回だけで書くと適用を永久に塞ぐため、確定された案の試行以外（未確定・別の版・案でない）では受け付けない（L1）。
+- **冪等な再確定を「版 N を確定した」と読ませない**: 2 案を比べ、**応答に `transitioned` と `version`（確定後の版）を足す**
+  （項目の追加だけ・既存の読み手は壊れない）を選んだ。報告書サービスが別の版の再確定を 409 にする案は採らない——
+  IADR-0024 の冪等（SPA・Discord の二重操作で 409 を出さない）を変え、既存の確定の経路すべての挙動が変わるため。
+  Bot は `transitioned=true`、または `version == 要求の版 + 1`（同じ版の冪等な再確定）だけを確定として扱い、
+  **別の版で確定済みなら「版 N は確定していません」と返し、入れ替えを照会しない**。項目の無い旧版の応答は従来どおり（配備順の窓。
+  照会の段階の検査が止める）。
+- **回復（M1）**: 確定の後・適用の前に Bot が落ちても、再起動の後に**同じ版の**ボタンを押し直せば、冪等な再確定を
+  「この版で確定済み」と確かめて入れ替えを適用する（内訳が未記録＝`ApplyRecorded=false` のとき。記録済みなら二重に適用しない）。
+- **見える化（M1）**: 報告書サービスは確定の遷移のときに、その版を作った試行へ「この版で確定された時刻」（`ProposalConfirmedAt`）を書く。
+  これがあって適用の内訳（`WatchlistAppliedAt`）が無い行が「確定されたが入れ替えの適用を試みていない」（Bot が落ちた・照会に失敗した）で、
+  Discord の応答だけでなく台帳で見える。
+
+## 却下した案
+
+- **報告書サービスが確定時に適用する**: 市場監視の変更は利用者のみ（OwnerOnly）で、報告書サービスの s2s トークンでは通らない。変更者も本人にならない。
+- **監視設定の版（Version）で楽観排他**: 同じ行の変動閾値・クールダウンの変更で、監視銘柄が変わっていなくても止まる。
+- **銘柄ごとに既存の POST / DELETE を呼ぶ**: 途中で失敗すると部分的に変わった状態が残り、期待値の比較も 1 回で済まない。
+- **ADR-0031 の見積りで追加を拒否する**: 現行の巡回では 1 銘柄でも超え、追加が 1 件も通らない（利用者裁定で警告のみ）。
+- **`/report approve` でも適用する**: 確認の前に銘柄と理由を見せていない経路で適用してしまう。
+
+## 残余リスク
+
+- 適用しなかった銘柄は市場監視の変更履歴（SC-02 の履歴）には現れず、報告書サービスの台帳（内訳）にだけ残る。
+- 確定の後・適用の前に Bot が落ちると、その版の入れ替えは自動では適用されない。［2026-09-26 追記 / PR #1027 の監査 M1］
+  台帳には「この版で確定された時刻」が残り（適用の内訳は無い）、再起動の後に**同じ版の**確認ボタンを押し直せば適用を回復する
+  （決定 7。試験 T-10-1422）。
+- 報告書の確定と監視銘柄の適用は別のサービスで、1 つのトランザクションではない。確定されたが適用されない、は起き得る（上）。
+  ~~逆は起きない~~ ［2026-09-26 追記 / PR #1027 の監査 H1］当初は「逆は起きない」と書いたが**誤りだった**（Bot の再起動の後に古い版の
+  ボタンで、確定されていない案が適用された）。決定 7 で、適用の前に報告書サービスが「その版で確定されたか」を検査するようにしたため、
+  **確定されていない案の適用（逆）は起きない**（Bot の窓口の状態に依らない。試験 T-10-1415・T-10-1421）。
+- Finnhub の日次要求は警告のみで、実際の上限を超えればデータが欠け得る（300 回/日の前提の実測は計画側で扱う）。
+- 実 Discord での疎通（ボタン・複数の通・内訳）は AI セッションでは確かめられない。

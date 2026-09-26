@@ -106,6 +106,11 @@ public static class BotCommandParser
             // FR-07, FR-14, UC-03〜05, #1016, IADR-0431: 方針の改訂（指示の本文は別の引数で運ぶ）。
             // `/policy` か `/policy <periodKey>` だけ。余分な引数・書式外の会話キーは Unknown（誤起動させない）。
             "/policy" or "policy" when tokens.Length == 1 => new BotCommand(BotCommandKind.PolicyRevise),
+            // FR-13, ADR-0042 決定 1, #1025: /policy approve <periodKey> <version>（確認ボタンの押下を表す。銘柄は取らない）。
+            "/policy" or "policy" when tokens.Length == 4 && tokens[1] == "approve" && IsPeriodKey(rawTokens[2])
+                && int.TryParse(tokens[3], out var approveVersion) && approveVersion >= MinVersion =>
+                new BotCommand(BotCommandKind.PolicyApprove, PeriodKey: rawTokens[2], Version: approveVersion),
+            // 会話キー 1 つだけ（`approve` という会話キーは作れない＝日報・週報・月報の書式ではないため曖昧にならない）。
             "/policy" or "policy" when tokens.Length == 2 && IsPeriodKey(rawTokens[1]) =>
                 new BotCommand(BotCommandKind.PolicyRevise, PeriodKey: rawTokens[1]),
             _ => BotCommand.Unknown,

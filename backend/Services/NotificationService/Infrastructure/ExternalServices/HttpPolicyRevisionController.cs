@@ -26,7 +26,11 @@ public sealed class HttpPolicyRevisionController(
     private const int MaxErrorLength = 300;
 
     public async Task<PolicyRevisionCommandOutcome> ReviseAsync(
-        string? periodKey, string instruction, string onBehalfOf, CancellationToken cancellationToken = default)
+        string? periodKey,
+        string instruction,
+        string onBehalfOf,
+        IReadOnlyList<WatchlistSnapshotItemView>? currentWatchlist,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(instruction);
         ArgumentException.ThrowIfNullOrWhiteSpace(onBehalfOf);
@@ -34,7 +38,12 @@ public sealed class HttpPolicyRevisionController(
         try
         {
             using var response = await httpClient
-                .PostAsJsonAsync(Path, new RevisePolicyBody(instruction, periodKey, onBehalfOf), cancellationToken)
+                .PostAsJsonAsync(
+                    Path,
+                    new RevisePolicyBody(
+                        instruction, periodKey, onBehalfOf,
+                        currentWatchlist?.Select(w => new SnapshotEntry(w.Symbol, w.Market)).ToList()),
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -90,6 +99,76 @@ public sealed class HttpPolicyRevisionController(
         }
     }
 
+    public const string ProposalPath = "/reports/policy-revisions/watchlist-proposal";
+
+    public async Task<WatchlistProposalLookup> GetWatchlistProposalAsync(
+        string periodKey, int version, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
+        try
+        {
+            using var response = await httpClient
+                .GetAsync($"{ProposalPath}?periodKey={Uri.EscapeDataString(periodKey)}&version={version}", cancellationToken)
+                .ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return new WatchlistProposalLookup(true, false, null, "この版は /policy の案ではありません");
+            // PR #1027 の監査 H1: 報告書がこの版で確定されていない（別の版で確定済み・未確定）。適用しない。
+            if (response.StatusCode == HttpStatusCode.Conflict)
+                return new WatchlistProposalLookup(true, false, null, "この版では確定されていないため、入れ替えは適用しません");
+            if (!response.IsSuccessStatusCode)
+                return new WatchlistProposalLookup(false, false, null, $"入れ替え案を照会できませんでした（HTTP {(int)response.StatusCode}）");
+
+            var view = await response.Content.ReadFromJsonAsync<ProposalView>(cancellationToken).ConfigureAwait(false);
+            if (view is null || view.Changes is null || view.Changes.Any(c => c is null || c.Action is null || c.Symbol is null))
+                return new WatchlistProposalLookup(false, false, null, "入れ替え案の応答を解釈できませんでした");
+
+            return new WatchlistProposalLookup(true, true, new WatchlistProposalDetail(
+                view.AttemptId,
+                view.PeriodKey ?? periodKey,
+                view.ReportVersion,
+                [.. view.Changes.Select(c => new WatchlistChangeSuggestionView(c!.Action!, c.Symbol!, c.Reason ?? string.Empty))],
+                // PR #1027 の監査 L3: 1 件でも欠けた項目があれば、黙って落とさず一覧ごと「分からない」（null）にする
+                // （落とした一覧を期待値にすると、楽観排他が偽の不一致・偽の一致を起こす）。
+                view.Snapshot is { } snapshot && snapshot.All(e => e is { Symbol: not null, Market: not null })
+                    ? [.. snapshot.Select(e => new WatchlistSnapshotItemView(e!.Symbol!, e.Market!))]
+                    : null,
+                view.ApplyRecorded), "照会しました");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "入れ替え案の照会で例外が発生しました。");
+            return new WatchlistProposalLookup(false, false, null, "入れ替え案を照会できませんでした（応答が届きませんでした）");
+        }
+    }
+
+    public async Task<bool> RecordWatchlistApplyAsync(
+        Guid attemptId,
+        string outcome,
+        IReadOnlyList<WatchlistApplyItemView> items,
+        string message,
+        string onBehalfOf,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient
+                .PostAsJsonAsync(
+                    $"/reports/policy-revisions/{attemptId}/watchlist-apply-result",
+                    new ApplyResultBody(
+                        outcome, [.. items.Select(i => new ApplyItemBody(i.Action, i.Symbol, i.Applied, i.SkipReason))], message, onBehalfOf),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                logger.LogWarning("入れ替え案の適用の内訳を記録できませんでした（{Status}）。", (int)response.StatusCode);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "入れ替え案の適用の内訳の記録で例外が発生しました。");
+            return false;
+        }
+    }
+
     private static async Task<string?> ErrorOf(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
@@ -108,7 +187,26 @@ public sealed class HttpPolicyRevisionController(
     }
 
     // 報告書サービス側 RevisePolicyRequest と同形（名前を変えてあるのは、送り手の型の目印〔IADR-0420 の検査器〕と区別するため）。
-    private sealed record RevisePolicyBody(string Instruction, string? PeriodKey, string OnBehalfOf);
+    private sealed record RevisePolicyBody(
+        string Instruction, string? PeriodKey, string OnBehalfOf, IReadOnlyList<SnapshotEntry>? CurrentWatchlist);
+
+    private sealed record SnapshotEntry(string Symbol, string Market);
+
+    // 報告書サービス側 WatchlistProposalView の射影。
+    private sealed record ProposalView(
+        Guid AttemptId,
+        string? PeriodKey,
+        int ReportVersion,
+        IReadOnlyList<WatchlistChangeItem?>? Changes,
+        IReadOnlyList<SnapshotItem?>? Snapshot,
+        bool ApplyRecorded);
+
+    private sealed record SnapshotItem(string? Symbol, string? Market);
+
+    // 報告書サービス側 WatchlistApplyResultRequest と同形。
+    private sealed record ApplyResultBody(string Outcome, IReadOnlyList<ApplyItemBody> Items, string Message, string OnBehalfOf);
+
+    private sealed record ApplyItemBody(string Action, string Symbol, bool Applied, string? SkipReason);
 
     // 報告書サービス側 PolicyRevisionResponse の必要部分の射影（欠落は null＝下で不明へ倒す）。
     private sealed record PolicyRevisionResponseView(

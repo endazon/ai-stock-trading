@@ -36,9 +36,29 @@ public sealed partial class ReportPolicyRevisionService(
     private static partial Regex PeriodKeyPattern();
 
     public async Task<PolicyRevisionResult> ReviseAsync(
-        string? periodKey, string? instruction, string actor, CancellationToken cancellationToken = default)
+        string? periodKey,
+        string? instruction,
+        string actor,
+        IReadOnlyList<WatchlistSnapshotItem>? currentWatchlist = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+
+        // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1: 案を作った時点の監視銘柄（Bot が照会して運ぶ）。null＝照会できなかった。
+        // 形式が崩れた一覧は受け取らない（楽観排他の基準になるため、推測で直さない）。
+        if (currentWatchlist is not null && currentWatchlist.Any(w => w is null || !WatchlistSnapshotItem.IsValid(w.Symbol, w.Market)))
+            return PolicyRevisionResult.Rejected(
+                PolicyRevisionStatus.InvalidWatchlist, "現在の監視銘柄（currentWatchlist）の形式が不正です。");
+
+        // PR #1027 の監査 L2: 上限（200 件）を超える一覧は `/policy` を失敗させず「分からない」（null）へ倒す
+        // ——その案の入れ替えは確定しても適用しない（基準を切り詰めて持つと楽観排他が偽の一致を起こす）。
+        if (currentWatchlist is not null && currentWatchlist.Count > WatchlistSnapshotItem.MaxCount)
+        {
+            logger.LogWarning(
+                "現在の監視銘柄が {Count} 件で上限 {Max} 件を超えるため、案を作った時点の監視銘柄は「分からない」として扱います。",
+                currentWatchlist.Count, WatchlistSnapshotItem.MaxCount);
+            currentWatchlist = null;
+        }
 
         var cleanedInstruction = PolicyRevisionProposalParser.CleanText(instruction);
         if (cleanedInstruction.Length == 0)
@@ -61,7 +81,9 @@ public sealed partial class ReportPolicyRevisionService(
         // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: 1 日の回数上限（JST の暦日）。**LLM を呼ぶ前に数え、
         // 呼ぶ前に 1 行書く**——応答が返らなかった呼び出しも費用が掛かり得るため上限に数える。上限に達したら LLM を呼ばない。
         // 🔴 数えることと書くことは台帳の 1 つの排他区間で行う（TryBegin。同時の要求で上限を超えない）。
-        var attempt = new PolicyRevisionAttempt(Guid.NewGuid(), clock.UtcNow, today, actor, key);
+        var attempt = new PolicyRevisionAttempt(
+            Guid.NewGuid(), clock.UtcNow, today, actor, key,
+            WatchlistSnapshotJson: currentWatchlist is null ? null : SerializeSnapshot(currentWatchlist));
         var begin = ledger.TryBegin(attempt, limit.DailyLimit);
         if (!begin.Begun)
         {
@@ -81,7 +103,9 @@ public sealed partial class ReportPolicyRevisionService(
         try
         {
             outcome = await reviser.ReviseAsync(
-                new PolicyRevisionContext(target.Kind, key, target.CurrentPolicy, target.Parent, cleanedInstruction),
+                new PolicyRevisionContext(
+                    target.Kind, key, target.CurrentPolicy, target.Parent, cleanedInstruction,
+                    currentWatchlist?.Where(w => w.Market == WatchlistSnapshotItem.UnitedStates).Select(w => w.Symbol).ToList()),
                 cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -255,7 +279,7 @@ public sealed partial class ReportPolicyRevisionService(
         sb.Append("\n### 改訂後の方針（AI の案）\n\n");
         sb.Append(proposal.PolicySummary).Append('\n');
 
-        sb.Append("\n### 監視銘柄の入れ替え案（提示のみ。適用は設定画面から）\n\n");
+        sb.Append("\n### 監視銘柄の入れ替え案（/policy の確認ボタンで確定したときに適用する。/report approve では適用しない）\n\n");
         if (proposal.WatchlistChanges.Count == 0)
         {
             sb.Append("- なし\n");
@@ -274,6 +298,10 @@ public sealed partial class ReportPolicyRevisionService(
 
         return sb.ToString();
     }
+
+    // 案を作った時点の監視銘柄の記録（楽観排他の基準）。
+    public static string SerializeSnapshot(IReadOnlyList<WatchlistSnapshotItem> snapshot) =>
+        JsonSerializer.Serialize(snapshot.Select(w => new { symbol = w.Symbol, market = w.Market }), LedgerJson);
 
     // 台帳の完了の書き込み（失敗しても元の結果・例外を上書きしない）。
     private void CompleteBestEffort(Guid attemptId, PolicyRevisionAttemptOutcome outcome, int? version, string? changesJson)
@@ -341,6 +369,9 @@ public enum PolicyRevisionStatus
 
     /// <summary>FR-14, ADR-0042 決定 3: 本日（JST）の /policy の回数上限に達している（LLM を呼ばない）。</summary>
     DailyLimitReached,
+
+    /// <summary>FR-13, ADR-0042 決定 1, #1025: 現在の監視銘柄の一覧の形式が不正。</summary>
+    InvalidWatchlist,
 }
 
 // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の 1 日（JST）の回数上限。構成 `Reports:PolicyRevision:DailyLimit`。

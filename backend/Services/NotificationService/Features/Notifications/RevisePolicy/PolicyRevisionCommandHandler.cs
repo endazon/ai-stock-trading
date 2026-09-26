@@ -9,11 +9,13 @@ namespace NotificationService.Features.Notifications.RevisePolicy;
 //
 // 🔴 **ここでは何も確定しない。** 報告書サービスは案を新しい版として保存・提示するだけであり、確定は既存の確認ボタン
 // （`ReportCommandHandler` の版番号付き確定・OnBehalfOf）だけが行う（ADR-0003「方針の確定には利用者との対話を要する」）。
-// 🔴 **監視銘柄は変えない。** 案に含まれる入れ替え案は表示するだけである（FR-14）。
+// 🔴 **ここでは監視銘柄を変えない。** 入れ替え案は表示して案として保存するだけで、適用は確認ボタン（PolicyApprovalCommandHandler）が
+// 確定できたときだけ行う（ADR-0042 決定 1。#1025）。
 //
 // 指示の本文は**ログに出さない**（長さだけ）。本文は報告書の改訂記録（本文）に残る。
 public sealed class PolicyRevisionCommandHandler(
     IPolicyRevisionController controller,
+    IMarketMonitorWatchlistController watchlist,
     DiscordBotOptions options,
     ILogger<PolicyRevisionCommandHandler> logger)
 {
@@ -62,8 +64,14 @@ public sealed class PolicyRevisionCommandHandler(
             "方針の改訂を要求します（Actor={Actor}・PeriodKey={PeriodKey}・指示の長さ={Length}）。",
             auth.Actor, command.PeriodKey ?? "(当日の日報)", trimmed.Length);
 
+        // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 1: 案を作る時点の監視銘柄を照会し、案の土台と適用の楽観排他の基準にする。
+        // 🔴 照会に失敗したら「空」ではなく「分からない」（null）として渡す——その案の入れ替えは確定しても適用しない。
+        var snapshot = await watchlist.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Succeeded)
+            logger.LogWarning("監視銘柄を照会できませんでした（{Message}）。入れ替え案は適用できない案として作ります。", snapshot.Message);
+
         var outcome = await controller
-            .ReviseAsync(command.PeriodKey, trimmed, auth.Actor!, cancellationToken)
+            .ReviseAsync(command.PeriodKey, trimmed, auth.Actor!, snapshot.Succeeded ? snapshot.Items : null, cancellationToken)
             .ConfigureAwait(false);
 
         if (!outcome.Succeeded || outcome.Proposal is not { } proposal)
@@ -82,7 +90,8 @@ public sealed class PolicyRevisionCommandHandler(
             proposal.Message,
             proposal.PolicySummary,
             [.. proposal.WatchlistChanges.Select(c => (c.Action, c.Symbol, c.Reason))],
-            proposal.Rationale);
+            proposal.Rationale,
+            watchlistSnapshotKnown: snapshot.Succeeded);
 
         logger.LogInformation(
             "方針の改訂案を受け取りました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}・提示={Presented}）。",
@@ -91,7 +100,9 @@ public sealed class PolicyRevisionCommandHandler(
         // 確認ボタンは**承認待ちにできた版に限って**出す（未提示の版は確定 API が受け付けない）。
         // 会話キーは報告書サービスが返した値であり、ボタンの CustomId と確定要求へ載る——値域を再確認する。
         var approvable = proposal.Presented && BotCommandParser.IsPeriodKey(proposal.PeriodKey) && proposal.Version >= 1;
-        return PolicyRevisionCommandResult.Proposed(messages, approvable ? proposal.PeriodKey : null, approvable ? proposal.Version : null);
+        return PolicyRevisionCommandResult.Proposed(
+            messages, approvable ? proposal.PeriodKey : null, approvable ? proposal.Version : null,
+            WatchlistChangeCount: snapshot.Succeeded ? proposal.WatchlistChanges.Count : 0);
     }
 
     // `/policy` で始まるか（書式外の period を「許可されていない」と読み違えないため）。
@@ -106,12 +117,14 @@ public sealed class PolicyRevisionCommandHandler(
 // WasExecuted=false は案が無い（拒否・検証・報告書サービスの失敗・不明）。IsDenied は多層認証・解析で弾いたこと。
 // Messages は順に送る通（案のときは見出し・方針の全文〔分割あり〕・入れ替え案と説明。失敗のときは 1 通）。
 // PeriodKey / Version は確認ボタンへ載せる値（承認待ちにできたときだけ非 null）。**ボタンは最後の通にだけ付ける。**
+// WatchlistChangeCount は確定で適用され得る入れ替えの件数（案を作った時点の監視銘柄が分からなければ 0）。ボタンの文言に使う。
 public sealed record PolicyRevisionCommandResult(
     bool WasExecuted,
     IReadOnlyList<string> Messages,
     string? PeriodKey = null,
     int? Version = null,
-    bool IsDenied = false)
+    bool IsDenied = false,
+    int WatchlistChangeCount = 0)
 {
     // 1 通にまとめた表示（ログ・失敗の応答用）。
     public string Message => string.Join("\n\n", Messages);
@@ -120,6 +133,7 @@ public sealed record PolicyRevisionCommandResult(
 
     public static PolicyRevisionCommandResult Failed(string message) => new(false, [message]);
 
-    public static PolicyRevisionCommandResult Proposed(IReadOnlyList<string> messages, string? periodKey, int? version) =>
-        new(true, messages, periodKey, version);
+    public static PolicyRevisionCommandResult Proposed(
+        IReadOnlyList<string> messages, string? periodKey, int? version, int WatchlistChangeCount = 0) =>
+        new(true, messages, periodKey, version, WatchlistChangeCount: WatchlistChangeCount);
 }

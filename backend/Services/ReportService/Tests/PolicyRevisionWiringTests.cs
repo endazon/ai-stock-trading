@@ -264,4 +264,157 @@ public class PolicyRevisionWiringTests
         var report = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}");
         report.GetProperty("version").GetInt32().Should().Be(2);
     }
+
+    // T-10-1387（ADR-0042 決定 1・#1025）: 本番の組み立てで、改訂の要求が運んだ監視銘柄と案の入れ替えを、確定した版から引ける。
+    // 内訳の記録は 1 回だけ（2 回目は 409）。/policy の案でない版は 404。サービス主体は 403。
+    [Fact]
+    public async Task 確定した版の入れ替え案を引き内訳を一度だけ記録する()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, new RecordingGateway(ProposalJson));
+        await SeedDraftAsync(factory);
+
+        (await BotClient(factory).PostAsJsonAsync("/reports/policy-revisions", new
+        {
+            instruction = "a",
+            periodKey = PeriodKey,
+            onBehalfOf = "developer",
+            currentWatchlist = new[] { new { symbol = "AAPL", market = "UnitedStates" } },
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // PR #1027 の監査 H1: 確定される前は照会できない（409）。
+        (await BotClient(factory).GetAsync($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2"))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "確定されていない版の案は適用の対象にならない");
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var proposal = await BotClient(factory).GetFromJsonAsync<JsonElement>(
+            $"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2");
+        proposal.GetProperty("reportVersion").GetInt32().Should().Be(2);
+        proposal.GetProperty("changes").EnumerateArray().Single().GetProperty("symbol").GetString().Should().Be("NVDA");
+        proposal.GetProperty("snapshot").EnumerateArray().Single().GetProperty("market").GetString().Should().Be("UnitedStates");
+        proposal.GetProperty("applyRecorded").GetBoolean().Should().BeFalse();
+        var attemptId = proposal.GetProperty("attemptId").GetGuid();
+
+        (await BotClient(factory).GetAsync($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=1"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound, "版 1 は /policy の案ではない");
+
+        var record = new { outcome = "applied", items = new[] { new { action = "add", symbol = "NVDA", applied = true } }, message = "m", onBehalfOf = "developer" };
+        (await BotClient(factory).PostAsJsonAsync($"/reports/policy-revisions/{attemptId}/watchlist-apply-result", record))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await BotClient(factory).PostAsJsonAsync($"/reports/policy-revisions/{attemptId}/watchlist-apply-result", record))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "内訳は 1 回だけ記録する");
+        (await BotClient(factory).GetFromJsonAsync<JsonElement>($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2"))
+            .GetProperty("applyRecorded").GetBoolean().Should().BeTrue();
+
+        var service = factory.CreateClient();
+        service.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-service");
+        (await service.GetAsync($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2"))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private static async Task SeedDraftAsync(WebApplicationFactory<Program> factory, string key)
+    {
+        (await UserClient(factory).PutAsJsonAsync($"/reports/{key}", new
+        {
+            Kind = "Daily",
+            PeriodStart = "2026-09-10",
+            BasedOn = (string?)null,
+            AssumptionsVersion = 1,
+            PolicySummary = "元の方針",
+            ExpectedVersion = 0,
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private static Task<HttpResponseMessage> ReviseAsync(WebApplicationFactory<Program> factory, string key, object? currentWatchlist) =>
+        BotClient(factory).PostAsJsonAsync("/reports/policy-revisions", new
+        {
+            instruction = "a",
+            periodKey = key,
+            onBehalfOf = "developer",
+            currentWatchlist,
+        });
+
+    // T-10-1415（PR #1027 の監査 H1）: 版 2（案 A）と版 3（案 B）を作り、版 3 を確定した後で、古い版 2 の確定要求が来ても
+    // ①応答は `transitioned=false` と確定後の版 4 を返し（版 2 の確定と読める値を返さない）②版 2 の案は照会できず（409）
+    // ③版 2 の試行へ内訳も記録できない（409）。版 3 の案は照会でき、確定の時刻が台帳に残る（M1）。版 2 には残らない。
+    [Fact]
+    public async Task 別の版で確定済みなら古い版の案を照会も記録もさせない()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, new RecordingGateway(ProposalJson));
+        await SeedDraftAsync(factory);
+        var watchlist = new[] { new { symbol = "AAPL", market = "UnitedStates" } };
+
+        (await ReviseAsync(factory, PeriodKey, watchlist)).StatusCode.Should().Be(HttpStatusCode.OK); // 版 2（案 A）
+        (await ReviseAsync(factory, PeriodKey, watchlist)).StatusCode.Should().Be(HttpStatusCode.OK); // 版 3（案 B）
+
+        var confirmed = await (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 3, OnBehalfOf = "developer" }))
+            .Content.ReadFromJsonAsync<JsonElement>();
+        (confirmed.GetProperty("transitioned").GetBoolean(), confirmed.GetProperty("version").GetInt32()).Should().Be((true, 4));
+
+        var stale = await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer" });
+        stale.StatusCode.Should().Be(HttpStatusCode.OK, "確定済みの再確定は冪等（IADR-0024 は変えない）");
+        var staleBody = await stale.Content.ReadFromJsonAsync<JsonElement>();
+        (staleBody.GetProperty("transitioned").GetBoolean(), staleBody.GetProperty("version").GetInt32())
+            .Should().Be((false, 4), "版 2 で確定されたとは読めない値（2 + 1 ≠ 4）を返す");
+        staleBody.GetProperty("state").GetString().Should().Be("Confirmed", "従来の報告書の項目も返す（追加だけ）");
+
+        (await BotClient(factory).GetAsync($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2"))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var v3 = await BotClient(factory).GetFromJsonAsync<JsonElement>($"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=3");
+        v3.GetProperty("reportVersion").GetInt32().Should().Be(3);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ReportService.Infrastructure.Persistence.ReportDbContext>();
+        var attempts = db.PolicyRevisionAttempts.OrderBy(a => a.ReportVersion).ToList();
+        attempts.Select(a => (a.ReportVersion, a.ProposalConfirmedAt is not null)).Should().Equal((2, false), (3, true));
+
+        var record = new { outcome = "applied", items = Array.Empty<object>(), message = "m", onBehalfOf = "developer" };
+        (await BotClient(factory).PostAsJsonAsync($"/reports/policy-revisions/{attempts[0].Id}/watchlist-apply-result", record))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "確定されていない案の試行で適用を塞がない（L1）");
+        (await BotClient(factory).PostAsJsonAsync($"/reports/policy-revisions/{Guid.NewGuid()}/watchlist-apply-result", record))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await BotClient(factory).PostAsJsonAsync($"/reports/policy-revisions/{attempts[1].Id}/watchlist-apply-result", record))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // T-10-1416（PR #1027 の監査 M3・原則 A）: 改訂の要求の現在の監視銘柄が null（照会できなかった）／空の一覧／1 件のとき、
+    // 確定した版の案の照会の `snapshot` はそれぞれ null／[]／1 件のまま返る（null と空を潰さない）。
+    [Theory]
+    [InlineData("null")]
+    [InlineData("empty")]
+    [InlineData("one")]
+    public async Task 監視銘柄の不明と空と有りを照会まで区別する(string kind)
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, new RecordingGateway(ProposalJson));
+        await SeedDraftAsync(factory, PeriodKey);
+        object? sent = kind switch
+        {
+            "null" => null,
+            "empty" => Array.Empty<object>(),
+            _ => new[] { new { symbol = "7203", market = "Japan" } },
+        };
+
+        (await ReviseAsync(factory, PeriodKey, sent)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var snapshot = (await BotClient(factory).GetFromJsonAsync<JsonElement>(
+            $"/reports/policy-revisions/watchlist-proposal?periodKey={PeriodKey}&version=2")).GetProperty("snapshot");
+
+        switch (kind)
+        {
+            case "null":
+                snapshot.ValueKind.Should().Be(JsonValueKind.Null);
+                break;
+            case "empty":
+                snapshot.ValueKind.Should().Be(JsonValueKind.Array);
+                snapshot.GetArrayLength().Should().Be(0);
+                break;
+            default:
+                snapshot.EnumerateArray().Single().GetProperty("symbol").GetString().Should().Be("7203");
+                break;
+        }
+    }
 }
