@@ -29,7 +29,8 @@ public class OrderReservationRetentionServiceTests
         public int PurgeResult { get; set; }
         public Exception? ThrowOnPurge { get; set; }
 
-        public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt) => true;
+        public bool TryReserve(
+            Guid decisionId, DateTimeOffset reservedAt, AiStockTrading.Shared.Contracts.Trading.BrokerProvider? brokerProvider) => true;
 
         public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt) { }
 

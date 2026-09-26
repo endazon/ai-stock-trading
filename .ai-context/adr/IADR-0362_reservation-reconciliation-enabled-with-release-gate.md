@@ -2,10 +2,10 @@
 title: IADR-0362 滞留 Reserved の自動突合は配備で有効化し、解放（NotPlaced）だけを別の門で閉じたままにする
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0003, ADR-0016, IADR-0057, IADR-0058, IADR-0074, IADR-0092, IADR-0111, IADR-0113, IADR-0114, IADR-0117, IADR-0210, IADR-0211, IADR-0428]
+related_ids: [FR-05, FR-10, FR-11, UC-06, ADR-0002, ADR-0003, ADR-0016, IADR-0057, IADR-0058, IADR-0074, IADR-0092, IADR-0111, IADR-0113, IADR-0114, IADR-0117, IADR-0210, IADR-0211, IADR-0428, IADR-0444]
 author: endazon (with Claude Code)
 created: 2026-09-19
-updated: 2026-09-25
+updated: 2026-09-27
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-05 発注執行)
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md (UC-06 利用者による建玉の手仕舞い)
@@ -80,6 +80,12 @@ plan_refs:
 - 🔴 **門は `NotPlaced` にしか効かない。** `Indeterminate` は門を開けても据え置く。
   「門を開ける」が「不明も解放してよい」へ広がらないことを否定形テスト（T-10-602）で固定する。
 - 門を開けてよいのは、実機で `NotPlaced` の偽陽性が無いことを**記録つきで示した後**だけである（#856 に残る）。
+
+> **［2026-09-27 追記 / [#1051](https://github.com/endazon/ai-stock-trading/issues/1051)］本決定の門は、取引環境（SIMULATE / 実弾）ごとに 2 つへ分けた**
+> （[IADR-0444](IADR-0444_release-gate-per-trading-environment.md)）。構成キーは `Reconciliation:ReleaseOnNotPlaced:Simulate` / `:Real`
+> （どちらも既定は閉）で、門は予約ごとに、その予約を送った取引環境で選ぶ。上の「記録つきで示した後」の中身は計画 ADR-0045 決定1 の
+> (a)(b) が具体化し、**取引環境ごとに**満たす（SIMULATE の記録で実弾の門を開けない）。旧キー `Reconciliation:ReleaseOnNotPlaced` は
+> SIMULATE の門にだけ写る。`Indeterminate` を門で解放しない性質は変わらない。
 
 これは IADR-0211 決定 1 の規律を突合の側へ延長したものである——**「未発注」の根拠が未検証の前提に依るあいだは、
 それを「確実に未発注」と呼ばない。**

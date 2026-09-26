@@ -132,7 +132,12 @@ public class ReservationReconciliationMetricsCompositionTests
             BusinessMetricNames.OrderReservationReconciliations, BusinessMetricNames.TagOutcome);
         if (enabled)
         {
-            outcomes.Should().BeEquivalentTo(
+            // #1051, IADR-0444 決定6: 系列は判定 6 値 × 取引環境 4 値。判定の語彙は 6 値のまま。
+            outcomes.Should().HaveCount(6 * 4);
+            capture.TagValuesOf(BusinessMetricNames.OrderReservationReconciliations, BusinessMetricNames.TagProvider)
+                .Distinct().Should().BeEquivalentTo(
+                    ["MoomooSimulate", "MoomooReal", "InternalPaper", BusinessMetrics.ReservationReconciliationProviderUnknown]);
+            outcomes.Distinct().Should().BeEquivalentTo(
                 [
                     BusinessMetrics.ReservationReconciliationProbePlaced,
                     BusinessMetrics.ReservationReconciliationSelfHealed,

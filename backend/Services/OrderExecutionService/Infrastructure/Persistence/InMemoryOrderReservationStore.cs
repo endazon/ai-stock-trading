@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace OrderExecutionService.Infrastructure.Persistence;
 
@@ -8,13 +9,16 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, OrderDispatchReservation> _reservations = [];
 
-    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt)
+    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider)
     {
         lock (_gate)
         {
+            // #1051, IADR-0444 決定1: 送る先の取引環境を予約に残す（EF 実装と同じ）。
             return _reservations.TryAdd(
                 decisionId,
-                new OrderDispatchReservation(decisionId, OrderDispatchState.Reserved, reservedAt, BrokerOrderId: null));
+                new OrderDispatchReservation(
+                    decisionId, OrderDispatchState.Reserved, reservedAt, BrokerOrderId: null,
+                    BrokerProvider: brokerProvider));
         }
     }
 

@@ -3,15 +3,15 @@ title: リスク統制コア（FR-10・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-09-26
+updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-06, FR-10, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09, FR-08]
-adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0042, ADR-0043, ADR-0031]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0437, IADR-0435, IADR-0436, IADR-0439, IADR-0441]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260926_1044_monitor-replace-residuals, 20260926_826_stop-method-audit-residuals]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1030, #1015, #1028, #1039, #1022, #856, #1044]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-10, NFR-09, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09, FR-08]
+adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0042, ADR-0043, ADR-0031, ADR-0045]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0437, IADR-0435, IADR-0436, IADR-0439, IADR-0441, IADR-0444]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260926_1044_monitor-replace-residuals, 20260926_826_stop-method-audit-residuals, 20260927_1051_release-gate-per-trading-env]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1030, #1015, #1028, #1039, #1022, #856, #1044, #1051]
 -->
 
 
@@ -3550,13 +3550,56 @@ T-10-1521 はこの変異では赤にならない（実行日の UTC の日付�
 | **T-10-1556** | 構成を渡さないリコンサイラ・照会は未発注 | 1 巡回 | 据え置き・書き込み 0 回 | 構成が無い＝解放してよい、にしない | 自動（否定形） |
 | **T-10-1557** | 6 つの判定（照会で確定・自己修復・門で据え置き・解放・不明・失敗） | 件数つきで計上する | 系列名は `ast.order.reservation_reconciliations`・タグ `outcome`・値は件数 | 名前と語彙 | 自動 |
 | **T-10-1558** | 語彙の外の判定（空・`placed`・銘柄）／件数 0・負 | 計上する | 語彙の外は例外。どちらも測定値 0 件 | 系列を増やさない | 自動（否定形） |
-| **T-10-1559** | — | 起動時の 0 を計上する | 6 系列が値 0 で現れる | 最初の 1 件を `increase()` が拾える | 自動 |
+| **T-10-1559** | — | 起動時の 0 を計上する | 判定 6 × 取引環境 4 の系列が値 0 で現れる（取引環境の別は下の節で足した） | 最初の 1 件を `increase()` が拾える | 自動 |
 | **T-10-1560** | 照会で確定・自己修復・未発注（門は閉）・不明・例外の 5 件 | 常駐の 1 巡回 | 5 つの判定が 1 件ずつ・解放は計上なし | 巡回サマリの内訳と 1 対 1 | 自動 |
 | **T-10-1561** | 照会で確定する 1 件・発行が落ちる | 常駐の 1 巡回 | 例外で巡回が止まっても、照会で確定の 1 件は数えられている | 確定した 1 件の計数は発行より先 | 自動（否定形） |
-| **T-10-1562** | 本番の組み立て・`Reconciliation:Enabled` が true／false | 起動する | true なら 6 系列が値 0 で在る。false なら 1 つも無い | 無効な構成で「巡回して 0 件」に見せない | 自動（結線） |
+| **T-10-1562** | 本番の組み立て・`Reconciliation:Enabled` が true／false | 起動する | true なら判定 6 値 × 取引環境 4 値の系列が値 0 で在る。false なら 1 つも無い | 無効な構成で「巡回して 0 件」に見せない | 自動（結線） |
 
 変異注入（起動時の計上で `Enabled` を見ずに常に 0 を計上する）で T-10-1562 の false が赤。
 
 🔴 **本節が固定していない残余リスク**:
 - 照会の「未発注」が実機で正しいか（備考が moomoo SIMULATE で往復するか）は確かめていない。門を開ける判断は #856 に残る。
 - 計器が数えるのは判定の回数であり、据え置いた予約は巡回ごとに数え直される。
+
+## 予約の解放の門は取引環境ごとに分かれ、予約ごとに送った取引環境で評価される
+
+解放の門（照会が「未発注」と答えた予約を解放＝再発注を許可してよいか）は、SIMULATE と実弾の 2 つに分かれている
+（`Reconciliation:ReleaseOnNotPlaced:Simulate` / `:Real`。既定はどちらも閉）。予約は、取った時点で送る先だった発注先を記録し、
+リコンサイラはその予約の取引環境の門で判定する。取引環境が不明な予約（記録を始める前の予約）・内蔵 paper の予約・
+照会先と取引環境が食い違う予約は、どちらの門を開けても解放しない。判定の内訳の計器は、予約の取引環境をタグ `provider` に載せる（#1051）。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-1600** | 構成の既定／構成を渡さないリコンサイラ・SIMULATE と実弾の予約・照会は未発注 | 1 巡回 | 門はどちらも閉・どちらの予約も据え置き | 既定は閉 | 自動 |
+| **T-10-1601** | 実弾の予約・照会先も実弾・SIMULATE の門だけ開 | 1 巡回 | 🔴 解放 0・据え置きに載る・予約は `Reserved` | SIMULATE の門は実弾へ漏れない | 自動（否定形） |
+| **T-10-1602** | SIMULATE の予約（照会先も SIMULATE）／実弾の予約（照会先も実弾） | 門を片方ずつ開けて 1 巡回 | 自分の取引環境の門が開いたときだけ解放。もう片方の門では据え置き | 門は取引環境ごとに独立 | 自動 |
+| **T-10-1603** | 取引環境が不明な予約・照会先は SIMULATE／実弾／内蔵 paper・両方の門を開 | 1 巡回 | 🔴 据え置き | 不明は SIMULATE ではない（原則 A） | 自動（否定形） |
+| **T-10-1604** | 予約の取引環境と照会先が食い違う（SIMULATE↔実弾・SIMULATE↔内蔵 paper）・両方の門を開 | 1 巡回 | 🔴 据え置き | 別の口座の「一致ゼロ」を未発注の根拠にしない | 自動（否定形） |
+| **T-10-1605** | 内蔵 paper の予約・照会先も内蔵 paper・両方の門を開 | 1 巡回 | 据え置き | 外部の門の対象ではない | 自動（否定形） |
+| **T-10-1606** | SIMULATE／実弾の予約（照会先も同じ）・両方の門を開・照会は判定不能 | 1 巡回 | 🔴 解放 0・不確定 1・予約は `Reserved` | 判定不能は門に依らず据え置く | 自動（否定形） |
+| **T-10-1607** | 旧キー `Reconciliation:ReleaseOnNotPlaced` が `true` | 構成を読む | 🔴 SIMULATE の門だけが開き、実弾の門は閉。実弾の予約は解放されない | 旧キーは実弾の門へ写らない | 自動（移行） |
+| **T-10-1608** | 旧キーが `false`／新キーと同居／真偽値でない／空 | 構成を読む | `false` は両方閉（稼働中の構成で何も変わらない）・新キーが勝つ・真偽値でなければ止まる・空は無いのと同じ | 旧キーの扱いを固定する | 自動（移行） |
+| **T-10-1609** | 本番の組み立て（Program.cs）・新キー／旧キー／同居／不正な旧キー | 起動する | 新キーが取引環境ごとに届く・旧キー `false` で起動し両方閉・旧キー `true` は SIMULATE だけ・同居で束縛が落ちない・不正な旧キーで起動が止まる | 構成の束縛 | 自動（結線） |
+| **T-10-1610** | 送る先のアダプタが SIMULATE／実弾・承認の段階の既定の発注先は内蔵 paper・送信後に結果が不明 | 承認済み注文を発注する | 据え置かれた予約はアダプタの発注先を持つ | 予約の取引環境は送る先が決める | 自動（結線） |
+| **T-10-1611** | EF の予約ストア・SIMULATE／実弾の予約と取引環境を持たない行 | 保存し、滞留を走査し、照会する | 取引環境がそのまま返り、持たない行は null のまま | 不明を推測で埋めない | 自動（永続化） |
+| **T-10-1612** | 判定を計上する（取引環境 3 値・null・未定義の序数）／起動時の 0 | 計上する | タグ `provider` は取引環境の名前、null と未定義は `Unknown`。起動時の 0 は 6 × 4 系列 | 取引環境ごとに数える | 自動 |
+| **T-10-1613** | SIMULATE の照会で確定・実弾の未発注（据え置き）・不明の判定不能・SIMULATE の例外 | 常駐の 1 巡回（照会先は内蔵 paper の構成） | 確定の 1 件も巡回サマリも、予約の取引環境で数える | 照会先ではなく予約の取引環境 | 自動 |
+| **T-10-1614** | Helm の既定描画／moomoo-sim／values-local | 描画する | 新キー 2 つが `"false"`・旧キーが描画されない（`helm.yml`） | 配備の門は閉 | 自動（描画） |
+
+変異注入（1 つずつ入れて戻した）:
+
+| 変異 | 赤になった試験 |
+| --- | --- |
+| 門の評価で取引環境を見ず、実弾の予約にも SIMULATE の門を使う | T-10-1601・T-10-1602・T-10-1607（3 件） |
+| 不明（null）を SIMULATE として扱う | T-10-1603（照会先 SIMULATE の 1 件） |
+| 予約の取引環境と照会先の一致を見ない | T-10-1604（3 件） |
+| 旧キーを実弾の門にも写す | T-10-1607・T-10-1609（4 件） |
+| 本番の組み立てから旧キーの写像を外す | T-10-1609（4 件） |
+| 判定不能でも、門が開いていれば解放する | T-10-1606（2 件） |
+| 承認済み注文の予約に取引環境を渡さない（null） | T-10-1610（2 件） |
+| 計器から `provider` タグを落とす | T-10-1612・T-10-1557（11 件） |
+| 巡回サマリの計上で予約の取引環境の代わりに固定値を渡す | T-10-1613 |
+
+🔴 **本節が固定していない残余リスク**:
+- 一致を得た市場と列挙の経路（現在／履歴）はログに出ていない。門を開けるときの記録には、証券会社の画面で確かめて書き留める。
+- 取引環境を記録する前に取られた予約は不明のまま残り、門を開けても自動では解放されない（利用者の判断で解決する）。

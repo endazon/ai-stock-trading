@@ -49,12 +49,25 @@ public sealed class OrderReservationReconciliationService(
             return;
         }
 
+        // 🔴 NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定2: 解放の門は取引環境ごとに出す（1 つの「許可／禁止」にまとめない）。
         logger.LogInformation(
-            "発注予約の自動リコンサイルを開始します（滞留閾値 {Hours} 時間・間隔 {Interval}・未発注時の解放 {Release}）。"
-                + " 照会不達・不確定は解放しません（fail-safe）。",
+            "発注予約の自動リコンサイルを開始します（滞留閾値 {Hours} 時間・間隔 {Interval}・未発注時の解放 SIMULATE {ReleaseSimulate} /"
+                + " 実弾 {ReleaseReal}）。照会不達・不確定、取引環境が不明な予約は解放しません（fail-safe）。",
             ReconciliationPolicy.EffectiveStallThresholdHours(options.Value.StallThresholdHours),
             options.Value.Interval,
-            options.Value.ReleaseOnNotPlaced ? "許可" : "禁止（#856 の実機検証まで閉じる）");
+            options.Value.ReleaseOnNotPlaced.Simulate ? "許可" : "禁止",
+            options.Value.ReleaseOnNotPlaced.Real ? "許可" : "禁止");
+
+        // #1051, IADR-0444 決定4: 旧キーは SIMULATE の門にだけ写した（実弾の門には写らない）。黙って読み替えない。
+        if (options.Value.LegacyReleaseOnNotPlacedMapped is { } legacy)
+            logger.LogWarning(
+                "旧キー Reconciliation:ReleaseOnNotPlaced={Legacy} を SIMULATE の門にだけ写しました（実弾の門には写しません）。"
+                    + " 旧キーは廃止です。Reconciliation__ReleaseOnNotPlaced__Simulate / __Real へ移してください（#1051）。",
+                legacy);
+        if (options.Value.LegacyReleaseOnNotPlacedIgnored)
+            logger.LogWarning(
+                "旧キー Reconciliation:ReleaseOnNotPlaced は、新キー Reconciliation:ReleaseOnNotPlaced:Simulate が在るため無視しました。"
+                    + " 旧キーを構成から消してください（#1051）。");
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -123,9 +136,12 @@ public sealed class OrderReservationReconciliationService(
 
         // 🔴 FR-05, #856, IADR-0441: 確定した 1 件の計数も**発行より先**に残す（記録と同じ理由。発行が落ちても数え漏らさない）。
         // 確定した予約は次の巡回に載らないので、ここで数えなければ永久に数えられない（IADR-0371 の幾何）。
-        metrics.RecordOrderReservationReconciliation(emission.ProbeFinding is null
-            ? BusinessMetrics.ReservationReconciliationSelfHealed
-            : BusinessMetrics.ReservationReconciliationProbePlaced);
+        // 🔴 #1051, IADR-0444 決定6: 予約の取引環境で数える（ADR-0045 決定1 (a) は取引環境ごと）。
+        metrics.RecordOrderReservationReconciliation(
+            emission.ProbeFinding is null
+                ? BusinessMetrics.ReservationReconciliationSelfHealed
+                : BusinessMetrics.ReservationReconciliationProbePlaced,
+            emission.ReservationProvider);
 
         // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
@@ -257,10 +273,12 @@ public sealed class OrderReservationReconciliationService(
         // FR-05, NFR-09, #856, IADR-0441: 確定しなかった判定を件数で計上する（確定した分は EmitAsync が 1 件ずつ数え済み）。
         // これらの予約は Reserved のまま次の巡回に載るため、巡回が中断されて計上されなくても次の巡回で数え直される。
         // 🔴 held-not-placed は門を開けてよいかの観測に使う（ブローカーに存在する注文に対して出たら門を開けない。#856）。
-        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced, result.HeldNotPlaced.Count);
-        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationReleased, result.Released);
-        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationIndeterminate, result.Indeterminate);
-        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationFailed, result.Failed);
+        // 🔴 #1051, IADR-0444 決定6: 予約の取引環境ごとに数える（ADR-0045 決定1 (b) の held-not-placed は取引環境ごと）。
+        foreach (var group in result.Verdicts.GroupBy(v => (v.Kind, v.ReservationProvider)))
+        {
+            metrics.RecordOrderReservationReconciliation(
+                OutcomeOf(group.Key.Kind), group.Key.ReservationProvider, group.Count());
+        }
 
         // #856 監査 N3: 据え置き（Held）も件数に出す。出さないと、全件が門で据え置かれた巡回が
         // 「滞留 5 件を走査（終端化 0 / 解放 0 / 不確定 0 / 失敗 0）」になり、運用者には内訳の合わない行に見える。
@@ -286,11 +304,24 @@ public sealed class OrderReservationReconciliationService(
         // 🔴 #890, IADR-0371: これは巡回の末尾のままでよい。据え置いた予約は **Reserved のまま**であり
         // 次回巡回の FindStalledReserved に載るため、巡回が中断されても警告は失われない
         // （永久に失われるのは「確定済みで再走査されない」ものだけである）。
-        foreach (var decisionId in result.HeldNotPlaced)
+        // 🔴 #1051, IADR-0444: 予約の取引環境も出す（どちらの門の判断材料かを取り違えないため。不明は不明と出す）。
+        foreach (var held in result.Verdicts.Where(v => v.Kind == ReservationReconciliationVerdictKind.HeldNotPlaced))
             logger.LogWarning(
-                "発注予約リコンサイル: 照会は「未発注」と答えましたが、解放の門が閉じているため据え置きます"
-                    + "（DecisionId={DecisionId}）。Reconciliation:ReleaseOnNotPlaced=true にしてよいのは、"
-                    + "実機で誤判定が無いことを確かめた後だけです（#856）。それまでは人が証券会社の画面で確認してください。",
-                decisionId);
+                "発注予約リコンサイル: 照会は「未発注」と答えましたが、この予約の取引環境の解放の門が閉じているため据え置きます"
+                    + "（DecisionId={DecisionId} 取引環境={ReservationProvider}）。門を開けてよいのは、その取引環境の実機の記録で"
+                    + "誤判定が無いことを示した後だけです（#856 / #1051。取引環境が不明な予約はどちらの門でも解放しません）。"
+                    + "それまでは人が証券会社の画面で確認してください。",
+                held.DecisionId,
+                held.ReservationProvider?.ToString() ?? BusinessMetrics.ReservationReconciliationProviderUnknown);
     }
+
+    // #1051, IADR-0444 決定6: 確定しなかった判定の種類 → 計器の outcome の値。
+    private static string OutcomeOf(ReservationReconciliationVerdictKind kind) => kind switch
+    {
+        ReservationReconciliationVerdictKind.HeldNotPlaced => BusinessMetrics.ReservationReconciliationHeldNotPlaced,
+        ReservationReconciliationVerdictKind.Released => BusinessMetrics.ReservationReconciliationReleased,
+        ReservationReconciliationVerdictKind.Indeterminate => BusinessMetrics.ReservationReconciliationIndeterminate,
+        ReservationReconciliationVerdictKind.Failed => BusinessMetrics.ReservationReconciliationFailed,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "未知の判定の種類"),
+    };
 }

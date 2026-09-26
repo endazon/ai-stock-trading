@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace OrderExecutionService.Features.OrderExecution;
 
 // #131, FR-05, IADR-0057: 発注の3相（予約 → 発注 → 確定）における予約の状態。
@@ -47,12 +49,16 @@ public enum ForgoneRecordOutcome
 // #131, FR-05, IADR-0057: 発注前に確保する DecisionId の予約。
 // #137, IADR-0059: CompletedAt はパージの述語（終端行の経過時間）に用いる。Reserved の間は null であり、
 // 「null＝未確定＝パージ対象外」が保持期間パージの安全性の要である。
+// 🔴 NFR-09, FR-20, ADR-0045 決定2, #1051, IADR-0444 決定1: BrokerProvider は**予約を取った時点で送る先のアダプタの発注先**
+// （＝その予約の取引環境）。リコンサイラは解放の門をこの値で選ぶ。null は「不明」（列を足す前の予約）であり、
+// **SIMULATE とは読まない**（原則 A。どちらの門を開けても解放しない）。
 public sealed record OrderDispatchReservation(
     Guid DecisionId,
     OrderDispatchState State,
     DateTimeOffset ReservedAt,
     string? BrokerOrderId,
-    DateTimeOffset? CompletedAt = null);
+    DateTimeOffset? CompletedAt = null,
+    BrokerProvider? BrokerProvider = null);
 
 // #131, FR-05, IADR-0057: 発注前 DecisionId 予約のストア。ブローカ発注の「前」に一意予約をコミットし、
 // 「発注成功 → 永続化失敗」の窓での二重発注を防ぐ。実運用では PostgreSQL（DecisionId が主キー＝一意制約）。
@@ -62,8 +68,14 @@ public interface IOrderReservationStore
     /// DecisionId を予約する。新規に確保できたら true、既に予約が存在する（＝再配送・並行配送）なら false。
     /// 実装は true を返す前に予約をコミットし、他プロセスから観測可能にすること（戻った時点で確定していない
     /// と、発注前予約の意味が無くなる）。ブローカ発注より前に呼ぶのは呼び出し側の責務である。
+    /// <para>
+    /// 🔴 NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定1: <paramref name="brokerProvider"/> は<b>この予約で送る先のアダプタの
+    /// 発注先</b>（<c>IBrokerAdapter.Provider</c>）である。<b>必須引数にしてある</b>——渡し忘れると予約の取引環境が不明になり、
+    /// 解放の門がどちらも効かなくなる（安全側だが、門を開けても解放されない）。承認が運ぶ <c>OrderIntent.Mode</c> は
+    /// 段階の既定の発注先であって送る先ではないため、渡してはならない（IADR-0140 決定3）。
+    /// </para>
     /// </summary>
-    bool TryReserve(Guid decisionId, DateTimeOffset reservedAt);
+    bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider);
 
     /// <summary>発注結果の永続化後に予約を Completed へ確定する（ブローカ注文 ID を記録する）。</summary>
     void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt);

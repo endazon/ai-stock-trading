@@ -552,12 +552,35 @@ public class BusinessMetricsTests
         using var capture = new MeterCapture(meterName);
         using var metrics = BusinessMetrics.WithMeterName(meterName);
 
-        metrics.RecordOrderReservationReconciliation(outcome, count);
+        metrics.RecordOrderReservationReconciliation(outcome, BrokerProvider.MoomooSimulate, count);
 
         BusinessMetricNames.OrderReservationReconciliations.Should().Be("ast.order.reservation_reconciliations");
         capture.ValuesOf(BusinessMetricNames.OrderReservationReconciliations).Should().ContainSingle()
             .Which.Should().Match<MeterCapture.Measurement>(m =>
-                m.Value == count && m.Tags[BusinessMetricNames.TagOutcome] == outcome);
+                m.Value == count && m.Tags[BusinessMetricNames.TagOutcome] == outcome
+                && m.Tags[BusinessMetricNames.TagProvider] == nameof(BrokerProvider.MoomooSimulate));
+    }
+
+    // 🔴 T-10-1612, NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定6: 判定は**予約の取引環境**をタグ provider に載せる。
+    // 取引環境の列を足す前の予約（null）と未定義の序数は "Unknown"（既知の取引環境の系列へ混ぜない）。
+    // 殺す変異: provider タグを落とす／null を MoomooSimulate に倒す。
+    [Theory]
+    [InlineData(BrokerProvider.MoomooSimulate, "MoomooSimulate")]
+    [InlineData(BrokerProvider.MoomooReal, "MoomooReal")]
+    [InlineData(BrokerProvider.InternalPaper, "InternalPaper")]
+    [InlineData(null, "Unknown")]
+    [InlineData((BrokerProvider)99, "Unknown")]
+    public void リコンサイルの判定は予約の取引環境をproviderタグに載せる(BrokerProvider? provider, string expected)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced, provider);
+
+        BusinessMetrics.ReservationReconciliationProviderUnknown.Should().Be("Unknown");
+        capture.TagValuesOf(BusinessMetricNames.OrderReservationReconciliations, BusinessMetricNames.TagProvider)
+            .Should().Equal(expected);
     }
 
     [Theory]
@@ -573,7 +596,7 @@ public class BusinessMetricsTests
         using var capture = new MeterCapture(meterName);
         using var metrics = BusinessMetrics.WithMeterName(meterName);
 
-        var act = () => metrics.RecordOrderReservationReconciliation(outcome, count);
+        var act = () => metrics.RecordOrderReservationReconciliation(outcome, BrokerProvider.MoomooSimulate, count);
 
         if (Array.IndexOf(ReconciliationOutcomes, outcome) < 0)
             act.Should().Throw<ArgumentException>();
@@ -592,8 +615,14 @@ public class BusinessMetricsTests
 
         metrics.PrimeOrderReservationReconciliations();
 
-        capture.TagValuesOf(BusinessMetricNames.OrderReservationReconciliations, BusinessMetricNames.TagOutcome)
-            .Should().BeEquivalentTo(ReconciliationOutcomes);
+        // T-10-1612, #1051, IADR-0444 決定6: 判定 6 値 × 取引環境 4 値（取引環境ごとの最初の 1 件も increase() が拾える）。
+        string[] providers = ["MoomooSimulate", "MoomooReal", "InternalPaper", BusinessMetrics.ReservationReconciliationProviderUnknown];
+        capture.ValuesOf(BusinessMetricNames.OrderReservationReconciliations)
+            .Select(m => (m.Tags[BusinessMetricNames.TagOutcome], m.Tags[BusinessMetricNames.TagProvider]))
+            .Should().BeEquivalentTo(
+                from outcome in ReconciliationOutcomes
+                from provider in providers
+                select (outcome, provider));
         capture.SumOf(BusinessMetricNames.OrderReservationReconciliations).Should().Be(0);
     }
 
@@ -618,7 +647,7 @@ public class BusinessMetricsTests
         metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
         metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
         metrics.RecordDriftAdoptionFollowUpAbandoned(BusinessMetrics.DriftFollowUpPositionsUnknown);
-        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced);
+        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced, BrokerProvider.MoomooSimulate);
         metrics.RecordFinnhubSymbolSetResolution("watchlist");
         metrics.RecordFinnhubSymbolsDeferred(0);
 

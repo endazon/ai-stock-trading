@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.EntityFrameworkCore;
 
 namespace OrderExecutionService.Infrastructure.Persistence;
@@ -7,7 +8,7 @@ namespace OrderExecutionService.Infrastructure.Persistence;
 // TryReserve はブローカ発注より前に呼ばれ、SaveChanges で「コミットしてから」true を返す（発注前予約の要）。
 public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrderReservationStore
 {
-    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt)
+    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider)
     {
         // 先読みは高速路（再配送の大半はここで false）。並行配送の実際の排他は主キーの一意制約が担う。
         if (db.DispatchReservations.Any(r => r.DecisionId == decisionId))
@@ -18,6 +19,8 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             DecisionId = decisionId,
             State = OrderDispatchState.Reserved,
             ReservedAt = reservedAt,
+            // 🔴 #1051, IADR-0444 決定1: 送る先の取引環境。リコンサイラが解放の門を選ぶ。
+            BrokerProvider = brokerProvider,
         });
 
         try
@@ -62,7 +65,8 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
         var row = db.DispatchReservations.AsNoTracking().FirstOrDefault(r => r.DecisionId == decisionId);
         return row is null
             ? null
-            : new OrderDispatchReservation(row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt);
+            : new OrderDispatchReservation(
+                row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt, row.BrokerProvider);
     }
 
     // #141, IADR-0074: 滞留 Reserved（State=Reserved AND ReservedAt < reservedBefore）を ReservedAt 昇順で
@@ -74,7 +78,7 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             .OrderBy(r => r.ReservedAt)
             .Take(batchSize)
             .Select(r => new OrderDispatchReservation(
-                r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt))
+                r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt, r.BrokerProvider))
             .ToList();
     }
 

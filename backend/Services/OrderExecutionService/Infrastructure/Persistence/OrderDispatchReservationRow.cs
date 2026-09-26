@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace OrderExecutionService.Infrastructure.Persistence;
 
@@ -20,4 +21,11 @@ public sealed class OrderDispatchReservationRow
 
     /// <summary>ブローカ注文 ID（確定時に記録する。Reserved の間は null）。</summary>
     public string? BrokerOrderId { get; set; }
+
+    /// <summary>
+    /// 🔴 NFR-09, FR-20, ADR-0045 決定2, #1051, IADR-0444 決定1: 予約を取った時点で送る先のアダプタの発注先（取引環境）。
+    /// 解放の門（SIMULATE / 実弾）はこの値で選ぶ。<b>null は不明</b>（本列を足す前の行）であり、どちらの門を開けても解放しない。
+    /// 序数は <see cref="BrokerProvider"/> の整数（0＝内蔵 paper / 1＝moomoo REAL / 2＝moomoo SIMULATE）。
+    /// </summary>
+    public BrokerProvider? BrokerProvider { get; set; }
 }
