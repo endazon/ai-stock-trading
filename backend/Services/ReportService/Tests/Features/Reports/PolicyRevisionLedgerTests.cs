@@ -297,8 +297,168 @@ public class PolicyRevisionLedgerTests
         entry.State.Should().Contain(kv => kv.Key == "Outcome" && Equals(kv.Value, PolicyRevisionAttemptOutcome.Proposed));
     }
 
-    // 条件に合う変更を含む保存を指定の回数だけ DbUpdateException で失敗させる。
-    private sealed class FailingSave(Func<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry, bool> when, int times) : SaveChangesInterceptor
+    // ---- #1029, IADR-0432（2026-09-26 追記）: 適用の内訳の記録の原子性と、台帳・ストアの失敗の片付け（T-10-1482〜T-10-1488）----
+
+    private static readonly DateTimeOffset FirstAt = new(2026, 9, 28, 1, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset LaterAt = new(2026, 9, 28, 1, 0, 5, TimeSpan.Zero);
+    private const string AppliedJson = "{\"outcome\":\"applied\"}";
+    private const string StaleJson = "{\"outcome\":\"stale\"}";
+
+    // 版 2 の案（Proposed）の試行を 1 件書く。
+    private static Guid SeedProposed(string dbName)
+    {
+        using var seed = InMemoryContext(dbName);
+        var ledger = new EfPolicyRevisionLedger(seed);
+        var attempt = Attempt(new DateOnly(2026, 9, 28));
+        ledger.TryBegin(attempt, 10).Begun.Should().BeTrue();
+        ledger.Complete(attempt.Id, PolicyRevisionAttemptOutcome.Proposed, 2, "[]");
+        return attempt.Id;
+    }
+
+    private static ReportDbContext FailingContext(string dbName, FailingSave interceptor) =>
+        new(new DbContextOptionsBuilder<ReportDbContext>().UseInMemoryDatabase(dbName).AddInterceptors(interceptor).Options);
+
+    // T-10-1482: 別の DbContext（別のプロセスの Bot の要求に相当）の 2 つの書き手が、どちらも「まだ記録が無い」と読んでから記録する。
+    // 先に保存した方だけが記録し、後の方は**上書きせず**「記録済み」（false＝409）。後の方の DbContext は衝突した行を残さず、続けて保存できる。
+    [Fact]
+    public void 別のDbContextが先に記録したら後の書き手は上書きせず記録済みを返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = SeedProposed(dbName);
+        using var first = InMemoryContext(dbName);
+        using var second = InMemoryContext(dbName);
+        second.PolicyRevisionAttempts.Find(id)!.WatchlistAppliedAt.Should().BeNull("前提: 後の書き手も「まだ記録が無い」と読んだ");
+
+        new EfPolicyRevisionLedger(first).RecordWatchlistApply(id, AppliedJson, FirstAt).Should().BeTrue();
+        var later = new EfPolicyRevisionLedger(second);
+        later.RecordWatchlistApply(id, StaleJson, LaterAt).Should().BeFalse("先の内訳を上書きしない");
+
+        second.ChangeTracker.Entries<PolicyRevisionAttemptRow>().Should().BeEmpty("衝突した行を追跡に残さない");
+        later.RecordWatchlistApply(id, StaleJson, LaterAt).Should().BeFalse("読み直しても記録済み");
+        later.TryBegin(Attempt(new DateOnly(2026, 9, 28)), 10).Begun.Should().BeTrue("同じスコープの続く保存が衝突した行で落ちない");
+        using var check = InMemoryContext(dbName);
+        var row = check.PolicyRevisionAttempts.Single(a => a.Id == id);
+        (row.WatchlistApplyJson, row.WatchlistAppliedAt).Should().Be((AppliedJson, FirstAt));
+    }
+
+    // T-10-1483: 同じ DbContext（報告書のストアと台帳が共有するスコープ）で 2 回記録しても、2 回目は「記録済み」で先の内訳のまま。
+    [Fact]
+    public void 同じDbContextで二度目の記録は記録済みを返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = SeedProposed(dbName);
+        using var db = InMemoryContext(dbName);
+
+        new EfPolicyRevisionLedger(db).RecordWatchlistApply(id, AppliedJson, FirstAt).Should().BeTrue();
+        new EfPolicyRevisionLedger(db).RecordWatchlistApply(id, StaleJson, LaterAt).Should().BeFalse();
+
+        using var check = InMemoryContext(dbName);
+        var row = check.PolicyRevisionAttempts.Single(a => a.Id == id);
+        (row.WatchlistApplyJson, row.WatchlistAppliedAt).Should().Be((AppliedJson, FirstAt));
+    }
+
+    // T-10-1484: 本番のモデル（Npgsql）で、同時実行のトークンは記録時刻（WatchlistAppliedAt）の 1 つだけ（UPDATE は「まだ記録が無い」行だけを
+    // 更新する）。他の列をトークンにすると、試行の完了・確定の時刻の書き込みまで無関係な衝突で落ちる。
+    [Fact]
+    public void 同時実行のトークンは適用の記録時刻だけ()
+    {
+        using var npgsql = new ReportDbContext(
+            new DbContextOptionsBuilder<ReportDbContext>().UseNpgsql("Host=localhost;Database=report_svc").Options);
+        var entity = npgsql.Model.FindEntityType(typeof(PolicyRevisionAttemptRow))!;
+
+        entity.GetProperties().Where(p => p.IsConcurrencyToken).Select(p => p.Name)
+            .Should().Equal(nameof(PolicyRevisionAttemptRow.WatchlistAppliedAt));
+    }
+
+    // T-10-1485: 内訳の記録の保存が（衝突以外で）失敗したら、例外は上へ（「記録済み」に偽らない）、行は追跡から外れ、同じスコープで記録し直せる。
+    [Fact]
+    public void 内訳の記録の保存が失敗したら行を切り離す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = SeedProposed(dbName);
+        var interceptor = new FailingSave(e => e.Entity is PolicyRevisionAttemptRow && e.State == EntityState.Modified, times: 1);
+        using var db = FailingContext(dbName, interceptor);
+        var ledger = new EfPolicyRevisionLedger(db);
+
+        var act = () => ledger.RecordWatchlistApply(id, AppliedJson, FirstAt);
+
+        act.Should().Throw<DbUpdateException>();
+        db.ChangeTracker.Entries<PolicyRevisionAttemptRow>().Should().BeEmpty("失敗した行を Modified のまま残さない");
+        ledger.RecordWatchlistApply(id, AppliedJson, FirstAt).Should().BeTrue("追跡に残った「記録済み」の値で断らない");
+        using var check = InMemoryContext(dbName);
+        check.PolicyRevisionAttempts.Single(a => a.Id == id).WatchlistApplyJson.Should().Be(AppliedJson);
+    }
+
+    // T-10-1486: 確定の時刻の保存が失敗したら、行は追跡から外れ、同じスコープで書き直せる。
+    [Fact]
+    public void 確定の時刻の保存が失敗したら行を切り離す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = SeedProposed(dbName);
+        var interceptor = new FailingSave(e => e.Entity is PolicyRevisionAttemptRow && e.State == EntityState.Modified, times: 1);
+        using var db = FailingContext(dbName, interceptor);
+        var ledger = new EfPolicyRevisionLedger(db);
+
+        var act = () => ledger.MarkProposalConfirmed(id, FirstAt);
+
+        act.Should().Throw<DbUpdateException>();
+        db.ChangeTracker.Entries<PolicyRevisionAttemptRow>().Should().BeEmpty("失敗した行を Modified のまま残さない");
+        ledger.MarkProposalConfirmed(id, FirstAt);
+        using var check = InMemoryContext(dbName);
+        check.PolicyRevisionAttempts.Single(a => a.Id == id).ProposalConfirmedAt.Should().Be(FirstAt);
+    }
+
+    // T-10-1487（#1026 の差分監査 N2）: TryBegin の追加の保存が失敗したら、行は追跡から外れる。続く TryBegin は失敗した試行を
+    // 一緒に保存せず（数にも入らない）、自分の 1 行だけを書く。
+    [Fact]
+    public void TryBeginの保存が失敗したら行を切り離す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var day = new DateOnly(2026, 9, 28);
+        var interceptor = new FailingSave(e => e.Entity is PolicyRevisionAttemptRow && e.State == EntityState.Added, times: 1);
+        using var db = FailingContext(dbName, interceptor);
+        var ledger = new EfPolicyRevisionLedger(db);
+
+        var act = () => ledger.TryBegin(Attempt(day), 10);
+
+        act.Should().Throw<DbUpdateException>();
+        db.ChangeTracker.Entries<PolicyRevisionAttemptRow>().Should().BeEmpty("失敗した行を Added のまま残さない");
+        var next = Attempt(day);
+        ledger.TryBegin(next, 10).Should().Be(new PolicyRevisionBeginResult(true, 0));
+        using var check = InMemoryContext(dbName);
+        check.PolicyRevisionAttempts.Select(a => a.Id).Should().Equal(next.Id);
+    }
+
+    // T-10-1488（#1026 の差分監査 N1）: 報告書の保存が DbUpdateException 以外（Npgsql が接続を開けないときの NpgsqlException）で
+    // 失敗しても、変更の追跡を消す——台帳の SaveFailed の書き込みが失敗した下書きを一緒に保存しない。例外は上へ。
+    [Fact]
+    public async Task DbUpdateException以外の保存の失敗でも下書きを保存せずSaveFailedを記録する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = InMemoryContext(dbName))
+            new EfReportStore(seed).UpsertDraft(Draft(), 0);
+
+        var interceptor = new FailingSave(
+            e => e.Entity is ReportRow && e.State == EntityState.Modified, times: 1,
+            error: () => new Npgsql.NpgsqlException("接続を開けなかった（模擬）"));
+        using var db = FailingContext(dbName, interceptor);
+        var service = new ReportPolicyRevisionService(
+            new EfReportStore(db), new FixedClock(new DateTimeOffset(2026, 9, 27, 1, 0, 0, TimeSpan.Zero)), new CountingReviser(),
+            new PolicyRevisionSchedule(new ReportScheduleOptions(), AutoDailyEnabled: true),
+            new EfPolicyRevisionLedger(db), new PolicyRevisionLimit(10), NullLogger<ReportPolicyRevisionService>.Instance);
+
+        var act = () => service.ReviseAsync("daily-2026-09-25", "積極的に", "developer");
+
+        await act.Should().ThrowAsync<Npgsql.NpgsqlException>();
+        using var check = InMemoryContext(dbName);
+        var saved = new EfReportStore(check).Get("daily-2026-09-25")!;
+        (saved.Version, saved.Report.PolicySummary).Should().Be((1, "元の方針"), "失敗した下書きを保存しない");
+        check.PolicyRevisionAttempts.Single().Outcome.Should().Be(PolicyRevisionAttemptOutcome.SaveFailed);
+    }
+
+    // 条件に合う変更を含む保存を指定の回数だけ失敗させる（既定は DbUpdateException。#1029 で例外を差し替えられるようにした）。
+    private sealed class FailingSave(
+        Func<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry, bool> when, int times, Func<Exception>? error = null) : SaveChangesInterceptor
     {
         public int Failures { get; private set; }
 
@@ -307,7 +467,7 @@ public class PolicyRevisionLedgerTests
             if (Failures < times && eventData.Context!.ChangeTracker.Entries().Any(when))
             {
                 Failures++;
-                throw new DbUpdateException("保存に失敗した（模擬）");
+                throw error?.Invoke() ?? new DbUpdateException("保存に失敗した（模擬）");
             }
 
             return result;

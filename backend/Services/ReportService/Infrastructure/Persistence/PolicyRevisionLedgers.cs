@@ -49,8 +49,9 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
     public Guid Begin(PolicyRevisionAttempt attempt)
     {
         ArgumentNullException.ThrowIfNull(attempt);
-        db.PolicyRevisionAttempts.Add(PolicyRevisionAttemptRow.From(attempt));
-        db.SaveChanges();
+        var row = PolicyRevisionAttemptRow.From(attempt);
+        db.PolicyRevisionAttempts.Add(row);
+        SaveOrDetach(row);
         return attempt.Id;
     }
 
@@ -67,6 +68,7 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
     // FR-14, #1024, IADR-0432（PR #1026 の再監査 F1）: 台帳の書き込みが失敗したら、その行を追跡から外してから例外を上げる。
     // 台帳は報告書のストアと DbContext（スコープ）を共有しており、失敗した行を Modified / Added のまま残すと、続く報告書の
     // 保存（提示の ApplyReview 等）がこの行をもう一度保存しようとして同じ失敗で落ちる（保存済みの案が提示されなくなる）。
+    // #1029, IADR-0432（追記）: 台帳の書き込みはすべてこれを通す（Begin・MarkProposalConfirmed・RecordWatchlistApply も）。
     private void SaveOrDetach(PolicyRevisionAttemptRow row)
     {
         try
@@ -88,7 +90,7 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
         if (row is null || row.ProposalConfirmedAt is not null)
             return;
         row.ProposalConfirmedAt = confirmedAt;
-        db.SaveChanges();
+        SaveOrDetach(row);
     }
 
     public PolicyRevisionAttempt? FindProposed(string periodKey, int reportVersion) =>
@@ -105,7 +107,18 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
             return false;
         row.WatchlistApplyJson = resultJson;
         row.WatchlistAppliedAt = recordedAt;
-        db.SaveChanges();
+        try
+        {
+            SaveOrDetach(row);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // #1029, IADR-0432（追記）: 読んでから書くまでの間に、別の書き手（別の DbContext・別のプロセス）が先に記録した。
+            // WatchlistAppliedAt は同時実行のトークンで、保存は「まだ記録が無い（NULL のまま）」行だけを更新する。
+            // **先の内訳を上書きせず**「記録済み」として返す（行は SaveOrDetach が追跡から外した）。
+            return false;
+        }
+
         return true;
     }
 }
