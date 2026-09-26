@@ -375,7 +375,7 @@ public sealed class ProtectiveStopGuard(
             bool reserved;
             try
             {
-                reserved = reservations.TryReserve(stopDecisionId, now);
+                reserved = reservations.TryReserve(stopDecisionId, now, broker.Provider); // #1051, IADR-0444 決定1
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -473,7 +473,7 @@ public sealed class ProtectiveStopGuard(
 
             // 相 2（発注着手の権威・IADR-0057）: 送る「前」に決定的な DecisionId を予約する。取れなければ送らない
             //（(b) の後に並行して予約された＝送信中か成否不明。重ねて送らない）。
-            if (!reservations.TryReserve(closeDecisionId, clock.UtcNow))
+            if (!reservations.TryReserve(closeDecisionId, clock.UtcNow, broker.Provider)) // #1051, IADR-0444 決定1
             {
                 LogHeldClose(stop, closeDecisionId);
                 return Outcome.Unknown;

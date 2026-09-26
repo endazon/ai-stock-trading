@@ -264,6 +264,9 @@ jobs:
       #    これが描画されないと「送ったが結果が不明」な注文を後から確定させる自動経路が 1 本も無くなる
       #    （2026-09-18 に人が詰んだ状態そのもの）。**解放の門（ReleaseOnNotPlaced）が開いたら赤にする**
       #    ——解放は再発注の許可であり、実機で偽陽性が無いことを示すまで開けてはならない（#856）。
+      # 🔴 T-10-1614, #1051, IADR-0444: 門は取引環境ごとに 2 つ（__Simulate / __Real）。どちらも "false" で描画されること、
+      #    取引環境を区別しない旧キー（Reconciliation__ReleaseOnNotPlaced）が描画されないことを固定する。
+      #    門を開ける変更は、その取引環境の実機の記録を添えて本アサーションごと改める（docs/operations/operations.md）。
       - name: Assert reservation reconciliation is enabled and the release gate stays shut
         run: |
           set -eu
@@ -271,7 +274,12 @@ jobs:
             label="$1"; out="$2"
             doc="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: order-execution-service/')"
             [ -n "$doc" ] || { echo "::error::[$label] order-execution の Deployment が描画されない。"; exit 1; }
-            for pair in "Reconciliation__Enabled true" "Reconciliation__UseBrokerProbe true" "Reconciliation__ReleaseOnNotPlaced false" "Reconciliation__StallThresholdHours 2" "Reconciliation__IntervalHours 1" "Reconciliation__BatchSize 50"; do
+            # T-10-1614: 旧キー（取引環境を区別しない門）は描画しない。残っていると SIMULATE の門へ写るため、黙って残さない。
+            if printf '%s' "$doc" | grep -q "name: Reconciliation__ReleaseOnNotPlaced$"; then
+              echo "::error::[$label] 旧キー Reconciliation__ReleaseOnNotPlaced が描画された（#1051: __Simulate / __Real へ分けた）。"
+              exit 1
+            fi
+            for pair in "Reconciliation__Enabled true" "Reconciliation__UseBrokerProbe true" "Reconciliation__ReleaseOnNotPlaced__Simulate false" "Reconciliation__ReleaseOnNotPlaced__Real false" "Reconciliation__StallThresholdHours 2" "Reconciliation__IntervalHours 1" "Reconciliation__BatchSize 50"; do
               key="${pair%% *}"; want="${pair##* }"
               if ! printf '%s' "$doc" | grep -A1 "name: ${key}$" | grep -q "value: \"${want}\""; then
                 echo "::error::[$label] ${key} が \"${want}\" で描画されない（滞留 Reserved が自動解決しない構成へ戻った）。"

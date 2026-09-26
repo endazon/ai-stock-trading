@@ -143,10 +143,11 @@ public sealed class ThrowingReserveStore(
     OrderExecutionService.Features.OrderExecution.IOrderReservationStore inner, Guid throwFor)
     : OrderExecutionService.Features.OrderExecution.IOrderReservationStore
 {
-    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt) =>
+    public bool TryReserve(
+        Guid decisionId, DateTimeOffset reservedAt, AiStockTrading.Shared.Contracts.Trading.BrokerProvider? brokerProvider) =>
         decisionId == throwFor
             ? throw new InvalidOperationException("予約表へ書けない（テスト）")
-            : inner.TryReserve(decisionId, reservedAt);
+            : inner.TryReserve(decisionId, reservedAt, brokerProvider);
 
     public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt) =>
         inner.MarkCompleted(decisionId, brokerOrderId, completedAt);

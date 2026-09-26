@@ -3,15 +3,15 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-09-26
+updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-05, FR-10, FR-11, FR-12]
-adrs: [ADR-0002]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone]
-issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013]
+ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
+adrs: [ADR-0002, ADR-0045]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env]
+issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, planning#676]
 -->
 
 
@@ -146,13 +146,15 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 > | 突合の答え | 自動でどうなるか | 人がすること |
 > | --- | --- | --- |
 > | 発注済みと確定 | 記録を保存して予約を確定し、約定を台帳・通知・監査へ流す | **保護逆指値の有無を確認する**（下記） |
-> | 未発注と確定 | 🔴 **何もしない（据え置く）**。解放の門が閉じている（`Reconciliation__ReleaseOnNotPlaced=false`） | 証券会社の画面で確認して手で解決する |
+> | 未発注と確定 | 🔴 **何もしない（据え置く）**。解放の門が閉じている（取引環境ごとの `Reconciliation__ReleaseOnNotPlaced__Simulate` / `__Real` がどちらも `false`） | 証券会社の画面で確認して手で解決する |
 > | 判定不能・照会不達 | 何もしない（据え置く） | 同上 |
 >
 > 解放（予約を消して再発注を許可する）を閉じているのは、「未発注」の根拠が**備考の突合**であって
 > 証券会社が「無い」と答えた事実ではないからである。SIMULATE が備考を往復させるかは実機未検証であり、
 > 往復していなければ**発注済みの注文も「一致ゼロ」に見える**（＝全件解放＝全件二重発注）。
-> 門を開けてよいのは、実機で誤判定が無いことを記録つきで示した後だけである。
+> 門を開けてよいのは、**その取引環境の**実機の記録で誤判定が無いことを示した後だけである（記録の形は運用仕様書
+> [「解放の門を開けるときの記録」](operations.md#解放の門を開けるときの記録)）。門は取引環境（SIMULATE / 実弾）ごとに分かれ、
+> 予約ごとに、その予約を送った取引環境の門で判定される。**SIMULATE の門を開けても実弾の予約は解放されない。**
 >
 > 🔴 **突合が「発注済み」と確定したエントリーには、続けて承認時の損切り手法で保護レグを張る**（2026-09-25 改定。旧: 張らなかった）。
 > 確定した時点では保護レグが無いので、発注執行のログに Critical で
@@ -172,6 +174,11 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 > **二重発注を防ぐこと自体は予約が担うので突合の有無に依らない**——突合が担うのは滞留の解消だけである。
 
 #### 滞留した予約を人が解決する（突合が「未発注」「判定不能」で据え置いたとき）
+
+🔴 **その取引環境で解放の基準（運用仕様書「解放の門を開けるときの記録」の (a)(b)）を満たすまで、未発注・判定不能の予約を
+解放する手段は、この手順（利用者の判断による DB の直接操作）だけである**（計画の裁定。画面・Discord の手段は無い）。
+判定不能は基準を満たした後も自動では解放されないので、常にこの手順で解決する。原則は **「不明なら発注済みとして扱う」**
+（二重発注を避ける側に倒す）であり、証券会社の注文状態を確かめてから解決する。
 
 1. **真因のログを探す。** メッセージ基盤の `_error` キューに最後に残る例外は
    `OrderDispatchReservationConflictException`（予約の衝突）であり、**真因を指さない**——初回の配送が

@@ -96,7 +96,7 @@ public class ReconcilerAmbiguousStateNoBrokerWriteTests
     }
 
     private static ReconciliationOptions Enabled(bool releaseOnNotPlaced = false) =>
-        new() { Enabled = true, UseBrokerProbe = true, ReleaseOnNotPlaced = releaseOnNotPlaced };
+        new() { Enabled = true, UseBrokerProbe = true, ReleaseOnNotPlaced = new() { Simulate = releaseOnNotPlaced } }; // #1051: SIMULATE の門（予約・照会先とも SIMULATE）
 
     // エントリーを送る前に残した承認時の保護の文脈（S0）。**保護の口が呼ばれたら逆指値を送る**状態を用意しておく
     // ——この状態で書き込みが 0 回であることが、「口が呼ばれなかった」ことの証拠になる。
@@ -108,7 +108,7 @@ public class ReconcilerAmbiguousStateNoBrokerWriteTests
     private static Guid SeedAwaitingEntry(Harness h)
     {
         var entry = Guid.NewGuid();
-        h.Reservations.TryReserve(entry, StalledAt);
+        h.Reservations.TryReserve(entry, StalledAt, h.Broker.Provider);
         h.Stops.Save(Awaiting(entry));
         return entry;
     }
@@ -192,9 +192,9 @@ public class ReconcilerAmbiguousStateNoBrokerWriteTests
             _ => notPlaced ? ReservationProbeResult.NotPlaced : ReservationProbeResult.Indeterminate, Enabled());
         var entry = Guid.NewGuid();
         var stopLeg = ProtectiveStopIds.StopDecisionId(entry, 1);
-        h.Reservations.TryReserve(entry, StalledAt);
+        h.Reservations.TryReserve(entry, StalledAt, h.Broker.Provider);
         h.Reservations.MarkCompleted(entry, "entry-1", StalledAt);
-        h.Reservations.TryReserve(stopLeg, StalledAt);
+        h.Reservations.TryReserve(stopLeg, StalledAt, h.Broker.Provider);
         h.Stops.Save(Awaiting(entry) with { State = ProtectiveStopState.Active, Attempt = 1 });
 
         var result = await h.Reconciler.ReconcileAsync(Cutoff, 50, h.Sink);

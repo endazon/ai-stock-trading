@@ -22,8 +22,9 @@ namespace AiStockTrading.Shared.Contracts.Ports;
 //     リコンサイル（IADR-0092 / IADR-0074）が実状態（Placed / NotPlaced / Indeterminate）へ解決する。
 //     🔴 #856, IADR-0362（2026-09-19）: **アプリの既定は無効のままだが、配備では有効である**
 //     （deploy/helm/ai-stock-trading/values.yaml の Reconciliation__Enabled / __UseBrokerProbe＝true）。
-//     ただし**解放（NotPlaced → 予約の削除）だけは門が閉じている**（Reconciliation__ReleaseOnNotPlaced=false）
-//     ——解放は再発注の許可であり、誤判定は二重発注に直結するため、実機で偽陽性が無いことを示すまで開けない。
+//     ただし**解放（NotPlaced → 予約の削除）だけは門が閉じている**（#1051, IADR-0444: 取引環境ごとの
+//     Reconciliation__ReleaseOnNotPlaced__Simulate / __Real がどちらも false）
+//     ——解放は再発注の許可であり、誤判定は二重発注に直結するため、取引環境ごとに実機の記録で基準を満たすまで開けない（ADR-0045）。
 //     したがって配備でいま自動解決するのは **Placed 側（＋記録ありの自己修復）だけ**であり、
 //     NotPlaced と Indeterminate は据え置かれて人が証券会社の画面で確認する
 //     （docs/operations/broker-execution-paths-runbook.md）。

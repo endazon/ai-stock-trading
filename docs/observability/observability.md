@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-09-26
+updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-01, NFR-02, NFR-03, NFR-07, FR-04, FR-09, FR-10]
-adrs: [ADR-0006]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics]
-issues: [#24, #287, #689, #751, #891, #942, #856]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10]
+adrs: [ADR-0006, ADR-0045]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env]
+issues: [#24, #287, #689, #751, #891, #942, #856, #1051]
 -->
 
 
@@ -73,7 +73,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | 発注 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | 発注 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り。ブローカーの拒否（`status=Rejected`）と混ぜない |
 | 発注 | `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 🔴 乖離の取り込みの追随を、建玉照会の**不明**（`positions-unknown`）・**失敗**（`positions-query-failed`）のまま再試行を使い切って打ち切った件数。**空の一覧（0 株）は数えない**（確かめた結果であり追随は進む）。途中の配送も数えない。発注執行の起動完了時に 0 で作られる |
-| 発注 | `ast_order_reservation_reconciliations_total` | `outcome` | 発注予約の自動リコンサイルの**判定の内訳**（`probe-placed` / `self-healed` / `held-not-placed` / `released` / `indeterminate` / `failed`）。🔴 `held-not-placed` は解放の門が閉じているため据え置いた「未発注」判定で、同じ予約が巡回ごとに数え直される。**実際には証券会社に存在する注文に対してこれが出ていたら、門を開けてはならない**。リコンサイルが有効な構成でだけ起動時に 0 で作られる |
+| 発注 | `ast_order_reservation_reconciliations_total` | `outcome`, `provider` | 発注予約の自動リコンサイルの**判定の内訳**（`probe-placed` / `self-healed` / `held-not-placed` / `released` / `indeterminate` / `failed`）。🔴 `held-not-placed` は解放の門が閉じているため据え置いた「未発注」判定で、同じ予約が巡回ごとに数え直される。**実際には証券会社に存在する注文に対してこれが出ていたら、門を開けてはならない**。`provider` は**予約の取引環境**（`MoomooSimulate` / `MoomooReal` / `InternalPaper`、不明は `Unknown`）。解放の門は取引環境ごとに分かれており、**門の判断は同じ `provider` の系列だけで行う**。リコンサイルが有効な構成でだけ起動時に 0 で作られる（判定 6 × 取引環境 4） |
 | 費用 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | 費用 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率。80 で間隔延長・100 で停止 |
 

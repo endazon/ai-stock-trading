@@ -16,6 +16,9 @@
 #     供給する（#795 / IADR-0341: 値は基盤の画面から Vault へ書く）。AST_ESO=0 の従来経路でだけ
 #     k8s-local-deploy.sh が env から ast-secrets を作る。
 #   - order-execution は含めない → Broker__Provider は template 既定 paper（broker.tier 未指定・IADR-0111）＝実弾 OFF 不変。
+#     発注予約の自動リコンサイル（Reconciliation__*）も values.yaml をそのまま継ぐ。🔴 #1051: 解放の門は取引環境ごとの
+#     Reconciliation__ReleaseOnNotPlaced__Simulate / __Real で、**ローカルでもどちらも "false"（閉）**。ここで上書きしない
+#     （開けるには、その取引環境の実機の記録を添えた values.yaml の変更が要る。docs/operations/operations.md）。
 #   - notification の OwnerAuth__TokenEndpoint は入れない（template が global.authAuthority から注入・IADR-0098）。
 #   - Discord の環境固有値（GuildId/ChannelId/AllowedUserIds/UserMapping）は未設定時 IADR-0062 の安全既定
 #     （空は「全許可」ではなく全拒否）で no-op。ESO 所有（本プロファイルの既定）では template が ast-secrets の
