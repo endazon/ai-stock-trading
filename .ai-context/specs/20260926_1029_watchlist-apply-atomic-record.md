@@ -50,14 +50,16 @@ plan_refs:
 
 | # | 基準 | テスト |
 | --- | --- | --- |
-| 1 | 確定を確かめられなかった押下では案を引かず、応答が設定画面を案内する（同じプロセスの `/report approve` の後・照会の失敗の後の押し直し） | `PolicyApprovalCommandHandlerTests`（T-10-1480） |
-| 2 | 別の DbContext の 2 つの書き手: 後の方は `false`・先の内訳は上書きされない・後の方の DbContext は続けて保存できる | `PolicyRevisionLedgerTests`（T-10-1481） |
-| 2 | 同じ DbContext の 2 つの書き手: 後の方は `false`・先の内訳のまま | 同（T-10-1482） |
-| 2 | 行モデル: `WatchlistAppliedAt` が同時実行のトークン（Npgsql のモデル） | 同（T-10-1483） |
-| 3 | `RecordWatchlistApply` の保存の失敗で行を切り離す（続く保存が失敗した内訳を保存しない） | 同（T-10-1484） |
-| 3 | `MarkProposalConfirmed` の保存の失敗で行を切り離す | 同（T-10-1485） |
-| 3 | `TryBegin` の保存の失敗で行を切り離す（続く保存が失敗した試行を保存せず、数にも入らない）＝N2 | 同（T-10-1486） |
-| 4 | 改訂の保存が `DbUpdateException` 以外で失敗しても、下書きは保存されず台帳は SaveFailed＝N1 | 同（T-10-1487） |
+| 1 | 同じプロセスで先に `/report approve` した版の `/policy` のボタンでは案を引かず、応答が設定画面を案内する | `PolicyApprovalCommandHandlerTests`（T-10-1480） |
+| 1 | 照会の失敗の後の押し直しでも同じ（2 回目は照会しない） | 同（T-10-1481） |
+| 2 | 別の DbContext の 2 つの書き手: 後の方は `false`・先の内訳は上書きされない・後の方の DbContext は続けて保存できる | `PolicyRevisionLedgerTests`（T-10-1482） |
+| 2 | 同じ DbContext の 2 つの書き手: 後の方は `false`・先の内訳のまま | 同（T-10-1483） |
+| 2 | 行モデル: 同時実行のトークンは `WatchlistAppliedAt` の 1 列だけ（Npgsql のモデル） | 同（T-10-1484） |
+| 3 | `RecordWatchlistApply` の保存の失敗で行を切り離す（例外は上へ・同じスコープで記録し直せる） | 同（T-10-1485） |
+| 3 | `MarkProposalConfirmed` の保存の失敗で行を切り離す（同じスコープで書き直せる） | 同（T-10-1486） |
+| 3 | `TryBegin` の保存の失敗で行を切り離す（続く保存が失敗した試行を保存せず、数にも入らない）＝N2 | 同（T-10-1487） |
+| 4 | 改訂の保存が `DbUpdateException` 以外（`NpgsqlException`）で失敗しても、下書きは保存されず台帳は SaveFailed＝N1 | 同（T-10-1488） |
+| 3 | `Begin` の保存の失敗で行を切り離す | 同（T-10-1489） |
 
 - 変異注入で各試験が効くことを確かめ、結果を `docs/tests/FR-10_risk-controls-tests.md` に記録する。
 
