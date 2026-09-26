@@ -95,7 +95,7 @@ public sealed partial class ReportPolicyRevisionService(
             CompleteBestEffort(attemptId, PolicyRevisionAttemptOutcome.AiFailed, null, null);
             logger.LogWarning(
                 "方針の改訂案を作れませんでした（Actor={Actor}・PeriodKey={PeriodKey}・理由={Failure}）。何も保存していません。",
-                actor, key, outcome.Failure);
+                LogSanitizer.Sanitize(actor), key, outcome.Failure);
             return PolicyRevisionResult.Rejected(
                 PolicyRevisionStatus.AiFailed, $"AI の案を作れませんでした（{outcome.Message}）。方針は変わっていません。", key);
         }
@@ -150,7 +150,7 @@ public sealed partial class ReportPolicyRevisionService(
         logger.LogInformation(
             "方針の改訂案を保存し提示しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}・新規={Created}・提示={Presented}・"
             + "指示の長さ={InstructionLength}・追加案={Additions}・除外案={Removals}）。",
-            actor, key, version, target.Created, presented, cleanedInstruction.Length,
+            LogSanitizer.Sanitize(actor), key, version, target.Created, presented, cleanedInstruction.Length,
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Add),
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Remove));
 

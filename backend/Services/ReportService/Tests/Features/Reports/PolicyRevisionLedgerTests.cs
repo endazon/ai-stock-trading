@@ -1,5 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ReportService.Common.Abstractions;
 using ReportService.Domain;
@@ -221,6 +223,107 @@ public class PolicyRevisionLedgerTests
 
         (result.Status, result.Version, result.Presented).Should().Be((PolicyRevisionStatus.Proposed, 2, true));
         store.Get("daily-2026-09-25")!.Report.PolicySummary.Should().Be("押し目買いを優先する");
+    }
+
+    // T-10-1424（PR #1026 の再監査 F1）: EF のストアと台帳が DbContext を共有し、保存の後の台帳の完了（Modified の試行の行）の保存が
+    // 失敗しても、続く提示の保存がその行を保存し直して落ちない——保存済みの案は**提示される**（承認待ち）。
+    [Fact]
+    public async Task EFで保存後の台帳の失敗があっても案は提示される()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = InMemoryContext(dbName))
+            new EfReportStore(seed).UpsertDraft(Draft(), 0);
+
+        var interceptor = new FailingSave(e => e.Entity is PolicyRevisionAttemptRow && e.State == EntityState.Modified, times: 1);
+        using var db = new ReportDbContext(new DbContextOptionsBuilder<ReportDbContext>()
+            .UseInMemoryDatabase(dbName).AddInterceptors(interceptor).Options);
+        var service = new ReportPolicyRevisionService(
+            new EfReportStore(db), new FixedClock(new DateTimeOffset(2026, 9, 27, 1, 0, 0, TimeSpan.Zero)), new CountingReviser(),
+            new PolicyRevisionSchedule(new ReportScheduleOptions(), AutoDailyEnabled: true),
+            new EfPolicyRevisionLedger(db), new PolicyRevisionLimit(10), NullLogger<ReportPolicyRevisionService>.Instance);
+
+        var result = await service.ReviseAsync("daily-2026-09-25", "積極的に", "developer");
+
+        interceptor.Failures.Should().Be(1, "前提: 台帳の完了の保存が 1 回失敗した");
+        (result.Status, result.Version, result.Presented).Should().Be((PolicyRevisionStatus.Proposed, 2, true));
+        using var check = InMemoryContext(dbName);
+        new EfReportStore(check).GetReview("daily-2026-09-25")!.State.Should().Be(ReviewState.PendingApproval);
+        check.PolicyRevisionAttempts.Single().Outcome.Should().Be(PolicyRevisionAttemptOutcome.Pending, "台帳の完了は書けていない（上限には数える）");
+    }
+
+    // T-10-1425（PR #1026 の再監査 F2）: 報告書の保存が並行更新以外の DbUpdateException で失敗したら、下書きは**保存されず**、
+    // 台帳は SaveFailed（SaveFailed の書き込みが失敗した下書きを一緒に保存しない）。例外は上へ。
+    [Fact]
+    public async Task 並行更新以外の保存の失敗でも下書きを保存せずSaveFailedを記録する()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = InMemoryContext(dbName))
+            new EfReportStore(seed).UpsertDraft(Draft(), 0);
+
+        var interceptor = new FailingSave(e => e.Entity is ReportRow && e.State == EntityState.Modified, times: 1);
+        using var db = new ReportDbContext(new DbContextOptionsBuilder<ReportDbContext>()
+            .UseInMemoryDatabase(dbName).AddInterceptors(interceptor).Options);
+        var service = new ReportPolicyRevisionService(
+            new EfReportStore(db), new FixedClock(new DateTimeOffset(2026, 9, 27, 1, 0, 0, TimeSpan.Zero)), new CountingReviser(),
+            new PolicyRevisionSchedule(new ReportScheduleOptions(), AutoDailyEnabled: true),
+            new EfPolicyRevisionLedger(db), new PolicyRevisionLimit(10), NullLogger<ReportPolicyRevisionService>.Instance);
+
+        var act = () => service.ReviseAsync("daily-2026-09-25", "積極的に", "developer");
+
+        await act.Should().ThrowAsync<DbUpdateException>();
+        using var check = InMemoryContext(dbName);
+        var saved = new EfReportStore(check).Get("daily-2026-09-25")!;
+        (saved.Version, saved.Report.PolicySummary).Should().Be((1, "元の方針"), "失敗した下書きを保存しない");
+        check.PolicyRevisionAttempts.Single().Outcome.Should().Be(PolicyRevisionAttemptOutcome.SaveFailed);
+    }
+
+    // T-10-1426（PR #1026 の再監査 F4）: 台帳を閉じられなかったことを黙って捨てず、試行と結果を添えて Error で残す。
+    [Fact]
+    public async Task 台帳を閉じられなければ試行と結果をErrorで残す()
+    {
+        var store = new InMemoryReportStore();
+        store.UpsertDraft(Draft(), 0);
+        var logger = new RecordingLogger();
+        var service = new ReportPolicyRevisionService(
+            store, new FixedClock(new DateTimeOffset(2026, 9, 27, 1, 0, 0, TimeSpan.Zero)), new CountingReviser(),
+            new PolicyRevisionSchedule(new ReportScheduleOptions(), AutoDailyEnabled: true),
+            new CompleteFailingLedger(), new PolicyRevisionLimit(10), logger);
+
+        await service.ReviseAsync("daily-2026-09-25", "積極的に", "developer");
+
+        var entry = logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error).Subject;
+        entry.Exception.Should().BeOfType<InvalidOperationException>();
+        entry.State.Should().Contain(kv => kv.Key == "AttemptId" && kv.Value is Guid && (Guid)kv.Value != Guid.Empty);
+        entry.State.Should().Contain(kv => kv.Key == "Outcome" && Equals(kv.Value, PolicyRevisionAttemptOutcome.Proposed));
+    }
+
+    // 条件に合う変更を含む保存を指定の回数だけ DbUpdateException で失敗させる。
+    private sealed class FailingSave(Func<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry, bool> when, int times) : SaveChangesInterceptor
+    {
+        public int Failures { get; private set; }
+
+        public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+        {
+            if (Failures < times && eventData.Context!.ChangeTracker.Entries().Any(when))
+            {
+                Failures++;
+                throw new DbUpdateException("保存に失敗した（模擬）");
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class RecordingLogger : ILogger<ReportPolicyRevisionService>
+    {
+        public List<(LogLevel Level, Exception? Exception, IReadOnlyList<KeyValuePair<string, object?>> State)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, exception, state as IReadOnlyList<KeyValuePair<string, object?>> ?? []));
     }
 
     private sealed class CompleteFailingLedger : IPolicyRevisionLedger
