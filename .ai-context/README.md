@@ -7,8 +7,11 @@
 ```text
 .ai-context/
 ├── adr/     # 実装ADR（IADR-XXXX。docs/templates/adr_template.md から /new-spec adr で作成）
+├── annex/   # 必読規約（.claude/rules/）の別紙のうち、計画 ID・issue 参照を本文にそのまま持つ追記専用の記録
 └── specs/   # 作業仕様書（YYYYMMDD_<概要>.md。docs/templates/spec_template.md から /new-spec work で作成）
 ```
+
+`annex/` は**追記専用**である（過去の項は書き換えず、日付つきの項を末尾へ足す）。`docs/` の可視本文には計画 ID を書けないため、ID が本体の履歴だけをここへ置く（#1052）。
 
 本リポジトリに `superpowers/` の実体は無い（存在するリポジトリでは `.ai-context/superpowers/` を追加する）。
 
