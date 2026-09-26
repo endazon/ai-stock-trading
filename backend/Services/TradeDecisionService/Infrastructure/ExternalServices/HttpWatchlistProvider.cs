@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using AiStockTrading.Shared.Contracts.Trading;
 using TradeDecisionService.Features.TradeDecision;
 using Microsoft.Extensions.Logging;
 
@@ -18,20 +19,41 @@ public sealed class HttpWatchlistProvider(
 {
     public async Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken cancellationToken = default)
     {
-        var symbols = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
-        if (symbols is not null)
-            return symbols;
+        var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
+        if (rows is not null)
+        {
+            // 従来どおりの寛容な読み: 銘柄が空の行は除外し、市場が欠けた行は列挙の既定値で読む（定時サイクルの判断対象）。
+            return [.. rows
+                .Where(r => !string.IsNullOrWhiteSpace(r.Symbol))
+                .Select(r => new WatchedSymbol(r.Symbol!, r.Market ?? default))];
+        }
 
         logger.LogWarning("監視銘柄（watchlist）を権威源から読めないため、既定 watchlist（構成）へフォールバックします。");
         return await fallback.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // #1034, IADR-0440 決定 2: 読めなければ null（不明）。構成の固定リストへは倒さない。
-    public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default) =>
-        TryFetchAsync(cancellationToken);
+    // 🔴 PR #1041 の監査 F1: **1 行でも欠けていれば一覧ごと不明**にする（銘柄が空・null、市場が欠落・値域外）。
+    // 上の定時サイクル用の寛容な読み（空の行を黙って落とす・欠けた市場を既定値で読む）をここで使うと、200 の応答が
+    // 「0 件」や「別の市場の銘柄」へ化け、プロンプトが「この銘柄は対象外」と事実でないことを書く（原則 A）。
+    public async Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default)
+    {
+        var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
+        if (rows is null)
+            return null;
 
-    // 権威源の照会。読めた一覧（空を含む）か、供給不達なら null。キャンセル（呼び出し側の停止要求）は伝播する。
-    private async Task<IReadOnlyList<WatchedSymbol>?> TryFetchAsync(CancellationToken cancellationToken)
+        if (rows.Any(r => string.IsNullOrWhiteSpace(r.Symbol) || r.Market is not { } m || !Enum.IsDefined(m)))
+        {
+            logger.LogWarning("監視銘柄（watchlist）の応答に欠けた行（銘柄が空・市場が欠落または値域外）があるため、判断のプロンプトには不明と書きます。");
+            return null;
+        }
+
+        return [.. rows.Select(r => new WatchedSymbol(r.Symbol!, r.Market!.Value))];
+    }
+
+    // 権威源の照会。読めた行（空の配列を含む）か、供給不達・null 応答・null の行を含む応答なら null。
+    // 行の検証（空の銘柄・市場の欠落）は口ごとに違うため、ここでは行を加工しない。キャンセル（呼び出し側の停止要求）は伝播する。
+    private async Task<IReadOnlyList<WatchlistRow>?> TryFetchAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -45,18 +67,19 @@ public sealed class HttpWatchlistProvider(
                 return null;
             }
 
-            // MonitoredSymbol（MarketMonitorService.Domain）と WatchedSymbol は同形。camelCase・列挙は数値で往復する。
-            var symbols = await response.Content
-                .ReadFromJsonAsync<List<WatchedSymbol>>(cancellationToken)
+            // MonitoredSymbol（MarketMonitorService.Domain）と同形。camelCase・列挙は数値で往復する。
+            // 行の項目は nullable で受ける（欠落を列挙の既定値〔Japan〕と区別するため。#1041 監査 F1）。
+            var rows = await response.Content
+                .ReadFromJsonAsync<List<WatchlistRow?>>(cancellationToken)
                 .ConfigureAwait(false);
 
-            if (symbols is null)
+            if (rows is null || rows.Any(r => r is null))
             {
                 logger.LogWarning("監視銘柄（watchlist）の応答が不正（null）。");
                 return null;
             }
 
-            return [.. symbols.Where(s => !string.IsNullOrWhiteSpace(s.Symbol))];
+            return [.. rows.Select(r => r!)];
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -69,4 +92,7 @@ public sealed class HttpWatchlistProvider(
             return null;
         }
     }
+
+    // 応答の 1 行（MonitoredSymbol と同形）。欠落を検出するため項目は nullable。
+    private sealed record WatchlistRow(string? Symbol, Market? Market);
 }

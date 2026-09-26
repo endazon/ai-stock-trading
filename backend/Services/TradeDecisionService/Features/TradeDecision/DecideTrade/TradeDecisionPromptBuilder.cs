@@ -138,7 +138,12 @@ public static class TradeDecisionPromptBuilder
     // 所属の判定は上限と無関係に全件で行う（表示から落ちた銘柄を「含まれない」と書かない）。
     public const int MaxWatchlistEntries = 50;
 
-    private const int MaxWatchlistSymbolChars = 32;
+    // 🔴 PR #1041 の監査 F2: 判断対象の銘柄（trigger.Symbol）もプロンプトへ出す前に同じ Sanitize を通す。銘柄は外（市場監視の
+    // 監視銘柄・価格変動のイベント）から来る文字列であり、素で埋め込むと「A、バッククォート 3 つ、改行、# 確定済み日報の方針…」のような値が
+    // フェンスを閉じて権威ある節の見出しを名乗れる（ADR-0003 追補の構造分離）。所属の判定は加工前の値で行う。
+    private const int MaxSymbolChars = 32;
+
+    private static string SymbolText(DecisionTrigger trigger) => Sanitize(trigger.Symbol, MaxSymbolChars);
 
     // retrieved は #18（IADR-0069）の RAG 取得結果（IADR-0072）。null/空は現行動作（参考情報節なし）。
     // FR-17, IADR-0076 決定5: includeProfitability=false（既定）なら採算節・expectedProfitPerShare を出さない＝
@@ -185,13 +190,13 @@ public static class TradeDecisionPromptBuilder
         if (trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } price)
         {
             sb.AppendLine("# 価格変動トリガー");
-            sb.AppendLine($"- 銘柄: {trigger.Symbol} / 市場: {trigger.Market}");
+            sb.AppendLine($"- 銘柄: {SymbolText(trigger)} / 市場: {trigger.Market}");
             sb.AppendLine($"- 現在値: {price.ToString(ci)}{priceUnit} / 基準値: {trigger.BaselinePrice?.ToString(ci)}{priceUnit} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
         }
         else
         {
             sb.AppendLine("# 定時サイクル（価格変動トリガーなし）");
-            sb.AppendLine($"- 銘柄: {trigger.Symbol} / 市場: {trigger.Market}");
+            sb.AppendLine($"- 銘柄: {SymbolText(trigger)} / 市場: {trigger.Market}");
             // FR-02, IADR-0099 決定2: 権威ある現在値があれば価格文脈として載せる（定時トリガーは価格を持たないため
             // これが無いと LLM は Buy/Sell の根拠を持てず常に Hold に倒れる）。null（既定）なら行を出さず現行動作。
             if (currentPrice is { } cp)
@@ -308,7 +313,7 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine();
         // FR-04, #1034, IADR-0440 決定 1: 本判断と同じ節（縮退の保護分）。
         sb.Append(WatchlistSection(trigger, watchlist));
-        sb.AppendLine($"# 対象: {trigger.Symbol} / 市場: {trigger.Market}");
+        sb.AppendLine($"# 対象: {SymbolText(trigger)} / 市場: {trigger.Market}");
         var currency = MarketCurrency.Of(trigger.Market);
         var priceUnit = currency == MarketCurrency.Base ? string.Empty : $" {CurrencyFormat.CodeOf(currency)}";
         if (currentPrice is { } cp)
@@ -367,7 +372,7 @@ public static class TradeDecisionPromptBuilder
             {
                 var watched = watchlist[i];
                 sb.AppendLine(JsonSerializer.Serialize(
-                    new WatchedSymbolData(Sanitize(watched.Symbol, MaxWatchlistSymbolChars), watched.Market.ToString()),
+                    new WatchedSymbolData(Sanitize(watched.Symbol, MaxSymbolChars), watched.Market.ToString()),
                     DataLineJson));
             }
 
@@ -382,7 +387,7 @@ public static class TradeDecisionPromptBuilder
         var contained = watchlist.Any(w =>
             w.Market == trigger.Market && string.Equals(w.Symbol.Trim(), target, StringComparison.OrdinalIgnoreCase));
         sb.AppendLine(
-            $"- 判断対象の {trigger.Symbol}（市場: {trigger.Market}）{(contained ? WatchlistContainsSuffix : WatchlistNotContainsSuffix)}");
+            $"- 判断対象の {SymbolText(trigger)}（市場: {trigger.Market}）{(contained ? WatchlistContainsSuffix : WatchlistNotContainsSuffix)}");
         sb.AppendLine();
         return sb.ToString();
     }

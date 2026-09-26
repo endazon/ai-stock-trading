@@ -41,6 +41,12 @@ public sealed class TradeDecisionAppService(
     // 未指定＝null＝プロンプトは「監視銘柄: 不明」と書く（空の一覧は渡さない）。本番は Program.cs の IWatchlistProvider が注入される。
     private readonly IWatchlistProvider? _watchlist = watchlist;
 
+    // #1034, PR #1041 の監査 F5, IADR-0440 決定 2（2026-09-26 追記）: このインスタンスで監視銘柄を一度読めなかったら、以後の判断では
+    // 照会せず不明とする。本サービスはスコープ登録で、Wolverine はメッセージ 1 件ごとにスコープを作るため、状態は**そのメッセージ
+    // （定時サイクルなら 1 巡回）の中だけ**で持つ。市場監視が止まっているとき、1 巡回の銘柄ごとに照会の打ち切り（5 秒）を待たない。
+    // 読めた一覧は覚えない（判断ごとに引き直す。巡回の途中の変更を所属の判定へ反映する）。
+    private bool _watchlistUnavailable;
+
     // FR-04, ADR-0003, #252, IADR-0169 決定2: RAG 取得文脈の出典限定。
     // **未指定は「限定しない」ではなく Default（＝安全側の許可リスト）である。**
     // 不在が統制の無効を意味する形にはしない（IADR-0163 決定2 の規律）。
@@ -564,16 +570,21 @@ public sealed class TradeDecisionAppService(
     private async Task<IReadOnlyList<WatchedSymbol>?> GetWatchlistForPromptSafeAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken)
     {
-        if (_watchlist is null)
+        if (_watchlist is null || _watchlistUnavailable)
             return null;
 
         try
         {
-            return await _watchlist.GetAuthoritativeWatchlistAsync(cancellationToken).ConfigureAwait(false);
+            var read = await _watchlist.GetAuthoritativeWatchlistAsync(cancellationToken).ConfigureAwait(false);
+            _watchlistUnavailable = read is null;
+            return read;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        // 🔴 PR #1041 の監査 F6: 供給口自身の打ち切り（呼び出し側が止めていないのに出る OperationCanceledException）も不明へ縮退する。
+        // 種類で除外すると、市場監視の遅延だけで判断全体が中断される。止めるのは呼び出し側のキャンセルのときだけである。
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "監視銘柄の照会に失敗しました（プロンプトには不明と書きます）: {Symbol}", trigger.Symbol);
+            _watchlistUnavailable = true;
             return null;
         }
     }

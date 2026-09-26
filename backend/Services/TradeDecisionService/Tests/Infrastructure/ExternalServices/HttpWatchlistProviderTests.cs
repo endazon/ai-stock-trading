@@ -173,6 +173,51 @@ public class HttpWatchlistProviderTests
         fallback.Calls.Should().Be(0);
     }
 
+    // T-10-1545（PR #1041 の監査 F1）: 🔴 200 でも**1 行でも欠けていれば一覧ごと不明**。空の行を黙って落とすと 0 件・一部欠落の一覧に、
+    // 欠けた市場を既定値で読むと日本株に、値域外の市場を通すと存在しない市場になり、プロンプトが「対象外」と事実でないことを書く。
+    [Theory]
+    [InlineData("""[{"symbol":null,"market":1}]""")]
+    [InlineData("""[{"symbol":"  ","market":1}]""")]
+    [InlineData("""[{"market":1}]""")]
+    [InlineData("""[{"symbol":"AAPL"}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":null}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":99}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":-1}]""")]
+    [InlineData("""[null]""")]
+    [InlineData("""[{"symbol":"AAPL","market":1},{"symbol":null,"market":1}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":1},{"symbol":"META"}]""")]
+    public async Task 判断のプロンプト用の口は欠けた行を含む応答を不明にする_否定形(string body)
+    {
+        var fallback = new CountingFallback();
+
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, body), fallback).GetAuthoritativeWatchlistAsync();
+
+        read.Should().BeNull("欠けた行を落として残りを一覧として見せない（不明と書く）");
+        fallback.Calls.Should().Be(0);
+    }
+
+    // T-10-1545: 同じ応答でも定時サイクル用の口は従来どおり寛容に読む（判断対象の決め方は本件で変えない）。
+    [Theory]
+    [InlineData("""[{"symbol":null,"market":1},{"symbol":"MSFT","market":1}]""", "MSFT", Market.UnitedStates)]
+    [InlineData("""[{"symbol":"AAPL"}]""", "AAPL", Market.Japan)]
+    public async Task 定時サイクル用の口は欠けた行を従来どおり寛容に読む(string body, string symbol, Market market)
+    {
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, body), new CountingFallback()).GetWatchlistAsync();
+
+        read.Should().Equal(new WatchedSymbol(symbol, market));
+    }
+
+    [Fact]
+    public async Task 定時サイクル用の口は_null_の行を含む応答を従来どおり既定へ倒す()
+    {
+        var fallback = new CountingFallback();
+
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, "[null]"), fallback).GetWatchlistAsync();
+
+        read.Should().BeEquivalentTo(FallbackSymbols);
+        fallback.Calls.Should().Be(1);
+    }
+
     [Fact]
     public async Task 判断のプロンプト用の口は応答しない上流を打ち切り不明を返す()
     {
