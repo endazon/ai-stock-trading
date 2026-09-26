@@ -17,10 +17,13 @@ namespace InformationCollectionService.Infrastructure.ExternalServices;
 //
 // 取得失敗は**例外として上位へ返す**——SourceFetchRunner がソース単位の欠測として記録し、
 // ADR-0020 決定3 の「ニュース系の全滅」判定へ渡す。**握りつぶすと欠測が判定に届かない。**
+//
+// #1015, IADR-0435: 対象銘柄は巡回ごとに決まる集合（IFinnhubSymbolSet）から取る。レート制限は現在値のソースと
+// **同じバケットを共有する**（同じ鍵・同じ自制レート。InformationSourceFactory が 1 つだけ作る）。
 public sealed class FinnhubCompanyNewsSource(
     HttpClient httpClient,
     string apiKey,
-    IReadOnlyList<string> symbols,
+    IFinnhubSymbolSet symbols,
     IRateLimiter rateLimiter,
     IClock clock,
     ILogger<FinnhubCompanyNewsSource> logger,
@@ -38,7 +41,7 @@ public sealed class FinnhubCompanyNewsSource(
         var succeededAtLeastOnce = false;
         Exception? lastFailure = null;
 
-        foreach (var symbol in symbols)
+        foreach (var symbol in symbols.Current)
         {
             await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
 

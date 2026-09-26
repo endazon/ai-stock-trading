@@ -457,6 +457,27 @@ public class BusinessMetricsTests
             .Should().Equal("identity-missing");
     }
 
+    // ---- T-10-1465（計器側）, FR-01, #1015, IADR-0435: 情報収集の Finnhub の対象銘柄の出所は outcome つきで 1 件ずつ、
+    // 後回しの数は 0 も含めて直近の値を記録する（0 を記録しないと回復が見えない）。隔離した Meter 名。
+    [Fact]
+    public void 情報収集のFinnhub対象銘柄の出所は出所つきで計上され_後回しの数は0も記録する()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordFinnhubSymbolSetResolution("watchlist");
+        metrics.RecordFinnhubSymbolSetResolution("last-known");
+        metrics.RecordFinnhubSymbolsDeferred(3);
+        metrics.RecordFinnhubSymbolsDeferred(0);
+
+        capture.SumOf(BusinessMetricNames.InformationCollectionFinnhubSymbolSetResolutions).Should().Be(2);
+        capture.TagValuesOf(BusinessMetricNames.InformationCollectionFinnhubSymbolSetResolutions, BusinessMetricNames.TagOutcome)
+            .Should().Equal("watchlist", "last-known");
+        capture.ValuesOf(BusinessMetricNames.InformationCollectionFinnhubSymbolsDeferred).Select(m => m.Value)
+            .Should().Equal(3d, 0d);
+    }
+
     // ---- T-10-787, FR-10, NFR-07, #942, IADR-0395: 追随の打ち切りのカウンタは 0 から始められ、語彙の外の理由を拒む ----
     // 🔴 起動時の 0 は「系列が在る」ことを作るためだけにあり、件数を 1 つも足さない（足すと平常時に鳴る）。
     [Fact]
@@ -527,6 +548,8 @@ public class BusinessMetricsTests
         metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
         metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
         metrics.RecordDriftAdoptionFollowUpAbandoned(BusinessMetrics.DriftFollowUpPositionsUnknown);
+        metrics.RecordFinnhubSymbolSetResolution("watchlist");
+        metrics.RecordFinnhubSymbolsDeferred(0);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。

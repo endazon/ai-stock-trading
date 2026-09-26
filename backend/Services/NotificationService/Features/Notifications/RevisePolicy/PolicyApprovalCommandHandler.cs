@@ -23,6 +23,11 @@ public sealed class PolicyApprovalCommandHandler(
     /// <summary>応答文の上限（Discord の 2000 文字に余白を残す）。</summary>
     public const int MaxLength = 1900;
 
+    /// <summary>この押下では確定を確かめられず、入れ替えの適用を試みなかったときの文言（#1029）。</summary>
+    internal const string NotAttemptedText =
+        "監視銘柄の入れ替えは適用していません（この操作では確定していないため）。"
+        + "この版を既に確定していて入れ替えがまだ適用されていないなら、設定画面から変更してください。";
+
     public async Task<PolicyApprovalResult> HandleAsync(DiscordCommandContext context, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -47,10 +52,13 @@ public sealed class PolicyApprovalCommandHandler(
         var confirm = await reportHandler
             .HandleAsync(context with { RawCommand = $"/report approve {key} {version}" }, cancellationToken)
             .ConfigureAwait(false);
+        // #1029, IADR-0433（2026-09-26 追記）: 窓口の二重押下の吸収（層1）はプロセスの中の状態で、同じプロセスで先に `/report approve`
+        // した版や、照会に失敗した後の押し直しもここへ来る（再起動の後なら決定 7 の回復で適用される）。適用を試みなかったことを
+        // 言い切ったうえで、確定済みで未適用なら設定画面から変えられることを案内する（Bot のプロセスの状態を利用者に推測させない）。
         if (!confirm.ConfirmedNow)
         {
             return new PolicyApprovalResult(
-                Fit(confirm.Message + "\n監視銘柄の入れ替えは適用していません（この操作では確定していないため）。"),
+                Fit(confirm.Message + "\n" + NotAttemptedText),
                 ConfirmedNow: false, WatchlistApplyStatus: null);
         }
 

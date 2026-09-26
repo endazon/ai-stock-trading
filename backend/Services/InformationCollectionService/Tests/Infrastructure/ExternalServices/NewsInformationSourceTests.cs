@@ -200,7 +200,7 @@ public class NewsInformationSourceTests
         new FinnhubCompanyNewsSource(
             new HttpClient(handler),
             "key",
-            symbols,
+            new FixedFinnhubSymbolSet(symbols),
             limiter ?? new CountingRateLimiter(),
             new StubClock(),
             NullLogger<FinnhubCompanyNewsSource>.Instance);

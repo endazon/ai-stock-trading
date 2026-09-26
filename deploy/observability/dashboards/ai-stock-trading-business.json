@@ -251,6 +251,25 @@
         "expr": "sum by (reason) (increase(ast_market_monitor_position_rows_degraded_total[1h]))",
         "legendFormat": "{{reason}}"
       }]
+    },
+    {
+      "id": 18,
+      "title": "情報収集: Finnhub の対象銘柄の出所（1h あたり）と、巡回に収まらず後回しにした銘柄数",
+      "description": "市場監視に結線したとき、情報収集は巡回ごとに監視銘柄（米国の銘柄）から Finnhub の対象を決める。outcome=watchlist 以外は監視銘柄を読めなかった巡回であり、last-known は直前に読めた対象、configured-fallback は構成の固定リストで収集している（監視銘柄の変更が収集に届いていない）。deferred は 1 巡回の要求が巡回間隔に収まらず後回しにした銘柄数で、平常時 0（出ていれば自制レートか巡回間隔の見直しが要る）。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 56, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum by (outcome) (increase(ast_information_collection_finnhub_symbol_set_resolutions_total[1h]))",
+          "legendFormat": "{{outcome}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "max(ast_information_collection_finnhub_symbols_deferred)",
+          "legendFormat": "deferred"
+        }
+      ]
     }
   ]
 }

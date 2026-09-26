@@ -331,6 +331,12 @@ services:
       # Finnhub Free（米国株の市況・60回/60秒固定ウィンドウ。IADR-0275 で実測確認済み）。
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
+      # FR-01/13, #1015, IADR-0435: Finnhub の対象銘柄の出所＝市場監視の GET /monitor/watchlist（取引判断と同じ口・s2s）。
+      # 設定すると巡回ごとに監視銘柄（米国の銘柄）を読み、下の固定リストは**監視銘柄を一度も読めていないときのフォールバックだけ**になる
+      # （読めなければ直前に読めた対象を使い続ける＝不明を空と扱わない）。1 巡回の要求は巡回間隔に収める（計画 ADR-0043 決定2 (b)）。
+      # fail-safe: 空=未結線＝下の固定リストが対象（従来どおり）。本番既定では実 URL を投入しない（取引判断の同名設定と足並みを揃える）。
+      - { name: MarketMonitor__BaseUrl, value: "" }
+      # 構成の固定リスト。上の MarketMonitor__BaseUrl を結線したら**フォールバック専用**（一度も読めていないときだけ使う）。
       - { name: Collection__Source__Finnhub__Symbols__0, value: "" }
       # ADR-0020 §結果 / IADR-0224 / IADR-0275: 日次上限は空=未実測（銘柄数上限を逆算しない）のまま。
       # 分次は実測済みだが、日次は実測セッションでも確定できなかった（継続観察が要る）。

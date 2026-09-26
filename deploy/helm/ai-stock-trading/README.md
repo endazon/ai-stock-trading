@@ -190,8 +190,26 @@ Finnhub の 429 のうち、`X-Ratelimit-Remaining` が残っているのに拒�
   超過を**警告ログ**と比率（`ast.finnhub.daily_request_limit_ratio_percent`）で出す（未設定なら比率は記録しない）。
   Grafana ダッシュボード「統制: Finnhub 日次要求見積り」。**送出は止めない**。
   各プロセスの見積り値は `GET /internal/introspection` の自己申告（`finnhub-daily-request-estimate`）でも読める。
-- 情報収集（`information-collection`）は `Collection:Source:Finnhub:Symbols` の実銘柄数から**厳密に**算出する
+- 情報収集（`information-collection`）は `Collection:Source:Finnhub:Symbols` の実銘柄数から起動時に算出する
   （申告不要）。上記 4 サービスは動的な実数を持たないため運用者申告に依る。
+  **［2026-09-26 / #1015］** `MarketMonitor__BaseUrl` を結線すると収集対象は監視銘柄に追随する（下節）ため、
+  起動時の見積りは**フォールバック用の固定リストの数**で数えており、実際の対象数とは一致しない（見積りの数え方の是正は別作業）。
+
+### 情報収集の Finnhub の対象銘柄（監視銘柄への追随。#1015 / IADR-0435）
+
+- `MarketMonitor__BaseUrl`（`information-collection`。本番既定は空、`values-local` は `http://market-monitor-service:8080`）を
+  結線すると、情報収集は**巡回ごとに**市場監視の `GET /monitor/watchlist` を `trading-service` のトークン（`ServiceAuth__*`）で照会し、
+  監視銘柄のうち**米国の銘柄**を監視銘柄の順で Finnhub の対象にする。SC-02・Discord の `/policy` で監視銘柄を変えると、次の巡回から
+  収集対象も変わる。空なら従来どおり `Collection__Source__Finnhub__Symbols__*` が対象。
+- **固定リストはフォールバック専用**になる: 監視銘柄を**一度も読めていない**ときだけ使う。一度読めた後に読めなくなったら、
+  直前に読めた対象を使い続ける（不明を空と扱わない）。どちらも警告ログを出し、
+  `ast.information_collection.finnhub_symbol_set_resolutions`（`outcome`）で数える。
+- **1 巡回を巡回間隔に収める**（計画 ADR-0043 決定2 (b)）: 1 巡回に問い合わせる銘柄数は
+  `RateLimitPerMinute × 巡回間隔（分） ÷ 1 銘柄あたりの要求数（finnhub / finnhub-news の有効数）` まで。超えた分は監視銘柄の順の
+  後ろから後回しにして警告し、`ast.information_collection.finnhub_symbols_deferred` に数を出す。`values-local`（30 回/分・300 秒・
+  finnhub だけ）なら 150 銘柄まで収まる。
+- `finnhub` と `finnhub-news` は**1 つの自制レート（`Collection__Source__Finnhub__RateLimitPerMinute`）を共有する**（同じ鍵。
+  以前はソースごとに別のバケットで、両方を有効にすると同じ鍵へ自制値の 2 倍を送り得た）。
 
 > **Discord の環境固有 ID**（`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping`）は**空既定**であり、
 > 下記「Discord の環境固有 ID」の env（`DISCORD_BOT_*`）で与える（[#245](https://github.com/endazon/ai-stock-trading/issues/245) /
