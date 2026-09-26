@@ -159,6 +159,39 @@ public class PolicyRevisionWiringTests
         report.GetProperty("version").GetInt32().Should().Be(3, "値域外の代理指定では保存しない");
     }
 
+    // T-10-1524（FR-14, FR-09, #1039）: 確定済みの報告書への /policy は、本番の組み立てでも 409 のまま（意味は変えない）で、
+    // `error` に改訂の手段（period を省略したときの対象・リスク設定画面）が載る。AI は呼ばれず、版も方針も変わらない。
+    [Fact]
+    public async Task 確定済みへの改訂は409のまま改訂の手段を返す()
+    {
+        var gateway = new RecordingGateway(ProposalJson);
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, gateway);
+        await SeedDraftAsync(factory);
+        (await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "積極的に", periodKey = PeriodKey, onBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var confirmedVersion = (await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}"))
+            .GetProperty("version").GetInt32();
+
+        var response = await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "もっと積極的に", periodKey = PeriodKey, onBehalfOf = "developer" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var error = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
+        error.Should().StartWith($"報告書 {PeriodKey} は確定済みのため改訂できません")
+            .And.Contain("period を省略した /policy は当日（JST）の日報")
+            .And.Contain("リスク設定画面");
+        gateway.Bodies.Should().ContainSingle("確定済みへの改訂では AI を呼ばない");
+
+        var report = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}");
+        report.GetProperty("version").GetInt32().Should().Be(confirmedVersion, "確定時の版のまま");
+        report.GetProperty("report").GetProperty("state").GetString().Should().Be("Confirmed");
+        report.GetProperty("report").GetProperty("policySummary").GetString().Should().Be("AI の改訂案: 押し目買いを優先する");
+    }
+
     // LLM ゲートウェイの応答を返し、要求本文を記録する一次ハンドラ。
     internal sealed class RecordingGateway(string proposalText) : HttpMessageHandler
     {

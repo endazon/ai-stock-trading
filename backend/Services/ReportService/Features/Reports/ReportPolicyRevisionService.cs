@@ -199,7 +199,7 @@ public sealed partial class ReportPolicyRevisionService(
             if (existing.Report.State == ReportState.Confirmed)
                 return RevisionTarget.Reject(PolicyRevisionResult.Rejected(
                     PolicyRevisionStatus.AlreadyConfirmed,
-                    $"報告書 {key} は確定済みのため改訂できません（確定済みの方針は変えられません）。", key));
+                    AlreadyConfirmedMessage(key, todaysDailyKey, today, schedule), key));
 
             return new RevisionTarget(
                 existing.Report, existing.Report.Kind, existing.Report.PolicySummary, ParentOf(existing.Report.BasedOn),
@@ -244,6 +244,49 @@ public sealed partial class ReportPolicyRevisionService(
         return new RevisionTarget(
             created, ReportKind.Daily, latest.Report.PolicySummary, ParentOf(latest.Report.BasedOn),
             Body: string.Empty, ExpectedVersion: 0, Created: true, Rejection: null);
+    }
+
+    // FR-14, FR-09, #1039: 確定済みに当たったときの返答。「改訂できない」だけでなく、**いつ・どうすれば改訂できるか**を添える。
+    // 状態（AlreadyConfirmed＝409）と「何も保存しない」は変えない。文の中身は本クラスと自動生成の実際の規則から導く（推測で書かない）:
+    // - 対象が当日（JST）の日報なら、明日（JST の暦日 +1）の日報の作られ方を示す。営業日で自動生成が有効なら、生成境界の時刻の後に
+    //   自動生成のドラフトができ（方針は直近の確定済み日報を引き継ぐ。ReportAutoGenerator の継続案）、それを /policy で改訂できる
+    //   （境界の前の /policy は AutoDailyPending）。そうでなければ /policy の実行時に直近の確定済み日報を土台に作る（下の新規作成の分岐）。
+    // - 対象が他の会話キーなら、period を省略した /policy の対象（当日の日報）を示す。
+    // - 監視銘柄は確定を待たずにリスク設定画面（SC-02）から変えられる。
+    // 🔴 通知サービスは `error` を 300 文字で切る（HttpPolicyRevisionController.MaxErrorLength）。会話キーが上限（32 文字）でも収まる長さに保つ。
+    public static string AlreadyConfirmedMessage(string key, string todaysDailyKey, DateOnly today, PolicyRevisionSchedule schedule)
+    {
+        ArgumentNullException.ThrowIfNull(schedule);
+
+        var sb = new StringBuilder();
+        sb.Append(CultureInfo.InvariantCulture, $"報告書 {key} は確定済みのため改訂できません（確定済みの方針は変えられません）。");
+        if (string.Equals(key, todaysDailyKey, StringComparison.Ordinal))
+        {
+            var tomorrow = today.AddDays(1);
+            var tomorrowKey = ReportPeriod.ExpectedKey(ReportKind.Daily, tomorrow);
+            if (schedule.AutoDailyEnabled && ReportSchedule.IsBusinessDay(tomorrow, schedule.Schedule))
+            {
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"明日（{tomorrow:yyyy-MM-dd}・JST・営業日）は {schedule.Schedule.DailyAt:HH:mm} JST 以降に、直近の確定済み日報の方針を引き継いだ");
+                sb.Append(CultureInfo.InvariantCulture, $"日報 {tomorrowKey} のドラフトが自動生成され、その後の /policy で改訂できます。");
+            }
+            else
+            {
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"明日（{tomorrow:yyyy-MM-dd}・JST）に /policy を実行すると、直近の確定済み日報を土台に日報 {tomorrowKey} のドラフトを作り、");
+                sb.Append("それを改訂できます。");
+            }
+        }
+        else
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"period を省略した /policy は当日（JST）の日報 {todaysDailyKey} を対象にします。");
+        }
+
+        if (schedule.AutoDailyEnabled)
+            sb.Append("自動生成の日報のドラフトがある日は、確定するまでそのドラフトを /policy で改訂できます。");
+
+        sb.Append("監視銘柄はいまでもリスク設定画面から変更できます。");
+        return sb.ToString();
     }
 
     // 上位方針は確定済みのものだけを渡す（未確定の上位を方針の根拠にしない。散文ドラフトと同じ扱い）。
