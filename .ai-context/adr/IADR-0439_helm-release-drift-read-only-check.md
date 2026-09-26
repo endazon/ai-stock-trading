@@ -46,12 +46,24 @@ plan_refs:
 3. **OpenD の Deployment は必ず 1 行で判定を出す**（変化なし／変化あり／チャートにだけ在る／リリースにだけ在る／どちらにも無い）。
    変わるなら終了コード 3、変わらない差は 1、差なし 0、使い方の誤り・helm の失敗は 2。配備の手順書（chart README）は
    「OpenD の Deployment は変わってはならない・3 なら配備しない」と明記する（Pod が作り直されると有人認証のセッションが切れる）。
-4. **読み取り専用**: helm は `get manifest` / `get values` / `template` / `version` だけを呼ぶ。`assertReadOnly` がそれ以外の
-   サブコマンドと `--dry-run` / `--validate` / `--post-renderer` 等を例外で拒む。kubectl は呼ばない。
-5. **秘密を出さない**: manifest の行をそのまま出さない。Secret は変わったことだけを示す。env は secretKeyRef を参照先ごと伏せ、
-   平文の value でも名前が機密らしいもの（Password・Secret・Token〔`…TokenEndpoint` を除く〕・ApiKey・ConnectionString・Webhook 等）と
-   資格情報入りの URL・`Password=` を含む値は伏せる。`helm get values` の結果は 0600 の一時ファイルにだけ書いて描画に使い、表示せず
-   （失敗時の stderr も出さない）、終わったら消す。
+4. **読み取り専用・許可した形だけ**: helm の引数列は `assertReadOnly` が**許可の列挙**で検める——サブコマンドは `get manifest` /
+   `get values` / `template` / `version`、フラグは `-n` / `-o yaml` / `-f` / `--is-upgrade` / `--no-hooks` / `--skip-tests` / `--short`
+   だけ、位置引数の数も形ごとに固定し、値が `-` で始まるものは拒む（禁止の列挙では将来の書き込み系フラグを拾えない）。利用者の与える
+   `--release` / `--namespace` は名前の書式（helm のリリース名・DNS ラベル）で、`--chart` / `--values` はローカルに実在するディレクトリ・
+   ファイルに限り（`-` 始まり・URL〔`scheme://`〕は拒む）、helm を呼ぶ前に検める。kube の接続先はフラグではなく環境変数
+   （`KUBECONFIG` / `HELM_KUBECONTEXT`）で選ぶ。helm の実行ファイルは `--helm` / `HELM_RELEASE_DRIFT_HELM` で運用者が選べる
+   （運用者の選択であり、その実行ファイルの振る舞いは本検査器の保証の外。手順書に書く）。kubectl は呼ばない。
+5. **秘密を出さない・迷ったら伏せる**: manifest の行をそのまま出さない。Secret は変わったことだけを示す。env は secretKeyRef を参照先ごと伏せる。
+   平文の value は、(a) キー名を語に分け（`__` `_` `.` `:` `-` と camelCase の境目）機密らしい語（key / keys / pass / pwd / sig / salt /
+   private / cred と、部分一致の secret / password / passphrase / token / apikey / accesskey / privatekey / credential / bearer /
+   webhook / dsn / connectionstring / cookie / signature。connection＋string の並びも）を含むもの、(b) 値が URL の userinfo
+   （`://` の後の最初の空白までに `@`）・`/webhooks/<id>/<token>`・クエリの鍵（token / key / secret / sig / code 等）・トークンらしい
+   パス要素・接続文字列の `Pass=` / `Pwd=` / `Password=` / `AccountKey=` / `SharedAccessKey=` 等・トークンらしい長いランダム文字列
+   （20 字以上で英字と数字を含む／32 字以上の英数字）のものを伏せる。例外は資格情報でないと分かっている形だけ
+   （`…TokenEndpoint` / `…TokenUrl` と LLM 単価の `…Per1kTokens`）。
+   `helm get values` の結果は OS の一時ディレクトリ（`helm-release-drift-*`）に**実行中だけ**置き、描画にだけ使い、表示せず
+   （失敗時の stderr も出さない）、正常終了・例外・SIGINT / SIGTERM / SIGHUP で消す。`mode 0600` は POSIX でだけ効く
+   （Windows では利用者の一時ディレクトリの ACL に従う）。強制終了では消せない（手順書に後始末を書く）。
 6. **自己試験は fixture だけで走る**（`--self-test`・`scripts/fixtures/helm-release-drift/`）。helm もクラスタも使わない。
    `scripts.repo.test.js` から走らせ、CI の `scripts-tests` に載せる（ワークフローは変えない）。
 7. **YAML は外部依存ゼロの部分集合で読む**（helm が描くブロック形式と単純なフロー形式）。スクリプト群の「依存ゼロ」の方針に従う。
@@ -74,3 +86,14 @@ plan_refs:
   values-local.yaml が勝ち、実際の配備と食い違う差が出得る（手順書に注意を書いた）。
 - env・image 以外の差は行数だけを出す（中身は出さない）。ブロックスカラーの中のコメント行だけの変更は拾わない。
 - 実クラスタでの走行は本 PR では行っていない（検証は fixture と、オフラインの `helm template` 同士の比較だけ）。
+- 伏せる規則は発見的であり、未知の形の秘密（語にも値の形にも当たらない平文）は出得る。伏せる側へ倒してあるため、逆に機密でない設定が
+  伏せられて差が読めないことがある（その項目は `helm get manifest` を手元で見る）。
+- helm は同期で呼ぶため、helm の実行中に届いたシグナルは helm が終わってから処理される（一時ファイルはその時点で消える）。
+
+## 経過（同じ PR の中での是正）
+
+- **2026-09-26（PR #1043 の監査 NO-GO）**: F1＝資格情報の伏せ方が狭かった（userinfo はユーザー名と `/` を含まないパスワードの形だけ、
+  キー名は部分一致の少数語だけ。プローブ 10 件中 9 件が平文で出た）→ 決定 5 を上の形へ広げ、10 件と追加分を見張り値の fixture
+  （`scripts/fixtures/helm-release-drift/credential-cases.js`。秘密の走査に当たらないよう連結で組む）と自己試験に入れた。
+  F2＝読み取り専用の閂が禁止の列挙だった → 決定 4 を許可の列挙と利用者の値の検めへ改めた。F3＝Windows で `mode 0600` が効かない・
+  シグナルで一時ファイルが残る → シグナルのハンドラで消し、置き場所と限界を手順書に書いた。

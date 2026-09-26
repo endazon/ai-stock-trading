@@ -17,11 +17,22 @@
  * 出すもの: 追加・削除・変更された資源、ワークロード（Deployment 等）のコンテナごとの env のキーの追加・削除・変更と
  * image の変更、それ以外の差分の行数。OpenD の Deployment が変わるかを**必ず 1 行で示す**（変わるなら終了コード 3）。
  *
- * 🔴 **読み取り専用**: helm は `get manifest` / `get values` / `template` / `version` しか呼ばない（assertReadOnly が
- *    それ以外を例外で拒む）。upgrade・install・rollback・apply は呼ばない。kubectl は呼ばない。
- * 🔴 **秘密の値を出さない**: manifest の行をそのまま出さない。Secret は変わったことだけを示し中身を出さない。
- *    env は secretKeyRef（参照先を含め）を伏せる。平文の value でもキー名が機密らしいもの・資格情報入りの URL は伏せる。
- *    `helm get values` の結果は 0600 の一時ファイルへ書いて描画にだけ使い、表示せず、終わったら消す。
+ * 🔴 **読み取り専用**: helm の引数は**許可した形だけ**で組む（assertReadOnly が引数列を形ごと検める。サブコマンドは
+ *    `get manifest` / `get values` / `template` / `version`、フラグは `-n` / `-o yaml` / `-f` / `--is-upgrade` / `--no-hooks` /
+ *    `--skip-tests` / `--short` だけ。値が `-` で始まるもの・それ以外のフラグは例外）。upgrade・install・rollback・apply は呼ばない。
+ *    kubectl は呼ばない。利用者の与える値（--release / --namespace / --chart / --values 等）も `-` で始まるもの・URL・
+ *    存在しないパス・名前の書式外を拒む。kube の接続先は環境変数（KUBECONFIG / HELM_KUBECONTEXT）で選ぶ（フラグは通さない）。
+ *    呼ぶ helm の実行ファイルは `--helm <path>` / 環境変数 HELM_RELEASE_DRIFT_HELM で運用者が選べる（運用者の選択であり、
+ *    その実行ファイルが何をするかは本スクリプトの保証の外）。
+ * 🔴 **秘密の値を出さない（迷ったら伏せる）**: manifest の行をそのまま出さない。Secret は変わったことだけを示し中身を出さない。
+ *    env は secretKeyRef（参照先を含め）を伏せる。平文の value でも、キー名が機密らしいもの（名前を語に分けて key / apikey /
+ *    accesskey / dsn / bearer / token / secret / pass / pwd / credential / webhook 等を見る）と、値が機密らしいもの（URL の
+ *    userinfo・`/webhooks/<id>/<token>` の形・クエリの鍵・トークンらしい長いパス要素・接続文字列の Pass= / Pwd= / Password= /
+ *    AccountKey= 等・トークンらしい長いランダム文字列）は伏せる。
+ * 🔴 **リリースの values の一時ファイル**: `helm get values` の結果は OS の一時ディレクトリ（`os.tmpdir()` の
+ *    `helm-release-drift-*`）へ**実行中だけ**置き、描画にだけ使い、表示しない。正常終了・例外・SIGINT / SIGTERM / SIGHUP で消す。
+ *    `mode 0600` は POSIX でだけ効く（Windows では効かず、利用者の一時ディレクトリの ACL に従う）。Windows で強制終了
+ *    （taskkill /F 等）された場合は消せないので、残った `helm-release-drift-*` を手で消す。
  *
  * 使い方:
  *   node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading \
@@ -45,11 +56,24 @@ const DEFAULT_CHART = path.join(REPO_ROOT, 'deploy', 'helm', 'ai-stock-trading')
 const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'helm-release-drift');
 const WORKLOAD_KINDS = new Set(['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob', 'ReplicaSet', 'Pod']);
 
-// 平文の value でも伏せるキー名（大文字小文字を区別しない）。伏せすぎは安全側。
-// `…TokenEndpoint`（トークンを取りに行く URL。資格情報ではない）だけは伏せない——突合で見たい設定そのものである。
-const SENSITIVE_ENV_NAME = /(password|passwd|pwd|secret|token(?!_*endpoint)|api[_-]?key|connectionstring|credential|private|webhook|cookie)/i;
-// 平文の value でも伏せる値（資格情報入りの URL・接続文字列のパスワード）。
-const SENSITIVE_ENV_VALUE = [/:\/\/[^/\s:@]+:[^/\s@]+@/, /password\s*=/i, /pwd\s*=/i];
+// ── 伏せる規則（PR #1043 の監査 F1。**迷ったら伏せる**）──
+// キー名は語に分けて見る（`__` `_` `.` `:` `-` の区切りと camelCase の境目。`Llm__AccessKey` → llm / access / key）。
+// 語の一部に含まれれば伏せる語（`MySecret`・`apikey` のように区切りが無くても拾う）。
+const SENSITIVE_NAME_PARTS = [
+  'secret', 'password', 'passwd', 'passphrase', 'token', 'apikey', 'accesskey', 'secretkey', 'privatekey', 'credential',
+  'bearer', 'webhook', 'dsn', 'connectionstring', 'cookie', 'signature',
+];
+// 語そのものが一致すれば伏せる語（部分一致にすると `passthrough`・`keyboard` 等まで拾うため）。
+const SENSITIVE_NAME_WORDS = new Set(['key', 'keys', 'pass', 'pwd', 'pw', 'sig', 'salt', 'private', 'cred', 'creds']);
+// 例外: トークンを**取りに行く**先（`…TokenEndpoint` / `TOKEN_ENDPOINT` / `…TokenUrl`）は資格情報ではなく、突合で見たい設定そのもの。
+const TOKEN_LOCATION_WORDS = new Set(['endpoint', 'url', 'uri']);
+// 値の形で伏せる規則。
+// `scheme://…@`。userinfo に `/` を含む（規格外だが実在する。パスワードに `/` を含む AMQP の URL 等）形も拾うため、`://` の後の最初の空白までに
+// `@` があれば伏せる（パスの中の `@` も伏せる側に倒れる＝迷ったら伏せる）。ユーザー名だけ・空のユーザー名も拾う。
+const URL_USERINFO = /:\/\/[^\s@]*@/;
+const WEBHOOK_PATH = /\/webhooks?\/[^/\s?#]+\/[^/\s?#]+/i; // `/webhooks/<id>/<token>`（Discord・Slack 等）
+const URL_QUERY_SECRET = /[?&#;][^=&#\s]*(token|key|secret|sig|signature|password|passwd|pwd|auth|code|credential)[^=&#\s]*=/i;
+const CONN_STRING_SECRET = /(^|[;,\s])\s*(pass|passwd|password|pwd|accountkey|sharedaccesskey|sharedaccesssignature|secret|clientsecret|apikey|token|key)\s*=/i;
 const MAX_VALUE_DISPLAY = 200;
 
 // ───────────────────────── YAML の部分集合 ─────────────────────────
@@ -452,9 +476,52 @@ function compareManifests(liveText, renderedText, { opendName = 'opend' } = {}) 
 
 // ───────────────────────── 表示（秘密を出さない） ─────────────────────────
 
+// キー名を語へ分ける（`ServiceAuth__TokenEndpoint` → serviceauth? ではなく service / auth / token / endpoint）。
+function nameWords(name) {
+  return String(name)
+    .split(/[_.:\-\s]+/)
+    .flatMap((p) => p.split(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/))
+    .map((w) => w.toLowerCase())
+    .filter(Boolean);
+}
+
+function isSensitiveName(name) {
+  const words = nameWords(name);
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (/^token(endpoint|url|uri)$/.test(w)) continue;
+    if (w === 'token' && TOKEN_LOCATION_WORDS.has(words[i + 1])) continue;
+    // 例外: LLM の単価の単位（`…InputPer1kTokens`）。トークン数の単位であって資格情報ではない（値の形の検めは別に掛かる）。
+    if (/^tokens?$/.test(w) && /^per\d*k?$/.test(words[i - 1] ?? '')) continue;
+    if (SENSITIVE_NAME_WORDS.has(w)) return true;
+    if (SENSITIVE_NAME_PARTS.some((p) => w.includes(p))) return true;
+    if (w === 'connection' && /^string/.test(words[i + 1] ?? '')) return true;
+  }
+  return false;
+}
+
+// トークンらしい文字列（20 字以上・区切り文字や空白を含まない・英字と数字の両方を含む／32 字以上の英数字）。
+function looksLikeToken(s) {
+  if (/^[A-Za-z0-9_-]{32,}$/.test(s)) return true;
+  return s.length >= 20 && /^[A-Za-z0-9+/=_.~-]+$/.test(s) && /[A-Za-z]/.test(s) && /\d/.test(s);
+}
+
+function isSensitiveValue(value) {
+  if (value === null || value === undefined) return false;
+  const v = String(value);
+  if (URL_USERINFO.test(v) || WEBHOOK_PATH.test(v) || URL_QUERY_SECRET.test(v) || CONN_STRING_SECRET.test(v)) return true;
+  if (looksLikeToken(v.trim())) return true;
+  // URL のパス要素がトークンらしい（`https://host/hooks/AbC123…` 等）。
+  const m = /^[a-z][a-z0-9+.-]*:\/\/[^/\s]*(\/[^\s?#]*)?/i.exec(v.trim());
+  const tokenSegment = (seg) =>
+    /^[A-Za-z0-9_-]{32,}$/.test(seg) || (/^[A-Za-z0-9_.~-]{16,}$/.test(seg) && /[A-Za-z]/.test(seg) && /\d/.test(seg));
+  if (m && m[1] && m[1].split('/').some(tokenSegment)) return true;
+  return false;
+}
+
+/** 平文の value を伏せるか（名前・値のどちらかが機密らしければ伏せる。迷ったら伏せる）。 */
 function isSensitivePlain(name, value) {
-  if (SENSITIVE_ENV_NAME.test(name)) return true;
-  return value !== null && SENSITIVE_ENV_VALUE.some((re) => re.test(value));
+  return isSensitiveName(name) || isSensitiveValue(value);
 }
 
 function describeEnv(name, e) {
@@ -544,65 +611,161 @@ function exitCodeOf(result) {
 
 // ───────────────────────── helm（読み取り専用） ─────────────────────────
 
-/** 読み取り専用の helm のサブコマンドだけを許す。それ以外は例外。 */
+// helm の引数は**許可した形だけ**を通す（PR #1043 の監査 F2。禁止の列挙ではなく許可の列挙）。
+// value = 値を 1 つ取るフラグ（値は `-` で始まってはならない）・bool = 値を取らないフラグ・配列 = 値の許可リスト。
+const HELM_SHAPES = {
+  'get manifest': { positional: 1, flags: { '-n': 'value' } },
+  'get values': { positional: 1, flags: { '-n': 'value', '-o': ['yaml'] } },
+  template: {
+    positional: 2,
+    flags: { '-n': 'value', '-f': 'value', '--is-upgrade': 'bool', '--no-hooks': 'bool', '--skip-tests': 'bool' },
+  },
+  version: { positional: 0, flags: { '--short': 'bool' } },
+};
+
+/** helm の引数列が許可した読み取り専用の形か。違えば例外（呼ばない）。 */
 function assertReadOnly(args) {
-  const [a, b] = args;
-  const allowed = a === 'template' || a === 'version' || (a === 'get' && (b === 'manifest' || b === 'values'));
-  if (!allowed) throw new Error(`helm ${[a, b].filter(Boolean).join(' ')} は読み取り専用ではないため呼びません`);
-  const banned = args.find((x) => /^--(dry-run|validate|post-renderer|atomic|wait|force)/.test(String(x)));
-  if (banned) throw new Error(`helm の ${banned} は使いません（読み取り専用・クラスタへの書き込みをしない）`);
+  const list = args.map(String);
+  const key = list[0] === 'get' ? `get ${list[1] ?? ''}` : list[0];
+  const shape = HELM_SHAPES[key];
+  if (!shape) throw new Error(`helm ${list.slice(0, 2).join(' ')} は読み取り専用の形ではないため呼びません`);
+  let positional = 0;
+  for (let i = key.startsWith('get ') ? 2 : 1; i < list.length; i++) {
+    const t = list[i];
+    if (!t.startsWith('-')) {
+      positional++;
+      continue;
+    }
+    const kind = shape.flags[t];
+    if (!kind) throw new Error(`helm ${key} のフラグ ${t.split('=')[0]} は許可していません（読み取り専用の形だけを通す）`);
+    if (kind === 'bool') continue;
+    const v = list[++i];
+    if (v === undefined || v === '' || v.startsWith('-')) {
+      throw new Error(`helm ${key} の ${t} に値が無いか "-" で始まります（読み取り専用の形だけを通す）`);
+    }
+    if (Array.isArray(kind) && !kind.includes(v)) throw new Error(`helm ${key} の ${t} は ${kind.join(' / ')} だけです（読み取り専用の形だけを通す）`);
+  }
+  if (positional !== shape.positional) {
+    throw new Error(`helm ${key} の位置引数は ${shape.positional} 個です（${positional} 個。読み取り専用の形だけを通す）`);
+  }
+}
+
+// 利用者の与える値の検め（F2）。値は表示しない（URL の userinfo 等に秘密が入り得るため）。
+const RELEASE_NAME = /^[a-z0-9]([-a-z0-9]{0,51}[a-z0-9])?$/;
+const K8S_NAME = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+function assertLocalPath(flag, p, kind) {
+  if (typeof p !== 'string' || p === '') throw new Error(`${flag} が空です`);
+  if (p.startsWith('-')) throw new Error(`${flag} に "-" で始まる値は使えません`);
+  if (HAS_SCHEME.test(p)) throw new Error(`${flag} に URL は使えません（ローカルの${kind === 'dir' ? 'ディレクトリ' : 'ファイル'}だけ）`);
+  const st = fs.statSync(p, { throwIfNoEntry: false });
+  if (!st || (kind === 'dir' ? !st.isDirectory() : !st.isFile())) {
+    throw new Error(`${flag} の${kind === 'dir' ? 'ディレクトリ' : 'ファイル'}が見つかりません`);
+  }
+}
+
+/** --release / --namespace / --chart / --values を検める（書式外・`-` 始まり・URL・存在しないパスは例外）。 */
+function validateHelmTarget({ release, namespace, chart, values = [] }) {
+  if (!RELEASE_NAME.test(release ?? '')) throw new Error('--release の書式が不正です（helm のリリース名: 英小文字・数字・ハイフン・53 字まで）');
+  if (!K8S_NAME.test(namespace ?? '')) throw new Error('--namespace の書式が不正です（英小文字・数字・ハイフン・63 字まで）');
+  assertLocalPath('--chart', chart, 'dir');
+  for (const v of values) assertLocalPath('--values', v, 'file');
 }
 
 function defaultRunner(helmBin) {
   return (args, { quiet = false } = {}) => {
     assertReadOnly(args);
     try {
-      return execFileSync(helmBin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+      return execFileSync(helmBin, args, {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024, timeout: 120_000,
+      });
     } catch (e) {
       const detail = quiet ? '' : `: ${String(e.stderr ?? e.message).trim().slice(0, 500)}`;
-      const err = new Error(`helm ${args.slice(0, 2).join(' ')} が失敗しました（exit ${e.status ?? '?'}）${detail}`);
+      const err = new Error(`helm ${args.slice(0, 2).join(' ')} が失敗しました（exit ${e.status ?? e.signal ?? '?'}）${detail}`);
       err.helmFailure = true;
       throw err;
     }
   };
 }
 
+// 一時ディレクトリを作り、fn の後（正常・例外）と SIGINT / SIGTERM / SIGHUP で消す（F3）。
+// helm は同期で呼ぶため、helm の実行中に届いたシグナルは helm が終わってから処理される（Ctrl+C は helm にも届くので helm はすぐ終わる）。
+// その時点で finally が既に消しているか、ハンドラが消して終了する。POSIX 以外では mode 0600 は効かない（冒頭の注記）。
+const CLEANUP_SIGNALS = [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]];
+
+function withPrivateTempDir(fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-release-drift-'));
+  const cleanup = () => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      process.stderr.write(`[helm-release-drift] 一時ディレクトリを消せませんでした（手で消してください）: ${dir}（${e.code ?? e.message}）\n`);
+    }
+  };
+  const handlers = CLEANUP_SIGNALS.map(([sig, code]) => {
+    const h = () => {
+      cleanup();
+      process.exit(code);
+    };
+    process.on(sig, h);
+    return [sig, h];
+  });
+  try {
+    return fn(dir);
+  } finally {
+    cleanup();
+    for (const [sig, h] of handlers) process.removeListener(sig, h);
+  }
+}
+
 /**
  * 稼働側とチャート側の manifest を helm から集める（読み取り専用）。runner は差し替え可能（試験用）。
- * `helm get values` の結果は表示しない（quiet）・0600 の一時ファイルにだけ書き、終わったら消す。
+ * `helm get values` の結果は表示しない（quiet）・一時ファイルにだけ書き、終わったら（シグナルでも）消す。
  */
 function collectFromHelm({ release, namespace, chart = DEFAULT_CHART, values = [] }, runner) {
+  validateHelmTarget({ release, namespace, chart, values });
   const live = runner(['get', 'manifest', release, '-n', namespace]);
   const userValues = runner(['get', 'values', release, '-n', namespace, '-o', 'yaml'], { quiet: true });
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-release-drift-'));
-  const valuesFile = path.join(dir, 'release-values.yaml');
-  try {
+  return withPrivateTempDir((dir) => {
+    const valuesFile = path.join(dir, 'release-values.yaml');
     fs.writeFileSync(valuesFile, userValues, { mode: 0o600 });
     const args = ['template', release, chart, '-n', namespace, '--is-upgrade', '--no-hooks', '--skip-tests', '-f', valuesFile];
     for (const v of values) args.push('-f', v);
     const rendered = runner(args);
     return { live, rendered };
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  });
 }
 
 // ───────────────────────── 自己試験（fixture だけ・helm を呼ばない） ─────────────────────────
 
-// fixture に置いた偽の秘密（見張り値）。Secret の base64 は実行時に求める（base64 の字面をソースへ置かない）。
+// fixture に置いた偽の秘密（見張り値）。**大文字の FIXTURE は出力に 1 つも出てはならない**（Secret の名前は小文字の fixture）。
+// Secret の base64 は実行時に求める（base64 の字面をソースへ置かない）。
 const FIXTURE_SENTINEL = 'FIXTURE-SECRET-SENTINEL';
 const SELF_TEST_SENTINELS = [
-  FIXTURE_SENTINEL,
+  'FIXTURE',
   Buffer.from(FIXTURE_SENTINEL).toString('base64'),
   'fixture-hunter2',
   'fixture-webhook-token',
 ];
 
+// 資格情報の見張り値（F1。`scripts/fixtures/helm-release-drift/credential-cases.js`）から 1 つの Deployment を描く。
+function probeDeployment(cases, suffix = '') {
+  const env = cases.flatMap((c) => [`            - name: ${c.name}`, `              value: ${JSON.stringify(`${c.value}${suffix}`)}`]);
+  return [
+    '---', 'apiVersion: apps/v1', 'kind: Deployment', 'metadata:', '  name: credential-probe', '  namespace: ai-stock-trading',
+    'spec:', '  template:', '    spec:', '      containers:', '        - name: probe', '          image: "probe:1"',
+    ...(env.length ? ['          env:', ...env] : []),
+  ].join('\n');
+}
+
 function selfTest() {
   const live = fs.readFileSync(path.join(FIXTURE_DIR, 'live.yaml'), 'utf8');
   const rendered = fs.readFileSync(path.join(FIXTURE_DIR, 'rendered.yaml'), 'utf8');
+  const creds = require(path.join(FIXTURE_DIR, 'credential-cases.js'));
   const checks = [];
   const check = (name, cond) => checks.push({ name, ok: Boolean(cond) });
+  const leaks = (text) => SELF_TEST_SENTINELS.filter((s) => text.includes(s));
 
   const same = compareManifests(live, live);
   check('同じ manifest は差なし・exit 0', !same.drift && exitCodeOf(same) === 0 && same.opend.status === 'unchanged');
@@ -620,7 +783,19 @@ function selfTest() {
   check('Secret は変わったことだけを示す', text.includes('Secret ast-fixture-secret（ai-stock-trading）（Secret。内容は表示しない）'));
   check('secretKeyRef の変更は伏せる', text.includes('env 変更: ServiceAuth__ClientSecret（secretKeyRef を含むため、値と参照先は表示しない）'));
   check('機密らしい平文の value は伏せる', text.includes('Broker__Password = 平文の value（機密らしいため値は表示しない）'));
-  check('秘密の値を 1 つも出さない', SELF_TEST_SENTINELS.every((s) => !text.includes(s)));
+  check('秘密の値を 1 つも出さない', leaks(text).length === 0);
+
+  // F1: 資格情報入りの URL・機密らしい名前・接続文字列・トークンらしい値を、追加・変更・削除のどれでも伏せる。
+  const empty = probeDeployment([]);
+  const all = [...creds.sensitive, ...creds.visible];
+  const added = formatReport(compareManifests(empty, probeDeployment(all)));
+  const changed = formatReport(compareManifests(probeDeployment(all, '-old'), probeDeployment(all)));
+  const removed = formatReport(compareManifests(probeDeployment(all), empty));
+  check(`資格情報の見張り値 ${creds.sensitive.length} 件を追加・変更・削除のどれでも出さない`,
+    [added, changed, removed].every((t) => leaks(t).length === 0)
+    && creds.sensitive.every((c) => added.includes(`env 追加: ${c.name} = 平文の value（機密らしいため値は表示しない）`)));
+  check(`機密でない ${creds.visible.length} 件は値を出す（伏せすぎて突合できなくしない）`,
+    creds.visible.every((c) => added.includes(`env 追加: ${c.name} = ${JSON.stringify(c.value)}`)));
 
   const opendChanged = rendered.replace('value: "11111"', 'value: "22222"');
   const o = compareManifests(live, opendChanged);
@@ -644,7 +819,10 @@ function parseArgs(argv) {
     const k = argv[i];
     const next = () => {
       if (i + 1 >= argv.length) throw new Error(`${k} に値がありません`);
-      return argv[++i];
+      const v = argv[++i];
+      // F2: 値が "-" で始まるもの（別のフラグの取り違え・helm へのフラグの紛れ込み）は受けない。
+      if (v.startsWith('-')) throw new Error(`${k} に "-" で始まる値は使えません`);
+      return v;
     };
     if (k === '--self-test') a.selfTest = true;
     else if (k === '--help' || k === '-h') a.help = true;
@@ -656,8 +834,9 @@ function parseArgs(argv) {
     else if (k === '--live') a.live = next();
     else if (k === '--rendered') a.rendered = next();
     else if (k === '--helm') a.helm = next();
-    else throw new Error(`未知の引数: ${k}`);
+    else throw new Error(`未知の引数: ${k.split('=')[0]}`);
   }
+  if (!K8S_NAME.test(a.opendName)) throw new Error('--opend-name の書式が不正です');
   return a;
 }
 
@@ -680,6 +859,8 @@ function main(argv) {
   try {
     if (a.live || a.rendered) {
       if (!a.live || !a.rendered) throw new Error('--live と --rendered は両方を指定してください');
+      assertLocalPath('--live', a.live, 'file');
+      assertLocalPath('--rendered', a.rendered, 'file');
       live = fs.readFileSync(a.live, 'utf8');
       rendered = fs.readFileSync(a.rendered, 'utf8');
     } else {
@@ -706,9 +887,15 @@ module.exports = {
   compareManifests,
   formatReport,
   exitCodeOf,
+  isSensitiveName,
+  isSensitiveValue,
   assertReadOnly,
+  validateHelmTarget,
+  parseArgs,
   collectFromHelm,
+  probeDeployment,
   selfTest,
   main,
   SELF_TEST_SENTINELS,
+  DEFAULT_CHART,
 };

@@ -81,6 +81,18 @@ plan_refs:
 - 🔴 **実クラスタに対しては走らせていない**（作業の制約）。検証は fixture と、オフラインの `helm template` 同士（既定の values と
   values-local.yaml＋OpenD 有効）の比較だけ。
 
+## 監査の是正（2026-09-26・PR #1043 の監査 NO-GO）
+
+| 指摘 | 是正 | 試験 |
+| --- | --- | --- |
+| F1（中）資格情報の伏せ方が狭い（プローブ 10 件中 9 件が平文で出た） | キー名を語に分けて機密らしい語で判定（`__` の区切り・camelCase）。値は URL の userinfo（`://` の後の最初の空白までの `@`。`/` を含むパスワードも）・`/webhooks/<id>/<token>`・クエリの鍵・トークンらしいパス要素・接続文字列の `Pass=` / `Pwd=` / `Password=` / `AccountKey=` 等・トークンらしい長い値で判定。例外は `…TokenEndpoint` / `…TokenUrl` / `…Per1kTokens` だけ。プローブ 10 件＋追加 10 件を `credential-cases.js`（連結で組む見張り値）に置き、機密でない 9 件を陰性対照にした | T-10-1529（件ごとの Theory・追加／変更／削除）・自己試験 2 件（T-10-1533 が走らせる） |
+| F2（低）読み取り専用の閂が禁止の列挙 | 引数列を許可の列挙で検める（サブコマンド・フラグ・位置引数の数・`-` 始まりの値）。`--release` / `--namespace` の書式、`--chart` / `--values` の `-` 始まり・URL・実在を helm の前に検める。`--helm` / `HELM_RELEASE_DRIFT_HELM` は運用者の選択として手順書に書く | T-10-1532・T-10-1533 |
+| F3（低）Windows で `mode 0600` が効かない・シグナルで一時ファイルが残る | SIGINT / SIGTERM / SIGHUP のハンドラで消して終了（130 / 143 / 129）。置き場所（OS の一時ディレクトリ・実行中だけ）と強制終了の後始末を手順書に書いた | T-10-1532（シグナルごとの Theory） |
+
+- 変異注入（11 種＋secretKeyRef の 2 種）はいずれも赤になる（結果は `docs/tests/FR-10_risk-controls-tests.md` の本節）。
+- テスト仕様書の trace ブロック: #1040 が develop に入ったため衝突の懸念が無くなり、本 PR で IADR-0439・本仕様書・#1022 を足した
+  （上の「母集合」の除外は解消）。
+
 ## 完了の定義
 
 - `node scripts/scripts.test.js` と `node scripts/helm-release-drift.js --self-test` が通る。

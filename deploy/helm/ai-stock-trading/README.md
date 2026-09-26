@@ -118,9 +118,21 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 
 出力の読み方と注意:
 
-- **秘密の値は出さない。** manifest の行はそのまま出さない。Secret は「変わった」ことだけを示す。env は secretKeyRef を参照先ごと伏せ、
-  平文の value でも名前が機密らしいもの（Password・Secret・Token・ApiKey・ConnectionString 等。`…TokenEndpoint` は伏せない）と
-  資格情報入りの URL は伏せる。リリースの values は 0600 の一時ファイルにだけ書いて描画に使い、表示せず、終わったら消す。
+- **秘密の値は出さない（迷ったら伏せる）。** manifest の行はそのまま出さない。Secret は「変わった」ことだけを示す。env は secretKeyRef を
+  参照先ごと伏せる。平文の value でも、キー名を語に分けて機密らしい語（key / apikey / accesskey / dsn / bearer / token / secret / pass /
+  pwd / credential / webhook / connectionstring 等。`…TokenEndpoint` と LLM 単価の `…Per1kTokens` は伏せない）を含むもの、値が
+  URL の userinfo（`scheme://…@`）・`/webhooks/<id>/<token>`・クエリの鍵・トークンらしいパス要素・接続文字列の `Pass=` / `Pwd=` /
+  `Password=` / `AccountKey=` 等・トークンらしい長いランダム文字列のものは伏せる。伏せすぎて差が読めない項目は
+  `helm get manifest` を手元で見る（画面に出すときは秘密に注意）。
+- **リリースの values の一時ファイル**: `helm get values` の結果は OS の一時ディレクトリ（Linux / macOS は `$TMPDIR` か `/tmp`、
+  Windows は `%TEMP%`）の `helm-release-drift-*` に**実行中だけ**置き、描画にだけ使って表示しない。正常終了・失敗・Ctrl+C（SIGINT）・
+  SIGTERM・SIGHUP で消す。`mode 0600` は Linux / macOS でだけ効き、Windows では利用者の一時ディレクトリの権限に従う。
+  強制終了（`kill -9`・`taskkill /F`）では消せないので、残った `helm-release-drift-*` を手で消す。
+- **helm の引数は許可した形だけ**（`get manifest` / `get values` / `template` と、`-n` / `-o yaml` / `-f` / `--is-upgrade` /
+  `--no-hooks` / `--skip-tests`）。`--release` / `--namespace` / `--chart` / `--values` の値は、書式外・`-` で始まるもの・URL・
+  存在しないパスを拒む（exit 2）。kube の接続先は `--kubeconfig` 等のフラグではなく環境変数 `KUBECONFIG` / `HELM_KUBECONTEXT` で選ぶ。
+  呼ぶ helm は `--helm <path>` か環境変数 `HELM_RELEASE_DRIFT_HELM` で差し替えられる（運用者が選ぶもので、その実行ファイルが
+  何をするかは本スクリプトの保証の外）。
 - **`--set` で渡した値**（`k8s-local-deploy.sh` が前回リリースから引き継ぐ `broker.tier` / `opend.enabled` / `discord.bot.*` 等）は
   リリースの値に入っている。values-local.yaml が同じ項目を持つと、描画では values-local.yaml が勝つため、実際の配備（`--set` が勝つ）と
   食い違う差が出ることがある。その項目は `helm get values ast -n ai-stock-trading` の値と見比べて判断する（値を画面へ出すときは秘密に注意）。
