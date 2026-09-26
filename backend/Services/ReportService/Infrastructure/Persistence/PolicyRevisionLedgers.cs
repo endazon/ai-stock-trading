@@ -40,8 +40,9 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
         if (used >= dailyLimit)
             return new PolicyRevisionBeginResult(false, used);
 
-        db.PolicyRevisionAttempts.Add(PolicyRevisionAttemptRow.From(attempt));
-        db.SaveChanges();
+        var row = PolicyRevisionAttemptRow.From(attempt);
+        db.PolicyRevisionAttempts.Add(row);
+        SaveOrDetach(row);
         return new PolicyRevisionBeginResult(true, used);
     }
 
@@ -60,7 +61,23 @@ public sealed class EfPolicyRevisionLedger(ReportDbContext db) : IPolicyRevision
         row.Outcome = outcome;
         row.ReportVersion = reportVersion;
         row.WatchlistChangesJson = watchlistChangesJson;
-        db.SaveChanges();
+        SaveOrDetach(row);
+    }
+
+    // FR-14, #1024, IADR-0432（PR #1026 の再監査 F1）: 台帳の書き込みが失敗したら、その行を追跡から外してから例外を上げる。
+    // 台帳は報告書のストアと DbContext（スコープ）を共有しており、失敗した行を Modified / Added のまま残すと、続く報告書の
+    // 保存（提示の ApplyReview 等）がこの行をもう一度保存しようとして同じ失敗で落ちる（保存済みの案が提示されなくなる）。
+    private void SaveOrDetach(PolicyRevisionAttemptRow row)
+    {
+        try
+        {
+            db.SaveChanges();
+        }
+        catch
+        {
+            db.Entry(row).State = EntityState.Detached;
+            throw;
+        }
     }
 
     public PolicyRevisionAttempt? Find(Guid id) => db.PolicyRevisionAttempts.Find(id)?.ToAttempt();
