@@ -641,6 +641,61 @@ jobs:
             exit 1
           fi
           echo "ok: values-local は既定描画の env を 1 つも落としていない（$(wc -l < /tmp/env-prod.txt) 件を照合）"
+      # FR-02, FR-13, ADR-0044, #1050, IADR-0095 追記: 監視銘柄の権威源（市場監視）への結線を**本番既定で**固定する（T-10-1650〜T-10-1652）。
+      # 本番既定が空のままだと、SC-02・Discord の /policy での監視銘柄の変更が判断サイクルと情報収集に届かない（ADR-0044 実測 4）。
+      #   T-10-1650: MarketMonitor__BaseUrl を持つ Deployment は 3 つ（取引判断・情報収集・通知）で、どれも空でなく、宛先の
+      #              ホスト:ポートが**描画された** Service（templates/service.yaml の `<name>-service`）と一致する（values の文字列を正にしない）。
+      #   T-10-1651: 各消費側に照会の資格情報が揃う（取引判断・情報収集＝ServiceAuth__* の secretKeyRef ＋ token エンドポイント、
+      #              通知＝OwnerAuth__* の secretKeyRef ＋ token エンドポイント。適用が OwnerOnly のため）。
+      #   T-10-1652: 既定と values-local の両方で同じ検査が通り、宛先が一致する（経路B だけ別の宛先へ漂流しない）。
+      - name: Assert market-monitor watchlist consumers are wired in prod default (#1050)
+        run: |
+          check() {
+            local label="$1"; shift
+            local svcs envs url expected
+            # 描画された Service から market-monitor の宛先を導く（namespace は同じ＝短名で届く）。
+            svcs="$(helm template ast "$CHART" "$@" -s templates/service.yaml \
+              | awk '/^  name: /{n=$2} /^    - port: /{print n":"$3}')"
+            expected="$(printf '%s\n' "$svcs" | awk -F: '$1=="market-monitor-service" && $2=="8080" {print "http://"$1":"$2}')"
+            if [ -z "$expected" ]; then
+              echo "::error::[$label] 描画に Service market-monitor-service:8080 が無い（宛先を導けない＝検査の空振り）。"; exit 1
+            fi
+            envs="$(helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+              | awk '/^  name: /{svc=$2} /^            - name: /{n=$3}
+                     /^              value: /{v=$2; gsub(/"/, "", v); print svc" "n" value "v}
+                     /^                  name: /{sn=$2} /^                  key: /{print svc" "n" secret "sn"/"$2}')"
+            # T-10-1650: 母集合は「MarketMonitor__BaseUrl を持つ Deployment」全部（名前の許可リストで拾わない）。
+            local consumers
+            consumers="$(printf '%s\n' "$envs" | awk '$2=="MarketMonitor__BaseUrl" && $3=="value" {print $1}' | sort -u | tr '\n' ' ')"
+            if [ "$consumers" != "information-collection-service notification-service trade-decision-service " ]; then
+              echo "::error::[$label] MarketMonitor__BaseUrl を持つ Deployment が想定の 3 つでない: '$consumers'（増減したら本検査と README を直す）。"; exit 1
+            fi
+            for c in $consumers; do
+              url="$(printf '%s\n' "$envs" | awk -v s="$c" '$1==s && $2=="MarketMonitor__BaseUrl" && $3=="value" {print $4}')"
+              if [ -z "$url" ]; then
+                echo "::error::[$label] $c の MarketMonitor__BaseUrl が空（監視銘柄の変更が届かない。ADR-0044 実測 4）。"; exit 1
+              fi
+              if [ "$url" != "$expected" ]; then
+                echo "::error::[$label] $c の MarketMonitor__BaseUrl=$url が描画された Service（$expected）と一致しない。"; exit 1
+              fi
+            done
+            # T-10-1651: 照会の資格情報（値は見ない。参照先の Secret キーと token エンドポイントの有無だけ）。
+            has() { printf '%s\n' "$envs" | awk -v s="$1" -v n="$2" -v k="$3" -v x="$4" \
+              '$1==s && $2==n && $3==k && (x=="" || $4==x) {f=1} END{exit !f}'; }
+            for c in trade-decision-service information-collection-service; do
+              has "$c" ServiceAuth__ClientId secret ast-secrets/service-auth-client-id \
+                && has "$c" ServiceAuth__ClientSecret secret ast-secrets/service-auth-client-secret \
+                && has "$c" ServiceAuth__TokenEndpoint value "" \
+                || { echo "::error::[$label] $c に市場監視を照会する ServiceAuth__*（ClientId/ClientSecret の secretKeyRef・TokenEndpoint）が揃わない。"; exit 1; }
+            done
+            has notification-service Notifications__Discord__OwnerAuth__ClientId secret ast-secrets/discord-owner-auth-client-id \
+              && has notification-service Notifications__Discord__OwnerAuth__ClientSecret secret ast-secrets/discord-owner-auth-client-secret \
+              && has notification-service Notifications__Discord__OwnerAuth__TokenEndpoint value "" \
+              || { echo "::error::[$label] notification-service に市場監視を呼ぶ OwnerAuth__*（ClientId/ClientSecret の secretKeyRef・TokenEndpoint）が揃わない。"; exit 1; }
+            echo "[$label] ok: 3 つの消費側が $expected へ結線され、照会の資格情報が揃っている"
+          }
+          check "既定"
+          check "values-local" -f "$CHART/values-local.yaml"
       # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434 / IADR-0437: Finnhub の予算を描画で固定する（PR #1032 のレビュー推奨）。
       #   (a) 同一鍵の自制レートの合計 ≤ 60 回/分（情報収集＋実市況 4 サービス。IADR-0275 の実測で同一鍵）
       #   (b) 市場監視の 1 巡回に収まる要求数（自制レート × 巡回間隔 ÷ 60）≥ 12（稼働中の保有＋監視銘柄に余裕を持たせた値）

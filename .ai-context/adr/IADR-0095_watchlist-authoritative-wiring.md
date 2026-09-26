@@ -2,10 +2,10 @@
 title: IADR-0095 TradeDecision の監視銘柄（watchlist）供給を権威源 MarketMonitor から s2s 同期照会に一本化し、構成ベースは fail-safe フォールバックへ降格する
 type: impl-adr
 status: Accepted
-related_ids: [FR-02, FR-13, UC-06, SC-02, IADR-0051, IADR-0088, IADR-0090]
+related_ids: [FR-02, FR-13, UC-06, SC-02, ADR-0044, IADR-0051, IADR-0088, IADR-0090, IADR-0282, IADR-0433, IADR-0435]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-09-27
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -93,6 +93,34 @@ s2s 境界は JSON（camelCase・列挙は数値で往復）で、`HttpWatchlist
   他の外部ポート選択（sizing-context/daily-policy 等）と同じ規約。暫定残存を自己申告の面でも再発させない。
 - 既定挙動: `MarketMonitor:BaseUrl` 未設定なら**不変**（構成ベース）。実環境では BaseUrl を設定して権威源に接続する。
 - 監査 Consumer: **不変**（新イベント無し）。`Shared.Contracts`: **不変**。
+
+## 追記（2026-09-27・#1050）: 本番既定の配備でも監視銘柄の権威源へ結線する
+
+- 背景: 計画 ADR-0044「実装側の残作業」の実測 4。本 IADR の「影響」は「実環境では BaseUrl を設定して権威源に接続する」と書いたが、
+  チャートの本番既定（`deploy/helm/ai-stock-trading/values.yaml`）は `MarketMonitor__BaseUrl` を空のまま持ち続け、結線していたのは
+  経路B の `values-local.yaml`（IADR-0282）だけだった。同じ設定を後から足した情報収集（IADR-0435）と通知（IADR-0433）も
+  本番既定は空に揃えていた。その結果、本番既定の配備では SC-02・Discord の `/policy` での監視銘柄の変更が判断サイクルと
+  情報収集に届かず、ADR-0044 決定 2 の監視銘柄の節も常に「不明」になる。
+- 決定 1: 本番既定で 3 つの消費側（trade-decision・information-collection・notification）の `MarketMonitor__BaseUrl` を
+  `http://market-monitor-service:8080` にする。宛先は values の値からではなく、チャートの `templates/service.yaml` が描く
+  `<サービスのキー>-service`・ポート 8080（同じ namespace の短名で届く）から導いた。`values-local.yaml` と同じ値になる。
+- 決定 2: 資格情報は足さない。照会に要る鍵は結線の前から本番既定に在る。trade-decision・information-collection は
+  `ServiceAuth__ClientId` / `__ClientSecret`（`ast-secrets` の `service-auth-client-id` / `-secret`。token エンドポイントは
+  template が `global.authAuthority` から導出＝IADR-0324）。notification は、適用が OwnerOnly のため
+  `Notifications__Discord__OwnerAuth__*`（`discord-owner-auth-client-id` / `-secret`。IADR-0098）。GET `/monitor/watchlist` は
+  本 IADR 決定 2 のとおり `OwnerOrService` なので、どちらの主体でも読める。
+- 決定 3: 固定リストの意味を values のコメントと chart README に書き分ける。取引判断の `TradeCycle:Watchlist` は
+  **照会に失敗した巡回だけ**のフォールバック（本 IADR 決定 3。200 ＋空の一覧は倒さない）。情報収集の固定リストは
+  **一度も読めていないときだけ**のフォールバック（IADR-0435）。issue 本文の「一度も読めていないときだけ」は情報収集の意味であり、
+  取引判断には当たらない（取引判断は前回値を持たない。本 IADR 決定 3 の却下理由）。
+- 本番既定で変わる挙動: 取引判断が毎巡回 `GET /monitor/watchlist` を照会する。本番既定は `TradeCycle:Watchlist` も
+  market-monitor の初回シード（`Monitor:SeedSymbols`）も持たないので、監視銘柄は利用者が登録するまで空で、判断対象ゼロは
+  結線前と同じである。情報収集は `Collection__Source__Provider` が空、通知は Bot が無効の間は照会しない。
+  `values-local.yaml` の描画はバイト等価（3 つとも同じ値を既に持ち、Helm はリストを置換するため）。
+- 検査: CI の `helm.yml` に描画の検査を足した（T-10-1650〜T-10-1652）。`MarketMonitor__BaseUrl` を持つ Deployment 全部が
+  空でなく描画された Service と一致すること、各消費側の資格情報が揃うことを、既定と `values-local` の両方で見る。
+- 本 IADR の「影響」の「既定挙動: `MarketMonitor:BaseUrl` 未設定なら不変」はアプリの構成既定（`appsettings`）の話として有効である。
+  IADR-0282 決定 5・IADR-0435 決定 5（配備の行）の「本番既定は空」は各 PR の時点の記録であり、本追記が改める。作業仕様書 `20260927_1050_prod-market-monitor-wiring`。
 
 ## 却下した代替案
 
