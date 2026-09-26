@@ -46,6 +46,9 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPort("source", string.IsNullOrWhiteSpace(builder.Configuration["Collection:Source:Provider"]) ? "noop" : builder.Configuration["Collection:Source:Provider"]!)
     .AddPortFromBaseUrl("cost-state", builder.Configuration["CostControl:BaseUrl"], "http", "placeholder")
     .AddPortFromBaseUrl("knowledge-base-writer", builder.Configuration["KnowledgeBase:Documents:BaseUrl"], "http", "noop")
+    // FR-01, FR-13, #1015, IADR-0435: Finnhub の対象銘柄の出所。MarketMonitor:BaseUrl 設定時=http（監視銘柄に追随）、
+    // 未設定/不正=configuration（構成の固定リスト）。取引判断の同名ポート（IADR-0095）と同じ語彙。
+    .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration")
     // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告（現在の実現手段が
     // 無かった「日次総量の可視化」を、外部から /internal/introspection 経由で読めるようにする）。
     .AddMetric(
@@ -75,6 +78,41 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IClock, SystemClock>();
 // IADR-0068: レート制限の時刻源は共有物へ揃えるため TimeProvider（IClock は情報源の日付計算で引き続き使う）。
 builder.Services.AddSingleton(TimeProvider.System);
+// FR-01, FR-02, FR-13, #1015, IADR-0435: Finnhub の対象銘柄は**市場監視の監視銘柄**から決める（取引判断の定時サイクルが
+// 判断対象を決めるのと同じ GET /monitor/watchlist・OwnerOrService。IADR-0095 と同じ s2s の作法＝trading-service のトークン・短いタイムアウト）。
+// MarketMonitor:BaseUrl 未設定/不正 URI は従来どおり構成の固定リスト（Collection:Source:Finnhub:Symbols）。結線時の固定リストは
+// **一度も読めていないときのフォールバックだけ**である（読めなければ直前に読めた対象を使い続ける＝不明を空と扱わない）。
+// 1 巡回の要求は巡回間隔に収める（計画 ADR-0043 決定2 (b)。自制レート × 巡回間隔 ÷ 1 銘柄あたりの要求数）。
+builder.Services.AddHttpClient("monitor", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton(sp =>
+{
+    var sourceOptions =
+        builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new();
+    var pollIntervalSeconds =
+        builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
+            ?? new CollectionOptions().PollIntervalSeconds;
+
+    IWatchlistReader? reader = null;
+    var baseUrl = builder.Configuration["MarketMonitor:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    {
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("monitor");
+        http.BaseAddress = uri;
+        reader = new HttpMarketMonitorWatchlistReader(http, sp.GetRequiredService<ILogger<HttpMarketMonitorWatchlistReader>>());
+    }
+
+    return new FinnhubSymbolSelector(
+        reader,
+        sourceOptions.Finnhub.Symbols,
+        FinnhubCycleFit.MaxSymbolsPerCycle(
+            sourceOptions.Finnhub.RateLimitPerMinute,
+            pollIntervalSeconds,
+            Math.Max(1, InformationSourceFactory.FinnhubRequestsPerSymbol(sourceOptions))),
+        sp.GetRequiredService<BusinessMetrics>(),
+        sp.GetRequiredService<ILogger<FinnhubSymbolSelector>>());
+});
+
 // #336, ADR-0020 決定3: 取得は**ソース単位の成否**を返す ISourceFetcher へ委ねる（どの区分が落ちたかを
 // 欠測判定へ渡すため）。有効なソースが 0 件なら NoSourcesFetcher（外部接続しない安全既定）。
 builder.Services.AddSingleton<ISourceFetcher>(sp =>
@@ -82,12 +120,19 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
     var sourceOptions =
         builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new();
 
+    // #1015, IADR-0435: 銘柄の出所（監視銘柄への追随、または構成の固定リスト）があるときだけ選択器を渡す。
+    // 渡さなければ従来どおり「固定リストが空なら Finnhub 系を有効化しない」。
+    var finnhubSymbols = sp.GetRequiredService<FinnhubSymbolSelector>();
+    var hasSymbolSource = finnhubSymbols.FollowsWatchlist
+        || sourceOptions.Finnhub.Symbols.Any(s => !string.IsNullOrWhiteSpace(s));
+
     var sources = InformationSourceFactory.Create(
         sourceOptions,
         sp.GetRequiredService<IHttpClientFactory>().CreateClient("collection"),
         sp.GetRequiredService<IClock>(),
         sp.GetRequiredService<TimeProvider>(),
-        sp.GetRequiredService<ILoggerFactory>());
+        sp.GetRequiredService<ILoggerFactory>(),
+        hasSymbolSource ? finnhubSymbols : null);
 
     // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量の見積り
     // （銘柄未設定・Finnhub 系ソース未有効なら挙動中立）。巡回間隔は本サービス自身の CollectionOptions を使う。
@@ -99,9 +144,15 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
         sp.GetRequiredService<BusinessMetrics>(),
         sp.GetRequiredService<ILoggerFactory>());
 
-    return sources.Count == 0
-        ? new NoSourcesFetcher()
-        : new SourceFetchRunner(sources, sp.GetRequiredService<ILogger<SourceFetchRunner>>());
+    if (sources.Count == 0)
+        return new NoSourcesFetcher();
+
+    ISourceFetcher runner = new SourceFetchRunner(sources, sp.GetRequiredService<ILogger<SourceFetchRunner>>());
+
+    // #1015, IADR-0435: 監視銘柄に追随し、かつ Finnhub 系のソースが有効なら、取得の前に 1 回だけ対象銘柄を決め直す。
+    var followsWatchlist = finnhubSymbols.FollowsWatchlist
+        && sources.Any(s => s.Name is InformationSourceFactory.Finnhub or InformationSourceFactory.FinnhubNews);
+    return followsWatchlist ? new WatchlistFollowingSourceFetcher(runner, finnhubSymbols) : runner;
 });
 
 // FR-01, FR-08, IADR-0069: KB 連携（保存 IKnowledgeBaseWriter・取得 IKnowledgeBaseSearch）を配線する。

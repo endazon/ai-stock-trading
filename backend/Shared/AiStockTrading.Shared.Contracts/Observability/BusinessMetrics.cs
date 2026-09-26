@@ -98,6 +98,8 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
     private readonly Counter<long> _riskCapitalBaselineReads;
     private readonly Counter<long> _marketMonitorPositionRowsDegraded;
+    private readonly Counter<long> _finnhubSymbolSetResolutions;
+    private readonly Gauge<long> _finnhubSymbolsDeferred;
 
     /// <summary>
     /// 本番の構築点。Meter 名は <see cref="BusinessMetricNames.MeterName"/> 固定である。
@@ -219,6 +221,16 @@ public sealed class BusinessMetrics : IDisposable
         _marketMonitorPositionRowsDegraded = _meter.CreateCounter<long>(
             BusinessMetricNames.MarketMonitorPositionRowsDegraded,
             description: "市場監視が保有照会の応答をそのまま評価できなかった行の件数（reason 別。FR-03/FR-10）");
+
+        // FR-01, FR-13, #1015, IADR-0435: 情報収集の Finnhub の対象銘柄の出所（watchlist 以外は変更が収集に届いていない印）。
+        _finnhubSymbolSetResolutions = _meter.CreateCounter<long>(
+            BusinessMetricNames.InformationCollectionFinnhubSymbolSetResolutions,
+            description: "情報収集が Finnhub の対象銘柄を決めた出所の内訳（outcome 別。FR-01/FR-13）");
+
+        // FR-01, #1015, IADR-0435: 1 巡回に収まらず後回しにした Finnhub の対象銘柄の数（平常時 0）。
+        _finnhubSymbolsDeferred = _meter.CreateGauge<long>(
+            BusinessMetricNames.InformationCollectionFinnhubSymbolsDeferred,
+            description: "情報収集が 1 巡回に収まらず後回しにした Finnhub の対象銘柄の数（計画 ADR-0043 決定2 (b)。FR-01）");
     }
 
     /// <summary>FR-01, FR-02: 1 巡回で収集できたアイテム数を計上する。</summary>
@@ -436,6 +448,20 @@ public sealed class BusinessMetrics : IDisposable
             count,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
     }
+
+    /// <summary>
+    /// FR-01, FR-13, #1015, IADR-0435: 情報収集が Finnhub の対象銘柄を決めた出所を 1 件計上する
+    /// （<c>watchlist</c> / <c>last-known</c> / <c>configured-fallback</c>）。
+    /// </summary>
+    public void RecordFinnhubSymbolSetResolution(string outcome) =>
+        _finnhubSymbolSetResolutions.Add(
+            1,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome));
+
+    /// <summary>
+    /// FR-01, #1015, IADR-0435: 直近の決定で後回しにした Finnhub の対象銘柄の数を記録する（0 も記録する＝回復が見える）。
+    /// </summary>
+    public void RecordFinnhubSymbolsDeferred(long deferred) => _finnhubSymbolsDeferred.Record(deferred);
 
     public void Dispose() => _meter.Dispose();
 }

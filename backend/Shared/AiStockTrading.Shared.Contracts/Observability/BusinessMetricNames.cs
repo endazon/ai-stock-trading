@@ -151,6 +151,23 @@ public static class BusinessMetricNames
     /// </summary>
     public const string MarketMonitorPositionRowsDegraded = "ast.market_monitor.position_rows_degraded";
 
+    /// <summary>
+    /// FR-01, FR-13, #1015, IADR-0435: <b>情報収集が Finnhub の対象銘柄をどこから決めたか</b>の内訳（市場監視に結線したとき、巡回ごとに 1 件）。
+    /// タグ <c>outcome</c>（watchlist＝市場監視の監視銘柄 / last-known＝読めず直前の値 / configured-fallback＝一度も読めず構成の固定リスト）。
+    /// <para>
+    /// 🔴 <b>watchlist 以外は「監視銘柄の変更が収集に届いていない」印である。</b> 収集そのものは止めない（不明を空と扱わない）ため、
+    /// 数えないと、新しい監視銘柄が判断材料なしで見送られ続ける状態が外から見えない（#1015 の観測と同じ形）。
+    /// </para>
+    /// </summary>
+    public const string InformationCollectionFinnhubSymbolSetResolutions =
+        "ast.information_collection.finnhub_symbol_set_resolutions";
+
+    /// <summary>
+    /// FR-01, #1015, IADR-0435: 情報収集が 1 巡回に収まらず<b>後回しにした Finnhub の対象銘柄の数</b>（直近の決定。平常時 0）。
+    /// 1 巡回の要求数 ÷ 自制レートが巡回間隔を超える分である（計画 ADR-0043 決定2 (b)）。
+    /// </summary>
+    public const string InformationCollectionFinnhubSymbolsDeferred = "ast.information_collection.finnhub_symbols_deferred";
+
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";
 
