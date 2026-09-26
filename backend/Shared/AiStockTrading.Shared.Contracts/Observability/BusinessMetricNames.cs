@@ -124,7 +124,10 @@ public static class BusinessMetricNames
     /// </summary>
     public const string FinnhubDailyVolumeEstimate = "ast.finnhub.daily_request_estimate";
 
-    /// <summary>FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが暫定日次上限（既定300）に占める割合（%）。100 超で警告。</summary>
+    /// <summary>
+    /// FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが日次上限に占める割合（%）。100 超で警告。
+    /// ADR-0043（計画）決定 1, IADR-0437: 暫定の 300 回/日は撤回。上限は実測して設定したときだけあり、未設定（既定）なら記録しない。
+    /// </summary>
     public const string FinnhubDailyVolumeLimitRatioPercent = "ast.finnhub.daily_request_limit_ratio_percent";
 
     /// <summary>

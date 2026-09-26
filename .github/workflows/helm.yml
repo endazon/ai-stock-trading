@@ -641,6 +641,38 @@ jobs:
             exit 1
           fi
           echo "ok: values-local は既定描画の env を 1 つも落としていない（$(wc -l < /tmp/env-prod.txt) 件を照合）"
+      # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434 / IADR-0437: Finnhub の予算を描画で固定する（PR #1032 のレビュー推奨）。
+      #   (a) 同一鍵の自制レートの合計 ≤ 60 回/分（情報収集＋実市況 4 サービス。IADR-0275 の実測で同一鍵）
+      #   (b) 市場監視の 1 巡回に収まる要求数（自制レート × 巡回間隔 ÷ 60）≥ 12（稼働中の保有＋監視銘柄に余裕を持たせた値）
+      # env が無いサービスはコードの既定で数える（情報収集 30＝CollectionSourceOptions・実市況 5＝FinnhubMarketDataOptions・
+      # 巡回間隔 60 秒＝MonitorOptions）。既定を変えたらここも直す。
+      - name: Assert Finnhub budget and market-monitor cycle fit (ADR-0043 決定2)
+        run: |
+          check() {
+            local label="$1"; shift
+            helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+              | awk '/^  name: /{svc=$2} /^            - name: /{n=$3} /^              value: /{v=$2; gsub(/"/, "", v); print svc" "n" "v}' \
+              > /tmp/env-values.txt
+            val() { awk -v s="$1" -v n="$2" -v d="$3" '$1==s && $2==n && $3!="" {x=$3} END{print (x=="" ? d : x)}' /tmp/env-values.txt; }
+            local ic mm rm rp td poll
+            ic="$(val information-collection-service Collection__Source__Finnhub__RateLimitPerMinute 30)"
+            mm="$(val market-monitor-service MarketData__Finnhub__RequestsPerMinute 5)"
+            rm="$(val risk-management-service MarketData__Finnhub__RequestsPerMinute 5)"
+            rp="$(val report-service MarketData__Finnhub__RequestsPerMinute 5)"
+            td="$(val trade-decision-service MarketData__Finnhub__RequestsPerMinute 5)"
+            poll="$(val market-monitor-service Monitor__PollIntervalSeconds 60)"
+            local total=$((ic + mm + rm + rp + td)) capacity=$((mm * poll / 60))
+            echo "[$label] (a) $ic + $mm + $rm + $rp + $td = $total 回/分・(b) 市場監視 $mm 回/分 × $poll 秒 = $capacity 要求/巡回"
+            if [ "$total" -gt 60 ]; then
+              echo "::error::[$label] Finnhub の同一鍵の自制レートの合計が $total 回/分で 60 を超える（ADR-0043 決定2 (a)）。"; exit 1
+            fi
+            if [ "$capacity" -lt 12 ]; then
+              echo "::error::[$label] 市場監視の 1 巡回に収まる要求数が $capacity で 12 未満（IADR-0434。保有＋監視銘柄が巡回間隔に収まらない）。"; exit 1
+            fi
+          }
+          check "既定"
+          check "values-local" -f "$CHART/values-local.yaml"
+          echo "ok: Finnhub の予算 (a) と市場監視の巡回 (b) が描画で保たれている"
       # #245 / IADR-0102: Discord Bot の環境固有 ID（非機密）の設定点 discord.bot.*。
       # (a) 値を与えたら notification の env に入る（空振り検出）・snowflake が指数表記に化けない
       # (b) 空指定は既定描画とバイト一致（本番 values.yaml をバイト等価に保つ担保）

@@ -68,4 +68,18 @@ public static class MarketSessions
 
         _ => null,
     };
+
+    /// <summary>
+    /// FR-03, ADR-0043（計画）決定 3, #1030, IADR-0437: 通常の取引日の場中の長さ（分）。米国 390（9:30–16:00）・東証 330
+    /// （前場 150 ＋ 後場 180）・未知の市場 0。<b>1 日の巡回回数を開場中の巡回だけで数える</b>ための値であり、時刻の定数は
+    /// <see cref="IsWithinSession"/> と同じもの（境界の定義を 2 か所に置かない）から導く。半日取引日は数えない（通常日の上限）。
+    /// </summary>
+    public static int RegularSessionMinutes(Market market) => market switch
+    {
+        Market.UnitedStates => Minutes(UsOpen, UsClose),
+        Market.Japan => Minutes(JpMorningOpen, JpMorningClose) + Minutes(JpAfternoonOpen, JpAfternoonClose),
+        _ => 0,
+    };
+
+    private static int Minutes(TimeOnly from, TimeOnly to) => (int)(to - from).TotalMinutes;
 }

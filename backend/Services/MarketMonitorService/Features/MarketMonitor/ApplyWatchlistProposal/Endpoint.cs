@@ -17,8 +17,9 @@ internal static partial class ApplyWatchlistProposalEndpoint
     private static partial Regex ProposalRefPattern();
 
     public static void MapApplyWatchlistProposal(this IEndpointRouteBuilder owner) =>
-        owner.MapPost("/watchlist/proposal-apply", (WatchlistProposalApplyRequest req, MonitorWatchlistService svc,
-            DelegatedActorOptions delegated, WatchlistVolumeEstimator estimator, ILoggerFactory loggerFactory, HttpContext http) =>
+        owner.MapPost("/watchlist/proposal-apply", async (WatchlistProposalApplyRequest req, MonitorWatchlistService svc,
+            DelegatedActorOptions delegated, WatchlistVolumeEstimator estimator, WatchlistCycleFitGuard guard,
+            ILoggerFactory loggerFactory, HttpContext http) =>
         {
             var logger = loggerFactory.CreateLogger("WatchlistProposalApply");
             var applying = DelegatedActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
@@ -44,9 +45,12 @@ internal static partial class ApplyWatchlistProposalEndpoint
             var via = applying.AuthorizedBy is { } client
                 ? $"Discord の確認ボタンで適用・代理 {client}"
                 : "利用者のトークンで直接適用";
+            // FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 1 巡回が巡回間隔に収まらなくなる追加は適用せず、内訳に理由を載せる
+            // （SC-02 の追加と同じ検査。除外は止めない）。
+            var fit = await guard.ResolveAsync(http.RequestAborted);
             var plan = svc.ApplyProposal(
                 expected?.Cast<MonitoredSymbol>().ToList(), changes?.Cast<ProposedWatchlistChange>().ToList(),
-                applying.Actor, proposalRef, via);
+                applying.Actor, proposalRef, via, fit?.Fit);
             if (plan.Stale)
             {
                 logger.LogWarning("入れ替え案 {ProposalRef} は案の作成後に監視銘柄が変わったため適用しませんでした。", proposalRef);
@@ -65,7 +69,7 @@ internal static partial class ApplyWatchlistProposalEndpoint
                 [.. plan.Items.Select(i => new WatchlistProposalItemResult(
                     i.Change.Action == ProposedWatchlistAction.Add ? "add" : "remove", i.Change.Symbol, i.Applied, i.SkipReason))],
                 applying.Actor,
-                estimator.Estimate(plan.Resulting.Count)));
+                estimator.Estimate(plan.Resulting.Select(s => s.Market).Concat(fit?.HoldingMarkets ?? []))));
         });
 
     // 期待値（案を作った時点の監視銘柄）の 1 件。銘柄が空・市場の省略は形式違反（null＝400）。期待値は現在の監視銘柄の写しであり、
@@ -101,5 +105,7 @@ public sealed record WatchlistProposalApplyResponse(
 
 public sealed record WatchlistProposalItemResult(string Action, string Symbol, bool Applied, string? SkipReason);
 
-// ADR-0031, ADR-0042 決定 1（2026-09-26 利用者裁定＝警告のみ）: 推定 1 日の要求数と暫定上限。**適用を止めない。**
-public sealed record FinnhubDailyVolumeEstimateView(long EstimatedDailyRequests, int ProvisionalDailyLimit, bool Exceeds);
+// ADR-0031, ADR-0042 決定 1（2026-09-26 利用者裁定＝警告のみ）: 推定 1 日の要求数。**適用を止めない。**
+// ADR-0043（計画）決定 1・3, #1030, IADR-0437: 推定は開場中の巡回で数えた値（監視銘柄 ＋ 保有）。暫定の 300 回/日は撤回したため、
+// ProvisionalDailyLimit は日次上限を実測して設定したときだけ値を持ち、未設定（既定）なら null・Exceeds は false（比べない）。
+public sealed record FinnhubDailyVolumeEstimateView(long EstimatedDailyRequests, int? ProvisionalDailyLimit, bool Exceeds);

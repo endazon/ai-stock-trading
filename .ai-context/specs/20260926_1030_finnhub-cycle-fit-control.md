@@ -2,7 +2,7 @@
 title: Finnhub の監視銘柄数を分次の予算と「1 巡回が巡回間隔に収まること」で統制する（300 回/日の撤回・開場中の見積り・分次で説明できない 429）（#1030）
 type: spec
 status: accepted
-related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0031, ADR-0042, IADR-0434, IADR-0275, IADR-0224, IADR-0294, IADR-0433]
+related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0437, IADR-0435, IADR-0275, IADR-0224, IADR-0294, IADR-0433]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-26
@@ -22,7 +22,7 @@ plan_refs:
 - 画面: SC-02（監視銘柄の追加）
 - 関連 IADR: IADR-0434（PR 1）、IADR-0437（PR 2・予定）、IADR-0275・IADR-0224（前提）、IADR-0294（見積りを改める）、IADR-0433（Discord の適用）
 
-> ADR-0043 は着手時点で宣言レンジ（`ADR-0001..0042`）の外。frontmatter の `related_ids` とコミット件名には入れず、`plan_refs`・本文・コミット本文で引く。
+> ADR-0043 は着手時点で宣言レンジ（`ADR-0001..0042`）の外だったため、コミット件名には入れず本文で引いた。**［2026-09-26 追記 / #1031］** レンジが `ADR-0001..0043` へ引き直されたので、PR 2 で frontmatter の `related_ids` と docs の trace ブロックに足した。
 
 ## 分割（2 PR）
 
@@ -52,11 +52,26 @@ plan_refs:
   （コードの既定の記述として正しい）、`MarketDataOptions` の注記（同）、`docs/blocked-tasks.md`（IADR-0275 の是正の記録。正しい）、
   **chart README の秘密鍵の表（「既定のレート予算」を chart の値と読める）→ 直した**。
 
-### PR 2（予定。着手時に引き直す）
+### PR 2（着手時に引き直した結果）
 
-- 追加の経路: `git grep -n "MonitorWatchlistService\|WatchlistProposalPlan"`（SC-02 の `Add`・`ApplyProposal`）。
-- 見積りの呼び出し元: `git grep -n "CyclesPerDay\|ProvisionalDailyLimit\|WatchlistVolumeEstimator"`。
-- 429 の扱い: `git grep -n "429\|TooManyRequests\|X-Ratelimit"`。
+- **監視銘柄を増やす経路**（誤りの側＝「予算を見ずに監視銘柄を保存する箇所」から引く。規則 1）:
+  `git grep -n "store.Save(\|MonitoredSymbols = " -- backend/Services/MarketMonitorService` →
+  `MonitorWatchlistService.Add`（SC-02）・`MonitorWatchlistService.ApplyProposal`（Discord）・**`MonitorSettingsService.Replace`（全置換 `PUT /monitor/settings`。
+  issue 本文に無かった 3 本目。画面は使わないが監視銘柄を置き換える）**・`MonitorSettingsService.UpdateMovementThreshold / UpdateCooldown`（監視銘柄を変えない＝除外）・
+  `MonitorDefaults` のシード（構成 `Monitor:SeedSymbols`。初回だけ・運用者の構成＝除外。変更の口ではない）・`Remove`（除外は止めない）。
+- **見積りの呼び出し元**: `git grep -n "CyclesPerDay\|ProvisionalDailyLimit\|WatchlistVolumeEstimator\|EvaluateDailyVolume\|EstimateDailyVolume"` →
+  共有の `FinnhubDailyVolumeEstimator` / `FinnhubDailyVolumeGuardOptions` / `MarketDataSourceFactory`、市場監視・リスク管理・報告書・取引判断の `Program.cs`、
+  情報収集の `InformationSourceFactory`（並行作業 #1015 の領域。**本番コードは警告文の 1 行だけ直し、試験は上限を明示する 1 行だけ直した**）、
+  市場監視の `WatchlistVolumeEstimator`・入れ替え案の応答型、通知サービスの受け手 2 型と表示（`PolicyApprovalCommandHandler.Breakdown`）、
+  業務メトリクス・Grafana のパネル、chart README・values（注記）。
+  - 24 時間で数えるのが正しい呼び出し元（**除外**）: リスク管理の `QuoteRefreshService`（開場に関係なく巡回）・情報収集（同）・報告書と取引判断（巡回しない。保守的な仮定の間隔のまま）。
+- **429 の扱い**: `git grep -n "429\|TooManyRequests\|X-Ratelimit\|IsSuccessStatusCode" -- backend/Shared backend/Services/*/Infrastructure` →
+  Finnhub の quote は共有の `FinnhubQuoteClient` 1 箇所（市場監視・リスク管理・報告書・取引判断・情報収集が共有）。
+  情報収集のニュース（`finnhub-news`）は別のクライアントで、稼働構成は provider に含めていない（**除外**。有効化するときに同じ判別を足す）。
+- **「300 回/日」を前提にした記述**（規則 10）: `git grep -n -E "300 ?回/日|暫定上限|暫定日次|理論上限"`（`.ai-context/`・CHANGELOG を除く）→
+  共有の見積り・既定値・メトリクスの説明・chart README・values の注記（情報収集と本番既定）・Grafana のパネル・情報収集の警告文・通知の表示を直した。
+  `docs/blocked-tasks.md:507` は IADR-0275 の実測の記録（当時の事実）なので直さない。
+- **試験の母集合**: `git grep -n "暫定上限\|FinnhubEstimateView\|ProvisionalDailyLimit\|4320" -- '*Tests*'` → 共有 3 ファイル・情報収集 1・市場監視 1・通知 2 を直した。
 
 ## 予算表（PR 1。IADR-0434 と同じ）
 
@@ -80,10 +95,51 @@ plan_refs:
 
 ### PR 2（IADR-0437）
 
-- [ ] 決定 2(b)・4: SC-02 の追加と入れ替え案の適用で、(b) を破る追加を適用しない。除外は止めない。適用しなかった追加は内訳に理由。
-- [ ] 決定 3: 市場監視の見積りは開場中の巡回（米国 390 分 ÷ 間隔）で数え、300 回/日と比べない。警告とメトリクスは残す。
-- [ ] 決定 1: 分次で説明できない 429 を区別してログする。
-- [ ] 試験 ID は T-10-1430..T-10-1459。変異を掛けて落ちることを確かめる。
+- [x] 決定 2(b)・4: SC-02 の追加（400）・全置換（400）・入れ替え案の適用（その追加だけ適用せず `skipReason`）で、(b) を破る追加を適用しない。
+  保有＋監視銘柄で数える。除外は止めない（入れ替え案は除外を先に当てる）。Finnhub を使わない構成では検査しない。— T-10-1436〜T-10-1443
+- [x] 決定 3: 市場監視の見積りは開場中の巡回（米国 390 分・東証 330 分 ÷ 間隔）で数え、既定では何とも比べない（`ProvisionalDailyLimit` の既定を未設定へ）。
+  見積りのメトリクスは残し、上限を実測して設定したときだけ警告と比率。Discord の表示も追随。— T-10-1430・T-10-1431・T-10-1433〜T-10-1435・T-10-1444・T-10-1445・T-10-1450・T-10-1451（T-10-1432 は既存の読み取り試験の改訂）
+- [x] 決定 1: 分次で説明できない 429 を EventId 4301 で区別して記録する。— T-10-1446〜T-10-1449
+- [x] 試験 ID は T-10-1430..T-10-1451（1452〜1459 は欠番）。変異の実測は `docs/tests/FR-10_risk-controls-tests.md` の同名の節。
+
+### 決定する挙動（PR 2）
+
+IADR-0437 決定 1〜4 のとおり。要点:
+
+| 口 | (b) を満たさない追加 | 除外 |
+| --- | --- | --- |
+| `POST /monitor/watchlist`（SC-02） | 400（`error` に「Finnhub の巡回に収まりません（1 巡回 N 要求（保有 h ＋ 監視銘柄 w）が、自制 r 回/分・巡回間隔 i 秒で収まる c 要求を超えます）」） | — |
+| `PUT /monitor/settings`（全置換） | 今は無い銘柄を含み収まらなければ 400 | 止めない |
+| `POST /monitor/watchlist/proposal-apply` | その追加だけ適用せず、内訳の `skipReason` に同じ理由 | 止めない（先に当てる） |
+
+### ［2026-09-26 追記 / #1036 の監査］情報収集の見積りの追随（IADR-0437 決定 5）
+
+- 母集合（#1036 のマージ後に引き直した）: `git grep -n "EstimateDailyVolume\|EvaluateDailyVolumeEstimate\|FinnhubRequestsPerSymbol\|DailyRequestLimit\|AddHttpClient(\"monitor\"" -- backend/Services` →
+  情報収集の自己申告（`Program.cs` の `AddMetric`）・起動時の見積り（`ISourceFetcher` の登録）・`LogFinnhubQuota`（日次上限の未設定の警告）・
+  `FinnhubRequestsPerSymbol`（試験なし）・`monitor` の名前付き HttpClient（情報収集・取引判断。タイムアウトの試験なし）。
+  市場監視・リスク管理・報告書は自分の `IPositionStore` / `risk` クライアント等で、`monitor` クライアントを持たない（**除外**）。
+- 受け入れ基準:
+  - [x] 追随する構成では、起動時は 1 巡回の上限、巡回ごとは対象の数で見積りを記録する（固定リストで数えない）— T-10-1452・T-10-1454
+  - [x] 日次上限は比べない・未設定を警告しない — T-10-1452・T-10-1457
+  - [x] 1 銘柄あたりの要求数の `[Theory]` — T-10-1453
+  - [x] `monitor` の 5 秒のタイムアウト（情報収集・取引判断）— T-10-1455・T-10-1456
+- 🔴 **開場中の巡回だけで数える指示には従わなかった**: 情報収集の in-process の巡回は開場に関係なく 24 時間回るため、開場中だけで数えると
+  実際より少なく見せる。ADR-0043 決定 3 の 3 点目（巡回しない時間の扱いに数え方を合わせる）に従い 24 時間で数える（IADR-0437 決定 5）。
+
+### ［2026-09-26 追記 / PR #1037 の監査］是正（IADR-0437 決定 6）
+
+- 母集合（誤りの側から引いた）:
+  - 市場を問わず銘柄を数える箇所: `git grep -n "Fits(\|RequestsPerCycle\|held.Count\|CyclesPerDay(interval" -- backend/Services/MarketMonitorService` →
+    `WatchlistCycleFit`・`WatchlistProposalPlan.Plan`・`MonitorWatchlistService.Add`・`MonitorSettingsService.Replace`・`WatchlistCycleFitGuard`（保有）・
+    `WatchlistVolumeEstimator`。起動時の見積り（申告値）は市場を持たないので**除外**（IADR-0437 の残余に書いた）。
+  - 重複を通す口: `git grep -n "MonitoredSymbols = " -- backend/Services/MarketMonitorService/Features` → 全置換だけ（追加は重複を拒否済み・入れ替え案は形の検証で重複を拒否済み）。
+  - 429 の分類の呼び出し: `FinnhubQuoteClient` 1 箇所（共有）。
+- 受け入れ基準:
+  - [x] 全置換の重複（大小文字を無視・同じ市場）は 400。要求数が増えるのは新しい米国の銘柄を含むときだけになる — T-10-1458・T-10-1443
+  - [x] 1 銘柄あたりの要求数は米国 1・それ以外 0（3 つの口・保有・見積り）— T-10-1459・T-10-1444
+  - [x] 前回のリセットはこの応答にリセットが無いときだけ。直前の要求から 1 秒以内の残りありの 429 は秒次として手がかりにしない（他のプロセスの送出は見えない＝文書化）— T-10-1446〜T-10-1449
+  - [x] 全置換は一部適用しない方を選び、拒否の文言に収まらない追加と「除外だけなら送り直す」— T-10-1439
+  - [x] 配備の順序を chart README に・初回シードは検査しないことを IADR に
 
 ## 配備（coordinator）
 
