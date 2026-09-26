@@ -287,6 +287,20 @@ public class BusinessMetricsTests
             .Should().ContainSingle().Which.Value.Should().Be(160);
     }
 
+    // T-10-1435（ADR-0043 決定 1, #1030, IADR-0437）: 日次上限が未設定（比率 null）なら、見積りだけを記録し比率は記録しない。
+    [Fact]
+    public void Finnhub日次上限が未設定なら比率を記録しない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 2340, limitRatioPercent: null);
+
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(2340);
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent).Should().BeEmpty();
+    }
+
     // NFR-01, #689, IADR-0307: 起点イベント → 発注完了の端点間所要が、trigger タグつきで刻まれる。
     [Theory]
     [InlineData(BusinessMetrics.TriggerPriceMovement, 42_000)]
@@ -513,6 +527,76 @@ public class BusinessMetricsTests
         capture.ValuesOf(BusinessMetricNames.DriftAdoptionFollowUpAbandoned).Should().BeEmpty();
     }
 
+    // ---- T-10-1557〜T-10-1559, FR-05, NFR-09, #856, IADR-0441: 発注予約の自動リコンサイルの判定の内訳 ----
+    private static readonly string[] ReconciliationOutcomes =
+    [
+        BusinessMetrics.ReservationReconciliationProbePlaced,
+        BusinessMetrics.ReservationReconciliationSelfHealed,
+        BusinessMetrics.ReservationReconciliationHeldNotPlaced,
+        BusinessMetrics.ReservationReconciliationReleased,
+        BusinessMetrics.ReservationReconciliationIndeterminate,
+        BusinessMetrics.ReservationReconciliationFailed,
+    ];
+
+    [Theory]
+    [InlineData(BusinessMetrics.ReservationReconciliationProbePlaced, 1)]
+    [InlineData(BusinessMetrics.ReservationReconciliationSelfHealed, 1)]
+    [InlineData(BusinessMetrics.ReservationReconciliationHeldNotPlaced, 3)]
+    [InlineData(BusinessMetrics.ReservationReconciliationReleased, 1)]
+    [InlineData(BusinessMetrics.ReservationReconciliationIndeterminate, 2)]
+    [InlineData(BusinessMetrics.ReservationReconciliationFailed, 1)]
+    public void リコンサイルの判定は6つの内訳で件数を数える(string outcome, int count)
+    {
+        // T-10-1557: 名前はレジストリの宣言どおり（ast.order.reservation_reconciliations）・タグは outcome。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordOrderReservationReconciliation(outcome, count);
+
+        BusinessMetricNames.OrderReservationReconciliations.Should().Be("ast.order.reservation_reconciliations");
+        capture.ValuesOf(BusinessMetricNames.OrderReservationReconciliations).Should().ContainSingle()
+            .Which.Should().Match<MeterCapture.Measurement>(m =>
+                m.Value == count && m.Tags[BusinessMetricNames.TagOutcome] == outcome);
+    }
+
+    [Theory]
+    [InlineData("", 1)]
+    [InlineData("placed", 1)] // 語彙は probe-placed（自己修復と分ける）。似た名前で系列を増やさない
+    [InlineData("AAPL", 1)] // 銘柄・DecisionId をタグへ入れない（基数の規律）
+    [InlineData(BusinessMetrics.ReservationReconciliationHeldNotPlaced, 0)] // 巡回サマリの 0 件の内訳は計上しない
+    [InlineData(BusinessMetrics.ReservationReconciliationFailed, -1)]
+    public void リコンサイルの判定は語彙の外と0以下の件数を計上しない_否定形(string outcome, int count)
+    {
+        // 🔴 T-10-1558
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        var act = () => metrics.RecordOrderReservationReconciliation(outcome, count);
+
+        if (Array.IndexOf(ReconciliationOutcomes, outcome) < 0)
+            act.Should().Throw<ArgumentException>();
+        else
+            act.Should().NotThrow();
+        capture.ValuesOf(BusinessMetricNames.OrderReservationReconciliations).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void リコンサイルの判定のカウンタは6つの内訳とも0で計上でき_件数は増えない()
+    {
+        // T-10-1559: 起動時の 0 は系列を作るだけで件数を足さない。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.PrimeOrderReservationReconciliations();
+
+        capture.TagValuesOf(BusinessMetricNames.OrderReservationReconciliations, BusinessMetricNames.TagOutcome)
+            .Should().BeEquivalentTo(ReconciliationOutcomes);
+        capture.SumOf(BusinessMetricNames.OrderReservationReconciliations).Should().Be(0);
+    }
+
     /// <summary>本テスト内でのみ用いる費用カテゴリの表示名（CostControl の enum は別プロジェクトにある）。</summary>
     private static class CostCategoryLabels
     {
@@ -534,6 +618,7 @@ public class BusinessMetricsTests
         metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
         metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
         metrics.RecordDriftAdoptionFollowUpAbandoned(BusinessMetrics.DriftFollowUpPositionsUnknown);
+        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced);
         metrics.RecordFinnhubSymbolSetResolution("watchlist");
         metrics.RecordFinnhubSymbolsDeferred(0);
 

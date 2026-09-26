@@ -93,6 +93,24 @@ public class WatchlistApplyContractTests
         outcome.Estimate.Should().Be(new FinnhubEstimateView(4320, 300, true));
     }
 
+    // T-10-1451（ADR-0043 決定 1, #1030, IADR-0437）: 日次上限が未設定（null）の推定を、送り手の本物の型から読める
+    // （受け手が int のままだと null で逆直列化に失敗し、適用の結果が「不明」に化ける）。
+    [Fact]
+    public async Task 日次上限が無い推定を送り手の本物の型で読める()
+    {
+        MonitorApply.WatchlistProposalApplyResponse sent = new(
+            [new("add", "NVDA", true, null), new("add", "META", false, "Finnhub の巡回に収まりません（…）")],
+            "developer",
+            new MonitorApply.FinnhubDailyVolumeEstimateView(780, null, false));
+        var handler = new FakeHandler(HttpStatusCode.OK, JsonSerializer.Serialize(sent, MonitorWire));
+
+        var outcome = await Monitor(handler).ApplyProposalAsync(Snapshot, Changes, "daily-2026-09-28-v3", "developer");
+
+        outcome.Status.Should().Be(WatchlistApplyStatus.Applied);
+        outcome.Estimate.Should().Be(new FinnhubEstimateView(780, null, false));
+        outcome.Items[1].SkipReason.Should().StartWith("Finnhub の巡回に収まりません");
+    }
+
     // T-10-1391: 409＝変わっていた（適用なし）、400＝受理されず（適用なし）、タイムアウト・例外・解釈できない 2xx＝不明。
     [Fact]
     public async Task 適用の失敗と不明を区別する()

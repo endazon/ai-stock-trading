@@ -65,6 +65,35 @@ public sealed class BusinessMetrics : IDisposable
     /// <summary>FR-10, #942, IADR-0395: 追随を打ち切った理由タグ値。建玉照会が**例外**で落ちた。</summary>
     public const string DriftFollowUpPositionsQueryFailed = "positions-query-failed";
 
+    /// <summary>FR-05, #856, IADR-0441: リコンサイルの判定タグ値。照会（client order id）で発注済みと確定した。</summary>
+    public const string ReservationReconciliationProbePlaced = "probe-placed";
+
+    /// <summary>FR-05, #856, IADR-0441: リコンサイルの判定タグ値。記録があるのに予約が Reserved のままだった（自己修復。照会しない）。</summary>
+    public const string ReservationReconciliationSelfHealed = "self-healed";
+
+    /// <summary>FR-05, #856, IADR-0441: リコンサイルの判定タグ値。照会は未発注と答えたが、解放の門が閉じているため据え置いた。</summary>
+    public const string ReservationReconciliationHeldNotPlaced = "held-not-placed";
+
+    /// <summary>FR-05, #856, IADR-0441: リコンサイルの判定タグ値。照会が未発注と答え、門が開いていたので予約を解放した（再発注の許可）。</summary>
+    public const string ReservationReconciliationReleased = "released";
+
+    /// <summary>FR-05, #856, IADR-0441: リコンサイルの判定タグ値。照会不達・判定不能で据え置いた。</summary>
+    public const string ReservationReconciliationIndeterminate = "indeterminate";
+
+    /// <summary>FR-05, #856, IADR-0441: リコンサイルの判定タグ値。その 1 件の処理が例外で落ち、据え置いた（次の巡回で再試行）。</summary>
+    public const string ReservationReconciliationFailed = "failed";
+
+    // FR-05, #856, IADR-0441: 上の 6 値（語彙）。計上と起動時の 0 はこの集合だけを使う。
+    private static readonly string[] ReservationReconciliationOutcomes =
+    [
+        ReservationReconciliationProbePlaced,
+        ReservationReconciliationSelfHealed,
+        ReservationReconciliationHeldNotPlaced,
+        ReservationReconciliationReleased,
+        ReservationReconciliationIndeterminate,
+        ReservationReconciliationFailed,
+    ];
+
     /// <summary>
     /// FR-03, FR-10, #957, IADR-0399: 保有の行を評価に渡せなかった（識別項目が無い・列挙が未定義・数量が正でない・null の行）。
     /// </summary>
@@ -92,6 +121,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _orderExecutions;
     private readonly Counter<long> _orderDispatchForgone;
     private readonly Counter<long> _driftAdoptionFollowUpAbandoned;
+    private readonly Counter<long> _orderReservationReconciliations;
     private readonly Counter<double> _llmCostJpy;
     private readonly Gauge<double> _llmCostLimitRatioPercent;
     private readonly Gauge<long> _finnhubDailyVolumeEstimate;
@@ -195,6 +225,11 @@ public sealed class BusinessMetrics : IDisposable
             BusinessMetricNames.DriftAdoptionFollowUpAbandoned,
             description: "乖離の取り込みの追随を建玉照会の不明・失敗で再試行を使い切って打ち切った件数（reason 別。FR-10）");
 
+        // FR-05, NFR-09, #856, IADR-0441: 発注予約の自動リコンサイルの判定の内訳（観測であり、判定を変えない）。
+        _orderReservationReconciliations = _meter.CreateCounter<long>(
+            BusinessMetricNames.OrderReservationReconciliations,
+            description: "発注予約の自動リコンサイルが滞留 Reserved 1 件ごとに下した判定の内訳（outcome 別。FR-05/NFR-09）");
+
         _llmCostJpy = _meter.CreateCounter<double>(
             BusinessMetricNames.LlmCostJpy,
             description: "計上した LLM 費用（円。category=Llm は月次上限の対象。NFR-13）");
@@ -209,7 +244,7 @@ public sealed class BusinessMetrics : IDisposable
 
         _finnhubDailyVolumeLimitRatioPercent = _meter.CreateGauge<double>(
             BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent,
-            description: "Finnhub 日次要求見積りが暫定上限に占める割合（%）。100 超で警告（ADR-0031 決定3）");
+            description: "Finnhub 日次要求見積りが、実測して設定した日次上限に占める割合（%）。100 超で警告。上限が未設定（既定）なら記録しない（ADR-0043 決定1）");
 
         // FR-10, #889, IADR-0372: 基準資金を読んだ結果の内訳。**門ではなく観測である**
         // （どの帰結でも返す値は従来どおり）。
@@ -402,6 +437,44 @@ public sealed class BusinessMetrics : IDisposable
     }
 
     /// <summary>
+    /// FR-05, NFR-09, #856, IADR-0441: 発注予約の自動リコンサイルの判定を <paramref name="count"/> 件計上する。
+    /// <paramref name="count"/> が 0 以下なら何もしない（巡回サマリの 0 件の内訳を計上しない）。
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="outcome"/> が 6 値（<c>ReservationReconciliation*</c>）の外。語彙の外の値で系列を増やさない。</exception>
+    public void RecordOrderReservationReconciliation(string outcome, int count = 1)
+    {
+        if (Array.IndexOf(ReservationReconciliationOutcomes, outcome) < 0)
+        {
+            throw new ArgumentException(
+                $"リコンサイルの判定は {string.Join(" / ", ReservationReconciliationOutcomes)} のいずれかである（実値: '{outcome}'）。",
+                nameof(outcome));
+        }
+
+        if (count <= 0)
+            return;
+
+        _orderReservationReconciliations.Add(
+            count, new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome));
+    }
+
+    /// <summary>
+    /// FR-05, NFR-09, #856, IADR-0441: 上のカウンタを<b>判定ごとに 0 で計上し、系列を先に作る</b>。
+    /// 発注執行が、リコンサイルが有効な構成（<c>Reconciliation:Enabled=true</c>）でだけ起動完了時に 1 度呼ぶ。
+    /// <para>
+    /// 理由は <see cref="PrimeDriftAdoptionFollowUpAbandoned"/> と同じ（系列が最初の 1 件で初めて現れると
+    /// <c>increase()</c> はその 1 点目を数えない）。🔴 無効な構成で呼ばないのは、0 の系列が「巡回して 0 件だった」と読めるためである。
+    /// </para>
+    /// </summary>
+    public void PrimeOrderReservationReconciliations()
+    {
+        foreach (var outcome in ReservationReconciliationOutcomes)
+        {
+            _orderReservationReconciliations.Add(
+                0, new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome));
+        }
+    }
+
+    /// <summary>
     /// NFR-13: LLM 費用の計上と、当月の上限消費率を記録する。
     /// <paramref name="category"/> は上限の対象（<c>Llm</c>）か対象外（<c>LlmUncapped</c>）かを表す文字列。
     /// </summary>
@@ -414,12 +487,15 @@ public sealed class BusinessMetrics : IDisposable
     }
 
     /// <summary>
-    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスの Finnhub 日次要求見積りと、暫定上限に対する比率を記録する。
+    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスの Finnhub 日次要求見積りと、日次上限に対する比率を記録する。
+    /// ADR-0043（計画）決定 1, #1030, IADR-0437: 日次上限は既定で未設定（未実測）であり、そのときは比率を記録しない
+    /// （<paramref name="limitRatioPercent"/> が null）。推測の分母で割った比率を出さない。
     /// </summary>
-    public void RecordFinnhubDailyVolumeEstimate(long estimatedDailyRequests, double limitRatioPercent)
+    public void RecordFinnhubDailyVolumeEstimate(long estimatedDailyRequests, double? limitRatioPercent)
     {
         _finnhubDailyVolumeEstimate.Record(estimatedDailyRequests);
-        _finnhubDailyVolumeLimitRatioPercent.Record(limitRatioPercent);
+        if (limitRatioPercent is { } ratio)
+            _finnhubDailyVolumeLimitRatioPercent.Record(ratio);
     }
 
     /// <summary>

@@ -1,0 +1,105 @@
+# 自己試験用の fixture（チャート側 = `helm template` の形）。実在のクラスタ・値ではない。
+# 稼働側（live.yaml）との差: env の追加・値の変更・削除、secretKeyRef の参照先の変更、機密らしい平文の value の追加と変更、
+# image の変更、Secret の中身の変更、Service の追加、CronJob の削除。OpenD の Deployment は同じ（コメント・空行だけ違う）。
+---
+# Source: ai-stock-trading/templates/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-stock-trading
+---
+# Source: ai-stock-trading/templates/external-secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ast-fixture-secret
+  namespace: ai-stock-trading
+type: Opaque
+stringData:
+  sample: FIXTURE-SECRET-SENTINEL-rotated
+---
+# Source: ai-stock-trading/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-execution-service
+  namespace: ai-stock-trading
+spec:
+  selector:
+    app: order-execution-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# Source: ai-stock-trading/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: new-service
+  namespace: ai-stock-trading
+spec:
+  selector:
+    app: new-service
+  ports:
+    - port: 8080
+---
+# Source: ai-stock-trading/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-execution-service
+  namespace: ai-stock-trading
+  labels:
+    app: order-execution-service
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: order-execution-service
+          image: "k3d-local/ai-stock-trading/order-execution-service:v2"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: Reconciliation__Enabled
+              value: "true"
+            - name: Reconciliation__IntervalHours
+              value: "1"
+            - name: Broker__Password
+              value: "fixture-hunter2"
+            - name: Notifications__Discord__WebhookUrl
+              value: "https://discord.example/api/webhooks/1/fixture-webhook-token-new"
+            - name: ServiceAuth__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: ast-secrets
+                  key: service-auth-client-secret-v2
+                  optional: true
+          resources:
+            limits:
+              memory: 512Mi
+---
+# Source: ai-stock-trading/templates/opend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opend
+  namespace: ai-stock-trading
+spec:
+  replicas: 1
+
+  template:
+    spec:
+      containers:
+        # OpenD 本体（コメントと空行は比較から外れる）
+        - name: opend
+          image: "k3d-local/opend:latest"
+          ports:
+            - { containerPort: 11111, name: api }
+          env:
+            - name: OPEND_API_PORT
+              value: "11111"
+            - name: OPEND_LOGIN_PWD_MD5
+              valueFrom:
+                secretKeyRef: { name: moomoo-credentials, key: login-pwd-md5 }

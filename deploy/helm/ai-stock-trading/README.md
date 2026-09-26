@@ -84,6 +84,63 @@ MSP 連結のローカル配備では、秘密情報・接続設定を**画面�
 > Pod が古いまま残るため（実測: OpenD Pod が Helm revision 13→14 を跨いで 25 時間生存）。OpenD は
 > SMS/画像認証済みの moomoo セッションを持つため対象から除外する。
 
+### 配備の前後でリリースとチャートの差を確かめる（#1022 / [IADR-0439](../../../.ai-context/adr/IADR-0439_helm-release-drift-read-only-check.md)）
+
+> 🔴 **Pod の入れ替えでは values・テンプレートの変更は入らない。** `kubectl rollout restart`・イメージの焼き直し
+> （`scripts/k8s-local-images.sh`）・Reloader による再起動は、**リリースが保存している古い Pod テンプレートのまま** Pod を
+> 作り直すだけである。values（`values.yaml` / `values-local.yaml`）やテンプレートの変更を稼働へ入れるのは **`helm upgrade`
+> （＝`scripts/k8s-local-deploy.sh` の手順 4/5）だけ**である。実際に、リリース `ast` が 9/17 の版のまま更新されず、以降の配備が
+> `rollout restart` だけだったため、values に入れた `Reconciliation__*` の 6 項目が **8 日間**稼働中の発注執行に届いていなかった。
+
+差は `scripts/helm-release-drift.js` で出す（**読み取り専用**。helm は `get manifest` / `get values` / `template` しか呼ばず、
+upgrade・apply はしない。kubectl も呼ばない）。`helm get manifest`（稼働中のリリース）と、`helm get values`（リリースの利用者の値）を
+与えた `helm template`（今のチャート）を比べ、追加・削除・変更された資源と、コンテナごとの env のキーの差・image の差を出す。
+
+```bash
+# 配備の前（何が入るかを見る）。values-local.yaml はリリースの値の「後」に重なる＝今のプロファイルが勝つ。
+node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading \
+  --values deploy/helm/ai-stock-trading/values-local.yaml
+echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり（OpenD の Deployment が変わる）/ 2 使い方の誤り・helm の失敗
+```
+
+運用者の手順:
+
+1. **配備の前に走らせる。** 出た差が、この配備（`helm upgrade`）で稼働へ入るものである。意図した変更（今回の PR の values・
+   テンプレート）だけが出ていることを確かめる。意図しない差（他人の未配備の変更・手で入れた設定）が出たら、配備の前に理由を確かめる。
+2. 🔴 **OpenD の Deployment は変わってはならない。** 出力の 1 行目 `OpenD の Deployment（opend）:` が **「変化なし」**
+   （OpenD を立てない構成なら「どちらにも無い」）であることを必ず確かめる。**終了コード 3（変化あり・作られる・消える）なら配備しない。**
+   OpenD の Pod が作り直されると SMS / 画像で認証した moomoo のセッションが切れ、有人の再認証（SC-04）まで発注経路が止まる。
+   OpenD の Deployment を変える必要がある変更は、有人の再認証ができる時間帯を決めてから別に行う（`BROKER_TIER` / `OPEND_ENABLED` を
+   export し忘れても前回の値は引き継がれる。上記「前回リリースの値が引き継がれる」）。
+3. 配備する（`scripts/k8s-local-deploy.sh`。helm upgrade を含む）。**`kubectl rollout restart` だけで済ませない。**
+4. **配備の後にもう一度走らせ、終了コード 0（`OK: 稼働中のリリースとチャートの描画に差はありません`）を確かめる。**
+   差が残るなら、helm upgrade が失敗したか、`--set` で上書きした値が values-local.yaml と食い違っている（下の注意）。
+
+出力の読み方と注意:
+
+- **秘密の値は出さない（迷ったら伏せる）。** manifest の行はそのまま出さない。Secret は「変わった」ことだけを示す。env は secretKeyRef を
+  参照先ごと伏せる。平文の value でも、キー名を語に分けて機密らしい語（key / apikey / accesskey / dsn / bearer / token / secret / pass /
+  pwd / credential / webhook / connectionstring 等。`…TokenEndpoint` と LLM 単価の `…Per1kTokens` は伏せない）を含むもの、値が
+  URL の userinfo（`scheme://…@`）・`/webhooks/<id>/<token>`・クエリの鍵・トークンらしいパス要素・接続文字列の `Pass=` / `Pwd=` /
+  `Password=` / `AccountKey=` 等・トークンらしい長いランダム文字列のものは伏せる。伏せすぎて差が読めない項目は
+  `helm get manifest` を手元で見る（画面に出すときは秘密に注意）。
+- **リリースの values の一時ファイル**: `helm get values` の結果は OS の一時ディレクトリ（Linux / macOS は `$TMPDIR` か `/tmp`、
+  Windows は `%TEMP%`）の `helm-release-drift-*` に**実行中だけ**置き、描画にだけ使って表示しない。正常終了・失敗・Ctrl+C（SIGINT）・
+  SIGTERM・SIGHUP で消す。`mode 0600` は Linux / macOS でだけ効き、Windows では利用者の一時ディレクトリの権限に従う。
+  強制終了（`kill -9`・`taskkill /F`）では消せないので、残った `helm-release-drift-*` を手で消す。
+- **helm の引数は許可した形だけ**（`get manifest` / `get values` / `template` と、`-n` / `-o yaml` / `-f` / `--is-upgrade` /
+  `--no-hooks` / `--skip-tests`）。`--release` / `--namespace` / `--chart` / `--values` の値は、書式外・`-` で始まるもの・URL・
+  存在しないパスを拒む（exit 2）。kube の接続先は `--kubeconfig` 等のフラグではなく環境変数 `KUBECONFIG` / `HELM_KUBECONTEXT` で選ぶ。
+  呼ぶ helm は `--helm <path>` か環境変数 `HELM_RELEASE_DRIFT_HELM` で差し替えられる（運用者が選ぶもので、その実行ファイルが
+  何をするかは本スクリプトの保証の外）。
+- **`--set` で渡した値**（`k8s-local-deploy.sh` が前回リリースから引き継ぐ `broker.tier` / `opend.enabled` / `discord.bot.*` 等）は
+  リリースの値に入っている。values-local.yaml が同じ項目を持つと、描画では values-local.yaml が勝つため、実際の配備（`--set` が勝つ）と
+  食い違う差が出ることがある。その項目は `helm get values ast -n ai-stock-trading` の値と見比べて判断する（値を画面へ出すときは秘密に注意）。
+- env の並びだけの違い・コメント行だけの違い・フロー形式とブロック形式の書き方だけの違いは差として数えない。
+  env・image 以外の差（probe・resources・注釈等）は行数だけを出す。中身は `helm get manifest` と `helm template` を手元で比べて確かめる。
+- 検査器の自己試験は `node scripts/helm-release-drift.js --self-test`（同梱の fixture だけ・helm もクラスタも使わない。CI の
+  `scripts-tests` が走らせる）。
+
 ## 経路B（ローカル SIMULATE）の機能有効化: `values-local.yaml`
 
 > 起点: [IADR-0100](../../../.ai-context/adr/IADR-0100_route-b-values-local-standing-config.md) /
@@ -158,28 +215,57 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 - **(a) 同一鍵の予算**: 同じ鍵を使うすべてのプロセスの `RequestsPerMinute`（情報収集は `RateLimitPerMinute`）の合計 ≤ 60 回/分。
   chart の現況は 情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3（`risk-management` / `report` / `trade-decision`）＝ **57**。
 - **(b) 1 巡回が巡回間隔に収まる**: `market-monitor` は 1 巡回で**保有銘柄と監視銘柄を別々に**照会する（同じ銘柄でも 2 要求）。
-  **保有数 ＋ 監視銘柄数 ≤ `MarketData__Finnhub__RequestsPerMinute` × `Monitor__PollIntervalSeconds` ÷ 60** を満たすこと
+  **米国の保有数 ＋ 米国の監視銘柄数 ≤ `MarketData__Finnhub__RequestsPerMinute` × `Monitor__PollIntervalSeconds` ÷ 60** を満たすこと
+  （Finnhub 無料枠の現在値は米国株だけで、東証の銘柄は要求を出さない＝数えない）
   （chart の現況は 12 × 60 ÷ 60 ＝ **12 要求**）。満たさないと 1 銘柄あたりの価格の確認が遅れ、損切りの判定が遅れる。
   巡回間隔を延ばして収めることは、損切りの判定の遅れになるので避ける。
 
-> 追加の拒否（SC-02 と Discord の入れ替え案の適用の両方）が配備されるまでは、**監視銘柄を増やす前に運用者が (b) を確かめる**
-> （ADR-0043 決定 5 の暫定手段）。
+- **市場監視は (b) を満たさない追加を拒否する**（IADR-0437）。SC-02 の追加（`POST /monitor/watchlist`）と全置換
+  （`PUT /monitor/settings`）は 400、Discord の入れ替え案の適用（`POST /monitor/watchlist/proposal-apply`）はその銘柄だけを
+  適用せず内訳に理由を載せる。保有は巡回と同じリスク管理の照会で数える。除外は止めない。Finnhub を使わない構成では検査しない。
+  東証の銘柄の追加は要求を使わないので拒否しない。
+  - 全置換は**重複（銘柄コードの大小文字を無視・同じ市場）を 400** にする。全置換は一部だけ適用しないため、予算を超える追加を含む置換は
+    除外ごと断られる。断りの文言が収まらない追加の銘柄を示すので、**除外だけなら追加を含めずに送り直す**（除外は止めない）。
+    銘柄コードの無い要素（`symbol` が null・空白）を含む全置換も 400。
+  - 🔴 **運用者向けの注記（保存済みの重複）**: 重複を 400 にする前の全置換や初回シード（`Monitor:SeedSymbols` は重複を除かない）が保存した
+    重複が残っていると、それを保ったままの全置換も 400 になる（画面の部分更新と SC-02 の追加・除外は止まらない）。自動では直さない
+    （変更履歴の無い書き換えをしない）。`GET /monitor/settings` で重複を確かめ、**重複を 1 件ずつに減らした一覧で全置換を送り直す**
+    （減らすのは除外なので巡回の検査にも掛からない。この除外は変更履歴に行を残さない）。
+  🔴 **保有が増えて (b) を超えた場合は拒否では防げない**（追加ではないため）。運用者が上の式で確かめる。
+  🔴 **初回シード（`Monitor:SeedSymbols`）は検査しない**（運用者の構成であり、変更の口ではない）。シードの銘柄数も上の式で確かめる。
+
+> 🔴 **配備の順序: `market-monitor` と `notification` は同時に上げる。** 入れ替え案の適用の応答（`estimate.provisionalDailyLimit`）は
+> 日次上限が未設定なら null を返す。古い `notification` はこの null を読めず、Discord に適用の結果を「不明」と返す
+> （適用そのものは市場監視で済んでいる。変更履歴で確かめられる）。
+
+### 分次で説明できない 429（ADR-0043〔計画〕決定1 / IADR-0437）
+
+Finnhub の 429 のうち、`X-Ratelimit-Remaining` が残っているのに拒否されたもの、`X-Ratelimit-Reset` の時刻を過ぎても
+（成功を挟まずに）拒否が続くものは、分次の窓では説明できない。**日次上限の手がかり**として EventId
+`4301 FinnhubDailyLimitClue` の警告で記録する（取得はその銘柄をスキップするだけで、送出は変えない）。運用ログで見つけたら計画へ環流する。
+
+- 前回の 429 のリセットで判定するのは、その応答にリセットが無いときだけ（「残り 0・リセットは未来」の応答は新しい窓を使い切った 429）。
+- **秒次の上限（30 回/秒）の 429 は残りがあっても出る。** 同じプロセスの直前の要求から 1 秒以内の「残りがあるのに拒否」は手がかりにしない。
+  `information-collection` では現在値（`finnhub`）と企業ニュース（`finnhub-news`）が直前の要求の時刻を共有し、企業ニュースの送出も数える（#1044）。
+  🔴 同じ鍵を使う**他のプロセス**の同時の送出は見えないため、それによる秒次の 429 は手がかりとして記録され得る。4301 を読むときは
+  同じ時刻の他のプロセスのログと突き合わせる（情報収集は巡回の最初に最大 30 件をまとめて送り得る）。
 
 ### Finnhub の日次要求量の見積り（ADR-0031〔計画〕決定2〜4 / IADR-0292）
 
 分次の自制レート（上表）は瞬間的な要求レートしか保証せず、**1 日の総量**（銘柄数 × 1 巡回あたりの要求数 ×
-1 日の巡回回数）は別の制約である。日次上限は未実測のため、暫定手段として第三者観測「約 300 回/日」を
-`Finnhub:ProvisionalDailyLimit`（既定 300）で前提値として扱う。
+1 日の巡回回数）は別の制約である。**日次上限は公式に記載が無く、未実測**である（ADR-0043 決定1。暫定の前提値
+「約 300 回/日」は撤回した）。見積りは数えて見せるが、**既定では何とも比べない**。市場監視の 1 日の巡回回数は
+**開場中の巡回だけ**（米国 390 分 ÷ 巡回間隔）で数える（ADR-0043 決定3。全市場が閉じている間は巡回しないため）。
 
 - `MarketData:Finnhub:EstimatedSymbolCount`（`market-monitor` / `risk-management` / `report` / `trade-decision`
   の各 `MarketData` 節。既定 **0＝未申告**）: 当該サービスが 1 巡回で問い合わせる銘柄数（監視銘柄数・保有建玉数等）の
   運用者による申告値。実際の銘柄数は DB・台帳等の動的な値のため、起動時に確定させず運用者が実態に近い値を明示する。
   **既定 0 は挙動中立**（日次見積りへ寄与しない・警告もメトリクスも出ない）。
-- `Finnhub:ProvisionalDailyLimit`（`information-collection` と上記 4 サービス共通。既定 **300**）: 暫定日次上限。
-  日次上限が実測されたら実測値で上書きする（推測値の既定を残したまま「実測済み」の顔をさせない）。
-- 見積りが上限を超えると**警告ログ＋業務メトリクス**（`ast.finnhub.daily_request_estimate` /
-  `ast.finnhub.daily_request_limit_ratio_percent`。Grafana ダッシュボード「統制: Finnhub 日次要求見積り」）を
-  出す。**送出は止めない**——現時点の統制は可視化であり、確定した数値上限による強制ではない。
+- `Finnhub:ProvisionalDailyLimit`（`information-collection` と上記 4 サービス共通。既定 **未設定＝比べない**）: 日次上限。
+  **実測した値だけを設定する**（推測値を入れない）。キー名の「暫定」は歴史的な呼び名である。
+- 見積りは**業務メトリクス**（`ast.finnhub.daily_request_estimate`）と起動時の情報ログで見せる。上限を設定したときだけ、
+  超過を**警告ログ**と比率（`ast.finnhub.daily_request_limit_ratio_percent`）で出す（未設定なら比率は記録しない）。
+  Grafana ダッシュボード「統制: Finnhub 日次要求見積り」。**送出は止めない**。
   各プロセスの見積り値は `GET /internal/introspection` の自己申告（`finnhub-daily-request-estimate`）でも読める。
 - 情報収集（`information-collection`）は `Collection:Source:Finnhub:Symbols` の実銘柄数から起動時に算出する
   （申告不要）。上記 4 サービスは動的な実数を持たないため運用者申告に依る。

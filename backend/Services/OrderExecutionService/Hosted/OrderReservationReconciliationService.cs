@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Observability;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
@@ -33,6 +34,7 @@ public sealed class OrderReservationReconciliationService(
     IWolverineRuntime runtime,
     IClock clock,
     IOptions<ReconciliationOptions> options,
+    BusinessMetrics metrics,
     ILogger<OrderReservationReconciliationService> logger)
     : BackgroundService, IReservationReconciliationSink
 {
@@ -118,6 +120,12 @@ public sealed class OrderReservationReconciliationService(
     {
         if (emission.ProbeFinding is { } finding)
             ReportProbeTerminalized(finding);
+
+        // 🔴 FR-05, #856, IADR-0441: 確定した 1 件の計数も**発行より先**に残す（記録と同じ理由。発行が落ちても数え漏らさない）。
+        // 確定した予約は次の巡回に載らないので、ここで数えなければ永久に数えられない（IADR-0371 の幾何）。
+        metrics.RecordOrderReservationReconciliation(emission.ProbeFinding is null
+            ? BusinessMetrics.ReservationReconciliationSelfHealed
+            : BusinessMetrics.ReservationReconciliationProbePlaced);
 
         // ADR-0013, IADR-0129, #354: BackgroundService（singleton）からの発行。Wolverine の IMessageBus は scoped で
         // singleton へ注入できないため、singleton の IWolverineRuntime から MessageBus を作って発行する。
@@ -246,6 +254,14 @@ public sealed class OrderReservationReconciliationService(
     // （件数・失敗数・据え置き）。確定済み 1 件の事実は EmitAsync が既に出している。
     private void ReportRoundSummary(ReservationReconciliationResult result)
     {
+        // FR-05, NFR-09, #856, IADR-0441: 確定しなかった判定を件数で計上する（確定した分は EmitAsync が 1 件ずつ数え済み）。
+        // これらの予約は Reserved のまま次の巡回に載るため、巡回が中断されて計上されなくても次の巡回で数え直される。
+        // 🔴 held-not-placed は門を開けてよいかの観測に使う（ブローカーに存在する注文に対して出たら門を開けない。#856）。
+        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced, result.HeldNotPlaced.Count);
+        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationReleased, result.Released);
+        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationIndeterminate, result.Indeterminate);
+        metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationFailed, result.Failed);
+
         // #856 監査 N3: 据え置き（Held）も件数に出す。出さないと、全件が門で据え置かれた巡回が
         // 「滞留 5 件を走査（終端化 0 / 解放 0 / 不確定 0 / 失敗 0）」になり、運用者には内訳の合わない行に見える。
         //

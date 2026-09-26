@@ -51,12 +51,11 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration")
     // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告（現在の実現手段が
     // 無かった「日次総量の可視化」を、外部から /internal/introspection 経由で読めるようにする）。
+    // FR-01, ADR-0043（計画）決定 3, #1030, IADR-0437: 監視銘柄に追随する構成（MarketMonitor:BaseUrl）では構成の固定リストは対象ではない。
+    // 自己申告は起動時に 1 回だけ決まるため、1 巡回に収まる対象の数（上限）で数える。巡回ごとの実数は業務メトリクスが持つ。
     .AddMetric(
         "finnhub-daily-request-estimate",
-        InformationSourceFactory.EstimateDailyVolume(
-            builder.Configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new(),
-            builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
-                ?? new CollectionOptions().PollIntervalSeconds).ToString()));
+        EstimateAtStartup(builder.Configuration).ToString()));
 
 // 収集ポーリングの構成（間隔）。
 builder.Services.Configure<CollectionOptions>(builder.Configuration.GetSection(CollectionOptions.SectionName));
@@ -136,13 +135,17 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
 
     // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求量の見積り
     // （銘柄未設定・Finnhub 系ソース未有効なら挙動中立）。巡回間隔は本サービス自身の CollectionOptions を使う。
+    // ADR-0043（計画）決定 3, #1030, IADR-0437: 監視銘柄に追随するなら、起動時は 1 巡回の上限で数え、巡回ごとに実数で記録し直す（下の装飾）。
+    var pollIntervalSeconds =
+        builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
+            ?? new CollectionOptions().PollIntervalSeconds;
     InformationSourceFactory.EvaluateDailyVolumeEstimate(
         sourceOptions,
-        builder.Configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
-            ?? new CollectionOptions().PollIntervalSeconds,
+        pollIntervalSeconds,
         FinnhubDailyVolumeGuardOptions.Read(builder.Configuration),
         sp.GetRequiredService<BusinessMetrics>(),
-        sp.GetRequiredService<ILoggerFactory>());
+        sp.GetRequiredService<ILoggerFactory>(),
+        finnhubSymbols.FollowsWatchlist ? InformationSourceFactory.FinnhubMaxSymbolsPerCycle(sourceOptions, pollIntervalSeconds) : null);
 
     if (sources.Count == 0)
         return new NoSourcesFetcher();
@@ -152,7 +155,13 @@ builder.Services.AddSingleton<ISourceFetcher>(sp =>
     // #1015, IADR-0435: 監視銘柄に追随し、かつ Finnhub 系のソースが有効なら、取得の前に 1 回だけ対象銘柄を決め直す。
     var followsWatchlist = finnhubSymbols.FollowsWatchlist
         && sources.Any(s => s.Name is InformationSourceFactory.Finnhub or InformationSourceFactory.FinnhubNews);
-    return followsWatchlist ? new WatchlistFollowingSourceFetcher(runner, finnhubSymbols) : runner;
+    var metrics = sp.GetRequiredService<BusinessMetrics>();
+    return followsWatchlist
+        ? new WatchlistFollowingSourceFetcher(
+            runner,
+            finnhubSymbols,
+            count => InformationSourceFactory.RecordCycleDailyVolumeEstimate(sourceOptions, pollIntervalSeconds, count, metrics))
+        : runner;
 });
 
 // FR-01, FR-08, IADR-0069: KB 連携（保存 IKnowledgeBaseWriter・取得 IKnowledgeBaseSearch）を配線する。
@@ -237,6 +246,20 @@ app.MapActivateGeneralWebCollection();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);
+
+// FR-01, ADR-0043（計画）決定 3, #1030, IADR-0437: 起動時の日次要求の見積り（自己申告用）。監視銘柄に追随する構成
+// （MarketMonitor:BaseUrl が絶対 URI）なら 1 巡回に収まる対象の数（上限）、そうでなければ構成の固定リストの数で数える。
+static long EstimateAtStartup(IConfiguration configuration)
+{
+    var sourceOptions = configuration.GetSection(CollectionSourceOptions.SectionName).Get<CollectionSourceOptions>() ?? new();
+    var pollIntervalSeconds = configuration.GetSection(CollectionOptions.SectionName).Get<CollectionOptions>()?.PollIntervalSeconds
+        ?? new CollectionOptions().PollIntervalSeconds;
+    var followsWatchlist = Uri.TryCreate(configuration["MarketMonitor:BaseUrl"], UriKind.Absolute, out _);
+    return InformationSourceFactory.EstimateDailyVolume(
+        sourceOptions,
+        pollIntervalSeconds,
+        followsWatchlist ? InformationSourceFactory.FinnhubMaxSymbolsPerCycle(sourceOptions, pollIntervalSeconds) : null);
+}
 
 // 統合テスト（WebApplicationFactory）が参照するためのエントリポイント公開。
 public partial class Program { }

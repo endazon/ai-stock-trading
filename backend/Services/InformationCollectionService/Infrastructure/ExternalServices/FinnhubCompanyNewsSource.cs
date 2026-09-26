@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using InformationCollectionService.Common.Abstractions;
 using InformationCollectionService.Features.InformationCollection;
 using InformationCollectionService.Domain;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
@@ -20,6 +21,10 @@ namespace InformationCollectionService.Infrastructure.ExternalServices;
 //
 // #1015, IADR-0435: 対象銘柄は巡回ごとに決まる集合（IFinnhubSymbolSet）から取る。レート制限は現在値のソースと
 // **同じバケットを共有する**（同じ鍵・同じ自制レート。InformationSourceFactory が 1 つだけ作る）。
+//
+// ADR-0043（計画）決定 1, #1044 項目 3, IADR-0437 決定 7: 送出のたびに、現在値のクライアント（FinnhubQuoteClient）と共有する
+// 直前の要求の時刻（FinnhubLastRequestTracker）を刻む。現在値の 429 の分類がこの送出を「直前の要求」に数え、企業ニュースの直後の
+// 秒次（30 回/秒）の 429 を日次上限の手がかり（4301）と取り違えないため。企業ニュース自身の 429 は従来どおり取得失敗（分類しない）。
 public sealed class FinnhubCompanyNewsSource(
     HttpClient httpClient,
     string apiKey,
@@ -27,7 +32,8 @@ public sealed class FinnhubCompanyNewsSource(
     IRateLimiter rateLimiter,
     IClock clock,
     ILogger<FinnhubCompanyNewsSource> logger,
-    int lookbackDays = 1)
+    int lookbackDays = 1,
+    FinnhubLastRequestTracker? lastRequestTracker = null)
     : IInformationSource
 {
     public const string SourceName = "finnhub-news";
@@ -44,6 +50,7 @@ public sealed class FinnhubCompanyNewsSource(
         foreach (var symbol in symbols.Current)
         {
             await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            lastRequestTracker?.MarkSent();
 
             // API キーはクエリ文字列で渡す仕様のため、OTel の HttpClient 計装が URL（クエリ込み）を
             // トレースへ出力してキーが漏えいするのを防ぐべく、この要求のみ計装を抑止する（IADR-0064）。

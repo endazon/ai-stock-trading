@@ -5,12 +5,18 @@ namespace MarketMonitorService.Features.MarketMonitor.ReplaceMonitorSettings;
 // FR-03, FR-11, FR-13, SC-02, #423, IADR-0164 決定3: 全置換も**部分更新と同じ規律**
 // （理由必須・MonitorSettingsBounds の値域・変更履歴）を通す。導入前は理由も履歴も無く、
 // 値域も「正・非負」だけだったため、**画面が弾く値を API 直叩きで保存できた**。
+// FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 全置換も監視銘柄を増やし得るため、SC-02 の追加と同じ
+// 「1 巡回が巡回間隔に収まること」の検査を通す（画面から使わない経路だからこそ塞ぐ。IADR-0164 決定3 と同じ理由）。
 internal static class ReplaceMonitorSettingsEndpoint
 {
     public static void MapReplaceMonitorSettings(this IEndpointRouteBuilder owner) =>
         owner.MapPut("/settings",
-            (MonitorSettingsUpdateRequest req, MonitorSettingsService svc, HttpContext http) =>
-            Results.Ok(svc.Replace(req.ToSettings(), MonitorSettingsEndpoints.ActorOf(http), req.Reason ?? string.Empty)));
+            async (MonitorSettingsUpdateRequest req, MonitorSettingsService svc, WatchlistCycleFitGuard guard, HttpContext http) =>
+            {
+                var fit = await guard.ResolveAsync(http.RequestAborted);
+                return Results.Ok(svc.Replace(
+                    req.ToSettings(), MonitorSettingsEndpoints.ActorOf(http), req.Reason ?? string.Empty, fit?.Fit));
+            });
 }
 
 // 監視設定変更の要求。MonitoredSymbols は逆直列化可能な具象 List で受ける。

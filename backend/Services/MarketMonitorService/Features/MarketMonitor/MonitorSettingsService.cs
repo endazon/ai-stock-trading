@@ -87,7 +87,21 @@ public sealed class MonitorSettingsService(
     /// 「いつ変わったのか」が読めなくなる）。
     /// </para>
     /// </summary>
-    public MarketMonitorSettings Replace(MarketMonitorSettings settings, string actor, string reason)
+    /// <remarks>
+    /// FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 全置換も監視銘柄を増やし得るため、SC-02 の追加と同じ検査を通す。
+    /// <list type="bullet">
+    /// <item><b>銘柄コードの無い要素（null・空白）を含む置換は 400</b>（#1044）。</item>
+    /// <item>🔴 <b>重複（銘柄コードの大小文字を無視・同じ市場）を含む置換は 400</b>（検査の有無に関係なく）。SC-02 の追加は重複を拒否するのに
+    /// 全置換は通していたため、<c>[AAPL, aapl, AAPL…]</c> で「新しい銘柄なし」と判定させたまま巡回の要求数だけを増やせた（#1037 の監査）。</item>
+    /// <item><paramref name="cycleFit"/> があり、置換後の一覧に<b>今は無い、要求を使う（米国の）銘柄が含まれ</b>、かつ置換後の 1 巡回が巡回間隔に
+    /// 収まらないなら 400。重複を拒否した後なので、要求数が増えるのは新しい米国の銘柄を含むときに限られる。</item>
+    /// <item><b>全置換は全体で 1 つの変更として扱い、一部だけ適用しない</b>（入れ替え案の適用と違い、送られた一覧そのものを保存する口であるため。
+    /// 一部だけ保存すると送った一覧と保存された一覧が食い違う）。拒否の文言に、収まらない追加の銘柄と、除外だけなら別に送れば通ることを書く
+    /// （除外は止めない＝ADR-0043 決定 4。除外だけ・並べ替えだけの置換、要求を使わない追加は通す）。</item>
+    /// </list>
+    /// </remarks>
+    public MarketMonitorSettings Replace(
+        MarketMonitorSettings settings, string actor, string reason, WatchlistCycleFit? cycleFit = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         RequireActorAndReason(actor, reason);
@@ -101,7 +115,41 @@ public sealed class MonitorSettingsService(
             throw new ArgumentException(cooldownError, nameof(settings));
         }
 
+        // FR-13, #1044 項目 1: 銘柄コードの無い要素（要素そのものが null・symbol が null／空白）は 400。重複検査の Trim が
+        // NullReferenceException を投げ、エンドポイントが 500 を返していた（ArgumentException だけを 400 に写すため）。
+        if (settings.MonitoredSymbols.Any(s => s is null || string.IsNullOrWhiteSpace(s.Symbol)))
+        {
+            throw new ArgumentException("監視銘柄に銘柄コードの無い要素があります（symbol は必須です）。", nameof(settings));
+        }
+
+        var duplicates = settings.MonitoredSymbols
+            .GroupBy(s => (s.Symbol.Trim().ToUpperInvariant(), s.Market))
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key.Item1}@{g.Key.Market}")
+            .ToList();
+        if (duplicates.Count > 0)
+        {
+            // #1044 項目 4, IADR-0437 決定 7: #1037 より前の全置換・初回シードが保存した重複が残っていると、それを保ったままの置換も
+            // ここで止まる。読み取り時に黙って正規化はしない（変更履歴の外で台帳を変えない）。直し方を文言で示す（減らすのは除外＝止めない）。
+            throw new ArgumentException(
+                $"監視銘柄に重複があります（{string.Join(", ", duplicates)}。銘柄コードの大小文字は区別しません）。"
+                + "保存済みの一覧に残っている重複も、1 件ずつに減らして送れば適用されます（減らすのは除外なので止めません）。",
+                nameof(settings));
+        }
+
         var current = store.GetSettings();
+        var costlyAdditions = settings.MonitoredSymbols
+            .Where(s => WatchlistCycleFit.RequestsPerSymbol(s.Market) > 0 && !current.MonitoredSymbols.Any(c => Same(c, s)))
+            .ToList();
+        if (cycleFit is not null && costlyAdditions.Count > 0 && !cycleFit.Fits(settings.MonitoredSymbols))
+        {
+            throw new ArgumentException(
+                $"監視銘柄を増やす置換は Finnhub の巡回に収まりません（{cycleFit.Describe(settings.MonitoredSymbols)}）。"
+                + $"収まらない追加: {string.Join(", ", costlyAdditions.Select(s => $"{s.Symbol}@{s.Market}"))}。"
+                + "置換は一部だけ適用しません。除外だけなら、追加を含めずに送れば適用されます（除外は止めません）。",
+                nameof(settings));
+        }
+
         // 永続化を先に確定させる（fail-safe）。競合はここで送出され、履歴は 1 件も残らない。
         store.Save(settings);
 

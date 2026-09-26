@@ -103,6 +103,7 @@ public class InformationSourceFactoryDailyVolumeTests
         using var metrics = new BusinessMetrics();
         var logs = new CapturingLoggerFactory();
         // finnhub 1 要求/巡回 × 10 銘柄 × 48 巡回/日 = 480 件/日 > 300。
+        // ［2026-09-26 / #1030・ADR-0043 決定 1］既定の 300 回/日は撤回（既定は比べない）。比べるのは上限を設定したときだけ。
         var options = new CollectionSourceOptions
         {
             Provider = "finnhub",
@@ -110,7 +111,7 @@ public class InformationSourceFactoryDailyVolumeTests
         };
 
         InformationSourceFactory.EvaluateDailyVolumeEstimate(
-            options, pollIntervalSeconds: 1800, new FinnhubDailyVolumeGuardOptions(), metrics, logs);
+            options, pollIntervalSeconds: 1800, new FinnhubDailyVolumeGuardOptions { ProvisionalDailyLimit = 300 }, metrics, logs);
 
         logs.Warnings.Should().ContainSingle(m =>
             m.Contains("480", StringComparison.Ordinal) && m.Contains("300", StringComparison.Ordinal));

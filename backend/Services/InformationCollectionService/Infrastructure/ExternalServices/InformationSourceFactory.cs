@@ -55,7 +55,8 @@ public static class InformationSourceFactory
         var finnhub = new FinnhubFamily(
             finnhubSymbols ?? new FixedFinnhubSymbolSet(options.Finnhub.Symbols),
             FollowsDynamicSet: finnhubSymbols is not null,
-            new Lazy<IRateLimiter>(() => Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider)));
+            new Lazy<IRateLimiter>(() => Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider)),
+            new FinnhubLastRequestTracker(timeProvider));
 
         foreach (var provider in ParseProviders(options.Provider))
         {
@@ -86,9 +87,12 @@ public static class InformationSourceFactory
 
         if (cap is null)
         {
-            logger.LogWarning(
-                "Finnhub Free の日次要求上限が未設定（未実測）のため、監視銘柄数の上限を逆算していません。"
-                + "実測後に Collection:Source:Finnhub:DailyRequestLimit を設定してください（ADR-0020 フォローアップ）。");
+            // ADR-0043（計画）決定 1・2, #1030, IADR-0437: 日次上限は「公式に記載が無く、未実測」が平常であり警告ではない。
+            // 監視銘柄数は分次の予算と「1 巡回が巡回間隔に収まること」で統制する（FinnhubCycleFit）。日次は 429 で見張る。
+            logger.LogInformation(
+                "Finnhub Free の日次要求上限は未実測のため、日次上限から監視銘柄数の上限を逆算しません（ADR-0043 決定1）。"
+                + "監視銘柄数は分次の予算と 1 巡回が巡回間隔に収まることで統制します。日次上限を実測したら "
+                + "Collection:Source:Finnhub:DailyRequestLimit を設定すると逆算の結果を出します。");
             return;
         }
 
@@ -110,28 +114,57 @@ public static class InformationSourceFactory
     }
 
     /// <summary>
+    /// FR-01, ADR-0043（計画）決定 2 (b)・3, #1030, IADR-0437: 1 巡回に収まる Finnhub の対象の数（<see cref="FinnhubCycleFit"/>。
+    /// 選択器〔#1015 / IADR-0435〕が掛ける上限と同じ式）。監視銘柄に追随する構成の起動時の日次見積りは、対象がまだ分からないためこの上限で数える。
+    /// </summary>
+    public static int FinnhubMaxSymbolsPerCycle(CollectionSourceOptions options, int pollIntervalSeconds)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return FinnhubCycleFit.MaxSymbolsPerCycle(
+            options.Finnhub.RateLimitPerMinute, pollIntervalSeconds, Math.Max(1, FinnhubRequestsPerSymbol(options)));
+    }
+
+    /// <summary>
     /// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 情報収集ぶんの Finnhub 日次要求見積り（回/日）。
     /// finnhub / finnhub-news がいずれも無効、または銘柄が未設定なら 0（挙動中立）。
     /// introspection 自己申告（数値のみ・ログ副作用なし）から使う軽量版。
     /// </summary>
-    public static long EstimateDailyVolume(CollectionSourceOptions options, int pollIntervalSeconds)
+    /// <remarks>
+    /// FR-01, ADR-0043（計画）決定 3, #1030, IADR-0437: <paramref name="symbolCount"/> を与えればその銘柄数で数える
+    /// （監視銘柄に追随する構成＝#1015 / IADR-0435 では、構成の固定リストは対象ではない。起動時は 1 巡回の上限、巡回ごとは
+    /// その巡回の対象の数を渡す）。省略時は構成の固定リストの数。1 日の巡回回数は 24 時間で数える——本サービスの in-process の
+    /// 巡回は開場に関係なく回るため（ADR-0043 決定 3「巡回の形に合わせて数える」。閉場中は巡回しない市場監視とは違う）。
+    /// </remarks>
+    public static long EstimateDailyVolume(CollectionSourceOptions options, int pollIntervalSeconds, int? symbolCount = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         // Create() と同じ正規化（空要素の除去）を適用してから数える（Symbols の空要素混入を実体ありと数えない）。
         var normalized = Normalize(options);
-        var providers = ParseProviders(normalized.Provider).ToHashSet();
-        var requestsPerSymbol = new[] { Finnhub, FinnhubNews }.Count(providers.Contains);
-        if (requestsPerSymbol == 0 || normalized.Finnhub.Symbols.Length == 0)
+        var requestsPerSymbol = FinnhubRequestsPerSymbol(normalized);
+        var symbols = Math.Max(0, symbolCount ?? normalized.Finnhub.Symbols.Length);
+        if (requestsPerSymbol == 0 || symbols == 0)
             return 0;
 
         var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
         return new FinnhubDailyVolumeEstimator.ProcessVolume(
             ProcessName: "information-collection",
             ApiKeyGroup: "self",
-            SymbolCount: normalized.Finnhub.Symbols.Length,
+            SymbolCount: symbols,
             RequestsPerSymbolPerCycle: requestsPerSymbol,
             CyclesPerDay: cyclesPerDay).EstimatedDailyRequests;
+    }
+
+    /// <summary>
+    /// FR-01, ADR-0043（計画）決定 3, #1030, IADR-0437: 巡回ごとに、その巡回の Finnhub の対象の数から日次要求の見積りを業務メトリクスへ
+    /// 記録し直す（監視銘柄に追随する構成では対象が巡回ごとに変わる）。ログは出さない（巡回ごとの雑音にしない）。比率は記録しない
+    /// （日次上限の比較と警告は起動時の <see cref="EvaluateDailyVolumeEstimate"/> が持つ）。
+    /// </summary>
+    public static void RecordCycleDailyVolumeEstimate(
+        CollectionSourceOptions options, int pollIntervalSeconds, int symbolCount, BusinessMetrics metrics)
+    {
+        ArgumentNullException.ThrowIfNull(metrics);
+        metrics.RecordFinnhubDailyVolumeEstimate(EstimateDailyVolume(options, pollIntervalSeconds, symbolCount), null);
     }
 
     /// <summary>
@@ -144,14 +177,16 @@ public static class InformationSourceFactory
         int pollIntervalSeconds,
         FinnhubDailyVolumeGuardOptions dailyVolumeGuard,
         BusinessMetrics metrics,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        int? symbolCount = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(dailyVolumeGuard);
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        var estimatedDailyRequests = EstimateDailyVolume(options, pollIntervalSeconds);
+        // ADR-0043（計画）決定 3, #1030, IADR-0437: 監視銘柄に追随する構成では、起動時の対象の数を呼び出し側が渡す（1 巡回の上限）。
+        var estimatedDailyRequests = EstimateDailyVolume(options, pollIntervalSeconds, symbolCount);
         if (estimatedDailyRequests == 0)
             return;
 
@@ -160,20 +195,27 @@ public static class InformationSourceFactory
 
         metrics.RecordFinnhubDailyVolumeEstimate(result.EstimatedDailyRequests, result.ExceedRatio * 100);
 
+        var normalized = Normalize(options);
+        var symbols = symbolCount ?? normalized.Finnhub.Symbols.Length;
+        var requestsPerSymbol = FinnhubRequestsPerSymbol(normalized);
+        var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
+        var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
         if (result.Verdict == FinnhubDailyVolumeEstimator.Verdict.Exceeds)
         {
-            var normalized = Normalize(options);
-            var providers = ParseProviders(normalized.Provider).ToHashSet();
-            var requestsPerSymbol = new[] { Finnhub, FinnhubNews }.Count(providers.Contains);
-            var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
-
-            var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
             logger.LogWarning(
                 "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）が"
-                + "暫定日次上限 {Limit} 回/日（第三者観測の前提値。実測ではない。ADR-0031 決定3）を超えています。"
-                + "収集は継続します（統制は現時点では警告のみ）。監視銘柄数・巡回頻度を上げる前に日次上限の実測を検討してください。",
-                result.EstimatedDailyRequests, normalized.Finnhub.Symbols.Length, requestsPerSymbol, cyclesPerDay,
+                // ADR-0043（計画）決定 1, #1030, IADR-0437: 暫定の 300 回/日は撤回。ここへ来るのは日次上限を実測して設定したときだけ。
+                + "設定された日次上限 {Limit} 回/日（ADR-0031 決定3）を超えています。"
+                + "収集は継続します（統制は警告のみ）。銘柄数・巡回頻度を見直してください。",
+                result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay,
                 dailyVolumeGuard.ProvisionalDailyLimit);
+        }
+        else if (result.Verdict == FinnhubDailyVolumeEstimator.Verdict.NotCompared)
+        {
+            logger.LogInformation(
+                "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）。"
+                + "日次上限は未実測のため比べません（ADR-0043 決定1）。日次は 429 で見張ります。",
+                result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay);
         }
     }
 
@@ -278,11 +320,14 @@ public static class InformationSourceFactory
 
                 // IADR-0068: HTTP は共有の FinnhubQuoteClient。レート制限は構成値（既定は公称 60 回/分の 1/2）。
                 // #1015, IADR-0435: バケットは企業ニュースと共有し、銘柄は巡回ごとの集合から取る。
+                // #1044, IADR-0437 決定 7: 直前の要求の時刻も企業ニュースと共有する（429 の分類が企業ニュースの送出を数える）。
                 return new FinnhubInformationSource(
                     new FinnhubQuoteClient(
                         httpClient, options.Finnhub.ApiKey!,
                         finnhub.Limiter.Value,
-                        loggerFactory.CreateLogger<FinnhubQuoteClient>()),
+                        loggerFactory.CreateLogger<FinnhubQuoteClient>(),
+                        timeProvider: timeProvider,
+                        lastRequestTracker: finnhub.LastRequest),
                     finnhub.Symbols);
 
             case FinnhubNews:
@@ -295,7 +340,8 @@ public static class InformationSourceFactory
                     finnhub.Limiter.Value,
                     clock,
                     loggerFactory.CreateLogger<FinnhubCompanyNewsSource>(),
-                    options.Finnhub.NewsLookbackDays);
+                    options.Finnhub.NewsLookbackDays,
+                    finnhub.LastRequest);
 
             case GoogleNews:
                 if (options.GoogleNews.Queries.Length == 0)
@@ -370,8 +416,10 @@ public static class InformationSourceFactory
     }
 
     // #1015, IADR-0435: Finnhub 系（現在値・企業ニュース）で共有するもの —— 巡回ごとの銘柄の集合と、1 つのバケット（遅延生成）。
+    // #1044, IADR-0437 決定 7: 加えて直前の要求の時刻（同じ鍵の送り手の送出をすべて数え、秒次の 429 を 4301 と取り違えない）。
     // 有効化の条件: 鍵があり、かつ銘柄の出所がある（構成の固定リストが空でない、または巡回ごとに決まる集合を与えられた）。
-    private sealed record FinnhubFamily(IFinnhubSymbolSet Symbols, bool FollowsDynamicSet, Lazy<IRateLimiter> Limiter)
+    private sealed record FinnhubFamily(
+        IFinnhubSymbolSet Symbols, bool FollowsDynamicSet, Lazy<IRateLimiter> Limiter, FinnhubLastRequestTracker LastRequest)
     {
         public bool IsConfigured(CollectionSourceOptions options) =>
             !string.IsNullOrWhiteSpace(options.Finnhub.ApiKey) && (FollowsDynamicSet || options.Finnhub.Symbols.Length > 0);

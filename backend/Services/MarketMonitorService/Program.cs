@@ -9,6 +9,7 @@ using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
@@ -70,12 +71,14 @@ builder.Services.AddSingleton<IMarketDataSource>(sp =>
 
     // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
     // 既定 0 のときは挙動中立）。監視間隔は本サービス自身の巡回間隔（MonitorOptions.PollIntervalSeconds）を使う。
+    // ADR-0043（計画）決定 3, #1030, IADR-0437: 本サービスは全市場が閉じている間は巡回しないため、開場中（米国 390 分）だけで数える。
     MarketDataSourceFactory.EvaluateDailyVolume(
         marketDataOptions,
         sp.GetRequiredService<IOptions<MonitorOptions>>().Value.PollIntervalSeconds,
         FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),
         sp.GetRequiredService<BusinessMetrics>(),
-        sp.GetRequiredService<ILoggerFactory>());
+        sp.GetRequiredService<ILoggerFactory>(),
+        MarketSessions.RegularSessionMinutes(Market.UnitedStates));
 
     return MarketDataSourceFactory.Create(
         marketDataOptions,
@@ -135,6 +138,7 @@ builder.Services.AddSingleton(sp => new DelegatedActorOptions(
     DelegatedActorResolver.ParseTrustedClientIds(
         sp.GetRequiredService<IConfiguration>()[DelegatedActorOptions.TrustedClientIdsKey])));
 // ADR-0031, ADR-0042 決定 1, IADR-0433 決定 4: 適用後の Finnhub の日次要求の推定（警告のみ・適用を止めない）。
+// ADR-0043（計画）決定 1・3, #1030, IADR-0437: 開場中の巡回で数え、日次上限は実測して設定したときだけ比べる（既定は比べない）。
 builder.Services.AddSingleton(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -142,6 +146,18 @@ builder.Services.AddSingleton(sp =>
         cfg["MarketData:Provider"],
         sp.GetRequiredService<IOptions<MonitorOptions>>().Value.PollIntervalSeconds,
         FinnhubDailyVolumeGuardOptions.Read(cfg).ProvisionalDailyLimit);
+});
+// FR-13, SC-02, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 監視銘柄を増やす 3 つの口（SC-02 の追加・全置換・入れ替え案の適用）が
+// 通す「1 巡回が巡回間隔に収まること」の検査。自制レートは現在値ソースと、巡回間隔は巡回と同じ構成から読む（解決時に読む）。
+// 保有は巡回と同じ IPositionStore（scoped）から数えるため scoped。
+builder.Services.AddScoped(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    return new WatchlistCycleFitGuard(
+        cfg["MarketData:Provider"],
+        (cfg.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new()).Finnhub.RequestsPerMinute,
+        sp.GetRequiredService<IOptions<MonitorOptions>>().Value.PollIntervalSeconds,
+        sp.GetRequiredService<IPositionStore>());
 });
 // FR-03/FR-11/FR-13, UC-06, SC-01 §2, #340, IADR-0155: 収集パラメータ（変動閾値・クールダウン）の部分更新。
 // 全置換 PUT（/settings）と違い、他の項目（監視銘柄）を巻き込まない。
@@ -173,7 +189,9 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
         MarketDataSourceFactory.EstimateDailyVolume(
             builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new(),
             builder.Configuration.GetSection(MonitorOptions.SectionName).Get<MonitorOptions>()?.PollIntervalSeconds
-                ?? new MonitorOptions().PollIntervalSeconds).ToString()));
+                ?? new MonitorOptions().PollIntervalSeconds,
+            // ADR-0043（計画）決定 3, #1030, IADR-0437: 開場中（米国 390 分）だけで数える。
+            MarketSessions.RegularSessionMinutes(Market.UnitedStates)).ToString()));
 
 var app = builder.Build();
 

@@ -134,7 +134,7 @@
     {
       "id": 10,
       "title": "統制: Finnhub 日次要求見積り（プロセス別）",
-      "description": "ADR-0031（計画）決定2〜4: 監視銘柄数 × 巡回頻度からの日次総量見積り（回/日）。銘柄数未申告（既定）のプロセスは 0 のまま。",
+      "description": "ADR-0031（計画）決定2〜4: 監視銘柄数 × 巡回頻度からの日次総量見積り（回/日）。市場監視は開場中の巡回（米国 390 分）だけで数える（ADR-0043 決定3）。銘柄数未申告（既定）のプロセスは 0 のまま。",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 21, "w": 12, "h": 7 },
       "targets": [{
@@ -145,8 +145,8 @@
     },
     {
       "id": 11,
-      "title": "統制: Finnhub 日次暫定上限に対する比率（%・プロセス別）",
-      "description": "暫定上限（既定300回/日。第三者観測の前提値・実測ではない。ADR-0031 決定3）に対する比率。100% 超は警告ログを伴う（送出は止めない）。",
+      "title": "統制: Finnhub 日次上限に対する比率（%・プロセス別。上限を設定したときだけ）",
+      "description": "実測して設定した日次上限（Finnhub:ProvisionalDailyLimit）に対する比率。暫定の 300 回/日は撤回（ADR-0043 決定1）＝既定は未設定で記録しない（空のパネルが正常）。100% 超は警告ログを伴う（送出は止めない）。",
       "type": "timeseries",
       "gridPos": { "x": 12, "y": 21, "w": 12, "h": 7 },
       "fieldConfig": {
@@ -270,6 +270,18 @@
           "legendFormat": "deferred"
         }
       ]
+    },
+    {
+      "id": 19,
+      "title": "発注: 発注予約の自動リコンサイルの判定（1h あたり）",
+      "description": "滞留した発注予約（送信後に結果を確認できなかった注文）を、証券会社の注文一覧と備考（remark）で突き合わせた判定を outcome 別に数える。probe-placed は照会で発注済みと確定（エントリーなら続けて承認時の手法で保護レグを張る）、self-healed は記録があるのに予約が残っていた自己修復。held-not-placed は照会が未発注と答えたが解放の門が閉じているため据え置いた件数で、同じ予約が巡回ごとに数え直される。実際には証券会社に存在する注文に対してこれが出ていたら、解放の門を開けてはならない（備考が往復していない）。released は門が閉じている限り 0。indeterminate / failed は据え置き（人が証券会社の画面で確認する）。リコンサイルが有効な構成でだけ系列が現れる。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 63, "w": 24, "h": 7 },
+      "targets": [{
+        "datasource": "Prometheus",
+        "expr": "sum by (outcome) (increase(ast_order_reservation_reconciliations_total[1h]))",
+        "legendFormat": "{{outcome}}"
+      }]
     }
   ]
 }

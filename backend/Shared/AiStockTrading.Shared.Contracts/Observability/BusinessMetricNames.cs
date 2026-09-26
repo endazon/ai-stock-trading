@@ -112,6 +112,22 @@ public static class BusinessMetricNames
     /// </summary>
     public const string DriftAdoptionFollowUpAbandoned = "ast.order.drift_adoption_followup_abandoned";
 
+    /// <summary>
+    /// FR-05, NFR-09, #856, IADR-0441: <b>発注予約の自動リコンサイル（滞留 Reserved の突合）が 1 件ごとに下した判定。</b>
+    /// タグ <c>outcome</c>（<c>probe-placed</c>＝照会で発注済みと確定 / <c>self-healed</c>＝記録ありの自己修復 /
+    /// <c>held-not-placed</c>＝照会は未発注と答えたが解放の門が閉じているため据え置き / <c>released</c>＝門が開いていて解放 /
+    /// <c>indeterminate</c>＝照会不達・判定不能で据え置き / <c>failed</c>＝その 1 件の処理が例外で据え置き）。
+    /// <para>
+    /// 🔴 <b><c>held-not-placed</c> は解放の門を開けてよいかの観測に使う</b>（#856）。照会の「未発注」は備考（remark）の突合であり、
+    /// 実際にはブローカーに存在する注文に対してこれが出たら、門を開けてはならない（全件が未発注に見えている）。
+    /// 据え置いた予約は Reserved のまま次の巡回にも載るので、<b>同じ予約が巡回ごとに数え直される</b>（件数は「判定の回数」であり予約の数ではない）。
+    /// </para>
+    /// <para>
+    /// 起動時に 0 を計上する（<see cref="BusinessMetrics.PrimeOrderReservationReconciliations"/>。リコンサイルが有効な構成だけ）。
+    /// </para>
+    /// </summary>
+    public const string OrderReservationReconciliations = "ast.order.reservation_reconciliations";
+
     /// <summary>NFR-13: 計上した LLM 費用（円）。タグ <c>category</c>（Llm＝月次上限の対象 / LlmUncapped＝対象外）。</summary>
     public const string LlmCostJpy = "ast.llm.cost_jpy";
 
@@ -124,7 +140,10 @@ public static class BusinessMetricNames
     /// </summary>
     public const string FinnhubDailyVolumeEstimate = "ast.finnhub.daily_request_estimate";
 
-    /// <summary>FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが暫定日次上限（既定300）に占める割合（%）。100 超で警告。</summary>
+    /// <summary>
+    /// FR-01, ADR-0031（計画）決定3, IADR-0292: 上記見積りが日次上限に占める割合（%）。100 超で警告。
+    /// ADR-0043（計画）決定 1, IADR-0437: 暫定の 300 回/日は撤回。上限は実測して設定したときだけあり、未設定（既定）なら記録しない。
+    /// </summary>
     public const string FinnhubDailyVolumeLimitRatioPercent = "ast.finnhub.daily_request_limit_ratio_percent";
 
     /// <summary>
