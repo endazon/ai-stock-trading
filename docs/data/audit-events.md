@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028]
 -->
 
 
@@ -112,6 +112,14 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013]
   時刻は解決した時刻。要約に「選択 → 適用（理由・発注先・商品種別）」を書き、🔴 **拒否は「適用なし（発注しない）」と書く**
   —— S0 へ読み替えたと読ませない。日報の「実際に適用された手法」と月報の日数ベースの内訳は、報告書がこの記録を種別と期間で引いて
   承認と突き合わせて作る（台帳が唯一の供給元）。
+- 所有者が**確定済みの報告書を KB へ入れ直した**実行（`ReportKnowledgeReingested`・#1028）を、1 回の実行につき 1 件記録する
+  （KB の一覧を引けず 1 件も書かなかった中止も残す。範囲の不正・実行中で断った要求は何もしていないので残らない）。相関は固定
+  （入れ直しは種別と期間で引く）。要約に操作者（トークンの主体。分からなければ「操作者不明」）・範囲・対象の件数・送った件数
+  （作成・本文の投入・入れ直しの内訳）・既に在る・送らなかった・失敗・不明を書く。🔴 **不明（タイムアウト等で結果が分からない）は
+  送ったにも失敗にも数えない。** 中止は「1 件も書いていません」と理由を書く。payload には送らなかった／失敗／不明の報告書ごとの
+  内訳（期間キー・結果・理由・文書 ID）が 200 件まで残り、超えた件数も残る。
+  KB 上の写しが 2 件以上あった期間キー（同じ上限）と、試していない件数（途中の打ち切り・中止）も残り、対象の件数は結果ごとの件数の合計と常に等しい。
+  途中の打ち切りは要約に「途中で打ち切り（未試行 N 件）」と書く。
 - 利用者が承認した**台帳とブローカーの乖離の取り込み**（`PositionDriftAdopted`・#849）は、取引台帳が**約定以外で動く唯一の操作**
   である。相関はブローカー建玉の観測（`BrokerPositionsObserved`）・乖離の報告（`PositionReconciliationDrift`）と**同じ**決定的 GUID
   であり、「何を観測し、いつ乖離と報告し、誰がなぜ取り込んだか」を 1 本で辿れる。要約に取り込み前後の数量・観測値と観測時刻・
