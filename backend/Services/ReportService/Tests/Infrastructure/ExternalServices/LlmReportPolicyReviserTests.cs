@@ -52,7 +52,9 @@ public class LlmReportPolicyReviserTests
 
         outcome.Succeeded.Should().BeTrue();
         outcome.Proposal!.PolicySummary.Should().Be("押し目買いを優先");
-        usage.Reported.Should().ContainSingle().Which.Purpose.Should().Be("report-daily");
+        // FR-14, ADR-0042 決定 3, #1024: 計上区分は policy-revision（用途キーは report-daily のまま＝上の T-10-1306）。
+        usage.Reported.Should().ContainSingle().Which.Purpose.Should().Be("policy-revision");
+        AiStockTrading.Shared.Contracts.Llm.LlmCostScope.IsGoverned("policy-revision").Should().BeFalse("月次 LLM 上限に積まない");
     }
 
     // T-10-1308: 呼び出し失敗・解釈不能・送信拒否・拒否・形式違反は**案なし**（種別を区別）。形式違反でも費用は計上する。

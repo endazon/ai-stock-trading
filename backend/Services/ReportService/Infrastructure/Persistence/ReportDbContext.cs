@@ -8,6 +8,9 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
 {
     public DbSet<ReportRow> Reports => Set<ReportRow>();
 
+    // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の試行の台帳（1 日の回数上限・案の監査）。
+    public DbSet<PolicyRevisionAttemptRow> PolicyRevisionAttempts => Set<PolicyRevisionAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<ReportRow>(e =>
@@ -25,6 +28,22 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             e.Property(r => r.Version).IsConcurrencyToken();
             // 最新の確定済み日報の照会（種別・状態・期間）に用いるインデックス。
             e.HasIndex(r => new { r.Kind, r.State, r.PeriodStart });
+        });
+
+        mb.Entity<PolicyRevisionAttemptRow>(e =>
+        {
+            e.ToTable("policy_revision_attempts");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Id).ValueGeneratedNever();
+            e.Property(a => a.Actor).HasMaxLength(128);
+            e.Property(a => a.PeriodKey).HasMaxLength(64);
+            // 案の入れ替え（追加 5・除外 5・理由 200 文字まで）の JSON。**長さの上限を置かない（Postgres の text）。**
+            // PR #1026 の監査: varchar(8192) では、既定のエンコーダが日本語を \uXXXX（6 文字）へ逃がすため理由 200 字 × 10 件が
+            // 12,476 文字になり溢れた（保存済みのドラフトが 500 になる）。直列化は緩いエスケープ（日本語はそのまま）にしたうえで、
+            // 列の側でも上限で落ちない形にする（監査記録であり、長さで情報を捨てない）。
+            e.Property(a => a.WatchlistChangesJson).HasColumnType("text");
+            // 1 日の回数上限の判定（JST の暦日ごとの件数）。
+            e.HasIndex(a => a.JstDate);
         });
     }
 }

@@ -44,6 +44,9 @@ internal static class RevisePolicyEndpoint
                     Results.BadRequest(new { error = result.Message }),
                 PolicyRevisionStatus.NotFound => Results.NotFound(new { error = result.Message }),
                 PolicyRevisionStatus.AiFailed => Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status502BadGateway),
+                // FR-14, ADR-0042 決定 3, #1024: 1 日の回数上限（LLM を呼んでいない）。
+                PolicyRevisionStatus.DailyLimitReached =>
+                    Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status429TooManyRequests),
                 _ => Results.Conflict(new { error = result.Message }),
             };
         });

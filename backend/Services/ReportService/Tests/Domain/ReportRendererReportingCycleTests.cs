@@ -491,6 +491,24 @@ public class ReportRendererReportingCycleTests
             + expected + " |");
     }
 
+    // T-10-1360（ADR-0042 決定 3・#1024）: 月報 §7 に `/policy` の回数と費用の行が載る。呼び出しが無い月は「0 回・0 円」と書かない。
+    [Fact]
+    public void 月報に方針改訂の回数と費用が載る()
+    {
+        const string Row = "| 利用者起点の方針改訂（`/policy`・`policy-revision`。**上限の対象外**）の計上件数と費用実績 | ";
+
+        var used = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with
+        {
+            LlmUsage = new LlmUsageRecord(
+                [new LlmCostIncurred(3m, T0, LlmPurposes.PolicyRevision, "m"), new LlmCostIncurred(4m, T0, LlmPurposes.PolicyRevision, "m")],
+                [], []),
+        });
+        used.Should().Contain(Row + "2 回 / +7 JPY |");
+
+        var unused = ReportRenderer.RenderMarkdown(View(ReportKind.Monthly) with { LlmUsage = new LlmUsageRecord([], [], []) });
+        unused.Should().Contain(Row + "**当月の計上はありません**（0 回・0 円ではありません。回数は応答が返った呼び出しの計上件数） |");
+    }
+
     // 🔴 **否定形**: Stage 0 記録の費用が「その他の用途」へ混ざらない（混ざると対比が対比でなくなる）。
     // **対の肯定形**: 同じ入力で Stage 0 の行には確かに載り、情報収集の費用は「その他」に残る。
     [Fact]

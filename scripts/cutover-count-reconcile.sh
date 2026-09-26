@@ -53,6 +53,7 @@ order_execution_svc	executed_orders	ledger	ExecutedAt	-
 order_execution_svc	order_dispatch_reservations	reserved	ReservedAt	\"State\" = 0
 order_execution_svc	order_lifecycle_events	ledger	OccurredAt	-
 order_execution_svc	protective_stop_orders	ledger	UpdatedAt	-
+report_svc	policy_revision_attempts	ledger	AttemptedAt	-
 report_svc	reports	ledger	ConfirmedAt	-
 risk_management_svc	account_equity_days	ledger	UpdatedAt	-
 risk_management_svc	approved_orders	ledger	ApprovedAt	-

@@ -183,6 +183,10 @@ builder.Services.AddSingleton<IReportPolicyReviser>(sp =>
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
 });
 builder.Services.AddScoped<ReportPolicyRevisionService>();
+// FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の試行の台帳（1 日の回数上限・案の監査）と上限の値。
+builder.Services.AddScoped<IPolicyRevisionLedger, EfPolicyRevisionLedger>();
+builder.Services.AddSingleton(sp =>
+    PolicyRevisionLimit.Read(sp.GetRequiredService<IConfiguration>()[PolicyRevisionLimit.ConfigKey]));
 // IADR-0431 決定 1（2026-09-26 利用者裁定）: 営業日にまだ自動生成されていない当日の日報は /policy で作らない。
 // 判定に使う生成境界・休場日は自動生成と同じ構成（Reports:AutoGeneration）から読む。自動生成が無効なら止める生成が無い。
 builder.Services.AddSingleton(sp =>

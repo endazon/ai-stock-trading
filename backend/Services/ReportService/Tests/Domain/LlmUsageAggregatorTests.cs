@@ -262,4 +262,25 @@ public class LlmUsageAggregatorTests
         Record(degradation: counts).ScreeningDegradation.Should().Be(counts);
         Record().ScreeningDegradation.Should().BeNull();
     }
+
+    // T-10-1359（ADR-0042 決定 3・#1024）: `/policy` の計上（policy-revision）は上限の対象・報告書・その他のいずれにも入らず、
+    // 回数（計上の件数）と費用を独立に持つ。計上が無ければ null（0 回・0 円と書かない）。
+    [Fact]
+    public void 方針改訂の計上は独立区分で回数と費用を持つ()
+    {
+        var none = LlmUsageAggregator.Aggregate(Record(costs: [new LlmCostIncurred(300m, T0, LlmPurposes.ReportDaily, "m")]));
+        none.PolicyRevision.Should().BeNull();
+
+        var u = LlmUsageAggregator.Aggregate(Record(costs:
+        [
+            new LlmCostIncurred(3.5m, T0, LlmPurposes.PolicyRevision, "m"),
+            new LlmCostIncurred(4.0m, T0, LlmPurposes.PolicyRevision, "m"),
+            new LlmCostIncurred(300m, T0, LlmPurposes.ReportDaily, "m"),
+        ]));
+
+        u.PolicyRevision.Should().Be(new PolicyRevisionUsage(2, 7.5m));
+        u.TradeDecisionCostJpy.Should().Be(0m, "月次 LLM 上限に積まない");
+        u.ReportCostJpyByPurpose.Sum(e => e.AmountJpy).Should().Be(300m, "報告書生成の費用へ混ぜない");
+        u.OtherCostJpy.Should().Be(0m, "その他へ吸わせない");
+    }
 }
