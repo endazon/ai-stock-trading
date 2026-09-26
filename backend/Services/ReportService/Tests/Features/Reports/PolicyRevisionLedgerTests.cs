@@ -297,7 +297,7 @@ public class PolicyRevisionLedgerTests
         entry.State.Should().Contain(kv => kv.Key == "Outcome" && Equals(kv.Value, PolicyRevisionAttemptOutcome.Proposed));
     }
 
-    // ---- #1029, IADR-0432（2026-09-26 追記）: 適用の内訳の記録の原子性と、台帳・ストアの失敗の片付け（T-10-1482〜T-10-1488）----
+    // ---- #1029, IADR-0432（2026-09-26 追記）: 適用の内訳の記録の原子性と、台帳・ストアの失敗の片付け（T-10-1482〜T-10-1489）----
 
     private static readonly DateTimeOffset FirstAt = new(2026, 9, 28, 1, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset LaterAt = new(2026, 9, 28, 1, 0, 5, TimeSpan.Zero);
@@ -425,6 +425,26 @@ public class PolicyRevisionLedgerTests
         db.ChangeTracker.Entries<PolicyRevisionAttemptRow>().Should().BeEmpty("失敗した行を Added のまま残さない");
         var next = Attempt(day);
         ledger.TryBegin(next, 10).Should().Be(new PolicyRevisionBeginResult(true, 0));
+        using var check = InMemoryContext(dbName);
+        check.PolicyRevisionAttempts.Select(a => a.Id).Should().Equal(next.Id);
+    }
+
+    // T-10-1489: 上限を見ない Begin も同じ規律（保存の失敗で行を切り離し、続く Begin が失敗した試行を一緒に保存しない）。
+    [Fact]
+    public void Beginの保存が失敗したら行を切り離す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var day = new DateOnly(2026, 9, 28);
+        var interceptor = new FailingSave(e => e.Entity is PolicyRevisionAttemptRow && e.State == EntityState.Added, times: 1);
+        using var db = FailingContext(dbName, interceptor);
+        var ledger = new EfPolicyRevisionLedger(db);
+
+        var act = () => ledger.Begin(Attempt(day));
+
+        act.Should().Throw<DbUpdateException>();
+        db.ChangeTracker.Entries<PolicyRevisionAttemptRow>().Should().BeEmpty("失敗した行を Added のまま残さない");
+        var next = Attempt(day);
+        ledger.Begin(next).Should().Be(next.Id);
         using var check = InMemoryContext(dbName);
         check.PolicyRevisionAttempts.Select(a => a.Id).Should().Equal(next.Id);
     }
