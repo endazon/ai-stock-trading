@@ -172,6 +172,58 @@ public class WatchlistCycleFitTests
 
         svc.Replace(current with { MonitoredSymbols = [Aapl, new("AAPL", Market.Japan)] }, "owner", "市場違い").MonitoredSymbols
             .Should().HaveCount(2, "市場が違えば別の銘柄");
+
+        // #1044 項目 4, IADR-0437 決定 7: 保存済みの重複（#1037 より前の全置換・初回シード）を保ったままの置換も止まるため、直し方を文言で示す。
+        withoutFit.Should().Throw<ArgumentException>().WithMessage("*保存済みの一覧に残っている重複も、1 件ずつに減らして送れば適用されます*");
+        var legacy = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl, new("aapl", Market.UnitedStates), Msft]));
+        var legacySvc = new MonitorSettingsService(legacy, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
+        legacySvc.Replace(legacy.GetSettings() with { MonitoredSymbols = [Aapl, Msft] }, "owner", "重複を減らす", new WatchlistCycleFit(1, 60, 0))
+            .MonitoredSymbols.Should().Equal([Aapl, Msft], "重複を減らすのは除外なので、予算を超えていても通る");
+    }
+
+    // T-10-1570（#1044 項目 1）: 銘柄コードの無い要素（symbol が null・空文字・空白、要素そのものが null）を含む全置換は
+    // ArgumentException（→ 400）。重複検査の Trim が NullReferenceException を投げて 500 になっていた。保存も履歴も無い。
+    [Theory]
+    [InlineData("null-symbol")]
+    [InlineData("empty")]
+    [InlineData("blank")]
+    [InlineData("null-element")]
+    public void 全置換は銘柄コードの無い要素を拒否する(string shape)
+    {
+        var store = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl]));
+        var log = new InMemoryMonitorSettingsChangeLog();
+        var svc = new MonitorSettingsService(store, log, new FakeClock(DateTimeOffset.UnixEpoch));
+        MonitoredSymbol bad = shape switch
+        {
+            "null-symbol" => new(null!, Market.UnitedStates),
+            "empty" => new(string.Empty, Market.UnitedStates),
+            "blank" => new("   ", Market.UnitedStates),
+            _ => null!,
+        };
+
+        var replace = () => svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, bad] }, "owner", "置換");
+
+        replace.Should().Throw<ArgumentException>().WithMessage("*銘柄コードの無い要素*");
+        store.GetSettings().MonitoredSymbols.Should().Equal([Aapl]);
+        log.GetHistory().Should().BeEmpty();
+    }
+
+    // T-10-1572（#1044 項目 2・変異 M7）: 全置換の「費用のかかる追加」は米国の銘柄だけを数える。監視銘柄が既に予算を超えていても、
+    // 東証の銘柄だけを足す置換は通る。米国と東証を同時に足す置換は拒否し、「収まらない追加」には米国の銘柄だけを挙げる。
+    [Fact]
+    public void 全置換の費用のかかる追加は米国の銘柄だけを数える()
+    {
+        var store = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl, Msft]));
+        var svc = new MonitorSettingsService(store, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
+        var over = new WatchlistCycleFit(RequestsPerMinute: 1, PollIntervalSeconds: 60, HoldingRequests: 0); // 1 要求まで（監視 2 で超過中）
+
+        var mixed = () => svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, Msft, Toyota, Nvda] }, "owner", "混在", over);
+        mixed.Should().Throw<ArgumentException>().Which.Message.Should()
+            .Contain("収まらない追加: NVDA@UnitedStates。").And.NotContain("7203");
+        store.GetSettings().MonitoredSymbols.Should().Equal([Aapl, Msft]);
+
+        svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, Msft, Toyota, Sony] }, "owner", "東証だけ", over)
+            .MonitoredSymbols.Should().HaveCount(4, "東証の追加は要求を増やさないので、予算を超えていても止めない");
     }
 
     // T-10-1444（ADR-0043 決定 3）: 見積りは銘柄ごとにその市場の場中 ÷ 巡回間隔で数え、保有も数える。上限は設定したときだけ比べる。
@@ -322,6 +374,43 @@ public class WatchlistCycleFitTests
         padded.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await padded.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString().Should().Contain("重複");
         (await WatchlistOf(owner)).Should().BeEquivalentTo(["MSFT"]);
+    }
+
+    // T-10-1571（#1044 項目 1）: 本番の組み立てで、symbol が null の要素を含む全置換は 400（500 ではない）で理由を返し、監視銘柄は変わらない。
+    // 要素そのものが null の配列も同じ。
+    [Fact]
+    public async Task 全置換の口はsymbolがnullの要素を400で弾く()
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        await using var factory = Configured(baseFactory, Holding(), rate: "12");
+        var owner = Owner(factory);
+        var settings = await owner.GetFromJsonAsync<JsonElement>("/monitor/settings");
+        (await owner.PutAsJsonAsync("/monitor/settings", new
+        {
+            MovementThresholdRatio = settings.GetProperty("movementThresholdRatio").GetDecimal(),
+            Cooldown = settings.GetProperty("cooldown").GetString(),
+            MonitoredSymbols = new[] { new { Symbol = "MSFT", Market = Market.UnitedStates } },
+            Reason = "準備",
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        foreach (var symbols in new object?[][]
+        {
+            [new { Symbol = "MSFT", Market = Market.UnitedStates }, new { Symbol = (string?)null, Market = Market.UnitedStates }],
+            [new { Symbol = "MSFT", Market = Market.UnitedStates }, null],
+        })
+        {
+            var response = await owner.PutAsJsonAsync("/monitor/settings", new
+            {
+                MovementThresholdRatio = settings.GetProperty("movementThresholdRatio").GetDecimal(),
+                Cooldown = settings.GetProperty("cooldown").GetString(),
+                MonitoredSymbols = symbols,
+                Reason = "null を含む全置換",
+            });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString().Should().Contain("銘柄コードの無い要素");
+            (await WatchlistOf(owner)).Should().BeEquivalentTo(["MSFT"]);
+        }
     }
 
     // T-10-1445（ADR-0043 決定 3）: 入れ替え案の応答の推定は、適用後の監視銘柄 ＋ 保有を開場中の巡回（390）で数え、上限とは比べない。

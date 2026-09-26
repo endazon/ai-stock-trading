@@ -90,6 +90,7 @@ public sealed class MonitorSettingsService(
     /// <remarks>
     /// FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 全置換も監視銘柄を増やし得るため、SC-02 の追加と同じ検査を通す。
     /// <list type="bullet">
+    /// <item><b>銘柄コードの無い要素（null・空白）を含む置換は 400</b>（#1044）。</item>
     /// <item>🔴 <b>重複（銘柄コードの大小文字を無視・同じ市場）を含む置換は 400</b>（検査の有無に関係なく）。SC-02 の追加は重複を拒否するのに
     /// 全置換は通していたため、<c>[AAPL, aapl, AAPL…]</c> で「新しい銘柄なし」と判定させたまま巡回の要求数だけを増やせた（#1037 の監査）。</item>
     /// <item><paramref name="cycleFit"/> があり、置換後の一覧に<b>今は無い、要求を使う（米国の）銘柄が含まれ</b>、かつ置換後の 1 巡回が巡回間隔に
@@ -114,6 +115,13 @@ public sealed class MonitorSettingsService(
             throw new ArgumentException(cooldownError, nameof(settings));
         }
 
+        // FR-13, #1044 項目 1: 銘柄コードの無い要素（要素そのものが null・symbol が null／空白）は 400。重複検査の Trim が
+        // NullReferenceException を投げ、エンドポイントが 500 を返していた（ArgumentException だけを 400 に写すため）。
+        if (settings.MonitoredSymbols.Any(s => s is null || string.IsNullOrWhiteSpace(s.Symbol)))
+        {
+            throw new ArgumentException("監視銘柄に銘柄コードの無い要素があります（symbol は必須です）。", nameof(settings));
+        }
+
         var duplicates = settings.MonitoredSymbols
             .GroupBy(s => (s.Symbol.Trim().ToUpperInvariant(), s.Market))
             .Where(g => g.Count() > 1)
@@ -121,8 +129,11 @@ public sealed class MonitorSettingsService(
             .ToList();
         if (duplicates.Count > 0)
         {
+            // #1044 項目 4, IADR-0437 決定 7: #1037 より前の全置換・初回シードが保存した重複が残っていると、それを保ったままの置換も
+            // ここで止まる。読み取り時に黙って正規化はしない（変更履歴の外で台帳を変えない）。直し方を文言で示す（減らすのは除外＝止めない）。
             throw new ArgumentException(
-                $"監視銘柄に重複があります（{string.Join(", ", duplicates)}。銘柄コードの大小文字は区別しません）。",
+                $"監視銘柄に重複があります（{string.Join(", ", duplicates)}。銘柄コードの大小文字は区別しません）。"
+                + "保存済みの一覧に残っている重複も、1 件ずつに減らして送れば適用されます（減らすのは除外なので止めません）。",
                 nameof(settings));
         }
 

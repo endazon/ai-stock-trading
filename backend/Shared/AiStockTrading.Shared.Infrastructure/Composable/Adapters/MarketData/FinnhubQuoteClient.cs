@@ -27,7 +27,8 @@ public sealed class FinnhubQuoteClient(
     IRateLimiter rateLimiter,
     ILogger logger,
     string baseUrl = FinnhubQuoteClient.DefaultBaseUrl,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    FinnhubLastRequestTracker? lastRequestTracker = null)
 {
     public const string DefaultBaseUrl = "https://finnhub.io/api/v1";
 
@@ -41,9 +42,10 @@ public sealed class FinnhubQuoteClient(
     // 複数の呼び出しが共有し得るため Interlocked で読み書きする。
     private long _lastRejectedResetUnix;
 
-    // #1037 の監査: 直前に要求を送った時刻（UTC ticks。0＝まだ送っていない）。秒次（30 回/秒）の 429 を日次の手がかりと
-    // 取り違えないため、直前の要求からの間隔を分類へ渡す。
-    private long _lastRequestTicks;
+    // #1037 の監査: 直前に要求を送った時刻。秒次（30 回/秒）の 429 を日次の手がかりと取り違えないため、直前の要求からの間隔を分類へ渡す。
+    // #1044 項目 3, IADR-0437 決定 7: 同じ鍵でクライアントを通らずに送る送り手（情報収集の企業ニュース）がいるプロセスでは、
+    // 追跡器を共有してその送出も「直前の要求」に数える。省略すれば従来どおりこのクライアントの送出だけを数える。
+    private readonly FinnhubLastRequestTracker _lastRequest = lastRequestTracker ?? new FinnhubLastRequestTracker(timeProvider);
 
     /// <summary>1 銘柄の現在値スナップショットを取得する。非成功応答・空応答なら null。</summary>
     public async Task<FinnhubQuoteSnapshot?> GetQuoteAsync(string symbol, CancellationToken cancellationToken = default)
@@ -51,9 +53,7 @@ public sealed class FinnhubQuoteClient(
         // IADR-0064: 429 を受けてから対処するのでは規約違反そのものを防げないため、送信前に自制する。
         await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var sentAt = _time.GetUtcNow();
-        var previousTicks = Interlocked.Exchange(ref _lastRequestTicks, sentAt.UtcTicks);
-        TimeSpan? sincePreviousRequest = previousTicks > 0 ? sentAt - new DateTimeOffset(previousTicks, TimeSpan.Zero) : null;
+        var (_, sincePreviousRequest) = _lastRequest.MarkSent();
 
         // API キーはヘッダー（X-Finnhub-Token）で渡す。URL クエリに入れると OTel の HttpClient 計装が
         // リクエスト URL（クエリ含む）をトレースへ出力し、キーが可観測性基盤に漏えいするため。
