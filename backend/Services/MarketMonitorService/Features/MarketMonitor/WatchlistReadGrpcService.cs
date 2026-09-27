@@ -14,12 +14,15 @@ namespace MarketMonitorService.Features.MarketMonitor;
 // 監視銘柄の読み取りの gRPC 面。REST の read サブグループの `GET /monitor/watchlist`（MonitorWatchlistService.GetWatchlist）と
 // `GET /monitor/watchlist/as-of`（WatchlistAsOfReconstructor.Reconstruct）と**同じ**サービス・純関数を呼ぶ —— 評価器を 2 つにしない。
 //
-// 認可: REST の read サブグループと**同じ** `OwnerOrService`（IADR-0051・IADR-0095）。s2s トークンが無ければ `UNAUTHENTICATED`、
+// 認可: REST の read サブグループと同じ `OwnerOrService` に、所有者の分岐だけ呼び出し元のクライアント（`azp`）の確認を足した `GrpcOwnerOrService`（#1067。下の属性）（IADR-0051・IADR-0095）。s2s トークンが無ければ `UNAUTHENTICATED`、
 // ロールが無ければ `PERMISSION_DENIED`。🔴 履歴の照会（OwnerOnly）・設定の書き込みは gRPC に出さない。
 // as-of の時刻の欠落・オフセットの欠落・書式違い（REST の 400）は `INVALID_ARGUMENT`（検証は REST と共有）。
 //
 // 🔴 **並走中の正は REST である**（MSP:ADR-0029 の 2026-08-04 追記）。REST 面は変えていない。
-[Authorize(Policy = AiStockTradingAuthPolicies.OwnerOrService)]
+// 🔴 NFR-06, ADR-0047 決定 3, IADR-0448, #1067: 門は **`GrpcOwnerOrService`**（REST の `OwnerOrService` ではない）。
+// s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
+// ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
+[Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
 public sealed class WatchlistReadGrpcService(
     MonitorWatchlistService watchlist,
     IMonitorSettingsChangeLog changeLog,

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
@@ -16,6 +17,12 @@ public static class AiStockTradingAuthPolicies
     // IADR-0051: 読み取り系の同期照会（sizing-context / open-positions / daily-policy）は利用者またはサービスが呼べる。
     // 書き込み系は OwnerOnly 据え置き（サービスへ書き込み権限を与えない＝最小権限）。
     public const string OwnerOrService = "OwnerOrService";
+
+    // NFR-06, FR-14, ADR-0047 決定 3, IADR-0448, #1067: **east-west gRPC 面の門**。サービス（trading-service）は
+    // OwnerOrService と同じ。所有者（trading-owner）は、トークンの `azp` が Discord ボットの機密クライアント
+    // （構成 `Auth:GrpcOwnerClients`。既定 ai-stock-trading-owner）であるときだけ通す＝人の利用者のトークンは gRPC 面を通らない。
+    // 🔴 REST の面には付けない（REST の所有者の判定は OwnerOrService のまま。判定は GrpcOwnerClientGate）。
+    public const string GrpcOwnerOrService = "GrpcOwnerOrService";
 
     // 利用者ロール（Keycloak のレルムロール想定）。単独利用者運用のため単層とする（IADR-0011）。
     public const string OwnerRole = "trading-owner";
@@ -56,6 +63,11 @@ public static class AuthExtensions
         // これがないと RequireRole("trading-owner") が実トークンにマッチしない。
         services.AddTransient<IClaimsTransformation, KeycloakRolesClaimsTransformation>();
 
+        // NFR-06, ADR-0047 決定 3, IADR-0448 決定 2, #1067: gRPC 面の所有者の門の許可集合を**起動時に**解決する。
+        // 1 つの値の構成はここで例外（既定へ静かに戻さない）。全サービスが本拡張を通るので、gRPC 面を持たないサービスでも
+        // 誤った構成は起動で止まる（構成の書き手に気付かせる向き。値そのものは gRPC 面を持つサービスでだけ効く）。
+        var grpcOwnerClients = GrpcOwnerClientGate.EffectiveClients(config);
+
         // FR-10/FR-19/FR-20, ADR-0003/ADR-0007/ADR-0008: 利用者のみのエンドポイント用に OwnerOnly ポリシーを登録する。
         services.AddAuthorization(options =>
         {
@@ -65,6 +77,12 @@ public static class AuthExtensions
             // IADR-0051: 読み取り系の同期照会は利用者（trading-owner）またはサービス（trading-service）が呼べる。
             options.AddPolicy(AiStockTradingAuthPolicies.OwnerOrService, policy =>
                 policy.RequireRole(AiStockTradingAuthPolicies.OwnerRole, AiStockTradingAuthPolicies.ServiceRole));
+
+            // NFR-06, FR-14, ADR-0047 決定 3, IADR-0448 決定 1, #1067: gRPC 面の門。s2s の分岐は OwnerOrService と同じ、
+            // 所有者の分岐は azp がボットの機密クライアントであることを併せて求める（GrpcOwnerClientGate.Allows）。
+            options.AddPolicy(AiStockTradingAuthPolicies.GrpcOwnerOrService, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => GrpcOwnerClientGate.Allows(context.User, grpcOwnerClients)));
         });
         return services;
     }

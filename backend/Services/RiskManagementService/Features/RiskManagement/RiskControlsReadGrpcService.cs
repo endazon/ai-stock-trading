@@ -17,7 +17,7 @@ namespace RiskManagementService.Features.RiskManagement;
 // リスク管理の**読み取り**の gRPC 面。REST の読み取り群（`RiskControlEndpoints` の `read` 群）と**同じ**サービス・純関数を
 // 呼ぶ —— 評価器を 2 つにしない（段 1 の `AssumptionsGrpcService` と同じ作法）。
 //
-// 認可: REST の読み取り群と**同じ** `OwnerOrService`（IADR-0051）。s2s トークンが無ければ `UNAUTHENTICATED`、
+// 認可: REST の読み取り群と同じ `OwnerOrService` に、所有者の分岐だけ呼び出し元のクライアント（`azp`）の確認を足した `GrpcOwnerOrService`（#1067。下の属性）（IADR-0051）。s2s トークンが無ければ `UNAUTHENTICATED`、
 // ロールが無ければ `PERMISSION_DENIED`（ASP.NET Core の gRPC は認可失敗をこの 2 つへ写す）。
 //
 // 入力の検証は REST と同じ向きに揃える:
@@ -30,7 +30,10 @@ namespace RiskManagementService.Features.RiskManagement;
 //     `DbUpdateConcurrencyException`（REST の 409）は写さない —— 読み取りは書き込まないので起きない。
 //
 // 🔴 **並走中の正は REST である**（MSP:ADR-0029 の 2026-08-04 追記）。REST 面は 1 バイトも変えていない。
-[Authorize(Policy = AiStockTradingAuthPolicies.OwnerOrService)]
+// 🔴 NFR-06, ADR-0047 決定 3, IADR-0448, #1067: 門は **`GrpcOwnerOrService`**（REST の `OwnerOrService` ではない）。
+// s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
+// ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
+[Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
 public sealed class RiskControlsReadGrpcService(
     OpenPositionsService openPositions,
     WorkingEntryOrdersService workingEntryOrders,

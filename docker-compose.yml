@@ -127,6 +127,9 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=audit_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # NFR-06, ADR-0047 決定 3, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（配列。1 つの値は起動時に例外）。
+      # ボットの Notifications__Discord__OwnerAuth__ClientId と**同じ変数**から採る（単一情報源）。
+      Auth__GrpcOwnerClients__0: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
     depends_on:
       <<: *depends-infra
       postgres:
@@ -163,6 +166,8 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=configuration_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（audit-service の同じ行と同じ）。
+      Auth__GrpcOwnerClients__0: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
     depends_on:
       <<: *depends-infra
       postgres:
@@ -182,6 +187,8 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=cost_control_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（audit-service の同じ行と同じ）。
+      Auth__GrpcOwnerClients__0: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
       # FR-17, IADR-0065 (#139): 月次費用上限の取得元（設定サービスの GET /assumptions）。
       # 空=前提条件の既定値（20,000/15,000）で判定する＝従来挙動。設定すると利用者の上限変更が 80%/100% 判定へ反映される。
       Configuration__BaseUrl: ${CONFIGURATION_BASEURL:-}
@@ -258,6 +265,8 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=market_monitor_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（audit-service の同じ行と同じ）。
+      Auth__GrpcOwnerClients__0: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
       # fail-safe: 空=プレースホルダ（保有なし）。#76 で有効化。
       RiskManagement__BaseUrl: ${RISK_MANAGEMENT_BASEURL:-}
       # IADR-0051: s2s サービストークン（client_credentials）。空 secret=無効（認証なし→401→空列の安全既定）。#76。
@@ -344,6 +353,8 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=report_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（audit-service の同じ行と同じ）。
+      Auth__GrpcOwnerClients__0: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
       # FR-16, #158, IADR-0068: 評価損益の現在値。空/none=no-op（評価損益 0）。finnhub＋MARKETDATA_FINNHUB_API_KEY で
       # opt-in（報告書はゲート無し＝差し替えがそのまま有効化）。手動 live 検証・CI 対象外。
       MarketData__Provider: ${MARKETDATA_PROVIDER:-none}
@@ -392,6 +403,8 @@ services:
       <<: *app-env
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=risk_management_svc;Username=${POSTGRES_USER:-ai};Password=${POSTGRES_PASSWORD:-ai}
       Auth__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM:-ai-stock-trading}
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（audit-service の同じ行と同じ）。
+      Auth__GrpcOwnerClients__0: ${DISCORD_OWNERAUTH_CLIENTID:-ai-stock-trading-owner}
       # FR-10, #81, #158, IADR-0066/0068: 時価評価（含み損益・DD）。EnableMarkToMarket=true は最大DD の取引ゲート
       # （IADR-0008）の判定入力を変えるため、実市況の live 検証を経てから人手で切り替える（既定 false）。
       # Provider 空/none=no-op（実接続しない）。finnhub＋MARKETDATA_FINNHUB_API_KEY で実市況を opt-in する。

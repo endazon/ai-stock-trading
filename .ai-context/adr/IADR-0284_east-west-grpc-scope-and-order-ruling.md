@@ -18,6 +18,10 @@ related_ids:
   - IADR-0427
   - IADR-0445
   - IADR-0446
+  - IADR-0448
+  - ADR-0047
+  - NFR-06
+  - FR-14
 author: endazon (with Claude Code)
 created: 2026-09-03
 updated: 2026-09-27
@@ -26,6 +30,7 @@ plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md
   - planning:projects/microservices-platform/06_technical/12_backend-application-stack.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
+  - planning:projects/ai-stock-trading/07_adr/ADR-0047_discord-bot-token-is-service-identity-east-west.md
 ---
 
 # IADR-0284: east-west 同期照会の gRPC 化は射程 22 本（＋基盤待ち 4 本）を確定し、基盤の先例が無い間は着手せず移行順序の裁定を計画へ環流する
@@ -257,6 +262,21 @@ session-uptime｜提供側 1・消費側 3 サービス」）の読み方だけ�
 - **Notification が報告書・市場監視を呼ぶ 3 クラス（review・方針の改訂・監視銘柄の入れ替え案の適用）は段 5 で移す。** owner マップ機密クライアントの
   トークンで呼び、同じクラスに OwnerOnly の書き込みを持つ（上の 2026-09-25 追記の Notification `stage-gate` と同じ扱い）。
 - 呼び出しの規則（deadline・再試行）は呼び出し元サービスごとに 1 つにした（取引判断は段 2 の輸送から切り出し、情報収集は新設）。
+
+## ［2026-09-27 追記 / #1067］段 5 の前提 —— gRPC 面の所有者の門は azp がボットの機密クライアントであることを併せて求める
+
+計画 ADR-0047（planning#690 の裁定）が段 5 の行（「owner マップトークンは `AddDiscordOwnerToken` を同様に `IHttpClientBuilder` へ」）を
+具体化した。決定 1・2・4 と、決定 5 の段の順序・切り方は変わらない。
+
+- **ボットの所有者トークンはサービスの身元であり、ボットの呼び出しは east-west である**（ADR-0047 決定 1・2）。段 5 ではボット自身の
+  トークンを gRPC のメタデータに載せ、利用者の文脈は今どおり本文（`OnBehalfOf`）で運ぶ。エッジとして REST に残す扱いは採らない。
+- **段 5 でボットを移すより前に、gRPC 面の所有者の門を閉じた**（ADR-0047 決定 3。具体は [IADR-0448](IADR-0448_grpc-owner-gate-requires-bot-azp.md)）。
+  既存の 6 面（Audit・Configuration・CostControl・MarketMonitor・Report・Risk）の門を `OwnerOrService` から `GrpcOwnerOrService` へ替え、
+  所有者の分岐はトークンの `azp` がボットの機密クライアント（構成 `Auth:GrpcOwnerClients`・既定 `ai-stock-trading-owner`）であるときだけ通す。
+  s2s の分岐と REST の面の判定は変えない。**これで人の利用者のトークンは gRPC 面を通らない。**
+- 段 5 で足す gRPC 面（ボットが呼ぶ書き込み）も同じ `GrpcOwnerOrService` か、所有者の分岐に同じ確認を持つ門にする。
+- 段 5 の行と段 6 の範囲の改訂（ADR-0047 フォローアップ 3。完了は呼び出し箇所で数え、BFF が中継する REST の端点は段 6 で消さない）は
+  段 5 の着手時に行う（本追記の対象外）。
 
 ## 関連
 
