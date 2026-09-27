@@ -6,6 +6,7 @@ using CostControlService.Infrastructure.Persistence;
 using CostControlService.Hosted;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -77,6 +78,10 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder"));
 
+// NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0446, #1061 (#753): east-west gRPC の h2c 専用ポート。
+// **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない）。`AddGrpc()` は常に呼ばれる。
+builder.AddAiStockTradingGrpcListener();
+
 var app = builder.Build();
 
 // #811 / IADR-0129 追記: `codegen write` 等の JasperFx コマンドで起動したときは DB に触らない（ホスト稼働時だけ移行する）。
@@ -94,6 +99,8 @@ app.MapAiStockTradingIntrospection();
 
 // NFR（費用）: 費用計上・統制判定・費用レビュー（利用者/サービス）。
 app.MapCostControlEndpoints();
+// NFR, IADR-0446 決定2, #1061 (#753): 費用統制の判定の gRPC 面（REST の costs/state と同じサービス・同じ OwnerOrService）。
+app.MapGrpcService<CostStateReadGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

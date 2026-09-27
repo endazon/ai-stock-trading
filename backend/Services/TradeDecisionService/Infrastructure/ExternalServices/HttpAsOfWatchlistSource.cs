@@ -18,8 +18,7 @@ public sealed class HttpAsOfWatchlistSource(HttpClient httpClient, ILogger<HttpA
 {
     public async Task<AsOfWatchlist> GetWatchlistAtAsync(DateTimeOffset at, CancellationToken cancellationToken = default)
     {
-        // 時刻は UTC の「Z」付きで送る（`+` を含むオフセットはクエリで空白に化け得る）。
-        var query = at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+        var query = WireInstant(at);
         try
         {
             using var response = await httpClient
@@ -33,19 +32,7 @@ public sealed class HttpAsOfWatchlistSource(HttpClient httpClient, ILogger<HttpA
                 .ReadFromJsonAsync<AsOfBody>(cancellationToken)
                 .ConfigureAwait(false);
 
-            if (body?.Reconstructed is not { } reconstructed)
-                return Unavailable("市場監視の応答に再構成の可否（reconstructed）がありません。");
-
-            if (!reconstructed)
-                return AsOfWatchlist.NotReconstructable(body.Reason ?? "市場監視が再構成できないと答えました（理由なし）。");
-
-            if (body.Symbols is not { } rows
-                || rows.Any(r => r is null || string.IsNullOrWhiteSpace(r.Symbol) || r.Market is not { } m || !Enum.IsDefined(m)))
-            {
-                return Unavailable("市場監視の応答の一覧が無いか、欠けた行（銘柄が空・市場の欠落または値域外）があります。");
-            }
-
-            return AsOfWatchlist.Reconstructed([.. rows.Select(r => new WatchedSymbol(r!.Symbol!, r.Market!.Value))]);
+            return Interpret(body, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -58,14 +45,39 @@ public sealed class HttpAsOfWatchlistSource(HttpClient httpClient, ILogger<HttpA
         }
     }
 
-    private AsOfWatchlist Unavailable(string reason)
+    private AsOfWatchlist Unavailable(string reason) => Unavailable(reason, logger);
+
+    /// <summary>時刻は UTC の「Z」付きで送る（`+` を含むオフセットはクエリで空白に化け得る）。gRPC も同じ書式で送る。</summary>
+    internal static string WireInstant(DateTimeOffset at) =>
+        at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+
+    // NFR, IADR-0446 決定 4, #1061 (#753): 応答の解釈は gRPC 実装（GrpcAsOfWatchlistSource）と共有する（`internal static`）。
+    // gRPC は線上の応答を同じ nullable の形（AsOfBody）へ写してから呼ぶ。
+    internal static AsOfWatchlist Interpret(AsOfBody? body, ILogger logger)
+    {
+        if (body?.Reconstructed is not { } reconstructed)
+            return Unavailable("市場監視の応答に再構成の可否（reconstructed）がありません。", logger);
+
+        if (!reconstructed)
+            return AsOfWatchlist.NotReconstructable(body.Reason ?? "市場監視が再構成できないと答えました（理由なし）。");
+
+        if (body.Symbols is not { } rows
+            || rows.Any(r => r is null || string.IsNullOrWhiteSpace(r.Symbol) || r.Market is not { } m || !Enum.IsDefined(m)))
+        {
+            return Unavailable("市場監視の応答の一覧が無いか、欠けた行（銘柄が空・市場の欠落または値域外）があります。", logger);
+        }
+
+        return AsOfWatchlist.Reconstructed([.. rows.Select(r => new WatchedSymbol(r!.Symbol!, r.Market!.Value))]);
+    }
+
+    internal static AsOfWatchlist Unavailable(string reason, ILogger logger)
     {
         logger.LogWarning("当時の監視銘柄を読めません: {Reason}", reason);
         return AsOfWatchlist.NotReconstructable(reason);
     }
 
     // 応答（市場監視の WatchlistAsOfResponse と同形。camelCase・列挙は数値）。欠落を検出するため項目は nullable で受ける。
-    private sealed record AsOfBody(bool? Reconstructed, List<AsOfRow?>? Symbols, string? Reason);
+    internal sealed record AsOfBody(bool? Reconstructed, List<AsOfRow?>? Symbols, string? Reason);
 
-    private sealed record AsOfRow(string? Symbol, Market? Market);
+    internal sealed record AsOfRow(string? Symbol, Market? Market);
 }

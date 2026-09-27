@@ -41,6 +41,12 @@ public sealed class HttpFxSourceStatusSource(
         nameof(FxRateSourceUsed),
     ];
 
+    // NFR, IADR-0445 決定 4, #1059 (#753): 照会の窓・引く種別・記録の解釈は gRPC 実装（Grpc*）と共有する（`internal static`）。
+    // 輸送を差し替えても引く範囲と読み方が変わらないように、ここを唯一の定義にする。
+    /// <summary>照会の窓（JST の暦日 → 半開区間 [from 00:00 JST, to+1 日 00:00 JST)）。</summary>
+    internal static (DateTimeOffset From, DateTimeOffset To) Window(DateOnly fromInclusive, DateOnly toInclusive) =>
+        AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
+
     /// <summary>
     /// JST 取引日 <paramref name="fromInclusive"/>〜<paramref name="toInclusive"/> の状態。
     /// <para>
@@ -48,12 +54,6 @@ public sealed class HttpFxSourceStatusSource(
     /// 終端を <c>23:59:59</c> で閉じると<b>その日の最後の 1 秒が落ちる</b>。
     /// </para>
     /// </summary>
-    // NFR, IADR-0445 決定 4, #1059 (#753): 照会の窓・引く種別・記録の解釈は gRPC 実装（Grpc*）と共有する（`internal static`）。
-    // 輸送を差し替えても引く範囲と読み方が変わらないように、ここを唯一の定義にする。
-    /// <summary>照会の窓（JST の暦日 → 半開区間 [from 00:00 JST, to+1 日 00:00 JST)）。</summary>
-    internal static (DateTimeOffset From, DateTimeOffset To) Window(DateOnly fromInclusive, DateOnly toInclusive) =>
-        AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
-
     public async Task<FxSourceStatus?> GetStatusAsync(
         DateOnly fromInclusive,
         DateOnly toInclusive,

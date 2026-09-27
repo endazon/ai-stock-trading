@@ -39,7 +39,7 @@ public sealed class HttpCostControlGate(
             if (dto is null)
                 return CostControlGate.Normal;
 
-            return Map(dto);
+            return Map(dto.IsHalted, dto.IntervalMultiplier, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -58,21 +58,22 @@ public sealed class HttpCostControlGate(
     //   倍率の欠落・非正を理由に停止を Normal へ落とすと「費用上限 100% でも収集を続ける」側へ倒れるため。
     // - isHalted が欠落: 停止か否かを判定できない不正応答として Normal（不達・非 2xx と同じ安全既定）。
     // - isHalted が false で倍率が欠落・非正: 「費用統制は何も言っていない」を 0× と読まず Normal（1×）。
-    private CostControlGate Map(CostStateDto dto)
+    // NFR, IADR-0446 決定 4, #1061 (#753): 写しは gRPC 実装（GrpcCostControlGate）と共有する（`internal static`）。
+    internal static CostControlGate Map(bool? isHaltedOrMissing, decimal? intervalMultiplier, ILogger logger)
     {
-        if (dto.IsHalted is not bool isHalted)
+        if (isHaltedOrMissing is not bool isHalted)
         {
             logger.LogWarning("費用統制の応答に isHalted がありません。Normal（停止せず）に倒します。");
             return CostControlGate.Normal;
         }
 
         if (isHalted)
-            return new CostControlGate(true, dto.IntervalMultiplier ?? 0m);
+            return new CostControlGate(true, intervalMultiplier ?? 0m);
 
-        if (dto.IntervalMultiplier is not decimal multiplier || multiplier <= 0m)
+        if (intervalMultiplier is not decimal multiplier || multiplier <= 0m)
         {
             logger.LogWarning("費用統制の応答の intervalMultiplier が欠落または非正（{Multiplier}）。Normal（1×）に倒します。",
-                dto.IntervalMultiplier);
+                intervalMultiplier);
             return CostControlGate.Normal;
         }
 

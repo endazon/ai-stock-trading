@@ -17,6 +17,7 @@ related_ids:
   - IADR-0328
   - IADR-0427
   - IADR-0445
+  - IADR-0446
 author: endazon (with Claude Code)
 created: 2026-09-03
 updated: 2026-09-27
@@ -244,6 +245,18 @@ session-uptime｜提供側 1・消費側 3 サービス」）の読み方だけ�
 - **Audit への書き込みは段 3 に無い。** REST の書き込み口は 0 本で、書き込みは Wolverine（RabbitMQ）の購読である（同期の east-west ではない）。
   REST の OwnerOnly の 2 本（相関 ID・直近）にもサービス間の呼び出し元は無い。
 - 報告書では段 2 と段 3 の 2 つの輸送が、門・観測・deadline・再試行の規則を 1 つ（`ReportGrpcCalls`）で共有する（IADR-0445 決定 5）。
+
+## ［2026-09-27 追記 / #1061］段 4（Report・MarketMonitor・CostControl の読み取り）を実装した。決定 5 の段 4 行に表の後の 2 本を加える
+
+段 4 を #1061 として起票し実装した（具体の置き方は [IADR-0446](IADR-0446_report-monitor-cost-read-grpc-stage4.md)）。**決定 1・2・4 と、決定 5 の
+段の順序・切り方（1 PR）は変わらない。** 決定 5 の段 4 行（「Report `daily-policy`・MarketMonitor `watchlist`・CostControl `costs/state`｜1 PR」）の
+読み方だけを、着手時の実測で確定した。
+
+- **同じ提供側の OwnerOrService の読み取りで、表の後に追加された 2 本を段 4 に入れた**: 取引判断の当時の監視銘柄（`GET /monitor/watchlist/as-of`・#1049）と
+  情報収集の監視銘柄（`GET /monitor/watchlist`・#1015）。段 5・6 に入る場所が無い。
+- **Notification が報告書・市場監視を呼ぶ 3 クラス（review・方針の改訂・監視銘柄の入れ替え案の適用）は段 5 で移す。** owner マップ機密クライアントの
+  トークンで呼び、同じクラスに OwnerOnly の書き込みを持つ（上の 2026-09-25 追記の Notification `stage-gate` と同じ扱い）。
+- 呼び出しの規則（deadline・再試行）は呼び出し元サービスごとに 1 つにした（取引判断は段 2 の輸送から切り出し、情報収集は新設）。
 
 ## 関連
 

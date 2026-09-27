@@ -612,6 +612,10 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
         MarketDataSourceFactory.EstimateDailyVolume(
             introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds).ToString()));
 
+// NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0446, #1061 (#753): east-west gRPC の h2c 専用ポート。
+// **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない）。`AddGrpc()` は常に呼ばれる。
+builder.AddAiStockTradingGrpcListener();
+
 var app = builder.Build();
 
 // NFR（費用）, FR-04, #817, IADR-0122（2026-09-17 追記）: LLM ゲートウェイ（REST の BaseUrl か gRPC）が構成されているのに
@@ -654,6 +658,8 @@ app.MapAiStockTradingIntrospection();
 
 // FR-06/07, UC-03〜05: 報告書のドラフト管理・確定・照会（利用者のみ）。
 app.MapReportEndpoints();
+// NFR, IADR-0446 決定2, #1061 (#753): 確定済み日報の方針の gRPC 面（REST の daily-policy と同じサービス・同じ OwnerOrService）。
+app.MapGrpcService<DailyPolicyReadGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

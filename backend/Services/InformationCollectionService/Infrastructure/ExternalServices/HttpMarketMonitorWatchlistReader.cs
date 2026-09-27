@@ -40,22 +40,7 @@ public sealed class HttpMarketMonitorWatchlistReader(
                 return null;
             }
 
-            var result = new List<WatchedSymbol>(rows.Count);
-            foreach (var row in rows)
-            {
-                if (row is null
-                    || string.IsNullOrWhiteSpace(row.Symbol)
-                    || row.Market is not { } market
-                    || !Enum.IsDefined(market))
-                {
-                    logger.LogWarning("監視銘柄（watchlist）の応答に項目の欠けた行・値域外の市場があるため、一覧ごと不明として扱います。");
-                    return null;
-                }
-
-                result.Add(new WatchedSymbol(row.Symbol.Trim(), market));
-            }
-
-            return result;
+            return Interpret(rows, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -69,6 +54,28 @@ public sealed class HttpMarketMonitorWatchlistReader(
         }
     }
 
-    // GET /monitor/watchlist の 1 行（MonitoredSymbol と同じ項目名）。
-    private sealed record WatchlistRow(string? Symbol, Market? Market);
+    // NFR, IADR-0446 決定 4, #1061 (#753): 行の解釈は gRPC 実装（GrpcMarketMonitorWatchlistReader）と共有する（`internal static`）。
+    // 1 行でも項目が欠けていれば（行が null・銘柄が空・市場が欠落または値域外）一覧ごと不明（null）。
+    internal static IReadOnlyList<WatchedSymbol>? Interpret(IReadOnlyList<WatchlistRow?> rows, ILogger logger)
+    {
+        var result = new List<WatchedSymbol>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (row is null
+                || string.IsNullOrWhiteSpace(row.Symbol)
+                || row.Market is not { } market
+                || !Enum.IsDefined(market))
+            {
+                logger.LogWarning("監視銘柄（watchlist）の応答に項目の欠けた行・値域外の市場があるため、一覧ごと不明として扱います。");
+                return null;
+            }
+
+            result.Add(new WatchedSymbol(row.Symbol.Trim(), market));
+        }
+
+        return result;
+    }
+
+    // GET /monitor/watchlist の 1 行（MonitoredSymbol と同じ項目名）。gRPC 実装も同じ行へ写してから解釈する。
+    internal sealed record WatchlistRow(string? Symbol, Market? Market);
 }

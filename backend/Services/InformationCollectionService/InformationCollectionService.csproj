@@ -21,6 +21,9 @@
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <!-- 収集完了イベント（InformationCollected）の発行に共有契約を参照する。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- NFR, IADR-0331 決定7, IADR-0446, #1061 (#753): east-west gRPC（段 4・監視銘柄と費用統制の判定の読み取り）の proto 契約と生成物。
+         Shared.Contracts へは置けない（Domain 到達可能・外部ライブラリ依存ゼロの制約）。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Grpc\AiStockTrading.Shared.Grpc.csproj" />
     <!-- IADR-0068: Finnhub 呼び出し（FinnhubQuoteClient）とレート制限（TokenBucket 系）を共有物へ抽出したため参照する。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Infrastructure\AiStockTrading.Shared.Infrastructure.csproj" />
     <!-- FR-08, IADR-0069: 実 KB 保存（IKnowledgeBaseWriter）へ委譲する KnowledgeBaseWriterSink の登録・参照に

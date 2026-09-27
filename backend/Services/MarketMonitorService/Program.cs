@@ -12,6 +12,7 @@ using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -195,6 +196,10 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
             // ADR-0043（計画）決定 3, #1030, IADR-0437: 開場中（米国 390 分）だけで数える。
             MarketSessions.RegularSessionMinutes(Market.UnitedStates)).ToString()));
 
+// NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0446, #1061 (#753): east-west gRPC の h2c 専用ポート。
+// **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない）。`AddGrpc()` は常に呼ばれる。
+builder.AddAiStockTradingGrpcListener();
+
 var app = builder.Build();
 
 // IADR-0012 踏襲: 起動時にスキーマを最新 Migration へ更新（relational のみ。テストの InMemory はスキップ）。
@@ -213,6 +218,8 @@ app.MapAiStockTradingIntrospection();
 
 // FR-03, FR-13: 監視設定の照会・変更（利用者のみ）。
 app.MapMonitorSettingsEndpoints();
+// NFR, IADR-0446 決定2, #1061 (#753): 監視銘柄の読み取りの gRPC 面（REST の read と同じサービス・同じ OwnerOrService）。
+app.MapGrpcService<WatchlistReadGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

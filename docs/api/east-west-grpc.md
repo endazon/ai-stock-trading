@@ -7,11 +7,11 @@ updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16]
+ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15]
 adrs: [ADR-0001, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read]
-issues: [#526, #584, #745, #753, #997, #1059]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read]
+issues: [#526, #584, #745, #753, #997, #1059, #1061]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -26,7 +26,7 @@ issues: [#526, #584, #745, #753, #997, #1059]
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
 - **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面・§5）と
-  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
+  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
   **並走中の正は REST** であり、gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
@@ -261,6 +261,47 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 - 報告書は REST の依存先の門と観測を gRPC でも同じに行う（依存先の名前は REST と同じ `audit-ledger`）。§6 の輸送と、門・観測・deadline・
   再試行の規則を 1 つで共有する。
 - helm: 既定では `services.audit.grpcPort` も `Audit__Grpc` も置かない（既定の描画は変わらない）。有効化の手順は values.yaml のコメントにある。
+
+## 8. 面: 日報の方針・監視銘柄・費用統制の判定の読み取り
+
+提供側ごとに 1 つの service を持ち、いずれも REST の読み取り（利用者またはサービス）と**同じ**認可・同じサービスを通る。**並走中の正は REST。**
+運ぶ項目は**移した呼び出し元が読む項目だけ**で、message 名は送り手の型名と同じにしない。
+
+| service / rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
+| --- | --- | --- | --- |
+| `aistocktrading.report.v1.DailyPolicyRead/GetConfirmedDailyPolicy` | `GET /reports/daily-policy` | 取引判断 | 取引しない |
+| `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlist` | `GET /monitor/watchlist` | 取引判断（定時サイクル・判断のプロンプト）・情報収集 | 定時サイクルは構成の監視銘柄、プロンプトは不明、情報収集は不明（直前に読めた対象を使い続ける） |
+| `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlistAsOf` | `GET /monitor/watchlist/as-of?at=` | 取引判断（Stage 0 の記録） | 再構成できない（理由つき・その記録は合否から外れる） |
+| `aistocktrading.costcontrol.v1.CostStateRead/GetCostState` | `GET /costs/state` | 情報収集 | 通常（停止せず・1 倍） |
+
+エラーは §6 と同じ（`UNAUTHENTICATED` / `PERMISSION_DENIED` は再試行しない、`UNAVAILABLE` / `DEADLINE_EXCEEDED` は再試行の対象）。
+当時の監視銘柄の時刻の欠落・オフセットの欠落・書式違いは `INVALID_ARGUMENT`（REST の 400 と同じ）。
+
+### 🔴 線上の写し
+
+| 契約 | 線上 | 写し |
+| --- | --- | --- |
+| 日報の方針の未確定 | **`policy` の無い応答**（`NOT_FOUND` にしない） | REST の 404 と同じく警告なしで「取引しない」。未確定は毎朝の平常の状態であり、失敗として記録しない |
+| 方針の日付・要約 | `optional string` | 欠落・読めない日付は既定値で作らず「取引しない」 |
+| 監視銘柄の市場 | `MARKET_UNSPECIFIED = 0` を持つ列挙 | **名前で**写す。未指定・未知は不明（C# の 0 ＝日本は線上で 1） |
+| 当時の一覧 | 可否は `optional bool`、一覧は存在を持つ入れ物 | 入れ物が無ければ「一覧が無い」（空の一覧とは違う） |
+| 費用統制の停止・倍率 | `optional bool`・`optional string`（不変文化の 10 進） | 停止の欠落は「分からない」（通常へ倒す）、倍率の欠落・空・非正は 1 倍（REST と同じ写し） |
+
+行の検証（欠けた行・値域外の市場・停止の欠落）は REST のアダプタと**同じ 1 つ**を使う。
+
+### 呼び出し元の設定
+
+| 構成キー | 呼び出し元 | 既定 | 意味 |
+| --- | --- | --- | --- |
+| `Reports:Grpc` | 取引判断 | 未設定（＝REST） | 日報の方針の gRPC の宛先 |
+| `MarketMonitor:Grpc` | 取引判断・情報収集 | 未設定（＝REST） | 監視銘柄の gRPC の宛先（取引判断は当時の一覧も） |
+| `CostControl:Grpc` | 情報収集 | 未設定（＝REST） | 費用統制の判定の gRPC の宛先 |
+| `<上記>:GrpcTimeoutSeconds` | 〃 | 5 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値 |
+| `<上記>:GrpcMaxAttempts` | 〃 | 1 | 試行回数。**既定は再試行しない** |
+
+- 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する。チャネルは呼び出し元の輸送が所有する。
+- 呼び出しの規則（deadline・再試行）は呼び出し元サービスごとに 1 つ（同じサービスの他の輸送と共有する）。
+- helm: 既定では提供側の `grpcPort` も呼び出し元の宛先も置かない（既定の描画は変わらない）。有効化の手順は values.yaml のコメントにある。
 
 ## シーケンス
 
