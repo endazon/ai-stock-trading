@@ -38,6 +38,11 @@ updated: 2026-09-27
 | `InformationCollectionService/.../CostControlGrpcTransport.cs`（`CostControlWire.IntervalMultiplier`） | 段 4 | B で `TryParse` へ（PR #1062 で桁あふれは捕捉済み） |
 | `OrderExecutionService/.../MoomooBrokerOptions.cs` | — | 除外（構成値の読み取り。gRPC の受け手ではない） |
 
+［2026-09-27 追記 / #1065］上表の A の「実在の送り手（市場監視）は市場を 0 / 1 で必ず書くため、稼働中は起きない」は不正確だった。
+市場監視の全置換（`PUT /monitor/settings`）は未定義の市場を保存でき、初回シードの構成も列挙名でない番号を通していた（到達し得た）。
+#1065 で入口を閉じた（全置換は 400・シードの構成は起動時に止める）。B の REST の数値の文字列の書式（`NumberStyles.Float` が前後の空白を許した）も
+#1065 で以前の Web 既定と同じに戻した。判断の訂正は IADR-0447 の同日の追記。
+
 ## 受け入れ基準
 
 - [x] A: 市場の欠けた・値域外の行は定時サイクルの判断対象から外れる（REST・gRPC）。T-10-1545・T-10-1694 を改訂し、改訂を表明する
