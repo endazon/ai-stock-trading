@@ -1,7 +1,7 @@
 ---
 title: east-west gRPC 段 5（後半）—— Discord ボットの書き込みを gRPC でも呼べるようにし、構成で切り替える（#753）
 type: spec
-status: in-progress
+status: done
 related_ids: [NFR, NFR-06, FR-14, FR-07, FR-09, FR-10, FR-11, FR-13, FR-19, FR-20, ADR-0003, ADR-0028, ADR-0041, ADR-0047, IADR-0062, IADR-0098, IADR-0284, IADR-0427, IADR-0448, IADR-0449, IADR-0450]
 author: endazon (with Claude Code)
 created: 2026-09-28
@@ -142,15 +142,15 @@ plan_refs:
 
 ## 受け入れ基準
 
-- [ ] 13 本の書き込みそれぞれで、gRPC 実装が REST 実装と**同じ結果**（成功・拒否・受理不能の文言と真偽）を返す
-- [ ] 提供側: 新しい面はボットのトークンで通り、azp の無い所有者・BFF 等の azp・s2s は `PERMISSION_DENIED`。本物の Program.cs で REST と同じ状態の変化・同じ操作者（`OnBehalfOf`）の記録・同じ拒否の分類になる
-- [ ] 書き込みは `*:GrpcMaxAttempts` を宣言しても 1 回しか呼ばない（`UNAVAILABLE` でも再試行しない）
-- [ ] 失敗時に REST へ落とさない（REST の偽の提供側は呼ばれない）
-- [ ] 書き込みの時間切れは「結果は不明」、`UNIMPLEMENTED` 等の明確な失敗は「実行していない」
-- [ ] 本番の Program.cs の組み立てで、宣言があれば書き込みも gRPC（偽の提供側がボットのトークンを受け取る）・無ければ REST
-- [ ] 監査の 3 点（null 要素・読み取りの時間切れの文言・監視銘柄の Warning）
-- [ ] 変異 5 件以上で赤
-- [ ] build・test・format・scripts の検査器が通る
+- [x] 13 本の書き込みそれぞれで、gRPC 実装が REST 実装と**同じ結果**（成功・拒否・受理不能の文言と真偽）を返す
+- [x] 提供側: 新しい面はボットのトークンで通り、azp の無い所有者・BFF 等の azp・s2s は `PERMISSION_DENIED`。本物の Program.cs で REST と同じ状態の変化・同じ操作者（`OnBehalfOf`）の記録・同じ拒否の分類になる
+- [x] 書き込みは `*:GrpcMaxAttempts` を宣言しても 1 回しか呼ばない（`UNAVAILABLE` でも再試行しない）
+- [x] 失敗時に REST へ落とさない（REST の偽の提供側は呼ばれない）
+- [x] 書き込みの時間切れは「結果は不明」、`UNIMPLEMENTED` 等の明確な失敗は「実行していない」
+- [x] 本番の Program.cs の組み立てで、宣言があれば書き込みも gRPC（偽の提供側がボットのトークンを受け取る）・無ければ REST
+- [x] 監査の 3 点（null 要素・読み取りの時間切れの文言・監視銘柄の Warning）
+- [x] 変異 5 件以上で赤
+- [x] build・test・format・scripts の検査器が通る
 
 ## テスト方針（テスト ID は develop の最大 T-10-1731 の次から）
 
@@ -174,4 +174,13 @@ plan_refs:
 
 ## 検証の結果
 
-（実装後に記入する）
+（2026-09-28・実装コミット `dfc02a2` 時点）
+
+- `dotnet build backend/backend.slnx` 警告・エラーの増加なし（既存の CS0108 1 件のみ）。`dotnet format backend/backend.slnx --verify-no-changes` exit 0。
+- `dotnet test`: IntegrationTests 以外の 21 プロジェクトすべて緑（新規: T-10-1732 16 件・T-10-1733 15 件・T-10-1734 8 件・T-10-1735 23 件・T-10-1736 9 件。
+  前半の T-10-1730 は「書き込みは REST へ委ねる」の 1 件を外し、読み取りの時間切れの文言を改めた）。IntegrationTests は Testcontainers（Docker）必須のため実行していない（この環境に Docker が無い）。
+- 検査器: check-trace-blocks / check-proto-contracts（`--update`・`git diff --diff-algorithm=patience` で削除行 0。既定の diff の見かけの削除 64 行は同じ内容の行の並びの移動で、旧 baseline のキーと値はすべて残っていることを JSON で突き合わせた）/
+  check-reading-budget / gen-knowledge-graph --check / check-test-traceability / check-cross-repo-refs / check-plan-id-qualification / check-doc-links / check-adr-index-sync / check-realm-export /
+  check-commit-messages --range=origin/develop..HEAD がすべて OK。`REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` 477 件 pass。
+- 変異 13 件すべて赤（一覧は `docs/tests/FR-10_risk-controls-tests.md` の本件の節）。
+- 規則 10 の走査で見つけた既存の食い違い: 前半の仕様書・`IADR-0449`・`IADR-0284` の追記の「書き込み 14」（実数 13）→ `IADR-0450` 決定 1 で是正（凍結記録の本文は変えない）。
