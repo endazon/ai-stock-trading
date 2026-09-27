@@ -31,7 +31,7 @@ public sealed class HttpFxSourceStatusSource(
     private static JsonSerializerOptions DetailOptions => AuditDetailJson.Options;
 
     // 引く種別。**イベント型名がそのまま台帳の EventType である**（AuditEntryFactory が nameof で書く）。
-    private static readonly string[] WantedTypes =
+    internal static readonly string[] WantedTypes =
     [
         nameof(FxRateSourceFellBack),
         nameof(FxRateSourcePrimaryRestored),
@@ -48,12 +48,18 @@ public sealed class HttpFxSourceStatusSource(
     /// 終端を <c>23:59:59</c> で閉じると<b>その日の最後の 1 秒が落ちる</b>。
     /// </para>
     /// </summary>
+    // NFR, IADR-0445 決定 4, #1059 (#753): 照会の窓・引く種別・記録の解釈は gRPC 実装（Grpc*）と共有する（`internal static`）。
+    // 輸送を差し替えても引く範囲と読み方が変わらないように、ここを唯一の定義にする。
+    /// <summary>照会の窓（JST の暦日 → 半開区間 [from 00:00 JST, to+1 日 00:00 JST)）。</summary>
+    internal static (DateTimeOffset From, DateTimeOffset To) Window(DateOnly fromInclusive, DateOnly toInclusive) =>
+        AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
+
     public async Task<FxSourceStatus?> GetStatusAsync(
         DateOnly fromInclusive,
         DateOnly toInclusive,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
+        var (from, to) = Window(fromInclusive, toInclusive);
         var path = "/audit/events/by-type"
             + $"?from={Uri.EscapeDataString(from.ToString("o"))}"
             + $"&to={Uri.EscapeDataString(to.ToString("o"))}"
@@ -73,7 +79,7 @@ public sealed class HttpFxSourceStatusSource(
             }
 
             var entries = await response.Content
-                .ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(cancellationToken)
+                .ReadFromJsonAsync<IReadOnlyList<AuditLedgerEntry>>(cancellationToken)
                 .ConfigureAwait(false);
 
             if (entries is null)
@@ -82,7 +88,7 @@ public sealed class HttpFxSourceStatusSource(
                 return null;
             }
 
-            return Build(entries);
+            return Build(entries, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -102,7 +108,7 @@ public sealed class HttpFxSourceStatusSource(
 
     // 台帳の記録を種別ごとに戻す。**壊れた 1 件で期間全体を落とさない**——
     // 読めなかった記録は捨ててログへ残す（**黙って捨てない**）。
-    private FxSourceStatus Build(IReadOnlyList<AuditEntryDto> entries)
+    internal static FxSourceStatus Build(IReadOnlyList<AuditLedgerEntry> entries, ILogger logger)
     {
         var fellBacks = new List<FxRateSourceFellBack>();
         var restorations = new List<FxRateSourcePrimaryRestored>();
@@ -115,19 +121,19 @@ public sealed class HttpFxSourceStatusSource(
             switch (e.EventType)
             {
                 case nameof(FxRateSourceFellBack):
-                    Add(fellBacks, e);
+                    Add(fellBacks, e, logger);
                     break;
                 case nameof(FxRateSourcePrimaryRestored):
-                    Add(restorations, e);
+                    Add(restorations, e, logger);
                     break;
                 case nameof(FxRateStale):
-                    Add(stales, e);
+                    Add(stales, e, logger);
                     break;
                 case nameof(PositionClosedWithStaleFxRate):
-                    Add(staleCloses, e);
+                    Add(staleCloses, e, logger);
                     break;
                 case nameof(FxRateSourceUsed):
-                    Add(usages, e);
+                    Add(usages, e, logger);
                     break;
                 default:
                     // 要求していない種別が返った＝台帳側の絞り込みが効いていない。混ぜずに落とす。
@@ -140,7 +146,7 @@ public sealed class HttpFxSourceStatusSource(
             fellBacks, restorations, stales, Credits(fellBacks, restorations, usages), staleCloses, usages);
     }
 
-    private void Add<T>(List<T> into, AuditEntryDto entry)
+    private static void Add<T>(List<T> into, AuditLedgerEntry entry, ILogger logger)
     {
         try
         {
@@ -185,7 +191,4 @@ public sealed class HttpFxSourceStatusSource(
 
     // 🔴 期間の作り方は AuditPeriodRange（#338 で 1 箇所へ集約）。
     // 照会元が 3 つに増えたため各アダプタで書き写さない——1 つで境界を間違えても他が正しいと気づけない。
-
-    // 監査台帳の応答の受け皿。**必要な 3 項目だけ**を受ける（残りは報告書が使わない）。
-    private sealed record AuditEntryDto(Guid Id, string EventType, string Detail);
 }

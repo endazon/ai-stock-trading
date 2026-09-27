@@ -26,17 +26,24 @@ public sealed class HttpStopLossMethodResolutionSource(
     // 🔴 **書き手と同じ 1 つの定義を使う**（`AuditDetailJson`・IADR-0199 決定6。列挙は文字列で書かれている）。
     private static JsonSerializerOptions DetailOptions => AuditDetailJson.Options;
 
+    // NFR, IADR-0445 決定 4, #1059 (#753): 照会の窓・引く種別・記録の解釈は gRPC 実装（Grpc*）と共有する（`internal static`）。
+    // 輸送を差し替えても引く範囲と読み方が変わらないように、ここを唯一の定義にする。
+    internal static readonly string[] WantedTypes = [nameof(StopLossMethodResolved)];
+
+    /// <summary>照会の窓（報告期間の前後 <see cref="WindowMarginDays"/> 日を含む JST の半開区間）。</summary>
+    internal static (DateTimeOffset From, DateTimeOffset To) Window(DateOnly fromInclusive, DateOnly toInclusive) =>
+        AuditPeriodRange.JstHalfOpen(fromInclusive.AddDays(-WindowMarginDays), toInclusive.AddDays(WindowMarginDays));
+
     public async Task<StopLossMethodResolutionFeed?> GetResolutionsAsync(
         DateOnly fromInclusive,
         DateOnly toInclusive,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = AuditPeriodRange.JstHalfOpen(
-            fromInclusive.AddDays(-WindowMarginDays), toInclusive.AddDays(WindowMarginDays));
+        var (from, to) = Window(fromInclusive, toInclusive);
         var path = "/audit/events/by-type"
             + $"?from={Uri.EscapeDataString(from.ToString("o"))}"
             + $"&to={Uri.EscapeDataString(to.ToString("o"))}"
-            + $"&types={nameof(StopLossMethodResolved)}";
+            + $"&types={string.Join(",", WantedTypes)}";
 
         try
         {
@@ -52,7 +59,7 @@ public sealed class HttpStopLossMethodResolutionSource(
             }
 
             var entries = await response.Content
-                .ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(cancellationToken)
+                .ReadFromJsonAsync<IReadOnlyList<AuditLedgerEntry>>(cancellationToken)
                 .ConfigureAwait(false);
 
             if (entries is null)
@@ -61,7 +68,7 @@ public sealed class HttpStopLossMethodResolutionSource(
                 return null;
             }
 
-            return Build(entries);
+            return Build(entries, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -80,7 +87,7 @@ public sealed class HttpStopLossMethodResolutionSource(
     }
 
     // **壊れた 1 件で期間全体を落とさない**——読めなかった記録は除き、その数を別に返す（報告書が件数を書く）。
-    private StopLossMethodResolutionFeed Build(IReadOnlyList<AuditEntryDto> entries)
+    internal static StopLossMethodResolutionFeed Build(IReadOnlyList<AuditLedgerEntry> entries, ILogger logger)
     {
         var resolutions = new List<StopLossMethodResolved>();
         var unreadable = 0;
@@ -114,7 +121,4 @@ public sealed class HttpStopLossMethodResolutionSource(
 
         return new StopLossMethodResolutionFeed(resolutions, unreadable);
     }
-
-    // 監査台帳の応答の受け皿。**必要な 3 項目だけ**を受ける。
-    private sealed record AuditEntryDto(Guid Id, string EventType, string Detail);
 }

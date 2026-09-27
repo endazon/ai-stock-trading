@@ -9,6 +9,86 @@
   "$schemaVersion": 1,
   "$acceptedBreakingChanges": [],
   "files": {
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/audit/v1/audit_events_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.audit.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.Audit.V1",
+      "imports": [],
+      "messages": {
+        "GetEventsByTypeRequest": {
+          "fields": {
+            "event_types": {
+              "number": 3,
+              "type": "string",
+              "label": "repeated"
+            },
+            "from": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "to": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetEventsByTypeResponse": {
+          "fields": {
+            "records": {
+              "number": 1,
+              "type": "LedgerRecord",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "LedgerRecord": {
+          "fields": {
+            "detail": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "event_type": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "AuditEventsRead": {
+          "rpcs": {
+            "GetEventsByType": {
+              "request": "GetEventsByTypeRequest",
+              "response": "GetEventsByTypeResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/configuration/v1/assumptions.proto": {
       "syntax": "proto3",
       "package": "aistocktrading.configuration.v1",

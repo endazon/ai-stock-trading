@@ -273,6 +273,11 @@ services:
     image: ai-stock-trading/audit-service
     db: audit_svc
     auth: true
+    # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 3）, IADR-0328 決定 3, IADR-0445, #1059: east-west gRPC（h2c）の提供側ポート。
+    # 🔴 **既定は REST であり、`grpcPort` は意図的に宣言していない**（宣言すると Service / Deployment の第 2 ポートと
+    # env `Grpc__Port` が描画され、既定描画が変わる。宣言しないサービスは 1 バイトも変わらない）。
+    # 有効化するときだけ、ここへ 1 行足す（呼び出し元の report の `Audit__Grpc` と**同じ変更で**揃える）:
+    #   grpcPort: 8081
   backtest:
     image: ai-stock-trading/backtest-service
     # DB は持たない（永続化なし）。**メッセージバスは持つ**（#688 / IADR-0310: verdict の発行。接続文字列は
@@ -522,6 +527,13 @@ services:
       # ADR-0031（計画）決定2〜4, IADR-0292: 監視銘柄数の運用者申告（空=未申告・既定0＝日次見積りへ寄与しない）。
       - { name: MarketData__Finnhub__EstimatedSymbolCount, value: "" }
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
+      # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 3）, IADR-0445, #1059: 監査台帳の読み取り（為替の情報源・LLM 利用実績・借株料・
+      # 損切りの実行機構・判断根拠）を east-west gRPC（h2c）で呼ぶ場合の宛先。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。REST の宛先 `Audit__BaseUrl` も
+      # 既定では置いていない（未設定＝6 つの供給元は「照会できませんでした」の未供給）。有効化するときだけ、この env 配列へ足す:
+      #   - { name: Audit__Grpc, value: "http://audit-service:8081" }
+      # 前提（同じ変更で揃える）: 上の services.audit に `grpcPort: 8081` を宣言すること（片方だけだと常に未供給へ倒れる）。
+      # s2s は REST と同じ AST レルムの ServiceAuth__* をそのまま使う。deadline は Audit__GrpcTimeoutSeconds（既定 10 秒）。
       # FR-06/16, ADR-0010, IADR-0071 決定1: 報告書散文の実 LLM ドラフト。fail-safe: 空=Placeholder（定型散文＝既定オフ）。
       - { name: LlmGateway__BaseUrl, value: "" }
       # NFR, MSP:ADR-0029, IADR-0284, IADR-0328, IADR-0332, #746: east-west gRPC（h2c）で呼ぶ場合の宛先。

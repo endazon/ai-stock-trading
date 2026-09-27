@@ -357,8 +357,16 @@ builder.Services.AddSingleton<IBuyInInferenceRecordSource>(sp =>
 builder.Services.AddHttpClient("audit-ledger", c => c.Timeout = TimeSpan.FromSeconds(10))
     .AddReportDependencyGate("audit-ledger", sp => sp.GetService<IServiceAccessTokenProvider>())
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 3）, IADR-0445 決定 5, #1059 (#753): east-west gRPC
+// （`aistocktrading.audit.v1.AuditEventsRead`）。**`Audit:Grpc` があるときだけ**輸送を登録し、下の 6 つの供給元が
+// gRPC 実装を選ぶ（BaseUrl より優先）。**既定は REST** でありこの行は何もしない（未設定なら本変更前とバイト等価）。
+// 門と観測（#840）は REST の audit-ledger と同じ判定を輸送が持つ（依存先の名前も同じ audit-ledger）。
+builder.Services.AddAiStockTradingAuditGrpc(builder.Configuration);
 builder.Services.AddSingleton<IFxSourceStatusSource>(sp =>
 {
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcFxSourceStatusSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcFxSourceStatusSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedFxSourceStatusSource();
@@ -380,6 +388,9 @@ builder.Services.AddSingleton<IFxSourceStatusSource>(sp =>
 // 🔴 ここで空（＝費用 0 円・発火 0 件）へ倒さない。**LLM は本番で実際に呼ばれている**ため嘘になる。
 builder.Services.AddSingleton<ILlmUsageRecordSource>(sp =>
 {
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcLlmUsageRecordSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcLlmUsageRecordSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedLlmUsageRecordSource();
@@ -407,6 +418,9 @@ builder.Services.AddSingleton<IStage0RecordingEstimateSource>(sp =>
 // 計上イベントと未計上イベントの両方を引く（契約が 2 つに分かれている理由そのもの）。
 builder.Services.AddSingleton<IBorrowFeeRecordSource>(sp =>
 {
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcBorrowFeeRecordSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcBorrowFeeRecordSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedBorrowFeeRecordSource();
@@ -423,6 +437,9 @@ builder.Services.AddSingleton<IBorrowFeeRecordSource>(sp =>
 // **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした」。**「承認なし」へ倒さない。
 builder.Services.AddSingleton<IStopLossMethodUsageSource>(sp =>
 {
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcStopLossMethodUsageSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcStopLossMethodUsageSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedStopLossMethodUsageSource();
@@ -438,6 +455,9 @@ builder.Services.AddSingleton<IStopLossMethodUsageSource>(sp =>
 // **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）＝「照会できませんでした」。**「記録なし」へ倒さない。
 builder.Services.AddSingleton<IStopLossMethodResolutionSource>(sp =>
 {
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcStopLossMethodResolutionSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcStopLossMethodResolutionSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedStopLossMethodResolutionSource();
@@ -457,6 +477,9 @@ builder.Services.AddSingleton<IStopLossMethodResolutionSource>(sp =>
 // 🔴 ここで空の辞書（＝根拠の記録が 1 件も無い）へ倒さない。**判断根拠は本番で実際に記録されている**ため嘘になる。
 builder.Services.AddSingleton<ITradeRationaleSource>(sp =>
 {
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcTradeRationaleSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcTradeRationaleSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnsuppliedTradeRationaleSource();

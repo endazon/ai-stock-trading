@@ -12,8 +12,14 @@ namespace AuditService.Features.AuditEvents.GetAuditEventsByType;
 //
 // 🔴 **件数の上限を置かない。** 期間の集計に使うため、上限で切ると
 // **取りこぼしたことが赤くならない**（上の /events とは用途が違う）。
+//
+// NFR, IADR-0445 決定 2, #1059 (#753): 種別の解析と入力の検証の文言は gRPC 面（AuditEventsReadGrpcService）と共有する
+// （`internal static`）。REST の応答は本変更の前とバイト等価。
 internal static class GetAuditEventsByTypeEndpoint
 {
+    internal const string NoTypesError = "types は 1 つ以上の監査イベント種別が必要です。";
+    internal const string ReversedPeriodError = "from は to より前である必要があります（半開区間）。";
+
     public static void MapGetAuditEventsByType(this IEndpointRouteBuilder g) =>
         g.MapGet("/events/by-type", (
                 IAuditEventStore store,
@@ -21,17 +27,23 @@ internal static class GetAuditEventsByTypeEndpoint
                 DateTimeOffset to,
                 string types) =>
             {
-                // 空・空白のみの要素は落とす（`types=,,` を「全件」と解釈しない）。
-                var wanted = types
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .ToArray();
+                var wanted = ParseTypes(types);
 
                 return wanted.Length == 0
-                    ? Results.BadRequest(new { error = "types は 1 つ以上の監査イベント種別が必要です。" })
+                    ? Results.BadRequest(new { error = NoTypesError })
                     // 半開区間 [from, to)。終端を閉じるとその日の最後の 1 秒が落ちる。
                     : from >= to
-                        ? Results.BadRequest(new { error = "from は to より前である必要があります（半開区間）。" })
+                        ? Results.BadRequest(new { error = ReversedPeriodError })
                         : Results.Ok(store.GetByTypesInPeriod(wanted, from, to));
             })
             .RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
+
+    /// <summary>
+    /// カンマ区切りの種別を解析する。空・空白のみの要素は落とす（`types=,,` を「全件」と解釈しない）。
+    /// gRPC 面は repeated をカンマで連結して本メソッドへ渡す（解析を 2 つにしない。IADR-0445 決定 2）。
+    /// </summary>
+    internal static string[] ParseTypes(string types) =>
+        types
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToArray();
 }
