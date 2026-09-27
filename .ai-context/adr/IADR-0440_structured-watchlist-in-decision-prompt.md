@@ -2,7 +2,7 @@
 title: IADR-0440 判断のプロンプトへ判断時点の監視銘柄（権威源から読めた一覧）と判断対象の所属を方針とは別の節に構造化して渡し、読めなければ「不明」と書く（構成の固定リストは載せない・見送らない）
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-02, FR-13, FR-15, UC-01, UC-02, ADR-0003, ADR-0044, ADR-0036, ADR-0033, ADR-0043, IADR-0351, IADR-0095, IADR-0313, IADR-0247, IADR-0169, IADR-0297, IADR-0318, IADR-0435, IADR-0387]
+related_ids: [FR-04, FR-02, FR-13, FR-15, UC-01, UC-02, ADR-0003, ADR-0044, ADR-0046, ADR-0036, ADR-0033, ADR-0043, IADR-0351, IADR-0095, IADR-0313, IADR-0247, IADR-0169, IADR-0297, IADR-0318, IADR-0435, IADR-0387, IADR-0442]
 author: claude (Claude Code)
 created: 2026-09-26
 updated: 2026-09-27
@@ -133,6 +133,12 @@ LLM が「META は対象の 6 銘柄に含まれていない」と方針を誤�
   (e) を必須へ上げるかは、再構成の供給口とあわせて #1049 で決める。
 - **版番号は設けない。** プロンプトの版の規約は無く、Stage 0 の記録は入力の指紋（プロンプトの SHA-256）とそれを含む内容ハッシュ（戦略 ID）を持つため、
   文言の変化は新しい戦略 ID として区別される。
+
+［2026-09-27 追記 / #1049・IADR-0442］**再構成の供給口が入った。** 市場監視の `GET /monitor/watchlist/as-of`（読み取り専用・s2s）が、変更履歴と
+`SeededAt` から当時の監視銘柄を再構成する（ADR-0044 決定 3。最初の変更より前の扱いは ADR-0046 決定 1・2 が部分改定: `SeededAt` 以降に限り最初の変更の
+変更前を使い、`SeededAt` より前・null・矛盾は再構成できない）。取引判断は `WatchlistAsOfDecisionInputProvider` で `AsOfDecisionInput.Watchlist` を埋め、
+再構成できない時点は理由を (e) の申告へ載せて合否から外す。上の「供給口が入るまで」の定めは、再構成できない時点について引き続き効く。
+(e) は申告の成立（`RequiredKinds`）へは上げない（本決定の判断を維持。理由は同じ）。as-of の他の入力の実供給は無いため、本番の記録はまだ 0 件である。
 
 ## 却下した案
 

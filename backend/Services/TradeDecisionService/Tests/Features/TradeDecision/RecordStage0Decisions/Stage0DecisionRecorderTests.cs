@@ -63,14 +63,19 @@ public class Stage0DecisionRecorderTests
             IReadOnlyList<string> responses,
             int tokensPerCall = 1_000,
             IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null,
-            IReadOnlyList<WatchedSymbol>? asOfWatchlist = null)
+            IReadOnlyList<WatchedSymbol>? asOfWatchlist = null,
+            Func<IAsOfDecisionInputProvider, IAsOfDecisionInputProvider>? wrapInputs = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
         var llm = new FakeLlmClient(responses, collector, tokensPerCall);
         var sink = new CapturingSink();
         var recorder = new Stage0DecisionRecorder(
-            llm, new StubInputProvider(notReconstructable, asOfWatchlist), sink, collector, Prices(),
+            llm,
+            wrapInputs is null
+                ? new StubInputProvider(notReconstructable, asOfWatchlist)
+                : wrapInputs(new StubInputProvider(notReconstructable, asOfWatchlist)),
+            sink, collector, Prices(),
             new FixedTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink, reporter);
     }
@@ -435,6 +440,70 @@ public class Stage0DecisionRecorderTests
             p.Contains($"判断対象の AAPL（市場: UnitedStates）{TradeDecisionPromptBuilder.WatchlistNotContainsSuffix}"));
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
         Stage0AsOfInputs.IsExcluded(sink.Saved!.Records[0].AsOfInputs).Should().BeFalse();
+    }
+
+    // 🔴 T-10-1630, FR-04, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 本番の組み立てと同じく供給をデコレータで包むと、
+    // 当時の監視銘柄（META・NVDA）が節に載り、記録の対象銘柄（AAPL・MSFT）は一覧の行として載らない。照会は判断時点ごとに 1 回で、
+    // 時刻は AsOf の UTC の日の終わりである。再構成できたので (e) は除外の理由にならない。
+    [Fact]
+    public async Task 当時の監視銘柄の供給口が再構成した一覧を節に載せ記録の対象銘柄は載らない()
+    {
+        var source = new RecordingAsOfWatchlistSource(
+            AsOfWatchlist.Reconstructed([new("META", Market.UnitedStates), new("NVDA", Market.UnitedStates)]));
+        var (recorder, llm, sink, _) = Build(
+            [Decision("Buy")], wrapInputs: inner => new WatchlistAsOfDecisionInputProvider(inner, source));
+
+        await recorder.RunAsync(
+            Options(
+                approvedJpy: 8m,
+                symbols:
+                [
+                    new Stage0RecordingOptions.SymbolEntry { Symbol = "AAPL", Market = Market.UnitedStates },
+                    new Stage0RecordingOptions.SymbolEntry { Symbol = "MSFT", Market = Market.UnitedStates },
+                ]),
+            CancellationToken.None);
+
+        llm.Prompts.Should().HaveCount(4);
+        llm.Prompts.Should().OnlyContain(p => p.Contains("""{"symbol":"META","market":"UnitedStates"}"""));
+        llm.Prompts.Should().OnlyContain(p => p.Contains("""{"symbol":"NVDA","market":"UnitedStates"}"""));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains("""{"symbol":"AAPL",""") && !p.Contains("""{"symbol":"MSFT","""));
+        llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.WatchlistNotContainsSuffix));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
+        source.Queried.Should().Equal(
+            new DateTimeOffset(2026, 6, 1, 23, 59, 59, TimeSpan.Zero).AddTicks(9_999_999),
+            new DateTimeOffset(2026, 6, 2, 23, 59, 59, TimeSpan.Zero).AddTicks(9_999_999));
+        sink.Saved!.Records.Should().OnlyContain(r => !Stage0AsOfInputs.IsExcluded(r.AsOfInputs));
+    }
+
+    // 🔴 T-10-1630: 再構成できない時点（例: SeededAt より前）は、節を「不明」と書き、供給口の理由を (e) の申告へ載せて合否から外す。
+    // 記録そのものは残る（ADR-0036 決定 1）。記録の対象銘柄で代えない。
+    [Fact]
+    public async Task 再構成できない時点は不明と書き理由つきで合否から外れる()
+    {
+        var source = new RecordingAsOfWatchlistSource(
+            AsOfWatchlist.NotReconstructable("SeededAt より前の時点です（その時点の監視銘柄は無かったか空でした）。"));
+        var (recorder, llm, sink, _) = Build(
+            [Decision("Buy")], wrapInputs: inner => new WatchlistAsOfDecisionInputProvider(inner, source));
+
+        var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains("""{"symbol":"""));
+        sink.Saved!.Records.Should().NotBeEmpty().And.OnlyContain(r =>
+            Stage0AsOfInputs.NotReconstructableKinds(r.AsOfInputs).SequenceEqual(new[] { Stage0AsOfInputKind.Watchlist })
+            && r.AsOfInputs!.Single(s => s.Kind == Stage0AsOfInputKind.Watchlist).Reason.Contains("SeededAt より前"));
+    }
+
+    private sealed class RecordingAsOfWatchlistSource(AsOfWatchlist result) : IAsOfWatchlistSource
+    {
+        public List<DateTimeOffset> Queried { get; } = [];
+
+        public Task<AsOfWatchlist> GetWatchlistAtAsync(DateTimeOffset at, CancellationToken cancellationToken = default)
+        {
+            Queried.Add(at);
+            return Task.FromResult(result);
+        }
     }
 
     // 🔴 **否定形**: 記録中でなければ計上は素通しである（本番の計上区分を変えない）。

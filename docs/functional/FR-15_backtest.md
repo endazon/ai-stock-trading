@@ -7,11 +7,11 @@ updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-15, FR-17, FR-20, UC-06, FR-04]
-adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034]
+ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13]
+adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049]
 -->
 
 
@@ -191,8 +191,12 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 - 申告の対象は 4 種（ニュース・開示／当時の確定日報方針／非基準通貨市場のその時点の為替レート／当時の監視銘柄）であり、
   **過去日の終値は対象外**である（裁定がそう定めている）。
 - 🔴 **当時の監視銘柄は、判断のプロンプトの「監視銘柄」の節の入力である。** 記録の対象銘柄の集合を代わりに渡さない
-  （当時の方針が挙げる銘柄と食い違うことがある）。再構成の供給口がまだ無いため、いまの記録ではこの節は「不明」であり、
-  記録は「再構成できなかった」と申告して**合格根拠にならない**。この種別は申告の成立には求めない ——
+  （当時の方針が挙げる銘柄と食い違うことがある）。当時の一覧は、市場監視の変更履歴と seed を適用した時刻から、読み取り専用の口で再構成する:
+  - その時点以前（同じ時刻を含む）で最後の変更の「変更後」の一覧を使う。判断時点は判断日の UTC の日の終わり（その時刻を含む）とする。
+  - 最初の変更より前は、seed を適用した時刻以降に限り、最初の変更の「変更前」の一覧を使う。変更が 1 件も無ければ、seed の時刻以降は現在の一覧を使う。
+  - 🔴 次の時点は**再構成できない**: seed の時刻より前・seed の時刻が記録されていない（推測で埋めない）・seed の時刻が最初の変更より後（記録の矛盾）・
+    同じ時刻の変更で一覧が食い違う・前後の変更がつながらない・一覧を読み戻せない・未来・照会できない。
+  - 再構成できない時点の記録は、節を「不明」と書き、理由をつけて「再構成できなかった」と申告し、**合格根拠にならない**。この種別は申告の成立には求めない ——
   監視銘柄の節を持たなかった以前の記録を、遡って「未申告」にせず、戦略識別子も変えないためである。
 - 🔴 **「外す」は「走らせない」ではない。** 痩せた入力での記録は残す —— 消すと、何を外したのかが記録から読めなくなる。
 - 🔴 **見送り（数量 0）の記録も除外として数える。** 母集団から外れた事実は数量と無関係であり、混ぜると

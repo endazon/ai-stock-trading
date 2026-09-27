@@ -47,9 +47,13 @@ public sealed class AsOfDecisionInput
     /// <para>
     /// 🔴 **null は「再構成できなかった」であり、(e) を <see cref="Stage0AsOfInputAvailability.NotReconstructable"/> と申告する**
     /// （プロンプトの監視銘柄の節は「不明」になり、この判断は Stage 0 の合否から外れる）。空の一覧は「当時 0 件だった」という事実である。
-    /// 再構成の供給口（#1049）が入るまで、供給側はこの引数を渡さない（ADR-0044 決定 4 の暫定手段）。
+    /// 再構成の供給口（#1049・IADR-0442）は `WatchlistAsOfDecisionInputProvider` が <see cref="WithWatchlist"/> で埋める。
     /// 🔴 **記録の対象銘柄の集合をここへ渡さない**（ADR-0044 決定 3。当時の方針が挙げる銘柄と食い違うことがある）。
     /// </para>
+    /// </param>
+    /// <param name="watchlistUnavailableReason">
+    /// FR-04, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 一覧が null のとき、(e) の申告へ載せる<b>再構成できなかった理由</b>
+    /// （供給口が返した理由。例: SeededAt より前）。null・空なら既定の文言。一覧があるときは使わない。
     /// </param>
     public AsOfDecisionInput(
         DateOnly asOf,
@@ -59,7 +63,8 @@ public sealed class AsOfDecisionInput
         IEnumerable<RetrievedContext>? references = null,
         decimal rateToBase = 1m,
         IEnumerable<Stage0AsOfInputKind>? notReconstructable = null,
-        IReadOnlyList<WatchedSymbol>? watchlist = null)
+        IReadOnlyList<WatchedSymbol>? watchlist = null,
+        string? watchlistUnavailableReason = null)
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(sizing);
@@ -106,8 +111,26 @@ public sealed class AsOfDecisionInput
         DroppedFutureReferenceCount = droppedFuture;
         DroppedUndatedReferenceCount = droppedUndated;
         Watchlist = watchlist;
-        AsOfInputs = DeriveAvailability(notReconstructable, kept.Count, droppedUndated, watchlist is not null);
+        AsOfInputs = DeriveAvailability(
+            notReconstructable, kept.Count, droppedUndated, watchlist is not null, watchlistUnavailableReason);
+
+        // #1049, IADR-0442 決定 4: WithWatchlist で同じ入力を組み直すために、構築時の引数を持つ（切る前の参考情報を含む）。
+        _price = price;
+        _references = references is null ? [] : [.. references];
+        _notReconstructable = notReconstructable is null ? [] : [.. notReconstructable];
     }
+
+    private readonly DatedPrice? _price;
+    private readonly IReadOnlyList<RetrievedContext> _references;
+    private readonly IReadOnlyList<Stage0AsOfInputKind> _notReconstructable;
+
+    /// <summary>
+    /// FR-04, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 当時の監視銘柄（(e)）だけを差し替えた入力を返す。
+    /// 他の入力（方針・価格・参考情報・換算レート・供給側の申告）は同じ規律で組み直す（as-of の切り方は変わらない）。
+    /// <paramref name="watchlist"/> が null なら (e) は再構成できないと申告し、<paramref name="unavailableReason"/> を理由に載せる。
+    /// </summary>
+    public AsOfDecisionInput WithWatchlist(IReadOnlyList<WatchedSymbol>? watchlist, string? unavailableReason) =>
+        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason);
 
     // FR-15, ADR-0036 決定1, #749, IADR-0387: 4 種（ADR-0044 決定 3 の (e) を含む）すべての再構成可否を導出する（**部分申告を作らない**）。
     //
@@ -125,7 +148,7 @@ public sealed class AsOfDecisionInput
     //     供給側が一覧を渡さない限り記録は合格根拠にならない（ADR-0044 決定 4 の暫定手段）。
     private static IReadOnlyList<Stage0AsOfInputStatus> DeriveAvailability(
         IEnumerable<Stage0AsOfInputKind>? notReconstructable, int keptReferenceCount, int droppedUndatedCount,
-        bool watchlistReconstructed)
+        bool watchlistReconstructed, string? watchlistUnavailableReason)
     {
         var declared = notReconstructable is null
             ? new HashSet<Stage0AsOfInputKind>()
@@ -148,7 +171,9 @@ public sealed class AsOfDecisionInput
                     : new Stage0AsOfInputStatus(
                         kind,
                         Stage0AsOfInputAvailability.NotReconstructable,
-                        "当時の監視銘柄を再構成できなかった（記録の対象銘柄では代えない。ADR-0044 決定 3）"));
+                        string.IsNullOrWhiteSpace(watchlistUnavailableReason)
+                            ? "当時の監視銘柄を再構成できなかった（記録の対象銘柄では代えない。ADR-0044 決定 3）"
+                            : $"当時の監視銘柄を再構成できなかった: {watchlistUnavailableReason}"));
                 continue;
             }
 

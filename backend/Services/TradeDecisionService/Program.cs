@@ -398,7 +398,21 @@ builder.Services.AddScoped<TradeDecisionAppService>();
 // as-of 入力の供給は既定「入力なし」であり、実供給を構成するまで記録は 1 件も作られない（LLM も呼ばれない）。
 builder.Services.Configure<Stage0RecordingOptions>(
     builder.Configuration.GetSection(Stage0RecordingOptions.SectionName));
-builder.Services.AddScoped<IAsOfDecisionInputProvider, NoAsOfDecisionInputProvider>();
+// FR-04, FR-15, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 当時の監視銘柄（as-of の (e)）は市場監視の
+// GET /monitor/watchlist/as-of から読み、供給をデコレータで包んで埋める。MarketMonitor:BaseUrl が空・不正なら常に「再構成できない」
+// （その記録は合否から外れる）。記録の対象銘柄（Stage0Recording:Symbols）では代えない。as-of の他の入力の実供給は無いまま。
+builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["MarketMonitor:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnwiredAsOfWatchlistSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("monitor");
+    http.BaseAddress = uri;
+    return new HttpAsOfWatchlistSource(http, sp.GetRequiredService<ILogger<HttpAsOfWatchlistSource>>());
+});
+builder.Services.AddScoped<IAsOfDecisionInputProvider>(sp => new WatchlistAsOfDecisionInputProvider(
+    new NoAsOfDecisionInputProvider(), sp.GetRequiredService<IAsOfWatchlistSource>()));
 builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
 {
     var outputPath = sp.GetRequiredService<IConfiguration>()[$"{Stage0RecordingOptions.SectionName}:OutputPath"];
