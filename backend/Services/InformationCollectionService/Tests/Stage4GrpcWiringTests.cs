@@ -15,7 +15,8 @@ namespace InformationCollectionService.Tests;
 // T-10-1697, NFR, FR-01, FR-13, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446 決定 5, #1061 (#753):
 // **本番の Program.cs の組み立て**で、`MarketMonitor:Grpc` / `CostControl:Grpc` の有無が監視銘柄の読み手と統制ゲートの実装を切り替え、
 // **既定は REST** であることを固定する。🔴 型を見るだけでなく、組み立てた実装で**実際に呼び**、偽の提供側の rpc ごとの呼ばれた回数が
-// **呼んだ分だけ増える**ことまで見る（常駐の巡回が起動直後に呼び得るため、絶対値ではなく差分で数える）。
+// **呼んだ分だけ増える**ことまで見る。常駐の巡回（in-process のポーリング）は `Collection:Trigger=External` で止める —— 差分で数えても、
+// 巡回が試験の呼び出しと同時に走ると増分が 2 になる（段 2 の #1010 と同じ形。全件の実行で実測）。
 public class Stage4GrpcWiringTests
 {
     [Fact]
@@ -108,6 +109,8 @@ public class Stage4GrpcWiringTests
                     ["RabbitMq:ConnectionString"] = "amqp://localhost",
                     ["Otlp:Endpoint"] = "http://localhost:4317",
                     ["Collection:PollIntervalSeconds"] = "3600",
+                    // 常駐の巡回を止める（起動直後の巡回が統制ゲート・監視銘柄を照会し、試験の呼び出しと競合する。実測で費用統制が 2 回）。
+                    ["Collection:Trigger"] = "External",
                 };
                 if (restBaseUrls)
                 {
