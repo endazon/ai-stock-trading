@@ -1,7 +1,7 @@
 ---
 title: east-west gRPC 段 5（前半）—— Discord ボットの読み取りを gRPC でも呼べるようにし、構成で切り替える（#753）
 type: spec
-status: in-progress
+status: done
 related_ids: [NFR, NFR-06, FR-14, FR-07, FR-10, FR-13, FR-20, ADR-0047, IADR-0062, IADR-0098, IADR-0284, IADR-0328, IADR-0427, IADR-0446, IADR-0448, IADR-0449]
 author: endazon (with Claude Code)
 created: 2026-09-27
@@ -143,17 +143,17 @@ ADR-0047 は、ボットの所有者トークンをサービスの身元と分�
 
 ## 受け入れ基準
 
-- [ ] 6 本の読み取りそれぞれで、gRPC 実装が REST 実装と**同じ結果**（成功時の文言・版番号・一覧・入れ替え案・警告）を返す（同じ送り手の値を REST と gRPC の両方で読ませて比べる）
-- [ ] 失敗（`UNAUTHENTICATED`・`PERMISSION_DENIED`・`NOT_FOUND`・`FAILED_PRECONDITION`・`UNIMPLEMENTED`・`UNAVAILABLE`・deadline 超過・項目の欠落）は成功に見えない（REST の同じ失敗と同じ種類の結果）
-- [ ] 書き込みは gRPC を宣言しても REST の実装へ委ねられる（偽の REST の提供側が呼ばれる）
-- [ ] 通知のチャネルはボットの owner トークンを `authorization` に載せる（s2s のトークンではない）。資格情報が未構成ならメタデータを付けない
-- [ ] 提供側: 新しい面（`RiskControlsOwnerRead`・`ReportOwnerRead`）はボットのトークンで通り、azp の無い所有者・BFF 等の azp・s2s（`trading-service` だけ）は `PERMISSION_DENIED`。REST の面は変わらない
-- [ ] 提供側: gRPC の値が REST と同じ（本物の Program.cs で REST と gRPC を並べて比べる）。`GetStageGate` の既存の読み手（`current_stage`）は変わらない
-- [ ] 本番の Program.cs の組み立てで、宣言があれば `Grpc*` が選ばれ実際に偽の提供側を呼ぶ・宣言が無ければ REST・使えない宛先は起動時に落ちる
-- [ ] helm（values・values-local）・compose の既定の描画に通知の `*__Grpc` が無い（配線試験）
-- [ ] `IADR-0284` の段 5 の行と段 6 の範囲を改めた（残す REST の端点を列挙）
-- [ ] 変異 3 件以上で赤
-- [ ] build・test・format・scripts の検査器が通る
+- [x] 6 本の読み取りそれぞれで、gRPC 実装が REST 実装と**同じ結果**（成功時の文言・版番号・一覧・入れ替え案・警告）を返す（同じ送り手の値を REST と gRPC の両方で読ませて比べる）
+- [x] 失敗（`UNAUTHENTICATED`・`PERMISSION_DENIED`・`NOT_FOUND`・`FAILED_PRECONDITION`・`UNIMPLEMENTED`・`UNAVAILABLE`・deadline 超過・項目の欠落）は成功に見えない（REST の同じ失敗と同じ種類の結果）
+- [x] 書き込みは gRPC を宣言しても REST の実装へ委ねられる（偽の REST の提供側が呼ばれる）
+- [x] 通知のチャネルはボットの owner トークンを `authorization` に載せる（s2s のトークンではない）。資格情報が未構成ならメタデータを付けない
+- [x] 提供側: 新しい面（`RiskControlsOwnerRead`・`ReportOwnerRead`）はボットのトークンで通り、azp の無い所有者・BFF 等の azp・s2s（`trading-service` だけ）は `PERMISSION_DENIED`。REST の面は変わらない
+- [x] 提供側: gRPC の値が REST と同じ（本物の Program.cs で REST と gRPC を並べて比べる）。`GetStageGate` の既存の読み手（`current_stage`）は変わらない
+- [x] 本番の Program.cs の組み立てで、宣言があれば `Grpc*` が選ばれ実際に偽の提供側を呼ぶ・宣言が無ければ REST・使えない宛先は起動時に落ちる
+- [x] helm（values・values-local）・compose の既定の描画に通知の `*__Grpc` が無い（配線試験）
+- [x] `IADR-0284` の段 5 の行と段 6 の範囲を改めた（残す REST の端点を列挙）
+- [x] 変異 3 件以上で赤
+- [x] build・test・format・scripts の検査器が通る
 
 ## テスト方針（テスト ID は develop の最大 T-10-1726 の次から）
 
@@ -178,4 +178,13 @@ ADR-0047 は、ボットの所有者トークンをサービスの身元と分�
 
 ## 検証の結果
 
-（実装後に記入）
+（2026-09-27・コミット `ce4d40e` 時点）
+
+- `dotnet build backend/backend.slnx` 警告・エラーの増加なし。`dotnet format backend/backend.slnx --verify-no-changes` exit 0。
+- `dotnet test`: IntegrationTests 以外の 21 プロジェクトすべて緑（新規: T-10-1727 12 件・T-10-1728 12 件・T-10-1729 16 件・T-10-1730 20 件・T-10-1731 9 件）。
+  IntegrationTests は 35 件中 11 件が失敗し、11 件すべて `DockerUnavailableException`（この環境に Docker が無い。Testcontainers 必須）。
+- 検査器: check-trace-blocks / check-proto-contracts（baseline を `--update` で更新・差分は非破壊の追加だけ）/ check-reading-budget / gen-knowledge-graph --check /
+  check-test-traceability / check-cross-repo-refs / check-plan-id-qualification / check-doc-links / check-adr-index-sync / check-realm-export /
+  check-commit-messages --range=origin/develop..HEAD がすべて OK。`REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` 477 件 pass。
+- 変異 11 件すべて赤（一覧は `docs/tests/FR-10_risk-controls-tests.md` の本件の節）。
+- 規則 10 の走査で見つけた既存の食い違い: `docs/api/east-west-grpc.md` の認可の記述 5 箇所（「利用者またはサービス」）が #1067 の門の後も古いままだった → 是正した。
