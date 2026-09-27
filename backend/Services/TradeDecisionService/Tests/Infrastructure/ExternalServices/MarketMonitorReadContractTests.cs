@@ -5,6 +5,8 @@ using System.Text;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Trading;
 using MarketMonitorWorker::MarketMonitorService.Domain;
+using MarketMonitorWorker::MarketMonitorService.Features.MarketMonitor.GetWatchlistAsOf;
+using TradeDecisionService.Features.TradeDecision.RecordStage0Decisions;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
@@ -57,6 +59,37 @@ public class MarketMonitorReadContractTests
 
         read.Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("META", Market.UnitedStates));
         fallback.Called.Should().BeFalse("プロンプト用の口は既定 watchlist を使わない");
+    }
+
+    // 🔴 T-10-1629, FR-04, FR-15, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 3, IADR-0420: Stage 0 の記録が読む当時の監視銘柄
+    // （GET /monitor/watchlist/as-of）も、送り手の本物の応答型 `WatchlistAsOfResponse` を送り手の JSON 設定（web 既定）で直列化した本文を読む。
+    // 送り手で `reconstructed` や `symbols` の名前が変わると、受け手は「再構成できない」へ倒れる（空の一覧へは化けない）——が、
+    // その時点の記録がすべて合否から外れる事故になるため、ここで名前のずれを赤くする。送り手の本文は市場監視の T-10-1627 が固定する。
+    [Fact]
+    public async Task 当時の監視銘柄は送り手の本物の応答型を直列化した応答から読める()
+    {
+        var reconstructed = new WatchlistAsOfResponse(
+            Reconstructed: true,
+            Symbols: [new MonitoredSymbol("META", Market.UnitedStates), new MonitoredSymbol("7203", Market.Japan)],
+            Basis: WatchlistAsOfResponse.Bases.BeforeFirstChange,
+            BasisChangedAt: new DateTimeOffset(2026, 9, 25, 18, 9, 0, TimeSpan.Zero),
+            SeededAt: new DateTimeOffset(2026, 9, 15, 16, 30, 52, TimeSpan.Zero),
+            Reason: null);
+        var source = new HttpAsOfWatchlistSource(
+            new HttpClient(new StubHandler(JsonSerializer.Serialize(reconstructed, Web))) { BaseAddress = new Uri("http://monitor") },
+            NullLogger<HttpAsOfWatchlistSource>.Instance);
+
+        var read = await source.GetWatchlistAtAsync(DateTimeOffset.UtcNow);
+
+        read.Symbols.Should().Equal(new WatchedSymbol("META", Market.UnitedStates), new WatchedSymbol("7203", Market.Japan));
+
+        var unreconstructable = new WatchlistAsOfResponse(false, null, null, null, null, "SeededAt が記録されていません。");
+        var denied = await new HttpAsOfWatchlistSource(
+            new HttpClient(new StubHandler(JsonSerializer.Serialize(unreconstructable, Web))) { BaseAddress = new Uri("http://monitor") },
+            NullLogger<HttpAsOfWatchlistSource>.Instance).GetWatchlistAtAsync(DateTimeOffset.UtcNow);
+
+        denied.Symbols.Should().BeNull();
+        denied.Reason.Should().Be("SeededAt が記録されていません。");
     }
 
     private sealed class RecordingFallback : IWatchlistProvider

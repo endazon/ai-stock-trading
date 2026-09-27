@@ -6,6 +6,7 @@ using MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal;
 using MarketMonitorService.Features.MarketMonitor.GetMonitorSettings;
 using MarketMonitorService.Features.MarketMonitor.GetMonitorSettingsHistory;
 using MarketMonitorService.Features.MarketMonitor.GetWatchlist;
+using MarketMonitorService.Features.MarketMonitor.GetWatchlistAsOf;
 using MarketMonitorService.Features.MarketMonitor.GetWatchlistHistory;
 using MarketMonitorService.Features.MarketMonitor.RemoveWatchlistSymbol;
 using MarketMonitorService.Features.MarketMonitor.ReplaceMonitorSettings;
@@ -70,6 +71,9 @@ internal static class MonitorSettingsEndpoints
         // FR-02, IADR-0095: 取得は read（OwnerOrService）に置き、定時サイクル（#11 TradeDecision）が s2s 同期照会できるようにする。
         // 変更（追加/削除）と履歴は owner（OwnerOnly）据え置き＝変更は利用者のみ（FR-13）維持。
         read.MapGetWatchlist();
+        // FR-04, FR-15, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442: 当時の監視銘柄の照会（Stage 0 の記録が s2s で読む）。
+        // 読み取り専用（GET だけ）。履歴そのものは返さず、履歴の照会（下の /watchlist/history）は owner のまま。
+        read.MapGetWatchlistAsOf();
         owner.MapAddWatchlistSymbol();
         owner.MapRemoveWatchlistSymbol();
         // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433: `/policy` の入れ替え案の一括適用（利用者のみ・代理の変更者・楽観排他）。

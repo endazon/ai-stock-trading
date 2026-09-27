@@ -131,6 +131,8 @@ builder.Services.AddScoped<MarketMonitorAppService>();
 // FR-03/FR-11/FR-13, UC-06, IADR-0088: 監視銘柄（watchlist）の取得/追加/削除と変更履歴（Risk 設定の作法をミラー）。
 // IClock は上で singleton 登録済み。変更履歴は DbContext 依存のため scoped。
 builder.Services.AddScoped<IMonitorSettingsChangeLog, EfMonitorSettingsChangeLog>();
+// FR-04, FR-15, ADR-0046 決定 1, #1049, IADR-0442 決定 2: 当時の監視銘柄の再構成が読む seed の時刻（SeededAt）。追跡せずに読むだけ（書かない）。
+builder.Services.AddScoped<IMonitorSeedRecord, EfMonitorSeedRecord>();
 builder.Services.AddScoped<MonitorWatchlistService>();
 // FR-13, FR-14, ADR-0042 決定 1, #1025, IADR-0433 決定 3: `/policy` の入れ替え案の適用で変更者を本人として残すため、
 // 代理（OnBehalfOf）を信じてよいクライアントの一覧。**既定は空＝誰も信じない**（構成は解決時に読む）。
