@@ -122,7 +122,7 @@ plan_refs:
 | 日報の方針の未確定は REST では 404 で、受け手は警告なしで「取引しない」へ倒す。gRPC で `NOT_FOUND` にすると呼び出しの規則が毎朝「照会に失敗」と警告する | `HttpDailyPolicyProvider` の 404 分岐・`TradeDecisionGrpcCalls` の警告 | `policy` の無い応答で運ぶ（IADR-0446 決定 3） |
 | 取引判断は段 2 の輸送が呼び出しの規則を持ち、情報収集には gRPC の呼び出しが無かった | `RiskManagementGrpcTransport.CallAsync`・情報収集の csproj に `Shared.Grpc` の参照が無い | 取引判断は `TradeDecisionGrpcCalls` へ切り出して共有、情報収集は `InformationCollectionGrpcCalls` を新設（IADR-0446 決定 5） |
 | 情報収集の起動時の日次要求の見積り（`EstimateAtStartup`）と introspection は `MarketMonitor:BaseUrl` しか見ない | `InformationCollectionService/Program.cs` | 既存の欠落と同じ種類として IADR-0446 の結果に残した（本 PR は既定を変えないので実害は無い。段 6 までに輸送へ追随させる） |
-| 取引判断・情報収集の常駐の巡回が起動直後に照会し得る | 段 2 の #1010 の実測（市場監視） | 配線の試験は rpc ごとの呼ばれた回数を**差分**で数える |
+| 取引判断・情報収集の常駐の巡回が起動直後に照会し得る | 段 2 の #1010 の実測（市場監視）。本 PR でも全件の実行で情報収集の費用統制の増分が 2 になった（差分で数えても巡回が同時に走ると増える） | 配線の試験は rpc ごとの呼ばれた回数を**差分**で数え、情報収集は `Collection:Trigger=External` で巡回を止める（表明は緩めない） |
 | 段 3 の監査の指摘（`HttpFxSourceStatusSource` の文書コメントが `Window` に付いていた） | PR #1060 の監査 | 同じ PR で `GetStatusAsync` へ付け直した（別コミット） |
 
 ## 検証の記録（2026-09-27）
