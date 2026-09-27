@@ -78,6 +78,27 @@ public class GrpcOwnerClientGateTests
         (await Evaluate(named)).Should().BeFalse();
     }
 
+    // 🔴 #1067 監査の変異 M2: azp が無いとき client_id（Keycloak の client_credentials トークンが持つ）で代わりに照合しない。
+    // 名前（preferred_username・ClaimTypes.Name）の `service-account-<id>` と client_id を併せ持っても、azp が無ければ拒否。
+    [Fact]
+    public async Task T_10_1723_azpの無い所有者のトークンはclient_idやサービスアカウント名がボットでも拒否()
+    {
+        static ClaimsPrincipal Without(params Claim[] extra) => new(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, OwnerRole), .. extra], "Test", ClaimTypes.Name, ClaimTypes.Role));
+
+        (await Evaluate(Without(new Claim("client_id", Bot)))).Should().BeFalse("client_id は azp の代わりにしない");
+        (await Evaluate(Without(new Claim("clientId", Bot)))).Should().BeFalse();
+        (await Evaluate(Without(new Claim(ClaimTypes.Name, $"service-account-{Bot}")))).Should().BeFalse("名前から復元しない");
+        (await Evaluate(Without(
+            new Claim("client_id", Bot),
+            new Claim("preferred_username", $"service-account-{Bot}"),
+            new Claim(ClaimTypes.Name, $"service-account-{Bot}")))).Should().BeFalse("全部揃っても azp が無ければ拒否");
+
+        // 対照: 同じトークンに azp＝ボットを足せば通る（拒否の理由が azp の欠落だけであることを示す）。
+        (await Evaluate(Without(new Claim("client_id", Bot), new Claim(GrpcOwnerClientGate.AuthorizedPartyClaim, Bot))))
+            .Should().BeTrue();
+    }
+
     [Fact]
     public async Task T_10_1723_azpが2つ以上なら拒否()
     {

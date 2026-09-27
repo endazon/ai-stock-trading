@@ -138,6 +138,41 @@ public class AssumptionsGrpcServiceTests
         (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
+    // 🔴 #1067 監査の変異 M2: azp の無いトークンは、client_id やサービスアカウント名がボットでも通さない（本物の Program.cs 越し）。
+    [Theory]
+    [InlineData("client_id")]
+    [InlineData("name")]
+    [InlineData("both")]
+    public async Task T_10_1725_azpが無ければclient_idやサービスアカウント名がボットでも_PERMISSION_DENIED(string how)
+    {
+        using var factory = new ConfigurationWorkerWebApplicationFactory();
+        var inner = factory.Server.CreateHandler();
+        var handler = new ExtraHeadersHandler(inner, new Dictionary<string, string>
+        {
+            [TestAuthHandler.RolesHeader] = GateOwnerRole,
+            [TestAuthHandler.ClientIdHeader] = how is "client_id" or "both" ? BotClient : "",
+            [TestAuthHandler.NameHeader] = how is "name" or "both" ? $"service-account-{BotClient}" : "test-owner",
+        });
+        using var channel = GrpcChannel.ForAddress(factory.Server.BaseAddress, new GrpcChannelOptions { HttpHandler = handler });
+
+        var act = async () => await new Proto.Assumptions.AssumptionsClient(channel).GetAsync(new Proto.GetAssumptionsRequest());
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
+    private sealed class ExtraHeadersHandler(HttpMessageHandler inner, IReadOnlyDictionary<string, string> headers) : DelegatingHandler(inner)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            foreach (var (name, value) in headers)
+            {
+                if (value.Length > 0)
+                    request.Headers.TryAddWithoutValidation(name, value);
+            }
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+
     // 陽性対照: ボットのトークン（trading-owner ＋ azp＝ボットの機密クライアント）は通る。s2s は azp を問わず従来どおり。
     // 🔴 REST の面の所有者の判定は変えない（azp の無い利用者のトークンで REST は読める＝BFF が中継する経路）。
     [Fact]
