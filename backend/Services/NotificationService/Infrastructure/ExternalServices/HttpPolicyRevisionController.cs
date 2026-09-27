@@ -111,34 +111,45 @@ public sealed class HttpPolicyRevisionController(
                 .GetAsync($"{ProposalPath}?periodKey={Uri.EscapeDataString(periodKey)}&version={version}", cancellationToken)
                 .ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.NotFound)
-                return new WatchlistProposalLookup(true, false, null, "この版は /policy の案ではありません");
+                return new WatchlistProposalLookup(true, false, null, NotProposalMessage);
             // PR #1027 の監査 H1: 報告書がこの版で確定されていない（別の版で確定済み・未確定）。適用しない。
             if (response.StatusCode == HttpStatusCode.Conflict)
-                return new WatchlistProposalLookup(true, false, null, "この版では確定されていないため、入れ替えは適用しません");
+                return new WatchlistProposalLookup(true, false, null, NotConfirmedAtVersionMessage);
             if (!response.IsSuccessStatusCode)
                 return new WatchlistProposalLookup(false, false, null, $"入れ替え案を照会できませんでした（HTTP {(int)response.StatusCode}）");
 
             var view = await response.Content.ReadFromJsonAsync<ProposalView>(cancellationToken).ConfigureAwait(false);
-            if (view is null || view.Changes is null || view.Changes.Any(c => c is null || c.Action is null || c.Symbol is null))
-                return new WatchlistProposalLookup(false, false, null, "入れ替え案の応答を解釈できませんでした");
-
-            return new WatchlistProposalLookup(true, true, new WatchlistProposalDetail(
-                view.AttemptId,
-                view.PeriodKey ?? periodKey,
-                view.ReportVersion,
-                [.. view.Changes.Select(c => new WatchlistChangeSuggestionView(c!.Action!, c.Symbol!, c.Reason ?? string.Empty))],
-                // PR #1027 の監査 L3: 1 件でも欠けた項目があれば、黙って落とさず一覧ごと「分からない」（null）にする
-                // （落とした一覧を期待値にすると、楽観排他が偽の不一致・偽の一致を起こす）。
-                view.Snapshot is { } snapshot && snapshot.All(e => e is { Symbol: not null, Market: not null })
-                    ? [.. snapshot.Select(e => new WatchlistSnapshotItemView(e!.Symbol!, e.Market!))]
-                    : null,
-                view.ApplyRecorded), "照会しました");
+            return InterpretProposal(view, periodKey);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "入れ替え案の照会で例外が発生しました。");
             return new WatchlistProposalLookup(false, false, null, "入れ替え案を照会できませんでした（応答が届きませんでした）");
         }
+    }
+
+    // FR-13, #1025: 案が無い（REST の 404・gRPC の NOT_FOUND）／その版で確定されていない（REST の 409・gRPC の FAILED_PRECONDITION）。
+    internal const string NotProposalMessage = "この版は /policy の案ではありません";
+    internal const string NotConfirmedAtVersionMessage = "この版では確定されていないため、入れ替えは適用しません";
+
+    // NFR, IADR-0449 決定 4, #753（段 5）: 読めた案 → 結果。gRPC 実装（GrpcPolicyRevisionController）と共有する
+    // （欠けた変更は案ごと解釈不能・欠けたスナップショットは一覧ごと「分からない」の規則を 1 つに保つ）。
+    internal static WatchlistProposalLookup InterpretProposal(ProposalView? view, string periodKey)
+    {
+        if (view is null || view.Changes is null || view.Changes.Any(c => c is null || c.Action is null || c.Symbol is null))
+            return new WatchlistProposalLookup(false, false, null, "入れ替え案の応答を解釈できませんでした");
+
+        return new WatchlistProposalLookup(true, true, new WatchlistProposalDetail(
+            view.AttemptId,
+            view.PeriodKey ?? periodKey,
+            view.ReportVersion,
+            [.. view.Changes.Select(c => new WatchlistChangeSuggestionView(c!.Action!, c.Symbol!, c.Reason ?? string.Empty))],
+            // PR #1027 の監査 L3: 1 件でも欠けた項目があれば、黙って落とさず一覧ごと「分からない」（null）にする
+            // （落とした一覧を期待値にすると、楽観排他が偽の不一致・偽の一致を起こす）。
+            view.Snapshot is { } snapshot && snapshot.All(e => e is { Symbol: not null, Market: not null })
+                ? [.. snapshot.Select(e => new WatchlistSnapshotItemView(e!.Symbol!, e.Market!))]
+                : null,
+            view.ApplyRecorded), "照会しました");
     }
 
     public async Task<bool> RecordWatchlistApplyAsync(
@@ -193,7 +204,7 @@ public sealed class HttpPolicyRevisionController(
     private sealed record SnapshotEntry(string Symbol, string Market);
 
     // 報告書サービス側 WatchlistProposalView の射影。
-    private sealed record ProposalView(
+    internal sealed record ProposalView(
         Guid AttemptId,
         string? PeriodKey,
         int ReportVersion,
@@ -201,7 +212,7 @@ public sealed class HttpPolicyRevisionController(
         IReadOnlyList<SnapshotItem?>? Snapshot,
         bool ApplyRecorded);
 
-    private sealed record SnapshotItem(string? Symbol, string? Market);
+    internal sealed record SnapshotItem(string? Symbol, string? Market);
 
     // 報告書サービス側 WatchlistApplyResultRequest と同形。
     private sealed record ApplyResultBody(string Outcome, IReadOnlyList<ApplyItemBody> Items, string Message, string OnBehalfOf);
@@ -219,7 +230,7 @@ public sealed class HttpPolicyRevisionController(
         IReadOnlyList<WatchlistChangeItem?>? WatchlistChanges,
         string? Rationale);
 
-    private sealed record WatchlistChangeItem(string? Action, string? Symbol, string? Reason);
+    internal sealed record WatchlistChangeItem(string? Action, string? Symbol, string? Reason);
 
     private sealed record ErrorView(string? Error);
 }

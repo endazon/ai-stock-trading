@@ -46,7 +46,7 @@ service RiskControlsRead {
   rpc GetWorkingEntryOrders(GetWorkingEntryOrdersRequest) returns (GetWorkingEntryOrdersResponse);
   // GET /risk-controls/sizing-context（サイジング文脈）。
   rpc GetSizingContext(GetSizingContextRequest) returns (GetSizingContextResponse);
-  // GET /risk-controls/stage-gate（段階ゲートの現況。本 rpc は現段階だけを運ぶ）。
+  // GET /risk-controls/stage-gate（段階ゲートの現況。現段階と、Discord ボットの `/stage status` が読む項目。段 5 で項目を足した）。
   rpc GetStageGate(GetStageGateRequest) returns (GetStageGateResponse);
   // GET /risk-controls/fills?from&to（期間の約定。取り込み行は含まない）。
   rpc GetFills(GetFillsRequest) returns (GetFillsResponse);
@@ -99,6 +99,39 @@ enum TradingStage {
   TRADING_STAGE_STAGE1_SIMULATE = 2;
   TRADING_STAGE_STAGE2_MINIMAL_LIVE = 3;
   TRADING_STAGE_STAGE3_SCALED_LIVE = 4;
+}
+
+// FR-20, IADR-0449（段 5）: 段階遷移の種別（C# `StageTransitionKind`）。名前で写す。
+enum StageTransitionKind {
+  STAGE_TRANSITION_KIND_UNSPECIFIED = 0;
+  STAGE_TRANSITION_KIND_PROMOTION = 1;
+  STAGE_TRANSITION_KIND_DEMOTION = 2;
+  STAGE_TRANSITION_KIND_SHORT_SELL_RELEASE_VERDICT = 3;
+}
+
+// FR-20, IADR-0449（段 5）: 段階遷移の合格・拒否の基準（C# `StageGateCriterion`）。C# の 1（旧 PaperDeviationUnexplained）は
+// 廃止済みで送り手に存在しないため、線上にも置かない（受け手は REST と同じく序数 1 のラベルを持ち続ける）。
+enum StageGateCriterion {
+  STAGE_GATE_CRITERION_UNSPECIFIED = 0;
+  STAGE_GATE_CRITERION_BACKTEST_NOT_PASSED = 1;
+  STAGE_GATE_CRITERION_CONTROL_VIOLATIONS_PRESENT = 2;
+  STAGE_GATE_CRITERION_SLIPPAGE_OR_COST_EXCEEDED = 3;
+  STAGE_GATE_CRITERION_DAILY_LOSS_LIMIT_VIOLATED = 4;
+  STAGE_GATE_CRITERION_NO_USER_APPROVAL = 5;
+  STAGE_GATE_CRITERION_PROMOTION_MUST_BE_SEQUENTIAL = 6;
+  STAGE_GATE_CRITERION_TARGET_IS_CURRENT_STAGE = 7;
+  STAGE_GATE_CRITERION_ALREADY_AT_TOP_STAGE = 8;
+  STAGE_GATE_CRITERION_STAGE1_TRADING_DAYS_INSUFFICIENT = 9;
+  STAGE_GATE_CRITERION_STAGE1_TRADE_COUNT_INSUFFICIENT = 10;
+  STAGE_GATE_CRITERION_STAGE1_EXTENSION_EXHAUSTED = 11;
+  STAGE_GATE_CRITERION_CONTROL_VIOLATION_COUNT_UNAVAILABLE = 12;
+}
+
+// FR-20, IADR-0449（段 5）: 撤退（差し戻し）の理由（C# `WithdrawalReason`。1 は廃止済みで送り手に無い）。
+enum WithdrawalReason {
+  WITHDRAWAL_REASON_UNSPECIFIED = 0;
+  WITHDRAWAL_REASON_DRAWDOWN_BREACHED_MULTIPLE = 1;
+  WITHDRAWAL_REASON_STAGE1_EXTENSION_EXHAUSTED = 2;
 }
 
 // ---- 建玉 ----
@@ -176,9 +209,64 @@ message GetSizingContextResponse {
 
 message GetStageGateRequest {}
 
-// REST の StageGateStatus のうち、移した呼び出し元が読む項目（現段階）だけ。
+// REST の StageGateStatus のうち、移した呼び出し元が読む項目。
+// - 段 2（取引判断・市場監視・報告書）: 現段階だけ。
+// - 段 5（Discord ボットの `/stage status`。IADR-0449）: 設定・履歴・昇格評価・撤退評価・Stage 1 の合格条件を**フィールド追加**で足した
+//   （非破壊。段 2 の読み手は current_stage だけを読む）。🔴 入れ物（message）の欠落は「不明」であり、既定値で読まない。
 message GetStageGateResponse {
   TradingStage current_stage = 1;
+  StageSettingsRecord current_settings = 2;
+  repeated StageTransitionRecord history = 3;
+  PromotionAssessmentRecord promotion = 4;
+  WithdrawalAssessmentRecord withdrawal = 5;
+  // 欠落は「宣言が無い」（REST の旧版の送り手と同じく警告を出さない）。
+  Stage1CriteriaRecord stage1_criteria = 6;
+}
+
+// 段階の設定（REST の StageSettings。名前は送り手の型名と変えてある）。
+message StageSettingsRecord {
+  TradingStage stage = 1;
+  BrokerProvider mode = 2;
+  // 総資金に対する発注可能額の比（不変文化の 10 進）。
+  optional string capital_cap_ratio = 3;
+}
+
+// 段階遷移の記録 1 件（REST の StageTransition）。
+message StageTransitionRecord {
+  optional int32 sequence = 1;
+  TradingStage from_stage = 2;
+  TradingStage to_stage = 3;
+  StageTransitionKind kind = 4;
+  optional string approved_by = 5;
+  // 往復書式（`O`）。
+  optional string occurred_at = 6;
+  optional string reason = 7;
+}
+
+// 昇格評価（REST の PromotionAssessment）。
+message PromotionAssessmentRecord {
+  // 欠落＝昇格先なし（最上段）。
+  optional TradingStage target_stage = 1;
+  optional bool eligible = 2;
+  repeated StageGateCriterion unmet_criteria = 3;
+}
+
+// 撤退評価（REST の WithdrawalAssessment）。
+message WithdrawalAssessmentRecord {
+  optional bool triggered = 1;
+  // 欠落＝理由なし（REST の null）。
+  optional WithdrawalReason reason = 2;
+  optional bool halt_new_entries = 3;
+  // 欠落＝差し戻しの提案なし（REST の null）。
+  optional TradingStage proposed_stage = 4;
+}
+
+// Stage 1 の合格条件（REST の Stage1GateCriteria ＋ サーバが宣言する BelowStatisticalBasis）。
+message Stage1CriteriaRecord {
+  optional int32 target_trading_days = 1;
+  optional int32 minimum_trade_count = 2;
+  optional int32 maximum_trading_days = 3;
+  optional bool below_statistical_basis = 4;
 }
 
 // ---- 期間の約定 ----

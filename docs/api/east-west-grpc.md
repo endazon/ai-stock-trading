@@ -7,11 +7,11 @@ updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15]
-adrs: [ADR-0001, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read]
-issues: [#526, #584, #745, #753, #997, #1059, #1061]
+ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
+adrs: [ADR-0001, ADR-0047, MSP:ADR-0029, MSP:ADR-0075]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -26,7 +26,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061]
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
 - **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面・§5）と
-  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
+  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）・**Discord ボットの読み取り**（§9）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
   **並走中の正は REST** であり、gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
@@ -91,7 +91,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061]
 | --- | --- |
 | メタデータ | `authorization: Bearer <呼び出し側サービス自身の JWT>` |
 | トークンの出所 | realm の confidential client の client credentials（`ServiceAuth:ClientId` / `ClientSecret`） |
-| 呼び出し先の検証 | 既存の JwtBearer と同じ。読み取りの面には利用者またはサービスのロールを要求する |
+| 呼び出し先の検証 | 既存の JwtBearer と同じ。読み取りの面にはサービスのロール、または利用者のロールかつ呼び出し元のクライアント（`azp`）が Discord ボットの機密クライアントであることを要求する（§9。人の利用者のトークンは gRPC の面を通らない） |
 | 拒否 | トークン無し → `UNAUTHENTICATED`、ロール不足 → `PERMISSION_DENIED` |
 | 🔴 利用者トークン | **メタデータへ載せない**（載せると呼び出し先が「利用者が直接呼んだ」と「サービスが利用者のために呼んだ」を区別できない） |
 | 利用者の文脈 | 必要な経路では**本文で運ぶ**（現在の 1 経路は利用者の文脈を取らない） |
@@ -103,7 +103,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061]
 
 - 概要: 費用統制・取引判断の 2 サービスが、構成 `Configuration:Grpc`（例 `http://configuration-service:8081`）が
   あるときだけ gRPC で照会し、無ければ REST `GET /assumptions` で照会する。**並走中の正は REST。**
-- 認証・認可: 読み取りの面と同じ（利用者またはサービス）。
+- 認証・認可: 読み取りの面と同じ（サービス、または呼び出し元がボットの利用者のロール。§4）。
 - 評価器: REST と**同じ**サービス実装（`AssumptionsService.GetCurrent()`）を呼ぶ（評価器を 2 つにしない）。
 
 | rpc | 形 | 対応する REST |
@@ -159,7 +159,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061]
 
 - 概要: 報告書・取引判断・市場監視の 3 サービスが、構成 `RiskManagement:Grpc`（例 `http://risk-management-service:8081`）が
   あるときだけ gRPC で照会し、無ければ REST `GET /risk-controls/*` で照会する。**並走中の正は REST。**
-- 認証・認可: 読み取りの面と同じ（利用者またはサービス）。REST の読み取り群と同じポリシーを service のクラス属性で持つ。
+- 認証・認可: 読み取りの面と同じ（サービス、または呼び出し元がボットの利用者のロール。§4）。REST の読み取り群の判定に呼び出し元の確認を足したポリシーを service のクラス属性で持つ。
 - 評価器: REST と**同じ**サービス・純関数を呼ぶ（評価器を 2 つにしない）。
 - 運ぶ項目: **移した呼び出し元が読む項目だけ**（REST の応答はより多くを持つ）。追加はフィールド追加＝非破壊である。
 
@@ -168,7 +168,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061]
 | `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書 | 不明／空列（損切り検知対象なし）／未供給 |
 | `GetWorkingEntryOrders` | `GET /risk-controls/working-entry-orders` | 取引判断 | 不明 |
 | `GetSizingContext` | `GET /risk-controls/sizing-context` | 取引判断 | 残枠 0 の安全既定 |
-| `GetStageGate` | `GET /risk-controls/stage-gate`（現段階だけ） | 報告書 | 未供給 |
+| `GetStageGate` | `GET /risk-controls/stage-gate`（報告書は現段階だけ・ボットは §9 の項目も） | 報告書・Discord ボット | 未供給（ボットは §9） |
 | `GetFills` | `GET /risk-controls/fills?from&to` | 報告書 | 空列（数値 0 の報告書） |
 | `GetDriftAdoptions` | `GET /risk-controls/drift-adoptions?from&to` | 報告書 | 未供給 |
 | `GetBuyInInferences` | `GET /risk-controls/buy-in-inferences?from&to` | 報告書 | 未供給 |
@@ -215,7 +215,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 - 概要: 報告書が、構成 `Audit:Grpc`（例 `http://audit-service:8081`）があるときだけ gRPC で照会し、無ければ REST
   `GET /audit/events/by-type` で照会する。**並走中の正は REST。** 呼び出し元は報告書の 6 つの供給元（為替の情報源・LLM 利用実績・
   借株料・損切りの実行機構の承認・同じく解決結果・判断根拠）で、すべて同じ rpc を使う。
-- 認可: REST の当該エンドポイントと同じ（利用者またはサービス）。同じ監査台帳の利用者専用の照会 2 本（相関 ID・直近）は gRPC に出さない
+- 認可: REST の当該エンドポイントの判定に、利用者のロールの呼び出し元の確認を足したもの（§4）。同じ監査台帳の利用者専用の照会 2 本（相関 ID・直近）は gRPC に出さない
   （サービス間の呼び出し元が無い）。書き込みは非同期のイベント購読であり、本書の対象外。
 - 評価器: REST と**同じ**ストアと**同じ**種別の解析を呼ぶ（repeated の種別はカンマで連結して REST と同じ解析へ渡す）。
 - 運ぶ項目: 報告書が読む 3 項目（id・種別・本文）だけ。本文はイベント全量の JSON を書き手の直列化設定のまま運ぶ。
@@ -264,7 +264,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 
 ## 8. 面: 日報の方針・監視銘柄・費用統制の判定の読み取り
 
-提供側ごとに 1 つの service を持ち、いずれも REST の読み取り（利用者またはサービス）と**同じ**認可・同じサービスを通る。**並走中の正は REST。**
+提供側ごとに 1 つの service を持ち、いずれも REST の読み取りと同じサービスを通り、認可は REST の判定に利用者のロールの呼び出し元の確認を足したもの（§4）である。**並走中の正は REST。**
 運ぶ項目は**移した呼び出し元が読む項目だけ**で、message 名は送り手の型名と同じにしない。
 
 | service / rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
@@ -302,6 +302,62 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 - 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する。チャネルは呼び出し元の輸送が所有する。
 - 呼び出しの規則（deadline・再試行）は呼び出し元サービスごとに 1 つ（同じサービスの他の輸送と共有する）。
 - helm: 既定では提供側の `grpcPort` も呼び出し元の宛先も置かない（既定の描画は変わらない）。有効化の手順は values.yaml のコメントにある。
+
+## 9. 面: Discord ボットの読み取り
+
+Discord ボット（通知サービス）の**読み取り 6 本**を gRPC でも呼べるようにした。**書き込みは REST のまま**であり、次の段で移す。**並走中の正は REST。**
+
+- **ボットのトークンはサービスの身元である**（利用者のトークンではない）。ボットは所有者の対応表の機密クライアントで client_credentials のトークンを取り、
+  §4 の「呼び出し側サービス自身の JWT」としてメタデータへ載せる。s2s（`trading-service`）のトークンへは替えない。利用者の文脈（誰の操作か）は、書き込みで今どおり本文で運ぶ。
+- **提供側の門は呼び出し元のクライアント（`azp`）を確かめる。** `trading-owner` を持つトークンは、`azp` がボットの機密クライアント（構成 `Auth:GrpcOwnerClients`・既定 `ai-stock-trading-owner`）のときだけ通す。
+  人の利用者のトークン（`azp` は BFF・ブラウザの公開クライアント）は gRPC の面を通らない。人の利用者は BFF が中継する REST で操作する。
+- **所有者限定の読み取り**（REST の利用者のみ）は新しい service に分け、門を「所有者 ∧ `azp` がボット」にする（s2s には開かない）。
+
+| service / rpc | 対応する REST | 門 | 取得できないときのボットの扱い |
+| --- | --- | --- | --- |
+| `aistocktrading.riskmanagement.v1.RiskControlsOwnerRead/GetRiskStatus` | `GET /risk-controls/status` | 所有者 ∧ ボット | 失敗の文言（`/status`） |
+| `aistocktrading.riskmanagement.v1.RiskControlsRead/GetStageGate` | `GET /risk-controls/stage-gate` | サービス ∨（所有者 ∧ ボット） | 失敗の文言（`/stage status`） |
+| `aistocktrading.report.v1.ReportOwnerRead/GetReportReview` | `GET /reports/{periodKey}/review` | 所有者 ∧ ボット | 失敗の文言（版番号を騙らない） |
+| `aistocktrading.report.v1.ReportOwnerRead/ListReportPeriodKeys` | `GET /reports/period-keys` | 所有者 ∧ ボット | 候補なし（入力補完） |
+| `aistocktrading.report.v1.ReportOwnerRead/GetWatchlistProposal` | `GET /reports/policy-revisions/watchlist-proposal` | 所有者 ∧ ボット | 失敗の文言（適用しない） |
+| `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlist` | `GET /monitor/watchlist` | サービス ∨（所有者 ∧ ボット） | 失敗の文言（空の一覧にしない） |
+
+エラー:
+
+| gRPC status | 条件 | ボットの対応 |
+| --- | --- | --- |
+| `UNAUTHENTICATED` / `PERMISSION_DENIED` | トークン無し／ボットの所有者トークンでない | 失敗。REST の 401/403 と同じ注記（owner クライアントの設定を確認）。**再試行しない** |
+| `NOT_FOUND` | レビュー局面の対象が無い／入れ替え案ではない（REST の 404） | REST の 404 と同じ文言 |
+| `FAILED_PRECONDITION` | 入れ替え案の版で確定されていない（REST の 409） | REST の 409 と同じ文言（適用しない） |
+| `INVALID_ARGUMENT` | 会話キー・版の誤り（REST の 400） | 失敗 |
+| `UNIMPLEMENTED` | 提供側が古い（配備順の窓） | 失敗（会話キーの一覧は候補なし。REST の旧一覧への退避は持たない） |
+| `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 失敗（タイムアウトの文言）。**再試行の対象** |
+
+### 🔴 線上の写し
+
+| 契約 | 線上 | 写し |
+| --- | --- | --- |
+| 稼働状態・段階ゲートの必須の項目 | `optional`・未指定を持つ列挙 | 欠落・未指定の段階は既定値（0・false・Stage 0）で作らず「応答を解釈できない」 |
+| 日次発注の上限・ロックアウトの解除日 | `optional string` | 欠落は「分からない／未定」（0 と表示しない）。在るのに読めない値は解釈できない |
+| 段階遷移の種別・基準・撤退の理由 | 未指定を持つ列挙 | **名前で**写し、表示のラベルは REST と同じ序数で引く |
+| 未供給の入力 | 存在を持つ入れ物 | 入れ物が無ければ注記を出さない（REST の旧版と同じ） |
+| 入れ替え案の案を作った時点の監視銘柄 | 存在を持つ入れ物 | 入れ物が無ければ「分からない」（空の一覧とは違う。適用しない） |
+
+表示の整形・並び替え・欠けた項目の扱いは REST のアダプタと**同じ 1 つ**を使う。
+
+### 呼び出し元の設定（通知サービス）
+
+| 構成キー | 既定 | 意味 |
+| --- | --- | --- |
+| `RiskManagement:Grpc` | 未設定（＝REST） | 稼働状態・段階ゲートの gRPC の宛先 |
+| `Reports:Grpc` | 未設定（＝REST） | レビュー局面・会話キーの一覧・入れ替え案の gRPC の宛先 |
+| `MarketMonitor:Grpc` | 未設定（＝REST） | 監視銘柄の gRPC の宛先 |
+| `<上記>:GrpcTimeoutSeconds` | 5 / 5 / 10 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値（入れ替え案の照会は台帳の読み取りなのでレビューと同じ 5 秒） |
+| `<上記>:GrpcMaxAttempts` | 1 | 試行回数。**既定は再試行しない** |
+
+- メタデータのトークンは REST と同じ `Notifications:Discord:OwnerAuth:*`（ボットの機密クライアント）から取る。3 つの宛先で 1 つの取得器を共有する。資格情報が未構成ならメタデータを付けない（→ `UNAUTHENTICATED` → 失敗）。
+- 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する（書き込みは `*:BaseUrl` の REST のまま）。
+- helm・compose: 既定では置かない（既定の描画は変わらない）。有効化の手順は values.yaml の notification のコメントにある。
 
 ## シーケンス
 

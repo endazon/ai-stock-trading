@@ -47,23 +47,30 @@ public sealed class HttpReportReviewController(
                 return new ReportReviewResult(false, 0, "レビュー局面の応答を解釈できませんでした");
             }
 
-            // FR-07, FR-14, #840, IADR-0352 決定 5: 入力が未供給のまま生成された報告書なら、**確定の前に**それを見せる。
-            // 本メッセージは `/report show` と、版番号なしの `/report approve`（確認ボタンの前段）の両方に出る。
-            var message = $"報告書 {periodKey}: 版 {view.Version}";
-            if (ReportUnsuppliedNotice.Format(view.UnsuppliedInputs) is { } notice)
-            {
-                logger.LogWarning(
-                    "報告書 {PeriodKey}（版 {Version}）は入力が未供給のまま生成されています（{Count} 件）。",
-                    periodKey, view.Version, view.UnsuppliedInputs?.Count ?? 0);
-                message += $"\n{notice}";
-            }
-
-            return new ReportReviewResult(true, view.Version, message);
+            return ReviewResult(periodKey, view.Version, view.UnsuppliedInputs, logger);
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
             return new ReportReviewResult(false, 0, ExceptionMessage("レビュー局面の照会", ex, cancellationToken));
         }
+    }
+
+    // NFR, IADR-0449 決定 4, #753（段 5）: 読めたレビュー局面 → 結果。gRPC 実装（GrpcReportReviewController）と共有する。
+    internal static ReportReviewResult ReviewResult(
+        string periodKey, int version, IReadOnlyList<string?>? unsuppliedInputs, ILogger logger)
+    {
+        // FR-07, FR-14, #840, IADR-0352 決定 5: 入力が未供給のまま生成された報告書なら、**確定の前に**それを見せる。
+        // 本メッセージは `/report show` と、版番号なしの `/report approve`（確認ボタンの前段）の両方に出る。
+        var message = $"報告書 {periodKey}: 版 {version}";
+        if (ReportUnsuppliedNotice.Format(unsuppliedInputs) is { } notice)
+        {
+            logger.LogWarning(
+                "報告書 {PeriodKey}（版 {Version}）は入力が未供給のまま生成されています（{Count} 件）。",
+                periodKey, version, unsuppliedInputs?.Count ?? 0);
+            message += $"\n{notice}";
+        }
+
+        return new ReportReviewResult(true, version, message);
     }
 
     // FR-07, ADR-0003, 詳細設計07 §二重実行防止: 版番号付き冪等の確定。
@@ -211,11 +218,7 @@ public sealed class HttpReportReviewController(
                 return [];
             }
 
-            return [.. reports
-                .Where(r => !string.IsNullOrWhiteSpace(r.PeriodKey))
-                .OrderByDescending(r => StartOf(r.PeriodStart))
-                .ThenByDescending(r => r.PeriodKey, StringComparer.Ordinal)
-                .Select(r => r.PeriodKey!)];
+            return OrderPeriodKeys(reports.Select(r => (r.PeriodKey, StartOf(r.PeriodStart))));
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
@@ -223,6 +226,14 @@ public sealed class HttpReportReviewController(
             return [];
         }
     }
+
+    // NFR, IADR-0449 決定 4, #753（段 5）: 候補の並べ方（開始日の降順・同日は会話キーの降順・空のキーは落とす）。gRPC 実装と共有する。
+    internal static IReadOnlyList<string> OrderPeriodKeys(IEnumerable<(string? PeriodKey, DateTime Start)> rows) =>
+        [.. rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.PeriodKey))
+            .OrderByDescending(r => r.Start)
+            .ThenByDescending(r => r.PeriodKey, StringComparer.Ordinal)
+            .Select(r => r.PeriodKey!)];
 
     // #843 項目1, IADR-0418: 補完が読む軽い一覧と、配備順の窓でだけ使う従来の一覧。
     private const string PeriodKeysPath = "/reports/period-keys";
@@ -250,7 +261,7 @@ public sealed class HttpReportReviewController(
         if (status == HttpStatusCode.NotFound)
         {
             logger.LogWarning("{Operation}の対象が見つかりませんでした（404）。", operation);
-            return "その会話キーの報告書が見つかりません（例: `daily-2026-09-18`）";
+            return NotFoundMessage;
         }
 
         var hint = status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
@@ -260,12 +271,18 @@ public sealed class HttpReportReviewController(
         return $"{operation}に失敗しました（HTTP {(int)status}）{hint}";
     }
 
+    // FR-14, #834: 会話キーの報告書が無いときの文言（正しい形の例を添える）。gRPC 実装の NOT_FOUND も同じ文言（IADR-0449 決定 4）。
+    internal const string NotFoundMessage = "その会話キーの報告書が見つかりません（例: `daily-2026-09-18`）";
+
     // 対象期間の開始日。文字列で日付として解釈できる値だけを採り、それ以外（数値・null・欠落・解釈不能）は
     // 最小値へ倒す（その 1 件を末尾へ回すだけで、一覧ごと落とさない。#843 項目3）。
     private static DateTime StartOf(JsonElement? periodStart) =>
-        periodStart is { ValueKind: JsonValueKind.String } element
-        && DateTime.TryParse(
-            element.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+        periodStart is { ValueKind: JsonValueKind.String } element ? StartOf(element.GetString()) : DateTime.MinValue;
+
+    // 文字列の開始日（gRPC 実装と共有する）。解釈できなければ最小値（末尾へ回す）。
+    internal static DateTime StartOf(string? periodStart) =>
+        periodStart is not null
+        && DateTime.TryParse(periodStart, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed
             : DateTime.MinValue;
 

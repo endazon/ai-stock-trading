@@ -35,17 +35,24 @@ public sealed class HttpMarketMonitorWatchlistController(
             }
 
             var symbols = await response.Content.ReadFromJsonAsync<List<SymbolView?>>(Web, cancellationToken).ConfigureAwait(false);
-            if (symbols is null || symbols.Any(s => s is null || string.IsNullOrWhiteSpace(s.Symbol) || s.Market is null))
-                return new WatchlistSnapshotResult(false, [], "監視銘柄の応答を解釈できませんでした");
-
-            return new WatchlistSnapshotResult(
-                true, [.. symbols.Select(s => new WatchlistSnapshotItemView(s!.Symbol!, s.Market!.Value.ToString()))], "照会しました");
+            return InterpretWatchlist(symbols);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "監視銘柄の照会で例外が発生しました。");
             return new WatchlistSnapshotResult(false, [], "監視銘柄を照会できませんでした（応答が届きませんでした）");
         }
+    }
+
+    // NFR, IADR-0449 決定 4, #753（段 5）: 読めた一覧 → 結果。gRPC 実装（GrpcMarketMonitorWatchlistController）と共有する
+    // （1 行でも銘柄・市場が欠ければ一覧ごと解釈不能＝原則 A の規則を 1 つに保つ）。
+    internal static WatchlistSnapshotResult InterpretWatchlist(IReadOnlyList<SymbolView?>? symbols)
+    {
+        if (symbols is null || symbols.Any(s => s is null || string.IsNullOrWhiteSpace(s.Symbol) || s.Market is null))
+            return new WatchlistSnapshotResult(false, [], "監視銘柄の応答を解釈できませんでした");
+
+        return new WatchlistSnapshotResult(
+            true, [.. symbols.Select(s => new WatchlistSnapshotItemView(s!.Symbol!, s.Market!.Value.ToString()))], "照会しました");
     }
 
     public async Task<WatchlistApplyOutcome> ApplyProposalAsync(
@@ -115,7 +122,7 @@ public sealed class HttpMarketMonitorWatchlistController(
     }
 
     // 市場監視の MonitoredSymbol / WatchlistSymbolRef と同形（市場は列挙・数値表現）。
-    private sealed record SymbolView(string? Symbol, Market? Market);
+    internal sealed record SymbolView(string? Symbol, Market? Market);
 
     // 市場監視の WatchlistProposalApplyRequest と同形（名前を変えてあるのは送り手の型の目印〔IADR-0420 の検査器〕と区別するため）。
     private sealed record ApplyBody(

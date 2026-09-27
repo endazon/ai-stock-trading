@@ -77,13 +77,7 @@ public sealed class HttpStageGateController(
                 return new StageGateStatusResult(false, "段階ゲートの応答を解釈できませんでした");
             }
 
-            // #466, IADR-0180: 警告は Message にも含まれるが、**確認ボタンを出す前**に警告だけを
-            // 添えられるよう単独でも返す（現況の全文を確認プロンプトへ貼ると警告が埋もれる）。
-            var warning = view.Stage1Criteria is { BelowStatisticalBasis: true } c
-                ? FormatBelowBasisWarning(c.MinimumTradeCount)
-                : null;
-
-            return new StageGateStatusResult(true, FormatStatus(view), warning);
+            return ToStatusResult(view);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -223,6 +217,18 @@ public sealed class HttpStageGateController(
         var hint = status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? OwnerHint : string.Empty;
         logger.LogWarning("{Operation}に失敗しました（{Status}）。{Hint}", operation, (int)status, hint);
         return new StageGateStatusResult(false, $"{operation}に失敗しました（HTTP {(int)status}）{hint}");
+    }
+
+    // NFR, IADR-0449 決定 4, #753（段 5）: 読めた現況 → 結果。gRPC 実装（GrpcStageGateController）と共有する（輸送を替えても文言と警告が 1 つ）。
+    internal static StageGateStatusResult ToStatusResult(StageGateStatusView view)
+    {
+        // #466, IADR-0180: 警告は Message にも含まれるが、**確認ボタンを出す前**に警告だけを
+        // 添えられるよう単独でも返す（現況の全文を確認プロンプトへ貼ると警告が埋もれる）。
+        var warning = view.Stage1Criteria is { BelowStatisticalBasis: true } c
+            ? FormatBelowBasisWarning(c.MinimumTradeCount)
+            : null;
+
+        return new StageGateStatusResult(true, FormatStatus(view), warning);
     }
 
     // ---- 整形（数値 enum → 表示テキスト。ここに Risk の JSON 表現への結合を閉じる） ----

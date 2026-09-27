@@ -54,6 +54,12 @@ builder.Services.AddSingleton<INotificationSender>(sp => NotificationSenderFacto
 var discordBotOptions = DiscordBotOptionsReader.Read(builder.Configuration);
 builder.Services.AddSingleton(discordBotOptions);
 
+// NFR, FR-14, MSP:ADR-0029, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0449, #753: east-west gRPC（ボットの**読み取り** 6 本）。
+// **`RiskManagement:Grpc` / `Reports:Grpc` / `MarketMonitor:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。
+// 宣言があれば、そのポートの読み取りだけを gRPC 実装が行い（BaseUrl より優先）、書き込みは REST の実装へ委ねる（段 5 の後半で移す）。
+// メタデータにはボットの owner マップ機密クライアントのトークンを載せる（ADR-0047 決定 2。s2s ではない）。不正な宛先は起動時に落とす。
+builder.Services.AddNotificationReadGrpc(builder.Configuration);
+
 // kill switch は Risk の OwnerOnly エンドポイントを呼ぶ（Risk 側は無改修）。IADR-0051 の s2s トークン
 // （trading-service）では 403 のため、Bot 専用の owner マップ機密クライアントのトークンを付与する（IADR-0062 決定4）。
 // RiskManagement:BaseUrl 未設定/不正 URI は BaseAddress 未設定＝呼び出し失敗（Succeeded=false）に倒す。
@@ -82,7 +88,10 @@ builder.Services.AddSingleton<IPauseController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpPauseController(http, sp.GetRequiredService<ILogger<HttpPauseController>>());
+    IPauseController controller = new HttpPauseController(http, sp.GetRequiredService<ILogger<HttpPauseController>>());
+    return sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc
+        ? new GrpcPauseController(riskGrpc, controller, sp.GetRequiredService<ILogger<GrpcPauseController>>())
+        : controller;
 });
 builder.Services.AddSingleton<PauseCommandHandler>();
 
@@ -97,7 +106,10 @@ builder.Services.AddSingleton<IStageGateController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpStageGateController(http, sp.GetRequiredService<ILogger<HttpStageGateController>>());
+    IStageGateController controller = new HttpStageGateController(http, sp.GetRequiredService<ILogger<HttpStageGateController>>());
+    return sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc
+        ? new GrpcStageGateController(riskGrpc, controller, sp.GetRequiredService<ILogger<GrpcStageGateController>>())
+        : controller;
 });
 builder.Services.AddSingleton<StageGateCommandHandler>();
 
@@ -148,7 +160,10 @@ builder.Services.AddSingleton<IReportReviewController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpReportReviewController(http, sp.GetRequiredService<ILogger<HttpReportReviewController>>());
+    IReportReviewController controller = new HttpReportReviewController(http, sp.GetRequiredService<ILogger<HttpReportReviewController>>());
+    return sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc
+        ? new GrpcReportReviewController(reportsGrpc, controller, sp.GetRequiredService<ILogger<GrpcReportReviewController>>())
+        : controller;
 });
 
 // 詳細設計07 §二重実行防止: 窓口での多重押下を弾く前段のガード（**権威は報告書サービスの版番号付き冪等 API**）。
@@ -168,7 +183,10 @@ builder.Services.AddSingleton<IPolicyRevisionController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpPolicyRevisionController(http, sp.GetRequiredService<ILogger<HttpPolicyRevisionController>>());
+    IPolicyRevisionController controller = new HttpPolicyRevisionController(http, sp.GetRequiredService<ILogger<HttpPolicyRevisionController>>());
+    return sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc
+        ? new GrpcPolicyRevisionController(reportsGrpc, controller, sp.GetRequiredService<ILogger<GrpcPolicyRevisionController>>())
+        : controller;
 });
 builder.Services.AddSingleton<PolicyRevisionCommandHandler>();
 
@@ -184,8 +202,11 @@ builder.Services.AddSingleton<IMarketMonitorWatchlistController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpMarketMonitorWatchlistController(
+    IMarketMonitorWatchlistController controller = new HttpMarketMonitorWatchlistController(
         http, sp.GetRequiredService<ILogger<HttpMarketMonitorWatchlistController>>());
+    return sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc
+        ? new GrpcMarketMonitorWatchlistController(monitorGrpc, controller)
+        : controller;
 });
 builder.Services.AddSingleton<PolicyApprovalCommandHandler>();
 

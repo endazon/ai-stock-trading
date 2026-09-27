@@ -1,0 +1,84 @@
+// NFR, NFR-06, FR-07, FR-13, FR-14, MSP:ADR-0029, MSP:ADR-0075, ADR-0047 決定 1〜3, IADR-0284 決定 5（段 5）, IADR-0448, IADR-0449, #753:
+// 報告書の**所有者限定の読み取り**（REST の OwnerOnly）の gRPC 契約。呼び出し元は Discord ボットだけである（ADR-0047 決定 1）。
+// REST の `GET /reports/{periodKey}/review`・`GET /reports/period-keys`・`GET /reports/policy-revisions/watchlist-proposal` と
+// 同じ意味論で、提供側は REST と同じサービス・同じ検証を通る。
+//
+// ■ 認可（IADR-0449 決定 2）: 門は `GrpcOwnerOnly` ＝ `trading-owner` ∧ トークンの `azp` がボットの機密クライアント。s2s には開かない。
+// ■ 誤りの写し（REST と同じ分類）: 会話キー・版の誤り（400）→ INVALID_ARGUMENT、対象が無い（404）→ NOT_FOUND、
+//   その版で確定されていない（409）→ FAILED_PRECONDITION。
+// ■ 線上表現は原則 A（IADR-0427 決定 3）。message 名を送り手の C# の型名（`ReportReviewView`・`ReportPeriodKeyItem`・
+//   `WatchlistProposalView`・`WatchlistChangeView`・`WatchlistSnapshotEntryView`）にしない。
+syntax = "proto3";
+
+package aistocktrading.report.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Grpc.Report.V1";
+
+service ReportOwnerRead {
+  // GET /reports/{periodKey}/review（レビュー局面の版番号と、未供給の入力の表示名）。
+  rpc GetReportReview(GetReportReviewRequest) returns (GetReportReviewResponse);
+  // GET /reports/period-keys（入力補完の候補。会話キーと開始日だけ）。
+  rpc ListReportPeriodKeys(ListReportPeriodKeysRequest) returns (ListReportPeriodKeysResponse);
+  // GET /reports/policy-revisions/watchlist-proposal?periodKey&version（確定した版の監視銘柄の入れ替え案）。
+  rpc GetWatchlistProposal(GetWatchlistProposalRequest) returns (GetWatchlistProposalResponse);
+}
+
+message GetReportReviewRequest {
+  string period_key = 1;
+}
+
+message GetReportReviewResponse {
+  // 欠落は「不明」（受け手は版番号を騙らず失敗を返す）。
+  optional int32 version = 1;
+  // 欠落＝未供給の入力の宣言が無い（REST の旧版と同じく注記を出さない）。
+  UnsuppliedInputList unsupplied_inputs = 2;
+}
+
+// 未供給の入力の表示名（報告書サービスのコード定数）。
+message UnsuppliedInputList {
+  repeated string names = 1;
+}
+
+message ListReportPeriodKeysRequest {}
+
+message ListReportPeriodKeysResponse {
+  repeated ReportPeriodKeyRow items = 1;
+}
+
+message ReportPeriodKeyRow {
+  optional string period_key = 1;
+  // yyyy-MM-dd。欠落・読めない値は並び替えで末尾へ回る（REST と同じ）。
+  optional string period_start = 2;
+}
+
+message GetWatchlistProposalRequest {
+  string period_key = 1;
+  int32 version = 2;
+}
+
+message GetWatchlistProposalResponse {
+  // Guid の文字列表現。
+  optional string attempt_id = 1;
+  optional string period_key = 2;
+  optional int32 report_version = 3;
+  repeated WatchlistChangeRow changes = 4;
+  // 欠落＝案を作った時点の監視銘柄が分からない（REST の null。適用しない）。
+  WatchlistSnapshotRows snapshot = 5;
+  optional bool apply_recorded = 6;
+}
+
+message WatchlistChangeRow {
+  optional string action = 1;
+  optional string symbol = 2;
+  optional string reason = 3;
+}
+
+message WatchlistSnapshotRows {
+  repeated WatchlistSnapshotRow items = 1;
+}
+
+message WatchlistSnapshotRow {
+  optional string symbol = 1;
+  // 市場の名前（REST と同じ文字列。例 "Japan"）。
+  optional string market = 2;
+}

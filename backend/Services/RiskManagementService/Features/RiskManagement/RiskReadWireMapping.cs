@@ -74,6 +74,125 @@ public static class RiskReadWireMapping
         _ => Proto.TradingStage.Unspecified,
     };
 
+    // ---- 段 5（IADR-0449 決定 3）: 段階ゲートの現況と稼働状態（Discord ボットが読む項目） ----
+
+    public static Proto.StageTransitionKind ToProto(StageTransitionKind value) => value switch
+    {
+        StageTransitionKind.Promotion => Proto.StageTransitionKind.Promotion,
+        StageTransitionKind.Demotion => Proto.StageTransitionKind.Demotion,
+        StageTransitionKind.ShortSellReleaseVerdict => Proto.StageTransitionKind.ShortSellReleaseVerdict,
+        _ => Proto.StageTransitionKind.Unspecified,
+    };
+
+    public static Proto.StageGateCriterion ToProto(StageGateCriterion value) => value switch
+    {
+        StageGateCriterion.BacktestNotPassed => Proto.StageGateCriterion.BacktestNotPassed,
+        StageGateCriterion.ControlViolationsPresent => Proto.StageGateCriterion.ControlViolationsPresent,
+        StageGateCriterion.SlippageOrCostExceeded => Proto.StageGateCriterion.SlippageOrCostExceeded,
+        StageGateCriterion.DailyLossLimitViolated => Proto.StageGateCriterion.DailyLossLimitViolated,
+        StageGateCriterion.NoUserApproval => Proto.StageGateCriterion.NoUserApproval,
+        StageGateCriterion.PromotionMustBeSequential => Proto.StageGateCriterion.PromotionMustBeSequential,
+        StageGateCriterion.TargetIsCurrentStage => Proto.StageGateCriterion.TargetIsCurrentStage,
+        StageGateCriterion.AlreadyAtTopStage => Proto.StageGateCriterion.AlreadyAtTopStage,
+        StageGateCriterion.Stage1TradingDaysInsufficient => Proto.StageGateCriterion.Stage1TradingDaysInsufficient,
+        StageGateCriterion.Stage1TradeCountInsufficient => Proto.StageGateCriterion.Stage1TradeCountInsufficient,
+        StageGateCriterion.Stage1ExtensionExhausted => Proto.StageGateCriterion.Stage1ExtensionExhausted,
+        StageGateCriterion.ControlViolationCountUnavailable => Proto.StageGateCriterion.ControlViolationCountUnavailable,
+        _ => Proto.StageGateCriterion.Unspecified,
+    };
+
+    public static Proto.WithdrawalReason ToProto(WithdrawalReason value) => value switch
+    {
+        WithdrawalReason.DrawdownBreachedMultiple => Proto.WithdrawalReason.DrawdownBreachedMultiple,
+        WithdrawalReason.Stage1ExtensionExhausted => Proto.WithdrawalReason.Stage1ExtensionExhausted,
+        _ => Proto.WithdrawalReason.Unspecified,
+    };
+
+    public static Proto.GetStageGateResponse ToProto(StageGateStatus status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+
+        var response = new Proto.GetStageGateResponse
+        {
+            CurrentStage = ToProto(status.CurrentStage),
+            CurrentSettings = new Proto.StageSettingsRecord
+            {
+                Stage = ToProto(status.CurrentSettings.Stage),
+                Mode = ToProto((BrokerProvider?)status.CurrentSettings.Mode),
+                CapitalCapRatio = ToWire(status.CurrentSettings.CapitalCapRatio),
+            },
+            Promotion = new Proto.PromotionAssessmentRecord { Eligible = status.Promotion.Eligible },
+            Withdrawal = new Proto.WithdrawalAssessmentRecord
+            {
+                Triggered = status.Withdrawal.Triggered,
+                HaltNewEntries = status.Withdrawal.HaltNewEntries,
+            },
+            Stage1Criteria = new Proto.Stage1CriteriaRecord
+            {
+                TargetTradingDays = status.Stage1Criteria.TargetTradingDays,
+                MinimumTradeCount = status.Stage1Criteria.MinimumTradeCount,
+                MaximumTradingDays = status.Stage1Criteria.MaximumTradingDays,
+                BelowStatisticalBasis = status.Stage1Criteria.BelowStatisticalBasis,
+            },
+        };
+
+        // 🔴 C# の null（最上段・理由なし・提案なし）は**設定しない**（受け手は欠落を REST の null と同じに読む）。
+        if (status.Promotion.TargetStage is { } target)
+            response.Promotion.TargetStage = ToProto(target);
+        response.Promotion.UnmetCriteria.AddRange(status.Promotion.UnmetCriteria.Select(ToProto));
+        if (status.Withdrawal.Reason is { } reason)
+            response.Withdrawal.Reason = ToProto(reason);
+        if (status.Withdrawal.ProposedStage is { } proposed)
+            response.Withdrawal.ProposedStage = ToProto(proposed);
+
+        response.History.AddRange(status.History.Select(t =>
+        {
+            var row = new Proto.StageTransitionRecord
+            {
+                Sequence = t.Sequence,
+                FromStage = ToProto(t.FromStage),
+                ToStage = ToProto(t.ToStage),
+                Kind = ToProto(t.Kind),
+                OccurredAt = ToWire(t.OccurredAtUtc),
+            };
+            if (t.ApprovedBy is not null)
+                row.ApprovedBy = t.ApprovedBy;
+            if (t.Reason is not null)
+                row.Reason = t.Reason;
+            return row;
+        }));
+        return response;
+    }
+
+    public static Proto.GetRiskStatusResponse ToProto(GetRiskStatus.RiskStatusView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        var response = new Proto.GetRiskStatusResponse
+        {
+            KillSwitchEngaged = view.KillSwitchEngaged,
+            DailyLossLockoutActive = view.DailyLossLockoutActive,
+            TradingPaused = view.TradingPaused,
+            NewEntriesBlocked = view.NewEntriesBlocked,
+            Stage = ToProto(view.Stage),
+            DailyRealizedPnl = ToWire(view.DailyRealizedPnl),
+            UnrealizedPnl = ToWire(view.UnrealizedPnl),
+            DailyPnl = ToWire(view.DailyPnl),
+            DailyOrderedAmount = ToWire(view.DailyOrderedAmount),
+            DrawdownRatio = ToWire(view.DrawdownRatio),
+            MaxDrawdownRatio = ToWire(view.MaxDrawdownRatio),
+            OpenPositionCount = view.OpenPositionCount,
+            MaxOpenPositions = view.MaxOpenPositions,
+        };
+
+        // 🔴 null（解除日が未定・口座を照会できず上限を解決できない）は**設定しない**。0 と書くと「上限 0」になる（#990）。
+        if (view.LockoutReleaseOn is { } releaseOn)
+            response.LockoutReleaseOn = ToWire(releaseOn);
+        if (view.MaxDailyOrderAmount is { } maxDaily)
+            response.MaxDailyOrderAmount = ToWire(maxDaily);
+        return response;
+    }
+
     public static Proto.OpenPositionRow ToProto(OpenPositionView view)
     {
         ArgumentNullException.ThrowIfNull(view);

@@ -24,22 +24,14 @@ internal static partial class WatchlistProposalEndpoints
         // 読んで確定されていない案を適用していた（監査が実測）。適用の可否の権威をこの照会（報告書サービス）へ置く。
         owner.MapGet("/policy-revisions/watchlist-proposal", (string? periodKey, int? version, IPolicyRevisionLedger ledger, IReportStore store) =>
         {
-            if (periodKey is null || !PeriodKeyPattern().IsMatch(periodKey) || version is not >= 1)
-                return Results.BadRequest(new { error = "会話キー（periodKey）と版（version）が必要です。" });
-
-            if (ledger.FindProposed(periodKey, version.Value) is not { } attempt)
-                return Results.NotFound(new { error = $"報告書 {periodKey}（版 {version}）は /policy の案ではありません。" });
-
-            if (store.Get(periodKey) is not { } report || !report.IsConfirmedAtDraftVersion(version.Value))
-                return Results.Conflict(new { error = $"報告書 {periodKey} は版 {version} で確定されていません。入れ替えは適用しません。" });
-
-            return Results.Ok(new WatchlistProposalView(
-                attempt.Id,
-                attempt.PeriodKey,
-                attempt.ReportVersion!.Value,
-                Parse<WatchlistChangeView>(attempt.WatchlistChangesJson) ?? [],
-                Parse<WatchlistSnapshotEntryView>(attempt.WatchlistSnapshotJson),
-                attempt.WatchlistAppliedAt is not null));
+            var lookup = Lookup(periodKey, version, ledger, store);
+            return lookup.Outcome switch
+            {
+                ProposalLookupOutcome.Invalid => Results.BadRequest(new { error = lookup.Error }),
+                ProposalLookupOutcome.NotProposal => Results.NotFound(new { error = lookup.Error }),
+                ProposalLookupOutcome.NotConfirmedAtVersion => Results.Conflict(new { error = lookup.Error }),
+                _ => Results.Ok(lookup.Proposal),
+            };
         });
 
         // 記録: 200＝記録した／409＝既に記録済み（1 回だけ）・案でない・その版で確定されていない／404＝試行が無い。
@@ -76,6 +68,40 @@ internal static partial class WatchlistProposalEndpoints
                     : Results.Conflict(new { error = "この案の適用の内訳は記録済みです。" });
             });
     }
+
+    // NFR, IADR-0449 決定 3, #753（段 5）: 照会の判定（検証・案の有無・その版で確定されているか）は REST と gRPC 面
+    // （ReportOwnerReadGrpcService）で**この 1 つ**を使う。REST は 400 / 404 / 409 / 200、gRPC は INVALID_ARGUMENT / NOT_FOUND /
+    // FAILED_PRECONDITION / 応答へ写す（判定を 2 箇所に書かない。PR #1027 の監査 H1 の条件が片方だけ直るのを防ぐ）。
+    internal static ProposalLookup Lookup(string? periodKey, int? version, IPolicyRevisionLedger ledger, IReportStore store)
+    {
+        if (periodKey is null || !PeriodKeyPattern().IsMatch(periodKey) || version is not >= 1)
+            return new(ProposalLookupOutcome.Invalid, null, "会話キー（periodKey）と版（version）が必要です。");
+
+        if (ledger.FindProposed(periodKey, version.Value) is not { } attempt)
+            return new(ProposalLookupOutcome.NotProposal, null, $"報告書 {periodKey}（版 {version}）は /policy の案ではありません。");
+
+        if (store.Get(periodKey) is not { } report || !report.IsConfirmedAtDraftVersion(version.Value))
+            return new(ProposalLookupOutcome.NotConfirmedAtVersion, null,
+                $"報告書 {periodKey} は版 {version} で確定されていません。入れ替えは適用しません。");
+
+        return new(ProposalLookupOutcome.Found, new WatchlistProposalView(
+            attempt.Id,
+            attempt.PeriodKey,
+            attempt.ReportVersion!.Value,
+            Parse<WatchlistChangeView>(attempt.WatchlistChangesJson) ?? [],
+            Parse<WatchlistSnapshotEntryView>(attempt.WatchlistSnapshotJson),
+            attempt.WatchlistAppliedAt is not null), null);
+    }
+
+    internal enum ProposalLookupOutcome
+    {
+        Found,
+        Invalid,
+        NotProposal,
+        NotConfirmedAtVersion,
+    }
+
+    internal sealed record ProposalLookup(ProposalLookupOutcome Outcome, WatchlistProposalView? Proposal, string? Error);
 
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
