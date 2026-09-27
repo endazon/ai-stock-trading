@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -12,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Features.RiskManagement.AdoptPositionDrift;
+using Wolverine.Tracking;
 using Xunit;
 using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
@@ -327,6 +330,135 @@ public class RiskControlsOwnerWriteGrpcServiceTests
 
         status.Should().Be(400);
         (ex.StatusCode, ex.Status.Detail).Should().Be((StatusCode.InvalidArgument, error!), "未指定を日本と読まない");
+    }
+
+    // ---- 監査の発行（PR #1070 の監査の指摘 1）: gRPC 面から呼んでも REST と同じ内容の監査イベントを発行する ----
+    // 🔴 観測は Wolverine の送信の記録（ExecuteAndWaitForTestAsync）。処理関数の bus を飛ばす変異（監査を発行しない）をここで止める。
+
+    private static void SeedViolations(WebApplicationFactory<Program> factory, params string[] orderIds)
+    {
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IGoodFaithViolationStore>();
+        foreach (var id in orderIds)
+        {
+            store.Append(new GoodFaithViolationRecord(
+                Guid.NewGuid(), id, Guid.NewGuid(), "AAPL", Market.UnitedStates,
+                PurchaseAmountInBase: 1000m, SettledCashInBase: 0m,
+                OccurredOn: new DateOnly(2026, 8, 8),
+                ExecutedAt: DateTimeOffset.UtcNow, RecordedAt: DateTimeOffset.UtcNow));
+        }
+    }
+
+    private static void SeedBacktestPassed(WebApplicationFactory<Program> factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStagePerformanceStore>().Save(new StagePerformance { BacktestPassed = true });
+    }
+
+    private static async Task<T[]> PublishedAsync<T>(WebApplicationFactory<Program> factory, Func<Task> act)
+    {
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(act);
+        return [.. session.Sent.MessagesOf<T>()];
+    }
+
+    [Fact]
+    public async Task T_10_1732_gRPC_から呼んでも_REST_と同じ内容の監査イベントを発行する()
+    {
+        await using var restBase = new RiskWorkerWebApplicationFactory();
+        await using var grpcBase = new RiskWorkerWebApplicationFactory();
+        var restHost = Trusted(restBase);
+        var grpcHost = Trusted(grpcBase);
+        foreach (var host in new[] { restHost, grpcHost })
+        {
+            SeedBacktestPassed(host);
+            SeedReportedDrift(host);
+            SeedViolations(host, "ord-1", "ord-2");
+        }
+
+        // 段階遷移（StageTransitioned）: 承認者＝代理される利用者・認可の主体＝ボットの機密クライアント。
+        var restStage = await PublishedAsync<StageTransitioned>(restHost, async () =>
+            await Rest(restHost, name: null).PostAsJsonAsync("/risk-controls/stage-gate/transition", new { targetStage = 1, onBehalfOf = "owner-a" }));
+        var grpcStage = await PublishedAsync<StageTransitioned>(grpcHost, async () =>
+            await Grpc(grpcHost, name: null).RequestStageTransitionAsync(new Proto.StageTransitionApprovalRequest
+            {
+                TargetStage = Proto.TradingStage.Stage1Simulate,
+                OnBehalfOf = "owner-a",
+            }));
+        var r = restStage.Should().ContainSingle().Subject;
+        var g = grpcStage.Should().ContainSingle("gRPC 面からも監査へ発行する").Subject;
+        (g.FromStage, g.ToStage, g.Kind, g.ApprovedBy, g.Reason, g.Stage1MinimumTradeCount, g.Stage1BelowStatisticalBasis, g.AuthorizedBy)
+            .Should().Be((r.FromStage, r.ToStage, r.Kind, r.ApprovedBy, r.Reason, r.Stage1MinimumTradeCount, r.Stage1BelowStatisticalBasis, r.AuthorizedBy));
+        (g.ApprovedBy, g.AuthorizedBy).Should().Be(("owner-a", Bot));
+
+        // 乖離の取り込み（PositionDriftAdopted）。
+        var restAdopted = await PublishedAsync<PositionDriftAdopted>(restHost, async () =>
+            await Rest(restHost, name: null).PostAsJsonAsync("/risk-controls/position-drift/adopt",
+                new { symbol = "AAPL", market = (int)Market.UnitedStates, reason = "アプリで売却", onBehalfOf = "owner-a" }));
+        var grpcAdopted = await PublishedAsync<PositionDriftAdopted>(grpcHost, async () =>
+            await Grpc(grpcHost, name: null).AdoptPositionDriftAsync(new Proto.DriftAdoptionCommandRequest
+            {
+                Symbol = "AAPL",
+                Market = Proto.Market.UnitedStates,
+                Reason = "アプリで売却",
+                OnBehalfOf = "owner-a",
+            }));
+        var ra = restAdopted.Should().ContainSingle().Subject;
+        var ga = grpcAdopted.Should().ContainSingle("gRPC 面からも監査へ発行する").Subject;
+        (ga.Symbol, ga.Market, ga.LedgerQuantityBefore, ga.LedgerQuantityAfter, ga.BrokerQuantity, ga.Actor, ga.Reason, ga.AuthorizedBy)
+            .Should().Be((ra.Symbol, ra.Market, ra.LedgerQuantityBefore, ra.LedgerQuantityAfter, ra.BrokerQuantity, ra.Actor, ra.Reason, ra.AuthorizedBy));
+        (ga.Actor, ga.AuthorizedBy).Should().Be(("owner-a", Bot));
+
+        // GFV の解除（GoodFaithViolationsCleared）: 解除者はトークンの名前。
+        var restCleared = await PublishedAsync<GoodFaithViolationsCleared>(restHost, async () =>
+            await Rest(restHost).PostAsJsonAsync("/risk-controls/good-faith-violations/clear", new { reason = "是正済み" }));
+        var grpcCleared = await PublishedAsync<GoodFaithViolationsCleared>(grpcHost, async () =>
+            await Grpc(grpcHost).ClearGoodFaithViolationsAsync(new Proto.GoodFaithViolationClearanceRequest { Reason = "是正済み" }));
+        var rc = restCleared.Should().ContainSingle().Subject;
+        var gc = grpcCleared.Should().ContainSingle("gRPC 面からも監査へ発行する").Subject;
+        (gc.ClearedBy, gc.Reason, gc.RemainingCount).Should().Be((rc.ClearedBy, rc.Reason, rc.RemainingCount));
+        gc.ClearedOrderIds.Should().BeEquivalentTo(rc.ClearedOrderIds).And.HaveCount(2);
+    }
+
+    // ---- 信頼一覧に呼び出し元が無い（PR #1070 の監査の指摘 2）: on_behalf_of を操作者にしない（REST と同じ） ----
+    // 🔴 門（GrpcOwnerOnly）は通るが、代理を信じるのは `*:DelegatedActor:TrustedClientIds` に載ったクライアントだけである。
+    // 他の試験のホストは全件 Trusted(...) なので、on_behalf_of を無条件に信じる変異はここでしか止まらない。
+
+    [Fact]
+    public async Task T_10_1732_信頼一覧に無ければ_on_behalf_of_を承認者_操作者にしない()
+    {
+        await using var restHost = new RiskWorkerWebApplicationFactory();
+        await using var grpcHost = new RiskWorkerWebApplicationFactory();
+        foreach (var host in new[] { restHost, grpcHost })
+        {
+            SeedBacktestPassed(host);
+            SeedReportedDrift(host);
+        }
+
+        var restStage = await PublishedAsync<StageTransitioned>(restHost, async () =>
+            await Rest(restHost).PostAsJsonAsync("/risk-controls/stage-gate/transition", new { targetStage = 1, onBehalfOf = "owner-a" }));
+        var grpcStage = await PublishedAsync<StageTransitioned>(grpcHost, async () =>
+            await Grpc(grpcHost).RequestStageTransitionAsync(new Proto.StageTransitionApprovalRequest
+            {
+                TargetStage = Proto.TradingStage.Stage1Simulate,
+                OnBehalfOf = "owner-a",
+            }));
+        var r = restStage.Should().ContainSingle().Subject;
+        var g = grpcStage.Should().ContainSingle().Subject;
+        (g.ApprovedBy, g.AuthorizedBy).Should().Be((r.ApprovedBy, r.AuthorizedBy));
+        g.ApprovedBy.Should().Be("risk-bot", "信頼一覧に無いクライアントの代理指定は無視し、トークンの主体を承認者にする");
+
+        using var restAdopt = await Rest(restHost).PostAsJsonAsync("/risk-controls/position-drift/adopt",
+            new { symbol = "AAPL", market = (int)Market.UnitedStates, reason = "アプリで売却", onBehalfOf = "owner-a" });
+        var restAdopted = await restAdopt.Content.ReadFromJsonAsync<PositionDriftAdoptionResponse>(Web);
+        var grpcAdopted = await Grpc(grpcHost).AdoptPositionDriftAsync(new Proto.DriftAdoptionCommandRequest
+        {
+            Symbol = "AAPL",
+            Market = Proto.Market.UnitedStates,
+            Reason = "アプリで売却",
+            OnBehalfOf = "owner-a",
+        });
+        restAdopt.StatusCode.Should().Be(HttpStatusCode.OK);
+        grpcAdopted.Actor.Should().Be(restAdopted!.Actor).And.Be("risk-bot", "操作者は on_behalf_of ではなくトークンの主体");
     }
 
     // ---- 門（GrpcOwnerOnly）: 8 rpc すべてでボットだけが通る ----
