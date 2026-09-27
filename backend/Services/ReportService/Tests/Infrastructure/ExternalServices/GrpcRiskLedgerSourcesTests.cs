@@ -278,6 +278,25 @@ public class GrpcRiskLedgerSourcesTests
         }
     }
 
+    // T-10-1713, #1063 D: decimal の範囲を超える桁の価格も「読めない」と同じく未供給（OverflowException を報告書の生成の外へ出さない）。
+    [Fact]
+    public async Task T_10_1713_建玉の価格の桁あふれは例外にせず未供給()
+    {
+        var response = new Proto.GetOpenPositionsResponse();
+        var overflowing = RiskReadWireMapping.ToProto(new OpenPositionView("AAPL", Market.UnitedStates, TradeSide.Buy, 1, 190.5m, 180m));
+        overflowing.EntryPrice = "79228162514264337593543950336";
+        response.Positions.Add(overflowing);
+        await using var host = await RiskReadStubHost.StartAsync(new RiskReadStubBehavior
+        {
+            OpenPositions = RiskReadStubBehavior.Returns(response),
+        });
+        var (sp, t) = Compose(host.Address);
+        await using (sp)
+        {
+            (await new GrpcOpenPositionSource(t, Log<GrpcOpenPositionSource>()).GetOpenPositionsAsync()).Should().BeNull();
+        }
+    }
+
     // ---- T-10-1056: 契約（送り手の本物の型 → 提供側の写し → 線 → 受け手） ----
 
     [Fact]

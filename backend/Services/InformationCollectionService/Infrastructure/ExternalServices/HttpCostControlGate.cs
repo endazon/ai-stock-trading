@@ -1,4 +1,5 @@
-using System.Net.Http.Json;
+using System.Globalization;
+using System.Text.Json;
 using InformationCollectionService.Features.InformationCollection;
 using Microsoft.Extensions.Logging;
 
@@ -16,10 +17,14 @@ public sealed class HttpCostControlGate(
     ILogger<HttpCostControlGate> logger)
     : ICostControlGate
 {
-    // CostControlDecision（費用統制）の JSON 受け皿。CostControlService.Domain を参照せず isHalted/intervalMultiplier で疎結合に読む。
-    // FR-01, NFR（費用）, #915, IADR-0031: 両項目を nullable にし、「項目が無い」を既定値（false / 0）と区別する。
+    // CostControlDecision（費用統制）の JSON を、CostControlService.Domain を参照せず isHalted/intervalMultiplier で疎結合に読む。
+    // FR-01, NFR（費用）, #915, IADR-0031: 両項目を nullable で読み、「項目が無い」を既定値（false / 0）と区別する。
     // 非 nullable だと本文 {} が (false, 0) になり、0× のまま写っていた（消費側の下限 1 で隠れていただけ）。
-    private sealed record CostStateDto(bool? IsHalted, decimal? IntervalMultiplier);
+    //
+    // FR-01, NFR（費用）, #1063 B: **項目ごとに**読む。以前は 1 つの DTO へ一括で逆直列化していたため、倍率だけが読めない
+    // （文字列の "two"・decimal の範囲を超える桁）と本文全体が不正応答になり、**停止の旗が読めていても Normal（停止せず）**へ倒れていた
+    // —— #915 の規則（停止は倍率に関わらず守る）より弱い。項目の読み方（名前の大小を区別しない・数値は文字列でも読む）は
+    // 以前の Web 既定の逆直列化と同じにしてあり、変わるのは「停止が読めて倍率が読めない」ときに停止を守るようになる点だけである。
 
     public async Task<CostControlGate> GetAsync(CancellationToken cancellationToken = default)
     {
@@ -35,11 +40,21 @@ public sealed class HttpCostControlGate(
                 return CostControlGate.Normal;
             }
 
-            var dto = await response.Content.ReadFromJsonAsync<CostStateDto>(cancellationToken).ConfigureAwait(false);
-            if (dto is null)
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                if (document.RootElement.ValueKind != JsonValueKind.Null)
+                    logger.LogWarning("費用統制の応答がオブジェクトではありません。Normal（停止せず）に倒します。");
                 return CostControlGate.Normal;
+            }
 
-            return Map(dto.IsHalted, dto.IntervalMultiplier, logger);
+            var isHalted = ReadIsHalted(document.RootElement);
+            var multiplier = ReadIntervalMultiplier(document.RootElement, out var unreadable);
+            if (unreadable)
+                logger.LogWarning("費用統制の応答の intervalMultiplier を読めません。倍率は無いものとして扱います（停止の旗は守ります）。");
+
+            return Map(isHalted, multiplier, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -58,6 +73,46 @@ public sealed class HttpCostControlGate(
     //   倍率の欠落・非正を理由に停止を Normal へ落とすと「費用上限 100% でも収集を続ける」側へ倒れるため。
     // - isHalted が欠落: 停止か否かを判定できない不正応答として Normal（不達・非 2xx と同じ安全既定）。
     // - isHalted が false で倍率が欠落・非正: 「費用統制は何も言っていない」を 0× と読まず Normal（1×）。
+    // 項目の読み取り（以前の Web 既定の逆直列化と同じ規則: 名前の大小を区別しない・真偽は true/false のみ・倍率は数値か数値の文字列）。
+    private static JsonElement? Property(JsonElement root, string name)
+    {
+        JsonElement? found = null;
+        foreach (var property in root.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                found = property.Value;
+        }
+
+        return found;
+    }
+
+    private static bool? ReadIsHalted(JsonElement root) => Property(root, "isHalted") switch
+    {
+        { ValueKind: JsonValueKind.True } => true,
+        { ValueKind: JsonValueKind.False } => false,
+        // 欠落・null・真偽でない値は「判定できない」（以前は真偽でない値で本文全体が不正応答＝Normal。Map でも Normal になる）。
+        _ => null,
+    };
+
+    private static decimal? ReadIntervalMultiplier(JsonElement root, out bool unreadable)
+    {
+        unreadable = false;
+        switch (Property(root, "intervalMultiplier"))
+        {
+            case null:
+            case { ValueKind: JsonValueKind.Null }:
+                return null;
+            case { ValueKind: JsonValueKind.Number } number when number.TryGetDecimal(out var value):
+                return value;
+            case { ValueKind: JsonValueKind.String } text
+                when decimal.TryParse(text.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value):
+                return value;
+            default:
+                unreadable = true;
+                return null;
+        }
+    }
+
     // NFR, IADR-0446 決定 4, #1061 (#753): 写しは gRPC 実装（GrpcCostControlGate）と共有する（`internal static`）。
     internal static CostControlGate Map(bool? isHaltedOrMissing, decimal? intervalMultiplier, ILogger logger)
     {

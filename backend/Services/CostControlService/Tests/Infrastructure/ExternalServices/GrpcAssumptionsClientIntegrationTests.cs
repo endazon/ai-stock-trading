@@ -195,10 +195,13 @@ public class GrpcAssumptionsClientIntegrationTests
     // 🔴 陰性対照: **線上の 10 進が読めない応答も例外にしない。** IADR-0331 決定 2 が警戒するのは
     // 「写しが静かに壊れる」ことであり、その裏返しとして**壊れた線上値を掴んだときも消費側の巡回を止めない**
     // （IADR-0063 決定 5）。REST 実装の「不正応答 → null」と同じ向きである。
-    [Fact]
-    public async Task 線上の十進が読めなくても例外を出さず安全側既定へ倒れる()
+    // ［2026-09-27 追記 / #1063 D］T-10-1713: decimal の範囲を超える桁も同じ（OverflowException を外へ出さない）。
+    [Theory]
+    [InlineData("not-a-decimal")]
+    [InlineData("79228162514264337593543950336")]
+    public async Task 線上の十進が読めなくても例外を出さず安全側既定へ倒れる(string malformed)
     {
-        await using var host = await GrpcStubHost.StartAsync(StubAssumptions.ReturnsMalformedDecimal());
+        await using var host = await GrpcStubHost.StartAsync(StubAssumptions.ReturnsMalformedDecimal(malformed));
 
         var current = await ResolveAsync(host.Address, new() { ["Configuration:GrpcMaxAttempts"] = "3" });
 
@@ -323,11 +326,11 @@ internal sealed class StubAssumptions(Func<int, CancellationToken, Task<Proto.Ge
             : Task.FromResult(Ok()));
 
     // 線上の 10 進が読めない応答（提供側の写しが壊れた場合・別実装のピアが繋がった場合）。
-    internal static StubAssumptions ReturnsMalformedDecimal() =>
+    internal static StubAssumptions ReturnsMalformedDecimal(string malformed = "not-a-decimal") =>
         new((_, _) =>
         {
             var response = Ok();
-            response.Assumptions.CapitalGainsTaxRate = "not-a-decimal";
+            response.Assumptions.CapitalGainsTaxRate = malformed;
             return Task.FromResult(response);
         });
 

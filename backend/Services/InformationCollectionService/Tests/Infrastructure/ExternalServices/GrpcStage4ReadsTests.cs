@@ -128,6 +128,9 @@ public class GrpcStage4ReadsTests
         { "間隔延長は 2×", false, "2", false, 2m },
         { "読めない倍率は Normal", false, "two", false, 1m },
         { "桁あふれの倍率は Normal", false, "79228162514264337593543950336", false, 1m },
+        // T-10-1712, #1063 B: 停止の旗が読めていれば、倍率が読めなくても停止を守る（以前は応答全体を Normal へ倒していた）。
+        { "停止中の読めない倍率でも停止を守る", true, "two", true, 0m },
+        { "停止中の桁あふれの倍率でも停止を守る", true, "79228162514264337593543950336", true, 0m },
     };
 
     [Theory]

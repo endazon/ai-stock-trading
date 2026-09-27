@@ -112,6 +112,34 @@ public class HttpCostControlGateTests
         (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Halted.Should().BeTrue();
     }
 
+    // T-10-1712, FR-01, NFR（費用）, #1063 B: 停止の旗が読めていれば、倍率だけが読めなくても停止を守る。
+    // 以前は 1 つの DTO へ一括で逆直列化していたため、倍率が読めないと本文全体が不正応答になり Normal（停止せず）へ倒れていた。
+    [Theory]
+    [InlineData("""{"isHalted":true,"intervalMultiplier":"two"}""")]
+    [InlineData("""{"isHalted":true,"intervalMultiplier":79228162514264337593543950336}""")]
+    [InlineData("""{"isHalted":true,"intervalMultiplier":{"x":1}}""")]
+    public async Task T_10_1712_停止の旗が読めれば倍率が読めなくても停止を守る(string body)
+    {
+        (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Should().Be(
+            new InformationCollectionService.Features.InformationCollection.CostControlGate(true, 0m));
+    }
+
+    // T-10-1712 の対（変わらないこと）: 停止していない応答の倍率が読めなければ、従来どおり Normal（1×）。
+    // 項目の読み方は以前の Web 既定の逆直列化と同じ（名前の大小を区別しない・数値の文字列も読む・真偽でない isHalted は判定できない）。
+    [Theory]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":"two"}""", false, 1)]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":79228162514264337593543950336}""", false, 1)]
+    [InlineData("""{"IsHalted":false,"IntervalMultiplier":2}""", false, 2)]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":"2"}""", false, 2)]
+    [InlineData("""{"isHalted":"true","intervalMultiplier":0}""", false, 1)]
+    [InlineData("""[]""", false, 1)]
+    [InlineData("""null""", false, 1)]
+    public async Task T_10_1712_停止していない応答や読めない本文の扱いは従来どおり(string body, bool halted, int multiplier)
+    {
+        (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Should().Be(
+            new InformationCollectionService.Features.InformationCollection.CostControlGate(halted, multiplier));
+    }
+
     // NFR（費用）, IADR-0031: 費用統制の応答が上限に間に合わなければ、情報収集は止めず Normal（1×）へ倒す。
     //
     // #901, IADR-0367: 従来は「壁時計 50 ms の `HttpClient.Timeout`」対「壁時計 2 秒のハンドラ遅延」という

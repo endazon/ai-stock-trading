@@ -133,12 +133,15 @@ public class GrpcRiskReadTests
         }
     }
 
-    [Fact]
-    public async Task T_10_1052_読めない_10_進は不明()
+    // ［2026-09-27 追記 / #1063 D］T-10-1713: decimal の範囲を超える桁も「読めない」と同じく不明（例外を外へ出さない）。
+    [Theory]
+    [InlineData("not-a-decimal")]
+    [InlineData("79228162514264337593543950336")]
+    public async Task T_10_1052_読めない_10_進は不明(string entryPrice)
     {
         await using var host = await RiskReadStubHost.StartAsync(new RiskReadStubBehavior
         {
-            OpenPositions = Positions(Row(r => r.EntryPrice = "not-a-decimal")),
+            OpenPositions = Positions(Row(r => r.EntryPrice = entryPrice)),
         });
         var (sp, t) = await TransportAsync(host.Address);
         await using (sp)
@@ -229,6 +232,28 @@ public class GrpcRiskReadTests
         var (sp, t) = await TransportAsync(host.Address);
         await using (sp)
             return await Sizing(t, sp).GetContextAsync();
+    }
+
+    // T-10-1713, #1063 D: サイジング文脈の 10 進が decimal の範囲を超えても、例外を判断の外へ出さず**残枠 0 の安全既定**へ倒す。
+    // 以前は OverflowException が FormatException の捕捉を素通りし、判断の外へ出ていた（発注はしない側だが、判断そのものが落ちる）。
+    [Theory]
+    [InlineData("資金")]
+    [InlineData("残枠")]
+    [InlineData("上限")]
+    public async Task T_10_1713_サイジング文脈の桁あふれは例外にせず残枠_0_の安全既定(string where)
+    {
+        var context = await ReadSizingAsync(SizingProto(r =>
+        {
+            switch (where)
+            {
+                case "資金": r.Capital = "79228162514264337593543950336"; break;
+                case "残枠": r.StageCapitalRemaining = "79228162514264337593543950336"; break;
+                default: r.Limits.MaxOrderAmountRatio = "79228162514264337593543950336"; break;
+            }
+        }));
+
+        context.StageCapitalRemaining.Should().Be(0m, where);
+        context.DailyOrderRemaining.Should().Be(0m, where);
     }
 
     // 🔴 口座を照会できていない（資金・残枠が無い）は**不明のまま**運ぶ。0 と読むと「枠を使い切った」になる。

@@ -196,15 +196,32 @@ public class HttpWatchlistProviderTests
         fallback.Calls.Should().Be(0);
     }
 
-    // T-10-1545: 同じ応答でも定時サイクル用の口は従来どおり寛容に読む（判断対象の決め方は本件で変えない）。
+    // T-10-1545: 同じ応答でも定時サイクル用の口は寛容に読む —— 識別できない行を落とし、読めた行で判断を続ける（一覧ごと捨てない）。
+    // ［2026-09-27 改訂 / #1063 A］T-10-1710: 市場の欠けた行・値域外の市場の行も**落とす**。以前は欠けた市場を日本（列挙の既定値）と読み、
+    // 値域外の番号はそのまま通していた（本試験は `[{"symbol":"AAPL"}]` を日本として読むことを表明していた）。
     [Theory]
-    [InlineData("""[{"symbol":null,"market":1},{"symbol":"MSFT","market":1}]""", "MSFT", Market.UnitedStates)]
-    [InlineData("""[{"symbol":"AAPL"}]""", "AAPL", Market.Japan)]
-    public async Task 定時サイクル用の口は欠けた行を従来どおり寛容に読む(string body, string symbol, Market market)
+    [InlineData("""[{"symbol":null,"market":1},{"symbol":"MSFT","market":1}]""")]
+    [InlineData("""[{"symbol":"AAPL"},{"symbol":"MSFT","market":1}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":null},{"symbol":"MSFT","market":1}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":99},{"symbol":"MSFT","market":1}]""")]
+    public async Task 定時サイクル用の口は識別できない行を落とし読めた行で判断を続ける(string body)
     {
-        var read = await Provider(new StubHandler(HttpStatusCode.OK, body), new CountingFallback()).GetWatchlistAsync();
+        var fallback = new CountingFallback();
 
-        read.Should().Equal(new WatchedSymbol(symbol, market));
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, body), fallback).GetWatchlistAsync();
+
+        read.Should().Equal(new WatchedSymbol("MSFT", Market.UnitedStates));
+        fallback.Calls.Should().Be(0, "読めた行があるので構成の監視銘柄へは倒さない");
+    }
+
+    // T-10-1710: 🔴 市場の欠けた行を日本として判断対象に入れない（米国の銘柄が日本の銘柄に化ける）。全行が欠けていれば判断対象は空。
+    [Fact]
+    public async Task T_10_1710_定時サイクル用の口は市場の欠けた行を日本として読まない()
+    {
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, """[{"symbol":"AAPL"}]"""), new CountingFallback())
+            .GetWatchlistAsync();
+
+        read.Should().BeEmpty();
     }
 
     [Fact]

@@ -185,8 +185,15 @@ internal static class RiskManagementWire
     // 読めない文字列は FormatException（呼び出し元が「応答を解釈できない」へ倒す）。
     internal static decimal? Decimal(bool has, string value) =>
         has && !string.IsNullOrEmpty(value)
-            ? decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture)
+            ? ParseDecimal(value)
             : null;
+
+    // 🔴 #1063 D: 読めない書式も decimal の範囲を超える桁も FormatException にそろえる。`decimal.Parse` の OverflowException のままだと
+    // 呼び出し元の FormatException の捕捉を素通りし、安全既定（不明・残枠 0・既知の値）へ倒れずに例外が外へ出る。
+    internal static decimal ParseDecimal(string value) =>
+        decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new FormatException($"10 進として読めない値です（書式または桁あふれ）: \"{value}\"");
 
     internal static Market? Market(Proto.Market value) => value switch
     {

@@ -140,13 +140,51 @@ public class GrpcStage4ReadsTests
         await using var sp = Compose(host.Address);
         var provider = Watchlist(sp);
 
-        // REST の定時サイクルの読み（HttpWatchlistProvider.ToCycleWatchlist）: 銘柄の無い行は落とし、市場の欠けた行は列挙の既定値。
+        // REST の定時サイクルの読み（HttpWatchlistProvider.ToCycleWatchlist）: 銘柄の無い行も、市場が未指定の行も落とす。
+        // ［2026-09-27 改訂 / #1063 A］以前は市場が未指定の MSFT を日本（列挙の既定値）として読んでいた。
         (await provider.GetWatchlistAsync()).Should().Equal(
             new WatchedSymbol("AAPL", Market.UnitedStates),
-            new WatchedSymbol("7203", Market.Japan),
-            new WatchedSymbol("MSFT", default));
+            new WatchedSymbol("7203", Market.Japan));
         // 🔴 プロンプトの読み: 1 行でも欠けていれば一覧ごと不明（既定値で読むと別の市場の銘柄に化ける。#1041 監査 F1）。
         (await provider.GetAuthoritativeWatchlistAsync()).Should().BeNull();
+    }
+
+    // T-10-1711, #1063 C: 市場の写しを**単独で**確かめる。上の試験は銘柄の無い行も混ぜているので、未指定の市場を日本と読む写しの誤りが
+    // 銘柄の無い行の検査で先に不明へ倒れて隠れる（PR #1062 の監査で変異が生き残った）。欠けているのが市場だけの応答で、
+    // プロンプトの口は一覧ごと不明・定時サイクルの口はその行だけを落とすことを、それぞれ別に表明する。
+    [Theory]
+    [InlineData(MonitorProto.Market.Unspecified)]
+    [InlineData((MonitorProto.Market)9)]
+    public async Task T_10_1711_市場だけが欠けた行はプロンプトでは一覧ごと不明_定時サイクルではその行だけを落とす(MonitorProto.Market market)
+    {
+        await using var host = await Stage4ReadStubHost.StartAsync(new Stage4ReadStubBehavior
+        {
+            Watchlist = Stage4ReadStubBehavior.Returns(Items(
+                Item("AAPL", MonitorProto.Market.UnitedStates),
+                Item("MSFT", market))),
+        });
+        await using var sp = Compose(host.Address);
+        var provider = Watchlist(sp);
+
+        (await provider.GetAuthoritativeWatchlistAsync()).Should().BeNull("市場の欠けた行を日本として読まない");
+        (await provider.GetWatchlistAsync()).Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates));
+    }
+
+    // T-10-1711 の対: 欠けているのが銘柄だけの応答（市場は正しい）でも、プロンプトの口は一覧ごと不明。
+    [Fact]
+    public async Task T_10_1711_銘柄だけが欠けた行はプロンプトでは一覧ごと不明_定時サイクルではその行だけを落とす()
+    {
+        await using var host = await Stage4ReadStubHost.StartAsync(new Stage4ReadStubBehavior
+        {
+            Watchlist = Stage4ReadStubBehavior.Returns(Items(
+                Item("AAPL", MonitorProto.Market.UnitedStates),
+                Item(null, MonitorProto.Market.Japan))),
+        });
+        await using var sp = Compose(host.Address);
+        var provider = Watchlist(sp);
+
+        (await provider.GetAuthoritativeWatchlistAsync()).Should().BeNull();
+        (await provider.GetWatchlistAsync()).Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates));
     }
 
     [Fact]

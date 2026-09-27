@@ -123,5 +123,12 @@ public sealed class GrpcAssumptionsClient(
     internal static decimal FromWire(string? value) =>
         string.IsNullOrEmpty(value)
             ? 0m
-            : decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture);
+            : ParseDecimal(value);
+
+    // 🔴 #1063 D: 読めない書式も decimal の範囲を超える桁も FormatException にそろえる。`decimal.Parse` の OverflowException のままだと
+    // 呼び出し元の FormatException の捕捉を素通りし、安全既定（既知の値または既定）へ倒れずに例外が外へ出る。
+    internal static decimal ParseDecimal(string value) =>
+        decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new FormatException($"10 進として読めない値です（書式または桁あふれ）: \"{value}\"");
 }
