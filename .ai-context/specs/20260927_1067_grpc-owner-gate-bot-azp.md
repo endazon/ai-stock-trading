@@ -74,6 +74,11 @@ gRPC 面 6 つの門 `OwnerOrService` はロールだけを見る。ボットの
 | T-10-1725 | 6 面の gRPC 試験（本物の `Program.cs`） | 否定の試験（9 通りの azp）・陽性対照（ボット・s2s）・同じサービスの REST |
 | T-10-1726 | PlatformShim.Tests `GrpcOwnerGateWiringTests` | 既定＝realm・helm・compose の一致 |
 
+## 検証の結果（2026-09-27）
+
+- build 警告の増加なし・`dotnet test` 全プロジェクト緑（IntegrationTests の失敗 11 件はすべて `DockerUnavailableException`）・`dotnet format --verify-no-changes` exit 0・`REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` 477 件 pass・trace-blocks / proto-contracts / reading-budget / knowledge-graph / test-traceability / cross-repo-refs / plan-id-qualification / doc-links / adr-index-sync / commit-messages が exit 0
+- 変異 10 件すべて赤（一覧は `docs/tests/FR-10_risk-controls-tests.md` の本件の節）
+
 ## 計画書との差異
 
 なし。ADR-0047 フォローアップ 3（IADR-0284 の段 5 の行と段 6 の範囲の改訂）は段 5 の着手時に行う（本 PR は決定 3 の門だけ）。
