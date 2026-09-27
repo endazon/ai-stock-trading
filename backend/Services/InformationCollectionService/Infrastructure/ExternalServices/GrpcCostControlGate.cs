@@ -27,8 +27,9 @@ public sealed class GrpcCostControlGate(CostControlGrpcTransport transport, ILog
             return HttpCostControlGate.Map(
                 CostControlWire.IsHalted(response), CostControlWire.IntervalMultiplier(response), logger);
         }
-        catch (FormatException ex)
+        catch (Exception ex) when (ex is FormatException or OverflowException)
         {
+            // 読めない書式・decimal の範囲を超える桁は、どちらも不正応答として Normal へ倒す（REST の不正応答と同じ向き）。
             logger.LogWarning(ex, "費用統制の gRPC 応答の倍率を読めません。Normal（停止せず）に倒します。");
             return CostControlGate.Normal;
         }

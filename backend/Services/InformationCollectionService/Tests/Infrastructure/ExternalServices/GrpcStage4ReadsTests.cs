@@ -127,6 +127,7 @@ public class GrpcStage4ReadsTests
         { "倍率の非正は 1×", false, "0", false, 1m },
         { "間隔延長は 2×", false, "2", false, 2m },
         { "読めない倍率は Normal", false, "two", false, 1m },
+        { "桁あふれの倍率は Normal", false, "79228162514264337593543950336", false, 1m },
     };
 
     [Theory]
