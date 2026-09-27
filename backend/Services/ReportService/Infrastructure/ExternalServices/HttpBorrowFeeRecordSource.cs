@@ -22,18 +22,24 @@ public sealed class HttpBorrowFeeRecordSource(
 {
     private static JsonSerializerOptions DetailOptions => AuditDetailJson.Options;
 
-    private static readonly string[] WantedTypes =
+    internal static readonly string[] WantedTypes =
     [
         nameof(BorrowFeeAccrued),
         nameof(BorrowFeeAccrualUnavailable),
     ];
+
+    // NFR, IADR-0445 決定 4, #1059 (#753): 照会の窓・引く種別・記録の解釈は gRPC 実装（Grpc*）と共有する（`internal static`）。
+    // 輸送を差し替えても引く範囲と読み方が変わらないように、ここを唯一の定義にする。
+    /// <summary>照会の窓（JST の暦日 → 半開区間 [from 00:00 JST, to+1 日 00:00 JST)）。</summary>
+    internal static (DateTimeOffset From, DateTimeOffset To) Window(DateOnly fromInclusive, DateOnly toInclusive) =>
+        AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
 
     public async Task<BorrowFeeRecord?> GetBorrowFeesAsync(
         DateOnly fromInclusive,
         DateOnly toInclusive,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
+        var (from, to) = Window(fromInclusive, toInclusive);
         var path = "/audit/events/by-type"
             + $"?from={Uri.EscapeDataString(from.ToString("o"))}"
             + $"&to={Uri.EscapeDataString(to.ToString("o"))}"
@@ -53,7 +59,7 @@ public sealed class HttpBorrowFeeRecordSource(
             }
 
             var entries = await response.Content
-                .ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(cancellationToken)
+                .ReadFromJsonAsync<IReadOnlyList<AuditLedgerEntry>>(cancellationToken)
                 .ConfigureAwait(false);
 
             if (entries is null)
@@ -62,7 +68,7 @@ public sealed class HttpBorrowFeeRecordSource(
                 return null;
             }
 
-            return Build(entries);
+            return Build(entries, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -80,7 +86,7 @@ public sealed class HttpBorrowFeeRecordSource(
         }
     }
 
-    private BorrowFeeRecord Build(IReadOnlyList<AuditEntryDto> entries)
+    internal static BorrowFeeRecord Build(IReadOnlyList<AuditLedgerEntry> entries, ILogger logger)
     {
         var accruals = new List<BorrowFeeAccrued>();
         var unavailable = new List<BorrowFeeAccrualUnavailable>();
@@ -90,10 +96,10 @@ public sealed class HttpBorrowFeeRecordSource(
             switch (e.EventType)
             {
                 case nameof(BorrowFeeAccrued):
-                    Add(accruals, e);
+                    Add(accruals, e, logger);
                     break;
                 case nameof(BorrowFeeAccrualUnavailable):
-                    Add(unavailable, e);
+                    Add(unavailable, e, logger);
                     break;
                 default:
                     logger.LogWarning("要求していない監査種別が返りました（{EventType}）。無視します。", e.EventType);
@@ -104,7 +110,7 @@ public sealed class HttpBorrowFeeRecordSource(
         return new BorrowFeeRecord(accruals, unavailable);
     }
 
-    private void Add<T>(List<T> into, AuditEntryDto entry)
+    private static void Add<T>(List<T> into, AuditLedgerEntry entry, ILogger logger)
     {
         try
         {
@@ -123,6 +129,4 @@ public sealed class HttpBorrowFeeRecordSource(
                 entry.EventType, entry.Id);
         }
     }
-
-    private sealed record AuditEntryDto(Guid Id, string EventType, string Detail);
 }

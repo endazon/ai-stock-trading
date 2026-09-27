@@ -33,19 +33,25 @@ public sealed class HttpLlmUsageRecordSource(
     // 発生源はスクリーニング層（取引判断サービス）にあり、本 PR の範囲外である。
     // **ここへ推測で種別名を足さない**——存在しない種別を要求すると台帳は 0 件を返し、
     // それは「縮退が無かった」ではなく「そもそも記録されていない」である。**未供給として描く。**
-    private static readonly string[] WantedTypes =
+    internal static readonly string[] WantedTypes =
     [
         nameof(LlmCostIncurred),
         nameof(LlmFallbackFired),
         nameof(TradeDecisionSkipped),
     ];
 
+    // NFR, IADR-0445 決定 4, #1059 (#753): 照会の窓・引く種別・記録の解釈は gRPC 実装（Grpc*）と共有する（`internal static`）。
+    // 輸送を差し替えても引く範囲と読み方が変わらないように、ここを唯一の定義にする。
+    /// <summary>照会の窓（JST の暦日 → 半開区間 [from 00:00 JST, to+1 日 00:00 JST)）。</summary>
+    internal static (DateTimeOffset From, DateTimeOffset To) Window(DateOnly fromInclusive, DateOnly toInclusive) =>
+        AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
+
     public async Task<LlmUsageRecord?> GetUsageAsync(
         DateOnly fromInclusive,
         DateOnly toInclusive,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
+        var (from, to) = Window(fromInclusive, toInclusive);
         var path = "/audit/events/by-type"
             + $"?from={Uri.EscapeDataString(from.ToString("o"))}"
             + $"&to={Uri.EscapeDataString(to.ToString("o"))}"
@@ -65,7 +71,7 @@ public sealed class HttpLlmUsageRecordSource(
             }
 
             var entries = await response.Content
-                .ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(cancellationToken)
+                .ReadFromJsonAsync<IReadOnlyList<AuditLedgerEntry>>(cancellationToken)
                 .ConfigureAwait(false);
 
             if (entries is null)
@@ -74,7 +80,7 @@ public sealed class HttpLlmUsageRecordSource(
                 return null;
             }
 
-            return Build(entries);
+            return Build(entries, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -93,7 +99,7 @@ public sealed class HttpLlmUsageRecordSource(
     }
 
     // 壊れた 1 件で期間全体を落とさない（読めなかった記録は捨ててログへ残す＝黙って捨てない）。
-    private LlmUsageRecord Build(IReadOnlyList<AuditEntryDto> entries)
+    internal static LlmUsageRecord Build(IReadOnlyList<AuditLedgerEntry> entries, ILogger logger)
     {
         var costs = new List<LlmCostIncurred>();
         var fallbacks = new List<LlmFallbackFired>();
@@ -104,13 +110,13 @@ public sealed class HttpLlmUsageRecordSource(
             switch (e.EventType)
             {
                 case nameof(LlmCostIncurred):
-                    Add(costs, e);
+                    Add(costs, e, logger);
                     break;
                 case nameof(LlmFallbackFired):
-                    Add(fallbacks, e);
+                    Add(fallbacks, e, logger);
                     break;
                 case nameof(TradeDecisionSkipped):
-                    Add(skips, e);
+                    Add(skips, e, logger);
                     break;
                 default:
                     logger.LogWarning("要求していない監査種別が返りました（{EventType}）。無視します。", e.EventType);
@@ -122,7 +128,7 @@ public sealed class HttpLlmUsageRecordSource(
         return new LlmUsageRecord(costs, fallbacks, skips, ScreeningDegradation: null);
     }
 
-    private void Add<T>(List<T> into, AuditEntryDto entry)
+    private static void Add<T>(List<T> into, AuditLedgerEntry entry, ILogger logger)
     {
         try
         {
@@ -141,6 +147,4 @@ public sealed class HttpLlmUsageRecordSource(
                 entry.EventType, entry.Id);
         }
     }
-
-    private sealed record AuditEntryDto(Guid Id, string EventType, string Detail);
 }

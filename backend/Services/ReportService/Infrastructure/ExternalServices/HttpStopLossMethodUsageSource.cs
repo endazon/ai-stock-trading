@@ -23,7 +23,13 @@ public sealed class HttpStopLossMethodUsageSource(
     private static JsonSerializerOptions DetailOptions => AuditDetailJson.Options;
 
     // 引く種別。**イベント型名がそのまま台帳の EventType である**（AuditEntryFactory が nameof で書く）。
-    private static readonly string[] WantedTypes = [nameof(OrderApproved)];
+    internal static readonly string[] WantedTypes = [nameof(OrderApproved)];
+
+    // NFR, IADR-0445 決定 4, #1059 (#753): 照会の窓・引く種別・記録の解釈は gRPC 実装（Grpc*）と共有する（`internal static`）。
+    // 輸送を差し替えても引く範囲と読み方が変わらないように、ここを唯一の定義にする。
+    /// <summary>照会の窓（JST の暦日 → 半開区間 [from 00:00 JST, to+1 日 00:00 JST)）。</summary>
+    internal static (DateTimeOffset From, DateTimeOffset To) Window(DateOnly fromInclusive, DateOnly toInclusive) =>
+        AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
 
     public async Task<StopLossMethodUsage?> GetUsageAsync(
         DateOnly fromInclusive,
@@ -31,7 +37,7 @@ public sealed class HttpStopLossMethodUsageSource(
         CancellationToken cancellationToken = default)
     {
         // 🔴 半開区間 [from 00:00 JST, to+1 日 00:00 JST)。作り方は AuditPeriodRange に集約してある。
-        var (from, to) = AuditPeriodRange.JstHalfOpen(fromInclusive, toInclusive);
+        var (from, to) = Window(fromInclusive, toInclusive);
         var path = "/audit/events/by-type"
             + $"?from={Uri.EscapeDataString(from.ToString("o"))}"
             + $"&to={Uri.EscapeDataString(to.ToString("o"))}"
@@ -51,7 +57,7 @@ public sealed class HttpStopLossMethodUsageSource(
             }
 
             var entries = await response.Content
-                .ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(cancellationToken)
+                .ReadFromJsonAsync<IReadOnlyList<AuditLedgerEntry>>(cancellationToken)
                 .ConfigureAwait(false);
 
             if (entries is null)
@@ -60,7 +66,7 @@ public sealed class HttpStopLossMethodUsageSource(
                 return null;
             }
 
-            return Build(entries);
+            return Build(entries, logger);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -80,7 +86,7 @@ public sealed class HttpStopLossMethodUsageSource(
 
     // 台帳の記録を承認へ戻して数える。**壊れた 1 件で期間全体を落とさない**——読めなかった記録は件数から除き、
     // その数を別に返す（日報が「復元できなかった承認 N 件」と書く。**黙って落とさない**）。
-    private StopLossMethodUsage Build(IReadOnlyList<AuditEntryDto> entries)
+    internal static StopLossMethodUsage Build(IReadOnlyList<AuditLedgerEntry> entries, ILogger logger)
     {
         var approvals = new List<OrderApproved>();
         var unreadable = 0;
@@ -115,7 +121,4 @@ public sealed class HttpStopLossMethodUsageSource(
 
         return StopLossMethodUsage.From(approvals, unreadable);
     }
-
-    // 監査台帳の応答の受け皿。**必要な 3 項目だけ**を受ける。
-    private sealed record AuditEntryDto(Guid Id, string EventType, string Detail);
 }
