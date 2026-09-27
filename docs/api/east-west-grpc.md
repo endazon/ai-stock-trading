@@ -3,15 +3,15 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-09-25
+updated: 2026-09-27
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21]
+ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16]
 adrs: [ADR-0001, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read]
-issues: [#526, #584, #745, #753, #997]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read]
+issues: [#526, #584, #745, #753, #997, #1059]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -26,7 +26,7 @@ issues: [#526, #584, #745, #753, #997]
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
 - **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面・§5）と
-  **リスク管理の読み取り**（§6）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
+  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
   **並走中の正は REST** であり、gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
@@ -209,6 +209,58 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 - チャネルは呼び出し元の輸送が所有する（同じサービスの別の面が引く型と衝突させない）。
 - 報告書は REST の依存先の門と観測を gRPC でも同じに行う —— 資格情報が整っているのにトークンを取れなければ**送信しない**、
   失敗は HTTP 相当の状態コードへ写して REST と同じ判定で一過性／恒常に分けて記録する（依存先の名前は REST と同じ `risk-ledger`）。
+
+## 7. 面: 監査台帳の読み取り（`aistocktrading.audit.v1.AuditEventsRead`）
+
+- 概要: 報告書が、構成 `Audit:Grpc`（例 `http://audit-service:8081`）があるときだけ gRPC で照会し、無ければ REST
+  `GET /audit/events/by-type` で照会する。**並走中の正は REST。** 呼び出し元は報告書の 6 つの供給元（為替の情報源・LLM 利用実績・
+  借株料・損切りの実行機構の承認・同じく解決結果・判断根拠）で、すべて同じ rpc を使う。
+- 認可: REST の当該エンドポイントと同じ（利用者またはサービス）。同じ監査台帳の利用者専用の照会 2 本（相関 ID・直近）は gRPC に出さない
+  （サービス間の呼び出し元が無い）。書き込みは非同期のイベント購読であり、本書の対象外。
+- 評価器: REST と**同じ**ストアと**同じ**種別の解析を呼ぶ（repeated の種別はカンマで連結して REST と同じ解析へ渡す）。
+- 運ぶ項目: 報告書が読む 3 項目（id・種別・本文）だけ。本文はイベント全量の JSON を書き手の直列化設定のまま運ぶ。
+
+| rpc | 対応する REST | 取得できないときの呼び出し元の扱い |
+| --- | --- | --- |
+| `GetEventsByType` | `GET /audit/events/by-type?from&to&types` | 未供給（「照会できませんでした」。空＝「事象なし」へ倒さない） |
+
+リクエスト（`GetEventsByTypeRequest`）:
+
+| 名前 | 型 | 説明 |
+| --- | --- | --- |
+| `from` | string | 期間の始端（含む）。往復書式（オフセットを保つ） |
+| `to` | string | 期間の終端（**含まない**。半開区間） |
+| `event_types` | repeated string | 引く種別（イベント型名）。空・空白の要素は無視。🔴 名前を `types` にしない（C# の生成で入れ子の型の置き場 `Types` と衝突し `Types_` に化ける） |
+
+レスポンス（`GetEventsByTypeResponse`）: `records`（`LedgerRecord` の一覧・発生時刻の昇順・件数の上限なし）。
+`LedgerRecord` は `id`（GUID の `D` 書式）・`event_type`・`detail` の 3 つで、**すべて `optional`**。
+
+エラー:
+
+| gRPC status | 条件 | 呼び出し側の対応 |
+| --- | --- | --- |
+| `UNAUTHENTICATED` / `PERMISSION_DENIED` | サービストークン無し／ロール不足 | 未供給。**再試行しない** |
+| `INVALID_ARGUMENT` | 期間の欠落・書式違い・逆順・空区間、種別が 1 つも無い（REST の 400） | 同上 |
+| `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 同上。**再試行の対象** |
+
+### 🔴 欠けた記録の扱い
+
+受け手は、id・種別・本文のどれかが欠けた記録（読めない id・空の種別を含む）が 1 件でもあれば、**応答全体を未供給**にする。
+既定値（空の GUID・空文字）で記録を作らず、その 1 件を黙って捨てもしない —— 種別の欠けた記録を捨てると、1 件しか無い期間が
+「事象なし」に化ける。**空の応答は「事象なし」**であり未供給と区別する。本文が JSON として読めない 1 件は REST と同じ解釈で扱う。
+照会の窓・引く種別・記録の読み方は REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型名と同じにしない。
+
+### 呼び出し元の設定（報告書）
+
+| 構成キー | 既定 | 意味 |
+| --- | --- | --- |
+| `Audit:Grpc` | 未設定（＝REST） | gRPC の宛先。**宣言してあるのに使えない値は起動時に落とす**。宣言があれば `Audit:BaseUrl` より優先 |
+| `Audit:GrpcTimeoutSeconds` | 10 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値 |
+| `Audit:GrpcMaxAttempts` | 1 | 試行回数。**既定は再試行しない** |
+
+- 報告書は REST の依存先の門と観測を gRPC でも同じに行う（依存先の名前は REST と同じ `audit-ledger`）。§6 の輸送と、門・観測・deadline・
+  再試行の規則を 1 つで共有する。
+- helm: 既定では `services.audit.grpcPort` も `Audit__Grpc` も置かない（既定の描画は変わらない）。有効化の手順は values.yaml のコメントにある。
 
 ## シーケンス
 

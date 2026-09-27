@@ -16,9 +16,10 @@ related_ids:
   - IADR-0264
   - IADR-0328
   - IADR-0427
+  - IADR-0445
 author: endazon (with Claude Code)
 created: 2026-09-03
-updated: 2026-09-25
+updated: 2026-09-27
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0029_grpc-rest-usage-criteria.md
   - planning:projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md
@@ -232,6 +233,17 @@ session-uptime｜提供側 1・消費側 3 サービス」）の読み方だけ�
   属するものも見えた —— 報告書の `HttpStopLossMethodUsageSource`（Audit `GET /audit/events/by-type`・#823。段 3）、
   通知の `HttpPositionDriftAdoptionController`（Risk `POST /risk-controls/position-drift/adopt`・OwnerOnly・#871。段 5）。
   **各段は着手時に母集合を引き直す**（本表を転記しない）。
+
+## ［2026-09-27 追記 / #1059］段 3（Audit）を実装した。決定 5 の段 3 行の「Report 4 本」は 6 本と読む
+
+段 3 を #1059 として起票し実装した（具体の置き方は [IADR-0445](IADR-0445_audit-read-grpc-stage3.md)）。**決定 1・2・4 と、決定 5 の
+段の順序・切り方は変わらない。** 決定 5 の段 3 行（「Audit `events/by-type`（Report 4 本）｜1 PR」）の読み方だけを、着手時の実測で確定した。
+
+- **同じルートの呼び出し元は報告書に 6 クラスある。** 射程表（2026-09-03）の 4 本に、表の後に追加された `HttpStopLossMethodUsageSource`
+  （#823。上の 2026-09-25 追記が段 3 と名指し）と `HttpStopLossMethodResolutionSource`（#1002）を加えて段 3 で移した。
+- **Audit への書き込みは段 3 に無い。** REST の書き込み口は 0 本で、書き込みは Wolverine（RabbitMQ）の購読である（同期の east-west ではない）。
+  REST の OwnerOnly の 2 本（相関 ID・直近）にもサービス間の呼び出し元は無い。
+- 報告書では段 2 と段 3 の 2 つの輸送が、門・観測・deadline・再試行の規則を 1 つ（`ReportGrpcCalls`）で共有する（IADR-0445 決定 5）。
 
 ## 関連
 

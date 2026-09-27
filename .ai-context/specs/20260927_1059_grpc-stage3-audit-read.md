@@ -1,7 +1,7 @@
 ---
 title: east-west gRPC の段 3 —— Audit の events/by-type（報告書の 6 つの供給元）を生成クライアントへ寄せ、REST と並走させる
 type: spec
-status: in-progress
+status: done
 related_ids: [NFR, FR-06, FR-10, FR-11, FR-16, IADR-0199, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, MSP:ADR-0029, MSP:ADR-0075]
 author: endazon (with Claude Code)
 created: 2026-09-27
@@ -85,17 +85,17 @@ plan_refs:
 
 ## 受け入れ基準（#1059）
 
-- [ ] proto と生成クライアント・サーバ実装。AuditService に `MapGrpcService` 1 件。REST 面は不変
-- [ ] 同値: 本物の Program.cs で REST と gRPC が同じ記録を返し、入力の誤りも同じ扱い
-- [ ] 否定形: 資格情報なし `UNAUTHENTICATED`・ロール不足 `PERMISSION_DENIED`
-- [ ] ReportService の 6 つの供給元が `Audit:Grpc` の有無で切り替え、既定は REST。**本番の Program.cs から**解決して実際に呼ぶ
-- [ ] 原則 A: 欠けた記録で応答全体が未供給・取得失敗も未供給
-- [ ] 門と観測が gRPC でも働く
-- [ ] timeout / retry の陽性・陰性対照（実 Kestrel h2c・127.0.0.1）
-- [ ] 変異注入の実測
-- [ ] proto 互換検査器の baseline 更新と陰性対照
-- [ ] helm の既定描画と values-local の描画が不変（`helm template` の差分）
-- [ ] `dotnet build` / `dotnet test` / `dotnet format --verify-no-changes` と文書系検査器が通る
+- [x] proto と生成クライアント・サーバ実装。AuditService に `MapGrpcService` 1 件。REST 面は不変
+- [x] 同値: 本物の Program.cs で REST と gRPC が同じ記録を返し、入力の誤りも同じ扱い
+- [x] 否定形: 資格情報なし `UNAUTHENTICATED`・ロール不足 `PERMISSION_DENIED`
+- [x] ReportService の 6 つの供給元が `Audit:Grpc` の有無で切り替え、既定は REST。**本番の Program.cs から**解決して実際に呼ぶ
+- [x] 原則 A: 欠けた記録で応答全体が未供給・取得失敗も未供給
+- [x] 門と観測が gRPC でも働く
+- [x] timeout / retry の陽性・陰性対照（実 Kestrel h2c・127.0.0.1）
+- [x] 変異注入の実測
+- [x] proto 互換検査器の baseline 更新と陰性対照
+- [x] helm の既定描画と values-local の描画が不変（`helm template` の差分）
+- [x] `dotnet build` / `dotnet test` / `dotnet format --verify-no-changes` と文書系検査器が通る
 
 ## テスト方針（テスト ID は T-10-1670〜T-10-1677。develop の最大 T-10-1652 から間を空けた新しい区画）
 
@@ -121,3 +121,25 @@ plan_refs:
 - 稼働クラスタでの h2c 往復は未実測（段 1・段 2 と同じ。既定を変えないため）。そもそも稼働中の配備は `Audit__BaseUrl` も
   構成していない（軸 2）。
 - 実効構成の自己申告（introspection）は REST の構成しか見ない（段 1・段 2 と同じ既存の欠落。段 6 までに別 issue）。
+
+## 着手後に判明した制約（規則 10）
+
+| 判明したこと | 実測 | 扱い |
+| --- | --- | --- |
+| 要求の種別のフィールドを `types` と名付けると、protoc の C# 生成が入れ子の型の置き場 `Types` と衝突させ、プロパティを `Types_` に改名する | 初回のビルドが `GetEventsByTypeRequest に 'Types' の定義が含まれておらず` で赤 | `event_types` に改名し、proto にコメントで残した（IADR-0445 決定 3） |
+| 稼働中の配備（helm の values.yaml・values-local.yaml）は REST の宛先 `Audit__BaseUrl` も構成していない | 軸 2 の走査で 0 件 | 6 つの供給元は稼働中も未供給のまま。本 PR は既定を変えない方針なので構成を足さない（values.yaml にコメントで有効化の手順だけを書いた） |
+| 段 2 の helm の変更は無かった（`RiskManagement__Grpc` も `grpcPort` も既定では置いていない） | `gh pr diff 1003` に `deploy/` が無い | 段 3 も同じく既定描画を変えない。`helm template` の既定・values-local の描画が変更前とバイト等価であることを確かめた（下記） |
+| 報告書では段 2 の輸送が門・観測・deadline・再試行の規則を持っていた | `RiskManagementGrpcTransport.CallAsync` | `ReportGrpcCalls` へ切り出して 2 つの輸送で共有（段 2 の公開面・試験は不変）。IADR-0445 決定 5 |
+| 解決結果の供給元だけ照会の窓が前後 1 日広い | `HttpStopLossMethodResolutionSource`（#1002） | 窓を各アダプタの `Window` として共有（T-10-1677 で REST の要求と突き合わせ、窓を取り違える変異で赤） |
+
+## 検証の記録（2026-09-27）
+
+- `dotnet build backend/backend.slnx`: 0 エラー（警告は既存の NotificationService.Tests の CS0108 1 件のみ）。
+- `dotnet test`: AuditService.Tests 233 合格・ReportService.Tests 1438 合格・Architecture.Tests 188 合格（件数と他のプロジェクトは PR 本文）。
+- `dotnet format backend/backend.slnx --verify-no-changes`: exit 0。
+- `node scripts/check-proto-contracts.js`: `--update` 後 OK（4 ファイル）。陰性対照（`LedgerRecord.detail` の番号を 3 → 9）で
+  `[breaking] 番号が変わった` の NG（書き戻し後 OK）。`--self-test` 42 件 OK。
+- 変異注入 10 件（1 つずつ入れて実行し、コミット済みの版を取り出して書き戻した）はテスト仕様書の本節の表に載せた。
+- helm: `helm template ast deploy/helm/ai-stock-trading`（既定）と `-f values-local.yaml` の描画は変更前後で sha256 が一致
+  （差分 0 行）。陽性対照として `--set services.audit.grpcPort=8081` を与えると Service の `grpc` ポート・`containerPort: 8081`・
+  env `Grpc__Port` だけが増える。稼働中のクラスタ・OpenD には触れていない（描画はローカルのみ）。
