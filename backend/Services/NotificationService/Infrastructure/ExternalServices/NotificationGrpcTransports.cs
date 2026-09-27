@@ -9,9 +9,10 @@ using RiskProto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
 namespace NotificationService.Infrastructure.ExternalServices;
 
-// NFR, FR-14, MSP:ADR-0029, MSP:ADR-0075, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0328, IADR-0449 決定 4, #753:
-// Discord ボットの読み取りの east-west gRPC の**輸送** 3 つ（リスク管理・報告書・市場監視）。構成 `<提供側>:Grpc`（宛先）を宣言したときだけ
-// DI に載り、載っていれば各ポートの工場が `Grpc*` 実装を選ぶ（**既定は REST**）。
+// NFR, FR-14, MSP:ADR-0029, MSP:ADR-0075, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0328, IADR-0449 決定 4, IADR-0450 決定 4, #753:
+// Discord ボットの east-west gRPC の**輸送** 3 つ（リスク管理・報告書・市場監視）。構成 `<提供側>:Grpc`（宛先）を宣言したときだけ
+// DI に載り、載っていれば各ポートの工場が `Grpc*` 実装を選ぶ（**既定は REST**）。宣言すれば、そのポートの読み取りと書き込みの**両方**が gRPC になる
+// （段 5 の後半で書き込みも移した。REST へ黙って落とさない）。
 //
 // 🔴 **資格情報はボットの owner マップ機密クライアントのトークン**（`DiscordOwnerGrpcCredentials`。REST の `AddDiscordOwnerToken` と同じ構成）。
 // ボットのトークンはサービスの身元であり（ADR-0047 決定 1）、手引き §4 の「呼び出し側サービス自身の JWT」にあたる（決定 2）。
@@ -22,10 +23,13 @@ public sealed class RiskManagementGrpcTransport : IDisposable
     /// <summary>gRPC の宛先（例 <c>http://risk-management-service:8081</c>）。**未設定なら REST**。</summary>
     internal const string AddressKey = "RiskManagement:Grpc";
 
-    /// <summary>試行ごとの deadline（秒）。未設定は REST の "risk-pause" / "risk-stage-gate" の HttpClient.Timeout と同値。</summary>
+    /// <summary>
+    /// 試行ごとの deadline（秒）。未設定は REST の "risk-kill-switch" / "risk-pause" / "risk-stage-gate" / "risk-good-faith-violations" /
+    /// "risk-position-drift" の HttpClient.Timeout と同値（読み取りと書き込みで共通）。
+    /// </summary>
     internal const string TimeoutKey = "RiskManagement:GrpcTimeoutSeconds";
 
-    /// <summary>試行回数。未設定は 1（＝再試行しない）。</summary>
+    /// <summary>試行回数（**読み取りだけ**に効く。書き込みは再試行しない＝IADR-0450 決定 4）。未設定は 1（＝再試行しない）。</summary>
     internal const string MaxAttemptsKey = "RiskManagement:GrpcMaxAttempts";
 
     internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
@@ -39,6 +43,7 @@ public sealed class RiskManagementGrpcTransport : IDisposable
         Calls = new NotificationGrpcCalls(timeout, maxAttempts, logger ?? throw new ArgumentNullException(nameof(logger)));
         Read = new RiskProto.RiskControlsRead.RiskControlsReadClient(channel);
         OwnerRead = new RiskProto.RiskControlsOwnerRead.RiskControlsOwnerReadClient(channel);
+        OwnerWrite = new RiskProto.RiskControlsOwnerWrite.RiskControlsOwnerWriteClient(channel);
     }
 
     internal NotificationGrpcCalls Calls { get; }
@@ -49,6 +54,9 @@ public sealed class RiskManagementGrpcTransport : IDisposable
     /// <summary>稼働状態（`GrpcOwnerOnly` の面）。</summary>
     internal RiskProto.RiskControlsOwnerRead.RiskControlsOwnerReadClient OwnerRead { get; }
 
+    /// <summary>kill switch・一時停止/再開・GFV 解除・段階遷移・撤退評価・乖離の取り込み（`GrpcOwnerOnly` の面）。</summary>
+    internal RiskProto.RiskControlsOwnerWrite.RiskControlsOwnerWriteClient OwnerWrite { get; }
+
     public void Dispose() => _channel.Dispose();
 }
 
@@ -57,27 +65,46 @@ public sealed class ReportsGrpcTransport : IDisposable
     /// <summary>gRPC の宛先（例 <c>http://report-service:8081</c>）。**未設定なら REST**。</summary>
     internal const string AddressKey = "Reports:Grpc";
 
-    /// <summary>試行ごとの deadline（秒）。未設定は REST の "report-review" の HttpClient.Timeout と同値。</summary>
+    /// <summary>試行ごとの deadline（秒）。未設定は REST の "report-review" の HttpClient.Timeout と同値（照会・確定・差し戻し）。</summary>
     internal const string TimeoutKey = "Reports:GrpcTimeoutSeconds";
 
+    /// <summary>
+    /// 方針の改訂と入れ替えの適用の内訳の記録の deadline（秒）。未設定は REST の "report-policy-revision" の HttpClient.Timeout（90 秒）と同値
+    /// （LLM の所要時間を見込む。REST では 2 つの書き込みがこのクライアントを共用している）。
+    /// </summary>
+    internal const string PolicyRevisionTimeoutKey = "Reports:GrpcPolicyRevisionTimeoutSeconds";
+
+    /// <summary>試行回数（**読み取りだけ**に効く。書き込みは再試行しない）。</summary>
     internal const string MaxAttemptsKey = "Reports:GrpcMaxAttempts";
 
     // 🔴 入れ替え案の照会は REST では方針の改訂用の 90 秒のクライアントを共用していたが、照会そのものは台帳の読み取りであり
     // LLM を待たない。gRPC ではレビューの照会と同じ 5 秒にする（IADR-0449 決定 4）。
     internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
 
+    internal static readonly TimeSpan DefaultPolicyRevisionTimeout = TimeSpan.FromSeconds(90);
+
     private readonly GrpcChannel _channel;
 
-    public ReportsGrpcTransport(GrpcChannel channel, TimeSpan timeout, int maxAttempts, ILogger<ReportsGrpcTransport> logger)
+    public ReportsGrpcTransport(
+        GrpcChannel channel, TimeSpan timeout, int maxAttempts, ILogger<ReportsGrpcTransport> logger, TimeSpan? policyRevisionTimeout = null)
     {
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
-        Calls = new NotificationGrpcCalls(timeout, maxAttempts, logger ?? throw new ArgumentNullException(nameof(logger)));
+        ArgumentNullException.ThrowIfNull(logger);
+        Calls = new NotificationGrpcCalls(timeout, maxAttempts, logger);
+        PolicyRevisionCalls = new NotificationGrpcCalls(policyRevisionTimeout ?? DefaultPolicyRevisionTimeout, 1, logger);
         OwnerRead = new ReportProto.ReportOwnerRead.ReportOwnerReadClient(channel);
+        OwnerWrite = new ReportProto.ReportOwnerWrite.ReportOwnerWriteClient(channel);
     }
 
+    /// <summary>照会・確定・差し戻しの規則（deadline は <see cref="TimeoutKey"/>）。</summary>
     internal NotificationGrpcCalls Calls { get; }
 
+    /// <summary>方針の改訂・適用の内訳の記録の規則（deadline は <see cref="PolicyRevisionTimeoutKey"/>。書き込みだけなので再試行しない）。</summary>
+    internal NotificationGrpcCalls PolicyRevisionCalls { get; }
+
     internal ReportProto.ReportOwnerRead.ReportOwnerReadClient OwnerRead { get; }
+
+    internal ReportProto.ReportOwnerWrite.ReportOwnerWriteClient OwnerWrite { get; }
 
     public void Dispose() => _channel.Dispose();
 }
@@ -87,9 +114,10 @@ public sealed class MarketMonitorGrpcTransport : IDisposable
     /// <summary>gRPC の宛先（例 <c>http://market-monitor-service:8081</c>）。**未設定なら REST**。</summary>
     internal const string AddressKey = "MarketMonitor:Grpc";
 
-    /// <summary>試行ごとの deadline（秒）。未設定は REST の監視銘柄の名前付き HttpClient の Timeout と同値。</summary>
+    /// <summary>試行ごとの deadline（秒）。未設定は REST の監視銘柄の名前付き HttpClient の Timeout と同値（照会・適用で共通）。</summary>
     internal const string TimeoutKey = "MarketMonitor:GrpcTimeoutSeconds";
 
+    /// <summary>試行回数（**読み取りだけ**に効く。書き込みは再試行しない）。</summary>
     internal const string MaxAttemptsKey = "MarketMonitor:GrpcMaxAttempts";
 
     internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
@@ -101,19 +129,23 @@ public sealed class MarketMonitorGrpcTransport : IDisposable
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
         Calls = new NotificationGrpcCalls(timeout, maxAttempts, logger ?? throw new ArgumentNullException(nameof(logger)));
         Read = new MonitorProto.WatchlistRead.WatchlistReadClient(channel);
+        OwnerWrite = new MonitorProto.WatchlistOwnerWrite.WatchlistOwnerWriteClient(channel);
     }
 
     internal NotificationGrpcCalls Calls { get; }
 
     internal MonitorProto.WatchlistRead.WatchlistReadClient Read { get; }
 
+    /// <summary>入れ替え案の適用（`GrpcOwnerOnly` の面）。</summary>
+    internal MonitorProto.WatchlistOwnerWrite.WatchlistOwnerWriteClient OwnerWrite { get; }
+
     public void Dispose() => _channel.Dispose();
 }
 
-// NFR, IADR-0449 決定 4: 構成から輸送を組む登録点（段 2〜4 の登録点と同じ規則。宣言が無ければ**何もしない**＝既定は REST）。
+// NFR, IADR-0449 決定 4, IADR-0450 決定 4: 構成から輸送を組む登録点（段 2〜4 の登録点と同じ規則。宣言が無ければ**何もしない**＝既定は REST）。
 public static class NotificationGrpcExtensions
 {
-    public static IServiceCollection AddNotificationReadGrpc(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddNotificationGrpc(this IServiceCollection services, IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
@@ -138,8 +170,10 @@ public static class NotificationGrpcExtensions
         {
             var timeout = NotificationGrpcCalls.ReadTimeout(config, ReportsGrpcTransport.TimeoutKey, ReportsGrpcTransport.DefaultTimeout);
             var attempts = NotificationGrpcCalls.ReadMaxAttempts(config, ReportsGrpcTransport.MaxAttemptsKey);
+            var revisionTimeout = NotificationGrpcCalls.ReadTimeout(
+                config, ReportsGrpcTransport.PolicyRevisionTimeoutKey, ReportsGrpcTransport.DefaultPolicyRevisionTimeout);
             services.AddSingleton(sp => new ReportsGrpcTransport(
-                Channel(sp, reports), timeout, attempts, sp.GetRequiredService<ILogger<ReportsGrpcTransport>>()));
+                Channel(sp, reports), timeout, attempts, sp.GetRequiredService<ILogger<ReportsGrpcTransport>>(), revisionTimeout));
         }
 
         if (monitor is not null)

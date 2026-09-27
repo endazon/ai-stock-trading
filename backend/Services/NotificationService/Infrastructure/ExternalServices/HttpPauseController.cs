@@ -54,15 +54,15 @@ public sealed class HttpPauseController(
             if (state is null)
             {
                 logger.LogWarning("取引の{Operation}の応答を解釈できませんでした。", operation);
-                return new PauseResult(false, false, $"取引の{operation}の応答を解釈できませんでした");
+                return new PauseResult(false, false, UnparsableMessage(operation));
             }
 
-            return new PauseResult(true, state.Paused, $"取引を{operation}しました");
+            return new PauseResult(true, state.Paused, SucceededMessage(operation));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("取引の{Operation}がタイムアウトしました。", operation);
-            return new PauseResult(false, false, $"取引の{operation}がタイムアウトしました（状態は不明です）");
+            return new PauseResult(false, false, TimedOutMessage(operation));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -145,6 +145,14 @@ public sealed class HttpPauseController(
     internal const string UnknownDailyOrderCap = "不明（口座を照会できていません）";
 
     private static string OnOff(bool on) => on ? "ON" : "OFF";
+
+    // NFR, IADR-0450 決定 4, #753（段 5）: 一時停止/再開の文言は gRPC 実装（GrpcPauseController）と共有する（輸送を替えても 1 つ）。
+    internal static string SucceededMessage(string operation) => $"取引を{operation}しました";
+
+    internal static string UnparsableMessage(string operation) => $"取引の{operation}の応答を解釈できませんでした";
+
+    // 🔴 書き込みの時間切れは「状態は不明」（停止したかどうかを騙らない）。
+    internal static string TimedOutMessage(string operation) => $"取引の{operation}がタイムアウトしました（状態は不明です）";
 
     // Risk 側 PauseRequest と同形（理由必須）。
     private sealed record PauseRequest(string Reason);

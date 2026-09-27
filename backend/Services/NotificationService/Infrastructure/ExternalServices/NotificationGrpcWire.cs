@@ -144,6 +144,145 @@ internal static class NotificationGrpcWire
         return new HttpMarketMonitorWatchlistController.SymbolView(item.HasSymbol ? item.Symbol : null, Market(item.Market));
     }
 
+    // ---- 段 5 の後半（IADR-0450 決定 4）: 書き込みの応答 → REST の各アダプタと同じ射影 ----
+
+    /// <summary>段階遷移の応答（受理・受理不能）。受理の有無の欠落・合格条件の欠けた項目・未指定の遷移先は解釈できない（<c>null</c>）。</summary>
+    internal static (bool Accepted, int? ToStage, IReadOnlyList<int> RejectionReasons, HttpStageGateController.Stage1GateCriteriaView? Criteria)?
+        ToTransition(RiskProto.StageTransitionApprovalResponse r)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+        if (!r.HasAccepted)
+            return null;
+
+        int? toStage = null;
+        if (r.HasToStage)
+        {
+            if (Stage(r.ToStage) is not { } to)
+                return null;
+            toStage = to;
+        }
+
+        HttpStageGateController.Stage1GateCriteriaView? criteria = null;
+        if (r.Stage1Criteria is { } c)
+        {
+            if (!c.HasTargetTradingDays || !c.HasMinimumTradeCount || !c.HasMaximumTradingDays || !c.HasBelowStatisticalBasis)
+                return null;
+            criteria = new HttpStageGateController.Stage1GateCriteriaView(
+                c.TargetTradingDays, c.MinimumTradeCount, c.MaximumTradingDays, c.BelowStatisticalBasis);
+        }
+
+        return (r.Accepted, toStage, [.. r.RejectionReasons.Select(Criterion)], criteria);
+    }
+
+    /// <summary>撤退評価（REST の WithdrawalAssessment と同じ射影）。成立・停止の真偽の欠落、未指定の提案段階は解釈できない。</summary>
+    internal static HttpStageGateController.WithdrawalAssessmentView? ToWithdrawalView(RiskProto.WithdrawalAssessmentRecord? w)
+    {
+        if (w is not { HasTriggered: true, HasHaltNewEntries: true })
+            return null;
+
+        int? proposed = null;
+        if (w.HasProposedStage)
+        {
+            if (Stage(w.ProposedStage) is not { } p)
+                return null;
+            proposed = p;
+        }
+
+        return new HttpStageGateController.WithdrawalAssessmentView(
+            w.Triggered, w.HasReason ? Reason(w.Reason) : null, w.HaltNewEntries, proposed);
+    }
+
+    /// <summary>乖離の取り込みの応答（REST の AdoptionView と同じ射影）。数量・識別子の欠落は解釈できない（0 と読まない）。</summary>
+    internal static HttpPositionDriftAdoptionController.AdoptionView? ToAdoptionView(RiskProto.DriftAdoptionCommandResponse r)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+        if (!r.HasAdoptionId || !Guid.TryParse(r.AdoptionId, out var id)
+            || !r.HasLedgerQuantityBefore || !r.HasLedgerQuantityAfter || !r.HasBrokerQuantity || !r.HasRealizedPnlRecorded)
+            return null;
+
+        DateTimeOffset? observedAt = null;
+        if (r.HasObservedAt)
+        {
+            if (!DateTimeOffset.TryParse(r.ObservedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var at))
+                return null;
+            observedAt = at;
+        }
+
+        return new HttpPositionDriftAdoptionController.AdoptionView(
+            id, r.HasSymbol ? r.Symbol : null, Market(r.Market), r.LedgerQuantityBefore, r.LedgerQuantityAfter, r.BrokerQuantity,
+            observedAt, r.RealizedPnlRecorded, r.HasActor ? r.Actor : null);
+    }
+
+    /// <summary>方針の改訂の応答（REST の PolicyRevisionResponseView と同じ射影）。真偽の欠落は解釈できない（<c>null</c> ＝「不明」へ倒れる）。</summary>
+    internal static HttpPolicyRevisionController.PolicyRevisionResponseView? ToRevisionView(ReportProto.PolicyRevisionProposalResponse r)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+        if (!r.HasVersion || !r.HasCreated || !r.HasPresented)
+            return null;
+
+        return new HttpPolicyRevisionController.PolicyRevisionResponseView(
+            r.HasPeriodKey ? r.PeriodKey : null,
+            r.Version,
+            r.Created,
+            r.Presented,
+            r.HasMessage ? r.Message : null,
+            r.HasPolicySummary ? r.PolicySummary : null,
+            [.. r.WatchlistChanges.Select(c => new HttpPolicyRevisionController.WatchlistChangeItem(
+                c.HasAction ? c.Action : null, c.HasSymbol ? c.Symbol : null, c.HasReason ? c.Reason : null))],
+            r.HasRationale ? r.Rationale : null);
+    }
+
+    /// <summary>入れ替え案の適用の応答（REST の ApplyResponseView と同じ射影）。適用の真偽の欠落は行ごと欠けた扱い（一覧ごと解釈できない）。</summary>
+    internal static HttpMarketMonitorWatchlistController.ApplyResponseView ToApplyView(MonitorProto.WatchlistProposalApplicationResponse r)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+        return new HttpMarketMonitorWatchlistController.ApplyResponseView(
+            [.. r.Items.Select(i => i.HasApplied
+                ? new HttpMarketMonitorWatchlistController.ItemView(
+                    i.HasAction ? i.Action : null, i.HasSymbol ? i.Symbol : null, i.Applied, i.HasSkipReason ? i.SkipReason : null)
+                : null)],
+            r.HasActor ? r.Actor : null,
+            r.Estimate is { HasEstimatedDailyRequests: true, HasExceeds: true } e
+                ? new HttpMarketMonitorWatchlistController.EstimateView(
+                    e.EstimatedDailyRequests, e.HasProvisionalDailyLimit ? e.ProvisionalDailyLimit : null, e.Exceeds)
+                : null);
+    }
+
+    // ---- 要求（C# → 線上。名前で写す） ----
+
+    internal static RiskProto.TradingStage ToProtoStage(int stage) => stage switch
+    {
+        0 => RiskProto.TradingStage.Stage0Verification,
+        1 => RiskProto.TradingStage.Stage1Simulate,
+        2 => RiskProto.TradingStage.Stage2MinimalLive,
+        3 => RiskProto.TradingStage.Stage3ScaledLive,
+        // 範囲外は未指定（REST の範囲外と同じく提供側が INVALID_ARGUMENT にする）。
+        _ => RiskProto.TradingStage.Unspecified,
+    };
+
+    internal static RiskProto.Market ToRiskMarket(Market market) => market switch
+    {
+        AiStockTrading.Shared.Contracts.Trading.Market.Japan => RiskProto.Market.Japan,
+        AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates => RiskProto.Market.UnitedStates,
+        _ => RiskProto.Market.Unspecified,
+    };
+
+    // 監視銘柄の市場の名前（"Japan" / "UnitedStates"）→ 線上。読めない名前は未指定（REST の市場の欠落と同じく提供側が 400 にする）。
+    internal static MonitorProto.Market ToMonitorMarket(string? market) =>
+        Enum.TryParse<Market>(market, out var m) ? m switch
+        {
+            AiStockTrading.Shared.Contracts.Trading.Market.Japan => MonitorProto.Market.Japan,
+            AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates => MonitorProto.Market.UnitedStates,
+            _ => MonitorProto.Market.Unspecified,
+        } : MonitorProto.Market.Unspecified;
+
+    internal static Market? Market(RiskProto.Market value) => value switch
+    {
+        RiskProto.Market.Japan => AiStockTrading.Shared.Contracts.Trading.Market.Japan,
+        RiskProto.Market.UnitedStates => AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates,
+        _ => null,
+    };
+
     // ---- 列挙（名前で写す） ----
 
     // TradingStage（C# 0〜3）。未指定・未知は null（段階は表示の主語であり、「不明」を既定の Stage 0 と読まない）。

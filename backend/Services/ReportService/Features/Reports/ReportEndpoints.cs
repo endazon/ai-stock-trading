@@ -41,21 +41,9 @@ internal static class ReportEndpoints
                 {
                     return await next(ctx);
                 }
-                catch (ArgumentException e)
+                catch (Exception e) when (MapException(e) is { } mapped)
                 {
-                    return Results.BadRequest(new { error = e.Message });
-                }
-                catch (ReportConcurrencyException e)
-                {
-                    return Results.Conflict(new { error = e.Message });
-                }
-                catch (InvalidOperationException e)
-                {
-                    return Results.Conflict(new { error = e.Message });
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    return Results.Conflict(new { error = "報告書が他の更新と競合しました。最新を取得して再試行してください。" });
+                    return mapped;
                 }
             });
 
@@ -96,6 +84,17 @@ internal static class ReportEndpoints
 
         return app;
     }
+
+    // NFR, IADR-0450, #753（段 5）: 群のフィルタの例外の写し。gRPC 面（ReportOwnerWriteGrpcService）も同じ写しを使う（2 箇所に書かない）。
+    // 写さない例外は null（そのまま上げる）。各型は互いに派生しないので、分類は元の catch の並びと同じ結果になる。
+    internal static IResult? MapException(Exception e) => e switch
+    {
+        ArgumentException => Results.BadRequest(new { error = e.Message }),
+        ReportConcurrencyException => Results.Conflict(new { error = e.Message }),
+        DbUpdateConcurrencyException => Results.Conflict(new { error = "報告書が他の更新と競合しました。最新を取得して再試行してください。" }),
+        InvalidOperationException => Results.Conflict(new { error = e.Message }),
+        _ => null,
+    };
 
     // NFR, IADR-0289 決定3: 書き込み系の複数操作（present / request-changes）が使うため 2 段目に残す。
     // #774, IADR-0240 決定11: **confirm はここを使わない**（確定者は発行・監査されるため

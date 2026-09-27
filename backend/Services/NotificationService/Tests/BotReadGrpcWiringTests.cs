@@ -135,7 +135,7 @@ public class BotReadGrpcWiringTests
     }
 
     // `  <name>:` から次の同じ深さのキーまで（なければ空）。
-    private static string ServiceBlock(string text, string name)
+    internal static string ServiceBlock(string text, string name)
     {
         var lines = text.Replace("\r\n", "\n").Split('\n');
         var start = Array.IndexOf(lines, $"  {name}:");
@@ -146,7 +146,7 @@ public class BotReadGrpcWiringTests
         return string.Join('\n', lines[start..end]);
     }
 
-    private static string RepoRoot()
+    internal static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
@@ -155,7 +155,7 @@ public class BotReadGrpcWiringTests
         throw new InvalidOperationException("リポジトリの根（backend/backend.slnx）が見つからない。");
     }
 
-    private sealed class Factory(Dictionary<string, string> settings) : WebApplicationFactory<Program>
+    internal sealed class Factory(Dictionary<string, string> settings, Action<IServiceCollection>? configure = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -170,7 +170,11 @@ public class BotReadGrpcWiringTests
                 ["Reports:BaseUrl"] = "http://report-rest-must-not-be-used",
                 ["MarketMonitor:BaseUrl"] = "http://monitor-rest-must-not-be-used",
             }));
-            builder.ConfigureServices(services => services.DisableAllExternalWolverineTransports());
+            builder.ConfigureServices(services =>
+            {
+                services.DisableAllExternalWolverineTransports();
+                configure?.Invoke(services);
+            });
         }
     }
 }

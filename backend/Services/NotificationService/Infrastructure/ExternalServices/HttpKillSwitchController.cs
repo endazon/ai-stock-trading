@@ -55,15 +55,15 @@ public sealed class HttpKillSwitchController(
             if (state is null)
             {
                 logger.LogWarning("kill switch の{Operation}の応答を解釈できませんでした。", operation);
-                return new KillSwitchResult(false, false, $"kill switch の{operation}の応答を解釈できませんでした");
+                return new KillSwitchResult(false, false, UnparsableMessage(operation));
             }
 
-            return new KillSwitchResult(true, state.Engaged, $"kill switch を{operation}しました");
+            return new KillSwitchResult(true, state.Engaged, SucceededMessage(operation));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("kill switch の{Operation}がタイムアウトしました。", operation);
-            return new KillSwitchResult(false, false, $"kill switch の{operation}がタイムアウトしました（状態は不明です）");
+            return new KillSwitchResult(false, false, TimedOutMessage(operation));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -71,6 +71,14 @@ public sealed class HttpKillSwitchController(
             return new KillSwitchResult(false, false, $"kill switch の{operation}に失敗しました（{ex.GetType().Name}）");
         }
     }
+
+    // NFR, IADR-0450 決定 4, #753（段 5）: 文言は gRPC 実装（GrpcKillSwitchController）と共有する（輸送を替えても 1 つ）。
+    internal static string SucceededMessage(string operation) => $"kill switch を{operation}しました";
+
+    internal static string UnparsableMessage(string operation) => $"kill switch の{operation}の応答を解釈できませんでした";
+
+    // 🔴 書き込みの時間切れは「状態は不明」（停止したかどうかを騙らない）。
+    internal static string TimedOutMessage(string operation) => $"kill switch の{operation}がタイムアウトしました（状態は不明です）";
 
     // Risk 側 KillSwitchRequest と同形（理由必須）。
     private sealed record KillSwitchRequest(string Reason);

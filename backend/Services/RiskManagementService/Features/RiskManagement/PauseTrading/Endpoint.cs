@@ -5,6 +5,9 @@ namespace RiskManagementService.Features.RiskManagement.PauseTrading;
 internal static class PauseTradingEndpoint
 {
     public static void MapPauseTrading(this IEndpointRouteBuilder owner) =>
-        owner.MapPost("/pause", (PauseRequest req, PauseService svc, HttpContext http) =>
-            Results.Ok(svc.Pause(RiskControlEndpoints.ActorOf(http), req.Reason)));
+        owner.MapPost("/pause", (PauseRequest req, PauseService svc, HttpContext http) => Handle(req, svc, http));
+
+    // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
+    internal static IResult Handle(PauseRequest req, PauseService svc, HttpContext http) =>
+        Results.Ok(svc.Pause(RiskControlEndpoints.ActorOf(http), req.Reason));
 }

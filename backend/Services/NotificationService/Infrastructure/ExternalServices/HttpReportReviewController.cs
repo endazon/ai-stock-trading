@@ -51,7 +51,7 @@ public sealed class HttpReportReviewController(
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
-            return new ReportReviewResult(false, 0, ExceptionMessage("レビュー局面の照会", ex, cancellationToken));
+            return new ReportReviewResult(false, 0, ExceptionMessage("レビュー局面の照会", ex, cancellationToken, write: false));
         }
     }
 
@@ -98,8 +98,7 @@ public sealed class HttpReportReviewController(
                 logger.LogWarning(
                     "報告書の確定が版不一致で拒否されました（PeriodKey={PeriodKey}・版={Version}）。",
                     periodKey, expectedVersion);
-                return new ReportConfirmResult(
-                    true, false, "版番号が一致しません。最新のドラフトを確認してください。");
+                return new ReportConfirmResult(true, false, VersionMismatchMessage);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -125,24 +124,39 @@ public sealed class HttpReportReviewController(
                 return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）を確定しました。");
             }
 
-            if (transitioned)
-                return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）を確定しました。");
-
-            if (confirmedVersion == expectedVersion + 1)
-                return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）は確定済みです（この版で確定されています）。");
-
-            logger.LogWarning(
-                "報告書は別の版で確定済みです（PeriodKey={PeriodKey}・要求の版={Version}・確定後の版={ConfirmedVersion}）。",
-                periodKey, expectedVersion, confirmedVersion);
-            return new ReportConfirmResult(
-                true, false,
-                $"報告書 {periodKey} は既に別の版で確定済みです（確定後の版 {confirmedVersion}）。版 {expectedVersion} は確定していません。");
+            return InterpretConfirmed(periodKey, expectedVersion, transitioned, confirmedVersion, logger);
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
-            return new ReportConfirmResult(false, false, ExceptionMessage("報告書の確定", ex, cancellationToken));
+            return new ReportConfirmResult(false, false, ExceptionMessage("報告書の確定", ex, cancellationToken, write: true));
         }
     }
+
+    // NFR, IADR-0450 決定 4, #753（段 5）: 確定の応答（この要求で遷移したか・確定後の版）→ 結果。gRPC 実装（GrpcReportReviewController）と
+    // 共有する（「200 を版 N を確定したと読まない」規則＝IADR-0433 決定 7 を 1 つに保つ）。
+    internal static ReportConfirmResult InterpretConfirmed(
+        string periodKey, int expectedVersion, bool transitioned, int confirmedVersion, ILogger logger)
+    {
+        if (transitioned)
+            return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）を確定しました。");
+
+        if (confirmedVersion == expectedVersion + 1)
+            return new ReportConfirmResult(true, true, $"報告書 {periodKey}（版 {expectedVersion}）は確定済みです（この版で確定されています）。");
+
+        logger.LogWarning(
+            "報告書は別の版で確定済みです（PeriodKey={PeriodKey}・要求の版={Version}・確定後の版={ConfirmedVersion}）。",
+            periodKey, expectedVersion, confirmedVersion);
+        return new ReportConfirmResult(
+            true, false,
+            $"報告書 {periodKey} は既に別の版で確定済みです（確定後の版 {confirmedVersion}）。版 {expectedVersion} は確定していません。");
+    }
+
+    // 版の不一致（REST の 409・gRPC の ABORTED）。サーバは正しく応答しているので呼び出しの失敗ではない（Confirmed=false）。
+    internal const string VersionMismatchMessage = "版番号が一致しません。最新のドラフトを確認してください。";
+
+    internal static string ChangesRequestedMessage(string periodKey, int version) => $"報告書 {periodKey}（版 {version}）を差し戻しました。";
+
+    internal const string ChangesUnparsableMessage = "報告書の差し戻しの応答を解釈できませんでした";
 
     public async Task<ReportReviewResult> RequestChangesAsync(
         string periodKey, int expectedVersion, CancellationToken cancellationToken = default)
@@ -166,13 +180,12 @@ public sealed class HttpReportReviewController(
                 .ConfigureAwait(false);
 
             return view is null
-                ? new ReportReviewResult(false, 0, "報告書の差し戻しの応答を解釈できませんでした")
-                : new ReportReviewResult(
-                    true, view.Version, $"報告書 {periodKey}（版 {view.Version}）を差し戻しました。");
+                ? new ReportReviewResult(false, 0, ChangesUnparsableMessage)
+                : new ReportReviewResult(true, view.Version, ChangesRequestedMessage(periodKey, view.Version));
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
-            return new ReportReviewResult(false, 0, ExceptionMessage("報告書の差し戻し", ex, cancellationToken));
+            return new ReportReviewResult(false, 0, ExceptionMessage("報告書の差し戻し", ex, cancellationToken, write: true));
         }
     }
 
@@ -286,17 +299,22 @@ public sealed class HttpReportReviewController(
             ? parsed
             : DateTime.MinValue;
 
-    private string ExceptionMessage(string operation, Exception ex, CancellationToken cancellationToken)
+    private string ExceptionMessage(string operation, Exception ex, CancellationToken cancellationToken, bool write)
     {
         if (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("{Operation}がタイムアウトしました。", operation);
-            return $"{operation}がタイムアウトしました（結果は不明です）";
+            return TimedOutMessage(operation, write);
         }
 
         logger.LogWarning(ex, "{Operation}で例外が発生しました。", operation);
         return $"{operation}に失敗しました（{ex.GetType().Name}）";
     }
+
+    // NFR, IADR-0450 決定 4, #753（PR #1069 の監査）: 時間切れの文言。🔴 **「結果は不明」は書き込み（確定・差し戻し）だけに付ける** ——
+    // 読み取り（レビュー局面の照会）は状態を変えないので「不明」になる結果が無い。gRPC 実装と共有する（輸送を替えても 1 つ）。
+    internal static string TimedOutMessage(string operation, bool write) =>
+        write ? $"{operation}がタイムアウトしました（結果は不明です）" : $"{operation}がタイムアウトしました";
 
     // 呼び出し側のキャンセルだけは伝播させる（タイムアウトは HttpClient 由来の OperationCanceledException）。
     private static bool Handled(Exception ex, CancellationToken cancellationToken) =>

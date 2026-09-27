@@ -20,7 +20,7 @@ internal sealed class HttpGoodFaithViolationController(
     ILogger<HttpGoodFaithViolationController> logger)
     : IGoodFaithViolationController
 {
-    private const string OwnerHint = "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）";
+    internal const string OwnerHint = "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）";
 
     public async Task<GoodFaithViolationClearResult> ClearAsync(
         string reason, CancellationToken cancellationToken = default)
@@ -40,25 +40,10 @@ internal sealed class HttpGoodFaithViolationController(
                 if (view is null)
                 {
                     logger.LogWarning("GFV 解除の応答を解釈できませんでした。");
-                    return new GoodFaithViolationClearResult(false, false, "GFV 解除の応答を解釈できませんでした");
+                    return new GoodFaithViolationClearResult(false, false, UnparsableMessage);
                 }
 
-                var cleared = view.ClearedOrderIds?.Count ?? 0;
-
-                // 🔴 **「解除しました」だけを返さない。** ADR-0028 決定1 が「違反記録は失効させない」と
-                // 定めており、解けたのは**停止**であって記録ではない。利用者が「記録が消えた」と
-                // 誤解すると、次に同じ原因が起きたときの調査の起点が失われる。
-                //
-                // **残件数も返す。** 解除の最中に新たな違反が計上され得るため 0 とは限らず、
-                // 0 でなければ停止は続いている（「解除したのに止まったまま」を利用者が理解できるようにする）。
-                var remaining = view.RemainingCount > 0
-                    ? $" **なお {view.RemainingCount} 件が残っており停止は継続します。**"
-                    : string.Empty;
-
-                return new GoodFaithViolationClearResult(true, true,
-                    $"GFV 違反による停止を解除しました（対象 {cleared} 件）。"
-                    + "**違反記録そのものは失効しません**（監査証跡として残ります）。"
-                    + remaining);
+                return Cleared(view.ClearedOrderIds?.Count ?? 0, view.RemainingCount);
             }
 
             // 422＝解除対象が無い（停止していない）・400＝理由欠如。どちらも「Risk は明確に応答した」。
@@ -78,7 +63,7 @@ internal sealed class HttpGoodFaithViolationController(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("GFV 解除がタイムアウトしました。");
-            return new GoodFaithViolationClearResult(false, false, "GFV 解除がタイムアウトしました（状態は不明です）");
+            return new GoodFaithViolationClearResult(false, false, TimedOutMessage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -87,17 +72,44 @@ internal sealed class HttpGoodFaithViolationController(
         }
     }
 
+    // NFR, IADR-0450 決定 4, #753（段 5）: 解除できたときの結果。gRPC 実装（GrpcGoodFaithViolationController）と共有する（文言を 1 つに保つ）。
+    internal static GoodFaithViolationClearResult Cleared(int cleared, int remainingCount)
+    {
+        // 🔴 **「解除しました」だけを返さない。** ADR-0028 決定1 が「違反記録は失効させない」と
+        // 定めており、解けたのは**停止**であって記録ではない。利用者が「記録が消えた」と
+        // 誤解すると、次に同じ原因が起きたときの調査の起点が失われる。
+        //
+        // **残件数も返す。** 解除の最中に新たな違反が計上され得るため 0 とは限らず、
+        // 0 でなければ停止は続いている（「解除したのに止まったまま」を利用者が理解できるようにする）。
+        var remaining = remainingCount > 0
+            ? $" **なお {remainingCount} 件が残っており停止は継続します。**"
+            : string.Empty;
+
+        return new GoodFaithViolationClearResult(true, true,
+            $"GFV 違反による停止を解除しました（対象 {cleared} 件）。"
+            + "**違反記録そのものは失効しません**（監査証跡として残ります）。"
+            + remaining);
+    }
+
+    internal const string UnparsableMessage = "GFV 解除の応答を解釈できませんでした";
+
+    // 🔴 書き込みの時間切れは「状態は不明」（解除したかどうかを騙らない）。
+    internal const string TimedOutMessage = "GFV 解除がタイムアウトしました（状態は不明です）";
+
+    // Risk が本文の説明を返さなかったときの受理不能の文言（gRPC 実装と共有する）。
+    internal const string NotAcceptedMessage = "GFV 解除は受理されませんでした。";
+
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response, CancellationToken ct)
     {
         try
         {
             var body = await response.Content.ReadFromJsonAsync<ErrorView>(ct).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(body?.Error) ? "GFV 解除は受理されませんでした。" : body!.Error;
+            return string.IsNullOrWhiteSpace(body?.Error) ? NotAcceptedMessage : body!.Error;
         }
         catch (Exception)
         {
             // 本文が読めなくても「受理されなかった」ことは伝える（黙って成功に見せない）。
-            return "GFV 解除は受理されませんでした。";
+            return NotAcceptedMessage;
         }
     }
 

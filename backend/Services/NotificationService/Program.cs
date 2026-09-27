@@ -54,11 +54,12 @@ builder.Services.AddSingleton<INotificationSender>(sp => NotificationSenderFacto
 var discordBotOptions = DiscordBotOptionsReader.Read(builder.Configuration);
 builder.Services.AddSingleton(discordBotOptions);
 
-// NFR, FR-14, MSP:ADR-0029, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0449, #753: east-west gRPC（ボットの**読み取り** 6 本）。
+// NFR, FR-14, MSP:ADR-0029, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0449, IADR-0450, #753: east-west gRPC（ボットの読み取り 6 本・書き込み 13 本）。
 // **`RiskManagement:Grpc` / `Reports:Grpc` / `MarketMonitor:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。
-// 宣言があれば、そのポートの読み取りだけを gRPC 実装が行い（BaseUrl より優先）、書き込みは REST の実装へ委ねる（段 5 の後半で移す）。
-// メタデータにはボットの owner マップ機密クライアントのトークンを載せる（ADR-0047 決定 2。s2s ではない）。不正な宛先は起動時に落とす。
-builder.Services.AddNotificationReadGrpc(builder.Configuration);
+// 宣言があれば、そのポートの読み取りと書き込みの**両方**を gRPC 実装が行う（BaseUrl より優先。失敗しても REST へ黙って落とさない）。
+// 書き込みは再試行しない（IADR-0450 決定 4）。メタデータにはボットの owner マップ機密クライアントのトークンを載せる（ADR-0047 決定 2。s2s ではない）。
+// 不正な宛先は起動時に落とす。
+builder.Services.AddNotificationGrpc(builder.Configuration);
 
 // kill switch は Risk の OwnerOnly エンドポイントを呼ぶ（Risk 側は無改修）。IADR-0051 の s2s トークン
 // （trading-service）では 403 のため、Bot 専用の owner マップ機密クライアントのトークンを付与する（IADR-0062 決定4）。
@@ -72,7 +73,10 @@ builder.Services.AddSingleton<IKillSwitchController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpKillSwitchController(http, sp.GetRequiredService<ILogger<HttpKillSwitchController>>());
+    // NFR, IADR-0450, #753（段 5）: `RiskManagement:Grpc` の宣言があれば gRPC（REST へは落とさない）。
+    return sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc
+        ? new GrpcKillSwitchController(riskGrpc, sp.GetRequiredService<ILogger<GrpcKillSwitchController>>())
+        : new HttpKillSwitchController(http, sp.GetRequiredService<ILogger<HttpKillSwitchController>>());
 });
 
 builder.Services.AddSingleton<KillSwitchCommandHandler>();
@@ -88,10 +92,9 @@ builder.Services.AddSingleton<IPauseController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    IPauseController controller = new HttpPauseController(http, sp.GetRequiredService<ILogger<HttpPauseController>>());
     return sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc
-        ? new GrpcPauseController(riskGrpc, controller, sp.GetRequiredService<ILogger<GrpcPauseController>>())
-        : controller;
+        ? new GrpcPauseController(riskGrpc, sp.GetRequiredService<ILogger<GrpcPauseController>>())
+        : new HttpPauseController(http, sp.GetRequiredService<ILogger<HttpPauseController>>());
 });
 builder.Services.AddSingleton<PauseCommandHandler>();
 
@@ -106,10 +109,9 @@ builder.Services.AddSingleton<IStageGateController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    IStageGateController controller = new HttpStageGateController(http, sp.GetRequiredService<ILogger<HttpStageGateController>>());
     return sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc
-        ? new GrpcStageGateController(riskGrpc, controller, sp.GetRequiredService<ILogger<GrpcStageGateController>>())
-        : controller;
+        ? new GrpcStageGateController(riskGrpc, sp.GetRequiredService<ILogger<GrpcStageGateController>>())
+        : new HttpStageGateController(http, sp.GetRequiredService<ILogger<HttpStageGateController>>());
 });
 builder.Services.AddSingleton<StageGateCommandHandler>();
 
@@ -125,8 +127,9 @@ builder.Services.AddSingleton<IGoodFaithViolationController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpGoodFaithViolationController(
-        http, sp.GetRequiredService<ILogger<HttpGoodFaithViolationController>>());
+    return sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc
+        ? new GrpcGoodFaithViolationController(riskGrpc, sp.GetRequiredService<ILogger<GrpcGoodFaithViolationController>>())
+        : new HttpGoodFaithViolationController(http, sp.GetRequiredService<ILogger<HttpGoodFaithViolationController>>());
 });
 builder.Services.AddSingleton<GoodFaithViolationCommandHandler>();
 
@@ -142,8 +145,10 @@ builder.Services.AddSingleton<IPositionDriftAdoptionController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    return new HttpPositionDriftAdoptionController(
-        http, sp.GetRequiredService<ILogger<HttpPositionDriftAdoptionController>>());
+    // ADR-0041 決定 4: REST の端点は人の窓口として残るが、ボットの呼び出しは east-west なので宣言があれば gRPC（IADR-0450）。
+    return sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc
+        ? new GrpcPositionDriftAdoptionController(riskGrpc, sp.GetRequiredService<ILogger<GrpcPositionDriftAdoptionController>>())
+        : new HttpPositionDriftAdoptionController(http, sp.GetRequiredService<ILogger<HttpPositionDriftAdoptionController>>());
 });
 builder.Services.AddSingleton<PositionDriftAdoptionCommandHandler>();
 
@@ -160,10 +165,9 @@ builder.Services.AddSingleton<IReportReviewController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    IReportReviewController controller = new HttpReportReviewController(http, sp.GetRequiredService<ILogger<HttpReportReviewController>>());
     return sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc
-        ? new GrpcReportReviewController(reportsGrpc, controller, sp.GetRequiredService<ILogger<GrpcReportReviewController>>())
-        : controller;
+        ? new GrpcReportReviewController(reportsGrpc, sp.GetRequiredService<ILogger<GrpcReportReviewController>>())
+        : new HttpReportReviewController(http, sp.GetRequiredService<ILogger<HttpReportReviewController>>());
 });
 
 // 詳細設計07 §二重実行防止: 窓口での多重押下を弾く前段のガード（**権威は報告書サービスの版番号付き冪等 API**）。
@@ -183,10 +187,9 @@ builder.Services.AddSingleton<IPolicyRevisionController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    IPolicyRevisionController controller = new HttpPolicyRevisionController(http, sp.GetRequiredService<ILogger<HttpPolicyRevisionController>>());
     return sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc
-        ? new GrpcPolicyRevisionController(reportsGrpc, controller, sp.GetRequiredService<ILogger<GrpcPolicyRevisionController>>())
-        : controller;
+        ? new GrpcPolicyRevisionController(reportsGrpc, sp.GetRequiredService<ILogger<GrpcPolicyRevisionController>>())
+        : new HttpPolicyRevisionController(http, sp.GetRequiredService<ILogger<HttpPolicyRevisionController>>());
 });
 builder.Services.AddSingleton<PolicyRevisionCommandHandler>();
 
@@ -202,11 +205,9 @@ builder.Services.AddSingleton<IMarketMonitorWatchlistController>(sp =>
     if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         http.BaseAddress = uri;
 
-    IMarketMonitorWatchlistController controller = new HttpMarketMonitorWatchlistController(
-        http, sp.GetRequiredService<ILogger<HttpMarketMonitorWatchlistController>>());
     return sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc
-        ? new GrpcMarketMonitorWatchlistController(monitorGrpc, controller)
-        : controller;
+        ? new GrpcMarketMonitorWatchlistController(monitorGrpc, sp.GetRequiredService<ILogger<GrpcMarketMonitorWatchlistController>>())
+        : new HttpMarketMonitorWatchlistController(http, sp.GetRequiredService<ILogger<HttpMarketMonitorWatchlistController>>());
 });
 builder.Services.AddSingleton<PolicyApprovalCommandHandler>();
 

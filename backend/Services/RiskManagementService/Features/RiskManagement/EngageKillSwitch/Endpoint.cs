@@ -4,9 +4,12 @@ namespace RiskManagementService.Features.RiskManagement.EngageKillSwitch;
 internal static class EngageKillSwitchEndpoint
 {
     public static void MapEngageKillSwitch(this IEndpointRouteBuilder owner) =>
-        owner.MapPost("/kill-switch/engage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) =>
-        {
-            svc.Engage(RiskControlEndpoints.ActorOf(http), req.Reason);
-            return Results.Ok(svc.GetState());
-        });
+        owner.MapPost("/kill-switch/engage", (KillSwitchRequest req, KillSwitchService svc, HttpContext http) => Handle(req, svc, http));
+
+    // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
+    internal static IResult Handle(KillSwitchRequest req, KillSwitchService svc, HttpContext http)
+    {
+        svc.Engage(RiskControlEndpoints.ActorOf(http), req.Reason);
+        return Results.Ok(svc.GetState());
+    }
 }

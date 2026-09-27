@@ -37,13 +37,9 @@ internal static class MonitorSettingsEndpoints
                 {
                     return await next(ctx);
                 }
-                catch (ArgumentException e)
+                catch (Exception e) when (MapException(e) is { } mapped)
                 {
-                    return Results.BadRequest(new { error = e.Message });
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    return Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" });
+                    return mapped;
                 }
             });
 
@@ -93,4 +89,13 @@ internal static class MonitorSettingsEndpoints
     // **2 段目に残る共通部分**——追加・削除の 2 操作が使う。
     internal static Market MarketOf(WatchlistChangeRequest req) =>
         req.Market ?? throw new ArgumentException("market は必須です。", nameof(req));
+
+    // NFR, IADR-0450, #753（段 5）: 群のフィルタの例外の写し。gRPC 面（WatchlistOwnerWriteGrpcService）も同じ写しを使う（2 箇所に書かない）。
+    // 写さない例外は null（そのまま上げる）。
+    internal static IResult? MapException(Exception e) => e switch
+    {
+        ArgumentException => Results.BadRequest(new { error = e.Message }),
+        DbUpdateConcurrencyException => Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" }),
+        _ => null,
+    };
 }

@@ -59,6 +59,18 @@ const RATCHET_MARGIN = 0.02;
  */
 const DEFAULT_MAX_EXCLUDED_LINE_SHARE = 0.35;
 
+/**
+ * 🔴 NFR, IADR-0450（2026-09-28 追記）, #753: **ビルド出力（`obj/`）の除外は G1 の上限の別枠**とする。
+ * G1 が防ぐのは「パターンがプロダクションコード（手書きのソース）を飲み込む」事故である。ソースは `obj/` に置かれず
+ * （`findSourceFiles` も `obj/` を走査しない＝G4 の前提と同じ）、`obj/` 配下のファイルは protoc 等の生成物に限られる。
+ * したがって `obj/` 配下に落ちた除外行は手書きを巻き込み得ず、上限の分子・分母の両方から外して比べる
+ * （= 手書きソースが置かれ得る範囲の中での除外の割合）。**カバレッジの分母（floor の比較）は変えない**。
+ * 判定はパターンではなく**実際に除外されたファイルのパス**で行う（`/obj/` の区切りのあるパス。パターンの見た目に依存しない）。
+ */
+function isBuildOutputPath(normalizedPath) {
+  return /(^|\/)obj\//.test(normalizedPath);
+}
+
 function parseArgs(argv) {
   const a = { root: 'backend', suggest: false, floor: null, exclude: true };
   for (let i = 0; i < argv.length; i++) {
@@ -388,6 +400,7 @@ function applyExcludes(acc, entries) {
     files: 0,
     lines: 0,
     covered: 0,
+    buildOutputLines: 0,
   }));
   const kept = new Map();
   for (const [name, lines] of acc) {
@@ -398,17 +411,20 @@ function applyExcludes(acc, entries) {
       continue;
     }
     hit.files++;
+    const buildOutput = isBuildOutputPath(norm);
     for (const h of lines.values()) {
       hit.lines++;
+      if (buildOutput) hit.buildOutputLines++;
       if (h) hit.covered++;
     }
   }
-  const byPattern = compiled.map(({ pattern, reason, files, lines, covered }) => ({
+  const byPattern = compiled.map(({ pattern, reason, files, lines, covered, buildOutputLines }) => ({
     pattern,
     reason,
     files,
     lines,
     covered,
+    buildOutputLines,
   }));
   return {
     kept,
@@ -416,6 +432,8 @@ function applyExcludes(acc, entries) {
     files: byPattern.reduce((s, p) => s + p.files, 0),
     lines: byPattern.reduce((s, p) => s + p.lines, 0),
     covered: byPattern.reduce((s, p) => s + p.covered, 0),
+    /** うち `obj/` 配下（ビルド出力）の除外行。G1 の上限の別枠（isBuildOutputPath）。 */
+    buildOutputLines: byPattern.reduce((s, p) => s + p.buildOutputLines, 0),
     /** 1 件も当たらなかったパターン（誤記・対象消滅の検知。G2。失敗はさせない） */
     unmatched: byPattern.filter((p) => p.files === 0).map((p) => p.pattern),
   };
@@ -425,7 +443,7 @@ function applyExcludes(acc, entries) {
  * 除外設定の健全性を検査する。違反理由の配列を返す（空なら合格）。
  * G1: 除外率の上限 / G3: 理由の必須。
  */
-function validateExclusion({ entries, excludedLines, totalLines, maxExcludedLineShare }) {
+function validateExclusion({ entries, excludedLines, totalLines, maxExcludedLineShare, buildOutputLines = 0 }) {
   const violations = [];
   const max =
     typeof maxExcludedLineShare === 'number' ? maxExcludedLineShare : DEFAULT_MAX_EXCLUDED_LINE_SHARE;
@@ -439,14 +457,23 @@ function validateExclusion({ entries, excludedLines, totalLines, maxExcludedLine
       violations.push(`exclude[${i}] (${e.pattern}): reason が無い（何をなぜ外したかを書くこと）`);
     }
   }
-  // G1: パターンが実コードを飲み込む退行を止める。
-  if (totalLines > 0 && excludedLines / totalLines > max) {
+  // G1: パターンが実コードを飲み込む退行を止める。ビルド出力（obj/）の除外は手書きを巻き込み得ないので別枠
+  // （分子・分母の両方から外す。IADR-0450 の 2026-09-28 追記）。
+  const build = Math.min(Math.max(buildOutputLines || 0, 0), excludedLines);
+  const share = shareOfSourceScope(excludedLines, totalLines, build);
+  if (share !== null && share > max) {
     violations.push(
-      `除外行が全体の ${pct(excludedLines / totalLines)}（${excludedLines}/${totalLines} 行）で上限 ${pct(max)} を超えた。`
-        + 'パターンがプロダクションコードを巻き込んでいないか確認すること'
+      `除外行が全体の ${pct(share)}（${excludedLines - build}/${totalLines - build} 行。obj/ 配下のビルド出力 ${build} 行は別枠）で`
+        + `上限 ${pct(max)} を超えた。パターンがプロダクションコードを巻き込んでいないか確認すること`
     );
   }
   return violations;
+}
+
+/** G1 の割合（ビルド出力の除外を分子・分母の両方から外す）。分母が 0 なら null。 */
+function shareOfSourceScope(excludedLines, totalLines, buildOutputLines) {
+  const denominator = totalLines - buildOutputLines;
+  return denominator > 0 ? (excludedLines - buildOutputLines) / denominator : null;
 }
 
 function readFloor(root) {
@@ -510,11 +537,20 @@ function main() {
         `[check-coverage] 注意: 一致 0 件のパターン: ${ex.unmatched.join(', ')}`
       );
     }
+    const maxShare = readMaxExcludedLineShare(REPO_ROOT);
+    const sourceShare = shareOfSourceScope(ex.lines, raw.total, ex.buildOutputLines);
+    console.log(
+      `[check-coverage] 除外率（G1）: ${sourceShare === null ? '—' : pct(sourceShare)}`
+        + `（${ex.lines - ex.buildOutputLines}/${raw.total - ex.buildOutputLines} 行・上限 ${pct(maxShare)}）。`
+        + `obj/ 配下のビルド出力の除外 ${ex.buildOutputLines} 行は別枠（手書きを巻き込み得ない）。`
+        + `参考: 別枠を含めた割合 ${pct(raw.total > 0 ? ex.lines / raw.total : 0)}`
+    );
     const violations = validateExclusion({
       entries,
       excludedLines: ex.lines,
       totalLines: raw.total,
-      maxExcludedLineShare: readMaxExcludedLineShare(REPO_ROOT),
+      maxExcludedLineShare: maxShare,
+      buildOutputLines: ex.buildOutputLines,
     });
 
     // G5: 隠蔽されたパターン（先行パターンが飲み込んだために空振りしている）は設定が広すぎる証拠。
@@ -602,6 +638,8 @@ module.exports = {
   globToRegExp,
   applyExcludes,
   validateExclusion,
+  isBuildOutputPath,
+  shareOfSourceScope,
   isAutoGenerated,
   findSourceFiles,
   findWrongfullyExcluded,

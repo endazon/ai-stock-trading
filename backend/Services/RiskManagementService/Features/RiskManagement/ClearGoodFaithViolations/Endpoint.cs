@@ -21,33 +21,32 @@ internal static class ClearGoodFaithViolationsEndpoint
 {
     public static void MapClearGoodFaithViolations(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/good-faith-violations/clear",
-            async (GoodFaithViolationClearRequest req, GoodFaithViolationClearingService svc,
-                   IMessageBus bus, HttpContext http) =>
+            (GoodFaithViolationClearRequest req, GoodFaithViolationClearingService svc, IMessageBus bus, HttpContext http) =>
+                HandleAsync(req, svc, bus, http));
+
+    // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
+    internal static async Task<IResult> HandleAsync(
+        GoodFaithViolationClearRequest req, GoodFaithViolationClearingService svc, IMessageBus bus, HttpContext http)
+    {
+        var outcome = svc.Clear(RiskControlEndpoints.ActorOf(http), req.Reason ?? string.Empty);
+
+        if (!outcome.Accepted)
         {
-            var outcome = svc.Clear(RiskControlEndpoints.ActorOf(http), req.Reason ?? string.Empty);
+            var error = DescribeGfvClearingRejection(outcome.Rejection);
+            return outcome.Rejection == GoodFaithViolationClearingRejection.NothingToClear
+                ? Results.UnprocessableEntity(new { error })
+                : Results.BadRequest(new { error });
+        }
 
-            if (!outcome.Accepted)
-            {
-                var error = DescribeGfvClearingRejection(outcome.Rejection);
-                return outcome.Rejection == GoodFaithViolationClearingRejection.NothingToClear
-                    ? Results.UnprocessableEntity(new { error })
-                    : Results.BadRequest(new { error });
-            }
+        // FR-11, ADR-0028 決定2: **誰が・いつ・どの記録に対して**解除したかを中央監査集約へ発行する。
+        // 永続化（解除台帳）はサービス内で先に完了しており、それが権威（fail-safe・IADR-0082 と同型）。
+        await bus.PublishAsync(new GoodFaithViolationsCleared(
+            RiskControlEndpoints.ActorOf(http), req.Reason!, outcome.ClearedOrderIds, outcome.RemainingCount,
+            outcome.ClearedAt!.Value));
 
-            // FR-11, ADR-0028 決定2: **誰が・いつ・どの記録に対して**解除したかを中央監査集約へ発行する。
-            // 永続化（解除台帳）はサービス内で先に完了しており、それが権威（fail-safe・IADR-0082 と同型）。
-            await bus.PublishAsync(new GoodFaithViolationsCleared(
-                RiskControlEndpoints.ActorOf(http), req.Reason!, outcome.ClearedOrderIds, outcome.RemainingCount,
-                outcome.ClearedAt!.Value));
-
-            return Results.Ok(new
-            {
-                clearedOrderIds = outcome.ClearedOrderIds,
-                clearedAt = outcome.ClearedAt,
-                // **0 とは限らない。**「解除したのに止まったまま」を利用者応答からも説明できるようにする。
-                remainingCount = outcome.RemainingCount,
-            });
-        });
+        // **remainingCount は 0 とは限らない。**「解除したのに止まったまま」を利用者応答からも説明できるようにする。
+        return Results.Ok(new GoodFaithViolationClearResponse(outcome.ClearedOrderIds, outcome.ClearedAt, outcome.RemainingCount));
+    }
 
     // #464, ADR-0028, IADR-0182: GFV 解除を受理しない理由を利用者向け文言に写す。
     // **何が足りないかを具体的に返す**——「不正な要求です」では、理由が必須であること自体が伝わらない。
@@ -68,3 +67,9 @@ internal static class ClearGoodFaithViolationsEndpoint
 // 暗黙束縛され、「理由なしの解除」が通る）。**確認フレーズは Discord 側の閂であり本文には含めない**
 // （kill switch と同型。窓口は Discord Bot＝決定3）。
 internal sealed record GoodFaithViolationClearRequest(string? Reason);
+
+// #464, IADR-0182: 解除の応答（200）。NFR, IADR-0450: 以前は匿名型だった。gRPC 面が同じ値を読むため名前を付けた（JSON は同じ＝camelCase・同じ順）。
+internal sealed record GoodFaithViolationClearResponse(
+    IReadOnlyList<string> ClearedOrderIds,
+    DateTimeOffset? ClearedAt,
+    int RemainingCount);

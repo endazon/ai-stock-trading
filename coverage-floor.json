@@ -16,6 +16,10 @@
     "［2026-09-11 / #745（IADR-0331 決定8）］protoc 生成物の除外を 2 つ足した（ユニット名 aistocktrading / platform）。除外率は",
     "31.75%（12742/40132 行）で上限 0.40 を下回るため maxExcludedLineShare は据え置く。lineRateFloor も据え置く（引き上げは人手の PR で行う規約であり、",
     "下の measuredAt/measuredLineRate は CI 相当の Release・清掃済み実測である。本 PR の 87.10% は Debug・ローカル実測なので上書きしない）。",
+    "［2026-09-28 / #753（IADR-0450 の追記）］G1（除外率の上限）は obj/ 配下のビルド出力（protoc の生成物）の除外を別枠にして",
+    "（分子・分母の両方から外して）比べる。段 5 の後半で proto を 3 本足し、CI 実測で除外率が 41.48%（27132/65417 行）になり上限を超えた。",
+    "G1 が防ぐのは手書きのソースを飲み込むパターン事故であり、ソースは obj/ に置かれないので obj/ 配下の除外は手書きを巻き込み得ない。",
+    "別枠を外した割合は 30.74%（16996/55281 行・obj/ 配下 10136 行）。maxExcludedLineShare 0.40 と lineRateFloor は据え置く（カバレッジの分母は不変）。",
     "測定は Release ビルドかつ bin/obj/TestResults を清掃した状態で行うこと（罠の詳細は",
     ".ai-context/specs/20260805_coverage-exclude-generated.md の『測定手順』を参照）。"
   ],

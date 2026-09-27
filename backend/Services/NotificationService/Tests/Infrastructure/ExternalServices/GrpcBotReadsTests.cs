@@ -40,7 +40,9 @@ namespace NotificationService.Tests;
 //   - gRPC 側は**送り手の本物の写し**（`RiskReadWireMapping` / `ReportOwnerReadWireMapping` / `WatchlistWireMapping`）で proto にしたものを
 //     実 Kestrel の h2c の偽の提供側（127.0.0.1）から返し、`Grpc*` 実装で読む、
 // その 2 つの結果を**等価比較**する。写しの取り違え・解釈の分岐（片方だけ直った規則）があれば赤になる。
-// あわせて、失敗が成功に見えないこと・REST の同じ失敗と同じ文言になること・書き込みは REST へ委ねることを固定する。
+// あわせて、失敗が成功に見えないこと・REST の同じ失敗と同じ文言になることを固定する。
+// （前半では「書き込みは REST へ委ねる」もここで固定していた。段 5 の後半で書き込みも gRPC へ移したので、書き込みの観点は
+// T-10-1735（GrpcBotWritesTests）へ移した＝反転した。IADR-0450。）
 public class GrpcBotReadsTests
 {
     private const string Token = "bot-owner-token";
@@ -118,7 +120,7 @@ public class GrpcBotReadsTests
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var transport = Risk(host);
         var restController = new HttpPauseController(RestReturning(sent, RiskWire), NullLogger<HttpPauseController>.Instance);
-        var grpcController = new GrpcPauseController(transport, restController, NullLogger<GrpcPauseController>.Instance);
+        var grpcController = new GrpcPauseController(transport, NullLogger<GrpcPauseController>.Instance);
 
         var rest = await restController.GetStatusAsync();
         var grpc = await grpcController.GetStatusAsync();
@@ -140,7 +142,7 @@ public class GrpcBotReadsTests
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var transport = Risk(host);
         var restController = new HttpStageGateController(RestReturning(sent, RiskWire), NullLogger<HttpStageGateController>.Instance);
-        var grpcController = new GrpcStageGateController(transport, restController, NullLogger<GrpcStageGateController>.Instance);
+        var grpcController = new GrpcStageGateController(transport, NullLogger<GrpcStageGateController>.Instance);
 
         var rest = await restController.GetStatusAsync();
         var grpc = await grpcController.GetStatusAsync();
@@ -162,7 +164,7 @@ public class GrpcBotReadsTests
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var transport = Reports(host);
         var restController = new HttpReportReviewController(RestReturning(sent, ReportWire), NullLogger<HttpReportReviewController>.Instance);
-        var grpcController = new GrpcReportReviewController(transport, restController, NullLogger<GrpcReportReviewController>.Instance);
+        var grpcController = new GrpcReportReviewController(transport, NullLogger<GrpcReportReviewController>.Instance);
 
         var rest = await restController.GetReviewAsync("daily-2026-09-01");
         var grpc = await grpcController.GetReviewAsync("daily-2026-09-01");
@@ -191,7 +193,7 @@ public class GrpcBotReadsTests
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var transport = Reports(host);
         var restController = new HttpReportReviewController(RestReturning(sent, ReportWire), NullLogger<HttpReportReviewController>.Instance);
-        var grpcController = new GrpcReportReviewController(transport, restController, NullLogger<GrpcReportReviewController>.Instance);
+        var grpcController = new GrpcReportReviewController(transport, NullLogger<GrpcReportReviewController>.Instance);
 
         var rest = await restController.ListPeriodKeysAsync();
         var grpc = await grpcController.ListPeriodKeysAsync();
@@ -214,7 +216,7 @@ public class GrpcBotReadsTests
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var transport = Reports(host);
         var restController = new HttpPolicyRevisionController(RestReturning(sent, ReportWire), NullLogger<HttpPolicyRevisionController>.Instance);
-        var grpcController = new GrpcPolicyRevisionController(transport, restController, NullLogger<GrpcPolicyRevisionController>.Instance);
+        var grpcController = new GrpcPolicyRevisionController(transport, NullLogger<GrpcPolicyRevisionController>.Instance);
 
         var rest = await restController.GetWatchlistProposalAsync("daily-2026-09-01", 1);
         var grpc = await grpcController.GetWatchlistProposalAsync("daily-2026-09-01", 1);
@@ -235,7 +237,7 @@ public class GrpcBotReadsTests
         using var transport = Monitor(host);
         var restController = new HttpMarketMonitorWatchlistController(
             RestReturning(sent, MonitorWire), NullLogger<HttpMarketMonitorWatchlistController>.Instance);
-        var grpcController = new GrpcMarketMonitorWatchlistController(transport, restController);
+        var grpcController = new GrpcMarketMonitorWatchlistController(transport, NullLogger<GrpcMarketMonitorWatchlistController>.Instance);
 
         var rest = await restController.GetWatchlistAsync();
         var grpc = await grpcController.GetWatchlistAsync();
@@ -257,8 +259,7 @@ public class GrpcBotReadsTests
         };
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var transport = Reports(host);
-        var review = new GrpcReportReviewController(transport, new HttpReportReviewController(
-            RestReturning(null, ReportWire, HttpStatusCode.NotFound), NullLogger<HttpReportReviewController>.Instance), NullLogger<GrpcReportReviewController>.Instance);
+        var review = new GrpcReportReviewController(transport, NullLogger<GrpcReportReviewController>.Instance);
         var restReview = new HttpReportReviewController(RestReturning(null, ReportWire, HttpStatusCode.NotFound), NullLogger<HttpReportReviewController>.Instance);
 
         (await review.GetReviewAsync("daily-2099-01-01")).Should().Be(await restReview.GetReviewAsync("daily-2099-01-01"));
@@ -267,7 +268,7 @@ public class GrpcBotReadsTests
             RestReturning(null, ReportWire, HttpStatusCode.NotFound), NullLogger<HttpPolicyRevisionController>.Instance).GetWatchlistProposalAsync("k", 1);
         var restNotConfirmed = await new HttpPolicyRevisionController(
             RestReturning(null, ReportWire, HttpStatusCode.Conflict), NullLogger<HttpPolicyRevisionController>.Instance).GetWatchlistProposalAsync("k", 1);
-        var grpcPolicy = new GrpcPolicyRevisionController(transport, null!, NullLogger<GrpcPolicyRevisionController>.Instance);
+        var grpcPolicy = new GrpcPolicyRevisionController(transport, NullLogger<GrpcPolicyRevisionController>.Instance);
 
         (await grpcPolicy.GetWatchlistProposalAsync("k", 1)).Should().Be(restNotProposal);
         behavior.Proposal = BotReadStubBehavior.Fails<ReportProto.GetWatchlistProposalResponse>(StatusCode.FailedPrecondition);
@@ -296,14 +297,14 @@ public class GrpcBotReadsTests
         using var reports = Reports(host);
         using var monitor = Monitor(host);
 
-        var statusResult = await new GrpcPauseController(risk, null!, NullLogger<GrpcPauseController>.Instance).GetStatusAsync();
-        var stage = await new GrpcStageGateController(risk, null!, NullLogger<GrpcStageGateController>.Instance).GetStatusAsync();
-        var reviewController = new GrpcReportReviewController(reports, null!, NullLogger<GrpcReportReviewController>.Instance);
+        var statusResult = await new GrpcPauseController(risk, NullLogger<GrpcPauseController>.Instance).GetStatusAsync();
+        var stage = await new GrpcStageGateController(risk, NullLogger<GrpcStageGateController>.Instance).GetStatusAsync();
+        var reviewController = new GrpcReportReviewController(reports, NullLogger<GrpcReportReviewController>.Instance);
         var review = await reviewController.GetReviewAsync("daily-2026-09-01");
         var keys = await reviewController.ListPeriodKeysAsync();
-        var proposal = await new GrpcPolicyRevisionController(reports, null!, NullLogger<GrpcPolicyRevisionController>.Instance)
+        var proposal = await new GrpcPolicyRevisionController(reports, NullLogger<GrpcPolicyRevisionController>.Instance)
             .GetWatchlistProposalAsync("daily-2026-09-01", 1);
-        var watchlist = await new GrpcMarketMonitorWatchlistController(monitor, null!).GetWatchlistAsync();
+        var watchlist = await new GrpcMarketMonitorWatchlistController(monitor, NullLogger<GrpcMarketMonitorWatchlistController>.Instance).GetWatchlistAsync();
 
         (statusResult.Succeeded, stage.Succeeded, review.Succeeded, review.Version).Should().Be((false, false, false, 0));
         (proposal.Succeeded, proposal.Found, watchlist.Succeeded).Should().Be((false, false, false));
@@ -340,16 +341,16 @@ public class GrpcBotReadsTests
         using var reports = Reports(host);
         using var monitor = Monitor(host);
 
-        (await new GrpcPauseController(risk, null!, NullLogger<GrpcPauseController>.Instance).GetStatusAsync())
+        (await new GrpcPauseController(risk, NullLogger<GrpcPauseController>.Instance).GetStatusAsync())
             .Should().Be(new RiskStatusResult(false, "稼働状態の応答を解釈できませんでした"));
-        (await new GrpcStageGateController(risk, null!, NullLogger<GrpcStageGateController>.Instance).GetStatusAsync())
+        (await new GrpcStageGateController(risk, NullLogger<GrpcStageGateController>.Instance).GetStatusAsync())
             .Should().Be(new StageGateStatusResult(false, "段階ゲートの応答を解釈できませんでした"));
-        (await new GrpcReportReviewController(reports, null!, NullLogger<GrpcReportReviewController>.Instance).GetReviewAsync("k"))
+        (await new GrpcReportReviewController(reports, NullLogger<GrpcReportReviewController>.Instance).GetReviewAsync("k"))
             .Should().Be(new ReportReviewResult(false, 0, "レビュー局面の応答を解釈できませんでした"), "版番号を騙らない");
-        var proposal = await new GrpcPolicyRevisionController(reports, null!, NullLogger<GrpcPolicyRevisionController>.Instance)
+        var proposal = await new GrpcPolicyRevisionController(reports, NullLogger<GrpcPolicyRevisionController>.Instance)
             .GetWatchlistProposalAsync("k", 1);
         (proposal.Succeeded, proposal.Found).Should().Be((false, false));
-        (await new GrpcMarketMonitorWatchlistController(monitor, null!).GetWatchlistAsync()).Succeeded.Should().BeFalse();
+        (await new GrpcMarketMonitorWatchlistController(monitor, NullLogger<GrpcMarketMonitorWatchlistController>.Instance).GetWatchlistAsync()).Succeeded.Should().BeFalse();
     }
 
     // deadline: 試行ごとの上限で打ち切り、タイムアウトの文言を返す（per-call 1 秒・上限 15 秒＝10 倍以上）。
@@ -366,12 +367,13 @@ public class GrpcBotReadsTests
         using var reports = Reports(host, TimeSpan.FromSeconds(1));
 
         var watch = Stopwatch.StartNew();
-        var status = await new GrpcPauseController(risk, null!, NullLogger<GrpcPauseController>.Instance).GetStatusAsync();
-        var review = await new GrpcReportReviewController(reports, null!, NullLogger<GrpcReportReviewController>.Instance).GetReviewAsync("k");
+        var status = await new GrpcPauseController(risk, NullLogger<GrpcPauseController>.Instance).GetStatusAsync();
+        var review = await new GrpcReportReviewController(reports, NullLogger<GrpcReportReviewController>.Instance).GetReviewAsync("k");
         watch.Stop();
 
         status.Should().Be(new RiskStatusResult(false, "稼働状態の照会がタイムアウトしました"));
-        review.Should().Be(new ReportReviewResult(false, 0, "レビュー局面の照会がタイムアウトしました（結果は不明です）"));
+        // NFR, IADR-0450, #753（PR #1069 の監査）: 読み取りの時間切れに「結果は不明」は付けない（状態を変えないので不明になる結果が無い）。
+        review.Should().Be(new ReportReviewResult(false, 0, "レビュー局面の照会がタイムアウトしました"));
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15));
     }
 
@@ -389,7 +391,7 @@ public class GrpcBotReadsTests
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var monitor = Monitor(host, attempts: 2);
 
-        (await new GrpcMarketMonitorWatchlistController(monitor, null!).GetWatchlistAsync()).Succeeded.Should().BeTrue();
+        (await new GrpcMarketMonitorWatchlistController(monitor, NullLogger<GrpcMarketMonitorWatchlistController>.Instance).GetWatchlistAsync()).Succeeded.Should().BeTrue();
         behavior.Calls("GetWatchlist").Should().Be(2);
     }
 
@@ -401,141 +403,7 @@ public class GrpcBotReadsTests
         await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
         using var risk = Risk(host, token: null);
 
-        (await new GrpcPauseController(risk, null!, NullLogger<GrpcPauseController>.Instance).GetStatusAsync()).Succeeded.Should().BeFalse();
+        (await new GrpcPauseController(risk, NullLogger<GrpcPauseController>.Instance).GetStatusAsync()).Succeeded.Should().BeFalse();
         behavior.Received.Should().ContainSingle().Which.Authorization.Should().BeEmpty();
-    }
-
-    // ---- 書き込みは REST の実装へ委ねる（段 5 の後半で移す） ----
-
-    [Fact]
-    public async Task T_10_1730_書き込みは_REST_の実装へ委ね_gRPC_を呼ばない()
-    {
-        var behavior = new BotReadStubBehavior();
-        await using var host = await BotReadGrpcStubHost.StartAsync(behavior);
-        using var risk = Risk(host);
-        using var reports = Reports(host);
-        using var monitor = Monitor(host);
-        var pause = new RecordingPause();
-        var stage = new RecordingStageGate();
-        var review = new RecordingReview();
-        var policy = new RecordingPolicy();
-        var watchlist = new RecordingWatchlist();
-
-        await new GrpcPauseController(risk, pause, NullLogger<GrpcPauseController>.Instance).PauseAsync("r");
-        await new GrpcPauseController(risk, pause, NullLogger<GrpcPauseController>.Instance).ResumeAsync("r");
-        await new GrpcStageGateController(risk, stage, NullLogger<GrpcStageGateController>.Instance).RequestTransitionAsync(2, "u");
-        await new GrpcStageGateController(risk, stage, NullLogger<GrpcStageGateController>.Instance).EvaluateWithdrawalAsync();
-        await new GrpcReportReviewController(reports, review, NullLogger<GrpcReportReviewController>.Instance).ConfirmAsync("k", 1, "u");
-        await new GrpcReportReviewController(reports, review, NullLogger<GrpcReportReviewController>.Instance).RequestChangesAsync("k", 1);
-        await new GrpcPolicyRevisionController(reports, policy, NullLogger<GrpcPolicyRevisionController>.Instance).ReviseAsync("k", "i", "u", null);
-        await new GrpcPolicyRevisionController(reports, policy, NullLogger<GrpcPolicyRevisionController>.Instance)
-            .RecordWatchlistApplyAsync(Guid.NewGuid(), "applied", [], "m", "u");
-        await new GrpcMarketMonitorWatchlistController(monitor, watchlist).ApplyProposalAsync([], [], "ref", "u");
-
-        (pause.Calls, stage.Calls, review.Calls, policy.Calls, watchlist.Calls).Should().Be((2, 2, 2, 2, 1));
-        behavior.Received.Should().BeEmpty("書き込みは gRPC を呼ばない");
-    }
-
-    private sealed class RecordingPause : IPauseController
-    {
-        internal int Calls;
-
-        public Task<PauseResult> PauseAsync(string reason, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new PauseResult(true, true, "rest"));
-        }
-
-        public Task<PauseResult> ResumeAsync(string reason, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new PauseResult(true, false, "rest"));
-        }
-
-        public Task<RiskStatusResult> GetStatusAsync(CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("読み取りは REST へ委ねない");
-    }
-
-    private sealed class RecordingStageGate : IStageGateController
-    {
-        internal int Calls;
-
-        public Task<StageGateStatusResult> GetStatusAsync(CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("読み取りは REST へ委ねない");
-
-        public Task<StageTransitionCommandResult> RequestTransitionAsync(int targetStage, string onBehalfOf, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new StageTransitionCommandResult(true, true, "rest"));
-        }
-
-        public Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new StageGateStatusResult(true, "rest"));
-        }
-    }
-
-    private sealed class RecordingReview : IReportReviewController
-    {
-        internal int Calls;
-
-        public Task<ReportReviewResult> GetReviewAsync(string periodKey, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("読み取りは REST へ委ねない");
-
-        public Task<ReportConfirmResult> ConfirmAsync(string periodKey, int expectedVersion, string onBehalfOf, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new ReportConfirmResult(true, true, "rest"));
-        }
-
-        public Task<ReportReviewResult> RequestChangesAsync(string periodKey, int expectedVersion, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new ReportReviewResult(true, 2, "rest"));
-        }
-
-        public Task<IReadOnlyList<string>> ListPeriodKeysAsync(CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("読み取りは REST へ委ねない");
-    }
-
-    private sealed class RecordingPolicy : IPolicyRevisionController
-    {
-        internal int Calls;
-
-        public Task<PolicyRevisionCommandOutcome> ReviseAsync(
-            string? periodKey, string instruction, string onBehalfOf, IReadOnlyList<WatchlistSnapshotItemView>? currentWatchlist,
-            CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new PolicyRevisionCommandOutcome(true, false, "rest"));
-        }
-
-        public Task<WatchlistProposalLookup> GetWatchlistProposalAsync(string periodKey, int version, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("読み取りは REST へ委ねない");
-
-        public Task<bool> RecordWatchlistApplyAsync(
-            Guid attemptId, string outcome, IReadOnlyList<WatchlistApplyItemView> items, string message, string onBehalfOf,
-            CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(true);
-        }
-    }
-
-    private sealed class RecordingWatchlist : IMarketMonitorWatchlistController
-    {
-        internal int Calls;
-
-        public Task<WatchlistSnapshotResult> GetWatchlistAsync(CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("読み取りは REST へ委ねない");
-
-        public Task<WatchlistApplyOutcome> ApplyProposalAsync(
-            IReadOnlyList<WatchlistSnapshotItemView> expected, IReadOnlyList<WatchlistChangeSuggestionView> changes, string proposalRef,
-            string onBehalfOf, CancellationToken cancellationToken = default)
-        {
-            Calls++;
-            return Task.FromResult(new WatchlistApplyOutcome(WatchlistApplyStatus.Applied, [], null, "rest"));
-        }
     }
 }

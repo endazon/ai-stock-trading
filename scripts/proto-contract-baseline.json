@@ -270,6 +270,167 @@
         }
       }
     },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/marketmonitor/v1/watchlist_owner_write.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.marketmonitor.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.MarketMonitor.V1",
+      "imports": [
+        "aistocktrading/marketmonitor/v1/watchlist_read.proto"
+      ],
+      "messages": {
+        "FinnhubRequestEstimate": {
+          "fields": {
+            "estimated_daily_requests": {
+              "number": 1,
+              "type": "int64",
+              "label": "optional"
+            },
+            "exceeds": {
+              "number": 3,
+              "type": "bool",
+              "label": "optional"
+            },
+            "provisional_daily_limit": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistApplicationItem": {
+          "fields": {
+            "action": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "applied": {
+              "number": 3,
+              "type": "bool",
+              "label": "optional"
+            },
+            "skip_reason": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistChangeInstruction": {
+          "fields": {
+            "action": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "reason": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistChangeInstructions": {
+          "fields": {
+            "items": {
+              "number": 1,
+              "type": "WatchlistChangeInstruction",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistProposalApplicationRequest": {
+          "fields": {
+            "changes": {
+              "number": 2,
+              "type": "WatchlistChangeInstructions",
+              "label": "singular"
+            },
+            "expected_watchlist": {
+              "number": 1,
+              "type": "WatchlistItems",
+              "label": "singular"
+            },
+            "on_behalf_of": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "proposal_ref": {
+              "number": 3,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistProposalApplicationResponse": {
+          "fields": {
+            "actor": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "estimate": {
+              "number": 3,
+              "type": "FinnhubRequestEstimate",
+              "label": "singular"
+            },
+            "items": {
+              "number": 1,
+              "type": "WatchlistApplicationItem",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "WatchlistOwnerWrite": {
+          "rpcs": {
+            "ApplyWatchlistProposal": {
+              "request": "WatchlistProposalApplicationRequest",
+              "response": "WatchlistProposalApplicationResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/marketmonitor/v1/watchlist_read.proto": {
       "syntax": "proto3",
       "package": "aistocktrading.marketmonitor.v1",
@@ -680,6 +841,269 @@
         }
       }
     },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/report/v1/report_owner_write.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.report.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.Report.V1",
+      "imports": [
+        "aistocktrading/report/v1/report_owner_read.proto"
+      ],
+      "messages": {
+        "PolicyRevisionProposalRequest": {
+          "fields": {
+            "current_watchlist": {
+              "number": 4,
+              "type": "WatchlistSnapshotRows",
+              "label": "singular"
+            },
+            "instruction": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "on_behalf_of": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "period_key": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "PolicyRevisionProposalResponse": {
+          "fields": {
+            "created": {
+              "number": 3,
+              "type": "bool",
+              "label": "optional"
+            },
+            "message": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "policy_summary": {
+              "number": 6,
+              "type": "string",
+              "label": "optional"
+            },
+            "presented": {
+              "number": 4,
+              "type": "bool",
+              "label": "optional"
+            },
+            "rationale": {
+              "number": 8,
+              "type": "string",
+              "label": "optional"
+            },
+            "version": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            },
+            "watchlist_changes": {
+              "number": 7,
+              "type": "WatchlistChangeRow",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ReportChangesRequest": {
+          "fields": {
+            "expected_version": {
+              "number": 2,
+              "type": "int32",
+              "label": "singular"
+            },
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ReportChangesResponse": {
+          "fields": {
+            "version": {
+              "number": 1,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ReportConfirmationRequest": {
+          "fields": {
+            "expected_version": {
+              "number": 2,
+              "type": "int32",
+              "label": "singular"
+            },
+            "on_behalf_of": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ReportConfirmationResponse": {
+          "fields": {
+            "transitioned": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            },
+            "version": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistApplyRecordItem": {
+          "fields": {
+            "action": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "applied": {
+              "number": 3,
+              "type": "bool",
+              "label": "optional"
+            },
+            "skip_reason": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistApplyRecordRequest": {
+          "fields": {
+            "attempt_id": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "items": {
+              "number": 3,
+              "type": "WatchlistApplyRecordItem",
+              "label": "repeated"
+            },
+            "message": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "on_behalf_of": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "outcome": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistApplyRecordResponse": {
+          "fields": {
+            "attempt_id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "ReportOwnerWrite": {
+          "rpcs": {
+            "ConfirmReport": {
+              "request": "ReportConfirmationRequest",
+              "response": "ReportConfirmationResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "RecordWatchlistApplyResult": {
+              "request": "WatchlistApplyRecordRequest",
+              "response": "WatchlistApplyRecordResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "RequestReportChanges": {
+              "request": "ReportChangesRequest",
+              "response": "ReportChangesResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "RevisePolicy": {
+              "request": "PolicyRevisionProposalRequest",
+              "response": "PolicyRevisionProposalResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/riskmanagement/v1/risk_controls_owner_read.proto": {
       "syntax": "proto3",
       "package": "aistocktrading.riskmanagement.v1",
@@ -786,6 +1210,306 @@
             "GetRiskStatus": {
               "request": "GetRiskStatusRequest",
               "response": "GetRiskStatusResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/riskmanagement/v1/risk_controls_owner_write.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.riskmanagement.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.RiskManagement.V1",
+      "imports": [
+        "aistocktrading/riskmanagement/v1/risk_controls_read.proto"
+      ],
+      "messages": {
+        "DriftAdoptionCommandRequest": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "on_behalf_of": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "reason": {
+              "number": 3,
+              "type": "string",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "DriftAdoptionCommandResponse": {
+          "fields": {
+            "actor": {
+              "number": 9,
+              "type": "string",
+              "label": "optional"
+            },
+            "adoption_id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "broker_quantity": {
+              "number": 6,
+              "type": "int32",
+              "label": "optional"
+            },
+            "ledger_quantity_after": {
+              "number": 5,
+              "type": "int32",
+              "label": "optional"
+            },
+            "ledger_quantity_before": {
+              "number": 4,
+              "type": "int32",
+              "label": "optional"
+            },
+            "market": {
+              "number": 3,
+              "type": "Market",
+              "label": "singular"
+            },
+            "observed_at": {
+              "number": 7,
+              "type": "string",
+              "label": "optional"
+            },
+            "realized_pnl_recorded": {
+              "number": 8,
+              "type": "bool",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GoodFaithViolationClearanceRequest": {
+          "fields": {
+            "reason": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GoodFaithViolationClearanceResponse": {
+          "fields": {
+            "cleared_at": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "cleared_order_ids": {
+              "number": 1,
+              "type": "string",
+              "label": "repeated"
+            },
+            "remaining_count": {
+              "number": 3,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "KillSwitchChangeRequest": {
+          "fields": {
+            "reason": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "KillSwitchChangeResponse": {
+          "fields": {
+            "engaged": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "StageTransitionApprovalRequest": {
+          "fields": {
+            "on_behalf_of": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "target_stage": {
+              "number": 1,
+              "type": "TradingStage",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "StageTransitionApprovalResponse": {
+          "fields": {
+            "accepted": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            },
+            "rejection_reasons": {
+              "number": 3,
+              "type": "StageGateCriterion",
+              "label": "repeated"
+            },
+            "stage1_criteria": {
+              "number": 4,
+              "type": "Stage1CriteriaRecord",
+              "label": "singular"
+            },
+            "to_stage": {
+              "number": 2,
+              "type": "TradingStage",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "TradingPauseChangeRequest": {
+          "fields": {
+            "reason": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "TradingPauseChangeResponse": {
+          "fields": {
+            "paused": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WithdrawalEvaluationRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WithdrawalEvaluationResponse": {
+          "fields": {
+            "assessment": {
+              "number": 1,
+              "type": "WithdrawalAssessmentRecord",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "RiskControlsOwnerWrite": {
+          "rpcs": {
+            "AdoptPositionDrift": {
+              "request": "DriftAdoptionCommandRequest",
+              "response": "DriftAdoptionCommandResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "ClearGoodFaithViolations": {
+              "request": "GoodFaithViolationClearanceRequest",
+              "response": "GoodFaithViolationClearanceResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "DisengageKillSwitch": {
+              "request": "KillSwitchChangeRequest",
+              "response": "KillSwitchChangeResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "EngageKillSwitch": {
+              "request": "KillSwitchChangeRequest",
+              "response": "KillSwitchChangeResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "EvaluateWithdrawal": {
+              "request": "WithdrawalEvaluationRequest",
+              "response": "WithdrawalEvaluationResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "PauseTrading": {
+              "request": "TradingPauseChangeRequest",
+              "response": "TradingPauseChangeResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "RequestStageTransition": {
+              "request": "StageTransitionApprovalRequest",
+              "response": "StageTransitionApprovalResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "ResumeTrading": {
+              "request": "TradingPauseChangeRequest",
+              "response": "TradingPauseChangeResponse",
               "clientStreaming": false,
               "serverStreaming": false
             }

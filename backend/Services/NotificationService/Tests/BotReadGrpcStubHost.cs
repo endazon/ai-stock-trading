@@ -15,8 +15,9 @@ using RiskProto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
 namespace NotificationService.Tests;
 
-// NFR, FR-14, IADR-0449, #753（段 5）: Discord ボットが読む 4 つの gRPC 面（リスク管理の `RiskControlsRead`・`RiskControlsOwnerRead`、
-// 報告書の `ReportOwnerRead`、市場監視の `WatchlistRead`）を**実 Kestrel の h2c 専用ポート**（127.0.0.1 のみ）で立てる偽の提供側。
+// NFR, FR-14, IADR-0449, IADR-0450, #753（段 5）: Discord ボットが呼ぶ 7 つの gRPC 面（読み取り: リスク管理の `RiskControlsRead`・
+// `RiskControlsOwnerRead`、報告書の `ReportOwnerRead`、市場監視の `WatchlistRead`。書き込み: `RiskControlsOwnerWrite`・`ReportOwnerWrite`・
+// `WatchlistOwnerWrite`）を**実 Kestrel の h2c 専用ポート**（127.0.0.1 のみ）で立てる偽の提供側。受け取った要求も記録する（on_behalf_of 等の観測点）。
 // 🔴 受け取った `authorization` メタデータを記録する（ボットの owner トークンが載ることの観測点）。
 // あわせて、owner トークンの取得先（client_credentials）を **HTTP/1.1 の別ポート**（127.0.0.1 のみ）で立てられる
 // （平文の 1 ポートで HTTP/1.1 と h2c を同時に受けられないため）。
@@ -57,6 +58,9 @@ internal sealed class BotReadGrpcStubHost : IAsyncDisposable
         app.MapGrpcService<RiskOwnerReadStub>();
         app.MapGrpcService<ReportOwnerReadStub>();
         app.MapGrpcService<WatchlistReadStub>();
+        app.MapGrpcService<RiskOwnerWriteStub>();
+        app.MapGrpcService<ReportOwnerWriteStub>();
+        app.MapGrpcService<WatchlistOwnerWriteStub>();
         app.MapPost("/token", (HttpContext http) =>
         {
             behavior.TokenRequests.Enqueue(http.Request.Protocol);
@@ -107,11 +111,58 @@ internal sealed class BotReadStubBehavior
     internal Func<int, CancellationToken, Task<MonitorProto.GetWatchlistResponse>> Watchlist { get; set; } =
         (_, _) => Task.FromResult(new MonitorProto.GetWatchlistResponse());
 
+    // ---- 書き込み（段 5 の後半） ----
+
+    internal Func<int, CancellationToken, Task<RiskProto.KillSwitchChangeResponse>> KillSwitch { get; set; } =
+        (_, _) => Task.FromResult(new RiskProto.KillSwitchChangeResponse());
+
+    internal Func<int, CancellationToken, Task<RiskProto.TradingPauseChangeResponse>> Pause { get; set; } =
+        (_, _) => Task.FromResult(new RiskProto.TradingPauseChangeResponse());
+
+    internal Func<int, CancellationToken, Task<RiskProto.GoodFaithViolationClearanceResponse>> GoodFaith { get; set; } =
+        (_, _) => Task.FromResult(new RiskProto.GoodFaithViolationClearanceResponse());
+
+    internal Func<int, CancellationToken, Task<RiskProto.StageTransitionApprovalResponse>> Transition { get; set; } =
+        (_, _) => Task.FromResult(new RiskProto.StageTransitionApprovalResponse());
+
+    internal Func<int, CancellationToken, Task<RiskProto.WithdrawalEvaluationResponse>> Withdrawal { get; set; } =
+        (_, _) => Task.FromResult(new RiskProto.WithdrawalEvaluationResponse());
+
+    internal Func<int, CancellationToken, Task<RiskProto.DriftAdoptionCommandResponse>> Adoption { get; set; } =
+        (_, _) => Task.FromResult(new RiskProto.DriftAdoptionCommandResponse());
+
+    internal Func<int, CancellationToken, Task<ReportProto.ReportConfirmationResponse>> Confirm { get; set; } =
+        (_, _) => Task.FromResult(new ReportProto.ReportConfirmationResponse());
+
+    internal Func<int, CancellationToken, Task<ReportProto.ReportChangesResponse>> Changes { get; set; } =
+        (_, _) => Task.FromResult(new ReportProto.ReportChangesResponse());
+
+    internal Func<int, CancellationToken, Task<ReportProto.PolicyRevisionProposalResponse>> Revision { get; set; } =
+        (_, _) => Task.FromResult(new ReportProto.PolicyRevisionProposalResponse());
+
+    internal Func<int, CancellationToken, Task<ReportProto.WatchlistApplyRecordResponse>> ApplyRecord { get; set; } =
+        (_, _) => Task.FromResult(new ReportProto.WatchlistApplyRecordResponse());
+
+    internal Func<int, CancellationToken, Task<MonitorProto.WatchlistProposalApplicationResponse>> Apply { get; set; } =
+        (_, _) => Task.FromResult(new MonitorProto.WatchlistProposalApplicationResponse());
+
+    /// <summary>rpc の名前ごとに受け取った要求（書き込みの本文の観測点）。</summary>
+    internal ConcurrentQueue<(string Rpc, Google.Protobuf.IMessage Request)> Requests { get; } = new();
+
     internal Task<T> Handle<T>(string rpc, ServerCallContext context, Func<int, CancellationToken, Task<T>> behavior)
     {
         Received.Enqueue((rpc, context.RequestHeaders.GetValue("authorization") ?? string.Empty));
         return behavior(_calls.AddOrUpdate(rpc, 1, (_, n) => n + 1), context.CancellationToken);
     }
+
+    internal Task<T> Handle<T>(string rpc, Google.Protobuf.IMessage request, ServerCallContext context, Func<int, CancellationToken, Task<T>> behavior)
+    {
+        Requests.Enqueue((rpc, request));
+        return Handle(rpc, context, behavior);
+    }
+
+    internal static Func<int, CancellationToken, Task<T>> Fails<T>(StatusCode status, string detail) =>
+        (_, _) => throw new RpcException(new Status(status, detail));
 
     internal static Func<int, CancellationToken, Task<T>> Returns<T>(T response) => (_, _) => Task.FromResult(response);
 
@@ -157,4 +208,59 @@ internal sealed class WatchlistReadStub(BotReadStubBehavior b) : MonitorProto.Wa
 {
     public override Task<MonitorProto.GetWatchlistResponse> GetWatchlist(MonitorProto.GetWatchlistRequest request, ServerCallContext context) =>
         b.Handle(nameof(GetWatchlist), context, b.Watchlist);
+}
+
+internal sealed class RiskOwnerWriteStub(BotReadStubBehavior b) : RiskProto.RiskControlsOwnerWrite.RiskControlsOwnerWriteBase
+{
+    public override Task<RiskProto.KillSwitchChangeResponse> EngageKillSwitch(RiskProto.KillSwitchChangeRequest request, ServerCallContext context) =>
+        b.Handle(nameof(EngageKillSwitch), request, context, b.KillSwitch);
+
+    public override Task<RiskProto.KillSwitchChangeResponse> DisengageKillSwitch(RiskProto.KillSwitchChangeRequest request, ServerCallContext context) =>
+        b.Handle(nameof(DisengageKillSwitch), request, context, b.KillSwitch);
+
+    public override Task<RiskProto.TradingPauseChangeResponse> PauseTrading(RiskProto.TradingPauseChangeRequest request, ServerCallContext context) =>
+        b.Handle(nameof(PauseTrading), request, context, b.Pause);
+
+    public override Task<RiskProto.TradingPauseChangeResponse> ResumeTrading(RiskProto.TradingPauseChangeRequest request, ServerCallContext context) =>
+        b.Handle(nameof(ResumeTrading), request, context, b.Pause);
+
+    public override Task<RiskProto.GoodFaithViolationClearanceResponse> ClearGoodFaithViolations(
+        RiskProto.GoodFaithViolationClearanceRequest request, ServerCallContext context) =>
+        b.Handle(nameof(ClearGoodFaithViolations), request, context, b.GoodFaith);
+
+    public override Task<RiskProto.StageTransitionApprovalResponse> RequestStageTransition(
+        RiskProto.StageTransitionApprovalRequest request, ServerCallContext context) =>
+        b.Handle(nameof(RequestStageTransition), request, context, b.Transition);
+
+    public override Task<RiskProto.WithdrawalEvaluationResponse> EvaluateWithdrawal(
+        RiskProto.WithdrawalEvaluationRequest request, ServerCallContext context) =>
+        b.Handle(nameof(EvaluateWithdrawal), request, context, b.Withdrawal);
+
+    public override Task<RiskProto.DriftAdoptionCommandResponse> AdoptPositionDrift(
+        RiskProto.DriftAdoptionCommandRequest request, ServerCallContext context) =>
+        b.Handle(nameof(AdoptPositionDrift), request, context, b.Adoption);
+}
+
+internal sealed class ReportOwnerWriteStub(BotReadStubBehavior b) : ReportProto.ReportOwnerWrite.ReportOwnerWriteBase
+{
+    public override Task<ReportProto.ReportConfirmationResponse> ConfirmReport(ReportProto.ReportConfirmationRequest request, ServerCallContext context) =>
+        b.Handle(nameof(ConfirmReport), request, context, b.Confirm);
+
+    public override Task<ReportProto.ReportChangesResponse> RequestReportChanges(ReportProto.ReportChangesRequest request, ServerCallContext context) =>
+        b.Handle(nameof(RequestReportChanges), request, context, b.Changes);
+
+    public override Task<ReportProto.PolicyRevisionProposalResponse> RevisePolicy(
+        ReportProto.PolicyRevisionProposalRequest request, ServerCallContext context) =>
+        b.Handle(nameof(RevisePolicy), request, context, b.Revision);
+
+    public override Task<ReportProto.WatchlistApplyRecordResponse> RecordWatchlistApplyResult(
+        ReportProto.WatchlistApplyRecordRequest request, ServerCallContext context) =>
+        b.Handle(nameof(RecordWatchlistApplyResult), request, context, b.ApplyRecord);
+}
+
+internal sealed class WatchlistOwnerWriteStub(BotReadStubBehavior b) : MonitorProto.WatchlistOwnerWrite.WatchlistOwnerWriteBase
+{
+    public override Task<MonitorProto.WatchlistProposalApplicationResponse> ApplyWatchlistProposal(
+        MonitorProto.WatchlistProposalApplicationRequest request, ServerCallContext context) =>
+        b.Handle(nameof(ApplyWatchlistProposal), request, context, b.Apply);
 }
