@@ -264,7 +264,9 @@ public sealed class OrderExecutionAppService(
         // 「未発注」と「発注済みだが記録できていない」を区別できない。実弾では二重発注（不可逆）の方が
         // 取りこぼし（可逆）より重いため、再発注せず拒否する（at-most-once・IADR-0057）。
         // 再試行を使い切ると _error キューへ送られ、ブローカ状態を確認するリコンサイルの対象になる。
-        if (!reservations.TryReserve(approved.DecisionId, clock.UtcNow))
+        // 🔴 NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定1: 予約には**送る先のアダプタの発注先**（取引環境）を残す。
+        // 滞留したときにリコンサイラが解放の門（SIMULATE / 実弾）をこの値で選ぶ。intent.Mode（段階の既定）は渡さない。
+        if (!reservations.TryReserve(approved.DecisionId, clock.UtcNow, broker.Provider))
             throw new OrderDispatchReservationConflictException(approved.DecisionId);
 
         // 🔴 FR-10, #853, IADR-0428 決定3: **予約を取った後・送る前に**、承認時の保護の文脈（手法・損切りライン・数量）を残す（S0 / S3）。
@@ -330,7 +332,8 @@ public sealed class OrderExecutionAppService(
             // 滞留の解消は、client order id によるリコンサイル（IADR-0092 / IADR-0074）が
             // Placed / NotPlaced / Indeterminate に解決する。🔴 #856, IADR-0362: **アプリ既定は無効のままだが、
             // 配備（Helm values）では有効**である。ただし**解放（NotPlaced）の門は閉じている**
-            // （Reconciliation:ReleaseOnNotPlaced=false）ので、自動で解決するのは Placed 側だけであり、
+            // （#1051, IADR-0444: 取引環境ごとの Reconciliation:ReleaseOnNotPlaced:Simulate / :Real がどちらも false）ので、
+            // 自動で解決するのは Placed 側だけであり、
             // NotPlaced / Indeterminate は据え置かれて人が証券会社の画面で確認する
             //（docs/operations/broker-execution-paths-runbook.md）。**本経路は例外で終わるのが正しい。**
             // 再試行を使い切ったあと _error キューに残る例外は OrderDispatchReservationConflictException であり
@@ -696,7 +699,7 @@ public sealed class OrderExecutionAppService(
         bool reserved;
         try
         {
-            reserved = reservations.TryReserve(stopDecisionId, clock.UtcNow);
+            reserved = reservations.TryReserve(stopDecisionId, clock.UtcNow, broker.Provider); // #1051, IADR-0444 決定1
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1070,7 +1073,7 @@ public sealed class OrderExecutionAppService(
         // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いもエントリーと同じ
         // 予約 → 発注 → 確定の 3 相（IADR-0057）で送る。「送ったかもしれない」を予約に残し、
         // **届いたか不明を「解消に失敗した（＝未発注）」と取り違えない**。
-        if (!reservations.TryReserve(closeDecisionId, clock.UtcNow))
+        if (!reservations.TryReserve(closeDecisionId, clock.UtcNow, broker.Provider)) // #1051, IADR-0444 決定1
         {
             // 予約済み＝送信中か成否不明。重ねて送らない。
             return IndeterminateClose(approved, quantity, closeDecisionId, closeIntent, cause: null);

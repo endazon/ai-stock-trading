@@ -152,7 +152,8 @@ public class OrderExecutionServiceTests
 
         public int RemainingFailures { get; set; }
 
-        public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt) => _inner.TryReserve(decisionId, reservedAt);
+        public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider) =>
+            _inner.TryReserve(decisionId, reservedAt, brokerProvider);
 
         public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt)
         {
@@ -237,6 +238,33 @@ public class OrderExecutionServiceTests
             .ExecuteAsync(Approved(simulateIntent))).Executed!;
 
         simulate.Provider.Should().Be(BrokerProvider.MoomooSimulate);
+    }
+
+    // 🔴 T-10-1610, NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定1: 予約には**送る先のアダプタの発注先**（取引環境）が残る。
+    // 結果が不明なまま据え置かれた予約こそリコンサイラが門を選ぶ対象なので、送信後に結果が不明になる経路で確かめる。
+    // intent.Mode（段階の既定の発注先）を別の値にしておき、予約に載るのがアダプタ側であることを示す。
+    // 殺す変異: 本番の TryReserve へ取引環境を渡さない（null）／intent.Mode を渡す。
+    [Theory]
+    [InlineData(BrokerProvider.MoomooSimulate)]
+    [InlineData(BrokerProvider.MoomooReal)]
+    public async Task 結果が不明で据え置かれた予約は送る先のアダプタの取引環境を持つ(BrokerProvider adapterProvider)
+    {
+        var intent = Intent() with { Mode = BrokerProvider.InternalPaper };
+        var order = new BrokerOrder("ORD-X", intent, OrderStatus.Accepted, 0, 0m, Now, null);
+        var broker = new FakeBroker(order, onPlace: () =>
+            throw new BrokerDispatchIndeterminateException("送信後に結果を確認できない（テスト）"))
+        {
+            Provider = adapterProvider,
+        };
+        var reservations = new InMemoryOrderReservationStore();
+        var approved = Approved(intent);
+
+        var act = () => NewService(broker, new InMemoryExecutedOrderStore(), reservations).ExecuteAsync(approved);
+
+        await act.Should().ThrowAsync<BrokerDispatchIndeterminateException>();
+        var reservation = reservations.Find(approved.DecisionId)!;
+        reservation.State.Should().Be(OrderDispatchState.Reserved, "前提: 結果が不明な予約は据え置かれる");
+        reservation.BrokerProvider.Should().Be(adapterProvider, "予約の取引環境は送る先のアダプタが決める（intent.Mode ではない）");
     }
 
     [Fact]

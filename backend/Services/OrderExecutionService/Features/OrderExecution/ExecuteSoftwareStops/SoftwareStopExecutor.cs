@@ -367,7 +367,7 @@ public sealed class SoftwareStopExecutor(
             return SoftwareStopCloseOutcome.Deferred;
         }
 
-        if (!reservations.TryReserve(closeDecisionId, now))
+        if (!reservations.TryReserve(closeDecisionId, now, broker.Provider)) // #1051, IADR-0444 決定1: 送る先の取引環境
         {
             // 予約済みで記録が無い＝並行処理が送信中か、送信の成否が不明。重ねて送らない（IADR-0057）。
             _logger.LogWarning(

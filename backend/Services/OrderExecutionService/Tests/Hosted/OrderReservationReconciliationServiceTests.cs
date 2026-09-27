@@ -594,6 +594,48 @@ public class OrderReservationReconciliationServiceTests
     }
 
     [Fact]
+    public async Task 巡回は確定した1件も巡回サマリも予約の取引環境で数える()
+    {
+        // 🔴 T-10-1613, NFR-09, ADR-0045 決定1・決定2, #1051, IADR-0444 決定6: (a) probe-placed と (b) held-not-placed は
+        // **取引環境ごとに**示す。確定した 1 件の出口（EmitAsync）と巡回サマリ（据え置き・不確定・失敗）の両方が、
+        // 照会先ではなく**予約の取引環境**をタグ provider に載せる。取引環境が不明な予約は Unknown と数える。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        var reservations = new InMemoryOrderReservationStore();
+        var simulatePlaced = Guid.NewGuid();
+        var realHeld = Guid.NewGuid();
+        var unknownIndeterminate = Guid.NewGuid();
+        var simulateFailing = Guid.NewGuid();
+        reservations.TryReserve(simulatePlaced, StalledAt, BrokerProvider.MoomooSimulate);
+        reservations.TryReserve(realHeld, StalledAt.AddSeconds(1), BrokerProvider.MoomooReal);
+        reservations.TryReserve(unknownIndeterminate, StalledAt.AddSeconds(2));
+        reservations.TryReserve(simulateFailing, StalledAt.AddSeconds(3), BrokerProvider.MoomooSimulate);
+
+        using var host = await BuildHostAsync(new MapProbe(new()
+        {
+            [simulatePlaced] = () => ReservationProbeResult.Placed(Placed("BRK-E1")),
+            [realHeld] = () => ReservationProbeResult.NotPlaced,
+            [simulateFailing] = () => throw new InvalidOperationException("照会が落ちた（テスト）"),
+        }), reservations);
+        var service = BuildService(host, new ReconciliationOptions { Enabled = true }, metrics);
+
+        var result = await service.ReconcileOnceAsync(CancellationToken.None);
+
+        result.Scanned.Should().Be(4, "前提: 4 件とも滞留として走査される");
+        capture.ValuesOf(BusinessMetricNames.OrderReservationReconciliations)
+            .Select(m => (m.Tags[BusinessMetricNames.TagOutcome], m.Tags[BusinessMetricNames.TagProvider], m.Value))
+            .Should().BeEquivalentTo(new[]
+            {
+                (BusinessMetrics.ReservationReconciliationProbePlaced, "MoomooSimulate", 1d),
+                (BusinessMetrics.ReservationReconciliationHeldNotPlaced, "MoomooReal", 1d),
+                (BusinessMetrics.ReservationReconciliationIndeterminate, BusinessMetrics.ReservationReconciliationProviderUnknown, 1d),
+                (BusinessMetrics.ReservationReconciliationFailed, "MoomooSimulate", 1d),
+            }, "照会先（本構成は内蔵 paper）ではなく、予約の取引環境で数える");
+    }
+
+    [Fact]
     public async Task 発行が落ちても確定した1件の計数は発行より先に残る()
     {
         // 🔴 T-10-1561（否定形）: 確定した予約は次の巡回に載らない（IADR-0371）。計数を発行の後ろに置くと、

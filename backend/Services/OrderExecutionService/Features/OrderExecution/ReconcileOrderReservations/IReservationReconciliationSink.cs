@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 
@@ -38,9 +39,13 @@ public interface IReservationReconciliationSink
 // <paramref name="ProbeFinding"/> が null なのは phase-4 自己修復（記録があるのに予約が Reserved のまま）である。
 // ブローカへ照会していない＝突合ではなく、記録も保護レグの有無も通常フローが決めているため、
 // 「保護レグを持たない」の Critical は出さない（IADR-0362 決定 3 の「phase-4 自己修復は載せない」）。
+// 🔴 NFR-09, ADR-0045 決定1・決定2, #1051, IADR-0444 決定6: <paramref name="ReservationProvider"/> は**その予約の取引環境**
+// （予約を取った時点で送る先だった発注先。null は不明）。判定の計数を取引環境ごとに分けるために運ぶ
+// ——ADR-0045 決定1 (a)「probe-placed が 1 件以上」は取引環境ごとに数える。
 public sealed record ReservationTerminalizationEmission(
     OrderExecuted Executed,
-    ReservationReconciliationFinding? ProbeFinding);
+    ReservationReconciliationFinding? ProbeFinding,
+    BrokerProvider? ReservationProvider);
 
 // 🔴 #853, IADR-0428 決定4: 出口へ渡す保護の結果 1 件。
 //   - Outcome が非 null: 保護の口が答えた（張った・据え置いた・張れない・要らない）。

@@ -95,4 +95,41 @@ public class EfOrderReservationReconcileTests
         using var db2 = NewContext(dbName);
         new EfOrderReservationStore(db2).Find(id)!.State.Should().Be(OrderDispatchState.Completed);
     }
+
+    [Fact]
+    public void 予約は送る先の取引環境を保存し_滞留の走査と照会で返す_列を足す前の行は不明のまま()
+    {
+        // T-10-1611, NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定1: リコンサイラは滞留の走査（FindStalledReserved）が返す
+        // 取引環境で解放の門を選ぶ。保存・走査・照会（Find）の 3 経路で落ちないこと、取引環境を持たない行（列を足す前の
+        // 予約＝null）が SIMULATE へ化けずに null のまま返ることを固定する。
+        var dbName = Guid.NewGuid().ToString();
+        var simulate = Guid.NewGuid();
+        var real = Guid.NewGuid();
+        var legacy = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfOrderReservationStore(db);
+            store.TryReserve(simulate, Now.AddHours(-48), AiStockTrading.Shared.Contracts.Trading.BrokerProvider.MoomooSimulate);
+            store.TryReserve(real, Now.AddHours(-47), AiStockTrading.Shared.Contracts.Trading.BrokerProvider.MoomooReal);
+            // 列を足す前の行と同じ形（取引環境を持たない）を直接書く。
+            db.DispatchReservations.Add(new OrderDispatchReservationRow
+            {
+                DecisionId = legacy,
+                State = OrderDispatchState.Reserved,
+                ReservedAt = Now.AddHours(-46),
+            });
+            db.SaveChanges();
+        }
+
+        using var db2 = NewContext(dbName);
+        var store2 = new EfOrderReservationStore(db2);
+        store2.FindStalledReserved(Now.AddHours(-24), batchSize: 50)
+            .Select(r => (r.DecisionId, r.BrokerProvider))
+            .Should().Equal(
+                (simulate, AiStockTrading.Shared.Contracts.Trading.BrokerProvider.MoomooSimulate),
+                (real, AiStockTrading.Shared.Contracts.Trading.BrokerProvider.MoomooReal),
+                (legacy, (AiStockTrading.Shared.Contracts.Trading.BrokerProvider?)null));
+        store2.Find(real)!.BrokerProvider.Should().Be(AiStockTrading.Shared.Contracts.Trading.BrokerProvider.MoomooReal);
+        store2.Find(legacy)!.BrokerProvider.Should().BeNull("不明は不明のまま（SIMULATE と推測しない）");
+    }
 }

@@ -274,13 +274,13 @@
     {
       "id": 19,
       "title": "発注: 発注予約の自動リコンサイルの判定（1h あたり）",
-      "description": "滞留した発注予約（送信後に結果を確認できなかった注文）を、証券会社の注文一覧と備考（remark）で突き合わせた判定を outcome 別に数える。probe-placed は照会で発注済みと確定（エントリーなら続けて承認時の手法で保護レグを張る）、self-healed は記録があるのに予約が残っていた自己修復。held-not-placed は照会が未発注と答えたが解放の門が閉じているため据え置いた件数で、同じ予約が巡回ごとに数え直される。実際には証券会社に存在する注文に対してこれが出ていたら、解放の門を開けてはならない（備考が往復していない）。released は門が閉じている限り 0。indeterminate / failed は据え置き（人が証券会社の画面で確認する）。リコンサイルが有効な構成でだけ系列が現れる。",
+      "description": "滞留した発注予約（送信後に結果を確認できなかった注文）を、証券会社の注文一覧と備考（remark）で突き合わせた判定を outcome 別に数える。probe-placed は照会で発注済みと確定（エントリーなら続けて承認時の手法で保護レグを張る）、self-healed は記録があるのに予約が残っていた自己修復。held-not-placed は照会が未発注と答えたが解放の門が閉じているため据え置いた件数で、同じ予約が巡回ごとに数え直される。実際には証券会社に存在する注文に対してこれが出ていたら、解放の門を開けてはならない（備考が往復していない）。released は門が閉じている限り 0。indeterminate / failed は据え置き（人が証券会社の画面で確認する）。provider は予約の取引環境（MoomooSimulate / MoomooReal / InternalPaper、不明は Unknown）で、解放の門は取引環境ごとに分かれている。門を開ける判断は同じ provider の系列だけで行う（MoomooSimulate の系列で実弾の門を開けない）。リコンサイルが有効な構成でだけ系列が現れる。",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 63, "w": 24, "h": 7 },
       "targets": [{
         "datasource": "Prometheus",
-        "expr": "sum by (outcome) (increase(ast_order_reservation_reconciliations_total[1h]))",
-        "legendFormat": "{{outcome}}"
+        "expr": "sum by (outcome, provider) (increase(ast_order_reservation_reconciliations_total[1h]))",
+        "legendFormat": "{{outcome}} / {{provider}}"
       }]
     }
   ]

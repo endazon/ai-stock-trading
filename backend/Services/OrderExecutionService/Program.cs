@@ -188,14 +188,23 @@ builder.Services.AddHostedService<OrderReservationRetentionService>();
 
 // #141, IADR-0074: Reserved 滞留の自動リコンサイル（アプリ既定は無効 Reconciliation:Enabled=false）。
 // 🔴 #856, IADR-0362: **配備（deploy/helm/ai-stock-trading/values.yaml）では Enabled / UseBrokerProbe が true** で、
-// 解放の門（ReleaseOnNotPlaced）だけを閉じている。ここで既定を反転させないのは、docker-compose・単体開発環境の
+// 解放の門（ReleaseOnNotPlaced。#1051 から取引環境ごと）だけを閉じている。ここで既定を反転させないのは、docker-compose・単体開発環境の
 // 挙動を変えないためである（有効化は配備の設定点 1 箇所に集める）。
 // プローブは差し替え可能で、既定は no-op（常に Indeterminate＝何も解放・終端化しない）。
 // #141, IADR-0092: Broker:Provider=moomoo かつ Reconciliation:UseBrokerProbe=true のときだけ実照会プローブ
 // （MoomooReservationBrokerProbe・OpenD SIMULATE）を配線する。それ以外（paper／OpenD 無し／既定）は no-op のまま。
 // no-op プローブ下では phase-4 自己修復のみ作動し、二重発注を招く解放は構造上起きない。
-builder.Services.Configure<ReconciliationOptions>(
-    builder.Configuration.GetSection(ReconciliationOptions.SectionName));
+// 🔴 NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定2・決定4: 解放の門は取引環境ごと（Reconciliation:ReleaseOnNotPlaced:Simulate / :Real）。
+// 旧キー Reconciliation:ReleaseOnNotPlaced（スカラー）は束縛では拾われない（子を持つ型の値は無視される）ため、ここで読み、
+// **SIMULATE の門にだけ**写す（実弾の門へは写さない。新キーが在れば新キーが勝つ。真偽値でなければ起動時に止める）。
+// ValidateOnStart で起動時に 1 度組み立てる——不正な旧キーを最初の巡回まで持ち越さない。
+var reconciliationSection = builder.Configuration.GetSection(ReconciliationOptions.SectionName);
+builder.Services.AddOptions<ReconciliationOptions>()
+    .Bind(reconciliationSection)
+    .PostConfigure(o => o.ApplyLegacyReleaseOnNotPlaced(
+        reconciliationSection["ReleaseOnNotPlaced"],
+        simulateKeyPresent: !string.IsNullOrWhiteSpace(reconciliationSection["ReleaseOnNotPlaced:Simulate"])))
+    .ValidateOnStart();
 if (brokerSelection.IsMoomoo
     && builder.Configuration.GetSection(ReconciliationOptions.SectionName).Get<ReconciliationOptions>()?.UseBrokerProbe == true)
 {

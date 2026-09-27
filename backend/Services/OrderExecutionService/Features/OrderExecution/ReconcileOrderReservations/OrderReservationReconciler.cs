@@ -14,8 +14,9 @@ namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservatio
 //   1. executed_orders に記録あり → phase-4 断絶（Save 成功・MarkCompleted 失敗）の**自己修復**。ブローカ照会不要。
 //   2. 記録なし → プローブ照会（IReservationBrokerProbe）:
 //        Placed        → 記録を保存し確定（MarkCompleted）＋ OrderExecuted 発行対象に載せる。
-//        NotPlaced     → 🔴 **解放の門（Reconciliation:ReleaseOnNotPlaced）が開いているときだけ**予約を解放（Release）。
-//                        閉じているあいだは据え置き、DecisionId を HeldNotPlaced に載せる（#856 / IADR-0362）。
+//        NotPlaced     → 🔴 **その予約の取引環境の解放の門（Reconciliation:ReleaseOnNotPlaced:Simulate / :Real）が開いて
+//                        いるときだけ**予約を解放（Release）。閉じているあいだは据え置き、DecisionId を HeldNotPlaced に載せる
+//                        （#856 / IADR-0362。門の選び方は #1051 / IADR-0444 / ReleaseGatePolicy。不明は据え置く）。
 //        Indeterminate → 据え置き（人手/`_error` の現行安全側を壊さない）。門の開閉に依らない。
 //
 // FR-05, #856, IADR-0362: 突合で終端化した予約は ProbeTerminalized に載せて返し、Worker 層が 1 件ずつ Critical でログする
@@ -67,6 +68,7 @@ public sealed class OrderReservationReconciler(
         var executed = new List<OrderExecuted>();
         var probeTerminalized = new List<ReservationReconciliationFinding>();
         var heldNotPlaced = new List<Guid>();
+        var verdicts = new List<ReservationReconciliationVerdict>();
         var protections = new List<ReconciledEntryProtectionEmission>();
         var terminalized = 0;
         var released = 0;
@@ -101,7 +103,8 @@ public sealed class OrderReservationReconciler(
                     executed.Add(selfHealed);
                     terminalized++;
                     // 🔴 phase-4 自己修復は突合ではない（ブローカへ照会していない）。所見は載せない（IADR-0362 決定 3）。
-                    emission = new ReservationTerminalizationEmission(selfHealed, ProbeFinding: null);
+                    emission = new ReservationTerminalizationEmission(
+                        selfHealed, ProbeFinding: null, reservation.BrokerProvider);
                     // #853, IADR-0428 決定4: 記録の保存後・確定の前に通常フローが止まった場合、保護レグは張られていない
                     // （事前記録が AwaitingEntry のまま残る）。張るかどうかは保護記録が決める（Active なら何もしない）。
                     protectionTarget = record;
@@ -146,7 +149,8 @@ public sealed class OrderReservationReconciler(
                                 confirmed.Quantity, confirmed.Status);
                             probeTerminalized.Add(finding);
                             terminalized++;
-                            emission = new ReservationTerminalizationEmission(placedExecuted, finding);
+                            emission = new ReservationTerminalizationEmission(
+                                placedExecuted, finding, reservation.BrokerProvider);
                             break;
 
                         case ReservationProbeOutcome.NotPlaced:
@@ -158,21 +162,35 @@ public sealed class OrderReservationReconciler(
                             // 🔴 #890, IADR-0371: 本経路は**確定していない**（MarkCompleted を commit していない）。
                             // したがって出口（sink）へは渡さない —— 据え置いた予約は Reserved のまま次回巡回に載るため、
                             // 巡回が中断されても警告は失われない（失われるのは「確定済み」のものだけである）。
-                            if (!_options.ReleaseOnNotPlaced)
+                            //
+                            // 🔴 NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定3: **門はこの予約の取引環境で選ぶ**
+                            // （プロセスに 1 つの真偽値ではない）。SIMULATE の門が開いていても、実弾の予約・取引環境が不明な予約・
+                            // 照会先と取引環境が食い違う予約は解放しない。
+                            if (!ReleaseGatePolicy.MayRelease(
+                                    reservation.BrokerProvider, broker.Provider, _options.ReleaseOnNotPlaced))
                             {
                                 // 据え置くが**無音にしない**。Worker 層が警告でログし、運用が門を開ける判断の入力にする。
                                 heldNotPlaced.Add(decisionId);
+                                verdicts.Add(new ReservationReconciliationVerdict(
+                                    decisionId, reservation.BrokerProvider, ReservationReconciliationVerdictKind.HeldNotPlaced));
                                 break;
                             }
 
                             // 解放後は元の OrderApproved 再配送が改めて予約→発注できる。
                             if (reservations.Release(decisionId))
+                            {
                                 released++;
+                                verdicts.Add(new ReservationReconciliationVerdict(
+                                    decisionId, reservation.BrokerProvider, ReservationReconciliationVerdictKind.Released));
+                            }
+
                             break;
 
                         default:
-                            // Indeterminate（照会不達・判定不能）: 二重発注を招かないため据え置く（fail-safe）。
+                            // Indeterminate（照会不達・判定不能）: 二重発注を招かないため据え置く（fail-safe）。門の開閉に依らない。
                             indeterminate++;
+                            verdicts.Add(new ReservationReconciliationVerdict(
+                                decisionId, reservation.BrokerProvider, ReservationReconciliationVerdictKind.Indeterminate));
                             break;
                     }
                 }
@@ -180,6 +198,8 @@ public sealed class OrderReservationReconciler(
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 failed++;
+                verdicts.Add(new ReservationReconciliationVerdict(
+                    reservation.DecisionId, reservation.BrokerProvider, ReservationReconciliationVerdictKind.Failed));
             }
 
             // 🔴 #890, IADR-0371: **出口は per-item の try/catch の外に置く。**
@@ -206,7 +226,7 @@ public sealed class OrderReservationReconciler(
 
         return new ReservationReconciliationResult(
             stalled.Count, terminalized, released, indeterminate, failed, executed,
-            probeTerminalized, heldNotPlaced, protections);
+            probeTerminalized, heldNotPlaced, protections, verdicts);
     }
 
     // #853, IADR-0428 決定4: 保護の口を 1 件ぶん呼ぶ。口が無い構成は「張れない」として返す（黙って飛ばさない）。
@@ -265,6 +285,8 @@ public sealed class OrderReservationReconciler(
 //   ProbeTerminalized —— 突合で発注済みと確定して終端化した注文（確定の時点では、エントリーなら保護レグが無い）。
 //   HeldNotPlaced     —— 照会が未発注と答えたが、解放の門が閉じているため据え置いた予約。
 // 🔴 #853, IADR-0428 決定4: Protections —— 確定した 1 件ごとの保護の結果（張った・据え置いた・張れない・要らない・失敗）。
+// 🔴 #1051, IADR-0444 決定6: Verdicts —— 確定しなかった判定（据え置き・解放・不確定・失敗）を 1 件ずつ、**予約の取引環境つきで**持つ。
+//   計数を取引環境ごとに分けるためである（ADR-0045 決定1 (b) の held-not-placed は取引環境ごとに数える）。
 public sealed record ReservationReconciliationResult(
     int Scanned,
     int Terminalized,
@@ -274,7 +296,30 @@ public sealed record ReservationReconciliationResult(
     IReadOnlyList<OrderExecuted> Executed,
     IReadOnlyList<ReservationReconciliationFinding> ProbeTerminalized,
     IReadOnlyList<Guid> HeldNotPlaced,
-    IReadOnlyList<ReconciledEntryProtectionEmission> Protections);
+    IReadOnlyList<ReconciledEntryProtectionEmission> Protections,
+    IReadOnlyList<ReservationReconciliationVerdict> Verdicts);
+
+// #1051, IADR-0444 決定6: 確定しなかった判定の種類（巡回サマリの内訳のうち、確定した 1 件の出口を通らないもの）。
+public enum ReservationReconciliationVerdictKind
+{
+    /// <summary>照会は未発注と答えたが、その予約の取引環境の門が閉じている（または取引環境が不明・照会先と食い違う）ため据え置いた。</summary>
+    HeldNotPlaced,
+
+    /// <summary>照会が未発注と答え、その予約の取引環境の門が開いていたので解放した（再発注の許可）。</summary>
+    Released,
+
+    /// <summary>照会不達・判定不能で据え置いた。門の開閉に依らない。</summary>
+    Indeterminate,
+
+    /// <summary>その 1 件の処理が例外で落ち、据え置いた（次の巡回で再試行）。</summary>
+    Failed,
+}
+
+// #1051, IADR-0444 決定6: 確定しなかった判定 1 件。ReservationProvider は予約の取引環境（null は不明）。
+public sealed record ReservationReconciliationVerdict(
+    Guid DecisionId,
+    BrokerProvider? ReservationProvider,
+    ReservationReconciliationVerdictKind Kind);
 
 // #856, IADR-0362: 突合で確定した 1 件の要約（ログ・運用手順で人が追える最小限）。
 // 銘柄・数量・状態まで持つのは、運用者が証券会社の画面で突き合わせるのに要るためである。

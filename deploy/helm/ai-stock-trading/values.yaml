@@ -485,7 +485,13 @@ services:
       #    「未発注」の根拠は remark 突合であって証券会社が「無い」と言った事実ではない —— moomoo SIMULATE が
       #    remark を往復させるかは**実機未検証**であり、往復しなければ発注済みの注文も「一致ゼロ」に見える
       #    （＝全件解放＝全件二重発注）。**true にしてよいのは実機で偽陽性が無いことを記録つきで示した後だけ**（#856）。
-      - { name: Reconciliation__ReleaseOnNotPlaced, value: "false" }
+      # 🔴 #1051: **門は取引環境ごとに 2 つ**（SIMULATE / 実弾）。どの門を使うかは予約ごとに、その予約を送った取引環境で決まる
+      #    （取引環境が不明な旧い予約は、どちらを開けても解放しない）。開けてよいのは、**その取引環境の実機の記録**で
+      #    「発注済みと分かっている予約で probe-placed が 1 件以上」と「held-not-placed の偽陽性が 0 件」を示した後だけ。
+      #    **SIMULATE の記録で __Real を開けない。** 記録の形は docs/operations/operations.md「解放の門を開けるときの記録」。
+      #    旧キー Reconciliation__ReleaseOnNotPlaced（取引環境を区別しない）は廃止。残っていれば SIMULATE の門にだけ写る。
+      - { name: Reconciliation__ReleaseOnNotPlaced__Simulate, value: "false" }
+      - { name: Reconciliation__ReleaseOnNotPlaced__Real, value: "false" }
       # 滞留とみなす閾値（時間）。アプリ既定の 24 時間は、保護逆指値の据え置き（＝無保護の建玉が残っている状態）を
       # 解くには遅すぎる。自動再配送の窓（約 42 秒）と `_error` 滞留の外側にあり、下限クランプ（1 時間）より上。
       # ⚠️ **23 時間を超える値にしない。** 約定追跡（FillPolling）の追跡上限が 24 時間であり、それを超えると

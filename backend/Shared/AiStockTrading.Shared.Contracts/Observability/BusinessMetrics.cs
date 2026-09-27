@@ -83,6 +83,22 @@ public sealed class BusinessMetrics : IDisposable
     /// <summary>FR-05, #856, IADR-0441: リコンサイルの判定タグ値。その 1 件の処理が例外で落ち、据え置いた（次の巡回で再試行）。</summary>
     public const string ReservationReconciliationFailed = "failed";
 
+    /// <summary>
+    /// 🔴 NFR-09, ADR-0045 決定1・決定2, #1051, IADR-0444 決定6: リコンサイルの判定のタグ <c>provider</c> で、予約の取引環境が
+    /// <b>不明</b>（取引環境の列を足す前の予約）であることを表す値。既知の取引環境は <see cref="BrokerProvider"/> の名前
+    /// （<c>MoomooSimulate</c> / <c>MoomooReal</c> / <c>InternalPaper</c>。<see cref="RecordOrderExecuted"/> と同じ語彙）。
+    /// </summary>
+    public const string ReservationReconciliationProviderUnknown = "Unknown";
+
+    // #1051, IADR-0444 決定6: タグ provider の語彙（起動時の 0 はこの 4 値 × 判定 6 値で作る）。
+    private static readonly string[] ReservationReconciliationProviders =
+    [
+        nameof(BrokerProvider.MoomooSimulate),
+        nameof(BrokerProvider.MoomooReal),
+        nameof(BrokerProvider.InternalPaper),
+        ReservationReconciliationProviderUnknown,
+    ];
+
     // FR-05, #856, IADR-0441: 上の 6 値（語彙）。計上と起動時の 0 はこの集合だけを使う。
     private static readonly string[] ReservationReconciliationOutcomes =
     [
@@ -439,9 +455,14 @@ public sealed class BusinessMetrics : IDisposable
     /// <summary>
     /// FR-05, NFR-09, #856, IADR-0441: 発注予約の自動リコンサイルの判定を <paramref name="count"/> 件計上する。
     /// <paramref name="count"/> が 0 以下なら何もしない（巡回サマリの 0 件の内訳を計上しない）。
+    /// <para>
+    /// 🔴 #1051, IADR-0444 決定6: <paramref name="reservationProvider"/> は<b>その予約の取引環境</b>（null は不明＝
+    /// <see cref="ReservationReconciliationProviderUnknown"/>）。ADR-0045 決定1 の (a)(b) を<b>取引環境ごとに</b>数えるため、
+    /// タグ <c>provider</c> に載せる。<b>必須引数</b>にしてある（落とすと取引環境の別が計器から消える）。
+    /// </para>
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="outcome"/> が 6 値（<c>ReservationReconciliation*</c>）の外。語彙の外の値で系列を増やさない。</exception>
-    public void RecordOrderReservationReconciliation(string outcome, int count = 1)
+    public void RecordOrderReservationReconciliation(string outcome, BrokerProvider? reservationProvider, int count = 1)
     {
         if (Array.IndexOf(ReservationReconciliationOutcomes, outcome) < 0)
         {
@@ -454,8 +475,15 @@ public sealed class BusinessMetrics : IDisposable
             return;
 
         _orderReservationReconciliations.Add(
-            count, new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome));
+            count,
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome),
+            new KeyValuePair<string, object?>(BusinessMetricNames.TagProvider, ReservationProviderTag(reservationProvider)));
     }
+
+    // #1051, IADR-0444 決定6: 予約の取引環境 → タグ provider の値。null（不明）は "Unknown"。
+    // 未定義の序数（範囲外の整数）も "Unknown" に倒す——既知の取引環境の系列へ混ぜない。
+    private static string ReservationProviderTag(BrokerProvider? provider) =>
+        provider is { } p && Enum.IsDefined(p) ? p.ToString() : ReservationReconciliationProviderUnknown;
 
     /// <summary>
     /// FR-05, NFR-09, #856, IADR-0441: 上のカウンタを<b>判定ごとに 0 で計上し、系列を先に作る</b>。
@@ -467,10 +495,16 @@ public sealed class BusinessMetrics : IDisposable
     /// </summary>
     public void PrimeOrderReservationReconciliations()
     {
+        // #1051, IADR-0444 決定6: 判定 6 値 × 取引環境 4 値（取引環境ごとの最初の 1 件も increase() が拾えるように）。
         foreach (var outcome in ReservationReconciliationOutcomes)
         {
-            _orderReservationReconciliations.Add(
-                0, new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome));
+            foreach (var provider in ReservationReconciliationProviders)
+            {
+                _orderReservationReconciliations.Add(
+                    0,
+                    new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome),
+                    new KeyValuePair<string, object?>(BusinessMetricNames.TagProvider, provider));
+            }
         }
     }
 

@@ -285,7 +285,7 @@ public class ProtectiveStopGuardIndeterminateCloseTests
 
         var reconciler = new OrderReservationReconciler(
             h.Reservations, h.Store, new StubProbe(ReservationProbeResult.NotPlaced), h.Broker, new FakeClock(),
-            Options.Create(new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = true }));
+            Options.Create(new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = new() { Simulate = true } }));
         (await reconciler.ReconcileAsync(Now.AddHours(1), 10)).Released.Should().Be(1);
 
         h.Broker.Close = CloseBehavior.Filled;

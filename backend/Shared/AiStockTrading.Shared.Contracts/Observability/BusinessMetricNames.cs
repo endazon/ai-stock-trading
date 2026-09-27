@@ -125,6 +125,12 @@ public static class BusinessMetricNames
     /// <para>
     /// 起動時に 0 を計上する（<see cref="BusinessMetrics.PrimeOrderReservationReconciliations"/>。リコンサイルが有効な構成だけ）。
     /// </para>
+    /// <para>
+    /// 🔴 NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定6: タグ <c>provider</c> は<b>その予約の取引環境</b>
+    /// （<c>MoomooSimulate</c> / <c>MoomooReal</c> / <c>InternalPaper</c>、取引環境の列を足す前の予約は <c>Unknown</c>）。
+    /// 解放の門は取引環境ごとに分かれており、(a)「発注済みと分かっている予約で probe-placed が 1 件以上」と
+    /// (b)「held-not-placed の偽陽性が 0 件」も取引環境ごとに示す。<b>SIMULATE の系列で実弾の門を開けない。</b>
+    /// </para>
     /// </summary>
     public const string OrderReservationReconciliations = "ast.order.reservation_reconciliations";
 

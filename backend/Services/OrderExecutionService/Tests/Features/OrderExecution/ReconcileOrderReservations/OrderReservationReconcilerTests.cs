@@ -56,9 +56,17 @@ public class OrderReservationReconcilerTests
 
     // 🔴 T-10-600, #856, IADR-0362: 解放の門（Reconciliation:ReleaseOnNotPlaced）は**既定で閉じている**。
     // 明示的に開けたときだけ NotPlaced が解放へ進む。テストも既定は閉じた側で組む。
+    // 🔴 #1051, IADR-0444: 門は取引環境ごとに分かれた。本クラスの既存の試験は SIMULATE の予約を SIMULATE の口座で照会する形で組み、
+    // releaseOnNotPlaced は **SIMULATE の門**を指す（実弾の門は閉じたまま）。取引環境ごとの門の評価は
+    // ReleaseGatePerTradingEnvironmentTests（T-10-1600〜）が固定する。
     private static IOptions<ReconciliationOptions> Options(bool releaseOnNotPlaced) =>
         Microsoft.Extensions.Options.Options.Create(
-            new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = releaseOnNotPlaced });
+            new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = new() { Simulate = releaseOnNotPlaced } });
+
+    // #1051, IADR-0444 決定1: 予約の取引環境（送る先の発注先）と照会先の取引環境。
+    private const BrokerProvider Sim = BrokerProvider.MoomooSimulate;
+
+    private static IBrokerAdapter SimulateBroker() => new ProviderOverrideBroker(Sim);
 
     private static (OrderReservationReconciler Reconciler, InMemoryOrderReservationStore Reservations,
         InMemoryExecutedOrderStore Executed, FakeProbe Probe) Build(
@@ -68,7 +76,7 @@ public class OrderReservationReconcilerTests
         var executed = new InMemoryExecutedOrderStore();
         var probe = new FakeProbe(probeResult);
         var reconciler = new OrderReservationReconciler(
-            reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock(), Options(releaseOnNotPlaced));
+            reservations, executed, probe, SimulateBroker(), new FakeClock(), Options(releaseOnNotPlaced));
         return (reconciler, reservations, executed, probe);
     }
 
@@ -78,7 +86,7 @@ public class OrderReservationReconcilerTests
         // phase-4 断絶（Save 成功・MarkCompleted 失敗）: 記録はあるが予約は Reserved のまま。ブローカに聞かず確定する。
         var (reconciler, reservations, executed, probe) = Build(ReservationProbeResult.Indeterminate);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
         executed.Save(new ExecutionRecord(
             decisionId, "BRK-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
             PositionEffect.Open, 10, 100m, 10, 101m, OrderStatus.Filled, 0.01m, StalledAt));
@@ -98,7 +106,7 @@ public class OrderReservationReconcilerTests
         // 受け入れ基準1（発注済み→確定）: プローブが Placed を返す。記録が保存され、予約は確定し、OrderExecuted が載る。
         var (reconciler, reservations, executed, _) = Build(ReservationProbeResult.Placed(Placed("BRK-9")));
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -118,7 +126,7 @@ public class OrderReservationReconcilerTests
         var (reconciler, reservations, executed, _) =
             Build(ReservationProbeResult.NotPlaced, releaseOnNotPlaced: true);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -135,7 +143,7 @@ public class OrderReservationReconcilerTests
         // 受け入れ基準2（fail-safe）: Indeterminate は「発注済みか不明」であり、解放すれば二重発注を招く。据え置く。
         var (reconciler, reservations, _, _) = Build(ReservationProbeResult.Indeterminate);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -153,11 +161,11 @@ public class OrderReservationReconcilerTests
         var reservations = new InMemoryOrderReservationStore();
         var executed = new InMemoryExecutedOrderStore();
         var reconciler = new OrderReservationReconciler(
-            reservations, executed, new IndeterminateReservationBrokerProbe(), new PaperBrokerAdapter(), new FakeClock(),
+            reservations, executed, new IndeterminateReservationBrokerProbe(), SimulateBroker(), new FakeClock(),
             Options(releaseOnNotPlaced: true));
         var ids = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid()).ToList();
         foreach (var id in ids)
-            reservations.TryReserve(id, StalledAt);
+            reservations.TryReserve(id, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -174,7 +182,7 @@ public class OrderReservationReconcilerTests
         // in-flight（cutoff より新しい）予約は滞留と誤認しない（再配送中の予約に触れて二重発注しないため）。
         var (reconciler, reservations, _, probe) = Build(ReservationProbeResult.NotPlaced);
         var recent = Guid.NewGuid();
-        reservations.TryReserve(recent, Now.AddMinutes(-1)); // cutoff（-24h）より新しい
+        reservations.TryReserve(recent, Now.AddMinutes(-1), Sim); // cutoff（-24h）より新しい
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -188,7 +196,7 @@ public class OrderReservationReconcilerTests
     {
         var (reconciler, reservations, _, _) = Build(ReservationProbeResult.Indeterminate);
         for (var i = 0; i < 5; i++)
-            reservations.TryReserve(Guid.NewGuid(), StalledAt.AddSeconds(i));
+            reservations.TryReserve(Guid.NewGuid(), StalledAt.AddSeconds(i), Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 2);
 
@@ -203,7 +211,7 @@ public class OrderReservationReconcilerTests
         var reservations = new InMemoryOrderReservationStore();
         var executed = new InMemoryExecutedOrderStore();
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
         var probe = new CallbackProbe(id =>
         {
             executed.Save(new ExecutionRecord(
@@ -212,7 +220,7 @@ public class OrderReservationReconcilerTests
             return ReservationProbeResult.Placed(Placed("BRK-PROBE"));
         });
         var reconciler = new OrderReservationReconciler(
-            reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock(), Options(releaseOnNotPlaced: true));
+            reservations, executed, probe, SimulateBroker(), new FakeClock(), Options(releaseOnNotPlaced: true));
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -231,13 +239,13 @@ public class OrderReservationReconcilerTests
         var executed = new InMemoryExecutedOrderStore();
         var bad = Guid.NewGuid();
         var good = Guid.NewGuid();
-        reservations.TryReserve(bad, StalledAt); // ReservedAt 昇順で先頭
-        reservations.TryReserve(good, StalledAt.AddSeconds(1));
+        reservations.TryReserve(bad, StalledAt, Sim); // ReservedAt 昇順で先頭
+        reservations.TryReserve(good, StalledAt.AddSeconds(1), Sim);
         var probe = new CallbackProbe(id =>
             id == bad ? throw new InvalidOperationException("照会失敗") : ReservationProbeResult.NotPlaced);
         // #856: 「1 件の失敗が他を巻き添えにしない」を見るテストなので、解放の門は開けた側で組む。
         var reconciler = new OrderReservationReconciler(
-            reservations, executed, probe, new PaperBrokerAdapter(), new FakeClock(), Options(releaseOnNotPlaced: true));
+            reservations, executed, probe, SimulateBroker(), new FakeClock(), Options(releaseOnNotPlaced: true));
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -259,7 +267,7 @@ public class OrderReservationReconcilerTests
         // 門が閉じているあいだは、プローブが何と言おうと在庫の押さえを解かない。
         var (reconciler, reservations, executed, _) = Build(ReservationProbeResult.NotPlaced);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -278,7 +286,7 @@ public class OrderReservationReconcilerTests
         // 常駐が警告でログする（実機検証が済めば門を開ける、という運用判断の入力になる）。
         var (reconciler, reservations, _, _) = Build(ReservationProbeResult.NotPlaced);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -291,7 +299,7 @@ public class OrderReservationReconcilerTests
         // T-10-601: 門の実効。開ければ従来どおり解放する（#141 / IADR-0074 の受け入れ基準1）。
         var (reconciler, reservations, _, _) = Build(ReservationProbeResult.NotPlaced, releaseOnNotPlaced: true);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -309,7 +317,7 @@ public class OrderReservationReconcilerTests
         // 門を開けても据え置く——門を開けることが「不明も解放してよい」へ広がらないことを固定する。
         var (reconciler, reservations, _, _) = Build(ReservationProbeResult.Indeterminate, releaseOnNotPlaced);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -328,7 +336,7 @@ public class OrderReservationReconcilerTests
         // （ReconciledEntryProtectionTests が固定する）。ここは口を持たない組み立てで、確定の可視化だけを固定する。
         var (reconciler, reservations, _, _) = Build(ReservationProbeResult.Placed(Placed("BRK-P1")));
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
 
@@ -347,7 +355,7 @@ public class OrderReservationReconcilerTests
         // 記録は通常フローが作ったものであり、保護レグの有無も通常フローが決めている。混ぜない。
         var (reconciler, reservations, executed, _) = Build(ReservationProbeResult.Indeterminate);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
         executed.Save(new ExecutionRecord(
             decisionId, "BRK-SELF", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
             PositionEffect.Open, 10, 100m, 10, 101m, OrderStatus.Filled, 0.01m, StalledAt));
@@ -367,7 +375,9 @@ public class OrderReservationReconcilerTests
 
         options.Enabled.Should().BeFalse();
         options.UseBrokerProbe.Should().BeFalse();
-        options.ReleaseOnNotPlaced.Should().BeFalse();
+        // #1051, IADR-0444 決定2: 解放の門は取引環境ごとに 2 つ。どちらも既定で閉（T-10-1600）。
+        options.ReleaseOnNotPlaced.Simulate.Should().BeFalse();
+        options.ReleaseOnNotPlaced.Real.Should().BeFalse();
     }
 
     // ---- 🔴 #890, IADR-0371: 確定した 1 件は、その場で出口へ渡す（巡回の中断で失われない） ----
@@ -410,8 +420,8 @@ public class OrderReservationReconcilerTests
         var executedStore = new InMemoryExecutedOrderStore();
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
-        reservations.TryReserve(first, StalledAt);              // ReservedAt 昇順で先頭
-        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+        reservations.TryReserve(first, StalledAt, Sim);              // ReservedAt 昇順で先頭
+        reservations.TryReserve(second, StalledAt.AddSeconds(1), Sim);
 
         // 実時間の sleep は使わない。1 件目の照会の中で停止要求を立て、2 件目のループ先頭で確実に投げさせる。
         using var cts = new CancellationTokenSource();
@@ -421,7 +431,7 @@ public class OrderReservationReconcilerTests
             return ReservationProbeResult.Placed(Placed("BRK-CANCEL"));
         });
         var reconciler = new OrderReservationReconciler(
-            reservations, executedStore, probe, new PaperBrokerAdapter(), new FakeClock(), Options(false));
+            reservations, executedStore, probe, SimulateBroker(), new FakeClock(), Options(false));
         var sink = new RecordingSink();
 
         var reconcile = async () =>
@@ -452,8 +462,8 @@ public class OrderReservationReconcilerTests
         var executedStore = new InMemoryExecutedOrderStore();
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
-        reservations.TryReserve(first, StalledAt);
-        reservations.TryReserve(second, StalledAt.AddSeconds(1));
+        reservations.TryReserve(first, StalledAt, Sim);
+        reservations.TryReserve(second, StalledAt.AddSeconds(1), Sim);
 
         using var cts = new CancellationTokenSource();
         var probe = new CallbackProbe(id =>
@@ -463,7 +473,7 @@ public class OrderReservationReconcilerTests
             return ReservationProbeResult.Placed(Placed($"BRK-{(id == first ? "1" : "2")}"));
         });
         var reconciler = new OrderReservationReconciler(
-            reservations, executedStore, probe, new PaperBrokerAdapter(), new FakeClock(), Options(false));
+            reservations, executedStore, probe, SimulateBroker(), new FakeClock(), Options(false));
         var sink = new RecordingSink();
 
         var aborted = async () => await reconciler.ReconcileAsync(Cutoff, batchSize: 50, sink, cts.Token);
@@ -491,15 +501,15 @@ public class OrderReservationReconcilerTests
         var held = Guid.NewGuid();
         var unknown = Guid.NewGuid();
         var broken = Guid.NewGuid();
-        reservations.TryReserve(held, StalledAt);
-        reservations.TryReserve(unknown, StalledAt.AddSeconds(1));
-        reservations.TryReserve(broken, StalledAt.AddSeconds(2));
+        reservations.TryReserve(held, StalledAt, Sim);
+        reservations.TryReserve(unknown, StalledAt.AddSeconds(1), Sim);
+        reservations.TryReserve(broken, StalledAt.AddSeconds(2), Sim);
         var probe = new CallbackProbe(id =>
             id == held ? ReservationProbeResult.NotPlaced
             : id == unknown ? ReservationProbeResult.Indeterminate
             : throw new InvalidOperationException("照会失敗"));
         var reconciler = new OrderReservationReconciler(
-            reservations, executedStore, probe, new PaperBrokerAdapter(), new FakeClock(),
+            reservations, executedStore, probe, SimulateBroker(), new FakeClock(),
             Options(releaseOnNotPlaced));
         var sink = new RecordingSink();
 
@@ -526,7 +536,7 @@ public class OrderReservationReconcilerTests
         //（IADR-0362 決定 3 の「phase-4 自己修復は載せない」）。
         var (reconciler, reservations, executedStore, probe) = Build(ReservationProbeResult.Indeterminate);
         var decisionId = Guid.NewGuid();
-        reservations.TryReserve(decisionId, StalledAt);
+        reservations.TryReserve(decisionId, StalledAt, Sim);
         executedStore.Save(new ExecutionRecord(
             decisionId, "BRK-HEAL", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
             PositionEffect.Open, 10, 100m, 10, 101m, OrderStatus.Filled, 0.01m, StalledAt));
@@ -546,7 +556,7 @@ public class OrderReservationReconcilerTests
         // 終端（Completed）予約はリコンサイル対象外（FindStalledReserved が Reserved のみ返す）。
         var (reconciler, reservations, _, probe) = Build(ReservationProbeResult.NotPlaced);
         var done = Guid.NewGuid();
-        reservations.TryReserve(done, StalledAt);
+        reservations.TryReserve(done, StalledAt, Sim);
         reservations.MarkCompleted(done, "BRK-DONE", StalledAt);
 
         var result = await reconciler.ReconcileAsync(Cutoff, batchSize: 50);
