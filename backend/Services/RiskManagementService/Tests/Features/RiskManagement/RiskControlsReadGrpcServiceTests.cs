@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
@@ -35,20 +36,22 @@ public class RiskControlsReadGrpcServiceTests
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
     // WebApplicationFactory の TestServer 越しに h2c を張る（実ポートを開かずに gRPC を通す。段 1 と同じ）。
-    private static GrpcChannel ChannelFor(WebApplicationFactory<Program> factory, string? roles)
+    private static GrpcChannel ChannelFor(WebApplicationFactory<Program> factory, string? roles, string? azp = null)
     {
         var handler = factory.Server.CreateHandler();
         if (roles is not null)
-            handler = new RolesHeaderHandler(handler, roles);
+            handler = new RolesHeaderHandler(handler, roles, azp);
 
         return GrpcChannel.ForAddress(factory.Server.BaseAddress, new GrpcChannelOptions { HttpHandler = handler });
     }
 
-    private sealed class RolesHeaderHandler(HttpMessageHandler inner, string roles) : DelegatingHandler(inner)
+    private sealed class RolesHeaderHandler(HttpMessageHandler inner, string roles, string? azp = null) : DelegatingHandler(inner)
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             request.Headers.TryAddWithoutValidation(TestAuthHandler.RolesHeader, roles);
+            if (azp is not null)
+                request.Headers.TryAddWithoutValidation(TestAuthHandler.AzpHeader, azp);
             return base.SendAsync(request, cancellationToken);
         }
     }
@@ -184,16 +187,71 @@ public class RiskControlsReadGrpcServiceTests
     }
 
     // 陽性対照: 利用者（trading-owner）も読める（REST の読み取りと同じ OwnerOrService）。
+    // #1067: gRPC 面の所有者の分岐は、トークンの azp がボットの機密クライアントであるときだけ（T-10-1725）。
     [Fact]
     public async Task T_10_1051_利用者のロールでも読める()
     {
         await using var factory = new RiskWorkerWebApplicationFactory();
-        using var channel = ChannelFor(factory, "trading-owner");
+        using var channel = ChannelFor(factory, "trading-owner", "ai-stock-trading-owner");
 
         var response = await new Proto.RiskControlsRead.RiskControlsReadClient(channel)
             .GetStageGateAsync(new Proto.GetStageGateRequest());
 
         response.CurrentStage.Should().NotBe(Proto.TradingStage.Unspecified);
+    }
+
+    // ---- T-10-1725: gRPC 面の所有者の門は、呼び出し元のクライアント（azp）が Discord ボットであることを併せて求める ----
+    // NFR-06, FR-14, ADR-0047 決定 3, IADR-0448 決定 1, #1067 (#753): 人の利用者のトークン（`trading-owner` を持つが azp は BFF 等）は
+    // gRPC 面を通らない。🔴 変種（大小文字・接頭辞・接尾辞）と azp の無いトークンも通さない。s2s の分岐と REST の面は変えない。
+    private const string GateOwnerRole = "trading-owner";
+    private const string GateServiceRole = "trading-service";
+    private const string BotClient = "ai-stock-trading-owner";
+
+    [Theory]
+    [InlineData(null)]                          // azp の無いトークン
+    [InlineData("ai-stock-trading-dev")]        // 利用者の公開クライアント（ブラウザ・BFF の経路）
+    [InlineData("bff")]
+    [InlineData("AI-STOCK-TRADING-OWNER")]      // 大小文字の変種
+    [InlineData("Ai-Stock-Trading-Owner")]
+    [InlineData("ai-stock-trading-owner-bff")]  // ボットの id を接頭辞に持つ別のクライアント
+    [InlineData("ai-stock-trading-own")]        // ボットの id の接頭辞
+    [InlineData("xai-stock-trading-owner")]     // ボットの id を接尾辞に持つ別のクライアント
+    [InlineData("ai-stock-trading-svc")]        // s2s のクライアントでも、所有者の分岐では通さない
+    public async Task T_10_1725_所有者のロールでも呼び出し元がボットでなければ_PERMISSION_DENIED(string? azp)
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        using var channel = ChannelFor(factory, GateOwnerRole, azp);
+
+        var act = async () => await new Proto.RiskControlsRead.RiskControlsReadClient(channel).GetStageGateAsync(new Proto.GetStageGateRequest());
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        var sizing = async () => await new Proto.RiskControlsRead.RiskControlsReadClient(channel)
+            .GetSizingContextAsync(new Proto.GetSizingContextRequest());
+        (await sizing.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied, "同じ面の別の rpc も同じ門");
+    }
+
+    // 陽性対照: ボットのトークン（trading-owner ＋ azp＝ボットの機密クライアント）は通る。s2s は azp を問わず従来どおり。
+    // 🔴 REST の面の所有者の判定は変えない（azp の無い利用者のトークンで REST は読める＝BFF が中継する経路）。
+    [Fact]
+    public async Task T_10_1725_ボットのトークンは通り_s2sは従来どおりで_RESTの所有者の判定は変えない()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+        foreach (var (roles, azp) in new (string, string?)[]
+                 {
+                     (GateOwnerRole, BotClient),
+                     (GateServiceRole, null),
+                     (GateServiceRole, "bff"),
+                     ($"{GateOwnerRole},{GateServiceRole}", "bff"),
+                 })
+        {
+            using var channel = ChannelFor(factory, roles, azp);
+            var act = async () => await new Proto.RiskControlsRead.RiskControlsReadClient(channel).GetStageGateAsync(new Proto.GetStageGateRequest());
+            await act.Should().NotThrowAsync($"roles={roles} azp={azp ?? "(無し)"} は通るはず");
+        }
+
+        using var rest = factory.CreateClient();
+        rest.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, GateOwnerRole);
+        (await rest.GetAsync("/risk-controls/stage-gate")).StatusCode.Should().Be(HttpStatusCode.OK, "REST の所有者の判定は OwnerOrService のまま");
     }
 
     // REST の 400（from・to の欠落・書式違い）は INVALID_ARGUMENT。逆順は REST と同じ扱い（約定・取り込みは空、

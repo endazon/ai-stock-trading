@@ -12,11 +12,14 @@ namespace CostControlService.Features.CostControl;
 // 費用統制の現在の判定の gRPC 面。REST の `GET /costs/state`（GetCostStateEndpoint）と**同じ**サービス
 // （CostControlAppService.GetLlmStateAsync）を呼ぶ —— 評価器を 2 つにしない。
 //
-// 認可: REST の read サブグループと**同じ** `OwnerOrService`（IADR-0051）。s2s トークンが無ければ `UNAUTHENTICATED`、
+// 認可: REST の read サブグループと同じ `OwnerOrService` に、所有者の分岐だけ呼び出し元のクライアント（`azp`）の確認を足した `GrpcOwnerOrService`（#1067。下の属性）（IADR-0051）。s2s トークンが無ければ `UNAUTHENTICATED`、
 // ロールが無ければ `PERMISSION_DENIED`。
 //
 // 🔴 **並走中の正は REST である**（MSP:ADR-0029 の 2026-08-04 追記）。REST 面は変えていない。
-[Authorize(Policy = AiStockTradingAuthPolicies.OwnerOrService)]
+// 🔴 NFR-06, ADR-0047 決定 3, IADR-0448, #1067: 門は **`GrpcOwnerOrService`**（REST の `OwnerOrService` ではない）。
+// s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
+// ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
+[Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
 public sealed class CostStateReadGrpcService(CostControlAppService costs) : Proto.CostStateRead.CostStateReadBase
 {
     public override async Task<Proto.GetCostStateResponse> GetCostState(

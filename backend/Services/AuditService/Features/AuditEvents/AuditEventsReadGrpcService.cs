@@ -13,7 +13,7 @@ namespace AuditService.Features.AuditEvents;
 // 監査台帳の**種別 × 期間の読み取り**の gRPC 面。REST の `GET /audit/events/by-type`（GetAuditEventsByTypeEndpoint）と
 // **同じ**ストア・同じ種別の解析を呼ぶ —— 評価器を 2 つにしない（段 2 の `RiskControlsReadGrpcService` と同じ作法）。
 //
-// 認可: REST の当該エンドポイントと**同じ** `OwnerOrService`（IADR-0051 / IADR-0199 決定2）。s2s トークンが無ければ
+// 認可: REST の当該エンドポイントと同じ `OwnerOrService` に、所有者の分岐だけ呼び出し元のクライアント（`azp`）の確認を足した `GrpcOwnerOrService`（#1067。下の属性）（IADR-0051 / IADR-0199 決定2）。s2s トークンが無ければ
 // `UNAUTHENTICATED`、ロールが無ければ `PERMISSION_DENIED`（ASP.NET Core の gRPC は認可失敗をこの 2 つへ写す）。
 // 🔴 同じ監査台帳の OwnerOnly の 2 本（相関 ID・直近）は gRPC に出さない —— サービス間の呼び出し元が無い。
 //
@@ -23,7 +23,10 @@ namespace AuditService.Features.AuditEvents;
 //   - 逆順・同時刻（半開区間が空になる）。
 //
 // 🔴 **並走中の正は REST である**（MSP:ADR-0029 の 2026-08-04 追記）。REST 面の振る舞いは変えていない。
-[Authorize(Policy = AiStockTradingAuthPolicies.OwnerOrService)]
+// 🔴 NFR-06, ADR-0047 決定 3, IADR-0448, #1067: 門は **`GrpcOwnerOrService`**（REST の `OwnerOrService` ではない）。
+// s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
+// ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
+[Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
 public sealed class AuditEventsReadGrpcService(IAuditEventStore store) : Proto.AuditEventsRead.AuditEventsReadBase
 {
     public override Task<Proto.GetEventsByTypeResponse> GetEventsByType(

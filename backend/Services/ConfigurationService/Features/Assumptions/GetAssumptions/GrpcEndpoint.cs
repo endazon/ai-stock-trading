@@ -11,13 +11,16 @@ namespace ConfigurationService.Features.Assumptions.GetAssumptions;
 // 全体前提条件の照会の gRPC 面。REST の `GET /assumptions`（`GetAssumptionsEndpoint`）と**同じ**
 // `AssumptionsService.GetCurrent()` を呼ぶ —— 評価器を 2 つにしない（基盤の参照実装と同じ作法）。
 //
-// 認可（IADR-0063 決定 2）: REST の読み取りと**同じ** `OwnerOrService`。s2s トークンが無ければ
+// 認可（IADR-0063 決定 2）: REST の読み取りと同じ `OwnerOrService` に、所有者の分岐だけ呼び出し元のクライアント（`azp`）の確認を足した `GrpcOwnerOrService`（#1067。下の属性）。s2s トークンが無ければ
 // `UNAUTHENTICATED`、`trading-service`／`trading-owner` のいずれも持たなければ `PERMISSION_DENIED` になる
 // （ASP.NET Core の gRPC は認可失敗をこの 2 つへ写像する）。呼び出し元はどちらも既存の fail-safe へ倒す。
 //
 // 🔴 **並走中の正は REST である**（MSP:ADR-0029 の 2026-08-04 追記・IADR-0284 決定 1 の順序）。
 // REST 面は 1 バイトも変えていない。撤去は段 6 の判断である。
-[Authorize(Policy = AiStockTradingAuthPolicies.OwnerOrService)]
+// 🔴 NFR-06, ADR-0047 決定 3, IADR-0448, #1067: 門は **`GrpcOwnerOrService`**（REST の `OwnerOrService` ではない）。
+// s2s（trading-service）は同じ、所有者（trading-owner）はトークンの `azp` が Discord ボットの機密クライアントであるときだけ通す
+// ＝人の利用者のトークンは gRPC 面を通らない（REST の面の判定は変えていない）。
+[Authorize(Policy = AiStockTradingAuthPolicies.GrpcOwnerOrService)]
 internal sealed class AssumptionsGrpcService(AssumptionsService assumptions) : Proto.Assumptions.AssumptionsBase
 {
     public override Task<Proto.GetAssumptionsResponse> Get(

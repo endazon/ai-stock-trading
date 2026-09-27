@@ -278,6 +278,14 @@ services:
     # env `Grpc__Port` が描画され、既定描画が変わる。宣言しないサービスは 1 バイトも変わらない）。
     # 有効化するときだけ、ここへ 1 行足す（呼び出し元の report の `Audit__Grpc` と**同じ変更で**揃える）:
     #   grpcPort: 8081
+    extraEnv:
+      # NFR-06, FR-14, ADR-0047 決定 3, IADR-0448, #1067: east-west gRPC 面の所有者の門が許す呼び出し元のクライアント（トークンの azp）。
+      # **notification の Notifications__Discord__OwnerAuth__ClientId と同じ秘密鍵から採る**（ボットが実際に使う機密クライアント＝単一情報源）。
+      # 🔴 配列の 1 要素目（`__0`）で書く。1 つの値（`Auth__GrpcOwnerClients`）は起動時に例外で止まる（既定へ静かに戻さない）。
+      # fail-safe: 鍵が無ければ env 自体が無い＝コード既定（ai-stock-trading-owner）。値が空なら誰の所有者トークンも gRPC 面を通さない。
+      # s2s（trading-service）の分岐と REST の面の判定には効かない。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   backtest:
     image: ai-stock-trading/backtest-service
     # DB は持たない（永続化なし）。**メッセージバスは持つ**（#688 / IADR-0310: verdict の発行。接続文字列は
@@ -308,6 +316,10 @@ services:
     image: ai-stock-trading/configuration-service
     db: configuration_svc
     auth: true
+    extraEnv:
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   cost-control:
     # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0328 決定 3, IADR-0446, #1061: east-west gRPC（h2c）の提供側ポート。
     # 🔴 **既定は REST であり、`grpcPort` は意図的に宣言していない**（宣言すると Service / Deployment の第 2 ポートと
@@ -327,6 +339,9 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   information-collection:
     image: ai-stock-trading/information-collection-service
     # auth=true は Auth__Authority の注入を意味する。本サービスは自身の API を認証しない（server 側 auth は無し）が、
@@ -437,6 +452,9 @@ services:
       # Notifications__Discord__OwnerAuth__ClientId と同じ秘密鍵から採る**（report / risk-management と同じ単一情報源）。
       # fail-safe: 未設定/空=誰の onBehalfOf も信じない（変更者は `client:<azp>` へ倒れる）。
       - name: Monitor__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   notification:
     image: ai-stock-trading/notification-service
@@ -611,6 +629,9 @@ services:
       - { name: Fx__Provider, value: "boj" }
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   risk-management:
     image: ai-stock-trading/risk-management-service
     db: risk_management_svc
@@ -652,6 +673,9 @@ services:
       # report の Reports__DelegatedActor__TrustedClientIds と同じ鍵）。
       # fail-safe: 未設定/空=誰の onBehalfOf も信じない（承認者はトークンの主体へ倒れる）。
       - name: RiskControls__DelegatedActor__TrustedClientIds
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
+      # NFR-06, IADR-0448, #1067: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
         secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   trade-decision:
     image: ai-stock-trading/trade-decision-service
