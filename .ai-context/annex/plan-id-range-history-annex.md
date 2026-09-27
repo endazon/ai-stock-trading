@@ -49,4 +49,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 
 ## 2. 移設後の引き直し
 
-（まだ無い）
+- **2026-09-27 に 0046 へ**〔ADR-0046 当時の監視銘柄の再構成で「最初の変更の変更前」を使えるのは `SeededAt` 以降に限り、`SeededAt` が無い・矛盾する時点は再構成できないとする（ADR-0044 決定 3 の部分改定）。planning#685 / planning#686。本リポの追随は #1056〕。
+  **2026-09-27 実測**: 隣接クローン（`36d1f10` = `origin/main`、`git rev-parse --is-shallow-repository` → `false`）で
+  `node tools/doc-checks/gen-plan-ranges.js --check` が ADR **[1, 46]・46 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
