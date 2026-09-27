@@ -90,13 +90,23 @@ public static class CostControlGrpcExtensions
 }
 
 // NFR, IADR-0446 決定 3: 線上表現 → 本サービスの型（受け手側の写し）。
-// 🔴 **原則 A**: 欠落・空は `null`（言っていない）。0・false へ写さない。読めない 10 進は FormatException（呼び出し元が不正応答へ倒す）。
+// 🔴 **原則 A**: 欠落・空は `null`（言っていない）。0・false へ写さない。
+// #1063 B: 読めない倍率（書式・decimal の範囲を超える桁）も例外にせず `null` ＋「読めなかった」で返す。例外で応答全体を Normal へ倒すと、
+// 停止の旗が読めていても停止を守らなくなる（#915 の規則より弱い）。
 internal static class CostControlWire
 {
     internal static bool? IsHalted(Proto.GetCostStateResponse response) => response.HasIsHalted ? response.IsHalted : null;
 
-    internal static decimal? IntervalMultiplier(Proto.GetCostStateResponse response) =>
-        response.HasIntervalMultiplier && !string.IsNullOrEmpty(response.IntervalMultiplier)
-            ? decimal.Parse(response.IntervalMultiplier, NumberStyles.Number, CultureInfo.InvariantCulture)
-            : null;
+    internal static decimal? IntervalMultiplier(Proto.GetCostStateResponse response, out bool unreadable)
+    {
+        unreadable = false;
+        if (!response.HasIntervalMultiplier || string.IsNullOrEmpty(response.IntervalMultiplier))
+            return null;
+
+        if (decimal.TryParse(response.IntervalMultiplier, NumberStyles.Number, CultureInfo.InvariantCulture, out var value))
+            return value;
+
+        unreadable = true;
+        return null;
+    }
 }

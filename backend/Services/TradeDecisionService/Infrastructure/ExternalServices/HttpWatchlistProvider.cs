@@ -21,7 +21,7 @@ public sealed class HttpWatchlistProvider(
     {
         var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
         if (rows is not null)
-            return ToCycleWatchlist(rows);
+            return ToCycleWatchlist(rows, logger);
 
         logger.LogWarning("監視銘柄（watchlist）を権威源から読めないため、既定 watchlist（構成）へフォールバックします。");
         return await fallback.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
@@ -30,11 +30,35 @@ public sealed class HttpWatchlistProvider(
     // NFR, IADR-0446 決定 4, #1061 (#753): 行の解釈（定時サイクルの寛容な読み・プロンプトの厳格な読み）は gRPC 実装
     // （GrpcWatchlistProvider）と共有する（`internal static`）。輸送を差し替えても読み方が変わらないように、ここを唯一の定義にする。
 
-    /// <summary>従来どおりの寛容な読み: 銘柄が空の行は除外し、市場が欠けた行は列挙の既定値で読む（定時サイクルの判断対象）。</summary>
-    internal static IReadOnlyList<WatchedSymbol> ToCycleWatchlist(IReadOnlyList<WatchlistRow> rows) =>
-        [.. rows
-            .Where(r => !string.IsNullOrWhiteSpace(r.Symbol))
-            .Select(r => new WatchedSymbol(r.Symbol!, r.Market ?? default))];
+    /// <summary>
+    /// 定時サイクルの寛容な読み: **識別できない行は落とし**、残りを判断対象にする（一覧全体は捨てない）。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 FR-02, FR-04, #1063 A: 市場が欠けた・値域外の行も落とす。以前は `r.Market ?? default` で**日本として読み**、値域外の番号は
+    /// そのまま通していた —— 米国の銘柄が日本の銘柄として判断対象に入り得る（原則 A）。実在の送り手（市場監視）は市場を必ず 0 / 1 で
+    /// 書くため、稼働中の定時サイクルでは起きない形である。一覧全体を不明（構成の監視銘柄へのフォールバック）にしないのは、
+    /// 銘柄の空の行と同じく「読めた行で判断を続ける」という定時サイクルの従来の読み方を保つため（プロンプトの口は一覧ごと不明にする）。
+    /// </remarks>
+    internal static IReadOnlyList<WatchedSymbol> ToCycleWatchlist(IReadOnlyList<WatchlistRow> rows, ILogger logger)
+    {
+        var result = new List<WatchedSymbol>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.Symbol))
+                continue;
+
+            if (row.Market is not { } market || !Enum.IsDefined(market))
+            {
+                logger.LogWarning(
+                    "監視銘柄（watchlist）の応答の行 {Symbol} は市場が欠落または値域外のため、定時サイクルの判断対象から外します。", row.Symbol);
+                continue;
+            }
+
+            result.Add(new WatchedSymbol(row.Symbol, market));
+        }
+
+        return result;
+    }
 
     // #1034, IADR-0440 決定 2: 読めなければ null（不明）。構成の固定リストへは倒さない。
     // 🔴 PR #1041 の監査 F1: **1 行でも欠けていれば一覧ごと不明**にする（銘柄が空・null、市場が欠落・値域外）。

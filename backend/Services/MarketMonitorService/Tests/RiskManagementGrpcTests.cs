@@ -148,6 +148,20 @@ public class RiskManagementGrpcTests
         }
     }
 
+    // T-10-1713, #1063 D: decimal の範囲を超える桁の価格も「読めない応答」と同じく空列（OverflowException を巡回の外へ出さない）。
+    [Fact]
+    public async Task T_10_1713_建玉の価格の桁あふれは例外にせず読めない応答と同じ空列()
+    {
+        var (positions, capture, _) = await ReadAsync(
+            RiskReadStubBehavior.Returns(Row("AAPL", r => r.EntryPrice = "79228162514264337593543950336")));
+        using (capture)
+        {
+            positions.Should().BeEmpty();
+            capture.TagValuesOf(BusinessMetricNames.MarketMonitorPositionRowsDegraded, BusinessMetricNames.TagReason)
+                .Should().Equal("response-unreadable");
+        }
+    }
+
     // ---- T-10-1056: 契約（送り手の本物の型 → 提供側の写し → 線 → 受け手） ----
 
     [Fact]

@@ -2,7 +2,7 @@
 title: IADR-0446 east-west gRPC 段 4 —— 日報の方針・監視銘柄・費用統制の判定の読み取りは提供側ごとに 1 service で REST と並走させ、未確定は失敗でなく「無い」応答で運び、行の解釈と呼び出しの規則を呼び出し元ごとに 1 つにする
 type: impl-adr
 status: Accepted
-related_ids: [NFR, FR-01, FR-02, FR-04, FR-07, FR-13, FR-15, MSP:ADR-0029, MSP:ADR-0075, IADR-0031, IADR-0095, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0420, IADR-0427, IADR-0435, IADR-0440, IADR-0442, IADR-0445]
+related_ids: [NFR, FR-01, FR-02, FR-04, FR-07, FR-13, FR-15, MSP:ADR-0029, MSP:ADR-0075, IADR-0031, IADR-0095, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0420, IADR-0427, IADR-0435, IADR-0440, IADR-0442, IADR-0445, IADR-0447]
 author: endazon (with Claude Code)
 created: 2026-09-27
 updated: 2026-09-27
@@ -136,6 +136,13 @@ plan_refs:
 - フォローアップ:
   1. 段 5（Notification の OwnerOnly・owner トークンの運び方）を #753 から切る。
   2. introspection と情報収集の起動時の見積りを輸送に追随させる（段 6 までに）。
+
+## ［2026-09-27 追記 / #1063］決定 3・4 の 2 点を IADR-0447 が改めた
+
+PR #1062 の監査の残り（#1063）を [IADR-0447](IADR-0447_grpc-read-latent-residuals.md) で直した。本 IADR の次の 2 点は、同 IADR の決定が正である。
+
+- **決定 3 の費用統制の行**「読めない倍率は Normal」は、**停止していない応答についてだけ**成り立つ。停止の旗が true なら、倍率が読めなくても停止を守る（REST も同じ。IADR-0447 決定 2）。
+- **決定 4 の定時サイクルの読み方**（`ToCycleWatchlist`）は、市場の欠けた・値域外の行を日本として読まず**落とす**（REST も同じ。IADR-0447 決定 1）。
 
 ## 関連
 

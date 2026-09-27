@@ -22,7 +22,7 @@ public sealed class GrpcWatchlistProvider(
     {
         var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
         if (rows is not null)
-            return HttpWatchlistProvider.ToCycleWatchlist(rows);
+            return HttpWatchlistProvider.ToCycleWatchlist(rows, logger);
 
         logger.LogWarning("監視銘柄（watchlist）を権威源から読めないため、既定 watchlist（構成）へフォールバックします。");
         return await fallback.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
