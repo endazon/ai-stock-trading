@@ -122,6 +122,16 @@ public sealed class MonitorSettingsService(
             throw new ArgumentException("監視銘柄に銘柄コードの無い要素があります（symbol は必須です）。", nameof(settings));
         }
 
+        // FR-02, FR-13, #1065 F1: 未定義の市場（例 `"market":7`）は 400。1 件の追加（MonitorWatchlistService.Add）は拒否していたが、
+        // 全置換は `(Market)7` のまま保存し、`GET /monitor/watchlist` が 7 を返していた（読み手は #1063 で行を落とすようになったが、入口で拒む）。
+        var undefinedMarkets = settings.MonitoredSymbols.Where(s => !Enum.IsDefined(s.Market)).ToList();
+        if (undefinedMarkets.Count > 0)
+        {
+            throw new ArgumentException(
+                $"監視銘柄に未定義の市場があります（{string.Join(", ", undefinedMarkets.Select(s => $"{s.Symbol}@{(int)s.Market}"))}）。",
+                nameof(settings));
+        }
+
         var duplicates = settings.MonitoredSymbols
             .GroupBy(s => (s.Symbol.Trim().ToUpperInvariant(), s.Market))
             .Where(g => g.Count() > 1)

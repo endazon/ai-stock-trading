@@ -118,6 +118,7 @@ public class HttpCostControlGateTests
     [InlineData("""{"isHalted":true,"intervalMultiplier":"two"}""")]
     [InlineData("""{"isHalted":true,"intervalMultiplier":79228162514264337593543950336}""")]
     [InlineData("""{"isHalted":true,"intervalMultiplier":{"x":1}}""")]
+    [InlineData("""{"isHalted":true,"intervalMultiplier":" 2"}""")]
     public async Task T_10_1712_停止の旗が読めれば倍率が読めなくても停止を守る(string body)
     {
         (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Should().Be(
@@ -131,13 +132,20 @@ public class HttpCostControlGateTests
     [InlineData("""{"isHalted":false,"intervalMultiplier":79228162514264337593543950336}""", false, 1)]
     [InlineData("""{"IsHalted":false,"IntervalMultiplier":2}""", false, 2)]
     [InlineData("""{"isHalted":false,"intervalMultiplier":"2"}""", false, 2)]
+    // ［2026-09-27 追記 / #1065 F2a］T-10-1722: 前後に空白のある数値の文字列は、以前の Web 既定の逆直列化と同じく拒む（Normal 1 倍）。
+    [InlineData("""{"isHalted":false,"intervalMultiplier":" 2"}""", false, 1)]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":"2 "}""", false, 1)]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":"1,000"}""", false, 1)]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":"-2"}""", false, 1)]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":"2.5"}""", false, 2.5)]
+    [InlineData("""{"isHalted":false,"intervalMultiplier":"2e0"}""", false, 2)]
     [InlineData("""{"isHalted":"true","intervalMultiplier":0}""", false, 1)]
     [InlineData("""[]""", false, 1)]
     [InlineData("""null""", false, 1)]
-    public async Task T_10_1712_停止していない応答や読めない本文の扱いは従来どおり(string body, bool halted, int multiplier)
+    public async Task T_10_1712_停止していない応答や読めない本文の扱いは従来どおり(string body, bool halted, double multiplier)
     {
         (await Gate(new StubHandler(HttpStatusCode.OK, body)).GetAsync()).Should().Be(
-            new InformationCollectionService.Features.InformationCollection.CostControlGate(halted, multiplier));
+            new InformationCollectionService.Features.InformationCollection.CostControlGate(halted, (decimal)multiplier));
     }
 
     // NFR（費用）, IADR-0031: 費用統制の応答が上限に間に合わなければ、情報収集は止めず Normal（1×）へ倒す。
