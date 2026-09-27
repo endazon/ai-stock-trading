@@ -1496,6 +1496,40 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.match(v.join(' '), /reason が無い/);
   });
 
+  // NFR, IADR-0450（2026-09-28 追記）, #753: obj/ 配下のビルド出力（protoc の生成物）の除外は G1 の上限の別枠。
+  // 手書きのソースは obj/ に置かれないので、上限の分子・分母の両方から外す。カバレッジの分母（kept）は変えない。
+  // 数値は PR #1070 の CI の実測（65417 行中 27132 行を除外・うち obj/ 配下 10136 行）。
+  ok('check-coverage: obj/ 配下のビルド出力の除外は上限の別枠で、手書きが置かれ得る範囲の割合で比べる', () => {
+    const ci = { entries: GENERATED_PATTERNS, excludedLines: 27132, totalLines: 65417, maxExcludedLineShare: 0.40 };
+    assert.strictEqual(cov.validateExclusion(ci).length, 1, '別枠が無ければ 41.48% で超える（PR #1070 の CI の赤の再現）');
+    assert.deepStrictEqual(cov.validateExclusion({ ...ci, buildOutputLines: 10136 }), [], '別枠なら 16996/55281 ＝ 30.74%');
+    // 🔴 否定形: 別枠の外（手書きが置かれ得る範囲）の除外が増えれば、別枠があっても超える。
+    const v = cov.validateExclusion({ ...ci, excludedLines: 27132 + 8000, buildOutputLines: 10136 });
+    assert.strictEqual(v.length, 1, JSON.stringify(v));
+    assert.match(v[0], /別枠/);
+    // 別枠の既定は 0（渡さない呼び出し元は従来どおり全体で比べる）。
+    assert.strictEqual(cov.validateExclusion({ ...ci, buildOutputLines: undefined }).length, 1);
+  });
+
+  ok('check-coverage: applyExcludes は obj/ 配下の除外行を別に数え、残す集合は変えない', () => {
+    const entries = [
+      ...GENERATED_PATTERNS,
+      { pattern: '**/obj/**/aistocktrading/**/*.cs', reason: 'protoc の生成物' },
+    ];
+    const acc = accOf({
+      'Svc/src/Infra/Migrations/20260101_Init.Designer.cs': 100,
+      'Shared/obj/Release/net10.0/aistocktrading/risk/v1/RiskGrpc.cs': 70,
+      'Svc/src/App/OrderService.cs': 30,
+    });
+    const ex = cov.applyExcludes(acc, entries);
+    assert.strictEqual(ex.lines, 170);
+    assert.strictEqual(ex.buildOutputLines, 70, 'obj/ 配下の除外だけを別枠に数える（Designer.cs は数えない）');
+    assert.deepStrictEqual([...ex.kept.keys()], ['Svc/src/App/OrderService.cs'], 'カバレッジの分母は変えない');
+    assert.strictEqual(cov.isBuildOutputPath('/a/obj/Release/x.cs'), true);
+    assert.strictEqual(cov.isBuildOutputPath('/a/objects/x.cs'), false, 'obj で始まる別名のディレクトリを別枠にしない');
+    assert.strictEqual(cov.isBuildOutputPath('/a/myobj/x.cs'), false);
+  });
+
   ok('check-coverage: 実ツリーの exclude 宣言は全件 reason を持ち、除外率が上限内である', () => {
     const entries = cov.readExcludes(REPO_ROOT_COV);
     assert.ok(entries.length > 0, 'exclude の宣言が消えている（#390 の退行）');

@@ -184,3 +184,13 @@ plan_refs:
   check-commit-messages --range=origin/develop..HEAD がすべて OK。`REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` 477 件 pass。
 - 変異 13 件すべて赤（一覧は `docs/tests/FR-10_risk-controls-tests.md` の本件の節）。
 - 規則 10 の走査で見つけた既存の食い違い: 前半の仕様書・`IADR-0449`・`IADR-0284` の追記の「書き込み 14」（実数 13）→ `IADR-0450` 決定 1 で是正（凍結記録の本文は変えない）。
+
+### ［2026-09-28 追記 / #753］CI のカバレッジの除外率（G1）の超過と是正
+
+- 症状: PR の CI `build-and-test` が `check-coverage.js --suggest --root cov` の G1 で失敗（除外 27132/65417 行 ＝ 41.48% ＞ 上限 40%）。
+  本 PR の proto 3 本で protoc の生成物（`obj/` 配下）の除外が 10136 行になったため。
+- 再現: ローカルで CI と同じ手順（Release ビルド・`--filter "Category!=Integration" --collect:"XPlat Code Coverage"`・21 レポートを 1 つの `--results-directory` へ集め `--root` で指す）を実行し、同じ 27132/65417 行で失敗することを確かめた。
+- 是正: G1 の割合から `obj/` 配下のビルド出力の除外を別枠にした（分子・分母の両方から外す。カバレッジの分母は不変）。根拠と採らなかった案（上限の引き上げ）は `IADR-0450` の 2026-09-28 追記。
+  是正後の同じ集合で G1 30.74%（16996/55281 行）・行カバレッジ 89.92%・floor 83.00% で合格。
+- 試験: `scripts/scripts.repo.test.js` に 2 件。変異（別枠を外す）で赤になることを確かめた（PR のコメントに記録する）。
+
