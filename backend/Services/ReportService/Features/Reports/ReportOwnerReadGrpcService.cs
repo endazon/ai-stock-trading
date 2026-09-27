@@ -111,9 +111,12 @@ public static class ReportOwnerReadWireMapping
         if (view.PeriodKey is not null)
             response.PeriodKey = view.PeriodKey;
 
+        // 🔴 NFR, IADR-0450, #753（PR #1069 の監査）: 保存済みの JSON の null 要素は**空の行**として運ぶ（NRE → INTERNAL にしない）。
+        // 受け手は REST と同じに読む —— 変更の空の行（操作・銘柄の欠落）は案ごと解釈できない、スナップショットの空の行は一覧ごと「分からない」。
         response.Changes.AddRange(view.Changes.Select(c =>
         {
             var row = new Proto.WatchlistChangeRow();
+            if (c is null) return row;
             if (c.Action is not null) row.Action = c.Action;
             if (c.Symbol is not null) row.Symbol = c.Symbol;
             if (c.Reason is not null) row.Reason = c.Reason;
@@ -127,6 +130,7 @@ public static class ReportOwnerReadWireMapping
             rows.Items.AddRange(snapshot.Select(e =>
             {
                 var row = new Proto.WatchlistSnapshotRow();
+                if (e is null) return row;
                 if (e.Symbol is not null) row.Symbol = e.Symbol;
                 if (e.Market is not null) row.Market = e.Market;
                 return row;

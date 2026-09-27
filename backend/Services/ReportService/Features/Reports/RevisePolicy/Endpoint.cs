@@ -18,41 +18,46 @@ internal static class RevisePolicyEndpoint
     // 保存の**後**の提示の失敗は 409 にせず 200・presented=false で返す（ReportPolicyRevisionService の注記）。
     // **200 以外では何も保存していない。**
     public static void MapRevisePolicy(this IEndpointRouteBuilder owner) =>
-        owner.MapPost("/policy-revisions", async (RevisePolicyRequest req, ReportPolicyRevisionService svc,
+        owner.MapPost("/policy-revisions", (RevisePolicyRequest req, ReportPolicyRevisionService svc,
             DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http) =>
+                HandleAsync(req, svc, delegated, loggerFactory, http));
+
+    // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する処理（改訂者の解決・状態の写しを 2 箇所に書かない）。
+    internal static async Task<IResult> HandleAsync(RevisePolicyRequest req, ReportPolicyRevisionService svc,
+        DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http)
+    {
+        var revising = ConfirmingActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
+        if (revising.Rejected)
         {
-            var revising = ConfirmingActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
-            if (revising.Rejected)
-            {
-                loggerFactory.CreateLogger("ReportPolicyRevisionActor").LogWarning(
-                    "方針の改訂の代理される利用者（OnBehalfOf）が値域外のため拒否しました。");
-                return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
-            }
+            loggerFactory.CreateLogger("ReportPolicyRevisionActor").LogWarning(
+                "方針の改訂の代理される利用者（OnBehalfOf）が値域外のため拒否しました。");
+            return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
+        }
 
-            if (revising.IgnoredOnBehalfOf)
-            {
-                loggerFactory.CreateLogger("ReportPolicyRevisionActor").LogWarning(
-                    "方針の改訂の OnBehalfOf を無視しました（信頼するクライアントのトークンではありません。改訂者={Actor}）。",
-                    LogSanitizer.Sanitize(revising.Actor));
-            }
+        if (revising.IgnoredOnBehalfOf)
+        {
+            loggerFactory.CreateLogger("ReportPolicyRevisionActor").LogWarning(
+                "方針の改訂の OnBehalfOf を無視しました（信頼するクライアントのトークンではありません。改訂者={Actor}）。",
+                LogSanitizer.Sanitize(revising.Actor));
+        }
 
-            var result = await svc.ReviseAsync(
-                req.PeriodKey, req.Instruction, revising.Actor,
-                req.CurrentWatchlist?.Select(w => new WatchlistSnapshotItem(w.Symbol ?? string.Empty, w.Market ?? string.Empty)).ToList(),
-                http.RequestAborted);
-            return result.Status switch
-            {
-                PolicyRevisionStatus.Proposed => Results.Ok(PolicyRevisionResponse.From(result)),
-                PolicyRevisionStatus.InvalidInstruction or PolicyRevisionStatus.InvalidPeriodKey or PolicyRevisionStatus.InvalidWatchlist =>
-                    Results.BadRequest(new { error = result.Message }),
-                PolicyRevisionStatus.NotFound => Results.NotFound(new { error = result.Message }),
-                PolicyRevisionStatus.AiFailed => Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status502BadGateway),
-                // FR-14, ADR-0042 決定 3, #1024: 1 日の回数上限（LLM を呼んでいない）。
-                PolicyRevisionStatus.DailyLimitReached =>
-                    Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status429TooManyRequests),
-                _ => Results.Conflict(new { error = result.Message }),
-            };
-        });
+        var result = await svc.ReviseAsync(
+            req.PeriodKey, req.Instruction, revising.Actor,
+            req.CurrentWatchlist?.Select(w => new WatchlistSnapshotItem(w.Symbol ?? string.Empty, w.Market ?? string.Empty)).ToList(),
+            http.RequestAborted);
+        return result.Status switch
+        {
+            PolicyRevisionStatus.Proposed => Results.Ok(PolicyRevisionResponse.From(result)),
+            PolicyRevisionStatus.InvalidInstruction or PolicyRevisionStatus.InvalidPeriodKey or PolicyRevisionStatus.InvalidWatchlist =>
+                Results.BadRequest(new { error = result.Message }),
+            PolicyRevisionStatus.NotFound => Results.NotFound(new { error = result.Message }),
+            PolicyRevisionStatus.AiFailed => Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status502BadGateway),
+            // FR-14, ADR-0042 決定 3, #1024: 1 日の回数上限（LLM を呼んでいない）。
+            PolicyRevisionStatus.DailyLimitReached =>
+                Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status429TooManyRequests),
+            _ => Results.Conflict(new { error = result.Message }),
+        };
+    }
 }
 
 // FR-07, #1016, IADR-0431: 改訂の要求。Instruction は利用者の自由文（1000 文字まで）。PeriodKey 省略時は当日（JST）の日報。

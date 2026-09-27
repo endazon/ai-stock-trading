@@ -17,60 +17,67 @@ internal static partial class ApplyWatchlistProposalEndpoint
     private static partial Regex ProposalRefPattern();
 
     public static void MapApplyWatchlistProposal(this IEndpointRouteBuilder owner) =>
-        owner.MapPost("/watchlist/proposal-apply", async (WatchlistProposalApplyRequest req, MonitorWatchlistService svc,
+        owner.MapPost("/watchlist/proposal-apply", (WatchlistProposalApplyRequest req, MonitorWatchlistService svc,
             DelegatedActorOptions delegated, WatchlistVolumeEstimator estimator, WatchlistCycleFitGuard guard,
             ILoggerFactory loggerFactory, HttpContext http) =>
+                HandleAsync(req, svc, delegated, estimator, guard, loggerFactory, http));
+
+    // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（WatchlistOwnerWriteGrpcService）が共有する処理（代理の解決・案の形の検証・楽観排他・
+    // 巡回間隔の検査を 2 箇所に書かない）。
+    internal static async Task<IResult> HandleAsync(WatchlistProposalApplyRequest req, MonitorWatchlistService svc,
+        DelegatedActorOptions delegated, WatchlistVolumeEstimator estimator, WatchlistCycleFitGuard guard,
+        ILoggerFactory loggerFactory, HttpContext http)
+    {
+        var logger = loggerFactory.CreateLogger("WatchlistProposalApply");
+        var applying = DelegatedActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
+        if (applying.Rejected)
+            return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
+        if (applying.IgnoredOnBehalfOf)
+            logger.LogWarning("入れ替え案の適用の OnBehalfOf を無視しました（信頼するクライアントのトークンではありません。変更者={Actor}）。",
+                LogSanitizer.Sanitize(applying.Actor));
+
+        if (req.ProposalRef is not { } proposalRef || !ProposalRefPattern().IsMatch(proposalRef))
+            return Results.BadRequest(new { error = "案の出所（proposalRef）の形式が不正です。" });
+
+        var expected = req.ExpectedWatchlist?.Select(ToSymbol).ToList();
+        if (expected is not null && expected.Any(s => s is null))
+            return Results.BadRequest(new { error = "案を作った時点の監視銘柄（expectedWatchlist）の形式が不正です。" });
+        var changes = req.Changes?.Select(ToChange).ToList();
+        if (changes is not null && changes.Any(c => c is null))
+            return Results.BadRequest(new { error = "入れ替え（changes）の操作は add / remove に限ります。" });
+
+        // 期待値・入れ替えの欠落は ApplyProposal の検証が 400 にする（1 件も適用しない）。
+        // PR #1027 の監査 L1（任意）: 変更履歴の理由に、どの経路で適用されたかを事実どおりに書く
+        // （信頼クライアント＝Discord Bot の代理か、利用者のトークンで直接呼ばれたか）。
+        var via = applying.AuthorizedBy is { } client
+            ? $"Discord の確認ボタンで適用・代理 {client}"
+            : "利用者のトークンで直接適用";
+        // FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 1 巡回が巡回間隔に収まらなくなる追加は適用せず、内訳に理由を載せる
+        // （SC-02 の追加と同じ検査。除外は止めない）。
+        var fit = await guard.ResolveAsync(http.RequestAborted);
+        var plan = svc.ApplyProposal(
+            expected?.Cast<MonitoredSymbol>().ToList(), changes?.Cast<ProposedWatchlistChange>().ToList(),
+            applying.Actor, proposalRef, via, fit?.Fit);
+        if (plan.Stale)
         {
-            var logger = loggerFactory.CreateLogger("WatchlistProposalApply");
-            var applying = DelegatedActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
-            if (applying.Rejected)
-                return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
-            if (applying.IgnoredOnBehalfOf)
-                logger.LogWarning("入れ替え案の適用の OnBehalfOf を無視しました（信頼するクライアントのトークンではありません。変更者={Actor}）。",
-                    LogSanitizer.Sanitize(applying.Actor));
-
-            if (req.ProposalRef is not { } proposalRef || !ProposalRefPattern().IsMatch(proposalRef))
-                return Results.BadRequest(new { error = "案の出所（proposalRef）の形式が不正です。" });
-
-            var expected = req.ExpectedWatchlist?.Select(ToSymbol).ToList();
-            if (expected is not null && expected.Any(s => s is null))
-                return Results.BadRequest(new { error = "案を作った時点の監視銘柄（expectedWatchlist）の形式が不正です。" });
-            var changes = req.Changes?.Select(ToChange).ToList();
-            if (changes is not null && changes.Any(c => c is null))
-                return Results.BadRequest(new { error = "入れ替え（changes）の操作は add / remove に限ります。" });
-
-            // 期待値・入れ替えの欠落は ApplyProposal の検証が 400 にする（1 件も適用しない）。
-            // PR #1027 の監査 L1（任意）: 変更履歴の理由に、どの経路で適用されたかを事実どおりに書く
-            // （信頼クライアント＝Discord Bot の代理か、利用者のトークンで直接呼ばれたか）。
-            var via = applying.AuthorizedBy is { } client
-                ? $"Discord の確認ボタンで適用・代理 {client}"
-                : "利用者のトークンで直接適用";
-            // FR-13, ADR-0043（計画）決定 2 (b)・4, #1030, IADR-0437: 1 巡回が巡回間隔に収まらなくなる追加は適用せず、内訳に理由を載せる
-            // （SC-02 の追加と同じ検査。除外は止めない）。
-            var fit = await guard.ResolveAsync(http.RequestAborted);
-            var plan = svc.ApplyProposal(
-                expected?.Cast<MonitoredSymbol>().ToList(), changes?.Cast<ProposedWatchlistChange>().ToList(),
-                applying.Actor, proposalRef, via, fit?.Fit);
-            if (plan.Stale)
+            logger.LogWarning("入れ替え案 {ProposalRef} は案の作成後に監視銘柄が変わったため適用しませんでした。", proposalRef);
+            return Results.Conflict(new
             {
-                logger.LogWarning("入れ替え案 {ProposalRef} は案の作成後に監視銘柄が変わったため適用しませんでした。", proposalRef);
-                return Results.Conflict(new
-                {
-                    error = "案を作った後に監視銘柄が変わったため、入れ替えを 1 件も適用していません。設定画面で確認してください。",
-                });
-            }
+                error = "案を作った後に監視銘柄が変わったため、入れ替えを 1 件も適用していません。設定画面で確認してください。",
+            });
+        }
 
-            logger.LogInformation(
-                "入れ替え案 {ProposalRef} を適用しました（変更者={Actor}・代理={AuthorizedBy}・適用={Applied}・適用せず={Skipped}）。",
-                proposalRef, LogSanitizer.Sanitize(applying.Actor), applying.AuthorizedBy,
-                plan.Items.Count(i => i.Applied), plan.Items.Count(i => !i.Applied));
+        logger.LogInformation(
+            "入れ替え案 {ProposalRef} を適用しました（変更者={Actor}・代理={AuthorizedBy}・適用={Applied}・適用せず={Skipped}）。",
+            proposalRef, LogSanitizer.Sanitize(applying.Actor), applying.AuthorizedBy,
+            plan.Items.Count(i => i.Applied), plan.Items.Count(i => !i.Applied));
 
-            return Results.Ok(new WatchlistProposalApplyResponse(
-                [.. plan.Items.Select(i => new WatchlistProposalItemResult(
+        return Results.Ok(new WatchlistProposalApplyResponse(
+            [.. plan.Items.Select(i => new WatchlistProposalItemResult(
                     i.Change.Action == ProposedWatchlistAction.Add ? "add" : "remove", i.Change.Symbol, i.Applied, i.SkipReason))],
-                applying.Actor,
-                estimator.Estimate(plan.Resulting.Select(s => s.Market).Concat(fit?.HoldingMarkets ?? []))));
-        });
+            applying.Actor,
+            estimator.Estimate(plan.Resulting.Select(s => s.Market).Concat(fit?.HoldingMarkets ?? []))));
+    }
 
     // 期待値（案を作った時点の監視銘柄）の 1 件。銘柄が空・市場の省略は形式違反（null＝400）。期待値は現在の監視銘柄の写しであり、
     // 日本株も含み得る（入れ替え〔changes〕が米国のティッカーに限られるのは案の形の検証〔WatchlistProposalPlan〕の側）。

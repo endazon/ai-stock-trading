@@ -53,38 +53,14 @@ public sealed class HttpPolicyRevisionController(
                 var hint = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
                     ? "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）"
                     : string.Empty;
-                return new PolicyRevisionCommandOutcome(
-                    false, false,
-                    error is null
-                        ? $"方針の改訂に失敗しました（HTTP {(int)response.StatusCode}）{hint}。方針は変わっていません。"
-                        : $"{error}{hint}");
+                return Rejected($"HTTP {(int)response.StatusCode}", error, hint);
             }
 
             var view = await response.Content
                 .ReadFromJsonAsync<PolicyRevisionResponseView>(cancellationToken)
                 .ConfigureAwait(false);
 
-            // 2xx だが解釈できない＝保存はされている可能性がある（200 は保存・提示の後に返る）。不明として扱う。
-            if (view is null || string.IsNullOrWhiteSpace(view.PeriodKey) || view.Version < 1 || view.PolicySummary is null)
-            {
-                logger.LogWarning("方針の改訂の応答を解釈できませんでした。");
-                return new PolicyRevisionCommandOutcome(
-                    false, true, "方針の改訂の応答を解釈できませんでした（案が保存された可能性があります。/report show で確認してください）。");
-            }
-
-            return new PolicyRevisionCommandOutcome(
-                true, false, view.Message ?? string.Empty,
-                new PolicyRevisionProposalView(
-                    view.PeriodKey!,
-                    view.Version,
-                    view.Created,
-                    view.Presented,
-                    view.Message ?? string.Empty,
-                    view.PolicySummary,
-                    [.. (view.WatchlistChanges ?? [])
-                        .Where(c => c is not null)
-                        .Select(c => new WatchlistChangeSuggestionView(c!.Action ?? "?", c.Symbol ?? "?", c.Reason ?? string.Empty))],
-                    view.Rationale));
+            return InterpretRevision(view, logger);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -93,10 +69,46 @@ public sealed class HttpPolicyRevisionController(
             else
                 logger.LogWarning(ex, "方針の改訂で例外が発生しました（結果は不明）。");
 
-            return new PolicyRevisionCommandOutcome(
-                false, true,
-                "方針の改訂の結果が分かりません（応答が届きませんでした）。案が保存された可能性があるため、/report show で確認してください。");
+            return new PolicyRevisionCommandOutcome(false, true, RevisionUnknownMessage);
         }
+    }
+
+    // NFR, IADR-0450 決定 4, #753（段 5）: 以下の 3 つは gRPC 実装（GrpcPolicyRevisionController）と共有する（原則 A の 3 値を 1 つに保つ）。
+
+    // 🔴 提供側が明確に拒否した（REST の非 2xx・gRPC の明確な失敗）＝**案なし**。提供側の説明があればそれを見せる。
+    internal static PolicyRevisionCommandOutcome Rejected(string statusLabel, string? error, string hint) =>
+        new(false, false,
+            error is null
+                ? $"方針の改訂に失敗しました（{statusLabel}）{hint}。方針は変わっていません。"
+                : $"{error}{hint}");
+
+    // 🔴 届いたか分からない（REST の例外・タイムアウト・gRPC の DEADLINE_EXCEEDED / UNAVAILABLE）＝**不明**（保存されたかもしれない）。
+    internal const string RevisionUnknownMessage =
+        "方針の改訂の結果が分かりません（応答が届きませんでした）。案が保存された可能性があるため、/report show で確認してください。";
+
+    // 200 の本文 → 結果。解釈できない＝保存はされている可能性がある（200 は保存・提示の後に返る）。不明として扱う。
+    internal static PolicyRevisionCommandOutcome InterpretRevision(PolicyRevisionResponseView? view, ILogger logger)
+    {
+        if (view is null || string.IsNullOrWhiteSpace(view.PeriodKey) || view.Version < 1 || view.PolicySummary is null)
+        {
+            logger.LogWarning("方針の改訂の応答を解釈できませんでした。");
+            return new PolicyRevisionCommandOutcome(
+                false, true, "方針の改訂の応答を解釈できませんでした（案が保存された可能性があります。/report show で確認してください）。");
+        }
+
+        return new PolicyRevisionCommandOutcome(
+            true, false, view.Message ?? string.Empty,
+            new PolicyRevisionProposalView(
+                view.PeriodKey!,
+                view.Version,
+                view.Created,
+                view.Presented,
+                view.Message ?? string.Empty,
+                view.PolicySummary,
+                [.. (view.WatchlistChanges ?? [])
+                        .Where(c => c is not null)
+                        .Select(c => new WatchlistChangeSuggestionView(c!.Action ?? "?", c.Symbol ?? "?", c.Reason ?? string.Empty))],
+                view.Rationale));
     }
 
     public const string ProposalPath = "/reports/policy-revisions/watchlist-proposal";
@@ -220,7 +232,7 @@ public sealed class HttpPolicyRevisionController(
     private sealed record ApplyItemBody(string Action, string Symbol, bool Applied, string? SkipReason);
 
     // 報告書サービス側 PolicyRevisionResponse の必要部分の射影（欠落は null＝下で不明へ倒す）。
-    private sealed record PolicyRevisionResponseView(
+    internal sealed record PolicyRevisionResponseView(
         string? PeriodKey,
         int Version,
         bool Created,

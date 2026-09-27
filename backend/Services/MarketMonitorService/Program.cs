@@ -226,6 +226,8 @@ app.MapAiStockTradingIntrospection();
 app.MapMonitorSettingsEndpoints();
 // NFR, IADR-0446 決定2, #1061 (#753): 監視銘柄の読み取りの gRPC 面（REST の read と同じサービス・同じ OwnerOrService）。
 app.MapGrpcService<WatchlistReadGrpcService>();
+// NFR-06, FR-14, ADR-0047 決定 1〜3, IADR-0450, #753（段 5 の後半）: 入れ替え案の適用（REST の OwnerOnly と同じ処理関数）。門は GrpcOwnerOnly（呼び出し元は Discord ボット）。
+app.MapGrpcService<WatchlistOwnerWriteGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

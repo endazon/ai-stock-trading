@@ -77,35 +77,49 @@ public sealed class HttpMarketMonitorWatchlistController(
             using var response = await httpClient.PostAsJsonAsync(ApplyPath, body, Web, cancellationToken).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.Conflict)
-                return new WatchlistApplyOutcome(WatchlistApplyStatus.Stale, [], null,
-                    await ErrorOf(response, cancellationToken).ConfigureAwait(false)
-                        ?? "案を作った後に監視銘柄が変わったため、入れ替えを 1 件も適用していません。");
+                return Stale(await ErrorOf(response, cancellationToken).ConfigureAwait(false));
 
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("入れ替え案の適用が受理されませんでした（{Status}）。", (int)response.StatusCode);
-                return new WatchlistApplyOutcome(WatchlistApplyStatus.Rejected, [], null,
-                    (await ErrorOf(response, cancellationToken).ConfigureAwait(false) ?? $"HTTP {(int)response.StatusCode}")
-                    + "（入れ替えは 1 件も適用していません）");
+                return Rejected(await ErrorOf(response, cancellationToken).ConfigureAwait(false), $"HTTP {(int)response.StatusCode}");
             }
 
             var view = await response.Content.ReadFromJsonAsync<ApplyResponseView>(Web, cancellationToken).ConfigureAwait(false);
-            if (view?.Items is null || view.Items.Any(i => i is null || i.Symbol is null || i.Action is null))
-                return new WatchlistApplyOutcome(WatchlistApplyStatus.Indeterminate, [], null,
-                    "入れ替えの適用の応答を解釈できませんでした（適用された可能性があります。設定画面で確認してください）");
-
-            return new WatchlistApplyOutcome(
-                WatchlistApplyStatus.Applied,
-                [.. view.Items.Select(i => new WatchlistApplyItemView(i!.Action!, i.Symbol!, i.Applied, i.SkipReason))],
-                view.Estimate is { } e ? new FinnhubEstimateView(e.EstimatedDailyRequests, e.ProvisionalDailyLimit, e.Exceeds) : null,
-                "適用しました");
+            return InterpretApplied(view);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "入れ替え案の適用で例外が発生しました（結果は不明）。");
-            return new WatchlistApplyOutcome(WatchlistApplyStatus.Indeterminate, [], null,
-                "入れ替えの適用の結果が分かりません（応答が届きませんでした。設定画面で監視銘柄を確認してください）");
+            return new WatchlistApplyOutcome(WatchlistApplyStatus.Indeterminate, [], null, ApplyUnknownMessage);
         }
+    }
+
+    // NFR, IADR-0450 決定 4, #753（段 5）: 以下は gRPC 実装（GrpcMarketMonitorWatchlistController）と共有する（原則 A の 3 値を 1 つに保つ）。
+
+    // 案を作った後に監視銘柄が変わった（REST の 409・gRPC の ABORTED）＝ 1 件も適用していない。
+    internal static WatchlistApplyOutcome Stale(string? error) =>
+        new(WatchlistApplyStatus.Stale, [], null, error ?? "案を作った後に監視銘柄が変わったため、入れ替えを 1 件も適用していません。");
+
+    // 提供側が明確に拒否した（REST の非 2xx・gRPC の明確な失敗）＝ 1 件も適用していない。
+    internal static WatchlistApplyOutcome Rejected(string? error, string statusLabel) =>
+        new(WatchlistApplyStatus.Rejected, [], null, (error ?? statusLabel) + "（入れ替えは 1 件も適用していません）");
+
+    // 🔴 届いたか分からない（REST の例外・gRPC の DEADLINE_EXCEEDED / UNAVAILABLE）＝**不明**（適用されたかもしれない）。
+    internal const string ApplyUnknownMessage =
+        "入れ替えの適用の結果が分かりません（応答が届きませんでした。設定画面で監視銘柄を確認してください）";
+
+    internal static WatchlistApplyOutcome InterpretApplied(ApplyResponseView? view)
+    {
+        if (view?.Items is null || view.Items.Any(i => i is null || i.Symbol is null || i.Action is null))
+            return new WatchlistApplyOutcome(WatchlistApplyStatus.Indeterminate, [], null,
+                "入れ替えの適用の応答を解釈できませんでした（適用された可能性があります。設定画面で確認してください）");
+
+        return new WatchlistApplyOutcome(
+            WatchlistApplyStatus.Applied,
+            [.. view.Items.Select(i => new WatchlistApplyItemView(i!.Action!, i.Symbol!, i.Applied, i.SkipReason))],
+            view.Estimate is { } e ? new FinnhubEstimateView(e.EstimatedDailyRequests, e.ProvisionalDailyLimit, e.Exceeds) : null,
+            "適用しました");
     }
 
     private static async Task<string?> ErrorOf(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -133,11 +147,11 @@ public sealed class HttpMarketMonitorWatchlistController(
 
     private sealed record ChangeBody(string Action, string Symbol, string Reason);
 
-    private sealed record ApplyResponseView(IReadOnlyList<ItemView?>? Items, string? Actor, EstimateView? Estimate);
+    internal sealed record ApplyResponseView(IReadOnlyList<ItemView?>? Items, string? Actor, EstimateView? Estimate);
 
-    private sealed record ItemView(string? Action, string? Symbol, bool Applied, string? SkipReason);
+    internal sealed record ItemView(string? Action, string? Symbol, bool Applied, string? SkipReason);
 
-    private sealed record EstimateView(long EstimatedDailyRequests, int? ProvisionalDailyLimit, bool Exceeds);
+    internal sealed record EstimateView(long EstimatedDailyRequests, int? ProvisionalDailyLimit, bool Exceeds);
 
     private sealed record ErrorView(string? Error);
 }

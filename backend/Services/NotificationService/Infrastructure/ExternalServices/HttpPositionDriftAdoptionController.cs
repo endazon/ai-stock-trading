@@ -25,7 +25,7 @@ internal sealed class HttpPositionDriftAdoptionController(
 {
     private const string OwnerHint = "（Bot の owner クライアント設定・trading-owner ロール割当を確認してください）";
 
-    private const string NotAdopted = "取り込みは行いませんでした（台帳は変わっていません）";
+    internal const string NotAdopted = "取り込みは行いませんでした（台帳は変わっていません）";
 
     // #871, IADR-0423: 200 の応答に操作者が無い＝リスク管理が本件より前の版（代理を解さない）。窓の間に取り込むと、
     // 台帳の操作者が `unknown` になり得る（作業仕様書 規則 11 の (b)）。黙らせずに見えるようにする。
@@ -58,8 +58,7 @@ internal sealed class HttpPositionDriftAdoptionController(
                 if (view is null)
                 {
                     logger.LogWarning("乖離の取り込みの応答を解釈できませんでした。");
-                    return new PositionDriftAdoptionResult(
-                        false, false, "乖離の取り込みの応答を解釈できませんでした（台帳が変わったかは監査台帳で確認してください）");
+                    return new PositionDriftAdoptionResult(false, false, UnparsableMessage);
                 }
 
                 return new PositionDriftAdoptionResult(true, true, FormatAdopted(view));
@@ -92,10 +91,7 @@ internal sealed class HttpPositionDriftAdoptionController(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("乖離の取り込みがタイムアウトしました。");
-            return new PositionDriftAdoptionResult(
-                false, false,
-                "乖離の取り込みがタイムアウトしました（台帳が変わったかは不明です。監査台帳で確認してください。"
-                + "再実行しても二重には取り込まれません）");
+            return new PositionDriftAdoptionResult(false, false, TimedOutMessage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -104,9 +100,19 @@ internal sealed class HttpPositionDriftAdoptionController(
         }
     }
 
+    // NFR, IADR-0450 決定 4, #753（段 5）: 文言は gRPC 実装（GrpcPositionDriftAdoptionController）と共有する（輸送を替えても 1 つ）。
+    // 🔴 応答を解釈できない・時間切れは「台帳が変わったかは不明」（取り込んだかどうかを騙らない）。
+    internal const string UnparsableMessage = "乖離の取り込みの応答を解釈できませんでした（台帳が変わったかは監査台帳で確認してください）";
+
+    internal const string TimedOutMessage =
+        "乖離の取り込みがタイムアウトしました（台帳が変わったかは不明です。監査台帳で確認してください。"
+        + "再実行しても二重には取り込まれません）";
+
+    internal const string NoReasonMessage = "理由は返されませんでした。";
+
     // 🔴 **実現損益を記録していないことを必ず書く**（「損益 0 の決済」と読ませない。通知・監査と同じ規律）。
     // 前後の数量と観測を出す——利用者が「何を観測して、何株から何株へ合わせたか」を Discord の応答だけで確かめられる。
-    private static string FormatAdopted(AdoptionView view)
+    internal static string FormatAdopted(AdoptionView view)
     {
         var observed = view.ObservedAt is { } at
             ? at.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "Z"
@@ -134,12 +140,12 @@ internal sealed class HttpPositionDriftAdoptionController(
         try
         {
             var body = await response.Content.ReadFromJsonAsync<ErrorView>(ct).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(body?.Error) ? "理由は返されませんでした。" : body!.Error;
+            return string.IsNullOrWhiteSpace(body?.Error) ? NoReasonMessage : body!.Error;
         }
         catch (Exception)
         {
             // 本文が読めなくても「取り込んでいない」ことは伝える（黙って成功に見せない）。
-            return "理由は返されませんでした。";
+            return NoReasonMessage;
         }
     }
 

@@ -663,6 +663,8 @@ app.MapGrpcService<DailyPolicyReadGrpcService>();
 // NFR-06, FR-14, ADR-0047 決定 1〜3, IADR-0449, #753（段 5）: 所有者限定の読み取り（レビュー局面・会話キーの一覧・入れ替え案）。
 // 門は GrpcOwnerOnly（呼び出し元は Discord ボット）。
 app.MapGrpcService<ReportOwnerReadGrpcService>();
+// NFR-06, FR-14, ADR-0047 決定 1〜3, IADR-0450, #753（段 5 の後半）: 所有者限定の書き込み（REST の OwnerOnly と同じ処理関数）。門は GrpcOwnerOnly。
+app.MapGrpcService<ReportOwnerWriteGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

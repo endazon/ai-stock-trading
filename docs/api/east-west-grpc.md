@@ -3,14 +3,14 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-09-27
+updated: 2026-09-28
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes]
 issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067]
 -->
 
@@ -26,7 +26,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067]
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
 - **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面・§5）と
-  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）・**Discord ボットの読み取り**（§9）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
+  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）・**Discord ボットの読み取りと書き込み**（§9）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
   **並走中の正は REST** であり、gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
@@ -303,15 +303,16 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 - 呼び出しの規則（deadline・再試行）は呼び出し元サービスごとに 1 つ（同じサービスの他の輸送と共有する）。
 - helm: 既定では提供側の `grpcPort` も呼び出し元の宛先も置かない（既定の描画は変わらない）。有効化の手順は values.yaml のコメントにある。
 
-## 9. 面: Discord ボットの読み取り
+## 9. 面: Discord ボットの読み取りと書き込み
 
-Discord ボット（通知サービス）の**読み取り 6 本**を gRPC でも呼べるようにした。**書き込みは REST のまま**であり、次の段で移す。**並走中の正は REST。**
+Discord ボット（通知サービス）の**読み取り 6 本と書き込み 13 本**を gRPC でも呼べるようにした。構成で宣言したポートは、読み取りと書き込みの**両方**が gRPC になる。**並走中の正は REST。**
 
 - **ボットのトークンはサービスの身元である**（利用者のトークンではない）。ボットは所有者の対応表の機密クライアントで client_credentials のトークンを取り、
   §4 の「呼び出し側サービス自身の JWT」としてメタデータへ載せる。s2s（`trading-service`）のトークンへは替えない。利用者の文脈（誰の操作か）は、書き込みで今どおり本文で運ぶ。
 - **提供側の門は呼び出し元のクライアント（`azp`）を確かめる。** `trading-owner` を持つトークンは、`azp` がボットの機密クライアント（構成 `Auth:GrpcOwnerClients`・既定 `ai-stock-trading-owner`）のときだけ通す。
   人の利用者のトークン（`azp` は BFF・ブラウザの公開クライアント）は gRPC の面を通らない。人の利用者は BFF が中継する REST で操作する。
-- **所有者限定の読み取り**（REST の利用者のみ）は新しい service に分け、門を「所有者 ∧ `azp` がボット」にする（s2s には開かない）。
+- **所有者限定の読み取りと書き込み**（REST の利用者のみ）は新しい service に分け、門を「所有者 ∧ `azp` がボット」にする（s2s には開かない）。
+- **書き込みは REST の端点と同じ処理**（操作者の解決・検証・監査の発行）を通る。利用者の文脈（誰の操作か）は本文の `on_behalf_of` で運び、提供側は信頼するクライアントのトークンに限ってそれを採る。
 
 | service / rpc | 対応する REST | 門 | 取得できないときのボットの扱い |
 | --- | --- | --- | --- |
@@ -322,16 +323,38 @@ Discord ボット（通知サービス）の**読み取り 6 本**を gRPC で�
 | `aistocktrading.report.v1.ReportOwnerRead/GetWatchlistProposal` | `GET /reports/policy-revisions/watchlist-proposal` | 所有者 ∧ ボット | 失敗の文言（適用しない） |
 | `aistocktrading.marketmonitor.v1.WatchlistRead/GetWatchlist` | `GET /monitor/watchlist` | サービス ∨（所有者 ∧ ボット） | 失敗の文言（空の一覧にしない） |
 
+書き込み（門はすべて「所有者 ∧ ボット」）:
+
+| service / rpc | 対応する REST | 繰り返したときの提供側 | 時間切れのボットの扱い |
+| --- | --- | --- | --- |
+| `…riskmanagement.v1.RiskControlsOwnerWrite/EngageKillSwitch`・`DisengageKillSwitch` | `POST /risk-controls/kill-switch/engage`・`/disengage` | 状態は同じ | 状態は不明 |
+| `…RiskControlsOwnerWrite/PauseTrading`・`ResumeTrading` | `POST /risk-controls/pause`・`/resume` | 冪等 | 状態は不明 |
+| `…RiskControlsOwnerWrite/ClearGoodFaithViolations` | `POST /risk-controls/good-faith-violations/clear` | 2 回目は受理不能 | 状態は不明 |
+| `…RiskControlsOwnerWrite/RequestStageTransition` | `POST /risk-controls/stage-gate/transition` | 2 回目は受理不能 | 状態は不明 |
+| `…RiskControlsOwnerWrite/EvaluateWithdrawal` | `POST /risk-controls/stage-gate/withdrawal/evaluate` | 成立時は kill switch を起動する | 状態は不明 |
+| `…RiskControlsOwnerWrite/AdoptPositionDrift` | `POST /risk-controls/position-drift/adopt` | 2 回目は受理不能（二重には取り込まない） | 台帳が変わったかは不明 |
+| `…report.v1.ReportOwnerWrite/ConfirmReport` | `POST /reports/{periodKey}/confirm` | 版番号付きで冪等 | 結果は不明 |
+| `…ReportOwnerWrite/RequestReportChanges` | `POST /reports/{periodKey}/request-changes` | 2 回目は不正な遷移 | 結果は不明 |
+| `…ReportOwnerWrite/RevisePolicy` | `POST /reports/policy-revisions` | **冪等でない**（新しい版を作る） | 不明（案が保存されたかもしれない） |
+| `…ReportOwnerWrite/RecordWatchlistApplyResult` | `POST /reports/policy-revisions/{attemptId}/watchlist-apply-result` | 1 回だけ | 記録できなかった |
+| `…marketmonitor.v1.WatchlistOwnerWrite/ApplyWatchlistProposal` | `POST /monitor/watchlist/proposal-apply` | 2 回目は楽観排他で拒否 | 不明（適用されたかもしれない） |
+
+- 🔴 **書き込みは再試行しない**（`*:GrpcMaxAttempts` は読み取りだけに効く）。繰り返すと「成功したのに失敗に見える」か二重に実行されるため。REST も再試行しない。
+- 🔴 **gRPC が失敗しても REST へ落とさない**（時間切れで実は適用済みのものを REST で再実行しないため）。
+- 乖離の取り込みの REST の端点は、人の窓口として gRPC 化の後も残る（ボットの呼び出しだけを gRPC へ移す）。
+
 エラー:
 
 | gRPC status | 条件 | ボットの対応 |
 | --- | --- | --- |
 | `UNAUTHENTICATED` / `PERMISSION_DENIED` | トークン無し／ボットの所有者トークンでない | 失敗。REST の 401/403 と同じ注記（owner クライアントの設定を確認）。**再試行しない** |
-| `NOT_FOUND` | レビュー局面の対象が無い／入れ替え案ではない（REST の 404） | REST の 404 と同じ文言 |
-| `FAILED_PRECONDITION` | 入れ替え案の版で確定されていない（REST の 409） | REST の 409 と同じ文言（適用しない） |
-| `INVALID_ARGUMENT` | 会話キー・版の誤り（REST の 400） | 失敗 |
-| `UNIMPLEMENTED` | 提供側が古い（配備順の窓） | 失敗（会話キーの一覧は候補なし。REST の旧一覧への退避は持たない） |
-| `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 失敗（タイムアウトの文言）。**再試行の対象** |
+| `NOT_FOUND` | レビュー局面・確定・差し戻しの対象が無い／入れ替え案ではない（REST の 404） | REST の 404 と同じ文言 |
+| `FAILED_PRECONDITION` | 入れ替え案の版で確定されていない（読み取りの REST の 409）／書き込みの受理不能（REST の 422: GFV の解除対象なし・乖離の取り込みの受理不能） | REST と同じ文言（提供側の説明をそのまま見せる） |
+| `ABORTED` | 書き込みの競合（REST の 409: 版の不一致・確定済み・記録済み・案の作成後に監視銘柄が変わった） | REST の 409 と同じ扱い（確定していない・1 件も適用していない） |
+| `INVALID_ARGUMENT` | 会話キー・版・理由・代理される利用者の誤り（REST の 400） | 失敗（書き込みは提供側の説明を見せる） |
+| `RESOURCE_EXHAUSTED` / `INTERNAL` | 方針の改訂の 1 日の上限（REST の 429）／AI の案を作れなかった（REST の 502） | 案なし（提供側の説明を見せる） |
+| `UNIMPLEMENTED` | 提供側が古い（配備順の窓） | 失敗＝実行していない（会話キーの一覧は候補なし。REST の旧一覧への退避は持たない） |
+| `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 読み取りは失敗（タイムアウトの文言）で**再試行の対象**。書き込みは上の表の「時間切れの扱い」で、**再試行しない** |
 
 ### 🔴 線上の写し
 
@@ -349,14 +372,15 @@ Discord ボット（通知サービス）の**読み取り 6 本**を gRPC で�
 
 | 構成キー | 既定 | 意味 |
 | --- | --- | --- |
-| `RiskManagement:Grpc` | 未設定（＝REST） | 稼働状態・段階ゲートの gRPC の宛先 |
-| `Reports:Grpc` | 未設定（＝REST） | レビュー局面・会話キーの一覧・入れ替え案の gRPC の宛先 |
-| `MarketMonitor:Grpc` | 未設定（＝REST） | 監視銘柄の gRPC の宛先 |
+| `RiskManagement:Grpc` | 未設定（＝REST） | 稼働状態・段階ゲート・kill switch・一時停止/再開・GFV 解除・段階遷移・撤退評価・乖離の取り込みの gRPC の宛先 |
+| `Reports:Grpc` | 未設定（＝REST） | レビュー局面・会話キーの一覧・入れ替え案・確定・差し戻し・方針の改訂・適用の内訳の記録の gRPC の宛先 |
+| `MarketMonitor:Grpc` | 未設定（＝REST） | 監視銘柄・入れ替え案の適用の gRPC の宛先 |
 | `<上記>:GrpcTimeoutSeconds` | 5 / 5 / 10 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値（入れ替え案の照会は台帳の読み取りなのでレビューと同じ 5 秒） |
-| `<上記>:GrpcMaxAttempts` | 1 | 試行回数。**既定は再試行しない** |
+| `Reports:GrpcPolicyRevisionTimeoutSeconds` | 90 | 方針の改訂と適用の内訳の記録の deadline（REST で 2 つが共用する 90 秒のクライアントと同値。LLM を待つ） |
+| `<上記>:GrpcMaxAttempts` | 1 | 試行回数。**読み取りだけに効く**（書き込みは再試行しない）。既定は再試行しない |
 
 - メタデータのトークンは REST と同じ `Notifications:Discord:OwnerAuth:*`（ボットの機密クライアント）から取る。3 つの宛先で 1 つの取得器を共有する。資格情報が未構成ならメタデータを付けない（→ `UNAUTHENTICATED` → 失敗）。
-- 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する（書き込みは `*:BaseUrl` の REST のまま）。
+- 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する（読み取りも書き込みも。失敗しても `*:BaseUrl` の REST へ落とさない）。
 - helm・compose: 既定では置かない（既定の描画は変わらない）。有効化の手順は values.yaml の notification のコメントにある。
 
 ## シーケンス

@@ -24,71 +24,78 @@ internal static class AdoptPositionDriftEndpoint
 {
     public static void MapAdoptPositionDrift(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/position-drift/adopt",
-            async (PositionDriftAdoptionRequest req, PositionDriftAdoptionService svc, IMessageBus bus,
+            (PositionDriftAdoptionRequest req, PositionDriftAdoptionService svc, IMessageBus bus,
                 DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http) =>
+                HandleAsync(req, svc, bus, delegated, loggerFactory, http));
+
+    // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（操作者の解決・検証・監査の発行を
+    // 2 箇所に書かない）。
+    internal static async Task<IResult> HandleAsync(
+        PositionDriftAdoptionRequest req, PositionDriftAdoptionService svc, IMessageBus bus,
+        DelegatedActorOptions delegated, ILoggerFactory loggerFactory, HttpContext http)
+    {
+        // market は Market?（非 nullable enum は省略時に暗黙 0＝日本市場へ束縛され、誤市場の建玉を対象にしてしまう）。
+        if (string.IsNullOrWhiteSpace(req.Symbol))
+            return Results.BadRequest(new { error = "symbol（銘柄コード）は必須です。" });
+        if (req.Market is not { } market || !Enum.IsDefined(market))
+            return Results.BadRequest(new { error = "market は有効な市場（Japan/UnitedStates）を指定してください。" });
+        if (string.IsNullOrWhiteSpace(req.Reason))
         {
-            // market は Market?（非 nullable enum は省略時に暗黙 0＝日本市場へ束縛され、誤市場の建玉を対象にしてしまう）。
-            if (string.IsNullOrWhiteSpace(req.Symbol))
-                return Results.BadRequest(new { error = "symbol（銘柄コード）は必須です。" });
-            if (req.Market is not { } market || !Enum.IsDefined(market))
-                return Results.BadRequest(new { error = "market は有効な市場（Japan/UnitedStates）を指定してください。" });
-            if (string.IsNullOrWhiteSpace(req.Reason))
+            return Results.BadRequest(new
             {
-                return Results.BadRequest(new
-                {
-                    error = "reason（理由）は必須です。何が起きて台帳を合わせるのかを記録として残してください。",
-                });
-            }
+                error = "reason（理由）は必須です。何が起きて台帳を合わせるのかを記録として残してください。",
+            });
+        }
 
-            // FR-11, #871, IADR-0383, IADR-0423: 操作者の解決（代理は信頼するクライアントのトークンに限る）。
-            var actor = DelegatedActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
-            var actorLogger = loggerFactory.CreateLogger("PositionDriftAdoptionActor");
+        // FR-11, #871, IADR-0383, IADR-0423: 操作者の解決（代理は信頼するクライアントのトークンに限る）。
+        var actor = DelegatedActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
+        var actorLogger = loggerFactory.CreateLogger("PositionDriftAdoptionActor");
 
-            // 信頼クライアントの代理指定が値域外。**操作者を記録できない取り込みは行わない**（台帳にも触れない）。
-            if (actor.Rejected)
+        // 信頼クライアントの代理指定が値域外。**操作者を記録できない取り込みは行わない**（台帳にも触れない）。
+        if (actor.Rejected)
+        {
+            actorLogger.LogWarning(
+                "乖離の取り込みの代理される利用者（OnBehalfOf）が値域外のため拒否しました（Symbol={Symbol}）。",
+                LogSanitizer.Sanitize(req.Symbol));
+            return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
+        }
+
+        // 🔴 **操作者をまったく特定できない**（名前クレームも azp も無いトークン）。`unknown` を台帳へ残さない
+        // （IADR-0383 決定 3 と同じ閂。7 年保持の台帳で「誰が台帳を書き換えたか」が失われる）。
+        if (actor.IsUnidentified)
+        {
+            actorLogger.LogWarning("乖離の取り込みの操作者を特定できないため拒否しました。");
+            return Results.BadRequest(new
             {
-                actorLogger.LogWarning(
-                    "乖離の取り込みの代理される利用者（OnBehalfOf）が値域外のため拒否しました（Symbol={Symbol}）。",
-                    LogSanitizer.Sanitize(req.Symbol));
-                return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
-            }
+                error = "操作者を特定できないため取り込みを行いません（トークンに利用者名がありません）。",
+            });
+        }
 
-            // 🔴 **操作者をまったく特定できない**（名前クレームも azp も無いトークン）。`unknown` を台帳へ残さない
-            // （IADR-0383 決定 3 と同じ閂。7 年保持の台帳で「誰が台帳を書き換えたか」が失われる）。
-            if (actor.IsUnidentified)
-            {
-                actorLogger.LogWarning("乖離の取り込みの操作者を特定できないため拒否しました。");
-                return Results.BadRequest(new
-                {
-                    error = "操作者を特定できないため取り込みを行いません（トークンに利用者名がありません）。",
-                });
-            }
+        // 代理指定を信じなかった（利用者トークン直叩き・一覧外のクライアント・azp 欠落・一覧未設定）。
+        // 取り込みは通すが（操作者はトークンの主体）、なりすましの試行／設定漏れのどちらも見えるよう警告に残す。
+        if (actor.IgnoredOnBehalfOf)
+        {
+            actorLogger.LogWarning(
+                "乖離の取り込みの OnBehalfOf を無視しました（信頼するクライアントのトークンではありません。操作者={Actor}）。",
+                LogSanitizer.Sanitize(actor.Actor));
+        }
 
-            // 代理指定を信じなかった（利用者トークン直叩き・一覧外のクライアント・azp 欠落・一覧未設定）。
-            // 取り込みは通すが（操作者はトークンの主体）、なりすましの試行／設定漏れのどちらも見えるよう警告に残す。
-            if (actor.IgnoredOnBehalfOf)
-            {
-                actorLogger.LogWarning(
-                    "乖離の取り込みの OnBehalfOf を無視しました（信頼するクライアントのトークンではありません。操作者={Actor}）。",
-                    LogSanitizer.Sanitize(actor.Actor));
-            }
+        var outcome = svc.Adopt(new PositionDriftAdoptionCommand(req.Symbol, market, req.Reason), actor.Actor);
 
-            var outcome = svc.Adopt(new PositionDriftAdoptionCommand(req.Symbol, market, req.Reason), actor.Actor);
+        if (!outcome.Accepted)
+        {
+            return Results.UnprocessableEntity(
+                new PositionDriftAdoptionRejectionBody(DescribeRejection(outcome.Rejection), outcome.Rejection.ToString()));
+        }
 
-            if (!outcome.Accepted)
-            {
-                return Results.UnprocessableEntity(
-                    new PositionDriftAdoptionRejectionBody(DescribeRejection(outcome.Rejection), outcome.Rejection.ToString()));
-            }
+        // FR-11: 取り込み行（台帳）は既に永続しており、それが権威（fail-safe・IADR-0082 と同型）。
+        // ここでは誰が・なぜ・何を観測して・どう変えたかを中央監査台帳と通知へ流す。
+        // #871, IADR-0423: 代理（Discord Bot 経由）のときは認可の主体（クライアント ID）も運ぶ（利用者本人のトークンは null）。
+        var adopted = outcome.Adopted! with { AuthorizedBy = actor.AuthorizedBy };
+        await bus.PublishAsync(adopted);
 
-            // FR-11: 取り込み行（台帳）は既に永続しており、それが権威（fail-safe・IADR-0082 と同型）。
-            // ここでは誰が・なぜ・何を観測して・どう変えたかを中央監査台帳と通知へ流す。
-            // #871, IADR-0423: 代理（Discord Bot 経由）のときは認可の主体（クライアント ID）も運ぶ（利用者本人のトークンは null）。
-            var adopted = outcome.Adopted! with { AuthorizedBy = actor.AuthorizedBy };
-            await bus.PublishAsync(adopted);
-
-            return Results.Ok(PositionDriftAdoptionResponse.From(adopted));
-        });
+        return Results.Ok(PositionDriftAdoptionResponse.From(adopted));
+    }
 
     // **何が足りないか・どうすれば通るかを具体的に返す**（「受理できません」では次の一手が分からない）。
     private static string DescribeRejection(PositionDriftAdoptionRejection rejection) => rejection switch

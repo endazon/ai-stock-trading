@@ -116,22 +116,11 @@ public sealed class HttpStageGateController(
                 if (result is null)
                 {
                     logger.LogWarning("段階遷移の応答を解釈できませんでした。");
-                    return new StageTransitionCommandResult(false, false, "段階遷移の応答を解釈できませんでした");
+                    return new StageTransitionCommandResult(false, false, TransitionUnparsableMessage);
                 }
 
-                // #466, FR-20, SC-02, §4.1 追補3（Q13-a）, IADR-0180: 承認操作にも警告を届ける。
-                //
-                // **判定はサーバ（Risk）の `belowStatisticalBasis` の宣言に従う**（閾値 100 を写経しない）。
-                // 応答が本項目を持たない（旧版 Risk）場合は警告を出さない（null＝宣言が無い。`/stage status` と同型）。
-                // **受理・拒否の両方で載せる**——拒否されたときだけ警告が消える経路を作らない。
-                var warning = result.Stage1Criteria is { BelowStatisticalBasis: true } c
-                    ? FormatBelowBasisWarning(c.MinimumTradeCount)
-                    : null;
-
-                return result.Accepted
-                    ? new StageTransitionCommandResult(true, true,
-                        $"段階を {StageLabel(result.Transition?.ToStage ?? targetStage)} へ遷移しました。", warning)
-                    : new StageTransitionCommandResult(true, false, FormatRejection(result.RejectionReasons), warning);
+                return ToTransitionResult(
+                    result.Accepted, result.Transition?.ToStage, result.RejectionReasons, result.Stage1Criteria, targetStage);
             }
 
             // FR-20, #868, IADR-0383: 400 は Risk が**明確に応答した**拒否である（不正な targetStage／
@@ -152,7 +141,7 @@ public sealed class HttpStageGateController(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("段階遷移がタイムアウトしました。");
-            return new StageTransitionCommandResult(false, false, "段階遷移がタイムアウトしました（状態は不明です）");
+            return new StageTransitionCommandResult(false, false, TransitionTimedOutMessage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -160,6 +149,37 @@ public sealed class HttpStageGateController(
             return new StageTransitionCommandResult(false, false, $"段階遷移に失敗しました（{ex.GetType().Name}）");
         }
     }
+
+    // NFR, IADR-0450 決定 4, #753（段 5）: 受理（200）・受理不能（422）の本文 → 結果。gRPC 実装（GrpcStageGateController）と共有する
+    // （警告を受理・拒否の両方に載せる規則を 1 つに保つ）。
+    internal static StageTransitionCommandResult ToTransitionResult(
+        bool accepted, int? toStage, IReadOnlyList<int>? rejectionReasons, Stage1GateCriteriaView? stage1Criteria, int targetStage)
+    {
+        // #466, FR-20, SC-02, §4.1 追補3（Q13-a）, IADR-0180: 承認操作にも警告を届ける。
+        //
+        // **判定はサーバ（Risk）の `belowStatisticalBasis` の宣言に従う**（閾値 100 を写経しない）。
+        // 応答が本項目を持たない（旧版 Risk）場合は警告を出さない（null＝宣言が無い。`/stage status` と同型）。
+        // **受理・拒否の両方で載せる**——拒否されたときだけ警告が消える経路を作らない。
+        var warning = stage1Criteria is { BelowStatisticalBasis: true } c
+            ? FormatBelowBasisWarning(c.MinimumTradeCount)
+            : null;
+
+        return accepted
+            ? new StageTransitionCommandResult(true, true,
+                $"段階を {StageLabel(toStage ?? targetStage)} へ遷移しました。", warning)
+            : new StageTransitionCommandResult(true, false, FormatRejection(rejectionReasons), warning);
+    }
+
+    internal const string TransitionUnparsableMessage = "段階遷移の応答を解釈できませんでした";
+
+    // 🔴 書き込みの時間切れは「状態は不明」（遷移したかどうかを騙らない）。
+    internal const string TransitionTimedOutMessage = "段階遷移がタイムアウトしました（状態は不明です）";
+
+    internal const string WithdrawalUnparsableMessage = "撤退評価の応答を解釈できませんでした";
+
+    // 🔴 NFR, IADR-0450 決定 4, #753（段 5）: 撤退評価は成立時に kill switch を自動起動する**書き込み**である。時間切れは「状態は不明」
+    // （以前の REST の文言「撤退評価がタイムアウトしました」は不明を言っていなかった。gRPC と揃えて是正した）。
+    internal const string WithdrawalTimedOutMessage = "撤退評価がタイムアウトしました（状態は不明です。kill switch の状態は /status で確認してください）";
 
     public async Task<StageGateStatusResult> EvaluateWithdrawalAsync(CancellationToken cancellationToken = default)
     {
@@ -180,7 +200,7 @@ public sealed class HttpStageGateController(
             if (view is null)
             {
                 logger.LogWarning("撤退評価の応答を解釈できませんでした。");
-                return new StageGateStatusResult(false, "撤退評価の応答を解釈できませんでした");
+                return new StageGateStatusResult(false, WithdrawalUnparsableMessage);
             }
 
             return new StageGateStatusResult(true, FormatWithdrawal(view));
@@ -188,7 +208,7 @@ public sealed class HttpStageGateController(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("撤退評価がタイムアウトしました。");
-            return new StageGateStatusResult(false, "撤退評価がタイムアウトしました");
+            return new StageGateStatusResult(false, WithdrawalTimedOutMessage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -204,13 +224,16 @@ public sealed class HttpStageGateController(
         try
         {
             var body = await response.Content.ReadFromJsonAsync<ErrorView>(ct).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(body?.Error) ? "段階遷移は受理されませんでした。" : body!.Error;
+            return string.IsNullOrWhiteSpace(body?.Error) ? TransitionNotAcceptedMessage : body!.Error;
         }
         catch (Exception)
         {
-            return "段階遷移は受理されませんでした。";
+            return TransitionNotAcceptedMessage;
         }
     }
+
+    // Risk が 400 の本文に説明を返さなかったときの文言（gRPC 実装と共有する）。
+    internal const string TransitionNotAcceptedMessage = "段階遷移は受理されませんでした。";
 
     private StageGateStatusResult Fail(string operation, HttpStatusCode status)
     {

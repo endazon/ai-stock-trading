@@ -40,33 +40,39 @@ internal static partial class WatchlistProposalEndpoints
         owner.MapPost("/policy-revisions/{attemptId:guid}/watchlist-apply-result",
             (Guid attemptId, WatchlistApplyResultRequest req, IPolicyRevisionLedger ledger, IReportStore store, IClock clock,
                 DelegatedActorOptions delegated, HttpContext http) =>
-            {
-                var recording = ConfirmingActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
-                if (recording.Rejected)
-                    return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
-                if (string.IsNullOrWhiteSpace(req.Outcome) || req.Outcome.Length > 32)
-                    return Results.BadRequest(new { error = "適用の結果（outcome）が必要です。" });
-                if (ledger.Find(attemptId) is not { } attempt)
-                    return Results.NotFound();
-                if (attempt is not { Outcome: PolicyRevisionAttemptOutcome.Proposed, ReportVersion: { } draftVersion }
-                    || store.Get(attempt.PeriodKey) is not { } report || !report.IsConfirmedAtDraftVersion(draftVersion))
-                    return Results.Conflict(new { error = "確定された /policy の案ではないため、適用の内訳を記録しません。" });
+                RecordApplyResult(attemptId, req, ledger, store, clock, delegated, http));
+    }
 
-                var json = JsonSerializer.Serialize(new
-                {
-                    outcome = req.Outcome,
-                    recordedBy = recording.Actor,
-                    items = req.Items ?? [],
-                    message = req.Message,
-                }, ReportPolicyRevisionService.LedgerJson);
-                // 列は text（上限なし）だが、要求の大きさは抑える（入れ替え 10 件の内訳に十分な量）。
-                if (json.Length > 65536)
-                    return Results.BadRequest(new { error = "適用の内訳が長すぎます。" });
+    // NFR, IADR-0450, #753（段 5）: 適用の内訳の記録。REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する（1 回だけ・確定された案だけの
+    // 条件を 2 箇所に書かない）。
+    internal static IResult RecordApplyResult(Guid attemptId, WatchlistApplyResultRequest req, IPolicyRevisionLedger ledger, IReportStore store,
+        IClock clock, DelegatedActorOptions delegated, HttpContext http)
+    {
+        var recording = ConfirmingActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
+        if (recording.Rejected)
+            return Results.BadRequest(new { error = "代理される利用者（onBehalfOf）の形式が不正です。" });
+        if (string.IsNullOrWhiteSpace(req.Outcome) || req.Outcome.Length > 32)
+            return Results.BadRequest(new { error = "適用の結果（outcome）が必要です。" });
+        if (ledger.Find(attemptId) is not { } attempt)
+            return Results.NotFound();
+        if (attempt is not { Outcome: PolicyRevisionAttemptOutcome.Proposed, ReportVersion: { } draftVersion }
+            || store.Get(attempt.PeriodKey) is not { } report || !report.IsConfirmedAtDraftVersion(draftVersion))
+            return Results.Conflict(new { error = "確定された /policy の案ではないため、適用の内訳を記録しません。" });
 
-                return ledger.RecordWatchlistApply(attemptId, json, clock.UtcNow)
-                    ? Results.Ok(new { attemptId })
-                    : Results.Conflict(new { error = "この案の適用の内訳は記録済みです。" });
-            });
+        var json = JsonSerializer.Serialize(new
+        {
+            outcome = req.Outcome,
+            recordedBy = recording.Actor,
+            items = req.Items ?? [],
+            message = req.Message,
+        }, ReportPolicyRevisionService.LedgerJson);
+        // 列は text（上限なし）だが、要求の大きさは抑える（入れ替え 10 件の内訳に十分な量）。
+        if (json.Length > 65536)
+            return Results.BadRequest(new { error = "適用の内訳が長すぎます。" });
+
+        return ledger.RecordWatchlistApply(attemptId, json, clock.UtcNow)
+            ? Results.Ok(new WatchlistApplyRecordedResponse(attemptId))
+            : Results.Conflict(new { error = "この案の適用の内訳は記録済みです。" });
     }
 
     // NFR, IADR-0449 決定 3, #753（段 5）: 照会の判定（検証・案の有無・その版で確定されているか）は REST と gRPC 面
@@ -129,3 +135,6 @@ public sealed record WatchlistApplyResultRequest(
     string? OnBehalfOf = null);
 
 public sealed record WatchlistApplyItemRecord(string? Action, string? Symbol, bool Applied, string? SkipReason);
+
+// 記録の応答（200）。NFR, IADR-0450: 以前は匿名型だった。gRPC 面が同じ値を読むため名前を付けた（JSON は同じ＝ `{"attemptId":…}`）。
+public sealed record WatchlistApplyRecordedResponse(Guid AttemptId);

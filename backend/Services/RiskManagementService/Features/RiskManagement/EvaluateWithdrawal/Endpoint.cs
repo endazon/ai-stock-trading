@@ -5,6 +5,8 @@ namespace RiskManagementService.Features.RiskManagement.EvaluateWithdrawal;
 internal static class EvaluateWithdrawalEndpoint
 {
     public static void MapEvaluateWithdrawal(this IEndpointRouteBuilder owner) =>
-        owner.MapPost("/stage-gate/withdrawal/evaluate",
-            (StageGateService svc) => Results.Ok(svc.EvaluateWithdrawal().Assessment));
+        owner.MapPost("/stage-gate/withdrawal/evaluate", (StageGateService svc) => Handle(svc));
+
+    // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（RiskControlsOwnerWriteGrpcService）が共有する処理（2 箇所に書かない）。
+    internal static IResult Handle(StageGateService svc) => Results.Ok(svc.EvaluateWithdrawal().Assessment);
 }

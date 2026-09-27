@@ -496,8 +496,10 @@ services:
       # （非テンプレート値では authAuthority 変更に追随せず 401 が別経路で再発するため）。
       # kill switch の呼び先（空=BaseAddress 未設定＝呼び出し失敗）。
       - { name: RiskManagement__BaseUrl, value: "" }
-      # NFR, FR-14, MSP:ADR-0029, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0449, #753: Discord Bot の**読み取り**（稼働状態・
-      # 段階ゲート・レビュー局面・会話キーの一覧・入れ替え案・監視銘柄）を east-west gRPC（h2c）で呼ぶ場合の宛先。書き込みは REST のまま。
+      # NFR, FR-14, MSP:ADR-0029, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0449, IADR-0450, #753: Discord Bot の**読み取りと書き込み**
+      # （稼働状態・段階ゲート・レビュー局面・会話キーの一覧・入れ替え案・監視銘柄／kill switch・一時停止/再開・GFV 解除・段階遷移・撤退評価・
+      # 乖離の取り込み・報告書の確定/差し戻し・方針の改訂・適用の内訳の記録・入れ替え案の適用）を east-west gRPC（h2c）で呼ぶ場合の宛先。
+      # 宣言した宛先は読み取りも書き込みも gRPC になる（失敗しても REST へ落とさない。書き込みは再試行しない）。
       # 🔴 **既定は REST であり、これらのキーは意図的に置いていない**（置くと既定描画が変わる。gRPC の面は既定の配備で開いていない）。
       # 有効化するときだけ、この env 配列へ足す（片方ずつでよい）:
       #   - { name: RiskManagement__Grpc, value: "http://risk-management-service:8081" }
@@ -505,7 +507,8 @@ services:
       #   - { name: MarketMonitor__Grpc, value: "http://market-monitor-service:8081" }
       # 前提（同じ変更で揃える）: 呼び先の services.<name> に `grpcPort: 8081` を宣言すること（片方だけだと各読み取りが失敗の文言を返す）。
       # 宣言があれば上の BaseUrl より優先する。メタデータのトークンは REST と同じ Notifications__Discord__OwnerAuth__*（ボットの機密クライアント。
-      # 呼び先の gRPC 面は Auth__GrpcOwnerClients__0 で azp を確かめる）。deadline は <上記>__GrpcTimeoutSeconds（既定 5 / 5 / 10 秒）。
+      # 呼び先の gRPC 面は Auth__GrpcOwnerClients__0 で azp を確かめる）。deadline は <上記>__GrpcTimeoutSeconds（既定 5 / 5 / 10 秒）、
+      # 方針の改訂と適用の内訳の記録は Reports__GrpcPolicyRevisionTimeoutSeconds（既定 90 秒＝REST と同値。これも既定では置かない）。
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc

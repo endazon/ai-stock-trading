@@ -1,0 +1,91 @@
+// NFR, NFR-06, FR-07, FR-09, FR-13, FR-14, MSP:ADR-0029, MSP:ADR-0075, ADR-0047 決定 1〜3, IADR-0284 決定 5（段 5）, IADR-0448, IADR-0450, #753:
+// 報告書の**所有者限定の書き込み**（REST の OwnerOnly）の gRPC 契約。呼び出し元は Discord ボットだけである（ADR-0047 決定 1）。
+// 各 rpc は REST の端点と同じ処理関数を通る（確定者の解決・版番号付きの冪等・監査の発行・KB への保存を 2 箇所に書かない）。
+//
+// ■ 認可（IADR-0450）: 門は `GrpcOwnerOnly`。s2s には開かない（生成AI・自動処理は確定できない＝ADR-0003）。
+// ■ 利用者の文脈は本文の `on_behalf_of` で運ぶ（ADR-0047 決定 1）。
+// ■ 誤りの写し（REST と同じ分類）: 400 → INVALID_ARGUMENT、404 → NOT_FOUND、409 → ABORTED（版の不一致・確定済み・記録済み）、
+//   429 → RESOURCE_EXHAUSTED（方針の改訂の 1 日の上限）、502 → INTERNAL（AI の案を作れなかった）。**いずれも何も保存していない**（REST の契約）。
+// ■ 🔴 方針の改訂は冪等でない（LLM を呼び新しい版を作る）。呼び出し側は再試行しない（IADR-0450）。
+// ■ 線上表現は原則 A（IADR-0427 決定 3）。message 名を送り手の C# の型名にしない。
+syntax = "proto3";
+
+package aistocktrading.report.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Grpc.Report.V1";
+
+import "aistocktrading/report/v1/report_owner_read.proto";
+
+service ReportOwnerWrite {
+  // POST /reports/{periodKey}/confirm（版番号付きで冪等）。
+  rpc ConfirmReport(ReportConfirmationRequest) returns (ReportConfirmationResponse);
+  // POST /reports/{periodKey}/request-changes（版番号付き）。
+  rpc RequestReportChanges(ReportChangesRequest) returns (ReportChangesResponse);
+  // POST /reports/policy-revisions（利用者の指示から方針の改訂案を作り、新しい版として保存・提示する）。
+  rpc RevisePolicy(PolicyRevisionProposalRequest) returns (PolicyRevisionProposalResponse);
+  // POST /reports/policy-revisions/{attemptId}/watchlist-apply-result（入れ替えの適用の内訳。1 回だけ）。
+  rpc RecordWatchlistApplyResult(WatchlistApplyRecordRequest) returns (WatchlistApplyRecordResponse);
+}
+
+message ReportConfirmationRequest {
+  string period_key = 1;
+  int32 expected_version = 2;
+  optional string on_behalf_of = 3;
+}
+
+message ReportConfirmationResponse {
+  // この要求で確定へ遷移したか。
+  optional bool transitioned = 1;
+  // 確定後の版（この版で確定されているかの判定に使う＝ expected_version + 1）。
+  optional int32 version = 2;
+}
+
+message ReportChangesRequest {
+  string period_key = 1;
+  int32 expected_version = 2;
+}
+
+message ReportChangesResponse {
+  optional int32 version = 1;
+}
+
+message PolicyRevisionProposalRequest {
+  string instruction = 1;
+  // 欠落＝当日（JST）の日報（REST の periodKey の省略と同じ）。
+  optional string period_key = 2;
+  optional string on_behalf_of = 3;
+  // 欠落＝現在の監視銘柄を照会できなかった（REST の null。その案の入れ替えは適用しない）。
+  WatchlistSnapshotRows current_watchlist = 4;
+}
+
+message PolicyRevisionProposalResponse {
+  optional string period_key = 1;
+  optional int32 version = 2;
+  optional bool created = 3;
+  optional bool presented = 4;
+  optional string message = 5;
+  optional string policy_summary = 6;
+  repeated WatchlistChangeRow watchlist_changes = 7;
+  // 欠落＝理由なし（REST の null）。
+  optional string rationale = 8;
+}
+
+message WatchlistApplyRecordRequest {
+  // Guid の文字列表現。
+  string attempt_id = 1;
+  string outcome = 2;
+  repeated WatchlistApplyRecordItem items = 3;
+  optional string message = 4;
+  optional string on_behalf_of = 5;
+}
+
+message WatchlistApplyRecordItem {
+  optional string action = 1;
+  optional string symbol = 2;
+  optional bool applied = 3;
+  optional string skip_reason = 4;
+}
+
+message WatchlistApplyRecordResponse {
+  optional string attempt_id = 1;
+}
