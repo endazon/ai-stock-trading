@@ -84,6 +84,10 @@ builder.Services.AddSingleton(TimeProvider.System);
 // 1 巡回の要求は巡回間隔に収める（計画 ADR-0043 決定2 (b)。自制レート × 巡回間隔 ÷ 1 銘柄あたりの要求数）。
 builder.Services.AddHttpClient("monitor", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061 (#753): east-west gRPC（`WatchlistRead`）。
+// **`MarketMonitor:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば監視銘柄の読み手が
+// gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingMarketMonitorGrpc(builder.Configuration);
 builder.Services.AddSingleton(sp =>
 {
     var sourceOptions =
@@ -94,7 +98,12 @@ builder.Services.AddSingleton(sp =>
 
     IWatchlistReader? reader = null;
     var baseUrl = builder.Configuration["MarketMonitor:BaseUrl"];
-    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    if (sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc)
+    {
+        reader = new GrpcMarketMonitorWatchlistReader(
+            monitorGrpc, sp.GetRequiredService<ILogger<GrpcMarketMonitorWatchlistReader>>());
+    }
+    else if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
     {
         var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("monitor");
         http.BaseAddress = uri;
@@ -194,9 +203,16 @@ builder.Services.AddScoped<AppSvc>();
 // ServiceAuth:ClientId/ClientSecret 未設定なら no-op（認証なし → 401 → Normal の安全既定）＝現行挙動を保持する。
 builder.Services.AddHttpClient("cost", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061 (#753): east-west gRPC（`CostStateRead`）。
+// **`CostControl:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば統制ゲートが
+// gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingCostControlGrpc(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderCostControlGate>();
 builder.Services.AddScoped<ICostControlGate>(sp =>
 {
+    if (sp.GetService<CostControlGrpcTransport>() is { } costGrpc)
+        return new GrpcCostControlGate(costGrpc, sp.GetRequiredService<ILogger<GrpcCostControlGate>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["CostControl:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return sp.GetRequiredService<PlaceholderCostControlGate>();

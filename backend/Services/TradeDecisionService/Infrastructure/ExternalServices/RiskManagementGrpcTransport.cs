@@ -21,7 +21,8 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // ここで同じ型をもう 1 つ登録すると、後勝ちで**前提条件の照会がリスク管理の宛先へ飛ぶ**（例外にならず、
 // UNIMPLEMENTED → 安全既定へ倒れるだけなので気付けない）。
 //
-// タイムアウトと再試行は段 1（GrpcAssumptionsClient / IADR-0331 決定 3）と同じ規則:
+// タイムアウトと再試行は段 1（GrpcAssumptionsClient / IADR-0331 決定 3）と同じ規則（実体は段 4 の輸送と共有する
+// `TradeDecisionGrpcCalls`。IADR-0446 決定 5・#1061）:
 //   - timeout: **試行ごとの** `CallOptions.Deadline`。既定は REST の "risk" HttpClient.Timeout と同値（5 秒）。
 //   - retry: 既定 1 試行（＝再試行しない＝REST と同じ振る舞い）。再試行するのは `Unavailable` / `DeadlineExceeded` だけ。
 //   - 失敗は `null`（取得できなかった）で返す。**何へ倒すかは各ポートが持つ**（不明・残枠 0 の安全既定は経路ごとに違う。
@@ -41,73 +42,37 @@ public sealed class RiskManagementGrpcTransport : IDisposable
     internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
 
     private readonly GrpcChannel _channel;
-    private readonly ILogger<RiskManagementGrpcTransport> _logger;
+    private readonly TradeDecisionGrpcCalls _calls;
 
     public RiskManagementGrpcTransport(
         GrpcChannel channel, TimeSpan timeout, int maxAttempts, ILogger<RiskManagementGrpcTransport> logger)
     {
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        // NFR, IADR-0446 決定 5, #1061: deadline・再試行の規則は段 4 の輸送と共有する（TradeDecisionGrpcCalls）。
+        _calls = new TradeDecisionGrpcCalls(timeout, maxAttempts, logger ?? throw new ArgumentNullException(nameof(logger)));
         Client = new Proto.RiskControlsRead.RiskControlsReadClient(channel);
-        Timeout = timeout;
-        MaxAttempts = maxAttempts < 1 ? 1 : maxAttempts;
     }
 
     internal Proto.RiskControlsRead.RiskControlsReadClient Client { get; }
 
-    internal TimeSpan Timeout { get; }
+    internal TimeSpan Timeout => _calls.Timeout;
 
-    internal int MaxAttempts { get; }
+    internal int MaxAttempts => _calls.MaxAttempts;
 
-    internal static bool IsRetryable(StatusCode status) =>
-        status is StatusCode.Unavailable or StatusCode.DeadlineExceeded;
+    internal static bool IsRetryable(StatusCode status) => TradeDecisionGrpcCalls.IsRetryable(status);
 
     /// <summary>
     /// 1 回の照会（再試行を含む）。取得できなければ <c>null</c>。呼び出し元自身のキャンセルは伝播させる。
     /// </summary>
     /// <param name="operation">ログに載せる照会の名前。</param>
     /// <param name="fallback">失敗時に呼び出し元が倒す先（ログに載せる）。</param>
-    internal async Task<TResponse?> CallAsync<TResponse>(
+    internal Task<TResponse?> CallAsync<TResponse>(
         string operation,
         string fallback,
         Func<Proto.RiskControlsRead.RiskControlsReadClient, CallOptions, AsyncUnaryCall<TResponse>> call,
         CancellationToken cancellationToken)
-        where TResponse : class
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                // AsyncUnaryCall は IDisposable（再試行のたびに新しい RPC を張るので、握ったままにしない）。
-                using var rpc = call(
-                    Client,
-                    new CallOptions(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: cancellationToken));
-                return await rpc.ResponseAsync.ConfigureAwait(false);
-            }
-            catch (RpcException ex)
-                when (ex.StatusCode == StatusCode.Cancelled && cancellationToken.IsCancellationRequested)
-            {
-                throw new OperationCanceledException(cancellationToken);
-            }
-            catch (RpcException ex) when (IsRetryable(ex.StatusCode) && attempt < MaxAttempts)
-            {
-                _logger.LogWarning(
-                    "{Operation} の gRPC 照会に失敗（{Status}・{Attempt}/{Attempts} 回目）。再試行します。",
-                    operation, ex.StatusCode, attempt, MaxAttempts);
-            }
-            catch (RpcException ex)
-            {
-                _logger.LogWarning(
-                    "{Operation} の gRPC 照会に失敗（{Status}）。{Fallback}", operation, ex.StatusCode, fallback);
-                return null;
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                _logger.LogWarning("{Operation} の gRPC 照会がタイムアウト。{Fallback}", operation, fallback);
-                return null;
-            }
-        }
-    }
+        where TResponse : class =>
+        _calls.CallAsync(operation, fallback, options => call(Client, options), cancellationToken);
 
     public void Dispose() => _channel.Dispose();
 }
@@ -128,8 +93,9 @@ public static class RiskManagementGrpcExtensions
         if (address is null)
             return services;
 
-        var timeout = ReadTimeout(config);
-        var maxAttempts = ReadMaxAttempts(config);
+        var timeout = TradeDecisionGrpcCalls.ReadTimeout(
+            config, RiskManagementGrpcTransport.TimeoutKey, RiskManagementGrpcTransport.DefaultTimeout);
+        var maxAttempts = TradeDecisionGrpcCalls.ReadMaxAttempts(config, RiskManagementGrpcTransport.MaxAttemptsKey);
         services.AddSingleton(sp => new RiskManagementGrpcTransport(
             GrpcClientExtensions.CreateAiStockTradingChannel(
                 address.AbsoluteUri,
@@ -147,32 +113,8 @@ public static class RiskManagementGrpcExtensions
     /// 🔴 **宣言してあるのに使えない値は起動時に落とす**（段 1 の <c>Configuration:Grpc</c>・IADR-0331 決定 4 と同じ）。
     /// 黙って REST へ戻すと「gRPC へ切り替えたつもりで切り替わっていない」が綴り誤りと区別できない。
     /// </remarks>
-    internal static Uri? ResolveAddress(IConfiguration config)
-    {
-        var raw = config[RiskManagementGrpcTransport.AddressKey];
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        if (!Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri))
-            throw new InvalidOperationException(
-                $"{RiskManagementGrpcTransport.AddressKey} は絶対 URL である必要があります（実際の値: \"{raw}\"）。");
-
-        // メッシュ内は平文 h2c（TLS はサイドカーが終端する）。
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                $"{RiskManagementGrpcTransport.AddressKey} の scheme は http のみです（実際の値: \"{raw}\"）。"
-                + " メッシュ内の TLS はサイドカーが終端します。");
-
-        return uri;
-    }
-
-    private static TimeSpan ReadTimeout(IConfiguration config) =>
-        int.TryParse(config[RiskManagementGrpcTransport.TimeoutKey], out var seconds) && seconds > 0
-            ? TimeSpan.FromSeconds(seconds)
-            : RiskManagementGrpcTransport.DefaultTimeout;
-
-    private static int ReadMaxAttempts(IConfiguration config) =>
-        int.TryParse(config[RiskManagementGrpcTransport.MaxAttemptsKey], out var attempts) && attempts > 1 ? attempts : 1;
+    internal static Uri? ResolveAddress(IConfiguration config) =>
+        TradeDecisionGrpcCalls.ResolveAddress(config, RiskManagementGrpcTransport.AddressKey);
 }
 
 // NFR, IADR-0427 決定 3: 線上表現 → 本サービスの型（受け手側の写し）。

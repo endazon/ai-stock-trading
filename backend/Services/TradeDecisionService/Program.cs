@@ -200,9 +200,16 @@ static int ParseTopK(string? value) =>
 // ServiceAuth:ClientId/ClientSecret 未設定なら no-op（認証なし → 401 → 安全既定）＝現行挙動を保持する。
 builder.Services.AddHttpClient("reports", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061 (#753): east-west gRPC（`DailyPolicyRead`）。
+// **`Reports:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば日報の方針のポートが
+// gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingReportsGrpc(builder.Configuration);
 builder.Services.AddSingleton<PlaceholderDailyPolicyProvider>();
 builder.Services.AddScoped<IDailyPolicyProvider>(sp =>
 {
+    if (sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc)
+        return new GrpcDailyPolicyProvider(reportsGrpc, sp.GetRequiredService<ILogger<GrpcDailyPolicyProvider>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Reports:BaseUrl"];
     // 未設定・不正 URI は安全既定（プレースホルダ＝取引しない）に倒す。
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
@@ -277,10 +284,17 @@ builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(
 // （TradeCycle:Watchlist）＝現行挙動・後方互換。照会失敗（非 2xx・timeout・例外）は構成ベース（既定 watchlist）へ倒す fail-safe。
 builder.Services.AddHttpClient("monitor", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061 (#753): east-west gRPC（`WatchlistRead`）。
+// **`MarketMonitor:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば監視銘柄と
+// 当時の監視銘柄（下の as-of）のポートが gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingMarketMonitorGrpc(builder.Configuration);
 builder.Services.AddSingleton<ConfigurationWatchlistProvider>();
 builder.Services.AddScoped<IWatchlistProvider>(sp =>
 {
     var configFallback = sp.GetRequiredService<ConfigurationWatchlistProvider>();
+    if (sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc)
+        return new GrpcWatchlistProvider(monitorGrpc, configFallback, sp.GetRequiredService<ILogger<GrpcWatchlistProvider>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["MarketMonitor:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return configFallback;
@@ -403,6 +417,9 @@ builder.Services.Configure<Stage0RecordingOptions>(
 // （その記録は合否から外れる）。記録の対象銘柄（Stage0Recording:Symbols）では代えない。as-of の他の入力の実供給は無いまま。
 builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
 {
+    if (sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc)
+        return new GrpcAsOfWatchlistSource(monitorGrpc, sp.GetRequiredService<ILogger<GrpcAsOfWatchlistSource>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["MarketMonitor:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new UnwiredAsOfWatchlistSource();

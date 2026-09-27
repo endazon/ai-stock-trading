@@ -224,6 +224,237 @@
         }
       }
     },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/costcontrol/v1/cost_state_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.costcontrol.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.CostControl.V1",
+      "imports": [],
+      "messages": {
+        "GetCostStateRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetCostStateResponse": {
+          "fields": {
+            "interval_multiplier": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "is_halted": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "CostStateRead": {
+          "rpcs": {
+            "GetCostState": {
+              "request": "GetCostStateRequest",
+              "response": "GetCostStateResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/marketmonitor/v1/watchlist_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.marketmonitor.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.MarketMonitor.V1",
+      "imports": [],
+      "messages": {
+        "GetWatchlistAsOfRequest": {
+          "fields": {
+            "at": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetWatchlistAsOfResponse": {
+          "fields": {
+            "reason": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "reconstructed": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            },
+            "symbols": {
+              "number": 2,
+              "type": "WatchlistItems",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetWatchlistRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetWatchlistResponse": {
+          "fields": {
+            "items": {
+              "number": 1,
+              "type": "WatchlistItem",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistItem": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistItems": {
+          "fields": {
+            "items": {
+              "number": 1,
+              "type": "WatchlistItem",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {
+        "Market": {
+          "values": {
+            "MARKET_JAPAN": 1,
+            "MARKET_UNITED_STATES": 2,
+            "MARKET_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "services": {
+        "WatchlistRead": {
+          "rpcs": {
+            "GetWatchlist": {
+              "request": "GetWatchlistRequest",
+              "response": "GetWatchlistResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetWatchlistAsOf": {
+              "request": "GetWatchlistAsOfRequest",
+              "response": "GetWatchlistAsOfResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/report/v1/daily_policy_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.report.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.Report.V1",
+      "imports": [],
+      "messages": {
+        "DailyPolicyRecord": {
+          "fields": {
+            "date": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "summary": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetConfirmedDailyPolicyRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetConfirmedDailyPolicyResponse": {
+          "fields": {
+            "policy": {
+              "number": 1,
+              "type": "DailyPolicyRecord",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "DailyPolicyRead": {
+          "rpcs": {
+            "GetConfirmedDailyPolicy": {
+              "request": "GetConfirmedDailyPolicyRequest",
+              "response": "GetConfirmedDailyPolicyResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/riskmanagement/v1/risk_controls_read.proto": {
       "syntax": "proto3",
       "package": "aistocktrading.riskmanagement.v1",

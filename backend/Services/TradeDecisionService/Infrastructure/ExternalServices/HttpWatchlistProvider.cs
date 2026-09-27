@@ -21,16 +21,20 @@ public sealed class HttpWatchlistProvider(
     {
         var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
         if (rows is not null)
-        {
-            // 従来どおりの寛容な読み: 銘柄が空の行は除外し、市場が欠けた行は列挙の既定値で読む（定時サイクルの判断対象）。
-            return [.. rows
-                .Where(r => !string.IsNullOrWhiteSpace(r.Symbol))
-                .Select(r => new WatchedSymbol(r.Symbol!, r.Market ?? default))];
-        }
+            return ToCycleWatchlist(rows);
 
         logger.LogWarning("監視銘柄（watchlist）を権威源から読めないため、既定 watchlist（構成）へフォールバックします。");
         return await fallback.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    // NFR, IADR-0446 決定 4, #1061 (#753): 行の解釈（定時サイクルの寛容な読み・プロンプトの厳格な読み）は gRPC 実装
+    // （GrpcWatchlistProvider）と共有する（`internal static`）。輸送を差し替えても読み方が変わらないように、ここを唯一の定義にする。
+
+    /// <summary>従来どおりの寛容な読み: 銘柄が空の行は除外し、市場が欠けた行は列挙の既定値で読む（定時サイクルの判断対象）。</summary>
+    internal static IReadOnlyList<WatchedSymbol> ToCycleWatchlist(IReadOnlyList<WatchlistRow> rows) =>
+        [.. rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.Symbol))
+            .Select(r => new WatchedSymbol(r.Symbol!, r.Market ?? default))];
 
     // #1034, IADR-0440 決定 2: 読めなければ null（不明）。構成の固定リストへは倒さない。
     // 🔴 PR #1041 の監査 F1: **1 行でも欠けていれば一覧ごと不明**にする（銘柄が空・null、市場が欠落・値域外）。
@@ -39,9 +43,12 @@ public sealed class HttpWatchlistProvider(
     public async Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default)
     {
         var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
-        if (rows is null)
-            return null;
+        return rows is null ? null : ToAuthoritativeWatchlist(rows, logger);
+    }
 
+    /// <summary>厳格な読み: 1 行でも欠けていれば（銘柄が空・市場が欠落または値域外）一覧ごと不明（null）。</summary>
+    internal static IReadOnlyList<WatchedSymbol>? ToAuthoritativeWatchlist(IReadOnlyList<WatchlistRow> rows, ILogger logger)
+    {
         if (rows.Any(r => string.IsNullOrWhiteSpace(r.Symbol) || r.Market is not { } m || !Enum.IsDefined(m)))
         {
             logger.LogWarning("監視銘柄（watchlist）の応答に欠けた行（銘柄が空・市場が欠落または値域外）があるため、判断のプロンプトには不明と書きます。");
@@ -93,6 +100,6 @@ public sealed class HttpWatchlistProvider(
         }
     }
 
-    // 応答の 1 行（MonitoredSymbol と同形）。欠落を検出するため項目は nullable。
-    private sealed record WatchlistRow(string? Symbol, Market? Market);
+    // 応答の 1 行（MonitoredSymbol と同形）。欠落を検出するため項目は nullable。gRPC 実装も同じ行へ写してから解釈する。
+    internal sealed record WatchlistRow(string? Symbol, Market? Market);
 }

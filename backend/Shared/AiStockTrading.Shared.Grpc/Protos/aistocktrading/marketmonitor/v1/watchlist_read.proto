@@ -1,0 +1,68 @@
+// NFR, FR-02, FR-04, FR-13, FR-15, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定 5（段 4）, IADR-0328 決定 4,
+// IADR-0331 決定 7, IADR-0427, IADR-0442, IADR-0446, #1061 (#753):
+// 監視銘柄の同期照会（現在の一覧と、当時の一覧の再構成）の gRPC 契約。REST の `GET /monitor/watchlist` と
+// `GET /monitor/watchlist/as-of`（いずれも OwnerOrService）と同じ意味論であり、提供側は REST と同じサービス・純関数を呼ぶ。
+//
+// ■ 置き場と所有（IADR-0328 決定 4 / IADR-0331 決定 7）
+//   所有者は呼び出される側（MarketMonitorService）。置き場は共有プロジェクト `AiStockTrading.Shared.Grpc`。
+//
+// ■ 🔴 原則 A（IADR-0427 決定 3 と同じ）
+//   - 銘柄は `optional`。市場は `MARKET_UNSPECIFIED = 0` を持つ列挙で、C# の列挙とは**名前で**写す
+//     （C# の 0 は `Japan`。欠落を日本と読むと米国の銘柄が黙って別の市場になる）。未指定・未知は「不明」。
+//   - 当時の一覧は「一覧が無い」と「一覧が空」を分ける（REST の `symbols: null` と `[]`）ため、存在を持つ入れ物 message で運ぶ。
+//   - 再構成の可否は `optional bool`（欠落は「再構成できない」扱い。REST の受け手と同じ）。
+//   **運ぶのは呼び出し元が読む項目だけ**（as-of の根拠・seed の時刻は運ばない）。足すのはフィールド追加＝非破壊。
+//
+// ■ 🔴 message 名を送り手（MarketMonitorService）の C# の型名（`MonitoredSymbol` / `WatchlistAsOfResponse`）と同じにしない。
+syntax = "proto3";
+
+package aistocktrading.marketmonitor.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Grpc.MarketMonitor.V1";
+
+// 監視銘柄の読み取り。REST の読み取り（`/monitor/watchlist`・`/monitor/watchlist/as-of`・OwnerOrService）と同じ認可・同じ評価器を通る。
+// - 呼び出し側サービスの資格情報が無い → UNAUTHENTICATED、ロールが無い → PERMISSION_DENIED
+// - as-of の時刻が無い・オフセットが無い・読めない（REST の 400）→ INVALID_ARGUMENT
+// - 提供側が不調・不達 → UNAVAILABLE、deadline 超過 → DEADLINE_EXCEEDED
+service WatchlistRead {
+  // GET /monitor/watchlist（現在の監視銘柄）。
+  rpc GetWatchlist(GetWatchlistRequest) returns (GetWatchlistResponse);
+  // GET /monitor/watchlist/as-of?at=（当時の監視銘柄の再構成）。
+  rpc GetWatchlistAsOf(GetWatchlistAsOfRequest) returns (GetWatchlistAsOfResponse);
+}
+
+enum Market {
+  MARKET_UNSPECIFIED = 0;
+  MARKET_JAPAN = 1;
+  MARKET_UNITED_STATES = 2;
+}
+
+message WatchlistItem {
+  optional string symbol = 1;
+  Market market = 2;
+}
+
+// 「一覧が無い」と「一覧が空」を分けるための入れ物。
+message WatchlistItems {
+  repeated WatchlistItem items = 1;
+}
+
+message GetWatchlistRequest {}
+
+message GetWatchlistResponse {
+  repeated WatchlistItem items = 1;
+}
+
+message GetWatchlistAsOfRequest {
+  // 時点。ISO 8601 で、オフセット（Z か ±hh:mm）が必須（REST の `at` と同じ）。
+  string at = 1;
+}
+
+message GetWatchlistAsOfResponse {
+  // 再構成できたか。欠落は「再構成できない」扱い。
+  optional bool reconstructed = 1;
+  // 再構成できたときの一覧。**入れ物が無ければ一覧が無い**（REST の `symbols: null`）。
+  WatchlistItems symbols = 2;
+  // 再構成できないときの理由（人が読む文）。
+  optional string reason = 3;
+}
