@@ -1,7 +1,7 @@
 ---
 title: east-west gRPC の段 4 —— Report daily-policy・MarketMonitor watchlist・CostControl costs/state の読み取りを生成クライアントへ寄せ、REST と並走させる
 type: spec
-status: in-progress
+status: done
 related_ids: [NFR, FR-01, FR-02, FR-04, FR-07, FR-13, FR-15, IADR-0031, IADR-0095, IADR-0284, IADR-0328, IADR-0331, IADR-0420, IADR-0427, IADR-0435, IADR-0440, IADR-0442, IADR-0445, IADR-0446, MSP:ADR-0029, MSP:ADR-0075]
 author: endazon (with Claude Code)
 created: 2026-09-27
@@ -80,18 +80,18 @@ plan_refs:
 
 ## 受け入れ基準（#1061）
 
-- [ ] proto と生成クライアント・サーバ実装。提供側 3 サービスに `MapGrpcService` 各 1 件。REST 面は不変
-- [ ] 同値: 本物の Program.cs で REST と gRPC が同じ値を返し、入力の誤りも同じ扱い
-- [ ] 否定形: 資格情報なし `UNAUTHENTICATED`・ロール不足 `PERMISSION_DENIED`
-- [ ] 呼び出し元 2 サービスが宛先の有無で切り替え、既定は REST。**本番の Program.cs から**解決して実際に呼ぶ
-- [ ] 原則 A: 欠落を既定値で読まない。縮退の向きは REST と同じ
-- [ ] timeout / retry の陽性・陰性対照（実 Kestrel h2c・127.0.0.1）
-- [ ] 変異注入の実測
-- [ ] proto 互換検査器の baseline 更新と陰性対照
-- [ ] helm の既定描画と values-local の描画がバイト等価
-- [ ] `dotnet build` / `dotnet test` / `dotnet format --verify-no-changes` と文書系検査器が通る
+- [x] proto と生成クライアント・サーバ実装。提供側 3 サービスに `MapGrpcService` 各 1 件。REST 面は不変
+- [x] 同値: 本物の Program.cs で REST と gRPC が同じ値を返し、入力の誤りも同じ扱い
+- [x] 否定形: 資格情報なし `UNAUTHENTICATED`・ロール不足 `PERMISSION_DENIED`
+- [x] 呼び出し元 2 サービスが宛先の有無で切り替え、既定は REST。**本番の Program.cs から**解決して実際に呼ぶ
+- [x] 原則 A: 欠落を既定値で読まない。縮退の向きは REST と同じ
+- [x] timeout / retry の陽性・陰性対照（実 Kestrel h2c・127.0.0.1）
+- [x] 変異注入の実測
+- [x] proto 互換検査器の baseline 更新と陰性対照
+- [x] helm の既定描画と values-local の描画がバイト等価
+- [x] `dotnet build` / `dotnet test` / `dotnet format --verify-no-changes` と文書系検査器が通る
 
-## テスト方針（テスト ID は T-10-1690〜T-10-1699。develop の最大 T-10-1677 から間を空けた新しい区画）
+## テスト方針（テスト ID は T-10-1690〜T-10-1698。develop の最大 T-10-1677 から間を空けた新しい区画）
 
 | ID | 置き場 | 観点 |
 | --- | --- | --- |
@@ -114,3 +114,24 @@ plan_refs:
 
 - 稼働クラスタでの h2c 往復は未実測（段 1〜3 と同じ）。
 - 実効構成の自己申告（introspection）は REST の構成しか見ない（既存の欠落。段 6 までに別 issue）。
+
+## 着手後に判明した制約（規則 10）
+
+| 判明したこと | 実測 | 扱い |
+| --- | --- | --- |
+| 日報の方針の未確定は REST では 404 で、受け手は警告なしで「取引しない」へ倒す。gRPC で `NOT_FOUND` にすると呼び出しの規則が毎朝「照会に失敗」と警告する | `HttpDailyPolicyProvider` の 404 分岐・`TradeDecisionGrpcCalls` の警告 | `policy` の無い応答で運ぶ（IADR-0446 決定 3） |
+| 取引判断は段 2 の輸送が呼び出しの規則を持ち、情報収集には gRPC の呼び出しが無かった | `RiskManagementGrpcTransport.CallAsync`・情報収集の csproj に `Shared.Grpc` の参照が無い | 取引判断は `TradeDecisionGrpcCalls` へ切り出して共有、情報収集は `InformationCollectionGrpcCalls` を新設（IADR-0446 決定 5） |
+| 情報収集の起動時の日次要求の見積り（`EstimateAtStartup`）と introspection は `MarketMonitor:BaseUrl` しか見ない | `InformationCollectionService/Program.cs` | 既存の欠落と同じ種類として IADR-0446 の結果に残した（本 PR は既定を変えないので実害は無い。段 6 までに輸送へ追随させる） |
+| 取引判断・情報収集の常駐の巡回が起動直後に照会し得る | 段 2 の #1010 の実測（市場監視） | 配線の試験は rpc ごとの呼ばれた回数を**差分**で数える |
+| 段 3 の監査の指摘（`HttpFxSourceStatusSource` の文書コメントが `Window` に付いていた） | PR #1060 の監査 | 同じ PR で `GetStatusAsync` へ付け直した（別コミット） |
+
+## 検証の記録（2026-09-27）
+
+- `dotnet build backend/backend.slnx`: 0 エラー。
+- `dotnet test`: 件数は PR 本文。新規の試験は報告書 4・市場監視 8・費用統制 5・取引判断 23・情報収集 26。
+- `dotnet format backend/backend.slnx --verify-no-changes`: exit 0。
+- `node scripts/check-proto-contracts.js`: `--update` 後 OK（7 ファイル）。陰性対照は PR 本文。
+- 変異注入 12 件（1 つずつ入れて実行し、コミット済みの版を取り出して書き戻した）はテスト仕様書の本節の表に載せた。
+- helm: `helm template ast deploy/helm/ai-stock-trading`（既定）と `-f values-local.yaml` の描画は変更前後で sha256 が一致（差分 0 行）。
+  陽性対照として 3 つの提供側に `grpcPort=8081` を与えると、各サービスの `grpc` ポート・`containerPort: 8081`・env `Grpc__Port` だけが増える。
+  稼働中のクラスタ・OpenD には触れていない（描画はローカルのみ）。
