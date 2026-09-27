@@ -24,6 +24,11 @@ public static class AiStockTradingAuthPolicies
     // 🔴 REST の面には付けない（REST の所有者の判定は OwnerOrService のまま。判定は GrpcOwnerClientGate）。
     public const string GrpcOwnerOrService = "GrpcOwnerOrService";
 
+    // NFR-06, FR-14, ADR-0047 決定 1〜3, IADR-0449 決定 2, #753（段 5）: **所有者限定（REST の OwnerOnly）の gRPC 面の門**。
+    // trading-owner ∧ トークンの `azp` が Discord ボットの機密クライアント（GrpcOwnerOrService の所有者の分岐と同じ許可集合）。
+    // REST の OwnerOnly と同じく s2s（trading-service）には開かない。🔴 REST の面には付けない。
+    public const string GrpcOwnerOnly = "GrpcOwnerOnly";
+
     // 利用者ロール（Keycloak のレルムロール想定）。単独利用者運用のため単層とする（IADR-0011）。
     public const string OwnerRole = "trading-owner";
 
@@ -83,6 +88,11 @@ public static class AuthExtensions
             options.AddPolicy(AiStockTradingAuthPolicies.GrpcOwnerOrService, policy => policy
                 .RequireAuthenticatedUser()
                 .RequireAssertion(context => GrpcOwnerClientGate.Allows(context.User, grpcOwnerClients)));
+
+            // NFR-06, FR-14, ADR-0047 決定 3, IADR-0449 決定 2, #753（段 5）: 所有者限定の gRPC 面の門。所有者の分岐だけ（s2s は通さない）。
+            options.AddPolicy(AiStockTradingAuthPolicies.GrpcOwnerOnly, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => GrpcOwnerClientGate.AllowsOwner(context.User, grpcOwnerClients)));
         });
         return services;
     }

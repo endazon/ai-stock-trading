@@ -26,6 +26,9 @@
     <PackageReference Include="Discord.Net.WebSocket" />
     <!-- FR-09: 取引パイプラインのイベントを購読・整形するため共有イベント契約を参照する（通知に固有 Domain 層は持たない）。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Contracts\AiStockTrading.Shared.Contracts.csproj" />
+    <!-- NFR, FR-14, ADR-0047 決定 1・2, IADR-0449, #753（段 5）: east-west gRPC（ボットの読み取り）の proto 契約と生成物。
+         Shared.Contracts へは置けない（Domain 到達可能・外部ライブラリ依存ゼロの制約。IADR-0331 決定 7）。 -->
+    <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Grpc\AiStockTrading.Shared.Grpc.csproj" />
     <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
     <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>

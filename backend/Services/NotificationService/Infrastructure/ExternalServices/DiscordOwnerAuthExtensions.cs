@@ -43,6 +43,41 @@ internal static class DiscordOwnerAuthExtensions
                 TimeProvider.System)));
     }
 
+    /// <summary>
+    /// NFR, FR-14, ADR-0047 決定 2, IADR-0449 決定 4, #753（段 5）: **gRPC のメタデータへ載せる**ボットの owner トークンの取得器を 1 つ登録する。
+    /// REST の <see cref="AddDiscordOwnerToken"/> と同じ構成（<c>Notifications:Discord:OwnerAuth</c>）・同じ取得器の型であり、
+    /// 3 つの輸送（リスク管理・報告書・市場監視）が 1 つを共有する（トークンのキャッシュを 1 つにする）。
+    /// </summary>
+    /// <remarks>
+    /// 🔴 **DI の <see cref="IServiceAccessTokenProvider"/> としては公開しない**（s2s の取得器と取り違えない。本クラス冒頭の規律）。
+    /// 包み型 <see cref="DiscordOwnerGrpcCredentials"/> でだけ引ける。
+    /// 安全既定: 資格情報が揃わなければ no-op（メタデータを付けない → 提供側が UNAUTHENTICATED → 各読み取りの失敗）。REST の
+    /// 「トークン無し → 401」と同じ向き。
+    /// </remarks>
+    public static IServiceCollection AddDiscordOwnerGrpcCredentials(this IServiceCollection services, IConfiguration config)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(config);
+
+        if (services.Any(d => d.ServiceType == typeof(DiscordOwnerGrpcCredentials)))
+            return services;
+
+        var options = ReadOptions(config);
+        if (!options.IsEnabled)
+        {
+            services.AddSingleton(new DiscordOwnerGrpcCredentials(NoServiceAccessTokenProvider.Instance));
+            return services;
+        }
+
+        services.AddHttpClient(TokenClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        services.AddSingleton(sp => new DiscordOwnerGrpcCredentials(new ClientCredentialsTokenProvider(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(TokenClientName),
+            options,
+            sp.GetRequiredService<ILogger<ClientCredentialsTokenProvider>>(),
+            TimeProvider.System)));
+        return services;
+    }
+
     // OwnerAuth セクションを読む。TokenEndpoint 未指定なら Auth:Authority から OIDC の token エンドポイントを導出する
     // （AddAiStockTradingServiceToken と同じ導出規則）。
     private static ServiceAuthOptions ReadOptions(IConfiguration config)
@@ -69,3 +104,6 @@ internal static class DiscordOwnerAuthExtensions
         return options;
     }
 }
+
+// NFR, FR-14, ADR-0047 決定 2, IADR-0449 決定 4: gRPC のメタデータへ載せるボットの owner トークンの取得器（s2s と取り違えないための包み型）。
+internal sealed record DiscordOwnerGrpcCredentials(IServiceAccessTokenProvider Provider);

@@ -428,6 +428,8 @@ app.MapAiStockTradingIntrospection();
 app.MapRiskControlEndpoints();
 // NFR, IADR-0427 決定2, #997 (#753): 読み取りの gRPC 面（REST の read 群と同じサービス・同じ OwnerOrService）。
 app.MapGrpcService<RiskControlsReadGrpcService>();
+// NFR-06, FR-14, ADR-0047 決定 1〜3, IADR-0449, #753（段 5）: 所有者限定の読み取り（稼働状態）。門は GrpcOwnerOnly（呼び出し元は Discord ボット）。
+app.MapGrpcService<RiskControlsOwnerReadGrpcService>();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

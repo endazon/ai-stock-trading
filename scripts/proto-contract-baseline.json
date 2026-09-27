@@ -455,6 +455,344 @@
         }
       }
     },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/report/v1/report_owner_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.report.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.Report.V1",
+      "imports": [],
+      "messages": {
+        "GetReportReviewRequest": {
+          "fields": {
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetReportReviewResponse": {
+          "fields": {
+            "unsupplied_inputs": {
+              "number": 2,
+              "type": "UnsuppliedInputList",
+              "label": "singular"
+            },
+            "version": {
+              "number": 1,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetWatchlistProposalRequest": {
+          "fields": {
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "version": {
+              "number": 2,
+              "type": "int32",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetWatchlistProposalResponse": {
+          "fields": {
+            "apply_recorded": {
+              "number": 6,
+              "type": "bool",
+              "label": "optional"
+            },
+            "attempt_id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "changes": {
+              "number": 4,
+              "type": "WatchlistChangeRow",
+              "label": "repeated"
+            },
+            "period_key": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "report_version": {
+              "number": 3,
+              "type": "int32",
+              "label": "optional"
+            },
+            "snapshot": {
+              "number": 5,
+              "type": "WatchlistSnapshotRows",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ListReportPeriodKeysRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ListReportPeriodKeysResponse": {
+          "fields": {
+            "items": {
+              "number": 1,
+              "type": "ReportPeriodKeyRow",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ReportPeriodKeyRow": {
+          "fields": {
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "period_start": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "UnsuppliedInputList": {
+          "fields": {
+            "names": {
+              "number": 1,
+              "type": "string",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistChangeRow": {
+          "fields": {
+            "action": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "reason": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistSnapshotRow": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WatchlistSnapshotRows": {
+          "fields": {
+            "items": {
+              "number": 1,
+              "type": "WatchlistSnapshotRow",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "ReportOwnerRead": {
+          "rpcs": {
+            "GetReportReview": {
+              "request": "GetReportReviewRequest",
+              "response": "GetReportReviewResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetWatchlistProposal": {
+              "request": "GetWatchlistProposalRequest",
+              "response": "GetWatchlistProposalResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "ListReportPeriodKeys": {
+              "request": "ListReportPeriodKeysRequest",
+              "response": "ListReportPeriodKeysResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
+    "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/riskmanagement/v1/risk_controls_owner_read.proto": {
+      "syntax": "proto3",
+      "package": "aistocktrading.riskmanagement.v1",
+      "csharpNamespace": "AiStockTrading.Shared.Grpc.RiskManagement.V1",
+      "imports": [
+        "aistocktrading/riskmanagement/v1/risk_controls_read.proto"
+      ],
+      "messages": {
+        "GetRiskStatusRequest": {
+          "fields": {},
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetRiskStatusResponse": {
+          "fields": {
+            "daily_loss_lockout_active": {
+              "number": 2,
+              "type": "bool",
+              "label": "optional"
+            },
+            "daily_ordered_amount": {
+              "number": 10,
+              "type": "string",
+              "label": "optional"
+            },
+            "daily_pnl": {
+              "number": 9,
+              "type": "string",
+              "label": "optional"
+            },
+            "daily_realized_pnl": {
+              "number": 7,
+              "type": "string",
+              "label": "optional"
+            },
+            "drawdown_ratio": {
+              "number": 12,
+              "type": "string",
+              "label": "optional"
+            },
+            "kill_switch_engaged": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
+            },
+            "lockout_release_on": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "max_daily_order_amount": {
+              "number": 11,
+              "type": "string",
+              "label": "optional"
+            },
+            "max_drawdown_ratio": {
+              "number": 13,
+              "type": "string",
+              "label": "optional"
+            },
+            "max_open_positions": {
+              "number": 15,
+              "type": "int32",
+              "label": "optional"
+            },
+            "new_entries_blocked": {
+              "number": 5,
+              "type": "bool",
+              "label": "optional"
+            },
+            "open_position_count": {
+              "number": 14,
+              "type": "int32",
+              "label": "optional"
+            },
+            "stage": {
+              "number": 6,
+              "type": "TradingStage",
+              "label": "singular"
+            },
+            "trading_paused": {
+              "number": 4,
+              "type": "bool",
+              "label": "optional"
+            },
+            "unrealized_pnl": {
+              "number": 8,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        }
+      },
+      "enums": {},
+      "services": {
+        "RiskControlsOwnerRead": {
+          "rpcs": {
+            "GetRiskStatus": {
+              "request": "GetRiskStatusRequest",
+              "response": "GetRiskStatusResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            }
+          }
+        }
+      }
+    },
     "backend/Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/riskmanagement/v1/risk_controls_read.proto": {
       "syntax": "proto3",
       "package": "aistocktrading.riskmanagement.v1",
@@ -815,9 +1153,34 @@
         },
         "GetStageGateResponse": {
           "fields": {
+            "current_settings": {
+              "number": 2,
+              "type": "StageSettingsRecord",
+              "label": "singular"
+            },
             "current_stage": {
               "number": 1,
               "type": "TradingStage",
+              "label": "singular"
+            },
+            "history": {
+              "number": 3,
+              "type": "StageTransitionRecord",
+              "label": "repeated"
+            },
+            "promotion": {
+              "number": 4,
+              "type": "PromotionAssessmentRecord",
+              "label": "singular"
+            },
+            "stage1_criteria": {
+              "number": 6,
+              "type": "Stage1CriteriaRecord",
+              "label": "singular"
+            },
+            "withdrawal": {
+              "number": 5,
+              "type": "WithdrawalAssessmentRecord",
               "label": "singular"
             }
           },
@@ -947,6 +1310,29 @@
             "names": []
           }
         },
+        "PromotionAssessmentRecord": {
+          "fields": {
+            "eligible": {
+              "number": 2,
+              "type": "bool",
+              "label": "optional"
+            },
+            "target_stage": {
+              "number": 1,
+              "type": "TradingStage",
+              "label": "optional"
+            },
+            "unmet_criteria": {
+              "number": 3,
+              "type": "StageGateCriterion",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "RiskLimits": {
           "fields": {
             "daily_loss_limit_ratio": {
@@ -1019,6 +1405,128 @@
               "number": 1,
               "type": "SessionUptimeDay",
               "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "Stage1CriteriaRecord": {
+          "fields": {
+            "below_statistical_basis": {
+              "number": 4,
+              "type": "bool",
+              "label": "optional"
+            },
+            "maximum_trading_days": {
+              "number": 3,
+              "type": "int32",
+              "label": "optional"
+            },
+            "minimum_trade_count": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            },
+            "target_trading_days": {
+              "number": 1,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "StageSettingsRecord": {
+          "fields": {
+            "capital_cap_ratio": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "mode": {
+              "number": 2,
+              "type": "BrokerProvider",
+              "label": "singular"
+            },
+            "stage": {
+              "number": 1,
+              "type": "TradingStage",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "StageTransitionRecord": {
+          "fields": {
+            "approved_by": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "from_stage": {
+              "number": 2,
+              "type": "TradingStage",
+              "label": "singular"
+            },
+            "kind": {
+              "number": 4,
+              "type": "StageTransitionKind",
+              "label": "singular"
+            },
+            "occurred_at": {
+              "number": 6,
+              "type": "string",
+              "label": "optional"
+            },
+            "reason": {
+              "number": 7,
+              "type": "string",
+              "label": "optional"
+            },
+            "sequence": {
+              "number": 1,
+              "type": "int32",
+              "label": "optional"
+            },
+            "to_stage": {
+              "number": 3,
+              "type": "TradingStage",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WithdrawalAssessmentRecord": {
+          "fields": {
+            "halt_new_entries": {
+              "number": 3,
+              "type": "bool",
+              "label": "optional"
+            },
+            "proposed_stage": {
+              "number": 4,
+              "type": "TradingStage",
+              "label": "optional"
+            },
+            "reason": {
+              "number": 2,
+              "type": "WithdrawalReason",
+              "label": "optional"
+            },
+            "triggered": {
+              "number": 1,
+              "type": "bool",
+              "label": "optional"
             }
           },
           "reserved": {
@@ -1100,6 +1608,39 @@
             "names": []
           }
         },
+        "StageGateCriterion": {
+          "values": {
+            "STAGE_GATE_CRITERION_ALREADY_AT_TOP_STAGE": 8,
+            "STAGE_GATE_CRITERION_BACKTEST_NOT_PASSED": 1,
+            "STAGE_GATE_CRITERION_CONTROL_VIOLATIONS_PRESENT": 2,
+            "STAGE_GATE_CRITERION_CONTROL_VIOLATION_COUNT_UNAVAILABLE": 12,
+            "STAGE_GATE_CRITERION_DAILY_LOSS_LIMIT_VIOLATED": 4,
+            "STAGE_GATE_CRITERION_NO_USER_APPROVAL": 5,
+            "STAGE_GATE_CRITERION_PROMOTION_MUST_BE_SEQUENTIAL": 6,
+            "STAGE_GATE_CRITERION_SLIPPAGE_OR_COST_EXCEEDED": 3,
+            "STAGE_GATE_CRITERION_STAGE1_EXTENSION_EXHAUSTED": 11,
+            "STAGE_GATE_CRITERION_STAGE1_TRADE_COUNT_INSUFFICIENT": 10,
+            "STAGE_GATE_CRITERION_STAGE1_TRADING_DAYS_INSUFFICIENT": 9,
+            "STAGE_GATE_CRITERION_TARGET_IS_CURRENT_STAGE": 7,
+            "STAGE_GATE_CRITERION_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "StageTransitionKind": {
+          "values": {
+            "STAGE_TRANSITION_KIND_DEMOTION": 2,
+            "STAGE_TRANSITION_KIND_PROMOTION": 1,
+            "STAGE_TRANSITION_KIND_SHORT_SELL_RELEASE_VERDICT": 3,
+            "STAGE_TRANSITION_KIND_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "StopLossExecutionMethod": {
           "values": {
             "STOP_LOSS_EXECUTION_METHOD_ALTERNATIVE_BROKER_ORDER_TYPE": 4,
@@ -1131,6 +1672,17 @@
             "TRADING_STAGE_STAGE2_MINIMAL_LIVE": 3,
             "TRADING_STAGE_STAGE3_SCALED_LIVE": 4,
             "TRADING_STAGE_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "WithdrawalReason": {
+          "values": {
+            "WITHDRAWAL_REASON_DRAWDOWN_BREACHED_MULTIPLE": 1,
+            "WITHDRAWAL_REASON_STAGE1_EXTENSION_EXHAUSTED": 2,
+            "WITHDRAWAL_REASON_UNSPECIFIED": 0
           },
           "reserved": {
             "numbers": [],

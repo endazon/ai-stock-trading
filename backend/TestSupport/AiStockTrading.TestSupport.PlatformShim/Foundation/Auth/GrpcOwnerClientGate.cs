@@ -103,6 +103,18 @@ public static class GrpcOwnerClientGate
         if (user.IsInRole(Extensions.AiStockTradingAuthPolicies.ServiceRole))
             return true;
 
+        return AllowsOwner(user, clients);
+    }
+
+    /// <summary>
+    /// 所有者限定の gRPC 面の門（<c>GrpcOwnerOnly</c>。IADR-0449 決定 2）の判定。所有者（<c>trading-owner</c>）で、呼び出し元のクライアントが
+    /// 許可集合に在るときだけ真。**サービス（<c>trading-service</c>）の分岐は持たない**（REST の <c>OwnerOnly</c> と同じく s2s には開かない）。
+    /// <see cref="Allows"/> の所有者の分岐と同じ判定である（2 箇所に書かない）。
+    /// </summary>
+    public static bool AllowsOwner(ClaimsPrincipal? user, IReadOnlyList<string> clients)
+    {
+        if (user?.Identity?.IsAuthenticated != true) return false;
+
         return user.IsInRole(Extensions.AiStockTradingAuthPolicies.OwnerRole)
             && IsTrustedOwnerClient(user, clients);
     }

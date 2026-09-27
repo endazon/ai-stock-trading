@@ -70,10 +70,8 @@ public sealed class RiskControlsReadGrpcService(
 
     public override Task<Proto.GetStageGateResponse> GetStageGate(
         Proto.GetStageGateRequest request, ServerCallContext context) =>
-        Reply(() => new Proto.GetStageGateResponse
-        {
-            CurrentStage = RiskReadWireMapping.ToProto(stageGate.GetStatus().CurrentStage),
-        });
+        // 段 5（IADR-0449 決定 3）: 現段階に加え、Discord ボットの `/stage status` が読む項目を同じ現況から写す（REST と同じ 1 回の GetStatus）。
+        Reply(() => RiskReadWireMapping.ToProto(stageGate.GetStatus()));
 
     public override Task<Proto.GetFillsResponse> GetFills(Proto.GetFillsRequest request, ServerCallContext context) =>
         Reply(() =>

@@ -1,0 +1,49 @@
+// NFR, NFR-06, FR-10, FR-14, MSP:ADR-0029, MSP:ADR-0075, ADR-0047 決定 1〜3, IADR-0284 決定 5（段 5）, IADR-0448, IADR-0449, #753:
+// リスク管理の**所有者限定の読み取り**（REST の OwnerOnly）の gRPC 契約。呼び出し元は Discord ボットだけである
+// （ボットの所有者トークンはサービスの身元＝east-west。ADR-0047 決定 1）。REST の `GET /risk-controls/status` と同じ意味論で、
+// 提供側は REST と同じサービスを呼ぶ。
+//
+// ■ 認可（IADR-0449 決定 2）: 門は `GrpcOwnerOnly` ＝ `trading-owner` ∧ トークンの `azp` がボットの機密クライアント。
+//   REST の OwnerOnly と同じく **s2s（`trading-service`）には開かない**（当日損益・建玉を束ねた利用者向けの要約であり、サービスに開く用途が無い）。
+//   人の利用者のトークン（azp は BFF 等）も通さない（ADR-0047 決定 3）。人の利用者は BFF が中継する REST で読む。
+//
+// ■ 線上表現は `risk_controls_read.proto` の冒頭の原則 A と同じ（スカラーは optional・列挙は名前で写す・金額と率は不変文化の 10 進文字列）。
+//   message 名を送り手の C# の型名（`RiskStatusView`）にしない。
+syntax = "proto3";
+
+package aistocktrading.riskmanagement.v1;
+
+option csharp_namespace = "AiStockTrading.Shared.Grpc.RiskManagement.V1";
+
+import "aistocktrading/riskmanagement/v1/risk_controls_read.proto";
+
+// リスク管理の所有者限定の読み取り。
+// - 資格情報が無い → UNAUTHENTICATED、ボットの所有者トークンでない（azp・ロール）→ PERMISSION_DENIED
+// - 提供側が不調・不達 → UNAVAILABLE、deadline 超過 → DEADLINE_EXCEEDED
+service RiskControlsOwnerRead {
+  // GET /risk-controls/status（稼働状態の集約。Discord `/status`）。
+  rpc GetRiskStatus(GetRiskStatusRequest) returns (GetRiskStatusResponse);
+}
+
+message GetRiskStatusRequest {}
+
+// REST の稼働状態のうち、ボットが読む項目。🔴 欠落は「不明」（受け手は応答を解釈できないとして失敗を返す）。
+message GetRiskStatusResponse {
+  optional bool kill_switch_engaged = 1;
+  optional bool daily_loss_lockout_active = 2;
+  // yyyy-MM-dd。欠落＝解除日が決まっていない（REST の null）。
+  optional string lockout_release_on = 3;
+  optional bool trading_paused = 4;
+  optional bool new_entries_blocked = 5;
+  TradingStage stage = 6;
+  optional string daily_realized_pnl = 7;
+  optional string unrealized_pnl = 8;
+  optional string daily_pnl = 9;
+  optional string daily_ordered_amount = 10;
+  // 欠落＝口座を照会できておらず上限を解決できない（REST の null。0 ではない）。
+  optional string max_daily_order_amount = 11;
+  optional string drawdown_ratio = 12;
+  optional string max_drawdown_ratio = 13;
+  optional int32 open_position_count = 14;
+  optional int32 max_open_positions = 15;
+}

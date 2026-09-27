@@ -19,7 +19,9 @@ related_ids:
   - IADR-0445
   - IADR-0446
   - IADR-0448
+  - IADR-0449
   - ADR-0047
+  - ADR-0041
   - NFR-06
   - FR-14
 author: endazon (with Claude Code)
@@ -277,6 +279,46 @@ session-uptime｜提供側 1・消費側 3 サービス」）の読み方だけ�
 - 段 5 で足す gRPC 面（ボットが呼ぶ書き込み）も同じ `GrpcOwnerOrService` か、所有者の分岐に同じ確認を持つ門にする。
 - 段 5 の行と段 6 の範囲の改訂（ADR-0047 フォローアップ 3。完了は呼び出し箇所で数え、BFF が中継する REST の端点は段 6 で消さない）は
   段 5 の着手時に行う（本追記の対象外）。
+
+## ［2026-09-27 追記 / #753］段 5 の行と段 6 の範囲を ADR-0047 決定 3・4 に合わせて改める（フォローアップ 3）。段 5 の前半（読み取り）を実装した
+
+計画 ADR-0047 のフォローアップ 3（「`IADR-0284` の段 5 の行と段 6 の範囲を、決定 3・4 に合わせて改める。段 6 で残す REST の端点を列挙する」）を段 5 の着手時に行う
+（上の #1067 の追記で約束した）。**決定 1・2・4 と、決定 5 の段の順序は変わらない。** 段 5 の前半の具体は [IADR-0449](IADR-0449_bot-read-grpc-stage5.md)。
+
+### 段 5 の行の読み方（改訂）
+
+決定 5 の段 5 の行（「Notification の OwnerOnly 書き込み 5 本（kill switch・pause・stage-gate・good-faith・report review）。人手経路のため最後。owner マップトークンは
+`AddDiscordOwnerToken` を同様に `IHttpClientBuilder` へ｜1 PR」）は、次のとおり読む。
+
+| 項目 | 改訂前（2026-09-03 の行） | 改訂後 |
+| --- | --- | --- |
+| 射程 | OwnerOnly 書き込み 5 本 | **Discord ボットの east-west の呼び出し 20 本**（読み取り 6・書き込み 14。名前付きクライアント 8 つ。母集合は作業仕様書 `20260927_753_grpc-stage5-bot-reads`）。表の後に加わった呼び出し（`/drift adopt`・`/policy` とその適用・会話キーの一覧 ほか）と、段 2・4 が段 5 へ回したもの（Notification の `stage-gate`・報告書 3 クラス）を含む |
+| 資格情報 | `AddDiscordOwnerToken` を `IHttpClientBuilder` へ | **ボット自身の owner マップ機密クライアントのトークンを gRPC のメタデータ（`authorization`）に載せる**（ADR-0047 決定 2。ボットのトークンはサービスの身元＝決定 1）。s2s（`trading-service`）へは替えない。利用者の文脈は今どおり本文の `OnBehalfOf` |
+| 提供側の門 | （記述なし） | 所有者の分岐は `azp` がボットの機密クライアントであることを併せて求める（ADR-0047 決定 3）。OwnerOrService の面は `GrpcOwnerOrService`（IADR-0448）、OwnerOnly の面は `GrpcOwnerOnly`（IADR-0449 決定 2。s2s に開かない） |
+| PR 粒度 | 1 PR | **2 PR**: 前半＝読み取り 6 本（IADR-0449）、後半＝書き込み 14 本。`MSP/ADR-0029` 追記の「作業の分割は妨げない」の範囲であり、例外ではない（ADR-0075 決定 3 の一括移行の義務は緩めない） |
+
+### 段 6 の範囲（改訂）
+
+決定 5 の段 6 の行（「REST エンドポイントの撤去（消費者 0 を確認してから）」）は、ADR-0047 決定 4 に合わせて次のとおり読む。
+
+- **完了は呼び出し箇所で数える。** east-west の呼び出し箇所がすべて gRPC へ移り、**その REST の呼び出し（呼び出し元の `Http*` アダプタと名前付きクライアント）が退役した時点**で完了とする（`MSP/ADR-0089` 決定 1・`MSP/ADR-0109` 決定 1）。
+- **段 6 で消す REST の端点は、呼び出し元が east-west だけのものに限る。** 次の端点は east-west の呼び出しが gRPC へ移っても**残す**（完了を妨げない）:
+
+  | 残す端点 | 残す理由 |
+  | --- | --- |
+  | `GET /assumptions` | BFF が中継する（`AssumptionsBffEndpoints`） |
+  | `GET /risk-controls/status` | BFF が中継する（`RiskControlsBffEndpoints`。ADR-0047 実測 8） |
+  | `GET /risk-controls/stage-gate` | 同上（ADR-0047 実測 8） |
+  | `GET /monitor/watchlist` | BFF が中継する（`MonitorBffEndpoints`。ADR-0047 実測 8） |
+  | `POST /risk-controls/position-drift/adopt` | 計画 ADR-0041 決定 4 が窓口を「REST API と Discord Bot の両方」と定める（人の窓口。east-west だけの端点ではない） |
+
+  走査（2026-09-27・`origin/develop` `ee9f803`）: `git grep -n 'ProxyAsync(httpFactory, http, HttpMethod' -- backend/Bff` の 21 ルートと、段 1〜5 で gRPC へ移した（移す）ルートの共通部分が上の 4 本。
+  BFF が中継するほかのルート（設定の読み書き・履歴など）は east-west の呼び出し元を持たず、段 6 の対象ではない。**段 6 の着手時に BFF・人の窓口の母集合を引き直す**（本表を転記しない）。
+- 段 6 で消せる端点の候補（呼び出し元が east-west だけ）: 段 2〜5 で移した残りの読み取り（`open-positions`・`working-entry-orders`・`sizing-context`・`fills`・`drift-adoptions`・
+  `buy-in-inferences`・`session-uptime`・`/audit/events/by-type`・`/reports/daily-policy`・`/reports/{periodKey}/review`・`/reports/period-keys`・`/reports/policy-revisions/watchlist-proposal`・
+  `/monitor/watchlist/as-of`・`/costs/state`）と、段 5 の後半で移す書き込み（上の `position-drift/adopt` を除く）。ボットの会話キーの一覧の退避先 `GET /reports` は、段 6 でボットの REST の
+  アダプタを退役させると呼び出し元が無くなる（端点を消すかは段 6 の母集合で決める）。
+- AST→MSP の基盤待ち 2 本（DocumentService `POST /documents`・RetrievalService `POST /search`）は段の外であり、完了の数えに入らない（基盤が proto を公開したときに移す）。
 
 ## 関連
 
