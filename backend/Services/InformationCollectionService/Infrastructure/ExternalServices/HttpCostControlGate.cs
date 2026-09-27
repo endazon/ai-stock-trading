@@ -94,6 +94,11 @@ public sealed class HttpCostControlGate(
         _ => null,
     };
 
+    // #1065 F2a: 数値の文字列の書式は以前の Web 既定の逆直列化（数値の文字列を読む・前後の空白は拒む）と同じにする。`NumberStyles.Float` は
+    // 前後の空白を許し、`" 2"` を 2 倍として受け付けていた（以前は本文全体が不正応答＝Normal 1 倍）。符号・小数点・指数だけを許す。
+    private const NumberStyles MultiplierStringStyles =
+        NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
+
     private static decimal? ReadIntervalMultiplier(JsonElement root, out bool unreadable)
     {
         unreadable = false;
@@ -105,7 +110,7 @@ public sealed class HttpCostControlGate(
             case { ValueKind: JsonValueKind.Number } number when number.TryGetDecimal(out var value):
                 return value;
             case { ValueKind: JsonValueKind.String } text
-                when decimal.TryParse(text.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value):
+                when decimal.TryParse(text.GetString(), MultiplierStringStyles, CultureInfo.InvariantCulture, out var value):
                 return value;
             default:
                 unreadable = true;

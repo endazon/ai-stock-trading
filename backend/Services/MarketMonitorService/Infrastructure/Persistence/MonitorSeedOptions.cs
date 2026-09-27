@@ -15,6 +15,16 @@ public sealed class MonitorSeedOptions
 
     public IReadOnlyList<SeedSymbolEntry> SeedSymbols { get; init; } = [];
 
+    /// <summary>
+    /// FR-02, FR-13, #1065 F1: 未定義の市場の構成値（例 <c>Monitor:SeedSymbols:0:Market=7</c>。列挙名でない番号は構成の束縛が
+    /// そのまま <c>(Market)7</c> として通す）を持つ要素の説明。無ければ空。起動時の検証（Program.cs の ValidateOnStart）が使う。
+    /// </summary>
+    public IReadOnlyList<string> UndefinedMarkets() =>
+        [.. SeedSymbols
+            .Select((e, i) => (e, i))
+            .Where(x => !Enum.IsDefined(x.e.Market))
+            .Select(x => $"{SectionName}:SeedSymbols:{x.i}（{x.e.Symbol}・市場 {(int)x.e.Market}）")];
+
     public IReadOnlyCollection<MonitoredSymbol> ToMonitoredSymbols() =>
         [.. SeedSymbols
             .Where(e => !string.IsNullOrWhiteSpace(e.Symbol))
