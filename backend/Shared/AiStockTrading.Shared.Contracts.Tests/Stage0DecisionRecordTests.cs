@@ -222,6 +222,50 @@ public class Stage0DecisionRecordTests
         new[] { Hash(complete), Hash(thin), Hash(undeclared) }.Distinct().Should().HaveCount(3);
     }
 
+    // ---- T-10-1621 FR-04, ADR-0044 決定 3, #1034, IADR-0440 決定 7: (e) 当時の監視銘柄の申告と戦略 ID ----
+
+    private static string HashOf(Stage0DecisionRecord r) => Stage0StrategyIdentity.ComputeContentHash(
+        new DateOnly(2026, 6, 1), new DateOnly(2026, 8, 31), [new Stage0RecordedSymbol("AAPL", Market.UnitedStates)],
+        new DateOnly(2026, 3, 31), "claude-sonnet-5", [r]);
+
+    // 🔴 T-10-1621 **否定形（最重要）**: (e) を申告しない記録（ADR-0044 より前の記録）の戦略 ID は変わらない。
+    // 期待値は (e) を足す前の実装（origin/develop `209ae4ce`）で同じ記録から計算した値である。変われば、既存の verdict が
+    // 「戦略の変更」として無効化される（IADR-0281 決定3）。
+    [Fact]
+    public void 監視銘柄を申告しない記録の戦略IDは変わらない()
+    {
+        var legacy = RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(), Raw(1, Stage0DecisionAction.Buy));
+
+        HashOf(legacy).Should().Be(LegacyDeclaredHash);
+    }
+
+    private const string LegacyDeclaredHash = "757fd6292352d39c";
+
+    // 🔴 T-10-1621 **否定形**: (e) の申告の有無・可否が違えば別の戦略である（何を合否から外すかが違う）。
+    // (e) の申告は JSON 往復で落ちず、再構成不可は除外の理由として読める。
+    [Fact]
+    public void 監視銘柄の申告の有無と可否が違えば戦略IDが変わり往復で落ちない()
+    {
+        Stage0DecisionRecord With(Stage0AsOfInputAvailability? watchlist) => RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10,
+            watchlist is { } w ? [.. Declared(), new(Stage0AsOfInputKind.Watchlist, w)] : Declared(),
+            Raw(1, Stage0DecisionAction.Buy));
+
+        new[]
+        {
+            HashOf(With(null)),
+            HashOf(With(Stage0AsOfInputAvailability.Reconstructed)),
+            HashOf(With(Stage0AsOfInputAvailability.NotReconstructable)),
+        }.Distinct().Should().HaveCount(3);
+
+        var original = SetOf(With(Stage0AsOfInputAvailability.NotReconstructable));
+        var json = Stage0DecisionRecordJson.Serialize(original);
+        json.Should().Contain("\"Watchlist\"");
+        var inputs = Stage0DecisionRecordJson.TryDeserialize(json)!.Records.Should().ContainSingle().Which.AsOfInputs;
+        Stage0AsOfInputs.NotReconstructableKinds(inputs).Should().Equal(Stage0AsOfInputKind.Watchlist);
+    }
+
     // 🔴 **否定形**（ADR-0033 決定3）: カットオフ日が違えば別の記録である。
     // 別のカットオフ前提で採った記録を、いま構成されているカットオフの検証結果として使わせない。
     [Fact]

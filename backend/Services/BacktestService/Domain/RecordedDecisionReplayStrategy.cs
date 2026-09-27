@@ -89,7 +89,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
         ExcludedDecisionCount = excluded;
         ExcludedDecisionWithQuantityCount = excludedWithQuantity;
         EvaluatedDecisionCount = evaluated;
-        ExcludedInputKinds = [.. Stage0AsOfInputs.RequiredKinds.Where(excludedKinds.Contains)];
+        ExcludedInputKinds = [.. Stage0AsOfInputs.DeclarableKinds.Where(excludedKinds.Contains)];
     }
 
     /// <summary>記録集合が覆う期間の始端（両端含む）。</summary>

@@ -42,6 +42,15 @@ public sealed class AsOfDecisionInput
     /// その日の参考情報は「無かった」ではなく「再構成できなかった」である（下の導出を参照）。
     /// </para>
     /// </param>
+    /// <param name="watchlist">
+    /// FR-04, ADR-0044 決定 3, #1034, IADR-0440 決定 7: **判断時点の監視銘柄**（市場監視の変更履歴から再構成した一覧。(e)）。
+    /// <para>
+    /// 🔴 **null は「再構成できなかった」であり、(e) を <see cref="Stage0AsOfInputAvailability.NotReconstructable"/> と申告する**
+    /// （プロンプトの監視銘柄の節は「不明」になり、この判断は Stage 0 の合否から外れる）。空の一覧は「当時 0 件だった」という事実である。
+    /// 再構成の供給口（#1049）が入るまで、供給側はこの引数を渡さない（ADR-0044 決定 4 の暫定手段）。
+    /// 🔴 **記録の対象銘柄の集合をここへ渡さない**（ADR-0044 決定 3。当時の方針が挙げる銘柄と食い違うことがある）。
+    /// </para>
+    /// </param>
     public AsOfDecisionInput(
         DateOnly asOf,
         DailyPolicy policy,
@@ -49,7 +58,8 @@ public sealed class AsOfDecisionInput
         DatedPrice? price = null,
         IEnumerable<RetrievedContext>? references = null,
         decimal rateToBase = 1m,
-        IEnumerable<Stage0AsOfInputKind>? notReconstructable = null)
+        IEnumerable<Stage0AsOfInputKind>? notReconstructable = null,
+        IReadOnlyList<WatchedSymbol>? watchlist = null)
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(sizing);
@@ -95,10 +105,11 @@ public sealed class AsOfDecisionInput
         References = kept;
         DroppedFutureReferenceCount = droppedFuture;
         DroppedUndatedReferenceCount = droppedUndated;
-        AsOfInputs = DeriveAvailability(notReconstructable, kept.Count, droppedUndated);
+        Watchlist = watchlist;
+        AsOfInputs = DeriveAvailability(notReconstructable, kept.Count, droppedUndated, watchlist is not null);
     }
 
-    // FR-15, ADR-0036 決定1, #749, IADR-0387: 3 種すべての再構成可否を導出する（**部分申告を作らない**）。
+    // FR-15, ADR-0036 決定1, #749, IADR-0387: 4 種（ADR-0044 決定 3 の (e) を含む）すべての再構成可否を導出する（**部分申告を作らない**）。
     //
     // 導出の規則:
     //   - 供給側が申告した種別は `NotReconstructable`（申告は無条件に効く。供給側だけが情報源の射程を知る）。
@@ -109,20 +120,35 @@ public sealed class AsOfDecisionInput
     //   - (b) が 0 件で落としたものも無ければ `AbsentAtAsOf`（**当時ニュースが無かったという事実**。
     //     本番の AI 判断も同じ入力で動くため、除外の理由にならない）。
     //   - (c)(d) は値の有無から痩せを観測できないため、申告が無ければ `Reconstructed`。
+    //   - (e) 当時の監視銘柄（FR-04, ADR-0044 決定 3, #1034, IADR-0440 決定 7）は**値の有無そのものが可否である** ——
+    //     一覧が無ければ `NotReconstructable`（プロンプトの節は「不明」）。🔴 **既定は再構成できない側**であり、
+    //     供給側が一覧を渡さない限り記録は合格根拠にならない（ADR-0044 決定 4 の暫定手段）。
     private static IReadOnlyList<Stage0AsOfInputStatus> DeriveAvailability(
-        IEnumerable<Stage0AsOfInputKind>? notReconstructable, int keptReferenceCount, int droppedUndatedCount)
+        IEnumerable<Stage0AsOfInputKind>? notReconstructable, int keptReferenceCount, int droppedUndatedCount,
+        bool watchlistReconstructed)
     {
         var declared = notReconstructable is null
             ? new HashSet<Stage0AsOfInputKind>()
             : [.. notReconstructable];
 
-        var statuses = new List<Stage0AsOfInputStatus>(Stage0AsOfInputs.RequiredKinds.Count);
-        foreach (var kind in Stage0AsOfInputs.RequiredKinds)
+        var statuses = new List<Stage0AsOfInputStatus>(Stage0AsOfInputs.DeclarableKinds.Count);
+        foreach (var kind in Stage0AsOfInputs.DeclarableKinds)
         {
             if (declared.Contains(kind))
             {
                 statuses.Add(new Stage0AsOfInputStatus(
                     kind, Stage0AsOfInputAvailability.NotReconstructable, "供給側が再構成不可と申告した"));
+                continue;
+            }
+
+            if (kind == Stage0AsOfInputKind.Watchlist)
+            {
+                statuses.Add(watchlistReconstructed
+                    ? new Stage0AsOfInputStatus(kind, Stage0AsOfInputAvailability.Reconstructed)
+                    : new Stage0AsOfInputStatus(
+                        kind,
+                        Stage0AsOfInputAvailability.NotReconstructable,
+                        "当時の監視銘柄を再構成できなかった（記録の対象銘柄では代えない。ADR-0044 決定 3）"));
                 continue;
             }
 
@@ -166,7 +192,13 @@ public sealed class AsOfDecisionInput
     public int DroppedUndatedReferenceCount { get; }
 
     /// <summary>
-    /// FR-15, ADR-0036 決定1, #749, IADR-0387: as-of 入力 3 種の再構成可否（**常に 3 件そろう**）。
+    /// FR-04, ADR-0044 決定 3, #1034, IADR-0440 決定 7: 判断時点の監視銘柄（(e)）。**null は再構成できなかった**
+    /// （プロンプトの節は「不明」と書く）。記録器はプロンプトの監視銘柄をここからだけ取る。
+    /// </summary>
+    public IReadOnlyList<WatchedSymbol>? Watchlist { get; }
+
+    /// <summary>
+    /// FR-15, ADR-0036 決定1, #749, IADR-0387: as-of 入力 4 種（(b)(c)(d)(e)。ADR-0044 決定 3）の再構成可否（**常に 4 件そろう**）。
     /// 記録（<c>Stage0DecisionRecord.AsOfInputs</c>）へそのまま載る。
     /// </summary>
     public IReadOnlyList<Stage0AsOfInputStatus> AsOfInputs { get; }

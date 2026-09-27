@@ -127,7 +127,10 @@ public class ScreeningContextDegradationTests
         // #854, IADR-0351 決定4: 銘柄行は保有状況の短縮版ぶん 120→400 へ底上げ（予算も同幅 +280 シフト）。
         // RAG（171）を削っても足りず、段 3 で関連度の低いニュース（171）を削って収まる。
         // IADR-0297: 骨格は空売りガードレール短縮版（142 文字・実測）ぶん 600→750 へ底上げ（予算も同幅シフト）。
-        var (service, llm, reporter) = Create(budget: 1_510);
+        // #1034, IADR-0440 決定 5: 監視銘柄節（この組み立てでは未配線＝不明の形）が共有保護分に実際の文字数で入るため、予算も同幅ずらす。
+        var watchlistUnknownChars = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder
+            .WatchlistSection(DecisionTrigger.FromPriceMovement(Trigger()), watchlist: null).Length;
+        var (service, llm, reporter) = Create(budget: 1_510 + watchlistUnknownChars);
 
         await service.DecideAsync(Trigger());
 

@@ -4,6 +4,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -122,10 +123,158 @@ public class HttpWatchlistProviderTests
             .BeTrue("上限に達した要求は打ち切られる（応答は返っていない）");
     }
 
+    // T-10-1545, FR-04, #1034, IADR-0440 決定 2: 判断のプロンプト用の口は、読めた一覧（空を含む）だけを返し、
+    // 供給不達は構成の既定へ倒さず null（不明）で返す。🔴 既定 watchlist を「判断時点の監視銘柄」として渡さない。
+    [Fact]
+    public async Task 判断のプロンプト用の口は読めた一覧をそのまま返し既定へ倒さない()
+    {
+        var body = JsonSerializer.Serialize(
+            new[] { new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("META", Market.UnitedStates) },
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var fallback = new CountingFallback();
+
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, body), fallback).GetAuthoritativeWatchlistAsync();
+
+        read.Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("META", Market.UnitedStates));
+        fallback.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task 判断のプロンプト用の口は空の一覧を空として返す_不明にしない()
+    {
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, "[]"), new CountingFallback())
+            .GetAuthoritativeWatchlistAsync();
+
+        read.Should().NotBeNull("読めて 0 件は事実であり、不明ではない");
+        read.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("404")]
+    [InlineData("403")]
+    [InlineData("500")]
+    [InlineData("null")]
+    [InlineData("throw")]
+    public async Task 判断のプロンプト用の口は供給不達なら不明を返し既定へ倒さない_否定形(string failure)
+    {
+        HttpMessageHandler handler = failure switch
+        {
+            "404" => new StubHandler(HttpStatusCode.NotFound, ""),
+            "403" => new StubHandler(HttpStatusCode.Forbidden, ""),
+            "500" => new StubHandler(HttpStatusCode.InternalServerError, ""),
+            "null" => new StubHandler(HttpStatusCode.OK, "null"),
+            _ => new ThrowingHandler(),
+        };
+        var fallback = new CountingFallback();
+
+        var read = await Provider(handler, fallback).GetAuthoritativeWatchlistAsync();
+
+        read.Should().BeNull("読めないときは不明であり、構成の既定 watchlist を代わりに返さない");
+        fallback.Calls.Should().Be(0);
+    }
+
+    // T-10-1545（PR #1041 の監査 F1）: 🔴 200 でも**1 行でも欠けていれば一覧ごと不明**。空の行を黙って落とすと 0 件・一部欠落の一覧に、
+    // 欠けた市場を既定値で読むと日本株に、値域外の市場を通すと存在しない市場になり、プロンプトが「対象外」と事実でないことを書く。
+    [Theory]
+    [InlineData("""[{"symbol":null,"market":1}]""")]
+    [InlineData("""[{"symbol":"  ","market":1}]""")]
+    [InlineData("""[{"market":1}]""")]
+    [InlineData("""[{"symbol":"AAPL"}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":null}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":99}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":-1}]""")]
+    [InlineData("""[null]""")]
+    [InlineData("""[{"symbol":"AAPL","market":1},{"symbol":null,"market":1}]""")]
+    [InlineData("""[{"symbol":"AAPL","market":1},{"symbol":"META"}]""")]
+    public async Task 判断のプロンプト用の口は欠けた行を含む応答を不明にする_否定形(string body)
+    {
+        var fallback = new CountingFallback();
+
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, body), fallback).GetAuthoritativeWatchlistAsync();
+
+        read.Should().BeNull("欠けた行を落として残りを一覧として見せない（不明と書く）");
+        fallback.Calls.Should().Be(0);
+    }
+
+    // T-10-1545: 同じ応答でも定時サイクル用の口は従来どおり寛容に読む（判断対象の決め方は本件で変えない）。
+    [Theory]
+    [InlineData("""[{"symbol":null,"market":1},{"symbol":"MSFT","market":1}]""", "MSFT", Market.UnitedStates)]
+    [InlineData("""[{"symbol":"AAPL"}]""", "AAPL", Market.Japan)]
+    public async Task 定時サイクル用の口は欠けた行を従来どおり寛容に読む(string body, string symbol, Market market)
+    {
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, body), new CountingFallback()).GetWatchlistAsync();
+
+        read.Should().Equal(new WatchedSymbol(symbol, market));
+    }
+
+    [Fact]
+    public async Task 定時サイクル用の口は_null_の行を含む応答を従来どおり既定へ倒す()
+    {
+        var fallback = new CountingFallback();
+
+        var read = await Provider(new StubHandler(HttpStatusCode.OK, "[null]"), fallback).GetWatchlistAsync();
+
+        read.Should().BeEquivalentTo(FallbackSymbols);
+        fallback.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task 判断のプロンプト用の口は応答しない上流を打ち切り不明を返す()
+    {
+        var handler = new NeverRespondingHandler();
+        var http = new HttpClient(handler) { BaseAddress = new Uri("http://monitor"), Timeout = TimeSpan.FromMilliseconds(50) };
+        var fallback = new CountingFallback();
+        var provider = new HttpWatchlistProvider(http, fallback, NullLogger<HttpWatchlistProvider>.Instance);
+
+        var read = await provider.GetAuthoritativeWatchlistAsync().WaitAsync(Guard);
+
+        read.Should().BeNull();
+        fallback.Calls.Should().Be(0);
+        (await handler.Cancellation.WaitAsync(Guard)).Should().BeTrue("上限に達した要求は打ち切られる（応答は返っていない）");
+    }
+
+    [Fact]
+    public async Task 構成ベースの供給は判断のプロンプト用の口では常に不明を返す_否定形()
+    {
+        // 構成に銘柄があっても、それは権威源ではない（後方互換・fail-safe の既定）。
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TradeCycle:Watchlist:0:Symbol"] = "AAPL",
+                ["TradeCycle:Watchlist:0:Market"] = "UnitedStates",
+            })
+            .Build();
+        var provider = new ConfigurationWatchlistProvider(configuration);
+
+        (await provider.GetWatchlistAsync()).Should().ContainSingle("定時サイクルの既定としては従来どおり構成を返す");
+        (await provider.GetAuthoritativeWatchlistAsync()).Should().BeNull();
+    }
+
+    private sealed class CountingFallback : IWatchlistProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(FallbackSymbols);
+        }
+
+        public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<WatchedSymbol>?>(FallbackSymbols);
+        }
+    }
+
     private sealed class FakeFallback(IReadOnlyList<WatchedSymbol> symbols) : IWatchlistProvider
     {
         public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken ct = default) =>
             Task.FromResult(symbols);
+
+        // 構成ベースの既定と同じく権威源ではない（#1034, IADR-0440 決定 2）。
+        public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<WatchedSymbol>?>(null);
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

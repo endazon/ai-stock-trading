@@ -18,6 +18,11 @@ public sealed class ConfigurationWatchlistProvider(IConfiguration configuration)
         return Task.FromResult(result);
     }
 
+    // FR-04, #1034, IADR-0440 決定 2: 構成の固定リストは権威源ではない（後方互換・fail-safe の既定）。判断のプロンプトへは
+    // 「判断時点の監視銘柄」として載せず、常に null（不明）を返す。
+    public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<WatchedSymbol>?>(null);
+
     // 構成バインド用（Market は列挙名でバインドされる）。
     private sealed class WatchlistEntry
     {

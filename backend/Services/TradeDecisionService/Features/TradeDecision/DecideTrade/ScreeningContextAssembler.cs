@@ -41,12 +41,15 @@ public static class ScreeningContextAssembler
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;
 
+    // FR-04, #1034, IADR-0440 決定 5: watchlist（判断時点の監視銘柄。null＝不明）は BuildScreening が無条件で出す監視銘柄節の材料。
+    // 🔴 **必須の引数にする**（省略可能にすると、呼び出し側が渡し忘れても見積りだけが静かに節の分を数えなくなる）。
     public static AssembledScreeningContext Assemble(
         DecisionTrigger trigger,
         DailyPolicy policy,
         IReadOnlyList<RetrievedContext> retrieved,
         decimal? currentPrice,
-        int budgetChars)
+        int budgetChars,
+        IReadOnlyList<WatchedSymbol>? watchlist)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -71,8 +74,11 @@ public static class ScreeningContextAssembler
                 i, kind, EstimateChars(reference), reference.PublishedAt, reference.Score)));
         }
 
-        // 保護分: プロンプト骨格 + 方針全文（共有）と、銘柄行 + 現在値行 + 保護参考情報（銘柄側）。
-        var sharedProtected = PromptScaffoldChars + policy.Summary.Length;
+        // 保護分: プロンプト骨格 + 方針全文 + 監視銘柄節（共有）と、銘柄行 + 現在値行 + 保護参考情報（銘柄側）。
+        // #1034, IADR-0440 決定 5: 監視銘柄節は概算ではなく**プロンプトへ出す文字列そのものの長さ**を数える
+        // （表示の上限 50 件で頭打ちになるため、予算 150,000 文字〔IADR-0313〕に対して数千文字以内に収まる）。
+        var sharedProtected = PromptScaffoldChars + policy.Summary.Length
+            + TradeDecisionPromptBuilder.WatchlistSection(trigger, watchlist).Length;
         var symbolProtected = PerSymbolLineChars + protectedRefs.Sum(EstimateChars);
 
         var plan = ScreeningContextPlanner.Plan(
