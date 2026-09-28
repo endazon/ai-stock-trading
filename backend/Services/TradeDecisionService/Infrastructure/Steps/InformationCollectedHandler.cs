@@ -25,6 +25,7 @@ public sealed class InformationCollectedHandler(
     IMarketCalendar calendar,
     IClock clock,
     BusinessMetrics metrics,
+    NewsCollectionStatusStore newsStatus,
     ILogger<InformationCollectedHandler> logger)
 {
     public async Task Handle(InformationCollected message, IMessageBus bus, CancellationToken cancellationToken)
@@ -33,6 +34,10 @@ public sealed class InformationCollectedHandler(
         ArgumentNullException.ThrowIfNull(bus);
 
         var now = clock.UtcNow;
+
+        // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成。null＝不明）を**判断の前に**記録する。
+        // 定時・急変の両方の判断が同じ最新値をプロンプトへ明示する（RAG を経由しない経路）。
+        newsStatus.Record(message.NewsStatus, message.NewsStatusValidFor, message.CollectedAt);
 
         // FR-02, IADR-0095: 権威源（市場監視 #10）から当該サイクルの監視銘柄を照会する（実装未接続/失敗時は構成ベースへ倒す）。
         var watchlistSymbols = await watchlist.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);

@@ -151,7 +151,9 @@
   "InformationCollected": {
     "CollectedAt": "DateTimeOffset",
     "EventId": "Guid",
-    "ItemCount": "Int32"
+    "ItemCount": "Int32",
+    "NewsStatus": "NewsCollectionStatus?",
+    "NewsStatusValidFor": "TimeSpan?"
   },
   "InformationSourceDegraded": {
     "Behavior": "String",
