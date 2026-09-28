@@ -116,7 +116,8 @@ public class OrderFeeProbeCommandTests
         new[] { Flag, "12;rm" },                // 記号
         new[] { Flag, "" },                     // 空
         new[] { "--other", Flag },              // 旗の位置
-        new[] { Flag + "=123" },                // = 付きの形は受けない
+        new[] { Flag + "=" },                   // = 付きで値が空
+        new[] { Flag + "=123", "456" },         // = 付きに余分な引数
     };
 
     [Theory]
@@ -138,6 +139,32 @@ public class OrderFeeProbeCommandTests
         OrderFeeProbeCommand.IsRequested([Flag + "=1"]).Should().BeTrue();
         OrderFeeProbeCommand.IsRequested([]).Should().BeFalse();
         OrderFeeProbeCommand.IsRequested(["codegen", "write"]).Should().BeFalse("Dockerfile の codegen を横取りしない");
+    }
+
+    [Fact]
+    public async Task イコール付きの形も同じ値として受け付ける()
+    {
+        // claude-review 🟢: IsRequested が `=` 形を起動と判定する以上、解釈も揃える（非対称を作らない）。
+        var (exitCode, _, query) = await Run(null, null, Flag + "=123456789");
+
+        exitCode.Should().Be(OrderFeeProbeCommand.ExitFeesReturned);
+        query.OrderIds.Should().Equal("123456789");
+    }
+
+    [Fact]
+    public async Task 出力の最終段で例外文を含むすべての行を照会口の伏せに通す()
+    {
+        // #1086 AI レビュー 🔴: 注文一覧の照会の失敗は生の retMsg（口座 ID を含み得る）を例外文に載せる。
+        // 検証口は照会口が伏せの口を持てば、例外文も含めて 1 行ずつ通してから書く。
+        var query = new RedactingThrowingQuery("283745190123",
+            new InvalidOperationException("moomoo GetHistoryOrderList が失敗しました（retType=-1）: acc 283745190123 denied"));
+        var writer = new StringWriter();
+
+        var exitCode = await OrderFeeProbeCommand.RunAsync(
+            [Flag, "123"], () => query, writer, cancellationToken: TestContext.Current.CancellationToken);
+
+        exitCode.Should().Be(OrderFeeProbeCommand.ExitQueryFailed);
+        writer.ToString().Should().NotContain("283745190123").And.Contain("acc ****23 denied");
     }
 
     [Fact]
@@ -196,5 +223,13 @@ public class OrderFeeProbeCommandTests
         }
 
         public void Dispose() => Disposed = true;
+    }
+
+    private sealed class RedactingThrowingQuery(string secret, Exception throws) : IOrderFeeQuery, IProbeOutputRedactor
+    {
+        public Task<OrderFeeQueryResult> QueryOrderFeeAsync(string orderId, CancellationToken cancellationToken = default) =>
+            Task.FromException<OrderFeeQueryResult>(throws);
+
+        public string Redact(string text) => text.Replace(secret, "****" + secret[^2..], StringComparison.Ordinal);
     }
 }

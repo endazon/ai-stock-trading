@@ -55,29 +55,32 @@ public static class OrderFeeProbeCommand
         ArgumentNullException.ThrowIfNull(createQuery);
         ArgumentNullException.ThrowIfNull(stdout);
 
+        // 🔴 すべての行は ProbeOutput を通して出す（出力の最終段で口座 ID を伏せる。どの経路の例外文にも効く）。
+        var output = new ProbeOutput(stdout);
         if (!TryParse(args, out var orderId, out var usageError))
         {
-            stdout.WriteLine("result=usage-error");
-            stdout.WriteLine($"error.message={OneLine(usageError)}");
-            stdout.WriteLine($"usage=dotnet \"$SERVICE_DLL\" {Flag} <注文ID（10 進の OrderID または OrderIDEx）>");
-            stdout.WriteLine($"exitCode={ExitUsageOrConfiguration}");
+            output.Line("result=usage-error");
+            output.Line($"error.message={OneLine(usageError)}");
+            output.Line($"usage=dotnet \"$SERVICE_DLL\" {Flag} <注文ID（10 進の OrderID または OrderIDEx）>");
+            output.Line($"exitCode={ExitUsageOrConfiguration}");
             return ExitUsageOrConfiguration;
         }
 
-        stdout.WriteLine($"probe=order-fee orderId={orderId} trdEnv=SIMULATE");
+        output.Line($"probe=order-fee orderId={orderId} trdEnv=SIMULATE");
 
         IOrderFeeQuery query;
         try
         {
             query = createQuery();
+            output.Redactor = query as IProbeOutputRedactor;
         }
         catch (Exception ex)
         {
             // 構成不正（moomoo 以外・実弾階層・RSA 鍵の未マウント等）。接続はしていない。
-            stdout.WriteLine("result=config-error");
-            WriteException(stdout, ex);
-            stdout.WriteLine("getOrderFee.sent=no");
-            stdout.WriteLine($"exitCode={ExitUsageOrConfiguration}");
+            output.Line("result=config-error");
+            WriteException(output, ex);
+            output.Line("getOrderFee.sent=no");
+            output.Line($"exitCode={ExitUsageOrConfiguration}");
             return ExitUsageOrConfiguration;
         }
 
@@ -94,16 +97,16 @@ public static class OrderFeeProbeCommand
             }
             catch (Exception ex)
             {
-                stdout.WriteLine("result=error");
-                WriteException(stdout, ex);
+                output.Line("result=error");
+                WriteException(output, ex);
                 // 接続前の失敗か、送信後の返信待ちで切れたかは例外からは言い切れない。
-                stdout.WriteLine("getOrderFee.sent=unknown");
-                stdout.WriteLine($"exitCode={ExitQueryFailed}");
+                output.Line("getOrderFee.sent=unknown");
+                output.Line($"exitCode={ExitQueryFailed}");
                 return ExitQueryFailed;
             }
 
-            var exitCode = Write(stdout, result);
-            stdout.WriteLine($"exitCode={exitCode}");
+            var exitCode = Write(output, result);
+            output.Line($"exitCode={exitCode}");
             return exitCode;
         }
         finally
@@ -112,31 +115,31 @@ public static class OrderFeeProbeCommand
         }
     }
 
-    private static int Write(TextWriter stdout, OrderFeeQueryResult result)
+    private static int Write(ProbeOutput output, OrderFeeQueryResult result)
     {
-        stdout.WriteLine($"account=SIMULATE({result.MaskedAccountId})");
+        output.Line($"account=SIMULATE({result.MaskedAccountId})");
         if (result.ResolvedMarket is not null)
-            stdout.WriteLine($"order.market={result.ResolvedMarket}");
+            output.Line($"order.market={result.ResolvedMarket}");
         if (result.ResolvedOrderStatus is { } status)
-            stdout.WriteLine($"order.status={status.ToString(CultureInfo.InvariantCulture)}");
-        stdout.WriteLine($"order.orderIdEx={OneLine(result.OrderIdEx ?? "(なし)")}");
-        stdout.WriteLine($"getOrderFee.sent={(result.Sent ? "yes" : "no")}");
+            output.Line($"order.status={status.ToString(CultureInfo.InvariantCulture)}");
+        output.Line($"order.orderIdEx={OneLine(result.OrderIdEx ?? "(なし)")}");
+        output.Line($"getOrderFee.sent={(result.Sent ? "yes" : "no")}");
 
         switch (result.Outcome)
         {
             case OrderFeeQueryOutcome.OrderNotFound:
-                stdout.WriteLine("result=order-not-found");
+                output.Line("result=order-not-found");
                 return ExitQueryFailed;
             case OrderFeeQueryOutcome.OrderIdExMissing:
-                stdout.WriteLine("result=order-id-ex-missing");
+                output.Line("result=order-id-ex-missing");
                 return ExitQueryFailed;
         }
 
-        stdout.WriteLine($"retType={(result.RetType?.ToString(CultureInfo.InvariantCulture) ?? "(なし)")}");
-        stdout.WriteLine($"retMsg={OneLine(result.RetMsg ?? string.Empty)}");
+        output.Line($"retType={(result.RetType?.ToString(CultureInfo.InvariantCulture) ?? "(なし)")}");
+        output.Line($"retMsg={OneLine(result.RetMsg ?? string.Empty)}");
         if (result.Outcome == OrderFeeQueryOutcome.Failed)
         {
-            stdout.WriteLine("result=failed");
+            output.Line("result=failed");
             return ExitQueryFailed;
         }
 
@@ -144,33 +147,42 @@ public static class OrderFeeProbeCommand
         for (var i = 0; i < result.Fees.Count; i++)
         {
             var fee = result.Fees[i];
-            stdout.WriteLine(
+            output.Line(
                 $"fee[{i}].orderIdEx={OneLine(fee.OrderIdEx ?? "(なし)")} fee[{i}].feeAmount={Number(fee.FeeAmount)} fee[{i}].items={fee.Items.Count}");
             for (var j = 0; j < fee.Items.Count; j++)
             {
                 var item = fee.Items[j];
-                stdout.WriteLine($"fee[{i}].item[{j}].title={OneLine(item.Title ?? "(なし)")}");
-                stdout.WriteLine($"fee[{i}].item[{j}].value={Number(item.Value)}");
+                output.Line($"fee[{i}].item[{j}].title={OneLine(item.Title ?? "(なし)")}");
+                output.Line($"fee[{i}].item[{j}].value={Number(item.Value)}");
                 itemCount++;
             }
         }
-        stdout.WriteLine($"fees.orders={result.Fees.Count} fees.items={itemCount}");
+        output.Line($"fees.orders={result.Fees.Count} fees.items={itemCount}");
 
         // 「値を返すか」の答え。注文ぶんの行が在っても項目も合計も無ければ「返さない」側へ数える。
         var returned = itemCount > 0 || result.Fees.Any(f => f.FeeAmount is not null);
-        stdout.WriteLine(returned ? "result=fees-returned" : "result=no-fees");
+        output.Line(returned ? "result=fees-returned" : "result=no-fees");
         return returned ? ExitFeesReturned : ExitNoFees;
     }
 
     private static bool TryParse(IReadOnlyList<string> args, out string orderId, out string error)
     {
         orderId = string.Empty;
-        if (args.Count != 2 || args[0] != Flag)
+        string value;
+        if (args.Count == 2 && args[0] == Flag)
         {
-            error = $"引数は `{Flag} <注文ID>` のちょうど 2 つにしてください（受け取った数: {args.Count}）。";
+            value = args[1];
+        }
+        else if (args.Count == 1 && args[0].StartsWith(Flag + "=", StringComparison.Ordinal))
+        {
+            // IsRequested が `=` 形も検証口の起動と判定するため、形も同じく受け付ける（判定と解釈の非対称を作らない）。
+            value = args[0][(Flag.Length + 1)..];
+        }
+        else
+        {
+            error = $"引数は `{Flag} <注文ID>`（または `{Flag}=<注文ID>`）だけにしてください（受け取った数: {args.Count}）。";
             return false;
         }
-        var value = args[1];
         if (!OrderIdPattern.IsMatch(value))
         {
             error = "注文 ID は英数字・`_`・`-` の 1〜64 文字で、`-` から始まらないこと。";
@@ -181,13 +193,13 @@ public static class OrderFeeProbeCommand
         return true;
     }
 
-    private static void WriteException(TextWriter stdout, Exception ex)
+    private static void WriteException(ProbeOutput output, Exception ex)
     {
         var depth = 0;
         for (var e = ex; e is not null && depth < 4; e = e.InnerException, depth++)
         {
-            stdout.WriteLine($"error[{depth}].type={e.GetType().Name}");
-            stdout.WriteLine($"error[{depth}].message={OneLine(e.Message)}");
+            output.Line($"error[{depth}].type={e.GetType().Name}");
+            output.Line($"error[{depth}].message={OneLine(e.Message)}");
         }
     }
 
@@ -195,4 +207,12 @@ public static class OrderFeeProbeCommand
         value is { } v ? v.ToString("R", CultureInfo.InvariantCulture) : "(なし)";
 
     private static string OneLine(string text) => text.Replace('\r', ' ').Replace('\n', ' ');
+
+    // 出力の最終段。照会口が IProbeOutputRedactor なら、書く前に 1 行ずつ通す（接続前・照会口の生成前は素通し）。
+    private sealed class ProbeOutput(TextWriter writer)
+    {
+        public IProbeOutputRedactor? Redactor { get; set; }
+
+        public void Line(string line) => writer.WriteLine(Redactor?.Redact(line) ?? line);
+    }
 }

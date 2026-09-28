@@ -63,20 +63,20 @@ order-execution のイメージには、moomoo の**注文費用照会（Trd_Get
    echo "exit=$?"
    ```
 
-   引数は `--probe-order-fee <注文ID>` のちょうど 2 つにする（他の引数を足すと使い方の誤りとして接続せずに終わる）。
+   引数は `--probe-order-fee <注文ID>`（または `--probe-order-fee=<注文ID>`）だけにする（他の引数を足すと使い方の誤りとして接続せずに終わる）。
 
 3. **出力を記録する**（「記録」の節）。**続けて打たない。** 撃ち直す必要があるときも 30 秒以上あける。
 
 ## 出力の読み方
 
-1 行 1 事実の `key=value` で出る。主な行:
+1 行 1 事実の `key=value` で出る。**口座番号は、応答・エラー文を含むすべての行で末尾 2 桁以外を伏せて出す**（ただし口座が確定する前＝接続・口座一覧の照会で失敗したときは、伏せる値がまだ分からないため伏せられない）。主な行:
 
 | 行 | 意味 |
 | --- | --- |
 | `account=SIMULATE(****NN)` | 照会に使った口座。**口座番号は末尾 2 桁以外を伏せて出す** |
 | `order.orderIdEx=` / `order.market=` / `order.status=` | 注文一覧から引いた照会の鍵（OrderIDEx）・市場・注文状態の数値（11 が全約定） |
 | `getOrderFee.sent=` | 費用照会を送ったか（`yes` / `no` / 例外で判別できないときは `unknown`） |
-| `retType=` / `retMsg=` | OpenD の応答。`retType=0` が成功。retMsg 中の口座番号は伏せる |
+| `retType=` / `retMsg=` | OpenD の応答。`retType=0` が成功 |
 | `fee[i].feeAmount=` / `fee[i].item[j].title=` / `fee[i].item[j].value=` | 返ってきた費用の合計と項目（項目名と値は応答のまま。区分へは写さない） |
 | `result=` | 結末（下表） |
 

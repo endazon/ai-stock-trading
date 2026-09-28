@@ -16,7 +16,7 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // OpenD（常駐・#124）へ TCP protobuf で接続し、非同期コールバック（nSerialNo 相関）で応答を待つ。
 // MMSPI_Conn（接続）と MMSPI_Trd（取引・全 OnReply_* 実装が必要）の両インターフェースを実装する。
 // 未使用のコールバックは no-op。接続/口座取得は初回利用時に遅延実行する（起動をブロックしない）。
-public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTradeClient, IShortPermitSource, IOrderFeeQuery, IDisposable
+public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTradeClient, IShortPermitSource, IOrderFeeQuery, IProbeOutputRedactor, IDisposable
 {
     private static readonly object InitGate = new();
     private static bool _apiInitialized;
@@ -944,6 +944,10 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         var digits = accountId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return digits.Length <= 2 ? "****" : "****" + digits[^2..];
     }
+
+    // #1086（AI レビュー指摘）: 検証口の出力の最終段。注文一覧の照会の失敗（EnsureSucceeded の例外文は生の retMsg を含む）を
+    // 含め、どの経路で出る文字列でも口座 ID の全桁を伏せる。接続前（口座未確定＝0）は素通し。
+    string IProbeOutputRedactor.Redact(string text) => RedactAccountId(text, _simAccId) ?? text;
 
     // 文中に口座 ID の全桁が現れたら伏せた形へ置き換える（OpenD の retMsg を出力へ流すため）。
     public static string? RedactAccountId(string? text, ulong accountId)

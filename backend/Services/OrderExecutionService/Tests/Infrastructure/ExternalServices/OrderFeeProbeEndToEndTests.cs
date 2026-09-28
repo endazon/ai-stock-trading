@@ -93,6 +93,25 @@ public class OrderFeeProbeEndToEndTests
         output.Should().NotContain(SimAccId.ToString(System.Globalization.CultureInfo.InvariantCulture), "口座 ID は伏せる");
     }
 
+    [Theory]
+    [InlineData(ListFailure.Current)]
+    [InlineData(ListFailure.History)]
+    public async Task 注文一覧の照会の失敗文に口座IDが含まれても全桁を出さない(ListFailure failure)
+    {
+        // #1086 AI レビュー 🔴: 数字の OrderID から OrderIDEx を引く経路の失敗は、生の retMsg を含む例外として上がる。
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: _ => FeeReply(0, "", ("Commission", 1.0)))
+        {
+            Failure = failure,
+        };
+
+        var (exitCode, output) = await Probe(opend, OrderId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        exitCode.Should().Be(OrderFeeProbeCommand.ExitQueryFailed, output);
+        opend.FeeRequests.Should().BeEmpty("解決に失敗したら費用照会は撃たない");
+        output.Should().Contain("result=error").And.Contain("acc ****23 is not authorized");
+        output.Should().NotContain(SimAccId.ToString(System.Globalization.CultureInfo.InvariantCulture), "口座 ID は伏せる");
+    }
+
     [Fact]
     public async Task RSA鍵の内容と口座IDを出力に載せない()
     {
@@ -192,6 +211,8 @@ public class OrderFeeProbeEndToEndTests
         MMApiMoomooTradeClient.RedactAccountId(null, SimAccId).Should().BeNull();
     }
 
+    public enum ListFailure { None, Current, History }
+
     private sealed class Factory(FakeOpenD opend) : IMoomooTradeConnectionFactory
     {
         public IMoomooTradeConnection Create()
@@ -212,6 +233,11 @@ public class OrderFeeProbeEndToEndTests
         private int _serial;
 
         public bool Created { get; set; }
+
+        // 注文一覧の照会を非成功（口座 ID を含む retMsg）で返す位置。
+        public ListFailure Failure { get; init; }
+
+        private static readonly string DeniedMessage = $"acc {SimAccId} is not authorized for this query";
 
         public List<TrdGetOrderFee.Request> FeeRequests { get; } = [];
 
@@ -263,8 +289,9 @@ public class OrderFeeProbeEndToEndTests
         {
             Interlocked.Increment(ref ListCalls);
             var serial = NextSerial();
+            var failed = Failure == ListFailure.Current;
             var response = TrdGetOrderList.Response.CreateBuilder()
-                .SetRetType(0).SetRetMsg(string.Empty)
+                .SetRetType(failed ? -1 : 0).SetRetMsg(failed ? DeniedMessage : string.Empty)
                 .SetS2C(TrdGetOrderList.S2C.CreateBuilder().SetHeader(request.C2S.Header).BuildPartial())
                 .BuildPartial();
             _ = Task.Run(() => _trdCallback?.OnReply_GetOrderList(_handle, serial, response));
@@ -288,8 +315,10 @@ public class OrderFeeProbeEndToEndTests
                     order.SetOrderIDEx(historyOrderIdEx);
                 s2c.AddOrderList(order.BuildPartial());
             }
+            var failed = Failure == ListFailure.History;
             var response = TrdGetHistoryOrderList.Response.CreateBuilder()
-                .SetRetType(0).SetRetMsg(string.Empty).SetS2C(s2c.BuildPartial()).BuildPartial();
+                .SetRetType(failed ? -1 : 0).SetRetMsg(failed ? DeniedMessage : string.Empty)
+                .SetS2C(s2c.BuildPartial()).BuildPartial();
             _ = Task.Run(() => _trdCallback?.OnReply_GetHistoryOrderList(_handle, serial, response));
             return serial;
         }

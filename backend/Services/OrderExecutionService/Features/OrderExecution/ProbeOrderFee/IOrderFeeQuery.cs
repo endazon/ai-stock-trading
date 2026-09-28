@@ -13,6 +13,15 @@ public interface IOrderFeeQuery
     Task<OrderFeeQueryResult> QueryOrderFeeAsync(string orderId, CancellationToken cancellationToken = default);
 }
 
+// FR-11, #1086（AI レビュー指摘 2026-09-29）: 検証口の出力の最終段で秘密（口座 ID）を伏せる口。
+// 照会口の実装が任意で実装する。**IOrderFeeQuery とは別の型にする**（照会のポートを「メソッド 1 つ」に保つため）。
+// 口座 ID は接続後にしか分からないため、検証口は照会口の生成後に 1 行ずつ通す。例外文（注文一覧の照会の失敗で
+// OpenD の retMsg をそのまま含む）も、照会の応答も、同じ最終段を通る。
+public interface IProbeOutputRedactor
+{
+    string Redact(string text);
+}
+
 // 照会の結末。Sent=false の結末（注文が見つからない・OrderIDEx が空）は Trd_GetOrderFee を撃っていない。
 public enum OrderFeeQueryOutcome
 {
