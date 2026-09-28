@@ -96,6 +96,7 @@ Stage 0 の記録は as-of のニュースの状態を再構成しないため�
 - 残余:
   - 空巡回（収集 0 件）では `InformationCollected` を発行しない（現行の規律）。その間は状態が有効期限で「不明」へ落ちる。
   - 急変の判断は、最後の定時の起点イベントから有効期間内でなければ「不明」と書く。
+  - 有効期間は基準の巡回間隔から決める。費用統制の Throttled/Halted で実効間隔が延びると、次の発行より先に期限が切れて「不明」と書く時間帯が生じる（安全側。現況観測と同じ性質）。収集と判断の時計のずれは有効期間の中で吸収し、補正はしない（PR #1088 監査）。
   - 「未構成」を新規建ての停止に数えるかは範囲外（IADR-0220 不変）。判断側の RAG の有効化は #1083、経路 B のニュース源は #1082。
 - フォローアップ: なし（本 PR で完結）。
 
@@ -109,6 +110,8 @@ Stage 0 の記録は as-of のニュースの状態を再構成しないため�
 | 文言 4 状態・null と範囲外は不明・最長が予約内・定時／急変／一次に無条件・判断サービスで一次と本判断の両方（縮退の予算 500 でも）・期限切れは不明 | `NewsStatusInPromptTests.cs` |
 | 定時の起点イベントの状態が判断のプロンプトへ届く・旧イベントでも判断が動く | `InformationCollectedConsumerTests` |
 | 本番の組み立てで singleton の同じ実体を判断サービスが保持 | `NewsCollectionStatusStoreRegistrationTests.cs` |
+| 列挙の数値の固定（Fetched=1・Outage=2・NotConfigured=3。0 を持たない。通信路では数値で送るため） | `AiStockTrading.Shared.Contracts.Tests/NewsCollectionStatusContractTests.cs` |
+| Stage 0 の記録のプロンプトは「不明」と書く | `Stage0DecisionRecorderTests.記録器のプロンプトはニュースの状態を不明と書く` |
 | 契約（追加のみ） | `event-schemas.baseline.json`（`UPDATE_EVENT_BASELINE=1` で再生成） |
 
 ## 関連
