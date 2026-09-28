@@ -79,7 +79,7 @@ public sealed record KnowledgeWriteResult(bool Saved, Guid? DocumentId)
 
 // FR-08: RAG 検索クエリ。AttributeFilters は単値完全一致（platform SearchRequest.AttributeFilters に写像）。
 //   SortBy — 並び順（platform SearchRequest.SortBy に写像。値は KnowledgeSearchSorts）。null は基盤の既定（関連度順）。
-//   #1083, IADR-0453 決定4: 基盤の `updated` は**取得後の並べ替え**（関連度の候補 4×TopK の中で索引の更新日時の降順）で、
+//   #1083, IADR-0454 決定4: 基盤の `updated` は**取得後の並べ替え**（関連度の候補 4×TopK の中で索引の更新日時の降順）で、
 //   関連度は候補の門番として残る。
 public sealed record KnowledgeQuery(
     string Query,
@@ -87,7 +87,7 @@ public sealed record KnowledgeQuery(
     IReadOnlyDictionary<string, string>? AttributeFilters = null,
     string? SortBy = null);
 
-// FR-08, #1083, IADR-0453 決定4: 並び順の値（platform Knowledge.Contracts.Dtos.SearchSorts と同じ文字列。
+// FR-08, #1083, IADR-0454 決定4: 並び順の値（platform Knowledge.Contracts.Dtos.SearchSorts と同じ文字列。
 // 基盤は未知の値を関連度順へ縮退させるため、ここで値を増やしても壊れはしないが効きもしない）。
 public static class KnowledgeSearchSorts
 {
@@ -95,7 +95,7 @@ public static class KnowledgeSearchSorts
     public const string Updated = "updated";
 }
 
-// FR-08, #1083, IADR-0453 決定2・3: 検索の絞り込みに使う文書属性のキー
+// FR-08, #1083, IADR-0454 決定2・3: 検索の絞り込みに使う文書属性のキー
 // （情報収集の KnowledgeBaseWriterSink が保存時に載せる。銘柄を持たない文書には無い）。
 public static class KnowledgeSearchAttributes
 {
@@ -116,6 +116,6 @@ public sealed record KnowledgeHit(
     string? SourceUri,
     IReadOnlyList<string> Tags,
     DateTimeOffset? PublishedAt = null,
-    // FR-08, #1083, IADR-0453 決定3: 文書属性 `symbol`（銘柄）。**銘柄を持たない文書（市場全体のニュース・マクロ・
+    // FR-08, #1083, IADR-0454 決定3: 文書属性 `symbol`（銘柄）。**銘柄を持たない文書（市場全体のニュース・マクロ・
     // 収集状態）は null**。判断側は銘柄フィルタを掛けない検索の結果から「銘柄を持たない文書」だけを残すのに使う。
     string? Symbol = null);

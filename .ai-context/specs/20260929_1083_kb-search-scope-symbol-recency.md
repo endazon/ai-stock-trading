@@ -2,7 +2,7 @@
 title: 取引判断の KB 検索要求に Scope・銘柄の絞り込み・新しい順と新しさの足切りを載せる（#1083）
 type: spec
 status: accepted
-related_ids: [FR-08, FR-04, ADR-0003, ADR-0020, IADR-0069, IADR-0072, IADR-0169, IADR-0270, IADR-0293, IADR-0313, IADR-0315, IADR-0453]
+related_ids: [FR-08, FR-04, ADR-0003, ADR-0020, IADR-0069, IADR-0072, IADR-0169, IADR-0270, IADR-0293, IADR-0313, IADR-0315, IADR-0454]
 author: claude (Claude Code)
 created: 2026-09-29
 updated: 2026-09-29
@@ -53,13 +53,13 @@ plan_refs:
     `KnowledgeModels.cs`（`KnowledgeQuery.SortBy`・`KnowledgeSearchSorts`・`KnowledgeHit.Symbol`）
   - `TradeDecisionService`: `KnowledgeBaseRetrievalContextProvider`（銘柄の検索＋銘柄を持たない文書の検索・新しい順・足切り）、
     `Program.cs`（`Retrieval:MaxAgeHours` と `TimeProvider` の配線）
-  - IADR-0453 新設・README 索引・IADR-0072 決定5 への日付付き追記
+  - IADR-0454 新設・README 索引・IADR-0072 決定5 への日付付き追記
 - 対象外:
   - 並行 #1081（`InformationCollected`・判断プロンプト・`InformationCollectedHandler`）と #1082（`values-local.yaml`）のファイル
   - `RetrievalSourcePolicy`（出典限定・サニタイズ）は変えない
   - `BaseUrl` の結線（空の間は NoOp のまま＝本番の挙動は変わらない）。基盤側の ABAC 主体の解決（MSP#1696）
 
-## 設計（詳細と代替案は IADR-0453）
+## 設計（詳細と代替案は IADR-0454）
 
 1. **Scope（全検索で固定）**: `{Filters:[{Key:"project", AllowedValues:["ai-stock-trading"]}], GrantsAccess:true}`。
    `project` は AST が保存する全文書へ必須で付く属性（IADR-0293）であり、他プロジェクトの文書を引かない主張になる。
@@ -74,7 +74,7 @@ plan_refs:
    `PublishedAt` を持たない文書（確定報告書など）は通し、null のまま下流の「不明＝最古扱い」に委ねる
    ［2026-09-29 追記 / PR #1087 監査 F1］当初は「無い文書も落とす」としたが、報告書（`ReportKnowledgeMapper` は publishedAt を書かない）が
    常に消え UC-01 手順 3「過去の判断（RAG）」が届かなくなるため改めた。
-   既定 168 時間（7 日）。根拠は IADR-0453 決定 5。不正・非正の値は既定へ。
+   既定 168 時間（7 日）。根拠は IADR-0454 決定 5。不正・非正の値は既定へ。
 6. **fail-safe**: 未許可（基盤が 200＋空）・空・非 2xx・例外は空（既存）。片方の検索が空でも他方は使う。
 
 ## 母集合（規則 9・10: 誤りの側で走査する）
@@ -88,7 +88,7 @@ plan_refs:
 | `KnowledgeModels.cs:80` | `KnowledgeQuery` の注記 | **直す**（SortBy を足す） |
 | `IADR-0072:82-85`（決定5） | 「Scope は本作業では送らない（後続）」 | **日付付き追記**（本文は凍結） |
 | `IADR-0114:221` | 範囲外の記録 | 変えない（時点の記録） |
-| `IADR-0247:95`・`IADR-0313:122-126`・README の IADR-0313 行 | 予算見積りの前提 `TopK=5` | 変えない（除外理由: 件数は最大 2×TopK=10 で、発火点 約 127 から遠い。IADR-0453 に記録） |
+| `IADR-0247:95`・`IADR-0313:122-126`・README の IADR-0313 行 | 予算見積りの前提 `TopK=5` | 変えない（除外理由: 件数は最大 2×TopK=10 で、発火点 約 127 から遠い。IADR-0454 に記録） |
 | `IADR-0315:38`・`KnowledgeBaseWriterSink.cs:42` | 「銘柄は `attributes["symbol"]` で絞れる」 | 正しいまま（本 PR が実際に使う） |
 | `Program.cs:271,312` | `Retrieval:TopK` の注記 | `:271` を**直す**（MaxAgeHours を足す）。`:312` は予算の前提で変えない（同上） |
 | `docker-compose.yml:465` | `Retrieval__TopK` | 変えない（除外理由: 既定値で動く。構成面の追加は #1082 と同じ層の変更で、BaseUrl が空の間は効かない） |

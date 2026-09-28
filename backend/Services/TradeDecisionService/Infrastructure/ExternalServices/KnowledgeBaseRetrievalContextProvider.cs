@@ -11,7 +11,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // 安全既定: search は KnowledgeBase:Search:BaseUrl 未設定なら #18 の NoOpKnowledgeBaseSearch（空）＝文脈なし＝現行動作。
 // fail-safe: IKnowledgeBaseSearch は非 2xx・例外・タイムアウトを空へ倒す（IADR-0069）。判断側でも例外を握るため二重に安全。
 //
-// FR-08, #1083, IADR-0453（IADR-0072 決定5 の「Scope は送らない」を置き換える）:
+// FR-08, #1083, IADR-0454（IADR-0072 決定5 の「Scope は送らない」を置き換える）:
 //   - Scope（project = ai-stock-trading）はアダプタ（HttpKnowledgeBaseSearch）が全検索に載せる（決定1）。
 //   - 検索は 2 本（決定2・3）: ① 銘柄の文書（attributes["symbol"] = トリガーの銘柄）、
 //     ② 銘柄を持たない文書（市場全体のニュース・マクロ・収集状態。銘柄フィルタなしで引き、symbol を持つ文書を落とす）。
@@ -28,13 +28,13 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
     TimeProvider timeProvider,
     ILogger<KnowledgeBaseRetrievalContextProvider> logger) : IRetrievalContextProvider
 {
-    // #1083, IADR-0453 決定5: 新しさの足切りの既定（168 時間＝7 日）。根拠は IADR-0453。
+    // #1083, IADR-0454 決定5: 新しさの足切りの既定（168 時間＝7 日）。根拠は IADR-0454。
     public static readonly TimeSpan DefaultMaxAge = TimeSpan.FromHours(168);
 
     // 足切りの上限（時間）。これを超える値は設定の誤りとみなし既定へ倒す（TimeSpan の桁あふれも防ぐ）。
     private const double MaxConfigurableHours = 24 * 366 * 10;
 
-    // FR-08, #1083, IADR-0453 決定5: `Retrieval:MaxAgeHours` を読む。空・不正・非正・上限超は既定（168 時間）。
+    // FR-08, #1083, IADR-0454 決定5: `Retrieval:MaxAgeHours` を読む。空・不正・非正・上限超は既定（168 時間）。
     public static TimeSpan ParseMaxAge(string? value) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours)
             && hours > 0 && hours <= MaxConfigurableHours

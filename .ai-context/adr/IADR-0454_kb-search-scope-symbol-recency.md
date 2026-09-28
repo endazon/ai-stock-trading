@@ -1,5 +1,5 @@
 ---
-title: IADR-0453 取引判断の KB 検索は project の Scope を主張として送り、銘柄の文書と銘柄を持たない文書の 2 本を新しい順で引き、発行時刻を持つ文書を足切りする
+title: IADR-0454 取引判断の KB 検索は project の Scope を主張として送り、銘柄の文書と銘柄を持たない文書の 2 本を新しい順で引き、発行時刻を持つ文書を足切りする
 type: impl-adr
 status: Accepted
 related_ids: [FR-08, FR-04, ADR-0003, ADR-0020, IADR-0069, IADR-0072, IADR-0169, IADR-0270, IADR-0293, IADR-0313, IADR-0315]
@@ -11,7 +11,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
 ---
 
-# IADR-0453: 取引判断の KB 検索に Scope・銘柄の絞り込み・新しい順と足切りを載せる（#1083）
+# IADR-0454: 取引判断の KB 検索に Scope・銘柄の絞り込み・新しい順と足切りを載せる（#1083）
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
@@ -28,6 +28,7 @@ plan_refs:
   [IADR-0169](IADR-0169_rag-context-injection-defense.md)（出典限定。変えない）、[IADR-0270](IADR-0270_knowledgehit-published-at-supply.md)（`publishedAt` の復元）、
   [IADR-0293](IADR-0293_kb-project-attribute-required.md)（保存文書の `project` 属性）、[IADR-0313](IADR-0313_screening-context-budget-default.md)（スクリーニング予算）、
   [IADR-0315](IADR-0315_kb-tags-static-vocabulary.md)（銘柄は属性で絞る）
+- 採番: #1085（#1082。[IADR-0453](IADR-0453_route-b-news-sources-enabled.md)＝経路 B のニュース源の有効化）と番号が衝突したため、後からマージする本 PR が最大＋1 の 0454 へ改番した（2026-09-29）。同 IADR が有効にした google-news は `symbol` を持たないため、決定3 の 2 本目の検索で届く。
 - 関連 issue: #1083（起点）・#1078（親）・#288・#252。基盤 MSP#1696（読み手の ABAC 主体。実環境で効かせる前提）
 - 基盤の読み取り: microservices-platform develop `89b7adc3` の `Knowledge.Contracts/Dtos/SearchDto.cs`・`ScopeNarrowing.cs`・
   `Platform.Shared.Contracts/Dtos/AccessScopeDto.cs`・`RetrievalService/Features/Search/Hybrid/{Endpoint,HybridSearchService}.cs`

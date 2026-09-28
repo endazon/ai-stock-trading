@@ -9,9 +9,9 @@ namespace InformationCollectionService.Tests;
 public class FinnhubCycleFitTests
 {
     [Theory]
-    // 経路 B の既定（30 回/分・300 秒・現在値だけ）: 30 × 5 分 ÷ 1 = 150 銘柄。
+    // 現在値だけ（30 回/分・300 秒）: 30 × 5 分 ÷ 1 = 150 銘柄（#1082 以前の経路 B）。
     [InlineData(30, 300, 1, 150)]
-    // 現在値＋企業ニュース（1 銘柄 2 要求）なら半分。
+    // 現在値＋企業ニュース（1 銘柄 2 要求）なら半分（#1082, IADR-0453 以降の経路 B）。
     [InlineData(30, 300, 2, 75)]
     // 本番既定の巡回（1800 秒）。
     [InlineData(30, 1800, 2, 450)]

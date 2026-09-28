@@ -10,7 +10,7 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 //
 // fail-safe（決定 3）: 非 2xx・例外・タイムアウトはすべて空結果に倒す（RAG 文脈なしへ縮退し、判断側の可用性を守る）。
 //
-// FR-08, #1083, IADR-0453 決定1: **本文の Scope を必ず送る。** 基盤の POST /search は Scope が `GrantsAccess:true` で
+// FR-08, #1083, IADR-0454 決定1: **本文の Scope を必ず送る。** 基盤の POST /search は Scope が `GrantsAccess:true` で
 // なければ 200＋空で返す（deny-by-default）。本文の Scope は権限の根拠ではなく**絞り込みの主張**であり、基盤は自分で
 // 引いた許可と交差させる（`ScopeNarrowing.Apply`）——したがって送っても権限は広がらない。主張は
 // 「project = ai-stock-trading の文書だけ」（AST が保存する全文書に必須で付く属性。IADR-0293）。
@@ -23,7 +23,7 @@ internal sealed class HttpKnowledgeBaseSearch(
     private static readonly IReadOnlyList<KnowledgeHit> Empty = [];
 
     // platform SearchRequest と JSON 互換の送信形状（Knowledge.Contracts に依存しない）。
-    // #1083, IADR-0453: 基盤 `SearchRequest(Query, TopK, AttributeFilters, Scope, Mode, SortBy)` のうち Mode 以外を送る
+    // #1083, IADR-0454: 基盤 `SearchRequest(Query, TopK, AttributeFilters, Scope, Mode, SortBy)` のうち Mode 以外を送る
     // （Mode は既定＝hybrid）。**基盤に無いフィールドは足さない。**
     private sealed record SearchBody(
         string Query,
@@ -38,7 +38,7 @@ internal sealed class HttpKnowledgeBaseSearch(
 
     private sealed record AttributeFilterBody(string Key, List<string> AllowedValues);
 
-    // FR-08, #1083, IADR-0453 決定1: 送る Scope は常に同じ（AST の文書だけに絞る主張）。
+    // FR-08, #1083, IADR-0454 決定1: 送る Scope は常に同じ（AST の文書だけに絞る主張）。
     private static ScopeBody ProjectScope() => new(
         [new AttributeFilterBody(
             KnowledgeAttributeDefaults.ProjectKey,

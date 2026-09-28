@@ -134,7 +134,7 @@ Application 層に `IRetrievalContextProvider`（`GetContextAsync(trigger, polic
   `0` または `off` を明示した構成に限られる。
 
 ［2026-09-29 追記 / #1083］ **決定5 の「`Scope`（ABAC 利用者スコープ）は本作業では送らない（後続）」と
-「フィルタ無し・関連度順の 1 本のクエリ」は、[IADR-0453](./IADR-0453_kb-search-scope-symbol-recency.md) により置き換えられた。**
+「フィルタ無し・関連度順の 1 本のクエリ」は、[IADR-0454](./IADR-0454_kb-search-scope-symbol-recency.md) により置き換えられた。**
 検索要求は `project = ai-stock-trading` の Scope を主張として必ず送り（基盤は Scope が無いと空で返す）、
 銘柄の文書（`attributes["symbol"]`）と銘柄を持たない文書の 2 本を新しい順で引き、発行時刻を持つ文書を既定 168 時間で足切りする（発行時刻を持たない確定報告書は通す）。
 クエリの素材（銘柄・市場・方針要約 500 字）と `Retrieval:TopK` は本決定のまま。

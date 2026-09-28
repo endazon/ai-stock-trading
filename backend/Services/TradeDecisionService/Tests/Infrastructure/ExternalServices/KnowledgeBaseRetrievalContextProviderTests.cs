@@ -10,7 +10,7 @@ using Xunit;
 namespace TradeDecisionService.Tests;
 
 // FR-08, IADR-0069/0072: RAG 取得アダプタが trigger+policy から検索クエリを組み、KnowledgeHit を RetrievedContext へ写像することを検証する。
-// FR-08, #1083, IADR-0453: 銘柄の検索と銘柄を持たない文書の検索の 2 本・新しい順・新しさの足切りを検証する。
+// FR-08, #1083, IADR-0454: 銘柄の検索と銘柄を持たない文書の検索の 2 本・新しい順・新しさの足切りを検証する。
 public class KnowledgeBaseRetrievalContextProviderTests
 {
     private static readonly DailyPolicy Policy = new(new DateOnly(2026, 7, 10), "米国株の押し目買い方針");
@@ -123,7 +123,7 @@ public class KnowledgeBaseRetrievalContextProviderTests
         result.Select(r => r.Title).Should().Equal("境界ちょうど", "新しい市場ニュース");
     }
 
-    // FR-08, UC-01 手順 3, #1083, IADR-0453 決定5: 確定報告書（tag report・symbol なし・publishedAt なし。
+    // FR-08, UC-01 手順 3, #1083, IADR-0454 決定5: 確定報告書（tag report・symbol なし・publishedAt なし。
     // ReportKnowledgeMapper は publishedAt を書かない）は足切りの対象外で、2 本目の検索から判断文脈へ届く。
     // 🔴 発行時刻なしを落とすと「過去の判断（RAG）」が構造的に届かなくなる。
     [Fact]

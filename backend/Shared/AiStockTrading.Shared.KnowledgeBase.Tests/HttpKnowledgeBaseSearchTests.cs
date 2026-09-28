@@ -139,7 +139,7 @@ public class HttpKnowledgeBaseSearchTests
         root.GetProperty("topK").GetInt32().Should().Be(7);
     }
 
-    // FR-08, #1083, IADR-0453 決定1・4: 送信 JSON は基盤 `SearchRequest` の形に合わせる。
+    // FR-08, #1083, IADR-0454 決定1・4: 送信 JSON は基盤 `SearchRequest` の形に合わせる。
     // Scope = AccessScope(Filters=[AttributeFilter(Key, AllowedValues)], GrantsAccess)。
     // 🔴 Scope が無い・GrantsAccess が true でないと基盤は 200＋空を返す（deny-by-default）。
     [Fact]
@@ -206,7 +206,7 @@ public class HttpKnowledgeBaseSearchTests
         hits.Should().BeEmpty();
     }
 
-    // FR-08, #1083, IADR-0453 決定3: 属性 symbol を KnowledgeHit.Symbol へ写す。無い・空白は null（銘柄を持たない文書）。
+    // FR-08, #1083, IADR-0454 決定3: 属性 symbol を KnowledgeHit.Symbol へ写す。無い・空白は null（銘柄を持たない文書）。
     [Theory]
     [InlineData("AAPL", "AAPL")]
     [InlineData(null, null)]
