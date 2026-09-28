@@ -449,6 +449,14 @@ jobs:
             || { echo "::error::values-local の Collection__Source__Provider に sec-edgar が無い（SEC EDGAR 未収集）。"; exit 1; }
           printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -q 'fred' \
             || { echo "::error::values-local の Collection__Source__Provider に fred が無い（FRED 未収集）。"; exit 1; }
+          # FR-01, ADR-0020 決定2, #1082 / IADR-0453: ニュース源 2 系統も合流させる。列挙漏れは判断へニュースが届かない（#1078 の原因の 1 つ）。
+          # finnhub-news は語の境界で照合する（finnhub の部分一致で緑にならないように）。google-news はクエリが空だとそのソースだけ無効に倒れる。
+          printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -Eq '(^|[",])finnhub-news([",]|$)' \
+            || { echo "::error::values-local の Collection__Source__Provider に finnhub-news が無い（Finnhub 企業ニュース未収集）。"; exit 1; }
+          printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -Eq '(^|[",])google-news([",]|$)' \
+            || { echo "::error::values-local の Collection__Source__Provider に google-news が無い（Google News RSS 未収集）。"; exit 1; }
+          printf '%s' "$out" | grep -A1 'name: Collection__Source__GoogleNews__Queries__0' | grep -Eq 'value: "[^"]+"' \
+            || { echo "::error::values-local の Collection__Source__GoogleNews__Queries__0 が空（google-news を列挙しても無効に倒れる）。"; exit 1; }
           need "SEC EDGAR の CIK（AAPL）" 'value: "0000320193"'
           need "FRED 系列 DEXJPUS" 'value: "DEXJPUS"'
           need "FRED 系列 DGS10" 'value: "DGS10"'
@@ -470,7 +478,7 @@ jobs:
           if [ "$cutoffs" -ne 2 ]; then
             echo "::error::values-local の学習カットオフ日 2026-01-31 が 2 件でない（実測 $cutoffs 件）。駆動側と記録側で同値である必要がある（#632）。"; exit 1
           fi
-          echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源＋Stage 0 駆動を有効化し、実弾/危険既定は OFF のまま"
+          echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源＋ニュース源＋Stage 0 駆動を有効化し、実弾/危険既定は OFF のまま"
       # #736 / IADR-0324: s2s 発信者（ServiceAuth__ClientId を持つ）の token エンドポイントは global.authAuthority から
       # 導出される。auth:true でない発信者（trade-decision）は Auth__Authority が無く、導出が無いとコード既定の
       # AST レルムに倒れて受け手（MSP レルム）で 401 になる（#456 の CronJob と同型の 2 回目）。
