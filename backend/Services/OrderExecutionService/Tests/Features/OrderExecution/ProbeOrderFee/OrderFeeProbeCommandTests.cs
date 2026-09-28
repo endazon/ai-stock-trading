@@ -198,8 +198,65 @@ public class OrderFeeProbeCommandTests
     [InlineData("acc 283745190123 denied", "acc ****23 denied")]
     [InlineData("retType=-100", "retType=-100")]
     [InlineData("code 12345", "code 12345")]
+    [InlineData("n 123456 m", "n ****56 m")]
     public void 例外文の6桁以上の数字の並びは末尾2桁以外を伏せる(string input, string expected) =>
         OrderFeeProbeCommand.MaskLongDigitRuns(input).Should().Be(expected);
+
+    private static async Task<string> ConfigErrorOutput(string message, params string[] sensitiveValues)
+    {
+        var writer = new StringWriter();
+        await OrderFeeProbeCommand.RunAsync(
+            [Flag, "123"], () => throw new InvalidOperationException(message), writer,
+            cancellationToken: TestContext.Current.CancellationToken, sensitiveValues: sensitiveValues);
+        return writer.ToString();
+    }
+
+    [Fact]
+    public async Task 数字を含む鍵のパスも構成由来の値として丸ごと伏せる()
+    {
+        // 差分監査 1: 数字の並びの伏せを先に掛けると、パスが完全一致しなくなり大半が漏れる。順序を固定する。
+        var output = await ConfigErrorOutput("鍵 /run/secrets/rsa-20260929.pem が無い", "/run/secrets/rsa-20260929.pem");
+
+        output.Should().Contain("鍵 <伏せ> が無い").And.NotContain("rsa-").And.NotContain("/run/secrets");
+    }
+
+    [Fact]
+    public async Task 構成由来の値は語の境界つきで置き換え一般語を壊さない()
+    {
+        // 差分監査 2: 部分一致の置換は `opend` が `opendir` を壊す。
+        var output = await ConfigErrorOutput("opendir (opend) opend:1", "opend");
+
+        output.Should().Contain("error[0].message=opendir (<伏せ>) <伏せ>:1");
+    }
+
+    [Fact]
+    public async Task 長い値から先に置き換え短い値が長い値の一部でも漏らさない()
+    {
+        // 差分監査 M7: host を先に置換すると host:port の port が残る。
+        var output = await ConfigErrorOutput("接続失敗（opend-x:23456）", "opend-x", "opend-x:23456");
+
+        output.Should().Contain("接続失敗（<伏せ>）").And.NotContain("23456");
+    }
+
+    [Fact]
+    public async Task 空白や短すぎる伏せる値が渡っても落ちず出力を壊さない()
+    {
+        // 差分監査 M2 / 2: 空文字は置換で落ち、`1` は `exitCode=1` まで伏せる。4 文字未満は対象外にする。
+        var query = new CountingQuery(RepliedWithFees, null);
+        var writer = new StringWriter();
+
+        var exitCode = await OrderFeeProbeCommand.RunAsync(
+            [Flag, "123456789"], () => query.Created(), writer,
+            cancellationToken: TestContext.Current.CancellationToken,
+            sensitiveValues: ["", "   ", "1", "abc"]);
+
+        exitCode.Should().Be(0);
+        OrderFeeProbeCommand.MinSensitiveLength.Should().Be(4);
+        writer.ToString().Should().NotContain(OrderFeeProbeCommand.Masked)
+            .And.Contain("retType=0")
+            .And.Contain("fee[0].item[0].value=0.99")
+            .And.Contain("exitCode=0");
+    }
 
     [Fact]
     public async Task 構成不正は照会せずに終了コード2()

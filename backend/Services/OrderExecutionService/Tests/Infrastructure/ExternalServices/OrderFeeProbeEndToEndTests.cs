@@ -298,6 +298,45 @@ public class OrderFeeProbeEndToEndTests
         opend.Created.Should().BeFalse("接続オブジェクトも作らない");
     }
 
+    private static IConfiguration OpenDConfig(string? host, string? port, string? keyPath = null) =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Broker:Moomoo:OpenD:Host"] = host,
+            ["Broker:Moomoo:OpenD:Port"] = port,
+            ["Broker:Moomoo:OpenD:RsaPrivateKeyPath"] = keyPath,
+        }).Build();
+
+    [Fact]
+    public void 構成で与えたhostはhost単体とhostとportの組の両方を伏せる値にする()
+    {
+        // 差分監査 M11: host だけが現れる文（port を伴わない）も伏せる。
+        OrderFeeProbeComposition.SensitiveValues(OpenDConfig(ProbeHost, ProbePort, "/run/k/rsa.pem"))
+            .Should().BeEquivalentTo([$"{ProbeHost}:{ProbePort}", ProbeHost, "/run/k/rsa.pem"]);
+    }
+
+    [Fact]
+    public async Task host単体が現れる例外文でもhostを出さない()
+    {
+        var writer = new StringWriter();
+        await OrderFeeProbeCommand.RunAsync(
+            [OrderFeeProbeCommand.Flag, "123"],
+            () => throw new InvalidOperationException($"host {ProbeHost} unreachable"),
+            writer,
+            cancellationToken: TestContext.Current.CancellationToken,
+            sensitiveValues: OrderFeeProbeComposition.SensitiveValues(OpenDConfig(ProbeHost, ProbePort)));
+
+        writer.ToString().Should().Contain("host <伏せ> unreachable").And.NotContain(ProbeHost);
+    }
+
+    [Fact]
+    public void 未設定の既定のhostは伏せる値にしない()
+    {
+        // 差分監査 M12 / 2 の決定: 既定 `opend`・11111 はチャートとコードに公開の Service 名・ポートで秘密ではない。
+        // 一般語として伏せると出力が読めなくなるため、構成で与えた値だけを伏せる。port だけ与えたら既定 host との組を伏せる。
+        OrderFeeProbeComposition.SensitiveValues(OpenDConfig(null, null)).Should().BeEmpty();
+        OrderFeeProbeComposition.SensitiveValues(OpenDConfig(null, ProbePort)).Should().Equal($"opend:{ProbePort}");
+    }
+
     [Fact]
     public void 口座IDの伏せは末尾2桁だけを残す()
     {

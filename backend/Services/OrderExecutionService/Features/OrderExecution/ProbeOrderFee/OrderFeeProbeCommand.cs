@@ -206,7 +206,8 @@ public static class OrderFeeProbeCommand
             output.Line($"error[{depth}].type={e.GetType().Name}");
             // 例外文は OpenD の retMsg をそのまま含み得る。口座が確定する前（口座一覧の照会の失敗）は伏せる値が
             // 分からないため、6 桁以上の数字の並びを末尾 2 桁以外伏せる（口座 ID の形。例外文に注文 ID を読む用は無い）。
-            output.Line($"error[{depth}].message={MaskLongDigitRuns(OneLine(e.Message))}");
+            // 🔴 数字の並びの伏せは最終段の**最後**に掛ける（先に掛けると数字を含む鍵のパス・host が完全一致しなくなる）。
+            output.Line($"error[{depth}].message={OneLine(e.Message)}", maskLongDigitRuns: true);
         }
     }
 
@@ -220,26 +221,48 @@ public static class OrderFeeProbeCommand
 
     private static string OneLine(string text) => text.Replace('\r', ' ').Replace('\n', ' ');
 
-    // 出力の最終段。すべての行を書く前に (1) 照会口の伏せ（口座 ID。照会口の生成前は無し）、(2) 構成由来の伏せる値
-    // （長いものから置換）へ通す。
-    private sealed class ProbeOutput(TextWriter writer, IReadOnlyCollection<string> sensitiveValues)
-    {
-        public const string Masked = "<伏せ>";
+    /// <summary>構成由来の伏せる値として扱う最短の長さ。これより短い値（`1` 等）は一般の文字と区別できないため伏せない。</summary>
+    public const int MinSensitiveLength = 4;
 
-        private readonly string[] _sensitive = sensitiveValues
-            .Where(v => !string.IsNullOrWhiteSpace(v))
-            .Distinct(StringComparer.Ordinal)
-            .OrderByDescending(v => v.Length)
-            .ToArray();
+    /// <summary>伏せた箇所に置く文字列。</summary>
+    public const string Masked = "<伏せ>";
+
+    // 出力の最終段。すべての行を書く前に次の順で通す（順序は試験で固定）。
+    //   (1) 構成由来の伏せる値（長いものから・語の境界つきの完全一致。4 文字未満は対象外）
+    //   (2) 照会口の伏せ（口座 ID。照会口の生成前は無し）
+    //   (3) 例外文だけ: 6 桁以上の数字の並び（口座が確定する前の口座 ID の形）
+    // (3) を先に掛けると、数字を含む鍵のパスや host が (1) で完全一致しなくなり大半が漏れる。
+    private sealed class ProbeOutput
+    {
+        private readonly TextWriter _writer;
+        private readonly Regex[] _sensitive;
+
+        public ProbeOutput(TextWriter writer, IReadOnlyCollection<string> sensitiveValues)
+        {
+            _writer = writer;
+            _sensitive = sensitiveValues
+                .Where(v => v is not null && v.Trim().Length >= MinSensitiveLength)
+                .Distinct(StringComparer.Ordinal)
+                .OrderByDescending(v => v.Length)
+                .Select(SensitivePattern)
+                .ToArray();
+        }
 
         public IProbeOutputRedactor? Redactor { get; set; }
 
-        public void Line(string line)
+        public void Line(string line, bool maskLongDigitRuns = false)
         {
-            var text = Redactor?.Redact(line) ?? line;
-            foreach (var value in _sensitive)
-                text = text.Replace(value, Masked, StringComparison.Ordinal);
-            writer.WriteLine(text);
+            var text = line;
+            foreach (var pattern in _sensitive)
+                text = pattern.Replace(text, Masked);
+            text = Redactor?.Redact(text) ?? text;
+            if (maskLongDigitRuns)
+                text = MaskLongDigitRuns(text);
+            _writer.WriteLine(text);
         }
+
+        // 語の境界つき（前後が英数字・`_` でない）。`opend` が `opendir` を壊さない。
+        private static Regex SensitivePattern(string value) =>
+            new($"(?<![A-Za-z0-9_]){Regex.Escape(value)}(?![A-Za-z0-9_])", RegexOptions.CultureInvariant);
     }
 }

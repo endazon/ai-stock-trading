@@ -34,15 +34,21 @@ public static class OrderFeeProbeComposition
 
     // #1086（別文脈監査）: 検証口の出力で伏せる構成由来の値。接続先（host:port と host）と RSA 鍵のパスは
     // 例外文（InitConnect の失敗・preflight）に現れるため、出力の最終段で伏せる（例外の型と要約は残す）。
-    // 実効値（未設定時の既定 opend:11111 を含む）で持つ。構成を読めなくても落ちない（生の値だけを使う）。
+    // 🔴 **構成で与えられた値だけを伏せる。** 未設定時の既定（host `opend`・port 11111）はチャートとコードに公開の
+    // Service 名・ポートであり秘密ではないため伏せない（`opend` を一般語として伏せると出力が読めなくなる。差分監査の決定）。
+    // port だけ設定されたときは既定 host との組（`opend:<port>`）を伏せる。構成を読めなくても落ちない（生の値だけを使う）。
     public static IReadOnlyCollection<string> SensitiveValues(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         var host = configuration["Broker:Moomoo:OpenD:Host"];
         var port = configuration["Broker:Moomoo:OpenD:Port"];
-        var effectiveHost = string.IsNullOrWhiteSpace(host) ? "opend" : host;
-        var effectivePort = string.IsNullOrWhiteSpace(port) ? "11111" : port;
-        var values = new List<string> { $"{effectiveHost}:{effectivePort}", effectiveHost };
+        var hostConfigured = !string.IsNullOrWhiteSpace(host);
+        var portConfigured = !string.IsNullOrWhiteSpace(port);
+        var values = new List<string>();
+        if (hostConfigured || portConfigured)
+            values.Add($"{(hostConfigured ? host : "opend")}:{(portConfigured ? port : "11111")}");
+        if (hostConfigured)
+            values.Add(host!);
         var keyPath = configuration["Broker:Moomoo:OpenD:RsaPrivateKeyPath"];
         if (!string.IsNullOrWhiteSpace(keyPath))
             values.Add(keyPath);
