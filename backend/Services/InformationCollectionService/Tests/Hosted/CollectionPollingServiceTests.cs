@@ -204,7 +204,7 @@ public class CollectionPollingServiceTests
         await host.StopAsync();
     }
 
-    // FR-04, ADR-0020 決定2, #1081, IADR-0453: InformationCollected はこの巡回のニュースの状態（取得済み／欠測／未構成）と、
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: InformationCollected はこの巡回のニュースの状態（取得済み／欠測／未構成）と、
     // 現況観測と同じ有効期間を運ぶ（欠測の明示を RAG に頼らず取引判断へ直接届ける）。
     // 🔴 未構成（ニュース源を試行していない）は欠測に数えず、新規建ての停止集合（現況観測）も空のまま（IADR-0220 は不変）。
     [Theory]

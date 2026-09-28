@@ -41,7 +41,7 @@ public static class ScreeningContextAssembler
     // 最悪長（桁の多い価格・通貨表記・全項目の値あり）が予約を超えないことを試験で固定する。
     public const int PriceContextReserveChars = 300;
 
-    // FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態の行（TradeDecisionPromptBuilder.NewsStatusLine。取得済み／欠測／
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の行（TradeDecisionPromptBuilder.NewsStatusLine。取得済み／欠測／
     // 未提供（未構成）／不明）は欠測の明示であり**保護分**である（削ると ADR-0020 が塞いだ「無言の空データ」が復活する）。
     // 4 状態の最長が予約を超えないことを試験で固定する。
     public const int NewsStatusReserveChars = 200;

@@ -70,7 +70,7 @@ public class InformationCollectedConsumerTests
         public bool IsOpen(Market market, DateTimeOffset instant) => open;
     }
 
-    // FR-04, #1081, IADR-0453: 判断へ渡ったプロンプトを記録する LLM（ニュースの状態の行を確かめる）。
+    // FR-04, #1081, IADR-0455: 判断へ渡ったプロンプトを記録する LLM（ニュースの状態の行を確かめる）。
     private sealed class RecordingLlm(string output) : ILlmCompletionClient
     {
         public System.Collections.Concurrent.ConcurrentQueue<string> Prompts { get; } = new();
@@ -100,7 +100,7 @@ public class InformationCollectedConsumerTests
                 // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
                 // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
                 opts.Services.AddSingleton<BusinessMetrics>();
-                // FR-04, #1081, IADR-0453: ニュースの状態の最新値（本番は Program.cs の singleton）。ハンドラが記録し判断が読む。
+                // FR-04, #1081, IADR-0455: ニュースの状態の最新値（本番は Program.cs の singleton）。ハンドラが記録し判断が読む。
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
 
                 opts.UseAiStockTradingRabbitMq(
@@ -249,7 +249,7 @@ public class InformationCollectedConsumerTests
         await host.StopAsync();
     }
 
-    // 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0453: 定時の起点イベントが運ぶニュースの状態を、**判断の前に**記録して
+    // 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0455: 定時の起点イベントが運ぶニュースの状態を、**判断の前に**記録して
     // プロンプトへ明示する（RAG を経由しない欠測の明示）。旧イベント（新項目 null）でも判断は動き「不明」と書く（互換）。
     [Theory]
     [InlineData(NewsCollectionStatus.Outage, TradeDecisionPromptBuilder.NewsOutageLine)]

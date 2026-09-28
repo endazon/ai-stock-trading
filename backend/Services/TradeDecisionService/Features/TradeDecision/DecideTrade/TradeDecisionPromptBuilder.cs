@@ -160,7 +160,7 @@ public static class TradeDecisionPromptBuilder
     public const string PriceContextComputedNote =
         "前日比・当日始値比は、上の現在値からシステムが計算した値です（あなたは計算しません）。「不明」は値を取得できなかったことを表し、変化が無いことではありません。";
 
-    // FR-04, FR-01, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態の行（本判断の定時・急変の節と一次で共用）の文言。
+    // FR-04, FR-01, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の行（本判断の定時・急変の節と一次で共用）の文言。
     // 実測（2026-09-28 稼働 PoC）: 判断の rationale は「好材料ニュース等の情報が提供されていない」と書き、
     // 取れなかったのか・無かったのか・集めていないのかが区別されなかった（欠測の明示は RAG 経由でしか届かず、RAG は無効だった）。
     // 🔴 **無言で省かない** —— 4 状態のいずれかを必ず書く（値動きの行の「出来高: 未提供」と同じ作法・IADR-0451）。
@@ -192,7 +192,7 @@ public static class TradeDecisionPromptBuilder
     // であり、0 件は空の一覧を明示して渡す（held と同じ規律）。監視銘柄節は方針の節の直後に無条件で出す。
     // FR-02, FR-04, #1035, IADR-0451: intraday は現在値と同じ取得の日中文脈（前日終値・始値・高安）。🔴 **null（既定）＝不明**
     // （値動きの行はすべて「不明」と書く）。値動きの行（PriceContextLines）は現在値を出す節にだけ出る。
-    // FR-04, ADR-0020 決定2, #1081, IADR-0453: news は直近の収集のニュースの状態。🔴 **null（既定）＝不明**。
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: news は直近の収集のニュースの状態。🔴 **null（既定）＝不明**。
     // ニュースの行（NewsStatusLine）は現在値の有無に依らず、定時・急変の節の末尾に**無条件で**出す。
     public static string Build(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
@@ -247,7 +247,7 @@ public static class TradeDecisionPromptBuilder
                 sb.Append(PriceContextLines(cp, intraday, priceUnit));
             }
         }
-        // FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態（定時・急変の両方。現在値の有無に依らず無条件）。
+        // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（定時・急変の両方。現在値の有無に依らず無条件）。
         sb.Append(NewsStatusLine(news));
         sb.AppendLine();
         // FR-04, FR-10, ADR-0003, #854, IADR-0351: 保有状況（保有あり／保有なし／不明の 3 状態を必ず書き分ける）。
@@ -337,7 +337,7 @@ public static class TradeDecisionPromptBuilder
     // 縮退では保護分として数える（ScreeningContextAssembler が節の実際の文字数を共有保護分へ加える）。
     // FR-02, FR-04, #1035, IADR-0451: intraday は現在値と同じ取得の日中文脈（前日終値・始値・高安）。🔴 **null（既定）＝不明**
     // （値動きの行はすべて「不明」と書く）。値動きの行（PriceContextLines）は現在値を出す節にだけ出る。
-    // FR-04, ADR-0020 決定2, #1081, IADR-0453: news（直近の収集のニュースの状態。**null＝不明**）。ニュースの行は対象の節の末尾に
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: news（直近の収集のニュースの状態。**null＝不明**）。ニュースの行は対象の節の末尾に
     // **無条件で**出る（一次は門であり、ニュースが「無い」と読んで落とせば本判断へ届かない）。縮退の保護分
     // （ScreeningContextAssembler.NewsStatusReserveChars）。
     public static string BuildScreening(
@@ -377,7 +377,7 @@ public static class TradeDecisionPromptBuilder
             sb.Append(PriceContextLines(cp, intraday, priceUnit));
         }
 
-        // FR-04, ADR-0020 決定2, #1081, IADR-0453: 本判断と同じニュースの状態の行（現在値の有無に依らず無条件・縮退の保護分）。
+        // FR-04, ADR-0020 決定2, #1081, IADR-0455: 本判断と同じニュースの状態の行（現在値の有無に依らず無条件・縮退の保護分）。
         sb.Append(NewsStatusLine(news));
         sb.AppendLine();
         // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定4: 保有状況の短縮版。縮退の**保護対象**（削ると、保有中の銘柄の
@@ -418,7 +418,7 @@ public static class TradeDecisionPromptBuilder
         return sb.ToString();
     }
 
-    // FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態の行（本判断の定時・急変の節と一次で共用。末尾の改行まで含む）。
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の行（本判断の定時・急変の節と一次で共用。末尾の改行まで含む）。
     // 縮退の見積りの予約（ScreeningContextAssembler.NewsStatusReserveChars）と試験が同じ文字列の長さを測るため公開する。
     // 🔴 **null と未定義の値は「不明」**（「取得済み」へ倒さない。既定値を健全と読ませない）。
     public static string NewsStatusLine(NewsCollectionStatus? news)

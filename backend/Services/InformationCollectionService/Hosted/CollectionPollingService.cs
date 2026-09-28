@@ -36,7 +36,7 @@ public sealed class CollectionPollingService(
     private readonly DegradationStateTracker _degradationTracker =
         new(ObservationValidity(TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds))));
 
-    // FR-04, ADR-0020 決定2, #1081, IADR-0453: InformationCollected に載せるニュースの状態の有効期間。
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: InformationCollected に載せるニュースの状態の有効期間。
     // 現況観測（InformationSourceStateObserved.ValidFor）と同じ値にする（同じ巡回の同じ事実の鮮度であるため）。
     private readonly TimeSpan _newsStatusValidity =
         ObservationValidity(TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds)));
@@ -144,7 +144,7 @@ public sealed class CollectionPollingService(
         // 収集があった場合のみ取引サイクルの起点イベントを発行する（空巡回では起動しない）。
         if (result.ItemCount > 0)
         {
-            // FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態（取得済み／欠測／未構成）を RAG を経由せずに
+            // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成）を RAG を経由せずに
             // 取引判断へ運ぶ。判断はこれをプロンプトへ明示する（未構成は KB の欠測文書を作らないため、ここが唯一の経路である）。
             await publish.PublishAsync(
                 new InformationCollected(

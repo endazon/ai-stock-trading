@@ -2,7 +2,7 @@
 title: ニュースの欠測・未構成を RAG を経由せず取引判断のプロンプトへ明示する（#1081）
 type: spec
 status: accepted
-related_ids: [FR-04, FR-01, FR-02, FR-03, FR-08, UC-01, UC-02, ADR-0020, ADR-0003, ADR-0001, IADR-0022, IADR-0220, IADR-0267, IADR-0313, IADR-0247, IADR-0451, IADR-0079, IADR-0453]
+related_ids: [FR-04, FR-01, FR-02, FR-03, FR-08, UC-01, UC-02, ADR-0020, ADR-0003, ADR-0001, IADR-0022, IADR-0220, IADR-0267, IADR-0313, IADR-0247, IADR-0451, IADR-0079, IADR-0455]
 author: claude (Claude Code)
 created: 2026-09-29
 updated: 2026-09-29
@@ -44,7 +44,7 @@ plan_refs:
 | AC-7 | ニュースの行は縮退の保護分（`ScreeningContextAssembler.NewsStatusReserveChars`）に入る。行の最悪長が予約を超えない | `NewsStatusInPromptTests`・既存の予算試験の追随 |
 | AC-8 | 「未構成」で新規建てを止めない（リスク管理の停止集合は不変＝`InformationSourceStateObserved` の内容を変えない） | 既存の `DegradationStateTracker` 試験が通ること＋未構成の巡回で停止カテゴリが空であることの追加試験 |
 
-## 設計（代替案は IADR-0453）
+## 設計（代替案は IADR-0455）
 
 - 共有契約: `Events/NewsCollectionStatus.cs`（`Fetched = 1`・`Outage = 2`・`NotConfigured = 3`。**0 を有効値にしない**＝既定値を「取得済み」と読ませない）。
   `InformationCollected(EventId, ItemCount, CollectedAt, NewsCollectionStatus? NewsStatus = null, TimeSpan? NewsStatusValidFor = null)`。
@@ -75,3 +75,7 @@ Stage 0 の記録（`Stage0DecisionRecorder`）は as-of のニュースの状�
 - 空巡回（収集 0 件）では `InformationCollected` を発行しない（現行の規律）。状態は有効期限で「不明」へ落ちる。
 - 「未構成」を新規建ての停止に数えるかは範囲外（IADR-0220 は不変）。
 - 判断側の RAG の実環境での有効化は #1083・ニュース源の有効化は #1082。
+
+## 採番
+
+- IADR は起草時 IADR-0453 だったが、#1085（IADR-0453）・#1087（IADR-0454）が先にマージされたため、後からマージする本 PR が最大＋1 の IADR-0455 へ改番した（2026-09-29）。

@@ -39,7 +39,7 @@ public sealed class TradeDecisionAppService(
     IDecisionHeldReporter? heldReporter = null,
     NewsCollectionStatusStore? newsStatus = null)
 {
-    // FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態（取得済み／欠測／未構成）の最新値。未指定＝null＝プロンプトは
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成）の最新値。未指定＝null＝プロンプトは
     // 「ニュース: 不明」と書く（無言で省かない）。本番は Program.cs の singleton が注入され、定時の購読が記録する。
     private readonly NewsCollectionStatusStore? _newsStatus = newsStatus;
 
@@ -311,7 +311,7 @@ public sealed class TradeDecisionAppService(
         // スクリーニング有効時のみ構築されるよう遅延ファクトリで渡す（既定＝無効の経路で無駄な構築をしない）。
         // IADR-0072 決定2: RAG 文脈は本判断のみに載せ、一次スクリーニング（費用統制）には載せない。
         // FR-17, IADR-0076 決定5: 採算ゲート有効時のみプロンプトに採算節を注入する（無効の既定は現行動作のプロンプトと一致）。
-        // FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態（取得済み／欠測／未構成。期限切れ・未受信は null＝不明）を
+        // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成。期限切れ・未受信は null＝不明）を
         // 本判断・一次の両方へ同じ値で渡す（RAG を経由しない欠測の明示。一次は門であり、ここで欠けると本判断へ届かない）。
         var news = _newsStatus?.Current(clock.UtcNow);
 

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Contracts.Tests;
 
-// 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態の**数値を固定する**。
+// 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の**数値を固定する**。
 //
 // InformationCollected.NewsStatus は通信路（JSON）では数値で送られる。値を振り直すと、新旧が混在する配備
 // （収集と判断の片方だけが新しい）で**欠測と未構成が入れ替わって**判断のプロンプトへ届く。基準ファイル

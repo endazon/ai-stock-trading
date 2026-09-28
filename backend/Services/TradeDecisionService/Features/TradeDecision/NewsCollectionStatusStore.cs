@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Events;
 
 namespace TradeDecisionService.Features.TradeDecision;
 
-// FR-04, FR-01, ADR-0020 決定2, #1081, IADR-0453: 情報収集から届いた**ニュースの状態の最新値**を有効期限つきで保持する。
+// FR-04, FR-01, ADR-0020 決定2, #1081, IADR-0455: 情報収集から届いた**ニュースの状態の最新値**を有効期限つきで保持する。
 //
 // 🔴 **欠測の明示を RAG に頼らない。** 収集側の欠測文書（KB の collection-status）は判断側の RAG が効かないと届かず、
 // ニュース源が未構成のときはそもそも作られない（IADR-0220）。本ストアは InformationCollected の追加項目から

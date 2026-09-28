@@ -16,7 +16,7 @@ public class DegradationEvaluatorTests
     private static CollectionDegradation Evaluate(params SourceOutcome[] outcomes) =>
         DegradationEvaluator.Evaluate(InformationSourceCatalog.Default, outcomes);
 
-    // --- FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュース系の状態（3 値） ---
+    // --- FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュース系の状態（3 値） ---
 
     [Theory]
     [InlineData(true, true, NewsCollectionStatus.Fetched)]     // 両方成功

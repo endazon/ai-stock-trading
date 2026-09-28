@@ -5,7 +5,7 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態の最新値を有効期限つきで保持する。
+// FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の最新値を有効期限つきで保持する。
 // 🔴 不明が既定: 未受信・期限切れ・旧イベント（null）・範囲外の値はすべて「不明」（null）。最後に聞いた値を信じ続けない。
 public class NewsCollectionStatusStoreTests
 {

@@ -387,7 +387,7 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WorkingUnknownNoFillsLine));
     }
 
-    // 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0453: 記録器は as-of 時点のニュースの状態を再構成しないため、ニュースの行は
+    // 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0455: 記録器は as-of 時点のニュースの状態を再構成しないため、ニュースの行は
     // 「不明」と書く。本番の最新値（取得済み等）を持ち込むと、当時は知り得なかった状態で判断させることになる。
     [Fact]
     public async Task 記録器のプロンプトはニュースの状態を不明と書く()

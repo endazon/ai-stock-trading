@@ -13,7 +13,7 @@ using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDeci
 
 namespace TradeDecisionService.Tests;
 
-// FR-04, FR-01, UC-01, UC-02, ADR-0020 決定2, #1081, IADR-0453: ニュースの欠測・未構成を RAG を経由せず取引判断のプロンプトへ明示する。
+// FR-04, FR-01, UC-01, UC-02, ADR-0020 決定2, #1081, IADR-0455: ニュースの欠測・未構成を RAG を経由せず取引判断のプロンプトへ明示する。
 // 実測（2026-09-28 稼働 PoC）: rationale は「好材料ニュース等の情報が提供されていない」と書き、取れなかったのか・無かったのか・
 // 集めていないのかが区別されなかった。🔴 4 状態（取得済み／欠測／未提供（未構成）／不明）のいずれかを必ず書く。実 LLM は呼ばない。
 public class NewsStatusInPromptTests

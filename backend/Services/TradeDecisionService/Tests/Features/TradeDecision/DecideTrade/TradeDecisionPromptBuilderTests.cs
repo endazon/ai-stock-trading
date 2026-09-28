@@ -712,7 +712,7 @@ public class TradeDecisionPromptBuilderTests
         var priceContextLines = TradeDecisionPromptBuilder.PriceContextLines(217.5m, intraday: null, priceUnit: string.Empty);
         prompt.Should().Contain(priceContextLines);
 
-        // #1081, IADR-0453: ニュースの状態の行（トリガーの節の末尾。ここでは既定＝不明の形）も後から足した行である。
+        // #1081, IADR-0455: ニュースの状態の行（トリガーの節の末尾。ここでは既定＝不明の形）も後から足した行である。
         var newsStatusLine = TradeDecisionPromptBuilder.NewsStatusLine(news: null);
         prompt.Should().Contain(newsStatusLine);
 

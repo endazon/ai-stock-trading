@@ -1,5 +1,5 @@
 ---
-title: IADR-0453 ニュースの状態（取得済み／欠測／未構成）を InformationCollected の任意項目で運び、取引判断が有効期限つきで保持してプロンプトへ無条件で明示する（RAG を経由しない）
+title: IADR-0455 ニュースの状態（取得済み／欠測／未構成）を InformationCollected の任意項目で運び、取引判断が有効期限つきで保持してプロンプトへ無条件で明示する（RAG を経由しない）
 type: impl-adr
 status: Accepted
 related_ids: [FR-04, FR-01, FR-02, FR-03, FR-08, UC-01, UC-02, ADR-0020, ADR-0003, ADR-0001, IADR-0022, IADR-0079, IADR-0220, IADR-0247, IADR-0267, IADR-0313, IADR-0451]
@@ -12,7 +12,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0020_datasource-tiering-and-fallback.md
 ---
 
-# IADR-0453: ニュースの状態を RAG を経由せず取引判断のプロンプトへ明示する（#1081）
+# IADR-0455: ニュースの状態を RAG を経由せず取引判断のプロンプトへ明示する（#1081）
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
@@ -30,6 +30,7 @@ plan_refs:
   [IADR-0267](IADR-0267_information-degradation-state-heartbeat-and-fail-closed.md)（現況観測の有効期間と受け手のクランプ）、
   [IADR-0451](IADR-0451_scheduled-decision-intraday-price-context.md)（値動きの行と「出来高: 未提供」の明示・縮退の保護分の予約）、
   [IADR-0313](IADR-0313_screening-context-budget-default.md)／[IADR-0247](IADR-0247_screening-context-degradation.md)（縮退）、[IADR-0079](IADR-0079_event-backward-compat-contract-test.md)（契約は追加のみ）
+- 採番: 起草時は IADR-0453 だったが、#1085（#1082。IADR-0453）と #1087（#1083。IADR-0454）が先にマージされたため、後からマージする本 PR が最大＋1 の 0455 へ改番した（2026-09-29。欠番は作らない）。
 - 関連 issue: #1081（起点）・#1078（親。判断側の RAG が実環境で無効）・#1082（経路 B のニュース源の有効化）・#1083（判断側の KB 検索）
 
 ## コンテキストと課題

@@ -32,7 +32,7 @@ public sealed record CollectionDegradation(
         new(false, false, false, false, [], [], []);
 
     /// <summary>
-    /// FR-04, ADR-0020 決定2, #1081, IADR-0453: この巡回のニュース系の状態（取得済み／欠測／未構成）。
+    /// FR-04, ADR-0020 決定2, #1081, IADR-0455: この巡回のニュース系の状態（取得済み／欠測／未構成）。
     /// <b>null は「判定していない」＝不明</b>（<see cref="None"/> など評価器を通らない値）。
     /// 取引判断のプロンプトへ RAG を経由せずに明示するため、<c>InformationCollected</c> に載せて運ぶ。
     /// <para>🔴 <b>未構成は欠測に数えない</b>（IADR-0220）—— <see cref="NewsOutage"/> は未構成で false のままである。</para>
@@ -141,7 +141,7 @@ public static class DegradationEvaluator
             }
         }
 
-        // FR-04, #1081, IADR-0453: ニュース系の状態（3 値）。試行 0 件＝未構成（欠測に数えない・上の 2）、
+        // FR-04, #1081, IADR-0455: ニュース系の状態（3 値）。試行 0 件＝未構成（欠測に数えない・上の 2）、
         // 試行したものがすべて失敗＝欠測、それ以外（1 つ以上成功）＝取得済み。
         var newsStatus = attemptedNews.Count == 0
             ? NewsCollectionStatus.NotConfigured

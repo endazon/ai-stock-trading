@@ -10,7 +10,7 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュースの状態のストアが composition root で **singleton として 1 つ**登録され、
+// 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態のストアが composition root で **singleton として 1 つ**登録され、
 // 判断サービスが**その同じ実体**を保持することを固定する。
 //
 // 判断サービス側の依存は省略可能（既定 null＝「ニュース: 不明」）である。Program.cs の登録を消してもコンパイルは通り、
