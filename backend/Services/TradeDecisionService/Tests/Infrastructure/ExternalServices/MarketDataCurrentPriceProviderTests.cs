@@ -54,7 +54,36 @@ public class MarketDataCurrentPriceProviderTests
         var quote = new Quote("AAPL", Market.UnitedStates, 1_234.5m, Now.AddSeconds(-10)); // 鮮度内
         var provider = Create(new FakeMarketData(quote), enabled: true);
 
-        (await provider.GetCurrentPriceAsync(Trigger())).Should().Be(1_234.5m);
+        (await provider.GetCurrentPriceAsync(Trigger()))!.Price.Should().Be(1_234.5m);
+    }
+
+    // FR-02, FR-04, #1035, IADR-0451: 同じ取得の日中文脈（前日終値・始値・高値・安値）を添えて返す。
+    [Fact]
+    public async Task 有効かつ鮮度内なら日中文脈も添えて返す()
+    {
+        var quote = new Quote(
+            "AAPL", Market.UnitedStates, 102m, Now.AddSeconds(-10),
+            PreviousClose: 100m, Open: 101m, High: 103m, Low: 99.5m);
+        var provider = Create(new FakeMarketData(quote), enabled: true);
+
+        var reading = await provider.GetCurrentPriceAsync(Trigger());
+
+        reading.Should().NotBeNull();
+        reading!.Price.Should().Be(102m);
+        reading.Intraday.Should().Be(new IntradayPriceContext(100m, 101m, 103m, 99.5m));
+    }
+
+    // #1035, IADR-0451: 情報源が日中文脈を持たない（4 引数の Quote）・0 を返したときは「不明」（null）であり 0 を値として渡さない。
+    [Fact]
+    public async Task 日中文脈が無い_または0の項目は不明として返す()
+    {
+        var withoutContext = new Quote("AAPL", Market.UnitedStates, 102m, Now.AddSeconds(-10));
+        var zeroOpen = new Quote("AAPL", Market.UnitedStates, 102m, Now.AddSeconds(-10), PreviousClose: 100m, Open: 0m);
+
+        (await Create(new FakeMarketData(withoutContext), enabled: true).GetCurrentPriceAsync(Trigger()))!
+            .Intraday.Should().Be(IntradayPriceContext.Unknown);
+        (await Create(new FakeMarketData(zeroOpen), enabled: true).GetCurrentPriceAsync(Trigger()))!
+            .Intraday.Should().Be(new IntradayPriceContext(100m, null, null, null));
     }
 
     [Fact]

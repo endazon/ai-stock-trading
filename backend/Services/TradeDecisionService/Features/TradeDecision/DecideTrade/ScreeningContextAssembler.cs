@@ -36,7 +36,12 @@ public static class ScreeningContextAssembler
     // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定4: 保有状況節（`# 保有状況（この銘柄）`。BuildScreening が無条件で追加）は
     // 銘柄ごとの保護分である——削ると、保有中の銘柄の出口を一次が落とす。保有ありの実測 200 文字に、桁の多い価格・
     // 通貨表記・「不明」の言い回しの余裕を足して 280 文字ぶん、120→400 へ底上げした（過大に見積もるほど安全側）。
-    private const int PerSymbolLineChars = 400;
+    // FR-02, FR-04, #1035, IADR-0451: 値動きの行（TradeDecisionPromptBuilder.PriceContextLines。前日比・当日始値比・日中高安・
+    // 出来高の未提供・計算の注記）は市況であり**保護分**である（削ると一次が値動きを知らずに全件を落とす＝実測の事故）。
+    // 最悪長（桁の多い価格・通貨表記・全項目の値あり）が予約を超えないことを試験で固定する。
+    public const int PriceContextReserveChars = 300;
+
+    private const int PerSymbolLineChars = 400 + PriceContextReserveChars;
 
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;

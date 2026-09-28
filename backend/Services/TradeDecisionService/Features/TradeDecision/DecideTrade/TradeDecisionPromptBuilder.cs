@@ -145,6 +145,20 @@ public static class TradeDecisionPromptBuilder
 
     private static string SymbolText(DecisionTrigger trigger) => Sanitize(trigger.Symbol, MaxSymbolChars);
 
+    // FR-02, FR-04, ADR-0044 決定1, ADR-0020, #1035, IADR-0451: 値動きの行（前日比・当日始値比・日中高安・出来高）の文言。
+    // 実測（2026-09-26 稼働 PoC）: 定時の判断へ渡る市況は現在値 1 行だけで、LLM は「値動きの情報が無い」として全件 Hold に倒れた。
+    // 🔴 **値が無ければ「不明」と書き、0 を書かない**（0 は「変化なし」と読まれる）。**出来高は無言で省かない** ——
+    // 取得経路が無いこと（planning#702 の裁定待ち）を「未提供」と明示する（ADR-0020 の欠測の明示）。
+    // 変化率はシステムが同じ節の現在値から計算する（ADR-0003・FR-16 の趣旨。LLM に計算させない）。
+    // テストがこれらの const を直接参照する（IADR-0297 決定1 と同じ規律）。
+    public const string PriceContextUnknownText = "不明";
+
+    public const string VolumeNotProvidedLine =
+        "出来高: 未提供（出来高の取得経路が未整備のため渡していません。「出来高が無い」「出来高が少ない」とは扱いません）";
+
+    public const string PriceContextComputedNote =
+        "前日比・当日始値比は、上の現在値からシステムが計算した値です（あなたは計算しません）。「不明」は値を取得できなかったことを表し、変化が無いことではありません。";
+
     // retrieved は #18（IADR-0069）の RAG 取得結果（IADR-0072）。null/空は現行動作（参考情報節なし）。
     // FR-17, IADR-0076 決定5: includeProfitability=false（既定）なら採算節・expectedProfitPerShare を出さない＝
     // 採算ゲート無効時（既定）はプロンプト文言も現行動作と完全に一致させる（LLM の判断傾向も変えない）。有効時のみ注入する。
@@ -158,6 +172,8 @@ public static class TradeDecisionPromptBuilder
     // 「無い」は WorkingEntryOrders.None を明示して渡す（held と同じ規律。不在が「無い」を意味する形にしない）。
     // FR-04, #1034, IADR-0440 決定 1: watchlist は判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。🔴 **null（既定）＝不明**
     // であり、0 件は空の一覧を明示して渡す（held と同じ規律）。監視銘柄節は方針の節の直後に無条件で出す。
+    // FR-02, FR-04, #1035, IADR-0451: intraday は現在値と同じ取得の日中文脈（前日終値・始値・高安）。🔴 **null（既定）＝不明**
+    // （値動きの行はすべて「不明」と書く）。値動きの行（PriceContextLines）は現在値を出す節にだけ出る。
     public static string Build(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         IReadOnlyList<RetrievedContext>? retrieved = null,
@@ -165,7 +181,8 @@ public static class TradeDecisionPromptBuilder
         decimal? currentPrice = null,
         HeldPosition? held = null,
         WorkingEntryOrders? working = null,
-        IReadOnlyList<WatchedSymbol>? watchlist = null)
+        IReadOnlyList<WatchedSymbol>? watchlist = null,
+        IntradayPriceContext? intraday = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -192,6 +209,8 @@ public static class TradeDecisionPromptBuilder
             sb.AppendLine("# 価格変動トリガー");
             sb.AppendLine($"- 銘柄: {SymbolText(trigger)} / 市場: {trigger.Market}");
             sb.AppendLine($"- 現在値: {price.ToString(ci)}{priceUnit} / 基準値: {trigger.BaselinePrice?.ToString(ci)}{priceUnit} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
+            // FR-02, FR-04, #1035, IADR-0451: 急変の節にも日中文脈を載せる。変化率はこの節の現在値（trigger.Price）から計算する。
+            sb.Append(PriceContextLines(price, intraday, priceUnit));
         }
         else
         {
@@ -202,6 +221,9 @@ public static class TradeDecisionPromptBuilder
             if (currentPrice is { } cp)
             {
                 sb.AppendLine($"- 現在値: {cp.ToString(ci)}{priceUnit}");
+                // FR-02, FR-04, #1035, IADR-0451: 定時の判断の値動きの材料（前日比・当日始値比・日中高安。出来高は未提供と明示）。
+                // 現在値を出さない構成（既定 NoOp）では出さない（比べる現在値が無い。IADR-0099 決定1 の現行動作）。
+                sb.Append(PriceContextLines(cp, intraday, priceUnit));
             }
         }
         sb.AppendLine();
@@ -290,13 +312,16 @@ public static class TradeDecisionPromptBuilder
     // FR-04, #1034, IADR-0440 決定 1: watchlist（判断時点の監視銘柄。**null＝不明**）。監視銘柄節も保有状況節と同じく
     // **無条件で出る**。一次は門（Hold で本判断が走らない）なので、所属を誤読して落とせば本判断へ届かない。
     // 縮退では保護分として数える（ScreeningContextAssembler が節の実際の文字数を共有保護分へ加える）。
+    // FR-02, FR-04, #1035, IADR-0451: intraday は現在値と同じ取得の日中文脈（前日終値・始値・高安）。🔴 **null（既定）＝不明**
+    // （値動きの行はすべて「不明」と書く）。値動きの行（PriceContextLines）は現在値を出す節にだけ出る。
     public static string BuildScreening(
         DecisionTrigger trigger, DailyPolicy policy, SizingContext context,
         decimal? currentPrice = null,
         IReadOnlyList<RetrievedContext>? references = null,
         HeldPosition? held = null,
         WorkingEntryOrders? working = null,
-        IReadOnlyList<WatchedSymbol>? watchlist = null)
+        IReadOnlyList<WatchedSymbol>? watchlist = null,
+        IntradayPriceContext? intraday = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -320,6 +345,9 @@ public static class TradeDecisionPromptBuilder
         {
             // #337: 当日の市況・価格データは縮退の**保護対象**（削ると銘柄を評価できない）。
             sb.AppendLine($"- 現在値: {cp.ToString(ci)}{priceUnit}");
+            // FR-02, FR-04, #1035, IADR-0451: 一次（門）にも本判断と同じ値動きの材料を渡す（実測: 一次が「勢いの情報が無い」で全件を落とした）。
+            // 市況として保護分に入る（ScreeningContextAssembler.PriceContextReserveChars）。
+            sb.Append(PriceContextLines(cp, intraday, priceUnit));
         }
 
         sb.AppendLine();
@@ -341,6 +369,34 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい（価格・損切り幅は本判断で決める）。""");
         return sb.ToString();
     }
+
+    // FR-02, FR-04, ADR-0044 決定1, ADR-0020, #1035, IADR-0451: 値動きの行（本判断の定時・急変の節と一次で共用）。
+    // 縮退の見積り（ScreeningContextAssembler）と試験が同じ文字列の長さを測るため公開する。
+    //   - 変化率は price（**同じ節に出した現在値**）から計算する。基準が不明・0 以下なら「不明」（0% と書かない）。
+    //   - 値が無い項目は「不明」。intraday が null（供給が日中文脈を持たない）ならすべて「不明」。
+    //   - 出来高は常に「未提供」と明示する（planning#702 の裁定待ち）。
+    public static string PriceContextLines(decimal price, IntradayPriceContext? intraday, string priceUnit)
+    {
+        var ctx = intraday ?? IntradayPriceContext.Unknown;
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            $"- 前日終値: {PriceText(ctx.PreviousClose, priceUnit)} / 前日比: {RatioText(IntradayPriceContext.ChangeRatio(price, ctx.PreviousClose))}");
+        sb.AppendLine(
+            $"- 当日始値: {PriceText(ctx.Open, priceUnit)} / 当日始値比: {RatioText(IntradayPriceContext.ChangeRatio(price, ctx.Open))}");
+        sb.AppendLine($"- 日中高値: {PriceText(ctx.High, priceUnit)} / 日中安値: {PriceText(ctx.Low, priceUnit)}");
+        sb.AppendLine($"- {VolumeNotProvidedLine}");
+        sb.AppendLine($"- {PriceContextComputedNote}");
+        return sb.ToString();
+    }
+
+    private static string PriceText(decimal? value, string priceUnit) =>
+        value is { } v && v > 0m ? $"{v.ToString(CultureInfo.InvariantCulture)}{priceUnit}" : PriceContextUnknownText;
+
+    // 符号つき・小数 2 桁の百分率（+1.23% / -0.50% / 0.00%）。null は「不明」。
+    private static string RatioText(decimal? ratio) =>
+        ratio is { } r
+            ? Math.Round(r * 100m, 2, MidpointRounding.AwayFromZero).ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%"
+            : PriceContextUnknownText;
 
     // FR-04, FR-02, ADR-0003, #1034, IADR-0440 決定 1/3/4: 監視銘柄節（本判断・一次で共用。末尾の空行まで含む）。
     // 縮退の見積り（ScreeningContextAssembler）が同じ文字列の長さを数えるため公開する（見積りと実物を 2 か所で書かない）。

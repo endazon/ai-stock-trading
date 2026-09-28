@@ -9,7 +9,7 @@ public sealed class NoOpCurrentPriceProvider : ICurrentPriceProvider
 {
     public bool IsEnabled => false;
 
-    public Task<decimal?> GetCurrentPriceAsync(
+    public Task<CurrentPriceReading?> GetCurrentPriceAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken = default) =>
-        Task.FromResult<decimal?>(null);
+        Task.FromResult<CurrentPriceReading?>(null);
 }

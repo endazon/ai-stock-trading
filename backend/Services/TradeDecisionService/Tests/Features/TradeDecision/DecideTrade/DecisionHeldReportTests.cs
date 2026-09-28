@@ -84,8 +84,9 @@ public class DecisionHeldReportTests
     {
         public bool IsEnabled => true;
 
-        public Task<decimal?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default) =>
-            Task.FromResult(price);
+        // #1035（#1079）: 価格供給は日中文脈つきの読み取りを返す。本スイートは価格だけを見る（日中文脈は不明）。
+        public Task<CurrentPriceReading?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default) =>
+            Task.FromResult(price is { } p ? new CurrentPriceReading(p, IntradayPriceContext.Unknown) : null);
     }
 
     private sealed class FakeFxRate(decimal? rate, FxRateFreshness freshness = FxRateFreshness.Fresh)

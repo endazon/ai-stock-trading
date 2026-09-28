@@ -563,15 +563,19 @@ public class TradeDecisionServiceTests
 
     // --- FR-02, FR-04, FR-10, IADR-0099: 現在値（価格文脈）供給と権威価格アンカリングの検証 ---
 
-    private sealed class FakeCurrentPrice(decimal? price, bool enabled = true) : ICurrentPriceProvider
+    // #1035, IADR-0451: 供給は現在値と日中文脈をまとめて返す（intraday 省略時はすべて不明）。
+    private sealed class FakeCurrentPrice(decimal? price, bool enabled = true, IntradayPriceContext? intraday = null)
+        : ICurrentPriceProvider
     {
         public int Calls { get; private set; }
         public bool IsEnabled => enabled;
 
-        public Task<decimal?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default)
+        public Task<CurrentPriceReading?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default)
         {
             Calls++;
-            return Task.FromResult(price);
+            return Task.FromResult(price is { } p
+                ? new CurrentPriceReading(p, intraday ?? IntradayPriceContext.Unknown)
+                : null);
         }
     }
 
@@ -579,7 +583,7 @@ public class TradeDecisionServiceTests
     {
         public bool IsEnabled => enabled;
 
-        public Task<decimal?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default) =>
+        public Task<CurrentPriceReading?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default) =>
             throw new InvalidOperationException("現在値取得の擬似障害");
     }
 
