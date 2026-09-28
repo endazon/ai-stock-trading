@@ -3,6 +3,7 @@ using InformationCollectionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.KnowledgeBase;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -161,6 +162,74 @@ public class KnowledgeBaseWriterSinkDedupTests
         fingerprints.Contains(0).Should().BeFalse("最も古い指紋が捨てられる");
         fingerprints.Contains(1).Should().BeTrue();
         fingerprints.Contains(SavedContentFingerprints.Capacity).Should().BeTrue();
+    }
+
+    // 重ねて覚えた古い登録が残ると、期限後に覚え直した指紋が本来の期限より早く消える（重複保存へ倒れる）。
+    [Fact]
+    public void 期限後に覚え直した指紋は先の重ねた登録で早く消えない()
+    {
+        var time = new ManualTimeProvider(Start);
+        var fingerprints = new SavedContentFingerprints(time);
+
+        fingerprints.Add(7);
+        time.Now = Start + TimeSpan.FromDays(1);
+        fingerprints.Add(7);
+
+        time.Now = Start + SavedContentFingerprints.Retention;
+        fingerprints.Contains(7).Should().BeFalse("最初に覚えた時刻から保持期間が過ぎた");
+        fingerprints.Add(7);
+
+        time.Now = Start + SavedContentFingerprints.Retention + TimeSpan.FromDays(1);
+        fingerprints.Contains(7).Should().BeTrue("覚え直してから保持期間は過ぎていない");
+    }
+
+    // ログの分母は送った件数。運用は「0/N（N>0）が続く＝保存失敗」で見分けるため、送らなかった分を混ぜない。
+    [Fact]
+    public async Task ログの分母は送った件数で送らなかった件数は別に出す()
+    {
+        var writer = new CapturingWriter();
+        var logger = new CapturingLogger();
+        var sink = new KnowledgeBaseWriterSink(writer, new SavedContentFingerprints(new ManualTimeProvider(Start)), logger);
+
+        await sink.SaveAsync([Item()]);
+        await sink.SaveAsync([Item(), Item(title: "新しい見出し")]);
+
+        var last = logger.States[^1];
+        last["Saved"].Should().Be(1);
+        last["Sent"].Should().Be(1);
+        last["Skipped"].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task 全件が保存済みと同じ巡回は分母が0になる()
+    {
+        var writer = new CapturingWriter();
+        var logger = new CapturingLogger();
+        var sink = new KnowledgeBaseWriterSink(writer, new SavedContentFingerprints(new ManualTimeProvider(Start)), logger);
+
+        await sink.SaveAsync([Item()]);
+        await sink.SaveAsync([Item()]);
+
+        var last = logger.States[^1];
+        last["Saved"].Should().Be(0);
+        last["Sent"].Should().Be(0);
+        last["Skipped"].Should().Be(1);
+    }
+
+    // 構造化ログの引数を名前で記録する。
+    private sealed class CapturingLogger : ILogger<KnowledgeBaseWriterSink>
+    {
+        public List<Dictionary<string, object?>> States { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (state is IReadOnlyList<KeyValuePair<string, object?>> pairs)
+                States.Add(pairs.ToDictionary(p => p.Key, p => p.Value));
+        }
     }
 
     [Fact]
