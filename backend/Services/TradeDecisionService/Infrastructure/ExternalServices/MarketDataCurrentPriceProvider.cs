@@ -23,7 +23,7 @@ public sealed class MarketDataCurrentPriceProvider(
 {
     public bool IsEnabled => enabled;
 
-    public async Task<decimal?> GetCurrentPriceAsync(
+    public async Task<CurrentPriceReading?> GetCurrentPriceAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(trigger);
@@ -54,6 +54,9 @@ public sealed class MarketDataCurrentPriceProvider(
             return null;
         }
 
-        return quote.Price;
+        // FR-02, FR-04, ADR-0044 決定1, #1035, IADR-0451: 同じ取得の日中文脈を添える（鮮度は現在値と同じ AsOf で判定済み）。
+        // 0 以下は不明（null）へ倒す（IntradayPriceContext.Of）。情報源が持たない項目は null のまま。
+        return new CurrentPriceReading(
+            quote.Price, IntradayPriceContext.Of(quote.PreviousClose, quote.Open, quote.High, quote.Low));
     }
 }

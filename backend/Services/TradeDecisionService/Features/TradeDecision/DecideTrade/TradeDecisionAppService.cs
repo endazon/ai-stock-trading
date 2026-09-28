@@ -162,7 +162,10 @@ public sealed class TradeDecisionAppService(
 
         // FR-02, FR-10, IADR-0099 決定2/3: 権威ある現在値（価格文脈）を取得する（既定 NoOp＝null＝現行動作）。
         // fail-safe: 取得の例外は「現在値なし」に縮退（GetCurrentPriceSafeAsync）。キャンセルは伝播。
-        var currentPrice = await GetCurrentPriceSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+        // FR-02, FR-04, #1035, IADR-0451: 供給は現在値と同じ取得の日中文脈（前日終値・始値・高安）を返す。ゲートと参照価格は現在値だけを見る。
+        var priceReading = await GetCurrentPriceSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+        var currentPrice = priceReading?.Price;
+        var intraday = priceReading?.Intraday;
 
         // IADR-0099 決定3: 現在値ソースが有効化（IsEnabled=true）されているのに現在値が取れない（取得不可・鮮度切れ）とき
         // だけ、古い/無い価格で発注しないよう安全側（Hold・発注抑止）に倒す。未有効化（既定 no-op・IsEnabled=false）は
@@ -249,7 +252,7 @@ public sealed class TradeDecisionAppService(
         // FR-17, IADR-0076 決定5: 採算ゲート有効時のみプロンプトに採算節を注入する（無効の既定は現行動作のプロンプトと一致）。
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
-            currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist);
+            currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -266,10 +269,11 @@ public sealed class TradeDecisionAppService(
             // #1034, IADR-0440 決定 1: 一次（門）にも監視銘柄を渡す（所属を誤読して落とすと本判断へ届かない）。
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
-                    trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist)
+                    trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
+                    intraday: intraday)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist),
+                    watchlist, intraday),
             decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
@@ -716,7 +720,7 @@ public sealed class TradeDecisionAppService(
     // FR-02, FR-10, IADR-0099 決定1: 現在値取得の fail-safe ラッパ。取得失敗（例外・遅延）は「現在値なし（null）」に
     // 縮退する。有効化時（IsEnabled=true）は呼び出し側が null を発注抑止（Hold）へ倒すため、例外は安全側に働く。
     // キャンセルは判断全体の停止要求のため伝播させる（縮退しない）。
-    private async Task<decimal?> GetCurrentPriceSafeAsync(
+    private async Task<CurrentPriceReading?> GetCurrentPriceSafeAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken)
     {
         try

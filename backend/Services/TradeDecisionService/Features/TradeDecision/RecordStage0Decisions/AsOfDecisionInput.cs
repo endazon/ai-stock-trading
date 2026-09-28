@@ -55,6 +55,12 @@ public sealed class AsOfDecisionInput
     /// FR-04, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 一覧が null のとき、(e) の申告へ載せる<b>再構成できなかった理由</b>
     /// （供給口が返した理由。例: SeededAt より前）。null・空なら既定の文言。一覧があるときは使わない。
     /// </param>
+    /// <param name="previousClose">
+    /// FR-02, FR-04, ADR-0033 決定2, #1035, IADR-0451: <b>判断時点より前の最後の終値</b>（日足。前日比の基準）。
+    /// <b>日付が AsOf 以降なら例外</b>（当日以降の終値は前日終値ではない＝未来の値で判断させない）。null は「不明」
+    /// （プロンプトの前日比は「不明」になる）。🔴 **当日の始値・日中高安は渡さない** —— 本番の定時の判断は場中に走り、
+    /// 日足の当日の値（その日の全体）は判断時点では得られない情報を含むため、Stage 0 の当日の変化率は常に「不明」とする。
+    /// </param>
     public AsOfDecisionInput(
         DateOnly asOf,
         DailyPolicy policy,
@@ -64,7 +70,8 @@ public sealed class AsOfDecisionInput
         decimal rateToBase = 1m,
         IEnumerable<Stage0AsOfInputKind>? notReconstructable = null,
         IReadOnlyList<WatchedSymbol>? watchlist = null,
-        string? watchlistUnavailableReason = null)
+        string? watchlistUnavailableReason = null,
+        DatedPrice? previousClose = null)
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(sizing);
@@ -81,8 +88,17 @@ public sealed class AsOfDecisionInput
                 nameof(price), p.Date, $"参照価格が判断時点より後である（AsOf={asOf}）。未来の価格で判断させない。");
         }
 
+        if (previousClose is { } pc && pc.Date >= asOf)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(previousClose), pc.Date, $"前日終値が判断時点以降である（AsOf={asOf}）。当日以降の終値を前日比の基準にしない。");
+        }
+
         AsOf = asOf;
         Policy = policy;
+        // #1035, IADR-0451: 前日比の基準だけを持つ。当日の始値・日中高安は不明（上の previousClose の説明）。
+        Intraday = IntradayPriceContext.Of(previousClose?.Value, open: null, high: null, low: null);
+        _previousClose = previousClose;
         Sizing = sizing;
         ReferencePrice = price?.Value;
         RateToBase = rateToBase;
@@ -121,6 +137,7 @@ public sealed class AsOfDecisionInput
     }
 
     private readonly DatedPrice? _price;
+    private readonly DatedPrice? _previousClose;
     private readonly IReadOnlyList<RetrievedContext> _references;
     private readonly IReadOnlyList<Stage0AsOfInputKind> _notReconstructable;
 
@@ -130,7 +147,7 @@ public sealed class AsOfDecisionInput
     /// <paramref name="watchlist"/> が null なら (e) は再構成できないと申告し、<paramref name="unavailableReason"/> を理由に載せる。
     /// </summary>
     public AsOfDecisionInput WithWatchlist(IReadOnlyList<WatchedSymbol>? watchlist, string? unavailableReason) =>
-        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason);
+        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason, _previousClose);
 
     // FR-15, ADR-0036 決定1, #749, IADR-0387: 4 種（ADR-0044 決定 3 の (e) を含む）すべての再構成可否を導出する（**部分申告を作らない**）。
     //
@@ -203,6 +220,12 @@ public sealed class AsOfDecisionInput
 
     /// <summary>AsOf 時点の参照価格（null は価格文脈なし）。</summary>
     public decimal? ReferencePrice { get; }
+
+    /// <summary>
+    /// FR-02, FR-04, #1035, IADR-0451: 判断時点の日中文脈。前日終値（AsOf より前の最後の終値）だけを持ち、
+    /// 当日の始値・日中高安は常に不明（null）。プロンプトの値動きの行へ渡る。
+    /// </summary>
+    public IntradayPriceContext Intraday { get; }
 
     /// <summary>基準通貨への換算レート（基準通貨の市場では 1）。</summary>
     public decimal RateToBase { get; }

@@ -12,6 +12,8 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 //   - FinnhubInformationSource（情報収集・IInformationSource）: RawInformationItem へ（high/low/prevClose を保つ）
 // Quote は Price しか持たないため、情報収集側を IMarketDataSource 経由にすると収集内容（FR-01）が劣化する。
 // 共有するのは「Finnhub をどう呼ぶか」であって「何を取り出すか」ではない。
+// ［2026-09-29 / #1035, IADR-0451］Quote は前日終値・始値・高値・安値を省略可能な値として持つようになった
+// （定時の判断の値動きの材料）。FinnhubMarketDataSource はそれらも写す。情報収集側の写像（上の 2 つ目）は変えない。
 //
 // 非成功応答（レート制限・一時エラー）は null を返し、呼び出し側が当該銘柄をスキップできるようにする
 // （1 銘柄の失敗で巡回全体を止めない）。通信例外は握りつぶさずそのまま送出する（抽出前と同じ挙動。
@@ -82,7 +84,7 @@ public sealed class FinnhubQuoteClient(
             return null;
 
         var asOf = quote.T > 0 ? DateTimeOffset.FromUnixTimeSeconds(quote.T) : DateTimeOffset.UtcNow;
-        return new FinnhubQuoteSnapshot(symbol, quote.C, quote.H, quote.L, quote.Pc, asOf);
+        return new FinnhubQuoteSnapshot(symbol, quote.C, quote.H, quote.L, quote.Pc, asOf, quote.O);
     }
 
     // ADR-0043 決定 1: 429 を分次で説明できるかで分けて記録する。前回の 429 のリセット時刻は、この応答のリセットで置き換える。
@@ -117,8 +119,9 @@ public sealed class FinnhubQuoteClient(
             ? parsed
             : null;
 
-    // Finnhub /quote 応答（c=現在値, h=高値, l=安値, pc=前日終値, t=UNIX 時刻）。
-    private sealed record FinnhubQuoteResponse(decimal C, decimal H, decimal L, decimal Pc, long T);
+    // Finnhub /quote 応答（c=現在値, h=高値, l=安値, o=当日始値, pc=前日終値, t=UNIX 時刻）。
+    // FR-02, FR-04, #1035, IADR-0451: 始値 o も読む（定時の判断の当日始値比）。応答に無ければ 0（＝不明。写像側で null にする）。
+    private sealed record FinnhubQuoteResponse(decimal C, decimal H, decimal L, decimal Pc, long T, decimal O = 0m);
 }
 
 /// <summary>Finnhub /quote の取得結果。Finnhub 応答の写しであり共有の抽象ではない（IADR-0068 決定 2）。</summary>
@@ -128,4 +131,5 @@ public sealed record FinnhubQuoteSnapshot(
     decimal High,
     decimal Low,
     decimal PreviousClose,
-    DateTimeOffset AsOf);
+    DateTimeOffset AsOf,
+    decimal Open = 0m);

@@ -19,5 +19,6 @@ public interface ICurrentPriceProvider
     bool IsEnabled { get; }
 
     // トリガー銘柄・市場の現在値。取得不可・鮮度切れ・無効化時は null（＝現在値なし）。
-    Task<decimal?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken cancellationToken = default);
+    // FR-02, FR-04, #1035, IADR-0451: 同じ取得の日中文脈（前日終値・始値・高値・安値。各項目 null＝不明）も返す。
+    Task<CurrentPriceReading?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken cancellationToken = default);
 }

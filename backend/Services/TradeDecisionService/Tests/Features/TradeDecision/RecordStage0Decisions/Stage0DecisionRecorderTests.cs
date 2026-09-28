@@ -558,9 +558,11 @@ public class Stage0DecisionRecorderTests
     // as-of 入力の偽装（AsOf 以前の情報だけを渡す）。
     // FR-15, ADR-0036 決定1, #749, IADR-0387: 再構成できなかった種別を申告する経路も張る。
     // FR-04, ADR-0044 決定 3, #1034: 当時の監視銘柄（(e)）を供給する経路も張る（null＝再構成できなかった）。
+    // #1035, IADR-0451: previousCloseValue を与えると、判断時点の前日の日付で前日終値（日足）を渡す。
     private sealed class StubInputProvider(
         IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null,
-        IReadOnlyList<WatchedSymbol>? asOfWatchlist = null)
+        IReadOnlyList<WatchedSymbol>? asOfWatchlist = null,
+        decimal? previousCloseValue = null)
         : IAsOfDecisionInputProvider
     {
         public Task<AsOfDecisionInput?> GetAsync(
@@ -572,7 +574,70 @@ public class Stage0DecisionRecorderTests
                     BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
                 new DatedPrice(asOf, 100m),
                 notReconstructable: notReconstructable,
-                watchlist: asOfWatchlist));
+                watchlist: asOfWatchlist,
+                previousClose: previousCloseValue is { } pc ? new DatedPrice(asOf.AddDays(-1), pc) : null));
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // FR-02, FR-04, ADR-0033 決定2, #1035, IADR-0451: 値動きの行（前日比は日足の前日終値から・当日の変化率は不明）
+    // ------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task 前日終値があれば前日比を出し当日の変化率と日中高安は不明とする()
+    {
+        var (recorder, llm, _, _) = Build(
+            [Decision("Hold"), Decision("Hold")],
+            wrapInputs: _ => new StubInputProvider(previousCloseValue: 80m));
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p =>
+            p.Contains("- 前日終値: 80 / 前日比: +25.00%")
+            && p.Contains("- 当日始値: 不明 / 当日始値比: 不明")
+            && p.Contains("- 日中高値: 不明 / 日中安値: 不明")
+            && p.Contains(TradeDecisionPromptBuilder.VolumeNotProvidedLine));
+    }
+
+    [Fact]
+    public async Task 前日終値が無ければ前日比も不明とする_否定形()
+    {
+        var (recorder, llm, _, _) = Build([Decision("Hold"), Decision("Hold")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p => p.Contains("- 前日終値: 不明 / 前日比: 不明"));
+    }
+
+    // 🔴 否定形: 判断時点以降の終値を前日終値として渡せない（未来の値で判断させない・ADR-0033 決定2）。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void 判断時点以降の終値を前日終値に渡すと例外(int daysAfterAsOf)
+    {
+        var asOf = new DateOnly(2026, 6, 1);
+        var act = () => new AsOfDecisionInput(
+            asOf,
+            new DailyPolicy(asOf, "当日の方針"),
+            new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
+            previousClose: new DatedPrice(asOf.AddDays(daysAfterAsOf), 99m));
+
+        act.Should().Throw<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("previousClose");
+    }
+
+    [Fact]
+    public void 監視銘柄を差し替えても前日終値は保たれる()
+    {
+        var asOf = new DateOnly(2026, 6, 1);
+        var input = new AsOfDecisionInput(
+            asOf,
+            new DailyPolicy(asOf, "当日の方針"),
+            new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
+            previousClose: new DatedPrice(asOf.AddDays(-3), 99m));
+
+        input.Intraday.Should().Be(new IntradayPriceContext(99m, null, null, null));
+        input.WithWatchlist([], unavailableReason: null).Intraday.Should().Be(input.Intraday);
     }
 
     private sealed class CapturingSink : IStage0DecisionRecordSink

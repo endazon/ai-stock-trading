@@ -130,7 +130,10 @@ public class ScreeningContextDegradationTests
         // #1034, IADR-0440 決定 5: 監視銘柄節（この組み立てでは未配線＝不明の形）が共有保護分に実際の文字数で入るため、予算も同幅ずらす。
         var watchlistUnknownChars = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder
             .WatchlistSection(DecisionTrigger.FromPriceMovement(Trigger()), watchlist: null).Length;
-        var (service, llm, reporter) = Create(budget: 1_510 + watchlistUnknownChars);
+        // #1035, IADR-0451: 銘柄行は値動きの行の予約ぶん 400→700 へ底上げ（予算も同幅シフト）。
+        var (service, llm, reporter) = Create(
+            budget: 1_510 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.PriceContextReserveChars
+                + watchlistUnknownChars);
 
         await service.DecideAsync(Trigger());
 

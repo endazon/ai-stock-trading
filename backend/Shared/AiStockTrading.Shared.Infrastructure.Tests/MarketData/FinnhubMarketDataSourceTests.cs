@@ -29,6 +29,40 @@ public class FinnhubMarketDataSourceTests
         quote.AsOf.Should().Be(DateTimeOffset.FromUnixTimeSeconds(1720000000));
     }
 
+    // FR-02, FR-04, ADR-0044 決定1, #1035, IADR-0451: 同じ応答の日中文脈（前日終値・始値 o・高値・安値）も Quote へ写す。
+    [Fact]
+    public async Task 応答の前日終値と始値と高安を_Quote_に写像する()
+    {
+        var source = Create(new StubHandler(HttpStatusCode.OK, OkBody));
+
+        var quote = await source.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
+
+        quote.Should().NotBeNull();
+        quote!.PreviousClose.Should().Be(148.0m);
+        quote.Open.Should().Be(149.5m);
+        quote.High.Should().Be(151.0m);
+        quote.Low.Should().Be(149.0m);
+    }
+
+    // #1035, IADR-0451: 場前は始値・高安が 0 で返る。0 は値ではなく「無い」の表現であり null（不明）へ倒す（前日比が -100% になる）。
+    // 始値 o が応答に無い場合も不明。
+    [Theory]
+    [InlineData("""{"c":150.25,"h":0,"l":0,"o":0,"pc":148.0,"t":1720000000}""")]
+    [InlineData("""{"c":150.25,"h":0,"l":0,"pc":148.0,"t":1720000000}""")]
+    public async Task 場前の0や欠けた項目は不明として写像する_否定形(string body)
+    {
+        var source = Create(new StubHandler(HttpStatusCode.OK, body));
+
+        var quote = await source.GetLatestQuoteAsync("AAPL", Market.UnitedStates);
+
+        quote.Should().NotBeNull();
+        quote!.Price.Should().Be(150.25m);
+        quote.PreviousClose.Should().Be(148.0m);
+        quote.Open.Should().BeNull();
+        quote.High.Should().BeNull();
+        quote.Low.Should().BeNull();
+    }
+
     [Fact]
     public async Task APIキーはURLではなくヘッダーで渡す()
     {
