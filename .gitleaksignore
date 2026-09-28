@@ -53,3 +53,10 @@ c255bfeb7667d54763ee1332b1785e5b2c2d4a0c:.github/workflows/helm.yml:discord-clie
 # checkout が全ブランチを取得し `git log --all` を走査するため、残ったブランチの履歴で落ちる。
 # 履歴は書き換えない方針のため fingerprint で無効化する（当該ブランチが削除されれば、この行は何も一致しなくなるだけで無害）。
 13fcb6355b5059ada76231948d2afdcc06e42321:scripts/fixtures/helm-release-drift/live.yaml:kubernetes-secret-yaml:12
+
+# #1086 / IADR-0300（2026-09-29 追記）: 注文費用照会の検証口の試験が、RSA 鍵ファイルの中身の**見張り用の偽値**
+# （試験が一時ファイルへ書き、出力に現れないことを確かめるための固定文字列。実在の鍵ではない）を `KeySentinel` という
+# 識別子で書いた行を generic-api-key ルールが検知した。次のコミットで識別子と値を低エントロピーのダミーへ改めたが、
+# PR の Secret scan は PR 上の全コミットを走査し、履歴は書き換えない方針のため当該コミットを fingerprint で無効化する。
+# develop へは squash マージで入り、squash 後のコミットにこの値は含まれない（この行は develop では何も一致しないだけで無害）。
+70faeadafc5dee0552d0b6d2640ebaa050cebed4:backend/Services/OrderExecutionService/Tests/Infrastructure/ExternalServices/OrderFeeProbeEndToEndTests.cs:generic-api-key:22
