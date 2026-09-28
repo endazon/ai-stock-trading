@@ -24,6 +24,9 @@ public class KnowledgeBaseWriterSinkTests
         }
     }
 
+    private static KnowledgeBaseWriterSink NewSink(IKnowledgeBaseWriter writer) =>
+        new(writer, new SavedContentFingerprints(TimeProvider.System), NullLogger<KnowledgeBaseWriterSink>.Instance);
+
     private static CollectedInformation News(string title, string source, string? symbol) =>
         new(InformationKind.News, source, symbol, title, "本文", DateTimeOffset.Parse("2026-07-18T00:00:00Z"), "https://example.com/a");
 
@@ -31,7 +34,7 @@ public class KnowledgeBaseWriterSinkTests
     public async Task 各収集情報を1件ずつwriterへ委譲する()
     {
         var writer = new CapturingWriter();
-        var sink = new KnowledgeBaseWriterSink(writer, NullLogger<KnowledgeBaseWriterSink>.Instance);
+        var sink = NewSink(writer);
 
         await sink.SaveAsync([News("A", "finnhub", "AAPL"), News("B", "sec-edgar", null)]);
 
@@ -44,7 +47,7 @@ public class KnowledgeBaseWriterSinkTests
     public async Task 写像は機密区分internalと種別源の属性タグを付与し銘柄は属性のみに置く()
     {
         var writer = new CapturingWriter();
-        var sink = new KnowledgeBaseWriterSink(writer, NullLogger<KnowledgeBaseWriterSink>.Instance);
+        var sink = NewSink(writer);
 
         await sink.SaveAsync([News("開示A", "sec-edgar", "MSFT")]);
 
@@ -65,7 +68,7 @@ public class KnowledgeBaseWriterSinkTests
     public async Task 銘柄はタグに含まれず属性にのみ含まれる()
     {
         var writer = new CapturingWriter();
-        var sink = new KnowledgeBaseWriterSink(writer, NullLogger<KnowledgeBaseWriterSink>.Instance);
+        var sink = NewSink(writer);
 
         await sink.SaveAsync([News("開示A", "sec-edgar", "MSFT")]);
 
@@ -78,7 +81,7 @@ public class KnowledgeBaseWriterSinkTests
     public async Task 銘柄なしは銘柄属性タグを付けない()
     {
         var writer = new CapturingWriter();
-        var sink = new KnowledgeBaseWriterSink(writer, NullLogger<KnowledgeBaseWriterSink>.Instance);
+        var sink = NewSink(writer);
 
         await sink.SaveAsync([News("マクロ", "fred", null)]);
 
@@ -96,7 +99,7 @@ public class KnowledgeBaseWriterSinkTests
     {
         var random = new Random(705);
         var writer = new CapturingWriter();
-        var sink = new KnowledgeBaseWriterSink(writer, NullLogger<KnowledgeBaseWriterSink>.Instance);
+        var sink = NewSink(writer);
         var staticVocabulary = KnowledgeTagVocabulary.CollectionKinds
             .Concat(KnowledgeTagVocabulary.CollectionSources)
             .ToHashSet(StringComparer.Ordinal);
@@ -129,7 +132,7 @@ public class KnowledgeBaseWriterSinkTests
     public async Task 空入力でも例外を投げない()
     {
         var writer = new CapturingWriter();
-        var sink = new KnowledgeBaseWriterSink(writer, NullLogger<KnowledgeBaseWriterSink>.Instance);
+        var sink = NewSink(writer);
 
         var act = async () => await sink.SaveAsync([]);
 

@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-29
 ---
 <!-- trace:
 ids: [FR-01, FR-08]
 adrs: [ADR-0004]
-iadrs: [IADR-0315]
-specs: [20260909_705_kb-tags-static-vocabulary]
-issues: [#705, #627, MSP#635]
+iadrs: [IADR-0315, IADR-0456]
+specs: [20260909_705_kb-tags-static-vocabulary, 20260929_1084_kb-save-dedup]
+issues: [#705, #627, #1084, MSP#635]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -61,7 +61,9 @@ issues: [#705, #627, MSP#635]
   `InformationKind` / `SourceAllowlist.Default` / `ReportKind` と `KnowledgeTagVocabulary` の
   食い違いを検知して落ちる。緑であれば一覧は最新である）。
 - **実 KB での確認**: 収集サイクル・報告確定のログに `KB 保存: N/N 件を platform 文書管理へ登録` が
-  出て **N が総件数と一致する**こと（`0/N` や `N` 未満は失敗が残っている合図）。
+  出て **N が送った件数と一致する**こと（`0/N`〔N>0〕や `N` 未満は失敗が残っている合図）。
+  収集サイクルの N は**送った件数**であり、保存済みと同じ内容のため送らなかった件数は含まない
+  （同じ行に別に出る）。全件が保存済みと同じ巡回の `0/0` は失敗ではない。
   🔴 **本項目は現時点で実行できない**（実環境残件・`docs/blocked-tasks.md` 参照）。
 
 ## 失敗したときの分岐
@@ -69,7 +71,7 @@ issues: [#705, #627, MSP#635]
 | 症状 | 原因の候補 | 次の手 |
 | --- | --- | --- |
 | 登録後も 400（未登録タグ）が続く | 生成した一覧が古い（`KnowledgeTagVocabulary.cs` 変更後に再生成していない）／登録が一部のタグに留まっている | 手順 1 を再実行し、出力全件が登録済みか突き合わせる |
-| `KB 保存: 0/N` が続く（400 以外） | 別の失敗要因（認証・ネットワーク到達性等） | `docs/blocked-tasks.md` の該当項目（実環境の到達性）を確認する。タグ辞書は原因の一つに過ぎない |
+| `KB 保存: 0/N`（N>0）が続く（400 以外） | 別の失敗要因（認証・ネットワーク到達性等） | `docs/blocked-tasks.md` の該当項目（実環境の到達性）を確認する。タグ辞書は原因の一つに過ぎない |
 | 基盤側にタグ登録 API が見当たらない | 未調査／基盤（MSP）側の設計がまだ無い | 基盤へ環流する（`docs/blocked-tasks.md` B 群または planning への issue） |
 
 ## 記録

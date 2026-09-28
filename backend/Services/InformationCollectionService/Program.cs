@@ -188,8 +188,10 @@ builder.Services.AddSingleton<IKnowledgeBaseSink>(sp =>
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out _))
         return sp.GetRequiredService<LoggingKnowledgeBaseSink>();
 
+    // #1084, IADR-0456: 保存済み内容の指紋は巡回をまたいで保つ（シンクと同じ singleton の寿命）。
     return new KnowledgeBaseWriterSink(
         sp.GetRequiredService<IKnowledgeBaseWriter>(),
+        new SavedContentFingerprints(sp.GetRequiredService<TimeProvider>()),
         sp.GetRequiredService<ILogger<KnowledgeBaseWriterSink>>());
 });
 
