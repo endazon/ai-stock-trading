@@ -55,6 +55,7 @@
 | `lib/trace-blocks.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。trace / trace-table ブロックのパーサと ID トークン分類（修飾子の汎用規則を含む）の単一情報源 | — |
 | `lib/plan-ranges.js` | `check-trace-blocks.js` / `gen-knowledge-graph.js` 共有。計画 ADR の実在レンジを `.claude/rules/traceability.repo.md` から読む（`check-test-traceability.js` の `readPlanIds()`/`planRangeSection()` を拡張点として再利用。同ファイル自体は変更しない） | — |
 | `scripts.repo.test.js` | 上記の本リポ固有スクリプトのテスト。`scripts.test.js` から自動で読み込まれる（キット提供の受け口） | 標準出力（判定） |
+| `package.json` | **`{"type": "commonjs"}` だけを持つ**（依存も scripts も書かない）。基盤（microservices-platform）の submodule（`src/ai-stock-trading`）として置かれると、Node は親を遡って基盤の `src/package.json`（`"type": "module"`）を見つけ、`require(` を使う本ディレクトリのスクリプトを ES module として読んで起動時に落とす（#1073）。ここで探索を止める。**本ディレクトリに ES module の `.js` を足さない**（書くなら `.mjs`）。`scripts.repo.test.js` が親に `"type": "module"` がある配置へコピーして起動を確かめる | — |
 
 ## プロファイルの適用
 
