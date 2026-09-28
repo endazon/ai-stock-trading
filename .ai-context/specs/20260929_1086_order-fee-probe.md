@@ -96,7 +96,15 @@ issue #1086 が挙げた確認点のうち **「SIMULATE 口座で費用照会�
 ## 母集合（規則 9・10: 誤りの側で走査する）
 
 - `IMoomooTradeConnection` の実装（`GetOrderFee` を足すと壊れる側）: `grep -rn ": IMoomooTradeConnection\|IMoomooTradeConnection$"` → 本番 1（`MMApiTradeConnection`）＋ 偽物 4（`MoomooAdapterFakeOpenDIntegrationTests.FakeConnection` / `SimulateLikeConnection` / `FakeTradeConnection` / `MarginRatioConnection`）。すべて追随する。
-- `OnReply_GetOrderFee` の参照: 本体 1・`UnsuppliedOrderExpenseSource` / `IOrderExpenseSource` のコメント 2。コメントは「空実装」と書くが、本 PR でも**経費の供給は空のまま**（応答を相関へ結ぶだけで、供給ポートは差し替えない）なので記述は偽にならない。**除外**（凍結記録ではないが、書き換える必要が無い）。
+- `OnReply_GetOrderFee` の参照: 本体 1・`UnsuppliedOrderExpenseSource` / `IOrderExpenseSource` のコメント 2。
+  ［2026-09-29 追記 / AI レビュー 🟡］当初は「経費の供給は空のままなので偽にならない」として除外したが、誤りだった。
+  `UnsuppliedOrderExpenseSource` のコメント「OnReply_GetOrderFee（現状は空実装）」と、本番の警告ログに出る
+  `Reason` 定数「…moomoo の注文費用照会は未実装」は、本 PR で**照会そのものを実装した**ため偽になる。
+  両方を「照会は実装済み（検証口で呼べる）だが、本番の経費供給経路（`IOrderExpenseSource`）へは未接続」へ直した。
+  `Reason` を固定する試験 2 件（`UnsuppliedOrderExpenseSourceTests` / `TradeExpenseRecordingServiceTests`）は定数を参照しており追随不要。
+  `IOrderExpenseSource` のコメント（「実費の取得そのものは本ポートの実装であって本ポートではない」）は偽にならないため据え置く。
+  IADR-0300 本文の「空実装 1 件のみ」「段 2（`OnReply_GetOrderFee` の実装…）」は 2026-09-04 時点の実測を記録した凍結記録であり、
+  書き換えず同 IADR の 2026-09-29 追記で現状を示す。
 - `Program.cs` の早期 return 分岐: 既存に無い（新設）。
 
 ## 受け入れ基準
