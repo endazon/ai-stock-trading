@@ -172,6 +172,41 @@ public class OrderFeeProbeEndToEndTests
     }
 
     [Fact]
+    public async Task 照会口の結果のretMsgは口座IDを伏せて返す()
+    {
+        // 伏せは 2 層（照会口の結果・検証口の出力の最終段）。この試験は照会口の層だけを見る（検証口を通さない）。
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: _ => FeeReply(-1, $"acc {SimAccId} denied"));
+        using var client = (MMApiMoomooTradeClient)OrderFeeProbeComposition.CreateQuery(
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Broker:Provider"] = "moomoo",
+                ["Broker:Environment"] = "sim",
+                ["Broker:Moomoo:OpenD:ReplyTimeoutSeconds"] = "2",
+            }).Build(),
+            new Factory(opend));
+
+        var result = await client.QueryOrderFeeAsync("EX_direct-01", TestContext.Current.CancellationToken);
+
+        result.Outcome.Should().Be(OrderFeeQueryOutcome.Failed);
+        result.RetMsg.Should().Be("acc ****23 denied");
+        result.MaskedAccountId.Should().Be("****23");
+    }
+
+    [Fact]
+    public async Task 出力の最終段は例外以外の行に現れた口座IDも伏せる()
+    {
+        // 伏せの最終段だけを見る: 費用項目名は照会口が伏せない（応答のまま）ため、最終段が無ければ全桁が出る。
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx,
+            feeReply: _ => FeeReply(0, "", ($"Fee for {SimAccId}", 1.0)));
+
+        var (exitCode, output) = await Probe(opend, "EX_direct-01");
+
+        exitCode.Should().Be(0, output);
+        output.Should().Contain("fee[0].item[0].title=Fee for ****23");
+        output.Should().NotContain(SimAccId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
     public async Task RSA鍵の内容と口座IDを出力に載せない()
     {
         var keyPath = Path.Combine(Path.GetTempPath(), $"order-fee-probe-{Guid.NewGuid():N}.pem");
