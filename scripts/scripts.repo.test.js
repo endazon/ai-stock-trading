@@ -4214,4 +4214,69 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(cronText, /~ CronJob cycle\n\s+コンテナ containers\/trigger:\n\s+env 変更: TOKEN_ENDPOINT: "http:\/\/a" → "http:\/\/b"/);
     });
   }
+
+  // --- scripts/package.json: 親に "type": "module" があっても CommonJS として読まれる（NFR, #1073）---
+  //
+  // MSP の submodule（`src/ai-stock-trading`）の中で `node scripts/<name>.js` を叩くと、Node は親を遡って
+  // MSP の `src/package.json`（`"type": "module"`）を見つけ、`require(` を使うスクリプトを ES module として
+  // 読んで起動時に落ちていた。scripts/ に `{"type": "commonjs"}` を置いて探索をそこで止める。
+  // 🔴 **シンボリックリンクでは再現しない**（Node は主モジュールを実体パスへ解決するため、親の package.json が
+  // 見えない）。一時ディレクトリへ**コピー**して、親に "type": "module" がある配置を作る。
+  {
+    const fs1073 = require('fs');
+    const os1073 = require('os');
+    const path1073 = require('path');
+    const { spawnSync: spawn1073 } = require('child_process');
+    const PKG1073 = path1073.join(__dirname, 'package.json');
+
+    ok('scripts/package.json[#1073]: "type" は "commonjs" だけを宣言する', () => {
+      assert.deepStrictEqual(JSON.parse(fs1073.readFileSync(PKG1073, 'utf8')), { type: 'commonjs' });
+    });
+
+    ok('scripts/package.json[#1073]: scripts/ 配下に ES module の構文で書いた .js と、別の package.json が無い', () => {
+      const esm = [];
+      const nested = [];
+      const walk = (dir) => {
+        for (const e of fs1073.readdirSync(dir, { withFileTypes: true })) {
+          const p = path1073.join(dir, e.name);
+          if (e.isDirectory()) walk(p);
+          else if (e.name === 'package.json' && p !== PKG1073) nested.push(path1073.relative(__dirname, p));
+          else if (e.name.endsWith('.js') && /^\s*(import\s+[\w{*'"]|export\s)/m.test(fs1073.readFileSync(p, 'utf8'))) {
+            esm.push(path1073.relative(__dirname, p));
+          }
+        }
+      };
+      walk(__dirname);
+      assert.deepStrictEqual(esm, [], 'ES module の .js は .mjs にする（scripts/ は CommonJS の範囲）');
+      assert.deepStrictEqual(nested, [], 'scripts/ の中の package.json は探索を途中で止め、"type" を変えうる');
+    });
+
+    ok('scripts/package.json[#1073]: 親に "type": "module" がある配置（MSP の submodule と同じ形）で代表スクリプトが起動する', () => {
+      const root = fs1073.mkdtempSync(path1073.join(os1073.tmpdir(), 'ast-1073-'));
+      try {
+        const src = path1073.join(root, 'src');
+        const ast = path1073.join(src, 'ai-stock-trading');
+        fs1073.mkdirSync(ast, { recursive: true });
+        fs1073.writeFileSync(path1073.join(src, 'package.json'), '{\n  "type": "module"\n}\n');
+        fs1073.cpSync(__dirname, path1073.join(ast, 'scripts'), { recursive: true });
+        const run = (args) => spawn1073(process.execPath, args, { cwd: ast, encoding: 'utf8', timeout: 60000 });
+        const cases = [
+          ['scripts/helm-release-drift.js', '--help'],
+          ['scripts/helm-release-drift.js', '--self-test'],
+          ['scripts/check-review-verdict.js', '--self-test'], // 兄弟スクリプトと lib/ を require する
+        ];
+        for (const argv of cases) {
+          const r = run(argv);
+          assert.strictEqual(r.status, 0, `${argv.join(' ')} が exit ${r.status}\n${r.stdout}${r.stderr}`);
+        }
+        // 陽性対照: 同じ配置から scripts/package.json だけを外すと #1073 の症状が出る（配置が親を効かせている証拠）
+        fs1073.unlinkSync(path1073.join(ast, 'scripts', 'package.json'));
+        const bad = run(cases[0]);
+        assert.notStrictEqual(bad.status, 0, '陽性対照が落ちない（親の "type": "module" が効いていない）');
+        assert.match(bad.stderr, /require is not defined in ES module scope/);
+      } finally {
+        fs1073.rmSync(root, { recursive: true, force: true }); // 本試験が作った一時ディレクトリだけを消す
+      }
+    });
+  }
 };
