@@ -114,14 +114,16 @@ LLM 呼び出しの**前**の 4 地点（`DailyPolicyUnconfirmed`・`CurrentPric
 - 残余:
   - **現在値の供給が無効な構成の定時判断の Hold** は判断時点の価格を持たず、基準値を進めない（本番 values.yaml の既定 `MarketData__Provider=""`。稼働 PoC の values-local は finnhub で有効なので当たらない）。定時判断へ価格を渡す改修は #1035 の範囲。
   - **初期基準値**: 基準値ストアは EF で永続し、再起動をまたいで残る（インメモリ構成では再起動で空になる）。前回判断が無い間は変動を判定しない（計画の文言どおり）。
+  - ［2026-09-29 追記 / PR #1080 監査］**定時判断で現在値が 0（正でない）、LLM が Buy/Sell で参照価格を返し、統制で見送った**場合、基準値は LLM の参照価格（実価格ではない）へ進む。決定 3 の最後の候補の範囲内であり、`TradeDecisionMade` の参照価格が現在値なしで LLM の値に倒れるのと同じ性質である。
+  - ［2026-09-29 追記 / PR #1080 監査］購読者の静的走査（`TradeDecisionHeldSubscribersTests`）は、規約名・実名/別名・null 許容の形だけを検出する。ジェネリックなハンドラ・saga・`[WolverineHandler]`・基底型で受ける形は検出対象外（本番ソースに実在しないことを grep で確認済み。試験のコメントに記録）。
 - フォローアップ: なし（本 PR で完結）。
 
 ## 試験
 
 | 観点 | 試験 |
 | --- | --- |
-| Hold で発行・価格の優先順・定時の Hold・価格が無ければ非発行・判断前 4 地点で非発行・判断後の統制 8 地点で発行（Hold と合わせ 9 地点を振る舞いで固定）・判断前後で語彙 13 値を覆う・解析不能で非発行・一次 Hold と一部解析不能で発行・成立時は非発行・発行失敗でも見送り継続・本判断のキャンセルは伝播・無関係な打ち切りは握る | `TradeDecisionService.Tests/.../DecisionHeldReportTests.cs`（13 件） |
-| 購読者は市場監視の基準値と監査だけ（発注の経路へ流れない。本番ソースの静的走査） | `AiStockTrading.Architecture.Tests/TradeDecisionHeldSubscribersTests.cs`（7 件） |
+| Hold で発行・価格の優先順・定時の Hold・価格が無ければ非発行・判断前 4 地点で非発行・判断後の統制 8 地点で発行（Hold と合わせ 9 地点を振る舞いで固定）・判断前後で語彙 13 値を覆う・解析不能で非発行・一次 Hold と一部解析不能で発行・成立時は非発行・発行失敗でも見送り継続・本判断のキャンセルは伝播・無関係な打ち切りは握る | `TradeDecisionService.Tests/.../DecisionHeldReportTests.cs`（14 件。取り消し後のキャンセル以外の失敗は握る、を含む） |
+| 購読者は市場監視の基準値と監査だけ（発注の経路へ流れない。本番ソースの静的走査） | `AiStockTrading.Architecture.Tests/TradeDecisionHeldSubscribersTests.cs`（12 件。null 許容・using 別名の検出を含む） |
 | 本番の組み立てで発行実装へ結線（個数・型・判断サービスの保持） | `DecisionHeldReporterRegistrationTests.cs`（3 件） |
 | 本物の発行実装が `TradeDecisionHeld` を送る | `ComposedRealImplementationsTests`（1 件追加） |
 | 市場監視が基準値を更新・連続 Hold で前進・非正は無視・**Hold が続いても急変が発火し得る**・キュー名 | `MarketMonitorService.Tests/.../TradeDecisionHeldBaselineHandlerTests.cs`（5 件） |

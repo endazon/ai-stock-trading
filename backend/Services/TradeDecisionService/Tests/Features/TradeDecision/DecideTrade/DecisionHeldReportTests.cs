@@ -410,6 +410,28 @@ public class DecisionHeldReportTests
         skips.Reasons.Should().BeEmpty("キャンセルされた判断は見送りとして数えない");
     }
 
+    // 🔴 PR #1080 監査（生存変異 V3）: **本判断のトークンが取り消された後でも、キャンセル以外の失敗は握って見送りを計上する。**
+    // 伝えるのは「キャンセルされた」ことだけであり、キャンセル後に起きた別の失敗（発行先の故障）まで伝えると、
+    // 見送りが「判断の失敗」へ化ける（握り条件をトークンだけで書く形 `when (!ct.IsCancellationRequested)` を赤にする）。
+    [Fact]
+    public async Task 本判断の取り消し後でもキャンセル以外の失敗は握って見送りを計上する()
+    {
+        using var cts = new CancellationTokenSource();
+        var skips = new RecordingSkipReporter();
+        var service = Create(
+            new DelegateHeldReporter(_ =>
+            {
+                cts.Cancel();
+                throw new InvalidOperationException("発行先が壊れている");
+            }),
+            new SequenceLlm(HoldJson), skips);
+
+        var act = async () => await service.DecideAsync(MovementTrigger(), cts.Token);
+
+        (await act.Should().NotThrowAsync()).Subject.Should().BeNull();
+        skips.Reasons.Should().Equal([DecisionSkipReason.LlmHold]);
+    }
+
     // 🔴 対: **本判断と無関係な打ち切り（発行先の内部の TaskCanceledException）は握り、見送りを計上する。**
     // 例外の型で伝播を決めると、ここで見送りが「判断の失敗」へ化ける。
     [Fact]
