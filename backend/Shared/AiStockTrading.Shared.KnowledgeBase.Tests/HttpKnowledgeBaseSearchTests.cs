@@ -139,6 +139,109 @@ public class HttpKnowledgeBaseSearchTests
         root.GetProperty("topK").GetInt32().Should().Be(7);
     }
 
+    // FR-08, #1083, IADR-0454 決定1・4: 送信 JSON は基盤 `SearchRequest` の形に合わせる。
+    // Scope = AccessScope(Filters=[AttributeFilter(Key, AllowedValues)], GrantsAccess)。
+    // 🔴 Scope が無い・GrantsAccess が true でないと基盤は 200＋空を返す（deny-by-default）。
+    [Fact]
+    public async Task Scopeはproject属性の絞り込みとGrantsAccessを基盤の型の形で送る()
+    {
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[],"totalHits":0,"elapsedMs":1}""");
+        var search = CreateSearch(handler);
+
+        await search.SearchAsync(new KnowledgeQuery("q"));
+
+        var scope = JsonDocument.Parse(handler.LastRequestBody!).RootElement.GetProperty("scope");
+        scope.GetProperty("grantsAccess").GetBoolean().Should().BeTrue();
+        var filters = scope.GetProperty("filters").EnumerateArray().ToList();
+        filters.Should().ContainSingle();
+        filters[0].GetProperty("key").GetString().Should().Be("project");
+        filters[0].GetProperty("allowedValues").EnumerateArray().Select(v => v.GetString())
+            .Should().Equal("ai-stock-trading");
+        // 基盤の AccessScope に在るが送らないもの（選言）と、AttributeFilter に無いものを足さない。
+        scope.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["filters", "grantsAccess"]);
+        filters[0].EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["key", "allowedValues"]);
+    }
+
+    [Fact]
+    public async Task 銘柄フィルタと並び順を基盤SearchRequestのフィールド名で送り基盤に無いフィールドは送らない()
+    {
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[],"totalHits":0,"elapsedMs":1}""");
+        var search = CreateSearch(handler);
+
+        await search.SearchAsync(new KnowledgeQuery(
+            "AAPL 決算", TopK: 5,
+            AttributeFilters: new Dictionary<string, string> { [KnowledgeSearchAttributes.Symbol] = "AAPL" },
+            SortBy: KnowledgeSearchSorts.Updated));
+
+        var root = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        root.GetProperty("attributeFilters").GetProperty("symbol").GetString().Should().Be("AAPL");
+        root.GetProperty("sortBy").GetString().Should().Be("updated");
+        // 基盤 SearchRequest(Query, TopK, AttributeFilters, Scope, Mode, SortBy) の部分集合（Mode は既定のまま送らない）。
+        root.EnumerateObject().Select(p => p.Name)
+            .Should().BeEquivalentTo(["query", "topK", "attributeFilters", "scope", "sortBy"]);
+    }
+
+    [Fact]
+    public async Task 並び順の値は基盤のSearchSortsと同じ文字列()
+    {
+        KnowledgeSearchSorts.Updated.Should().Be("updated");
+        KnowledgeSearchSorts.Relevance.Should().Be("relevance");
+
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[],"totalHits":0,"elapsedMs":1}""");
+        await CreateSearch(handler).SearchAsync(new KnowledgeQuery("q"));
+
+        // 未指定は null（基盤で関連度順へ縮退する＝従来の既定）。
+        JsonDocument.Parse(handler.LastRequestBody!).RootElement.GetProperty("sortBy").ValueKind
+            .Should().Be(JsonValueKind.Null);
+    }
+
+    // FR-08, #1083: 未許可（基盤は 200＋空で返す）は空に倒す。
+    [Fact]
+    public async Task 未許可で基盤が空を返したら空結果に倒す()
+    {
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[],"totalHits":0,"elapsedMs":0}""");
+
+        var hits = await CreateSearch(handler).SearchAsync(new KnowledgeQuery("q"));
+
+        hits.Should().BeEmpty();
+    }
+
+    // FR-08, #1083, IADR-0454 決定3: 属性 symbol を KnowledgeHit.Symbol へ写す。無い・空白は null（銘柄を持たない文書）。
+    [Theory]
+    [InlineData("AAPL", "AAPL")]
+    [InlineData(null, null)]
+    [InlineData("  ", null)]
+    public async Task symbol属性をKnowledgeHitのSymbolへ写像する(string? rawValue, string? expected)
+    {
+        var attributes = rawValue is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string> { ["Symbol"] = rawValue };
+        var json = JsonSerializer.Serialize(new
+        {
+            results = new[]
+            {
+                new
+                {
+                    chunkId = Guid.NewGuid(),
+                    documentId = Guid.NewGuid(),
+                    documentTitle = "t",
+                    text = "本文",
+                    score = 0.5f,
+                    markdownUri = (string?)null,
+                    attributes,
+                    tags = Array.Empty<string>(),
+                },
+            },
+            totalHits = 1,
+            elapsedMs = 1,
+        });
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, json);
+
+        var hits = await CreateSearch(handler).SearchAsync(new KnowledgeQuery("q"));
+
+        hits.Should().ContainSingle().Which.Symbol.Should().Be(expected);
+    }
+
     [Fact]
     public async Task 非2xxは空結果に倒す()
     {

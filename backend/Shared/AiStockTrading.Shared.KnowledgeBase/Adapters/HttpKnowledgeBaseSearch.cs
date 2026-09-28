@@ -9,7 +9,12 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // 当リポ DTO（KnowledgeQuery/KnowledgeHit）を platform 契約（SearchRequest/SearchResponse 形状）へ HTTP 境界の内側で写像する。
 //
 // fail-safe（決定 3）: 非 2xx・例外・タイムアウトはすべて空結果に倒す（RAG 文脈なしへ縮退し、判断側の可用性を守る）。
-// /search はロールゲート無し（ABAC は本文 Scope で絞る）だが、本 PR は Scope を送らない（後続 #11 で利用者スコープを伝播）。
+//
+// FR-08, #1083, IADR-0454 決定1: **本文の Scope を必ず送る。** 基盤の POST /search は Scope が `GrantsAccess:true` で
+// なければ 200＋空で返す（deny-by-default）。本文の Scope は権限の根拠ではなく**絞り込みの主張**であり、基盤は自分で
+// 引いた許可と交差させる（`ScopeNarrowing.Apply`）——したがって送っても権限は広がらない。主張は
+// 「project = ai-stock-trading の文書だけ」（AST が保存する全文書に必須で付く属性。IADR-0293）。
+// 未許可のときは基盤が空を返し、ここも空に倒れる（fail-safe は変えない）。
 internal sealed class HttpKnowledgeBaseSearch(
     HttpClient httpClient,
     ILogger<HttpKnowledgeBaseSearch> logger)
@@ -18,10 +23,27 @@ internal sealed class HttpKnowledgeBaseSearch(
     private static readonly IReadOnlyList<KnowledgeHit> Empty = [];
 
     // platform SearchRequest と JSON 互換の送信形状（Knowledge.Contracts に依存しない）。
+    // #1083, IADR-0454: 基盤 `SearchRequest(Query, TopK, AttributeFilters, Scope, Mode, SortBy)` のうち Mode 以外を送る
+    // （Mode は既定＝hybrid）。**基盤に無いフィールドは足さない。**
     private sealed record SearchBody(
         string Query,
         int TopK,
-        Dictionary<string, string>? AttributeFilters);
+        Dictionary<string, string>? AttributeFilters,
+        ScopeBody Scope,
+        string? SortBy);
+
+    // platform `AccessScope(Filters, GrantsAccess, Branches)` / `AttributeFilter(Key, AllowedValues)` と JSON 互換。
+    // Branches（選言）は送らない＝基盤の既定（null）。
+    private sealed record ScopeBody(List<AttributeFilterBody> Filters, bool GrantsAccess);
+
+    private sealed record AttributeFilterBody(string Key, List<string> AllowedValues);
+
+    // FR-08, #1083, IADR-0454 決定1: 送る Scope は常に同じ（AST の文書だけに絞る主張）。
+    private static ScopeBody ProjectScope() => new(
+        [new AttributeFilterBody(
+            KnowledgeAttributeDefaults.ProjectKey,
+            [KnowledgeAttributeDefaults.RequiredProject])],
+        GrantsAccess: true);
 
     // platform SearchResponse / SearchResultDto の受け皿。
     // Attributes, #568: ABAC 属性（`publishedAt` を含み得る。KnowledgeBaseWriterSink が書き込み時に
@@ -44,7 +66,9 @@ internal sealed class HttpKnowledgeBaseSearch(
         var body = new SearchBody(
             query.Query,
             query.TopK,
-            query.AttributeFilters is null ? null : new Dictionary<string, string>(query.AttributeFilters, StringComparer.Ordinal));
+            query.AttributeFilters is null ? null : new Dictionary<string, string>(query.AttributeFilters, StringComparer.Ordinal),
+            ProjectScope(),
+            query.SortBy);
 
         try
         {
@@ -73,7 +97,8 @@ internal sealed class HttpKnowledgeBaseSearch(
                     (double)r.Score, // platform は float スコア。KnowledgeHit は double のため明示変換（拡大・非損失）。
                     r.MarkdownUri,
                     r.Tags ?? [],
-                    ExtractPublishedAt(r.Attributes)))
+                    ExtractPublishedAt(r.Attributes),
+                    ExtractAttribute(r.Attributes, KnowledgeSearchAttributes.Symbol)))
                 .ToList();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -97,24 +122,27 @@ internal sealed class HttpKnowledgeBaseSearch(
 
     private static DateTimeOffset? ExtractPublishedAt(Dictionary<string, string>? attributes)
     {
-        if (attributes is null || attributes.Count == 0)
-            return null;
-
-        string? raw = null;
-        foreach (var (key, value) in attributes)
-        {
-            if (string.Equals(key, PublishedAtAttributeKey, StringComparison.OrdinalIgnoreCase))
-            {
-                raw = value;
-                break;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(raw))
+        var raw = ExtractAttribute(attributes, PublishedAtAttributeKey);
+        if (raw is null)
             return null;
 
         return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
             ? parsed
             : null;
+    }
+
+    // 属性をキーの大小無視で引く（platform 側 ExtractAttributes と同じ OrdinalIgnoreCase）。空白だけの値は無いものとする。
+    private static string? ExtractAttribute(Dictionary<string, string>? attributes, string key)
+    {
+        if (attributes is null || attributes.Count == 0)
+            return null;
+
+        foreach (var (k, value) in attributes)
+        {
+            if (string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+
+        return null;
     }
 }
