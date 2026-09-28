@@ -180,8 +180,8 @@ public class PolicyApprovalRealReportHostTests
                     services.Remove(d);
                 services.AddDbContext<ReportDb.ReportDbContext>(o => o.UseInMemoryDatabase(_dbName));
                 services.DisableAllExternalWolverineTransports();
-                services.AddAuthentication(BotAuthHandler.Scheme)
-                    .AddScheme<AuthenticationSchemeOptions, BotAuthHandler>(BotAuthHandler.Scheme, _ => { });
+                services.AddAuthentication(BotAuthHandler.SchemeName)
+                    .AddScheme<AuthenticationSchemeOptions, BotAuthHandler>(BotAuthHandler.SchemeName, _ => { });
                 services.AddHttpClient("report-llm").ConfigurePrimaryHttpMessageHandler(() => new LlmGateway());
             });
         }
@@ -191,14 +191,14 @@ public class PolicyApprovalRealReportHostTests
     private sealed class BotAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
         : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        public const string Scheme = "Bot";
+        public const string SchemeName = "Bot";
         public const string ClientId = "ai-stock-trading-owner";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             var identity = new ClaimsIdentity(
-                [new Claim("azp", ClientId), new Claim(ClaimTypes.Role, "trading-owner")], Scheme, ClaimTypes.Name, ClaimTypes.Role);
-            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme)));
+                [new Claim("azp", ClientId), new Claim(ClaimTypes.Role, "trading-owner")], SchemeName, ClaimTypes.Name, ClaimTypes.Role);
+            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
         }
     }
 
