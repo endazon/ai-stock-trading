@@ -4215,6 +4215,74 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- 共有: package scope を CommonJS に止めたディレクトリの走査（#1073 / #1075）---
+  //
+  // `dir` 配下を再帰で見て、(a) ES module の構文を持つ `.js`、(b) `ownPkg` 以外の `package.json` を返す。
+  // ES module の構文は、行頭の静的 `import` / `export` 文と、CommonJS では構文エラーになるメタプロパティ（`import` に `.meta` が続く形）。
+  // 🔴 動的 `import(` は CommonJS でも書けるため数えない（数えると CommonJS の正しい書き方を誤検知する）。
+  // メタプロパティは #1074 の監査で「拾わない」と指摘された抜け（本関数へ寄せて両節で塞ぐ。#1075）。
+  // 🔴 本ファイルは scripts/ の走査対象なので、メタプロパティを字面で書かない（試験の入力も連結で組む）。
+  // 空白を詰めた形（`export{a}` / `import{a}from'x'`）と、`.` の前後に空白を挟んだメタプロパティも拾う（#1076 監査）。
+  // 既知の抜け: 行の途中から始まる文（`;export{a}` のような 1 行に詰めた形）は拾わない（行頭に固定しているため）。
+  const ESM_SYNTAX = /^\s*(import(\s*[{*'"]|\s+[\w$])|export(\s|[{*]))|\bimport\s*\.\s*meta\b/m;
+  const scanCommonJsScope = (dir, ownPkg) => {
+    const fsS = require('fs');
+    const pathS = require('path');
+    const esm = [];
+    const nested = [];
+    const walk = (d) => {
+      for (const e of fsS.readdirSync(d, { withFileTypes: true })) {
+        const p = pathS.join(d, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name === 'package.json' && p !== ownPkg) nested.push(pathS.relative(dir, p));
+        else if (e.name.endsWith('.js') && ESM_SYNTAX.test(fsS.readFileSync(p, 'utf8'))) esm.push(pathS.relative(dir, p));
+      }
+    };
+    walk(dir);
+    return { esm, nested };
+  };
+
+  ok('scanCommonJsScope[#1075]: 静的 import / export とメタプロパティ（import に .meta）を拾い、動的 import( と require は拾わない', () => {
+    const t = ESM_SYNTAX;
+    assert.ok(t.test("import fs from 'fs';"));
+    assert.ok(t.test("  export const x = 1;"));
+    assert.ok(t.test('const here = import' + '.meta.url;'), 'メタプロパティを拾わない（#1074 監査の指摘）');
+    assert.ok(!t.test("const m = await import('./x.js');"), '動的 import( は CommonJS でも書ける');
+    assert.ok(!t.test("const fs = require('fs');\nmodule.exports = {};"));
+    assert.ok(!t.test('// important: exported later'), '語の一部（important / exported）は拾わない');
+    // 空白を詰めた形・空白を挟んだメタプロパティ（#1076 監査で挙がった抜け）
+    assert.ok(t.test('export{a};'), 'export{a} を拾わない');
+    assert.ok(t.test('export*from"./x.js";'), 'export*from を拾わない');
+    assert.ok(t.test("import{a}from'x';"), "import{a}from'x' を拾わない");
+    assert.ok(t.test("import'./side-effect.js';"), '副作用だけの import を拾わない');
+    assert.ok(t.test('const u = import' + ' . ' + 'meta.url;'), '空白を挟んだメタプロパティを拾わない');
+    assert.ok(!t.test('exports.x = 1;'), 'CommonJS の exports を拾う');
+    assert.ok(!t.test('exportFoo();'), '識別子の一部を拾う');
+    assert.ok(!t.test('importer.run();'), '識別子の一部を拾う');
+  });
+
+  ok('scanCommonJsScope[#1075]: 一時ディレクトリの fixture から ES module の .js と入れ子の package.json を返し、CommonJS の .js は返さない', () => {
+    const fsF = require('fs');
+    const osF = require('os');
+    const pathF = require('path');
+    const root = fsF.mkdtempSync(pathF.join(osF.tmpdir(), 'ast-1075-scan-'));
+    try {
+      const own = pathF.join(root, 'package.json');
+      fsF.writeFileSync(own, '{ "type": "commonjs" }\n');
+      fsF.mkdirSync(pathF.join(root, 'sub', 'deep'), { recursive: true });
+      fsF.writeFileSync(pathF.join(root, 'esm-export.js'), 'export const x = 1;\n');
+      fsF.writeFileSync(pathF.join(root, 'sub', 'esm-meta.js'), 'const u = import' + '.meta.url;\n');
+      fsF.writeFileSync(pathF.join(root, 'sub', 'deep', 'package.json'), '{ "type": "module" }\n');
+      fsF.writeFileSync(pathF.join(root, 'cjs.js'), "const fs = require('fs');\nmodule.exports = { fs };\n");
+      fsF.writeFileSync(pathF.join(root, 'sub', 'cjs-dynamic.js'), "module.exports = () => import('./x.mjs');\n");
+      const { esm, nested } = scanCommonJsScope(root, own);
+      assert.deepStrictEqual(esm.sort(), ['esm-export.js', pathF.join('sub', 'esm-meta.js')].sort());
+      assert.deepStrictEqual(nested, [pathF.join('sub', 'deep', 'package.json')]);
+    } finally {
+      fsF.rmSync(root, { recursive: true, force: true }); // 本試験が作った一時ディレクトリだけを消す
+    }
+  });
+
   // --- scripts/package.json: 親に "type": "module" があっても CommonJS として読まれる（NFR, #1073）---
   //
   // MSP の submodule（`src/ai-stock-trading`）の中で `node scripts/<name>.js` を叩くと、Node は親を遡って
@@ -4234,19 +4302,7 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
 
     ok('scripts/package.json[#1073]: scripts/ 配下に ES module の構文で書いた .js と、別の package.json が無い', () => {
-      const esm = [];
-      const nested = [];
-      const walk = (dir) => {
-        for (const e of fs1073.readdirSync(dir, { withFileTypes: true })) {
-          const p = path1073.join(dir, e.name);
-          if (e.isDirectory()) walk(p);
-          else if (e.name === 'package.json' && p !== PKG1073) nested.push(path1073.relative(__dirname, p));
-          else if (e.name.endsWith('.js') && /^\s*(import\s+[\w{*'"]|export\s)/m.test(fs1073.readFileSync(p, 'utf8'))) {
-            esm.push(path1073.relative(__dirname, p));
-          }
-        }
-      };
-      walk(__dirname);
+      const { esm, nested } = scanCommonJsScope(__dirname, PKG1073);
       assert.deepStrictEqual(esm, [], 'ES module の .js は .mjs にする（scripts/ は CommonJS の範囲）');
       assert.deepStrictEqual(nested, [], 'scripts/ の中の package.json は探索を途中で止め、"type" を変えうる');
     });
@@ -4276,6 +4332,77 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         assert.match(bad.stderr, /require is not defined in ES module scope/);
       } finally {
         fs1073.rmSync(root, { recursive: true, force: true }); // 本試験が作った一時ディレクトリだけを消す
+      }
+    });
+  }
+  // --- .claude/hooks/package.json: 親に "type": "module" があっても hook が CommonJS として起動する（NFR, #1075）---
+  //
+  // MSP の submodule（`src/ai-stock-trading`）を Claude Code のプロジェクトとして開くと、settings.json が
+  // `node ${CLAUDE_PROJECT_DIR}/.claude/hooks/<name>.js` で起動する hook も #1073 と同じく親の MSP の
+  // `src/package.json`（`"type": "module"`）で ES module として読まれ、`require(` で exit 1 になっていた。
+  // Claude Code では exit 1 は「止める」ではないため、guard-bash / guard-secrets のガードが素通りになる。
+  // `.claude/hooks/` に `{"type": "commonjs"}` を置いて探索をそこで止める。#1073 と同じくコピーで配置を組む。
+  {
+    const fs1075 = require('fs');
+    const os1075 = require('os');
+    const path1075 = require('path');
+    const { spawnSync: spawn1075 } = require('child_process');
+    const CLAUDE1075 = path1075.join(__dirname, '..', '.claude');
+    const HOOKS1075 = path1075.join(CLAUDE1075, 'hooks');
+    const PKG1075 = path1075.join(HOOKS1075, 'package.json');
+    const HOOK_NAMES1075 = ['guard-bash.js', 'guard-secrets.js', 'check-impl.js'];
+
+    ok('.claude/hooks/package.json[#1075]: "type" は "commonjs" だけを宣言する', () => {
+      assert.deepStrictEqual(JSON.parse(fs1075.readFileSync(PKG1075, 'utf8')), { type: 'commonjs' });
+    });
+
+    ok('.claude/hooks/package.json[#1075]: hooks/ に ES module の .js と別の package.json が無く、.claude/ の hooks/ の外に .js / .mjs / .cjs が無い', () => {
+      const { esm, nested } = scanCommonJsScope(HOOKS1075, PKG1075);
+      assert.deepStrictEqual(esm, [], 'ES module の .js は .mjs にする（.claude/hooks/ は CommonJS の範囲）');
+      assert.deepStrictEqual(nested, [], '.claude/hooks/ の中の package.json は探索を途中で止め、"type" を変えうる');
+      const outside = [];
+      const walk = (d) => {
+        for (const e of fs1075.readdirSync(d, { withFileTypes: true })) {
+          const p = path1075.join(d, e.name);
+          if (e.isDirectory()) { if (p !== HOOKS1075) walk(p); } else if (/\.(js|mjs|cjs)$/.test(e.name)) outside.push(path1075.relative(CLAUDE1075, p));
+        }
+      };
+      walk(CLAUDE1075);
+      assert.deepStrictEqual(outside, [], '.claude/ の hooks/ の外に node で動くファイル（.js / .mjs / .cjs）を置かない（置くなら hooks/ に置き、hooks/package.json の範囲に入れる）');
+    });
+
+    ok('.claude/hooks/package.json[#1075]: 親に "type": "module" がある配置（MSP の submodule と同じ形）で 3 つの hook が起動し、ガードが効く', () => {
+      const root = fs1075.mkdtempSync(path1075.join(os1075.tmpdir(), 'ast-1075-'));
+      try {
+        const src = path1075.join(root, 'src');
+        const ast = path1075.join(src, 'ai-stock-trading');
+        fs1075.mkdirSync(path1075.join(ast, '.claude'), { recursive: true });
+        fs1075.writeFileSync(path1075.join(src, 'package.json'), '{\n  "type": "module"\n}\n');
+        fs1075.cpSync(HOOKS1075, path1075.join(ast, '.claude', 'hooks'), { recursive: true });
+        // hook は標準入力の JSON だけを読む。コマンドは実行しない（判定するだけ）ので、ブロック対象の文字列を渡しても副作用は無い。
+        const run = (name, input) => spawn1075(process.execPath, [path1075.join('.claude', 'hooks', name)],
+          { cwd: ast, input: JSON.stringify(input), encoding: 'utf8', timeout: 30000 });
+        const harmless = { tool_name: 'Bash', tool_input: { command: 'echo ok' } };
+        for (const name of HOOK_NAMES1075) {
+          const r = run(name, harmless);
+          assert.strictEqual(r.status, 0, `${name} が exit ${r.status}\n${r.stdout}${r.stderr}`);
+        }
+        // 起動するだけでなく、ガードの判定がこの配置でも exit 2（ブロック）になる。見張り値は連結で組む（本ファイル自体が guard-secrets に掛からないように）。
+        const force = run('guard-bash.js', { tool_name: 'Bash', tool_input: { command: 'git push ' + '--force origin x' } });
+        assert.strictEqual(force.status, 2, `guard-bash が force push を止めない: exit ${force.status}\n${force.stderr}`);
+        const pem = run('guard-secrets.js', { tool_name: 'Write', tool_input: { file_path: 'a.txt', content: '-----BEGIN ' + 'RSA PRIVATE KEY-----' } });
+        assert.strictEqual(pem.status, 2, `guard-secrets が秘密鍵を止めない: exit ${pem.status}\n${pem.stderr}`);
+        // 陽性対照: 同じ配置から hooks/package.json だけを外すと #1075 の症状（require の hook が exit 1）が出る
+        fs1075.unlinkSync(path1075.join(ast, '.claude', 'hooks', 'package.json'));
+        for (const name of ['guard-bash.js', 'check-impl.js']) {
+          const bad = run(name, harmless);
+          assert.strictEqual(bad.status, 1, `陽性対照 ${name} が exit ${bad.status}（親の "type": "module" が効いていない）`);
+          assert.match(bad.stderr, /require is not defined in ES module scope/);
+        }
+        const badForce = run('guard-bash.js', { tool_name: 'Bash', tool_input: { command: 'git push ' + '--force origin x' } });
+        assert.strictEqual(badForce.status, 1, '陽性対照: package.json が無いと force push のガードが exit 1（素通り）になる');
+      } finally {
+        fs1075.rmSync(root, { recursive: true, force: true }); // 本試験が作った一時ディレクトリだけを消す
       }
     });
   }
