@@ -251,10 +251,12 @@ public sealed class Stage0DecisionRecorder(
         // 🔴 **記録の対象銘柄（Stage0Recording:Symbols）を監視銘柄の代わりに渡さない** —— 当時の方針が挙げる銘柄と食い違うことがある。
         // 再構成の供給口（#1049）が入るまで `input.Watchlist` は null であり、節は「不明」になる。その記録は (e) を
         // 再構成不可と申告し（`AsOfDecisionInput`）、Stage 0 の合否から外れる（ADR-0044 決定 4 の暫定手段）。
+        // FR-02, FR-04, #1035, IADR-0451: 値動きの行は as-of 入力の日中文脈から書く（前日比は日足の前日終値があれば出し、
+        // 当日始値比・日中高安は常に「不明」。場中の本番の判断が知り得ない当日の全体の値を渡さない）。
         var prompt = TradeDecisionPromptBuilder.Build(
             trigger, input.Policy, input.Sizing, input.References, includeProfitability: false,
             currentPrice: input.ReferencePrice, held: HeldPosition.None, working: WorkingEntryOrders.None,
-            watchlist: input.Watchlist);
+            watchlist: input.Watchlist, intraday: input.Intraday);
         var fingerprint = Fingerprint(prompt);
 
         if (input.DroppedFutureReferenceCount > 0 || input.DroppedUndatedReferenceCount > 0)

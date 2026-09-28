@@ -85,8 +85,8 @@ public class DecisionSkipReasonTests
     {
         public bool IsEnabled => true;
 
-        public Task<decimal?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default) =>
-            Task.FromResult(price);
+        public Task<CurrentPriceReading?> GetCurrentPriceAsync(DecisionTrigger trigger, CancellationToken ct = default) =>
+            Task.FromResult(price is { } p ? new CurrentPriceReading(p, IntradayPriceContext.Unknown) : null);
     }
 
     // #506, IADR-0197: 鮮度切れでも値は返す（「レートが無い」と「古いレートがある」を区別する）。

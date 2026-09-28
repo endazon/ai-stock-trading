@@ -708,9 +708,14 @@ public class TradeDecisionPromptBuilderTests
         var watchlistSection = TradeDecisionPromptBuilder.WatchlistSection(ScheduledAapl(), watchlist: null);
         prompt.Should().Contain(watchlistSection);
 
+        // #1035, IADR-0451: 値動きの行（現在値の直後。ここでは日中文脈なし＝すべて不明の形）も後から足した行である。
+        var priceContextLines = TradeDecisionPromptBuilder.PriceContextLines(217.5m, intraday: null, priceUnit: string.Empty);
+        prompt.Should().Contain(priceContextLines);
+
         Normalize(prompt
                 .Replace(noneSection, string.Empty, StringComparison.Ordinal)
-                .Replace(watchlistSection, string.Empty, StringComparison.Ordinal))
+                .Replace(watchlistSection, string.Empty, StringComparison.Ordinal)
+                .Replace(priceContextLines, string.Empty, StringComparison.Ordinal))
             .Should().Be(Normalize(LegacyScheduledPrompt));
     }
 

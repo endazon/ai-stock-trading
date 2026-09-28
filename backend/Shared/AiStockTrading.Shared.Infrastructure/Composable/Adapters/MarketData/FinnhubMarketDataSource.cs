@@ -76,6 +76,15 @@ public sealed class FinnhubMarketDataSource(
             return null;
         }
 
-        return new Quote(symbol, market, snapshot.Current, snapshot.AsOf);
+        // FR-02, FR-04, ADR-0044 決定1, #1035, IADR-0451: 同じ応答の日中文脈（前日終値・始値・高値・安値）も写す。
+        // 🔴 0 は「無い」の表現（場前の始値・未知の銘柄）であり、値として通さない（前日比が -100% になる）。null＝不明。
+        return new Quote(
+            symbol, market, snapshot.Current, snapshot.AsOf,
+            PreviousClose: KnownOrNull(snapshot.PreviousClose),
+            Open: KnownOrNull(snapshot.Open),
+            High: KnownOrNull(snapshot.High),
+            Low: KnownOrNull(snapshot.Low));
     }
+
+    private static decimal? KnownOrNull(decimal value) => value > 0m ? value : null;
 }
