@@ -10,50 +10,163 @@ using Xunit;
 namespace TradeDecisionService.Tests;
 
 // FR-08, IADR-0069/0072: RAG 取得アダプタが trigger+policy から検索クエリを組み、KnowledgeHit を RetrievedContext へ写像することを検証する。
+// FR-08, #1083, IADR-0453: 銘柄の検索と銘柄を持たない文書の検索の 2 本・新しい順・新しさの足切りを検証する。
 public class KnowledgeBaseRetrievalContextProviderTests
 {
     private static readonly DailyPolicy Policy = new(new DateOnly(2026, 7, 10), "米国株の押し目買い方針");
+    private static readonly DateTimeOffset Now = new(2026, 7, 10, 13, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Fresh = Now.AddHours(-1);
 
-    private sealed class FakeSearch(IReadOnlyList<KnowledgeHit> hits) : IKnowledgeBaseSearch
+    // 検索要求を記録し、銘柄フィルタの有無で返す結果を分ける（① 銘柄の検索 / ② 銘柄を持たない文書の検索）。
+    private sealed class FakeSearch(
+        IReadOnlyList<KnowledgeHit>? symbolHits = null,
+        IReadOnlyList<KnowledgeHit>? marketHits = null) : IKnowledgeBaseSearch
     {
-        public KnowledgeQuery? LastQuery { get; private set; }
+        public List<KnowledgeQuery> Queries { get; } = [];
+
+        public KnowledgeQuery SymbolQuery => Queries.Single(q => q.AttributeFilters is { Count: > 0 });
+
+        public KnowledgeQuery MarketQuery => Queries.Single(q => q.AttributeFilters is not { Count: > 0 });
 
         public Task<IReadOnlyList<KnowledgeHit>> SearchAsync(KnowledgeQuery query, CancellationToken cancellationToken = default)
         {
-            LastQuery = query;
-            return Task.FromResult(hits);
+            Queries.Add(query);
+            var hits = query.AttributeFilters is { Count: > 0 } ? symbolHits : marketHits;
+            return Task.FromResult(hits ?? []);
         }
     }
 
-    private static KnowledgeBaseRetrievalContextProvider Create(FakeSearch search, int topK = 5) =>
-        new(search, topK, NullLogger<KnowledgeBaseRetrievalContextProvider>.Instance);
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private static KnowledgeBaseRetrievalContextProvider Create(
+        FakeSearch search, int topK = 5, TimeSpan? maxAge = null) =>
+        new(search, topK, maxAge ?? KnowledgeBaseRetrievalContextProvider.DefaultMaxAge, new FixedTime(Now),
+            NullLogger<KnowledgeBaseRetrievalContextProvider>.Instance);
+
+    private static KnowledgeHit Hit(string title, DateTimeOffset? publishedAt, string? symbol = null) =>
+        new(Guid.NewGuid(), title, "本文。", 0.5d, null, ["google-news"], publishedAt, symbol);
+
+    private static Task<IReadOnlyList<RetrievedContext>> GetAsync(KnowledgeBaseRetrievalContextProvider provider) =>
+        provider.GetContextAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), Policy);
 
     [Fact]
-    public async Task 検索クエリは銘柄と市場と方針要約から組み立てられTopKを渡す()
+    public async Task 銘柄の検索は銘柄と市場と方針要約から組み立てられTopKと銘柄フィルタと新しい順を渡す()
     {
-        var search = new FakeSearch([]);
-        var provider = Create(search, topK: 7);
+        var search = new FakeSearch();
 
-        await provider.GetContextAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), Policy);
+        await GetAsync(Create(search, topK: 7));
 
-        search.LastQuery.Should().NotBeNull();
-        search.LastQuery!.Query.Should().Contain("AAPL");
-        search.LastQuery.Query.Should().Contain(Policy.Summary);
-        search.LastQuery.TopK.Should().Be(7);
+        search.Queries.Should().HaveCount(2);
+        var q = search.SymbolQuery;
+        q.Query.Should().Contain("AAPL");
+        q.Query.Should().Contain(Policy.Summary);
+        q.TopK.Should().Be(7);
+        q.AttributeFilters.Should().BeEquivalentTo(new Dictionary<string, string> { ["symbol"] = "AAPL" });
+        q.SortBy.Should().Be("updated");
+    }
+
+    [Fact]
+    public async Task 銘柄を持たない文書の検索は銘柄フィルタなしで銘柄をクエリに入れず新しい順を渡す()
+    {
+        var search = new FakeSearch();
+
+        await GetAsync(Create(search, topK: 7));
+
+        var q = search.MarketQuery;
+        q.AttributeFilters.Should().BeNull();
+        q.Query.Should().NotContain("AAPL");
+        q.Query.Should().Contain(Policy.Summary);
+        q.Query.Should().Contain(nameof(Market.UnitedStates));
+        q.TopK.Should().Be(7);
+        q.SortBy.Should().Be("updated");
+    }
+
+    [Fact]
+    public async Task 銘柄を持たない文書の検索から銘柄を持つ文書は除き銘柄を持たない文書だけを残す()
+    {
+        var search = new FakeSearch(
+            symbolHits: [Hit("AAPL の決算", Fresh, "AAPL")],
+            marketHits: [Hit("MSFT の決算", Fresh, "MSFT"), Hit("市場全体のニュース", Fresh), Hit("AAPL の重複", Fresh, "AAPL")]);
+
+        var result = await GetAsync(Create(search));
+
+        result.Select(r => r.Title).Should().Equal("AAPL の決算", "市場全体のニュース");
+    }
+
+    [Fact]
+    public async Task 片方の検索が空でも他方の結果を使う()
+    {
+        var onlyMarket = new FakeSearch(marketHits: [Hit("市場全体のニュース", Fresh)]);
+        var onlySymbol = new FakeSearch(symbolHits: [Hit("AAPL の決算", Fresh, "AAPL")]);
+
+        (await GetAsync(Create(onlyMarket))).Should().ContainSingle().Which.Title.Should().Be("市場全体のニュース");
+        (await GetAsync(Create(onlySymbol))).Should().ContainSingle().Which.Title.Should().Be("AAPL の決算");
+    }
+
+    [Fact]
+    public async Task 足切りより古い文書と発行時刻の無い文書は判断文脈に入らない()
+    {
+        var maxAge = TimeSpan.FromHours(24);
+        var search = new FakeSearch(
+            symbolHits:
+            [
+                Hit("境界ちょうど", Now - maxAge, "AAPL"),
+                Hit("境界を 1 秒過ぎた", Now - maxAge - TimeSpan.FromSeconds(1), "AAPL"),
+                Hit("発行時刻なし", null, "AAPL"),
+            ],
+            marketHits: [Hit("古い市場ニュース", Now.AddDays(-30)), Hit("新しい市場ニュース", Fresh)]);
+
+        var result = await GetAsync(Create(search, maxAge: maxAge));
+
+        result.Select(r => r.Title).Should().Equal("境界ちょうど", "新しい市場ニュース");
+    }
+
+    [Fact]
+    public async Task 既定の足切りは168時間()
+    {
+        KnowledgeBaseRetrievalContextProvider.DefaultMaxAge.Should().Be(TimeSpan.FromHours(168));
+
+        var search = new FakeSearch(symbolHits:
+        [
+            Hit("6 日前", Now.AddDays(-6), "AAPL"),
+            Hit("8 日前", Now.AddDays(-8), "AAPL"),
+        ]);
+
+        var result = await GetAsync(Create(search));
+
+        result.Should().ContainSingle().Which.Title.Should().Be("6 日前");
+    }
+
+    [Theory]
+    [InlineData("24", 24d)]
+    [InlineData("0.5", 0.5d)]
+    [InlineData(null, 168d)]
+    [InlineData("", 168d)]
+    [InlineData("abc", 168d)]
+    [InlineData("0", 168d)]
+    [InlineData("-5", 168d)]
+    [InlineData("NaN", 168d)]
+    [InlineData("Infinity", 168d)]
+    [InlineData("1e300", 168d)]
+    public void 足切りの構成値は正の時間だけを受け不正値は既定へ倒す(string? raw, double expectedHours)
+    {
+        KnowledgeBaseRetrievalContextProvider.ParseMaxAge(raw).Should().Be(TimeSpan.FromHours(expectedHours));
     }
 
     [Fact]
     public async Task 検索ヒットはRetrievedContextへ写像される()
     {
         var docId = Guid.NewGuid();
-        var publishedAt = new DateTimeOffset(2026, 7, 9, 21, 0, 0, TimeSpan.Zero);
-        var search = new FakeSearch(new[]
+        var publishedAt = Now.AddHours(-3);
+        var search = new FakeSearch(symbolHits: new[]
         {
-            new KnowledgeHit(docId, "決算メモ", "増収増益。", 0.91d, "kb://doc/1", ["earnings"], publishedAt),
+            new KnowledgeHit(docId, "決算メモ", "増収増益。", 0.91d, "kb://doc/1", ["earnings"], publishedAt, "AAPL"),
         });
-        var provider = Create(search);
 
-        var result = await provider.GetContextAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), Policy);
+        var result = await GetAsync(Create(search));
 
         result.Should().HaveCount(1);
         result[0].Title.Should().Be("決算メモ");
@@ -63,28 +176,13 @@ public class KnowledgeBaseRetrievalContextProviderTests
         // FR-08, #568: KnowledgeHit.PublishedAt は RetrievedContext.PublishedAt へそのまま伝播する
         // （ScreeningContextAssembler が段③の並び替え鍵に使う）。
         result[0].PublishedAt.Should().Be(publishedAt);
-    }
-
-    // FR-08, #568: 対の否定形。KnowledgeHit.PublishedAt が無ければ RetrievedContext.PublishedAt も
-    // null のまま伝播する（捏造しない・最古扱いの保守側既定へつながる）。
-    [Fact]
-    public async Task 検索ヒットに発行時刻が無ければRetrievedContextのPublishedAtもnullのまま()
-    {
-        var search = new FakeSearch(new[]
-        {
-            new KnowledgeHit(Guid.NewGuid(), "発行時刻不明の記事", "本文。", 0.5d, null, []),
-        });
-        var provider = Create(search);
-
-        var result = await provider.GetContextAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), Policy);
-
-        result.Should().ContainSingle().Which.PublishedAt.Should().BeNull();
+        result[0].Tags.Should().Equal("earnings");
     }
 
     [Fact]
     public async Task 検索ヒットが空なら空の文脈を返す()
     {
-        var provider = Create(new FakeSearch([]));
+        var provider = Create(new FakeSearch());
 
         var result = await provider.GetContextAsync(DecisionTrigger.Scheduled("7203", Market.Japan), Policy);
 
@@ -95,14 +193,15 @@ public class KnowledgeBaseRetrievalContextProviderTests
     [Fact]
     public async Task 長文方針の検索クエリは上限で切り詰められる()
     {
-        var search = new FakeSearch([]);
+        var search = new FakeSearch();
         var provider = Create(search);
         var longPolicy = new DailyPolicy(new DateOnly(2026, 7, 10), new string('方', 2000));
 
         await provider.GetContextAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), longPolicy);
 
         // 銘柄・市場・区切り空白 + 上限 500 文字の要約に収まる（2000 文字の全文は載らない）。
-        search.LastQuery!.Query.Length.Should().BeLessThan(560);
-        search.LastQuery.Query.Should().Contain("AAPL");
+        search.SymbolQuery.Query.Length.Should().BeLessThan(560);
+        search.SymbolQuery.Query.Should().Contain("AAPL");
+        search.MarketQuery.Query.Length.Should().BeLessThan(560);
     }
 }

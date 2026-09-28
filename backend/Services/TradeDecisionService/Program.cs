@@ -269,10 +269,13 @@ builder.Services.AddScoped<IHeldPositionProvider>(sp =>
 builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
 // FR-08, IADR-0072: 判断文脈への RAG 取得アダプタ。常に登録し、実接続の可否は上の IKnowledgeBaseSearch（Search:BaseUrl）で決まる。
 // TopK は Retrieval:TopK（既定 5・不正/非正値は既定へ）。取得失敗・空は判断側で「文脈なし」に縮退する（TradeDecisionService）。
+// FR-08, #1083, IADR-0453 決定5: 新しさの足切りは Retrieval:MaxAgeHours（既定 168 時間・不正/非正値は既定へ）。
 builder.Services.AddScoped<IRetrievalContextProvider>(sp =>
     new KnowledgeBaseRetrievalContextProvider(
         sp.GetRequiredService<IKnowledgeBaseSearch>(),
         ParseTopK(sp.GetRequiredService<IConfiguration>()["Retrieval:TopK"]),
+        KnowledgeBaseRetrievalContextProvider.ParseMaxAge(sp.GetRequiredService<IConfiguration>()["Retrieval:MaxAgeHours"]),
+        sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<KnowledgeBaseRetrievalContextProvider>>()));
 
 // FR-02, IADR-0023, #337, IADR-0245: 市場カレンダー（休場日・半日取引日・場中ゲート）と定時サイクルの監視銘柄。
