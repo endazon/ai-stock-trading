@@ -19,7 +19,8 @@ public class OrderFeeProbeEndToEndTests
     private const ulong SimAccId = 283745190123UL;
     private const ulong OrderId = 7788990011UL;
     private const string OrderIdEx = "20260929_NVDA_EX1";
-    private const string KeySentinel = "SENTINEL-PRIVATE-KEY-MATERIAL-7c1e";
+    // 鍵ファイルの中身の見張り値。gitleaks の generic-api-key に当たらないよう、識別子に key 系の語を使わず低エントロピーのダミーにする。
+    private const string PemMarker = "dummy-pem-dummy-pem-dummy-pem";
 
     private static TrdGetOrderFee.Response FeeReply(int retType, string retMsg, params (string Title, double Value)[] items)
     {
@@ -96,7 +97,7 @@ public class OrderFeeProbeEndToEndTests
     public async Task RSA鍵の内容と口座IDを出力に載せない()
     {
         var keyPath = Path.Combine(Path.GetTempPath(), $"order-fee-probe-{Guid.NewGuid():N}.pem");
-        await File.WriteAllTextAsync(keyPath, KeySentinel, TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(keyPath, PemMarker, TestContext.Current.CancellationToken);
         try
         {
             var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: _ => FeeReply(0, "", ("Commission", 1.0)));
@@ -104,8 +105,8 @@ public class OrderFeeProbeEndToEndTests
             var (exitCode, output) = await Probe(opend, OrderId.ToString(System.Globalization.CultureInfo.InvariantCulture), keyPath);
 
             exitCode.Should().Be(OrderFeeProbeCommand.ExitFeesReturned, output);
-            opend.RsaKeysApplied.Should().Equal(KeySentinel);
-            output.Should().NotContain(KeySentinel);
+            opend.RsaKeysApplied.Should().Equal(PemMarker);
+            output.Should().NotContain(PemMarker);
             output.Should().NotContain(SimAccId.ToString(System.Globalization.CultureInfo.InvariantCulture));
             output.Should().Contain("account=SIMULATE(****23)");
         }
