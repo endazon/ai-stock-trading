@@ -168,6 +168,40 @@ public class OrderFeeProbeCommandTests
     }
 
     [Fact]
+    public void 終了コードの数値を固定する()
+    {
+        // 別文脈監査: 定数どうしの比較だけでは値の入れ替わり（3 を 0 にする等）を捕まえられない。手順書の表と同じ数値で固定する。
+        OrderFeeProbeCommand.ExitFeesReturned.Should().Be(0);
+        OrderFeeProbeCommand.ExitQueryFailed.Should().Be(1);
+        OrderFeeProbeCommand.ExitUsageOrConfiguration.Should().Be(2);
+        OrderFeeProbeCommand.ExitNoFees.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task 構成由来の伏せる値は照会口の生成前の構成不正の文でも伏せる()
+    {
+        var writer = new StringWriter();
+        var exitCode = await OrderFeeProbeCommand.RunAsync(
+            [Flag, "123"],
+            () => throw new InvalidOperationException("OpenD への InitConnect が失敗しました（opend-x:23456）。鍵 /run/k/rsa.pem"),
+            writer,
+            cancellationToken: TestContext.Current.CancellationToken,
+            sensitiveValues: ["opend-x:23456", "opend-x", "/run/k/rsa.pem"]);
+
+        exitCode.Should().Be(2);
+        writer.ToString().Should().NotContain("opend-x").And.NotContain("23456").And.NotContain("/run/k/rsa.pem")
+            .And.Contain("error[0].type=InvalidOperationException")
+            .And.Contain("InitConnect が失敗しました（<伏せ>）。鍵 <伏せ>");
+    }
+
+    [Theory]
+    [InlineData("acc 283745190123 denied", "acc ****23 denied")]
+    [InlineData("retType=-100", "retType=-100")]
+    [InlineData("code 12345", "code 12345")]
+    public void 例外文の6桁以上の数字の並びは末尾2桁以外を伏せる(string input, string expected) =>
+        OrderFeeProbeCommand.MaskLongDigitRuns(input).Should().Be(expected);
+
+    [Fact]
     public async Task 構成不正は照会せずに終了コード2()
     {
         var writer = new StringWriter();

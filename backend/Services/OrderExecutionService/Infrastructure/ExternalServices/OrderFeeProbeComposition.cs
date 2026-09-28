@@ -31,4 +31,21 @@ public static class OrderFeeProbeComposition
             NullLogger<MMApiMoomooTradeClient>.Instance,
             connectionFactory);
     }
+
+    // #1086（別文脈監査）: 検証口の出力で伏せる構成由来の値。接続先（host:port と host）と RSA 鍵のパスは
+    // 例外文（InitConnect の失敗・preflight）に現れるため、出力の最終段で伏せる（例外の型と要約は残す）。
+    // 実効値（未設定時の既定 opend:11111 を含む）で持つ。構成を読めなくても落ちない（生の値だけを使う）。
+    public static IReadOnlyCollection<string> SensitiveValues(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var host = configuration["Broker:Moomoo:OpenD:Host"];
+        var port = configuration["Broker:Moomoo:OpenD:Port"];
+        var effectiveHost = string.IsNullOrWhiteSpace(host) ? "opend" : host;
+        var effectivePort = string.IsNullOrWhiteSpace(port) ? "11111" : port;
+        var values = new List<string> { $"{effectiveHost}:{effectivePort}", effectiveHost };
+        var keyPath = configuration["Broker:Moomoo:OpenD:RsaPrivateKeyPath"];
+        if (!string.IsNullOrWhiteSpace(keyPath))
+            values.Add(keyPath);
+        return values;
+    }
 }

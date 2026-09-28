@@ -34,14 +34,17 @@ public class OrderFeeProbeEndToEndTests
             .SetRetType(retType).SetRetMsg(retMsg).SetS2C(s2c.BuildPartial()).BuildPartial();
     }
 
+    private const string ProbeHost = "opend-probe-host.internal";
+    private const string ProbePort = "23456";
+
     private static async Task<(int ExitCode, string Output)> Probe(FakeOpenD opend, string orderId, string? keyPath = null)
     {
         var settings = new Dictionary<string, string?>
         {
             ["Broker:Provider"] = "moomoo",
             ["Broker:Environment"] = "sim",
-            ["Broker:Moomoo:OpenD:Host"] = "opend",
-            ["Broker:Moomoo:OpenD:Port"] = "11111",
+            ["Broker:Moomoo:OpenD:Host"] = ProbeHost,
+            ["Broker:Moomoo:OpenD:Port"] = ProbePort,
             ["Broker:Moomoo:OpenD:ReplyTimeoutSeconds"] = "2",
             ["Broker:Moomoo:OpenD:RsaPrivateKeyPath"] = keyPath,
         };
@@ -52,7 +55,8 @@ public class OrderFeeProbeEndToEndTests
             () => OrderFeeProbeComposition.CreateQuery(configuration, new Factory(opend)),
             writer,
             TimeSpan.FromSeconds(30),
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken,
+            OrderFeeProbeComposition.SensitiveValues(configuration));
         return (exitCode, writer.ToString());
     }
 
@@ -71,6 +75,7 @@ public class OrderFeeProbeEndToEndTests
         sent.Header.AccID.Should().Be(SimAccId, "発注に使っている口座で照会する");
         sent.Header.TrdMarket.Should().Be((int)TrdCommon.TrdMarket.TrdMarket_US);
         opend.WriteCalls.Should().Be(0, "書き込み系（PlaceOrder / ModifyOrder）を呼ばない");
+        opend.ListCalls.Should().Be(2, "US の当日 1 回・履歴 1 回で見つかる（撃ち直さない）");
         output.Should().Contain("fee[0].item[0].title=Commission")
             .And.Contain("fee[0].item[1].title=Settlement Fee")
             .And.Contain($"order.orderIdEx={OrderIdEx}")
@@ -110,6 +115,60 @@ public class OrderFeeProbeEndToEndTests
         opend.FeeRequests.Should().BeEmpty("解決に失敗したら費用照会は撃たない");
         output.Should().Contain("result=error").And.Contain("acc ****23 is not authorized");
         output.Should().NotContain(SimAccId.ToString(System.Globalization.CultureInfo.InvariantCulture), "口座 ID は伏せる");
+    }
+
+    [Fact]
+    public async Task 口座一覧の照会の失敗文に口座IDが含まれても全桁を出さない()
+    {
+        // 別文脈監査: 口座が確定する前（GetAccList の失敗）は伏せる値が分からない。例外文の長い数字の並びを伏せる。
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: null) { AccListFails = true };
+
+        var (exitCode, output) = await Probe(opend, OrderId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        exitCode.Should().Be(1, output);
+        opend.FeeRequests.Should().BeEmpty();
+        output.Should().Contain("acc ****23 is not authorized");
+        output.Should().NotContain(SimAccId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task 接続先のhostとportを出力に載せず例外の型と要約は残す()
+    {
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: null) { InitConnectFails = true };
+
+        var (exitCode, output) = await Probe(opend, OrderId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        exitCode.Should().Be(1, output);
+        output.Should().NotContain(ProbeHost).And.NotContain(ProbePort);
+        output.Should().Contain("error[0].type=BrokerUnavailableException").And.Contain("InitConnect が失敗しました（<伏せ>）");
+    }
+
+    [Fact]
+    public async Task RSA鍵のパスが無いときの構成不正でもパスを出力に載せない()
+    {
+        const string missingPath = "/run/probe-test-dir/moomoo-rsa-9f3.pem";
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: null);
+
+        var (exitCode, output) = await Probe(opend, "123", missingPath);
+
+        exitCode.Should().Be(2, output);
+        opend.Created.Should().BeFalse("preflight で止まり接続オブジェクトを作らない");
+        output.Should().Contain("result=config-error").And.Contain("RsaPrivateKeyPath '<伏せ>'");
+        output.Should().NotContain(missingPath).And.NotContain("moomoo-rsa-9f3");
+    }
+
+    [Fact]
+    public async Task 履歴の照会窓は過去30日()
+    {
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: _ => FeeReply(0, "", ("Commission", 1.0)));
+        var before = DateTimeOffset.UtcNow;
+
+        await Probe(opend, OrderId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        var filter = opend.HistoryRequests.Should().ContainSingle().Subject.C2S.FilterConditions;
+        var begin = DateTimeOffset.ParseExact(filter.BeginTime, "yyyy-MM-dd HH:mm:ss",
+            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal);
+        (before - begin).TotalDays.Should().BeInRange(29.99, 30.01, "履歴を引く窓は 30 日（短くすると直近の約定でも取りこぼす）");
     }
 
     [Fact]
@@ -157,7 +216,9 @@ public class OrderFeeProbeEndToEndTests
         exitCode.Should().Be(OrderFeeProbeCommand.ExitQueryFailed, output);
         opend.FeeRequests.Should().BeEmpty();
         opend.WriteCalls.Should().Be(0);
+        opend.ListCalls.Should().Be(4, "注文一覧の照会は最大 4 回（US・JP × 当日・履歴）で、再試行しない");
         output.Should().Contain("result=order-not-found");
+        exitCode.Should().Be(1);
     }
 
     [Fact]
@@ -237,6 +298,12 @@ public class OrderFeeProbeEndToEndTests
         // 注文一覧の照会を非成功（口座 ID を含む retMsg）で返す位置。
         public ListFailure Failure { get; init; }
 
+        public bool AccListFails { get; init; }
+
+        public bool InitConnectFails { get; init; }
+
+        public List<TrdGetHistoryOrderList.Request> HistoryRequests { get; } = [];
+
         private static readonly string DeniedMessage = $"acc {SimAccId} is not authorized for this query";
 
         public List<TrdGetOrderFee.Request> FeeRequests { get; } = [];
@@ -259,6 +326,8 @@ public class OrderFeeProbeEndToEndTests
 
         public bool InitConnect(string host, ushort port, bool encrypt)
         {
+            if (InitConnectFails)
+                return false;
             _ = Task.Run(() => _connCallback?.OnInitConnect(_handle, 0, string.Empty));
             return true;
         }
@@ -277,7 +346,7 @@ public class OrderFeeProbeEndToEndTests
                 .SetAccType((int)TrdCommon.TrdAccType.TrdAccType_Margin)
                 .BuildPartial();
             var response = TrdGetAccList.Response.CreateBuilder()
-                .SetRetType(0).SetRetMsg(string.Empty)
+                .SetRetType(AccListFails ? -1 : 0).SetRetMsg(AccListFails ? DeniedMessage : string.Empty)
                 .SetS2C(TrdGetAccList.S2C.CreateBuilder().AddAccList(acc).BuildPartial())
                 .BuildPartial();
             _ = Task.Run(() => _trdCallback?.OnReply_GetAccList(_handle, serial, response));
@@ -301,6 +370,8 @@ public class OrderFeeProbeEndToEndTests
         public uint GetHistoryOrderList(TrdGetHistoryOrderList.Request request)
         {
             Interlocked.Increment(ref ListCalls);
+            lock (HistoryRequests)
+                HistoryRequests.Add(request);
             var serial = NextSerial();
             var s2c = TrdGetHistoryOrderList.S2C.CreateBuilder().SetHeader(request.C2S.Header);
             if (request.C2S.Header.TrdMarket == (int)TrdCommon.TrdMarket.TrdMarket_US)

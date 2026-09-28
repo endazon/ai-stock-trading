@@ -29,7 +29,10 @@ public static class OrderFeeProbeCommand
     /// <summary>照会成功（retType=0）だが費用が空だった。</summary>
     public const int ExitNoFees = 3;
 
-    /// <summary>接続・解決・照会を合わせた上限。既定の返信待ち（15 秒）× 解決の最大 5 往復を覆う。</summary>
+    /// <summary>
+    /// 接続・解決・照会を合わせた上限。往復は最大 7 回（接続 1・口座一覧 1・注文一覧 4・費用照会 1）で、
+    /// 既定の返信待ち 15 秒 × 7 = 105 秒を覆う。
+    /// </summary>
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(120);
 
     // 注文 ID（10 進の OrderID か OrderIDEx）。`-` 始まりは別の引数の取り違えとして拒む。
@@ -49,14 +52,16 @@ public static class OrderFeeProbeCommand
         Func<IOrderFeeQuery> createQuery,
         TextWriter stdout,
         TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? sensitiveValues = null)
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(createQuery);
         ArgumentNullException.ThrowIfNull(stdout);
 
         // 🔴 すべての行は ProbeOutput を通して出す（出力の最終段で口座 ID を伏せる。どの経路の例外文にも効く）。
-        var output = new ProbeOutput(stdout);
+        // sensitiveValues は構成由来の伏せる値（接続先 host:port・鍵のパス等）。照会口の生成前（構成不正）にも効く。
+        var output = new ProbeOutput(stdout, sensitiveValues ?? []);
         if (!TryParse(args, out var orderId, out var usageError))
         {
             output.Line("result=usage-error");
@@ -199,20 +204,42 @@ public static class OrderFeeProbeCommand
         for (var e = ex; e is not null && depth < 4; e = e.InnerException, depth++)
         {
             output.Line($"error[{depth}].type={e.GetType().Name}");
-            output.Line($"error[{depth}].message={OneLine(e.Message)}");
+            // 例外文は OpenD の retMsg をそのまま含み得る。口座が確定する前（口座一覧の照会の失敗）は伏せる値が
+            // 分からないため、6 桁以上の数字の並びを末尾 2 桁以外伏せる（口座 ID の形。例外文に注文 ID を読む用は無い）。
+            output.Line($"error[{depth}].message={MaskLongDigitRuns(OneLine(e.Message))}");
         }
     }
+
+    private static readonly Regex LongDigitRun = new("[0-9]{6,}", RegexOptions.CultureInvariant);
+
+    public static string MaskLongDigitRuns(string text) =>
+        LongDigitRun.Replace(text, m => "****" + m.Value[^2..]);
 
     private static string Number(double? value) =>
         value is { } v ? v.ToString("R", CultureInfo.InvariantCulture) : "(なし)";
 
     private static string OneLine(string text) => text.Replace('\r', ' ').Replace('\n', ' ');
 
-    // 出力の最終段。照会口が IProbeOutputRedactor なら、書く前に 1 行ずつ通す（接続前・照会口の生成前は素通し）。
-    private sealed class ProbeOutput(TextWriter writer)
+    // 出力の最終段。すべての行を書く前に (1) 照会口の伏せ（口座 ID。照会口の生成前は無し）、(2) 構成由来の伏せる値
+    // （長いものから置換）へ通す。
+    private sealed class ProbeOutput(TextWriter writer, IReadOnlyCollection<string> sensitiveValues)
     {
+        public const string Masked = "<伏せ>";
+
+        private readonly string[] _sensitive = sensitiveValues
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.Ordinal)
+            .OrderByDescending(v => v.Length)
+            .ToArray();
+
         public IProbeOutputRedactor? Redactor { get; set; }
 
-        public void Line(string line) => writer.WriteLine(Redactor?.Redact(line) ?? line);
+        public void Line(string line)
+        {
+            var text = Redactor?.Redact(line) ?? line;
+            foreach (var value in _sensitive)
+                text = text.Replace(value, Masked, StringComparison.Ordinal);
+            writer.WriteLine(text);
+        }
     }
 }

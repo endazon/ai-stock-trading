@@ -38,7 +38,8 @@ if (OrderFeeProbeCommand.IsRequested(args))
     var probeExitCode = await OrderFeeProbeCommand.RunAsync(
         args,
         () => OrderFeeProbeComposition.CreateQuery(probeConfiguration),
-        Console.Out);
+        Console.Out,
+        sensitiveValues: OrderFeeProbeComposition.SensitiveValues(probeConfiguration));
     Console.Out.Flush();
     Environment.Exit(probeExitCode);
 }
