@@ -22,7 +22,7 @@ using Wolverine;
 const string ServiceName = "ai-stock-trading.market-monitor-service";
 
 // #10 Slice B, IADR-0013/0014: 監視設定変更の HTTP エンドポイント（Keycloak 認可）とヘルスチェックのため
-// WebApplication を用いる。ポーリングは BackgroundService、TradeDecisionMade 購読は Wolverine のハンドラ。
+// WebApplication を用いる。ポーリングは BackgroundService、TradeDecisionMade / TradeDecisionHeld 購読は Wolverine のハンドラ。
 //
 // IADR-0013: 本 Program.cs の standalone 配線（Wolverine/RabbitMQ・PostgreSQL・Keycloak を
 // AiStockTrading.TestSupport.PlatformShim 経由で組む部分）は dev/test/CI でのローカル単体実行のためのもの。
@@ -179,7 +179,8 @@ builder.Services.AddSingleton<StopLossLivenessReporter>();
 // FR-03: 監視間隔ごとのポーリング（市場開場時に評価・発行）。
 builder.Services.AddHostedService<MonitorPollingService>();
 
-// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。基準値更新のため TradeDecisionMade を購読、監視イベントを発行する。
+// ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。基準値更新のため TradeDecisionMade と TradeDecisionHeld
+// （#1077, IADR-0451: AI 判断後の見送り）を購読、監視イベントを発行する。
 // ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(

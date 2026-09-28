@@ -101,7 +101,7 @@ public sealed class MarketMonitorAppService(
             var baseline = baselineStore.GetBaseline(monitored.Symbol, monitored.Market);
             if (baseline is null)
             {
-                continue; // 基準値未確定（前回判断なし）は変動判定しない
+                continue; // 基準値未確定（前回判断なし）は変動判定しない。#1077, IADR-0451: Hold も判断に数える
             }
 
             var movement = PriceMovementEvaluator.Evaluate(quote.Price, baseline.Value, settings.MovementThresholdRatio);

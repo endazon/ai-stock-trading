@@ -26,6 +26,14 @@ public static class AuditEntryFactory
         Truncate($"{e.Intent.Symbol} 判断 {e.Intent.Side}/{e.Intent.PositionEffect} 数量{e.Intent.Quantity}: {e.Rationale}"),
         AuditSerialization.Serialize(e), e.DecidedAt, recordedAt);
 
+    // UC-02, FR-03, FR-11, #1077, IADR-0451 決定5: AI 判断後の見送り（Hold・統制による見送り）と判断時点の価格。
+    // 1 件の見送りが 1 行であり、発注チェーン（DecisionId）を持たないため EventId を相関にする（PriceMovementDetected と同じ）。
+    // 根拠（rationale）は運ばない —— Hold の根拠は従来どおり FR-11 ログにある（本イベントは基準値の契機である）。
+    public static AuditEntry From(TradeDecisionHeld e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeDecisionHeld), e.EventId, e.Symbol,
+        $"{e.Symbol} 判断後の見送り（{e.Reason}）判断時点価格 {e.Price}",
+        AuditSerialization.Serialize(e), e.DecidedAt, recordedAt);
+
     public static AuditEntry From(OrderApproved e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(OrderApproved), e.DecisionId, e.Intent.Symbol,
         $"{e.Intent.Symbol} 承認 {e.Intent.Side}/{e.Intent.PositionEffect} 数量{e.ApprovedQuantity}",

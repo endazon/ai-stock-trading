@@ -320,6 +320,11 @@ builder.Services.AddScoped<IScreeningReductionReporter, PublishingScreeningReduc
 // 既定（NoOp）はテストが判断サービスを直接組む場合のためであり、本番では必ずここを通す。
 builder.Services.AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter>();
 
+// 🔴 UC-02, FR-03, #1077, IADR-0451 決定4: AI 判断後の見送り（Hold・統制による見送り）を TradeDecisionHeld として
+// publish する経路。市場監視が購読して急変の基準値を判断時点の価格へ進める。
+// **配線しないと、Hold が続く間は基準値が作られず UC-02 が一度も発火しない**（#1077 の症状）。
+builder.Services.AddScoped<IDecisionHeldReporter, PublishingDecisionHeldReporter>();
+
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
 // 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。
 builder.Services.AddSingleton(ProfitabilityGateOptionsLoader.FromConfiguration(builder.Configuration));

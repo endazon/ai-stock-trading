@@ -49,6 +49,32 @@ public class ComposedRealImplementationsTests
         await host.StopAsync();
     }
 
+    // 🔴 UC-02, FR-03, #1077, IADR-0451 決定4: 判断後の見送りは TradeDecisionHeld として発行される（市場監視が基準値を進める）。
+    // 発行しなければ、Hold が続く間は急変の基準値が作られず UC-02 が発火しない（#1077 の症状）。
+    [Fact]
+    public async Task 判断後の見送りはTradeDecisionHeldとして発行する()
+    {
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.UseAiStockTradingRabbitMq(ServiceName, "amqp://guest:guest@localhost:5672");
+                opts.StubAllExternalTransports();
+            })
+            .StartAsync();
+        var held = new TradeDecisionHeld(
+            Guid.NewGuid(), "AAPL", AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates, 212.5m, "LlmHold",
+            new DateTimeOffset(2026, 9, 29, 14, 0, 0, TimeSpan.Zero), "scheduled");
+
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(bus =>
+            new PublishingDecisionHeldReporter(bus, NullLogger<PublishingDecisionHeldReporter>.Instance)
+                .ReportAsync(held));
+
+        session.Sent.MessagesOf<TradeDecisionHeld>().Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(held);
+
+        await host.StopAsync();
+    }
+
     // FR-15, ADR-0033 決定5, #632, IADR-0318: 出力先が未構成の安全既定は「書き出せなかった（false）」を返す。
     // true を返すと、記録が 1 件も残らないのに保存できたと報告される（費用だけ消費した実行が成功に見える）。
     [Fact]
