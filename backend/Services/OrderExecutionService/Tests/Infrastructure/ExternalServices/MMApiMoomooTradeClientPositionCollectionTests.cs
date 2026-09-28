@@ -316,6 +316,9 @@ public class MMApiMoomooTradeClientPositionCollectionTests
 
         public uint GetMarginRatio(TrdGetMarginRatio.Request request) => ++_serial;
 
+        // #1086: 注文費用照会（検証口だけが撃つ）。この偽物では使わない。
+        public uint GetOrderFee(TrdGetOrderFee.Request request) => ++_serial;
+
         public uint ModifyOrder(TrdModifyOrder.Request request) => ++_serial;
 
         public uint GetOrderList(TrdGetOrderList.Request request) => ++_serial;

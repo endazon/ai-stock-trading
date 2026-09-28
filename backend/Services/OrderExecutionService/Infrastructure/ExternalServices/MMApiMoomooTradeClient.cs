@@ -5,6 +5,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 using Moomoo.OpenApi;
 using Moomoo.OpenApi.Pb;
+using OrderExecutionService.Features.OrderExecution.ProbeOrderFee;
 using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 
 namespace OrderExecutionService.Infrastructure.ExternalServices;
@@ -15,7 +16,7 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // OpenD（常駐・#124）へ TCP protobuf で接続し、非同期コールバック（nSerialNo 相関）で応答を待つ。
 // MMSPI_Conn（接続）と MMSPI_Trd（取引・全 OnReply_* 実装が必要）の両インターフェースを実装する。
 // 未使用のコールバックは no-op。接続/口座取得は初回利用時に遅延実行する（起動をブロックしない）。
-public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTradeClient, IShortPermitSource, IDisposable
+public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTradeClient, IShortPermitSource, IOrderFeeQuery, IProbeOutputRedactor, IDisposable
 {
     private static readonly object InitGate = new();
     private static bool _apiInitialized;
@@ -822,6 +823,143 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         return row.IsShortPermit;
     }
 
+    // ---- IOrderFeeQuery（FR-11, FR-16, ADR-0016 決定15, #1086, IADR-0300 2026-09-29 追記）----
+
+    // 履歴注文から OrderIDEx を引くときの窓（過去何日ぶんを探すか）。検証口は直近の約定を指して使う想定である。
+    private static readonly TimeSpan OrderFeeLookupWindow = TimeSpan.FromDays(30);
+
+    // 注文費用照会（Trd_GetOrderFee）を **1 回だけ**撃ち、応答をそのまま SDK 非依存の形で返す（読み取り専用）。
+    //
+    // 🔴 照会の鍵は OrderIDEx（文字列）であり、本システムが持つ OrderID（uint64 の 10 進表記）ではない。
+    //    引数が 10 進数なら注文一覧（当日 → 履歴・対応市場ごと）から OrderIDEx を引く。見つからない・空なら
+    //    **照会を撃たずに**その結末を返す（「SIMULATE では OrderIDEx が無い」こと自体が段 2 の判断材料になる）。
+    // 🔴 再試行・ループを持たない。retType ≠ 0 は例外にせず結果として返す（EnsureSucceeded を通さない）。
+    // 🔴 口座 ID は伏せた形でしか結果へ載せない。retMsg に口座 ID が現れたら伏せる。
+    // 接続失敗・返信待ちのタイムアウト・注文一覧の照会失敗は例外のまま伝播する（呼び手が「失敗」として出す）。
+    public async Task<OrderFeeQueryResult> QueryOrderFeeAsync(string orderId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(orderId);
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+        var connection = _connection;
+        var maskedAccountId = MaskAccountId(_simAccId);
+
+        string orderIdEx;
+        int trdMarket;
+        string? resolvedMarket = null;
+        int? resolvedStatus = null;
+        if (ulong.TryParse(orderId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var oid))
+        {
+            var found = await ResolveOrderForFeeAsync(oid, cancellationToken).ConfigureAwait(false);
+            if (found is null)
+            {
+                return new OrderFeeQueryResult(
+                    OrderFeeQueryOutcome.OrderNotFound, maskedAccountId, null, null, null, null, null, []);
+            }
+            var (order, market) = found.Value;
+            resolvedMarket = market == (int)TrdCommon.TrdMarket.TrdMarket_JP ? "JP" : "US";
+            resolvedStatus = order.OrderStatus;
+            if (!order.HasOrderIDEx || string.IsNullOrWhiteSpace(order.OrderIDEx))
+            {
+                return new OrderFeeQueryResult(
+                    OrderFeeQueryOutcome.OrderIdExMissing, maskedAccountId, null, resolvedMarket, resolvedStatus, null, null, []);
+            }
+            orderIdEx = order.OrderIDEx;
+            trdMarket = market;
+        }
+        else
+        {
+            // OrderIDEx を直接与えられた。市場は分からないため PoC の市場（US）のヘッダで照会する。
+            orderIdEx = orderId;
+            trdMarket = (int)TrdCommon.TrdMarket.TrdMarket_US;
+        }
+
+        var c2s = TrdGetOrderFee.C2S.CreateBuilder()
+            .SetHeader(BuildHeader(trdMarket)) // SIMULATE 固定・発注に使う口座
+            .AddOrderIdExList(orderIdEx)
+            .Build();
+        var req = TrdGetOrderFee.Request.CreateBuilder().SetC2S(c2s).Build();
+        var rsp = (TrdGetOrderFee.Response)await SendAsync(() => connection.GetOrderFee(req), cancellationToken)
+            .ConfigureAwait(false);
+
+        var retMsg = RedactAccountId(rsp.HasRetMsg ? rsp.RetMsg : null, _simAccId);
+        if (rsp.RetType != MoomooRetType.Succeed)
+        {
+            return new OrderFeeQueryResult(
+                OrderFeeQueryOutcome.Failed, maskedAccountId, orderIdEx, resolvedMarket, resolvedStatus, rsp.RetType, retMsg, []);
+        }
+
+        var fees = new List<OrderFeeEntry>();
+        if (rsp.HasS2C)
+        {
+            foreach (TrdCommon.OrderFee fee in rsp.S2C.OrderFeeListList)
+            {
+                var items = new List<OrderFeeItem>();
+                foreach (TrdCommon.OrderFeeItem item in fee.FeeListList)
+                    items.Add(new OrderFeeItem(item.HasTitle ? item.Title : null, item.HasValue ? item.Value : null));
+                fees.Add(new OrderFeeEntry(
+                    fee.HasOrderIDEx ? fee.OrderIDEx : null,
+                    fee.HasFeeAmount ? fee.FeeAmount : null,
+                    items));
+            }
+        }
+        return new OrderFeeQueryResult(
+            OrderFeeQueryOutcome.Replied, maskedAccountId, orderIdEx, resolvedMarket, resolvedStatus, rsp.RetType, retMsg, fees);
+    }
+
+    // OrderID から注文を探す（対応市場ごとに当日 → 履歴）。読み取りのみ。見つからなければ null。
+    private async Task<(TrdCommon.Order Order, int TrdMarket)?> ResolveOrderForFeeAsync(ulong oid, CancellationToken cancellationToken)
+    {
+        var endUtc = DateTimeOffset.UtcNow.AddDays(1);
+        var beginUtc = DateTimeOffset.UtcNow - OrderFeeLookupWindow;
+        foreach (var (trdMarket, _) in SupportedMarkets)
+        {
+            var current = await FindOrderAsync(oid, trdMarket, cancellationToken).ConfigureAwait(false);
+            if (current is not null)
+                return (current, trdMarket);
+
+            var filter = TrdCommon.TrdFilterConditions.CreateBuilder()
+                .SetBeginTime(FormatFilterTime(beginUtc))
+                .SetEndTime(FormatFilterTime(endUtc))
+                .Build();
+            var c2s = TrdGetHistoryOrderList.C2S.CreateBuilder()
+                .SetHeader(BuildHeader(trdMarket))
+                .SetFilterConditions(filter)
+                .Build();
+            var req = TrdGetHistoryOrderList.Request.CreateBuilder().SetC2S(c2s).Build();
+            var rsp = (TrdGetHistoryOrderList.Response)await SendAsync(() => _connection.GetHistoryOrderList(req), cancellationToken)
+                .ConfigureAwait(false);
+            EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetHistoryOrderList");
+            foreach (TrdCommon.Order o in rsp.S2C.OrderListList)
+            {
+                if (o.OrderID == oid)
+                    return (o, trdMarket);
+            }
+        }
+        return null;
+    }
+
+    // 口座 ID を末尾 2 桁以外伏せる（検証口の出力で「どの口座か」の取り違えだけを確かめられる粒度）。
+    public static string MaskAccountId(ulong accountId)
+    {
+        var digits = accountId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return digits.Length <= 2 ? "****" : "****" + digits[^2..];
+    }
+
+    // #1086（AI レビュー指摘）: 検証口の出力の最終段。注文一覧の照会の失敗（EnsureSucceeded の例外文は生の retMsg を含む）を
+    // 含め、どの経路で出る文字列でも口座 ID の全桁を伏せる。接続前（口座未確定＝0）は素通し。
+    string IProbeOutputRedactor.Redact(string text) => RedactAccountId(text, _simAccId) ?? text;
+
+    // 文中に口座 ID の全桁が現れたら伏せた形へ置き換える（OpenD の retMsg を出力へ流すため）。
+    public static string? RedactAccountId(string? text, ulong accountId)
+    {
+        if (string.IsNullOrEmpty(text) || accountId == 0)
+            return text;
+        return text.Replace(
+            accountId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            MaskAccountId(accountId),
+            StringComparison.Ordinal);
+    }
+
     // MoomooMarket → QotMarket（銘柄の市場）。照会に使う Security の市場。
     private static int MapSecurityMarket(MoomooMarket market) => market switch
     {
@@ -951,6 +1089,9 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金（口座の評価額）の照会。応答を捨てると
     // GetAccountEquityInBaseAsync が応答待ちのままタイムアウトする（建玉照会と同型の事故）。
     public void OnReply_GetFunds(MMAPI_Conn client, uint nSerialNo, TrdGetFunds.Response rsp) => Complete(nSerialNo, rsp);
+    // FR-11, FR-16, ADR-0016 決定15, #1086, IADR-0300（2026-09-29 追記）: 注文費用照会（検証口だけが撃つ）。
+    // 応答を捨てると QueryOrderFeeAsync が応答待ちのままタイムアウトする。経費の供給ポートは差し替えていない（段 2）。
+    public void OnReply_GetOrderFee(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFee.Response rsp) => Complete(nSerialNo, rsp);
 
     // ---- MMSPI_Trd（未使用・no-op）----
 
@@ -961,7 +1102,6 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     public void OnReply_GetOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFillList.Response rsp) { }
     public void OnReply_GetHistoryOrderFillList(MMAPI_Conn client, uint nSerialNo, TrdGetHistoryOrderFillList.Response rsp) { }
     public void OnReply_GetMarginRatio(MMAPI_Conn client, uint nSerialNo, TrdGetMarginRatio.Response rsp) => Complete(nSerialNo, rsp);
-    public void OnReply_GetOrderFee(MMAPI_Conn client, uint nSerialNo, TrdGetOrderFee.Response rsp) { }
     public void OnReply_GetFlowSummary(MMAPI_Conn client, uint nSerialNo, TrdFlowSummary.Response rsp) { }
     public void OnReply_PlaceComboOrder(MMAPI_Conn client, uint nSerialNo, TrdPlaceComboOrder.Response rsp) { }
     public void OnReply_UpdateOrder(MMAPI_Conn client, uint nSerialNo, TrdUpdateOrder.Response rsp) { }

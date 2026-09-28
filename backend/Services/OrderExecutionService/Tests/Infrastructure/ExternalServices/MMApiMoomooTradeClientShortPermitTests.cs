@@ -155,6 +155,9 @@ public class MMApiMoomooTradeClientShortPermitTests
             return serial;
         }
 
+        // #1086: 注文費用照会（検証口だけが撃つ）。この偽物では使わない。
+        public uint GetOrderFee(TrdGetOrderFee.Request request) => ++_serial;
+
         public uint PlaceOrder(TrdPlaceOrder.Request request) => ++_serial;
 
         public uint ModifyOrder(TrdModifyOrder.Request request) => ++_serial;
