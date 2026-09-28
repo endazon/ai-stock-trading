@@ -387,6 +387,23 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WorkingUnknownNoFillsLine));
     }
 
+    // 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0455: 記録器は as-of 時点のニュースの状態を再構成しないため、ニュースの行は
+    // 「不明」と書く。本番の最新値（取得済み等）を持ち込むと、当時は知り得なかった状態で判断させることになる。
+    [Fact]
+    public async Task 記録器のプロンプトはニュースの状態を不明と書く()
+    {
+        var (recorder, llm, _, _) = Build([Decision("Buy")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.NewsUnknownLine));
+        llm.Prompts.Should().OnlyContain(p =>
+            !p.Contains(TradeDecisionPromptBuilder.NewsFetchedLine)
+            && !p.Contains(TradeDecisionPromptBuilder.NewsOutageLine)
+            && !p.Contains(TradeDecisionPromptBuilder.NewsNotConfiguredLine));
+    }
+
     // 🔴 T-10-1547 **否定形（最重要）**, FR-04, ADR-0044 決定 3・4, #1034, IADR-0440 決定 7（2026-09-27 改訂）:
     // 記録の対象銘柄を監視銘柄の代わりに渡さない。当時の監視銘柄が無い（再構成の供給口が無い）あいだ、監視銘柄の節は
     // 「不明」であり、記録は (e) を再構成不可と申告して Stage 0 の合否から外れる（記録そのものは残す）。

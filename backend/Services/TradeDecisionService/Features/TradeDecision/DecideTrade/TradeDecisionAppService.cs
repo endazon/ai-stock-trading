@@ -36,8 +36,13 @@ public sealed class TradeDecisionAppService(
     IScreeningReductionReporter? screeningReporter = null,
     IDecisionSkipReporter? skipReporter = null,
     IWatchlistProvider? watchlist = null,
-    IDecisionHeldReporter? heldReporter = null)
+    IDecisionHeldReporter? heldReporter = null,
+    NewsCollectionStatusStore? newsStatus = null)
 {
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成）の最新値。未指定＝null＝プロンプトは
+    // 「ニュース: 不明」と書く（無言で省かない）。本番は Program.cs の singleton が注入され、定時の購読が記録する。
+    private readonly NewsCollectionStatusStore? _newsStatus = newsStatus;
+
     // FR-04, #1034, IADR-0440 決定 2: 判断のプロンプトへ載せる監視銘柄の供給口（定時サイクルが判断対象を決める口と同じ登録）。
     // 未指定＝null＝プロンプトは「監視銘柄: 不明」と書く（空の一覧は渡さない）。本番は Program.cs の IWatchlistProvider が注入される。
     private readonly IWatchlistProvider? _watchlist = watchlist;
@@ -306,9 +311,14 @@ public sealed class TradeDecisionAppService(
         // スクリーニング有効時のみ構築されるよう遅延ファクトリで渡す（既定＝無効の経路で無駄な構築をしない）。
         // IADR-0072 決定2: RAG 文脈は本判断のみに載せ、一次スクリーニング（費用統制）には載せない。
         // FR-17, IADR-0076 決定5: 採算ゲート有効時のみプロンプトに採算節を注入する（無効の既定は現行動作のプロンプトと一致）。
+        // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成。期限切れ・未受信は null＝不明）を
+        // 本判断・一次の両方へ同じ値で渡す（RAG を経由しない欠測の明示。一次は門であり、ここで欠けると本判断へ届かない）。
+        var news = _newsStatus?.Current(clock.UtcNow);
+
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
-            currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday);
+            currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
+            news: news);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -326,10 +336,10 @@ public sealed class TradeDecisionAppService(
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
-                    intraday: intraday)
+                    intraday: intraday, news: news)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist, intraday),
+                    watchlist, intraday, news),
             decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;

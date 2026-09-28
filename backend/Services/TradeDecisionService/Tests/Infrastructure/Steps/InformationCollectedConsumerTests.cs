@@ -16,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Wolverine;
 using Wolverine.Tracking;
 using Xunit;
+using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionAppService;
 
 namespace TradeDecisionService.Tests;
@@ -69,6 +70,19 @@ public class InformationCollectedConsumerTests
         public bool IsOpen(Market market, DateTimeOffset instant) => open;
     }
 
+    // FR-04, #1081, IADR-0455: 判断へ渡ったプロンプトを記録する LLM（ニュースの状態の行を確かめる）。
+    private sealed class RecordingLlm(string output) : ILlmCompletionClient
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> Prompts { get; } = new();
+
+        public Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken ct = default)
+        {
+            Prompts.Enqueue(prompt);
+            return Task.FromResult(output);
+        }
+    }
+
     private const string ServiceName = "ai-stock-trading.trade-decision-service";
 
     private static Task<IHost> BuildAsync(
@@ -86,6 +100,8 @@ public class InformationCollectedConsumerTests
                 // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
                 // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
                 opts.Services.AddSingleton<BusinessMetrics>();
+                // FR-04, #1081, IADR-0455: ニュースの状態の最新値（本番は Program.cs の singleton）。ハンドラが記録し判断が読む。
+                opts.Services.AddSingleton<NewsCollectionStatusStore>();
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",
@@ -229,6 +245,32 @@ public class InformationCollectedConsumerTests
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should()
             .BeEmpty("休場の早期 return は取引サイクル 1 周ではない");
+
+        await host.StopAsync();
+    }
+
+    // 🔴 FR-04, ADR-0020 決定2, #1081, IADR-0455: 定時の起点イベントが運ぶニュースの状態を、**判断の前に**記録して
+    // プロンプトへ明示する（RAG を経由しない欠測の明示）。旧イベント（新項目 null）でも判断は動き「不明」と書く（互換）。
+    [Theory]
+    [InlineData(NewsCollectionStatus.Outage, TradeDecisionPromptBuilder.NewsOutageLine)]
+    [InlineData(NewsCollectionStatus.NotConfigured, TradeDecisionPromptBuilder.NewsNotConfiguredLine)]
+    [InlineData(null, TradeDecisionPromptBuilder.NewsUnknownLine)]
+    public async Task 定時の起点イベントのニュースの状態が判断のプロンプトへ届く(NewsCollectionStatus? status, string expectedLine)
+    {
+        var llm = new RecordingLlm(BuyJson);
+        using var host = await BuildAsync(
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)),
+            new CalendarStub(open: true),
+            llm);
+
+        var message = status is null
+            ? new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow)
+            : new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow, status, TimeSpan.FromMinutes(60));
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(message);
+
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().ContainSingle("旧イベントでも判断は動く");
+        llm.Prompts.Should().NotBeEmpty();
+        llm.Prompts.Should().OnlyContain(p => p.Contains(expectedLine));
 
         await host.StopAsync();
     }

@@ -269,10 +269,13 @@ builder.Services.AddScoped<IHeldPositionProvider>(sp =>
 builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);
 // FR-08, IADR-0072: 判断文脈への RAG 取得アダプタ。常に登録し、実接続の可否は上の IKnowledgeBaseSearch（Search:BaseUrl）で決まる。
 // TopK は Retrieval:TopK（既定 5・不正/非正値は既定へ）。取得失敗・空は判断側で「文脈なし」に縮退する（TradeDecisionService）。
+// FR-08, #1083, IADR-0454 決定5: 新しさの足切りは Retrieval:MaxAgeHours（既定 168 時間・不正/非正値は既定へ）。
 builder.Services.AddScoped<IRetrievalContextProvider>(sp =>
     new KnowledgeBaseRetrievalContextProvider(
         sp.GetRequiredService<IKnowledgeBaseSearch>(),
         ParseTopK(sp.GetRequiredService<IConfiguration>()["Retrieval:TopK"]),
+        KnowledgeBaseRetrievalContextProvider.ParseMaxAge(sp.GetRequiredService<IConfiguration>()["Retrieval:MaxAgeHours"]),
+        sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<KnowledgeBaseRetrievalContextProvider>>()));
 
 // FR-02, IADR-0023, #337, IADR-0245: 市場カレンダー（休場日・半日取引日・場中ゲート）と定時サイクルの監視銘柄。
@@ -324,6 +327,11 @@ builder.Services.AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter
 // publish する経路。市場監視が購読して急変の基準値を判断時点の価格へ進める。
 // **配線しないと、Hold が続く間は基準値が作られず UC-02 が一度も発火しない**（#1077 の症状）。
 builder.Services.AddScoped<IDecisionHeldReporter, PublishingDecisionHeldReporter>();
+
+// FR-04, ADR-0020 決定2, #1081, IADR-0455: 情報収集から届くニュースの状態（取得済み／欠測／未構成）の最新値を有効期限つきで保持する。
+// 定時の購読（InformationCollectedHandler）が記録し、判断サービスが定時・急変の両方のプロンプトへ明示する（RAG を経由しない）。
+// **singleton にする**（スコープごとに作ると記録した値が判断へ届かない）。未配線なら判断のプロンプトは常に「ニュース: 不明」と書く。
+builder.Services.AddSingleton<NewsCollectionStatusStore>();
 
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
 // 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。

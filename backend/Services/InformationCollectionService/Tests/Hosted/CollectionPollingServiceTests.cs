@@ -204,6 +204,44 @@ public class CollectionPollingServiceTests
         await host.StopAsync();
     }
 
+    // FR-04, ADR-0020 決定2, #1081, IADR-0455: InformationCollected はこの巡回のニュースの状態（取得済み／欠測／未構成）と、
+    // 現況観測と同じ有効期間を運ぶ（欠測の明示を RAG に頼らず取引判断へ直接届ける）。
+    // 🔴 未構成（ニュース源を試行していない）は欠測に数えず、新規建ての停止集合（現況観測）も空のまま（IADR-0220 は不変）。
+    [Theory]
+    [InlineData(true, true, NewsCollectionStatus.Fetched)]
+    [InlineData(true, false, NewsCollectionStatus.Outage)]
+    [InlineData(false, false, NewsCollectionStatus.NotConfigured)]
+    public async Task InformationCollected_はニュースの状態と有効期間を運ぶ(
+        bool newsAttempted, bool newsSucceeded, NewsCollectionStatus expected)
+    {
+        var raw = new RawInformationItem(InformationKind.Quote, "finnhub", "AAPL", "現在値", "current=1", DateTimeOffset.UtcNow);
+        List<SourceOutcome> outcomes = [SourceOutcome.Ok("finnhub")];
+        if (newsAttempted)
+        {
+            outcomes.Add(new SourceOutcome("finnhub-news", newsSucceeded));
+            outcomes.Add(new SourceOutcome("google-news", newsSucceeded));
+        }
+
+        using var host = await BuildAsync(new StubFetcher(new SourceFetchResult([raw], outcomes)));
+
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => NewPolling(host).RunOnceAsync(CancellationToken.None));
+
+        var published = session.Sent.MessagesOf<InformationCollected>().Should().ContainSingle().Which;
+        published.NewsStatus.Should().Be(expected);
+        published.NewsStatusValidFor.Should().Be(
+            CollectionPollingService.ObservationValidity(TimeSpan.FromSeconds(new CollectionOptions().PollIntervalSeconds)));
+
+        var observed = session.Sent.MessagesOf<InformationSourceStateObserved>().Should().ContainSingle().Which;
+        observed.ValidFor.Should().Be(published.NewsStatusValidFor!.Value, "同じ巡回の同じ事実の鮮度である");
+        if (expected == NewsCollectionStatus.NotConfigured)
+        {
+            observed.BlockingCategories.Should().BeEmpty("未構成は新規建ての停止に数えない（IADR-0220）");
+        }
+
+        await host.StopAsync();
+    }
+
     // 遷移でのみ発行する（続いている間は黙る）。1 巡回で N 件出る洪水を作らない。
     [Fact]
     public async Task 欠測が続いている間は再発行しない()
