@@ -627,7 +627,7 @@ public sealed class TradeDecisionSkippedAuditHandler(IAuditEventStore store, ICl
     }
 }
 
-// UC-02, FR-03, FR-11, #1077, IADR-0451 決定5: AI 判断後の見送り（急変の基準値の契機）を台帳へ記録する。
+// UC-02, FR-03, FR-11, #1077, IADR-0452 決定5: AI 判断後の見送り（急変の基準値の契機）を台帳へ記録する。
 // 全イベント監査（FR-11・AuditConsumerCoverageTests）の規約による。
 public sealed class TradeDecisionHeldAuditHandler(IAuditEventStore store, IClock clock)
 {

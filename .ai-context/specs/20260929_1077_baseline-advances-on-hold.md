@@ -2,7 +2,7 @@
 title: 判断が Hold・見送りで終わっても急変の基準値を判断時点の価格へ進める（#1077）
 type: spec
 status: accepted
-related_ids: [UC-02, FR-03, FR-02, FR-04, FR-11, ADR-0003, IADR-0014, IADR-0023, IADR-0079, IADR-0099, IADR-0129, IADR-0248, IADR-0374, IADR-0451]
+related_ids: [UC-02, FR-03, FR-02, FR-04, FR-11, ADR-0003, IADR-0014, IADR-0023, IADR-0079, IADR-0099, IADR-0129, IADR-0248, IADR-0374, IADR-0452]
 author: claude (Claude Code)
 created: 2026-09-29
 updated: 2026-09-29
@@ -65,7 +65,7 @@ UC-01 は「見送り」を判断結果に数える。Hold も AI 判断であ�
 判断時点の価格は、手元にある実価格を優先する: **現在値（`ICurrentPriceProvider`。有効時） → 起点の価格（価格変動トリガーの `PriceMovementDetected.Price`） → LLM の参照価格（正のときだけ。Buy/Sell の結論に限られる）**。
 いずれも無い（例: 現在値の供給が無効な構成の定時判断で Hold）ときは発行しない（基準値は動かさない。残余に記録）。
 
-### 伝え方（代替案は IADR-0451）
+### 伝え方（代替案は IADR-0452）
 
 - 新イベント `TradeDecisionHeld(EventId, Symbol, Market, Price, Reason, DecidedAt, CycleTrigger?)` を `Shared.Contracts.Events` に置く。
 - 取引判断は新ポート `IDecisionHeldReporter`（既定 NoOp・Worker が `PublishingDecisionHeldReporter` を配線。`IScreeningReductionReporter` と同じ作法）で発行する。
@@ -129,6 +129,10 @@ UC-01 は「見送り」を判断結果に数える。Hold も AI 判断であ�
 - 現在値の供給が無効な構成（本番 values.yaml の既定 `MarketData__Provider=""`）の**定時判断の Hold**は判断時点の価格を持たないため、基準値を進めない。
   稼働 PoC（values-local は finnhub で有効）では現在値があり、この残余は当たらない。定時判断へ価格を渡す改修は #1035 の範囲。
 - 基準値は市場監視自身の相場源ではなく取引判断の価格で進む（`TradeDecisionMade` の既存経路と同じ）。両者の相場源が違う構成では小さなずれが残る。
+
+## 採番
+
+- IADR は #1079（#1035）と番号が衝突したため、後からマージする本 PR が最大＋1 の IADR-0452 へ改番した（2026-09-29）。
 
 ## 未決事項
 

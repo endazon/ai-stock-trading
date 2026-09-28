@@ -104,7 +104,7 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(TradeDecisionSkipped), "AiStockTrading.Shared.Contracts.Events.TradeDecisionSkipped")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]
         [InlineData(typeof(TradeDecisionMade), "AiStockTrading.Shared.Contracts.Events.TradeDecisionMade")]
-        // UC-02, FR-03, #1077, IADR-0451: AI 判断後の見送り（市場監視が急変の基準値を進める）。
+        // UC-02, FR-03, #1077, IADR-0452: AI 判断後の見送り（市場監視が急変の基準値を進める）。
         [InlineData(typeof(TradeDecisionHeld), "AiStockTrading.Shared.Contracts.Events.TradeDecisionHeld")]
         // FR-11, ADR-0016 決定15, #339, IADR-0226: 取引記録の経費 1 行（経費区分 7 種）。
         [InlineData(typeof(TradeExpenseRecorded), "AiStockTrading.Shared.Contracts.Events.TradeExpenseRecorded")]

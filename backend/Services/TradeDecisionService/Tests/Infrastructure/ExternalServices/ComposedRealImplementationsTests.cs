@@ -49,7 +49,7 @@ public class ComposedRealImplementationsTests
         await host.StopAsync();
     }
 
-    // 🔴 UC-02, FR-03, #1077, IADR-0451 決定4: 判断後の見送りは TradeDecisionHeld として発行される（市場監視が基準値を進める）。
+    // 🔴 UC-02, FR-03, #1077, IADR-0452 決定4: 判断後の見送りは TradeDecisionHeld として発行される（市場監視が基準値を進める）。
     // 発行しなければ、Hold が続く間は急変の基準値が作られず UC-02 が発火しない（#1077 の症状）。
     [Fact]
     public async Task 判断後の見送りはTradeDecisionHeldとして発行する()

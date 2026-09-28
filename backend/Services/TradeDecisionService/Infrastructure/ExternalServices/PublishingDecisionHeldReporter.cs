@@ -5,7 +5,7 @@ using Wolverine;
 
 namespace TradeDecisionService.Infrastructure.ExternalServices;
 
-// UC-02, FR-03, #1077, IADR-0451 決定4: 判断後の見送りを TradeDecisionHeld として publish する。
+// UC-02, FR-03, #1077, IADR-0452 決定4: 判断後の見送りを TradeDecisionHeld として publish する。
 // 市場監視が購読して急変の基準値を判断時点の価格へ進め、監査サービスが台帳へ記録する。
 // ADR-0013, IADR-0129: 発行は Wolverine の IMessageBus（scoped）。PublishAsync は CancellationToken を取らない。
 internal sealed class PublishingDecisionHeldReporter(

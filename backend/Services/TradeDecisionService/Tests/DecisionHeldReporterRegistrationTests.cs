@@ -11,7 +11,7 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// 🔴 UC-02, FR-03, #1077, IADR-0451 決定4: 判断後の見送りの発行ポート（IDecisionHeldReporter）が composition root で
+// 🔴 UC-02, FR-03, #1077, IADR-0452 決定4: 判断後の見送りの発行ポート（IDecisionHeldReporter）が composition root で
 // **ちょうど 1 つ・発行実装へ**登録され、判断サービスへ実際に届いていることを固定する。
 //
 // 判断サービス側の依存は省略可能（既定 NoOp）である。Program.cs の登録を消してもコンパイルは通り、DI は NoOp で組み、

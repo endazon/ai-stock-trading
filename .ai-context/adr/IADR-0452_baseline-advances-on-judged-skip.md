@@ -1,5 +1,5 @@
 ---
-title: IADR-0451 AI 判断後の見送り（Hold を含む）は新イベント TradeDecisionHeld で急変の基準値を判断時点の価格へ進め、判断をしなかった見送りと解析不能では進めない
+title: IADR-0452 AI 判断後の見送り（Hold を含む）は新イベント TradeDecisionHeld で急変の基準値を判断時点の価格へ進め、判断をしなかった見送りと解析不能では進めない
 type: impl-adr
 status: Accepted
 related_ids: [UC-02, UC-01, FR-03, FR-02, FR-04, FR-11, ADR-0003, IADR-0014, IADR-0023, IADR-0079, IADR-0099, IADR-0129, IADR-0248, IADR-0358, IADR-0374]
@@ -12,7 +12,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
 
-# IADR-0451: AI 判断後の見送りで急変の基準値を進める（#1077）
+# IADR-0452: AI 判断後の見送りで急変の基準値を進める（#1077）
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。
@@ -28,6 +28,7 @@ plan_refs:
 - 関連する実装仕様書: [`.ai-context/specs/20260929_1077_baseline-advances-on-hold.md`](../specs/20260929_1077_baseline-advances-on-hold.md)
 - 前提: [IADR-0014](IADR-0014_market-monitor-events-and-boundary.md)（基準値＝前回 AI 判断時点の価格）、[IADR-0374](IADR-0374_decision-skip-reasons-and-first-alert-rule.md)（見送りの唯一の出口と 13 値の語彙）、
   [IADR-0248](IADR-0248_parse-failure-vs-hold-distinction.md)（解析不能と見送りの区別）、[IADR-0129](IADR-0129_wolverine-messaging-topology.md)（キュー名）、[IADR-0079](IADR-0079_event-backward-compat-contract-test.md)（契約の追加のみ）
+- 採番: #1079（#1035）と番号が衝突したため、後からマージする本 PR が最大＋1 の 0452 へ改番した（2026-09-29。欠番は作らない）。
 - 関連 issue: #1077（起点）。#1035（定時の判断に値動きを渡す。本件と並ぶ「稼働 PoC で注文が出ない」構造上の原因。本件は #1035 の範囲に触れない）
 
 ## コンテキストと課題

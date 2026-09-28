@@ -320,7 +320,7 @@ builder.Services.AddScoped<IScreeningReductionReporter, PublishingScreeningReduc
 // 既定（NoOp）はテストが判断サービスを直接組む場合のためであり、本番では必ずここを通す。
 builder.Services.AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter>();
 
-// 🔴 UC-02, FR-03, #1077, IADR-0451 決定4: AI 判断後の見送り（Hold・統制による見送り）を TradeDecisionHeld として
+// 🔴 UC-02, FR-03, #1077, IADR-0452 決定4: AI 判断後の見送り（Hold・統制による見送り）を TradeDecisionHeld として
 // publish する経路。市場監視が購読して急変の基準値を判断時点の価格へ進める。
 // **配線しないと、Hold が続く間は基準値が作られず UC-02 が一度も発火しない**（#1077 の症状）。
 builder.Services.AddScoped<IDecisionHeldReporter, PublishingDecisionHeldReporter>();

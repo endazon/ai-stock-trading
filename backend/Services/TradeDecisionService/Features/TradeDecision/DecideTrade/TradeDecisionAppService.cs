@@ -69,7 +69,7 @@ public sealed class TradeDecisionAppService(
     // 実計上（MetricsDecisionSkipReporter）は Worker が配線する。
     private readonly IDecisionSkipReporter _skipReporter = skipReporter ?? new NoOpDecisionSkipReporter();
 
-    // 🔴 UC-02, FR-03, #1077, IADR-0451 決定4: 判断後の見送りを市場監視（急変の基準値）へ渡すポート。未指定＝NoOp。
+    // 🔴 UC-02, FR-03, #1077, IADR-0452 決定4: 判断後の見送りを市場監視（急変の基準値）へ渡すポート。未指定＝NoOp。
     // 実発行（PublishingDecisionHeldReporter）は Worker が配線する。
     private readonly IDecisionHeldReporter _heldReporter = heldReporter ?? new NoOpDecisionHeldReporter();
 
@@ -138,7 +138,7 @@ public sealed class TradeDecisionAppService(
         return null;
     }
 
-    // 🔴 UC-02, FR-03, #1077, IADR-0451 決定1/4: **AI 判断が結論を出した後の見送り**の出口。
+    // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1/4: **AI 判断が結論を出した後の見送り**の出口。
     // 計画の基準点は「前回 AI 判断を行った時点の価格」であり、見送りも判断結果である。判断時点の価格が分かれば
     // TradeDecisionHeld を発行して市場監視の基準値を進め、そのうえで唯一の出口 Skip を通す（計上は Skip の 1 件のまま）。
     // judgedPrice が null（解析不能＝結論なし、または価格が手元に無い）なら発行しない。
@@ -168,7 +168,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, reason);
     }
 
-    // 🔴 UC-02, FR-03, #1077, IADR-0451 決定1/3: 判断時点の価格。**結論を得ていない（解析不能）なら null**
+    // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1/3: 判断時点の価格。**結論を得ていない（解析不能）なら null**
     // （IADR-0248: 一次の解析不能、または二次の全票が解析不能）。価格は手元の実価格を優先する:
     // 現在値（有効時） → 起点の価格（価格変動トリガー） → LLM の参照価格（正のときだけ。Hold は 0）。
     private static decimal? JudgedPriceOf(
@@ -343,7 +343,7 @@ public sealed class TradeDecisionAppService(
             orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut,
             orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable);
 
-        // 🔴 UC-02, FR-03, #1077, IADR-0451 決定1: ここから先の見送りは AI 判断の後である（基準点になる）。
+        // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1: ここから先の見送りは AI 判断の後である（基準点になる）。
         var judgedPrice = JudgedPriceOf(orchestrated, currentPrice, trigger);
 
         if (decision.Action == TradeAction.Hold)

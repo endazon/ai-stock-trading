@@ -313,7 +313,7 @@ public class AuditCycleCompletenessTests
             new StopLossTriggered(
                 Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 950m, 960m, t),
             new TradeDecisionMade(decisionId, Intent(), "上昇トレンドのため買い", t),
-            // UC-02, FR-03, #1077, IADR-0451 決定5: AI 判断後の見送り（急変の基準値の契機）。
+            // UC-02, FR-03, #1077, IADR-0452 決定5: AI 判断後の見送り（急変の基準値の契機）。
             new TradeDecisionHeld(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_000m, "LlmHold", t, "scheduled"),
             new TradeDecisionSkipped("trade-decision", "model-mismatch", "claude-opus-5", "claude-haiku-4-5", t),
             new TradeExpenseRecorded(new TradeExpense(

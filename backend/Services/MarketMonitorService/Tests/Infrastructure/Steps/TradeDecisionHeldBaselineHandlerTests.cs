@@ -16,7 +16,7 @@ using Xunit;
 
 namespace MarketMonitorService.Tests;
 
-// 🔴 UC-02, FR-03, #1077, IADR-0451 決定2: AI 判断後の見送り（TradeDecisionHeld）で急変の基準値が判断時点価格へ進む。
+// 🔴 UC-02, FR-03, #1077, IADR-0452 決定2: AI 判断後の見送り（TradeDecisionHeld）で急変の基準値が判断時点価格へ進む。
 //
 // 以前は TradeDecisionMade（発注意図あり）だけが基準値を進め、稼働 PoC（2026-09-28）で全件 Hold が続いた間、
 // 基準値が作られず UC-02 が一度も発火しなかった。計画の基準点は「前回 AI 判断を行った時点の価格」で、Hold も AI 判断である。

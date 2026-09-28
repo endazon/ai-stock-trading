@@ -180,7 +180,7 @@ builder.Services.AddSingleton<StopLossLivenessReporter>();
 builder.Services.AddHostedService<MonitorPollingService>();
 
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。基準値更新のため TradeDecisionMade と TradeDecisionHeld
-// （#1077, IADR-0451: AI 判断後の見送り）を購読、監視イベントを発行する。
+// （#1077, IADR-0452: AI 判断後の見送り）を購読、監視イベントを発行する。
 // ハンドラは明示登録ではなくアセンブリ走査で発見されるため、ハンドラを持つアセンブリ（Infrastructure）を明示する。
 // キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている（サービス側でトポロジを選ばない）。
 builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(

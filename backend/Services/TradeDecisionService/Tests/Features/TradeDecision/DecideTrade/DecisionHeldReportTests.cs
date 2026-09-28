@@ -15,7 +15,7 @@ using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDeci
 
 namespace TradeDecisionService.Tests;
 
-// 🔴 UC-02, FR-03, FR-04, ADR-0003, #1077, IADR-0451 決定1/3/4:
+// 🔴 UC-02, FR-03, FR-04, ADR-0003, #1077, IADR-0452 決定1/3/4:
 // **AI 判断が結論を出した後の見送りは、判断時点の価格つきで TradeDecisionHeld を発行する**（市場監視が急変の基準値を進める）。
 //
 // 計画の基準点は「前回 AI 判断を行った時点の価格」（04_workflows/02 §補足）。以前は TradeDecisionMade（発注意図あり）だけが
@@ -194,7 +194,7 @@ public class DecisionHeldReportTests
         report.CycleTrigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
     }
 
-    // IADR-0451 決定3: 権威ある現在値（有効時）を起点の価格より優先する（TradeDecisionMade の参照価格と同じ向き）。
+    // IADR-0452 決定3: 権威ある現在値（有効時）を起点の価格より優先する（TradeDecisionMade の参照価格と同じ向き）。
     [Fact]
     public async Task 現在値が有効なら現在値を判断時点の価格にする()
     {
@@ -220,7 +220,7 @@ public class DecisionHeldReportTests
         report.CycleTrigger.Should().Be(BusinessMetrics.TriggerScheduled);
     }
 
-    // 残余（IADR-0451 §結果）: 現在値の供給が無効な構成の定時の Hold は判断時点の価格を持たない。価格を作らず発行しない。
+    // 残余（IADR-0452 §結果）: 現在値の供給が無効な構成の定時の Hold は判断時点の価格を持たない。価格を作らず発行しない。
     [Fact]
     public async Task 判断時点の価格が手元に無ければ発行しない()
     {
