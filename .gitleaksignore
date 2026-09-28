@@ -45,3 +45,11 @@ cf093d22f9f30fb286bbfacf3eab696a766397e7:deploy/helm/ai-stock-trading/README.md:
 # （6154bbfe）ではなく squash 後の c255bfeb になる。#797 時点ではブランチ側の SHA を書いていたため develop への push で
 # Security が落ちた（#799）。fingerprint は develop に実在する squash コミットの SHA で書く。
 c255bfeb7667d54763ee1332b1785e5b2c2d4a0c:.github/workflows/helm.yml:discord-client-id:624
+
+# #1071 / IADR-0439: helm-release-drift の自己試験 fixture（live.yaml）が Secret の `data:` に**見張り用の偽値**
+# （FIXTURE-SECRET-SENTINEL の base64。実在の資格情報ではない）を書いた行を kubernetes-secret-yaml ルールが検知した。
+# 当該コミット 13fcb635 は **develop に入っていない**。閉じた PR #1042 のブランチ `chore/NFR-1022-helm-release-drift` に
+# 残っているだけで、develop へは stringData に改めた #1043（f23f2fa3）が入った。ところが週次 schedule の gitleaks は
+# checkout が全ブランチを取得し `git log --all` を走査するため、残ったブランチの履歴で落ちる。
+# 履歴は書き換えない方針のため fingerprint で無効化する（当該ブランチが削除されれば、この行は何も一致しなくなるだけで無害）。
+13fcb6355b5059ada76231948d2afdcc06e42321:scripts/fixtures/helm-release-drift/live.yaml:kubernetes-secret-yaml:12
