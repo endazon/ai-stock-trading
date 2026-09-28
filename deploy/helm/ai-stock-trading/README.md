@@ -185,13 +185,14 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens`（**円 / 1,000 トークン**・**モデル別**）。
   未設定（既定 0）だと毎回 ¥0 計上で月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
   🔴 **env 名ではモデル ID の `-` を `_` で書く**（`claude_sonnet_5`。#817）。
-- **公式情報源の収集（#279 / IADR-0114 / IADR-0064）**: `Collection__Source__Provider="finnhub,sec-edgar,fred"`。
+- **公式情報源・ニュース源の収集（#279 / IADR-0114 / IADR-0064 / #1082 / IADR-0453）**: `Collection__Source__Provider="finnhub,finnhub-news,google-news,sec-edgar,fred"`。
   SEC EDGAR は CIK `0000320193`（Apple）＋連絡先入り UA（下記 `SEC_EDGAR_USER_AGENT`）、FRED は `DEXJPUS` / `DGS10`
   （鍵は Fx と同じ `fred-api-key`）。必須構成を欠くソースだけが警告つきで除外される（他ソースは有効なまま）。
+  ニュース源（**［2026-09-29 / #1082］** 以前は未構成）は下記「情報収集の Finnhub の対象銘柄」節の末尾を参照（日次の要求が約 2 倍・429 の見張り方）。
 
 **本番（ArgoCD）はバイト等価**: `deploy/argocd/application.yaml` は `valueFiles` を持たず `values.yaml` のみを描画するため、
 `values-local.yaml` は本番描画に一切関与しない。`helm.yml` の CI が「既定描画に経路B有効化が漏れていないこと」と
-「`values-local` 描画で①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源が ON かつ Broker=paper・opend/ExternalSecret 不在であること」を
+「`values-local` 描画で①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源＋ニュース源が ON かつ Broker=paper・opend/ExternalSecret 不在であること」を
 両検証する。加えて「**`values-local` が既定描画の env を 1 つも落としていないこと**」も検査する（#279 / IADR-0114 決定4）——
 Helm は**リストを置換する**ため、`extraEnv` を上書きしているサービスでは本番 `values.yaml` にキーが増えたときの写し忘れが
 **当該 env の消失**になり、「有効化したつもりで別の機能を落とす」事故になるため。
@@ -287,9 +288,20 @@ Finnhub の 429 のうち、`X-Ratelimit-Remaining` が残っているのに拒�
 - **1 巡回を巡回間隔に収める**（計画 ADR-0043 決定2 (b)）: 1 巡回に問い合わせる銘柄数は
   `RateLimitPerMinute × 巡回間隔（分） ÷ 1 銘柄あたりの要求数（finnhub / finnhub-news の有効数）` まで。超えた分は監視銘柄の順の
   後ろから後回しにして警告し、`ast.information_collection.finnhub_symbols_deferred` に数を出す。`values-local`（30 回/分・300 秒・
-  finnhub だけ）なら 150 銘柄まで収まる。
+  finnhub と finnhub-news の 2 要求）なら 75 銘柄まで収まる（**［2026-09-29 / #1082］** 以前は finnhub だけで 150 銘柄）。
 - `finnhub` と `finnhub-news` は**1 つの自制レート（`Collection__Source__Finnhub__RateLimitPerMinute`）を共有する**（同じ鍵。
   以前はソースごとに別のバケットで、両方を有効にすると同じ鍵へ自制値の 2 倍を送り得た）。
+- **経路 B のニュース源（［2026-09-29 / #1082］ / IADR-0453）**: `values-local` は `finnhub-news` と `google-news` も列挙する。
+  - `finnhub-news` は上の鍵・対象銘柄・自制レートを共有する。同一鍵の合計（57 ≤ 60 回/分）は変わらないが、**情報収集の日次の要求は約 2 倍**になる
+    （巡回 300 秒＝288 巡回/日。6 銘柄なら 1,728 → 3,456 回/日。費用統制の間隔延長中はそれより少ない）。**日次上限は未実測**なので、次の 2 つで 429 を見張る:
+    - 企業ニュースの 429 は銘柄ごとの取得失敗として警告ログ「Finnhub 企業ニュースの取得に失敗しました（銘柄 …）」に出る（分類しない）。
+      全銘柄が失敗した巡回はソースの欠測になる。
+    - 現在値の 429 のうち分次で説明できないものは EventId `4301 FinnhubDailyLimitClue`（下記「分次で説明できない 429」）。
+      企業ニュースが増えた分、同じ鍵の日次の上限に先に届き得る。**見つけたら `Finnhub:ProvisionalDailyLimit` を推測で埋めず、計画へ環流する。**
+  - `google-news` は `Collection__Source__GoogleNews__Queries__*` の**固定のクエリ**だけを引く（監視銘柄に追随する仕組みは無い。記事は銘柄に紐付かない）。
+    `values-local` は市場全般の 1 クエリ（`米国株`）だけにとどめる。Finnhub の予算の外（キー不要・既定 1 回/分に自制）。
+  - 🔴 両方が同じ巡回で取得できないと「ニュース系の全滅」で**新規建てを止める**（手仕舞い・損切りは止めない）。以前は未構成（欠測に数えない）だった。
+  - 収集は巡回ごとに新しい文書として KB へ保存し、重複を除かない。ニュースを有効にすると文書数の増え方が大きくなる（#1084）。
 
 > **Discord の環境固有 ID**（`GuildId` / `ChannelId` / `AllowedUserIds` / `UserMapping`）は**空既定**であり、
 > 下記「Discord の環境固有 ID」の env（`DISCORD_BOT_*`）で与える（[#245](https://github.com/endazon/ai-stock-trading/issues/245) /

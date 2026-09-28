@@ -167,13 +167,17 @@ services:
       # 案A+（ADR-0004）の情報源はカンマ区切りで合流する（CompositeInformationSource）。必須構成を欠くソースだけが
       # 警告つきで除外され、他ソースは有効なまま（IADR-0064 決定1＝1 ソースの不備で全体を止めない）。
       # edinet は API キー（EDINET_SUBSCRIPTION_KEY）、boj は統計分類/系列コードの一次確認が要るため列挙しない（#279 残置）。
-      - { name: Collection__Source__Provider, value: "finnhub,sec-edgar,fred" }  # ← 収集起動（既定 ""）
+      # FR-01, ADR-0020 決定2, #1082, IADR-0453: ニュース源（finnhub-news・google-news）も列挙する（以前は未構成で、判断へニュースが届かなかった）。
+      - { name: Collection__Source__Provider, value: "finnhub,finnhub-news,google-news,sec-edgar,fred" }  # ← 収集起動（既定 ""）
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       # FR-01/13, #1015, IADR-0435: Finnhub の対象銘柄は市場監視の監視銘柄（米国の銘柄）に追随する（取引判断の
       # MarketMonitor__BaseUrl と同じ宛先・同じ s2s〔下の ServiceAuth__*〕）。SC-02・/policy で監視銘柄を変えると次の巡回から収集対象も変わる。
       # 自制レートは Collection__Source__Finnhub__RateLimitPerMinute（既定 30・finnhub と finnhub-news で共有）。巡回間隔 300 秒
-      # （appsettings.Development.json）・finnhub だけなら 1 巡回 150 銘柄まで収まる（計画 ADR-0043 決定2 (b)。超えた分は後回しにして警告）。
+      # （appsettings.Development.json）・finnhub と finnhub-news の両方で 1 銘柄 2 要求なので、1 巡回 75 銘柄まで収まる
+      # （計画 ADR-0043 決定2 (b)。超えた分は後回しにして警告。#1082 以前の finnhub だけのときは 150 銘柄）。
+      # #1082, IADR-0453: 同一鍵の合計（情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3 ＝ 57 ≤ 60 回/分）は変わらない。日次は約 2 倍
+      # （6 銘柄 × 2 要求 × 288 巡回 ≒ 3,456 回/日）。日次上限は未実測（ADR-0043 決定1）のため、429 を運用ログで見張る（helm README）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       # **フォールバック専用**: 監視銘柄を一度も読めていない（起動直後から市場監視に届かない）ときだけ使う。
       # 一度読めた後に読めなくなったら、直前に読めた対象を使い続ける（不明を空と扱わない）。
@@ -185,10 +189,12 @@ services:
       # ADR-0031（計画）決定2〜3, IADR-0292: 日次上限。ADR-0043 決定1・IADR-0437 で暫定の 300 回/日は撤回＝空は未実測（比べない）。実測したら設定する。
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # ============ ニュース源（FR-01 の必須条件は finnhub-news ∨ google-news）============
-      # ローカルでは Provider に finnhub-news / google-news を含めていないため**未構成**である
-      # （未構成は欠測に数えない＝IADR-0220）。boj と同じく env の枠だけ保持し、既定描画から
-      # 落とさない（helm.yml の env 突合が values-local の写し忘れを検出する）。
-      - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
+      # #1082, IADR-0453: 経路 B でも両方を有効にする。finnhub-news は上の Finnhub の鍵・対象銘柄（監視銘柄に追随）・自制レートを共有する。
+      # google-news の対象は**固定のクエリ**である（監視銘柄に追随する仕組みは無い。記事は銘柄に紐付かない＝Symbol なし）。
+      # 市場全般の 1 クエリだけにとどめる（自制は既定 1 回/分・1 クエリ最大 20 件）。監視銘柄ごとのクエリは IADR-0453 の残余。
+      # 🔴 両方が同じ巡回で失敗すると「ニュース系の全滅」＝新規建て停止（手仕舞い・損切りは止めない。ADR-0020 決定3）。
+      #    以前は未構成（欠測に数えない＝IADR-0220）だったため、経路 B でこの縮退が起こり得るのは本変更からである。
+      - { name: Collection__Source__GoogleNews__Queries__0, value: "米国株" }
       # ============ SEC EDGAR（米国の開示・API キー不要）: #279/IADR-0114 ============
       # SEC 規約は**連絡先（実在のメールアドレス）入り**の User-Agent を必須とする（IADR-0064 決定4 が構成必須化）。
       # これは環境固有の個人情報のため values へ直書きせず ast-secrets 経由で与える（IADR-0114 決定2）。
