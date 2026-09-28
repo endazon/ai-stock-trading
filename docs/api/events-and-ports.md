@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-08, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06]
-adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0040, ADR-0041]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, MSP:IADR-0049]
-specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077]
+adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0020, ADR-0040, ADR-0041]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, IADR-0453, MSP:IADR-0049]
+specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold, 20260929_1081_news-status-in-decision-prompt]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077, #1081]
 -->
 
 
@@ -73,7 +73,7 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 
 | イベント | 発行元 | 主なフィールド | 用途 |
 | --- | --- | --- | --- |
-| `InformationCollected` | 情報収集 | EventId, ItemCount, CollectedAt | 1 巡回の収集完了（正規化・KB 保存済み件数）。定時取引サイクルの起点（定時サイクルとイベント駆動サイクルは取引判断で合流する） |
+| `InformationCollected` | 情報収集 | EventId, ItemCount, CollectedAt, NewsStatus（任意）, NewsStatusValidFor（任意） | 1 巡回の収集完了（正規化・KB 保存済み件数）。定時取引サイクルの起点（定時サイクルとイベント駆動サイクルは取引判断で合流する）。`NewsStatus` はこの巡回のニュース系の状態（取得済み／欠測／未構成。無い＝不明）で、取引判断は有効期間のあいだ最新値を保持し、判断のプロンプトへ「ニュース: 取得済み／欠測／未提供（未構成）／不明」と明示する（知識ベースの検索を経由しない） |
 | `CostThresholdReached` | 費用統制 | Month, Category, Percent, State, OccurredAt | 費用しきい値到達で統制状態が上方遷移（Normal→Throttled→Halted）。通知が購読 |
 | `AssumptionsChanged` | 設定管理 | Version, Actor, Reason, ChangedAt | 全体前提条件が利用者により変更（バージョンつき）。監査・通知が購読。消費側は前提条件キャッシュの無効化に購読（`AssumptionsChangedConsumer`。共有クライアントのイベント無効化経路） |
 | `ReportConfirmed` | 報告書 | PeriodKey, Kind, Actor, AssumptionsVersion, ConfirmedAt, AuthorizedBy（任意） | 報告書の確定（Draft→Confirmed 遷移時のみ）。監査・通知が購読。`Actor` は確定を操作した利用者、`AuthorizedBy` は代理確定（Discord Bot 経由）のときの認可の主体＝owner マップ機密クライアントの ID（利用者本人のトークンでは null） |

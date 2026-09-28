@@ -260,7 +260,9 @@ public class WatchlistInDecisionPromptTests
         protectedWithUnknown.Materials.Should().ContainSingle("予算内なら削らない");
 
         // #1035, IADR-0451: 銘柄行は値動きの行の予約（PriceContextReserveChars）ぶん 400→700 へ底上げした。
+        // #1081, IADR-0453: ニュースの状態の行の予約（NewsStatusReserveChars）ぶん 700→900 へ底上げした。
         var exactBudget = 750 + Policy.Summary.Length + unknownChars + 400 + ScreeningContextAssembler.PriceContextReserveChars
+            + ScreeningContextAssembler.NewsStatusReserveChars
             + ("記事".Length + 100 + 60);
         ScreeningContextAssembler.Assemble(trigger, Policy, [news], null, exactBudget, watchlist: null)
             .Plan.DroppedNewsCount.Should().Be(0, "不明の形では予算ちょうどに収まる");

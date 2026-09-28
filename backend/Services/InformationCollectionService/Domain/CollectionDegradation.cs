@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Events;
+
 namespace InformationCollectionService.Domain;
 
 // FR-01, ADR-0020 決定2/決定3: 1 巡回におけるソース単位の取得結果。**成否だけを持つ**——
@@ -28,6 +30,14 @@ public sealed record CollectionDegradation(
     /// <summary>縮退も中止も無い状態。</summary>
     public static CollectionDegradation None { get; } =
         new(false, false, false, false, [], [], []);
+
+    /// <summary>
+    /// FR-04, ADR-0020 決定2, #1081, IADR-0453: この巡回のニュース系の状態（取得済み／欠測／未構成）。
+    /// <b>null は「判定していない」＝不明</b>（<see cref="None"/> など評価器を通らない値）。
+    /// 取引判断のプロンプトへ RAG を経由せずに明示するため、<c>InformationCollected</c> に載せて運ぶ。
+    /// <para>🔴 <b>未構成は欠測に数えない</b>（IADR-0220）—— <see cref="NewsOutage"/> は未構成で false のままである。</para>
+    /// </summary>
+    public NewsCollectionStatus? NewsStatus { get; init; }
 
     /// <summary>
     /// 🔴 <b>手仕舞い（Close）は常に許可される。</b> ADR-0020 決定2/決定3 は限定縮退でも
@@ -131,6 +141,12 @@ public static class DegradationEvaluator
             }
         }
 
+        // FR-04, #1081, IADR-0453: ニュース系の状態（3 値）。試行 0 件＝未構成（欠測に数えない・上の 2）、
+        // 試行したものがすべて失敗＝欠測、それ以外（1 つ以上成功）＝取得済み。
+        var newsStatus = attemptedNews.Count == 0
+            ? NewsCollectionStatus.NotConfigured
+            : newsOutage ? NewsCollectionStatus.Outage : NewsCollectionStatus.Fetched;
+
         return new CollectionDegradation(
             abortCycle,
             blocksNewEntries,
@@ -138,6 +154,9 @@ public static class DegradationEvaluator
             newsOutage,
             missingRequired,
             unconfiguredRequired,
-            notifications);
+            notifications)
+        {
+            NewsStatus = newsStatus,
+        };
     }
 }

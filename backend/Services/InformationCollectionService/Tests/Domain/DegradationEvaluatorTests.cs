@@ -1,4 +1,5 @@
 using InformationCollectionService.Domain;
+using AiStockTrading.Shared.Contracts.Events;
 using AwesomeAssertions;
 using Xunit;
 
@@ -14,6 +15,48 @@ public class DegradationEvaluatorTests
 {
     private static CollectionDegradation Evaluate(params SourceOutcome[] outcomes) =>
         DegradationEvaluator.Evaluate(InformationSourceCatalog.Default, outcomes);
+
+    // --- FR-04, ADR-0020 決定2, #1081, IADR-0453: ニュース系の状態（3 値） ---
+
+    [Theory]
+    [InlineData(true, true, NewsCollectionStatus.Fetched)]     // 両方成功
+    [InlineData(true, false, NewsCollectionStatus.Fetched)]    // 1 つでも成功 → 取得済み
+    [InlineData(false, true, NewsCollectionStatus.Fetched)]
+    [InlineData(false, false, NewsCollectionStatus.Outage)]    // 試行したものがすべて失敗 → 欠測
+    public void ニュースの状態は試行したニュース源の成否で決まる(
+        bool finnhubNewsOk, bool googleNewsOk, NewsCollectionStatus expected)
+    {
+        var degradation = Evaluate(
+            new SourceOutcome("finnhub-news", finnhubNewsOk),
+            new SourceOutcome("google-news", googleNewsOk));
+
+        degradation.NewsStatus.Should().Be(expected);
+    }
+
+    [Fact]
+    public void 片方だけ構成して失敗すれば欠測()
+    {
+        Evaluate(SourceOutcome.Ok("finnhub"), SourceOutcome.Failed("google-news"))
+            .NewsStatus.Should().Be(NewsCollectionStatus.Outage);
+    }
+
+    // 🔴 未構成（ニュース源を 1 つも試行していない）は「未構成」であり、欠測ではない（IADR-0220。新規建ても止めない）。
+    [Fact]
+    public void ニュース源を試行していなければ未構成で欠測に数えない()
+    {
+        var degradation = Evaluate(SourceOutcome.Ok("finnhub"), SourceOutcome.Ok("sec-edgar"));
+
+        degradation.NewsStatus.Should().Be(NewsCollectionStatus.NotConfigured);
+        degradation.NewsOutage.Should().BeFalse();
+        degradation.BlocksNewEntries.Should().BeFalse();
+    }
+
+    // 評価器を通らない値（None）は「判定していない」＝不明（null）。取得済みへ倒さない。
+    [Fact]
+    public void 評価器を通らない縮退なしの値はニュースの状態を持たない()
+    {
+        CollectionDegradation.None.NewsStatus.Should().BeNull();
+    }
 
     // --- 1. 判定テーブル（区分 × 欠測 → 3 種の振る舞い） ---
 

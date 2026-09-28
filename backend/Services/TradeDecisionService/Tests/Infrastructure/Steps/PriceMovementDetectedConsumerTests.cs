@@ -64,6 +64,8 @@ public class PriceMovementDetectedConsumerTests
                 // NFR-07, #287, IADR-0255: 業務メトリクスはハンドラの**必須依存**である。
                 // 本番では AddAiStockTradingObservability が登録する（BusinessMetricsWiringTests が固定）。
                 opts.Services.AddSingleton<BusinessMetrics>();
+                // FR-04, #1081, IADR-0453: 同じアセンブリの定時の購読（InformationCollectedHandler）の必須依存（本番は Program.cs の singleton）。
+                opts.Services.AddSingleton<NewsCollectionStatusStore>();
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",

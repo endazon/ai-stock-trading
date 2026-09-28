@@ -325,6 +325,11 @@ builder.Services.AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter
 // **配線しないと、Hold が続く間は基準値が作られず UC-02 が一度も発火しない**（#1077 の症状）。
 builder.Services.AddScoped<IDecisionHeldReporter, PublishingDecisionHeldReporter>();
 
+// FR-04, ADR-0020 決定2, #1081, IADR-0453: 情報収集から届くニュースの状態（取得済み／欠測／未構成）の最新値を有効期限つきで保持する。
+// 定時の購読（InformationCollectedHandler）が記録し、判断サービスが定時・急変の両方のプロンプトへ明示する（RAG を経由しない）。
+// **singleton にする**（スコープごとに作ると記録した値が判断へ届かない）。未配線なら判断のプロンプトは常に「ニュース: 不明」と書く。
+builder.Services.AddSingleton<NewsCollectionStatusStore>();
+
 // FR-17, 05_trading-assumptions §4, IADR-0076: 採算評価ゲート（Profitability:*）。未設定なら Default（無効＝現行挙動）。
 // 有効時は往復概算費用に対する最小期待利益を評価し、採算不成立・費用見積り不能は Hold に倒す。
 builder.Services.AddSingleton(ProfitabilityGateOptionsLoader.FromConfiguration(builder.Configuration));
