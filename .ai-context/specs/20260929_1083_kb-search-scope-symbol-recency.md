@@ -70,7 +70,10 @@ plan_refs:
    2 本目の検索（クエリは「市場＋方針」・銘柄フィルタなし）を引き、応答の `symbol` 属性が**空の文書だけ**を残す。
    基盤は「属性が無い」を条件にできないため、後段で落とす。
 4. **新しい順**: 両検索とも `SortBy="updated"`。
-5. **新しさの足切り**: `PublishedAt < now − Retrieval:MaxAgeHours` を落とす。`PublishedAt` が無い文書も落とす（新しさを示せない）。
+5. **新しさの足切り**: `PublishedAt` を持つ文書（収集情報）について `PublishedAt < now − Retrieval:MaxAgeHours` を落とす。
+   `PublishedAt` を持たない文書（確定報告書など）は通し、null のまま下流の「不明＝最古扱い」に委ねる
+   ［2026-09-29 追記 / PR #1087 監査 F1］当初は「無い文書も落とす」としたが、報告書（`ReportKnowledgeMapper` は publishedAt を書かない）が
+   常に消え UC-01 手順 3「過去の判断（RAG）」が届かなくなるため改めた。
    既定 168 時間（7 日）。根拠は IADR-0453 決定 5。不正・非正の値は既定へ。
 6. **fail-safe**: 未許可（基盤が 200＋空）・空・非 2xx・例外は空（既存）。片方の検索が空でも他方は使う。
 
@@ -96,7 +99,8 @@ plan_refs:
       基盤 `SearchRequest` に無いフィールドを送らない
 - [x] 銘柄の検索は `attributeFilters.symbol` をトリガーの銘柄で送る
 - [x] 銘柄を持たない文書（google-news 等）は 2 本目の検索で届き、他銘柄の文書は 2 本目から混ざらない
-- [x] `PublishedAt` が閾値より古い文書・`PublishedAt` の無い文書は判断文脈に入らない。閾値は構成値（既定 168 時間）
+- [x] `PublishedAt` が閾値より古い文書は判断文脈に入らない。閾値は構成値（既定 168 時間）
+- [x] `PublishedAt` を持たない文書（確定報告書: tag report・symbol なし）は足切りされず、2 本目の検索から判断文脈へ届き、PublishedAt は null のまま伝播する
 - [x] 未許可（200＋空）・空・非 2xx・例外は空に倒れる（fail-safe）
 - [x] `RetrievalSourcePolicy` は変えない。`BaseUrl` 空は NoOp のまま
 
@@ -105,6 +109,6 @@ plan_refs:
 - `HttpKnowledgeBaseSearchTests`: 送信 JSON の形（scope・filters の key/allowedValues・grantsAccess・sortBy・attributeFilters、
   `mode`/`branches` を送らない）、SortBy 未指定は `null`（基盤で relevance）、200＋空（未許可）で空、`symbol` 属性の復元
 - `KnowledgeBaseRetrievalContextProviderTests`: 2 本の検索要求の形（銘柄フィルタ有無・SortBy・クエリ）、2 本目の銘柄持ち文書の除外、
-  足切り（境界・`PublishedAt` なし）、片方が空でも他方を使う
+  足切り（境界）、報告書（`PublishedAt` なし）が通り null のまま伝播する、片方が空でも他方を使う
 - `RetrievalContextProviderSelectionTests` 等の既存配線試験が通ること
 - 変異 5 件以上（Scope を落とす・GrantsAccess を false・SortBy を落とす・足切りを外す・symbol フィルタを落とす・2 本目の除外を外す）で赤を確認

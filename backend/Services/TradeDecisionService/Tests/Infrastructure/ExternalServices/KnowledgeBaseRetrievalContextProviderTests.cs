@@ -107,7 +107,7 @@ public class KnowledgeBaseRetrievalContextProviderTests
     }
 
     [Fact]
-    public async Task 足切りより古い文書と発行時刻の無い文書は判断文脈に入らない()
+    public async Task 発行時刻を持つ文書は足切りより古ければ判断文脈に入らない()
     {
         var maxAge = TimeSpan.FromHours(24);
         var search = new FakeSearch(
@@ -115,13 +115,45 @@ public class KnowledgeBaseRetrievalContextProviderTests
             [
                 Hit("境界ちょうど", Now - maxAge, "AAPL"),
                 Hit("境界を 1 秒過ぎた", Now - maxAge - TimeSpan.FromSeconds(1), "AAPL"),
-                Hit("発行時刻なし", null, "AAPL"),
             ],
             marketHits: [Hit("古い市場ニュース", Now.AddDays(-30)), Hit("新しい市場ニュース", Fresh)]);
 
         var result = await GetAsync(Create(search, maxAge: maxAge));
 
         result.Select(r => r.Title).Should().Equal("境界ちょうど", "新しい市場ニュース");
+    }
+
+    // FR-08, UC-01 手順 3, #1083, IADR-0453 決定5: 確定報告書（tag report・symbol なし・publishedAt なし。
+    // ReportKnowledgeMapper は publishedAt を書かない）は足切りの対象外で、2 本目の検索から判断文脈へ届く。
+    // 🔴 発行時刻なしを落とすと「過去の判断（RAG）」が構造的に届かなくなる。
+    [Fact]
+    public async Task 発行時刻を持たない確定報告書は足切りされず銘柄を持たない文書の検索から判断文脈へ届く()
+    {
+        var report = new KnowledgeHit(
+            Guid.NewGuid(), "確定報告書 Daily 2026-07-09", "前日の判断の振り返り。", 0.7d, null, ["report"], null, null);
+        var search = new FakeSearch(marketHits: [report]);
+
+        var result = await GetAsync(Create(search, maxAge: TimeSpan.FromHours(1)));
+
+        var context = result.Should().ContainSingle().Which;
+        context.Title.Should().Be("確定報告書 Daily 2026-07-09");
+        context.Tags.Should().Equal("report");
+        context.PublishedAt.Should().BeNull();
+    }
+
+    // FR-08, #568: 対の否定形。KnowledgeHit.PublishedAt が無ければ RetrievedContext.PublishedAt も
+    // null のまま伝播する（捏造しない・最古扱いの保守側既定へつながる）。
+    [Fact]
+    public async Task 検索ヒットに発行時刻が無ければRetrievedContextのPublishedAtもnullのまま()
+    {
+        var search = new FakeSearch(symbolHits: new[]
+        {
+            new KnowledgeHit(Guid.NewGuid(), "発行時刻不明の記事", "本文。", 0.5d, null, [], null, "AAPL"),
+        });
+
+        var result = await GetAsync(Create(search));
+
+        result.Should().ContainSingle().Which.PublishedAt.Should().BeNull();
     }
 
     [Fact]

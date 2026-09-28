@@ -17,7 +17,10 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 //     ② 銘柄を持たない文書（市場全体のニュース・マクロ・収集状態。銘柄フィルタなしで引き、symbol を持つ文書を落とす）。
 //     ① だけにすると google-news・FRED・BoJ・collection-status が全部落ち、#1078 の目的（ニュースを判断へ届ける）に反する。
 //   - 両方とも新しい順（SortBy=updated。決定4）。
-//   - 新しさの足切り（決定5）: PublishedAt が now − maxAge より古い文書と、PublishedAt の無い文書は入れない。
+//   - 新しさの足切り（決定5）: PublishedAt を持つ文書（収集情報）だけに掛け、now − maxAge より古いものを入れない。
+//     🔴 PublishedAt を持たない文書（確定報告書〔tag report〕など）は**通す**。報告書は publishedAt を書かない
+//     （ReportKnowledgeMapper）ため、落とすと UC-01 手順 3「過去の判断（RAG）」が構造的に届かなくなる。
+//     null のまま下流へ運び、ScreeningContextPlanner・AsOfDecisionInput の「発行時刻不明＝最古扱い」に委ねる。
 public sealed class KnowledgeBaseRetrievalContextProvider(
     IKnowledgeBaseSearch search,
     int topK,
@@ -70,14 +73,14 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
         var cutoff = timeProvider.GetUtcNow() - maxAge;
         var hits = symbolHits
             .Concat(marketHits.Where(h => string.IsNullOrWhiteSpace(h.Symbol)))
-            .Where(h => h.PublishedAt is { } publishedAt && publishedAt >= cutoff)
+            .Where(h => h.PublishedAt is not { } publishedAt || publishedAt >= cutoff)
             .ToList();
 
         var dropped = symbolHits.Count + marketHits.Count - hits.Count;
         if (hits.Count == 0)
         {
             if (dropped > 0)
-                logger.LogDebug("RAG 取得: {Symbol} の候補 {Dropped} 件はすべて足切り（銘柄違い・古い・発行時刻なし）で除外した。", trigger.Symbol, dropped);
+                logger.LogDebug("RAG 取得: {Symbol} の候補 {Dropped} 件はすべて足切り（銘柄違い・古い）で除外した。", trigger.Symbol, dropped);
             return [];
         }
 
