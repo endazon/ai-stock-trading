@@ -94,11 +94,16 @@ google-news に何を問い合わせるかは構成の `GoogleNews:Queries`（�
   - Finnhub の日次の要求が約 2 倍になる。日次上限は未実測で、同じ鍵の日次の上限に先に届き得る。4301 や企業ニュースの 429 の警告を見つけたら、
     推測値を設定せず計画へ環流する。
   - 企業ニュースの記事数は銘柄・日によって変わり、上限を設けていない（1 日の lookback の全件）。
+  - 🔴 **Finnhub の鍵が無い間・日次上限で企業ニュースが全銘柄 429 の間は、ニュース系は実質 google-news だけが頼りになる。**
+    その間は Google News RSS の一時的な失敗だけで、その巡回の新規建てが止まる（ニュース系の全滅。次の巡回で取得に成功すれば解除される）。
 
 ## 試験
 
 - 配備: `helm.yml` の全ステップをローカル（helm v4.2.1）で実行して緑。変異 5 件（finnhub-news を外す・google-news を外す・クエリを空にする・
   変更前の Provider へ戻す・`finnhub-newsx` 等の部分一致の偽物）がいずれも赤。
+  監査の生存変異の是正（同じ PR の追加コミット）: 経路 B のクエリ検査は空白以外の文字を 1 つ以上要求する（空白だけの値はコードの `Clean()` で除かれ
+  google-news が無効に倒れる）。本番の既定描画で `Collection__Source__Provider` と `Collection__Source__GoogleNews__Queries__0` が空であることを
+  値で直接検査する（従来の漏れ検査 `value: "finnhub"` は完全一致で finnhub-news / google-news を捕まえなかった）。
 - C#: 変更なし。構成の束縛（`Collection:Source:Provider`・`Collection:Source:GoogleNews:Queries:0`）は既存の `InformationSourceSelectionTests`・
   `InformationSourceFactoryTests` が固定している。`InformationCollectionService.Tests` 596 件が緑。
 

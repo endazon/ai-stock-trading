@@ -363,6 +363,18 @@ jobs:
               echo "::error::既定描画に公式情報源の実値「$leak」が現れた（本番 values.yaml へ漏れている）。"; exit 1
             fi
           done
+          # FR-01, #1082 / IADR-0453: 情報源の列挙とニュースのクエリは経路B 限定の有効化である。本番既定は空（NoOp）。
+          # 上の 'value: "finnhub"' は完全一致のため finnhub-news / google-news の漏れを捕まえない。**値を直接**検査する
+          # （env が 1 件も無い＝検査の空振りも赤）。
+          for env in Collection__Source__Provider Collection__Source__GoogleNews__Queries__0; do
+            vals="$(printf '%s\n' "$out" | grep -A1 -E "name: $env\$" | grep -E '^[[:space:]]*value:' || true)"
+            if [ -z "$vals" ]; then
+              echo "::error::既定描画に $env が無い（検査の空振り）。"; exit 1
+            fi
+            if printf '%s\n' "$vals" | grep -vq 'value: ""'; then
+              echo "::error::既定描画の $env が空でない（経路B 限定の情報源が本番へ漏れた）: $vals"; exit 1
+            fi
+          done
           # #632 / IADR-0329 決定4: Stage 0 の定時駆動と本番戦略の選択は経路B 限定の有効化である。
           # 🔴 **設定点そのものは本番 values.yaml にも在る**（有効化ではなく「実効値が見える」ことに意味がある）ため、
           # 名前ではなく**値**で漏れを検査する。
@@ -451,12 +463,19 @@ jobs:
             || { echo "::error::values-local の Collection__Source__Provider に fred が無い（FRED 未収集）。"; exit 1; }
           # FR-01, ADR-0020 決定2, #1082 / IADR-0453: ニュース源 2 系統も合流させる。列挙漏れは判断へニュースが届かない（#1078 の原因の 1 つ）。
           # finnhub-news は語の境界で照合する（finnhub の部分一致で緑にならないように）。google-news はクエリが空だとそのソースだけ無効に倒れる。
+          # クエリは空白以外の文字を 1 つ以上要求する（空白だけの値はコードの Clean()〔IsNullOrWhiteSpace〕で除かれ、google-news が無効に倒れる）。
+          # 描画は Go の %q（sprig quote）で引用されるため、タブ・全角空白は `\t`・`\u3000` の形で現れ、正規表現の [:space:] では見えない。
+          # 値を JSON 文字列として戻してから Unicode の空白を除いて判定する（戻せない引用〔`\x01` 等〕は赤に倒す）。
           printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -Eq '(^|[",])finnhub-news([",]|$)' \
             || { echo "::error::values-local の Collection__Source__Provider に finnhub-news が無い（Finnhub 企業ニュース未収集）。"; exit 1; }
           printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -Eq '(^|[",])google-news([",]|$)' \
             || { echo "::error::values-local の Collection__Source__Provider に google-news が無い（Google News RSS 未収集）。"; exit 1; }
-          printf '%s' "$out" | grep -A1 'name: Collection__Source__GoogleNews__Queries__0' | grep -Eq 'value: "[^"]+"' \
-            || { echo "::error::values-local の Collection__Source__GoogleNews__Queries__0 が空（google-news を列挙しても無効に倒れる）。"; exit 1; }
+          printf '%s\n' "$out" | grep -A1 -E 'name: Collection__Source__GoogleNews__Queries__0$' | sed -n 's/^[[:space:]]*value: //p' | head -1 \
+            | python3 -c 'import json,sys
+          try: v = json.loads(sys.stdin.read())
+          except ValueError: sys.exit(1)
+          sys.exit(0 if isinstance(v, str) and v.strip() else 1)' \
+            || { echo "::error::values-local の Collection__Source__GoogleNews__Queries__0 が空または空白だけ（google-news を列挙しても無効に倒れる）。"; exit 1; }
           need "SEC EDGAR の CIK（AAPL）" 'value: "0000320193"'
           need "FRED 系列 DEXJPUS" 'value: "DEXJPUS"'
           need "FRED 系列 DGS10" 'value: "DGS10"'
