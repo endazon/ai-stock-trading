@@ -69,6 +69,21 @@ SessionStart は `bash scripts/setup.sh`（node ではない。`grep -n "node " 
      一時ディレクトリは `finally` で消す（試験が作ったものに限る）。
 3. `docs/ai-workflow.md` の「暴走防止（ローカル）」行に `.claude/hooks/package.json` の役割を 1 文足す。
 
+## 監査後の追加（#1076 の監査。同じ PR への追加コミット）
+
+1. **変異の生き残りを塞ぐ**: `scanCommonJsScope` が走査先を歩かない変異（hooks/ に `export` 付きの `.js` を植えても緑）が生き残った。
+   実物の hooks/ には ES module の `.js` が無いため、走査が空を返しても試験が通ってしまう。**陽性の fixture** の試験を 1 件足す:
+   一時ディレクトリに ES module の `.js`（`export` を使うもの・メタプロパティを使うもの）、入れ子の `package.json`、
+   CommonJS の `.js`（`require` のもの・動的 `import(` のもの）を置き、前 2 種だけが返ることを確かめる。一時ディレクトリは `finally` で消す。
+2. **失敗メッセージを検査の中身にそろえる**: hooks/ の外の検査は `.js` / `.mjs` / `.cjs` をすべて禁じているのに、
+   メッセージが「置くなら hooks/ か .cjs」と案内していた。検査はそのままにし、メッセージを「hooks/ の外に node で動くファイルを置かない（置くなら hooks/）」へそろえる（試験名も `.js / .mjs / .cjs` に）。
+3. **正規表現の抜け**: 監査で `export{a}`・`import{a}from'x'`・`.` の前後に空白を挟んだメタプロパティを拾わないと指摘された
+   （指摘時点で該当するファイルは `scripts/`・`.claude/hooks/` とも 0 件）。正規表現を
+   `^\s*(import(\s*[{*'"]|\s+[\w$])|export(\s|[{*]))|\bimport\s*\.\s*meta\b`（m フラグ）へ広げ、単体試験に例を足した
+   （`export*from`・副作用だけの `import'x'` も拾う。`exports.x`・`exportFoo`・`importer` は拾わない）。広げた後も `scripts/` の走査は 0 件のまま。
+   - **残る既知の抜け（記録のみ）**: 行の途中から始まる文（`;export{a}` のように 1 行へ詰めた形）は拾わない（行頭に固定しているため）。
+     コメント・文字列の中の行頭 `import` / `export` は誤検知しうる（構文解析はしない）。いずれも該当ファイルは 0 件。
+
 ## 必読の予算
 
 `scripts/check-reading-budget.js` の Claude Code の集合は `CLAUDE.md` ＋ `.claude/rules/*.md` だけ（`globDirs: ['.claude/rules']`）。

@@ -4222,7 +4222,9 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
   // 🔴 動的 `import(` は CommonJS でも書けるため数えない（数えると CommonJS の正しい書き方を誤検知する）。
   // メタプロパティは #1074 の監査で「拾わない」と指摘された抜け（本関数へ寄せて両節で塞ぐ。#1075）。
   // 🔴 本ファイルは scripts/ の走査対象なので、メタプロパティを字面で書かない（試験の入力も連結で組む）。
-  const ESM_SYNTAX = /^\s*(import\s+[\w{*'"]|export\s)|\bimport\.meta\b/m;
+  // 空白を詰めた形（`export{a}` / `import{a}from'x'`）と、`.` の前後に空白を挟んだメタプロパティも拾う（#1076 監査）。
+  // 既知の抜け: 行の途中から始まる文（`;export{a}` のような 1 行に詰めた形）は拾わない（行頭に固定しているため）。
+  const ESM_SYNTAX = /^\s*(import(\s*[{*'"]|\s+[\w$])|export(\s|[{*]))|\bimport\s*\.\s*meta\b/m;
   const scanCommonJsScope = (dir, ownPkg) => {
     const fsS = require('fs');
     const pathS = require('path');
@@ -4248,6 +4250,37 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.ok(!t.test("const m = await import('./x.js');"), '動的 import( は CommonJS でも書ける');
     assert.ok(!t.test("const fs = require('fs');\nmodule.exports = {};"));
     assert.ok(!t.test('// important: exported later'), '語の一部（important / exported）は拾わない');
+    // 空白を詰めた形・空白を挟んだメタプロパティ（#1076 監査で挙がった抜け）
+    assert.ok(t.test('export{a};'), 'export{a} を拾わない');
+    assert.ok(t.test('export*from"./x.js";'), 'export*from を拾わない');
+    assert.ok(t.test("import{a}from'x';"), "import{a}from'x' を拾わない");
+    assert.ok(t.test("import'./side-effect.js';"), '副作用だけの import を拾わない');
+    assert.ok(t.test('const u = import' + ' . ' + 'meta.url;'), '空白を挟んだメタプロパティを拾わない');
+    assert.ok(!t.test('exports.x = 1;'), 'CommonJS の exports を拾う');
+    assert.ok(!t.test('exportFoo();'), '識別子の一部を拾う');
+    assert.ok(!t.test('importer.run();'), '識別子の一部を拾う');
+  });
+
+  ok('scanCommonJsScope[#1075]: 一時ディレクトリの fixture から ES module の .js と入れ子の package.json を返し、CommonJS の .js は返さない', () => {
+    const fsF = require('fs');
+    const osF = require('os');
+    const pathF = require('path');
+    const root = fsF.mkdtempSync(pathF.join(osF.tmpdir(), 'ast-1075-scan-'));
+    try {
+      const own = pathF.join(root, 'package.json');
+      fsF.writeFileSync(own, '{ "type": "commonjs" }\n');
+      fsF.mkdirSync(pathF.join(root, 'sub', 'deep'), { recursive: true });
+      fsF.writeFileSync(pathF.join(root, 'esm-export.js'), 'export const x = 1;\n');
+      fsF.writeFileSync(pathF.join(root, 'sub', 'esm-meta.js'), 'const u = import' + '.meta.url;\n');
+      fsF.writeFileSync(pathF.join(root, 'sub', 'deep', 'package.json'), '{ "type": "module" }\n');
+      fsF.writeFileSync(pathF.join(root, 'cjs.js'), "const fs = require('fs');\nmodule.exports = { fs };\n");
+      fsF.writeFileSync(pathF.join(root, 'sub', 'cjs-dynamic.js'), "module.exports = () => import('./x.mjs');\n");
+      const { esm, nested } = scanCommonJsScope(root, own);
+      assert.deepStrictEqual(esm.sort(), ['esm-export.js', pathF.join('sub', 'esm-meta.js')].sort());
+      assert.deepStrictEqual(nested, [pathF.join('sub', 'deep', 'package.json')]);
+    } finally {
+      fsF.rmSync(root, { recursive: true, force: true }); // 本試験が作った一時ディレクトリだけを消す
+    }
   });
 
   // --- scripts/package.json: 親に "type": "module" があっても CommonJS として読まれる（NFR, #1073）---
@@ -4323,7 +4356,7 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.deepStrictEqual(JSON.parse(fs1075.readFileSync(PKG1075, 'utf8')), { type: 'commonjs' });
     });
 
-    ok('.claude/hooks/package.json[#1075]: hooks/ に ES module の .js と別の package.json が無く、.claude/ の hooks/ の外に .js が無い', () => {
+    ok('.claude/hooks/package.json[#1075]: hooks/ に ES module の .js と別の package.json が無く、.claude/ の hooks/ の外に .js / .mjs / .cjs が無い', () => {
       const { esm, nested } = scanCommonJsScope(HOOKS1075, PKG1075);
       assert.deepStrictEqual(esm, [], 'ES module の .js は .mjs にする（.claude/hooks/ は CommonJS の範囲）');
       assert.deepStrictEqual(nested, [], '.claude/hooks/ の中の package.json は探索を途中で止め、"type" を変えうる');
@@ -4335,7 +4368,7 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         }
       };
       walk(CLAUDE1075);
-      assert.deepStrictEqual(outside, [], '.claude/hooks/ の外の .js は package scope が止まらない（置くなら hooks/ か .cjs）');
+      assert.deepStrictEqual(outside, [], '.claude/ の hooks/ の外に node で動くファイル（.js / .mjs / .cjs）を置かない（置くなら hooks/ に置き、hooks/package.json の範囲に入れる）');
     });
 
     ok('.claude/hooks/package.json[#1075]: 親に "type": "module" がある配置（MSP の submodule と同じ形）で 3 つの hook が起動し、ガードが効く', () => {
