@@ -458,6 +458,15 @@
     "StopLossPrice": "Decimal",
     "Symbol": "String"
   },
+  "TradeDecisionHeld": {
+    "CycleTrigger": "String",
+    "DecidedAt": "DateTimeOffset",
+    "EventId": "Guid",
+    "Market": "Market",
+    "Price": "Decimal",
+    "Reason": "String",
+    "Symbol": "String"
+  },
   "TradeDecisionMade": {
     "CycleStartedAt": "DateTimeOffset?",
     "CycleTrigger": "String",

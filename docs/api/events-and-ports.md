@@ -3,15 +3,15 @@ title: 取引ドメインの通信契約（イベント・ポート）通信仕�
 type: api-spec
 status: draft
 created: 2026-07-09
-updated: 2026-09-26
+updated: 2026-09-29
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-08, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0040, ADR-0041]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, MSP:IADR-0049]
-specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, MSP:IADR-0049]
+specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077]
 -->
 
 
@@ -43,6 +43,7 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 | イベント | 発行元 | 主なフィールド | 用途 |
 | --- | --- | --- | --- |
 | `TradeDecisionMade` | 取引判断 | DecisionId, Intent(OrderIntent), Rationale, DecidedAt | 売買判断の確定（判断根拠つき） |
+| `TradeDecisionHeld` | 取引判断 | EventId, Symbol, Market, Price, Reason, DecidedAt, CycleTrigger（任意） | **AI 判断が結論を出したのに発注意図を作らなかった**（LLM の Hold、または Buy/Sell の結論を統制が見送らせた）。Price は判断時点の価格（現在値 → 起点の価格 → LLM の参照価格の順。手元に無ければ出さない）。市場監視が購読して急変の基準値をこの価格へ進め、監査ログが記録する。**判断をしなかった見送り（日報未確定・現在値なし・換算レート未解決・鮮度切れで保有なし）と、出力を解析できなかった回には出さない**。発注の経路ではない（リスク管理は購読しない） |
 | `OrderApproved` | リスク管理 | DecisionId, Intent, ApprovedQuantity, ApprovedAt, StopLossMethod（損切りの実行機構。任意・既定 0＝S0） | 発注前検証を通過し発注執行へ。発注執行は承認が運ぶ手法で保護逆指値を扱う（#819） |
 | `OrderRejected` | リスク管理 | DecisionId, Intent, Reasons(RejectionReason[]), RejectedAt | 発注前拒否（理由列挙。監査ログと Discord 通知が購読） |
 | `OrderExecuted` | 発注執行 | DecisionId, OrderId, Status(OrderStatus), FilledQuantity, AveragePrice, ExecutedAt | 約定/失注/取消/証券会社拒否の確定 |
@@ -64,7 +65,7 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 - `RejectionReason` / `OrderStatus` の値はデータ仕様書を参照。`OrderRejected`（発注前拒否）と
   `OrderExecuted.Status = Rejected`（証券会社拒否）は別事象。
 - 損切りは市場監視が「検知」してイベント発行、リスク管理が「執行」する責務分離。`ChangeRatio` の基準
-  `BaselinePrice` は前回 AI 判断時点の価格。
+  `BaselinePrice` は前回 AI 判断時点の価格（発注した判断の `TradeDecisionMade` と、見送った判断の `TradeDecisionHeld` のどちらでも進む）。
 - イベントのエンベロープ（メッセージヘッダ・トピック命名・冪等性キー）は基盤（platform）の規約に合わせる（#22）。
 
 運用・ライフサイクルのイベント（情報収集・費用・設定・報告書）。取引サイクルの相関 ID（`DecisionId`）とは別系統で、
