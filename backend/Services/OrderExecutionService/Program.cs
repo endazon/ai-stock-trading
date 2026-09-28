@@ -8,6 +8,7 @@ using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
+using OrderExecutionService.Features.OrderExecution.ProbeOrderFee;
 using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
@@ -26,6 +27,21 @@ using Serilog;
 using Wolverine;
 
 const string ServiceName = "ai-stock-trading.order-execution-service";
+
+// FR-11, FR-16, ADR-0016 決定15, #1086, IADR-0300（2026-09-29 追記）: 注文費用照会の 1 回実行の検証口。
+// `--probe-order-fee <注文ID>` のときだけ、Host（Wolverine・DB・常駐ジョブ）を組まずに Trd_GetOrderFee を 1 回撃って終わる。
+// 構成はサービス本体と同じ appsettings＋環境変数から読む（引数は構成へ渡さない＝値の無い旗で構成読みが落ちない）。
+// 🔴 Environment.Exit で終える —— SDK の接続スレッドが残っても 1 回実行の後にプロセスを確実に閉じるため。
+if (OrderFeeProbeCommand.IsRequested(args))
+{
+    var probeConfiguration = WebApplication.CreateBuilder().Configuration;
+    var probeExitCode = await OrderFeeProbeCommand.RunAsync(
+        args,
+        () => OrderFeeProbeComposition.CreateQuery(probeConfiguration),
+        Console.Out);
+    Console.Out.Flush();
+    Environment.Exit(probeExitCode);
+}
 
 // #13 Slice A, IADR-0013/0016: ヘルスチェックの HTTP サーフェスのため WebApplication を用いる。
 // OrderApproved 購読は Wolverine のハンドラとして稼働する。

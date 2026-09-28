@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-11, FR-16, UC-07, ADR-0016, ADR-0027]
 author: endazon (with Claude Code)
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-09-29
 ---
 
 # IADR-0300: 経費明細は取得ポート越しに取り、取れないことを「7 区分 LineCount = 0」として本番で記録する
@@ -141,6 +141,29 @@ IADR-0226 が経費区分 7 種・建玉単位の紐づけ・保存先（監査�
 - **フォローアップ**: 段 2（`OnReply_GetOrderFee` の実装・実費の供給・重複排除）は別 PR。
   報告書の費用表示を概算（`CostCalculator`）から実績へ切り替えるかは issue #633 が
   「別途判断する」としており、本 PR では 1 行も触っていない。
+
+## 追記（2026-09-29・#1086）: 段 2 の前に、SIMULATE 口座で費用照会が値を返すかを 1 回実行の検証口で実測する
+
+- 背景: 稼働 PoC（2026-09-29 01:59 JST、develop `73a79e33`）で初めての約定（NVDA 買い 1049 株・moomoo SIMULATE）があり、
+  本 IADR 決定 3 のとおり 7 区分すべてが未計上になった。段 2（実費の供給）へ進むには応答の形が要る（決定 9 の重複排除も
+  その形に依存する）が、**SIMULATE 口座で Trd_GetOrderFee が値を返すか自体が分かっていない**（#1086 の確認点 1）。
+- 実測（SDK `moomoo-api` 10.8.6808 をリフレクションで読んだ）: protobuf 定義は同梱されている（`TrdGetOrderFee`・
+  `TrdCommon.OrderFee`（`OrderIDEx` / `FeeAmount` / `FeeList`）・`TrdCommon.OrderFeeItem`（`Title` / `Value`）・ProtoID 2225・
+  `MMAPI_Trd.GetOrderFee`）。🔴 **照会の鍵は `OrderIDEx`（文字列）であり、本システムが持つ `OrderID`（uint64）ではない。**
+- 決定 A: **読み取り専用の 1 回実行の検証口**を order-execution のイメージへ同梱する（起動引数 `--probe-order-fee <注文ID>`。
+  Host を組まない）。経費の記録・`IOrderExpenseSource` の実装差し替えは**しない**（本 IADR の決定 1〜9 は不変。段 2 は別 PR）。
+- 決定 B: 検証口が受け取るのは**メソッドが 1 つのポート `IOrderFeeQuery`** だけとし、`IMoomooTradeClient`（発注・取消を持つ）を
+  受け取らない。**書き込み系へ届く経路を型の上に作らない**（試験で固定）。実装は既存の `MMApiMoomooTradeClient`
+  （接続・RSA 暗号・SIMULATE 口座の選択・応答相関）を再利用し、`IMoomooTradeConnection` に `GetOrderFee` を 1 本足す。
+- 決定 C: **Trd_GetOrderFee は 1 回だけ**撃ち、再試行しない。retType ≠ 0 は例外にせず結果として返す（検証の目的は応答を見ること）。
+  数字の注文 ID は注文一覧（当日 → 過去 30 日の履歴、US → JP）から `OrderIDEx` を引き、見つからない・空なら**照会を撃たない**
+  （空であること自体が「SIMULATE では鍵が得られない」という実測になる）。
+- 決定 D: 出力に秘密を載せない。口座 ID は末尾 2 桁以外を伏せ、retMsg 中の口座 ID も伏せる。既存の接続ログは口座 ID を平文で出すため、
+  検証口では `NullLogger` とする。構成の値は 1 つも表示しない。
+- 決定 E: 新たなオプトイン（`--live` / `LIVE=1` 相当）は設けない。リポに該当規約が無く、検証口は読み取り専用・SIMULATE 固定で、
+  `kubectl exec` を打つこと自体が明示操作である。moomoo の SIMULATE 階層以外では照会口を組まずに終了コード 2 で終える。
+- 手順: `docs/operations/order-fee-probe-runbook.md`。作業仕様書: `.ai-context/specs/20260929_1086_order-fee-probe.md`。
+- 残余: OpenD の頻度制限の実値は一次情報が無く確かめていない（手順書は「30 秒以上あける」に留めた）。
 
 ## 関連
 

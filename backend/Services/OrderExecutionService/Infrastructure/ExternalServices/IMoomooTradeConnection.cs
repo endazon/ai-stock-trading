@@ -47,6 +47,10 @@ public interface IMoomooTradeConnection : IDisposable
 
     // FR-10, ADR-0016 決定3, #967, IADR-0425: 借株可否（`MarginRatioInfo.IsShortPermit`）の照会。空売り文脈の一次ゲートの供給元。
     uint GetMarginRatio(TrdGetMarginRatio.Request request);
+
+    // FR-11, FR-16, ADR-0016 決定15, #1086, IADR-0300（2026-09-29 追記）: 注文費用照会（Trd_GetOrderFee・読み取り専用）。
+    // 現状の呼び手は 1 回実行の検証口（OrderFeeProbeCommand）だけである（経費の供給は段 2・別 PR）。
+    uint GetOrderFee(TrdGetOrderFee.Request request);
 }
 
 // #732, IADR-0327: 接続オブジェクトの生成点。接続試行が失敗するたびに Create() し直す。
@@ -93,6 +97,8 @@ public sealed class MMApiTradeConnectionFactory : IMoomooTradeConnectionFactory
         public uint GetFunds(TrdGetFunds.Request request) => _trd.GetFunds(request);
 
         public uint GetMarginRatio(TrdGetMarginRatio.Request request) => _trd.GetMarginRatio(request);
+
+        public uint GetOrderFee(TrdGetOrderFee.Request request) => _trd.GetOrderFee(request);
 
         public void Dispose() => _trd.Dispose();
     }
