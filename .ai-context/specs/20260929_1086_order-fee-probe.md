@@ -126,7 +126,7 @@ issue #1086 が挙げた確認点のうち **「SIMULATE 口座で費用照会�
 - `OrderFeeProbeCommandTests`: 偽の `IOrderFeeQuery` で 1 回・終了コード・引数不正・構成不正・出力。
 - `OrderFeeProbeEndToEndTests`: `OrderFeeProbeCommand` ＋ 実物の `MMApiMoomooTradeClient` ＋ 偽 OpenD
   （`IMoomooTradeConnection`）で、送信回数・書き込み系 0 回・ヘッダ（SIMULATE・`OrderIDEx`）・口座 ID の伏せを固定する。
-- `OrderFeeProbeCompositionTests`: paper・実弾階層で組まないこと。
+- 構成からの組み立て（`OrderFeeProbeComposition`）の試験は `OrderFeeProbeEndToEndTests` に同居させた（`moomooのSIMULATE以外では照会口を組まない`：paper・実弾階層で組まないこと。伏せる値の導出〔host 単体・host:port・既定値〕も同ファイル）。［2026-09-29 追記 / AI レビュー 🟢］当初は別ファイル `OrderFeeProbeCompositionTests` と書いたが実在しない
 - 変異 4 件以上で赤を確認（`scratchpad/impl-1086-*.sh`）。
 
 ## 計画書との差異
