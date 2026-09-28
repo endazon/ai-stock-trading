@@ -43,12 +43,12 @@ plan_refs:
 | AC-1 | Finnhub `/quote` の `o`（始値）を読み、`Quote` が前日終値・始値・高値・安値を省略可能な値として運ぶ。0（場前・未知）は null（不明） | `FinnhubMarketDataSourceTests` |
 | AC-2 | 既存の `Quote` 呼び出し（4 引数）はそのまま通る（追加項目は既定 null） | ビルド・既存試験 |
 | AC-3 | 価格供給（`ICurrentPriceProvider`）は価格と日中文脈をまとめたレコードを返す。NoOp・鮮度切れ・取得不可は従来どおり null | `MarketDataCurrentPriceProviderTests`・`CurrentPriceProviderSelectionTests` |
-| AC-4 | 前日比・当日始値比をコードで計算する（符号つき・小数 2 桁の %）。基準が無い・0 以下なら「不明」 | `IntradayPriceContextTests`・`PriceContextInPromptTests` |
+| AC-4 | 前日比・当日始値比をコードで計算する（符号つき・小数 2 桁の %）。基準が無い・0 以下なら「不明」 | `PriceContextInPromptTests`（`IntradayPriceContext` の計算を含む） |
 | AC-5 | 本判断の定時の節・急変の節、一次スクリーニングに「前日終値 / 前日比 / 当日始値 / 当日始値比 / 日中高値・安値」が出る。値が無ければ「不明」と明示し、0 を出さない | `PriceContextInPromptTests` |
 | AC-6 | 「出来高: 未提供」を明示する（値動きの行を出すすべての節） | `PriceContextInPromptTests` |
 | AC-7 | 縮退の見積り（`ScreeningContextAssembler`）の銘柄ごとの保護分が、値動きの行の最悪長を含む。値動きは市況として保護分に入り、縮退で削られない | `ScreeningContextAssemblerTests`・`ScreeningContextDegradationTests` |
 | AC-8 | Stage 0: 前日終値（日足）が渡されれば前日比を出し、当日始値・日中高安（当日の変化率）は「不明」とする。前日終値の日付は判断時点より前でなければ例外（未来の値で判断させない） | `Stage0DecisionRecorderTests`（追加） |
-| AC-9 | 本番の判断フロー（`TradeDecisionAppService`）で、価格供給の日中文脈が本判断・一次の両プロンプトへ届く | `TradeDecisionServiceTests`（追加） |
+| AC-9 | 本番の判断フロー（`TradeDecisionAppService`）で、価格供給の日中文脈が本判断・一次の両プロンプトへ届く | `PriceContextInPromptTests.判断サービスは価格供給の日中文脈を一次と本判断の両方へ渡す` |
 
 ## 設計
 
