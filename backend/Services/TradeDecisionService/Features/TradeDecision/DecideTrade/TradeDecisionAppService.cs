@@ -143,7 +143,9 @@ public sealed class TradeDecisionAppService(
     // TradeDecisionHeld を発行して市場監視の基準値を進め、そのうえで唯一の出口 Skip を通す（計上は Skip の 1 件のまま）。
     // judgedPrice が null（解析不能＝結論なし、または価格が手元に無い）なら発行しない。
     //
-    // 🔴 **発行の失敗で見送りを壊さない**（兄弟ポートの ...SafeAsync と同じ規律）。キャンセルだけは伝える。
+    // 🔴 **発行の失敗で見送りを壊さない**（兄弟ポートの ...SafeAsync と同じ規律）。伝えるのは**本判断のキャンセル**だけである
+    // （PR #1080 監査, IADR-0452 決定4）。判定は例外の型ではなく本判断のトークンで行う —— 発行先の内部の打ち切り
+    // （無関係な TaskCanceledException 等）まで伝えると、見送りが「判断の失敗」へ化け、見送りの計上が欠ける。
     private async Task<TradeDecisionMade?> SkipJudgedAsync(
         DecisionTrigger trigger, DecisionSkipReason reason, decimal? judgedPrice, CancellationToken cancellationToken)
     {
@@ -157,7 +159,7 @@ public sealed class TradeDecisionAppService(
                         trigger.MetricTrigger),
                     cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 logger.LogWarning(
                     ex, "判断後の見送りの発行に失敗しました（見送りは継続します・基準値は進みません）: {Symbol} reason={Reason}",
@@ -170,7 +172,7 @@ public sealed class TradeDecisionAppService(
 
     // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1/3: 判断時点の価格。**結論を得ていない（解析不能）なら null**
     // （IADR-0248: 一次の解析不能、または二次の全票が解析不能）。価格は手元の実価格を優先する:
-    // 現在値（有効時） → 起点の価格（価格変動トリガー） → LLM の参照価格（正のときだけ。Hold は 0）。
+    // 現在値（有効時） → 起点の価格（価格変動トリガー） → LLM の参照価格（いずれも正のときだけ。Hold の参照価格は 0）。
     private static decimal? JudgedPriceOf(
         OrchestratedDecision orchestrated, decimal? currentPrice, DecisionTrigger trigger)
     {
@@ -181,9 +183,10 @@ public sealed class TradeDecisionAppService(
             return null;
         }
 
-        var price = currentPrice ?? trigger.Price
-            ?? (orchestrated.Decision.ReferencePrice > 0m ? orchestrated.Decision.ReferencePrice : null);
-        return price is > 0m ? price : null;
+        // 正の値だけを候補にする（0 以下の現在値で後段の候補を塞がない。PR #1080 監査）。
+        return Positive(currentPrice) ?? Positive(trigger.Price) ?? Positive(orchestrated.Decision.ReferencePrice);
+
+        static decimal? Positive(decimal? value) => value is > 0m ? value : null;
     }
 
     // 価格変動イベント（イベント駆動系統）の起点。DecisionTrigger へ写像して合流する。

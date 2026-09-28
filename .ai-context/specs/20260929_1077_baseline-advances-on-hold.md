@@ -114,7 +114,8 @@ UC-01 は「見送り」を判断結果に数える。Hold も AI 判断であ�
 
 ## テスト方針
 
-- `TradeDecisionService.Tests/Features/TradeDecision/DecideTrade/DecisionHeldReportTests.cs`（新規）: 見送り 13 地点の表を 1 本で固定（判断後は発行・判断前は非発行）、解析不能、価格の優先順、Buy/Sell 成立時の非発行、発行失敗時の見送り継続。
+- `TradeDecisionService.Tests/Features/TradeDecision/DecideTrade/DecisionHeldReportTests.cs`（新規）: 見送り 13 地点を振る舞いで固定する —— 判断前 4 地点の表（非発行）・判断後の統制 8 地点の表（発行）・`LlmHold` の個別試験、および両表で語彙 13 値を過不足なく覆うことの語彙側の固定。ほかに解析不能、価格の優先順、Buy/Sell 成立時の非発行、発行失敗時の見送り継続、本判断のキャンセルの伝播と無関係な打ち切りの握り。［2026-09-29 追記 / PR #1080 監査］当初は判断後の 3 地点（参照価格不正・損切り幅不正・採算不成立）が表に無く、「13 地点を 1 本で固定」は事実でなかった。
+- `AiStockTrading.Architecture.Tests/TradeDecisionHeldSubscribersTests.cs`（新規・監査 M4）: 本番ソースで `TradeDecisionHeld` を購読するのは市場監視の基準値ハンドラと監査ハンドラだけであることを固定する。
 - `MarketMonitorService.Tests/Infrastructure/Steps/TradeDecisionHeldBaselineHandlerTests.cs`（新規）: Wolverine 経由で基準値が更新される／非正の価格は無視／Hold の連続でも急変が発火し得る（ハンドラ → `MarketMonitorAppService` の 1 巡回）。
 - 共有契約・監査の既存の完全一致テストへ新イベントを足す（`EventMessageTypeNameTests`・`AuditCycleCompletenessTests` の標本・`event-schemas.baseline.json` は `UPDATE_EVENT_BASELINE=1` で再生成し差分を確認）。
 - 配線: `ComposedRealImplementationsTests` 相当で本番の Program.cs が `PublishingDecisionHeldReporter` を解決することを確かめる。

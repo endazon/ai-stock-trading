@@ -149,16 +149,19 @@ public class DecisionHeldReportTests
         ICurrentPriceProvider? currentPrice = null,
         IFxRateProvider? fxRate = null,
         IHeldPositionProvider? held = null,
-        DecisionOrchestrationOptions? options = null) =>
+        DecisionOrchestrationOptions? options = null,
+        ProfitabilityGateOptions? profitabilityOptions = null) =>
         new(llm, new FakePolicy(withoutPolicy ? null : Policy), new FakeSizing(ctx ?? Context()),
             new FakeClock(), NullLogger<AppSvc>.Instance,
-            options: options, currentPrice: currentPrice, fxRate: fxRate, heldPosition: held,
-            skipReporter: skipReporter, heldReporter: heldReporter);
+            options: options, profitabilityOptions: profitabilityOptions, currentPrice: currentPrice, fxRate: fxRate,
+            heldPosition: held, skipReporter: skipReporter, heldReporter: heldReporter);
 
     private static AppSvc Create(IDecisionHeldReporter heldReporter, string llmOutput, RecordingSkipReporter? skipReporter = null,
         bool withoutPolicy = false, SizingContext? ctx = null, ICurrentPriceProvider? currentPrice = null,
-        IFxRateProvider? fxRate = null, IHeldPositionProvider? held = null) =>
-        Create(heldReporter, new SequenceLlm(llmOutput), skipReporter, withoutPolicy, ctx, currentPrice, fxRate, held);
+        IFxRateProvider? fxRate = null, IHeldPositionProvider? held = null,
+        ProfitabilityGateOptions? profitabilityOptions = null) =>
+        Create(heldReporter, new SequenceLlm(llmOutput), skipReporter, withoutPolicy, ctx, currentPrice, fxRate, held,
+            profitabilityOptions: profitabilityOptions);
 
     // 基準通貨（米国株）の価格変動トリガー。起点の価格は 1,040。
     private static DecisionTrigger MovementTrigger() =>
@@ -280,6 +283,17 @@ public class DecisionHeldReportTests
                 MovementTrigger(), DecisionSkipReason.SizingZeroQuantity, 1_040m),
             ((h, s) => Create(h, BuyJson, s, held: new FakeHeld(0, workingUnknown: true)), MovementTrigger(),
                 DecisionSkipReason.WorkingEntriesUnknownOpen, 1_040m),
+            // PR #1080 監査（生存変異 M2）: 残る判断後の 3 地点。
+            // 現在値が 0（正でない）→ 参照価格が不正。判断時点の価格は正の候補（起点の価格）へ進む。
+            ((h, s) => Create(h, BuyJson, s, currentPrice: new FakeCurrentPrice(0m), held: new FakeHeld(0)),
+                MovementTrigger(), DecisionSkipReason.ReferencePriceInvalid, 1_040m),
+            // 現在値 20 に対して LLM の損切り幅 30 ≧ 参照価格 → 損切り幅が不正。判断時点の価格は現在値。
+            ((h, s) => Create(h, BuyJson, s, currentPrice: new FakeCurrentPrice(20m), held: new FakeHeld(0)),
+                MovementTrigger(), DecisionSkipReason.StopLossDistanceInvalid, 20m),
+            // 採算ゲート有効・費用見積り不能（既定の NoOp は常に未解決）→ 採算不成立で見送り。
+            ((h, s) => Create(h, BuyJson, s, held: new FakeHeld(0),
+                    profitabilityOptions: ProfitabilityGateOptions.Default with { Enabled = true }),
+                MovementTrigger(), DecisionSkipReason.ProfitabilityNotViable, 1_040m),
             // 起点の価格も現在値も無い定時判断では、Buy/Sell の結論が出した参照価格（正）を使う（TradeDecisionMade と同じ源）。
             ((h, s) => Create(h, BuyJson, s, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(0)),
                 ScheduledTrigger(), DecisionSkipReason.SizingZeroQuantity, 1_000m),
@@ -298,6 +312,26 @@ public class DecisionHeldReportTests
             report.Reason.Should().Be(c.Reason.ToString());
             report.Price.Should().Be(c.Price, c.Reason.ToString());
         }
+    }
+
+    // 判断後の 9 地点と判断前の 4 地点で語彙 13 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する）。
+    [Fact]
+    public void 判断前と判断後の見送りは語彙13値を過不足なく覆う()
+    {
+        DecisionSkipReason[] before =
+        [
+            DecisionSkipReason.DailyPolicyUnconfirmed, DecisionSkipReason.CurrentPriceUnavailable,
+            DecisionSkipReason.FxRateUnresolved, DecisionSkipReason.FxRateStaleNoHolding,
+        ];
+        DecisionSkipReason[] after =
+        [
+            DecisionSkipReason.LlmHold, DecisionSkipReason.HoldingsUnknownOpen, DecisionSkipReason.NakedShortOpen,
+            DecisionSkipReason.FxRateStaleOpen, DecisionSkipReason.SizingZeroQuantity,
+            DecisionSkipReason.WorkingEntriesUnknownOpen, DecisionSkipReason.ReferencePriceInvalid,
+            DecisionSkipReason.StopLossDistanceInvalid, DecisionSkipReason.ProfitabilityNotViable,
+        ];
+
+        before.Concat(after).Should().BeEquivalentTo(Enum.GetValues<DecisionSkipReason>());
     }
 
     // 🔴 IADR-0248: **解析不能は結論ではない**（見送りと区別する）。単発・一次スクリーニングとも出さない。
@@ -346,6 +380,49 @@ public class DecisionHeldReportTests
         decision.Should().NotBeNull();
         decision!.Intent.Price.Should().Be(1_000m, "Buy/Sell の経路の参照価格は従来どおり（基準値はこの価格で進む）");
         held.Reports.Should().BeEmpty();
+    }
+
+    private sealed class DelegateHeldReporter(Func<CancellationToken, Task> onReport) : IDecisionHeldReporter
+    {
+        public Task ReportAsync(TradeDecisionHeld held, CancellationToken cancellationToken = default) =>
+            onReport(cancellationToken);
+    }
+
+    // 🔴 PR #1080 監査（生存変異 M6）, IADR-0452 決定4: **本判断のキャンセルは伝える**（握って見送りにしない）。
+    [Fact]
+    public async Task 本判断のキャンセルは発行から伝播する()
+    {
+        using var cts = new CancellationTokenSource();
+        var skips = new RecordingSkipReporter();
+        var service = Create(
+            new DelegateHeldReporter(ct =>
+            {
+                cts.Cancel();
+                ct.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            }),
+            new SequenceLlm(HoldJson), skips);
+
+        var act = async () => await service.DecideAsync(MovementTrigger(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        skips.Reasons.Should().BeEmpty("キャンセルされた判断は見送りとして数えない");
+    }
+
+    // 🔴 対: **本判断と無関係な打ち切り（発行先の内部の TaskCanceledException）は握り、見送りを計上する。**
+    // 例外の型で伝播を決めると、ここで見送りが「判断の失敗」へ化ける。
+    [Fact]
+    public async Task 本判断と無関係な打ち切りは握って見送りを計上する()
+    {
+        var skips = new RecordingSkipReporter();
+        var service = Create(
+            new DelegateHeldReporter(_ => throw new TaskCanceledException("発行先の内部の打ち切り")),
+            new SequenceLlm(HoldJson), skips);
+
+        var act = async () => await service.DecideAsync(MovementTrigger(), TestContext.Current.CancellationToken);
+
+        (await act.Should().NotThrowAsync()).Subject.Should().BeNull();
+        skips.Reasons.Should().Equal([DecisionSkipReason.LlmHold]);
     }
 
     // 🔴 発行の失敗で見送りを壊さない（兄弟ポートの ...SafeAsync と同じ規律）。発行は試みられ、計上も 1 件のまま。

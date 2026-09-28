@@ -64,7 +64,7 @@ Hold を含む見送りはすべて `null` を返し、何も出さない。基�
 
 | 案 | 評価 |
 | --- | --- |
-| **A（採用）: 現在値（有効時） → 起点の価格（価格変動トリガー） → LLM の参照価格（正のときだけ）。無ければ発行しない** | 手元の実価格を優先する。Buy/Sell の経路（`TradeDecisionMade` の参照価格＝現在値 → LLM の参照価格）と向きがそろう。Hold の参照価格は 0 なので、Hold では LLM の値を使わない |
+| **A（採用）: 現在値（有効時） → 起点の価格（価格変動トリガー） → LLM の参照価格（正のときだけ）。無ければ発行しない** | 手元の実価格を優先する。**現在値を最優先し LLM の参照価格を最後に置く点**は Buy/Sell の経路（`TradeDecisionMade` の参照価格＝現在値 → LLM の参照価格）と同じだが、**`TradeDecisionMade` は起点の価格を経由しない**（本件は Hold の参照価格が 0 のため、実価格である起点の価格を間に挟む）。［2026-09-29 訂正 / PR #1080 監査 N5］以前は「向きがそろう」と書いていたが、起点の価格の有無で経路が異なる |
 | B: 市場監視が受信時に自分の相場源で照会する | 相場源はそろうが、受信時刻は判断時刻より遅れ、照会 1 回分の費用（FR-01）と失敗経路が増える。既存の `TradeDecisionMade` 経路も取引判断の価格を使っている |
 
 ## 決定
@@ -79,9 +79,11 @@ LLM 呼び出しの**前**の 4 地点（`DailyPolicyUnconfirmed`・`CurrentPric
 
 `TradeDecisionHeld(EventId, Symbol, Market, Price, Reason, DecidedAt, CycleTrigger?)` を `Shared.Contracts.Events` に追加する（新規型。既存イベントは不変）。
 `Reason` は `DecisionSkipReason` の名前（観測・監査の読み手向け。購読側は分岐に使わない）。`CycleTrigger` は `TradeDecisionMade` と同じ語彙。
-市場監視は `TradeDecisionHeldBaselineHandler` で `IPriceBaselineStore.SetBaseline` を呼ぶ。価格が正でなければ更新しない（受け側の守り）。リスク管理は購読しない。
+市場監視は `TradeDecisionHeldBaselineHandler` で `IPriceBaselineStore.SetBaseline` を呼ぶ。価格が正でなければ更新しない（受け側の守り）。リスク管理は購読しない。**購読者は市場監視（基準値）と監査（台帳）の 2 つに限り**、`TradeDecisionHeldSubscribersTests` が本番ソースの購読者集合を固定する（PR #1080 監査 M4）。
 
-### 決定 3 — 価格は「現在値 → 起点の価格 → LLM の参照価格（正のとき）」、無ければ発行しない
+### 決定 3 — 価格は「現在値 → 起点の価格 → LLM の参照価格」の順に**正の値だけ**を採り、無ければ発行しない
+
+［2026-09-29 追記 / PR #1080 監査］0 以下の現在値で後段の候補を塞がない（以前は現在値が 0 のとき起点の価格へ進まず、参照価格が不正の見送りで発行されなかった）。
 
 0 や推測の価格で基準値を動かさない。
 
@@ -89,7 +91,7 @@ LLM 呼び出しの**前**の 4 地点（`DailyPolicyUnconfirmed`・`CurrentPric
 
 `IScreeningReductionReporter` と同じ作法（省略可能・既定 NoOp・Worker が `PublishingDecisionHeldReporter` を scoped で配線）。
 判断後の見送り 9 地点は `SkipJudgedAsync` を通り「発行 → 唯一の出口 `Skip`」とする。見送りの理由の計上は従来どおり `Skip` の 1 件である（IADR-0374 の規律を保つ）。
-**発行の失敗で見送りを壊さない**（キャンセル以外の例外は Warning で握り、`null` を返す）。キャンセルは伝える。
+**発行の失敗で見送りを壊さない**。伝えるのは**本判断のキャンセル**（本判断のトークンが取り消された状態の `OperationCanceledException`）だけで、それ以外の例外は Warning で握って見送りを計上し `null` を返す。［2026-09-29 改訂 / PR #1080 監査 M6］当初は例外の型（`OperationCanceledException` 以外を握る）で判定していたが、発行先の内部の打ち切り（無関係な `TaskCanceledException`）が伝播して見送りが「判断の失敗」へ化けるため、本判断のトークンで判定する形へ改めた。
 `TradeDecisionAppService` の変更は見送りの分岐・LLM 判断直後の 1 行・コンストラクタ末尾の引数に限る（#1035 が触るプロンプトの組み立て・価格の取得は変えない）。
 
 ### 決定 5 — 監査台帳に記録する
@@ -105,6 +107,7 @@ LLM 呼び出しの**前**の 4 地点（`DailyPolicyUnconfirmed`・`CurrentPric
 ## 結果
 
 - 良い影響: Hold が続いても基準値が直近の判断時点の価格へ進み、その後の閾値超過で UC-02 が発火する。銘柄追加直後も、最初の AI 判断（定時の Hold を含む）で基準値が作られる。
+- 発火の射程（［2026-09-29 追記 / PR #1080 監査 N3］）: 定時判断（約 5 分周期）のたびに基準値が進むため、UC-02 が発火するのは**直近の判断から「1 周期＋監視の巡回間隔」のうちに閾値を超えたとき**に限られる。緩やかな値動き（1 周期のうちに閾値へ届かない）は、次の定時判断が拾う。これは発注した判断（`TradeDecisionMade`）が基準値を進める既存の振る舞いと同じであり、計画の基準点（前回 AI 判断時点）の帰結である。
 - 悪い影響・トレードオフ:
   - イベント・監査行が判断後の見送り 1 回につき 1 件増える（定時 6 銘柄なら 1 巡回 6 件程度）。
   - 基準値は市場監視自身の相場源ではなく取引判断の価格で進む（`TradeDecisionMade` の既存経路と同じ。相場源が違う構成では小さなずれが残る）。
@@ -117,7 +120,8 @@ LLM 呼び出しの**前**の 4 地点（`DailyPolicyUnconfirmed`・`CurrentPric
 
 | 観点 | 試験 |
 | --- | --- |
-| Hold で発行・価格の優先順・定時の Hold・価格が無ければ非発行・判断前 4 地点で非発行・判断後の統制 5 地点で発行・解析不能で非発行・一次 Hold と一部解析不能で発行・成立時は非発行・発行失敗でも見送り継続 | `TradeDecisionService.Tests/.../DecisionHeldReportTests.cs`（10 件） |
+| Hold で発行・価格の優先順・定時の Hold・価格が無ければ非発行・判断前 4 地点で非発行・判断後の統制 8 地点で発行（Hold と合わせ 9 地点を振る舞いで固定）・判断前後で語彙 13 値を覆う・解析不能で非発行・一次 Hold と一部解析不能で発行・成立時は非発行・発行失敗でも見送り継続・本判断のキャンセルは伝播・無関係な打ち切りは握る | `TradeDecisionService.Tests/.../DecisionHeldReportTests.cs`（13 件） |
+| 購読者は市場監視の基準値と監査だけ（発注の経路へ流れない。本番ソースの静的走査） | `AiStockTrading.Architecture.Tests/TradeDecisionHeldSubscribersTests.cs`（7 件） |
 | 本番の組み立てで発行実装へ結線（個数・型・判断サービスの保持） | `DecisionHeldReporterRegistrationTests.cs`（3 件） |
 | 本物の発行実装が `TradeDecisionHeld` を送る | `ComposedRealImplementationsTests`（1 件追加） |
 | 市場監視が基準値を更新・連続 Hold で前進・非正は無視・**Hold が続いても急変が発火し得る**・キュー名 | `MarketMonitorService.Tests/.../TradeDecisionHeldBaselineHandlerTests.cs`（5 件） |
