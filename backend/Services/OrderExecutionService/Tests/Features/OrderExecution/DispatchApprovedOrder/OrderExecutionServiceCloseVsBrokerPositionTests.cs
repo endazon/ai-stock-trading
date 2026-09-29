@@ -156,6 +156,46 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         reservations.Find(approved.DecisionId)!.State.Should().Be(OrderDispatchState.Forgone); // #876
     }
 
+    // T-10-1770, NFR, FR-10, #1092, IADR-0462 決定2: 決済のゲートの建玉照会の成否（例外は失敗）を発生源 OrderDispatch で報告する。
+    [Theory]
+    [InlineData("成功", true)]
+    [InlineData("不明", false)]
+    [InlineData("例外", false)]
+    public async Task T_10_1770_決済のゲートは建玉照会の成否を報告し_例外も失敗として数える(string kind, bool succeeded)
+    {
+        IBrokerAdapter broker = kind switch
+        {
+            "成功" => new FakePositionAwareBroker([Position(300)]),
+            "不明" => new FakePositionAwareBroker(null),
+            _ => new ThrowingPositionBroker(),
+        };
+        var health = new RecordingPositionQueryHealth();
+        var service = new AppSvc(
+            broker, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock(), null, null,
+            (IBrokerPositionSource)broker, health);
+
+        await service.ExecuteAsync(Approved(CloseIntent(qty: 300)));
+
+        health.Reports.Should().Equal([(PositionQuerySource.OrderDispatch, succeeded, (string?)null)]);
+    }
+
+    // 契約違反（例外を投げる建玉照会）の発注先。決済のゲートは不明として扱う（#873 の監査 N2）。
+    private sealed class ThrowingPositionBroker : IBrokerAdapter, IBrokerPositionSource
+    {
+        public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
+
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
+            throw new InvalidOperationException("OpenD 不達（テスト）");
+
+        public Task<BrokerOrder> PlaceOrderAsync(OrderIntent intent, CancellationToken ct = default) =>
+            throw new NotSupportedException("本試験は発注しない");
+
+        public Task<BrokerOrder?> GetOrderAsync(string orderId, CancellationToken ct = default) =>
+            Task.FromResult<BrokerOrder?>(null);
+
+        public Task CancelOrderAsync(string orderId, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     // T-10-497（是正で**変えてはいけない**側）: 台帳とブローカーが一致している通常時は挙動が変わらない。
     // ブローカーの方が多い場合も、送るのは承認された数量だけである（勝手に増やさない）。
     [Theory]

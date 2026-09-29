@@ -3,6 +3,7 @@ using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -35,8 +36,13 @@ public sealed class BrokerPositionSnapshotService(
     TimeProvider timeProvider,
     IOptions<PositionReconciliationOptions> options,
     ILogger<BrokerPositionSnapshotService> logger,
-    IServiceScopeFactory scopeFactory) : BackgroundService
+    IServiceScopeFactory scopeFactory,
+    IPositionQueryHealthReporter? positionQueryHealth = null) : BackgroundService
 {
+    // NFR, FR-10, #1092, IADR-0462 決定2: 建玉照会の状態の報告口（本番は Program.cs の singleton。DI が解決する）。
+    private readonly IPositionQueryHealthReporter _positionQueryHealth =
+        positionQueryHealth ?? NoOpPositionQueryHealthReporter.Instance;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled)
@@ -95,6 +101,11 @@ public sealed class BrokerPositionSnapshotService(
         cancellationToken.ThrowIfCancellationRequested();
 
         var snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+
+        // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 観測の欠けは Pod の停止と照会の失敗を区別できない。照会の成功・失敗を報告し、
+        // 状態が変わったときだけ台帳へ出す（10 分ごとの成功は出さない）。
+        await _positionQueryHealth.ReportAsync(PositionQuerySource.BrokerPositionSnapshot, snapshot is not null)
+            .ConfigureAwait(false);
         if (snapshot is null)
         {
             // 「不明」を「建玉ゼロ」と取り違えない。発行すれば台帳の全建玉が乖離として報告される。

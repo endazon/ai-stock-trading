@@ -92,6 +92,40 @@ WHERE t NOT IN ('2026-09-29T21:10+09', '2026-09-29T22:10+09', '2026-09-29T22:20+
   AND t < '2026-09-30T08:00+09';
 SELECT ev('BrokerAvailabilityObserved', gen_random_uuid(), NULL, '{}', t)
 FROM generate_series('2026-09-29T20:00+09'::timestamptz, '2026-09-30T07:55+09', '5 minutes') t;
+-- T-10-1775, #1092 段 2, IADR-0462: 照会の状態の変化。
+-- ガード: 窓の前（19:00）に失敗が始まり、20:30 に回復（150 回）。01:00 に失敗、01:20 に再起動の後の最初の成功。
+-- スナップショット: 03:00 に失敗し、窓の終端まで回復しない。窓の尻ちょうど（08:00）の記録は数えない。
+-- 保有照会: 窓の前に成功（区間を出さない）。
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Failing","PreviousStatus":"Healthy","FailureKind":null,"FailedQueries":1}',
+  '2026-09-29T19:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Healthy","PreviousStatus":"Failing","FailureKind":null,"FailedQueries":150}',
+  '2026-09-29T20:30:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Failing","PreviousStatus":"Healthy","FailureKind":"Transient","FailedQueries":1}',
+  '2026-09-30T01:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Healthy","PreviousStatus":"Unknown","FailureKind":null,"FailedQueries":0}',
+  '2026-09-30T01:20:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"BrokerPositionSnapshot","Status":"Failing","PreviousStatus":"Healthy","FailureKind":null,"FailedQueries":1}',
+  '2026-09-30T03:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"BrokerPositionSnapshot","Status":"Healthy","PreviousStatus":"Failing","FailureKind":null,"FailedQueries":30}',
+  '2026-09-30T08:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"TradeDecisionHoldings","Status":"Healthy","PreviousStatus":"Unknown","FailureKind":null,"FailedQueries":0}',
+  '2026-09-29T18:00:00+09');
+-- LLM を呼ぶ前の見送り（窓の尻ちょうどは数えない）。
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'NVDA',
+  '{"Reason":"DailyPolicyUnconfirmed","CycleTrigger":"scheduled"}', '2026-09-29T22:30:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'TSLA',
+  '{"Reason":"DailyPolicyUnconfirmed","CycleTrigger":"scheduled"}', '2026-09-29T22:30:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AAPL',
+  '{"Reason":"CurrentPriceUnavailable","CycleTrigger":"price-movement"}', '2026-09-30T02:00:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AAPL',
+  '{"Reason":"FxRateUnresolved","CycleTrigger":"scheduled"}', '2026-09-30T08:00:00+09');
 SQL
 
 OUT="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
@@ -126,6 +160,21 @@ hasnt '帰属の分からない注文が無い' '|?|'
 has 'S1 の結果は理由別に数える' 'SoftwareStopExecuted|ClosePlaced|1|NVDA'
 has '観測の欠け: 30 分は出す' 'BrokerPositionsObserved|2026-09-29 22:00:00+09|2026-09-29 22:30:00+09|00:30:00'
 hasnt '観測の欠け: ちょうど 20 分は出さない（しきい値は「超える」）' '2026-09-29 21:00:00+09|2026-09-29 21:20:00+09'
+# T-10-1775, #1092 段 2, IADR-0462: 照会の失敗の区間と LLM を呼ぶ前の見送り。
+has '照会の失敗: 窓の前から続いた失敗は窓の頭から回復まで（回数つき）' \
+  'ProtectiveStopGuard|2026-09-29 20:00:00+09|2026-09-29 20:30:00+09|回復（失敗 150 回）|-|窓の前から'
+has '照会の失敗: 再起動の後の最初の成功で閉じる（回復の時刻は不明と書く）' \
+  'ProtectiveStopGuard|2026-09-30 01:00:00+09|2026-09-30 01:20:00+09|再起動の後に成功（回復の時刻は不明）|Transient|'
+# 終端は窓の終端（過ぎた窓）か現在時刻（窓の途中で走らせた場合）なので、時刻の列は見ない。
+if grep -qE '^BrokerPositionSnapshot\|2026-09-30 03:00:00\+09\|[^|]+\|窓の終端まで続いた（回復の記録なし）\|-\|$' <<<"$OUT"; then
+  pass=$((pass + 1)); echo '  ok  照会の失敗: 窓の尻ちょうどの回復は数えず、窓の終端まで続いたと書く'
+else fail=$((fail + 1)); echo '  NG  照会の失敗: 窓の終端まで続いた区間が無い' >&2; grep '^BrokerPositionSnapshot|' <<<"$OUT" >&2; fi
+hasnt '照会の失敗: 窓の前の成功は区間を出さない' 'TradeDecisionHoldings|'
+has '状態の変化の件数: 再起動の後の最初の観測を数える' 'ProtectiveStopGuard|Unknown→Healthy|1'
+has '状態の変化の件数: 窓の前の記録は数えない（窓の中の失敗→回復は 1 件）' 'ProtectiveStopGuard|Failing→Healthy|1'
+has 'LLM を呼ぶ前の見送り: 理由 × 起点で数える' 'DailyPolicyUnconfirmed|scheduled|2|NVDA,TSLA'
+has 'LLM を呼ぶ前の見送り: 別の理由' 'CurrentPriceUnavailable|price-movement|1|AAPL'
+hasnt 'LLM を呼ぶ前の見送り: 窓の尻ちょうどは数えない' 'FxRateUnresolved|'
 
 # 窓の途中で走らせる（場中の確かめ）: 終端は現在時刻で切り、まだ来ていない時間を欠けとして出さない。
 # 観測は 5 分ごとに現在時刻の 30 分前まで。欠けは「最後の観測 → 現在時刻」の約 30 分であり、「→ 窓の終端」の約 10 時間ではない。

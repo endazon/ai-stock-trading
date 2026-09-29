@@ -8,6 +8,7 @@ using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using Microsoft.Extensions.Logging;
 
 namespace TradeDecisionService.Features.TradeDecision.DecideTrade;
@@ -37,7 +38,9 @@ public sealed class TradeDecisionAppService(
     IDecisionSkipReporter? skipReporter = null,
     IWatchlistProvider? watchlist = null,
     IDecisionHeldReporter? heldReporter = null,
-    NewsCollectionStatusStore? newsStatus = null)
+    NewsCollectionStatusStore? newsStatus = null,
+    IDecisionForgoneBeforeLlmReporter? forgoneReporter = null,
+    IPositionQueryHealthReporter? positionQueryHealth = null)
 {
     // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成）の最新値。未指定＝null＝プロンプトは
     // 「ニュース: 不明」と書く（無言で省かない）。本番は Program.cs の singleton が注入され、定時の購読が記録する。
@@ -77,6 +80,16 @@ public sealed class TradeDecisionAppService(
     // 🔴 UC-02, FR-03, #1077, IADR-0452 決定4: 判断後の見送りを市場監視（急変の基準値）へ渡すポート。未指定＝NoOp。
     // 実発行（PublishingDecisionHeldReporter）は Worker が配線する。
     private readonly IDecisionHeldReporter _heldReporter = heldReporter ?? new NoOpDecisionHeldReporter();
+
+    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: LLM を呼ぶ前の見送りを監査台帳へ渡すポート。未指定＝NoOp。
+    // 実発行（PublishingDecisionForgoneBeforeLlmReporter）は Worker が配線する。
+    private readonly IDecisionForgoneBeforeLlmReporter _forgoneReporter =
+        forgoneReporter ?? new NoOpDecisionForgoneBeforeLlmReporter();
+
+    // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 保有照会・未約定の照会の状態の報告口（状態が変わったときだけ台帳へ出る）。
+    // 本番は Worker が singleton（発行の実装）を配線する。未指定＝NoOp。
+    private readonly IPositionQueryHealthReporter _positionQueryHealth =
+        positionQueryHealth ?? NoOpPositionQueryHealthReporter.Instance;
 
     // UC-01, FR-09, IADR-0096: 日報未確定（policy-null）で見送った際に確定を促す通知を促す出力ポート。
     // 未指定＝NoOp（何もしない＝現行のログのみ）。実発行（DailyPolicyUnconfirmed の publish・営業日 dedup）は Worker が
@@ -175,6 +188,45 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, reason);
     }
 
+    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: **LLM を呼ぶ前の見送り**（4 地点）の出口。1 回の見送りにつき 1 件
+    // TradeDecisionForgoneBeforeLlm を発行してから、唯一の出口 Skip を通す（計上は Skip の 1 件のまま）。
+    // 🔴 TradeDecisionHeld は出さない（判断をしていない見送りで急変の基準値を進めない。IADR-0452 決定1）。
+    // 🔴 **発行の失敗で見送りを壊さない**（SkipJudgedAsync と同じ規律）。伝えるのは本判断のキャンセルだけである。
+    private async Task<TradeDecisionMade?> SkipBeforeLlmAsync(
+        DecisionTrigger trigger, DecisionForgoneBeforeLlmReason reason, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _forgoneReporter.ReportAsync(
+                new TradeDecisionForgoneBeforeLlm(
+                    Guid.NewGuid(), trigger.Symbol, trigger.Market, reason, clock.UtcNow, trigger.MetricTrigger),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                ex, "LLM を呼ぶ前の見送りの発行に失敗しました（見送りは継続します）: {Symbol} reason={Reason}",
+                trigger.Symbol, reason);
+        }
+
+        return Skip(trigger, ToSkipReason(reason));
+    }
+
+    // #1092, IADR-0462 決定4: 台帳の語彙（4 値）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
+    {
+        DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
+        DecisionForgoneBeforeLlmReason.CurrentPriceUnavailable => DecisionSkipReason.CurrentPriceUnavailable,
+        DecisionForgoneBeforeLlmReason.FxRateUnresolved => DecisionSkipReason.FxRateUnresolved,
+        DecisionForgoneBeforeLlmReason.FxRateStaleNoHolding => DecisionSkipReason.FxRateStaleNoHolding,
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
+    };
+
+    // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 保有照会・未約定の照会の成否を報告する。**実結線（IsEnabled）のときだけ**
+    // （未結線の NoOp は常に不明を返すが、照会していないので失敗ではない）。報告は例外を投げない。
+    private Task ReportHoldingsQueryAsync(PositionQuerySource source, bool succeeded) =>
+        _heldPosition.IsEnabled ? _positionQueryHealth.ReportAsync(source, succeeded) : Task.CompletedTask;
+
     // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1/3: 判断時点の価格。**結論を得ていない（解析不能）なら null**
     // （IADR-0248: 一次の解析不能、または二次の全票が解析不能）。価格は手元の実価格を優先する:
     // 現在値（有効時） → 起点の価格（価格変動トリガー） → LLM の参照価格（いずれも正のときだけ。Hold の参照価格は 0）。
@@ -216,7 +268,8 @@ public sealed class TradeDecisionAppService(
             // UC-01, FR-09, IADR-0096: 日報未確定による見送りを通知（確定を促す）。営業日単位の重複抑止は notifier 側。
             // fail-safe: 通知は取引判断のクリティカルパス外。発行失敗・例外で見送り（null 返却）を壊さない。キャンセルは伝播。
             await NotifyDailyPolicyUnconfirmedSafeAsync(cancellationToken).ConfigureAwait(false);
-            return Skip(trigger, DecisionSkipReason.DailyPolicyUnconfirmed);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var context = await sizingProvider.GetContextAsync(cancellationToken).ConfigureAwait(false);
@@ -234,7 +287,8 @@ public sealed class TradeDecisionAppService(
         if (_currentPrice.IsEnabled && currentPrice is null)
         {
             logger.LogInformation("現在値が取得できない/鮮度切れのため見送り（発注抑止・安全側）: {Symbol}", trigger.Symbol);
-            return Skip(trigger, DecisionSkipReason.CurrentPriceUnavailable);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.CurrentPriceUnavailable, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         // FR-10, FR-17, #257, #364, IADR-0107 決定2/3: 発注意図を作る前に基準通貨（USD）への換算レートを確定させる。
@@ -249,7 +303,8 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market={Market}",
                 trigger.Symbol, trigger.Market);
-            return Skip(trigger, DecisionSkipReason.FxRateUnresolved);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.FxRateUnresolved, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var rateToBase = fxReading.Rate.Rate;
@@ -288,7 +343,9 @@ public sealed class TradeDecisionAppService(
                     "換算レートが鮮度切れで保有も無いため見送り（新規建てのみ停止・手仕舞いは対象外）: " +
                     "{Symbol} market={Market} asOf={AsOf}",
                     trigger.Symbol, trigger.Market, fxReading.Rate.AsOf);
-                return Skip(trigger, DecisionSkipReason.FxRateStaleNoHolding);
+                return await SkipBeforeLlmAsync(
+                        trigger, DecisionForgoneBeforeLlmReason.FxRateStaleNoHolding, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             logger.LogWarning(
@@ -623,17 +680,21 @@ public sealed class TradeDecisionAppService(
     private async Task<int?> GetSignedHeldQuantitySafeAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken)
     {
+        int? quantity;
         try
         {
-            return await _heldPosition
+            quantity = await _heldPosition
                 .GetSignedQuantityAsync(trigger.Symbol, trigger.Market, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "保有建玉の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
-            return null;
+            quantity = null;
         }
+
+        await ReportHoldingsQueryAsync(PositionQuerySource.TradeDecisionHoldings, quantity is not null).ConfigureAwait(false);
+        return quantity;
     }
 
     // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定1/決定2: 判断プロンプトへ載せる保有状況の照会（fail-safe ラッパ）。
@@ -642,17 +703,21 @@ public sealed class TradeDecisionAppService(
     private async Task<HeldPosition?> GetHeldPositionSafeAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken)
     {
+        HeldPosition? held;
         try
         {
-            return await _heldPosition
+            held = await _heldPosition
                 .GetPositionAsync(trigger.Symbol, trigger.Market, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "保有状況の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
-            return null;
+            held = null;
         }
+
+        await ReportHoldingsQueryAsync(PositionQuerySource.TradeDecisionHoldings, held is not null).ConfigureAwait(false);
+        return held;
     }
 
     // FR-04, FR-10, #934, IADR-0390 決定2: 未約定の新規建て注文の照会（fail-safe ラッパ）。
@@ -661,17 +726,22 @@ public sealed class TradeDecisionAppService(
     private async Task<WorkingEntryOrders?> GetWorkingEntryOrdersSafeAsync(
         DecisionTrigger trigger, CancellationToken cancellationToken)
     {
+        WorkingEntryOrders? working;
         try
         {
-            return await _heldPosition
+            working = await _heldPosition
                 .GetWorkingEntryOrdersAsync(trigger.Symbol, trigger.Market, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "未約定の新規建て注文の照会に失敗しました（不明として扱います）: {Symbol}", trigger.Symbol);
-            return null;
+            working = null;
         }
+
+        await ReportHoldingsQueryAsync(PositionQuerySource.TradeDecisionWorkingEntries, working is not null)
+            .ConfigureAwait(false);
+        return working;
     }
 
     // FR-04, #1034, IADR-0440 決定 2: 判断のプロンプトへ載せる監視銘柄の照会（fail-safe ラッパ）。

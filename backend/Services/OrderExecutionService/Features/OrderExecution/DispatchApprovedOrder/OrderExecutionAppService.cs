@@ -6,6 +6,7 @@ using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 
 namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 
@@ -52,7 +53,8 @@ public sealed class OrderExecutionAppService(
     IClock clock,
     IProtectiveStopOrderStore? protectiveStops = null,
     ILogger<OrderExecutionAppService>? logger = null,
-    IBrokerPositionSource? brokerPositions = null) : IReconciledEntryProtection
+    IBrokerPositionSource? brokerPositions = null,
+    IPositionQueryHealthReporter? positionQueryHealth = null) : IReconciledEntryProtection
 {
     // #820 の 8 巡目監査, IADR-0344 追記(8): 武装の前提条件（帰属不明の建玉が無いこと）を確かめるために
     // 見る Active 行の上限。保有建玉数上限（既定 3）に対して十分大きい。
@@ -63,6 +65,10 @@ public sealed class OrderExecutionAppService(
     // 建玉照会は実運用ではブローカーアダプタそのものが実装する（Program.cs の配線と同じ）。
     // 明示指定があればそれを使う（テスト・差し替え用）。
     private readonly IBrokerPositionSource? _positions = brokerPositions ?? broker as IBrokerPositionSource;
+
+    // NFR, FR-10, #1092, IADR-0462 決定2: 建玉照会（決済のゲート・S1 の武装前）の状態の報告口。本番は Program.cs が singleton を渡す。
+    private readonly IPositionQueryHealthReporter _positionQueryHealth =
+        positionQueryHealth ?? NoOpPositionQueryHealthReporter.Instance;
 
     // FR-10, FR-06, ADR-0040 決定1, #1002, IADR-0429 決定1: 損切りの実行機構を**解決した回に限り**、解決結果を結果へ載せる
     // （ハンドラが StopLossMethodResolved として発行し、監査台帳を経て日報・月報の「実際に適用された手法」になる）。
@@ -142,6 +148,11 @@ public sealed class OrderExecutionAppService(
                 _logger.LogError(ex, "ブローカーの建玉照会が例外で失敗しました（不明として扱います）。");
                 snapshot = null;
             }
+
+            // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 見送り（BrokerPositionsIndeterminate）は既に台帳へ出るが、照会の状態の変化も出す
+            // （同じ発生源の区間として、夜間に何時から何時まで照会できなかったかを読むため）。
+            await _positionQueryHealth.ReportAsync(PositionQuerySource.OrderDispatch, snapshot is not null)
+                .ConfigureAwait(false);
 
             var verdict = BrokerHeldPositionGate.Evaluate(intent, snapshot);
             switch (verdict.Outcome)
@@ -584,6 +595,9 @@ public sealed class OrderExecutionAppService(
         var claimedBefore = ClaimedFor(intent, stops);
 
         var snapshot = await _positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+
+        // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 照会の失敗は見送りの理由（UnattributedPosition）に畳まれるので、状態の変化で区別できるようにする。
+        await _positionQueryHealth.ReportAsync(PositionQuerySource.OrderDispatch, snapshot is not null).ConfigureAwait(false);
         if (snapshot is null)
         {
             _logger.LogError(

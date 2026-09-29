@@ -71,7 +71,8 @@ public class BrokerPositionSnapshotServiceTests
     private static BrokerPositionSnapshotService NewService(
         IHost host, FakePositionSource source, bool enabled = true,
         // #1093, IADR-0459: 初回の遅延を観測するときだけ差し替える（既定は固定時刻・タイマーは使わない試験）。
-        TimeProvider? time = null, PositionReconciliationOptions? options = null) =>
+        TimeProvider? time = null, PositionReconciliationOptions? options = null,
+        RecordingPositionQueryHealth? health = null) =>
         new(source,
             // 本アダプタは常駐（singleton）であり、Wolverine の IMessageBus（scoped）は注入できない。
             host.Services.GetRequiredService<IWolverineRuntime>(),
@@ -81,15 +82,17 @@ public class BrokerPositionSnapshotServiceTests
             // #880, IADR-0412: 帰属不明の検知の相乗り。本ファイルは観測の発行だけを見るので、保護記録の無い空のストアで組む
             //（検知の振る舞いは BrokerPositionSnapshotUnattributedDetectionTests が固定する）。
             BrokerPositionSnapshotUnattributedDetectionTests.DetectorScopes(
-                new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(), () => Now));
+                new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(), () => Now),
+            health);
 
     private static async Task<(bool Published, ITrackedSession Session, FakePositionSource Source)> RunOnceAsync(
-        IReadOnlyList<BrokerPositionSnapshot>? result, Func<Exception>? throws = null, bool enabled = true)
+        IReadOnlyList<BrokerPositionSnapshot>? result, Func<Exception>? throws = null, bool enabled = true,
+        RecordingPositionQueryHealth? health = null)
     {
         using var host = await NewHostAsync();
 
         var source = new FakePositionSource { Result = result, Throw = throws };
-        var service = NewService(host, source, enabled);
+        var service = NewService(host, source, enabled, health: health);
 
         var published = false;
         Func<IMessageContext, Task> publishOnce = async _ =>
@@ -98,6 +101,20 @@ public class BrokerPositionSnapshotServiceTests
 
         await host.StopAsync();
         return (published, session, source);
+    }
+
+    // T-10-1770, NFR, FR-10, #1092, IADR-0462 決定2: 観測の常駐は照会の成功・失敗を発生源 BrokerPositionSnapshot で報告する
+    // （状態が変わったときだけ台帳へ出るのは報告口の側。観測の欠けだけでは Pod の停止と照会の失敗を区別できない）。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_1770_観測の常駐は建玉照会の成否を発生源つきで報告する(bool succeeded)
+    {
+        var health = new RecordingPositionQueryHealth();
+
+        await RunOnceAsync(succeeded ? [] : null, health: health);
+
+        health.Reports.Should().Equal([(PositionQuerySource.BrokerPositionSnapshot, succeeded, (string?)null)]);
     }
 
     [Fact]

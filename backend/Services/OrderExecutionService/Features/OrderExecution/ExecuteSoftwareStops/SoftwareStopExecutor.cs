@@ -5,6 +5,7 @@ using OrderExecutionService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 
 namespace OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 
@@ -49,7 +50,8 @@ public sealed class SoftwareStopExecutor(
     IClock clock,
     ILogger<SoftwareStopExecutor>? logger = null,
     TimeSpan? orphanGrace = null,
-    TimeSpan? settlementGrace = null)
+    TimeSpan? settlementGrace = null,
+    IPositionQueryHealthReporter? positionQueryHealth = null)
 {
     /// <summary>
     /// 決済が続けて売れなかった回数がこの値に達したら Critical（<see cref="SoftwareStopOutcome.CloseRejected"/>）を出す
@@ -94,6 +96,10 @@ public sealed class SoftwareStopExecutor(
     private const int NettingScanLimit = 500;
 
     private readonly ILogger _logger = logger ?? NullLogger<SoftwareStopExecutor>.Instance;
+
+    // NFR, FR-10, #1092, IADR-0462: 建玉照会の状態の報告口。本番は Program.cs が singleton（発行の実装）を渡す。
+    private readonly IPositionQueryHealthReporter _positionQueryHealth =
+        positionQueryHealth ?? NoOpPositionQueryHealthReporter.Instance;
 
     private readonly TimeSpan _orphanGrace = orphanGrace ?? DefaultOrphanGrace;
 
@@ -291,7 +297,15 @@ public sealed class SoftwareStopExecutor(
         }
 
         // 3. 建玉を照会する（null＝不明は据え置き。「不明」を「建玉なし」と取り違えない）。
-        snapshot ??= await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: **自分で照会した回だけ**成功・失敗を報告する（ガードから渡されたスナップショットは
+        // ガードが報告済み。二重に数えない）。状態が変わったときだけ台帳へ出る（S1 の据え置きの原因が照会の失敗かを翌朝に読める）。
+        if (snapshot is null)
+        {
+            snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+            await _positionQueryHealth.ReportAsync(PositionQuerySource.SoftwareStopClose, snapshot is not null)
+                .ConfigureAwait(false);
+        }
+
         if (snapshot is null)
         {
             _logger.LogWarning(

@@ -490,4 +490,73 @@ public class ProtectiveStopGuardTests
         broker.ClassifiedQueryCount.Should().Be(0);
         broker.PositionQueryCount.Should().Be(1);
     }
+
+    // ---- T-10-1770, NFR, FR-10, #1092, IADR-0462 決定2: 巡回の先頭の建玉照会の成否を、失敗の種類つきで報告する ----
+
+    private static ProtectiveStopGuard WithHealth(
+        GuardBroker broker, InMemoryProtectiveStopOrderStore stops, InMemoryExecutedOrderStore store,
+        RecordingPositionQueryHealth health, bool withRetry) =>
+        new(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+            positionQueryRetry: withRetry
+                ? new PositionQueryRetry(new ProtectiveStopGuardOptions(), (_, _) => Task.CompletedTask, () => 0.5)
+                : null,
+            positionQueryHealth: health);
+
+    [Theory]
+    // 照会し直しの最終結果だけを 1 回の観測として報告する（途中の失敗は数えない）。
+    [InlineData(new[] { PositionQueryFailure.Transient }, true, null)]
+    [InlineData(new[] { PositionQueryFailure.Transient, PositionQueryFailure.RateLimited }, false, "RateLimited")]
+    [InlineData(new[] { PositionQueryFailure.Other }, false, "Other")]
+    public async Task T_10_1770_ガードは照会し直しの最終結果を失敗の種類つきで1回だけ報告する(
+        PositionQueryFailure[] failures, bool succeeded, string? kind)
+    {
+        var stop = ActiveStop();
+        var (_, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Positions = [Long(10)];
+        foreach (var f in failures)
+            broker.ClassifiedResults.Enqueue(PositionQueryResult.Failed(f));
+        var health = new RecordingPositionQueryHealth();
+
+        await WithHealth(broker, stops, store, health, withRetry: true).RunOnceAsync(10);
+
+        health.Reports.Should().Equal([(PositionQuerySource.ProtectiveStopGuard, succeeded, kind)]);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_1770_照会し直しの無いガードも成否を報告し_失敗の種類は不明とする(bool succeeded)
+    {
+        var stop = ActiveStop();
+        var (_, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Positions = succeeded ? [Long(10)] : null;
+        var health = new RecordingPositionQueryHealth();
+
+        await WithHealth(broker, stops, store, health, withRetry: false).RunOnceAsync(10);
+
+        health.Reports.Should().Equal([(PositionQuerySource.ProtectiveStopGuard, succeeded, (string?)null)]);
+    }
+
+    [Fact]
+    public async Task T_10_1770_巡回対象が無ければ照会せず報告もしない_建玉0の確かめ直しは数えない()
+    {
+        var health = new RecordingPositionQueryHealth();
+        var empty = new GuardBroker();
+        await WithHealth(empty, new InMemoryProtectiveStopOrderStore(), new InMemoryExecutedOrderStore(), health, false)
+            .RunOnceAsync(10);
+        health.Reports.Should().BeEmpty("Active な保護記録が無い巡回は照会しない");
+
+        // 建玉 0 ＋ エントリーは約定済み → 取り消す前に建玉を照会し直す（2 回目の照会）。報告は巡回の先頭の 1 回だけ。
+        var stop = ActiveStop();
+        var (_, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Positions = [];
+
+        await WithHealth(broker, stops, store, health, withRetry: false).RunOnceAsync(10);
+
+        broker.PositionQueryCount.Should().Be(2, "前提: 建玉 0 の確かめ直しで 2 回照会している");
+        health.Reports.Should().Equal([(PositionQuerySource.ProtectiveStopGuard, true, (string?)null)]);
+    }
 }

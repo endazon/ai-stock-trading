@@ -13,6 +13,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.Fx;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AiStockTrading.Shared.Infrastructure.Composable.Llm;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.Options;
@@ -22,6 +23,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Grpc;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Serilog;
 using Wolverine;
+using Wolverine.Runtime;
 using System.Globalization;
 
 const string ServiceName = "ai-stock-trading.trade-decision-service";
@@ -327,6 +329,18 @@ builder.Services.AddSingleton<IDecisionSkipReporter, MetricsDecisionSkipReporter
 // publish する経路。市場監視が購読して急変の基準値を判断時点の価格へ進める。
 // **配線しないと、Hold が続く間は基準値が作られず UC-02 が一度も発火しない**（#1077 の症状）。
 builder.Services.AddScoped<IDecisionHeldReporter, PublishingDecisionHeldReporter>();
+
+// 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: LLM を呼ぶ前の見送り（日報の未確定・現在値なし・換算レートの未解決・
+// 鮮度切れで保有なし）を TradeDecisionForgoneBeforeLlm として publish し、監査台帳へ残す経路。
+// **配線しないと、この 4 つの見送りはメトリクスとログにしか残らず、Pod の再起動で消える**（#1092 の症状）。
+builder.Services.AddScoped<IDecisionForgoneBeforeLlmReporter, PublishingDecisionForgoneBeforeLlmReporter>();
+
+// 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 保有照会・未約定の照会の成功・失敗を、状態が変わったときだけ監査台帳へ出す報告口。
+// **singleton**（判断サービスはスコープごとに作られるため、状態は外に置く）。発行はランタイムの MessageBus から行う。
+builder.Services.AddSingleton<IPositionQueryHealthReporter>(sp => new PositionQueryHealthReporter(
+    e => new MessageBus(sp.GetRequiredService<IWolverineRuntime>()).PublishAsync(e),
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<PositionQueryHealthReporter>()));
 
 // FR-04, ADR-0020 決定2, #1081, IADR-0455: 情報収集から届くニュースの状態（取得済み／欠測／未構成）の最新値を有効期限つきで保持する。
 // 定時の購読（InformationCollectedHandler）が記録し、判断サービスが定時・急変の両方のプロンプトへ明示する（RAG を経由しない）。

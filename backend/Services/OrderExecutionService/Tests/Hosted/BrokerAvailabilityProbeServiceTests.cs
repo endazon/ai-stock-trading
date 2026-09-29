@@ -101,23 +101,27 @@ public class BrokerAvailabilityProbeServiceTests
         IBrokerAccountSource? accountSource = null,
         // #1093, IADR-0459: 初回の遅延を観測するときだけ差し替える（既定は固定時刻・タイマーは使わない試験）。
         TimeProvider? time = null,
-        BrokerAvailabilityProbeOptions? options = null) =>
+        BrokerAvailabilityProbeOptions? options = null,
+        RecordingPositionQueryHealth? health = null) =>
         new(probe,
             new FakeBroker(provider),
             host.Services.GetRequiredService<IWolverineRuntime>(),
             time ?? new FixedTimeProvider(Now),
             Options.Create(options ?? new BrokerAvailabilityProbeOptions { Enabled = enabled }),
             NullLogger<BrokerAvailabilityProbeService>.Instance,
-            accountSource);
+            accountSource,
+            health);
 
     private static async Task<(bool Published, ITrackedSession Session)> RunOnceAsync(
         bool operational,
         BrokerProvider provider = BrokerProvider.MoomooSimulate,
-        IBrokerAccountSource? accountSource = null)
+        IBrokerAccountSource? accountSource = null,
+        RecordingPositionQueryHealth? health = null)
     {
         using var host = await NewHostAsync();
         var service = NewService(
-            host, new FakeProbe { Operational = operational }, provider: provider, accountSource: accountSource);
+            host, new FakeProbe { Operational = operational }, provider: provider, accountSource: accountSource,
+            health: health);
 
         var published = false;
         Func<IMessageContext, Task> probeOnce = async _ =>
@@ -129,6 +133,20 @@ public class BrokerAvailabilityProbeServiceTests
     }
 
     // 正: 到達できた巡回は観測として発行され、**実際に接続しているアダプタの発注先**を載せる。
+    // T-10-1770, NFR, FR-10, #1092, IADR-0462 決定2: 稼働 probe（moomoo では建玉照会）は到達の成否を発生源つきで報告する
+    // （到達できないことは「発行しない」で表す設計のため、台帳からは Pod の停止と区別できなかった）。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_1770_稼働probeは到達の成否を発生源つきで報告する(bool operational)
+    {
+        var health = new RecordingPositionQueryHealth();
+
+        await RunOnceAsync(operational, health: health);
+
+        health.Reports.Should().Equal([(PositionQuerySource.BrokerAvailabilityProbe, operational, (string?)null)]);
+    }
+
     [Fact]
     public async Task 到達できた巡回を観測として発行する()
     {

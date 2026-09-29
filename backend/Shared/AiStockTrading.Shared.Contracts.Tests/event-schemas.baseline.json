@@ -318,6 +318,15 @@
     "ReferencePrice": "Decimal?",
     "Symbol": "String"
   },
+  "PositionQueryStatusChanged": {
+    "FailedQueries": "Int32",
+    "FailingSince": "DateTimeOffset?",
+    "FailureKind": "String",
+    "OccurredAt": "DateTimeOffset",
+    "PreviousStatus": "PositionQueryStatus",
+    "Source": "PositionQuerySource",
+    "Status": "PositionQueryStatus"
+  },
   "PositionReconciliationDrift": {
     "DetectedAt": "DateTimeOffset",
     "Drifts": "IReadOnlyList\u003CPositionDriftItem\u003E",
@@ -470,6 +479,14 @@
     "Price": "Decimal",
     "Quantity": "Int32",
     "StopLossPrice": "Decimal",
+    "Symbol": "String"
+  },
+  "TradeDecisionForgoneBeforeLlm": {
+    "CycleTrigger": "String",
+    "EventId": "Guid",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "Reason": "DecisionForgoneBeforeLlmReason",
     "Symbol": "String"
   },
   "TradeDecisionHeld": {
