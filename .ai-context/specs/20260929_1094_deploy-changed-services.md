@@ -171,6 +171,10 @@ chart README の「OpenD を除く全 Deployment へ」は、絞り込み時に�
 - 実走: `select-changed-services.js --self-test` 47 件 OK、`k8s-local-deploy.test.sh` 173 passed、`node scripts/scripts.test.js` 490 passed
   （`k8s-local-images.test.sh` を含む）。追加したテストはそれぞれ対応する変異（`-z` の除去・未追跡の除去・inputLeaks の無効化・引用符の全件倒しの除去・
   目印を立てない・後始末を戻す・`K8S_BUILT_FILE` を渡さない）で 1 件ずつ落ちることを確かめた。
+- 再監査（GO）の 🟡 への対応:
+  - Y-a: 空の既定値を毎回 `""` で入れ直すパッチまで「更新」と数えており、従来経路では絞り込みが事実上効かなかった。値を変え得るもの（env の明示指定・非空の既定値）だけを数える（T-1094-D12 / D13）。
+  - Y-b: 本体の配線の検査に手順の順序を足し、コメントアウトと並べ替えも捕まえる（生存していた M16 / M17 を殺した）。
+  - `k8s-local-deploy.test.sh` は 176 passed。
 - 残した指摘: Y5（Deployment 名とイメージ名の一致の検査）は現状 11 本すべて一致しており、ずれると restart 0 件の表示で気付ける。別 issue の候補とする。
 
 ## 残余

@@ -153,7 +153,8 @@ AST_SECRET_KEYS=(
 
 AST_PATCH_DIR=""
 AST_BUILT_DIR=""
-# #1094: 従来経路で ast-secrets を実際にパッチした回は 1（手順 5 の restart の絞り込みを解く）。
+# #1094: 従来経路で ast-secrets の値を変え得るパッチを送った回は 1（手順 5 の restart の絞り込みを解く）。
+# env の明示指定か非空の既定値を入れた回だけ。空の既定値の入れ直しだけなら 0。
 AST_SECRETS_PATCHED=0
 ast_cleanup() {
   [ -n "$AST_PATCH_DIR" ] && rm -rf "$AST_PATCH_DIR"
@@ -186,7 +187,7 @@ helm_escape() { printf '%s' "${1:-}" | sed 's/[\\,]/\\&/g'; }
 
 sync_ast_secrets() {
   local existing entries='' preserved='' clobber='' spec key var default value
-  local n_set=0 n_preserved=0
+  local n_set=0 n_preserved=0 changes=0
   existing="$(ast_secret_nonempty_keys)"
 
   for spec in "${AST_SECRET_KEYS[@]}"; do
@@ -214,6 +215,11 @@ sync_ast_secrets() {
 
     entries="${entries},\"${key}\":\"$(ast_b64 "$value")\""
     n_set=$((n_set + 1))
+    # #1094: 値が変わり得るのは env の明示指定（平文は読み比べないので同値でも数える）と、非空の既定値だけ。
+    # 空の既定値は、空か不在のキーへ空を入れ直すだけで Pod の env を変えない（毎回の再投入で restart の絞り込みを解かない）。
+    if [ -n "${!var+set}" ] || [ -n "$value" ]; then
+      changes=$((changes + 1))
+    fi
   done
 
   if [ -n "$clobber" ] && [ "$FORCE_EMPTY" != "1" ]; then
@@ -241,7 +247,7 @@ sync_ast_secrets() {
       --patch-file "$AST_PATCH_DIR/ast-secrets.json" >/dev/null
     rm -rf "$AST_PATCH_DIR"
     AST_PATCH_DIR=""
-    AST_SECRETS_PATCHED=1
+    [ "$changes" -gt 0 ] && AST_SECRETS_PATCHED=1
   fi
 
   echo "  $SECRET_NAME: 設定 ${n_set} 件 / 既存値を保持 ${n_preserved} 件（値は表示しません）"

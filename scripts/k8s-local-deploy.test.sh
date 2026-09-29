@@ -607,11 +607,32 @@ given_secret "$(for spec in "${AST_SECRET_KEYS[@]}"; do printf '%s ' "${spec%%|*
 )
 assert_eq   'T-1094-D10 パッチなし: 目印は 0 のまま' "$(cat "$STATE/patched-flag")" '0|none'
 
+# T-1094-D12: 🔴 空の既定値を入れ直すだけのパッチは目印を立てない（従来経路で毎回絞り込みが解けるのを防ぐ）
+given_secret "$(for spec in "${AST_SECRET_KEYS[@]}"; do k="${spec%%|*}"; [ "$k" = "fred-api-key" ] || printf '%s ' "$k"; done)"
+(
+  sync_ast_secrets >/dev/null 2>&1
+  printf '%s|%s' "$AST_SECRETS_PATCHED" "$(cat "$STATE/patch.json" 2>/dev/null)" > "$STATE/patched-flag"
+)
+assert_eq   'T-1094-D12 空の既定値だけ: 目印は 0 のまま（パッチは送る）' "$(cat "$STATE/patched-flag")" '0|{"data":{"fred-api-key":""}}'
+
+# T-1094-D13: env の明示指定は（平文を読み比べないので）空でも目印を立てる（--force-empty-secrets で非空の値を消す回）
+given_secret "$(for spec in "${AST_SECRET_KEYS[@]}"; do printf '%s ' "${spec%%|*}"; done)"
+(
+  FRED_API_KEY=""; export FRED_API_KEY
+  FORCE_EMPTY=1
+  sync_ast_secrets >/dev/null 2>&1
+  printf '%s' "$AST_SECRETS_PATCHED" > "$STATE/patched-flag"
+)
+assert_eq   'T-1094-D13 env の明示指定: 目印を立てる' "$(cat "$STATE/patched-flag")" '1'
+
 # T-1094-D11: 🔴 本体の配線（AST_DEPLOY_LIB=1 の手前で return するため、手順の並びは静的に固定する）
 MAIN_PART="$(sed -n '/^if \[ "\${AST_DEPLOY_LIB:-}" = "1" \]; then/,$p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
 assert_contains 'T-1094-D11 配線: 選択を解決する' "$MAIN_PART" 'resolve_ast_image_selection'
 assert_contains 'T-1094-D11 配線: images へ作り直した名前の一覧を渡す' "$MAIN_PART" 'K8S_BUILT_FILE="$AST_BUILT_DIR/built" "$ROOT/scripts/k8s-local-images.sh"'
 assert_contains 'T-1094-D11 配線: 手順 5 へ同じ一覧を渡す' "$MAIN_PART" 'ast_restart_step "$AST_BUILT_DIR/built"'
+# 順序: 選択の解決 → images（一覧を書く）→ secret 同期 → 手順 5。コメント行は数えない。
+MAIN_ORDER="$(printf '%s\n' "$MAIN_PART" | grep -v '^[[:space:]]*#' | grep -nE '^(resolve_ast_image_selection|K8S_BUILT_FILE=|ast_prepare_secrets|ast_restart_step)' | sed -E 's/^[0-9]+:([A-Za-z0-9_]+).*/\1/' | tr '\n' ' ')"
+assert_eq   'T-1094-D11 配線: 手順の順序（コメントアウトも捕まえる）' "$MAIN_ORDER" 'resolve_ast_image_selection K8S_BUILT_FILE ast_prepare_secrets ast_restart_step '
 
 printf '\nk8s-local-deploy.sh: 作り直すイメージの絞り込みの中継（#1094）\n'
 
