@@ -11,7 +11,7 @@ ids: [NFR, FR-04, FR-10, FR-11]
 adrs: []
 iadrs: [IADR-0019, IADR-0254, IADR-0287, IADR-0452]
 specs: [20260929_1092_nightly-ledger-summary, 20260929_nightly-summary-gap-until-now]
-issues: [#1092]
+issues: [#1092, #1102]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
