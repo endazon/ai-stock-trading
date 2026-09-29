@@ -200,22 +200,49 @@ public static class InformationSourceFactory
         var requestsPerSymbol = FinnhubRequestsPerSymbol(normalized);
         var cyclesPerDay = FinnhubDailyVolumeEstimator.CyclesPerDay(Math.Max(1, pollIntervalSeconds));
         var logger = loggerFactory.CreateLogger(typeof(InformationSourceFactory).FullName!);
+        // #1099: 監視銘柄に追随する構成（symbolCount を渡す）では、数えたのは 1 巡回の上限であって実数ではない。
+        // 「銘柄数」と書くと実数と読み違えるため、文言を分ける（名前つきの値は同じ。見積りの値・メトリクスは変えない）。
+        var perCycleCap = symbolCount is not null;
         if (result.Verdict == FinnhubDailyVolumeEstimator.Verdict.Exceeds)
         {
-            logger.LogWarning(
-                "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）が"
-                // ADR-0043（計画）決定 1, #1030, IADR-0437: 暫定の 300 回/日は撤回。ここへ来るのは日次上限を実測して設定したときだけ。
-                + "設定された日次上限 {Limit} 回/日（ADR-0031 決定3）を超えています。"
-                + "収集は継続します（統制は警告のみ）。銘柄数・巡回頻度を見直してください。",
-                result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay,
-                dailyVolumeGuard.ProvisionalDailyLimit);
+            if (perCycleCap)
+            {
+                logger.LogWarning(
+                    "Finnhub の日次要求見積り {Estimated} 回/日（1 巡回の対象の上限 {Symbols} 銘柄 × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回。"
+                    + "監視銘柄に追随するため上限で数えた。実数は巡回ごとにメトリクスへ記録）が"
+                    + "設定された日次上限 {Limit} 回/日（ADR-0031 決定3）を超えています。"
+                    + "収集は継続します（統制は警告のみ）。巡回頻度を見直してください。",
+                    result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay,
+                    dailyVolumeGuard.ProvisionalDailyLimit);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）が"
+                    // ADR-0043（計画）決定 1, #1030, IADR-0437: 暫定の 300 回/日は撤回。ここへ来るのは日次上限を実測して設定したときだけ。
+                    + "設定された日次上限 {Limit} 回/日（ADR-0031 決定3）を超えています。"
+                    + "収集は継続します（統制は警告のみ）。銘柄数・巡回頻度を見直してください。",
+                    result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay,
+                    dailyVolumeGuard.ProvisionalDailyLimit);
+            }
         }
         else if (result.Verdict == FinnhubDailyVolumeEstimator.Verdict.NotCompared)
         {
-            logger.LogInformation(
-                "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）。"
-                + "日次上限は未実測のため比べません（ADR-0043 決定1）。日次は 429 で見張ります。",
-                result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay);
+            if (perCycleCap)
+            {
+                logger.LogInformation(
+                    "Finnhub の日次要求見積り {Estimated} 回/日（1 巡回の対象の上限 {Symbols} 銘柄 × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回。"
+                    + "監視銘柄に追随するため上限で数えた。実数は巡回ごとにメトリクスへ記録）。"
+                    + "日次上限は未実測のため比べません（ADR-0043 決定1）。日次は 429 で見張ります。",
+                    result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Finnhub の日次要求見積り {Estimated} 回/日（銘柄数 {Symbols} × 1 巡回 {PerSymbol} 要求 × 1 日 {Cycles} 巡回）。"
+                    + "日次上限は未実測のため比べません（ADR-0043 決定1）。日次は 429 で見張ります。",
+                    result.EstimatedDailyRequests, symbols, requestsPerSymbol, cyclesPerDay);
+            }
         }
     }
 

@@ -115,6 +115,9 @@ public class InformationSourceFactoryDailyVolumeTests
 
         logs.Warnings.Should().ContainSingle(m =>
             m.Contains("480", StringComparison.Ordinal) && m.Contains("300", StringComparison.Ordinal));
+        // #1099: 構成の固定リストでは従来どおり「銘柄数」と書き、1 巡回の上限の文言は出さない。
+        logs.Warnings.Should().ContainSingle(m => m.Contains("銘柄数 10 ", StringComparison.Ordinal));
+        logs.Warnings.Should().NotContain(m => m.Contains("1 巡回の対象の上限", StringComparison.Ordinal));
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent)
             .Should().ContainSingle(m => m.Value > 100);
     }
