@@ -176,6 +176,11 @@ jobs:
       - name: Test nightly-ledger-summary.sh (ledger-only nightly summary)
         if: ${{ !cancelled() }}
         run: bash scripts/nightly-ledger-summary.test.sh
+      # NFR, #1092: 同じ SQL を実 PostgreSQL（ubuntu-latest 同梱のサーバを一時クラスタで起動）で流し、窓の端・注文ごとの最新の行・
+      # 帰属（判断 → S1 → 承認）を固定する。スタブでは検出できない変異（`<` と `<=`・DISTINCT ON）を止める。
+      - name: Test nightly-ledger-summary.sh on real PostgreSQL
+        if: ${{ !cancelled() }}
+        run: bash scripts/nightly-ledger-summary.pg.test.sh
       # FR-10, #937, IADR-0344 追記（17）: ホスト側の死活監視（クラスタの外から S1 の生存を見張る）の純ロジック
       # （米国市場の開場判定・生存要約の鮮度・通知の要否・Webhook の URL を出さない）を固定する。
       # 実クラスタ・kubectl・通知は不要。ubuntu-latest の pwsh（PowerShell 7）で走る。

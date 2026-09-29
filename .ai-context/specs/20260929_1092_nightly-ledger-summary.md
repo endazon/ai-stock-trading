@@ -2,7 +2,7 @@
 title: 夜間の判断・発注・約定・S1・照会の欠けを、監査台帳だけから翌朝に要約する（#1092 段 1）
 type: spec
 status: accepted
-related_ids: [NFR, FR-04, FR-10, FR-11, IADR-0019, IADR-0254, IADR-0287, IADR-0452]
+related_ids: [NFR, FR-04, FR-10, FR-11, IADR-0019, IADR-0223, IADR-0254, IADR-0287, IADR-0452]
 author: claude (Claude Code)
 created: 2026-09-29
 updated: 2026-09-29
@@ -63,7 +63,9 @@ plan_refs: []
    - `SET LOCAL TIME ZONE 'Asia/Tokyo'` で、表示を JST にする。
    - 一時ビューも作らない（読み取りだけにする）。
 3. 注文は `OrderId` ごとの最新の 1 行で数える（`DISTINCT ON`）。
-   - 銘柄は `TradeDecisionMade`（CorrelationId）から引き、無ければ S1 の `SoftwareStopExecuted.CloseDecisionId` から引く。**窓の外の判断も引く**（夜の前の判断が夜に約定することがあるため）。
+   - 銘柄は `TradeDecisionMade`（CorrelationId）→ S1 の `SoftwareStopExecuted.CloseDecisionId` → `OrderApproved`（CorrelationId）の順に引く。**窓の外の記録も引く**（夜の前の判断が夜に約定することがあるため）。
+   - S1 は同じ CloseDecisionId の記録が複数あり得る（`CloseRejected` / `CloseUnfilled` は `CloseIntent` が null）。決済の意図を持つ行を先に採る（PR #1095 の監査 F1）。
+   - 判断を経ない注文（利用者の手仕舞い・維持証拠金の自動縮小・照合後の保護レグ）は `TradeDecisionMade` を持たないので、承認の記録から引く（同 F2）。
 4. 建玉照会の失敗は、観測の欠けから推定する。
    - しきい値は間隔の 2 倍で、既定は建玉 20 分・稼働 10 分とする。環境変数で変えられる。
    - 窓の両端も境界として数える（窓の頭から最初の観測まで・最後の観測から窓の尻までの欠けも出す）。
@@ -77,19 +79,32 @@ plan_refs: []
 - SQL が読み取り専用のトランザクションで始まり、`ROLLBACK` で終わること。書き込み・DDL の語を含まないこと。`ON_ERROR_STOP` を付けること。12 種類のイベントを数えること。
 - `AST_NIGHTLY_LIB=1` のとき、関数だけを読み込むこと。
 
-CI は `ci.yml` の shell-scripts ジョブに登録した。
+CI は `ci.yml` の `static-checks` ジョブの step に登録した（README の表の見出し「shell-scripts」はジョブ名ではない）。
+
+### 実 PostgreSQL の試験（`scripts/nightly-ledger-summary.pg.test.sh`。15 件）
+
+スタブの試験は SQL を実行しないので、窓の端（`<` と `<=`）と「注文ごとの最新の行」（`DISTINCT ON`）の変異を検出できなかった（PR #1095 の監査で M6・M8 が残った）。
+そこで、一時クラスタ（ubuntu-latest 同梱のサーバ。root なら postgres 利用者で起動、unix ソケットだけ）に移行と同じ形の表を作り、次の行を入れて出力を突き合わせる。
+- 窓の頭ちょうど・尻ちょうど・窓の前の判断
+- 同じ時刻で RecordedAt だけが違う約定の行
+- 窓の尻ちょうどの約定
+- S1 の決済（ClosePlaced と CloseRejected の両方の記録）
+- 承認だけを持つ注文
+- ちょうど 20 分と 30 分の観測の欠け
+
+変異を当て直して、M6 は 2 件、M8 は 1 件が落ちることを確かめた。サーバの実行ファイルが無ければ、CI（`CI=true`）では失敗し、手元では飛ばす。
 
 ## 実 Postgres での検証（2026-09-29。PostgreSQL 16.13、一時クラスタ）
 
 - 移行（`20260710095747_InitialCreate`）と同じ形の `audit_events` を作り、契約の形の Detail を持つ行を入れた。
-  - 判断 2 件（1 件は窓の外）、見送り 3 件、モデル利用不能 1 件、承認 1 件、拒否 1 件（理由 2 つ）、発注前の見送り 1 件。
+  - 判断 2 件（1 件は窓の外）、見送り 3 件（`LlmHold` 2・`HoldingsUnknownOpen` 1）、モデル利用不能 1 件、承認 1 件、拒否 1 件（理由 2 つ）、発注前の見送り 1 件。
   - 注文 3 件（1 件は受付 → 約定の 2 行）。
   - S1 の武装・到達・`ClosePlaced`（決済の注文を伴う）。
   - 建玉の観測（10 分ごと。02:00〜03:00 を欠く）と稼働の観測（5 分ごと）。
 - `bash scripts/nightly-ledger-summary.sh --night 2026-09-29` の結果（exit 0）。
   - 窓は `2026-09-29 20:00:00+09 〜 2026-09-30 08:00:00+09`。
   - 判断は `Buy/Open 1 NVDA`（窓の外の AAPL は数えない）。
-  - 見送りは `JudgedHold 2（MSFT,NVDA）`・`HoldingsUnknownOpen 1`。
+  - 見送りは理由別に 2 件と 1 件（投入した値は当初 `JudgedHold` という契約に無い値だった。監査 F4 の指摘により、手順書の例示は実在する `LlmHold` に直した）。
   - 拒否は理由別に 1 件ずつ。発注前の見送りは `BrokerPositionsIndeterminate 1 MSFT`。
   - 注文の最新の状態は `Filled 2 / Cancelled 1`（O1 は受付の行を数えない）。
   - 一覧で、窓の外の判断から AAPL を引いた（origin=decision）。S1 の決済の注文は origin=S1 で、NVDA の Sell/Close として引けた。
@@ -99,5 +114,6 @@ CI は `ci.yml` の shell-scripts ジョブに登録した。
 
 ## 残余
 
+- 窓の前に発注して窓の中で部分約定した注文は、途中の記録（OrderFillPoller）の時刻が発注時刻のままのため、窓に入らないことがある（監査 F3。最新の行は RecordedAt で同順位を解く）。
 - 観測の欠けは推定であり、Pod が止まっていた時間と照会の失敗を区別できない（段 2 で記録を足す）。
 - 🔴 保護逆指値ガードの 30 秒ごとの照会の失敗は、観測のイベントを出さないので、この推定にも表れない。

@@ -8,6 +8,7 @@
 # 接続は AST_PSQL（psql の呼び出しコマンド。既定 `psql`）で差し替える。ローカル k3s の platform-infra なら:
 #   AST_PSQL="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai"
 # DB は audit_svc（監査台帳 audit_events）。
+# 窓の検査は GNU date（`date -d`）を使う（Linux・WSL・CI の ubuntu-latest。BSD / macOS の date では動かない）。
 # 🔴 **読み取りだけ**を行う。SQL は `BEGIN TRANSACTION READ ONLY` の中で走らせ、最後に ROLLBACK する
 #    （書き込み・DDL・一時オブジェクトの作成もしない）。
 #
@@ -142,7 +143,7 @@ WITH last AS (
 )
 SELECT status, count(*) AS n FROM last GROUP BY 1 ORDER BY 2 DESC, 1;
 
-\echo '-- 7a. 注文の一覧（銘柄は判断か S1 の記録から引く。窓の外の判断も引く）'
+\echo '-- 7a. 注文の一覧（銘柄は判断 → S1 → 承認の順に引く。窓の外の記録も引く）'
 WITH last AS (
   SELECT DISTINCT ON ("Detail"->>'OrderId')
          "Detail"->>'OrderId' AS order_id, "CorrelationId" AS decision_id, "Detail"->>'Status' AS status,
@@ -153,20 +154,31 @@ WITH last AS (
     AND "EventType" = 'OrderExecuted'
   ORDER BY "Detail"->>'OrderId', "OccurredAt" DESC, "RecordedAt" DESC
 )
-SELECT l.at, COALESCE(d."Symbol", s."Symbol") AS symbol,
-       COALESCE(d."Detail"->'Intent'->>'Side', s."Detail"->'CloseIntent'->>'Side') AS side,
-       COALESCE(d."Detail"->'Intent'->>'PositionEffect', s."Detail"->'CloseIntent'->>'PositionEffect') AS effect,
-       CASE WHEN d."Id" IS NOT NULL THEN 'decision' WHEN s."Id" IS NOT NULL THEN 'S1' ELSE '?' END AS origin,
+SELECT l.at, COALESCE(d."Symbol", s."Symbol", a."Symbol") AS symbol,
+       COALESCE(d."Detail"->'Intent'->>'Side', s."Detail"->'CloseIntent'->>'Side', a."Detail"->'Intent'->>'Side') AS side,
+       COALESCE(d."Detail"->'Intent'->>'PositionEffect', s."Detail"->'CloseIntent'->>'PositionEffect',
+                a."Detail"->'Intent'->>'PositionEffect') AS effect,
+       CASE WHEN d."Id" IS NOT NULL THEN 'decision' WHEN s."Id" IS NOT NULL THEN 'S1'
+            WHEN a."Id" IS NOT NULL THEN 'approved' ELSE '?' END AS origin,
        l.status, l.filled, l.avg_price, l.order_id
 FROM last l
 LEFT JOIN LATERAL (
   SELECT "Id", "Symbol", "Detail" FROM audit_events
   WHERE "CorrelationId" = l.decision_id AND "EventType" = 'TradeDecisionMade' LIMIT 1
 ) d ON true
+-- S1 の決済は同じ CloseDecisionId の記録が複数あり得る（CloseRejected / CloseUnfilled は CloseIntent が null）。
+-- 決済の意図を持つ行を先に採る。
 LEFT JOIN LATERAL (
   SELECT "Id", "Symbol", "Detail" FROM audit_events
-  WHERE "EventType" = 'SoftwareStopExecuted' AND "Detail"->>'CloseDecisionId' = l.decision_id::text LIMIT 1
+  WHERE "EventType" = 'SoftwareStopExecuted' AND "Detail"->>'CloseDecisionId' = l.decision_id::text
+  ORDER BY jsonb_typeof("Detail"->'CloseIntent') = 'object' DESC, "OccurredAt" DESC
+  LIMIT 1
 ) s ON true
+-- 判断を経ない注文（利用者の手仕舞い・維持証拠金の自動縮小・照合後の保護レグ）は承認の記録から引く。
+LEFT JOIN LATERAL (
+  SELECT "Id", "Symbol", "Detail" FROM audit_events
+  WHERE "CorrelationId" = l.decision_id AND "EventType" = 'OrderApproved' LIMIT 1
+) a ON true
 ORDER BY l.at;
 
 \echo '== 8. S1（武装・損切りライン到達・発動の結果）'
