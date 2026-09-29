@@ -190,6 +190,9 @@ WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
 GROUP BY 1, 2 ORDER BY 1, 3 DESC;
 
 \echo '== 9. ブローカの観測の欠け（照会できなかった時間帯の推定。窓の両端も境界として数える）'
+-- 場中など窓の途中で走らせたときは、終端を現在時刻で切る（まだ来ていない時間を欠けとして出さない）。
+SELECT '注意: 窓の終端が現在時刻より後。欠けは現在時刻（' || to_char(now(), 'YYYY-MM-DD HH24:MI') || ' JST）までで数える' AS note
+WHERE :'to'::timestamptz > now();
 WITH obs AS (
   SELECT "EventType" AS event_type, "OccurredAt" AS at
   FROM audit_events
@@ -198,7 +201,8 @@ WITH obs AS (
 ), bounded AS (
   SELECT event_type, at FROM obs
   UNION ALL SELECT t, :'from'::timestamptz FROM (VALUES ('BrokerPositionsObserved'), ('BrokerAvailabilityObserved')) v(t)
-  UNION ALL SELECT t, :'to'::timestamptz FROM (VALUES ('BrokerPositionsObserved'), ('BrokerAvailabilityObserved')) v(t)
+  UNION ALL SELECT t, GREATEST(:'from'::timestamptz, LEAST(:'to'::timestamptz, now()))
+    FROM (VALUES ('BrokerPositionsObserved'), ('BrokerAvailabilityObserved')) v(t)
 ), gaps AS (
   SELECT event_type, lag(at) OVER (PARTITION BY event_type ORDER BY at) AS gap_from, at AS gap_to
   FROM bounded
