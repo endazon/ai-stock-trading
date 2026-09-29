@@ -25,6 +25,33 @@ scripts/k8s-local-deploy.sh              # build（Rancher=nerdctl/k3d=docker+im
 kubectl -n ai-stock-trading get pods
 ```
 
+### 変わったサービスだけを作り直す（#1094 / [IADR-0457](../../../.ai-context/adr/IADR-0457_deploy-changed-services-selection.md)）
+
+既定の `scripts/k8s-local-deploy.sh` は 12 イメージ（Worker 11 本と opend-auth-gateway）を**すべて**作り直す（最大約 30 分）。
+タグは `:latest` 固定・`imagePullPolicy: IfNotPresent` なので、**作り直さないサービスは前回のイメージのまま動き続ける**。
+場の前の配備（締め切り 21:30 JST）を短くするときは、作り直す対象を絞る:
+
+```bash
+scripts/k8s-local-deploy.sh --changed-since origin/develop   # git の差分（作業ツリーと ref の差＋未追跡）から選ぶ
+SERVICES=trade-decision-service,risk-management-service scripts/k8s-local-deploy.sh   # 名前で指定（MAPPING の名前）
+SERVICES=report-service scripts/k8s-local-images.sh          # イメージだけ（Pod は入れ替わらない。下の注記）
+```
+
+- 選択の規則は `scripts/select-changed-services.js`（`node scripts/select-changed-services.js --since <ref>` で結果だけを確かめられる）。
+  `backend/Services/<Dir>/**`（`Tests/**` を除く）をそのサービスへ写し、csproj の ProjectReference で**依存するサービスも足す**
+  （risk-management を変えると trade-decision も作り直す）。`backend/` の外（docs・deploy・scripts・frontend 等）は無視する
+  —— deploy/ の変更は helm upgrade が反映する。
+- ⚠️ **共有の変更は全件になる**: `backend/Shared/**`・`backend/TestSupport/**`・ルートの `global.json` / `Directory.*.props` /
+  `nuget.config`・`.dockerignore`・`backend/Dockerfile`・`backend/` の下で分類できないパス・差分 0 件・git の失敗は、迷わず全件を作り直す
+  （作り直し漏れは、古いイメージが緑のまま動き続けて気付けないため）。
+- ⚠️ **初回・作り直したクラスタは実質全件になる**: 選ばれていなくても、ランタイムに `:latest` が無いイメージは作る
+  （rancher は containerd の `k8s.io` 名前空間、k3d は docker の有無で作り、ノードに無ければ import する）。
+- restart は**作り直した（ランタイムへ新たに供給した）サービスの Deployment だけ**になる。絞り込みを付けなければ従来どおり全件。
+  ただし従来経路（`AST_ESO=0`）で `ast-secrets` の値を env で指定した回（同じ値でも）と、非空の既定値を新たに入れた回は全件 restart する（Secret を参照する env は再起動でしか反映されない）。
+  opend-auth-gateway を作り直しても OpenD は再起動しない（反映は `kubectl -n ai-stock-trading rollout restart deploy/opend`）。
+- ⚠️ **前回の配備が途中で失敗した後・ブランチを切り替えた後は、指定なし（全件）で配備する**。選択は「ref の状態＋作業ツリーの差分」だけを見るため、前回配備との差を取りこぼし得る。
+- `SERVICES` の未知の名前は何も作らずに exit 2。`SERVICES` と `--changed-since` の併用も exit 2。
+
 ### 画面だけで PoC を立ち上げる（連結ローカル・ESO 所有。#795 / [IADR-0341](../../../.ai-context/adr/IADR-0341_screen-only-eso-wiring-local-profile.md)）
 
 MSP 連結のローカル配備では、秘密情報・接続設定を**画面から**入れる。`values-local.yaml` は
@@ -79,7 +106,7 @@ MSP 連結のローカル配備では、秘密情報・接続設定を**画面�
 > ID が空へ戻り Discord Bot が無言で no-op へ落ちる事故が実際に発生していた（#673）。
 
 > **`scripts/k8s-local-deploy.sh` は helm upgrade の後、OpenD を除く全 Deployment へ
-> `kubectl rollout restart` を打つ**（#673）。イメージタグは `:latest` 固定 + `imagePullPolicy: IfNotPresent`
+> `kubectl rollout restart` を打つ**（#673。作り直す対象を絞ったときは作り直したサービスだけ＝上の節・#1094）。イメージタグは `:latest` 固定 + `imagePullPolicy: IfNotPresent`
 > であり、Pod テンプレートが変わらないサービスは `scripts/k8s-local-images.sh` でイメージを焼き直しても
 > Pod が古いまま残るため（実測: OpenD Pod が Helm revision 13→14 を跨いで 25 時間生存）。OpenD は
 > SMS/画像認証済みの moomoo セッションを持つため対象から除外する。

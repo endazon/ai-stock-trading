@@ -457,6 +457,11 @@ jobs:
       - name: Self-test changed-areas detector
         if: ${{ !cancelled() }}
         run: node scripts/detect-changed-areas.js --self-test
+      # #1094, IADR-0457: ローカル配備で作り直すサービスの選択器（迷ったら全件へ倒す）。実ファイルの MAPPING と
+      # csproj の ProjectReference も読むので、MAPPING・参照の変更で黙ってずれたら自己試験が赤くなる。
+      - name: Self-test changed-services selector
+        if: ${{ !cancelled() }}
+        run: node scripts/select-changed-services.js --self-test
       - name: Self-test test-project sharder
         if: ${{ !cancelled() }}
         run: node scripts/list-test-projects.js --self-test

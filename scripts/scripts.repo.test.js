@@ -38,6 +38,13 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- NFR, #1094, IADR-0457: イメージの作り直しの絞り込み（scripts/k8s-local-images.sh）の Bash 試験 ---
+  // 上の #1092 と同じ理由で ci.yml の `run: bash` へは足さず、node の経路から起動する（nerdctl / docker / k3d はスタブ）。
+  ok('k8s-local-images.test.sh（イメージの作り直しの絞り込み）が通る', () => {
+    const r = require('child_process').spawnSync('bash', ['scripts/k8s-local-images.test.sh'], { encoding: 'utf8', env: { ...process.env } });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
+
   // --- check-doc-links.js: parseArgs（資料再編 ADR-0029 で docs/ ・ .ai-context/ の 2 系統走査へ） ---
   const fsDl = require('fs');
   const osDl = require('os');
