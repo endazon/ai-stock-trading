@@ -49,8 +49,19 @@ public sealed class BrokerAvailabilityProbeService(
         }
 
         logger.LogInformation(
-            "ブローカ稼働の定期観測を開始します（発注先 {Provider}・間隔 {Interval}）。到達できない巡回は発行しません（fail-safe）。",
-            broker.Provider, options.Value.Interval);
+            "ブローカ稼働の定期観測を開始します（発注先 {Provider}・間隔 {Interval}・初回まで {InitialDelay}）。到達できない巡回は発行しません（fail-safe）。",
+            broker.Provider, options.Value.Interval, options.Value.InitialDelay);
+
+        // FR-10, #1093, IADR-0459 決定1: 起動直後の初回の建玉照会を、他の常駐と同じ瞬間に重ねない（OpenD の頻度制限。IADR-0144 決定 5）。
+        // 待つのは最初の巡回の前の 1 回だけ。待ちの間に停止要求が来たら、1 回も照会せずに正常に終わる。
+        try
+        {
+            await Task.Delay(options.Value.InitialDelay, timeProvider, stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
