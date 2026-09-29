@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, UC-01, UC-02, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-08
-updated: 2026-07-09
+updated: 2026-09-30
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -93,3 +93,11 @@ plan_refs:
 
 - Supersedes: なし
 - Superseded by: なし
+
+## ［2026-09-30 追記 / #1104］上の「損切り幅（ATR）」は実装の事実ではない
+
+上の「理由」は損切り幅を「ATR」と書くが、**実装は ATR を計算していない**（本文は書き換えない）。損切り幅は取引判断 LLM の出力
+`stopLossDistancePerShare` をそのまま受け取り、検証は `0 < 幅 < 参照価格` だけである。計画（FR-10・05_trading-assumptions §5）は
+「ATR 連動でサイズ算出」と定めており、計画と実装の差は planning#703 の裁定待ちである。
+「サイジングは判断側の入力（損切り幅）に依存するため判断サービスに置く」という本決定の理由そのものは変わらない。
+観測（幅の比率・日中の値幅に対する倍率のログ）は [IADR-0460](IADR-0460_stop-width-observability-log-only.md)。

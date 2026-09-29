@@ -26,7 +26,7 @@ public class TradingDefaultsTests
         limits.MaxOpenPositions.Should().Be(3);               // 保有**建玉**数上限（ADR-0016 決定9）
 
         limits.DailyLossLimitRatio.Should().Be(0.02m);   // 日次損失上限: 資金の 2%
-        limits.PerTradeRiskRatio.Should().Be(0.01m);     // 1取引あたりリスク: 資金の 1%（ATR 連動）
+        limits.PerTradeRiskRatio.Should().Be(0.01m);     // 1取引あたりリスク: 資金の 1%（幅は LLM の出力・ATR は計算しない。IADR-0460）
         limits.MaxDrawdownRatio.Should().Be(0.10m);      // 最大DD上限: 10%
         limits.LosingStreakThreshold.Should().Be(5);     // 5 連敗でサイズ半減（ADR-0018 決定1）
         limits.LosingStreakSizeFactor.Should().Be(0.5m);

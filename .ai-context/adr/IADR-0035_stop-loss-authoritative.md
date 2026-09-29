@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-03, FR-04, FR-10, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-09-25
+updated: 2026-09-30
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -76,3 +76,12 @@ plan_refs:
   そのラインは最も保護的なロットのものになり、S1 の行ごとの判定は発注執行が行う（IADR-0344 決定4）。
 - 本 IADR の他の決定（`OrderIntent` への搭載・台帳への永続化・欠損時の近似）は変えない。欠損したロットが他のロットと混じるときは、
   そのロットを近似で見積もって候補に入れる（IADR-0393 決定2）。
+
+## ［2026-09-30 追記 / #1104］上の「ATR 連動」は実装の事実ではない
+
+本文は書き換えない。「コンテキストと課題」と「結果」の「`stopLossDistancePerShare`（ATR 連動）」「ATR 連動の実際の…」
+「ATR 連動の実値で動き」は、**実装が ATR を計算していない**ため誤りである。損切り価格は、アンカリング済みの参照価格から
+取引判断 LLM が出した 1 株あたり幅をそのまま引いた（ショートは足した）値であり、検証は `0 < 幅 < 参照価格` だけである。
+計画（FR-10・05_trading-assumptions §5）は「ATR 連動」を定めており、その差は planning#703 の裁定待ちである。
+本 IADR の決定（`OrderIntent` への搭載・台帳への永続化・近似へのフォールバック）は変わらない。
+幅の観測（比率・日中の値幅に対する倍率のログ）は [IADR-0460](IADR-0460_stop-width-observability-log-only.md)。

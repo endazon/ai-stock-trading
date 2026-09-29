@@ -39,8 +39,10 @@ public static class TradingDefaults
     public const decimal InitialCapital = InitialEquityUsd;
 
     /// <summary>
-    /// 既定損切り幅比率 3%（前提条件 05_trading-assumptions §5 の「損切り幅3%」目安）。
-    /// FR-03/FR-10, IADR-0030: 損切り価格の権威データ（取引判断の ATR 連動 stopLossDistancePerShare）が
+    /// 既定損切り幅比率 3%。出典は前提条件 05_trading-assumptions §5 の**旧版**（円建て資金の時期の「初期投入資金」行の備考
+    /// 「損切り幅3%なら…」の目安）であり、**現行の §5 には無い**（#1104 で確認。当時の引用は計画側の環流記録
+    /// 10_feedback/20260708_trading-defaults-derived-values.md に残る）。計画の確定値ではなく実装側の過渡的な近似値である。
+    /// FR-03/FR-10, IADR-0030: 損切り価格の権威データ（取引判断 LLM が出す stopLossDistancePerShare。ATR は計算していない・IADR-0460）が
     /// 発注/約定パイプラインに永続化されるまで、平均取得単価からの近似導出に用いる過渡的既定値。
     /// #957, IADR-0399: 市場監視も応答にラインが無い行を同じ式で見積もるため、値と式の実体は共有の
     /// <see cref="StopLossApproximation"/> に置く（ここはその値を指す）。
@@ -61,7 +63,8 @@ public static class TradingDefaults
         MaxOpenPositions = 3,
         // 日次損失上限: 資金の 2% 到達で当日全停止・翌営業日までロックアウト
         DailyLossLimitRatio = 0.02m,
-        // 1 取引あたりリスク: 資金の 1%（ATR 連動サイジングの基礎。ADR-0018 決定1）
+        // 1 取引あたりリスク: 資金の 1%（サイジングの基礎。ADR-0018 決定1）。計画は「ATR 連動」を定めるが、実装の損切り幅は
+        // LLM の出力をそのまま使い ATR は計算していない（#1104, IADR-0460。幅の数値の下限は planning#703 の裁定待ち）。
         PerTradeRiskRatio = 0.01m,
         // 最大 DD 上限: 10% 到達で全停止・再検証（ADR-0018 決定1）
         MaxDrawdownRatio = 0.10m,
