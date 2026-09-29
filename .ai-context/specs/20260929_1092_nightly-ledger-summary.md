@@ -80,7 +80,8 @@ plan_refs: []
 - SQL が読み取り専用のトランザクションで始まり、`ROLLBACK` で終わること。書き込み・DDL の語を含まないこと。`ON_ERROR_STOP` を付けること。12 種類のイベントを数えること。
 - `AST_NIGHTLY_LIB=1` のとき、関数だけを読み込むこと。
 
-CI は `ci.yml` の `static-checks` ジョブの step に登録した（README の表の見出し「shell-scripts」はジョブ名ではない）。
+CI は `scripts/scripts.repo.test.js` から 2 本の Bash 試験を起動する（scripts-tests ジョブ）。
+当初は `ci.yml` の static-checks に `run: bash …` の step として足したが、`check-ai-workflow-config`（厳格モード）が AI のワークフローとローカルの許可リスト（`.claude/settings.json`）の 3 系統を揃えることを要求した。許可リストは権限の設定なので変えず、既に許可された `node` の経路へ移した（AI のレビューも `node scripts/scripts.test.js` で追試できる）。
 
 ### 実 PostgreSQL の試験（`scripts/nightly-ledger-summary.pg.test.sh`。15 件）
 
