@@ -44,7 +44,7 @@ public class OpenPositionsServiceTests
     [Fact]
     public void 損切り価格があれば実値を用いる_近似しない()
     {
-        // IADR-0035: 権威データ（ATR 連動の実損切り価格 950）をそのまま返す（近似 970 ではない）。
+        // IADR-0035: 権威データ（取引判断が決めた実損切り価格 950。IADR-0460: ATR 連動ではない）をそのまま返す（近似 970 ではない）。
         var service = new OpenPositionsService(new FakeLedger(FillSl(TradeSide.Buy, 10, 1_000m, 950m)));
 
         service.Build().Single().StopLossPrice.Should().Be(950m);

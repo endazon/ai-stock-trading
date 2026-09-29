@@ -32,7 +32,10 @@ public record RiskLimitSettings
     /// <summary>日次損失上限（資金比。到達で当日全停止）。</summary>
     public required decimal DailyLossLimitRatio { get; init; }
 
-    /// <summary>1取引あたりリスク（資金比。ATR連動サイジングの基礎）。</summary>
+    /// <summary>
+    /// 1取引あたりリスク（資金比。サイジングの基礎）。計画は「ATR 連動」を定めるが、実装の損切り幅は取引判断 LLM の出力を
+    /// そのまま使い ATR は計算していない（#1104, IADR-0460。数値の下限は planning#703 の裁定待ち）。
+    /// </summary>
     public required decimal PerTradeRiskRatio { get; init; }
 
     /// <summary>最大ドローダウン上限（到達で全停止・再検証）。</summary>

@@ -4,7 +4,8 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// FR-10, ADR-0018: 1取引あたりリスク（既定: 資金の 1%・ATR 連動サイジング）と連敗時縮小（既定: 5 連敗で半減）
+// FR-10, ADR-0018: 1取引あたりリスク（既定: 資金の 1%。損切り幅は入力として受け取る＝LLM の出力・ATR は計算しない。IADR-0460）と
+// 連敗時縮小（既定: 5 連敗で半減）
 public class PositionSizerTests
 {
     [Fact]

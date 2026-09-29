@@ -549,6 +549,10 @@ public sealed class TradeDecisionAppService(
             ? referencePrice - decision.StopLossDistancePerShare
             : referencePrice + decision.StopLossDistancePerShare;
 
+        // FR-10, FR-04, #1104, IADR-0460 決定1〜3: 損切り幅の観測（ログだけ・統制ではない・判断を変えない）。
+        // 幅は LLM の出力をそのまま使い ATR は計算していない（数値の下限は planning#703 の裁定待ち）。
+        LogStopWidth(trigger, side, quantity, decision, referencePrice, intraday, stopLossPrice);
+
         // IADR-0004: 発注意図には PositionEffect を必ず設定する。ここへ到達するのは新規建て（Open）のみで、
         // 決済（Close）は上で確定済み（#292, IADR-0119）。
         // IADR-0107 決定1: 価格・損切り価格はローカル通貨のまま載せ（発注執行がそのまま注文価格に用いる）、
@@ -570,6 +574,30 @@ public sealed class TradeDecisionAppService(
             Guid.NewGuid(), intent, ReconcileRationale(trigger, decision.Rationale, quantity), clock.UtcNow,
             trigger.MetricTrigger, trigger.CycleStartedAt);
     }
+
+    // FR-10, FR-04, #1104, IADR-0460 決定1/決定3: 新規建ての損切り幅の観測値を構造化 Information ログへ出す。
+    // 監査イベント（共有契約）へは載せない。不明（日中の値幅が無い）は 0 ではなく「不明」と書く。
+    private void LogStopWidth(
+        DecisionTrigger trigger, TradeSide side, int quantity, LlmDecision decision, decimal anchoredPrice,
+        IntradayPriceContext? intraday, decimal stopLossPrice)
+    {
+        var observed = StopWidthObservation.Of(
+            decision.ReferencePrice, anchoredPrice, decision.StopLossDistancePerShare, intraday);
+
+        logger.LogInformation(
+            "損切り幅の観測（新規建て・LLM の幅・統制ではない）: {Symbol} side={Side} quantity={Quantity} "
+                + "llmReferencePrice={LlmReferencePrice} anchoredPrice={AnchoredPrice} anchorDiff={AnchorDifference} "
+                + "stopWidth={StopWidthPerShare} stopWidthPct={StopWidthPercent} intradayRange={IntradayRange} "
+                + "stopWidthToRange={StopWidthToIntradayRange} stopLossPrice={StopLossPrice}",
+            trigger.Symbol, side, quantity,
+            observed.LlmReferencePrice, observed.AnchoredPrice, observed.AnchorDifference,
+            observed.WidthPerShare, observed.WidthPercentOfAnchored,
+            (object?)observed.IntradayRange ?? Unknown, (object?)observed.WidthToIntradayRange ?? Unknown,
+            stopLossPrice);
+    }
+
+    // #1104, IADR-0460 決定3: 観測ログで値が無いことの表記（0 と読まれない）。
+    internal const string Unknown = "不明";
 
     // FR-04, FR-10, FR-11, ADR-0040 決定5, #822, IADR-0343 決定2: 発行する記録の根拠文をシステムが決めた数量と突合する。
     // 🔴 数量（サイジング・保有全量）はここでは変えない。根拠文の株数が食い違えば LLM の文言を保ったまま注記を追記し、

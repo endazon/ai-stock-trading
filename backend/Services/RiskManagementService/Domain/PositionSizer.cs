@@ -1,6 +1,9 @@
 namespace RiskManagementService.Domain;
 
-// FR-10: 1取引あたりリスクに基づくポジションサイジング（ATR連動を想定した損切り幅入力）
+// FR-10: 1取引あたりリスクに基づくポジションサイジング。株数＝floor(資金 × 1取引リスク × 縮小係数 ÷ 1 株あたり損切り幅) を、
+// 1 注文金額上限（equity の 25%）と残枠（段階残枠・日次発注残枠の小さい方）で上から抑える（CalculateCappedQuantity）。
+// #1104, IADR-0460: 損切り幅は取引判断 LLM の出力（stopLossDistancePerShare）をそのまま受け取る。計画は「ATR 連動」を定めるが、
+// 実装は ATR を計算していない（検証は 0 ＜ 幅 ＜ 参照価格だけ。幅の数値の下限は planning#703 の裁定待ち）。
 public static class PositionSizer
 {
     /// <summary>

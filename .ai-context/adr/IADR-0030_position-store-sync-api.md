@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-03, FR-10, ADR-0001, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-09-30
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/01_architecture-overview.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -79,3 +79,15 @@ daily-policy/sizing-context の安全既定は「取引しない」（保守側�
 - Supersedes: なし（`PlaceholderPositionStore` を設定時に差し替え）
 - Superseded by: なし
 - 関連: [IADR-0029](IADR-0029_sizing-context-sync-api.md)（同期 API 方式・集約方針）、[IADR-0018](IADR-0018_portfolio-ledger-projection.md)（射影）、[IADR-0014](IADR-0014_market-monitor-events-and-boundary.md)（損切り優先）
+
+## ［2026-09-30 追記 / #1104］「ATR 連動」と「§5 の『損切り幅 3%』注記」はどちらも実態と合わない
+
+本文は書き換えない。次の 2 点を記録する（[IADR-0460](IADR-0460_stop-width-observability-log-only.md) 決定 5）。
+
+- 🔴 「コンテキストと課題」と「結果」の「`stopLossDistancePerShare`（ATR 連動）」「ATR 連動の実値ではない」は誤りである。
+  **実装は ATR を計算していない**。`stopLossDistancePerShare` は取引判断 LLM の出力をそのまま使う（検証は `0 < 幅 < 参照価格` だけ）。
+  計画（FR-10・05_trading-assumptions §5）は「ATR 連動」を定めており、その差は planning#703 の裁定待ちである。
+- 🔴 「決定」の「前提条件 §5 の『損切り幅 3%』注記」は、**現行の §5 に無い**。当時（円建て資金の時期）の §5「初期投入資金」行の備考
+  「損切り幅3%なら…」の目安であり、資金の USD 化で同行ごと書き換わった（当時の引用は計画側の環流記録
+  `10_feedback/20260708_trading-defaults-derived-values.md` に残る）。0.03 は計画の確定値ではなく、実装側の過渡的な近似値である。
+  値と近似の式（[IADR-0035](IADR-0035_stop-loss-authoritative.md) 以降はフォールバック）は変えない。
