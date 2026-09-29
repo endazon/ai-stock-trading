@@ -49,8 +49,19 @@ public sealed class BrokerPositionSnapshotService(
         }
 
         logger.LogInformation(
-            "ブローカ建玉の定期照会を開始します（間隔 {Interval}）。照会不能は発行せず据え置きます（fail-safe）。",
-            options.Value.Interval);
+            "ブローカ建玉の定期照会を開始します（間隔 {Interval}・初回まで {InitialDelay}）。照会不能は発行せず据え置きます（fail-safe）。",
+            options.Value.Interval, options.Value.InitialDelay);
+
+        // FR-10, #1093, IADR-0459 決定1: 起動直後の初回の建玉照会を、他の常駐と同じ瞬間に重ねない（OpenD の頻度制限。IADR-0144 決定 5）。
+        // 待つのは最初の巡回の前の 1 回だけ。待ちの間に停止要求が来たら、1 回も照会せずに正常に終わる。
+        try
+        {
+            await Task.Delay(options.Value.InitialDelay, timeProvider, stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {

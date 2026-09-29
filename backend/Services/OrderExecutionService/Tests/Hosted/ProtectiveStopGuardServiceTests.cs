@@ -375,6 +375,26 @@ public class ProtectiveStopGuardServiceTests
         await host.StopAsync();
     }
 
+    // T-10-1746, FR-10, #1093, IADR-0459 決定2: **ガードは初回を遅らせない**（保護が先）。
+    // 起動直後の照会の集中はスナップショット・稼働 probe の側の初回の遅延でずらす。ガードに遅延が入ると、
+    // 再起動のたびに逆指値の失効・建玉消滅の評価が遅れる。巡回間隔は既定（30 秒）のまま、その前に最初の巡回が来ることを見る。
+    [Fact]
+    public async Task T_10_1746_ガードは起動直後に最初の巡回を回す()
+    {
+        var stops = new CountingStopStore(new InMemoryProtectiveStopOrderStore());
+        using var host = await BuildHostAsync(new GuardBroker(), stops);
+        var service = BuildService(host, new ProtectiveStopGuardOptions());
+
+        await service.StartAsync(CancellationToken.None);
+        // 他の常駐の既定の初回の遅延（10 秒・20 秒）より短い上限で待つ。
+        await stops.Reached.WaitAsync(TimeSpan.FromSeconds(5));
+        await service.StopAsync(CancellationToken.None);
+
+        stops.Calls.Should().Be(1, "起動直後に最初の巡回を 1 回回し、次は巡回間隔（30 秒）の後");
+
+        await host.StopAsync();
+    }
+
     [Fact]
     public async Task 巡回が失敗しても常駐は落ちず次回巡回で再試行する()
     {

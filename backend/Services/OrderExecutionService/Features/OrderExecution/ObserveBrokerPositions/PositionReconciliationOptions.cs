@@ -12,6 +12,7 @@ public sealed class PositionReconciliationOptions
     private const int MinIntervalSeconds = 60;
     private const int MaxIntervalSeconds = 3600;
     private const int DefaultIntervalSeconds = 600;
+    private const int DefaultInitialDelaySeconds = 20;
 
     public bool Enabled { get; set; } = true;
 
@@ -25,4 +26,14 @@ public sealed class PositionReconciliationOptions
         IntervalSeconds <= 0
             ? DefaultIntervalSeconds
             : Math.Clamp(IntervalSeconds, MinIntervalSeconds, MaxIntervalSeconds));
+
+    // FR-10, #1093, IADR-0459 決定1・3: 起動直後の初回の建玉照会を、ガード（即時）・稼働 probe（既定 10 秒）とずらす。
+    public int InitialDelaySeconds { get; set; } = DefaultInitialDelaySeconds;
+
+    /// <summary>
+    /// 起動から初回の照会までの遅延（既定 20 秒・揺らぎなし）。負の値は 0（遅らせない）へ、巡回間隔を超える値は巡回間隔へクランプする。
+    /// 上限は「設定できるが初回が来ない」状態を作らせないため。2 回目以降の巡回の間隔は変えない。
+    /// </summary>
+    public TimeSpan InitialDelay => TimeSpan.FromSeconds(
+        Math.Clamp(InitialDelaySeconds, 0, (int)Interval.TotalSeconds));
 }

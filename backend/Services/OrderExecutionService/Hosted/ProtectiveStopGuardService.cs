@@ -40,6 +40,8 @@ public sealed class ProtectiveStopGuardService(
             "保護逆指値ガードを開始します（間隔 {Interval}・バッチ {BatchSize}）。照会不能は据え置きます（fail-safe）。",
             options.Value.Interval, options.Value.BatchSize);
 
+        // 🔴 FR-10, #1093, IADR-0459 決定2: ガードは初回を遅らせない（保護が先）。起動直後の照会の集中は、
+        // スナップショット・稼働 probe の側の初回の遅延（InitialDelay）でずらす。
         while (!stoppingToken.IsCancellationRequested)
         {
             try

@@ -12,6 +12,7 @@ public sealed class BrokerAvailabilityProbeOptions
     private const int MinIntervalSeconds = 60;
     private const int MaxIntervalSeconds = 1800;
     private const int DefaultIntervalSeconds = 300;
+    private const int DefaultInitialDelaySeconds = 10;
 
     /// <summary>稼働 probe を回すか（既定: 有効）。無効化すると Stage 1 の営業日は 1 日も積まれない。</summary>
     public bool Enabled { get; set; } = true;
@@ -31,4 +32,17 @@ public sealed class BrokerAvailabilityProbeOptions
         IntervalSeconds <= 0
             ? DefaultIntervalSeconds
             : Math.Clamp(IntervalSeconds, MinIntervalSeconds, MaxIntervalSeconds));
+
+    // FR-10, #1093, IADR-0459 決定1・3: 起動直後の初回の建玉照会（到達性の判定に流用）を、ガード（即時）・スナップショット（既定 20 秒）とずらす。
+    public int InitialDelaySeconds { get; set; } = DefaultInitialDelaySeconds;
+
+    /// <summary>
+    /// 起動から初回の probe までの遅延（既定 10 秒・揺らぎなし）。負の値は 0（遅らせない）へ、巡回間隔を超える値は巡回間隔へクランプする。
+    /// <para>
+    /// FR-20, IADR-0459 結果: 再起動をはさむ区間がこの分だけ長くなり、巡回間隔を超えればその区間は稼働として積まれない
+    /// （積み不足の側。水増しには倒れない）。2 回目以降の巡回の間隔は変えない。
+    /// </para>
+    /// </summary>
+    public TimeSpan InitialDelay => TimeSpan.FromSeconds(
+        Math.Clamp(InitialDelaySeconds, 0, (int)Interval.TotalSeconds));
 }
