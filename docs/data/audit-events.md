@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-26
+updated: 2026-09-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105]
 -->
 
 
@@ -112,6 +112,11 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   時刻は解決した時刻。要約に「選択 → 適用（理由・発注先・商品種別）」を書き、🔴 **拒否は「適用なし（発注しない）」と書く**
   —— S0 へ読み替えたと読ませない。日報の「実際に適用された手法」と月報の日数ベースの内訳は、報告書がこの記録を種別と期間で引いて
   承認と突き合わせて作る（台帳が唯一の供給元）。
+- 発注執行が決済（Close）の数量を、**同じ建玉を売る処理中の決済の分だけ縮めて送った**事実（`CloseReducedForInFlightCloses`）を、
+  縮めた承認 1 件につき 1 件記録する。相関は承認の `DecisionId`、時刻は縮めた時刻。要約に承認の数量・ブローカーの決済方向の建玉・
+  処理中の株数（件数）・送った株数を書き、🔴 **「台帳の乖離ではない」と書く**（乖離の記録と読み違えさせない）。
+  payload には引いた処理中の決済の `DecisionId` が残り、その決済の記録と突き合わせられる。
+  処理中の決済が建玉をすべて覆ったときは本記録ではなく**見送り**（`OrderDispatchForgone`・理由は処理中の決済が建玉を覆う）が残る。
 - 所有者が**確定済みの報告書を KB へ入れ直した**実行（`ReportKnowledgeReingested`・#1028）を、1 回の実行につき 1 件記録する
   （KB の一覧を引けず 1 件も書かなかった中止も残す。範囲の不正・実行中で断った要求は何もしていないので残らない）。相関は固定
   （入れ直しは種別と期間で引く）。要約に操作者（トークンの主体。分からなければ「操作者不明」）・範囲・対象の件数・送った件数

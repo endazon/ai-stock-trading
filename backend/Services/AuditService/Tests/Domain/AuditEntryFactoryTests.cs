@@ -1153,6 +1153,25 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Be("AAPL 損切りの実行機構を解決: " + summary);
     }
 
+    // T-10-1766, FR-10, FR-11, #1105, IADR-0461 決定3: 処理中の決済の分だけ縮めて送った事実。相関は承認の DecisionId。
+    // 🔴 「台帳の乖離ではない」と要約に書く（乖離の記録と読み違えさせない）。4 つの数量がすべて読める。
+    [Fact]
+    public void T_10_1766_処理中の決済の分だけ縮めた決済は承認の相関で数量が読め乖離ではないと書く()
+    {
+        var decisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new CloseReducedForInFlightCloses(decisionId, "AAPL", Market.UnitedStates, TradeSide.Sell, 1_428, 1_428, 713, 715,
+                [Guid.NewGuid()], StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(CloseReducedForInFlightCloses));
+        entry.CorrelationId.Should().Be(decisionId);
+        entry.OccurredAt.Should().Be(StopT0);
+        entry.Summary.Should().Be(
+            "AAPL/UnitedStates Sell 決済の数量を処理中の決済の分だけ縮めて送った: 承認 1428 株 / ブローカーの決済方向の建玉 1428 株"
+            + " − 処理中 713 株（1 件）→ 送った 715 株（台帳の乖離ではない）");
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は「ブローカーへの逆指値なし・システム停止中は決済されない」が読める。
     [Fact]
     public void ソフトウェア逆指値の配置はブローカーに保護が無いことが読める()

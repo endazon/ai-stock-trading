@@ -12,7 +12,7 @@ namespace RiskManagementService.Tests;
 // 黙って混じると、二重決済で意図しないショート化を作る（#848 の 2 巡目監査 B3 と同型の穴）。
 public class OrderDispatchForgoneLifecycleTests
 {
-    // T-10-410（境界値・現行 7 値）: いずれも発注執行が **reservations.TryReserve より前**で
+    // T-10-410（境界値・現行 8 値）: いずれも発注執行が **reservations.TryReserve より前**で
     // return する＝ブローカーへ 1 バイトも送っていない（OrderExecutionAppService.ExecuteAsync を実測）。
     [Theory]
     [InlineData(OrderDispatchForgoneReason.BrokerUnavailable)]
@@ -22,6 +22,8 @@ public class OrderDispatchForgoneLifecycleTests
     [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent)]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate)]
     [InlineData(OrderDispatchForgoneReason.UnattributedPosition)]
+    // T-10-1766, FR-10, #1105, IADR-0461 決定2: 処理中の決済が建玉を覆う見送りも**予約の前**に return する。
+    [InlineData(OrderDispatchForgoneReason.InFlightCloseCoversPosition)]
     public void 確実に未発注と判っている理由は在庫を解放してよい(OrderDispatchForgoneReason reason)
     {
         OrderDispatchForgoneLifecycle.ConfirmsNoOrderPlaced(reason).Should().BeTrue();
@@ -51,6 +53,8 @@ public class OrderDispatchForgoneLifecycleTests
     //     分類は `true`＝確実に未発注（`ExecuteAsync` を実測: **L194** で `return`・`TryReserve` は **L223**・
     //     送信は **L233/234**。判定中の `GetPositionsAsync` は読み取りのみ）。
     //     ただし本理由は **Open でしか起き得ない**ため、決済の在庫解放が実際に動くことは今のところ無い。
+    //   - #1105（IADR-0461）が `InFlightCloseCoversPosition` を足して **7 → 8**（対応済み）。分類は `true`＝確実に未発注
+    //     （建玉照会と処理中の決済の読み取り＝読み取りだけの後で `return`・`TryReserve` と送信はいずれも後）。
     // 赤くなった側がやること:
     //
     //   【必須（やらないと赤のまま）】
@@ -75,7 +79,7 @@ public class OrderDispatchForgoneLifecycleTests
     public void 見送り理由の要素数を固定する()
     {
         Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(
-            7,
+            8,
             "見送り理由が増えたら、それが「確実に未発注」かを実測して分類し直すこと（既定は解放しない側）");
     }
 }

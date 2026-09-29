@@ -3,15 +3,15 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-09-26
+updated: 2026-09-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, planning#292, planning#644, planning#646]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0461]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1105_close-qty-inflight]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1105, planning#292, planning#644, planning#646]
 -->
 
 
@@ -869,6 +869,32 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 「可能性」と書くのは判別できなかったときだけである。株数は記録が実際に動かせる株数（未確定の外部要因の減少を引いた値。新規建ての前提条件と同じ数え方）であり、銘柄・方向ごとに合算する（建玉ごとの帰属は区別しない）。
 いずれの場合も重大（Critical）のままで、対処は「照会できないあいだは、手仕舞いを出し直しても同じ理由で見送られる」と書く
 （見送った承認は再配送されても送らないため、「照会が回復したら送られる」とは書かない）。
+
+#### 処理中の決済が売っている株数は引いてから送る（#1105）
+
+ブローカーの建玉の数量は、**約定していない売り注文が押さえている株数を引かない**。そのため、ソフトウェア逆指値の成行決済が処理中の
+銘柄へ判断の決済を全量で送ると、証券会社が「建玉が足りない」で拒否し、処理中の決済が売らない残りの株数が建玉として残る
+（2026-09-29 の模擬取引で実測。1,428 株の保有に対し、処理中の決済 713 株と判断の決済 1,428 株が重なり、判断の決済が拒否されて 715 株が残った）。
+
+そこで、上の突き合わせの直後（発注に着手する前）に、**発注執行が自分で出した処理中の決済**の株数を引く。
+
+| 数えるもの | 数えないもの |
+| --- | --- |
+| 同じ銘柄・同じ市場・同じ決済の方向で、まだ終わっていない決済（ソフトウェア逆指値の成行決済・失効した逆指値の成行手仕舞い・他の承認の決済など） | 🔴 **ブローカー側の保護逆指値**（既定の手法・他の注文種別の手法）。引くと、保護逆指値を持つ建玉への決済が常に 0 株になり、手仕舞いを止める |
+| ブローカーに照会して**まだ生きている**と答えた注文の、未約定の残り | この承認そのもの・終わった決済・ブローカーが生きていると答えなかった注文（照会できない・終わっていた） |
+
+| 決済方向の建玉 − 処理中の決済 | 送るもの | 残すもの |
+| --- | --- | --- |
+| 注文数量以上 | 従来どおり（変わらない） | — |
+| 1 株以上・注文数量未満 | **残りの株数へ縮めた注文 1 本** | 警告ログと「処理中の決済の分だけ縮めた」監査の記録（乖離の記録・通知ではない） |
+| 0 以下 | **何も送らない**（見送り・警告） | 見送りの記録・通知（処理中の決済が約定しなかった場合は改めて手仕舞う） |
+
+送る数量は、この段を足す前より**増えることは無い**（減るだけ）。ブローカーが生きていると答えなかった注文を数えないのは、
+処理中の決済の記録は約定追跡（30 秒周期）が書くまで古く、既に約定した決済を数えると建玉の減少と二重に引いて、判断の決済を取り残すためである。
+拒否や見送りの後に自動で出し直すことはしない（再発注は次の取引判断から）。建玉照会の能力を持たない発注先では、この段も行わない。
+
+🔴 **ブローカー側の保護逆指値が実弾で売れる数量を押さえるかは確認できていない。** 押さえる場合、保護逆指値を持つ建玉への判断の決済は
+この段の有無にかかわらず拒否され得る。
 
 ### 損切りした銘柄は、その取引日のうちは同じ方向の新規建てをしない（#935）
 

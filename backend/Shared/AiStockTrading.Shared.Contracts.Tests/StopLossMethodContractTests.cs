@@ -132,8 +132,11 @@ public class StopLossMethodContractTests
         // 🔴 #864 が序数 4・5 を先に取ったため 4 → 6 へ繰り下げた（先にマージされた側が確保する）。
         ((int)OrderDispatchForgoneReason.UnattributedPosition).Should().Be(6);
 
+        // T-10-1766, FR-10, #1105, IADR-0461 決定2: 処理中の決済が建玉を覆う見送りも**末尾**である。
+        ((int)OrderDispatchForgoneReason.InFlightCloseCoversPosition).Should().Be(7);
+
         // 値を増やしたら、見送りを分類し直す側（在庫解放の可否など）も引き直させる。
-        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(7);
+        Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(8);
     }
 
     // 🔴 T-10-1084, FR-10, FR-06, #1002, IADR-0429 決定2: 解決の理由の序数は動かさない（イベント本文の整数・監査 payload）。

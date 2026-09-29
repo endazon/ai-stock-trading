@@ -605,6 +605,8 @@ public class NotificationFormatterTests
     // 「台帳とブローカーのどちらが正しいかを確かめる」であり、他の 4 つと読み分けられなければならない。
     [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent, "裸のショート")]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate, "建玉を照会できません")]
+    // T-10-1766, FR-10, #1105, IADR-0461 決定2: 処理中の決済が建玉を覆う見送り。対処は「その決済の結果を待つ」。
+    [InlineData(OrderDispatchForgoneReason.InFlightCloseCoversPosition, "処理中の決済")]
     public void 見送りの理由は日本語で読み分けられる(OrderDispatchForgoneReason reason, string expected)
     {
         // 見送りは 3 つの原因で起こり、**対処がそれぞれ違う**（OpenD の復旧／判断側の損切り価格の欠落／
@@ -623,6 +625,8 @@ public class NotificationFormatterTests
     [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate, NotificationSeverity.Critical)]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent, NotificationSeverity.Warning)]
     [InlineData(OrderDispatchForgoneReason.BrokerUnavailable, NotificationSeverity.Warning)]
+    // T-10-1766, #1105, IADR-0461 決定2: 処理中の決済が建玉を覆う見送りは Warning（建玉はその決済が売っている）。
+    [InlineData(OrderDispatchForgoneReason.InFlightCloseCoversPosition, NotificationSeverity.Warning)]
     public void 建玉を照会できずに見送った決済だけ重大度が上がる(
         OrderDispatchForgoneReason reason, NotificationSeverity expected)
     {

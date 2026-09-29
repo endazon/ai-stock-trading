@@ -72,6 +72,11 @@ public sealed class OrderApprovedHandler(
             await bus.PublishAsync(drift).ConfigureAwait(false);
         }
 
+        // 🔴 FR-10, FR-11, #1105, IADR-0461 決定3: 決済を**同じ建玉を売る処理中の決済の分だけ縮めて送った**事実（監査台帳へ）。
+        // 乖離とは別の事実であり、乖離イベントは使わない（台帳の乖離ではない）。縮めた理由として、発注結果より先に並べる。
+        if (result.InFlightReduction is { } inFlightReduction)
+            await bus.PublishAsync(inFlightReduction).ConfigureAwait(false);
+
         // FR-05, ADR-0002（SPOF）, #331, IADR-0211: 見送り（OpenD 切断・逆指値を張れない Open）は
         // **例外を投げずに**正常終了する——投げると Wolverine の共通再試行がキューで再送し、
         // 「キューイングせず見送り」の裁定に反する。再発注は次の取引判断からのみ。

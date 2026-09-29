@@ -423,6 +423,9 @@ public static class NotificationFormatter
         OrderDispatchForgoneReason.UnattributedPosition =>
             "同一銘柄・同方向に帰属不明の建玉があります（S1 はその建玉を自分の損切りラインで売らないために武装しません。"
                 + "先に手仕舞ってから切り替えてください）",
+        // FR-10, #1105, IADR-0461 決定2: 送れば証券会社に拒否されるだけの決済。対処は要らない（処理中の決済の結果を待つ）。
+        OrderDispatchForgoneReason.InFlightCloseCoversPosition =>
+            "同じ建玉を売る処理中の決済が、決済できる建玉をすべて覆っています（その決済が約定しなかった場合は、改めて手仕舞ってください）",
         _ => reason.ToString(),
     };
 

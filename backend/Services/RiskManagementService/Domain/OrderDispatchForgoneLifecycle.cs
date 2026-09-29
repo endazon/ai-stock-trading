@@ -74,6 +74,11 @@ public static class OrderDispatchForgoneLifecycle
             // 決済の在庫解放が実際に動くことは今のところ無い。**それでも事実として正しい側へ分類する**
             // ——既定 `false` は「送ったかもしれない」という*誤った事実*を述べることになる。
             OrderDispatchForgoneReason.UnattributedPosition => true,
+            // 🔴 FR-10, #1105, IADR-0461 決定2: 同じ建玉を売る処理中の決済が決済方向の建玉をすべて覆っている。**送信前**である
+            // （`OrderExecutionAppService.ExecuteAsync` を実測: 建玉照会・処理中の決済の読み取り〔記録と注文照会＝読み取りだけ〕の後で
+            // `return` し、`reservations.TryReserve` とブローカーへの送信は**いずれも後**）。解放しないと、この承認の決済が
+            // 処理中として在庫を押さえ続け、処理中の決済が約定しなかったときに次の手仕舞いが通らない（#852 と同型）。
+            OrderDispatchForgoneReason.InFlightCloseCoversPosition => true,
             // 🔴 既定は「解放しない」。新しい理由を足す人は、それが確実に未発注かを**実測して**からここへ足す。
             //
             // 🔴 判定の基準は**理由の名前ではなく「ブローカーへ送信したか」**である。

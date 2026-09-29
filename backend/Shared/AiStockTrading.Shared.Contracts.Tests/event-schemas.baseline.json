@@ -80,6 +80,18 @@
     "Symbol": "String",
     "UnexplainedQuantity": "Int32"
   },
+  "CloseReducedForInFlightCloses": {
+    "ApprovedQuantity": "Int32",
+    "BrokerClosableQuantity": "Int32",
+    "DecisionId": "Guid",
+    "DispatchedQuantity": "Int32",
+    "InFlightDecisionIds": "IReadOnlyList\u003CGuid\u003E",
+    "InFlightQuantity": "Int32",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "Side": "TradeSide",
+    "Symbol": "String"
+  },
   "CostThresholdReached": {
     "Category": "String",
     "Month": "String",
