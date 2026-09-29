@@ -79,7 +79,7 @@ issues: [#1092, #1102]
 | --- | --- | --- |
 | `ProtectiveStopGuard` | 保護逆指値ガードの巡回（30 秒ごと）の先頭の建玉照会。有効な保護記録が無い巡回では照会しない | その巡回の保護の判定を全件据え置く。失敗の種類（`Transient`・`RateLimited`・`Other`）が出る |
 | `BrokerPositionSnapshot` | 建玉の定期観測（10 分ごと） | 9 の建玉の観測が欠ける |
-| `BrokerAvailabilityProbe` | 稼働の定期観測（5 分ごと。moomoo では建玉照会） | 9 の稼働の観測が欠ける（段階ゲートの稼働の数えに入らない） |
+| `BrokerAvailabilityProbe` | 稼働の定期観測（5 分ごと。moomoo では建玉照会） | 9 の稼働の観測が欠ける（段階ゲートの稼働の数えに入らない）。内蔵のペーパー構成でも probe は動くので、発注執行の起動ごとに 10a へ `Unknown→Healthy` が 1 行出る（照会の失敗ではない。起動の回数の目安として読む） |
 | `SoftwareStopClose` | 損切りライン到達を受けたソフトウェア逆指値（S1）の決済の建玉照会 | S1 の決済を据え置く |
 | `OrderDispatch` | 決済の発注前の突き合わせ・S1 の武装前の確かめ | 6 の `BrokerPositionsIndeterminate`（決済）・`UnattributedPosition`（S1 の新規建て）の見送りになる |
 | `TradeDecisionHoldings` | 取引判断の保有照会（リスク管理の台帳） | 判断の入力の保有が「不明」になり、新規建てを見送る（3 の `HoldingsUnknownOpen`） |

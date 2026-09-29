@@ -81,6 +81,32 @@ public class LedgerGapEventsTests
             Task.FromResult(workingUnknown ? null : WorkingEntryOrders.None);
     }
 
+    // 照会の最中に判断が止められた（呼び出し側がトークンを取り消した）ことを模す: 指定の照会で CTS を取り消してから
+    // OperationCanceledException を投げる。他の照会は成功（保有なし・未約定なし・決済の数量 10）を返す。
+    private sealed class CancellingHeld(string cancelAt, CancellationTokenSource cts) : IHeldPositionProvider
+    {
+        public bool IsEnabled => true;
+
+        public List<string> Calls { get; } = [];
+
+        private Exception Cancel(string name)
+        {
+            Calls.Add(name);
+            cts.Cancel();
+            return new OperationCanceledException(cts.Token);
+        }
+
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
+            cancelAt == "決済の数量" ? throw Cancel("決済の数量") : Task.FromResult<int?>(10);
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
+            cancelAt == "保有状況" ? throw Cancel("保有状況") : Task.FromResult<HeldPosition?>(new HeldPosition(10, 1_000m, 970m));
+
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+            string symbol, Market market, CancellationToken ct = default) =>
+            cancelAt == "未約定" ? throw Cancel("未約定") : Task.FromResult<WorkingEntryOrders?>(WorkingEntryOrders.None);
+    }
+
     private sealed class FakeCurrentPrice(decimal? price) : ICurrentPriceProvider
     {
         public bool IsEnabled => true;
@@ -112,9 +138,14 @@ public class LedgerGapEventsTests
 
         public bool Throw { get; init; }
 
+        /// <summary>発行口が投げる例外を作る（null なら <see cref="Throw"/> に従う）。呼ばれた時点のトークンを受け取る。</summary>
+        public Func<CancellationToken, Exception>? Throws { get; init; }
+
         public Task ReportAsync(TradeDecisionForgoneBeforeLlm forgone, CancellationToken cancellationToken = default)
         {
             Reports.Add(forgone);
+            if (Throws is not null)
+                throw Throws(cancellationToken);
             return Throw ? throw new InvalidOperationException("発行先が壊れている") : Task.CompletedTask;
         }
     }
@@ -238,6 +269,42 @@ public class LedgerGapEventsTests
         probe.Skips.Reasons.Should().Equal([DecisionSkipReason.DailyPolicyUnconfirmed]);
     }
 
+    // T-10-1772: PR #1110 の監査 N3。発行口が**本判断のキャンセルでない** OperationCanceledException（発行口自身の打ち切り。
+    // 呼び出し側のトークンは生きている）を投げても、見送りは壊さない（発行の失敗の 1 つとして飲む）。
+    // 🔴 伝えるのは本判断のキャンセル（トークンが取り消された）ときだけ（SkipJudgedAsync と同じ規律）。種類だけで伝えると、
+    // 発行口の遅延だけで見送りの計上が落ち、定時の巡回では銘柄ごとの catch へ、価格変動では再試行へ流れる。
+    [Fact]
+    public async Task T_10_1772_発行口自身の打ち切りでは見送りを壊さず_本判断のキャンセルだけを伝える()
+    {
+        var own = Create(withoutPolicy: true, forgone: new RecordingForgone
+        {
+            Throws = _ => new OperationCanceledException("発行口の打ち切り（呼び出し側は止めていない）"),
+        });
+
+        var decision = await own.Service.DecideAsync(MovementTrigger(), TestContext.Current.CancellationToken);
+
+        decision.Should().BeNull("発行口の打ち切りは発行の失敗であり、見送りは従来どおり");
+        own.Forgone.Reports.Should().ContainSingle("前提: 発行を試みている");
+        own.Skips.Reasons.Should().Equal([DecisionSkipReason.DailyPolicyUnconfirmed], "見送りの計上は 1 件のまま");
+
+        // 本判断のキャンセル: 発行の最中にトークンが取り消された → キャンセルを伝える（見送りとして計上しない）。
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var cancelled = Create(withoutPolicy: true, forgone: new RecordingForgone
+        {
+            Throws = ct =>
+            {
+                cts.Cancel();
+                return new OperationCanceledException(ct);
+            },
+        });
+
+        var act = () => cancelled.Service.DecideAsync(MovementTrigger(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>("本判断のキャンセルは伝える");
+        cancelled.Forgone.Reports.Should().ContainSingle("前提: 発行の最中に取り消された");
+        cancelled.Skips.Reasons.Should().BeEmpty("取り消された判断を見送りとして数えない");
+    }
+
     // T-10-1772: 台帳の語彙（4 値）は観測の語彙（DecisionSkipReason）と同じ名前で、写像は名前どおりである。
     [Fact]
     public void T_10_1772_台帳の理由は観測の理由と同じ名前で写る()
@@ -296,6 +363,28 @@ public class LedgerGapEventsTests
         probe.Health.Reports.Should().Equal(
             (PositionQuerySource.TradeDecisionHoldings, true), (PositionQuerySource.TradeDecisionWorkingEntries, true),
             (PositionQuerySource.TradeDecisionHoldings, true));
+    }
+
+    // T-10-1771: PR #1110 の監査 N2。照会の最中に判断が止められた（キャンセル）ときは、照会の**失敗として数えない**
+    // （報告しない）。キャンセルは照会先の不調ではない。失敗と数えると、停止・再配備のたびに Failing が台帳へ出て、
+    // 夜間の要約に実在しない照会の失敗の区間が現れる。キャンセルはそのまま伝える（fail-safe の「不明」へ縮退しない）。
+    [Theory]
+    [InlineData("保有状況")]
+    [InlineData("未約定")]
+    [InlineData("決済の数量")]
+    public async Task T_10_1771_照会の最中のキャンセルは失敗として報告せず_キャンセルを伝える(string cancelAt)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var held = new CancellingHeld(cancelAt, cts);
+        // 決済の数量の引き直しは LLM が Sell を返した後の照会である。
+        var probe = Create(
+            """{"action":"Sell","rationale":"利確","referencePrice":1000,"stopLossDistancePerShare":30}""", held: held);
+
+        var act = () => probe.Service.DecideAsync(MovementTrigger(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>(cancelAt);
+        held.Calls.Should().Equal([cancelAt], "前提: その照会の最中に取り消された");
+        probe.Health.Reports.Should().NotContain(r => !r.Succeeded, $"{cancelAt}: キャンセルを照会の失敗として数えない");
     }
 
     // T-10-1771（否定形）: 未結線（NoOp＝常に不明）は照会していないので、失敗として報告しない。

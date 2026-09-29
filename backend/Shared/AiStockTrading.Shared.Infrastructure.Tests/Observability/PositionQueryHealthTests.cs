@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using AwesomeAssertions;
@@ -61,6 +62,73 @@ public class PositionQueryHealthTests
         tracker.Observe(PositionQuerySource.BrokerPositionSnapshot, true, null, T0.AddMinutes(10)).Should().BeNull();
     }
 
+    // ---- T-10-1767（並行）: PR #1110 の監査 N1。報告口は業務クラスの間で共有する singleton であり、
+    // ガード・スナップショット・稼働 probe・発注のハンドラが別スレッドから同時に呼ぶ。状態の読みと書きは 1 つの錠の中で行う。
+    // 錠を外すと、2 つのスレッドが同じ「前の状態」を読んで同じ変化を 2 回出す・失敗の回数を取りこぼす・Dictionary が壊れる。
+    // 遷移の順序（内部の版）は試験から見えないので、順序に依らない等式で「交互に揃う」ことを表明する:
+    //   - 発生源ごとに、前の状態が Unknown の遷移はちょうど 1 件（起動直後の 1 回だけ）。
+    //   - 最後に成功で区間を閉じた後、Failing の遷移の数 ＝ Failing からの回復の数（失敗の区間は 1 回ずつ開いて閉じる）。
+    //   - Healthy からの失敗の数 ＝ Healthy の遷移の数 − 1（成功と失敗が交互に並ぶ）。
+    //   - 回復に載った失敗の回数の合計 ＝ 報告した失敗の数（1 件も取りこぼさず、二重にも数えない）。
+    [Fact]
+    public async Task T_10_1767_並行に報告しても遷移は交互に揃い_失敗の回数を取りこぼさない()
+    {
+        const int threads = 16;
+        const int iterations = 20_000;
+        var sources = Enum.GetValues<PositionQuerySource>();
+        var tracker = new PositionQueryHealthTracker();
+        var transitions = new ConcurrentQueue<PositionQueryStatusChanged>();
+        var failures = new int[sources.Length];
+        using var start = new Barrier(threads);
+
+        var workers = Enumerable.Range(0, threads).Select(t => Task.Factory.StartNew(
+            () =>
+            {
+                var myFailures = new int[sources.Length];
+                start.SignalAndWait();
+                for (var i = 0; i < iterations; i++)
+                {
+                    var k = i % sources.Length;
+                    var succeeded = ((i / sources.Length) + t) % 2 == 0; // スレッドごとに位相をずらして失敗と成功を交互に報告する
+                    if (!succeeded)
+                        myFailures[k]++;
+                    if (tracker.Observe(sources[k], succeeded, null, T0.AddTicks(i)) is { } transition)
+                        transitions.Enqueue(transition.Event);
+                }
+
+                for (var k = 0; k < sources.Length; k++)
+                    Interlocked.Add(ref failures[k], myFailures[k]);
+            },
+            TestContext.Current.CancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+
+        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        // 失敗のまま終わった区間を、成功 1 回で閉じる（その回復に残りの失敗の回数が載る）。
+        foreach (var source in sources)
+        {
+            if (tracker.Observe(source, true, null, T0.AddDays(1)) is { } closing)
+                transitions.Enqueue(closing.Event);
+        }
+
+        foreach (var (source, k) in sources.Select((s, k) => (s, k)))
+        {
+            var mine = transitions.Where(e => e.Source == source).ToList();
+            var failing = mine.Where(e => e.Status == PositionQueryStatus.Failing).ToList();
+            var healthy = mine.Where(e => e.Status == PositionQueryStatus.Healthy).ToList();
+
+            mine.Count(e => e.PreviousStatus == PositionQueryStatus.Unknown)
+                .Should().Be(1, $"{source}: 起動直後の遷移は 1 回だけ");
+            failing.Should().NotBeEmpty($"{source}: 前提として失敗と成功が入れ替わっている");
+            failing.Should().AllSatisfy(e => e.FailedQueries.Should().Be(1, $"{source}: 失敗の始まりは 1 回目"));
+            healthy.Count(e => e.PreviousStatus == PositionQueryStatus.Failing)
+                .Should().Be(failing.Count, $"{source}: 失敗の区間は 1 回ずつ開いて 1 回ずつ閉じる（二重に開かない）");
+            failing.Count(e => e.PreviousStatus == PositionQueryStatus.Healthy)
+                .Should().Be(healthy.Count - 1, $"{source}: 成功と失敗が交互に並ぶ");
+            healthy.Sum(e => e.FailedQueries)
+                .Should().Be(failures[k], $"{source}: 失敗の回数を 1 件も取りこぼさず、二重にも数えない");
+        }
+    }
+
     // ---- T-10-1768: 発生源ごとに独立する ----
     [Fact]
     public void T_10_1768_発生源ごとに状態を持ち_一方の失敗が他方を変えない()
@@ -121,6 +189,49 @@ public class PositionQueryHealthTests
         published[1].PreviousStatus.Should().Be(PositionQueryStatus.Failing);
         published[1].FailingSince.Should().Be(T0.AddSeconds(5), "戻した後も失敗の始まりを失わない");
         published[1].FailedQueries.Should().Be(1);
+    }
+
+    // T-10-1769: PR #1110 の監査 N3。発行口がどんな種類の例外で失敗しても（同期でも非同期でも）照会した側へ漏らさず、状態を戻す。
+    // 捕まえる例外を特定の種類へ狭めると、打ち切り・接続断などの別種の失敗で照会した業務（ガードの巡回・発注）が落ちる。
+    [Theory]
+    [InlineData("TimeoutException（同期）", false)]
+    [InlineData("TimeoutException（非同期）", true)]
+    [InlineData("IOException（同期）", false)]
+    [InlineData("OperationCanceledException（非同期）", true)]
+    public async Task T_10_1769_発行口がどんな種類の例外で失敗しても照会した側へ漏らさず_次の照会で出し直す(
+        string name, bool asynchronously)
+    {
+        Exception Make() => name switch
+        {
+            _ when name.StartsWith("TimeoutException", StringComparison.Ordinal) => new TimeoutException("発行の打ち切り"),
+            _ when name.StartsWith("IOException", StringComparison.Ordinal) => new IOException("接続断"),
+            _ => new OperationCanceledException("発行口の打ち切り"),
+        };
+
+        var published = new List<PositionQueryStatusChanged>();
+        var fail = true;
+        var reporter = new PositionQueryHealthReporter(
+            e =>
+            {
+                if (fail)
+                {
+                    // 同期: 発行口の呼び出しそのものが投げる。非同期: 失敗した ValueTask を返す（await の時点で投げる）。
+                    return asynchronously ? ValueTask.FromException(Make()) : throw Make();
+                }
+
+                published.Add((PositionQueryStatusChanged)e);
+                return ValueTask.CompletedTask;
+            },
+            new ManualTime(T0));
+
+        var report = () => reporter.ReportAsync(PositionQuerySource.BrokerAvailabilityProbe, succeeded: false, "Other");
+        await report.Should().NotThrowAsync(name);
+        published.Should().BeEmpty();
+
+        fail = false;
+        await reporter.ReportAsync(PositionQuerySource.BrokerAvailabilityProbe, succeeded: false);
+        published.Should().ContainSingle($"{name}: 戻した状態から、次の失敗で出し直す").Which.PreviousStatus
+            .Should().Be(PositionQueryStatus.Unknown);
     }
 
     // T-10-1769: 戻すのは自分が進めた状態だけ（その後の別の変化を巻き戻さない）。

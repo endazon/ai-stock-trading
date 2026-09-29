@@ -33,9 +33,14 @@ public class ProtectiveStopGuardTests
         public int ClassifiedQueryCount { get; private set; }
         public int PositionQueryCount { get; private set; }
 
+        /// <summary>NFR, #1092: 建玉照会（分類つき・従来のどちらも）が投げる例外を作る（null なら投げない）。</summary>
+        public Func<Exception>? ThrowOnPositionQuery { get; set; }
+
         public Task<PositionQueryResult> QueryPositionsAsync(CancellationToken ct = default)
         {
             ClassifiedQueryCount++;
+            if (ThrowOnPositionQuery is not null)
+                throw ThrowOnPositionQuery();
             return Task.FromResult(ClassifiedResults.Count > 0
                 ? ClassifiedResults.Dequeue()
                 : Positions is null
@@ -113,6 +118,8 @@ public class ProtectiveStopGuardTests
         public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
         {
             PositionQueryCount++;
+            if (ThrowOnPositionQuery is not null)
+                throw ThrowOnPositionQuery();
             return Task.FromResult(Positions);
         }
     }
@@ -558,5 +565,31 @@ public class ProtectiveStopGuardTests
 
         broker.PositionQueryCount.Should().Be(2, "前提: 建玉 0 の確かめ直しで 2 回照会している");
         health.Reports.Should().Equal([(PositionQuerySource.ProtectiveStopGuard, true, (string?)null)]);
+    }
+
+    // T-10-1770: PR #1110 の監査 N2。巡回の先頭の照会の最中にガードが止められた（キャンセル）ときは、照会の失敗として報告しない。
+    // キャンセルは moomoo の不調ではない（停止・再配備のたびに Failing を台帳へ出すと、夜間の要約に実在しない失敗の区間が現れる）。
+    // キャンセルはそのまま伝える（据え置きの結果へ縮退しない）。照会し直しの有無の両方で固定する。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_1770_照会の最中のキャンセルは失敗として報告せず_キャンセルを伝える(bool withRetry)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var stop = ActiveStop();
+        var (_, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.ThrowOnPositionQuery = () =>
+        {
+            cts.Cancel();
+            return new OperationCanceledException(cts.Token);
+        };
+        var health = new RecordingPositionQueryHealth();
+
+        var act = () => WithHealth(broker, stops, store, health, withRetry).RunOnceAsync(10, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        (broker.ClassifiedQueryCount + broker.PositionQueryCount).Should().Be(1, "前提: 巡回の先頭の照会の最中に取り消された");
+        health.Reports.Should().BeEmpty("キャンセルを照会の失敗として数えない");
     }
 }
