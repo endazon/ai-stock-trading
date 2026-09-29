@@ -42,7 +42,7 @@ plan_refs: []
 「1 巡回 1 回」を前提にしている記述も走査した（`git grep -n "1 巡回.*1 回"`）。
 - ガードの注記は「1 つのスナップショットを使う」へ直した。
 - `ProtectiveStopNetting` の「群につき 1 巡回 1 回の観測」は変わらない。照会し直しても、使うスナップショットは 1 つだけだからである。
-- IADR-0412 の「建玉照会は 1 巡回 1 回のまま」は凍結記録なので書き換えない。IADR-0458 決定 5 で読み方を補う。
+- IADR-0412 の「建玉照会は 1 巡回 1 回のまま」は、建玉観測の常駐（BrokerPositionSnapshotService）の巡回についての記述である。本 PR は常駐に触れないので、そのまま真である（当初はガードの巡回と読み違えていた。監査の指摘で正した）。
 
 ## 設計（IADR-0458）
 
@@ -70,9 +70,10 @@ plan_refs: []
 - 揺らぎの両端（1 秒・3 秒）。回数を 0〜1 に収める。取り消されたら中断する。
 - 分類の表（13 通り）。
 
-`MoomooBrokerAdapterTests`（7 件）:
+`MoomooBrokerAdapterTests`（8 件）:
 - 分類つきの照会は失敗の種類を運び、同じ失敗で `GetPositionsAsync` は null を返す（契約は不変）。
 - 成功は None。
+- 取り消しは分類せず、両方の口から伝播する（監査の生存変異 M19 を殺す）。
 
 `ProtectiveStopGuardTests`（3 件）:
 - 一時的な失敗の後に照会し直して成功すれば、その巡回で評価する（Unknown 0）。
@@ -83,10 +84,12 @@ plan_refs: []
 
 ## 検証
 
-- `dotnet test backend/Services/OrderExecutionService/Tests`: 1191/1191 成功・警告 0。
+- `dotnet test backend/Services/OrderExecutionService/Tests`: 1192/1192 成功・警告 0。
 - `dotnet format --verify-no-changes`（OrderExecutionService）: 差分なし。
 
 ## 残余
 
 - 起動時の集中は段 2 で扱う。
+- 予算が数えるのは待ちだけで、照会の所要時間は含まない。打ち切りが 2 回続く最悪では、次の巡回が最大で約 18 秒遅れる（IADR-0458 決定 3）。
+- 頻度制限の後の照会し直しは、発注の経路と同じ枠を消費し得る（IADR-0458 §結果）。
 - 頻度制限の文言は、語の一部で引いている。外れたら Other（照会し直さない）へ倒れる。安全側である。

@@ -510,6 +510,20 @@ public class MoomooBrokerAdapterTests
         result.Positions.Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
     }
 
+    // T-10-1738: 取り消しは分類しない（Other へ丸めて null を返すと、停止中の巡回が「照会不能」として記録される）。
+    [Fact]
+    public async Task 建玉照会の取り消しは分類せず伝播する()
+    {
+        var client = new FakeClient { PositionsThrow = () => new OperationCanceledException() };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var classified = async () => await adapter.QueryPositionsAsync();
+        var legacy = async () => await adapter.GetPositionsAsync();
+
+        await classified.Should().ThrowAsync<OperationCanceledException>();
+        await legacy.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     // =====================================================================================
     // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: 口座種別の照会（IBrokerAccountSource）
     // =====================================================================================

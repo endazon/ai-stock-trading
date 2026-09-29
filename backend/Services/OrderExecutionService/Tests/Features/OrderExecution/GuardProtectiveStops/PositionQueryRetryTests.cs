@@ -123,7 +123,7 @@ public class PositionQueryRetryTests
 
         var positions = await retry.QueryAsync(source, CancellationToken.None);
 
-        positions.Should().BeNull("次の巡回を遅らせない");
+        positions.Should().BeNull("待ちが予算を超える照会し直しはしない");
         source.Calls.Should().Be(1);
         delays.Waits.Should().BeEmpty();
     }

@@ -43,7 +43,7 @@ public sealed class ProtectiveStopGuardOptions
 
     /// <summary>
     /// FR-10, #1093, IADR-0458: 照会し直しの待ちの合計の上限＝巡回間隔の半分。これを超えるなら照会し直さずに据え置く
-    /// （次の巡回を遅らせない。30 秒の巡回なら 15 秒）。
+    /// （30 秒の巡回なら 15 秒）。数えるのは待ちだけで、照会の所要時間は含まない（打ち切りが 2 回続けば次の巡回は十数秒遅れ得る）。
     /// </summary>
     public TimeSpan PositionQueryRetryBudget => Interval > TimeSpan.Zero ? Interval / 2 : TimeSpan.Zero;
 }
