@@ -26,6 +26,8 @@ namespace OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 // FR-10, FR-06, ADR-0040 決定1, #1002, IADR-0429 決定1: 損切りの実行機構を**解決した回**（Open の承認）には、
 // 解決結果（MethodResolved）が付く。発注（Executed）にも見送り（Forgone）にも付き得るため**排他にしない**（末尾の任意項目）。
 // 解決しなかった回（Close・再配送の抑止・完了済みの再発行）は null である。
+// 🔴 FR-10, #1105, IADR-0461 決定3: 決済の数量を**同じ建玉を売る処理中の決済の分だけ縮めて送った**回には、その事実
+// （InFlightReduction）が付く。乖離（Drift）とは別の事実であり、両方が付き得る（台帳の乖離でも縮め、さらに処理中の分も引いた回）。
 public sealed record OrderDispatchResult(
     OrderExecuted? Executed,
     OrderDispatchForgone? Forgone,
@@ -37,7 +39,8 @@ public sealed record OrderDispatchResult(
     int DriftDispatchedQuantity = 0,
     SoftwareStopArmed? SoftwareStopArmed = null,
     bool ForgoneReplaySuppressed = false,
-    StopLossMethodResolved? MethodResolved = null)
+    StopLossMethodResolved? MethodResolved = null,
+    CloseReducedForInFlightCloses? InFlightReduction = null)
 {
     public static OrderDispatchResult FromExecuted(
         OrderExecuted executed,
@@ -47,9 +50,10 @@ public sealed record OrderDispatchResult(
         AlternativeProtectiveStopAttempted? stopAttempted = null,
         PositionReconciliationDrift? drift = null,
         int driftDispatchedQuantity = 0,
-        SoftwareStopArmed? softwareStopArmed = null) =>
+        SoftwareStopArmed? softwareStopArmed = null,
+        CloseReducedForInFlightCloses? inFlightReduction = null) =>
         new(executed, null, stopPlaced, coverageLost, stopWaived, stopAttempted, drift, driftDispatchedQuantity,
-            softwareStopArmed);
+            softwareStopArmed, InFlightReduction: inFlightReduction);
 
     // 見送りは 1 株も送っていない（DriftDispatchedQuantity は 0 のまま）。
     public static OrderDispatchResult FromForgone(

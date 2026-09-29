@@ -603,6 +603,15 @@ public static class AuditEntryFactory
             + $"（{ResolutionReasonLabel(e.Reason)}・発注先 {e.Provider}・{e.ProductType}）"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // 🔴 FR-10, FR-11, #1105, IADR-0461 決定3: 発注執行が決済の数量を、同じ建玉を売る処理中の決済の分だけ縮めて送った事実。
+    // 相関は承認の DecisionId（承認・発注と 1 本で辿れる）。**台帳の乖離ではない**と要約に書く（乖離の記録と読み違えさせない）。
+    public static AuditEntry From(CloseReducedForInFlightCloses e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(CloseReducedForInFlightCloses), e.DecisionId, e.Symbol,
+        Truncate($"{e.Symbol}/{e.Market} {e.Side} 決済の数量を処理中の決済の分だけ縮めて送った: 承認 {e.ApprovedQuantity} 株"
+            + $" / ブローカーの決済方向の建玉 {e.BrokerClosableQuantity} 株 − 処理中 {e.InFlightQuantity} 株"
+            + $"（{e.InFlightDecisionIds.Count} 件）→ 送った {e.DispatchedQuantity} 株（台帳の乖離ではない）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     private static string ResolutionReasonLabel(StopLossMethodResolutionReason reason) => reason switch
     {
         StopLossMethodResolutionReason.AsSelected => "選択どおり",

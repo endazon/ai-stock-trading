@@ -388,6 +388,7 @@ public class PortfolioLedgerConsumersTests
     [InlineData(OrderDispatchForgoneReason.BrokerPositionAbsent)]
     [InlineData(OrderDispatchForgoneReason.BrokerPositionsIndeterminate)]
     [InlineData(OrderDispatchForgoneReason.UnattributedPosition)]
+    [InlineData(OrderDispatchForgoneReason.InFlightCloseCoversPosition)] // T-10-1766, #1105, IADR-0461
     public async Task 現行の見送り理由はいずれも処理中から外れる(OrderDispatchForgoneReason reason)
     {
         var ledger = new InMemoryPortfolioLedgerStore();

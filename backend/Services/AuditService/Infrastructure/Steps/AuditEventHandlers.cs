@@ -557,6 +557,16 @@ public sealed class StopLossMethodResolvedAuditHandler(IAuditEventStore store, I
     }
 }
 
+// 🔴 FR-10, FR-11, #1105, IADR-0461 決定3: 決済の数量を処理中の決済の分だけ縮めて送った事実を中央監査台帳へ記録する。
+public sealed class CloseReducedForInFlightClosesAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(CloseReducedForInFlightCloses message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置を中央監査台帳へ記録する。
 public sealed class SoftwareStopArmedAuditHandler(IAuditEventStore store, IClock clock)
 {

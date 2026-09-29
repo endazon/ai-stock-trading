@@ -72,6 +72,20 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             .Select(r => ToRecord(r))];
     }
 
+    // FR-10, #1105, IADR-0461 決定1: 非終端の決済の行を銘柄・市場・決済の方向で絞って古い順に返す（追跡上限は見ない）。
+    // 終端判定は FindPendingSince と同じ集合を列挙する（EF が SQL へ翻訳できる形）。
+    public IReadOnlyList<ExecutionRecord> FindPendingCloses(string symbol, Market market, TradeSide closeSide)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        return [.. db.ExecutedOrders
+            .Where(r => r.PositionEffect == PositionEffect.Close
+                && (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
+                && r.Symbol == symbol && r.Market == market && r.Side == closeSide)
+            .OrderBy(r => r.ExecutedAt)
+            .Select(r => ToRecord(r))];
+    }
+
     // FR-10, #958, IADR-0406 決定3: 非終端の行の追跡の起点を進める。変更追跡により UPDATE は executed_at の 1 列だけになり、
     // 並行に約定追跡が書いた状態・数量を古い値で上書きしない。
     public bool RenewTracking(string orderId, DateTimeOffset trackedFrom)

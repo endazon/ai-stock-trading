@@ -29,6 +29,19 @@ public interface IExecutedOrderStore
     IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds);
 
     /// <summary>
+    /// 🔴 FR-10, #1105, IADR-0461 決定1: 非終端（<see cref="OrderStatusLifecycle.IsPending"/>）の<b>決済（Close）</b>の記録のうち、
+    /// 銘柄・市場・決済の方向（<paramref name="closeSide"/>）が一致するものを古い順に返す（決済の数量から処理中の決済を引くため）。
+    /// <b>追跡上限は見ない</b>——生きているかは呼び出し側がブローカーへ確かめる。保護レグ（S0 / S3）も含まれるので、呼び出し側が除く。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindPendingCloses(string symbol, Market market, TradeSide closeSide) =>
+        GetAll()
+            .Where(r => r.PositionEffect == PositionEffect.Close && OrderStatusLifecycle.IsPending(r.Status)
+                && r.Symbol == symbol && r.Market == market && r.Side == closeSide)
+            .OrderBy(r => r.ExecutedAt)
+            .ToList();
+
+    /// <summary>
     /// FR-10, #958, IADR-0406 決定3: 非終端の記録の<b>追跡の起点</b>（<see cref="ExecutionRecord.ExecutedAt"/>）を
     /// <paramref name="trackedFrom"/> へ進める（約定追跡の窓へ戻す）。<b>時刻の列だけ</b>を書き、状態・数量・価格には触れない
     /// （並行に約定追跡が記録を終端にしていても、古い状態で上書きしない）。記録が無い・終端・起点が既に同じか新しいなら

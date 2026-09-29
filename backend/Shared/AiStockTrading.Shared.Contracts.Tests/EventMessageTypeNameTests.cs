@@ -71,6 +71,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(AlternativeProtectiveStopAttempted), "AiStockTrading.Shared.Contracts.Events.AlternativeProtectiveStopAttempted")]
         // T-10-1084, FR-10, FR-06, #1002, IADR-0429 決定1: 損切りの実行機構の解決結果（発注執行 → 監査台帳 → 報告書）。
         [InlineData(typeof(StopLossMethodResolved), "AiStockTrading.Shared.Contracts.Events.StopLossMethodResolved")]
+        // FR-10, FR-11, #1105, IADR-0461 決定3: 決済を処理中の決済の分だけ縮めて送った事実。
+        [InlineData(typeof(CloseReducedForInFlightCloses), "AiStockTrading.Shared.Contracts.Events.CloseReducedForInFlightCloses")]
         [InlineData(typeof(PositionCloseRequested), "AiStockTrading.Shared.Contracts.Events.PositionCloseRequested")]
         // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による手仕舞いの取消要求と、
         // 未約定残を残して終わった手仕舞い（失効・取消・拒否）。

@@ -3,15 +3,15 @@ title: 取引ドメインの通信契約（イベント・ポート）通信仕�
 type: api-spec
 status: draft
 created: 2026-07-09
-updated: 2026-09-29
+updated: 2026-09-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-08, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0020, ADR-0040, ADR-0041]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, IADR-0455, MSP:IADR-0049]
-specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold, 20260929_1081_news-status-in-decision-prompt]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077, #1081]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, IADR-0455, MSP:IADR-0049, IADR-0461]
+specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold, 20260929_1081_news-status-in-decision-prompt, 20260930_1105_close-qty-inflight]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077, #1081, #1105]
 -->
 
 
@@ -52,6 +52,7 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 | `ProtectiveStopWaived` | 発注執行 | EntryDecisionId, Symbol, Market, Side, ProductType, Quantity, StopLossPrice, Method, Provider, OccurredAt | moomoo SIMULATE で手法 S2 が選ばれた新規買いに保護逆指値を発注せず建玉を保持した（ペーパーで免除）。エントリーの受付時点で発行し、Quantity は**発注数量**（建玉は約定で確定する）。約定しないまま・一部約定で終端したときの打ち消し／数量の確定は、監査ログが同じ相関の終端の約定記録から派生記録 `ProtectiveStopWaiverSettled` として残す。監査ログと Discord 通知が購読（#819） |
 | `AlternativeProtectiveStopAttempted` | 発注執行 | EntryDecisionId, StopDecisionId, Symbol, Market, OrderType, Status, BrokerOrderId, RejectReasonCode, RejectReasonMessage, Method, Provider, OccurredAt | moomoo SIMULATE で手法 S3 が選ばれた新規買いの保護レグを代替注文種別（ストップリミット／トレーリングストップ）で試した。**受理・拒否のどちらでも 1 件**出し、拒否理由（`retType` / `retMsg`）を監査ログへ残す（#821） |
 | `StopLossMethodResolved` | 発注執行 | DecisionId, Symbol, Market, ProductType, SelectedMethod, AppliedMethod（拒否なら null）, Reason(AsSelected/BrokerNotMoomooSimulate/ShortSellEntry/UnknownMethod), Provider, OccurredAt | 新規建ての承認の損切りの実行機構を解決した結果（承認の手法 → 実際に適用した手法と、違ったときの理由）。Provider は実際に発注するアダプタの発注先。解決した回だけ 1 件出す（見送りの回にも出る・手仕舞いと再配送では出ない）。監査ログが購読し、報告書は監査台帳から引いて日報の「実際に適用された手法」と月報の日数ベースの内訳を作る（#1002） |
+| `CloseReducedForInFlightCloses` | 発注執行 | DecisionId, Symbol, Market, Side, ApprovedQuantity, BrokerClosableQuantity, InFlightQuantity, DispatchedQuantity, InFlightDecisionIds, OccurredAt | 決済（Close）の数量を、**同じ建玉を売る処理中の決済**（発注執行が自分で出し、ブローカーがまだ生きていると答えた非終端の決済。ブローカー側の保護逆指値は含まない）の分だけ縮めて送った事実。ブローカーの建玉は約定していない売り注文が押さえた株数を引かないため、引かずに送ると証券会社が「建玉が足りない」で拒否する。**台帳の乖離ではない**ので乖離の事実（`PositionReconciliationDrift`）は使わない。1 株も残らないときは本事実ではなく見送り（`OrderDispatchForgone`・理由 `InFlightCloseCoversPosition`）になる。監査ログだけが購読する（通知しない＝平常の動作） |
 | `PositionDriftAdopted` | リスク管理 | AdoptionId, Symbol, Market, LedgerQuantityBefore, LedgerQuantityAfter, BrokerQuantity, ObservedAt, CostBasisPrice, RealizedPnlRecorded, ReferencePrice, EstimatedPnlInBase, Actor, Reason, AdoptedAt, AuthorizedBy（任意） | 利用者が承認した**台帳とブローカーの乖離の取り込み**（#849）。数量は符号付き。**`RealizedPnlRecorded` は常に false** —— システム外の売買は約定価格が分からないため実現損益を記録しない。`ReferencePrice` / `EstimatedPnlInBase` は取り込み時点の現在値による**推定**であり台帳へは入らない（現在値が取れなければ null）。`CostBasisPrice` は取り込み前の平均取得単価で、約定価格ではない。監査ログと Discord 通知が購読する。発注執行側の保護記録の追随は本イベントの購読で行う想定（後続）。取り込みの窓口は API と Discord Bot の 2 つで、`Actor` はどちらでも操作した利用者、`AuthorizedBy` は Discord Bot 経由（代理）のときの認可の主体＝owner マップ機密クライアントの ID（利用者本人のトークンでは null）。それ以外の項目は窓口に依らず同じ |
 
 市場監視のイベント（価格変動監視と、変動トリガーによる取引の起動に対応する）。`EventId`（Guid）で 1 検知を相関する

@@ -75,4 +75,12 @@ public enum OrderDispatchForgoneReason
     /// </para>
     /// </summary>
     UnattributedPosition,
+
+    /// <summary>
+    /// 🔴 FR-10, FR-05, UC-06, #1105, IADR-0461 決定2: 決済（Close）だが、<b>同じ建玉を売る処理中の決済</b>
+    /// （発注執行が自分で出し、ブローカーがまだ生きていると答えた非終端の決済。S0 / S3 の保護レグは含まない）が、
+    /// 決済方向の建玉を<b>すべて覆っている</b>。送れば証券会社が「建玉が足りない」で拒否する（2026-09-29 の実測）。
+    /// 予約の<b>前</b>に見送る（確実に未発注）。<b>末尾へ追加する</b>（序数 7。メトリクスのタグ・監査 payload の整数が往来する）。
+    /// </summary>
+    InFlightCloseCoversPosition,
 }
