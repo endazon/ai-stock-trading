@@ -17,7 +17,8 @@ namespace AiStockTrading.Shared.Kernel.Trading;
 public static class StopLossApproximation
 {
     /// <summary>
-    /// 既定損切り幅比率 3%（前提条件 05_trading-assumptions §5 の「損切り幅3%」目安）。リスク管理の
+    /// 既定損切り幅比率 3%。出典は前提条件 05_trading-assumptions §5 の<b>旧版</b>（円建て資金の時期の「初期投入資金」行の備考
+    /// 「損切り幅3%なら…」の目安）であり、<b>現行の §5 には無い</b>（#1104, IADR-0460 で確認）。実装側の過渡的な近似値である。リスク管理の
     /// <c>TradingDefaults.DefaultStopLossRatio</c> はこの値を指す。
     /// </summary>
     public const decimal DefaultRatio = 0.03m;
