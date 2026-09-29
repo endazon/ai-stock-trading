@@ -27,6 +27,12 @@
 #     （カンマ・バックスラッシュを含む allowedUserIds / userMapping のエスケープが壊れない）
 #   - 明示的な空指定で前回の非空値を消す場合は中断し、--force-empty-values でのみ強制できる
 #   - helm upgrade の後、OpenD を除く Deployment へ rollout restart が呼ばれる
+#
+# 検証する不変条件（Issue #1094 の受け入れ基準。images 側は scripts/k8s-local-images.test.sh）:
+#   - 絞り込み（SERVICES / --changed-since）が無ければ restart は従来どおり全件（上の #673 の検査を無改修で維持）
+#   - 絞り込みがあれば、作り直したサービスの Deployment だけを restart する（OpenD は除外のまま）
+#   - SERVICES / --changed-since の結果を k8s-local-images.sh の SERVICES へ中継する（ALL・選択器の失敗は全件へ倒す）
+#   - --changed-since の値欠落・未知のオプションは exit 2
 set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -488,6 +494,181 @@ given_deployments ""
 run_rollout
 assert_eq   'T-673-06 空: 正常終了する' "$RC" "0"
 assert_eq   'T-673-06 空: 何も再起動しない' "$RESTARTED" ''
+
+# ---- #1094 / IADR-0457: 作り直したサービスだけの rollout restart --------------
+printf '\nk8s-local-deploy.sh: 作り直したサービスだけの rollout restart（#1094）\n'
+
+ALL_DEPLOYMENTS='audit-service
+backtest-service
+configuration-service
+cost-control-service
+information-collection-service
+market-monitor-service
+notification-service
+order-execution-service
+report-service
+risk-management-service
+trade-decision-service
+opend'
+
+# 作り直した名前の一覧（k8s-local-images.sh の K8S_BUILT_FILE の疑似）。$1 = 改行区切り
+given_built() { printf '%s' "${1:-}" > "$STATE/built"; [ -n "${1:-}" ] && echo >> "$STATE/built"; return 0; }
+run_rollout_built() {
+  ( ast_rollout_restart_workers "$STATE/built" ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  RESTARTED="$(cat "$STATE/restarted.log" 2>/dev/null || true)"
+}
+
+# T-1094-D01: 作り直した 2 件だけを restart する
+given_secret ""
+given_deployments "$ALL_DEPLOYMENTS"
+given_built 'risk-management-service
+trade-decision-service'
+run_rollout_built
+assert_eq   'T-1094-D01 絞り込み: 正常終了する' "$RC" "0"
+assert_eq   'T-1094-D01 絞り込み: 作り直した 2 件だけを restart する' "$RESTARTED" 'risk-management-service
+trade-decision-service'
+assert_contains 'T-1094-D01 絞り込み: 件数と範囲を表示する' "$OUT" '2 件（作り直したサービスだけ'
+
+# T-1094-D02: 一覧が空（何も作り直していない）→ 何も restart しない
+given_deployments "$ALL_DEPLOYMENTS"
+given_built ''
+run_rollout_built
+assert_eq   'T-1094-D02 空: 正常終了する' "$RC" "0"
+assert_eq   'T-1094-D02 空: 何も restart しない' "$RESTARTED" ''
+
+# T-1094-D03: 一覧に OpenD（Deployment 名 opend）が紛れても restart しない。opend-auth-gateway は案内だけ出す
+given_deployments "$ALL_DEPLOYMENTS"
+given_built 'opend
+opend-auth-gateway
+audit-service'
+run_rollout_built
+assert_eq   'T-1094-D03 OpenD: audit-service だけを restart する' "$RESTARTED" 'audit-service'
+assert_contains 'T-1094-D03 OpenD: サイドカーの作り直しを案内する' "$ERR" 'rollout restart deploy/opend'
+
+# T-1094-D04: 一覧にあってもクラスタに Deployment が無い名前は restart しない（新規サービスは helm が作る）
+given_deployments 'audit-service'
+given_built 'audit-service
+report-service'
+run_rollout_built
+assert_eq   'T-1094-D04 不在: クラスタに在る分だけ' "$RESTARTED" 'audit-service'
+
+# T-1094-D05: 引数なしは従来どおり全件（絞り込みを指定しない既定の不変）
+given_deployments "$ALL_DEPLOYMENTS"
+run_rollout
+assert_contains 'T-1094-D05 既定: 件数は OpenD を除いた 11 件のまま' "$OUT" '11 件（OpenD は除外）'
+
+printf '\nk8s-local-deploy.sh: 作り直すイメージの絞り込みの中継（#1094）\n'
+
+# 選択器の疑似（node で走る JS。$1 = 標準出力に出す内容、$2 = 終了コード）
+SELECTOR_STUB="$STUB_BIN/selector-stub.js"   # given_secret が $STATE を作り直しても消えない場所
+given_selector() {
+  cat > "$SELECTOR_STUB" <<JS
+if (process.argv[2] !== '--since') process.exit(9);
+require('fs').writeFileSync(process.env.AST_TEST_STATE + '/selector-args', process.argv.slice(2).join(' '));
+process.stdout.write(${1});
+process.exit(${2:-0});
+JS
+}
+# resolve_ast_image_selection をサブシェルで実行し、RC / OUT / ERR / SEL_SERVICES / SEL_MODE を埋める。
+run_selection() {
+  (
+    resolve_ast_image_selection
+    rc=$?
+    printf '%s|%s' "${SERVICES-<unset>}" "${AST_IMAGE_SELECTION:-}" > "$STATE/selection"
+    exit $rc
+  ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  SEL_SERVICES="$(cut -d'|' -f1 "$STATE/selection" 2>/dev/null)"
+  SEL_MODE="$(cut -d'|' -f2 "$STATE/selection" 2>/dev/null)"
+}
+reset_selection() { unset SERVICES CHANGED_SINCE; export AST_SELECT_CHANGED_SERVICES="$SELECTOR_STUB"; }
+
+# T-1094-S01: 指定なし → 絞り込みなし（SERVICES 未設定のまま＝images は全件・restart も全件）
+given_secret ""
+reset_selection
+run_selection
+assert_eq   'T-1094-S01 指定なし: 正常終了する' "$RC" "0"
+assert_eq   'T-1094-S01 指定なし: SERVICES を設定しない' "$SEL_SERVICES" '<unset>'
+assert_eq   'T-1094-S01 指定なし: 絞り込みなし' "$SEL_MODE" '0'
+
+# T-1094-S02: SERVICES → そのまま中継し、絞り込みあり
+reset_selection
+SERVICES=audit-service,report-service
+run_selection
+assert_eq   'T-1094-S02 SERVICES: そのまま中継する' "$SEL_SERVICES" 'audit-service,report-service'
+assert_eq   'T-1094-S02 SERVICES: 絞り込みあり' "$SEL_MODE" '1'
+
+# T-1094-S03: --changed-since → 選択器の名前をカンマ区切りで中継し、ref を渡す
+reset_selection
+CHANGED_SINCE=origin/develop
+given_selector "'risk-management-service\\ntrade-decision-service\\n'"
+run_selection
+assert_eq   'T-1094-S03 changed-since: 正常終了する' "$RC" "0"
+assert_eq   'T-1094-S03 changed-since: 名前をカンマ区切りで中継する' "$SEL_SERVICES" 'risk-management-service,trade-decision-service'
+assert_eq   'T-1094-S03 changed-since: 絞り込みあり' "$SEL_MODE" '1'
+assert_eq   'T-1094-S03 changed-since: ref を選択器へ渡す' "$(cat "$STATE/selector-args")" '--since origin/develop'
+
+# T-1094-S04: --changed-since で該当 0 件 → SERVICES=none（ランタイムに無いものだけ作る）
+reset_selection
+CHANGED_SINCE=origin/develop
+given_selector "''"
+run_selection
+assert_eq   'T-1094-S04 0 件: SERVICES=none' "$SEL_SERVICES" 'none'
+assert_eq   'T-1094-S04 0 件: 絞り込みあり（restart も 0 件側）' "$SEL_MODE" '1'
+
+# T-1094-S05: --changed-since で ALL → 絞り込みなし（全件を作り、全件を restart）
+reset_selection
+CHANGED_SINCE=origin/develop
+given_selector "'ALL\\n'"
+run_selection
+assert_eq   'T-1094-S05 ALL: SERVICES を設定しない' "$SEL_SERVICES" '<unset>'
+assert_eq   'T-1094-S05 ALL: 絞り込みなし' "$SEL_MODE" '0'
+
+# T-1094-S06: 選択器の失敗 → 全件へ倒す（中断しない）
+reset_selection
+CHANGED_SINCE=origin/develop
+given_selector "'audit-service\\n'" 1
+run_selection
+assert_eq   'T-1094-S06 失敗: 正常終了する（配備は止めない）' "$RC" "0"
+assert_eq   'T-1094-S06 失敗: 全件へ倒す' "$SEL_SERVICES|$SEL_MODE" '<unset>|0'
+assert_contains 'T-1094-S06 失敗: 警告する' "$ERR" '全件を作り直す'
+
+# T-1094-S07: SERVICES と --changed-since の併用 → exit 2
+reset_selection
+SERVICES=audit-service
+CHANGED_SINCE=origin/develop
+run_selection
+assert_eq   'T-1094-S07 併用: 終了コード 2' "$RC" "2"
+assert_contains 'T-1094-S07 併用: 理由を示す' "$ERR" '併用できない'
+reset_selection
+rm -f "$SELECTOR_STUB"
+
+printf '\nk8s-local-deploy.sh: 引数の解釈（#1094）\n'
+
+# 引数つきで source し（AST_DEPLOY_LIB=1 は解釈の後で戻る）、RC と CHANGED_SINCE|CLUSTER|FORCE_EMPTY を得る。
+parse_args() {
+  env AST_DEPLOY_LIB=1 PATH="$PATH" bash -c '. "$1/scripts/k8s-local-deploy.sh" "${@:2}" && printf "%s|%s|%s" "$CHANGED_SINCE" "$CLUSTER" "$FORCE_EMPTY"' \
+    _ "$ROOT_DIR" "$@" > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  PARSED="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+}
+parse_args --changed-since origin/develop my-cluster --force-empty-secrets
+assert_eq   'T-1094-A01 --changed-since <ref>: 解釈する（他のフラグ・クラスタ名も従来どおり）' "$RC|$PARSED" '0|origin/develop|my-cluster|1'
+parse_args --changed-since=HEAD~3
+assert_eq   'T-1094-A02 --changed-since=<ref>: 解釈する（クラスタ名は既定）' "$RC|$PARSED" '0|HEAD~3|msp-ast-dev|0'
+parse_args --changed-since
+assert_eq   'T-1094-A03 値の欠落: 終了コード 2' "$RC" "2"
+parse_args --changed-since --force-empty-secrets
+assert_eq   'T-1094-A04 値が次のオプション: 終了コード 2' "$RC" "2"
+parse_args --no-such-option
+assert_eq   'T-1094-A05 未知のオプション: 従来どおり終了コード 2' "$RC" "2"
+assert_contains 'T-1094-A05 未知のオプション: 名前を示す' "$ERR" 'unknown option: --no-such-option'
 
 # ---- #795 / IADR-0341: 連結ローカルの ESO 所有（画面から入れた値を Pod へ届ける） ----------
 # ESO が ast-secrets / moomoo-credentials / moomoo-rsa を所有するプロファイルでは、本スクリプトがそれらを作る・

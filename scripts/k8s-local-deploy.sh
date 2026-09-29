@@ -5,7 +5,18 @@
 # #727, IADR-0324: MSP 連結では利用者認証と s2s の token 発行を values-local.yaml の global.authAuthority＝MSP レルム
 #   （platform）で行う。realm `ai-stock-trading` の import は単体 E2E（IADR-0050）用に残るだけで、本スクリプトの経路では使わない。
 #
-#   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [--adopt-existing-secrets] [cluster-name]
+#   scripts/k8s-local-deploy.sh [--force-empty-secrets] [--force-empty-values] [--adopt-existing-secrets]
+#                               [--changed-since <ref>] [cluster-name]
+#
+# #1094, IADR-0457: **作り直すイメージを絞れる**（既定は従来どおり 12 本すべて・約 30 分）。
+#   SERVICES=a,b scripts/k8s-local-deploy.sh           # MAPPING の名前で指定（未知の名前は何も作らずに exit 2）
+#   scripts/k8s-local-deploy.sh --changed-since origin/develop
+#                                # git の差分（作業ツリーと ref の差＋未追跡）から scripts/select-changed-services.js が選ぶ。
+#                                # 共有物（backend/Shared・TestSupport・ルートの props・Dockerfile 等）の変更・判定不能は全件。
+#   絞り込んだときは、**作り直した（ランタイムへ新たに供給した）サービスの Deployment だけ**を rollout restart する
+#   （作り直していないサービスは :latest の IfNotPresent なので、restart しても同じイメージのまま＝効果が無い）。
+#   選ばれていなくても、ランタイムに :latest が無いイメージは作る（初回・作り直したクラスタは実質全件になる）。
+#   SERVICES と --changed-since の併用は exit 2（どちらを信じるか曖昧）。
 #
 # #795, IADR-0341: **秘密情報・接続設定の供給経路は AST_ESO で選ぶ**（未設定＝values-local.yaml から導出＝既定は ESO 所有）。
 #   - ESO 所有（AST_ESO=1 / values-local 既定）: 基盤を VAULT=1 ESO=1 で起動した連結クラスタ向け。ast-secrets /
@@ -73,21 +84,37 @@
 # また、helm upgrade だけでは Pod テンプレートが変わらないサービスにイメージ更新が届かない
 # （タグ :latest 固定 + imagePullPolicy IfNotPresent）ため、末尾で OpenD を除く Deployment へ
 # `kubectl rollout restart` を打つ（OpenD は SMS/画像認証済みセッションを切らないため除外）。
+# #1094: 絞り込み（SERVICES / --changed-since）があれば、restart も作り直したサービスだけに絞る。
 set -euo pipefail
 
 FORCE_EMPTY=0
 FORCE_EMPTY_VALUES=0
 ADOPT_EXISTING=0
+CHANGED_SINCE=""
 CLUSTER=""
-for arg in "$@"; do
+while [ $# -gt 0 ]; do
+  arg="$1"
   case "$arg" in
     --force-empty-secrets) FORCE_EMPTY=1 ;;
     --force-empty-values) FORCE_EMPTY_VALUES=1 ;;
     --adopt-existing-secrets) ADOPT_EXISTING=1 ;;
+    # #1094: 値を取る唯一のオプション。値の欠落・`-` 始まりの値（次のオプションを食う誤り）は exit 2。
+    --changed-since)
+      if [ $# -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+        echo "--changed-since には git の ref が要る（例: --changed-since origin/develop）" >&2; exit 2
+      fi
+      CHANGED_SINCE="$2"; shift ;;
+    --changed-since=*)
+      CHANGED_SINCE="${arg#--changed-since=}"
+      if [ -z "$CHANGED_SINCE" ] || [ "${CHANGED_SINCE#-}" != "$CHANGED_SINCE" ]; then
+        echo "--changed-since には git の ref が要る（例: --changed-since origin/develop）" >&2; exit 2
+      fi ;;
     -*) echo "unknown option: $arg" >&2; exit 2 ;;
     *) CLUSTER="$arg" ;;
   esac
+  shift
 done
+unset arg
 CLUSTER="${CLUSTER:-msp-ast-dev}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -125,7 +152,12 @@ AST_SECRET_KEYS=(
 )
 
 AST_PATCH_DIR=""
-ast_cleanup() { [ -n "$AST_PATCH_DIR" ] && rm -rf "$AST_PATCH_DIR"; return 0; }
+AST_BUILT_DIR=""
+ast_cleanup() {
+  [ -n "$AST_PATCH_DIR" ] && rm -rf "$AST_PATCH_DIR"
+  [ -n "$AST_BUILT_DIR" ] && rm -rf "$AST_BUILT_DIR"
+  return 0
+}
 trap ast_cleanup EXIT
 
 # 既存 Secret のうち**非空の値を持つキー名だけ**を列挙する（IADR-0109 決定3: 平文は読み出さない）。
@@ -485,6 +517,51 @@ resolve_ast_value_overrides() {
   return 0
 }
 
+# #1094, IADR-0457: 作り直すイメージの絞り込みを決める。SERVICES（env）と --changed-since（CHANGED_SINCE）を
+# k8s-local-images.sh の SERVICES へ中継し、絞り込みがあれば AST_IMAGE_SELECTION=1 にする（手順 5 の restart を絞る）。
+#   --changed-since: select-changed-services.js の出力が ALL → 絞り込みなし（SERVICES を unset＝全件・全 restart）/
+#     0 件 → SERVICES=none（ランタイムに無いイメージだけを作る）/ 名前 → SERVICES=a,b。
+#   🔴 選択器が動かない（node が無い・失敗）ときは**全件へ倒す**（作り直し漏れは古いイメージが緑のまま動き続ける）。
+# AST_SELECT_CHANGED_SERVICES は検査（k8s-local-deploy.test.sh）が選択器を差し替えるための入口。
+resolve_ast_image_selection() {
+  AST_IMAGE_SELECTION=0
+  if [ -n "${SERVICES:-}" ] && [ -n "${CHANGED_SINCE:-}" ]; then
+    echo "ERROR: SERVICES と --changed-since は併用できない（どちらを信じるか曖昧）。どちらか一方にする。#1094" >&2
+    return 2
+  fi
+  if [ -n "${CHANGED_SINCE:-}" ]; then
+    local out
+    local selector="${AST_SELECT_CHANGED_SERVICES:-$ROOT/scripts/select-changed-services.js}"
+    if ! command -v node >/dev/null 2>&1; then
+      echo "  WARN: node が無いため --changed-since を判定できない。全件を作り直す（安全側）。" >&2
+      unset SERVICES
+      return 0
+    fi
+    if ! out="$(node "$selector" --since "$CHANGED_SINCE")"; then
+      echo "  WARN: select-changed-services.js が失敗した。全件を作り直す（安全側）。" >&2
+      unset SERVICES
+      return 0
+    fi
+    if [ "$out" = "ALL" ]; then
+      echo "  image selection: ${CHANGED_SINCE} からの差分は全件扱い（共有物・判定不能等）→ 全件を作り直し、全件を restart する"
+      unset SERVICES
+      return 0
+    fi
+    out="$(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | paste -sd, - || true)"
+    SERVICES="${out:-none}"
+    export SERVICES
+    AST_IMAGE_SELECTION=1
+    echo "  image selection: ${CHANGED_SINCE} からの差分 → SERVICES=${SERVICES}（ランタイムに無いイメージは別に作る）"
+    return 0
+  fi
+  if [ -n "${SERVICES:-}" ]; then
+    export SERVICES
+    AST_IMAGE_SELECTION=1
+    echo "  image selection: SERVICES=${SERVICES}（ランタイムに無いイメージは別に作る）"
+  fi
+  return 0
+}
+
 # #673: helm upgrade は Pod テンプレートを変えない限り既存 Pod を再作成しない。タグ :latest 固定 +
 # imagePullPolicy IfNotPresent のため、イメージを焼き直しても（k8s-local-images.sh）helm upgrade だけでは
 # 新イメージが Pod へ届かない（実測: OpenD Pod が Helm revision 13→14 を跨いで 25 時間生存）。
@@ -492,18 +569,34 @@ resolve_ast_value_overrides() {
 # 追随作業が要らない）。OpenD（Deployment 名 "opend"）は除外する: SMS/画像認証済みの moomoo セッションを
 # 持ち、Recreate 戦略・単一レプリカで再起動コストが高い（ADR-0024 決定3/4）ため、ローカル配備の便宜で
 # 不要な再起動によりセッションを失わせない。
+# #1094: 引数に「作り直した名前の一覧ファイル」（k8s-local-images.sh の K8S_BUILT_FILE）を渡すと、
+# **その名前の Deployment だけ**を restart する（絞り込み時。OpenD は従来どおり除外）。引数なしは従来どおり全件。
+# opend-auth-gateway は OpenD Pod のサイドカーであり自前の Deployment を持たないため、作り直しても restart しない
+# （反映の手順を案内する）。
 ast_rollout_restart_workers() {
-  local dep restarted='' n=0
+  local built_file="${1:-}" dep restarted='' n=0 scope='OpenD は除外'
+  if [ -n "$built_file" ]; then
+    scope='作り直したサービスだけ・OpenD は除外'
+    if grep -Fxq 'opend-auth-gateway' "$built_file" 2>/dev/null; then
+      {
+        echo "  NOTE: opend-auth-gateway（OpenD Pod のサイドカー）を作り直したが、OpenD は再起動しない（認証済みセッションを保つ）。"
+        echo "        反映するときは: kubectl -n $NS rollout restart deploy/opend（再検証を求められる場合がある）"
+      } >&2
+    fi
+  fi
   while IFS= read -r dep; do
     [ -z "$dep" ] && continue
     [ "$dep" = "opend" ] && continue
+    if [ -n "$built_file" ] && ! grep -Fxq -- "$dep" "$built_file" 2>/dev/null; then
+      continue
+    fi
     kubectl rollout restart deployment "$dep" -n "$NS" >/dev/null
     restarted="${restarted}${dep}
 "
     n=$((n + 1))
   done < <(kubectl get deployment -n "$NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
 
-  echo "  rollout restart: ${n} 件（OpenD は除外）"
+  echo "  rollout restart: ${n} 件（${scope}）"
   [ -n "$restarted" ] && printf '%s' "$restarted" | sed 's/^/    /'
   return 0
 }
@@ -513,8 +606,10 @@ if [ "${AST_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-echo "==> [1/5] build & import AST images"
-"$ROOT/scripts/k8s-local-images.sh" "$CLUSTER"
+echo "==> [1/5] build & import AST images（絞り込み: SERVICES / --changed-since・#1094 / IADR-0457）"
+resolve_ast_image_selection
+AST_BUILT_DIR="$(mktemp -d)"
+K8S_BUILT_FILE="$AST_BUILT_DIR/built" "$ROOT/scripts/k8s-local-images.sh" "$CLUSTER"
 
 echo "==> [2/5] namespace & secret 供給（ESO 所有＝作らない / 従来経路＝ast-secrets を差分同期・#795 / IADR-0341）"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
@@ -539,8 +634,12 @@ helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" \
   "${AST_ESO_OVERRIDES[@]}" \
   -f deploy/helm/ai-stock-trading/values-local.yaml
 
-echo "==> [5/5] rollout restart (イメージ更新を Pod へ反映。OpenD は除外=SMS/画像認証セッションを維持・#673)"
-ast_rollout_restart_workers
+echo "==> [5/5] rollout restart (イメージ更新を Pod へ反映。OpenD は除外=SMS/画像認証セッションを維持・#673。絞り込み時は作り直した分だけ・#1094)"
+if [ "${AST_IMAGE_SELECTION:-0}" = "1" ]; then
+  ast_rollout_restart_workers "$AST_BUILT_DIR/built"
+else
+  ast_rollout_restart_workers
+fi
 
 echo ""
 echo "done. 状態確認:"
