@@ -59,6 +59,8 @@ public class StopWidthObservationTests
     [InlineData(110, 100, 3, -10, 3)]
     [InlineData(100, 300, 1, 200, 0.3333)]
     [InlineData(100, 30, 1, -70, 3.3333)]
+    // 丸めは四捨五入（中間は 0 から遠い側）: 1 ÷ 128 × 100 = 0.78125 → 0.7813（偶数丸めなら 0.7812）。
+    [InlineData(128, 128, 1, 0, 0.7813)]
     public void 差は符号つきで比率は小数4桁に丸める(
         decimal llmReference, decimal anchored, decimal width, decimal expectedDiff, decimal expectedPercent)
     {
@@ -180,6 +182,39 @@ public class StopWidthObservationTests
 
         decision.Should().BeNull();
         logger.Entries.Should().NotContain(e => e.Message.StartsWith(ObservationPrefix, StringComparison.Ordinal));
+    }
+
+    // T-10-1751, #1104, IADR-0460 決定2: 🔴 否定形。保有の決済（Close）は損切りラインを作らないので、LLM が幅を返しても観測ログを出さない。
+    [Fact]
+    public async Task 決済の判断では観測ログを出さない_否定形()
+    {
+        var logger = new StateLogger();
+        var service = new AppSvc(
+            new FixedLlm("""{"action":"Sell","rationale":"利益確定","referencePrice":102,"stopLossDistancePerShare":2}"""),
+            new FakePolicy(), new FakeSizing(), new FakeClock(), logger,
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)),
+            heldPosition: new LongHeld(10));
+
+        var decision = await service.DecideAsync(ScheduledAapl());
+
+        decision.Should().NotBeNull("保有の決済は判断として出る（見送りではない）");
+        decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
+        logger.Entries.Should().NotContain(e => e.Message.StartsWith(ObservationPrefix, StringComparison.Ordinal));
+    }
+
+    private sealed class LongHeld(int quantity) : IHeldPositionProvider
+    {
+        public bool IsEnabled => true;
+
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken cancellationToken = default) =>
+            Task.FromResult<int?>(quantity);
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken cancellationToken = default) =>
+            Task.FromResult<HeldPosition?>(new HeldPosition(quantity, 100m, 98m));
+
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
+            string symbol, Market market, CancellationToken cancellationToken = default) =>
+            Task.FromResult<WorkingEntryOrders?>(WorkingEntryOrders.None);
     }
 
     private sealed record LogEntry(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> Values);
