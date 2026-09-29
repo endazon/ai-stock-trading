@@ -52,8 +52,52 @@ public class FinnhubDailyEstimateFollowsWatchlistTests
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle(m => m.Value == 576);
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent).Should().BeEmpty();
         logs.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
+        // #1099: 与えた数は 1 巡回の上限であり、実数と読み違える「銘柄数」とは書かない。
         logs.Entries.Should().ContainSingle(e => e.Level == LogLevel.Information && e.Message.Contains("576", StringComparison.Ordinal)
-            && e.Message.Contains("銘柄数 6", StringComparison.Ordinal));
+            && e.Message.Contains("1 巡回の対象の上限 6 銘柄", StringComparison.Ordinal));
+        logs.Entries.Should().NotContain(e => e.Message.Contains("銘柄数 6", StringComparison.Ordinal));
+    }
+
+    // T-10-1740, #1099: 構成の固定リスト（数を与えない）なら、従来どおり「銘柄数」と書き、上限の文言は出さない。
+    [Fact]
+    public void 固定リストの見積りのログは銘柄数と書き上限とは書かない()
+    {
+        var options = new CollectionSourceOptions
+        {
+            Provider = "finnhub,finnhub-news",
+            Finnhub = new FinnhubOptions { Symbols = ["AAPL"] },
+        };
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var logs = new CapturingLoggerFactory();
+
+        InformationSourceFactory.EvaluateDailyVolumeEstimate(options, 1800, new FinnhubDailyVolumeGuardOptions(), metrics, logs);
+
+        logs.Entries.Should().ContainSingle(e => e.Level == LogLevel.Information && e.Message.Contains("銘柄数 1 ", StringComparison.Ordinal));
+        logs.Entries.Should().NotContain(e => e.Message.Contains("上限", StringComparison.Ordinal) && e.Message.Contains("銘柄 ×", StringComparison.Ordinal));
+    }
+
+    // T-10-1741, #1099: 日次上限を超える警告も、上限で数えたときは上限の文言にする（固定リストの文言は出さない）。
+    [Fact]
+    public void 上限で数えた見積りが日次上限を超える警告も上限と書く()
+    {
+        var options = new CollectionSourceOptions
+        {
+            Provider = "finnhub",
+            Finnhub = new FinnhubOptions { Symbols = ["AAPL"] },
+        };
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var logs = new CapturingLoggerFactory();
+
+        // 75 銘柄 × 1 要求 × 48 巡回 ＝ 3,600 回/日 > 300。
+        InformationSourceFactory.EvaluateDailyVolumeEstimate(
+            options, 1800, new FinnhubDailyVolumeGuardOptions { ProvisionalDailyLimit = 300 }, metrics, logs, symbolCount: 75);
+
+        logs.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning
+            && e.Message.Contains("3600", StringComparison.Ordinal)
+            && e.Message.Contains("1 巡回の対象の上限 75 銘柄", StringComparison.Ordinal));
+        logs.Entries.Should().NotContain(e => e.Message.Contains("銘柄数 75", StringComparison.Ordinal));
     }
 
     // T-10-1453: 1 銘柄あたりの要求数は Provider に列挙された finnhub・finnhub-news の数（大小文字・空白・重複・none を吸収）。
