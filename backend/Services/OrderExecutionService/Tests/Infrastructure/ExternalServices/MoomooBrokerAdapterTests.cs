@@ -1,4 +1,6 @@
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Infrastructure.ExternalServices;
+using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
 using Xunit;
@@ -468,6 +470,44 @@ public class MoomooBrokerAdapterTests
         var positions = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).GetPositionsAsync();
 
         positions.Should().BeNull();
+    }
+
+    // T-10-1738, FR-10, #1093, IADR-0458: 分類つきの照会は、共有ポートの契約（照会不能は null）を変えずに失敗の種類を運ぶ。
+    public static TheoryData<string, Func<Exception>, PositionQueryFailure> ClassifiedFailures() => new()
+    {
+        { "返信待ちの打ち切り", () => new TimeoutException("reply timeout"), PositionQueryFailure.Transient },
+        { "接続の確立の失敗", () => new BrokerUnavailableException("InitConnect failed"), PositionQueryFailure.Transient },
+        { "SDK の打ち切り(-100)", () => new MoomooTradeRequestException("GetPositionList", MoomooRetType.TimeOut, "timeout"), PositionQueryFailure.Transient },
+        { "頻度制限", () => new MoomooTradeRequestException("GetPositionList", MoomooRetType.Failed, "Maximum 10 times per 30 seconds"), PositionQueryFailure.RateLimited },
+        { "業務上の失敗", () => new MoomooTradeRequestException("GetPositionList", MoomooRetType.Failed, "account not found"), PositionQueryFailure.Other },
+        { "分類できない例外", () => new InvalidOperationException("OpenD 不達"), PositionQueryFailure.Other },
+    };
+
+    [Theory]
+    [MemberData(nameof(ClassifiedFailures))]
+    public async Task 分類つきの照会は失敗の種類を運び_従来の照会は同じ失敗で_null_を返す(
+        string label, Func<Exception> thrown, PositionQueryFailure expected)
+    {
+        var client = new FakeClient { PositionsThrow = thrown };
+        var adapter = new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate);
+
+        var classified = await adapter.QueryPositionsAsync();
+        var legacy = await adapter.GetPositionsAsync();
+
+        classified.Positions.Should().BeNull(label);
+        classified.Failure.Should().Be(expected, label);
+        legacy.Should().BeNull(label);
+    }
+
+    [Fact]
+    public async Task 分類つきの照会は成功なら_None_で建玉を返す()
+    {
+        var client = new FakeClient { Positions = [new MoomooPositionSnapshot("AAPL", MoomooMarket.UnitedStates, 5, 10m)] };
+
+        var result = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).QueryPositionsAsync();
+
+        result.Failure.Should().Be(PositionQueryFailure.None);
+        result.Positions.Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
     }
 
     // =====================================================================================

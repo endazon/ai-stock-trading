@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
@@ -31,7 +32,7 @@ public sealed class MoomooBrokerAdapter(
     ILogger<MoomooBrokerAdapter>? logger = null,
     MoomooAlternativeStopSettings? alternativeStop = null)
     : IBrokerAdapter, IClientOrderIdBroker, IBrokerPositionSource, IBrokerAvailabilityProbe, IBrokerAccountSource,
-      IProtectiveOrderBroker, IAlternativeProtectiveOrderBroker
+      IProtectiveOrderBroker, IAlternativeProtectiveOrderBroker, IClassifiedPositionSource
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly MoomooAlternativeStopSettings _alternativeStop = alternativeStop ?? new MoomooAlternativeStopSettings();
@@ -253,19 +254,25 @@ public sealed class MoomooBrokerAdapter(
     // #292, IADR-0118: 現在建玉の照会。失敗は **null（不明）** に倒す。空列（建玉ゼロ）と取り違えると
     // 台帳の全建玉が乖離として報告されるため、この区別が本メソッドの中核である。
     public async Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        (await QueryPositionsAsync(cancellationToken).ConfigureAwait(false)).Positions;
+
+    // FR-10, #1093, IADR-0458: 失敗の種類つきの建玉照会（保護逆指値ガードの照会し直しだけが使う）。
+    // GetPositionsAsync はこれの Positions を返す —— 共有ポートの契約（照会不能は null・例外を投げない）は変わらない。
+    public async Task<PositionQueryResult> QueryPositionsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             var positions = await client.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
-            return positions
+            return PositionQueryResult.Success(positions
                 .Select(p => new BrokerPositionSnapshot(p.Symbol, MapMarketBack(p.Market), p.Quantity, p.AverageCost))
-                .ToList();
+                .ToList());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "moomoo 建玉照会に失敗したため不明（null）を返します。");
-            return null;
+            var failure = MoomooPositionQueryClassifier.Classify(ex);
+            _logger.LogWarning(ex, "moomoo 建玉照会に失敗したため不明（null）を返します（分類 {Failure}）。", failure);
+            return PositionQueryResult.Failed(failure);
         }
     }
 
