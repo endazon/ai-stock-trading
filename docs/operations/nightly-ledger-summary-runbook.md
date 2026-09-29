@@ -9,7 +9,7 @@ updated: 2026-09-29
 <!-- trace:
 ids: [NFR, FR-04, FR-10, FR-11]
 adrs: []
-iadrs: [IADR-0019, IADR-0223, IADR-0254, IADR-0287, IADR-0452]
+iadrs: [IADR-0019, IADR-0254, IADR-0287, IADR-0452]
 specs: [20260929_1092_nightly-ledger-summary]
 issues: [#1092]
 -->
