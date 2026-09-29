@@ -237,6 +237,12 @@ public class ProtectiveStopDriftAdopterCompositionTests
     // あわせて Meter 名を試験ごとに隔離する。既定名はプロセス全体で共有され、並走する別の Program ホストの 0 が
     // この試験の provider にも届くため、「自分のホストの計上を見届けた」も「exporter に届いた」も他人の計上で満たされ得る。
     // 差し替えるのは BusinessMetrics の Meter 名だけで、計上の呼び出し（Program.cs の ApplicationStarted）は本番のまま通す。
+    //
+    // 🔴 #1108, IADR-0395（2026-09-30 追記）: 3 つ目の競走は門と OTel の集計の間にある。Counter.Add は登録されたリスナの
+    // コールバックを開始順に同じスレッドで呼ぶ。門（PrimeLatch）は変異②を殺すためホストの開始前に開始するので OTel より先に呼ばれ、
+    // 2 つ目の計上で門が開いた瞬間、その計上は **OTel の集計にまだ入っていない**。1 回だけの Collect はそれと競走し、負荷で
+    // 1 系列（positions-unknown）だけが export されて赤になった（門の直後に 500ms 眠らせると旧形は 22 回中 6 回赤、是正後は 13 回とも緑）。
+    // 足した reader の Collect を 2 つの系列がそろうまで繰り返し（期限 10 秒）、判定と表明は最後の Collect の点だけで行う。
     [Theory]
     [InlineData("paper")]
     [InlineData("moomoo")]
@@ -255,7 +261,8 @@ public class ProtectiveStopDriftAdopterCompositionTests
 
         _ = factory.Services; // ホストを開始する（ApplicationStarted が発火する。コールバックの完了は待たない）。
 
-        // 起動のスレッドが 0 を計上し終えるまで待つ（再試行ではない。計上という 1 つの出来事を待つ）。
+        // 起動のスレッドが 0 を計上したのを試験のリスナが受けるまで待つ（再試行ではない。計上という 1 つの出来事を待つ）。
+        // 🔴 門が開いた時点では、2 つ目の計上は OTel の集計にまだ入っていない（#1108。上のコメント）。
         // 変異①（計上を消す）はここで落ちる。変異②（開始前へ動かす）はここを通り、下の exporter の表明で落ちる。
         primed.Wait(TimeSpan.FromSeconds(30)).Should().BeTrue(
             "Program.cs は起動完了の通知で 2 つの理由の系列を 0 で計上する");
@@ -264,9 +271,31 @@ public class ProtectiveStopDriftAdopterCompositionTests
         // 残り時間を次へ渡す——先に回る OTLP の reader（otel-collector が居ないので失敗する送信）が高負荷で期限を食うと、
         // 足した reader は残り 0 で「集めたが export しない」（OTel 1.16 MetricReader.ProcessMetricsCollection）になり、
         // exporter が空のまま赤になる（実測: 高負荷で ForceFlush 1 回に最大 4.7 秒、期限 1 ms で決定的に空）。
-        reader.Collect().Should().BeTrue("足した exporter は常に成功を返す（OTLP の送信の成否とは切り離す）");
+        // 🔴 OTel が 2 つ目の計上を集計するのを見届けるため、2 つの系列がそろうまで繰り返す（失敗を握りつぶす再試行ではない。
+        // 期限切れはそのまま下の表明で赤になる。変異②はここで期限を使い切る）。exporter は累積で毎回同じ点を再び出すので、
+        // 各回の前に sink を空にし、判定と表明は最後の Collect の点だけで行う（重複した点で表明を水増ししない）。
+        var otelDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        List<(string Name, long Value, string? Reason)> points;
+        while (true)
+        {
+            lock (exported) exported.Clear();
+            reader.Collect().Should().BeTrue("足した exporter は常に成功を返す（OTLP の送信の成否とは切り離す）");
+            lock (exported)
+            {
+                points = [.. exported.Where(e => e.Name == BusinessMetricNames.DriftAdoptionFollowUpAbandoned)];
+            }
 
-        var points = exported.Where(e => e.Name == BusinessMetricNames.DriftAdoptionFollowUpAbandoned).ToList();
+            var reasons = points.Select(p => p.Reason).ToHashSet();
+            if ((reasons.Contains(BusinessMetrics.DriftFollowUpPositionsUnknown)
+                 && reasons.Contains(BusinessMetrics.DriftFollowUpPositionsQueryFailed))
+                || DateTime.UtcNow >= otelDeadline)
+            {
+                break;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
+        }
+
         points.Select(p => p.Reason).Should().Contain(
             [BusinessMetrics.DriftFollowUpPositionsUnknown, BusinessMetrics.DriftFollowUpPositionsQueryFailed],
             "起動しただけで 2 つの理由の系列が既に在る（0 から始まるので最初の打ち切りを increase() が拾える）");

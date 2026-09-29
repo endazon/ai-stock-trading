@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-05, NFR-07, UC-06, IADR-0129, IADR-0255, IADR-0370, IADR-0374]
 author: claude (Claude Code)
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-09-30
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10「逆指値なしの建玉を持たない」・NFR-07 可観測性)
 ---
@@ -88,6 +88,15 @@ IADR-0370 決定 3′ により、乖離の取り込みに保護を追随させ�
   集めたが export しない（OTel 1.16 `ProcessMetricsCollection`）。先に回る OTLP の reader（otel-collector が居ないので失敗する送信）が
   高負荷で期限を食うと（実測で 1 回最大 4.7 秒）、足した reader が空のまま赤になる。試験は ③足した reader だけを期限なしで `Collect()` する。
   変異①（計上を消す）・②（ホストの開始前へ動かす）はどちらも引き続き赤。作業仕様書 `20260925_942_t10786-otel-prime-test-sync`。
+- **［2026-09-30 追記 / #1108］** T-10-786 に **3 つ目の競走**があった（赤の形は `{"positions-unknown"}` だけが exporter に届く。#1107 の head で 6 回中 2 回）。
+  🔴 **原因は本番ではなく試験の門と OTel の集計の順序である。** `Counter.Add` は登録されたリスナのコールバックを**開始順に同じスレッドで**呼ぶ
+  （探査の実測: OTel より先に開始したリスナのコールバックの中で `Collect()` すると、その計上はまだ export されない）。試験の `MeterListener`
+  （門）は変異②を殺すためホストの開始前に開始するので OTel より先に呼ばれ、2 つ目の計上で門が開いた瞬間、その計上は OTel の集計に
+  まだ入っていない。試験のスレッドの 1 回だけの `Collect()` がそれと競走していた（門を開いた直後に 500ms 眠らせると旧形は 22 回中 6 回、#1108 と同じ文面で赤。是正後は 13 回とも緑）。
+  本番では同じ `Add` の中で OTel のコールバックも済み、次の収集はその後なので本決定の性質は成り立つ（本番コードは変えない）。
+  試験は ④足した reader の `Collect()` を 2 つの系列がそろうまで短い間隔で繰り返し（期限 10 秒）、exporter が累積で同じ点を再び出すため
+  各回の前に sink を空にして**最後の `Collect()` の点だけ**で判定・表明する。変異①は門で、②は期限切れの後に exporter の表明で引き続き赤。
+  作業仕様書 `20260930_1108_t786-otel-collect-race`。
 
 ### 決定 4: アラート `AstDriftAdoptionFollowUpAbandoned`（IADR-0374 決定 4 の規約どおり）
 
