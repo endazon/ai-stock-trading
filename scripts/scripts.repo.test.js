@@ -16,6 +16,35 @@ const { execSync } = require('child_process');
 // **既定を「黙らない no-op」ではなく ok 相当の記録**にはせず、最低限の出力を出すスタブにする。
 module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${name}（${reason}）\n`), assert }) => {
 
+  // --- NFR, #1092: 夜間の台帳の要約（scripts/nightly-ledger-summary.sh）の Bash 試験をここから起動する ---
+  // ci.yml の `run: bash <path>` へ足すと、AI のワークフローとローカルの許可リスト（.claude/settings.json）の 3 系統を
+  // 揃える必要がある（check-ai-workflow-config）。許可リストは権限の設定なので変えず、既に許可された node の経路で走らせる
+  // （scripts-tests ジョブで実行され、AI のレビューも `node scripts/scripts.test.js` で追試できる）。
+  {
+    const { spawnSync: spawnNightly } = require('child_process');
+    const runNightly = (script) => spawnSync_(spawnNightly, script);
+    function spawnSync_(spawn, script) {
+      const r = spawn('bash', [script], { encoding: 'utf8', env: { ...process.env } });
+      return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
+    }
+    ok('nightly-ledger-summary.test.sh（psql スタブ）が通る', () => {
+      const r = runNightly('scripts/nightly-ledger-summary.test.sh');
+      assert.strictEqual(r.status, 0, r.out.slice(-3000));
+    });
+    // 実 PostgreSQL の一時クラスタを起動する（サーバの実行ファイルが無ければ、CI では失敗、手元では skip で 0 を返す）。
+    ok('nightly-ledger-summary.pg.test.sh（実 PostgreSQL）が通る', () => {
+      const r = runNightly('scripts/nightly-ledger-summary.pg.test.sh');
+      assert.strictEqual(r.status, 0, r.out.slice(-3000));
+    });
+  }
+
+  // --- NFR, #1094, IADR-0457: イメージの作り直しの絞り込み（scripts/k8s-local-images.sh）の Bash 試験 ---
+  // 上の #1092 と同じ理由で ci.yml の `run: bash` へは足さず、node の経路から起動する（nerdctl / docker / k3d はスタブ）。
+  ok('k8s-local-images.test.sh（イメージの作り直しの絞り込み）が通る', () => {
+    const r = require('child_process').spawnSync('bash', ['scripts/k8s-local-images.test.sh'], { encoding: 'utf8', env: { ...process.env } });
+    assert.strictEqual(r.status, 0, `${r.stdout || ''}${r.stderr || ''}`.slice(-3000));
+  });
+
   // --- check-doc-links.js: parseArgs（資料再編 ADR-0029 で docs/ ・ .ai-context/ の 2 系統走査へ） ---
   const fsDl = require('fs');
   const osDl = require('os');

@@ -47,7 +47,9 @@ SERVICES=report-service scripts/k8s-local-images.sh          # イメージだ�
 - ⚠️ **初回・作り直したクラスタは実質全件になる**: 選ばれていなくても、ランタイムに `:latest` が無いイメージは作る
   （rancher は containerd の `k8s.io` 名前空間、k3d は docker の有無で作り、ノードに無ければ import する）。
 - restart は**作り直した（ランタイムへ新たに供給した）サービスの Deployment だけ**になる。絞り込みを付けなければ従来どおり全件。
+  ただし従来経路（`AST_ESO=0`）で `ast-secrets` を更新した回は全件 restart する（Secret を参照する env は再起動でしか反映されない）。
   opend-auth-gateway を作り直しても OpenD は再起動しない（反映は `kubectl -n ai-stock-trading rollout restart deploy/opend`）。
+- ⚠️ **前回の配備が途中で失敗した後・ブランチを切り替えた後は、指定なし（全件）で配備する**。選択は「ref の状態＋作業ツリーの差分」だけを見るため、前回配備との差を取りこぼし得る。
 - `SERVICES` の未知の名前は何も作らずに exit 2。`SERVICES` と `--changed-since` の併用も exit 2。
 
 ### 画面だけで PoC を立ち上げる（連結ローカル・ESO 所有。#795 / [IADR-0341](../../../.ai-context/adr/IADR-0341_screen-only-eso-wiring-local-profile.md)）

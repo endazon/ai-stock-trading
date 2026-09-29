@@ -153,6 +153,8 @@ AST_SECRET_KEYS=(
 
 AST_PATCH_DIR=""
 AST_BUILT_DIR=""
+# #1094: 従来経路で ast-secrets を実際にパッチした回は 1（手順 5 の restart の絞り込みを解く）。
+AST_SECRETS_PATCHED=0
 ast_cleanup() {
   [ -n "$AST_PATCH_DIR" ] && rm -rf "$AST_PATCH_DIR"
   [ -n "$AST_BUILT_DIR" ] && rm -rf "$AST_BUILT_DIR"
@@ -237,8 +239,9 @@ sync_ast_secrets() {
     ( umask 077; printf '{"data":{%s}}' "${entries#,}" > "$AST_PATCH_DIR/ast-secrets.json" )
     kubectl patch secret "$SECRET_NAME" -n "$NS" --type=merge \
       --patch-file "$AST_PATCH_DIR/ast-secrets.json" >/dev/null
-    ast_cleanup
+    rm -rf "$AST_PATCH_DIR"
     AST_PATCH_DIR=""
+    AST_SECRETS_PATCHED=1
   fi
 
   echo "  $SECRET_NAME: 設定 ${n_set} 件 / 既存値を保持 ${n_preserved} 件（値は表示しません）"
@@ -601,6 +604,22 @@ ast_rollout_restart_workers() {
   return 0
 }
 
+# 手順 5 の restart の範囲を決める。絞り込み（AST_IMAGE_SELECTION=1）なら作り直した分だけ。
+# 🔴 #1094: ただし従来経路で ast-secrets をパッチした回（AST_SECRETS_PATCHED=1）は全件へ戻す ——
+# Secret を参照する env は Pod の再起動でしか反映されず、以前は全件 restart が副次的にそれを届けていた
+# （Reloader の無いクラスタでは、絞ると値の更新が黙って効かない）。ESO 所有の経路はパッチしないので影響しない。
+ast_restart_step() {
+  local built_file="$1"
+  if [ "${AST_IMAGE_SELECTION:-0}" != "1" ]; then
+    ast_rollout_restart_workers
+  elif [ "${AST_SECRETS_PATCHED:-0}" = "1" ]; then
+    echo "  ast-secrets を更新したため、絞り込みを解いて全件を restart する（Secret 参照の env は再起動でしか反映されない）"
+    ast_rollout_restart_workers
+  else
+    ast_rollout_restart_workers "$built_file"
+  fi
+}
+
 # scripts/k8s-local-deploy.test.sh から関数だけを読み込むための入口（デプロイ手順は実行しない）。
 if [ "${AST_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
@@ -635,11 +654,7 @@ helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" \
   -f deploy/helm/ai-stock-trading/values-local.yaml
 
 echo "==> [5/5] rollout restart (イメージ更新を Pod へ反映。OpenD は除外=SMS/画像認証セッションを維持・#673。絞り込み時は作り直した分だけ・#1094)"
-if [ "${AST_IMAGE_SELECTION:-0}" = "1" ]; then
-  ast_rollout_restart_workers "$AST_BUILT_DIR/built"
-else
-  ast_rollout_restart_workers
-fi
+ast_restart_step "$AST_BUILT_DIR/built"
 
 echo ""
 echo "done. 状態確認:"

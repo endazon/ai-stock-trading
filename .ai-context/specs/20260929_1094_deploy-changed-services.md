@@ -105,9 +105,9 @@ plan_refs: []
 | `scripts/README.md` の表 2 行と `shell-scripts` の列挙 | images / deploy の説明 | **変更**・新規 2 行（選択器・images のテスト） |
 | `deploy/helm/ai-stock-trading/README.md` §デプロイ・§rollout restart の注記 | 配備コマンド・全件 restart | **変更**（使い方と注意: 共有の変更は全件・初回は全件・OpenD は再起動しない） |
 | `docs/operations/operations.md` の「手順（dev）」行 | 「images → deploy」の 2 段 | **変更**（deploy が images を呼ぶこと・絞り込みの口）。 trace ブロックは既存のまま（表示テキストに ID を書かない） |
-| `.github/workflows/ci.yml` の `static-checks`（シェルテスト）・常時の自己試験 | テストの配線 | **追加**（`bash scripts/k8s-local-images.test.sh`・`node scripts/select-changed-services.js --self-test`） |
-| `.github/workflows/claude-coding.yml` / `claude-code-review.yml` の `--allowedTools`・レビューの案内 | CI が実走するシェルテストの許可（`check-ai-workflow-config.js` の `shellTestDrift` が ci.yml と突合する） | **追加**（`Bash(bash scripts/k8s-local-images.test.sh:*)`。案内の「3 本」を 4 本へ） |
-| `.claude/settings.json` の許可 | ローカルの Claude の許可 | **変えない**（利用者の権限設定であり、エージェントが変えない。検査器の突合対象でもない）。PR で利用者に追加を提案する |
+| `.github/workflows/ci.yml` の常時の自己試験 | テストの配線 | **追加**（`node scripts/select-changed-services.js --self-test`） |
+| `scripts/scripts.repo.test.js` | シェルテストの配線 | **追加**（`k8s-local-images.test.sh` を node から起動する。当初は ci.yml の `run: bash` とワークフローの `--allowedTools` へ足したが、`check-ai-workflow-config` の厳格モードが `.claude/settings.json` との一致も求め、権限の設定は変えないため #1092 と同じ形へ移した） |
+| `.github/workflows/claude-coding.yml` / `claude-code-review.yml` / `.claude/settings.json` | 許可 | **変えない**（上記のとおり node の経路で走るため不要） |
 | `deploy/opend/README.md:269` / `deploy/opend/k8s/opend.yaml:85` / `values.yaml:180` / `values-local.yaml:44` | 「opend-auth-gateway のイメージを先に用意する」 | 変えない（引数なしの `k8s-local-images.sh` は従来どおり全件を作る＝記述は正しいまま） |
 | `docs/tech/tech-requirements.md` / `docs/integration/*` / `docs/migration/*` / `docs/operations/{vault-secrets,wolverine-queue-cleanup}-runbook.md` / `docs/blocked-tasks.md` / `infra/README.md` | build args の同一性・secret の挙動・手動デプロイである事実 | 変えない（本変更で誤りにならない） |
 | `.github/workflows/helm.yml` / `scripts/check-ai-workflow-config.js` の fixture | AST_ESO・DISCORD 等の文脈、自己試験の入力 | 変えない |
@@ -155,6 +155,23 @@ chart README の「OpenD を除く全 Deployment へ」は、絞り込み時に�
 - 文書・設定の検査（`git add` 後）: `check-trace-blocks` / `check-doc-links` / `check-cross-repo-refs` / `check-plan-id-qualification` / `check-workflow-job-refs` /
   `gen-knowledge-graph --check` / `check-reading-budget` / `check-ai-workflow-config`（シェルテストの許可の突合を含む）/ `check-adr-index-sync` / `check-adr-index-addendum-loss` / `check-test-traceability` がすべて exit 0。
 - 実クラスタ・実ランタイム（kubectl / helm / nerdctl / docker / k3d）では走らせていない（作業の制約。スタブのみ）。
+
+### 監査の指摘への対応（2026-09-29）
+
+フレッシュな文脈の監査は NO-GO（🔴 1 件）で、次を直した。
+- 🔴 F1: `git diff --name-only` / `git ls-files` を `-z` なしで呼んでおり、非 ASCII・`"` を含むパスが `core.quotePath` で引用され、
+  `backend/` の外として黙って無視されていた（作り直し漏れ）。`-z` で NUL 区切りに取り、引用符で始まるパスは全件へ倒す。
+  自己試験に一時 git リポジトリでの実走（追跡済みの変更と未追跡の両方）を足した（未追跡を読まない変異も殺す）。
+- 🟡 Y1: 従来経路で `ast-secrets` をパッチした回は、絞り込みを解いて全件 restart する（IADR-0457 決定 4）。
+  🔴 調べる中で実バグも見つけた: `sync_ast_secrets` がパッチの後始末に `ast_cleanup` を呼び、作り直した名前の一覧（`AST_BUILT_DIR`）まで
+  手順 5 の前に消していた（従来経路で絞り込むと restart が 0 件になる）。パッチの一時ディレクトリだけを消すよう直した（T-1094-D09）。
+- 🟡 Y2 / Y3: 取りこぼしの前提を IADR-0457 の残余 2・2b に広げて書いた。
+- 🟡 Y4: 本体の配線（選択の解決・images へ一覧を渡す・手順 5 へ同じ一覧を渡す）を静的に固定（T-1094-D11）、`--changed-since=-x` / `=` 空の拒否（A06/A07）、
+  Worker が Bff を参照する構成の `loadContext`（inputLeaks）を一時ディレクトリで試す。
+- 実走: `select-changed-services.js --self-test` 47 件 OK、`k8s-local-deploy.test.sh` 173 passed、`node scripts/scripts.test.js` 490 passed
+  （`k8s-local-images.test.sh` を含む）。追加したテストはそれぞれ対応する変異（`-z` の除去・未追跡の除去・inputLeaks の無効化・引用符の全件倒しの除去・
+  目印を立てない・後始末を戻す・`K8S_BUILT_FILE` を渡さない）で 1 件ずつ落ちることを確かめた。
+- 残した指摘: Y5（Deployment 名とイメージ名の一致の検査）は現状 11 本すべて一致しており、ずれると restart 0 件の表示で気付ける。別 issue の候補とする。
 
 ## 残余
 

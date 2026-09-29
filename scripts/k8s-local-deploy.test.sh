@@ -560,6 +560,59 @@ given_deployments "$ALL_DEPLOYMENTS"
 run_rollout
 assert_contains 'T-1094-D05 既定: 件数は OpenD を除いた 11 件のまま' "$OUT" '11 件（OpenD は除外）'
 
+# 手順 5 の範囲の決定（ast_restart_step）。$1 = AST_IMAGE_SELECTION、$2 = AST_SECRETS_PATCHED
+run_restart_step() {
+  ( AST_IMAGE_SELECTION="$1"; AST_SECRETS_PATCHED="$2"; ast_restart_step "$STATE/built" ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  RESTARTED="$(cat "$STATE/restarted.log" 2>/dev/null || true)"
+}
+
+# T-1094-D06: 絞り込みあり・Secret を触っていない → 作り直した分だけ
+given_deployments "$ALL_DEPLOYMENTS"
+given_built 'audit-service'
+run_restart_step 1 0
+assert_eq   'T-1094-D06 絞り込み: 作り直した分だけ' "$RESTARTED" 'audit-service'
+
+# T-1094-D07: 🔴 絞り込みあり・ast-secrets をパッチした → 全件（Secret 参照の env は再起動でしか届かない）
+given_deployments "$ALL_DEPLOYMENTS"
+given_built 'audit-service'
+run_restart_step 1 1
+assert_contains 'T-1094-D07 Secret 更新: 全件へ戻す' "$OUT" '11 件（OpenD は除外）'
+assert_contains 'T-1094-D07 Secret 更新: 理由を表示する' "$OUT" 'ast-secrets を更新したため'
+
+# T-1094-D08: 絞り込みなし → 全件（従来どおり）
+given_deployments "$ALL_DEPLOYMENTS"
+given_built 'audit-service'
+run_restart_step 0 0
+assert_contains 'T-1094-D08 絞り込みなし: 全件' "$OUT" '11 件（OpenD は除外）'
+
+# T-1094-D09: 🔴 ast-secrets のパッチは AST_SECRETS_PATCHED=1 を立て、作り直した名前の一覧（AST_BUILT_DIR）を消さない
+# （以前は後始末の関数ごと呼び、手順 5 の前に一覧が消えて絞り込みの restart が 0 件になっていた）
+given_secret "absent"
+mkdir -p "$STATE/built-dir"; printf 'audit-service\n' > "$STATE/built-dir/built"
+(
+  AST_BUILT_DIR="$STATE/built-dir"
+  sync_ast_secrets >/dev/null 2>&1
+  printf '%s' "$AST_SECRETS_PATCHED" > "$STATE/patched-flag"
+)
+assert_eq   'T-1094-D09 パッチ: 目印を立てる' "$(cat "$STATE/patched-flag")" '1'
+[ -f "$STATE/built-dir/built" ] && ok 'T-1094-D09 パッチ: 作り直した名前の一覧を消さない' || ng 'T-1094-D09 パッチ: 作り直した名前の一覧を消さない' 'built が消えた'
+
+# T-1094-D10: 全キーが既存で env の指定が無い（パッチしない）回は目印を立てない
+given_secret "$(for spec in "${AST_SECRET_KEYS[@]}"; do printf '%s ' "${spec%%|*}"; done)"
+(
+  sync_ast_secrets >/dev/null 2>&1
+  printf '%s|%s' "$AST_SECRETS_PATCHED" "$([ -f "$STATE/patch.json" ] && echo patched || echo none)" > "$STATE/patched-flag"
+)
+assert_eq   'T-1094-D10 パッチなし: 目印は 0 のまま' "$(cat "$STATE/patched-flag")" '0|none'
+
+# T-1094-D11: 🔴 本体の配線（AST_DEPLOY_LIB=1 の手前で return するため、手順の並びは静的に固定する）
+MAIN_PART="$(sed -n '/^if \[ "\${AST_DEPLOY_LIB:-}" = "1" \]; then/,$p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-1094-D11 配線: 選択を解決する' "$MAIN_PART" 'resolve_ast_image_selection'
+assert_contains 'T-1094-D11 配線: images へ作り直した名前の一覧を渡す' "$MAIN_PART" 'K8S_BUILT_FILE="$AST_BUILT_DIR/built" "$ROOT/scripts/k8s-local-images.sh"'
+assert_contains 'T-1094-D11 配線: 手順 5 へ同じ一覧を渡す' "$MAIN_PART" 'ast_restart_step "$AST_BUILT_DIR/built"'
+
 printf '\nk8s-local-deploy.sh: 作り直すイメージの絞り込みの中継（#1094）\n'
 
 # 選択器の疑似（node で走る JS。$1 = 標準出力に出す内容、$2 = 終了コード）
@@ -666,6 +719,10 @@ parse_args --changed-since
 assert_eq   'T-1094-A03 値の欠落: 終了コード 2' "$RC" "2"
 parse_args --changed-since --force-empty-secrets
 assert_eq   'T-1094-A04 値が次のオプション: 終了コード 2' "$RC" "2"
+parse_args --changed-since=-x
+assert_eq   'T-1094-A06 = 形で - 始まりの値: 終了コード 2（git のオプションとして渡さない）' "$RC" "2"
+parse_args --changed-since=
+assert_eq   'T-1094-A07 = 形で空の値: 終了コード 2' "$RC" "2"
 parse_args --no-such-option
 assert_eq   'T-1094-A05 未知のオプション: 従来どおり終了コード 2' "$RC" "2"
 assert_contains 'T-1094-A05 未知のオプション: 名前を示す' "$ERR" 'unknown option: --no-such-option'
