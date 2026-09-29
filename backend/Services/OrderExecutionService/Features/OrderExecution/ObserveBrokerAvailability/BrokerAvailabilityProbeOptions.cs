@@ -40,7 +40,7 @@ public sealed class BrokerAvailabilityProbeOptions
     /// 起動から初回の probe までの遅延（既定 10 秒・揺らぎなし）。負の値は 0（遅らせない）へ、巡回間隔を超える値は巡回間隔へクランプする。
     /// <para>
     /// FR-20, IADR-0459 結果: 再起動をはさむ区間がこの分だけ長くなり、巡回間隔を超えればその区間は稼働として積まれない
-    /// （積み不足の側。水増しには倒れない）。2 回目以降の巡回の間隔は変えない。
+    /// （積み不足の側。区間が巡回間隔に収まる場合の広がりは分の切り捨てで最大 1 分）。2 回目以降の巡回の間隔は変えない。
     /// </para>
     /// </summary>
     public TimeSpan InitialDelay => TimeSpan.FromSeconds(

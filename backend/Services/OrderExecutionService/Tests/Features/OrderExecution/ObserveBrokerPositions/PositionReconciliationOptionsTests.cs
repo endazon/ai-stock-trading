@@ -31,4 +31,20 @@ public class PositionReconciliationOptionsTests
         new PositionReconciliationOptions { IntervalSeconds = configured }
             .Interval.Should().Be(TimeSpan.FromSeconds(expectedSeconds));
     }
+
+    // T-10-1745, FR-10, #1093, IADR-0459 決定1: 負の値は 0（遅らせない）、巡回間隔を超える値は巡回間隔へ収める。
+    [Theory]
+    [InlineData(null, 600, 20)]     // 未設定は既定 20 秒
+    [InlineData(-5, 600, 0)]        // 負は 0（遅らせない）
+    [InlineData(0, 600, 0)]         // 0 は遅らせない（明示の無効化）
+    [InlineData(45, 600, 45)]       // 範囲内はそのまま
+    [InlineData(9999, 600, 600)]    // 巡回間隔を超える値は巡回間隔
+    [InlineData(120, 60, 60)]       // 巡回間隔を縮めれば上限も縮む
+    public void T_10_1745_初回の遅延の設定を収める(int? configured, int intervalSeconds, int expectedSeconds)
+    {
+        var options = new PositionReconciliationOptions { IntervalSeconds = intervalSeconds };
+        if (configured is { } value) options.InitialDelaySeconds = value;
+
+        options.InitialDelay.Should().Be(TimeSpan.FromSeconds(expectedSeconds));
+    }
 }
