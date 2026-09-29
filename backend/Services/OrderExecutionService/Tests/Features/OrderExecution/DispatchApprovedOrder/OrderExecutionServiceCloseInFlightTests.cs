@@ -8,6 +8,7 @@ using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
@@ -451,6 +452,97 @@ public class OrderExecutionServiceCloseInFlightTests
 
         f.Broker.Placed.Should().ContainSingle().Which.Quantity.Should().Be(1_428);
         f.Broker.OrderQueryCount.Should().Be(0);
+    }
+
+    // 🔴 T-10-1752（境界・min）: 承認の数量が「建玉 − 処理中」より小さいなら**承認の数量のまま**送る（縮めない・見送らない）。
+    // 「承認 − 処理中」で比べると 500 − 713 が負になり、送れる決済を見送って取り残す（監査 F1）。
+    [Fact]
+    public async Task 承認の数量が建玉から処理中を引いた残りより小さいならそのまま送る()
+    {
+        var f = NewFixture([Position(1_428)]);
+        f.Store.Save(CloseRecord("S1-CLOSE", 713));
+        f.Broker.Live("S1-CLOSE");
+
+        var result = await f.Service.ExecuteAsync(Approved(Close(500)));
+
+        f.Broker.Placed.Should().ContainSingle().Which.Quantity.Should().Be(500, "min(承認 500, 1,428 − 713 = 715) = 500");
+        result.Forgone.Should().BeNull();
+        result.InFlightReduction.Should().BeNull("縮めていない");
+    }
+
+    // 🔴 T-10-1764（否定形・補足）: 保護記録の読み取りが**例外**でも、保護レグを見分けられないので何も引かずに送る（是正前と同じ）。
+    // 例外を外へ投げると決済そのものが止まり、ハンドラの再試行に入る（監査 F2）。
+    [Fact]
+    public async Task 保護記録を読めないときは処理中の決済を引かずに送る()
+    {
+        var broker = new FakeBroker([Position(1_428)]);
+        var store = new InMemoryExecutedOrderStore();
+        store.Save(CloseRecord("S1-CLOSE", 713));
+        broker.Live("S1-CLOSE");
+        var service = new AppSvc(
+            broker, store, new InMemoryOrderReservationStore(), new FakeClock(), new ThrowingProtectiveStops(), null, broker);
+
+        var result = await service.ExecuteAsync(Approved(Close(1_428)));
+
+        broker.Placed.Should().ContainSingle().Which.Quantity.Should().Be(1_428);
+        result.InFlightReduction.Should().BeNull();
+        broker.OrderQueryCount.Should().Be(0, "候補を読めていないので確かめの照会もしない");
+    }
+
+    // T-10-1752（補足）: 縮めた事実は Warning のログにも残す（黙って数量を変えない。IADR-0461 決定3。監査 F3）。
+    [Fact]
+    public async Task 縮めたときはWarningのログを残す()
+    {
+        var broker = new FakeBroker([Position(1_428)]);
+        var store = new InMemoryExecutedOrderStore();
+        store.Save(CloseRecord("S1-CLOSE", 713));
+        broker.Live("S1-CLOSE");
+        var logger = new RecordingLogger();
+        var service = new AppSvc(
+            broker, store, new InMemoryOrderReservationStore(), new FakeClock(), new InMemoryProtectiveStopOrderStore(),
+            logger, broker);
+
+        await service.ExecuteAsync(Approved(Close(1_428)));
+
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning
+            && e.Message.StartsWith("決済の数量を、同じ建玉を売る処理中の決済の分だけ縮めました", StringComparison.Ordinal)
+            && e.Message.Contains("→ 715 株", StringComparison.Ordinal));
+    }
+
+    // 保護記録の読み取りだけが失敗するストア（F2 のプローブ）。ほかの読み書きは空の既定で応える。
+    private sealed class ThrowingProtectiveStops : IProtectiveStopOrderStore
+    {
+        private readonly InMemoryProtectiveStopOrderStore _inner = new();
+
+        public void Save(ProtectiveStopOrder stop) => _inner.Save(stop);
+
+        public ProtectiveStopOrder? Find(Guid entryDecisionId) => _inner.Find(entryDecisionId);
+
+        public IReadOnlyList<ProtectiveStopOrder> FindActive(int batchSize) => _inner.FindActive(batchSize);
+
+        public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
+            _inner.FindActiveSoftwareStops(symbol, market, entrySide);
+
+        public IReadOnlyList<ProtectiveStopOrder> FindActiveFor(string symbol, Market market, TradeSide entrySide) =>
+            throw new TimeoutException("保護記録の読み取りがタイムアウト");
+
+        public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
+            string symbol, Market market, TradeSide entrySide, int limit) =>
+            _inner.FindCompletedSoftwareStops(symbol, market, entrySide, limit);
+
+        public IReadOnlyList<ProtectiveStopOrder> FindUnattributedNotified(int limit) => _inner.FindUnattributedNotified(limit);
+    }
+
+    private sealed class RecordingLogger : ILogger<AppSvc>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
     }
 
     // T-10-1752（本番配線）: ハンドラが縮めた事実（CloseReducedForInFlightCloses）を発行し、乖離イベントは発行しない。

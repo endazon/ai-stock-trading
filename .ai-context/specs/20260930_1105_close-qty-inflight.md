@@ -177,10 +177,19 @@ node scripts/check-plan-id-qualification.js
 | コマンド | 結果 |
 | --- | --- |
 | `dotnet build backend/backend.slnx --no-incremental` | 0 Warning(s) / 0 Error(s) |
-| OrderExecutionService.Tests | Passed 1243 / Failed 0 |
+| OrderExecutionService.Tests | Passed 1243 / Failed 0（監査対応の追加 3 件の後は 1246） |
 | RiskManagementService.Tests | Passed 2085 / Failed 0 |
 | NotificationService.Tests | Passed 850 / Failed 0 |
 | AuditService.Tests | Passed 244 / Failed 0 |
 | AiStockTrading.Shared.Contracts.Tests | Passed 514 / Failed 0 |
 | `dotnet format backend/backend.slnx --verify-no-changes` | 差分なし |
 | 文書・トレーサビリティの検査器 | PR 本文に貼る |
+
+## 監査の指摘への対応（2026-09-30）
+
+フェーズ末監査は条件付き GO だった（製品コードの誤りは無い）。変異の生き残りに次のとおり試験を足し、各変異で赤になることを確かめた。
+- F1: 比較の基準を承認の数量に変える変異（`sendable = intent.Quantity - inFlight.Quantity`）が生き残った。T-10-1752 に「承認 500 株・建玉 1,428 株・処理中 713 株なら 500 株を送る」を足した。
+- F2: 保護記録・ストアの読み取りの catch を外す変異が生き残った。T-10-1764 に「保護記録の読み取りが例外なら引かずに送る」を足した。
+- F3: 縮めたときの Warning のログを消す変異が生き残った。T-10-1752 にログの試験を足した。
+- F4（同じ DecisionId の除外）は受容する。再配送は相 1 で既存の結果を再発行するため到達しない。
+- F5（張り直しの途中で、取消の確定していない旧試行の逆指値が生きていると答えた場合は引かれる）は受容し、残余リスクとして記録する。決済を縮める側に倒れる。起きる確率は低い。
