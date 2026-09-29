@@ -127,6 +127,27 @@ has 'S1 の結果は理由別に数える' 'SoftwareStopExecuted|ClosePlaced|1|N
 has '観測の欠け: 30 分は出す' 'BrokerPositionsObserved|2026-09-29 22:00:00+09|2026-09-29 22:30:00+09|00:30:00'
 hasnt '観測の欠け: ちょうど 20 分は出さない（しきい値は「超える」）' '2026-09-29 21:00:00+09|2026-09-29 21:20:00+09'
 
+# 窓の途中で走らせる（場中の確かめ）: 終端は現在時刻で切り、まだ来ていない時間を欠けとして出さない。
+# 観測は 5 分ごとに現在時刻の 30 分前まで。欠けは「最後の観測 → 現在時刻」の約 30 分であり、「→ 窓の終端」の約 10 時間ではない。
+MID_FROM="$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:00+00:00)"
+MID_TO="$(date -u -d '+10 hours' +%Y-%m-%dT%H:%M:00+00:00)"
+$PSQL -d audit_svc -q -v ON_ERROR_STOP=1 -o /dev/null -c "DELETE FROM audit_events WHERE \"EventType\" = 'BrokerAvailabilityObserved';" \
+  -c "SELECT ev('BrokerAvailabilityObserved', gen_random_uuid(), NULL, '{}', t) FROM generate_series('$MID_FROM'::timestamptz, now() - interval '30 minutes', '5 minutes') t;" || exit 1
+OUT="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" "$MID_FROM" "$MID_TO" 2>&1)"
+rc=$?
+if [ "$rc" -eq 0 ]; then pass=$((pass + 1)); echo '  ok  窓の途中の実行も exit 0'
+else fail=$((fail + 1)); echo "  NG  窓の途中の実行が exit $rc" >&2; echo "$OUT" >&2; fi
+if grep -q '^注意: 窓の終端が現在時刻より後' <<<"$OUT"; then pass=$((pass + 1)); echo '  ok  窓の途中なら注意を 1 行出す'
+else fail=$((fail + 1)); echo '  NG  窓の途中なのに注意が無い' >&2; fi
+LAST_GAP="$(grep '^BrokerAvailabilityObserved|' <<<"$OUT" | tail -1)"
+case "$LAST_GAP" in
+  *'|00:3'[0-9]':'*|*'|00:29:'*) pass=$((pass + 1)); echo "  ok  最後の欠けは現在時刻まで（${LAST_GAP##*|}）" ;;
+  *) fail=$((fail + 1)); echo "  NG  最後の欠けが現在時刻で切られていない: ${LAST_GAP:-（行なし）}" >&2 ;;
+esac
+OUT_DONE="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-20 2>&1)"
+if grep -q '^注意: 窓の終端が現在時刻より後' <<<"$OUT_DONE"; then fail=$((fail + 1)); echo '  NG  過ぎた窓なのに注意を出す' >&2
+else pass=$((pass + 1)); echo '  ok  過ぎた窓では注意を出さない'; fi
+
 echo
 if [ "$fail" -ne 0 ]; then
   echo "✗ ${fail} failed / ${pass} passed" >&2
