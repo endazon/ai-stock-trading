@@ -184,6 +184,24 @@ public class StopWidthObservationTests
         logger.Entries.Should().NotContain(e => e.Message.StartsWith(ObservationPrefix, StringComparison.Ordinal));
     }
 
+    // T-10-1751, #1104, IADR-0460 決定2: 🔴 否定形。損切り幅が妥当でもサイジングで数量 0 になって見送る判断では観測ログを出さない
+    // （ログは数量 0 判定・採算ゲートの後、発注意図を作る直前に置く）。
+    [Fact]
+    public async Task サイジングで数量0の見送りでは観測ログを出さない_否定形()
+    {
+        var logger = new StateLogger();
+        var service = new AppSvc(
+            new FixedLlm(BuyJson), new FakePolicy(), new FakeSizing(Context with { StageCapitalRemaining = 0m }),
+            new FakeClock(), logger,
+            currentPrice: new FakeCurrentPrice(new CurrentPriceReading(102m, Known)));
+
+        var decision = await service.DecideAsync(ScheduledAapl());
+
+        decision.Should().BeNull();
+        logger.Entries.Should().Contain(e => e.Message.StartsWith("サイジングで数量 0 のため見送り", StringComparison.Ordinal));
+        logger.Entries.Should().NotContain(e => e.Message.StartsWith(ObservationPrefix, StringComparison.Ordinal));
+    }
+
     // T-10-1751, #1104, IADR-0460 決定2: 🔴 否定形。保有の決済（Close）は損切りラインを作らないので、LLM が幅を返しても観測ログを出さない。
     [Fact]
     public async Task 決済の判断では観測ログを出さない_否定形()
@@ -250,9 +268,9 @@ public class StopWidthObservationTests
         public Task<DailyPolicy?> GetCurrentAsync(CancellationToken ct = default) => Task.FromResult<DailyPolicy?>(Policy);
     }
 
-    private sealed class FakeSizing : ISizingContextProvider
+    private sealed class FakeSizing(SizingContext? context = null) : ISizingContextProvider
     {
-        public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(Context);
+        public Task<SizingContext> GetContextAsync(CancellationToken ct = default) => Task.FromResult(context ?? Context);
     }
 
     private sealed class FakeCurrentPrice(CurrentPriceReading? reading) : ICurrentPriceProvider

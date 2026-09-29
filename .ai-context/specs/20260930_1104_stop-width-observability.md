@@ -110,7 +110,7 @@ plan_refs:
 | T-10-1748 | 日中文脈なし／高値不明／安値不明／高値＝安値／高値＜安値 → 値幅・倍率とも null（0 にしない） | 自動（否定形） |
 | T-10-1749 | 判断サービス（現在値の供給あり・日中文脈あり）で新規建てを出すと、Information の観測ログが 1 件出て、構造化値が上と一致し、損切り価格と株数が発注意図と一致する | 自動 |
 | T-10-1750 | 現在値の供給なし（NoOp）では、アンカリング済みの価格＝LLM の参照価格・差 0、値幅と倍率は「不明」と出す | 自動（否定形） |
-| T-10-1751 | Hold の判断・損切り幅が不正で見送る判断では観測ログを出さない | 自動（否定形） |
+| T-10-1751 | Hold の判断・損切り幅が不正で見送る判断・サイジングで数量 0 の見送り・決済（Close）では観測ログを出さない | 自動（否定形） |
 
 ## 検証
 
@@ -130,7 +130,7 @@ plan_refs:
 | 検証 | 結果 |
 | --- | --- |
 | `dotnet build backend/backend.slnx` | `0 Warning(s)` / `0 Error(s)` |
-| `dotnet test` TradeDecisionService.Tests | `Passed! - Failed: 0, Passed: 1050, Total: 1050` |
+| `dotnet test` TradeDecisionService.Tests | `Passed! - Failed: 0, Passed: 1053, Total: 1053`（監査対応の追加 3 件を含む） |
 | `dotnet test` RiskManagementService.Tests | `Passed! - Failed: 0, Passed: 2083, Total: 2083` |
 | `dotnet format backend/backend.slnx --verify-no-changes --include`（TradeDecisionService・RiskManagementService・Shared の Contracts/Trading・Kernel/Trading） | exit 0 |
 | `node scripts/check-test-traceability.js` | exit 0（採番の最大値 T-10-1751） |
@@ -158,3 +158,7 @@ plan_refs:
 監査は途中で中断した。調整側が同じ作業ツリーで、監査の変異をコミットに取り込んだためである（別のコミットで戻した）。中断までの所見に 🔴 は無かった。🟡 の 2 件は次のとおり対応した。
 - 決済（Close）でログが出ないことを固定する試験が無かった。T-10-1751 に、保有 10 株・LLM が幅つきで売る（決済）ケースを足した。決済の分岐でログを出す変異で落ちることを確かめた。
 - 丸め方式を偶数丸めに変える変異が生き残っていた。T-10-1747 の Theory に中間値（1 ÷ 128 × 100 ＝ 0.78125 → 0.7813）を足し、変異で落ちることを確かめた。
+
+再監査（2026-09-30）は GO で、🔴 は無かった。🟡 の 2 件は次のとおり対応した。
+- ログを数量 0 判定の前へ移す変異（値は正しいまま）が生き残っていた。T-10-1751 に、段階残枠 0 でサイジングが数量 0 になる見送りのケースを足した。この変異で落ちることを確かめた。
+- 本仕様書の検証結果と試験表が、試験の追加より古かった。件数（1053）と T-10-1751 の対象を更新した。
