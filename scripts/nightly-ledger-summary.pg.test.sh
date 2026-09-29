@@ -141,12 +141,24 @@ if grep -q '^注意: 窓の終端が現在時刻より後' <<<"$OUT"; then pass=
 else fail=$((fail + 1)); echo '  NG  窓の途中なのに注意が無い' >&2; fi
 LAST_GAP="$(grep '^BrokerAvailabilityObserved|' <<<"$OUT" | tail -1)"
 case "$LAST_GAP" in
-  *'|00:3'[0-9]':'*|*'|00:29:'*) pass=$((pass + 1)); echo "  ok  最後の欠けは現在時刻まで（${LAST_GAP##*|}）" ;;
+  *'|00:3'[0-9]':'*) pass=$((pass + 1)); echo "  ok  最後の欠けは現在時刻まで（${LAST_GAP##*|}）" ;;
   *) fail=$((fail + 1)); echo "  NG  最後の欠けが現在時刻で切られていない: ${LAST_GAP:-（行なし）}" >&2 ;;
 esac
 OUT_DONE="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-20 2>&1)"
 if grep -q '^注意: 窓の終端が現在時刻より後' <<<"$OUT_DONE"; then fail=$((fail + 1)); echo '  NG  過ぎた窓なのに注意を出す' >&2
 else pass=$((pass + 1)); echo '  ok  過ぎた窓では注意を出さない'; fi
+# 過ぎた窓（観測なし）: 欠けは窓の頭から窓の終端まで（現在時刻まで伸ばさない）。
+if grep -qxF 'BrokerAvailabilityObserved|2026-09-20 20:00:00+09|2026-09-21 08:00:00+09|12:00:00' <<<"$OUT_DONE"; then
+  pass=$((pass + 1)); echo '  ok  過ぎた窓の欠けは窓の終端で切る'
+else fail=$((fail + 1)); echo '  NG  過ぎた窓の欠けが窓の終端で切られていない' >&2; grep '^Broker' <<<"$OUT_DONE" >&2; fi
+if grep -q '^Broker.* days\?' <<<"$OUT_DONE"; then fail=$((fail + 1)); echo '  NG  過ぎた窓に日をまたぐ欠けが出る（現在時刻まで伸ばした）' >&2
+else pass=$((pass + 1)); echo '  ok  過ぎた窓に日をまたぐ欠けは出ない'; fi
+# 窓が丸ごと未来: 欠けは 0 行（窓の頭より前へ戻らない）。
+FUT_FROM="$(date -u -d '+5 days' +%Y-%m-%dT%H:%M:00+00:00)"
+FUT_TO="$(date -u -d '+6 days' +%Y-%m-%dT%H:%M:00+00:00)"
+OUT_FUT="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" "$FUT_FROM" "$FUT_TO" 2>&1)"
+if grep -q '^Broker' <<<"$OUT_FUT"; then fail=$((fail + 1)); echo '  NG  窓が丸ごと未来なのに欠けが出る' >&2; grep '^Broker' <<<"$OUT_FUT" >&2
+else pass=$((pass + 1)); echo '  ok  窓が丸ごと未来なら欠けは 0 行'; fi
 
 echo
 if [ "$fail" -ne 0 ]; then
