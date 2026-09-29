@@ -116,8 +116,8 @@ plan_refs:
 
 （実行結果は下の「検証結果」に記す）
 
-- `~/.dotnet/dotnet build backend/backend.slnx`（警告 0）
-- `~/.dotnet/dotnet test` —— TradeDecisionService.Tests・RiskManagementService.Tests
+- `dotnet build backend/backend.slnx`（警告 0）
+- `dotnet test` —— TradeDecisionService.Tests・RiskManagementService.Tests
 - `dotnet format --verify-no-changes --include` 変更したサービスのディレクトリ
 - `node scripts/check-test-traceability.js` / `check-trace-blocks.js` / `check-doc-links.js` / `check-adr-index-sync.js` /
   `gen-knowledge-graph.js --check` / `check-commit-messages.js` / `check-cross-repo-refs.js` / `check-plan-id-qualification.js`
@@ -129,7 +129,7 @@ plan_refs:
 
 | 検証 | 結果 |
 | --- | --- |
-| `~/.dotnet/dotnet build backend/backend.slnx` | `0 Warning(s)` / `0 Error(s)` |
+| `dotnet build backend/backend.slnx` | `0 Warning(s)` / `0 Error(s)` |
 | `dotnet test` TradeDecisionService.Tests | `Passed! - Failed: 0, Passed: 1050, Total: 1050` |
 | `dotnet test` RiskManagementService.Tests | `Passed! - Failed: 0, Passed: 2083, Total: 2083` |
 | `dotnet format backend/backend.slnx --verify-no-changes --include`（TradeDecisionService・RiskManagementService・Shared の Contracts/Trading・Kernel/Trading） | exit 0 |

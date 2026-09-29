@@ -551,7 +551,6 @@ public sealed class TradeDecisionAppService(
 
         // FR-10, FR-04, #1104, IADR-0460 決定1〜3: 損切り幅の観測（ログだけ・統制ではない・判断を変えない）。
         // 幅は LLM の出力をそのまま使い ATR は計算していない（数値の下限は planning#703 の裁定待ち）。
-        LogStopWidth(trigger, side, quantity, decision, referencePrice, intraday, stopLossPrice);
 
         // IADR-0004: 発注意図には PositionEffect を必ず設定する。ここへ到達するのは新規建て（Open）のみで、
         // 決済（Close）は上で確定済み（#292, IADR-0119）。
