@@ -325,7 +325,12 @@ if (brokerSelection.IsMoomoo)
             sp.GetRequiredService<SoftwareStopExecutor>(),
             // #857, IADR-0369: 確認できた拒否の数え（撃ち直しの上限）。
             sp.GetRequiredService<
-                OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.CloseRejectionTracker>()));
+                OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.CloseRejectionTracker>(),
+            // FR-10, #1093, IADR-0458: 建玉照会の一時的な失敗に限り、巡回の中で 1 回だけ照会し直す（発注の経路には入れない）。
+            new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.PositionQueryRetry(
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value,
+                logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger<
+                    OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.PositionQueryRetry>())));
     // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
     builder.Services.AddSingleton(sp =>
         new SoftwareStopLivenessReporter(
