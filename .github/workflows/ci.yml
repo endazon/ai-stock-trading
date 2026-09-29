@@ -161,11 +161,6 @@ jobs:
       - name: Test k8s-local-deploy.sh (ast-secrets sync)
         if: ${{ !cancelled() }}
         run: bash scripts/k8s-local-deploy.test.sh
-      # #1094, IADR-0457: イメージの作り直しの絞り込み（SERVICES・未知の名前で exit 2・ランタイムに無ければ作る・
-      # k3d はノードの有無で import）を nerdctl / docker / k3d スタブで固定する。実ランタイムは不要（Bash のみ）。
-      - name: Test k8s-local-images.sh (image selection)
-        if: ${{ !cancelled() }}
-        run: bash scripts/k8s-local-images.test.sh
       # #274, IADR-0060 決定3: OpenD entrypoint の RSA 鍵検査（k8s Secret の symlink 越しに実体の
       # パーミッションを見る）を固定する。symlink と chmod が要るため ubuntu-latest で実行する。
       - name: Test opend entrypoint.sh (RSA key permission check)

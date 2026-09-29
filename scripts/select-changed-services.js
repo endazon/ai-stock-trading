@@ -163,6 +163,8 @@ function decide(files, ctx) {
   const byDir = new Map(ctx.mapping.map((e) => [e.dir, e]));
   const changedDirs = new Set();
   for (const f of list) {
+    // 🔴 引用されたパス（`-z` を通らない経路・`--files` の入力）は分類できない。無視へ倒さず全件にする。
+    if (f.startsWith('"')) return ALL('引用符で始まるパス（git の quotePath の形。分類できない）', f);
     if (ALL_FILES.some((re) => re.test(f))) return ALL('全イメージのビルド入力が変更された', f);
     if (!f.startsWith('backend/')) continue; // deploy/ 等は helm upgrade が反映する。イメージの入力ではない
     if (ctx.nonInputFiles.includes(f)) continue;
@@ -206,16 +208,18 @@ function decide(files, ctx) {
 /**
  * git から変更一覧を取る。作業ツリーと ref の差（コミット済み・未コミットの両方）＋未追跡。
  * `--no-renames` で改名の旧名と新名の両方を出す（旧名のサービスも作り直す）。
+ * 🔴 **`-z` で NUL 区切りに取る。** 既定の `core.quotePath` は非 ASCII・`"`・タブを含むパスを
+ * `"backend/\346..."` の形で引用し、`backend/` の前方一致を外して「backend/ の外」として黙って無視させる。
  * 🔴 **失敗したら null を返す**（呼び出し側が ALL へ倒す）。例外で配備を止めない。
  */
 function filesFromGit(ref, cwd = REPO_ROOT) {
   const { execFileSync } = require('child_process');
   const run = (args) =>
-    execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\n');
+    execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\0');
   try {
     return [
-      ...run(['diff', '--name-only', '--no-renames', ref, '--']),
-      ...run(['ls-files', '--others', '--exclude-standard']),
+      ...run(['diff', '--name-only', '-z', '--no-renames', ref, '--']),
+      ...run(['ls-files', '-z', '--others', '--exclude-standard']),
     ];
   } catch (e) {
     process.stderr.write(`[select-changed-services] git から差分を取得できなかった（${String(e.message).split('\n')[0]}）。全件へ倒す。\n`);
@@ -294,6 +298,8 @@ function selfTest() {
   ok('🔴 全件: 変更 0 件', () => isAll([]));
   ok('🔴 全件: 空白行だけ（結果 0 件）', () => isAll(['', '  ']));
   ok('🔴 全件: git の失敗（null）', () => isAll(null));
+  ok('🔴 全件: 引用符で始まるパス（quotePath の形）は backend/ の外として無視しない', () =>
+    isAll(['"backend/Services/AuditService/\\346\\227\\245.cs"']));
   ok('🔴 全件: サービスの変更に共有物が 1 件でも混ざれば全件', () => isAll(['backend/Services/AuditService/Program.cs', 'backend/Shared/x.cs']));
 
   // サービス単位
@@ -357,7 +363,50 @@ function selfTest() {
     eq(real.nonInputDirs, NON_INPUT_DIRS);
   });
 
+  ok('🔴 loadContext: Worker が backend/Bff を参照する構成では inputLeaks に載り、Bff を無視しなくなる', () => {
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'leak-'));
+    try {
+      fs.mkdirSync(path.join(tmp, 'scripts'));
+      fs.writeFileSync(
+        path.join(tmp, IMAGES_SCRIPT),
+        'MAPPING=(\n  "audit-service|backend/Services/AuditService/AuditService.csproj|AuditService.dll"\n)\n'
+      );
+      fs.mkdirSync(path.join(tmp, 'backend/Services/AuditService'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmp, 'backend/Services/AuditService/AuditService.csproj'),
+        '<Project><ItemGroup><ProjectReference Include="..\\..\\Bff\\X\\X.csproj" /></ItemGroup></Project>'
+      );
+      const leaked = loadContext(tmp);
+      eq(leaked.inputLeaks.map((l) => l.label), ['backend/Bff/']);
+      if (leaked.nonInputDirs.some((d) => d.label === 'backend/Bff/')) throw new Error('Bff がまだ無視される');
+      if (!decide(['backend/Bff/X/Y.cs'], leaked).all) throw new Error('全件にならない');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   // git
+  ok('🔴 filesFromGit: 非 ASCII・引用符を含むパスを未追跡・追跡済みの変更の両方で素のまま返す', () => {
+    const { execFileSync } = require('child_process');
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'git-'));
+    const git = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: tmp, stdio: 'ignore' });
+    try {
+      git('init', '-q');
+      const svc = path.join(tmp, 'backend/Services/AuditService');
+      fs.mkdirSync(svc, { recursive: true });
+      fs.writeFileSync(path.join(svc, '日本語.cs'), 'a');
+      git('add', '.');
+      git('commit', '-q', '-m', 'init');
+      fs.writeFileSync(path.join(svc, '日本語.cs'), 'b'); // 追跡済みの変更
+      fs.writeFileSync(path.join(svc, 'a b"c.cs'), 'x'); // 未追跡
+      const r = filesFromGit('HEAD', tmp);
+      const got = (r || []).filter(Boolean).sort();
+      eq(got, ['backend/Services/AuditService/a b"c.cs', 'backend/Services/AuditService/日本語.cs'].sort());
+      eq(decide(r, ctx).services, ['audit-service']);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
   ok('filesFromGit: git の無い場所では null（→ 全件）に倒れる', () => {
     const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'nogit-'));
     try {
