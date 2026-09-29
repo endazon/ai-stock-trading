@@ -23,8 +23,26 @@ public class ProtectiveStopGuardTests
         public DateTimeOffset UtcNow => Now;
     }
 
-    private sealed class GuardBroker : IBrokerAdapter, IProtectiveOrderBroker, IBrokerPositionSource
+    private sealed class GuardBroker : IBrokerAdapter, IProtectiveOrderBroker, IBrokerPositionSource, IClassifiedPositionSource
     {
+        /// <summary>
+        /// FR-10, #1093, IADR-0458: 分類つきの照会が返す結果の列（先頭から順に使う）。空なら <see cref="Positions"/> から作る
+        /// （null は分類できない失敗）。照会し直しを渡さないガードはこの口を使わない（従来の GetPositionsAsync だけ）。
+        /// </summary>
+        public Queue<PositionQueryResult> ClassifiedResults { get; } = new();
+        public int ClassifiedQueryCount { get; private set; }
+        public int PositionQueryCount { get; private set; }
+
+        public Task<PositionQueryResult> QueryPositionsAsync(CancellationToken ct = default)
+        {
+            ClassifiedQueryCount++;
+            return Task.FromResult(ClassifiedResults.Count > 0
+                ? ClassifiedResults.Dequeue()
+                : Positions is null
+                    ? PositionQueryResult.Failed(PositionQueryFailure.Other)
+                    : PositionQueryResult.Success(Positions));
+        }
+
         public BrokerProvider Provider => BrokerProvider.MoomooSimulate;
 
         /// <summary>StopOrderId → 照会結果（未登録は null＝照会不能）。</summary>
@@ -92,8 +110,11 @@ public class ProtectiveStopGuardTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default) =>
-            Task.FromResult(Positions);
+        public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
+        {
+            PositionQueryCount++;
+            return Task.FromResult(Positions);
+        }
     }
 
     private static ProtectiveStopOrder ActiveStop(
@@ -403,5 +424,70 @@ public class ProtectiveStopGuardTests
             .Should().NotBeNull("手仕舞いレグは約定追跡へ載る");
         result.Events.OfType<ProtectiveStopCoverageLost>().Should().ContainSingle(e =>
             e.Remediation == ProtectiveStopRemediation.PositionClosed);
+    }
+
+    // ---- T-10-1739, FR-10, #1093, IADR-0458: 建玉照会の一時的な失敗は巡回の中で 1 回だけ照会し直す ----
+
+    private static ProtectiveStopGuard WithRetry(GuardBroker broker, InMemoryProtectiveStopOrderStore stops,
+        InMemoryExecutedOrderStore store, List<TimeSpan> waits) =>
+        new(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+            positionQueryRetry: new PositionQueryRetry(
+                new ProtectiveStopGuardOptions(),
+                (wait, _) =>
+                {
+                    waits.Add(wait);
+                    return Task.CompletedTask;
+                },
+                () => 0.5));
+
+    [Fact]
+    public async Task 建玉照会が一時的に失敗しても照会し直して成功すれば_この巡回で評価する()
+    {
+        var stop = ActiveStop();
+        var (_, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Positions = [Long(10)];
+        broker.ClassifiedResults.Enqueue(PositionQueryResult.Failed(PositionQueryFailure.Transient));
+        var waits = new List<TimeSpan>();
+
+        var result = await WithRetry(broker, stops, store, waits).RunOnceAsync(10);
+
+        result.Unknown.Should().Be(0, "照会し直して建玉が取れたので据え置かない");
+        result.StillActive.Should().Be(1);
+        broker.ClassifiedQueryCount.Should().Be(2);
+        waits.Should().Equal(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task 建玉照会が分類できない失敗なら照会し直さず_従来どおり全件据え置く()
+    {
+        var stop = ActiveStop();
+        var (_, broker, stops, store) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Positions = [Long(10)];
+        broker.ClassifiedResults.Enqueue(PositionQueryResult.Failed(PositionQueryFailure.Other));
+        var waits = new List<TimeSpan>();
+
+        var result = await WithRetry(broker, stops, store, waits).RunOnceAsync(10);
+
+        result.Unknown.Should().Be(1);
+        broker.ClassifiedQueryCount.Should().Be(1);
+        waits.Should().BeEmpty();
+        broker.Cancelled.Should().BeEmpty();
+        broker.StopPlaceCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task 照会し直しを渡さないガードは分類つきの口を使わない()
+    {
+        var stop = ActiveStop();
+        var (guard, broker, _, _) = NewGuard(stop);
+        broker.Orders["stop-1"] = StopOrder(OrderStatus.Accepted);
+        broker.Positions = [Long(10)];
+
+        await guard.RunOnceAsync(10);
+
+        broker.ClassifiedQueryCount.Should().Be(0);
+        broker.PositionQueryCount.Should().Be(1);
     }
 }

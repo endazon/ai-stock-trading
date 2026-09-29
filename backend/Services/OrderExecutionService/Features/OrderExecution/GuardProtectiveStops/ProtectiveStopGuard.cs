@@ -53,7 +53,8 @@ public sealed class ProtectiveStopGuard(
     ILogger<ProtectiveStopGuard>? logger = null,
     HeldCloseNotificationTracker? heldCloseNotifications = null,
     OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null,
-    CloseRejectionTracker? closeRejections = null)
+    CloseRejectionTracker? closeRejections = null,
+    PositionQueryRetry? positionQueryRetry = null)
 {
     /// <summary>
     /// 🔴 #857, IADR-0369 決定3: <b>確認できた拒否</b>で終わった成行手仕舞いを撃ち直す上限
@@ -94,9 +95,15 @@ public sealed class ProtectiveStopGuard(
         // S0 が「その建玉は自分のもの」と誤認し、#826 項目 3 が 1 巡回ぶん効かない。
         var active = ProtectiveStopNetting.ConfirmEntryFills(scanned, stops, store, clock.UtcNow);
 
-        // 建玉は 1 巡回につき 1 回照会する。null（照会不能）なら巡回ごと据え置く——建玉不明のまま
+        // 建玉は 1 巡回につき 1 つのスナップショットを使う（一時的な失敗なら照会し直すが、観測として数えるのは得られた 1 つだけ）。
+        // null（照会不能）なら巡回ごと据え置く——建玉不明のまま
         // 「消滅した」と誤認して逆指値を取り消すと、直後の失効側の保護が消える。
-        var snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        // FR-10, #1093, IADR-0458: 分類できた一時的な失敗（打ち切り・切断・頻度制限）に限り、巡回の中で 1 回だけ照会し直す。
+        // 使い切ったら従来どおり null ＝据え置き。照会し直しを渡されない・分類の口が無いときは従来どおり 1 回だけ照会する。
+        // 🔴 下の HoldUnlessPositionGoneAsync の照会し直し（建玉 0 の確かめ）には使わない —— 据え置きに倒れるだけで、穴を作らない。
+        var snapshot = positionQueryRetry is not null && positions is IClassifiedPositionSource classified
+            ? await positionQueryRetry.QueryAsync(classified, cancellationToken).ConfigureAwait(false)
+            : await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
             return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, active.Count, 0, []);
 
