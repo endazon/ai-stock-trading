@@ -5,6 +5,7 @@ using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 
 namespace OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 
@@ -54,7 +55,8 @@ public sealed class ProtectiveStopGuard(
     HeldCloseNotificationTracker? heldCloseNotifications = null,
     OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null,
     CloseRejectionTracker? closeRejections = null,
-    PositionQueryRetry? positionQueryRetry = null)
+    PositionQueryRetry? positionQueryRetry = null,
+    IPositionQueryHealthReporter? positionQueryHealth = null)
 {
     /// <summary>
     /// 🔴 #857, IADR-0369 決定3: <b>確認できた拒否</b>で終わった成行手仕舞いを撃ち直す上限
@@ -69,6 +71,10 @@ public sealed class ProtectiveStopGuard(
     public const int MaxConfirmedCloseRejections = 3;
 
     private readonly ILogger _logger = logger ?? NullLogger<ProtectiveStopGuard>.Instance;
+
+    // NFR, FR-10, #1092, IADR-0462: 建玉照会の状態の報告口。本番は Program.cs が singleton（発行の実装）を渡す。
+    private readonly IPositionQueryHealthReporter _positionQueryHealth =
+        positionQueryHealth ?? NoOpPositionQueryHealthReporter.Instance;
 
     // #848, IADR-0117（改定 9）: 据え置き中の成行手仕舞いを「このプロセスがいつ通知したか」の記憶。本番は singleton を
     // 渡す（ガード自体は巡回ごとに作られる scoped）。省略時は本インスタンスの寿命で持つ（単体テスト用）。
@@ -101,9 +107,20 @@ public sealed class ProtectiveStopGuard(
         // FR-10, #1093, IADR-0458: 分類できた一時的な失敗（打ち切り・切断・頻度制限）に限り、巡回の中で 1 回だけ照会し直す。
         // 使い切ったら従来どおり null ＝据え置き。照会し直しを渡されない・分類の口が無いときは従来どおり 1 回だけ照会する。
         // 🔴 下の HoldUnlessPositionGoneAsync の照会し直し（建玉 0 の確かめ）には使わない —— 据え置きに倒れるだけで、穴を作らない。
-        var snapshot = positionQueryRetry is not null && positions is IClassifiedPositionSource classified
-            ? await positionQueryRetry.QueryAsync(classified, cancellationToken).ConfigureAwait(false)
-            : await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        var query = positionQueryRetry is not null && positions is IClassifiedPositionSource classified
+            ? await positionQueryRetry.QueryWithFailureAsync(classified, cancellationToken).ConfigureAwait(false)
+            : new PositionQueryResult(
+                await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false), PositionQueryFailure.None);
+        var snapshot = query.Positions;
+
+        // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 巡回の先頭の照会の成功・失敗を報告する（状態が変わったときだけ台帳へ出る）。
+        // 失敗の種類は分類できたときだけ載せる（分類の口が無い照会の失敗は種類不明）。建玉 0 の確かめ直しの照会は数えない。
+        await _positionQueryHealth.ReportAsync(
+            PositionQuerySource.ProtectiveStopGuard,
+            snapshot is not null,
+            snapshot is null && query.Failure != PositionQueryFailure.None ? query.Failure.ToString() : null)
+            .ConfigureAwait(false);
+
         if (snapshot is null)
             return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, active.Count, 0, []);
 

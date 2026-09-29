@@ -16,8 +16,9 @@
 #   分かる: 判断（発注意図あり）・判断後の見送り（理由別）・モデル利用不能の見送り・審査・発注前の見送り（理由別）・
 #          注文ごとの最新の状態（約定・拒否・取消）・S1 の武装と発動の結果・損切りライン到達・
 #          ブローカの建玉観測（10 分ごと）と稼働観測（5 分ごと）の欠け（＝照会できなかった時間帯の推定）。
-#   分からない（台帳に記録が無い）: LLM を呼ぶ前の見送り（現在値なし・為替など）、建玉照会の失敗そのものの回数、
-#          判断中の例外。これらは #1092 の段 2 で台帳へ出す。
+#   段 2（IADR-0462）で足したもの: 建玉照会・保有照会の失敗の区間（発生源別。PositionQueryStatusChanged）・
+#          LLM を呼ぶ前の見送り（理由別。TradeDecisionForgoneBeforeLlm）。段 2 の配備より前の夜は 0 行になる（9 の推定を使う）。
+#   分からない（台帳に記録が無い）: 判断中の例外（段 2 でも入れていない。作業仕様書 20260930_1092_ledger-gap-events）。
 #
 # ■ テスト: scripts/nightly-ledger-summary.test.sh（psql スタブ・実 DB 不要）。AST_NIGHTLY_LIB=1 で source すると
 #   関数定義だけを読み込む（scripts/cutover-count-reconcile.sh と同じ idiom）。
@@ -214,6 +215,50 @@ WHERE gap_from IS NOT NULL
         WHEN 'BrokerPositionsObserved' THEN :'positions_gap'::interval
         ELSE :'availability_gap'::interval END
 ORDER BY event_type, gap_from;
+
+\echo '== 10. 建玉照会・保有照会の失敗の区間（PositionQueryStatusChanged・発生源別。窓の前から続く失敗も出す）'
+-- 状態が変わったときだけ記録される（成功⇄失敗）。区間の終わりは同じ発生源の次の記録で、前の状態が Unknown の記録は
+-- 再起動の後の最初の観測である（回復の時刻は「再起動の後の最初の成功」までしか分からない）。
+WITH ev AS (
+  SELECT "Detail"->>'Source' AS source, "Detail"->>'Status' AS status, "Detail"->>'PreviousStatus' AS prev,
+         "Detail"->>'FailureKind' AS kind, ("Detail"->>'FailedQueries')::int AS failed,
+         "OccurredAt" AS at, "RecordedAt" AS rec
+  FROM audit_events
+  WHERE "EventType" = 'PositionQueryStatusChanged' AND "OccurredAt" < :'to'::timestamptz
+), before AS (
+  SELECT DISTINCT ON (source) * FROM ev WHERE at < :'from'::timestamptz ORDER BY source, at DESC, rec DESC
+), seq AS (
+  SELECT x.*, lead(at) OVER w AS next_at, lead(status) OVER w AS next_status, lead(prev) OVER w AS next_prev,
+         lead(failed) OVER w AS next_failed
+  FROM (SELECT * FROM before UNION ALL SELECT * FROM ev WHERE at >= :'from'::timestamptz) x
+  WINDOW w AS (PARTITION BY source ORDER BY at, rec)
+)
+SELECT source, GREATEST(at, :'from'::timestamptz) AS failing_from,
+       COALESCE(next_at, GREATEST(at, :'from'::timestamptz, LEAST(:'to'::timestamptz, now()))) AS failing_to,
+       CASE WHEN next_at IS NULL THEN '窓の終端まで続いた（回復の記録なし）'
+            WHEN next_prev = 'Unknown' AND next_status = 'Healthy' THEN '再起動の後に成功（回復の時刻は不明）'
+            WHEN next_prev = 'Unknown' THEN '再起動の後も失敗'
+            ELSE '回復（失敗 ' || next_failed || ' 回）' END AS ended,
+       COALESCE(kind, '-') AS kind,
+       CASE WHEN at < :'from'::timestamptz THEN '窓の前から' ELSE '' END AS note
+FROM seq
+WHERE status = 'Failing'
+ORDER BY source, at;
+
+\echo '-- 10a. 状態の変化の件数（発生源 × 前→後。Unknown→ は再起動の後の最初の観測）'
+SELECT "Detail"->>'Source' AS source, ("Detail"->>'PreviousStatus') || '→' || ("Detail"->>'Status') AS change, count(*) AS n
+FROM audit_events
+WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
+  AND "EventType" = 'PositionQueryStatusChanged'
+GROUP BY 1, 2 ORDER BY 1, 2;
+
+\echo '== 11. LLM を呼ぶ前の見送り（TradeDecisionForgoneBeforeLlm・理由 × 起点別）'
+SELECT "Detail"->>'Reason' AS reason, COALESCE("Detail"->>'CycleTrigger', '-') AS cycle_trigger, count(*) AS n,
+       string_agg(DISTINCT "Symbol", ',' ORDER BY "Symbol") AS symbols
+FROM audit_events
+WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
+  AND "EventType" = 'TradeDecisionForgoneBeforeLlm'
+GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2;
 
 ROLLBACK;
 SQL

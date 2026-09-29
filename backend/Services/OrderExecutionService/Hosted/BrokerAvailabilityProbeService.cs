@@ -2,6 +2,7 @@ using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,8 +35,13 @@ public sealed class BrokerAvailabilityProbeService(
     TimeProvider timeProvider,
     IOptions<BrokerAvailabilityProbeOptions> options,
     ILogger<BrokerAvailabilityProbeService> logger,
-    IBrokerAccountSource? accountSource = null) : BackgroundService
+    IBrokerAccountSource? accountSource = null,
+    IPositionQueryHealthReporter? positionQueryHealth = null) : BackgroundService
 {
+    // NFR, FR-10, #1092, IADR-0462 決定2: probe（moomoo では建玉照会）の状態の報告口（本番は Program.cs の singleton）。
+    private readonly IPositionQueryHealthReporter _positionQueryHealth =
+        positionQueryHealth ?? NoOpPositionQueryHealthReporter.Instance;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled)
@@ -95,6 +101,10 @@ public sealed class BrokerAvailabilityProbeService(
         cancellationToken.ThrowIfCancellationRequested();
 
         var operational = await probe.IsOperationalAsync(cancellationToken).ConfigureAwait(false);
+
+        // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 到達できないことは「発行しない」（沈黙）で表す設計のため、台帳からは Pod の停止と
+        // 区別できない。状態が変わったときだけ別の事実として出す（稼働の数え〔BrokerAvailabilityObserved〕の意味は変えない）。
+        await _positionQueryHealth.ReportAsync(PositionQuerySource.BrokerAvailabilityProbe, operational).ConfigureAwait(false);
         if (!operational)
         {
             // 「到達できなかった」を発行しない。受け手は沈黙をそのまま稼働 0 分として扱う（§4.2 の除外）。

@@ -73,6 +73,9 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(StopLossMethodResolved), "AiStockTrading.Shared.Contracts.Events.StopLossMethodResolved")]
         // FR-10, FR-11, #1105, IADR-0461 決定3: 決済を処理中の決済の分だけ縮めて送った事実。
         [InlineData(typeof(CloseReducedForInFlightCloses), "AiStockTrading.Shared.Contracts.Events.CloseReducedForInFlightCloses")]
+        // T-10-1773, NFR, FR-04, FR-10, #1092, IADR-0462: LLM を呼ぶ前の見送りと、建玉照会・保有照会の状態の変化。
+        [InlineData(typeof(TradeDecisionForgoneBeforeLlm), "AiStockTrading.Shared.Contracts.Events.TradeDecisionForgoneBeforeLlm")]
+        [InlineData(typeof(PositionQueryStatusChanged), "AiStockTrading.Shared.Contracts.Events.PositionQueryStatusChanged")]
         [InlineData(typeof(PositionCloseRequested), "AiStockTrading.Shared.Contracts.Events.PositionCloseRequested")]
         // FR-05, FR-10, FR-11, UC-06, #847, #768, IADR-0357: 利用者による手仕舞いの取消要求と、
         // 未約定残を残して終わった手仕舞い（失効・取消・拒否）。

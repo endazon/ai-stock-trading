@@ -92,6 +92,51 @@ WHERE t NOT IN ('2026-09-29T21:10+09', '2026-09-29T22:10+09', '2026-09-29T22:20+
   AND t < '2026-09-30T08:00+09';
 SELECT ev('BrokerAvailabilityObserved', gen_random_uuid(), NULL, '{}', t)
 FROM generate_series('2026-09-29T20:00+09'::timestamptz, '2026-09-30T07:55+09', '5 minutes') t;
+-- T-10-1775, #1092 段 2, IADR-0462: 照会の状態の変化。
+-- ガード: 窓の前（19:00）に失敗が始まり、20:30 に回復（150 回）。01:00 に失敗、01:20 に再起動の後の最初の成功。
+-- スナップショット: 03:00 に失敗し、窓の終端まで回復しない。窓の尻ちょうど（08:00）の記録は数えない。
+-- 保有照会: 窓の前に成功（区間を出さない）。
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Failing","PreviousStatus":"Healthy","FailureKind":null,"FailedQueries":1}',
+  '2026-09-29T19:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Healthy","PreviousStatus":"Failing","FailureKind":null,"FailedQueries":150}',
+  '2026-09-29T20:30:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Failing","PreviousStatus":"Healthy","FailureKind":"Transient","FailedQueries":1}',
+  '2026-09-30T01:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"ProtectiveStopGuard","Status":"Healthy","PreviousStatus":"Unknown","FailureKind":null,"FailedQueries":0}',
+  '2026-09-30T01:20:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"BrokerPositionSnapshot","Status":"Failing","PreviousStatus":"Healthy","FailureKind":null,"FailedQueries":1}',
+  '2026-09-30T03:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"BrokerPositionSnapshot","Status":"Healthy","PreviousStatus":"Failing","FailureKind":null,"FailedQueries":30}',
+  '2026-09-30T08:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"TradeDecisionHoldings","Status":"Healthy","PreviousStatus":"Unknown","FailureKind":null,"FailedQueries":0}',
+  '2026-09-29T18:00:00+09');
+-- 稼働 probe: 窓の前（19:00）は成功、窓の頭ちょうど（20:00）に失敗、20:10 に回復（60 回）。PR #1110 の監査 N4(a):
+-- 窓の頭ちょうどの記録は「窓の中」の側だけで数える（窓の前の最後の記録として二重に拾わない）。
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"BrokerAvailabilityProbe","Status":"Healthy","PreviousStatus":"Unknown","FailureKind":null,"FailedQueries":0}',
+  '2026-09-29T19:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"BrokerAvailabilityProbe","Status":"Failing","PreviousStatus":"Healthy","FailureKind":"Other","FailedQueries":1}',
+  '2026-09-29T20:00:00+09');
+SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
+  '{"Source":"BrokerAvailabilityProbe","Status":"Healthy","PreviousStatus":"Failing","FailureKind":null,"FailedQueries":60}',
+  '2026-09-29T20:10:00+09');
+-- LLM を呼ぶ前の見送り（窓の尻ちょうどは数えない）。
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'NVDA',
+  '{"Reason":"DailyPolicyUnconfirmed","CycleTrigger":"scheduled"}', '2026-09-29T22:30:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'TSLA',
+  '{"Reason":"DailyPolicyUnconfirmed","CycleTrigger":"scheduled"}', '2026-09-29T22:30:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AAPL',
+  '{"Reason":"CurrentPriceUnavailable","CycleTrigger":"price-movement"}', '2026-09-30T02:00:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AAPL',
+  '{"Reason":"FxRateUnresolved","CycleTrigger":"scheduled"}', '2026-09-30T08:00:00+09');
 SQL
 
 OUT="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
@@ -126,13 +171,37 @@ hasnt '帰属の分からない注文が無い' '|?|'
 has 'S1 の結果は理由別に数える' 'SoftwareStopExecuted|ClosePlaced|1|NVDA'
 has '観測の欠け: 30 分は出す' 'BrokerPositionsObserved|2026-09-29 22:00:00+09|2026-09-29 22:30:00+09|00:30:00'
 hasnt '観測の欠け: ちょうど 20 分は出さない（しきい値は「超える」）' '2026-09-29 21:00:00+09|2026-09-29 21:20:00+09'
+# T-10-1775, #1092 段 2, IADR-0462: 照会の失敗の区間と LLM を呼ぶ前の見送り。
+has '照会の失敗: 窓の前から続いた失敗は窓の頭から回復まで（回数つき）' \
+  'ProtectiveStopGuard|2026-09-29 20:00:00+09|2026-09-29 20:30:00+09|回復（失敗 150 回）|-|窓の前から'
+has '照会の失敗: 再起動の後の最初の成功で閉じる（回復の時刻は不明と書く）' \
+  'ProtectiveStopGuard|2026-09-30 01:00:00+09|2026-09-30 01:20:00+09|再起動の後に成功（回復の時刻は不明）|Transient|'
+# 終端は窓の終端（過ぎた窓）か現在時刻（窓の途中で走らせた場合）なので、時刻の列は見ない。
+if grep -qE '^BrokerPositionSnapshot\|2026-09-30 03:00:00\+09\|[^|]+\|窓の終端まで続いた（回復の記録なし）\|-\|$' <<<"$OUT"; then
+  pass=$((pass + 1)); echo '  ok  照会の失敗: 窓の尻ちょうどの回復は数えず、窓の終端まで続いたと書く'
+else fail=$((fail + 1)); echo '  NG  照会の失敗: 窓の終端まで続いた区間が無い' >&2; grep '^BrokerPositionSnapshot|' <<<"$OUT" >&2; fi
+hasnt '照会の失敗: 窓の前の成功は区間を出さない' 'TradeDecisionHoldings|'
+# PR #1110 の監査 N4(a): 窓の頭ちょうどに始まった失敗は 1 区間だけ（窓の前の最後の記録として二重に拾うと 2 行になる）。
+has '照会の失敗: 窓の頭ちょうどに始まった失敗は窓の中の区間として出す' \
+  'BrokerAvailabilityProbe|2026-09-29 20:00:00+09|2026-09-29 20:10:00+09|回復（失敗 60 回）|Other|'
+n_head="$(grep -c '^BrokerAvailabilityProbe|2026-09-29 20:00:00+09|' <<<"$OUT")"
+if [ "$n_head" = "1" ]; then pass=$((pass + 1)); echo '  ok  照会の失敗: 窓の頭ちょうどの記録を二重に数えない（1 区間）'
+else fail=$((fail + 1)); echo "  NG  照会の失敗: 窓の頭ちょうどの区間が ${n_head} 行（1 行のはず）" >&2
+  grep '^BrokerAvailabilityProbe|' <<<"$OUT" >&2; fi
+has '状態の変化の件数: 再起動の後の最初の観測を数える' 'ProtectiveStopGuard|Unknown→Healthy|1'
+has '状態の変化の件数: 窓の前の記録は数えない（窓の中の失敗→回復は 1 件）' 'ProtectiveStopGuard|Failing→Healthy|1'
+has 'LLM を呼ぶ前の見送り: 理由 × 起点で数える' 'DailyPolicyUnconfirmed|scheduled|2|NVDA,TSLA'
+has 'LLM を呼ぶ前の見送り: 別の理由' 'CurrentPriceUnavailable|price-movement|1|AAPL'
+hasnt 'LLM を呼ぶ前の見送り: 窓の尻ちょうどは数えない' 'FxRateUnresolved|'
 
 # 窓の途中で走らせる（場中の確かめ）: 終端は現在時刻で切り、まだ来ていない時間を欠けとして出さない。
 # 観測は 5 分ごとに現在時刻の 30 分前まで。欠けは「最後の観測 → 現在時刻」の約 30 分であり、「→ 窓の終端」の約 10 時間ではない。
 MID_FROM="$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:00+00:00)"
 MID_TO="$(date -u -d '+10 hours' +%Y-%m-%dT%H:%M:00+00:00)"
 $PSQL -d audit_svc -q -v ON_ERROR_STOP=1 -o /dev/null -c "DELETE FROM audit_events WHERE \"EventType\" = 'BrokerAvailabilityObserved';" \
-  -c "SELECT ev('BrokerAvailabilityObserved', gen_random_uuid(), NULL, '{}', t) FROM generate_series('$MID_FROM'::timestamptz, now() - interval '30 minutes', '5 minutes') t;" || exit 1
+  -c "SELECT ev('BrokerAvailabilityObserved', gen_random_uuid(), NULL, '{}', t) FROM generate_series('$MID_FROM'::timestamptz, now() - interval '30 minutes', '5 minutes') t;" \
+  -c "SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL, '{\"Source\":\"SoftwareStopClose\",\"Status\":\"Failing\",\"PreviousStatus\":\"Healthy\",\"FailureKind\":null,\"FailedQueries\":1}', now() - interval '1 hour');" \
+  || exit 1
 OUT="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" "$MID_FROM" "$MID_TO" 2>&1)"
 rc=$?
 if [ "$rc" -eq 0 ]; then pass=$((pass + 1)); echo '  ok  窓の途中の実行も exit 0'
@@ -144,6 +213,13 @@ case "$LAST_GAP" in
   *'|00:3'[0-9]':'*) pass=$((pass + 1)); echo "  ok  最後の欠けは現在時刻まで（${LAST_GAP##*|}）" ;;
   *) fail=$((fail + 1)); echo "  NG  最後の欠けが現在時刻で切られていない: ${LAST_GAP:-（行なし）}" >&2 ;;
 esac
+# PR #1110 の監査 N4(b): 窓の途中なら、回復の記録が無い照会の失敗の区間は**現在時刻**で切る（窓の終端〔約 10 時間後〕まで伸ばさない）。
+MID_Q="$(grep '^SoftwareStopClose|' <<<"$OUT" | head -1)"
+MID_Q_TO="$(cut -d'|' -f3 <<<"$MID_Q")"
+if [ -n "$MID_Q_TO" ] && q_to=$(date -d "$MID_Q_TO" +%s 2>/dev/null) && [ $(( q_to - $(date +%s) )) -le 300 ] \
+  && [ $(( $(date +%s) - q_to )) -le 300 ] && grep -qF '|窓の終端まで続いた（回復の記録なし）|-|' <<<"$MID_Q"; then
+  pass=$((pass + 1)); echo "  ok  窓の途中なら未回復の照会の失敗は現在時刻で切る（${MID_Q_TO}）"
+else fail=$((fail + 1)); echo "  NG  窓の途中の未回復の照会の失敗が現在時刻で切られていない: ${MID_Q:-（行なし）}" >&2; fi
 OUT_DONE="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-20 2>&1)"
 if grep -q '^注意: 窓の終端が現在時刻より後' <<<"$OUT_DONE"; then fail=$((fail + 1)); echo '  NG  過ぎた窓なのに注意を出す' >&2
 else pass=$((pass + 1)); echo '  ok  過ぎた窓では注意を出さない'; fi

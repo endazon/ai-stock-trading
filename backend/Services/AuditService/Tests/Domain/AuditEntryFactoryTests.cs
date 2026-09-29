@@ -1172,6 +1172,59 @@ public class AuditEntryFactoryTests
             + " − 処理中 713 株（1 件）→ 送った 715 株（台帳の乖離ではない）");
     }
 
+    // T-10-1773, NFR, FR-04, FR-11, #1092, IADR-0462 決定4: LLM を呼ぶ前の見送りは EventId 相関で、理由と起点が読める。
+    // 「LLM を呼ぶ前」と書く（判断後の見送り TradeDecisionHeld と読み違えさせない）。
+    [Fact]
+    public void T_10_1773_LLMを呼ぶ前の見送りはEventId相関で理由と起点が読める()
+    {
+        var eventId = Guid.NewGuid();
+        var at = new DateTimeOffset(2026, 9, 30, 17, 0, 0, TimeSpan.Zero);
+        var entry = AuditEntryFactory.From(
+            new TradeDecisionForgoneBeforeLlm(
+                eventId, "AAPL", Market.UnitedStates, DecisionForgoneBeforeLlmReason.FxRateUnresolved, at, "scheduled"),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(TradeDecisionForgoneBeforeLlm));
+        entry.CorrelationId.Should().Be(eventId);
+        entry.Symbol.Should().Be("AAPL");
+        entry.OccurredAt.Should().Be(at);
+        entry.Summary.Should().Be("AAPL LLM を呼ぶ前の見送り（FxRateUnresolved・scheduled）");
+        entry.Detail.Should().Contain("\"Reason\":\"FxRateUnresolved\"", "夜間の要約は Detail の Reason を名前で数える");
+    }
+
+    // T-10-1773, NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 状態の変化は発生源ごとの決定的な相関で、失敗・回復・起動後の最初の観測が
+    // 読み分けられる。
+    [Fact]
+    public void T_10_1773_照会の状態の変化は発生源ごとの相関で失敗と回復と起動後の最初の観測が読める()
+    {
+        var at = new DateTimeOffset(2026, 9, 30, 17, 0, 0, TimeSpan.Zero);
+        var failed = AuditEntryFactory.From(
+            new PositionQueryStatusChanged(
+                PositionQuerySource.ProtectiveStopGuard, PositionQueryStatus.Failing, PositionQueryStatus.Unknown,
+                "RateLimited", at, 1, at),
+            Id, RecordedAt);
+        var recovered = AuditEntryFactory.From(
+            new PositionQueryStatusChanged(
+                PositionQuerySource.ProtectiveStopGuard, PositionQueryStatus.Healthy, PositionQueryStatus.Failing,
+                null, at, 42, at.AddMinutes(21)),
+            Id, RecordedAt);
+        var firstOk = AuditEntryFactory.From(
+            new PositionQueryStatusChanged(
+                PositionQuerySource.BrokerPositionSnapshot, PositionQueryStatus.Healthy, PositionQueryStatus.Unknown,
+                null, null, 0, at),
+            Id, RecordedAt);
+
+        failed.EventType.Should().Be(nameof(PositionQueryStatusChanged));
+        failed.Symbol.Should().BeNull();
+        failed.CorrelationId.Should().Be(recovered.CorrelationId, "同じ発生源の失敗と回復は 1 本の相関で辿れる");
+        firstOk.CorrelationId.Should().NotBe(failed.CorrelationId, "発生源が違えば相関も違う");
+        failed.Summary.Should().Be("照会の失敗が始まった: ProtectiveStopGuard（起動後の最初の観測）（種類 RateLimited）");
+        recovered.Summary.Should().Be("照会が回復した: ProtectiveStopGuard（失敗 42 回・2026-09-30 17:00:00Z から）");
+        recovered.OccurredAt.Should().Be(at.AddMinutes(21));
+        firstOk.Summary.Should().Be("照会できている: BrokerPositionSnapshot（起動後の最初の観測）");
+        failed.Detail.Should().Contain("\"Source\":\"ProtectiveStopGuard\"").And.Contain("\"Status\":\"Failing\"");
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: 配置は「ブローカーへの逆指値なし・システム停止中は決済されない」が読める。
     [Fact]
     public void ソフトウェア逆指値の配置はブローカーに保護が無いことが読める()

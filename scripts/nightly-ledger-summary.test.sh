@@ -11,6 +11,7 @@
 #   - --night <日付> は その日 20:00 JST 〜 翌日 08:00 JST（米国市場の夜を夏冬とも覆う）
 #   - 接続先の DB は audit_svc で、SQL は読み取り専用のトランザクションの中で走り、最後に ROLLBACK する
 #   - SQL に書き込み・DDL の語が無い
+#   - 段 2（IADR-0462）の 2 種（照会の状態の変化・LLM を呼ぶ前の見送り）も数える（T-10-1775）
 set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -95,10 +96,12 @@ if grep -Eiq '\b(insert|update|delete|create|drop|alter|truncate|grant|revoke|co
 else ok 'SQL に書き込み・DDL の語が無い'; fi
 if grep -q 'ON_ERROR_STOP 1' <<<"$sql"; then ok '途中の失敗で止まる（ON_ERROR_STOP）'; else ng 'ON_ERROR_STOP が無い'; fi
 for t in TradeDecisionMade TradeDecisionHeld TradeDecisionSkipped OrderApproved OrderRejected OrderDispatchForgone \
-  OrderExecuted SoftwareStopArmed StopLossTriggered SoftwareStopExecuted BrokerPositionsObserved BrokerAvailabilityObserved; do
+  OrderExecuted SoftwareStopArmed StopLossTriggered SoftwareStopExecuted BrokerPositionsObserved BrokerAvailabilityObserved \
+  PositionQueryStatusChanged TradeDecisionForgoneBeforeLlm; do
   if grep -q "'$t'" <<<"$sql"; then :; else ng "SQL が ${t} を数えていない"; fi
 done
-ok '台帳の 12 種類のイベントを数える'
+# T-10-1775, NFR, #1092 段 2, IADR-0462: 照会の失敗の区間（§10）と LLM を呼ぶ前の見送り（§11）を数える。
+ok '台帳の 14 種類のイベントを数える（段 2 の照会の状態の変化・LLM を呼ぶ前の見送りを含む）'
 
 # --- 関数だけの読み込み ---------------------------------------------------------------
 if AST_NIGHTLY_LIB=1 bash -c ". '$SCRIPT'; declare -F nightly_window nightly_sql nightly_main >/dev/null"; then

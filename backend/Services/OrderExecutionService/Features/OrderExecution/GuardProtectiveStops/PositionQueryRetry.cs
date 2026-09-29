@@ -47,6 +47,14 @@ public sealed class PositionQueryRetry
     /// 照会し、分類できた一時的な失敗なら予算の範囲で照会し直す。戻り値が null なら照会不能（呼び出し側は据え置く）。
     /// </summary>
     public async Task<IReadOnlyList<BrokerPositionSnapshot>?> QueryAsync(
+        IClassifiedPositionSource source, CancellationToken cancellationToken) =>
+        (await QueryWithFailureAsync(source, cancellationToken).ConfigureAwait(false)).Positions;
+
+    /// <summary>
+    /// NFR, FR-10, #1092, IADR-0462 決定2: <see cref="QueryAsync"/> と同じ照会で、最後の失敗の種類も返す
+    /// （照会の状態の変化を監査台帳へ出すとき、失敗の種類を載せるため）。挙動は <see cref="QueryAsync"/> と同じ。
+    /// </summary>
+    public async Task<PositionQueryResult> QueryWithFailureAsync(
         IClassifiedPositionSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -62,7 +70,7 @@ public sealed class PositionQueryRetry
                 _logger.LogWarning(
                     "建玉照会が一時的に失敗しました（{Failure}）。待ち {Wait} は予算 {Budget} を超えるため照会し直さず、この巡回は据え置きます。",
                     result.Failure, wait, _budget);
-                return null;
+                return result;
             }
 
             _logger.LogInformation(
@@ -83,7 +91,7 @@ public sealed class PositionQueryRetry
                     "照会し直した建玉照会も失敗しました（{Failure}）。この巡回は据え置きます（fail-safe）。", result.Failure);
         }
 
-        return result.Positions;
+        return result;
     }
 
     private static bool IsRetryable(PositionQueryFailure failure) =>

@@ -19,12 +19,14 @@ using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Operations;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Infrastructure.Composable.Observability;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
 using Wolverine;
+using Wolverine.Runtime;
 
 const string ServiceName = "ai-stock-trading.order-execution-service";
 
@@ -101,6 +103,14 @@ builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 });
 
 builder.Services.AddSingleton<IClock, SystemClock>();
+// 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会の成功・失敗を、状態が変わったときだけ監査台帳へ出す報告口。
+// **singleton を 1 つだけ**置き、ガード・S1・発注・観測の常駐へ同じものを渡す（状態は発生源ごとにこの中で持つ）。
+// 発行はランタイムの MessageBus から行う —— 発注・S1 のハンドラの処理中に呼ばれても、その処理が例外で終わったときに
+// 記録が捨てられない（ハンドラの IMessageBus は処理の成功まで発行を留める）。
+builder.Services.AddSingleton<IPositionQueryHealthReporter>(sp => new PositionQueryHealthReporter(
+    e => new MessageBus(sp.GetRequiredService<IWolverineRuntime>()).PublishAsync(e),
+    sp.GetService<TimeProvider>() ?? TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<PositionQueryHealthReporter>()));
 // DbContext が scoped のため発注結果ストアも scoped。
 builder.Services.AddScoped<IExecutedOrderStore, EfExecutedOrderStore>();
 // #131, IADR-0057: 発注前 DecisionId 予約（二重発注の防止）。
@@ -117,7 +127,9 @@ builder.Services.AddScoped(sp => new OrderExecutionAppService(
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<IProtectiveStopOrderStore>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderExecutionAppService>(),
-    sp.GetService<IBrokerPositionSource>()));
+    sp.GetService<IBrokerPositionSource>(),
+    // NFR, FR-10, #1092, IADR-0462: 決済のゲート・S1 の武装前の建玉照会の状態を台帳へ出す。
+    sp.GetRequiredService<IPositionQueryHealthReporter>()));
 // 🔴 FR-10, FR-12, #853, IADR-0428 決定4: 突合で「発注済み」と確定したエントリーに保護レグを張る口。実体は発注執行そのもの
 // （平常の経路と同じ PlaceProtectiveStopAsync を通す）。下の突合（OrderReservationReconciler）へ渡す——渡し忘れると、
 // 引数は省略可能なのでコンパイルも単体の試験も通ったまま、突合で確定したエントリーは保護レグを持たないまま台帳へ載る
@@ -135,7 +147,9 @@ builder.Services.AddScoped(sp => new SoftwareStopExecutor(
     sp.GetRequiredService<IExecutedOrderStore>(),
     sp.GetRequiredService<IOrderReservationStore>(),
     sp.GetRequiredService<IClock>(),
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>()));
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopExecutor>(),
+    // NFR, FR-10, #1092, IADR-0462: S1 が自ら照会した回の建玉照会の状態を台帳へ出す。
+    positionQueryHealth: sp.GetRequiredService<IPositionQueryHealthReporter>()));
 
 // FR-11, FR-16, ADR-0016 決定15, ADR-0027 決定2/決定4, #633, IADR-0300: 取引の経費区分の記録（段 1）。
 // 既定の供給口は **常に「取得できない」** を返す no-op であり、経費イベントは 1 本も出ない。
@@ -330,7 +344,9 @@ if (brokerSelection.IsMoomoo)
             new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.PositionQueryRetry(
                 sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value,
                 logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger<
-                    OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.PositionQueryRetry>())));
+                    OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.PositionQueryRetry>()),
+            // NFR, FR-10, #1092, IADR-0462: 巡回の先頭の建玉照会の状態を台帳へ出す。
+            sp.GetRequiredService<IPositionQueryHealthReporter>()));
     // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
     builder.Services.AddSingleton(sp =>
         new SoftwareStopLivenessReporter(

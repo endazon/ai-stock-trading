@@ -319,6 +319,12 @@ public class AuditCycleCompletenessTests
             // UC-02, FR-03, #1077, IADR-0452 決定5: AI 判断後の見送り（急変の基準値の契機）。
             new TradeDecisionHeld(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_000m, "LlmHold", t, "scheduled"),
             new TradeDecisionSkipped("trade-decision", "model-mismatch", "claude-opus-5", "claude-haiku-4-5", t),
+            // T-10-1773, NFR, FR-04, FR-10, #1092, IADR-0462: LLM を呼ぶ前の見送りと、建玉照会・保有照会の状態の変化。
+            new TradeDecisionForgoneBeforeLlm(
+                Guid.NewGuid(), "AAPL", Market.UnitedStates, DecisionForgoneBeforeLlmReason.CurrentPriceUnavailable, t, "scheduled"),
+            new PositionQueryStatusChanged(
+                PositionQuerySource.ProtectiveStopGuard, PositionQueryStatus.Failing, PositionQueryStatus.Healthy,
+                "Transient", t, 1, t),
             new TradeExpenseRecorded(new TradeExpense(
                 "AAPL", Market.UnitedStates, TradeExpenseCategory.Commission, 1.00m, day, "ORD-1", t)),
             new WithdrawalTriggered(0, "最大 DD 到達", true, t),

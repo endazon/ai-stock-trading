@@ -7,11 +7,11 @@ updated: 2026-09-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-08, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06]
+ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-08, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06, NFR]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0020, ADR-0040, ADR-0041]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, IADR-0455, MSP:IADR-0049, IADR-0461]
-specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold, 20260929_1081_news-status-in-decision-prompt, 20260930_1105_close-qty-inflight]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077, #1081, #1105]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, IADR-0455, MSP:IADR-0049, IADR-0461, IADR-0462]
+specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold, 20260929_1081_news-status-in-decision-prompt, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077, #1081, #1105, #1092]
 -->
 
 
@@ -44,6 +44,8 @@ issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809
 | --- | --- | --- | --- |
 | `TradeDecisionMade` | 取引判断 | DecisionId, Intent(OrderIntent), Rationale, DecidedAt | 売買判断の確定（判断根拠つき） |
 | `TradeDecisionHeld` | 取引判断 | EventId, Symbol, Market, Price, Reason, DecidedAt, CycleTrigger（任意） | **AI 判断が結論を出したのに発注意図を作らなかった**（LLM の Hold、または Buy/Sell の結論を統制が見送らせた）。Price は判断時点の価格（現在値 → 起点の価格 → LLM の参照価格の順。手元に無ければ出さない）。市場監視が購読して急変の基準値をこの価格へ進め、監査ログが記録する。**判断をしなかった見送り（日報未確定・現在値なし・換算レート未解決・鮮度切れで保有なし）と、出力を解析できなかった回には出さない**。発注の経路ではない（リスク管理は購読しない） |
+| `TradeDecisionForgoneBeforeLlm` | 取引判断 | EventId, Symbol, Market, Reason(DailyPolicyUnconfirmed/CurrentPriceUnavailable/FxRateUnresolved/FxRateStaleNoHolding), OccurredAt, CycleTrigger（任意） | 取引判断が **LLM を呼ぶ前に見送った**（見送り 1 回につき 1 件）。理由の名前は見送りの計上の語彙と同じ。`TradeDecisionHeld`（判断後の見送り）とは別の事実で、急変の基準値を進めない。監査ログだけが購読する（通知しない） |
+| `PositionQueryStatusChanged` | 発注執行・取引判断 | Source(ProtectiveStopGuard/BrokerPositionSnapshot/BrokerAvailabilityProbe/SoftwareStopClose/OrderDispatch/TradeDecisionHoldings/TradeDecisionWorkingEntries), Status(Healthy/Failing), PreviousStatus(Unknown/Healthy/Failing), FailureKind（任意）, FailingSince（任意）, FailedQueries, OccurredAt | 建玉照会・保有照会の**状態が変わった**（発生源ごとに成功⇄失敗）。周期ごとの成功・失敗の連続では出さない。状態はサービスのプロセスの中に持つため、`PreviousStatus=Unknown` は起動後の最初の観測である（再起動の後の最初の失敗は必ず出る。最初の成功も 1 回だけ出る）。回復の回は `FailingSince`（失敗の始まり）と `FailedQueries`（続いた照会の回数）を持つ。発行に失敗したら状態を戻して次の照会で出し直す。監査ログだけが購読する（通知しない） |
 | `OrderApproved` | リスク管理 | DecisionId, Intent, ApprovedQuantity, ApprovedAt, StopLossMethod（損切りの実行機構。任意・既定 0＝S0） | 発注前検証を通過し発注執行へ。発注執行は承認が運ぶ手法で保護逆指値を扱う（#819） |
 | `OrderRejected` | リスク管理 | DecisionId, Intent, Reasons(RejectionReason[]), RejectedAt | 発注前拒否（理由列挙。監査ログと Discord 通知が購読） |
 | `OrderExecuted` | 発注執行 | DecisionId, OrderId, Status(OrderStatus), FilledQuantity, AveragePrice, ExecutedAt | 約定/失注/取消/証券会社拒否の確定 |

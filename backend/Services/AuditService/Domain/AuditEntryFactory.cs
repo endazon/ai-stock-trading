@@ -612,6 +612,32 @@ public static class AuditEntryFactory
             + $"（{e.InFlightDecisionIds.Count} 件）→ 送った {e.DispatchedQuantity} 株（台帳の乖離ではない）"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: LLM を呼ぶ前の見送り（1 回につき 1 行）。発注チェーンを持たないため EventId を相関にする
+    // （TradeDecisionHeld と同じ）。要約に「LLM を呼ぶ前」と書く（判断後の見送り〔TradeDecisionHeld〕と読み違えさせない）。
+    public static AuditEntry From(TradeDecisionForgoneBeforeLlm e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeDecisionForgoneBeforeLlm), e.EventId, e.Symbol,
+        $"{e.Symbol} LLM を呼ぶ前の見送り（{e.Reason}・{e.CycleTrigger ?? "起点不明"}）",
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会・保有照会の状態の変化。相関は発生源ごとの決定的 GUID
+    // （"position-query:<発生源>"）とし、1 つの発生源の失敗と回復を 1 本の相関で辿れるようにする。
+    // 🔴 前の状態が Unknown（起動直後）の回は「起動後の最初の観測」と書く（再起動をまたいだ区間の読み違いを防ぐ）。
+    public static AuditEntry From(PositionQueryStatusChanged e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(PositionQueryStatusChanged), AuditCorrelation.From($"position-query:{e.Source}"), Symbol: null,
+        Truncate(PositionQuerySummary(e)),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    private static string PositionQuerySummary(PositionQueryStatusChanged e)
+    {
+        var first = e.PreviousStatus == PositionQueryStatus.Unknown ? "（起動後の最初の観測）" : string.Empty;
+        return e.Status == PositionQueryStatus.Failing
+            ? $"照会の失敗が始まった: {e.Source}{first}（種類 {e.FailureKind ?? "不明"}）"
+            : e.PreviousStatus == PositionQueryStatus.Failing
+                ? $"照会が回復した: {e.Source}（失敗 {e.FailedQueries.ToString(CultureInfo.InvariantCulture)} 回・"
+                    + $"{e.FailingSince:yyyy-MM-dd HH:mm:ss}Z から）"
+                : $"照会できている: {e.Source}{first}";
+    }
+
     private static string ResolutionReasonLabel(StopLossMethodResolutionReason reason) => reason switch
     {
         StopLossMethodResolutionReason.AsSelected => "選択どおり",

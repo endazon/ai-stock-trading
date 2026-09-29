@@ -418,6 +418,50 @@ public class SoftwareStopExecutorTests
         f.Broker.MarketCloses.Should().ContainSingle("届いたか不明な注文に重ねて送らない");
     }
 
+    // ---- T-10-1770, NFR, FR-10, #1092, IADR-0462 決定2: S1 は自分で照会した回だけ成否を報告する ----
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_1770_S1は到達の受信で自ら照会した建玉照会の成否を報告する(bool succeeded)
+    {
+        var broker = new FakeBroker();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var store = new InMemoryExecutedOrderStore();
+        var health = new RecordingPositionQueryHealth();
+        var f = new Fixture(
+            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+                positionQueryHealth: health),
+            broker, stops, store, new InMemoryOrderReservationStore());
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+        f.Broker.Positions = succeeded ? [Long(10)] : null;
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        result.Deferred.Should().Be(succeeded ? 0 : 1, "前提: 照会できなければ据え置く");
+        health.Reports.Should().Equal([(PositionQuerySource.SoftwareStopClose, succeeded, (string?)null)]);
+    }
+
+    [Fact]
+    public async Task T_10_1770_ガードから渡されたスナップショットではS1は照会も報告もしない()
+    {
+        var broker = new FakeBroker();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var store = new InMemoryExecutedOrderStore();
+        var health = new RecordingPositionQueryHealth();
+        var executor = new SoftwareStopExecutor(
+            broker, broker, stops, store, new InMemoryOrderReservationStore(), new FakeClock(), positionQueryHealth: health);
+        var stop = SoftwareStop() with { TriggeredAt = Now, TriggeredPrice = 940m };
+        stops.Save(stop);
+        Entry(new Fixture(executor, broker, stops, store, new InMemoryOrderReservationStore()), stop, OrderStatus.Filled, 10);
+
+        await executor.TryCloseAsync(stops.Find(stop.EntryDecisionId)!, [Long(10)]);
+
+        broker.PositionQueries.Should().Be(0);
+        health.Reports.Should().BeEmpty("ガードが巡回の先頭の照会として報告済み（二重に数えない）");
+    }
+
     [Fact]
     public async Task 建玉を照会できなければ据え置く()
     {

@@ -648,6 +648,26 @@ public sealed class TradeDecisionHeldAuditHandler(IAuditEventStore store, IClock
     }
 }
 
+// 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: LLM を呼ぶ前の見送りを台帳へ記録する（再起動で消えるログの代わり）。
+public sealed class TradeDecisionForgoneBeforeLlmAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(TradeDecisionForgoneBeforeLlm message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会・保有照会の状態の変化を台帳へ記録する。
+public sealed class PositionQueryStatusChangedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(PositionQueryStatusChanged message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-02, FR-04, FR-11, #337, IADR-0247: スクリーニング入力の縮退（分割/切り詰め）を台帳へ記録する。
 // 月報の件数記載（分割と切り詰めを分けて数える）は台帳の種別 × 期間照会が集計経路である。
 public sealed class ScreeningContextReducedAuditHandler(IAuditEventStore store, IClock clock)

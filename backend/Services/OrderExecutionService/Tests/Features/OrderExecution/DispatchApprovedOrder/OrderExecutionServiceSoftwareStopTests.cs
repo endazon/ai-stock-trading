@@ -224,6 +224,24 @@ public class OrderExecutionServiceSoftwareStopTests
         stops.Find(approved.DecisionId).Should().BeNull();
     }
 
+    // T-10-1770, NFR, FR-10, #1092, IADR-0462 決定2: S1 の武装前の建玉照会の成否を発生源 OrderDispatch で報告する
+    // （照会の失敗は見送りの理由 UnattributedPosition に畳まれ、実際の帰属不明と台帳の上で区別できなかった）。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_1770_S1の武装前の建玉照会の成否を報告する(bool succeeded)
+    {
+        var broker = new ScriptedBroker { Positions = succeeded ? [] : null };
+        var health = new RecordingPositionQueryHealth();
+        var service = new AppSvc(
+            broker, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock(),
+            new InMemoryProtectiveStopOrderStore(), positionQueryHealth: health);
+
+        await service.ExecuteAsync(S1());
+
+        health.Reports.Should().Equal([(PositionQuerySource.OrderDispatch, succeeded, (string?)null)]);
+    }
+
     // T-10-434（同上）: 建玉照会の能力そのものが無い発注先でも同じ（構成事故を fail-closed で受ける）。
     [Fact]
     public async Task 建玉照会の能力が無い発注先ではS1を武装せず見送る()
