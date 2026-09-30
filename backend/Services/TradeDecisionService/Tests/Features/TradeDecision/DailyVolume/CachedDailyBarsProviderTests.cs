@@ -253,15 +253,59 @@ public class CachedDailyBarsProviderTests
         handler.Calls.Should().Be(2);
     }
 
+    // 🔴 T-10-1847: 本物の受け手の照会中に呼び出し側がキャンセルしたら、OCE として伝え（「未提供」に化けさせない）、失敗としても覚えない
+    // （［2026-10-01 追記］再監査 🟡-1。受け手の when 句を外す変異をここで殺す）。
+    [Fact]
+    public async Task 照会中の呼び出し側のキャンセルは伝え失敗として覚えない()
+    {
+        var handler = new HangingHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://order-execution"), Timeout = TimeSpan.FromMinutes(5) };
+        using var provider = new CachedDailyBarsProvider(
+            new HttpDailyBarsSource(http, NullLogger<HttpDailyBarsSource>.Instance),
+            new ManualTimeProvider(TuesdayMorning), NullLogger<CachedDailyBarsProvider>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+
+        using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            var pending = provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, cts.Token);
+            await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            await cts.CancelAsync();
+            await ((Func<Task>)(() => pending)).Should().ThrowAsync<OperationCanceledException>("停止時などのキャンセルは判断へ伝える");
+        }
+
+        // 失敗として 15 分覚えていれば撃たない。キャンセルは失敗ではないので、同じ時刻でも撃ち直す。
+        using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            var again = provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, cts.Token);
+            await ((Func<Task>)(() => WaitForCallsAsync(handler, 2, ct))).Should().NotThrowAsync();
+            await cts.CancelAsync();
+            await ((Func<Task>)(() => again)).Should().ThrowAsync<OperationCanceledException>();
+        }
+    }
+
+    private static async Task WaitForCallsAsync(HangingHandler handler, int calls, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (handler.Calls < calls)
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException($"照会が {calls} 回に達しない（{handler.Calls} 回）");
+            await Task.Delay(10, ct);
+        }
+    }
+
     private sealed class HangingHandler : HttpMessageHandler
     {
         private int _calls;
 
         public int Calls => Volatile.Read(ref _calls);
 
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _calls);
+            Started.TrySetResult();
             await Task.Delay(Timeout.Infinite, cancellationToken);
             throw new InvalidOperationException("到達しない");
         }
