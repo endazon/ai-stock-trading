@@ -55,3 +55,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-09-27 に 0047 へ**〔ADR-0047 Discord ボットの所有者トークンはサービスの身元であり、ボットの呼び出しは east-west として gRPC へ移す。gRPC 面の所有者の門は呼び出し元のクライアントがボットであることを併せて求める。planning#690。本リポの追随は #1067（決定 3 の実装と同じ PR）〕。
   **2026-09-27 実測**: 隣接クローンの `origin/main`（`3c7949f`。`git rev-parse --is-shallow-repository` → `true` のため `git archive origin/main` で展開した木で実行。
   ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 47]・47 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-09-30 に 0048 へ**〔ADR-0048 定時の判断へ渡す出来高は日足 K 線の前日までの値とし既存源の内側として扱う。K 線を判断へ流すのは取得枠の確認と分割の確認が済んでから。planning#702。本リポの追随は #1117（確認の道具〔検証口〕と同じ PR）〕。
+  **2026-09-30 実測**: 隣接クローンの `origin/main`（`2b0716c`。`git rev-parse --is-shallow-repository` → `true` のため `git archive origin/main` で展開した木で実行。
+  ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 48]・48 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
