@@ -71,6 +71,22 @@ public interface IProtectiveStopOrderStore
             .ToList();
 
     /// <summary>
+    /// 🔴 FR-10, ADR-0050 決定1, #1121, IADR-0466 決定2: 銘柄・市場・エントリー方向が一致する記録を<b>状態も機構も問わず</b>、
+    /// 更新が新しい順に最大 <paramref name="limit"/> 件返す。
+    /// <para>
+    /// 用途は<b>処理中の決済が保護の機構の出したものか</b>を見分けることだけである（S1 の決済の前に判断の手仕舞いを取り消す段。
+    /// 保護レグ〔S0 / S3 の逆指値〕・他の S1 の決済・失効した逆指値の成行手仕舞いは取り消さない）。完了した記録の逆指値が
+    /// まだ生きていることがある（IADR-0461 の残余）ため、Active だけでは足りない。
+    /// </para>
+    /// <para>
+    /// 既定の実装（試験用の包み型のためのもの）は Active な記録だけを返す（<see cref="FindActiveFor"/>）。
+    /// 本番のストア（EF・インメモリ）は状態を問わない問い合わせで上書きする。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<ProtectiveStopOrder> FindRecentFor(string symbol, Market market, TradeSide entrySide, int limit) =>
+        FindActiveFor(symbol, market, entrySide).OrderByDescending(s => s.UpdatedAt).Take(limit).ToList();
+
+    /// <summary>
     /// FR-10, #820 の 6 巡目監査・7 巡目監査, IADR-0344 追記(6)・追記(7): <b>完了済み</b>のソフトウェア逆指値（S1）のうち、
     /// 銘柄・市場・エントリー方向が一致するものを<b>更新が新しい順</b>に最大 <paramref name="limit"/> 件返す。
     /// <para>

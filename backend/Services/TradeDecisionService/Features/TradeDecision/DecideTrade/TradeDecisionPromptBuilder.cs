@@ -68,6 +68,7 @@ public static class TradeDecisionPromptBuilder
     // IADR-0351 決定3: 方針（PolicySummary）は書き換えない。出口の基準は ① 方針にあればそれに従う ② 無ければ保有継続が既定
     // ③ ただし記録上の損切りライン（FR-10 のリスク制約。建てた時点で判断が決めた権威データ＝IADR-0035）に達した建玉は
     // 手仕舞いを選べる。FR-04 は判断の枠を「方針」と「リスク制約」の 2 つで定めており、③ は方針の範囲外の行動ではない。
+    // ［2026-09-30 / #1121, ADR-0050 決定2］③ は機械的な損切りの無い構成（S2）と不明に限る（下の UsesStopLineExitGuidance）。
     public const string ExitFollowsPolicyRule =
         "出口の基準（利確・損切り・保有期間など）が方針にあれば、それに従います。方針に出口の基準が無ければ、保有継続（Hold）を既定とします。";
 
@@ -77,8 +78,15 @@ public static class TradeDecisionPromptBuilder
     public const string StopLossLineScopeNote =
         "記録上の損切りラインは、建て増しした建玉ではエントリーのうち最も保護的なラインです（全量のラインではありません）。";
 
+    // 🔴 FR-10, FR-04, ADR-0003, ADR-0050 決定2, #1121, IADR-0351 決定3（2026-09-30 追記）: 下の案内は**機械的な損切りの無い構成**
+    // （S2）と、損切りの実行機構が**不明**のときにだけ出す（UsesStopLineExitGuidance）。S0・S1・S3 では損切りは機械的に執行されるため、
+    // 案内は AI を 2 つ目の損切りの執行者にする（2026-09-29 の実測: 判断が「損切りライン到達」を理由に S1 と同じ建玉を同時に決済しようとした）。
+    // 代わりに StopLossIsMechanicalRule を出す。方針に基づく手仕舞い（ExitFollowsPolicyRule）はどの構成でも選べる。
     public const string StopLossLineIsRiskConstraintRule =
         "記録上の損切りラインはリスク制約の一部です。現在値が損切りラインに達している建玉は、方針に出口の基準が無くても、リスク制約に基づいて手仕舞いを選べます。";
+
+    public const string StopLossIsMechanicalRule =
+        "損切りは損切りの実行機構が機械的に執行します。現在値が損切りラインに達していることだけを理由に手仕舞いを選びません（方針に出口の基準があれば、それに従う手仕舞いは選べます）。";
 
     // FR-04, FR-10, #854, IADR-0351 決定3 の 4（#860 の監査の指摘）: 損切りライン到達中の建玉へは買い増ししない。
     // 🔴 これが無いと上の出口が消える —— 含み損の中で買い増すと、方針が「押し目買い」なら含み損が買い増しの根拠として
@@ -120,8 +128,12 @@ public static class TradeDecisionPromptBuilder
 
     // IADR-0351 決定4: 一次スクリーニングは門である（Hold を返すと本判断が走らない）。保有を知らない一次は、新規の関心が
     // 無いという理由で損切りライン到達の建玉を落とし得る＝出口の判断が本判断へ届かない。費用統制のため短縮版に留める。
+    // FR-10, ADR-0050 決定2, #1121, IADR-0351 決定4（2026-09-30 追記）: 後半の ScreeningStopLineCandidateRule は本判断の案内と同じ条件
+    // （S2・不明）でだけ続けて出す。S0・S1・S3 では損切りライン到達は判断の出口ではない。
     public const string ScreeningHeldRule =
-        "保有中の銘柄は、買い増し・売り増しに加えて、手仕舞いの検討に値する場合も本判断へ進めます。現在値が記録上の損切りラインに達している建玉は手仕舞いの候補です。";
+        "保有中の銘柄は、買い増し・売り増しに加えて、手仕舞いの検討に値する場合も本判断へ進めます。";
+
+    public const string ScreeningStopLineCandidateRule = "現在値が記録上の損切りラインに達している建玉は手仕舞いの候補です。";
 
     // FR-04, FR-02, ADR-0003, #1034, IADR-0440 決定 1/3: 監視銘柄節の文言。実測（2026-09-26）: 監視銘柄 6 件で方針を確定した日に、
     // META の判断で LLM が「META は対象の 6 銘柄に含まれていない」と方針を誤読した（方針の本文には明記されていた）。
@@ -394,7 +406,7 @@ public static class TradeDecisionPromptBuilder
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
-        AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit);
+        AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit, context.StopLossMethod);
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
         // 二段判断（IADR-0039）の費用統制のため、誘因の詳細説明（本判断側）は省き結論だけを渡す。
         // 無条件で出す（Build と同じく空売り可否のフラグをこのメソッドへ持ち込まない）。
@@ -558,7 +570,9 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine(
             $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
         sb.AppendLine($"- {ExitFollowsPolicyRule}");
-        sb.AppendLine($"- {StopLossLineIsRiskConstraintRule}");
+        sb.AppendLine(UsesStopLineExitGuidance(stopLossMethod)
+            ? $"- {StopLossLineIsRiskConstraintRule}"
+            : $"- {StopLossIsMechanicalRule}");
         sb.AppendLine($"- {NoAddAtStopLossLineRule}");
         sb.AppendLine($"- {AddOnlyWithinPolicyRule}");
         // #934, IADR-0390 決定4: 保有中でも未約定の建て増しが在り得る。不明なら買い増し・売り増しを選ばない。
@@ -607,7 +621,8 @@ public static class TradeDecisionPromptBuilder
     // FR-04, #854, IADR-0351 決定4: 保有状況節の短縮版（一次スクリーニング）。保護の状態と規則の詳細は本判断側が担う。
     // FR-04, FR-10, #934, IADR-0390 決定4: 未約定の新規建て注文（null＝不明）は本判断と同じ規則で書き分ける（要約 1 行）。
     private static void AppendHeldPositionSectionShort(
-        StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit)
+        StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit,
+        StopLossExecutionMethod? stopLossMethod)
     {
         sb.AppendLine(HeldPositionSectionTitle);
         if (held is null)
@@ -639,7 +654,8 @@ public static class TradeDecisionPromptBuilder
             var view = HeldPositionView.Of(held, markPrice, priceUnit);
             sb.AppendLine(
                 $"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice} / 含み損益率: {view.UnrealizedPnlRatio} / 記録上の損切りライン: {view.StopLossLine}");
-            sb.AppendLine($"- {ScreeningHeldRule}（この建玉の手仕舞いは {view.CloseAction}）");
+            var stopLineCandidate = UsesStopLineExitGuidance(stopLossMethod) ? ScreeningStopLineCandidateRule : string.Empty;
+            sb.AppendLine($"- {ScreeningHeldRule}{stopLineCandidate}（この建玉の手仕舞いは {view.CloseAction}）");
             if (working is null)
                 sb.AppendLine($"- {WorkingUnknownLine}");
             else if (working.Any)
@@ -652,17 +668,31 @@ public static class TradeDecisionPromptBuilder
     // #854, IADR-0351 決定1: 保護の状態。供給できるのは**損切りの実行機構の設定**（S0〜S3）だけであり、個々の建玉の
     // 逆指値が現在有効かを持つ射影は無い。🔴 **設定から「保護あり」を断定しない**——S0 でも保護を失った建玉は残り得る
     // （#847）。断定できるのは S2（保護レグを発注しない＝無保護）だけである。未供給（null）・未知の値は不明。
+    // FR-10, ADR-0050 決定2, #1121: S1 は IADR-0344 で実装済みである（旧文言「未実装のため S0 と同じ扱い」は古かった）。
+    // 設定から「保護あり」を断定しない規律は S1 でも同じ（保護記録が有効かの射影は供給されていない）。
     private static string DescribeProtection(StopLossExecutionMethod? method) => method switch
     {
         StopLossExecutionMethod.BrokerStopOrder =>
             "ブローカー側逆指値を建玉と同時に発注する設定です（S0）。この建玉の逆指値が現在有効かどうかは供給されていません（不明）。",
         StopLossExecutionMethod.SoftwareStop =>
-            "ソフトウェア逆指値の設定です（S1）が未実装のため、ブローカー側逆指値（S0）と同じ扱いです。この建玉の逆指値が現在有効かどうかは供給されていません（不明）。",
+            "ソフトウェア逆指値の設定です（S1）。損切りラインへの到達をシステムが検知し、成行で決済します（ブローカー側に逆指値は置きません）。この建玉の保護が現在有効かどうかは供給されていません（不明）。",
         StopLossExecutionMethod.NoProtectiveStop =>
             "無保護です（逆指値なしの建玉を許容する設定＝S2）。損切りは自動では執行されません。",
         StopLossExecutionMethod.AlternativeBrokerOrderType =>
             "ブローカー側の代替注文種別で保護する設定です（S3）。この建玉の保護注文が現在有効かどうかは供給されていません（不明）。",
         _ => "不明（損切りの実行機構の設定を取得できませんでした。自動の損切りが効く前提に立ちません）。",
+    };
+
+    // 🔴 FR-10, FR-04, ADR-0003, ADR-0050 決定2, #1121, IADR-0351 決定3（2026-09-30 追記）: 「損切りライン到達で手仕舞いを選べる」の
+    // 案内を出すか。**機械的な損切りの無い構成（S2）**と、**不明**（未供給・未知の値）だけ true。
+    // 不明で出すのは、ADR-0050 決定2 が案内しないとした S0・S1・S3 のどれとも分からず、消すと実際は S2 だった建玉の出口を塞ぐため
+    // （FR-10）。出したときの悪い側（判断と機械的な損切りの重なり）は IADR-0461・IADR-0466 が二重に売らないようにしている。
+    internal static bool UsesStopLineExitGuidance(StopLossExecutionMethod? method) => method switch
+    {
+        StopLossExecutionMethod.BrokerStopOrder => false,
+        StopLossExecutionMethod.SoftwareStop => false,
+        StopLossExecutionMethod.AlternativeBrokerOrderType => false,
+        _ => true,
     };
 
     // 保有状況の表示用の値（本判断・一次で共用）。計算はここ 1 か所に寄せる。

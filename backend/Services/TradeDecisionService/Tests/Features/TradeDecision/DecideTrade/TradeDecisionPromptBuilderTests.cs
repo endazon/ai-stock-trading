@@ -816,7 +816,7 @@ public class TradeDecisionPromptBuilderTests
     [Theory]
     [InlineData(null, "保護の状態: 不明（損切りの実行機構の設定を取得できませんでした。自動の損切りが効く前提に立ちません）。")]
     [InlineData(StopLossExecutionMethod.BrokerStopOrder, "ブローカー側逆指値を建玉と同時に発注する設定です（S0）。この建玉の逆指値が現在有効かどうかは供給されていません（不明）。")]
-    [InlineData(StopLossExecutionMethod.SoftwareStop, "ソフトウェア逆指値の設定です（S1）が未実装のため、ブローカー側逆指値（S0）と同じ扱いです。")]
+    [InlineData(StopLossExecutionMethod.SoftwareStop, "保護の状態: ソフトウェア逆指値の設定です（S1）。損切りラインへの到達をシステムが検知し、成行で決済します（ブローカー側に逆指値は置きません）。この建玉の保護が現在有効かどうかは供給されていません（不明）。")]
     [InlineData(StopLossExecutionMethod.NoProtectiveStop, "保護の状態: 無保護です（逆指値なしの建玉を許容する設定＝S2）。")]
     [InlineData(StopLossExecutionMethod.AlternativeBrokerOrderType, "ブローカー側の代替注文種別で保護する設定です（S3）。この建玉の保護注文が現在有効かどうかは供給されていません（不明）。")]
     public void 保護の状態は損切りの実行機構の設定から書き未供給は不明と書く(StopLossExecutionMethod? method, string expected)
@@ -841,6 +841,85 @@ public class TradeDecisionPromptBuilderTests
 
             ExtractSection(prompt, HeldHeading).Should().NotContain("無保護");
         }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // 🔴 FR-10, FR-04, ADR-0003, ADR-0050 決定2, #1121, IADR-0351 決定3・決定4（2026-09-30 追記）:
+    // 「損切りライン到達で手仕舞いを選べる」の案内は、機械的な損切りの無い構成（S2）と不明にだけ出す（T-10-1810..T-10-1812）。
+    // 実測（2026-09-29・S1）: 判断が「損切りライン 331.67 に達しており手仕舞い」として S1 と同じ建玉を同時に決済しようとした。
+    // ------------------------------------------------------------------------------------------------
+
+    public static TheoryData<StopLossExecutionMethod?, bool> StopLineGuidanceCases => new()
+    {
+        { StopLossExecutionMethod.NoProtectiveStop, true },
+        { null, true },
+        { (StopLossExecutionMethod)99, true },
+        { StopLossExecutionMethod.BrokerStopOrder, false },
+        { StopLossExecutionMethod.SoftwareStop, false },
+        { StopLossExecutionMethod.AlternativeBrokerOrderType, false },
+    };
+
+    // T-10-1810: 本判断。S2・不明でだけ到達の案内が出る。S0・S1・S3 では出ず、機械的な損切りの 1 行が出る。
+    // 方針に基づく手仕舞いの規則と、到達中の買い増しの禁止はどの構成でも出る。
+    [Theory]
+    [MemberData(nameof(StopLineGuidanceCases))]
+    public void T_10_1810_損切りライン到達の手仕舞いの案内は機械的な損切りの無い構成と不明にだけ出る(
+        StopLossExecutionMethod? method, bool guided)
+    {
+        var prompt = TradeDecisionPromptBuilder.Build(
+            ScheduledAapl(), Policy, ContextWith(method), currentPrice: 217.5m, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        section.Should().Contain("現在値は損切りラインに達しています");
+        section.Should().Contain(TradeDecisionPromptBuilder.ExitFollowsPolicyRule, "方針に基づく手仕舞いはどの構成でも選べる");
+        section.Should().Contain(TradeDecisionPromptBuilder.NoAddAtStopLossLineRule);
+        if (guided)
+        {
+            section.Should().Contain(TradeDecisionPromptBuilder.StopLossLineIsRiskConstraintRule);
+            section.Should().NotContain(TradeDecisionPromptBuilder.StopLossIsMechanicalRule);
+        }
+        else
+        {
+            section.Should().NotContain(TradeDecisionPromptBuilder.StopLossLineIsRiskConstraintRule);
+            section.Should().NotContain("リスク制約に基づいて手仕舞いを選べます");
+            section.Should().Contain(TradeDecisionPromptBuilder.StopLossIsMechanicalRule);
+        }
+
+        TradeDecisionPromptBuilder.StopLossIsMechanicalRule.Should().Contain("損切りラインに達していることだけを理由に手仕舞いを選びません");
+        TradeDecisionPromptBuilder.StopLossIsMechanicalRule.Should().Contain("方針に出口の基準があれば、それに従う手仕舞いは選べます");
+    }
+
+    // T-10-1811: 一次スクリーニングも同じ条件（到達は手仕舞いの候補、は S2・不明だけ）。前半（手仕舞いの検討に値すれば本判断へ）は全構成。
+    [Theory]
+    [MemberData(nameof(StopLineGuidanceCases))]
+    public void T_10_1811_一次スクリーニングの到達は手仕舞いの候補の文言も機械的な損切りの無い構成と不明にだけ出る(
+        StopLossExecutionMethod? method, bool guided)
+    {
+        var prompt = TradeDecisionPromptBuilder.BuildScreening(
+            ScheduledAapl(), Policy, ContextWith(method), currentPrice: 217.5m, held: LongAapl);
+
+        var section = ExtractSection(prompt, HeldHeading);
+        var expected = guided
+            ? $"- {TradeDecisionPromptBuilder.ScreeningHeldRule}{TradeDecisionPromptBuilder.ScreeningStopLineCandidateRule}（この建玉の手仕舞いは Sell）"
+            : $"- {TradeDecisionPromptBuilder.ScreeningHeldRule}（この建玉の手仕舞いは Sell）";
+        section.Should().Contain(expected);
+        if (!guided)
+            section.Should().NotContain(TradeDecisionPromptBuilder.ScreeningStopLineCandidateRule);
+    }
+
+    // T-10-1812: 保護の状態の S1 は実装済みの実態で書く（旧文言「未実装のため S0 と同じ扱い」を出さない）。保護ありとは断定しない。
+    [Fact]
+    public void T_10_1812_保護の状態のS1は未実装と書かず成行で決済すると書き有効かは不明と書く()
+    {
+        var section = ExtractSection(
+            TradeDecisionPromptBuilder.Build(
+                ScheduledAapl(), Policy, ContextWith(StopLossExecutionMethod.SoftwareStop), currentPrice: 217.5m, held: LongAapl),
+            HeldHeading);
+
+        section.Should().NotContain("未実装");
+        section.Should().NotContain("S0）と同じ扱い");
+        section.Should().Contain("成行で決済します");
+        section.Should().Contain("この建玉の保護が現在有効かどうかは供給されていません（不明）");
     }
 
     // IADR-0351 決定4: 一次スクリーニングは門である（Hold で本判断が走らない）。保有を知らない一次は、新規の関心が

@@ -42,6 +42,23 @@ public interface IExecutedOrderStore
             .ToList();
 
     /// <summary>
+    /// 🔴 FR-10, ADR-0050 決定1, #1121, IADR-0466 決定2: <b>新規建て（Open）</b>の記録のうち、銘柄・市場・エントリーの方向
+    /// （<paramref name="entrySide"/>）が一致するものを<b>状態を問わず</b>、新しい順に最大 <paramref name="limit"/> 件返す。
+    /// <para>
+    /// 用途は、保護逆指値を張れなかったエントリーの成行手仕舞い（DecisionId＝エントリーから決定的に導出。保護記録を持たないことがある）を
+    /// 保護の機構が出した決済として見分けることだけである。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindRecentOpens(string symbol, Market market, TradeSide entrySide, int limit) =>
+        GetAll()
+            .Where(r => r.PositionEffect == PositionEffect.Open
+                && r.Symbol == symbol && r.Market == market && r.Side == entrySide)
+            .OrderByDescending(r => r.ExecutedAt)
+            .Take(limit)
+            .ToList();
+
+    /// <summary>
     /// FR-10, #958, IADR-0406 決定3: 非終端の記録の<b>追跡の起点</b>（<see cref="ExecutionRecord.ExecutedAt"/>）を
     /// <paramref name="trackedFrom"/> へ進める（約定追跡の窓へ戻す）。<b>時刻の列だけ</b>を書き、状態・数量・価格には触れない
     /// （並行に約定追跡が記録を終端にしていても、古い状態で上書きしない）。記録が無い・終端・起点が既に同じか新しいなら

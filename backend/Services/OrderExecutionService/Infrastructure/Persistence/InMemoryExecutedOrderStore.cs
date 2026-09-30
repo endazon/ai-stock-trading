@@ -79,6 +79,22 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
+    // FR-10, #1121, IADR-0466 決定2: 新規建ての記録を銘柄・市場・エントリーの方向で絞って新しい順に返す（状態を問わない・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindRecentOpens(string symbol, Market market, TradeSide entrySide, int limit)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        lock (_gate)
+        {
+            return _records
+                .Where(r => r.PositionEffect == PositionEffect.Open
+                    && r.Symbol == symbol && r.Market == market && r.Side == entrySide)
+                .OrderByDescending(r => r.ExecutedAt)
+                .Take(limit)
+                .ToList();
+        }
+    }
+
     // FR-10, #958, IADR-0406 決定3: 非終端の記録の追跡の起点を進める（時刻だけを書く）。
     public bool RenewTracking(string orderId, DateTimeOffset trackedFrom)
     {
