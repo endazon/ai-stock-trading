@@ -8,6 +8,7 @@ using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
+using OrderExecutionService.Features.OrderExecution.ProbeKLineQuota;
 using OrderExecutionService.Features.OrderExecution.ProbeOrderFee;
 using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
@@ -44,6 +45,22 @@ if (OrderFeeProbeCommand.IsRequested(args))
         sensitiveValues: OrderFeeProbeComposition.SensitiveValues(probeConfiguration));
     Console.Out.Flush();
     Environment.Exit(probeExitCode);
+}
+
+// FR-02, FR-15, ADR-0048 決定 3, ADR-0023 決定 5, #1117, IADR-0464: 日足 K 線の取得枠と復権の扱いの 1 回実行の検証口。
+// `--probe-kline-quota [オプション]` のときだけ、Host を組まずに相場（Qot）の読み取り要求だけを撃って終わる（発注の接続は作らない）。
+// 構成・終わり方は上の注文費用照会の検証口と同じ（構成はサービス本体と同じ appsettings＋環境変数・Environment.Exit で閉じる）。
+// 2 つの旗を同時に渡すと、先に判定した注文費用照会の側が「余分な引数」として使い方の誤りで終える（どちらも接続しない）。
+if (KLineQuotaProbeCommand.IsRequested(args))
+{
+    var klineProbeConfiguration = WebApplication.CreateBuilder().Configuration;
+    var klineProbeExitCode = await KLineQuotaProbeCommand.RunAsync(
+        args,
+        () => KLineQuotaProbeComposition.CreateQuery(klineProbeConfiguration),
+        Console.Out,
+        sensitiveValues: KLineQuotaProbeComposition.SensitiveValues(klineProbeConfiguration));
+    Console.Out.Flush();
+    Environment.Exit(klineProbeExitCode);
 }
 
 // #13 Slice A, IADR-0013/0016: ヘルスチェックの HTTP サーフェスのため WebApplication を用いる。

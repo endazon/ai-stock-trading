@@ -15,6 +15,11 @@
     <None Remove="Tests/**" />
   </ItemGroup>
   <ItemGroup>
+    <!-- #1117（PR #1119 の監査 F3）: MMAPI.Init の二重化防止（internal の OnceInitializer）を試験から直接組み立てる
+         （NotificationService / ConfigurationService / CostControlService / TradeDecisionService と同じ作法）。 -->
+    <InternalsVisibleTo Include="OrderExecutionService.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- ADR-0013, IADR-0129, #354: メッセージングは Wolverine（RabbitMQ）。共通配線は shim の WolverineExtensions。 -->
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
