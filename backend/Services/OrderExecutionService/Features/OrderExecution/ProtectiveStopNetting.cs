@@ -532,6 +532,11 @@ public static class ProtectiveStopNetting
     /// 🔴 <b>照会不能（null）のスナップショットで呼んではならない</b>——不明を「建玉なし」と読んで印を消すと、
     /// 次の照会で同じ状態を重ねて鳴らす。
     /// </para>
+    /// <para>
+    /// 🔴 <b>#1114, IADR-0344 追記(18)</b>: 帰属不明 = 方向の純額 − Active 行の主張 − <see cref="SharesAccountedElsewhere"/>
+    /// − <see cref="PendingEntryUnfilledShares"/>。最後の項は、エントリーの約定が発注記録へ反映される前の窓
+    /// （約定追跡の間隔）で自分の新規建てを帰属不明と誤って知らせないための、<b>検知だけの</b>差し引きである。
+    /// </para>
     /// </summary>
     public static void DetectUnattributedPositions(
         IReadOnlyList<BrokerPositionSnapshot> snapshot,
@@ -586,11 +591,15 @@ public static class ProtectiveStopNetting
                 .First();
 
             // 帳簿の主張（一時的な観測で揺れない側）で引き、さらに「純額に含まれるが帳簿に現れない株数」を除く。
+            // 🔴 FR-10, #1114, IADR-0344 追記(18): 検知に限り、非終端のエントリーが**これから約定し得る株数**も除く
+            // （記録へ約定が反映される前の窓で、自分の新規建てを帰属不明と誤って知らせない）。
+            // SharesAccountedElsewhere 自体には入れない——観測の門（ReconcileShares）は約定数量で数える（BLK-7-1）。
             var unattributed = net <= 0
                 ? 0
                 : net
                     - group.Sum(s => s.ProtectedQuantity)
-                    - SharesAccountedElsewhere(symbol, market, entrySide, group, stops, store);
+                    - SharesAccountedElsewhere(symbol, market, entrySide, group, stops, store)
+                    - PendingEntryUnfilledShares(group, store);
 
             if (unattributed <= 0)
             {
@@ -661,8 +670,11 @@ public static class ProtectiveStopNetting
     /// その株数は S0 行の主張が既に覆っている（数えると二重に引く）。
     /// </para>
     /// <para>
-    /// 🔴 <b>持ち分（残保護数量）の計算には使わない。</b> この集計は<b>観測を数え続けてよいかの門</b>にだけ使う
+    /// 🔴 <b>持ち分（残保護数量）の計算には使わない。</b> この集計は<b>観測を数え続けてよいかの門</b>と
+    /// 帰属不明の検知（<see cref="DetectUnattributedPositions"/>）にだけ使う
     /// ——追記(4) で撤去した「毎巡回の引き直し」を復活させるものではない。
+    /// 🔴 <b>#1114, IADR-0344 追記(18): 検知の側はこれに <see cref="PendingEntryUnfilledShares"/> を足して引く。</b>
+    /// ここへ入れてはならない（門で承認数量を数えることになり、BLK-7-1 が再発する）。
     /// </para>
     /// </summary>
     private static int SharesAccountedElsewhere(
@@ -693,6 +705,29 @@ public static class ProtectiveStopNetting
 
         return sent + unconfirmedEntryFills;
     }
+
+    /// <summary>
+    /// 🔴 FR-10, #1114, IADR-0344 追記(18): <b>帰属不明の検知だけ</b>が差し引く、確定前の S1 行の
+    /// <b>「これから約定し得る株数」</b>（エントリーの発注記録が<b>非終端</b>の行について <c>max(0, 行の数量 − 記録の約定数量)</c> の合計）。
+    /// <para>
+    /// moomoo はエントリーの発注応答を Accepted・約定 0 で返し、約定追跡が記録を Filled へ直すまでの窓がある。
+    /// その窓では純額に自分の約定が既に含まれるのに、<see cref="SharesAccountedElsewhere"/> は記録の約定数量（0）しか数えないため、
+    /// 自分の新規建てを帰属不明として知らせていた。<see cref="SharesAccountedElsewhere"/> と合わせて、非終端の行は
+    /// <c>max(約定数量, 行の数量)</c> まで説明が付く。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>終端の記録（Filled / Rejected / Cancelled / Expired）は 0</b>——これ以上約定しないので、見込みを残すと他人の建玉を隠し続ける
+    /// （建玉観測の常駐は確定を通さずに検知するため、終端でも未確定の行が残り得る）。
+    /// 🔴 <b>記録が無い行も 0</b>——届いたか不明の行は到達しない限り閉じないため、見込みで数えると他人の建玉を期限なく隠す。
+    /// 🔴 <b>観測の門（<c>ReconcileShares</c>）には使わない</b>（承認数量で数えると BLK-7-1 が再発する）。
+    /// </para>
+    /// </summary>
+    private static int PendingEntryUnfilledShares(List<ProtectiveStopOrder> group, IExecutedOrderStore store) =>
+        group
+            .Where(s => s.IsSoftwareStop && s.RemainingProtected is null)
+            .Sum(s => store.FindByDecisionId(s.EntryDecisionId) is { } entry && OrderStatusLifecycle.IsPending(entry.Status)
+                ? Math.Max(0, s.Quantity - Math.Max(0, entry.FilledQuantity))
+                : 0);
 
     // 🔴 FR-10, #833 項目3, IADR-0396: 群の写しは呼び出し側が await を跨いで持っていたものであり得る（決済経路・乖離の取り込み）。
     // **楽観並行で書き**、衝突したら何も書かずに群の行を保存先の最新へ差し替えて false を返す
