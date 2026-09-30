@@ -19,14 +19,14 @@ public class EntryBlockersServiceTests
     // 2026-09-23 10:00 EDT（米国の取引日の中）。
     private static readonly DateTimeOffset Now = new(2026, 9, 23, 14, 0, 0, TimeSpan.Zero);
 
-    private sealed class Fixture
+    private sealed class Fixture(DateTimeOffset? now = null)
     {
         public InMemoryPortfolioLedgerStore Ledger { get; } = new();
         public InMemoryKillSwitchStore KillSwitch { get; } = new();
         public InMemoryPauseStore Pause { get; } = new();
         public InMemoryLockoutStore Lockout { get; } = new();
         public InMemoryRiskSettingsStore Settings { get; } = new();
-        public IClock Clock { get; } = new FakeClock(Now, TradingDay.Of(Now));
+        public IClock Clock { get; } = new FakeClock(now ?? Now, TradingDay.Of(now ?? Now));
 
         private PortfolioSnapshotBuilder Snapshots() => new(
             new LedgerPortfolioStateProvider(
@@ -137,6 +137,25 @@ public class EntryBlockersServiceTests
         f.Blockers().Build("AAPL", Market.UnitedStates).LongSide.Should().BeEmpty();
 
         f.Lockout.Get().Should().Be(expired);
+    }
+
+    // T-10-1783: 🔴 当日は**銘柄の市場の現地取引日**で読む（PR #1116 の監査 M5。審査側の同型は OrderScreeningServiceTests の
+    // 「米国セッション中にJSTの日付が変わってもロックアウトは解除されない」）。ET 9/23 11:30 ＝ JST 9/24 0:30 に、
+    // ET 9/23 に到達して 9/24 解除のロックアウトは米国の当日にまだ有効である。JST の日付で読むと失効に見えて口が空を返す。
+    [Fact]
+    public async Task T_10_1783_JSTの日付が変わっても米国の取引日内ならロックアウトを返す()
+    {
+        var jstNextDay = new DateTimeOffset(2026, 9, 23, 15, 30, 0, TimeSpan.Zero);
+        var f = new Fixture(jstNextDay);
+        f.Lockout.Set(new LockoutState(new DateOnly(2026, 9, 24), "試験", Now));
+        TradingDay.Of(jstNextDay, Market.Japan).Should().Be(new DateOnly(2026, 9, 24), "前提: JST では日付が変わっている");
+        TradingDay.Of(jstNextDay, Market.UnitedStates).Should().Be(new DateOnly(2026, 9, 23), "前提: 米国の取引日内");
+
+        var view = f.Blockers().Build("AAPL", Market.UnitedStates);
+
+        view.LongSide.Should().Equal(RejectionReason.DailyLossLimitReached);
+        view.ShortSide.Should().Equal(RejectionReason.DailyLossLimitReached);
+        view.LongSide.Should().Equal(await ScreenedDeterminableAsync(f), "審査も米国の当日で読む（口と審査の一致）");
     }
 
     [Theory]

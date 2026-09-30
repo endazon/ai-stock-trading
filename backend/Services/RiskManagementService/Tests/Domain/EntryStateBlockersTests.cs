@@ -28,6 +28,10 @@ public class EntryStateBlockersTests
         CashBelowLimit,
         CashAtLimit,
         CashUnknownCount,
+
+        // 🔴 PR #1116 の監査（M6）: 信用口座（照会済み）で GFV 件数が停止基準以上。GFV は現金口座でのみ加わる統制であり、
+        // 口座種別の条件を外すとここだけが口に GoodFaithViolationLimitReached を立てる（上の 4 値は Account か件数が null）。
+        MarginAtLimit,
     }
 
     private static PortfolioSnapshot Snapshot(
@@ -41,17 +45,24 @@ public class EntryStateBlockersTests
             DailyRealizedPnl = dailyLoss ? -1_500m : 0m,
             UnrealizedPnl = dailyLoss ? -500m : -1_999m,
             DrawdownRatio = drawdown ? Settings.Limits.MaxDrawdownRatio : Settings.Limits.MaxDrawdownRatio - 0.0001m,
-            Account = gfv == Gfv.NotCashAccount ? null : new BrokerAccountState(AccountType.Cash, SettledCashInBase: 1_000_000m),
+            Account = gfv switch
+            {
+                Gfv.NotCashAccount => null,
+                Gfv.MarginAtLimit => new BrokerAccountState(AccountType.Margin, SettledCashInBase: 1_000_000m),
+                _ => new BrokerAccountState(AccountType.Cash, SettledCashInBase: 1_000_000m),
+            },
             GoodFaithViolations = gfv switch
             {
                 Gfv.CashBelowLimit => GoodFaithViolationTally.Observed(AccountTypePolicy.GoodFaithViolationStopThreshold - 1),
-                Gfv.CashAtLimit => GoodFaithViolationTally.Observed(AccountTypePolicy.GoodFaithViolationStopThreshold),
+                Gfv.CashAtLimit or Gfv.MarginAtLimit =>
+                    GoodFaithViolationTally.Observed(AccountTypePolicy.GoodFaithViolationStopThreshold),
                 _ => null,
             },
         };
 
     // T-10-1782: 全組み合わせで口と審査が一致する（建玉数 上限−1/上限/上限+1 × 損切り None/StoppedOut/Unknown（両方向）×
-    // 方向 × kill switch × 一時停止 × 日次損失 × DD × GFV（口座種別・件数の既知／不明）× 資金の既知／不明）。
+    // 方向 × kill switch × 一時停止 × 日次損失 × DD × GFV（口座種別・件数の既知／不明。信用口座（照会済み）で件数が停止基準以上を
+    // 含む＝PR #1116 の監査 M6）× 資金の既知／不明）。
     [Fact]
     public void T_10_1782_口の答えは同じ入力の審査の拒否と一致する()
     {
@@ -100,7 +111,7 @@ public class EntryStateBlockersTests
         }
 
         failures.Should().BeEmpty();
-        checkedCases.Should().Be(3 * 3 * 3 * 2 * 2 * 2 * 2 * 2 * 4 * 2);
+        checkedCases.Should().Be(3 * 3 * 3 * 2 * 2 * 2 * 2 * 2 * 5 * 2);
         blockedCases.Should().BeGreaterThan(0).And.BeLessThan(checkedCases, "塞がる組と塞がらない組の両方を試す");
     }
 
@@ -143,7 +154,7 @@ public class EntryStateBlockersTests
             .Should().BeEmpty("不明は確定した拒否ではない（審査は StopOutStatusUnknown で止める）");
     }
 
-    // T-10-1784: kill switch・一時停止・日次損失・ロックアウト・DD・GFV（件数が既知のとき）をそれぞれ名前で返す。
+    // T-10-1784: kill switch・一時停止・日次損失・ロックアウト・DD・GFV（現金口座で件数が既知のとき）をそれぞれ名前で返す。
     [Fact]
     public void T_10_1784_各ブロッカーを名前で返し_GFV_の件数が不明なら返さない()
     {
@@ -161,6 +172,12 @@ public class EntryStateBlockersTests
             .Should().Equal(RejectionReason.GoodFaithViolationLimitReached);
         Long(Snapshot(0, false, false, false, false, Gfv.CashUnknownCount, true))
             .Should().BeEmpty("GFV の件数が未供給なのは不明（審査は止めるが確定とは言わない）");
+        // 🔴 PR #1116 の監査（M6）: 信用口座（照会済み）＋件数が停止基準以上。口も審査も GFV では止めない（口と審査の一致）。
+        var marginAtLimit = Snapshot(0, false, false, false, false, Gfv.MarginAtLimit, true);
+        Long(marginAtLimit)
+            .Should().BeEmpty("GFV は現金口座でのみ加わる統制（信用口座なら件数が停止基準以上でも塞がない）");
+        RiskEvaluator.Evaluate(Entry(TradeSide.Buy), Settings, marginAtLimit, stopOuts: StopOutReentrySupply.NoneToday).Reasons
+            .Should().NotContain(RejectionReason.GoodFaithViolationLimitReached, "審査も信用口座では GFV で止めない");
         Long(Snapshot(0, false, false, true, false, Gfv.NotCashAccount, capitalKnown: false))
             .Should().BeEmpty("資金が未供給なら日次損失は判定しない（審査は CapitalBaselineUnavailable で止める）");
     }
