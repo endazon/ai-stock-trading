@@ -18,9 +18,6 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // 未使用のコールバックは no-op。接続/口座取得は初回利用時に遅延実行する（起動をブロックしない）。
 public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTradeClient, IShortPermitSource, IOrderFeeQuery, IProbeOutputRedactor, IDisposable
 {
-    private static readonly object InitGate = new();
-    private static bool _apiInitialized;
-
     private readonly MoomooBrokerOptions _options;
     // #132: 応答待ちは構成から外部化する（Broker:Moomoo:OpenD:ReplyTimeoutSeconds・既定 15 秒＝従来のハードコード値）。
     private readonly TimeSpan _replyTimeout;
@@ -67,14 +64,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         _replyTimeout = options.ReplyTimeout;
         _logger = logger;
         _connectionFactory = connectionFactory ?? new MMApiTradeConnectionFactory();
-        lock (InitGate)
-        {
-            if (!_apiInitialized)
-            {
-                MMAPI.Init();
-                _apiInitialized = true;
-            }
-        }
+        // #1117, IADR-0464: MMAPI.Init はプロセスで 1 回（K 線の検証口の Qot クライアントと共有する口）。
+        MoomooApi.EnsureInitialized();
         // moomoo は cross-network の trade 接続に暗号化を要求する。RSA 秘密鍵が構成されていれば暗号化で接続する。
         // SetRsaPrivateKey は鍵の内容（PKCS#1 PEM 文字列）を受け取る（パスではない）。
         // 鍵パスが構成済みなら存在は preflight が保証済み（不在なら上で停止している）。同一コンストラクタ内で
