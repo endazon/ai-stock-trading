@@ -531,7 +531,10 @@ public static class KLineQuotaProbeCommand
     {
         var head = $"requestTime.tz={RequestTimeZoneLabel}";
         if (requestTime is null
-            || !DateTime.TryParseExact(requestTime.Trim(), RequestTimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
+            || !DateTime.TryParseExact(requestTime.Trim(), RequestTimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var local)
+            // 読めても換算先（UTC は −8h・JST は +1h）が DateTime の範囲外なら換算できない（例外で検証口を打ち切らない）。
+            || local < DateTime.MinValue + RequestTimeOffset
+            || local > DateTime.MaxValue - (JstOffset - RequestTimeOffset))
             return $"{head} requestTime.jst=(換算不可) requestTime.utc=(換算不可)";
         var fraction = requestTime.Trim().Split('.') is [_, var f] ? "." + new string('f', f.Length) : string.Empty;
         var format = "yyyy-MM-dd HH:mm:ss" + fraction;

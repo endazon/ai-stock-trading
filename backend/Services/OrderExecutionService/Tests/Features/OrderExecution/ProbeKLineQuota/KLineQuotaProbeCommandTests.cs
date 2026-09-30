@@ -409,6 +409,8 @@ public class KLineQuotaProbeCommandTests
     [InlineData("")]
     [InlineData("2026/09/30 22:25:53")]
     [InlineData("1790000000")]
+    [InlineData("0001-01-01 05:00:00")] // 読めるが UTC へ換算すると DateTime の範囲を下回る
+    [InlineData("9999-12-31 23:30:00")] // 読めるが JST へ換算すると DateTime の範囲を上回る
     public void 読めないrequestTimeは時刻帯だけ明記し換算不可と出す(string? requestTime) =>
         KLineQuotaProbeCommand.DescribeRequestTimeZones(requestTime)
             .Should().Be("requestTime.tz=UTC+8 requestTime.jst=(換算不可) requestTime.utc=(換算不可)");

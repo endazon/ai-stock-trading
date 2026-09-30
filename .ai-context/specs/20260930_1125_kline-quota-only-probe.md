@@ -139,3 +139,5 @@ IADR は新規に起こさない（IADR-0464 の形〔読み取り専用・1 回
 `dotnet format backend/backend.slnx --verify-no-changes`（差分なし）／node の検査器（`check-trace-blocks`・`gen-knowledge-graph --check`・`check-cross-repo-refs`・
 `check-plan-id-qualification`・`check-test-traceability`・`check-doc-links`・`check-adr-index-sync`・`check-adr-index-addendum-loss`・`check-reading-budget`・
 `check-commit-messages`）と `scripts.test.js`（490 件）。
+
+［2026-10-01 追記 / #1125］独立監査の 🟡（形式として読める極端な requestTime ― `0001-01-01 05:00:00`・`9999-12-31 23:30:00` ― で換算が `ArgumentOutOfRangeException` を投げ、検証口が result=error で打ち切られる）を是正した。換算先（UTC は −8h、JST は +1h）が `DateTime` の範囲外なら「(換算不可)」に倒す。試験は「読めない requestTime」の Theory に 2 件を足した。変異（範囲の判定を外す）で 2 件が赤になることを確かめた。
