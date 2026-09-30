@@ -269,6 +269,10 @@ builder.Services.AddScoped<IHeldPositionProvider>(sp =>
 // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 銘柄単位の新規建ての可否（リスク管理の GET /risk-controls/entry-blockers・
 // gRPC GetEntryBlockers。審査と同じ述語）。保有照会と同じ選び方（gRPC の宣言 → Grpc、BaseUrl → Http、どちらも無ければ NoOp）。
 // NoOp は常に不明＝判断は LLM を呼ぶ（従来どおり）。照会の失敗も同じ（見送らない。審査が止める）。
+// FR-10, ADR-0049 決定2・決定5, #1120, IADR-0465 決定1: 損切り幅の下限（ATR(14)）の供給口。**今は ATR を供給しない**
+// （日足が判断へ通るまで＝ADR-0048 決定 3 と同じ条件）。常に null＝判断は参照価格（アンカー後）の 2% を下限とする。
+// 明示的に登録する（省略可能な引数の既定へ黙って落とさない。IADR-0397）。ATR の実装はここで差し替える。
+builder.Services.AddSingleton<IStopWidthFloorSource, NoAtrStopWidthFloorSource>();
 builder.Services.AddSingleton<NoOpEntryBlockersProvider>();
 builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
 {

@@ -315,6 +315,28 @@ public class Stage0DecisionRecorderTests
         record.RawDecisions[0].Rationale.Should().Be("1株単位の新規買いが可能");
     }
 
+    // T-10-1809, FR-10, ADR-0049 決定2・決定3, #1120, IADR-0465 決定5: Stage 0 の記録も本番と同じ下限（参照価格の 2%）を掛けてから
+    // サイジングする。縮小係数 0.25（5 連敗 × DD 5% 以上）で 1 取引リスク側が効く構成にし、幅の違いを株数で読む:
+    // 予算 100,000 × 1% × 0.25 ＝ 250。AI の幅 0.5 → 下限 2 → 125 株（下限が無ければ 500 株 → 残枠で 200 株）。
+    // 幅 3（下限以上）→ 83 株（そのまま）。各票の生の幅は AI の値のまま残る。
+    [Theory]
+    [InlineData(0.5, 125)]
+    [InlineData(3, 83)]
+    public async Task Stage0の記録も損切り幅に下限を掛けてサイジングする(double width, int expected)
+    {
+        var shrunk = new SizingContext(100_000m, 50_000m, 20_000m, 5, 0.06m,
+            BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits());
+        var (recorder, _, sink, _) = Build(
+            [$$"""{"action":"Buy","rationale":"根拠","referencePrice":100,"stopLossDistancePerShare":{{width}}}"""],
+            wrapInputs: _ => new StubInputProvider(sizing: shrunk));
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        var record = sink.Saved!.Records[0];
+        record.SignedQuantity.Should().Be(expected);
+        record.RawDecisions[0].StopLossDistancePerShare.Should().Be((decimal)width, "生の判断は AI の幅のまま");
+    }
+
     // 売り判断は負の数量（再生側の空売り観測 IADR-0304 が働く形になる）。
     [Fact]
     public async Task 売り判断は負の数量で記録される()
@@ -579,7 +601,8 @@ public class Stage0DecisionRecorderTests
     private sealed class StubInputProvider(
         IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null,
         IReadOnlyList<WatchedSymbol>? asOfWatchlist = null,
-        decimal? previousCloseValue = null)
+        decimal? previousCloseValue = null,
+        SizingContext? sizing = null)
         : IAsOfDecisionInputProvider
     {
         public Task<AsOfDecisionInput?> GetAsync(
@@ -587,7 +610,7 @@ public class Stage0DecisionRecorderTests
             Task.FromResult<AsOfDecisionInput?>(new AsOfDecisionInput(
                 asOf,
                 new DailyPolicy(asOf, "当日の方針"),
-                new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m,
+                sizing ?? new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m,
                     BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
                 new DatedPrice(asOf, 100m),
                 notReconstructable: notReconstructable,

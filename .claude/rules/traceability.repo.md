@@ -6,7 +6,7 @@
 ## 起点 ID の種別（固有）
 
 裸の ID は**本リポジトリ（ai-stock-trading）の計画書**を指す。レンジは
-`FR-01..21` / `UC-01..07` / `SC-01..04`、計画 ADR は `ADR-0001..0047`（いずれも欠番なし。
+`FR-01..21` / `UC-01..07` / `SC-01..04`、計画 ADR は `ADR-0001..0050`（いずれも欠番なし。
 project-planning `projects/ai-stock-trading/` の実ファイルと一致）。
 🔴 **転記元は計画 ADR の本文ではなく、計画リポの `node tools/doc-checks/gen-plan-ranges.js --check` の実測である**
 （ADR 本文の数値は、その ADR 自身が加わった時点で古くなる）。

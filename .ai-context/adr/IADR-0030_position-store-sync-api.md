@@ -91,3 +91,11 @@ daily-policy/sizing-context の安全既定は「取引しない」（保守側�
   「損切り幅3%なら…」の目安であり、資金の USD 化で同行ごと書き換わった（当時の引用は計画側の環流記録
   `10_feedback/20260708_trading-defaults-derived-values.md` に残る）。0.03 は計画の確定値ではなく、実装側の過渡的な近似値である。
   値と近似の式（[IADR-0035](IADR-0035_stop-loss-authoritative.md) 以降はフォールバック）は変えない。
+
+## ［2026-09-30 追記 / #1120］「ATR 連動」の定義（計画 ADR-0049）と下限の強制
+
+本文と上の #1104 の追記は書き換えない。上の追記の「planning#703 の裁定待ち」は、計画 ADR-0049（利用者裁定 2026-09-30）で裁定された。
+`stopLossDistancePerShare` は LLM の提案であり、取引判断が**下限 ＝ 1.0 × ATR(14, 日足)（ATR が得られないときは参照価格〔アンカー後〕の 2%）**を掛け、
+割った幅は下限まで広げる。損切り価格は広げた幅から引く。ATR はまだ供給されておらず、2% が効いている
+（[IADR-0465](IADR-0465_stop-width-floor-fallback-2pct-widen-and-audit.md)）。
+**近似の 3%（`DefaultStopLossRatio`）は本下限とは別の値**であり（ADR-0049 フォローアップ 4）、本 IADR のフォールバックの値と式は変わらない。

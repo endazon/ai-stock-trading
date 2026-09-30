@@ -26,10 +26,22 @@ public class TradingDefaultsTests
         limits.MaxOpenPositions.Should().Be(3);               // 保有**建玉**数上限（ADR-0016 決定9）
 
         limits.DailyLossLimitRatio.Should().Be(0.02m);   // 日次損失上限: 資金の 2%
-        limits.PerTradeRiskRatio.Should().Be(0.01m);     // 1取引あたりリスク: 資金の 1%（幅は LLM の出力・ATR は計算しない。IADR-0460）
+        limits.PerTradeRiskRatio.Should().Be(0.01m);     // 1取引あたりリスク: 資金の 1%（幅は取引判断が下限を掛けた幅。IADR-0465）
         limits.MaxDrawdownRatio.Should().Be(0.10m);      // 最大DD上限: 10%
         limits.LosingStreakThreshold.Should().Be(5);     // 5 連敗でサイズ半減（ADR-0018 決定1）
         limits.LosingStreakSizeFactor.Should().Be(0.5m);
+    }
+
+    // T-10-1798, FR-10, FR-17, ADR-0049 決定2, #1120, IADR-0465 決定1: 損切り幅の下限の退避値は参照価格の 2%
+    // （05_trading-assumptions §5「損切り幅の下限」）。ラインが不明な建玉の近似（3%）とは別の値である。
+    [Fact]
+    public void 損切り幅の下限の退避値は参照価格の2パーセント()
+    {
+        TradingDefaults.StopWidthFloorFallbackRatio.Should().Be(0.02m);
+        TradingDefaults.StopWidthFloorFallbackRatio.Should().NotBe(TradingDefaults.DefaultStopLossRatio);
+        // 幅 2% は 1 注文上限（25%）が効く上端 4%（＝1% ÷ 25%）より狭い＝既定のサイジングでは株数を変えない（ADR-0049 決定3）。
+        var limits = TradingDefaults.CreateRiskLimits();
+        TradingDefaults.StopWidthFloorFallbackRatio.Should().BeLessThan(limits.PerTradeRiskRatio / limits.MaxOrderAmountRatio);
     }
 
     // FR-10, FR-17, #329, #364, IADR-0130 決定3 / IADR-0152 決定3: 初期投入資金は USD 3,000

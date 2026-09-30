@@ -33,8 +33,8 @@ public record RiskLimitSettings
     public required decimal DailyLossLimitRatio { get; init; }
 
     /// <summary>
-    /// 1取引あたりリスク（資金比。サイジングの基礎）。計画は「ATR 連動」を定めるが、実装の損切り幅は取引判断 LLM の出力を
-    /// そのまま使い ATR は計算していない（#1104, IADR-0460。数値の下限は planning#703 の裁定待ち）。
+    /// 1取引あたりリスク（資金比。サイジングの基礎）。「ATR 連動」の実体は損切り幅の下限（1.0 × ATR(14)。ATR が得られない間は
+    /// 参照価格の 2%）であり、取引判断が LLM の幅に掛ける（#1120, ADR-0049, IADR-0465。ATR は未供給で 2% が効いている）。
     /// </summary>
     public required decimal PerTradeRiskRatio { get; init; }
 
