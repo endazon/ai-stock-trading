@@ -96,6 +96,19 @@ public class UnattributedEntryFillWindowTests
             return row;
         }
 
+        /// <summary>S0（ブローカー側逆指値）の未確定の行。逆指値は受理済み（StopOrderId あり）。主張は行の数量。</summary>
+        public ProtectiveStopOrder ArmS0(string symbol, int quantity, DateTimeOffset? createdAt = null)
+        {
+            var id = Guid.NewGuid();
+            var at = createdAt ?? T0;
+            var row = new ProtectiveStopOrder(
+                id, ProtectiveStopIds.StopDecisionId(id, 1), $"stop-{id:N}", symbol, Market.UnitedStates, TradeSide.Buy,
+                ProductType.Cash, BrokerProvider.MoomooSimulate, quantity, 245.14m, 1m, 1, ProtectiveStopState.Active,
+                at, at, StopLossExecutionMethod.BrokerStopOrder);
+            Stops.Save(row);
+            return row;
+        }
+
         /// <summary>エントリーの発注記録（約定追跡が書き換える側）。</summary>
         public void Entry(ProtectiveStopOrder row, OrderStatus status, int filled) =>
             Store.Save(new ExecutionRecord(
@@ -179,6 +192,48 @@ public class UnattributedEntryFillWindowTests
         f.Stops.Find(row.EntryDecisionId)!.UnattributedNotifiedQuantity.Should().Be(30);
     }
 
+    [Theory]
+    [InlineData(Path.Guard)]
+    [InlineData(Path.Resident)]
+    public async Task T_10_1778_別銘柄の未確定エントリーの見込みで他人の建玉を隠さない(Path path)
+    {
+        // T-10-1778, FR-10, #1114, IADR-0344 追記(18)（#1115 監査 F1・M10）: 差し引きは群（銘柄・市場・方向）の行だけで数える。
+        // AMZN の未確定エントリー（970 株・受付・約定 0）の見込みを META の群へ持ち込むと、META の他人の 50 株が隠れる。
+        var f = new Fixture();
+        var amzn = f.Arm("AMZN", 970);
+        f.Entry(amzn, OrderStatus.Accepted, filled: 0);
+        var meta = f.Arm("META", 100, createdAt: T0.AddMinutes(-5));
+        f.Entry(meta, OrderStatus.Filled, filled: 100);
+
+        var emitted = await f.DetectAsync(path, Position("AMZN", 970), Position("META", 150));
+
+        emitted.Should().ContainSingle("META の 50 株はどの記録も主張していない（AMZN の見込みは META を説明しない）")
+            .Which.Quantity.Should().Be(50);
+        emitted.Single().Symbol.Should().Be("META");
+        emitted.Single().EntryDecisionId.Should().Be(meta.EntryDecisionId);
+    }
+
+    [Theory]
+    [InlineData(Path.Guard)]
+    [InlineData(Path.Resident)]
+    public async Task T_10_1778_S0の記録が非終端で混在しても見込みとして二重に引かず他人の建玉を知らせる(Path path)
+    {
+        // T-10-1778, FR-10, #1114, IADR-0344 追記(18)（#1115 監査 F1・M5）: 見込みは S1 の行だけ。
+        // S0 の未確定の行は主張（ProtectedQuantity＝行の数量）で既に引かれているため、見込みでも引くと二重になる。
+        // 純額 970（S1 の窓）＋100（S0）＋30（他人）＝1,100 のうち 30 株を知らせる。
+        var f = new Fixture();
+        var s0 = f.ArmS0("AMZN", 100, createdAt: T0.AddMinutes(-5));
+        f.Entry(s0, OrderStatus.Accepted, filled: 0);
+        var s1 = f.Arm("AMZN", 970);
+        f.Entry(s1, OrderStatus.Accepted, filled: 0);
+
+        var emitted = await f.DetectAsync(path, Position("AMZN", 1_100));
+
+        emitted.Should().ContainSingle("S0 の行の株数は主張で一度だけ引く")
+            .Which.Quantity.Should().Be(30);
+        emitted.Single().EntryDecisionId.Should().Be(s1.EntryDecisionId, "群の代表は S1 行");
+    }
+
     // ---- T-10-1779: 窓の減る側。約定 0 のまま終端したエントリーの見込みは消える ----
 
     [Theory]
@@ -199,6 +254,58 @@ public class UnattributedEntryFillWindowTests
 
         emitted.Should().ContainSingle("自分のエントリーは 1 株も約定していない＝純額の 970 株はどの記録も主張していない")
             .Which.Quantity.Should().Be(970);
+    }
+
+    [Theory]
+    [InlineData(Path.Guard)]
+    [InlineData(Path.Resident)]
+    public async Task T_10_1779_発注記録が無い確定前の記録は行の数量で差し引かず純額の建玉を知らせる(Path path)
+    {
+        // T-10-1779, FR-10, #1114, IADR-0344 追記(18)（#1115 監査 F1・M3）: 記録が無い行（届いたか不明）は見込みを数えない。
+        // 行の数量で差し引くと、到達しない限り閉じない行が他人の建玉を期限なく隠す。
+        var f = new Fixture();
+        var row = f.Arm("AMZN", 970);
+
+        var emitted = await f.DetectAsync(path, Position("AMZN", 970));
+
+        emitted.Should().ContainSingle("記録の無い行は純額の 970 株を説明しない")
+            .Which.Quantity.Should().Be(970);
+        emitted.Single().EntryDecisionId.Should().Be(row.EntryDecisionId);
+    }
+
+    [Theory]
+    [InlineData(Path.Guard)]
+    [InlineData(Path.Resident)]
+    public async Task T_10_1779_窓のあいだは通知済みの印が消えて黙り記録が終端になった巡回で再び知らせる(Path path)
+    {
+        // T-10-1779, FR-10, #1114, IADR-0344 追記(18)（#1115 監査 F2・受容した残余）: 他人の 30 株を通知済みのところへ
+        // 新しいエントリー（受付・約定 0）が来ると、その見込み 970 株が 30 株を覆い、旧行の通知済みの印は null に戻る（黙る）。
+        // 記録が終端になった巡回で見込みが消え、30 株を改めて知らせる。
+        var f = new Fixture();
+        var old = f.Arm("AMZN", 100, createdAt: T0.AddMinutes(-10));
+        f.Entry(old, OrderStatus.Filled, filled: 100);
+
+        (await f.DetectAsync(path, Position("AMZN", 130))).Should().ContainSingle()
+            .Which.Quantity.Should().Be(30);
+        f.Stops.Find(old.EntryDecisionId)!.UnattributedNotifiedQuantity.Should().Be(30);
+
+        // 窓: 新しいエントリーが受付・約定 0（純額はまだ 130）。
+        f.Clock.UtcNow = T0.AddSeconds(30);
+        var fresh = f.Arm("AMZN", 970, createdAt: T0.AddSeconds(30));
+        f.Entry(fresh, OrderStatus.Accepted, filled: 0);
+
+        (await f.DetectAsync(path, Position("AMZN", 130))).Should().BeEmpty("見込み 970 株が他人の 30 株を覆う（受容した残余）");
+        f.Stops.Find(old.EntryDecisionId)!.UnattributedNotifiedQuantity.Should().BeNull("窓で印はリセットされる");
+        f.Stops.Find(fresh.EntryDecisionId)!.UnattributedNotifiedQuantity.Should().BeNull();
+
+        // 記録が約定 0 のまま終端（取消）: 見込みが消え、30 株を再び知らせる（代表は新しい行）。
+        f.Clock.UtcNow = T0.AddSeconds(60);
+        f.Track(fresh, OrderStatus.Cancelled, filled: 0);
+
+        var renotified = await f.DetectAsync(path, Position("AMZN", 130));
+        renotified.Should().ContainSingle("終端になった巡回で他人の 30 株を改めて知らせる")
+            .Which.Quantity.Should().Be(30);
+        renotified.Single().EntryDecisionId.Should().Be(fresh.EntryDecisionId);
     }
 
     // ---- T-10-1780: 一部約定・複数の未確定エントリー ----
@@ -226,6 +333,25 @@ public class UnattributedEntryFillWindowTests
         emitted.Should().ContainSingle("終端した一部約定の残りはもう約定しない")
             .Which.Quantity.Should().Be(470);
         emitted.Single().EntryDecisionId.Should().Be(second.EntryDecisionId, "群の代表は作成が最も新しい S1 行");
+    }
+
+    [Theory]
+    [InlineData(Path.Guard)]
+    [InlineData(Path.Resident)]
+    public async Task T_10_1780_一部約定の非終端の記録は残りの株数までしか見込まず他人の建玉を知らせる(Path path)
+    {
+        // T-10-1780, FR-10, #1114, IADR-0344 追記(18)（#1115 監査 F1・M9）: 見込みは「行の数量 − 約定数量」。
+        // 970 株のうち 500 株約定・非終端なら、約定 500（SharesAccountedElsewhere）＋見込み 470 で 970 株まで説明が付く。
+        // 見込みを行の数量（970）で数えると 1,470 株まで説明が付き、純額 1,000 の他人の 30 株が隠れる。
+        var f = new Fixture();
+        var row = f.Arm("AMZN", 970);
+        f.Entry(row, OrderStatus.PartiallyFilled, filled: 500);
+
+        var emitted = await f.DetectAsync(path, Position("AMZN", 1_000));
+
+        emitted.Should().ContainSingle("約定済み 500 株を見込みでも数えると二重になる")
+            .Which.Quantity.Should().Be(30);
+        emitted.Single().EntryDecisionId.Should().Be(row.EntryDecisionId);
     }
 
     // ---- T-10-1781: 観測を数え続けてよいかの門（ReconcileShares）は約定数量で数える（BLK-7-1）を変えない ----
