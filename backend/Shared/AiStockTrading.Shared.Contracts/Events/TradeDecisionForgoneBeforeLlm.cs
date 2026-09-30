@@ -9,7 +9,7 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // （IADR-0358 決定4: 流用は誤帰属。TradeDecisionHeld は市場監視が急変の基準値を進める事実であり、判断をしていない見送りで
 // 基準値を動かしてはならない〔IADR-0452 決定1〕）。
 //
-//   - Reason: 4 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。
+//   - Reason: 5 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を末尾へ足した。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙（TradeDecisionHeld と同じ）。
 //   - 監査台帳だけが購読する（通知しない。日報の未確定の通知は DailyPolicyUnconfirmed が営業日ごとに出す）。
 public record TradeDecisionForgoneBeforeLlm(
@@ -37,4 +37,11 @@ public enum DecisionForgoneBeforeLlmReason
 
     /// <summary>FR-10, ADR-0022 決定5, IADR-0197: 換算レートが鮮度切れで、保有が無い／不明。</summary>
     FxRateStaleNoHolding,
+
+    /// <summary>
+    /// FR-10, FR-04, #1113, IADR-0463 決定 4: 保有が既知で 0・未約定の新規建てが既知で空の銘柄で、リスク管理の新規建ての可否の口が
+    /// 買いの新規建てを**審査で必ず拒否される**と答えた（kill switch・一時停止・当日の損切り・保有建玉数・日次損失・最大 DD・GFV）。
+    /// 審査の拒否（<c>ast.risk.rejections</c>）の一部がここへ移る。
+    /// </summary>
+    EntryBlockedByRiskControls,
 }

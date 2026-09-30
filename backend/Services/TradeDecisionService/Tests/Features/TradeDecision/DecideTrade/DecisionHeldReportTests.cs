@@ -315,14 +315,16 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 9 地点と判断前の 4 地点で語彙 13 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する）。
+    // 判断後の 9 地点と判断前の 5 地点で語彙 14 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙13値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙14値を過不足なく覆う()
     {
         DecisionSkipReason[] before =
         [
             DecisionSkipReason.DailyPolicyUnconfirmed, DecisionSkipReason.CurrentPriceUnavailable,
             DecisionSkipReason.FxRateUnresolved, DecisionSkipReason.FxRateStaleNoHolding,
+            DecisionSkipReason.EntryBlockedByRiskControls,
         ];
         DecisionSkipReason[] after =
         [
