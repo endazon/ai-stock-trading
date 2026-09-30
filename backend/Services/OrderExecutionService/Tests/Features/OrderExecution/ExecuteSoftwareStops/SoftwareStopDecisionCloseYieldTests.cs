@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
+using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -61,6 +62,9 @@ public class SoftwareStopDecisionCloseYieldTests
 
         public bool CancelThrows { get; set; }
 
+        /// <summary>取消が効かない注文（取消の後も生きていると答える。注文ごと）。</summary>
+        public HashSet<string> CancelIgnored { get; } = [];
+
         public HashSet<string> QueryReturnsNull { get; } = [];
 
         public HashSet<string> QueryThrows { get; } = [];
@@ -117,7 +121,7 @@ public class SoftwareStopDecisionCloseYieldTests
             Cancels.Add(orderId);
             if (CancelThrowsFor(orderId) is { } thrown)
                 throw thrown;
-            if (Orders.TryGetValue(orderId, out var order) && CancelTakesEffect)
+            if (Orders.TryGetValue(orderId, out var order) && CancelTakesEffect && !CancelIgnored.Contains(orderId))
             {
                 order.Filled += FillDuringCancel;
                 Position -= FillDuringCancel;
@@ -161,15 +165,34 @@ public class SoftwareStopDecisionCloseYieldTests
         SoftwareStopExecutor Executor, FakeBroker Broker, InMemoryProtectiveStopOrderStore Stops,
         InMemoryExecutedOrderStore Store, MutableClock Clock, RecordingLogger<SoftwareStopExecutor> Log);
 
-    private static Fixture NewFixture(int position = 1_428)
+    // 発注の記録の読み出し（FindPendingCloses）が落ちるストア（T-10-1825）。他は包んだ実装へ渡す。
+    private sealed class PendingClosesThrowingStore(IExecutedOrderStore inner) : IExecutedOrderStore
+    {
+        public void Save(ExecutionRecord record) => inner.Save(record);
+        public IReadOnlyList<ExecutionRecord> GetAll() => inner.GetAll();
+        public ExecutionRecord? FindByDecisionId(Guid decisionId) => inner.FindByDecisionId(decisionId);
+        public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize) =>
+            inner.FindPendingSince(since, batchSize);
+        public IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds) =>
+            inner.FindPendingByOrderIds(orderIds);
+        public IReadOnlyList<ExecutionRecord> FindPendingCloses(string symbol, Market market, TradeSide closeSide) =>
+            throw new InvalidOperationException("発注の記録を読めない（試験）");
+        public bool RenewTracking(string orderId, DateTimeOffset trackedFrom) => inner.RenewTracking(orderId, trackedFrom);
+        public bool UpdateOutcome(string orderId, OrderStatus status, int filledQuantity, decimal averagePrice,
+            decimal slippageRatio, DateTimeOffset executedAt) =>
+            inner.UpdateOutcome(orderId, status, filledQuantity, averagePrice, slippageRatio, executedAt);
+    }
+
+    private static Fixture NewFixture(int position = 1_428, Func<IExecutedOrderStore, IExecutedOrderStore>? wrapStore = null)
     {
         var clock = new MutableClock(T0);
         var broker = new FakeBroker { Position = position };
         var stops = new InMemoryProtectiveStopOrderStore();
         var store = new InMemoryExecutedOrderStore();
         var log = new RecordingLogger<SoftwareStopExecutor>();
+        IExecutedOrderStore executorStore = wrapStore is null ? store : wrapStore(store);
         return new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, store, new InMemoryOrderReservationStore(), clock, log),
+            new SoftwareStopExecutor(broker, broker, stops, executorStore, new InMemoryOrderReservationStore(), clock, log),
             broker, stops, store, clock, log);
     }
 
@@ -473,5 +496,132 @@ public class SoftwareStopDecisionCloseYieldTests
         f.Broker.PositionQueries.Should().Be(queriesBefore + 1, "取り消した後はガードのスナップショットを捨てて照会し直す");
         f.Broker.MarketCloses.Sum(c => c.Intent.Quantity)
             .Should().BeLessThanOrEqualTo(428, "取消の最中に約定した分を重ねて売りに出さない（送った数量で見る）");
+    }
+
+    // T-10-1821: 🔴 保護逆指値を張れなかったエントリーの成行手仕舞い（エントリーの時点で出す・DecisionId＝エントリーから導出）は、
+    // **保護記録が無くても**取り消さない（承認時の保護の文脈を書けなかった等）。取り消すと出し直されず、逆指値の無い建玉が残る。
+    [Fact]
+    public async Task T_10_1821_保護記録の無いエントリーの成行手仕舞いは取り消さない()
+    {
+        var f = NewFixture(position: 1_528);
+        var (upper, _) = PocStops(f);
+        var entryId = Guid.NewGuid();
+        f.Store.Save(new ExecutionRecord(
+            entryId, $"entry-{entryId:N}", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, 100, 332m, 100, 332m, OrderStatus.Filled, 0m, T0.AddSeconds(-30)));
+        var unprotectedExit = PendingClose(f, 100, ProtectiveStopIds.CloseDecisionId(entryId, attempt: 1));
+        f.Stops.Find(entryId).Should().BeNull("前提: このエントリーには保護記録が無い");
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("保護逆指値を張れなかった建玉の成行手仕舞いは保護の機構が出した決済である");
+        f.Broker.Orders[unprotectedExit.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted);
+        f.Stops.Find(upper.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+
+        // 別の銘柄・別の方向のエントリーから導いた DecisionId は見分けに使わない（判断の手仕舞いとして取り消す）。
+        var other = NewFixture();
+        PocStops(other);
+        var shortEntry = Guid.NewGuid();
+        other.Store.Save(new ExecutionRecord(
+            shortEntry, $"entry-{shortEntry:N}", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+            PositionEffect.Open, 100, 332m, 100, 332m, OrderStatus.Filled, 0m, T0.AddSeconds(-30)));
+        var lookalike = PendingClose(other, 1_428, ProtectiveStopIds.CloseDecisionId(shortEntry, attempt: 1));
+
+        await other.Executor.OnTriggeredAsync(Trigger());
+
+        other.Broker.Cancels.Should().Equal([lookalike.OrderId], "方向の違うエントリーの導出は同じ建玉の保護ではない");
+    }
+
+    // T-10-1823: 判断の手仕舞いが既に約定し切っている（証券会社は Filled と答え、発注の記録はまだ未約定のまま）。常駐ガードが
+    // 巡回の先頭の建玉（約定の前）を渡す → 約定が記録より進んでいるので建玉を照会し直し、残りの建玉を超えて売りに出さない。
+    [Fact]
+    public async Task T_10_1823_既に約定し切った判断の手仕舞いは取り消さず建玉を照会し直して重ねて売らない()
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var decision = PendingClose(f, 1_000);
+        // 到達だけ記録する（取消が確定しないので送らない）。
+        f.Broker.CancelTakesEffect = false;
+        await f.Executor.OnTriggeredAsync(Trigger());
+        f.Broker.MarketCloses.Should().BeEmpty();
+
+        var staleSnapshot = f.Broker.Snapshot(); // 1,428 株（約定の前）
+        var order = f.Broker.Orders[decision.OrderId];
+        order.Filled = 1_000;
+        order.Status = OrderStatus.Filled;
+        f.Broker.Position -= 1_000;
+        f.Store.FindByDecisionId(decision.DecisionId)!.FilledQuantity.Should().Be(0, "前提: 記録は約定追跡が書くまで古い");
+        var cancelsBefore = f.Broker.Cancels.Count;
+        var queriesBefore = f.Broker.PositionQueries;
+
+        await Guard(f, upper, staleSnapshot);
+
+        f.Broker.Cancels.Should().HaveCount(cancelsBefore, "終端の注文は取り消さない");
+        f.Broker.PositionQueries.Should().Be(queriesBefore + 1, "約定が記録より進んでいれば建玉を照会し直す");
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity)
+            .Should().BeLessThanOrEqualTo(428, "約定し切った分を重ねて売りに出さない（送った数量で見る）");
+    }
+
+    // T-10-1824: 判断の手仕舞いが 2 本。先の 1 本の取消が確定せず（生きている）、後の 1 本の取消は確定する →
+    // 後の確定で「取消済み」に上書きしない。この巡回は送らない（据え置く）。
+    [Fact]
+    public async Task T_10_1824_取消が確定しない判断の手仕舞いが1本でも残れば他が確定しても送らない()
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var stuck = PendingClose(f, 1_000);
+        var cancelled = PendingClose(f, 428);
+        f.Broker.CancelIgnored.Add(stuck.OrderId);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().Equal([stuck.OrderId, cancelled.OrderId]);
+        f.Broker.Orders[cancelled.OrderId].Status.Should().Be(OrderStatus.Cancelled);
+        result.Deferred.Should().Be(1);
+        f.Broker.MarketCloses.Should().BeEmpty("取消が確定していない判断の手仕舞いが残るあいだは送らない");
+        f.Stops.Find(upper.EntryDecisionId)!.CloseFailures.Should().Be(0);
+    }
+
+    // T-10-1825: 発注の記録を読めない（例外）→ 何も取り消さず、是正前と同じく S1 の決済を送る（損切りを読み出しの失敗で止めない）。
+    [Fact]
+    public async Task T_10_1825_処理中の決済を読めなければ取り消さずにS1の決済を送る()
+    {
+        var f = NewFixture(position: 10_000, wrapStore: inner => new PendingClosesThrowingStore(inner));
+        var (upper, _) = PocStops(f);
+        var decision = PendingClose(f, 1_428);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("読めないものは取り消さない");
+        f.Broker.Orders[decision.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted);
+        f.Stops.Find(upper.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+        f.Log.Entries.Should().Contain(e => e.Level == LogLevel.Error
+            && e.Message.Contains("処理中の判断の手仕舞いを読めませんでした", StringComparison.Ordinal));
+    }
+
+    // T-10-1826: 保護記録の StopDecisionId が (エントリー, 試行) からの導出と一致しない（建玉の乖離の採用などで付いた識別子）。
+    // その DecisionId を持ち、注文番号は保護記録の StopOrderId と違う処理中の決済 → 保護の機構のものとして取り消さない。
+    [Fact]
+    public async Task T_10_1826_導出と一致しない保護記録のStopDecisionIdを持つ決済は取り消さない()
+    {
+        var f = NewFixture(position: 10_000);
+        PocStops(f);
+        var adoptedEntry = Guid.NewGuid();
+        var adoptedStopId = Guid.NewGuid();
+        var row = new ProtectiveStopOrder(
+            adoptedEntry, adoptedStopId, "leg-adopted", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            BrokerProvider.MoomooSimulate, 100, 320m, 1m, 1, ProtectiveStopState.Active, T0.AddHours(-1), T0.AddHours(-1));
+        f.Stops.Save(row);
+        adoptedStopId.Should().NotBe(ProtectiveStopIds.StopDecisionId(adoptedEntry, 1), "前提: 導出と一致しない");
+        adoptedStopId.Should().NotBe(ProtectiveStopIds.StopDecisionId(adoptedEntry, 2));
+        var leg = PendingClose(f, 100, adoptedStopId, orderId: "leg-other-order");
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("保護記録の StopDecisionId を持つ決済は保護レグである");
+        f.Broker.Orders[leg.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted);
     }
 }

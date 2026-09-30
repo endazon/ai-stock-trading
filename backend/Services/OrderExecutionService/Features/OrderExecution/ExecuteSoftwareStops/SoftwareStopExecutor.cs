@@ -545,6 +545,9 @@ public sealed class SoftwareStopExecutor(
     // 出したものを除いた残り＝承認の経路の決済）を取り消す。
     //   - 保護の機構が出したもの（取り消さない）: 同じ銘柄・市場・方向の保護記録（状態を問わない）の StopDecisionId・StopOrderId と、
     //     試行 1..Attempt+1 の逆指値レグ・成行手仕舞い・S1 の決済の DecisionId。🔴 **保護レグを取り消すと保護そのものを外す。**
+    //     加えて、同じ銘柄・市場・方向のエントリーの記録から導いた、保護逆指値を張れなかった建玉の成行手仕舞い（試行 1）の DecisionId。
+    //     利用者の成行の手仕舞い・維持率割れの自動縮小は記録から見分けられない（DecisionId は無作為・記録に出どころの列が無い）ので、
+    //     判断の手仕舞いと同じく取り消す（IADR-0466 の残余）。
     //   - 確かめられない（照会 null・例外）ものは取り消さない＝是正前と同じ（拒否され得るが撃ち直しは続く）。
     //     環境の違う記録（照会が恒久的に null）で S1 を永遠に待たせないため、待つのは「生きている」と答えたものだけである。
     //   - 取消の後に終端を確かめられなければ AwaitingCancel（据え置き）。確定前に送ると、売れる数量を押さえる証券会社では拒否され、
@@ -570,6 +573,12 @@ public sealed class SoftwareStopExecutor(
                     mechanicalDecisionIds.Add(ProtectiveStopIds.SoftwareCloseDecisionId(row.EntryDecisionId, attempt));
                 }
             }
+
+            // 🔴 保護逆指値を張れなかったエントリーの成行手仕舞い（OrderExecutionAppService.CloseUnprotectedPositionAsync。
+            // DecisionId＝CloseDecisionId(エントリー, 1)）は、保護記録が無いことがある（承認時の保護の文脈を書けなかった等）。
+            // 取り消すと出し直されず、逆指値の無い建玉が残る。エントリーの記録から同じ導出で見分ける。
+            foreach (var entry in store.FindRecentOpens(stop.Symbol, stop.Market, stop.EntrySide, NettingScanLimit))
+                mechanicalDecisionIds.Add(ProtectiveStopIds.CloseDecisionId(entry.DecisionId, attempt: 1));
 
             decisionCloses = store.FindPendingCloses(stop.Symbol, stop.Market, stop.CloseSide)
                 .Where(r => !mechanicalDecisionIds.Contains(r.DecisionId) && !mechanicalOrderIds.Contains(r.OrderId))

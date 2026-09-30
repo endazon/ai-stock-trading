@@ -85,4 +85,26 @@ public class ExecutedOrderStorePendingClosesTests
 
         store().FindPendingCloses("AAPL", Market.UnitedStates, TradeSide.Sell).Should().BeEmpty();
     }
+
+    // T-10-1822, #1121, IADR-0466 決定2: 新規建ての記録を銘柄・市場・エントリーの方向で絞り、状態を問わず新しい順・上限つきで返す
+    // （保護逆指値を張れなかった建玉の成行手仕舞いを、エントリーから導いて見分けるため）。
+    [Theory]
+    [MemberData(nameof(Implementations))]
+    public void 新規建てを銘柄と市場と方向で絞り状態を問わず新しい順に上限まで返す(string kind)
+    {
+        var store = Stores(kind);
+        store().Save(Record("oldest", OrderStatus.Filled, Now.AddDays(-3), effect: PositionEffect.Open, side: TradeSide.Buy, filled: 713));
+        store().Save(Record("middle", OrderStatus.Cancelled, Now.AddDays(-2), effect: PositionEffect.Open, side: TradeSide.Buy));
+        store().Save(Record("newest", OrderStatus.Accepted, Now, effect: PositionEffect.Open, side: TradeSide.Buy));
+        store().Save(Record("close", OrderStatus.Accepted, Now, side: TradeSide.Buy));
+        store().Save(Record("sell-open", OrderStatus.Filled, Now, effect: PositionEffect.Open, side: TradeSide.Sell));
+        store().Save(Record("msft", OrderStatus.Filled, Now, effect: PositionEffect.Open, side: TradeSide.Buy, symbol: "MSFT"));
+        store().Save(Record("jp", OrderStatus.Filled, Now, effect: PositionEffect.Open, side: TradeSide.Buy, market: Market.Japan));
+
+        store().FindRecentOpens("AAPL", Market.UnitedStates, TradeSide.Buy, 10)
+            .Select(r => r.OrderId).Should().Equal("newest", "middle", "oldest");
+        store().FindRecentOpens("AAPL", Market.UnitedStates, TradeSide.Buy, 2)
+            .Select(r => r.OrderId).Should().Equal("newest", "middle");
+    }
 }
+

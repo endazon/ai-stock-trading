@@ -86,6 +86,19 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             .Select(r => ToRecord(r))];
     }
 
+    // FR-10, #1121, IADR-0466 決定2: 新規建ての行を銘柄・市場・エントリーの方向で絞って新しい順に返す（状態を問わない・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindRecentOpens(string symbol, Market market, TradeSide entrySide, int limit)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        return [.. db.ExecutedOrders
+            .Where(r => r.PositionEffect == PositionEffect.Open
+                && r.Symbol == symbol && r.Market == market && r.Side == entrySide)
+            .OrderByDescending(r => r.ExecutedAt)
+            .Take(limit)
+            .Select(r => ToRecord(r))];
+    }
+
     // FR-10, #958, IADR-0406 決定3: 非終端の行の追跡の起点を進める。変更追跡により UPDATE は executed_at の 1 列だけになり、
     // 並行に約定追跡が書いた状態・数量を古い値で上書きしない。
     public bool RenewTracking(string orderId, DateTimeOffset trackedFrom)
