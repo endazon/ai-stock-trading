@@ -23,9 +23,12 @@ public sealed class LlmReportPolicyReviser(
     TimeSpan timeout,
     ILlmUsageReporter usageReporter,
     ILlmGovernanceReporter governanceReporter,
-    bool logPrompts = false)
+    bool logPrompts = false,
+    bool decisionVolumeProvided = false)
     : IReportPolicyReviser
 {
+    // FR-07, ADR-0048 決定 4, #1118, IADR-0467 決定 7: decisionVolumeProvided は判断へ出来高が渡る構成か（判断サービスと同じ
+    // DecisionVolume:Enabled。既定 false＝「出来高: 未提供」を方針の改訂 LLM へ示す）。
     // 方針 2000 文字＋入れ替え案＋説明の JSON に、思考トークンの余裕を足した合算上限（IADR-0101）。
     private const int MaxTokens = 4096;
 
@@ -34,7 +37,7 @@ public sealed class LlmReportPolicyReviser(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var prompt = PolicyRevisionPromptBuilder.Build(context);
+        var prompt = PolicyRevisionPromptBuilder.Build(context, decisionVolumeProvided);
         var purpose = string.IsNullOrWhiteSpace(purposeOverride) ? ReportNarrativePurpose.For(context.Kind) : purposeOverride;
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

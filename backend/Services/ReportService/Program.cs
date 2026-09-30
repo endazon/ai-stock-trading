@@ -180,7 +180,10 @@ builder.Services.AddSingleton<IReportPolicyReviser>(sp =>
         TimeSpan.FromSeconds(timeoutSeconds),
         sp.GetRequiredService<ILlmUsageReporter>(),
         sp.GetRequiredService<ILlmGovernanceReporter>(),
-        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts);
+        logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,
+        // FR-07, ADR-0048 決定 4, #1118, IADR-0467 決定 7: 方針の改訂 LLM へ示す「判断へ渡る材料」の出来高の行。
+        // **判断サービスの DecisionVolume:Enabled と同じ値にする**（既定 false＝出来高は未提供と示す）。
+        decisionVolumeProvided: bool.TryParse(cfg["DecisionVolume:Enabled"], out var volumeEnabled) && volumeEnabled);
 });
 builder.Services.AddScoped<ReportPolicyRevisionService>();
 // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の試行の台帳（1 日の回数上限・案の監査）と上限の値。

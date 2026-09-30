@@ -97,7 +97,8 @@ public class PriceContextInPromptTests
         }
     }
 
-    // 出来高は取得経路が無い（planning#702 の裁定待ち）。無言で省かず「未提供」と明示する（ADR-0020）。
+    // 出来高は、判断の出来高が無効（既定。ADR-0048 決定 3 の確認が済むまで）の構成では、無言で省かず「未提供」と明示する（ADR-0020）。
+    // ［#1118・IADR-0467］有効化した構成の行は DailyVolumeInPromptTests（T-10-1833〜T-10-1835）。
     [Fact]
     public void 出来高は未提供と明示する()
     {

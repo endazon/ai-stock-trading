@@ -193,6 +193,22 @@ public static class BusinessMetricNames
     /// </summary>
     public const string InformationCollectionFinnhubSymbolsDeferred = "ast.information_collection.finnhub_symbols_deferred";
 
+    /// <summary>
+    /// FR-04, FR-15, ADR-0048 決定 3, ADR-0023 決定 5, #1118, IADR-0467: 発注執行が OpenD へ撃った<b>日足 K 線の要求</b>の件数
+    /// （判断へ渡す出来高の取得。前復権）。タグ <c>outcome</c>（succeeded / non-success / failed）。
+    /// <para>
+    /// 🔴 <b>取得枠は銘柄単位で減る</b>（#1117 の実測）。要求の件数そのものは枠の消費ではないが、既定（無効）で 0 のままであることと、
+    /// 有効化の後に 1 日あたり監視銘柄の数程度に収まっていることを外から確かめるために数える。
+    /// </para>
+    /// </summary>
+    public const string KLineDailyRequests = "ast.kline.daily_requests";
+
+    /// <summary>FR-04, FR-15, #1118, IADR-0467: 日足 K 線の取得の直後に照会した<b>取得枠の使用数</b>（<c>usedQuota</c>。直近の値）。</summary>
+    public const string KLineQuotaUsed = "ast.kline.quota_used";
+
+    /// <summary>FR-04, FR-15, #1118, IADR-0467: 日足 K 線の取得の直後に照会した<b>取得枠の残り</b>（<c>remainQuota</c>。直近の値）。</summary>
+    public const string KLineQuotaRemaining = "ast.kline.quota_remaining";
+
     /// <summary>タグ名: 判断の結果（buy / sell / no-trade）。</summary>
     public const string TagAction = "action";
 

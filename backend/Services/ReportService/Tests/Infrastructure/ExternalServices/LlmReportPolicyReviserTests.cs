@@ -123,6 +123,24 @@ public class LlmReportPolicyReviserTests
         transport.Calls[1].Prompt.Split('\n').Select(l => l.TrimEnd('\r')).Should().Contain("currentWatchlist: null");
     }
 
+    // T-10-1841（#1118, IADR-0467 決定 7）: 改訂の LLM へ、判断へ渡る材料の出来高の行を構成（DecisionVolume:Enabled）どおりに示す。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 判断へ渡る材料の出来高の行は構成どおり(bool provided)
+    {
+        var transport = new FakeTransport(Completed(ValidJson));
+        var reviser = new LlmReportPolicyReviser(
+            transport, NullLogger<LlmReportPolicyReviser>.Instance, "internal", purposeOverride: null,
+            TimeSpan.FromSeconds(5), new RecordingUsage(), new NoOpGovernance(), decisionVolumeProvided: provided);
+
+        await reviser.ReviseAsync(Context());
+
+        transport.Calls.Should().ContainSingle().Which.Prompt.Should().Contain(provided
+            ? PolicyRevisionPromptBuilder.VolumeProvidedMaterial
+            : PolicyRevisionPromptBuilder.VolumeNotProvidedMaterial);
+    }
+
     internal sealed class FakeTransport(LlmCompletionExchange exchange) : ILlmCompletionTransport
     {
         public List<LlmCompletionCall> Calls { get; } = [];

@@ -10,6 +10,7 @@ using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.ProbeKLineQuota;
 using OrderExecutionService.Features.OrderExecution.ProbeOrderFee;
+using OrderExecutionService.Features.OrderExecution.QueryDailyBars;
 using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
@@ -228,6 +229,22 @@ builder.Services.AddSingleton(sp => new ShortPermitQueryService(
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<ShortPermitQueryService>(),
     sp.GetService<IShortPermitSource>()));
+
+// FR-04, FR-15, ADR-0048 決定 2・3, #1118, IADR-0467 決定 1・2・5: 日足の照会（判断へ渡す出来高。前復権）。
+// 読み取りポート（IDailyKLineSource）は **moomoo 構成でだけ登録する**。相場だけのクライアント（IADR-0464。発注の接続を作らず口座も
+// 選ばない）を初回の照会で遅延生成し、例外で作り直す（起動時に OpenD へ繋がない）。内蔵 paper では null ＝ 常に Unavailable
+// （broker-not-supported）。**判断側の出来高は既定で無効**（DecisionVolume:Enabled=false）であり、有効化するまでこの口は呼ばれない
+// （取得枠に触れない）。サービスは予算・計器を持つため singleton。計器（要求の件数・取得枠）を必ず渡す。
+if (brokerSelection.IsMoomoo)
+{
+    builder.Services.AddSingleton<IDailyKLineSource>(sp => new MoomooDailyKLineSource(
+        () => KLineQuotaProbeComposition.CreateQuery(sp.GetRequiredService<IConfiguration>())));
+}
+builder.Services.AddSingleton(sp => new DailyBarsQueryService(
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<BusinessMetrics>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<DailyBarsQueryService>(),
+    sp.GetService<IDailyKLineSource>()));
 
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
@@ -448,6 +465,9 @@ app.MapAiStockTradingIntrospection();
 
 // FR-10, #967, IADR-0425 決定1: 借株可否の照会（リスク管理の審査が新規の売り建てで呼ぶ）。
 app.MapShortPermitEndpoint();
+
+// FR-04, FR-15, #1118, IADR-0467 決定 2: 日足の照会（判断へ渡す出来高。判断側で有効化したときだけ呼ばれる）。
+app.MapDailyBarsEndpoint();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

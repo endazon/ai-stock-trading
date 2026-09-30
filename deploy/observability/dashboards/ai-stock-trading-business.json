@@ -282,6 +282,30 @@
         "expr": "sum by (outcome, provider) (increase(ast_order_reservation_reconciliations_total[1h]))",
         "legendFormat": "{{outcome}} / {{provider}}"
       }]
+    },
+    {
+      "id": 20,
+      "title": "判断の出来高: 日足 K 線の要求（24h あたり）と取得枠（使用数・残り）",
+      "description": "判断へ渡す出来高（前営業日の出来高・20 日平均比）のために、発注執行が OpenD へ撃った日足 K 線の要求（outcome 別）と、取得の直後に照会した取得枠。判断の出来高が無効（既定）なら要求は 0 のまま。有効化の後は取引日ごとに監視銘柄の数程度（判断側が銘柄 × 取引日でキャッシュする）。枠は銘柄単位で減る（毎日取り直す監視銘柄は使用中に数えられ続ける想定）。残りが大きく減り続けるなら有効化を見直す。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 70, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum by (outcome) (increase(ast_kline_daily_requests_total[24h]))",
+          "legendFormat": "{{outcome}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "max(ast_kline_quota_used)",
+          "legendFormat": "quota used"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "min(ast_kline_quota_remaining)",
+          "legendFormat": "quota remaining"
+        }
+      ]
     }
   ]
 }
