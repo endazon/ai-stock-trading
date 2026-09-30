@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR]
 adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113]
 -->
 
 
@@ -117,8 +117,11 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   処理中の株数（件数）・送った株数を書き、🔴 **「台帳の乖離ではない」と書く**（乖離の記録と読み違えさせない）。
   payload には引いた処理中の決済の `DecisionId` が残り、その決済の記録と突き合わせられる。
   処理中の決済が建玉をすべて覆ったときは本記録ではなく**見送り**（`OrderDispatchForgone`・理由は処理中の決済が建玉を覆う）が残る。
-- 取引判断が **LLM を呼ぶ前に見送った**事実（`TradeDecisionForgoneBeforeLlm`）を、見送り 1 回につき 1 件記録する。理由は 4 つ
-  （確定済みの日報が無い・現在値が取れない・為替が決まらない・為替が古く保有も無い）。相関は事実ごとの `EventId`、時刻は見送った時刻。
+- 取引判断が **LLM を呼ぶ前に見送った**事実（`TradeDecisionForgoneBeforeLlm`）を、見送り 1 回につき 1 件記録する。理由は 5 つ
+  （確定済みの日報が無い・現在値が取れない・為替が決まらない・為替が古く保有も無い・新規建てが審査で必ず拒否される）。
+  最後の理由（`EntryBlockedByRiskControls`）は、保有 0・未約定なしの銘柄でリスク管理の新規建ての可否の口が買いの新規建てを
+  塞いでいると答えたときに出る。🔴 **従来はその新規建てが LLM の後に審査で拒否され `OrderRejected` として残っていた**
+  （損切りした当日・保有建玉数の上限・kill switch など）。その一部がこちらへ移る（審査は変わらない）。相関は事実ごとの `EventId`、時刻は見送った時刻。
   要約に「LLM を呼ぶ前」と理由・起点（定時／価格変動）を書く。LLM が結論を出した**後**の見送り（`TradeDecisionHeld`）とは別の事実であり、
   急変の基準値を進めない。夜間の要約は Detail の `Reason` を名前で数える。
 - 建玉照会・保有照会の**状態の変化**（`PositionQueryStatusChanged`）を、発生源ごとに成功⇄失敗が変わったときだけ記録する
