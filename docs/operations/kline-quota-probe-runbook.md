@@ -10,8 +10,8 @@ updated: 2026-09-30
 ids: [FR-02, FR-15, UC-01]
 adrs: [ADR-0048, ADR-0023]
 iadrs: [IADR-0464, IADR-0157, IADR-0300]
-specs: [20260930_1117_kline-quota-probe]
-issues: [#1117, planning#702]
+specs: [20260930_1117_kline-quota-probe, 20260930_1125_kline-quota-only-probe]
+issues: [#1117, #1125, planning#702]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -36,7 +36,7 @@ order-execution のイメージには、この 2 つを確かめるための**�
 ## この手順を実行する条件（いつ走らせるか）
 
 - 判断へ出来高を流す実装に入る前に、取得枠の単位を確かめたいとき（1 回目）。
-- 回復周期を確かめるとき。1 回目から日を置いて、2 回目以降を打つ（下の「回復周期の判定」）。
+- 回復周期を確かめるとき。1 回目から日を置いて、**取得枠だけを読むモード（`--quota-only`）**で打つ（下の「回復周期の判定」）。
 - 分割のあった別の銘柄・期間で、出来高の調整を確かめ直したいとき。
 
 ## 前提
@@ -47,8 +47,8 @@ order-execution のイメージには、この 2 つを確かめるための**�
 | 必要なツール | `kubectl` |
 | 対象 | **order-execution の Pod**（`deploy/order-execution-service`）。OpenD の接続先と RSA 鍵は、この Pod にだけ入っている。**OpenD の Pod には触れない**（exec・再起動・ログインのいずれもしない） |
 | 構成 | 階層が `moomoo-sim` であること（[発注経路の区別と識別 Runbook](broker-execution-paths-runbook.md) の introspection で確かめる）。paper 階層では接続せずに終わる |
-| 取得枠の消費 | 既定の 1 回で、**最大 3 銘柄ぶん**（AAPL・MSFT・NVDA）。枠は稼働中のサービス（バックテストの履歴源など）と共有である |
-| 所要時間の目安 | 1 分（要求 12 回 × 2.5 秒） |
+| 取得枠の消費 | 既定の 1 回で、**最大 3 銘柄ぶん**（AAPL・MSFT・NVDA）。枠は稼働中のサービス（バックテストの履歴源など）と共有である。`--quota-only` は枠を消費しない（K 線を取らない） |
+| 所要時間の目安 | 1 分（要求 12 回 × 2.5 秒）。`--quota-only` は要求 1 回で数秒 |
 
 ## 手順
 
@@ -76,6 +76,16 @@ order-execution のイメージには、この 2 つを確かめるための**�
 
    上以外の引数・値の欠け・重複は、使い方の誤りとして接続せずに終わる。
 
+   **取得枠だけを読む（K 線を 1 本も取らない）ときは `--quota-only` を付ける。** 回復周期の追試はこちらで打つ（下の「回復周期の判定」）:
+
+   ```bash
+   kubectl -n ai-stock-trading exec deploy/order-execution-service -c order-execution-service -- \
+     sh -c 'exec dotnet "$SERVICE_DLL" --probe-kline-quota --quota-only'
+   echo "exit=$?"
+   ```
+
+   `--quota-only` は上の他のオプションと併用できない（併用すると使い方の誤りとして接続せずに終わる）。
+
 2. **出力を記録する**（「記録」の節）。**続けて打たない。** 撃ち直すときも 1 分以上あける。
 
 ## 出力の読み方
@@ -89,6 +99,13 @@ order-execution のイメージには、この 2 つを確かめるための**�
 | `section=split-compare` | 分割の銘柄を無復権・前復権・後復権で取った結果。`split.row` が日付ごとの並び、`split.<区分>.vsNone` が無復権との比較 |
 | `section=quota-final` | 取り終えた後の取得枠（詳細つき） |
 | `section=quota-summary` | 取得ごとの枠の差（`quota.step[i]`）と、単位の読み（`quota.unit.reading=`） |
+
+`--quota-only` では、見出しが `probe=kline-quota mode=quota-only market=US requestTime.tz=UTC+8` になり、`section=quota-only` の 1 節だけが出る
+（`quota[0] label=quota-only` の行と詳細一覧、`quota.used=` / `quota.remain=` / `quota.total=`（`used + remain`）の行）。要求は 1 回（`requests.sent=1`）である。
+
+詳細一覧の各行（`quota[n].detail[j]`）の `requestTime=` は **UTC+8（moomoo のサーバ時刻）であり、JST ではない**（JST より 1 時間遅れて見える）。
+行末に `requestTime.tz=UTC+8`・`requestTime.jst=`（JST への換算）・`requestTime.utc=`（UTC への換算）が並ぶ。読めない値は `(換算不可)` になる。
+`requestTimeStamp=` は単位を確かめていないため換算しない。
 
 各取得（`kline[k]`）の直後に、枠を照会した行（`quota[n] label=after-kline[k]`）が続く。`delta.used=` が、その 1 回の取得で `used` がいくつ動いたかである。
 
@@ -126,15 +143,25 @@ order-execution のイメージには、この 2 つを確かめるための**�
 
 ## 回復周期の判定
 
-1 回の実行では分からない。**日を置いて打ち直し**、詳細一覧（`quota[0].detail[j]`）の変化から読む。
+1 回の実行では分からない。**日を置いて `--quota-only` で打ち**、詳細一覧（`quota[0].detail[j]`）と `used=` の変化から読む。
 
-1. 1 回目の `section=quota-final` の詳細一覧（銘柄と `requestTime=`）と `used=` を記録する。
-2. 1 日後・7 日後など、日を置いて 2 回目以降を打つ。**同じ銘柄だけを取る**と、枠の新たな消費を増やさずに済む（例: `--symbols AAPL` と、1 回目と同じ分割の銘柄と期間）。
-3. `quota[0]`（取る前）の `used=` が 1 回目の `quota-final` より減っていれば、枠が戻っている。**詳細一覧から消えた銘柄の、1 回目の `requestTime=` から今日までの日数**が回復周期の手掛かりになる。
-   消えた銘柄が無ければ、周期はまだ来ていない。
+### 詳細一覧の `requestTime` は、取り直すと更新される（追試に既定の手順を使わない理由）
 
-- `requestTime=` の時刻帯（OpenD の表示の時刻帯か UTC か）は確かめていない。`requestTimeStamp=`（UNIX 秒）と照らし合わせて記録する。
-- 詳細一覧は、稼働中のサービスが取った銘柄も含む。
+- **同じ銘柄の K 線を取り直すと、`used` は増えない（`delta.used=0`）が、詳細一覧のその銘柄の `requestTime=` は取り直した時刻へ更新される**（実測。1 回目と 2 回目の間で、同じ銘柄の要求時刻が 2 回目の時刻へ変わった）。
+- 回復が「その銘柄を最後に取った時刻から」数える仕組みなら、**K 線を取り直すたびに回復の時計が戻る。** 既定の手順（K 線を取る）で追試すると、回復をいつまでも観測できない。
+- よって、**追試は必ず `--quota-only` で打つ。** K 線を 1 本も取らないため、枠を消費せず、どの銘柄の `requestTime=` も更新しない。
+- 同じ理由で、稼働中のサービスが日次で取り直す銘柄（監視銘柄など）は、詳細一覧に常に「使用中」として残り、`requestTime=` が毎日更新される。回復の観測には使えない。
+
+### 追試の手順
+
+1. 最後に既定の手順で打った回の `section=quota-final` の詳細一覧（銘柄と `requestTime=`・`requestTime.jst=`）と `used=` を記録する（起点）。
+   2026-09-30 の 2 回の実行で消費した 3 件（AAPL・MSFT・NVDA）が起点である。
+2. **数日おき**（例: 1 日後・3 日後・7 日後）に `--quota-only` で打ち、`quota[0]` の `used=` / `remain=` と詳細一覧を記録する。**既定の手順（K 線を取る）は打たない。**
+3. 起点の 3 件が詳細一覧から消え、`used=` が減っていれば枠が戻っている。**消えた銘柄の起点の `requestTime=` から、消えていることを確かめた回までの間**に回復周期がある。
+   前の回ではまだ在り、次の回で消えていれば、周期はその 2 回の間に絞れる。消えた銘柄が無ければ、周期はまだ来ていない。
+
+- 比べるときは時刻帯をそろえる。`requestTime=` は UTC+8 である。打った時刻（JST）と比べるときは `requestTime.jst=` を使う。
+- 詳細一覧は、稼働中のサービスが取った銘柄も含む。起点の 3 件のうち稼働中のサービスも取っている銘柄は、上の性質により回復の観測に使えない（その銘柄の `requestTime=` が起点より新しくなっていれば、取り直されている）。
 
 ## 分割の歪みの判定
 
@@ -167,7 +194,7 @@ order-execution のイメージには、この 2 つを確かめるための**�
 
 ## 頻度制限への注意
 
-- 検証口 1 回で送るのは、**枠の照会 7 回と日足の取得 5 回の合わせて 12 回**（既定）である。銘柄を N 個にすると `2 + 2N + 6` 回になる。
+- 検証口 1 回で送るのは、**枠の照会 7 回と日足の取得 5 回の合わせて 12 回**（既定）である。銘柄を N 個にすると `2 + 2N + 6` 回になる。`--quota-only` は枠の照会 1 回だけである。
 - 要求の間隔は 2.5 秒以上あけている。**検証口を続けて打たない。**
 - 検証口は稼働中のサービスとは別に、OpenD へ相場の接続を 1 本張る（実行中だけ。終われば閉じる）。
 

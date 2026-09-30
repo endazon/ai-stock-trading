@@ -82,6 +82,26 @@ public class KLineQuotaProbeEndToEndTests
     }
 
     [Fact]
+    public async Task quota_onlyは詳細つきの枠の照会1件だけを送りK線の要求を1件も送らない()
+    {
+        // #1125（IADR-0464 の 2026-09-30 追記）: 取り直すと requestTime が更新され回復の時計が戻るため、K 線を送らない。
+        var opend = new FakeOpenD();
+
+        var (exitCode, output) = await Probe(opend, null, KLineQuotaProbeCommand.QuotaOnlyOption);
+
+        exitCode.Should().Be(KLineQuotaProbeCommand.ExitAllSucceeded, output);
+        opend.InitConnectCalls.Should().Be(1);
+        opend.QuotaRequests.Select(r => r.C2S.BGetDetail).Should().Equal([true], "詳細つきの照会 1 回だけ");
+        opend.KLineRequests.Should().BeEmpty("K 線は 1 本も取らない");
+        output.Should().Contain("quota[0] label=quota-only retType=0 used=7 remain=293")
+            .And.Contain("quota[0].detail[0] security=US.AAPL name=Apple requestTime=2026-09-29 22:10:05 requestTimeStamp=1790719805 "
+                + "requestTime.tz=UTC+8 requestTime.jst=2026-09-29 23:10:05 requestTime.utc=2026-09-29 14:10:05")
+            .And.Contain("quota.used=7 quota.remain=293 quota.total=300")
+            .And.Contain("requests.sent=1 requests.failed=0");
+        output.Should().NotContain(ProbeHost).And.NotContain(ProbePort);
+    }
+
+    [Fact]
     public async Task 応答の出来高と売買代金と空白足と続きの鍵と枠の詳細を写す()
     {
         var opend = new FakeOpenD();
