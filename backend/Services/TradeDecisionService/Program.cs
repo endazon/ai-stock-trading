@@ -287,6 +287,36 @@ builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpEntryBlockersProvider(http, sp.GetRequiredService<ILogger<HttpEntryBlockersProvider>>());
 });
+// 🔴 FR-04, ADR-0048 決定 2・3, #1118, IADR-0467 決定 2・3・6: 判断へ渡す出来高（前営業日の出来高・20 日平均比）の日足の口。
+// **既定は無効**（DecisionVolume:Enabled=false）＝NoOp＝日足の要求を 1 回も出さない（取得枠に触れない）＝プロンプトは従来の
+// 「出来高: 未提供」の行のまま。**有効化は、取得枠の回復周期を IADR に記録してから利用者が行う**（ADR-0048 決定 3 の確認 1。
+// 単位は銘柄単位と実測済み・回復周期は未測定＝#1117）。有効かつ OrderExecution:BaseUrl があるときだけ、発注執行の
+// GET /order-execution/daily-bars（前復権）を銘柄 × 取引日で 1 回だけ引く（CachedDailyBarsProvider・singleton でキャッシュを共有）。
+// 有効でも接続先が無ければ NoOp（警告）。明示的に登録する（省略可能な引数の既定へ黙って落とさない。IADR-0397）。
+// 報告書サービスの同名の設定（方針の改訂 LLM へ示す材料）と同じ値にする（IADR-0467 決定 7）。ATR(14)（#1122）も同じ口を使う。
+builder.Services.AddHttpClient("order-execution", c => c.Timeout = TimeSpan.FromSeconds(20))
+    .AddAiStockTradingServiceToken(builder.Configuration);
+builder.Services.AddSingleton<IDailyBarsProvider>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    if (!bool.TryParse(configuration["DecisionVolume:Enabled"], out var volumeEnabled) || !volumeEnabled)
+        return new NoOpDailyBarsProvider();
+
+    var baseUrl = configuration["OrderExecution:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    {
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger("DecisionVolume").LogWarning(
+            "DecisionVolume:Enabled=true だが OrderExecution:BaseUrl が無い・不正のため、出来高は未提供のままにします（日足を要求しません）。");
+        return new NoOpDailyBarsProvider();
+    }
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
+    http.BaseAddress = uri;
+    return new CachedDailyBarsProvider(
+        new HttpDailyBarsSource(http, sp.GetRequiredService<ILogger<HttpDailyBarsSource>>()),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILogger<CachedDailyBarsProvider>>());
+});
 // FR-08, IADR-0069/0072: RAG 取得ポート（#18 IKnowledgeBaseSearch）を配線する。KnowledgeBase:Search:BaseUrl 未設定/不正なら
 // #18 の NoOpKnowledgeBaseSearch（空）＝参考情報なし＝実 LLM 結線（IADR-0061）と同一プロンプト＝現行動作（安全既定）。
 builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);

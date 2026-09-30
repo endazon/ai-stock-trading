@@ -42,8 +42,13 @@ public sealed class TradeDecisionAppService(
     IDecisionForgoneBeforeLlmReporter? forgoneReporter = null,
     IPositionQueryHealthReporter? positionQueryHealth = null,
     IEntryBlockersProvider? entryBlockers = null,
-    IStopWidthFloorSource? stopWidthFloor = null)
+    IStopWidthFloorSource? stopWidthFloor = null,
+    IDailyBarsProvider? dailyBars = null)
 {
+    // FR-04, ADR-0048 決定 2・3, #1118, IADR-0467 決定 3・6: 判断へ渡す出来高の日足の口。未指定＝NoOp（IsEnabled=false・要求しない）＝
+    // プロンプトは従来の「出来高: 未提供」の行のまま。本番は Program.cs が DecisionVolume:Enabled（既定 false）で選んで明示的に渡す。
+    private readonly IDailyBarsProvider _dailyBars = dailyBars ?? new NoOpDailyBarsProvider();
+
     // FR-10, ADR-0049 決定2, #1120, IADR-0465 決定1: 損切り幅の下限（ATR(14)）の供給口。未指定＝NoAtr（常に null）＝
     // 参照価格（アンカー後）の 2% が下限として効く（配備までの暫定手段）。
     private readonly IStopWidthFloorSource _stopWidthFloor = stopWidthFloor ?? new NoAtrStopWidthFloorSource();
@@ -403,10 +408,17 @@ public sealed class TradeDecisionAppService(
         // 本判断・一次の両方へ同じ値で渡す（RAG を経由しない欠測の明示。一次は門であり、ここで欠けると本判断へ届かない）。
         var news = _newsStatus?.Current(clock.UtcNow);
 
+        // 🔴 FR-04, ADR-0048 決定 2・3, #1118, IADR-0467 決定 4・6: 前営業日の出来高と 20 日平均比（日足から計算）。
+        // **無効（既定）なら引かない**（要求 0 回＝取得枠に触れない・プロンプトは従来の「未提供」の行）。見送りの判定の後に引く
+        // （見送る判断で取得しない）。**取得できないことで判断を止めない**（「未提供」と書いて続ける）。
+        var volume = _dailyBars.IsEnabled
+            ? DailyVolumeContext.From(await GetDailyBarsSafeAsync(trigger, cancellationToken).ConfigureAwait(false))
+            : null;
+
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
-            news: news);
+            news: news, volume: volume);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -424,10 +436,10 @@ public sealed class TradeDecisionAppService(
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
-                    intraday: intraday, news: news)
+                    intraday: intraday, news: news, volume: volume)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist, intraday, news),
+                    watchlist, intraday, news, volume),
             decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
@@ -835,6 +847,22 @@ public sealed class TradeDecisionAppService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "新規建ての可否の照会に失敗しました（不明として扱い LLM を呼びます）: {Symbol}", trigger.Symbol);
+            return null;
+        }
+    }
+
+    // FR-04, ADR-0048 決定 2, #1118, IADR-0467 決定 4: 日足の照会（fail-safe ラッパ）。例外は **null（取得できない＝出来高は未提供）**
+    // に縮退する（判断を止めない）。本判断のキャンセルは伝える。
+    private async Task<ConfirmedDailyBars?> GetDailyBarsSafeAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _dailyBars.GetConfirmedBarsAsync(trigger.Symbol, trigger.Market, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "日足の照会に失敗しました（出来高は未提供として判断を続けます）: {Symbol}", trigger.Symbol);
             return null;
         }
     }

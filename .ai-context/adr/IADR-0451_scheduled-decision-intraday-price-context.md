@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-02, FR-04, FR-01, UC-01, ADR-0003, ADR-0044, ADR-0020, ADR-0033, IADR-0099, IADR-0068, IADR-0313, IADR-0247, IADR-0351, IADR-0318, IADR-0440, IADR-0435]
 author: claude (Claude Code)
 created: 2026-09-29
-updated: 2026-09-29
+updated: 2026-09-30
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-02・FR-04)
   - planning:projects/ai-stock-trading/07_adr/ADR-0044_watchlist-in-decision-prompt-and-stage0-asof.md (決定 1「価格変動トリガーの現在値は、収集情報〔市況〕に含まれる」)
@@ -140,3 +140,13 @@ planning#702 で裁定中である。本 IADR は出来高を供給しない。
 - **Stage 0 の実供給**: 既定の供給口は null を返す（IADR-0318）。日足からの前日終値の供給は as-of 入力の実供給とともに残件。
 - **本番と Stage 0 の入力の差**: 本番（経路 B）は当日始値比・日中高安を通常は値つきで出し、Stage 0 は常に「不明」とする（決定 5）。記録と本番の判断の比較はこの差を含む。また急変の節では、変化率はトリガーの価格から計算し、前日終値・始値・高値・安値は判断時に取得した /quote の値を使うため、検知から判断までの間に日中の高値・安値が動くと、現在値が高安の範囲外に見えることがある（表示上のずれに留まる）。
 - **プロンプト上の材料であってコードの統制ではない**: 値動きをどう判断に使うかは LLM に委ねる（方針・リスク制約の範囲内。ADR-0003）。
+
+## ［2026-09-30 追記 / #1118］出来高の供給が決まり、値の行を足した（既定は無効で「未提供」の行は変わらない）
+
+本文は書き換えない。planning#702 は計画 ADR-0048（利用者裁定 2026-09-30）で裁定され、出来高は moomoo の日足 K 線から得る前日までの値
+（前営業日の出来高・20 日平均比）とされた。経路と表示は [IADR-0467](IADR-0467_decision-volume-from-daily-kline-via-order-execution.md) が決めた。
+
+- 🔴 **残る制約の「`VolumeNotProvidedLine` を値の行へ差し替える」は、差し替えではなく切り替えにした。** 判断の出来高が無効（`DecisionVolume:Enabled=false`。
+  既定）なら `VolumeNotProvidedLine` を従来どおり出す（1 字も変えない）。有効化した構成では値の行、取得できないときは別の文 `VolumeUnavailableLine`（「未提供」）を出す。
+- 決定 4 の予約 `PriceContextReserveChars` は 300 → 450 に広げた（出来高の値の行の最悪長。IADR-0467 決定 4）。
+- 決定 5（Stage 0）は変えていない。Stage 0 の記録の出来高は「未提供」のまま（残件）。

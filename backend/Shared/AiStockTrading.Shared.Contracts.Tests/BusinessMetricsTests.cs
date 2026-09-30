@@ -478,6 +478,32 @@ public class BusinessMetricsTests
             .Should().Equal(3d, 0d);
     }
 
+    // ---- T-10-1839, FR-04, FR-15, #1118, IADR-0467: 日足 K 線の要求は結果つきで 1 件ずつ、取得枠は使用数と残りを直近の値で記録する。
+    // 🔴 語彙の外の結果は拒む。応答に欄が無い枠の値は記録しない（0 で埋めると「枠を使い切った」に見える）。隔離した Meter 名。
+    [Fact]
+    public void 日足K線の要求は結果つきで計上され_取得枠は欄がある値だけを記録する()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+
+        metrics.RecordKLineDailyRequest(BusinessMetrics.KLineRequestSucceeded);
+        metrics.RecordKLineDailyRequest(BusinessMetrics.KLineRequestNonSuccess);
+        metrics.RecordKLineDailyRequest(BusinessMetrics.KLineRequestFailed);
+        metrics.RecordKLineQuota(used: 3, remaining: 297);
+        metrics.RecordKLineQuota(used: null, remaining: null);
+
+        capture.SumOf(BusinessMetricNames.KLineDailyRequests).Should().Be(3);
+        capture.TagValuesOf(BusinessMetricNames.KLineDailyRequests, BusinessMetricNames.TagOutcome)
+            .Should().Equal("succeeded", "non-success", "failed");
+        capture.ValuesOf(BusinessMetricNames.KLineQuotaUsed).Select(m => m.Value).Should().Equal(3d);
+        capture.ValuesOf(BusinessMetricNames.KLineQuotaRemaining).Select(m => m.Value).Should().Equal(297d);
+
+        var act = () => metrics.RecordKLineDailyRequest("timeout");
+        act.Should().Throw<ArgumentException>();
+        capture.SumOf(BusinessMetricNames.KLineDailyRequests).Should().Be(3);
+    }
+
     // ---- T-10-787, FR-10, NFR-07, #942, IADR-0395: 追随の打ち切りのカウンタは 0 から始められ、語彙の外の理由を拒む ----
     // 🔴 起動時の 0 は「系列が在る」ことを作るためだけにあり、件数を 1 つも足さない（足すと平常時に鳴る）。
     [Fact]
@@ -650,6 +676,8 @@ public class BusinessMetricsTests
         metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced, BrokerProvider.MoomooSimulate);
         metrics.RecordFinnhubSymbolSetResolution("watchlist");
         metrics.RecordFinnhubSymbolsDeferred(0);
+        metrics.RecordKLineDailyRequest(BusinessMetrics.KLineRequestSucceeded);
+        metrics.RecordKLineQuota(used: 1, remaining: 299);
 
         // NFR-01, NFR-02, #689: 端点間の 3 計器。**未観測カウンタも 1 回発火させる** ——
         // 起点なしの呼び出しでしか出ない計器であり、ここを落とすとレジストリとの一致検査がすり抜ける。

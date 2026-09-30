@@ -169,13 +169,23 @@ public static class TradeDecisionPromptBuilder
     // FR-02, FR-04, ADR-0044 決定1, ADR-0020, #1035, IADR-0451: 値動きの行（前日比・当日始値比・日中高安・出来高）の文言。
     // 実測（2026-09-26 稼働 PoC）: 定時の判断へ渡る市況は現在値 1 行だけで、LLM は「値動きの情報が無い」として全件 Hold に倒れた。
     // 🔴 **値が無ければ「不明」と書き、0 を書かない**（0 は「変化なし」と読まれる）。**出来高は無言で省かない** ——
-    // 取得経路が無いこと（planning#702 の裁定待ち）を「未提供」と明示する（ADR-0020 の欠測の明示）。
+    // 判断の出来高が無効（既定。計画 ADR-0048 決定 3 の確認が済むまで）なら VolumeNotProvidedLine で「未提供」と明示する（ADR-0020 の欠測の明示）。
+    // ［2026-09-30 / #1118・IADR-0467］有効化した構成では前営業日の出来高と 20 日平均比を出し、取得できないときは VolumeUnavailableLine。
     // 変化率はシステムが同じ節の現在値から計算する（ADR-0003・FR-16 の趣旨。LLM に計算させない）。
     // テストがこれらの const を直接参照する（IADR-0297 決定1 と同じ規律）。
     public const string PriceContextUnknownText = "不明";
 
     public const string VolumeNotProvidedLine =
         "出来高: 未提供（出来高の取得経路が未整備のため渡していません。「出来高が無い」「出来高が少ない」とは扱いません）";
+
+    // FR-04, ADR-0048 決定 2, #1118, IADR-0467 決定 4: 判断の出来高を有効化した構成で、前営業日までの日足を取得できない・前営業日の足が
+    // 無いときの行。🔴 無効の構成の VolumeNotProvidedLine とは別の文にする（有効なのに取れないことを読み分ける）。「未提供」と明示し、0 や
+    // 「少ない」とは書かない（ADR-0048 決定 2）。判断は止めない。
+    public const string VolumeUnavailableLine =
+        "出来高: 未提供（前営業日までの日足を取得できなかったため渡していません。「出来高が無い」「出来高が少ない」とは扱いません）";
+
+    // FR-04, ADR-0048 決定 2, #1118, IADR-0467 決定 4: 前営業日の出来高はあるが、20 日平均比を計算できない（確定足が 20 本に満たない等）ときの比の文言。
+    public const string VolumeRatioUnknownText = "不明（前営業日までの確定した日足が 20 本そろわないため計算していません）";
 
     public const string PriceContextComputedNote =
         "前日比・当日始値比は、上の現在値からシステムが計算した値です（あなたは計算しません）。「不明」は値を取得できなかったことを表し、変化が無いことではありません。";
@@ -223,7 +233,8 @@ public static class TradeDecisionPromptBuilder
         WorkingEntryOrders? working = null,
         IReadOnlyList<WatchedSymbol>? watchlist = null,
         IntradayPriceContext? intraday = null,
-        NewsCollectionStatus? news = null)
+        NewsCollectionStatus? news = null,
+        DailyVolumeContext? volume = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -251,7 +262,7 @@ public static class TradeDecisionPromptBuilder
             sb.AppendLine($"- 銘柄: {SymbolText(trigger)} / 市場: {trigger.Market}");
             sb.AppendLine($"- 現在値: {price.ToString(ci)}{priceUnit} / 基準値: {trigger.BaselinePrice?.ToString(ci)}{priceUnit} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
             // FR-02, FR-04, #1035, IADR-0451: 急変の節にも日中文脈を載せる。変化率はこの節の現在値（trigger.Price）から計算する。
-            sb.Append(PriceContextLines(price, intraday, priceUnit));
+            sb.Append(PriceContextLines(price, intraday, priceUnit, volume));
         }
         else
         {
@@ -264,7 +275,7 @@ public static class TradeDecisionPromptBuilder
                 sb.AppendLine($"- 現在値: {cp.ToString(ci)}{priceUnit}");
                 // FR-02, FR-04, #1035, IADR-0451: 定時の判断の値動きの材料（前日比・当日始値比・日中高安。出来高は未提供と明示）。
                 // 現在値を出さない構成（既定 NoOp）では出さない（比べる現在値が無い。IADR-0099 決定1 の現行動作）。
-                sb.Append(PriceContextLines(cp, intraday, priceUnit));
+                sb.Append(PriceContextLines(cp, intraday, priceUnit, volume));
             }
         }
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（定時・急変の両方。現在値の有無に依らず無条件）。
@@ -369,7 +380,8 @@ public static class TradeDecisionPromptBuilder
         WorkingEntryOrders? working = null,
         IReadOnlyList<WatchedSymbol>? watchlist = null,
         IntradayPriceContext? intraday = null,
-        NewsCollectionStatus? news = null)
+        NewsCollectionStatus? news = null,
+        DailyVolumeContext? volume = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -395,7 +407,7 @@ public static class TradeDecisionPromptBuilder
             sb.AppendLine($"- 現在値: {cp.ToString(ci)}{priceUnit}");
             // FR-02, FR-04, #1035, IADR-0451: 一次（門）にも本判断と同じ値動きの材料を渡す（実測: 一次が「勢いの情報が無い」で全件を落とした）。
             // 市況として保護分に入る（ScreeningContextAssembler.PriceContextReserveChars）。
-            sb.Append(PriceContextLines(cp, intraday, priceUnit));
+            sb.Append(PriceContextLines(cp, intraday, priceUnit, volume));
         }
 
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: 本判断と同じニュースの状態の行（現在値の有無に依らず無条件・縮退の保護分）。
@@ -424,8 +436,11 @@ public static class TradeDecisionPromptBuilder
     // 縮退の見積り（ScreeningContextAssembler）と試験が同じ文字列の長さを測るため公開する。
     //   - 変化率は price（**同じ節に出した現在値**）から計算する。基準が不明・0 以下なら「不明」（0% と書かない）。
     //   - 値が無い項目は「不明」。intraday が null（供給が日中文脈を持たない）ならすべて「不明」。
-    //   - 出来高は常に「未提供」と明示する（planning#702 の裁定待ち）。
-    public static string PriceContextLines(decimal price, IntradayPriceContext? intraday, string priceUnit)
+    //   - 出来高（#1118・IADR-0467 決定 4）: volume が null（判断の出来高が無効＝既定）なら従来どおり VolumeNotProvidedLine。
+    //     有効な構成では、前営業日の出来高と 20 日平均比（コードが計算した値）、比が計算できなければ比だけ「不明」、
+    //     前営業日の出来高が得られなければ VolumeUnavailableLine（「未提供」）。当日の累計は渡さない（ADR-0048 決定 2）。
+    public static string PriceContextLines(
+        decimal price, IntradayPriceContext? intraday, string priceUnit, DailyVolumeContext? volume = null)
     {
         var ctx = intraday ?? IntradayPriceContext.Unknown;
         var sb = new StringBuilder();
@@ -434,9 +449,27 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine(
             $"- 当日始値: {PriceText(ctx.Open, priceUnit)} / 当日始値比: {RatioText(IntradayPriceContext.ChangeRatio(price, ctx.Open))}");
         sb.AppendLine($"- 日中高値: {PriceText(ctx.High, priceUnit)} / 日中安値: {PriceText(ctx.Low, priceUnit)}");
-        sb.AppendLine($"- {VolumeNotProvidedLine}");
+        sb.AppendLine($"- {VolumeLine(volume)}");
         sb.AppendLine($"- {PriceContextComputedNote}");
         return sb.ToString();
+    }
+
+    // FR-04, ADR-0048 決定 2, #1118, IADR-0467 決定 4: 出来高の行（先頭の "- " と改行を除く）。
+    // 数値は株数（前復権。分割で調整済み）。比は小数 2 桁（四捨五入）。平均は整数へ四捨五入して見せる（比の計算は丸めない値で行う）。
+    public static string VolumeLine(DailyVolumeContext? volume)
+    {
+        if (volume is null)
+            return VolumeNotProvidedLine;
+        if (volume is not { PreviousDay: { } day, PreviousDayVolume: { } dayVolume })
+            return VolumeUnavailableLine;
+
+        var ci = CultureInfo.InvariantCulture;
+        var ratio = volume is { RatioToAverage20: { } r, Average20: { } avg }
+            ? $"{Math.Round(r, 2, MidpointRounding.AwayFromZero).ToString("0.00", ci)} 倍（前営業日までの確定した日足 20 本の単純平均 "
+                + $"{Math.Round(avg, 0, MidpointRounding.AwayFromZero).ToString("0", ci)} 株に対する比）"
+            : VolumeRatioUnknownText;
+        return $"出来高: 前営業日（{day.ToString("yyyy-MM-dd", ci)}）の確定値 {dayVolume.ToString(ci)} 株 / 20 日平均比: {ratio}"
+            + "。出来高と比はシステムが日足（分割調整済み）から計算した値です。当日の出来高は含みません";
     }
 
     // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の行（本判断の定時・急変の節と一次で共用。末尾の改行まで含む）。

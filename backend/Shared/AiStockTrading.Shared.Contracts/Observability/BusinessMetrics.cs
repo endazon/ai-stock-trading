@@ -146,6 +146,9 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Counter<long> _marketMonitorPositionRowsDegraded;
     private readonly Counter<long> _finnhubSymbolSetResolutions;
     private readonly Gauge<long> _finnhubSymbolsDeferred;
+    private readonly Counter<long> _klineDailyRequests;
+    private readonly Gauge<long> _klineQuotaUsed;
+    private readonly Gauge<long> _klineQuotaRemaining;
 
     /// <summary>
     /// 本番の構築点。Meter 名は <see cref="BusinessMetricNames.MeterName"/> 固定である。
@@ -282,6 +285,17 @@ public sealed class BusinessMetrics : IDisposable
         _finnhubSymbolsDeferred = _meter.CreateGauge<long>(
             BusinessMetricNames.InformationCollectionFinnhubSymbolsDeferred,
             description: "情報収集が 1 巡回に収まらず後回しにした Finnhub の対象銘柄の数（計画 ADR-0043 決定2 (b)。FR-01）");
+
+        // FR-04, FR-15, ADR-0048 決定 3, #1118, IADR-0467: 日足 K 線の要求の件数と、取得の直後に照会した取得枠（使用数・残り）。
+        _klineDailyRequests = _meter.CreateCounter<long>(
+            BusinessMetricNames.KLineDailyRequests,
+            description: "発注執行が OpenD へ撃った日足 K 線の要求の件数（outcome 別。判断へ渡す出来高の取得。FR-04/FR-15）");
+        _klineQuotaUsed = _meter.CreateGauge<long>(
+            BusinessMetricNames.KLineQuotaUsed,
+            description: "日足 K 線の取得の直後に照会した取得枠の使用数（usedQuota。銘柄単位で減る。FR-04/FR-15）");
+        _klineQuotaRemaining = _meter.CreateGauge<long>(
+            BusinessMetricNames.KLineQuotaRemaining,
+            description: "日足 K 線の取得の直後に照会した取得枠の残り（remainQuota。FR-04/FR-15）");
     }
 
     /// <summary>FR-01, FR-02: 1 巡回で収集できたアイテム数を計上する。</summary>
@@ -572,6 +586,37 @@ public sealed class BusinessMetrics : IDisposable
     /// FR-01, #1015, IADR-0435: 直近の決定で後回しにした Finnhub の対象銘柄の数を記録する（0 も記録する＝回復が見える）。
     /// </summary>
     public void RecordFinnhubSymbolsDeferred(long deferred) => _finnhubSymbolsDeferred.Record(deferred);
+
+    /// <summary>FR-04, FR-15, #1118, IADR-0467: 日足 K 線の要求の結果タグ値。OpenD が retType=0 で返した。</summary>
+    public const string KLineRequestSucceeded = "succeeded";
+
+    /// <summary>FR-04, FR-15, #1118, IADR-0467: 日足 K 線の要求の結果タグ値。OpenD が非成功（retType ≠ 0）を返した・応答が不完全だった。</summary>
+    public const string KLineRequestNonSuccess = "non-success";
+
+    /// <summary>FR-04, FR-15, #1118, IADR-0467: 日足 K 線の要求の結果タグ値。接続失敗・切断・打ち切り等の例外で終わった。</summary>
+    public const string KLineRequestFailed = "failed";
+
+    /// <summary>
+    /// FR-04, FR-15, ADR-0048 決定 3, #1118, IADR-0467: 発注執行が OpenD へ撃った日足 K 線の要求を 1 件計上する。
+    /// 語彙（succeeded / non-success / failed）の外は例外（ダッシュボードの系列を黙って増やさない）。
+    /// </summary>
+    public void RecordKLineDailyRequest(string outcome)
+    {
+        if (outcome is not (KLineRequestSucceeded or KLineRequestNonSuccess or KLineRequestFailed))
+            throw new ArgumentException($"日足 K 線の要求の結果の語彙の外: {outcome}", nameof(outcome));
+        _klineDailyRequests.Add(1, new KeyValuePair<string, object?>(BusinessMetricNames.TagOutcome, outcome));
+    }
+
+    /// <summary>
+    /// FR-04, FR-15, #1118, IADR-0467: 取得の直後に照会した取得枠を記録する。応答に欄が無ければその値は記録しない（0 で埋めない）。
+    /// </summary>
+    public void RecordKLineQuota(long? used, long? remaining)
+    {
+        if (used is { } u)
+            _klineQuotaUsed.Record(u);
+        if (remaining is { } r)
+            _klineQuotaRemaining.Record(r);
+    }
 
     public void Dispose() => _meter.Dispose();
 }
