@@ -13,6 +13,11 @@ namespace OrderExecutionService.Features.OrderExecution.ProbeKLineQuota;
 // ADR-0048 決定 3 が K 線を判断へ流す前提とした 2 つの確認（取得枠の単位と回復周期・分割をまたいでも 20 日平均比が歪まないこと）を、
 // 利用者が実機の OpenD で行うための道具であり、判断へ出来高を流すことはしない。
 //
+// #1125（IADR-0464 の 2026-09-30 追記）: `--probe-kline-quota --quota-only` は K 線を 1 本も取らず、枠の照会（詳細つき）を 1 回だけ撃つ。
+// 同じ銘柄を取り直すと used は増えないが詳細一覧の requestTime がその時刻へ更新される（実測 9/30）ため、回復周期の追試で
+// K 線を取り直すと「最後の取得から」の時計が戻ってしまう。追試はこのモードで行う。他のオプションとの併用は使い方の誤り。
+// requestTime は moomoo のサーバ時刻（UTC+8。JST ではない）で返る。詳細の各行に時刻帯と JST・UTC の換算値を並べる（両モード）。
+//
 // 🔴 受け取るのは読み取り専用ポート IKLineQuotaQuery の**生成関数だけ**である。発注・訂正・取消を持つ型は受け取らない（試験で固定）。
 // 🔴 各要求は 1 回だけ。再試行・ページングのループを置かない（失敗はそのまま出して次の段へ進む。接続の失敗では以後を撃たない）。
 // 🔴 要求の間隔を MinRequestInterval（2.5 秒）以上あける（24 回/分。自制レート 30 回/分の内側）。
@@ -64,6 +69,19 @@ public static class KLineQuotaProbeCommand
     private const string SplitFromOption = "--split-from";
     private const string SplitToOption = "--split-to";
 
+    /// <summary>K 線を取らず取得枠だけを読むモードの旗（値を取らない。#1125）。</summary>
+    public const string QuotaOnlyOption = "--quota-only";
+
+    /// <summary>詳細一覧の requestTime の時刻帯（moomoo のサーバ時刻。実測 9/30。#1125）。</summary>
+    public static readonly TimeSpan RequestTimeOffset = TimeSpan.FromHours(8);
+
+    public const string RequestTimeZoneLabel = "UTC+8";
+
+    private static readonly TimeSpan JstOffset = TimeSpan.FromHours(9);
+
+    private static readonly string[] RequestTimeFormats =
+        ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss.f", "yyyy-MM-dd HH:mm:ss.ff", "yyyy-MM-dd HH:mm:ss.fff"];
+
     private static readonly string[] KnownOptions = [SymbolsOption, CountOption, SplitSymbolOption, SplitFromOption, SplitToOption];
 
     // 米国株のコード（`BRK.B` を許す）。大文字へ揃えた後で照合する。
@@ -97,12 +115,16 @@ public static class KLineQuotaProbeCommand
             output.Line("result=usage-error");
             output.Line($"error.message={OneLine(usageError)}");
             output.Line($"usage=dotnet \"$SERVICE_DLL\" {Flag} [{SymbolsOption} AAPL,MSFT] [{CountOption} 25] "
-                + $"[{SplitSymbolOption} NVDA {SplitFromOption} 2024-05-28 {SplitToOption} 2024-06-21]");
+                + $"[{SplitSymbolOption} NVDA {SplitFromOption} 2024-05-28 {SplitToOption} 2024-06-21]"
+                + $" | dotnet \"$SERVICE_DLL\" {Flag} {QuotaOnlyOption}");
             output.Line($"exitCode={ExitUsageOrConfiguration}");
             return ExitUsageOrConfiguration;
         }
 
-        output.Line($"probe=kline-quota market=US symbols={string.Join(',', options.Symbols)} count={options.Count} "
+        if (options.QuotaOnly)
+            output.Line($"probe=kline-quota mode=quota-only market=US requestTime.tz={RequestTimeZoneLabel}");
+        else
+            output.Line($"probe=kline-quota market=US symbols={string.Join(',', options.Symbols)} count={options.Count} "
             + $"split={options.SplitSymbol}:{Date(options.SplitFrom)}..{Date(options.SplitTo)} "
             + $"rehabs={string.Join(',', SplitRehabs.Select(RehabName))} "
             + $"minIntervalMs={MinRequestInterval.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)}");
@@ -129,7 +151,10 @@ public static class KLineQuotaProbeCommand
             var run = new ProbeRun(query, output, delay ?? Task.Delay, cts.Token);
             try
             {
-                await run.ExecuteAsync(options, today).ConfigureAwait(false);
+                if (options.QuotaOnly)
+                    await run.ExecuteQuotaOnlyAsync().ConfigureAwait(false);
+                else
+                    await run.ExecuteAsync(options, today).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -169,7 +194,7 @@ public static class KLineQuotaProbeCommand
     }
 
     private sealed record ProbeOptions(
-        IReadOnlyList<string> Symbols, int Count, string SplitSymbol, DateOnly SplitFrom, DateOnly SplitTo);
+        IReadOnlyList<string> Symbols, int Count, string SplitSymbol, DateOnly SplitFrom, DateOnly SplitTo, bool QuotaOnly = false);
 
     // 手順の実行。要求の数・失敗の数・取得枠の前後を持つ。
     private sealed class ProbeRun(
@@ -221,6 +246,17 @@ public static class KLineQuotaProbeCommand
             WriteQuotaSummary(usedBefore, usedFinal);
         }
 
+        // #1125: 🔴 K 線を 1 本も取らない（取り直すと詳細一覧の requestTime が更新され、回復の時計が戻る）。枠の照会 1 回だけ。
+        public async Task ExecuteQuotaOnlyAsync()
+        {
+            output.Line("section=quota-only");
+            var reading = await QuotaAsync("quota-only", includeDetail: true).ConfigureAwait(false);
+            var used = reading.Succeeded ? reading.UsedQuota : null;
+            var remain = reading.Succeeded ? reading.RemainQuota : null;
+            var total = used is { } u && remain is { } r ? (u + r).ToString(CultureInfo.InvariantCulture) : "(不明)";
+            output.Line($"quota.used={Int(used)} quota.remain={Int(remain)} quota.total={total}");
+        }
+
         private async Task PaceAsync()
         {
             // 🔴 最初の要求の前には待たない。以後は毎回 MinRequestInterval 以上あける（自制レート）。
@@ -251,7 +287,8 @@ public static class KLineQuotaProbeCommand
                 {
                     var d = reading.Details[j];
                     output.Line($"quota[{i}].detail[{j}] security={OneLine(d.Security ?? "(なし)")} name={OneLine(d.Name ?? "(なし)")} "
-                        + $"requestTime={OneLine(d.RequestTime ?? "(なし)")} requestTimeStamp={Long(d.RequestTimeStamp)}");
+                        + $"requestTime={OneLine(d.RequestTime ?? "(なし)")} requestTimeStamp={Long(d.RequestTimeStamp)} "
+                        + DescribeRequestTimeZones(d.RequestTime));
                 }
             }
             _lastUsed = reading.Succeeded ? reading.UsedQuota : null;
@@ -375,12 +412,25 @@ public static class KLineQuotaProbeCommand
         }
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var quotaOnly = false;
         for (var i = 1; i < args.Count; i += 2)
         {
             var option = args[i];
+            if (option == QuotaOnlyOption)
+            {
+                // 値を取らない旗。次の引数から解釈を続ける（i += 2 と合わせて 1 つ進む）。
+                if (quotaOnly)
+                {
+                    error = $"`{QuotaOnlyOption}` が重複しています。";
+                    return false;
+                }
+                quotaOnly = true;
+                i--;
+                continue;
+            }
             if (!KnownOptions.Contains(option))
             {
-                error = $"未知の引数です: `{OneLine(option)}`（使えるのは {string.Join(" / ", KnownOptions)}）。";
+                error = $"未知の引数です: `{OneLine(option)}`（使えるのは {string.Join(" / ", KnownOptions)} / {QuotaOnlyOption}）。";
                 return false;
             }
             if (values.ContainsKey(option))
@@ -394,6 +444,19 @@ public static class KLineQuotaProbeCommand
                 return false;
             }
             values[option] = args[i + 1];
+        }
+
+        if (quotaOnly)
+        {
+            // 🔴 併用は「K 線も取りたいのか」が曖昧。取り直しで回復の時計が戻る事故を黙って起こさないため拒否する（#1125）。
+            if (values.Count > 0)
+            {
+                error = $"`{QuotaOnlyOption}` は K 線を取らないモードです。{string.Join(" / ", KnownOptions)} と併用できません。";
+                return false;
+            }
+            options = options with { QuotaOnly = true };
+            error = string.Empty;
+            return true;
         }
 
         var symbols = DefaultSymbols;
@@ -461,6 +524,20 @@ public static class KLineQuotaProbeCommand
         options = new ProbeOptions(symbols, count, splitSymbol, splitFrom, splitTo);
         error = string.Empty;
         return true;
+    }
+
+    // #1125: requestTime（UTC+8 の壁時計の文字列）に時刻帯を明記し、JST と UTC の換算値を並べる。小数秒は入力の桁のまま出す。
+    public static string DescribeRequestTimeZones(string? requestTime)
+    {
+        var head = $"requestTime.tz={RequestTimeZoneLabel}";
+        if (requestTime is null
+            || !DateTime.TryParseExact(requestTime.Trim(), RequestTimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
+            return $"{head} requestTime.jst=(換算不可) requestTime.utc=(換算不可)";
+        var fraction = requestTime.Trim().Split('.') is [_, var f] ? "." + new string('f', f.Length) : string.Empty;
+        var format = "yyyy-MM-dd HH:mm:ss" + fraction;
+        var at = new DateTimeOffset(local, RequestTimeOffset);
+        return $"{head} requestTime.jst={at.ToOffset(JstOffset).ToString(format, CultureInfo.InvariantCulture)} "
+            + $"requestTime.utc={at.UtcDateTime.ToString(format, CultureInfo.InvariantCulture)}";
     }
 
     private static bool TryNormalizeSymbol(string raw, out string symbol)

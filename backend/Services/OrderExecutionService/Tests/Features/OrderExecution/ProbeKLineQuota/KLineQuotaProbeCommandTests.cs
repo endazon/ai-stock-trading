@@ -352,6 +352,124 @@ public class KLineQuotaProbeCommandTests
             .And.NotContain("CreateBuilder(args)", "引数は構成へ渡さない");
     }
 
+    // ── #1125（IADR-0464 の 2026-09-30 追記）: K 線を取らず取得枠だけを読むモードと、requestTime の時刻帯（UTC+8）の明記 ──
+    // 受け入れ基準: quota-only は K 線を 1 本も撃たず枠の照会（詳細つき）を 1 回だけ撃つ／used・remain・詳細を出す／
+    // requestTime に UTC+8 を明記し JST・UTC の換算を並べる／他のオプションとの併用は使い方の誤り／既定モードは変わらない。
+
+    [Fact]
+    public async Task quota_onlyはK線を1本も取らず詳細つきの枠の照会を1回だけ撃つ()
+    {
+        var query = new FakeQuery { KnownBefore = ["US.AAPL", "US.MSFT", "US.NVDA"] };
+
+        var (exitCode, output, q, delays) = await Run(query, null, Flag, KLineQuotaProbeCommand.QuotaOnlyOption);
+
+        exitCode.Should().Be(KLineQuotaProbeCommand.ExitAllSucceeded, output);
+        q.Calls.Should().Equal(["quota(detail)"], "K 線を取り直すと詳細一覧の requestTime が更新され回復の時計が戻るため、枠の照会だけを撃つ");
+        q.Calls.Should().NotContain(c => c.StartsWith("kline", StringComparison.Ordinal));
+        delays.Should().BeEmpty("要求は 1 回なので待たない");
+        q.Disposed.Should().BeTrue();
+        output.Should().Contain("probe=kline-quota mode=quota-only market=US requestTime.tz=UTC+8")
+            .And.Contain("section=quota-only")
+            .And.Contain("quota[0] label=quota-only retType=0 used=3 remain=297")
+            .And.Contain("quota[0].detail.count=3")
+            .And.Contain("quota[0].detail[0] security=US.AAPL name=Apple requestTime=2026-09-29 10:00:00 requestTimeStamp=1790000000 "
+                + "requestTime.tz=UTC+8 requestTime.jst=2026-09-29 11:00:00 requestTime.utc=2026-09-29 02:00:00")
+            .And.Contain("quota.used=3 quota.remain=297 quota.total=300")
+            .And.Contain("requests.sent=1 requests.failed=0")
+            .And.Contain("result=ok").And.Contain("exitCode=0");
+        output.Should().NotContain("section=recent-daily").And.NotContain("section=split-compare").And.NotContain("kline[");
+    }
+
+    [Fact]
+    public async Task quota_onlyで枠の照会が非成功ならretMsgを出し終了コード1で撃ち直さない()
+    {
+        var query = new FakeQuery { QuotaRetType = -1 };
+
+        var (exitCode, output, q, _) = await Run(query, null, Flag, KLineQuotaProbeCommand.QuotaOnlyOption);
+
+        exitCode.Should().Be(KLineQuotaProbeCommand.ExitQueryFailed, output);
+        q.Calls.Should().Equal(["quota(detail)"], "撃ち直さない");
+        output.Should().Contain("quota[0].retMsg=quota failed")
+            .And.Contain("quota.used=(なし) quota.remain=(なし) quota.total=(不明)")
+            .And.Contain("result=partial");
+    }
+
+    [Theory]
+    [InlineData("2026-09-30 22:25:53", "2026-09-30 23:25:53", "2026-09-30 14:25:53")] // 9/30 の実測（23:25 JST の実行）
+    [InlineData("2026-09-30 03:10:00", "2026-09-30 04:10:00", "2026-09-29 19:10:00")] // UTC は前日へまたぐ
+    [InlineData("2026-09-30 23:30:00", "2026-10-01 00:30:00", "2026-09-30 15:30:00")] // JST は翌日（月）へまたぐ
+    [InlineData("2026-09-30 22:42:36.5", "2026-09-30 23:42:36.5", "2026-09-30 14:42:36.5")] // 小数秒は同じ桁で出す
+    [InlineData(" 2026-09-30 22:42:36.123 ", "2026-09-30 23:42:36.123", "2026-09-30 14:42:36.123")]
+    public void requestTimeはUTC8として読みJSTとUTCの換算を並べる(string requestTime, string jst, string utc) =>
+        KLineQuotaProbeCommand.DescribeRequestTimeZones(requestTime)
+            .Should().Be($"requestTime.tz=UTC+8 requestTime.jst={jst} requestTime.utc={utc}");
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("2026/09/30 22:25:53")]
+    [InlineData("1790000000")]
+    public void 読めないrequestTimeは時刻帯だけ明記し換算不可と出す(string? requestTime) =>
+        KLineQuotaProbeCommand.DescribeRequestTimeZones(requestTime)
+            .Should().Be("requestTime.tz=UTC+8 requestTime.jst=(換算不可) requestTime.utc=(換算不可)");
+
+    [Fact]
+    public void requestTimeの時刻帯はUTC8である()
+    {
+        KLineQuotaProbeCommand.RequestTimeOffset.Should().Be(TimeSpan.FromHours(8), "#1125: moomoo のサーバ時刻（JST ではない）");
+        KLineQuotaProbeCommand.RequestTimeZoneLabel.Should().Be("UTC+8");
+        KLineQuotaProbeCommand.QuotaOnlyOption.Should().Be("--quota-only");
+    }
+
+    public static TheoryData<string[]> QuotaOnlyWithOtherOptions => new()
+    {
+        new[] { Flag, KLineQuotaProbeCommand.QuotaOnlyOption, "--symbols", "AAPL" },          // 併用（後ろ）
+        new[] { Flag, "--symbols", "AAPL", KLineQuotaProbeCommand.QuotaOnlyOption },          // 併用（前）
+        new[] { Flag, KLineQuotaProbeCommand.QuotaOnlyOption, "--count", "3" },
+        new[] { Flag, KLineQuotaProbeCommand.QuotaOnlyOption, "--split-symbol", "NVDA", "--split-from", "2024-05-28", "--split-to", "2024-06-21" },
+        new[] { Flag, KLineQuotaProbeCommand.QuotaOnlyOption, KLineQuotaProbeCommand.QuotaOnlyOption }, // 重複
+        new[] { Flag, KLineQuotaProbeCommand.QuotaOnlyOption + "=1" },                         // = 形
+        new[] { Flag, "--symbols", KLineQuotaProbeCommand.QuotaOnlyOption },                  // 値の取り違え
+        new[] { KLineQuotaProbeCommand.QuotaOnlyOption, Flag },                                // 検証口の旗が先頭でない
+    };
+
+    [Theory]
+    [MemberData(nameof(QuotaOnlyWithOtherOptions))]
+    public async Task quota_onlyと他のオプションの併用や重複は使い方の誤りで接続しない(string[] args)
+    {
+        var (exitCode, output, query, _) = await Run(null, null, args);
+
+        exitCode.Should().Be(KLineQuotaProbeCommand.ExitUsageOrConfiguration, output);
+        query.CreateCount.Should().Be(0, "引数不正では接続しない");
+        query.Calls.Should().BeEmpty();
+        output.Should().Contain("result=usage-error").And.Contain("exitCode=2");
+    }
+
+    [Fact]
+    public async Task 使い方の誤りの案内にquota_onlyの形も出す()
+    {
+        var (_, output, _, _) = await Run(null, null, Flag, "--unknown", "x");
+
+        output.Should().Contain($"usage=dotnet \"$SERVICE_DLL\" {Flag} [--symbols")
+            .And.Contain($"| dotnet \"$SERVICE_DLL\" {Flag} --quota-only")
+            .And.Contain("--quota-only）。");
+    }
+
+    [Fact]
+    public async Task 既定モードの手順は変わらず枠の詳細の各行に時刻帯と換算を足す()
+    {
+        var query = new FakeQuery { KnownBefore = ["US.AAPL"] };
+
+        var (exitCode, output, q, _) = await Run(query);
+
+        exitCode.Should().Be(0, output);
+        q.Calls.Count(c => c.StartsWith("kline", StringComparison.Ordinal)).Should().Be(5, "既定モードは従来どおり K 線を 5 回取る");
+        q.Calls.Should().HaveCount(12);
+        output.Should().Contain("probe=kline-quota market=US symbols=AAPL,MSFT count=25").And.NotContain("mode=quota-only");
+        output.Should().Contain("quota[0].detail[0] security=US.AAPL name=Apple requestTime=2026-09-29 10:00:00 requestTimeStamp=1790000000 "
+            + "requestTime.tz=UTC+8 requestTime.jst=2026-09-29 11:00:00 requestTime.utc=2026-09-29 02:00:00");
+    }
+
     private static string ProgramPath([CallerFilePath] string testFile = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(testFile)!, "..", "..", "..", "..", "Program.cs"));
 
@@ -382,6 +500,8 @@ public class KLineQuotaProbeCommandTests
 
         public KLineRehab? FailRehab { get; init; }
 
+        public int QuotaRetType { get; init; }
+
         public int? ThrowOnCall { get; init; }
 
         public string ThrowMessage { get; init; } = "返信待ちで打ち切り";
@@ -408,7 +528,9 @@ public class KLineQuotaProbeCommandTests
             var details = includeDetail
                 ? _consumed.Select(s => new KLineQuotaDetail(s, s == "US.AAPL" ? "Apple" : null, "2026-09-29 10:00:00", 1790000000L)).ToList()
                 : [];
-            return Task.FromResult(new KLineQuotaReading(0, "", _used, 300 - _used, details));
+            return QuotaRetType != 0
+                ? Task.FromResult(new KLineQuotaReading(QuotaRetType, "quota failed", null, null, []))
+                : Task.FromResult(new KLineQuotaReading(0, "", _used, 300 - _used, details));
         }
 
         public Task<DailyKLineReading> RequestDailyKLinesAsync(DailyKLineProbeRequest request, CancellationToken cancellationToken = default)
