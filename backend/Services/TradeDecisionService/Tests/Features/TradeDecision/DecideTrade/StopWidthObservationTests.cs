@@ -13,9 +13,9 @@ using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDeci
 
 namespace TradeDecisionService.Tests;
 
-// FR-10, FR-04, FR-02, #1104, IADR-0460: 新規建ての損切り幅の観測（ログだけ・統制ではない）。
-// 損切り幅は LLM の出力をそのまま使い ATR は計算していない。数値の下限は planning#703 の裁定待ちのため、本試験は
-// 観測値の計算とログの有無だけを固定し、判断（数量・損切り価格・見送り）を変えないことを確かめる。実 LLM は呼ばない。
+// FR-10, FR-04, FR-02, #1104, IADR-0460: 新規建ての損切り幅の観測（ログ）。本試験は観測値の計算とログの有無を固定する。
+// #1120, IADR-0465: 幅には下限（ATR が得られない間は参照価格の 2%）が掛かる。下限そのものの試験は StopWidthFloorTests。
+// 観測の stopWidth・比率・倍率は AI の幅のまま、ラインは下限を掛けた幅から引く。実 LLM は呼ばない。
 public class StopWidthObservationTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 30, 14, 0, 0, TimeSpan.Zero);
@@ -33,6 +33,13 @@ public class StopWidthObservationTests
 
     private const string ObservationPrefix = "損切り幅の観測";
 
+    // #1120: 観測の計算は下限の結果も受け取る。ここでは退避の 2%（アンカー後の価格）を掛けた結果を渡す（本番の経路と同じ）。
+    private static StopWidthObservation Observe(
+        decimal llmReference, decimal anchored, decimal width, IntradayPriceContext? intraday) =>
+        StopWidthObservation.Of(
+            llmReference, anchored, width, intraday,
+            StopWidthFloorPolicy.Apply(width, StopWidthFloorPolicy.Fallback(anchored)));
+
     private static DecisionTrigger ScheduledAapl() => DecisionTrigger.Scheduled("AAPL", Market.UnitedStates, Now);
 
     // ================================================================================================
@@ -43,7 +50,7 @@ public class StopWidthObservationTests
     [Fact]
     public void 観測値は差と比率と日中の値幅に対する倍率を計算する()
     {
-        var observed = StopWidthObservation.Of(100m, 102m, 2m, Known);
+        var observed = Observe(100m, 102m, 2m, Known);
 
         observed.LlmReferencePrice.Should().Be(100m);
         observed.AnchoredPrice.Should().Be(102m);
@@ -64,7 +71,7 @@ public class StopWidthObservationTests
     public void 差は符号つきで比率は小数4桁に丸める(
         decimal llmReference, decimal anchored, decimal width, decimal expectedDiff, decimal expectedPercent)
     {
-        var observed = StopWidthObservation.Of(llmReference, anchored, width, intraday: null);
+        var observed = Observe(llmReference, anchored, width, intraday: null);
 
         observed.AnchorDifference.Should().Be(expectedDiff);
         observed.WidthPercentOfAnchored.Should().Be(expectedPercent);
@@ -75,14 +82,14 @@ public class StopWidthObservationTests
     [MemberData(nameof(UnknownRanges))]
     public void 日中の値幅が分からなければ値幅も倍率も不明_否定形(IntradayPriceContext intraday)
     {
-        AssertRangeUnknown(StopWidthObservation.Of(100m, 102m, 2m, intraday));
+        AssertRangeUnknown(Observe(100m, 102m, 2m, intraday));
     }
 
     // T-10-1748: 現在値の供給なし（日中文脈そのものが無い）。
     [Fact]
     public void 日中文脈が無ければ値幅も倍率も不明_否定形()
     {
-        AssertRangeUnknown(StopWidthObservation.Of(100m, 102m, 2m, intraday: null));
+        AssertRangeUnknown(Observe(100m, 102m, 2m, intraday: null));
     }
 
     private static void AssertRangeUnknown(StopWidthObservation observed)
@@ -105,7 +112,8 @@ public class StopWidthObservationTests
     [Fact]
     public void アンカリング済みの価格が0以下なら例外()
     {
-        var act = () => StopWidthObservation.Of(100m, 0m, 2m, Known);
+        var act = () => StopWidthObservation.Of(
+            100m, 0m, 2m, Known, new StopWidthFloorApplication(2m, 2m, StopWidthFloorSource.Fallback2Pct, 2m, false));
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -127,7 +135,8 @@ public class StopWidthObservationTests
         var decision = await service.DecideAsync(ScheduledAapl());
 
         decision.Should().NotBeNull();
-        decision!.Intent.StopLossPrice.Should().Be(100m, "102 − 2（アンカリング済みの価格から引く）");
+        // #1120, IADR-0465: AI の幅 2 は下限 2.04（アンカー後 102 の 2%）を割るため、下限まで広げてから引く。
+        decision!.Intent.StopLossPrice.Should().Be(99.96m, "102 − 2.04（アンカリング済みの価格から、下限を掛けた幅を引く）");
 
         var entry = logger.Entries.Should().ContainSingle(e => e.Message.StartsWith(ObservationPrefix, StringComparison.Ordinal))
             .Subject;

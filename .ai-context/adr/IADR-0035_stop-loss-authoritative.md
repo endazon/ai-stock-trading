@@ -85,3 +85,11 @@ plan_refs:
 計画（FR-10・05_trading-assumptions §5）は「ATR 連動」を定めており、その差は planning#703 の裁定待ちである。
 本 IADR の決定（`OrderIntent` への搭載・台帳への永続化・近似へのフォールバック）は変わらない。
 幅の観測（比率・日中の値幅に対する倍率のログ）は [IADR-0460](IADR-0460_stop-width-observability-log-only.md)。
+
+## ［2026-09-30 追記 / #1120］`OrderIntent.StopLossPrice` は下限を掛けた幅から引く
+
+本文と上の #1104 の追記は書き換えない。上の追記の「planning#703 の裁定待ち」は、計画 ADR-0049（利用者裁定 2026-09-30）で裁定された。
+`OrderIntent.StopLossPrice` は、アンカリング済みの参照価格から **max(LLM の幅, 下限)** を引いた（ショートは足した）値である。
+下限 ＝ 1.0 × ATR(14, 日足)、ATR が得られないときは参照価格の 2%（今は ATR が未供給で 2% が効いている。
+[IADR-0465](IADR-0465_stop-width-floor-fallback-2pct-widen-and-audit.md)）。ADR-0049 決定 1 のとおり、損切りの実行機構（S0〜S3）は下限を掛けた後のラインを使う。
+本 IADR の決定（`OrderIntent` への搭載・台帳への永続化・近似へのフォールバック）は変わらない。

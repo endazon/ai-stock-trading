@@ -42,12 +42,21 @@ public static class TradingDefaults
     /// 既定損切り幅比率 3%。出典は前提条件 05_trading-assumptions §5 の**旧版**（円建て資金の時期の「初期投入資金」行の備考
     /// 「損切り幅3%なら…」の目安）であり、**現行の §5 には無い**（#1104 で確認。当時の引用は計画側の環流記録
     /// 10_feedback/20260708_trading-defaults-derived-values.md に残る）。計画の確定値ではなく実装側の過渡的な近似値である。
-    /// FR-03/FR-10, IADR-0030: 損切り価格の権威データ（取引判断 LLM が出す stopLossDistancePerShare。ATR は計算していない・IADR-0460）が
+    /// FR-03/FR-10, IADR-0030: 損切り価格の権威データ（取引判断 LLM が出す stopLossDistancePerShare に下限を掛けた幅。IADR-0465）が
     /// 発注/約定パイプラインに永続化されるまで、平均取得単価からの近似導出に用いる過渡的既定値。
     /// #957, IADR-0399: 市場監視も応答にラインが無い行を同じ式で見積もるため、値と式の実体は共有の
     /// <see cref="StopLossApproximation"/> に置く（ここはその値を指す）。
     /// </summary>
     public const decimal DefaultStopLossRatio = StopLossApproximation.DefaultRatio;
+
+    /// <summary>
+    /// FR-10, FR-17, ADR-0049 決定2, #1120, IADR-0465 決定1: **損切り幅の下限の退避値＝参照価格（アンカー後の現在値）の 2%**
+    /// （05_trading-assumptions §5「損切り幅の下限」。利用者裁定 2026-09-30）。
+    /// 下限の本体は 1.0 × ATR(14, 日足) だが、ATR が得られないとき（日足が判断へ通っていない間を含む）は本値が効く。
+    /// 取引判断の LLM の幅がこれを割れば、下限まで広げてサイジングとラインを計算する（見送らない）。
+    /// 🔴 <see cref="DefaultStopLossRatio"/>（ラインが不明な建玉の近似 3%）とは**別の値**である（ADR-0049 フォローアップ 4）。
+    /// </summary>
+    public const decimal StopWidthFloorFallbackRatio = 0.02m;
 
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。
@@ -63,8 +72,8 @@ public static class TradingDefaults
         MaxOpenPositions = 3,
         // 日次損失上限: 資金の 2% 到達で当日全停止・翌営業日までロックアウト
         DailyLossLimitRatio = 0.02m,
-        // 1 取引あたりリスク: 資金の 1%（サイジングの基礎。ADR-0018 決定1）。計画は「ATR 連動」を定めるが、実装の損切り幅は
-        // LLM の出力をそのまま使い ATR は計算していない（#1104, IADR-0460。幅の数値の下限は planning#703 の裁定待ち）。
+        // 1 取引あたりリスク: 資金の 1%（サイジングの基礎。ADR-0018 決定1）。「ATR 連動」の実体は損切り幅の下限
+        // （StopWidthFloorFallbackRatio。#1120, ADR-0049, IADR-0465）。
         PerTradeRiskRatio = 0.01m,
         // 最大 DD 上限: 10% 到達で全停止・再検証（ADR-0018 決定1）
         MaxDrawdownRatio = 0.10m,

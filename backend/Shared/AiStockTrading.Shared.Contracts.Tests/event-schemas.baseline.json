@@ -504,7 +504,8 @@
     "DecidedAt": "DateTimeOffset",
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
-    "Rationale": "String"
+    "Rationale": "String",
+    "StopWidth": "StopWidthFloorApplication"
   },
   "TradeDecisionSkipped": {
     "EffectiveModel": "String",

@@ -12,10 +12,15 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //   - CycleStartedAt: 起点イベント自身の時刻（InformationCollected.CollectedAt / PriceMovementDetected.DetectedAt）。
 // 🔴 **既定は null（＝起点不明）であり、0 や現在時刻へ倒さない。** 起点を持たない経路（owner 手仕舞い・
 // 自動縮小）は実在し、そこで 0 を作ると「即座に完了した」と読めてしまう（未観測は未観測として出す）。
+//
+// FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: StopWidth は**新規建ての損切り幅に下限を掛けた結果**
+// （AI の幅・下限・出所・適用した幅・広げたか）。監査台帳へ残すために判断の記録へ載せる（IADR-0460 決定1 を改めた）。
+// 🔴 **既定は null**。損切りラインを作らない判断（決済・owner 手仕舞い・自動縮小）は持たない。0 で埋めない。
 public record TradeDecisionMade(
     Guid DecisionId,
     OrderIntent Intent,
     string Rationale,
     DateTimeOffset DecidedAt,
     string? CycleTrigger = null,
-    DateTimeOffset? CycleStartedAt = null);
+    DateTimeOffset? CycleStartedAt = null,
+    StopWidthFloorApplication? StopWidth = null);

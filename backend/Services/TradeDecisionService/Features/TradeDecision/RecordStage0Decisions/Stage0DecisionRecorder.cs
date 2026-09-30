@@ -354,9 +354,15 @@ public sealed class Stage0DecisionRecorder(
             return 0; // IADR-0035 の不変量違反は見送りへ倒す（本番と同じ）。
         }
 
+        // 🔴 FR-10, ADR-0049 決定2・決定3, #1120, IADR-0465 決定5: 本番と同じ下限を掛けてからサイジングする（幅を下限まで広げ、見送らない）。
+        // Stage 0 には現在値のアンカーが無く、記録の参照価格が判断時点の価格である。ATR(14) は前営業日までの確定足から復元できるが
+        // （ADR-0049 決定2）、日足が判断へ通るまでは本番と同じく参照価格の 2% を使う。各票の生の幅（Stage0RawDecision）は従来どおり残る。
+        var stopWidth = StopWidthFloorPolicy.Apply(
+            decision.StopLossDistancePerShare, StopWidthFloorPolicy.Fallback(decision.ReferencePrice));
+
         var context = input.Sizing;
         var referencePriceBase = decision.ReferencePrice * input.RateToBase;
-        var stopLossDistanceBase = decision.StopLossDistancePerShare * input.RateToBase;
+        var stopLossDistanceBase = stopWidth.AppliedWidthPerShare * input.RateToBase;
         var sizeFactor = PositionSizer.GetSizeFactor(context.ConsecutiveLosses, context.DrawdownRatio, context.Limits);
         // #869, ADR-0041 決定2, IADR-0354: 基準資金・残枠の未供給（null）は 0 として畳む（本番の経路と同じ扱い）。
         var capital = context.Capital ?? 0m;
