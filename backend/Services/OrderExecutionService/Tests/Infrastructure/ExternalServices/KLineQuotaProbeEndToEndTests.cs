@@ -142,6 +142,57 @@ public class KLineQuotaProbeEndToEndTests
     }
 
     [Fact]
+    public async Task 応答待ちの間に切断されたら返信待ちの打ち切りを待たずに失敗し以後を撃たない()
+    {
+        // PR #1119 の監査 F2: 切断で応答待ちの要求を即座に失敗させる（返信待ちの打ち切り〔構成 5 秒〕まで待たない）。
+        var opend = new FakeOpenD { DisconnectOnKLine = true };
+
+        var (exitCode, output) = await Probe(opend);
+
+        exitCode.Should().Be(KLineQuotaProbeCommand.ExitQueryFailed, output);
+        output.Should().Contain("result=error")
+            .And.Contain("error[0].type=InvalidOperationException")
+            .And.Contain("接続が切れた")
+            .And.Contain("requests.sent=2");
+        output.Should().NotContain("TimeoutException", "切断を返信待ちの打ち切りとして扱わない");
+        opend.InitConnectCalls.Should().Be(1, "再接続しない");
+        opend.QuotaRequests.Should().ContainSingle("切断の後は撃たない");
+        opend.KLineRequests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task 切断の後の要求は再接続も送信もせずに失敗する()
+    {
+        // PR #1119 の監査 F2: 同じ接続オブジェクトへ InitConnect を再び呼ばない（接続は作り直さない＝コメントと一致）。
+        var opend = new FakeOpenD();
+        using var client = new MMApiMoomooKLineProbeClient(
+            MoomooBrokerOptions.FromConfiguration(Config()), new Factory(opend), TimeSpan.FromSeconds(5));
+        var first = await client.QueryQuotaAsync(false, TestContext.Current.CancellationToken);
+        first.Succeeded.Should().BeTrue();
+
+        client.OnDisconnect(new MMAPI_Conn(), 1);
+        var act = () => client.QueryQuotaAsync(false, TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*接続が切れた*");
+        opend.InitConnectCalls.Should().Be(1, "切断の後に InitConnect を呼び直さない");
+        opend.QuotaRequests.Should().ContainSingle("切断の後は撃たない");
+    }
+
+    [Fact]
+    public void MMAPIの初期化は何度呼んでも1回だけである()
+    {
+        // PR #1119 の監査 F3: MoomooApi.EnsureInitialized の二重化防止（発注の接続と検証口の相場の接続が共有する）。
+        var calls = 0;
+        var initializer = new OnceInitializer(() => Interlocked.Increment(ref calls));
+
+        initializer.Ensure();
+        initializer.Ensure();
+        Parallel.For(0, 16, _ => initializer.Ensure());
+
+        calls.Should().Be(1);
+    }
+
+    [Fact]
     public async Task RSA鍵の内容とパスを出力に載せず鍵で暗号化して繋ぐ()
     {
         var keyPath = Path.Combine(Path.GetTempPath(), $"kline-probe-{Guid.NewGuid():N}.pem");
@@ -246,6 +297,9 @@ public class KLineQuotaProbeEndToEndTests
 
         public bool NeverReply { get; init; }
 
+        // K 線の要求に返信せず、別スレッドから切断を通知する（応答待ちの間の切断）。
+        public bool DisconnectOnKLine { get; init; }
+
         public int KLineRetType { get; init; }
 
         public string KLineRetMsg { get; init; } = "";
@@ -284,6 +338,15 @@ public class KLineQuotaProbeEndToEndTests
             var serial = ++_serial;
             if (NeverReply)
                 return serial;
+            if (DisconnectOnKLine)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(50);
+                    _conn?.OnDisconnect(_handle, 1);
+                });
+                return serial;
+            }
             var code = request.C2S.Security.Code;
             if (KLineRetType == 0)
                 _consumed.Add(code);

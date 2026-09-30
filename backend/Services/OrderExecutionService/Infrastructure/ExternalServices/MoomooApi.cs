@@ -7,16 +7,25 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // 以前は MMApiMoomooTradeClient が同じ処理（静的なフラグ＋ロック）を自分で持っていた。挙動は変えていない。
 public static class MoomooApi
 {
-    private static readonly object InitGate = new();
-    private static bool _initialized;
+    private static readonly OnceInitializer Initializer = new(MMAPI.Init);
 
-    public static void EnsureInitialized()
+    public static void EnsureInitialized() => Initializer.Ensure();
+}
+
+// 二重化防止の本体（#1117・PR #1119 の監査 F3）。MMAPI.Init はプロセス全体の状態を触るため試験から呼び数えられない。
+// 初期化の処理を差し込める最小の internal 型に分け、「何度呼んでも初期化は 1 回」を試験で固定する（MoomooApi は委ねるだけ）。
+internal sealed class OnceInitializer(Action initialize)
+{
+    private readonly object _gate = new();
+    private bool _initialized;
+
+    public void Ensure()
     {
-        lock (InitGate)
+        lock (_gate)
         {
             if (_initialized)
                 return;
-            MMAPI.Init();
+            initialize();
             _initialized = true;
         }
     }

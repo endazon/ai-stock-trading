@@ -15,6 +15,9 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 // 🔴 **MMSPI_Trd を実装しない・発注の接続（IMoomooTradeConnection）を参照しない。** 本クラスから発注・訂正・取消・口座の
 // 照会へ届く経路は無く、口座番号も扱わない（試験で型を固定）。
 // 🔴 **1 呼び出しにつき OpenD へ 1 回だけ撃つ。** 再試行・ページングのループを持たない。接続も作り直さない（1 回実行のため）。
+// 🔴 **切断されたら以後の要求は撃たずに失敗させ、応答待ちの要求も即座に失敗させる**（InitConnect を再び呼ばない・返信待ちの
+// 打ち切りまで待たない）。常駐の BacktestService は切断後に接続を作り直す（#743 / IADR-0327）が、検証口は一発撃ちであり、
+// 切断をまたいで撃ち続けると取得枠の前後の差が読めなくなるため採らない（PR #1119 の監査 F2）。
 // 🔴 **ログを持たない。** 検証口の出力は検証口（KLineQuotaProbeCommand）が伏せてから書く。本クラスは例外文に接続先を載せ得るが、
 // 鍵の内容は載せない。
 //
@@ -46,6 +49,7 @@ public sealed class MMApiMoomooKLineProbeClient : MMSPI_Qot, MMSPI_Conn, IKLineQ
     private readonly bool _encrypt;
     private TaskCompletionSource<long>? _connectTcs;
     private volatile bool _connected;
+    private bool _disconnected; // _sendGate の下で読み書きする。一度立てたら下ろさない。
     private bool _disposed;
 
     // connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装で、試験は偽の OpenD を差す。
@@ -176,11 +180,13 @@ public sealed class MMApiMoomooKLineProbeClient : MMSPI_Qot, MMSPI_Conn, IKLineQ
 
     private async Task EnsureConnectedAsync(CancellationToken cancellationToken)
     {
+        ThrowIfDisconnected();
         if (_connected)
             return;
         await _connectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ThrowIfDisconnected();
             if (_connected)
                 return;
             _connectTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -205,12 +211,27 @@ public sealed class MMApiMoomooKLineProbeClient : MMSPI_Qot, MMSPI_Conn, IKLineQ
     {
         var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
         // send() 直後にコールバックが返るレースを防ぐため、serial 採番と登録を _sendGate 内で原子的に行う。
+        // 切断の判定も同じロックの下で行う（切断の後に撃つ・切断と入れ違いに登録して取り残される、を塞ぐ）。
         lock (_sendGate)
         {
+            if (_disconnected)
+                throw DisconnectedException();
             _pending[send()] = tcs;
         }
         return tcs.Task.WaitAsync(_replyTimeout, cancellationToken);
     }
+
+    private void ThrowIfDisconnected()
+    {
+        lock (_sendGate)
+        {
+            if (_disconnected)
+                throw DisconnectedException();
+        }
+    }
+
+    private static InvalidOperationException DisconnectedException() =>
+        new("OpenD（相場）との接続が切れたため、以後の要求は撃たない（検証口は再接続しない）。");
 
     private void Complete(uint serial, object rsp)
     {
@@ -233,7 +254,23 @@ public sealed class MMApiMoomooKLineProbeClient : MMSPI_Qot, MMSPI_Conn, IKLineQ
             tcs?.TrySetException(new InvalidOperationException($"OpenD（相場）接続失敗 errCode={errCode}: {desc}"));
     }
 
-    public void OnDisconnect(MMAPI_Conn client, long errCode) => _connected = false;
+    // 切断: 以後の要求を撃たせず、応答待ちの要求をすべて即座に失敗させる（再接続しない。返信待ちの打ち切りまで待たない）。
+    public void OnDisconnect(MMAPI_Conn client, long errCode)
+    {
+        List<TaskCompletionSource<object>> waiting;
+        lock (_sendGate)
+        {
+            _disconnected = true;
+            _connected = false;
+            waiting = [.. _pending.Values];
+            _pending.Clear();
+        }
+        var error = new InvalidOperationException(
+            $"OpenD（相場）との接続が切れた（errCode={errCode.ToString(CultureInfo.InvariantCulture)}）。応答を待たずに失敗させる（再接続しない）。");
+        foreach (var tcs in waiting)
+            tcs.TrySetException(error);
+        _connectTcs?.TrySetException(error);
+    }
 
     // ---- MMSPI_Qot（使用するコールバック）----
 

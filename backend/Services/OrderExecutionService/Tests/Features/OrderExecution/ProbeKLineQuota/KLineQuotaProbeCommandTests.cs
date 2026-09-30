@@ -174,6 +174,38 @@ public class KLineQuotaProbeCommandTests
     }
 
     [Fact]
+    public async Task 全体の打ち切りを過ぎたら待ちの途中でも以後を撃たずresult_errorと終了コード1で終わる()
+    {
+        // PR #1119 の監査 F1: 全体の打ち切り（既定 3 分・注入可）を固定する。待ち（delay）は打ち切りの取り消しでしか終わらない。
+        // 打ち切りを外すと RunAsync が終わらないため、試験は 10 秒の見張りで「終わらない」を赤として検出し、見張りの取り消しで後始末する。
+        var query = new FakeQuery();
+        var writer = new StringWriter();
+        using var guard = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var run = KLineQuotaProbeCommand.RunAsync(
+            [Flag],
+            () => query.Created(),
+            writer,
+            timeout: TimeSpan.FromMilliseconds(200),
+            cancellationToken: guard.Token,
+            timeProvider: new FixedTimeProvider(Today),
+            delay: (_, ct) => Task.Delay(Timeout.InfiniteTimeSpan, ct));
+
+        var finished = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)) == run;
+        guard.Cancel(); // 打ち切りが効かないとき（変異）に RunAsync を残さない。
+        var exitCode = await run;
+
+        finished.Should().BeTrue("全体の打ち切り（200 ミリ秒）で待ちが取り消されて終わる");
+        exitCode.Should().Be(KLineQuotaProbeCommand.ExitQueryFailed);
+        query.Calls.Should().Equal(["quota(detail)"], "打ち切りの後は撃たない（撃ち直さない）");
+        var output = writer.ToString();
+        output.Should().Contain("result=error")
+            .And.Contain("error[0].type=TaskCanceledException")
+            .And.Contain("requests.sent=1")
+            .And.Contain("exitCode=1");
+        query.Disposed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task 銘柄と本数と分割の銘柄と期間を引数で指定できる()
     {
         var (exitCode, output, query, _) = await Run(null, null,
@@ -279,6 +311,7 @@ public class KLineQuotaProbeCommandTests
         KLineQuotaProbeCommand.DefaultSymbols.Should().HaveCountLessThanOrEqualTo(3, "取得枠を消費するため既定は少数");
         KLineQuotaProbeCommand.SplitRehabs.Should().Equal(KLineRehab.None, KLineRehab.Forward, KLineRehab.Backward);
         KLineQuotaProbeCommand.MinRequestInterval.Should().Be(TimeSpan.FromMilliseconds(2500));
+        KLineQuotaProbeCommand.DefaultTimeout.Should().Be(TimeSpan.FromMinutes(3), "全体の打ち切りの既定（12 往復 × 2.5 秒 ＋ 返信待ち）");
     }
 
     [Fact]

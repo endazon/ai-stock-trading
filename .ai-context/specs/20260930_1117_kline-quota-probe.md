@@ -174,3 +174,35 @@ planning#702 の裁定（ADR-0048、2026-09-30）で、判断へ渡す出来高�
 
 新規 **IADR-0464**（develop の最大は IADR-0462、並行 PR #1116 が IADR-0463 を使う）。
 テスト ID は振らない（FR-02 は網羅裁定 #211 の必須範囲外でテスト仕様書が無い。注文費用照会の検証口〔FR-11〕と同じ扱い）。
+
+## 監査の指摘への対応（PR #1119 の監査）
+
+別のエージェントが diff と受け入れ基準だけで監査した（head `b659ad15`）。指摘と対応:
+
+| # | 重さ | 指摘 | 対応 |
+| --- | --- | --- | --- |
+| F1 | 中 | `KLineQuotaProbeCommand` の全体の打ち切り（`cts.CancelAfter`）を外しても全試験が緑 | 打ち切りの時間は既に `RunAsync(timeout:)` で注入でき（既定 `DefaultTimeout` = 3 分。本番の `Program.cs` は渡さない＝既定）、その口を使う試験を足した: 待ち（delay）を打ち切りの取り消しでしか終わらない形にして 200 ミリ秒で打ち切り、`result=error`・`error[0].type=TaskCanceledException`・`requests.sent=1`・終了コード 1・以後を撃たない・照会口を閉じる、を固定する。打ち切りを外すと終わらないため、試験は 10 秒の見張りで「終わらない」を赤にし、見張りの取り消しで後始末する。既定値 3 分も既定値の試験で固定した |
+| F2 | 低 | 切断の後の次の要求で同じ接続オブジェクトへ `InitConnect` を再び呼ぶ（コメント「接続も作り直さない」と矛盾。BacktestService は #743 / IADR-0327 で作り直している）。切断時に応答待ちの要求を失敗させず、返信待ちの打ち切り（15 秒）まで待つ | 一発撃ちの検証口なので**再接続しない**形に直した: `OnDisconnect` で切断の旗を立て（`_sendGate` の下）、応答待ちの要求と接続待ちを即座に失敗させる。以後の要求は `EnsureConnectedAsync` と `SendAsync`（登録と同じロックの下）で撃たずに `InvalidOperationException` で失敗させる。検証口は例外で以後の段を撃たずに `result=error` で終わる。クラス冒頭のコメントと IADR-0464 決定 3 に明記した。試験 2 つ（偽の OpenD が K 線の要求の応答待ちの間に切断を通知する E2E／クライアントへ直接切断を通知した後の照会が `InitConnect` も送信もせずに失敗する） |
+| F3 | 低 | `MoomooApi.EnsureInitialized` の二重化防止を外しても生存 | **固定した。** `MMAPI.Init` はプロセス全体の状態を触るため試験から呼び数えられない。二重化防止の本体を初期化の処理を差し込める最小の internal 型 `OnceInitializer` に分け（`MoomooApi` は委ねるだけ）、`OrderExecutionService.csproj` に `InternalsVisibleTo`（他サービスと同じ作法）を足して、逐次 2 回＋並行 16 回で初期化が 1 回であることを固定した。公開面は増やしていない |
+| F4 | 低・記録 | #1117 は既定の銘柄を「監視銘柄から少数」と求めたが、実装は固定の `AAPL,MSFT` | 実装は変えない。理由: 検証口は稼働設定（監視銘柄の構成）に依存せず、誰がいつ打っても同じ要求になる（再現できる）べきであり、監視銘柄を読むには構成の取得経路を検証口へ足す必要があって読み取り専用の面が広がる。監視銘柄で確かめたいときは `--symbols` で差し替えられる（5 銘柄まで）。IADR-0464 決定 3 に追記した |
+| F5 | 低・runbook | 取得枠の単位の判定で、稼働中のサービスの同時取得が差を汚し得る | 手順書 §取得枠の単位の判定 に注記を足した（多くは `inconclusive` に倒れるが `per-request` と誤読し得る。値が不審なら結果を採らず時間を置いて打ち直す） |
+
+- 情報: 計画リポの `origin/main` に ADR-0049 が加わった（planning#703。確認時点の `4867280` では ADR-0050〔planning#704〕まで在る）。本 PR の計画 ADR のレンジは `ADR-0001..0048` のままとし、引き直しは次の PR で行う。
+
+### 変異（自己変異）の実測
+
+| 変異 | 内容 | 結果 |
+| --- | --- | --- |
+| A1 | `cts.CancelAfter(timeout ?? DefaultTimeout)` を外す | **赤**（`全体の打ち切りを過ぎたら…` が 10 秒の見張りで失敗） |
+| A9 | `OnDisconnect` で応答待ちの要求を失敗させない | **赤**（`応答待ちの間に切断されたら…` が返信待ちの打ち切り 5 秒で `TimeoutException`） |
+| A10 | 切断の旗を立てない（切断後も撃てる＝再接続する） | **赤**（`切断の後の要求は再接続も送信もせずに失敗する` が `InitConnect` 2 回で失敗） |
+| A9＋A10 | クライアントを `b659ad15` の版へ戻す | **赤**（上の 2 試験） |
+| A8 | `OnceInitializer.Ensure` の `if (_initialized) return;` を外す | **赤**（`MMAPIの初期化は何度呼んでも1回だけである`） |
+
+各変異は戻して再ビルドし、`KLineQuotaProbe` の試験 56 件が緑に戻ることを確かめた。
+
+### 検証
+
+`dotnet build backend/backend.slnx`（警告 0）／`dotnet test`（OrderExecutionService.Tests 全件）／`dotnet format backend/backend.slnx --verify-no-changes`／
+node の検査器（`check-trace-blocks`・`check-doc-links`・`check-adr-index-sync`・`check-adr-index-addendum-loss`・`check-cross-repo-refs`・
+`check-plan-id-qualification`・`gen-knowledge-graph --check`・`check-commit-messages`）。
