@@ -9,6 +9,7 @@ using RiskManagementService.Features.RiskManagement.EngageKillSwitch;
 using RiskManagementService.Features.RiskManagement.EvaluateWithdrawal;
 using RiskManagementService.Features.RiskManagement.GetBuyInInferences;
 using RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
+using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetFills;
 using RiskManagementService.Features.RiskManagement.GetKillSwitch;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
@@ -73,6 +74,8 @@ internal static class RiskControlEndpoints
         // FR-04, FR-10, ADR-0003, #934, IADR-0390 決定1: 当日の未約定の新規建て注文（判断の入力）。
         // **/open-positions とは別の口**である（未約定を建玉へ混ぜると市場監視の損切り検知が存在しない建玉を見る）。
         read.MapGetWorkingEntryOrders();
+        // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語。判断が LLM を呼ぶ前に読む）。
+        read.MapGetEntryBlockers();
         read.MapGetFills();
         // FR-06, FR-11, ADR-0041 決定 1, #870, IADR-0360 決定 2: 期間の乖離の取り込み（報告書 §2-b の供給元）。
         // **約定列（/fills）とは別の口**である（取り込みは約定価格を持たず、実現損益は不明である）。

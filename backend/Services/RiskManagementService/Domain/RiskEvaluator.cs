@@ -66,14 +66,15 @@ public static class RiskEvaluator
         // 全停止スイッチ（kill switch）: 新規建て（エントリー）のみ停止する。
         // NFR フェイルセーフ（02_requirements: 新規発注停止。保有ポジションの損切り監視は最後まで維持）
         // および ADR-0003（損切りは機械的に執行）により、手仕舞い（Close）は止めない。
-        if (isEntry && snapshot.KillSwitchEngaged)
+        // #1113, IADR-0463 決定 2: 状態だけで確定する述語は EntryStateBlockers が単一情報源（新規建ての可否の口と共有）。
+        if (isEntry && EntryStateBlockers.KillSwitch(snapshot))
         {
             reasons.Add(RejectionReason.KillSwitchActive);
         }
 
         // FR-10, ADR-0009: 取引の一時停止（pause）。kill switch と同じ位置・同じ判定（isEntry のみ）で新規建てを止める。
         // 日次損失ロックアウトとは別状態の「軽い統制」。手仕舞い（Close）・損切りは isEntry の短絡で止めない。
-        if (isEntry && snapshot.TradingPaused)
+        if (isEntry && EntryStateBlockers.Paused(snapshot))
         {
             reasons.Add(RejectionReason.TradingPaused);
         }
@@ -204,17 +205,9 @@ public static class RiskEvaluator
         // **手仕舞い（Close）・損切りは止めない**（isEntry の短絡。ADR-0009 の不変条件）。
         // stopOuts が null（＝この呼び出し元が供給していない）なら評価しない。本番の唯一の呼び出し元
         // （OrderScreeningService）は新規建てで**常に**供給する（台帳は必須依存。IADR-0163 決定2）。
-        if (isEntry && stopOuts is { } stopOut)
+        if (isEntry && stopOuts is { } stopOut && EntryStateBlockers.StopOut(stopOut, intent.Side) is { } stopOutReason)
         {
-            switch (stopOut.ForEntry(intent.Side))
-            {
-                case StopOutStatus.StoppedOut:
-                    reasons.Add(RejectionReason.StoppedOutSameDay);
-                    break;
-                case StopOutStatus.Unknown:
-                    reasons.Add(RejectionReason.StopOutStatusUnknown);
-                    break;
-            }
+            reasons.Add(stopOutReason);
         }
 
         // FR-19, #375, ADR-0021 決定4-2/決定4-3: **現金口座でのみ**加わる 2 統制。
@@ -293,7 +286,7 @@ public static class RiskEvaluator
         }
 
         // FR-10, ADR-0016 決定9: 保有**建玉**数の上限（銘柄数では数えない）。
-        if (isEntry && snapshot.OpenPositionCount >= settings.Limits.MaxOpenPositions)
+        if (isEntry && EntryStateBlockers.MaxPositions(settings, snapshot))
         {
             reasons.Add(RejectionReason.MaxPositionsExceeded);
         }
@@ -302,15 +295,13 @@ public static class RiskEvaluator
         // 損失拡大局面での手仕舞い（売り）を止めないよう、エントリーにのみ適用する。
         // 日次損失は実現損益と含み損益（評価損益）の合算で判定する（IADR-0008, Issue #31）。実現ゼロでも
         // 含み損が大きいケースの検知遅れを防ぐデイリーストップ。手仕舞いは含み損を実現・縮小する方向のため対象外。
-        var dailyLoss = snapshot.DailyRealizedPnl + snapshot.UnrealizedPnl;
-        if (isEntry
-            && equity is { } lossEquity
-            && dailyLoss <= -(lossEquity * settings.Limits.DailyLossLimitRatio))
+        // equity が未供給なら判定しない（上の CapitalBaselineUnavailable が既に新規建てを止めている）。
+        if (isEntry && EntryStateBlockers.DailyLoss(settings, snapshot))
         {
             reasons.Add(RejectionReason.DailyLossLimitReached);
         }
 
-        if (isEntry && snapshot.DrawdownRatio >= settings.Limits.MaxDrawdownRatio)
+        if (isEntry && EntryStateBlockers.MaxDrawdown(settings, snapshot))
         {
             reasons.Add(RejectionReason.MaxDrawdownReached);
         }

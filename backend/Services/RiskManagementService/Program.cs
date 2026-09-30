@@ -8,6 +8,7 @@ using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetRiskStatus;
 using RiskManagementService.Features.RiskManagement.GetShortSellingStatus;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
+using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using RiskManagementService.Hosted;
 using RiskManagementService.Infrastructure.Steps;
@@ -206,6 +207,8 @@ builder.Services.AddScoped<SizingContextService>();
 builder.Services.AddScoped<OpenPositionsService>();
 // FR-04, FR-10, #934, IADR-0390 決定1: 取引判断へ供給する当日の未約定の新規建て注文（統制 IADR-0346 と同じ定義）。
 builder.Services.AddScoped<WorkingEntryOrdersService>();
+// FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（審査と同じ述語・同じ入力。読み取り専用）。
+builder.Services.AddScoped<EntryBlockersService>();
 builder.Services.AddScoped<KillSwitchService>();
 // FR-10, FR-14, UC-06/07, ADR-0009: 一時停止/再開の操作と、稼働状態の集約照会（/status・表示専用）。
 builder.Services.AddScoped<PauseService>();

@@ -167,6 +167,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067]
 | --- | --- | --- | --- |
 | `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書 | 不明／空列（損切り検知対象なし）／未供給 |
 | `GetWorkingEntryOrders` | `GET /risk-controls/working-entry-orders` | 取引判断 | 不明 |
+| `GetEntryBlockers` | `GET /risk-controls/entry-blockers?symbol&market`（銘柄単位の新規建ての可否。審査と同じ述語で、状態から確定する拒否理由を方向別に返す） | 取引判断 | 不明（LLM を呼ぶ。審査は変わらない） |
 | `GetSizingContext` | `GET /risk-controls/sizing-context` | 取引判断 | 残枠 0 の安全既定 |
 | `GetStageGate` | `GET /risk-controls/stage-gate`（報告書は現段階だけ・ボットは §9 の項目も） | 報告書・Discord ボット | 未供給（ボットは §9） |
 | `GetFills` | `GET /risk-controls/fills?from&to` | 報告書 | 空列（数値 0 の報告書） |
@@ -179,7 +180,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067]
 | gRPC status | 条件 | 呼び出し側の対応 |
 | --- | --- | --- |
 | `UNAUTHENTICATED` / `PERMISSION_DENIED` | サービストークン無し／ロール不足 | 上表の扱いへ縮退。**再試行しない** |
-| `INVALID_ARGUMENT` | 期間の `from`・`to` の欠落・書式違い（REST の 400）。強制買戻し・稼働率は逆順も（REST と同じ）。処理中の引数の検証失敗も（REST の 400 と同じ。`UNKNOWN` にしない） | 同上 |
+| `INVALID_ARGUMENT` | 期間の `from`・`to` の欠落・書式違い（REST の 400）。新規建ての可否の `symbol`・`market` の欠落も。強制買戻し・稼働率は逆順も（REST と同じ）。処理中の引数の検証失敗も（REST の 400 と同じ。`UNKNOWN` にしない） | 同上 |
 | `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 同上。**再試行の対象** |
 
 ### 🔴 「不明」「無し」「有り」を取り違えない写し
