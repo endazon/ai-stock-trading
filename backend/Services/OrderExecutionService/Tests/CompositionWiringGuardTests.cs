@@ -65,7 +65,7 @@ public class CompositionWiringGuardTests(ITestOutputHelper output)
 
     // moomoo（SIMULATE）構成。差し替えるのは伝送の境界（OpenD クライアント）と DB だけで、
     // MoomooBrokerAdapter とそこから Program.cs が変換する建玉照会・口座種別・稼働観測は本物のまま組ませる。
-    private sealed class MoomooFactory : WebApplicationFactory<Program>
+    internal sealed class MoomooFactory : WebApplicationFactory<Program>
     {
         private readonly string _dbName = Guid.NewGuid().ToString();
 

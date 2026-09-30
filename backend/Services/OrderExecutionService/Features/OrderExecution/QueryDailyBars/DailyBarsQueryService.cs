@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
@@ -47,7 +48,7 @@ public sealed class DailyBarsQueryService(
             {
                 logger.LogWarning(
                     "日足 K 線の自制の予算（{Window} 秒に {Budget} 回）を使い切ったため撃たない: {Symbol}",
-                    BudgetWindow.TotalSeconds, BudgetPerWindow, symbol);
+                    BudgetWindow.TotalSeconds, BudgetPerWindow, LogSanitizer.Sanitize(symbol));
                 return Unavailable(symbol, market, from, to, DailyBarsUnavailableReasons.RateLimited);
             }
 
@@ -64,7 +65,7 @@ public sealed class DailyBarsQueryService(
             catch (Exception ex)
             {
                 metrics.RecordKLineDailyRequest(BusinessMetrics.KLineRequestFailed);
-                logger.LogWarning(ex, "日足 K 線の取得に失敗（前復権）: {Symbol} {From}〜{To}", symbol, from, to);
+                logger.LogWarning(ex, "日足 K 線の取得に失敗（前復権）: {Symbol} {From}〜{To}", LogSanitizer.Sanitize(symbol), from, to);
                 return Unavailable(symbol, market, from, to, DailyBarsUnavailableReasons.QueryFailed);
             }
 
@@ -74,7 +75,7 @@ public sealed class DailyBarsQueryService(
             logger.LogInformation(
                 "日足 K 線を取得（前復権）: {Symbol} {From}〜{To} succeeded={Succeeded} bars={Bars} reason={Reason} "
                     + "quotaUsed={QuotaUsed} quotaRemaining={QuotaRemaining}",
-                symbol, from, to, fetch.Succeeded, fetch.Bars.Count, fetch.FailureReason ?? "-",
+                LogSanitizer.Sanitize(symbol), from, to, fetch.Succeeded, fetch.Bars.Count, LogSanitizer.Sanitize(fetch.FailureReason ?? "-"),
                 (object?)fetch.QuotaUsed ?? "不明", (object?)fetch.QuotaRemaining ?? "不明");
 
             if (!fetch.Succeeded)

@@ -19,6 +19,13 @@ public sealed class HttpDailyBarsSource(
     ILogger<HttpDailyBarsSource> logger)
     : IDailyBarsSource
 {
+    /// <summary>
+    /// 1 回の照会の上限（名前付きクライアント "order-execution" の HttpClient.Timeout。［2026-10-01 追記 / #1118］監査 🟡-4）。
+    /// 判断はこの間だけ待ち、超えたら出来高を「未提供」にして続ける（取得できないとして 15 分おく）。発注執行の内側の待ち
+    /// （接続・取得・枠の照会がそれぞれ最大 15 秒）を全部は待たない —— 判断の遅れを 1 銘柄あたりこの長さに抑える方を採る。
+    /// </summary>
+    public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(8);
+
     // 送り手 DailyBarsStatus の数値（web 既定で列挙は数値）。送り手の型は参照しない（別サービス）。
     private const int StatusAvailable = 1;
 

@@ -51,6 +51,19 @@ public class DailyBarsProviderSelectionTests
         InjectedInto(scope.ServiceProvider.GetRequiredService<TradeDecisionAppService>()).Should().BeSameAs(provider);
     }
 
+    // 🔴 T-10-1845（［2026-10-01 追記］監査 🟡-4）: 本番の組み立ての照会口（名前付きクライアント "order-execution"）の上限は 8 秒。
+    // 発注執行が遅れても判断の待ちを 1 銘柄あたり 8 秒に抑える（超えたら未提供。15 分おく）。
+    [Fact]
+    public void 本番の組み立ての日足の照会の上限は8秒()
+    {
+        using var factory = new Factory("true", "http://order-execution");
+        _ = factory.CreateClient();
+
+        using var http = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
+        http.Timeout.Should().Be(TimeSpan.FromSeconds(8));
+        HttpDailyBarsSource.RequestTimeout.Should().Be(TimeSpan.FromSeconds(8));
+    }
+
     private static object? InjectedInto(TradeDecisionAppService service) =>
         typeof(TradeDecisionAppService).GetField("_dailyBars", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service);
 

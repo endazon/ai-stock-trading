@@ -294,7 +294,8 @@ builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
 // GET /order-execution/daily-bars（前復権）を銘柄 × 取引日で 1 回だけ引く（CachedDailyBarsProvider・singleton でキャッシュを共有）。
 // 有効でも接続先が無ければ NoOp（警告）。明示的に登録する（省略可能な引数の既定へ黙って落とさない。IADR-0397）。
 // 報告書サービスの同名の設定（方針の改訂 LLM へ示す材料）と同じ値にする（IADR-0467 決定 7）。ATR(14)（#1122）も同じ口を使う。
-builder.Services.AddHttpClient("order-execution", c => c.Timeout = TimeSpan.FromSeconds(20))
+// ［2026-10-01 追記 / #1118］監査 🟡-4: 照会の上限は HttpDailyBarsSource.RequestTimeout（8 秒）。超えたら「未提供」で判断を続ける。
+builder.Services.AddHttpClient("order-execution", c => c.Timeout = HttpDailyBarsSource.RequestTimeout)
     .AddAiStockTradingServiceToken(builder.Configuration);
 builder.Services.AddSingleton<IDailyBarsProvider>(sp =>
 {

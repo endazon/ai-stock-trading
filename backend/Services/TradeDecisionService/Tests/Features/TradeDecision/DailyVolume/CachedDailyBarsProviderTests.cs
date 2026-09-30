@@ -150,6 +150,140 @@ public class CachedDailyBarsProviderTests
         (await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, TestContext.Current.CancellationToken)).Should().BeNull();
     }
 
+    // ---- T-10-1844: 最後の足が前営業日でない成功（古い成功）は 15 分だけ覚えて撃ち直す（［2026-10-01 追記］監査 🟡-3） ----
+    // moomoo 側の前営業日の足の公開が遅れた日に、古い応答を取引日の終わりまで抱えて 1 日「未提供」のままにしない。
+    [Fact]
+    public async Task 最後の足が前営業日でない成功は15分は撃ち直さず_過ぎたら撃ち直して回復する()
+    {
+        var friday = MarketTradingDays.PreviousTradingDay(Market.UnitedStates, Monday);
+        var answers = new Queue<IReadOnlyList<DailyBar>?>([Bars(friday, Repeat(9_000, 21)), Bars(Monday, Repeat(9_000, 21))]);
+        var source = new FakeSource(_ => answers.Dequeue());
+        var time = new ManualTimeProvider(TuesdayMorning);
+        using var provider = Provider(source, time);
+        var ct = TestContext.Current.CancellationToken;
+
+        var stale = await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct);
+        DailyVolumeContext.From(stale).Should().Be(DailyVolumeContext.Unavailable, "古い足を前日と書かない（今は未提供）");
+
+        time.Now = TuesdayMorning + CachedDailyBarsProvider.FailureRetryInterval - TimeSpan.FromSeconds(1);
+        var within = await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct);
+        within.Should().BeSameAs(stale, "15 分未満は撃ち直さず、覚えた古い応答（未提供）を返す");
+        source.Requests.Should().HaveCount(1, "判断のサイクルごとに叩かない");
+
+        time.Now = TuesdayMorning + CachedDailyBarsProvider.FailureRetryInterval;
+        var recovered = await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct);
+        source.Requests.Should().HaveCount(2, "15 分で撃ち直す（取引日の終わりまで抱えない）");
+        DailyVolumeContext.From(recovered).PreviousDay.Should().Be(Monday, "公開が遅れた足が出たら同じ取引日のうちに回復する");
+
+        time.Now = TuesdayMorning + CachedDailyBarsProvider.FailureRetryInterval * 3;
+        (await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct)).Should().BeSameAs(recovered);
+        source.Requests.Should().HaveCount(2, "最新の成功は取引日の終わりまで覚える");
+    }
+
+    [Fact]
+    public async Task 足が空の成功も15分で撃ち直す()
+    {
+        var answers = new Queue<IReadOnlyList<DailyBar>?>([[], Bars(Monday, Repeat(9_000, 21))]);
+        var source = new FakeSource(_ => answers.Dequeue());
+        var time = new ManualTimeProvider(TuesdayMorning);
+        using var provider = Provider(source, time);
+        var ct = TestContext.Current.CancellationToken;
+
+        DailyVolumeContext.From(await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct))
+            .Should().Be(DailyVolumeContext.Unavailable);
+        time.Now = TuesdayMorning + CachedDailyBarsProvider.FailureRetryInterval;
+        DailyVolumeContext.From(await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct))
+            .PreviousDay.Should().Be(Monday);
+        source.Requests.Should().HaveCount(2);
+    }
+
+    // ---- T-10-1845: 取得は銘柄ごとに待つ・照会のタイムアウトは未提供（［2026-10-01 追記］監査 🟡-4） ----
+    // 1 銘柄の取得が発注執行の遅れで止まっても、他の銘柄の判断は待たない（全体を 1 本のゲートで直列化しない）。
+    [Fact]
+    public async Task ある銘柄の取得が止まっても別の銘柄は待たない()
+    {
+        var hung = new TaskCompletionSource<IReadOnlyList<DailyBar>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var aaplStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new AsyncFakeSource(r =>
+        {
+            if (r.Symbol != "AAPL")
+                return Task.FromResult<IReadOnlyList<DailyBar>?>(Bars(Monday, Repeat(9_000, 21)));
+            aaplStarted.TrySetResult();
+            return hung.Task;
+        });
+        using var provider = new CachedDailyBarsProvider(
+            source, new ManualTimeProvider(TuesdayMorning), NullLogger<CachedDailyBarsProvider>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+
+        var aapl = provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct);
+        await aaplStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var msft = await provider.GetConfirmedBarsAsync("MSFT", Market.UnitedStates, ct).WaitAsync(TimeSpan.FromSeconds(5), ct);
+        DailyVolumeContext.From(msft).PreviousDay.Should().Be(Monday, "AAPL の取得が止まっている間も MSFT は取れる");
+        aapl.IsCompleted.Should().BeFalse();
+
+        // 同じ銘柄の後続は同じゲートで待ち、呼び出し側のキャンセルは伝わる（握り潰さない）。
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var waiting = provider.GetConfirmedBarsAsync("aapl", Market.UnitedStates, cts.Token);
+        await cts.CancelAsync();
+        await ((Func<Task>)(() => waiting)).Should().ThrowAsync<OperationCanceledException>();
+
+        hung.SetResult(Bars(Monday, Repeat(9_000, 21)));
+        DailyVolumeContext.From(await aapl.WaitAsync(TimeSpan.FromSeconds(10), ct)).PreviousDay.Should().Be(Monday);
+        source.Requests.Select(r => r.Symbol).Should().Equal("AAPL", "MSFT");
+    }
+
+    // 本物の受け手（HttpDailyBarsSource）の照会が HttpClient.Timeout を超えたら、例外ではなく「未提供」（null）にして 15 分おく。
+    [Fact]
+    public async Task 照会のタイムアウトは未提供にして15分おく()
+    {
+        var handler = new HangingHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://order-execution"), Timeout = TimeSpan.FromMilliseconds(200) };
+        var time = new ManualTimeProvider(TuesdayMorning);
+        using var provider = new CachedDailyBarsProvider(
+            new HttpDailyBarsSource(http, NullLogger<HttpDailyBarsSource>.Instance), time, NullLogger<CachedDailyBarsProvider>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+
+        (await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct)).Should().BeNull("タイムアウトは判断を止めず未提供");
+        (await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct)).Should().BeNull();
+        handler.Calls.Should().Be(1, "タイムアウトの後 15 分は撃ち直さない");
+
+        time.Now = TuesdayMorning + CachedDailyBarsProvider.FailureRetryInterval;
+        (await provider.GetConfirmedBarsAsync("AAPL", Market.UnitedStates, ct)).Should().BeNull();
+        handler.Calls.Should().Be(2);
+    }
+
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _calls);
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("到達しない");
+        }
+    }
+
+    internal sealed class AsyncFakeSource(Func<(string Symbol, Market Market, DateOnly From, DateOnly To), Task<IReadOnlyList<DailyBar>?>> answer)
+        : IDailyBarsSource
+    {
+        private readonly object _lock = new();
+
+        public List<(string Symbol, Market Market, DateOnly From, DateOnly To)> Requests { get; } = [];
+
+        public Task<IReadOnlyList<DailyBar>?> FetchAsync(
+            string symbol, Market market, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+        {
+            var request = (symbol, market, from, to);
+            lock (_lock)
+                Requests.Add(request);
+            return answer(request);
+        }
+    }
+
     internal sealed class FakeSource(Func<(string Symbol, Market Market, DateOnly From, DateOnly To), IReadOnlyList<DailyBar>?> answer)
         : IDailyBarsSource
     {

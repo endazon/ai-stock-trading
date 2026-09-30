@@ -105,4 +105,23 @@ public class DailyVolumeContextTests
         MarketTradingDays.TradingDateOf(Market.UnitedStates, new DateTimeOffset(2026, 9, 30, 4, 30, 0, TimeSpan.Zero))
             .Should().Be(new DateOnly(2026, 9, 30));
     }
+
+    // ---- T-10-1842: 取引日は冬時間（EST・UTC-5）と夏時間の切り替えの日でも米国東部の日付（［2026-10-01 追記］監査 🟡-1） ----
+    // 固定の -4 時間（夏時間）で換算すると、冬時間の 04:00〜05:00 UTC の取引日が 1 日進む（前日の取得を翌日に使う・
+    // 当日の未確定足を前日として読む側へずれる）。固定の -5 時間では夏時間の同じ時間帯が 1 日戻る。どちらの変異も赤にする。
+    [Theory]
+    [InlineData("2026-11-03T04:30:00Z", "2026-11-02")] // EST: 11/02 23:30（固定 -4 なら 11/03 00:30）
+    [InlineData("2026-11-03T05:30:00Z", "2026-11-03")] // EST: 11/03 00:30
+    [InlineData("2027-01-15T04:59:00Z", "2027-01-14")] // 真冬の EST: 01/14 23:59
+    [InlineData("2026-11-01T04:30:00Z", "2026-11-01")] // 夏時間の終わりの日（06:00 UTC に EST へ）の直前は EDT: 11/01 00:30（固定 -5 なら 10/31）
+    [InlineData("2026-11-02T04:30:00Z", "2026-11-01")] // 切り替えの後は EST: 11/01 23:30（固定 -4 なら 11/02）
+    [InlineData("2027-03-14T04:30:00Z", "2027-03-13")] // 夏時間の始まりの日（07:00 UTC に EDT へ）の前は EST: 03/13 23:30（固定 -4 なら 03/14）
+    [InlineData("2027-03-15T04:30:00Z", "2027-03-15")] // 切り替えの後は EDT: 03/15 00:30（固定 -5 なら 03/14）
+    public void 取引日は冬時間と夏時間の切り替えの日でも米国東部の日付(string instantUtc, string expected)
+    {
+        var instant = DateTimeOffset.Parse(instantUtc, System.Globalization.CultureInfo.InvariantCulture);
+
+        MarketTradingDays.TradingDateOf(Market.UnitedStates, instant)
+            .Should().Be(DateOnly.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
+    }
 }
