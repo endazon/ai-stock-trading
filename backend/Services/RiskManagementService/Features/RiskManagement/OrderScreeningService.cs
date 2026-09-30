@@ -148,7 +148,7 @@ public sealed class OrderScreeningService(
         }
 
         // 翌営業日の解除日に達していれば失効させ、状態を掃除する。
-        if (!lockout.IsActiveOn(tradingDay))
+        if (!IsLockoutActive(lockout, tradingDay))
         {
             lockoutStore.Clear();
             return false;
@@ -156,6 +156,11 @@ public sealed class OrderScreeningService(
 
         return true;
     }
+
+    // 🔴 FR-10, #1113, IADR-0463 決定 2: ロックアウトが当日有効か（審査と新規建ての可否の口〔EntryBlockersService〕が共有する述語）。
+    // 口は読むだけで掃除（Clear）しない —— 掃除は次の新規建ての審査が行う（状態は失効判定で無効化されるので結果は同じ）。
+    internal static bool IsLockoutActive(LockoutState? lockout, DateOnly tradingDay) =>
+        lockout is not null && lockout.IsActiveOn(tradingDay);
 
     private void EngageLockout(DateOnly tradingDay)
     {

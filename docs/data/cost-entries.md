@@ -3,15 +3,15 @@ title: 費用台帳（cost_entries）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-08-21
+updated: 2026-09-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-09, FR-16, FR-17, NFR-13, NFR-15]
 adrs: [ADR-0001]
-iadrs: [IADR-0021, IADR-0027]
-specs: [20260710_cost-control]
-issues: [#9, #14, #19, #21, #22, #23]
+iadrs: [IADR-0021, IADR-0027, IADR-0463]
+specs: [20260710_cost-control, 20260930_1113_entry-blockers-before-llm]
+issues: [#9, #14, #19, #21, #22, #23, #1113]
 -->
 
 
@@ -19,6 +19,10 @@ issues: [#9, #14, #19, #21, #22, #23]
 
 > 費用統制サービス（`CostControlService`）が所有する月次費用の追記専用台帳。非機能要件（費用）＝LLM 月次上限の間隔延長/停止判定・
 > 月報の費用レビュー。設計は「費用統制は専用サービスが月次費用台帳を持ち、純関数で間隔延長/停止を判定する」。
+>
+> 🔴 月報の費用レビューの読み方: 新規建てが審査で必ず拒否される銘柄（保有 0・未約定なし）では、取引判断が LLM を呼ばずに見送る
+> （判断の見送りの計器の理由 `EntryBlockedByRiskControls`）。この変更の前後の月を比べると、LLM 費用と審査の拒否の件数が同時に減る。
+> 統制が緩んだのではない（審査は変わらない）。
 > 作業仕様は 仕様書: 費用統制サービス Slice A。
 
 ## 本書が受け持つ範囲

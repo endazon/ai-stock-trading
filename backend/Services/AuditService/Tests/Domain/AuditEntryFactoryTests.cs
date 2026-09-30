@@ -1192,6 +1192,25 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("\"Reason\":\"FxRateUnresolved\"", "夜間の要約は Detail の Reason を名前で数える");
     }
 
+    // T-10-1795, FR-10, FR-04, FR-11, #1113, IADR-0463 決定 4・5: 新規建てが審査で必ず拒否される銘柄の LLM を呼ぶ前の見送りも、
+    // 同じ書式で理由の名前が読める（夜間の要約 §11 は Detail の Reason を名前で数える＝審査の拒否から移った件数が見える）。
+    [Fact]
+    public void T_10_1795_新規建てが塞がっている銘柄の見送りは理由の名前で台帳に残る()
+    {
+        var eventId = Guid.NewGuid();
+        var at = new DateTimeOffset(2026, 9, 30, 17, 0, 0, TimeSpan.Zero);
+        var entry = AuditEntryFactory.From(
+            new TradeDecisionForgoneBeforeLlm(
+                eventId, "META", Market.UnitedStates, DecisionForgoneBeforeLlmReason.EntryBlockedByRiskControls, at, "scheduled"),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(TradeDecisionForgoneBeforeLlm));
+        entry.CorrelationId.Should().Be(eventId);
+        entry.Symbol.Should().Be("META");
+        entry.Summary.Should().Be("META LLM を呼ぶ前の見送り（EntryBlockedByRiskControls・scheduled）");
+        entry.Detail.Should().Contain("\"Reason\":\"EntryBlockedByRiskControls\"");
+    }
+
     // T-10-1773, NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 状態の変化は発生源ごとの決定的な相関で、失敗・回復・起動後の最初の観測が
     // 読み分けられる。
     [Fact]

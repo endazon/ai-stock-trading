@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-04, FR-19, UC-01, UC-02, ADR-0003, ADR-0009, ADR-0040, IADR-0246, IADR-0210, IADR-0344, IADR-0132, IADR-0163, IADR-0374, IADR-0358, IADR-0134]
 author: claude (Claude Code)
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-09-30
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10)
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md (§5 差金決済防止)
@@ -186,6 +186,19 @@ PR でオーナーの確認を求める（足すなら判断側へ損切りの�
 加えて、決定 5・決定 6 の「台帳の読み取りが失敗しても手仕舞いは巻き込まれない／新規建ては `OrderApproved` を出さない」を
 赤くするテストが無かった（「手仕舞いも読む」「読み取りの失敗を無しに倒す」の 2 変異が生き残っていた）。
 `StopOutReentryWiringTests` に T-10-816 を足し、各変異で赤になることを実測した。
+
+［2026-09-30 追記 / #1113］**決定 8 と §検討した選択肢の案 B の不採用を、[IADR-0463](IADR-0463_entry-blockers-before-llm.md) が改めた**
+（オーナー裁定 2026-09-30）。本文は書き換えない。
+
+- 判断側は、保有が既知で 0 かつ未約定の新規建てが既知で空の銘柄について、リスク管理の読み取り口
+  （`GET /risk-controls/entry-blockers`・gRPC `GetEntryBlockers`）が買いの新規建てを塞いでいると答えたら、LLM を呼ぶ前に
+  `TradeDecisionForgoneBeforeLlm(EntryBlockedByRiskControls)` で見送る。`decision_skips{reason="EntryBlockedByRiskControls"}` にも出る。
+- 案 B を退けた理由（同じ規則を 2 か所に置く・LLM に任せない）は満たしたまま改める —— 規則はリスク管理の 1 か所
+  （`EntryStateBlockers`。本 IADR の判定もそこを通る）で、判断側は結果を読むだけである。損切りの判定は LLM に任せない。
+- **本 IADR の統制（審査の `StoppedOutSameDay` / `StopOutStatusUnknown`）は変えない**（両端で止める）。口は不明
+  （`StopOutStatusUnknown`）を返さず、判断は LLM を呼ぶ側へ倒れ、審査が止める。
+- 計器: 塞がっている銘柄の新規建ての一部が `ast.risk.rejections{reason="StoppedOutSameDay"}` から判断側の見送りへ移る。
+  §フォローアップ「判断側の見送りとしても数えるかのオーナー確認（決定 8）」はこれで済んだ。
 
 ## 関連
 

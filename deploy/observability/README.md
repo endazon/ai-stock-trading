@@ -26,7 +26,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | **見送りの理由**の内訳（#891）。上の `action=no-trade` を**置き換えない**——1 回の見送りで両方が 1 ずつ増える |
 | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム） |
 | `ast_risk_screenings_total` | `outcome` | 発注前審査（**承認も拒否も数える**） |
-| `ast_risk_rejections_total` | `reason` | 見送り理由の内訳 |
+| `ast_risk_rejections_total` | `reason` | 見送り理由の内訳。保有 0・未約定なしで新規建てが必ず拒否される銘柄は判断が LLM を呼ぶ前に見送り、上の `decision_skips{reason="EntryBlockedByRiskControls"}` に出る（審査は不変。推移は両方を足して読む） |
 | `ast_risk_capital_baseline_reads_total` | `outcome` | 統制上限の**基準資金を読んだ帰結**（#889）。🔴 `SuppliedWithGap` は「値は返っているが直前の取引日の観測が届いていない」＝**古い分母で統制が回っている**印である |
 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り（ブローカーの拒否とは別） |

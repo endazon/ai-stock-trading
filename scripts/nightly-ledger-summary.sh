@@ -18,6 +18,8 @@
 #          ブローカの建玉観測（10 分ごと）と稼働観測（5 分ごと）の欠け（＝照会できなかった時間帯の推定）。
 #   段 2（IADR-0462）で足したもの: 建玉照会・保有照会の失敗の区間（発生源別。PositionQueryStatusChanged）・
 #          LLM を呼ぶ前の見送り（理由別。TradeDecisionForgoneBeforeLlm）。段 2 の配備より前の夜は 0 行になる（9 の推定を使う）。
+#   #1113（IADR-0463）で足したもの: §11 の理由 EntryBlockedByRiskControls（新規建てが審査で必ず拒否される銘柄の LLM を呼ぶ前の
+#          見送り）。配備の後は §5 の審査の拒否（StoppedOutSameDay・MaxPositionsExceeded 等）の一部がこちらへ移る（審査は不変）。
 #   分からない（台帳に記録が無い）: 判断中の例外（段 2 でも入れていない。作業仕様書 20260930_1092_ledger-gap-events）。
 #
 # ■ テスト: scripts/nightly-ledger-summary.test.sh（psql スタブ・実 DB 不要）。AST_NIGHTLY_LIB=1 で source すると
@@ -112,6 +114,7 @@ WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
 GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2;
 
 \echo '== 5. 審査（承認の件数と、拒否の理由別の件数。1 件の拒否が複数の理由を持つことがある）'
+\echo '-- 保有 0・未約定なしで新規建てが必ず拒否される銘柄は LLM を呼ぶ前に見送る（§11 の EntryBlockedByRiskControls）。審査は不変で、ここの拒否の一部がそちらへ移る'
 SELECT 'OrderApproved' AS kind, '-' AS reason, count(*) AS n
 FROM audit_events
 WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
@@ -253,6 +256,7 @@ WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
 GROUP BY 1, 2 ORDER BY 1, 2;
 
 \echo '== 11. LLM を呼ぶ前の見送り（TradeDecisionForgoneBeforeLlm・理由 × 起点別）'
+\echo '-- EntryBlockedByRiskControls は新規建てが審査で必ず拒否される銘柄（kill switch・一時停止・当日の損切り・建玉数の上限等）の見送り。§5 の拒否から移った分'
 SELECT "Detail"->>'Reason' AS reason, COALESCE("Detail"->>'CycleTrigger', '-') AS cycle_trigger, count(*) AS n,
        string_agg(DISTINCT "Symbol", ',' ORDER BY "Symbol") AS symbols
 FROM audit_events

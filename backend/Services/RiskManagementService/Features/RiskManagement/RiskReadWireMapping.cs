@@ -3,6 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
+using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
@@ -223,6 +224,36 @@ public static class RiskReadWireMapping
         if (view.Symbol is not null)
             row.Symbol = view.Symbol;
         return row;
+    }
+
+    // FR-10, #1113, IADR-0463 決定 3: 新規建ての可否。🔴 理由は名前で写す。口が返し得ない理由（EntryStateBlockers.Determinable の外）は
+    // 線上の値を持たないので**例外にする**（黙って落とすと「確定する拒否は無い」と読まれる）。全対象の写像は試験が固定する。
+    public static Proto.EntryBlocker ToProto(RejectionReason reason) => reason switch
+    {
+        RejectionReason.KillSwitchActive => Proto.EntryBlocker.KillSwitchActive,
+        RejectionReason.TradingPaused => Proto.EntryBlocker.TradingPaused,
+        RejectionReason.StoppedOutSameDay => Proto.EntryBlocker.StoppedOutSameDay,
+        RejectionReason.GoodFaithViolationLimitReached => Proto.EntryBlocker.GoodFaithViolationLimitReached,
+        RejectionReason.MaxPositionsExceeded => Proto.EntryBlocker.MaxPositionsExceeded,
+        RejectionReason.DailyLossLimitReached => Proto.EntryBlocker.DailyLossLimitReached,
+        RejectionReason.MaxDrawdownReached => Proto.EntryBlocker.MaxDrawdownReached,
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "新規建ての可否の口が返す理由ではない"),
+    };
+
+    public static Proto.GetEntryBlockersResponse ToProto(EntryBlockersView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        var longSide = new Proto.EntryBlockerReasons();
+        longSide.Reasons.AddRange(view.LongSide.Select(ToProto));
+        var shortSide = new Proto.EntryBlockerReasons();
+        shortSide.Reasons.AddRange(view.ShortSide.Select(ToProto));
+        return new Proto.GetEntryBlockersResponse
+        {
+            Symbol = view.Symbol,
+            Market = ToProto(view.Market),
+            LongSide = longSide,
+            ShortSide = shortSide,
+        };
     }
 
     public static Proto.GetSizingContextResponse ToProto(SizingContextView view)

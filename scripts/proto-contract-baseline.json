@@ -1654,6 +1654,19 @@
             "names": []
           }
         },
+        "EntryBlockerReasons": {
+          "fields": {
+            "reasons": {
+              "number": 1,
+              "type": "EntryBlocker",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "GetBuyInInferencesRequest": {
           "fields": {
             "from": {
@@ -1719,6 +1732,52 @@
               "number": 1,
               "type": "DriftAdoption",
               "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetEntryBlockersRequest": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetEntryBlockersResponse": {
+          "fields": {
+            "long_side": {
+              "number": 3,
+              "type": "EntryBlockerReasons",
+              "label": "singular"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "short_side": {
+              "number": 4,
+              "type": "EntryBlockerReasons",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
             }
           },
           "reserved": {
@@ -2310,6 +2369,22 @@
             "names": []
           }
         },
+        "EntryBlocker": {
+          "values": {
+            "ENTRY_BLOCKER_DAILY_LOSS_LIMIT_REACHED": 6,
+            "ENTRY_BLOCKER_GOOD_FAITH_VIOLATION_LIMIT_REACHED": 4,
+            "ENTRY_BLOCKER_KILL_SWITCH_ACTIVE": 1,
+            "ENTRY_BLOCKER_MAX_DRAWDOWN_REACHED": 7,
+            "ENTRY_BLOCKER_MAX_POSITIONS_EXCEEDED": 5,
+            "ENTRY_BLOCKER_STOPPED_OUT_SAME_DAY": 3,
+            "ENTRY_BLOCKER_TRADING_PAUSED": 2,
+            "ENTRY_BLOCKER_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "Market": {
           "values": {
             "MARKET_JAPAN": 1,
@@ -2426,6 +2501,12 @@
             "GetDriftAdoptions": {
               "request": "GetDriftAdoptionsRequest",
               "response": "GetDriftAdoptionsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetEntryBlockers": {
+              "request": "GetEntryBlockersRequest",
+              "response": "GetEntryBlockersResponse",
               "clientStreaming": false,
               "serverStreaming": false
             },

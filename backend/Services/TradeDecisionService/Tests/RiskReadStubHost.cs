@@ -70,6 +70,12 @@ internal sealed class RiskReadStubBehavior
     internal Func<int, CancellationToken, Task<Proto.GetSizingContextResponse>> SizingContext { get; init; } =
         (_, _) => Task.FromResult(new Proto.GetSizingContextResponse());
 
+    // #1113, IADR-0463: 新規建ての可否。受け取った要求を記録する（銘柄・市場が線に乗っているかを確かめる）。
+    internal Func<int, CancellationToken, Task<Proto.GetEntryBlockersResponse>> EntryBlockers { get; init; } =
+        (_, _) => Task.FromResult(new Proto.GetEntryBlockersResponse());
+
+    internal Proto.GetEntryBlockersRequest? LastEntryBlockersRequest { get; set; }
+
     internal Task<T> Handle<T>(Func<int, CancellationToken, Task<T>> handler, ServerCallContext context)
     {
         var call = Interlocked.Increment(ref _calls);
@@ -105,6 +111,13 @@ internal sealed class RiskReadStubService(RiskReadStubBehavior behavior) : Proto
     public override Task<Proto.GetWorkingEntryOrdersResponse> GetWorkingEntryOrders(
         Proto.GetWorkingEntryOrdersRequest request, ServerCallContext context) =>
         behavior.Handle(behavior.WorkingEntryOrders, context);
+
+    public override Task<Proto.GetEntryBlockersResponse> GetEntryBlockers(
+        Proto.GetEntryBlockersRequest request, ServerCallContext context)
+    {
+        behavior.LastEntryBlockersRequest = request;
+        return behavior.Handle(behavior.EntryBlockers, context);
+    }
 
     public override Task<Proto.GetSizingContextResponse> GetSizingContext(
         Proto.GetSizingContextRequest request, ServerCallContext context) =>
