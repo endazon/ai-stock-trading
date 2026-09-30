@@ -3,15 +3,15 @@ title: 実弾（live trading・TrdEnv_Real）解禁 Runbook
 type: runbook
 status: draft
 created: 2026-07-19
-updated: 2026-09-27
+updated: 2026-09-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-05, FR-20, NFR-09]
-adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0074, IADR-0111, IADR-0428, IADR-0441, IADR-0444]
-specs: [20260927_1051_release-gate-per-trading-env]
-issues: [#20, #24, #131, #132, #141, #204, #268, #853, #856, #1051, planning#676]
+ids: [FR-05, FR-20, NFR-09, FR-10]
+adrs: [ADR-0002, ADR-0045, ADR-0040]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0074, IADR-0111, IADR-0428, IADR-0441, IADR-0444, IADR-0466]
+specs: [20260927_1051_release-gate-per-trading-env, 20260930_1121_s1-vs-decision-close]
+issues: [#20, #24, #131, #132, #141, #204, #268, #853, #856, #1051, #1121, planning#676, planning#704]
 -->
 
 
@@ -104,7 +104,7 @@ broker:
 ## 解禁前チェックリスト（すべて充足するまで解禁しない）
 
 実弾解禁の前提は、実アダプタ実装（実弾は引き続きゲート）の実装 ADR §3 と、
-OpenD 本番化の実装 ADR 決定 6 に定義される。詳細な状態表（12 項目）は
+OpenD 本番化の実装 ADR 決定 6 に定義される。詳細な状態表（13 項目）は
 [`operations.md`](operations.md) の「OpenD の本番切替チェックリスト> 前提条件」にあり、ここでは
 **実弾解禁に直結する項目**を再掲する（重複管理を避け、状態は `operations.md` を単一情報源とする）。
 
@@ -118,6 +118,7 @@ OpenD 本番化の実装 ADR 決定 6 に定義される。詳細な状態表（
 | 6 | **`TradingDefaults`（リスク統制・上限）の実弾向け再確認** | 実アダプタ実装の実装 ADR §3 | 全体前提条件 §5 と一致し、実弾向けに保守的であることを再確認。少額上限から始めること |
 | 7 | **発注の冪等化（at-most-once）** | [#131](https://github.com/endazon/ai-stock-trading/issues/131) / 発注の冪等化の実装 ADR | **充足済み**（発注前 `DecisionId` 予約の 3 相化）。ただし #3 の滞留リコンサイルと併せて運用すること |
 | 8 | **監査サインオフ** | [#204](https://github.com/endazon/ai-stock-trading/issues/204)（go-live 前実装監査） | 実環境構築前の実装監査（要求・非機能要件・ユースケース・画面・意思決定のトレースと安全性）で Conditional-Go 以上。指摘の未解消がないこと |
+| 9 | **判断の手仕舞いと保護逆指値の併存**（ブローカー側の逆指値が売れる数量を押さえるか） | 損切りの実行機構の計画 ADR の実弾解禁前の確認（2026-09-30 の部分改定で追加） / [#1121](https://github.com/endazon/ai-stock-trading/issues/1121) | SIMULATE は逆指値を拒否するため確かめられない。🔴 **実弾口座・最少数量で、逆指値を置いた建玉に全量の手仕舞い（指値）を出し、受理されるかを確かめる。** 受理されれば充足。🔴 **受理されない（逆指値が数量を押さえる）なら、解禁の前に「手仕舞いの前に保護逆指値を取り消す経路」を起案・実装すること**——無いまま実弾へ進むと、保護逆指値を持つ建玉への判断・利用者の手仕舞いが常に「建玉が足りない」で拒否され、手仕舞いが止まる。確かめた結果（受理／拒否と拒否の文言）は運用仕様書の前提条件 #13 に記録する |
 
 > 上表に一つでも未充足があれば、実弾解禁 IADR を Accepted 化してはならない。とりわけ #2〜#5 は
 > `operations.md` で 🔴 **未充足**であり（2026-07-19 時点）、**現状は解禁段階に達していない**。

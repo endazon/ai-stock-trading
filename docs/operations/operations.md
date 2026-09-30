@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-09-29
+updated: 2026-09-30
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10]
-adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, MSP#266, MSP#635, planning#54, planning#676]
+adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, MSP#266, MSP#635, planning#54, planning#676, planning#704]
 -->
 
 
@@ -85,6 +85,7 @@ issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #
 | 10 | OpenD の**ログイン済み**判定（healthcheck） | 🟡 **限界を明示** | readiness は **TCP 疎通のみ**。OpenD は**検証前から listen する**ため、**probe 通過≠ログイン完了**。「使える」判定は `kubectl attach` でのログイン成功確認に依る。liveness は付けない（自動再起動が有人検証待ちの停止を招くため） |
 | 11 | **発注予約 `Reserved` 滞留の監視・自動リコンサイル** | 🔴 **未充足** | 自動リコンサイルは配備で有効（下記「発注予約の自動リコンサイル」）で、**発注済みと確定できた側だけ**が自動で片付く。**未発注・判定不能は解放の門が閉じているため人手のまま**（下記 Runbook）。🔴 **解放の門は取引環境ごとに分かれている**（`Reconciliation__ReleaseOnNotPlaced__Simulate` / `__Real`）。計画の裁定（解放の基準を取引環境ごとに満たす）により、**実弾の門は実弾の実機の記録で下記「解放の門を開けるときの記録」の (a)(b) を示すまで閉じたまま**であり、SIMULATE の記録では開けない。記録の収集は **#856**。満たすまで、未発注・判定不能の予約を解放する手段は利用者の判断（下記 Runbook の DB 直接操作）だけである。実弾では「発注済みか不明な注文」＝未確定の建玉を意味する（実アダプタ実装の実装 ADR §3） |
 | 12 | `TradingDefaults`（リスク統制・上限）の**実弾向け再確認** | 🔴 **未充足** | 実弾解禁の実装 ADR の前提（実アダプタ実装の実装 ADR §3） |
+| 13 | **判断の手仕舞いと保護逆指値の併存**（ブローカー側の逆指値が売れる数量を押さえるか） | 🔴 **未確認**（SIMULATE では逆指値が拒否されるため確かめられない） | 実弾口座・最少数量で、逆指値を置いた建玉に全量の手仕舞い（指値）を出し、受理されるかを確かめる。🔴 **受理されない（逆指値が数量を押さえる）なら、手仕舞いの前に保護逆指値を取り消す経路が要る**（未起案。受理されないまま実弾へ進むと、保護逆指値を持つ建玉への手仕舞いが常に拒否され「手仕舞いは止めない」が破れる）。手順は[実弾解禁 Runbook](live-trading-cutover-runbook.md) の解禁前チェックリスト #9 |
 
 > 🔴 が一つでも残る限り**実弾（`TrdEnv_Real`）は解禁しない**。解禁には**別の実装 ADR ＋ 明示 config** が要り、
 > 現状のコードは `TrdEnv_Simulate` 固定・`BrokerFactory` の config ゲート・`Broker:Moomoo:TrdEnv` の拒否という

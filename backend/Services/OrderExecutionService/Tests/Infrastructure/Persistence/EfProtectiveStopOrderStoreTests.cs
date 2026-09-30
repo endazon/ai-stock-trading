@@ -348,4 +348,43 @@ public class EfProtectiveStopOrderStoreTests
         found.Select(s => s.EntryDecisionId).Should().Equal(expected, "一致する Active 行だけを、上限なしで古い順に返す");
         found.Should().Contain(s => s.IsSoftwareStop).And.Contain(s => !s.IsSoftwareStop, "機構を問わない");
     }
+
+    // T-10-1819, FR-10, ADR-0050 決定1, #1121, IADR-0466 決定2: FindRecentFor は銘柄・市場・エントリー方向が一致する行を
+    // **状態も機構も問わず**、更新が新しい順・上限つきで返す（S1 の決済の前に、処理中の決済が保護の機構の出したものかを見分けるため）。
+    // EF（InMemory プロバイダ）とインメモリで同じ契約。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void T_10_1819_FindRecentForは状態と機構を問わず銘柄市場方向が一致する行を新しい順に上限つきで返す(bool ef)
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using var db = NewContext(dbName);
+        OrderExecutionService.Features.OrderExecution.IProtectiveStopOrderStore store = ef
+            ? new EfProtectiveStopOrderStore(db)
+            : new InMemoryProtectiveStopOrderStore();
+
+        var active = Guid.NewGuid();
+        var completed = Guid.NewGuid();
+        var awaiting = Guid.NewGuid();
+        var software = Guid.NewGuid();
+        store.Save(Stop(active) with { UpdatedAt = Now.AddMinutes(1) });
+        store.Save(Stop(completed, state: ProtectiveStopState.Completed) with { UpdatedAt = Now.AddMinutes(4) });
+        store.Save(Stop(awaiting, state: ProtectiveStopState.AwaitingEntry) with { UpdatedAt = Now.AddMinutes(2) });
+        store.Save(Stop(software) with
+        {
+            Mechanism = StopLossExecutionMethod.SoftwareStop,
+            StopOrderId = string.Empty,
+            UpdatedAt = Now.AddMinutes(3),
+        });
+
+        // 一致しない行（1 条件ずつ外す）。
+        store.Save(Stop(Guid.NewGuid()) with { Symbol = "MSFT", UpdatedAt = Now.AddMinutes(9) });
+        store.Save(Stop(Guid.NewGuid()) with { Market = Market.Japan, UpdatedAt = Now.AddMinutes(9) });
+        store.Save(Stop(Guid.NewGuid()) with { EntrySide = TradeSide.Sell, UpdatedAt = Now.AddMinutes(9) });
+
+        store.FindRecentFor("AAPL", Market.UnitedStates, TradeSide.Buy, 50).Select(s => s.EntryDecisionId)
+            .Should().Equal([completed, software, awaiting, active], "一致する行を状態・機構を問わず更新が新しい順に返す");
+        store.FindRecentFor("AAPL", Market.UnitedStates, TradeSide.Buy, 2).Select(s => s.EntryDecisionId)
+            .Should().Equal([completed, software]);
+    }
 }

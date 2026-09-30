@@ -145,6 +145,18 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
             .Select(ToDomain)
             .ToList();
 
+    // FR-10, #1121, IADR-0466 決定2: 状態・機構を問わない同じ銘柄・市場・方向の記録（更新が新しい順・上限つき）。
+    public IReadOnlyList<ProtectiveStopOrder> FindRecentFor(string symbol, Market market, TradeSide entrySide, int limit) =>
+        db.ProtectiveStopOrders
+            .Where(r => r.Symbol == symbol
+                && r.Market == market
+                && r.EntrySide == entrySide)
+            .OrderByDescending(r => r.UpdatedAt)
+            .Take(limit)
+            .ToList()
+            .Select(ToDomain)
+            .ToList();
+
     // #820 の 6 巡目監査・7 巡目監査, IADR-0344 追記(6)・追記(7): 観測を数え続けてよいかの門が読む
     // 「完了済みの S1」（更新が新しい順・上限つき）。
     public IReadOnlyList<ProtectiveStopOrder> FindCompletedSoftwareStops(
