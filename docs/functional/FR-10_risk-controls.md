@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
-adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0466]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1121_s1-vs-decision-close]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1121, planning#292, planning#644, planning#646, planning#703, planning#704]
+adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0049, ADR-0050]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1120, #1121, planning#292, planning#644, planning#646, planning#703, planning#704]
 -->
 
 
@@ -187,12 +187,31 @@ issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #3
 | --- | --- | --- |
 | 初期投入資金 | **USD 3,000**（約 491,000 円・1 USD ≈ 163.7 円） | `InitialEquityUsd` ＋ `EquityCurrency`（権威値）／ `InitialCapital`（基準通貨建ての供給値。#364 以降は権威値そのもの） |
 | 日次損失上限 | 資金の **2%**（到達で当日全停止・翌営業日までロックアウト） | `DailyLossLimitRatio = 0.02` |
-| 1 取引あたりリスク | 資金の **1%**（計画は ATR 連動サイジングと定める） | `PerTradeRiskRatio = 0.01`。🔴 **実装は ATR を計算していない**: 1 株あたりの損切り幅は取引判断 LLM の出力をそのまま使い、検証は 0 ＜ 幅 ＜ 参照価格だけである。株数＝floor(資金 × 1% × 縮小係数 ÷ 幅) を 1 注文 25% と残枠で抑える。幅の数値の下限は計画側の裁定待ち。新規建てごとの幅（価格に対する %・当日の値幅に対する倍率）は取引判断のログで観測できる |
+| 1 取引あたりリスク | 資金の **1%**（計画は「ATR 連動」と定め、その実体は損切り幅の下限） | `PerTradeRiskRatio = 0.01`。1 株あたりの損切り幅は、取引判断 LLM の提案に**系が下限を掛けた幅**である（下の「損切り幅の下限」）。株数＝floor(資金 × 1% × 縮小係数 ÷ 幅) を 1 注文 25% と残枠で抑える。新規建てごとの幅（価格に対する %・当日の値幅に対する倍率・下限・広げたか）は取引判断のログで観測でき、下限を掛けた結果は判断の記録として監査台帳に残る |
 | 最大ドローダウン上限 | **10%**（到達で全停止・再検証） | `MaxDrawdownRatio = 0.10` |
 | 連敗時縮小 | **5 連敗**でサイズ半減（復帰は機械的条件） | `LosingStreakThreshold = 5` / `LosingStreakSizeFactor = 0.5` |
 
 > **レンジ表記は用いない**。旧実装は「3〜5 連敗」の保守側 3・「10〜15%」の上限側 0.15 を
 > 採っており、前者は本 issue で是正した。後者（Stage 0 合格判定の DD 許容値）は #333 の担当である。
+
+### 損切り幅の下限（割った幅は広げる・見送らない）
+
+計画は損切り幅の下限を **1.0 × ATR(14, 日足)**、ATR が得られないときは**参照価格（現在値へアンカリングした後の価格）の 2%** と定める。
+幅は生成 AI が判断ごとに提案し、系が決定的なコードで下限を掛ける（AI は上書きできない）。
+
+| 項目 | 実装 |
+| --- | --- |
+| 掛ける位置 | 取引判断の新規建て。AI の幅の検証（0 ＜ 幅 ＜ アンカー後の参照価格）の**後**、サイジングの**前** |
+| 下限の値 | 🔴 **ATR はまだ供給されていない**（日足が判断へ通っていない）。いまは常に**アンカー後の参照価格 × 2%**（`TradingDefaults.StopWidthFloorFallbackRatio = 0.02`。端数は丸めない）。ATR の供給口（`IStopWidthFloorSource`）は用意してあり、本番は常に「得られない」を返す実装（`NoAtrStopWidthFloorSource`）を登録している。供給口が値を返さない・0 以下・例外のときも 2% |
+| 下限を割った幅 | **下限まで広げる**（見送らない）。ちょうど下限は広げない。サイジング・損切りライン・発注意図はすべて広げた幅から計算する |
+| 空売り | 対称（ライン ＝ 価格 ＋ 幅） |
+| 広げた幅が参照価格以上 | 見送る（ロングのラインが 0 以下になる）。2% では起こらず、将来の ATR の極端な値だけに当たる |
+| 上限 | 設けない。1 注文上限（equity の 25%）は緩めない。幅 4% 以下では 25% の上限が株数を決めるため、既定の構成では広げても株数は変わらない（縮小係数が掛かると、広げた幅が株数を減らす） |
+| 監査 | 判断の記録（`TradeDecisionMade`）の `StopWidth` に AI の幅・下限・出所（`Fallback2Pct` / `Atr14`）・適用した幅・広げたかを載せる。要約にも出す。決済の判断は持たない（null） |
+| Stage 0 | 記録のサイジングも同じ下限（記録の参照価格 × 2%）を掛ける |
+| プロンプト | 本判断のリスク制約節で「損切り幅は当日の値動きより広く取る。系が下限を掛けて広げる」と案内する（数値は書かない） |
+
+ラインが不明な建玉の近似（`DefaultStopLossRatio = 0.03`）は、この下限とは別の値である。
 
 ### 通貨の扱い（equity 比保持の決定 3 → #364。基準通貨を USD へ反転する決定 1・3）
 

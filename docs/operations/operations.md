@@ -8,7 +8,7 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10]
-adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040]
+adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050]
 iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466]
 specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close]
 issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, MSP#266, MSP#635, planning#54, planning#676, planning#704]

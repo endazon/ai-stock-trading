@@ -2,7 +2,7 @@
 title: IADR-0351 取引判断のプロンプトへ保有状況（保有あり／保有なし／不明）を載せ、方針に出口の基準が無いときは保有継続を既定としつつ、記録上の損切りラインに達した建玉はリスク制約に基づいて手仕舞いを選べるとする
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-10, FR-03, FR-11, UC-01, UC-02, ADR-0003, ADR-0040, IADR-0029, IADR-0030, IADR-0035, IADR-0039, IADR-0119, IADR-0247, IADR-0297, IADR-0318, IADR-0342, IADR-0343, IADR-0358, IADR-0390, IADR-0466]
+related_ids: [FR-04, FR-10, FR-03, FR-11, UC-01, UC-02, ADR-0003, ADR-0040, IADR-0029, IADR-0030, IADR-0035, IADR-0039, IADR-0119, IADR-0247, IADR-0297, IADR-0318, IADR-0342, IADR-0343, IADR-0358, IADR-0390, IADR-0466, ADR-0050]
 author: endazon (with Claude Code)
 created: 2026-09-19
 updated: 2026-09-30

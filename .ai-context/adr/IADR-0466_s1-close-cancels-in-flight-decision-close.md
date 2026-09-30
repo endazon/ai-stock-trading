@@ -2,7 +2,7 @@
 title: IADR-0466 S1 の決済を送る前に、同じ建玉を売る判断の手仕舞い（処理中）を取り消し、取消が確定してから送る（保護の機構が出した決済は取り消さない）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-05, UC-02, ADR-0040, ADR-0003, IADR-0344, IADR-0461, IADR-0355, IADR-0211, IADR-0396, IADR-0389, IADR-0351, IADR-0210, IADR-0113]
+related_ids: [FR-10, FR-05, UC-02, ADR-0040, ADR-0003, IADR-0344, IADR-0461, IADR-0355, IADR-0211, IADR-0396, IADR-0389, IADR-0351, IADR-0210, IADR-0113, ADR-0050]
 author: claude (Claude Code)
 created: 2026-09-30
 updated: 2026-09-30

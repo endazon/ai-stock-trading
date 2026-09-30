@@ -2,7 +2,7 @@
 title: 損切りライン到達を理由とする手仕舞いの案内を S2 に限り、S1 の決済が処理中の判断の手仕舞いで止まらないようにする（#1121）
 type: spec
 status: accepted
-related_ids: [FR-10, FR-04, FR-05, UC-02, ADR-0040, ADR-0003, IADR-0466, IADR-0351, IADR-0344, IADR-0461, IADR-0355, IADR-0211, IADR-0458, IADR-0396, IADR-0389]
+related_ids: [FR-10, FR-04, FR-05, UC-02, ADR-0040, ADR-0003, IADR-0466, IADR-0351, IADR-0344, IADR-0461, IADR-0355, IADR-0211, IADR-0458, IADR-0396, IADR-0389, ADR-0050]
 author: claude (Claude Code)
 created: 2026-09-30
 updated: 2026-09-30
@@ -151,6 +151,8 @@ S1 の決済を送る直前（数量・待ち時間が決まった後、予約�
 **本 PR では `.ai-context/`（本仕様書・IADR-0466・追記）の本文と `plan_refs` にだけ書き、docs の trace ブロックには入れない。**
 `related_ids`（frontmatter）にも入れない —— `gen-knowledge-graph --check` が計画 ADR のレンジ外として落とす（実測）。 #1120 のマージ後に、docs の trace ブロック
 （FR-10 機能仕様書・テスト仕様書・運用仕様書・Runbook）と、本仕様書・IADR-0466・IADR-0351・IADR-0461 の `related_ids` へ ADR-0050 を足す追随を行う。
+
+［2026-09-30 追記 / #1121］#1120（#1124）のマージ後に develop を取り込み、上記 4 文書の trace ブロックと 4 記録の `related_ids` へ ADR-0050 を足した。
 
 ## 試験（T-10-1810〜）
 

@@ -8,10 +8,10 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-17, FR-19, FR-20]
-adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027]
-iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271, IADR-0286, IADR-0346, IADR-0460]
-specs: [20260930_1104_stop-width-observability]
-issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569, #611, #829, #832, #1104, planning#703]
+adrs: [ADR-0001, ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0018, ADR-0026, ADR-0027, ADR-0049]
+iadrs: [IADR-0001, IADR-0002, IADR-0003, IADR-0004, IADR-0005, IADR-0006, IADR-0007, IADR-0008, IADR-0016, IADR-0018, IADR-0130, IADR-0132, IADR-0149, IADR-0150, IADR-0183, IADR-0260, IADR-0271, IADR-0286, IADR-0346, IADR-0460, IADR-0465]
+specs: [20260930_1104_stop-width-observability, 20260930_1120_stop-width-floor]
+issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #340, #346, #465, #569, #611, #829, #832, #1104, #1120, planning#703]
 -->
 
 
@@ -76,7 +76,7 @@ issues: [#12, #13, #17, #19, #25, #26, #27, #30, #31, #302, #329, #332, #333, #3
 | MaxDailyOrderAmountRatio | decimal | 1.50 | > 0 | 1 日あたりの発注金額上限（**equity 比・日次**）。新規建てのみ算入。§5 / #302 |
 | MaxOpenPositions | int | 3 | ≥ 0 | 保有**建玉**数上限（「保有銘柄数」では数えない）。§5 / 空売り段階解禁の決定 9 |
 | DailyLossLimitRatio | decimal | 0.02 | 0〜1 | 日次損失上限（equity 比）。§5 / リスク統制既定値の計画 ADR |
-| PerTradeRiskRatio | decimal | 0.01 | 0〜1 | 1 取引リスク（equity 比）。§5 / 同上。計画は ATR 連動と定めるが、実装は ATR を計算せず、取引判断 LLM が出す損切り幅をそのまま使う（数値の下限は計画側の裁定待ち） |
+| PerTradeRiskRatio | decimal | 0.01 | 0〜1 | 1 取引リスク（equity 比）。§5 / 同上。「ATR 連動」の実体は損切り幅の下限（1.0 × ATR(14)。ATR が得られないときは参照価格の 2%）で、取引判断が LLM の幅に掛け、割った幅は下限まで広げる。ATR はまだ供給されておらず、2% が効いている（退避の比率は `TradingDefaults.StopWidthFloorFallbackRatio`） |
 | MaxDrawdownRatio | decimal | 0.10 | 0〜1 | 最大 DD 上限。§5 / 同上 |
 | LosingStreakThreshold | int | 5 | ≥ 1 | 連敗縮小しきい値。§5 / 同上（旧レンジの保守側 3 からの是正） |
 | LosingStreakSizeFactor | decimal | 0.5 | 0〜1 | 連敗時サイズ縮小係数 |

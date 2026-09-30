@@ -32,6 +32,42 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("AAPL");
     }
 
+    // T-10-1806, FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: 新規建ての損切り幅に下限を掛けた結果（AI の幅・下限・出所・
+    // 適用した幅・広げたか）を監査に残す。要約は根拠文の前に置き（切り詰めで消えない）、本文は 5 項目を載せる（出所は名前）。
+    [Theory]
+    [InlineData(true, "・損切り幅 2（AI 0.5・下限 2 Fallback2Pct・下限まで拡大）")]
+    [InlineData(false, "・損切り幅 3（AI 3・下限 2 Fallback2Pct）")]
+    public void TradeDecisionMade_は損切り幅の下限の結果を要約と本文に残す(bool widened, string expected)
+    {
+        var width = widened
+            ? new StopWidthFloorApplication(0.5m, 2m, StopWidthFloorSource.Fallback2Pct, 2m, Widened: true)
+            : new StopWidthFloorApplication(3m, 2m, StopWidthFloorSource.Fallback2Pct, 3m, Widened: false);
+        var e = new TradeDecisionMade(
+            Guid.NewGuid(), Intent(), new string('長', 400), DateTimeOffset.UtcNow, StopWidth: width);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().StartWith($"AAPL 判断 Buy/Open 数量10{expected}: ");
+        entry.Detail.Should().Contain("\"StopWidth\":{")
+            .And.Contain($"\"AiWidthPerShare\":{(widened ? "0.5" : "3")}")
+            .And.Contain("\"FloorPerShare\":2")
+            .And.Contain("\"FloorSource\":\"Fallback2Pct\"")
+            .And.Contain($"\"AppliedWidthPerShare\":{(widened ? "2" : "3")}")
+            .And.Contain($"\"Widened\":{(widened ? "true" : "false")}");
+    }
+
+    // T-10-1806: 🔴 否定形。値の無い判断（決済・owner 手仕舞い等）は従来と同じ要約（何も足さない）で、本文は null を書く。
+    [Fact]
+    public void TradeDecisionMade_は損切り幅の結果が無ければ従来の要約のまま_否定形()
+    {
+        var e = new TradeDecisionMade(Guid.NewGuid(), Intent(PositionEffect.Close), "利益確定", DateTimeOffset.UtcNow);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Be("AAPL 判断 Buy/Close 数量10: 利益確定");
+        entry.Detail.Should().Contain("\"StopWidth\":null");
+    }
+
     [Fact]
     public void OrderApproved_は_承認数量を要約に含める()
     {

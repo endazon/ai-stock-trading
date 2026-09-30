@@ -39,6 +39,14 @@ public static class TradeDecisionPromptBuilder
     public const string TradingUnitIsNotCapRule =
         "方針にある「1株単位」等の表記は売買単位（1株刻みで売買できること）であり、数量の上限ではありません。";
 
+    // FR-04, FR-10, ADR-0049 決定5（配備までの暫定手段）, #1120, IADR-0465 決定4: 損切り幅は当日の値動きより広く取るよう案内する。
+    // 実測（PoC 2026-09-29）: LLM は 0.4〜0.6% の幅を置き、S1 が通常の値動きで約 50 分後に刈った。数値の強制は系の下限
+    // （StopWidthFloorPolicy）が行い、ここは案内だけである（下限の値は書かない＝ATR の供給で変わる）。本判断（Build）のリスク制約節にだけ置く
+    // （一次スクリーニングは幅を決めない）。テストがこの const を直接参照する。
+    public const string StopWidthBeyondDailyRangeRule =
+        "損切り幅（stopLossDistancePerShare）は当日の値動き（日中の高値と安値の差）より広く取ってください。"
+        + "狭い幅は通常の値動きで損切りされます。システムは損切り幅に下限を掛け、下限を下回る幅は下限まで広げます（数量は広げた幅で算出します）。";
+
     // FR-04, FR-10, ADR-0003, #854, IADR-0351: 保有状況節の文言。計画 ADR-0003 は判断入力を「確定済み日報＋保有ポジション＋
     // 収集情報＋過去判断のRAG」と定めるが、従来のプロンプトは保有を 1 つも渡しておらず、LLM は毎サイクルを「何も持って
     // いない状態での新規買いの是非」として判断していた（実測: 2 夜連続で Buy しか出ず、当日枠を使い切るまで買い増した）。
@@ -298,6 +306,7 @@ public static class TradeDecisionPromptBuilder
         // FR-04, FR-10, ADR-0040 決定5, #822, IADR-0343 決定1: 数量はシステムが決める。散文の「1株単位」は上限ではない。
         sb.AppendLine($"- {QuantityIsSystemDecidedRule}");
         sb.AppendLine($"- {TradingUnitIsNotCapRule}");
+        sb.AppendLine($"- {StopWidthBeyondDailyRangeRule}");
         sb.AppendLine();
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件。空売りの有効・無効に
         // かかわらず常に出す（このメソッドは空売り可否のフラグを受け取らない）。誘因の構造（なぜ危険か）

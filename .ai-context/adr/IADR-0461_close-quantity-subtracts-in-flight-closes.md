@@ -2,7 +2,7 @@
 title: IADR-0461 決済の数量から、同じ建玉を売る処理中の決済を引く（ブローカーが生きていると答えた分だけ。S0 / S3 の保護レグは引かない）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-05, FR-11, UC-06, IADR-0466, IADR-0355, IADR-0211, IADR-0458, IADR-0356, IADR-0398, IADR-0344, IADR-0210, IADR-0113, IADR-0406]
+related_ids: [FR-10, FR-05, FR-11, UC-06, IADR-0466, IADR-0355, IADR-0211, IADR-0458, IADR-0356, IADR-0398, IADR-0344, IADR-0210, IADR-0113, IADR-0406, ADR-0050]
 author: claude (Claude Code)
 created: 2026-09-30
 updated: 2026-09-30

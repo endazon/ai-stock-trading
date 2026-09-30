@@ -59,6 +59,24 @@ public class TradeDecisionPromptBuilderTests
             .Should().BeGreaterThan(prompt.IndexOf("# リスク制約", StringComparison.Ordinal), "リスク制約節の中に置く");
     }
 
+    // T-10-1808, FR-04, FR-10, ADR-0049 決定5, #1120, IADR-0465 決定4: 本判断のリスク制約節に「損切り幅は当日の値動きより広く」の
+    // 案内があり、系が下限を掛けて広げることを明示する（数値は書かない）。一次スクリーニングは幅を決めないので出さない。
+    [Fact]
+    public void 本判断プロンプトは損切り幅を当日の値動きより広く取るよう案内する()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
+        var screening = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        prompt.Should().Contain($"- {TradeDecisionPromptBuilder.StopWidthBeyondDailyRangeRule}");
+        prompt.IndexOf(TradeDecisionPromptBuilder.StopWidthBeyondDailyRangeRule, StringComparison.Ordinal)
+            .Should().BeGreaterThan(prompt.IndexOf("# リスク制約", StringComparison.Ordinal), "リスク制約節の中に置く");
+        TradeDecisionPromptBuilder.StopWidthBeyondDailyRangeRule.Should().Contain("当日の値動き")
+            .And.Contain("より広く").And.Contain("下限まで広げます");
+        screening.Should().NotContain(TradeDecisionPromptBuilder.StopWidthBeyondDailyRangeRule);
+    }
+
     [Fact]
     public void 数量の明示は採算節の有無や価格変動トリガーでも出る()
     {
@@ -716,11 +734,16 @@ public class TradeDecisionPromptBuilderTests
         var newsStatusLine = TradeDecisionPromptBuilder.NewsStatusLine(news: null);
         prompt.Should().Contain(newsStatusLine);
 
+        // #1120, IADR-0465 決定4: 損切り幅の案内（リスク制約節の 1 行）も後から足した行である。
+        var stopWidthRuleLine = $"- {TradeDecisionPromptBuilder.StopWidthBeyondDailyRangeRule}{Environment.NewLine}";
+        prompt.Should().Contain(stopWidthRuleLine);
+
         Normalize(prompt
                 .Replace(noneSection, string.Empty, StringComparison.Ordinal)
                 .Replace(watchlistSection, string.Empty, StringComparison.Ordinal)
                 .Replace(priceContextLines, string.Empty, StringComparison.Ordinal)
-                .Replace(newsStatusLine, string.Empty, StringComparison.Ordinal))
+                .Replace(newsStatusLine, string.Empty, StringComparison.Ordinal)
+                .Replace(stopWidthRuleLine, string.Empty, StringComparison.Ordinal))
             .Should().Be(Normalize(LegacyScheduledPrompt));
     }
 

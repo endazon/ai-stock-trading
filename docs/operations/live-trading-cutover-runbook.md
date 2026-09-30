@@ -8,7 +8,7 @@ author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-20, NFR-09, FR-10]
-adrs: [ADR-0002, ADR-0045, ADR-0040]
+adrs: [ADR-0002, ADR-0045, ADR-0040, ADR-0050]
 iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0074, IADR-0111, IADR-0428, IADR-0441, IADR-0444, IADR-0466]
 specs: [20260927_1051_release-gate-per-trading-env, 20260930_1121_s1-vs-decision-close]
 issues: [#20, #24, #131, #132, #141, #204, #268, #853, #856, #1051, #1121, planning#676, planning#704]

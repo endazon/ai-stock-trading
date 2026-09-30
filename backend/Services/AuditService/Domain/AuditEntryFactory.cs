@@ -23,8 +23,18 @@ public static class AuditEntryFactory
 
     public static AuditEntry From(TradeDecisionMade e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(TradeDecisionMade), e.DecisionId, e.Intent.Symbol,
-        Truncate($"{e.Intent.Symbol} 判断 {e.Intent.Side}/{e.Intent.PositionEffect} 数量{e.Intent.Quantity}: {e.Rationale}"),
+        Truncate($"{e.Intent.Symbol} 判断 {e.Intent.Side}/{e.Intent.PositionEffect} 数量{e.Intent.Quantity}"
+            + $"{StopWidthSummary(e.StopWidth)}: {e.Rationale}"),
         AuditSerialization.Serialize(e), e.DecidedAt, recordedAt);
+
+    // FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: 新規建ての損切り幅に下限を掛けた結果の要約。
+    // 本文（payload）には 5 項目が自動で載るが、**要約を走査する監査**でも「AI の幅を系が広げた」ことが目に入るよう、
+    // 根拠文（切り詰められ得る）の**前**に置く。値が無い判断（決済・owner 手仕舞い等）は従来と同じ要約（何も足さない）。
+    private static string StopWidthSummary(StopWidthFloorApplication? w) => w is null
+        ? string.Empty
+        : FormattableString.Invariant(
+            $"・損切り幅 {w.AppliedWidthPerShare}（AI {w.AiWidthPerShare}・下限 {w.FloorPerShare} {w.FloorSource}")
+            + (w.Widened ? "・下限まで拡大）" : "）");
 
     // UC-02, FR-03, FR-11, #1077, IADR-0452 決定5: AI 判断後の見送り（Hold・統制による見送り）と判断時点の価格。
     // 1 件の見送りが 1 行であり、発注チェーン（DecisionId）を持たないため EventId を相関にする（PriceMovementDetected と同じ）。

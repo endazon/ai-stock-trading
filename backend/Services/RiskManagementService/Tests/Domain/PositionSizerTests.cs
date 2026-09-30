@@ -4,7 +4,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// FR-10, ADR-0018: 1取引あたりリスク（既定: 資金の 1%。損切り幅は入力として受け取る＝LLM の出力・ATR は計算しない。IADR-0460）と
+// FR-10, ADR-0018: 1取引あたりリスク（既定: 資金の 1%。損切り幅は入力として受け取る＝取引判断が下限を掛けた幅。IADR-0465）と
 // 連敗時縮小（既定: 5 連敗で半減）
 public class PositionSizerTests
 {
