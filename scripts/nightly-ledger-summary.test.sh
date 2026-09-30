@@ -102,6 +102,10 @@ for t in TradeDecisionMade TradeDecisionHeld TradeDecisionSkipped OrderApproved 
 done
 # T-10-1775, NFR, #1092 段 2, IADR-0462: 照会の失敗の区間（§10）と LLM を呼ぶ前の見送り（§11）を数える。
 ok '台帳の 14 種類のイベントを数える（段 2 の照会の状態の変化・LLM を呼ぶ前の見送りを含む）'
+# T-10-1796, FR-10, #1113, IADR-0463 決定 5: §5 と §11 に計器の移動（審査の拒否 → LLM を呼ぶ前の見送り）の注記がある。
+if grep -q "^\\\\echo '-- EntryBlockedByRiskControls は" <<<"$sql" && grep -q "^\\\\echo '-- 保有 0・未約定なしで新規建てが必ず拒否される銘柄は" <<<"$sql"; then
+  ok '§5・§11 に計器の移動（EntryBlockedByRiskControls）の注記がある'
+else ng '§5・§11 に計器の移動の注記が無い'; fi
 
 # --- 関数だけの読み込み ---------------------------------------------------------------
 if AST_NIGHTLY_LIB=1 bash -c ". '$SCRIPT'; declare -F nightly_window nightly_sql nightly_main >/dev/null"; then

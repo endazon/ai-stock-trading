@@ -76,4 +76,14 @@ public enum DecisionSkipReason
     /// </para>
     /// </summary>
     WorkingEntriesUnknownOpen,
+
+    /// <summary>
+    /// FR-10, FR-04, #1113, IADR-0463 決定 4: <b>LLM を呼ぶ前</b>の見送り。保有が既知で 0・未約定の新規建てが既知で空の銘柄で、
+    /// リスク管理の新規建ての可否の口（審査と同じ述語）が買いの新規建ては必ず拒否されると答えた。
+    /// <para>
+    /// 🔴 計器の移動: 是正前は同じ新規建てが LLM を呼んだ後に審査で拒否され、<c>ast.risk.rejections{reason}</c> に出ていた。
+    /// その一部がこの値へ移る（審査は変わらない）。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </para>
+    /// </summary>
+    EntryBlockedByRiskControls,
 }

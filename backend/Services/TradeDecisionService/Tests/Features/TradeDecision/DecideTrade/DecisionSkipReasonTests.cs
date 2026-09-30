@@ -255,15 +255,16 @@ public class DecisionSkipReasonTests
         observed.Should().OnlyHaveUniqueItems("理由が重なると内訳が読めなくなる");
     }
 
-    // 🔴 #891 やること 1（語彙の網羅）: **語彙は 13 値で、洗い出しの結果そのものである**
-    // （#934 / IADR-0390 決定5 が末尾に WorkingEntriesUnknownOpen を足して 12 → 13）。
+    // 🔴 #891 やること 1（語彙の網羅）: **語彙は 14 値で、洗い出しの結果そのものである**
+    // （#934 / IADR-0390 決定5 が末尾に WorkingEntriesUnknownOpen を足して 12 → 13。#1113 / IADR-0463 決定 4 が
+    // 末尾に EntryBlockedByRiskControls を足して 13 → 14。LLM を呼ぶ前の見送りで、振る舞いは EntryBlockersBeforeLlmTests が固定する）。
     // 値を足したのに報告点を足さない／報告点を消したのに値を残す、を気付けるようにする。
     // 上のテストが 10 値を**振る舞いで**固定し、残る 3 値は到達に LLM 出力の不正（参照価格 0・損切り幅の異常）か
     // 採算ゲートの構成が要るため、ここでは語彙の側だけを固定する（IADR-0374 §結果 に明記）。
     [Fact]
-    public void 見送り理由の語彙は洗い出した13値である()
+    public void 見送り理由の語彙は洗い出した14値である()
     {
-        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(13);
+        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(14);
         Enum.GetValues<DecisionSkipReason>().Should().Contain(
         [
             DecisionSkipReason.ReferencePriceInvalid,

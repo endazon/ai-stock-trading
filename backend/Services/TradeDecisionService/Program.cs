@@ -266,6 +266,23 @@ builder.Services.AddScoped<IHeldPositionProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpHeldPositionProvider(http, sp.GetRequiredService<ILogger<HttpHeldPositionProvider>>());
 });
+// 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 銘柄単位の新規建ての可否（リスク管理の GET /risk-controls/entry-blockers・
+// gRPC GetEntryBlockers。審査と同じ述語）。保有照会と同じ選び方（gRPC の宣言 → Grpc、BaseUrl → Http、どちらも無ければ NoOp）。
+// NoOp は常に不明＝判断は LLM を呼ぶ（従来どおり）。照会の失敗も同じ（見送らない。審査が止める）。
+builder.Services.AddSingleton<NoOpEntryBlockersProvider>();
+builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
+{
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcEntryBlockersProvider(riskGrpc, sp.GetRequiredService<ILogger<GrpcEntryBlockersProvider>>());
+
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return sp.GetRequiredService<NoOpEntryBlockersProvider>();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
+    http.BaseAddress = uri;
+    return new HttpEntryBlockersProvider(http, sp.GetRequiredService<ILogger<HttpEntryBlockersProvider>>());
+});
 // FR-08, IADR-0069/0072: RAG 取得ポート（#18 IKnowledgeBaseSearch）を配線する。KnowledgeBase:Search:BaseUrl 未設定/不正なら
 // #18 の NoOpKnowledgeBaseSearch（空）＝参考情報なし＝実 LLM 結線（IADR-0061）と同一プロンプト＝現行動作（安全既定）。
 builder.Services.AddAiStockTradingKnowledgeBase(builder.Configuration);

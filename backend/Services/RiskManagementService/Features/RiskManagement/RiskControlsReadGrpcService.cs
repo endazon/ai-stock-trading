@@ -1,9 +1,11 @@
 using System.Globalization;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
+using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetFills;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
@@ -38,6 +40,7 @@ public sealed class RiskControlsReadGrpcService(
     OpenPositionsService openPositions,
     WorkingEntryOrdersService workingEntryOrders,
     SizingContextService sizingContext,
+    EntryBlockersService entryBlockers,
     StageGateService stageGate,
     IPortfolioLedgerStore ledger,
     IBuyInInferenceStore inferences,
@@ -67,6 +70,24 @@ public sealed class RiskControlsReadGrpcService(
     public override Task<Proto.GetSizingContextResponse> GetSizingContext(
         Proto.GetSizingContextRequest request, ServerCallContext context) =>
         Reply(() => RiskReadWireMapping.ToProto(sizingContext.Build()));
+
+    // FR-10, FR-04, #1113, IADR-0463 決定 3: 銘柄単位の新規建ての可否（REST と同じサービス）。
+    // symbol・market の欠落・未指定は INVALID_ARGUMENT（REST の 400）。
+    public override Task<Proto.GetEntryBlockersResponse> GetEntryBlockers(
+        Proto.GetEntryBlockersRequest request, ServerCallContext context) =>
+        Reply(() =>
+        {
+            var market = request.Market switch
+            {
+                Proto.Market.Japan => Market.Japan,
+                Proto.Market.UnitedStates => Market.UnitedStates,
+                _ => (Market?)null,
+            };
+            if (!request.HasSymbol || string.IsNullOrWhiteSpace(request.Symbol) || market is not { } m)
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "symbol・market は必須です。"));
+
+            return RiskReadWireMapping.ToProto(entryBlockers.Build(request.Symbol, m));
+        });
 
     public override Task<Proto.GetStageGateResponse> GetStageGate(
         Proto.GetStageGateRequest request, ServerCallContext context) =>

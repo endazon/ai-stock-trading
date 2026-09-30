@@ -305,7 +305,7 @@ public class LedgerGapEventsTests
         cancelled.Skips.Reasons.Should().BeEmpty("取り消された判断を見送りとして数えない");
     }
 
-    // T-10-1772: 台帳の語彙（4 値）は観測の語彙（DecisionSkipReason）と同じ名前で、写像は名前どおりである。
+    // T-10-1772 / T-10-1793: 台帳の語彙（5 値）は観測の語彙（DecisionSkipReason）と同じ名前で、写像は名前どおりである。
     [Fact]
     public void T_10_1772_台帳の理由は観測の理由と同じ名前で写る()
     {
@@ -314,7 +314,8 @@ public class LedgerGapEventsTests
             AppSvc.ToSkipReason(reason).ToString().Should().Be(reason.ToString());
         }
 
-        Enum.GetValues<DecisionForgoneBeforeLlmReason>().Should().HaveCount(4, "LLM より前の見送りは 4 地点（仕様書の母集合）");
+        // #1113, IADR-0463 決定 4: 新規建てが審査で必ず拒否される銘柄の見送りを末尾へ足した（5 地点）。
+        Enum.GetValues<DecisionForgoneBeforeLlmReason>().Should().HaveCount(5, "LLM より前の見送りは 5 地点（仕様書の母集合）");
     }
 
     // ---- T-10-1771: 保有照会・未約定の照会の成否を発生源を分けて報告する ----

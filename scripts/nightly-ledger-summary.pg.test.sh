@@ -137,6 +137,10 @@ SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AAPL',
   '{"Reason":"CurrentPriceUnavailable","CycleTrigger":"price-movement"}', '2026-09-30T02:00:00+09');
 SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AAPL',
   '{"Reason":"FxRateUnresolved","CycleTrigger":"scheduled"}', '2026-09-30T08:00:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'META',
+  '{"Reason":"EntryBlockedByRiskControls","CycleTrigger":"scheduled"}', '2026-09-29T23:00:00+09');
+SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AMZN',
+  '{"Reason":"EntryBlockedByRiskControls","CycleTrigger":"scheduled"}', '2026-09-30T01:00:00+09');
 SQL
 
 OUT="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
@@ -193,6 +197,9 @@ has '状態の変化の件数: 窓の前の記録は数えない（窓の中の�
 has 'LLM を呼ぶ前の見送り: 理由 × 起点で数える' 'DailyPolicyUnconfirmed|scheduled|2|NVDA,TSLA'
 has 'LLM を呼ぶ前の見送り: 別の理由' 'CurrentPriceUnavailable|price-movement|1|AAPL'
 hasnt 'LLM を呼ぶ前の見送り: 窓の尻ちょうどは数えない' 'FxRateUnresolved|'
+# T-10-1796, #1113, IADR-0463: 新規建てが塞がっている銘柄の見送りも理由 × 起点で数える（審査の拒否から移った分）。
+has 'LLM を呼ぶ前の見送り: 新規建てが塞がっている銘柄' 'EntryBlockedByRiskControls|scheduled|2|AMZN,META'
+has '§11 に計器の移動の注記' '-- EntryBlockedByRiskControls は新規建てが審査で必ず拒否される銘柄（kill switch・一時停止・当日の損切り・建玉数の上限等）の見送り。§5 の拒否から移った分'
 
 # 窓の途中で走らせる（場中の確かめ）: 終端は現在時刻で切り、まだ来ていない時間を欠けとして出さない。
 # 観測は 5 分ごとに現在時刻の 30 分前まで。欠けは「最後の観測 → 現在時刻」の約 30 分であり、「→ 窓の終端」の約 10 時間ではない。

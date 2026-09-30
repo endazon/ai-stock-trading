@@ -40,8 +40,13 @@ public sealed class TradeDecisionAppService(
     IDecisionHeldReporter? heldReporter = null,
     NewsCollectionStatusStore? newsStatus = null,
     IDecisionForgoneBeforeLlmReporter? forgoneReporter = null,
-    IPositionQueryHealthReporter? positionQueryHealth = null)
+    IPositionQueryHealthReporter? positionQueryHealth = null,
+    IEntryBlockersProvider? entryBlockers = null)
 {
+    // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 銘柄単位の新規建ての可否（リスク管理が審査と同じ述語で答える）。未指定＝NoOp
+    // （常に不明＝LLM を呼ぶ＝従来どおり）。本番は Program.cs が保有照会と同じ選び方で Http / Grpc を注入する。
+    private readonly IEntryBlockersProvider _entryBlockers = entryBlockers ?? new NoOpEntryBlockersProvider();
+
     // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成）の最新値。未指定＝null＝プロンプトは
     // 「ニュース: 不明」と書く（無言で省かない）。本番は Program.cs の singleton が注入され、定時の購読が記録する。
     private readonly NewsCollectionStatusStore? _newsStatus = newsStatus;
@@ -188,7 +193,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, reason);
     }
 
-    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: **LLM を呼ぶ前の見送り**（4 地点）の出口。1 回の見送りにつき 1 件
+    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: **LLM を呼ぶ前の見送り**（4 地点。#1113 / IADR-0463 で 5 地点）の出口。1 回の見送りにつき 1 件
     // TradeDecisionForgoneBeforeLlm を発行してから、唯一の出口 Skip を通す（計上は Skip の 1 件のまま）。
     // 🔴 TradeDecisionHeld は出さない（判断をしていない見送りで急変の基準値を進めない。IADR-0452 決定1）。
     // 🔴 **発行の失敗で見送りを壊さない**（SkipJudgedAsync と同じ規律）。伝えるのは本判断のキャンセルだけである。
@@ -212,13 +217,14 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, ToSkipReason(reason));
     }
 
-    // #1092, IADR-0462 決定4: 台帳の語彙（4 値）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    // #1092, IADR-0462 決定4: 台帳の語彙（5 値。#1113 で 1 値を足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
     internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
     {
         DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
         DecisionForgoneBeforeLlmReason.CurrentPriceUnavailable => DecisionSkipReason.CurrentPriceUnavailable,
         DecisionForgoneBeforeLlmReason.FxRateUnresolved => DecisionSkipReason.FxRateUnresolved,
         DecisionForgoneBeforeLlmReason.FxRateStaleNoHolding => DecisionSkipReason.FxRateStaleNoHolding,
+        DecisionForgoneBeforeLlmReason.EntryBlockedByRiskControls => DecisionSkipReason.EntryBlockedByRiskControls,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -352,6 +358,26 @@ public sealed class TradeDecisionAppService(
                 "換算レートが鮮度切れだが保有があるため判断を続行する（手仕舞いのみ許可・ADR-0022 決定5）: " +
                 "{Symbol} held={Held} asOf={AsOf}",
                 trigger.Symbol, held, fxReading.Rate.AsOf);
+        }
+
+        // 🔴 FR-10, FR-04, ADR-0003, #1113, IADR-0463 決定 1・4: **新規建てが審査で必ず拒否される銘柄は、LLM を呼ぶ前に見送る。**
+        // 省けるのは「保有が既知で 0、かつ未約定の新規建てが既知で空」のときだけである —— この銘柄では LLM の結論は
+        // 買いの新規建て（審査で必ず落ちる）か、売り（裸の新規ショートとして NakedShortOpen で必ず見送る）か、Hold しか無い。
+        // 保有中・未約定あり・不明の銘柄では照会もしない（決済の判断は必ず残す。IADR-0358 決定 2 と同じ線引き）。
+        // 可否はリスク管理が審査と同じ述語で答える（規則を判断側に持たない）。照会の失敗・未結線（不明）は LLM を呼ぶ側へ倒す。
+        // 🔴 **審査は残す**（両端で止める）。ここで省くのは費用の最適化であって統制ではない。
+        // ShortSide は見ない（保有 0 の売りは上のとおり必ず見送られる）。
+        if (heldPosition is { SignedQuantity: 0 } && workingEntries is { Any: false }
+            && await GetEntryBlockersSafeAsync(trigger, cancellationToken).ConfigureAwait(false) is { } blockers
+            && blockers.ForEntry(TradeSide.Buy) is { Count: > 0 } longBlockers)
+        {
+            logger.LogInformation(
+                "新規建てが審査で必ず拒否されるため LLM を呼ばずに見送り（保有 0・未約定なし・審査は不変・IADR-0463）: " +
+                "{Symbol} reasons={Reasons}",
+                trigger.Symbol, string.Join(",", longBlockers));
+            return await SkipBeforeLlmAsync(
+                    trigger, DecisionForgoneBeforeLlmReason.EntryBlockedByRiskControls, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。
@@ -742,6 +768,22 @@ public sealed class TradeDecisionAppService(
         await ReportHoldingsQueryAsync(PositionQuerySource.TradeDecisionWorkingEntries, working is not null)
             .ConfigureAwait(false);
         return working;
+    }
+
+    // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 新規建ての可否の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は
+    // **null（不明）**に縮退する（＝LLM を呼ぶ。見送らない）。本判断のキャンセルは伝える。
+    private async Task<EntryBlockers?> GetEntryBlockersSafeAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _entryBlockers.GetAsync(trigger.Symbol, trigger.Market, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "新規建ての可否の照会に失敗しました（不明として扱い LLM を呼びます）: {Symbol}", trigger.Symbol);
+            return null;
+        }
     }
 
     // FR-04, #1034, IADR-0440 決定 2: 判断のプロンプトへ載せる監視銘柄の照会（fail-safe ラッパ）。

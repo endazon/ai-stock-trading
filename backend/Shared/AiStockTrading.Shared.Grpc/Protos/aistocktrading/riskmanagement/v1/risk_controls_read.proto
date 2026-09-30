@@ -46,6 +46,9 @@ service RiskControlsRead {
   rpc GetWorkingEntryOrders(GetWorkingEntryOrdersRequest) returns (GetWorkingEntryOrdersResponse);
   // GET /risk-controls/sizing-context（サイジング文脈）。
   rpc GetSizingContext(GetSizingContextRequest) returns (GetSizingContextResponse);
+  // GET /risk-controls/entry-blockers?symbol&market（銘柄単位の新規建ての可否。審査と同じ述語。#1113 / IADR-0463）。
+  // symbol・market の欠落は INVALID_ARGUMENT。
+  rpc GetEntryBlockers(GetEntryBlockersRequest) returns (GetEntryBlockersResponse);
   // GET /risk-controls/stage-gate（段階ゲートの現況。現段階と、Discord ボットの `/stage status` が読む項目。段 5 で項目を足した）。
   rpc GetStageGate(GetStageGateRequest) returns (GetStageGateResponse);
   // GET /risk-controls/fills?from&to（期間の約定。取り込み行は含まない）。
@@ -203,6 +206,41 @@ message GetSizingContextResponse {
   BrokerProvider mode = 6;
   RiskLimits limits = 7;
   StopLossExecutionMethod stop_loss_method = 8;
+}
+
+// ---- 新規建ての可否（#1113 / IADR-0463） ----
+
+message GetEntryBlockersRequest {
+  optional string symbol = 1;
+  Market market = 2;
+}
+
+// 状態から確定する新規建ての拒否理由（C# `RejectionReason` の同名の値。名前で写す）。
+// 口が返し得る理由だけを置く（送り手の `EntryStateBlockers.Determinable`）。未指定・未知の番号は「不明」。
+enum EntryBlocker {
+  ENTRY_BLOCKER_UNSPECIFIED = 0;
+  ENTRY_BLOCKER_KILL_SWITCH_ACTIVE = 1;
+  ENTRY_BLOCKER_TRADING_PAUSED = 2;
+  ENTRY_BLOCKER_STOPPED_OUT_SAME_DAY = 3;
+  ENTRY_BLOCKER_GOOD_FAITH_VIOLATION_LIMIT_REACHED = 4;
+  ENTRY_BLOCKER_MAX_POSITIONS_EXCEEDED = 5;
+  ENTRY_BLOCKER_DAILY_LOSS_LIMIT_REACHED = 6;
+  ENTRY_BLOCKER_MAX_DRAWDOWN_REACHED = 7;
+}
+
+// 1 方向の理由の一覧。🔴 入れ物の欠落は「不明」、空の入れ物は「確定する拒否は無い」。
+message EntryBlockerReasons {
+  repeated EntryBlocker reasons = 1;
+}
+
+// REST の EntryBlockersView と同じ意味（名前は送り手の型名と変えてある）。
+message GetEntryBlockersResponse {
+  optional string symbol = 1;
+  Market market = 2;
+  // 買いの新規建て（ロングを建てる）。
+  EntryBlockerReasons long_side = 3;
+  // 売りの新規建て（ショートを建てる）。
+  EntryBlockerReasons short_side = 4;
 }
 
 // ---- 段階ゲート ----
