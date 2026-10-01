@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using MarketMonitorService.Common.Abstractions;
 using MarketMonitorService.Domain;
 using MarketMonitorService.Features.MarketMonitor;
@@ -20,7 +21,8 @@ public sealed class MonitorPollingService(
     IClock clock,
     IOptions<MonitorOptions> options,
     ILogger<MonitorPollingService> logger,
-    StopLossLivenessReporter? liveness = null) : BackgroundService
+    StopLossLivenessReporter? liveness = null,
+    FinnhubDailyVolumeRecorder? dailyVolume = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -81,6 +83,21 @@ public sealed class MonitorPollingService(
         foreach (var movement in result.PriceMovements)
         {
             await publish.PublishAsync(movement).ConfigureAwait(false);
+        }
+
+        // FR-01, ADR-0031（計画）決定2〜4, ADR-0043（計画）決定 3, #1132, IADR-0477: 日次要求見積りを巡回ごとに、
+        // この巡回の照会の対象（保有＋監視銘柄）の実数から記録する（是正前は起動時に運用者の申告 1 銘柄で数えていた）。
+        // 観測のみ。失敗しても巡回を失敗させない（発行の後に置く）。
+        if (dailyVolume is not null)
+        {
+            try
+            {
+                dailyVolume.Record(result.QuotedSymbolMarkets, options.Value.PollIntervalSeconds);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Finnhub の日次要求見積りの記録に失敗しました（監視・発行には影響しません）。");
+            }
         }
 
         // FR-10, #902, IADR-0365 決定4: 評価の生存要約・価格欠落の Warning（観測のみ）。発行の**後**に置き、

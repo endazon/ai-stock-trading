@@ -72,17 +72,6 @@ builder.Services.AddSingleton<IMarketDataSource>(sp =>
         sp.GetRequiredService<IConfiguration>().GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>()
         ?? new();
 
-    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
-    // 既定 0 のときは挙動中立）。監視間隔は本サービス自身の巡回間隔（MonitorOptions.PollIntervalSeconds）を使う。
-    // ADR-0043（計画）決定 3, #1030, IADR-0437: 本サービスは全市場が閉じている間は巡回しないため、開場中（米国 390 分）だけで数える。
-    MarketDataSourceFactory.EvaluateDailyVolume(
-        marketDataOptions,
-        sp.GetRequiredService<IOptions<MonitorOptions>>().Value.PollIntervalSeconds,
-        FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),
-        sp.GetRequiredService<BusinessMetrics>(),
-        sp.GetRequiredService<ILoggerFactory>(),
-        MarketSessions.RegularSessionMinutes(Market.UnitedStates));
-
     return MarketDataSourceFactory.Create(
         marketDataOptions,
         sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
@@ -178,6 +167,14 @@ builder.Services.AddScoped<MonitorSettingsService>();
 builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection(MonitorOptions.SectionName));
 // FR-10, #902, IADR-0365: 損切り評価の生存要約・価格欠落の Warning（観測のみ・巡回をまたいで状態を持つため singleton）。
 builder.Services.AddSingleton<StopLossLivenessReporter>();
+// FR-01, ADR-0031（計画）決定2〜4, ADR-0043（計画）決定 3, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに
+// 保有＋監視銘柄の実数から記録する（MonitorPollingService）。運用者の申告（旧 EstimatedSymbolCount）は撤去した。
+builder.Services.AddSingleton(sp => new FinnhubDailyVolumeRecorder(
+    sp.GetRequiredService<IConfiguration>().GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new(),
+    FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),
+    sp.GetRequiredService<BusinessMetrics>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<FinnhubDailyVolumeRecorder>(),
+    MarketSessions.RegularSessionMinutes));
 // FR-03: 監視間隔ごとのポーリング（市場開場時に評価・発行）。
 builder.Services.AddHostedService<MonitorPollingService>();
 
@@ -192,18 +189,11 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
+// #1132, IADR-0477: Finnhub の日次要求見積りは起動時には決まらない（銘柄の実数は巡回の中にある）ため、自己申告には
+// 載せない（是正前は運用者の申告で数えた値を載せていた）。業務メトリクス ast.finnhub.daily_request_estimate で読む。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
-    .AddPortFromBaseUrl("position-store", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder")
-    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）の自己申告。
-    .AddMetric(
-        "finnhub-daily-request-estimate",
-        MarketDataSourceFactory.EstimateDailyVolume(
-            builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new(),
-            builder.Configuration.GetSection(MonitorOptions.SectionName).Get<MonitorOptions>()?.PollIntervalSeconds
-                ?? new MonitorOptions().PollIntervalSeconds,
-            // ADR-0043（計画）決定 3, #1030, IADR-0437: 開場中（米国 390 分）だけで数える。
-            MarketSessions.RegularSessionMinutes(Market.UnitedStates)).ToString()));
+    .AddPortFromBaseUrl("position-store", builder.Configuration["RiskManagement:BaseUrl"], "http", "placeholder"));
 
 // NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0446, #1061 (#753): east-west gRPC の h2c 専用ポート。
 // **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない）。`AddGrpc()` は常に呼ばれる。

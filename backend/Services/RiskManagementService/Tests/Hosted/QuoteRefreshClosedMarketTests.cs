@@ -71,7 +71,16 @@ public class QuoteRefreshClosedMarketTests
 
     private static OpenPosition Jp(string symbol = "7203") => new(symbol, Market.Japan, TradeSide.Buy, 100, 2_000m);
 
-    private static Host Build(DateTimeOffset now, params (string Symbol, Market Market)[] holdings)
+    private static Host Build(DateTimeOffset now, params (string Symbol, Market Market)[] holdings) =>
+        BuildWith(null, now, holdings);
+
+    private static Host BuildWith(
+        FinnhubDailyVolumeRecorder? dailyVolume, DateTimeOffset now, params (string Symbol, Market Market)[] holdings) =>
+        BuildWith(dailyVolume, refreshIntervalSeconds: 60, now, holdings);
+
+    private static Host BuildWith(
+        FinnhubDailyVolumeRecorder? dailyVolume, int refreshIntervalSeconds, DateTimeOffset now,
+        params (string Symbol, Market Market)[] holdings)
     {
         var ledger = new InMemoryPortfolioLedgerStore();
         foreach (var (symbol, market) in holdings)
@@ -90,8 +99,10 @@ public class QuoteRefreshClosedMarketTests
         services.AddSingleton<IMarketDataSource>(source);
         services.AddSingleton(cache);
         services.AddSingleton<TimeProvider>(time);
-        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new MarketDataOptions()));
+        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new MarketDataOptions { RefreshIntervalSeconds = refreshIntervalSeconds }));
         services.AddSingleton<ILogger<QuoteRefreshService>>(NullLogger<QuoteRefreshService>.Instance);
+        if (dailyVolume is not null)
+            services.AddSingleton(dailyVolume);
         services.AddSingleton<QuoteRefreshService>();
         var sut = services.BuildServiceProvider().GetRequiredService<QuoteRefreshService>();
         return new Host(sut, source, cache, time);
@@ -248,16 +259,70 @@ public class QuoteRefreshClosedMarketTests
     }
 
     // T-10-1969, FR-01, ADR-0043 決定 3, #1131: 日次要求量の見積りは市場監視と同じく米国の場中（390 分）で数える。
+    // ［2026-10-02 / #1132, IADR-0477］運用者の申告ではなく、補充の巡回ごとに保有建玉の実数から数える。米国 3 銘柄 × 60 秒
+    // ＝ 1,170（是正前の 24 時間なら 4,320）。閉場中の巡回（引かない）でも同じ値を記録する（見積りは開場中の量）。
     [Fact]
-    public void 日次見積りは場中の分数で数える()
+    public async Task 日次見積りは場中の分数で数える()
     {
-        QuoteRefreshService.ActiveMinutesPerDay.Should().Be(MarketSessions.RegularSessionMinutes(Market.UnitedStates));
-        QuoteRefreshService.ActiveMinutesPerDay.Should().Be(390);
-        MarketDataSourceFactory.EstimateDailyVolume(
-                new MarketDataOptions { Finnhub = new FinnhubMarketDataOptions { EstimatedSymbolCount = 3 } },
-                60,
-                QuoteRefreshService.ActiveMinutesPerDay)
-            .Should().Be(3 * 390, "3 銘柄 × 60 秒巡回 × 390 分（是正前は 24 時間で 3 × 1,440）");
+        var meterName = AiStockTrading.TestSupport.Metrics.MeterCapture.NewIsolatedMeterName();
+        using var capture = new AiStockTrading.TestSupport.Metrics.MeterCapture(meterName);
+        using var metrics = AiStockTrading.Shared.Contracts.Observability.BusinessMetrics.WithMeterName(meterName);
+        var recorder = new FinnhubDailyVolumeRecorder(
+            new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } },
+            new FinnhubDailyVolumeGuardOptions(), metrics, NullLogger.Instance, MarketSessions.RegularSessionMinutes);
+        var host = BuildWith(
+            recorder, UsOpenDay, ("AAPL", Market.UnitedStates), ("MSFT", Market.UnitedStates), ("NVDA", Market.UnitedStates));
+
+        await host.TickAsync(UsOpenDay);
+        await host.TickAsync(UsClose.AddMinutes(5));
+        await host.TickAsync(UsClose.AddMinutes(6)); // 閉場中で引かない巡回
+
+        host.Source.Requested.Should().HaveCount(6, "場中 3 ＋ 引けの後の 1 回 × 3");
+        capture.ValuesOf(AiStockTrading.Shared.Contracts.Observability.BusinessMetricNames.FinnhubDailyVolumeEstimate)
+            .Select(m => m.Value).Should().Equal(3 * 390, 3 * 390, 3 * 390);
+    }
+
+    // T-10-1969, FR-01, #1132（独立監査 🟡）: 見積りは構成の補充間隔で数える。120 秒なら 1 日 195 巡回 × 3 銘柄 ＝ 585
+    //（補充間隔を定数 60 に取り違えると 1,170 になる）。
+    [Fact]
+    public async Task 日次見積りは構成の補充間隔で数える()
+    {
+        var meterName = AiStockTrading.TestSupport.Metrics.MeterCapture.NewIsolatedMeterName();
+        using var capture = new AiStockTrading.TestSupport.Metrics.MeterCapture(meterName);
+        using var metrics = AiStockTrading.Shared.Contracts.Observability.BusinessMetrics.WithMeterName(meterName);
+        var recorder = new FinnhubDailyVolumeRecorder(
+            new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } },
+            new FinnhubDailyVolumeGuardOptions(), metrics, NullLogger.Instance, MarketSessions.RegularSessionMinutes);
+        var host = BuildWith(
+            recorder, refreshIntervalSeconds: 120, UsOpenDay,
+            ("AAPL", Market.UnitedStates), ("MSFT", Market.UnitedStates), ("NVDA", Market.UnitedStates));
+
+        await host.TickAsync(UsOpenDay);
+
+        capture.ValuesOf(AiStockTrading.Shared.Contracts.Observability.BusinessMetricNames.FinnhubDailyVolumeEstimate)
+            .Should().ContainSingle().Which.Value.Should().Be(3 * 195);
+    }
+
+    // T-10-2017, FR-01, #1132: 東証の建玉は Finnhub へ送らないので数えない。記録器が無い（補充の既定構成）ときも補充は従来どおり。
+    [Fact]
+    public async Task 日次見積りは東証の建玉を数えず記録器が無くても補充は回る()
+    {
+        var meterName = AiStockTrading.TestSupport.Metrics.MeterCapture.NewIsolatedMeterName();
+        using var capture = new AiStockTrading.TestSupport.Metrics.MeterCapture(meterName);
+        using var metrics = AiStockTrading.Shared.Contracts.Observability.BusinessMetrics.WithMeterName(meterName);
+        var recorder = new FinnhubDailyVolumeRecorder(
+            new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } },
+            new FinnhubDailyVolumeGuardOptions(), metrics, NullLogger.Instance, MarketSessions.RegularSessionMinutes);
+        var withRecorder = BuildWith(recorder, JpOpenUsClosed, ("AAPL", Market.UnitedStates), ("7203", Market.Japan));
+
+        await withRecorder.TickAsync(JpOpenUsClosed);
+
+        capture.ValuesOf(AiStockTrading.Shared.Contracts.Observability.BusinessMetricNames.FinnhubDailyVolumeEstimate)
+            .Should().ContainSingle().Which.Value.Should().Be(390);
+
+        var without = Build(JpOpenUsClosed, ("AAPL", Market.UnitedStates), ("7203", Market.Japan));
+        await without.TickAsync(JpOpenUsClosed);
+        without.Source.Requested.Should().HaveCount(2);
     }
 
     // ---- #1131 独立監査（PR #1147）の追加: 鮮度の起点の境界・読む側の市場別判定 ----

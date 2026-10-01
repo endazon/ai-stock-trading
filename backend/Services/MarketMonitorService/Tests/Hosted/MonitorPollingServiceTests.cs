@@ -6,7 +6,11 @@ using MarketMonitorService.Infrastructure.ExternalServices;
 using MarketMonitorService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.Metrics;
 using AiStockTrading.TestSupport.Messaging;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
@@ -46,6 +50,12 @@ public class MonitorPollingServiceTests
         // #902, IADR-0365: 生存要約（null なら配線しない＝従来の構成）。
         public StopLossLivenessReporter? Liveness { get; set; }
 
+        // #1132, IADR-0477: 日次要求見積りの記録器（null なら配線しない＝従来の構成）。
+        public FinnhubDailyVolumeRecorder? DailyVolume { get; set; }
+
+        // 巡回の構成（既定 60 秒）。#1132 監査 🟡: 見積りに渡す巡回間隔が構成の値であることを固定する。
+        public MonitorOptions MonitorOptions { get; init; } = new();
+
         private IHost? _host;
 
         public Harness(MarketMonitorSettings settings) => Settings = new InMemoryMonitoredSymbolStore(settings);
@@ -72,8 +82,8 @@ public class MonitorPollingServiceTests
 
             var service = new MonitorPollingService(
                 _host.Services.GetRequiredService<IServiceScopeFactory>(),
-                Schedule, Clock, Options.Create(new MonitorOptions()),
-                NullLogger<MonitorPollingService>.Instance, Liveness);
+                Schedule, Clock, Options.Create(MonitorOptions),
+                NullLogger<MonitorPollingService>.Instance, Liveness, DailyVolume);
 
             return (service, _host);
         }
@@ -259,5 +269,94 @@ public class MonitorPollingServiceTests
         await service.RunOnceAsync(CancellationToken.None);
 
         ClosedLines(Market.UnitedStates).Should().Be(2);
+    }
+
+    // ---- FR-01, #1132, IADR-0477: Finnhub の日次要求見積りを巡回ごとに保有＋監視銘柄の実数から記録する ----
+
+    private static FinnhubDailyVolumeRecorder Recorder(BusinessMetrics metrics) => new(
+        new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } },
+        new FinnhubDailyVolumeGuardOptions(), metrics, NullLogger.Instance, MarketSessions.RegularSessionMinutes);
+
+    private static HeldPosition HeldUs(string symbol) => new(symbol, Market.UnitedStates, TradeSide.Buy, 10, 100m, 50m);
+
+    // 🔴 T-10-2015: 保有 3 ＋ 監視銘柄 6（米国・60 秒巡回）なら 1 巡回 9 要求 × 390 ＝ 3,510 を記録する（#1132 の実測 ≈ 9 要求/分と一致）。
+    // 保有と監視銘柄に同じ銘柄があれば 2 要求として数える（照会の形と同じ）。是正前は申告 1 銘柄で 390 だった。
+    [Fact]
+    public async Task 巡回ごとに保有と監視銘柄の実数から日次見積りを記録する()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        await using var h = new Harness(Settings(
+            Aapl, new("MSFT", Market.UnitedStates), new("NVDA", Market.UnitedStates),
+            new("AMZN", Market.UnitedStates), new("GOOGL", Market.UnitedStates), new("META", Market.UnitedStates)))
+        {
+            DailyVolume = Recorder(metrics),
+        };
+        h.Positions.Set([HeldUs("AAPL"), HeldUs("TSLA"), HeldUs("AMD")]);
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        h.Market.Requested.Should().HaveCount(9, "1 巡回の照会は保有 3 ＋ 監視銘柄 6（AAPL は 2 回）");
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(3_510);
+    }
+
+    // T-10-2015, #1132（独立監査 🟡）: 見積りは構成の巡回間隔で数える。120 秒なら 1 日 195 巡回 × 9 要求 ＝ 1,755
+    //（巡回間隔を定数 60 に取り違えると 3,510 になる）。
+    [Fact]
+    public async Task 日次見積りは構成の巡回間隔で数える()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        await using var h = new Harness(Settings(
+            Aapl, new("MSFT", Market.UnitedStates), new("NVDA", Market.UnitedStates),
+            new("AMZN", Market.UnitedStates), new("GOOGL", Market.UnitedStates), new("META", Market.UnitedStates)))
+        {
+            DailyVolume = Recorder(metrics),
+            MonitorOptions = new MonitorOptions { PollIntervalSeconds = 120 },
+        };
+        h.Positions.Set([HeldUs("AAPL"), HeldUs("TSLA"), HeldUs("AMD")]);
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(9 * 195);
+    }
+
+    // 🔴 T-10-2016: 米国が閉場で東証だけ開いた巡回でも、米国の銘柄を数える（見積りは開場中の量。照会した数で数えると 0 に落ちる）。
+    // 東証の銘柄は Finnhub へ送らないので 0。
+    [Fact]
+    public async Task 米国が閉場の巡回でも米国の銘柄を数え東証の銘柄は数えない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        await using var h = new Harness(Settings(Aapl, new("7203", Market.Japan))) { DailyVolume = Recorder(metrics) };
+        h.Schedule.ClosedMarkets.Add(Market.UnitedStates);
+        h.Positions.Set([HeldUs("MSFT")]);
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        h.Market.Requested.Should().OnlyContain(r => r.Market == Market.Japan, "米国の銘柄は照会しない");
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(2 * 390);
+    }
+
+    // T-10-2019: 全市場が閉じている巡回は評価しない（従来どおり）ので記録もしない（最後の値をゲージが保つ）。
+    [Fact]
+    public async Task 全市場が閉場の巡回は日次見積りを記録しない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        await using var h = new Harness(Settings(Aapl)) { DailyVolume = Recorder(metrics) };
+        h.Schedule.Open = false;
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().BeEmpty();
     }
 }
