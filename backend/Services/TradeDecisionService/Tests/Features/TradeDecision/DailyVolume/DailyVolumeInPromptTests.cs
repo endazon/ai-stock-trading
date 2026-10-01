@@ -180,6 +180,10 @@ public class DailyVolumeInPromptTests
             Calls++;
             return Task.FromResult(answer(symbol));
         }
+
+        public Task<ConfirmedDailyBars?> GetConfirmedBarsAsOfAsync(
+            string symbol, Market market, DateOnly tradingDay, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("本番の判断は as-of の口を呼ばない");
     }
 
     private sealed class FakeClock : IClock { public DateTimeOffset UtcNow => TuesdayMorning; }

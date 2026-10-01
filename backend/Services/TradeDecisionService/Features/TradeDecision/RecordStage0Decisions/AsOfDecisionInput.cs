@@ -61,6 +61,12 @@ public sealed class AsOfDecisionInput
     /// （プロンプトの前日比は「不明」になる）。🔴 **当日の始値・日中高安は渡さない** —— 本番の定時の判断は場中に走り、
     /// 日足の当日の値（その日の全体）は判断時点では得られない情報を含むため、Stage 0 の当日の変化率は常に「不明」とする。
     /// </param>
+    /// <param name="volume">
+    /// FR-04, FR-15, ADR-0048 決定 2, #1139, IADR-0479 決定 2: <b>判断時点の前営業日までの確定足から計算した出来高と 20 日平均比</b>
+    /// （本番と同じ純関数 <see cref="DailyVolumeContext.From"/> の値）。<b>前営業日の日付が AsOf 以降なら例外</b>（当日以降の足で判断させない）。
+    /// 🔴 **null は「判断の出来高が無効」**であり、プロンプトは従来の「出来高: 未提供」の行のまま（本番の無効の構成と同じ）。
+    /// 取得できない日は null ではなく <see cref="DailyVolumeContext.Unavailable"/>（本番と同じ「未提供」の別の文）。
+    /// </param>
     public AsOfDecisionInput(
         DateOnly asOf,
         DailyPolicy policy,
@@ -71,7 +77,8 @@ public sealed class AsOfDecisionInput
         IEnumerable<Stage0AsOfInputKind>? notReconstructable = null,
         IReadOnlyList<WatchedSymbol>? watchlist = null,
         string? watchlistUnavailableReason = null,
-        DatedPrice? previousClose = null)
+        DatedPrice? previousClose = null,
+        DailyVolumeContext? volume = null)
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(sizing);
@@ -94,8 +101,15 @@ public sealed class AsOfDecisionInput
                 nameof(previousClose), pc.Date, $"前日終値が判断時点以降である（AsOf={asOf}）。当日以降の終値を前日比の基準にしない。");
         }
 
+        if (volume is { PreviousDay: { } volumeDay } && volumeDay >= asOf)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(volume), volumeDay, $"出来高の前営業日が判断時点以降である（AsOf={asOf}）。当日以降の足で判断させない。");
+        }
+
         AsOf = asOf;
         Policy = policy;
+        Volume = volume;
         // #1035, IADR-0451: 前日比の基準だけを持つ。当日の始値・日中高安は不明（上の previousClose の説明）。
         Intraday = IntradayPriceContext.Of(previousClose?.Value, open: null, high: null, low: null);
         _previousClose = previousClose;
@@ -134,12 +148,14 @@ public sealed class AsOfDecisionInput
         _price = price;
         _references = references is null ? [] : [.. references];
         _notReconstructable = notReconstructable is null ? [] : [.. notReconstructable];
+        _watchlistUnavailableReason = watchlistUnavailableReason;
     }
 
     private readonly DatedPrice? _price;
     private readonly DatedPrice? _previousClose;
     private readonly IReadOnlyList<RetrievedContext> _references;
     private readonly IReadOnlyList<Stage0AsOfInputKind> _notReconstructable;
+    private readonly string? _watchlistUnavailableReason;
 
     /// <summary>
     /// FR-04, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 当時の監視銘柄（(e)）だけを差し替えた入力を返す。
@@ -147,7 +163,15 @@ public sealed class AsOfDecisionInput
     /// <paramref name="watchlist"/> が null なら (e) は再構成できないと申告し、<paramref name="unavailableReason"/> を理由に載せる。
     /// </summary>
     public AsOfDecisionInput WithWatchlist(IReadOnlyList<WatchedSymbol>? watchlist, string? unavailableReason) =>
-        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason, _previousClose);
+        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason, _previousClose, Volume);
+
+    /// <summary>
+    /// FR-04, FR-15, ADR-0048 決定 2, #1139, IADR-0479 決定 2: 出来高だけを差し替えた入力を返す。
+    /// 他の入力（監視銘柄とその理由を含む）は同じ規律で組み直す。前営業日が AsOf 以降なら例外。
+    /// </summary>
+    public AsOfDecisionInput WithVolume(DailyVolumeContext? volume) =>
+        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, Watchlist, _watchlistUnavailableReason,
+            _previousClose, volume);
 
     // FR-15, ADR-0036 決定1, #749, IADR-0387: 4 種（ADR-0044 決定 3 の (e) を含む）すべての再構成可否を導出する（**部分申告を作らない**）。
     //
@@ -226,6 +250,12 @@ public sealed class AsOfDecisionInput
     /// 当日の始値・日中高安は常に不明（null）。プロンプトの値動きの行へ渡る。
     /// </summary>
     public IntradayPriceContext Intraday { get; }
+
+    /// <summary>
+    /// FR-04, ADR-0048 決定 2, #1139, IADR-0479 決定 2: 判断時点の前営業日までの確定足から計算した出来高（null＝判断の出来高が無効）。
+    /// 記録器はプロンプトの出来高の行をここからだけ書く（本番と同じ <c>TradeDecisionPromptBuilder.Build(volume:)</c>）。
+    /// </summary>
+    public DailyVolumeContext? Volume { get; }
 
     /// <summary>基準通貨への換算レート（基準通貨の市場では 1）。</summary>
     public decimal RateToBase { get; }

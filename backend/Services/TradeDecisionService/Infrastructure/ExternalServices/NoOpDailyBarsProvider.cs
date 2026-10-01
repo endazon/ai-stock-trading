@@ -12,4 +12,9 @@ public sealed class NoOpDailyBarsProvider : IDailyBarsProvider
     public Task<ConfirmedDailyBars?> GetConfirmedBarsAsync(
         string symbol, Market market, CancellationToken cancellationToken = default) =>
         Task.FromResult<ConfirmedDailyBars?>(null);
+
+    // #1139, IADR-0479 決定 1: Stage 0 の as-of の取得も要求しない（無効の間は記録の出来高も従来の「未提供」の行）。
+    public Task<ConfirmedDailyBars?> GetConfirmedBarsAsOfAsync(
+        string symbol, Market market, DateOnly tradingDay, CancellationToken cancellationToken = default) =>
+        Task.FromResult<ConfirmedDailyBars?>(null);
 }

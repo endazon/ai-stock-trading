@@ -65,9 +65,7 @@ public sealed class CachedDailyBarsProvider(
                     return cached.Bars;
             }
 
-            var expectedPrevious = MarketTradingDays.PreviousTradingDay(market, tradingDay);
-            var from = expectedPrevious.AddDays(-LookbackCalendarDays);
-            var to = tradingDay.AddDays(-1);
+            var (expectedPrevious, from, to) = RequestWindow(market, tradingDay);
 
             IReadOnlyList<DailyBar>? fetched;
             try
@@ -93,14 +91,8 @@ public sealed class CachedDailyBarsProvider(
                 return null;
             }
 
-            // 🔴 取引日以降の足（未確定の当日足）を捨てる。重複した日付は先の 1 本だけを残し、昇順に並べる。
-            var confirmed = fetched
-                .Where(b => b.Date < tradingDay)
-                .GroupBy(b => b.Date)
-                .Select(g => g.First())
-                .OrderBy(b => b.Date)
-                .ToList();
-            var result = new ConfirmedDailyBars(tradingDay, expectedPrevious, confirmed);
+            var result = Confirm(tradingDay, expectedPrevious, fetched);
+            var confirmed = result.Bars;
             // 🔴 最後の足が期待する前営業日でない（公開の遅れ・臨時休場の翌日）成功は、失敗と同じく撃ち直しの時刻を置く。
             var stale = confirmed.Count == 0 || confirmed[^1].Date != expectedPrevious;
             _cache[key] = new Entry(tradingDay, result, stale ? now + FailureRetryInterval : null);
@@ -121,6 +113,64 @@ public sealed class CachedDailyBarsProvider(
             gate.Release();
         }
     }
+
+    /// <summary>
+    /// FR-15, ADR-0048 決定 2, #1139, IADR-0479 決定 1: Stage 0 の判断時点（<paramref name="tradingDay"/>＝AsOf）より前の確定足を 1 回取る。
+    /// 期間と切り方は本番（<see cref="GetConfirmedBarsAsync"/>）と同じ関数を使う。🔴 **キャッシュは読まない・書かない**
+    /// （鍵は今の取引日であり、過去日の取得で本番の今日の取得を置き換えない）。米国株だけ。失敗は null（キャンセルは伝える）。
+    /// </summary>
+    public async Task<ConfirmedDailyBars?> GetConfirmedBarsAsOfAsync(
+        string symbol, Market market, DateOnly tradingDay, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
+        if (market != Market.UnitedStates)
+            return null;
+
+        var (expectedPrevious, from, to) = RequestWindow(market, tradingDay);
+        IReadOnlyList<DailyBar>? fetched;
+        try
+        {
+            fetched = await source.FetchAsync(symbol, market, from, to, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Stage 0 の日足の取得で例外。出来高は未提供として記録します: {Symbol} asOf={AsOf}", symbol, tradingDay);
+            return null;
+        }
+
+        if (fetched is null)
+        {
+            logger.LogInformation("Stage 0 の日足を取得できない（出来高は未提供）: {Symbol} asOf={AsOf}", symbol, tradingDay);
+            return null;
+        }
+
+        var result = Confirm(tradingDay, expectedPrevious, fetched);
+        logger.LogInformation(
+            "Stage 0 の日足を取得（判断時点の前営業日まで・前復権）: {Symbol} asOf={AsOf} bars={Bars} last={Last} droppedAsOfOrLater={Dropped}",
+            symbol, tradingDay, result.Bars.Count, result.Bars.Count > 0 ? result.Bars[^1].Date : null,
+            fetched.Count - result.Bars.Count);
+        return result;
+    }
+
+    // #1118, #1139, IADR-0467 決定 3, IADR-0479 決定 1: 要求の期間（本番と Stage 0 で共有）。前営業日の 45 暦日前〜取引日の前日。
+    internal static (DateOnly ExpectedPrevious, DateOnly From, DateOnly To) RequestWindow(Market market, DateOnly tradingDay)
+    {
+        var expectedPrevious = MarketTradingDays.PreviousTradingDay(market, tradingDay);
+        return (expectedPrevious, expectedPrevious.AddDays(-LookbackCalendarDays), tradingDay.AddDays(-1));
+    }
+
+    // 🔴 #1118, #1139: 取引日以降の足（本番は未確定の当日足、Stage 0 は判断時点以降の足＝先読み）を捨てる。
+    // 重複した日付は先の 1 本だけを残し、昇順に並べる（本番と Stage 0 で共有）。
+    internal static ConfirmedDailyBars Confirm(DateOnly tradingDay, DateOnly expectedPrevious, IEnumerable<DailyBar> fetched) =>
+        new(tradingDay, expectedPrevious, [.. fetched
+            .Where(b => b.Date < tradingDay)
+            .GroupBy(b => b.Date)
+            .Select(g => g.First())
+            .OrderBy(b => b.Date)]);
 
     public void Dispose()
     {

@@ -253,10 +253,12 @@ public sealed class Stage0DecisionRecorder(
         // 再構成不可と申告し（`AsOfDecisionInput`）、Stage 0 の合否から外れる（ADR-0044 決定 4 の暫定手段）。
         // FR-02, FR-04, #1035, IADR-0451: 値動きの行は as-of 入力の日中文脈から書く（前日比は日足の前日終値があれば出し、
         // 当日始値比・日中高安は常に「不明」。場中の本番の判断が知り得ない当日の全体の値を渡さない）。
+        // 🔴 FR-04, ADR-0048 決定 2, #1139, IADR-0479: 出来高は as-of 入力の値（判断時点の前営業日までの確定足から本番と同じ計算）を渡す。
+        // 判断の出来高が無効なら null で、従来の「出来高: 未提供」の行のまま（本番の無効の構成と同じプロンプト）。
         var prompt = TradeDecisionPromptBuilder.Build(
             trigger, input.Policy, input.Sizing, input.References, includeProfitability: false,
             currentPrice: input.ReferencePrice, held: HeldPosition.None, working: WorkingEntryOrders.None,
-            watchlist: input.Watchlist, intraday: input.Intraday);
+            watchlist: input.Watchlist, intraday: input.Intraday, volume: input.Volume);
         var fingerprint = Fingerprint(prompt);
 
         if (input.DroppedFutureReferenceCount > 0 || input.DroppedUndatedReferenceCount > 0)
