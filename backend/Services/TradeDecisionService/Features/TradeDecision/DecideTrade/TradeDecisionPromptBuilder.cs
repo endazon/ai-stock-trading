@@ -105,6 +105,17 @@ public static class TradeDecisionPromptBuilder
 
     public const string CloseQuantityIsWholeRule = "手仕舞いは保有の全量をシステムが決済します（一部だけの決済は選べません）。";
 
+    // 🔴 FR-10, FR-04, ADR-0003, #1130, IADR-0471 決定 2: 保有中の銘柄で、リスク管理の新規建ての可否の口（審査と同じ述語）が
+    // 保有の方向の新規建て（買い増し・売り増し）を必ず拒否すると答えたときの文言。実測（2026-09-30 MSFT）: 保有中の銘柄で LLM が
+    // 買い増しを提案し、審査が MaxPositionsExceeded で拒否した（費用・拒否の通知・根拠文の食い違い）。選択肢を Hold と手仕舞いに絞る。
+    // 🔴 手仕舞いは選べる（IADR-0358 決定 2）。方針（PolicySummary）は書き換えない。テストがこれらの const を直接参照する。
+    public const string AddOnBlockedReasonLead = "リスク管理の審査で必ず拒否される状態です";
+
+    public const string AddOnBlockedConversionNote =
+        "買い増し・売り増しを返しても、システムは発注せず Hold（見送り）として扱います。";
+
+    public const string ScreeningAddOnBlockedTail = "手仕舞いの検討に値する場合だけ本判断へ進めます。";
+
     // FR-04, FR-10, ADR-0003, #934, IADR-0390 決定4: 未約定の新規建て注文（承認済み・終端未確認・残数量 > 0）の文言。
     // 実測（2026-09-23）: 指値 715 株が板に残っている間に、判断は根拠に「保有なし」と書いて同じ銘柄を重ねて買った。
     // 🔴 **未約定は約定済みの保有に混ぜない**（数量・平均取得単価・含み損益は約定済みだけ）。別の行で書き、
@@ -235,7 +246,8 @@ public static class TradeDecisionPromptBuilder
         IReadOnlyList<WatchedSymbol>? watchlist = null,
         IntradayPriceContext? intraday = null,
         NewsCollectionStatus? news = null,
-        DailyVolumeContext? volume = null)
+        DailyVolumeContext? volume = null,
+        IReadOnlyList<RejectionReason>? addOnBlockers = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -287,7 +299,7 @@ public static class TradeDecisionPromptBuilder
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
-        AppendHeldPositionSection(sb, held, working, markPrice, priceUnit, context.StopLossMethod, policy.Summary, trigger.Symbol);
+        AppendHeldPositionSection(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol);
         sb.AppendLine("# リスク制約");
         // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金はブローカーの口座照会に由来し、**未供給があり得る**。
         // 🔴 **未供給を数値で埋めない**——LLM に「その額の運用資金がある」と読ませることになる。
@@ -382,7 +394,8 @@ public static class TradeDecisionPromptBuilder
         IReadOnlyList<WatchedSymbol>? watchlist = null,
         IntradayPriceContext? intraday = null,
         NewsCollectionStatus? news = null,
-        DailyVolumeContext? volume = null)
+        DailyVolumeContext? volume = null,
+        IReadOnlyList<RejectionReason>? addOnBlockers = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -419,7 +432,7 @@ public static class TradeDecisionPromptBuilder
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
-        AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit, context.StopLossMethod, policy.Summary, trigger.Symbol);
+        AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol);
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
         // 二段判断（IADR-0039）の費用統制のため、誘因の詳細説明（本判断側）は省き結論だけを渡す。
         // 無条件で出す（Build と同じく空売り可否のフラグをこのメソッドへ持ち込まない）。
@@ -558,9 +571,11 @@ public static class TradeDecisionPromptBuilder
     // 数値はすべてコードが計算して渡す（LLM に損益・到達判定を計算させない。FR-16 と同じ規律）。
     // 🔴 値が無いものは「不明」と書く。0 や空で埋めない（取得単価 0 は含み損益を、損切りライン 0 は「未到達」を捏造する）。
     // FR-04, FR-10, #934, IADR-0390 決定4: working（未約定の新規建て注文。null＝不明）は約定済みの保有とは別の行で書く。
+    // FR-10, #1130, IADR-0471 決定 2: addOnBlockers は保有の方向の新規建て（買い増し・売り増し）の確定した拒否理由。null・空は従来の文言。
     private static void AppendHeldPositionSection(
         StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit,
-        StopLossExecutionMethod? stopLossMethod, string? policySummary = null, string? symbol = null)
+        StopLossExecutionMethod? stopLossMethod, IReadOnlyList<RejectionReason>? addOnBlockers,
+        string? policySummary = null, string? symbol = null)
     {
         sb.AppendLine(HeldPositionSectionTitle);
         if (held is null)
@@ -601,8 +616,10 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine($"- 記録上の損切りライン: {view.StopLossLine}");
         sb.AppendLine($"- {StopLossLineScopeNote}");
         sb.AppendLine($"- 保護の状態: {DescribeProtection(stopLossMethod)}");
-        sb.AppendLine(
-            $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
+        var addOnBlocked = addOnBlockers is { Count: > 0 };
+        sb.AppendLine(addOnBlocked
+            ? $"- この銘柄は保有中です。{AddOnBlockedLine(view, addOnBlockers!)}保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{AddOnBlockedConversionNote}{CloseQuantityIsWholeRule}"
+            : $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
         sb.AppendLine($"- {ExitFollowsPolicyRule}");
         // FR-04, ADR-0003, #1129, IADR-0470 決定 3: 方針の数値の利確条件に達していれば、コードで比べた結果を明示する
         // （達していない・条件を取り出せない・値が不明なら何も足さない＝従来どおり）。
@@ -611,8 +628,12 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine(UsesStopLineExitGuidance(stopLossMethod)
             ? $"- {StopLossLineIsRiskConstraintRule}"
             : $"- {StopLossIsMechanicalRule}");
-        sb.AppendLine($"- {NoAddAtStopLossLineRule}");
-        sb.AppendLine($"- {AddOnlyWithinPolicyRule}");
+        // #1130, IADR-0471 決定 2: 選べない行動（買い増し・売り増し）の条件の行は出さない。
+        if (!addOnBlocked)
+        {
+            sb.AppendLine($"- {NoAddAtStopLossLineRule}");
+            sb.AppendLine($"- {AddOnlyWithinPolicyRule}");
+        }
         // #934, IADR-0390 決定4: 保有中でも未約定の建て増しが在り得る。不明なら買い増し・売り増しを選ばない。
         if (working is null)
         {
@@ -660,7 +681,8 @@ public static class TradeDecisionPromptBuilder
     // FR-04, FR-10, #934, IADR-0390 決定4: 未約定の新規建て注文（null＝不明）は本判断と同じ規則で書き分ける（要約 1 行）。
     private static void AppendHeldPositionSectionShort(
         StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit,
-        StopLossExecutionMethod? stopLossMethod, string? policySummary = null, string? symbol = null)
+        StopLossExecutionMethod? stopLossMethod, IReadOnlyList<RejectionReason>? addOnBlockers,
+        string? policySummary = null, string? symbol = null)
     {
         sb.AppendLine(HeldPositionSectionTitle);
         if (held is null)
@@ -693,7 +715,10 @@ public static class TradeDecisionPromptBuilder
             sb.AppendLine(
                 $"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice} / 含み損益率: {view.UnrealizedPnlRatio} / 記録上の損切りライン: {view.StopLossLine}");
             var stopLineCandidate = UsesStopLineExitGuidance(stopLossMethod) ? ScreeningStopLineCandidateRule : string.Empty;
-            sb.AppendLine($"- {ScreeningHeldRule}{stopLineCandidate}（この建玉の手仕舞いは {view.CloseAction}）");
+            // #1130, IADR-0471 決定 2: 一次（門）でも買い増し・売り増しを候補にしない（本判断へ進めるのは手仕舞いの検討だけ）。
+            sb.AppendLine(addOnBlockers is { Count: > 0 }
+                ? $"- 保有中の銘柄です。{AddOnBlockedLine(view, addOnBlockers)}{ScreeningAddOnBlockedTail}{stopLineCandidate}（この建玉の手仕舞いは {view.CloseAction}）"
+                : $"- {ScreeningHeldRule}{stopLineCandidate}（この建玉の手仕舞いは {view.CloseAction}）");
             // #1129, IADR-0470 決定 3: 一次は門である（Hold で本判断が走らない）。利確条件への到達も本判断と同じ行で知らせる
             // （縮退の保護分 ScreeningContextAssembler.TakeProfitReachedReserveChars）。
             if (TakeProfitReachedLine(policySummary, symbol, held, markPrice, priceUnit) is { } takeProfitLine)
@@ -775,6 +800,23 @@ public static class TradeDecisionPromptBuilder
             + $"（平均取得単価 {entry.ToString("0.####", ci)}{priceUnit}・現在値 {mark.ToString(ci)}{priceUnit}）。"
             + $"{partialNote}手仕舞い（{(held.IsLong ? "Sell" : "Buy")}）を選ぶかは、方針とリスク制約に照らして判断します。";
     }
+
+    // FR-10, #1130, IADR-0471 決定 2: 「本日は買い増し（Buy）を選べません。…（理由: …）。」（本判断・一次で共用）。
+    private static string AddOnBlockedLine(HeldPositionView view, IReadOnlyList<RejectionReason> reasons) =>
+        $"本日は{view.AddWord}（{view.AddAction}）を選べません。{AddOnBlockedReasonLead}（理由: {string.Join("・", reasons.Select(EntryBlockerLabel))}）。";
+
+    // FR-10, #1130, IADR-0471 決定 2: 新規建ての可否の口が返す 7 理由（IADR-0463 決定 2）の日本語名。対象外の値は列挙子の名前のまま書く。
+    internal static string EntryBlockerLabel(RejectionReason reason) => reason switch
+    {
+        RejectionReason.KillSwitchActive => "全停止（kill switch）中",
+        RejectionReason.TradingPaused => "取引の一時停止中",
+        RejectionReason.StoppedOutSameDay => "本日この方向で損切り済み",
+        RejectionReason.GoodFaithViolationLimitReached => "Good Faith Violation の件数が停止基準に到達",
+        RejectionReason.MaxPositionsExceeded => "保有建玉数の上限に到達",
+        RejectionReason.DailyLossLimitReached => "日次損失上限に到達",
+        RejectionReason.MaxDrawdownReached => "最大ドローダウンに到達",
+        _ => reason.ToString(),
+    };
 
     // 保有状況の表示用の値（本判断・一次で共用）。計算はここ 1 か所に寄せる。
     private sealed record HeldPositionView(

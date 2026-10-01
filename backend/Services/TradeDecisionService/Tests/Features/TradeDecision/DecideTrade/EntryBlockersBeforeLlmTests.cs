@@ -219,7 +219,9 @@ public class EntryBlockersBeforeLlmTests
         };
     }
 
-    // T-10-1792: 省けない状態では LLM を呼ぶ（見送りの事実も出さない）。保有中・未約定あり・不明の銘柄では可否を照会もしない。
+    // T-10-1792: 省けない状態では LLM を呼ぶ（見送りの事実も出さない）。未約定あり・不明の銘柄では可否を照会もしない。
+    // ［2026-10-01 / #1130, IADR-0471 決定 1］保有中（ロング・ショート）の銘柄は照会する（買い増し・売り増しの可否をプロンプトへ渡すため。
+    // LLM は必ず呼ぶ。振る舞いは HeldAddOnBlockersTests が固定する）。
     [Theory]
     [MemberData(nameof(CallsLlmCases))]
     public async Task T_10_1792_省けない状態ではLLMを呼ぶ(string name)
@@ -231,7 +233,9 @@ public class EntryBlockersBeforeLlmTests
         probe.Llm.Calls.Should().BeGreaterThan(0, name);
         probe.Forgone.Reports.Should().BeEmpty(name);
         probe.Skips.Reasons.Should().NotContain(DecisionSkipReason.EntryBlockedByRiskControls, name);
-        if (blocked is not null)
+        if (blocked is not null && name is "ロング保有" or "ショート保有")
+            blocked.Calls.Should().ContainSingle($"{name}: 保有中は買い増し・売り増しの可否を 1 回照会する（#1130）");
+        else if (blocked is not null)
             blocked.Calls.Should().BeEmpty($"{name}: 保有 0・未約定なしが既知でなければ照会もしない");
     }
 

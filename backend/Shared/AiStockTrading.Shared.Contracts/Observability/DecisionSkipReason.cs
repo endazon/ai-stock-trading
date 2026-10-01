@@ -86,4 +86,14 @@ public enum DecisionSkipReason
     /// </para>
     /// </summary>
     EntryBlockedByRiskControls,
+
+    /// <summary>
+    /// FR-10, FR-04, #1130, IADR-0471 決定 3: <b>LLM を呼んだ後</b>の見送り。保有中の銘柄で、LLM の前に読んだリスク管理の新規建ての可否の口
+    /// （審査と同じ述語）がその方向の新規建て（買い増し・売り増し）は必ず拒否されると答えていたのに、LLM が買い増し・売り増しを返した。
+    /// 発注意図を作らず Hold に倒す（決済は対象外）。<c>TradeDecisionHeld</c> の理由にもこの名前が載る。
+    /// <para>
+    /// 🔴 計器の移動: 是正前は同じ買い増しが審査で拒否され、<c>ast.risk.rejections{reason}</c> に出ていた。その一部がこの値へ移る（審査は変わらない）。
+    /// </para>
+    /// </summary>
+    AddOnBlockedByRiskControls,
 }
