@@ -54,7 +54,7 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddPortFromBaseUrl("knowledge-base-search", builder.Configuration["KnowledgeBase:Search:BaseUrl"], "http", "noop")
     .AddPortFromBaseUrl("assumptions", builder.Configuration["Configuration:BaseUrl"], "http", "placeholder")
     // FR-02, IADR-0095/0078 決定4: 監視銘柄（watchlist）供給の選択中実装を自己申告する。MarketMonitor:BaseUrl 設定時=http
-    // （権威源 GET /monitor/watchlist へ s2s 照会）、未設定/不正=configuration（構成フォールバック）。introspection から結線状態を判別可能にする。
+    // （権威源 GET /monitor/watchlist へ s2s 照会）、未設定/不正=configuration（未結線の構成ベース）。introspection から結線状態を判別可能にする。
     .AddPortFromBaseUrl("watchlist", builder.Configuration["MarketMonitor:BaseUrl"], "http", "configuration")
     // FR-02, #158, IADR-0068/0099: 判断文脈の現在値ソースの選択中実装を自己申告する。MarketData:Provider 設定時=その値
     //（finnhub 等）、未設定=noop（現在値なし＝現行挙動）。introspection から現在値供給の結線状態を判別可能にする。
@@ -338,7 +338,10 @@ builder.Services.AddSingleton<IMarketCalendar>(_ => new MarketCalendar(
     LoadMarketDates(builder.Configuration, "TradeCycle:HalfDays")));
 // FR-02/13, UC-06, SC-02, IADR-0088/0095: 監視銘柄（watchlist）は権威源（市場監視 #10）の GET /monitor/watchlist を
 // s2s 同期照会（OwnerOrService・IADR-0051）して供給する。MarketMonitor:BaseUrl 未設定/不正 URI は従来どおり構成ベース
-// （TradeCycle:Watchlist）＝現行挙動・後方互換。照会失敗（非 2xx・timeout・例外）は構成ベース（既定 watchlist）へ倒す fail-safe。
+// （TradeCycle:Watchlist）＝現行挙動・後方互換。
+// 🔴 FR-02, ADR-0044, #1134, IADR-0475: 照会失敗（非 2xx・timeout・例外）は**構成ベースへ倒さない**。直前に読めた一覧
+// （WatchlistLastKnown。**singleton**＝供給口はスコープごとに作られるため外に置く）を使い、一度も読めていなければ不明として
+// そのサイクルの判断を見送る（一斉再起動の直後に判断対象が構成の銘柄へ切り替わらない）。
 builder.Services.AddHttpClient("monitor", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
 // NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061 (#753): east-west gRPC（`WatchlistRead`）。
@@ -346,19 +349,20 @@ builder.Services.AddHttpClient("monitor", c => c.Timeout = TimeSpan.FromSeconds(
 // 当時の監視銘柄（下の as-of）のポートが gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
 builder.Services.AddAiStockTradingMarketMonitorGrpc(builder.Configuration);
 builder.Services.AddSingleton<ConfigurationWatchlistProvider>();
+builder.Services.AddSingleton<WatchlistLastKnown>();
 builder.Services.AddScoped<IWatchlistProvider>(sp =>
 {
-    var configFallback = sp.GetRequiredService<ConfigurationWatchlistProvider>();
+    var lastKnown = sp.GetRequiredService<WatchlistLastKnown>();
     if (sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc)
-        return new GrpcWatchlistProvider(monitorGrpc, configFallback, sp.GetRequiredService<ILogger<GrpcWatchlistProvider>>());
+        return new GrpcWatchlistProvider(monitorGrpc, lastKnown, sp.GetRequiredService<ILogger<GrpcWatchlistProvider>>());
 
     var baseUrl = sp.GetRequiredService<IConfiguration>()["MarketMonitor:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        return configFallback;
+        return sp.GetRequiredService<ConfigurationWatchlistProvider>();
 
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("monitor");
     http.BaseAddress = uri;
-    return new HttpWatchlistProvider(http, configFallback, sp.GetRequiredService<ILogger<HttpWatchlistProvider>>());
+    return new HttpWatchlistProvider(http, lastKnown, sp.GetRequiredService<ILogger<HttpWatchlistProvider>>());
 });
 // FR-04, IADR-0039, IADR-0212, IADR-0278, #571: 多数決・二段オーケストレーションの構成（Decision:*）。
 // 未設定なら VoteCount=1・EnableScreening=true（#571 で基盤 trade-decision-screening 登録を前提に既定反転）。

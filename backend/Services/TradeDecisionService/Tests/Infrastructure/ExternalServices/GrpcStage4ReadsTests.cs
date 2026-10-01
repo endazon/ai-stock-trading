@@ -42,23 +42,13 @@ public class GrpcStage4ReadsTests
     private static GrpcDailyPolicyProvider Policy(ServiceProvider sp) =>
         new(sp.GetRequiredService<ReportsGrpcTransport>(), NullLogger<GrpcDailyPolicyProvider>.Instance);
 
-    private static GrpcWatchlistProvider Watchlist(ServiceProvider sp, IWatchlistProvider? fallback = null) =>
-        new(sp.GetRequiredService<MarketMonitorGrpcTransport>(), fallback ?? new FixedFallback(),
+    // #1134, IADR-0475: 供給口は構成の既定を持たない（読めなければ直前に読めた一覧か不明）。
+    private static GrpcWatchlistProvider Watchlist(ServiceProvider sp, WatchlistLastKnown? lastKnown = null) =>
+        new(sp.GetRequiredService<MarketMonitorGrpcTransport>(), lastKnown ?? new WatchlistLastKnown(NullLogger<WatchlistLastKnown>.Instance),
             NullLogger<GrpcWatchlistProvider>.Instance);
 
     private static GrpcAsOfWatchlistSource AsOf(ServiceProvider sp) =>
         new(sp.GetRequiredService<MarketMonitorGrpcTransport>(), NullLogger<GrpcAsOfWatchlistSource>.Instance);
-
-    private sealed class FixedFallback : IWatchlistProvider
-    {
-        internal static readonly IReadOnlyList<WatchedSymbol> List = [new("CONFIG", Market.Japan)];
-
-        public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(List);
-
-        public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<WatchedSymbol>?>(List);
-    }
 
     private static MonitorProto.WatchlistItem Item(string? symbol, MonitorProto.Market market)
     {
@@ -187,8 +177,10 @@ public class GrpcStage4ReadsTests
         (await provider.GetWatchlistAsync()).Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates));
     }
 
+    // ［2026-10-01 改訂 / #1134, IADR-0475］T-10-1694・T-10-1996: 以前は「読めなければ定時サイクルは構成の監視銘柄」を表明していた。
+    // 一度も読めていなければ定時サイクルも不明（null）。構成の既定へは倒さない。
     [Fact]
-    public async Task T_10_1694_読めなければ定時サイクルは構成の監視銘柄_プロンプトは不明()
+    public async Task T_10_1996_一度も読めていなければ定時サイクルもプロンプトも不明()
     {
         await using var host = await Stage4ReadStubHost.StartAsync(new Stage4ReadStubBehavior
         {
@@ -197,8 +189,29 @@ public class GrpcStage4ReadsTests
         await using var sp = Compose(host.Address);
         var provider = Watchlist(sp);
 
-        (await provider.GetWatchlistAsync()).Should().Equal(FixedFallback.List);
+        (await provider.GetWatchlistAsync()).Should().BeNull();
         (await provider.GetAuthoritativeWatchlistAsync()).Should().BeNull();
+    }
+
+    // T-10-1996, FR-02, #1134, IADR-0475: gRPC でも REST と同じ倒す向き —— 読めた後に読めなければ、定時サイクルは直前に読めた一覧、
+    // プロンプトは不明。読めた一覧は提供側の 1 回目の応答、2 回目以降は失敗。
+    [Fact]
+    public async Task T_10_1996_読めた後に読めなければ定時サイクルは直前に読めた一覧_プロンプトは不明()
+    {
+        var first = Items(Item("AAPL", MonitorProto.Market.UnitedStates), Item("7203", MonitorProto.Market.Japan));
+        await using var host = await Stage4ReadStubHost.StartAsync(new Stage4ReadStubBehavior
+        {
+            Watchlist = (call, _) => call == 1
+                ? Task.FromResult(first)
+                : throw new RpcException(new Status(StatusCode.PermissionDenied, $"stub failure #{call}")),
+        });
+        await using var sp = Compose(host.Address);
+        var provider = Watchlist(sp);
+
+        var expected = new[] { new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("7203", Market.Japan) };
+        (await provider.GetWatchlistAsync()).Should().Equal(expected);
+        (await provider.GetWatchlistAsync()).Should().Equal(expected, "読めないときは直前に読めた一覧（構成ではない）");
+        (await provider.GetAuthoritativeWatchlistAsync()).Should().BeNull("プロンプトの口は直前の一覧を使わない");
     }
 
     [Fact]

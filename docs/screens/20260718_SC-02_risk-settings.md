@@ -3,15 +3,15 @@ title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク�
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-09-26
+updated: 2026-10-01
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
 adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040, ADR-0042, ADR-0043]
-iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437]
-specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control]
-issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, planning#31, planning#33]
+iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437, IADR-0475]
+specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20261001_1134_watchlist-no-fallback]
+issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, #1134, planning#31, planning#33]
 -->
 
 
@@ -263,8 +263,12 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
 > **暫定結線の解消（#209・2026-07-20）**: 従来 TradeDecision の定時サイクルは監視銘柄を構成ファイル（`TradeCycle:Watchlist`）
 > から読む暫定実装で、本画面での変更が判断対象に反映されなかった。#209 で TradeDecision は権威源（本画面と同じ
 > MarketMonitor `GET /monitor/watchlist`）を **s2s 同期照会**（`OwnerOrService`）するよう恒久化され、**本画面での監視銘柄変更は
-> 以後の定時サイクルの判断対象に反映される**。供給不達時は構成ベース（既定 watchlist）へ fail-safe に倒す。詳細は
+> 以後の定時サイクルの判断対象に反映される**。供給不達時の扱いは下の 2026-10-01 改訂のとおり。詳細は
 > watchlist の供給を権威源 MarketMonitor への s2s 同期照会に一本化した実装 ADR に記す。
+>
+> **［2026-10-01 改訂 / #1134］供給不達時は構成ベースへ倒さない。** 取引判断は直前に読めた監視銘柄で判断を続け、
+> 起動してから一度も読めていなければそのサイクルの判断を見送る（クラスタの一斉再起動の直後に、本画面で決めた監視銘柄では
+> なく構成の銘柄で判断していた）。構成ベースは権威源へ結線していない構成（後方互換）でだけ使う。
 
 > **リスク上限の保存の復旧（#362・2026-08-05）**: [#329](https://github.com/endazon/ai-stock-trading/issues/329) の equity 比化以降、
 > 本画面からのリスク上限の保存は **400 で拒否されていた**（PUT の本文が旧名＝金額キーのままだったため）。これは

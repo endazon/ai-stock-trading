@@ -302,8 +302,8 @@ public class WatchlistInDecisionPromptTests
     {
         public int AuthoritativeCalls { get; private set; }
 
-        public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken ct = default) =>
-            throw new InvalidOperationException("判断のプロンプトは定時サイクル用の口（構成へ倒す）を使わない");
+        public Task<IReadOnlyList<WatchedSymbol>?> GetWatchlistAsync(CancellationToken ct = default) =>
+            throw new InvalidOperationException("判断のプロンプトは定時サイクル用の口（直前に読めた一覧へ倒す）を使わない");
 
         public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken ct = default)
         {
@@ -430,31 +430,23 @@ public class WatchlistInDecisionPromptTests
         watchlist.AuthoritativeCalls.Should().Be(2);
     }
 
-    // T-10-1544: 🔴 本物の供給口で、権威源が不達なら構成の固定リスト（フォールバック）はプロンプトへ一切載らず「不明」になる。
-    // 定時サイクル用の口は従来どおり既定へ倒す（判断対象の決め方は変えない）。
+    // T-10-1544: 🔴 本物の供給口で、権威源が不達ならプロンプトは「不明」と書く。
+    // ［2026-10-01 改訂 / #1134, IADR-0475］以前は「定時サイクル用の口は従来どおり構成の固定リスト（STALEFIXED）へ倒す」も表明していた。
+    // 供給口は構成を持たなくなり、一度も読めていなければ定時サイクル用の口も不明（null）を返す。
     [Fact]
-    public async Task 権威源が不達なら構成の固定リストはプロンプトに載らず不明と書く_否定形()
+    public async Task 権威源が不達なら定時サイクルもプロンプトも不明で構成の固定リストを使わない_否定形()
     {
-        var fallback = new ConfigurationWatchlistProvider(
-            new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["TradeCycle:Watchlist:0:Symbol"] = "STALEFIXED",
-                    ["TradeCycle:Watchlist:0:Market"] = "UnitedStates",
-                })
-                .Build());
         var provider = new HttpWatchlistProvider(
             new HttpClient(new StatusHandler(HttpStatusCode.ServiceUnavailable)) { BaseAddress = new Uri("http://monitor") },
-            fallback,
+            new WatchlistLastKnown(NullLogger<WatchlistLastKnown>.Instance),
             NullLogger<HttpWatchlistProvider>.Instance);
         var (service, llm) = Create(provider);
 
-        (await provider.GetWatchlistAsync()).Should().ContainSingle().Which.Symbol.Should().Be("STALEFIXED");
+        (await provider.GetWatchlistAsync()).Should().BeNull("一度も読めていなければ不明（構成の既定へ倒さない）");
         var decision = await service.DecideAsync(ScheduledMeta());
 
         decision.Should().NotBeNull();
         llm.Prompts.Should().HaveCount(2);
-        llm.Prompts.Should().OnlyContain(p => !p.Contains("STALEFIXED"), "構成の固定リストを判断時点の監視銘柄として見せない");
         llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
     }
 

@@ -12,7 +12,7 @@ using Composable = TradeDecisionService.Infrastructure;
 
 namespace TradeDecisionService.Tests;
 
-// FR-02, FR-13, UC-06, SC-02, IADR-0095: MarketMonitor:BaseUrl の有無で IWatchlistProvider が構成ベース（後方互換・既定 watchlist）/
+// FR-02, FR-13, UC-06, SC-02, IADR-0095: MarketMonitor:BaseUrl の有無で IWatchlistProvider が構成ベース（未結線の後方互換）/
 // 権威源への s2s 同期照会（Http）に切り替わることを検証する。選択は解決時に構成を読む（WebApplicationFactory の構成上書きに追随する）。
 public class WatchlistProviderSelectionTests
 {
@@ -34,6 +34,32 @@ public class WatchlistProviderSelectionTests
 
         using var scope = factory.Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<IWatchlistProvider>().Should().BeOfType<HttpWatchlistProvider>();
+    }
+
+    // T-10-1998, FR-02, #1134, IADR-0475: 🔴 直前に読めた一覧は**本番の組み立てで singleton**（供給口はスコープごとに作られる）。
+    // 別のスコープで覚えた一覧を、次のスコープの供給口が権威源の不達時に返す（scoped だと次のサイクルで不明に戻る）。
+    // 宛先は接続を拒否する予約ポート（127.0.0.1:9）＝照会は必ず失敗する。
+    [Fact]
+    public async Task T_10_1998_直前に読めた一覧はスコープを跨いで残り_次のサイクルの供給口が使う()
+    {
+        using var factory = new Factory(monitorBaseUrl: "http://127.0.0.1:9");
+        _ = factory.CreateClient();
+
+        WatchlistLastKnown first;
+        using (var scope = factory.Services.CreateScope())
+        {
+            first = scope.ServiceProvider.GetRequiredService<WatchlistLastKnown>();
+            first.Record([new WatchedSymbol("AAPL", AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates)]);
+        }
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<WatchlistLastKnown>().Should().BeSameAs(first);
+            var provider = scope.ServiceProvider.GetRequiredService<IWatchlistProvider>();
+            provider.Should().BeOfType<HttpWatchlistProvider>();
+
+            (await provider.GetWatchlistAsync()).Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
+        }
     }
 
     private sealed class Factory(string? monitorBaseUrl) : WebApplicationFactory<Program>
