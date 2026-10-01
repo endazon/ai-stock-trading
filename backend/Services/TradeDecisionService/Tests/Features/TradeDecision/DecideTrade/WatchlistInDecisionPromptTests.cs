@@ -263,6 +263,8 @@ public class WatchlistInDecisionPromptTests
         // #1081, IADR-0455: ニュースの状態の行の予約（NewsStatusReserveChars）ぶん 700→900 へ底上げした。
         var exactBudget = 750 + Policy.Summary.Length + unknownChars + 400 + ScreeningContextAssembler.PriceContextReserveChars
             + ScreeningContextAssembler.NewsStatusReserveChars
+            // #1129, IADR-0470 決定 3: 利確条件への到達の行の予約ぶんも同幅シフト。
+            + ScreeningContextAssembler.TakeProfitReachedReserveChars
             + ("記事".Length + 100 + 60);
         ScreeningContextAssembler.Assemble(trigger, Policy, [news], null, exactBudget, watchlist: null)
             .Plan.DroppedNewsCount.Should().Be(0, "不明の形では予算ちょうどに収まる");

@@ -321,8 +321,14 @@ public sealed class ReportAutoGenerator(
 
         // FR-09, IADR-0116 決定4: 提示通知の要約。数値はコード集計値のみ、散文はサニタイズ済み（Build の内側で適用）。
         // #840, IADR-0352 決定 5: 未供給だった入力を要約へ載せる（確定依頼を見た時点で欠落に気付ける）。
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の初稿（直近の確定済み方針の継続）に数値の利確条件が無ければ、
+        // 提示の要約で確定の前に警告する（確定は止めない。方針の本文は変えない）。要約に印が入ると、通知サービスが
+        // 提示の通知を Warning へ上げる（未供給の警告と同じ経路。本クラスはロガーを持たない）。
+        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(due.Kind, policy);
+
         var summary = ReportSummary.Build(
-            due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative, unsuppliedInputs);
+            due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative, unsuppliedInputs,
+            takeProfitWarning);
 
         // FR-09, IADR-0116 決定2: 提示まで到達したものだけ通知する（承認待ちに無いものを「確認してください」と言わない）。
         var notificationFailed = presented

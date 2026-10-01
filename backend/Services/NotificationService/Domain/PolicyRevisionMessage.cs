@@ -1,4 +1,5 @@
 using System.Text;
+using AiStockTrading.Shared.Contracts.Events;
 
 namespace NotificationService.Domain;
 
@@ -61,6 +62,13 @@ public static class PolicyRevisionMessage
         // 承認待ちにできなかったときは、報告書サービスの案内（何が保存され、どう確かめるか）をそのまま見せる。
         if (!presented && !string.IsNullOrWhiteSpace(serviceMessage))
             header.Append('\n').Append(serviceMessage);
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: **承認待ちにできた案でも、方針に数値の利確条件が無い警告は確認ボタンの前に見せる。**
+        // 印（契約アセンブリの定数）で始まる行だけを拾う（案内文のほかの行は従来どおり出さない）。確定は止めない。
+        else if (presented)
+        {
+            foreach (var line in TakeProfitWarningLines(serviceMessage))
+                header.Append('\n').Append(line);
+        }
         header.Append("\n確定するまで取引には適用されません。方針案は全文を次に送ります。");
         messages.Add(header.ToString());
 
@@ -105,6 +113,13 @@ public static class PolicyRevisionMessage
         messages.AddRange(watchlistMessages);
         return messages;
     }
+
+    // 案内文のうち、方針に数値の利確条件が無い警告の行（印で始まる行）。
+    internal static IEnumerable<string> TakeProfitWarningLines(string? serviceMessage) =>
+        string.IsNullOrEmpty(serviceMessage)
+            ? []
+            : serviceMessage.ReplaceLineEndings("\n").Split('\n')
+                .Where(l => l.StartsWith(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, StringComparison.Ordinal));
 
     // 上限の長さごとに割る。割り目がサロゲートペアの上位にかかるなら 1 文字手前で割る（文字を壊さない）。
     internal static IReadOnlyList<string> Split(string text, int size)

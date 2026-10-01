@@ -17,6 +17,8 @@ namespace ReportService.Features.Reports;
 // FR-07, FR-04, ADR-0048 決定 4, 04_report-templates §日報の追加記載要件, #1118, IADR-0467 決定 7: **判断へ渡る材料と「未提供」の材料を示す。**
 // 渡らない材料（出来高が未提供の間の出来高・テクニカル指標など）を売買条件に書いた方針では、判断が条件を確かめられず全件 Hold になる
 // （PoC の実測）。出来高の行は判断サービスと同じ設定 DecisionVolume:Enabled（既定 false）で切り替える（呼び出し側が渡す）。
+//
+// FR-04, FR-07, #1129, IADR-0470 決定 1: 日報の方針の**利確の条件を数値で書く**案内を足す（上と同じ「判断が確かめられない条件を書かない」）。
 public static class PolicyRevisionPromptBuilder
 {
     /// <summary>判断へ渡る材料の節の見出し。</summary>
@@ -33,6 +35,22 @@ public static class PolicyRevisionPromptBuilder
     /// <summary>渡らない材料を条件にしないことの案内。</summary>
     public const string NotProvidedMaterialsRule =
         "上に無い材料・「未提供」の材料（例: テクニカル指標〔移動平均・RSI 等〕、板の情報、当日の累計出来高）は判断へ渡らない。これらを買い条件・売り条件にしない（判断が条件を確かめられず、すべて見送りになる）。";
+
+    /// <summary>
+    /// FR-04, FR-07, ADR-0048 決定 4, #1129, IADR-0470 決定 1: 日報の方針の売り条件（利確）を数値で書く案内（日報の改訂にだけ出す）。
+    /// 「十分に」のような語は判断が条件に達したかを確かめられず、利確されないまま保有継続（Hold）に倒れる（実測: 保有中の銘柄の
+    /// 一晩の判断が Hold 17・Buy 1・Sell 0）。判断へ渡る材料の節と同じ考え方（判断が確かめられない条件を書かない）。
+    /// </summary>
+    public const string NumericTakeProfitHeading = "売り条件（利確）の書き方（日報の方針。取引判断が条件に達したかを確かめられるようにする）:";
+
+    /// <summary>利確の条件を数値で書く案内。</summary>
+    public const string NumericTakeProfitRule =
+        "- 保有中の銘柄と新規建ての対象には、利確の条件を銘柄ごとに数値で書く。数値は平均取得単価からの含み益の率（例「AAPL: 取得単価から +5% で利確」）か価格（例「AAPL: 230 ドル以上で利確」）にする。"
+        + "一部だけ利確するときは割合も書く（例「+3% で保有の 50% を利確、+6% で残りを利確」）。";
+
+    /// <summary>数値の無い利確の語を使わない案内。</summary>
+    public const string VagueTakeProfitRule =
+        "- 「十分に」「適切に」「ある程度」「目安で」のような数値の無い語だけで利確の条件を書かない。取引判断は条件に達したかを確かめられず、利確されないまま保有を続ける。数値の利確条件が無い方針は、確定の前に利用者へ警告される。";
 
     public static string Build(PolicyRevisionContext context, bool decisionVolumeProvided = false)
     {
@@ -66,6 +84,15 @@ public static class PolicyRevisionPromptBuilder
         sb.AppendLine(decisionVolumeProvided ? VolumeProvidedMaterial : VolumeNotProvidedMaterial);
         sb.AppendLine(NotProvidedMaterialsRule);
         sb.AppendLine();
+        // FR-04, FR-07, #1129, IADR-0470 決定 1: 日報の方針だけ（週報・月報は銘柄別の売買条件の粒度を持たない）。
+        if (context.Kind == ReportKind.Daily)
+        {
+            sb.AppendLine(NumericTakeProfitHeading);
+            sb.AppendLine(NumericTakeProfitRule);
+            sb.AppendLine(VagueTakeProfitRule);
+            sb.AppendLine();
+        }
+
         sb.AppendLine("出力形式:");
         sb.AppendLine("{\"policySummary\": \"<改訂後の方針>\", \"watchlistChanges\": [{\"action\": \"add\" または \"remove\", \"symbol\": \"<ティッカー>\", \"reason\": \"<理由>\"}], \"rationale\": \"<改訂の説明（1000 文字以内）>\"}");
         sb.AppendLine();

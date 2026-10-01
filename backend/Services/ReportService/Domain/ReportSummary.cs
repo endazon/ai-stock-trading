@@ -27,7 +27,8 @@ public static class ReportSummary
         string periodLabel,
         PnlSummary pnl,
         string? narrative,
-        IReadOnlyList<ReportInput>? unsuppliedInputs = null)
+        IReadOnlyList<ReportInput>? unsuppliedInputs = null,
+        string? policyTakeProfitWarning = null)
     {
         ArgumentNullException.ThrowIfNull(pnl);
 
@@ -61,6 +62,11 @@ public static class ReportSummary
                 $"\n{UnsuppliedWarningPrefix}（確定の前に本文を確認してください）: "
                 + $"{string.Join("、", ReportInputs.Labels(unsuppliedInputs))}");
         }
+
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: **方針に数値の利確条件が無いことを、確定の前に見せる**（確定は止めない）。
+        // 文は PolicyTakeProfitCheck のコード定数（外部入力を含まない）。未供給の警告と同じく散文より前に置く（切り落とされない）。
+        if (!string.IsNullOrEmpty(policyTakeProfitWarning))
+            sb.Append('\n').Append(policyTakeProfitWarning);
 
         // 散文は残り枠に収める（数値行が切り落とされないよう、上限は散文側に配分する）。
         var remaining = MaxLength - sb.Length - 2; // 区切りの空行ぶん
