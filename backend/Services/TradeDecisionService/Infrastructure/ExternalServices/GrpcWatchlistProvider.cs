@@ -11,21 +11,18 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 //
 // 🔴 **行の解釈は REST と同じ 1 つ**（`HttpWatchlistProvider.ToCycleWatchlist` / `ToAuthoritativeWatchlist`）。gRPC は線上の行を
 // 同じ nullable の行へ写すだけ（銘柄の欠落は null、市場の未指定・未知は null）。
-// 🔴 **倒す向きは REST と同じ**: 定時サイクルは読めなければ構成の監視銘柄（fallback）、判断のプロンプトは null（不明）。
+// 🔴 **倒す向きは REST と同じ**（`HttpWatchlistProvider.ToCycleWatchlistOrLastKnown`）: 定時サイクルは読めなければ直前に読めた一覧、
+// 一度も読めていなければ null（不明）で、構成の既定 watchlist へは倒さない（#1134, IADR-0475）。判断のプロンプトは null（不明）。
 public sealed class GrpcWatchlistProvider(
     MarketMonitorGrpcTransport transport,
-    IWatchlistProvider fallback,
+    WatchlistLastKnown lastKnown,
     ILogger<GrpcWatchlistProvider> logger)
     : IWatchlistProvider
 {
-    public async Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<WatchedSymbol>?> GetWatchlistAsync(CancellationToken cancellationToken = default)
     {
         var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
-        if (rows is not null)
-            return HttpWatchlistProvider.ToCycleWatchlist(rows, logger);
-
-        logger.LogWarning("監視銘柄（watchlist）を権威源から読めないため、既定 watchlist（構成）へフォールバックします。");
-        return await fallback.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
+        return HttpWatchlistProvider.ToCycleWatchlistOrLastKnown(rows, lastKnown, logger);
     }
 
     public async Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default)

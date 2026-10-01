@@ -114,7 +114,9 @@ builder.Services.AddSingleton<IMarketDataSource>(sp =>
         marketDataOptions.RefreshIntervalSeconds,
         FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),
         sp.GetRequiredService<BusinessMetrics>(),
-        sp.GetRequiredService<ILoggerFactory>());
+        sp.GetRequiredService<ILoggerFactory>(),
+        // #1131, IADR-0473: 補充は閉場中は引かないため、市場監視と同じく開場中（米国 390 分）だけで数える。
+        QuoteRefreshService.ActiveMinutesPerDay);
 
     return MarketDataSourceFactory.Create(
         marketDataOptions,
@@ -404,7 +406,8 @@ builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceNa
     .AddMetric(
         "finnhub-daily-request-estimate",
         MarketDataSourceFactory.EstimateDailyVolume(
-            introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds).ToString()));
+            introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds,
+            QuoteRefreshService.ActiveMinutesPerDay).ToString()));
 
 // NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0427, #997 (#753): east-west gRPC の h2c 専用ポート。
 // **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない）。`AddGrpc()` は常に呼ばれる。

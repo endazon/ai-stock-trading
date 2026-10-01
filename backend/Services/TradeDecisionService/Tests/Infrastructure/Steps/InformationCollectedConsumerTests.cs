@@ -58,12 +58,26 @@ public class InformationCollectedConsumerTests
     }
     private sealed class FakeWatchlist(params WatchedSymbol[] symbols) : IWatchlistProvider
     {
-        public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<WatchedSymbol>>(symbols);
+        public Task<IReadOnlyList<WatchedSymbol>?> GetWatchlistAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<WatchedSymbol>?>(symbols);
 
         // #1034, IADR-0440 決定 2: 権威源から読めた状態を模す（判断のプロンプトにも同じ一覧が載る）。
         public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<WatchedSymbol>?>(symbols);
+    }
+    // #1134, IADR-0475: 権威源を一度も読めていない（不明）状態を模す。定時サイクルの口は null を返す。
+    private sealed class UnknownWatchlist : IWatchlistProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<WatchedSymbol>?> GetWatchlistAsync(CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<WatchedSymbol>?>(null);
+        }
+
+        public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<WatchedSymbol>?>(null);
     }
     private sealed class CalendarStub(bool open) : IMarketCalendar
     {
@@ -180,6 +194,26 @@ public class InformationCollectedConsumerTests
 
         session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
         session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
+
+        await host.StopAsync();
+    }
+
+    // T-10-1997, FR-02, ADR-0044, #1134, IADR-0475: 🔴 監視銘柄が不明（権威源を一度も読めていない）なら、このサイクルは
+    // 判断も発行もしない（LLM を呼ばない）。例外にもしない（再配送で同じサイクルを繰り返さない）。
+    [Fact]
+    public async Task T_10_1997_監視銘柄が不明ならこのサイクルは判断も発行もしない_否定形()
+    {
+        var watchlist = new UnknownWatchlist();
+        var llm = new RecordingLlm(BuyJson);
+        using var host = await BuildAsync(watchlist, new CalendarStub(open: true), llm);
+
+        var session = await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+
+        session.Executed.MessagesOf<InformationCollected>().Should().NotBeEmpty();
+        watchlist.Calls.Should().Be(1);
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty();
+        llm.Prompts.Should().BeEmpty("不明の監視銘柄で判断しない");
 
         await host.StopAsync();
     }
