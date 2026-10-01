@@ -84,11 +84,26 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        if (_riskFactory is not null)
-            await _riskFactory.DisposeAsync();
-        if (_executionFactory is not null)
-            await _executionFactory.DisposeAsync();
+        // NFR, #1128: ホストの破棄の打ち切り（RabbitMQ の閉じ待ち）で試験を赤にせず、1 つ目が投げても残りの破棄を必ず行う。
+        try
+        {
+            try
+            {
+                await E2EInfrastructure.DisposeQuietlyAsync(_riskFactory, "リスク管理のホスト");
+            }
+            finally
+            {
+                await E2EInfrastructure.DisposeQuietlyAsync(_executionFactory, "発注執行のホスト");
+            }
+        }
+        finally
+        {
+            await DisposeInfrastructureAsync();
+        }
+    }
 
+    private async Task DisposeInfrastructureAsync()
+    {
         // 外部注入時はコンテナを持たない（破棄は呼び出し側の責務）。
         var disposals = new List<Task>();
         if (_postgres is not null)
