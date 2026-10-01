@@ -91,3 +91,6 @@ plan_refs:
 - 繰り返しの 2 行は Debug のため既定のログ水準では見えない（初回と変化は見える。供給が止まれば既存の Warning が出る）。
 - **［2026-10-01 追記 / #1131］独立監査（PR #1147）:** 鮮度の起点に使う取得時刻は**応答の受信時刻**である（`QuoteRefreshService` が応答を待った後の時計で `QuoteCache.Set` する）。したがって 15:59:59.x ET に送った要求の応答が 16:00:00.x に届けば閉場中の値として扱われ、引けの直前の価格が次の開場＋保持期限（既定 300 秒）まで残る。
 - **［2026-10-01 追記 / #1135］独立監査（PR #1147）:** OpenD の `retMsg` を含む例外・ログは本件の伏せ方（末尾 2 桁）を通しておらず、口座 ID が全桁で出得る（本件の射程外。[#1148](https://github.com/endazon/ai-stock-trading/issues/1148)）。
+
+> **［2026-10-02 追記 / #1132］** 決定 3 の渡し方（`Program.cs` 2 か所へ `QuoteRefreshService.ActiveMinutesPerDay` を渡す）は [IADR-0477](IADR-0477_finnhub-daily-estimate-from-actual-symbols.md) が改めた。
+> 見積りは補充の巡回ごとに保有建玉の実数から数え、場中の分は市場ごと（米国 390 分）に渡す。`ActiveMinutesPerDay` は撤去した。決定 3 の数え方（米国の場中 390 分・閉場ごとの 1 回は数えない）は不変。

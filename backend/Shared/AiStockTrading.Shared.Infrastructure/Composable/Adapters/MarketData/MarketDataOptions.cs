@@ -54,12 +54,7 @@ public sealed class FinnhubMarketDataOptions
     /// </summary>
     public int RequestsPerMinute { get; set; } = 5;
 
-    /// <summary>
-    /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: 当サービスが 1 巡回で問い合わせる銘柄数の運用者による
-    /// 申告値（監視銘柄数・保有建玉数等の目安）。<b>既定 0＝未申告</b>（挙動中立。日次要求量の見積りに
-    /// 寄与させない）。実際の銘柄数は監視銘柄（DB）・保有建玉（台帳）等の動的な値であり起動時には
-    /// 確定しないため、運用者が実態に近い値を構成へ明示する（IADR-0275 決定5 が退けたのは
-    /// 「絶対的な上限の新設」であり、日次総量の見積り自体は ADR-0031 決定2 が求める統制である）。
-    /// </summary>
-    public int EstimatedSymbolCount { get; set; }
+    // FR-01, #1132, IADR-0477: 日次要求見積りの銘柄数の申告（旧 EstimatedSymbolCount）は撤去した。申告は 1 に固定され、
+    // 実測と桁で外れた。巡回するサービスは巡回ごとに保有・監視銘柄の実数から数える（FinnhubDailyVolumeRecorder）。
+    // 旧キーを構成に残しても読まれない（束縛は未知のキーを無視する）。
 }

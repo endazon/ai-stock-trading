@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 
 // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub の**日次総量**を見積もる純関数。
@@ -14,8 +16,10 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 // 比べる（ADR-0031 決定 3 の「統制（確定）」の文は有効なまま）。推測値を焼き込まない（IADR-0224）。
 //
 // ADR-0043（計画）決定 3: 1 日の巡回回数は**開場中の巡回だけ**で数える（<see cref="CyclesPerDay(int, int)"/> の
-// activeMinutesPerDay）。全市場が閉じている間は巡回しないプロセス（市場監視）は場中の長さを渡し、24 時間巡回する
-// プロセス（リスク管理の現在値の補充等）は既定の 24 時間のまま数える——数え方は巡回の形に合わせる。
+// activeMinutesPerDay）。閉場中は巡回しない（引かない）プロセス（市場監視・リスク管理の現在値の補充。#1131）は場中の長さを渡し、
+// 24 時間巡回するプロセスは既定の 24 時間のまま数える——数え方は巡回の形に合わせる。
+//
+// #1132, IADR-0477: 銘柄数は運用者の申告ではなく、巡回の対象の実数から数える（<see cref="EstimateForSymbols"/>）。
 //
 // ADR-0031 決定4: 同一鍵を共有する全プロセスの見積りは合算する。<see cref="ApiKeyGroup"/> が
 // 同一のプロセスだけを合算し、鍵が別のプロセスは独立に判定する（合算しない）。
@@ -84,6 +88,31 @@ public static class FinnhubDailyVolumeEstimator
         ArgumentOutOfRangeException.ThrowIfNegative(activeMinutesPerDay);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(activeMinutesPerDay, MinutesPerDay);
         return activeMinutesPerDay * 60 / pollIntervalSeconds;
+    }
+
+    /// <summary>
+    /// FR-01, #1037 の監査, #1132, IADR-0477: 1 銘柄・1 巡回あたりの Finnhub の要求数。米国 1・それ以外 0
+    /// （<see cref="FinnhubMarketDataSource"/> は米国以外の銘柄では要求を出さない）。
+    /// </summary>
+    public static int RequestsPerSymbol(Market market) => market == Market.UnitedStates ? 1 : 0;
+
+    /// <summary>
+    /// FR-01, ADR-0043（計画）決定 3, #1132, IADR-0477: 1 巡回で問い合わせる銘柄の市場から、1 日の要求数を見積もる。
+    /// 銘柄ごとに「1 巡回の要求数 × その市場の場中の分 ÷ 巡回間隔」を足す（開場中の巡回だけで数える）。
+    /// 運用者の申告ではなく、巡回の対象の実数から数える（申告 1 固定で実測と桁で外れた。#1132）。
+    /// </summary>
+    /// <param name="symbolMarkets">1 巡回で問い合わせる銘柄の市場（同じ銘柄を 2 回問い合わせるなら 2 件）。</param>
+    /// <param name="pollIntervalSeconds">巡回間隔（秒）。1 未満は 1 として数える。</param>
+    /// <param name="sessionMinutes">市場ごとの場中の分（共有カーネルの <c>MarketSessions.RegularSessionMinutes</c> を渡す）。</param>
+    public static long EstimateForSymbols(
+        IEnumerable<Market> symbolMarkets, int pollIntervalSeconds, Func<Market, int> sessionMinutes)
+    {
+        ArgumentNullException.ThrowIfNull(symbolMarkets);
+        ArgumentNullException.ThrowIfNull(sessionMinutes);
+
+        var interval = Math.Max(1, pollIntervalSeconds);
+        return symbolMarkets.Sum(m =>
+            RequestsPerSymbol(m) == 0 ? 0L : (long)RequestsPerSymbol(m) * CyclesPerDay(interval, sessionMinutes(m)));
     }
 
     /// <summary>単一プロセスの見積りを日次上限（未設定なら比べない）と突き合わせる。</summary>

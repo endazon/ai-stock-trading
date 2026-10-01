@@ -29,14 +29,9 @@ public sealed class QuoteRefreshService(
     QuoteCache cache,
     TimeProvider timeProvider,
     IOptions<MarketDataOptions> options,
-    ILogger<QuoteRefreshService> logger) : BackgroundService
+    ILogger<QuoteRefreshService> logger,
+    FinnhubDailyVolumeRecorder? dailyVolume = null) : BackgroundService
 {
-    /// <summary>
-    /// FR-01, ADR-0043（計画）決定 3, #1131, IADR-0473: 日次要求量の見積りで「1 日のうち巡回する分数」として渡す値。
-    /// 閉場中は引かないため、市場監視と同じく米国の場中（390 分）で数える（是正前は既定の 24 時間）。
-    /// 閉場ごとの 1 回（銘柄数 × 1 回/日）は数えない。
-    /// </summary>
-    public static int ActiveMinutesPerDay => MarketSessions.RegularSessionMinutes(Market.UnitedStates);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -70,6 +65,22 @@ public sealed class QuoteRefreshService(
 
         // 現在値が要るのは保有中の建玉だけ（IADR-0030 と同じ射影を再利用する）。
         var positions = PortfolioProjection.ProjectOpenPositions(ledger.GetFills());
+
+        // FR-01, ADR-0031（計画）決定2〜4, ADR-0043（計画）決定 3, #1132, IADR-0477: 日次要求見積りを巡回ごとに保有建玉の実数から
+        // 記録する（是正前は起動時に運用者の申告 1 銘柄で数えていた）。閉場中の巡回でも同じ値（開場中の量を数える。
+        // #1131, IADR-0473 決定 3: 1 日の巡回は米国の場中 390 分で数え、閉場ごとの 1 回は数えない）。
+        // 観測のみ。失敗しても補充を止めない（市場監視の巡回と同じ扱い）。
+        if (dailyVolume is not null)
+        {
+            try
+            {
+                dailyVolume.Record(positions.Select(p => p.Market), options.Value.RefreshIntervalSeconds);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Finnhub の日次要求見積りの記録に失敗しました（現在値の補充には影響しません）。");
+            }
+        }
 
         var now = timeProvider.GetUtcNow();
         foreach (var position in positions)
