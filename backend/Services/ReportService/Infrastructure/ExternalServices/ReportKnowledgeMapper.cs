@@ -34,6 +34,9 @@ public static class ReportKnowledgeMapper
             [PeriodKeyAttribute] = report.PeriodKey,
             [KindAttribute] = kind,
             ["assumptionsVersion"] = report.AssumptionsVersion.ToString(CultureInfo.InvariantCulture),
+            // FR-08, UC-01 手順 3, #1138, IADR-0474 決定1: 報告書は銘柄を持たない。判断側の 2 本目の検索（coverage=market の
+            // 単値フィルタ）で引けるよう目印を付ける。付けないと、目印つきの収集情報が K 件たまった後は報告書だけが届かなくなる。
+            [KnowledgeSearchAttributes.Coverage] = KnowledgeSearchAttributes.MarketCoverage,
         };
         if (report.ConfirmedAt is { } confirmedAt)
             attributes["confirmedAt"] = confirmedAt.ToString("O", CultureInfo.InvariantCulture);

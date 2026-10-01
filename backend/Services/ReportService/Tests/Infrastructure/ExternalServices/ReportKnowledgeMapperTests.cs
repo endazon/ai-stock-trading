@@ -84,6 +84,18 @@ public class ReportKnowledgeMapperTests
         doc.Attributes.Should().ContainKey("confirmedAt");
     }
 
+    // T-10-1989, FR-08, UC-01 手順 3, #1138, IADR-0474 決定1: 確定報告書の写しは目印 coverage=market を持ち、symbol を持たない
+    // （判断側の 2 本目の検索〔coverage=market の単値フィルタ〕で引ける。付けないと目印つきの収集情報に枠を取られて届かない）。
+    [Fact]
+    public void 確定報告書の写しは目印coverage_marketを持ち銘柄を持たない()
+    {
+        var doc = ReportKnowledgeMapper.ToDocument(Confirmed());
+
+        doc.Attributes!["coverage"].Should().Be("market");
+        doc.Attributes.Should().NotContainKey("symbol");
+        doc.Tags.Should().NotContain("market");
+    }
+
     // 中央パッケージ管理にログ用のテストダブルが無いため最小の実装を置く
     // （AiStockTrading.Shared.Infrastructure.Tests.Fx.FxRateSourceFactoryTests.CapturingLogger と同型）。
     private sealed class CapturingLogger : ILogger
