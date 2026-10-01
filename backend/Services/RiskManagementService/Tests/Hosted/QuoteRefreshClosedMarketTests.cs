@@ -259,4 +259,48 @@ public class QuoteRefreshClosedMarketTests
                 QuoteRefreshService.ActiveMinutesPerDay)
             .Should().Be(3 * 390, "3 銘柄 × 60 秒巡回 × 390 分（是正前は 24 時間で 3 × 1,440）");
     }
+
+    // ---- #1131 独立監査（PR #1147）の追加: 鮮度の起点の境界・読む側の市場別判定 ----
+
+    // 🔴 T-10-1975, FR-10, #1131: 鮮度の起点は引けの 1 秒前の取得なら取得時刻、引けちょうどの取得なら次の開場
+    // （翌営業日 9:30 ET）。開場の判定を 1 秒ずらす形（取得時刻＋1 秒で判定する）を赤にする。
+    [Fact]
+    public void 引けの1秒前の取得は取得時刻から引けちょうどの取得は次の開場から数える()
+    {
+        var beforeClose = UsClose.AddSeconds(-1); // 15:59:59 EDT
+        QuoteSessionFreshness.FreshFrom(Market.UnitedStates, beforeClose).Should().Be(beforeClose, "引けの 1 秒前は場中");
+        QuoteSessionFreshness.FreshFrom(Market.UnitedStates, UsClose).Should().Be(UsNextOpen, "引けちょうどは閉場（終了は排他）");
+    }
+
+    // T-10-1976, FR-10, #1131: 東証の前場の引け（11:30 JST）でも同じ。11:29:59 の取得は取得時刻、11:30:00 の取得は
+    // 後場の寄り付き（12:30 JST）から数える。
+    [Fact]
+    public void 東証の前場の引けの1秒前は取得時刻から引けちょうどは後場の寄り付きから数える()
+    {
+        var morningClose = new DateTimeOffset(2026, 10, 1, 2, 30, 0, TimeSpan.Zero);    // 11:30 JST
+        var afternoonOpen = new DateTimeOffset(2026, 10, 1, 3, 30, 0, TimeSpan.Zero);   // 12:30 JST
+        QuoteSessionFreshness.FreshFrom(Market.Japan, morningClose.AddSeconds(-1)).Should().Be(morningClose.AddSeconds(-1));
+        QuoteSessionFreshness.FreshFrom(Market.Japan, morningClose).Should().Be(afternoonOpen);
+    }
+
+    // 🔴 T-10-1977, FR-10, #1131: 読む側（CachedCurrentPriceSource）も建玉ごとに**その建玉の市場**で鮮度を判定する。
+    // 東証が場中・米国が閉場の 10:00 JST に両方を引き、保持期限の 1 秒後に読むと、東証の値（場中に引いた値）は
+    // 切れ、米国の値（閉場中に引いた値）は読める。どの建玉も米国（または東証）の市場で判定する形を赤にする。
+    [Fact]
+    public async Task 読む側も建玉の市場ごとに鮮度を判定する()
+    {
+        var host = Build(JpOpenUsClosed, ("AAPL", Market.UnitedStates), ("7203", Market.Japan));
+        await host.TickAsync(JpOpenUsClosed);
+        host.Count("AAPL").Should().Be(1);
+        host.Count("7203").Should().Be(1);
+        var reader = host.Reader();
+
+        host.Time.Now = JpOpenUsClosed + MaxStaleness;
+        reader.GetCurrentPrices([Us(), Jp()]).Keys.Should().BeEquivalentTo(
+            [("AAPL", Market.UnitedStates), ("7203", Market.Japan)], "保持期限ちょうどはどちらも読める");
+
+        host.Time.Now = JpOpenUsClosed + MaxStaleness + TimeSpan.FromSeconds(1);
+        reader.GetCurrentPrices([Us(), Jp()]).Keys.Should().BeEquivalentTo(
+            [("AAPL", Market.UnitedStates)], "東証の値は場中に引いたので切れ、米国の値は閉場中に引いたので次の開場まで読める");
+    }
 }

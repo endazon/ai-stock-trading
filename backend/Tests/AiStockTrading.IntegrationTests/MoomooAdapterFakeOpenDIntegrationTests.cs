@@ -364,6 +364,53 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             LogLevel.Information, LogLevel.Debug, LogLevel.Information, LogLevel.Information);
     }
 
+    // 🔴 T-10-1978, FR-11, #1135（PR #1147 独立監査）: 非 USD の応答（警告）を挟んで近似へ戻ったら、Information で出し直す。
+    // T-10-1973 は USD の明示と反証の経路だけで、非 USD の警告の経路で報告済みを解くことを固定していなかった。
+    [Fact]
+    public async Task 非USDの応答を挟んで近似へ戻れば通貨近似のログをInformationで出し直す()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+        opend.FundsCurrency = (int)TrdCommon.Currency.Currency_JPY;
+        (await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct)).Should().BeNull(); // 非 USD（警告・採らない）
+        opend.FundsCurrency = null;
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似へ戻る（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+
+        Matching(logger, "要求した通貨").Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Information, LogLevel.Debug);
+        Matching(logger, "USD ではありません").Should().ContainSingle(e => e.Level == LogLevel.Warning);
+    }
+
+    // 🔴 T-10-1979, FR-11, #1135（PR #1147 独立監査）: 接続の張り直しで発注先の口座が入れ替わったら、通貨近似のログを
+    // Information で出し直す（「同じ前提」の鍵は口座と要求通貨の組。口座を鍵から外す形を赤にする）。
+    [Fact]
+    public async Task 口座が入れ替われば通貨近似のログをInformationで出し直す()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+        opend.SimulateAccountId = 31_415_926UL;
+        client.OnDisconnect(new MMAPI_Conn(), 1);                                           // 切断 → 次の照会で張り直す
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 別の口座で近似（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+
+        opend.Connections.Should().HaveCount(2, "切断の後は接続を張り直す");
+        Matching(logger, "OpenD 接続完了").Select(e => e.Message.Contains("accId=****26", StringComparison.Ordinal))
+            .Should().Equal(false, true);
+        Matching(logger, "要求した通貨").Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Information, LogLevel.Debug);
+    }
+
     // 🔴 T-10-1974, FR-11, #1135: 口座 ID はどの水準のログにも全桁で出さない（接続完了・口座選択・口座の食い違い）。
     // 伏せ方は検証口の出力と同じ（末尾 2 桁）。口座が入れ替わったら Information で出し直す。
     [Fact]
