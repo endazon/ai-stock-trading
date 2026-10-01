@@ -125,6 +125,12 @@ public sealed class MarketMonitorAppService(
         {
             StopLossEvaluations = evaluations,
             ClosedMarketPositions = closedMarketPositions,
+            // #1132, IADR-0477: 日次要求見積りの母数。開場に関係なく、保有と監視銘柄を別々に数える（照会の形と同じ）。
+            QuotedSymbolMarkets =
+            [
+                .. openPositions.Select(p => p.Market),
+                .. settings.MonitoredSymbols.Select(s => s.Market),
+            ],
         };
     }
 

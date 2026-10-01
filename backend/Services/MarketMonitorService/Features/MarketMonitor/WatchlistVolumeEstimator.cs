@@ -24,10 +24,9 @@ public sealed class WatchlistVolumeEstimator(string? provider, int pollIntervalS
             return null;
 
         // #1037 の監査: 1 銘柄あたりの要求数は市場で決まる（米国 1・それ以外 0。FinnhubMarketDataSource は米国以外で要求を出さない）。
-        var interval = Math.Max(1, pollIntervalSeconds);
-        var estimated = symbolMarkets.Sum(m =>
-            (long)WatchlistCycleFit.RequestsPerSymbol(m)
-            * FinnhubDailyVolumeEstimator.CyclesPerDay(interval, MarketSessions.RegularSessionMinutes(m)));
+        // #1132, IADR-0477: 数え方は巡回ごとの記録（FinnhubDailyVolumeRecorder）と同じ共有の純関数に寄せる（2 通りにしない）。
+        var estimated = FinnhubDailyVolumeEstimator.EstimateForSymbols(
+            symbolMarkets, pollIntervalSeconds, MarketSessions.RegularSessionMinutes);
         return new FinnhubDailyVolumeEstimateView(estimated, dailyLimit, dailyLimit is { } limit && estimated > limit);
     }
 }

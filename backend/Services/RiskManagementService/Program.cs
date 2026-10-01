@@ -107,17 +107,6 @@ builder.Services.AddSingleton<IMarketDataSource>(sp =>
 {
     var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
 
-    // FR-01, ADR-0031（計画）決定2〜4, IADR-0292: 日次要求量の見積り（申告銘柄数 EstimatedSymbolCount が
-    // 既定 0 のときは挙動中立）。巡回間隔は QuoteRefreshService と同じ MarketData:RefreshIntervalSeconds を使う。
-    MarketDataSourceFactory.EvaluateDailyVolume(
-        marketDataOptions,
-        marketDataOptions.RefreshIntervalSeconds,
-        FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),
-        sp.GetRequiredService<BusinessMetrics>(),
-        sp.GetRequiredService<ILoggerFactory>(),
-        // #1131, IADR-0473: 補充は閉場中は引かないため、市場監視と同じく開場中（米国 390 分）だけで数える。
-        QuoteRefreshService.ActiveMinutesPerDay);
-
     return MarketDataSourceFactory.Create(
         marketDataOptions,
         sp.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata"),
@@ -163,7 +152,18 @@ builder.Services.AddScoped<ICurrentPriceSource, CachedCurrentPriceSource>();
 // 現在値の補充は背景で行う（発注判断の同期経路にネットワーク往復を持ち込まない）。
 // 無効（既定）なら補充自体を起動しない＝台帳への巡回アクセスも発生させない。
 if (builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>()?.EnableMarkToMarket == true)
+{
+    // FR-01, ADR-0031（計画）決定2〜4, ADR-0043（計画）決定 3, #1132, IADR-0477: Finnhub の日次要求見積りは補充の巡回ごとに
+    // 保有建玉の実数から記録する（QuoteRefreshService）。運用者の申告（旧 EstimatedSymbolCount）は撤去した。
+    // 補充が起動しない（既定）なら Finnhub へ送らないため、記録器も置かない。
+    builder.Services.AddSingleton(sp => new FinnhubDailyVolumeRecorder(
+        sp.GetRequiredService<IOptions<MarketDataOptions>>().Value,
+        FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),
+        sp.GetRequiredService<BusinessMetrics>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<FinnhubDailyVolumeRecorder>(),
+        AiStockTrading.Shared.Kernel.Trading.MarketSessions.RegularSessionMinutes));
     builder.Services.AddHostedService<QuoteRefreshService>();
+}
 // FR-19, FR-10, #375, ADR-0021 決定3, IADR-0153: 口座種別の観測（BrokerAccountObserved）の保持。
 // **singleton・非永続**である——口座種別は「いまブローカーへ照会して得られる値」であり、プロセスをまたいで
 // 引き継ぐべき事実ではない。再起動で観測が消えれば新規建ては止まり（フェイルクローズ）、次の probe で復帰する。
@@ -394,20 +394,14 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 
 // ADR-0001, FR-15, #22 受け入れ基準③: 実効構成（有効な段=宣言由来・選択中ポート実装・構成バージョン）の自己申告。
 // メッシュ内部限定エンドポイント GET /internal/introspection（無認可・ネットワーク分離が防御）。
-// FR-01, ADR-0031（計画）決定2〜4, IADR-0292: Finnhub 日次要求見積り（回/日）を自己申告へ載せる（下記 AddMetric）。
-var introspectionMarketDataOptions =
-    builder.Configuration.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new();
+// #1132, IADR-0477: Finnhub の日次要求見積りは起動時には決まらない（保有の実数は巡回の中にある）ため、自己申告には
+// 載せない（是正前は運用者の申告で数えた値を載せていた）。業務メトリクス ast.finnhub.daily_request_estimate で読む。
 builder.Services.AddAiStockTradingIntrospection(builder.Configuration, ServiceName, b => b
     .AddPort("market-data", string.IsNullOrWhiteSpace(builder.Configuration["MarketData:Provider"]) ? "noop" : builder.Configuration["MarketData:Provider"]!)
     // #611, IADR-0286 決定1: 認識時レートの源。判断サービスと同じく FxRateSourceFactory.ResolveProvider を単一情報源にする
     // （構成不備で no-op へ倒れる場合は none＝承認の認識時レートは未記録）。
     .AddPort("fx-rate", FxRateSourceFactory.ResolveProvider(
-        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions()))
-    .AddMetric(
-        "finnhub-daily-request-estimate",
-        MarketDataSourceFactory.EstimateDailyVolume(
-            introspectionMarketDataOptions, introspectionMarketDataOptions.RefreshIntervalSeconds,
-            QuoteRefreshService.ActiveMinutesPerDay).ToString()));
+        builder.Configuration.GetSection(FxOptions.SectionName).Get<FxOptions>() ?? new FxOptions())));
 
 // NFR, MSP:ADR-0029, IADR-0328 決定3, IADR-0427, #997 (#753): east-west gRPC の h2c 専用ポート。
 // **`Grpc:Port` が未設定・0 なら立たない**（既定配備の振る舞いは変わらない）。`AddGrpc()` は常に呼ばれる。
