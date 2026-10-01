@@ -203,13 +203,14 @@ public class KnowledgeBaseRetrievalContextProviderTests
     }
 
     // T-10-1984, #1138, IADR-0474 決定3: 補充の判定は足切りの後の件数で行う（目印つきが TopK 件あっても全部古ければ補充を引く）。
+    // 補充の結果にも足切りを掛ける（補充が拾うのは配備前＝古い文書が主。独立監査 🟡: 足切りを外す変異が生き残っていた）。
     [Fact]
     public async Task 目印つきがTopK件あっても全部古ければ補充を引く()
     {
         var stale = Now.AddDays(-30);
         var search = new FakeSearch(
             marketHits: [.. Enumerable.Range(0, 5).Select(i => Hit($"古い市場ニュース {i}", stale))],
-            fallbackHits: [Hit("新しい配備前の市場ニュース", Fresh)]);
+            fallbackHits: [Hit("古い配備前の市場ニュース", stale), Hit("新しい配備前の市場ニュース", Fresh)]);
 
         var result = await GetAsync(Create(search, topK: 5));
 
