@@ -62,6 +62,37 @@ public class KnowledgeBaseWriterSinkTests
         doc.Tags.Should().Contain(["News", "sec-edgar"]);
     }
 
+    // T-10-1988, FR-01, FR-02, FR-08, #1138, IADR-0474 決定1: 銘柄を持たない収集情報（空・空白・収集状態を含む）には
+    // 目印 coverage=market を付け、銘柄を持つ収集情報には付けない（判断側の 2 本目の検索が単値フィルタで引く）。
+    [Fact]
+    public async Task 銘柄を持たない収集情報だけに目印coverage_marketを付ける()
+    {
+        var writer = new CapturingWriter();
+        var sink = NewSink(writer);
+
+        await sink.SaveAsync(
+        [
+            News("google-news の市場ニュース", "google-news", null),
+            News("空白の銘柄", "fred", "  "),
+            DegradationNotice.Create(
+                CollectionDegradation.None with { NewsOutage = true }, DateTimeOffset.Parse("2026-07-18T00:00:00Z")),
+            News("AAPL の企業ニュース", "finnhub", "AAPL"),
+        ]);
+
+        writer.Saved.Should().HaveCount(4);
+        foreach (var doc in writer.Saved.Take(3))
+        {
+            doc.Attributes!["coverage"].Should().Be("market");
+            doc.Attributes.Should().NotContainKey("symbol");
+        }
+
+        var symbolDoc = writer.Saved[3];
+        symbolDoc.Attributes!["symbol"].Should().Be("AAPL");
+        symbolDoc.Attributes.Should().NotContainKey("coverage");
+        // 目印は属性だけに置き、タグ（基盤の辞書検証を通る静的語彙）には載せない（IADR-0315）。
+        writer.Saved.Should().AllSatisfy(d => d.Tags.Should().NotContain("market"));
+    }
+
     // FR-01, FR-08, #705, IADR-0315: 否定形——銘柄コードはタグ集合へ一切現れない
     // （属性 attributes["symbol"] にのみ現れる。絞り込み手段は失われない）。
     [Fact]
