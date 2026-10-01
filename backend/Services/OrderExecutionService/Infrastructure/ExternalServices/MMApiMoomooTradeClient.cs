@@ -910,7 +910,11 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         var rsp = (TrdGetOrderFee.Response)await SendAsync(() => connection.GetOrderFee(req), cancellationToken)
             .ConfigureAwait(false);
 
-        var retMsg = RedactAccountId(rsp.HasRetMsg ? rsp.RetMsg : null, _simAccId);
+        // FR-11, #1148, IADR-0476: 検証口の retMsg も、口座一覧で見た全口座（実弾を含む）と発注口座で伏せる
+        //（独立監査 🟡: 従来は SIMULATE の口座 ID だけを伏せていた）。
+        var retMsg = rsp.HasRetMsg
+            ? RedactRetMsg(rsp.RetMsg, [.. Volatile.Read(ref _knownAccountIds).Append(_simAccId).Where(id => id != 0).Distinct()])
+            : null;
         if (rsp.RetType != MoomooRetType.Succeed)
         {
             return new OrderFeeQueryResult(

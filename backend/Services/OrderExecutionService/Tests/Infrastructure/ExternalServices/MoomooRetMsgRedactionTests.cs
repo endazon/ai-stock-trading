@@ -45,6 +45,15 @@ public class MoomooRetMsgRedactionTests
             .Should().Be("acc ****08 / ****08");
     }
 
+    // T-10-2006, FR-11, #1148: 並びは数値の大きい順（文字列の辞書順では "1724808" < "724808" となり、短い方を先に伏せて
+    // 長い方の頭 1 桁が残る。独立監査 🟢: 辞書順への変異が生き残っていた）。
+    [Fact]
+    public void 辞書順では短い方が先になる組でも長い口座IDを先に伏せる()
+    {
+        MMApiMoomooTradeClient.RedactRetMsg("acc 1724808 / 724808", [724808UL, 1724808UL])
+            .Should().Be("acc ****08 / ****08");
+    }
+
     // T-10-2006, FR-11, #1148: 空・null の retMsg は空のまま（例外文の形を変えない）。
     [Fact]
     public void 空のretMsgは空のまま()
