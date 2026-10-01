@@ -62,11 +62,38 @@ public class WatchlistProviderSelectionTests
         }
     }
 
-    private sealed class Factory(string? monitorBaseUrl) : WebApplicationFactory<Program>
+    // T-10-1998, FR-02, #1134, IADR-0475: gRPC 経路（`MarketMonitor:Grpc` の宣言）でも同じ singleton を使う
+    // （独立監査 🟡-1: gRPC 分岐でスコープごとに箱を作る変異が生き残っていた）。宛先は接続を拒否する予約ポート。
+    [Fact]
+    public async Task T_10_1998_gRPC経路でも直前に読めた一覧はスコープを跨いで残る()
+    {
+        using var factory = new Factory(monitorBaseUrl: "http://127.0.0.1:9", monitorGrpc: "http://127.0.0.1:9");
+        _ = factory.CreateClient();
+
+        WatchlistLastKnown first;
+        using (var scope = factory.Services.CreateScope())
+        {
+            first = scope.ServiceProvider.GetRequiredService<WatchlistLastKnown>();
+            first.Record([new WatchedSymbol("AAPL", AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates)]);
+        }
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var provider = scope.ServiceProvider.GetRequiredService<IWatchlistProvider>();
+            provider.Should().BeOfType<GrpcWatchlistProvider>();
+
+            (await provider.GetWatchlistAsync()).Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
+        }
+    }
+
+    private sealed class Factory(string? monitorBaseUrl, string? monitorGrpc = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
+            // gRPC の輸送は組み立て時に構成を読むため UseSetting で渡す（Stage4GrpcWiringTests と同じ）。
+            if (monitorGrpc is not null)
+                builder.UseSetting("MarketMonitor:Grpc", monitorGrpc);
             builder.ConfigureAppConfiguration((_, cfg) =>
             {
                 var settings = new Dictionary<string, string?>
