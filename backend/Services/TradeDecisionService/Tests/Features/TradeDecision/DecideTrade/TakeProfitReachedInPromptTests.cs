@@ -41,7 +41,8 @@ public class TakeProfitReachedInPromptTests
     [Fact]
     public void 方針の利確条件に達していれば本判断と一次に明示する()
     {
-        const string policy = "AAPL は押し目で拾い、含み益が出たら半分を利確する。\n利確: AAPL +5% (50%)";
+        // #1129 第 4 回監査 R1: 説明の文に「利確」の語があると方針全体が読まれないため、説明の文は「売る」で書く。
+        const string policy = "AAPL は押し目で拾い、含み益が出たら半分を売る。\n利確: AAPL +5% (50%)";
         var held = new HeldPosition(10, 100m, 98m);
 
         foreach (var prompt in new[] { MainPrompt(policy, held, 106m), Screening(policy, held, 106m) })
@@ -165,6 +166,8 @@ public class TakeProfitReachedInPromptTests
     [InlineData("利確: 全銘柄 +3%\n利確: AAPL +8% 以外", "AAPL", 10, "100", "106")]
     [InlineData("利確: AAPL $250 割ったら", "AAPL", 10, "200", "260")]
     [InlineData("利確: AAPL +5%; MSFT +8%", "MSFT", 10, "100", "106")]
+    [InlineData("利確: 全銘柄 +5%\n利確 AAPL +20%", "AAPL", 10, "100", "106")] // #1129 第 4 回監査 R1: コロンの無い上書きの行
+    [InlineData("利確: 全銘柄 +5%\n| 利確 | AAPL | +20% |", "AAPL", 10, "100", "106")]
     public void 監査の場面では到達の行を出さない(string policy, string symbol, int qty, string entry, string mark)
     {
         var e = decimal.Parse(entry, System.Globalization.CultureInfo.InvariantCulture);
@@ -234,7 +237,7 @@ public class TakeProfitReachedInPromptTests
         int Dropped(string policy, int budget) =>
             ScreeningContextAssembler.Assemble(Aapl, Policy(policy), [news], currentPrice: null, budget, watchlist: null).Plan.DroppedNewsCount;
 
-        // 同じ長さの 3 つの方針: AAPL の条件あり／他の銘柄の条件だけ／条件なし（「利確」の後ろにコロンが無い説明の文）。
+        // 同じ長さの 3 つの方針: AAPL の条件あり／他の銘柄の条件だけ／条件なし（「利確」の語を含む書式外の行＝方針全体を読まない。#1129 第 4 回監査 R1）。
         const string withCondition = "利確: AAPL +5%";
         const string otherSymbol = "利確: MSFT +5%";
         const string noCondition = "AAPLは利確 +5%。";

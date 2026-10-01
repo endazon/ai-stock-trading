@@ -7,7 +7,7 @@ namespace AiStockTrading.Shared.Kernel.Tests.Trading;
 
 // FR-04, FR-07, ADR-0003, #1129, IADR-0470 決定 2・3（2026-10-01 追記 / #1129 再監査）: 方針の決まった書式の「利確:」行だけを読み、
 // 自由文からは読まない。書式に合わない「利確:」行が 1 行でもあれば方針全体を読まない。同じ銘柄の行が複数あればすべてに達したときだけ到達。
-// T-10-1880〜1883・T-10-1892〜1896・T-10-1942〜1944。
+// T-10-1880〜1883・T-10-1892〜1896・T-10-1942〜1944・T-10-1947〜1949。
 public class PolicyTakeProfitConditionsTests
 {
     private static PolicyTakeProfitCondition Pct(string? symbol, decimal threshold, decimal? partial = null) =>
@@ -38,7 +38,8 @@ public class PolicyTakeProfitConditionsTests
             symbol, kind, decimal.Parse(threshold, System.Globalization.CultureInfo.InvariantCulture), currency,
             partial is null ? null : decimal.Parse(partial, System.Globalization.CultureInfo.InvariantCulture));
 
-        PolicyTakeProfitConditions.Parse($"押し目買いを優先する。\n{line}\n含み益が十分なら利確を検討する。")
+        // #1129 第 4 回監査 R1: 説明の文に「利確」の語があると方針全体を読まないため、挟む説明の文はその語を含まない。
+        PolicyTakeProfitConditions.Parse($"押し目買いを優先する。\n{line}\n含み益が十分なら売却を検討する。")
             .Should().ContainSingle().Which.Should().Be(expected);
         PolicyTakeProfitConditions.HasAny(line).Should().BeTrue();
     }
@@ -98,6 +99,7 @@ public class PolicyTakeProfitConditionsTests
     }
 
     // 「利確:」の見出しで始まらない行は、数値があっても読まない（自由文。「利確」の後ろにコロンがある行は書式外として方針全体を読まない＝T-10-1942）。
+    // ［2026-10-02 / #1129 第 4 回監査 R1］コロンの有無を問わず「利確」を含む行は書式外なら方針全体を読まない（T-10-1947〜1949）。
     [Theory]
     [InlineData("利確 AAPL +5%")]
     [InlineData("利確：　")]
@@ -177,19 +179,118 @@ public class PolicyTakeProfitConditionsTests
             PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 106m, Currency.Usd).Should().BeEmpty();
     }
 
-    // ---- T-10-1944: 「利確」の後ろにコロンが無い説明の文は候補にしない（書式どおりの行は従来どおり読む） ----
+    // ---- T-10-1944: 「利確」の語を含む説明の文があれば、書式どおりの行があっても方針全体を読まない ----
+    // ［2026-10-02 / #1129 第 4 回監査 R1］挙動を反転した（旧: コロンの無い説明の文は候補にせず、書式どおりの行を読んで到達した）。
+    // コロンを候補の条件にすると、コロンの無い上書き行（「利確 AAPL +20%」等）を黙って飛ばし全銘柄の行を当てるため、語を含む行はすべて候補にする。
 
     [Theory]
     [InlineData("含み益が出たら半分を利確する。")]
     [InlineData("方針: 押し目で拾い、含み益が出たら利確する")]
     [InlineData("利確の理由は決算前の利益確定である")]
-    public void 利確の後ろにコロンが無い説明の文は候補にしない(string prose)
+    [InlineData("権利確定日の前日は新規の空売りをしない")]
+    public void 利確の語を含む説明の文があれば方針全体を読まない(string prose)
     {
         var policy = prose + "\n利確: AAPL +5% (50%)";
 
-        PolicyTakeProfitConditions.Parse(policy).Should().Equal(Pct("AAPL", 5m, 50m));
+        PolicyTakeProfitConditions.Parse(policy).Should().BeEmpty();
+        PolicyTakeProfitConditions.HasAny(policy).Should().BeFalse("警告の対象（方針の利確の条件を読めない）");
         PolicyTakeProfitConditions.Reached(
-            PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 106m, Currency.Usd).Should().Equal(Pct("AAPL", 5m, 50m));
+            PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 106m, Currency.Usd).Should().BeEmpty();
+        // 対照: 語を含まない説明の文なら書式どおりの行を読み、到達する。
+        const string control = "含み益が出たら半分を売る。\n利確: AAPL +5% (50%)";
+        PolicyTakeProfitConditions.Reached(
+            PolicyTakeProfitConditions.ForSymbol(control, "AAPL"), true, 100m, 106m, Currency.Usd).Should().Equal(Pct("AAPL", 5m, 50m));
+    }
+
+    // ---- T-10-1947: 「利確」の後ろに半角コロンが無い上書きの行も、全銘柄の行と並べば方針全体を読まない（#1129 第 4 回監査 R1・否定形） ----
+
+    // 監査の実測: 「- 利確: 全銘柄 +5%」と、AAPL を上書きするつもりのコロンの無い行。候補を「利確 … :」にしていたため、どれも黙って飛ばされ、
+    // 全銘柄 +5% を AAPL に当てて 100→106 を「達した」と書いた。
+    [Theory]
+    [InlineData("- 利確 AAPL +20%")]
+    [InlineData("利確 AAPL +20%")]
+    [InlineData("利確; AAPL +20%")]
+    [InlineData("利確=AAPL +20%")]
+    [InlineData("利確 → AAPL +20%")]
+    [InlineData("利確 - AAPL +20%")]
+    [InlineData("利確｜AAPL +20%")]
+    [InlineData("利確(AAPL)+20%")]
+    [InlineData("利確（AAPL）＝+20%")]
+    [InlineData("利確ライン AAPL +20%")]
+    [InlineData("| 利確 | AAPL | +20% |")]
+    [InlineData("### 利確\n- AAPL +20%")]
+    [InlineData("### 利確条件\n- AAPL: +20%")]
+    [InlineData("AAPL 利確 +20%")]
+    [InlineData("AAPL: 利確 +20%")]
+    [InlineData("ただし AAPL は +20% で利確")]
+    [InlineData("利確\r\n: AAPL +20%")]
+    // NFKC で半角コロンにならない、コロンに似た字。
+    [InlineData("利確\uA789 AAPL +20%")]
+    [InlineData("利確\u2236 AAPL +20%")]
+    [InlineData("利確\u02F8 AAPL +20%")]
+    [InlineData("利確\u02D0 AAPL +20%")]
+    [InlineData("利確\u0589 AAPL +20%")]
+    [InlineData("利確\u05C3 AAPL +20%")]
+    [InlineData("利確\u1804 AAPL +20%")]
+    [InlineData("利確\u205A AAPL +20%")]
+    [InlineData("利確\u2982 AAPL +20%")]
+    [InlineData("利確\u0F0D AAPL +20%")]
+    [InlineData("利確\u1361 AAPL +20%")]
+    [InlineData("利確\u0703 AAPL +20%")]
+    [InlineData("利確\uA4FD AAPL +20%")]
+    [InlineData("利確\u16EC AAPL +20%")]
+    [InlineData("利確\u0903 AAPL +20%")]
+    [InlineData("利確\u05F4 AAPL +20%")]
+    [InlineData("利確 \u2014 AAPL +20%")]
+    public void コロンの無い利確の上書きの行も方針全体を読まない(string overrideLine) => AssertUnreadableWithAllSymbols(overrideLine);
+
+    // ---- T-10-1948: 候補の判定で空白・結合文字・異体字セレクタ・制御文字・見えない字を除く（#1129 第 4 回監査 Y1・Y2・否定形） ----
+
+    [Theory]
+    [InlineData("利 確: AAPL +20%")] // 空白
+    [InlineData("利\u3000確 AAPL +20%")] // 全角の空白
+    [InlineData("利\U000E0100確: AAPL +20%")] // 異体字セレクタ（IVS。Mn）
+    [InlineData("利\uFE00確: AAPL +20%")] // 異体字セレクタ（Mn）
+    [InlineData("利\u0301確: AAPL +20%")] // 結合文字（Mn）
+    [InlineData("利\u20DD確: AAPL +20%")] // 囲みの結合文字（Me）
+    [InlineData("利\u0903確: AAPL +20%")] // 結合文字（Mc）
+    [InlineData("利\u0007確: AAPL +20%")] // 制御文字（Cc）
+    [InlineData("利\u200B確 AAPL +20%")] // 書式文字（Cf）
+    [InlineData("利\uE000確: AAPL +20%")] // 私用（Co）
+    [InlineData("利\u0378確: AAPL +20%")] // 未割り当て（Cn）
+    [InlineData("利\u3164確: AAPL +20%")] // ハングルの埋め字
+    [InlineData("利\u115F確: AAPL +20%")]
+    [InlineData("利\u1160確: AAPL +20%")]
+    [InlineData("利\uFFA0確: AAPL +20%")]
+    [InlineData("利\u2800確: AAPL +20%")] // 点字の空白
+    [InlineData("利\uFFFD確: AAPL +20%")] // 置換文字
+    public void 候補の判定で見えない字を除く(string overrideLine) => AssertUnreadableWithAllSymbols(overrideLine);
+
+    // ---- T-10-1949: 「利確」の語の判定は線形で終わる（#1129 第 4 回監査 Y5。旧「利確.*:」は後戻りで 100k 字に約 28 秒） ----
+
+    [Fact]
+    public void 利確の語を繰り返す長い入力も線形で終わる()
+    {
+        var huge = "- 利確: 全銘柄 +5%\n" + string.Concat(Enumerable.Repeat("利確", 50_000));
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        PolicyTakeProfitConditions.Parse(huge).Should().BeEmpty();
+        sw.Stop();
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
+    }
+
+    private static void AssertUnreadableWithAllSymbols(string overrideLine)
+    {
+        var policy = "- 利確: 全銘柄 +5%\n" + overrideLine;
+
+        PolicyTakeProfitConditions.Parse(policy).Should().BeEmpty(overrideLine);
+        PolicyTakeProfitConditions.HasAny(policy).Should().BeFalse("警告の対象（方針の利確の条件を読めない）");
+        PolicyTakeProfitConditions.ForSymbol(policy, "AAPL").Should().BeEmpty();
+        PolicyTakeProfitConditions.Reached(
+            PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 106m, Currency.Usd).Should().BeEmpty();
+        // 対照: 上書きの行が無ければ全銘柄 +5% に達している。
+        PolicyTakeProfitConditions.Reached(
+            PolicyTakeProfitConditions.ForSymbol("- 利確: 全銘柄 +5%", "AAPL"), true, 100m, 106m, Currency.Usd).Should().ContainSingle();
     }
 
     // ---- T-10-1882: 銘柄への当て方（名指しが全銘柄を上書きする） ----
