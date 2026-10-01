@@ -74,6 +74,9 @@ builder.Services.AddSingleton(sp => InformationSourceFactory.ApplyDemotions(
 // 必須構成（APIキー・銘柄・CIK・系列コード等）が揃ったときのみ有効になる。案A+ の複数ソースはカンマ区切りで指定する
 // （例: finnhub,sec-edgar,edinet,boj,fred）。各ソースは公表レート上限より保守側に送信前自制する（IADR-0064）。
 builder.Services.AddHttpClient();
+// FR-01, #1133, IADR-0469: 情報源の取得（Finnhub を含む）は 1 要求 15 秒で打ち切る（既定 100 秒のままにしない）。
+// 情報源は直列に走るため、応答が止まる相手が 1 つあると巡回全体が待つ。打ち切りは SourceFetchRunner がソース単位の欠測に写す。
+builder.Services.AddHttpClient("collection", c => c.Timeout = FinnhubHttpTimeouts.Collection);
 builder.Services.AddSingleton<IClock, SystemClock>();
 // IADR-0068: レート制限の時刻源は共有物へ揃えるため TimeProvider（IClock は情報源の日付計算で引き続き使う）。
 builder.Services.AddSingleton(TimeProvider.System);

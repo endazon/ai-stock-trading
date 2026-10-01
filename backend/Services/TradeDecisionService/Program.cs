@@ -425,7 +425,8 @@ else
 // （有効化時のみ取得不可/鮮度切れを Hold）に用いる。定時サイクルでも現在値が供給され、権威価格でサイジングされる。
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(MarketDataOptions.SectionName));
-builder.Services.AddHttpClient("marketdata");
+// FR-02, FR-10, #1133, IADR-0469: Finnhub /quote の打ち切りは 5 秒（既定 100 秒のままにしない）。超えたら取得不可（null）。
+builder.Services.AddHttpClient("marketdata", c => c.Timeout = FinnhubHttpTimeouts.Quote);
 builder.Services.AddSingleton<IMarketDataSource>(sp =>
 {
     var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;

@@ -100,6 +100,18 @@ public class InformationSourceSelectionTests
         SourceNames(factory).Should().Equal("fred");
     }
 
+    // T-10-1864, FR-01, #1133, IADR-0469: 情報源の取得（名前付き HttpClient "collection"。Finnhub の /quote・企業ニュースを含む）は
+    // 15 秒で打ち切る。名前付きの構成が無いと既定の 100 秒になり、直列の巡回が止まる相手 1 つで長く待つ。
+    [Fact]
+    public void T_10_1864_情報源の取得は15秒で打ち切る()
+    {
+        using var factory = new Factory([]);
+        _ = factory.CreateClient();
+
+        factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient("collection").Timeout
+            .Should().Be(AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData.FinnhubHttpTimeouts.Collection);
+    }
+
     private static IReadOnlyList<string> SourceNames(Factory factory) =>
         factory.Services.GetRequiredService<ISourceFetcher>().Should().BeOfType<SourceFetchRunner>().Which.SourceNames;
 
