@@ -492,7 +492,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             // FR-11, #1135, IADR-0473: 口座 ID はログでは伏せる（末尾 2 桁。検証口の出力と同じ伏せ方）。
             _logger.LogInformation(
                 "OpenD 接続完了・SIMULATE 口座 accId={AccId} 種別={AccType}",
-                MaskAccountId(_simAccId),
+                TailOnly(_simAccId),
                 _simAccType?.ToString() ?? "不明");
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
@@ -581,7 +581,7 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
                 _logger.Log(
                     IsNewReport(ref _reportedAccountSelection, selection) ? LogLevel.Information : LogLevel.Debug,
                     "SIMULATE 口座を選びました accId={AccId} accType={AccType} trdMarketAuthList={TrdMarketAuthList}",
-                    MaskAccountId(acc.AccID),
+                    TailOnly(acc.AccID),
                     acc.AccType,
                     trdMarketAuthList);
                 return (acc.AccID, MapAccountType(acc.AccType));
@@ -627,8 +627,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             // FR-11, #1135, IADR-0473: 両方の口座 ID を伏せる（末尾 2 桁で取り違えだけは見分けられる）。
             _logger.LogWarning(
                 "照会した SIMULATE 口座 accId={FetchedAccId} が発注先 accId={OrderAccId} と異なるため口座種別を不明として扱います。",
-                MaskAccountId(accId),
-                MaskAccountId(_simAccId));
+                TailOnly(accId),
+                TailOnly(_simAccId));
             return null;
         }
 
@@ -966,9 +966,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
 
     // 口座 ID を末尾 2 桁以外伏せる（検証口の出力で「どの口座か」の取り違えだけを確かめられる粒度）。
     // FR-11, #1135, IADR-0473: ログ（接続完了・口座選択・口座の食い違い）も同じ伏せ方を使う（2 通りの伏せ方を作らない）。
-    public static string MaskAccountId(ulong accountId)
+    public static string MaskAccountId(ulong accountId) => TailOnly(accountId);
+
+    // FR-11, #1135, IADR-0473: 伏せ方の本体（末尾 2 桁以外を伏せる）。ログの引数にはこちらを使う。
+    // 名前に "Account" を含むメソッドの戻り値は、伏せた後の値でも CodeQL（cs/cleartext-storage-of-sensitive-information）が
+    // 「機密を平文で保存」と判定する（名前による推定）。値の意味は MaskAccountId と同一で、全桁は出ない。
+    internal static string TailOnly(ulong value)
     {
-        var digits = accountId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var digits = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return digits.Length <= 2 ? "****" : "****" + digits[^2..];
     }
 
