@@ -54,6 +54,11 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // 同じ行が Information で積もり、一晩に約 106 行ずつ出ていた）。null は未報告。プロセス内だけ（本型は singleton）。
     private string? _reportedAccountSelection;
     private string? _reportedCurrencyApproximation;
+    // FR-11, #1148, IADR-0476: 口座一覧（userID=0＝ログイン中のユーザーの全口座。実弾を含む）で見た口座 ID の集合。
+    // OpenD の retMsg を例外へ載せる前に伏せる値である。口座一覧を読むたびに足し、減らさない（入れ替わった口座も伏せ続ける）。
+    // 差し替えは _knownAccountIdsGate の内側だけ・読み手は Volatile.Read で配列ごと受ける（配列の中身は書き換えない）。
+    private ulong[] _knownAccountIds = [];
+    private readonly object _knownAccountIdsGate = new();
 
     // #732, IADR-0327: connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装であり、
     // Program.cs の登録（2 引数）は変更していない。テストはここへフェイクを差す。
@@ -563,6 +568,9 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         var rsp = (TrdGetAccList.Response)await SendAsync(() => _connection.GetAccList(req), cancellationToken).ConfigureAwait(false);
         EnsureSucceeded(rsp.RetType, rsp.RetMsg, "GetAccList");
 
+        // FR-11, #1148, IADR-0476: 選ぶ前に一覧の全口座（実弾を含む）を覚える。以後の retMsg はこの集合で伏せる。
+        RememberAccountIds(rsp.S2C.AccListList);
+
         foreach (TrdCommon.TrdAcc acc in rsp.S2C.AccListList)
         {
             if (acc.TrdEnv == (int)TrdCommon.TrdEnv.TrdEnv_Simulate)
@@ -902,7 +910,11 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         var rsp = (TrdGetOrderFee.Response)await SendAsync(() => connection.GetOrderFee(req), cancellationToken)
             .ConfigureAwait(false);
 
-        var retMsg = RedactAccountId(rsp.HasRetMsg ? rsp.RetMsg : null, _simAccId);
+        // FR-11, #1148, IADR-0476: 検証口の retMsg も、口座一覧で見た全口座（実弾を含む）と発注口座で伏せる
+        //（独立監査 🟡: 従来は SIMULATE の口座 ID だけを伏せていた）。
+        var retMsg = rsp.HasRetMsg
+            ? RedactRetMsg(rsp.RetMsg, [.. Volatile.Read(ref _knownAccountIds).Append(_simAccId).Where(id => id != 0).Distinct()])
+            : null;
         if (rsp.RetType != MoomooRetType.Succeed)
         {
             return new OrderFeeQueryResult(
@@ -977,8 +989,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         return digits.Length <= 2 ? "****" : "****" + digits[^2..];
     }
 
-    // #1086（AI レビュー指摘）: 検証口の出力の最終段。注文一覧の照会の失敗（EnsureSucceeded の例外文は生の retMsg を含む）を
-    // 含め、どの経路で出る文字列でも口座 ID の全桁を伏せる。接続前（口座未確定＝0）は素通し。
+    // #1086（AI レビュー指摘）: 検証口の出力の最終段。注文一覧の照会の失敗を含め、どの経路で出る文字列でも口座 ID の全桁を伏せる。
+    // 接続前（口座未確定＝0）は素通し。FR-11, #1148, IADR-0476: EnsureSucceeded の例外文は作る時点で既に伏せてある（ここは二重の守り）。
     string IProbeOutputRedactor.Redact(string text) => RedactAccountId(text, _simAccId) ?? text;
 
     // 文中に口座 ID の全桁が現れたら伏せた形へ置き換える（OpenD の retMsg を出力へ流すため）。
@@ -1067,20 +1079,60 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         }
     }
 
-    // #821, IADR-0347: 非成功は **retType / retMsg を保つ例外**で投げる（従来のメッセージ文字列は不変。
-    // MoomooTradeRequestException は InvalidOperationException 派生であり、既存の捕捉は 1 行も変わらない）。
+    // #821, IADR-0347: 非成功は **retType / retMsg を保つ例外**で投げる（MoomooTradeRequestException は
+    // InvalidOperationException 派生であり、既存の捕捉は 1 行も変わらない）。
+    //
+    // 🔴 FR-11, #1148, IADR-0476: **retMsg の口座 ID はここで伏せてから例外を作る**（例外文・RetMsg の両方）。本番で
+    // MoomooTradeRequestException を作るのは本メソッドだけであり、例外はアダプタのログ・例外の連鎖・監査イベント
+    //（S3 の拒否理由・届いたか不明の理由）へ流れる。受け手（48 か所以上）を 1 つずつ直すと次に足した受け手が漏れるため、
+    // 作る側の 1 か所で覆う。retMsg を判定に使うのは頻度制限の語の照合（数字を含まない）だけで、分類は変わらない。
     // S3（代替注文種別）は「拒否理由を監査台帳へ残すこと」自体が目的であり、文字列へ畳むと取り出せない。
     //
     // 🔴 #848, IADR-0117（2026-09-19 追記・改定 8）: **ここで投げる例外は「拒否」を意味しない。**
     // retType は OpenD の返事（-1＝Failed）だけでなく、SDK がクライアント側で合成する「返事を読めなかった」
     //（-100＝送信済み要求の 12 秒打ち切り／-500＝届いた応答の復号・パース失敗）も運ぶ。本メソッドは分類しない
     //（照会・取消も通るため）。**発注の分類はアダプタが MoomooTradeRequestException.IsConfirmedFailure で行う。**
-    private static void EnsureSucceeded(int retType, string retMsg, string op)
+    private void EnsureSucceeded(int retType, string retMsg, string op)
     {
         if (retType != 0) // RetType_Succeed=0
         {
-            throw new MoomooTradeRequestException(op, retType, retMsg);
+            throw new MoomooTradeRequestException(op, retType, RedactRetMsg(retMsg, Volatile.Read(ref _knownAccountIds)));
         }
+    }
+
+    // FR-11, #1148, IADR-0476: 口座一覧で見た口座 ID を集合へ足す（減らさない）。
+    private void RememberAccountIds(IEnumerable<TrdCommon.TrdAcc> accounts)
+    {
+        lock (_knownAccountIdsGate)
+        {
+            var merged = new HashSet<ulong>(_knownAccountIds);
+            foreach (var acc in accounts)
+            {
+                if (acc.AccID != 0)
+                    merged.Add(acc.AccID);
+            }
+            if (merged.Count != _knownAccountIds.Length)
+                Volatile.Write(ref _knownAccountIds, merged.ToArray());
+        }
+    }
+
+    // FR-11, #1148, IADR-0476: OpenD の retMsg から口座 ID の全桁を除く。
+    // - 口座一覧で見た口座 ID があれば、その ID だけを末尾 2 桁以外伏せる（RedactAccountId と同じ伏せ方）。
+    //   注文 ID・日付など他の数字は残す（拒否理由として読めるように）。
+    // - 口座一覧をまだ読めていない（接続時の口座一覧の照会の失敗）なら、伏せる値が分からないため検証口と同じく
+    //   6 桁以上の数字の並びを伏せる（OrderFeeProbeCommand.MaskLongDigitRuns。2 通り目の伏せ方を作らない）。
+    internal static string RedactRetMsg(string? retMsg, IReadOnlyList<ulong> knownAccountIds)
+    {
+        ArgumentNullException.ThrowIfNull(knownAccountIds);
+        if (string.IsNullOrEmpty(retMsg))
+            return retMsg ?? string.Empty;
+        if (knownAccountIds.Count == 0)
+            return OrderFeeProbeCommand.MaskLongDigitRuns(retMsg);
+        var text = retMsg;
+        // 大きい順＝桁の多い順。長い ID の中に短い ID が部分一致しても、先に長い方を伏せる（長い方の頭を残さない）。
+        foreach (var accountId in knownAccountIds.OrderByDescending(id => id))
+            text = RedactAccountId(text, accountId)!;
+        return text;
     }
 
     // ---- MMSPI_Conn ----
