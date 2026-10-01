@@ -2,10 +2,10 @@
 title: IADR-0463 新規建てが必ず拒否される銘柄は LLM を呼ぶ前に見送る。可否はリスク管理が審査と同じ述語で返し、判断側は読むだけ（審査は残す）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-04, FR-11, NFR, UC-01, UC-02, ADR-0003, ADR-0009, IADR-0394, IADR-0358, IADR-0462, IADR-0374, IADR-0390, IADR-0346, IADR-0420, IADR-0427, IADR-0008, IADR-0119, IADR-0452]
+related_ids: [FR-10, FR-04, FR-11, NFR, UC-01, UC-02, ADR-0003, ADR-0009, IADR-0471, IADR-0394, IADR-0358, IADR-0462, IADR-0374, IADR-0390, IADR-0346, IADR-0420, IADR-0427, IADR-0008, IADR-0119, IADR-0452]
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-01
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10, FR-04)
   - planning:projects/ai-stock-trading/07_adr/ADR-0003 (リスク管理の権威と直列の配置)
@@ -84,6 +84,10 @@ IADR-0394 は案 B（判断側で損切りを知って見送る）を「同じ�
     （方向別の答えは将来、保有 0 の空売りを許すときのために返す）。
 - 新しい理由 `EntryBlockedByRiskControls` は `DecisionForgoneBeforeLlmReason` と `DecisionSkipReason` の**末尾**へ足す（名前は一致）。
   `TradeDecisionHeld` は出さない（[IADR-0452](IADR-0452_baseline-advances-on-judged-skip.md) 決定 1）。
+- ［2026-10-01 追記 / [#1130](https://github.com/endazon/ai-stock-trading/issues/1130)］**保有中**の銘柄の「照会もしない」は
+  [IADR-0471](IADR-0471_held-add-on-blockers-prompt-and-hold.md) が改めた（保有中も照会し、LLM は必ず呼んだうえで、保有の方向の新規建て
+  ＝買い増し・売り増しが塞がっていればプロンプトで選べないと伝え、LLM が返しても判断後の見送り `AddOnBlockedByRiskControls` に倒す）。
+  本決定の保有 0・未約定なしの経路は変わらない。
 
 ### 決定 5: 計器の移動を受け入れる（裁定 4）
 

@@ -315,10 +315,11 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 9 地点と判断前の 5 地点で語彙 14 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
-    // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が固定する）。
+    // 判断後の 10 地点と判断前の 5 地点で語彙 15 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
+    // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙14値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙15値を過不足なく覆う()
     {
         DecisionSkipReason[] before =
         [
@@ -332,6 +333,7 @@ public class DecisionHeldReportTests
             DecisionSkipReason.FxRateStaleOpen, DecisionSkipReason.SizingZeroQuantity,
             DecisionSkipReason.WorkingEntriesUnknownOpen, DecisionSkipReason.ReferencePriceInvalid,
             DecisionSkipReason.StopLossDistanceInvalid, DecisionSkipReason.ProfitabilityNotViable,
+            DecisionSkipReason.AddOnBlockedByRiskControls,
         ];
 
         before.Concat(after).Should().BeEquivalentTo(Enum.GetValues<DecisionSkipReason>());
