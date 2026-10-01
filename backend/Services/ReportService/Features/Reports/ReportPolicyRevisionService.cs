@@ -128,7 +128,7 @@ public sealed partial class ReportPolicyRevisionService(
         // 🔴 **LLM を待っている間に報告書が更新されたら（自動生成・別の改訂・確定）、ここで版が合わず保存しない**
         // ——読んだ時点の版（ExpectedVersion）で楽観排他を掛ける。古い土台から作った案で新しい版を踏まない。
         var nextVersion = target.ExpectedVersion + 1;
-        // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の案に数値の利確条件が無ければ、確定の前に警告する（確定は止めない）。
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の案に書式どおりの「利確:」行が無ければ、確定の前に警告する（確定は止めない）。
         // 警告は方針（PolicySummary）へ入れず、改訂の記録・案内文・ログにだけ出す（方針はそのまま判断へ渡る）。
         var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary);
         var body = AppendRevisionRecord(
@@ -185,7 +185,7 @@ public sealed partial class ReportPolicyRevisionService(
         if (takeProfitWarning is not null)
         {
             logger.LogWarning(
-                "方針の改訂案に数値の利確条件がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
+                "方針の改訂案に書式どおりの「利確:」行がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
                 LogSanitizer.Sanitize(key), version);
         }
 

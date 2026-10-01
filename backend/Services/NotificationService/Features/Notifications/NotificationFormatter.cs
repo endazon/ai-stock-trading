@@ -524,7 +524,7 @@ public static class NotificationFormatter
     private static bool HasUnsuppliedInputs(ReportDraftPresented e) =>
         e.Summary?.Contains(ReportSummaryMarkers.UnsuppliedWarningPrefix, StringComparison.Ordinal) == true;
 
-    // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の方針に数値の利確条件が無い（発行側 ReportSummary.Build が同じ印を入れる）。
+    // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の方針に書式どおりの「利確:」行が無い（発行側 ReportSummary.Build が同じ印を入れる）。
     // 確定は止めないが、提示を定常の Info に埋もれさせない（未供給の警告と同じ扱い）。
     private static bool LacksNumericTakeProfit(ReportDraftPresented e) =>
         e.Summary?.Contains(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, StringComparison.Ordinal) == true;

@@ -19,6 +19,8 @@ namespace ReportService.Features.Reports;
 // （PoC の実測）。出来高の行は判断サービスと同じ設定 DecisionVolume:Enabled（既定 false）で切り替える（呼び出し側が渡す）。
 //
 // FR-04, FR-07, #1129, IADR-0470 決定 1: 日報の方針の**利確の条件を数値で書く**案内を足す（上と同じ「判断が確かめられない条件を書かない」）。
+// IADR-0470（2026-10-01 追記 / #1129 再監査）: 条件は**決まった書式の「利確:」行**として書かせる。システム（警告・判断側の到達の明示）は
+// その行だけを読み、自由文からは読まない（共有カーネル PolicyTakeProfitConditions）。説明の文は人が読む方針として残させる。
 public static class PolicyRevisionPromptBuilder
 {
     /// <summary>判断へ渡る材料の節の見出し。</summary>
@@ -43,14 +45,28 @@ public static class PolicyRevisionPromptBuilder
     /// </summary>
     public const string NumericTakeProfitHeading = "売り条件（利確）の書き方（日報の方針。取引判断が条件に達したかを確かめられるようにする）:";
 
-    /// <summary>利確の条件を数値で書く案内。</summary>
+    /// <summary>利確の条件を決まった書式の「利確:」行で書く案内。</summary>
     public const string NumericTakeProfitRule =
-        "- 保有中の銘柄と新規建ての対象には、利確の条件を銘柄ごとに数値で書く。数値は平均取得単価からの含み益の率（例「AAPL: 取得単価から +5% で利確」）か価格（例「AAPL: 230 ドル以上で利確」）にする。"
-        + "一部だけ利確するときは割合も書く（例「+3% で保有の 50% を利確、+6% で残りを利確」）。";
+        "- 保有中の銘柄と新規建ての対象には、銘柄ごとに 1 行ずつ、方針（policySummary）の中に「利確: <ティッカー> <しきい値>」の書式の行を書く（JSON 文字列の中では行を \\n で区切る）。"
+        + "しきい値は、平均取得単価からの含み益の率「+N%」（+ は必須）か、価格「$N」「N ドル」（米ドル）・「N 円」のどれか 1 つにする。"
+        + "一部だけ利確するときは、しきい値の後ろに括弧で割合「(N%)」を書く。すべての銘柄に同じ条件を掛けるときは、ティッカーの代わりに「全銘柄」と書く（銘柄の行があれば、その銘柄には銘柄の行が優先する）。";
+
+    /// <summary>「利確:」行の例（試験が、共有カーネルの読み取りで条件として読めることを固定する）。</summary>
+    public static readonly IReadOnlyList<string> TakeProfitLineExamples = ["利確: AAPL +5%", "利確: MSFT $450 (50%)", "利確: 全銘柄 +8%"];
+
+    /// <summary>「利確:」行の例の案内。</summary>
+    public static readonly string TakeProfitLineExamplesRule =
+        "- 例: " + string.Join("／", TakeProfitLineExamples.Select(e => $"「{e}」"))
+        + "（AAPL は平均取得単価から +5% で利確、MSFT は 450 ドルで保有の 50% を利確、他の銘柄は +8% で利確）。";
+
+    /// <summary>「利確:」行に書式以外の文字を書かない案内（説明の文は別に残す）。</summary>
+    public const string TakeProfitLineStrictRule =
+        "- 「利確:」で始める行には、この書式以外の文字（「で利確」「以外」「。」など）を書かない。書式に合わない「利確:」行が 1 行でもあると、システムはその方針の利確の条件を 1 つも読まない。"
+        + "条件の理由や補足は「利確:」行とは別の説明の文に書く（説明の文は、これまでどおり人が読む方針として書く）。";
 
     /// <summary>数値の無い利確の語を使わない案内。</summary>
     public const string VagueTakeProfitRule =
-        "- 「十分に」「適切に」「ある程度」「目安で」のような数値の無い語だけで利確の条件を書かない。取引判断は条件に達したかを確かめられず、利確されないまま保有を続ける。数値の利確条件が無い方針は、確定の前に利用者へ警告される。";
+        "- 「十分に」「適切に」「ある程度」「目安で」のような数値の無い語だけで利確の条件を書かない。取引判断は条件に達したかを確かめられず、利確されないまま保有を続ける。書式どおりの「利確:」行が無い方針は、確定の前に利用者へ警告される。";
 
     public static string Build(PolicyRevisionContext context, bool decisionVolumeProvided = false)
     {
@@ -89,6 +105,8 @@ public static class PolicyRevisionPromptBuilder
         {
             sb.AppendLine(NumericTakeProfitHeading);
             sb.AppendLine(NumericTakeProfitRule);
+            sb.AppendLine(TakeProfitLineExamplesRule);
+            sb.AppendLine(TakeProfitLineStrictRule);
             sb.AppendLine(VagueTakeProfitRule);
             sb.AppendLine();
         }

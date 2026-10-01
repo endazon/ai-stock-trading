@@ -6,14 +6,14 @@ using Xunit;
 
 namespace NotificationService.Tests;
 
-// T-10-1888, FR-04, FR-07, FR-09, #1129, IADR-0470 決定 4: 日報の方針に数値の利確条件が無い警告を、確定の前に Discord で見せる
+// T-10-1888, FR-04, FR-07, FR-09, #1129, IADR-0470 決定 4: 日報の方針に書式どおりの「利確:」行が無い警告を、確定の前に Discord で見せる
 // （提示の通知は Warning へ上げ、/policy の改訂案は承認待ちにできた案でも確認ボタンの前に警告の行を出す）。確定は止めない。
 public class PolicyTakeProfitWarningNotificationTests
 {
-    private const string WarningLine = ReportSummaryMarkers.PolicyTakeProfitMissingPrefix + "（確定はできます）: 数値で書いてください。";
+    private const string WarningLine = ReportSummaryMarkers.PolicyTakeProfitMissingPrefix + "（確定はできます）: 「利確: AAPL +5%」の形の行を足してください。";
 
     [Fact]
-    public void 数値の利確条件が無い方針のドラフトの提示は_Warning_で通知する()
+    public void 書式どおりの利確の行が無い方針のドラフトの提示は_Warning_で通知する()
     {
         var e = new ReportDraftPresented(
             "daily-2026-10-01", "Daily", "2026-10-01",

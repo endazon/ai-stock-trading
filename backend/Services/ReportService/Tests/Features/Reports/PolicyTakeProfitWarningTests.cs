@@ -11,12 +11,13 @@ using Xunit;
 namespace ReportService.Tests;
 
 // FR-04, FR-07, ADR-0003, ADR-0048 決定 4, #1129, IADR-0470 決定 1・4（オーナー裁定 2026-10-01）:
-// 日報の方針の利確条件を数値で書くよう方針の改訂 LLM へ求め、数値の利確条件が無い方針は**確定の前に警告する**（確定は止めない）。
+// 日報の方針の利確条件を決まった書式の「利確:」行で書くよう方針の改訂 LLM へ求め、書式どおりの行が無い（または書式に合わない
+// 「利確:」行がある）方針は**確定の前に警告する**（確定は止めない。IADR-0470 の 2026-10-01 追記 / #1129 再監査）。
 // 警告は方針の本文へ入れない（方針はそのまま判断へ渡る）。T-10-1884〜1887。
 public class PolicyTakeProfitWarningTests
 {
     private const string VaguePolicy = "含み益が十分に出た段階で利確する。押し目買いを優先する。";
-    private const string NumericPolicy = "AAPL: 取得単価から +5% で利確。押し目買いを優先する。";
+    private const string NumericPolicy = "AAPL は取得単価から 5% 上がったら利確する。押し目買いを優先する。\n利確: AAPL +5%";
 
     // ---- T-10-1884: 方針の改訂のプロンプト ----
 
@@ -28,9 +29,14 @@ public class PolicyTakeProfitWarningTests
 
         prompt.Should().Contain(PolicyRevisionPromptBuilder.NumericTakeProfitHeading)
             .And.Contain(PolicyRevisionPromptBuilder.NumericTakeProfitRule)
+            .And.Contain(PolicyRevisionPromptBuilder.TakeProfitLineExamplesRule)
+            .And.Contain(PolicyRevisionPromptBuilder.TakeProfitLineStrictRule)
             .And.Contain(PolicyRevisionPromptBuilder.VagueTakeProfitRule);
         PolicyRevisionPromptBuilder.VagueTakeProfitRule.Should().Contain("十分に").And.Contain("適切に");
-        PolicyRevisionPromptBuilder.NumericTakeProfitRule.Should().Contain("取得単価").And.Contain("%").And.Contain("割合");
+        PolicyRevisionPromptBuilder.NumericTakeProfitRule.Should().Contain("利確: <ティッカー> <しきい値>").And.Contain("+N%")
+            .And.Contain("全銘柄").And.Contain("(N%)").And.Contain("\\n");
+        PolicyRevisionPromptBuilder.TakeProfitLineStrictRule.Should().Contain("説明の文");
+        PolicyRevisionPromptBuilder.TakeProfitLineExamples.Should().HaveCount(3);
 
         // 案内はデータ（利用者の指示）より前に置く（指示で案内を偽装できない。材料の節と同じ構造分離）。
         prompt.IndexOf(PolicyRevisionPromptBuilder.NumericTakeProfitHeading, StringComparison.Ordinal)
@@ -39,12 +45,19 @@ public class PolicyTakeProfitWarningTests
         prompt.Should().Contain(PolicyRevisionPromptBuilder.DecisionMaterialsHeading);
     }
 
-    // 案内の例は、確定の前の警告と判断側が使う同じ部品で数値の利確条件として読める（例が警告に掛からない）。
+    // 案内の例は、確定の前の警告と判断側が使う同じ部品で、案内の説明どおりの条件として読める（例が警告に掛からない）。
     [Fact]
-    public void 案内の例は数値の利確条件として読める()
+    public void 案内の例は説明どおりの条件として読める()
     {
-        AiStockTrading.Shared.Kernel.Trading.PolicyTakeProfitConditions
-            .HasAny(PolicyRevisionPromptBuilder.NumericTakeProfitRule).Should().BeTrue();
+        var conditions = AiStockTrading.Shared.Kernel.Trading.PolicyTakeProfitConditions
+            .Parse(string.Join('\n', PolicyRevisionPromptBuilder.TakeProfitLineExamples));
+
+        conditions.Select(c => (c.Symbol, c.Kind, c.Threshold, c.PartialPercent)).Should().Equal(
+            ("AAPL", AiStockTrading.Shared.Kernel.Trading.TakeProfitThresholdKind.GainPercent, 5m, (decimal?)null),
+            ("MSFT", AiStockTrading.Shared.Kernel.Trading.TakeProfitThresholdKind.Price, 450m, (decimal?)50m),
+            ((string?)null, AiStockTrading.Shared.Kernel.Trading.TakeProfitThresholdKind.GainPercent, 8m, (decimal?)null));
+        PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, string.Join('\n', PolicyRevisionPromptBuilder.TakeProfitLineExamples))
+            .Should().BeNull();
     }
 
     [Theory]
@@ -61,13 +74,27 @@ public class PolicyTakeProfitWarningTests
     // ---- T-10-1885: 警告の判定 ----
 
     [Fact]
-    public void 日報の方針に数値の利確条件が無ければ警告し_あれば警告しない()
+    public void 日報の方針に書式どおりの利確の行が無ければ警告し_あれば警告しない()
     {
         PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, VaguePolicy).Should().Be(PolicyTakeProfitCheck.Warning);
         PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, null).Should().Be(PolicyTakeProfitCheck.Warning);
         PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, NumericPolicy).Should().BeNull();
         PolicyTakeProfitCheck.Warning.Should().StartWith(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix)
-            .And.Contain("確定はできます");
+            .And.Contain("確定はできます")
+            .And.Contain("利確: AAPL +5%", "直し方（行の書式の例）まで書く")
+            .And.Contain("利確: 全銘柄");
+    }
+
+    // 🔴 自由文の数値は読まない（書式どおりの行が無ければ数値があっても警告する）。書式に合わない「利確:」行があれば、
+    // 書式どおりの行があっても警告する（方針全体の利確の条件が読まれないため）。
+    [Theory]
+    [InlineData("AAPLは+5%で利確、MSFTは230ドルで利確する。")]
+    [InlineData("利確 AAPL +5%")]
+    [InlineData("利確: AAPL +5% では利確しない")]
+    [InlineData("利確: AAPL +5%\n利確: MSFT +8% 以外")]
+    public void 自由文の数値と書式に合わない行は警告する(string policy)
+    {
+        PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, policy).Should().Be(PolicyTakeProfitCheck.Warning);
     }
 
     [Theory]
@@ -114,7 +141,7 @@ public class PolicyTakeProfitWarningTests
     }
 
     [Fact]
-    public async Task 数値の利確条件が無い案は保存し承認待ちにしたうえで案内文と本文の記録で警告する()
+    public async Task 書式どおりの利確の行が無い案は保存し承認待ちにしたうえで案内文と本文の記録で警告する()
     {
         var (service, store) = CreateRevision(VaguePolicy);
 
@@ -131,7 +158,7 @@ public class PolicyTakeProfitWarningTests
     }
 
     [Fact]
-    public async Task 数値の利確条件がある案は警告しない()
+    public async Task 書式どおりの利確の行がある案は警告しない()
     {
         var (service, store) = CreateRevision(NumericPolicy);
 
@@ -183,7 +210,7 @@ public class PolicyTakeProfitWarningTests
     [Theory]
     [InlineData(VaguePolicy, true)]
     [InlineData(NumericPolicy, false)]
-    public async Task 日報の初稿の方針に数値の利確条件が無ければ提示の要約で警告する(string previousPolicy, bool warns)
+    public async Task 日報の初稿の方針に書式どおりの利確の行が無ければ提示の要約で警告する(string previousPolicy, bool warns)
     {
         var store = new InMemoryReportStore();
         var version = store.UpsertDraft(new TradingReport

@@ -299,7 +299,7 @@ public static class TradeDecisionPromptBuilder
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
-        AppendHeldPositionSection(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol);
+        AppendHeldPositionSection(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol, currency);
         sb.AppendLine("# リスク制約");
         // FR-10, #869, ADR-0041 決定2, IADR-0354: 基準資金はブローカーの口座照会に由来し、**未供給があり得る**。
         // 🔴 **未供給を数値で埋めない**——LLM に「その額の運用資金がある」と読ませることになる。
@@ -432,7 +432,7 @@ public static class TradeDecisionPromptBuilder
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
             ? triggerPrice
             : currentPrice;
-        AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol);
+        AppendHeldPositionSectionShort(sb, held, working, markPrice, priceUnit, context.StopLossMethod, addOnBlockers, policy.Summary, trigger.Symbol, currency);
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件の短縮版（結論のみ）。
         // 二段判断（IADR-0039）の費用統制のため、誘因の詳細説明（本判断側）は省き結論だけを渡す。
         // 無条件で出す（Build と同じく空売り可否のフラグをこのメソッドへ持ち込まない）。
@@ -575,7 +575,7 @@ public static class TradeDecisionPromptBuilder
     private static void AppendHeldPositionSection(
         StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit,
         StopLossExecutionMethod? stopLossMethod, IReadOnlyList<RejectionReason>? addOnBlockers,
-        string? policySummary = null, string? symbol = null)
+        string? policySummary, string? symbol, Currency currency)
     {
         sb.AppendLine(HeldPositionSectionTitle);
         if (held is null)
@@ -621,9 +621,9 @@ public static class TradeDecisionPromptBuilder
             ? $"- この銘柄は保有中です。{AddOnBlockedLine(view, addOnBlockers!)}保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{AddOnBlockedConversionNote}{CloseQuantityIsWholeRule}"
             : $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
         sb.AppendLine($"- {ExitFollowsPolicyRule}");
-        // FR-04, ADR-0003, #1129, IADR-0470 決定 3: 方針の数値の利確条件に達していれば、コードで比べた結果を明示する
-        // （達していない・条件を取り出せない・値が不明なら何も足さない＝従来どおり）。
-        if (TakeProfitReachedLine(policySummary, symbol, held, markPrice, priceUnit) is { } takeProfitLine)
+        // FR-04, ADR-0003, #1129, IADR-0470 決定 3: 方針の「利確:」行の条件に達していれば、コードで比べた結果を明示する
+        // （達していない・読める「利確:」行が無い・値が不明なら何も足さない＝従来どおり）。
+        if (TakeProfitReachedLine(policySummary, symbol, held, markPrice, priceUnit, currency) is { } takeProfitLine)
             sb.AppendLine($"- {takeProfitLine}");
         sb.AppendLine(UsesStopLineExitGuidance(stopLossMethod)
             ? $"- {StopLossLineIsRiskConstraintRule}"
@@ -682,7 +682,7 @@ public static class TradeDecisionPromptBuilder
     private static void AppendHeldPositionSectionShort(
         StringBuilder sb, HeldPosition? held, WorkingEntryOrders? working, decimal? markPrice, string priceUnit,
         StopLossExecutionMethod? stopLossMethod, IReadOnlyList<RejectionReason>? addOnBlockers,
-        string? policySummary = null, string? symbol = null)
+        string? policySummary, string? symbol, Currency currency)
     {
         sb.AppendLine(HeldPositionSectionTitle);
         if (held is null)
@@ -721,7 +721,7 @@ public static class TradeDecisionPromptBuilder
                 : $"- {ScreeningHeldRule}{stopLineCandidate}（この建玉の手仕舞いは {view.CloseAction}）");
             // #1129, IADR-0470 決定 3: 一次は門である（Hold で本判断が走らない）。利確条件への到達も本判断と同じ行で知らせる
             // （縮退の保護分 ScreeningContextAssembler.TakeProfitReachedReserveChars）。
-            if (TakeProfitReachedLine(policySummary, symbol, held, markPrice, priceUnit) is { } takeProfitLine)
+            if (TakeProfitReachedLine(policySummary, symbol, held, markPrice, priceUnit, currency) is { } takeProfitLine)
                 sb.AppendLine($"- {takeProfitLine}");
             if (working is null)
                 sb.AppendLine($"- {WorkingUnknownLine}");
@@ -768,12 +768,13 @@ public static class TradeDecisionPromptBuilder
     /// <summary>行に並べる条件の上限（縮退の予約の最悪長を有限に保つ）。</summary>
     public const int MaxTakeProfitConditionsShown = 3;
 
-    // FR-04, ADR-0003, #1129, IADR-0470 決定 3（オーナー裁定 2026-10-01）: **判断は LLM が方針を見て行う**まま、方針に数値の利確条件があり
-    // それに達しているときだけ、達していることを明示する。数値（含み益の率・条件との比較）は**コードで計算する**（LLM に計算させない）。
-    // 🔴 条件を取り出せない・達していない・取得単価や現在値が不明なら null（何も足さない）。既定の Hold の規則（ExitFollowsPolicyRule）は変えない。
+    // FR-04, ADR-0003, #1129, IADR-0470 決定 3（オーナー裁定 2026-10-01）: **判断は LLM が方針を見て行う**まま、方針の決まった書式の
+    // 「利確:」行（IADR-0470 の 2026-10-01 追記 / #1129 再監査。自由文は読まない）がこの銘柄に掛かり、その**すべてに**達しているときだけ、
+    // 達していることを明示する。数値（含み益の率・条件との比較）は**コードで計算する**（LLM に計算させない）。価格の条件は市場の通貨（currency）のものだけを比べる。
+    // 🔴 読める「利確:」行が無い・1 つでも達していない・取得単価や現在値が不明なら null（何も足さない）。既定の Hold の規則（ExitFollowsPolicyRule）は変えない。
     // 🔴 自動の利確（S1 と対になる機械的な売り）は採らない（同裁定）。手仕舞うかは判断が決める。
     internal static string? TakeProfitReachedLine(
-        string? policySummary, string? symbol, HeldPosition held, decimal? markPrice, string priceUnit)
+        string? policySummary, string? symbol, HeldPosition held, decimal? markPrice, string priceUnit, Currency currency)
     {
         if (string.IsNullOrWhiteSpace(policySummary) || string.IsNullOrWhiteSpace(symbol) || !held.IsHeld)
             return null;
@@ -783,7 +784,7 @@ public static class TradeDecisionPromptBuilder
         var entry = held.AverageEntryPrice.Value;
         var mark = markPrice.Value;
         var reached = PolicyTakeProfitConditions.Reached(
-            PolicyTakeProfitConditions.ForSymbol(policySummary, symbol), held.IsLong, entry, mark);
+            PolicyTakeProfitConditions.ForSymbol(policySummary, symbol), held.IsLong, entry, mark, currency);
         if (reached.Count == 0)
             return null;
 

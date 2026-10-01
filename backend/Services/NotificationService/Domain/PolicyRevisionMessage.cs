@@ -62,7 +62,7 @@ public static class PolicyRevisionMessage
         // 承認待ちにできなかったときは、報告書サービスの案内（何が保存され、どう確かめるか）をそのまま見せる。
         if (!presented && !string.IsNullOrWhiteSpace(serviceMessage))
             header.Append('\n').Append(serviceMessage);
-        // FR-04, FR-07, #1129, IADR-0470 決定 4: **承認待ちにできた案でも、方針に数値の利確条件が無い警告は確認ボタンの前に見せる。**
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: **承認待ちにできた案でも、方針に書式どおりの「利確:」行が無い警告は確認ボタンの前に見せる。**
         // 印（契約アセンブリの定数）で始まる行だけを拾う（案内文のほかの行は従来どおり出さない）。確定は止めない。
         else if (presented)
         {
@@ -114,7 +114,7 @@ public static class PolicyRevisionMessage
         return messages;
     }
 
-    // 案内文のうち、方針に数値の利確条件が無い警告の行（印で始まる行）。
+    // 案内文のうち、方針に書式どおりの「利確:」行が無い警告の行（印で始まる行）。
     internal static IEnumerable<string> TakeProfitWarningLines(string? serviceMessage) =>
         string.IsNullOrEmpty(serviceMessage)
             ? []

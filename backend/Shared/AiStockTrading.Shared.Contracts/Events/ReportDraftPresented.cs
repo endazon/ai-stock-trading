@@ -31,9 +31,10 @@ public static class ReportSummaryMarkers
     public const string UnsuppliedWarningPrefix = "⚠ 未供給の入力があります";
 
     /// <summary>
-    /// FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の方針に数値の利確条件が 1 件も無いときに、確定の前に見せる警告行の先頭。
+    /// FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の方針に書式どおりの「利確:」行が 1 行も無い（または書式に合わない「利確:」行がある）ときに、
+    /// 確定の前に見せる警告行の先頭（IADR-0470 の 2026-10-01 追記 / #1129 再監査で文を改めた）。
     /// 自動生成のドラフトの要約（提示の通知は Warning へ上がる）と、<c>/policy</c> の改訂の応答の案内文に入る
     /// （通知サービスは承認待ちにできた案でも、この印で始まる行だけは確認ボタンの前に見せる）。確定は止めない。
     /// </summary>
-    public const string PolicyTakeProfitMissingPrefix = "⚠ 方針に数値の利確条件がありません";
+    public const string PolicyTakeProfitMissingPrefix = "⚠ 方針に書式どおりの「利確:」行がありません";
 }

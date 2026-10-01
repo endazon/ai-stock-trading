@@ -63,7 +63,7 @@ public static class ReportSummary
                 + $"{string.Join("、", ReportInputs.Labels(unsuppliedInputs))}");
         }
 
-        // FR-04, FR-07, #1129, IADR-0470 決定 4: **方針に数値の利確条件が無いことを、確定の前に見せる**（確定は止めない）。
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: **方針に書式どおりの「利確:」行が無いことを、確定の前に見せる**（確定は止めない）。
         // 文は PolicyTakeProfitCheck のコード定数（外部入力を含まない）。未供給の警告と同じく散文より前に置く（切り落とされない）。
         if (!string.IsNullOrEmpty(policyTakeProfitWarning))
             sb.Append('\n').Append(policyTakeProfitWarning);
