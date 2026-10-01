@@ -38,6 +38,8 @@ public class TradingDefaultsTests
     public void 損切り幅の下限の退避値は参照価格の2パーセント()
     {
         TradingDefaults.StopWidthFloorFallbackRatio.Should().Be(0.02m);
+        // T-10-1920, #1136, IADR-0472 決定7: 値の実体は共有契約（発注執行の遡及と同じ値）。
+        TradingDefaults.StopWidthFloorFallbackRatio.Should().Be(StopWidthFloorDefaults.FallbackRatio);
         TradingDefaults.StopWidthFloorFallbackRatio.Should().NotBe(TradingDefaults.DefaultStopLossRatio);
         // 幅 2% は 1 注文上限（25%）が効く上端 4%（＝1% ÷ 25%）より狭い＝既定のサイジングでは株数を変えない（ADR-0049 決定3）。
         var limits = TradingDefaults.CreateRiskLimits();

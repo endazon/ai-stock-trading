@@ -31,6 +31,22 @@ public interface IPortfolioLedgerStore
         ApprovalSource? source = null);
 
     /// <summary>
+    /// 🔴 FR-10, ADR-0049, #1136, IADR-0472 決定6: 新規建て（Open）の承認行の損切りライン（<c>StopLossPrice</c>）を、
+    /// <b>広げる向きのときだけ</b>（買い建ては下げる・売り建ては上げる）<paramref name="stopLossPrice"/> へ書き換える。
+    /// 発注執行が S1 のラインを下限まで遡及して広げた事実（<c>SoftwareStopLineWidened</c>）の追随であり、
+    /// 市場監視が台帳のラインで到達を出すため、追随しないと旧ラインと新ラインの間で決済しない到達（Critical）が出続ける。
+    /// <para>
+    /// 承認が無い・決済の承認・方向が違う・ラインが未記録（null）・狭める向き・同じ値は<b>何もせず false</b>。
+    /// 再配送・順序の入れ替わりでも、最も広いラインに収束する（冪等）。承認行は追記専用の例外として、この列だけを広げる。
+    /// </para>
+    /// <para>
+    /// 既定の実装（試験用の偽物のためのもの）は <see cref="NotSupportedException"/>。本番のストア（EF・インメモリ）が上書きする。
+    /// </para>
+    /// </summary>
+    bool WidenStopLoss(Guid entryDecisionId, TradeSide entrySide, decimal stopLossPrice) =>
+        throw new NotSupportedException("この台帳は損切りラインの追随を実装していません。");
+
+    /// <summary>
     /// FR-10, #935, IADR-0394: 指定銘柄の<b>決済（Close）の承認</b>のうち、<paramref name="activitySince"/> 以降に
     /// <b>承認された</b>もの、または<b>約定が付いた</b>ものを、由来と約定時刻つきで返す。
     /// <para>
@@ -229,4 +245,17 @@ public interface IPortfolioLedgerStore
     /// </para>
     /// </summary>
     void MarkForgone(Guid decisionId, DateTimeOffset forgoneAt);
+}
+
+/// <summary>
+/// FR-10, #1136, IADR-0472 決定6: 台帳の損切りラインを「広げる向きか」で比べる純関数（EF・インメモリで共有する）。
+/// </summary>
+public static class LedgerStopLineWidening
+{
+    /// <summary>
+    /// <paramref name="proposed"/> が <paramref name="current"/> より外側か（買い建ては低い・売り建ては高い）。
+    /// 今のラインが未記録（null）なら false（不明を埋めない。ラインが不明な建玉は近似で扱う＝IADR-0399）。
+    /// </summary>
+    public static bool IsWider(TradeSide entrySide, decimal? current, decimal proposed) =>
+        current is { } line && (entrySide == TradeSide.Buy ? proposed < line : proposed > line);
 }

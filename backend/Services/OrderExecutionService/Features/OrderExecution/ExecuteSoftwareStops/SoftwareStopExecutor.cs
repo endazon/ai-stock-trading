@@ -162,7 +162,11 @@ public sealed class SoftwareStopExecutor(
                 armed = stops.Update(candidate.EntryDecisionId, fresh =>
                 {
                     before = fresh;
-                    return fresh.IsSoftwareStop && fresh.State == ProtectiveStopState.Active ? Arm(fresh, triggered) : null;
+                    // 🔴 FR-10, #1136, IADR-0472 決定4: 到達は**最新の行のライン**で判定し直す。候補を読んだ後に常駐ガードが
+                    // ラインを下限まで広げていたら（遡及）、古いラインでの到達で武装しない（新ラインが正。窓 A の P1）。
+                    return fresh.IsSoftwareStop && fresh.State == ProtectiveStopState.Active && Reached(fresh, triggered.Price)
+                        ? Arm(fresh, triggered)
+                        : null;
                 });
             }
             catch (ProtectiveStopConcurrencyException ex)
@@ -173,7 +177,12 @@ public sealed class SoftwareStopExecutor(
             }
 
             if (armed is null || before is null)
-                continue; // 並行に完了した（候補の一覧を読んだ後に）。
+            {
+                // 並行に完了した・ラインが広がって未到達になった（候補の一覧を読んだ後に）。
+                // #1136 独立監査 F6: 最新の行で到達していない行は「到達」に数えない（ハンドラの到達件数のログを実態に合わせる）。
+                matched--;
+                continue;
+            }
 
             if (before.TriggeredAt is null)
             {

@@ -56,7 +56,8 @@ public sealed class ProtectiveStopGuard(
     OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops.SoftwareStopExecutor? softwareStops = null,
     CloseRejectionTracker? closeRejections = null,
     PositionQueryRetry? positionQueryRetry = null,
-    IPositionQueryHealthReporter? positionQueryHealth = null)
+    IPositionQueryHealthReporter? positionQueryHealth = null,
+    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter? floorRetrofit = null)
 {
     /// <summary>
     /// 🔴 #857, IADR-0369 決定3: <b>確認できた拒否</b>で終わった成行手仕舞いを撃ち直す上限
@@ -101,6 +102,55 @@ public sealed class ProtectiveStopGuard(
         // S0 が「その建玉は自分のもの」と誤認し、#826 項目 3 が 1 巡回ぶん効かない。
         var active = ProtectiveStopNetting.ConfirmEntryFills(scanned, stops, store, clock.UtcNow);
 
+        IReadOnlyList<SoftwareStopLineWidened> widened = [];
+
+        // 🔴 FR-10, ADR-0049, #1136, IADR-0472 決定1: **巡回の先頭で**、Active・未到達の S1 の損切りラインへ下限（取得単価 × 2%）を遡及する
+        // （広げる向きだけ・冪等）。ガードは起動直後に遅延なく初回を回すため、再起動・取り込み直後の行も最初の巡回で覆う。
+        // 建玉照会より前に置く——照会が不明（null）で巡回を据え置く回でも、ラインの是正は建玉に依らないので止めない。
+        // 到達の購読との競合は、書き込みと武装の両方が最新の行で判定し直すことで塞ぐ（IADR-0472 決定4）。
+        if (floorRetrofit is not null)
+        {
+            try
+            {
+                widened = await floorRetrofit.ApplyAsync(active, cancellationToken).ConfigureAwait(false);
+                if (widened.Count > 0)
+                    active = stops.FindActive(batchSize); // 広げた行は版が進んだ。以降の書き込みは最新の写しから始める。
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 遡及の失敗で保護の巡回を止めない（次の巡回で当て直す）。
+                _logger.LogError(ex, "ソフトウェア逆指値の損切りラインの遡及に失敗しました（巡回は続けます。次の巡回で当て直します）。");
+            }
+        }
+
+        if (widened.Count == 0)
+            return await GuardAsync(batchSize, active, widened, cancellationToken).ConfigureAwait(false);
+
+        // 🔴 #1136 独立監査 F1（IADR-0472 2026-10-01 追記）: 遡及で広げた行の事実は、**後段（建玉照会・割り当て・評価）が例外で
+        // 終わっても失わない**。遡及は冪等で、広げた行へは二度と事実を出さないため、ここで巡回ごと例外を投げると発行（Worker 層）へ
+        // 届かず、監査にも台帳の追随にも永遠に残らない（台帳は旧ラインのまま市場監視が毎分 Critical の到達を出し続ける）。
+        // 後段の例外はこの巡回の失敗として記録し（Worker 層の巡回失敗と同じ Error）、広げた事実だけを結果に載せて返す。
+        // 事実が無い巡回は従来どおり例外を上へ投げる（挙動を変えない）。
+        try
+        {
+            return await GuardAsync(batchSize, active, widened, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex,
+                "保護逆指値ガードの巡回に失敗しました（遡及で広げた {Count} 件の事実は発行します。次回巡回で再試行します）。",
+                widened.Count);
+            return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, 0, active.Count, [.. widened]);
+        }
+    }
+
+    // 建玉照会から先（巡回の本体）。events は遡及で広げた事実から始める（巡回の結果で先頭に載る）。
+    private async Task<ProtectiveStopGuardResult> GuardAsync(
+        int batchSize, IReadOnlyList<ProtectiveStopOrder> active, IReadOnlyList<SoftwareStopLineWidened> widened,
+        CancellationToken cancellationToken)
+    {
+        var events = new List<object>(widened);
+
         // 建玉は 1 巡回につき 1 つのスナップショットを使う（一時的な失敗なら照会し直すが、観測として数えるのは得られた 1 つだけ）。
         // null（照会不能）なら巡回ごと据え置く——建玉不明のまま
         // 「消滅した」と誤認して逆指値を取り消すと、直後の失効側の保護が消える。
@@ -122,9 +172,7 @@ public sealed class ProtectiveStopGuard(
             .ConfigureAwait(false);
 
         if (snapshot is null)
-            return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, active.Count, 0, []);
-
-        var events = new List<object>();
+            return new ProtectiveStopGuardResult(active.Count, 0, 0, 0, 0, active.Count, 0, events);
 
         // 🔴 #820 の 4 巡目監査, IADR-0344 追記(4) 決定4: 外部要因（人手決済・強制決済・S0 の逆指値の約定）による減少を
         // **この巡回で一度だけ**割り当てて保存する。S0 の取消判定より前に行う——判定は「割り当て後の主張」を見るべきで、

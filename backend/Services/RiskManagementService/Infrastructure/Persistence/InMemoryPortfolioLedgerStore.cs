@@ -152,6 +152,26 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
         return false;
     }
 
+    // 🔴 FR-10, #1136, IADR-0472 決定6: 新規建ての承認行の損切りラインを広げる向きにだけ書き換える（EfPortfolioLedgerStore と同一の意味論）。
+    public bool WidenStopLoss(Guid entryDecisionId, TradeSide entrySide, decimal stopLossPrice)
+    {
+        while (_approvals.TryGetValue(entryDecisionId, out var current))
+        {
+            var intent = current.Intent;
+            if (intent.PositionEffect != PositionEffect.Open || intent.Side != entrySide
+                || !LedgerStopLineWidening.IsWider(entrySide, intent.StopLossPrice, stopLossPrice))
+            {
+                return false;
+            }
+
+            var updated = current with { Intent = intent with { StopLossPrice = stopLossPrice } };
+            if (_approvals.TryUpdate(entryDecisionId, updated, current))
+                return true;
+        }
+
+        return false;
+    }
+
     // #847, IADR-0357: 承認に対する約定累計（EfPortfolioLedgerStore と同一の意味論）。
     public int? FindApprovedFilledQuantity(Guid decisionId)
     {

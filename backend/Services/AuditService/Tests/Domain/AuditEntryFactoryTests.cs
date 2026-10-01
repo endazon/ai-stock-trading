@@ -1208,6 +1208,26 @@ public class AuditEntryFactoryTests
             + " − 処理中 713 株（1 件）→ 送った 715 株（台帳の乖離ではない）");
     }
 
+    // T-10-1926, FR-10, FR-11, #1136, IADR-0472 決定5: S1 の損切りラインの遡及はエントリーの DecisionId 相関で、
+    // 旧ライン・新ライン・取得単価・下限・出所（名前）が要約から読め、本文に全項目が残る。
+    [Fact]
+    public void T_10_1926_損切りラインの遡及はエントリー相関で旧新のラインと下限の出所が読める()
+    {
+        var entryDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new SoftwareStopLineWidened(entryDecisionId, "NVDA", Market.UnitedStates, TradeSide.Buy, 230.82m, 226.52m,
+                226.2036m, 4.6164m, StopWidthFloorSource.Fallback2Pct, StopT0),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(SoftwareStopLineWidened));
+        entry.CorrelationId.Should().Be(entryDecisionId);
+        entry.OccurredAt.Should().Be(StopT0);
+        entry.Summary.Should().Be(
+            "NVDA/UnitedStates Buy ソフトウェア逆指値の損切りラインを下限まで広げた（遡及）: 226.52 → 226.2036"
+            + "（取得単価 230.82・下限 4.6164 Fallback2Pct・広げる向きだけ）");
+        entry.Detail.Should().Contain("\"PreviousStopLossPrice\":226.52").And.Contain("\"FloorSource\"");
+    }
+
     // T-10-1773, NFR, FR-04, FR-11, #1092, IADR-0462 決定4: LLM を呼ぶ前の見送りは EventId 相関で、理由と起点が読める。
     // 「LLM を呼ぶ前」と書く（判断後の見送り TradeDecisionHeld と読み違えさせない）。
     [Fact]

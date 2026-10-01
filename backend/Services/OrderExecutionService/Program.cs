@@ -381,7 +381,16 @@ if (brokerSelection.IsMoomoo)
                 logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger<
                     OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.PositionQueryRetry>()),
             // NFR, FR-10, #1092, IADR-0462: 巡回の先頭の建玉照会の状態を台帳へ出す。
-            sp.GetRequiredService<IPositionQueryHealthReporter>()));
+            sp.GetRequiredService<IPositionQueryHealthReporter>(),
+            // 🔴 FR-10, ADR-0049, #1136, IADR-0472 決定1: 巡回の先頭で、Active・未到達の S1 の損切りラインへ下限を遡及する（広げる向きだけ・冪等）。
+            // 渡し忘れると引数は省略可能なのでコンパイルも単体の試験も通ったまま遡及が一度も走らない（T-10-1933 が本番の組み立てで固定する）。
+            new OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter(
+                sp.GetRequiredService<IProtectiveStopOrderStore>(),
+                sp.GetRequiredService<IExecutedOrderStore>(),
+                sp.GetRequiredService<IBrokerAdapter>(),
+                sp.GetRequiredService<IClock>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<
+                    OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>())));
     // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
     builder.Services.AddSingleton(sp =>
         new SoftwareStopLivenessReporter(
