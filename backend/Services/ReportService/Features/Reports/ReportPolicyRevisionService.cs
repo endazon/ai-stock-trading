@@ -186,7 +186,7 @@ public sealed partial class ReportPolicyRevisionService(
         {
             logger.LogWarning(
                 "方針の改訂案に数値の利確条件がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
-                key, version);
+                LogSanitizer.Sanitize(key), version);
         }
 
         var usage = $"（本日の /policy: {attemptNumber}/{limit.DailyLimit} 回目）";
