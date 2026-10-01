@@ -33,6 +33,15 @@ public sealed class E2EInfrastructureDisposeTests
     }
 
     [Fact]
+    public async Task 素のOperationCanceledExceptionも例外にしない()
+    {
+        // ホストの停止の打ち切りは TaskCanceledException ではなく OperationCanceledException で来る。
+        var act = () => E2EInfrastructure.DisposeQuietlyAsync(new Throwing(new OperationCanceledException()), "ホスト");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task 打ち切り以外の例外はそのまま投げる()
     {
         var act = () => E2EInfrastructure.DisposeQuietlyAsync(new Throwing(new InvalidOperationException("壊れた")), "ホスト");

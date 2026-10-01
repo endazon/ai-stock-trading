@@ -57,6 +57,11 @@ internal static class E2EInfrastructure
     /// 試験の判定はホストの破棄より前に済んでいる。打ち切りを赤にすると、判定が通った試験が後片付けの時間切れで落ち、
     /// 後続の破棄（コンテナ・環境変数）にも届かない（2026-09-30 の実測）。ほかの例外は後片付けの本物の不具合なので投げる。
     /// </para>
+    /// <para>
+    /// 握るのは打ち切り全般（ホストの停止の打ち切りも含む）であり、閉じ待ちに限らない。どの段かは標準エラーのスタックで見る。
+    /// 打ち切られた接続が半開きで残り得るが、Testcontainers の経路では直後にブローカのコンテナごと破棄する。
+    /// 外部注入（E2E_*）で共有するブローカでは consumer が残り得る（作業仕様書の残余）。
+    /// </para>
     /// </summary>
     public static async Task DisposeQuietlyAsync(IAsyncDisposable? host, string name)
     {
@@ -72,7 +77,7 @@ internal static class E2EInfrastructure
         catch (OperationCanceledException ex)
         {
             await Console.Error.WriteLineAsync(
-                $"[E2E 後片付け] {name} の破棄で接続を閉じる待ちが打ち切られました（試験の判定には影響しない）: {ex.GetType().Name}");
+                $"[E2E 後片付け] {name} の破棄が打ち切られました（試験の判定には影響しない。どの段かはスタックで見る）: {ex}");
         }
     }
 

@@ -110,12 +110,18 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
             disposals.Add(_postgres.DisposeAsync().AsTask());
         if (_rabbitMq is not null)
             disposals.Add(_rabbitMq.DisposeAsync().AsTask());
-        await Task.WhenAll(disposals);
-
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
-        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
-        Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
-        Environment.SetEnvironmentVariable("Broker__Provider", null);
+        try
+        {
+            await Task.WhenAll(disposals);
+        }
+        finally
+        {
+            // NFR, #1128: コンテナの破棄が投げても、環境変数は後続の試験クラスへ漏らさない。
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+            Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
+            Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
+            Environment.SetEnvironmentVariable("Broker__Provider", null);
+        }
     }
 
     [Fact]

@@ -115,12 +115,18 @@ public sealed class KeycloakOwnerOnlyEndpointE2ETests : IAsyncLifetime
             disposals.Add(_rabbitMq.DisposeAsync().AsTask());
         if (_keycloak is not null)
             disposals.Add(_keycloak.DisposeAsync().AsTask());
-        await Task.WhenAll(disposals);
-
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
-        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
-        Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
-        Environment.SetEnvironmentVariable("Auth__Authority", null);
+        try
+        {
+            await Task.WhenAll(disposals);
+        }
+        finally
+        {
+            // NFR, #1128: コンテナの破棄が投げても、環境変数は後続の試験クラスへ漏らさない。
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+            Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
+            Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
+            Environment.SetEnvironmentVariable("Auth__Authority", null);
+        }
     }
 
     [Fact]
