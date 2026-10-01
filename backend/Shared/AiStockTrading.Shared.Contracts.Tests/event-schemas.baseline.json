@@ -448,6 +448,18 @@
     "Symbol": "String",
     "TriggeredPrice": "Decimal"
   },
+  "SoftwareStopLineWidened": {
+    "EntryDecisionId": "Guid",
+    "EntryPrice": "Decimal",
+    "EntrySide": "TradeSide",
+    "FloorPerShare": "Decimal",
+    "FloorSource": "StopWidthFloorSource",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "PreviousStopLossPrice": "Decimal",
+    "StopLossPrice": "Decimal",
+    "Symbol": "String"
+  },
   "StageTransitioned": {
     "ApprovedBy": "String",
     "AuthorizedBy": "String",

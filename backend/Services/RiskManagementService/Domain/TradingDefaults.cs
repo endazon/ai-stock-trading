@@ -55,8 +55,11 @@ public static class TradingDefaults
     /// 下限の本体は 1.0 × ATR(14, 日足) だが、ATR が得られないとき（日足が判断へ通っていない間を含む）は本値が効く。
     /// 取引判断の LLM の幅がこれを割れば、下限まで広げてサイジングとラインを計算する（見送らない）。
     /// 🔴 <see cref="DefaultStopLossRatio"/>（ラインが不明な建玉の近似 3%）とは**別の値**である（ADR-0049 フォローアップ 4）。
+    /// <para>
+    /// FR-10, #1136, IADR-0472 決定7: 値の実体は共有契約の <see cref="StopWidthFloorDefaults.FallbackRatio"/>（発注執行の遡及も同じ値を使う）。
+    /// </para>
     /// </summary>
-    public const decimal StopWidthFloorFallbackRatio = 0.02m;
+    public const decimal StopWidthFloorFallbackRatio = StopWidthFloorDefaults.FallbackRatio;
 
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。

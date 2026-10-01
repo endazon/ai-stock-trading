@@ -73,6 +73,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(StopLossMethodResolved), "AiStockTrading.Shared.Contracts.Events.StopLossMethodResolved")]
         // FR-10, FR-11, #1105, IADR-0461 決定3: 決済を処理中の決済の分だけ縮めて送った事実。
         [InlineData(typeof(CloseReducedForInFlightCloses), "AiStockTrading.Shared.Contracts.Events.CloseReducedForInFlightCloses")]
+        // T-10-1926, FR-10, FR-11, #1136, IADR-0472 決定5: S1 の損切りラインを下限まで遡及して広げた事実。
+        [InlineData(typeof(SoftwareStopLineWidened), "AiStockTrading.Shared.Contracts.Events.SoftwareStopLineWidened")]
         // T-10-1773, NFR, FR-04, FR-10, #1092, IADR-0462: LLM を呼ぶ前の見送りと、建玉照会・保有照会の状態の変化。
         [InlineData(typeof(TradeDecisionForgoneBeforeLlm), "AiStockTrading.Shared.Contracts.Events.TradeDecisionForgoneBeforeLlm")]
         [InlineData(typeof(PositionQueryStatusChanged), "AiStockTrading.Shared.Contracts.Events.PositionQueryStatusChanged")]
