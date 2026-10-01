@@ -39,8 +39,12 @@ public sealed class InformationCollectedHandler(
         // 定時・急変の両方の判断が同じ最新値をプロンプトへ明示する（RAG を経由しない経路）。
         newsStatus.Record(message.NewsStatus, message.NewsStatusValidFor, message.CollectedAt);
 
-        // FR-02, IADR-0095: 権威源（市場監視 #10）から当該サイクルの監視銘柄を照会する（実装未接続/失敗時は構成ベースへ倒す）。
+        // FR-02, IADR-0095: 権威源（市場監視 #10）から当該サイクルの監視銘柄を照会する（未結線なら構成ベース）。
+        // 🔴 FR-02, ADR-0044, #1134, IADR-0475: 読めなければ直前に読めた一覧。一度も読めていなければ null（不明）で、
+        // このサイクルの判断をしない（構成の既定 watchlist で判断しない。警告は供給口が障害ごとに 1 回出す）。
         var watchlistSymbols = await watchlist.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
+        if (watchlistSymbols is null)
+            return;
 
         foreach (var watched in watchlistSymbols)
         {

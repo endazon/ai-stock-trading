@@ -12,7 +12,7 @@ using Composable = TradeDecisionService.Infrastructure;
 
 namespace TradeDecisionService.Tests;
 
-// FR-02, FR-13, UC-06, SC-02, IADR-0095: MarketMonitor:BaseUrl の有無で IWatchlistProvider が構成ベース（後方互換・既定 watchlist）/
+// FR-02, FR-13, UC-06, SC-02, IADR-0095: MarketMonitor:BaseUrl の有無で IWatchlistProvider が構成ベース（未結線の後方互換）/
 // 権威源への s2s 同期照会（Http）に切り替わることを検証する。選択は解決時に構成を読む（WebApplicationFactory の構成上書きに追随する）。
 public class WatchlistProviderSelectionTests
 {
@@ -36,11 +36,64 @@ public class WatchlistProviderSelectionTests
         scope.ServiceProvider.GetRequiredService<IWatchlistProvider>().Should().BeOfType<HttpWatchlistProvider>();
     }
 
-    private sealed class Factory(string? monitorBaseUrl) : WebApplicationFactory<Program>
+    // T-10-1998, FR-02, #1134, IADR-0475: 🔴 直前に読めた一覧は**本番の組み立てで singleton**（供給口はスコープごとに作られる）。
+    // 別のスコープで覚えた一覧を、次のスコープの供給口が権威源の不達時に返す（scoped だと次のサイクルで不明に戻る）。
+    // 宛先は接続を拒否する予約ポート（127.0.0.1:9）＝照会は必ず失敗する。
+    [Fact]
+    public async Task T_10_1998_直前に読めた一覧はスコープを跨いで残り_次のサイクルの供給口が使う()
+    {
+        using var factory = new Factory(monitorBaseUrl: "http://127.0.0.1:9");
+        _ = factory.CreateClient();
+
+        WatchlistLastKnown first;
+        using (var scope = factory.Services.CreateScope())
+        {
+            first = scope.ServiceProvider.GetRequiredService<WatchlistLastKnown>();
+            first.Record([new WatchedSymbol("AAPL", AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates)]);
+        }
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<WatchlistLastKnown>().Should().BeSameAs(first);
+            var provider = scope.ServiceProvider.GetRequiredService<IWatchlistProvider>();
+            provider.Should().BeOfType<HttpWatchlistProvider>();
+
+            (await provider.GetWatchlistAsync()).Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
+        }
+    }
+
+    // T-10-1998, FR-02, #1134, IADR-0475: gRPC 経路（`MarketMonitor:Grpc` の宣言）でも同じ singleton を使う
+    // （独立監査 🟡-1: gRPC 分岐でスコープごとに箱を作る変異が生き残っていた）。宛先は接続を拒否する予約ポート。
+    [Fact]
+    public async Task T_10_1998_gRPC経路でも直前に読めた一覧はスコープを跨いで残る()
+    {
+        using var factory = new Factory(monitorBaseUrl: "http://127.0.0.1:9", monitorGrpc: "http://127.0.0.1:9");
+        _ = factory.CreateClient();
+
+        WatchlistLastKnown first;
+        using (var scope = factory.Services.CreateScope())
+        {
+            first = scope.ServiceProvider.GetRequiredService<WatchlistLastKnown>();
+            first.Record([new WatchedSymbol("AAPL", AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates)]);
+        }
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var provider = scope.ServiceProvider.GetRequiredService<IWatchlistProvider>();
+            provider.Should().BeOfType<GrpcWatchlistProvider>();
+
+            (await provider.GetWatchlistAsync()).Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
+        }
+    }
+
+    private sealed class Factory(string? monitorBaseUrl, string? monitorGrpc = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
+            // gRPC の輸送は組み立て時に構成を読むため UseSetting で渡す（Stage4GrpcWiringTests と同じ）。
+            if (monitorGrpc is not null)
+                builder.UseSetting("MarketMonitor:Grpc", monitorGrpc);
             builder.ConfigureAppConfiguration((_, cfg) =>
             {
                 var settings = new Dictionary<string, string?>
