@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NFR, #1092: 夜間（任意の時間窓）の判断・審査・発注・約定・S1・ブローカ観測の欠けを、**監査台帳だけから**要約する。
+# NFR, #1092: 夜間（任意の時間窓）の判断・審査・発注・約定・S1・ブローカ観測の欠けを、**監査台帳から**要約する（§13 の当月の費用の累計と上限だけは、費用統制と設定サービスの DB から読む）。
 # ログ・メトリクスは Pod の再起動で消える（稼働クラスタに Loki / Prometheus は無い）ため、翌朝の振り返りは台帳を正とする。
 #
 #   bash scripts/nightly-ledger-summary.sh <from> <to>        # 時刻は ISO 8601 の時差つき（例 2026-09-29T22:30+09:00）
@@ -7,7 +7,7 @@
 #
 # 接続は AST_PSQL（psql の呼び出しコマンド。既定 `psql`）で差し替える。ローカル k3s の platform-infra なら:
 #   AST_PSQL="kubectl -n platform-infra exec -i deploy/postgres -- psql -U ai"
-# DB は audit_svc（監査台帳 audit_events）。
+# DB は audit_svc（監査台帳 audit_events）。§13 だけ cost_control_svc（費用の台帳）と configuration_svc（前提条件）も読む（#1140）。
 # 窓の検査は GNU date（`date -d`）を使う（Linux・WSL・CI の ubuntu-latest。BSD / macOS の date では動かない）。
 # 🔴 **読み取りだけ**を行う。SQL は `BEGIN TRANSACTION READ ONLY` の中で走らせ、最後に ROLLBACK する
 #    （書き込み・DDL・一時オブジェクトの作成もしない）。
@@ -21,6 +21,10 @@
 #   #1113（IADR-0463）で足したもの: §11 の理由 EntryBlockedByRiskControls（新規建てが審査で必ず拒否される銘柄の LLM を呼ぶ前の
 #          見送り）。配備の後は §5 の審査の拒否（StoppedOutSameDay・MaxPositionsExceeded 等）の一部がこちらへ移る（審査は不変）。
 #   分からない（台帳に記録が無い）: 判断中の例外（段 2 でも入れていない。作業仕様書 20260930_1092_ledger-gap-events）。
+#   #1140（IADR-0478 決定 2）で足したもの: §12 LLM の費用（窓の中の LlmCostIncurred の円。用途 × モデル別と合計）。
+#          §13 当月の LLM 費用と月次上限に対する使用率。🔴 13 だけは監査台帳の外を読む —— 累計は費用統制の台帳（cost_control_svc。
+#          上限の判定と同じカウンタ）、上限は設定サービスの前提条件（configuration_svc）から読む（上限の値をここへ複写しない）。
+#          どちらも読み取り専用のトランザクションで読む。上限を読めなければ使用率を「不明」と出して続ける。
 #
 # ■ テスト: scripts/nightly-ledger-summary.test.sh（psql スタブ・実 DB 不要）。AST_NIGHTLY_LIB=1 で source すると
 #   関数定義だけを読み込む（scripts/cutover-count-reconcile.sh と同じ idiom）。
@@ -264,6 +268,71 @@ WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
   AND "EventType" = 'TradeDecisionForgoneBeforeLlm'
 GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2;
 
+\echo '== 12. LLM の費用（LlmCostIncurred・用途 × モデル別の件数と円。最後の行が窓の合計）'
+\echo '-- 月次上限の対象かどうかは用途で決まる（費用統制が判別する）。当月の累計と月次上限に対する使用率は 13 を見る'
+SELECT purpose, model, n, amount_jpy FROM (
+  SELECT 0 AS k, COALESCE("Detail"->>'Purpose', '(不明)') AS purpose, COALESCE("Detail"->>'Model', '(不明)') AS model,
+         count(*) AS n, round(sum(("Detail"->>'Amount')::numeric), 2) AS amount_jpy
+  FROM audit_events
+  WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
+    AND "EventType" = 'LlmCostIncurred'
+  GROUP BY 2, 3
+  UNION ALL
+  SELECT 1, '合計', '-', count(*), round(COALESCE(sum(("Detail"->>'Amount')::numeric), 0), 2)
+  FROM audit_events
+  WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
+    AND "EventType" = 'LlmCostIncurred'
+) x
+ORDER BY k, amount_jpy DESC, purpose, model;
+
+ROLLBACK;
+SQL
+}
+
+# NFR（費用）, #1140, IADR-0478 決定 2: 月次 LLM 費用上限の**現在値**を設定サービスの前提条件（configuration_svc の assumptions。
+# 費用統制がしきい値の判定に使うのと同じ単一の行）から読む。値をここへ複写しない（利用者が上限を変えると食い違うため）。
+# 出力は数値 1 行だけ（-A -t）。行が無い・読めないときは空を返す（13 は「不明」と出す）。
+nightly_cost_limit_sql() {
+  cat <<'SQL'
+\set ON_ERROR_STOP 1
+BEGIN TRANSACTION READ ONLY;
+SELECT "Json"->'costLimits'->>'llm' FROM assumptions WHERE "Id" = 1;
+ROLLBACK;
+SQL
+}
+
+# NFR（費用）, #1140, IADR-0478 決定 2: 当月の LLM 費用の累計（費用統制の台帳 cost_control_svc の cost_entries。月次上限の判定と同じ
+# カウンタ）と、月次上限に対する使用率。psql 変数 to / llm_limit（空＝読めなかった）を使う。
+# 🔴 Category は費用統制の CostCategory の序数で永続化されている（Llm=0・LlmUncapped=3。途中への挿入は enum 側が禁じている）。
+#    序数が変わったら scripts.repo.test.js の T-10-2027 が赤になる。
+nightly_cost_sql() {
+  cat <<'SQL'
+\set ON_ERROR_STOP 1
+\pset footer off
+BEGIN TRANSACTION READ ONLY;
+SET LOCAL TIME ZONE 'Asia/Tokyo';
+
+\echo '== 13. 当月の LLM 費用と月次上限に対する使用率（費用統制の台帳。上限は設定サービスの前提条件）'
+\echo '-- 月は費用統制と同じ UTC の暦月で、窓の終端（現在時刻より後なら現在時刻）の月。累計はその月の頭から窓の終端までに計上された分'
+\echo '-- llm_governed_jpy が上限の対象（取引判断）。llm_uncapped_jpy は対象外（報告書・情報収集など。抑制しない）'
+WITH m AS (
+  SELECT to_char((LEAST(:'to'::timestamptz, now()) - interval '1 microsecond') AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+         LEAST(:'to'::timestamptz, now()) AS until_at,
+         NULLIF(:'llm_limit', '')::numeric AS lim
+), s AS (
+  SELECT m.month, m.lim,
+         COALESCE(sum(c."Amount") FILTER (WHERE c."Category" = 0), 0) AS governed,
+         COALESCE(sum(c."Amount") FILTER (WHERE c."Category" = 3), 0) AS uncapped
+  FROM m LEFT JOIN cost_entries c ON c."Month" = m.month AND c."RecordedAt" < m.until_at
+  GROUP BY m.month, m.lim
+)
+SELECT month, round(governed, 2) AS llm_governed_jpy, lim AS llm_limit_jpy,
+       CASE WHEN lim IS NULL THEN '不明（上限を読めない）'
+            WHEN lim <= 0 THEN '上限 0 以下（費用統制は統制しない）'
+            ELSE to_char(round(100 * governed / lim, 1), 'FM999990.0') || '%' END AS usage,
+       round(uncapped, 2) AS llm_uncapped_jpy
+FROM s;
+
 ROLLBACK;
 SQL
 }
@@ -275,11 +344,30 @@ nightly_main() {
     return 2
   fi
   from="${window%%$'\t'*}"; to="${window#*$'\t'}"
+  local rc limit limit_err
   # shellcheck disable=SC2086  # AST_PSQL は意図的に単語分割する（kubectl exec … psql の形を与えるため）
   nightly_sql | ${AST_PSQL:-psql} -d audit_svc -X -q \
     -v from="$from" -v to="$to" \
     -v positions_gap="$NIGHTLY_POSITIONS_GAP" -v availability_gap="$NIGHTLY_AVAILABILITY_GAP" \
     -f -
+  rc=$?
+  # 13: 上限を読めなくても累計は出す（上限は「不明」と出し、理由を標準エラーへ 1 行出す）。
+  limit_err="$(mktemp)"
+  # shellcheck disable=SC2086
+  limit="$(nightly_cost_limit_sql | ${AST_PSQL:-psql} -d configuration_svc -X -q -A -t -f - 2>"$limit_err")"
+  limit="$(printf '%s' "$limit" | tr -d '[:space:]')"
+  if [[ ! "$limit" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "WARN: 月次 LLM 費用上限を設定サービス（configuration_svc の assumptions）から読めないため、13 の使用率は「不明」と出します: $(head -c 300 "$limit_err" | tr '\n' ' ')${limit:+（値: ${limit}）}" >&2
+    limit=""
+  fi
+  rm -f "$limit_err"
+  # shellcheck disable=SC2086
+  nightly_cost_sql | ${AST_PSQL:-psql} -d cost_control_svc -X -q \
+    -v to="$to" -v llm_limit="$limit" \
+    -f -
+  local rc_cost=$?
+  [ "$rc" -ne 0 ] && return "$rc"
+  return "$rc_cost"
 }
 
 if [ "${AST_NIGHTLY_LIB:-}" != "1" ]; then

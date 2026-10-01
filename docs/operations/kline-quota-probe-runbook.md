@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-10-01
+updated: 2026-10-02
 ---
 <!-- trace:
 ids: [FR-02, FR-15, UC-01, FR-04, FR-07]
 adrs: [ADR-0048, ADR-0023]
-iadrs: [IADR-0464, IADR-0157, IADR-0300, IADR-0467]
-specs: [20260930_1117_kline-quota-probe, 20260930_1125_kline-quota-only-probe, 20260930_1118_daily-volume-from-kline]
-issues: [#1117, #1118, #1125, planning#702]
+iadrs: [IADR-0464, IADR-0157, IADR-0300, IADR-0467, IADR-0478]
+specs: [20260930_1117_kline-quota-probe, 20260930_1125_kline-quota-only-probe, 20260930_1118_daily-volume-from-kline, 20261001_1140_volume-flag-kline-rate-cost-summary]
+issues: [#1117, #1118, #1125, #1140, planning#702]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -222,7 +222,7 @@ order-execution のイメージには、この 2 つを確かめるための**�
 
 ### 有効化の手順
 
-1. trade-decision と report の **両方**の環境変数 `DecisionVolume__Enabled` を `true` にする（片方だけにしない）。report 側は、方針の改訂を作る AI へ「出来高は判断へ渡る」と示すための設定である。report だけ `true` にすると、判断が確かめられない条件を方針に書かせることになる。
+1. trade-decision と report の **両方**の環境変数 `DecisionVolume__Enabled` を `true` にする（片方だけにしない）。report 側は、方針の改訂を作る AI へ「出来高は判断へ渡る」と示すための設定である。report だけ `true` にすると、判断が確かめられない条件を方針に書かせることになる。chart の描画の検査（`helm.yml`）は、2 つの値が食い違う描画と、両方 `true` なのに trade-decision の `OrderExecution__BaseUrl` が絶対 URL でない描画を赤にする（配備の前に止まる）。`--set` で配備するときは同じ検査を手元で当てられる: `helm template ast deploy/helm/ai-stock-trading <配備と同じ -f / --set> -s templates/deployment.yaml | node scripts/check-decision-volume-parity.js`。
 2. trade-decision の `OrderExecution__BaseUrl` に order-execution の宛先を入れる。trade-decision にサービスの資格（`ServiceAuth__*`）があり、order-execution の認証（Authority）が設定済みであることを確かめる。
 3. 配備の後、次で動きを確かめる:
    - trade-decision のログに `日足を取得（前営業日まで・前復権）` が銘柄ごとに取引日 1 回ずつ出る。
@@ -235,6 +235,18 @@ order-execution のイメージには、この 2 つを確かめるための**�
 
 - 前営業日の足がまだ公開されていない（最後の足が前営業日より古い）日は「出来高: 未提供」と書き、**15 分ごとに取り直す**。足が出れば同じ取引日のうちに値の行へ戻る。構成で足した臨時休場の翌営業日は、この取り直しを続けて「未提供」のままになる（同じ銘柄の取り直しは取得枠を増やさない）。
 - order-execution の応答が 8 秒を超えたら、その銘柄は「出来高: 未提供」として判断を続け、15 分おいて取り直す。判断側で待つのはその銘柄の判断だけである。ただし order-execution は相場の接続 1 本で照会を順に流すので、判断が同時に走ると後の銘柄も order-execution の中で 8 秒を超え、「未提供」になり得る（安全側）。
+
+### バックテストの日足を同じ OpenD から取るとき（同時運用は未解決）
+
+バックテストの過去データ源は既定で無効（`Backtest__BarData__Provider` が空）であり、今は判断の日足と OpenD を取り合わない。バックテストの過去データ源を `moomoo` にする前に、次を読む。
+
+- **自制の頻度は共有されない。** 判断の日足は order-execution が 60 秒に 25 回まで、バックテストは backtest-service が既定で 1 分に 30 回まで（`Backtest__BarData__Moomoo__RequestsPerMinute`）、それぞれ別のプロセスで数える。同じ OpenD へ向くので、合わせて 1 分に 55 回まで撃ち得る。OpenD の相場の要求の頻度制限の実値は確かめていない（上の「頻度制限への注意」）。
+- **取得枠（`remainQuota`）も共有される。** バックテストが日足を取る銘柄も、同じ枠（300）の「使用中」に数えられる。上の「有効化してよい条件」の 2 の見積もりに、バックテストで取る銘柄の数を足す。
+- **同時に有効にしてよい条件（両方が揃うまで、片方だけを有効にする）:**
+  1. OpenD の日足の要求の頻度制限を確かめ、記録している。
+  2. 判断の 25 回とバックテストの `Backtest__BarData__Moomoo__RequestsPerMinute` の合計が、その制限に収まる値へバックテスト側を下げている（判断側は定数で、構成では変えられない）。
+  3. 取得枠の見積もり（監視銘柄＋入れ替えで外した銘柄の回復待ち＋バックテストの銘柄）が 300 に十分収まる。
+- 条件が揃う前にバックテストの日足が要るときは、判断の出来高を無効へ戻してから（下）バックテストを有効にする。どちらかの日足の取得で頻度制限に掛かると、判断側はその銘柄を「出来高: 未提供」にして続け（安全側）、バックテスト側はその過去データの取得が失敗する。
 
 ### 無効へ戻す
 

@@ -41,7 +41,26 @@ as_pg "'$PG_BIN/initdb' -D '$DIR/data' -U ai --auth=trust -E UTF8" >/dev/null ||
 as_pg "'$PG_BIN/pg_ctl' -D '$DIR/data' -o \"-k '$DIR' -p $PORT -c listen_addresses=''\" -l '$DIR/log' -w start" >/dev/null \
   || { echo "✗ サーバの起動に失敗" >&2; cat "$DIR/log" >&2; exit 1; }
 PSQL="psql -h $DIR -p $PORT -U ai"
-$PSQL -d postgres -q -c 'CREATE DATABASE audit_svc' || exit 1
+$PSQL -d postgres -q -c 'CREATE DATABASE audit_svc' -c 'CREATE DATABASE cost_control_svc' -c 'CREATE DATABASE configuration_svc' || exit 1
+
+# #1140, IADR-0478 決定 2: §13 が読む 2 つの表（移行 20260710160156_InitialCreate / 20260710105651_InitialCreate と同じ形）。
+# 窓（--night 2026-09-29）の終端は 2026-09-29T23:00Z ＝ UTC の 2026-09。上限は前提条件の JSON（Web 既定＝camelCase）の costLimits.llm。
+$PSQL -d cost_control_svc -q -v ON_ERROR_STOP=1 -o /dev/null <<'SQL' || exit 1
+CREATE TABLE cost_entries ("Id" uuid PRIMARY KEY, "Month" varchar(7) NOT NULL, "Category" integer NOT NULL,
+  "Amount" numeric NOT NULL, "RecordedAt" timestamptz NOT NULL);
+-- 上限の対象（Llm=0）: 月の頭と窓の中の 2 件（1,000 + 2,000）を数える。窓の終端ちょうど・前の月は数えない。
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 0, 1000, '2026-09-01T00:00:00Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 0, 2000, '2026-09-29T22:00:00Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 0, 500, '2026-09-29T23:00:00Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-08', 0, 9999, '2026-08-31T23:59:00Z');
+-- 対象外（LlmUncapped=3）は別の列。インフラ（Infrastructure=1）は数えない。
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 3, 700, '2026-09-15T00:00:00Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 1, 4000, '2026-09-15T00:00:00Z');
+SQL
+$PSQL -d configuration_svc -q -v ON_ERROR_STOP=1 -o /dev/null <<'SQL' || exit 1
+CREATE TABLE assumptions ("Id" integer PRIMARY KEY, "Json" jsonb NOT NULL, "Version" integer NOT NULL, "UpdatedAt" timestamptz NOT NULL);
+INSERT INTO assumptions VALUES (1, '{"costLimits":{"total":20000,"llm":12000,"infrastructure":5000,"data":0}}', 3, now());
+SQL
 
 # 移行（20260710095747_InitialCreate）と同じ形の表。
 $PSQL -d audit_svc -q -v ON_ERROR_STOP=1 -o /dev/null <<'SQL' || exit 1
@@ -128,6 +147,15 @@ SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
 SELECT ev('PositionQueryStatusChanged', gen_random_uuid(), NULL,
   '{"Source":"BrokerAvailabilityProbe","Status":"Healthy","PreviousStatus":"Failing","FailureKind":null,"FailedQueries":60}',
   '2026-09-29T20:10:00+09');
+-- #1140: LLM の費用（窓の中の 3 件・窓の尻ちょうどの 1 件は数えない。用途の無い従来の形は (不明)）。
+SELECT ev('LlmCostIncurred', gen_random_uuid(), NULL,
+  '{"Amount":10.25,"At":"2026-09-29T12:00:00Z","Purpose":"trade-decision","Model":"claude-sonnet-5"}', '2026-09-29T21:00:00+09');
+SELECT ev('LlmCostIncurred', gen_random_uuid(), NULL,
+  '{"Amount":20.5,"At":"2026-09-29T13:00:00Z","Purpose":"trade-decision","Model":"claude-sonnet-5"}', '2026-09-29T22:00:00+09');
+SELECT ev('LlmCostIncurred', gen_random_uuid(), NULL,
+  '{"Amount":3,"At":"2026-09-29T14:00:00Z","Purpose":null,"Model":null}', '2026-09-29T23:00:00+09');
+SELECT ev('LlmCostIncurred', gen_random_uuid(), NULL,
+  '{"Amount":99,"At":"2026-09-29T23:00:00Z","Purpose":"trade-decision","Model":"claude-sonnet-5"}', '2026-09-30T08:00:00+09');
 -- LLM を呼ぶ前の見送り（窓の尻ちょうどは数えない）。
 SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'NVDA',
   '{"Reason":"DailyPolicyUnconfirmed","CycleTrigger":"scheduled"}', '2026-09-29T22:30:00+09');
@@ -200,6 +228,46 @@ hasnt 'LLM を呼ぶ前の見送り: 窓の尻ちょうどは数えない' 'FxRa
 # T-10-1796, #1113, IADR-0463: 新規建てが塞がっている銘柄の見送りも理由 × 起点で数える（審査の拒否から移った分）。
 has 'LLM を呼ぶ前の見送り: 新規建てが塞がっている銘柄' 'EntryBlockedByRiskControls|scheduled|2|AMZN,META'
 has '§11 に計器の移動の注記' '-- EntryBlockedByRiskControls は新規建てが審査で必ず拒否される銘柄（kill switch・一時停止・当日の損切り・建玉数の上限等）の見送り。§5 の拒否から移った分'
+# T-10-2024〜T-10-2026, #1140, IADR-0478 決定 2: LLM の費用の円（§12）と、当月の累計・月次上限に対する使用率（§13）。
+has '§12: 用途 × モデル別の件数と円（窓の尻ちょうどは数えない）' 'trade-decision|claude-sonnet-5|2|30.75'
+has '§12: 用途の無い従来の形は (不明)' '(不明)|(不明)|1|3.00'
+has '§12: 最後の行が窓の合計' '合計|-|3|33.75'
+has '§13: 当月（UTC の 2026-09）の対象の累計・上限（設定サービスの値）・使用率・対象外の累計' '2026-09|3000.00|12000|25.0%|700.00'
+hasnt '§13: 前の月・窓の終端ちょうど・インフラの計上を数えない' '2026-09|12999'
+$PSQL -d configuration_svc -q -o /dev/null -c 'DELETE FROM assumptions' || exit 1
+OUT_NOLIM="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
+rc_nolim=$?
+if [ "$rc_nolim" -eq 0 ] && grep -qxF '2026-09|3000.00||不明（上限を読めない）|700.00' <<<"$OUT_NOLIM" \
+  && grep -q '^WARN: 月次 LLM 費用上限を設定サービス' <<<"$OUT_NOLIM"; then
+  pass=$((pass + 1)); echo '  ok  §13: 前提条件の行が無ければ使用率は「不明」と出し、累計は出して exit 0'
+else fail=$((fail + 1)); echo "  NG  §13: 上限を読めないときの扱い（rc=${rc_nolim}）" >&2; grep '^2026-09|\|^WARN' <<<"$OUT_NOLIM" >&2; fi
+$PSQL -d configuration_svc -q -o /dev/null \
+  -c "INSERT INTO assumptions VALUES (1, '{\"costLimits\":{\"llm\":0}}', 4, now())" || exit 1
+OUT_ZERO="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
+if grep -qxF '2026-09|3000.00|0|上限 0 以下（費用統制は統制しない）|700.00' <<<"$OUT_ZERO"; then
+  pass=$((pass + 1)); echo '  ok  §13: 上限 0 は割り算せず「統制しない」と出す'
+else fail=$((fail + 1)); echo '  NG  §13: 上限 0 の扱い' >&2; grep '^2026-09|' <<<"$OUT_ZERO" >&2; fi
+# T-10-2025（月の境界）, #1140: 月は JST ではなく UTC の暦月で、窓 [from, to) の最後の瞬間（to の 1 マイクロ秒前）の月。
+# 上の行に 9 月の 2 件（09-30T22:59Z・09-30T23:59:59Z）と、UTC で 10 月に計上された 10 月分 1 件（10-01T00:00Z ちょうど）を足す。
+$PSQL -d configuration_svc -q -o /dev/null -c 'DELETE FROM assumptions' \
+  -c "INSERT INTO assumptions VALUES (1, '{\"costLimits\":{\"llm\":12000}}', 5, now())" || exit 1
+$PSQL -d cost_control_svc -q -v ON_ERROR_STOP=1 -o /dev/null <<'SQL' || exit 1
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 0, 400, '2026-09-30T22:59:00Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 0, 100, '2026-09-30T23:59:59Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-10', 0, 8000, '2026-10-01T00:00:00Z');
+SQL
+# JST の月初の夜（--night 2026-09-30）: 終端は 10-01 08:00 JST だが UTC では 09-30T23:00Z ＝ まだ 9 月。
+# 9 月の 1,000 + 2,000 + 500 + 400 を数え（23:59:59Z は終端より後）、10 月分は含めない。JST で切ると 2026-10 になって赤。
+OUT_JST="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-30 2>&1)"
+if grep -qxF '2026-09|3900.00|12000|32.5%|700.00' <<<"$OUT_JST" && ! grep -q '^2026-10|' <<<"$OUT_JST"; then
+  pass=$((pass + 1)); echo '  ok  §13: JST の月初の夜も UTC の暦月（9 月）で累計し、10 月分を含めない'
+else fail=$((fail + 1)); echo '  NG  §13: JST の月初の夜の月の取り違え' >&2; grep '^2026-' <<<"$OUT_JST" >&2; fi
+# 窓の終端がちょうど月初 00:00Z: 窓は半開区間なので終端の月（10 月）ではなく前の月（9 月）として扱う。
+# 9 月の 5 件（4,000）を数え、終端ちょうどに計上された 10 月分は含めない。1 マイクロ秒を引かないと 2026-10 になって赤。
+OUT_EDGE="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" 2026-09-30T20:00+00:00 2026-10-01T00:00+00:00 2>&1)"
+if grep -qxF '2026-09|4000.00|12000|33.3%|700.00' <<<"$OUT_EDGE" && ! grep -q '^2026-10|' <<<"$OUT_EDGE"; then
+  pass=$((pass + 1)); echo '  ok  §13: 窓の終端がちょうど月初 00:00Z なら前の月（9 月）として扱う'
+else fail=$((fail + 1)); echo '  NG  §13: 窓の終端がちょうど月初のときの月' >&2; grep '^2026-' <<<"$OUT_EDGE" >&2; fi
 
 # 窓の途中で走らせる（場中の確かめ）: 終端は現在時刻で切り、まだ来ていない時間を欠けとして出さない。
 # 観測は 5 分ごとに現在時刻の 30 分前まで。欠けは「最後の観測 → 現在時刻」の約 30 分であり、「→ 窓の終端」の約 10 時間ではない。

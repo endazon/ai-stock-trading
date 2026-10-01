@@ -569,6 +569,7 @@ services:
       # FR-07, ADR-0048 決定 4, #1118, IADR-0467 決定 7: 方針の改訂 LLM へ示す「判断へ渡る材料」の出来高の行。既定（キーなし＝false）は
       # 「出来高: 未提供」と示す。trade-decision の DecisionVolume__Enabled を true にするときだけ、同じ変更でこの env 配列へ足す:
       #   - { name: DecisionVolume__Enabled, value: "true" }
+      # #1140, IADR-0478 決定 1: 2 つの値の一致は helm.yml の描画検査（scripts/check-decision-volume-parity.js）が止める（片方だけ true は赤）。
       # FR-10, FR-06, FR-21, ADR-0016 決定15, #463, IADR-0181: 強制買戻しの推定の照会先（権威源＝リスク管理）。
       # **空＝未供給（null）**。空列（＝推定 0 件）へ倒さない——0 件と表示すると「強制買戻しは
       # 起きていない」と読める（計画が名指しで禁じた向き）。期間約定（/fills）と同じ BaseUrl を使う。
@@ -694,7 +695,8 @@ services:
       # FR-04, ADR-0048 決定 3, #1118, IADR-0467 決定 6: 判断へ渡す出来高（前営業日の出来高・20 日平均比。日足は order-execution の
       # GET /order-execution/daily-bars から銘柄 × 取引日に 1 回）。🔴 **既定は無効であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。
       # 有効化は取得枠の回復周期を IADR に記録してから（手順は docs/operations/kline-quota-probe-runbook.md の「判断への出来高の有効化」）。
-      # 有効化するときだけ、この env 配列へ足す（report の DecisionVolume__Enabled も同じ変更で true にする）:
+      # 有効化するときだけ、この env 配列へ足す（report の DecisionVolume__Enabled も同じ変更で true にする。片方だけ true の描画は
+      # helm.yml の検査が赤にする。#1140, IADR-0478 決定 1）:
       #   - { name: DecisionVolume__Enabled, value: "true" }
       #   - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
       - { name: Reports__BaseUrl, value: "" }
