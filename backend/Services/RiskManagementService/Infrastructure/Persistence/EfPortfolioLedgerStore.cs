@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace RiskManagementService.Infrastructure.Persistence;
 
 // FR-10, FR-05, IADR-0018: 取引台帳の EF 実装（追記専用・専有 DB）。承認は DecisionId、約定は OrderId で冪等。
+// #1136, IADR-0472 決定6: 例外として、新規建ての承認行の損切りライン（StopLossPrice）だけは広げる向きに書き換える（WidenStopLoss）。
 public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfolioLedgerStore
 {
     public void AppendApproval(
@@ -80,6 +81,23 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 a.DecisionId, symbol, market, a.Side, a.Source, a.ApprovedAt,
                 fillTimes.GetValueOrDefault(a.DecisionId) ?? [])),
         ];
+    }
+
+    // 🔴 FR-10, ADR-0049, #1136, IADR-0472 決定6: 新規建ての承認行の損切りラインを**広げる向きにだけ**書き換える
+    // （発注執行が S1 のラインを下限まで遡及した事実の追随。市場監視・建玉の照会は台帳のラインを読む）。
+    // 承認行は追記専用だが、この列だけは広げる向きの書き換えを許す（狭めない・null を埋めない・決済の行は触らない）。
+    public bool WidenStopLoss(Guid entryDecisionId, TradeSide entrySide, decimal stopLossPrice)
+    {
+        var row = db.ApprovedOrders.Find(entryDecisionId);
+        if (row is null || row.PositionEffect != PositionEffect.Open || row.Side != entrySide
+            || !LedgerStopLineWidening.IsWider(entrySide, row.StopLossPrice, stopLossPrice))
+        {
+            return false;
+        }
+
+        row.StopLossPrice = stopLossPrice;
+        db.SaveChanges();
+        return true;
     }
 
     // FR-20, #386, IADR-0149 決定2: 承認済み注文の建玉効果を DecisionId で引く（未承認は null＝不明）。

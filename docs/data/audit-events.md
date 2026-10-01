@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-30
+updated: 2026-10-01
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR]
-adrs: [ADR-0001, ADR-0003, ADR-0040]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113]
+adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136]
 -->
 
 
@@ -112,6 +112,9 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   時刻は解決した時刻。要約に「選択 → 適用（理由・発注先・商品種別）」を書き、🔴 **拒否は「適用なし（発注しない）」と書く**
   —— S0 へ読み替えたと読ませない。日報の「実際に適用された手法」と月報の日数ベースの内訳は、報告書がこの記録を種別と期間で引いて
   承認と突き合わせて作る（台帳が唯一の供給元）。
+- ソフトウェア逆指値（S1）の損切りラインを、損切り幅の下限まで**遡及して広げた**事実（`SoftwareStopLineWidened`）を、広げた記録 1 件につき 1 件記録する。
+  相関はエントリーの `DecisionId`（配置・発動の記録と同じ鍵）、時刻は広げた時刻。要約に旧ライン → 新ライン・取得単価・下限・出所（名前）と「広げる向きだけ」を書く。
+  同じラインでは 2 回目以降は記録しない（冪等）。下限を掛ける前に建てた建玉のラインがなぜ動いたかの一次証跡になる。
 - 発注執行が決済（Close）の数量を、**同じ建玉を売る処理中の決済の分だけ縮めて送った**事実（`CloseReducedForInFlightCloses`）を、
   縮めた承認 1 件につき 1 件記録する。相関は承認の `DecisionId`、時刻は縮めた時刻。要約に承認の数量・ブローカーの決済方向の建玉・
   処理中の株数（件数）・送った株数を書き、🔴 **「台帳の乖離ではない」と書く**（乖離の記録と読み違えさせない）。

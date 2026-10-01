@@ -1,0 +1,172 @@
+---
+title: 損切り幅の下限を、下限の導入前に建てた S1 の建玉へ遡及して当てる（取得単価を基準に広げる向きだけ。#1136）
+type: spec
+status: accepted
+related_ids: [FR-10, FR-11, UC-02, ADR-0049, ADR-0040, ADR-0003, IADR-0472, IADR-0465, IADR-0344, IADR-0389, IADR-0396, IADR-0461, IADR-0466, IADR-0393, IADR-0399]
+author: claude (Claude Code)
+created: 2026-10-01
+updated: 2026-10-01
+plan_refs:
+  - planning:projects/ai-stock-trading/07_adr/ADR-0049_stop-width-floor-atr14-widen-no-ceiling.md
+  - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1 の S1)
+  - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md (§5「損切り幅の下限」)
+---
+
+# 損切り幅の下限を既存の S1 の建玉へ遡及する（#1136）
+
+## 起点
+
+- #1136 のオーナー裁定（2026-10-01・issue コメント）。
+  - **遡及する。** 計画 ADR-0049 の損切り幅の下限（ATR が無い間は 2%）を、下限の導入（#1120・IADR-0465）より前に建てた建玉にも当てる。
+  - 基準は**取得単価**。新しいライン ＝ min(現在のライン, 取得単価 × (1 − 下限))。空売りは逆向き（max(現在のライン, 取得単価 × (1 ＋ 下限))）。
+  - **広げる向きだけ**。狭めない。
+  - 対象は **Active な S1 の保護記録だけ**。`TriggeredAt` 済み・決済が処理中のものは触らない。
+  - 監査に旧ライン・新ライン・下限の出所（`Fallback2Pct` / `Atr14`）を残す。
+  - 1 回だけの是正か、起動のたびに冪等に当てるかは実装に任せる。
+  - 稼働中（9/30）: NVDA 226.52 → 約 226.20、AMZN 245.14 → 約 243.05、MSFT 503.98 → 約 501.67。
+
+## 現状の調査（origin/develop 23b73f35 で確認）
+
+| # | 事実 | 場所 |
+| --- | --- | --- |
+| 1 | S1 の行のラインは `ProtectiveStopOrder.TriggerPrice`（丸めない）。新規建ての承認の `StopLossPrice` を武装時にそのまま保存し、以後どの経路も書き換えない | `OrderExecutionAppService`・`ProtectiveStopOrder` |
+| 2 | 行は**取得単価を持たない**。取得単価はエントリーの発注記録（`ExecutionRecord.AveragePrice`。DecisionId ＝ `EntryDecisionId`・`PositionEffect.Open`）にある。約定追跡が累積の平均を書く | `IExecutedOrderStore.FindByDecisionId`・`OrderFillPoller` |
+| 3 | 到達の判定は 2 段。市場監視が**取引台帳のライン**（銘柄ごとに保有中のエントリーのうち最も保護的な 1 本。IADR-0393）で `StopLossTriggered` を出し、発注執行は**行自身の `TriggerPrice`** で `Reached` を判定し直してから武装（`TriggeredAt`）する | `MarketMonitorAppService`・`SoftwareStopExecutor.OnTriggeredAsync` |
+| 4 | 🔴 武装は「候補の一覧を読んだ写し」で `Reached` を判定し、`stops.Update` の中（最新の行）では判定し直さない。候補を読んだ後にラインが変わると、古いラインで武装し得る | `SoftwareStopExecutor.OnTriggeredAsync` |
+| 5 | 保護記録の書き込みは `ProtectiveStopStoreUpdates.Update`（最新を読み直して版が一致したときだけ書く・IADR-0396）。EF・インメモリの `TrySave` は原子的 | `ProtectiveStopStoreUpdates`・各ストア |
+| 6 | 常駐ガード（moomoo 構成のみ・既定 30 秒）は**起動直後に遅延なく**初回を回す。到達の購読（Wolverine）とは別スレッドで並行に動く | `ProtectiveStopGuardService` |
+| 7 | 下限の比率は `TradingDefaults.StopWidthFloorFallbackRatio`（リスク管理の Domain）。発注執行はリスク管理を参照しない（Shared.Contracts / Shared.Infrastructure だけ）。下限の供給口 `IStopWidthFloorSource` は取引判断の中にある | `TradingDefaults`・`OrderExecutionService.csproj` |
+| 8 | 処理中の決済の見分け方は IADR-0461 決定1・4（非終端の Close の記録から Active な S0 / S3 の保護レグ〔`StopOrderId` / `StopDecisionId`〕を除き、ブローカーが生きていると答えたものだけ数える） | `OrderExecutionAppService.CountInFlightClosesAsync` |
+| 9 | 取引台帳の承認行の `StopLossPrice` は書き換える経路が無い。市場監視は台帳のラインで到達を出し、通知（Critical）・監査に残る。発注執行のラインだけを広げると、旧ラインと新ラインの間の価格で**毎巡回（60 秒）到達の Critical が出るのに決済しない**状態になる | `EfPortfolioLedgerStore`・`NotificationFormatter.From(StopLossTriggered)` |
+
+## 設計（IADR-0472）
+
+1. **常駐ガードの巡回の先頭**（Active 行を読んだ直後・建玉照会と評価の前）で、遡及の純関数を Active な S1 の未到達の行へ当てる。
+   起動直後の初回で再起動・取り込み直後の行も覆い、以後 30 秒ごとに冪等に当て直す（min / max は下限のラインで安定するので 2 回目以降は何も書かない）。
+   1 回だけの移行（Migration・管理コマンド）は採らない（取り込み・遅れて約定が確定した行を取りこぼす）。
+2. **規則**（純関数 `StopWidthFloorRetrofitPolicy`）: 下限 ＝ 取得単価 × `StopWidthFloorDefaults.FallbackRatio`（0.02・出所 `Fallback2Pct`）。
+   下限のライン ＝ 取得単価 − 下限（買い建て）／＋ 下限（売り建て）。新しいライン ＝ 買い建ては下限のラインが今のラインより**低いときだけ**それ、売り建ては**高いときだけ**それ。
+   等しい・狭める向きは変えない。端数は丸めない（S1 のラインは丸めない。S0 / S3 は対象外）。
+   取得単価はエントリーの発注記録（Open・約定 1 株以上・平均価格 > 0）。無ければ当てない（次の巡回で当て直す）。
+3. **対象**: `IsSoftwareStop`・`State == Active`・`TriggeredAt == null`。S0 / S3・`AwaitingEntry`・完了・到達済み（再武装した行を含む）は触らない。
+   **決済が処理中の群は触らない**: 同じ銘柄・市場・方向について、非終端の Close の記録から Active な S0 / S3 の保護レグ（`StopOrderId` / `StopDecisionId`）を除いたもののうち、
+   ブローカーが生きている（非終端）と答えた注文が 1 件でもあれば、その群の行はこの巡回では当てない（IADR-0461 決定1・4 と同じ見分け方）。
+   確かめられない（照会 null・例外）は数えない（IADR-0461 / IADR-0466 と同じ側。恒久に照会できない古い記録で遡及が永遠に止まるのを避ける）。
+4. **競合**: 書き込みは `stops.Update`（最新の行で対象の条件と規則を判定し直す・楽観並行）。加えて**武装の側（`OnTriggeredAsync` の `Update`）で最新の行のラインに対して `Reached` を判定し直す**
+   （調査 4 の穴を塞ぐ。窓の表）。衝突し続けたら書かずにエラーログで次の巡回へ回す。
+5. **監査**: 新しい事実 `SoftwareStopLineWidened`（EntryDecisionId・銘柄・市場・建玉方向・取得単価・旧ライン・新ライン・下限・出所・時刻）を広げた行ごとに 1 件。
+   既存の事実で行のラインの変化を表すものは無い（`SoftwareStopExecuted` は発動の結果・`SoftwareStopArmed` は武装）。監査台帳とリスク管理が購読し、通知はしない。
+   Information ログ「ソフトウェア逆指値の損切りラインを下限まで広げました（遡及）」を出す。
+6. **取引台帳のラインを追随させる**（調査 9）: リスク管理が `SoftwareStopLineWidened` を購読し、承認行（DecisionId ＝ EntryDecisionId・Open）の `StopLossPrice` を**広げる向きのときだけ**書き換える
+   （null・決済・方向違い・狭める向き・行が無いは何もしない。再配送・順序の入れ替わりでも広い方に収束する）。市場監視は台帳から読むので、到達もこのラインで出る。
+7. **下限の比率の単一情報源**: 0.02 を `Shared.Contracts` の `StopWidthFloorDefaults.FallbackRatio` へ移し、`TradingDefaults.StopWidthFloorFallbackRatio` はそれを指す
+   （`StopLossApproximation.DefaultRatio` と `DefaultStopLossRatio` の先例・IADR-0399）。ATR(14) の供給口は取引判断の中にあり、発注執行は使えない。ATR が供給されたら（#1122）遡及の出所も見直す（残余）。
+
+## 窓の表（規則 11）
+
+### 窓 A: 遡及の書き込みと、到達の武装（別スレッド）
+
+プローブ:
+
+- **P1（増える側）**: 価格 p が新ライン ＜ p ≦ 旧ライン。到達の購読が候補（旧ライン）を読んだ**後**に遡及が広げ、その後で武装の書き込みが走る。期待: 武装しない（新ラインが正）。
+- **P2（減る側）**: 武装（`TriggeredAt`）が書かれた後に、遡及が古い写し（未到達）で書こうとする。期待: 遡及は何もしない（到達の記録を巻き戻さない）。
+- **P3（対照）**: p ≦ 新ライン。遡及が割り込んでも武装する。
+
+| 形 | P1 | P2 | P3 |
+| --- | --- | --- | --- |
+| 前の端だけ（候補・巡回の写しで判定し、無条件の `Save` で書く） | ✗ 旧ラインで武装する | ✗ 到達の記録を null で上書きする | ✓ |
+| 後の端だけ（最新の行で判定・楽観並行で書く） | ✓ | ✓ | ✓ |
+| **両端（写しで候補を絞り、最新の行で判定し直して書く）＝採用** | ✓ | ✓ | ✓ |
+
+後の端だけでも正しい（判定の権威は最新の行と版の一致）。前の端は「書く必要のない行に書き込みを起こさない」ための絞り込みとして残す。
+試験: P1 ＝ T-10-1930、P2 ＝ T-10-1931、P3 ＝ T-10-1932。
+
+### 窓 B: 遡及を当てる時点の価格
+
+| 価格の位置（買い建て） | 当てた後 | 判断 |
+| --- | --- | --- |
+| 旧ラインより上 | 広げる。以後は新ラインで到達 | 裁定どおり |
+| 新ライン ＜ p ≦ 旧ライン で、まだ到達の記録が無い（市場監視の巡回前・閉場中） | 広げる。武装しない | 裁定どおり（旧ラインなら発動していた。新ラインが正） |
+| 同上で、既に到達の記録がある | 触らない（決済を続ける） | 裁定どおり（`TriggeredAt` 済みは触らない） |
+| p ≦ 新ライン | 広げる。次の到達で武装して決済する | 新ラインでも割っている |
+
+### 窓 C: 取得単価の変化（部分約定の続き）
+
+平均が下がる（増える側）→ 下限のラインが下がり、さらに広げる。上がる（減る側）→ 下限のラインが上がるが狭めないので変えない。
+min / max のため、どの順に観測しても「観測した中で最も広いライン」に収束する（T-10-1925）。
+
+### 窓 D: 処理中の決済の判定と書き込みの間
+
+判定の後に決済が載っても、そのまま広げる。決済で建玉は減り、ラインを広げたことで損切りを早めることは無い（広げる向きだけ）。前の端だけで判定する。
+
+### 窓 E: 発注執行のラインと取引台帳のライン
+
+発注執行が広げてから台帳が追随するまで（メッセージの往復）、市場監視は旧ラインで到達を出し得る。発注執行は行自身の新ラインで判定し直すので武装しない（窓 A の P1 と同じ形）。
+台帳が追随した後は出ない。
+
+## 母集合（規則 9: 誤りの側の文字列で引いた）
+
+- `StopWidthFloorFallbackRatio`・`0.02m`: `TradingDefaults`（値を Shared へ移して指す）・`StopWidthFloorPolicy`（`TradingDefaults` を指したまま。変更不要）・`TradingDefaultsTests`（Shared と一致する表明を足す）。
+- `TriggerPrice` を書く箇所（`TriggerPrice =` / `with {`）: 武装時の保存（`OrderExecutionAppService`）だけ。本件が 2 か所目。
+- `Reached(`: `SoftwareStopExecutor` の 2 か所（候補の絞り込み・本件で足す最新の行）。
+- `StopLossPrice` を書く台帳の経路: `AppendApproval` だけ。本件で `WidenStopLoss` を足す（EF・インメモリ）。
+- 「既存の建玉には掛からない」旨の記述（`新規建てだけ|遡及|既存の建玉`）: IADR-0465・作業仕様書 1120・テスト仕様書の下限の節・機能仕様書を走査し、「既存の建玉は対象外」と書いた箇所は無かった（いずれも「新規建てに掛ける」の記述で、誤りにならない）。
+
+### 規則 10（この変更で新たに誤りになる自分の記述）
+
+- IADR-0465 §結果の残余「LLM を経ない経路…は対象外」 → 対象外のまま（遡及はライン、IADR-0465 は幅とサイジング）。誤りにならない。
+- 取引台帳の「追記専用」（`EfPortfolioLedgerStore` の冒頭の注記） → 承認行の `StopLossPrice` を広げる向きにだけ書き換える例外が増えた。注記を直す。
+- イベントの一覧（`docs/api/events-and-ports.md`）・監査の記録（`docs/data/audit-events.md`） → 行を足す。
+
+## 試験（T-10-1920〜T-10-1939）
+
+| ID | 内容 |
+| --- | --- |
+| T-10-1920 | 純関数: 買い建て（取得 100・ライン 99 → 98）・売り建て（取得 100・ライン 101 → 102）・既に広い（97 / 103）は変えない・ちょうど下限のラインは変えない・比率は `StopWidthFloorDefaults` |
+| T-10-1921 | 稼働中の 3 例: NVDA 取得 230.82・226.52 → 226.2036／AMZN 248.01・245.14 → 243.0498／MSFT 511.91・503.98 → 501.6718 |
+| T-10-1922 | 遡及: 買い建て・売り建ての行を広げ、保存し、事実（旧・新・取得単価・下限・`Fallback2Pct`）を返す |
+| T-10-1923 | 触らない: 既に広い行・到達済み・完了・S0・S3・取得単価が分からない（記録なし・約定 0） |
+| T-10-1924 | 処理中の決済: 判断の手仕舞いが生きている群は触らない。終端・照会 null・S0 の保護レグだけなら当てる |
+| T-10-1925 | 冪等: 2 回目は書かず事実も出さない（版が進まない）。取得単価が下がれば広げ、上がっても狭めない |
+| T-10-1926 | 監査の要約と本文（出所は名前）・契約（往復・型名・イベント契約の基準） |
+| T-10-1927 | 永続化: EF（別コンテキストから読める）・インメモリ |
+| T-10-1928 | ガード: 起動直後の巡回で広げて事実を出す。建玉照会が null の巡回でも事実を返す。遡及の口が無い組み立ては従来どおり |
+| T-10-1929 | 取引台帳: 承認行のラインを広げる向きにだけ書き換える（EF・インメモリ）。狭める・null・決済・方向違い・行なしは何もしない。射影の建玉のラインが追随する |
+| T-10-1930 | 窓 A の P1: 候補を読んだ後に広げた → 旧ラインでの到達で武装しない |
+| T-10-1931 | 窓 A の P2: 武装の後に古い写しで遡及 → 到達の記録を巻き戻さない |
+| T-10-1932 | 窓 A の P3: 新ラインも割った到達 → 武装して決済する |
+| T-10-1933 | 本番の組み立て（moomoo 構成）でガードに遡及の口が渡り、リスク管理に台帳のハンドラがある |
+
+## 自己変異（実測）
+
+作業ツリーにだけ当て、対象のテストを走らせて赤を確かめてから戻した（`--filter` は遡及の試験群・台帳の試験群）。
+
+| 変異 | 落ちた試験（実測） |
+| --- | --- |
+| M1 狭める向きにも動かす（買い建ての `floorLine < currentLine` を `!=` に） | T-10-1920（買い・97）・T-10-1923・T-10-1925（3 件赤） |
+| M2 到達済みの行も対象にする（`IsTarget` から `TriggeredAt is null` を外す） | T-10-1923・T-10-1931（2 件赤） |
+| M3 処理中の決済を見ない（`HasLiveCloseInFlightAsync` を `false` に） | T-10-1924（生きている）（1 件赤） |
+| M4 武装の側で最新の行のラインを見ない（`Reached(fresh, …)` を外す） | T-10-1930（1 件赤） |
+| M5 遡及を巡回の写しで判定して書く（前の端だけ。写しの全列を版だけ合わせて書く） | T-10-1931（1 件赤） |
+| M6 売り建ての向きを買い建てと同じにする | T-10-1920（売り 2 件）・T-10-1922（3 件赤） |
+| M7 事実を出さない | T-10-1921 ×3・T-10-1922・T-10-1924 ×3・T-10-1925・T-10-1927・T-10-1928 ×2・T-10-1933（12 件赤） |
+| M8 台帳で狭める向きにも書き換える（`IsWider` を `!=` に） | T-10-1929（EF・インメモリ）（2 件赤） |
+| M9 Program.cs が遡及の口を渡さない（`false ? new … : null`） | T-10-1933（発注執行）（1 件赤。配線ガードの試験は緑のまま＝本試験だけが止める） |
+| M10 台帳のハンドラが書き換えない | T-10-1929（ハンドラ）・T-10-1933（リスク管理）（2 件赤） |
+
+## 検証
+
+- `dotnet build backend/backend.slnx -warnaserror`
+- `dotnet test`（OrderExecutionService・RiskManagementService・AuditService・Shared.Contracts）
+- `dotnet format backend/backend.slnx --verify-no-changes`
+- node 検査器（`check-trace-blocks`・`gen-knowledge-graph --check`・`check-cross-repo-refs`・`check-plan-id-qualification`・`check-test-traceability`・`check-doc-links`・
+  `check-adr-index-sync`・`check-adr-index-addendum-loss`・`check-reading-budget`・`check-observability-assets`・`check-commit-messages`）・`node scripts/scripts.test.js`
+
+## 残余リスク
+
+- ATR(14) は発注執行から得られない（供給口は取引判断の中）。遡及の下限は一律 2%（`Fallback2Pct`）。ATR の供給（#1122）で新規建ての下限が 2% より広くなったとき、遡及も ATR を使うかは見直す。
+- 取得単価はエントリーの発注記録の平均価格であり、建て増し・一部の外部決済の後の「建玉全体の平均取得単価」（ブローカーの値）とは違い得る（行ごとの取得単価の方が裁定の「その建玉の取得単価」に近い）。
+- 処理中の決済を確かめられない（照会 null・例外）ときは当てる側へ倒す。実際に処理中でも、広げる向きなので損切りを早めない。
+- 発注執行が広げてから台帳が追随するまで、旧ラインと新ラインの間の価格では市場監視の到達（Critical の通知）が出得る（武装はしない）。
+- 広げた分だけ 1 回の損切りの損失は大きくなる。幅 2% は 1 注文上限（25%）の効く 4% より狭いため、ラインでの損失は資金の 0.5% 以内に収まる。
+- 実機（SIMULATE）での確認は配備後（期待するログは IADR-0472）。

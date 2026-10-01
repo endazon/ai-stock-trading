@@ -549,6 +549,17 @@ public static class AuditEntryFactory
             + "——**ブローカーへの逆指値なし。到達でシステムが成行決済する（システム停止中は決済されない）**"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // 🔴 FR-10, FR-11, ADR-0049, #1136, IADR-0472 決定5: ソフトウェア逆指値の損切りラインを損切り幅の下限まで**遡及して広げた**事実。
+    // 相関はエントリーの DecisionId（配置・発動の記録と 1 本で辿れる）。旧ライン・新ライン・取得単価・下限と出所（名前）を要約に書き、
+    // 「広げる向きだけ」と書く（狭めた記録と読み違えさせない）。
+    public static AuditEntry From(SoftwareStopLineWidened e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(SoftwareStopLineWidened), e.EntryDecisionId, e.Symbol,
+        Truncate($"{e.Symbol}/{e.Market} {e.EntrySide} ソフトウェア逆指値の損切りラインを下限まで広げた（遡及）: "
+            + $"{e.PreviousStopLossPrice.ToString(CultureInfo.InvariantCulture)} → {e.StopLossPrice.ToString(CultureInfo.InvariantCulture)}"
+            + $"（取得単価 {e.EntryPrice.ToString(CultureInfo.InvariantCulture)}・下限 {e.FloorPerShare.ToString(CultureInfo.InvariantCulture)} {e.FloorSource}"
+            + "・広げる向きだけ）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定5・決定8: ソフトウェア逆指値の発動結果。
     // 利用者の承認なしに決済注文・取消が起きる事象であり、この記録が「なぜ建玉が消えたか」の一次証跡になる。
     public static AuditEntry From(SoftwareStopExecuted e, Guid id, DateTimeOffset recordedAt) => new(

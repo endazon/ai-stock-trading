@@ -567,6 +567,16 @@ public sealed class CloseReducedForInFlightClosesAuditHandler(IAuditEventStore s
     }
 }
 
+// 🔴 FR-10, FR-11, ADR-0049, #1136, IADR-0472 決定5: ソフトウェア逆指値の損切りラインを下限まで遡及して広げた事実を中央監査台帳へ記録する。
+public sealed class SoftwareStopLineWidenedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(SoftwareStopLineWidened message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, FR-12, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置を中央監査台帳へ記録する。
 public sealed class SoftwareStopArmedAuditHandler(IAuditEventStore store, IClock clock)
 {
