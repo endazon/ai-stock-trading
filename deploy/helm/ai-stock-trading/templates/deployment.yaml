@@ -300,13 +300,17 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+          {{- /* NFR, IADR-0468, #1137: 値は values.yaml の probes.readiness が単一情報源。timeoutSeconds は
+                 アプリの DB 疎通チェックの打ち切り（3 秒）より厳密に長く保つ（未指定＝既定 1 秒が先に切っていた）。 */}}
+          {{- $ready := $.Values.probes.readiness }}
           readinessProbe:
             httpGet:
               path: /health/ready
               port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 30
+            initialDelaySeconds: {{ $ready.initialDelaySeconds }}
+            periodSeconds: {{ $ready.periodSeconds }}
+            timeoutSeconds: {{ $ready.timeoutSeconds }}
+            failureThreshold: {{ $ready.failureThreshold }}
           livenessProbe:
             httpGet:
               path: /health/live

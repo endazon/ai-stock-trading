@@ -51,8 +51,9 @@ var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
 builder.Services.AddDbContext<RiskManagementDbContext>(opt => opt.UseNpgsql(connStr));
 
 // DB 到達性の readiness ヘルスチェック。
+// NFR, IADR-0468, #1137: DB 疎通チェックの打ち切りを明示する（readinessProbe の timeoutSeconds より短く）。
 builder.Services.AddAiStockTradingHealthChecks()
-    .AddNpgSql(connStr, tags: ["ready"]);
+    .AddNpgSql(connStr, tags: ["ready"], timeout: HealthCheckExtensions.NpgSqlReadinessTimeout);
 
 // --- リスク管理のポートとサービス（Slice A）を配線する ---
 // 時刻・営業日はステートレスのため singleton。

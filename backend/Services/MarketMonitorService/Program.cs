@@ -44,8 +44,9 @@ var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=postgres;Port=5432;Database=market_monitor_svc;Username=ai;Password=ai";
 builder.Services.AddDbContext<MarketMonitorDbContext>(opt => opt.UseNpgsql(connStr));
 
+// NFR, IADR-0468, #1137: DB 疎通チェックの打ち切りを明示する（readinessProbe の timeoutSeconds より短く）。
 builder.Services.AddAiStockTradingHealthChecks()
-    .AddNpgSql(connStr, tags: ["ready"]);
+    .AddNpgSql(connStr, tags: ["ready"], timeout: HealthCheckExtensions.NpgSqlReadinessTimeout);
 
 // --- 市場監視のポートとサービス（Slice A）を配線する ---
 builder.Services.AddSingleton<IClock, SystemClock>();

@@ -9,6 +9,19 @@ namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 // Kubernetes の liveness/readiness プローブ向けエンドポイント。
 public static class HealthCheckExtensions
 {
+    /// <summary>
+    /// NFR, IADR-0468, #1137: readiness の DB 疎通チェック（<c>AddNpgSql</c>・"ready" タグ）1 回の打ち切り時間。
+    /// <para>
+    /// 未指定だと打ち切りは Npgsql の既定（接続 15 秒・コマンド 30 秒）に委ねられ、kubelet の readinessProbe の
+    /// <c>timeoutSeconds</c>（未指定なら 1 秒）が先に切って「結果の無い失敗」になる（2026-09-30 17:49 UTC の
+    /// "completed after 1002ms … The operation was canceled" はこの形）。
+    /// 🔴 <b>chart の <c>probes.readiness.timeoutSeconds</c>（values.yaml）より厳密に短く保つ</b>——チェックが先に
+    /// 打ち切って 503（Unhealthy）を返し、kubelet の打ち切りより先に必ず答えが届くようにする。
+    /// 両者の大小は <c>DbReadinessTimeoutConsistencyTests</c>（Architecture.Tests）と helm.yml の assert が固定する。
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan NpgSqlReadinessTimeout = TimeSpan.FromSeconds(3);
+
     public static IHealthChecksBuilder AddAiStockTradingHealthChecks(
         this IServiceCollection services) =>
         services.AddHealthChecks();
