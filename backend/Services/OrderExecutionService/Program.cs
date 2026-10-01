@@ -81,8 +81,9 @@ var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=postgres;Port=5432;Database=order_execution_svc;Username=ai;Password=ai";
 builder.Services.AddDbContext<OrderExecutionDbContext>(opt => opt.UseNpgsql(connStr));
 
+// NFR, IADR-0468, #1137: DB 疎通チェックの打ち切りを明示する（readinessProbe の timeoutSeconds より短く）。
 builder.Services.AddAiStockTradingHealthChecks()
-    .AddNpgSql(connStr, tags: ["ready"]);
+    .AddNpgSql(connStr, tags: ["ready"], timeout: HealthCheckExtensions.NpgSqlReadinessTimeout);
 
 // FR-10, #967, IADR-0425 決定1: 借株可否の照会の口（GET /order-execution/short-permit・OwnerOrService）を守る認証・認可。
 // それまで本サービスの HTTP 面はヘルスと自己申告（いずれも無認可・メッシュ内部限定）だけで、認証を登録していなかった。

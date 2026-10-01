@@ -47,8 +47,9 @@ var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=postgres;Port=5432;Database=report_svc;Username=ai;Password=ai";
 builder.Services.AddDbContext<ReportDbContext>(opt => opt.UseNpgsql(connStr));
 
+// NFR, IADR-0468, #1137: DB 疎通チェックの打ち切りを明示する（readinessProbe の timeoutSeconds より短く）。
 builder.Services.AddAiStockTradingHealthChecks()
-    .AddNpgSql(connStr, tags: ["ready"]);
+    .AddNpgSql(connStr, tags: ["ready"], timeout: HealthCheckExtensions.NpgSqlReadinessTimeout);
 
 // 列挙（ReportKind/State）を文字列で送受信する（API の可読性・堅牢性）。
 builder.Services.ConfigureHttpJsonOptions(o =>

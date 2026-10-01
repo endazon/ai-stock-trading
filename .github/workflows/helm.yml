@@ -171,6 +171,35 @@ jobs:
           }
           check default
           check values-local -f "$CHART/values-local.yaml" --set opend.enabled=true
+      # NFR, IADR-0468, #1137: 全 .NET サービス（ASPNETCORE_URLS を持つ Deployment・11 本）の readinessProbe に
+      # timeoutSeconds が明示され、アプリの DB 疎通チェックの打ち切り（HealthCheckExtensions.NpgSqlReadinessTimeout
+      # ＝ 3 秒）より厳密に長いこと。未指定は Kubernetes 既定の 1 秒で、DB の往復が 1 秒を超えると kubelet が先に切る。
+      # 3 秒の側は PlatformShim.Tests の ReadinessProbeTimeoutConsistencyTests が C# の定数と values.yaml の大小で固定する。
+      - name: Assert readinessProbe timeoutSeconds exceeds the DB check timeout (#1137)
+        run: |
+          check_timeout=3
+          check() {
+            label="$1"; shift
+            rows="$(helm template ast "$CHART" "$@" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ {
+                n=""; if (match($0, /\n  name: [a-z-]+/)) n=substr($0, RSTART+9, RLENGTH-9)
+                t="none"; i=index($0, "readinessProbe:")
+                if (i > 0) { r=substr($0, i); j=index(r, "livenessProbe:"); if (j > 0) r=substr(r, 1, j-1)
+                  if (match(r, /timeoutSeconds: [0-9]+/)) t=substr(r, RSTART+16, RLENGTH-16) }
+                print n" "t }')"
+            count="$(printf '%s\n' "$rows" | grep -c . || true)"
+            if [ "$count" -ne 11 ]; then
+              echo "::error::$label: .NET サービスの Deployment が 11 本でない（$count 本）。母集合が変わったなら本 assert と IADR-0468 を見直す。"
+              printf '%s\n' "$rows"; exit 1
+            fi
+            bad="$(printf '%s\n' "$rows" | awk -v c="$check_timeout" '$2 == "none" || $2 + 0 <= c + 0')"
+            if [ -n "$bad" ]; then
+              echo "::error::$label: readinessProbe の timeoutSeconds が無いか、DB 疎通チェックの打ち切り（${check_timeout} 秒）以下（#1137）:"
+              printf '%s\n' "$bad"; exit 1
+            fi
+            echo "$label: 11 本とも readinessProbe.timeoutSeconds > ${check_timeout}"
+          }
+          check default
+          check values-local -f "$CHART/values-local.yaml"
       # #132 / IADR-0060: 既定が no-op（fail-safe）であることを描画で検査する。実弾防止と同じ性質の
       # 「既定で外部へ触らない」保証であり、うっかり既定を反転させたら CI で落とす。
       - name: Assert fail-safe defaults (opend/ExternalSecret 不在・Broker=paper)
