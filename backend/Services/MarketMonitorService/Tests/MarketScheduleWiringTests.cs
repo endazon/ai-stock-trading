@@ -58,6 +58,18 @@ public class MarketScheduleWiringTests
             .Should().BeTrue("ISO でない表記は読まない（月先で 10 月 9 日を休場にしない）");
     }
 
+    // T-10-1863, FR-03, FR-10, #1133, IADR-0469: 巡回の現在値の照会（名前付き HttpClient "marketdata"＝Finnhub /quote）は
+    // 5 秒で打ち切る。既定の 100 秒のままだと 1 銘柄で巡回（既定 60 秒）を越え、他の銘柄の損切り検知が遅れる。
+    [Fact]
+    public void T_10_1863_巡回の現在値の照会は5秒で打ち切る()
+    {
+        using var factory = new Factory();
+        _ = factory.CreateClient();
+
+        factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient("marketdata").Timeout
+            .Should().Be(AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData.FinnhubHttpTimeouts.Quote);
+    }
+
     private sealed class Factory(IDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
     {
         private readonly string _dbName = Guid.NewGuid().ToString();

@@ -100,7 +100,8 @@ builder.Services.Configure<MarketDataOptions>(builder.Configuration.GetSection(M
 // FR-10, #158, IADR-0068: 現在値ソースは構成 MarketData:Provider で選択（既定・空・未知は no-op＝実接続しない）。
 // finnhub 指定＋API キーありのときだけ実市況になる。補充（QuoteRefreshService）は EnableMarkToMarket=false の
 // 既定では起動しないため、Provider を指定しても実際の取得はゲートを人手で ON にするまで起きない（IADR-0066 決定 4）。
-builder.Services.AddHttpClient("marketdata");
+// FR-02, FR-10, #1133, IADR-0469: Finnhub /quote の打ち切りは 5 秒（既定 100 秒のままにしない）。超えたら取得不可（null）。
+builder.Services.AddHttpClient("marketdata", c => c.Timeout = FinnhubHttpTimeouts.Quote);
 builder.Services.AddSingleton<IMarketDataSource>(sp =>
 {
     var marketDataOptions = sp.GetRequiredService<IOptions<MarketDataOptions>>().Value;
