@@ -31,8 +31,9 @@ var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=postgres;Port=5432;Database=configuration_svc;Username=ai;Password=ai";
 builder.Services.AddDbContext<ConfigurationDbContext>(opt => opt.UseNpgsql(connStr));
 
+// NFR, IADR-0468, #1137: DB 疎通チェックの打ち切りを明示する（readinessProbe の timeoutSeconds より短く）。
 builder.Services.AddAiStockTradingHealthChecks()
-    .AddNpgSql(connStr, tags: ["ready"]);
+    .AddNpgSql(connStr, tags: ["ready"], timeout: HealthCheckExtensions.NpgSqlReadinessTimeout);
 
 // 時刻はステートレスのため singleton。DbContext が scoped のため EF ストアも scoped。
 builder.Services.AddSingleton<IClock, SystemClock>();
