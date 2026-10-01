@@ -127,7 +127,7 @@ public class HeldAddOnBlockersTests
 
     private static Probe Create(
         IHeldPositionProvider held, IEntryBlockersProvider? blockers, string llmOutput, bool screening = false,
-        string? mainOutput = null)
+        string? mainOutput = null, int? screeningBudget = null)
     {
         var llm = mainOutput is null ? new RecordingLlm(llmOutput) : new RecordingLlm(llmOutput, mainOutput);
         var forgone = new RecordingForgone();
@@ -135,7 +135,9 @@ public class HeldAddOnBlockersTests
         var skips = new RecordingSkips();
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            options: screening ? new DecisionOrchestrationOptions { EnableScreening = true } : null,
+            options: screening
+                ? new DecisionOrchestrationOptions { EnableScreening = true, ScreeningContextBudgetChars = screeningBudget }
+                : null,
             heldPosition: held, skipReporter: skips, heldReporter: heldReporter, forgoneReporter: forgone,
             entryBlockers: blockers);
         return new Probe(service, llm, forgone, heldReporter, skips);
@@ -186,6 +188,30 @@ public class HeldAddOnBlockersTests
         screeningPrompt.Should().Contain($"本日は{addOn}を選べません。");
         screeningPrompt.Should().Contain(TradeDecisionPromptBuilder.ScreeningAddOnBlockedTail);
         screeningPrompt.Should().NotContain(TradeDecisionPromptBuilder.ScreeningHeldRule);
+    }
+
+    // T-10-1909: 予算付きの一次（`ScreeningContextBudgetChars` を設定した縮退制御ありの経路）にも、選べない旨が渡る
+    // （独立監査の変異 M17: この分岐へ塞がりを渡さなくても T-10-1901 は緑のままだった）。
+    [Theory]
+    [InlineData(10, "買い増し（Buy）")]
+    [InlineData(-10, "売り増し（Sell）")]
+    public async Task T_10_1909_予算付きの一次にも買い増しを選べない旨が渡る(int held, string addOn)
+    {
+        var blocked = held > 0
+            ? LongBlocked(RejectionReason.MaxPositionsExceeded)
+            : ShortBlocked(RejectionReason.MaxPositionsExceeded);
+        var probe = Create(
+            new FakeHeld(held), new FakeBlockers(blocked), SellJson, screening: true,
+            mainOutput: """{"action":"Hold","rationale":"様子見"}""",
+            screeningBudget: DecisionOrchestrationOptions.DefaultScreeningContextBudgetChars);
+
+        await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken);
+
+        var screeningPrompt = ScreeningPrompt(probe);
+        screeningPrompt.Should().Contain($"本日は{addOn}を選べません。");
+        screeningPrompt.Should().Contain(TradeDecisionPromptBuilder.ScreeningAddOnBlockedTail);
+        screeningPrompt.Should().NotContain(TradeDecisionPromptBuilder.ScreeningHeldRule);
+        MainPrompt(probe).Should().Contain($"本日は{addOn}を選べません。");
     }
 
     // T-10-1902: 🔴 LLM が買い増し（ロングの Buy）・売り増し（ショートの Sell）を返しても発注意図を作らず Hold に倒す。
@@ -290,14 +316,14 @@ public class HeldAddOnBlockersTests
         probe.Skips.Reasons.Should().Equal([DecisionSkipReason.AddOnBlockedByRiskControls], "1 回目だけ");
     }
 
-    // T-10-1905: #1113 の経路（保有 0・未約定なし・買いが塞がり）は変わらない（LLM 0 回・LLM を呼ぶ前の見送り・照会 1 回）。
+    // T-10-1908: #1113 の経路（保有 0・未約定なし・買いが塞がり）は変わらない（LLM 0 回・LLM を呼ぶ前の見送り・照会 1 回）。
     // 保有 0 で未約定あり／不明・保有不明は照会しない（従来どおり。本件は保有中だけを足した）。
     [Theory]
     [InlineData("保有0", 1)]
     [InlineData("未約定あり", 0)]
     [InlineData("未約定不明", 0)]
     [InlineData("保有不明", 0)]
-    public async Task T_10_1905_保有中でない銘柄の照会と見送りは従来どおり(string name, int expectedCalls)
+    public async Task T_10_1908_保有中でない銘柄の照会と見送りは従来どおり(string name, int expectedCalls)
     {
         var blockers = new FakeBlockers(LongBlocked(RejectionReason.MaxPositionsExceeded));
         var held = name switch
