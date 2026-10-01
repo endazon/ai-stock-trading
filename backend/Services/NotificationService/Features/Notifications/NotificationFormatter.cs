@@ -518,11 +518,16 @@ public static class NotificationFormatter
         $"{e.Summary}\n\n"
             + $"内容を確認のうえ確定してください（{e.PeriodKey}・版 {e.Version}）。"
             + "確定するまで取引方針は変わりません。",
-        HasUnsuppliedInputs(e) ? NotificationSeverity.Warning : NotificationSeverity.Info);
+        HasUnsuppliedInputs(e) || LacksNumericTakeProfit(e) ? NotificationSeverity.Warning : NotificationSeverity.Info);
 
     // #866: 要約に未供給の警告行が含まれているか（発行側 ReportSummary.Build が同じ定数で組み立てる）。
     private static bool HasUnsuppliedInputs(ReportDraftPresented e) =>
         e.Summary?.Contains(ReportSummaryMarkers.UnsuppliedWarningPrefix, StringComparison.Ordinal) == true;
+
+    // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の方針に書式どおりの「利確:」行が無い（発行側 ReportSummary.Build が同じ印を入れる）。
+    // 確定は止めないが、提示を定常の Info に埋もれさせない（未供給の警告と同じ扱い）。
+    private static bool LacksNumericTakeProfit(ReportDraftPresented e) =>
+        e.Summary?.Contains(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, StringComparison.Ordinal) == true;
 
     // NFR（費用）, FR-09: 費用しきい値到達（間隔延長/停止）。停止（Halted）は Critical、間隔延長（Throttled）は Warning。
     public static NotificationMessage From(CostThresholdReached e) => new(

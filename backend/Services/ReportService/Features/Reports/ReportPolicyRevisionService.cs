@@ -128,7 +128,11 @@ public sealed partial class ReportPolicyRevisionService(
         // 🔴 **LLM を待っている間に報告書が更新されたら（自動生成・別の改訂・確定）、ここで版が合わず保存しない**
         // ——読んだ時点の版（ExpectedVersion）で楽観排他を掛ける。古い土台から作った案で新しい版を踏まない。
         var nextVersion = target.ExpectedVersion + 1;
-        var body = AppendRevisionRecord(target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal);
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の案に書式どおりの「利確:」行が無ければ、確定の前に警告する（確定は止めない）。
+        // 警告は方針（PolicySummary）へ入れず、改訂の記録・案内文・ログにだけ出す（方針はそのまま判断へ渡る）。
+        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary);
+        var body = AppendRevisionRecord(
+            target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal, takeProfitWarning);
         var report = target.Base with
         {
             PolicySummary = proposal.PolicySummary,
@@ -178,12 +182,21 @@ public sealed partial class ReportPolicyRevisionService(
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Add),
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Remove));
 
+        if (takeProfitWarning is not null)
+        {
+            logger.LogWarning(
+                "方針の改訂案に書式どおりの「利確:」行がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
+                LogSanitizer.Sanitize(key), version);
+        }
+
         var usage = $"（本日の /policy: {attemptNumber}/{limit.DailyLimit} 回目）";
+        // 案内文の末尾の行に警告を置く（通知サービスは承認待ちにできた案でも、印で始まるこの行を確認ボタンの前に見せる）。
+        var warningSuffix = takeProfitWarning is null ? string.Empty : "\n" + takeProfitWarning;
         return new PolicyRevisionResult(
             PolicyRevisionStatus.Proposed,
             presented
-                ? $"方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。{usage}"
-                : $"方針の改訂案を保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。{usage}",
+                ? $"方針の改訂案を保存し、承認待ちにしました（確定するまで取引には適用されません）。{usage}{warningSuffix}"
+                : $"方針の改訂案を保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。{usage}{warningSuffix}",
             key, version, target.Created, presented, proposal);
     }
 
@@ -303,7 +316,8 @@ public sealed partial class ReportPolicyRevisionService(
 
     // 本文の末尾へ改訂の記録を追記する（誰が・いつ・何を指示し・AI が何を案として返したか）。確定時に KB へ保存される。
     internal static string AppendRevisionRecord(
-        string existingBody, int version, string actor, DateTimeOffset at, string instruction, PolicyRevisionProposal proposal)
+        string existingBody, int version, string actor, DateTimeOffset at, string instruction, PolicyRevisionProposal proposal,
+        string? takeProfitWarning = null)
     {
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(existingBody))
@@ -318,6 +332,10 @@ public sealed partial class ReportPolicyRevisionService(
         sb.Append("- 指示（原文）:\n\n");
         foreach (var line in instruction.Split('\n'))
             sb.Append("> ").Append(line).Append('\n');
+
+        // FR-04, FR-07, #1129, IADR-0470 決定 4: 案の方針の直前に警告を置く（/report show・承認の画面で本文を読む利用者へ）。
+        if (takeProfitWarning is not null)
+            sb.Append('\n').Append(takeProfitWarning).Append('\n');
 
         sb.Append("\n### 改訂後の方針（AI の案）\n\n");
         sb.Append(proposal.PolicySummary).Append('\n');

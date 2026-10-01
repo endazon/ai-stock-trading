@@ -17,6 +17,10 @@ namespace ReportService.Features.Reports;
 // FR-07, FR-04, ADR-0048 決定 4, 04_report-templates §日報の追加記載要件, #1118, IADR-0467 決定 7: **判断へ渡る材料と「未提供」の材料を示す。**
 // 渡らない材料（出来高が未提供の間の出来高・テクニカル指標など）を売買条件に書いた方針では、判断が条件を確かめられず全件 Hold になる
 // （PoC の実測）。出来高の行は判断サービスと同じ設定 DecisionVolume:Enabled（既定 false）で切り替える（呼び出し側が渡す）。
+//
+// FR-04, FR-07, #1129, IADR-0470 決定 1: 日報の方針の**利確の条件を数値で書く**案内を足す（上と同じ「判断が確かめられない条件を書かない」）。
+// IADR-0470（2026-10-01 追記 / #1129 再監査）: 条件は**決まった書式の「利確:」行**として書かせる。システム（警告・判断側の到達の明示）は
+// その行だけを読み、自由文からは読まない（共有カーネル PolicyTakeProfitConditions）。説明の文は人が読む方針として残させる。
 public static class PolicyRevisionPromptBuilder
 {
     /// <summary>判断へ渡る材料の節の見出し。</summary>
@@ -33,6 +37,52 @@ public static class PolicyRevisionPromptBuilder
     /// <summary>渡らない材料を条件にしないことの案内。</summary>
     public const string NotProvidedMaterialsRule =
         "上に無い材料・「未提供」の材料（例: テクニカル指標〔移動平均・RSI 等〕、板の情報、当日の累計出来高）は判断へ渡らない。これらを買い条件・売り条件にしない（判断が条件を確かめられず、すべて見送りになる）。";
+
+    /// <summary>
+    /// FR-04, FR-07, ADR-0048 決定 4, #1129, IADR-0470 決定 1: 日報の方針の売り条件（利確）を数値で書く案内（日報の改訂にだけ出す）。
+    /// 「十分に」のような語は判断が条件に達したかを確かめられず、利確されないまま保有継続（Hold）に倒れる（実測: 保有中の銘柄の
+    /// 一晩の判断が Hold 17・Buy 1・Sell 0）。判断へ渡る材料の節と同じ考え方（判断が確かめられない条件を書かない）。
+    /// </summary>
+    public const string NumericTakeProfitHeading = "売り条件（利確）の書き方（日報の方針。取引判断が条件に達したかを確かめられるようにする）:";
+
+    /// <summary>利確の条件を決まった書式の「利確:」行で書く案内。</summary>
+    public const string NumericTakeProfitRule =
+        "- 保有中の銘柄と新規建ての対象には、銘柄ごとに 1 行ずつ、方針（policySummary）の中に「利確: <ティッカー> <しきい値>」の書式の行を書く（JSON 文字列の中では行を \\n で区切る）。"
+        + "<ティッカー> は英字で始まる大文字のティッカー（例 AAPL・BRK.B）だけを書ける。数字のコードの銘柄（日本株。例 7203）は銘柄の行を書けないため、「全銘柄」の行で扱う（数字のコードの行があると、その方針の利確の条件は 1 つも読まれない）。"
+        + "しきい値は、平均取得単価からの含み益の率「+N%」（+ は必須）か、価格「$N」「N ドル」（米ドル）・「N 円」のどれか 1 つにする。"
+        + "一部だけ利確するときは、しきい値の後ろに括弧で割合「(N%)」を書く。すべての銘柄に同じ条件を掛けるときは、ティッカーの代わりに「全銘柄」と書く（銘柄の行があれば、その銘柄には銘柄の行が優先する）。";
+
+    /// <summary>「利確:」行の例（試験が、共有カーネルの読み取りで条件として読めることを固定する）。</summary>
+    public static readonly IReadOnlyList<string> TakeProfitLineExamples = ["利確: AAPL +5%", "利確: MSFT $450 (50%)", "利確: 全銘柄 +8%"];
+
+    /// <summary>「利確:」行の例の案内。</summary>
+    public static readonly string TakeProfitLineExamplesRule =
+        "- 例: " + string.Join("／", TakeProfitLineExamples.Select(e => $"「{e}」"))
+        // #1129 第 4 回監査 R1: 例の説明の文に「利確」の語を置かない（写されると方針全体が読めなくなる）。
+        + "（AAPL は平均取得単価から +5% で保有の全量を売る、MSFT は 450 ドルで保有の 50% を売る、他の銘柄は +8% で保有の全量を売る）。";
+
+    /// <summary>「利確:」行に書式以外の文字を書かない案内（説明の文は別に残す）。</summary>
+    // #1129 第 4 回監査 R1: システムは「利確」を含む行をコロンの有無を問わずすべて「利確:」行とみなす（見出し・表・説明の文・語の一部も含む）。
+    public const string TakeProfitLineStrictRule =
+        "- 「利確:」行は行頭から書式どおりに書き、この書式以外の文字（「で利確」「以外」「。」・太字の「**」・番号「1.」・引用の「>」・表の「|」など）を足さない。"
+        + "システムは「利確」の語を含む行を、コロンの有無を問わずすべて「利確:」行とみなし（見出し・表・説明の文・「利確条件:」「AAPL 利確 +20%」も含む）、"
+        + "書式に合わない行が 1 行でもあると、その方針の利確の条件を 1 つも読まない。";
+
+    /// <summary>「利確」の語は「利確:」行の中でだけ使う案内（#1129 第 4 回監査 R1）。</summary>
+    public const string TakeProfitWordOnlyInLineRule =
+        "- 「利確」という語は「利確:」行の中でだけ使う。条件の理由や補足は「利確:」行とは別の説明の文に書くが、説明の文では「利確」を使わず、"
+        + "「利益確定」「利食い」などの別の語も使わない（「売る」「手仕舞う」で書く。別の語で書いた条件や例外はシステムに読まれない）。"
+        + "「権利確定日」「金利確認」のように「利確」の文字の並びを含む語も説明の文に書かない（「権利付き最終日」「金利の確認」などと書く）。"
+        + "説明の文は、これまでどおり人が読む方針として書く。";
+
+    /// <summary>銘柄ごとの例外を自由文で書かない案内（#1129 第 3 回監査 F2）。</summary>
+    public const string TakeProfitExceptionRule =
+        "- 「全銘柄」の行と違う条件を掛けたい銘柄（例外）は、必ずその銘柄の「利確:」行で書く（例「利確: 全銘柄 +5%」と「利確: AAPL +20%」）。"
+        + "「ただし AAPL は +20% まで保有する」のような説明の文の例外はシステムに読まれず、その銘柄にも「全銘柄」の条件が当たる。";
+
+    /// <summary>数値の無い利確の語を使わない案内。</summary>
+    public const string VagueTakeProfitRule =
+        "- 「十分に」「適切に」「ある程度」「目安で」のような数値の無い語だけで利確の条件を書かない。取引判断は条件に達したかを確かめられず、利確されないまま保有を続ける。書式どおりの「利確:」行が無い方針は、確定の前に利用者へ警告される。";
 
     public static string Build(PolicyRevisionContext context, bool decisionVolumeProvided = false)
     {
@@ -66,6 +116,19 @@ public static class PolicyRevisionPromptBuilder
         sb.AppendLine(decisionVolumeProvided ? VolumeProvidedMaterial : VolumeNotProvidedMaterial);
         sb.AppendLine(NotProvidedMaterialsRule);
         sb.AppendLine();
+        // FR-04, FR-07, #1129, IADR-0470 決定 1: 日報の方針だけ（週報・月報は銘柄別の売買条件の粒度を持たない）。
+        if (context.Kind == ReportKind.Daily)
+        {
+            sb.AppendLine(NumericTakeProfitHeading);
+            sb.AppendLine(NumericTakeProfitRule);
+            sb.AppendLine(TakeProfitLineExamplesRule);
+            sb.AppendLine(TakeProfitLineStrictRule);
+            sb.AppendLine(TakeProfitWordOnlyInLineRule);
+            sb.AppendLine(TakeProfitExceptionRule);
+            sb.AppendLine(VagueTakeProfitRule);
+            sb.AppendLine();
+        }
+
         sb.AppendLine("出力形式:");
         sb.AppendLine("{\"policySummary\": \"<改訂後の方針>\", \"watchlistChanges\": [{\"action\": \"add\" または \"remove\", \"symbol\": \"<ティッカー>\", \"reason\": \"<理由>\"}], \"rationale\": \"<改訂の説明（1000 文字以内）>\"}");
         sb.AppendLine();
