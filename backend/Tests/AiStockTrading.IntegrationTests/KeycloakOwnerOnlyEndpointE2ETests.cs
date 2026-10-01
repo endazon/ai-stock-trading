@@ -94,9 +94,19 @@ public sealed class KeycloakOwnerOnlyEndpointE2ETests : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        if (_factory is not null)
-            await _factory.DisposeAsync();
+        // NFR, #1128: ホストの破棄の打ち切り（RabbitMQ の閉じ待ち）で試験を赤にせず、投げてもコンテナの破棄を必ず行う。
+        try
+        {
+            await E2EInfrastructure.DisposeQuietlyAsync(_factory, "リスク管理のホスト");
+        }
+        finally
+        {
+            await DisposeInfrastructureAsync();
+        }
+    }
 
+    private async Task DisposeInfrastructureAsync()
+    {
         // 外部注入時はコンテナを持たない（破棄は呼び出し側の責務）。
         var disposals = new List<Task>();
         if (_postgres is not null)
@@ -105,12 +115,18 @@ public sealed class KeycloakOwnerOnlyEndpointE2ETests : IAsyncLifetime
             disposals.Add(_rabbitMq.DisposeAsync().AsTask());
         if (_keycloak is not null)
             disposals.Add(_keycloak.DisposeAsync().AsTask());
-        await Task.WhenAll(disposals);
-
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
-        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
-        Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
-        Environment.SetEnvironmentVariable("Auth__Authority", null);
+        try
+        {
+            await Task.WhenAll(disposals);
+        }
+        finally
+        {
+            // NFR, #1128: コンテナの破棄が投げても、環境変数は後続の試験クラスへ漏らさない。
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+            Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
+            Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
+            Environment.SetEnvironmentVariable("Auth__Authority", null);
+        }
     }
 
     [Fact]
