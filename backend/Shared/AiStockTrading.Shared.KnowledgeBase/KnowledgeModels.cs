@@ -96,10 +96,18 @@ public static class KnowledgeSearchSorts
 }
 
 // FR-08, #1083, IADR-0454 決定2・3: 検索の絞り込みに使う文書属性のキー
-// （情報収集の KnowledgeBaseWriterSink が保存時に載せる。銘柄を持たない文書には無い）。
+// （情報収集の KnowledgeBaseWriterSink が保存時に載せる。銘柄を持たない文書には `symbol` が無い）。
 public static class KnowledgeSearchAttributes
 {
     public const string Symbol = "symbol";
+
+    // FR-01, FR-02, FR-08, #1138, IADR-0474 決定1: 銘柄を持たない文書（市場全体のニュース・マクロ・収集状態・確定報告書）の目印。
+    // 基盤の AttributeFilters は単値の完全一致だけで「属性が無い」を条件にできないため、保存時に肯定の値を書いて絞れるようにする。
+    // 書き手は情報収集の KnowledgeBaseWriterSink（銘柄が無いときだけ）と報告書の ReportKnowledgeMapper（常に）の 2 か所。
+    // キー名に `scope` を使わない（基盤の Scope〔ABAC の許可〕・doc_scope と紛れる）。
+    public const string Coverage = "coverage";
+
+    public const string MarketCoverage = "market";
 }
 
 // FR-08, FR-02, FR-04, #568: RAG 検索ヒット 1 件（チャンク単位。platform SearchResultDto に対応）。
@@ -117,5 +125,6 @@ public sealed record KnowledgeHit(
     IReadOnlyList<string> Tags,
     DateTimeOffset? PublishedAt = null,
     // FR-08, #1083, IADR-0454 決定3: 文書属性 `symbol`（銘柄）。**銘柄を持たない文書（市場全体のニュース・マクロ・
-    // 収集状態）は null**。判断側は銘柄フィルタを掛けない検索の結果から「銘柄を持たない文書」だけを残すのに使う。
+    // 収集状態）は null**。判断側は目印（coverage）を持たない旧文書の補充（フィルタなしの検索。#1138, IADR-0474 決定3）から
+    // 「銘柄を持たない文書」だけを残すのに使う。
     string? Symbol = null);
