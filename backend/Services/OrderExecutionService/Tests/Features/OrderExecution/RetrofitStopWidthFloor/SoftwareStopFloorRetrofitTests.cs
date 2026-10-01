@@ -596,4 +596,23 @@ public class SoftwareStopFloorRetrofitTests
         f.Stops.Find(postLong.EntryDecisionId)!.Version.Should().Be(versionBefore, "書かない");
         f.Stops.Find(postShort.EntryDecisionId)!.TriggerPrice.Should().Be(102m);
     }
+
+    // T-10-1939, FR-10, #1136 再監査 R-2, IADR-0472（2026-10-01 追記）: 対象の判定（下限を割って建てた行か）は**後の端（最新の行）でも**行う。
+    // 写しは導入前の幅（98.5）でも、写しを読んだ後に別の書き手が 97.51 まで広げていれば、最新の行は計画価格から 2% 以上離れている。
+    // その後に取得単価が下がっても（99.0 → 下限 97.02）追わない（窓 C の上限）。前の端だけで判定すると 97.02 へさらに広げる。
+    [Fact]
+    public async Task T_10_1939_古い写しでも最新の行が下限の外なら広げない()
+    {
+        var f = NewFixture();
+        var stop = S1(98.5m, TradeSide.Buy, "MSFT");
+        f.Stops.Save(stop);
+        Entry(f, stop, 99.0m, planned: 100m);
+        var stale = f.Stops.FindActive(10);
+        f.Stops.Update(stop.EntryDecisionId, s => s with { TriggerPrice = 97.51m });
+
+        var events = await f.Retrofit.ApplyAsync(stale);
+
+        events.Should().BeEmpty();
+        f.Stops.Find(stop.EntryDecisionId)!.TriggerPrice.Should().Be(97.51m, "最新の行は計画価格から 2% 以上離れている");
+    }
 }
