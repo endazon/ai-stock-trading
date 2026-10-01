@@ -111,7 +111,8 @@ public enum MoomooOrderKind { Limit, Stop, Market, StopLimit, TrailingStop }
 // InvalidOperationException であり、拒否理由はログにしか残らなかった。S3（#821）は「拒否理由を監査台帳へ残すこと」
 // 自体が目的であるため、アダプタが理由を取り出して戻り値へ載せられる必要がある。
 // **InvalidOperationException 派生のまま**にしてあるのは、既存の捕捉・表明（アダプタの fail-safe・テスト）を
-// 1 行も変えずに済ませるためである（メッセージ文字列も従来と同一）。
+// 1 行も変えずに済ませるためである（メッセージ文字列の形も従来と同一。FR-11, #1148, IADR-0476: retMsg の口座 ID だけは
+// 作る側で末尾 2 桁以外を伏せる）。
 public sealed class MoomooTradeRequestException(string operation, int retType, string retMsg)
     : InvalidOperationException($"moomoo {operation} が失敗しました（retType={retType}）: {retMsg}")
 {
@@ -121,7 +122,10 @@ public sealed class MoomooTradeRequestException(string operation, int retType, s
     /// <summary>moomoo の retType（RetType_Succeed=0 以外）。</summary>
     public int RetType { get; } = retType;
 
-    /// <summary>moomoo の retMsg（ブローカーが返した拒否理由の原文）。</summary>
+    /// <summary>
+    /// moomoo の retMsg（ブローカーが返した拒否理由）。FR-11, #1148, IADR-0476: 口座 ID は作る側
+    /// （MMApiMoomooTradeClient.EnsureSucceeded）で伏せてあり、原文そのものではない。
+    /// </summary>
     public string RetMsg { get; } = retMsg;
 
     /// <summary>
