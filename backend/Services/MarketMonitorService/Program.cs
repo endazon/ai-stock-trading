@@ -64,7 +64,8 @@ builder.Services.AddSingleton<IMarketSchedule>(_ => new MarketHoursSchedule(
 // 市況断のあいだ古い価格から StopLossTriggered＝実際の決済発注が誤発火しうる。取得不可はスキップ（＝発注しない）が安全側。
 // 前回値フォールバックは発注を伴わない時価評価（リスク管理・報告書）にのみ適用する（IADR-0066 決定 2）。
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddHttpClient("marketdata");
+// FR-02, FR-10, #1133, IADR-0469: Finnhub /quote の打ち切りは 5 秒（既定 100 秒のままにしない）。超えたら取得不可（null）。
+builder.Services.AddHttpClient("marketdata", c => c.Timeout = FinnhubHttpTimeouts.Quote);
 builder.Services.AddSingleton<IMarketDataSource>(sp =>
 {
     var marketDataOptions =

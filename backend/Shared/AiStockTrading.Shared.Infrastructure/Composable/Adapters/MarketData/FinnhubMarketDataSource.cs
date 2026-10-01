@@ -53,9 +53,17 @@ public sealed class FinnhubMarketDataSource(
         {
             snapshot = await client.GetQuoteAsync(symbol, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw; // 停止要求は「取得不可」ではない
+        }
+        catch (OperationCanceledException ex)
+        {
+            // FR-02, FR-10, #1133, IADR-0469 決定 2: 呼び出し側のトークンでない打ち切り（HttpClient.Timeout。
+            // FinnhubHttpTimeouts.Quote）は「取得できない」である。例外のまま返すと、OperationCanceledException を
+            // 停止要求として素通しする呼び出し側（判断の現在値・補充の巡回）が判断や巡回ごと落ちる。
+            logger.LogWarning(ex, "Finnhub の現在値の照会が打ち切られました（銘柄 {Symbol}）。この銘柄をスキップします。", symbol);
+            return null;
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or NotSupportedException)
         {
