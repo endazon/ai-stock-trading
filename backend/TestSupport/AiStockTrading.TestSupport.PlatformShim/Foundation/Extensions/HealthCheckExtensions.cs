@@ -16,8 +16,9 @@ public static class HealthCheckExtensions
     /// <c>timeoutSeconds</c>（未指定なら 1 秒）が先に切って「結果の無い失敗」になる（2026-09-30 17:49 UTC の
     /// "completed after 1002ms … The operation was canceled" はこの形）。
     /// 🔴 <b>chart の <c>probes.readiness.timeoutSeconds</c>（values.yaml）より厳密に短く保つ</b>——チェックが先に
-    /// 打ち切って 503（Unhealthy）を返し、kubelet の打ち切りより先に必ず答えが届くようにする。
-    /// 両者の大小は <c>DbReadinessTimeoutConsistencyTests</c>（Architecture.Tests）と helm.yml の assert が固定する。
+    /// 打ち切って 503（Unhealthy）を返し、kubelet の打ち切りより先に答えが届くようにする（Npgsql が取り消しに応じる局面に限る。
+    /// 起動・認証のハンドシェイクでの無応答は接続 Timeout まで止まらない。IADR-0468 の残余）。
+    /// 両者の大小は <c>ReadinessProbeTimeoutConsistencyTests</c>（PlatformShim.Tests）と helm.yml の assert が固定する。
     /// </para>
     /// </summary>
     public static readonly TimeSpan NpgSqlReadinessTimeout = TimeSpan.FromSeconds(3);

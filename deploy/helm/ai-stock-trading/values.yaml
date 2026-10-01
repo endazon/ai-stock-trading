@@ -805,7 +805,8 @@ resources:
 
 # NFR, #1137: 11 Worker 共通の readinessProbe（/health/ready）。templates/deployment.yaml が読む単一情報源。
 # 🔴 timeoutSeconds はアプリの DB 疎通チェックの打ち切り（HealthCheckExtensions.NpgSqlReadinessTimeout = 3 秒）より
-#    **厳密に長く**保つ。チェックが先に打ち切って 503 を返し、kubelet の打ち切りより先に必ず答えが届くようにするため。
+#    **厳密に長く**保つ。チェックが先に打ち切って 503 を返し、kubelet の打ち切りより先に答えが届くようにするため（Npgsql が取り消しに
+#    応じる局面に限る。ハンドシェイクでの無応答は接続 Timeout まで止まらない）。
 #    未指定（Kubernetes 既定 1 秒）だと、DB の往復が 1 秒を超えた時点で kubelet が切り、チェックは途中で取り消される
 #    （2026-09-30 17:49 UTC の実測）。差（2 秒）は応答の書き出し・スケジューリングの遅れの余裕。大小は
 #    PlatformShim.Tests の ReadinessProbeTimeoutConsistencyTests と helm.yml の assert が固定する。

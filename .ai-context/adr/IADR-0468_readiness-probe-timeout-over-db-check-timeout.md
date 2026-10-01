@@ -38,7 +38,7 @@ updated: 2026-10-01
 
 1. **DB 疎通チェックの打ち切りを 3 秒に固定する。** 定数 `HealthCheckExtensions.NpgSqlReadinessTimeout = TimeSpan.FromSeconds(3)`（PlatformShim）を置き、7 サービスの `AddNpgSql(..., timeout: HealthCheckExtensions.NpgSqlReadinessTimeout)` が渡す。超えたら `HealthCheckService` が Unhealthy（"A timeout occurred while running check."）を返す。
 2. **readinessProbe の `timeoutSeconds` を 5 秒で明示する。** 値は `values.yaml` の `probes.readiness`（`initialDelaySeconds: 10` / `periodSeconds: 10` / `timeoutSeconds: 5` / `failureThreshold: 30`）を単一情報源とし、テンプレートはそれを読む。**描画差分は 11 Deployment に `timeoutSeconds: 5` が 1 行ずつ増えるだけ**（既定・values-local とも実測）。
-3. **大小の不変条件: probe の `timeoutSeconds` ＞ チェックの打ち切り（厳密に）。** チェックが先に打ち切って 503 を返すので、kubelet の打ち切りより前に**必ず答えが届く**（取り消されない）。逆か等しいと、kubelet が先に切って「結果の無い失敗」に戻る。
+3. **大小の不変条件: probe の `timeoutSeconds` ＞ チェックの打ち切り（厳密に）。** チェックが先に打ち切って 503 を返すので、**チェックが取り消しに応じる局面では** kubelet の打ち切りより前に答えが届く（取り消されない）。応じない局面は「結果」の残余に書く（独立監査の実測）。逆か等しいと、kubelet が先に切って「結果の無い失敗」に戻る。
 4. **回数と間隔は変えない。** `failureThreshold: 30` × `periodSeconds: 10`（約 300 秒）は起動時の migration を待つための値で、本件の射程外。この値の下では、遅い往復が 1 回あっても失敗 1 回に数えるだけで NotReady にはならない（連続 30 回で NotReady）。
 5. **liveness は変えない**（チェック 0 個で DB に依存しない。`timeoutSeconds` は既定 1 秒のまま）。
 6. **固定する検査**:
@@ -69,4 +69,9 @@ updated: 2026-10-01
 - 残余:
   - 3 秒・5 秒は 1 回の事象からの見積もりで、負荷時の DB の往復の分布は測っていない（計器の `ast_*` にヘルスチェックの所要時間は無い）。
   - liveness の `timeoutSeconds`（既定 1 秒）はチェック 0 個の応答だけを待つ。ノード負荷でそれすら 1 秒を超えるなら別件（本件では観測されていない）。
+  - **打ち切り 3 秒が効かない局面がある**（独立監査の実測。AspNetCore.HealthChecks.NpgSql 9.0.0 / Npgsql 10.0.3）。`HealthCheckRegistration.Timeout` はトークンを取り消すだけなので、Npgsql がトークンを見ない局面ではチェックは止まらない。
+    - 取り消しに応じる局面（遅いクエリ・SYN が返らない宛先）: 約 3.0 秒で Unhealthy。#1137 の実例（要求の中断による取り消し）はこちら。
+    - 応じない局面（TCP は受理したまま起動・認証のハンドシェイクで無応答 / 初回 Open の型読み込みで停止）: Npgsql の接続 `Timeout`（既定 15 秒）・内部コマンドの打ち切り（30 秒）まで走る。kubelet は 5 秒で切るので、この局面に限り「結果の無い失敗」が残る。**回帰ではない**（是正前も同じ）。readiness は失敗 1 回に数えるので NotReady への遷移は従来どおり。
+    - 塞ぐなら、ヘルスチェック専用の接続文字列に `Timeout=3`（必要なら `Command Timeout=3`）を付ける（実測で無応答の局面も約 3 秒で終わる。`AddNpgSql` は自前のデータソースを作るので EF Core には波及しない）。上の「採らなかった案」の理由（業務の DB アクセスまで変わる）は、業務の接続文字列へ足す形にだけ当てはまる。本件では 7 サービスの接続文字列の組み立てを変えることになるので射程外とし、ハンドシェイクでの停止が実際に観測されたら別件で起票する。
+  - 走査テストは `Program.cs` の `.AddNpgSql(` という文字列だけを見る。拡張メソッド経由の登録や、`AddNpgSql` 以外の `ready` チェックを打ち切り無しで足しても落ちない（独立監査の変異 M8 が生存）。
   - helm.yml の assert はチェックの打ち切り 3 秒を数値で持つ。定数を変えるときは同じ変更で直す（`ReadinessProbeTimeoutConsistencyTests` が定数と values の大小を固定するので、定数だけを 5 秒以上にすれば .NET 側が赤になる）。
