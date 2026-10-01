@@ -17,6 +17,7 @@ namespace OrderExecutionService.Tests;
 public class OrderFeeProbeEndToEndTests
 {
     private const ulong SimAccId = 283745190123UL;
+    private const ulong RealAccId = 918273645501UL;
     private const ulong OrderId = 7788990011UL;
     private const string OrderIdEx = "20260929_NVDA_EX1";
     // 鍵ファイルの中身の見張り値。gitleaks の generic-api-key に当たらないよう、識別子に key 系の語を使わず低エントロピーのダミーにする。
@@ -190,6 +191,30 @@ public class OrderFeeProbeEndToEndTests
         result.Outcome.Should().Be(OrderFeeQueryOutcome.Failed);
         result.RetMsg.Should().Be("acc ****23 denied");
         result.MaskedAccountId.Should().Be("****23");
+    }
+
+    // T-10-2006, FR-11, #1148, IADR-0476: 照会口の retMsg は、口座一覧で見た実弾口座の ID も伏せる
+    //（独立監査 🟡: 従来は SIMULATE の口座 ID だけを伏せており、実弾の口座 ID が検証口の出力に全桁で出得た）。
+    [Fact]
+    public async Task 照会口の結果のretMsgは実弾口座のIDも伏せる()
+    {
+        var opend = new FakeOpenD(historyOrderIdEx: OrderIdEx, feeReply: _ => FeeReply(-1, $"acc {SimAccId} / real {RealAccId} denied"))
+        {
+            IncludeRealAccount = true,
+        };
+        using var client = (MMApiMoomooTradeClient)OrderFeeProbeComposition.CreateQuery(
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Broker:Provider"] = "moomoo",
+                ["Broker:Environment"] = "sim",
+                ["Broker:Moomoo:OpenD:ReplyTimeoutSeconds"] = "2",
+            }).Build(),
+            new Factory(opend));
+
+        var result = await client.QueryOrderFeeAsync("EX_direct-01", TestContext.Current.CancellationToken);
+
+        result.Outcome.Should().Be(OrderFeeQueryOutcome.Failed);
+        result.RetMsg.Should().Be("acc ****23 / real ****01 denied");
     }
 
     [Fact]
@@ -369,6 +394,9 @@ public class OrderFeeProbeEndToEndTests
 
         public bool Created { get; set; }
 
+        // 口座一覧に実弾口座も載せる（#1148: 検証口も実弾の口座 ID を伏せる）。
+        public bool IncludeRealAccount { get; init; }
+
         // 注文一覧の照会を非成功（口座 ID を含む retMsg）で返す位置。
         public ListFailure Failure { get; init; }
 
@@ -419,9 +447,18 @@ public class OrderFeeProbeEndToEndTests
                 .SetAccID(SimAccId)
                 .SetAccType((int)TrdCommon.TrdAccType.TrdAccType_Margin)
                 .BuildPartial();
+            var s2c = TrdGetAccList.S2C.CreateBuilder().AddAccList(acc);
+            if (IncludeRealAccount)
+            {
+                s2c.AddAccList(TrdCommon.TrdAcc.CreateBuilder()
+                    .SetTrdEnv((int)TrdCommon.TrdEnv.TrdEnv_Real)
+                    .SetAccID(RealAccId)
+                    .SetAccType((int)TrdCommon.TrdAccType.TrdAccType_Margin)
+                    .BuildPartial());
+            }
             var response = TrdGetAccList.Response.CreateBuilder()
                 .SetRetType(AccListFails ? -1 : 0).SetRetMsg(AccListFails ? DeniedMessage : string.Empty)
-                .SetS2C(TrdGetAccList.S2C.CreateBuilder().AddAccList(acc).BuildPartial())
+                .SetS2C(s2c.BuildPartial())
                 .BuildPartial();
             _ = Task.Run(() => _trdCallback?.OnReply_GetAccList(_handle, serial, response));
             return serial;

@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log]
-issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, planning#676]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id]
+issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, planning#676]
 -->
 
 
@@ -100,7 +100,7 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 | `OpenD へ接続します <host>:<port> encrypt=...` | moomoo 経路の接続開始（**接続は遅延**＝初回の発注・照会時に張る。起動直後には出ない） |
 | `OpenD 接続完了・SIMULATE 口座 accId=****<末尾 2 桁>` | **SIMULATE 口座を掴んだ**。この行が無ければ moomoo へは出ていない。口座 ID はログでは末尾 2 桁以外を伏せる（全桁は出さない） |
 | `moomoo SIMULATE 発注成功 orderId=<数値> <side> <symbol> x<qty>@<price>` | moomoo へ 1 件送った（**注文ごとに 1 行**） |
-| `moomoo 発注を拒否されました ... retType=-1 retMsg=...` | 証券会社が**返事として**断った（確認できた拒否）。`retMsg` が理由。拒否として記録され、手仕舞いなら在庫は解放される。**`retType` が `-1` 以外でこの行が出ることは無い**（2026-09-19 改定。`-100` / `-200` / `-400` / `-500` は下の行になる） |
+| `moomoo 発注を拒否されました ... retType=-1 retMsg=...` | 証券会社が**返事として**断った（確認できた拒否）。`retMsg` が理由（証券会社の文に口座 ID が入っていれば末尾 2 桁以外を伏せて出る。ログ・例外・監査台帳とも同じ）。拒否として記録され、手仕舞いなら在庫は解放される。**`retType` が `-1` 以外でこの行が出ることは無い**（2026-09-19 改定。`-100` / `-200` / `-400` / `-500` は下の行になる） |
 | `moomoo 発注の結果を確認できませんでした（送信済み・届いたか不明）...` | 🔴 **送信は済んだが結果が分からない**（返信待ちのタイムアウト等）。例外の詳細に `retType=-100`（接続ライブラリが送信済みの要求を 12 秒で打ち切った。**既定構成の返信待ちタイムアウトはこの形で出る**）・`-500`（届いた応答を読めなかった）・`-200` / `-400` が載っていることがある——**どれも「断られた」ではない**。**注文は証券会社側で生きているかもしれない**。拒否として記録せず、予約を据え置く（2026-09-19 改定。旧: `moomoo 発注に失敗したため Rejected に倒します ...`）。🔴 **自動の突合は配備では有効**だが、自動で片付くのは突合が「発注済み」と確定できたものだけである（解放の門が閉じているため「未発注」「判定不能」は据え置かれる）。据え置かれたものは下の「滞留した予約を人が解決する」で解決する。突合が確定させたエントリーへの保護逆指値の扱いも下を参照 |
 | `保護逆指値ガード: 成行手仕舞いの結果を確認できませんでした（送信済み・届いたか不明）...` | 🔴 逆指値が失効した建玉の**成行手仕舞いを送ったが結果が分からない**。システムは**成行も逆指値も重ねない**（重ねると巡回ごとに全数量の成行が増え、二重決済でショートになる）。同時に Critical の通知が出る（据え置きが続くあいだ**約 1 時間ごと**と、**再起動後の最初の巡回**で出し直される。同じ `CloseDecisionId` の通知は同じ 1 本の成行であり、新しい発注ではない）。`CloseDecisionId` が予約のキー |
 | `保護逆指値の発注結果を確認できませんでした（送信済み・届いたか不明、または発注に着手済み）。エントリーの取消も成行手仕舞いもしません...` | 🔴 エントリーと同時に送った**保護逆指値そのもの**の結果が分からない。システムは**エントリーを取り消さず、成行でも手仕舞わず、同じ逆指値も送り直さない**（逆指値が生きていれば、建玉を落とすと逆指値だけが残り、発火で反対方向の建玉になる）。同時に Critical の通知（件名「保護逆指値の発注結果が未確認（据え置き中）」）が出る。`StopDecisionId` が逆指値の予約のキー。解決するまで**逆指値の有無が分からない建玉**が残る＝下の「逆指値の送信結果が不明なとき」で確かめる |

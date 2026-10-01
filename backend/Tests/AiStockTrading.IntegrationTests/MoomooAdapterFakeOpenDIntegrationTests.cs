@@ -441,6 +441,221 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             && e.Message.Contains("accId=****08", StringComparison.Ordinal));
     }
 
+    // ---- FR-11, #1148, IADR-0476: OpenD の retMsg に現れる口座 ID を伏せる（作る側＝EnsureSucceeded の 1 か所）----
+    //
+    // 偽 OpenD が retMsg に口座 ID の全桁（SIMULATE・実弾）を含めても、ログ（本文・例外の連鎖）・例外文・戻り値
+    //（監査へ運ぶ拒否理由）のどこにも全桁が出ないこと。伏せた形（末尾 2 桁）と理由の文は残ること。
+
+    private static readonly string SimFull = SimulateAccId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    private static readonly string RealFull = RealAccId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    // 口座 ID を 2 つとも全桁で含む retMsg（OpenD の文言を模す。実機で口座 ID を返す文言は未実測）。
+    private static string RetMsgWithAccountIds(string reason) => $"{reason} (acc {SimulateAccId} / {RealAccId})";
+
+    private static void ShouldNotContainFullAccountIds(string? text, string because)
+    {
+        text.Should().NotBeNull();
+        text.Should().NotContain(SimFull, because).And.NotContain(RealFull, because);
+    }
+
+    private static IBrokerAdapter CreateAdapter(IMoomooTradeClient client, ILogger<MoomooBrokerAdapter> logger) =>
+        BrokerFactory.Create(
+            BrokerSelection.Parse(BrokerSelection.MoomooProvider, BrokerSelection.SimulatedEnvironment), client, logger);
+
+    // 🔴 T-10-2000, FR-11, FR-10, #1148: 確認できた拒否（retType=-1）。アダプタの Warning（本文の retMsg= と例外）と
+    // 拒否の戻り値に全桁が出ない。伏せた末尾 2 桁と理由の文は残る（拒否理由として読める）。
+    [Fact]
+    public async Task 確認できた拒否のログにOpenDのretMsgの口座IDが全桁で出ない()
+    {
+        using var opend = new FakeOpenD();
+        opend.Failures["PlaceOrder"] = (-1, RetMsgWithAccountIds("price precision invalid"));
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var logger = new RecordingLogger<MoomooBrokerAdapter>();
+        var adapter = CreateAdapter(client, logger);
+        var ct = TestContext.Current.CancellationToken;
+
+        var placed = await adapter.PlaceOrderAsync(BuyIntent(), ct).WaitAsync(Guard, ct);
+
+        placed.Status.Should().Be(OrderStatus.Rejected, "確認できた拒否の扱いは従来どおり");
+        var rejected = logger.Rendered.Where(r => r.Contains("moomoo 発注を拒否されました", StringComparison.Ordinal)).ToList();
+        rejected.Should().ContainSingle();
+        rejected[0].Should().Contain("price precision invalid (acc ****08 / ****76)", "理由の文と伏せた末尾 2 桁は残る");
+        logger.Rendered.Should().AllSatisfy(r => ShouldNotContainFullAccountIds(r, "ログに口座 ID を全桁で残さない"));
+    }
+
+    // 🔴 T-10-2001, FR-11, FR-05, #1148: 届いたか不明（retType=-100）。伝播する例外の連鎖（BrokerDispatchIndeterminateException の
+    // 本文は内側の例外文を含み、監査の理由にもなる）とアダプタの Error に全桁が出ない。
+    [Fact]
+    public async Task 届いたか不明の例外とログにOpenDのretMsgの口座IDが全桁で出ない()
+    {
+        using var opend = new FakeOpenD();
+        opend.Failures["PlaceOrder"] = (-100, RetMsgWithAccountIds("timeout"));
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var logger = new RecordingLogger<MoomooBrokerAdapter>();
+        var adapter = CreateAdapter(client, logger);
+        var ct = TestContext.Current.CancellationToken;
+
+        var act = () => adapter.PlaceOrderAsync(BuyIntent(), ct).WaitAsync(Guard, ct);
+
+        var thrown = (await act.Should().ThrowAsync<BrokerDispatchIndeterminateException>()).Which;
+        thrown.Message.Should().Contain("retType=-100").And.Contain("timeout (acc ****08 / ****76)");
+        ShouldNotContainFullAccountIds(thrown.ToString(), "例外の連鎖（本文・内側）に口座 ID を全桁で載せない");
+        logger.Rendered.Should().NotBeEmpty();
+        logger.Rendered.Should().AllSatisfy(r => ShouldNotContainFullAccountIds(r, "ログに口座 ID を全桁で残さない"));
+    }
+
+    // 🔴 T-10-2002, FR-11, FR-10, #1148: S3 の拒否。監査イベント（AlternativeProtectiveStopAttempted）へ運ぶ拒否理由に全桁が出ない。
+    // 拒否理由を残すこと（#821）は崩さない —— 理由の文と retType は残る。
+    [Fact]
+    public async Task S3の拒否理由は口座IDを伏せて監査へ運ぶ()
+    {
+        using var opend = new FakeOpenD();
+        opend.Failures["PlaceOrder"] = (-1, RetMsgWithAccountIds("Paper trading does not support StopLimit order"));
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var logger = new RecordingLogger<MoomooBrokerAdapter>();
+        var adapter = (IAlternativeProtectiveOrderBroker)CreateAdapter(client, logger);
+        var ct = TestContext.Current.CancellationToken;
+        var closeIntent = BuyIntent() with { Side = TradeSide.Sell, PositionEffect = PositionEffect.Close, StopLossPrice = null };
+
+        var placement = await adapter.PlaceAlternativeStopOrderAsync(closeIntent, 140m, 150m, Guid.NewGuid(), ct).WaitAsync(Guard, ct);
+
+        placement.Order.Status.Should().Be(OrderStatus.Rejected);
+        placement.RejectReasonCode.Should().Be(-1);
+        placement.RejectReasonMessage.Should().Be("Paper trading does not support StopLimit order (acc ****08 / ****76)");
+        logger.Rendered.Should().AllSatisfy(r => ShouldNotContainFullAccountIds(r, "ログに口座 ID を全桁で残さない"));
+    }
+
+    // 🔴 T-10-2003, FR-11, FR-10, #1148, IADR-0458: 建玉照会の失敗。ログに全桁が出ず、retMsg を使う唯一の判定
+    //（頻度制限の語）は伏せた後も同じ分類になる。
+    [Fact]
+    public async Task 建玉照会の失敗のログに口座IDが全桁で出ず頻度制限の分類は変わらない()
+    {
+        using var opend = new FakeOpenD();
+        opend.Failures["GetPositionList"] = (-1, RetMsgWithAccountIds("Maximum 10 times per 30 seconds"));
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var logger = new RecordingLogger<MoomooBrokerAdapter>();
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, logger);
+        var ct = TestContext.Current.CancellationToken;
+
+        var result = await adapter.QueryPositionsAsync(ct).WaitAsync(Guard, ct);
+
+        result.Positions.Should().BeNull();
+        result.Failure.Should().Be(
+            OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.PositionQueryFailure.RateLimited,
+            "伏せても頻度制限の語は残る（照会し直しの分類を変えない）");
+        logger.Rendered.Should().ContainSingle(r => r.Contains("Maximum 10 times per 30 seconds (acc ****08 / ****76)", StringComparison.Ordinal));
+        logger.Rendered.Should().AllSatisfy(r => ShouldNotContainFullAccountIds(r, "ログに口座 ID を全桁で残さない"));
+    }
+
+    // 🔴 T-10-2004, FR-11, #1148: 口座一覧の照会の失敗（口座が未確定＝伏せる値が分からない）。6 桁以上の数字の並びを伏せるため、
+    // 例外の連鎖（BrokerUnavailableException の内側）とアダプタのログに全桁が出ない。
+    [Fact]
+    public async Task 口座が未確定のまま口座一覧の照会が失敗しても口座IDを全桁で出さない()
+    {
+        using var opend = new FakeOpenD();
+        opend.Failures["GetAccList"] = (-1, RetMsgWithAccountIds("account list unavailable"));
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var logger = new RecordingLogger<MoomooBrokerAdapter>();
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, logger);
+        var ct = TestContext.Current.CancellationToken;
+
+        var act = () => client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct);
+        var thrown = (await act.Should().ThrowAsync<BrokerUnavailableException>()).Which;
+        thrown.InnerException.Should().BeOfType<MoomooTradeRequestException>()
+            .Which.RetMsg.Should().Be("account list unavailable (acc ****08 / ****76)");
+        ShouldNotContainFullAccountIds(thrown.ToString(), "例外の連鎖に口座 ID を全桁で載せない");
+
+        (await adapter.GetAccountStateAsync(ct).WaitAsync(Guard, ct)).Should().BeNull("照会できなければ不明（従来どおり）");
+        logger.Rendered.Should().NotBeEmpty();
+        logger.Rendered.Should().AllSatisfy(r => ShouldNotContainFullAccountIds(r, "ログに口座 ID を全桁で残さない"));
+    }
+
+    // 🔴 T-10-2005, FR-11, #1148: 取消・口座照会の失敗。呼び手へ伝播する例外（取消）とアダプタのログ（口座照会）に全桁が出ない。
+    // 口座 ID 以外の数字（注文 ID）は伏せない（口座一覧で見た口座 ID だけを伏せる）。
+    [Fact]
+    public async Task 取消と口座照会の失敗は口座IDだけを伏せ注文IDは残す()
+    {
+        using var opend = new FakeOpenD();
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var logger = new RecordingLogger<MoomooBrokerAdapter>();
+        var adapter = (MoomooBrokerAdapter)CreateAdapter(client, logger);
+        var ct = TestContext.Current.CancellationToken;
+        var placed = await adapter.PlaceOrderAsync(BuyIntent(), ct).WaitAsync(Guard, ct);
+        opend.Failures["CancelOrder"] = (-1, RetMsgWithAccountIds($"order {placed.OrderId} cannot be cancelled"));
+        opend.Failures["GetFunds"] = (-1, RetMsgWithAccountIds("funds unavailable"));
+
+        var act = () => adapter.CancelOrderAsync(placed.OrderId, ct).WaitAsync(Guard, ct);
+        var thrown = (await act.Should().ThrowAsync<MoomooTradeRequestException>()).Which;
+        thrown.Operation.Should().Be("CancelOrder");
+        thrown.RetType.Should().Be(-1);
+        thrown.RetMsg.Should().Be($"order {placed.OrderId} cannot be cancelled (acc ****08 / ****76)", "注文 ID は伏せない");
+        ShouldNotContainFullAccountIds(thrown.ToString(), "例外に口座 ID を全桁で載せない");
+
+        (await adapter.GetAccountStateAsync(ct).WaitAsync(Guard, ct)).Should().BeNull();
+        logger.Rendered.Should().ContainSingle(r => r.Contains("funds unavailable (acc ****08 / ****76)", StringComparison.Ordinal));
+        logger.Rendered.Should().AllSatisfy(r => ShouldNotContainFullAccountIds(r, "ログに口座 ID を全桁で残さない"));
+    }
+
+    // 🔴 T-10-2007, FR-11, #1148: 偽 OpenD のすべての非成功の経路（接続後）で、例外文・RetMsg に全桁が出ない（否定形の総当たり）。
+    // 口座一覧の照会（GetAccList）は接続後の再照会（可用性の巡回）の経路。retType と操作名は保つ。
+    [Theory]
+    [InlineData("PlaceOrder")]
+    [InlineData("GetOrderList")]
+    [InlineData("GetPositionList")]
+    [InlineData("GetFunds")]
+    [InlineData("GetAccList")]
+    [InlineData("CancelOrder")]
+    public async Task どの非成功の経路でも例外にOpenDのretMsgの口座IDが全桁で出ない(string op)
+    {
+        using var opend = new FakeOpenD();
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var ct = TestContext.Current.CancellationToken;
+        await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct); // 接続して口座を確定する
+        var placed = op == "CancelOrder"
+            ? await client.PlaceOrderAsync(
+                new MoomooOrderRequest("AAPL", MoomooMarket.UnitedStates, MoomooSide.Buy, 1, 150m, null), ct).WaitAsync(Guard, ct)
+            : null;
+        opend.Failures[op] = (-1, RetMsgWithAccountIds("denied"));
+
+        Func<Task> act = op switch
+        {
+            "PlaceOrder" => () => client.PlaceOrderAsync(
+                new MoomooOrderRequest("AAPL", MoomooMarket.UnitedStates, MoomooSide.Buy, 1, 150m, null), ct).WaitAsync(Guard, ct),
+            "GetOrderList" => () => client.QueryOrderAsync("9000000001", ct).WaitAsync(Guard, ct),
+            "GetPositionList" => () => client.GetPositionsAsync(ct).WaitAsync(Guard, ct),
+            "GetFunds" => () => client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct),
+            "GetAccList" => () => client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct),
+            "CancelOrder" => () => client.CancelOrderAsync(placed!.OrderId, ct).WaitAsync(Guard, ct),
+            _ => throw new ArgumentOutOfRangeException(nameof(op)),
+        };
+
+        var thrown = (await act.Should().ThrowAsync<MoomooTradeRequestException>()).Which;
+        thrown.Operation.Should().Be(op);
+        thrown.RetType.Should().Be(-1);
+        thrown.RetMsg.Should().Be("denied (acc ****08 / ****76)");
+        thrown.Message.Should().Be($"moomoo {op} が失敗しました（retType=-1）: denied (acc ****08 / ****76)");
+    }
+
+    // T-10-2008, FR-11, #1148: 口座が入れ替わっても、前に見た口座 ID は伏せ続ける（集合は減らさない）。
+    [Fact]
+    public async Task 口座が入れ替わっても前に見た口座IDを伏せ続ける()
+    {
+        using var opend = new FakeOpenD();
+        using var client = new MMApiMoomooTradeClient(Options(), NullLogger<MMApiMoomooTradeClient>.Instance, opend);
+        var ct = TestContext.Current.CancellationToken;
+        await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct);
+        const ulong otherAccId = 31_415_926UL;
+        opend.SimulateAccountId = otherAccId;
+        (await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct)).Should().BeNull("発注先と違う口座の種別は不明（従来どおり）");
+        opend.Failures["GetPositionList"] = (-1, $"acc {SimulateAccId} moved to {otherAccId}");
+
+        var act = () => client.GetPositionsAsync(ct).WaitAsync(Guard, ct);
+
+        var thrown = (await act.Should().ThrowAsync<MoomooTradeRequestException>()).Which;
+        thrown.RetMsg.Should().Be("acc ****08 moved to ****26");
+        ShouldNotContainFullAccountIds(thrown.ToString(), "例外に口座 ID を全桁で載せない");
+    }
+
     // T-10-658, T-10-659, T-10-660, T-10-661, FR-10, #899, ADR-0041 決定2, IADR-0373:
     // 🔴 **通貨の「反証」——非 USD だと示す積極的な証拠があるときだけ採らない。**
     //
@@ -585,6 +800,9 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
     {
         public List<(LogLevel Level, string Message)> Entries { get; } = [];
 
+        /// <summary>FR-11, #1148: 本文と例外（連鎖・スタックを含む <c>ToString()</c>）を合わせた、ログに出る文字列の全体。</summary>
+        public List<string> Rendered { get; } = [];
+
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
         public bool IsEnabled(LogLevel logLevel) => true;
@@ -594,8 +812,12 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             EventId eventId,
             TState state,
             Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
-            Entries.Add((logLevel, formatter(state, exception)));
+            Func<TState, Exception?, string> formatter)
+        {
+            var message = formatter(state, exception);
+            Entries.Add((logLevel, message));
+            Rendered.Add(exception is null ? message : message + Environment.NewLine + exception);
+        }
     }
 
     /// <summary>
@@ -671,6 +893,12 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
 
         /// <summary>FR-11, #1135: 口座一覧が返す SIMULATE 口座の種別（既定は Margin）。</summary>
         public TrdCommon.TrdAccType SimulateAccountType { get; set; } = TrdCommon.TrdAccType.TrdAccType_Margin;
+
+        /// <summary>
+        /// FR-11, #1148: 操作ごとの非成功の応答（鍵は <c>EnsureSucceeded</c> の操作名。CancelOrder は ModifyOrder の応答）。
+        /// 無い操作は従来どおり成功（retType=0・retMsg 空）を返す。
+        /// </summary>
+        public Dictionary<string, (int RetType, string RetMsg)> Failures { get; } = [];
 
         public IMoomooTradeConnection Create()
         {
@@ -749,9 +977,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                     .SetAccID(opend.SimulateAccountId)
                     .SetAccType((int)opend.SimulateAccountType)
                     .BuildPartial();
+                var (retType, retMsg) = Outcome("GetAccList");
                 var response = TrdGetAccList.Response.CreateBuilder()
-                    .SetRetType(0)
-                    .SetRetMsg(string.Empty)
+                    .SetRetType(retType)
+                    .SetRetMsg(retMsg)
                     .SetS2C(TrdGetAccList.S2C.CreateBuilder().AddAccList(real).AddAccList(simulate).BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_GetAccList(_handle, serial, response));
@@ -765,9 +994,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                 var orderId = opend.NextOrderId();
                 opend.LastPlacedOrderId = orderId;
                 opend.PlacedOrders.Add(request.C2S);
+                var (retType, retMsg) = Outcome("PlaceOrder");
                 var response = TrdPlaceOrder.Response.CreateBuilder()
-                    .SetRetType(0)
-                    .SetRetMsg(string.Empty)
+                    .SetRetType(retType)
+                    .SetRetMsg(retMsg)
                     .SetS2C(TrdPlaceOrder.S2C.CreateBuilder().SetOrderID(orderId).BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_PlaceOrder(_handle, serial, response));
@@ -777,9 +1007,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             public uint ModifyOrder(TrdModifyOrder.Request request)
             {
                 var serial = ++_serial;
+                var (retType, retMsg) = Outcome("CancelOrder");
                 var response = TrdModifyOrder.Response.CreateBuilder()
-                    .SetRetType(0)
-                    .SetRetMsg(string.Empty)
+                    .SetRetType(retType)
+                    .SetRetMsg(retMsg)
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_ModifyOrder(_handle, serial, response));
                 return serial;
@@ -795,9 +1026,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                 {
                     builder.AddOrderList(BuildOrder(opend.PlacedOrders[^1], opend.LastPlacedOrderId, opend._fill));
                 }
+                var (retType, retMsg) = Outcome("GetOrderList");
                 var response = TrdGetOrderList.Response.CreateBuilder()
-                    .SetRetType(0)
-                    .SetRetMsg(string.Empty)
+                    .SetRetType(retType)
+                    .SetRetMsg(retMsg)
                     .SetS2C(builder.BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_GetOrderList(_handle, serial, response));
@@ -807,9 +1039,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             public uint GetHistoryOrderList(TrdGetHistoryOrderList.Request request)
             {
                 var serial = ++_serial;
+                var (retType, retMsg) = Outcome("GetHistoryOrderList");
                 var response = TrdGetHistoryOrderList.Response.CreateBuilder()
-                    .SetRetType(0)
-                    .SetRetMsg(string.Empty)
+                    .SetRetType(retType)
+                    .SetRetMsg(retMsg)
                     .SetS2C(TrdGetHistoryOrderList.S2C.CreateBuilder().BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_GetHistoryOrderList(_handle, serial, response));
@@ -833,9 +1066,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                         .SetCostPrice(p.CostPrice)
                         .BuildPartial());
                 }
+                var (retType, retMsg) = Outcome("GetPositionList");
                 var response = TrdGetPositionList.Response.CreateBuilder()
-                    .SetRetType(0)
-                    .SetRetMsg(string.Empty)
+                    .SetRetType(retType)
+                    .SetRetMsg(retMsg)
                     .SetS2C(builder.BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_GetPositionList(_handle, serial, response));
@@ -865,9 +1099,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                     fundsBuilder = fundsBuilder.AddCashInfoList(rowBuilder.BuildPartial());
                 }
                 var funds = fundsBuilder.BuildPartial();
+                var (retType, retMsg) = Outcome("GetFunds");
                 var response = TrdGetFunds.Response.CreateBuilder()
-                    .SetRetType(0)
-                    .SetRetMsg(string.Empty)
+                    .SetRetType(retType)
+                    .SetRetMsg(retMsg)
                     .SetS2C(TrdGetFunds.S2C.CreateBuilder().SetFunds(funds).BuildPartial())
                     .BuildPartial();
                 Reply(() => _trdCallback?.OnReply_GetFunds(_handle, serial, response));
@@ -881,6 +1116,10 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
             public uint GetOrderFee(TrdGetOrderFee.Request request) => ++_serial;
 
             public void Dispose() { }
+
+            // FR-11, #1148: 仕込まれた非成功の応答（無ければ成功）。
+            private (int RetType, string RetMsg) Outcome(string op) =>
+                opend.Failures.TryGetValue(op, out var failure) ? failure : (0, string.Empty);
 
             // 応答は送信の登録が済んだ後で返す必要がある（SendAsync が _sendGate 内で採番・登録する）。
             private static void Reply(Action reply) => _ = Task.Run(reply);

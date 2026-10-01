@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR]
 adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148]
 -->
 
 
@@ -103,7 +103,7 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
 - moomoo SIMULATE で損切りの実行機構 S3（他のブローカー側注文種別）が選ばれていた新規建ては、保護レグを
   ストップリミット（または設定でトレーリングストップ）で発注し、**試行の事実（`AlternativeProtectiveStopAttempted`）**を
   **受理・拒否のどちらでも 1 件**記録する（#821）。🔴 **要約と payload に注文種別と拒否理由（`retType` / `retMsg`）を残すことが
-  本記録の目的そのものである** —— 模擬取引は公式に「指値・成行のみ」とされており、断られた理由がここに無いと
+  本記録の目的そのものである**（拒否理由の文に口座 ID が入っていれば、発注執行が末尾 2 桁以外を伏せてから運ぶ。理由の文・他の数字は残る） —— 模擬取引は公式に「指値・成行のみ」とされており、断られた理由がここに無いと
   「なぜその種別が使えないのか」を後から誰も説明できない。相関はエントリーの `DecisionId`。
   結果の扱いは逆指値（既定の手法）と同一であり、試行の記録は `ProtectiveStopPlaced` / `ProtectiveStopCoverageLost` と
   **排他ではなく重ねて**残る。
