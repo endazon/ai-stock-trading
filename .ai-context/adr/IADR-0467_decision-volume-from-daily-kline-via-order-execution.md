@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-02, FR-07, FR-11, FR-15, UC-01, ADR-0048, ADR-0023, ADR-0044, ADR-0003, ADR-0020, ADR-0049, IADR-0451, IADR-0464, IADR-0465, IADR-0425, IADR-0420, IADR-0397, IADR-0431, IADR-0247, IADR-0313]
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-10-01
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0048_decision-volume-from-daily-kline-within-existing-source.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0023_us-daily-ohlc-history-source.md (決定 5 の確認 1)
@@ -186,4 +186,13 @@ ADR-0048 は定時の判断へ渡す出来高を日足 K 線から得る前日�
 - 発注執行の Pod に 2 本目の OpenD 接続（相場だけ）が常駐する（有効化後の初回の照会から）。OpenD の接続数の上限は未確認。
 - Stage 0 の記録は出来高を「未提供」のまま記録する（ADR-0048 決定 2 の Stage 0 の供給は残件）。本番（有効化後）と入力が異なる。
 - 判断サービスと報告書サービスの設定が 2 か所（決定 7 の要確認）。
+  - ［2026-10-02 追記 / #1140］2 か所の値の一致は、chart の描画で機械的に検査する（[IADR-0478](IADR-0478_decision-volume-parity-render-check-and-llm-cost-in-nightly-summary.md) 決定 1。
+    `helm.yml` が全プロファイルの描画へ `scripts/check-decision-volume-parity.js` を当て、片方だけ true・両方 true で trade-decision の `OrderExecution__BaseUrl` が
+    絶対 URL でない描画を赤にする）。設定が 2 か所であること自体は変えない。稼働中の Pod の env（描画を経ない変更）は見ない。
+- ［2026-10-02 追記 / #1140］**日足の自制レートは判断側とバックテストで共有されない（同時運用は未解決）。** 判断の日足は発注執行の `DailyBarsQueryService`（60 秒に 25 回）、
+  バックテストの日足は backtest-service の `MoomooHistoricalBarSource`（`Backtest:BarData:Moomoo:RequestsPerMinute`、既定 30 回/分）が、別のプロセスでそれぞれ数え、
+  同じ OpenD へ向く（合わせて 1 分に 55 回まで撃ち得る。OpenD の頻度制限の実値は未確認）。取得枠（銘柄単位・300）も同じものを使う。
+  **現状はバックテストの過去データ源が `none`（本番 values.yaml・values-local とも空）で実害は無い。** 共有の自制（両プロセスにまたがる予算）は作らない —— 片方が既定で無効の間は
+  使われない仕組みを先に足すことになる。バックテストの過去データ源を `moomoo` にするときの運用条件（頻度制限の実測・合計が収まるようバックテスト側を下げる・取得枠の見積もりに
+  バックテストの銘柄を足す・揃うまでは片方だけを有効にする）は Runbook `docs/operations/kline-quota-probe-runbook.md`「バックテストの日足を同じ OpenD から取るとき」に置いた。
 - 計画 `04_report-templates` の「現在その案内は無く」は、本決定で配備された（既定は出来高を未提供と示す）。計画側の記述の更新は計画リポジトリの担当。
