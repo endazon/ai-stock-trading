@@ -32,4 +32,12 @@ public sealed class QuoteCache
 
         return now - entry.FetchedAt <= maxStaleness ? entry.Quote : null;
     }
+
+    /// <summary>
+    /// FR-10, FR-01, #1131, IADR-0473: 保持している値と取得時刻をそのまま返す（期限は判定しない）。無ければ null。
+    /// 鮮度の起点を「取得時刻」以外に置く読み手（リスク管理: 閉場中に引いた値は次の開場から数える）だけが使う。
+    /// 期限の判定は呼び出し側の責務であり、<see cref="GetFresh"/> の規約（取得時刻からの経過）は変えない。
+    /// </summary>
+    public (Quote Quote, DateTimeOffset FetchedAt)? GetEntry(string symbol, Market market) =>
+        _entries.TryGetValue((symbol, market), out var entry) ? entry : null;
 }

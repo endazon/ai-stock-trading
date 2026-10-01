@@ -18,7 +18,8 @@ namespace RiskManagementService.Tests;
 // #81, FR-10, IADR-0066: 現在値の補充（非同期・背景）と読み出し（同期・判定経路）の結線を検証する。
 public class MarketDataWiringTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 7, 17, 3, 0, 0, TimeSpan.Zero);
+    // #1131, IADR-0473: 場中（11:00 EDT）。閉場中に引いた値は次の開場から鮮度を数えるため、場中の鮮度を確かめる本書は場中に置く。
+    private static readonly DateTimeOffset Now = new(2026, 7, 17, 15, 0, 0, TimeSpan.Zero);
 
     private static IOptions<MarketDataOptions> Options(int maxStalenessSeconds = 300) =>
         Microsoft.Extensions.Options.Options.Create(new MarketDataOptions { MaxQuoteStalenessSeconds = maxStalenessSeconds });

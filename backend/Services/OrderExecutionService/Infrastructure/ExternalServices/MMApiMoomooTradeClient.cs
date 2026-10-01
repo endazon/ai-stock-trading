@@ -50,6 +50,10 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // **不明（TrdAccType_Unknown・未対応値）は null のまま**であり、「信用口座とみなす」に倒さない。
     private MoomooAccountType? _simAccType;
     private bool _disposed;
+    // FR-11, #1135, IADR-0473: 「前回 Information で出した内容」。同じなら Debug へ下げる（probe の巡回〔既定 5 分〕ごとに
+    // 同じ行が Information で積もり、一晩に約 106 行ずつ出ていた）。null は未報告。プロセス内だけ（本型は singleton）。
+    private string? _reportedAccountSelection;
+    private string? _reportedCurrencyApproximation;
 
     // #732, IADR-0327: connectionFactory は接続オブジェクトの生成点。既定は本番の SDK 実装であり、
     // Program.cs の登録（2 引数）は変更していない。テストはここへフェイクを差す。
@@ -485,9 +489,10 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             await _connectTcs.Task.WaitAsync(_replyTimeout, cancellationToken).ConfigureAwait(false);
             (_simAccId, _simAccType) = await FetchSimulateAccountAsync(cancellationToken).ConfigureAwait(false);
             _connected = true;
+            // FR-11, #1135, IADR-0473: 口座 ID はログでは伏せる（末尾 2 桁。検証口の出力と同じ伏せ方）。
             _logger.LogInformation(
                 "OpenD 接続完了・SIMULATE 口座 accId={AccId} 種別={AccType}",
-                _simAccId,
+                MaskAccountId(_simAccId),
                 _simAccType?.ToString() ?? "不明");
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not BrokerUnavailableException)
@@ -567,11 +572,18 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
                 // 実機の口座が何を返すかを後から証跡で確かめられるよう、選んだ口座の取扱市場を残す。
                 // **止める条件にはしない** —— 取扱市場は通貨の証拠ではなく、「JP を含むなら止める」は
                 // universal 口座（JP と US の両方を扱い `currency` を明示する）を通貨と無関係に落とす。
-                _logger.LogInformation(
+                //
+                // FR-11, #1135, IADR-0473: 口座 ID は伏せる。Information は初回と「口座・種別・取扱市場」が変わったときだけで、
+                // 同じ選択の繰り返し（probe の巡回ごと）は Debug へ下げる。**選択そのものは変えない**（ログだけ）。
+                var trdMarketAuthList = string.Join(",", acc.TrdMarketAuthListList);
+                var selection = string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture, $"{acc.AccID}|{acc.AccType}|{trdMarketAuthList}");
+                _logger.Log(
+                    IsNewReport(ref _reportedAccountSelection, selection) ? LogLevel.Information : LogLevel.Debug,
                     "SIMULATE 口座を選びました accId={AccId} accType={AccType} trdMarketAuthList={TrdMarketAuthList}",
-                    acc.AccID,
+                    MaskAccountId(acc.AccID),
                     acc.AccType,
-                    string.Join(",", acc.TrdMarketAuthListList));
+                    trdMarketAuthList);
                 return (acc.AccID, MapAccountType(acc.AccType));
             }
         }
@@ -612,10 +624,11 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         // 口座が入れ替わったのなら再接続で確定させるのが筋である。
         if (accId != _simAccId)
         {
+            // FR-11, #1135, IADR-0473: 両方の口座 ID を伏せる（末尾 2 桁で取り違えだけは見分けられる）。
             _logger.LogWarning(
                 "照会した SIMULATE 口座 accId={FetchedAccId} が発注先 accId={OrderAccId} と異なるため口座種別を不明として扱います。",
-                accId,
-                _simAccId);
+                MaskAccountId(accId),
+                MaskAccountId(_simAccId));
             return null;
         }
 
@@ -695,21 +708,38 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             // そのとき全比率上限が約 150 倍緩む。`cashInfoList` が非 USD だけを名乗るなら採らない。
             if (IsDisprovedByCashBreakdown(funds))
             {
+                // #1135: 近似を採らなかった。次に近似へ戻ったら Information で出し直す。
+                Volatile.Write(ref _reportedCurrencyApproximation, null);
                 return null;
             }
 
-            _logger.LogInformation(
+            // FR-11, #1135, IADR-0473: Information は初回（プロセスで最初・口座が変わった後・近似でない応答を挟んだ後）だけ。
+            // 同じ前提の繰り返し（probe の巡回ごと）は Debug へ下げる。**Warning にはしない**（上の注記。正常な見え方）。
+            // 「いま採っている値が近似か」は初回の Information と、近似でない応答の Warning の有無で答えられる。
+            _logger.Log(
+                IsNewReport(
+                    ref _reportedCurrencyApproximation,
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{_simAccId}|{RequestedCurrency}"))
+                    ? LogLevel.Information
+                    : LogLevel.Debug,
                 "口座照会の応答が通貨を明示していないため、要求した通貨（currency={RequestedCurrency}・USD）を"
                     + "前提として基準資金を採ります（近似）。",
                 RequestedCurrency);
         }
         else if (funds.Currency != RequestedCurrency)
         {
+            // #1135: 近似を採らなかった。次に近似へ戻ったら Information で出し直す。
+            Volatile.Write(ref _reportedCurrencyApproximation, null);
             // 🔴 **この守りは撤去しない。** 口座の通貨設定が変わる・別市場の口座を足す、で実機でも起こり得る。
             _logger.LogWarning(
                 "口座照会の応答通貨が USD ではありません currency={Currency}。基準資金は未供給として扱います。",
                 funds.Currency);
             return null;
+        }
+        else
+        {
+            // #1135: 通貨を USD と明示した応答＝近似ではない。次に近似へ戻ったら Information で出し直す。
+            Volatile.Write(ref _reportedCurrencyApproximation, null);
         }
 
         var totalAssets = (decimal)funds.TotalAssets;
@@ -929,7 +959,13 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         return null;
     }
 
+    // FR-11, #1135, IADR-0473: 前回報告した内容と違えば true（＝Information で出す）。並行に呼ばれても
+    // 同じ内容は 1 回だけ true になる（Interlocked）。最悪でも Information が 1 行増えるだけで、黙る向きには倒れない。
+    private static bool IsNewReport(ref string? reported, string current) =>
+        !string.Equals(Interlocked.Exchange(ref reported, current), current, StringComparison.Ordinal);
+
     // 口座 ID を末尾 2 桁以外伏せる（検証口の出力で「どの口座か」の取り違えだけを確かめられる粒度）。
+    // FR-11, #1135, IADR-0473: ログ（接続完了・口座選択・口座の食い違い）も同じ伏せ方を使う（2 通りの伏せ方を作らない）。
     public static string MaskAccountId(ulong accountId)
     {
         var digits = accountId.ToString(System.Globalization.CultureInfo.InvariantCulture);
