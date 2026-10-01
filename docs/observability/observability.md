@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-09-30
+updated: 2026-10-01
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10]
 adrs: [ADR-0006, ADR-0045]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm]
-issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm]
+issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130]
 -->
 
 
@@ -63,13 +63,13 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | --- | --- | --- | --- |
 | 取引サイクル | `ast_information_items_collected_total` | — | 収集件数。**空巡回も 0 として出す**（「回って 0 件」と「止まっている」を区別するため） |
 | 取引サイクル | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
-| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕ほか 14 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
+| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕・保有中の買い増しが審査で必ず拒否される〔`AddOnBlockedByRiskControls`。LLM の後〕ほか 15 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
 | 取引サイクル | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム）。**1 サービス内の判断 1 回**であり、端点間ではない |
 | 取引サイクル | `ast_trade_cycle_order_completion_latency_ms_*` | `trigger` | **起点イベント → 発注完了**の端点間所要（ヒストグラム）。価格変動検知起点は `trigger=price-movement` の系列で読む（目標 5 分＝300,000 ms） |
 | 取引サイクル | `ast_trade_cycle_record_completion_latency_ms_*` | `trigger` | **起点イベント → 記録完了**（監査台帳へ記録した時点）の端点間所要。定時サイクルは `trigger=scheduled` の系列で読む（目標 10 分＝600,000 ms） |
 | 取引サイクル | `ast_trade_cycle_latency_unobserved_total` | `stage` / `reason` | 🔴 **端点間の所要を確定できなかった件数。**起点を持たない注文（利用者の手仕舞い・維持証拠金の自動縮小・約定追跡の後追い）や時計ずれで負になった区間はここへ出し、**ヒストグラムには 1 件も入れない**（0 ms を入れると目標を満たしているように見えるため） |
 | 統制 | `ast_risk_screenings_total` | `outcome` | 発注前審査。**承認も拒否も数える**（拒否だけを数えると「違反 0 件」と「審査が動いていない」を区別できない） |
-| 統制 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳（上限超過・緊急停止・一時停止・禁止銘柄ほか）。🔴 保有 0・未約定なしで新規建てが必ず拒否される銘柄は、判断が LLM を呼ぶ前に見送るため、ここではなく上の `decision_skips{reason="EntryBlockedByRiskControls"}` に出る（審査は変わらない。件数の推移を比べるときは両方を足して読む） |
+| 統制 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳（上限超過・緊急停止・一時停止・禁止銘柄ほか）。🔴 保有 0・未約定なしで新規建てが必ず拒否される銘柄は、判断が LLM を呼ぶ前に見送るため、ここではなく上の `decision_skips{reason="EntryBlockedByRiskControls"}` に出る。保有中の銘柄で LLM が返した買い増し・売り増しのうち、LLM の前に読んだ可否が塞がっていたものも `decision_skips{reason="AddOnBlockedByRiskControls"}` に出る（審査は変わらない。件数の推移を比べるときは両方を足して読む） |
 | 発注 | `ast_order_executions_total` | `status` / `provider` | 発注結果と発注先 |
 | 発注 | `ast_order_dispatch_forgone_total` | `reason` | 発注に**届いていない**見送り。ブローカーの拒否（`status=Rejected`）と混ぜない |
 | 発注 | `ast_order_drift_adoption_followup_abandoned_total` | `reason` | 🔴 乖離の取り込みの追随を、建玉照会の**不明**（`positions-unknown`）・**失敗**（`positions-query-failed`）のまま再試行を使い切って打ち切った件数。**空の一覧（0 株）は数えない**（確かめた結果であり追随は進む）。途中の配送も数えない。発注執行の起動完了時に 0 で作られる |

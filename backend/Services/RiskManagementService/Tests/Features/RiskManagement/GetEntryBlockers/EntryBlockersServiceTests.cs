@@ -11,7 +11,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// 🔴 T-10-1783, FR-10, FR-04, #1113, IADR-0463 決定 2・3: 新規建ての可否の口（EntryBlockersService）が、**同じストアの上の
+// 🔴 T-10-1783, T-10-1900, FR-10, FR-04, #1113, #1130, IADR-0463 決定 2・3, IADR-0471: 新規建ての可否の口（EntryBlockersService）が、**同じストアの上の
 // 審査（OrderScreeningService）**と同じ答えを返すこと。判定コアの外にある入力（台帳からの当日の損切り・日次損失のロックアウト・
 // kill switch・一時停止のストア）の組み立てまで含めて一致させる（組み立てを口の側で別に書くと、ここが赤になる）。
 public class EntryBlockersServiceTests
@@ -156,6 +156,48 @@ public class EntryBlockersServiceTests
         view.LongSide.Should().Equal(RejectionReason.DailyLossLimitReached);
         view.ShortSide.Should().Equal(RejectionReason.DailyLossLimitReached);
         view.LongSide.Should().Equal(await ScreenedDeterminableAsync(f), "審査も米国の当日で読む（口と審査の一致）");
+    }
+
+    // 🔴 T-10-1900, FR-10, #1130, IADR-0471 決定 1: **保有中の銘柄の買い増し**にも口の答えはそのまま当たる。審査は買い増しを新規建て
+    // （PositionEffect.Open）として同じ述語で拒否し（建玉数の上限は「この注文が建玉を増やすか」を見ない）、口は銘柄の保有と無関係に
+    // 同じ答えを返す。実測（2026-09-30 MSFT）: 保有中の銘柄の買い増しが MaxPositionsExceeded で拒否された。上限ちょうど・上限未満の両方で一致する。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task T_10_1900_保有中の銘柄の買い増しでも口は審査と同じ理由を返す(int belowMax)
+    {
+        var f = new Fixture();
+        var max = f.Settings.GetCurrent().Limits.MaxOpenPositions;
+        // AAPL（判断対象）を保有し、ほかの銘柄と合わせて上限ちょうど（belowMax=0）／上限−1（belowMax=1）の建玉を持つ。
+        string[] symbols = ["AAPL", "MSFT", "GOOG", "AMZN", "META", "NVDA", "TSLA", "NFLX"];
+        symbols.Length.Should().BeGreaterThanOrEqualTo(max, "前提: 上限までの銘柄を用意できる");
+        foreach (var symbol in symbols.Take(max - belowMax))
+            HoldLong(f, symbol);
+
+        var view = f.Blockers().Build("AAPL", Market.UnitedStates);
+        var screened = await ScreenedDeterminableAsync(f);
+
+        view.LongSide.Should().Equal(screened, "買い増し（保有中の AAPL への買いの新規建て）でも口と審査が一致する");
+        if (belowMax == 0)
+        {
+            view.LongSide.Should().Equal(RejectionReason.MaxPositionsExceeded);
+            view.ShortSide.Should().Equal([RejectionReason.MaxPositionsExceeded], "売りの新規建て（売り増し）にも同じ述語");
+        }
+        else
+        {
+            view.LongSide.Should().BeEmpty();
+        }
+    }
+
+    private static void HoldLong(Fixture f, string symbol)
+    {
+        var id = Guid.NewGuid();
+        f.Ledger.AppendApproval(
+            id,
+            new OrderIntent(symbol, Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper,
+                1, 100m, PositionEffect.Open, StopLossPrice: 95m),
+            Now.AddDays(-1));
+        f.Ledger.AppendFill(id, $"open-{id:N}", 1, 100m, Now.AddDays(-1));
     }
 
     [Theory]

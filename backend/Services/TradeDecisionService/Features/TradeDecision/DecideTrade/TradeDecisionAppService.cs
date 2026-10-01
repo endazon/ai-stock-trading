@@ -390,6 +390,14 @@ public sealed class TradeDecisionAppService(
                 .ConfigureAwait(false);
         }
 
+        // 🔴 FR-10, FR-04, ADR-0003, #1130, IADR-0471 決定 1: **保有中の銘柄でも**新規建ての可否を読む（LLM は必ず呼ぶ＝決済の判断を残す）。
+        // 口の答えは保有と無関係に「この銘柄のその方向の新規建て」の審査の述語であり、買い増し（ロングへの Buy）・売り増し（ショートへの Sell）
+        // にもそのまま当たる。上の #1113 の関門（保有 0）とは条件が排他で、#1113 の経路は変わらない。照会の失敗・未結線（null）は従来どおり。
+        var heldEntryBlockers = heldPosition is { SignedQuantity: not 0 }
+            ? await GetEntryBlockersSafeAsync(trigger, cancellationToken).ConfigureAwait(false)
+            : null;
+        var addOnBlockers = heldEntryBlockers?.ForEntry(heldPosition!.IsLong ? TradeSide.Buy : TradeSide.Sell);
+
         // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。
         // fail-safe: 取得は判断のクリティカルパス外。例外・遅延で判断を止めないよう、失敗は「文脈なし」に縮退する
         //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
@@ -418,7 +426,7 @@ public sealed class TradeDecisionAppService(
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
-            news: news, volume: volume);
+            news: news, volume: volume, addOnBlockers: addOnBlockers);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -436,10 +444,10 @@ public sealed class TradeDecisionAppService(
             () => screening is null
                 ? TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist,
-                    intraday: intraday, news: news, volume: volume)
+                    intraday: intraday, news: news, volume: volume, addOnBlockers: addOnBlockers)
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
-                    watchlist, intraday, news, volume),
+                    watchlist, intraday, news, volume, addOnBlockers),
             decisionPrompt, cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
@@ -521,6 +529,20 @@ public sealed class TradeDecisionAppService(
                 trigger.Symbol, side);
             // 🔴 PR #940 監査, IADR-0374: 見送りは唯一の出口 Skip を通す（素の null は decision_skips にもアラートにも出ない）。
             return await SkipJudgedAsync(trigger, DecisionSkipReason.WorkingEntriesUnknownOpen, judgedPrice, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // 🔴 FR-10, FR-04, ADR-0003, #1130, IADR-0471 決定 3: LLM の前に読んだ口が**この方向の新規建て**（保有中の銘柄の買い増し・売り増し）は
+        // 審査で必ず拒否されると答えていたのに LLM がそれを返したら、発注意図を作らず Hold に倒す（判断後の見送り。TradeDecisionHeld を出す）。
+        // 🔴 決済（Close）はここまで来ても対象外（!effect.IsClose）。照会していない・不明（null）なら倒さない（審査が止める）。
+        // 🔴 **審査は残す**（両端で止める）。ここで倒すのは審査が必ず落とす注文だけで、統制を緩めない。
+        if (!effect.IsClose && heldEntryBlockers?.ForEntry(side) is { Count: > 0 } addOnReasons)
+        {
+            logger.LogInformation(
+                "買い増し・売り増しが審査で必ず拒否されるため Hold に倒す（LLM の結論を発注しない・決済は対象外・審査は不変・IADR-0471）: " +
+                "{Symbol} side={Side} reasons={Reasons}",
+                trigger.Symbol, side, string.Join(",", addOnReasons));
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.AddOnBlockedByRiskControls, judgedPrice, cancellationToken)
                 .ConfigureAwait(false);
         }
 

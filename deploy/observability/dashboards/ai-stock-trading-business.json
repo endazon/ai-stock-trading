@@ -58,7 +58,7 @@
     {
       "id": 5,
       "title": "統制: 見送り理由の内訳（24h）",
-      "description": "上限超過・kill switch・一時停止・禁止銘柄などの内訳。1 注文に複数の理由が同時に立ち得る。保有 0・未約定なしで新規建てが必ず拒否される銘柄（当日の損切り・保有建玉数の上限・kill switch など）は判断が LLM を呼ぶ前に見送るため、ここではなく「取引サイクル: 見送りの理由の内訳」の EntryBlockedByRiskControls に出る（審査は不変。推移を比べるときは両方を足して読む）。",
+      "description": "上限超過・kill switch・一時停止・禁止銘柄などの内訳。1 注文に複数の理由が同時に立ち得る。保有 0・未約定なしで新規建てが必ず拒否される銘柄（当日の損切り・保有建玉数の上限・kill switch など）は判断が LLM を呼ぶ前に見送るため、ここではなく「取引サイクル: 見送りの理由の内訳」の EntryBlockedByRiskControls に出る。保有中の銘柄の買い増し・売り増しで可否が塞がっていたものは同じパネルの AddOnBlockedByRiskControls に出る（審査は不変。推移を比べるときは両方を足して読む）。",
       "type": "barchart",
       "gridPos": { "x": 8, "y": 7, "w": 8, "h": 7 },
       "targets": [{
@@ -231,7 +231,7 @@
     {
       "id": 16,
       "title": "取引サイクル: 見送りの理由の内訳（1h あたり）",
-      "description": "reason タグ別。decisions{action=no-trade} は「何回見送ったか」しか語らない —— LLM が Hold を返した（平常・最も多い）と、保有照会が壊れていて新規建てだけが静かに止まっている（異常）をここで読み分ける。HoldingsUnknownOpen は平常時 0 件であり、出ていること自体が異常である（同名のアラートが 30 分継続で鳴る）。EntryBlockedByRiskControls は LLM を呼ぶ前の見送りで、新規建てが審査で必ず拒否される銘柄（保有 0・未約定なし）の分であり、「統制: 見送り理由の内訳（24h）」の拒否から移った件数である。",
+      "description": "reason タグ別。decisions{action=no-trade} は「何回見送ったか」しか語らない —— LLM が Hold を返した（平常・最も多い）と、保有照会が壊れていて新規建てだけが静かに止まっている（異常）をここで読み分ける。HoldingsUnknownOpen は平常時 0 件であり、出ていること自体が異常である（同名のアラートが 30 分継続で鳴る）。EntryBlockedByRiskControls は LLM を呼ぶ前の見送りで、新規建てが審査で必ず拒否される銘柄（保有 0・未約定なし）の分であり、「統制: 見送り理由の内訳（24h）」の拒否から移った件数である。AddOnBlockedByRiskControls は LLM の後の見送りで、保有中の銘柄で LLM が返した買い増し・売り増しを、LLM の前に読んだ可否が塞がっていたため発注しなかった分であり、同じく拒否から移った件数である。",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 42, "w": 24, "h": 7 },
       "targets": [{
