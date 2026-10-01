@@ -69,7 +69,18 @@ public sealed class QuoteRefreshService(
         // FR-01, ADR-0031（計画）決定2〜4, ADR-0043（計画）決定 3, #1132, IADR-0477: 日次要求見積りを巡回ごとに保有建玉の実数から
         // 記録する（是正前は起動時に運用者の申告 1 銘柄で数えていた）。閉場中の巡回でも同じ値（開場中の量を数える。
         // #1131, IADR-0473 決定 3: 1 日の巡回は米国の場中 390 分で数え、閉場ごとの 1 回は数えない）。
-        dailyVolume?.Record(positions.Select(p => p.Market), options.Value.RefreshIntervalSeconds);
+        // 観測のみ。失敗しても補充を止めない（市場監視の巡回と同じ扱い）。
+        if (dailyVolume is not null)
+        {
+            try
+            {
+                dailyVolume.Record(positions.Select(p => p.Market), options.Value.RefreshIntervalSeconds);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Finnhub の日次要求見積りの記録に失敗しました（現在値の補充には影響しません）。");
+            }
+        }
 
         var now = timeProvider.GetUtcNow();
         foreach (var position in positions)
