@@ -342,7 +342,8 @@ services:
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }               # G4（確定済み日報方針の照会先）
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }# サイジング文脈(残枠/DD)
       # #286/IADR-0282: market-monitor の watchlist を初回シード（上の market-monitor.Monitor__SeedSymbols__0）
-      # したうえで結線する。下の TradeCycle__Watchlist__0__* は照会不達時のフォールバックとして残す（IADR-0095）。
+      # したうえで結線する。下の TradeCycle__Watchlist__0__* は結線を外したときの対象（#1134 / IADR-0475: 結線時は照会不達でも
+      # 構成へ倒さず、直前に読めた一覧か、一度も読めていなければその巡回を見送る）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日（本番既定と同値の写し）。
       # 🔴 backtest 側の Backtest__Stage0__LlmTrainingCutoff と必ず同値にする（食い違うと RecordingMismatch）。
@@ -427,7 +428,8 @@ services:
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       # --- 監視銘柄（構成ベース watchlist）。#286/IADR-0282 で MarketMonitor__BaseUrl を結線した後は
-      #     権威源（market-monitor）が優先され、本設定は**照会不達時のフォールバックのみ**（IADR-0095）。
+      #     権威源（market-monitor）が優先され、本設定は**使われない**（#1134 / IADR-0475: 照会不達でも構成へ倒さない。
+      #     結線を外したときだけの対象）。
       #     権威源側（market-monitor.Monitor__SeedSymbols__0）と同じ銘柄に揃える。Market は列挙名。
       - { name: TradeCycle__Watchlist__0__Symbol, value: "AAPL" }
       - { name: TradeCycle__Watchlist__0__Market, value: "UnitedStates" }

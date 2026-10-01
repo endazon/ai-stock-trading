@@ -2,10 +2,10 @@
 title: IADR-0095 TradeDecision の監視銘柄（watchlist）供給を権威源 MarketMonitor から s2s 同期照会に一本化し、構成ベースは fail-safe フォールバックへ降格する
 type: impl-adr
 status: Accepted
-related_ids: [FR-02, FR-13, UC-06, SC-02, ADR-0044, IADR-0051, IADR-0088, IADR-0090, IADR-0282, IADR-0433, IADR-0435]
+related_ids: [FR-02, FR-13, UC-06, SC-02, ADR-0044, IADR-0051, IADR-0088, IADR-0090, IADR-0282, IADR-0433, IADR-0435, IADR-0475]
 author: endazon (with Claude Code)
 created: 2026-07-20
-updated: 2026-09-27
+updated: 2026-10-01
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -121,6 +121,16 @@ s2s 境界は JSON（camelCase・列挙は数値で往復）で、`HttpWatchlist
   空でなく描画された Service と一致すること、各消費側の資格情報が揃うことを、既定と `values-local` の両方で見る。
 - 本 IADR の「影響」の「既定挙動: `MarketMonitor:BaseUrl` 未設定なら不変」はアプリの構成既定（`appsettings`）の話として有効である。
   IADR-0282 決定 5・IADR-0435 決定 5（配備の行）の「本番既定は空」は各 PR の時点の記録であり、本追記が改める。作業仕様書 `20260927_1050_prod-market-monitor-wiring`。
+
+## 追記（2026-10-01・#1134）: 照会失敗時に構成 watchlist へ倒さない
+
+- 背景: クラスタの一斉再起動（2026-09-30 09:59 UTC）の直後、取引判断が市場監視より先に起動し、決定 3 のとおり構成 watchlist へ
+  フォールバックした（経路 B では AAPL のみ）。場中なら利用者の監視銘柄ではなく構成の銘柄で判断する。計画 ADR-0044（権威源は市場監視）と食い違う。
+- 決定 3 のうち「照会失敗（非 2xx・timeout・例外・不正応答）は構成 watchlist へ委譲する」は [IADR-0475](IADR-0475_watchlist-no-config-fallback-last-known.md) が改めた。
+  読めなければこのプロセスで直前に読めた一覧を使い、一度も読めていなければ不明としてそのサイクルの判断を見送る。
+  決定 3 で却下した「前回値キャッシュ」は IADR-0475 で採った（理由は同 IADR）。
+- `MarketMonitor:BaseUrl` 未設定（未結線）で構成ベースを使う部分、および 200 ＋空の一覧を尊重する部分は有効のまま。
+- 上の 2026-09-27 追記の決定 3（「取引判断の `TradeCycle:Watchlist` は照会に失敗した巡回だけのフォールバック」）も、結線時には使われなくなった（同 IADR）。
 
 ## 却下した代替案
 
