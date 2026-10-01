@@ -792,6 +792,39 @@ jobs:
           check "既定"
           check "values-local" -f "$CHART/values-local.yaml"
           echo "ok: Finnhub の予算 (a) と市場監視の巡回 (b) が描画で保たれている"
+      # FR-04, FR-07, ADR-0048 決定 4, #1140, IADR-0478 決定 1: 判断へ渡す出来高の設定 DecisionVolume__Enabled は trade-decision と
+      # report が別々に読む（IADR-0467 決定 6・7）。report だけ true だと、判断へ渡らない出来高を方針の改訂 LLM へ「渡る」と示す。
+      # 全プロファイルの描画で 2 つの実効値が等しいこと（両方 true なら trade-decision の OrderExecution__BaseUrl が絶対 URL）を検査し、
+      # 片方だけ true の値で**赤になる**ことも確かめる（検査の空振りを作らない）。判定は scripts/check-decision-volume-parity.js
+      # （試験 T-10-2020〜T-10-2023 は scripts.repo.test.js）。
+      - name: Assert DecisionVolume__Enabled matches between trade-decision and report (#1140)
+        run: |
+          parity() { local label="$1"; shift; helm template ast "$CHART" "$@" -s templates/deployment.yaml \
+            | node scripts/check-decision-volume-parity.js --label "$label"; }
+          parity "既定" || exit 1
+          parity "values-local" -f "$CHART/values-local.yaml" || exit 1
+          parity "全フラグ ON" --set tradingCycle.cronjob.enabled=true --set moomoo.enabled=true --set opend.enabled=true || exit 1
+          tmp="$(mktemp -d)"
+          printf '%s\n' 'services:' '  report:' '    extraEnv:' \
+            '      - { name: DecisionVolume__Enabled, value: "true" }' > "$tmp/report-on.yaml"
+          printf '%s\n' 'services:' '  trade-decision:' '    extraEnv:' \
+            '      - { name: DecisionVolume__Enabled, value: "true" }' \
+            '      - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }' > "$tmp/td-on.yaml"
+          printf '%s\n' 'services:' '  trade-decision:' '    extraEnv:' \
+            '      - { name: DecisionVolume__Enabled, value: "true" }' > "$tmp/td-on-no-url.yaml"
+          # 正例: 同じ変更で両方を true にした（Runbook の手順どおり）なら通る。
+          parity "両方 true（既定）" -f "$tmp/td-on.yaml" -f "$tmp/report-on.yaml" || exit 1
+          parity "両方 true（values-local）" -f "$CHART/values-local.yaml" -f "$tmp/td-on.yaml" -f "$tmp/report-on.yaml" || exit 1
+          # 負例: 片方だけ true・BaseUrl なしで両方 true は赤になる。
+          must_fail() { local label="$1"; shift
+            if parity "$label" "$@" > /dev/null 2>&1; then
+              echo "::error::[$label] 食い違う描画なのに検査が通った（検査の空振り）。"; exit 1
+            fi
+            echo "ok (gate fired): $label"; }
+          must_fail "report だけ true" -f "$tmp/report-on.yaml"
+          must_fail "report だけ true（values-local）" -f "$CHART/values-local.yaml" -f "$tmp/report-on.yaml"
+          must_fail "trade-decision だけ true" -f "$tmp/td-on.yaml"
+          must_fail "両方 true だが BaseUrl なし" -f "$tmp/td-on-no-url.yaml" -f "$tmp/report-on.yaml"
       # #245 / IADR-0102: Discord Bot の環境固有 ID（非機密）の設定点 discord.bot.*。
       # (a) 値を与えたら notification の env に入る（空振り検出）・snowflake が指数表記に化けない
       # (b) 空指定は既定描画とバイト一致（本番 values.yaml をバイト等価に保つ担保）

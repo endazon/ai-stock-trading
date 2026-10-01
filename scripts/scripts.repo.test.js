@@ -4244,6 +4244,92 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- check-decision-volume-parity.js: 出来高の設定を trade-decision と report で揃える（FR-04, FR-07, #1140, IADR-0478 決定 1）---
+  //
+  // 2 つのサービスが同じ名前の設定を別々に読むため、片方だけ true の配備を描画の時点で止める。helm.yml が全プロファイルの
+  // 描画へ当てる（実 chart の正例・負例はそちら）。ここでは描画済みの manifest を文字列で与え、判定だけを固定する。T-10-2020〜T-10-2023。
+  {
+    const parity = require('./check-decision-volume-parity.js');
+    const dep = (name, envLines) => [
+      'apiVersion: apps/v1', 'kind: Deployment', 'metadata:', `  name: ${name}`, '  namespace: ai-stock-trading', 'spec:',
+      '  template:', '    spec:', '      containers:', `        - name: ${name}`, '          image: "img:1"', '          env:',
+      '            - name: ASPNETCORE_URLS', '              value: http://+:8080',
+      ...envLines.map((l) => `            ${l}`),
+    ].join('\n');
+    const flag = (v, name = 'DecisionVolume__Enabled') => [`- name: ${name}`, `  value: ${v}`];
+    const url = (v) => ['- name: OrderExecution__BaseUrl', `  value: ${v}`];
+    const render = (td, rp) => [dep('trade-decision-service', td), dep('report-service', rp)].map((d) => `---\n${d}`).join('\n');
+
+    ok('decision-volume-parity[T-10-2020]: 両方キーなし・両方 false・両方 true（BaseUrl あり）は一致として通る', () => {
+      assert.strictEqual(parity.checkManifest(render([], [])).ok, true);
+      assert.strictEqual(parity.checkManifest(render(flag('"false"'), [])).ok, true, 'false とキーなしは同じ実効値');
+      const both = parity.checkManifest(render([...flag('"true"'), ...url('"http://order-execution-service:8080"')], flag('"True"')));
+      assert.strictEqual(both.ok, true, both.errors.join('\n'));
+      assert.strictEqual(both.tradeDecision.value, true);
+    });
+
+    ok('decision-volume-parity[T-10-2021]: 片方だけ true は赤（report だけ・trade-decision だけ・名前の大小文字違い・前後の空白）', () => {
+      const reportOnly = parity.checkManifest(render([], flag('"true"')));
+      assert.strictEqual(reportOnly.ok, false);
+      assert.match(reportOnly.errors.join('\n'), /report だけ true/);
+      const tdOnly = parity.checkManifest(render([...flag('"true"'), ...url('"http://oe:8080"')], flag('"false"')));
+      assert.strictEqual(tdOnly.ok, false);
+      assert.match(tdOnly.errors.join('\n'), /trade-decision だけ true/);
+      // .NET の構成キーは大文字小文字を区別しない・bool.TryParse は前後の空白を許す（どちらもサービスでは true として効く）。
+      assert.strictEqual(parity.checkManifest(render([], flag('"true"', 'decisionvolume__enabled'))).ok, false);
+      assert.strictEqual(parity.checkManifest(render([], flag('" TRUE "'))).ok, false);
+      // 読めない値は両サービスとも false へ倒す（TryParse の失敗）＝キーなしと一致。
+      assert.strictEqual(parity.checkManifest(render([], flag('"yes"'))).ok, true);
+    });
+
+    ok('decision-volume-parity[T-10-2022]: 両方 true でも trade-decision の OrderExecution__BaseUrl が無い・空・相対なら赤', () => {
+      for (const td of [flag('"true"'), [...flag('"true"'), ...url('""')], [...flag('"true"'), ...url('"order-execution-service"')]]) {
+        const r = parity.checkManifest(render(td, flag('"true"')));
+        assert.strictEqual(r.ok, false);
+        assert.match(r.errors.join('\n'), /OrderExecution__BaseUrl が絶対 URL でない/);
+      }
+    });
+
+    ok('decision-volume-parity[T-10-2023]: 読めない描画は通さない（Deployment の欠け・設定の重複・secretKeyRef）・main の終了コード', () => {
+      assert.match(parity.checkManifest(`---\n${dep('trade-decision-service', [])}`).errors.join('\n'), /report-service が描画に 0 本/);
+      const dup = parity.checkManifest(render([], [...flag('"true"'), ...flag('"true"', 'decisionVolume__enabled')]));
+      assert.strictEqual(dup.ok, false);
+      assert.match(dup.errors.join('\n'), /2 つある/);
+      const secret = parity.checkManifest(render([], ['- name: DecisionVolume__Enabled', '  valueFrom:', '    secretKeyRef:',
+        '      name: ast-secrets', '      key: dv']));
+      assert.strictEqual(secret.ok, false);
+      assert.match(secret.errors.join('\n'), /平文の value でない/);
+      const lines = [];
+      const io = { out: (s) => lines.push(s), err: (s) => lines.push(s) };
+      assert.strictEqual(parity.main(['--label', 'x'], { ...io, stdin: () => render([], []) }), 0);
+      assert.strictEqual(parity.main(['--label', 'y'], { ...io, stdin: () => render([], flag('"true"')) }), 1);
+      assert.strictEqual(parity.main(['--label', 'z'], { ...io, stdin: () => '' }), 1, '空の描画は空振りとして落とす');
+      assert.strictEqual(parity.main(['--bogus'], { ...io, stdin: () => '' }), 2);
+      assert.ok(lines.some((l) => l.startsWith('::error::[y] DecisionVolume__Enabled が食い違う')), lines.join('\n'));
+    });
+  }
+
+  // --- NFR（費用）, #1140, IADR-0478 決定 2: 夜間の要約の §13 が読む費用のカテゴリの序数を、費用統制の enum と突き合わせる（T-10-2027）---
+  // cost_entries の Category は CostCategory の序数で永続化されている。SQL は Llm=0・LlmUncapped=3 を直に書くため、
+  // enum の並びが変わったら（enum 側は末尾にだけ足すと定めている）ここで赤にする。
+  {
+    const fsCc = require('fs');
+    const pathCc = require('path');
+    ok('nightly-ledger-summary[T-10-2027]: §13 の Category の序数（Llm=0・LlmUncapped=3）が費用統制の CostCategory と一致する', () => {
+      const src = fsCc.readFileSync(pathCc.join(__dirname, '..', 'backend', 'Services', 'CostControlService', 'Domain', 'CostGovernor.cs'), 'utf8');
+      const body = /public enum CostCategory\s*\{([\s\S]*?)\}/.exec(src);
+      assert.ok(body, 'CostCategory の定義が見つからない');
+      const members = body[1].split('\n')
+        .map((l) => l.replace(/\/\/.*$/, '').trim())
+        .filter((l) => l && !l.startsWith('///') && !l.startsWith('<') && /^[A-Za-z_]\w*\s*,?$/.test(l))
+        .map((l) => l.replace(/\s*,$/, ''));
+      assert.deepStrictEqual(members, ['Llm', 'Infrastructure', 'Data', 'LlmUncapped']);
+      const sh = fsCc.readFileSync(pathCc.join(__dirname, 'nightly-ledger-summary.sh'), 'utf8');
+      assert.match(sh, /FILTER \(WHERE c\."Category" = 0\), 0\) AS governed/);
+      assert.match(sh, /FILTER \(WHERE c\."Category" = 3\), 0\) AS uncapped/);
+    });
+  }
+
   // --- 共有: package scope を CommonJS に止めたディレクトリの走査（#1073 / #1075）---
   //
   // `dir` 配下を再帰で見て、(a) ES module の構文を持つ `.js`、(b) `ownPkg` 以外の `package.json` を返す。

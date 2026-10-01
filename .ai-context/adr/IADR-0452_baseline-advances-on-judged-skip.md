@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [UC-02, UC-01, FR-03, FR-02, FR-04, FR-11, ADR-0003, IADR-0014, IADR-0023, IADR-0079, IADR-0099, IADR-0129, IADR-0248, IADR-0358, IADR-0374]
 author: claude (Claude Code)
 created: 2026-09-29
-updated: 2026-09-29
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -116,6 +116,14 @@ LLM 呼び出しの**前**の 4 地点（`DailyPolicyUnconfirmed`・`CurrentPric
   - **初期基準値**: 基準値ストアは EF で永続し、再起動をまたいで残る（インメモリ構成では再起動で空になる）。前回判断が無い間は変動を判定しない（計画の文言どおり）。
   - ［2026-09-29 追記 / PR #1080 監査］**定時判断で現在値が 0（正でない）、LLM が Buy/Sell で参照価格を返し、統制で見送った**場合、基準値は LLM の参照価格（実価格ではない）へ進む。決定 3 の最後の候補の範囲内であり、`TradeDecisionMade` の参照価格が現在値なしで LLM の値に倒れるのと同じ性質である。
   - ［2026-09-29 追記 / PR #1080 監査］購読者の静的走査（`TradeDecisionHeldSubscribersTests`）は、規約名・実名/別名・null 許容の形だけを検出する。ジェネリックなハンドラ・saga・`[WolverineHandler]`・基底型で受ける形は検出対象外（本番ソースに実在しないことを grep で確認済み。試験のコメントに記録）。
+  - ［2026-10-02 追記 / #1140］**LLM を呼ぶ前の見送りが毎回続く銘柄は、基準値が古いまま急変が繰り返し発火し得る**（意図どおり。コードは変えない）。
+    [IADR-0463](IADR-0463_entry-blockers-before-llm.md) で、保有 0・未約定なしで新規建てが必ず拒否される銘柄（同日の損切り・保有建玉数の上限・kill switch・一時停止など）は
+    LLM を呼ぶ前に `EntryBlockedByRiskControls` で見送るようになった。これは決定 1 の「判断をしていない」見送りであり、基準値を進めない。
+    その銘柄の価格が最後に判断した時点の基準値から閾値を超えて離れたままだと、市場監視は**クールダウン（既定 15 分）ごとに** `PriceMovementDetected` を出し直し、
+    取引判断はそのたびに LLM を呼ばずに見送る（監査台帳に `TradeDecisionForgoneBeforeLlm` が 1 件ずつ増える。夜間の要約の §11 の `price-movement` の行）。
+    1 回ごとの費用は小さく（LLM を呼ばない）、クールダウンが回数を抑える。塞がりが解けた後の最初の判断（定時の判断を含む）が基準値を進め、繰り返しは止まる。
+    **基準値を見送りで進めない**のは、判断をしていない回で基準値を動かすと計画の基準点（前回 AI 判断を行った時点）から外れるためであり（範囲の案 C を採らなかった理由と同じ）、
+    繰り返しの抑制のためだけにこれを崩さない。回数が問題になったら、市場監視の側で「塞がっている銘柄の再発火」を抑える案を別途検討する（本追記では決めない）。
 - フォローアップ: なし（本 PR で完結）。
 
 ## 試験
