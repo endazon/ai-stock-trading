@@ -12,7 +12,7 @@ namespace TradeDecisionService.Tests;
 // FR-04, ADR-0003, #1129, IADR-0470 決定 3（オーナー裁定 2026-10-01）: 判断は LLM が方針を見て行うまま、方針の決まった書式の「利確:」行
 // （IADR-0470 の 2026-10-01 追記 / #1129 再監査。自由文は読まない）の条件にすべて達しているときだけ、保有状況の節で「方針の利確条件に達している」と
 // 明示する。数値（含み益の率・条件との比較）はコードで計算する。既定の Hold の規則（ExitFollowsPolicyRule）は変えない。自動の利確は採らない。
-// T-10-1889〜1891・T-10-1897〜1899・T-10-1940〜1941。
+// T-10-1889〜1891・T-10-1897〜1899・T-10-1940〜1941・T-10-1945。
 public class TakeProfitReachedInPromptTests
 {
     private static readonly SizingContext Context =
@@ -223,5 +223,30 @@ public class TakeProfitReachedInPromptTests
         lines[blocked].Should().Contain(TradeDecisionPromptBuilder.AddOnBlockedReasonLead);
         reached.Should().Be(blocked + 1, "塞がっていても到達の行は消えず、塞がりの行の次に並ぶ");
         lines[reached].Should().Contain($"手仕舞い（{close}）");
+    }
+
+    // T-10-1945（#1129 第 3 回監査 F4）: 一次の縮退の到達の行の予約は、その銘柄に掛かる読める「利確:」条件があるときだけ掛ける。
+    // 条件が無い（他の銘柄の行だけ・書式外の行がある・行が無い）方針は develop と同じ予算で記事を残し、条件がある方針でだけ予約ぶん早く削る。
+    [Fact]
+    public void 縮退の到達の行の予約は条件があるときだけ掛ける()
+    {
+        var news = new RetrievedContext("記事", new string('あ', 100), SourceUri: null, 0.5, ["google-news"], null);
+        int Dropped(string policy, int budget) =>
+            ScreeningContextAssembler.Assemble(Aapl, Policy(policy), [news], currentPrice: null, budget, watchlist: null).Plan.DroppedNewsCount;
+
+        // 同じ長さの 3 つの方針: AAPL の条件あり／他の銘柄の条件だけ／条件なし（「利確」の後ろにコロンが無い説明の文）。
+        const string withCondition = "利確: AAPL +5%";
+        const string otherSymbol = "利確: MSFT +5%";
+        const string noCondition = "AAPLは利確 +5%。";
+        new[] { otherSymbol.Length, noCondition.Length }.Should().AllBeEquivalentTo(withCondition.Length);
+
+        // 条件の無い方針で記事を 1 件も削らない最小の予算（予約なしの develop と同じ見積り）。
+        var budget = Enumerable.Range(1, 20_000).First(b => Dropped(noCondition, b) == 0);
+
+        Dropped(otherSymbol, budget).Should().Be(0, "AAPL に掛かる条件が無ければ予約しない");
+        Dropped(noCondition, budget - 1).Should().Be(1);
+        Dropped(withCondition, budget).Should().Be(1, "AAPL に掛かる条件があれば到達の行の予約ぶん早く削る");
+        Dropped(withCondition, budget + ScreeningContextAssembler.TakeProfitReachedReserveChars).Should().Be(0);
+        Dropped(withCondition, budget + ScreeningContextAssembler.TakeProfitReachedReserveChars - 1).Should().Be(1);
     }
 }

@@ -48,6 +48,7 @@ public static class PolicyRevisionPromptBuilder
     /// <summary>利確の条件を決まった書式の「利確:」行で書く案内。</summary>
     public const string NumericTakeProfitRule =
         "- 保有中の銘柄と新規建ての対象には、銘柄ごとに 1 行ずつ、方針（policySummary）の中に「利確: <ティッカー> <しきい値>」の書式の行を書く（JSON 文字列の中では行を \\n で区切る）。"
+        + "<ティッカー> は英字で始まる大文字のティッカー（例 AAPL・BRK.B）だけを書ける。数字のコードの銘柄（日本株。例 7203）は銘柄の行を書けないため、「全銘柄」の行で扱う（数字のコードの行があると、その方針の利確の条件は 1 つも読まれない）。"
         + "しきい値は、平均取得単価からの含み益の率「+N%」（+ は必須）か、価格「$N」「N ドル」（米ドル）・「N 円」のどれか 1 つにする。"
         + "一部だけ利確するときは、しきい値の後ろに括弧で割合「(N%)」を書く。すべての銘柄に同じ条件を掛けるときは、ティッカーの代わりに「全銘柄」と書く（銘柄の行があれば、その銘柄には銘柄の行が優先する）。";
 
@@ -60,9 +61,17 @@ public static class PolicyRevisionPromptBuilder
         + "（AAPL は平均取得単価から +5% で利確、MSFT は 450 ドルで保有の 50% を利確、他の銘柄は +8% で利確）。";
 
     /// <summary>「利確:」行に書式以外の文字を書かない案内（説明の文は別に残す）。</summary>
+    // #1129 第 3 回監査 F1: システムは「利確」の後ろにコロンがある行をすべて「利確:」行とみなす（行頭の見出しに限らない）。
     public const string TakeProfitLineStrictRule =
-        "- 「利確:」で始める行には、この書式以外の文字（「で利確」「以外」「。」など）を書かない。書式に合わない「利確:」行が 1 行でもあると、システムはその方針の利確の条件を 1 つも読まない。"
-        + "条件の理由や補足は「利確:」行とは別の説明の文に書く（説明の文は、これまでどおり人が読む方針として書く）。";
+        "- 「利確:」行は行頭から書式どおりに書き、この書式以外の文字（「で利確」「以外」「。」・太字の「**」・番号「1.」・引用の「>」など）を足さない。"
+        + "システムは「利確」の後ろにコロン（:）がある行をすべて「利確:」行とみなし（「利確条件:」「AAPL 利確:」「利確（AAPL）:」も含む）、"
+        + "書式に合わない行が 1 行でもあると、その方針の利確の条件を 1 つも読まない。"
+        + "条件の理由や補足は「利確:」行とは別の説明の文に、「利確」の後ろにコロンを置かずに書く（説明の文は、これまでどおり人が読む方針として書く）。";
+
+    /// <summary>銘柄ごとの例外を自由文で書かない案内（#1129 第 3 回監査 F2）。</summary>
+    public const string TakeProfitExceptionRule =
+        "- 「全銘柄」の行と違う条件を掛けたい銘柄（例外）は、必ずその銘柄の「利確:」行で書く（例「利確: 全銘柄 +5%」と「利確: AAPL +20%」）。"
+        + "「ただし AAPL は +20% まで保有する」のような説明の文の例外はシステムに読まれず、その銘柄にも「全銘柄」の条件が当たる。";
 
     /// <summary>数値の無い利確の語を使わない案内。</summary>
     public const string VagueTakeProfitRule =
@@ -107,6 +116,7 @@ public static class PolicyRevisionPromptBuilder
             sb.AppendLine(NumericTakeProfitRule);
             sb.AppendLine(TakeProfitLineExamplesRule);
             sb.AppendLine(TakeProfitLineStrictRule);
+            sb.AppendLine(TakeProfitExceptionRule);
             sb.AppendLine(VagueTakeProfitRule);
             sb.AppendLine();
         }

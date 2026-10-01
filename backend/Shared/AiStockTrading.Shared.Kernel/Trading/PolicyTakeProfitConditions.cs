@@ -52,6 +52,12 @@ public sealed record PolicyTakeProfitCondition(
 // 読めない行が特定の銘柄の上書きだった場合に、その行を飛ばして「全銘柄」や他の行を当てると、意図より低いしきい値で
 // 「達した」と書きうるため（読めない行は「何も足さない」ではなく「全体を読まない」側へ倒す）。
 //
+// 🔴 **「利確:」行の候補は行頭の見出しに限らない**（#1129 第 3 回監査 F1）。書式文字（Unicode の Cf。U+200B・U+FEFF・U+200F 等）・
+// 結合文字・空白を除いた行に「利確」があり、その後ろにコロンがあれば候補とする（例「**利確:** AAPL +20%」「1. 利確:」「> 利確:」
+// 「利確（AAPL）: +20%」「AAPL 利確: +20%」「利確条件:」「利<U+200B>確:」）。候補が書式に合わなければ、上の規則で方針全体を読まない
+// ——行頭の厳密な見出しだけを候補にすると、こうした行を黙って飛ばし、「全銘柄」の行を当てて誤った「達した」を書くため。
+// 除くのは候補の判定だけで、書式の照合は除く前の行で行う（銘柄・語の間・行末の U+200B 等は従来どおり書式外＝方針全体を読まない）。
+//
 // 銘柄への当て方: 銘柄を名指しした行があればその行だけ、無ければ「全銘柄」の行。同じ銘柄（または「全銘柄」）に
 // 行が複数あれば、**すべてに達したときだけ**到達とする（しきい値の高いほうに合わせる＝最も控えめ）。
 // 価格は利益の側だけを到達とし（ロングは価格 > 平均取得単価、ショートは価格 < 平均取得単価）、通貨が市場の通貨と違う価格は到達としない。
@@ -69,8 +75,8 @@ public static class PolicyTakeProfitConditions
 
     private const string Ticker = @"[A-Z][A-Z0-9.]{0,9}";
 
-    // 「利確:」で始まる行（箇条書きの印は 1 つまで）。書式に合うかは FullLine で確かめる。
-    private static readonly Regex LabelLine = new(@"\A(?:[-*・]\s*)?利確:", RegexOptions.CultureInvariant);
+    // 「利確:」行の候補（書式文字・結合文字・空白を除いた行で、「利確」の後ろにコロンがある）。書式に合うかは FullLine で確かめる。
+    private static readonly Regex LabelCandidate = new("利確.*:", RegexOptions.CultureInvariant);
 
     private static readonly Regex FullLine = new(
         @"\A(?:[-*・]\s*)?利確:\s*"
@@ -82,7 +88,8 @@ public static class PolicyTakeProfitConditions
     private static readonly Regex LineBreak = new(@"\r\n|\r|\n", RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// 方針の「利確:」行から利確条件を読む（出現順）。読める行が無い、または書式に合わない「利確:」行が 1 行でもあれば空。
+    /// 方針の「利確:」行から利確条件を読む（出現順）。読める行が無い、または書式に合わない「利確:」行（「利確」の後ろにコロンがある行。
+    /// 書式文字・空白を除いて判定する）が 1 行でもあれば空。
     /// </summary>
     public static IReadOnlyList<PolicyTakeProfitCondition> Parse(string? policy)
     {
@@ -96,7 +103,7 @@ public static class PolicyTakeProfitConditions
         foreach (var raw in LineBreak.Split(text))
         {
             var line = raw.Trim();
-            if (!LabelLine.IsMatch(line))
+            if (!LabelCandidate.IsMatch(StripInvisible(line)))
                 continue;
             if (!TryParseLine(line, out var conditions))
                 return [];
@@ -218,6 +225,23 @@ public static class PolicyTakeProfitConditions
         foreach (var symbol in target.Split(',').Select(s => s.Trim()))
             conditions.Add(new PolicyTakeProfitCondition(symbol, kind, threshold, currency, partial));
         return true;
+    }
+
+    // 候補の判定にだけ使う: 書式文字（Cf）・結合文字（Mn・Me）・空白を除く（「利<U+200B>確:」「<U+FEFF>利確:」「利確 :」を候補にする）。
+    private static string StripInvisible(string line)
+    {
+        var sb = new StringBuilder(line.Length);
+        foreach (var rune in line.EnumerateRunes())
+        {
+            if (Rune.IsWhiteSpace(rune))
+                continue;
+            var category = Rune.GetUnicodeCategory(rune);
+            if (category is UnicodeCategory.Format or UnicodeCategory.NonSpacingMark or UnicodeCategory.EnclosingMark)
+                continue;
+            sb.Append(rune.ToString());
+        }
+
+        return sb.ToString();
     }
 
     // 桁区切りのカンマを除いてから読む（書式の正規表現が 3 桁ごとの区切りだけを通している）。

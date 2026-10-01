@@ -7,7 +7,7 @@ namespace AiStockTrading.Shared.Kernel.Tests.Trading;
 
 // FR-04, FR-07, ADR-0003, #1129, IADR-0470 決定 2・3（2026-10-01 追記 / #1129 再監査）: 方針の決まった書式の「利確:」行だけを読み、
 // 自由文からは読まない。書式に合わない「利確:」行が 1 行でもあれば方針全体を読まない。同じ銘柄の行が複数あればすべてに達したときだけ到達。
-// T-10-1880〜1883・T-10-1892〜1896。
+// T-10-1880〜1883・T-10-1892〜1896・T-10-1942〜1944。
 public class PolicyTakeProfitConditionsTests
 {
     private static PolicyTakeProfitCondition Pct(string? symbol, decimal threshold, decimal? partial = null) =>
@@ -97,7 +97,7 @@ public class PolicyTakeProfitConditionsTests
         PolicyTakeProfitConditions.HasAny(line).Should().BeFalse();
     }
 
-    // 「利確:」の見出しで始まらない行は、数値があっても読まない（自由文）。
+    // 「利確:」の見出しで始まらない行は、数値があっても読まない（自由文。「利確」の後ろにコロンがある行は書式外として方針全体を読まない＝T-10-1942）。
     [Theory]
     [InlineData("利確 AAPL +5%")]
     [InlineData("利確：　")]
@@ -124,6 +124,72 @@ public class PolicyTakeProfitConditionsTests
         PolicyTakeProfitConditions.HasAny(policy).Should().BeFalse();
         PolicyTakeProfitConditions.Reached(
             PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 110m, Currency.Usd).Should().BeEmpty();
+    }
+
+    // ---- T-10-1942: 行頭の見出し以外の「利確 … :」行も候補にし、書式に合わなければ方針全体を読まない（#1129 第 3 回監査 F1・否定形） ----
+
+    // 🔴 「利確: 全銘柄 +5%」と、AAPL を上書きするつもりの書式外の行。候補を行頭の厳密な見出しだけにすると、書式外の行を黙って飛ばし、
+    // 全銘柄 +5% を AAPL に当てて 100→106 を「達した」と書く（監査の実測。15 表記すべて）。
+    [Theory]
+    [InlineData("利確 : AAPL +20%")]
+    [InlineData("**利確:** AAPL +20%")]
+    [InlineData("**利確: AAPL +20%**")]
+    [InlineData("1. 利確: AAPL +20%")]
+    [InlineData("• 利確: AAPL +20%")]
+    [InlineData("- - 利確: AAPL +20%")]
+    [InlineData("> 利確: AAPL +20%")]
+    [InlineData("- [ ] 利確: AAPL +20%")]
+    [InlineData("利確（AAPL）: +20%")]
+    [InlineData("AAPL 利確: +20%")]
+    [InlineData("利確条件: AAPL +20%")]
+    [InlineData("\u200B利確: AAPL +20%")]
+    [InlineData("\uFEFF利確: AAPL +20%")]
+    [InlineData("\u200F利確: AAPL +20%")]
+    [InlineData("利\u200B確: AAPL +20%")]
+    public void 行頭の見出し以外の利確の行も書式に合わなければ方針全体を読まない(string overrideLine)
+    {
+        var policy = "利確: 全銘柄 +5%\n" + overrideLine;
+
+        PolicyTakeProfitConditions.Parse(policy).Should().BeEmpty();
+        PolicyTakeProfitConditions.HasAny(policy).Should().BeFalse("警告の対象（方針の利確の条件を読めない）");
+        PolicyTakeProfitConditions.ForSymbol(policy, "AAPL").Should().BeEmpty();
+        PolicyTakeProfitConditions.Reached(
+            PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 106m, Currency.Usd).Should().BeEmpty();
+        // 対照: 上書きの行が無ければ全銘柄 +5% に達している（上の否定は書式外の行だけが崩している）。
+        PolicyTakeProfitConditions.Reached(
+            PolicyTakeProfitConditions.ForSymbol("利確: 全銘柄 +5%", "AAPL"), true, 100m, 106m, Currency.Usd).Should().ContainSingle();
+    }
+
+    // ---- T-10-1943: 書式文字を除くのは候補の判定だけ（銘柄・語の間・行末の書式文字は従来どおり書式外＝方針全体を読まない） ----
+
+    [Theory]
+    [InlineData("利確: AA\u200BPL +20%")]
+    [InlineData("利確: AAPL\u200B +20%")]
+    [InlineData("利確: AAPL \u200B+20%")]
+    [InlineData("利確: AAPL +20%\u200B")]
+    [InlineData("利確: AAPL +20%\u200F")]
+    public void 書式文字を除くのは候補の判定だけで書式の照合は除かない(string overrideLine)
+    {
+        var policy = "利確: 全銘柄 +5%\n" + overrideLine;
+
+        PolicyTakeProfitConditions.Parse(policy).Should().BeEmpty();
+        PolicyTakeProfitConditions.Reached(
+            PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 106m, Currency.Usd).Should().BeEmpty();
+    }
+
+    // ---- T-10-1944: 「利確」の後ろにコロンが無い説明の文は候補にしない（書式どおりの行は従来どおり読む） ----
+
+    [Theory]
+    [InlineData("含み益が出たら半分を利確する。")]
+    [InlineData("方針: 押し目で拾い、含み益が出たら利確する")]
+    [InlineData("利確の理由は決算前の利益確定である")]
+    public void 利確の後ろにコロンが無い説明の文は候補にしない(string prose)
+    {
+        var policy = prose + "\n利確: AAPL +5% (50%)";
+
+        PolicyTakeProfitConditions.Parse(policy).Should().Equal(Pct("AAPL", 5m, 50m));
+        PolicyTakeProfitConditions.Reached(
+            PolicyTakeProfitConditions.ForSymbol(policy, "AAPL"), true, 100m, 106m, Currency.Usd).Should().Equal(Pct("AAPL", 5m, 50m));
     }
 
     // ---- T-10-1882: 銘柄への当て方（名指しが全銘柄を上書きする） ----

@@ -13,7 +13,7 @@ namespace ReportService.Tests;
 // FR-04, FR-07, ADR-0003, ADR-0048 決定 4, #1129, IADR-0470 決定 1・4（オーナー裁定 2026-10-01）:
 // 日報の方針の利確条件を決まった書式の「利確:」行で書くよう方針の改訂 LLM へ求め、書式どおりの行が無い（または書式に合わない
 // 「利確:」行がある）方針は**確定の前に警告する**（確定は止めない。IADR-0470 の 2026-10-01 追記 / #1129 再監査）。
-// 警告は方針の本文へ入れない（方針はそのまま判断へ渡る）。T-10-1884〜1887。
+// 警告は方針の本文へ入れない（方針はそのまま判断へ渡る）。T-10-1884〜1887・T-10-1946。
 public class PolicyTakeProfitWarningTests
 {
     private const string VaguePolicy = "含み益が十分に出た段階で利確する。押し目買いを優先する。";
@@ -103,6 +103,34 @@ public class PolicyTakeProfitWarningTests
     public void 週報と月報の方針は警告しない(ReportKind kind)
     {
         PolicyTakeProfitCheck.WarningFor(kind, VaguePolicy).Should().BeNull();
+    }
+
+    // ---- T-10-1946: 例外は銘柄の行で・数字のコードは全銘柄の行で・「利確」とコロンを含む行の扱いを案内と警告に書く（#1129 第 3 回監査 F1〜F3） ----
+
+    [Fact]
+    public void 改訂の案内と警告は例外の書き方と数字のコードの扱いとコロンのある利確の行の扱いを書く()
+    {
+        var prompt = PolicyRevisionPromptBuilder.Build(
+            new PolicyRevisionContext(ReportKind.Daily, "daily-2026-10-01", VaguePolicy, null, "利確を早めたい"));
+
+        // F2: 銘柄ごとの例外は、その銘柄の「利確:」行で書く（説明の文の例外は読まれない）。
+        prompt.Should().Contain(PolicyRevisionPromptBuilder.TakeProfitExceptionRule);
+        prompt.IndexOf(PolicyRevisionPromptBuilder.TakeProfitExceptionRule, StringComparison.Ordinal)
+            .Should().BeLessThan(prompt.IndexOf("ownerInstruction:", StringComparison.Ordinal));
+        PolicyRevisionPromptBuilder.TakeProfitExceptionRule.Should().Contain("その銘柄の「利確:」行").And.Contain("読まれず");
+        // F3: 銘柄の行は英字のティッカーだけ。数字のコードの銘柄は「全銘柄」の行で扱う。
+        PolicyRevisionPromptBuilder.NumericTakeProfitRule.Should().Contain("英字").And.Contain("「全銘柄」の行で扱う");
+        // F1: 「利確」の後ろにコロンがある行はすべて「利確:」行とみなす。
+        PolicyRevisionPromptBuilder.TakeProfitLineStrictRule.Should().Contain("「利確」の後ろにコロン")
+            .And.Contain("利確条件:").And.Contain("AAPL 利確:");
+        PolicyTakeProfitCheck.Warning.Should().Contain("英字のティッカーだけ").And.Contain("「全銘柄」の行で扱って")
+            .And.Contain("「利確」の後ろにコロンがある行").And.Contain("説明の文の例外は読まれません");
+
+        // 案内どおりの書き方は警告されず、案内が退けた書き方は警告される（警告・判断と同じ部品で判定する）。
+        PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, "利確: 全銘柄 +5%\n利確: AAPL +20%").Should().BeNull();
+        PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, "利確: 全銘柄 +5%\n利確: 7203 +8%").Should().Be(PolicyTakeProfitCheck.Warning);
+        PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, "利確: 全銘柄 +5%\n**利確:** AAPL +20%").Should().Be(PolicyTakeProfitCheck.Warning);
+        PolicyTakeProfitCheck.WarningFor(ReportKind.Daily, "利確: 全銘柄 +5%\n利確条件: AAPL +20%").Should().Be(PolicyTakeProfitCheck.Warning);
     }
 
     // ---- T-10-1886: /policy の改訂案 ----

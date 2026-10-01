@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Kernel.Trading;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Domain;
 
@@ -50,10 +51,11 @@ public static class ScreeningContextAssembler
 
     // FR-04, #1129, IADR-0470 決定 3: 方針の利確条件への到達の行（TradeDecisionPromptBuilder.TakeProfitReachedLine）は保有状況の一部であり
     // **保護分**である（削ると、利確条件に達した保有を一次が落とす）。並べる条件は 3 件までで、最悪長が予約を超えないことを試験で固定する。
+    // 🔴 予約は**その銘柄に掛かる読める「利確:」条件があるときだけ**掛ける（#1129 第 3 回監査 F4）。条件が無ければ到達の行は出ず、
+    // 無条件に予約すると「利確:」行の無い方針でも記事を余計に削る（裁定「未到達なら develop と一字一句同じ」から外れる）。
     public const int TakeProfitReachedReserveChars = 400;
 
-    private const int PerSymbolLineChars =
-        400 + PriceContextReserveChars + NewsStatusReserveChars + TakeProfitReachedReserveChars;
+    private const int PerSymbolLineChars = 400 + PriceContextReserveChars + NewsStatusReserveChars;
 
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;
@@ -96,7 +98,8 @@ public static class ScreeningContextAssembler
         // （表示の上限 50 件で頭打ちになるため、予算 150,000 文字〔IADR-0313〕に対して数千文字以内に収まる）。
         var sharedProtected = PromptScaffoldChars + policy.Summary.Length
             + TradeDecisionPromptBuilder.WatchlistSection(trigger, watchlist).Length;
-        var symbolProtected = PerSymbolLineChars + protectedRefs.Sum(EstimateChars);
+        var symbolProtected = PerSymbolLineChars + protectedRefs.Sum(EstimateChars)
+            + (PolicyTakeProfitConditions.ForSymbol(policy.Summary, trigger.Symbol).Count > 0 ? TakeProfitReachedReserveChars : 0);
 
         var plan = ScreeningContextPlanner.Plan(
             sharedProtected,
