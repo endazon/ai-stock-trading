@@ -247,6 +247,27 @@ OUT_ZERO="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
 if grep -qxF '2026-09|3000.00|0|上限 0 以下（費用統制は統制しない）|700.00' <<<"$OUT_ZERO"; then
   pass=$((pass + 1)); echo '  ok  §13: 上限 0 は割り算せず「統制しない」と出す'
 else fail=$((fail + 1)); echo '  NG  §13: 上限 0 の扱い' >&2; grep '^2026-09|' <<<"$OUT_ZERO" >&2; fi
+# T-10-2025（月の境界）, #1140: 月は JST ではなく UTC の暦月で、窓 [from, to) の最後の瞬間（to の 1 マイクロ秒前）の月。
+# 上の行に 9 月の 2 件（09-30T22:59Z・09-30T23:59:59Z）と、UTC で 10 月に計上された 10 月分 1 件（10-01T00:00Z ちょうど）を足す。
+$PSQL -d configuration_svc -q -o /dev/null -c 'DELETE FROM assumptions' \
+  -c "INSERT INTO assumptions VALUES (1, '{\"costLimits\":{\"llm\":12000}}', 5, now())" || exit 1
+$PSQL -d cost_control_svc -q -v ON_ERROR_STOP=1 -o /dev/null <<'SQL' || exit 1
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 0, 400, '2026-09-30T22:59:00Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-09', 0, 100, '2026-09-30T23:59:59Z');
+INSERT INTO cost_entries VALUES (gen_random_uuid(), '2026-10', 0, 8000, '2026-10-01T00:00:00Z');
+SQL
+# JST の月初の夜（--night 2026-09-30）: 終端は 10-01 08:00 JST だが UTC では 09-30T23:00Z ＝ まだ 9 月。
+# 9 月の 1,000 + 2,000 + 500 + 400 を数え（23:59:59Z は終端より後）、10 月分は含めない。JST で切ると 2026-10 になって赤。
+OUT_JST="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-30 2>&1)"
+if grep -qxF '2026-09|3900.00|12000|32.5%|700.00' <<<"$OUT_JST" && ! grep -q '^2026-10|' <<<"$OUT_JST"; then
+  pass=$((pass + 1)); echo '  ok  §13: JST の月初の夜も UTC の暦月（9 月）で累計し、10 月分を含めない'
+else fail=$((fail + 1)); echo '  NG  §13: JST の月初の夜の月の取り違え' >&2; grep '^2026-' <<<"$OUT_JST" >&2; fi
+# 窓の終端がちょうど月初 00:00Z: 窓は半開区間なので終端の月（10 月）ではなく前の月（9 月）として扱う。
+# 9 月の 5 件（4,000）を数え、終端ちょうどに計上された 10 月分は含めない。1 マイクロ秒を引かないと 2026-10 になって赤。
+OUT_EDGE="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" 2026-09-30T20:00+00:00 2026-10-01T00:00+00:00 2>&1)"
+if grep -qxF '2026-09|4000.00|12000|33.3%|700.00' <<<"$OUT_EDGE" && ! grep -q '^2026-10|' <<<"$OUT_EDGE"; then
+  pass=$((pass + 1)); echo '  ok  §13: 窓の終端がちょうど月初 00:00Z なら前の月（9 月）として扱う'
+else fail=$((fail + 1)); echo '  NG  §13: 窓の終端がちょうど月初のときの月' >&2; grep '^2026-' <<<"$OUT_EDGE" >&2; fi
 
 # 窓の途中で走らせる（場中の確かめ）: 終端は現在時刻で切り、まだ来ていない時間を欠けとして出さない。
 # 観測は 5 分ごとに現在時刻の 30 分前まで。欠けは「最後の観測 → 現在時刻」の約 30 分であり、「→ 窓の終端」の約 10 時間ではない。
