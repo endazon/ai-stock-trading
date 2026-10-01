@@ -11,7 +11,7 @@ namespace TradeDecisionService.Tests;
 
 // FR-04, ADR-0003, #1129, IADR-0470 決定 3（オーナー裁定 2026-10-01）: 判断は LLM が方針を見て行うまま、方針に数値の利確条件があり
 // それに達しているときだけ、保有状況の節で「方針の利確条件に達している」と明示する。数値（含み益の率・条件との比較）はコードで計算する。
-// 既定の Hold の規則（ExitFollowsPolicyRule）は変えない。自動の利確は採らない。T-10-1889〜1891。
+// 既定の Hold の規則（ExitFollowsPolicyRule）は変えない。自動の利確は採らない。T-10-1889〜1891・独立監査の是正 T-10-1897〜1899。
 public class TakeProfitReachedInPromptTests
 {
     private static readonly SizingContext Context =
@@ -101,5 +101,67 @@ public class TakeProfitReachedInPromptTests
         line.Should().NotBeNull();
         line.Should().Contain(" ほか ");
         ("- " + line + "\n").Length.Should().BeLessThanOrEqualTo(ScreeningContextAssembler.TakeProfitReachedReserveChars);
+    }
+    private static string ReachedLine(string prompt) =>
+        prompt.Split('\n').Select(l => l.TrimEnd('\r'))
+            .Should().ContainSingle(l => l.Contains(TradeDecisionPromptBuilder.TakeProfitReachedLinePrefix)).Which;
+
+    private static string HeldSection(string prompt)
+    {
+        var start = prompt.IndexOf(TradeDecisionPromptBuilder.HeldPositionSectionTitle, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0);
+        var end = prompt.IndexOf("\n# ", start, StringComparison.Ordinal);
+        return (end < 0 ? prompt[start..] : prompt[start..(end + 1)]).Replace("\r\n", "\n", StringComparison.Ordinal);
+    }
+
+    // T-10-1897（#1129 監査 F6）: ショートの到達の行そのものが手仕舞いを Buy と書く（プロンプトの他の行の「手仕舞い（Buy）」で代用しない）。
+    [Fact]
+    public void ショートの到達の行は手仕舞いをBuyと書く()
+    {
+        var held = new HeldPosition(-10, 100m, 102m);
+
+        foreach (var prompt in new[] { MainPrompt("+5% で利確", held, 94m), Screening("+5% で利確", held, 94m) })
+        {
+            var line = ReachedLine(prompt);
+            line.Should().Contain("手仕舞い（Buy）").And.NotContain("Sell");
+        }
+    }
+
+    // T-10-1898（#1129 監査 F6）: 一次（短縮版）のショートの保有状況の節は、到達していなければ利確条件の無い方針と一字一句同じ（全文で固定）。
+    [Fact]
+    public void 一次のショートの保有状況の節は未到達なら全文が変わらない()
+    {
+        var held = new HeldPosition(-10, 100m, 102m);
+
+        var section = HeldSection(Screening("+5% で利確", held, 104m));
+
+        section.Should().Be(
+            "# 保有状況（この銘柄）\n"
+            + "- 保有: ショート 10 株 / 平均取得単価: 100 / 含み損益率: -4.00% / 記録上の損切りライン: 102（現在値は損切りラインに達しています）\n"
+            + "- 保有中の銘柄は、買い増し・売り増しに加えて、手仕舞いの検討に値する場合も本判断へ進めます。"
+            + "現在値が記録上の損切りラインに達している建玉は手仕舞いの候補です。（この建玉の手仕舞いは Buy）\n"
+            + "\n");
+    }
+
+    // T-10-1899（#1129 監査 F1・F2・F5・否定形）: 監査の場面はプロンプトにも到達の行を出さない。
+    // 他の銘柄の条件（AAPL の +5%）・損の側の価格（ショート 200→220 で 230 ドル）・値幅（5 ドル上昇）・社名の名指し（アップル）。
+    [Theory]
+    [InlineData("AAPLは+5%で利確、MSFTは+8%で利確する。", "MSFT", 10, "100", "106")]
+    [InlineData("AAPL は 230 ドルで利確。", "AAPL", -10, "200", "220")]
+    [InlineData("AAPLは5ドル上昇したら利確。", "AAPL", 10, "100", "106")]
+    [InlineData("利益が500ドルに達したら利確。", "AAPL", 10, "100", "106")]
+    [InlineData("アップルは+5%で利確。", "AAPL", 10, "100", "106")]
+    [InlineData("1銘柄あたり口座の10%まで、含み益が十分に出たら利確。", "AAPL", 10, "100", "150")]
+    public void 監査の場面では到達の行を出さない(string policy, string symbol, int qty, string entry, string mark)
+    {
+        var e = decimal.Parse(entry, System.Globalization.CultureInfo.InvariantCulture);
+        var m = decimal.Parse(mark, System.Globalization.CultureInfo.InvariantCulture);
+        var held = new HeldPosition(qty, e, null);
+
+        TradeDecisionPromptBuilder.TakeProfitReachedLine(policy, symbol, held, m, " USD").Should().BeNull();
+        var trigger = DecisionTrigger.Scheduled(symbol, Market.UnitedStates);
+        TradeDecisionPromptBuilder.Build(trigger, Policy(policy), Context, currentPrice: m, held: held,
+                working: WorkingEntryOrders.None, watchlist: [])
+            .Should().NotContain(TradeDecisionPromptBuilder.TakeProfitReachedLinePrefix);
     }
 }
