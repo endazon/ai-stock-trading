@@ -108,13 +108,34 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
     public async ValueTask DisposeAsync()
     {
         _tokenHttp?.Dispose();
-        if (_riskFactory is not null)
-            await _riskFactory.DisposeAsync();
-        if (_reportFactory is not null)
-            await _reportFactory.DisposeAsync();
-        if (_costFactory is not null)
-            await _costFactory.DisposeAsync();
 
+        // NFR, #1128: ホストの破棄の打ち切り（RabbitMQ の閉じ待ち）で試験を赤にせず、1 つが投げても残りの破棄を必ず行う。
+        try
+        {
+            try
+            {
+                try
+                {
+                    await E2EInfrastructure.DisposeQuietlyAsync(_riskFactory, "リスク管理のホスト");
+                }
+                finally
+                {
+                    await E2EInfrastructure.DisposeQuietlyAsync(_reportFactory, "報告書のホスト");
+                }
+            }
+            finally
+            {
+                await E2EInfrastructure.DisposeQuietlyAsync(_costFactory, "費用統制のホスト");
+            }
+        }
+        finally
+        {
+            await DisposeInfrastructureAsync();
+        }
+    }
+
+    private async Task DisposeInfrastructureAsync()
+    {
         // 外部注入時はコンテナを持たない（破棄は呼び出し側の責務）。
         var disposals = new List<Task>();
         if (_postgres is not null)
@@ -123,12 +144,18 @@ public sealed class ServiceTokenSyncQueryE2ETests : IAsyncLifetime
             disposals.Add(_rabbitMq.DisposeAsync().AsTask());
         if (_keycloak is not null)
             disposals.Add(_keycloak.DisposeAsync().AsTask());
-        await Task.WhenAll(disposals);
-
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
-        Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
-        Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
-        Environment.SetEnvironmentVariable("Auth__Authority", null);
+        try
+        {
+            await Task.WhenAll(disposals);
+        }
+        finally
+        {
+            // NFR, #1128: コンテナの破棄が投げても、環境変数は後続の試験クラスへ漏らさない。
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", null);
+            Environment.SetEnvironmentVariable("RabbitMq__ConnectionString", null);
+            Environment.SetEnvironmentVariable("Otlp__Endpoint", null);
+            Environment.SetEnvironmentVariable("Auth__Authority", null);
+        }
     }
 
     [Fact]
