@@ -264,6 +264,8 @@ public class PolicyTakeProfitConditionsTests
     [InlineData("利\uFFA0確: AAPL +20%")]
     [InlineData("利\u2800確: AAPL +20%")] // 点字の空白
     [InlineData("利\uFFFD確: AAPL +20%")] // 置換文字
+    [InlineData("利\uFFFC確: AAPL +20%")] // オブジェクト置換文字
+    [InlineData("利\U0001D159確: AAPL +20%")] // 楽譜の空の符頭（見えない記号）
     public void 候補の判定で見えない字を除く(string overrideLine) => AssertUnreadableWithAllSymbols(overrideLine);
 
     // ---- T-10-1949: 「利確」の語の判定は線形で終わる（#1129 第 4 回監査 Y5。旧「利確.*:」は後戻りで 100k 字に約 28 秒） ----
