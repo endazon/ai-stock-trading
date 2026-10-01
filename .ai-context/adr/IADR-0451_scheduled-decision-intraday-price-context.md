@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-02, FR-04, FR-01, UC-01, ADR-0003, ADR-0044, ADR-0020, ADR-0033, IADR-0099, IADR-0068, IADR-0313, IADR-0247, IADR-0351, IADR-0318, IADR-0440, IADR-0435]
 author: claude (Claude Code)
 created: 2026-09-29
-updated: 2026-09-30
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-02・FR-04)
   - planning:projects/ai-stock-trading/07_adr/ADR-0044_watchlist-in-decision-prompt-and-stage0-asof.md (決定 1「価格変動トリガーの現在値は、収集情報〔市況〕に含まれる」)
@@ -150,3 +150,9 @@ planning#702 で裁定中である。本 IADR は出来高を供給しない。
   既定）なら `VolumeNotProvidedLine` を従来どおり出す（1 字も変えない）。有効化した構成では値の行、取得できないときは別の文 `VolumeUnavailableLine`（「未提供」）を出す。
 - 決定 4 の予約 `PriceContextReserveChars` は 300 → 450 に広げた（出来高の値の行の最悪長。IADR-0467 決定 4）。
 - 決定 5（Stage 0）は変えていない。Stage 0 の記録の出来高は「未提供」のまま（残件）。
+
+## ［2026-10-02 追記 / #1139］Stage 0 の出来高も判断時点の前営業日までの確定足から渡す
+
+本文と上の追記は書き換えない。上の追記の「Stage 0 の記録の出来高は『未提供』のまま（残件）」は、[IADR-0479](IADR-0479_stage0-decision-volume-asof-same-port.md) で解消した。
+決定 5（前日終値からの前日比・当日の変化率と高安は「不明」）は変えていない。出来高は判断の出来高が有効なときだけ、AsOf より前の確定足から本番と同じ計算で渡す
+（AsOf ちょうど以降の足は使わない。無効なら従来の「出来高: 未提供」の行）。

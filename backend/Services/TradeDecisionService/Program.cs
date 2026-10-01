@@ -497,8 +497,14 @@ builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
     http.BaseAddress = uri;
     return new HttpAsOfWatchlistSource(http, sp.GetRequiredService<ILogger<HttpAsOfWatchlistSource>>());
 });
+// 🔴 FR-04, ADR-0048 決定 2, #1139, IADR-0479 決定 3: 出来高（判断時点の前営業日までの確定足から本番と同じ計算）も as-of 入力へ埋める。
+// 口は判断サービスと同じ singleton の IDailyBarsProvider（DecisionVolume:Enabled の 1 か所の選択。既定は NoOp＝要求 0 回・従来の「未提供」の行）。
 builder.Services.AddScoped<IAsOfDecisionInputProvider>(sp => new WatchlistAsOfDecisionInputProvider(
-    new NoAsOfDecisionInputProvider(), sp.GetRequiredService<IAsOfWatchlistSource>()));
+    new DailyVolumeAsOfDecisionInputProvider(
+        new NoAsOfDecisionInputProvider(),
+        sp.GetRequiredService<IDailyBarsProvider>(),
+        sp.GetRequiredService<ILogger<DailyVolumeAsOfDecisionInputProvider>>()),
+    sp.GetRequiredService<IAsOfWatchlistSource>()));
 builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
 {
     var outputPath = sp.GetRequiredService<IConfiguration>()[$"{Stage0RecordingOptions.SectionName}:OutputPath"];

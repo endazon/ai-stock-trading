@@ -20,6 +20,14 @@ public interface IDailyBarsProvider
     /// キャンセル以外の失敗は null で返し、例外にしない（実装の約束。呼び出し側も保険として握る）。
     /// </summary>
     Task<ConfirmedDailyBars?> GetConfirmedBarsAsync(string symbol, Market market, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-15, ADR-0048 決定 2, #1139, IADR-0479 決定 1: <b>過去の判断時点（Stage 0 の AsOf）</b>を取引日として、それより前の確定した日足を返す。
+    /// 期間の求め方と確定足の切り方は <see cref="GetConfirmedBarsAsync"/> と同じ（取引日以降の足は返さない＝先読みしない）。
+    /// 本番のキャッシュは読まない・書かない。IsEnabled=false の実装は要求せず null。取得できなければ null（キャンセル以外は例外にしない）。
+    /// </summary>
+    Task<ConfirmedDailyBars?> GetConfirmedBarsAsOfAsync(
+        string symbol, Market market, DateOnly tradingDay, CancellationToken cancellationToken = default);
 }
 
 // 日足 1 本（前復権の OHLCV・ローカル通貨）。True Range（ATR）は High・Low・前日の Close を使う。
