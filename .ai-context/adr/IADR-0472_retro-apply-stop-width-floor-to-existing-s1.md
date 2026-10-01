@@ -77,6 +77,7 @@ Active な S1 の保護記録だけ（到達済み・決済が処理中は触ら
 6. **取引台帳のラインを追随させる。** リスク管理が `SoftwareStopLineWidened` を購読し（`SoftwareStopLineWidenedLedgerHandler`）、承認行
    （DecisionId ＝ `EntryDecisionId`・`Open`・同じ方向）の `StopLossPrice` を広げる向きのときだけ書き換える（`IPortfolioLedgerStore.WidenStopLoss`。EF・インメモリ）。
    null（不明のライン）・決済の承認・方向違い・狭める向き・同じ値・承認なしは何もしない。再配送・順序の入れ替わりでも広い方に収束する。
+   **並行しても狭い値で上書きしない**: 関係 DB では判定と書き込みを 1 文の条件付き UPDATE（`ExecuteUpdate`。WHERE が広げる向きのときだけ一致）にまとめる。読んでから書く形だと、2 通の追随が同じ旧ラインを読んで両方「広げる向き」と判定し、後勝ちが広い値を狭い値で上書きし得る（PR の AI レビューの指摘）。InMemory プロバイダ（単体試験）は `ExecuteUpdate` を持たないので読んでから書く経路のまま。実 PostgreSQL での固定は T-10-1934（統合試験）。
    市場監視と建玉の照会は台帳から読むので、到達もこのラインで出る。承認行は追記専用だったが、この列だけは広げる向きの書き換えを許す例外とする。
 7. **下限の比率の単一情報源を共有契約へ移す。** `StopWidthFloorDefaults.FallbackRatio = 0.02`（`AiStockTrading.Shared.Contracts.Trading`）を置き、
    `TradingDefaults.StopWidthFloorFallbackRatio` はそれを指す（`StopLossApproximation.DefaultRatio` と同じ作法。IADR-0399）。発注執行はリスク管理を参照しない。

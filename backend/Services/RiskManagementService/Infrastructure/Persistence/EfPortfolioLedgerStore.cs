@@ -88,6 +88,22 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
     // 承認行は追記専用だが、この列だけは広げる向きの書き換えを許す（狭めない・null を埋めない・決済の行は触らない）。
     public bool WidenStopLoss(Guid entryDecisionId, TradeSide entrySide, decimal stopLossPrice)
     {
+        // 🔴 TOCTOU（読んでから書く間に別の遡及が入る）: 2 通の追随が並行すると、両方が同じ旧ラインを読んで
+        // 「広げる向き」と判定し、後勝ちの書き込みが先の（より広い）値を狭い値で上書きし得る（決定6の「最も広いラインに
+        // 収束する」が破れる）。関係 DB では判定と書き込みを **1 文の条件付き UPDATE** にまとめて塞ぐ
+        // （WHERE が広げる向きのときだけ一致する＝負けた側は 0 行）。InMemory プロバイダ（試験）は ExecuteUpdate を
+        // 持たないので下の読んでから書く経路を通る（単一スレッドの試験では差が出ない）。
+        if (db.Database.IsRelational())
+        {
+            var open = db.ApprovedOrders.Where(a =>
+                a.DecisionId == entryDecisionId && a.PositionEffect == PositionEffect.Open && a.Side == entrySide
+                && a.StopLossPrice != null);
+            var wider = entrySide == TradeSide.Buy
+                ? open.Where(a => a.StopLossPrice > stopLossPrice)
+                : open.Where(a => a.StopLossPrice < stopLossPrice);
+            return wider.ExecuteUpdate(u => u.SetProperty(a => a.StopLossPrice, stopLossPrice)) > 0;
+        }
+
         var row = db.ApprovedOrders.Find(entryDecisionId);
         if (row is null || row.PositionEffect != PositionEffect.Open || row.Side != entrySide
             || !LedgerStopLineWidening.IsWider(entrySide, row.StopLossPrice, stopLossPrice))
