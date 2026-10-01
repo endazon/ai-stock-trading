@@ -45,4 +45,19 @@ public class StopWidthFloorContractTests
 
         JsonSerializer.Deserialize<TradeDecisionMade>(JsonSerializer.Serialize(e))!.StopWidth.Should().Be(width);
     }
+
+    // T-10-1926, FR-10, FR-11, #1136, IADR-0472 決定5・決定7: 遡及の事実は往復で 10 項目を保ち、出所は序数ではなく値で一致する。
+    // 下限の比率の単一情報源は共有契約の 0.02（取引判断の TradingDefaults と発注執行の遡及が同じ値を指す）。
+    [Fact]
+    public void T_10_1926_遡及の事実は直列化の往復で保たれ下限の比率は共有の2パーセント()
+    {
+        var e = new SoftwareStopLineWidened(
+            Guid.NewGuid(), "NVDA", Market.UnitedStates, TradeSide.Buy, 230.82m, 226.52m, 226.2036m, 4.6164m,
+            StopWidthFloorSource.Fallback2Pct, DateTimeOffset.UtcNow);
+
+        JsonSerializer.Deserialize<SoftwareStopLineWidened>(JsonSerializer.Serialize(e)).Should().Be(e);
+        StopWidthFloorDefaults.FallbackRatio.Should().Be(0.02m);
+        (e.EntryPrice * StopWidthFloorDefaults.FallbackRatio).Should().Be(e.FloorPerShare);
+        (e.EntryPrice - e.FloorPerShare).Should().Be(e.StopLossPrice);
+    }
 }

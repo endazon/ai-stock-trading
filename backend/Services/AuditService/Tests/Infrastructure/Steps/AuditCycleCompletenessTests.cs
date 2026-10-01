@@ -304,6 +304,10 @@ public class AuditCycleCompletenessTests
             // T-10-1766, FR-10, FR-11, #1105, IADR-0461 決定3: 決済を処理中の決済の分だけ縮めて送った事実。
             new CloseReducedForInFlightCloses(
                 decisionId, "AAPL", Market.UnitedStates, TradeSide.Sell, 1_428, 1_428, 713, 715, [Guid.NewGuid()], t),
+            // T-10-1926, FR-10, FR-11, #1136, IADR-0472 決定5: S1 の損切りラインを下限まで遡及して広げた事実。
+            new SoftwareStopLineWidened(
+                decisionId, "NVDA", Market.UnitedStates, TradeSide.Buy, 230.82m, 226.52m, 226.2036m, 4.6164m,
+                StopWidthFloorSource.Fallback2Pct, t),
             // T-10-1506, FR-08, FR-11, #1028, IADR-0436 決定 4: 確定報告書の KB への入れ直し（所有者の操作）。
             new ReportKnowledgeReingested(
                 Guid.NewGuid(), "endazon", "all", false, "Completed", null, 2, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, [],
