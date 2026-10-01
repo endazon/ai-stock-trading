@@ -149,3 +149,7 @@ IADR-0275 決定5 が示した懸念（「銘柄数さえ上限内なら安全�
 > **［2026-09-26 追記 / #1030］** 計画 ADR-0043 決定 1・3 により、見積りの数え方と比較先を [IADR-0437](IADR-0437_finnhub-cycle-fit-control-and-daily-premise-withdrawal.md) が改めた。
 > 暫定の 300 回/日は撤回され、`Finnhub:ProvisionalDailyLimit` の既定は未設定（比べない。実測したら設定する）。市場監視は開場中の巡回（米国 390 分）で数える。
 > 本文の「暫定上限 300」を前提にした記述は当時の記録として残す。
+
+> **［2026-10-02 追記 / #1132］** 実市況 4 サービスの運用者申告（`EstimatedSymbolCount`）は [IADR-0477](IADR-0477_finnhub-daily-estimate-from-actual-symbols.md) が撤去した（申告は 1 に固定され、実測と桁で外れた）。
+> 市場監視・リスク管理は巡回ごとに保有・監視銘柄の実数から数え、取引判断・報告書は見積らない。実市況 4 サービスの introspection の `finnhub-daily-request-estimate` も撤去した。
+> 情報収集の見積りと自己申告は本文のまま。上の「悪い影響」（申告を怠ると偽陰性）は実市況 4 サービスについては解消した。

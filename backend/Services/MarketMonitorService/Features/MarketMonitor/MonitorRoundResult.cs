@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 using MarketMonitorService.Domain;
 
 namespace MarketMonitorService.Features.MarketMonitor;
@@ -21,4 +22,11 @@ public record MonitorRoundResult(
     /// 保護の空白を声に出すため（StopLossLivenessReporter）だけに使う。到達の判定・発行には使わない。
     /// </summary>
     public IReadOnlyList<StopLossEvaluation> ClosedMarketPositions { get; init; } = [];
+
+    /// <summary>
+    /// FR-01, #1132, IADR-0477: この巡回の照会の対象（保有 ＋ 監視銘柄。同じ銘柄でも別々に照会するので 2 件）の市場。
+    /// <b>閉場中で照会を飛ばした銘柄も含める</b>（日次要求見積りは開場中の量であり、照会した数で数えると、ある市場だけ
+    /// 閉じた巡回で値が落ちる）。日次要求見積りの記録（FinnhubDailyVolumeRecorder）だけが読む。
+    /// </summary>
+    public IReadOnlyList<Market> QuotedSymbolMarkets { get; init; } = [];
 }

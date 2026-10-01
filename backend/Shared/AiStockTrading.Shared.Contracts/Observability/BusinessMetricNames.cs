@@ -142,7 +142,8 @@ public static class BusinessMetricNames
 
     /// <summary>
     /// FR-01, ADR-0031（計画）決定2〜3, IADR-0292: プロセスごとの Finnhub 日次要求見積り（回/日）。
-    /// 銘柄数の運用者申告（既定 0）が無ければ計上しない（挙動中立）。
+    /// #1132, IADR-0477: 市場監視・リスク管理は巡回ごとに巡回の対象の実数から、情報収集は起動時に計上する。
+    /// 取引判断・報告書（事象ごとに引く）と、Finnhub へ送らない構成のプロセスは計上しない。
     /// </summary>
     public const string FinnhubDailyVolumeEstimate = "ast.finnhub.daily_request_estimate";
 

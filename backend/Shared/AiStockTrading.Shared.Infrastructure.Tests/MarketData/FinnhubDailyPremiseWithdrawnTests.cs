@@ -50,6 +50,7 @@ public class FinnhubDailyPremiseWithdrawnTests
     }
 
     // T-10-1434: 既定（上限なし）では警告を出さず、比率も記録しない。見積りは記録し、開場中の巡回で数えられる。
+    // ［2026-10-02 / #1132, IADR-0477］見積りは運用者の申告ではなく巡回の対象の実数から数える（記録器 FinnhubDailyVolumeRecorder）。
     [Fact]
     public void 既定では警告も比率も出さず見積りだけを開場中の巡回で記録する()
     {
@@ -57,18 +58,19 @@ public class FinnhubDailyPremiseWithdrawnTests
         using var capture = new MeterCapture(meterName);
         using var metrics = BusinessMetrics.WithMeterName(meterName);
         var logs = new CapturingLoggerFactory();
-        // 監視 6 銘柄 × 1 要求 × 390 巡回（米国 390 分 ÷ 60 秒）＝ 2,340。24 時間なら 8,640。
-        var options = new MarketDataOptions { Finnhub = new FinnhubMarketDataOptions { EstimatedSymbolCount = 6 } };
+        // 監視 6 銘柄（米国）× 1 要求 × 390 巡回（米国 390 分 ÷ 60 秒）＝ 2,340。24 時間なら 8,640。
+        var options = new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } };
+        var sixUs = Enumerable.Repeat(AiStockTrading.Shared.Contracts.Trading.Market.UnitedStates, 6).ToArray();
 
-        MarketDataSourceFactory.EvaluateDailyVolume(
-            options, pollIntervalSeconds: 60, new FinnhubDailyVolumeGuardOptions(), metrics, logs, activeMinutesPerDay: 390);
+        new FinnhubDailyVolumeRecorder(options, new FinnhubDailyVolumeGuardOptions(), metrics, logs.CreateLogger("v"), _ => 390)
+            .Record(sixUs, pollIntervalSeconds: 60);
 
         logs.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
         logs.Entries.Should().ContainSingle(e => e.Level == LogLevel.Information && e.Message.Contains("2340", StringComparison.Ordinal));
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle(m => m.Value == 2340);
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeLimitRatioPercent).Should().BeEmpty("推測の分母で割った比率を出さない");
-        MarketDataSourceFactory.EstimateDailyVolume(options, 60, activeMinutesPerDay: 390).Should().Be(2340);
-        MarketDataSourceFactory.EstimateDailyVolume(options, 60).Should().Be(8640, "既定は 24 時間のまま");
+        FinnhubDailyVolumeEstimator.EstimateForSymbols(sixUs, 60, _ => FinnhubDailyVolumeEstimator.MinutesPerDay)
+            .Should().Be(8640, "24 時間で数えると 3.7 倍になる");
     }
 
     // T-10-1446: 残りがあるのに拒否された 429 は分次では説明できない（日次の手がかり）。
