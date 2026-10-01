@@ -663,7 +663,7 @@ services:
       - { name: MarketData__Provider, value: "" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
-      # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有・監視銘柄の実数から数える（旧 EstimatedSymbolCount の申告は撤去）。
+      # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有建玉の実数から数える（旧 EstimatedSymbolCount の申告は撤去）。
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # FR-06/16, #611, ADR-0022, IADR-0286 決定1: 承認記録時の**認識時レート**（1 USD あたりの円）を承認台帳へ固定する源。
       # trade-decision と同じ為替レート源（日銀第一・FRED フォールバック）を同じ構成キーで組む。

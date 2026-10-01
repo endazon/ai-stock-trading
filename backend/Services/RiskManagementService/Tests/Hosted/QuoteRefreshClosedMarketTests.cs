@@ -75,7 +75,12 @@ public class QuoteRefreshClosedMarketTests
         BuildWith(null, now, holdings);
 
     private static Host BuildWith(
-        FinnhubDailyVolumeRecorder? dailyVolume, DateTimeOffset now, params (string Symbol, Market Market)[] holdings)
+        FinnhubDailyVolumeRecorder? dailyVolume, DateTimeOffset now, params (string Symbol, Market Market)[] holdings) =>
+        BuildWith(dailyVolume, refreshIntervalSeconds: 60, now, holdings);
+
+    private static Host BuildWith(
+        FinnhubDailyVolumeRecorder? dailyVolume, int refreshIntervalSeconds, DateTimeOffset now,
+        params (string Symbol, Market Market)[] holdings)
     {
         var ledger = new InMemoryPortfolioLedgerStore();
         foreach (var (symbol, market) in holdings)
@@ -94,7 +99,7 @@ public class QuoteRefreshClosedMarketTests
         services.AddSingleton<IMarketDataSource>(source);
         services.AddSingleton(cache);
         services.AddSingleton<TimeProvider>(time);
-        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new MarketDataOptions()));
+        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new MarketDataOptions { RefreshIntervalSeconds = refreshIntervalSeconds }));
         services.AddSingleton<ILogger<QuoteRefreshService>>(NullLogger<QuoteRefreshService>.Instance);
         if (dailyVolume is not null)
             services.AddSingleton(dailyVolume);
@@ -275,6 +280,27 @@ public class QuoteRefreshClosedMarketTests
         host.Source.Requested.Should().HaveCount(6, "場中 3 ＋ 引けの後の 1 回 × 3");
         capture.ValuesOf(AiStockTrading.Shared.Contracts.Observability.BusinessMetricNames.FinnhubDailyVolumeEstimate)
             .Select(m => m.Value).Should().Equal(3 * 390, 3 * 390, 3 * 390);
+    }
+
+    // T-10-1969, FR-01, #1132（独立監査 🟡）: 見積りは構成の補充間隔で数える。120 秒なら 1 日 195 巡回 × 3 銘柄 ＝ 585
+    //（補充間隔を定数 60 に取り違えると 1,170 になる）。
+    [Fact]
+    public async Task 日次見積りは構成の補充間隔で数える()
+    {
+        var meterName = AiStockTrading.TestSupport.Metrics.MeterCapture.NewIsolatedMeterName();
+        using var capture = new AiStockTrading.TestSupport.Metrics.MeterCapture(meterName);
+        using var metrics = AiStockTrading.Shared.Contracts.Observability.BusinessMetrics.WithMeterName(meterName);
+        var recorder = new FinnhubDailyVolumeRecorder(
+            new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } },
+            new FinnhubDailyVolumeGuardOptions(), metrics, NullLogger.Instance, MarketSessions.RegularSessionMinutes);
+        var host = BuildWith(
+            recorder, refreshIntervalSeconds: 120, UsOpenDay,
+            ("AAPL", Market.UnitedStates), ("MSFT", Market.UnitedStates), ("NVDA", Market.UnitedStates));
+
+        await host.TickAsync(UsOpenDay);
+
+        capture.ValuesOf(AiStockTrading.Shared.Contracts.Observability.BusinessMetricNames.FinnhubDailyVolumeEstimate)
+            .Should().ContainSingle().Which.Value.Should().Be(3 * 195);
     }
 
     // T-10-2017, FR-01, #1132: 東証の建玉は Finnhub へ送らないので数えない。記録器が無い（補充の既定構成）ときも補充は従来どおり。

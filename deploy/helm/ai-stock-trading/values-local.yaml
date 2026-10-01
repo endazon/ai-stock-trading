@@ -84,7 +84,7 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（既定 ""）
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
-      # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有・監視銘柄の実数から数える（旧 EstimatedSymbolCount の申告 1 は撤去。実測と桁で外れた）。
+      # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有建玉の実数から数える（旧 EstimatedSymbolCount の申告 1 は撤去。実測と桁で外れた）。
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # ============ 実DD（観測最大ドローダウン）の供給（#279/IADR-0114・#164/IADR-0103）============
       # ADR-0008 の撤退基準は実DD を入力に取るが、それを書く本番コードがバックテスト射影 1 箇所しか無いため

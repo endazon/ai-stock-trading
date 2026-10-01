@@ -53,6 +53,9 @@ public class MonitorPollingServiceTests
         // #1132, IADR-0477: 日次要求見積りの記録器（null なら配線しない＝従来の構成）。
         public FinnhubDailyVolumeRecorder? DailyVolume { get; set; }
 
+        // 巡回の構成（既定 60 秒）。#1132 監査 🟡: 見積りに渡す巡回間隔が構成の値であることを固定する。
+        public MonitorOptions MonitorOptions { get; init; } = new();
+
         private IHost? _host;
 
         public Harness(MarketMonitorSettings settings) => Settings = new InMemoryMonitoredSymbolStore(settings);
@@ -79,7 +82,7 @@ public class MonitorPollingServiceTests
 
             var service = new MonitorPollingService(
                 _host.Services.GetRequiredService<IServiceScopeFactory>(),
-                Schedule, Clock, Options.Create(new MonitorOptions()),
+                Schedule, Clock, Options.Create(MonitorOptions),
                 NullLogger<MonitorPollingService>.Instance, Liveness, DailyVolume);
 
             return (service, _host);
@@ -297,6 +300,29 @@ public class MonitorPollingServiceTests
 
         h.Market.Requested.Should().HaveCount(9, "1 巡回の照会は保有 3 ＋ 監視銘柄 6（AAPL は 2 回）");
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(3_510);
+    }
+
+    // T-10-2015, #1132（独立監査 🟡）: 見積りは構成の巡回間隔で数える。120 秒なら 1 日 195 巡回 × 9 要求 ＝ 1,755
+    //（巡回間隔を定数 60 に取り違えると 3,510 になる）。
+    [Fact]
+    public async Task 日次見積りは構成の巡回間隔で数える()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        await using var h = new Harness(Settings(
+            Aapl, new("MSFT", Market.UnitedStates), new("NVDA", Market.UnitedStates),
+            new("AMZN", Market.UnitedStates), new("GOOGL", Market.UnitedStates), new("META", Market.UnitedStates)))
+        {
+            DailyVolume = Recorder(metrics),
+            MonitorOptions = new MonitorOptions { PollIntervalSeconds = 120 },
+        };
+        h.Positions.Set([HeldUs("AAPL"), HeldUs("TSLA"), HeldUs("AMD")]);
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(9 * 195);
     }
 
     // 🔴 T-10-2016: 米国が閉場で東証だけ開いた巡回でも、米国の銘柄を数える（見積りは開場中の量。照会した数で数えると 0 に落ちる）。
