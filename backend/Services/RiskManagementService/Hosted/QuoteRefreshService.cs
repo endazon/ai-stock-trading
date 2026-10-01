@@ -1,6 +1,8 @@
 using RiskManagementService.Features.RiskManagement;
 using AiStockTrading.Shared.Contracts.Ports;
+using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
+using AiStockTrading.Shared.Kernel.Trading;
 // IADR-0128: Web SDK（旧 Worker）の暗黙 using に頼っていた型を、ライブラリ SDK では明示する。
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,6 +17,12 @@ namespace RiskManagementService.Hosted;
 //
 // 既定では IMarketDataSource が no-op（常に取得不可）のため、本サービスは何も補充しない＝含み 0・DD 0 のまま。
 // 台帳ストアは scoped（EF）のため巡回ごとに DI スコープを作る（MonitorPollingService と同じ規約）。
+//
+// FR-01, FR-10, #1131, IADR-0473: **閉場中は引かない**（市場ごと。開場判定は市場監視と同じ共有カーネルの MarketHours）。
+// 是正前は開場に関係なく巡回し、引け後の 3 時間で Finnhub を約 510 回呼んでいた（市場監視は 0 回）。
+// ただし閉場ごとに 1 回だけは引く（引けの後・閉場中の再起動）。その値は次の開場から鮮度を数えるため
+// （QuoteSessionFreshness）、閉場中に読む側（手仕舞いの参照価格・実DD・審査の含み損益）は価格を失わない。
+// 開場後は最初の巡回で引く（閉場中の値は開場から保持期限まで有効なので、巡回間隔が保持期限未満なら途切れない）。
 public sealed class QuoteRefreshService(
     IServiceScopeFactory scopeFactory,
     IMarketDataSource marketData,
@@ -23,6 +31,13 @@ public sealed class QuoteRefreshService(
     IOptions<MarketDataOptions> options,
     ILogger<QuoteRefreshService> logger) : BackgroundService
 {
+    /// <summary>
+    /// FR-01, ADR-0043（計画）決定 3, #1131, IADR-0473: 日次要求量の見積りで「1 日のうち巡回する分数」として渡す値。
+    /// 閉場中は引かないため、市場監視と同じく米国の場中（390 分）で数える（是正前は既定の 24 時間）。
+    /// 閉場ごとの 1 回（銘柄数 × 1 回/日）は数えない。
+    /// </summary>
+    public static int ActiveMinutesPerDay => MarketSessions.RegularSessionMinutes(Market.UnitedStates);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var interval = TimeSpan.FromSeconds(Math.Max(1, options.Value.RefreshIntervalSeconds));
@@ -56,8 +71,14 @@ public sealed class QuoteRefreshService(
         // 現在値が要るのは保有中の建玉だけ（IADR-0030 と同じ射影を再利用する）。
         var positions = PortfolioProjection.ProjectOpenPositions(ledger.GetFills());
 
+        var now = timeProvider.GetUtcNow();
         foreach (var position in positions)
         {
+            // #1131, IADR-0473: 閉場中で、この閉場の中で引いた値が手元にあれば引かない（閉場中は価格が動かない）。
+            if (!QuoteSessionFreshness.ShouldRefresh(
+                    position.Market, now, cache.GetEntry(position.Symbol, position.Market)?.FetchedAt))
+                continue;
+
             var quote = await marketData
                 .GetLatestQuoteAsync(position.Symbol, position.Market, cancellationToken)
                 .ConfigureAwait(false);

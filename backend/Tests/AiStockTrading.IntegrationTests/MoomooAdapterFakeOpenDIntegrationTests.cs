@@ -253,7 +253,9 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
     }
 
     // T-10-621, FR-10, #897, IADR-0354 決定1（近似の記録）:
-    // 🔴 **近似で採ったことは毎回ログに残る。ただし Warning ではなく Information である。**
+    // 🔴 **近似で採ったことはログに残る。ただし Warning ではなく Information である。**
+    // ［2026-10-01 / #1135・IADR-0473］Information は初回（と口座・前提が変わった直後）だけで、繰り返しは Debug
+    // （T-10-1972〜T-10-1973）。本テストは 1 回の照会なので、初回の Information がちょうど 1 件である。
     //
     // 通貨の欠落は実機の**正常な見え方**であり、既定 5 分の巡回で必ず出る。Warning のままだと
     // 警告が常時鳴って本物の警告が埋もれる（#874 が作った状態がまさにそれ）。黙らせもしない ——
@@ -271,9 +273,172 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         state!.EquityInBase.Should().Be(3_000m);
         logger.Entries.Should().ContainSingle(e =>
                 e.Level == LogLevel.Information && e.Message.Contains("要求した通貨"),
-            "近似で採ったことを毎回残す");
+            "近似で採ったことを初回は Information で残す");
         logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning,
             "実機の正常な見え方を警告として鳴らし続けない（本物の警告が埋もれる）");
+    }
+
+    // ---- FR-11, #1135, IADR-0473: 口座選択と通貨近似のログは初回だけ Information、口座 ID は伏せる ----
+    //
+    // 可用性 probe の巡回（既定 5 分）ごとに口座一覧と口座照会が走り、同じ 2 行が Information で一晩に約 106 行ずつ
+    // 積もっていた。しかも口座選択の行は口座 ID の全桁を出していた。**ログ以外の振る舞い（選ぶ口座・採る値）は変えない。**
+
+    private static List<(LogLevel Level, string Message)> Matching(RecordingLogger<MMApiMoomooTradeClient> logger, string text) =>
+        logger.Entries.Where(e => e.Message.Contains(text, StringComparison.Ordinal)).ToList();
+
+    // 🔴 T-10-1970, FR-11, #1135: 口座選択の行は初回が Information、同じ選択の繰り返しは Debug。
+    [Fact]
+    public async Task 口座選択のログは初回だけInformationで繰り返しはDebugになる()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        // 接続（口座一覧 1 回目）＋ probe 相当の照会 3 回（口座一覧 2〜4 回目）。
+        for (var i = 0; i < 3; i++)
+            (await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct)).Should().Be(MoomooAccountType.Margin);
+
+        var selected = Matching(logger, "SIMULATE 口座を選びました");
+        selected.Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Debug, LogLevel.Debug);
+        opend.GetAccListCalls.Should().Be(4, "照会の回数（振る舞い）は変えない");
+    }
+
+    // T-10-1971, FR-11, #1135: 選んだ口座の種別が変われば Information で出し直す（変化は見える）。
+    [Fact]
+    public async Task 口座の種別が変われば口座選択のログをInformationで出し直す()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct);
+        opend.SimulateAccountType = TrdCommon.TrdAccType.TrdAccType_Cash;
+        (await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct)).Should().Be(MoomooAccountType.Cash);
+        await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct);
+
+        Matching(logger, "SIMULATE 口座を選びました").Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Information, LogLevel.Debug);
+    }
+
+    // 🔴 T-10-1972, FR-11, #1135: 通貨近似の行は初回が Information、繰り返しは Debug。Warning は出さない（T-10-621 は不変）。
+    [Fact]
+    public async Task 通貨近似のログは初回だけInformationで繰り返しはDebugになる()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        for (var i = 0; i < 3; i++)
+            (await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct)).Should().Be(3_000m, "採る値は変えない");
+
+        Matching(logger, "要求した通貨").Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Debug);
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
+    }
+
+    // T-10-1973, FR-11, #1135: 近似でない応答（USD の明示・反証）を挟んで近似へ戻ったら、Information で出し直す。
+    [Fact]
+    public async Task 近似でない応答を挟んで近似へ戻れば通貨近似のログをInformationで出し直す()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+        opend.FundsCurrency = (int)TrdCommon.Currency.Currency_USD;
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // USD の明示＝近似ではない
+        opend.FundsCurrency = null;
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似へ戻る（Information）
+        opend.FundsCashInfoCurrencies.Add((int)TrdCommon.Currency.Currency_JPY);
+        (await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct)).Should().BeNull(); // 反証（採らない）
+        opend.FundsCashInfoCurrencies.Clear();
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似へ戻る（Information）
+
+        Matching(logger, "要求した通貨").Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Information, LogLevel.Information);
+    }
+
+    // 🔴 T-10-1978, FR-11, #1135（PR #1147 独立監査）: 非 USD の応答（警告）を挟んで近似へ戻ったら、Information で出し直す。
+    // T-10-1973 は USD の明示と反証の経路だけで、非 USD の警告の経路で報告済みを解くことを固定していなかった。
+    [Fact]
+    public async Task 非USDの応答を挟んで近似へ戻れば通貨近似のログをInformationで出し直す()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+        opend.FundsCurrency = (int)TrdCommon.Currency.Currency_JPY;
+        (await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct)).Should().BeNull(); // 非 USD（警告・採らない）
+        opend.FundsCurrency = null;
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似へ戻る（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+
+        Matching(logger, "要求した通貨").Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Information, LogLevel.Debug);
+        Matching(logger, "USD ではありません").Should().ContainSingle(e => e.Level == LogLevel.Warning);
+    }
+
+    // 🔴 T-10-1979, FR-11, #1135（PR #1147 独立監査）: 接続の張り直しで発注先の口座が入れ替わったら、通貨近似のログを
+    // Information で出し直す（「同じ前提」の鍵は口座と要求通貨の組。口座を鍵から外す形を赤にする）。
+    [Fact]
+    public async Task 口座が入れ替われば通貨近似のログをInformationで出し直す()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+        opend.SimulateAccountId = 31_415_926UL;
+        client.OnDisconnect(new MMAPI_Conn(), 1);                                           // 切断 → 次の照会で張り直す
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 別の口座で近似（Information）
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);                  // 近似（Debug）
+
+        opend.Connections.Should().HaveCount(2, "切断の後は接続を張り直す");
+        Matching(logger, "OpenD 接続完了").Select(e => e.Message.Contains("accId=****26", StringComparison.Ordinal))
+            .Should().Equal(false, true);
+        Matching(logger, "要求した通貨").Select(e => e.Level).Should().Equal(
+            LogLevel.Information, LogLevel.Debug, LogLevel.Information, LogLevel.Debug);
+    }
+
+    // 🔴 T-10-1974, FR-11, #1135: 口座 ID はどの水準のログにも全桁で出さない（接続完了・口座選択・口座の食い違い）。
+    // 伏せ方は検証口の出力と同じ（末尾 2 桁）。口座が入れ替わったら Information で出し直す。
+    [Fact]
+    public async Task 口座IDはどのログにも全桁で出さない()
+    {
+        using var opend = new FakeOpenD();
+        var logger = new RecordingLogger<MMApiMoomooTradeClient>();
+        using var client = new MMApiMoomooTradeClient(Options(), logger, opend);
+        var ct = TestContext.Current.CancellationToken;
+
+        await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct);
+        await client.GetAccountEquityInBaseAsync(ct).WaitAsync(Guard, ct);
+        const ulong otherAccId = 31_415_926UL;
+        opend.SimulateAccountId = otherAccId;
+        (await client.GetAccountTypeAsync(ct).WaitAsync(Guard, ct)).Should().BeNull("発注先と違う口座の種別は不明（従来どおり）");
+
+        logger.Entries.Should().NotBeEmpty();
+        logger.Entries.Should().NotContain(e => e.Message.Contains("724808", StringComparison.Ordinal));
+        logger.Entries.Should().NotContain(e => e.Message.Contains("31415926", StringComparison.Ordinal));
+        logger.Entries.Should().NotContain(e => e.Message.Contains(RealAccId.ToString(), StringComparison.Ordinal));
+        Matching(logger, "OpenD 接続完了").Should().ContainSingle(e =>
+            e.Level == LogLevel.Information && e.Message.Contains("accId=****08", StringComparison.Ordinal));
+        Matching(logger, "SIMULATE 口座を選びました").Select(e => (e.Level, Masked: e.Message.Contains("accId=****", StringComparison.Ordinal)))
+            .Should().Equal((LogLevel.Information, true), (LogLevel.Debug, true), (LogLevel.Information, true));
+        Matching(logger, "が発注先").Should().ContainSingle(e =>
+            e.Level == LogLevel.Warning
+            && e.Message.Contains("accId=****26", StringComparison.Ordinal)
+            && e.Message.Contains("accId=****08", StringComparison.Ordinal));
     }
 
     // T-10-658, T-10-659, T-10-660, T-10-661, FR-10, #899, ADR-0041 決定2, IADR-0373:
@@ -501,6 +666,12 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
         /// </summary>
         public List<int?> FundsCashInfoCurrencies { get; } = [];
 
+        /// <summary>FR-11, #1135: 口座一覧が返す SIMULATE 口座の ID（既定は #342 の PoC の実測値）。口座の入れ替わりを再現する。</summary>
+        public ulong SimulateAccountId { get; set; } = SimulateAccId;
+
+        /// <summary>FR-11, #1135: 口座一覧が返す SIMULATE 口座の種別（既定は Margin）。</summary>
+        public TrdCommon.TrdAccType SimulateAccountType { get; set; } = TrdCommon.TrdAccType.TrdAccType_Margin;
+
         public IMoomooTradeConnection Create()
         {
             var connection = new FakeConnection(this);
@@ -575,8 +746,8 @@ public sealed class MoomooAdapterFakeOpenDIntegrationTests
                     .BuildPartial();
                 var simulate = TrdCommon.TrdAcc.CreateBuilder()
                     .SetTrdEnv((int)TrdCommon.TrdEnv.TrdEnv_Simulate)
-                    .SetAccID(SimulateAccId)
-                    .SetAccType((int)TrdCommon.TrdAccType.TrdAccType_Margin)
+                    .SetAccID(opend.SimulateAccountId)
+                    .SetAccType((int)opend.SimulateAccountType)
                     .BuildPartial();
                 var response = TrdGetAccList.Response.CreateBuilder()
                     .SetRetType(0)

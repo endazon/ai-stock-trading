@@ -3,15 +3,15 @@ title: 基準資金が供給されず新規建てが止まるときの Runbook�
 type: runbook
 status: draft
 created: 2026-09-19
-updated: 2026-09-23
+updated: 2026-10-01
 author: claude (Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-19, NFR-07, UC-06, UC-07]
 adrs: [ADR-0041, ADR-0016, ADR-0028]
-iadrs: [IADR-0354, IADR-0153, IADR-0372]
-specs: [20260919_869_capital-baseline-from-broker-account, 20260923_889_zero-equity-observation]
-issues: [#869, #889]
+iadrs: [IADR-0354, IADR-0153, IADR-0372, IADR-0473]
+specs: [20260919_869_capital-baseline-from-broker-account, 20260923_889_zero-equity-observation, 20261001_1131_1135_quiet-closed-market-and-account-log]
+issues: [#869, #889, #1135]
 -->
 
 
@@ -105,6 +105,9 @@ ON CONFLICT ("TradingDay") DO UPDATE
   🔴 **`口座照会の応答が通貨を明示していないため、要求した通貨（…）を前提として基準資金を採ります（近似）`
   は失敗ではない。** これは情報の水準で出る**正常な見え方**であり、この行が出ているときは基準資金は
   **供給されている**。**警告として扱って接続設定をいじらないこと。**
+  情報の水準で出るのは**プロセスで最初の 1 回**（と、口座が変わった・通貨を明示した応答を挟んだ直後）だけで、
+  同じ前提の繰り返しはデバッグの水準になる。**以後この行が見えないことは、供給が止まったことを意味しない**
+  （止まったときは上の警告が出る）。
   理由: 要求した通貨は**汎用証券口座・先物口座にしか効かず、単一市場口座では無視される**（提供元の公式資料）。
   応答の通貨欄も同じ条件でしか載らないため、**欄が無いこと自体が「この口座は単一市場口座である」という
   documented なシグナル**であり、そのとき資産純値は**口座自身の基準通貨**で返る。本系の照会先は
