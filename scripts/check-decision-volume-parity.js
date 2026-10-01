@@ -16,7 +16,7 @@
  * 何を見るか（Deployment trade-decision-service と report-service のコンテナの env）:
  *   1. 両方の Deployment が描画に在る（無ければ検査の空振りとして落とす）。
  *   2. `DecisionVolume__Enabled` の実効値（サービスと同じく bool.TryParse の読み。キーなし・読めない値は false）が等しい。
- *      env の名前は大文字小文字を区別せずに拾う（.NET の構成キーは区別しない）。同じ設定が 2 つ以上あれば落とす（どれが効くか読めない）。
+ *      env の名前は大文字小文字を区別せずに拾う（.NET の構成キーは区別しない）。大文字小文字だけが違う名前・別のコンテナの同名が 2 つ以上あれば落とす（どれが効くか読めない）。完全に同名の重複は manifest の読み（名前をキーにした Map）で後勝ちに潰れて検出しないが、Kubernetes も後勝ちなので実効値の判定は変わらない。
  *      値が平文の value でない（secretKeyRef 等）なら落とす（描画から値を読めない＝一致を示せない）。
  *   3. 両方 true のとき、trade-decision の `OrderExecution__BaseUrl` が絶対 URL である
  *      （無い・不正なら trade-decision は黙って未提供へ倒れ、report だけ「渡る」と示し続ける。IADR-0467 の 2026-10-01 追記）。
