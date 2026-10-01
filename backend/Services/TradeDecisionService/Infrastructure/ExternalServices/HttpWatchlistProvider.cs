@@ -8,23 +8,34 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // FR-02, FR-13, UC-06, SC-02, IADR-0088/0095: 定時サイクルの監視銘柄を権威源（市場監視 #10 MarketMonitor）の
 // GET /monitor/watchlist（OwnerOrService・IADR-0051）から s2s 同期照会する。SizingContext（IADR-0029）と同型の作法。
 // 照会成功なら SC-02/API で変更された最新 watchlist を返し、以後の定時サイクルへ反映する。
-// 供給不達（非 2xx・timeout・例外・不正応答）は fallback（構成ベース＝既定 watchlist・IADR-0095）へ委譲する fail-safe。
+// 🔴 FR-02, ADR-0044, #1134, IADR-0475: 供給不達（非 2xx・timeout・例外・不正応答）は**構成の既定 watchlist へ倒さない**。
+// このプロセスで直前に読めた一覧（WatchlistLastKnown・singleton）を返し、一度も読めていなければ null（不明＝そのサイクルは見送り）。
+// 以前は構成ベース（IADR-0095 決定 3 の fail-safe）へ委譲しており、一斉再起動の直後に判断対象が構成の銘柄へ切り替わった。
 // FR-04, #1034, IADR-0440 決定 2: 判断のプロンプト用の口（GetAuthoritativeWatchlistAsync）は同じ照会を使い、
-// 供給不達を fallback へ倒さず null（不明）で返す。
+// 供給不達を null（不明）で返す（直前に読めた一覧も使わない）。
 public sealed class HttpWatchlistProvider(
     HttpClient httpClient,
-    IWatchlistProvider fallback,
+    WatchlistLastKnown lastKnown,
     ILogger<HttpWatchlistProvider> logger)
     : IWatchlistProvider
 {
-    public async Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<WatchedSymbol>?> GetWatchlistAsync(CancellationToken cancellationToken = default)
     {
         var rows = await TryFetchAsync(cancellationToken).ConfigureAwait(false);
-        if (rows is not null)
-            return ToCycleWatchlist(rows, logger);
+        return ToCycleWatchlistOrLastKnown(rows, lastKnown, logger);
+    }
 
-        logger.LogWarning("監視銘柄（watchlist）を権威源から読めないため、既定 watchlist（構成）へフォールバックします。");
-        return await fallback.GetWatchlistAsync(cancellationToken).ConfigureAwait(false);
+    // #1134, IADR-0475: 定時サイクルの口の倒す向き（REST と gRPC で共有する唯一の定義）。読めた行は寛容に読んで直前値として覚え、
+    // 読めなければ直前に読めた一覧か不明（null）。
+    internal static IReadOnlyList<WatchedSymbol>? ToCycleWatchlistOrLastKnown(
+        IReadOnlyList<WatchlistRow>? rows, WatchlistLastKnown lastKnown, ILogger logger)
+    {
+        if (rows is null)
+            return lastKnown.Unavailable();
+
+        var watchlist = ToCycleWatchlist(rows, logger);
+        lastKnown.Record(watchlist);
+        return watchlist;
     }
 
     // NFR, IADR-0446 決定 4, #1061 (#753): 行の解釈（定時サイクルの寛容な読み・プロンプトの厳格な読み）は gRPC 実装
@@ -36,7 +47,7 @@ public sealed class HttpWatchlistProvider(
     /// <remarks>
     /// 🔴 FR-02, FR-04, #1063 A: 市場が欠けた・値域外の行も落とす。以前は `r.Market ?? default` で**日本として読み**、値域外の番号は
     /// そのまま通していた —— 米国の銘柄が日本の銘柄として判断対象に入り得る（原則 A）。実在の送り手（市場監視）は市場を必ず 0 / 1 で
-    /// 書くため、稼働中の定時サイクルでは起きない形である。一覧全体を不明（構成の監視銘柄へのフォールバック）にしないのは、
+    /// 書くため、稼働中の定時サイクルでは起きない形である。一覧全体を不明（直前に読めた一覧・見送り）にしないのは、
     /// 銘柄の空の行と同じく「読めた行で判断を続ける」という定時サイクルの従来の読み方を保つため（プロンプトの口は一覧ごと不明にする）。
     /// </remarks>
     internal static IReadOnlyList<WatchedSymbol> ToCycleWatchlist(IReadOnlyList<WatchlistRow> rows, ILogger logger)

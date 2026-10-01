@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-08, FR-04, ADR-0003, ADR-0020, IADR-0069, IADR-0072, IADR-0169, IADR-0270, IADR-0293, IADR-0313, IADR-0315]
 author: claude (Claude Code)
 created: 2026-09-29
-updated: 2026-09-29
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -84,6 +84,9 @@ google-news は ADR-0020 のニュース系の必須ソースであり、これ�
 - 残る弱点: 2 本目の候補（基盤の 4×TopK）が銘柄を持つ文書で埋まると、銘柄を持たない文書が 0 件になり得る。残余リスクに記録する。
 - collection-status は 2 本目で届き得る。#1081 が直接の経路でも渡すと、判断文脈に同じ趣旨が 2 回載り得る（害は小さい。残余リスク）。
 
+［2026-10-02 追記 / #1138］本決定の「フィルタなしで引いて後段で落とす」は [IADR-0474](IADR-0474_kb-market-docs-coverage-tag-and-fallback.md) が置き換えた
+（保存時の目印 `coverage=market` の単値フィルタで引き、目印つきが TopK 件に満たない間だけフィルタなし・TopK×4 件で旧文書を補充する。上の表の案 C を補充と組み合わせて採った）。
+
 ### 決定4: 両方の検索を新しい順（`sortBy: "updated"`）で引く
 
 基盤の `SearchSorts.Updated` は**取得後の並べ替え**である（MSP:IADR-0150 決定1・3。関連度で選んだ候補 4×TopK を索引の更新日時の降順に並べる）。
@@ -118,6 +121,7 @@ google-news は ADR-0020 のニュース系の必須ソースであり、これ�
 
 - **実環境で効くには MSP#1696 が要る。** 基盤が AST の読み手の ABAC 主体を解決できない間は、主張を送っても権威側が許可なしとなり空が返る（fail-safe で空）。
 - 2 本目の候補が銘柄を持つ文書で埋まると、銘柄を持たない文書が届かない（決定3）。起きるかどうかは実データで測る。
+  ［2026-10-02 追記 / #1138］[IADR-0474](IADR-0474_kb-market-docs-coverage-tag-and-fallback.md) で塞いだ（配備前の文書の届き方は確率のまま残る）。
 - trigger の銘柄表記と保存時の `symbol` 表記が違うと 1 本目は 0 件になる。現在の経路 B は両方とも同じ監視銘柄の表記（例: `AAPL`）である。
 - 基盤の `updated` は索引の更新日時で並べる。再索引で古い記事が上に来ることはあり得るが、決定5 の足切りが発行時刻で落とす。
 - 確定報告書の新しさは足切りしない（決定5）。古い報告書が上位に残り得る（基盤の `updated` による並べ替えは効く）。

@@ -29,16 +29,15 @@ public class MarketMonitorReadContractTests
     {
         IReadOnlyCollection<MonitoredSymbol> watchlist =
             [new MonitoredSymbol("7203", Market.Japan), new MonitoredSymbol("AAPL", Market.UnitedStates)];
-        var fallback = new RecordingFallback();
+        // #1134, IADR-0475: 供給口は構成の既定を持たない（読めなければ直前値か不明）。
         var provider = new HttpWatchlistProvider(
             new HttpClient(new StubHandler(JsonSerializer.Serialize(watchlist, Web))) { BaseAddress = new Uri("http://monitor") },
-            fallback,
+            new WatchlistLastKnown(NullLogger<WatchlistLastKnown>.Instance),
             NullLogger<HttpWatchlistProvider>.Instance);
 
         var read = await provider.GetWatchlistAsync();
 
         read.Should().Equal(new WatchedSymbol("7203", Market.Japan), new WatchedSymbol("AAPL", Market.UnitedStates));
-        fallback.Called.Should().BeFalse("供給できた応答は既定 watchlist へ倒さない");
     }
 
     // 🔴 T-10-1549, FR-04, #1034, IADR-0440 決定 2, IADR-0420: 判断のプロンプト用の口（GetAuthoritativeWatchlistAsync）も同じ応答を
@@ -49,16 +48,15 @@ public class MarketMonitorReadContractTests
     {
         IReadOnlyCollection<MonitoredSymbol> watchlist =
             [new MonitoredSymbol("AAPL", Market.UnitedStates), new MonitoredSymbol("META", Market.UnitedStates)];
-        var fallback = new RecordingFallback();
+        // #1134, IADR-0475: 供給口は構成の既定を持たない（読めなければ直前値か不明）。
         var provider = new HttpWatchlistProvider(
             new HttpClient(new StubHandler(JsonSerializer.Serialize(watchlist, Web))) { BaseAddress = new Uri("http://monitor") },
-            fallback,
+            new WatchlistLastKnown(NullLogger<WatchlistLastKnown>.Instance),
             NullLogger<HttpWatchlistProvider>.Instance);
 
         var read = await provider.GetAuthoritativeWatchlistAsync();
 
         read.Should().Equal(new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("META", Market.UnitedStates));
-        fallback.Called.Should().BeFalse("プロンプト用の口は既定 watchlist を使わない");
     }
 
     // 🔴 T-10-1629, FR-04, FR-15, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 3, IADR-0420: Stage 0 の記録が読む当時の監視銘柄
@@ -91,24 +89,6 @@ public class MarketMonitorReadContractTests
         denied.Symbols.Should().BeNull();
         denied.Reason.Should().Be("SeededAt が記録されていません。");
     }
-
-    private sealed class RecordingFallback : IWatchlistProvider
-    {
-        public bool Called { get; private set; }
-
-        public Task<IReadOnlyList<WatchedSymbol>> GetWatchlistAsync(CancellationToken cancellationToken = default)
-        {
-            Called = true;
-            return Task.FromResult<IReadOnlyList<WatchedSymbol>>([new WatchedSymbol("FALLBACK", Market.Japan)]);
-        }
-
-        public Task<IReadOnlyList<WatchedSymbol>?> GetAuthoritativeWatchlistAsync(CancellationToken cancellationToken = default)
-        {
-            Called = true;
-            return Task.FromResult<IReadOnlyList<WatchedSymbol>?>(null);
-        }
-    }
-
     private sealed class StubHandler(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>

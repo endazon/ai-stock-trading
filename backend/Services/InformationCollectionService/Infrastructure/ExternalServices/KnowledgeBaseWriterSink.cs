@@ -73,8 +73,13 @@ public sealed class KnowledgeBaseWriterSink(
             ["source"] = item.Source,
             ["publishedAt"] = item.PublishedAt.ToString("O"),
         };
+        // FR-01, FR-02, FR-08, #1138, IADR-0474 決定1: 銘柄を持たない文書（google-news・FRED・BoJ・収集状態など）には
+        // 目印 coverage=market を付け、判断側が単値フィルタで引けるようにする（基盤は「属性が無い」を条件にできない）。
+        // 銘柄を持つ文書には付けない（両方を持つ文書を作らない）。
         if (!string.IsNullOrWhiteSpace(item.Symbol))
-            attributes["symbol"] = item.Symbol;
+            attributes[KnowledgeSearchAttributes.Symbol] = item.Symbol;
+        else
+            attributes[KnowledgeSearchAttributes.Coverage] = KnowledgeSearchAttributes.MarketCoverage;
 
         return new KnowledgeDocument(
             Title: item.Title,

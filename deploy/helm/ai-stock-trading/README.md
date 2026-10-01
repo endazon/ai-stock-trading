@@ -200,8 +200,10 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   **［2026-09-27 / #1050］** `MarketMonitor__BaseUrl`（trade-decision・information-collection・notification）は**本番既定でも結線した**
   ため経路B 固有の有効化ではない（同じ値の写し。下記「監視銘柄の権威源への結線」）。
   監視銘柄（watchlist）は権威源（market-monitor）を `Monitor__SeedSymbols__0__*` で初回シードし
-  （AAPL/UnitedStates）、trade-decision 側の `TradeCycle__Watchlist__0__*` は同じ銘柄をフォールバック用に
-  据える（#286 / IADR-0282。詳細は下記「監視銘柄（watchlist）の初回シードと全削除の尊重」）。
+  （AAPL/UnitedStates）、trade-decision 側の `TradeCycle__Watchlist__0__*` は同じ銘柄を据える（#286 / IADR-0282。
+  詳細は下記「監視銘柄（watchlist）の初回シードと全削除の尊重」）。**［2026-10-01 / #1134］** 結線時は照会に失敗しても
+  この構成へは倒さない（直前に読めた一覧、起動から一度も読めていなければそのサイクルを見送る。IADR-0475）。
+  `TradeCycle__Watchlist__*` が効くのは結線を外したときだけである。
 - **実DD（観測最大ドローダウン）の供給（#279 / [IADR-0114](../../../.ai-context/adr/IADR-0114_route-b-parity-observed-drawdown-and-official-sources.md) / IADR-0103）**:
   risk-management `ObservedDrawdownRefresh__Enabled=true` ＋ `WithdrawalEvaluation__Enabled=true`。前者が営業日の定時に
   建玉台帳の `DrawdownRatio` をサンプリングして段階実績台帳へ単調 latch し、後者が ADR-0008 の撤退基準を評価する。
@@ -518,12 +520,12 @@ ADR-0008（計画リポ） の撤退基準に該当すると、
 
 | 消費側 | 使い道 | 照会の資格情報（本番既定の参照先） | 構成の固定リストの扱い |
 | --- | --- | --- | --- |
-| trade-decision | 定時サイクルの判断対象（IADR-0095） | `ServiceAuth__ClientId` / `__ClientSecret`（`ast-secrets` の `service-auth-client-id` / `-secret`）。token エンドポイントは template が `global.authAuthority` から導出 | `TradeCycle:Watchlist` は**照会に失敗した巡回だけ**のフォールバック（非 2xx・timeout・例外・不正応答）。200 ＋空の一覧は利用者の選択として尊重し、倒さない |
+| trade-decision | 定時サイクルの判断対象（IADR-0095） | `ServiceAuth__ClientId` / `__ClientSecret`（`ast-secrets` の `service-auth-client-id` / `-secret`）。token エンドポイントは template が `global.authAuthority` から導出 | **［2026-10-01 / #1134・IADR-0475］** `TradeCycle:Watchlist` は結線時には**使わない**。照会に失敗した巡回（非 2xx・timeout・例外・不正応答）は直前に読めた一覧で判断し、起動から一度も読めていなければその巡回の判断を見送る。200 ＋空の一覧は利用者の選択として尊重する（以前は照会に失敗した巡回だけのフォールバックだった＝IADR-0095） |
 | information-collection | Finnhub の対象銘柄（IADR-0435） | 同上（`ServiceAuth__*`） | `Collection__Source__Finnhub__Symbols__*` は**一度も読めていないときだけ**のフォールバック。読めた後に読めなくなったら直前の対象を使い続ける |
 | notification | Discord `/policy` の照会と入れ替えの適用（IADR-0433） | `Notifications__Discord__OwnerAuth__ClientId` / `__ClientSecret`（`ast-secrets` の `discord-owner-auth-client-id` / `-secret`。適用が OwnerOnly のため `ServiceAuth__*` ではない）。token エンドポイントは template が導出 | 固定リストは無い（未結線なら照会失敗＝「適用できない案」） |
 
 - 資格情報の Secret キーはいずれも**結線の前から本番既定に在った**（`optional: true`）。本件で足した鍵は無い。
-  Secret が空なら照会は 401 になり、上表のフォールバック（取引判断・情報収集）または照会失敗（通知）へ倒れる。
+  Secret が空なら照会は 401 になり、取引判断は直前の一覧か見送り、情報収集は上表のフォールバック、通知は照会失敗へ倒れる。
 - **本番既定で挙動が変わる範囲**: 取引判断は毎巡回 `GET /monitor/watchlist` を照会するようになる。本番既定は固定リストも
   初回シードも持たないので、監視銘柄は SC-02 か `/policy` で登録するまで空で、判断対象ゼロは結線前と同じである。
   情報収集は `Collection__Source__Provider` が空、通知は Bot が無効（いずれも本番既定）の間は照会しない。
@@ -541,8 +543,8 @@ trade-decision の `MarketMonitor__BaseUrl` を market-monitor へ結線する�
 
 これを避けるため、market-monitor の watchlist は `Monitor__SeedSymbols__0__Symbol` /
 `Monitor__SeedSymbols__0__Market`（複数銘柄は `__1__*`・`__2__*` と続ける）で**構成から初回シード**される。
-`values-local.yaml` は trade-decision の `TradeCycle__Watchlist__0__*`（フォールバック用の構成ベース
-watchlist）と同じ銘柄を投入しており、結線しても判断対象は減らない。
+`values-local.yaml` は trade-decision の `TradeCycle__Watchlist__0__*`（未結線時の構成ベース
+watchlist。結線時は照会に失敗しても使わない＝IADR-0475）と同じ銘柄を投入しており、結線しても判断対象は減らない。
 
 - **シードされるのは「未設定」のときだけ**。SC-02（画面）または API で監視銘柄を 1 件でも追加・削除した
   時点で、以後は利用者の操作が正となり構成シードは効かなくなる。

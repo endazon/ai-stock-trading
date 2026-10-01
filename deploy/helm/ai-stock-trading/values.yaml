@@ -709,8 +709,9 @@ services:
       # 定時サイクルの判断対象に届く（空のままだと届かず、ADR-0044 決定 2 の監視銘柄の節も常に「不明」になる）。
       # 宛先は本チャートの templates/service.yaml が描く同じ namespace の `market-monitor-service:8080`。照会の s2s は下の
       # ServiceAuth__*（trading-service。token エンドポイントは template が global.authAuthority から導出）。
-      # 構成の固定リスト（TradeCycle:Watchlist）は**照会に失敗した巡回だけのフォールバック**になる（非 2xx・timeout・例外・不正応答）。
-      # 200 ＋空の一覧は利用者の選択として尊重し、固定リストへは倒さない（IADR-0095 / IADR-0282）。本番既定は固定リストも
+      # FR-02, ADR-0044, #1134, IADR-0475: 結線時は構成の固定リスト（TradeCycle:Watchlist）を**使わない**。照会に失敗した巡回
+      # （非 2xx・timeout・例外・不正応答）は直前に読めた一覧で判断し、起動から一度も読めていなければその巡回の判断を見送る
+      # （以前は照会に失敗した巡回だけのフォールバックだった＝IADR-0095）。200 ＋空の一覧は利用者の選択として尊重する（IADR-0282）。本番既定は固定リストも
       # 市場監視の初回シード（Monitor:SeedSymbols）も持たないので、監視銘柄は SC-02 か /policy で登録するまで空（結線前と同じ）。
       # 空にすると未結線＝固定リストだけが対象（従来の挙動）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
