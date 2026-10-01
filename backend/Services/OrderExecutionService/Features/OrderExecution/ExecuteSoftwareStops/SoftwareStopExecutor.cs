@@ -177,7 +177,12 @@ public sealed class SoftwareStopExecutor(
             }
 
             if (armed is null || before is null)
-                continue; // 並行に完了した・ラインが広がって未到達になった（候補の一覧を読んだ後に）。
+            {
+                // 並行に完了した・ラインが広がって未到達になった（候補の一覧を読んだ後に）。
+                // #1136 独立監査 F6: 最新の行で到達していない行は「到達」に数えない（ハンドラの到達件数のログを実態に合わせる）。
+                matched--;
+                continue;
+            }
 
             if (before.TriggeredAt is null)
             {

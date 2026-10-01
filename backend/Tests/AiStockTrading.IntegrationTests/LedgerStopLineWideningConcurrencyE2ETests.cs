@@ -131,7 +131,8 @@ public sealed class LedgerStopLineWideningConcurrencyE2ETests : IAsyncLifetime
 
         store.WidenStopLoss(buy, TradeSide.Buy, 227.00m).Should().BeFalse("買い建てで高くするのは狭める向き");
         store.WidenStopLoss(buy, TradeSide.Buy, 226.52m).Should().BeFalse("同じ値は書かない（冪等）");
-        store.WidenStopLoss(buy, TradeSide.Sell, 220.00m).Should().BeFalse("向きが違う");
+        // #1136 独立監査 F5: 売りの向きの述語（StopLossPrice < 230）には一致するので、止めるのは WHERE の方向（Side）だけ。
+        store.WidenStopLoss(buy, TradeSide.Sell, 230.00m).Should().BeFalse("向きが違う");
         store.WidenStopLoss(noLine, TradeSide.Buy, 220.00m).Should().BeFalse("未記録のラインは埋めない");
         store.WidenStopLoss(close, TradeSide.Sell, 230.00m).Should().BeFalse("決済の行は触らない");
         store.WidenStopLoss(Guid.NewGuid(), TradeSide.Buy, 220.00m).Should().BeFalse("知らない判断");

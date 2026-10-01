@@ -52,7 +52,9 @@ public class LedgerStopLineWideningTests
         ledger.WidenStopLoss(longId, TradeSide.Buy, 226.2036m).Should().BeTrue();
         ledger.WidenStopLoss(longId, TradeSide.Buy, 226.2036m).Should().BeFalse("同じ値は書かない（冪等）");
         ledger.WidenStopLoss(longId, TradeSide.Buy, 226.40m).Should().BeFalse("狭めない（順序の入れ替わり）");
-        ledger.WidenStopLoss(longId, TradeSide.Sell, 220m).Should().BeFalse("方向が違う");
+        // #1136 独立監査 F5: 売りの向きで見れば 230 は今のライン 226.2036 より広い（高い）ので、広げる向きの判定では止まらない。
+        // 止めるのは方向の検査だけ（方向を見ないと、買い建てのラインを建値の上へ動かす）。
+        ledger.WidenStopLoss(longId, TradeSide.Sell, 230m).Should().BeFalse("方向が違う");
         ledger.WidenStopLoss(shortId, TradeSide.Sell, 102m).Should().BeTrue("空売りは上へ広げる");
         ledger.WidenStopLoss(shortId, TradeSide.Sell, 101.5m).Should().BeFalse();
         ledger.WidenStopLoss(unknownId, TradeSide.Buy, 90m).Should().BeFalse("不明のラインを埋めない");

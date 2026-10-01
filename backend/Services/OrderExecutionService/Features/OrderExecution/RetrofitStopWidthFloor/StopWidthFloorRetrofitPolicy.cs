@@ -8,8 +8,24 @@ namespace OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor;
 //   新しいライン ＝ 買い建て min(今のライン, 下限のライン)／売り建て max(今のライン, 下限のライン)
 // 🔴 **広げる向きだけ**。等しい・狭める向きは変えない（null）。端数は丸めない（S1 のラインは数値で比べる。S0 / S3 は対象外）。
 // min / max なので何度当てても同じ値に留まる（冪等）。
+// 🔴 #1136 独立監査 F2（IADR-0472 2026-10-01 追記）: 対象は**下限を割って建てた行**だけ（WasSizedBelowFloor）。
 public static class StopWidthFloorRetrofitPolicy
 {
+    /// <summary>
+    /// 🔴 #1136 独立監査 F2: この行のラインが、<b>ラインを引いた価格</b>（<paramref name="plannedPrice"/>＝エントリーの発注記録の
+    /// PlannedPrice。取引判断の参照価格）から見て下限（2%）を割っているか。割っていれば「下限の導入前の幅で建てた行」として遡及の対象にする。
+    /// <para>
+    /// 下限の導入後の新規建ては、参照価格から max(AI の幅, 参照価格 × 2%) を引いてラインを作る（IADR-0465）。参照価格から見れば
+    /// 必ず 2% 以上離れているので false になり、約定が参照価格より有利だった（取得単価から見ると 2% を割る）行でも二重に広げない。
+    /// 導入前の行のうち AI の幅が参照価格の 2% 以上だった行も同じく対象外になる（下限そのものの基準は満たして建てた）。
+    /// </para>
+    /// <para>
+    /// ラインを引いた価格が分からない（0 以下）ときは true（裁定の側＝遡及する。広げる向きだけなので損切りを早めない）。
+    /// </para>
+    /// </summary>
+    public static bool WasSizedBelowFloor(TradeSide entrySide, decimal currentLine, decimal plannedPrice) =>
+        plannedPrice <= 0m || Widen(entrySide, currentLine, plannedPrice) is not null;
+
     /// <summary>下限（1 株あたり・取得単価と同じローカル通貨）。</summary>
     public static decimal FloorPerShare(decimal entryPrice)
     {
