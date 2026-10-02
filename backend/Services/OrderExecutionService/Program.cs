@@ -176,7 +176,10 @@ builder.Services.AddScoped(sp => new SoftwareStopExecutor(
 // 出るのは「7 区分すべて未計上（明細 0 件）」を残す警告ログだけである——「照会する経路が無い」と
 // 「照会したが取得できない」を区別できるようにするのが段 1 の目的である。
 // 実費の取得（moomoo の注文費用照会）は段 2（実口座での応答仕様の確認が前提）。
-builder.Services.AddSingleton<IOrderExpenseSource, UnsuppliedOrderExpenseSource>();
+// #1086, IADR-0484: 取得できない理由は発注先で決まる（moomoo SIMULATE は照会そのものをブローカーが拒否する）。
+// 発注先は合成起点で 1 度だけ解決した brokerSelection から取る。推計は積まない（未計上のまま）。
+builder.Services.AddSingleton<IOrderExpenseSource>(
+    _ => UnsuppliedOrderExpenseSource.For(brokerSelection.ToBrokerProvider()));
 builder.Services.AddScoped<TradeExpenseRecordingService>();
 
 // #154, FR-19, #847, #768, IADR-0067, IADR-0357: 注文履歴テレメトリ（訂正・取消の適用＋永続化＋発行）。
