@@ -10,6 +10,9 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
     private readonly Lock _gate = new();
     private readonly List<ExecutionRecord> _records = [];
 
+    // 🔴 #1048, IADR-0481 決定3: 打ち切りを記録した追跡の起点（OrderId → 起点）。EF の行の列に当たる。
+    private readonly Dictionary<string, DateTimeOffset> _abandonedFrom = new(StringComparer.Ordinal);
+
     public void Save(ExecutionRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -111,6 +114,36 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
             }
 
             _records[index] = _records[index] with { ExecutedAt = trackedFrom };
+            return true;
+        }
+    }
+
+    // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 追跡上限を過ぎた非終端の記録のうち、その起点で打ち切りを記録していないもの（古い順）。
+    public IReadOnlyList<ExecutionRecord> FindTrackingExpired(DateTimeOffset before, int batchSize)
+    {
+        lock (_gate)
+        {
+            return _records
+                .Where(r => OrderStatusLifecycle.IsPending(r.Status) && r.ExecutedAt < before
+                    && !(_abandonedFrom.TryGetValue(r.OrderId, out var from) && from == r.ExecutedAt))
+                .OrderBy(r => r.ExecutedAt)
+                .Take(batchSize)
+                .ToList();
+        }
+    }
+
+    // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 打ち切りの印を書く（起点が進んでいれば書かない）。
+    public bool MarkTrackingAbandoned(string orderId, DateTimeOffset trackedFrom)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        lock (_gate)
+        {
+            var record = _records.FirstOrDefault(r => r.OrderId == orderId);
+            if (record is null || record.ExecutedAt != trackedFrom)
+                return false;
+
+            _abandonedFrom[orderId] = trackedFrom;
             return true;
         }
     }

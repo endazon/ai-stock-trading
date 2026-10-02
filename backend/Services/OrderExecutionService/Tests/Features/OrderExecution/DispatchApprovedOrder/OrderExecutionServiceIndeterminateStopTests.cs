@@ -41,6 +41,9 @@ public class OrderExecutionServiceIndeterminateStopTests
 
     private static Harness NewHarness(StopLegScriptedBroker broker)
     {
+        // 🔴 #1048, IADR-0481 決定2: moomoo SIMULATE の S0・S3 の新規建ては、記録の無い建玉がある銘柄では見送る。
+        // 本ファイルはエントリーを送る**前**の口座を見るので、建玉は無い（既定の 10 株は送った後の口座を模した値）。
+        broker.Positions = [];
         var store = new InMemoryExecutedOrderStore();
         var stops = new InMemoryProtectiveStopOrderStore();
         var reservations = new InMemoryOrderReservationStore();
@@ -149,7 +152,8 @@ public class OrderExecutionServiceIndeterminateStopTests
     {
         // T-10-1062（続き・PR #1005 監査 3）: 予約表が落ちた（DB 障害）。何もせずに戻ると、建玉は巡回されない AwaitingEntry の行だけを持ち、
         // 逆指値も取消も成行も通知も無いまま残る。送らずに保護記録を送信結果待ちで残し（ガードが巡回する）、保護喪失（None）で知らせる。
-        var broker = new StopLegScriptedBroker { Stop = Behavior.Accept };
+        // #1048, IADR-0481 決定2: エントリーを送る前の口座に建玉は無い（NewHarness と同じ）。
+        var broker = new StopLegScriptedBroker { Stop = Behavior.Accept, Positions = [] };
         var store = new InMemoryExecutedOrderStore();
         var stops = new InMemoryProtectiveStopOrderStore();
         var reservations = new InMemoryOrderReservationStore();
@@ -175,6 +179,8 @@ public class OrderExecutionServiceIndeterminateStopTests
         row.IsStopDispatchPending.Should().BeTrue();
 
         // 常駐ガードは「予約も記録も無い送信結果待ち」を未発注として扱い、次の試行の新しいレグで逆指値を張り直す。
+        // エントリーを送った後の口座には建玉がある（#1048 で送る前を空にしたので、ここで約定後の口座へ戻す）。
+        broker.Positions = [new BrokerPositionSnapshot("AAPL", Market.UnitedStates, 10, 1_000m)];
         var guard = new OrderExecutionService.Features.OrderExecution.GuardProtectiveStops.ProtectiveStopGuard(
             broker, broker, stops, store, reservations, new FakeClock());
         var patrol = await guard.RunOnceAsync(batchSize: 10);

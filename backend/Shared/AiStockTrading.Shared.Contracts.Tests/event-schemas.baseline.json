@@ -245,6 +245,21 @@
     "Provider": "BrokerProvider",
     "Status": "OrderStatus"
   },
+  "OrderFillTrackingAbandoned": {
+    "AbandonedAt": "DateTimeOffset",
+    "DecisionId": "Guid",
+    "FilledQuantity": "Int32",
+    "LastStatus": "OrderStatus",
+    "Market": "Market",
+    "MaxTracking": "TimeSpan",
+    "OrderId": "String",
+    "PositionEffect": "PositionEffect",
+    "Provider": "BrokerProvider",
+    "Quantity": "Int32",
+    "Side": "TradeSide",
+    "Symbol": "String",
+    "TrackedFrom": "DateTimeOffset"
+  },
   "OrderModified": {
     "DecisionId": "Guid",
     "ModifiedAt": "DateTimeOffset",

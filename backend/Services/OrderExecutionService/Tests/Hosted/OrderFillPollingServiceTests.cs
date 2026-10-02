@@ -143,6 +143,33 @@ public class OrderFillPollingServiceTests
         await host.StopAsync();
     }
 
+    // T-10-2115, FR-10, FR-11, #1048（Q3）, IADR-0481 決定3: 期限を過ぎて非終端のまま打ち切った注文は、本番と同じ配線の常駐から
+    // OrderFillTrackingAbandoned として**発行し、その後に**打ち切りの印を書く（次の巡回では発行しない）。
+    [Fact]
+    public async Task T_10_2115_追跡の打ち切りを発行してから印を書く()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var decisionId = Guid.NewGuid();
+        var trackedFrom = Now.AddHours(-25);
+        store.Save(Dispatched(decisionId) with { ExecutedAt = trackedFrom });
+        var broker = new SequenceBroker((BrokerOrder?)null);
+        using var host = await BuildHostAsync(broker, store);
+        var service = BuildService(host, new FillPollingOptions());
+
+        Func<IMessageContext, Task> poll = async _ => await service.PollOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
+
+        session.Sent.MessagesOf<OrderFillTrackingAbandoned>().Should().ContainSingle(m =>
+            m.DecisionId == decisionId && m.OrderId == "ORD-1" && m.TrackedFrom == trackedFrom
+            && m.LastStatus == OrderStatus.Accepted && m.Provider == BrokerProvider.MoomooSimulate);
+        store.FindTrackingExpired(Now.AddHours(-24), 10).Should().BeEmpty("発行の後に印を書いた");
+
+        var again = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
+        again.Sent.MessagesOf<OrderFillTrackingAbandoned>().Should().BeEmpty("同じ打ち切りは 1 回だけ発行する");
+
+        await host.StopAsync();
+    }
+
     // T-10-865, FR-10, FR-05, #958, IADR-0406 決定2: 武装から 25 時間後に約定した S0 の損切りが、本番と同じ形の配線の常駐から
     // OrderExecuted として発行される（リスク管理の取引台帳が約定を記録する唯一の入力。IADR-0394 はこの約定で損切りを数える）。
     // 時計は固定（壁時計の sleep を使わない）。

@@ -420,9 +420,15 @@ public static class NotificationFormatter
         OrderDispatchForgoneReason.BrokerPositionsIndeterminate =>
             "ブローカーの建玉を照会できません（不明のまま決済を送りません）",
         // FR-10, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: 対処は「先に手仕舞ってから切り替える」であり、他と違う。
+        // 🔴 #1048, IADR-0481 決定2: moomoo SIMULATE の S0・S3 の新規建てにも使う（S2 の建玉は記録を持たず帰属不明に見える）。
         OrderDispatchForgoneReason.UnattributedPosition =>
             "同一銘柄・同方向に帰属不明の建玉があります（S1 はその建玉を自分の損切りラインで売らないために武装しません。"
+                + "moomoo SIMULATE の S0・S3 も、記録の無い建玉〔S2・人手〕と併存させないために新規建てを見送ります。"
                 + "先に手仕舞ってから切り替えてください）",
+        // 🔴 FR-10, #1048, IADR-0481 決定1: 対処は「別の手法の建玉が手仕舞われるのを待つ（または先に手仕舞う）」。決済は止めていない。
+        OrderDispatchForgoneReason.StopLossMethodConflict =>
+            "同一銘柄・同方向に別の損切りの実行機構の建玉が残っています（手法の違う建玉を併存させないため新規建てを見送りました。"
+                + "決済は止めていません。その建玉を手仕舞ってから新しい手法で建ててください）",
         // FR-10, #1105, IADR-0461 決定2: 送れば証券会社に拒否されるだけの決済。対処は要らない（処理中の決済の結果を待つ）。
         OrderDispatchForgoneReason.InFlightCloseCoversPosition =>
             "同じ建玉を売る処理中の決済が、決済できる建玉をすべて覆っています（その決済が約定しなかった場合は、改めて手仕舞ってください）",

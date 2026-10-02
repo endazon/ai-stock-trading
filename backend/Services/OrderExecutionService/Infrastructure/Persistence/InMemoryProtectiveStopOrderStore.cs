@@ -59,6 +59,16 @@ public sealed class InMemoryProtectiveStopOrderStore : IProtectiveStopOrderStore
             .OrderBy(s => s.CreatedAt)
             .ToList();
 
+    // FR-10, #1048, IADR-0481 決定1: 完了していない記録（Active・AwaitingEntry）を機構を問わず古い順に返す。
+    public IReadOnlyList<ProtectiveStopOrder> FindOpenFor(string symbol, Market market, TradeSide entrySide) =>
+        _stops.Values
+            .Where(s => s.State != ProtectiveStopState.Completed
+                && s.Symbol == symbol
+                && s.Market == market
+                && s.EntrySide == entrySide)
+            .OrderBy(s => s.CreatedAt)
+            .ToList();
+
     // #820, IADR-0344 決定1・決定4。
     public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
         _stops.Values

@@ -71,6 +71,20 @@ public interface IProtectiveStopOrderStore
             .ToList();
 
     /// <summary>
+    /// 🔴 FR-10, ADR-0040 決定1, #1048, IADR-0481 決定1: 銘柄・市場・エントリー方向が一致する記録のうち<b>完了していないもの</b>
+    /// （<see cref="ProtectiveStopState.Active"/> と、送信結果待ちの <see cref="ProtectiveStopState.AwaitingEntry"/>）を、
+    /// <b>機構を問わず・件数の上限なしで</b>古い順に返す（同じ銘柄に別の手法の建玉を併存させないための照合）。
+    /// <para>
+    /// AwaitingEntry を含めるのは、エントリーの送信結果が不明のまま突合を待つ S0 / S3 の建玉が実在し得るためである
+    /// （含めないと、その間に別の手法で建てられる）。
+    /// 既定の実装（試験用の包み型のためのもの）は Active な記録だけを返す（<see cref="FindActiveFor"/>）。
+    /// 本番のストア（EF・インメモリ）は状態で絞る問い合わせで上書きする。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<ProtectiveStopOrder> FindOpenFor(string symbol, Market market, TradeSide entrySide) =>
+        FindActiveFor(symbol, market, entrySide);
+
+    /// <summary>
     /// 🔴 FR-10, ADR-0050 決定1, #1121, IADR-0466 決定2: 銘柄・市場・エントリー方向が一致する記録を<b>状態も機構も問わず</b>、
     /// 更新が新しい順に最大 <paramref name="limit"/> 件返す。
     /// <para>

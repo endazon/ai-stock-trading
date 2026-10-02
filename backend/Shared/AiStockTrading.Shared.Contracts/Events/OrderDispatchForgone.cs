@@ -73,6 +73,11 @@ public enum OrderDispatchForgoneReason
     /// （IADR-0210 決定1）に合わせ、<b>建玉を持たずに見送る</b>。<b>末尾へ追加する</b>（序数 6。
     /// 🔴 #864 が序数 4・5 を先に取ったため、本値は 4 から 6 へ繰り下げた——**先にマージされた側が確保する**）。
     /// </para>
+    /// <para>
+    /// 🔴 #1048, IADR-0481 決定2: <b>moomoo SIMULATE での S0・S3 の新規建て</b>にも同じ判定で使う。S2 の建玉は保護記録を
+    /// 持たないため、記録の照合（<see cref="StopLossMethodConflict"/>）では見えず、帰属不明の建玉としてしか現れない。
+    /// S2 は SIMULATE でしか選べないので、判定するのも SIMULATE だけである（実弾・内蔵 paper の S0 の経路は変えない）。
+    /// </para>
     /// </summary>
     UnattributedPosition,
 
@@ -83,4 +88,18 @@ public enum OrderDispatchForgoneReason
     /// 予約の<b>前</b>に見送る（確実に未発注）。<b>末尾へ追加する</b>（序数 7。メトリクスのタグ・監査 payload の整数が往来する）。
     /// </summary>
     InFlightCloseCoversPosition,
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0040 決定1, #1048（利用者裁定 2026-10-02・Q2 案 b）, IADR-0481 決定1: 新規建て（Open）だが、
+    /// 同じ銘柄・同じ方向に<b>別の損切りの実行機構の有効な記録</b>（完了していない保護記録＝Active または送信結果待ちの
+    /// AwaitingEntry。S0 と S1・S2・S3 のどの組み合わせも含む）が残っている。
+    /// <para>
+    /// 保護記録の持ち分（<c>ProtectiveStopNetting</c>）は銘柄単位の純額からしか測れず、手法の違う建玉が併存すると
+    /// 互いの数量を取り違える（S2 は記録を持たないため差し引けず、S0 と S3 は互いを差し引き合って建玉残を 0 と読み得る）。
+    /// 併存そのものを作らないため、<b>新しい手法での新規建てを見送る</b>。決済（Close）には効かない（手仕舞い・損切りは止めない）。
+    /// 予約の前と、自分の記録を残した後（送信の直前）の<b>両方</b>で確かめる（どちらでも送信前＝確実に未発注）。
+    /// <b>末尾へ追加する</b>（序数 8。メトリクスのタグ・監査 payload の整数が往来する）。
+    /// </para>
+    /// </summary>
+    StopLossMethodConflict,
 }
