@@ -61,3 +61,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-09-30 に 0050 へ**〔ADR-0048 定時の判断へ渡す出来高は moomoo の日足 K 線から得る前日までの値とし、K 線が判断へ通るまでは「未提供」と明示する。planning#702／ADR-0049 損切り幅は AI の提案に系が下限（1.0 × ATR(14)、得られないときは参照価格の 2%）を掛け、割った幅は下限まで広げる。planning#703／ADR-0050 保護された建玉への判断の手仕舞いは処理中の決済を差し引いた残りだけを送る（ADR-0040 決定 4 の部分改定）。planning#704。本リポの追随は #1120（ADR-0049 の実装と同じ PR。並行する #1119 が 0048 へ引き直しており、マージで 0050 に揃える）〕。
   **2026-09-30 実測**: 隣接クローンの `origin/main`（`4867280`。`git rev-parse --is-shallow-repository` → `true` のため `git archive origin/main` で展開した木で実行。
   ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 50]・50 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-10-02 に 0051 へ**〔ADR-0051 日報 §7 の利確条件は書式の行で銘柄ごとに数値で書き、欠ければ確定の前に警告する（確定は止めない）。ADR-0048 決定 4 の補完。planning#709。実装は先行して #1129（IADR-0470）。本リポの追随は本 PR〕。
+  **2026-10-02 実測**: 隣接クローンの `origin/main`（`b9d0d27`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
+  ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js` が「宣言と実物は一致」、ai-stock-trading は ADR **[1, 51]・51 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
