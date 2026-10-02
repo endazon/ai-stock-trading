@@ -46,7 +46,7 @@ public class TradeDecisionFailureReporterRegistrationTests
         var reporter = factory.Services.GetRequiredService<ITradeDecisionFailureReporter>();
 
         var session = await factory.Services.ExecuteAndWaitForTestAsync(() => reporter.ReportFinalFailureAsync(
-            "price-movement", "MSFT", Market.UnitedStates, new TimeoutException("api_key=sk-live-SECRET-2187")));
+            "price-movement", "MSFT", Market.UnitedStates, new TimeoutException("照会に失敗 SECRET-2187")));
 
         var failed = session.Sent.MessagesOf<TradeDecisionFailed>().Should().ContainSingle(
             "Program.cs の発行の委譲がランタイムの MessageBus から 1 件発行する").Which;
