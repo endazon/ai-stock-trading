@@ -1,6 +1,8 @@
+extern alias AuditWorker;
 extern alias RiskManagementWorker;
 
 using System.Text.Json;
+using AuditWorker::AuditService.Domain;
 using RiskManagementWorker::RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
@@ -24,7 +26,7 @@ using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDeci
 
 namespace TradeDecisionService.Tests;
 
-// 🔴 T-10-2180〜T-10-2182・T-10-2184, NFR, FR-04, FR-11, #1111, IADR-0483:
+// 🔴 T-10-2180〜T-10-2182・T-10-2184・T-10-2186, NFR, FR-04, FR-11, #1111, IADR-0483:
 // 取引判断の**最中の例外**は、再試行の後の**最終の失敗だけ**を 1 件、監査台帳へ残す。載せるのは型名・発生源・銘柄・時刻だけで、
 // メッセージとスタックは載せない（裁定 2026-10-02「最小限で残す」）。発行はランタイムの MessageBus から行う。
 //
@@ -450,5 +452,67 @@ public class TradeDecisionFailureRecordTests
         var log = string.Join("\n", logger.Lines);
         log.Should().Contain("Warning: ").And.Contain("発行できませんでした").And.Contain("SecretBearingException");
         AssertNoSecret(log, "発行の失敗のログにも元の例外の本文を載せない");
+    }
+
+    // ---- T-10-2186: 例外の Data と内側の例外が秘密を持っても、事実・ログ・監査の記録へ運ばない（独立監査 🟡1） ----
+
+    // 🔴 T-10-2186, NFR, FR-04, FR-11, #1111, IADR-0483 決定1・4: 型名の組み立てが `Exception.Data`（キーと値）や内側の例外を
+    // 読み始めても、上の陰性の試験は Data を持たない例外で行っているので赤にならなかった（変異「型名へ Data の値を足す」が生き残った）。
+    // ここでは外側と内側の両方の例外の Data に秘密と口座 ID を持たせ、事実の型名・直列化した事実・報告口のログ・監査台帳の記録
+    // （AuditEntryFactory の要約と Detail）のどこにも現れないことを固定する。
+    private const string DataSecret = "ghp_DATA-SECRET-1111";
+    private const string DataKey = "brokerAccountId";
+    private const string InnerDataSecret = "INNER-DATA-SECRET-1111";
+
+    private static SecretBearingException ThrownSecretExceptionWithData()
+    {
+        var exception = ThrownSecretException();
+        exception.Data[DataKey] = AccountId;
+        exception.Data["apiKey"] = DataSecret;
+        exception.InnerException!.Data["token"] = InnerDataSecret;
+        return exception;
+    }
+
+    [Fact]
+    public async Task T_10_2186_例外のDataと内側の例外が秘密を持っても事実とログと監査の記録へ運ばない_否定形()
+    {
+        var published = new List<TradeDecisionFailed>();
+        var logger = new ListLogger<PublishingTradeDecisionFailureReporter>();
+        var reporter = new PublishingTradeDecisionFailureReporter(
+            e => { published.Add(e); return ValueTask.CompletedTask; }, new FixedClock(), logger);
+        var exception = ThrownSecretExceptionWithData();
+        exception.Data.Count.Should().Be(2, "陰性の試験は Data を持つ例外で行う");
+        exception.InnerException!.Data.Count.Should().Be(1, "陰性の試験は内側の例外も Data を持つ例外で行う");
+        exception.InnerException.Message.Should().Contain("SECRET", "陰性の試験は内側の例外の本文にも秘密を持たせる");
+
+        await reporter.ReportFinalFailureAsync(BusinessMetrics.TriggerPriceMovement, "AAPL", Market.UnitedStates, exception);
+
+        var failed = published.Should().ContainSingle().Which;
+        failed.ExceptionType.Should().Be(
+            "TradeDecisionService.Tests.TradeDecisionFailureRecordTests+SecretBearingException",
+            "型名は型だけから作る（Data も内側の例外も読まない）");
+        PublishingTradeDecisionFailureReporter.ExceptionTypeName(exception).Should().Be(failed.ExceptionType);
+
+        var entry = AuditEntryFactory.From(failed, Guid.NewGuid(), Now);
+        var surfaces = new Dictionary<string, string>
+        {
+            ["事実の型名"] = failed.ExceptionType,
+            ["台帳へ渡る事実（JSON）"] = JsonSerializer.Serialize(failed),
+            ["報告口のログ"] = string.Join("\n", logger.Lines),
+            ["監査の要約"] = entry.Summary,
+            ["監査の Detail"] = entry.Detail,
+        };
+        foreach (var (surface, text) in surfaces)
+        {
+            AssertNoSecret(text, $"{surface}に例外の本文・スタックを載せない");
+            text.Should().NotContain(DataSecret, $"{surface}に例外の Data の値を載せない")
+                .And.NotContain(DataKey, $"{surface}に例外の Data のキーを載せない")
+                .And.NotContain(InnerDataSecret, $"{surface}に内側の例外の Data を載せない")
+                .And.NotContain(nameof(HttpRequestException), $"{surface}に内側の例外を載せない");
+        }
+
+        // 対照: Detail は型名を持つ（JSON の `+` は `\u002B` へ逃がされるので、読み戻して比べる）。
+        using var detail = JsonDocument.Parse(entry.Detail);
+        detail.RootElement.GetProperty(nameof(TradeDecisionFailed.ExceptionType)).GetString().Should().Be(failed.ExceptionType);
     }
 }

@@ -117,7 +117,7 @@ git grep -n -E "判断中の例外|判断の途中の例外|台帳に記録が�
 4. 監査: `AuditEntryFactory.From`・`TradeDecisionFailedAuditHandler`。相関は `EventId`。通知しない。
 5. 夜間の要約 §14（起点 × 型名 × 件数・銘柄）。
 
-## 受け入れ基準 → 試験（FR-10 のテスト仕様書。T-10-2180〜T-10-2185）
+## 受け入れ基準 → 試験（FR-10 のテスト仕様書。T-10-2180〜T-10-2188）
 
 並行の作業（#1156 が T-10-2160〜T-10-2172 を使う）と衝突しないよう、T-10-2180 から振った（T-10-2040〜T-10-2159 は他の進行中の作業が取り得るため避けた）。
 
@@ -129,6 +129,9 @@ git grep -n -E "判断中の例外|判断の途中の例外|台帳に記録が�
 | T-10-2183 | 監査: 種別・`EventId` 相関・銘柄・要約・Detail に型名と起点があり、メッセージ・スタックの欄が無い。全イベントの監査の完全性・メッセージの型名 | `AuditEntryFactoryTests`・`AuditCycleCompletenessTests`・`EventMessageTypeNameTests` |
 | T-10-2184 | 組み立て: 報告口は Program.cs で singleton の発行の実装として 1 つだけ。両ハンドラの必須依存（抜けは `CompositionWiringGuardTests` が拾う） | `TradeDecisionFailureReporterRegistrationTests` |
 | T-10-2185 | 夜間の要約 §14: 起点 × 型名で数え、銘柄を並べる。窓の頭ちょうどを含み、尻ちょうど・窓の前を含まない。SQL はメッセージ・スタックの欄を読まない。§1 の種類別の件数にも出る | `scripts/nightly-ledger-summary.test.sh`・`.pg.test.sh` |
+| T-10-2186 | 独立監査 🟡1: 外側と内側の例外の `Data` と内側の例外の本文に秘密を持つ例外でも、事実の型名・直列化した事実・報告口のログ・監査の要約と Detail（`AuditEntryFactory.From`）に `Data` のキーと値・内側の例外・秘密・口座 ID が無い | `TradeDecisionFailureRecordTests`（監査の記録を作るため、テスト専用に AuditService を別名 `AuditWorker` で参照） |
+| T-10-2187 | 独立監査 🟡2: Program.cs の組み立てから解決した報告口で報告すると、`TradeDecisionFailed` がメッセージバスへ 1 件発行される（Wolverine の追跡。外部の送信先は無効。Docker 不要） | `TradeDecisionFailureReporterRegistrationTests` |
+| T-10-2188 | 独立監査 🟡3（IADR-0483 決定4「通知はしない」）: 通知サービスのどの型のメソッドも `TradeDecisionFailed` を引数に取らず、本番と同じ発見範囲の Wolverine は実行器を「ハンドラ無し」と答える（対照 `OrderExecuted` はあり） | 通知の `TradeDecisionFailedIsNotNotifiedTests` |
 
 ## 検証
 
@@ -170,6 +173,15 @@ git grep -n -E "判断中の例外|判断の途中の例外|台帳に記録が�
 | S2 §14 の窓の頭を `>` | T-10-2185（pg 1 件） |
 | S3 §14 を銘柄ごとに分ける | T-10-2185（pg 1 件） |
 | S4 §14 でメッセージの欄を読む | T-10-2185（スタブ 2 件・pg 2 件） |
+
+［2026-10-02 追記 / #1111・独立監査］独立監査が生き残りを示した 3 つの変異（監査の番号で M3・M6c・M4。上の表の M 番号とは別）を塞ぐ試験
+T-10-2186〜T-10-2188 を足し、変異を当てて赤を確かめ、退避した写しで戻して `cmp` で一致を確かめた。
+
+| 変異（独立監査） | 落ちた試験 |
+| --- | --- |
+| M3 型名へ `Exception.Data` の値を足す（`ExceptionTypeName` の末尾に連結） | T-10-2186（1 件。既存の T-10-2180〜2182 は緑のまま） |
+| M6c Program.cs の発行の委譲を `e => ValueTask.CompletedTask` にする | T-10-2187（1 件。既存の T-10-2184・CompositionWiringGuard は緑のまま） |
+| M4 通知サービスに `TradeDecisionFailedNotificationHandler` を足す | T-10-2188（2 件。通知の既存の 854 件は緑のまま） |
 
 - `dotnet build backend/backend.slnx`（警告 0）・`dotnet test backend/backend.slnx`。
 - `dotnet format backend/backend.slnx --verify-no-changes`。

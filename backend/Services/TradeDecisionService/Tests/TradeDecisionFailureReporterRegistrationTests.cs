@@ -1,3 +1,6 @@
+using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.Messaging;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using AwesomeAssertions;
@@ -29,6 +32,29 @@ public class TradeDecisionFailureReporterRegistrationTests
         using var b = factory.Services.CreateScope();
         a.ServiceProvider.GetRequiredService<ITradeDecisionFailureReporter>().Should().BeSameAs(singleton);
         b.ServiceProvider.GetRequiredService<ITradeDecisionFailureReporter>().Should().BeSameAs(singleton);
+    }
+
+    // 🔴 T-10-2187, NFR, FR-04, FR-11, #1111, IADR-0483 決定3: **Program.cs が組み立てた**報告口で報告すると、TradeDecisionFailed が
+    // メッセージバスへ実際に発行される（独立監査 🟡2）。上の試験は型と寿命しか見ず、発行の試験（TradeDecisionFailureRecordTests）は
+    // Program.cs と同じ形の委譲を自分で組み直していたため、Program.cs の発行の委譲を何もしない形へ変えても緑のままだった。
+    // ここでは本番の組み立てから解決した報告口を使い、Wolverine の追跡で外へ出たメッセージを見る（外部の送信先は無効化してある）。
+    [Fact]
+    public async Task T_10_2187_本番の組み立ての報告口で報告するとTradeDecisionFailedがメッセージバスへ発行される()
+    {
+        using var factory = new Factory();
+        _ = factory.CreateClient();
+        var reporter = factory.Services.GetRequiredService<ITradeDecisionFailureReporter>();
+
+        var session = await factory.Services.ExecuteAndWaitForTestAsync(() => reporter.ReportFinalFailureAsync(
+            "price-movement", "MSFT", Market.UnitedStates, new TimeoutException("api_key=sk-live-SECRET-2187")));
+
+        var failed = session.Sent.MessagesOf<TradeDecisionFailed>().Should().ContainSingle(
+            "Program.cs の発行の委譲がランタイムの MessageBus から 1 件発行する").Which;
+        failed.Symbol.Should().Be("MSFT");
+        failed.Market.Should().Be(Market.UnitedStates);
+        failed.CycleTrigger.Should().Be("price-movement");
+        failed.ExceptionType.Should().Be(typeof(TimeoutException).FullName);
+        failed.EventId.Should().NotBe(Guid.Empty);
     }
 
     private sealed class Factory : WebApplicationFactory<Program>

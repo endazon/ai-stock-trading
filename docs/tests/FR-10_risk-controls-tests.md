@@ -5018,9 +5018,12 @@ Stage 0 の記録は、判断時点（AsOf）の前営業日までの確定足�
 | **T-10-2183** | 最終の失敗の事実 | 監査台帳へ記録する | 種別 `TradeDecisionFailed`・相関は EventId・銘柄・要約「取引判断の最中の例外（最終の失敗）: 型名・起点」。Detail に型名と起点があり、メッセージ・スタックの欄が無い。全イベントの監査の完全性とメッセージの型名にも入る | 台帳が数えられる形で残す | 自動 |
 | **T-10-2184** | 本番の組み立て | 報告口を解決する | 発行の実装が singleton で 1 つだけ。両ハンドラの必須依存で、登録を消すと組み立ての検査が赤 | 配線の抜けを試験で見えるようにする | 自動 |
 | **T-10-2185** | 窓の頭ちょうど・中の 3 件（同じ銘柄の 2 件を含む）・尻ちょうど・窓の前 | 夜間の要約を出す（psql スタブ・実 PostgreSQL） | §14 に `scheduled｜System.InvalidOperationException｜3｜META,NVDA` と `price-movement｜…｜1｜AAPL`。尻ちょうど・窓の前は数えない。§1 の件数に出る。SQL はメッセージ・スタックの欄を読まない | 窓は半開区間・1 行は 1 回の最終の失敗 | 自動（**境界**） |
+| **T-10-2186** | 外側と内側の例外の `Data`（キーと値）と内側の例外の本文に秘密と口座 ID を持つ例外 | 報告口で報告し、事実から監査台帳の記録を作る | 型名は型だけ。事実の型名・直列化した事実・報告口のログ・監査の要約と Detail のどこにも `Data` のキーと値・内側の例外の型と本文・秘密・口座 ID が無い（Detail は型名を持つ） | 例外の付帯情報を台帳へ運ばない | 自動 |
+| **T-10-2187** | 本番の組み立て（外部の送信先は無効） | 組み立てから解決した報告口で報告する | `TradeDecisionFailed` がメッセージバスへ 1 件発行され、銘柄・市場・起点・型名を持つ | 組み立ての発行の委譲が実際に発行する（試験側で組み直した委譲では見えない） | 自動 |
+| **T-10-2188** | 通知サービス | アセンブリの全型のメソッドの引数を調べる／本番と同じ発見範囲で起こした Wolverine に実行器を問う | `TradeDecisionFailed` を引数に取るメソッドが無い。実行器は「ハンドラ無し」（対照の `OrderExecuted` はハンドラあり） | 最終の失敗は台帳に残すだけで通知しない | 自動 |
 
 試験の置き場所: T-10-2180〜T-10-2182 は取引判断の `TradeDecisionFailureRecordTests`、T-10-2183 は監査の `AuditEntryFactoryTests`・`AuditCycleCompletenessTests` と契約の `EventMessageTypeNameTests`、
-T-10-2184 は `TradeDecisionFailureReporterRegistrationTests`（と既存の `CompositionWiringGuardTests`）、T-10-2185 は `scripts/nightly-ledger-summary.test.sh`・`scripts/nightly-ledger-summary.pg.test.sh`。
+T-10-2184・T-10-2187 は `TradeDecisionFailureReporterRegistrationTests`（と既存の `CompositionWiringGuardTests`）、T-10-2186 は `TradeDecisionFailureRecordTests`、T-10-2188 は通知の `TradeDecisionFailedIsNotNotifiedTests`、T-10-2185 は `scripts/nightly-ledger-summary.test.sh`・`scripts/nightly-ledger-summary.pg.test.sh`。
 
 **変異で確かめたこと**:
 
@@ -5046,6 +5049,9 @@ T-10-2184 は `TradeDecisionFailureReporterRegistrationTests`（と既存の `Co
 | §14 の窓の頭を `>` にする | T-10-2185（実 PostgreSQL） |
 | §14 を銘柄ごとに分ける | T-10-2185（実 PostgreSQL） |
 | §14 で型名の代わりにメッセージの欄を読む | T-10-2185（スタブ 2 件・実 PostgreSQL 2 件） |
+| 🔴 型名へ例外の `Data` の値を足す | T-10-2186（1 件。それまでの陰性の試験は `Data` を持たない例外だったので緑のままだった） |
+| 🔴 組み立ての発行の委譲を何もしない形にする | T-10-2187（1 件。それまでの試験は委譲を自分で組み直していたので緑のままだった） |
+| 🔴 通知サービスに最終の失敗のハンドラを足す | T-10-2188（2 件） |
 
 🔴 **本節が固定していない残余リスク**:
 - Wolverine の実際の再試行（2 秒・10 秒・30 秒の待ち）を通した試験は無い（待ちが 42 秒かかる）。配送回数の判定と、最大配送回数が失敗規則と一致することは別の試験（配送回数の理論試験と既存の配線の試験）が固定する。
