@@ -48,8 +48,18 @@ public sealed class ReportAutoGenerationOptions
     /// <summary>
     /// FR-06, #840, IADR-0352 決定 3: 依存先が一過性に落ちているとき、1 期間あたり生成を**見送ってよい回数**。
     /// 既定 5。0 は「見送らない」（本変更前と同じく、その巡回で縮退した報告書を出す）。負値は既定へ倒す。
+    /// #1156, IADR-0480 決定 3: 中核の入力（約定・建玉・手動売買の取り込み）が欠けているときは
+    /// <see cref="DependencyRetryCoreMaxAttempts"/> の上限を使う（本値は中核でない入力の上限）。0 は中核にも効く。
     /// </summary>
     public int DependencyRetryMaxAttempts { get; set; } = ReportDeferralSettings.DefaultMaxDeferrals;
+
+    /// <summary>
+    /// FR-06, #1156, IADR-0480 決定 3: <b>中核の入力（約定・建玉・手動売買の取り込み）</b>が一過性に欠けているとき、
+    /// 1 期間あたり生成を見送ってよい回数。既定 12（待ち時間は倍々で巡回間隔が上限＝既定で計 約 47.5 分）。
+    /// 負値は既定へ倒す。<see cref="DependencyRetryMaxAttempts"/> より小さければそちらに揃え、
+    /// <see cref="DependencyRetryMaxAttempts"/> が 0（見送らない）なら中核も見送らない。
+    /// </summary>
+    public int DependencyRetryCoreMaxAttempts { get; set; } = ReportDeferralSettings.DefaultCoreMaxDeferrals;
 
     /// <summary>
     /// FR-06, #840, IADR-0352 決定 3: 見送った後に次の巡回を早める待ち時間の基準（秒）。既定 30。
@@ -67,6 +77,9 @@ public sealed class ReportAutoGenerationOptions
         MaxDeferrals = DependencyRetryMaxAttempts >= 0
             ? DependencyRetryMaxAttempts
             : ReportDeferralSettings.DefaultMaxDeferrals,
+        CoreMaxDeferrals = DependencyRetryCoreMaxAttempts >= 0
+            ? DependencyRetryCoreMaxAttempts
+            : ReportDeferralSettings.DefaultCoreMaxDeferrals,
         BaseDelay = DependencyRetryBaseSeconds > 0
             ? TimeSpan.FromSeconds(DependencyRetryBaseSeconds)
             : ReportDeferralSettings.DefaultBaseDelay,

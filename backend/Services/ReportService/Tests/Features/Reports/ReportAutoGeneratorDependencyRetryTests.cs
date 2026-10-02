@@ -83,9 +83,13 @@ public class ReportAutoGeneratorDependencyRetryTests
     {
         public int Calls { get; private set; }
 
+        /// <summary>#1156: 最後に受け取った散文の文脈（未供給の一覧・建玉が渡っているかを見る）。</summary>
+        public ReportNarrativeContext? LastContext { get; private set; }
+
         public Task<string> DraftNarrativeAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default)
         {
             Calls++;
+            LastContext = context;
             return Task.FromResult("自動生成の散文");
         }
     }
@@ -174,9 +178,15 @@ public class ReportAutoGeneratorDependencyRetryTests
         /// <summary>true なら散文も本物の判定器（HttpReportNarrativeDrafter）を本物の鎖越しに使う。</summary>
         public bool UseRealDrafter { get; init; }
 
-        public Rig(int maxDeferrals = ReportDeferralSettings.DefaultMaxDeferrals)
+        // #1156, IADR-0480 決定 3: 中核の上限は既定で通常の上限と同じにする（既存の試験は建玉＝中核の欠落で
+        // 通常の上限を見ている）。中核の上限を見る試験だけが coreMaxDeferrals を与える。
+        public Rig(int maxDeferrals = ReportDeferralSettings.DefaultMaxDeferrals, int? coreMaxDeferrals = null)
         {
-            Deferrals = new ReportGenerationDeferralTracker(new ReportDeferralSettings { MaxDeferrals = maxDeferrals });
+            Deferrals = new ReportGenerationDeferralTracker(new ReportDeferralSettings
+            {
+                MaxDeferrals = maxDeferrals,
+                CoreMaxDeferrals = coreMaxDeferrals ?? maxDeferrals,
+            });
 
             // #839, IADR-0382: **方針の連鎖を張っておく。** 本ファイルの検証対象は「依存先が一過性に落ちている
             // ときの見送り」であり、上位方針・前期方針の欠落（別の未供給）を混ぜると
@@ -629,5 +639,141 @@ public class ReportAutoGeneratorDependencyRetryTests
 
         after.Deferred.Should().NotContain(d => d.PeriodKey == MonthlyKey);
         rig.Deferrals.DeferralsOf(MonthlyKey).Should().Be(0);
+    }
+
+    // ---- #1156, IADR-0480: 中核の入力の一過性の欠落は長く見送る（規則 11 のプローブ） ------------------
+
+    // T-10-2168, FR-06, FR-16, #1156, IADR-0480 決定 3: P1（増える側）。全 Pod の同時起動で Keycloak の準備が
+    // 通常の上限（5 回 ≒ 12.5 分）に間に合わない。建玉（中核）が欠けている間は通常の上限を超えても見送り続け、
+    // 回復すれば縮退しない報告書を出す。
+    [Fact]
+    public async Task 中核の入力が一過性に欠ける間は_通常の上限を超えても見送り続け_回復すれば縮退しない報告書が出る()
+    {
+        var rig = new Rig(maxDeferrals: 2, coreMaxDeferrals: 6);
+        rig.Tokens.Token = null;
+
+        var waits = new List<TimeSpan>();
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            var deferred = await rig.RunOnceAsync();
+            // 🔴 否定形: 通常の上限（2 回）を超えた 3〜6 回目も縮退した報告書を出さない。
+            deferred.Generated.Should().BeEmpty();
+            deferred.Degraded.Should().BeEmpty();
+            var deferral = deferred.Deferred.Should().ContainSingle().Subject;
+            deferral.Attempt.Should().Be(attempt);
+            deferral.MaxDeferrals.Should().Be(6);
+            deferral.WaitingFor.Should().Equal(ReportInput.OpenPositions);
+            waits.Add(deferral.RetryAfter);
+        }
+
+        // 待ち時間は従来どおり倍々で、巡回間隔（既定 300 秒）が上限。
+        waits.Should().Equal(
+            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(120),
+            TimeSpan.FromSeconds(240), TimeSpan.FromSeconds(300), TimeSpan.FromSeconds(300));
+
+        rig.Tokens.Token = "T"; // Keycloak が立ち上がった。
+        var result = await rig.RunOnceAsync();
+
+        var report = result.Generated.Should().ContainSingle().Subject;
+        report.UnsuppliedInputs.Should().BeEmpty();
+        result.Degraded.Should().BeEmpty();
+        report.Body.Should().Contain("AAPL");
+    }
+
+    // T-10-2169, #1156, IADR-0480 決定 3: P3（減る側・回復しない）。中核の上限に達したら縮退した報告書と警告を出す
+    // （依存先が戻らないまま報告書が永久に出ない、を作らない）。
+    [Fact]
+    public async Task 中核の上限に達したら_縮退した報告書を出して上限到達を返す()
+    {
+        var rig = new Rig(maxDeferrals: 1, coreMaxDeferrals: 3);
+        rig.Tokens.Token = null;
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+            (await rig.RunOnceAsync()).Deferred.Should().ContainSingle().Which.Attempt.Should().Be(attempt);
+
+        var result = await rig.RunOnceAsync();
+
+        result.Deferred.Should().BeEmpty();
+        var degradation = result.Degraded.Should().ContainSingle().Subject;
+        degradation.RetriesExhausted.Should().BeTrue();
+        degradation.WindowClosing.Should().BeFalse();
+        degradation.UnsuppliedInputs.Should().Equal(ReportInput.OpenPositions);
+        rig.Store.Get(DailyKey)!.Report.Body.Should().Contain("建玉を照会できませんでした");
+    }
+
+    // T-10-2170, #1156, IADR-0480 決定 3: P4（対照）。中核でない入力（散文の LLM）の一過性の失敗は、
+    // 中核の上限を広げても従来の上限で打ち切る（中核でない入力の待ちを延ばさない）。
+    [Fact]
+    public async Task 中核でない入力の一過性の欠落は_中核の上限ではなく通常の上限で打ち切る()
+    {
+        var rig = new Rig(maxDeferrals: 2, coreMaxDeferrals: 6) { UseRealDrafter = true };
+        rig.LlmTokens.Token = null;
+
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            var deferral = (await rig.RunOnceAsync()).Deferred.Should().ContainSingle().Subject;
+            deferral.WaitingFor.Should().Equal(ReportInput.Narrative);
+            deferral.MaxDeferrals.Should().Be(2);
+        }
+
+        var result = await rig.RunOnceAsync();
+
+        // 🔴 否定形: 3 回目は見送らない（中核の上限 6 を使っていない）。
+        result.Deferred.Should().BeEmpty();
+        var degradation = result.Degraded.Should().ContainSingle().Subject;
+        degradation.RetriesExhausted.Should().BeTrue();
+        degradation.UnsuppliedInputs.Should().Equal(ReportInput.Narrative);
+    }
+
+    // #1156, IADR-0480 決定 3: P2（減る側・窓の終端）を**中核の入力で**も固定する。中核の上限を広げても、
+    // 次の試行時刻に生成窓が閉じるなら待たずに縮退版を出す（#866 の規則は中核にも効く）。
+    // 2026-07-09（木）15:59:45 JST ＝ 06:59:45 UTC。次の試行（+30 秒）では日報の対象が 07-09 へ移り、
+    // daily-2026-07-08 は Due から消える。
+    [Fact]
+    public async Task 中核の入力の欠落でも_次の試行時刻に生成窓が閉じるなら見送らずに縮退版を出す()
+    {
+        var rig = new Rig(maxDeferrals: 5, coreMaxDeferrals: 12)
+        {
+            Now = new DateTimeOffset(2026, 7, 9, 6, 59, 45, TimeSpan.Zero),
+        };
+        rig.Tokens.Token = null;
+
+        var result = await rig.RunOnceAsync();
+
+        result.Deferred.Should().BeEmpty();
+        var degradation = result.Degraded.Should().ContainSingle().Subject;
+        degradation.PeriodKey.Should().Be(DailyKey);
+        degradation.WindowClosing.Should().BeTrue();
+        degradation.UnsuppliedInputs.Should().Equal(ReportInput.OpenPositions);
+    }
+
+    // T-10-2167, FR-06, FR-16, #1156, IADR-0480 決定 1: 生成器が未供給の入力と建玉を散文の文脈へ渡す
+    // （生成器 → 下書きの要求 → 散文の文脈が繋がっている。部品だけの試験では結線の漏れを捕まえられない）。
+    [Fact]
+    public async Task 縮退して生成するとき_散文の文脈へ未供給の入力を渡し_建玉は未供給のまま渡す()
+    {
+        var rig = new Rig(maxDeferrals: 0);
+        rig.Risk.Status = HttpStatusCode.Forbidden; // 恒常＝見送らずに縮退して生成する。
+
+        (await rig.RunOnceAsync()).Generated.Should().ContainSingle();
+
+        var context = rig.StubDrafter.LastContext!;
+        context.UnsuppliedInputs.Should().Equal(ReportInput.OpenPositions);
+        // 🔴 否定形: 照会できていない建玉を空列（＝建玉なし）として渡していない。
+        context.Positions.Should().BeNull();
+        ReportNarrativePromptBuilder.Build(context).Should().Contain("建玉（現在の台帳）: 未供給（取得できなかった）");
+    }
+
+    [Fact]
+    public async Task 供給できたときは_散文の文脈へ建玉を渡し_未供給の一覧は空()
+    {
+        var rig = new Rig();
+
+        (await rig.RunOnceAsync()).Generated.Should().ContainSingle();
+
+        var context = rig.StubDrafter.LastContext!;
+        context.UnsuppliedInputs.Should().BeEmpty();
+        context.Positions.Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
+        ReportNarrativePromptBuilder.Build(context).Should().Contain("建玉（現在の台帳）: 1 件（銘柄: AAPL）");
     }
 }
