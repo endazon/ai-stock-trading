@@ -62,7 +62,9 @@ c255bfeb7667d54763ee1332b1785e5b2c2d4a0c:.github/workflows/helm.yml:discord-clie
 70faeadafc5dee0552d0b6d2640ebaa050cebed4:backend/Services/OrderExecutionService/Tests/Infrastructure/ExternalServices/OrderFeeProbeEndToEndTests.cs:generic-api-key:22
 
 # #1111（2026-10-02 追記）: 最終の失敗の記録の試験（T-10-2187）が、例外の本文に**見張り用の偽値**
-# （`api_key=sk-live-SECRET-2187`。実在の鍵ではない）を書いた行を generic-api-key ルールが検知した。次のコミットで
+# （鍵の名前と値の代入の形をした固定文字列。実在の鍵ではない）を書いた行を generic-api-key ルールが検知した。次のコミットで
 # 代入の形を持たない低エントロピーの文言へ改めたが、PR の Secret scan は PR 上の全コミットを走査し、履歴は書き換えない
 # 方針のため当該コミットを fingerprint で無効化する（squash 後のコミットにこの値は含まれない）。
 14cc91031112de27e367225c49de45eb2e36ebef:backend/Services/TradeDecisionService/Tests/TradeDecisionFailureReporterRegistrationTests.cs:generic-api-key:49
+# 上の説明の初版（c694d753）がその偽値をコメントへ引用したため同じルールが再び検知した。引用は次のコミットで除いた。
+c694d7531b8765751680810a07c054ecb310d645:.gitleaksignore:generic-api-key:65
