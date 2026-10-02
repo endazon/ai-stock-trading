@@ -213,6 +213,17 @@ public sealed class BorrowFeeAccruedAuditHandler(IAuditEventStore store, IClock 
     }
 }
 
+// FR-10, FR-11, UC-06, #1000, IADR-0482 決定4: 実弾口座のヘッダでの読み取り専用の照会を中央監査台帳へ記録する。
+// 本系が実弾のヘッダを OpenD へ送ったのは**この照会だけ**であることを、台帳の上で数えられるようにする。
+public sealed class RealAccountReadOnlyQueriedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(RealAccountReadOnlyQueried message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // FR-10, FR-11, #465, ADR-0027 決定4, IADR-0183: 借株料を**計上できなかった日**を中央監査台帳へ記録する。
 // 🔴 **0 円の計上として残さない**——「費用が発生しなかった」と「取得できなかった」は別の事実である。
 public sealed class BorrowFeeAccrualUnavailableAuditHandler(IAuditEventStore store, IClock clock)

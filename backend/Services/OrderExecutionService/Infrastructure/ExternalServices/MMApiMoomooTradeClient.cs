@@ -812,8 +812,9 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
 
     // FR-10, UC-06, ADR-0016 決定3（2026-08-06 改訂）, #967, IADR-0425 決定1・2: 借株可否（`MarginRatioInfo.IsShortPermit`）の照会。
     //
-    // 🔴 **ヘッダは発注と同じ（SIMULATE・発注に使う口座）である。** 実弾ヘッダ（TrdEnv_Real）の照会経路は作らない
-    // （IADR-0425 決定2。実弾の閂と IADR-0111 の環境 1 軸に触れる別の判断）。moomoo はこの照会を SIMULATE 口座では
+    // 🔴 **ヘッダは発注と同じ（SIMULATE・発注に使う口座）である。** 本型（発注の面を持つ）には実弾ヘッダ（TrdEnv_Real）の照会経路を作らない
+    // （IADR-0425 決定2。実弾の閂と IADR-0111 の環境 1 軸に触れる別の判断）。［2026-10-02 追記 / #1000］実弾口座のヘッダでの読み取り専用の照会は
+    // 別の型（RealReadOnly/MMApiRealMarginQueryClient・既定無効）が持ち、本型からは到達しない（IADR-0482 決定2）。moomoo はこの照会を SIMULATE 口座では
     // `Get Margin Trading Data does not support Stocks in US Market` で失敗させる（IADR-0144 決定3 の実測。本件では実 OpenD で
     // 再確認していない）ため、実測どおりなら EnsureSucceeded が例外を投げる——呼び出し側（ShortPermitQueryService）はそれを「分からない」へ倒す。
     // `ShortFeeRate` は読まない（単位が未確定。IADR-0158 決定3）。契約は IShortPermitSource。
@@ -983,26 +984,16 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     // FR-11, #1135, IADR-0473: 伏せ方の本体（末尾 2 桁以外を伏せる）。ログの引数にはこちらを使う。
     // 名前に "Account" を含むメソッドの戻り値は、伏せた後の値でも CodeQL（cs/cleartext-storage-of-sensitive-information）が
     // 「機密を平文で保存」と判定する（名前による推定）。値の意味は MaskAccountId と同一で、全桁は出ない。
-    internal static string TailOnly(ulong value)
-    {
-        var digits = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        return digits.Length <= 2 ? "****" : "****" + digits[^2..];
-    }
+    // #1000, IADR-0482 決定5: 本体は MoomooAccountIdRedaction（実弾の読み取り専用の照会と共有する。伏せ方は不変）。
+    internal static string TailOnly(ulong value) => MoomooAccountIdRedaction.TailOnly(value);
 
     // #1086（AI レビュー指摘）: 検証口の出力の最終段。注文一覧の照会の失敗を含め、どの経路で出る文字列でも口座 ID の全桁を伏せる。
     // 接続前（口座未確定＝0）は素通し。FR-11, #1148, IADR-0476: EnsureSucceeded の例外文は作る時点で既に伏せてある（ここは二重の守り）。
     string IProbeOutputRedactor.Redact(string text) => RedactAccountId(text, _simAccId) ?? text;
 
     // 文中に口座 ID の全桁が現れたら伏せた形へ置き換える（OpenD の retMsg を出力へ流すため）。
-    public static string? RedactAccountId(string? text, ulong accountId)
-    {
-        if (string.IsNullOrEmpty(text) || accountId == 0)
-            return text;
-        return text.Replace(
-            accountId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            MaskAccountId(accountId),
-            StringComparison.Ordinal);
-    }
+    public static string? RedactAccountId(string? text, ulong accountId) =>
+        MoomooAccountIdRedaction.RedactAccountId(text, accountId);
 
     // MoomooMarket → QotMarket（銘柄の市場）。照会に使う Security の市場。
     private static int MapSecurityMarket(MoomooMarket market) => market switch
@@ -1121,19 +1112,9 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     //   注文 ID・日付など他の数字は残す（拒否理由として読めるように）。
     // - 口座一覧をまだ読めていない（接続時の口座一覧の照会の失敗）なら、伏せる値が分からないため検証口と同じく
     //   6 桁以上の数字の並びを伏せる（OrderFeeProbeCommand.MaskLongDigitRuns。2 通り目の伏せ方を作らない）。
-    internal static string RedactRetMsg(string? retMsg, IReadOnlyList<ulong> knownAccountIds)
-    {
-        ArgumentNullException.ThrowIfNull(knownAccountIds);
-        if (string.IsNullOrEmpty(retMsg))
-            return retMsg ?? string.Empty;
-        if (knownAccountIds.Count == 0)
-            return OrderFeeProbeCommand.MaskLongDigitRuns(retMsg);
-        var text = retMsg;
-        // 大きい順＝桁の多い順。長い ID の中に短い ID が部分一致しても、先に長い方を伏せる（長い方の頭を残さない）。
-        foreach (var accountId in knownAccountIds.OrderByDescending(id => id))
-            text = RedactAccountId(text, accountId)!;
-        return text;
-    }
+    // #1000, IADR-0482 決定5: 本体は MoomooAccountIdRedaction（実弾の読み取り専用の照会と共有する。伏せ方は不変）。
+    internal static string RedactRetMsg(string? retMsg, IReadOnlyList<ulong> knownAccountIds) =>
+        MoomooAccountIdRedaction.RedactRetMsg(retMsg, knownAccountIds);
 
     // ---- MMSPI_Conn ----
 

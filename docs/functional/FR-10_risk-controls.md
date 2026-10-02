@@ -9,8 +9,8 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0049, ADR-0050]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471, IADR-0481]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471, IADR-0481, IADR-0482]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query]
 issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1120, #1121, #1136, #1130, #1048, planning#292, planning#644, planning#646, planning#703, planning#704]
 -->
 
@@ -296,7 +296,34 @@ locate 失敗、後者は**期間の経過**で解除される禁止状態であ
   エクスポージャが分かったときだけ空売り文脈を組む（下の「空売り文脈の供給」）。ところが
   **この照会は SIMULATE 口座では失敗する**（実弾口座のヘッダでのみ成功する）ため、借株可否は「分からない」＝文脈は組まれず
   `BorrowUnavailable` で拒否される。**借株が許可されても、料率が単位未確定で供給されない限り `BorrowUnavailable` は立ち続ける。**
-  実弾ヘッダでの照会を足すかは裁定待ち（#1000）——`blocked-tasks.md`「実装済みだが発動しない機能」を参照。
+  実弾ヘッダでの照会は裁定（#1000・2026-10-02「読み取り専用で足す」）により**既定無効の設定として入った**（下の「実弾口座のヘッダでの読み取り専用の照会」）。
+  既定のままでは上のとおり拒否が続く——`blocked-tasks.md`「実装済みだが発動しない機能」を参照。
+
+#### 実弾口座のヘッダでの読み取り専用の照会（既定は無効）
+
+借株可否の照会は SIMULATE 口座では成功しない。そこで、**借株可否と維持率の束の照会に限り**、実弾口座のヘッダで照会する
+照会専用の環境を持つ。**発注は SIMULATE のまま変わらず、実弾の閂（起動時の拒否）も変わらない。**
+
+| 項目 | 振る舞い |
+| --- | --- |
+| 既定 | **無効**。発注執行の `Broker:Moomoo:RealMarginQuery:Enabled` が未設定・空・`false` なら、照会は従来どおり発注と同じ SIMULATE 口座のヘッダで送る（失敗して「分からない」＝拒否）。`true` だけが有効、それ以外の値は起動時に停止する。moomoo 以外の構成で `true` なら起動時に停止する |
+| 口座 | 口座一覧から**実弾 × 信用 × 米国株の取扱あり**の口座を 1 つだけ選ぶ。0 件・2 件以上なら照会を送らない（「分からない」） |
+| 照会 | `TrdGetMarginRatio` だけ（借株可否と維持率の束を 1 つの応答で返す）。取引の解錠は送らない。答え・キャッシュ・予算（30 秒あたり 9 回）・相乗りは既定と同じ |
+| 発注経路との切り離し | 照会のクライアントは照会ポートとしてだけ結線し、発注・訂正・取消の型を実装しない。接続は口座一覧と照会だけの専用の口で、発注に使う接続を共有しない。発注の機能のソースから照会側を参照しない（型・結線・ソース走査の 3 つの試験で固定） |
+| 監査 | 照会を送るたびに、成否に関わらず「実弾口座（Real）のヘッダでの読み取り専用の照会」を 1 件、中央の監査台帳へ残す（照会の種類・銘柄・結果・時刻）。**口座 ID は末尾 2 桁以外を伏せた形だけ**を残す。**監査に残せなければ答えを使わない**（「分からない」＝拒否） |
+| 空売りへの効果 | 借株可否が答えられ、文脈が組まれて 1 銘柄 10% / 空売り比率 50%・維持率・株価下限・逆指値必須が観測した値の上で評価される。**ただし料率が単位未確定で供給されないため `BorrowUnavailable` は立ち続け、空売りは今も通らない** |
+
+有効にするにはリスク管理の照会先（`OrderExecution__BaseUrl`）の結線も要る（既定は未結線）。実 OpenD での照会は未検証である。
+
+**残余リスク**（有効にしたときの限界）:
+
+- **「監査に残せなければ答えを使わない」が捕まえるのは、発注執行のプロセス内での監査の発行の失敗だけである。** 発注執行は送信の永続化（送信箱）を持たないため、
+  発行はプロセス内の送信待ちへ渡した時点で成功になる。その後のメッセージブローカへの送信の失敗（接続断・送信待ちのままの終了）と、監査サービス側の台帳への書き込みの失敗は、
+  照会の答えが使われた後に起き、照会側には届かない。したがって「照会を送ったのに監査台帳に行が無い」は起こり得る。
+- **「取引の解錠を送らない」による OpenD 側の守りは OpenD の運用に依存する。** moomoo の取引の解錠は接続ごとではなく OpenD（ログイン中のユーザー）ごとに効くとされ（実機未検証）、
+  運用者が OpenD の画面や別のクライアントから実弾の取引を解錠すれば、この守りは成り立たない。そのときの守りは本系の側（型・結線・ソース走査の検査と、実弾の閂）だけになる。
+  照会に使う OpenD では実弾の取引を解錠しない運用とする。
+- 発注経路との切り離しのソース走査は、文字列リテラル・名前でメンバへ到達するリフレクションの代表的な形まで見るが、網羅ではない（実行時に組み立てた名前・動的な呼び出しは見えない）。
 
 #### 空売り文脈の供給
 

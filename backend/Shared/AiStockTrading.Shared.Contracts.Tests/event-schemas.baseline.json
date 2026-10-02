@@ -388,6 +388,15 @@
     "StopLossPrice": "Decimal?",
     "Symbol": "String"
   },
+  "RealAccountReadOnlyQueried": {
+    "Market": "Market",
+    "MaskedTail": "String",
+    "Operation": "String",
+    "Outcome": "String",
+    "QueriedAt": "DateTimeOffset",
+    "Symbol": "String",
+    "TradingEnvironment": "String"
+  },
   "ReportConfirmed": {
     "Actor": "String",
     "AssumptionsVersion": "Int32",

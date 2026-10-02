@@ -821,6 +821,25 @@ public class AuditEntryFactoryTests
         entry.OccurredAt.Should().Be(e.ObservedAt);
     }
 
+    // T-10-2066, FR-10, FR-11, #1000, IADR-0482 決定4: 実弾口座のヘッダでの読み取り専用の照会は、要約だけで
+    // 「実弾（Real）のヘッダ」「読み取り専用」「発注しない」と読め、口座は伏せた形だけが残る（全桁は運ばれない）。
+    [Fact]
+    public void RealAccountReadOnlyQueried_は実弾ヘッダの読み取り専用照会と書き口座は伏せた形だけ残す()
+    {
+        var e = new RealAccountReadOnlyQueried(
+            RealAccountReadOnlyQueried.RealTradingEnvironment, "GetMarginRatio", "****08", "AAPL", Market.UnitedStates,
+            RealAccountReadOnlyQueryOutcomes.NotPermitted, RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.EventType.Should().Be("RealAccountReadOnlyQueried");
+        entry.Symbol.Should().Be("AAPL");
+        entry.Summary.Should().Contain("実弾口座（Real）のヘッダ").And.Contain("読み取り専用").And.Contain("GetMarginRatio")
+            .And.Contain("****08").And.Contain("not-permitted").And.Contain("発注はしない");
+        entry.Detail.Should().Contain("\"TradingEnvironment\":\"Real\"").And.Contain("****08");
+        entry.OccurredAt.Should().Be(e.QueriedAt);
+    }
+
     // --- FR-10, FR-17, FR-11, #381, ADR-0022 決定2・決定5, IADR-0196: 為替の情報源の劣化 ---
 
     private static readonly DateTimeOffset FxT0 = new(2026, 8, 15, 3, 0, 0, TimeSpan.Zero);

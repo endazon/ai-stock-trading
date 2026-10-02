@@ -109,7 +109,8 @@ services:
       - name: Fx__Fred__ApiKey
         secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
       # FR-10, #967, IADR-0425: 借株可否の照会先（発注執行）。値は本番既定と同一＝空（未結線＝借株可否は常に「分からない」＝
-      # 新規の売り建ては BorrowUnavailable で拒否）。helm はリストを置換するため写す。SIMULATE では結線しても結果は変わらない（#1000）。
+      # 新規の売り建ては BorrowUnavailable で拒否）。helm はリストを置換するため写す。SIMULATE では結線しても結果は変わらない
+      # （発注執行の実弾口座の読み取り専用の照会〔Broker__Moomoo__RealMarginQuery__Enabled・既定無効。#1000 / IADR-0482〕を有効にしたときだけ変わる）。
       - { name: OrderExecution__BaseUrl, value: "" }
       # FR-20, FR-11, UC-06, #868, IADR-0383: 段階遷移の onBehalfOf を信じてよいクライアント。
       # 値は本番既定と同一（helm はリストを置換するため、写し忘れると env が消える）。

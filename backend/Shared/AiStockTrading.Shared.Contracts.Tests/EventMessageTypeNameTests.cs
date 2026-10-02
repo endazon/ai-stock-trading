@@ -90,6 +90,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(PositionDriftAdopted), "AiStockTrading.Shared.Contracts.Events.PositionDriftAdopted")]
         [InlineData(typeof(PositionReconciliationDrift), "AiStockTrading.Shared.Contracts.Events.PositionReconciliationDrift")]
         [InlineData(typeof(PriceMovementDetected), "AiStockTrading.Shared.Contracts.Events.PriceMovementDetected")]
+        // FR-10, FR-11, #1000, IADR-0482 決定4: 実弾口座のヘッダでの読み取り専用の照会（発注執行 → 監査台帳）。
+        [InlineData(typeof(RealAccountReadOnlyQueried), "AiStockTrading.Shared.Contracts.Events.RealAccountReadOnlyQueried")]
         [InlineData(typeof(ReportConfirmed), "AiStockTrading.Shared.Contracts.Events.ReportConfirmed")]
         [InlineData(typeof(ReportDraftPresented), "AiStockTrading.Shared.Contracts.Events.ReportDraftPresented")]
         // T-10-1507, FR-08, FR-11, #1028, IADR-0436 決定 4: 確定報告書の KB への入れ直し（報告書 → 監査台帳）。

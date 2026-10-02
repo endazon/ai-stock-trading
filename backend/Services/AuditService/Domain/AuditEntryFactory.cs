@@ -224,6 +224,16 @@ public static class AuditEntryFactory
             + $"—— **0 円ではありません（費用は発生しています）**: {e.Reason}"),
         AuditSerialization.Serialize(e), e.ObservedAt, recordedAt);
 
+    // FR-10, FR-11, UC-06, ADR-0016 決定3（2026-08-06 追記）, #1000, IADR-0482 決定4: 実弾口座のヘッダでの読み取り専用の照会。
+    // 注文相関を持たないため "real-readonly-query" の決定的 GUID を相関にする（実弾ヘッダの照会どうしを 1 本の相関で辿れる）。
+    // **要約に「実弾口座のヘッダ」「読み取り専用」を明記する**——本系が実弾のヘッダを OpenD へ送った事実は、要約だけで識別できる必要がある。
+    // 口座は伏せた形（末尾 2 桁）だけを載せる（イベントが全桁を運ばない）。
+    public static AuditEntry From(RealAccountReadOnlyQueried e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(RealAccountReadOnlyQueried), AuditCorrelation.From("real-readonly-query"), e.Symbol,
+        Truncate($"実弾口座（{e.TradingEnvironment}）のヘッダで読み取り専用の照会 {e.Operation} {e.Symbol}（{e.Market}）"
+            + $" 口座 {e.MaskedTail} → {e.Outcome}（発注はしない）"),
+        AuditSerialization.Serialize(e), e.QueriedAt, recordedAt);
+
     // FR-20, FR-11, #166, IADR-0083: 撤退基準到達（自動安全側の発火）。段階遷移と同じ "stage-gate" 相関で束ね、
     // 監査照会で撤退と遷移をまとめて辿れるようにする（段階の実降格は提案に留まるため StageTransitioned は伴わない）。
     public static AuditEntry From(WithdrawalTriggered e, Guid id, DateTimeOffset recordedAt) => new(
