@@ -12,6 +12,8 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
     // 送信要求の Authorization ヘッダ（s2s トークン付与の検証用。未付与は null）。
     public string? LastAuthorization { get; private set; }
     public int CallCount { get; private set; }
+    // 送信された本文の全件（同じハンドラを複数の主体が通るときに、どれか 1 件でも混ざっていないかを見る。#1078）。
+    public List<string> RequestBodies { get; } = [];
 
     private StubHttpMessageHandler(Func<HttpRequestMessage, string, HttpResponseMessage> responder)
         => _responder = responder;
@@ -40,6 +42,8 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
         LastRequestBody = request.Content is null
             ? null
             : await request.Content.ReadAsStringAsync(cancellationToken);
+        if (LastRequestBody is not null)
+            RequestBodies.Add(LastRequestBody);
         return _responder(request, LastRequestBody ?? string.Empty);
     }
 }

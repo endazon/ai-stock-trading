@@ -67,6 +67,11 @@
 {{- if or (index $baseUrls "KnowledgeBase__Documents__BaseUrl") (index $baseUrls "KnowledgeBase__Search__BaseUrl") -}}
 {{- $_ := set $envOverrides "KnowledgeBase__Auth__Authority" $g.authAuthority -}}
 {{- end -}}
+{{- /* #1078, IADR-0485: 検索の読み手（KnowledgeBase__SearchAuth__*）の Authority も同じ源から導出する（検索を配線したときだけ）。
+       env を持たないサービスでは上書きの対象が無いので何も描画されない（env は追加しない）。 */ -}}
+{{- if index $baseUrls "KnowledgeBase__Search__BaseUrl" -}}
+{{- $_ := set $envOverrides "KnowledgeBase__SearchAuth__Authority" $g.authAuthority -}}
+{{- end -}}
 {{- if index $baseUrls "LlmGateway__BaseUrl" -}}
 {{- $_ := set $envOverrides "LlmGateway__Auth__Authority" $g.authAuthority -}}
 {{- end -}}

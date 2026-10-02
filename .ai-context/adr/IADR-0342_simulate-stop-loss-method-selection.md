@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-11, FR-12, UC-02, UC-06, SC-02, SC-03, ADR-0003, ADR-0016, ADR-0040, IADR-0016, IADR-0111, IADR-0134, IADR-0141, IADR-0161, IADR-0210, IADR-0211, IADR-0344, IADR-0413]
 author: claude (Claude Code)
 created: 2026-09-17
-updated: 2026-09-26
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1・決定2・決定3・決定6)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 の 3 文〔口座種別の軸〕)
@@ -56,6 +56,11 @@ plan_refs:
 >   変わらない」は S2 を落としていたので正し、S0 と S2 の併存を S1 の表の行として書いた（差し引けない・今は起きない・運用上の回避）。
 >   現状の挙動（S2 の数量が S0 の建玉残に入る）は**既知の制約として**試験で固定した。直し方（S2 にも記録を持たせる／併存する新規建てを
 >   見送る／建玉がある間の手法の切り替えを拒否する 等）は設計判断であり、本 IADR では決めない（利用者への問いとして PR に残した）。
+
+> **［2026-10-02 追記 / #1048］「同一銘柄の S0・S2 併存時のガード」の行き先（利用者裁定 2026-10-02・案 b）。**
+> 差し引きの規則は変えず、**併存を作らない**ことにした——同じ銘柄・同じ向きに別の手法の有効な保護記録がある新規建ては見送り
+> （`StopLossMethodConflict`）、moomoo SIMULATE の S0・S3 の新規建ては記録の無い建玉（S2）がある銘柄で見送る（`UnattributedPosition`）。
+> 決済は止めない。[IADR-0481](IADR-0481_same-symbol-method-coexistence-fill-tracking-abandonment-provider-alignment.md) 決定 1・2。
 
 ## コンテキストと課題
 

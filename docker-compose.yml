@@ -243,7 +243,7 @@ services:
       # Documents:BaseUrl を platform DocumentService（POST /documents）へ向けると実 KB 保存へ切り替わる（KnowledgeBaseWriterSink）。
       KnowledgeBase__Documents__BaseUrl: ${KNOWLEDGEBASE_DOCUMENTS_BASEURL:-}
       KnowledgeBase__Search__BaseUrl: ${KNOWLEDGEBASE_SEARCH_BASEURL:-}
-      # FR-08, #18, IADR-0093: KB 書き込み/検索の s2s は上の ServiceAuth__*（AST レルム）ではなく、
+      # FR-08, #18, IADR-0093: KB 書き込みの s2s は上の ServiceAuth__*（AST レルム）ではなく、
       # MSP `microservices-platform` レルムの専用クライアント（ai-stock-trading-kb-writer／platform-operator）で認証する。
       # AST レルムのトークンは issuer 不一致で 401・role 不一致で 403 になるため（IADR-0093）。空=トークン無し→401→未保存へ fail-safe。
       # 実運用は MSP realm へ ai-stock-trading-kb-writer を反映（MSP 側 PR）した上で ClientSecret を投入する。Authority は MSP レルムを指す。
@@ -456,11 +456,13 @@ services:
       # FR-08, IADR-0069/0072: RAG 取得（収集情報・判断根拠を KB から本判断プロンプトへ注入）。
       # fail-safe: 空=NoOp 検索（参考情報なし＝現行動作）。設定時のみ platform RetrievalService（POST /search）へ s2s 照会する。
       KnowledgeBase__Search__BaseUrl: ${KNOWLEDGEBASE_SEARCH_BASEURL:-}
-      # FR-08, #18, IADR-0093: RAG 検索の s2s も MSP レルムの専用クライアントで認証する（AST レルムの ServiceAuth ではない）。
-      # 空=トークン無し（現行の NoOp 検索/参考情報なしを保持）。Authority は MSP レルムを指す。
-      KnowledgeBase__Auth__Authority: ${KNOWLEDGEBASE_AUTH_AUTHORITY:-}
-      KnowledgeBase__Auth__ClientId: ${KNOWLEDGEBASE_AUTH_CLIENTID:-}
-      KnowledgeBase__Auth__ClientSecret: ${KNOWLEDGEBASE_AUTH_CLIENTSECRET:-}
+      # FR-08, #18, IADR-0093 → #1078, IADR-0485: RAG 検索の s2s は MSP レルムの**読み手**（ai-stock-trading-kb-reader。
+      # ロールなし・project=ai-stock-trading の文書だけを読める）で認証する。書き手（KnowledgeBase__Auth__*）は渡さない
+      # （検索は KnowledgeBase:SearchAuth だけを読み、書き手へフォールバックしない）。
+      # 空=トークン無し→401→空結果（参考情報なしで判断を続ける）。Authority は MSP レルムを指す。
+      KnowledgeBase__SearchAuth__Authority: ${KNOWLEDGEBASE_SEARCHAUTH_AUTHORITY:-}
+      KnowledgeBase__SearchAuth__ClientId: ${KNOWLEDGEBASE_SEARCHAUTH_CLIENTID:-}
+      KnowledgeBase__SearchAuth__ClientSecret: ${KNOWLEDGEBASE_SEARCHAUTH_CLIENTSECRET:-}
       # 取得件数（TopK）。空・不正・非正値=既定 5。
       Retrieval__TopK: ${RETRIEVAL_TOPK:-}
     depends_on:

@@ -43,7 +43,8 @@
 #     未設定だと冗長化が失われるだけで、日銀単独で換算できる。レートが解決できないときに見送られるのは
 #     非基準通貨＝JPY 建て銘柄であり、基準通貨の米国株は定義上レート 1 で無影響〔#364 で入れ替わった〕）/
 #   DISCORD_WEBHOOK_URL / DISCORD_BOT_TOKEN /
-#   DISCORD_BOT_KILLSWITCH_PHRASE / KB_AUTH_CLIENTSECRET（KB 書き込みの s2s・IADR-0093）。
+#   DISCORD_BOT_KILLSWITCH_PHRASE / KB_AUTH_CLIENTSECRET（KB 書き込みの s2s・IADR-0093）/
+#   KB_READER_AUTH_CLIENTSECRET（KB 検索の読み手の s2s・#1078 / IADR-0485）。
 #   ESO 所有の経路で export されていたら、変数名だけを挙げて「使わない」と警告する（値は表示しない）。
 # #279, IADR-0114: SEC_EDGAR_USER_AGENT は**機密ではない**が、SEC 規約が求める**連絡先（実在のメール
 #   アドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本 Secret 経由で与える
@@ -67,6 +68,8 @@
 # #18, IADR-0093: KB 書き込みの s2s は MSP レルムの client ai-stock-trading-kb-writer（KB_AUTH_CLIENTID で上書き可）。
 # #734, IADR-0323: LLM ゲートウェイ呼び出しの s2s は MSP レルムの client ai-stock-trading-llm-caller
 #   （LLM_AUTH_CLIENTID で上書き可・秘密は LLM_AUTH_CLIENTSECRET）。KB 書き込みとは別主体（MSP#1368）。
+# #1078, IADR-0485（MSP#1696 の裁定 案 B）: KB 検索（取引判断の RAG）の s2s は MSP レルムの client ai-stock-trading-kb-reader
+#   （KB_READER_AUTH_CLIENTID で上書き可・秘密は KB_READER_AUTH_CLIENTSECRET）。書き手とは別主体で、ロールを持たず書けない。
 # LLM プロバイダ鍵は AST では扱わない（鍵は MSP の LlmGateway 側が保持する。ADR-0010 / IADR-0061 決定6）。
 # #263, IADR-0109: ast-secrets は**再作成しない**。env 未設定のキーには触れず（投入済みの値を保持）、
 # 明示的な空指定が既存の非空値を消す場合だけキー名を列挙して中断する（--force-empty-secrets で許可）。
@@ -131,7 +134,8 @@ AST_ESO_TARGET_SECRETS=("$SECRET_NAME" moomoo-credentials moomoo-rsa)
 
 # ast-secrets のキー定義: <Secret キー>|<環境変数>|<既定値>。
 # 既定値は「env 未設定 **かつ** 既存 Secret にも値が無い」場合にだけ使う（＝新規環境の後方互換）。
-# 非空の既定を持つ 5 キーは dev 既定（realm-export.json と一致）。
+# 非空の既定を持つ 7 キーは dev 既定（svc / owner は realm-export.json、kb-writer / kb-reader / llm-caller の ID は MSP の realm 宣言と一致）。
+# ［2026-10-02 / #1078］従前の「5 キー」は llm-caller を足した時点（#734）から数え違っていた（当時 6）。読み手を足して 7。
 AST_SECRET_KEYS=(
   "finnhub-api-key|FINNHUB_API_KEY|"
   "marketdata-finnhub-api-key|MARKETDATA_FINNHUB_API_KEY|"
@@ -145,6 +149,8 @@ AST_SECRET_KEYS=(
   "service-auth-client-secret|SERVICEAUTH_CLIENTSECRET|dev-only-service-secret"
   "kb-auth-client-id|KB_AUTH_CLIENTID|ai-stock-trading-kb-writer"
   "kb-auth-client-secret|KB_AUTH_CLIENTSECRET|"
+  "kb-reader-auth-client-id|KB_READER_AUTH_CLIENTID|ai-stock-trading-kb-reader"
+  "kb-reader-auth-client-secret|KB_READER_AUTH_CLIENTSECRET|"
   "llm-auth-client-id|LLM_AUTH_CLIENTID|ai-stock-trading-llm-caller"
   "llm-auth-client-secret|LLM_AUTH_CLIENTSECRET|"
   "discord-owner-auth-client-id|DISCORD_OWNERAUTH_CLIENTID|ai-stock-trading-owner"

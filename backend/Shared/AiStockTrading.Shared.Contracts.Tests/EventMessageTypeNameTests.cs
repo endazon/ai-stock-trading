@@ -56,6 +56,7 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(OrderApproved), "AiStockTrading.Shared.Contracts.Events.OrderApproved")]
         [InlineData(typeof(OrderCancelled), "AiStockTrading.Shared.Contracts.Events.OrderCancelled")]
         [InlineData(typeof(OrderExecuted), "AiStockTrading.Shared.Contracts.Events.OrderExecuted")]
+        [InlineData(typeof(OrderFillTrackingAbandoned), "AiStockTrading.Shared.Contracts.Events.OrderFillTrackingAbandoned")]
         [InlineData(typeof(OrderModified), "AiStockTrading.Shared.Contracts.Events.OrderModified")]
         [InlineData(typeof(OrderRejected), "AiStockTrading.Shared.Contracts.Events.OrderRejected")]
         // FR-05, FR-10, #331, IADR-0210/0211: 発注見送り・保護逆指値（一本化）の 3 イベント。

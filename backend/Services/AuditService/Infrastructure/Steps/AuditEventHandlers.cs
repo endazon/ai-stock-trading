@@ -88,6 +88,18 @@ public sealed class OrderExecutedAuditHandler(IAuditEventStore store, IClock clo
     }
 }
 
+// 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 約定追跡の打ち切りを中央監査台帳へ記録する。冪等キーは envelope.Id ではなく
+// OrderId と追跡の起点から決定的に導く（発注執行は発行の後に印を書くので、同じ打ち切りが再発行され得る）。
+public sealed class OrderFillTrackingAbandonedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(OrderFillTrackingAbandoned message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        store.Append(AuditEntryFactory.From(
+            message, AuditEntryFactory.FillTrackingAbandonedIdFor(message.OrderId, message.TrackedFrom), clock.UtcNow));
+    }
+}
+
 // FR-05, FR-19, #154, IADR-0067: 注文の訂正（注文履歴テレメトリ）を監査台帳へ記録する（FR-11: 全イベントの時系列記録）。
 public sealed class OrderModifiedAuditHandler(IAuditEventStore store, IClock clock)
 {

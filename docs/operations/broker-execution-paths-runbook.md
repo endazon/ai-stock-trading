@@ -3,15 +3,15 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-10-01
+updated: 2026-10-02
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id]
-issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, planning#676]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking]
+issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, planning#676]
 -->
 
 
@@ -248,6 +248,8 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 3. 通知が何時間も続くときは、発注執行の注文照会（OpenD）が戻っていないか、エントリーの発注の記録が欠けているか、
    発注の記録が約定追跡の追跡上限（24 時間）を過ぎても終わっていない（障害中に約定を取りこぼし、証券会社の当日一覧からも消えた）。
    最後の場合は**自動では解けない**——人が確かめるまで逆指値は据え置かれる。
+   追跡上限を過ぎて打ち切った注文は、監査台帳に「約定追跡を打ち切り」（種別 `OrderFillTrackingAbandoned`。最後の状態・約定数・追跡の起点）として
+   通知の `EntryDecisionId` と同じ相関で残り、発注執行のログにも「約定追跡を打ち切りました」の警告が 1 行出る。
    order-execution DB で記録を確かめる:
 
    ```sql

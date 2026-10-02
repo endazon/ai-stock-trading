@@ -143,6 +143,105 @@ public class OrderFillPollingServiceTests
         await host.StopAsync();
     }
 
+    // T-10-2115, FR-10, FR-11, #1048（Q3）, IADR-0481 決定3: 期限を過ぎて非終端のまま打ち切った注文は、本番と同じ配線の常駐から
+    // OrderFillTrackingAbandoned として**発行し、その後に**打ち切りの印を書く（次の巡回では発行しない）。
+    [Fact]
+    public async Task T_10_2115_追跡の打ち切りを発行してから印を書く()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var decisionId = Guid.NewGuid();
+        var trackedFrom = Now.AddHours(-25);
+        store.Save(Dispatched(decisionId) with { ExecutedAt = trackedFrom });
+        var broker = new SequenceBroker((BrokerOrder?)null);
+        using var host = await BuildHostAsync(broker, store);
+        var service = BuildService(host, new FillPollingOptions());
+
+        Func<IMessageContext, Task> poll = async _ => await service.PollOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
+
+        session.Sent.MessagesOf<OrderFillTrackingAbandoned>().Should().ContainSingle(m =>
+            m.DecisionId == decisionId && m.OrderId == "ORD-1" && m.TrackedFrom == trackedFrom
+            && m.LastStatus == OrderStatus.Accepted && m.Provider == BrokerProvider.MoomooSimulate);
+        store.FindTrackingExpired(Now.AddHours(-24), 10).Should().BeEmpty("発行の後に印を書いた");
+
+        var again = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
+        again.Sent.MessagesOf<OrderFillTrackingAbandoned>().Should().BeEmpty("同じ打ち切りは 1 回だけ発行する");
+
+        await host.StopAsync();
+    }
+
+    // T-10-2121, FR-10, FR-11, #1048（Q3・独立監査）, IADR-0481 決定3: 打ち切りの**発行に失敗したら印を書かない**。
+    // 印が残らない記録は次の巡回でも洗い出され、バスが戻れば発行され、その後に印が書かれる。
+    // T-10-2115 は成功時の結果しか見ないため、発行と印の順序を入れ替えても緑のままだった（独立監査の変異 M5）。
+    [Fact]
+    public async Task T_10_2121_打ち切りの発行に失敗したら印を書かず次の巡回で発行する()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var decisionId = Guid.NewGuid();
+        var trackedFrom = Now.AddHours(-25);
+        store.Save(Dispatched(decisionId) with { ExecutedAt = trackedFrom });
+        var broker = new SequenceBroker((BrokerOrder?)null);
+        using var host = await BuildHostAsync(broker, store);
+        var runtime = FailingPublishRuntime.Wrap(
+            host.Services.GetRequiredService<IWolverineRuntime>(), typeof(OrderFillTrackingAbandoned));
+        var service = new OrderFillPollingService(
+            host.Services.GetRequiredService<IServiceScopeFactory>(),
+            runtime,
+            Options.Create(new FillPollingOptions()),
+            NullLogger<OrderFillPollingService>.Instance);
+
+        FailingPublishRuntime.SetBroken(runtime, true);
+        var broken = async () => await service.PollOnceAsync(CancellationToken.None);
+        await broken.Should().ThrowAsync<InvalidOperationException>().WithMessage("*故障注入*");
+        store.FindTrackingExpired(Now.AddHours(-24), 10).Should().ContainSingle(r => r.OrderId == "ORD-1",
+            "発行に失敗した打ち切りには印を書かない（次の巡回で再び洗い出す）");
+
+        FailingPublishRuntime.SetBroken(runtime, false);
+        Func<IMessageContext, Task> poll = async _ => await service.PollOnceAsync(CancellationToken.None);
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(poll);
+
+        session.Sent.MessagesOf<OrderFillTrackingAbandoned>().Should().ContainSingle(m =>
+            m.DecisionId == decisionId && m.OrderId == "ORD-1" && m.TrackedFrom == trackedFrom);
+        store.FindTrackingExpired(Now.AddHours(-24), 10).Should().BeEmpty("バスが戻って発行した後に印を書いた");
+
+        await host.StopAsync();
+    }
+
+    // 指定した型の発行の経路解決だけを失敗させる IWolverineRuntime の代理（他の呼び出しは本物へ委ねる）。
+    public class FailingPublishRuntime : System.Reflection.DispatchProxy
+    {
+        private IWolverineRuntime _inner = null!;
+        private Type _failing = null!;
+        private bool _broken;
+
+        public static IWolverineRuntime Wrap(IWolverineRuntime inner, Type failing)
+        {
+            var proxy = Create<IWolverineRuntime, FailingPublishRuntime>();
+            var self = (FailingPublishRuntime)(object)proxy;
+            self._inner = inner;
+            self._failing = failing;
+            return proxy;
+        }
+
+        public static void SetBroken(IWolverineRuntime proxy, bool broken) =>
+            ((FailingPublishRuntime)(object)proxy)._broken = broken;
+
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+        {
+            if (_broken && targetMethod?.Name == "RoutingFor" && args is [Type type] && type == _failing)
+                throw new InvalidOperationException("バスへ発行できない（試験の故障注入）。");
+            try
+            {
+                return targetMethod!.Invoke(_inner, args);
+            }
+            catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw;
+            }
+        }
+    }
+
     // T-10-865, FR-10, FR-05, #958, IADR-0406 決定2: 武装から 25 時間後に約定した S0 の損切りが、本番と同じ形の配線の常駐から
     // OrderExecuted として発行される（リスク管理の取引台帳が約定を記録する唯一の入力。IADR-0394 はこの約定で損切りを数える）。
     // 時計は固定（壁時計の sleep を使わない）。

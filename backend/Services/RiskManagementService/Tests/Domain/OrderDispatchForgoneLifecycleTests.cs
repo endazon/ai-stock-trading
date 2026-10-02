@@ -24,6 +24,8 @@ public class OrderDispatchForgoneLifecycleTests
     [InlineData(OrderDispatchForgoneReason.UnattributedPosition)]
     // T-10-1766, FR-10, #1105, IADR-0461 決定2: 処理中の決済が建玉を覆う見送りも**予約の前**に return する。
     [InlineData(OrderDispatchForgoneReason.InFlightCloseCoversPosition)]
+    // T-10-2102, #1048, IADR-0481 決定1: 別の手法の有効な記録がある新規建て（予約の前・送信の直前のどちらも送信前）。
+    [InlineData(OrderDispatchForgoneReason.StopLossMethodConflict)]
     public void 確実に未発注と判っている理由は在庫を解放してよい(OrderDispatchForgoneReason reason)
     {
         OrderDispatchForgoneLifecycle.ConfirmsNoOrderPlaced(reason).Should().BeTrue();
@@ -55,6 +57,8 @@ public class OrderDispatchForgoneLifecycleTests
     //     ただし本理由は **Open でしか起き得ない**ため、決済の在庫解放が実際に動くことは今のところ無い。
     //   - #1105（IADR-0461）が `InFlightCloseCoversPosition` を足して **7 → 8**（対応済み）。分類は `true`＝確実に未発注
     //     （建玉照会と処理中の決済の読み取り＝読み取りだけの後で `return`・`TryReserve` と送信はいずれも後）。
+    //   - #1048（IADR-0481）が `StopLossMethodConflict` を足して **8 → 9**（対応済み）。分類は `true`＝確実に未発注
+    //     （予約の前の判定は保護記録の読み取りだけの後で `return`、送信の直前の判定は予約を Forgone へ移して送信の前に `return`）。
     // 赤くなった側がやること:
     //
     //   【必須（やらないと赤のまま）】
@@ -79,7 +83,7 @@ public class OrderDispatchForgoneLifecycleTests
     public void 見送り理由の要素数を固定する()
     {
         Enum.GetValues<OrderDispatchForgoneReason>().Should().HaveCount(
-            8,
+            9,
             "見送り理由が増えたら、それが「確実に未発注」かを実測して分類し直すこと（既定は解放しない側）");
     }
 }

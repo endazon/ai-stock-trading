@@ -66,6 +66,31 @@ public interface IExecutedOrderStore
     /// </summary>
     bool RenewTracking(string orderId, DateTimeOffset trackedFrom);
 
+    /// <summary>
+    /// 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: <b>追跡上限を過ぎた</b>（<see cref="ExecutionRecord.ExecutedAt"/> が
+    /// <paramref name="before"/> より古い）非終端の記録のうち、<b>その追跡の起点でまだ打ち切りを記録していないもの</b>を
+    /// 古い順に最大 <paramref name="batchSize"/> 件返す（約定追跡の打ち切りを監査へ残す対象）。
+    /// <para>
+    /// 打ち切りの印は「打ち切った追跡の起点」（<see cref="MarkTrackingAbandoned"/>）であり、起点が後から進められて
+    /// （<see cref="RenewTracking"/>）再び期限を過ぎた記録は、印と起点が違うため<b>改めて</b>返る。
+    /// 既定の実装（試験用の包み型のためのもの）は何も返さない。本番のストア（EF・インメモリ）は印つきの問い合わせで上書きする。
+    /// </para>
+    /// <para>
+    /// <paramref name="excludedOrderIds"/> の注文は問い合わせの段で除く（件数の上限の前に除くので、除かれる記録が
+    /// 古い側に溜まっても上限を占めない。Active な S0 の逆指値レグ＝追跡上限の対象外。#1048 独立監査）。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindTrackingExpired(
+        DateTimeOffset before, int batchSize, IReadOnlyCollection<string>? excludedOrderIds = null) => [];
+
+    /// <summary>
+    /// 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 記録に「起点 <paramref name="trackedFrom"/> の追跡を打ち切ったことを記録済み」の印を書く
+    /// （<b>印の列だけ</b>を書く。状態・数量・価格・起点には触れない）。記録が無い・起点が既に進んでいる（別の追跡になった）なら
+    /// 何もせず false を返す。<b>発行の後に呼ぶ</b>（先に印を書くと、発行に失敗した打ち切りが二度と記録されない）。
+    /// 既定の実装（試験用の包み型のためのもの）は何もしない。
+    /// </summary>
+    bool MarkTrackingAbandoned(string orderId, DateTimeOffset trackedFrom) => false;
+
     // #820 の 4 巡目監査, IADR-0344 追記(4): FindClosesSince（建玉照会がまだ映していない決済の走査）は撤去した。
     // 持ち分を毎巡回引き直す方式そのものをやめ、保護記録が残保護数量を状態として持つ形へ作り直したため、
     // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。

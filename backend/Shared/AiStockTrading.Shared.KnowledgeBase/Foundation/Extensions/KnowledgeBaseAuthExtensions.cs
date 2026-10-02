@@ -20,9 +20,20 @@ namespace AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 //
 // 安全既定（IADR-0093 決定4）: `KnowledgeBase:Auth` の資格が揃わなければハンドラを付けない（トークン無し→401→
 // writer は NotSaved へ fail-safe）。設定不備で「誰でもない権限」で通ることはない。
+//
+// FR-08, FR-04, NFR-09, #1078, IADR-0485（MSP#1696 の裁定 案 B）: **検索（読み手）は書き手と別の資格情報で名乗る。**
+//   - 保存・台帳（DocumentService）＝ `KnowledgeBase:Auth`（書き手 `ai-stock-trading-kb-writer`。platform-operator）。
+//   - 検索（RetrievalService の /search）＝ `KnowledgeBase:SearchAuth`（読み手 `ai-stock-trading-kb-reader`。ロールなし・
+//     ABAC で project=ai-stock-trading の文書だけを読める）。
+//   🔴 **互いへフォールバックしない。** 検索が `KnowledgeBase:Auth` へ倒れると、書ける資格情報で検索を名乗る
+//   （読み手を分けた最小権限が崩れる。しかも基盤の書き手には AST の文書を読むポリシーが無いので 0 件のまま）。
+//   `KnowledgeBase:SearchAuth` が揃わなければ検索にはトークンを付けない（401 → 空結果。HttpKnowledgeBaseSearch の fail-safe）。
 internal static class KnowledgeBaseAuthExtensions
 {
     public const string SectionName = "KnowledgeBase:Auth";
+
+    // #1078, IADR-0485: 検索（読み手）の資格情報の節。
+    public const string SearchSectionName = "KnowledgeBase:SearchAuth";
 
     // token 取得専用の名前付き HttpClient（発信トークンハンドラを通さない＝自己再帰を避ける）。
     internal const string TokenClientName = "kb-writer-token";
@@ -30,11 +41,16 @@ internal static class KnowledgeBaseAuthExtensions
     // KB 名前付きクライアントへ MSP レルムのサービストークン付与を追加する。無効時はハンドラを付けない。
     public static IHttpClientBuilder AddAiStockTradingKnowledgeBaseAuth(
         this IHttpClientBuilder builder, IConfiguration config)
+        => builder.AddAiStockTradingKnowledgeBaseAuth(config, SectionName);
+
+    // #1078, IADR-0485: 読む節を指定して付ける（保存・台帳は SectionName、検索は SearchSectionName）。
+    internal static IHttpClientBuilder AddAiStockTradingKnowledgeBaseAuth(
+        this IHttpClientBuilder builder, IConfiguration config, string sectionName)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(config);
 
-        var options = ReadOptions(config);
+        var options = ReadOptions(config, sectionName);
         if (!options.IsEnabled)
             return builder; // fail-safe: 資格情報/エンドポイント未整備ならトークンを付けない（現行挙動）。
 
@@ -49,11 +65,14 @@ internal static class KnowledgeBaseAuthExtensions
                 TimeProvider.System)));
     }
 
-    // KnowledgeBase:Auth を読む。TokenEndpoint 未指定なら KnowledgeBase:Auth:Authority（＝MSP レルム）から導出する。
+    // KnowledgeBase:Auth（または指定の節）を読む。TokenEndpoint 未指定なら <節>:Authority（＝MSP レルム）から導出する。
     // AST の Auth:Authority（AST レルム）へはフォールバックしない（IADR-0093 決定3・取り違え防止）。
-    internal static ServiceAuthOptions ReadOptions(IConfiguration config)
+    internal static ServiceAuthOptions ReadOptions(IConfiguration config) => ReadOptions(config, SectionName);
+
+    // #1078, IADR-0485: 節ごとに独立して読む（検索の節が空でも保存の節へは倒れない。逆も同じ）。
+    internal static ServiceAuthOptions ReadOptions(IConfiguration config, string sectionName)
     {
-        var section = config.GetSection(SectionName);
+        var section = config.GetSection(sectionName);
         var options = new ServiceAuthOptions
         {
             TokenEndpoint = section["TokenEndpoint"],

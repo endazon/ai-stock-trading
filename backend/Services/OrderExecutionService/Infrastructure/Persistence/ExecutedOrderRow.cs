@@ -33,4 +33,9 @@ public sealed class ExecutedOrderRow
     public decimal SlippageRatio { get; set; }
 
     public DateTimeOffset ExecutedAt { get; set; }
+
+    // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 約定追跡の打ち切りを監査へ記録した、その追跡の起点（ExecutedAt の値）。
+    // null＝打ち切りを記録していない。起点が後から進められた（RenewTracking）記録は、この値と ExecutedAt が食い違うため
+    // 再び期限を過ぎたときに改めて打ち切りを記録する。**列の追加だけ**（既存行は null）。
+    public DateTimeOffset? TrackingAbandonedFrom { get; set; }
 }

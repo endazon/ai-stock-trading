@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-11, FR-12, UC-02, UC-06, ADR-0040, IADR-0019, IADR-0141, IADR-0161, IADR-0342, IADR-0344, IADR-0347]
 author: claude (Claude Code)
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1・決定3)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 口座種別の軸 / FR-11 監査ログ)
@@ -91,3 +91,10 @@ plan_refs:
   監査の種別照会（`/events/by-type`）で `ProtectiveStopWaiverSettled` を指定すれば引ける。
 - 監査は終端の `OrderExecuted` ごとに相関の照会を 1 回行う（全注文。相関は索引つき）。
 - 項目 1 の食い違い（設定上の発注先と構成）は運用で揃えるまで残る。設定値を発注経路へ結線する issue で再検討する。
+
+> **［2026-10-02 追記 / #1048］残余 2 件の行き先（利用者裁定 2026-10-02）。**
+> - 「約定追跡の期間を過ぎても非終端のまま残った注文には打ち消しが付かない」: 打ち消しは引き続き付かない（終端の約定記録が来ないため）が、
+>   **約定追跡の打ち切りを監査台帳へ記録する**ようにした（`OrderFillTrackingAbandoned`。免除と同じ相関に並ぶ）。
+>   [IADR-0481](IADR-0481_same-symbol-method-coexistence-fill-tracking-abandonment-provider-alignment.md) 決定 3。
+> - 「項目 1 の食い違いは運用で揃えるまで残る」: 揃える手段は運用のまま（決定 1 は不変）とし、**揃っていることを口座照会の観測のたびに確かめて
+>   知らせる**ようにした（設定値は書き換えない）。IADR-0481 決定 4。稼働中の設定値を揃える操作そのものは利用者が行う。

@@ -186,6 +186,11 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   **realm 側で当該 service account に `platform-service` が付くまでは 403 になる**（基盤リポジトリの管掌）。
 - **③実 KB 保存**: information-collection・report の `KnowledgeBase__Documents__BaseUrl`（MSP DocumentService）＋
   `KnowledgeBase__Auth`（MSP レルムの `ai-stock-trading-kb-writer`・IADR-0093）。
+- **KB 検索（取引判断の RAG。#1078 / IADR-0485）**: trade-decision の `KnowledgeBase__Search__BaseUrl`（MSP RetrievalService）＋
+  `KnowledgeBase__SearchAuth`（MSP レルムの**読み手** `ai-stock-trading-kb-reader`。書き手とは別主体で、ロールを持たず書けない。
+  基盤の ABAC が `project=ai-stock-trading` の文書だけを読ませる＝MSP#1696 の裁定 案 B）。秘密は `kb-reader-auth-*`。
+  基盤側の前提（読み手のクライアント・ABAC のポリシーの投入）が無いと検索は 0 件のまま（参考情報なしで判断を続ける）。
+  **本番の既定は空**（基盤の既定拒否の NetworkPolicy が AST 名前空間からの ingress を塞いでいるため。別件）。
 - **Discord 通知**: notification `Notifications__Provider=discord-webhook` / `Bot__Enabled=true`（FR-09/14・IADR-0062）。
 - **価格文脈（#236 / IADR-0099）**: trade-decision へ現在値を供給し権威価格でサイジング
   （`MarketData__Provider=finnhub`＋鍵で `ICurrentPriceProvider.IsEnabled` が真・鮮度 `MaxQuoteStalenessSeconds=300`）。
@@ -236,6 +241,7 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
 | `KB_AUTH_CLIENTSECRET` | `kb-auth-client-secret` | ③KB 書き込みの s2s（`kb-auth-client-id` は dev 既定 `ai-stock-trading-kb-writer`） | 空=401→未保存（fail-safe） |
+| `KB_READER_AUTH_CLIENTSECRET` | `kb-reader-auth-client-secret` | KB 検索（取引判断の RAG）の s2s（`kb-reader-auth-client-id` は dev 既定 `ai-stock-trading-kb-reader`。書き手とは別主体・#1078） | 空=401→空結果（参考情報なしで判断を続ける） |
 | `LLM_AUTH_CLIENTSECRET` | `llm-auth-client-secret` | ②実 LLM の s2s（`llm-auth-client-id` は dev 既定 `ai-stock-trading-llm-caller`。基盤の LlmGateway が `platform-service` を要求するため KB 書き込みの kb-writer とは別主体） | 空=トークン無し（基盤側で 401） |
 | `DISCORD_BOT_TOKEN` | `discord-bot-token` | Discord Bot（双方向） | 空=Gateway に接続しない |
 | `DISCORD_BOT_KILLSWITCH_PHRASE` | `discord-bot-killswitch-phrase` | kill switch 確認フレーズ | 空=kill switch 起動不可（安全側） |
