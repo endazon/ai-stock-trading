@@ -136,6 +136,19 @@ public static class ReportInputs
         _ => false,
     };
 
+    /// <summary>
+    /// FR-06, FR-16, #1156, IADR-0480 決定 3: <b>中核の入力</b>か。中核の入力が<b>一過性</b>に欠けているときは、
+    /// 見送りの上限を別に持ち（<c>ReportDeferralSettings.CoreMaxDeferrals</c>）長く待つ。
+    /// <para>
+    /// 中核＝欠けると報告書の主張（損益・取引の有無・保有の有無）そのものが成り立たない入力である。
+    /// 約定（§1 サマリと明細の素）・建玉（日報 §3）・手動売買の取り込み（在庫の畳み込みの入力。欠けると
+    /// 実在しない建玉の評価損益が出る）の 3 つに限る。監査台帳の記録（為替・LLM 実績・借株料・判断根拠等）は
+    /// 各節が「照会できませんでした」と描けば報告書の主張は崩れないため、中核に入れない（待ちを延ばさない）。
+    /// </para>
+    /// </summary>
+    public static bool IsCore(ReportInput input) =>
+        input is ReportInput.Fills or ReportInput.OpenPositions or ReportInput.DriftAdoptions;
+
     /// <summary>利用者へ見せる名前（Discord の通知・`/report show`）。コード定数であり外部入力を含まない。</summary>
     public static string Label(ReportInput input) => input switch
     {
