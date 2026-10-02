@@ -42,6 +42,7 @@ public class RealMarginQueryOptionsTests
     [InlineData("yes")]
     [InlineData("1")]
     [InlineData("real")]
+    [InlineData("on")] // 独立監査 🟢3（2026-10-02）: 慣用の真値でも有効にしない（明示の true だけ）。
     public void 未知の値は起動時に止める(string value)
     {
         var act = () => Parse(value);

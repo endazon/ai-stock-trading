@@ -25,7 +25,7 @@ public class RealReadOnlyTypeIsolationTests
     [
         typeof(IMoomooTradeClient), typeof(MMApiMoomooTradeClient), typeof(IMoomooTradeConnection),
         typeof(IMoomooTradeConnectionFactory), typeof(IBrokerAdapter), typeof(MoomooBrokerAdapter),
-        typeof(IClientOrderIdBroker), typeof(IOrderFeeQuery),
+        typeof(IClientOrderIdBroker), typeof(IOrderFeeQuery), typeof(IBrokerAccountSource), typeof(IReservationBrokerProbe),
         typeof(TrdPlaceOrder.Request), typeof(TrdModifyOrder.Request), typeof(TrdPlaceComboOrder.Request), typeof(TrdUnlockTrade.Request),
     ];
 

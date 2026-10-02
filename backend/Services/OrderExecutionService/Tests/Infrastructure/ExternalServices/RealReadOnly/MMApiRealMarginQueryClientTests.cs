@@ -1,6 +1,7 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moomoo.OpenApi.Pb;
 using OrderExecutionService.Common.Abstractions;
@@ -10,7 +11,7 @@ using Xunit;
 
 namespace OrderExecutionService.Tests;
 
-// FR-10, UC-06, ADR-0016 決定3（2026-08-06 追記）, #1000, IADR-0482 決定1・4・5（T-10-2060 / T-10-2061 / T-10-2064）:
+// FR-10, UC-06, ADR-0016 決定3（2026-08-06 追記）, #1000, IADR-0482 決定1・4・5（T-10-2060 / T-10-2061 / T-10-2064 / T-10-2067）:
 // 実弾口座の読み取り専用の照会クライアント。
 //   - 口座一覧から **Real × Margin × 米国株** を 1 つだけ選び、その口座の**実弾のヘッダ**で TrdGetMarginRatio を送る。
 //   - 照会を送ったら成否に関わらず監査を 1 件出す（取引環境 Real・口座は末尾 2 桁だけ）。監査に残せなければ答えを使わない。
@@ -20,11 +21,12 @@ public class MMApiRealMarginQueryClientTests
     private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
     private static readonly DateTimeOffset Now = new(2026, 10, 2, 14, 0, 0, TimeSpan.Zero);
 
-    private static MMApiRealMarginQueryClient Client(FakeMarginQueryOpenD openD, RecordingRealReadOnlyQueryAudit audit) =>
+    private static MMApiRealMarginQueryClient Client(
+        FakeMarginQueryOpenD openD, RecordingRealReadOnlyQueryAudit audit, ILogger<MMApiRealMarginQueryClient>? logger = null) =>
         new(new MoomooBrokerOptions("opend", 11111) { ReplyTimeout = Timeout.InfiniteTimeSpan },
             audit,
             new FixedClock(Now),
-            NullLogger<MMApiRealMarginQueryClient>.Instance,
+            logger ?? NullLogger<MMApiRealMarginQueryClient>.Instance,
             openD);
 
     private static Task<bool?> Query(MMApiRealMarginQueryClient client) =>
@@ -138,15 +140,62 @@ public class MMApiRealMarginQueryClientTests
         await FluentThrow<InvalidOperationException>(() => Query(client));
     }
 
+    // 口座の選び方（T-10-2060 の前提）。日本株だけの実弾信用口座・口座 ID 0 も選ばない（独立監査 🟢1・2026-10-02）。
     [Theory]
-    [InlineData(TrdCommon.TrdEnv.TrdEnv_Real, TrdCommon.TrdAccType.TrdAccType_Margin, true)]
-    [InlineData(TrdCommon.TrdEnv.TrdEnv_Simulate, TrdCommon.TrdAccType.TrdAccType_Margin, false)]
-    [InlineData(TrdCommon.TrdEnv.TrdEnv_Real, TrdCommon.TrdAccType.TrdAccType_Cash, false)]
-    public void 照会に使える口座はRealかつMarginかつ米国株だけ(TrdCommon.TrdEnv env, TrdCommon.TrdAccType type, bool expected)
+    [InlineData(TrdCommon.TrdEnv.TrdEnv_Real, TrdCommon.TrdAccType.TrdAccType_Margin, TrdCommon.TrdMarket.TrdMarket_US, 281234599UL, true)]
+    [InlineData(TrdCommon.TrdEnv.TrdEnv_Simulate, TrdCommon.TrdAccType.TrdAccType_Margin, TrdCommon.TrdMarket.TrdMarket_US, 281234599UL, false)]
+    [InlineData(TrdCommon.TrdEnv.TrdEnv_Real, TrdCommon.TrdAccType.TrdAccType_Cash, TrdCommon.TrdMarket.TrdMarket_US, 281234599UL, false)]
+    [InlineData(TrdCommon.TrdEnv.TrdEnv_Real, TrdCommon.TrdAccType.TrdAccType_Margin, TrdCommon.TrdMarket.TrdMarket_JP, 281234599UL, false)]
+    [InlineData(TrdCommon.TrdEnv.TrdEnv_Real, TrdCommon.TrdAccType.TrdAccType_Margin, TrdCommon.TrdMarket.TrdMarket_US, 0UL, false)]
+    public void 照会に使える口座はRealかつMarginかつ米国株だけ(
+        TrdCommon.TrdEnv env, TrdCommon.TrdAccType type, TrdCommon.TrdMarket market, ulong accId, bool expected)
     {
-        MMApiRealMarginQueryClient.IsRealMarginUs(
-                FakeMarginQueryOpenD.Account(281234599UL, env, type, TrdCommon.TrdMarket.TrdMarket_US))
+        MMApiRealMarginQueryClient.IsRealMarginUs(FakeMarginQueryOpenD.Account(accId, env, type, market))
             .Should().Be(expected);
+    }
+
+    // T-10-2067（#1000・独立監査 🟡2・2026-10-02）: 照会クライアントのログに口座 ID の全桁を出さない（末尾 2 桁だけ）。
+    // 接続（開始・完了）・照会の成功・欄の欠落・照会の失敗・監査の失敗・切断の各経路を、記録するロガーで通して検査する。
+    // 書式化後の文言だけでなく、構造化ログの state（テンプレート引数）の値も見る（シンクは state を別に保存し得るため）。
+    [Fact]
+    public async Task 照会クライアントのログに口座IDの全桁を出さない()
+    {
+        var fullId = FakeMarginQueryOpenD.RealMarginAccId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var logger = new RecordingLogger<MMApiRealMarginQueryClient>();
+        var replies = new Queue<TrdGetMarginRatio.Response>(
+        [
+            FakeMarginQueryOpenD.Reply(0, "", FakeMarginQueryOpenD.Row("AAPL", true)),
+            FakeMarginQueryOpenD.Reply(0, "", FakeMarginQueryOpenD.Row("AAPL", null)),
+            FakeMarginQueryOpenD.Reply(-1, $"acc {fullId} has no margin data"),
+        ]);
+        var openD = new FakeMarginQueryOpenD(FakeMarginQueryOpenD.DefaultAccounts(), _ => replies.Dequeue());
+        var audit = new RecordingRealReadOnlyQueryAudit();
+        using (var client = Client(openD, audit, logger))
+        {
+            (await Query(client)).Should().BeTrue();
+            (await Query(client)).Should().BeNull();
+            await FluentThrow(() => Query(client));
+            client.OnDisconnect(new Moomoo.OpenApi.MMAPI_Conn(), 1);
+        }
+
+        // 監査の失敗の経路（別のクライアントで接続からやり直す）。
+        var failingAudit = new RecordingRealReadOnlyQueryAudit { Fail = true };
+        var openD2 = new FakeMarginQueryOpenD(FakeMarginQueryOpenD.DefaultAccounts(),
+            _ => FakeMarginQueryOpenD.Reply(0, "", FakeMarginQueryOpenD.Row("AAPL", true)));
+        using (var client2 = Client(openD2, failingAudit, logger))
+        {
+            await FluentThrow<InvalidOperationException>(() => Query(client2));
+        }
+
+        var records = logger.Records;
+        foreach (var record in records)
+        {
+            record.Message.Should().NotContain(fullId, "ログの文言に口座 ID の全桁を出さない");
+            foreach (var value in record.StateValues)
+                value.Should().NotContain(fullId, "構造化ログの引数に口座 ID の全桁を出さない");
+        }
+        records.Should().Contain(r => r.Message.Contains("接続完了", StringComparison.Ordinal) && r.Message.Contains("****99", StringComparison.Ordinal),
+            "接続完了のログは口座を末尾 2 桁だけで示す（ログが出ていなければこの検査は空振りになる）");
     }
 
     private static async Task<AwesomeAssertions.Specialized.ExceptionAssertions<MoomooTradeRequestException>> FluentThrow(
@@ -157,5 +206,33 @@ public class MMApiRealMarginQueryClientTests
     private sealed class FixedClock(DateTimeOffset now) : IClock
     {
         public DateTimeOffset UtcNow => now;
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        private readonly List<(string Message, IReadOnlyList<string> StateValues)> _records = [];
+
+        public IReadOnlyList<(string Message, IReadOnlyList<string> StateValues)> Records
+        {
+            get { lock (_records) return _records.ToArray(); }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var values = state is IEnumerable<KeyValuePair<string, object?>> pairs
+                ? pairs.Select(p => Convert.ToString(p.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty).ToList()
+                : [];
+            lock (_records) _records.Add((formatter(state, exception), values));
+        }
     }
 }

@@ -43,6 +43,7 @@ plan_refs:
 3. 合成起点（`Program.cs`）の結線（既定無効・有効時だけ照会ポートを差し替え・moomoo 以外で有効なら起動停止）。
 4. 口座 ID の伏せ方の本体を `MoomooAccountIdRedaction` へ移す（挙動不変・発注クライアントは委譲）。
 5. 試験 T-10-2060〜T-10-2066 と変異注入、アーキテクチャ試験（ソース走査）。
+   ［2026-10-02 追記 / #1000・独立監査］T-10-2067（照会クライアントのログに口座 ID の全桁を出さない）を足した（既存の最大 T-10-2066 の次。`git grep -ohE "T-10-2067"` で未使用を確認）。
 6. IADR-0482、機能仕様書・テスト仕様書・`blocked-tasks.md`・helm の注記の追随。
 
 範囲外: 稼働での有効化と照会の確認（PoC 側）。維持率の束の他の欄の供給（呼び手が無い）。料率の単位（#342）。リスク管理の照会先の結線（配備の判断）。
@@ -70,6 +71,7 @@ plan_refs:
 | `docs/blocked-tasks.md`（最終更新・空売りの一次ゲートの行・強制買戻しの事後推定の行） | 「#1000 の裁定待ち」 | **是正**（設定は入った・既定無効・PoC での有効化と確認が残る） |
 | `deploy/helm/.../values.yaml`・`values-local.yaml` のリスク管理 `OrderExecution__BaseUrl` の注記 | 「SIMULATE では結線しても結果は変わらない（#1000）」 | **是正**（有効化したときだけ変わる、を追記。描画は不変） |
 | `.ai-context/adr/IADR-0425`（論点 1・決定 2・フォローアップ） | 実弾ヘッダは #1000 へ | **凍結記録のため本文は書き換えない**。索引（README）の IADR-0425 行へ日付つき追記を足す |
+| | | ［2026-10-02 追記 / #1000・独立監査］上の扱いは実際の差分と食い違っていた。差分は索引の行に加えて **IADR-0425 本体のフォローアップの箇条へ日付つき追記（`［2026-10-02 追記 / #1000］`）を 1 行足し、frontmatter の `updated:` を進めている**。既存の本文プロズは書き換えておらず、日付つき追記は凍結記録へ足してよい形であるため差分はそのまま残し、本表の記述をこの追記で正す |
 | `.ai-context/adr/IADR-0144` 決定 3（「実装時に IADR-0111 を部分改定する」） | 予告 | 凍結記録。IADR-0482 決定 6 が受ける |
 | `MMApiMoomooTradeClientShortPermitTests`・`OrderFeeProbeEndToEndTests` の「実弾ヘッダの照会経路は作らない」 | 発注クライアントについての表明 | **対象外**（発注クライアントについては今も正しい。変えない） |
 | `RiskManagementService` の `ShortSellOrderContext`・`ShortSellingStatusService`/`View`、frontend の SC-03 の試験 | 維持率は実弾口座のヘッダを要する | **対象外**（維持率の供給は `Funds` の欄であり本件は供給しない。記述は今も正しい） |
@@ -102,6 +104,8 @@ plan_refs:
 | 監査に残せなければ答えを使わない | T-10-2064 |
 | LiveTradingGate の挙動が変わらない（live は照会を有効にしても起動時に止まる・paper で有効は止まる・既存の閂の試験） | T-10-2065・既存の `LiveTradingGateTests` |
 | 変異を入れると赤になる | 下の変異注入の表（テスト仕様書にも記録） |
+| ［2026-10-02 追記 / #1000・独立監査］照会クライアントのログ（接続・照会の成功・欄の欠落・失敗・監査の失敗・切断）に口座 ID の全桁が出ない（文言と構造化ログの引数の両方） | T-10-2067（`MMApiRealMarginQueryClientTests`。記録するロガー） |
+| ［2026-10-02 追記 / #1000・独立監査］照会側の外（発注クライアント・アダプタ・Features・Hosted・合成起点）から照会側の内部へ、文字列リテラル・`nameof`・リフレクションでも到達しない。発注側のポート（`IOrderFeeQuery`・`IBrokerAccountSource`・`IReservationBrokerProbe` ほか）を照会側が識別子として使わない | T-10-2063（`RealReadOnlyQueryIsolationTests` に 1 件追加・禁止識別子の母集合を引き直し） |
 
 ## PoC で有効にする手順（稼働での確認は PoC 側）
 
@@ -118,3 +122,37 @@ plan_refs:
 - 料率の単位（#342）が確定するまで空売りは通らない。
 - 実 OpenD での照会・口座一覧の形・解錠なしで照会が通るか・同時接続数は未検証（PoC で確かめる）。
 - 維持率の束の他の欄は読まない。
+
+## ［2026-10-02 追記 / #1000・独立監査］独立監査の指摘への対応
+
+| 指摘 | 対応 |
+| --- | --- |
+| 🟡1 監査の発行は Wolverine の `MessageBus.PublishAsync` で、発注執行は永続化した送信箱（durable outbox）を持たない。「監査に残せなければ答えを使わない」はプロセス内の発行の失敗しか捕まえない | コードは変えない。IADR-0482 の残余と機能仕様書・テスト仕様書の残余リスクへ正確に記録した |
+| 🟡2 ログの伏せを固定する試験が無い（接続完了のログに全桁を出す変異が緑のまま。試験は `NullLogger`） | T-10-2067 を足した。変異（接続完了のログを全桁へ）で赤、戻して緑を確認 |
+| 🟡3 ソース走査がリフレクション・一部の発注側のポートを見ない | 禁止識別子に発注側のポートを足し（母集合は下）、文字列リテラル・`nameof`・リフレクション API の検査を 1 件足した。網羅ではないため IADR-0482 の盲点に「リフレクション」を足した |
+| 🟡4 「取引を解錠しない」第 2 の守りは OpenD の運用に依存する（解錠は接続ごとではなく OpenD ごと・実機未検証） | IADR-0482 と機能仕様書・テスト仕様書の残余へ記録した |
+| 🟢2 規則 9 の表が IADR-0425 本体を書き換えていないとしていたが差分は日付つき追記を足している | 規則 9 の表へ日付つき追記で正した |
+| 🟢1 / 🟢3 | 口座の選び方の Theory に日本株だけ・口座 ID 0 の行、有効化フラグの未知の値に `on` の行を足した |
+
+### 規則 9（🟡3 の母集合）: 発注側のポートの全数
+
+引き方: 発注執行の本番ソースの `interface` 宣言の全数（`grep -rhoE "(public|internal)\s+interface\s+\w+"`）と、
+`MMApiMoomooTradeClient`・`MoomooBrokerAdapter`・`MoomooReservationBrokerProbe` が実装するインターフェースの全数（Shared.Contracts の `Ports/` を含む）。
+
+| 区分 | 型 | 扱い |
+| --- | --- | --- |
+| 既に禁止 | `IMoomooTradeClient`・`IMoomooTradeConnection`・`IMoomooTradeConnectionFactory`・`IBrokerAdapter`・`IOrderAmendmentBroker`・`IClientOrderIdBroker` | 変えない |
+| **足した** | `IOrderFeeQuery`・`IProbeOutputRedactor`・`IBrokerAccountSource`・`IBrokerPositionSource`・`IBrokerAvailabilityProbe`・`IProtectiveOrderBroker`・`IAlternativeProtectiveOrderBroker`・`IClassifiedPositionSource`・`IReservationBrokerProbe`（実装 `MoomooReservationBrokerProbe`・`IndeterminateReservationBrokerProbe` も）・`IOrderExpenseSource`・`IExecutedOrderStore`・`IOrderLifecycleStore`・`IOrderReservationStore`・`IProtectiveStopOrderStore`・`IReservationReconciliationSink`・`IReconciledEntryProtection` | 発注・建玉・口座・予約・費用・発注の記録の面。照会側が使う理由が無い |
+| 除外 | `IShortPermitSource`・`IMoomooMarginQueryConnection`・`IMoomooMarginQueryConnectionFactory`・`IRealReadOnlyQueryAudit` | 照会側自身の型 |
+| 除外 | `IClock` | 時計（照会側も使う） |
+| 除外 | `IKLineQuotaQuery`・`IDailyKLineSource`・`IMoomooQotProbeConnection`・`IMoomooQotProbeConnectionFactory` | 相場系（取引の面を持たない） |
+
+型の上の検査（`RealReadOnlyTypeIsolationTests`）にも `IBrokerAccountSource`・`IReservationBrokerProbe` を足した（`IOrderFeeQuery` は既にあった）。
+
+### 変異注入（独立監査の指摘分。実行ごとに `cp` で書き戻し `cmp` で一致を確認）
+
+| 変異 | 修正前の試験 | 修正後の試験 |
+| --- | --- | --- |
+| A13: 接続完了のログに口座 ID の全桁を出す | 緑（`NullLogger`） | 照会クライアントの試験 12 件中 1 件赤（T-10-2067） |
+| A2: 照会のクライアントに `IOrderFeeQuery` を実装する | アーキテクチャ 4 件すべて緑 | アーキテクチャ 5 件中 1 件赤（禁止識別子 `IOrderFeeQuery`） |
+| A4: 発注クライアントから `Type.GetType("…MMApiRealMarginQueryClient")?.GetMethod("BuildRealHeader", …)` で実弾ヘッダを作る | アーキテクチャ 4 件すべて緑 | アーキテクチャ 5 件中 1 件赤（文字列リテラル・リフレクション） |
