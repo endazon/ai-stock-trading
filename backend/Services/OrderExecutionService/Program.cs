@@ -16,6 +16,7 @@ using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using OrderExecutionService.Hosted;
 using OrderExecutionService.Infrastructure.ExternalServices;
+using OrderExecutionService.Infrastructure.ExternalServices.RealReadOnly;
 using OrderExecutionService.Infrastructure.Steps;
 using OrderExecutionService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Observability;
@@ -221,7 +222,33 @@ builder.Services.AddScoped(sp => new ProtectiveStopDriftAdopter(
 // 照会の予算とキャッシュを持つため singleton。照会ポート（IShortPermitSource）は **moomoo 構成でだけ登録する**
 // （発注と同じ OpenD 接続・同じ SIMULATE 口座のヘッダ）。内蔵 paper では null ＝ 常に「分からない」を返し、
 // リスク管理はそれを拒否へ倒す（照会できないなら空売りしない）。
-if (brokerSelection.IsMoomoo)
+//
+// 🔴 FR-10, UC-06, ADR-0016 決定3（2026-08-06 追記）, #1000, IADR-0482: **実弾口座の読み取り専用の照会（既定は無効）。**
+// Broker:Moomoo:RealMarginQuery:Enabled=true を明示したときだけ、借株可否（と維持率の束）の照会を実弾口座（Real × Margin）の
+// ヘッダで行う専用のクライアント（MMApiRealMarginQueryClient）へ切り替える。**発注は SIMULATE のまま**（閂は変えない・上の
+// LiveTradingGate.Ensure が先に走る）。照会のクライアントは IShortPermitSource としてだけ登録し、発注の型（IMoomooTradeClient・
+// IBrokerAdapter 等）としては登録しない＝発注経路から到達できない。照会ごとに監査（RealAccountReadOnlyQueried）を出す。
+// moomoo 以外の構成で有効にしたら起動時に止める（照会先の口座が無い構成で「有効のつもり」を作らない）。
+var realMarginQuery = RealMarginQueryOptions.FromConfiguration(builder.Configuration);
+if (realMarginQuery.Enabled && !brokerSelection.IsMoomoo)
+{
+    throw new InvalidOperationException(
+        $"{RealMarginQueryOptions.EnabledKey}=true は moomoo 構成（broker.tier=moomoo-sim）でだけ受理します"
+        + $"（現在の発注先 '{brokerSelection.Tier}'。#1000 / IADR-0482）。");
+}
+if (brokerSelection.IsMoomoo && realMarginQuery.Enabled)
+{
+    builder.Services.AddSingleton<IRealReadOnlyQueryAudit, WolverineRealReadOnlyQueryAudit>();
+    builder.Services.AddSingleton(sp => new MMApiRealMarginQueryClient(
+        MoomooBrokerOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()),
+        sp.GetRequiredService<IRealReadOnlyQueryAudit>(),
+        sp.GetRequiredService<IClock>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<MMApiRealMarginQueryClient>(),
+        // 接続オブジェクトの生成点。本番は未登録＝SDK の既定（試験だけが偽の OpenD を差す）。
+        sp.GetService<IMoomooMarginQueryConnectionFactory>()));
+    builder.Services.AddSingleton<IShortPermitSource>(sp => sp.GetRequiredService<MMApiRealMarginQueryClient>());
+}
+else if (brokerSelection.IsMoomoo)
 {
     builder.Services.AddSingleton<IShortPermitSource>(sp =>
         (IShortPermitSource)sp.GetRequiredService<IMoomooTradeClient>());

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-05, UC-06, ADR-0016, ADR-0019, ADR-0026, IADR-0111, IADR-0131, IADR-0144, IADR-0158, IADR-0159, IADR-0163, IADR-0346, IADR-0354, IADR-0397, IADR-0408, IADR-0420]
 author: claude (Claude Code)
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md (決定 2(a)・決定 3〔2026-08-06 改訂・同追記・2026-08-07 確定〕・決定 9・決定 10)
   - planning:projects/ai-stock-trading/07_adr/ADR-0019_moomoo-poc-margin-paper-account.md (PoC 項目 3)
@@ -151,6 +151,7 @@ plan_refs:
   - 照会の予算とキャッシュはプロセス内（発注執行の複製が複数になれば予算も複数になる。現状は単一）。同じ銘柄の同時の要求は走っている照会に相乗りする（T-10-1036）。借株可否の答えは最長 60 秒古い。
   - 新規の売り建ての審査は発注執行への照会（最大 5 秒）を待つ。
 - フォローアップ: [#1000](https://github.com/endazon/ai-stock-trading/issues/1000)（実弾口座のヘッダ〔読み取り専用〕で借株可否を照会する照会用の環境を足すか。IADR-0111 の部分改定・実弾の閂との関係の裁定）。
+  ［2026-10-02 追記 / #1000］裁定「読み取り専用で足す」により [IADR-0482](IADR-0482_real-account-readonly-margin-query.md) で実装した。決定 2（照会は SIMULATE のヘッダ）は**既定**として有効のまま、`Broker:Moomoo:RealMarginQuery:Enabled=true` のときだけ実弾口座（Real × Margin）のヘッダの読み取り専用の照会へ替わる。
 
 ## 関連
 

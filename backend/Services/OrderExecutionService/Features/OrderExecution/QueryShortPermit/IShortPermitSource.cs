@@ -10,9 +10,10 @@ namespace OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 //   - 応答が当該銘柄の行を持ち、借株可否の欄が載っている → その値（true＝許可／false＝不許可）
 //   - 応答に当該銘柄の行が無い・欄が載っていない → null（＝**分からない**。false＝不許可と取り違えない）
 //   - 照会の失敗（不達・非成功の retType・打ち切り）→ **例外を送出する**（null を返してはならない）
-// 🔴 **照会は発注に使っている口座（SIMULATE）のヘッダで送る。** moomoo はこの照会を SIMULATE 口座では失敗させる
-// （IADR-0144 決定3 の実測）ため、実測どおりなら常に例外となる（本件では実 OpenD で再確認していない）。実弾ヘッダでの照会経路は
-// 作らない（IADR-0425 決定2）。
+// 🔴 **既定では照会は発注に使っている口座（SIMULATE）のヘッダで送る**（実装は MMApiMoomooTradeClient・IADR-0425 決定2）。
+// moomoo はこの照会を SIMULATE 口座では失敗させる（IADR-0144 決定3 の実測）ため、実測どおりなら常に例外となる。
+// ［2026-10-02 追記 / #1000］`Broker:Moomoo:RealMarginQuery:Enabled=true` を明示したときだけ、実装は実弾口座（Real × Margin）の
+// ヘッダで読み取り専用の照会をする MMApiRealMarginQueryClient に替わる（発注は SIMULATE のまま。発注経路から構造的に切り離す。IADR-0482）。
 public interface IShortPermitSource
 {
     Task<bool?> GetShortPermitAsync(string symbol, Market market, CancellationToken cancellationToken = default);

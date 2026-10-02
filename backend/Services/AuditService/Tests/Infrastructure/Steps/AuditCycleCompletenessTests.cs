@@ -288,6 +288,9 @@ public class AuditCycleCompletenessTests
             new ProtectiveStopWaived(
                 decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,
                 StopLossExecutionMethod.NoProtectiveStop, BrokerProvider.MoomooSimulate, t),
+            new RealAccountReadOnlyQueried(
+                RealAccountReadOnlyQueried.RealTradingEnvironment, "GetMarginRatio", "****08", "AAPL", Market.UnitedStates,
+                RealAccountReadOnlyQueryOutcomes.Permitted, t),
             new ReportConfirmed("2026-08-28", "Daily", "endazon", 3, t),
             new ReportDraftPresented("2026-08-28", "Daily", "2026-08-28（日報）", "本日の方針", 1, t),
             // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置と発動結果。
