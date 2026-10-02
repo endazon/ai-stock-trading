@@ -75,8 +75,13 @@ public interface IExecutedOrderStore
     /// （<see cref="RenewTracking"/>）再び期限を過ぎた記録は、印と起点が違うため<b>改めて</b>返る。
     /// 既定の実装（試験用の包み型のためのもの）は何も返さない。本番のストア（EF・インメモリ）は印つきの問い合わせで上書きする。
     /// </para>
+    /// <para>
+    /// <paramref name="excludedOrderIds"/> の注文は問い合わせの段で除く（件数の上限の前に除くので、除かれる記録が
+    /// 古い側に溜まっても上限を占めない。Active な S0 の逆指値レグ＝追跡上限の対象外。#1048 独立監査）。
+    /// </para>
     /// </summary>
-    IReadOnlyList<ExecutionRecord> FindTrackingExpired(DateTimeOffset before, int batchSize) => [];
+    IReadOnlyList<ExecutionRecord> FindTrackingExpired(
+        DateTimeOffset before, int batchSize, IReadOnlyCollection<string>? excludedOrderIds = null) => [];
 
     /// <summary>
     /// 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 記録に「起点 <paramref name="trackedFrom"/> の追跡を打ち切ったことを記録済み」の印を書く

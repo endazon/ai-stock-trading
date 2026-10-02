@@ -359,6 +359,9 @@ public sealed class OrderExecutionAppService(
         // 🔴 FR-10, #1048, IADR-0481 決定1: 窓の**後の端**（自分の記録を残した後・送信の直前）。S1 は送る前に自分の行を、
         // S0 / S3 は予約の後に AwaitingEntry を残しているので、別の手法で同時に建てようとした 2 本は**少なくとも一方が他方を見る**
         // （前の端だけでは、照合の後に現れた記録を見落とす）。見つけたら予約を Forgone へ移して送らない（接続確立の失敗と同じ扱い）。
+        // 🔴 例外は S2: S2 の新規建ては保護の記録を残さないため、S0 / S3 の側の後の端は S2 を見ない。S2 との同時の新規建ては
+        // 予約の前の moomoo SIMULATE の「記録の無い建玉」の照合でしか止まらず、建玉照会がまだ S2 の約定を映していない窓では
+        // 両方が通り得る（S2 の側の後の端は S0 / S3 の AwaitingEntry を見る。IADR-0481 の残余）。
         if (intent.PositionEffect == PositionEffect.Open
             && HasConflictingStopLossMethod(approved, disposition, "送信の直前"))
         {

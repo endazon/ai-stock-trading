@@ -119,12 +119,16 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     }
 
     // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 追跡上限を過ぎた非終端の行のうち、その起点で打ち切りを記録していないもの（古い順）。
-    public IReadOnlyList<ExecutionRecord> FindTrackingExpired(DateTimeOffset before, int batchSize)
+    // 除外（Active な S0 の逆指値レグ）は件数の上限の前に問い合わせの段で行う（#1048 独立監査）。
+    public IReadOnlyList<ExecutionRecord> FindTrackingExpired(
+        DateTimeOffset before, int batchSize, IReadOnlyCollection<string>? excludedOrderIds = null)
     {
+        string[] excluded = [.. excludedOrderIds ?? []];
         return [.. db.ExecutedOrders
             .Where(r => (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
                 && r.ExecutedAt < before
-                && (r.TrackingAbandonedFrom == null || r.TrackingAbandonedFrom != r.ExecutedAt))
+                && (r.TrackingAbandonedFrom == null || r.TrackingAbandonedFrom != r.ExecutedAt)
+                && !excluded.Contains(r.OrderId))
             .OrderBy(r => r.ExecutedAt)
             .Take(batchSize)
             .Select(r => ToRecord(r))];

@@ -193,4 +193,43 @@ public class FillTrackingAbandonmentTests
         store.RenewTracking("old-1", Now.AddHours(-25)).Should().BeTrue();
         store.FindTrackingExpired(before, 10).Select(r => r.OrderId).Should().Equal(["old-2", "old-1"], "起点が進めば改めて対象（新しい起点で古い順に並ぶ）");
     }
+
+    // T-10-2122: #1048 独立監査。Active な S0 の逆指値レグ（追跡上限の対象外）は洗い出しの**問い合わせの段で**除く。
+    // 件数の上限 N に対し、それより古い Active な S0 のレグが N 本あっても、本物の打ち切り候補はその巡回で打ち切る
+    // （洗い出した後に飛ばす形では、レグが上限を占め続けて候補が永久に処理されない）。本番の DB 実装とインメモリ実装の両方で固定する。
+    [Theory]
+    [InlineData("ef")]
+    [InlineData("inmemory")]
+    public async Task T_10_2122_有効な保護記録の逆指値レグは洗い出しの上限を占めない(string kind)
+    {
+        IExecutedOrderStore store = kind == "ef"
+            ? new EfExecutedOrderStore(new OrderExecutionDbContext(
+                new DbContextOptionsBuilder<OrderExecutionDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options))
+            : new InMemoryExecutedOrderStore();
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var broker = new Broker();
+        var poller = new OrderFillPoller(broker, store, new MutableClock(Now), protectiveStops: stops);
+        const int limit = 2;
+        for (var n = 0; n < limit; n++)
+        {
+            var entry = Guid.NewGuid();
+            var stopId = ProtectiveStopIds.StopDecisionId(entry, attempt: 1);
+            var armedAt = Now.AddDays(-3).AddMinutes(n);
+            stops.Save(new ProtectiveStopOrder(
+                entry, stopId, $"stop-live-{n}", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+                BrokerProvider.MoomooSimulate, 10, 950m, 1m, 1, ProtectiveStopState.Active, armedAt, armedAt));
+            store.Save(new ExecutionRecord(
+                stopId, $"stop-live-{n}", "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                PositionEffect.Close, 10, 950m, 0, 0m, OrderStatus.Accepted, 0m, armedAt));
+        }
+        store.Save(Entry("ORD-OLD", Now.AddHours(-25)));
+
+        store.FindTrackingExpired(Now - MaxTracking, limit, ["stop-live-0", "stop-live-1"])
+            .Select(r => r.OrderId).Should().Equal(["ORD-OLD"], "除外は上限の前に行う");
+
+        var result = await poller.PollOnceAsync(MaxTracking, batchSize: limit);
+
+        result.Abandoned!.Should().ContainSingle(a => a.OrderId == "ORD-OLD",
+            "上限と同じ本数の古い S0 のレグがあっても、本物の打ち切り候補を処理する");
+    }
 }

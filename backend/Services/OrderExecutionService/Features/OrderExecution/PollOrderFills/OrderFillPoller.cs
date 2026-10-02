@@ -210,13 +210,12 @@ public sealed class OrderFillPoller(
         CancellationToken cancellationToken)
     {
         IReadOnlyList<ExecutionRecord> expired;
-        HashSet<string> trackedBeyondWindow;
         try
         {
-            expired = store.FindTrackingExpired(now - maxTracking, batchSize);
-            if (expired.Count == 0)
-                return [];
-            trackedBeyondWindow = ActiveBrokerStopLegIds(int.MaxValue);
+            // #1048 独立監査: Active な S0 の逆指値レグは**問い合わせの段で**除く。洗い出した後に飛ばすと、古い側に溜まった
+            // レグが件数の上限（batchSize）を占め続け、本物の打ち切り候補がいつまでも処理されない。
+            var trackedBeyondWindow = ActiveBrokerStopLegIds(int.MaxValue);
+            expired = store.FindTrackingExpired(now - maxTracking, batchSize, trackedBeyondWindow);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -229,8 +228,6 @@ public sealed class OrderFillPoller(
         foreach (var record in expired)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (trackedBeyondWindow.Contains(record.OrderId))
-                continue;
 
             var status = record.Status;
             var filled = record.FilledQuantity;
