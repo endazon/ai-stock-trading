@@ -41,6 +41,10 @@ public class ReportNarrativeUnsuppliedPromptTests
 
         prompt.Should().Contain("取得できなかった入力（未供給）: 為替の情報源の状態、LLM 利用実績、判断根拠");
         prompt.Should().Contain(ReportNarrativePromptBuilder.UnsuppliedRule);
+        // #1156（独立監査）: 規則の要点は**文字列リテラルで**固定する（定数との比較だけでは、定数の文言を
+        // 削っても緑のまま）。「無い」「0」と言い切らず「未供給（取得できなかった）」と書く、の 3 点。
+        prompt.Should().Contain("「無い」「0」「発生しなかった」のではなく、値が分かりません。");
+        prompt.Should().Contain("「未供給（取得できなかった）」と書き、「無い」「0」「なかった」と言い切らないでください。");
         prompt.Should().Contain("未供給（取得できなかった）");
     }
 
@@ -175,6 +179,7 @@ public class ReportNarrativeUnsuppliedPromptTests
         prompt.Should().Contain("- 実現損益(税引前): 0");
     }
 
+    // T-10-2177, IADR-0071 決定1: 未供給の一覧と建玉を足しても、プロンプトは決定的である。
     [Fact]
     public void 決定的_同一入力で同一出力()
     {

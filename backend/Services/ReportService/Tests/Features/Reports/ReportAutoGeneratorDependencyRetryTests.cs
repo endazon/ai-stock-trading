@@ -169,6 +169,15 @@ public class ReportAutoGeneratorDependencyRetryTests
         public SwitchableTokenProvider LlmTokens { get; } = new() { Token = "L" };
         public Upstream Risk { get; } = new() { Body = PositionsJson };
         public Upstream Llm { get; } = new() { Body = LlmJson };
+
+        /// <summary>
+        /// #1156（独立監査）: OpenD 稼働率（中核でない入力）の上流。<see cref="UseHttpUptime"/> のときだけ使う。
+        /// 台帳と同じ AST レルムのトークン（<see cref="Tokens"/>）で送る＝Keycloak が未準備なら建玉と一緒に欠ける。
+        /// </summary>
+        public Upstream Uptime { get; } = new() { Body = """{"days":[]}""" };
+
+        /// <summary>true なら稼働率も本物の供給元（HttpOpenDUptimeSource）を本物の鎖越しに使う。</summary>
+        public bool UseHttpUptime { get; init; }
         public InMemoryReportStore Store { get; } = new();
         public RecordingNotifier Notifier { get; } = new();
         public CountingDrafter StubDrafter { get; } = new();
@@ -245,7 +254,10 @@ public class ReportAutoGeneratorDependencyRetryTests
                 rationaleSource: supplied,
                 openPositionSource: new HttpOpenPositionSource(
                     Client(Risk, "risk-ledger", Tokens), NullLogger<HttpOpenPositionSource>.Instance),
-                uptimeSource: supplied,
+                uptimeSource: UseHttpUptime
+                    ? new HttpOpenDUptimeSource(
+                        Client(Uptime, "risk-ledger", Tokens), NullLogger<HttpOpenDUptimeSource>.Instance)
+                    : supplied,
                 stageProgressSource: supplied,
                 periodEndFxRateSource: supplied,
                 dependencyProbe: Probe,
@@ -725,7 +737,7 @@ public class ReportAutoGeneratorDependencyRetryTests
         degradation.UnsuppliedInputs.Should().Equal(ReportInput.Narrative);
     }
 
-    // #1156, IADR-0480 決定 3: P2（減る側・窓の終端）を**中核の入力で**も固定する。中核の上限を広げても、
+    // T-10-2173, #1156, IADR-0480 決定 3: P2（減る側・窓の終端）を**中核の入力で**も固定する。中核の上限を広げても、
     // 次の試行時刻に生成窓が閉じるなら待たずに縮退版を出す（#866 の規則は中核にも効く）。
     // 2026-07-09（木）15:59:45 JST ＝ 06:59:45 UTC。次の試行（+30 秒）では日報の対象が 07-09 へ移り、
     // daily-2026-07-08 は Due から消える。
@@ -764,6 +776,7 @@ public class ReportAutoGeneratorDependencyRetryTests
         ReportNarrativePromptBuilder.Build(context).Should().Contain("建玉（現在の台帳）: 未供給（取得できなかった）");
     }
 
+    // T-10-2176, #1156, IADR-0480 決定 1: T-10-2167 の対（供給できた建玉は件数と銘柄で渡り、未供給の一覧は空）。
     [Fact]
     public async Task 供給できたときは_散文の文脈へ建玉を渡し_未供給の一覧は空()
     {
@@ -775,5 +788,63 @@ public class ReportAutoGeneratorDependencyRetryTests
         context.UnsuppliedInputs.Should().BeEmpty();
         context.Positions.Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
         ReportNarrativePromptBuilder.Build(context).Should().Contain("建玉（現在の台帳）: 1 件（銘柄: AAPL）");
+    }
+
+    // T-10-2174, FR-06, FR-16, #1156（独立監査）, IADR-0480 決定 3: **事故の実際の形**。Keycloak が未準備で
+    // 建玉（中核）と OpenD 稼働率（中核でない）が**同時に**一過性に欠ける（実測は建玉＋稼働率＋運用段階＋risk-ledger）。
+    // 欠けた入力に中核が 1 つでもあれば中核の上限まで見送る（「全部が中核なら」ではない）。
+    [Fact]
+    public async Task 中核と中核でない入力が同時に一過性に欠けても_中核の上限まで見送り続ける()
+    {
+        var rig = new Rig(maxDeferrals: 2, coreMaxDeferrals: 6) { UseHttpUptime = true };
+        rig.Tokens.Token = null; // 全 Pod の同時起動の直後。
+
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            var deferred = await rig.RunOnceAsync();
+            // 🔴 否定形: 通常の上限（2 回）を超えた 3〜6 回目も縮退した報告書を出さない。
+            deferred.Generated.Should().BeEmpty();
+            var deferral = deferred.Deferred.Should().ContainSingle().Subject;
+            deferral.WaitingFor.Should().Equal(ReportInput.OpenPositions, ReportInput.OpenDUptime);
+            deferral.Attempt.Should().Be(attempt);
+            deferral.MaxDeferrals.Should().Be(6);
+        }
+
+        rig.Store.Get(DailyKey).Should().BeNull();
+
+        rig.Tokens.Token = "T"; // Keycloak が立ち上がった。
+        var result = await rig.RunOnceAsync();
+
+        var report = result.Generated.Should().ContainSingle().Subject;
+        report.UnsuppliedInputs.Should().BeEmpty();
+        result.Degraded.Should().BeEmpty();
+        rig.Uptime.Requests.Should().ContainSingle().Which.Authorization.Should().Be("Bearer T");
+    }
+
+    // T-10-2175, #1156（独立監査）, IADR-0480 決定 3・決定 5: 中核かどうかは**一過性の失敗で欠けた入力だけ**で決める。
+    // 建玉（中核）が 403（恒常＝待っても変わらない）で、稼働率（中核でない）だけが一過性に欠けているなら、
+    // 中核の上限ではなく通常の上限で打ち切る（恒常的な失敗で報告書を長く遅らせない）。
+    [Fact]
+    public async Task 中核が恒常的に欠け_中核でない入力だけが一過性なら_通常の上限で打ち切る()
+    {
+        var rig = new Rig(maxDeferrals: 2, coreMaxDeferrals: 6) { UseHttpUptime = true };
+        rig.Risk.Status = HttpStatusCode.Forbidden;
+        rig.Uptime.Status = HttpStatusCode.ServiceUnavailable;
+
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            var deferral = (await rig.RunOnceAsync()).Deferred.Should().ContainSingle().Subject;
+            // 待っているのは稼働率だけ（403 の建玉は待たない）。
+            deferral.WaitingFor.Should().Equal(ReportInput.OpenDUptime);
+            deferral.MaxDeferrals.Should().Be(2);
+        }
+
+        var result = await rig.RunOnceAsync();
+
+        // 🔴 否定形: 3 回目は見送らない（中核の上限 6 を使っていない）。
+        result.Deferred.Should().BeEmpty();
+        var degradation = result.Degraded.Should().ContainSingle().Subject;
+        degradation.RetriesExhausted.Should().BeTrue();
+        degradation.UnsuppliedInputs.Should().Equal(ReportInput.OpenPositions, ReportInput.OpenDUptime);
     }
 }
