@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
 using Moomoo.OpenApi;
@@ -134,7 +135,7 @@ public sealed class MMApiRealMarginQueryClient : MMSPI_Trd, MMSPI_Conn, IShortPe
         {
             _logger.LogWarning(
                 "実弾口座の読み取り専用の照会の応答に当該銘柄の行または IsShortPermit の欄がありません symbol={Symbol}。借株可否は不明として扱います。",
-                symbol);
+                LogSanitizer.Sanitize(symbol)); // CWE-117（IADR-0316）: 銘柄は呼び手由来の文字列
             return null;
         }
         return row.IsShortPermit;
@@ -333,7 +334,7 @@ public sealed class MMApiRealMarginQueryClient : MMSPI_Trd, MMSPI_Conn, IShortPe
         }
         else
         {
-            _logger.LogError("OpenD 接続失敗（実弾口座の読み取り専用の照会用） errCode={ErrCode} desc={Desc}", errCode, desc);
+            _logger.LogError("OpenD 接続失敗（実弾口座の読み取り専用の照会用） errCode={ErrCode} desc={Desc}", errCode, LogSanitizer.Sanitize(desc));
             tcs?.TrySetException(new InvalidOperationException($"OpenD 接続失敗 errCode={errCode}: {desc}"));
         }
     }
