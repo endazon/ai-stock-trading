@@ -45,6 +45,15 @@ public class ReportInputsTests
         }
     }
 
+    // T-10-2172, FR-06, FR-16, #1156, IADR-0480 決定 3: 中核の入力（一過性に欠けたら長く見送る）は
+    // 約定・建玉・手動売買の取り込みだけ。広げると監査台帳の記録の欠落でも長く待つ（見送りの射程が膨らむ）。
+    [Fact]
+    public void 中核の入力は約定と建玉と手動売買の取り込みだけ()
+    {
+        Enum.GetValues<ReportInput>().Where(ReportInputs.IsCore).Should().BeEquivalentTo(
+            [ReportInput.Fills, ReportInput.OpenPositions, ReportInput.DriftAdoptions]);
+    }
+
     // ---- 永続化形式 ---------------------------------------------------------------------------
 
     [Fact]

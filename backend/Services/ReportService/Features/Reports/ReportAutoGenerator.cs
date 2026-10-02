@@ -272,7 +272,10 @@ public sealed class ReportAutoGenerator(
                 PeriodEndFxRate: periodEndFxRate,
                 DriftAdoptions: driftAdoptions,
                 StopLossMethods: stopLossMethods,
-                StopLossMethodResolutions: stopLossMethodResolutions),
+                StopLossMethodResolutions: stopLossMethodResolutions,
+                // FR-06, FR-16, #1156, IADR-0480 決定 1: 散文（LLM）へ「取得できなかった入力」を渡す。
+                // 渡さないと、LLM は値の無さや 0 から「建玉なし」「取引なし」と推測する（#1156 の実測）。
+                UnsuppliedInputs: ReportInputs.Parse(ReportInputs.Serialize(unsupplied))),
             cancellationToken).ConfigureAwait(false);
 
         // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
@@ -365,11 +368,16 @@ public sealed class ReportAutoGenerator(
         if (waitingFor.Count == 0)
             return null;
 
+        // FR-06, FR-16, #1156, IADR-0480 決定 3: 中核の入力（約定・建玉・手動売買の取り込み）が一過性に欠けているなら
+        // 上限を別に持ち、長く待つ。中核が欠けた報告書は「建玉なし」「取引なし」と読める主張を作るためである。
+        // 窓の終端（#866）の判定は下で同じく効く（長く待っても、窓を跨いで無音で消えることはない）。
+        var core = waitingFor.Any(ReportInputs.IsCore);
+
         // 待ち時間は**回数を消費せずに**先読みする（窓の外なら 1 回も数えない）。
-        if (deferrals.NextDelay(due.PeriodKey) is not { } nextDelay)
+        if (deferrals.NextDelay(due.PeriodKey, core) is not { } nextDelay)
         {
             // 上限 0（見送らない構成）は「使い切った」ではない。警告の文言を変えないために分ける。
-            retriesExhausted = deferrals.MaxDeferrals > 0;
+            retriesExhausted = deferrals.LimitFor(core) > 0;
             return null;
         }
 
@@ -381,9 +389,9 @@ public sealed class ReportAutoGenerator(
             return null;
         }
 
-        if (deferrals.TryDefer(due.PeriodKey) is not { } ticket)
+        if (deferrals.TryDefer(due.PeriodKey, core) is not { } ticket)
         {
-            retriesExhausted = deferrals.MaxDeferrals > 0;
+            retriesExhausted = deferrals.LimitFor(core) > 0;
             return null;
         }
 

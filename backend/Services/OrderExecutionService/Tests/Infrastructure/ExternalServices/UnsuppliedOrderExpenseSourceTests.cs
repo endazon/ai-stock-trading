@@ -25,6 +25,42 @@ public class UnsuppliedOrderExpenseSourceTests
         lookup.UnavailableReason.Should().Be(UnsuppliedOrderExpenseSource.Reason);
     }
 
+    // FR-11, ADR-0027 決定4, #1086, IADR-0484: 取得できない理由は発注先で決まる。
+    // moomoo SIMULATE は Trd_GetOrderFee をブローカーが拒否する（2026-10-02 実測）ため「未接続」と書かない。
+    [Theory]
+    [InlineData(BrokerProvider.MoomooSimulate, UnsuppliedOrderExpenseSource.MoomooSimulateReason)]
+    [InlineData(BrokerProvider.InternalPaper, UnsuppliedOrderExpenseSource.InternalPaperReason)]
+    [InlineData(BrokerProvider.MoomooReal, UnsuppliedOrderExpenseSource.Reason)]
+    public async Task 発注先ごとに取得できない理由を返し供給はしない(BrokerProvider provider, string expected)
+    {
+        var lookup = await UnsuppliedOrderExpenseSource.For(provider).GetOrderExpensesAsync(Query());
+
+        lookup.IsSupplied.Should().BeFalse();
+        lookup.UnavailableReason.Should().Be(expected);
+    }
+
+    // 3 つの理由は互いに区別できる（同じ文言へ畳むと、警告から発注先の事情が読めなくなる）。
+    [Fact]
+    public void 三つの理由は互いに異なる()
+    {
+        new[]
+        {
+            UnsuppliedOrderExpenseSource.Reason,
+            UnsuppliedOrderExpenseSource.MoomooSimulateReason,
+            UnsuppliedOrderExpenseSource.InternalPaperReason,
+        }.Should().OnlyHaveUniqueItems();
+        UnsuppliedOrderExpenseSource.MoomooSimulateReason.Should().Contain("SIMULATE").And.Contain("推計でも埋めない");
+    }
+
+    // 未知の発注先は黙って既定（未接続）へ倒さない。
+    [Fact]
+    public void 未知の発注先は例外になる()
+    {
+        var create = () => UnsuppliedOrderExpenseSource.For((BrokerProvider)99);
+
+        create.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     // 型の上で「未供給を 0 件として合計へ混ぜる」経路が無いことを固定する（IADR-0183 と同じ規律）。
     [Fact]
     public async Task 未供給の結果から明細を読むと例外になる()
