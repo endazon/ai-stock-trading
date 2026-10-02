@@ -138,4 +138,146 @@ public class KnowledgeBaseAuthTests
         docStub.CallCount.Should().Be(1);
         docStub.LastAuthorization.Should().BeNull();
     }
+    // --- FR-08, FR-04, NFR-09, #1078, IADR-0485（MSP#1696 の裁定 案 B）: 検索は読み手、保存は書き手。互いへ倒れない ---
+
+    private const string ReaderId = "ai-stock-trading-kb-reader";
+    private const string WriterId = "ai-stock-trading-kb-writer";
+
+    private static async Task<(StubHttpMessageHandler Token, StubHttpMessageHandler Search)> SearchWithAsync(
+        Dictionary<string, string?> values)
+    {
+        values["KnowledgeBase:Search:BaseUrl"] = "http://retrieval";
+        var tokenStub = StubHttpMessageHandler.Json(
+            HttpStatusCode.OK, """{"access_token":"R","token_type":"Bearer","expires_in":300}""");
+        var searchStub = StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[]}""");
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAiStockTradingKnowledgeBase(Config(values));
+        services.AddHttpClient(KnowledgeBaseAuthExtensions.TokenClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => tokenStub);
+        services.AddHttpClient(KnowledgeBaseExtensions.SearchClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => searchStub);
+        using var sp = services.BuildServiceProvider();
+
+        await sp.GetRequiredService<IKnowledgeBaseSearch>().SearchAsync(new KnowledgeQuery("AAPL のニュース"));
+        return (tokenStub, searchStub);
+    }
+
+    // 受け入れ基準（AST 側）: 検索は読み手の資格情報（KnowledgeBase:SearchAuth）で名乗る。
+    [Fact]
+    public async Task 検索は読み手の資格情報で名乗る()
+    {
+        var (token, search) = await SearchWithAsync(new()
+        {
+            ["KnowledgeBase:Auth:TokenEndpoint"] = "http://msp-kc/token",
+            ["KnowledgeBase:Auth:ClientId"] = WriterId,
+            ["KnowledgeBase:Auth:ClientSecret"] = "writer-secret",
+            ["KnowledgeBase:SearchAuth:TokenEndpoint"] = "http://msp-kc/token",
+            ["KnowledgeBase:SearchAuth:ClientId"] = ReaderId,
+            ["KnowledgeBase:SearchAuth:ClientSecret"] = "reader-secret",
+        });
+
+        search.LastAuthorization.Should().Be("Bearer R");
+        token.LastRequestBody.Should().Contain($"client_id={ReaderId}");
+        token.LastRequestBody.Should().NotContain(WriterId, "検索に書き手の資格情報を使わない（最小権限）");
+    }
+
+    // 🔴 検索の節が空なら、書き手の節が揃っていても検索にトークンを付けない（書き手へ倒れない）。
+    [Fact]
+    public async Task 読み手が未設定なら書き手が揃っていても検索にトークンを付けない()
+    {
+        var (token, search) = await SearchWithAsync(new()
+        {
+            ["KnowledgeBase:Auth:TokenEndpoint"] = "http://msp-kc/token",
+            ["KnowledgeBase:Auth:ClientId"] = WriterId,
+            ["KnowledgeBase:Auth:ClientSecret"] = "writer-secret",
+        });
+
+        search.CallCount.Should().Be(1);
+        search.LastAuthorization.Should().BeNull();
+        token.CallCount.Should().Be(0, "書き手の資格情報でトークンを取りに行かない");
+    }
+
+    // 🔴 逆向き: 保存（書き込み）は書き手の資格情報で名乗り、読み手の資格情報を使わない。
+    // ［2026-10-02 / #1078・独立監査］従前の版は token エンドポイントを stub しておらず、保存側がどの節で名乗っても
+    // トークン取得が失敗して Authorization が null になる＝空振りだった。token を stub し、送られた client_id を見る。
+    private static async Task<(StubHttpMessageHandler Token, StubHttpMessageHandler Docs)> SaveWithAsync(
+        Dictionary<string, string?> values)
+    {
+        values["KnowledgeBase:Documents:BaseUrl"] = "http://documents";
+        var tokenStub = StubHttpMessageHandler.Json(
+            HttpStatusCode.OK, """{"access_token":"W","token_type":"Bearer","expires_in":300}""");
+        var docStub = StubHttpMessageHandler.Json(HttpStatusCode.Created, $$"""{"id":"{{Guid.NewGuid()}}"}""");
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAiStockTradingKnowledgeBase(Config(values));
+        services.AddHttpClient(KnowledgeBaseAuthExtensions.TokenClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => tokenStub);
+        services.AddHttpClient(KnowledgeBaseExtensions.DocumentsClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => docStub);
+        using var sp = services.BuildServiceProvider();
+
+        var result = await sp.GetRequiredService<IKnowledgeBaseWriter>().SaveAsync(new KnowledgeDocument("t"));
+        result.Saved.Should().BeTrue();
+        return (tokenStub, docStub);
+    }
+
+    [Fact]
+    public async Task 読み手の資格情報は保存に使わない()
+    {
+        // 両方の節が揃っている（取引判断以外の消費者が将来両方を持っても、保存は書き手で名乗る）。
+        var (token, docs) = await SaveWithAsync(new()
+        {
+            ["KnowledgeBase:Auth:TokenEndpoint"] = "http://msp-kc/token",
+            ["KnowledgeBase:Auth:ClientId"] = WriterId,
+            ["KnowledgeBase:Auth:ClientSecret"] = "writer-secret",
+            ["KnowledgeBase:SearchAuth:TokenEndpoint"] = "http://msp-kc/token",
+            ["KnowledgeBase:SearchAuth:ClientId"] = ReaderId,
+            ["KnowledgeBase:SearchAuth:ClientSecret"] = "reader-secret",
+        });
+
+        docs.CallCount.Should().Be(1);
+        docs.LastAuthorization.Should().Be("Bearer W", "保存は書き手のトークンで名乗る");
+        token.CallCount.Should().BeGreaterThan(0, "前提: token エンドポイントへ実際に取りに行っている（空振りでない）");
+        token.RequestBodies.Should().AllSatisfy(b => b.Should().Contain($"client_id={WriterId}"));
+        token.RequestBodies.Should().NotContain(b => b.Contains(ReaderId), "保存に読み手の資格情報を使わない");
+    }
+
+    // 🔴 読み手だけが揃っていても、保存は読み手で名乗らない（書き手が無ければトークンを付けない。token を取りに行かない）。
+    [Fact]
+    public async Task 読み手だけが揃っていても保存は読み手で名乗らない()
+    {
+        var (token, docs) = await SaveWithAsync(new()
+        {
+            ["KnowledgeBase:SearchAuth:TokenEndpoint"] = "http://msp-kc/token",
+            ["KnowledgeBase:SearchAuth:ClientId"] = ReaderId,
+            ["KnowledgeBase:SearchAuth:ClientSecret"] = "reader-secret",
+        });
+
+        docs.CallCount.Should().Be(1);
+        docs.LastAuthorization.Should().BeNull();
+        token.CallCount.Should().Be(0, "読み手の資格情報でトークンを取りに行かない");
+    }
+
+    [Fact]
+    public void 検索の節は保存の節と独立に読む()
+    {
+        var config = Config(new()
+        {
+            ["KnowledgeBase:Auth:Authority"] = "http://keycloak:8080/realms/platform",
+            ["KnowledgeBase:Auth:ClientId"] = WriterId,
+            ["KnowledgeBase:Auth:ClientSecret"] = "writer-secret",
+            ["KnowledgeBase:SearchAuth:Authority"] = "http://keycloak:8080/realms/platform",
+            ["KnowledgeBase:SearchAuth:ClientId"] = ReaderId,
+            ["KnowledgeBase:SearchAuth:ClientSecret"] = "reader-secret",
+        });
+
+        KnowledgeBaseAuthExtensions.ReadOptions(config, KnowledgeBaseAuthExtensions.SearchSectionName)
+            .ClientId.Should().Be(ReaderId);
+        KnowledgeBaseAuthExtensions.ReadOptions(config).ClientId.Should().Be(WriterId);
+        KnowledgeBaseAuthExtensions.ReadOptions(config, KnowledgeBaseAuthExtensions.SearchSectionName)
+            .TokenEndpoint.Should().Be("http://keycloak:8080/realms/platform/protocol/openid-connect/token");
+    }
 }

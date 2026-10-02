@@ -3,15 +3,15 @@ title: Vault 秘匿参照（External Secrets）opt-in 手順 Runbook
 type: runbook
 status: draft
 created: 2026-07-19
-updated: 2026-09-26
+updated: 2026-10-02
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [NFR-05, SC-04]
 adrs: [ADR-0006, ADR-0022]
-iadrs: [IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, IADR-0308, IADR-0341, MSP:IADR-0077]
+iadrs: [IADR-0485, IADR-0060, IADR-0094, IADR-0107, IADR-0109, IADR-0152, IADR-0308, IADR-0341, MSP:IADR-0077]
 specs: [20260915_795_screen-only-eso-wiring]
-issues: [#24, #318, #262, #263, #364, #686, #795, MSP#1477]
+issues: [#1078, #24, #318, #262, #263, #364, #686, #795, MSP#1477, MSP#1696]
 -->
 
 
@@ -58,7 +58,7 @@ issues: [#24, #318, #262, #263, #364, #686, #795, MSP#1477]
 `service-auth-client-id` / `service-auth-client-secret` / `kb-auth-client-id` / `kb-auth-client-secret` /
 `discord-webhook-url` / `discord-bot-token` / `discord-bot-killswitch-phrase` /
 `discord-owner-auth-client-id` / `discord-owner-auth-client-secret` / `sec-edgar-user-agent` /
-`llm-auth-client-id` / `llm-auth-client-secret`。
+`llm-auth-client-id` / `llm-auth-client-secret` / `kb-reader-auth-client-id` / `kb-reader-auth-client-secret`。
 
 **Discord の環境固有 ID**（非機密）も同じ KV に置く: `discord-bot-guild-id` / `discord-bot-channel-id` /
 `discord-bot-allowed-user-ids` / `discord-bot-user-mapping`。`appSecrets` 有効時、notification の env

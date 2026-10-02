@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-08, FR-01, FR-06, ADR-0001, ADR-0010]
 author: endazon (with Claude Code)
 created: 2026-07-19
-updated: 2026-07-19
+updated: 2026-10-02
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/06_technical/01_architecture-overview.md
@@ -93,6 +93,8 @@ KB の認証は独立した `KnowledgeBase:Auth` セクションから読む（`
 **AST の `Auth:Authority`（＝AST レルム）へはフォールバックしない**。[IADR-0051] の `AddAiStockTradingServiceToken` は
 `Auth:Authority` から導出するが、それを流用すると誤って AST レルムのトークンを出し、故障（決定1）を再現する。
 KB の token エンドポイントは MSP レルムを**明示**する（`KnowledgeBase:Auth:TokenEndpoint` か `KnowledgeBase:Auth:Authority`）。
+
+［2026-10-02 追記 / #1078］**検索は書き手から分離した（[IADR-0485](./IADR-0485_kb-search-uses-separate-reader-client.md)）。** 決定1〜3 の「書き込み・検索の両方を `ai-stock-trading-kb-writer` ／ `KnowledgeBase:Auth` で認証する」のうち、**検索（`kb-search`）は読み手の別クライアント `ai-stock-trading-kb-reader` と別節 `KnowledgeBase:SearchAuth` へ移った**（MSP#1696 の裁定。書き手へはフォールバックしない）。書き込み（`kb-documents`）は従来どおり本 ADR の `KnowledgeBase:Auth`。inline ハンドラ（決定2）と AST レルムへフォールバックしない規則（決定3）は、読み手の節にもそのまま適用する。
 
 ### 4. 既定は空＝トークン無し＝現行 no-op / fail-safe を厳密保持。秘密は Secret 経由・空既定・平文禁止
 `KnowledgeBase:Auth:*` が未設定（＝`IsEnabled` false）なら**トークンを付けない**。`ServiceTokenHandler` は

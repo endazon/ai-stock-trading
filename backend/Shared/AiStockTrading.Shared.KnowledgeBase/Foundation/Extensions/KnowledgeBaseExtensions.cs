@@ -13,7 +13,8 @@ namespace AiStockTrading.Shared.KnowledgeBase.Foundation.Extensions;
 // 安全既定（IADR-0069 決定 2）: `KnowledgeBase:Documents:BaseUrl` 未設定/不正 URI なら保存は NoOp（ログのみ）。
 // `KnowledgeBase:Search:BaseUrl` 未設定/不正 URI なら取得は NoOp（空）。
 // s2s トークン（IADR-0093）: KB は MSP `microservices-platform` レルムの専用クライアントで認証する（AddAiStockTradingKnowledgeBaseAuth）。
-// `KnowledgeBase:Auth:*` 未設定ならトークンを付けない（＝401 → fail-safe）。よって既定ビルド/CI は外部接続なしで成立する。
+// 保存は `KnowledgeBase:Auth`（書き手）、検索は `KnowledgeBase:SearchAuth`（読み手。#1078 / IADR-0485）。
+// それぞれ未設定ならトークンを付けない（＝401 → fail-safe）。よって既定ビルド/CI は外部接続なしで成立する。
 // DocumentService と RetrievalService は別ホストのため、保存・取得それぞれ独立に BaseUrl で opt-in する。
 public static class KnowledgeBaseExtensions
 {
@@ -34,8 +35,9 @@ public static class KnowledgeBaseExtensions
         // BaseUrl 未設定でも登録は無害。KnowledgeBase:Auth 未設定ならトークンは付かない（fail-safe）。
         services.AddHttpClient(DocumentsClientName, c => c.Timeout = DefaultTimeout)
             .AddAiStockTradingKnowledgeBaseAuth(config);
+        // FR-08, #1078, IADR-0485: 検索は読み手（KnowledgeBase:SearchAuth）で名乗る。書き手の KnowledgeBase:Auth へは倒れない。
         services.AddHttpClient(SearchClientName, c => c.Timeout = DefaultTimeout)
-            .AddAiStockTradingKnowledgeBaseAuth(config);
+            .AddAiStockTradingKnowledgeBaseAuth(config, KnowledgeBaseAuthExtensions.SearchSectionName);
 
         // 保存ポート: Documents:BaseUrl が絶対 URI なら Http、さもなくば NoOp（解決時に構成を読む）。
         services.AddSingleton<IKnowledgeBaseWriter>(sp =>
