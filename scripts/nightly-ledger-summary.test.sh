@@ -13,6 +13,7 @@
 #   - SQL に書き込み・DDL の語が無い
 #   - 段 2（IADR-0462）の 2 種（照会の状態の変化・LLM を呼ぶ前の見送り）も数える（T-10-1775）
 #   - §12 は LlmCostIncurred の円を数え、§13 は上限を configuration_svc から読んで cost_control_svc の照会へ渡す（#1140。T-10-2024〜T-10-2026）
+#   - §14 は取引判断の最中の例外の最終の失敗（TradeDecisionFailed）を起点 × 型名で数え、メッセージの欄を読まない（#1111。T-10-2185）
 set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -112,6 +113,15 @@ ok '台帳の 14 種類のイベントを数える（段 2 の照会の状態の
 if grep -q "^\\\\echo '-- EntryBlockedByRiskControls は" <<<"$sql" && grep -q "^\\\\echo '-- 保有 0・未約定なしで新規建てが必ず拒否される銘柄は" <<<"$sql"; then
   ok '§5・§11 に計器の移動（EntryBlockedByRiskControls）の注記がある'
 else ng '§5・§11 に計器の移動の注記が無い'; fi
+
+# --- §14: 取引判断の最中の例外（NFR, #1111, IADR-0483 決定 5） --------------------------------
+# T-10-2185: TradeDecisionFailed を起点 × 型名で数える。台帳に無い欄（メッセージ・スタック）を読まない。
+if grep -q "^\\\\echo '== 14. 取引判断の最中の例外" <<<"$sql" && grep -q "\"EventType\" = 'TradeDecisionFailed'" <<<"$sql" \
+  && grep -q '"Detail"->>'"'"'ExceptionType'"'" <<<"$sql" && grep -q '"Detail"->>'"'"'CycleTrigger'"'" <<<"$sql"; then
+  ok '§14 は TradeDecisionFailed を起点 × 例外の型名で数える'
+else ng '§14（取引判断の最中の例外）が無い'; fi
+if grep -Eq "'(Message|StackTrace|InnerException)'" <<<"$sql"; then ng 'SQL が例外のメッセージ・スタックの欄を読む'
+else ok 'SQL は例外のメッセージ・スタックの欄を読まない'; fi
 
 # --- §12・§13: LLM の費用（NFR, #1140, IADR-0478 決定 2） ------------------------------------
 # T-10-2024: 窓の中の LlmCostIncurred の円を数える（§12）。

@@ -31,6 +31,11 @@
          送り手の本物の型（DailyBarsView）を直列化するためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
          （リスク管理のテストと同じ別名 OrderExecutionWorker）。 -->
     <ProjectReference Include="..\..\OrderExecutionService\OrderExecutionService.csproj" Aliases="OrderExecutionWorker" />
+    <!-- NFR, FR-11, #1111, IADR-0483 決定1・4: 取引判断の最中の例外の最終の失敗（T-10-2186）が、`Exception.Data` と内側の例外に
+         秘密を持つ例外でも、監査台帳の記録（AuditEntryFactory の要約と Detail）へ秘密を運ばないことを、発行の実装から台帳の
+         記録まで続けて確かめるためのテスト専用参照。`Program` の曖昧を避けて extern alias で参照する
+         （ReportService.Tests と同じ別名 AuditWorker）。 -->
+    <ProjectReference Include="..\..\AuditService\AuditService.csproj" Aliases="AuditWorker" />
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、
          共通配線ヘルパを持つ shim をテストからのみ参照する（ハンドラのランタイム生成 RuntimeCompilation も同経路で入る）。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />

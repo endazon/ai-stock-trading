@@ -329,6 +329,9 @@ public class AuditCycleCompletenessTests
             new PositionQueryStatusChanged(
                 PositionQuerySource.ProtectiveStopGuard, PositionQueryStatus.Failing, PositionQueryStatus.Healthy,
                 "Transient", t, 1, t),
+            // T-10-2183, NFR, FR-04, FR-11, #1111, IADR-0483: 取引判断の最中の例外の最終の失敗。
+            new TradeDecisionFailed(
+                Guid.NewGuid(), "AAPL", Market.UnitedStates, "scheduled", "System.InvalidOperationException", t),
             new TradeExpenseRecorded(new TradeExpense(
                 "AAPL", Market.UnitedStates, TradeExpenseCategory.Commission, 1.00m, day, "ORD-1", t)),
             new WithdrawalTriggered(0, "最大 DD 到達", true, t),
