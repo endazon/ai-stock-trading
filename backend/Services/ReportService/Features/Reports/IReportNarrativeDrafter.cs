@@ -46,7 +46,20 @@ public sealed record ReportNarrativeContext(
     IReadOnlyList<string> Markets,
     PnlSummary Pnl,
     string PolicySummary,
-    ParentPolicyReference? ParentPolicy = null);
+    ParentPolicyReference? ParentPolicy = null)
+{
+    /// <summary>
+    /// FR-06, FR-16, #1156, IADR-0480 決定 1: 取得できなかった（未供給の）入力。空＝未供給なし。
+    /// プロンプトは一覧として示し、「無い」「0」と言い切らせない。
+    /// </summary>
+    public IReadOnlyList<ReportInput> UnsuppliedInputs { get; init; } = [];
+
+    /// <summary>
+    /// FR-06, FR-16, #1156, IADR-0480 決定 1: 日報の建玉（現在の台帳）。<b>null＝照会できていない／空列＝建玉なし</b>。
+    /// 日報以外は常に null であり、プロンプトは種別で読み分ける（週報・月報は建玉を入力に持たない）。
+    /// </summary>
+    public IReadOnlyList<ReportPosition>? Positions { get; init; }
+}
 
 // FR-07, IADR-0120 決定3: 上位方針の参照（期間キーと本文）。
 // 期間キーと本文を 1 つの record に束ねることで「片方だけ在る」状態を表現不能にする

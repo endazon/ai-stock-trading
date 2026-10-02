@@ -69,7 +69,13 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var draft = await drafter
             .DraftAsync(
                 new ReportNarrativeContext(
-                    request.Kind, request.PeriodKey, periodLabel, markets, pnl, request.PolicySummary, parentPolicy),
+                    request.Kind, request.PeriodKey, periodLabel, markets, pnl, request.PolicySummary, parentPolicy)
+                {
+                    // FR-06, FR-16, #1156, IADR-0480 決定 1: 未供給と 0 を区別して散文へ渡す。建玉は日報だけが持つ
+                    // （null＝照会できていない／空列＝建玉なし。週報・月報は建玉を入力に持たない）。
+                    UnsuppliedInputs = request.UnsuppliedInputs ?? [],
+                    Positions = request.Kind == ReportKind.Daily ? request.Positions : null,
+                },
                 cancellationToken)
             .ConfigureAwait(false);
         var narrative = draft.Text;
@@ -308,7 +314,10 @@ public sealed record DraftRequest(
     StopLossMethodUsage? StopLossMethods = null,
     // FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定4: 日報の「実際に適用された手法」・月報 §6 の日数ベースの内訳の供給
     // （発注執行の解決結果）。**null＝照会できていない**。既定 null で既存の呼び出しは非破壊。
-    StopLossMethodResolutionFeed? StopLossMethodResolutions = null);
+    StopLossMethodResolutionFeed? StopLossMethodResolutions = null,
+    // FR-06, FR-16, #1156, IADR-0480 決定 1: 生成器が「取得できなかった」と判定した入力（散文の文脈へ渡す）。
+    // null・空＝未供給の判定を持たない（手動の API）。散文が値の無さや 0 を「無い」と言い切らないために使う。
+    IReadOnlyList<ReportInput>? UnsuppliedInputs = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。
