@@ -417,12 +417,18 @@ services:
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
-      - { name: KnowledgeBase__Search__BaseUrl, value: "" }       # RAG 読み取りは任意（空=NoOp）
-      - { name: KnowledgeBase__Auth__Authority, value: "" }
-      - name: KnowledgeBase__Auth__ClientId
-        secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
-      - name: KnowledgeBase__Auth__ClientSecret
-        secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
+      # FR-08, FR-04, ADR-0020, #1078, IADR-0485（MSP#1696 の裁定 案 B）: RAG 読み取りを経路 B で有効にする（以前は空=NoOp で、
+      # 収集したニュースが判断へ 1 件も届かなかった）。宛先は MSP の RetrievalService。本文の Scope（project=ai-stock-trading）は
+      # HttpKnowledgeBaseSearch が送る（#1083）。🔴 本番の既定（values.yaml）は空のまま —— 本番は MSP の既定拒否の
+      # NetworkPolicy が AST 名前空間からの ingress を塞いでいる（別件）。
+      - { name: KnowledgeBase__Search__BaseUrl, value: "http://retrieval-service.microservices-platform:8080" }
+      # 読み手（ai-stock-trading-kb-reader）で名乗る。Authority の**値はここに書かない**（template が global.authAuthority から導出。
+      # 上の KnowledgeBase__Auth__Authority と同じ理由。導出は KnowledgeBase__Search__BaseUrl が非空のときだけ効く）。
+      - { name: KnowledgeBase__SearchAuth__Authority, value: "" }
+      - name: KnowledgeBase__SearchAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: kb-reader-auth-client-id, optional: true }
+      - name: KnowledgeBase__SearchAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: kb-reader-auth-client-secret, optional: true }
       # --- 監視銘柄（構成ベース watchlist）。#286/IADR-0282 で MarketMonitor__BaseUrl を結線した後は
       #     権威源（market-monitor）が優先され、本設定は**使われない**（#1134 / IADR-0475: 照会不達でも構成へ倒さない。
       #     結線を外したときだけの対象）。

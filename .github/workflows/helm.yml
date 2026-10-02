@@ -229,6 +229,20 @@ jobs:
             echo "::error::既定描画の LlmGateway__Auth__ClientId が kb-auth-client-id を参照している（llm-auth-client-id であるべき・#764）。"; exit 1
           fi
           printf '%s' "$out" | grep -A4 'name: LlmGateway__Auth__ClientId' | grep -q 'key: llm-auth-client-id'             || { echo "::error::既定描画に LlmGateway__Auth__ClientId → llm-auth-client-id が無い（#764）。"; exit 1; }
+          # #1078 / IADR-0485（MSP#1696 の裁定 案 B）: KB の検索は読み手（kb-reader-auth-*）で名乗る。書き手（kb-auth-*）の資格情報を
+          # 検索へ渡さない（最小権限）。取引判断は KB へ書かないので、取引判断の Deployment に kb-auth-* が在れば赤。既定・経路 B の両面で見る。
+          for face in default local; do
+            if [ "$face" = local ]; then fo="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"; else fo="$(helm template ast "$CHART" -s templates/deployment.yaml)"; fi
+            td="$(printf '%s' "$fo" | awk 'BEGIN{RS="---"} /\n  name: trade-decision-service\n/')"
+            [ -n "$td" ] || { echo "::error::[$face] 描画に trade-decision-service の Deployment が無い（検査の空振り）。"; exit 1; }
+            if printf '%s' "$td" | grep -q 'key: kb-auth-client-'; then
+              echo "::error::[$face] 取引判断が書き手の資格情報（kb-auth-client-*）を参照している（検索は kb-reader-auth-client-* であるべき・#1078）。"; exit 1
+            fi
+            printf '%s' "$td" | grep -A4 'name: KnowledgeBase__SearchAuth__ClientId' | grep -q 'key: kb-reader-auth-client-id' \
+              || { echo "::error::[$face] 取引判断に KnowledgeBase__SearchAuth__ClientId → kb-reader-auth-client-id が無い（#1078）。"; exit 1; }
+            printf '%s' "$td" | grep -A4 'name: KnowledgeBase__SearchAuth__ClientSecret' | grep -q 'key: kb-reader-auth-client-secret' \
+              || { echo "::error::[$face] 取引判断に KnowledgeBase__SearchAuth__ClientSecret → kb-reader-auth-client-secret が無い（#1078）。"; exit 1; }
+          done
           for forbidden in 'kind: ExternalSecret' 'name: opend'; do
             if printf '%s' "$out" | grep -q "$forbidden"; then
               echo "::error::既定値の描画に「$forbidden」が現れた（#132 の絶対条件＝既定 no-op に違反）。"
@@ -604,7 +618,8 @@ jobs:
           # 抽出が壊れると「1 件も違わない＝緑」で静かに壊れるため、下限件数で破綻を検出する
           # （既定描画の実測は 13 件・values-local は 17 件・CronJob を含む描画は 18 件。2026-09-11）。
           FLOOR=10
-          # #781: KB / LLM ゲートウェイの s2s Authority（KnowledgeBase__Auth__Authority / LlmGateway__Auth__Authority）を
+          # #781: KB / LLM ゲートウェイの s2s Authority（KnowledgeBase__Auth__Authority / LlmGateway__Auth__Authority。
+          # #1078 / IADR-0485 で検索の読み手 KnowledgeBase__SearchAuth__Authority を足した＝values-local の期待は 4 → 5）を
           # env 名で拾い、「kind/workload/env名<TAB>値」を出す（値は引用符を外す。空なら空）。
           # 🔴 上の「違うレルムが無いこと」は**欠けた経路を検出しない**（値が空なら /realms/ を含まず母集合から落ちる
           # だけで、件数下限 10 も割らない）。導出の 2 行を消しても、導出をレルム名で条件付けしても（IADR-0324 の
@@ -618,7 +633,7 @@ jobs:
                 if (match($0,/\n  name: [A-Za-z0-9.-]+/)) { wl=substr($0,RSTART+9,RLENGTH-9) }
                 n=split($0,L,"\n");
                 for(i=1;i<=n;i++){
-                  if (L[i] ~ /^[ \t]*-[ \t]+name:[ \t]*"?(KnowledgeBase|LlmGateway)__Auth__Authority"?[ \t\r]*$/) {
+                  if (L[i] ~ /^[ \t]*-[ \t]+name:[ \t]*"?(KnowledgeBase__Auth|KnowledgeBase__SearchAuth|LlmGateway__Auth)__Authority"?[ \t\r]*$/) {
                     env=L[i]; sub(/^[^:]*:[ \t]*/,"",env); gsub(/["\r ]/,"",env);
                     v="";
                     if (i<n && L[i+1] ~ /^[ \t]*value:/) { v=L[i+1]; sub(/^[ \t]*value:[ \t]*/,"",v); gsub(/["\r]/,"",v); gsub(/^[ \t]+|[ \t]+$/,"",v) }
@@ -652,7 +667,7 @@ jobs:
               echo "--- $1: KB / LLM の s2s Authority（非空 $fcnt 件・期待 $4 件） ---"
               printf '%s\n' "$s2s"
               if [ "$fcnt" -ne "$4" ]; then
-                echo "::error::$1: 非空の KnowledgeBase__Auth__Authority / LlmGateway__Auth__Authority が $fcnt 件（期待 $4 件）。少なければ BaseUrl を配線したサービスで global.authAuthority からの導出が効いていない（空の Authority は匿名呼び出しになり 401 で止まる）。多ければ導出の条件が BaseUrl の配線ではなくなっている（#781 / IADR-0324）。"
+                echo "::error::$1: 非空の KnowledgeBase__Auth__Authority / KnowledgeBase__SearchAuth__Authority / LlmGateway__Auth__Authority が $fcnt 件（期待 $4 件）。少なければ BaseUrl を配線したサービスで global.authAuthority からの導出が効いていない（空の Authority は匿名呼び出しになり 401 で止まる）。多ければ導出の条件が BaseUrl の配線ではなくなっている（#781 / IADR-0324）。"
                 exit 1
               fi
               echo "ok: $1 は KB / LLM の s2s Authority が $4 件とも埋まっている"
@@ -662,12 +677,12 @@ jobs:
           check "values-local（経路B・連結配備）" \
             "$(helm template ast "$CHART" -f "$CHART/values-local.yaml")" \
             "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")" \
-            4
+            5
           # 既定 false のフラグを ON にしないと CronJob は描画されない＝#456 で破れた当の経路が検査の外に落ちる。
           check "values-local + 全フラグ ON（CronJob を含む）" \
             "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set tradingCycle.cronjob.enabled=true --set opend.enabled=true --set moomoo.enabled=true)" \
             "$(authority_of "$CHART/values.yaml" "$CHART/values-local.yaml")" \
-            4
+            5
           # 本番描画にレルムのリテラルが 1 つも無いこと（--set に全経路が追随する）。
           check "既定 + --set global.authAuthority 差し替え" \
             "$(helm template ast "$CHART" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
@@ -679,7 +694,7 @@ jobs:
           check "values-local + --set global.authAuthority 差し替え" \
             "$(helm template ast "$CHART" -f "$CHART/values-local.yaml" --set global.authAuthority=http://kc:8080/realms/zzsentinel)" \
             "http://kc:8080/realms/zzsentinel" \
-            4
+            5
           echo "ok: 配備される全経路（Deployment/CronJob/Job の env）が単一レルムを指す（ADR-0038 決定2）"
       # #279 / IADR-0114 決定4: Helm は**リストを置換する**ため、values-local が extraEnv を上書きしている
       # サービスでは、本番 values.yaml 側にキーが増えたときに写し忘れると**当該 env が消える**（有効化のつもりで
