@@ -3,15 +3,15 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-10-01
+updated: 2026-10-02
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0049, ADR-0050]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1120, #1121, #1136, #1130, planning#292, planning#644, planning#646, planning#703, planning#704]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471, IADR-0481]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1120, #1121, #1136, #1130, #1048, planning#292, planning#644, planning#646, planning#703, planning#704]
 -->
 
 
@@ -954,6 +954,11 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
   過ぎた未約定の注文を照会しないが、逆指値の記録の時刻は武装の時刻である。そこで、保護が有効なあいだの逆指値は
   追跡上限の対象外として照会し、常駐ガードが逆指値の約定・失効を見て（または取り消して）保護を完了させるときは、
   その前に逆指値の記録を追跡の窓へ戻す。照会が増えるのは保護が有効な逆指値の数だけである。
+- **約定追跡の打ち切りは監査台帳に残る**。追跡上限を過ぎても終わらない注文は、打ち切る直前に 1 回だけ照会し直し、
+  終わっていれば通常どおり約定を記録する。まだ終わっていなければ追跡を打ち切り、その事実（`OrderFillTrackingAbandoned`。
+  最後の状態・約定数・追跡の起点）を注文と同じ相関で監査台帳へ残す。以後その注文の終端の約定は台帳へ届かないため、
+  逆指値なしの建玉の免除は発注数量のまま残るが、その理由を相関で辿れる。打ち切りは追跡の起点ごとに 1 回だけ記録する
+  （起点が窓へ戻されてから再び期限を過ぎたときは別に記録する）。Discord 通知は出さない（警告ログが 1 行出る）。
 
 ### 新規建てが審査で必ず拒否される銘柄は、LLM を呼ぶ前に見送る
 
@@ -1080,7 +1085,10 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
   両者が食い違っていると、設定側では保存できた手法が発注執行で見送られる（例: 設定上は moomoo SIMULATE のまま、
   構成が内蔵 paper → S2 を保存できるが新規建ては全件見送り・Error ログと見送りの通知あり）。**S0 以外を選ぶ前に、
   設定上の発注先を発注執行の構成と揃える**（逆向きの食い違い〔設定上は内蔵 paper・実際は moomoo SIMULATE〕は
-  選んだ手法どおりに動くが、表示される発注先が実態と違う）。設定側の判定を観測（口座照会の発注先）へ寄せることはしない
+  選んだ手法どおりに動くが、表示される発注先が実態と違う）。**揃っていることはリスク管理が口座照会の観測のたびに確かめる**——
+  発注執行が観測に載せる実際の発注先と設定上の発注先が違えば、揃える操作（`PUT /risk-controls/settings/broker-provider`）と揃える先の値を
+  名指しした Warning を出す（実際が実弾なら Error）。観測は既定 5 分ごとなので、起動の直後から出る。揃っていれば何も出ない。
+  **設定値は観測から書き換えない**（実弾への切り替えに求める確認操作を迂回する経路になるため。揃えるのは利用者の操作である）。設定側の判定を観測（口座照会の発注先）へ寄せることはしない
   ——安全は発注執行の承認ごとの判定（実際のアダプタで判定・見送りへ倒す）が担っており、観測が届かない時間帯の
   扱いを新たに決めると関門の根拠が弱まるためである。
 - **承認への搭載**: 取引判断の承認（`OrderApproved`）は**審査時点で有効な手法**を運ぶ。発注執行は承認が運んだ値で
@@ -1097,8 +1105,15 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 - **常駐ガードとの関係**: S2 の建玉は保護逆指値の記録を作らないため、失効検知の巡回対象に入らない
   （失効扱いで手仕舞われることが構造的に無い）。S1 の記録はブローカーへ照会せずに巡回する（下記）。
   S0 の建玉に対するガードの挙動は、同じ銘柄・方向に S0 以外の手法の建玉が無い限り変わらない。他の手法の有効な保護記録
-  （S1 の残保護数量・S3 の逆指値の数量）は差し引いて判定するが、🔴 **S2 の建玉は記録を持たないため差し引けない**
-  （下の S1 の表の「同じ銘柄に S0 と S2 の建玉が併存」。残る制約）。
+  （S1 の残保護数量・S3 の逆指値の数量）は差し引いて判定するが、S2 の建玉は記録を持たないため差し引けない。
+  そこで🔴 **同じ銘柄・同じ方向に手法の違う建玉を併存させない**（下の「同じ銘柄の手法の併存」）。
+- **同じ銘柄の手法の併存（新規建ての見送り）**: 新規建ての承認を送る前に、同じ銘柄・市場・方向に**別の手法の有効な保護記録**
+  （完了していない記録。エントリーの送信結果待ちを含む）が残っていれば、新しい手法での新規建てを**発注せず見送る**
+  （`OrderDispatchForgone` の理由 `StopLossMethodConflict`。Warning ログと見送りの通知・監査）。S0・S1・S2・S3 のどの組み合わせにも効く。
+  照合は予約の前と、自分の記録を残した後（送信の直前）の 2 回行う（並行した 2 本の承認のどちらかが必ず他方を見る）。
+  S2 の建玉は記録を持たないので、**moomoo SIMULATE の S0・S3 の新規建ては、記録の無い建玉（S2・人手）がある銘柄で見送る**
+  （理由 `UnattributedPosition`。S1 の武装の前提条件と同じ判定）。実弾・内蔵 paper の S0 は建玉照会を足さない。
+  🔴 **決済（手仕舞い・損切り）は止めない**。手法を切り替えてその銘柄へ新規建てしたいときは、先に前の手法の建玉を手仕舞う。
 - **起動時の停止**: 発注執行は手法を起動時に知らない（設定はリスク管理が持ち、承認ごとに届く）。実弾の発注先は
   起動時の閂が別に止めている。したがって「実弾で S0 以外が有効」は設定側の 2 方向の拒否と、承認ごとの見送りで塞ぐ。
 - **注意（S2 の読み方）**: S2 の建玉が損切りラインへ到達すると市場監視は従来どおり到達を通知するが、
@@ -1169,7 +1184,7 @@ S1 は、2026-07-31 の裁定が一本化で消した「システムが決済注
 | 発注執行の再起動 | 記録は DB にあり、再起動後の到達・ガードの巡回がそのまま扱う。停止中に発行された到達は発注執行の購読キュー（永続）に残り、再開後に届く |
 | 常駐ガード | ブローカーへ注文照会をしない。**残保護数量が 0 になり、かつ外部要因の観測が確定したときだけ**記録を完了にする（純額や他手法の主張では完了させない）。処理順は**ブローカー側の記録 → 到達済み → 未到達**である（役目を終えた逆指値の主張で持ち分を削らないため／未到達の記録に持ち分を先取りさせないため） |
 | 同じ銘柄に S0 と S1 の建玉が併存 | ブローカー側の建玉残は**システム側の残保護数量を差し引いて**判定する（S1 の建玉が S0 の逆指値を生かし続けない／S1 の決済が S0 の建玉を売らない）。超過はシステム側の記録から先に削るため、**システム側が吸収しきれる限りブローカー側の逆指値は取り消さない**。吸収しきれない構成（建玉が丸ごと消えた・システム側の主張が無い）では従来どおり取り消す。ブローカー側の主張は**実在する逆指値の数量**であり、帳簿だけを部分的に削っても注文は縮まないため、**全部か 0 か**でしか削らない（0 になった記録は逆指値そのものを取り消して完了する）。システム側の記録が 1 件も無い構成では差し引く量が 0 で、従来と挙動が変わらない |
-| 同じ銘柄に S0 と S2 の建玉が併存（🔴 **残る制約**） | S2 の建玉は保護記録を持たないため、**差し引けない**。S0 の側から見た建玉残に S2 の数量が入るので、**S0 の建玉が消えても S2 の建玉が残っていれば S0 の逆指値を取り消さない**（残った逆指値が約定すると S2 の建玉を決済する）。S0 の逆指値が失効したときも、S0 の建玉が消えていて S2 の数量があれば、S0 の数量を上限に逆指値を張り直す（または手仕舞う）ため、S2 の建玉を決済し得る。**今は起きない**——SIMULATE ではブローカーが逆指値を受け付けないため S0 の建玉が残らず、S2 は SIMULATE でしか選べない。直し方は未決で、実弾・S3 の常用より前に決める。**決まるまでの暫定の運用**: 同じ銘柄に一方の手法の建玉が残っている間は、S0 と S2 の間で手法を切り替えてその銘柄へ新規建てを出さない（切り替えるなら、その銘柄の建玉を先に手仕舞う） |
+| 同じ銘柄に S0 と S2 の建玉が併存 | S2 の建玉は保護記録を持たないため差し引けない（S0 の側から見た建玉残に S2 の数量が入る）。そこで**併存を作らない**——同じ銘柄・方向に別の手法の有効な記録がある新規建ては見送り（`StopLossMethodConflict`）、moomoo SIMULATE の S0・S3 の新規建ては記録の無い建玉（S2）がある銘柄で見送る（`UnattributedPosition`）。決済は止めない。S0 と S3 が互いの主張を差し引き合う規則も、同じ見送りで併存しないため働かない。**残るのは配備より前に既に併存していた建玉だけ**（今は到達しない構成のため、併存は無い見込み） |
 
 - 🔴 **受容した制約（原理的な限界）**: **ブローカーの建玉照会は銘柄単位の純額しか返さないため、次の 2 つを区別できない。**
   ①**建玉照会が 1 巡回だけ過少に返った**（＝主張を戻すべき。戻さないとその記録の損切りが二度と出ない）

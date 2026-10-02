@@ -132,6 +132,18 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
             .Select(ToDomain)
             .ToList();
 
+    // FR-10, #1048, IADR-0481 決定1: 完了していない記録（Active・AwaitingEntry）を機構を問わず古い順に返す（手法の併存の照合）。
+    public IReadOnlyList<ProtectiveStopOrder> FindOpenFor(string symbol, Market market, TradeSide entrySide) =>
+        db.ProtectiveStopOrders
+            .Where(r => r.State != ProtectiveStopState.Completed
+                && r.Symbol == symbol
+                && r.Market == market
+                && r.EntrySide == entrySide)
+            .OrderBy(r => r.CreatedAt)
+            .ToList()
+            .Select(ToDomain)
+            .ToList();
+
     // #820, IADR-0344 決定1・決定4: 損切りライン到達の突き合わせ対象（Active な S1 の同一銘柄・同一方向）。
     public IReadOnlyList<ProtectiveStopOrder> FindActiveSoftwareStops(string symbol, Market market, TradeSide entrySide) =>
         db.ProtectiveStopOrders

@@ -60,6 +60,24 @@ public static class AuditEntryFactory
         $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}）",
         AuditSerialization.Serialize(e), e.ExecutedAt, recordedAt);
 
+    // 🔴 FR-10, FR-11, #1048（利用者裁定 2026-10-02・Q3）, IADR-0481 決定3: 約定追跡の打ち切り。相関は注文の DecisionId
+    // （エントリーなら免除・保護レグと同じ相関）。Id は呼び出し側が OrderId と追跡の起点から決定的に導く（<see cref="FillTrackingAbandonedIdFor"/>）。
+    // 要約は「以後、終端の約定記録が届かない」ことと、免除（S2）があれば発注数量のまま残ることを書く。時刻は打ち切った時刻。
+    public static AuditEntry From(OrderFillTrackingAbandoned e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(OrderFillTrackingAbandoned), e.DecisionId, e.Symbol,
+        // 要約の上限（Truncate）に収まるよう、肝心の帰結を先に書く。追跡の起点・発注先・追跡上限は Detail（全量 JSON）にある。
+        Truncate($"{e.Symbol} 約定追跡を打ち切り——**以後この注文の終端の約定記録は台帳へ届かない**（免除があれば発注数量のまま残る）。"
+            + $"最後の状態 {e.LastStatus} 約定{e.FilledQuantity}/発注{e.Quantity}（{e.PositionEffect} {e.Side}・OrderId={e.OrderId}）"),
+        AuditSerialization.Serialize(e), e.AbandonedAt, recordedAt);
+
+    /// <summary>
+    /// 🔴 #1048, IADR-0481 決定3: 約定追跡の打ち切りの記録 Id（OrderId と追跡の起点から決定的に導く）。発注執行は「発行の後に印を書く」
+    /// ため同じ打ち切りを 2 回以上発行し得るが、台帳には 1 件だけ残る。起点が違えば（追跡が窓へ戻されてから再び打ち切った）別の記録。
+    /// </summary>
+    public static Guid FillTrackingAbandonedIdFor(string orderId, DateTimeOffset trackedFrom) =>
+        AuditCorrelation.From(
+            "order-fill-tracking-abandoned:" + orderId + ":" + trackedFrom.UtcTicks.ToString(CultureInfo.InvariantCulture));
+
     // FR-05, FR-19, #154, IADR-0067: 注文の訂正（注文履歴テレメトリ）。相関は既存の注文系と同じ DecisionId。
     // OrderExecuted と同様に銘柄を持たない（DecisionId で相関して補完する系）ため Symbol は null。
     public static AuditEntry From(OrderModified e, Guid id, DateTimeOffset recordedAt) => new(

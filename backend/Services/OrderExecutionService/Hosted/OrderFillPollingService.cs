@@ -106,6 +106,25 @@ public sealed class OrderFillPollingService(
         foreach (var reArmed in result.SoftwareStopEvents ?? [])
             await bus.PublishAsync(reArmed).ConfigureAwait(false);
 
+        // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 追跡の打ち切りを監査へ残す。**発行の後に印を書く**——先に書くと、
+        // 発行に失敗した打ち切りが二度と記録されない。印を書けずに次の巡回で再び発行しても、監査台帳は OrderId と
+        // 追跡の起点から決定的に導いた Id で 1 件に畳む。
+        if (result.Abandoned is { Count: > 0 } abandoned)
+        {
+            var executedOrders = scope.ServiceProvider.GetRequiredService<IExecutedOrderStore>();
+            foreach (var giveUp in abandoned)
+            {
+                await bus.PublishAsync(giveUp).ConfigureAwait(false);
+                executedOrders.MarkTrackingAbandoned(giveUp.OrderId, giveUp.TrackedFrom);
+                logger.LogWarning(
+                    "約定追跡を打ち切りました（追跡上限 {MaxTracking} を過ぎても非終端）: DecisionId={DecisionId} OrderId={OrderId} "
+                        + "銘柄={Symbol} 最後の状態={Status} 約定 {Filled}/{Quantity} 追跡の起点={TrackedFrom}。"
+                        + "以後この注文の約定・終端は台帳へ届きません。証券会社の画面で注文の結果を確認してください。",
+                    giveUp.MaxTracking, giveUp.DecisionId, giveUp.OrderId, giveUp.Symbol, giveUp.LastStatus,
+                    giveUp.FilledQuantity, giveUp.Quantity, giveUp.TrackedFrom);
+            }
+        }
+
         if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogInformation(
                 "約定追跡: 非終端 {Scanned} 件を照会（更新 {Updated} / 終端化 {Terminalized} / 変化なし {Unchanged}"

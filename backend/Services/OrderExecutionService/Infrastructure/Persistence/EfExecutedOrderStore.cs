@@ -118,6 +118,36 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
         return true;
     }
 
+    // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 追跡上限を過ぎた非終端の行のうち、その起点で打ち切りを記録していないもの（古い順）。
+    // 除外（Active な S0 の逆指値レグ）は件数の上限の前に問い合わせの段で行う（#1048 独立監査）。
+    public IReadOnlyList<ExecutionRecord> FindTrackingExpired(
+        DateTimeOffset before, int batchSize, IReadOnlyCollection<string>? excludedOrderIds = null)
+    {
+        string[] excluded = [.. excludedOrderIds ?? []];
+        return [.. db.ExecutedOrders
+            .Where(r => (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
+                && r.ExecutedAt < before
+                && (r.TrackingAbandonedFrom == null || r.TrackingAbandonedFrom != r.ExecutedAt)
+                && !excluded.Contains(r.OrderId))
+            .OrderBy(r => r.ExecutedAt)
+            .Take(batchSize)
+            .Select(r => ToRecord(r))];
+    }
+
+    // 🔴 FR-10, FR-11, #1048, IADR-0481 決定3: 打ち切りの印を書く（印の列だけ。起点が進んでいれば書かない）。
+    public bool MarkTrackingAbandoned(string orderId, DateTimeOffset trackedFrom)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        var row = db.ExecutedOrders.Find(orderId);
+        if (row is null || row.ExecutedAt != trackedFrom)
+            return false;
+
+        row.TrackingAbandonedFrom = trackedFrom;
+        db.SaveChanges();
+        return true;
+    }
+
     // #270, IADR-0113: 観測した最新のブローカ状態を既存行へ反映する。行が無ければ何もしない
     // （新規に作らない＝DecisionId 1:1 の不変を壊さない）。
     public bool UpdateOutcome(

@@ -79,6 +79,11 @@ public static class OrderDispatchForgoneLifecycle
             // `return` し、`reservations.TryReserve` とブローカーへの送信は**いずれも後**）。解放しないと、この承認の決済が
             // 処理中として在庫を押さえ続け、処理中の決済が約定しなかったときに次の手仕舞いが通らない（#852 と同型）。
             OrderDispatchForgoneReason.InFlightCloseCoversPosition => true,
+            // 🔴 FR-10, #1048, IADR-0481 決定1: 同じ銘柄・同じ方向に別の手法の有効な保護記録がある新規建て。**送信前**である
+            // （`OrderExecutionAppService.ExecuteAsync` を実測: 予約の前の判定は保護記録の読み取りだけの後で `return`、
+            // 自分の記録を残した後の判定は `TryReserve` の後・**ブローカーへの送信の前**で予約を Forgone へ移して `return` する
+            // ——接続確立の失敗〔BrokerUnavailable〕と同じ位置づけ）。Open でしか起きないため決済の在庫解放は動かない。
+            OrderDispatchForgoneReason.StopLossMethodConflict => true,
             // 🔴 既定は「解放しない」。新しい理由を足す人は、それが確実に未発注かを**実測して**からここへ足す。
             //
             // 🔴 判定の基準は**理由の名前ではなく「ブローカーへ送信したか」**である。

@@ -256,6 +256,10 @@ public class AuditCycleCompletenessTests
             new OrderCancelled(decisionId, "ORD-1", "市場閉場のため取消", t),
             new OrderDispatchForgone(decisionId, Intent(), OrderDispatchForgoneReason.BrokerUnavailable, t),
             new OrderExecuted(decisionId, "ORD-1", OrderStatus.Filled, 10, 1_005m, t, BrokerProvider.MoomooSimulate),
+            // T-10-2119, FR-10, FR-11, #1048, IADR-0481 決定3: 約定追跡の打ち切り。
+            new OrderFillTrackingAbandoned(
+                decisionId, "ORD-1", "AAPL", Market.UnitedStates, TradeSide.Buy, PositionEffect.Open, 10, 0,
+                OrderStatus.Accepted, t.AddHours(-25), TimeSpan.FromHours(24), BrokerProvider.MoomooSimulate, t),
             new OrderModified(decisionId, "ORD-1", 10, 1_000m, 8, 1_010m, "数量を縮小", t),
             new OrderRejected(decisionId, Intent(), [RejectionReason.PerOrderAmountExceeded], t),
             new PositionCloseRequested(

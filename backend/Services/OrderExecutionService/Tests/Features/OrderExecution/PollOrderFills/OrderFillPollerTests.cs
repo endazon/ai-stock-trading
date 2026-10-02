@@ -251,7 +251,15 @@ public class OrderFillPollerTests
         var result = await poller.PollOnceAsync(MaxTracking, batchSize: 100);
 
         result.Scanned.Should().Be(1);
-        broker.QueriedOrderIds.Should().Equal("ORD-NEW");
+        // 🔴 #1048, IADR-0481 決定3: 追跡上限を過ぎた記録は通常の追跡では照会しない。打ち切りを記録する直前に 1 回だけ照会し直し
+        // （窓の後の端）、打ち切りの印を書いた後は二度と照会しない。
+        broker.QueriedOrderIds.Should().Equal("ORD-NEW", "ORD-OLD");
+        result.Abandoned!.Select(a => a.OrderId).Should().Equal("ORD-OLD");
+        store.MarkTrackingAbandoned("ORD-OLD", Now.AddHours(-25)).Should().BeTrue();
+
+        await poller.PollOnceAsync(MaxTracking, batchSize: 100);
+
+        broker.QueriedOrderIds.Should().Equal("ORD-NEW", "ORD-OLD", "ORD-NEW");
     }
 
     [Fact]

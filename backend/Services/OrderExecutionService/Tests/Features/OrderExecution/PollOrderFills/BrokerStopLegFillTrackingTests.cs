@@ -202,7 +202,16 @@ public class BrokerStopLegFillTrackingTests
         var result = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
 
         result.Scanned.Should().Be(0);
-        f.Broker.Queried.Should().BeEmpty();
+        // 🔴 #1048, IADR-0481 決定3: 通常の追跡では照会しない。打ち切りの直前に 1 回だけ照会し直し、打ち切りを記録する。
+        result.Abandoned!.Select(a => a.OrderId).Should().BeEquivalentTo(["entry-1", "stop-done", "s1-close-1"]);
+        f.Broker.Queried.Should().BeEquivalentTo(["entry-1", "stop-done", "s1-close-1"]);
+        foreach (var a in result.Abandoned!)
+            f.Store.MarkTrackingAbandoned(a.OrderId, a.TrackedFrom).Should().BeTrue();
+
+        var again = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
+
+        again.Abandoned.Should().BeEmpty("打ち切りの印を書いた記録は二度と照会しない");
+        f.Broker.Queried.Should().HaveCount(3);
     }
 
     [Fact]
@@ -217,8 +226,11 @@ public class BrokerStopLegFillTrackingTests
 
         var result = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
 
-        result.Scanned.Should().Be(0);
-        result.Executed.Should().BeEmpty();
+        result.Scanned.Should().Be(0, "通常の追跡は上限内だけ");
+        // 🔴 #1048, IADR-0481 決定3: 追跡上限を過ぎた記録は、打ち切りを記録する直前に 1 回だけ照会し直す（窓の後の端）。
+        // そこで終端していれば通常どおり約定を記録して打ち切らない（終端したのに「打ち切った」と残さない）。
+        result.Executed.Select(e => e.OrderId).Should().Equal("stop-1");
+        result.Abandoned.Should().BeEmpty();
     }
 
     // 注文 ID 指定の抽出だけが失敗する発注結果ストア（足す側の読み取りの失敗を再現する）。

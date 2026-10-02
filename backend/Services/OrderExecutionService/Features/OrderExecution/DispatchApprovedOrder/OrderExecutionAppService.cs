@@ -274,6 +274,33 @@ public sealed class OrderExecutionAppService(
                 return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopOrderUnsupported);
             }
 
+            // 🔴 FR-10, ADR-0040 決定1, #1048（利用者裁定 2026-10-02・Q2 案 b）, IADR-0481 決定1:
+            // **同じ銘柄・同じ方向に別の手法の有効な保護記録があれば、新しい手法での新規建てを見送る**（決済は止めない）。
+            // ここは窓の**前の端**（予約の前）。自分の記録を残した後（送信の直前）にもう一度確かめる（下の後の端）。
+            if (HasConflictingStopLossMethod(approved, disposition, "予約の前"))
+            {
+                return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopLossMethodConflict);
+            }
+
+            // 🔴 FR-10, #1048, IADR-0481 決定2: **moomoo SIMULATE の S0・S3 の新規建ては、記録の無い建玉（S2・人手）がある銘柄では見送る。**
+            // S2 の建玉は保護記録を持たないため上の照合では見えず、帰属不明の建玉としてしか現れない。S1 の武装の前提条件
+            // （下）と同じ判定を使う（照会の前と後で主張を読み、小さい方を採る）。S2 は SIMULATE でしか選べないので、
+            // 実弾・内蔵 paper の S0 の経路には建玉照会を足さない（1 バイトも変えない）。
+            // 建玉照会の能力が無い発注先では判定しない——S0 / S3 の保護記録の持ち分（常駐ガードの純額）もその能力が無ければ
+            // 計算されず、併存の害（記録の無い建玉を自分の建玉と読む）そのものが起きない（S1 と違い、不明を「ある」へ倒す理由が無い）。
+            // 照会の能力はあるのに照会が失敗した（null）ときは S1 と同じく「ある」側へ倒す（HasUnattributedPositionAsync）。
+            if (disposition is StopLossMethodDisposition.BrokerStopOrder
+                    or StopLossMethodDisposition.NotImplementedFallbackToBrokerStop
+                    or StopLossMethodDisposition.AlternativeBrokerOrderType
+                && broker.Provider == BrokerProvider.MoomooSimulate
+                && _positions is not null
+                && protectiveStops is not null
+                && protectiveStops.Find(approved.DecisionId) is null
+                && await HasUnattributedPositionAsync(approved, cancellationToken).ConfigureAwait(false))
+            {
+                return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.UnattributedPosition);
+            }
+
             // 🔴 #820 の 8 巡目監査, IADR-0344 追記(8) 決定4: **S1 は帰属不明の建玉がある銘柄では武装しない。**
             // S1 の行が守る株数はブローカーの純額からしか測れず、他人の建玉（S2・人手・S0 の発注窓）と
             // 自分の建玉を区別できない。先に他人の建玉が在ると超過が一度も観測されないまま満額の主張が残り、
@@ -327,6 +354,25 @@ public sealed class OrderExecutionAppService(
                 or StopLossMethodDisposition.AlternativeBrokerOrderType)
         {
             RecordAwaitingProtection(approved, disposition);
+        }
+
+        // 🔴 FR-10, #1048, IADR-0481 決定1: 窓の**後の端**（自分の記録を残した後・送信の直前）。S1 は送る前に自分の行を、
+        // S0 / S3 は予約の後に AwaitingEntry を残しているので、別の手法で同時に建てようとした 2 本は**少なくとも一方が他方を見る**
+        // （前の端だけでは、照合の後に現れた記録を見落とす）。見つけたら予約を Forgone へ移して送らない（接続確立の失敗と同じ扱い）。
+        // 🔴 例外は S2: S2 の新規建ては保護の記録を残さないため、S0 / S3 の側の後の端は S2 を見ない。S2 との同時の新規建ては
+        // 予約の前の moomoo SIMULATE の「記録の無い建玉」の照合でしか止まらず、建玉照会がまだ S2 の約定を映していない窓では
+        // 両方が通り得る（S2 の側の後の端は S0 / S3 の AwaitingEntry を見る。IADR-0481 の残余）。
+        if (intent.PositionEffect == PositionEffect.Open
+            && HasConflictingStopLossMethod(approved, disposition, "送信の直前"))
+        {
+            var conflicted = reservations.MarkReservationForgone(approved.DecisionId, clock.UtcNow);
+            if (conflicted is ForgoneRecordOutcome.Recorded or ForgoneRecordOutcome.AlreadyForgone)
+            {
+                CompleteSoftwareStopWithoutPosition(approved, disposition);
+                CompleteAwaitingProtection(approved.DecisionId);
+            }
+
+            return ForgoneIfRecorded(approved, OrderDispatchForgoneReason.StopLossMethodConflict, conflicted);
         }
 
         // 相3: ADR-0003: 承認済み注文のみ発注する。Close（owner 手仕舞い・自動縮小）も同一経路。
@@ -559,6 +605,29 @@ public sealed class OrderExecutionAppService(
         }
     }
 
+    // 🔴 FR-10, ADR-0040 決定1, #1048, IADR-0481 決定1: 同じ銘柄・同じ方向に別の手法の有効な保護記録があるか（あればログを出して true）。
+    // 記録先が無い構成（内蔵 paper）では記録そのものが無いので判定しない。
+    private bool HasConflictingStopLossMethod(
+        OrderApproved approved, StopLossMethodDisposition disposition, string phase)
+    {
+        if (protectiveStops is null || StopLossMethodCoexistenceGate.MechanismOf(disposition) is not { } mechanism)
+            return false;
+
+        var intent = approved.Intent;
+        var conflicting = StopLossMethodCoexistenceGate.Conflicting(
+            approved.DecisionId, intent, mechanism, protectiveStops.FindOpenFor(intent.Symbol, intent.Market, intent.Side));
+        if (conflicting.Count == 0)
+            return false;
+
+        _logger.LogWarning(
+            "同じ銘柄・同じ方向に別の損切りの実行機構の建玉が残っているため、新規建てを見送ります（{Phase}）: "
+                + "DecisionId={DecisionId} 銘柄={Symbol} 方向={Side} 新しい手法={Mechanism} "
+                + "残っている記録={Existing}。決済は止めていません。その建玉を手仕舞ってから新しい手法で建ててください。",
+            phase, approved.DecisionId, intent.Symbol, intent.Side, mechanism,
+            string.Join(",", conflicting.Select(r => $"{r.Mechanism}:{r.State}:{r.EntryDecisionId}")));
+        return true;
+    }
+
     // 🔴 FR-10, ADR-0040 決定1（S1）, #820 の 8 巡目監査, IADR-0344 追記(8) 決定4:
     // 同一銘柄・同方向に**帰属不明の建玉**（純額 − Active な保護記録の主張合計 > 0）があるか。
     // **確かめられない場合（建玉照会の能力が無い・照会不能）も「ある」側へ倒す**（fail-closed。
@@ -601,7 +670,8 @@ public sealed class OrderExecutionAppService(
         if (snapshot is null)
         {
             _logger.LogError(
-                "建玉を照会できないため S1 を武装しません（帰属不明の建玉が無いことを確かめられない）。"
+                "建玉を照会できないため S1 を武装しません（帰属不明の建玉が無いことを確かめられない。"
+                    + "moomoo SIMULATE の S0・S3 も同じ理由で新規建てを見送ります）。"
                     + "DecisionId={DecisionId} 銘柄={Symbol}",
                 approved.DecisionId, intent.Symbol);
             return true;
@@ -618,6 +688,7 @@ public sealed class OrderExecutionAppService(
 
         _logger.LogError(
             "同一銘柄・同方向に帰属不明の建玉が {Unattributed} 株あるため S1 を武装せず見送ります"
+                + "（moomoo SIMULATE の S0・S3 なら、記録の無い建玉〔S2・人手〕と併存させないため新規建てを見送ります）"
                 + "（純額 {Net} 株・保護記録の主張 {Claimed} 株＝照会の前 {Before} 株と後 {After} 株の小さい方）。"
                 + "その建玉を S1 の損切りラインで決済しないための前提条件です"
                 + "（先に手仕舞ってから切り替えてください）。DecisionId={DecisionId} 銘柄={Symbol}",
