@@ -47,6 +47,20 @@ issue: "#1078"
 | `Search__BaseUrl` | 同上 | values.yaml 2・values-local 2・template 1・README | 経路 B の取引判断だけ宛先を入れた（情報収集は空のまま） |
 | `RAG` ＋ `kb-writer` | 同上 | values.yaml の取引判断の注記 1 | 読み手へ書き換えた |
 
+［2026-10-02 追記 / #1078・独立監査］**上の走査は区切りつきの文字列（`KnowledgeBase__Auth` / `KnowledgeBase:Auth`）だけで引いたため、
+入れ子の JSON（`"KnowledgeBase": { … "Auth": { … } }`）と、`docker-compose.yml` の取引判断の節を取りこぼした。** 監査の指摘を受け、
+追跡下の `appsettings*.json` を注記を除いて JSON として読み、`KnowledgeBase` の下の鍵を列挙し直した（入れ子で走査）。あわせて
+`KNOWLEDGEBASE_AUTH_` で `.env.example` / `docker-compose.yml` を引き直した。
+
+| 当たり | 主体 | 追随 |
+| --- | --- | --- |
+| `TradeDecisionService/appsettings.Development.json` の `KnowledgeBase.Auth` と注記「kb-writer で認証」 | 取引判断（検索だけ） | `KnowledgeBase.SearchAuth`（読み手 `ai-stock-trading-kb-reader`）へ替え、注記を読み手へ直した。秘密は書かない |
+| `docker-compose.yml` の取引判断の `KnowledgeBase__Auth__*`（「RAG 検索の s2s も kb-writer」） | 取引判断 | `KnowledgeBase__SearchAuth__*`（`KNOWLEDGEBASE_SEARCHAUTH_*`）へ替えた。`.env.example` に同 3 キーを空既定で足した |
+| `docker-compose.yml` / `.env.example` の情報収集の注記「KB 書き込み/検索の s2s は kb-writer」 | 情報収集（保存。検索は未使用） | 「書き込み」へ直した。値は不変 |
+| `InformationCollectionService` / `ReportService` の `appsettings.Development.json` の `KnowledgeBase.Auth` | 保存（書き手） | 不変（正しい） |
+
+**教訓（規則 9 の引き方）**: 設定の鍵は区切り（`:` / `__`）と入れ子の JSON の 3 つの形で現れる。区切りつきの文字列だけで引くと入れ子を取りこぼす。
+
 ### 規則 10（この変更で新たに誤りになる自分の記述・導出値）
 
 - `scripts/k8s-local-deploy.sh` の「非空の既定を持つ 5 キー」——計算し直すと llm-caller を足した時点で 6、読み手を足して **7**。直した（日付つきの注記）。
@@ -62,6 +76,7 @@ issue: "#1078"
 | 変異 | 期待 |
 | --- | --- |
 | 検索の名前付きクライアントを `KnowledgeBase:Auth` で構成する（フォールバック） | `KnowledgeBaseAuthTests` の 2 件が赤 |
+| ［2026-10-02 追記 / #1078・独立監査］保存の名前付きクライアントを `KnowledgeBase:SearchAuth` で構成する | `KnowledgeBaseAuthTests` の 3 件が赤（「読み手の資格情報は保存に使わない」「読み手だけが揃っていても保存は読み手で名乗らない」ほか）。従前の「読み手の資格情報は保存に使わない」は token を stub しておらず、この変異でも緑のままだった（空振り）ので書き直した |
 | 取引判断の `KnowledgeBase__SearchAuth__ClientId` を `kb-auth-client-id` へ戻す | `helm.yml`「Assert fail-safe defaults」が赤 |
 | template の `KnowledgeBase__SearchAuth__Authority` の導出を消す | `helm.yml`「Assert every rendered realm …」が赤（4 件・期待 5 件） |
 
