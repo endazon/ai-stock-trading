@@ -116,6 +116,8 @@ public class InformationCollectedConsumerTests
                 opts.Services.AddSingleton<BusinessMetrics>();
                 // FR-04, #1081, IADR-0455: ニュースの状態の最新値（本番は Program.cs の singleton）。ハンドラが記録し判断が読む。
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
+                // NFR, FR-04, FR-11, #1111, IADR-0483: 最中の例外の最終の失敗の報告口（両ハンドラの必須依存。本番は Program.cs の singleton）。
+                opts.Services.AddSingleton<ITradeDecisionFailureReporter>(new RecordingTradeDecisionFailureReporter());
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",
