@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-01
+updated: 2026-10-02
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR]
 adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111]
 -->
 
 
@@ -137,6 +137,13 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   🔴 **前の状態が `Unknown` の行は「起動後の最初の観測」と書く**（サービスの再起動で状態が消えるため。再起動の後の最初の失敗は必ず記録され、
   最初の成功も 1 回だけ記録されて前のプロセスで始まった失敗の区間を閉じる）。発生源は保護逆指値ガード・建玉の定期観測・稼働の定期観測・
   ソフトウェア逆指値の決済・発注前の突き合わせ・取引判断の保有照会・未約定の照会の 7 つ。
+- 取引判断の**最中の例外**が再試行の後の**最終の失敗**になった事実（`TradeDecisionFailed`）を、最終の失敗 1 回につき 1 件記録する。
+  定時の判断は銘柄ごとに捕まえた失敗（その巡回で同じ銘柄をやり直さない）、価格変動の判断は再試行（2 秒・10 秒・30 秒）を使い切って
+  退避先へ移る配送の失敗だけを数え、🔴 **途中の再試行では記録しない**（1 件の失敗を再試行の回数だけ数えない）。
+  🔴 **載せるのは例外の型名・起点（定時／価格変動）・銘柄・時刻だけで、例外のメッセージとスタックは載せない**（秘密情報や口座 ID を
+  含み得るため。本文はログを見る）。型名は名前空間つきで、総称型は定義の名前（型引数・アセンブリ名を含めない）。相関は事実ごとの
+  `EventId`、時刻は失敗を報告した時刻。要約は「取引判断の最中の例外（最終の失敗）: 型名・起点」。発行は取引判断のサービスの
+  ランタイムの発行口から行い、ハンドラが例外で終わっても捨てられない。夜間の要約は Detail の `CycleTrigger` と `ExceptionType` で数える。
 - 所有者が**確定済みの報告書を KB へ入れ直した**実行（`ReportKnowledgeReingested`・#1028）を、1 回の実行につき 1 件記録する
   （KB の一覧を引けず 1 件も書かなかった中止も残す。範囲の不正・実行中で断った要求は何もしていないので残らない）。相関は固定
   （入れ直しは種別と期間で引く）。要約に操作者（トークンの主体。分からなければ「操作者不明」）・範囲・対象の件数・送った件数

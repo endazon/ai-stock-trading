@@ -1286,6 +1286,27 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("\"Reason\":\"EntryBlockedByRiskControls\"");
     }
 
+    // T-10-2183, NFR, FR-04, FR-11, #1111, IADR-0483 決定4: 取引判断の最中の例外の最終の失敗は EventId 相関で、型名と起点が読める。
+    // 「最終の失敗」と書く。事実にメッセージ・スタックの欄が無いので、要約と Detail にも出ない（夜間の要約は Detail の ExceptionType を数える）。
+    [Fact]
+    public void T_10_2183_取引判断の最中の例外の最終の失敗はEventId相関で型名と起点が読めメッセージを持たない()
+    {
+        var eventId = Guid.NewGuid();
+        var at = new DateTimeOffset(2026, 10, 2, 14, 0, 0, TimeSpan.Zero);
+        var entry = AuditEntryFactory.From(
+            new TradeDecisionFailed(eventId, "NVDA", Market.UnitedStates, "price-movement", "System.InvalidOperationException", at),
+            Id, RecordedAt);
+
+        entry.EventType.Should().Be(nameof(TradeDecisionFailed));
+        entry.CorrelationId.Should().Be(eventId);
+        entry.Symbol.Should().Be("NVDA");
+        entry.OccurredAt.Should().Be(at);
+        entry.Summary.Should().Be("NVDA 取引判断の最中の例外（最終の失敗）: System.InvalidOperationException・price-movement");
+        entry.Detail.Should().Contain("\"ExceptionType\":\"System.InvalidOperationException\"")
+            .And.Contain("\"CycleTrigger\":\"price-movement\"");
+        entry.Detail.Should().NotContain("Message").And.NotContain("StackTrace").And.NotContain("InnerException");
+    }
+
     // T-10-1773, NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 状態の変化は発生源ごとの決定的な相関で、失敗・回復・起動後の最初の観測が
     // 読み分けられる。
     [Fact]

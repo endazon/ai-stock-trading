@@ -391,6 +391,15 @@ builder.Services.AddSingleton<IPositionQueryHealthReporter>(sp => new PositionQu
     TimeProvider.System,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<PositionQueryHealthReporter>()));
 
+// 🔴 NFR, FR-04, FR-11, #1111, IADR-0483 決定1〜3: 取引判断の最中の例外の**最終の失敗**（定時は銘柄ごとの捕捉、価格変動は最後の配送の
+// 失敗）を TradeDecisionFailed として監査台帳へ出す報告口。載せるのは型名・発生源・銘柄・時刻だけ（メッセージとスタックは載せない）。
+// **発行はランタイムの MessageBus から行う**（価格変動のハンドラは報告の直後に投げ直して失敗で終わるため、scoped の IMessageBus で
+// 出すと捨てられる）。両ハンドラの必須依存であり、ここを消すと組み立てが失敗する。
+builder.Services.AddSingleton<ITradeDecisionFailureReporter>(sp => new PublishingTradeDecisionFailureReporter(
+    e => new MessageBus(sp.GetRequiredService<IWolverineRuntime>()).PublishAsync(e),
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<PublishingTradeDecisionFailureReporter>()));
+
 // FR-04, ADR-0020 決定2, #1081, IADR-0455: 情報収集から届くニュースの状態（取得済み／欠測／未構成）の最新値を有効期限つきで保持する。
 // 定時の購読（InformationCollectedHandler）が記録し、判断サービスが定時・急変の両方のプロンプトへ明示する（RAG を経由しない）。
 // **singleton にする**（スコープごとに作ると記録した値が判断へ届かない）。未配線なら判断のプロンプトは常に「ニュース: 不明」と書く。

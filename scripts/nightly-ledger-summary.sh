@@ -20,7 +20,9 @@
 #          LLM を呼ぶ前の見送り（理由別。TradeDecisionForgoneBeforeLlm）。段 2 の配備より前の夜は 0 行になる（9 の推定を使う）。
 #   #1113（IADR-0463）で足したもの: §11 の理由 EntryBlockedByRiskControls（新規建てが審査で必ず拒否される銘柄の LLM を呼ぶ前の
 #          見送り）。配備の後は §5 の審査の拒否（StoppedOutSameDay・MaxPositionsExceeded 等）の一部がこちらへ移る（審査は不変）。
-#   分からない（台帳に記録が無い）: 判断中の例外（段 2 でも入れていない。作業仕様書 20260930_1092_ledger-gap-events）。
+#   #1111（IADR-0483）で足したもの: §14 取引判断の最中の例外（TradeDecisionFailed。再試行の後の最終の失敗だけ・起点 × 例外の型別）。
+#          型名だけを数える（メッセージとスタックは台帳に無い）。§13 の後ろではなく audit_svc の照会の末尾に置くので、出力は 12 → 14 → 13 の順になる。
+#          配備より前の夜は 0 行（判断中の例外はログにしか残っていない）。
 #   #1140（IADR-0478 決定 2）で足したもの: §12 LLM の費用（窓の中の LlmCostIncurred の円。用途 × モデル別と合計）。
 #          §13 当月の LLM 費用と月次上限に対する使用率。🔴 13 だけは監査台帳の外を読む —— 累計は費用統制の台帳（cost_control_svc。
 #          上限の判定と同じカウンタ）、上限は設定サービスの前提条件（configuration_svc）から読む（上限の値をここへ複写しない）。
@@ -284,6 +286,15 @@ SELECT purpose, model, n, amount_jpy FROM (
     AND "EventType" = 'LlmCostIncurred'
 ) x
 ORDER BY k, amount_jpy DESC, purpose, model;
+
+\echo '== 14. 取引判断の最中の例外（TradeDecisionFailed・起点 × 例外の型別。再試行の後の最終の失敗だけ）'
+\echo '-- 1 件＝1 回の最終の失敗（定時は銘柄ごとの失敗、価格変動は再試行を使い切った失敗）。型名だけでメッセージは無い（本文はログを見る）'
+SELECT "Detail"->>'CycleTrigger' AS cycle_trigger, "Detail"->>'ExceptionType' AS exception_type, count(*) AS n,
+       string_agg(DISTINCT "Symbol", ',' ORDER BY "Symbol") AS symbols
+FROM audit_events
+WHERE "OccurredAt" >= :'from'::timestamptz AND "OccurredAt" < :'to'::timestamptz
+  AND "EventType" = 'TradeDecisionFailed'
+GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2;
 
 ROLLBACK;
 SQL
