@@ -680,6 +680,16 @@ public sealed class TradeDecisionForgoneBeforeLlmAuditHandler(IAuditEventStore s
     }
 }
 
+// 🔴 NFR, FR-04, FR-11, #1111, IADR-0483 決定4: 取引判断の最中の例外の最終の失敗を台帳へ記録する（再起動で消えるログの代わり）。
+public sealed class TradeDecisionFailedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(TradeDecisionFailed message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会・保有照会の状態の変化を台帳へ記録する。
 public sealed class PositionQueryStatusChangedAuditHandler(IAuditEventStore store, IClock clock)
 {

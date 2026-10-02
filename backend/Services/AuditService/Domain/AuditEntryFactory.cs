@@ -658,6 +658,14 @@ public static class AuditEntryFactory
         $"{e.Symbol} LLM を呼ぶ前の見送り（{e.Reason}・{e.CycleTrigger ?? "起点不明"}）",
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // 🔴 NFR, FR-04, FR-11, #1111, IADR-0483 決定4: 取引判断の最中の例外の最終の失敗（1 回につき 1 行）。発注チェーンを持たないため
+    // EventId を相関にする（TradeDecisionForgoneBeforeLlm と同じ）。要約に「最終の失敗」と型名・起点を書く。
+    // 🔴 事実そのものがメッセージとスタックを持たない（台帳へ載せない。裁定 2026-10-02）。
+    public static AuditEntry From(TradeDecisionFailed e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(TradeDecisionFailed), e.EventId, e.Symbol,
+        Truncate($"{e.Symbol} 取引判断の最中の例外（最終の失敗）: {e.ExceptionType}・{e.CycleTrigger}"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
     // 🔴 NFR, FR-10, FR-11, #1092, IADR-0462 決定1〜3: 建玉照会・保有照会の状態の変化。相関は発生源ごとの決定的 GUID
     // （"position-query:<発生源>"）とし、1 つの発生源の失敗と回復を 1 本の相関で辿れるようにする。
     // 🔴 前の状態が Unknown（起動直後）の回は「起動後の最初の観測」と書く（再起動をまたいだ区間の読み違いを防ぐ）。

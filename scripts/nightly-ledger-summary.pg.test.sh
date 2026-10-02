@@ -169,6 +169,19 @@ SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'META',
   '{"Reason":"EntryBlockedByRiskControls","CycleTrigger":"scheduled"}', '2026-09-29T23:00:00+09');
 SELECT ev('TradeDecisionForgoneBeforeLlm', gen_random_uuid(), 'AMZN',
   '{"Reason":"EntryBlockedByRiskControls","CycleTrigger":"scheduled"}', '2026-09-30T01:00:00+09');
+-- T-10-2185, #1111, IADR-0483: 取引判断の最中の例外の最終の失敗。窓の頭ちょうど（含む）・窓の尻ちょうど（含まない）・窓の前（含まない）。
+SELECT ev('TradeDecisionFailed', gen_random_uuid(), 'META',
+  '{"CycleTrigger":"scheduled","ExceptionType":"System.InvalidOperationException"}', '2026-09-29T20:00:00+09');
+SELECT ev('TradeDecisionFailed', gen_random_uuid(), 'NVDA',
+  '{"CycleTrigger":"scheduled","ExceptionType":"System.InvalidOperationException"}', '2026-09-29T22:00:00+09');
+SELECT ev('TradeDecisionFailed', gen_random_uuid(), 'NVDA',
+  '{"CycleTrigger":"scheduled","ExceptionType":"System.InvalidOperationException"}', '2026-09-29T23:00:00+09');
+SELECT ev('TradeDecisionFailed', gen_random_uuid(), 'AAPL',
+  '{"CycleTrigger":"price-movement","ExceptionType":"System.InvalidOperationException"}', '2026-09-30T02:00:00+09');
+SELECT ev('TradeDecisionFailed', gen_random_uuid(), 'AMZN',
+  '{"CycleTrigger":"price-movement","ExceptionType":"System.TimeoutException"}', '2026-09-30T08:00:00+09');
+SELECT ev('TradeDecisionFailed', gen_random_uuid(), 'TSLA',
+  '{"CycleTrigger":"scheduled","ExceptionType":"System.Collections.Generic.KeyNotFoundException"}', '2026-09-29T19:59:59+09');
 SQL
 
 OUT="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
@@ -234,6 +247,12 @@ has '§12: 用途の無い従来の形は (不明)' '(不明)|(不明)|1|3.00'
 has '§12: 最後の行が窓の合計' '合計|-|3|33.75'
 has '§13: 当月（UTC の 2026-09）の対象の累計・上限（設定サービスの値）・使用率・対象外の累計' '2026-09|3000.00|12000|25.0%|700.00'
 hasnt '§13: 前の月・窓の終端ちょうど・インフラの計上を数えない' '2026-09|12999'
+# T-10-2185, #1111, IADR-0483 決定 5: 取引判断の最中の例外の最終の失敗を起点 × 型名で数える（1 行＝1 回の最終の失敗）。
+has '§14: 起点 × 型名で数え、窓の頭ちょうどは含む（同じ銘柄の 2 回は 2 件）' 'scheduled|System.InvalidOperationException|3|META,NVDA'
+has '§14: 起点が違えば別の行' 'price-movement|System.InvalidOperationException|1|AAPL'
+hasnt '§14: 窓の尻ちょうどは数えない' 'System.TimeoutException'
+hasnt '§14: 窓の前は数えない' 'KeyNotFoundException'
+has '§1: 種類別の件数に TradeDecisionFailed が出る' 'TradeDecisionFailed|4'
 $PSQL -d configuration_svc -q -o /dev/null -c 'DELETE FROM assumptions' || exit 1
 OUT_NOLIM="$(AST_PSQL="$PSQL -A -F|" bash "$SCRIPT" --night 2026-09-29 2>&1)"
 rc_nolim=$?

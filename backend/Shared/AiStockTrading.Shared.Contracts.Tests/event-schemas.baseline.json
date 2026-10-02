@@ -508,6 +508,14 @@
     "StopLossPrice": "Decimal",
     "Symbol": "String"
   },
+  "TradeDecisionFailed": {
+    "CycleTrigger": "String",
+    "EventId": "Guid",
+    "ExceptionType": "String",
+    "Market": "Market",
+    "OccurredAt": "DateTimeOffset",
+    "Symbol": "String"
+  },
   "TradeDecisionForgoneBeforeLlm": {
     "CycleTrigger": "String",
     "EventId": "Guid",

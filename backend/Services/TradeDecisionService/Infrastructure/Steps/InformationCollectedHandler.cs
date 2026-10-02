@@ -19,6 +19,10 @@ namespace TradeDecisionService.Infrastructure.Steps;
 //
 // NFR-07, #287, IADR-0255: 定時系統の判断回数・内訳・レイテンシを銘柄ごとに計上する（銘柄はタグにしない。
 // 系列のカーディナリティを業務量に比例させないため。銘柄単位の追跡はログ・トレースが担う）。
+//
+// 🔴 NFR, FR-04, FR-11, #1111, IADR-0483 決定2: 銘柄ごとに捕まえた例外は、その銘柄のこの巡回での**最終の失敗**である
+// （同じ巡回で再試行しない。次の巡回は新しい判断）。1 件につき 1 回だけ監査台帳へ渡す（型名・発生源・銘柄・時刻だけ）。
+// 報告口は**必須依存**にする（省略可能にすると Program.cs から配線が消えても試験が緑のまま記録だけが止まる。IADR-0163 決定2）。
 public sealed class InformationCollectedHandler(
     AppSvc decisionService,
     IWatchlistProvider watchlist,
@@ -26,6 +30,7 @@ public sealed class InformationCollectedHandler(
     IClock clock,
     BusinessMetrics metrics,
     NewsCollectionStatusStore newsStatus,
+    ITradeDecisionFailureReporter failureReporter,
     ILogger<InformationCollectedHandler> logger)
 {
     public async Task Handle(InformationCollected message, IMessageBus bus, CancellationToken cancellationToken)
@@ -83,6 +88,10 @@ public sealed class InformationCollectedHandler(
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "定時サイクルの銘柄処理でエラー: {Symbol}。この銘柄をスキップし継続します。", watched.Symbol);
+                // #1111, IADR-0483 決定2: 最終の失敗として 1 件だけ台帳へ渡す（報告口は例外を投げない）。
+                await failureReporter
+                    .ReportFinalFailureAsync(BusinessMetrics.TriggerScheduled, watched.Symbol, watched.Market, ex)
+                    .ConfigureAwait(false);
             }
         }
     }
