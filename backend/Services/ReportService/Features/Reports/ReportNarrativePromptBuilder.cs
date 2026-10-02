@@ -43,13 +43,31 @@ public static class ReportNarrativePromptBuilder
             ? string.Format(CultureInfo.InvariantCulture, "算出不能（{0}件）", p.UnvaluedSettlementCount)
             : null;
 
+        // FR-06, FR-16, #1156, IADR-0480 決定 1: 🔴 **未供給を 0 として渡さない。** 約定は不達でも空列へ倒れる
+        // （IADR-0115 決定5）ため、値は 0 件・損益 0 になる。それを確定値として渡すと「取引なし」「損益 0」と書ける。
+        // 手動売買の取り込みが欠けると在庫の畳み込みが崩れ、評価損益は実在しない建玉の値になり得る（IADR-0360）。
+        var unsupplied = context.UnsuppliedInputs.ToHashSet();
+        var fillsUnsupplied = unsupplied.Contains(ReportInput.Fills) ? UnsuppliedValue : null;
+        var unrealizedUnsupplied = fillsUnsupplied
+            ?? (unsupplied.Contains(ReportInput.DriftAdoptions) ? UnsuppliedValue : null);
+
         sb.AppendLine("集計値（参考・再計算不可）:");
-        sb.AppendLine($"- 実現損益(税引前): {unvalued ?? Num(p.RealizedPnlGross)}");
-        sb.AppendLine($"- 費用合計: {Num(p.TotalCost)}");
-        sb.AppendLine($"- 源泉徴収税額: {unvalued ?? Num(p.TaxWithheld)}");
-        sb.AppendLine($"- 実現損益(税引後): {unvalued ?? Num(p.RealizedPnlNet)}");
-        sb.AppendLine($"- 評価損益(参考): {unvalued ?? Num(p.UnrealizedPnl)}");
-        sb.AppendLine($"- 約定件数: {p.TradeCount} / 決済件数: {unvalued ?? Count(p.RealizingTradeCount)} / 勝ち決済: {unvalued ?? Count(p.WinningTradeCount)}");
+        sb.AppendLine($"- 実現損益(税引前): {fillsUnsupplied ?? unvalued ?? Num(p.RealizedPnlGross)}");
+        // #1156, IADR-0480 決定 2: 費用合計は**概算**である（前提条件の料率から見積もった手数料・為替スプレッド相当）。
+        // 実際の経費明細は本サービスへ取り込まれていない（#1086）。0 を「費用負担は無かった」と読ませない。
+        // 🔴 行頭の「- 費用合計: <値>」の形は変えない（既存の試験・読み手が値をこの形で引く）。
+        sb.AppendLine($"- 費用合計: {fillsUnsupplied ?? Num(p.TotalCost)}（概算）");
+        sb.AppendLine($"- 源泉徴収税額: {fillsUnsupplied ?? unvalued ?? Num(p.TaxWithheld)}");
+        sb.AppendLine($"- 実現損益(税引後): {fillsUnsupplied ?? unvalued ?? Num(p.RealizedPnlNet)}");
+        sb.AppendLine($"- 評価損益(参考): {unrealizedUnsupplied ?? unvalued ?? Num(p.UnrealizedPnl)}");
+        sb.AppendLine($"- 約定件数: {fillsUnsupplied ?? Count(p.TradeCount)} / 決済件数: {fillsUnsupplied ?? unvalued ?? Count(p.RealizingTradeCount)} / 勝ち決済: {fillsUnsupplied ?? unvalued ?? Count(p.WinningTradeCount)}");
+        sb.AppendLine(CostEstimateNote);
+        sb.AppendLine(UnrealizedScopeNote);
+        if (fillsUnsupplied is not null)
+        {
+            sb.AppendLine("注意: 当期間の約定を取得できませんでした（未供給）。取引の有無・件数・損益・費用には散文で一切言及しないでください。"
+                + "「取引は無かった」「損益は 0 だった」等とも書かないでください。");
+        }
         if (unvalued is not null)
         {
             sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
@@ -58,6 +76,20 @@ public static class ReportNarrativePromptBuilder
                 p.UnvaluedSettlementCount));
             sb.AppendLine("これらの値・増減・勝敗・決済の有無には散文で一切言及しないでください。"
                 + "「決済が無かった」「損益は 0 だった」「勝ち越した／負け越した」等とも書かないでください。");
+        }
+
+        // FR-06, FR-16, #1156, IADR-0480 決定 1: 建玉の状態を**3 通りで**渡す（未供給・0 件・N 件）。
+        // 渡さなかった是正前は、LLM が評価損益 0 と約定 0 件から「参照すべき建玉がなく」と書いた（実際は 3 銘柄を保有）。
+        sb.AppendLine();
+        AppendPositions(sb, context);
+
+        // FR-06, FR-16, #1156, IADR-0480 決定 1: 取得できなかった入力の一覧。**未供給が無ければ節ごと出さない**
+        // （供給されている入力を「取得できなかった」と言わせない。05_screens の逆向きの禁止と同じ規律）。
+        if (context.UnsuppliedInputs.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"取得できなかった入力（未供給）: {string.Join("、", ReportInputs.Labels(context.UnsuppliedInputs))}");
+            sb.AppendLine(UnsuppliedRule);
         }
 
         sb.AppendLine();
@@ -85,6 +117,56 @@ public static class ReportNarrativePromptBuilder
         sb.AppendLine("上記を踏まえ、市況所感・当期の振り返り・翌期間の見通しを簡潔な散文で述べてください。数値の羅列や再計算はしないこと。");
 
         return sb.ToString();
+    }
+
+    /// <summary>FR-06, #1156, IADR-0480 決定 1: 未供給の値を表す文言（0・「—」・空欄で表さない）。</summary>
+    public const string UnsuppliedValue = "未供給（取得できなかった）";
+
+    /// <summary>FR-06, #1156, IADR-0480 決定 1: 未供給の入力について散文が守る規則。</summary>
+    public const string UnsuppliedRule =
+        "上記の入力は「無い」「0」「発生しなかった」のではなく、値が分かりません。散文で触れるときは"
+        + "「未供給（取得できなかった）」と書き、「無い」「0」「なかった」と言い切らないでください。";
+
+    /// <summary>
+    /// FR-06, FR-16, #1156, IADR-0480 決定 2: 費用合計の注記。費用合計は前提条件からの概算で、実際の経費明細は
+    /// 取り込まれていない（#1086）。🔴 経費明細を取り込んだら、この注記を見直す（IADR-0480 の残余）。
+    /// </summary>
+    public const string CostEstimateNote =
+        "注意: 費用合計は前提条件の料率から見積もった概算（売買手数料と為替スプレッド相当額）です。"
+        + "実際の経費明細は取り込まれておらず、取引諸費用・借株料を含みません。"
+        + "費用合計が 0 でも「費用負担は無かった」「費用は発生しなかった」とは書かないでください。";
+
+    /// <summary>FR-06, FR-16, #1156, IADR-0480 決定 1: 評価損益の範囲の注記（建玉の有無を推測させない）。</summary>
+    public const string UnrealizedScopeNote =
+        "注意: 評価損益(参考)は当期間の約定から畳んだ建玉だけの値で、期間より前から保有している建玉を含みません。"
+        + "この値や約定件数から、建玉の有無・保有状況を推測しないでください。";
+
+    // FR-06, FR-16, #1156, IADR-0480 決定 1: 建玉の状態。日報だけが建玉を入力に持つ（ReportInputs.AppliesTo）。
+    // 銘柄コードは自サービスの台帳（リスク管理の射影）由来であり、外部の自由文ではない。
+    private static void AppendPositions(StringBuilder sb, ReportNarrativeContext context)
+    {
+        if (context.Kind != ReportKind.Daily)
+        {
+            sb.AppendLine("建玉: 本報告書の入力に含まれていません。建玉の有無・保有状況には散文で言及しないでください。");
+            return;
+        }
+
+        if (context.Positions is not { } positions)
+        {
+            sb.AppendLine($"建玉（現在の台帳）: {UnsuppliedValue}");
+            sb.AppendLine("建玉の有無・保有状況・評価損益には散文で触れないでください。「建玉なし」「ポジションを保有していない」とも書かないでください。");
+            return;
+        }
+
+        if (positions.Count == 0)
+        {
+            sb.AppendLine("建玉（現在の台帳）: 0 件（建玉なし）");
+            return;
+        }
+
+        var symbols = positions.Select(p => p.Symbol).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
+        sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+            "建玉（現在の台帳）: {0} 件（銘柄: {1}）", positions.Count, string.Join(", ", symbols)));
     }
 
     // 上位の呼称。月報の上位は「前月の月報」であり、自種別の呼称と紛れないようにする

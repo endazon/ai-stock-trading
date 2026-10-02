@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-11, FR-16, UC-07, ADR-0016, ADR-0027]
 author: endazon (with Claude Code)
 created: 2026-09-04
-updated: 2026-09-29
+updated: 2026-10-02
 ---
 
 # IADR-0300: 経費明細は取得ポート越しに取り、取れないことを「7 区分 LineCount = 0」として本番で記録する
@@ -170,6 +170,13 @@ IADR-0226 が経費区分 7 種・建玉単位の紐づけ・保存先（監査�
   `kubectl exec` を打つこと自体が明示操作である。moomoo の SIMULATE 階層以外では照会口を組まずに終了コード 2 で終える。
 - 手順: `docs/operations/order-fee-probe-runbook.md`。作業仕様書: `.ai-context/specs/20260929_1086_order-fee-probe.md`。
 - 残余: OpenD の頻度制限の実値は一次情報が無く確かめていない（手順書は「30 秒以上あける」に留めた）。
+
+## 追記（2026-10-02・#1086）: SIMULATE では費用照会が拒否されると実測した。未計上のまま推計を積まず、理由を発注先ごとに明示する
+
+- 実測（利用者が検証口を 1 回実行）: 注文の照会は成功し（status=11・`orderIdEx` を取得）、`Trd_GetOrderFee` は
+  `retType=-1 retMsg=Paper trading is not supported.` で失敗した。**SIMULATE の間は段 2（実費の供給）が成立しない。**
+- 決定は [IADR-0484](IADR-0484_order-fee-unavailable-reason-per-broker-provider-no-estimate.md) に置く: 未計上（決定3・決定6）のまま推計を積まず、
+  既定実装の「取得できない理由」を発注先（moomoo SIMULATE／内蔵 paper／moomoo REAL）ごとに合成起点で決める。本 IADR の決定 1〜10 は不変。
 
 ## 関連
 

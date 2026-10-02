@@ -39,7 +39,8 @@ public class ReportAutoGenerationDeferralTests
         retryAfter.Should().Be(TimeSpan.FromSeconds(30));
         logger.Warnings.Should().ContainSingle(m =>
             m.Contains("生成を見送りました") && m.Contains(PeriodKey) && m.Contains("建玉")
-            && m.Contains("risk-ledger") && m.Contains("1/5"));
+            // #1156, IADR-0480 決定 3: 建玉は中核の入力なので、上限は中核の既定 12 回である。
+            && m.Contains("risk-ledger") && m.Contains("1/12"));
         // 🔴 否定形: 見送った期間を「提示しました」と記録しない・報告書も出来ていない。
         logger.Messages.Should().NotContain(m => m.Contains("提示しました"));
         store.Get(PeriodKey).Should().BeNull();
@@ -59,7 +60,10 @@ public class ReportAutoGenerationDeferralTests
         var logger = new RecordingLogger();
         var positions = new FailingPositionSource { Transient = true };
         var (service, store) = NewService(
-            logger, positions, new ReportAutoGenerationOptions { DependencyRetryMaxAttempts = 2 });
+            logger, positions,
+            // #1156, IADR-0480 決定 3: 建玉は中核の入力であり、中核の上限（既定 12）で数える。ここは上限到達の
+            // 警告を見る試験なので、中核の上限も 2 に揃える。
+            new ReportAutoGenerationOptions { DependencyRetryMaxAttempts = 2, DependencyRetryCoreMaxAttempts = 2 });
 
         (await service.RunOnceAsync(CancellationToken.None)).Should().Be(TimeSpan.FromSeconds(30));
         (await service.RunOnceAsync(CancellationToken.None)).Should().Be(TimeSpan.FromSeconds(60));
@@ -132,6 +136,53 @@ public class ReportAutoGenerationDeferralTests
     {
         new ReportAutoGenerationOptions { DependencyRetryMaxAttempts = configured }
             .ToDeferralSettings().MaxDeferrals.Should().Be(expected);
+    }
+
+    // T-10-2171, FR-06, #1156, IADR-0480 決定 3: 中核の入力の上限。既定 12（30+60+120+240+300×8 秒 ≒ 47.5 分）。
+    [Fact]
+    public void 中核の上限は既定_12_回で_待ちの合計は約_47_5_分()
+    {
+        var settings = new ReportAutoGenerationOptions().ToDeferralSettings();
+
+        settings.CoreMaxDeferrals.Should().Be(12);
+        settings.LimitFor(core: true).Should().Be(12);
+        settings.LimitFor(core: false).Should().Be(5);
+        Enumerable.Range(1, settings.LimitFor(core: true)).Select(settings.DelayFor)
+            .Aggregate(TimeSpan.Zero, (sum, d) => sum + d).Should().Be(TimeSpan.FromSeconds(2850));
+    }
+
+    // T-10-2171
+    [Theory]
+    [InlineData(5, -1, 12)] // 負値は既定へ倒す。
+    [InlineData(5, 20, 20)]
+    [InlineData(5, 3, 5)]   // 通常の上限より小さければ通常の上限に揃える（中核のほうが早く諦める、を作らない）。
+    [InlineData(0, 12, 0)]  // 🔴 通常の上限 0（＝見送らない）なら中核も見送らない（#840 の約束）。
+    public void 中核の上限は_負値を既定へ倒し_通常の上限を下回らず_0_は中核にも効く(
+        int maxAttempts, int coreMaxAttempts, int expected)
+    {
+        new ReportAutoGenerationOptions
+        {
+            DependencyRetryMaxAttempts = maxAttempts,
+            DependencyRetryCoreMaxAttempts = coreMaxAttempts,
+        }.ToDeferralSettings().LimitFor(core: true).Should().Be(expected);
+    }
+
+    // T-10-2171
+    [Fact]
+    public void 見送り回数は期間ごとに1本で数え_上限だけを中核かどうかで選ぶ()
+    {
+        var tracker = new ReportGenerationDeferralTracker(
+            new ReportDeferralSettings { MaxDeferrals = 1, CoreMaxDeferrals = 3 });
+
+        tracker.TryDefer("daily-a")!.Should().BeEquivalentTo(new { Attempt = 1, MaxDeferrals = 1 });
+        // 中核でない入力では 2 回目は無い。
+        tracker.NextDelay("daily-a").Should().BeNull();
+        tracker.TryDefer("daily-a").Should().BeNull();
+        // 中核の入力なら、同じ回数の続きから中核の上限まで見送れる。
+        tracker.NextDelay("daily-a", core: true).Should().Be(TimeSpan.FromSeconds(60));
+        tracker.TryDefer("daily-a", core: true)!.Should().BeEquivalentTo(new { Attempt = 2, MaxDeferrals = 3 });
+        tracker.TryDefer("daily-a", core: true)!.Attempt.Should().Be(3);
+        tracker.TryDefer("daily-a", core: true).Should().BeNull();
     }
 
     [Theory]
