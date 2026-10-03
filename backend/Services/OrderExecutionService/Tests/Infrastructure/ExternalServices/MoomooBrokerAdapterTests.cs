@@ -111,7 +111,8 @@ public class MoomooBrokerAdapterTests
         var order = await new MoomooBrokerAdapter(client, BrokerProvider.MoomooSimulate).PlaceOrderAsync(
             Intent(qty: 10, price: 100m, market: Market.Japan, side: TradeSide.Sell));
 
-        client.LastRequest.Should().Be(new MoomooOrderRequest("AAPL", MoomooMarket.Japan, MoomooSide.Sell, 10, 100m));
+        client.LastRequest.Should().Be(new MoomooOrderRequest("AAPL", MoomooMarket.Japan, MoomooSide.Sell, 10, 100m,
+            PositionEffect: PositionEffect.Open)); // #856, IADR-0488: 発注意図の効果を載せる（OpenD へは送らない）
         order.OrderId.Should().Be("mo-9");
         order.Status.Should().Be(OrderStatus.Filled);
         order.FilledQuantity.Should().Be(10);
