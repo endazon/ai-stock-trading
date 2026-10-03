@@ -90,6 +90,8 @@ plan_refs:
 | `Broker:Moomoo:TrdEnv` が `simulate` 以外 | 起動時に止める（`MoomooBrokerOptions` と同じ語彙） | 同上 |
 | 実弾口座の読み取り専用の照会（`Broker:Moomoo:RealMarginQuery:Enabled=true`）が有効 | 起動時に止める | 実弾口座へ接続する構成と同じプロセスで故障注入を許さない（「実弾の構成では起動を止める」を広く読む。PoC の構成では無効） |
 
+**実弾口座の照会が有効かは合成起点（Program.cs）が読み、真偽値で検証へ渡す。** 故障注入の側は照会側の型・名前空間・それを指す文字列を持たない（照会側の型を参照してよいのは合成起点だけ。IADR-0482 決定2。初版は照会側の構成の型を直接参照し、Architecture.Tests の照会側の隔離の検査 2 件で CI が赤になった）。
+
 ### 3. 注入の対象（新規建てだけ）
 
 - 対象は `PositionEffect == Open` かつ `Kind == Limit` かつ remark（DecisionId）がある要求。保護レグ（S0 / S3）・成行の手仕舞い・指値の手仕舞いはすべて `Close` なので構造上対象外。

@@ -4,7 +4,6 @@ using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using OrderExecutionService.Infrastructure.ExternalServices.RealReadOnly;
 
 namespace OrderExecutionService.Infrastructure.ExternalServices;
 
@@ -23,7 +22,7 @@ public enum IndeterminateDispatchFaultMode
 //
 // 有効（None 以外）にするときは、許可する銘柄（`*` 単独で全銘柄）と期限（ISO-8601）が必須。
 // 未知の値・空の銘柄・`*` と銘柄の混在・読めない期限・起動時刻から 24 時間より先の期限は**起動時に止める**
-// （「有効のつもりで無効」「切り忘れ」を作らない。RealMarginQueryOptions と同じ流儀）。
+// （「有効のつもりで無効」「切り忘れ」を作らない。実弾口座の照会の有効化の構成と同じ流儀）。
 // **期限を過ぎた構成は起動を止めない**（注入しないだけ）——切り忘れた構成で発注執行が再起動のたびに落ちると、
 // 発注と保護逆指値ガードがまとめて止まる（IADR-0444 決定4 と同じ判断）。
 public sealed record IndeterminateDispatchFaultInjectionOptions(
@@ -60,6 +59,8 @@ public sealed record IndeterminateDispatchFaultInjectionOptions(
     }
 
     // 🔴 FR-10, NFR-09, #856, IADR-0488 決定2: **SIMULATE 限定。** 有効なら、実弾に近づく構成・意味の無い構成で起動を止める。
+    // 🔴 #856, IADR-0482 決定2: 実弾口座の照会が有効かは**合成起点（Program.cs）が読んで真偽値で渡す**。本型は照会側の型・名前空間を
+    // 参照しない（照会側の型を参照してよいのは合成起点だけ。Architecture.Tests の照会側の隔離の検査が止める）。
     // 引数で受けるのは試験のためであり、本番は Program.cs が合成起点で 1 回だけ呼ぶ
     // （liveTradingReleased には LiveTradingGate.LiveTradingReleased を渡す。定数を直接読むと分岐が到達不能になる＝CS0162）。
     public void EnsureAllowed(
@@ -88,7 +89,7 @@ public sealed record IndeterminateDispatchFaultInjectionOptions(
         }
         if (realAccountQueryEnabled)
         {
-            throw Refuse($"実弾口座の読み取り専用の照会（{RealMarginQueryOptions.EnabledKey}=true）と同じプロセスでは受理しません");
+            throw Refuse("実弾口座の読み取り専用の照会が有効な構成と同じプロセスでは受理しません");
         }
     }
 

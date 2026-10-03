@@ -119,7 +119,7 @@ public class IndeterminateDispatchFaultInjectionCompositionTests
         var act = () => factory.Services;
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage($"*{IndeterminateDispatchFaultInjectionOptions.ModeKey}*{RealMarginQueryOptions.EnabledKey}*");
+            .WithMessage($"*{IndeterminateDispatchFaultInjectionOptions.ModeKey}*実弾口座の読み取り専用の照会*");
     }
 
     // T-10-2237: 不正な値は起動時に止める（本番の組み立てでも）。

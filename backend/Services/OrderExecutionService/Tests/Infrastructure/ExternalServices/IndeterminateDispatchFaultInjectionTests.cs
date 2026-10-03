@@ -480,7 +480,7 @@ public class IndeterminateDispatchFaultInjectionTests
     [InlineData("moomoo", "live", false, null, false, "moomoo-live")]
     [InlineData("moomoo", "sim", true, null, false, "LiveTradingReleased")]
     [InlineData("moomoo", "sim", false, "real", false, "TrdEnv")]
-    [InlineData("moomoo", "sim", false, null, true, "RealMarginQuery")]
+    [InlineData("moomoo", "sim", false, null, true, "実弾口座の読み取り専用の照会")]
     public void T_10_2236_SIMULATE以外の構成では起動を止める(
         string provider, string environment, bool liveReleased, string? trdEnv, bool realQuery, string expected)
     {
