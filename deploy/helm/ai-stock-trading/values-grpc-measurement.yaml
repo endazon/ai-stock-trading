@@ -4,7 +4,7 @@
 # 🔴 **本ファイルは既定の配備に含めない**（values.yaml / values-local.yaml / scripts/k8s-local-deploy.sh / ArgoCD のいずれからも参照しない）。
 #    段 1〜5 の消費側は「既定 REST、`<提供側>:Grpc` を宣言したときだけ gRPC」であり、本ファイルがその宣言を一度に入れる。
 # 🔴 **extraEnv（配列）を 1 行も持たない。** helm は 2 つ目の values ファイルや --set の配列を**配列ごと置き換える**
-#    （例: report の extraEnv に Audit__Grpc を 1 行だけ書いて重ねると、values-local の 53 本の env が 17 本になり
+#    （例: report の extraEnv に Audit__Grpc を 1 行だけ書いて重ねると、values-local の 50 本の env が 14 本になり
 #    ServiceAuth__* まで消える。実測は作業仕様書）。本ファイルはマップのキー（grpcPort と grpcClients）だけを書くので、
 #    重ねても既存の env は 1 本も消えない（helm.yml の「Assert gRPC measurement overlay」が描画で検査する）。
 #
@@ -12,6 +12,7 @@
 #   helm upgrade ast deploy/helm/ai-stock-trading -n ai-stock-trading \
 #     --reset-then-reuse-values -f deploy/helm/ai-stock-trading/values-grpc-measurement.yaml
 # 1 経路だけ外す（REST に戻す）: --set services.<消費側>.grpcClients.<提供側>=false を足す。
+# 🔴 本ファイルに書いてよいのは services.<名前>.grpcPort と services.<名前>.grpcClients.<提供側>（true / false）だけ（helm.yml が行の形で検める）。
 # 切り戻し: helm rollback ast <適用前のリビジョン> -n ai-stock-trading（または scripts/k8s-local-deploy.sh の再実行）。
 #
 # 宛先 URL はここに書かない。テンプレートが呼び先の grpcPort から http://<呼び先>-service:<grpcPort> を導出し、
@@ -28,7 +29,11 @@ services:
     grpcPort: 8081            # 段 4・5: DailyPolicyRead / ReportOwnerRead / ReportOwnerWrite
     grpcClients:
       RiskManagement: true    # 段 2: 取引台帳の 6 供給元（GetOpenPositions・GetFills・GetDriftAdoptions・GetBuyInInferences・GetSessionUptime・GetStageGate）
-      Audit: true             # 段 3: 監査台帳の 6 供給元（GetEventsByType）。🔴 Audit__BaseUrl は chart に無い＝REST も未結線だった経路（新規結線）
+      # 段 3: 監査台帳の 6 供給元（GetEventsByType）。🔴 **既定は false（この overlay では宣言しない）。** Audit__BaseUrl は chart に無く
+      # REST も未結線だった経路で、宣言すると監査の実値が報告書に載る。values-local は報告書の自動生成が有効（Reports__AutoGeneration__Enabled）
+      # なので、窓の中で生成された報告書へ実値が**永続化される**。所有者の同意を得た別の窓で
+      # --set services.report.grpcClients.Audit=true を足して測る（Runbook「経路 #6 の別窓」）。
+      Audit: false
   market-monitor:
     grpcPort: 8081            # 段 4・5: WatchlistRead / WatchlistOwnerWrite
     grpcClients:
@@ -40,7 +45,7 @@ services:
   # ---- 呼び出し側だけ（提供する面を持たない） ----
   trade-decision:
     grpcClients:
-      Configuration: true     # 段 1: 全体前提条件。🔴 Configuration__BaseUrl は chart に無い＝REST も未結線だった経路（新規結線）
+      Configuration: true     # 段 1: 全体前提条件。読むのは採算評価ゲート（Profitability:Enabled）が有効なときだけ＝既定は無効で発火しない
       RiskManagement: true    # 段 2: GetOpenPositions・GetWorkingEntryOrders・GetSizingContext・GetEntryBlockers
       Reports: true           # 段 4: GetConfirmedDailyPolicy
       MarketMonitor: true     # 段 4: GetWatchlist・GetWatchlistAsOf

@@ -40,7 +40,7 @@ plan_refs:
 - 対象:
   1. chart: 呼び出し側の宣言を**マップのキー** `services.<name>.grpcClients.<提供側>: true` で描くテンプレート（`templates/deployment.yaml`）。
      宛先は呼び先の `grpcPort` から導出し、片方だけの宣言・未知の提供側・`extraEnv` との二重定義は描画時に止める。既定描画・values-local 描画はバイト等価。
-  2. 計測 overlay `deploy/helm/ai-stock-trading/values-grpc-measurement.yaml`（提供側 6 の `grpcPort: 8081`・呼び出し側 13 の `grpcClients`。配列を 1 つも持たない）。
+  2. 計測 overlay `deploy/helm/ai-stock-trading/values-grpc-measurement.yaml`（提供側 6 の `grpcPort: 8081`・呼び出し側 13 の `grpcClients`。うち #6〔report → Audit〕は既定 `false`＝宣言は 12。配列を 1 つも持たない。書いてよい葉は `services.*.grpcPort` と `services.*.grpcClients.*` だけ）。
   3. CI: `helm.yml` に overlay の検査（env が 1 本も消えない・足すのは gRPC の宣言だけ・数がそろう・異常系が描画で止まる）。
   4. Runbook `docs/operations/grpc-h2c-measurement-runbook.md`（前提・適用・計測・合否・中止条件・切り戻し・記録）。運用仕様書と通信仕様書から参照を張る。
   5. values.yaml の有効化の案内コメント（「env 配列へ足す」）を `grpcClients` へ改める（配列へ足す案内は事故の形そのものである）。
@@ -66,11 +66,11 @@ plan_refs:
 | 呼び出し側 | 宣言（構成キー） | 呼び先（提供側） | rpc | 段 | REST の現状（values-local） |
 | --- | --- | --- | --- | --- | --- |
 | cost-control | `Configuration:Grpc` | configuration | `Assumptions/Get` | 1 | 結線（`Configuration__BaseUrl`。values.yaml） |
-| trade-decision | `Configuration:Grpc` | configuration | `Assumptions/Get` | 1 | 🔴 **未結線**（`Configuration__BaseUrl` が chart に無い＝既定プロバイダ） |
+| trade-decision | `Configuration:Grpc` | configuration | `Assumptions/Get` | 1 | 🔴 **未結線**（`Configuration__BaseUrl` が chart に無い＝既定プロバイダ）。🔴 しかも**既定では発火しない**: 読むのは `AssumptionsProfitabilityProvider` だけで、`TradeDecisionAppService` が `_profitabilityOptions.Enabled` のときだけ呼ぶ（`Profitability__*` は values に無く既定無効） |
 | trade-decision | `RiskManagement:Grpc` | risk-management | `GetOpenPositions`・`GetWorkingEntryOrders`・`GetSizingContext`・`GetEntryBlockers` | 2 | 結線 |
 | market-monitor | `RiskManagement:Grpc` | risk-management | `GetOpenPositions` | 2 | 結線 |
 | report | `RiskManagement:Grpc` | risk-management | `GetOpenPositions`・`GetFills`・`GetDriftAdoptions`・`GetBuyInInferences`・`GetSessionUptime`・`GetStageGate` | 2 | 結線 |
-| report | `Audit:Grpc` | audit | `AuditEventsRead/GetEventsByType`（6 供給元） | 3 | 🔴 **未結線**（`Audit__BaseUrl` が chart に無い＝未供給） |
+| report | `Audit:Grpc` | audit | `AuditEventsRead/GetEventsByType`（6 供給元） | 3 | 🔴 **未結線**（`Audit__BaseUrl` が chart に無い＝未供給）。values-local は報告書の自動生成が有効（`Reports__AutoGeneration__Enabled=true`）なので、宣言すると窓の中で生成された報告書に監査の実値が永続化される → overlay の既定は `false`、所有者の同意を得た別窓で測る |
 | trade-decision | `Reports:Grpc` | report | `DailyPolicyRead/GetConfirmedDailyPolicy` | 4 | 結線 |
 | trade-decision | `MarketMonitor:Grpc` | market-monitor | `WatchlistRead/GetWatchlist`・`GetWatchlistAsOf` | 4 | 結線 |
 | information-collection | `MarketMonitor:Grpc` | market-monitor | `WatchlistRead/GetWatchlist` | 4 | 結線 |
@@ -80,8 +80,9 @@ plan_refs:
 | notification | `MarketMonitor:Grpc` | market-monitor | 読み 1（`WatchlistRead/GetWatchlist`）・書き 1（`WatchlistOwnerWrite/ApplyWatchlistProposal`） | 5 | 結線 |
 
 - 除外: `LlmGateway:Grpc`（report・trade-decision）。呼び先が基盤（chart の外）で、本 chart の `grpcPort` から宛先を導出できない。段 1′ の別系列で段 6 の数えにも入らない（IADR-0284 2026-09-11 追記）。
-- 🔴 **未結線の 2 経路は、宣言で輸送だけでなく結線そのものが変わる**（trade-decision の全体前提条件は既定値から提供側の値へ、report の監査台帳の 6 供給元は「照会できませんでした」から実値へ）。
-  Runbook では「輸送の切り替え」と分けて扱い、比較の基準（REST の往復）が無いことを明記する。
+- 🔴 **#2（trade-decision → Configuration）は既定の構成では発火しない**（採算評価ゲートが無効）。宣言しても業務は変わらないが、測るにはゲートを有効にする判断（業務の変更）が要る。
+- 🔴 **#6（report → Audit）は宣言で輸送だけでなく結線そのものが変わり、業務の入力が変わる**（監査台帳の 6 供給元が「照会できませんでした」から実値へ。自動生成の報告書に永続化される）。
+  Runbook では別窓（所有者の同意・`--set services.report.grpcClients.Audit=true`）として扱い、比較の基準（REST の往復）が無いことを明記する。
 
 ### 実測の証跡（観測点）をコードから引いた結果
 
@@ -105,7 +106,7 @@ plan_refs:
 
 1. **呼び出し側の宣言はマップのキーにする（IADR-0489）。** `extraEnv` は配列で、helm は values を重ねるとき配列を**丸ごと置き換える**。
    実測（helm v3.16.4）: report の `extraEnv` に `Audit__Grpc` を 1 行だけ書いた overlay を values-local に重ねると、report の env は
-   53 本 → 17 本になり `ServiceAuth__*`・`LlmGateway__*`・`RiskManagement__BaseUrl` 等 37 本が消えた。
+   50 本 → 14 本になり `ServiceAuth__*`・`LlmGateway__*`・`RiskManagement__BaseUrl` 等 37 本が消えた（コンテナの `env:` ブロックの中だけを数えた値。初版の 53 → 17 は同じ字下げの volumeMounts の `- name:` を 3 本拾っていた）。
    マップのキーは深くマージされるので、`grpcPort`（既存）と `grpcClients`（新設）だけを書く overlay は何も消さない。
 2. **宛先はテンプレートが導出する。** 提供側の名前 → 呼び先のサービス名の表（6 行）をテンプレートに置き、`http://<呼び先>-service:<grpcPort>` を描く。
    「呼び先の `grpcPort` と呼び出し側の宛先を同じ変更で揃える」（values.yaml の注意書き）を構造で強制する —— 片方だけだと描画で止まる。
@@ -117,8 +118,9 @@ plan_refs:
    - 棄却: スクリプトに追加の `-f` を受ける env を足す案。スクリプトは画像の作り直しと restart を含み、計測の一時適用には重い。
      計測が 1 回限りの操作である間は、既存の読み取り専用の差分検査と helm の標準機能で足りる（段 6 で既定にするときは values.yaml へ入れる）。
 4. **CI の検査**（`helm.yml`「Assert gRPC measurement overlay keeps every env」）: 既定・values-local の 2 つで、overlay の有無の env 名の集合を Deployment ごとに比べ、
-   ①overlay が配列を持たない ②overlay なしに gRPC の宣言が無い ③消えた env が 0 ④足した env が gRPC の宣言だけで、呼び出し側 13・提供側 6
-   ⑤宛先の導出 ⑥異常系（片方だけ・未知の提供側・真偽値でない・二重定義）が描画で止まる、を検める。
+   ①overlay の葉が `services.*.grpcPort` と `services.*.grpcClients.*`（true / false）だけ（行の形で閉じる）②overlay なしに gRPC の宣言が無い ③消えた env が 0
+   ④足した env が gRPC の宣言だけ（`Grpc__Port` 6）⑤呼び出し側の宣言（Deployment・env・宛先）が期待表 12 行と完全一致 ⑥`=false` で 1 経路だけ外れ、`Audit=true` で #6 が足される
+   ⑦異常系（片方だけ・未知の提供側・真偽値でない・二重定義）が**期待した理由の文言で**描画で止まる、を検める。`set -euo pipefail`（描画の失敗を別の誤った文言に化けさせない）。
 5. **NetworkPolicy**: chart は NetworkPolicy を持たない（`git grep -i networkpolicy -- deploy` は chart の README と values-local のコメントの 2 件だけ）。
    Service の gRPC ポートは既存の `grpcPort` が `name: grpc` / `appProtocol: grpc` で描く。名前空間に NetworkPolicy が在る場合（chart の外で入れられたもの）は
    8081 を塞ぎ得るので、Runbook の前提確認で列挙させ、在れば中止とする（本件で許可の規則を足さない）。
@@ -126,8 +128,8 @@ plan_refs:
 ## 受け入れ基準
 
 - [x] AC-1: 既定描画・values-local 描画がテンプレート変更の前後でバイト等価（`cmp` で実測）。
-- [x] AC-2: values-local ＋ overlay の描画で、全 Deployment の env が 1 本も消えず、足されるのは `*__Grpc` 13・`Grpc__Port` 6 だけ（helm.yml の新ステップがローカルで緑）。
-- [x] AC-3: 自己変異 —— overlay に配列を足すと①で赤、①を外すと③で赤（order-execution の `Reconciliation__*` が消えたと名指しする）、宣言を 1 つ消すと④で赤。
+- [x] AC-2: values-local ＋ overlay の描画で、全 Deployment の env が 1 本も消えず、足されるのは `*__Grpc` 12（#6 は別窓）・`Grpc__Port` 6 だけ（helm.yml の新ステップが helm v3.16.4 と v4.2.1 のローカルで緑）。
+- [x] AC-3: 自己変異 —— 初版: overlay に配列を足すと①で赤、①を外すと③で赤（order-execution の `Reconciliation__*` が消えたと名指しする）、宣言を 1 つ消すと赤。追記の変異は下の追記の表。
 - [x] AC-4: 呼び先の `grpcPort` 無し・未知の提供側・文字列の真偽値・`extraEnv` との二重定義は描画で止まる。`--set …=false` で 1 経路だけ外せる。
 - [x] AC-5: Runbook が、経路表・適用・観測点（コードの文言と系列）・合否・中止条件・切り戻し・記録先を持ち、`docs/` の trace ブロック規約を満たす。
 - [x] AC-6: 文書系の検査（trace-blocks・doc-links・cross-repo-refs・plan-id-qualification・knowledge-graph）・コミット件名・gitleaks が緑。
@@ -141,5 +143,30 @@ plan_refs:
 
 - 実測そのものは未実施（本件は道具まで）。系列名・属性名は OTel の版と collector の変換に依存し、Runbook の手順 0 で実名を確かめる前提である。
 - `--reset-then-reuse-values` は helm 3.14 以降の旗。古い helm では使えない（Runbook の前提に書いた）。
-- 未結線だった 2 経路（trade-decision の全体前提条件・report の監査台帳）は、宣言で業務の入力が変わる。Runbook で分けて観測させる。
+- #2 は採算評価ゲートが無効な限り未実測のまま残る。#6 は所有者の同意が無ければ未実測のまま残る。
 - 書き込みの経路（ボット 13 本）は人の操作でしか発火しない。kill switch の起動など影響の大きい操作を実測のために打たない、を中止条件に置いた。未発火の経路は「未実測」として記録させる。
+
+## ［2026-10-04 追記 / #753］別文脈の監査（条件付き GO）の指摘を直した
+
+| 指摘 | 直したこと |
+| --- | --- |
+| F1 #2 は既定で発火しない | 経路表・注意を「採算評価ゲート（`Profitability:Enabled=true`）が有効なときだけ。既定無効で発火しない」に改め、測るにはゲート有効化（業務変更）の判断が要ると明記。「業務の入力が変わる」は #6 だけに残した |
+| F2 #6 は自動生成の報告書へ実値が永続化される | overlay の既定を `Audit: false`。Runbook 手順 4 の 7 に所有者の同意を得た別窓（`--set services.report.grpcClients.Audit=true`）、記録に「別窓の間に生成・確定した報告書」。CI の期待を 12 に |
+| F3 宛先の突き合わせ | ⑤を全宣言の（Deployment・env・宛先）期待表との完全一致に、⑥で `=false` による除外と `Audit=true` の追加を assert |
+| F4 葉パスの機械検査 | ①を行の形の許可リストへ（`services:` / `  <名前>:` / `    grpcPort: <数>` / `    grpcClients:` / `      <提供側>: true\|false` 以外は赤） |
+| F5 開場外 | Runbook 前提表に「適用と戻しは開場外（9 Deployment のローリング再起動）」 |
+| F6 対象クラスタ | Runbook 前提表に「`k8s-local-deploy.sh`（values-local）で配備したクラスタに限る。ArgoCD 管理下では実施しない（本番プロファイルでは未結線→結線が 8 経路）」 |
+| F7 一時停止の後始末 | 中止条件 5 に「`/status` で一時停止中なら、REST に戻した後に `/resume` を打ち直す」 |
+| 🟢 | `set -euo pipefail`（here-string で SIGPIPE を避けた）・`must_fail` は期待文言を grep・件数 50 → 14（`envs()` を `env:` ブロックに限定）・Runbook の「手順 3 の観測」→「手順 4」 |
+
+自己変異（helm v3.16.4 / v4.2.1 の両方で赤を確認）:
+
+| 変異 | 内容 | 赤になった検査 |
+| --- | --- | --- |
+| M2 | テンプレートの `if $on` → `if true` | ⑤（`Audit: false` が描かれ期待表と不一致） |
+| M5 | 提供側の表の `Reports` の呼び先を risk-management に取り違え | ⑤ |
+| M9 | 未知の提供側の `fail` を削除（別の理由＝grpcPort 無しで止まる） | ⑦（期待した理由の文言で止まっていない） |
+| M11 | overlay に `replicas: 0` | ① |
+| M17 | overlay に `global.authAuthority` | ① |
+| M19 | overlay の configuration を `grpcPort: 0`（描画が失敗する） | helm の失敗がそのまま出て停止（pipefail。「env が消える」の誤文言にならない） |
+

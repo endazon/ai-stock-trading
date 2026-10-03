@@ -42,13 +42,15 @@ REST のアダプタを退役させる（段 6）前に、次の 2 つを稼働�
 | チャート | **稼働中のリリースと同じコミット**のチェックアウトで行う（チャートのテンプレートに呼び出し側の宣言 `grpcClients` が入っていること）。イメージも同じコミット以降で作り直してあること（段 5 の書き込みまでの実装を含む） |
 | overlay | `deploy/helm/ai-stock-trading/values-grpc-measurement.yaml`。**既定の配備（values.yaml・values-local.yaml・`scripts/k8s-local-deploy.sh`）は参照しない** |
 | 発注経路 | `broker.tier` が `paper` か `moomoo-sim` であること（実弾は描画で拒否される） |
+| 対象のクラスタ | 🔴 **`scripts/k8s-local-deploy.sh`（values-local のプロファイル）で配備したクラスタに限る。** ArgoCD 管理下（values.yaml だけの本番プロファイル）では実施しない —— 本番プロファイルは REST の宛先（`*__BaseUrl`）の多くが空で、宣言を入れると「未結線 → 結線」が 8 経路（#2〜#7・#11・#12）に広がり、輸送の切り替えではなく業務の配線の変更になる。自動同期が宣言を巻き戻すおそれもある |
+| 時間帯 | 🔴 **適用と戻しは開場外に行う。** 9 つの Deployment（configuration・risk-management・audit・report・market-monitor・cost-control・trade-decision・information-collection・notification）がローリング再起動する。損切り監視（market-monitor）・リスク管理（risk-management）・取引判断（trade-decision）を含む。計測窓は開場中に取る |
 | 所要時間の目安 | 適用と確認 15 分。計測は基準窓（REST）と計測窓（gRPC）をそれぞれ**開場中に 2 時間以上**。書き込みの経路は人の操作を含む |
 
 ### 🔴 values の配列を重ねない（なぜ overlay がこの形なのか）
 
 チャートの `services.<name>.extraEnv` は**配列**である。helm は 2 つ目の values ファイルや `--set` で配列を書くと、**配列を丸ごと置き換える**（追記しない）。
 values-local は 7 サービスの `extraEnv` を丸ごと持っているので、計測のために `extraEnv` へ `X__Grpc` を 1 行足した values を重ねると、写し忘れた env が黙って消える。
-実測では、report に `Audit__Grpc` の 1 行だけを書いた values で、report の env は 53 本から 17 本になり、サービス間トークン（`ServiceAuth__*`）まで消えた。
+実測では、report に `Audit__Grpc` の 1 行だけを書いた values で、report の env は 50 本から 14 本になり（37 本が消えて 1 本が足された）、サービス間トークン（`ServiceAuth__*`）まで消えた。
 同じ形で、発注執行の突合の設定（`Reconciliation__*`）が消えた事故が過去にある。
 
 そのため overlay は配列を 1 つも持たず、**マップのキーだけ**を書く。
@@ -57,20 +59,20 @@ values-local は 7 サービスの `extraEnv` を丸ごと持っているので�
 - 呼び出し側: `services.<name>.grpcClients.<提供側>: true` → env `<提供側>__Grpc` が描かれる。宛先は呼び先の `grpcPort` から `http://<呼び先>-service:8081` と導出される。
   呼び先に `grpcPort` が無い宣言・未知の提供側・`extraEnv` との二重定義は、**描画の時点で止まる**。
 
-CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 13・提供側 6）」を毎回検めている。
+CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps every env」）が、既定と values-local の両方で「overlay を重ねても消える env は 0 本、足されるのは gRPC の宣言だけ（呼び出し側 12〔#6 は別窓〕・提供側 6）で、宣言の宛先が期待表と一致する」こと、overlay に `grpcPort` と `grpcClients` 以外を書いていないことを毎回検めている。
 
 ## 経路表（実測の対象）
 
-呼び出し側 13 宣言・提供側 6 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
+呼び出し側 13 宣言（overlay が既定で入れるのは #6 を除く 12）・提供側 6 サービス。rpc の名前は提供側のメトリクスの `http.route`（`/<package>.<Service>/<Method>`）にそのまま現れる。
 
 | # | 呼び出し側 | 宣言（env） | 呼び先:8081 | rpc（`aistocktrading.` を略す） | 段 | 発火のきっかけ | deadline（既定） |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | cost-control | `Configuration__Grpc` | configuration | `configuration.v1.Assumptions/Get` | 1 | 費用の判定で全体前提条件を読むとき（キャッシュ 300 秒） | 5 秒 |
-| 2 | trade-decision | `Configuration__Grpc` | configuration | `configuration.v1.Assumptions/Get` | 1 | 判断で全体前提条件を読むとき。🔴 **REST は未結線だった**（下の注意） | 5 秒 |
+| 2 | trade-decision | `Configuration__Grpc` | configuration | `configuration.v1.Assumptions/Get` | 1 | 🔴 **採算評価ゲート（`Profitability:Enabled=true`）が有効なときだけ**読む。既定は無効なので**発火しない**（下の注意） | 5 秒 |
 | 3 | trade-decision | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions`・`GetWorkingEntryOrders`・`GetSizingContext`・`GetEntryBlockers` | 2 | 取引サイクル（開場中） | 5 秒 |
 | 4 | market-monitor | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions` | 2 | 損切り監視の巡回（保有があるとき） | 5 秒 |
 | 5 | report | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions`・`GetFills`・`GetDriftAdoptions`・`GetBuyInInferences`・`GetSessionUptime`・`GetStageGate` | 2 | 報告書の生成 | 10 秒 |
-| 6 | report | `Audit__Grpc` | audit | `audit.v1.AuditEventsRead/GetEventsByType` | 3 | 報告書の生成（監査台帳の 6 つの供給元）。🔴 **REST は未結線だった** | 10 秒 |
+| 6 | report | `Audit__Grpc` | audit | `audit.v1.AuditEventsRead/GetEventsByType` | 3 | 報告書の生成（監査台帳の 6 つの供給元）。🔴 **overlay の既定では宣言しない**（別窓。下の注意） | 10 秒 |
 | 7 | trade-decision | `Reports__Grpc` | report | `report.v1.DailyPolicyRead/GetConfirmedDailyPolicy` | 4 | 取引サイクル（その日の方針） | 5 秒 |
 | 8 | trade-decision | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist`・`GetWatchlistAsOf` | 4 | 取引サイクル・Stage 0 の記録 | 5 秒 |
 | 9 | information-collection | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist` | 4 | 収集の巡回（Finnhub を使う構成のとき） | 5 秒 |
@@ -81,10 +83,15 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 
 基盤のテキスト生成（呼び出し側の宣言 `LlmGateway__Grpc`）はこの表に入らない。呼び先がこのチャートの外にあり、段 1〜5 とは別の系列である。
 
-> 🔴 **#2 と #6 は「輸送の切り替え」ではなく「初めての結線」である。** チャートには `Configuration__BaseUrl`（取引判断）と `Audit__BaseUrl`（報告書）が無く、
-> 今の配備では取引判断の全体前提条件は**既定値**のまま、報告書の監査台帳の 6 つの供給元は「**照会できませんでした**」のままである。
-> 宣言を入れると、取引判断は設定管理サービスの値を読み、報告書は監査台帳の実値を載せる。**業務の入力が変わる**ので、比べる REST の往復（基準窓）は無い。
-> 業務の入力を変えたくなければ、この 2 本だけ外して適用する（手順 3 の `--set …=false`）。
+> 🔴 **#2 は既定の構成では発火しない。** 取引判断が全体前提条件を読むのは、採算評価のアダプタを通るときだけであり、それは
+> 採算評価ゲート（構成 `Profitability:Enabled`）が有効なときだけ呼ばれる。values に `Profitability__*` は無く、既定は無効である。
+> 宣言は入れておく（入れても読まないので業務は変わらない）が、#2 を実際に測るには**ゲートを有効にする判断（業務の変更）**が要る。
+> その判断が無ければ #2 は「未実測（採算評価ゲートが無効）」と記録する。チャートには取引判断の `Configuration__BaseUrl` も無く、REST の基準窓も無い。
+>
+> 🔴 **#6 は「輸送の切り替え」ではなく「初めての結線」であり、業務の入力が変わる。** チャートには報告書の `Audit__BaseUrl` が無く、今の配備では
+> 監査台帳の 6 つの供給元は「**照会できませんでした**」のままである。宣言を入れると報告書は監査台帳の実値を載せる。values-local は報告書の自動生成
+> （`Reports__AutoGeneration__Enabled=true`）が有効なので、**窓の中で生成された報告書に実値が永続化される**。そのため overlay は既定で `Audit: false` とし、
+> #6 は所有者の同意を得た**別の窓**で測る（手順 4 の 7）。比べる REST の往復（基準窓）は無い。
 
 > 🔴 **#11〜#13 は失敗しても REST へ落とさない。書き込みは再試行しない。** 時間切れは「結果は不明」である。
 
@@ -127,7 +134,7 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
    以下では、提供側の要求の所要時間の系列を `<SRV>`（例 `http_server_request_duration_seconds`）、呼び出し側を `<CLI>`（例 `http_client_request_duration_seconds`）と書く。
    ラベルは OTel の属性名の `.` を `_` にしたもの（`http_route`・`network_protocol_version`・`server_address`・`server_port`）と、サービス名 `service_name`
    （`ai-stock-trading.<サービス>-service`）である。**名前が 1 つも出なければ中止する**（往復を数えられない計測は合否を出せない）。
-5. **基準窓（REST）を取る。** 適用の前の開場中に 2 時間以上、手順 3 の観測を REST のルートで取っておく（例 `http_route="/risk-controls/open-positions"`）。#2・#6 は基準が無い。
+5. **基準窓（REST）を取る。** 適用の前の開場中に 2 時間以上、手順 4 の観測を REST のルートで取っておく（例 `http_route="/risk-controls/open-positions"`）。#2・#6 は基準が無い。
 
 ### 1. 適用の差を見る（まだ適用しない）
 
@@ -141,7 +148,7 @@ overlay はリリースの値の**後に**重ねて描かれる（次の手順�
 
 - 🔴 1 行目 `OpenD の Deployment（opend）:` が「変化なし」（または「どちらにも無い」）。**終了コード 3 なら適用しない。**
 - env のキーの差が**追加だけ**で、中身が `Grpc__Port`（configuration・risk-management・audit・report・market-monitor・cost-control の 6）と
-  `*__Grpc`（上の経路表の 13）だけであること。**削除が 1 つでも出たら適用しない。**
+  `*__Grpc`（上の経路表の 13 から #6 を除いた 12）だけであること。**削除が 1 つでも出たら適用しない。**
 - 変わる Deployment は 9 つ（上の 6 ＋ trade-decision・information-collection・notification）。order-execution・backtest・OpenD は変わらない。
 
 ### 2. 適用する
@@ -238,6 +245,19 @@ done
    読み取り（`/status`・`/stage` の `status`・`/report` の `show`・会話キーの入力補完）→ 書き込みのうち戻せるもの（`/pause` の直後に `/resume`）。
    🔴 **実測のためだけに `/killswitch`・`/stage` の昇格/降格/撤退評価・`/gfv`・`/drift`・`/report` の確定/差し戻し・`/policy` を打たない**（業務の状態が変わる）。
    本来の運用でそれらを打ったときに観測できれば記録し、無ければ「未実測（書き込み・業務の操作待ち）」と書く。
+7. **経路 #6（報告書 → 監査台帳）の別窓。** 🔴 **所有者の同意を得てから**行う（窓の中で生成・確定した報告書に監査の実値が載り、そのまま残る）。
+   1〜6 の窓の後（宣言が入ったまま）に、#6 だけを足す:
+
+   ```bash
+   helm upgrade ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+     --reset-then-reuse-values \
+     --set services.report.grpcClients.Audit=true
+   kubectl -n ai-stock-trading rollout status deploy/report-service --timeout=5m
+   ```
+
+   再起動するのは report だけである（audit の `grpcPort` は overlay で既に入っている）。これも開場外に行う。報告書が生成されるまで待ち、
+   1〜5 と同じ観測（`http_route="/aistocktrading.audit.v1.AuditEventsRead/GetEventsByType"`・report のログ）を取る。
+   別窓の間に**生成・確定した報告書**（期間のキー）を控える（下の「記録」）。終わったら手順 5 で戻す（`--set …Audit=false` で #6 だけ外してもよい）。
 
 ### 5. 戻す（REST の既定へ）
 
@@ -286,6 +306,7 @@ echo "exit=$?"   # 手順 0 の 2 と同じ結果に戻ること
 3. 適用後に Ready にならない Pod がある（起動時の構成の検証で落ちた・`CrashLoopBackOff`）。
 4. 同じ経路で `Unauthenticated` / `PermissionDenied` が続く（トークンの宛先・所有者の門の構成の食い違い。待っても直らない）。
 5. ボットの書き込みが時間切れになった（「結果は不明」）。**打ち直さない。** 戻したうえで、REST の画面（BFF）か `/status` で状態を確かめる。
+   後始末: 計測のために `/pause` を打っていて、`/status` が**一時停止中**を示すなら、REST に戻した後に `/resume` を打ち直す（取引が止まったまま残さない）。
 6. 手順 0 の前提（NetworkPolicy・差分 0・系列名）を満たせない、または手順 1 で env の削除や OpenD の変化が出た（この場合は適用しない）。
 7. 計測の途中で配備スクリプトが走り、宣言が消えた（計測窓が切れた。測り直すか終える）。
 
@@ -302,7 +323,7 @@ echo "exit=$?"   # 手順 0 の 2 と同じ結果に戻ること
 ## 記録
 
 - 結果は起票済みの issue（段 6 の受け皿）にコメントで残す。書くもの: 実施日時（窓の開始・終了）・チャートのコミット・適用と戻しのリビジョン・
-  経路表の # ごとの判定（合格／不合格／未実測）・提供側と呼び出し側の p95（gRPC と基準窓の REST）・失敗のログの件数と状態コード・中止した場合はその条件。
+  経路表の # ごとの判定（合格／不合格／未実測。#2 は採算評価ゲートの有無、#6 は別窓の有無を添える）・#6 の別窓の間に**生成・確定した報告書**（期間のキー。監査の実値が載ったもの）・提供側と呼び出し側の p95（gRPC と基準窓の REST）・失敗のログの件数と状態コード・中止した場合はその条件。
 - ログの行やトークン・env の値は貼らない（件数と状態コードだけを書く）。
 
 ## 限界（この手順で担保できないこと）

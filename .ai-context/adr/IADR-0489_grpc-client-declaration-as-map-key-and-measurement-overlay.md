@@ -36,7 +36,7 @@ plan_refs:
   「この env 配列（`extraEnv`）へ `{ name: X__Grpc, value: http://…:8081 }` を足す」と案内していた。
 - 🔴 **`extraEnv` は配列であり、helm は 2 つ目の values / `--set` の配列を丸ごと置き換える。** 稼働の配備は values.yaml に values-local.yaml を重ね、
   values-local は 7 サービスの `extraEnv` を既に丸ごと持っている。計測のために 3 つ目の values で `extraEnv` を書くと、values-local の配列を写し忘れた分が
-  黙って消える。実測（helm v3.16.4）: report に `Audit__Grpc` の 1 行だけを書いた overlay で、report の env は 53 本 → 17 本（`ServiceAuth__*` を含む 37 本が消えた）。
+  黙って消える。実測（helm v3.16.4）: report に `Audit__Grpc` の 1 行だけを書いた overlay で、report の env は 50 本 → 14 本（`ServiceAuth__*` を含む 37 本が消えた）。
   同じ形の事故（`Reconciliation__*` が消えた）が過去にある。
 - 呼び先の `grpcPort` と呼び出し側の宛先は「同じ変更で揃える」と注意書きされているが、揃っていないことを止める仕組みが無かった（片方だけだと常に安全側既定へ倒れる）。
 
@@ -57,7 +57,9 @@ plan_refs:
 
 ### 決定 3 — 稼働クラスタでの実測は、配列を持たない一時 overlay を `--reset-then-reuse-values` で重ねる
 
-- overlay `values-grpc-measurement.yaml` は提供側 6 の `grpcPort: 8081` と呼び出し側 13 の `grpcClients` だけを持つ。既定の配備（values.yaml・values-local.yaml・
+- overlay `values-grpc-measurement.yaml` は提供側 6 の `grpcPort: 8081` と呼び出し側の `grpcClients` だけを持つ（13 宣言のうち report → Audit は既定 `false`＝宣言は 12。
+  values-local は報告書の自動生成が有効で、宣言すると窓の中の報告書に監査の実値が永続化されるため、所有者の同意を得た別窓で `--set` して測る）。
+  trade-decision → Configuration は宣言するが、採算評価ゲート（`Profitability:Enabled`）が既定無効なので発火しない。既定の配備（values.yaml・values-local.yaml・
   `k8s-local-deploy.sh`・ArgoCD）からは参照しない。
 - 適用は `helm upgrade ast … --reset-then-reuse-values -f values-grpc-measurement.yaml`（リリースの利用者の値〔`--set` で引き継いだ `broker.tier` 等を含む〕に重ねる）。
   適用前の差は IADR-0439 の `helm-release-drift.js --values <overlay>` で出す（同じ合成で描く）。切り戻しは `helm rollback`。
@@ -66,7 +68,8 @@ plan_refs:
 ### 決定 4 — CI は「overlay で env が 1 本も消えない」を描画で検める
 
 `helm.yml` に 1 ステップ: 既定・values-local の 2 通りで overlay の有無の env 名の集合を Deployment ごとに比べ、消えた env が 0・足した env が gRPC の宣言だけ
-（呼び出し側 13・提供側 6）・overlay が配列を持たない・異常系が描画で止まる、を検める。
+（`Grpc__Port` 6）・呼び出し側の宣言（Deployment・env・宛先）が期待表 12 行と完全一致・`=false` で 1 経路だけ外れる・overlay の葉が
+`services.*.grpcPort` と `services.*.grpcClients.*` だけ（行の形で閉じる）・異常系が**期待した理由で**描画で止まる、を検める。
 
 ## 検討した選択肢
 
