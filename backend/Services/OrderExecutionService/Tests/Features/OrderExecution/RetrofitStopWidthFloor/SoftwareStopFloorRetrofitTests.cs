@@ -60,11 +60,14 @@ public class SoftwareStopFloorRetrofitTests
     }
 
     // planned＝ラインを引いた価格（発注記録の PlannedPrice＝取引判断の参照価格）。省略時は取得単価と同じ（参照価格どおりに約定した）。
-    private static void Entry(Fixture f, ProtectiveStopOrder stop, decimal averagePrice, int filled = 10, decimal? planned = null) =>
+    // floorSource＝発注記録の「下限を掛けてラインを引いた」印（#1122, IADR-0486 決定6。省略は null＝#1122 より前の記録）。
+    private static void Entry(
+        Fixture f, ProtectiveStopOrder stop, decimal averagePrice, int filled = 10, decimal? planned = null,
+        StopWidthFloorSource? floorSource = null) =>
         f.Store.Save(new ExecutionRecord(
             stop.EntryDecisionId, $"entry-{stop.EntryDecisionId:N}", stop.Symbol, stop.Market, stop.EntrySide,
             ProductType.Cash, PositionEffect.Open, 10, planned ?? averagePrice, filled, filled > 0 ? averagePrice : 0m,
-            filled >= 10 ? OrderStatus.Filled : OrderStatus.PartiallyFilled, 0m, Now.AddDays(-1)));
+            filled >= 10 ? OrderStatus.Filled : OrderStatus.PartiallyFilled, 0m, Now.AddDays(-1), floorSource));
 
     private static Task<IReadOnlyList<SoftwareStopLineWidened>> Apply(Fixture f) =>
         f.Retrofit.ApplyAsync(f.Stops.FindActive(100));
@@ -83,6 +86,35 @@ public class SoftwareStopFloorRetrofitTests
             .Should().Be(expected is null ? null : (decimal)expected.Value);
         StopWidthFloorRetrofitPolicy.FloorPerShare(100m).Should().Be(100m * StopWidthFloorDefaults.FallbackRatio);
         StopWidthFloorDefaults.FallbackRatio.Should().Be(0.02m);
+    }
+
+    // T-10-2205, FR-10, ADR-0049 決定1, #1122（オーナー裁定 2026-10-03・案 A）, IADR-0486 決定7, IADR-0472（2026-10-03 追記）:
+    // 🔴 サイジングの時点で下限を掛けて建てた印のある行（Atr14 / Fallback2Pct）は遡及しない。ATR 1.2（参照価格 100 の 1.2%）の下限で
+    // 引いたライン 98.8 は「参照価格から 2% 未満」なので、印が無ければ導入前の行と取り違えて 98 へ広げる（サイジングの想定より広い損切り）。
+    // 印が無い（null）・未指定（Unspecified）の行は従来どおり（98 へ広げる）。売り建ても対称（101.2 は印があれば動かさない）。
+    [Theory]
+    [InlineData(TradeSide.Buy, 98.8, StopWidthFloorSource.Atr14, null)]
+    [InlineData(TradeSide.Buy, 98.8, StopWidthFloorSource.Fallback2Pct, null)]
+    [InlineData(TradeSide.Sell, 101.2, StopWidthFloorSource.Atr14, null)]
+    [InlineData(TradeSide.Buy, 98.8, null, 98.0)]
+    [InlineData(TradeSide.Buy, 98.8, StopWidthFloorSource.Unspecified, 98.0)]
+    [InlineData(TradeSide.Sell, 101.2, null, 102.0)]
+    public async Task T_10_2205_下限を掛けて建てた印のある行は遡及しない(
+        TradeSide side, double line, StopWidthFloorSource? floorSource, double? expected)
+    {
+        var f = NewFixture();
+        var stop = S1((decimal)line, side);
+        f.Stops.Save(stop);
+        Entry(f, stop, 100m, planned: 100m, floorSource: floorSource);
+
+        var events = await Apply(f);
+
+        f.Stops.Find(stop.EntryDecisionId)!.TriggerPrice.Should().Be(expected is null ? (decimal)line : (decimal)expected.Value);
+        if (expected is null)
+            events.Should().BeEmpty();
+        else
+            events.Should().ContainSingle().Which.StopLossPrice.Should().Be((decimal)expected.Value);
+        StopWidthFloorRetrofitPolicy.WasFloorAppliedAtSizing(floorSource).Should().Be(expected is null);
     }
 
     // T-10-1921, FR-10, #1136: 稼働中の 3 例（9/30）。取得単価は裁定の「約」の値から逆算（新ライン ÷ 0.98）。端数は丸めない。

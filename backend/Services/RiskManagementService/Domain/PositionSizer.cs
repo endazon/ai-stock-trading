@@ -3,8 +3,9 @@ namespace RiskManagementService.Domain;
 // FR-10: 1取引あたりリスクに基づくポジションサイジング。株数＝floor(資金 × 1取引リスク × 縮小係数 ÷ 1 株あたり損切り幅) を、
 // 1 注文金額上限（equity の 25%）と残枠（段階残枠・日次発注残枠の小さい方）で上から抑える（CalculateCappedQuantity）。
 // #1120, ADR-0049, IADR-0465: 損切り幅は、取引判断 LLM の提案（stopLossDistancePerShare）に取引判断サービスが下限を掛けた幅を受け取る
-// （下限 ＝ 1.0 × ATR(14, 日足)。ATR が得られない間は参照価格の 2%。下限を割った幅は下限まで広げる）。ATR はまだ供給されておらず、
-// 2% が効いている（ADR-0048 決定 3 の条件の後に ATR を供給する）。本クラスは幅を受け取るだけで、下限は掛けない。
+// （下限 ＝ 1.0 × ATR(14, 日足)。ATR が得られない間は参照価格の 2%。下限を割った幅は下限まで広げる）。#1122, IADR-0486: ATR の供給は
+// 取引判断の設定 StopWidthFloor:Atr14:Enabled（既定 false）で有効になり、既定の構成では 2% が効いている（ADR-0048 決定 3 の条件の後に
+// 利用者が有効化する）。本クラスは幅を受け取るだけで、下限は掛けない。
 public static class PositionSizer
 {
     /// <summary>

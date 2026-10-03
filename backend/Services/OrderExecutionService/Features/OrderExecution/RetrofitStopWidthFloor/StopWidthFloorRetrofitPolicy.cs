@@ -9,8 +9,19 @@ namespace OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor;
 // 🔴 **広げる向きだけ**。等しい・狭める向きは変えない（null）。端数は丸めない（S1 のラインは数値で比べる。S0 / S3 は対象外）。
 // min / max なので何度当てても同じ値に留まる（冪等）。
 // 🔴 #1136 独立監査 F2（IADR-0472 2026-10-01 追記）: 対象は**下限を割って建てた行**だけ（WasSizedBelowFloor）。
+// 🔴 #1122, IADR-0486 決定7（IADR-0472 2026-10-03 追記）: **サイジングの時点で下限を掛けて建てた印のある行は対象にしない**（WasFloorAppliedAtSizing）。
+// ATR の下限は参照価格の 2% より狭いことがあり、「参照価格から 2% 未満」の行を下限の導入前の行と取り違えて広げると、
+// サイジングの想定（1 取引リスク 1%）より広い損切りになる（ADR-0049 決定1「系が掛ける下限は 1.0 × ATR」に反する）。
 public static class StopWidthFloorRetrofitPolicy
 {
+    /// <summary>
+    /// 🔴 #1122, IADR-0486 決定7: エントリーの発注記録の印（<c>ExecutionRecord.StopFloorSource</c>）が「下限を掛けてラインを引いた」
+    /// （<see cref="StopWidthFloorSource.Fallback2Pct"/> / <see cref="StopWidthFloorSource.Atr14"/>）を示すか。示せば遡及しない。
+    /// null・<see cref="StopWidthFloorSource.Unspecified"/>（#1122 より前の記録・分からない）は false（従来の <see cref="WasSizedBelowFloor"/> で判定する）。
+    /// </summary>
+    public static bool WasFloorAppliedAtSizing(StopWidthFloorSource? stopFloorSource) =>
+        stopFloorSource is StopWidthFloorSource.Fallback2Pct or StopWidthFloorSource.Atr14;
+
     /// <summary>
     /// 🔴 #1136 独立監査 F2: この行のラインが、<b>ラインを引いた価格</b>（<paramref name="plannedPrice"/>＝エントリーの発注記録の
     /// PlannedPrice。取引判断の参照価格）から見て下限（2%）を割っているか。割っていれば「下限の導入前の幅で建てた行」として遡及の対象にする。

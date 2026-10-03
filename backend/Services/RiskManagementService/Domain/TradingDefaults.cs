@@ -52,7 +52,7 @@ public static class TradingDefaults
     /// <summary>
     /// FR-10, FR-17, ADR-0049 決定2, #1120, IADR-0465 決定1: **損切り幅の下限の退避値＝参照価格（アンカー後の現在値）の 2%**
     /// （05_trading-assumptions §5「損切り幅の下限」。利用者裁定 2026-09-30）。
-    /// 下限の本体は 1.0 × ATR(14, 日足) だが、ATR が得られないとき（日足が判断へ通っていない間を含む）は本値が効く。
+    /// 下限の本体は 1.0 × ATR(14, 日足) だが、ATR が得られないとき（ATR の設定 StopWidthFloor:Atr14:Enabled が無効＝既定の間を含む。#1122, IADR-0486）は本値が効く。
     /// 取引判断の LLM の幅がこれを割れば、下限まで広げてサイジングとラインを計算する（見送らない）。
     /// 🔴 <see cref="DefaultStopLossRatio"/>（ラインが不明な建玉の近似 3%）とは**別の値**である（ADR-0049 フォローアップ 4）。
     /// <para>
@@ -60,6 +60,18 @@ public static class TradingDefaults
     /// </para>
     /// </summary>
     public const decimal StopWidthFloorFallbackRatio = StopWidthFloorDefaults.FallbackRatio;
+
+    /// <summary>
+    /// FR-10, ADR-0049 決定2, #1122, IADR-0486 決定3: <b>損切り幅の下限の本体の倍率＝1.0 × ATR</b>（05_trading-assumptions §5「損切り幅の下限」）。
+    /// 下限（1 株あたり）＝ 本値 × ATR(<see cref="StopWidthFloorAtrPeriod"/>, 日足)。ATR が得られないときは <see cref="StopWidthFloorFallbackRatio"/>。
+    /// </summary>
+    public const decimal StopWidthFloorAtrMultiple = 1.0m;
+
+    /// <summary>
+    /// FR-10, ADR-0049 決定2, #1122, IADR-0486 決定3: <b>ATR の本数＝14</b>（判断時点の前営業日までの確定足で、直近 14 本の True Range の単純平均。
+    /// 前日終値を使うため足は 15 本要る）。Wilder の平滑化は使わない（Stage 0 と本番で値を揃えるため。ADR-0049 決定2）。
+    /// </summary>
+    public const int StopWidthFloorAtrPeriod = 14;
 
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。

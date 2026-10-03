@@ -42,7 +42,8 @@ public static class TradeDecisionPromptBuilder
 
     // FR-04, FR-10, ADR-0049 決定5（配備までの暫定手段）, #1120, IADR-0465 決定4: 損切り幅は当日の値動きより広く取るよう案内する。
     // 実測（PoC 2026-09-29）: LLM は 0.4〜0.6% の幅を置き、S1 が通常の値動きで約 50 分後に刈った。数値の強制は系の下限
-    // （StopWidthFloorPolicy）が行い、ここは案内だけである（下限の値は書かない＝ATR の供給で変わる）。本判断（Build）のリスク制約節にだけ置く
+    // （StopWidthFloorPolicy）が行い、ここは案内だけである（この行に下限の値は書かない＝ATR の供給で変わる。#1122, IADR-0486 決定3: ATR の下限が
+    // 有効な構成では、値は次の行 StopWidthFloorLine が別に書く）。本判断（Build）のリスク制約節にだけ置く
     // （一次スクリーニングは幅を決めない）。テストがこの const を直接参照する。
     public const string StopWidthBeyondDailyRangeRule =
         "損切り幅（stopLossDistancePerShare）は当日の値動き（日中の高値と安値の差）より広く取ってください。"
@@ -247,7 +248,8 @@ public static class TradeDecisionPromptBuilder
         IntradayPriceContext? intraday = null,
         NewsCollectionStatus? news = null,
         DailyVolumeContext? volume = null,
-        IReadOnlyList<RejectionReason>? addOnBlockers = null)
+        IReadOnlyList<RejectionReason>? addOnBlockers = null,
+        StopWidthFloorContext? stopFloor = null)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(policy);
@@ -331,6 +333,10 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine($"- {QuantityIsSystemDecidedRule}");
         sb.AppendLine($"- {TradingUnitIsNotCapRule}");
         sb.AppendLine($"- {StopWidthBeyondDailyRangeRule}");
+        // 🔴 FR-10, ADR-0049 決定2, #1122, IADR-0486 決定3: ATR の下限が有効な構成でだけ、ATR(14) と下限の値（得られなければ「未提供・2%」）を書く。
+        // 無効（既定・stopFloor が null）なら行を出さない（プロンプトは従来と一字一句同じ）。
+        if (StopWidthFloorLine(stopFloor, priceUnit) is { } floorLine)
+            sb.AppendLine($"- {floorLine}");
         sb.AppendLine();
         // FR-04, ADR-0016 決定11, ADR-0003, IADR-0297: 空売り固有ガードレール4件。空売りの有効・無効に
         // かかわらず常に出す（このメソッドは空売り可否のフラグを受け取らない）。誘因の構造（なぜ危険か）
@@ -484,6 +490,31 @@ public static class TradeDecisionPromptBuilder
             : VolumeRatioUnknownText;
         return $"出来高: 前営業日（{day.ToString("yyyy-MM-dd", ci)}）の確定値 {dayVolume.ToString(ci)} 株 / 20 日平均比: {ratio}"
             + "。出来高と比はシステムが日足（分割調整済み）から計算した値です。当日の出来高は含みません";
+    }
+
+    /// <summary>
+    /// FR-10, ADR-0049 決定2, #1122, IADR-0486 決定3: ATR の下限が得られなかったときの行（有効な構成のとき）。
+    /// テストがこの const を直接参照する。
+    /// </summary>
+    public const string StopWidthFloorAtrUnavailableLine =
+        "損切り幅の下限: ATR(14, 日足) は未提供です（日足が足りない・取得できない）。下限は参照価格の 2% です。";
+
+    // FR-10, ADR-0049 決定2, #1122, IADR-0486 決定3: 損切り幅の下限の行（先頭の "- " と改行を除く）。stopFloor が null（無効＝既定）なら null（行を出さない）。
+    // ATR が得られたら「ATR(14) の値と下限（1.0 × ATR）」を書く（系が実際に掛ける値と同じ。判断ごとに 1 回読んだ値）。値は小数 4 桁で四捨五入して見せる
+    // （適用は丸めない値で行う）。得られなければ StopWidthFloorAtrUnavailableLine。Stage 0 も同じ行を書く（AsOfDecisionInput.StopFloor）。
+    public static string? StopWidthFloorLine(StopWidthFloorContext? stopFloor, string priceUnit = "")
+    {
+        if (stopFloor is null)
+            return null;
+        if (stopFloor.Atr14 is not { } floor)
+            return StopWidthFloorAtrUnavailableLine;
+
+        var ci = CultureInfo.InvariantCulture;
+        static decimal Show(decimal value) => Math.Round(value, 4, MidpointRounding.AwayFromZero);
+        var atr = Show(floor.Atr ?? floor.PerShare).ToString("0.####", ci);
+        var perShare = Show(floor.PerShare).ToString("0.####", ci);
+        return $"損切り幅の下限: {perShare}{priceUnit}（1 株あたり。ATR(14, 日足・前営業日までの確定足 14 本の True Range の単純平均) {atr}{priceUnit} の 1.0 倍）。"
+            + "この値はシステムが日足（分割調整済み）から計算しました。stopLossDistancePerShare がこれを下回ると、システムが下限まで広げます";
     }
 
     // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態の行（本判断の定時・急変の節と一次で共用。末尾の改行まで含む）。

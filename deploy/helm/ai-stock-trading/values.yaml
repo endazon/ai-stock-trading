@@ -703,6 +703,11 @@ services:
       # helm.yml の検査が赤にする。#1140, IADR-0478 決定 1）:
       #   - { name: DecisionVolume__Enabled, value: "true" }
       #   - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # FR-10, ADR-0049 決定2, ADR-0048 決定 3, #1122, IADR-0486 決定 1: 損切り幅の下限を 1.0 × ATR(14, 日足) にする（得られなければ参照価格の 2%）。
+      # 🔴 **既定は無効（false）であり、このキーは意図的に置いていない**（置くと既定描画が変わる。無効の間は下限は参照価格の 2%・プロンプトは従来のまま）。
+      # 日足の口は上の出来高と 1 つを共有する（同じ銘柄の同じ取引日の取得は 1 回）。有効化の条件は出来高と同じ（取得枠の回復周期を IADR に記録してから利用者が行う）。
+      # 出来高とは独立に有効にできる（report 側に対応する設定は無い）。有効化するときだけ、この env 配列へ足す（OrderExecution__BaseUrl も要る）:
+      #   - { name: StopWidthFloor__Atr14__Enabled, value: "true" }
       - { name: Reports__BaseUrl, value: "" }
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
       # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、この env 配列へ足す:

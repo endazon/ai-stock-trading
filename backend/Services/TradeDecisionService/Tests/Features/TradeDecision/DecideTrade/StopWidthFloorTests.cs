@@ -218,7 +218,9 @@ public class StopWidthFloorTests
     {
         var real = new NoAtrStopWidthFloorSource();
 
-        (await real.GetFloorAsync("META", Market.UnitedStates, 724.85m)).Should().BeNull();
+        real.IsEnabled.Should().BeFalse();
+        (await real.GetFloorAsync("META", Market.UnitedStates)).Should().BeNull();
+        (await real.GetFloorAsOfAsync("META", Market.UnitedStates, new DateOnly(2026, 9, 30))).Should().BeNull();
 
         var decision = await Service(Buy(724.85m, 4.5m), floor: real).DecideAsync(ScheduledMeta());
 
@@ -227,7 +229,9 @@ public class StopWidthFloorTests
         decision.Intent.StopLossPrice.Should().Be(710.353m, "PoC の META（幅 4.50 ≈ 0.6%）は 724.85 − 14.497 まで広がる");
     }
 
-    // T-10-1803: 供給口が得た値（ATR）はその出所で記録し、アンカー後の価格を供給口へ渡す。
+    // T-10-1803: 供給口が得た値（ATR）はその出所で記録する。
+    // ［2026-10-03 改 / #1122, IADR-0486 決定2］ATR は価格に依らないため、供給口へ価格を渡さない（判断ごとにプロンプトの前に 1 回だけ読む）。
+    // 2% の退避はアンカー後の価格で求める（T-10-1799）。
     [Fact]
     public async Task 供給口の下限は出所つきで使う()
     {
@@ -236,7 +240,7 @@ public class StopWidthFloorTests
         var decision = await Service(Buy(100m, 0.5m), currentPrice: new FakeCurrentPrice(105m), floor: floor)
             .DecideAsync(ScheduledMeta());
 
-        floor.Calls.Should().ContainSingle().Which.Should().Be(("META", Market.UnitedStates, 105m));
+        floor.Calls.Should().ContainSingle().Which.Should().Be(("META", Market.UnitedStates));
         decision!.StopWidth.Should().Be(new StopWidthFloorApplication(0.5m, 3m, StopWidthFloorSource.Atr14, 3m, Widened: true));
         decision.Intent.StopLossPrice.Should().Be(102m);
     }
@@ -268,7 +272,8 @@ public class StopWidthFloorTests
         logger.Entries.Should().Contain(e => e.Message.StartsWith("損切り幅の下限が現在値以上のため見送り", StringComparison.Ordinal));
     }
 
-    // T-10-1804: AI の幅そのものが参照価格以上（壊れた出力）は、下限を掛ける前に従来どおり見送る（下限の供給口を読まない）。
+    // T-10-1804: AI の幅そのものが参照価格以上（壊れた出力）は、下限を掛ける前に従来どおり見送る。
+    // ［2026-10-03 改 / #1122, IADR-0486 決定2］下限の供給口はプロンプトの前に 1 回だけ読む（ATR と下限をプロンプトへ出すため）。読み直さない。
     [Fact]
     public async Task AIの幅が参照価格以上なら下限を掛ける前に見送る_否定形()
     {
@@ -278,7 +283,7 @@ public class StopWidthFloorTests
             .DecideAsync(ScheduledMeta());
 
         decision.Should().BeNull();
-        floor.Calls.Should().BeEmpty();
+        floor.Calls.Should().ContainSingle("下限はプロンプトの前に 1 回だけ読み、見送りで読み直さない");
     }
 
     // T-10-1805, ADR-0049 決定3・決定4: 🔴 1 注文上限（equity の 25%）は緩めない。equity 3,000・価格 100 → 上限 750 → 7 株。
@@ -344,6 +349,7 @@ public class StopWidthFloorTests
     }
 
     // T-10-1806: 🔴 否定形。決済（保有 10 株の売り）は損切りラインを作らないので、監査の幅（StopWidth）を持たない（null）。
+    // ［2026-10-03 改 / #1122, IADR-0486 決定2・決定5］供給口はプロンプトの前に 1 回だけ読む。決済の発注意図は下限の印を持たない（null）。
     [Fact]
     public async Task 決済の判断は下限の結果を持たない_否定形()
     {
@@ -354,29 +360,42 @@ public class StopWidthFloorTests
         decision.Should().NotBeNull();
         decision!.Intent.PositionEffect.Should().Be(PositionEffect.Close);
         decision.StopWidth.Should().BeNull();
-        floor.Calls.Should().BeEmpty();
+        decision.Intent.StopFloorSource.Should().BeNull();
+        floor.Calls.Should().ContainSingle();
     }
 
     // ------------------------------------------------------------------------------------------------
 
     private sealed class FixedFloor(StopWidthFloor? floor) : IStopWidthFloorSource
     {
-        public List<(string Symbol, Market Market, decimal AnchoredPrice)> Calls { get; } = [];
+        public List<(string Symbol, Market Market)> Calls { get; } = [];
+
+        public bool IsEnabled => true;
 
         public ValueTask<StopWidthFloor?> GetFloorAsync(
-            string symbol, Market market, decimal anchoredPrice, CancellationToken cancellationToken = default)
+            string symbol, Market market, CancellationToken cancellationToken = default)
         {
-            Calls.Add((symbol, market, anchoredPrice));
+            Calls.Add((symbol, market));
             return ValueTask.FromResult(floor);
         }
+
+        public ValueTask<StopWidthFloor?> GetFloorAsOfAsync(
+            string symbol, Market market, DateOnly tradingDay, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(floor);
 
         public override string ToString() => $"FixedFloor({floor?.ToString() ?? "null"})";
     }
 
     private sealed class ThrowingFloor(Exception exception) : IStopWidthFloorSource
     {
+        public bool IsEnabled => true;
+
         public ValueTask<StopWidthFloor?> GetFloorAsync(
-            string symbol, Market market, decimal anchoredPrice, CancellationToken cancellationToken = default) =>
+            string symbol, Market market, CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<StopWidthFloor?>(exception);
+
+        public ValueTask<StopWidthFloor?> GetFloorAsOfAsync(
+            string symbol, Market market, DateOnly tradingDay, CancellationToken cancellationToken = default) =>
             ValueTask.FromException<StopWidthFloor?>(exception);
 
         public override string ToString() => $"ThrowingFloor({exception.GetType().Name})";

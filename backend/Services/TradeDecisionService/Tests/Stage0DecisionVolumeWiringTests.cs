@@ -31,7 +31,9 @@ public class Stage0DecisionVolumeWiringTests
         var outer = scope.ServiceProvider.GetRequiredService<IAsOfDecisionInputProvider>();
         outer.Should().BeOfType<WatchlistAsOfDecisionInputProvider>();
 
-        var volume = InnerOf(outer).Should().BeOfType<DailyVolumeAsOfDecisionInputProvider>().Subject;
+        // ［2026-10-03 追記 / #1122, IADR-0486 決定4］監視銘柄 → 損切り幅の下限（ATR）→ 出来高 → 入力なし の順。
+        var floor = InnerOf(outer).Should().BeOfType<StopWidthFloorAsOfDecisionInputProvider>().Subject;
+        var volume = floor.Inner.Should().BeOfType<DailyVolumeAsOfDecisionInputProvider>().Subject;
         volume.Inner.Should().BeOfType<NoAsOfDecisionInputProvider>();
         volume.DailyBars.Should().BeOfType(expectedProvider);
         volume.DailyBars.Should().BeSameAs(scope.ServiceProvider.GetRequiredService<IDailyBarsProvider>(),

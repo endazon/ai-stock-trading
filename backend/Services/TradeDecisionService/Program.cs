@@ -262,10 +262,6 @@ builder.Services.AddScoped<IHeldPositionProvider>(sp =>
 // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 銘柄単位の新規建ての可否（リスク管理の GET /risk-controls/entry-blockers・
 // gRPC GetEntryBlockers。審査と同じ述語）。保有照会と同じ選び方（gRPC の宣言 → Grpc、BaseUrl → Http、どちらも無ければ NoOp）。
 // NoOp は常に不明＝判断は LLM を呼ぶ（従来どおり）。照会の失敗も同じ（見送らない。審査が止める）。
-// FR-10, ADR-0049 決定2・決定5, #1120, IADR-0465 決定1: 損切り幅の下限（ATR(14)）の供給口。**今は ATR を供給しない**
-// （日足が判断へ通るまで＝ADR-0048 決定 3 と同じ条件）。常に null＝判断は参照価格（アンカー後）の 2% を下限とする。
-// 明示的に登録する（省略可能な引数の既定へ黙って落とさない。IADR-0397）。ATR の実装はここで差し替える。
-builder.Services.AddSingleton<IStopWidthFloorSource, NoAtrStopWidthFloorSource>();
 builder.Services.AddSingleton<NoOpEntryBlockersProvider>();
 builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
 {
@@ -290,17 +286,26 @@ builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
 // ［2026-10-01 追記 / #1118］監査 🟡-4: 照会の上限は HttpDailyBarsSource.RequestTimeout（8 秒）。超えたら「未提供」で判断を続ける。
 builder.Services.AddHttpClient("order-execution", c => c.Timeout = HttpDailyBarsSource.RequestTimeout)
     .AddAiStockTradingServiceToken(builder.Configuration);
-builder.Services.AddSingleton<IDailyBarsProvider>(sp =>
+// 🔴 FR-10, ADR-0049 決定2, #1122, IADR-0486 決定1: 日足の口は**出来高と損切り幅の下限（ATR(14)）で 1 つの singleton を共有する**
+// （キャッシュを共有＝同じ銘柄の同じ取引日の取得は 1 回。取得枠を増やさない）。どちらかの設定が有効で OrderExecution:BaseUrl が
+// 絶対 URL のときだけ Cached（Http）を作り、どちらも無効なら NoOp（要求 0 回）。各機能はそれぞれの設定が有効なときだけこの口を使う
+// （出来高が無効なら判断・Stage 0 の出来高には NoOp を渡し、ATR が無効なら NoAtr を登録する）。
+// 設定の読みは既存の DecisionVolume:Enabled と同じく bool.TryParse（読めない値は無効。IADR-0486 決定1）。
+builder.Services.AddKeyedSingleton<IDailyBarsProvider>(DailyBarsComposition.SharedKey, (sp, _) =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
-    if (!bool.TryParse(configuration["DecisionVolume:Enabled"], out var volumeEnabled) || !volumeEnabled)
+    var volumeEnabled = DailyBarsComposition.IsOn(configuration, DailyBarsComposition.DecisionVolumeFlag);
+    var atrEnabled = DailyBarsComposition.IsOn(configuration, DailyBarsComposition.StopWidthFloorAtrFlag);
+    if (!volumeEnabled && !atrEnabled)
         return new NoOpDailyBarsProvider();
 
     var baseUrl = configuration["OrderExecution:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
     {
         sp.GetRequiredService<ILoggerFactory>().CreateLogger("DecisionVolume").LogWarning(
-            "DecisionVolume:Enabled=true だが OrderExecution:BaseUrl が無い・不正のため、出来高は未提供のままにします（日足を要求しません）。");
+            "DecisionVolume:Enabled={VolumeEnabled} / StopWidthFloor:Atr14:Enabled={AtrEnabled} だが OrderExecution:BaseUrl が無い・不正のため、"
+                + "日足を要求しません（出来高は未提供のまま・損切り幅の下限は参照価格の 2%）。",
+            volumeEnabled, atrEnabled);
         return new NoOpDailyBarsProvider();
     }
 
@@ -310,6 +315,26 @@ builder.Services.AddSingleton<IDailyBarsProvider>(sp =>
         new HttpDailyBarsSource(http, sp.GetRequiredService<ILogger<HttpDailyBarsSource>>()),
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<CachedDailyBarsProvider>>());
+});
+// FR-04, #1118, IADR-0467 決定 6: 判断の出来高の口（判断サービス・Stage 0 の出来高のデコレータが読む）。出来高が無効なら NoOp
+// （ATR だけが有効でも出来高は従来の「未提供」の行のまま）。有効なら共有の口（Cached または接続先が無ければ NoOp）。
+builder.Services.AddSingleton<IDailyBarsProvider>(sp =>
+    DailyBarsComposition.IsOn(sp.GetRequiredService<IConfiguration>(), DailyBarsComposition.DecisionVolumeFlag)
+        ? sp.GetRequiredKeyedService<IDailyBarsProvider>(DailyBarsComposition.SharedKey)
+        : new NoOpDailyBarsProvider());
+// 🔴 FR-10, ADR-0049 決定2・決定5, ADR-0048 決定3, #1120, IADR-0465 決定1, #1122, IADR-0486 決定1: 損切り幅の下限（ATR(14)）の供給口。
+// **既定は無効**（StopWidthFloor:Atr14:Enabled=false）＝NoAtr＝日足の要求 0 回・判断は参照価格（アンカー後）の 2% を下限とし、プロンプトは従来のまま。
+// **有効化は、出来高と同じく取得枠の回復周期を IADR に記録してから利用者が行う**（ADR-0048 決定 3 と同じ条件。ADR-0049 決定2）。
+// 有効かつ共有の口が要求を出せる（Cached）ときだけ Atr14（共有の口から ATR を計算）。接続先が無ければ NoAtr。明示的に登録する（IADR-0397）。
+builder.Services.AddSingleton<IStopWidthFloorSource>(sp =>
+{
+    if (!DailyBarsComposition.IsOn(sp.GetRequiredService<IConfiguration>(), DailyBarsComposition.StopWidthFloorAtrFlag))
+        return new NoAtrStopWidthFloorSource();
+
+    var shared = sp.GetRequiredKeyedService<IDailyBarsProvider>(DailyBarsComposition.SharedKey);
+    return shared.IsEnabled
+        ? new Atr14StopWidthFloorSource(shared, sp.GetRequiredService<ILogger<Atr14StopWidthFloorSource>>())
+        : new NoAtrStopWidthFloorSource();
 });
 // FR-08, IADR-0069/0072: RAG 取得ポート（#18 IKnowledgeBaseSearch）を配線する。KnowledgeBase:Search:BaseUrl 未設定/不正なら
 // #18 の NoOpKnowledgeBaseSearch（空）＝参考情報なし＝実 LLM 結線（IADR-0061）と同一プロンプト＝現行動作（安全既定）。
@@ -508,11 +533,16 @@ builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
 });
 // 🔴 FR-04, ADR-0048 決定 2, #1139, IADR-0479 決定 3: 出来高（判断時点の前営業日までの確定足から本番と同じ計算）も as-of 入力へ埋める。
 // 口は判断サービスと同じ singleton の IDailyBarsProvider（DecisionVolume:Enabled の 1 か所の選択。既定は NoOp＝要求 0 回・従来の「未提供」の行）。
+// 🔴 FR-10, ADR-0049 決定2, #1122, IADR-0486 決定4: 損切り幅の下限（ATR(14)）も判断時点の前営業日までの確定足から本番と同じ計算で埋める。
+// 口は判断サービスと同じ singleton の IStopWidthFloorSource（StopWidthFloor:Atr14:Enabled の 1 か所の選択。既定は NoAtr＝要求 0 回・2%）。
 builder.Services.AddScoped<IAsOfDecisionInputProvider>(sp => new WatchlistAsOfDecisionInputProvider(
-    new DailyVolumeAsOfDecisionInputProvider(
-        new NoAsOfDecisionInputProvider(),
-        sp.GetRequiredService<IDailyBarsProvider>(),
-        sp.GetRequiredService<ILogger<DailyVolumeAsOfDecisionInputProvider>>()),
+    new StopWidthFloorAsOfDecisionInputProvider(
+        new DailyVolumeAsOfDecisionInputProvider(
+            new NoAsOfDecisionInputProvider(),
+            sp.GetRequiredService<IDailyBarsProvider>(),
+            sp.GetRequiredService<ILogger<DailyVolumeAsOfDecisionInputProvider>>()),
+        sp.GetRequiredService<IStopWidthFloorSource>(),
+        sp.GetRequiredService<ILogger<StopWidthFloorAsOfDecisionInputProvider>>()),
     sp.GetRequiredService<IAsOfWatchlistSource>()));
 builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
 {

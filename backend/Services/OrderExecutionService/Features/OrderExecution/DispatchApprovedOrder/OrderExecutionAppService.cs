@@ -345,7 +345,9 @@ public sealed class OrderExecutionAppService(
         // 再試行を使い切ると _error キューへ送られ、ブローカ状態を確認するリコンサイルの対象になる。
         // 🔴 NFR-09, ADR-0045 決定2, #1051, IADR-0444 決定1: 予約には**送る先のアダプタの発注先**（取引環境）を残す。
         // 滞留したときにリコンサイラが解放の門（SIMULATE / 実弾）をこの値で選ぶ。intent.Mode（段階の既定）は渡さない。
-        if (!reservations.TryReserve(approved.DecisionId, clock.UtcNow, broker.Provider))
+        // 🔴 FR-10, #1122, IADR-0486 決定6: 予約には承認の発注意図の「下限を掛けてラインを引いた」印も残す（新規建てだけが持つ）。
+        // 送信結果が不明のまま突合が発注済みと確定すると、突合はブローカーの注文から記録を組み直すため、印はここにしか残らない。
+        if (!reservations.TryReserve(approved.DecisionId, clock.UtcNow, broker.Provider, intent.StopFloorSource))
             throw new OrderDispatchReservationConflictException(approved.DecisionId);
 
         // 🔴 FR-10, #853, IADR-0428 決定3: **予約を取った後・送る前に**、承認時の保護の文脈（手法・損切りライン・数量）を残す（S0 / S3）。
@@ -467,7 +469,9 @@ public sealed class OrderExecutionAppService(
             brokerOrder.AveragePrice,
             brokerOrder.Status,
             slippage,
-            now));
+            now,
+            // 🔴 FR-10, #1122, IADR-0486 決定6: 下限を掛けてラインを引いた印（既存の S1 への遡及が、この行を広げないために読む）。
+            intent.StopFloorSource));
 
         reservations.MarkCompleted(approved.DecisionId, brokerOrder.OrderId, now);
 
