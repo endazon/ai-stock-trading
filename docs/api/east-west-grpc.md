@@ -3,14 +3,14 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-09-28
+updated: 2026-10-04
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook]
 issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113]
 -->
 
@@ -407,10 +407,13 @@ sequenceDiagram
 - **観測**: gRPC の状態コードは呼び出し側の警告ログに出る。gRPC 専用の計装は展開の issue で扱う。
 - **配備**: 既定では有効化しない（helm の既定描画は変えていない）。有効化するときは
   **提供側の `grpcPort` と呼び出し元の宛先を同じ変更で揃える**（片方だけだと常に安全側既定へ倒れる）。
+  呼び出し元の宛先は helm の `services.<呼び出し元>.grpcClients.<提供側>: true` で宣言する（宛先は呼び先の `grpcPort` から導出され、
+  片方だけの宣言は描画で止まる）。**`extraEnv` へ `*__Grpc` を足さない** —— 配列は values を重ねると丸ごと置き換わり、既存の env が消える。
+  稼働クラスタでの一時的な切り替えと往復の実測は [east-west gRPC（h2c）の往復の実測 Runbook](../operations/grpc-h2c-measurement-runbook.md) で行う。
 
 ## 未決事項
 
-- 稼働クラスタでの h2c 往復は**未実測**（新イメージの配備を要するため）。
+- 稼働クラスタでの h2c 往復は**未実測**（新イメージの配備を要するため）。手順は [east-west gRPC（h2c）の往復の実測 Runbook](../operations/grpc-h2c-measurement-runbook.md)。
 - gRPC ヘルスプロトコル（`grpc.health.v1`）の要否（今は HTTP の readiness で足りる）。
 
 ## 関連仕様

@@ -363,9 +363,9 @@ services:
       # 空にすると未結線＝下の固定リストが対象（従来の挙動）。Collection__Source__Provider が空（本番既定）の間は Finnhub を呼ばないので照会もしない。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
-      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、この env 配列へ足す:
-      #   - { name: MarketMonitor__Grpc, value: "http://market-monitor-service:8081" }
-      # 前提（同じ変更で揃える）: services.market-monitor に `grpcPort: 8081` を宣言すること（片方だけだと常に安全側既定へ倒れる）。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { MarketMonitor: true }   # → MarketMonitor__Grpc=http://market-monitor-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: services.market-monitor に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。deadline は MarketMonitor__GrpcTimeoutSeconds（既定 5 秒）。
       # 構成の固定リスト。上の MarketMonitor__BaseUrl を結線している（本番既定）ので**フォールバック専用**（一度も読めていないときだけ使う）。
       - { name: Collection__Source__Finnhub__Symbols__0, value: "" }
@@ -396,9 +396,9 @@ services:
       # 費用は積み上がらず、既定では Normal のまま＝実単価を投入して初めて効く。
       - { name: CostControl__BaseUrl, value: "http://cost-control-service:8080" }
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
-      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、この env 配列へ足す:
-      #   - { name: CostControl__Grpc, value: "http://cost-control-service:8081" }
-      # 前提（同じ変更で揃える）: services.cost-control に `grpcPort: 8081` を宣言すること（片方だけだと常に安全側既定へ倒れる）。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { CostControl: true }   # → CostControl__Grpc=http://cost-control-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: services.cost-control に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。deadline は CostControl__GrpcTimeoutSeconds（既定 5 秒）。
       # IADR-0051: s2s 同期照会（costs/state）用の client_credentials。fail-safe: 未設定=認証なし→401→Normal。
       - name: ServiceAuth__ClientId
@@ -501,11 +501,9 @@ services:
       # 乖離の取り込み・報告書の確定/差し戻し・方針の改訂・適用の内訳の記録・入れ替え案の適用）を east-west gRPC（h2c）で呼ぶ場合の宛先。
       # 宣言した宛先は読み取りも書き込みも gRPC になる（失敗しても REST へ落とさない。書き込みは再試行しない）。
       # 🔴 **既定は REST であり、これらのキーは意図的に置いていない**（置くと既定描画が変わる。gRPC の面は既定の配備で開いていない）。
-      # 有効化するときだけ、この env 配列へ足す（片方ずつでよい）:
-      #   - { name: RiskManagement__Grpc, value: "http://risk-management-service:8081" }
-      #   - { name: Reports__Grpc, value: "http://report-service:8081" }
-      #   - { name: MarketMonitor__Grpc, value: "http://market-monitor-service:8081" }
-      # 前提（同じ変更で揃える）: 呼び先の services.<name> に `grpcPort: 8081` を宣言すること（片方だけだと各読み取りが失敗の文言を返す）。
+      # 有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す（片方ずつでよい）。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { RiskManagement: true, Reports: true, MarketMonitor: true }   # → RiskManagement__Grpc=http://risk-management-service:<grpcPort>・Reports__Grpc=http://report-service:<grpcPort>・MarketMonitor__Grpc=http://market-monitor-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: 呼び先の services.<name> に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。メタデータのトークンは REST と同じ Notifications__Discord__OwnerAuth__*（ボットの機密クライアント。
       # 呼び先の gRPC 面は Auth__GrpcOwnerClients__0 で azp を確かめる）。deadline は <上記>__GrpcTimeoutSeconds（既定 5 / 5 / 10 秒）、
       # 方針の改訂と適用の内訳の記録は Reports__GrpcPolicyRevisionTimeoutSeconds（既定 90 秒＝REST と同値。これも既定では置かない）。
@@ -594,9 +592,9 @@ services:
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 3）, IADR-0445, #1059: 監査台帳の読み取り（為替の情報源・LLM 利用実績・借株料・
       # 損切りの実行機構・判断根拠）を east-west gRPC（h2c）で呼ぶ場合の宛先。
       # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。REST の宛先 `Audit__BaseUrl` も
-      # 既定では置いていない（未設定＝6 つの供給元は「照会できませんでした」の未供給）。有効化するときだけ、この env 配列へ足す:
-      #   - { name: Audit__Grpc, value: "http://audit-service:8081" }
-      # 前提（同じ変更で揃える）: 上の services.audit に `grpcPort: 8081` を宣言すること（片方だけだと常に未供給へ倒れる）。
+      # 既定では置いていない（未設定＝6 つの供給元は「照会できませんでした」の未供給）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { Audit: true }   # → Audit__Grpc=http://audit-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: 上の services.audit に `grpcPort: 8081` を宣言すること。
       # s2s は REST と同じ AST レルムの ServiceAuth__* をそのまま使う。deadline は Audit__GrpcTimeoutSeconds（既定 10 秒）。
       # FR-06/16, ADR-0010, IADR-0071 決定1: 報告書散文の実 LLM ドラフト。fail-safe: 空=Placeholder（定型散文＝既定オフ）。
       - { name: LlmGateway__BaseUrl, value: "" }
@@ -719,9 +717,9 @@ services:
       #   - { name: StopWidthFloor__Atr14__Enabled, value: "true" }
       - { name: Reports__BaseUrl, value: "" }
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
-      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、この env 配列へ足す:
-      #   - { name: Reports__Grpc, value: "http://report-service:8081" }
-      # 前提（同じ変更で揃える）: services.report に `grpcPort: 8081` を宣言すること（片方だけだと常に安全側既定へ倒れる）。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { Reports: true }   # → Reports__Grpc=http://report-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: services.report に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。deadline は Reports__GrpcTimeoutSeconds（既定 5 秒）。
       - { name: RiskManagement__BaseUrl, value: "" }
       # FR-02/13, UC-06, SC-02, IADR-0088/0095: 監視銘柄（watchlist）の権威源＝市場監視の GET /monitor/watchlist を s2s 同期照会。
@@ -736,9 +734,9 @@ services:
       # 空にすると未結線＝固定リストだけが対象（従来の挙動）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0446, #1061: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
-      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、この env 配列へ足す:
-      #   - { name: MarketMonitor__Grpc, value: "http://market-monitor-service:8081" }
-      # 前提（同じ変更で揃える）: services.market-monitor に `grpcPort: 8081` を宣言すること（片方だけだと常に安全側既定へ倒れる）。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { MarketMonitor: true }   # → MarketMonitor__Grpc=http://market-monitor-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: services.market-monitor に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。当時の監視銘柄（Stage 0 の記録）も同じ宛先で gRPC になる。
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日。
       # 🔴 **バックテスト側（Backtest__Stage0__LlmTrainingCutoff）と必ず同値にする** —— 食い違うと

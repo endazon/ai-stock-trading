@@ -242,6 +242,38 @@ spec:
               value: {{ index $envOverrides $e.name | default $e.value | quote }}
               {{- end }}
             {{- end }}
+            {{- /* NFR, IADR-0284 決定 5（段 1〜5）, IADR-0489, #753: east-west gRPC の呼び出し側の宣言（`<提供側>__Grpc`）。
+                   services.<name>.grpcClients.<提供側> を true にしたときだけ描く。宛先は**呼び先の grpcPort から導出する**
+                   （http://<呼び先>-service:<grpcPort>）。未宣言・false・null は何も描かない＝既定描画・values-local 描画は追加前とバイト等価。
+                   🔴 extraEnv（配列）へ足させないのは、2 つ目の values や --set で配列を重ねると**配列ごと置き換わり**、
+                      既存の env（ServiceAuth__* など）が黙って消えるためである（マップのキーは深くマージされる）。
+                   🔴 呼び先の grpcPort が無い・未知の提供側・extraEnv と同名の二重定義は描画時に止める
+                      （片方だけの宣言は「切り替えたつもりで常に安全側既定へ倒れる」を作る）。
+                   提供側の名前は各サービスの輸送が読む構成キー（`<提供側>:Grpc`）の節名と同じ。基盤の LlmGateway（chart の外）は対象外。 */}}
+            {{- $grpcCallees := dict "Configuration" "configuration" "RiskManagement" "risk-management" "Audit" "audit" "Reports" "report" "MarketMonitor" "market-monitor" "CostControl" "cost-control" }}
+            {{- $extraEnvNames := dict }}
+            {{- range $e := $svc.extraEnv }}{{- $_ := set $extraEnvNames $e.name true }}{{- end }}
+            {{- range $provider, $on := ($svc.grpcClients | default dict) }}
+            {{- if not (or (kindIs "invalid" $on) (kindIs "bool" $on)) }}
+            {{- fail (printf "services.%s.grpcClients.%s は true / false で指定してください（実際の値: %v）。" $name $provider $on) }}
+            {{- end }}
+            {{- if $on }}
+            {{- $callee := index $grpcCallees $provider }}
+            {{- if not $callee }}
+            {{- fail (printf "services.%s.grpcClients.%s は未知の提供側です（既知: %s）。" $name $provider (keys $grpcCallees | sortAlpha | join ", ")) }}
+            {{- end }}
+            {{- $calleeSvc := index $.Values.services $callee | default dict }}
+            {{- if not $calleeSvc.grpcPort }}
+            {{- fail (printf "services.%s.grpcClients.%s=true には呼び先 services.%s.grpcPort の宣言が要ります（片方だけでは gRPC の面が開かず、常に安全側既定へ倒れます）。" $name $provider $callee) }}
+            {{- end }}
+            {{- $envName := printf "%s__Grpc" $provider }}
+            {{- if hasKey $extraEnvNames $envName }}
+            {{- fail (printf "services.%s は extraEnv の %s と grpcClients.%s を併用できません（同名 env の二重定義）。grpcClients に一本化してください。" $name $envName $provider) }}
+            {{- end }}
+            - name: {{ $envName }}
+              value: {{ printf "http://%s-service:%v" $callee $calleeSvc.grpcPort | quote }}
+            {{- end }}
+            {{- end }}
             {{- /* #226, IADR-0098: Discord Bot 制御コマンドの owner トークンの token エンドポイント。
                    notification は auth:true を持たず Auth__Authority が注入されないため、ここで
                    global.authAuthority から算出して注入する。空だと OwnerAuth.IsEnabled が false に倒れ 401。

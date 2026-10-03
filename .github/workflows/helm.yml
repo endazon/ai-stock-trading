@@ -104,6 +104,110 @@ jobs:
             echo "::error::Grpc__Port が 1 件でない（実測 $count 件）。宣言していないサービスへ波及している。"; exit 1
           fi
           echo "ok: grpcPort は宣言したサービスにだけ h2c の 3 点を描画する"
+      # NFR / IADR-0284 決定5（段1〜5）/ IADR-0489 / #753: 稼働クラスタで h2c の往復を実測する一時 overlay
+      # （values-grpc-measurement.yaml）と、呼び出し側の宣言 services.<name>.grpcClients。
+      # 🔴 守るのは「overlay を重ねても既存の env が 1 本も消えない」こと —— extraEnv は配列なので、2 つ目の values で
+      #    重ねると配列ごと置き換わり、Reconciliation__* や ServiceAuth__* が黙って消える（過去の事故の形）。
+      - name: Assert gRPC measurement overlay keeps every env (#753)
+        run: |
+          set -euo pipefail
+          O="$CHART/values-grpc-measurement.yaml"
+          # Deployment ごとに「<名前>\t<env 名>」を並べる。コンテナの `env:` ブロックの中だけを見る
+          # （同じ字下げの `- name:` を持つ volumeMounts を拾わない）。
+          envs() { awk 'BEGIN{RS="---"} /kind: Deployment/ {
+              d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
+              n=split($0, L, "\n"); inenv=0
+              for (i=1; i<=n; i++) {
+                if (L[i] ~ /^          env:$/) { inenv=1; continue }
+                if (L[i] ~ /^          [a-zA-Z]/) inenv=0
+                if (inenv && L[i] ~ /^            - name: /) { v=L[i]; sub(/^ *- name: /, "", v); print d "\t" v }
+              }
+            }' | sort; }
+          # Deployment ごとに「<名前>\t<env 名>\t<値>」（*__Grpc だけ）。
+          grpc_urls() { awk 'BEGIN{RS="---"} /kind: Deployment/ {
+              d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
+              n=split($0, L, "\n")
+              for (i=1; i<n; i++) if (L[i] ~ /^            - name: [A-Za-z]+__Grpc$/) {
+                k=L[i]; sub(/^ *- name: /, "", k); v=L[i+1]; sub(/^ *value: /, "", v); gsub(/"/, "", v); print d "\t" k "\t" v }
+            }' | sort; }
+          # ① overlay の葉は services.<名前>.grpcPort と services.<名前>.grpcClients.<提供側>（true / false）だけ。
+          #    行の形で閉じる（フロー形式・他のキー・配列は書けない）。
+          awk '
+            /^[[:space:]]*(#.*)?$/ { next }
+            { line=$0; sub(/[[:space:]]+#.*$/, "", line) }
+            line ~ /^services:$/ && !seen { seen=1; svc=0; cl=0; next }
+            seen && line ~ /^  [a-z][a-z-]*:$/ { svc=1; cl=0; next }
+            svc && line ~ /^    grpcPort: [0-9]+$/ { cl=0; next }
+            svc && line ~ /^    grpcClients:$/ { cl=1; next }
+            cl && line ~ /^      [A-Z][A-Za-z]*: (true|false)$/ { next }
+            { printf "::error::%s:%d は許した形ではない（grpcPort / grpcClients.<提供側>: true|false だけを書く・#753）: %s\n", FILENAME, FNR, $0; bad=1 }
+            END { exit bad }' "$O"
+          # 期待する宣言（Deployment・env・宛先）。#6（report → Audit）は既定 false（別窓で測る）。
+          expected="$(printf '%s\n' \
+            'cost-control-service	Configuration__Grpc	http://configuration-service:8081' \
+            'trade-decision-service	Configuration__Grpc	http://configuration-service:8081' \
+            'trade-decision-service	RiskManagement__Grpc	http://risk-management-service:8081' \
+            'market-monitor-service	RiskManagement__Grpc	http://risk-management-service:8081' \
+            'report-service	RiskManagement__Grpc	http://risk-management-service:8081' \
+            'trade-decision-service	Reports__Grpc	http://report-service:8081' \
+            'trade-decision-service	MarketMonitor__Grpc	http://market-monitor-service:8081' \
+            'information-collection-service	MarketMonitor__Grpc	http://market-monitor-service:8081' \
+            'information-collection-service	CostControl__Grpc	http://cost-control-service:8081' \
+            'notification-service	RiskManagement__Grpc	http://risk-management-service:8081' \
+            'notification-service	Reports__Grpc	http://report-service:8081' \
+            'notification-service	MarketMonitor__Grpc	http://market-monitor-service:8081' | sort)"
+          for profile in default local; do
+            if [ "$profile" = local ]; then base=(-f "$CHART/values-local.yaml"); else base=(); fi
+            before_out="$(helm template ast "$CHART" "${base[@]}")"
+            after_out="$(helm template ast "$CHART" "${base[@]}" -f "$O")"
+            before="$(envs <<<"$before_out")"
+            after="$(envs <<<"$after_out")"
+            # ② overlay なしには gRPC の宣言が 1 つも無い（既定は REST）。
+            if grep -qE $'\t''([A-Za-z]+__Grpc|Grpc__Port)$' <<<"$before"; then
+              echo "::error::[$profile] overlay なしの描画に gRPC の宣言が現れた（既定は REST・#753）。"; exit 1
+            fi
+            # ③ 消えた env が 0 本。
+            removed="$(comm -23 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
+            if [ -n "$removed" ]; then
+              echo "::error::[$profile] overlay を重ねると env が消える（配列の置き換え）:"; printf '%s\n' "$removed"; exit 1
+            fi
+            # ④ 増えたのは gRPC の宣言だけ（提供側 6 の Grpc__Port）。
+            added="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
+            if grep -vqE $'\t''([A-Za-z]+__Grpc|Grpc__Port)$' <<<"$added"; then
+              echo "::error::[$profile] overlay が gRPC 以外の env を足した:"; printf '%s\n' "$added"; exit 1
+            fi
+            ports="$(grep -cE $'\t''Grpc__Port$' <<<"$added" || true)"
+            if [ "$ports" -ne 6 ]; then
+              echo "::error::[$profile] 提供側の Grpc__Port が $ports/6。Runbook の経路表と揃える。"; exit 1
+            fi
+            # ⑤ 呼び出し側の宣言（Deployment・env・宛先）が期待表と完全に一致する（数・呼び先の取り違え・false の無視を捕まえる）。
+            got="$(grpc_urls <<<"$after_out")"
+            if [ "$got" != "$expected" ]; then
+              echo "::error::[$profile] 呼び出し側の宣言が期待表と違う（< 期待 / > 実際）:"; diff <(printf '%s\n' "$expected") <(printf '%s\n' "$got") || true; exit 1
+            fi
+          done
+          # ⑥ --set …=false で 1 経路だけ外れ、=true で別窓の #6 が足される。
+          off="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.trade-decision.grpcClients.Configuration=false | grpc_urls)"
+          if grep -q $'^trade-decision-service\tConfiguration__Grpc\t' <<<"$off"; then
+            echo "::error::grpcClients.Configuration=false でも trade-decision に Configuration__Grpc が描かれた。"; exit 1
+          fi
+          grep -q $'^cost-control-service\tConfiguration__Grpc\t' <<<"$off" \
+            || { echo "::error::trade-decision の宣言を外したら cost-control の宣言まで消えた。"; exit 1; }
+          on="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -f "$O" --set services.report.grpcClients.Audit=true | grpc_urls)"
+          grep -qx $'report-service\tAudit__Grpc\thttp://audit-service:8081' <<<"$on" \
+            || { echo "::error::grpcClients.Audit=true で report に Audit__Grpc（http://audit-service:8081）が描かれない。"; exit 1; }
+          # ⑦ 片方だけの宣言・未知の提供側・真偽値でない値・extraEnv との二重定義は、**その理由で**描画が止まる。
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then echo "::error::描画が通ってしまった: $label"; exit 1; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          must_fail "呼び先に grpcPort が無い" "には呼び先 services.audit.grpcPort の宣言が要ります" --set services.report.grpcClients.Audit=true
+          must_fail "未知の提供側" "grpcClients.Auditt は未知の提供側です" --set services.audit.grpcPort=8081 --set services.report.grpcClients.Auditt=true
+          must_fail "真偽値でない" "grpcClients.Audit は true / false で指定してください" --set services.audit.grpcPort=8081 --set-string services.report.grpcClients.Audit=true
+          must_fail "extraEnv と二重定義" "は extraEnv の Audit__Grpc と grpcClients.Audit を併用できません" -f "$O" --set services.report.grpcClients.Audit=true --set 'services.report.extraEnv[0].name=Audit__Grpc'
+          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 12〔#6 は別窓〕・提供側 6）だけを足す"
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため
