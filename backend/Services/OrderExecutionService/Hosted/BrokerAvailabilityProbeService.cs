@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerAvailability;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -100,11 +101,26 @@ public sealed class BrokerAvailabilityProbeService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var operational = await probe.IsOperationalAsync(cancellationToken).ConfigureAwait(false);
+        // 🔴 FR-10, NFR, #1164, IADR-0487 決定1: probe が分類つきの建玉照会の口も持つ（moomoo のアダプタ）なら、同じ照会を
+        // その口で行い、失敗の種類も報告する。moomoo の到達判定は「建玉照会が null でない」であり（IsOperationalAsync と同値）、
+        // 判定は変えない。口を持たない probe は従来どおり到達の可否だけを見る（種類は不明）。
+        bool operational;
+        string? failureKind = null;
+        if (probe is IClassifiedPositionSource classified)
+        {
+            var query = await classified.QueryPositionsAsync(cancellationToken).ConfigureAwait(false);
+            operational = query.Positions is not null;
+            failureKind = query.ReportedFailureKind;
+        }
+        else
+        {
+            operational = await probe.IsOperationalAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 到達できないことは「発行しない」（沈黙）で表す設計のため、台帳からは Pod の停止と
         // 区別できない。状態が変わったときだけ別の事実として出す（稼働の数え〔BrokerAvailabilityObserved〕の意味は変えない）。
-        await _positionQueryHealth.ReportAsync(PositionQuerySource.BrokerAvailabilityProbe, operational).ConfigureAwait(false);
+        await _positionQueryHealth.ReportAsync(PositionQuerySource.BrokerAvailabilityProbe, operational, failureKind)
+            .ConfigureAwait(false);
         if (!operational)
         {
             // 「到達できなかった」を発行しない。受け手は沈黙をそのまま稼働 0 分として扱う（§4.2 の除外）。
