@@ -104,6 +104,57 @@ jobs:
             echo "::error::Grpc__Port が 1 件でない（実測 $count 件）。宣言していないサービスへ波及している。"; exit 1
           fi
           echo "ok: grpcPort は宣言したサービスにだけ h2c の 3 点を描画する"
+      # NFR / IADR-0284 決定5（段1〜5）/ IADR-0489 / #753: 稼働クラスタで h2c の往復を実測する一時 overlay
+      # （values-grpc-measurement.yaml）と、呼び出し側の宣言 services.<name>.grpcClients。
+      # 🔴 守るのは「overlay を重ねても既存の env が 1 本も消えない」こと —— extraEnv は配列なので、2 つ目の values で
+      #    重ねると配列ごと置き換わり、Reconciliation__* や ServiceAuth__* が黙って消える（過去の事故の形）。
+      - name: Assert gRPC measurement overlay keeps every env (#753)
+        run: |
+          set -eu
+          O="$CHART/values-grpc-measurement.yaml"
+          # Deployment ごとに「<名前>\t<env 名>」を並べる（コンテナ env は 12 桁字下げの `- name:`）。
+          envs() { awk 'BEGIN{RS="---"} /kind: Deployment/ {
+              d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
+              n=split($0, L, "\n"); for (i=1; i<=n; i++) if (L[i] ~ /^            - name: /) { v=L[i]; sub(/^ *- name: /, "", v); print d "\t" v }
+            }' | sort; }
+          # ① overlay は配列（extraEnv）を持たない（コメント行は除く）。
+          if grep -v '^[[:space:]]*#' "$O" | grep -q 'extraEnv'; then
+            echo "::error::$O が extraEnv を持っている（配列は重ねると置き換わり、既存の env が消える・#753）。"; exit 1
+          fi
+          for profile in default local; do
+            if [ "$profile" = local ]; then base=(-f "$CHART/values-local.yaml"); else base=(); fi
+            before="$(helm template ast "$CHART" "${base[@]}" | envs)"
+            after="$(helm template ast "$CHART" "${base[@]}" -f "$O" | envs)"
+            # ② 既定・values-local には gRPC の宣言が 1 つも無い（既定は REST）。
+            if printf '%s\n' "$before" | grep -qE $'\t''([A-Za-z]+__Grpc|Grpc__Port)$'; then
+              echo "::error::[$profile] overlay なしの描画に gRPC の宣言が現れた（既定は REST・#753）。"; exit 1
+            fi
+            # ③ 消えた env が 0 本。
+            removed="$(comm -23 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
+            if [ -n "$removed" ]; then
+              echo "::error::[$profile] overlay を重ねると env が消える（配列の置き換え）:"; printf '%s\n' "$removed"; exit 1
+            fi
+            # ④ 増えたのは gRPC の宣言だけで、段 1〜5 の全経路（呼び出し側 13・提供側 6）がそろう。
+            added="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
+            if printf '%s\n' "$added" | grep -vqE $'\t''([A-Za-z]+__Grpc|Grpc__Port)$'; then
+              echo "::error::[$profile] overlay が gRPC 以外の env を足した:"; printf '%s\n' "$added"; exit 1
+            fi
+            clients="$(printf '%s\n' "$added" | grep -cE '__Grpc$' || true)"
+            ports="$(printf '%s\n' "$added" | grep -cE $'\t''Grpc__Port$' || true)"
+            if [ "$clients" -ne 13 ] || [ "$ports" -ne 6 ]; then
+              echo "::error::[$profile] 宣言の数が違う（呼び出し側 $clients/13・提供側 $ports/6）。Runbook の経路表と揃える。"; exit 1
+            fi
+          done
+          # ⑤ 宛先は呼び先の grpcPort から導出される。
+          helm template ast "$CHART" -f "$O" | grep -A1 'name: Audit__Grpc' | grep -q 'value: "http://audit-service:8081"' \
+            || { echo "::error::Audit__Grpc の宛先が呼び先の grpcPort から導出されていない。"; exit 1; }
+          # ⑥ 片方だけの宣言・未知の提供側・extraEnv との二重定義は描画時に止まる。
+          must_fail() { if helm template ast "$CHART" "${@:2}" >/dev/null 2>&1; then echo "::error::描画が通ってしまった: $1"; exit 1; fi; }
+          must_fail "呼び先に grpcPort が無い" --set services.report.grpcClients.Audit=true
+          must_fail "未知の提供側" --set services.audit.grpcPort=8081 --set services.report.grpcClients.Auditt=true
+          must_fail "真偽値でない" --set services.audit.grpcPort=8081 --set-string services.report.grpcClients.Audit=true
+          must_fail "extraEnv と二重定義" -f "$O" --set 'services.report.extraEnv[0].name=Audit__Grpc'
+          echo "ok: 計測 overlay は env を 1 本も消さず、段 1〜5 の宣言（呼び出し側 13・提供側 6）だけを足す"
       - name: helm template (externalSecrets.enabled=true)
         run: helm template ast "$CHART" --set externalSecrets.enabled=true > /dev/null
       # #24 / IADR-0094: API 鍵群（ast-secrets）の Vault 同期 opt-in。既定描画では評価されないため

@@ -1,0 +1,55 @@
+# east-west gRPC（h2c）の往復を稼働クラスタで実測するための**一時 overlay**（NFR, IADR-0284 決定 5 の段 1〜5, IADR-0489, #753）。
+# 手順・合否・切り戻し・中止条件は docs/operations/grpc-h2c-measurement-runbook.md が単一情報源である。
+#
+# 🔴 **本ファイルは既定の配備に含めない**（values.yaml / values-local.yaml / scripts/k8s-local-deploy.sh / ArgoCD のいずれからも参照しない）。
+#    段 1〜5 の消費側は「既定 REST、`<提供側>:Grpc` を宣言したときだけ gRPC」であり、本ファイルがその宣言を一度に入れる。
+# 🔴 **extraEnv（配列）を 1 行も持たない。** helm は 2 つ目の values ファイルや --set の配列を**配列ごと置き換える**
+#    （例: report の extraEnv に Audit__Grpc を 1 行だけ書いて重ねると、values-local の 53 本の env が 17 本になり
+#    ServiceAuth__* まで消える。実測は作業仕様書）。本ファイルはマップのキー（grpcPort と grpcClients）だけを書くので、
+#    重ねても既存の env は 1 本も消えない（helm.yml の「Assert gRPC measurement overlay」が描画で検査する）。
+#
+# 適用（リリースの値に重ねる。配備中のリリースと同じコミットのチャートで行う）:
+#   helm upgrade ast deploy/helm/ai-stock-trading -n ai-stock-trading \
+#     --reset-then-reuse-values -f deploy/helm/ai-stock-trading/values-grpc-measurement.yaml
+# 1 経路だけ外す（REST に戻す）: --set services.<消費側>.grpcClients.<提供側>=false を足す。
+# 切り戻し: helm rollback ast <適用前のリビジョン> -n ai-stock-trading（または scripts/k8s-local-deploy.sh の再実行）。
+#
+# 宛先 URL はここに書かない。テンプレートが呼び先の grpcPort から http://<呼び先>-service:<grpcPort> を導出し、
+# 呼び先に grpcPort が無い宣言・未知の提供側・extraEnv との二重定義は描画時に止める。
+services:
+  # ---- 提供側: h2c リスナ（env Grpc__Port）・containerPort / Service ポート（name: grpc, appProtocol: grpc）を描く ----
+  configuration:
+    grpcPort: 8081            # 段 1: aistocktrading.configuration.v1.Assumptions
+  risk-management:
+    grpcPort: 8081            # 段 2・5: RiskControlsRead / RiskControlsOwnerRead / RiskControlsOwnerWrite
+  audit:
+    grpcPort: 8081            # 段 3: AuditEventsRead
+  report:
+    grpcPort: 8081            # 段 4・5: DailyPolicyRead / ReportOwnerRead / ReportOwnerWrite
+    grpcClients:
+      RiskManagement: true    # 段 2: 取引台帳の 6 供給元（GetOpenPositions・GetFills・GetDriftAdoptions・GetBuyInInferences・GetSessionUptime・GetStageGate）
+      Audit: true             # 段 3: 監査台帳の 6 供給元（GetEventsByType）。🔴 Audit__BaseUrl は chart に無い＝REST も未結線だった経路（新規結線）
+  market-monitor:
+    grpcPort: 8081            # 段 4・5: WatchlistRead / WatchlistOwnerWrite
+    grpcClients:
+      RiskManagement: true    # 段 2: 損切り検知の保有ポジション（GetOpenPositions）
+  cost-control:
+    grpcPort: 8081            # 段 4: CostStateRead
+    grpcClients:
+      Configuration: true     # 段 1: 全体前提条件（Assumptions/Get）
+  # ---- 呼び出し側だけ（提供する面を持たない） ----
+  trade-decision:
+    grpcClients:
+      Configuration: true     # 段 1: 全体前提条件。🔴 Configuration__BaseUrl は chart に無い＝REST も未結線だった経路（新規結線）
+      RiskManagement: true    # 段 2: GetOpenPositions・GetWorkingEntryOrders・GetSizingContext・GetEntryBlockers
+      Reports: true           # 段 4: GetConfirmedDailyPolicy
+      MarketMonitor: true     # 段 4: GetWatchlist・GetWatchlistAsOf
+  information-collection:
+    grpcClients:
+      MarketMonitor: true     # 段 4: Finnhub の対象銘柄（GetWatchlist）
+      CostControl: true       # 段 4: 費用統制の判定（GetCostState）
+  notification:
+    grpcClients:
+      RiskManagement: true    # 段 5: /status・/stage・/killswitch・/pause・/resume・/gfv・/drift（読み取り 2・書き込み 8）
+      Reports: true           # 段 5: /report・/policy（読み取り 3・書き込み 4）
+      MarketMonitor: true     # 段 5: 監視銘柄の読み取り・入れ替え案の適用（読み取り 1・書き込み 1）
