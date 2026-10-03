@@ -77,9 +77,10 @@ public class StopLossMethodCoexistenceTests
     {
         private readonly InMemoryOrderReservationStore _inner = new();
 
-        public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider)
+        public bool TryReserve(
+            Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null)
         {
-            var reserved = _inner.TryReserve(decisionId, reservedAt, brokerProvider);
+            var reserved = _inner.TryReserve(decisionId, reservedAt, brokerProvider, stopFloorSource);
             if (reserved)
                 onReserve();
             return reserved;

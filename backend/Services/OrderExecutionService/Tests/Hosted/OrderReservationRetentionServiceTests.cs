@@ -30,7 +30,8 @@ public class OrderReservationRetentionServiceTests
         public Exception? ThrowOnPurge { get; set; }
 
         public bool TryReserve(
-            Guid decisionId, DateTimeOffset reservedAt, AiStockTrading.Shared.Contracts.Trading.BrokerProvider? brokerProvider) => true;
+            Guid decisionId, DateTimeOffset reservedAt, AiStockTrading.Shared.Contracts.Trading.BrokerProvider? brokerProvider,
+            AiStockTrading.Shared.Contracts.Trading.StopWidthFloorSource? stopFloorSource = null) => true;
 
         public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt) { }
 

@@ -23,6 +23,9 @@ namespace OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor;
 //     PlannedPrice〔取引判断の参照価格〕から 2% 以上離れている）。下限の導入後の行は参照価格の 2% で引かれているので、約定が参照価格より
 //     有利だった（取得単価基準では 2% を割る）ときでも二重に広げない。判定は StopWidthFloorRetrofitPolicy.WasSizedBelowFloor（状態で決める。
 //     時刻の切れ目は配備時刻をデータが持たず、取り違えると導入前の行を取りこぼす側に倒れるため採らない）。
+//   - 🔴 #1122, IADR-0486 決定7（IADR-0472 2026-10-03 追記）: **サイジングの時点で下限を掛けて建てた印のある行**（エントリーの発注記録の
+//     StopFloorSource が Fallback2Pct / Atr14）。ATR の下限は参照価格の 2% より狭いことがあり、上の「2% 以上離れているか」の判定では
+//     導入前の行と見分けられない。印の無い（null の）行は従来どおり上の判定で見分ける。
 //
 // 🔴 #1136 独立監査 F1: 群ごとに失敗を閉じ込める（ある群の照会・書き込みが例外でも、先に広げた群の事実を捨てない）。広げた行は冪等のため
 // 二度と事実を出さないので、ここで捨てると監査にも台帳の追随にも永遠に届かない。
@@ -104,7 +107,8 @@ public sealed class SoftwareStopFloorRetrofitter(
 
     // 対象の行の広げた後のライン（広げない・下限を満たして建てた行は null）。前の端（写し）と後の端（最新の行）で同じ判定を使う。
     private static decimal? ShouldWiden(ProtectiveStopOrder stop, EntryPrices entry) =>
-        StopWidthFloorRetrofitPolicy.WasSizedBelowFloor(stop.EntrySide, stop.TriggerPrice, entry.Planned)
+        !StopWidthFloorRetrofitPolicy.WasFloorAppliedAtSizing(entry.StopFloorSource)
+        && StopWidthFloorRetrofitPolicy.WasSizedBelowFloor(stop.EntrySide, stop.TriggerPrice, entry.Planned)
             ? StopWidthFloorRetrofitPolicy.Widen(stop.EntrySide, stop.TriggerPrice, entry.Average)
             : null;
 
@@ -114,13 +118,14 @@ public sealed class SoftwareStopFloorRetrofitter(
 
     // 取得単価（Average）＝エントリーの発注記録の平均約定価格（約定 1 株以上・正の値）。分からなければ null（当てない）。
     // ラインを引いた価格（Planned）＝同じ記録の PlannedPrice（発注意図の価格＝取引判断の参照価格。ラインはこの価格から幅を引いて作る）。
-    private readonly record struct EntryPrices(decimal Average, decimal Planned);
+    // #1122, IADR-0486 決定7: StopFloorSource＝同じ記録の「下限を掛けてラインを引いた」印（null＝分からない）。
+    private readonly record struct EntryPrices(decimal Average, decimal Planned, StopWidthFloorSource? StopFloorSource);
 
     private EntryPrices? EntryOf(ProtectiveStopOrder stop)
     {
         var entry = store.FindByDecisionId(stop.EntryDecisionId);
         return entry is { PositionEffect: PositionEffect.Open, FilledQuantity: > 0, AveragePrice: > 0m }
-            ? new EntryPrices(entry.AveragePrice, entry.PlannedPrice)
+            ? new EntryPrices(entry.AveragePrice, entry.PlannedPrice, entry.StopFloorSource)
             : null;
     }
 

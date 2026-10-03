@@ -49,8 +49,9 @@ public sealed class TradeDecisionAppService(
     // プロンプトは従来の「出来高: 未提供」の行のまま。本番は Program.cs が DecisionVolume:Enabled（既定 false）で選んで明示的に渡す。
     private readonly IDailyBarsProvider _dailyBars = dailyBars ?? new NoOpDailyBarsProvider();
 
-    // FR-10, ADR-0049 決定2, #1120, IADR-0465 決定1: 損切り幅の下限（ATR(14)）の供給口。未指定＝NoAtr（常に null）＝
-    // 参照価格（アンカー後）の 2% が下限として効く（配備までの暫定手段）。
+    // FR-10, ADR-0049 決定2, #1120, IADR-0465 決定1: 損切り幅の下限（ATR(14)）の供給口。未指定＝NoAtr（IsEnabled=false・常に null）＝
+    // 参照価格（アンカー後）の 2% が下限として効く（配備までの暫定手段）。本番は Program.cs が StopWidthFloor:Atr14:Enabled（既定 false）で
+    // 選んで明示的に渡す（#1122, IADR-0486 決定1）。
     private readonly IStopWidthFloorSource _stopWidthFloor = stopWidthFloor ?? new NoAtrStopWidthFloorSource();
 
     // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 銘柄単位の新規建ての可否（リスク管理が審査と同じ述語で答える）。未指定＝NoOp
@@ -423,10 +424,18 @@ public sealed class TradeDecisionAppService(
             ? DailyVolumeContext.From(await GetDailyBarsSafeAsync(trigger, cancellationToken).ConfigureAwait(false))
             : null;
 
+        // 🔴 FR-10, ADR-0049 決定2, #1122, IADR-0486 決定2: 損切り幅の下限（ATR(14)）を**判断ごとに 1 回だけ、プロンプトの前に**読む。
+        // 同じ値をプロンプト（ATR と下限の行）・下限の適用・発注意図の印・監査へ使う（プロンプトと適用で値が食い違わない）。
+        // **無効（既定）なら読まない**（要求 0 回・プロンプトは従来のまま・下限は参照価格の 2%）。見送りの判定の後に読む（出来高と同じ位置。
+        // 日足は出来高と同じ口・同じキャッシュ）。**得られないことで判断を止めない**（2% へ退避する）。
+        var stopFloor = _stopWidthFloor.IsEnabled
+            ? new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false))
+            : null;
+
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
             currentPrice: currentPrice, held: heldPosition, working: workingEntries, watchlist: watchlist, intraday: intraday,
-            news: news, volume: volume, addOnBlockers: addOnBlockers);
+            news: news, volume: volume, addOnBlockers: addOnBlockers, stopFloor: stopFloor);
 
         // #337, IADR-0247: 縮退制御が有効（スクリーニング有効かつ予算設定）なときだけ、スクリーニング入力
         // （方針・市況＝保護、RAG・ニュース＝削減可）へ縮退順序 ①分割→②RAG→③ニュース を適用する。
@@ -626,9 +635,9 @@ public sealed class TradeDecisionAppService(
         // 🔴 FR-10, ADR-0003, ADR-0049 決定1〜3, #1120, IADR-0465 決定1: 損切り幅に下限を掛ける（AI は上書きできない）。
         // 下限はアンカー後の参照価格で求める（ラインを引く価格と同じ。LLM の参照価格で求めると、窓の間に上がった分だけ下限を割る）。
         // 下限を割った幅は下限まで広げ、**見送らない**。以降のサイジング・ライン・発注意図・監査はすべて適用した幅を使う。
+        // #1122, IADR-0486 決定2: ATR の下限はプロンプトの前に読んだ値を使う（読み直さない）。無効・得られないときは 2%。
         var stopWidth = StopWidthFloorPolicy.Apply(
-            decision.StopLossDistancePerShare,
-            await ResolveStopWidthFloorAsync(trigger, referencePrice, cancellationToken).ConfigureAwait(false));
+            decision.StopLossDistancePerShare, StopWidthFloorPolicy.Resolve(stopFloor?.Supplied, referencePrice));
         // 下限で広げた幅が参照価格以上ならラインが成立しない（ロングは 0 以下）。2% の退避では起こらず、将来の ATR が
         // 価格以上を返した極端な場合だけに当たる。幅を価格未満へ縮めると下限を割るため、IADR-0035 の不変量で見送る。
         if (stopWidth.AppliedWidthPerShare >= referencePrice)
@@ -693,7 +702,7 @@ public sealed class TradeDecisionAppService(
 
         // FR-10, FR-04, #1104, IADR-0460 決定1〜3, #1120, IADR-0465 決定3: 損切り幅の観測（ログ。判断を変えない）。
         // AI の幅の傾向（比率・日中の値幅に対する倍率）と、下限・出所・適用した幅・広げたかを並べて出す。
-        LogStopWidth(trigger, side, quantity, decision, referencePrice, intraday, stopWidth, stopLossPrice);
+        LogStopWidth(trigger, side, quantity, decision, referencePrice, intraday, stopWidth, stopLossPrice, stopFloor);
 
         // IADR-0004: 発注意図には PositionEffect を必ず設定する。ここへ到達するのは新規建て（Open）のみで、
         // 決済（Close）は上で確定済み（#292, IADR-0119）。
@@ -709,7 +718,10 @@ public sealed class TradeDecisionAppService(
             referencePrice,
             PositionEffect.Open,
             stopLossPrice,
-            rateToBase);
+            rateToBase,
+            // 🔴 FR-10, ADR-0049 決定1, #1122, IADR-0486 決定5: このラインを下限を掛けてから引いた印（出所）。発注執行が発注結果の記録と
+            // 予約の行に残し、既存の S1 への下限の遡及（IADR-0472）がこの行を広げない（ATR の下限は参照価格の 2% より狭いことがある）。
+            StopFloorSource: stopWidth.FloorSource);
 
         // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
         // FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: 下限を掛けた結果を監査台帳へ残す（判断の記録に載せる）。
@@ -718,27 +730,24 @@ public sealed class TradeDecisionAppService(
             trigger.MetricTrigger, trigger.CycleStartedAt, stopWidth);
     }
 
-    // FR-10, ADR-0049 決定2, #1120, IADR-0465 決定1: 下限の供給口を読む（fail-safe）。得られない（null・0 以下・未指定の出所）・
-    // 例外（キャンセルを除く）は、参照価格（アンカー後）の 2% へ退避する。**下限が得られないことを理由に見送らない**
-    // （ADR-0049「ATR が得られないときは参照価格の 2%」）。キャンセルは伝える。
-    private async Task<StopWidthFloor> ResolveStopWidthFloorAsync(
-        DecisionTrigger trigger, decimal anchoredPrice, CancellationToken cancellationToken)
+    // FR-10, ADR-0049 決定2, #1120, IADR-0465 決定1, #1122, IADR-0486 決定2: 下限の供給口を読む（fail-safe）。例外（キャンセルを除く）は
+    // null（＝得られない）に縮退し、適用の側（StopWidthFloorPolicy.Resolve）が参照価格（アンカー後）の 2% へ退避する。
+    // **下限が得られないことを理由に見送らない**（ADR-0049「ATR が得られないときは参照価格の 2%」）。キャンセルは伝える。
+    private async Task<StopWidthFloor?> GetStopWidthFloorSafeAsync(
+        DecisionTrigger trigger, CancellationToken cancellationToken)
     {
-        StopWidthFloor? supplied;
         try
         {
-            supplied = await _stopWidthFloor
-                .GetFloorAsync(trigger.Symbol, trigger.Market, anchoredPrice, cancellationToken)
+            return await _stopWidthFloor
+                .GetFloorAsync(trigger.Symbol, trigger.Market, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(
                 ex, "損切り幅の下限の供給に失敗しました（参照価格の 2% を下限とします）: {Symbol}", trigger.Symbol);
-            supplied = null;
+            return null;
         }
-
-        return StopWidthFloorPolicy.Resolve(supplied, anchoredPrice);
     }
 
     // FR-10, FR-04, #1104, IADR-0460 決定1/決定3: 新規建ての損切り幅の観測値を構造化 Information ログへ出す。
@@ -747,7 +756,8 @@ public sealed class TradeDecisionAppService(
     // 広げたかを足す。監査台帳へは TradeDecisionMade.StopWidth が残す（IADR-0465 決定2）。
     private void LogStopWidth(
         DecisionTrigger trigger, TradeSide side, int quantity, LlmDecision decision, decimal anchoredPrice,
-        IntradayPriceContext? intraday, StopWidthFloorApplication stopWidth, decimal stopLossPrice)
+        IntradayPriceContext? intraday, StopWidthFloorApplication stopWidth, decimal stopLossPrice,
+        StopWidthFloorContext? stopFloor)
     {
         var observed = StopWidthObservation.Of(
             decision.ReferencePrice, anchoredPrice, decision.StopLossDistancePerShare, intraday, stopWidth);
@@ -757,13 +767,15 @@ public sealed class TradeDecisionAppService(
                 + "llmReferencePrice={LlmReferencePrice} anchoredPrice={AnchoredPrice} anchorDiff={AnchorDifference} "
                 + "stopWidth={StopWidthPerShare} stopWidthPct={StopWidthPercent} intradayRange={IntradayRange} "
                 + "stopWidthToRange={StopWidthToIntradayRange} floor={StopWidthFloor} floorSource={FloorSource} "
-                + "appliedWidth={AppliedStopWidth} widened={Widened} stopLossPrice={StopLossPrice}",
+                + "appliedWidth={AppliedStopWidth} widened={Widened} stopLossPrice={StopLossPrice} atr14={Atr14}",
             trigger.Symbol, side, quantity,
             observed.LlmReferencePrice, observed.AnchoredPrice, observed.AnchorDifference,
             observed.WidthPerShare, observed.WidthPercentOfAnchored,
             (object?)observed.IntradayRange ?? Unknown, (object?)observed.WidthToIntradayRange ?? Unknown,
             observed.FloorPerShare, observed.FloorSource, observed.AppliedWidthPerShare, observed.Widened,
-            stopLossPrice);
+            stopLossPrice,
+            // #1122, IADR-0486 決定3: ATR(14) の値（下限の出所が ATR のときだけ。無効・得られないときは「不明」）。
+            stopWidth.FloorSource == StopWidthFloorSource.Atr14 && stopFloor?.Atr14?.Atr is { } atr ? atr : Unknown);
     }
 
     // #1104, IADR-0460 決定3: 観測ログで値が無いことの表記（0 と読まれない）。

@@ -11,7 +11,10 @@ public enum StopWidthFloorSource
     /// <summary>ATR が得られないときの退避値＝参照価格（アンカー後の現在値）の 2%（計画 05_trading-assumptions §5）。</summary>
     Fallback2Pct = 1,
 
-    /// <summary>1.0 × ATR(14, 日足)。日足が判断へ通るまで（ADR-0048 決定 3 と同じ条件）は供給されない。</summary>
+    /// <summary>
+    /// 1.0 × ATR(14, 日足)。#1122, IADR-0486 決定1: 取引判断の設定 <c>StopWidthFloor:Atr14:Enabled</c>（既定 false）が有効なときだけ供給される
+    /// （ADR-0048 決定 3 と同じ条件＝取得枠の回復周期の記録の後に利用者が有効化する）。
+    /// </summary>
     Atr14 = 2,
 }
 

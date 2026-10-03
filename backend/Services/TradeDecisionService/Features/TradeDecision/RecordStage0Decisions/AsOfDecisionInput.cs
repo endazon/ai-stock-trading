@@ -67,6 +67,12 @@ public sealed class AsOfDecisionInput
     /// 🔴 **null は「判断の出来高が無効」**であり、プロンプトは従来の「出来高: 未提供」の行のまま（本番の無効の構成と同じ）。
     /// 取得できない日は null ではなく <see cref="DailyVolumeContext.Unavailable"/>（本番と同じ「未提供」の別の文）。
     /// </param>
+    /// <param name="stopFloor">
+    /// FR-10, FR-15, ADR-0049 決定2, #1122, IADR-0486 決定4: <b>判断時点の前営業日までの確定足から本番と同じ計算で求めた損切り幅の下限（ATR(14)）</b>。
+    /// 🔴 **null は「ATR の下限が無効」**（本番の無効の構成と同じ。下限は記録の参照価格の 2%・プロンプトは従来のまま）。
+    /// 有効で得られない日は <see cref="StopWidthFloorContext.Unavailable"/>（2% へ退避・プロンプトは「未提供」の行）。
+    /// 足は <c>GetConfirmedBarsAsOfAsync</c> が AsOf 以降を捨てて返すため、値そのものは先読みにならない。
+    /// </param>
     public AsOfDecisionInput(
         DateOnly asOf,
         DailyPolicy policy,
@@ -78,7 +84,8 @@ public sealed class AsOfDecisionInput
         IReadOnlyList<WatchedSymbol>? watchlist = null,
         string? watchlistUnavailableReason = null,
         DatedPrice? previousClose = null,
-        DailyVolumeContext? volume = null)
+        DailyVolumeContext? volume = null,
+        StopWidthFloorContext? stopFloor = null)
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(sizing);
@@ -110,6 +117,7 @@ public sealed class AsOfDecisionInput
         AsOf = asOf;
         Policy = policy;
         Volume = volume;
+        StopFloor = stopFloor;
         // #1035, IADR-0451: 前日比の基準だけを持つ。当日の始値・日中高安は不明（上の previousClose の説明）。
         Intraday = IntradayPriceContext.Of(previousClose?.Value, open: null, high: null, low: null);
         _previousClose = previousClose;
@@ -163,7 +171,8 @@ public sealed class AsOfDecisionInput
     /// <paramref name="watchlist"/> が null なら (e) は再構成できないと申告し、<paramref name="unavailableReason"/> を理由に載せる。
     /// </summary>
     public AsOfDecisionInput WithWatchlist(IReadOnlyList<WatchedSymbol>? watchlist, string? unavailableReason) =>
-        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason, _previousClose, Volume);
+        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason, _previousClose, Volume,
+            StopFloor);
 
     /// <summary>
     /// FR-04, FR-15, ADR-0048 決定 2, #1139, IADR-0479 決定 2: 出来高だけを差し替えた入力を返す。
@@ -171,7 +180,15 @@ public sealed class AsOfDecisionInput
     /// </summary>
     public AsOfDecisionInput WithVolume(DailyVolumeContext? volume) =>
         new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, Watchlist, _watchlistUnavailableReason,
-            _previousClose, volume);
+            _previousClose, volume, StopFloor);
+
+    /// <summary>
+    /// FR-10, FR-15, ADR-0049 決定2, #1122, IADR-0486 決定4: 損切り幅の下限（ATR）だけを差し替えた入力を返す。
+    /// 他の入力（監視銘柄とその理由・出来高を含む）は同じ規律で組み直す。
+    /// </summary>
+    public AsOfDecisionInput WithStopFloor(StopWidthFloorContext? stopFloor) =>
+        new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, Watchlist, _watchlistUnavailableReason,
+            _previousClose, Volume, stopFloor);
 
     // FR-15, ADR-0036 決定1, #749, IADR-0387: 4 種（ADR-0044 決定 3 の (e) を含む）すべての再構成可否を導出する（**部分申告を作らない**）。
     //
@@ -256,6 +273,13 @@ public sealed class AsOfDecisionInput
     /// 記録器はプロンプトの出来高の行をここからだけ書く（本番と同じ <c>TradeDecisionPromptBuilder.Build(volume:)</c>）。
     /// </summary>
     public DailyVolumeContext? Volume { get; }
+
+    /// <summary>
+    /// FR-10, ADR-0049 決定2, #1122, IADR-0486 決定4: 判断時点の前営業日までの確定足から求めた損切り幅の下限（null＝ATR の下限が無効）。
+    /// 記録器はサイジングの下限とプロンプトの下限の行をここからだけ書く（本番と同じ <c>StopWidthFloorPolicy.Resolve</c> と
+    /// <c>TradeDecisionPromptBuilder.Build(stopFloor:)</c>）。
+    /// </summary>
+    public StopWidthFloorContext? StopFloor { get; }
 
     /// <summary>基準通貨への換算レート（基準通貨の市場では 1）。</summary>
     public decimal RateToBase { get; }

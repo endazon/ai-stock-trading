@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-10-02
+updated: 2026-10-03
 ---
 <!-- trace:
-ids: [FR-02, FR-15, UC-01, FR-04, FR-07]
-adrs: [ADR-0048, ADR-0023]
-iadrs: [IADR-0464, IADR-0157, IADR-0300, IADR-0467, IADR-0478, IADR-0479]
-specs: [20260930_1117_kline-quota-probe, 20260930_1125_kline-quota-only-probe, 20260930_1118_daily-volume-from-kline, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261001_1139_stage0-decision-volume]
-issues: [#1117, #1118, #1125, #1140, #1139, planning#702]
+ids: [FR-02, FR-15, UC-01, FR-04, FR-07, FR-10]
+adrs: [ADR-0048, ADR-0023, ADR-0049]
+iadrs: [IADR-0464, IADR-0157, IADR-0300, IADR-0467, IADR-0478, IADR-0479, IADR-0486]
+specs: [20260930_1117_kline-quota-probe, 20260930_1125_kline-quota-only-probe, 20260930_1118_daily-volume-from-kline, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261001_1139_stage0-decision-volume, 20261003_1122_atr14-stop-floor]
+issues: [#1117, #1118, #1125, #1140, #1139, #1122, planning#702]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -254,3 +254,30 @@ order-execution のイメージには、この 2 つを確かめるための**�
 
 両方の `DecisionVolume__Enabled` を `false`（または未設定）へ戻して配備する。日足の要求は止まり、プロンプトは「出来高: 未提供」の行へ戻る。
 
+ATR の下限（下の節）を有効にしている間は、日足の要求は ATR のために続く（出来高の行だけが「未提供」へ戻る）。
+
+## 損切り幅の下限（ATR(14)）の有効化
+
+判断は、新規建ての損切り幅の下限を **1.0 × ATR(14, 日足)** にできる。ATR は、前営業日で終わる最後の 15 本の確定した日足（前復権）から 14 本の True Range を単純平均した値である。**既定は無効**であり、無効の間は日足の要求を出さず、下限は参照価格の 2%、判断のプロンプトは従来のままである。
+
+- 設定は trade-decision の `StopWidthFloor__Atr14__Enabled`（1 か所。report 側に対応する設定は無い）。出来高の設定とは独立に有効にできる。
+- 日足の口は出来高と 1 つを共有する。両方を有効にしても、同じ銘柄の同じ取引日の取得は 1 回である（取得枠を増やさない）。
+- **有効化してよい条件は出来高と同じ**（上の「有効化してよい条件」の 1〜3）。回復周期がまだ分からない間は有効にしない。
+- 1 注文あたりの発注金額の上限（equity の 25%）は、この設定では変わらない。
+
+### 有効化の手順
+
+1. trade-decision の環境変数 `StopWidthFloor__Atr14__Enabled` を `true` にし、`OrderExecution__BaseUrl` に order-execution の宛先を入れる（出来高の手順 2 と同じ。出来高を有効にしていれば入っている）。
+2. 配備の後、次で動きを確かめる:
+   - 判断のプロンプト（ログ）のリスク制約節に `損切り幅の下限: <値>（1 株あたり。ATR(14, …) <値> の 1.0 倍）` が出る。足が足りない・取れない日は `損切り幅の下限: ATR(14, 日足) は未提供です…下限は参照価格の 2% です。` と出て、判断は続く。
+   - 新規建ての `損切り幅の観測` のログで `floorSource=Atr14` と `atr14=<値>` が出る。
+   - trade-decision のログに `OrderExecution:BaseUrl が無い・不正のため、日足を要求しません` の警告が**出ていない**こと（出ていれば下限は 2% のまま）。
+3. Stage 0 の記録も同じ設定で切り替わる（判断時点の前営業日までの確定足から同じ ATR を求める。その日以降の足は使わない）。
+
+### 既存の建玉への遡及との関係
+
+発注執行の遡及（下限を割って建てた S1 の建玉のラインを、取得単価の 2% まで広げる）は、ATR の下限で建てた建玉を広げない。新規建ての発注記録に、下限を掛けてラインを引いた印（`Fallback2Pct` / `Atr14`）が残り、遡及はその印のある記録を対象から外す。印は、送信結果が不明のまま突合で発注済みと確定した記録にも写る。
+
+### ATR の下限を無効へ戻す
+
+`StopWidthFloor__Atr14__Enabled` を `false`（または未設定）へ戻して配備する。下限は参照価格の 2% に戻り、プロンプトの下限の行は消える。出来高も無効なら日足の要求は止まる。

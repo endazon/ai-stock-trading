@@ -46,6 +46,15 @@ public class TradingDefaultsTests
         TradingDefaults.StopWidthFloorFallbackRatio.Should().BeLessThan(limits.PerTradeRiskRatio / limits.MaxOrderAmountRatio);
     }
 
+    // T-10-2189, FR-10, ADR-0049 決定2, #1122, IADR-0486 決定3: 損切り幅の下限の本体は 1.0 × ATR(14, 日足)
+    // （05_trading-assumptions §5「損切り幅の下限」）。14 本の True Range の単純平均（前日終値を使うため足は 15 本）。
+    [Fact]
+    public void 損切り幅の下限の本体はATR14の1倍()
+    {
+        TradingDefaults.StopWidthFloorAtrMultiple.Should().Be(1.0m);
+        TradingDefaults.StopWidthFloorAtrPeriod.Should().Be(14);
+    }
+
     // FR-10, FR-17, #329, #364, IADR-0130 決定3 / IADR-0152 決定3: 初期投入資金は USD 3,000
     // （計画 §5・利用者決定 2026-07-31）。基準通貨が USD になったため、基準通貨建ての供給値は権威値そのものであり、
     // 参照レートによる 1 点換算は消えた（`ReferenceUsdToJpyRate` は削除済み）。

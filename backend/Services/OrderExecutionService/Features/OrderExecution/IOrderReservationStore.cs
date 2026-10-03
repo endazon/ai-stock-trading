@@ -58,7 +58,8 @@ public sealed record OrderDispatchReservation(
     DateTimeOffset ReservedAt,
     string? BrokerOrderId,
     DateTimeOffset? CompletedAt = null,
-    BrokerProvider? BrokerProvider = null);
+    BrokerProvider? BrokerProvider = null,
+    StopWidthFloorSource? StopFloorSource = null);
 
 // #131, FR-05, IADR-0057: 発注前 DecisionId 予約のストア。ブローカ発注の「前」に一意予約をコミットし、
 // 「発注成功 → 永続化失敗」の窓での二重発注を防ぐ。実運用では PostgreSQL（DecisionId が主キー＝一意制約）。
@@ -74,8 +75,14 @@ public interface IOrderReservationStore
     /// 解放の門がどちらも効かなくなる（安全側だが、門を開けても解放されない）。承認が運ぶ <c>OrderIntent.Mode</c> は
     /// 段階の既定の発注先であって送る先ではないため、渡してはならない（IADR-0140 決定3）。
     /// </para>
+    /// <para>
+    /// 🔴 FR-10, #1122, IADR-0486 決定6: <paramref name="stopFloorSource"/> は承認の発注意図の「下限を掛けてラインを引いた」印
+    /// （<c>OrderIntent.StopFloorSource</c>。新規建てだけが持つ）。突合（<c>OrderReservationReconciler</c>）が発注済みと確定したとき、
+    /// ブローカーの注文から組み直す記録へ写す。省略は null（分からない＝決済・保護レグ）。
+    /// </para>
     /// </summary>
-    bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider);
+    bool TryReserve(
+        Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null);
 
     /// <summary>発注結果の永続化後に予約を Completed へ確定する（ブローカ注文 ID を記録する）。</summary>
     void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt);

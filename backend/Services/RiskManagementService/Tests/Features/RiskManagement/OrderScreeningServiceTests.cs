@@ -73,6 +73,23 @@ public class OrderScreeningServiceTests
         outcome.Rejected.Should().BeNull();
     }
 
+    // T-10-2202, FR-10, ADR-0049 決定1, #1122, IADR-0486 決定5: 発注意図の「下限を掛けてラインを引いた」印（StopFloorSource）は
+    // 審査で書き換えず、承認の発注意図へそのまま運ぶ（発注執行が発注結果と予約の行に残し、既存の S1 への遡及が読む）。
+    [Theory]
+    [InlineData(StopWidthFloorSource.Atr14)]
+    [InlineData(StopWidthFloorSource.Fallback2Pct)]
+    public async Task T_10_2202_承認は発注意図の下限の印をそのまま運ぶ(StopWidthFloorSource source)
+    {
+        var (service, _, _, _, _) = CreateService();
+        var intent = EntryIntent() with { StopLossPrice = 988m, StopFloorSource = source };
+
+        var outcome = await service.ScreenAsync(Decision(intent));
+
+        outcome.IsApproved.Should().BeTrue();
+        outcome.Approved!.Intent.Should().Be(intent);
+        outcome.Approved.Intent.StopFloorSource.Should().Be(source);
+    }
+
     // NFR-01, NFR-02, #689, IADR-0307 決定1/7: 取引サイクルの起点は判断から発注執行へ**そのまま**中継する。
     // 🔴 審査時刻（clock.UtcNow）で上書きすると、審査より前の区間（検知・収集・LLM 判断）が計測から消え、
     // 端点間レイテンシが実際より短く出る。統制の判定には一切使わない（読まない）。
