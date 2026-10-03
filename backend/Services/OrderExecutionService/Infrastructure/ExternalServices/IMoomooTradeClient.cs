@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace OrderExecutionService.Infrastructure.ExternalServices;
 
 // #13, FR-05, ADR-0002: moomoo 取引の薄いポート（SDK 非依存）。写像・状態変換・fail-safe は MoomooBrokerAdapter に集約し、
@@ -86,6 +88,8 @@ public sealed record MoomooPositionRow(
 // （Stop は発火後成行・Market は板成行であり、指値を送ると意味が変わる）。
 // FR-10, #821, IADR-0347: Kind=StopLimit は S3 のストップリミット（TriggerPrice=発火価格＝AuxPrice・Price=指値）、
 // Kind=TrailingStop は S3 のトレーリングストップ（TrailValue=トレール幅の絶対額・TrailType_Amount）。
+// FR-10, #856, IADR-0488 決定3: PositionEffect は発注意図の効果（新規建て／手仕舞い）。**OpenD へは送らない**
+// （MMApiMoomooTradeClient は読まない）。故障注入のデコレータが新規建てだけを見分けるために載せる。null は不明（従来の生成元）。
 public sealed record MoomooOrderRequest(
     string Symbol,
     MoomooMarket Market,
@@ -95,7 +99,8 @@ public sealed record MoomooOrderRequest(
     string? Remark = null,
     MoomooOrderKind Kind = MoomooOrderKind.Limit,
     decimal? TriggerPrice = null,
-    decimal? TrailValue = null);
+    decimal? TrailValue = null,
+    PositionEffect? PositionEffect = null);
 
 // FR-10, #331, IADR-0210: 注文種別（SDK 非依存）。Limit=OrderType_Normal / Stop=OrderType_Stop / Market=OrderType_Market。
 // FR-10, #821, IADR-0347: S3 の代替種別を末尾へ足す。StopLimit=OrderType_StopLimit / TrailingStop=OrderType_TrailingStop。

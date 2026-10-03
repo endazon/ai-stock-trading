@@ -559,6 +559,15 @@ services:
       # 200 件 × 4 = 800 往復が 1 バーストで同じコネクションに乗り、発注そのものを詰まらせ得る。
       # 溢れた分は次の巡回（1 時間後）が拾う——滞留の解消は急がなくてよいが、発注は待てない。
       - { name: Reconciliation__BatchSize, value: "50" }
+      # FR-10, #856, IADR-0488: 送信結果を確認できない発注を SIMULATE で意図的に作る故障注入（解放の門の判断に使う実機の記録づくり）。
+      # 🔴 **既定では置かない**（helm.yml の描画検査が FaultInjection__ の描画を赤にする。コミットしない）。PoC の 1 回ごとに
+      #    作業ツリーで下の 3 行のコメントを外して通常の配備（helm upgrade）を行い、注入を見たら戻して再配備する
+      #    （env の配列は values の上書きで丸ごと置き換わるため、別の values ファイルや --set で足さない。
+      #    `kubectl set env` も使わない＝次の helm upgrade が所有権の競合で落ちる。手順は docs/operations/broker-execution-paths-runbook.md）。
+      #    moomoo-sim 以外・実弾口座の照会（Broker__Moomoo__RealMarginQuery__Enabled=true）と同居なら発注執行は起動しない。
+      #   - { name: FaultInjection__IndeterminateDispatch__Mode, value: "BeforeSend" }   # None（既定）/ AfterSend / BeforeSend
+      #   - { name: FaultInjection__IndeterminateDispatch__Symbols, value: "AAPL" }      # 当てる銘柄（* 単独で全銘柄）。新規建てにだけ・1 回だけ当たる
+      #   - { name: FaultInjection__IndeterminateDispatch__ExpiresAtUtc, value: "2026-10-05T20:00:00Z" }  # 時差（Z か +09:00）必須・起動から 24 時間以内。過ぎたら注入しない
   report:
     image: ai-stock-trading/report-service
     # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0328 決定 3, IADR-0446, #1061: east-west gRPC（h2c）の提供側ポート。

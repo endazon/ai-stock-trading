@@ -322,6 +322,11 @@ jobs:
               echo "::error::[$label] 旧キー Reconciliation__ReleaseOnNotPlaced が描画された（#1051: __Simulate / __Real へ分けた）。"
               exit 1
             fi
+            # T-10-2230, #856, IADR-0488: 送信結果を確認できない発注の故障注入は既定の配備で描画しない（PoC の一時的な values でだけ足す）。
+            if printf '%s' "$doc" | grep -q "name: FaultInjection__"; then
+              echo "::error::[$label] 故障注入（FaultInjection__*）が描画された。既定の配備では置かない（#856 / IADR-0488）。"
+              exit 1
+            fi
             for pair in "Reconciliation__Enabled true" "Reconciliation__UseBrokerProbe true" "Reconciliation__ReleaseOnNotPlaced__Simulate false" "Reconciliation__ReleaseOnNotPlaced__Real false" "Reconciliation__StallThresholdHours 2" "Reconciliation__IntervalHours 1" "Reconciliation__BatchSize 50"; do
               key="${pair%% *}"; want="${pair##* }"
               if ! printf '%s' "$doc" | grep -A1 "name: ${key}$" | grep -q "value: \"${want}\""; then

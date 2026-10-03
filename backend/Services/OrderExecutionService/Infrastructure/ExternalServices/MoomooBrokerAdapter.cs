@@ -189,7 +189,8 @@ public sealed class MoomooBrokerAdapter(
         {
             // Mode=Live でも SIMULATE を用いる（本 PR は実弾を撃たない・IADR-0016）。実弾解禁は別 IADR＋明示 config。
             var request = new MoomooOrderRequest(intent.Symbol, MapMarket(intent.Market), MapSide(intent.Side),
-                intent.Quantity, intent.Price, remark, kind, triggerPrice, trailValue);
+                intent.Quantity, intent.Price, remark, kind, triggerPrice, trailValue,
+                PositionEffect: intent.PositionEffect); // #856, IADR-0488: OpenD へは送らない（故障注入の対象の見分けにだけ使う）
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
             return (ToBrokerOrder(intent, result, now), null, null, result.OrderId);
         }

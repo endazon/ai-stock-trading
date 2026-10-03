@@ -3,14 +3,14 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-10-02
+updated: 2026-10-04
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection]
 issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, planning#676]
 -->
 
@@ -201,6 +201,92 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
      DELETE FROM order_dispatch_reservations WHERE "DecisionId" = '<確認した DecisionId>' AND "State" = 0;
      ```
    - **判断できない**: 据え置く（何もしない）。建玉は証券会社の画面から人が管理する。
+
+#### 突合の判定を実機で確かめる（送信結果が不明な発注を SIMULATE で意図的に作る）
+
+解放の門を開ける判断（運用仕様書「解放の門を開けるときの記録」の (a)(b)）には、送信結果を確認できなかった発注の実例が要る。
+自然には起きにくいので、**SIMULATE に限り**、発注執行の故障注入のスイッチで 1 件ずつ作る。作るのは 2 通りである。
+
+| 形 | 発注執行がすること | 証券会社の注文一覧 | 突合の期待 |
+| --- | --- | --- | --- |
+| `AfterSend` | 新規建てを**実際に送信した後で**、結果を確認できなかったことにする | 備考（remark）に `DecisionId` の注文が**有る** | 「発注済み」と確定（Critical `…突合で「発注済み」と確定しました…`） |
+| `BeforeSend` | 新規建てを**送信せずに**、結果を確認できなかったことにする | その `DecisionId` の注文が**無い** | 「未発注」と判定し、門が閉じているので据え置き（Warning `…照会は「未発注」と答えましたが…据え置きます…`） |
+
+🔴 **`BeforeSend` が本丸である**（「未発注」の判定を初めて実機で出す事例。解放はこの判定にだけ効く）。
+逆に `AfterSend` の事例が「未発注」と判定されたら、有る注文を無いと読んだ誤判定であり、門を開けた後なら**二重発注**になる。
+**1 件でも期待と食い違ったら門は閉じたままにする。**
+
+スイッチの性質（発注執行の構成。**既定は無効で、配備の values には置いていない**）:
+
+| env | 値 | 意味 |
+| --- | --- | --- |
+| `FaultInjection__IndeterminateDispatch__Mode` | `None`（既定）/ `AfterSend` / `BeforeSend` | 形 |
+| `FaultInjection__IndeterminateDispatch__Symbols` | 銘柄のカンマ区切り（`*` 単独で全銘柄） | 当てる銘柄。必須 |
+| `FaultInjection__IndeterminateDispatch__ExpiresAtUtc` | ISO-8601 で**時差つき**（例 `2026-10-05T20:00:00Z`・`2026-10-06T05:00:00+09:00`） | この時刻以降は注入しない。必須。時差（`Z` か `+09:00` の形）が無い・起動から 24 時間より先なら起動を止める |
+
+- 当たるのは**新規建ての指値の発注だけ**である。保護逆指値・代替注文種別・成行の手仕舞い・指値の手仕舞いには当たらない。
+- **1 プロセスにつき 1 回だけ**当たる。2 本目以降は普段どおり送る。**発注執行が再起動すると 1 回分が戻る**ので、注入を見たらすぐ外す。
+- `broker.tier=moomoo-sim` 以外、実弾口座の読み取り専用の照会（`Broker__Moomoo__RealMarginQuery__Enabled=true`）と同時、
+  不正な値（未知の形・銘柄なし・読めない期限・時差の無い期限）では**発注執行が起動しない**。期限を過ぎた構成は起動を止めず、注入しないだけである。
+
+手順（形ごとに 1 回ずつ、米国の通常取引時間中に行う。読み取りの確認と SIMULATE での発注だけを行う）:
+
+1. **前提を確かめる。** 発注執行の起動ログに `発注予約の自動リコンサイルを開始します（滞留閾値 2 時間・間隔 01:00:00・未発注時の解放 SIMULATE 禁止 / 実弾 禁止）`
+   が出ていること。introspection で `moomoo-sim` であること（上の「1. 稼働中の階層を自己申告させる」）。
+2. **スイッチを入れる。** 作業ツリーの `deploy/helm/ai-stock-trading/values.yaml` で、`services.order-execution.extraEnv` の末尾にある
+   故障注入の 3 行のコメントを外し、形・銘柄・期限を書く（**コミットしない**）。
+   銘柄は監視対象（ウォッチリスト）にある銘柄か `*`、期限はその日の取引時間の終わりに数時間足した時刻にする。
+   - 🔴 **別の values ファイルや `--set` で足さない。** env の配列は丸ごと置き換わり、突合の設定（`Reconciliation__*`）が消える。
+     **`kubectl set env` も使わない**（次の `helm upgrade` が所有権の競合で落ちる）。
+   - 配備の前に `node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading --values deploy/helm/ai-stock-trading/values-local.yaml`
+     で、差が**発注執行の env の 3 キーの追加だけ**であること・OpenD が「変化なし」であることを確かめてから、通常の配備（`scripts/k8s-local-deploy.sh`）を行う。
+3. **入ったことを確かめる。** 🔴 発注執行が起動しない（再起動を繰り返す）ときは、直ちに手順 5 で戻す（その間は発注も保護逆指値ガードも止まっている。起動ログの理由を直してからやり直す）。
+   起動したら、発注執行の起動ログに Warning `故障注入（送信結果を確認できない発注）が構成されています: 形=… 銘柄=… 期限=…` が 1 行出る。
+   `（期限切れのため注入しません）` が付いていたら期限を直す。
+4. **新規建てを待つ。** その銘柄の新規建ての承認が配送されると、発注執行のログに次の 2 行が続けて出る:
+   - Warning `故障注入: 発注の結果を確認できなかった状態を意図的に作りました（形=… DecisionId=… 銘柄=… 数量=… 注文ID=…）`
+     （`BeforeSend` の注文ID は `（送信していない）`）
+   - Error `発注の結果を確認できませんでした（送信済み・届いたか不明）: DecisionId=…`（本番の経路そのもの）
+
+   `DecisionId` と時刻を控える。メッセージ基盤の `_error` キューに残る `OrderDispatchReservationConflictException` は想定どおりである（上の「滞留した予約を人が解決する」の 1.）。
+   🔴 **この承認を `_error` キューから再投入しない**（`BeforeSend` の承認が送られてしまい、観測の対象が消える）。
+5. **すぐにスイッチを外す。** values.yaml を元に戻し（`git checkout -- deploy/helm/ai-stock-trading/values.yaml`）、もう一度配備する。
+   `helm-release-drift.js` の差が 0（終了コード 0）であることを確かめる。外し忘れると、発注執行が再起動するたびに次の新規建てへ 1 回ずつ当たる（期限まで）。
+6. **予約が据え置かれていることを確かめる**（order-execution DB）:
+
+   ```sql
+   SELECT "DecisionId", "State", "ReservedAt", "BrokerProvider" FROM order_dispatch_reservations
+   WHERE "DecisionId" = '<控えた DecisionId>';  -- State = 0（Reserved）であること
+   ```
+7. **証券会社の画面で注文を確かめる**（moomoo アプリの模擬取引口座の注文履歴。備考に `DecisionId` がハイフン無しの 32 桁で入る）。
+   `AfterSend` なら**有る**、`BeforeSend` なら**無い**ことを記録する（どちらの一覧〔当日／履歴〕に出たかも書き留める）。
+8. **突合を待つ。** 滞留とみなすのは予約から 2 時間後、巡回は 1 時間ごとなので、注入から**最悪 3 時間**で判定される。
+   巡回は発注執行の起動直後にも 1 回走るので、注入から 2 時間を過ぎていれば `kubectl -n ai-stock-trading rollout restart deploy/order-execution-service`
+   で早めてよい（env は変わらない）。判定のログを探す:
+
+   ```bash
+   kubectl -n ai-stock-trading logs deploy/order-execution-service --since=6h \
+     | grep -E "発注予約リコンサイル|故障注入"
+   ```
+
+   | 形 | 期待どおり | 食い違い（🔴 門を開けない） |
+   | --- | --- | --- |
+   | `AfterSend` | Critical `…突合で「発注済み」と確定しました（DecisionId=<控えた値> 注文ID=…）` と、直後の保護レグの結果の行 | 同じ `DecisionId` について Warning `…照会は「未発注」と答えましたが…`（備考が往復していない） |
+   | `BeforeSend` | Warning `…照会は「未発注」と答えましたが…据え置きます（DecisionId=<控えた値> 取引環境=MoomooSimulate）` が巡回ごとに出る | 「発注済み」と確定した（存在しない注文を見つけた） |
+
+   計器では `ast_order_reservation_reconciliations_total{provider="MoomooSimulate"}` の `outcome="probe-placed"`（`AfterSend`）・
+   `outcome="held-not-placed"`（`BeforeSend`）が増える。`indeterminate` が続くなら照会が届いていない（OpenD の状態を確かめる）。
+9. **記録する。** 運用仕様書「解放の門を開けるときの記録」の 1 件ごとの項目（`DecisionId`・判定・画面での確認結果・日時・取引環境・
+   一致を得た市場・列挙の経路）を #856 へ表で残す。故障注入で作った事例であることと形も書く。
+10. **後始末する。**
+    - `BeforeSend`: 予約は門が閉じている限り Reserved のまま残る。手順 7 で注文が無いことを確かめてあるので、上の「滞留した予約を人が解決する」の
+      「注文が存在しない」の手順で予約行を消す（承認は再投入しない）。保護の記録（承認時の文脈・S1 の行）が残っていたら、
+      建玉が無いことを確かめたうえで、上の「エントリー注文の状態が不明なとき」の扱いに従う。
+    - `AfterSend`: 突合が確定した時点で、承認時の損切り手法で保護レグが張られる（確定の Critical の直後の行）。建玉は以降、通常どおり管理される。
+      確定までの最悪 3 時間は、その建玉に保護レグが無い（SIMULATE なので実損は出ない）。数量の小さい新規建てで行う。
+
+両方が期待どおりになったら、門を開ける変更（values.yaml の `Reconciliation__ReleaseOnNotPlaced__Simulate` を `"true"`・helm.yml の描画検査の改め）を、
+この記録への参照を添えて別に出す。**実弾では作らない**（実弾の門は実弾で自然に起きた記録だけで判断する）。
 
 #### 逆指値の送信結果が不明なとき（通知「保護逆指値の発注結果が未確認（据え置き中）」）
 

@@ -100,6 +100,19 @@ var brokerSelection = BrokerSelection.FromConfiguration(builder.Configuration);
 // LiveTradingReleased を true にする 1 ファイルの変更に集約され、別 IADR＋IADR-0056 §3 の前提充足を要する。
 LiveTradingGate.Ensure(brokerSelection);
 
+// 🔴 FR-10, FR-05, NFR-09, ADR-0045 決定1, #856, IADR-0488: 送信結果を確認できない発注を SIMULATE で意図的に作る故障注入
+// （既定は無効。FaultInjection:IndeterminateDispatch:Mode=AfterSend / BeforeSend）。解放の門の判断に使う実機の記録を作るためだけにある。
+// 構成の読み取りと拒否（paper・実弾・実弾口座の照会と同居・不正な値）は**ここで 1 回だけ**行い、起動を止める。
+// 有効なときは、下の IBrokerAdapter へ渡す OpenD クライアントだけを包む（DI の IMoomooTradeClient は包まない——
+// 借株可否の照会はそのインスタンスを IShortPermitSource へ型変換して使い、突合のプローブも素のクライアントで照会する）。
+var indeterminateDispatchFault = IndeterminateDispatchFaultInjectionOptions.FromConfiguration(
+    builder.Configuration, DateTimeOffset.UtcNow);
+indeterminateDispatchFault.EnsureAllowed(
+    brokerSelection,
+    LiveTradingGate.LiveTradingReleased,
+    builder.Configuration["Broker:Moomoo:TrdEnv"],
+    RealMarginQueryOptions.FromConfiguration(builder.Configuration).Enabled);
+
 // moomoo 選択時は OpenD 接続クライアント（IMoomooTradeClient）を構成し SIMULATE 限定で発注する（実弾を撃たない）。
 // #141, IADR-0092: moomoo 時は IMoomooTradeClient を単一インスタンスで DI 共有し、発注アダプタ（IBrokerAdapter）と
 // 実照会プローブ（MoomooReservationBrokerProbe）が同一の OpenD 接続を使う（接続を二重化しない）。paper では登録しない。
@@ -113,6 +126,15 @@ builder.Services.AddSingleton<IBrokerAdapter>(sp =>
 {
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
     var moomooClient = sp.GetService<IMoomooTradeClient>(); // moomoo 時のみ登録済み
+    // 🔴 #856, IADR-0488 決定6: 故障注入はアダプタへ渡すクライアントにだけ挟む（有効なときだけ。既定は素のまま）。
+    if (moomooClient is not null && indeterminateDispatchFault.Enabled)
+    {
+        moomooClient = new IndeterminateDispatchFaultInjectingClient(
+            moomooClient,
+            indeterminateDispatchFault,
+            loggerFactory.CreateLogger<IndeterminateDispatchFaultInjectingClient>(),
+            sp.GetService<TimeProvider>());
+    }
     // FR-10, #821, IADR-0347: S3（代替注文種別）の設定もアダプタへ渡す。
     // **moomoo のときだけ構成を読む**——paper 構成で moomoo の構成検証（TrdEnv 等）を走らせない。
     var alternativeStop = brokerSelection.IsMoomoo
