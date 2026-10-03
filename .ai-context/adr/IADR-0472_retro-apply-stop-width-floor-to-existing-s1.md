@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-11, UC-02, ADR-0049, ADR-0040, ADR-0003, IADR-0465, IADR-0344, IADR-0389, IADR-0396, IADR-0461, IADR-0466, IADR-0393, IADR-0399, IADR-0397]
 author: claude (Claude Code)
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-03
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0049_stop-width-floor-atr14-widen-no-ceiling.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1 の S1)
@@ -199,3 +199,17 @@ RabbitMQ への発行が失敗すると、事実は失われ、遡及は冪等�
 
 試験: T-10-1935（群ごとの閉じ込め）・T-10-1936（後の段の例外でも事実を返す。事実の無い巡回は従来どおり投げる）・T-10-1937（遡及の段の例外で巡回を止めない）・
 T-10-1938（下限を満たして建てた行は遡及しない）。作業仕様書の窓の表に窓 F（対象の判定）を足し、窓 C を改めた。
+
+## ［2026-10-03 追記 / #1122］下限を掛けて建てた印のある行は遡及しない（追記 2 の残余を塞ぐ。[IADR-0486](IADR-0486_stop-width-floor-atr14-flag-and-floor-marker-on-order-intent.md) 決定5〜7）
+
+オーナー裁定（2026-10-03・案 A、予約の経路も閉じる）に従い、追記 2 の残余（参照価格の 2% より狭い ATR の下限で建てた行を、導入前の行と取り違えて 2% まで広げる）を次のとおり塞いだ。
+
+- 取引判断が新規建ての発注意図に印 `OrderIntent.StopFloorSource`（`Fallback2Pct` / `Atr14`）を立て、リスク管理はそのまま運び、発注執行は発注結果の記録
+  （`executed_orders.StopFloorSource`）と予約の行（`order_dispatch_reservations.StopFloorSource`）に残す。突合で確定した記録は予約の行の印を写す。
+- 遡及の対象の判定に `StopWidthFloorRetrofitPolicy.WasFloorAppliedAtSizing` を足した: **エントリーの発注記録の印が `Fallback2Pct` / `Atr14` の行は遡及しない。**
+  印の無い（null・`Unspecified`）行は従来どおり追記 2 の判定（ラインを引いた価格から 2% 未満か）で見分ける。前の端（写し）と後の端（最新の行）で同じ判定を使う。
+- 遡及の下限は取得単価 × 2%（出所 `Fallback2Pct`）のまま変えない（印の無い行＝#1120 より前の行だけが対象に残るため）。
+- 結果の残余（「ATR の供給（#1122）で…遡及も ATR を使うかは見直す」）の答え: 使わない。印のある行は対象外で、印の無い行は 2% の導入前の行である。
+
+試験: T-10-2203（発注で予約・記録に残す）・T-10-2204（突合で確定した記録に残す）・T-10-2205（印のある行は遡及しない・null と Unspecified は従来どおり）。
+

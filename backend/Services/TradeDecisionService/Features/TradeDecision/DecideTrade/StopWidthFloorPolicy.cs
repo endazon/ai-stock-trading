@@ -23,6 +23,15 @@ public static class StopWidthFloorPolicy
     }
 
     /// <summary>
+    /// FR-10, ADR-0049 決定2, #1122, IADR-0486 決定3: ATR(14) から下限を作る（下限 ＝ <see cref="TradingDefaults.StopWidthFloorAtrMultiple"/>（1.0）× ATR。
+    /// 出所 <see cref="StopWidthFloorSource.Atr14"/>）。ATR が得られない（null・0 以下）ときは null（呼び出し側が退避の 2% を使う）。端数は丸めない。
+    /// </summary>
+    public static StopWidthFloor? FromAtr(decimal? atr) =>
+        atr is decimal value && value > 0m
+            ? new StopWidthFloor(value * TradingDefaults.StopWidthFloorAtrMultiple, StopWidthFloorSource.Atr14, value)
+            : null;
+
+    /// <summary>
     /// 供給口の答え（<paramref name="supplied"/>。null＝得られない）を検める。正の値だけを採り、それ以外は退避の 2% にする。
     /// </summary>
     public static StopWidthFloor Resolve(StopWidthFloor? supplied, decimal referencePrice) =>

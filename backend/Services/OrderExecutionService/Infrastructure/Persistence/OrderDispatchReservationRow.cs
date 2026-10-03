@@ -28,4 +28,11 @@ public sealed class OrderDispatchReservationRow
     /// 序数は <see cref="BrokerProvider"/> の整数（0＝内蔵 paper / 1＝moomoo REAL / 2＝moomoo SIMULATE）。
     /// </summary>
     public BrokerProvider? BrokerProvider { get; set; }
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0049 決定1, #1122, IADR-0486 決定6: 予約を取った承認の発注意図が運んだ「損切り幅に下限を掛けてラインを引いた」印
+    /// （<c>OrderIntent.StopFloorSource</c>）。送信結果が不明のまま突合が発注済みと確定したとき、突合はブローカーの注文から記録を組み直すため
+    /// 発注意図の印を持たない——ここに残した値を記録へ写す。<b>null は分からない</b>（列を足す前の行・決済・保護レグ）。
+    /// </summary>
+    public StopWidthFloorSource? StopFloorSource { get; set; }
 }

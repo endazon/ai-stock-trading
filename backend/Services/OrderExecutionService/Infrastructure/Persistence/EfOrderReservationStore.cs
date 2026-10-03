@@ -8,7 +8,8 @@ namespace OrderExecutionService.Infrastructure.Persistence;
 // TryReserve はブローカ発注より前に呼ばれ、SaveChanges で「コミットしてから」true を返す（発注前予約の要）。
 public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrderReservationStore
 {
-    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider)
+    public bool TryReserve(
+        Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null)
     {
         // 先読みは高速路（再配送の大半はここで false）。並行配送の実際の排他は主キーの一意制約が担う。
         if (db.DispatchReservations.Any(r => r.DecisionId == decisionId))
@@ -21,6 +22,8 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             ReservedAt = reservedAt,
             // 🔴 #1051, IADR-0444 決定1: 送る先の取引環境。リコンサイラが解放の門を選ぶ。
             BrokerProvider = brokerProvider,
+            // 🔴 #1122, IADR-0486 決定6: 承認の発注意図の「下限を掛けてラインを引いた」印。突合が記録へ写す。
+            StopFloorSource = stopFloorSource,
         });
 
         try
@@ -66,7 +69,8 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
         return row is null
             ? null
             : new OrderDispatchReservation(
-                row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt, row.BrokerProvider);
+                row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt, row.BrokerProvider,
+                row.StopFloorSource);
     }
 
     // #141, IADR-0074: 滞留 Reserved（State=Reserved AND ReservedAt < reservedBefore）を ReservedAt 昇順で
@@ -78,7 +82,7 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             .OrderBy(r => r.ReservedAt)
             .Take(batchSize)
             .Select(r => new OrderDispatchReservation(
-                r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt, r.BrokerProvider))
+                r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt, r.BrokerProvider, r.StopFloorSource))
             .ToList();
     }
 

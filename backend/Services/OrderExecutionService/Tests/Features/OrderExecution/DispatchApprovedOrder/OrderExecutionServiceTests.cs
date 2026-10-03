@@ -152,8 +152,9 @@ public class OrderExecutionServiceTests
 
         public int RemainingFailures { get; set; }
 
-        public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider) =>
-            _inner.TryReserve(decisionId, reservedAt, brokerProvider);
+        public bool TryReserve(
+            Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null) =>
+            _inner.TryReserve(decisionId, reservedAt, brokerProvider, stopFloorSource);
 
         public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt)
         {

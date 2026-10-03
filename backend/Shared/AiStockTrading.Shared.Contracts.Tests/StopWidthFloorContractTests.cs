@@ -60,4 +60,27 @@ public class StopWidthFloorContractTests
         (e.EntryPrice * StopWidthFloorDefaults.FallbackRatio).Should().Be(e.FloorPerShare);
         (e.EntryPrice - e.FloorPerShare).Should().Be(e.StopLossPrice);
     }
+
+    // T-10-2201, FR-10, ADR-0049 決定1, #1122, IADR-0486 決定5: 発注意図の「下限を掛けてラインを引いた」印（OrderIntent.StopFloorSource）は
+    // 末尾の既定 null の項目である。項目を持たない旧い本文は null で読み（Fallback2Pct へ黙って倒れない）、往復で保たれ、
+    // 判断の記録（TradeDecisionMade）・承認（OrderApproved）の本文を通しても残る。
+    [Fact]
+    public void T_10_2201_発注意図の下限の印は旧い本文ではnullで往復で保たれる()
+    {
+        var plain = new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 1, 100m);
+        plain.StopFloorSource.Should().BeNull("既定は null（決済・保護レグ・#1122 より前の判断）");
+        var oldJson = JsonSerializer.Serialize(plain).Replace(",\"StopFloorSource\":null", string.Empty, StringComparison.Ordinal);
+        oldJson.Should().NotContain("StopFloorSource");
+        JsonSerializer.Deserialize<OrderIntent>(oldJson)!.StopFloorSource.Should().BeNull();
+
+        var marked = plain with { StopLossPrice = 98.8m, StopFloorSource = StopWidthFloorSource.Atr14 };
+        JsonSerializer.Deserialize<OrderIntent>(JsonSerializer.Serialize(marked)).Should().Be(marked);
+
+        var made = new TradeDecisionMade(Guid.NewGuid(), marked, "根拠", DateTimeOffset.UtcNow);
+        JsonSerializer.Deserialize<TradeDecisionMade>(JsonSerializer.Serialize(made))!.Intent.StopFloorSource
+            .Should().Be(StopWidthFloorSource.Atr14);
+        var approved = new OrderApproved(Guid.NewGuid(), marked, 1, DateTimeOffset.UtcNow);
+        JsonSerializer.Deserialize<OrderApproved>(JsonSerializer.Serialize(approved))!.Intent.StopFloorSource
+            .Should().Be(StopWidthFloorSource.Atr14);
+    }
 }

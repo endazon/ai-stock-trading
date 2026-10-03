@@ -21,6 +21,11 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 // 内蔵 paper の約定価格が使う）。実ブローカー（moomoo）は成行注文に価格を載せないため、送信内容には影響しない。
 // 既定 false により、エントリー・保護レグ・判断由来の決済の挙動は 1 バイトも変わらない。
 // 取引台帳（approved_orders）は OrderIntent の列を明示写像しており本値を持たない（発注時にしか意味を持たない）。
+// 🔴 FR-10, ADR-0049 決定1・決定2, #1122, IADR-0486 決定5: StopFloorSource は「この新規建ての損切り幅（StopLossPrice）を、どの出所の
+// 下限を掛けてから引いたか」の印（Fallback2Pct / Atr14）。取引判断が新規建てにだけ立てる。**null＝下限を掛けたかが分からない**
+// （#1122 より前の判断・決済・保護レグ・利用者の手仕舞い等）。発注執行は発注結果の記録と予約の行に残し、既存の S1 への下限の遡及
+// （IADR-0472）が「サイジングの時点で下限を掛けて建てた行」を広げないために読む（ATR の下限は参照価格の 2% より狭いことがある）。
+// 発注には使わない（ブローカーへ送る内容は変わらない）。取引台帳は本値を持たない（明示写像）。
 public record OrderIntent(
     string Symbol,
     Market Market,
@@ -32,7 +37,8 @@ public record OrderIntent(
     PositionEffect PositionEffect = PositionEffect.Open,
     decimal? StopLossPrice = null,
     decimal FxRateToBase = 1m,
-    bool MarketOrder = false)
+    bool MarketOrder = false,
+    StopWidthFloorSource? StopFloorSource = null)
 {
     /// <summary>ローカル通貨建ての概算約定金額（執行・スリッページ評価用）。</summary>
     public decimal Notional => Quantity * Price;

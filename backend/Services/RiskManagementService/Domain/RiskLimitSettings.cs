@@ -34,7 +34,7 @@ public record RiskLimitSettings
 
     /// <summary>
     /// 1取引あたりリスク（資金比。サイジングの基礎）。「ATR 連動」の実体は損切り幅の下限（1.0 × ATR(14)。ATR が得られない間は
-    /// 参照価格の 2%）であり、取引判断が LLM の幅に掛ける（#1120, ADR-0049, IADR-0465。ATR は未供給で 2% が効いている）。
+    /// 参照価格の 2%）であり、取引判断が LLM の幅に掛ける（#1120, ADR-0049, IADR-0465。#1122, IADR-0486: ATR は設定で有効にしたときだけ供給され、既定の構成では 2% が効いている）。
     /// </summary>
     public required decimal PerTradeRiskRatio { get; init; }
 

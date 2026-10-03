@@ -38,4 +38,8 @@ public sealed class ExecutedOrderRow
     // null＝打ち切りを記録していない。起点が後から進められた（RenewTracking）記録は、この値と ExecutedAt が食い違うため
     // 再び期限を過ぎたときに改めて打ち切りを記録する。**列の追加だけ**（既存行は null）。
     public DateTimeOffset? TrackingAbandonedFrom { get; set; }
+
+    // 🔴 FR-10, ADR-0049 決定1, #1122, IADR-0486 決定6: 新規建ての損切り幅に下限を掛けてラインを引いた印（出所の序数。1＝Fallback2Pct / 2＝Atr14）。
+    // null＝分からない（列を足す前の行・決済・保護レグ）。**列の追加だけ**（既存行は null＝従来どおり遡及の判定をする）。
+    public StopWidthFloorSource? StopFloorSource { get; set; }
 }

@@ -9,7 +9,8 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, OrderDispatchReservation> _reservations = [];
 
-    public bool TryReserve(Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider)
+    public bool TryReserve(
+        Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null)
     {
         lock (_gate)
         {
@@ -18,7 +19,7 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
                 decisionId,
                 new OrderDispatchReservation(
                     decisionId, OrderDispatchState.Reserved, reservedAt, BrokerOrderId: null,
-                    BrokerProvider: brokerProvider));
+                    BrokerProvider: brokerProvider, StopFloorSource: stopFloorSource));
         }
     }
 

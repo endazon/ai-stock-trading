@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-04, FR-11, FR-15, ADR-0003, ADR-0018, ADR-0040, ADR-0048, ADR-0049, IADR-0460, IADR-0003, IADR-0030, IADR-0035, IADR-0099, IADR-0107, IADR-0318, IADR-0397]
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-03
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0049_stop-width-floor-atr14-widen-no-ceiling.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -91,3 +91,17 @@ plan_refs:
   - ブローカーへ送る発火価格の丸め（`MoomooPriceRounding.RoundTrigger`。早く発火する側）は、ラインを最大 1 刻み未満だけ内側へ寄せ得る（S0 / S3。S1 は丸めないラインを使う）。
   - ギャップ・約定のずれでラインを越えた分は 1% の計算の外にある（ADR-0049 決定 3）。
   - 決済の判断（`StopWidth` は null）と、LLM を経ない経路（owner 手仕舞い・自動縮小）は対象外。
+
+## ［2026-10-03 追記 / #1122］ATR(14) の供給と、決定1・2・4・5 の改め（[IADR-0486](IADR-0486_stop-width-floor-atr14-flag-and-floor-marker-on-order-intent.md)）
+
+本文は当時の決定として残す。#1122（計画 ADR-0049 の本体・オーナー裁定 2026-10-03 の案 A）で次のとおり改めた。
+
+- **決定1（供給口）**: `IStopWidthFloorSource` は価格を受け取らない問い合わせ（`GetFloorAsync(symbol, market)`）・as-of の問い合わせ（`GetFloorAsOfAsync`）・`IsEnabled` を持つ。
+  本番は `StopWidthFloor:Atr14:Enabled`（既定 false）で `Atr14StopWidthFloorSource`（1.0 × ATR(14)・日足の口は出来高と共有）と `NoAtrStopWidthFloorSource` を選ぶ。
+  下限は判断ごとに**プロンプトの前に 1 回だけ**読む（決済・壊れた出力の判断でも読む。無効なら読まない）。2% の退避をアンカー後の参照価格で求めることは変わらない。
+- **決定2（`OrderIntent` には載せない）を改める**: 発注意図に末尾の既定 null の印 `StopFloorSource`（下限を掛けてラインを引いた出所）を足す。発注執行が発注結果の記録と予約の行に残し、
+  既存の S1 への遡及（IADR-0472）が印のある行を広げない。判断の記録 `StopWidth` の形は変えない。
+- **決定4（数値は書かない）を改める**: ATR の下限が有効な構成では、本判断のリスク制約節に ATR と下限の値（得られなければ「未提供・参照価格の 2%」）を書く。無効なら従来と同じ。
+- **決定5（Stage 0 は 2%）を改める**: Stage 0 も判断時点の前営業日までの確定足から本番と同じ ATR を求めて下限にする（無効なら 2% のまま）。
+- 残余の「ATR(14) は未供給」は、供給の実装が入った（既定は無効のまま。有効化は取得枠の回復周期の記録の後に利用者が行う）。
+
