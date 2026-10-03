@@ -510,10 +510,12 @@ public class ProtectiveStopGuardTests
             positionQueryHealth: health);
 
     [Theory]
-    // 照会し直しの最終結果だけを 1 回の観測として報告する（途中の失敗は数えない）。
-    [InlineData(new[] { PositionQueryFailure.Transient }, true, null)]
-    [InlineData(new[] { PositionQueryFailure.Transient, PositionQueryFailure.RateLimited }, false, "RateLimited")]
-    [InlineData(new[] { PositionQueryFailure.Other }, false, "Other")]
+    // 照会し直しの最終結果を 1 回の観測として報告する（途中の失敗は観測として数えない）。
+    // T-10-2213〜T-10-2215, FR-10, NFR, #1164, IADR-0487 決定2: 照会し直した失敗は「最初→最後」で載せる（照会し直しの有無を台帳で読む）。
+    [InlineData(new[] { PositionQueryFailure.Transient }, true, null)] // T-10-2215（P3）: 照会し直して成功
+    [InlineData(new[] { PositionQueryFailure.Transient, PositionQueryFailure.RateLimited }, false, "Transient→RateLimited")]
+    [InlineData(new[] { PositionQueryFailure.Transient, PositionQueryFailure.Other }, false, "Transient→Other")] // T-10-2213（P1）
+    [InlineData(new[] { PositionQueryFailure.Other }, false, "Other")] // T-10-2214（P2）: 照会し直さない
     public async Task T_10_1770_ガードは照会し直しの最終結果を失敗の種類つきで1回だけ報告する(
         PositionQueryFailure[] failures, bool succeeded, string? kind)
     {

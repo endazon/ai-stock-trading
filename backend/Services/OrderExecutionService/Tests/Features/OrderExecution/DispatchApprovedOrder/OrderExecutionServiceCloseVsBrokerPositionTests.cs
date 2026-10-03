@@ -179,6 +179,37 @@ public class OrderExecutionServiceCloseVsBrokerPositionTests
         health.Reports.Should().Equal([(PositionQuerySource.OrderDispatch, succeeded, (string?)null)]);
     }
 
+    // T-10-2216, FR-10, NFR, #1164, IADR-0487 決定1: 決済のゲートは、本物のアダプタ越しの建玉照会の失敗の種類を
+    // 他の経路と同じ書き方で報告する（種類を捨てない）。決済は送らない（不明は見送り）。
+    [Theory]
+    [InlineData("返信待ちの打ち切り", "Transient")]
+    [InlineData("-1 頻度制限", "RateLimited")]
+    [InlineData("-1 業務上の失敗", "Other")]
+    public async Task T_10_2216_決済のゲートは建玉照会の失敗の種類を報告する(string shape, string expected)
+    {
+        Func<Exception> failure = shape switch
+        {
+            "返信待ちの打ち切り" => () => new TimeoutException("返信待ち（試験）"),
+            "-1 頻度制限" => () => new OrderExecutionService.Infrastructure.ExternalServices.MoomooTradeRequestException(
+                "GetPositionList", OrderExecutionService.Infrastructure.ExternalServices.MoomooRetType.Failed, "Maximum 10 times per 30 seconds"),
+            _ => () => new OrderExecutionService.Infrastructure.ExternalServices.MoomooTradeRequestException(
+                "GetPositionList", OrderExecutionService.Infrastructure.ExternalServices.MoomooRetType.Failed, "account not found"),
+        };
+        var client = new ScriptedPositionsMoomooClient(failure);
+        var adapter = new OrderExecutionService.Infrastructure.ExternalServices.MoomooBrokerAdapter(
+            client, BrokerProvider.MoomooSimulate);
+        var health = new RecordingPositionQueryHealth();
+        var store = new InMemoryExecutedOrderStore();
+        var service = new AppSvc(
+            adapter, store, new InMemoryOrderReservationStore(), new FakeClock(), null, null, adapter, health);
+
+        await service.ExecuteAsync(Approved(CloseIntent(qty: 300)));
+
+        client.PositionCalls.Should().Be(1, "発注の経路では照会し直さない（IADR-0211 決定 3）");
+        store.GetAll().Should().BeEmpty("不明のまま決済を送らない");
+        health.Reports.Should().Equal([(PositionQuerySource.OrderDispatch, false, expected)]);
+    }
+
     // 契約違反（例外を投げる建玉照会）の発注先。決済のゲートは不明として扱う（#873 の監査 N2）。
     private sealed class ThrowingPositionBroker : IBrokerAdapter, IBrokerPositionSource
     {

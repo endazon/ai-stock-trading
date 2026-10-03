@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-02
+updated: 2026-10-03
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR]
 adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487]
 specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164]
 -->
 
 
@@ -137,6 +137,9 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   🔴 **前の状態が `Unknown` の行は「起動後の最初の観測」と書く**（サービスの再起動で状態が消えるため。再起動の後の最初の失敗は必ず記録され、
   最初の成功も 1 回だけ記録されて前のプロセスで始まった失敗の区間を閉じる）。発生源は保護逆指値ガード・建玉の定期観測・稼働の定期観測・
   ソフトウェア逆指値の決済・発注前の突き合わせ・取引判断の保有照会・未約定の照会の 7 つ。
+  失敗の種類（要約の「種類」・夜間の要約の `kind` 列）は、照会し直さない失敗なら 1 語（`Transient`＝一過性 / `RateLimited`＝頻度制限 /
+  `Other`＝それ以外）、保護逆指値ガードが照会し直した失敗なら「最初→最後」（例 `Transient→Other`＝最初は一過性で、照会し直しも失敗した）で、
+  種類を分類できない供給元（取引判断の 2 つ・ブローカーが分類の口を持たない構成）は「不明」になる。種類はどの発生源でも同じ分類から来る。
 - 取引判断の**最中の例外**が再試行の後の**最終の失敗**になった事実（`TradeDecisionFailed`）を、最終の失敗 1 回につき 1 件記録する。
   定時の判断は銘柄ごとに捕まえた失敗（その巡回で同じ銘柄をやり直さない）、価格変動の判断は再試行（2 秒・10 秒・30 秒）を使い切って
   退避先へ移る配送の失敗だけを数え、🔴 **途中の再試行では記録しない**（1 件の失敗を再試行の回数だけ数えない）。

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -138,20 +139,23 @@ public sealed class OrderExecutionAppService(
             // #873 の監査 N2: それでも**例外は不明として扱う**——契約違反の実装が現れたときに
             // ExecuteAsync ごと落ちると、承認が再配送で撃ち直され（予約はまだ取っていない）、
             // 最後には error キューへ落ちる。落とすより「不明として送らない」方が本 IADR の向きと一致する。
-            IReadOnlyList<BrokerPositionSnapshot>? snapshot;
+            // FR-10, NFR, #1164, IADR-0487 決定1: 共有の入口で照会し、失敗の種類も報告する（例外は種類の分からない失敗のまま）。
+            PositionQueryResult query;
             try
             {
-                snapshot = await brokerPositions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+                query = await PositionQueries.QueryAsync(brokerPositions, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "ブローカーの建玉照会が例外で失敗しました（不明として扱います）。");
-                snapshot = null;
+                query = new PositionQueryResult(null, PositionQueryFailure.None);
             }
+            var snapshot = query.Positions;
 
             // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 見送り（BrokerPositionsIndeterminate）は既に台帳へ出るが、照会の状態の変化も出す
             // （同じ発生源の区間として、夜間に何時から何時まで照会できなかったかを読むため）。
-            await _positionQueryHealth.ReportAsync(PositionQuerySource.OrderDispatch, snapshot is not null)
+            await _positionQueryHealth.ReportAsync(
+                    PositionQuerySource.OrderDispatch, snapshot is not null, query.ReportedFailureKind)
                 .ConfigureAwait(false);
 
             var verdict = BrokerHeldPositionGate.Evaluate(intent, snapshot);
@@ -667,10 +671,13 @@ public sealed class OrderExecutionAppService(
             protectiveStops!.FindActive(ArmingScanLimit), protectiveStops, store, clock.UtcNow);
         var claimedBefore = ClaimedFor(intent, stops);
 
-        var snapshot = await _positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        // FR-10, NFR, #1164, IADR-0487 決定1: 共有の入口で照会し、失敗の種類も報告する。
+        var query = await PositionQueries.QueryAsync(_positions, cancellationToken).ConfigureAwait(false);
+        var snapshot = query.Positions;
 
         // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 照会の失敗は見送りの理由（UnattributedPosition）に畳まれるので、状態の変化で区別できるようにする。
-        await _positionQueryHealth.ReportAsync(PositionQuerySource.OrderDispatch, snapshot is not null).ConfigureAwait(false);
+        await _positionQueryHealth.ReportAsync(
+            PositionQuerySource.OrderDispatch, snapshot is not null, query.ReportedFailureKind).ConfigureAwait(false);
         if (snapshot is null)
         {
             _logger.LogError(

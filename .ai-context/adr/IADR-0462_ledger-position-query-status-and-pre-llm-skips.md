@@ -64,6 +64,8 @@ plan_refs: []
    `BrokerPositionSnapshot`・`BrokerAvailabilityProbe`・`SoftwareStopClose`（S1 が自ら照会した回だけ。ガードから渡されたスナップショットは数えない）・
    `OrderDispatch`（決済のゲート〔例外も失敗〕と S1 の武装前）・`TradeDecisionHoldings`・`TradeDecisionWorkingEntries`（取引判断は実結線〔`IsEnabled`〕のときだけ）。
    数えない呼び出し元（ガードの建玉 0 の確かめ直し・乖離の取り込み・市場監視・報告書）と理由は作業仕様書の母集合の表にある。
+   ［2026-10-03 追記 / #1164］決定2 の失敗の種類は、ガード以外の建玉照会の発生源も共有の入口（`PositionQueries.QueryAsync`）から受け取って載せ、
+   ガードの照会し直した失敗は「最初→最後」（例 `Transient→Other`）で載せる（[IADR-0487](IADR-0487_position-query-failure-kind-single-entry-and-retry-trail.md)）。取引判断の 2 つの発生源は分類器を通らないため従来どおり種類を持たない。
 3. **発行はランタイムの `MessageBus` から行い、監査台帳だけが購読する**（通知しない）。発注・S1 のハンドラの処理中に呼ばれても、その処理が例外で終わったときに記録が捨てられない。
    相関は発生源ごとの決定的 GUID（`position-query:<発生源>`）。
 4. **LLM を呼ぶ前の見送りは、1 回につき 1 件の新しい事実 `TradeDecisionForgoneBeforeLlm` で出す**（理由 4 値の `DecisionForgoneBeforeLlmReason`。名前は `DecisionSkipReason` と一致）。

@@ -53,6 +53,7 @@ public sealed class PositionQueryRetry
     /// <summary>
     /// NFR, FR-10, #1092, IADR-0462 決定2: <see cref="QueryAsync"/> と同じ照会で、最後の失敗の種類も返す
     /// （照会の状態の変化を監査台帳へ出すとき、失敗の種類を載せるため）。挙動は <see cref="QueryAsync"/> と同じ。
+    /// FR-10, NFR, #1164, IADR-0487 決定2: 照会し直したときは、最初の失敗の種類と回数も載せる（<see cref="PositionQueryResult.ReportedFailureKind"/>）。
     /// </summary>
     public async Task<PositionQueryResult> QueryWithFailureAsync(
         IClassifiedPositionSource source, CancellationToken cancellationToken)
@@ -60,6 +61,7 @@ public sealed class PositionQueryRetry
         ArgumentNullException.ThrowIfNull(source);
 
         var result = await source.QueryPositionsAsync(cancellationToken).ConfigureAwait(false);
+        var first = result.Failure;
         var waited = TimeSpan.Zero;
         var retries = 0;
         while (result.Positions is null && IsRetryable(result.Failure) && retries < _maxRetries)
@@ -70,7 +72,7 @@ public sealed class PositionQueryRetry
                 _logger.LogWarning(
                     "建玉照会が一時的に失敗しました（{Failure}）。待ち {Wait} は予算 {Budget} を超えるため照会し直さず、この巡回は据え置きます。",
                     result.Failure, wait, _budget);
-                return result;
+                return Annotated(result, first, retries);
             }
 
             _logger.LogInformation(
@@ -91,8 +93,12 @@ public sealed class PositionQueryRetry
                     "照会し直した建玉照会も失敗しました（{Failure}）。この巡回は据え置きます（fail-safe）。", result.Failure);
         }
 
-        return result;
+        return Annotated(result, first, retries);
     }
+
+    // FR-10, NFR, #1164, IADR-0487 決定2: 照会し直したなら、最初の失敗の種類と回数を結果へ載せる（台帳で照会し直しの有無を読むため）。
+    private static PositionQueryResult Annotated(PositionQueryResult result, PositionQueryFailure first, int retries) =>
+        retries > 0 ? result with { Retries = retries, FirstFailure = first } : result;
 
     private static bool IsRetryable(PositionQueryFailure failure) =>
         failure is PositionQueryFailure.Transient or PositionQueryFailure.RateLimited;

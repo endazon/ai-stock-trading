@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -314,8 +315,11 @@ public sealed class SoftwareStopExecutor(
         // ガードが報告済み。二重に数えない）。状態が変わったときだけ台帳へ出る（S1 の据え置きの原因が照会の失敗かを翌朝に読める）。
         if (snapshot is null)
         {
-            snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
-            await _positionQueryHealth.ReportAsync(PositionQuerySource.SoftwareStopClose, snapshot is not null)
+            // FR-10, NFR, #1164, IADR-0487 決定1: 共有の入口で照会し、失敗の種類も報告する。
+            var query = await PositionQueries.QueryAsync(positions, cancellationToken).ConfigureAwait(false);
+            snapshot = query.Positions;
+            await _positionQueryHealth.ReportAsync(
+                    PositionQuerySource.SoftwareStopClose, snapshot is not null, query.ReportedFailureKind)
                 .ConfigureAwait(false);
         }
 

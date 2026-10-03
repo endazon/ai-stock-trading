@@ -1,4 +1,5 @@
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
 using OrderExecutionService.Features.OrderExecution.ObserveBrokerPositions;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
@@ -100,11 +101,14 @@ public sealed class BrokerPositionSnapshotService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var snapshot = await positions.GetPositionsAsync(cancellationToken).ConfigureAwait(false);
+        // 🔴 FR-10, NFR, #1164, IADR-0487 決定1: 共有の入口で照会し、失敗の種類を捨てない（ガードと同じ分類を台帳へ載せる）。
+        var query = await PositionQueries.QueryAsync(positions, cancellationToken).ConfigureAwait(false);
+        var snapshot = query.Positions;
 
         // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 観測の欠けは Pod の停止と照会の失敗を区別できない。照会の成功・失敗を報告し、
         // 状態が変わったときだけ台帳へ出す（10 分ごとの成功は出さない）。
-        await _positionQueryHealth.ReportAsync(PositionQuerySource.BrokerPositionSnapshot, snapshot is not null)
+        await _positionQueryHealth.ReportAsync(
+                PositionQuerySource.BrokerPositionSnapshot, snapshot is not null, query.ReportedFailureKind)
             .ConfigureAwait(false);
         if (snapshot is null)
         {

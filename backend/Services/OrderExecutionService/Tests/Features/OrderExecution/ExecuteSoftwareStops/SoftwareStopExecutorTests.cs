@@ -443,6 +443,36 @@ public class SoftwareStopExecutorTests
         health.Reports.Should().Equal([(PositionQuerySource.SoftwareStopClose, succeeded, (string?)null)]);
     }
 
+    // T-10-2217, FR-10, NFR, #1164, IADR-0487 決定1: S1 が自ら照会した回は、本物のアダプタ越しの失敗の種類を報告する。
+    [Theory]
+    [InlineData(true, "Transient")]
+    [InlineData(false, "Other")]
+    public async Task T_10_2217_S1は自ら照会した建玉照会の失敗の種類を報告する(bool transient, string expected)
+    {
+        var broker = new FakeBroker();
+        var client = new ScriptedPositionsMoomooClient(transient
+            ? () => new TimeoutException("返信待ち（試験）")
+            : () => new InvalidOperationException("想定外（試験）"));
+        var positions = new OrderExecutionService.Infrastructure.ExternalServices.MoomooBrokerAdapter(
+            client, BrokerProvider.MoomooSimulate);
+        var stops = new InMemoryProtectiveStopOrderStore();
+        var store = new InMemoryExecutedOrderStore();
+        var health = new RecordingPositionQueryHealth();
+        var f = new Fixture(
+            new SoftwareStopExecutor(broker, positions, stops, store, new InMemoryOrderReservationStore(), new FakeClock(),
+                positionQueryHealth: health),
+            broker, stops, store, new InMemoryOrderReservationStore());
+        var stop = SoftwareStop();
+        f.Stops.Save(stop);
+        Entry(f, stop, OrderStatus.Filled, 10);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        result.Deferred.Should().Be(1, "照会できなければ据え置く");
+        client.PositionCalls.Should().Be(1, "S1 の決済の経路では照会し直さない");
+        health.Reports.Should().Equal([(PositionQuerySource.SoftwareStopClose, false, expected)]);
+    }
+
     [Fact]
     public async Task T_10_1770_ガードから渡されたスナップショットではS1は照会も報告もしない()
     {

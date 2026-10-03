@@ -242,6 +242,31 @@ public class OrderExecutionServiceSoftwareStopTests
         health.Reports.Should().Equal([(PositionQuerySource.OrderDispatch, succeeded, (string?)null)]);
     }
 
+    // T-10-2216, FR-10, NFR, #1164, IADR-0487 決定1: S1 の武装前の建玉照会も、本物のアダプタ越しの失敗の種類を報告する。
+    [Theory]
+    [InlineData(true, "Transient")]
+    [InlineData(false, "Other")]
+    public async Task T_10_2216_S1の武装前の建玉照会は失敗の種類を報告する(bool transient, string expected)
+    {
+        var broker = new ScriptedBroker();
+        var client = new ScriptedPositionsMoomooClient(transient
+            ? () => new TimeoutException("返信待ち（試験）")
+            : () => new OrderExecutionService.Infrastructure.ExternalServices.MoomooTradeRequestException(
+                "GetPositionList", OrderExecutionService.Infrastructure.ExternalServices.MoomooRetType.Invalid, ""));
+        var positions = new OrderExecutionService.Infrastructure.ExternalServices.MoomooBrokerAdapter(
+            client, BrokerProvider.MoomooSimulate);
+        var health = new RecordingPositionQueryHealth();
+        var service = new AppSvc(
+            broker, new InMemoryExecutedOrderStore(), new InMemoryOrderReservationStore(), new FakeClock(),
+            new InMemoryProtectiveStopOrderStore(), null, positions, health);
+
+        var result = await service.ExecuteAsync(S1());
+
+        ((int)result.Forgone!.Reason).Should().Be(6, "OrderDispatchForgoneReason.UnattributedPosition（不明は見送り）");
+        client.PositionCalls.Should().Be(1, "発注の経路では照会し直さない（IADR-0211 決定 3）");
+        health.Reports.Should().Equal([(PositionQuerySource.OrderDispatch, false, expected)]);
+    }
+
     // T-10-434（同上）: 建玉照会の能力そのものが無い発注先でも同じ（構成事故を fail-closed で受ける）。
     [Fact]
     public async Task 建玉照会の能力が無い発注先ではS1を武装せず見送る()

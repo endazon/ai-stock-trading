@@ -8,7 +8,9 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //   - Status / PreviousStatus: 変化の後と前。PreviousStatus=Unknown は**そのプロセスの最初の観測**である（起動直後）。
 //     🔴 起動直後の失敗は必ず出る（再起動で状態が消えても最初の失敗を取りこぼさない）。起動直後の成功も 1 回だけ出る
 //     （前のプロセスで始まった失敗の区間を、再起動の後に閉じるため。回復の時刻は「再起動の後の最初の成功」までしか分からない）。
-//   - FailureKind: 失敗の種類（分かるときだけ。保護逆指値ガードの分類 Transient / RateLimited / Other）。成功では null。
+//   - FailureKind: 失敗の種類（分かるときだけ。moomoo の建玉照会の分類 Transient / RateLimited / Other）。成功では null。
+//     #1164, IADR-0487: 建玉照会の発生源はすべて同じ分類（発注執行の 1 か所の分類器）を載せる。照会し直した失敗（保護逆指値ガード）は
+//     「最初→最後」（例 Transient→Other）で載る（照会し直しが効いたかを台帳で読むため）。
 //   - FailingSince / FailedQueries: 失敗では「その時刻・1」。Failing からの回復では「失敗が始まった時刻・続いた照会の回数」。
 //     Unknown / Healthy からの成功では null・0。
 //   - 監査台帳だけが購読する（通知しない）。
@@ -26,7 +28,7 @@ public record PositionQueryStatusChanged(
 /// </summary>
 public enum PositionQuerySource
 {
-    /// <summary>保護逆指値ガードの巡回の先頭の建玉照会（照会し直しの最終結果）。</summary>
+    /// <summary>保護逆指値ガードの巡回の先頭の建玉照会（照会し直しの最終結果。照会し直した失敗の種類は「最初→最後」。#1164）。</summary>
     ProtectiveStopGuard,
 
     /// <summary>ブローカ建玉の定期観測（BrokerPositionsObserved の供給元）。</summary>

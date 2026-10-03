@@ -157,6 +157,8 @@ public sealed class ProtectiveStopGuard(
         // FR-10, #1093, IADR-0458: 分類できた一時的な失敗（打ち切り・切断・頻度制限）に限り、巡回の中で 1 回だけ照会し直す。
         // 使い切ったら従来どおり null ＝据え置き。照会し直しを渡されない・分類の口が無いときは従来どおり 1 回だけ照会する。
         // 🔴 下の HoldUnlessPositionGoneAsync の照会し直し（建玉 0 の確かめ）には使わない —— 据え置きに倒れるだけで、穴を作らない。
+        // #1164, IADR-0487 決定1: 照会し直しを渡されない構成（本番では使わない。Program.cs は常に渡す）は IADR-0458 のとおり
+        // 従来の口で 1 回だけ照会する（種類は不明）。本番の経路は分類つきの口であり、他の経路と同じ分類器の種類を受け取る。
         var query = positionQueryRetry is not null && positions is IClassifiedPositionSource classified
             ? await positionQueryRetry.QueryWithFailureAsync(classified, cancellationToken).ConfigureAwait(false)
             : new PositionQueryResult(
@@ -165,10 +167,9 @@ public sealed class ProtectiveStopGuard(
 
         // 🔴 NFR, FR-10, #1092, IADR-0462 決定2: 巡回の先頭の照会の成功・失敗を報告する（状態が変わったときだけ台帳へ出る）。
         // 失敗の種類は分類できたときだけ載せる（分類の口が無い照会の失敗は種類不明）。建玉 0 の確かめ直しの照会は数えない。
+        // #1164, IADR-0487 決定2: 照会し直したときは「最初→最後」で載せる（照会し直しが効いたかを台帳で読む）。
         await _positionQueryHealth.ReportAsync(
-            PositionQuerySource.ProtectiveStopGuard,
-            snapshot is not null,
-            snapshot is null && query.Failure != PositionQueryFailure.None ? query.Failure.ToString() : null)
+            PositionQuerySource.ProtectiveStopGuard, snapshot is not null, query.ReportedFailureKind)
             .ConfigureAwait(false);
 
         if (snapshot is null)
