@@ -5,7 +5,7 @@ status: accepted
 related_ids: [FR-10, FR-05, NFR-09, ADR-0045, IADR-0488, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0362, IADR-0444, IADR-0111, IADR-0316, IADR-0482]
 author: claude (Claude Code)
 created: 2026-10-03
-updated: 2026-10-03
+updated: 2026-10-04
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements (FR-10 リスク統制・FR-05 発注執行)
   - planning:projects/ai-stock-trading/07_adr (ADR-0045 決定1・決定2 解放の基準は取引環境ごとの実機の記録)
@@ -74,7 +74,7 @@ plan_refs:
 | --- | --- | --- |
 | `FaultInjection:IndeterminateDispatch:Mode`（`FaultInjection__IndeterminateDispatch__Mode`） | `None` / `AfterSend` / `BeforeSend`（大小文字・前後空白は問わない） | 未設定・空 ＝ `None` |
 | `FaultInjection:IndeterminateDispatch:Symbols`（`__Symbols`） | 許可する銘柄のカンマ区切り（発注意図の `Symbol` と大小文字を問わず一致）。`*` 単独で全銘柄 | `Mode` が `None` 以外なら必須 |
-| `FaultInjection:IndeterminateDispatch:ExpiresAtUtc`（`__ExpiresAtUtc`） | ISO-8601 の時刻（例 `2026-10-05T20:00:00Z`）。この時刻以降は注入しない | `Mode` が `None` 以外なら必須 |
+| `FaultInjection:IndeterminateDispatch:ExpiresAtUtc`（`__ExpiresAtUtc`） | ISO-8601 の時刻で時差（`Z` / `+hh:mm`）が必須（例 `2026-10-05T20:00:00Z`）。この時刻以降は注入しない | `Mode` が `None` 以外なら必須 |
 
 - 未知の `Mode`・空の銘柄・`*` と銘柄の混在・読めない時刻・**起動時刻から 24 時間より先の期限**は起動時に止める（「有効のつもりで無効」「無効のつもりで有効」「切り忘れ」を作らない）。
 - **期限を過ぎた構成は起動を止めない**（注入しないだけ。Warning を 1 行出す）。切り忘れた構成で発注執行が再起動のたびに落ちると、発注と保護逆指値ガードがまとめて止まるため（IADR-0444 決定4 と同じ判断）。
@@ -140,7 +140,7 @@ plan_refs:
 | T-10-2234 | 範囲の制限: 許可外の銘柄・2 本目・期限切れ・remark なしは素通し。`*` は全銘柄 | 同上 |
 | T-10-2235 | 保護レグ・手仕舞い（Close の Limit / Market / Stop / StopLimit / TrailingStop）には注入しない（1 回分も消費しない） | 同上 |
 | T-10-2236 | 起動時の拒否: 内蔵 paper・live 階層・実弾解禁・TrdEnv が simulate 以外・実弾口座の照会が有効 | 同上（単体）・`IndeterminateDispatchFaultInjectionCompositionTests`（paper・live・実弾口座の照会） |
-| T-10-2237 | 不正な値で起動を止める: 未知の Mode・銘柄なし・`*` の混在・期限なし・読めない期限・24 時間より先の期限。期限切れは止めない | `IndeterminateDispatchFaultInjectionTests` |
+| T-10-2237 | 不正な値で起動を止める: 未知の Mode・銘柄なし・`*` の混在・期限なし・読めない期限・時差の無い期限・24 時間より先の期限。期限切れは止めない | `IndeterminateDispatchFaultInjectionTests` |
 | T-10-2238 | 注入の Warning は発火 1 回につき 1 行で、形・DecisionId・銘柄を載せ、外部由来の文字列は無害化される | 同上 |
 | T-10-2239 | Program.cs で有効にすると、承認の配送の口（アダプタ）にだけ注入が効き、DI の `IMoomooTradeClient` と借株可否の照会は素のまま | `IndeterminateDispatchFaultInjectionCompositionTests` |
 
@@ -153,7 +153,7 @@ plan_refs:
 - 文面: 運用仕様書の「`SIMULATE` に限り、記録を集めるために送信後に結果を確認できない発注を意図的に作ってよい」に、手段（本スイッチと Runbook）への参照を足す。`BrokerDispatchIndeterminateException` の契約コメント・IADR-0117 改定6・IADR-0362 の「門が閉じている」記述は**本件では変わらない**（門は開けない）。
 - 自分の記述で新たに誤りになるもの: 無し（「自然には起きていない」は issue のコメントの記述で、本件の後も自然発生の数は変わらない）。
 
-## 自己変異（実測 2026-10-03。15 件すべて赤）
+## 自己変異（実測 2026-10-03〜04。17 件すべて赤）
 
 対象の試験（`IndeterminateDispatchFaultInjection*`・`MoomooBrokerAdapterTests`、118 件）を変異ごとに走らせた（1 件ずつ当てて戻す）。
 初回の実測で「内蔵 paper を許す」変異が生き残った（`IsMoomoo` の判定が、後続の「発注先が moomoo SIMULATE か」の判定と重複していた）。
@@ -176,6 +176,10 @@ plan_refs:
 | M13 | ログの銘柄を無害化しない | T-10-2238（1） |
 | M14 | 送信が失敗したら 1 回分を戻す（両端の形） | T-10-2234（1） |
 | M15 | TrdEnv を見ない | T-10-2236（1） |
+| M16 | 無効でも Program.cs がクライアントを包む | T-10-2230（1） |
+| M17 | 時差を必須にせず、時差の無い期限をホストの時間帯で読む | T-10-2237（2） |
+
+［2026-10-04 追記 / #856 独立監査］M16・M17 は監査が見つけた生存変異である。T-10-2230 に「既定では故障注入の構成の Warning が 1 行も出ない（＝包まない）」と、その対照（有効なら 1 行）を本番の組み立てで足し、T-10-2237 に時差の無い期限の拒否と、時差の形を問わず同じ瞬間に読むことを足した。
 
 ## 計画書との差異
 

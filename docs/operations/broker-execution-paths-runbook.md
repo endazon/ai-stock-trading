@@ -3,7 +3,7 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-10-03
+updated: 2026-10-04
 author: endazon (with Claude Code)
 ---
 <!-- trace:
@@ -222,12 +222,12 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 | --- | --- | --- |
 | `FaultInjection__IndeterminateDispatch__Mode` | `None`（既定）/ `AfterSend` / `BeforeSend` | 形 |
 | `FaultInjection__IndeterminateDispatch__Symbols` | 銘柄のカンマ区切り（`*` 単独で全銘柄） | 当てる銘柄。必須 |
-| `FaultInjection__IndeterminateDispatch__ExpiresAtUtc` | ISO-8601（例 `2026-10-05T20:00:00Z`） | この時刻以降は注入しない。必須。起動から 24 時間より先は起動を止める |
+| `FaultInjection__IndeterminateDispatch__ExpiresAtUtc` | ISO-8601 で**時差つき**（例 `2026-10-05T20:00:00Z`・`2026-10-06T05:00:00+09:00`） | この時刻以降は注入しない。必須。時差（`Z` か `+09:00` の形）が無い・起動から 24 時間より先なら起動を止める |
 
 - 当たるのは**新規建ての指値の発注だけ**である。保護逆指値・代替注文種別・成行の手仕舞い・指値の手仕舞いには当たらない。
 - **1 プロセスにつき 1 回だけ**当たる。2 本目以降は普段どおり送る。**発注執行が再起動すると 1 回分が戻る**ので、注入を見たらすぐ外す。
 - `broker.tier=moomoo-sim` 以外、実弾口座の読み取り専用の照会（`Broker__Moomoo__RealMarginQuery__Enabled=true`）と同時、
-  不正な値（未知の形・銘柄なし・読めない期限）では**発注執行が起動しない**。期限を過ぎた構成は起動を止めず、注入しないだけである。
+  不正な値（未知の形・銘柄なし・読めない期限・時差の無い期限）では**発注執行が起動しない**。期限を過ぎた構成は起動を止めず、注入しないだけである。
 
 手順（形ごとに 1 回ずつ、米国の通常取引時間中に行う。読み取りの確認と SIMULATE での発注だけを行う）:
 
@@ -240,7 +240,8 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
      **`kubectl set env` も使わない**（次の `helm upgrade` が所有権の競合で落ちる）。
    - 配備の前に `node scripts/helm-release-drift.js --release ast --namespace ai-stock-trading --values deploy/helm/ai-stock-trading/values-local.yaml`
      で、差が**発注執行の env の 3 キーの追加だけ**であること・OpenD が「変化なし」であることを確かめてから、通常の配備（`scripts/k8s-local-deploy.sh`）を行う。
-3. **入ったことを確かめる。** 発注執行の起動ログに Warning `故障注入（送信結果を確認できない発注）が構成されています: 形=… 銘柄=… 期限=…` が 1 行出る。
+3. **入ったことを確かめる。** 🔴 発注執行が起動しない（再起動を繰り返す）ときは、直ちに手順 5 で戻す（その間は発注も保護逆指値ガードも止まっている。起動ログの理由を直してからやり直す）。
+   起動したら、発注執行の起動ログに Warning `故障注入（送信結果を確認できない発注）が構成されています: 形=… 銘柄=… 期限=…` が 1 行出る。
    `（期限切れのため注入しません）` が付いていたら期限を直す。
 4. **新規建てを待つ。** その銘柄の新規建ての承認が配送されると、発注執行のログに次の 2 行が続けて出る:
    - Warning `故障注入: 発注の結果を確認できなかった状態を意図的に作りました（形=… DecisionId=… 銘柄=… 数量=… 注文ID=…）`

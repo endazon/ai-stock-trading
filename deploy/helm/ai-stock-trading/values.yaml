@@ -567,7 +567,7 @@ services:
       #    moomoo-sim 以外・実弾口座の照会（Broker__Moomoo__RealMarginQuery__Enabled=true）と同居なら発注執行は起動しない。
       #   - { name: FaultInjection__IndeterminateDispatch__Mode, value: "BeforeSend" }   # None（既定）/ AfterSend / BeforeSend
       #   - { name: FaultInjection__IndeterminateDispatch__Symbols, value: "AAPL" }      # 当てる銘柄（* 単独で全銘柄）。新規建てにだけ・1 回だけ当たる
-      #   - { name: FaultInjection__IndeterminateDispatch__ExpiresAtUtc, value: "2026-10-05T20:00:00Z" }  # 起動から 24 時間以内。過ぎたら注入しない
+      #   - { name: FaultInjection__IndeterminateDispatch__ExpiresAtUtc, value: "2026-10-05T20:00:00Z" }  # 時差（Z か +09:00）必須・起動から 24 時間以内。過ぎたら注入しない
   report:
     image: ai-stock-trading/report-service
     # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0328 決定 3, IADR-0446, #1061: east-west gRPC（h2c）の提供側ポート。

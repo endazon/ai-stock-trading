@@ -510,6 +510,8 @@ public class IndeterminateDispatchFaultInjectionTests
     [InlineData("BeforeSend", "AAPL", null, "ExpiresAtUtc")]
     [InlineData("BeforeSend", "AAPL", "来週", "ExpiresAtUtc")]
     [InlineData("BeforeSend", "AAPL", "2026-10-06T14:00:01Z", "ExpiresAtUtc")]
+    [InlineData("BeforeSend", "AAPL", "2026-10-05T20:00:00", "ExpiresAtUtc")]
+    [InlineData("BeforeSend", "AAPL", "2026-10-05 20:00", "ExpiresAtUtc")]
     public void T_10_2237_不正な値は起動時に止める(string mode, string? symbols, string? expiresAt, string key)
     {
         var act = () => IndeterminateDispatchFaultInjectionOptions.FromConfiguration(Config(
@@ -518,6 +520,23 @@ public class IndeterminateDispatchFaultInjectionTests
             (IndeterminateDispatchFaultInjectionOptions.ExpiresAtKey, expiresAt)), Now);
 
         act.Should().Throw<InvalidOperationException>().WithMessage($"*FaultInjection:IndeterminateDispatch:{key}*");
+    }
+
+    // 🔴 T-10-2237（#856 監査 🟡2）: 時差の無い期限はホストの時間帯で意味が変わるので受理しない。
+    // 時差があれば、どの形でも同じ瞬間に読む（UTC の Z・小文字の z・+09:00・-04:00）。
+    [Theory]
+    [InlineData("2026-10-05T20:00:00Z")]
+    [InlineData("2026-10-05T20:00:00z")]
+    [InlineData("2026-10-06T05:00:00+09:00")]
+    [InlineData("2026-10-05T16:00:00-04:00")]
+    public void T_10_2237_時差つきの期限はどの形でも同じ瞬間に読む(string expiresAt)
+    {
+        var options = IndeterminateDispatchFaultInjectionOptions.FromConfiguration(Config(
+            (IndeterminateDispatchFaultInjectionOptions.ModeKey, "AfterSend"),
+            (IndeterminateDispatchFaultInjectionOptions.SymbolsKey, "AAPL"),
+            (IndeterminateDispatchFaultInjectionOptions.ExpiresAtKey, expiresAt)), Now);
+
+        options.ExpiresAt.Should().Be(new DateTimeOffset(2026, 10, 5, 20, 0, 0, TimeSpan.Zero));
     }
 
     // T-10-2237: 正しい値を読む（大小文字・空白・重複を問わない。期限ちょうど 24 時間は受理）。

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Infrastructure.ExternalServices;
@@ -45,6 +46,21 @@ public class IndeterminateDispatchFaultInjectionCompositionTests
 
         order.OrderId.Should().Be("1");
         factory.TradeClient.Placed.Should().ContainSingle();
+        // 🔴 #856 監査 🟡1: 包まれていれば（無効の構成でも）デコレータの生成時に構成の Warning が 1 行出る。既定では 1 行も出ない。
+        factory.Logs.Messages(typeof(IndeterminateDispatchFaultInjectingClient).FullName!).Should().BeEmpty(
+            "既定ではアダプタへ渡すクライアントを包まない（故障注入の型を 1 つも作らない）");
+    }
+
+    // T-10-2230 / T-10-2239: 有効なら、アダプタを組んだ時点で構成の Warning がちょうど 1 行出る（上の否定形の対照）。
+    [Fact]
+    public void T_10_2230_有効ならアダプタを組んだ時点で構成のWarningが1行出る()
+    {
+        using var factory = new MoomooFactory(Injection("AfterSend"));
+
+        _ = factory.Services.GetRequiredService<IBrokerAdapter>();
+
+        factory.Logs.Messages(typeof(IndeterminateDispatchFaultInjectingClient).FullName!).Should().ContainSingle()
+            .Which.Should().Contain("故障注入（送信結果を確認できない発注）が構成されています").And.Contain("形=AfterSend");
     }
 
     // 🔴 T-10-2239: BeforeSend を有効にすると、承認の配送の口は送信せずに「届いたか不明」になる。
@@ -186,6 +202,8 @@ public class IndeterminateDispatchFaultInjectionCompositionTests
 
         public CountingOpenD TradeClient { get; } = new();
 
+        public RecordingLoggerFactory Logs { get; } = new();
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
@@ -200,6 +218,9 @@ public class IndeterminateDispatchFaultInjectionCompositionTests
             {
                 services.RemoveAll<IMoomooTradeClient>();
                 services.AddSingleton<IMoomooTradeClient>(TradeClient);
+                // 合成起点が使うロガーの生成元を差し替え、カテゴリごとにログを数える（Serilog の生成元より後に登録して勝たせる）。
+                services.RemoveAll<ILoggerFactory>();
+                services.AddSingleton<ILoggerFactory>(Logs);
 
                 foreach (var hosted in services
                              .Where(d => d.ServiceType == typeof(IHostedService)
@@ -222,6 +243,41 @@ public class IndeterminateDispatchFaultInjectionCompositionTests
 
                 services.DisableAllExternalWolverineTransports();
             });
+        }
+    }
+
+    // カテゴリごとにメッセージを覚えるロガーの生成元（本番の組み立ての中で何が作られたかを外から観測する）。
+    internal sealed class RecordingLoggerFactory : ILoggerFactory
+    {
+        private readonly List<(string Category, string Message)> _records = [];
+
+        public IReadOnlyList<string> Messages(string category)
+        {
+            lock (_records) return _records.Where(r => r.Category == category).Select(r => r.Message).ToList();
+        }
+
+        public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
+
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Logger(RecordingLoggerFactory owner, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                lock (owner._records) owner._records.Add((category, formatter(state, exception)));
+            }
         }
     }
 }

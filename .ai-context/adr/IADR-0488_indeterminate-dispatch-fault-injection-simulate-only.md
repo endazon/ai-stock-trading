@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-05, NFR-09, ADR-0045, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0362, IADR-0444, IADR-0111, IADR-0316, IADR-0482]
 author: claude (Claude Code)
 created: 2026-10-03
-updated: 2026-10-03
+updated: 2026-10-04
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements (FR-10 リスク統制・FR-05 発注執行)
   - planning:projects/ai-stock-trading/07_adr (ADR-0045 決定1・決定2)
@@ -41,8 +41,9 @@ plan_refs:
 
 ### 決定 1 — 構成は `FaultInjection:IndeterminateDispatch:{Mode, Symbols, ExpiresAtUtc}`。既定は無効
 
-- `Mode` = `None`（既定・未設定・空）/ `AfterSend` / `BeforeSend`。`None` 以外では `Symbols`（カンマ区切り。`*` 単独で全銘柄）と `ExpiresAtUtc`（ISO-8601）が必須。
-- 未知の `Mode`・空の銘柄・`*` と銘柄の混在・読めない期限・**起動時刻から 24 時間より先の期限**は起動時に止める。
+- `Mode` = `None`（既定・未設定・空）/ `AfterSend` / `BeforeSend`。`None` 以外では `Symbols`（カンマ区切り。`*` 単独で全銘柄）と `ExpiresAtUtc`（ISO-8601。**時差 `Z` / `+hh:mm` が必須**）が必須。
+- 未知の `Mode`・空の銘柄・`*` と銘柄の混在・読めない期限・**時差の無い期限**・**起動時刻から 24 時間より先の期限**は起動時に止める。
+  ［2026-10-04 追記 / #856 監査］時差の無い期限（例 `2026-10-05T20:00:00`）は初版では UTC と仮定して読んでいた。読む側の時間帯の設定で意味が変わり得るため、時差を必須にした（T-10-2237）。
 - **期限を過ぎた構成は起動を止めない**（注入しないだけ。構成の Warning に「期限切れのため注入しません」と出す）。切り忘れた構成で発注執行が再起動のたびに落ちると、発注と保護逆指値ガードがまとめて止まるため（IADR-0444 決定4 と同じ判断）。期限は「外し忘れ」を時間で無害にするためにある。
 
 ### 決定 2 — SIMULATE 限定。`Mode` が `None` 以外なら次の構成で起動を止める
@@ -102,7 +103,7 @@ plan_refs:
 - 予約・突合のコードを変えないこと: T-10-2231〜T-10-2233（本物のアダプタ・発注執行・プローブ・突合を通す）。
 - 観測: 構成と発火の Warning。T-10-2238。
 
-## 自己変異（実測 2026-10-03。15 件すべて赤）
+## 自己変異（実測 2026-10-03〜04。17 件すべて赤）
 
 対象の試験（`IndeterminateDispatchFaultInjection*`・`MoomooBrokerAdapterTests`）を変異ごとに走らせた（1 件ずつ当てて戻す）。表は作業仕様書と試験仕様書に同じものを置く。
 
@@ -123,6 +124,8 @@ plan_refs:
 | M13 | ログの銘柄を無害化しない | T-10-2238（1） |
 | M14 | 送信が失敗したら 1 回分を戻す（両端の形） | T-10-2234（1） |
 | M15 | TrdEnv を見ない | T-10-2236（1） |
+| M16 | 無効でも Program.cs がクライアントを包む（監査 🟡1。試験を足す前は生存） | T-10-2230（1。包まれていればデコレータの構成の Warning が出ることで観測する） |
+| M17 | 時差を必須にせず、時差の無い期限をホストの時間帯で読む（監査 🟡2。試験を足す前は生存） | T-10-2237（2） |
 
 ## 結果
 

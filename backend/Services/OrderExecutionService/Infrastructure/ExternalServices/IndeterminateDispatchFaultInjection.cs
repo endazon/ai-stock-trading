@@ -40,6 +40,10 @@ public sealed record IndeterminateDispatchFaultInjectionOptions(
     /// <summary>期限の上限（起動時刻からの長さ）。これより先の期限は切り忘れの温床なので受理しない。</summary>
     public static readonly TimeSpan MaximumLifetime = TimeSpan.FromHours(24);
 
+    // 期限の末尾の時差（`Z` / `z` / `+hh:mm` / `-hh:mm`）。
+    private static readonly System.Text.RegularExpressions.Regex ExplicitOffset =
+        new(@"(?:[Zz]|[+-]\d{2}:\d{2})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     public static IndeterminateDispatchFaultInjectionOptions Disabled { get; } =
         new(IndeterminateDispatchFaultMode.None, [], null);
 
@@ -140,8 +144,16 @@ public sealed record IndeterminateDispatchFaultInjectionOptions(
                 $"{ExpiresAtKey} が空です。故障注入の期限を ISO-8601（例 2026-10-05T20:00:00Z）で指定してください"
                 + $"（起動から {MaximumLifetime.TotalHours:0} 時間以内。切り忘れを期限で無害にするため。#856 / IADR-0488）。");
         }
+        // 🔴 #856 監査 🟡2: 時差（`Z` か `+09:00` の形）を必須にする。無いと読む側の時間帯（ホストの設定）で意味が変わり、
+        // 期限の読み違いは「切り忘れを時間で無害にする」の前提を崩す。
+        if (!ExplicitOffset.IsMatch(configured.Trim()))
+        {
+            throw new InvalidOperationException(
+                $"{ExpiresAtKey} '{configured}' に時差がありません。末尾に 'Z'（UTC）か '+09:00' の形の時差を付けてください"
+                + "（例 2026-10-05T20:00:00Z。時差が無いと読む側の時間帯で意味が変わる。#856 / IADR-0488）。");
+        }
         if (!DateTimeOffset.TryParse(configured.Trim(), CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var expiresAt))
+                DateTimeStyles.AdjustToUniversal, out var expiresAt))
         {
             throw new InvalidOperationException(
                 $"{ExpiresAtKey} '{configured}' を時刻として読めません。ISO-8601（例 2026-10-05T20:00:00Z）で指定してください（#856 / IADR-0488）。");
