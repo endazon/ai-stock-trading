@@ -94,7 +94,7 @@ public sealed partial class ReportRegenerationService(
                 NotRestorableInputs: ReportInputs.Serialize(inputs.NotRestorable)));
             logger.LogWarning(
                 "報告書の作り直しを断りました。中核の入力を取得できません（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}・入力={Inputs}）。",
-                LogSanitizer.Sanitize(actor), key, previousVersion, string.Join(',', coreFailed));
+                LogSanitizer.Sanitize(actor), LogSanitizer.Sanitize(key), previousVersion, string.Join(',', coreFailed));
             return ReportRegenerationResult.Rejected(
                 ReportRegenerationStatus.CoreInputsUnsupplied,
                 $"中核の入力（{string.Join("・", ReportInputs.Labels(coreFailed))}）をいま取得できないため、報告書 {key} を作り直しませんでした。"
@@ -172,7 +172,7 @@ public sealed partial class ReportRegenerationService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "報告書を作り直して保存しましたが、提示に失敗しました（PeriodKey={PeriodKey}・版={Version}）。", key, version);
+            logger.LogWarning(ex, "報告書を作り直して保存しましたが、提示に失敗しました（PeriodKey={PeriodKey}・版={Version}）。", LogSanitizer.Sanitize(key), version);
             presented = false;
         }
 
@@ -185,7 +185,7 @@ public sealed partial class ReportRegenerationService(
         logger.LogInformation(
             "報告書を作り直しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Previous}→{Version}・提示={Presented}・"
             + "なお未供給={Unsupplied}・復元できない入力={NotRestorable}・本日 {Attempt}/{Limit} 回目）。",
-            LogSanitizer.Sanitize(actor), key, previousVersion, version, presented,
+            LogSanitizer.Sanitize(actor), LogSanitizer.Sanitize(key), previousVersion, version, presented,
             ReportInputs.Serialize(unsuppliedInputs) ?? "なし", ReportInputs.Serialize(inputs.NotRestorable) ?? "なし",
             attemptNumber, limit.DailyLimit);
 
@@ -219,7 +219,7 @@ public sealed partial class ReportRegenerationService(
             Guid.NewGuid(), now, today, actor, key, previousVersion, ReportRegenerationOutcome.LimitReached));
         logger.LogWarning(
             "報告書の作り直しの 1 日の上限に達しています（Actor={Actor}・PeriodKey={PeriodKey}・本日={Used}・上限={Limit}）。入力も LLM も呼びません。",
-            LogSanitizer.Sanitize(actor), key, used, limit.DailyLimit);
+            LogSanitizer.Sanitize(actor), LogSanitizer.Sanitize(key), used, limit.DailyLimit);
         return ReportRegenerationResult.Rejected(
             ReportRegenerationStatus.DailyLimitReached,
             $"本日（{today:yyyy-MM-dd}・JST）の /report regenerate は上限の {limit.DailyLimit} 回に達しています（{used} 回実行済み。"
@@ -327,7 +327,7 @@ public sealed partial class ReportRegenerationService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "報告書の作り直しを断った記録を台帳へ書けませんでした（PeriodKey={PeriodKey}・結果={Outcome}）。",
-                attempt.PeriodKey, attempt.Outcome);
+                LogSanitizer.Sanitize(attempt.PeriodKey), attempt.Outcome);
         }
     }
 
@@ -358,7 +358,7 @@ public sealed partial class ReportRegenerationService(
         {
             logger.LogError(ex,
                 "報告書の作り直しの監査を発行できませんでした（PeriodKey={PeriodKey}・版={Version}・操作者={Actor}）。台帳の行は残っています。",
-                evt.PeriodKey, evt.Version, LogSanitizer.Sanitize(evt.Actor));
+                LogSanitizer.Sanitize(evt.PeriodKey), evt.Version, LogSanitizer.Sanitize(evt.Actor));
         }
     }
 }
