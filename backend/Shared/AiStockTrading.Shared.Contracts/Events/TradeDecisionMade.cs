@@ -8,6 +8,9 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // 注文チェーンの相関は DecisionId だが、DecisionId は判断サービスが**新規採番**するため、
 // 起点イベント（PriceMovementDetected / InformationCollected）とは繋がらない。端点間レイテンシは
 // サービスを跨ぐため、起点の素性を**イベントに載せて運ぶ**（載せないと下流で結べない）。
+// ［2026-10-06 追記 / #1169・IADR-0490 決定2］定時サイクルの DecisionId は新規採番ではなく、起点の EventId・市場・銘柄から
+// **決定的に導く**（再配送で同じ値になり、下流の DecisionId の冪等が重複を止める）。ハッシュであり起点へ逆にはたどれないので、
+// 起点の素性を載せて運ぶ理由は変わらない。価格変動の判断は従来どおり新規採番。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙。
 //   - CycleStartedAt: 起点イベント自身の時刻（InformationCollected.CollectedAt / PriceMovementDetected.DetectedAt）。
 // 🔴 **既定は null（＝起点不明）であり、0 や現在時刻へ倒さない。** 起点を持たない経路（owner 手仕舞い・
