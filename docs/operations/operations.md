@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-04
+updated: 2026-10-06
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13]
+ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, MSP#266, MSP#635, planning#54, planning#676, planning#704]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, MSP#266, MSP#635, planning#54, planning#676, planning#704]
 -->
 
 
@@ -252,6 +252,33 @@ done
 - **キュー名から所有サービスが読める**（接頭辞）。`consumers = 0` のキューは所有サービスが購読できていない印である。
 - 移行前（MassTransit）の旧キュー 47 本はブローカ上に残るため、Wolverine 版の安定稼働後に削除する:
   [旧キュー削除 Runbook](wolverine-queue-cleanup-runbook.md)。
+
+### 定時サイクルの実行時間の上限（#1169）
+
+取引判断の定時サイクルは、情報収集の完了 1 通で監視銘柄の全件を**順に**判断する。所要は銘柄数に比例するため、
+ハンドラの実行時間の上限を**構成から導いて明示している**（メッセージングの既定 60 秒には頼らない）。
+
+| 値 | 導き方 | 既定（稼働） |
+| --- | --- | --- |
+| 1 銘柄の締め切り | LLM の timeout（`LlmGateway__TimeoutSeconds`。空＝30 秒）× 1 判断あたりの LLM 呼び出し回数（一次スクリーニング 1 ＋ 二次の票数）＋ 30 秒 | 90 秒 |
+| サイクルの上限 | 1 銘柄の締め切り × 監視銘柄数の前提（`TradeCycle__MaxWatchedSymbols`。空・不正・0 以下＝10）＋ 60 秒 | 960 秒 |
+
+- 起動時に `定時サイクルの実行時間の上限: …` が 1 行出る（導いた値の確認はこれで行う）。
+- 1 銘柄の締め切りを超えた銘柄は**その銘柄の失敗**として扱い（最終の失敗を監査台帳へ 1 件）、次の銘柄へ進む。サイクル全体はやり直さない。
+- 監視銘柄が前提の数を超えると、各サイクルで `監視銘柄 … 件が定時サイクルの上限の前提 … 件を超えています` の警告が出る。
+  **監視銘柄を増やしたら `TradeCycle__MaxWatchedSymbols` を trade-decision の env に足して合わせる**（超えたままだとサイクルが上限で打ち切られ得る）。
+- 🔴 **古い起点は判断せずに捨てる。** 受信は 1 本ずつなので、サイクルが巡回間隔より長くなると情報収集の完了がキューに溜まる。溜まった起点を順に判断すると
+  どれも所要の目標（10 分）を満たさず、受信から完了までが RabbitMQ の `consumer_timeout`（既定 30 分）を超えると処理中のサイクルまでやり直しになる。
+  そこで収集の完了から**鮮度の上限**（情報収集が宣言する有効期間＝巡回間隔の 2 倍・下限 5 分。宣言が無ければ 10 分）を超えた起点は、
+  `古い定時サイクルの起点を判断せずに捨てます` の警告を 1 行出して何もせずに終える（再試行しない）。この警告が続くなら LLM の所要・監視銘柄数を見直す。
+  🔴 **時計がずれると全件が静かに捨てられる。** 鮮度は情報収集の時計と trade-decision の時計の差で測るため、両者の時計がずれ続けると、
+  例外も `Failed to process` も出ないまま**すべての定時サイクルがこの警告だけで止まる**（判断も発注も起きない）。業務メトリクスは無く、
+  **検知はこの警告ログの継続**だけである（Wolverine の `Finished processing …InformationCollected` は捨てた巡回でも出るので、それでは気付けない）。
+  日々の確認でこの警告が出ていないかを trade-decision のログで探す。
+  続いていれば、両 Pod のノードの時計（NTP）を確かめる。
+- 市場の開場は銘柄ごとに判定する（長いサイクルの途中で引けを越えたら、残りの銘柄は判断しない）。
+- 打ち切られて再配送されても、定時の判断の DecisionId は同じ巡回・市場・銘柄なら同じ値になる。下流（審査・発注）は DecisionId で重複を止めるので、
+  **二重発注にはならない**（LLM の呼び出しは二重になり、判断の時刻はずれる）。
 
 ## データ保持・パージ（#137。重複排除ストアは「終端行のみ・保持期間 90 日・下限クランプ付き」でパージする）
 
@@ -508,6 +535,7 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 | --- | --- | --- | --- |
 | **禁止銘柄の建玉が手仕舞えない**（#380。取引ガードの計画 ADR の 2026-08-04 追補） | 手仕舞い注文が拒否理由 **`BannedSymbol`** で拒否される。**不具合ではなく設計どおり**である——禁止銘柄ガードは新規建てだけでなく**手仕舞いにも適用する**（理由: **インサイダー取引は売付けも対象**であり、AI が利用者の関知しないタイミングで規制対象銘柄を自動売却する経路を残さない） | **一時解除 → 手仕舞い → 再登録**（[禁止銘柄の一時解除 Runbook](banned-symbol-unlock-runbook.md) が単一情報源）。解除・再登録はアクターと理由が必須で、日時・対象銘柄とともに設定変更履歴へ自動で残る | **再登録の忘れを検知する仕組みは無い**（解除しっぱなしでも警告は出ない）。解除中は当該銘柄への新規建ても通るため、手順の所要時間を最小にする |
 | **発注予約が `Reserved` のまま滞留**（#131。発注の冪等化は 3 相で行い、不明な窓は再発注せず拒否する。自動化は #141） | `order-approved_error` キューの滞留。および `order_dispatch_reservations` に `State=Reserved`（＝0）の行が残る（`SELECT * FROM order_dispatch_reservations WHERE "State" = 0 ORDER BY "ReservedAt";`） | **自動再開はしない**（意図的な at-most-once）。配備では自動リコンサイルが有効で実照会プローブも配線済みなので、**「発注済み」と確定できたものは自動で解消される**（エントリーなら続けて承認時の手法で保護レグを張る〔2026-09-25 改定。旧: 張らなかった〕。確定の Critical ログと直後の結果の行を見て確認する）。**「未発注」「判定不能」は解放の門（取引環境ごと。どちらも閉）が閉じているため据え置かれる**ので手動で: ブローカ側の注文状態を確認し、①発注済み→当該注文を台帳へ手動計上して予約を確定／②未発注→予約行を削除して再配送を許可（手順は発注経路の Runbook「滞留した予約を人が解決する」）。🔴 **その取引環境で解放の基準（上記「解放の門を開けるときの記録」の (a)(b)）を満たすまで、未発注・判定不能の予約を解放する手段はこの利用者の判断だけである**（計画の裁定。画面・Discord の手段は無い） | **不明なら「発注済み」として扱う**（二重発注を避ける側に倒す）。実弾運用中は建玉と突き合わせ、判断が付かなければ取引を停止して人間が判断する |
+| **定時サイクルが打ち切られる**（#1169） | trade-decision のログ `Failed to process message …InformationCollected`（`TaskCanceledException`）と、直後の同じ巡回の再試行。前提超過なら `上限の前提` の警告。滞留していれば `古い定時サイクルの起点を判断せずに捨てます` の警告 | 起動時の `定時サイクルの実行時間の上限` と監視銘柄数を突き合わせ、監視銘柄が前提を超えていれば `TradeCycle__MaxWatchedSymbols` を上げて再配備する。前提以内で起きるなら LLM・照会の遅延を疑う（1 銘柄の締め切りが効いているはずである） | **二重発注にはならない**（同じ巡回の判断は同じ DecisionId）。続く場合は LLM の費用（二重呼び出し）を確認する |
 | **重複排除ストアが肥大化する**（#137。終端行のみを保持期間でパージする） | 「データ保持・パージ」の確認クエリで、保持期間より古い行が減らない | パージジョブが有効か確認する（既定は**無効**）。ログに「パージは無効です（Retention:Enabled=false）」が出ていれば `Retention__Enabled=true` で有効化する。有効なのに減らない場合はパージ失敗のエラーログ（DB 権限・接続）を確認する | 行量に対して 1 巡回の削除上限が小さすぎる場合は `BatchSize` / `IntervalHours` を調整する。恒常的に追いつかないならパーティション化を検討（パージ方針の代替案） |
 | **パージを止めたい**（誤設定・調査中） | — | `Retention__Enabled=false` に戻して再デプロイすれば次回巡回から no-op になる | **削除済みの行は戻らない**。`RetentionDays` を短く誤設定していた場合、重複排除の記憶が消えた期間に再配信が起きると二重計上／二重発注の可能性があるため、費用台帳・発注履歴の重複を確認する |
 | **日本株だけ何も起きない**（米国株は判断・発注が回る）（#262 / #364。基準通貨は USD で、換算は判断境界の 1 点で行う） | trade-decision のログ `基準通貨への換算レートが解決できないため見送り（発注抑止・安全側）: {Symbol} market=Japan`、および初回 1 回の `NoOpFxRateSource を使用中: …`。確定判定は `GET /internal/introspection` の `fx-rate` ポートが `none` を申告すること | 為替レート源が未接続。**設定点は `Fx__Provider=boj`（日銀・認証不要）で、3 サービス分ある**（#686 以降。`fred` は鍵があるときだけ後段に積まれるフォールバックであり、第一に据えない）。`fx-rate` が `boj` を申告することを確認する（手順は [chart README「為替換算」](../../deploy/helm/ai-stock-trading/README.md)）。`Fx__Provider=fred` は鍵が空なら `none` を申告する＝「設定したのに効いていない」の検知点。**`boj` は認証不要のため鍵の有無で `none` へ倒れない** | `none` のままなら provider 名の誤り（未知の値は警告して no-op）か、`Fx__Provider` を空へ戻している。`boj` 申告でも見送りが続く場合は日銀側の収録停止を疑う（**鮮度上限 30 日**超過は採らない。上限・警告しきい値はデータ源の公表周期から計画が定めた値）。日銀は**毎営業日**公表だが**実装が読む経路への収録は翌々営業日 8:50 頃**であり、**最新観測が 2〜4 日前でも正常**である。FRED へフォールバック中は `DEXJPUS` の公表が **H.10 週次リリース**（月曜・前週金曜まで一括収載／月曜が祝日なら火曜）であるため**最新観測が 10 日前でも正常**（警告しきい値 5 日を常に超えうる）。**見送り自体は fail-safe であり緊急停止は不要**（古い/無いレートで発注しない・主ターゲットの米国株の取引は継続する） |

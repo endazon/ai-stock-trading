@@ -386,6 +386,18 @@ builder.Services.AddScoped<IWatchlistProvider>(sp =>
 // 未設定なら VoteCount=1・EnableScreening=true（#571 で基盤 trade-decision-screening 登録を前提に既定反転）。
 // 明示的に Decision:EnableScreening=false を与えれば従来どおり単発判断（IADR-0017）へ戻せる。
 builder.Services.AddSingleton(DecisionOptionsLoader.FromConfiguration(builder.Configuration));
+// 🔴 FR-02, NFR-02, #1169, IADR-0490 決定1: 定時サイクルの実行時間の上限と 1 銘柄の締め切り。LLM の timeout（上の "llm" と同じ解釈）・
+// 1 判断あたりの LLM 呼び出し回数（上の多数決・二段の構成）・監視銘柄数の前提（TradeCycle:MaxWatchedSymbols。既定 10）から導く。
+// ハンドラ（銘柄ごとの締め切り）と Wolverine のポリシー（ハンドラの上限）が**この 1 つの値**を読む。解決時に構成を読む
+// （起動時読み取りだと WebApplicationFactory の構成上書きに追随しないため。上の ILlmCompletionClient と同じ作法）。
+builder.Services.AddSingleton(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    return ScheduledCycleBudget.Derive(
+        ParseTimeout(cfg["LlmGateway:TimeoutSeconds"]),
+        ScheduledCycleBudget.LlmCallsPerDecision(sp.GetRequiredService<DecisionOrchestrationOptions>()),
+        ScheduledCycleBudget.ParseMaxWatchedSymbols(cfg[ScheduledCycleBudget.MaxWatchedSymbolsKey]));
+});
 // FR-02, FR-04, FR-06, FR-11, #337, #567, IADR-0247, IADR-0313: スクリーニング入力の縮退の記録経路。
 // 発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の集計経路）へ届ける。
 // 予算は既定で有効（150,000 文字。IADR-0313 決定1）。ただし現行構成（Retrieval:TopK=5・参考情報 1 件あたり
@@ -566,10 +578,16 @@ builder.Services.AddHostedService<Stage0RecordingService>();
 // 取引判断で合流して TradeDecisionMade を発行する。
 // ADR-0013, IADR-0129, #354: Wolverine（RabbitMQ）。ハンドラは明示登録ではなくアセンブリ走査で発見されるため、
 // ハンドラを持つアセンブリ（Infrastructure）を明示する。キュー名・fan-out・再試行・DLQ の規則は共通ヘルパに閉じている。
-builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
-    ServiceName,
-    builder.Configuration["RabbitMq:ConnectionString"],
-    typeof(PriceMovementDetectedHandler).Assembly));
+// FR-02, NFR-02, #1169, IADR-0490 決定1: 定時サイクル（InformationCollected）のハンドラの実行時間の上限を、上の予算から設定する
+// （明示しないと Wolverine の既定 60 秒で、監視 6 銘柄が LLM へ回るとサイクルが丸ごと打ち切られた）。
+builder.Host.UseWolverine(opts =>
+{
+    opts.UseAiStockTradingRabbitMq(
+        ServiceName,
+        builder.Configuration["RabbitMq:ConnectionString"],
+        typeof(PriceMovementDetectedHandler).Assembly);
+    opts.Policies.Add<ScheduledCycleTimeoutPolicy>();
+});
 
 var app = builder.Build();
 
@@ -585,6 +603,12 @@ if (BuildLlmPriceTable(app.Configuration).IsEffectivelyZero
         "LlmPricing__PerModel__<model>__InputPer1kTokens / __OutputPer1kTokens を設定する" +
         "（env 名ではモデル ID の - を _ で書く。- を含む env 名は起動シェルが落とす・#817）。");
 }
+
+// FR-02, #1169, IADR-0490: 導いた上限を起動時に 1 行出す（運用者が監視銘柄数・LLM の timeout と突き合わせられるように）。
+var cycleBudget = app.Services.GetRequiredService<ScheduledCycleBudget>();
+app.Logger.LogInformation(
+    "定時サイクルの実行時間の上限: {HandlerTimeout}（1 銘柄の締め切り {PerSymbol} × 監視銘柄数の前提 {MaxWatchedSymbols} ＋ 余裕 {Margin}）",
+    cycleBudget.HandlerTimeout, cycleBudget.PerSymbol, cycleBudget.MaxWatchedSymbols, ScheduledCycleBudget.CycleMargin);
 
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();
