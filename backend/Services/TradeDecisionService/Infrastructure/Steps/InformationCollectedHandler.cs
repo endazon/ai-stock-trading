@@ -46,7 +46,20 @@ public sealed class InformationCollectedHandler(
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(bus);
 
-        var now = clock.UtcNow;
+        // 🔴 #1169 監査 🟡1, IADR-0490 決定3: 古い起点は判断せずに捨てる（何も発行せず、正常に終えて受信を完了させる＝再試行しない）。
+        // 受信は 1 本ずつ（Inline）なので、遅い LLM でサイクルが巡回間隔より長くなると起点が溜まる。溜まった起点を順に判断すると
+        // どれも NFR-02 を満たさず、待ちがブローカの consumer_timeout（既定 30 分）を超えると処理中のサイクルまでやり直しになる。
+        // ニュースの状態も記録しない（古い起点で新しい状態を上書きしない）。
+        var receivedAt = clock.UtcNow;
+        if (ScheduledCycleBudget.IsStale(receivedAt, message.CollectedAt, message.NewsStatusValidFor))
+        {
+            logger.LogWarning(
+                "古い定時サイクルの起点を判断せずに捨てます: EventId={EventId} 収集完了={CollectedAt} 経過={Age} 鮮度の上限={Bound}"
+                + "（サイクルが巡回間隔より長く、起点が滞留している。LLM の所要・監視銘柄数を確認してください）。",
+                message.EventId, message.CollectedAt, receivedAt - message.CollectedAt,
+                ScheduledCycleBudget.StalenessBound(message.NewsStatusValidFor));
+            return;
+        }
 
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: ニュースの状態（取得済み／欠測／未構成。null＝不明）を**判断の前に**記録する。
         // 定時・急変の両方の判断が同じ最新値をプロンプトへ明示する（RAG を経由しない経路）。
@@ -71,7 +84,8 @@ public sealed class InformationCollectedHandler(
 
         foreach (var watched in watchlistSymbols)
         {
-            if (!calendar.IsOpen(watched.Market, now))
+            // #1169 監査 🟡2: 開場の判定は銘柄ごとに今の時刻で行う（長いサイクルの途中で引けを越えたら、残りの銘柄は判断しない）。
+            if (!calendar.IsOpen(watched.Market, clock.UtcNow))
             {
                 // 休場日（週末・祝日）はサイクルを起動しない。
                 continue;

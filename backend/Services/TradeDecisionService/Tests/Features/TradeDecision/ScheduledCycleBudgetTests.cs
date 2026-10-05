@@ -111,4 +111,27 @@ public class ScheduledCycleBudgetTests
 
     // 既知の入力（上の試験）に対する値。実装の名前空間・名前の組み立てを変えたら赤くなる。
     private const string KnownId = "c40c7fa3-7310-80df-a74f-98bac87c1544";
+
+    // T-10-2250（#1169 監査 🟡1）: 起点の鮮度の上限は発行側の宣言（巡回間隔の 2 倍・下限 5 分）をニュースの状態と同じ範囲（1 分〜2 時間）へ
+    // クランプした値、宣言が無ければ 10 分。上限を**超えた**ときだけ古い（ちょうどは古くない）。
+    [Theory]
+    [InlineData(10, 10)]
+    [InlineData(5, 5)]
+    [InlineData(0, 1)]      // 0 は下限 1 分へ
+    [InlineData(300, 120)]  // 5 時間は上限 2 時間へ
+    [InlineData(null, 10)]  // 宣言なし
+    public void T_10_2250_鮮度の上限は宣言をクランプし無ければ10分(int? declaredMinutes, int expectedMinutes) =>
+        ScheduledCycleBudget.StalenessBound(declaredMinutes is { } m ? TimeSpan.FromMinutes(m) : null)
+            .Should().Be(TimeSpan.FromMinutes(expectedMinutes));
+
+    [Theory]
+    [InlineData(600, false)]
+    [InlineData(601, true)]
+    [InlineData(-30, false)] // 起点が未来（時計の差）は古くない
+    public void T_10_2250_上限を超えたときだけ古い(int ageSeconds, bool expected)
+    {
+        var now = new DateTimeOffset(2026, 10, 6, 14, 0, 0, TimeSpan.Zero);
+
+        ScheduledCycleBudget.IsStale(now, now.AddSeconds(-ageSeconds), TimeSpan.FromMinutes(10)).Should().Be(expected);
+    }
 }

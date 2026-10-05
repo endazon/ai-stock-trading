@@ -86,6 +86,26 @@ public sealed record ScheduledCycleBudget
     }
 
     /// <summary>
+    /// 起点イベントが有効期間を宣言していない（旧発行側）ときの鮮度の上限。NFR-02（定時サイクル 1 回の所要 10 分以内）に合わせる。
+    /// </summary>
+    public static readonly TimeSpan DefaultStaleness = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// #1169 監査 🟡1, IADR-0490 決定3: 定時サイクルの起点の鮮度の上限。発行側が宣言した有効期間（<c>InformationCollected.NewsStatusValidFor</c>。
+    /// 巡回間隔の 2 倍・下限 5 分）を、ニュースの状態と同じ範囲へクランプして使う（同じ巡回の同じ事実の鮮度であるため）。
+    /// 宣言が無ければ <see cref="DefaultStaleness"/>。
+    /// </summary>
+    public static TimeSpan StalenessBound(TimeSpan? declaredValidFor) =>
+        declaredValidFor is { } validFor ? NewsCollectionStatusStore.Clamp(validFor) : DefaultStaleness;
+
+    /// <summary>
+    /// 起点が鮮度の上限を**超えて**古いか（ちょうどは古くない）。古い起点は次の巡回の起点が既に届いているか届く頃であり、
+    /// 判断しても NFR-02 を満たさず、滞留を伸ばすだけである。
+    /// </summary>
+    public static bool IsStale(DateTimeOffset now, DateTimeOffset collectedAt, TimeSpan? declaredValidFor) =>
+        now - collectedAt > StalenessBound(declaredValidFor);
+
+    /// <summary>
     /// 監視銘柄数の前提を構成から読む。未設定・不正・非正値は既定（<see cref="DefaultMaxWatchedSymbols"/>）へ倒す
     /// （LLM の timeout の解釈〔未設定・不正・非正値は既定 30 秒〕と同じ作法。0 や負で上限を潰さない）。
     /// </summary>
