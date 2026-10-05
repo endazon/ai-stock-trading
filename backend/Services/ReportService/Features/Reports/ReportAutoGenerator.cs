@@ -448,7 +448,7 @@ public sealed class ReportAutoGenerator(
         {
             return regenerationLedger.Tally(due.PeriodStart, due.PeriodEnd, (regenerationLimit ?? ReportRegenerationLimit.Default).DailyLimit);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return null;
         }

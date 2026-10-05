@@ -266,6 +266,28 @@ public class ReportRegenerationServiceTests
     public void 上限の構成値は1未満や不正を既定へ倒す(string? configured, int expected) =>
         ReportRegenerationLimit.Read(configured).DailyLimit.Should().Be(expected);
 
+    // T-10-2278, FR-06, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 3: 1 日の上限は **JST の暦日**で数える。
+    // 2026-10-05T15:30Z は JST では 10-06 00:30。前日（JST 10-05）に上限ぶん使っていても、新しい日の枠で作り直せる
+    //（UTC の日付で数えると 10-05 の 5 回に当たって断ってしまう）。
+    [Fact]
+    public async Task 上限はJSTの暦日で数え日付が変われば新しい枠で作り直せる()
+    {
+        var h = new Harness { Limit = 5 };
+        h.Clock.UtcNow = new DateTimeOffset(2026, 10, 5, 15, 30, 0, TimeSpan.Zero);
+        var previousJstDay = new DateOnly(2026, 10, 5);
+        for (var i = 0; i < 5; i++)
+            h.Ledger.TryBegin(new ReportRegenerationAttempt(
+                Guid.NewGuid(), new DateTimeOffset(2026, 10, 5, 3, 0, 0, TimeSpan.Zero), previousJstDay, "owner", PastDaily, 1), 5)
+                .Begun.Should().BeTrue();
+        h.SeedDegradedDraft(PastDaily, new DateOnly(2026, 10, 2));
+
+        var result = await h.Service().RegenerateAsync(PastDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        h.Ledger.CountOn(new DateOnly(2026, 10, 6)).Should().Be(1, "JST 10-06 の枠で数える");
+        h.Ledger.CountOn(previousJstDay).Should().Be(5);
+    }
+
     // ---- 中核の入力の取得失敗（ADR-0052 決定 4） ----
 
     public static TheoryData<string, ReportInput> CoreInputFailures() => new()
@@ -571,6 +593,38 @@ public class ReportRegenerationServiceTests
 
         var monthly = store.Get("monthly-2026-10")!.Report.Body;
         monthly.Should().Contain("回数は照会できませんでした").And.NotContain("作り直し）: 0 回");
+    }
+
+    // T-10-2277, FR-06, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6: 台帳が構成されていても集計（Tally）が失敗したら、
+    // 「0 回」と書かず「照会できませんでした」と書く（読めなかったことを、作り直しが無かったことと取り違えない）。月報の生成は止めない。
+    [Fact]
+    public async Task 台帳の集計に失敗した月報は作り直しの回数をゼロと書かない()
+    {
+        var store = new InMemoryReportStore();
+        var monthEnd = new DateTimeOffset(2026, 10, 30, 8, 0, 0, TimeSpan.Zero);
+        var generator = new ReportAutoGenerator(
+            store, new ReportDraftService(new RecordingDrafter()), new CountingFillSource(), new FixedClock(monthEnd),
+            new ReportAutoGenerationSettings(), regenerationLedger: new TallyFailingLedger());
+
+        await generator.RunOnceAsync();
+
+        var monthly = store.Get("monthly-2026-10")!.Report.Body;
+        monthly.Should().Contain("回数は照会できませんでした").And.NotContain("作り直し）: 0 回");
+    }
+
+    // 集計だけが失敗する台帳（DB 障害の模擬）。他の操作は使わない。
+    private sealed class TallyFailingLedger : IReportRegenerationLedger
+    {
+        private readonly InMemoryReportRegenerationLedger _inner = new();
+
+        public int CountOn(DateOnly jstDate) => _inner.CountOn(jstDate);
+        public ReportRegenerationBeginResult TryBegin(ReportRegenerationAttempt attempt, int dailyLimit) => _inner.TryBegin(attempt, dailyLimit);
+        public void RecordRefusal(ReportRegenerationAttempt attempt) => _inner.RecordRefusal(attempt);
+        public void Complete(Guid id, ReportRegenerationOutcome outcome, int? reportVersion, string? unsuppliedInputs, string? notRestorableInputs) =>
+            _inner.Complete(id, outcome, reportVersion, unsuppliedInputs, notRestorableInputs);
+        public ReportRegenerationAttempt? Find(Guid id) => _inner.Find(id);
+        public ReportRegenerationTally Tally(DateOnly from, DateOnly to, int dailyLimit) =>
+            throw new InvalidOperationException("台帳を読めません");
     }
 
     // T-10-2266, FR-06, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 作り直しの計上は独立区分に集計し、取引判断（上限の対象）・報告書生成・その他へ

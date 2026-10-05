@@ -5414,8 +5414,11 @@ T-10-2245〜T-10-2249・T-10-2251・T-10-2252 は `ScheduledCycleRedeliveryTests
 | **T-10-2273** | 作り直しの監査イベント（操作者あり・`unknown`） | 監査台帳の行にする | 要約に会話キー・利用者・「版 2 → 版 3」・「なお未供給 2 件: …」。確定と同じ相関。`unknown` は「操作者不明」・未供給なしは「未供給の入力なし」。監査の全数の標本・全イベントの購読の検査にも載る | 誰がどの版を作り直したかを残す | 自動 |
 | **T-10-2274** | Discord の `/report regenerate` | 解析する／多層認証を通す | 会話キー 1 つだけを受け（大小文字は原文のまま）、版番号つき・会話キーなし・書式外・別の副コマンド名は Unknown。所有者は解決した利用者名を代理の利用者として送り、確定・差し戻しは呼ばない。許可外の利用者・DM・別チャンネルは報告書サービスを呼ばない。断った結果は失敗として伝え、窓口が未構成ならその旨を返す | 所有者の門（Bot 側） | 自動（**否定形**） |
 | **T-10-2275** | 送り手の本物の応答（REST の JSON・gRPC の写し） | REST と gRPC で作り直す | 成功・断り（422/FAILED_PRECONDITION・429/RESOURCE_EXHAUSTED・409/ABORTED）が REST と gRPC で同じ結果。REST のタイムアウト・gRPC の UNAVAILABLE・deadline 超過は「不明」（/report show へ誘導）で、gRPC は 1 回しか呼ばない。200 でも版が無ければ不明 | 冪等でない作り直しを再試行しない・不明を失敗と言わない | 自動（**否定形**） |
+| **T-10-2276** | 作り直しの散文（日報。計上区分 `report-regeneration`・用途の上書きなし） | ゲートウェイへ散文を頼み、費用を計測へ渡す | 計測へ渡す用途は `report-regeneration`、ゲートウェイへ送る用途は `report-daily` のまま | 計上区分だけを付け替え、モデルの割当は変えない | 自動（**否定形**） |
+| **T-10-2277** | 台帳は構成されているが集計が例外になる | 月報を自動生成する | §7 は「回数は照会できませんでした」（0 回と書かない）。月報の生成は止めない | 読めないことと 0 回を混ぜない | 自動（**否定形**） |
+| **T-10-2278** | 上限 5。JST 10-05 に数える試行が 5 回。いまは 2026-10-05T15:30Z（JST 10-06 00:30） | 作り直す | 断らずに作り直し、JST 10-06 の枠で 1 回と数える（10-05 は 5 回のまま） | 1 日の上限は JST の暦日で数える | 自動（**否定形**） |
 
-試験の置き場所: T-10-2260〜T-10-2270 と T-10-2266 の集計は `ReportRegenerationServiceTests`、T-10-2266 の描画は `ReportTemplateGoldenTests`（月報のゴールデン）と `LlmCostScopeTests`、T-10-2265 の発行口は `PublishingLlmReportersTests`、T-10-2271・T-10-2272 は `ReportRegenerationEndpointTests` と `ReportOwnerWriteGrpcServiceTests`（門の 5 rpc）、T-10-2273 は `AuditEntryFactoryTests` と `AuditCycleCompletenessTests`、T-10-2274・T-10-2275 は `ReportRegenerateCommandTests`。
+試験の置き場所: T-10-2260〜T-10-2270・T-10-2277・T-10-2278 と T-10-2266 の集計は `ReportRegenerationServiceTests`、T-10-2266 の描画は `ReportTemplateGoldenTests`（月報のゴールデン）と `LlmCostScopeTests`、T-10-2265 の発行口は `PublishingLlmReportersTests`、T-10-2271・T-10-2272 は `ReportRegenerationEndpointTests` と `ReportOwnerWriteGrpcServiceTests`（門の 5 rpc）、T-10-2273 は `AuditEntryFactoryTests` と `AuditCycleCompletenessTests`、T-10-2274・T-10-2275 は `ReportRegenerateCommandTests`、T-10-2276 は `HttpReportNarrativeDrafterTests`。
 
 **変異で確かめたこと**:
 
@@ -5442,11 +5445,15 @@ T-10-2245〜T-10-2249・T-10-2251・T-10-2252 は `ScheduledCycleRedeliveryTests
 | M19 | 解析が版番号つきの regenerate も受ける | T-10-2274（1） |
 | M20 | Bot が届いたか分からない結果を「作り直していない」と伝える | T-10-2275（1） |
 | M21 | 月報の自動生成が台帳を引かない | T-10-2267（1） |
+| M22 | 散文の費用の計上区分を付け替えず、用途キー（`report-daily`）のまま計測へ渡す | T-10-2276（1） |
+| M23 | 台帳の集計の失敗を「0 回・0 日」として返す | T-10-2277（1） |
+| M24 | 1 日の上限を数える暦日を UTC の日付から取る | T-10-2278（1） |
 
-21 本すべて赤（生存 0）。M4 は初回に生存した（入力を引く前の確認が先に断るため、排他区間の上限を見る試験が無かった）。入力を引く間に枠が埋まる試験を足して赤にした。
+21 本すべて赤（生存 0）。M4 は初回に生存した（入力を引く前の確認が先に断るため、排他区間の上限を見る試験が無かった）。入力を引く間に枠が埋まる試験を足して赤にした。**［2026-10-06 追記］** 独立の監査で M22〜M24 が生存していた（計上区分の付け替え・集計の失敗・JST の日付境界を見る試験が無かった）。T-10-2276〜T-10-2278 を足して 3 本とも赤にした（24 本・生存 0）。あわせて集計の失敗を握る箇所が取り消し（`OperationCanceledException`）まで握らないようにした。
 
 🔴 **本節が固定していない残余リスク**:
 - 基盤チャット UI からの作り直しは無い（Discord から先に用意する）。
 - 入力の取得は依存先ごとに逐次で、依存先が遅いと Bot の上限（300 秒）に近づく。超えたら Bot は「不明」を返す（作り直されているかもしれない）。
 - 散文が縮退（プレースホルダ）しても作り直しは保存し、回数を消費する（散文は中核の入力ではない。未供給として記録・提示される）。
+- 上限を数える JST の暦日は入力を引く前に決める。JST の午前 0 時を跨いだ要求は前の日の枠で数える（影響は無視できるため直さない）。
 - 実機の Discord でのコマンドの登録と応答は、本節の試験では確かめられない（実機確認の手順は `docs/blocked-tasks.md` の再測定 ⑧）。

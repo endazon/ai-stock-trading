@@ -260,6 +260,26 @@ public class HttpReportNarrativeDrafterTests
         doc.RootElement.GetProperty("purpose").GetString().Should().Be(expected);
     }
 
+    // T-10-2276, FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 2: 作り直しは**計上区分だけ**を付け替える。
+    // 費用計測へ渡す用途は `report-regeneration`（月次上限の対象外の独立区分）、ゲートウェイへ送る用途キー＝モデル割当は
+    // 自動生成と同じ種別の用途（日報なら `report-daily`）のまま。どちらかを他方へ寄せると、計上か割当のどちらかが崩れる。
+    [Fact]
+    public async Task 作り直しは費用の計上区分だけを付け替えゲートウェイへ送る用途は変えない()
+    {
+        var handler = new CapturingHandler(
+            """{"text":"散文","model":"claude-sonnet-5","sent":true,"inputTokens":120,"outputTokens":30}""");
+        var usage = new RecordingUsageReporter();
+        var drafter = new HttpReportNarrativeDrafter(
+            new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
+            NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", purposeOverride: null, usageReporter: usage);
+
+        await drafter.DraftNarrativeAsync(Ctx with { UsagePurpose = "report-regeneration" });
+
+        usage.Calls.Should().ContainSingle().Which.Purpose.Should().Be("report-regeneration");
+        using var doc = JsonDocument.Parse(handler.LastBody!);
+        doc.RootElement.GetProperty("purpose").GetString().Should().Be("report-daily", "モデルの割当（用途キー）は変えない");
+    }
+
     // T-3, IADR-0120 決定2: LlmGateway:Purpose を明示設定したデプロイでは**全種別へ上書き適用**する。
     // 構成値を単に削ると設定済みのデプロイで挙動が変わるため、既定値だけを外し上書きの意味を残す。
     [Theory]
@@ -459,6 +479,17 @@ public class HttpReportNarrativeDrafterTests
         {
             LastPath = request.RequestUri?.AbsolutePath;
             return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+        }
+    }
+
+    private sealed class RecordingUsageReporter : ILlmUsageReporter
+    {
+        public List<LlmUsage> Calls { get; } = [];
+
+        public Task ReportAsync(LlmUsage usage, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(usage);
+            return Task.CompletedTask;
         }
     }
 
