@@ -153,6 +153,7 @@ confidentiality: internal
 | 報告書生成の費用実績（上限の対象外） | report-monthly: +450 JPY |
 | Stage 0 記録実行の費用実績（`stage0-recording`。**上限の対象外**）と見積り承認額との対比 | 実績 +1,800 JPY / 承認 +2,000 JPY / 差 -200 JPY（-10.0%） |
 | 利用者起点の方針改訂（`/policy`・`policy-revision`。**上限の対象外**）の計上件数と費用実績 | **当月の計上はありません**（0 回・0 円ではありません。回数は応答が返った呼び出しの計上件数） |
+| 報告書の作り直し（`/report regenerate`・`report-regeneration`。**上限の対象外**）の回数と費用実績 | 2 回 / +12 JPY（計上 1 件） / 上限到達 1 日 / 断り 1 回 |
 | その他の用途の費用実績（上限の対象外） | 0 JPY |
 | フォールバック発火回数（用途別・原因別） | report-daily／FallbackFired: 1 件 |
 | モデル利用不能による取引判断スキップ回数 | 1 件（model-unavailable: 1 件） |

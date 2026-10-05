@@ -18,7 +18,10 @@ public sealed class ReportCommandHandler(
     IReportReviewController controller,
     VersionedConfirmationGuard guard,
     DiscordBotOptions options,
-    ILogger<ReportCommandHandler> logger)
+    ILogger<ReportCommandHandler> logger,
+    // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 1: 作り直し（`/report regenerate`）。未注入は「構成されていない」
+    // ＝作り直さずにその旨を返す（既存の構成・試験は無改修で通る）。
+    IReportRegenerationController? regenerations = null)
 {
     public async Task<ReportCommandResult> HandleAsync(
         DiscordCommandContext context,
@@ -56,6 +59,9 @@ public sealed class ReportCommandHandler(
             case { Kind: BotCommandKind.ReportRequestChanges, PeriodKey: { } rcKey }:
                 return await RequestChangesAsync(rcKey, command.Version, auth.Actor!, cancellationToken)
                     .ConfigureAwait(false);
+
+            case { Kind: BotCommandKind.ReportRegenerate, PeriodKey: { } regenerateKey }:
+                return await RegenerateAsync(regenerateKey, auth.Actor!, cancellationToken).ConfigureAwait(false);
 
             default:
                 // 他系（kill switch/pause/段階/GFV）のほか、書式外の periodKey・不正な版番号で
@@ -199,6 +205,28 @@ public sealed class ReportCommandHandler(
         logger.LogInformation(
             "報告書を確定しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}）。", actor, periodKey, version);
         return ReportCommandResult.Confirmed(result.Message);
+    }
+
+    // FR-06, FR-14, UC-03〜05, 計画 ADR-0052 決定 1・4, #1156, IADR-0491 決定 1: 作り直し。**所有者の門は閂1（多層認証）と報告書サービスの
+    // OwnerOnly（owner マップ機密クライアント・代理の利用者は onBehalfOf）の 2 段**である。版番号ガードは掛けない（確定ではない。
+    // 報告書サービスが読んだ時点の版で楽観排他を掛け、確定は従来どおり版番号つきの /report approve だけが行う）。
+    // 🔴 冪等でないので再試行しない。届いたか分からない結果は「不明」として伝える（作り直されたかもしれない）。
+    private async Task<ReportCommandResult> RegenerateAsync(string periodKey, string actor, CancellationToken cancellationToken)
+    {
+        if (regenerations is null)
+        {
+            logger.LogWarning("報告書の作り直しの窓口が構成されていません（Actor={Actor}・PeriodKey={PeriodKey}）。", actor, periodKey);
+            return ReportCommandResult.Failed("報告書の作り直しはこの構成では使えません（報告書サービスへの経路が構成されていません）。");
+        }
+
+        var outcome = await regenerations.RegenerateAsync(periodKey, actor, cancellationToken).ConfigureAwait(false);
+        logger.LogInformation(
+            "報告書の作り直しを要求しました（Actor={Actor}・PeriodKey={PeriodKey}・Succeeded={Succeeded}・不明={Unknown}・版={Version}）。",
+            actor, periodKey, outcome.Succeeded, outcome.OutcomeUnknown, outcome.Version);
+
+        return outcome.Succeeded
+            ? new ReportCommandResult(true, outcome.Message, outcome.Version)
+            : ReportCommandResult.Failed(outcome.Message);
     }
 
     // FR-14, UC-03〜05: 差し戻し（修正指示）。安全方向・可逆のため版番号ガードは掛けない

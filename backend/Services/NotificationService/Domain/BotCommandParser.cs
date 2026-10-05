@@ -8,6 +8,7 @@ namespace NotificationService.Domain;
 // 段階ゲート（/stage status・/stage promote <n>・/stage demote <n>・/stage withdrawal）・
 // GFV 違反による停止の解除（/gfv clear・#464・ADR-0028 決定3）。
 // FR-07, UC-03〜05, IADR-0240: 報告書レビュー（/report show・/report approve・/report request-changes）も扱う
+// （FR-06, 計画 ADR-0052, #1156, IADR-0491: 作り直しの /report regenerate も同じ副コマンドの並びに置く）
 // （IADR-0062 決定6 が #14 交差のため保留していた分。#14 側は版番号付き冪等の確定 API を実装済み）。
 // FR-10, FR-11, UC-06, ADR-0041 決定 4, #871, IADR-0423: 乖離の取り込み（/drift adopt <symbol> <market>）も扱う
 // （台帳の是正であり設定値の変更ではない。数量は取らない）。
@@ -139,6 +140,7 @@ public static class BotCommandParser
     //   /report approve <periodKey>                  … 確認ボタンを出す前段（版番号は未確定）
     //   /report approve <periodKey> <version>        … 確定の実行（版番号付き＝詳細設計07 の必須要件）
     //   /report request-changes <periodKey> [<version>]… 差し戻し（修正指示。版番号を省くとハンドラが照会する）
+    //   /report regenerate <periodKey>               … 作り直し（FR-06, 計画 ADR-0052, #1156, IADR-0491。版番号は取らない）
     // 余分な引数・書式外の periodKey・不正な版番号はすべて Unknown へ倒す（誤起動させない）。
     private static BotCommand ParseReport(string[] tokens, string[] rawTokens)
     {
@@ -168,6 +170,8 @@ public static class BotCommandParser
             // 差し戻しは可逆（安全方向）。版番号を省いた要求はハンドラが照会して補う。
             "request-changes" =>
                 new BotCommand(BotCommandKind.ReportRequestChanges, PeriodKey: periodKey, Version: version),
+            // FR-06, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 1: 作り直し。版番号を添えた形は解釈しない（誤起動させない）。
+            "regenerate" when version is null => new BotCommand(BotCommandKind.ReportRegenerate, PeriodKey: periodKey),
             _ => BotCommand.Unknown,
         };
     }

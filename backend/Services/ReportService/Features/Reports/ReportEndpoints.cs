@@ -11,6 +11,7 @@ using ReportService.Features.Reports.GetReportReview;
 using ReportService.Features.Reports.ListReportPeriodKeys;
 using ReportService.Features.Reports.ListReports;
 using ReportService.Features.Reports.PresentReport;
+using ReportService.Features.Reports.RegenerateReport;
 using ReportService.Features.Reports.ReingestKnowledgeBase;
 using ReportService.Features.Reports.RequestReportChanges;
 using ReportService.Features.Reports.RevisePolicy;
@@ -79,6 +80,8 @@ internal static class ReportEndpoints
         owner.MapWatchlistProposal();
         // FR-08, FR-11, #1028, IADR-0436: 確定済みの報告書を KB へ入れ直す（基盤の切替の後の復旧・本文なしの写しの修復・冪等）。
         owner.MapReingestKnowledgeBase();
+        // FR-06, FR-14, 計画 ADR-0052, #1156, IADR-0491: 未確定の下書きを所有者の操作で作り直す（方針は保つ・版を上げて再提示・確定はしない）。
+        owner.MapRegenerateReport();
 
         owner.MapConfirmReport();
 

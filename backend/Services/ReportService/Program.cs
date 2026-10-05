@@ -191,6 +191,15 @@ builder.Services.AddScoped<ReportPolicyRevisionService>();
 builder.Services.AddScoped<IPolicyRevisionLedger, EfPolicyRevisionLedger>();
 builder.Services.AddSingleton(sp =>
     PolicyRevisionLimit.Read(sp.GetRequiredService<IConfiguration>()[PolicyRevisionLimit.ConfigKey]));
+// FR-06, FR-14, 計画 ADR-0052 決定 1〜5, #1156, IADR-0491: 所有者の操作による報告書の作り直し（`/report regenerate`）。
+// 試行の台帳と上限（`/policy` とは別枠。構成 `Reports:Regeneration:DailyLimit`・既定 5 回/日）・監査の発行口。
+// 入力の取得と本文の組み立ては自動生成（ReportAutoGenerator・scoped）と同じ供給元・同じ規則を使う。
+builder.Services.AddScoped<ReportRegenerationService>();
+builder.Services.AddScoped<IReportRegenerationLedger, EfReportRegenerationLedger>();
+builder.Services.AddSingleton(sp =>
+    ReportRegenerationLimit.Read(sp.GetRequiredService<IConfiguration>()[ReportRegenerationLimit.ConfigKey]));
+builder.Services.AddSingleton<IReportRegenerationAuditPublisher>(sp =>
+    new MessageBusReportRegenerationAuditPublisher(sp.GetRequiredService<IWolverineRuntime>()));
 // IADR-0431 決定 1（2026-09-26 利用者裁定）: 営業日にまだ自動生成されていない当日の日報は /policy で作らない。
 // 判定に使う生成境界・休場日は自動生成と同じ構成（Reports:AutoGeneration）から読む。自動生成が無効なら止める生成が無い。
 builder.Services.AddSingleton(sp =>

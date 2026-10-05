@@ -120,6 +120,18 @@ public static class AuditEntryFactory
         Truncate($"{e.Kind} 報告書 {e.PeriodKey} のドラフトを提示（版 {e.Version}・承認待ち）"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
+    // FR-06, FR-11, FR-14, 計画 ADR-0052 決定 5, #1156, IADR-0491 決定 5: 所有者による報告書の作り直し。提示・確定と同じ相関で束ね、
+    // 「どの版が作り直された版か・誰が・なお未供給だった入力」を監査照会で辿れるようにする。操作者が分からなければ「操作者不明」。
+    public static AuditEntry From(ReportRegenerated e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(ReportRegenerated), AuditCorrelation.From($"report:{e.PeriodKey}"), Symbol: null,
+        Truncate($"{e.Kind} 報告書 {e.PeriodKey} を作り直し（{RegeneratorOf(e)}・版 {e.PreviousVersion} → 版 {e.Version}・"
+            + (e.UnsuppliedInputs.Count == 0 ? "未供給の入力なし" : $"なお未供給 {e.UnsuppliedInputs.Count} 件: {string.Join(", ", e.UnsuppliedInputs)}")
+            + "）"),
+        AuditSerialization.Serialize(e), e.RegeneratedAt, recordedAt);
+
+    private static string RegeneratorOf(ReportRegenerated e) =>
+        string.IsNullOrWhiteSpace(e.Actor) || e.Actor == "unknown" ? "操作者不明" : e.Actor;
+
     // NFR（費用）: 費用しきい値到達（費用統制 #23）。同一月×カテゴリで同一相関になるよう "cost:{Month}:{Category}" の決定的 GUID を相関にする。
     public static AuditEntry From(CostThresholdReached e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(CostThresholdReached), AuditCorrelation.From($"cost:{e.Month}:{e.Category}"), Symbol: null,

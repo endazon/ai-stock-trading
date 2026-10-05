@@ -53,6 +53,12 @@ public enum BotCommandKind
     // /report request-changes <periodKey> <version>: 差し戻し（修正指示）。安全方向・可逆。
     ReportRequestChanges,
 
+    // FR-06, FR-14, UC-03〜05, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 1: /report regenerate <periodKey>。
+    // 未確定の下書きを、その期間の入力で作り直す（方針は保ち、版を上げて再提示する。**確定はしない**）。
+    // 🔴 **設定値の変更ではない**（報告書の対話＝FR-14 が Discord に認めた操作の内側。ADR-0052 決定 1）。版番号は取らない
+    // （作り直しは現在の版を土台にし、報告書サービスが読んだ時点の版で楽観排他を掛ける）。
+    ReportRegenerate,
+
     // FR-10, FR-11, FR-14, UC-06, ADR-0041 決定 4, #871, IADR-0423: /drift adopt <symbol> <market>。
     // 台帳とブローカーの乖離の**取り込み**（台帳を書き換える＝破壊的。確認ボタン＋理由＋確認フレーズを要する）。
     // 🔴 **設定値の変更ではない**（台帳の是正。ADR-0041 決定 4 が Discord の窓口を明示した）。**数量は取らない**

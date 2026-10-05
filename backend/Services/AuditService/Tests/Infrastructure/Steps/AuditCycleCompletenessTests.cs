@@ -297,6 +297,8 @@ public class AuditCycleCompletenessTests
                 RealAccountReadOnlyQueryOutcomes.Permitted, t),
             new ReportConfirmed("2026-08-28", "Daily", "endazon", 3, t),
             new ReportDraftPresented("2026-08-28", "Daily", "2026-08-28（日報）", "本日の方針", 1, t),
+            // FR-06, FR-11, 計画 ADR-0052 決定 5, #1156, IADR-0491 決定 5: 所有者による報告書の作り直し。
+            new ReportRegenerated("daily-2026-08-28", "Daily", 1, 2, "endazon", ["OpenPositions"], ["OpenPositions"], t),
             // FR-10, ADR-0040 決定1（S1）, #820, IADR-0344 決定8: ソフトウェア逆指値の配置と発動結果。
             new SoftwareStopArmed(
                 decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, 10, 950m,

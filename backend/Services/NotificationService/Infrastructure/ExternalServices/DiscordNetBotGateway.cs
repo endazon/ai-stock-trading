@@ -228,7 +228,7 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
         // 例外は kill switch と pause/resume だけである（`DiscordSettingsAreReadOnlyTests` が固定）。
         var report = new SlashCommandBuilder()
             .WithName("report")
-            .WithDescription("報告書のレビュー（版番号の確認・確定・差し戻し）を行います")
+            .WithDescription("報告書のレビュー（版番号の確認・確定・差し戻し・作り直し）を行います")
             .AddOption(new SlashCommandOptionBuilder()
                 .WithName("action")
                 .WithDescription("操作")
@@ -236,7 +236,9 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
                 .WithRequired(true)
                 .AddChoice("show", "show")
                 .AddChoice("approve", "approve")
-                .AddChoice("request-changes", "request-changes"))
+                .AddChoice("request-changes", "request-changes")
+                // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 1: 未確定の下書きの作り直し（所有者だけ・確定はしない）。
+                .AddChoice("regenerate", "regenerate"))
             .AddOption(new SlashCommandOptionBuilder()
                 .WithName("period")
                 .WithDescription("会話キー（例: daily-2026-09-18 / weekly-2026-W38 / monthly-2026-09）")
@@ -352,6 +354,8 @@ public sealed class DiscordNetBotGateway : IDiscordBotGateway, IAsyncDisposable
     // show は参照のみのため直接実行。approve は破壊的（確定した方針が取引に適用される）ため、
     // **現在の版番号を照会してから確認ボタンを出す**（詳細設計07 §認証・認可 4項＝報告書確定は 2 段階）。
     // request-changes は安全方向・可逆のため直接実行する。
+    // FR-06, 計画 ADR-0052, #1156, IADR-0491 決定 1: regenerate も直接実行する（確定しない・方針を変えない。版を上げて再提示するだけで、
+    // 確定は従来どおり版番号つきの approve）。入力の取得と散文の LLM を待つため、先の Defer の後に追送で結果を返す。
     private async Task OnReportSlashAsync(SocketSlashCommand command)
     {
         var action = command.Data.Options.FirstOrDefault(o => o.Name == "action")?.Value as string;

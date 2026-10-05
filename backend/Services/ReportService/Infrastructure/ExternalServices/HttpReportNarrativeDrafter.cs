@@ -165,7 +165,8 @@ public sealed class HttpReportNarrativeDrafter(
             {
                 await _usage
                     .ReportAsync(
-                        new LlmUsage(purpose, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model), requestToken)
+                        // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 2: 作り直しは計上区分だけを付け替える（用途キーは変えない）。
+                        new LlmUsage(context.UsagePurpose ?? purpose, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model), requestToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

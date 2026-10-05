@@ -48,6 +48,20 @@ public static class LlmPurposes
     /// </summary>
     public const string PolicyRevision = "policy-revision";
 
+    /// <summary>
+    /// FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 2: 所有者の操作による報告書の作り直し（Discord <c>/report regenerate</c>）の
+    /// 費用の計上区分。
+    /// <para>
+    /// 🔴 <b>これはゲートウェイへ送る用途キーではない。</b> 作り直しの散文は自動生成と同じ用途（<see cref="ReportDaily"/> 等）で LLM を呼ぶ
+    /// （モデル割当を報告書と同じにする）。<see cref="PolicyRevision"/> と同じく<b>計上の境界で本キーへ付け替える</b>。
+    /// </para>
+    /// <para>
+    /// 本キーは <see cref="IsTradeDecision"/> に該当しないため <c>LlmCostScope.IsGoverned</c> は偽＝月次 LLM 上限へ積まない（計画 ADR-0052 決定 1）。
+    /// <see cref="IsReport"/> にも該当しない（月報 §7 は回数と費用を別の行で載せる）。
+    /// </para>
+    /// </summary>
+    public const string ReportRegeneration = "report-regeneration";
+
     /// <summary>月報。ADR-0015 により第 1 候補は ZDR 対応モデルへ改定された。</summary>
     public const string ReportMonthly = "report-monthly";
 
@@ -77,6 +91,10 @@ public static class LlmPurposes
     /// <summary>FR-14, ADR-0042 決定 3, #1024: 利用者起点の方針改訂（<c>/policy</c>）の計上区分か。</summary>
     public static bool IsPolicyRevision(string? purpose) =>
         string.Equals(purpose, PolicyRevision, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 2: 報告書の作り直し（<c>/report regenerate</c>）の計上区分か。</summary>
+    public static bool IsReportRegeneration(string? purpose) =>
+        string.Equals(purpose, ReportRegeneration, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>報告書生成の用途か（月報・週報・日報）。</summary>
     public static bool IsReport(string? purpose) =>

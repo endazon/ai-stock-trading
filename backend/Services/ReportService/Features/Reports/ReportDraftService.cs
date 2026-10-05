@@ -75,6 +75,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                     // （null＝照会できていない／空列＝建玉なし。週報・月報は建玉を入力に持たない）。
                     UnsuppliedInputs = request.UnsuppliedInputs ?? [],
                     Positions = request.Kind == ReportKind.Daily ? request.Positions : null,
+                    // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 2: 作り直しの費用の計上区分（null＝用途キーのまま）。
+                    UsagePurpose = request.UsagePurpose,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -108,6 +110,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             // #338: 以下はいずれもコード集計値であり、散文（LLM）には渡さない（FR-16）。
             // **null（未供給）を空・0 へ潰さない**——既存の各節と同じ規律である。
             LlmUsage = request.LlmUsage,
+            // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 月報 §7 の作り直しの回数（null＝照会できていない）。
+            ReportRegeneration = request.ReportRegeneration,
             // FR-15, ADR-0037 決定3, #750: 見積り承認額。**null（未供給）を 0 円へ潰さない**——
             // 承認が無いのに対比が成立して見えると、超過が起きたのかを誤って読ませる。
             Stage0RecordingApprovedEstimateJpy = request.Stage0RecordingApprovedEstimateJpy,
@@ -317,7 +321,12 @@ public sealed record DraftRequest(
     StopLossMethodResolutionFeed? StopLossMethodResolutions = null,
     // FR-06, FR-16, #1156, IADR-0480 決定 1: 生成器が「取得できなかった」と判定した入力（散文の文脈へ渡す）。
     // null・空＝未供給の判定を持たない（手動の API）。散文が値の無さや 0 を「無い」と言い切らないために使う。
-    IReadOnlyList<ReportInput>? UnsuppliedInputs = null);
+    IReadOnlyList<ReportInput>? UnsuppliedInputs = null,
+    // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 2: 散文の LLM 費用の計上区分の付け替え（null＝用途キーのまま）。
+    string? UsagePurpose = null,
+    // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6: 月報 §7 の作り直しの回数（試行の台帳の集計）。
+    // **null＝台帳を照会できていない**（「0 回」と書かない）。月報以外は使わない。
+    ReportRegenerationTally? ReportRegeneration = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

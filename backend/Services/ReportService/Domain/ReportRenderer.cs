@@ -1417,6 +1417,9 @@ public static class ReportRenderer
         {
             sb.Append("- **LLM の利用実績を照会できませんでした（供給元がありません）**: "
                 + "「費用 0 円」「フォールバック 0 件」「スキップ 0 件」とは区別しています。\n");
+            // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 作り直しの回数は報告書サービスの台帳から読めるので、費用が分からなくても載せる。
+            sb.Append(CultureInfo.InvariantCulture,
+                $"- 報告書の作り直し（`/report regenerate`。**上限の対象外**）: {RegenerationCell(null, view.ReportRegeneration, costSupplied: false)}\n");
             return;
         }
 
@@ -1446,6 +1449,12 @@ public static class ReportRenderer
         sb.Append(CultureInfo.InvariantCulture,
             $"| 利用者起点の方針改訂（`/policy`・`policy-revision`。**上限の対象外**）の計上件数と費用実績 "
             + $"| {(u.PolicyRevision is { } pr ? $"{pr.Count} 回 / {ReportAmountFormat.Jpy(pr.CostJpy)}" : "**当月の計上はありません**（0 回・0 円ではありません。回数は応答が返った呼び出しの計上件数）")} |\n");
+
+        // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6, 04_report-templates 月報 §7: 報告書の作り直し（`/report regenerate`）の
+        // 回数と費用実績。上限の対象外。回数は試行の台帳、費用は計上（`report-regeneration`）から読む（`/policy` の行と同じ規律で 0 と書かない）。
+        sb.Append(CultureInfo.InvariantCulture,
+            $"| 報告書の作り直し（`/report regenerate`・`report-regeneration`。**上限の対象外**）の回数と費用実績 "
+            + $"| {RegenerationCell(u.ReportRegeneration, view.ReportRegeneration, costSupplied: true)} |\n");
 
         // 🔴 上限の対象でも報告書でもない用途（情報収集等）を**落とさない**。
         // 落とすと「どこにも現れない費用」ができ、#282 と同じ形が別の用途で再発する。
@@ -1491,6 +1500,24 @@ public static class ReportRenderer
         var rate = approvedValue == 0m ? "算出不能" : SignedPercent(diff / approvedValue);
 
         return $"{actual} / {approved} / 差 {ReportAmountFormat.Jpy(diff)}（{rate}）";
+    }
+
+    // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 計画の表記 `<n 回 / N 円 / 上限到達 n 日 / 断り n 回>`。
+    // 🔴 回数（台帳）と費用（計上）は別の供給元である。片方が無いときに「0」と書かない。
+    private static string RegenerationCell(PolicyRevisionUsage? cost, ReportRegenerationTally? tally, bool costSupplied)
+    {
+        var count = tally is { } t
+            ? $"{t.Regenerated} 回"
+            : "回数は照会できませんでした";
+        var yen = !costSupplied
+            ? "費用は照会できませんでした"
+            : cost is { } c
+                ? $"{ReportAmountFormat.Jpy(c.CostJpy)}（計上 {c.Count} 件）"
+                : "費用の計上はありません（0 円ではありません）";
+        var rest = tally is { } r
+            ? $"上限到達 {r.LimitReachedDays} 日 / 断り {r.Refused} 回"
+            : "上限到達・断りは照会できませんでした";
+        return $"{count} / {yen} / {rest}";
     }
 
     private static string ReportCostBreakdown(LlmUsageSummary u) =>

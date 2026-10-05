@@ -151,6 +151,17 @@ public sealed class ReportDraftPresentedAuditHandler(IAuditEventStore store, ICl
     }
 }
 
+// FR-06, FR-11, FR-14, 計画 ADR-0052 決定 5, #1156, IADR-0491 決定 5: 所有者による報告書の作り直し（誰が・どの版を・なお未供給の入力）を
+// 監査台帳へ記録する。提示・確定と同じ "report:{PeriodKey}" 相関で束ねる。
+public sealed class ReportRegeneratedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(ReportRegenerated message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
 // NFR（費用）: 費用しきい値到達（費用統制 #23）を監査台帳へ記録する。
 public sealed class CostThresholdReachedAuditHandler(IAuditEventStore store, IClock clock)
 {

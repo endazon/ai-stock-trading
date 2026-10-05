@@ -59,6 +59,12 @@ public sealed record ReportNarrativeContext(
     /// 日報以外は常に null であり、プロンプトは種別で読み分ける（週報・月報は建玉を入力に持たない）。
     /// </summary>
     public IReadOnlyList<ReportPosition>? Positions { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 2: 費用の<b>計上区分</b>の付け替え（null＝用途キーのまま計上する）。
+    /// 所有者の作り直し（<c>/report regenerate</c>）は <c>report-regeneration</c> を渡す。🔴 ゲートウェイへ送る用途キー（モデル割当）は変えない。
+    /// </summary>
+    public string? UsagePurpose { get; init; }
 }
 
 // FR-07, IADR-0120 決定3: 上位方針の参照（期間キーと本文）。

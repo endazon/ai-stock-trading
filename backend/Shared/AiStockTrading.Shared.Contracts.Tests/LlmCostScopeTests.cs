@@ -102,4 +102,18 @@ public class LlmCostScopeTests
         tradePurposes.Should().HaveCount(2);
         tradePurposes.Should().OnlyContain(p => LlmCostScope.IsGoverned(p));
     }
+
+    // T-10-2266（否定形）, FR-06, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 2: 報告書の作り直しの費用は月次 LLM 上限へ積まない。
+    // 報告書生成（用途キー）とも別の計上区分である（月報 §7 は別の行で載せる）。
+    [Theory]
+    [InlineData(LlmPurposes.ReportRegeneration)]
+    [InlineData("REPORT-REGENERATION")]
+    public void 報告書の作り直しの費用は上限の対象外で独立の区分である(string purpose)
+    {
+        LlmCostScope.IsGoverned(purpose).Should().BeFalse();
+        LlmPurposes.IsReport(purpose).Should().BeFalse();
+        LlmPurposes.IsPolicyRevision(purpose).Should().BeFalse();
+        LlmPurposes.IsReportRegeneration(purpose).Should().BeTrue();
+        LlmPurposes.IsReportRegeneration(LlmPurposes.ReportDaily).Should().BeFalse();
+    }
 }

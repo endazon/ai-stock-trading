@@ -143,6 +143,10 @@ internal sealed class BotReadStubBehavior
     internal Func<int, CancellationToken, Task<ReportProto.WatchlistApplyRecordResponse>> ApplyRecord { get; set; } =
         (_, _) => Task.FromResult(new ReportProto.WatchlistApplyRecordResponse());
 
+    // FR-06, 計画 ADR-0052, #1156, IADR-0491 決定 1: 報告書の作り直し。
+    internal Func<int, CancellationToken, Task<ReportProto.ReportRegenerationReply>> Regenerate { get; set; } =
+        (_, _) => Task.FromResult(new ReportProto.ReportRegenerationReply());
+
     internal Func<int, CancellationToken, Task<MonitorProto.WatchlistProposalApplicationResponse>> Apply { get; set; } =
         (_, _) => Task.FromResult(new MonitorProto.WatchlistProposalApplicationResponse());
 
@@ -256,6 +260,10 @@ internal sealed class ReportOwnerWriteStub(BotReadStubBehavior b) : ReportProto.
     public override Task<ReportProto.WatchlistApplyRecordResponse> RecordWatchlistApplyResult(
         ReportProto.WatchlistApplyRecordRequest request, ServerCallContext context) =>
         b.Handle(nameof(RecordWatchlistApplyResult), request, context, b.ApplyRecord);
+
+    public override Task<ReportProto.ReportRegenerationReply> RegenerateReport(
+        ReportProto.ReportRegenerationRequest request, ServerCallContext context) =>
+        b.Handle(nameof(RegenerateReport), request, context, b.Regenerate);
 }
 
 internal sealed class WatchlistOwnerWriteStub(BotReadStubBehavior b) : MonitorProto.WatchlistOwnerWrite.WatchlistOwnerWriteBase
