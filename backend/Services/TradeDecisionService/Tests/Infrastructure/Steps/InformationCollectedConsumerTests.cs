@@ -116,6 +116,8 @@ public class InformationCollectedConsumerTests
                 opts.Services.AddSingleton<BusinessMetrics>();
                 // FR-04, #1081, IADR-0455: ニュースの状態の最新値（本番は Program.cs の singleton）。ハンドラが記録し判断が読む。
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
+                // FR-02, #1169, IADR-0490: 定時サイクルの予算（ハンドラの必須依存。本番は Program.cs の singleton。値は本番の既定と同じ導出）。
+                opts.Services.AddSingleton(ScheduledCycleBudget.Derive(TimeSpan.FromSeconds(30), 2, ScheduledCycleBudget.DefaultMaxWatchedSymbols));
                 // NFR, FR-04, FR-11, #1111, IADR-0483: 最中の例外の最終の失敗の報告口（両ハンドラの必須依存。本番は Program.cs の singleton）。
                 opts.Services.AddSingleton<ITradeDecisionFailureReporter>(new RecordingTradeDecisionFailureReporter());
 

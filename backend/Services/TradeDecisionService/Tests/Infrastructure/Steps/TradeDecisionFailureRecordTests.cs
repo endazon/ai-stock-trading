@@ -325,6 +325,8 @@ public class TradeDecisionFailureRecordTests
                 opts.Services.AddScoped<AppSvc>();
                 opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
+                // FR-02, #1169, IADR-0490: 同じアセンブリの定時の購読の必須依存（本番は Program.cs の singleton。値は本番の既定と同じ導出）。
+                opts.Services.AddSingleton(ScheduledCycleBudget.Derive(TimeSpan.FromSeconds(30), 2, ScheduledCycleBudget.DefaultMaxWatchedSymbols));
                 if (reporter is not null)
                     opts.Services.AddSingleton(reporter);
                 else
