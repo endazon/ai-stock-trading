@@ -58,6 +58,10 @@ public sealed record ScreeningDegradationCounts(
 /// 🔴 <c>null</c> は「当月に <c>/policy</c> の LLM 呼び出しが無かった」であり「0 回・0 円」とは書かない（Stage 0 記録と同じ規律）。
 /// 回数は計上（応答が返った呼び出し）の件数である。
 /// </param>
+/// <param name="ReportRegeneration">
+/// FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 所有者の作り直し（<c>/report regenerate</c>・<c>report-regeneration</c>）の
+/// 計上件数と費用。上限の対象外。<c>null</c> は「当月に計上が無い」（0 回・0 円と書かない）。
+/// </param>
 /// <param name="OtherCostJpy">
 /// 上限の対象でも報告書でも Stage 0 記録でもない用途の費用（情報収集等）。
 /// </param>
@@ -72,10 +76,24 @@ public sealed record LlmUsageSummary(
     IReadOnlyList<(string Purpose, string Outcome, int Count)> FallbacksByPurposeAndOutcome,
     int SkipCount,
     IReadOnlyList<(string Reason, int Count)> SkipsByReason,
-    PolicyRevisionUsage? PolicyRevision = null);
+    PolicyRevisionUsage? PolicyRevision = null,
+    PolicyRevisionUsage? ReportRegeneration = null);
 
-/// <summary>FR-14, ADR-0042 決定 3, #1024: <c>/policy</c> の LLM 利用実績（回数＝計上の件数・費用）。</summary>
+/// <summary>
+/// FR-14, ADR-0042 決定 3, #1024: <c>/policy</c> の LLM 利用実績（回数＝計上の件数・費用）。
+/// FR-06, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 報告書の作り直し（<c>report-regeneration</c>）の計上も同じ形で持つ
+/// （<see cref="LlmUsageSummary.ReportRegeneration"/>）。
+/// </summary>
 public sealed record PolicyRevisionUsage(int Count, decimal CostJpy);
+
+/// <summary>
+/// FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6, 04_report-templates 月報 §7: 期間の報告書の作り直しの回数
+/// （報告書サービスの試行の台帳の集計。費用は LLM の計上〔<c>report-regeneration</c>〕から読むので持たない）。
+/// </summary>
+/// <param name="Regenerated">作り直して保存した回数。</param>
+/// <param name="Refused">中核の入力の取得に失敗して断った回数（回数の上限を消費していない）。</param>
+/// <param name="LimitReachedDays">1 日の回数の上限に達した日数（JST の暦日。上限で断った日・数えた試行が上限に届いた日）。</param>
+public sealed record ReportRegenerationTally(int Regenerated, int Refused, int LimitReachedDays);
 
 // FR-06, FR-16, #338, 04_report-templates 月報 §7, 05_trading-assumptions §6.1, IADR-0251:
 // LLM 利用実績の集計（純関数・決定的・副作用なし）。
@@ -112,6 +130,7 @@ public static class LlmUsageAggregator
         // 0m で初期化すると「実行しなかった」と「実行して 0 円だった」が潰れる（計画注記が禁じた向き）。
         decimal? stage0Recording = null;
         PolicyRevisionUsage? policyRevision = null;
+        PolicyRevisionUsage? reportRegeneration = null;
 
         foreach (var cost in record.Costs)
         {
@@ -147,6 +166,14 @@ public static class LlmUsageAggregator
                 continue;
             }
 
+            // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 報告書の作り直しは上限の対象外だが独立区分（月報 §7 の別の行）。
+            if (LlmPurposes.IsReportRegeneration(cost.Purpose))
+            {
+                reportRegeneration = new PolicyRevisionUsage(
+                    (reportRegeneration?.Count ?? 0) + 1, (reportRegeneration?.CostJpy ?? 0m) + cost.Amount);
+                continue;
+            }
+
             // 情報収集など、上限の対象でも報告書でもない用途。**捨てない**——
             // 落とすと「どこにも現れない費用」ができ、#282 と同じ形になる。
             other += cost.Amount;
@@ -167,7 +194,8 @@ public static class LlmUsageAggregator
                 .GroupBy(s => s.Reason, StringComparer.Ordinal)
                 .OrderBy(g => g.Key, StringComparer.Ordinal)
                 .Select(g => (g.Key, g.Count()))],
-            policyRevision);
+            policyRevision,
+            reportRegeneration);
     }
 
     /// <summary>

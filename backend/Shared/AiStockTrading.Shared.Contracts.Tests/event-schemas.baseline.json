@@ -436,6 +436,16 @@
     "Targeted": "Int32",
     "Unknown": "Int32"
   },
+  "ReportRegenerated": {
+    "Actor": "String",
+    "Kind": "String",
+    "NotRestorableInputs": "IReadOnlyList\u003CString\u003E",
+    "PeriodKey": "String",
+    "PreviousVersion": "Int32",
+    "RegeneratedAt": "DateTimeOffset",
+    "UnsuppliedInputs": "IReadOnlyList\u003CString\u003E",
+    "Version": "Int32"
+  },
   "ScreeningContextReduced": {
     "BatchCount": "Int32",
     "BudgetChars": "Int32",

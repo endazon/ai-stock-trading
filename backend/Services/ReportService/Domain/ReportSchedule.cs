@@ -55,6 +55,24 @@ public static class ReportSchedule
         return due;
     }
 
+    /// <summary>
+    /// FR-06, 計画 ADR-0052 決定 2, #1156, IADR-0491 決定 4: 既存の報告書（種別と開始日）の集計期間を、自動生成（<see cref="Due"/>）と
+    /// <b>同じ規則</b>で求める（作り直しが自動生成と同じ範囲の入力を引くため）。週報・月報の終端は区間の最終営業日、
+    /// 区間に営業日が 1 日も無ければ区間の末日（自動生成はその期間を作らないが、手で作られた行は在り得る）。
+    /// </summary>
+    public static DueReport PeriodOf(ReportKind kind, DateOnly periodStart, ReportScheduleOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var end = kind switch
+        {
+            ReportKind.Daily => periodStart,
+            ReportKind.Weekly => LastBusinessDay(periodStart, periodStart.AddDays(6), options) ?? periodStart.AddDays(6),
+            _ => LastBusinessDay(periodStart, periodStart.AddMonths(1).AddDays(-1), options) ?? periodStart.AddMonths(1).AddDays(-1),
+        };
+        return Build(kind, periodStart, end);
+    }
+
     /// <summary>営業日か（土日でも構成された休場日でもない）。</summary>
     public static bool IsBusinessDay(DateOnly date, ReportScheduleOptions options)
     {

@@ -64,3 +64,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-10-02 に 0051 へ**〔ADR-0051 日報 §7 の利確条件は書式の行で銘柄ごとに数値で書き、欠ければ確定の前に警告する（確定は止めない）。ADR-0048 決定 4 の補完。planning#709。実装は先行して #1129（IADR-0470）。本リポの追随は本 PR〕。
   **2026-10-02 実測**: 隣接クローンの `origin/main`（`b9d0d27`。`git rev-parse --is-shallow-repository` → `true` のため `git worktree add --detach origin/main` で展開した木で実行。
   ファイルの実在の検査であり履歴は使わない）で `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 51]・51 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-10-06 に 0052 へ**〔ADR-0052 入力が未供給のまま作られた報告書の下書きは、所有者の操作（`/report regenerate`）で作り直す。対象は未確定の下書きに限り、方針の節は保って事実と散文だけを作り直し、中核の入力がなお未供給なら断る。planning#711。本リポの追随は #1156（IADR-0491）〕。
+  **2026-10-06 実測**: 計画リポの作業ツリー（`c3ad458` = `origin/main`。`git rev-parse --is-shallow-repository` → `true`。ファイルの実在の検査であり履歴は使わない）で
+  `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 52]・52 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。

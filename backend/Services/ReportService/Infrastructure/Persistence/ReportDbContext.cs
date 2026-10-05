@@ -11,6 +11,10 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
     // FR-14, ADR-0042 決定 3, #1024, IADR-0432 決定 1: `/policy` の試行の台帳（1 日の回数上限・案の監査）。
     public DbSet<PolicyRevisionAttemptRow> PolicyRevisionAttempts => Set<PolicyRevisionAttemptRow>();
 
+    // FR-06, FR-14, 計画 ADR-0052 決定 1・4・5, #1156, IADR-0491 決定 3・5: `/report regenerate` の試行の台帳
+    // （`/policy` とは別枠の 1 日の回数上限・作り直した版の記録・断った回数）。
+    public DbSet<ReportRegenerationAttemptRow> ReportRegenerationAttempts => Set<ReportRegenerationAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<ReportRow>(e =>
@@ -53,6 +57,24 @@ public sealed class ReportDbContext(DbContextOptions<ReportDbContext> options)
             e.HasIndex(a => new { a.PeriodKey, a.ReportVersion });
             // 1 日の回数上限の判定（JST の暦日ごとの件数）。
             e.HasIndex(a => a.JstDate);
+        });
+
+        mb.Entity<ReportRegenerationAttemptRow>(e =>
+        {
+            e.ToTable("report_regeneration_attempts");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Id).ValueGeneratedNever();
+            e.Property(a => a.Actor).HasMaxLength(128);
+            e.Property(a => a.PeriodKey).HasMaxLength(64);
+            // 結果は列挙名で持つ（序数に結合しない。断った行を数えない規則が名前で読める）。
+            e.Property(a => a.Outcome).HasConversion<string>().HasMaxLength(32);
+            // 入力の列挙名のカンマ区切り（reports.UnsuppliedInputs と同じ形・同じ上限）。
+            e.Property(a => a.UnsuppliedInputs).HasMaxLength(1024);
+            e.Property(a => a.NotRestorableInputs).HasMaxLength(1024);
+            // 1 日の回数上限の判定・月報 §7 の集計（JST の暦日）。
+            e.HasIndex(a => a.JstDate);
+            // 作り直した版の記録を引く（会話キー＋版）。
+            e.HasIndex(a => new { a.PeriodKey, a.ReportVersion });
         });
     }
 }

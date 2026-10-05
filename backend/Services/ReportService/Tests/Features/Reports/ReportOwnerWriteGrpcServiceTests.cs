@@ -306,7 +306,7 @@ public class ReportOwnerWriteGrpcServiceTests
         }))).StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
-    // ---- 門（GrpcOwnerOnly）: 4 rpc すべて ----
+    // ---- 門（GrpcOwnerOnly）: 5 rpc すべて ----
 
     private static Func<Task>[] AllRpcs(Proto.ReportOwnerWrite.ReportOwnerWriteClient c) =>
     [
@@ -314,6 +314,8 @@ public class ReportOwnerWriteGrpcServiceTests
         async () => await c.RequestReportChangesAsync(new Proto.ReportChangesRequest { PeriodKey = Key, ExpectedVersion = 1 }),
         async () => await c.RevisePolicyAsync(new Proto.PolicyRevisionProposalRequest { Instruction = "i", OnBehalfOf = "owner-a" }),
         async () => await c.RecordWatchlistApplyResultAsync(new Proto.WatchlistApplyRecordRequest { AttemptId = Guid.NewGuid().ToString(), Outcome = "applied" }),
+        // T-10-2271, FR-06, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 1: 作り直しも同じ所有者の門（ボットだけ・s2s には開かない）。
+        async () => await c.RegenerateReportAsync(new Proto.ReportRegenerationRequest { PeriodKey = Key, OnBehalfOf = "owner-a" }),
     ];
 
     [Theory]

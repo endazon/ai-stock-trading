@@ -553,6 +553,28 @@ public class AuditEntryFactoryTests
         entry.CorrelationId.Should().Be(other.CorrelationId);
     }
 
+    // T-10-2273, FR-06, FR-11, 計画 ADR-0052 決定 5, #1156, IADR-0491 決定 5: 作り直しは「誰が・どの版を・なお未供給の入力」を要約に書き、
+    // 提示・確定と同じ報告書の相関で束ねる。操作者が分からなければ内部の既定値ではなく「操作者不明」と書く。
+    [Fact]
+    public void ReportRegenerated_は作り直した利用者と版となお未供給の入力を報告書相関で記録する()
+    {
+        var e = new ReportRegenerated(
+            "daily-2026-10-02", "Daily", 2, 3, "owner-a", ["OpenPositions", "LlmUsage"], ["OpenPositions"], RecordedAt);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+        var unknown = AuditEntryFactory.From(e with { Actor = "unknown", UnsuppliedInputs = [] }, Guid.NewGuid(), RecordedAt);
+        var confirmed = AuditEntryFactory.From(
+            new ReportConfirmed("daily-2026-10-02", "Daily", "owner", 1, RecordedAt), Guid.NewGuid(), RecordedAt);
+
+        entry.EventType.Should().Be("ReportRegenerated");
+        entry.Summary.Should().Contain("daily-2026-10-02").And.Contain("owner-a").And.Contain("版 2 → 版 3")
+            .And.Contain("なお未供給 2 件: OpenPositions, LlmUsage");
+        entry.Detail.Should().Contain("NotRestorableInputs");
+        entry.OccurredAt.Should().Be(RecordedAt);
+        entry.CorrelationId.Should().Be(confirmed.CorrelationId);
+        unknown.Summary.Should().Contain("操作者不明").And.Contain("未供給の入力なし").And.NotContain("unknown");
+    }
+
     [Fact]
     public void ReportDraftPresented_は確定と同じ報告書相関で提示を記録する()
     {

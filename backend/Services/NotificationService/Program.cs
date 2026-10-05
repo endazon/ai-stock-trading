@@ -193,6 +193,24 @@ builder.Services.AddSingleton<IPolicyRevisionController>(sp =>
 });
 builder.Services.AddSingleton<PolicyRevisionCommandHandler>();
 
+// FR-06, FR-14, UC-03〜05, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 1: 報告書の作り直し（`/report regenerate`）。報告書レビューと同じ
+// 資格情報（owner マップ機密クライアント）。期間の入力の取得（依存先ごとに最長 10 秒前後）と散文の LLM（週報・月報は既定 120 秒）を見込み、
+// **専用の名前付き HttpClient** で上限を 300 秒に取る（`report-review` の 5 秒・`report-policy-revision` の 90 秒は変えない）。
+// Discord の応答は Defer の後の追送で、追送の期限（15 分）に収まる。
+builder.Services.AddHttpClient("report-regeneration", c => c.Timeout = TimeSpan.FromSeconds(300))
+    .AddDiscordOwnerToken(builder.Configuration);
+builder.Services.AddSingleton<IReportRegenerationController>(sp =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-regeneration");
+    var baseUrl = builder.Configuration["Reports:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        http.BaseAddress = uri;
+
+    return sp.GetService<ReportsGrpcTransport>() is { } reportsGrpc
+        ? new GrpcReportRegenerationController(reportsGrpc, sp.GetRequiredService<ILogger<GrpcReportRegenerationController>>())
+        : new HttpReportRegenerationController(http, sp.GetRequiredService<ILogger<HttpReportRegenerationController>>());
+});
+
 // FR-13, FR-14, ADR-0042 決定 1・2, #1025, IADR-0433: 市場監視サービスの監視銘柄の照会と `/policy` の入れ替え案の適用。
 // 適用は OwnerOnly のため owner マップ機密クライアントのトークンを付与する（報告書レビューと同じ資格情報）。
 // MarketMonitor:BaseUrl 未設定/不正 URI は BaseAddress 未設定＝照会は失敗（案は「適用できない案」として作られ、確定しても適用しない）。

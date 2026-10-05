@@ -5,7 +5,8 @@
 // ■ 認可（IADR-0450）: 門は `GrpcOwnerOnly`。s2s には開かない（生成AI・自動処理は確定できない＝ADR-0003）。
 // ■ 利用者の文脈は本文の `on_behalf_of` で運ぶ（ADR-0047 決定 1）。
 // ■ 誤りの写し（REST と同じ分類）: 400 → INVALID_ARGUMENT、404 → NOT_FOUND、409 → ABORTED（版の不一致・確定済み・記録済み）、
-//   429 → RESOURCE_EXHAUSTED（方針の改訂の 1 日の上限）、502 → INTERNAL（AI の案を作れなかった）。**いずれも何も保存していない**（REST の契約）。
+//   422 → FAILED_PRECONDITION（作り直しで中核の入力の取得に失敗した）、
+//   429 → RESOURCE_EXHAUSTED（方針の改訂・作り直しの 1 日の上限）、502 → INTERNAL（AI の案を作れなかった）。**いずれも何も保存していない**（REST の契約）。
 // ■ 🔴 方針の改訂は冪等でない（LLM を呼び新しい版を作る）。呼び出し側は再試行しない（IADR-0450）。
 // ■ 線上表現は原則 A（IADR-0427 決定 3）。message 名を送り手の C# の型名にしない。
 syntax = "proto3";
@@ -25,6 +26,27 @@ service ReportOwnerWrite {
   rpc RevisePolicy(PolicyRevisionProposalRequest) returns (PolicyRevisionProposalResponse);
   // POST /reports/policy-revisions/{attemptId}/watchlist-apply-result（入れ替えの適用の内訳。1 回だけ）。
   rpc RecordWatchlistApplyResult(WatchlistApplyRecordRequest) returns (WatchlistApplyRecordResponse);
+  // POST /reports/{periodKey}/regenerate（未確定の下書きをその期間の入力で作り直す。方針は保ち版を上げて再提示する。確定はしない）。
+  // FR-06, FR-14, 計画 ADR-0052, #1156, IADR-0491 決定 1。🔴 冪等でない（LLM を呼び新しい版を作り、1 日の回数を消費する）。再試行しない。
+  // 422 → FAILED_PRECONDITION（中核の入力の取得に失敗したので断った。回数は消費しない）、429 → RESOURCE_EXHAUSTED（本日の上限）。
+  rpc RegenerateReport(ReportRegenerationRequest) returns (ReportRegenerationReply);
+}
+
+message ReportRegenerationRequest {
+  string period_key = 1;
+  optional string on_behalf_of = 2;
+}
+
+message ReportRegenerationReply {
+  optional string period_key = 1;
+  optional int32 previous_version = 2;
+  optional int32 version = 3;
+  optional bool presented = 4;
+  optional string message = 5;
+  // なお未供給だった入力の表示名（報告書サービスのコード定数）。
+  repeated string unsupplied_inputs = 6;
+  // 期間の時点に復元できないため未供給として扱った入力の表示名（unsupplied_inputs の部分集合）。
+  repeated string not_restorable_inputs = 7;
 }
 
 message ReportConfirmationRequest {

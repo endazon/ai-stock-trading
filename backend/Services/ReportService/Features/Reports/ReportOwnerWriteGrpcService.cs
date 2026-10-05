@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using ReportService.Common.Abstractions;
 using ReportService.Domain;
 using ReportService.Features.Reports.ConfirmReport;
+using ReportService.Features.Reports.RegenerateReport;
 using ReportService.Features.Reports.RequestReportChanges;
 using ReportService.Features.Reports.RevisePolicy;
 using ReportService.Features.Reports.WatchlistProposal;
@@ -21,6 +22,7 @@ namespace ReportService.Features.Reports;
 //   - `POST /reports/{periodKey}/request-changes` → RequestReportChangesEndpoint.Handle
 //   - `POST /reports/policy-revisions` → RevisePolicyEndpoint.HandleAsync
 //   - `POST /reports/policy-revisions/{attemptId}/watchlist-apply-result` → WatchlistProposalEndpoints.RecordApplyResult
+//   - `POST /reports/{periodKey}/regenerate` → RegenerateReportEndpoint.HandleAsync（FR-06, 計画 ADR-0052, #1156, IADR-0491 決定 1）
 // 処理関数の結果（REST の状態と本文）を gRPC の状態へ写すのは ReportWriteGrpcReplies（REST の群のフィルタの例外の写しも同じものを使う）。
 //
 // 🔴 門は **`GrpcOwnerOnly`**。REST の OwnerOnly と同じく s2s には開かない（生成AI・自動処理は確定できない＝ADR-0003）。
@@ -35,7 +37,8 @@ public sealed class ReportOwnerWriteGrpcService(
     IReportStore store,
     IClock clock,
     DelegatedActorOptions delegated,
-    ILoggerFactory loggerFactory)
+    ILoggerFactory loggerFactory,
+    ReportRegenerationService regenerations)
     : Proto.ReportOwnerWrite.ReportOwnerWriteBase
 {
     public override async Task<Proto.ReportConfirmationResponse> ConfirmReport(
@@ -90,6 +93,17 @@ public sealed class ReportOwnerWriteGrpcService(
                 request.HasOnBehalfOf ? request.OnBehalfOf : null),
             ledger, store, clock, delegated, context.GetHttpContext()));
         return new Proto.WatchlistApplyRecordResponse { AttemptId = reply.ValueOrThrow<WatchlistApplyRecordedResponse>().AttemptId.ToString() };
+    }
+
+    // FR-06, FR-14, 計画 ADR-0052, #1156, IADR-0491 決定 1: 作り直し（REST と同じ処理関数。冪等でない＝呼び出し側は再試行しない）。
+    public override async Task<Proto.ReportRegenerationReply> RegenerateReport(
+        Proto.ReportRegenerationRequest request, ServerCallContext context)
+    {
+        var reply = await ReportWriteGrpcReplies.RunAsync(() => RegenerateReportEndpoint.HandleAsync(
+            PeriodKeyOf(request.PeriodKey),
+            new RegenerateReportRequest(request.HasOnBehalfOf ? request.OnBehalfOf : null),
+            regenerations, delegated, loggerFactory, context.GetHttpContext()));
+        return ReportWriteWireMapping.ToProto(reply.ValueOrThrow<ReportRegenerationResponse>());
     }
 
     // REST の経路引数は空になり得ない。gRPC では空を「対象が無い」ではなく入力の誤りとして返す（読み取りの面と同じ）。
@@ -163,6 +177,24 @@ internal static class ReportWriteGrpcReplies
 // NFR, IADR-0450 決定 3: 書き込みの応答型 → 線上表現（提供側の写し）。C# の null は設定しない。
 public static class ReportWriteWireMapping
 {
+    // FR-06, 計画 ADR-0052, IADR-0491 決定 1: 作り直しの応答の線上表現。
+    public static Proto.ReportRegenerationReply ToProto(ReportRegenerationResponse regeneration)
+    {
+        ArgumentNullException.ThrowIfNull(regeneration);
+
+        var reply = new Proto.ReportRegenerationReply
+        {
+            PeriodKey = regeneration.PeriodKey,
+            PreviousVersion = regeneration.PreviousVersion,
+            Version = regeneration.Version,
+            Presented = regeneration.Presented,
+            Message = regeneration.Message,
+        };
+        reply.UnsuppliedInputs.AddRange(regeneration.UnsuppliedInputs);
+        reply.NotRestorableInputs.AddRange(regeneration.NotRestorableInputs);
+        return reply;
+    }
+
     public static Proto.PolicyRevisionProposalResponse ToProto(PolicyRevisionResponse revision)
     {
         ArgumentNullException.ThrowIfNull(revision);

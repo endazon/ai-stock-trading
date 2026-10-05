@@ -148,4 +148,18 @@ public class PublishingLlmReportersTests
 
         await host.StopAsync();
     }
+
+    // T-10-2265, FR-06, FR-11, 計画 ADR-0052 決定 5, #1156, IADR-0491 決定 5: 作り直しの監査の発行口（本物）は、本番と同じ Wolverine 配線で
+    // ReportRegenerated をバスへ出す（監査サービスが中央台帳へ記録する唯一の経路）。
+    [Fact]
+    public async Task 作り直しの監査はバスへ発行する()
+    {
+        using var host = await BuildHostAsync();
+        var publisher = new MessageBusReportRegenerationAuditPublisher(host.Services.GetRequiredService<IWolverineRuntime>());
+        var evt = new ReportRegenerated("daily-2026-10-02", "Daily", 2, 3, "owner-a", ["OpenPositions"], ["OpenPositions"], Now);
+
+        var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(_ => publisher.PublishAsync(evt));
+
+        session.Sent.MessagesOf<ReportRegenerated>().Should().ContainSingle().Which.Should().BeEquivalentTo(evt);
+    }
 }

@@ -3,15 +3,15 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-10-04
+updated: 2026-10-06
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
-adrs: [ADR-0001, ADR-0047, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook]
-issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113]
+adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -306,7 +306,7 @@ REST のアダプタと**同じ 1 つ**を使う。message 名は送り手の型
 
 ## 9. 面: Discord ボットの読み取りと書き込み
 
-Discord ボット（通知サービス）の**読み取り 6 本と書き込み 13 本**を gRPC でも呼べるようにした。構成で宣言したポートは、読み取りと書き込みの**両方**が gRPC になる。**並走中の正は REST。**
+Discord ボット（通知サービス）の**読み取り 6 本と書き込み 13 本**を gRPC でも呼べるようにした（その後、報告書の作り直しの書き込みを 1 本足して 14 本）。構成で宣言したポートは、読み取りと書き込みの**両方**が gRPC になる。**並走中の正は REST。**
 
 - **ボットのトークンはサービスの身元である**（利用者のトークンではない）。ボットは所有者の対応表の機密クライアントで client_credentials のトークンを取り、
   §4 の「呼び出し側サービス自身の JWT」としてメタデータへ載せる。s2s（`trading-service`）のトークンへは替えない。利用者の文脈（誰の操作か）は、書き込みで今どおり本文で運ぶ。
@@ -338,6 +338,7 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 | `…ReportOwnerWrite/RequestReportChanges` | `POST /reports/{periodKey}/request-changes` | 2 回目は不正な遷移 | 結果は不明 |
 | `…ReportOwnerWrite/RevisePolicy` | `POST /reports/policy-revisions` | **冪等でない**（新しい版を作る） | 不明（案が保存されたかもしれない） |
 | `…ReportOwnerWrite/RecordWatchlistApplyResult` | `POST /reports/policy-revisions/{attemptId}/watchlist-apply-result` | 1 回だけ | 記録できなかった |
+| `…ReportOwnerWrite/RegenerateReport` | `POST /reports/{periodKey}/regenerate` | **冪等でない**（新しい版を作り、1 日の回数を消費する） | 不明（作り直されたかもしれない） |
 | `…marketmonitor.v1.WatchlistOwnerWrite/ApplyWatchlistProposal` | `POST /monitor/watchlist/proposal-apply` | 2 回目は楽観排他で拒否 | 不明（適用されたかもしれない） |
 
 - 🔴 **書き込みは再試行しない**（`*:GrpcMaxAttempts` は読み取りだけに効く）。繰り返すと「成功したのに失敗に見える」か二重に実行されるため。REST も再試行しない。
@@ -350,10 +351,10 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 | --- | --- | --- |
 | `UNAUTHENTICATED` / `PERMISSION_DENIED` | トークン無し／ボットの所有者トークンでない | 失敗。REST の 401/403 と同じ注記（owner クライアントの設定を確認）。**再試行しない** |
 | `NOT_FOUND` | レビュー局面・確定・差し戻しの対象が無い／入れ替え案ではない（REST の 404） | REST の 404 と同じ文言 |
-| `FAILED_PRECONDITION` | 入れ替え案の版で確定されていない（読み取りの REST の 409）／書き込みの受理不能（REST の 422: GFV の解除対象なし・乖離の取り込みの受理不能） | REST と同じ文言（提供側の説明をそのまま見せる） |
-| `ABORTED` | 書き込みの競合（REST の 409: 版の不一致・確定済み・記録済み・案の作成後に監視銘柄が変わった） | REST の 409 と同じ扱い（確定していない・1 件も適用していない） |
+| `FAILED_PRECONDITION` | 入れ替え案の版で確定されていない（読み取りの REST の 409）／書き込みの受理不能（REST の 422: GFV の解除対象なし・乖離の取り込みの受理不能・報告書の作り直しで中核の入力を取得できない） | REST と同じ文言（提供側の説明をそのまま見せる） |
+| `ABORTED` | 書き込みの競合（REST の 409: 版の不一致・確定済み・記録済み・案の作成後に監視銘柄が変わった・作り直しの間の改訂） | REST の 409 と同じ扱い（確定していない・1 件も適用していない） |
 | `INVALID_ARGUMENT` | 会話キー・版・理由・代理される利用者の誤り（REST の 400） | 失敗（書き込みは提供側の説明を見せる） |
-| `RESOURCE_EXHAUSTED` / `INTERNAL` | 方針の改訂の 1 日の上限（REST の 429）／AI の案を作れなかった（REST の 502） | 案なし（提供側の説明を見せる） |
+| `RESOURCE_EXHAUSTED` / `INTERNAL` | 方針の改訂・報告書の作り直しの 1 日の上限（REST の 429。別々の枠）／AI の案を作れなかった（REST の 502） | 案なし・作り直していない（提供側の説明を見せる） |
 | `UNIMPLEMENTED` | 提供側が古い（配備順の窓） | 失敗＝実行していない（会話キーの一覧は候補なし。REST の旧一覧への退避は持たない） |
 | `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 読み取りは失敗（タイムアウトの文言）で**再試行の対象**。書き込みは上の表の「時間切れの扱い」で、**再試行しない** |
 
@@ -378,6 +379,7 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 | `MarketMonitor:Grpc` | 未設定（＝REST） | 監視銘柄・入れ替え案の適用の gRPC の宛先 |
 | `<上記>:GrpcTimeoutSeconds` | 5 / 5 / 10 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値（入れ替え案の照会は台帳の読み取りなのでレビューと同じ 5 秒） |
 | `Reports:GrpcPolicyRevisionTimeoutSeconds` | 90 | 方針の改訂と適用の内訳の記録の deadline（REST で 2 つが共用する 90 秒のクライアントと同値。LLM を待つ） |
+| `Reports:GrpcRegenerationTimeoutSeconds` | 300 | 報告書の作り直しの deadline（REST の 300 秒のクライアントと同値。期間の入力の取得と散文の LLM を待つ） |
 | `<上記>:GrpcMaxAttempts` | 1 | 試行回数。**読み取りだけに効く**（書き込みは再試行しない）。既定は再試行しない |
 
 - メタデータのトークンは REST と同じ `Notifications:Discord:OwnerAuth:*`（ボットの機密クライアント）から取る。3 つの宛先で 1 つの取得器を共有する。資格情報が未構成ならメタデータを付けない（→ `UNAUTHENTICATED` → 失敗）。

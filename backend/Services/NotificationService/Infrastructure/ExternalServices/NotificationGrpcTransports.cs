@@ -74,6 +74,12 @@ public sealed class ReportsGrpcTransport : IDisposable
     /// </summary>
     internal const string PolicyRevisionTimeoutKey = "Reports:GrpcPolicyRevisionTimeoutSeconds";
 
+    /// <summary>
+    /// FR-06, 計画 ADR-0052, #1156, IADR-0491 決定 1: 報告書の作り直しの deadline（秒）。未設定は REST の "report-regeneration" の
+    /// HttpClient.Timeout（300 秒）と同値（期間の入力の取得と散文の LLM を待つ）。
+    /// </summary>
+    internal const string RegenerationTimeoutKey = "Reports:GrpcRegenerationTimeoutSeconds";
+
     /// <summary>試行回数（**読み取りだけ**に効く。書き込みは再試行しない）。</summary>
     internal const string MaxAttemptsKey = "Reports:GrpcMaxAttempts";
 
@@ -83,15 +89,19 @@ public sealed class ReportsGrpcTransport : IDisposable
 
     internal static readonly TimeSpan DefaultPolicyRevisionTimeout = TimeSpan.FromSeconds(90);
 
+    internal static readonly TimeSpan DefaultRegenerationTimeout = TimeSpan.FromSeconds(300);
+
     private readonly GrpcChannel _channel;
 
     public ReportsGrpcTransport(
-        GrpcChannel channel, TimeSpan timeout, int maxAttempts, ILogger<ReportsGrpcTransport> logger, TimeSpan? policyRevisionTimeout = null)
+        GrpcChannel channel, TimeSpan timeout, int maxAttempts, ILogger<ReportsGrpcTransport> logger, TimeSpan? policyRevisionTimeout = null,
+        TimeSpan? regenerationTimeout = null)
     {
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
         ArgumentNullException.ThrowIfNull(logger);
         Calls = new NotificationGrpcCalls(timeout, maxAttempts, logger);
         PolicyRevisionCalls = new NotificationGrpcCalls(policyRevisionTimeout ?? DefaultPolicyRevisionTimeout, 1, logger);
+        RegenerationCalls = new NotificationGrpcCalls(regenerationTimeout ?? DefaultRegenerationTimeout, 1, logger);
         OwnerRead = new ReportProto.ReportOwnerRead.ReportOwnerReadClient(channel);
         OwnerWrite = new ReportProto.ReportOwnerWrite.ReportOwnerWriteClient(channel);
     }
@@ -101,6 +111,9 @@ public sealed class ReportsGrpcTransport : IDisposable
 
     /// <summary>方針の改訂・適用の内訳の記録の規則（deadline は <see cref="PolicyRevisionTimeoutKey"/>。書き込みだけなので再試行しない）。</summary>
     internal NotificationGrpcCalls PolicyRevisionCalls { get; }
+
+    /// <summary>報告書の作り直しの規則（deadline は <see cref="RegenerationTimeoutKey"/>。冪等でないので再試行しない）。</summary>
+    internal NotificationGrpcCalls RegenerationCalls { get; }
 
     internal ReportProto.ReportOwnerRead.ReportOwnerReadClient OwnerRead { get; }
 
@@ -172,8 +185,11 @@ public static class NotificationGrpcExtensions
             var attempts = NotificationGrpcCalls.ReadMaxAttempts(config, ReportsGrpcTransport.MaxAttemptsKey);
             var revisionTimeout = NotificationGrpcCalls.ReadTimeout(
                 config, ReportsGrpcTransport.PolicyRevisionTimeoutKey, ReportsGrpcTransport.DefaultPolicyRevisionTimeout);
+            var regenerationTimeout = NotificationGrpcCalls.ReadTimeout(
+                config, ReportsGrpcTransport.RegenerationTimeoutKey, ReportsGrpcTransport.DefaultRegenerationTimeout);
             services.AddSingleton(sp => new ReportsGrpcTransport(
-                Channel(sp, reports), timeout, attempts, sp.GetRequiredService<ILogger<ReportsGrpcTransport>>(), revisionTimeout));
+                Channel(sp, reports), timeout, attempts, sp.GetRequiredService<ILogger<ReportsGrpcTransport>>(), revisionTimeout,
+                regenerationTimeout));
         }
 
         if (monitor is not null)

@@ -314,6 +314,12 @@ public sealed partial class ReportPolicyRevisionService(
             : null;
     }
 
+    /// <summary>
+    /// 改訂の記録の見出しの先頭（版番号の前まで）。FR-06, 計画 ADR-0052 決定 3, IADR-0491 決定 4: 作り直し（ReportRegenerationService）は
+    /// この見出しから後ろを<b>そのまま保つ</b>（利用者の対話の結果を系が消さない）。
+    /// </summary>
+    public const string RevisionRecordHeadingPrefix = "## 利用者の指示による方針の改訂（版 ";
+
     // 本文の末尾へ改訂の記録を追記する（誰が・いつ・何を指示し・AI が何を案として返したか）。確定時に KB へ保存される。
     internal static string AppendRevisionRecord(
         string existingBody, int version, string actor, DateTimeOffset at, string instruction, PolicyRevisionProposal proposal,
@@ -326,7 +332,7 @@ public sealed partial class ReportPolicyRevisionService(
             sb.Append("\n\n");
         }
 
-        sb.Append(CultureInfo.InvariantCulture, $"## 利用者の指示による方針の改訂（版 {version}）\n\n");
+        sb.Append(CultureInfo.InvariantCulture, $"{RevisionRecordHeadingPrefix}{version}）\n\n");
         sb.Append(CultureInfo.InvariantCulture, $"- 指示者: {actor}\n");
         sb.Append(CultureInfo.InvariantCulture, $"- 日時（UTC）: {at.UtcDateTime:yyyy-MM-dd HH:mm:ss}\n");
         sb.Append("- 指示（原文）:\n\n");

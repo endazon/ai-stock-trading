@@ -997,6 +997,67 @@
             "names": []
           }
         },
+        "ReportRegenerationReply": {
+          "fields": {
+            "message": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "not_restorable_inputs": {
+              "number": 7,
+              "type": "string",
+              "label": "repeated"
+            },
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "presented": {
+              "number": 4,
+              "type": "bool",
+              "label": "optional"
+            },
+            "previous_version": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            },
+            "unsupplied_inputs": {
+              "number": 6,
+              "type": "string",
+              "label": "repeated"
+            },
+            "version": {
+              "number": 3,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "ReportRegenerationRequest": {
+          "fields": {
+            "on_behalf_of": {
+              "number": 2,
+              "type": "string",
+              "label": "optional"
+            },
+            "period_key": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "WatchlistApplyRecordItem": {
           "fields": {
             "action": {
@@ -1085,6 +1146,12 @@
             "RecordWatchlistApplyResult": {
               "request": "WatchlistApplyRecordRequest",
               "response": "WatchlistApplyRecordResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "RegenerateReport": {
+              "request": "ReportRegenerationRequest",
+              "response": "ReportRegenerationReply",
               "clientStreaming": false,
               "serverStreaming": false
             },

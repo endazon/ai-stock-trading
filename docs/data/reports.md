@@ -3,15 +3,15 @@ title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-09-26
+updated: 2026-10-06
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
-adrs: [ADR-0001, ADR-0003, ADR-0042]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028]
+adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, planning#711]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -84,6 +84,20 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028]
   改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
   **1 日（JST の暦日）の回数上限**は `Reports:PolicyRevision:DailyLimit`（既定 10 回）。上限に達した要求は LLM を呼ばず **429** で断る。
   数えるのは LLM を呼んだ試行（失敗も含む）で、入力の検証・対象の決定で断った要求は数えない。
+- `POST /reports/{periodKey}/regenerate`（**未確定の下書きを、その期間の入力で作り直す**。OwnerOnly。Discord の `/report regenerate <periodKey>`・gRPC `ReportOwnerWrite/RegenerateReport` も同じ処理）:
+  入力が未供給のまま作られた下書き（起動直後に依存先が未準備だった等）を、所有者の操作で作り直す。**系が自分で下書きを書き換える経路は無い。**
+  対象は未確定の下書きだけ（確定済みは 409・無い報告書は 404・下書きを新しく作らない）。要求は `{onBehalfOf?}`（作り直した利用者。確定と同じ規則で信頼クライアントのトークンに限り採る）。
+  **方針（方針の要約と `/policy` の改訂の記録）は保ち、事実と散文の節だけを作り直して版を上げ、承認待ちへ再提示する。** 確定は従来どおり版番号つきの確定だけが行う。
+  入力は自動生成と同じ供給元・同じ規則で引く。**期間がもう現在でない報告書では、「今」しか引けない入力（建玉・運用段階）を取りに行かず「未供給」として扱う**
+  （今の値を期間の値として書かない。期間が現在＝自動生成がいま対象にしている期間か、今日〔JST〕を含む期間）。
+  **中核の入力（約定・建玉・手動売買の取り込み）の取得に失敗したら作り直さず 422** で理由（入力の表示名）を返す（下書きはそのまま・回数は消費しない）。前文の「未供給として扱う」入力は取得の失敗に含めない。
+  **1 日（JST の暦日）の回数上限**は `Reports:Regeneration:DailyLimit`（既定 5 回・`/policy` とは別の枠）。上限に達した要求は入力も LLM も呼ばず **429** で断る。
+  数えるのは上限の門を通って散文を組み立てに行った試行（失敗も含む）で、上限・中核の入力で断った要求は数えない（台帳には残る）。
+  散文の LLM 費用は用途キー（モデル割当）を変えずに計上区分 `report-regeneration` へ付け替える（月次 LLM 上限の対象外。月報 §7 に回数・費用・上限到達の日数・断った回数を載せる）。
+  作り直した版の本文の末尾に「報告書の作り直しの記録（版 n）」（作り直した利用者・日時・作り直す前の版・なお未供給だった入力・復元できなかった入力）を足し、
+  `UnsuppliedInputs` はこの版の記録に従う（方針の連鎖の未供給は前の版から引き継ぐ）。試行は `report_regeneration_attempts` 表に残し、作り直せたときは監査台帳へ `ReportRegenerated` を発行する。
+  応答は 200＝`{periodKey, previousVersion, version, presented, message, unsuppliedInputs[], notRestorableInputs[]}`（入力は表示名）／400＝会話キー・代理指定の不正／404／409＝確定済み・期間の不整合・並行更新（散文を待つ間の改訂）／422／429。
+  **200 以外では下書きを変えていない。**
 - `POST /reports/knowledge-base/reingest`（**確定済みの報告書を KB へ入れ直す**。OwnerOnly）: 基盤の切替で消えた KB 上の写しの復旧と、
   本文なしで入った写しの修復に使う。要求は `{all?, fromPeriodKey?, toPeriodKey?, refreshExisting?}`。全件は `all: true` で明示する
   （範囲との併用・指定なしは 400）。範囲は期間キーを期間へ直して読む（日報＝その日・週報＝ISO 週の月〜日・月報＝その月。

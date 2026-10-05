@@ -50,7 +50,10 @@ public sealed class ReportAutoGenerator(
     IStopLossMethodUsageSource? stopLossMethodUsageSource = null,
     // FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定4: 発注執行の損切りの実行機構の解決結果（日報の 2 行目・月報 §6）。
     // 未注入は「供給元が構成されていない」＝常に未供給（「記録なし」「食い違いなし」へ倒さない）。
-    IStopLossMethodResolutionSource? stopLossMethodResolutionSource = null)
+    IStopLossMethodResolutionSource? stopLossMethodResolutionSource = null,
+    // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6: 月報 §7 の作り直しの回数（試行の台帳）。未注入は null＝照会できていない。
+    IReportRegenerationLedger? regenerationLedger = null,
+    ReportRegenerationLimit? regenerationLimit = null)
 {
     // 観測点が未注入（単体テスト・旧構成）なら誰も記録しない観測になり、見送りは起きない＝従来挙動。
     private readonly ReportDependencyProbe _probe = dependencyProbe ?? new ReportDependencyProbe();
@@ -161,80 +164,8 @@ public sealed class ReportAutoGenerator(
         if (previous is null && parentKind != due.Kind)
             unsupplied.Add(ReportInput.PreviousPolicy);
 
-        observation.Enter(ReportInput.Fills);
-        var (fills, fillsFailed) = await SafeFillsAsync(due, cancellationToken).ConfigureAwait(false);
-        // 約定だけは不達でも空列へ倒れる（IADR-0115 決定5）ため、値からは欠落が分からない。観測から判定する。
-        if (fillsFailed || observation.HasFailure(ReportInput.Fills))
-            unsupplied.Add(ReportInput.Fills);
-
-        observation.Enter(ReportInput.DriftAdoptions);
-        var driftAdoptions = await SafeDriftAdoptionsAsync(due, cancellationToken).ConfigureAwait(false);
-        if (driftAdoptions is null)
-            unsupplied.Add(ReportInput.DriftAdoptions);
-
-        observation.Enter(ReportInput.MarginReductions);
-        var reductions = await SafeReductionsAsync(due, cancellationToken).ConfigureAwait(false);
-        if (reductions is null)
-            unsupplied.Add(ReportInput.MarginReductions);
-
-        observation.Enter(ReportInput.BuyInInferences);
-        var buyIns = await SafeBuyInInferencesAsync(due, cancellationToken).ConfigureAwait(false);
-        if (buyIns is null)
-            unsupplied.Add(ReportInput.BuyInInferences);
-
-        observation.Enter(ReportInput.FxSourceStatus);
-        var fxStatus = await SafeFxSourceStatusAsync(due, cancellationToken).ConfigureAwait(false);
-        if (fxStatus is null)
-            unsupplied.Add(ReportInput.FxSourceStatus);
-
-        observation.Enter(ReportInput.LlmUsage);
-        var llmUsage = await SafeLlmUsageAsync(due, cancellationToken).ConfigureAwait(false);
-        if (llmUsage is null)
-            unsupplied.Add(ReportInput.LlmUsage);
-
-        observation.Enter(ReportInput.BorrowFees);
-        var borrowFees = await SafeBorrowFeesAsync(due, cancellationToken).ConfigureAwait(false);
-        if (borrowFees is null)
-            unsupplied.Add(ReportInput.BorrowFees);
-
-        observation.Enter(ReportInput.TradeRationales);
-        var rationales = await SafeRationalesAsync(due, cancellationToken).ConfigureAwait(false);
-        if (rationales is null)
-            unsupplied.Add(ReportInput.TradeRationales);
-
-        observation.Enter(ReportInput.OpenPositions);
-        var positions = await SafeOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
-        if (positions is null)
-            unsupplied.Add(ReportInput.OpenPositions);
-
-        observation.Enter(ReportInput.OpenDUptime);
-        var uptime = await SafeUptimeAsync(due, cancellationToken).ConfigureAwait(false);
-        if (uptime is null)
-            unsupplied.Add(ReportInput.OpenDUptime);
-
-        observation.Enter(ReportInput.StopLossMethods);
-        var stopLossMethods = await SafeStopLossMethodsAsync(due, cancellationToken).ConfigureAwait(false);
-        if (stopLossMethods is null)
-            unsupplied.Add(ReportInput.StopLossMethods);
-
-        observation.Enter(ReportInput.StopLossMethodResolutions);
-        var stopLossMethodResolutions = await SafeStopLossMethodResolutionsAsync(due, cancellationToken).ConfigureAwait(false);
-        if (stopLossMethodResolutions is null)
-            unsupplied.Add(ReportInput.StopLossMethodResolutions);
-
-        observation.Enter(ReportInput.CurrentStage);
-        var currentStage = await SafeCurrentStageAsync(cancellationToken).ConfigureAwait(false);
-        if (currentStage is null)
-            unsupplied.Add(ReportInput.CurrentStage);
-
-        observation.Enter(ReportInput.PeriodEndFxRate);
-        var periodEndFxRate = await SafePeriodEndFxRateAsync(due, cancellationToken).ConfigureAwait(false);
-        if (periodEndFxRate is null)
-            unsupplied.Add(ReportInput.PeriodEndFxRate);
-
-        // この種別が使わない入力の欠落は数えない（週報は建玉を描かない。警告にも見送りの判定にも混ぜない）。
-        // Stage 0 の見積り承認額は構成値であり、未設定（承認が無い）が通常の状態のため、そもそも数えない。
-        unsupplied.RemoveWhere(input => !ReportInputs.AppliesTo(input, due.Kind));
+        var inputs = await CollectInputsAsync(due, observation, NoNotRestorable, cancellationToken).ConfigureAwait(false);
+        unsupplied.UnionWith(inputs.Unsupplied);
 
         // #840, IADR-0352 決定 3: **散文（LLM）を呼ぶ前に**見送りを判定する。入力が欠けたままの回に
         // LLM 費用を出さない（見送る回の散文は捨てるしかない）。
@@ -245,56 +176,18 @@ public sealed class ReportAutoGenerator(
 
         observation.Enter(ReportInput.Narrative);
 
-        // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
-        //
-        // FR-07, IADR-0120 決定3, #293: 上位方針は **PeriodKey だけでなく本文まで**散文ドラフトへ渡す。
-        // 従来は取得済みの parent から PeriodKey のみを使い PolicySummary を破棄していたため、計画
-        // （04_workflows/03_reporting-cycle）が求める「上位方針の目標との差異評価」を LLM が書けなかった。
-        // 渡し先は散文の文脈のみ。方針文（policy）へは混ぜない（IADR-0115 決定4・ADR-0003）。
-        //
-        // IADR-0125 決定4, #310: 渡すのは**方針の実体だけ**（Substance）。累積済みのレコードを持つ環境では
-        // 上位方針の本文が定型文で膨らんでおり、そのまま渡すとプロンプトの大半が前置きで埋まる。
-        var draft = await draftService.BuildDraftAsync(
-            new DraftRequest(
-                due.Kind, due.PeriodKey, due.PeriodStart, settings.Markets, settings.AssumptionsVersion,
-                parent?.Report.PeriodKey, policy, fills, CurrentPrices: null,
-                ParentPolicySummary: ReportPolicyDraft.Substance(parent?.Report.PolicySummary),
-                MarginReductions: reductions,
-                BuyInInferences: buyIns,
-                FxSourceStatus: fxStatus,
-                LlmUsage: llmUsage,
-                Stage0RecordingApprovedEstimateJpy: SafeStage0RecordingEstimate(),
-                BorrowFees: borrowFees,
-                TradeRationales: rationales,
-                Positions: positions,
-                Uptime: uptime,
-                CurrentStage: currentStage,
-                PeriodEndFxRate: periodEndFxRate,
-                DriftAdoptions: driftAdoptions,
-                StopLossMethods: stopLossMethods,
-                StopLossMethodResolutions: stopLossMethodResolutions,
-                // FR-06, FR-16, #1156, IADR-0480 決定 1: 散文（LLM）へ「取得できなかった入力」を渡す。
-                // 渡さないと、LLM は値の無さや 0 から「建玉なし」「取引なし」と推測する（#1156 の実測）。
-                UnsuppliedInputs: ReportInputs.Parse(ReportInputs.Serialize(unsupplied))),
-            cancellationToken).ConfigureAwait(false);
-
-        // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
-        // **期間開始時点の在庫**を未供給として記録する（IADR-0352 の既存経路＝記録・提示通知の警告・
-        // `/report show`・版番号なしの `/report approve` の警告へそのまま乗る）。
-        // 🔴 **見送り（リトライ）には掛けない。** 供給元が存在しない入力であり、待っても変わらない
-        //（TryDefer は上で終わっており、ここから先で見送りへ入る経路は散文だけである）。
-        if (draft.Pnl.UnvaluedSettlementCount > 0)
-            unsupplied.Add(ReportInput.OpeningInventory);
+        var draft = await DraftFromInputsAsync(
+            due, inputs, policy, settings.AssumptionsVersion, parent?.Report.PeriodKey,
+            // FR-07, IADR-0120 決定3, #293 / IADR-0125 決定4, #310: 上位方針は**方針の実体だけ**を散文の文脈へ渡す。
+            ReportPolicyDraft.Substance(parent?.Report.PolicySummary),
+            unsupplied, usagePurpose: null, cancellationToken).ConfigureAwait(false);
 
         // 散文の未供給＝プレースホルダ散文（LLM 未接続・縮退のいずれも。数値には関与しない）。
-        if (string.Equals(draft.Narrative, ReportNarrativeDefaults.PlaceholderText, StringComparison.Ordinal))
-        {
-            unsupplied.Add(ReportInput.Narrative);
-            if (TryDefer(due, [ReportInput.Narrative], observation, ref retriesExhausted, ref windowClosing)
+        if (unsupplied.Contains(ReportInput.Narrative)
+            && TryDefer(due, [ReportInput.Narrative], observation, ref retriesExhausted, ref windowClosing)
                 is { } deferredForNarrative)
-            {
-                return GenerationOutcome.Deferred(deferredForNarrative);
-            }
+        {
+            return GenerationOutcome.Deferred(deferredForNarrative);
         }
 
         var unsuppliedInputs = ReportInputs.Parse(ReportInputs.Serialize(unsupplied));
@@ -339,6 +232,226 @@ public sealed class ReportAutoGenerator(
 
         return new GenerationOutcome(
             report, presented, notificationFailed, retriesExhausted, windowClosing, Deferral: null);
+    }
+
+    private static readonly IReadOnlySet<ReportInput> NoNotRestorable = new HashSet<ReportInput>();
+
+    /// <summary>
+    /// FR-06, FR-14, 計画 ADR-0052 決定 2・4, #1156, IADR-0491 決定 4: 所有者の作り直し（<see cref="ReportRegenerationService"/>）が、
+    /// 自動生成と<b>同じ供給元・同じ規則</b>で期間の入力を引く入口。<paramref name="notRestorable"/> に挙げた入力（期間の時点に復元できない
+    /// 入力）は<b>取りに行かず</b>未供給として扱う（今の値を期間の値として書かない）。見送り（TryDefer）はしない——作り直しは利用者が今
+    /// 求めた操作であり、中核の入力の取得失敗は呼び出し側が断る（ADR-0052 決定 4）。
+    /// </summary>
+    public async Task<ReportInputSnapshot> CollectInputsAsync(
+        DueReport due, IReadOnlySet<ReportInput> notRestorable, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(due);
+        ArgumentNullException.ThrowIfNull(notRestorable);
+        using var observation = _probe.Begin();
+        return await CollectInputsAsync(due, observation, notRestorable, cancellationToken).ConfigureAwait(false);
+    }
+
+    // 期間の入力を順に引く（自動生成と作り直しで 1 本）。未供給は種別が使う入力だけを数える。
+    private async Task<ReportInputSnapshot> CollectInputsAsync(
+        DueReport due,
+        ReportDependencyObservation observation,
+        IReadOnlySet<ReportInput> notRestorable,
+        CancellationToken cancellationToken)
+    {
+        var unsupplied = new HashSet<ReportInput>();
+
+        observation.Enter(ReportInput.Fills);
+        var (fills, fillsFailed) = await SafeFillsAsync(due, cancellationToken).ConfigureAwait(false);
+        // 約定だけは不達でも空列へ倒れる（IADR-0115 決定5）ため、値からは欠落が分からない。観測から判定する。
+        if (fillsFailed || observation.HasFailure(ReportInput.Fills))
+            unsupplied.Add(ReportInput.Fills);
+
+        observation.Enter(ReportInput.DriftAdoptions);
+        var driftAdoptions = await SafeDriftAdoptionsAsync(due, cancellationToken).ConfigureAwait(false);
+        if (driftAdoptions is null)
+            unsupplied.Add(ReportInput.DriftAdoptions);
+
+        observation.Enter(ReportInput.MarginReductions);
+        var reductions = await SafeReductionsAsync(due, cancellationToken).ConfigureAwait(false);
+        if (reductions is null)
+            unsupplied.Add(ReportInput.MarginReductions);
+
+        observation.Enter(ReportInput.BuyInInferences);
+        var buyIns = await SafeBuyInInferencesAsync(due, cancellationToken).ConfigureAwait(false);
+        if (buyIns is null)
+            unsupplied.Add(ReportInput.BuyInInferences);
+
+        observation.Enter(ReportInput.FxSourceStatus);
+        var fxStatus = await SafeFxSourceStatusAsync(due, cancellationToken).ConfigureAwait(false);
+        if (fxStatus is null)
+            unsupplied.Add(ReportInput.FxSourceStatus);
+
+        observation.Enter(ReportInput.LlmUsage);
+        var llmUsage = await SafeLlmUsageAsync(due, cancellationToken).ConfigureAwait(false);
+        if (llmUsage is null)
+            unsupplied.Add(ReportInput.LlmUsage);
+
+        observation.Enter(ReportInput.BorrowFees);
+        var borrowFees = await SafeBorrowFeesAsync(due, cancellationToken).ConfigureAwait(false);
+        if (borrowFees is null)
+            unsupplied.Add(ReportInput.BorrowFees);
+
+        observation.Enter(ReportInput.TradeRationales);
+        var rationales = await SafeRationalesAsync(due, cancellationToken).ConfigureAwait(false);
+        if (rationales is null)
+            unsupplied.Add(ReportInput.TradeRationales);
+
+        // FR-06, 計画 ADR-0052 決定 2, IADR-0491 決定 4: 建玉は「今の台帳」しか引けない。期間の時点に復元できないなら取りに行かない
+        // （今の建玉を「当日終了時点」と書く誤りを作らない）。
+        IReadOnlyList<ReportPosition>? positions = null;
+        if (!notRestorable.Contains(ReportInput.OpenPositions))
+        {
+            observation.Enter(ReportInput.OpenPositions);
+            positions = await SafeOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (positions is null)
+            unsupplied.Add(ReportInput.OpenPositions);
+
+        observation.Enter(ReportInput.OpenDUptime);
+        var uptime = await SafeUptimeAsync(due, cancellationToken).ConfigureAwait(false);
+        if (uptime is null)
+            unsupplied.Add(ReportInput.OpenDUptime);
+
+        observation.Enter(ReportInput.StopLossMethods);
+        var stopLossMethods = await SafeStopLossMethodsAsync(due, cancellationToken).ConfigureAwait(false);
+        if (stopLossMethods is null)
+            unsupplied.Add(ReportInput.StopLossMethods);
+
+        observation.Enter(ReportInput.StopLossMethodResolutions);
+        var stopLossMethodResolutions = await SafeStopLossMethodResolutionsAsync(due, cancellationToken).ConfigureAwait(false);
+        if (stopLossMethodResolutions is null)
+            unsupplied.Add(ReportInput.StopLossMethodResolutions);
+
+        // FR-06, 計画 ADR-0052 決定 2, IADR-0491 決定 4: 運用段階も「今の段階」しか引けない（月報 §5 の三者比較）。
+        TradingStage? currentStage = null;
+        if (!notRestorable.Contains(ReportInput.CurrentStage))
+        {
+            observation.Enter(ReportInput.CurrentStage);
+            currentStage = await SafeCurrentStageAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (currentStage is null)
+            unsupplied.Add(ReportInput.CurrentStage);
+
+        observation.Enter(ReportInput.PeriodEndFxRate);
+        var periodEndFxRate = await SafePeriodEndFxRateAsync(due, cancellationToken).ConfigureAwait(false);
+        if (periodEndFxRate is null)
+            unsupplied.Add(ReportInput.PeriodEndFxRate);
+
+        // この種別が使わない入力の欠落は数えない（週報は建玉を描かない。警告にも見送りの判定にも混ぜない）。
+        // Stage 0 の見積り承認額は構成値であり、未設定（承認が無い）が通常の状態のため、そもそも数えない。
+        unsupplied.RemoveWhere(input => !ReportInputs.AppliesTo(input, due.Kind));
+
+        return new ReportInputSnapshot
+        {
+            Fills = fills,
+            DriftAdoptions = driftAdoptions,
+            MarginReductions = reductions,
+            BuyInInferences = buyIns,
+            FxSourceStatus = fxStatus,
+            LlmUsage = llmUsage,
+            BorrowFees = borrowFees,
+            TradeRationales = rationales,
+            Positions = positions,
+            Uptime = uptime,
+            StopLossMethods = stopLossMethods,
+            StopLossMethodResolutions = stopLossMethodResolutions,
+            CurrentStage = currentStage,
+            PeriodEndFxRate = periodEndFxRate,
+            Unsupplied = ReportInputs.Parse(ReportInputs.Serialize(unsupplied)),
+            NotRestorable = ReportInputs.Parse(ReportInputs.Serialize(
+                notRestorable.Where(input => ReportInputs.AppliesTo(input, due.Kind)))),
+        };
+    }
+
+    /// <summary>
+    /// 引いた入力から本文（数値はコード集計・散文は LLM）を組み立てる（自動生成と作り直しで 1 本）。<paramref name="unsupplied"/> は
+    /// 呼び出し側が持つ未供給の集合で、散文の文脈へ渡し、組み立ての結果（期間開始時点の在庫・プレースホルダ散文）を<b>足して返す</b>。
+    /// <paramref name="usagePurpose"/> は散文の LLM 費用の計上区分の付け替え（作り直しは <c>report-regeneration</c>。IADR-0491 決定 2）。
+    /// </summary>
+    public async Task<ReportDraft> DraftFromInputsAsync(
+        DueReport due,
+        ReportInputSnapshot inputs,
+        string policy,
+        int assumptionsVersion,
+        string? basedOn,
+        string? parentPolicySummary,
+        ISet<ReportInput> unsupplied,
+        string? usagePurpose,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(due);
+        ArgumentNullException.ThrowIfNull(inputs);
+        ArgumentNullException.ThrowIfNull(unsupplied);
+
+        // 数値はコード集計・散文は LLM ドラフト（IADR-0032）。現在値は要求で指定せず、市場データ源へ委ねる（IADR-0066）。
+        //
+        // FR-07, IADR-0120 決定3, #293: 上位方針は **PeriodKey だけでなく本文まで**散文ドラフトへ渡す。
+        // 従来は取得済みの parent から PeriodKey のみを使い PolicySummary を破棄していたため、計画
+        // （04_workflows/03_reporting-cycle）が求める「上位方針の目標との差異評価」を LLM が書けなかった。
+        // 渡し先は散文の文脈のみ。方針文（policy）へは混ぜない（IADR-0115 決定4・ADR-0003）。
+        var draft = await draftService.BuildDraftAsync(
+            new DraftRequest(
+                due.Kind, due.PeriodKey, due.PeriodStart, settings.Markets, assumptionsVersion,
+                basedOn, policy, inputs.Fills, CurrentPrices: null,
+                ParentPolicySummary: parentPolicySummary,
+                MarginReductions: inputs.MarginReductions,
+                BuyInInferences: inputs.BuyInInferences,
+                FxSourceStatus: inputs.FxSourceStatus,
+                LlmUsage: inputs.LlmUsage,
+                Stage0RecordingApprovedEstimateJpy: SafeStage0RecordingEstimate(),
+                BorrowFees: inputs.BorrowFees,
+                TradeRationales: inputs.TradeRationales,
+                Positions: inputs.Positions,
+                Uptime: inputs.Uptime,
+                CurrentStage: inputs.CurrentStage,
+                PeriodEndFxRate: inputs.PeriodEndFxRate,
+                DriftAdoptions: inputs.DriftAdoptions,
+                StopLossMethods: inputs.StopLossMethods,
+                StopLossMethodResolutions: inputs.StopLossMethodResolutions,
+                // FR-06, FR-16, #1156, IADR-0480 決定 1: 散文（LLM）へ「取得できなかった入力」を渡す。
+                // 渡さないと、LLM は値の無さや 0 から「建玉なし」「取引なし」と推測する（#1156 の実測）。
+                UnsuppliedInputs: ReportInputs.Parse(ReportInputs.Serialize(unsupplied)),
+                UsagePurpose: usagePurpose,
+                // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 月報 §7 の作り直しの回数（台帳。null＝照会できていない）。
+                ReportRegeneration: due.Kind == ReportKind.Monthly ? SafeRegenerationTally(due) : null),
+            cancellationToken).ConfigureAwait(false);
+
+        // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
+        // **期間開始時点の在庫**を未供給として記録する（IADR-0352 の既存経路＝記録・提示通知の警告・
+        // `/report show`・版番号なしの `/report approve` の警告へそのまま乗る）。
+        // 🔴 **見送り（リトライ）には掛けない。** 供給元が存在しない入力であり、待っても変わらない
+        //（TryDefer は入力の後で終わっており、ここから先で見送りへ入る経路は散文だけである）。
+        if (draft.Pnl.UnvaluedSettlementCount > 0)
+            unsupplied.Add(ReportInput.OpeningInventory);
+
+        // 散文の未供給＝プレースホルダ散文（LLM 未接続・縮退のいずれも。数値には関与しない）。
+        if (string.Equals(draft.Narrative, ReportNarrativeDefaults.PlaceholderText, StringComparison.Ordinal))
+            unsupplied.Add(ReportInput.Narrative);
+
+        return draft;
+    }
+
+    // FR-06, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 月報 §7 の作り直しの回数。台帳が無い構成・読めないときは null（0 回と書かない）。
+    private ReportRegenerationTally? SafeRegenerationTally(DueReport due)
+    {
+        if (regenerationLedger is null)
+            return null;
+
+        try
+        {
+            return regenerationLedger.Tally(due.PeriodStart, due.PeriodEnd, (regenerationLimit ?? ReportRegenerationLimit.Default).DailyLimit);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     // #840, IADR-0352 決定 3・4: 見送るかどうか。
@@ -881,3 +994,48 @@ public sealed record ReportGenerationDegradation(
 
 // 期間単位の失敗（常駐側のログ出力に用いる）。
 public sealed record ReportAutoGenerationFailure(string PeriodKey, Exception Error);
+
+// FR-06, FR-14, 計画 ADR-0052 決定 2・4, #1156, IADR-0491 決定 4: 期間の入力（自動生成と作り直しが同じ供給元・同じ規則で引いた値）。
+// 各値の null は「照会できていない」であり、空・0 へ潰さない（各 Safe* の注記）。
+public sealed record ReportInputSnapshot
+{
+    public required IReadOnlyList<PeriodTradeFill> Fills { get; init; }
+
+    public IReadOnlyList<PeriodDriftAdoption>? DriftAdoptions { get; init; }
+
+    public IReadOnlyList<MaintenanceMarginReductionExecuted>? MarginReductions { get; init; }
+
+    public IReadOnlyList<BuyInInferred>? BuyInInferences { get; init; }
+
+    public FxSourceStatus? FxSourceStatus { get; init; }
+
+    public LlmUsageRecord? LlmUsage { get; init; }
+
+    public BorrowFeeRecord? BorrowFees { get; init; }
+
+    public IReadOnlyDictionary<Guid, string>? TradeRationales { get; init; }
+
+    public IReadOnlyList<ReportPosition>? Positions { get; init; }
+
+    public OpenDUptimeRecord? Uptime { get; init; }
+
+    public StopLossMethodUsage? StopLossMethods { get; init; }
+
+    public StopLossMethodResolutionFeed? StopLossMethodResolutions { get; init; }
+
+    public TradingStage? CurrentStage { get; init; }
+
+    public PeriodEndFxRate? PeriodEndFxRate { get; init; }
+
+    /// <summary>この種別が使う入力のうち、取得できなかった（または期間の時点に復元できないため取りに行かなかった）もの。</summary>
+    public required IReadOnlyList<ReportInput> Unsupplied { get; init; }
+
+    /// <summary>期間の時点に復元できないため取りに行かなかった入力（この種別が使うものだけ）。<see cref="Unsupplied"/> の部分集合。</summary>
+    public IReadOnlyList<ReportInput> NotRestorable { get; init; } = [];
+
+    /// <summary>
+    /// 計画 ADR-0052 決定 4: <b>取得に失敗した</b>入力（<see cref="Unsupplied"/> から <see cref="NotRestorable"/> を除いたもの）。
+    /// 復元できない入力は「取得の失敗」に含めない（含めると期間が過ぎた日報は常に断られ、決定 2 が意味を失う）。
+    /// </summary>
+    public IReadOnlyList<ReportInput> FetchFailed => [.. Unsupplied.Where(i => !NotRestorable.Contains(i))];
+}

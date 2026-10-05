@@ -149,6 +149,14 @@ public static class ReportInputs
     public static bool IsCore(ReportInput input) =>
         input is ReportInput.Fills or ReportInput.OpenPositions or ReportInput.DriftAdoptions;
 
+    /// <summary>
+    /// FR-06, 計画 ADR-0052 決定 2, #1156, IADR-0491 決定 4: <b>「今」の値しか引けない入力</b>か。供給元に過去の時点を問う口が無い
+    /// （建玉＝現在の台帳の射影、運用段階＝現在の段階）。期間がもう現在でない報告書を作り直すときは、取りに行かず「未供給」として扱う
+    /// （今の値を期間の値として書かない）。それ以外の入力は期間の範囲で引くので、いつ作り直しても期間の時点の値になる。
+    /// </summary>
+    public static bool IsPointInTime(ReportInput input) =>
+        input is ReportInput.OpenPositions or ReportInput.CurrentStage;
+
     /// <summary>利用者へ見せる名前（Discord の通知・`/report show`）。コード定数であり外部入力を含まない。</summary>
     public static string Label(ReportInput input) => input switch
     {

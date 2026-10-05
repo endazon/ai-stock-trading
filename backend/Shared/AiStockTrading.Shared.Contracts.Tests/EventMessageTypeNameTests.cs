@@ -94,6 +94,8 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(RealAccountReadOnlyQueried), "AiStockTrading.Shared.Contracts.Events.RealAccountReadOnlyQueried")]
         [InlineData(typeof(ReportConfirmed), "AiStockTrading.Shared.Contracts.Events.ReportConfirmed")]
         [InlineData(typeof(ReportDraftPresented), "AiStockTrading.Shared.Contracts.Events.ReportDraftPresented")]
+        // FR-06, FR-11, 計画 ADR-0052 決定 5, #1156, IADR-0491 決定 5: 所有者による報告書の作り直し。
+        [InlineData(typeof(ReportRegenerated), "AiStockTrading.Shared.Contracts.Events.ReportRegenerated")]
         // T-10-1507, FR-08, FR-11, #1028, IADR-0436 決定 4: 確定報告書の KB への入れ直し（報告書 → 監査台帳）。
         [InlineData(typeof(ReportKnowledgeReingested), "AiStockTrading.Shared.Contracts.Events.ReportKnowledgeReingested")]
         [InlineData(typeof(StageTransitioned), "AiStockTrading.Shared.Contracts.Events.StageTransitioned")]

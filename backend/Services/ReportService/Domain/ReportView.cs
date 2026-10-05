@@ -101,6 +101,13 @@ public sealed record ReportView
     public LlmUsageRecord? LlmUsage { get; init; }
 
     /// <summary>
+    /// FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6, 04_report-templates 月報 §7: 当月の報告書の作り直し
+    /// （<c>/report regenerate</c>）の回数（作り直した・断った・上限に達した日）。費用は <see cref="LlmUsage"/> の計上から読む。
+    /// 🔴 <c>null</c> は「<b>試行の台帳を照会できていない</b>」であり「0 回」ではない。
+    /// </summary>
+    public ReportRegenerationTally? ReportRegeneration { get; init; }
+
+    /// <summary>
     /// FR-06, FR-15, ADR-0033 決定5・5.3, ADR-0037 決定3, #750, 04_report-templates 月報 §7:
     /// Stage 0 記録実行の<b>見積り承認額</b>（円）。<see cref="LlmUsage"/> から集計する実績と並べて対比を出す。
     /// <para>
