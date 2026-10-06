@@ -28,7 +28,8 @@ public sealed record PnlSummary(
 
     /// <summary>
     /// FR-06, FR-16, #892, IADR-0381: <b>取得原価が当期間に無く、実現損益を算定できなかった決済の件数</b>
-    /// （期間より前に建てた建玉の決済。<see cref="PeriodInventory"/>）。
+    /// （期間より前に建てた建玉の決済。<see cref="PeriodInventory"/>）。#1181, IADR-0493: 期間開始時点の在庫を受け取った回は、
+    /// 在庫と期間の買いで賄えない手仕舞い（台帳と報告書の窓の食い違い）だけがここに数えられる。
     /// <para>
     /// 🔴 <b>0 より大きければ、この期間の実現損益（<see cref="RealizedPnlGross"/> /
     /// <see cref="RealizedPnlNet"/>）・<see cref="TaxWithheld"/>・勝率（<see cref="WinningTradeCount"/> /
@@ -38,4 +39,22 @@ public sealed record PnlSummary(
     /// </para>
     /// <para>既定 0 ＝算定できなかった決済は無い（既存の呼び出しは非破壊で通る）。</para>
     /// </summary>
-    int UnvaluedSettlementCount = 0);
+    int UnvaluedSettlementCount = 0,
+
+    /// <summary>
+    /// FR-06, FR-16, #1181, IADR-0493 決定 4: <b>期間開始時点の在庫を照会できなかった</b>（供給元はあるが取得に失敗した）。
+    /// <para>
+    /// 🔴 <c>true</c> のとき、在庫は期間で切ったまま畳まれている。持ち越した建玉は評価損益に入らず、期間の買いで賄えた決済も
+    /// 持ち越し分と混ぜた平均取得単価で算定されていない——<b>実現損益・税・勝率・評価損益は部分値である</b>
+    /// （<see cref="UnvaluedSettlementCount"/> が 0 でも）。描画は <see cref="IsPartial"/> で分岐する。
+    /// </para>
+    /// <para>既定 <c>false</c>＝照会できた、または供給元を持たない経路（手動の生成 API・未注入の単体テスト＝従来挙動）。</para>
+    /// </summary>
+    bool OpeningInventoryUnknown = false)
+{
+    /// <summary>
+    /// 取得原価を要する値（実現損益・税・勝率・評価損益）が部分値か（#892 の算定できない決済、または #1181 の在庫の照会失敗）。
+    /// 🔴 <c>true</c> の値を数字として出さない。
+    /// </summary>
+    public bool IsPartial => UnvaluedSettlementCount > 0 || OpeningInventoryUnknown;
+}

@@ -9,9 +9,9 @@ updated: 2026-10-06
 <!-- trace:
 ids: [NFR]
 adrs: [MSP:ADR-0029, MSP:ADR-0075, ADR-0047]
-iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283]
+iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493]
 specs: [20261004_753_grpc-h2c-measurement-runbook]
-issues: [#753, #626, #1178]
+issues: [#753, #626, #1178, #1181]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -71,7 +71,7 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 | 2 | trade-decision | `Configuration__Grpc` | configuration | `configuration.v1.Assumptions/Get` | 1 | 🔴 **採算評価ゲート（`Profitability:Enabled=true`）が有効なときだけ**読む。既定は無効なので**発火しない**（下の注意） | 5 秒 |
 | 3 | trade-decision | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions`・`GetWorkingEntryOrders`・`GetSizingContext`・`GetEntryBlockers` | 2 | 取引サイクル（開場中） | 5 秒 |
 | 4 | market-monitor | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions` | 2 | 損切り監視の巡回（保有があるとき） | 5 秒 |
-| 5 | report | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions`・`GetFills`・`GetDriftAdoptions`・`GetBuyInInferences`・`GetSessionUptime`・`GetStageGate` | 2 | 報告書の生成 | 10 秒 |
+| 5 | report | `RiskManagement__Grpc` | risk-management | `riskmanagement.v1.RiskControlsRead/GetOpenPositions`・`GetFills`・`GetDriftAdoptions`・`GetBuyInInferences`・`GetSessionUptime`・`GetStageGate`・`GetOpeningInventory` | 2 | 報告書の生成 | 10 秒 |
 | 6 | report | `Audit__Grpc` | audit | `audit.v1.AuditEventsRead/GetEventsByType` | 3 | 報告書の生成（監査台帳の 6 つの供給元）。🔴 **overlay の既定では宣言しない**（別窓。下の注意） | 10 秒 |
 | 7 | trade-decision | `Reports__Grpc` | report | `report.v1.DailyPolicyRead/GetConfirmedDailyPolicy` | 4 | 取引サイクル（その日の方針） | 5 秒 |
 | 8 | trade-decision | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist`・`GetWatchlistAsOf` | 4 | 取引サイクル・Stage 0 の記録 | 5 秒 |

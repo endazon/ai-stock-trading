@@ -8,6 +8,7 @@ using RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
 using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetFills;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
+using RiskManagementService.Features.RiskManagement.GetOpeningInventory;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
@@ -149,6 +150,27 @@ public sealed class RiskControlsReadGrpcService(
                 Days = days,
                 Stage1CumulativeCountedDays = uptimeObservations.GetQualifiedTradingDayCount(),
             };
+        });
+
+    // FR-06, FR-16, #1181, IADR-0493 決定 2: 期間開始時点の在庫（REST と同じ純関数）。market・before の欠落・未指定は
+    // INVALID_ARGUMENT（REST の 400）。
+    public override Task<Proto.GetOpeningInventoryResponse> GetOpeningInventory(
+        Proto.GetOpeningInventoryRequest request, ServerCallContext context) =>
+        Reply(() =>
+        {
+            var market = request.Market switch
+            {
+                Proto.Market.Japan => Market.Japan,
+                Proto.Market.UnitedStates => Market.UnitedStates,
+                _ => (Market?)null,
+            };
+            if (market is not { } m || !TryParseDay(request.Before, out var before))
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "market・before（yyyy-MM-dd）は必須です。"));
+
+            var response = new Proto.GetOpeningInventoryResponse();
+            response.Lots.AddRange(
+                OpeningInventoryQuery.AsOf(ledger.GetFills(), m, before).Select(RiskReadWireMapping.ToProto));
+            return response;
         });
 
     // REST の群のフィルタ（RiskControlEndpoints）と同じ分類: ArgumentException は 400 ＝ INVALID_ARGUMENT。

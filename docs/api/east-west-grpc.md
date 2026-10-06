@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate]
-issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -174,13 +174,14 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156]
 | `GetDriftAdoptions` | `GET /risk-controls/drift-adoptions?from&to` | 報告書 | 未供給 |
 | `GetBuyInInferences` | `GET /risk-controls/buy-in-inferences?from&to` | 報告書 | 未供給 |
 | `GetSessionUptime` | `GET /risk-controls/session-uptime?from&to` | 報告書 | 未供給 |
+| `GetOpeningInventory` | `GET /risk-controls/opening-inventory?market&before`（期間開始時点の在庫。指定した市場の現地取引日より前〔排他〕までの台帳行を畳み、銘柄ごとの数量・基準通貨の平均取得単価・認識時レートの加重平均を返す） | 報告書 | 未供給（取得原価を要する値は算出不能。必須の項目が欠けた行があれば応答全体を読めない） |
 
 エラー:
 
 | gRPC status | 条件 | 呼び出し側の対応 |
 | --- | --- | --- |
 | `UNAUTHENTICATED` / `PERMISSION_DENIED` | サービストークン無し／ロール不足 | 上表の扱いへ縮退。**再試行しない** |
-| `INVALID_ARGUMENT` | 期間の `from`・`to` の欠落・書式違い（REST の 400）。新規建ての可否の `symbol`・`market` の欠落も。強制買戻し・稼働率は逆順も（REST と同じ）。処理中の引数の検証失敗も（REST の 400 と同じ。`UNKNOWN` にしない） | 同上 |
+| `INVALID_ARGUMENT` | 期間の `from`・`to` の欠落・書式違い（REST の 400）。新規建ての可否の `symbol`・`market` の欠落も。期間開始時点の在庫の `market`・`before` の欠落も。強制買戻し・稼働率は逆順も（REST と同じ）。処理中の引数の検証失敗も（REST の 400 と同じ。`UNKNOWN` にしない） | 同上 |
 | `UNAVAILABLE` / `DEADLINE_EXCEEDED` | 届かない／試行ごとの deadline 超過 | 同上。**再試行の対象** |
 
 ### 🔴 「不明」「無し」「有り」を取り違えない写し

@@ -258,7 +258,7 @@ builder.Services.AddHttpClient("risk-ledger", c => c.Timeout = TimeSpan.FromSeco
     .AddAiStockTradingServiceToken(builder.Configuration);
 // NFR, MSP:ADR-0029, IADR-0284 決定 5（段 2）, IADR-0427, #997 (#753): east-west gRPC（`RiskControlsRead`）。
 // **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば
-// 下の取引台帳の 6 つの供給元（約定・取り込み・強制買戻し・建玉・稼働率・段階）が gRPC 実装を選ぶ（BaseUrl より優先）。
+// 下の取引台帳の 7 つの供給元（約定・取り込み・強制買戻し・建玉・稼働率・段階・期間開始時点の在庫〔#1181〕）が gRPC 実装を選ぶ（BaseUrl より優先）。
 // 🔴 risk-ledger の門と観測（#840）は輸送が同じ判定で持つ（IADR-0427 決定 6）。不正な宛先は起動時に落とす。
 builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
 builder.Services.AddSingleton<IPeriodFillSource>(sp =>
@@ -292,6 +292,23 @@ builder.Services.AddSingleton<IPeriodDriftAdoptionSource>(sp =>
     http.BaseAddress = uri;
     return new HttpPeriodDriftAdoptionSource(
         http, sp.GetRequiredService<ILogger<HttpPeriodDriftAdoptionSource>>());
+});
+
+// FR-06, FR-16, #1181, IADR-0493 決定 1・2・4: **期間開始時点の在庫**（取引台帳が窓の市場ごとの下端まで畳んだもの）。
+// 権威源は同じリスク管理の取引台帳（GET /risk-controls/opening-inventory・gRPC GetOpeningInventory）。輸送の選び方は約定と同じ。
+// 🔴 **未構成・照会失敗はいずれも null（未供給）へ倒す。空列（期間開始時点で建玉なし）へ倒さない。**
+builder.Services.AddSingleton<IOpeningInventorySource>(sp =>
+{
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+        return new GrpcOpeningInventorySource(riskGrpc, sp.GetRequiredService<ILogger<GrpcOpeningInventorySource>>());
+
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["RiskManagement:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedOpeningInventorySource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk-ledger");
+    http.BaseAddress = uri;
+    return new HttpOpeningInventorySource(http, sp.GetRequiredService<ILogger<HttpOpeningInventorySource>>());
 });
 
 // FR-06, FR-16, #611, 05_trading-assumptions §3, ADR-0022, IADR-0286 決定2: 為替差損益の**期末レート**

@@ -43,21 +43,35 @@ public static class FxTranslationBuilder
     /// 決済されたかは知り得ないため、その分の再測定を明細にすると日付とレートを捏造することになる（FR-16）。
     /// 減らすのは、既に消えた建玉が<b>期末レートで再測定され続ける</b>のを止めるためである（#859 の主訴）。
     /// </param>
+    /// <param name="opening">
+    /// FR-06, #1181, IADR-0493: 期間開始時点の在庫（<c>null</c>＝受け取っていない。従来どおり期間の約定だけから畳む）。
+    /// </param>
     public static FxTranslationBuildResult Build(
         IReadOnlyList<PeriodTradeFill> fills,
         PeriodEndFxRate? periodEnd,
-        IReadOnlyList<PeriodDriftAdoption>? adoptions = null)
+        IReadOnlyList<PeriodDriftAdoption>? adoptions = null,
+        OpeningInventorySnapshot? opening = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
 
         var translatable = fills.Where(IsTranslatable).ToList();
 
-        var unrecorded = translatable.Count(f => f.FxRateBaseToDisplay is not > 0m);
+        // FR-06, FR-16, #1181, IADR-0493 決定 3: 期間開始時点の在庫（対象市場の建玉）を初期の建玉に置く。認識時レートは台帳が
+        // 基準通貨の原価で加重平均した値（本型の Apply と同じ規則）。平均が作れない建玉は、建玉に残る未記録の台帳行の数を
+        // 未記録の件数へ足す（🔴 推定で埋めない。約定の未記録と同じく節ごと未供給にする）。
+        var openingLots = opening?.Lots.Where(l => IsTranslatable(l.Market) && l.SignedQuantity != 0).ToList() ?? [];
+
+        var unrecorded = translatable.Count(f => f.FxRateBaseToDisplay is not > 0m)
+            + openingLots
+                .Where(l => l.AverageFxRateBaseToDisplay is not > 0m || l.UnrecordedFxRateFillCount > 0)
+                .Sum(l => Math.Max(1, l.UnrecordedFxRateFillCount));
         if (unrecorded > 0)
             return new FxTranslationBuildResult(null, unrecorded);
 
         var entries = new List<FxTranslationEntry>();
         var lots = new Dictionary<(string Symbol, Market Market), Lot>();
+        foreach (var lot in openingLots)
+            lots[(lot.Symbol, lot.Market)] = new Lot(lot.SignedQuantity, lot.AverageCost, lot.AverageFxRateBaseToDisplay!.Value);
 
         // 対象（USD 建て）の取り込みも同じ時系列へ混ぜる。順序の定義は PeriodLedgerTimeline が持つ。
         var translatableAdoptions = adoptions?.Where(IsTranslatable).ToList();
@@ -200,7 +214,7 @@ public static class FxTranslationBuilder
 /// </summary>
 /// <param name="Summary">集計結果。<b><c>null</c> は「供給されていない」</b>（0 円ではない）。</param>
 /// <param name="UnrecordedFillCount">
-/// 認識時レートが未記録だった対象（USD 建て）約定の件数。0 より大きければ <paramref name="Summary"/> は必ず <c>null</c> であり、
+/// 認識時レートが未記録だった対象（USD 建て）約定の件数（#1181: 期間開始時点の在庫の建玉に残る未記録の台帳行の数を含む）。0 より大きければ <paramref name="Summary"/> は必ず <c>null</c> であり、
 /// 描画は件数を明記する（黙って落とさない）。
 /// </param>
 public sealed record FxTranslationBuildResult(FxTranslationSummary? Summary, int UnrecordedFillCount);

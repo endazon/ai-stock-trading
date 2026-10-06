@@ -6,13 +6,19 @@ namespace ReportService.Domain;
 // FR-16, 04_report-templates 数値定義, IADR-0025: 損益集計の純関数。約定列を平均取得単価法で畳み込み、
 // 前提条件（手数料/為替/税率）を用いてテンプレート定義どおりに実現損益・費用・税・評価損益を集計する（数値は LLM に計算させない）。
 //
-// 🔴 #892, IADR-0381: **在庫は期間で切られている**（報告書は期間内の約定しか受け取らない）。期間より前に建てた
-// 建玉の決済は、取得原価が当期間に無いため**実現損益を算定できない**——畳み込みの規則（幻のショートを開かない・
-// 賄えない分を建てない）は <see cref="PeriodInventory"/> が単一情報源として持ち、算定できなかった決済の件数は
+// 🔴 #892, IADR-0381: 報告書は期間内の約定しか受け取らない。期間より前に建てた建玉の取得原価は
+// **期間開始時点の在庫**（#1181, IADR-0493。取引台帳が窓の下端まで畳んだもの）を初期在庫に置いて持ち込む。
+// 在庫を受け取れない（null）とき、または期間開始時点の在庫と期間の買いで賄えない決済は、取得原価が無いため
+// **実現損益を算定できない**——畳み込みの規則（幻のショートを開かない・賄えない分を建てない）は
+// <see cref="PeriodInventory"/> が単一情報源として持ち、算定できなかった決済の件数は
 // <see cref="PnlSummary.UnvaluedSettlementCount"/> で返す。**件数 > 0 の期間の実現損益・税・勝率・評価損益は
 // 部分値である**（レンダラが数字として出さない）。
 public static class PnlAggregator
 {
+    /// <param name="opening">
+    /// FR-06, FR-16, #1181, IADR-0493: <b>期間開始時点の在庫</b>（畳み込みの初期値）。<c>null</c>＝受け取っていない
+    /// （期間で切った在庫から畳む。期間より前に建てた建玉の決済は算定できないと数える）。
+    /// </param>
     /// <param name="adoptions">
     /// FR-11, ADR-0041 決定 1, #870, #859, IADR-0360 決定 4: 期間の<b>乖離の取り込み</b>（システム外の売買）。
     /// 🔴 <b>数量だけを在庫へ反映する。</b> 実現損益・費用合計・約定件数・決済件数・勝ち決済件数のいずれにも算入しない
@@ -25,12 +31,16 @@ public static class PnlAggregator
         IReadOnlyList<PeriodTradeFill> fills,
         TradingAssumptions assumptions,
         IReadOnlyDictionary<string, decimal>? currentPrices = null,
-        IReadOnlyList<PeriodDriftAdoption>? adoptions = null)
+        IReadOnlyList<PeriodDriftAdoption>? adoptions = null,
+        OpeningInventorySnapshot? opening = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
         ArgumentNullException.ThrowIfNull(assumptions);
 
-        var positions = new Dictionary<(string Symbol, Market Market), (int Qty, decimal AvgCost)>();
+        // FR-06, FR-16, #1181, IADR-0493 決定 3: 期間開始時点の在庫を初期在庫に置く（null＝従来どおり空から＝期間で切った在庫）。
+        // 🔴 5 つの畳み込みはすべて同じ初期在庫から始める（内訳の合計が §1 と一致する条件。IADR-0301）。
+        var positions = OpeningInventorySnapshot.Seed(opening)
+            .ToDictionary(e => e.Key, e => (Qty: e.Value.Quantity, AvgCost: e.Value.AverageCost));
         var realizedGross = 0m;
         var totalCost = 0m;
         var realizingCount = 0;

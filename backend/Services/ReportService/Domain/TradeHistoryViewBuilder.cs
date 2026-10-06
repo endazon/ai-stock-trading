@@ -30,16 +30,19 @@ public static class TradeHistoryViewBuilder
     /// （計画テンプレートの明文）。代わりに <b>§2-b「手動売買（損益不明）」</b>へ別掲し、在庫は数量だけ畳む。
     /// <c>null</c>＝照会できていない（§2-b は「照会できませんでした」）／空列＝<b>該当なし</b>（欄は出す）。
     /// </param>
+    /// <param name="opening">FR-06, #1181, IADR-0493: 期間開始時点の在庫（<c>null</c>＝受け取っていない。PnlAggregator と同じ扱い）。</param>
     public static TradeHistoryView Build(
         IReadOnlyList<PeriodTradeFill> fills,
         TradingAssumptions assumptions,
         IReadOnlyDictionary<Guid, string>? rationales,
-        IReadOnlyList<PeriodDriftAdoption>? adoptions = null)
+        IReadOnlyList<PeriodDriftAdoption>? adoptions = null,
+        OpeningInventorySnapshot? opening = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
         ArgumentNullException.ThrowIfNull(assumptions);
 
-        var positions = new Dictionary<(string Symbol, Market Market), InventoryLot>();
+        // FR-06, FR-16, #1181, IADR-0493 決定 3: PnlAggregator と**同じ初期在庫**から畳む（明細の実現損益の合計が §1 と一致する条件）。
+        var positions = OpeningInventorySnapshot.Seed(opening);
         var lines = new List<TradeHistoryLine>(fills.Count);
         var index = 0;
 

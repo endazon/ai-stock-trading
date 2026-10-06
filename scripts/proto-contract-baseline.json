@@ -1903,6 +1903,37 @@
             "names": []
           }
         },
+        "GetOpeningInventoryRequest": {
+          "fields": {
+            "before": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
+            },
+            "market": {
+              "number": 1,
+              "type": "Market",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "GetOpeningInventoryResponse": {
+          "fields": {
+            "lots": {
+              "number": 1,
+              "type": "OpeningInventoryLot",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "GetSessionUptimeRequest": {
           "fields": {
             "from": {
@@ -2089,6 +2120,49 @@
             "symbol": {
               "number": 1,
               "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "OpeningInventoryLot": {
+          "fields": {
+            "average_cost_in_base": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "average_fx_rate_base_to_display": {
+              "number": 6,
+              "type": "string",
+              "label": "optional"
+            },
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "quantity": {
+              "number": 4,
+              "type": "int32",
+              "label": "optional"
+            },
+            "side": {
+              "number": 3,
+              "type": "TradeSide",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "unrecorded_fx_rate_fill_count": {
+              "number": 7,
+              "type": "int32",
               "label": "optional"
             }
           },
@@ -2586,6 +2660,12 @@
             "GetOpenPositions": {
               "request": "GetOpenPositionsRequest",
               "response": "GetOpenPositionsResponse",
+              "clientStreaming": false,
+              "serverStreaming": false
+            },
+            "GetOpeningInventory": {
+              "request": "GetOpeningInventoryRequest",
+              "response": "GetOpeningInventoryResponse",
               "clientStreaming": false,
               "serverStreaming": false
             },

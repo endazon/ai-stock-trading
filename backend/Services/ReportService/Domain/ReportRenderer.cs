@@ -313,7 +313,7 @@ public static class ReportRenderer
         // 期間より前に建てた建玉の決済は取得原価を持たず実現損益へ算入できないため、分母が実際より小さく、
         // 費用率だけが跳ね上がる。**既存の「算出不能」と同じ語**で、理由を分けて書く。
         sb.Append(CultureInfo.InvariantCulture,
-            $"- 損益に対する費用率: {(view.Pnl.UnvaluedSettlementCount > 0 ? UnvaluedCell(view.Pnl) : CostRatioCell(review))}\n");
+            $"- 損益に対する費用率: {(view.Pnl.IsPartial ? UnvaluedCell(view.Pnl) : CostRatioCell(review))}\n");
         sb.Append("- **「取引諸費用」（米国株の SEC Fee・TAF 等）は記録源がありません。**"
             + "全体前提条件に設定点が無く、概算費用関数も手数料と為替スプレッドしか計算していません——"
             + "**費用合計は諸費用のぶんだけ過小です。**\n");
@@ -1729,14 +1729,21 @@ public static class ReportRenderer
         "**算出不能**（期間より前に建てた建玉の決済が {0} 件あり、その取得原価が当期間の約定に含まれていません）。"
         + "**0 ではありません。**";
 
+    // FR-06, FR-16, #1181, IADR-0493 決定 4: 期間開始時点の在庫を照会できなかったとき（取得の失敗）。算定できない決済の件数が
+    // あればそちらを優先して書く（件数は読み手が確かめられる事実である）。
+    private const string OpeningInventoryUnknownCell =
+        "**算出不能**（期間開始時点の在庫を照会できず、持ち越した建玉の取得原価が分かりません）。**0 ではありません。**";
+
     private static string UnvaluedCell(PnlSummary p) =>
-        string.Format(CultureInfo.InvariantCulture, UnvaluedCellFormat, p.UnvaluedSettlementCount);
+        p.UnvaluedSettlementCount > 0
+            ? string.Format(CultureInfo.InvariantCulture, UnvaluedCellFormat, p.UnvaluedSettlementCount)
+            : OpeningInventoryUnknownCell;
 
     private static string AmountOrUnvalued(PnlSummary p, decimal amount) =>
-        p.UnvaluedSettlementCount > 0 ? UnvaluedCell(p) : Amount(amount);
+        p.IsPartial ? UnvaluedCell(p) : Amount(amount);
 
     private static string WinRateCell(PnlSummary p) =>
-        p.UnvaluedSettlementCount > 0 ? UnvaluedCell(p) : WinRate(p);
+        p.IsPartial ? UnvaluedCell(p) : WinRate(p);
 
     // 勝率（04_report-templates: 週報「<n%（n/n）>」形式）。決済ゼロなら "-（0/0）"。パーセントは文化非依存で整数表記する。
     private static string WinRate(PnlSummary p) => WinRateOf(p.WinningTradeCount, p.RealizingTradeCount);

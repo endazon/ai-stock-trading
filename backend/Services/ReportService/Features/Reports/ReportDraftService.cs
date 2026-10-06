@@ -29,19 +29,25 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var fills = request.Fills ?? [];
         // #870, #859, IADR-0360 決定 4: **null（照会できていない）を空列（該当なし）へ潰さない。**
         var adoptions = request.DriftAdoptions;
+        // FR-06, FR-16, #1181, IADR-0493 決定 3: 期間開始時点の在庫（null＝受け取っていない）。5 つの畳み込みへ**同じ値**を渡す。
+        var opening = request.OpeningInventory;
 
         // 評価損益の現在値: 要求指定が最優先。無ければ市場データ源から補完する（#81・IADR-0066）。
         var currentPrices = request.CurrentPrices
-            ?? await ResolveCurrentPricesAsync(fills, adoptions, cancellationToken).ConfigureAwait(false);
+            ?? await ResolveCurrentPricesAsync(fills, adoptions, opening, cancellationToken).ConfigureAwait(false);
 
         // 数値はコード集計（FR-16）。前提条件は暫定で既定値（#19 バージョン付き取得・#63 台帳連携は #22 後続）。
         var assumptions = TradingAssumptionsDefaults.Create();
-        var pnl = PnlAggregator.Aggregate(fills, assumptions, currentPrices, adoptions);
+        var pnl = PnlAggregator.Aggregate(fills, assumptions, currentPrices, adoptions, opening);
+        // FR-06, FR-16, #1181, IADR-0493 決定 4: 期間開始時点の在庫を照会できなかった（生成器が未供給と判定した）なら、
+        // 取得原価を要する値は部分値である（🔴 fail-closed: 数字として出さない）。
+        if (request.UnsuppliedInputs?.Contains(ReportInput.OpeningInventory) == true)
+            pnl = pnl with { OpeningInventoryUnknown = true };
 
         // FR-06, FR-16, #611, IADR-0286 決定3・決定4: 為替差損益は**ここで集計する**（三者比較・取引履歴と同じ形。
         // 数値はコード集計であり LLM に渡さない）。集計の単一情報源は FxTranslationBuilder（純関数）。
         // 期末レートが未供給でも、期末に建玉が残らなければ集計できる（供給元が組み立てた表を受けない理由と同じ）。
-        var fxTranslation = FxTranslationBuilder.Build(fills, request.PeriodEndFxRate, adoptions);
+        var fxTranslation = FxTranslationBuilder.Build(fills, request.PeriodEndFxRate, adoptions, opening);
 
         var buyCount = fills.Count(f => f.Side == TradeSide.Buy);
         var sellCount = fills.Count(f => f.Side == TradeSide.Sell);
@@ -53,7 +59,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         // **週報（§2/§3）と月報（§2 週別・市場別・方向別の内訳）が同じ帰属を消費する**（#615・IADR-0306）。
         // 日報は明細（TradeHistory）を持つため要らない。
         var fillAttributions = request.Kind is ReportKind.Weekly or ReportKind.Monthly
-            ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales, adoptions)
+            ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening)
             : null;
 
         // FR-07, IADR-0120 決定3, #293: 上位方針（BasedOn の期間キー＋本文）を散文の文脈として渡す。
@@ -138,7 +144,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             //（週報・月報は計画の粒度対応表が集計を求めており、明細ではない）。
             // 数値は PnlAggregator と同じ関数・同じ畳み込みで積み、判断根拠は**記録の転記**である（LLM に書かせない）。
             TradeHistory = request.Kind == ReportKind.Daily
-                ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales, adoptions)
+                ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening)
                 : null,
             FillAttributions = fillAttributions,
             // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: 費用の内訳と費用率。
@@ -209,16 +215,19 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
     private async Task<IReadOnlyDictionary<string, decimal>?> ResolveCurrentPricesAsync(
         IReadOnlyList<PeriodTradeFill> fills,
         IReadOnlyList<PeriodDriftAdoption>? adoptions,
+        OpeningInventorySnapshot? opening,
         CancellationToken cancellationToken)
     {
-        if (marketData is null || fills.Count == 0)
+        // #1181, IADR-0493: 約定が無くても、持ち越した建玉があれば評価損益の現在値が要る。
+        if (marketData is null || (fills.Count == 0 && opening is not { Lots.Count: > 0 }))
             return null;
 
         // IADR-0033, #892, IADR-0381: 畳み込みは PnlAggregator と**同じ純関数**（PeriodInventory）を単一情報源とする。
         // ここでは建玉の有無（数量 ≠ 0）だけが要るため、符号付き在庫のみを畳み込む。
         // 🔴 素の SignedInventory.Apply を使うと、期間より前に建てた建玉の決済で**幻のショート**が開き、
         // その銘柄の相場を市場データ源へ取りに行ったうえで**実在しない建玉の評価損益**を出すことになる。
-        var inventory = new Dictionary<(string Symbol, Market Market), InventoryLot>();
+        // FR-06, #1181, IADR-0493 決定 3: 期間開始時点の在庫から畳む（持ち越して当期に決済しない建玉の現在値も引く）。
+        var inventory = OpeningInventorySnapshot.Seed(opening);
         foreach (var entry in PeriodLedgerTimeline.Merge(fills, adoptions))
         {
             if (entry.Adoption is { } adoption)
@@ -331,7 +340,11 @@ public sealed record DraftRequest(
     ReportRegenerationTally? ReportRegeneration = null,
     // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲（市場ごとの現地取引日）。
     // **null＝窓を持たない経路**（手動の API。約定は呼び出し側が渡す）で、報告書に行を出さない。
-    IReadOnlyList<ReportSessionRange>? SessionRanges = null);
+    IReadOnlyList<ReportSessionRange>? SessionRanges = null,
+    // FR-06, FR-16, #1181, IADR-0493 決定 3: **期間開始時点の在庫**（取引台帳が窓の市場ごとの下端まで畳んだもの）。在庫の畳み込みの初期値。
+    // **null＝受け取っていない**（従来どおり期間で切った在庫から畳み、期間より前に建てた建玉の決済は算定できないと数える）。
+    // 照会に失敗したことは UnsuppliedInputs の OpeningInventory で渡す（手動の API は null のまま＝従来挙動）。
+    OpeningInventorySnapshot? OpeningInventory = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。
