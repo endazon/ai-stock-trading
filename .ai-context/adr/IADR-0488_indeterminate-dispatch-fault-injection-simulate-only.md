@@ -2,10 +2,10 @@
 title: IADR-0488 送信結果を確認できない発注を SIMULATE で意図的に作る故障注入は、アダプタへ渡す OpenD クライアントのデコレータで新規建てに 1 プロセス 1 回だけ当て、既定は無効・SIMULATE 以外の構成では起動を止める
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-05, NFR-09, ADR-0045, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0362, IADR-0444, IADR-0111, IADR-0316, IADR-0482]
+related_ids: [FR-10, FR-05, NFR-09, ADR-0045, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0362, IADR-0444, IADR-0111, IADR-0316, IADR-0482, IADR-0346, IADR-0390, IADR-0463]
 author: claude (Claude Code)
 created: 2026-10-03
-updated: 2026-10-04
+updated: 2026-10-06
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements (FR-10 リスク統制・FR-05 発注執行)
   - planning:projects/ai-stock-trading/07_adr (ADR-0045 決定1・決定2)
@@ -131,6 +131,12 @@ plan_refs:
 
 - PoC は `Mode` と銘柄と期限を構成に足して発注執行を再起動するだけで、AfterSend と BeforeSend を 1 件ずつ作れる。手順は発注経路の Runbook。
 - 解放の門・helm.yml の門のアサーション・#851 の文面は本件では変えない。PoC の結果を見て別の PR で開ける（1 件でも食い違えば閉じたまま。裁定）。
+- ［2026-10-06 追記 / #1173］**BeforeSend の新規建ては建玉を生じないが、その ET 取引日のあいだリスク管理の統制枠を占有する**（決定3 の (3) は建玉についての記述であり、枠については言っていなかった。PoC 2026-10-05 の AAPL 719 株で観測）。
+  リスク管理は承認の時点で承認を台帳へ記録し（`EfPortfolioLedgerStore.cs:25`）、「承認済みで終端でない新規建て」を当日分だけ日次発注累計・段階資金の累計・保有建玉数へ算入する（IADR-0346 決定2。`PortfolioProjection.cs:130-148`）。
+  BeforeSend の注入は届いたか不明の経路を通るので、発注執行は確定も見送りも発行しない（`OrderExecutionAppService.cs:423-446`）。終端を立てる事象（約定の終端・取消・見送り）が来ないため、
+  **算入は承認時刻の ET 暦日が終わる（ET 0 時）まで続き、それより前に自動で解ける経路は無い**（`PortfolioProjection.cs:202-203`・`TradingDay.cs:32-33`）。突合の「未発注」判定・門の開閉・人による予約行の削除はどれもリスク管理へ何も発行しないので、枠は戻らない。
+  その日は、保有建玉数 1 件（上限到達なら保有 0 の他銘柄は LLM 前に見送り。IADR-0463）・段階資金と日次発注枠のうち承認の発注代金ぶん（観測では段階の発注可能額の約 25%）・注入した銘柄の同方向の新規建て（判断が未約定ありとして Hold。IADR-0390）が止まる。手仕舞い・保護・損切りは止まらない。
+  **所有者の操作で解く口を設けるかは要裁定**（二重発注の防止の原則に触れる）。**裁定までは拘束を受け入れる**（PoC は新規建てが減ってよい日に注入する）。選択肢と事実の file:line は作業仕様書 `.ai-context/specs/20261006_1173_before-send-reservation-hold.md`、運用の案内は発注経路の Runbook。
 
 ## 残余
 
