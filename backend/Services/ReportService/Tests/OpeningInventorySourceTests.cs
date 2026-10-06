@@ -69,14 +69,20 @@ public class OpeningInventorySourceTests(ReportWorkerWebApplicationFactory facto
     [InlineData(HttpStatusCode.OK, "null")]
     [InlineData(HttpStatusCode.OK, "{not json")]
     // 必須の項目の欠落・市場の食い違い・数量 0 は**応答全体を読めない**（既定値で在庫を作らない）。
-    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","side":0,"quantity":1,"averageCostInBase":1,"unrecordedFxRateFillCount":0}]""")]
-    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"quantity":1,"averageCostInBase":1,"unrecordedFxRateFillCount":0}]""")]
-    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"averageCostInBase":1,"unrecordedFxRateFillCount":0}]""")]
-    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"unrecordedFxRateFillCount":0}]""")]
-    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageCostInBase":1}]""")]
-    [InlineData(HttpStatusCode.OK, """[{"market":1,"side":0,"quantity":1,"averageCostInBase":1,"unrecordedFxRateFillCount":0}]""")]
-    [InlineData(HttpStatusCode.OK, """[{"symbol":"7203","market":0,"side":0,"quantity":1,"averageCostInBase":1,"unrecordedFxRateFillCount":0}]""")]
-    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":0,"averageCostInBase":1,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":150}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"market":1,"side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"7203","market":0,"side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":0,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    // T-06-057（独立監査 🟢1）: 同じ銘柄の重複・負の平均取得単価・レートと未記録の数の食い違い・正でないレートも読めない。
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0},{"symbol":"MSFT","market":1,"side":0,"quantity":2,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageCostInBase":-1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":null,"unrecordedFxRateFillCount":0}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":150,"unrecordedFxRateFillCount":1}]""")]
+    [InlineData(HttpStatusCode.OK, """[{"symbol":"MSFT","market":1,"side":0,"quantity":1,"averageCostInBase":1,"averageFxRateBaseToDisplay":0,"unrecordedFxRateFillCount":0}]""")]
     public async Task T06_053_REST_の不達と読めない応答は未供給(HttpStatusCode status, string body)
     {
         var (source, _) = Http(status, body);
@@ -146,6 +152,28 @@ public class OpeningInventorySourceTests(ReportWorkerWebApplicationFactory facto
         using var withBroken = factory.WithWebHostBuilder(b => b.UseSetting("RiskManagement:Grpc", host.Address));
         (await withBroken.Services.GetRequiredService<IOpeningInventorySource>()
             .GetOpeningInventoryAsync(Market.UnitedStates, Before)).Should().BeNull("既定値（0）の取得原価で在庫を作らない");
+
+        // T-06-057（独立監査 🟢1）: 同じ銘柄の重複行も gRPC で読めない（REST と同じ解釈）。
+        var duplicated = new Proto.GetOpeningInventoryResponse();
+        for (var i = 0; i < 2; i++)
+        {
+            duplicated.Lots.Add(new Proto.OpeningInventoryLot
+            {
+                Symbol = "NVDA",
+                Market = Proto.Market.UnitedStates,
+                Side = Proto.TradeSide.Buy,
+                Quantity = 1 + i,
+                AverageCostInBase = "230.77",
+                AverageFxRateBaseToDisplay = "150",
+                UnrecordedFxRateFillCount = 0,
+            });
+        }
+
+        await using var dupHost = await RiskReadStubHost.StartAsync(
+            new RiskReadStubBehavior { OpeningInventory = RiskReadStubBehavior.Returns(duplicated) });
+        using var withDup = factory.WithWebHostBuilder(b => b.UseSetting("RiskManagement:Grpc", dupHost.Address));
+        (await withDup.Services.GetRequiredService<IOpeningInventorySource>()
+            .GetOpeningInventoryAsync(Market.UnitedStates, Before)).Should().BeNull("重複は後勝ちで黙って畳まない");
 
         // 失敗の status（UNAVAILABLE）も未供給。
         await using var failing = await RiskReadStubHost.StartAsync(

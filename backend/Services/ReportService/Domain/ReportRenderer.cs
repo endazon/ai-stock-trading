@@ -1671,6 +1671,11 @@ public static class ReportRenderer
     // 供給できないときは、**未記録の件数を明記**する（🔴 黙って落とさない。件数 0 の未供給は従来の文言のまま）。
     private static string FxTranslationCell(ReportView view)
     {
+        // FR-06, FR-16, #1181, IADR-0493 決定 4（独立監査 🟡2）: 期間開始時点の在庫を照会できなかった期間は、持ち越した建玉の
+        // 認識時レートが分からず、為替差損益も部分値である（期間の約定だけから畳んだ値を完全な値として出さない）。
+        if (view.Pnl.OpeningInventoryUnknown)
+            return OpeningInventoryUnknownFxCell;
+
         if (view.FxTranslation is { } fx)
         {
             return fx is { PeriodEndRate: { } periodEndRate, PeriodEndRateAsOf: { } asOf }
@@ -1733,6 +1738,9 @@ public static class ReportRenderer
     // あればそちらを優先して書く（件数は読み手が確かめられる事実である）。
     private const string OpeningInventoryUnknownCell =
         "**算出不能**（期間開始時点の在庫を照会できず、持ち越した建玉の取得原価が分かりません）。**0 ではありません。**";
+
+    private const string OpeningInventoryUnknownFxCell =
+        "**算出不能**（期間開始時点の在庫を照会できず、持ち越した建玉の認識時レートが分かりません）。**0 円ではありません。**";
 
     private static string UnvaluedCell(PnlSummary p) =>
         p.UnvaluedSettlementCount > 0

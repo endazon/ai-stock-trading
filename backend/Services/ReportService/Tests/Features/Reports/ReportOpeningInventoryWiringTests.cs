@@ -144,6 +144,8 @@ public class ReportOpeningInventoryWiringTests
         report.Body.Should().Contain("| 実現損益（税引後・費用込み） | **算出不能**（期間開始時点の在庫を照会できず")
             .And.Contain("| 評価損益（税引前・参考） | **算出不能**（期間開始時点の在庫を照会できず")
             .And.Contain("| 源泉徴収税額 | **算出不能**（期間開始時点の在庫を照会できず")
+            // T-06-055（独立監査 🟡2）: 為替差損益（独立表示）も持ち越した建玉の認識時レートが分からず部分値である。
+            .And.Contain("| 為替差損益（独立表示） | **算出不能**（期間開始時点の在庫を照会できず")
             .And.NotContain(ReportAmountFormat.Base(79.685m), "部分値（当期の約定だけの税引後の実現損益）を数字として出さない");
     }
 

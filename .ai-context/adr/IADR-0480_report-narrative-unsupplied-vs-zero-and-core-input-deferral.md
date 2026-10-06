@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-06, FR-07, FR-16, UC-03, UC-04, UC-05, ADR-0003, IADR-0352, IADR-0381, IADR-0360, IADR-0115, IADR-0071, IADR-0382]
 author: claude (Claude Code)
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-06
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements (FR-06 / FR-07 / FR-16)
   - planning:projects/ai-stock-trading/04_workflows/03_reporting-cycle (数値はコード集計、LLM は文章生成のみ。ドラフトの更新は利用者との対話で行う)
@@ -109,3 +109,10 @@ plan_refs:
 - 費用合計の注記は経費明細を取り込んだ時点で見直しが要る（#1086）。取り込んだ後もこの注記が残ると、実額を「概算」と呼ぶ誤りになる。
 - 中核の上限はプロセス内の回数であり、再起動で 0 に戻る（IADR-0352 と同じ）。
 - 建玉が「供給された空列」でも、それがリスク管理の射影の起動直後の未構築によるものなら、散文は「0 件（建玉なし）」を受け取る。供給元が正しく未供給を返すことが前提である。
+
+## ［2026-10-06 追記 / #1181］決定 3 の中核の入力は 4 つになった
+
+- 決定 3 は中核の入力を「約定・建玉・手動売買の取り込みの 3 つ」と定めた。[IADR-0493](./IADR-0493_report-opening-inventory-from-ledger-as-of.md) 決定 4 が
+  **期間開始時点の在庫**（`ReportInput.OpeningInventory`。リスク管理の取引台帳が窓の下端まで畳んだ持ち越しの建玉の取得原価）を中核へ足し、**4 つ**になった。
+  欠けると実現損益・税・勝率・評価損益が算出不能になり、報告書の損益の主張が成り立たない——決定 3 の基準（欠けると主張そのものが崩れる）に当たる。
+- 見送りの上限（`CoreMaxDeferrals`）・待ち時間・窓の終端の扱いは変えない。作り直し（IADR-0491）は中核の取得失敗として断る。本文は凍結記録として書き換えない。

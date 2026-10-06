@@ -121,6 +121,32 @@ public class OpeningInventoryQueryTests
         lot.AverageCostInBase.Should().Be(200m);
     }
 
+    // T-06-054（独立監査 🟡3）: 向きが反転した建玉は、反転させた約定だけの建玉として数え直す（反転後の数量が反転前より
+    // 小さい形と大きい形の両方。前者は一部決済の分岐へ、後者は建て増しの分岐へ誤って落ち得る）。
+    [Theory]
+    [InlineData(15, 160)]
+    [InlineData(25, 160)]
+    [InlineData(15, null)]
+    [InlineData(25, null)]
+    public void T06_054_反転した建玉は反転させた約定のレートと単価で数え直す(int sellQuantity, int? flipRate)
+    {
+        var d = new DateTimeOffset(2026, 9, 28, 14, 0, 0, TimeSpan.Zero);
+        var fills = new[]
+        {
+            Fill("MSFT", Market.UnitedStates, TradeSide.Buy, PositionEffect.Open, 10, 100m, d, recognitionRate: 150m),
+            Fill("MSFT", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, sellQuantity, 120m, d.AddHours(1),
+                recognitionRate: flipRate),
+        };
+
+        var lot = OpeningInventoryQuery.AsOf(fills, Market.UnitedStates, new DateOnly(2026, 10, 1)).Single();
+
+        lot.Side.Should().Be(TradeSide.Sell);
+        lot.Quantity.Should().Be(sellQuantity - 10);
+        lot.AverageCostInBase.Should().Be(120m, "反転後の建玉は反転させた約定の単価で建つ");
+        lot.AverageFxRateBaseToDisplay.Should().Be(flipRate, "反転前の建玉のレート（150）を引き継がない");
+        lot.UnrecordedFxRateFillCount.Should().Be(flipRate is null ? 1 : 0);
+    }
+
     [Fact]
     public void T06_048_未記録の約定が建玉に残れば_null_と件数を返し_全決済で数え直す()
     {

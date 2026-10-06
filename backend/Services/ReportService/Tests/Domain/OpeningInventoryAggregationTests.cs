@@ -216,6 +216,33 @@ public class OpeningInventoryAggregationTests
             .And.Contain("期間開始時点の在庫を照会できなかった");
     }
 
+    // T-06-055/T-06-056（独立監査 🟡2・🟡4）: 照会できなかった期間は、算定できない決済が 0 件でも週報 §5 の費用率と
+    // 月報 §1 の為替差損益を算出不能にする（判定は IsPartial / OpeningInventoryUnknown。件数だけを見ない）。
+    [Theory]
+    [InlineData(ReportKind.Weekly, "weekly-2026-W41", "- 損益に対する費用率: **算出不能**（期間開始時点の在庫を照会でき")]
+    [InlineData(ReportKind.Monthly, "monthly-2026-10", "| 為替差損益（独立表示） | **算出不能**（期間開始時点の在庫を照会でき")]
+    [InlineData(ReportKind.Daily, "daily-2026-10-06", "| 為替差損益（独立表示） | **算出不能**（期間開始時点の在庫を照会でき")]
+    public async Task T06_056_照会できなかった期間は件数が0でも費用率と為替差損益を算出不能にする(
+        ReportKind kind, string periodKey, string expected)
+    {
+        var sut = new ReportDraftService(new FakeDrafter());
+        // 当期に建てて当期に決済した約定だけ（算定できない決済は 0 件）。認識時レートは記録済み。
+        PeriodTradeFill[] fills =
+        [
+            Buy("AAPL", 10, 100m, Et(10, 0), rate: 150m),
+            Sell("AAPL", 10, 110m, Et(15, 0), rate: 151m),
+        ];
+
+        var draft = await sut.BuildDraftAsync(new DraftRequest(
+            kind, periodKey, new DateOnly(2026, 10, 6), ["US"], 1, null, "方針", fills, null,
+            PeriodEndFxRate: new PeriodEndFxRate(150m, new DateOnly(2026, 10, 6)),
+            UnsuppliedInputs: [ReportInput.OpeningInventory]));
+
+        draft.Pnl.UnvaluedSettlementCount.Should().Be(0);
+        draft.Pnl.OpeningInventoryUnknown.Should().BeTrue();
+        draft.Markdown.Should().Contain(expected);
+    }
+
     private sealed class FakeDrafter : IReportNarrativeDrafter
     {
         public Task<string> DraftNarrativeAsync(ReportNarrativeContext context, CancellationToken cancellationToken = default) =>

@@ -68,6 +68,7 @@ public sealed class HttpOpeningInventorySource(HttpClient httpClient, ILogger<Ht
     internal static IReadOnlyList<OpeningLot>? Interpret(IEnumerable<OpeningInventoryDto> rows, Market requested)
     {
         var lots = new List<OpeningLot>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var r in rows)
         {
             if (string.IsNullOrWhiteSpace(r.Symbol)
@@ -75,7 +76,12 @@ public sealed class HttpOpeningInventorySource(HttpClient httpClient, ILogger<Ht
                 || r.Side is not { } side || !Enum.IsDefined(side)
                 || r.Quantity is not > 0
                 || r.AverageCostInBase is not { } averageCost || averageCost < 0m
-                || r.UnrecordedFxRateFillCount is not { } unrecorded || unrecorded < 0)
+                || r.UnrecordedFxRateFillCount is not { } unrecorded || unrecorded < 0
+                // #1181（独立監査 🟢1）: 送り手の不変条件「レートが無い ⇔ 未記録の行がある」と「レートは正」を受け手でも確かめる。
+                || (r.AverageFxRateBaseToDisplay is null) != (unrecorded > 0)
+                || r.AverageFxRateBaseToDisplay is <= 0m
+                // 同じ (銘柄, 市場) は 1 行の契約（重複は後勝ちで黙って畳まない）。市場は requested に揃っているので銘柄で見る。
+                || !seen.Add(r.Symbol))
             {
                 return null;
             }

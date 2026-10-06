@@ -801,6 +801,7 @@ public sealed class ReportAutoGenerator(
                 if (marketLots is null)
                     return null;
 
+                // 受け手の解釈（Interpret）が市場の食い違う応答を既に読めない（null）にしているので、ここは二つ目の安全弁である。
                 lots.AddRange(marketLots.Where(l => l.Market == market));
             }
 
