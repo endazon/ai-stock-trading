@@ -106,19 +106,25 @@ plan_refs:
 | 7 | 判断の前に保有中でも、LLM の後の引き直しで保有 0 なら決済にも新規建てにもならない（0 の印が新規建てへ流れない） | T-10-2285 `ClosingDecisionStopDistanceTests.判断前は保有中でも引き直しで保有0なら発注しない` |
 | 8 | 二次の解析不能の Warning に `action=` が載る（`InvalidValues` は Buy/Sell、形の問題は null）。detail は改行を含まない | T-10-2286 `DecisionOrchestratorTests.二次の解析不能のログはactionを載せdetailをサニタイズする` |
 | 9 | 本判断の出力形式は新規建てと決済で文言を分ける。一次は不変 | T-10-2287 `TradeDecisionPromptBuilderTests.本判断の出力形式は新規建てと決済で損切り幅の要求を分ける` ＋ 既存 #806 試験の更新 |
-| 10 | `dotnet build` 警告 0・`dotnet test`（TradeDecisionService.Tests）緑・`dotnet format --verify-no-changes` 差分なし・CI の node 検査緑 | 実測（PR 本文に記す） |
+| 10 | `dotnet build` 警告 0・`dotnet test`（TradeDecisionService.Tests）緑・`dotnet format --verify-no-changes` 差分なし・CI の node 検査緑 | 実測: build 警告 0・エラー 0／TradeDecisionService.Tests 1,496 件緑／format 差分なし／trace-blocks・knowledge-graph・test-traceability・adr-index-sync・addendum-loss・cross-repo-refs・plan-id-qualification・reading-budget・banned-libraries・doc-links・proto-contracts・scripts.test・scripts.repo.test 緑 |
 
 ### 変異（主要な分岐）
 
-| # | 変異 | 赤になる試験 |
+実測（各変異で TradeDecisionService.Tests 1,496 件を全件実行。コミット a9b039a7 に対して適用し `git checkout` で戻した）:
+
+| # | 変異 | 赤になった試験 |
 | --- | --- | --- |
-| M1 | パーサの緩和を外す（`closes` を常に false） | T-10-2281・T-10-2285（決済） |
-| M2 | 緩和を保有の符号を見ずに掛ける（Buy/Sell なら常に緩める） | T-10-2283・T-10-2285（保有 0 の Buy） |
-| M3 | 決済で供給された不正な損切り幅をそのまま残す | T-10-2282 |
-| M4 | 決済で供給された有効な損切り幅を捨てる | T-10-2282 |
-| M5 | アプリがオーケストレータへ保有を渡さない（null） | T-10-2285（決済） |
-| M6 | ログから action を外す | T-10-2286 |
-| M7 | `ClosesHolding` のショート側（保有 < 0 かつ Buy）を外す | T-10-2281（ショート行）・T-10-2284 |
+| M1 | パーサの緩和を外す（`closes` を常に false） | T-10-2281（3）・T-10-2282（5）・T-10-2285（オーケストレータ 1・判断サービス 3） |
+| M2 | 緩和を保有の符号を見ずに掛ける（Buy/Sell なら常に緩める） | T-10-2283（9）・T-10-2285（4）・T-10-2286（1）・既存の #785 / IADR-0035 の解釈の試験（5） |
+| M3 | 決済で供給された不正な損切り幅をそのまま残す | T-10-2282（3） |
+| M4 | 決済で供給された有効な損切り幅を捨てる | T-10-2282（1） |
+| M5 | アプリがオーケストレータへ保有を渡さない（null） | T-10-2285（3） |
+| M6 | ログから action を外す | T-10-2286（1） |
+| M7 | `ClosesHolding` のショート側（保有 < 0 かつ Buy）を外す | T-10-2281（1）・T-10-2284（1）・既存の決済の試験（5） |
+| M8 | 本判断の出力形式から決済の行を外す | T-10-2287（1）・出力形式の全文の期待値（1） |
+| M9 | 解析不能の detail をサニタイズしない | T-10-2286（1） |
+
+9 本すべて赤（生存 0）。
 
 ## 残余
 
