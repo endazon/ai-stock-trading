@@ -241,6 +241,12 @@ services:
       # **空＝未供給（null）**。空列（＝推定 0 件）へ倒さない——0 件と表示すると「強制買戻しは
       # 起きていない」と読める（計画が名指しで禁じた向き）。期間約定（/fills）と同じ BaseUrl を使う。
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
+      # FR-06, FR-11, FR-16, #1178（所有者の同意 2026-10-06）: 監査台帳の読み取り（GET /audit/events/by-type・OwnerOrService）の宛先（REST）。
+      # 6 つの供給元（為替の情報源の状態・LLM 利用実績・借株料・判断根拠・損切りの実行機構〔承認の記録／発注執行の解決結果〕）が
+      # 未供給（「照会できませんでした」）から実値になる。s2s は下の ServiceAuth__*（リスク管理の照会と同じ client）をそのまま使う。
+      # 🔴 本番既定（values.yaml）には置かない（業務の入力が変わる結線であり、経路B でだけ所有者が同意した）。
+      # 切り戻しはこの 1 行の削除＋再配備（6 項目が未供給へ戻るだけで、他の env は変わらない）。
+      - { name: Audit__BaseUrl, value: "http://audit-service:8080" }
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①（報告書の評価損益）
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
