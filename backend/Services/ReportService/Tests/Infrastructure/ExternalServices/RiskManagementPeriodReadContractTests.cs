@@ -5,6 +5,8 @@ using System.Text;
 using System.Text.Json;
 using RiskManagementWorker::RiskManagementService.Features.RiskManagement;
 using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
+using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetOpeningInventory;
+using ReportService.Domain;
 using ReportService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -103,6 +105,26 @@ public class RiskManagementPeriodReadContractTests
             .Should().Be((id, "TSLA", Market.UnitedStates, 10, 4, 1));
         (e.UnexplainedQuantity, e.NewlyInferredQuantity, e.BanUntil, e.ObservedAt, e.InferredAt)
             .Should().Be((5, 5, inferredOn.AddDays(30), At, At.AddMinutes(1)));
+    }
+
+    // 🔴 T-06-053, FR-06, FR-16, #1181, IADR-0493 決定 2（IADR-0420 決定 1 の同型）: 期間開始時点の在庫
+    // （GET /risk-controls/opening-inventory）。送り手の本物の型を web 既定で直列化した応答から読める（項目名の改名を緑のまま通さない）。
+    [Fact]
+    public async Task 期間開始時点の在庫は送り手の本物の型を直列化した応答から読める()
+    {
+        IReadOnlyList<OpeningInventoryView> views =
+        [
+            new("MSFT", Market.UnitedStates, TradeSide.Buy, 468, 511.912m, 150.25m, 0),
+            new("TSLA", Market.UnitedStates, TradeSide.Sell, 30, 250m, null, 2),
+        ];
+        var source = new HttpOpeningInventorySource(
+            Client(JsonSerializer.Serialize(views, Web)), NullLogger<HttpOpeningInventorySource>.Instance);
+
+        var read = await source.GetOpeningInventoryAsync(Market.UnitedStates, From);
+
+        read.Should().Equal(
+            new OpeningLot("MSFT", Market.UnitedStates, 468, 511.912m, 150.25m, 0),
+            new OpeningLot("TSLA", Market.UnitedStates, -30, 250m, null, 2));
     }
 
     private sealed class StubHandler(string body) : HttpMessageHandler
