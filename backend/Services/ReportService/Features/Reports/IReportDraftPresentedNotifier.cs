@@ -12,6 +12,12 @@ public interface IReportDraftPresentedNotifier
 {
     /// <summary>提示を通知する。通知は best-effort であり、失敗しても生成・提示は巻き戻さない。</summary>
     Task NotifyAsync(PresentedReportNotice notice, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// #1182: 通知が構成で有効か（<c>NotifyOnDraftPresented=false</c> の no-op は false）。作り直しの応答が「要約は通知で届きます」と
+    /// 偽って言わないために見る。既定は true（発行する実装）。
+    /// </summary>
+    bool Enabled => true;
 }
 
 // 提示の通知内容。Summary は投稿可能な形へサニタイズ済み（ReportSummary.Build の内側で適用・IADR-0116 決定4）。

@@ -6,6 +6,9 @@ namespace ReportService.Infrastructure.ExternalServices;
 // イベントは 1 件も発行されない（#210 の NoOp 通知ポートと同型）。
 public sealed class NoOpReportDraftPresentedNotifier : IReportDraftPresentedNotifier
 {
+    // #1182: 通知しない構成であることを作り直しの応答へ伝える（「届きます」と言わない）。
+    public bool Enabled => false;
+
     public Task NotifyAsync(PresentedReportNotice notice, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 }

@@ -179,10 +179,14 @@ public sealed partial class ReportRegenerationService(
             presented = false;
         }
 
-        // FR-06, FR-09, 計画 ADR-0052 決定 5, #1182: 再提示の通知。初版（ReportAutoGenerator）と同じ要約（数値はコード集計値・散文はサニタイズ済み・
+        // FR-06, FR-09, 計画 ADR-0052 決定 3（再提示）・決定 5（要約の警告は作り直した版の記録に従う）, #1182: 再提示の通知。初版（ReportAutoGenerator）と同じ要約（数値はコード集計値・散文はサニタイズ済み・
         // この版の未供給の警告・保った方針の利確の書式の警告）を、新しい版で出す。承認待ちにできなかった版は通知しない（IADR-0116 決定 2）。
-        bool? notified = null;
-        if (presented)
+        var notified = PresentedNotice.NotPresented;
+        if (presented && !notifier.Enabled)
+        {
+            notified = PresentedNotice.Disabled;
+        }
+        else if (presented)
         {
             var kind = existing.Report.Kind;
             var label = ReportPeriod.Label(kind, period.PeriodStart);
@@ -190,7 +194,9 @@ public sealed partial class ReportRegenerationService(
                 kind, label, draft.Pnl, draft.Narrative, unsuppliedInputs,
                 PolicyTakeProfitCheck.WarningFor(kind, existing.Report.PolicySummary));
             notified = await NotifyPresentedBestEffortAsync(new PresentedReportNotice(key, kind, label, summary, version))
-                .ConfigureAwait(false);
+                .ConfigureAwait(false)
+                ? PresentedNotice.Sent
+                : PresentedNotice.Failed;
         }
 
         await PublishAuditBestEffortAsync(new ReportRegenerated(
@@ -312,7 +318,7 @@ public sealed partial class ReportRegenerationService(
     }
 
     private static string SuccessMessage(
-        string key, int version, bool presented, bool? notified, int attemptNumber,
+        string key, int version, bool presented, PresentedNotice notified, int attemptNumber,
         IReadOnlyList<ReportInput> unsupplied, IReadOnlyList<ReportInput> notRestorable)
     {
         var sb = new StringBuilder();
@@ -320,10 +326,12 @@ public sealed partial class ReportRegenerationService(
             ? $"報告書 {key} を作り直し、版 {version} として承認待ちにしました（確定するまで取引には適用されません）。"
             : $"報告書 {key} を作り直し、版 {version} として保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。");
         // #1182: 作り直した版の要約は提示の通知で届く（Bot は本文を取りに行かない。IADR-0240 決定 4）。届かないなら黙らずにそう言う。
-        if (notified == true)
+        if (notified == PresentedNotice.Sent)
             sb.Append(CultureInfo.InvariantCulture, $"版 {version} の要約は提示の通知（報告書ドラフト（承認待ち））で届きます。");
-        else if (notified == false)
+        else if (notified == PresentedNotice.Failed)
             sb.Append(CultureInfo.InvariantCulture, $"版 {version} の提示の通知（要約）を発行できませんでした。");
+        else if (notified == PresentedNotice.Disabled)
+            sb.Append(CultureInfo.InvariantCulture, $"提示の通知はこの構成では無効のため、版 {version} の要約は通知で届きません。");
         sb.Append(CultureInfo.InvariantCulture, $"方針は変えていません。確定は /report approve {key} で行ってください。");
         sb.Append(CultureInfo.InvariantCulture, $"（本日の /report regenerate: {attemptNumber} 回目）");
         if (unsupplied.Count > 0)
@@ -371,6 +379,8 @@ public sealed partial class ReportRegenerationService(
 
     // 提示の通知（失敗しても保存・提示済みの下書きを失敗と伝えない。記録して応答へ載せる。初版の ReportAutoGenerator.NotifyAsync と同じく best-effort）。
     // 🔴 保存の後の段なので要求の取り消しを渡さない（取り消しで通知と監査の発行を飛ばさない。監査の発行口も取り消しを取らない）。
+    // 取り消しを渡していないので、発行口の内部の TaskCanceledException（送信の時間切れ等）も含めてすべて握る
+    // （逃がすと保存・提示済みの作り直しが失敗に見え、監査の発行も飛ぶ）。
     private async Task<bool> NotifyPresentedBestEffortAsync(PresentedReportNotice notice)
     {
         try
@@ -378,7 +388,7 @@ public sealed partial class ReportRegenerationService(
             await notifier.NotifyAsync(notice, CancellationToken.None).ConfigureAwait(false);
             return true;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
             logger.LogWarning(ex,
                 "報告書を作り直して承認待ちにしましたが、提示の通知を発行できませんでした（PeriodKey={PeriodKey}・版={Version}）。",
@@ -407,6 +417,18 @@ public sealed partial class ReportRegenerationService(
 public interface IReportRegenerationAuditPublisher
 {
     Task PublishAsync(ReportRegenerated evt);
+}
+
+// #1182: 作り直した版の提示の通知の結果（応答の案内文に使う）。
+internal enum PresentedNotice
+{
+    /// <summary>承認待ちにできなかった（通知しない）。</summary>
+    NotPresented,
+    Sent,
+    Failed,
+
+    /// <summary>通知が構成で無効（<c>NotifyOnDraftPresented=false</c>）。</summary>
+    Disabled,
 }
 
 // 結果の種別。Regenerated 以外は**下書きを変えていない**。

@@ -88,15 +88,17 @@ public class ReportRegenerationServiceTests
         }
     }
 
-    // #1182: 提示の通知の記録（throws=true なら発行に失敗する）。
-    private sealed class RecordingNotifier(bool throws = false) : IReportDraftPresentedNotifier
+    // #1182: 提示の通知の記録（failure を渡すとその例外で発行に失敗する。enabled=false は構成で無効な no-op を模す）。
+    private sealed class RecordingNotifier(Exception? failure = null, bool enabled = true) : IReportDraftPresentedNotifier
     {
         public List<PresentedReportNotice> Notices { get; } = [];
 
+        public bool Enabled => enabled;
+
         public Task NotifyAsync(PresentedReportNotice notice, CancellationToken cancellationToken = default)
         {
-            if (throws)
-                throw new InvalidOperationException("バスへ到達できません");
+            if (failure is not null)
+                throw failure;
             Notices.Add(notice);
             return Task.CompletedTask;
         }
@@ -533,9 +535,9 @@ public class ReportRegenerationServiceTests
         h.Audit.Events.Should().BeEmpty();
     }
 
-    // ---- 再提示の通知（ADR-0052 決定 5・#1182） ----
+    // ---- 再提示の通知（ADR-0052 決定 3・5・#1182） ----
 
-    // T-10-2279, FR-06, FR-09, 計画 ADR-0052 決定 5, #1182, IADR-0491 決定 5（2026-10-06 追記）: 作り直して承認待ちにした版は、
+    // T-10-2279, FR-06, FR-09, 計画 ADR-0052 決定 3・5, #1182, IADR-0491 決定 5（2026-10-06 追記）: 作り直して承認待ちにした版は、
     // **初版の自動生成と同じ要約**で提示の通知を**ちょうど 1 件**・**新しい版**で出す（`/report show` は本文を返さないので、
     // 通知が作り直した版の中身を見る唯一の経路）。同じ入力で作った初版の通知の要約と一字一句一致し、未供給の警告と利確の書式の警告を含む。
     [Fact]
@@ -619,7 +621,7 @@ public class ReportRegenerationServiceTests
     [Fact]
     public async Task 提示の通知に失敗しても作り直しは成功として返し失敗を応答に載せる()
     {
-        var h = new Harness { Notifier = new RecordingNotifier(throws: true) };
+        var h = new Harness { Notifier = new RecordingNotifier(new InvalidOperationException("バスへ到達できません")) };
         var before = h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
 
         var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
@@ -631,6 +633,61 @@ public class ReportRegenerationServiceTests
             .And.NotContain("で届きます");
         h.Audit.Events.Should().ContainSingle();
         h.Store.GetReview(CurrentDaily)!.State.Should().Be(ReviewState.PendingApproval);
+    }
+
+    // T-10-2279, 計画 ADR-0052 決定 5, #1182: 提示の要約の未供給の警告は**作り直した版の記録**に従う（前の版の記録ではない）。
+    // 縮退した下書き（建玉・期間の約定・上位方針が未供給）を、建玉と約定が取れる状態で作り直すと、警告の行から建玉と約定が消え、
+    // 方針の連鎖の未供給（上位方針）は方針の節に属するので引き継がれて残る。
+    [Fact]
+    public async Task 提示の要約の未供給の警告は作り直した版の記録に従う()
+    {
+        var h = new Harness();
+        h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+        h.Store.Get(CurrentDaily)!.Report.UnsuppliedInputs.Should()
+            .Contain([ReportInput.OpenPositions, ReportInput.Fills, ReportInput.ParentPolicy], "前の版は建玉・約定・上位方針が未供給");
+
+        await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        var summary = h.Notifier.Notices.Should().ContainSingle().Which.Summary;
+        var warning = summary.Split('\n').Should()
+            .ContainSingle(l => l.StartsWith(ReportSummaryMarkers.UnsuppliedWarningPrefix, StringComparison.Ordinal)).Which;
+        warning.Should().NotContain(ReportInputs.Label(ReportInput.OpenPositions), "この版では建玉を取れた")
+            .And.NotContain(ReportInputs.Label(ReportInput.Fills), "この版では約定を取れた")
+            .And.Contain(ReportInputs.Label(ReportInput.ParentPolicy), "方針の連鎖の未供給は引き継ぐ");
+    }
+
+    // T-10-2279, #1182: 提示の通知が構成で無効（`NotifyOnDraftPresented=false` の no-op）なら、応答は「要約は通知で届きます」と言わず、
+    // 通知が無効で要約が届かないことを伝える。発行口も呼ばない。本番の no-op 実装が無効を申告することも固定する。
+    [Fact]
+    public async Task 提示の通知が無効な構成では要約が届くと言わない()
+    {
+        new ReportService.Infrastructure.ExternalServices.NoOpReportDraftPresentedNotifier().Enabled.Should().BeFalse();
+        var h = new Harness { Notifier = new RecordingNotifier(enabled: false) };
+        var before = h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        result.Presented.Should().BeTrue();
+        result.Message.Should().Contain($"提示の通知はこの構成では無効のため、版 {before + 1} の要約は通知で届きません")
+            .And.NotContain("で届きます").And.NotContain("発行できませんでした");
+        h.Notifier.Notices.Should().BeEmpty();
+        h.Audit.Events.Should().ContainSingle();
+    }
+
+    // T-10-2279, #1182: 発行口の内部の取り消し（TaskCanceledException。送信の時間切れ等）も握る。要求の取り消しは渡していないので、
+    // 逃がすと保存・提示済みの作り直しが失敗に見え、監査の発行も飛ぶ。
+    [Fact]
+    public async Task 提示の通知の発行口が内部で取り消されても作り直しは成功し監査を発行する()
+    {
+        var h = new Harness { Notifier = new RecordingNotifier(new TaskCanceledException("送信の時間切れ")) };
+        var before = h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        result.Message.Should().Contain($"版 {before + 1} の提示の通知（要約）を発行できませんでした");
+        h.Audit.Events.Should().ContainSingle();
     }
 
     // ---- 本文の組み立て（ADR-0052 決定 3・5） ----

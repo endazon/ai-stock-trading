@@ -6,7 +6,7 @@ using Xunit;
 
 namespace NotificationService.Tests;
 
-// T-10-2280, FR-06, FR-09, 計画 ADR-0052 決定 5, #1182, IADR-0491 決定 5（2026-10-06 追記）: `/report regenerate` で作り直した版の
+// T-10-2280, FR-06, FR-09, 計画 ADR-0052 決定 3・5, #1182, IADR-0491 決定 5（2026-10-06 追記）: `/report regenerate` で作り直した版の
 // 提示（ReportDraftPresented・版 N）は、同じ会話キーの版 1 の提示の後でも**抑止されずに届き**、本文に版を書き、重大度は初版と同じ規則
 // （要約に未供給の印・利確の書式の印があれば Warning）で上がる。`/report show` は本文を返さないため、これが作り直した版の要約を見る唯一の経路。
 public class ReportRegeneratedDraftPresentedNotificationTests

@@ -3,7 +3,7 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // FR-06, FR-07, FR-09, FR-11, UC-03〜05, IADR-0115/0116, #280: 報告書ドラフトが自動生成され、利用者の承認待ち
 // （ReviewState.PendingApproval）として提示された。ReportConfirmed（確定）と対になる「提示」イベント。
 //
-// 発行は報告書サービスの自動生成スケジューラと、所有者の作り直し（`/report regenerate`。FR-06, 計画 ADR-0052 決定 5, #1182。
+// 発行は報告書サービスの自動生成スケジューラと、所有者の作り直し（`/report regenerate`。FR-06, 計画 ADR-0052 決定 3, #1182。
 // 同じ会話キーの新しい版を初版と同じ要約で再提示する）で、**提示まで到達したものだけ**（提示が受理されなかった期間は
 // 承認待ち一覧に並ばないため発行しない）。NotificationService が購読して Discord へ確定依頼を投稿し（FR-09）、
 // AuditService が中央監査台帳へ集約する（FR-11: 全イベントの時系列記録）。
