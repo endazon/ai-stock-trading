@@ -140,7 +140,8 @@ public sealed class ReportConfirmedAuditHandler(IAuditEventStore store, IClock c
     }
 }
 
-// FR-06/07/09, FR-11, IADR-0116, #280: 報告書ドラフトの提示（自動生成スケジューラ）を監査台帳へ記録する。
+// FR-06/07/09, FR-11, IADR-0116, #280: 報告書ドラフトの提示（自動生成スケジューラ・所有者の作り直し〔#1182〕）を監査台帳へ記録する。
+// 作り直した版の提示は版ごとに別の行になる（封筒の ID で記録し、会話キーで重複扱いしない）。
 // 確定（ReportConfirmed）と同じ相関で束ねられ、提示から確定までのリードタイムを監査照会で辿れる。
 public sealed class ReportDraftPresentedAuditHandler(IAuditEventStore store, IClock clock)
 {

@@ -88,6 +88,39 @@ public class ReportRegenerationServiceTests
         }
     }
 
+    // #1182: 提示の通知の記録（failure を渡すとその例外で発行に失敗する。enabled=false は構成で無効な no-op を模す）。
+    private sealed class RecordingNotifier(Exception? failure = null, bool enabled = true) : IReportDraftPresentedNotifier
+    {
+        public List<PresentedReportNotice> Notices { get; } = [];
+
+        public bool Enabled => enabled;
+
+        public Task NotifyAsync(PresentedReportNotice notice, CancellationToken cancellationToken = default)
+        {
+            if (failure is not null)
+                throw failure;
+            Notices.Add(notice);
+            return Task.CompletedTask;
+        }
+    }
+
+    // #1182: 提示（Present）だけを失敗させるストア（承認待ちにできなかった版を作る）。他は委ねる。
+    private sealed class PresentFailingStore(IReportStore inner) : IReportStore
+    {
+        public VersionedReport? Get(string periodKey) => inner.Get(periodKey);
+        public IReadOnlyList<TradingReport> List() => inner.List();
+        public IReadOnlyList<ReportPeriodKeyItem> ListPeriodKeys() => inner.ListPeriodKeys();
+        public int UpsertDraft(TradingReport report, int expectedVersion) => inner.UpsertDraft(report, expectedVersion);
+        public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
+            inner.Confirm(periodKey, expectedVersion, confirmedAt);
+        public VersionedReport? GetLatestConfirmed(ReportKind kind) => inner.GetLatestConfirmed(kind);
+        public ReportReview? GetReview(string periodKey) => inner.GetReview(periodKey);
+        public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) =>
+            command.Action == ReviewAction.Present
+                ? throw new InvalidOperationException("提示の遷移に失敗しました")
+                : inner.ApplyReview(periodKey, command);
+    }
+
     private static readonly IReadOnlyList<ReportPosition> HeldPositions =
     [
         new(Market.UnitedStates, "NVDA", TradeSide.Buy, 10, 100m, 95m, null, null, null, 3),
@@ -103,18 +136,25 @@ public class ReportRegenerationServiceTests
         public StubDriftSource Drift { get; init; } = new(supplied: true);
         public InMemoryReportRegenerationLedger Ledger { get; } = new();
         public RecordingAudit Audit { get; } = new();
+        public RecordingNotifier Notifier { get; init; } = new();
         public int Limit { get; init; } = ReportRegenerationLimit.DefaultDailyLimit;
+        public bool FailPresent { get; init; }
+
+        // 自動生成（初版）と作り直しが同じ供給元・同じ通知の発行口を使う生成器。
+        public ReportAutoGenerator Generator(ReportAutoGenerationSettings settings) =>
+            new(
+                Store, new ReportDraftService(Drafter), Fills, Clock, settings,
+                notifier: Notifier,
+                openPositionSource: Positions,
+                driftAdoptionSource: Drift,
+                regenerationLedger: Ledger);
 
         public ReportRegenerationService Service()
         {
             var settings = new ReportAutoGenerationSettings();
-            var generator = new ReportAutoGenerator(
-                Store, new ReportDraftService(Drafter), Fills, Clock, settings,
-                openPositionSource: Positions,
-                driftAdoptionSource: Drift,
-                regenerationLedger: Ledger);
+            IReportStore store = FailPresent ? new PresentFailingStore(Store) : Store;
             return new ReportRegenerationService(
-                Store, Clock, generator, settings, Ledger, new ReportRegenerationLimit(Limit), Audit,
+                store, Clock, Generator(settings), settings, Ledger, new ReportRegenerationLimit(Limit), Audit, Notifier,
                 NullLogger<ReportRegenerationService>.Instance);
         }
 
@@ -493,6 +533,161 @@ public class ReportRegenerationServiceTests
         h.Ledger.Attempts.Single().Outcome.Should().Be(ReportRegenerationOutcome.SaveFailed);
         h.Ledger.CountOn(new DateOnly(2026, 10, 6)).Should().Be(1, "LLM を呼んだ試行は数える");
         h.Audit.Events.Should().BeEmpty();
+    }
+
+    // ---- 再提示の通知（ADR-0052 決定 3・5・#1182） ----
+
+    // T-10-2279, FR-06, FR-09, 計画 ADR-0052 決定 3・5, #1182, IADR-0491 決定 5（2026-10-06 追記）: 作り直して承認待ちにした版は、
+    // **初版の自動生成と同じ要約**で提示の通知を**ちょうど 1 件**・**新しい版**で出す（`/report show` は本文を返さないので、
+    // 通知が作り直した版の中身を見る唯一の経路）。同じ入力で作った初版の通知の要約と一字一句一致し、未供給の警告と利確の書式の警告を含む。
+    [Fact]
+    public async Task 作り直して承認待ちにした版は初版と同じ要約で提示の通知を一度だけ出す()
+    {
+        var h = new Harness();
+        // 初版: 自動生成（Due＝daily-2026-10-05）。同じ供給元・同じ散文・同じ通知の発行口。
+        await h.Generator(new ReportAutoGenerationSettings()).RunOnceAsync();
+        var initial = h.Notifier.Notices.Single(n => n.PeriodKey == CurrentDaily);
+        h.Notifier.Notices.Clear();
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        result.Presented.Should().BeTrue();
+        var notice = h.Notifier.Notices.Should().ContainSingle("作り直し 1 回につき提示の通知は 1 件").Which;
+        notice.PeriodKey.Should().Be(CurrentDaily);
+        notice.Kind.Should().Be(ReportKind.Daily);
+        notice.Version.Should().Be(initial.Version + 1).And.Be(result.Version, "確定の expectedVersion になる新しい版");
+        notice.PeriodLabel.Should().Be(initial.PeriodLabel);
+        notice.Summary.Should().Be(initial.Summary, "初版と同じ組み立て・同じ入力なら同じ要約");
+        notice.Summary.Should().Contain(ReportSummaryMarkers.UnsuppliedWarningPrefix, "この版の未供給の警告（通知サービスが Warning へ上げる）")
+            .And.Contain(PolicyTakeProfitCheck.Warning, "保った方針の利確の書式の警告")
+            .And.Contain(NewNarrative);
+        // 警告は作り直した版の記録（UnsuppliedInputs）に従う（ADR-0052 決定 5）。
+        h.Store.Get(CurrentDaily)!.Report.UnsuppliedInputs.Should().NotBeEmpty();
+        foreach (var input in h.Store.Get(CurrentDaily)!.Report.UnsuppliedInputs)
+            notice.Summary.Should().Contain(ReportInputs.Label(input));
+        result.Message.Should().Contain($"版 {result.Version} の要約は提示の通知（報告書ドラフト（承認待ち））で届きます");
+    }
+
+    // T-10-2279（否定形）, #1182: 断った作り直し（確定済み・上限・中核の入力の取得失敗）と保存できなかった作り直しは、下書きを変えていないので
+    // 提示の通知を出さない（承認待ちに無い版を「確認してください」と言わない。IADR-0116 決定 2）。
+    [Fact]
+    public async Task 断った作り直しや保存できなかった作り直しは提示の通知を出さない()
+    {
+        var confirmed = new Harness();
+        confirmed.SeedDegradedDraft(PastDaily, new DateOnly(2026, 10, 2), confirmed: true);
+        (await confirmed.Service().RegenerateAsync(PastDaily, "owner")).Status.Should().Be(ReportRegenerationStatus.AlreadyConfirmed);
+        confirmed.Notifier.Notices.Should().BeEmpty();
+
+        var limited = new Harness { Limit = 1 };
+        limited.SeedDegradedDraft(PastDaily, new DateOnly(2026, 10, 2));
+        var svc = limited.Service();
+        await svc.RegenerateAsync(PastDaily, "owner");
+        limited.Notifier.Notices.Clear();
+        (await svc.RegenerateAsync(PastDaily, "owner")).Status.Should().Be(ReportRegenerationStatus.DailyLimitReached);
+        limited.Notifier.Notices.Should().BeEmpty();
+
+        var core = new Harness { Fills = new CountingFillSource(fail: true) };
+        core.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+        (await core.Service().RegenerateAsync(CurrentDaily, "owner")).Status.Should().Be(ReportRegenerationStatus.CoreInputsUnsupplied);
+        core.Notifier.Notices.Should().BeEmpty();
+
+        InMemoryReportStore? store = null;
+        var raced = new Harness
+        {
+            Drafter = new RecordingDrafter(duringCall: () =>
+            {
+                var current = store!.Get(CurrentDaily)!;
+                store.UpsertDraft(current.Report with { PolicySummary = "別の改訂" }, current.Version);
+            }),
+        };
+        store = raced.Store;
+        raced.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+        await ((Func<Task>)(() => raced.Service().RegenerateAsync(CurrentDaily, "owner"))).Should().ThrowAsync<ReportConcurrencyException>();
+        raced.Notifier.Notices.Should().BeEmpty();
+
+        // 保存はできたが承認待ちにできなかった版も通知しない（応答は「承認待ちにできませんでした」で /report show へ誘導する）。
+        var notPresented = new Harness { FailPresent = true };
+        notPresented.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+        var result = await notPresented.Service().RegenerateAsync(CurrentDaily, "owner");
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        result.Presented.Should().BeFalse();
+        result.Message.Should().Contain("承認待ちにできませんでした").And.NotContain("提示の通知");
+        notPresented.Notifier.Notices.Should().BeEmpty("承認待ちに無い版を「確認してください」と言わない");
+    }
+
+    // T-10-2279, #1182: 提示の通知の発行に失敗しても、保存・提示済みの作り直しを失敗と伝えない（best-effort。IADR-0432 監査 1 と同じ規律）。
+    // ただし黙らない: 応答に「提示の通知（要約）を発行できませんでした」と載せ、監査は発行する。
+    [Fact]
+    public async Task 提示の通知に失敗しても作り直しは成功として返し失敗を応答に載せる()
+    {
+        var h = new Harness { Notifier = new RecordingNotifier(new InvalidOperationException("バスへ到達できません")) };
+        var before = h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        result.Presented.Should().BeTrue();
+        result.Version.Should().Be(before + 1);
+        result.Message.Should().Contain($"版 {before + 1} の提示の通知（要約）を発行できませんでした")
+            .And.NotContain("で届きます");
+        h.Audit.Events.Should().ContainSingle();
+        h.Store.GetReview(CurrentDaily)!.State.Should().Be(ReviewState.PendingApproval);
+    }
+
+    // T-10-2279, 計画 ADR-0052 決定 5, #1182: 提示の要約の未供給の警告は**作り直した版の記録**に従う（前の版の記録ではない）。
+    // 縮退した下書き（建玉・期間の約定・上位方針が未供給）を、建玉と約定が取れる状態で作り直すと、警告の行から建玉と約定が消え、
+    // 方針の連鎖の未供給（上位方針）は方針の節に属するので引き継がれて残る。
+    [Fact]
+    public async Task 提示の要約の未供給の警告は作り直した版の記録に従う()
+    {
+        var h = new Harness();
+        h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+        h.Store.Get(CurrentDaily)!.Report.UnsuppliedInputs.Should()
+            .Contain([ReportInput.OpenPositions, ReportInput.Fills, ReportInput.ParentPolicy], "前の版は建玉・約定・上位方針が未供給");
+
+        await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        var summary = h.Notifier.Notices.Should().ContainSingle().Which.Summary;
+        var warning = summary.Split('\n').Should()
+            .ContainSingle(l => l.StartsWith(ReportSummaryMarkers.UnsuppliedWarningPrefix, StringComparison.Ordinal)).Which;
+        warning.Should().NotContain(ReportInputs.Label(ReportInput.OpenPositions), "この版では建玉を取れた")
+            .And.NotContain(ReportInputs.Label(ReportInput.Fills), "この版では約定を取れた")
+            .And.Contain(ReportInputs.Label(ReportInput.ParentPolicy), "方針の連鎖の未供給は引き継ぐ");
+    }
+
+    // T-10-2279, #1182: 提示の通知が構成で無効（`NotifyOnDraftPresented=false` の no-op）なら、応答は「要約は通知で届きます」と言わず、
+    // 通知が無効で要約が届かないことを伝える。発行口も呼ばない。本番の no-op 実装が無効を申告することも固定する。
+    [Fact]
+    public async Task 提示の通知が無効な構成では要約が届くと言わない()
+    {
+        new ReportService.Infrastructure.ExternalServices.NoOpReportDraftPresentedNotifier().Enabled.Should().BeFalse();
+        var h = new Harness { Notifier = new RecordingNotifier(enabled: false) };
+        var before = h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        result.Presented.Should().BeTrue();
+        result.Message.Should().Contain($"提示の通知はこの構成では無効のため、版 {before + 1} の要約は通知で届きません")
+            .And.NotContain("で届きます").And.NotContain("発行できませんでした");
+        h.Notifier.Notices.Should().BeEmpty();
+        h.Audit.Events.Should().ContainSingle();
+    }
+
+    // T-10-2279, #1182: 発行口の内部の取り消し（TaskCanceledException。送信の時間切れ等）も握る。要求の取り消しは渡していないので、
+    // 逃がすと保存・提示済みの作り直しが失敗に見え、監査の発行も飛ぶ。
+    [Fact]
+    public async Task 提示の通知の発行口が内部で取り消されても作り直しは成功し監査を発行する()
+    {
+        var h = new Harness { Notifier = new RecordingNotifier(new TaskCanceledException("送信の時間切れ")) };
+        var before = h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5));
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        result.Message.Should().Contain($"版 {before + 1} の提示の通知（要約）を発行できませんでした");
+        h.Audit.Events.Should().ContainSingle();
     }
 
     // ---- 本文の組み立て（ADR-0052 決定 3・5） ----

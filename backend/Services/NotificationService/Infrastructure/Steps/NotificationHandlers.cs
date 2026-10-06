@@ -53,8 +53,8 @@ public sealed class ReportConfirmedNotificationHandler(INotificationSender sende
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
-// FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示（報告書サービスの自動生成スケジューラ）を購読し、
-// 要約と確定依頼を通知する。Discord 未設定なら送信ポートが no-op に倒れる（IADR-0020/0062）＝送信経路の追加のみ。
+// FR-06/07/09, UC-03〜05, IADR-0116, #280: 報告書ドラフトの提示（報告書サービスの自動生成スケジューラ・所有者の作り直し〔#1182〕）を購読し、
+// 要約と確定依頼を通知する。会話キーで重複を抑止しない（作り直した版 N は版 1 と別の提示であり、本文に版を書く）。Discord 未設定なら送信ポートが no-op に倒れる（IADR-0020/0062）＝送信経路の追加のみ。
 public sealed class ReportDraftPresentedNotificationHandler(INotificationSender sender)
 {
     public Task Handle(ReportDraftPresented message, CancellationToken cancellationToken) =>
