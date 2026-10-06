@@ -298,7 +298,9 @@ public sealed class Stage0DecisionRecorder(
                 .ConfigureAwait(false);
             calls++;
 
-            var parsed = TradeDecisionParser.ParseDetailed(output);
+            // #1187: 保有なし（プロンプトと同じ HeldPosition.None）を明示する。記録の判断は新規建ての枝だけであり、
+            // 決済の損切り幅の任意化（本番の二次本判断）は掛からない（挙動は従来どおり）。
+            var parsed = TradeDecisionParser.ParseDetailed(output, HeldPosition.None.SignedQuantity);
             votes.Add(parsed.Decision);
 
             // この 1 回で発生した計測を切り出して費用へ積む（実効モデルで単価を引く。IADR-0122 決定1）。

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace TradeDecisionService.Domain;
 
@@ -18,8 +19,21 @@ public static class TradeDecisionParser
     /// <summary>
     /// #290, IADR-0248: 解析結果と失敗種別を区別して返す。<c>Failure</c> が非 null のとき Decision は
     /// 常に Hold（安全既定）であり、<b>「LLM が見送りを選んだ」のではなく「出力を解析できなかった」</b>ことを表す。
+    /// <para>保有の文脈なし（新規建てとして読む）。損切り幅は Buy/Sell で常に必須（従来どおり）。</para>
     /// </summary>
-    public static ParsedTradeDecision ParseDetailed(string? llmOutput)
+    public static ParsedTradeDecision ParseDetailed(string? llmOutput) => ParseDetailed(llmOutput, signedHeldQuantity: null);
+
+    /// <summary>
+    /// FR-04, FR-10, #1187, IADR-0248: 保有の文脈つきで解析する。<paramref name="signedHeldQuantity"/> は判断プロンプトへ
+    /// 渡したのと同じ照会の符号付き保有数（+ ロング / − ショート / 0 保有なし / <b>null＝不明</b>）。
+    /// <para>
+    /// この売買が保有建玉の決済になる（<see cref="PositionEffectResolver.ClosesHolding"/>＝ロング保有中の Sell・
+    /// ショート保有中の Buy）ときだけ、損切り幅を任意にする——決済は保有全量で、損切り幅を一度も読まない（IADR-0119）。
+    /// 供給された損切り幅は有効（0 &lt; 幅 &lt; 参照価格）なら残し、未供給・不正なら 0（未使用の印）にする。
+    /// それ以外（保有なし・不明・同方向の建て増し）は従来の不変量のまま <see cref="TradeDecisionParseFailureKind.InvalidValues"/>。
+    /// </para>
+    /// </summary>
+    public static ParsedTradeDecision ParseDetailed(string? llmOutput, int? signedHeldQuantity)
     {
         var envelope = ReadEnvelope(llmOutput);
         if (envelope.Failure is { } failure)
@@ -36,26 +50,54 @@ public static class TradeDecisionParser
                 LlmDecision.Hold with { Rationale = dto.Rationale ?? LlmDecision.Hold.Rationale });
         }
 
-        // Buy/Sell は価格・損切り幅が正でなければサイジング不能のため Hold に倒す。
+        // 新規建ての Buy/Sell は価格・損切り幅が正でなければサイジング不能のため Hold に倒す。
         // IADR-0035: 損切り幅が参照価格以上だと損切り価格が 0 以下（ロングでは損切り監視から外れる）になるため、
         // 異常値（幻覚）として Hold に倒す（損切り価格が権威データとして下流に渡るため下限を担保する）。
         // #290: これは「解析はできたが値が成立しない」＝解析不能系（InvalidValues）として区別する。
-        // #785: null（未供給）も「成立しない」に含める（Buy/Sell で数値が無ければサイジング不能）。
+        // #785: null（未供給）も「成立しない」に含める（新規建てで数値が無ければサイジング不能）。
         // #806: この不変量は**二次本判断（サイジングへ渡す）だけ**のもの。一次スクリーニングは ParseScreening で
         // 方向だけを読み、ここへは来ない。
-        if (dto.ReferencePrice is not > 0m || dto.StopLossDistancePerShare is not > 0m
-            || dto.StopLossDistancePerShare >= dto.ReferencePrice)
+        // 🔴 FR-04, FR-10, #1187: **保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）には損切り幅の不変量を掛けない。**
+        // 決済は保有全量・損切り価格なし（StopLossPrice=null）で、サイジングも下限も通らない（IADR-0119）——使わない値の欠落で
+        // 決済の判断を捨てていた（PoC 2026-10-06: 利確の Sell が 14 回 InvalidValues→Hold になり約 2 時間 43 分遅れた）。
+        // 判定は PositionEffectResolver.ClosesHolding（建玉効果の Close 分岐と同じ関数）。参照価格は決済でも必須のまま。
+        if (dto.ReferencePrice is not > 0m)
         {
-            return ParsedTradeDecision.Failed(
-                TradeDecisionParseFailureKind.InvalidValues,
-                $"価格・損切り幅が不正: referencePrice={dto.ReferencePrice} stopLossDistance={dto.StopLossDistancePerShare}");
+            return InvalidValues(action, dto);
+        }
+
+        var closes = PositionEffectResolver.ClosesHolding(
+            action == TradeAction.Buy ? TradeSide.Buy : TradeSide.Sell, signedHeldQuantity);
+        var stopValid = dto.StopLossDistancePerShare is decimal supplied && supplied > 0m && supplied < dto.ReferencePrice.Value;
+        decimal stopLossDistance;
+        if (closes)
+        {
+            // #1187: 供給された損切り幅は有効なら残し（多数決の代表票の決定的順序に使われるだけ）、未供給・不正は 0（未使用の印）。
+            // 不正値で決済を捨てれば #1187 と同じ遅延を再現する。0 の印が新規建てへ流れても、判断サービスの新規建ての
+            // 再検証（損切り幅 <= 0 → StopLossDistanceInvalid）が必ず落とす。
+            stopLossDistance = stopValid ? dto.StopLossDistancePerShare!.Value : 0m;
+        }
+        else if (stopValid)
+        {
+            stopLossDistance = dto.StopLossDistancePerShare!.Value;
+        }
+        else
+        {
+            return InvalidValues(action, dto);
         }
 
         // FR-17, IADR-0076: 想定利益（任意）。欠損は 0、負値は 0 に正規化する（保守側＝採算ゲート有効時は Hold に倒れる）。
         var expectedProfit = dto.ExpectedProfitPerShare is > 0m ? dto.ExpectedProfitPerShare.Value : 0m;
         return ParsedTradeDecision.Ok(new LlmDecision(
-            action, dto.Rationale ?? string.Empty, dto.ReferencePrice.Value, dto.StopLossDistancePerShare.Value, expectedProfit));
+            action, dto.Rationale ?? string.Empty, dto.ReferencePrice.Value, stopLossDistance, expectedProfit));
     }
+
+    // #290, #1187: 値の不変量違反。解析できた action を失敗に載せる（ログで「どの売買が捨てられたか」を推定に頼らず読む）。
+    private static ParsedTradeDecision InvalidValues(TradeAction action, DecisionDto dto) =>
+        ParsedTradeDecision.Failed(
+            TradeDecisionParseFailureKind.InvalidValues,
+            $"価格・損切り幅が不正: referencePrice={dto.ReferencePrice} stopLossDistance={dto.StopLossDistancePerShare}",
+            action);
 
     /// <summary>
     /// FR-04, FR-11, #806, IADR-0039, IADR-0248: 一次スクリーニング用の解釈。<b>方向（関心の有無）だけ</b>を読む。
@@ -228,6 +270,7 @@ public static class TradeDecisionParser
 
     // #785: 数値は null 許容（Hold のときモデルは null を返してよい）。
     // #806: Buy/Sell で必須なのは二次本判断（ParseDetailed。無ければ InvalidValues）だけ。一次（ParseScreening）は見ない。
+    // #1187: 二次でも、保有を決済する売買では損切り幅は任意（参照価格は必須）。
     private sealed record DecisionDto(
         string? Action,
         string? Rationale,
@@ -247,8 +290,9 @@ public sealed record ParsedTradeDecision(LlmDecision Decision, TradeDecisionPars
 
     public static ParsedTradeDecision Ok(LlmDecision decision) => new(decision, null);
 
-    public static ParsedTradeDecision Failed(TradeDecisionParseFailureKind kind, string detail) =>
-        new(LlmDecision.Hold, new TradeDecisionParseFailure(kind, detail));
+    public static ParsedTradeDecision Failed(
+        TradeDecisionParseFailureKind kind, string detail, TradeAction? action = null) =>
+        new(LlmDecision.Hold, new TradeDecisionParseFailure(kind, detail, action));
 }
 
 /// <summary>
@@ -287,9 +331,16 @@ public enum TradeDecisionParseFailureKind
     /// <summary>action が欠損・未知の値。</summary>
     UnknownAction,
 
-    /// <summary>解析はできたが値が成立しない（価格・損切り幅の不変量違反＝幻覚の疑い）。</summary>
+    /// <summary>
+    /// 解析はできたが値が成立しない（価格・損切り幅の不変量違反＝幻覚の疑い）。#1187: 損切り幅の不変量は新規建てにだけ掛かる
+    /// （保有を決済する売買では損切り幅は任意。参照価格は常に必須）。
+    /// </summary>
     InvalidValues,
 }
 
-/// <summary>#290: 解析失敗の記録（種別と機械可読な詳細）。</summary>
-public sealed record TradeDecisionParseFailure(TradeDecisionParseFailureKind Kind, string Detail);
+/// <summary>
+/// #290: 解析失敗の記録（種別と機械可読な詳細）。#1187: <see cref="Action"/> は解析できた action（Buy/Sell）で、
+/// action を読めた後でしか起きない <see cref="TradeDecisionParseFailureKind.InvalidValues"/> にだけ入る（形の問題では null）。
+/// </summary>
+public sealed record TradeDecisionParseFailure(
+    TradeDecisionParseFailureKind Kind, string Detail, TradeAction? Action = null);

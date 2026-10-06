@@ -106,6 +106,16 @@ public static class TradeDecisionPromptBuilder
 
     public const string CloseQuantityIsWholeRule = "手仕舞いは保有の全量をシステムが決済します（一部だけの決済は選べません）。";
 
+    // 🔴 FR-04, FR-10, #1187, IADR-0248: 本判断の出力形式の数値の要求。新規建てと決済で分ける。
+    // 決済（ロング保有中の Sell・ショート保有中の Buy）は保有全量で、損切り幅を使わない（IADR-0119）。従来の「Buy/Sell では必ず
+    // 数値を入れる」は決済にも損切り幅を求め、省いた利確の Sell が解析不能で捨てられていた（PoC 2026-10-06・14 回）。
+    // 解釈（TradeDecisionParser.ParseDetailed）は保有の文脈で同じ線を引く。テストがこれらの const を直接参照する。
+    public const string OutputNumbersForEntryRule =
+        "Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。新規建ての Buy/Sell では必ず数値を入れる。";
+
+    public const string OutputNumbersForCloseRule =
+        "保有中の建玉を手仕舞う売買（ロング保有中の Sell・ショート保有中の Buy）では stopLossDistancePerShare を null にしてよい（決済は保有全量で、損切り幅を使わない）。referencePrice は数値を入れる。";
+
     // 🔴 FR-10, FR-04, ADR-0003, #1130, IADR-0471 決定 2: 保有中の銘柄で、リスク管理の新規建ての可否の口（審査と同じ述語）が
     // 保有の方向の新規建て（買い増し・売り増し）を必ず拒否すると答えたときの文言。実測（2026-09-30 MSFT）: 保有中の銘柄で LLM が
     // 買い増しを提案し、審査が MaxPositionsExceeded で拒否した（費用・拒否の通知・根拠文の食い違い）。選択肢を Hold と手仕舞いに絞る。
@@ -359,7 +369,9 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine(includeProfitability
             ? "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅,\"expectedProfitPerShare\":想定利益}"
             : "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
-        sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。""");
+        // FR-04, FR-10, #1187: 新規建て（損切り幅は必須）と決済（損切り幅は任意）で数値の要求を分ける。
+        sb.AppendLine(OutputNumbersForEntryRule);
+        sb.AppendLine(OutputNumbersForCloseRule);
         return sb.ToString();
     }
 

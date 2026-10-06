@@ -248,4 +248,95 @@ public class TradeDecisionParserTests
         screening.Action.Should().Be(TradeAction.Hold);
         screening.AsHold.Should().Be(LlmDecision.Hold);
     }
+
+    // ================================================================================================
+    // FR-04, FR-10, #1187, IADR-0248: 保有を決済する売買では損切り幅を任意にする
+    // ================================================================================================
+
+    // T-10-2281: PoC 2026-10-06 の AMZN（保有 970 株・+3% の利確）。損切り幅を省いた（null・キー欠落）利確の Sell が 14 回 InvalidValues→Hold
+    // になっていた。ロング保有中の Sell・ショート保有中の Buy は決済であり、損切り幅を使わない（保有全量・損切り価格なし）→ 解析成功。
+    [Theory]
+    [InlineData("""{"action":"Sell","rationale":"利確","referencePrice":255.55,"stopLossDistancePerShare":null}""", 970, TradeAction.Sell)]
+    [InlineData("""{"action":"Sell","rationale":"利確","referencePrice":255.55}""", 970, TradeAction.Sell)]
+    [InlineData("""{"action":"Buy","rationale":"買い戻し","referencePrice":40,"stopLossDistancePerShare":null}""", -100, TradeAction.Buy)]
+    public void 保有を決済する売買は損切り幅が無くても解析成功(string json, int held, TradeAction expected)
+    {
+        var parsed = TradeDecisionParser.ParseDetailed(json, held);
+
+        parsed.IsUnparseable.Should().BeFalse("決済は損切り幅を使わない（#1187）");
+        parsed.Decision.Action.Should().Be(expected);
+        parsed.Decision.StopLossDistancePerShare.Should().Be(0m, "未供給は 0（未使用の印）");
+        parsed.Decision.ReferencePrice.Should().BeGreaterThan(0m);
+        parsed.Decision.Rationale.Should().NotBeEmpty();
+    }
+
+    // T-10-2282: 決済で損切り幅が供給されたら、有効（0 < 幅 < 参照価格）なら残し、不正（≤0・参照価格以上・数値でない）なら 0 にして
+    // 解析成功とする（使わない値の不正で決済を捨てれば #1187 と同じ遅延を再現する）。
+    [Theory]
+    [InlineData("5", 5)]
+    [InlineData("0", 0)]
+    [InlineData("-3", 0)]
+    [InlineData("255.55", 0)]   // 参照価格と等しい
+    [InlineData("300", 0)]      // 参照価格より大きい
+    [InlineData("\"n/a\"", 0)]  // 数値でない
+    public void 決済で供給された損切り幅は有効なら残し不正なら捨てる(string stop, double expected)
+    {
+        var json = $$"""{"action":"Sell","rationale":"利確","referencePrice":255.55,"stopLossDistancePerShare":{{stop}}}""";
+
+        var parsed = TradeDecisionParser.ParseDetailed(json, signedHeldQuantity: 970);
+
+        parsed.IsUnparseable.Should().BeFalse();
+        parsed.Decision.Action.Should().Be(TradeAction.Sell);
+        parsed.Decision.StopLossDistancePerShare.Should().Be((decimal)expected);
+    }
+
+    // T-10-2283（否定形）: 決済にならない売買（新規建て・保有なし／不明の売り・同方向の建て増し）は従来どおり損切り幅が必須で、
+    // 欠ければ InvalidValues（Hold 票）。失敗には解析できた action が載る。
+    [Theory]
+    [InlineData("Buy", 0, "null")]      // 保有 0 の新規買い
+    [InlineData("Buy", null, "null")]   // 保有不明の新規買い
+    [InlineData("Buy", 970, "null")]    // 買い増し（ロング保有中の Buy）
+    [InlineData("Sell", 0, "null")]     // 保有 0 の売り（裸の新規売り）
+    [InlineData("Sell", null, "null")]  // 保有不明の売り
+    [InlineData("Sell", -100, "null")]  // 売り増し（ショート保有中の Sell）
+    [InlineData("Buy", 0, "300")]       // 新規建ての損切り幅が参照価格以上（IADR-0035）
+    public void 決済にならない売買は損切り幅が無ければ従来どおりInvalidValues_否定形(string action, int? held, string stop)
+    {
+        var json = $$"""{"action":"{{action}}","rationale":"x","referencePrice":255.55,"stopLossDistancePerShare":{{stop}}}""";
+
+        var parsed = TradeDecisionParser.ParseDetailed(json, held);
+
+        parsed.IsUnparseable.Should().BeTrue();
+        parsed.Failure!.Kind.Should().Be(TradeDecisionParseFailureKind.InvalidValues);
+        parsed.Failure.Action.Should().Be(Enum.Parse<TradeAction>(action), "捨てた票の action をログへ出す（#1187）");
+        parsed.Decision.Should().Be(LlmDecision.Hold);
+    }
+
+    // T-10-2283（否定形・参照価格）: 決済でも参照価格は必須（決済の意図の参照価格・判断時点の価格に使う）。
+    [Theory]
+    [InlineData("null")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    public void 決済でも参照価格が無ければInvalidValues_否定形(string referencePrice)
+    {
+        var json = $$"""{"action":"Sell","rationale":"利確","referencePrice":{{referencePrice}},"stopLossDistancePerShare":null}""";
+
+        var parsed = TradeDecisionParser.ParseDetailed(json, signedHeldQuantity: 970);
+
+        parsed.IsUnparseable.Should().BeTrue();
+        parsed.Failure!.Kind.Should().Be(TradeDecisionParseFailureKind.InvalidValues);
+        parsed.Failure.Action.Should().Be(TradeAction.Sell);
+    }
+
+    // T-10-2283（否定形・文脈なし）: 1 引数の ParseDetailed は保有の文脈なし＝従来どおり（新規建てとして読む）。形の問題の失敗は action を持たない。
+    [Fact]
+    public void 保有の文脈なしの解析は従来どおりで形の問題はactionを持たない_否定形()
+    {
+        TradeDecisionParser.ParseDetailed("""{"action":"Sell","rationale":"利確","referencePrice":255.55}""")
+            .Failure!.Kind.Should().Be(TradeDecisionParseFailureKind.InvalidValues);
+
+        var malformed = TradeDecisionParser.ParseDetailed("""{"action":"Sell",}""", signedHeldQuantity: 970);
+        malformed.Failure!.Kind.Should().Be(TradeDecisionParseFailureKind.MalformedJson);
+        malformed.Failure.Action.Should().BeNull();
+    }
 }

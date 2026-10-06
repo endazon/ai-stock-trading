@@ -12,6 +12,8 @@ public enum TradeAction
 // FR-17, IADR-0076: ExpectedProfitPerShare は 1 株あたりの想定利益（費用控除前の見込み値幅）で採算評価（ProfitabilityGate）
 // の入力。相場の見込み（判断）は LLM、費用・しきい値の算術はコード（05 §4 採用方針）。既定 0＝想定利益なし（採算ゲート有効時は保守側）。
 // Hold の場合は価格・損切り幅・想定利益は用いない。
+// FR-04, FR-10, #1187: 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）の損切り幅は任意で、未供給・不正なら 0
+// （未使用の印）。決済は損切り幅を読まず、新規建ての経路は 0 以下を不正として落とす（TradeDecisionAppService の再検証）。
 public record LlmDecision(
     TradeAction Action,
     string Rationale,

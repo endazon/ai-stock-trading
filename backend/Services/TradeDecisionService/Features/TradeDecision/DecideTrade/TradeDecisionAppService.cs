@@ -457,7 +457,13 @@ public sealed class TradeDecisionAppService(
                 : TradeDecisionPromptBuilder.BuildScreening(
                     trigger, policy, context, currentPrice, screening.RetainedReferences, heldPosition, workingEntries,
                     watchlist, intraday, news, volume, addOnBlockers),
-            decisionPrompt, cancellationToken)
+            decisionPrompt,
+            // 🔴 FR-04, FR-10, #1187, IADR-0248: 二次本判断の解釈へ、プロンプトへ渡したのと同じ保有（null＝不明）を渡す。
+            // 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする（決済は保有全量で損切り幅を
+            // 使わない）。発注の建玉効果は下で LLM の後に引き直した保有で決める（IADR-0351 決定6）——ずれて新規建てになっても、
+            // 新規建ての損切り幅の再検証（<= 0 → StopLossDistanceInvalid）が未使用の印 0 を必ず落とす。
+            heldPosition?.SignedQuantity,
+            cancellationToken)
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
 

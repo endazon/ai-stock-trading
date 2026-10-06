@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Contracts.Logging;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Domain;
 using Microsoft.Extensions.Logging;
@@ -22,8 +23,13 @@ public sealed class DecisionOrchestrator(
     ILogger logger)
 {
     // screeningPromptFactory は一次スクリーニング時のみ評価する（既定＝スクリーニング無効の経路で無駄なプロンプト構築を避ける）。
+    // 🔴 FR-04, FR-10, #1187, IADR-0248: signedHeldQuantity は判断プロンプトへ渡したのと同じ照会の符号付き保有数（null＝不明）。
+    // 二次本判断の解釈が「保有を決済する売買」では損切り幅を任意にするために使う（TradeDecisionParser.ParseDetailed）。
+    // **省略可能にしない** —— 省ける形にすると渡し忘れが「決済の判断を損切り幅の欠落で捨てる」（#1187 の症状）へ黙って戻り、
+    // 試験は全緑のままになる（IADR-0163 決定2 の規律に倣う）。保有を知らない呼び出し側は null（不明＝緩めない）を明示する。
     public async Task<OrchestratedDecision> DecideAsync(
-        Func<string> screeningPromptFactory, string decisionPrompt, CancellationToken cancellationToken = default)
+        Func<string> screeningPromptFactory, string decisionPrompt, int? signedHeldQuantity,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(screeningPromptFactory);
         ArgumentNullException.ThrowIfNull(decisionPrompt);
@@ -49,9 +55,10 @@ public sealed class DecisionOrchestrator(
                 // 監査から見えなくなる。
                 if (screen.IsUnparseable)
                 {
+                    // #1187: detail はモデル出力（不明な action の文字列）や例外文を含み得るため 1 行へ正規化する。
                     logger.LogWarning(
                         "一次スクリーニングの構造化出力が解析不能（見送りとは区別して記録・#290）: kind={Kind} detail={Detail}",
-                        screen.Failure!.Kind, screen.Failure.Detail);
+                        screen.Failure!.Kind, LogSanitizer.Sanitize(screen.Failure.Detail));
                 }
                 else
                 {
@@ -75,15 +82,22 @@ public sealed class DecisionOrchestrator(
             var output = await llm
                 .CompleteAsync(decisionPrompt, options.SecondaryModel, LlmPurposes.TradeDecision, cancellationToken)
                 .ConfigureAwait(false);
-            var parsed = TradeDecisionParser.ParseDetailed(output);
+            // #1187: 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）では損切り幅を任意にする。
+            var parsed = TradeDecisionParser.ParseDetailed(output, signedHeldQuantity);
             if (parsed.IsUnparseable)
             {
                 // #290, IADR-0248: 解析不能票は Hold として多数決へ入れる（安全側・従来挙動）が、
                 // 件数は見送りと区別して数え、FR-11 の記録へ出す。
+                // 🔴 #1187: **解析できた action を載せる**（InvalidValues のとき Buy/Sell。形の問題では null）。従来は載らず、
+                // 「捨てられたのは利確の Sell だった」が推定でしか言えなかった。action は列挙値（モデルの文字列ではない）。
+                // detail はモデル出力（不明な action の文字列）や例外文を含み得るため 1 行へ正規化する。
                 unparseableVotes++;
                 logger.LogWarning(
-                    "二次本判断の構造化出力が解析不能（Hold 票として扱う・#290）: vote={Vote}/{Total} kind={Kind} detail={Detail}",
-                    i + 1, options.VoteCount, parsed.Failure!.Kind, parsed.Failure.Detail);
+                    "二次本判断の構造化出力が解析不能（Hold 票として扱う・#290）: vote={Vote}/{Total} kind={Kind} action={Action} " +
+                    "held={Held} detail={Detail}",
+                    i + 1, options.VoteCount, parsed.Failure!.Kind, parsed.Failure.Action?.ToString() ?? "不明",
+                    signedHeldQuantity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "不明",
+                    LogSanitizer.Sanitize(parsed.Failure.Detail));
             }
 
             votes.Add(parsed.Decision);
