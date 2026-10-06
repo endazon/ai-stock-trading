@@ -2,10 +2,10 @@
 title: IADR-0246 日次統制・期間集計の取引日境界を市場現地の取引日で解釈する（JST 固定の廃止）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-06, ADR-0009, IADR-0008, IADR-0018, IADR-0181, IADR-0246]
+related_ids: [FR-10, FR-06, ADR-0009, IADR-0008, IADR-0018, IADR-0181, IADR-0246, IADR-0492]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-10-06
 plan_refs:
   - planning:projects/ai-stock-trading/04_workflows/01_scheduled-trading-cycle.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -61,3 +61,12 @@ plan_refs:
   東証は当面監視/検証用（計画 04_workflows/01）であるため許容する。
 - 残余リスク: `IBusinessCalendar`（週末のみ）は市場の祝日を持たない——ロックアウトの「翌営業日」が
   祝日に当たると 1 日早く解ける可能性は従来と同じ（#21 系の関心事・IADR-0245 と同根）。
+
+## 追記
+
+**［2026-10-06 追記 / #1172］** 決定 4 のうち「報告書の生成タイミング（`ReportSchedule`——生成の都合であり集計境界は
+`PeriodFillQuery` 側で市場別になる）」は [IADR-0492](./IADR-0492_report-session-window-by-market-close.md) が改めた。
+生成の時刻（16:00 JST）を JST に残したまま報告書の期間（JST の営業日）を市場の現地取引日としてそのまま照会すると、
+米国のセッション（ET 日 D）は daily-D の生成時点でまだ始まっておらず、**米国の約定はどの日報にも載らなかった**。
+IADR-0492 は生成の時刻を保ったまま、「生成境界までに大引けを迎えたセッション」の窓を市場ごとの取引日へ写して照会する。
+決定 2（`PeriodFillQuery` の市場別解釈）と、その他の決定 4 の線引きは変えない。本文は凍結記録のため書き換えない。

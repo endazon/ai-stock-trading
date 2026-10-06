@@ -175,7 +175,9 @@ public class ReportAutoGeneratorThreeWayAndUptimeTests
         BodyOf(empty, ReportKind.Monthly).Should().Contain("| 100% | 0 日 |");
     }
 
-    // 供給の照会は**当該報告書の期間**で行う（別の期間の稼働率を載せない）。
+    // 供給の照会は**当該報告書の窓のセッション**で行う（別の期間の稼働率を載せない）。
+    // T-06-027, FR-06, #1172, IADR-0492 決定 4: 稼働率の日次は ET の取引日で記録されるため、日報 2026-07-08（水・16:00 JST 生成）は
+    // 生成時点までに閉場した ET 07-07（火）のセッションを引く（ET 07-08 のセッションはまだ始まっていない）。
     [Fact]
     public async Task 稼働率の照会は当該報告書の期間で行う()
     {
@@ -183,7 +185,8 @@ public class ReportAutoGeneratorThreeWayAndUptimeTests
 
         await NewGenerator(new InMemoryReportStore(), WedAfterClose, uptimeSource: source).RunOnceAsync();
 
-        source.Requested.Should().Contain((new DateOnly(2026, 7, 8), new DateOnly(2026, 7, 8)));
+        source.Requested.Should().Contain((new DateOnly(2026, 7, 7), new DateOnly(2026, 7, 7)));
+        source.Requested.Should().NotContain((new DateOnly(2026, 7, 8), new DateOnly(2026, 7, 8)));
     }
 
     // ---- 三者比較（月報 §5） ----

@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, planning#711]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, planning#711]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -152,6 +152,25 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 
 - PeriodKey ごとに 1 行。確定済みは不変（`UpsertDraft` で変更不可）。版番号（Version）で楽観排他しロストアップデートを防ぐ。
 - 確定は利用者のみ（OwnerOnly・アクター必須）。生成AI・自動処理は確定できない。
+
+## 約定・手動売買の取り込みの集計範囲（セッションの窓）
+
+報告書の期間（JST の営業日）を、そのまま取引台帳の取引日として照会しない。取引台帳の取引日は**約定した市場の現地取引日**
+（米国＝米国東部時間・東証＝JST）であり、米国のセッション（ET 日 D）は JST の D 22:30〜D+1 05:00（冬時間は 23:30〜06:00）にある。
+16:00 JST の生成時点で ET 日 D はまだ始まっていないため、同じ日付で引くと米国の約定はどの日報にも載らない。
+
+- **規則**: 報告書は「前の営業日の日報の生成境界（`DailyAt`・既定 16:00 JST）の後〜期間の最終営業日の日報の生成境界まで」に
+  **大引け**（米国 16:00 ET・東証 15:30 JST）を迎えたセッションを集計する。生成の時刻（日報 16:00・週報 16:30・月報 17:00 JST）は変えない。
+- **日報**: 東証は同じ日付のセッション（従来どおり）、米国は前営業日〜前日の ET 取引日（例: 火曜の日報は月曜〔ET〕、月曜の日報は
+  金曜〜日曜〔ET〕＝金曜のセッション）。休場日（構成）の日報は作られず、その日に閉場したセッションは次の営業日の日報が数える。
+- **週報・月報**: その期間の日報の窓の和に等しい。最終営業日（金曜・月末）の米国のセッションは生成時点でまだ閉じていないため、
+  **次の週報・月報**に入る（どの週報・月報にもちょうど 1 回）。
+- **照会の形**: 取引台帳への照会の契約（市場の現地取引日の `[from, to]`、REST・gRPC とも）は変えない。全市場の取引日の外包で
+  1 回引き、受け取った後に市場ごとの範囲で絞る。手動売買の取り込みも同じ窓で絞る（§2 と §2-b・在庫の畳み込みが同じセッションを見る）。
+- **作り直し**（`POST /reports/{periodKey}/regenerate`）も同じ規則で引く。**確定済みの報告書は書き換えない**——規則の変更前に確定した
+  日報に載らなかった米国の約定は、その日報には載らないまま残る。未確定の下書きは作り直しで新しい規則の窓へ引き直せる。
+- OpenD の稼働率の日次（米国東部時間の取引日で記録される）も、同じ窓の米国の取引日で引く。
+- 判断根拠・LLM 利用実績など、監査台帳を JST の暦日で引く入力は本規則の対象外である（区間は従来どおり）。
 
 ## 永続化方針
 

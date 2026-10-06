@@ -27,4 +27,19 @@ public class MarketSessionMinutesTests
     {
         MarketSessions.RegularSessionMinutes((Market)99).Should().Be(0);
     }
+
+    // T-06-026, FR-06, #1172, IADR-0492 決定 2: 通常日の大引けは場中判定の終端と一致する（米国 16:00・東証 15:30・未知の市場 null）。
+    // 報告書の「生成境界までに閉場したセッション」の判定に使う。直前の 1 分は場中・大引けちょうどは場外。
+    [Theory]
+    [InlineData(Market.UnitedStates, 16, 0)]
+    [InlineData(Market.Japan, 15, 30)]
+    public void 通常日の大引けは場中判定の終端と一致する(Market market, int hour, int minute)
+    {
+        var close = new TimeOnly(hour, minute);
+
+        MarketSessions.RegularClose(market).Should().Be(close);
+        MarketSessions.IsWithinSession(market, close.AddMinutes(-1), isHalfDay: false).Should().BeTrue();
+        MarketSessions.IsWithinSession(market, close, isHalfDay: false).Should().BeFalse();
+        MarketSessions.RegularClose((Market)99).Should().BeNull();
+    }
 }

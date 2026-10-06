@@ -1,0 +1,121 @@
+---
+title: 日報・週報・月報が米国市場の約定を集計しない（生成境界は JST・約定の取引日は ET）を、生成時刻を保ったまま「生成境界までに閉場したセッション」の窓で集計して直す（#1172）
+type: spec
+status: accepted
+related_ids: [FR-06, FR-11, FR-16, FR-20, UC-03, UC-04, UC-05, ADR-0052, IADR-0492, IADR-0246, IADR-0115, IADR-0491, IADR-0360, IADR-0271]
+author: claude (Claude Code)
+created: 2026-10-06
+updated: 2026-10-06
+plan_refs:
+  - planning:projects/ai-stock-trading/04_workflows/03_reporting-cycle (生成タイミング「日報＝毎営業日の閉場後／週報・月報＝最終営業日の閉場後」・休場日・確定した日報が翌営業日の方針)
+  - planning:projects/ai-stock-trading/04_workflows/01_scheduled-trading-cycle (市場の時刻構造：米国 9:30–16:00 ET・東証 15:30 大引け・判定は米国東部時間)
+  - planning:projects/ai-stock-trading/03_usecases/01_usecases (UC-03 事前条件「当日の市場が閉場している」)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0052 (作り直しは自動生成と同じ入力の規則)
+---
+
+# 日報が米国市場の約定を集計しない問題を、セッションの窓で直す（#1172）
+
+## 背景（issue の観測）
+
+- 2026-10-05（ET）の米国セッション（JST 22:30〜10-06 05:00）で、MSFT・NVDA の利確の売りと新規の買いが約定した。
+- daily-2026-10-05 はセッション前（21:20 JST）に確定し、daily-2026-10-06 版 1 は「取引 0 件」なのに保有 4 銘柄と書いた（照会の期間 `10/06〜10/06`）。
+- 原因: 日報の対象日は JST の営業日（境界 `DailyAt`＝16:00 JST・`ReportSchedule`）、約定の絞り込みは**約定した市場の現地取引日**
+  （`PeriodFillQuery` → `PortfolioProjection.TradeDate` → `TradingDay.Of(instant, market)`・IADR-0246 決定 2）。
+  daily-D は D 16:00 JST（＝D 02:00〜03:00 ET）以降に生成され、ET 日 D の約定はまだ無い。daily-D+1 は ET 日 D+1 だけを引く。
+  **米国の約定はどの日報にも載らない。** 週報・月報も終端（最終営業日）の米国セッションを落とす。
+
+## 実測（origin/develop b52dddcd）
+
+- `ReportSchedule.Due`（生成の期間）と `ReportSchedule.PeriodOf`（作り直しの期間）はどちらも `DueReport(Kind, PeriodKey, PeriodStart, PeriodEnd)` を返し、
+  `ReportAutoGenerator.CollectInputsAsync`（自動生成と `/report regenerate` で 1 本）が各供給元へ `[PeriodStart, PeriodEnd]` を渡す。
+- 取引台帳の照会（REST `GET /risk-controls/fills?from&to`・gRPC `RiskControlsRead/GetFills`）は `[from, to]` を**市場の現地取引日**で解釈する。
+  乖離の取り込み（`/drift-adoptions`）も同じ（`PeriodDriftAdoptionQuery`）。OpenD の稼働率の日次（`/session-uptime`）は**米国東部時間の取引日**。
+- 配備（`values-local.yaml`）は `Reports__AutoGeneration__Markets__0=US`・生成時刻は組込既定（日報 16:00 / 週報 16:30 / 月報 17:00 JST）・休場日は空（週末のみ）。
+- 取引の門（`GET /daily-policy`）は「最新の確定済み日報」を引くだけで日付に依存しない。`/policy`・`/report regenerate` の「今日」は JST。
+
+## 計画の確認
+
+- 計画（fixed）は生成タイミングを「日報＝毎営業日の**閉場後**／週報・月報＝最終営業日の**閉場後**」とだけ書き、**JST の時刻を定めていない**
+  （16:00 JST は IADR-0115 の実装判断。「東証の大引け 15:30 の後」）。「閉場」が市場ごとか（米国なら 16:00 ET＝JST 翌朝）は書かれていない。
+- 確定した日報が翌営業日の取引方針になる。翌営業日の開場までに応答が無ければ直近の確定済み日報を継続する（UC-03）。
+- 結論: 生成の時刻を変えることも保つことも計画に反しない。**期間の写像は実装側で直せる**（IADR-0492）。ただし「閉場」が市場ごとかの
+  曖昧さは週報・月報の終端（最終営業日の米国セッションを含むか）に効くため、計画へ環流した（planning#724）。
+
+## 決定（IADR-0492 の要約）
+
+- 案 (b) を採る: **生成の時刻（16:00 / 16:30 / 17:00 JST）と PeriodKey は変えず**、報告書が集計するセッションを
+  「前の営業日の日報の生成境界の後〜期間の最終営業日の日報の生成境界まで」に**大引け**を迎えたもの、と定義する（`ReportSchedule.SessionWindowOf`）。
+- 窓は市場ごとの現地取引日へ写す（`ReportSessionWindow.TradingDays`）。照会の契約は変えず、全市場の外包で 1 回引いて市場ごとに絞る。
+- 約定・乖離の取り込み・OpenD の稼働率（ET の取引日）に適用する。監査台帳を JST の暦日で引く入力は対象外（残余リスク）。
+- 案 (a)（日報の生成を米国の閉場後 06:30 JST へ移す）は採らない。理由は IADR-0492 §却下した案。
+
+## 範囲
+
+1. `MarketSessions.RegularClose`（共有カーネル・通常日の大引け）。
+2. `ReportSessionWindow`（Domain・新設）と `ReportSchedule.SessionWindowOf`。
+3. `ReportAutoGenerator`: 約定・取り込み・稼働率の照会を窓で行う（自動生成と作り直しが同じ経路）。
+4. 文書: IADR-0492（新設）・IADR-0246 への日付つき追記（決定 4 の改定を指す）・索引・データ仕様書（報告書）・本仕様書。
+5. 試験 T-06-015〜T-06-027（走査の結果、既存の `T-06` 帯は T-06-014 まで。`git grep -hoE "\bT-06-[0-9]+\b|\bT06_[0-9]+"`）。
+
+範囲外:
+- 監査台帳を JST の暦日で引く入力（判断根拠・LLM 利用実績・借株料・損切りの手法・強制買戻しの推定・自動縮小・為替の状態）の窓合わせ（残余リスク・後続候補）。
+- 生成の時刻・`/policy`・取引の門・通知（変えない）。照会の契約（REST・gRPC・proto）も変えない。
+- 確定済みの報告書の書き換え（しない）。稼働中のクラスタへの配備（本 PR では行わない）。
+
+## 母集合（規則 9。誤りの側＝「報告書の期間を市場の取引日としてそのまま渡す」箇所から引く）
+
+引き方（origin/develop b52dddcd）: `git grep -n "due.PeriodStart, due.PeriodEnd" -- backend`（報告書から供給元への期間の受け渡し 12 箇所）と、
+受け手の解釈 `git grep -n "TradeDate(\|TradingDay.Of(" -- 'backend/Services/*' ':!*Tests*'`・`IStage1TradingDayObservationStore`（ET）。
+
+| 供給元（受け手の日の解釈） | 扱い |
+| --- | --- |
+| 約定 `GetFills`（市場の現地取引日） | **直す**（窓の外包で引き市場ごとに絞る） |
+| 乖離の取り込み `GetDriftAdoptions`（市場の現地取引日） | **直す**（約定と同じ窓。§2 と §2-b・在庫の畳み込みを揃える） |
+| OpenD の稼働率 `GetUptime`（ET の取引日） | **直す**（窓の米国の取引日） |
+| 自動縮小・強制買戻しの推定・為替の状態・LLM 利用実績・借株料・判断根拠・損切りの手法と解決（JST の暦日・監査台帳） | 変えない（JST の暦日で一貫。窓とのずれは残余リスク） |
+| 作り直しの回数（自リポの台帳・JST の暦日） | 変えない |
+| 期末レート（期末日の観測） | 変えない |
+
+規則 10（この変更で新たに誤りになる自分の記述）: `IPeriodFillSource` の「JST 取引日」・`ReportSchedule` 冒頭の「市場別の取引日境界は #249 の管轄」・
+`ReportScheduleOptions.DailyAt`・`DueReport` の注記・`PeriodFillQuery` の注記・IADR-0246 決定 4・データ仕様書（報告書）。いずれも本 PR で直す
+（IADR-0246 は凍結記録のため本文を書き換えず日付つき追記）。
+
+## 受け入れ基準 → 試験
+
+| ID | 受け入れ基準 | 試験 |
+| --- | --- | --- |
+| T-06-015 | （再現）ET 10-05 の米国の約定は日報 10-06 の窓に入り、日報 10-05 には入らない | `ReportSessionWindowTests` |
+| T-06-016 | 東証の約定は従来どおり同じ日付の日報に入る | 同上 |
+| T-06-017 | どの市場のどのセッションも連続する日報のちょうど 1 つに入る（休場日の構成あり／なし・夏時間の切替を跨ぐ） | 同上 |
+| T-06-018 | 月曜の日報は金曜（ET）の米国セッションを含む | 同上 |
+| T-06-019 | 東証の祝日（構成）と米国の祝日の食い違いで取りこぼさない。休場日の日報の窓は空 | 同上 |
+| T-06-020 | 夏時間の切替（3 月・11 月）を跨いでも、大引け直前・大引け後に記録された約定は次の営業日の日報に入る | 同上 |
+| T-06-021 | 週報・月報の窓は日報の窓の和に等しく、最終セッションはちょうど 1 つの週報・月報に入る | 同上 |
+| T-06-022 | 照会の範囲は全市場の取引日の外包 | 同上 |
+| T-06-023 | （再現・自動生成）台帳の契約どおりに絞る供給元で、日報 10-06 に ET 10-05 の約定が載る（修正前は 0 / 0 / 0） | `ReportUsSessionCoverageTests` |
+| T-06-024 | `/report regenerate` は自動生成と同じ窓で引く | 同上 |
+| T-06-025 | 乖離の取り込みも同じ窓で載る | 同上 |
+| T-06-026 | 通常日の大引けは場中判定の終端と一致する | `MarketSessionMinutesTests` |
+| T-06-027 | 稼働率の日次は窓の米国の取引日で引く | `ReportAutoGeneratorThreeWayAndUptimeTests` |
+
+既存試験の前提の是正（実在し得ない時刻）: `ReportAutoGeneratorFxTranslationTests`（5 本）・`PeriodInventoryPhantomShortTests` T16_019 は、
+日報 2026-07-08 の生成時刻（16:00 JST＝07:00 UTC）より**後**の米国の約定（07-08 14:30 UTC）を日報 07-08 の約定として与えていた。
+全行を返すスタブだったため通っていた。約定を ET 07-07 のセッションへ移した（意図は変えない）。`期間の約定を集計範囲で照会する` は照会の範囲の期待値を窓の外包へ改めた。
+
+## 自己変異（scratchpad/ast1172-mut/）
+
+| 変異 | 結果 |
+| --- | --- |
+| 生成器の照会を `[PeriodStart, PeriodEnd]`・絞り込み無しへ戻す（修正前の挙動） | T-06-023/024/025・照会の範囲の試験が赤 |
+| 窓の写像を全市場 JST（同じ日付）にする | T-06-015/018/019/021/022/023/024/025 ほかが赤 |
+| 窓の始端を「期間の初日の境界」にする（1 日ずれ） | T-06-020/023/024/025・既存の約定試験が赤 |
+| 稼働率の照会を `[PeriodStart, PeriodEnd]` へ戻す | T-06-027 が赤 |
+
+## 配備の注記
+
+- 生成の時刻・PeriodKey は変わらない。配備後の最初の自動生成から新しい窓で引く。
+- **確定済みの報告書は書き換えない**（daily-2026-10-05 版 2 など）。未確定の daily-2026-10-06 版 1 は、配備後に `/report regenerate daily-2026-10-06`
+  で ET 10-05 の約定（MSFT・NVDA の利確）を引き直せる（未確定であることを確かめてから）。
+- 規則の変わり目の二重計上: 旧規則の日報は ET の当日を引くが、16:00 JST〜当日 22:30（23:30）JST に生成されていれば ET の当日はまだ始まっておらず、0 件である。
+  **旧規則の日報の生成が ET の当日のセッションの後へずれていた場合**（停止明けの遅れ生成など）に限り、新規則の翌営業日の日報と同じセッションが重なり得る（確定済みは書き換えないため、気付いたら手で注記する）。週報 2026-W41 が新規則で生成されれば ET 10-02〜10-08 を数える
+  （ET 10-02 は旧規則の W40 が落としていたセッション）。

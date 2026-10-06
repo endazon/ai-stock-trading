@@ -7,6 +7,10 @@ namespace RiskManagementService.Features.RiskManagement.GetFills;
 // 取引日は PortfolioProjection.TradeDate（**約定の市場の現地取引日**）で解釈する。統制・射影と同じ境界を
 // 使うことで、「日次上限が見ている 1 日」と「日報が集計する 1 日」がずれない——この一致は境界を
 // 市場別解釈へ移しても不変条件である（片側だけ JST に残すとずれが復活する）。
+//
+// FR-06, #1172, IADR-0492 決定 3: 報告書サービスは報告書の期間（JST の営業日）をそのまま [from, to] に渡さない
+// （同じ日付で引くと、米国のセッションは 16:00 JST の生成時点でまだ始まっていない）。生成境界までに閉場した
+// セッションの窓の外包で引き、市場ごとに絞り直す。本関数の契約（市場の現地取引日の [from, to]）は変えない。
 public static class PeriodFillQuery
 {
     /// <summary>取引日が [fromInclusive, toInclusive] に入る約定を約定時刻の昇順で返す。逆順の期間は空。</summary>

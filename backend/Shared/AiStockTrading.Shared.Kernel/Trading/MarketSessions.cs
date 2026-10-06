@@ -81,5 +81,18 @@ public static class MarketSessions
         _ => 0,
     };
 
+    /// <summary>
+    /// FR-06, #1172, IADR-0492 決定 2: 通常の取引日の<b>大引け</b>（市場ローカル）。米国 16:00・東証 15:30・未知の市場 <c>null</c>。
+    /// 報告書が「生成の時点までに閉場したセッション」を数えるための値であり、時刻の定数は <see cref="IsWithinSession"/> と
+    /// 同じもの（境界の定義を 2 か所に置かない）。半日取引日の前倒し（13:00 ET）は使わない —— 通常日の大引けは半日の
+    /// 大引けより後であり、「閉場したか」の判定を遅い側へ倒す（まだ開いているセッションを閉場済みと数えない）。
+    /// </summary>
+    public static TimeOnly? RegularClose(Market market) => market switch
+    {
+        Market.UnitedStates => UsClose,
+        Market.Japan => JpAfternoonClose,
+        _ => null,
+    };
+
     private static int Minutes(TimeOnly from, TimeOnly to) => (int)(to - from).TotalMinutes;
 }

@@ -3,6 +3,7 @@ using ReportService.Common.Abstractions;
 using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace ReportService.Features.Reports;
 
@@ -756,8 +757,15 @@ public sealed class ReportAutoGenerator(
 
         try
         {
+            // FR-06, #1172, IADR-0492 決定 4: 稼働率の日次は米国東部時間の取引日で記録される（Stage 1 の観測）。約定と同じ窓の
+            // 米国の取引日で引く（報告書の期間〔JST の営業日〕で引くと、生成時点でまだ始まっていない ET の日を照会する）。
+            // 窓に米国の取引日が 1 日も無い（休場日の日報）なら、観測された取引日が無いことが事実である。
+            var (from, to) = ReportSchedule.SessionWindowOf(due, settings.Schedule).TradingDays(Market.UnitedStates);
+            if (from > to)
+                return new OpenDUptimeRecord([]);
+
             return await uptimeSource
-                .GetUptimeAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .GetUptimeAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -895,9 +903,13 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            return await driftAdoptionSource
-                .GetDriftAdoptionsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+            // FR-06, #1172, IADR-0492 決定 3: 約定と同じ窓で絞る（§2 と §2-b・在庫の畳み込みが同じセッションを見る）。
+            var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
+            var (from, to) = window.QueryRange();
+            var adoptions = await driftAdoptionSource
+                .GetDriftAdoptionsAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
+            return adoptions is null ? null : [.. adoptions.Where(a => window.Includes(a.Market, a.AdoptedAt))];
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -918,10 +930,15 @@ public sealed class ReportAutoGenerator(
     {
         try
         {
+            // FR-06, #1172, IADR-0492 決定 3: 報告書の期間（JST の営業日）を各市場の取引日としてそのまま引かない。
+            // 生成境界までに大引けを迎えたセッションの窓を市場ごとの取引日へ写し、外包で照会してから市場ごとに絞る
+            // （照会の契約〔市場の現地取引日の [from, to]〕は REST・gRPC とも変えない）。
+            var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
+            var (from, to) = window.QueryRange();
             var fills = await fillSource
-                .GetFillsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .GetFillsAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
-            return (fills, false);
+            return ([.. fills.Where(f => window.Includes(f.Market, f.ExecutedAt))], false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
