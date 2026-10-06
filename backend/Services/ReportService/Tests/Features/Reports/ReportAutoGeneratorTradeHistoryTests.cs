@@ -160,8 +160,9 @@ public class ReportAutoGeneratorTradeHistoryTests
             .RunOnceAsync();
 
         BodyOf(store).Should().Contain("| 始値が支持線で反発。出来高増。 |");
-        // 判断根拠は**当該報告期間**で引く（別の日の根拠を混ぜない）。
-        rationales.Requested.Should().Contain((new DateOnly(2026, 7, 8), new DateOnly(2026, 7, 8)));
+        // 判断根拠は窓の始まり（前の営業日の生成境界の JST の日付）〜期間の終わりで引く（#1172, IADR-0492 決定 3）。
+        // 窓に入る米国の約定（ET 07-07）の判断は JST 07-07 の夜に記録され得る。DecisionId 引きなので別の約定の根拠は混ざらない。
+        rationales.Requested.Should().Contain((new DateOnly(2026, 7, 7), new DateOnly(2026, 7, 8)));
     }
 
     // 🔴 **否定形（上の肯定形と対）**: 供給元が未注入・照会失敗なら未供給と書く（「根拠なし」ではない）。

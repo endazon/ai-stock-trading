@@ -29,6 +29,9 @@ public class ReportUsSessionCoverageTests
     private static readonly DateTimeOffset WedMorning = new(2026, 10, 7, 1, 0, 0, TimeSpan.Zero);
 
     private const string AdoptionReason = "証券会社のアプリで手動決済（#1172 の検証）";
+    private const string JpPrevDayReason = "前日の東証の取り込み（窓の外）";
+    private const string UsNextSessionReason = "次のセッションの米国の取り込み（窓の外）";
+    private const string EarlyFillRationale = "寄り付き直後の押し目で新規買い（#1172 の検証）";
 
     private static DateTimeOffset Et(int month, int day, int hour, int minute)
     {
@@ -78,6 +81,17 @@ public class ReportUsSessionCoverageTests
                 [.. adoptions.Where(a => LocalTradingDay(a.AdoptedAt, a.Market) is var d && d >= fromInclusive && d <= toInclusive)]);
     }
 
+    // 監査台帳の契約（判断の記録時刻の JST 取引日で [from, to] を絞り、DecisionId で引く）を写したスタブ。
+    private sealed class LedgerRationaleSource(params (Guid DecisionId, DateTimeOffset RecordedAt, string Rationale)[] records)
+        : ITradeRationaleSource
+    {
+        public Task<IReadOnlyDictionary<Guid, string>?> GetRationalesAsync(
+            DateOnly fromInclusive, DateOnly toInclusive, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyDictionary<Guid, string>?>(records
+                .Where(r => LocalTradingDay(r.RecordedAt, Market.Japan) is var d && d >= fromInclusive && d <= toInclusive)
+                .ToDictionary(r => r.DecisionId, r => r.Rationale));
+    }
+
     private sealed class NoPositions : IOpenPositionSource
     {
         public Task<IReadOnlyList<ReportPosition>?> GetOpenPositionsAsync(CancellationToken cancellationToken = default) =>
@@ -91,8 +105,9 @@ public class ReportUsSessionCoverageTests
 
     private static ReportAutoGenerator Generator(
         IReportStore store, IClock clock, IPeriodFillSource fills, IPeriodDriftAdoptionSource? drift = null,
-        IReportRegenerationLedger? ledger = null) =>
+        IReportRegenerationLedger? ledger = null, ITradeRationaleSource? rationales = null) =>
         new(store, new ReportDraftService(new StubDrafter()), fills, clock, new ReportAutoGenerationSettings(),
+            rationaleSource: rationales,
             openPositionSource: new NoPositions(), driftAdoptionSource: drift ?? new LedgerDriftSource(), regenerationLedger: ledger);
 
     private static string DailyBody(IReportStore store, string key) => store.Get(key)!.Report.Body;
@@ -159,8 +174,38 @@ public class ReportUsSessionCoverageTests
         var adoption = new PeriodDriftAdoption(
             Guid.NewGuid(), "NVDA", Market.UnitedStates, TradeSide.Sell, 5, 10, 5, adoptedAt.AddMinutes(-5), "owner", AdoptionReason, adoptedAt);
 
-        await Generator(store, new FixedClock(TueAfterBoundary), new LedgerFillSource(), new LedgerDriftSource(adoption)).RunOnceAsync();
+        // 否定の例（窓の外）: 東証の JST 10-05 の取り込み（日報 2026-10-05 の分）と、米国の ET 10-06 の取り込み（日報 2026-10-07 の分）。
+        // どちらも照会の外包 [10-05, 10-06] には入るため、取引台帳のスタブは返す——落とすのは窓の市場ごとの絞り込みである。
+        var jpPrevDayAt = new DateTimeOffset(2026, 10, 5, 14, 0, 0, TimeSpan.FromHours(9));
+        var jpPrevDay = new PeriodDriftAdoption(
+            Guid.NewGuid(), "7203", Market.Japan, TradeSide.Sell, 100, 200, 100, jpPrevDayAt.AddMinutes(-5), "owner", JpPrevDayReason, jpPrevDayAt);
+        var usNextSessionAt = Et(10, 6, 11, 0);
+        var usNextSession = new PeriodDriftAdoption(
+            Guid.NewGuid(), "MSFT", Market.UnitedStates, TradeSide.Sell, 3, 6, 3, usNextSessionAt.AddMinutes(-5), "owner", UsNextSessionReason, usNextSessionAt);
 
-        DailyBody(store, "daily-2026-10-06").Should().Contain(AdoptionReason);
+        await Generator(store, new FixedClock(WedMorning), new LedgerFillSource(), new LedgerDriftSource(adoption, jpPrevDay, usNextSession))
+            .RunOnceAsync();
+
+        var body = DailyBody(store, "daily-2026-10-06");
+        body.Should().Contain(AdoptionReason);
+        body.Should().NotContain(JpPrevDayReason, "東証の JST 10-05 の取り込みは日報 2026-10-05 の分");
+        body.Should().NotContain(UsNextSessionReason, "米国の ET 10-06 の取り込みは日報 2026-10-07 の分（10-06 16:00 JST にはまだ始まっていない）");
+    }
+
+    // T-06-028, FR-06, FR-16, #1172, IADR-0492 決定 3: 窓に入る米国の約定の判断根拠は、判断が前日（JST）の夜に記録されていても載る。
+    // ET 10-05 09:45 の約定（日報 2026-10-06 の分）の判断は JST 10-05 22:40（＝ET 09:40）に記録される。判断根拠を
+    // 報告書の期間（JST 10-06）だけで引くと見つからず「未供給」になる。
+    [Fact]
+    public async Task T06_028_米国の早い約定の判断根拠は前日夜の記録でも載る()
+    {
+        var store = new InMemoryReportStore();
+        var decisionId = Guid.NewGuid();
+        var fill = new PeriodTradeFill("AAPL", Market.UnitedStates, TradeSide.Buy, PositionEffect.Open, 10, 100m, Et(10, 5, 9, 45), decisionId);
+        var recordedAt = new DateTimeOffset(2026, 10, 5, 22, 40, 0, TimeSpan.FromHours(9));
+        var rationales = new LedgerRationaleSource((decisionId, recordedAt, EarlyFillRationale));
+
+        await Generator(store, new FixedClock(TueAfterBoundary), new LedgerFillSource(fill), rationales: rationales).RunOnceAsync();
+
+        DailyBody(store, "daily-2026-10-06").Should().Contain(EarlyFillRationale);
     }
 }

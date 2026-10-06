@@ -26,7 +26,10 @@ public sealed record ReportSessionWindow(DateTimeOffset ClosedAfter, DateTimeOff
     public (DateOnly From, DateOnly To) TradingDays(Market market)
     {
         var zone = MarketHours.ZoneOf(market);
-        // 未知の市場は現地の暦日の終わりを大引けとみなす（閉場の判定を遅い側へ倒す）。
+        // Market は東証・米国の 2 値だけで、RegularClose はどちらにも値を返す——`??` の右辺は現状到達しない。
+        // 列挙に市場が足されて RegularClose が追随しなかった場合の保険として、現地の暦日の終わりを大引けとみなす
+        // （閉場の判定を遅い側へ倒す）。🔴 その場合のタイムゾーン（MarketHours.ZoneOf の既定＝米国東部）はリスク管理の
+        // TradingDay（未知の市場は JST）と揃っていない。市場を足すときは RegularClose・ZoneOf・TradingDay を同時に直すこと。
         var close = MarketSessions.RegularClose(market) ?? TimeOnly.MaxValue;
 
         var from = LocalDate(ClosedAfter, zone);

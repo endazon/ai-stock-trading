@@ -711,8 +711,12 @@ public sealed class ReportAutoGenerator(
 
         try
         {
+            // FR-06, FR-16, #1172, IADR-0492 決定 3: 判断根拠は約定ごとの突き合わせ（DecisionId 引き）であり、期間の集計ではない。
+            // 窓に入る米国の約定（ET D-1）の判断は JST D-1 の夜（22:30〜）に記録され得るため、照会は窓の始まり
+            // （前の営業日の生成境界の JST 日付）から引く。広げても DecisionId 引きなので他の約定の根拠が混ざることは無い。
+            var (from, to) = RationaleRange(due);
             return await rationaleSource
-                .GetRationalesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .GetRationalesAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -723,6 +727,17 @@ public sealed class ReportAutoGenerator(
         {
             return null;
         }
+    }
+
+    // FR-06, FR-16, #1172, IADR-0492 決定 3: 判断根拠の照会範囲（JST 取引日）。下端は期間の始まり・窓の照会範囲の始まり・
+    // 窓の始まり（ClosedAfter）の JST 日付の最小、上端は期間の終わり。窓に入る約定はいずれも ClosedAfter より後に始まる
+    // セッションに属するため、その判断の記録は下端以降にある。
+    private (DateOnly From, DateOnly To) RationaleRange(DueReport due)
+    {
+        var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
+        var windowStartJst = DateOnly.FromDateTime(window.ClosedAfter.ToOffset(ReportSchedule.JstOffset).DateTime);
+        var from = new[] { due.PeriodStart, window.QueryRange().From, windowStartJst }.Min();
+        return (from, due.PeriodEnd);
     }
 
     // FR-06, FR-16, #563, IADR-0269: 日報 §3 のポジション一覧。
