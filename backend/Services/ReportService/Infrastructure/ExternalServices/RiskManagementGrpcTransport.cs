@@ -16,7 +16,7 @@ namespace ReportService.Infrastructure.ExternalServices;
 // NFR, FR-06, MSP:ADR-0029, MSP:ADR-0075, IADR-0284 決定 5（段 2）, IADR-0328, IADR-0331, IADR-0352, IADR-0427 決定 5・6,
 // #997 (#753):
 // リスク管理の読み取り（`aistocktrading.riskmanagement.v1.RiskControlsRead`）を呼ぶ**本サービスの**輸送。
-// 構成 `RiskManagement:Grpc`（宛先）を宣言したときだけ DI に載り、載っていれば取引台帳の 6 つの供給元が `Grpc*` 実装を選ぶ
+// 構成 `RiskManagement:Grpc`（宛先）を宣言したときだけ DI に載り、載っていれば取引台帳の 7 つの供給元（#1181 で期間開始時点の在庫を足した）が `Grpc*` 実装を選ぶ
 // （**既定は REST**。宣言しなければ本ファイルは何も登録しない＝振る舞いは 1 つも変わらない）。
 //
 // 🔴 **REST の `risk-ledger` が持つ依存先の門と観測（#840 / IADR-0352 決定 1・2）を gRPC でも同じに行う。**

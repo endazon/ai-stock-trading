@@ -38,11 +38,14 @@ public static class ReportSummary
         // あると実現損益・決済件数・勝ち件数は部分値になる（報告書の在庫は当期間の約定だけから畳まれる）。
         // 要約だけを見て確定する利用者に、部分値を「この期間の実現損益」として見せない。
         // 費用は約定ごとに掛かり取得原価を要さないため、そのまま出す。
+        // #1181, IADR-0493 決定 4: 期間開始時点の在庫を照会できなかったときも部分値である（件数が無ければ理由をそう書く）。
         var realizedCell = pnl.UnvaluedSettlementCount > 0
             ? string.Format(CultureInfo.InvariantCulture,
                 "算出不能（期間より前に建てた建玉の決済 {0} 件）", pnl.UnvaluedSettlementCount)
-            : ReportAmountFormat.Base(pnl.RealizedPnlNet);
-        var settlementCell = pnl.UnvaluedSettlementCount > 0
+            : pnl.OpeningInventoryUnknown
+                ? "算出不能（期間開始時点の在庫を照会できませんでした）"
+                : ReportAmountFormat.Base(pnl.RealizedPnlNet);
+        var settlementCell = pnl.IsPartial
             ? "決済・勝ちは算出不能"
             : string.Format(CultureInfo.InvariantCulture,
                 "決済 {0}・勝ち {1}", pnl.RealizingTradeCount, pnl.WinningTradeCount);

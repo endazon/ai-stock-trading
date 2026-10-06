@@ -35,7 +35,16 @@ public class ReportRegenerationEndpointTests
             Task.FromResult<IReadOnlyList<PeriodDriftAdoption>?>([]);
     }
 
-    // 信頼クライアント（ボット）・中核の入力の供給（既定の構成は手動売買の取り込みが未構成＝未供給）・上限。
+    // FR-06, #1181, IADR-0493 決定 4: 期間開始時点の在庫も中核の入力である（既定の構成はリスク管理の所在が未構成＝未供給）。
+    private sealed class SuppliedOpening : IOpeningInventorySource
+    {
+        public Task<IReadOnlyList<OpeningLot>?> GetOpeningInventoryAsync(
+            AiStockTrading.Shared.Contracts.Trading.Market market, DateOnly beforeTradingDay,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<OpeningLot>?>([]);
+    }
+
+    // 信頼クライアント（ボット）・中核の入力の供給（既定の構成は手動売買の取り込み・期間開始時点の在庫が未構成＝未供給）・上限。
     private static WebApplicationFactory<Program> Host(ReportWorkerWebApplicationFactory baseFactory, bool coreSupplied = true, int? limit = null) =>
         baseFactory.WithWebHostBuilder(b =>
         {
@@ -45,7 +54,11 @@ public class ReportRegenerationEndpointTests
                 [ReportRegenerationLimit.ConfigKey] = limit?.ToString(System.Globalization.CultureInfo.InvariantCulture),
             }));
             if (coreSupplied)
-                b.ConfigureTestServices(s => s.Replace(ServiceDescriptor.Singleton<IPeriodDriftAdoptionSource>(new SuppliedDrift())));
+                b.ConfigureTestServices(s =>
+                {
+                    s.Replace(ServiceDescriptor.Singleton<IPeriodDriftAdoptionSource>(new SuppliedDrift()));
+                    s.Replace(ServiceDescriptor.Singleton<IOpeningInventorySource>(new SuppliedOpening()));
+                });
         });
 
     private sealed class Headers(HttpMessageHandler inner, string? roles, string? azp) : DelegatingHandler(inner)

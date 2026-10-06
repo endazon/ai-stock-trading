@@ -135,16 +135,19 @@ public static class FillPnlAttributionBuilder
     /// <b>構造的に入らない</b>。畳むのは、畳み込み順序と規則を <see cref="PnlAggregator"/> と一致させるためである
     /// （一致しないと内訳の合計が §1 サマリとずれ、しかも全テストは緑のままそうなる）。
     /// </param>
+    /// <param name="opening">FR-06, #1181, IADR-0493: 期間開始時点の在庫（<c>null</c>＝受け取っていない。PnlAggregator と同じ扱い）。</param>
     public static IReadOnlyList<FillPnlAttribution> Build(
         IReadOnlyList<PeriodTradeFill> fills,
         TradingAssumptions assumptions,
         IReadOnlyDictionary<Guid, string>? rationales,
-        IReadOnlyList<PeriodDriftAdoption>? adoptions = null)
+        IReadOnlyList<PeriodDriftAdoption>? adoptions = null,
+        OpeningInventorySnapshot? opening = null)
     {
         ArgumentNullException.ThrowIfNull(fills);
         ArgumentNullException.ThrowIfNull(assumptions);
 
-        var positions = new Dictionary<(string Symbol, Market Market), InventoryLot>();
+        // FR-06, FR-16, #1181, IADR-0493 決定 3: PnlAggregator と**同じ初期在庫**から畳む（内訳の合計が §1 と一致する条件）。
+        var positions = OpeningInventorySnapshot.Seed(opening);
         var entries = new List<FillPnlAttribution>(fills.Count);
         var sequence = 0;
 

@@ -59,6 +59,9 @@ service RiskControlsRead {
   rpc GetBuyInInferences(GetBuyInInferencesRequest) returns (GetBuyInInferencesResponse);
   // GET /risk-controls/session-uptime?from&to（OpenD 稼働率）。
   rpc GetSessionUptime(GetSessionUptimeRequest) returns (GetSessionUptimeResponse);
+  // GET /risk-controls/opening-inventory?market&before（期間開始時点の在庫。#1181 / IADR-0493）。
+  // market・before の欠落・未指定は INVALID_ARGUMENT。
+  rpc GetOpeningInventory(GetOpeningInventoryRequest) returns (GetOpeningInventoryResponse);
 }
 
 // ---- 列挙（C# の列挙とは名前で写す。未指定・未知は「不明」） ----
@@ -364,6 +367,34 @@ message DriftAdoption {
 
 message GetDriftAdoptionsResponse {
   repeated DriftAdoption adoptions = 1;
+}
+
+// ---- 期間開始時点の在庫（FR-06, FR-16, #1181, IADR-0493） ----
+
+message GetOpeningInventoryRequest {
+  // 対象の市場（未指定は INVALID_ARGUMENT）。
+  Market market = 1;
+  // この市場の現地取引日**より前**（排他。yyyy-MM-dd）までの台帳行を畳む。報告書は窓の市場ごとの下端を渡す。
+  string before = 2;
+}
+
+// REST の OpeningInventoryView と同じ形（数量は常に正・向きは side）。
+message OpeningInventoryLot {
+  optional string symbol = 1;
+  Market market = 2;
+  TradeSide side = 3;
+  optional int32 quantity = 4;
+  // 基準通貨（USD）建ての平均取得単価（10 進文字列）。
+  optional string average_cost_in_base = 5;
+  // 認識時レート（1 USD あたりの円）の加重平均。🔴 欠落は「建玉に未記録の約定が含まれ平均を作れない」（0・1 ではない）。
+  optional string average_fx_rate_base_to_display = 6;
+  // 建玉に残る、認識時レートが未記録の台帳行の数。
+  optional int32 unrecorded_fx_rate_fill_count = 7;
+}
+
+message GetOpeningInventoryResponse {
+  // 空は「その時点で建玉なし」。照会できないことは rpc の失敗（status）で表す。
+  repeated OpeningInventoryLot lots = 1;
 }
 
 // ---- 強制買戻しの推定 ----

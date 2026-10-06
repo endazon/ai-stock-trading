@@ -54,7 +54,11 @@ public sealed class ReportAutoGenerator(
     IStopLossMethodResolutionSource? stopLossMethodResolutionSource = null,
     // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6: 月報 §7 の作り直しの回数（試行の台帳）。未注入は null＝照会できていない。
     IReportRegenerationLedger? regenerationLedger = null,
-    ReportRegenerationLimit? regenerationLimit = null)
+    ReportRegenerationLimit? regenerationLimit = null,
+    // FR-06, FR-16, #1181, IADR-0493 決定 1・4: 期間開始時点の在庫（取引台帳が窓の市場ごとの下端まで畳んだもの）。
+    // 未注入（単体テスト・旧構成）は取りに行かない＝従来どおり期間で切った在庫（IADR-0381。算定できない決済を検出した回だけ未供給）。
+    // 本番は必ず注入する（所在が未構成なら UnsuppliedOpeningInventorySource ＝常に未供給）。
+    IOpeningInventorySource? openingInventorySource = null)
 {
     // 観測点が未注入（単体テスト・旧構成）なら誰も記録しない観測になり、見送りは起きない＝従来挙動。
     private readonly ReportDependencyProbe _probe = dependencyProbe ?? new ReportDependencyProbe();
@@ -345,6 +349,17 @@ public sealed class ReportAutoGenerator(
         if (periodEndFxRate is null)
             unsupplied.Add(ReportInput.PeriodEndFxRate);
 
+        // FR-06, FR-16, #1181, IADR-0493 決定 1・4: 期間開始時点の在庫。台帳から引ける過去の時点の値であり、作り直しでも取りに行く
+        // （IsPointInTime ではない）。取得に失敗したら未供給（fail-closed: 取得原価を要する値を「算出不能」にする）。
+        OpeningInventorySnapshot? openingInventory = null;
+        if (openingInventorySource is not null)
+        {
+            observation.Enter(ReportInput.OpeningInventory);
+            openingInventory = await SafeOpeningInventoryAsync(due, cancellationToken).ConfigureAwait(false);
+            if (openingInventory is null)
+                unsupplied.Add(ReportInput.OpeningInventory);
+        }
+
         // この種別が使わない入力の欠落は数えない（週報は建玉を描かない。警告にも見送りの判定にも混ぜない）。
         // Stage 0 の見積り承認額は構成値であり、未設定（承認が無い）が通常の状態のため、そもそも数えない。
         unsupplied.RemoveWhere(input => !ReportInputs.AppliesTo(input, due.Kind));
@@ -365,6 +380,7 @@ public sealed class ReportAutoGenerator(
             StopLossMethodResolutions = stopLossMethodResolutions,
             CurrentStage = currentStage,
             PeriodEndFxRate = periodEndFxRate,
+            OpeningInventory = openingInventory,
             Unsupplied = ReportInputs.Parse(ReportInputs.Serialize(unsupplied)),
             NotRestorable = ReportInputs.Parse(ReportInputs.Serialize(
                 notRestorable.Where(input => ReportInputs.AppliesTo(input, due.Kind)))),
@@ -424,14 +440,17 @@ public sealed class ReportAutoGenerator(
                 ReportRegeneration: due.Kind == ReportKind.Monthly ? SafeRegenerationTally(due) : null,
                 // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲を冒頭に書く
                 // （約定を絞った窓と同じ SessionWindowOf から引く。作り直しも同じ経路を通る）。
-                SessionRanges: ReportSchedule.SessionRangesOf(due, settings.Schedule, ReportedMarkets(settings.Markets))),
+                SessionRanges: ReportSchedule.SessionRangesOf(due, settings.Schedule, ReportedMarkets(settings.Markets)),
+                // FR-06, FR-16, #1181, IADR-0493 決定 3: 期間開始時点の在庫（null＝受け取っていない）。
+                OpeningInventory: inputs.OpeningInventory),
             cancellationToken).ConfigureAwait(false);
 
-        // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
-        // **期間開始時点の在庫**を未供給として記録する（IADR-0352 の既存経路＝記録・提示通知の警告・
-        // `/report show`・版番号なしの `/report approve` の警告へそのまま乗る）。
-        // 🔴 **見送り（リトライ）には掛けない。** 供給元が存在しない入力であり、待っても変わらない
-        //（TryDefer は入力の後で終わっており、ここから先で見送りへ入る経路は散文だけである）。
+        // FR-06, FR-16, #892, IADR-0381: 取得原価で賄えない決済を実際に検出したら、**期間開始時点の在庫**を未供給として記録する
+        // （IADR-0352 の既存経路＝記録・提示通知の警告・`/report show`・版番号なしの `/report approve` の警告へそのまま乗る）。
+        // #1181, IADR-0493 決定 4: 在庫を受け取った回でも、期間開始時点の在庫と期間の買いを超える売り（手仕舞い）はここに来る
+        // （台帳と報告書の窓の食い違い。数字を騙らない）。
+        // 🔴 **ここでは見送り（リトライ）に掛けない。** 照会の失敗は入力の段（CollectInputsAsync）で観測済みであり、TryDefer はそこで
+        // 判定を終えている。ここで検出する食い違いは待っても変わらない（ここから先で見送りへ入る経路は散文だけである）。
         if (draft.Pnl.UnvaluedSettlementCount > 0)
             unsupplied.Add(ReportInput.OpeningInventory);
 
@@ -763,6 +782,41 @@ public sealed class ReportAutoGenerator(
         return (from, due.PeriodEnd);
     }
 
+    // FR-06, FR-16, #1181, IADR-0493 決定 1・4: 期間開始時点の在庫を窓の**市場ごとの下端**（その市場の窓に入る最初の現地取引日）より前で引く。
+    // 🔴 JST 0 時・期間の初日では切らない——約定の窓（IADR-0492）と同じ取引日で切らないと、窓の約定と二重に数えるか取りこぼす。
+    // 市場は取引台帳が持ち得るすべて（約定の照会と同じ ReportSessionWindow.Markets）。1 市場でも取得できなければ全体を null（未供給）。
+    // **未注入は呼ばない（呼び出し側が判定する）。照会失敗は null（未供給）である**——空（建玉なし）は別の主張になる。
+    private async Task<OpeningInventorySnapshot?> SafeOpeningInventoryAsync(DueReport due, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
+            var lots = new List<OpeningLot>();
+            foreach (var market in ReportSessionWindow.Markets)
+            {
+                var (from, _) = window.TradingDays(market);
+                var marketLots = await openingInventorySource!
+                    .GetOpeningInventoryAsync(market, from, cancellationToken)
+                    .ConfigureAwait(false);
+                if (marketLots is null)
+                    return null;
+
+                // 受け手の解釈（Interpret）が市場の食い違う応答を既に読めない（null）にしているので、ここは二つ目の安全弁である。
+                lots.AddRange(marketLots.Where(l => l.Market == market));
+            }
+
+            return new OpeningInventorySnapshot(lots);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     // FR-06, FR-16, #563, IADR-0269: 日報 §3 のポジション一覧。
     // **未注入・照会失敗のいずれも null（未供給）である**——空列は「建玉なし」という別の主張になる。
     private async Task<IReadOnlyList<ReportPosition>?> SafeOpenPositionsAsync(CancellationToken cancellationToken)
@@ -1081,6 +1135,9 @@ public sealed record ReportInputSnapshot
     public TradingStage? CurrentStage { get; init; }
 
     public PeriodEndFxRate? PeriodEndFxRate { get; init; }
+
+    /// <summary>FR-06, #1181, IADR-0493: 期間開始時点の在庫。<c>null</c>＝供給元が未注入、または照会できていない（後者は Unsupplied に入る）。</summary>
+    public OpeningInventorySnapshot? OpeningInventory { get; init; }
 
     /// <summary>この種別が使う入力のうち、取得できなかった（または期間の時点に復元できないため取りに行かなかった）もの。</summary>
     public required IReadOnlyList<ReportInput> Unsupplied { get; init; }

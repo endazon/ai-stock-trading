@@ -13,6 +13,7 @@ using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetFills;
 using RiskManagementService.Features.RiskManagement.GetKillSwitch;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
+using RiskManagementService.Features.RiskManagement.GetOpeningInventory;
 using RiskManagementService.Features.RiskManagement.GetPause;
 using RiskManagementService.Features.RiskManagement.GetRiskSettings;
 using RiskManagementService.Features.RiskManagement.GetRiskStatus;
@@ -80,6 +81,9 @@ internal static class RiskControlEndpoints
         // FR-06, FR-11, ADR-0041 決定 1, #870, IADR-0360 決定 2: 期間の乖離の取り込み（報告書 §2-b の供給元）。
         // **約定列（/fills）とは別の口**である（取り込みは約定価格を持たず、実現損益は不明である）。
         read.MapGetDriftAdoptions();
+        // FR-06, FR-16, #1181, IADR-0493 決定 2: 期間開始時点の在庫（報告書の在庫の初期値）。
+        // **/open-positions とは別の口**である（過去の取引日の境界まで畳み、基準通貨の平均取得単価を返す）。
+        read.MapGetOpeningInventory();
         read.MapGetBuyInInferences();
         read.MapGetSessionUptime();
 

@@ -78,6 +78,13 @@ internal sealed class RiskReadStubBehavior
     internal Func<int, CancellationToken, Task<Proto.GetSessionUptimeResponse>> SessionUptime { get; init; } =
         (_, _) => Task.FromResult(new Proto.GetSessionUptimeResponse());
 
+    // FR-06, #1181, IADR-0493: 期間開始時点の在庫。既定は**未実装**（旧版のリスク管理＝UNIMPLEMENTED）を写すため override しない形にせず、
+    // null のときは提供側が UNIMPLEMENTED を返す。
+    internal Func<int, CancellationToken, Task<Proto.GetOpeningInventoryResponse>>? OpeningInventory { get; init; }
+
+    /// <summary>期間開始時点の在庫の照会で受け取った (市場, before)。</summary>
+    internal List<(Proto.Market Market, string Before)> OpeningInventoryRequests { get; } = [];
+
     internal Task<T> Handle<T>(Func<int, CancellationToken, Task<T>> handler, ServerCallContext context, string? from = null, string? to = null)
     {
         var call = Interlocked.Increment(ref _calls);
@@ -117,6 +124,17 @@ internal sealed class RiskReadStubService(RiskReadStubBehavior behavior) : Proto
 
     public override Task<Proto.GetFillsResponse> GetFills(Proto.GetFillsRequest request, ServerCallContext context) =>
         behavior.Handle(behavior.Fills, context, request.From, request.To);
+
+    public override Task<Proto.GetOpeningInventoryResponse> GetOpeningInventory(
+        Proto.GetOpeningInventoryRequest request, ServerCallContext context)
+    {
+        if (behavior.OpeningInventory is null)
+            return base.GetOpeningInventory(request, context); // 旧版のリスク管理（UNIMPLEMENTED）
+
+        lock (behavior.OpeningInventoryRequests)
+            behavior.OpeningInventoryRequests.Add((request.Market, request.Before));
+        return behavior.Handle(behavior.OpeningInventory, context);
+    }
 
     public override Task<Proto.GetDriftAdoptionsResponse> GetDriftAdoptions(
         Proto.GetDriftAdoptionsRequest request, ServerCallContext context) =>

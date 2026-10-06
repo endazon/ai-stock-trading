@@ -48,10 +48,11 @@ public class ReportInputsTests
     // T-10-2172, FR-06, FR-16, #1156, IADR-0480 決定 3: 中核の入力（一過性に欠けたら長く見送る）は
     // 約定・建玉・手動売買の取り込みだけ。広げると監査台帳の記録の欠落でも長く待つ（見送りの射程が膨らむ）。
     [Fact]
-    public void 中核の入力は約定と建玉と手動売買の取り込みだけ()
+    public void 中核の入力は約定と建玉と手動売買の取り込みと期間開始時点の在庫だけ()
     {
+        // T-06-052, FR-06, #1181, IADR-0493 決定 4: 期間開始時点の在庫を中核へ足した（欠けると損益の主張が成り立たない）。
         Enum.GetValues<ReportInput>().Where(ReportInputs.IsCore).Should().BeEquivalentTo(
-            [ReportInput.Fills, ReportInput.OpenPositions, ReportInput.DriftAdoptions]);
+            [ReportInput.Fills, ReportInput.OpenPositions, ReportInput.DriftAdoptions, ReportInput.OpeningInventory]);
     }
 
     // ---- 永続化形式 ---------------------------------------------------------------------------

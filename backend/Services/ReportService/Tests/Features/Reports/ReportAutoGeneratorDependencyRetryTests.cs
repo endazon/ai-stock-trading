@@ -178,6 +178,12 @@ public class ReportAutoGeneratorDependencyRetryTests
 
         /// <summary>true なら稼働率も本物の供給元（HttpOpenDUptimeSource）を本物の鎖越しに使う。</summary>
         public bool UseHttpUptime { get; init; }
+
+        /// <summary>#1181, IADR-0493 決定 4: 期間開始時点の在庫（中核の入力）の上流。<see cref="UseHttpOpening"/> のときだけ使う。</summary>
+        public Upstream Opening { get; } = new() { Body = "[]" };
+
+        /// <summary>true なら期間開始時点の在庫も本物の供給元（HttpOpeningInventorySource）を本物の鎖越しに使う。</summary>
+        public bool UseHttpOpening { get; init; }
         public InMemoryReportStore Store { get; } = new();
         public RecordingNotifier Notifier { get; } = new();
         public CountingDrafter StubDrafter { get; } = new();
@@ -264,7 +270,11 @@ public class ReportAutoGeneratorDependencyRetryTests
                 deferrals: Deferrals,
                 driftAdoptionSource: supplied,
                 stopLossMethodUsageSource: supplied,
-                stopLossMethodResolutionSource: supplied);
+                stopLossMethodResolutionSource: supplied,
+                openingInventorySource: UseHttpOpening
+                    ? new HttpOpeningInventorySource(
+                        Client(Opening, "risk-ledger", Tokens), NullLogger<HttpOpeningInventorySource>.Instance)
+                    : null);
 
             return generator.RunOnceAsync();
         }
@@ -788,6 +798,31 @@ public class ReportAutoGeneratorDependencyRetryTests
         context.UnsuppliedInputs.Should().BeEmpty();
         context.Positions.Should().ContainSingle().Which.Symbol.Should().Be("AAPL");
         ReportNarrativePromptBuilder.Build(context).Should().Contain("建玉（現在の台帳）: 1 件（銘柄: AAPL）");
+    }
+
+    // T-06-058, FR-06, FR-16, #1181（独立監査 🟢2）, IADR-0493 決定 4: 期間開始時点の在庫（中核の入力）が一過性（503）に欠ける間は、
+    // 中核の上限で見送り、回復すれば縮退しない報告書を出す。
+    [Fact]
+    public async Task 期間開始時点の在庫が一過性に欠ける間は_中核の上限で見送り_回復すれば縮退しない()
+    {
+        var rig = new Rig(maxDeferrals: 2, coreMaxDeferrals: 6) { UseHttpOpening = true };
+        rig.Opening.Status = HttpStatusCode.ServiceUnavailable;
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var deferred = await rig.RunOnceAsync();
+            deferred.Generated.Should().BeEmpty("通常の上限（2 回）を超えても縮退した報告書を出さない");
+            var deferral = deferred.Deferred.Should().ContainSingle().Subject;
+            deferral.WaitingFor.Should().Equal(ReportInput.OpeningInventory);
+            deferral.Attempt.Should().Be(attempt);
+            deferral.MaxDeferrals.Should().Be(6, "中核の上限");
+        }
+
+        rig.Opening.Status = HttpStatusCode.OK;
+        var result = await rig.RunOnceAsync();
+
+        result.Generated.Should().ContainSingle().Which.UnsuppliedInputs.Should().BeEmpty();
+        rig.Opening.Requests.Should().Contain(r => r.Path == "/risk-controls/opening-inventory");
     }
 
     // T-10-2174, FR-06, FR-16, #1156（独立監査）, IADR-0480 決定 3: **事故の実際の形**。Keycloak が未準備で

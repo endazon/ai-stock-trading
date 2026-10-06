@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-06, FR-11, FR-16, UC-03, ADR-0041, IADR-0025, IADR-0033, IADR-0301, IADR-0352, IADR-0360]
 author: claude (Claude Code)
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-10-06
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-06 報告書 / FR-16 損益集計)
   - planning:projects/ai-stock-trading/04_workflows/04_report-templates.md (数値の定義・日報 §1/§2・週報 §1/§2/§3/§5・月報 §1/§2/§5)
@@ -150,3 +150,14 @@ issue が検出器の案として挙げた「在庫 0 への反対売買」は�
 - **テスト ID** は `T-16-001`〜`T-16-023` を新設した（T-16-016〜023 は監査の指摘で足した）（走査の結果、本リポジトリに `T-16` 帯は 1 件も
   存在しなかった。`docs/tests/` に FR-16 のテスト仕様書は無い＝網羅裁定 #211 の必須範囲外のため、
   採番の記録は本 ADR と作業仕様書が持つ）。
+
+## ［2026-10-06 追記 / #1181］決定 1・5 の改定（期間開始時点の在庫に供給元ができた）
+
+- **決定 1 が採らなかった方向 1（期間開始時点の在庫を供給する）を [IADR-0493](./IADR-0493_report-opening-inventory-from-ledger-as-of.md) で採った。**
+  「供給元が存在しない」の前提は、台帳が全期間の行を追記専用で持ち射影を毎回畳み直しているため、行を取引日で切って畳めば過去の時点の射影になる
+  （スナップショットは要らない）と実測して崩れた。リスク管理の新しい口 `GET /risk-controls/opening-inventory`（gRPC `GetOpeningInventory`）が
+  市場ごとの窓の下端（現地取引日・排他）まで畳んだ在庫を返し、報告書の 5 つの畳み込みが初期在庫に置く。
+- **決定 5 の「取りに行かない・見送らない」を改める。** 生成器は入力を引く段で在庫を取りに行き、取得の失敗は未供給（`OpeningInventory`）として
+  記録し §1 の取得原価を要する値を算出不能にする（fail-closed）。`OpeningInventory` は中核の入力（一過性の失敗は長く見送る・作り直しは断る）になった。
+  期間開始時点の在庫と期間の買いで賄えない手仕舞いを検出した回の記録（本 ADR 決定 5 の経路）はそのまま残る。
+- 決定 2〜4（`PositionEffect` で見分ける・規則は `PeriodInventory` 1 か所・部分値は算出不能）は変えない。本文は凍結記録として書き換えない。

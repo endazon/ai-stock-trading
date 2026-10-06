@@ -5,6 +5,7 @@ using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement.GetDriftAdoptions;
 using RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 using RiskManagementService.Features.RiskManagement.GetOpenPositions;
+using RiskManagementService.Features.RiskManagement.GetOpeningInventory;
 using RiskManagementService.Features.RiskManagement.GetSizingContext;
 using RiskManagementService.Features.RiskManagement.GetWorkingEntryOrders;
 using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
@@ -337,6 +338,25 @@ public static class RiskReadWireMapping
             row.Actor = view.Actor;
         if (view.Reason is not null)
             row.Reason = view.Reason;
+        return row;
+    }
+
+    // FR-06, FR-16, #1181, IADR-0493 決定 2: 期間開始時点の在庫 1 銘柄。認識時レートの平均が作れない（null）ときは設定しない。
+    public static Proto.OpeningInventoryLot ToProto(OpeningInventoryView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        var row = new Proto.OpeningInventoryLot
+        {
+            Market = ToProto(view.Market),
+            Side = ToProto(view.Side),
+            Quantity = view.Quantity,
+            AverageCostInBase = ToWire(view.AverageCostInBase),
+            UnrecordedFxRateFillCount = view.UnrecordedFxRateFillCount,
+        };
+        if (view.Symbol is not null)
+            row.Symbol = view.Symbol;
+        if (view.AverageFxRateBaseToDisplay is { } rate)
+            row.AverageFxRateBaseToDisplay = ToWire(rate);
         return row;
     }
 

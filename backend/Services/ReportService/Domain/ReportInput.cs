@@ -56,10 +56,10 @@ public enum ReportInput
 
     /// <summary>
     /// FR-06, FR-16, #892, IADR-0381: <b>期間開始時点の在庫</b>（期間より前に建てた建玉）。
-    /// 🔴 <b>供給元が存在しない入力である</b>——リスク管理の <c>ProjectOpenPositions</c> は<b>現在</b>の台帳を畳む口で、
-    /// 過去時点の射影を返す口が無い。したがって<b>取りに行かず</b>、期間より前に建てた建玉の決済を
-    /// 実際に検出した回だけ未供給として記録する（<see cref="PnlSummary.UnvaluedSettlementCount"/>）。
-    /// 🔴 <b>見送り（リトライ）の対象にしない</b>——待っても供給されない。
+    /// #1181, IADR-0493: 供給元は<b>リスク管理の取引台帳</b>（`GET /risk-controls/opening-inventory`。窓の市場ごとの下端より前までを畳む）。
+    /// 未供給になるのは 2 通り: ① 照会に失敗した（取得原価を要する値をすべて「算出不能」にする。一過性なら見送る＝中核の入力）、
+    /// ② 期間開始時点の在庫と期間の買いで賄えない決済を検出した（<see cref="PnlSummary.UnvaluedSettlementCount"/>。
+    /// 供給元が未注入の旧構成では従来どおりこちらだけ）。
     /// </summary>
     OpeningInventory,
 
@@ -142,12 +142,15 @@ public static class ReportInputs
     /// <para>
     /// 中核＝欠けると報告書の主張（損益・取引の有無・保有の有無）そのものが成り立たない入力である。
     /// 約定（§1 サマリと明細の素）・建玉（日報 §3）・手動売買の取り込み（在庫の畳み込みの入力。欠けると
-    /// 実在しない建玉の評価損益が出る）の 3 つに限る。監査台帳の記録（為替・LLM 実績・借株料・判断根拠等）は
+    /// 実在しない建玉の評価損益が出る）の 3 つに、#1181（IADR-0493 決定 4）で期間開始時点の在庫（持ち越した建玉の取得原価）を足した 4 つに限る。監査台帳の記録（為替・LLM 実績・借株料・判断根拠等）は
     /// 各節が「照会できませんでした」と描けば報告書の主張は崩れないため、中核に入れない（待ちを延ばさない）。
     /// </para>
     /// </summary>
     public static bool IsCore(ReportInput input) =>
-        input is ReportInput.Fills or ReportInput.OpenPositions or ReportInput.DriftAdoptions;
+        input is ReportInput.Fills or ReportInput.OpenPositions or ReportInput.DriftAdoptions
+            // FR-06, FR-16, #1181, IADR-0493 決定 4: 期間開始時点の在庫も中核である（欠けると実現損益・税・勝率・評価損益が
+            // 算出不能になり、報告書の損益の主張が成り立たない）。作り直しは取得の失敗を断る（ADR-0052 決定 4）。
+            or ReportInput.OpeningInventory;
 
     /// <summary>
     /// FR-06, 計画 ADR-0052 決定 2, #1156, IADR-0491 決定 4: <b>「今」の値しか引けない入力</b>か。供給元に過去の時点を問う口が無い

@@ -39,9 +39,10 @@ public static class ReportNarrativePromptBuilder
         // 「算出不能」と描くのに、散文だけが部分値を権威として受け取ると「当期は決済が無かった」
         // 「損益 0 だった」と書けてしまう。**値そのものを渡さず**、言及しないよう指示する。
         // 費用・約定件数は約定ごとに数え取得原価を要さないため、そのまま渡す。
+        // #1181, IADR-0493 決定 4: 期間開始時点の在庫を照会できなかったときも同じく値を渡さない（件数が無ければ件数を書かない）。
         var unvalued = p.UnvaluedSettlementCount > 0
             ? string.Format(CultureInfo.InvariantCulture, "算出不能（{0}件）", p.UnvaluedSettlementCount)
-            : null;
+            : p.OpeningInventoryUnknown ? "算出不能" : null;
 
         // FR-06, FR-16, #1156, IADR-0480 決定 1: 🔴 **未供給を 0 として渡さない。** 約定は不達でも空列へ倒れる
         // （IADR-0115 決定5）ため、値は 0 件・損益 0 になる。それを確定値として渡すと「取引なし」「損益 0」と書ける。
@@ -70,10 +71,13 @@ public static class ReportNarrativePromptBuilder
         }
         if (unvalued is not null)
         {
-            sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                "注意: 当期間には期間より前に建てた建玉の決済が {0} 件あり、その取得原価が当期間の約定に含まれていないため、"
-                    + "実現損益・源泉徴収税額・評価損益・決済件数・勝ち決済は算出できていません（上記の「算出不能」）。",
-                p.UnvaluedSettlementCount));
+            sb.AppendLine(p.UnvaluedSettlementCount > 0
+                ? string.Format(CultureInfo.InvariantCulture,
+                    "注意: 当期間には期間より前に建てた建玉の決済が {0} 件あり、その取得原価が当期間の約定に含まれていないため、"
+                        + "実現損益・源泉徴収税額・評価損益・決済件数・勝ち決済は算出できていません（上記の「算出不能」）。",
+                    p.UnvaluedSettlementCount)
+                : "注意: 期間開始時点の在庫を照会できなかったため、持ち越した建玉の取得原価が分からず、"
+                    + "実現損益・源泉徴収税額・評価損益・決済件数・勝ち決済は算出できていません（上記の「算出不能」）。");
             sb.AppendLine("これらの値・増減・勝敗・決済の有無には散文で一切言及しないでください。"
                 + "「決済が無かった」「損益は 0 だった」「勝ち越した／負け越した」等とも書かないでください。");
         }
