@@ -170,6 +170,7 @@ public class ReportUsSessionCoverageTests
         var service = new ReportRegenerationService(
             store, clock, Generator(store, clock, fills, ledger: ledger), settings, ledger,
             new ReportRegenerationLimit(ReportRegenerationLimit.DefaultDailyLimit), new NoAudit(),
+            new ReportService.Infrastructure.ExternalServices.NoOpReportDraftPresentedNotifier(),
             NullLogger<ReportRegenerationService>.Instance);
 
         var result = await service.RegenerateAsync("daily-2026-10-06", "owner");

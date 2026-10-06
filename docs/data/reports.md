@@ -10,8 +10,8 @@ author: endazon (with Claude Code)
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052, ADR-0053]
 iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, planning#711, planning#724]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1182_report-regenerate-present-notice]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1182, planning#711, planning#724]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -96,6 +96,7 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
   散文の LLM 費用は用途キー（モデル割当）を変えずに計上区分 `report-regeneration` へ付け替える（月次 LLM 上限の対象外。月報 §7 に回数・費用・上限到達の日数・断った回数を載せる）。
   作り直した版の本文の末尾に「報告書の作り直しの記録（版 n）」（作り直した利用者・日時・作り直す前の版・なお未供給だった入力・復元できなかった入力）を足し、
   `UnsuppliedInputs` はこの版の記録に従う（方針の連鎖の未供給は前の版から引き継ぐ）。試行は `report_regeneration_attempts` 表に残し、作り直せたときは監査台帳へ `ReportRegenerated` を発行する。
+  **承認待ちにできた版は、初版の自動生成と同じ要約（未供給の警告・利確の書式の警告を含む）で提示の通知（`ReportDraftPresented`・新しい版）を出す**（本文を返す照会が無いので、作り直した版の中身はこの通知で見る。発行は best-effort で、失敗したら応答の `message` にその旨を書く。断った・保存できなかった・承認待ちにできなかった版は出さない）。
   応答は 200＝`{periodKey, previousVersion, version, presented, message, unsuppliedInputs[], notRestorableInputs[]}`（入力は表示名）／400＝会話キー・代理指定の不正／404／409＝確定済み・期間の不整合・並行更新（散文を待つ間の改訂）／422／429。
   **200 以外では下書きを変えていない。**
 - `POST /reports/knowledge-base/reingest`（**確定済みの報告書を KB へ入れ直す**。OwnerOnly）: 基盤の切替で消えた KB 上の写しの復旧と、

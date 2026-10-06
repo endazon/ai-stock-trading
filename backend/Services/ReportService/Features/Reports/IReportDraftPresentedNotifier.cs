@@ -4,6 +4,7 @@ namespace ReportService.Features.Reports;
 
 // FR-06, FR-07, FR-09, IADR-0116, #280: 報告書ドラフトを提示（承認待ちに）したことを利用者へ知らせるポート。
 // #210（IADR-0096）の通知ポートと同型で、Application 層をメッセージ基盤（Wolverine・ADR-0013 / IADR-0129 / #354）へ依存させない。
+// 呼び出し元は自動生成（ReportAutoGenerator）と作り直し（ReportRegenerationService。#1182, IADR-0491 決定 5 の 2026-10-06 追記）。
 //
 // 既定は no-op。Worker 側でバス実装（MessageBusReportDraftPresentedNotifier）を選ぶと ReportDraftPresented が発行され、通知サービスが Discord へ
 // 投稿する（Discord 未設定なら送信ポートが no-op に倒れる＝送信経路の追加のみ・IADR-0020/0062）。

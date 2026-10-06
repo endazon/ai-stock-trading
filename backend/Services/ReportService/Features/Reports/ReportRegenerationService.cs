@@ -25,6 +25,8 @@ namespace ReportService.Features.Reports;
 //   7. 方針（方針の要約と `/policy` の改訂の記録）は保ち（決定 3）、作り直しの記録を本文へ足して版を上げて保存する（決定 5）。
 //      読んだ時点の版で楽観排他を掛ける（LLM を待つ間に改訂・確定されたら保存しない）。
 //   8. 再提示（承認待ち）。台帳を閉じ、監査へ発行する（決定 5）。確定は従来どおり版番号つきの `/report approve` だけが行う。
+//      #1182, IADR-0491 決定 5（2026-10-06 追記）: 承認待ちにできた版は、初版と同じ要約で提示の通知（ReportDraftPresented）を出す
+//      （`/report show` は本文を返さない〔IADR-0240 決定 4〕ので、通知が作り直した版の中身を見る唯一の経路である）。
 public sealed partial class ReportRegenerationService(
     IReportStore store,
     IClock clock,
@@ -33,6 +35,7 @@ public sealed partial class ReportRegenerationService(
     IReportRegenerationLedger ledger,
     ReportRegenerationLimit limit,
     IReportRegenerationAuditPublisher audit,
+    IReportDraftPresentedNotifier notifier,
     ILogger<ReportRegenerationService> logger)
 {
     /// <summary>作り直しの記録の見出しの先頭（版番号の前まで）。次の作り直しはこの見出しから後ろも保つ。</summary>
@@ -176,6 +179,20 @@ public sealed partial class ReportRegenerationService(
             presented = false;
         }
 
+        // FR-06, FR-09, 計画 ADR-0052 決定 5, #1182: 再提示の通知。初版（ReportAutoGenerator）と同じ要約（数値はコード集計値・散文はサニタイズ済み・
+        // この版の未供給の警告・保った方針の利確の書式の警告）を、新しい版で出す。承認待ちにできなかった版は通知しない（IADR-0116 決定 2）。
+        bool? notified = null;
+        if (presented)
+        {
+            var kind = existing.Report.Kind;
+            var label = ReportPeriod.Label(kind, period.PeriodStart);
+            var summary = ReportSummary.Build(
+                kind, label, draft.Pnl, draft.Narrative, unsuppliedInputs,
+                PolicyTakeProfitCheck.WarningFor(kind, existing.Report.PolicySummary));
+            notified = await NotifyPresentedBestEffortAsync(new PresentedReportNotice(key, kind, label, summary, version))
+                .ConfigureAwait(false);
+        }
+
         await PublishAuditBestEffortAsync(new ReportRegenerated(
             key, existing.Report.Kind.ToString(), previousVersion, version, actor,
             [.. unsuppliedInputs.Select(i => i.ToString())],
@@ -183,15 +200,15 @@ public sealed partial class ReportRegenerationService(
             now)).ConfigureAwait(false);
 
         logger.LogInformation(
-            "報告書を作り直しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Previous}→{Version}・提示={Presented}・"
+            "報告書を作り直しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Previous}→{Version}・提示={Presented}・提示の通知={Notified}・"
             + "なお未供給={Unsupplied}・復元できない入力={NotRestorable}・本日 {Attempt}/{Limit} 回目）。",
-            LogSanitizer.Sanitize(actor), LogSanitizer.Sanitize(key), previousVersion, version, presented,
+            LogSanitizer.Sanitize(actor), LogSanitizer.Sanitize(key), previousVersion, version, presented, notified,
             ReportInputs.Serialize(unsuppliedInputs) ?? "なし", ReportInputs.Serialize(inputs.NotRestorable) ?? "なし",
             attemptNumber, limit.DailyLimit);
 
         return new ReportRegenerationResult(
             ReportRegenerationStatus.Regenerated,
-            SuccessMessage(key, version, presented, attemptNumber, unsuppliedInputs, inputs.NotRestorable),
+            SuccessMessage(key, version, presented, notified, attemptNumber, unsuppliedInputs, inputs.NotRestorable),
             key, previousVersion, version, presented,
             ReportInputs.Labels(unsuppliedInputs), ReportInputs.Labels(inputs.NotRestorable));
     }
@@ -295,13 +312,18 @@ public sealed partial class ReportRegenerationService(
     }
 
     private static string SuccessMessage(
-        string key, int version, bool presented, int attemptNumber,
+        string key, int version, bool presented, bool? notified, int attemptNumber,
         IReadOnlyList<ReportInput> unsupplied, IReadOnlyList<ReportInput> notRestorable)
     {
         var sb = new StringBuilder();
         sb.Append(presented
             ? $"報告書 {key} を作り直し、版 {version} として承認待ちにしました（確定するまで取引には適用されません）。"
             : $"報告書 {key} を作り直し、版 {version} として保存しましたが、承認待ちにできませんでした（/report show で状態を確認してください）。");
+        // #1182: 作り直した版の要約は提示の通知で届く（Bot は本文を取りに行かない。IADR-0240 決定 4）。届かないなら黙らずにそう言う。
+        if (notified == true)
+            sb.Append(CultureInfo.InvariantCulture, $"版 {version} の要約は提示の通知（報告書ドラフト（承認待ち））で届きます。");
+        else if (notified == false)
+            sb.Append(CultureInfo.InvariantCulture, $"版 {version} の提示の通知（要約）を発行できませんでした。");
         sb.Append(CultureInfo.InvariantCulture, $"方針は変えていません。確定は /report approve {key} で行ってください。");
         sb.Append(CultureInfo.InvariantCulture, $"（本日の /report regenerate: {attemptNumber} 回目）");
         if (unsupplied.Count > 0)
@@ -344,6 +366,24 @@ public sealed partial class ReportRegenerationService(
             logger.LogError(ex,
                 "報告書の作り直しの台帳を閉じられませんでした（試行={AttemptId}・結果={Outcome}）。行は Pending のまま残ります（上限には数えられます）。",
                 attemptId, outcome);
+        }
+    }
+
+    // 提示の通知（失敗しても保存・提示済みの下書きを失敗と伝えない。記録して応答へ載せる。初版の ReportAutoGenerator.NotifyAsync と同じく best-effort）。
+    // 🔴 保存の後の段なので要求の取り消しを渡さない（取り消しで通知と監査の発行を飛ばさない。監査の発行口も取り消しを取らない）。
+    private async Task<bool> NotifyPresentedBestEffortAsync(PresentedReportNotice notice)
+    {
+        try
+        {
+            await notifier.NotifyAsync(notice, CancellationToken.None).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                "報告書を作り直して承認待ちにしましたが、提示の通知を発行できませんでした（PeriodKey={PeriodKey}・版={Version}）。",
+                LogSanitizer.Sanitize(notice.PeriodKey), notice.Version);
+            return false;
         }
     }
 
