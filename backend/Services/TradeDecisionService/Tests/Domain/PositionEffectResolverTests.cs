@@ -126,4 +126,25 @@ public class PositionEffectResolverTests
         PositionEffectResolver.Resolve(TradeSide.Buy, signedHeldQuantity: held, requireKnownHoldingForOpen: true)
             .Effect.Should().Be(PositionEffect.Open);
     }
+
+    // T-10-2284, FR-04, FR-10, #1187, IADR-0248: 「決済になるか」の判定（二次本判断の解釈が損切り幅を任意にする条件）は
+    // Resolve の Close 分岐と一致する。ロング保有中の Sell・ショート保有中の Buy だけが真。保有 0・不明・同方向の建て増しは偽。
+    [Theory]
+    [InlineData(TradeSide.Sell, 970, true)]
+    [InlineData(TradeSide.Buy, -100, true)]
+    [InlineData(TradeSide.Buy, 970, false)]   // 買い増し（新規建て）
+    [InlineData(TradeSide.Sell, -100, false)] // 売り増し（新規建て）
+    [InlineData(TradeSide.Sell, 0, false)]    // 保有なしの売り（裸の新規売り＝見送り）
+    [InlineData(TradeSide.Buy, 0, false)]
+    [InlineData(TradeSide.Sell, null, false)] // 不明
+    [InlineData(TradeSide.Buy, null, false)]
+    public void 決済になるかの判定はResolveのClose分岐と一致する(TradeSide side, int? held, bool expected)
+    {
+        PositionEffectResolver.ClosesHolding(side, held).Should().Be(expected);
+
+        foreach (var requireKnown in new[] { false, true })
+        {
+            PositionEffectResolver.Resolve(side, held, requireKnown).IsClose.Should().Be(expected);
+        }
+    }
 }

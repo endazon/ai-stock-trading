@@ -18,6 +18,18 @@ public static class PositionEffectResolver
     }
 
     /// <summary>
+    /// FR-04, FR-10, #292, #1187, IADR-0119, IADR-0248: この方向の売買が<b>保有建玉の決済（手仕舞い）になるか</b>。
+    /// ロング保有中（&gt; 0）の Sell と、ショート保有中（&lt; 0）の Buy だけが真。保有 0・不明（null）・同方向の建て増しは偽。
+    /// <para>
+    /// 🔴 <b>「決済になるか」の唯一の判定</b>である。<see cref="Resolve"/> の Close 分岐と、二次本判断の解釈
+    /// （<c>TradeDecisionParser.ParseDetailed</c> の損切り幅の任意化）が同じこの関数を呼ぶ。判定を 2 か所に書くと、
+    /// 片方だけが変わったときに「決済なのに損切り幅を要求する」（#1187 の症状）か「新規建てなのに損切り幅を要求しない」へずれる。
+    /// </para>
+    /// </summary>
+    public static bool ClosesHolding(TradeSide side, int? signedHeldQuantity) =>
+        (signedHeldQuantity is > 0 && side == TradeSide.Sell) || (signedHeldQuantity is < 0 && side == TradeSide.Buy);
+
+    /// <summary>
     /// <paramref name="signedHeldQuantity"/> は符号付き建玉（+ ロング / − ショート / 0 保有なし）。
     /// **null は「不明」**（照会不能）であり 0（保有なし）とは意味が異なる。
     /// </summary>
@@ -39,11 +51,9 @@ public static class PositionEffectResolver
         TradeSide side, int? signedHeldQuantity, bool requireKnownHoldingForOpen)
     {
         // 建玉の反対売買は手仕舞い。数量は保有数（全量）＝ゼロを跨がないため IADR-0038 の分割は発生しない。
-        if (signedHeldQuantity is > 0 && side == TradeSide.Sell)
-            return new PositionEffectDecision(PositionEffect.Close, signedHeldQuantity.Value);
-
-        if (signedHeldQuantity is < 0 && side == TradeSide.Buy)
-            return new PositionEffectDecision(PositionEffect.Close, -signedHeldQuantity.Value);
+        // #1187: 判定は ClosesHolding の 1 か所に置く（二次本判断の解釈〔TradeDecisionParser〕も同じ関数を呼ぶ）。
+        if (ClosesHolding(side, signedHeldQuantity))
+            return new PositionEffectDecision(PositionEffect.Close, Math.Abs(signedHeldQuantity!.Value));
 
         // 保有なし・不明での売りは新規ショート建てになる。現物のみ有効な現段階では成立せず、
         // ガード（ProductType/Market）は方向を見ないため素通りしてブローカへ飛ぶ。ADR-0003 に従い見送る。

@@ -3,6 +3,7 @@ using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Features.TradeDecision.DecideTrade;
 using TradeDecisionService.Domain;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -44,7 +45,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"));
         var orchestrator = Create(llm, DecisionOrchestrationOptions.Default);
 
-        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.Decision.Action.Should().Be(TradeAction.Buy);
         result.ScreenedOut.Should().BeFalse();
@@ -60,7 +61,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), Json("Buy"), Json("Sell"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3 };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.Decision.Action.Should().Be(TradeAction.Buy);
         result.TotalVotes.Should().Be(3);
@@ -76,7 +77,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), Json("Sell"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 2 };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.Decision.Action.Should().Be(TradeAction.Hold);
     }
@@ -88,7 +89,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Hold"), Json("Buy"), Json("Buy"), Json("Buy"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.Decision.Action.Should().Be(TradeAction.Hold);
         result.ScreenedOut.Should().BeTrue();
@@ -106,7 +107,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(refused, Json("Buy"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.Decision.Action.Should().Be(TradeAction.Hold);
         result.Decision.Rationale.Should().Be("LLM が要求を拒否したため見送り");
@@ -122,7 +123,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), Json("Buy"), Json("Buy"), Json("Sell"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.Decision.Action.Should().Be(TradeAction.Buy);
         result.ScreenedOut.Should().BeFalse();
@@ -145,7 +146,7 @@ public class DecisionOrchestratorTests
             SecondaryModel = "pro",
         };
 
-        await Create(llm, options).DecideAsync(() => "screen", "decision");
+        await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         llm.Calls[0].Model.Should().Be("light"); // 一次スクリーニング
         llm.Calls.Skip(1).Should().OnlyContain(c => c.Model == "pro"); // 二次本判断
@@ -160,7 +161,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), Json("Buy"), Json("Buy"));
         var options = new DecisionOrchestrationOptions { VoteCount = 2, EnableScreening = true };
 
-        await Create(llm, options).DecideAsync(() => "screen", "decision");
+        await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         llm.Purposes[0].Should().Be(LlmPurposes.TradeDecisionScreening);
         llm.Purposes.Skip(1).Should().OnlyContain(p => p == LlmPurposes.TradeDecision);
@@ -172,7 +173,7 @@ public class DecisionOrchestratorTests
     {
         var llm = new SequencedLlm(Json("Buy"));
 
-        await Create(llm, DecisionOrchestrationOptions.Default).DecideAsync(() => "screen", "decision");
+        await Create(llm, DecisionOrchestrationOptions.Default).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         llm.Purposes.Should().Equal(LlmPurposes.TradeDecision);
     }
@@ -185,7 +186,7 @@ public class DecisionOrchestratorTests
         var factoryCalls = 0;
 
         await Create(llm, DecisionOrchestrationOptions.Default)
-            .DecideAsync(() => { factoryCalls++; return "screen"; }, "decision");
+            .DecideAsync(() => { factoryCalls++; return "screen"; }, "decision", signedHeldQuantity: null);
 
         factoryCalls.Should().Be(0);
     }
@@ -207,7 +208,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"), "モデルが散文で回答した（JSON なし）", Json("Buy"));
         var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { VoteCount = 3 });
 
-        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.Decision.Action.Should().Be(TradeAction.Buy);
         result.UnparseableVotes.Should().Be(1, "解析不能は見送りと区別して数える（#290）");
@@ -220,7 +221,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm("応答が JSON ではない");
         var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { EnableScreening = true });
 
-        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.ScreenedOut.Should().BeTrue("解析不能でも安全側で打ち切る（挙動は従来どおり）");
         result.ScreeningUnparseable.Should().BeTrue("打ち切りの理由が解析不能であることを区別して残す（#290）");
@@ -233,7 +234,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm("""{"action":"Hold","rationale":"方針外"}""");
         var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { EnableScreening = true });
 
-        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.ScreenedOut.Should().BeTrue();
         result.ScreeningUnparseable.Should().BeFalse("LLM が選んだ見送りは解析不能ではない");
@@ -246,7 +247,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(Json("Buy"));
         var orchestrator = Create(llm, DecisionOrchestrationOptions.Default with { VoteCount = 2 });
 
-        var result = await orchestrator.DecideAsync(() => "screen", "decision");
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.UnparseableVotes.Should().Be(0);
         result.ScreeningUnparseable.Should().BeFalse();
@@ -266,7 +267,7 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(screeningOutput, Json("Buy"), Json("Buy"), Json("Buy"));
         var options = DecisionOrchestrationOptions.Default with { VoteCount = 3, EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.ScreenedOut.Should().BeFalse("一次の関心ありは数値の有無に関わらず二次へ進む");
         result.ScreeningUnparseable.Should().BeFalse("数値欠損は出力の形の問題ではない");
@@ -285,7 +286,7 @@ public class DecisionOrchestratorTests
             """{"action":"Hold","rationale":"方針外","referencePrice":null,"stopLossDistancePerShare":null}""", Json("Buy"));
         var options = DecisionOrchestrationOptions.Default with { EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.ScreenedOut.Should().BeTrue();
         result.ScreeningUnparseable.Should().BeFalse("LLM が選んだ見送りは解析不能ではない");
@@ -304,12 +305,79 @@ public class DecisionOrchestratorTests
         var llm = new SequencedLlm(screeningOutput, Json("Buy"));
         var options = DecisionOrchestrationOptions.Default with { EnableScreening = true };
 
-        var result = await Create(llm, options).DecideAsync(() => "screen", "decision");
+        var result = await Create(llm, options).DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
 
         result.ScreenedOut.Should().BeTrue("解析不能でも安全側で打ち切る");
         result.ScreeningUnparseable.Should().BeTrue("打ち切りの理由が解析不能であることを区別して残す（#290）");
         result.Decision.Action.Should().Be(TradeAction.Hold);
         result.TotalVotes.Should().Be(0);
         llm.Calls.Should().ContainSingle("二次は呼ばない");
+    }
+
+    // --- FR-04, FR-11, #1187, IADR-0248: 解析不能のログに action を載せ、保有の文脈で決済の損切り幅を任意にする ---
+
+    // T-10-2286: 二次の解析不能の Warning に、解析できた action（InvalidValues なら Buy/Sell。形の問題は「不明」）と保有を載せる。
+    // 従来は action が無く、「捨てたのは利確の Sell だった」が推定でしか言えなかった（PoC 2026-10-06）。detail はモデル出力（不明な action
+    // の文字列）を含み得るため 1 行へ正規化する。
+    [Fact]
+    public async Task 二次の解析不能のログはactionを載せdetailをサニタイズする()
+    {
+        var llm = new SequencedLlm(
+            """{"action":"Buy","rationale":"押し目","referencePrice":255.55,"stopLossDistancePerShare":null}""",
+            "{\"action\":\"Ma\\nybe\",\"rationale\":\"x\"}");
+        var logger = new CapturingLogger();
+        var orchestrator = new DecisionOrchestrator(llm, DecisionOrchestrationOptions.Default with { VoteCount = 2 }, logger);
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: 970);
+
+        result.UnparseableVotes.Should().Be(2);
+        var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
+        warnings.Should().HaveCount(2);
+
+        // 1 票目: ロング保有中の Buy（買い増し＝新規建て）で損切り幅なし → InvalidValues。action=Buy が載る。
+        warnings[0].Values["Kind"].Should().Be(TradeDecisionParseFailureKind.InvalidValues);
+        warnings[0].Values["Action"].Should().Be("Buy");
+        warnings[0].Values["Held"].Should().Be("970");
+        warnings[0].Message.Should().Contain("action=Buy").And.Contain("held=970");
+
+        // 2 票目: 不明な action（改行入り）→ UnknownAction。action は「不明」、detail は改行を含まない。
+        warnings[1].Values["Kind"].Should().Be(TradeDecisionParseFailureKind.UnknownAction);
+        warnings[1].Values["Action"].Should().Be("不明");
+        ((string)warnings[1].Values["Detail"]!).Should().NotContain("\n").And.Contain("Ma_ybe");
+    }
+
+    // T-10-2285（オーケストレータ）: 渡された保有で二次を読む。ロング保有中の Sell は損切り幅なしでも Sell 票、保有 0 なら解析不能票。
+    [Theory]
+    [InlineData(970, TradeAction.Sell, 0)]
+    [InlineData(0, TradeAction.Hold, 1)]
+    [InlineData(null, TradeAction.Hold, 1)]
+    public async Task 二次は渡された保有で決済の損切り幅を任意にする(int? held, TradeAction expected, int unparseable)
+    {
+        var llm = new SequencedLlm("""{"action":"Sell","rationale":"利確","referencePrice":255.55,"stopLossDistancePerShare":null}""");
+
+        var result = await Create(llm, DecisionOrchestrationOptions.Default).DecideAsync(() => "screen", "decision", held);
+
+        result.Decision.Action.Should().Be(expected);
+        result.UnparseableVotes.Should().Be(unparseable);
+    }
+
+    private sealed record LogEntry(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> Values);
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var values = state is IEnumerable<KeyValuePair<string, object?>> pairs
+                ? pairs.ToDictionary(p => p.Key, p => p.Value)
+                : new Dictionary<string, object?>();
+            Entries.Add(new LogEntry(logLevel, formatter(state, exception), values));
+        }
     }
 }

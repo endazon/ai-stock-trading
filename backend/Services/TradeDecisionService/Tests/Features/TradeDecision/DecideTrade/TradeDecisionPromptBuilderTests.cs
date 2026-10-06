@@ -487,7 +487,8 @@ public class TradeDecisionPromptBuilderTests
         prompt.Should().NotContain("Buy/Sell では必ず数値を入れる");
     }
 
-    // #806 対の否定形: 本判断（Build）はサイジングへ渡すため Buy/Sell に数値を必須とする（不変）。
+    // #806 対の否定形: 本判断（Build）はサイジングへ渡すため新規建ての Buy/Sell に数値を必須とする。
+    // ［2026-10-07 改 / #1187］決済（保有を手仕舞う売買）だけは損切り幅を任意にした（下の T-10-2287）。一次の「Buy/Sell でも null でよい」は持ち込まない。
     [Fact]
     public void 本判断プロンプトはBuySellに数値を必須とする_対の否定形()
     {
@@ -495,8 +496,34 @@ public class TradeDecisionPromptBuilderTests
 
         var prompt = TradeDecisionPromptBuilder.Build(trigger, Policy, Context);
 
-        prompt.Should().Contain("Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。");
+        prompt.Should().Contain("Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。新規建ての Buy/Sell では必ず数値を入れる。");
         prompt.Should().NotContain("Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい");
+    }
+
+    // T-10-2287, FR-04, FR-10, #1187, IADR-0248: 本判断の出力形式は新規建て（損切り幅は必須）と決済（保有を手仕舞う売買。損切り幅は任意・
+    // 参照価格は必須）で文言を分ける。保有の有無に関わらず同じ 2 行を出す（解釈が保有の文脈で線を引く）。一次（BuildScreening）には出さない。
+    [Fact]
+    public void 本判断の出力形式は新規建てと決済で損切り幅の要求を分ける()
+    {
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var flat = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, held: HeldPosition.None);
+        var held = TradeDecisionPromptBuilder.Build(trigger, Policy, Context, held: new HeldPosition(970, 248.015m, null));
+        var screening = TradeDecisionPromptBuilder.BuildScreening(trigger, Policy, Context);
+
+        foreach (var prompt in new[] { flat, held })
+        {
+            var lines = prompt.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
+            var entry = lines.IndexOf(TradeDecisionPromptBuilder.OutputNumbersForEntryRule);
+            entry.Should().BeGreaterThan(0);
+            lines[entry + 1].Should().Be(TradeDecisionPromptBuilder.OutputNumbersForCloseRule, "決済の要求は新規建ての要求の直後の行");
+            prompt.Should().NotContain("。Buy/Sell では必ず数値を入れる。", "従来の無条件の要求（決済にも損切り幅を求める）を残さない");
+        }
+
+        TradeDecisionPromptBuilder.OutputNumbersForCloseRule.Should().Contain("ロング保有中の Sell").And.Contain("ショート保有中の Buy")
+            .And.Contain("stopLossDistancePerShare を null にしてよい").And.Contain("referencePrice は数値を入れる");
+        screening.Should().NotContain(TradeDecisionPromptBuilder.OutputNumbersForCloseRule);
+        screening.Should().NotContain(TradeDecisionPromptBuilder.OutputNumbersForEntryRule);
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -1100,7 +1127,8 @@ public class TradeDecisionPromptBuilderTests
 
         # 出力形式（JSON のみ）
         {"action":"Buy|Sell|Hold","rationale":"判断根拠","referencePrice":参照価格,"stopLossDistancePerShare":損切り幅}
-        Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell では必ず数値を入れる。
+        Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。新規建ての Buy/Sell では必ず数値を入れる。
+        保有中の建玉を手仕舞う売買（ロング保有中の Sell・ショート保有中の Buy）では stopLossDistancePerShare を null にしてよい（決済は保有全量で、損切り幅を使わない）。referencePrice は数値を入れる。
         """;
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n');

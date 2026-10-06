@@ -2,10 +2,10 @@
 title: IADR-0248 LLM 構造化出力の解析不能と見送り（Hold）を区別して記録する（挙動は Hold のまま不変）
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-11, ADR-0003, IADR-0039, IADR-0104, IADR-0248]
+related_ids: [FR-04, FR-10, FR-11, ADR-0003, IADR-0039, IADR-0104, IADR-0119, IADR-0248]
 author: claude (Claude Code)
 created: 2026-08-28
-updated: 2026-09-16
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
 ---
@@ -69,3 +69,18 @@ plan_refs:
 > `DecisionOrchestrator` の一次分岐だけがこれを使い、ログ 2 行・`ScreeningUnparseable` の意味（真の解析不能のみ true）・
 > 二次の解釈（`ParseDetailed`）・サイジングは不変。`BuildScreening` の出力形式は「Buy/Sell でも null でよい（本判断で決める）」に
 > 改めた（本判断側 `Build` は「必ず数値」のまま）。決定 1〜4 は不変。
+
+> ［2026-10-07 追記 / #1187］**決定 1 の「値の不変量違反」のうち損切り幅の不変量は、新規建てにだけ掛ける。** 二次本判断は Buy / Sell の
+> 区別なく `0 < stopLossDistancePerShare < referencePrice` を要求していたため、**保有を決済する Sell（利確）が損切り幅を省くと
+> `InvalidValues`→Hold 票になり**、PoC（2026-10-06・保有 970 株の AMZN・+3% の利確）で 14 回捨てられ、利確が約 2 時間 43 分遅れた。
+> 決済（`PositionEffectResolver` の Close。数量は保有全量・`StopLossPrice=null`。IADR-0119）は損切り幅を一度も読まない。
+> `ParseDetailed(output, signedHeldQuantity)` を足し、**判断プロンプトへ渡したのと同じ保有**を受けて、`PositionEffectResolver.ClosesHolding`
+> （Close 分岐と同じ関数＝判定の唯一の情報源。ロング保有中の Sell・ショート保有中の Buy）が真のときだけ損切り幅を任意にする。
+> 供給された損切り幅は有効なら残し、未供給・不正（≤0・参照価格以上・数値でない）は 0（未使用の印）にする——不正値で決済を捨てれば
+> 同じ遅延を再現するため。参照価格は決済でも必須。保有 0・不明・同方向の建て増しは従来どおり `InvalidValues`。1 引数の `ParseDetailed` は
+> 「保有の文脈なし」＝従来どおりで、Stage 0 の記録は保有なしを明示して読む（挙動不変）。`DecisionOrchestrator.DecideAsync` は保有を
+> **必須引数**で受ける（渡し忘れが黙って「決済を捨てる」へ戻らないように）。発注の建玉効果は従来どおり LLM の後に引き直した保有で決まり、
+> ずれて新規建てになっても新規建ての再検証（損切り幅 ≤ 0 → `StopLossDistanceInvalid`）が 0 の印を落とす。決定 3 の記録は、二次の
+> 解析不能の Warning に**解析できた action**（`TradeDecisionParseFailure.Action`。`InvalidValues` だけ）と保有を足し、detail を
+> `LogSanitizer` で 1 行へ正規化する（従来は action が無く、捨てた票が利確の Sell だったことを推定でしか言えなかった）。本判断の
+> 出力形式は新規建て（必須）と決済（損切り幅は null 可・参照価格は必須）の 2 行に分けた。一次スクリーニング（#806）は不変。決定 1〜4 は不変。
