@@ -130,6 +130,22 @@ public class ReportUsSessionCoverageTests
         fills.Requested.Should().Contain((new DateOnly(2026, 10, 5), new DateOnly(2026, 10, 6)));
     }
 
+    // T-06-035, FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 自動生成した日報は、数えたセッションの範囲を
+    // 市場ごとの現地取引日で冒頭に書く（日報 2026-10-06 は米国 ET 10-05 のセッションを数える）。
+    [Fact]
+    public async Task T06_035_自動生成した日報は集計したセッションの範囲を冒頭に書く()
+    {
+        var store = new InMemoryReportStore();
+        var clock = new FixedClock(MonAfterBoundary);
+
+        await Generator(store, clock, new LedgerFillSource(UsSessionFills)).RunOnceAsync();
+        clock.UtcNow = TueAfterBoundary;
+        await Generator(store, clock, new LedgerFillSource(UsSessionFills)).RunOnceAsync();
+
+        DailyBody(store, "daily-2026-10-05").Should().Contain("# 日報 2026-10-05\n\n集計したセッション: 米国 2026-10-02（ET）／東証 2026-10-05（JST）\n\n");
+        DailyBody(store, "daily-2026-10-06").Should().Contain("# 日報 2026-10-06\n\n集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）\n\n");
+    }
+
     // T-06-024, FR-06, 計画 ADR-0052 決定 2, #1172: `/report regenerate` は自動生成と同じ窓で引く。
     // 縮退した日報 2026-10-06 を翌朝作り直すと、ET 10-05 のセッションの約定が載り、ET 10-06 の約定（次の日報の分）は載らない。
     [Fact]
@@ -162,6 +178,8 @@ public class ReportUsSessionCoverageTests
         var body = DailyBody(store, "daily-2026-10-06");
         body.Should().Contain("| 取引回数（買/売/決済） | 1 / 1 / 1 |");
         body.Should().NotContain("MSFT");
+        // 計画 ADR-0053 決定 3, IADR-0492 決定 6: 作り直しも同じ窓の範囲を冒頭に書く。
+        body.Should().Contain("集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）");
     }
 
     // T-06-025, FR-06, FR-11, #1172: 手動売買の取り込みも約定と同じ窓で絞る（§2 と §2-b・在庫の畳み込みが同じセッションを見る）。

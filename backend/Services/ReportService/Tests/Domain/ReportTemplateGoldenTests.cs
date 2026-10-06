@@ -44,6 +44,26 @@ public class ReportTemplateGoldenTests
             _ => "2026-08-28",
         },
         Markets = ["JP", "US"],
+        // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲（窓は生成器が必ず決める＝供給あり／なしの
+        // 両系統に出る）。値は ReportSchedule.SessionRangesOf が既定の構成で各期間に返すもの（ReportSessionRangeTests が固定する）。
+        SessionRanges = kind switch
+        {
+            ReportKind.Weekly =>
+            [
+                new ReportSessionRange(Market.UnitedStates, new DateOnly(2026, 8, 21), new DateOnly(2026, 8, 27)),
+                new ReportSessionRange(Market.Japan, new DateOnly(2026, 8, 24), new DateOnly(2026, 8, 28)),
+            ],
+            ReportKind.Monthly =>
+            [
+                new ReportSessionRange(Market.UnitedStates, new DateOnly(2026, 7, 31), new DateOnly(2026, 8, 28)),
+                new ReportSessionRange(Market.Japan, new DateOnly(2026, 8, 3), new DateOnly(2026, 8, 31)),
+            ],
+            _ =>
+            [
+                new ReportSessionRange(Market.UnitedStates, new DateOnly(2026, 8, 27), new DateOnly(2026, 8, 27)),
+                new ReportSessionRange(Market.Japan, new DateOnly(2026, 8, 28), new DateOnly(2026, 8, 28)),
+            ],
+        },
         AssumptionsVersion = 3,
         BasedOn = kind == ReportKind.Monthly ? "monthly-2026-07" : "weekly-2026-W35",
         ConfirmedAt = ConfirmedAt,

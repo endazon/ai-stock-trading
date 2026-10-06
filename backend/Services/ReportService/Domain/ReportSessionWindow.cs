@@ -70,3 +70,11 @@ public sealed record ReportSessionWindow(DateTimeOffset ClosedAfter, DateTimeOff
         return new DateTimeOffset(local, zone.GetUtcOffset(local));
     }
 }
+
+// FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 報告書が集計したセッションの範囲（1 市場ぶん・市場の現地取引日）。
+// From > To は「窓にその市場のセッションが 1 つも無い」（描画は「なし」）。
+public sealed record ReportSessionRange(Market Market, DateOnly From, DateOnly To)
+{
+    /// <summary>窓にその市場のセッションが 1 つ以上あるか。</summary>
+    public bool HasSession => From <= To;
+}

@@ -421,7 +421,10 @@ public sealed class ReportAutoGenerator(
                 UnsuppliedInputs: ReportInputs.Parse(ReportInputs.Serialize(unsupplied)),
                 UsagePurpose: usagePurpose,
                 // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 月報 §7 の作り直しの回数（台帳。null＝照会できていない）。
-                ReportRegeneration: due.Kind == ReportKind.Monthly ? SafeRegenerationTally(due) : null),
+                ReportRegeneration: due.Kind == ReportKind.Monthly ? SafeRegenerationTally(due) : null,
+                // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲を冒頭に書く
+                // （約定を絞った窓と同じ SessionWindowOf から引く。作り直しも同じ経路を通る）。
+                SessionRanges: ReportSchedule.SessionRangesOf(due, settings.Schedule, ReportedMarkets(settings.Markets))),
             cancellationToken).ConfigureAwait(false);
 
         // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
@@ -437,6 +440,26 @@ public sealed class ReportAutoGenerator(
             unsupplied.Add(ReportInput.Narrative);
 
         return draft;
+    }
+
+    // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 「集計したセッション」に書く市場。構成の対象市場（"US"/"JP"。
+    // 列挙名も可・大小無視）のうち解釈できたものだけを書き、1 つも解釈できない（既定の空を含む）なら全市場を書く
+    // （市場を黙って落とさない側へ倒す）。
+    public static IReadOnlyCollection<Market> ReportedMarkets(IReadOnlyList<string> configured)
+    {
+        var markets = new HashSet<Market>();
+        foreach (var value in configured)
+        {
+            var text = value.Trim();
+            if (string.Equals(text, "US", StringComparison.OrdinalIgnoreCase))
+                markets.Add(Market.UnitedStates);
+            else if (string.Equals(text, "JP", StringComparison.OrdinalIgnoreCase))
+                markets.Add(Market.Japan);
+            else if (Enum.TryParse<Market>(text, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+                markets.Add(parsed);
+        }
+
+        return markets.Count > 0 ? markets : [.. ReportSessionWindow.Markets];
     }
 
     // FR-06, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 月報 §7 の作り直しの回数。台帳が無い構成・読めないときは null（0 回と書かない）。

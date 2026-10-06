@@ -1,3 +1,5 @@
+using AiStockTrading.Shared.Contracts.Trading;
+
 namespace ReportService.Domain;
 
 // FR-06, UC-03〜05, 04_workflows/03_reporting-cycle, IADR-0115, #280: 自動生成の期間判定（純関数・決定的・副作用なし）。
@@ -96,6 +98,44 @@ public static class ReportSchedule
             DailyBoundaryOnOrBefore(due.PeriodStart.AddDays(-1), options),
             DailyBoundaryOnOrBefore(due.PeriodEnd, options));
     }
+
+    /// <summary>
+    /// FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 報告書の冒頭に書く「集計したセッション」の範囲（市場ごとの現地取引日）。
+    /// <see cref="SessionWindowOf"/> の窓に大引けが入る現地の日のうち、両端の<b>セッションの無い日</b>（米国＝現地の土日・
+    /// 東証＝構成された営業日でない日）を落とした [最初, 最後] を返す。並びは米国 → 東証（米国株が主）で、
+    /// <paramref name="markets"/> に含まれる市場だけを返す。
+    /// <para>
+    /// 🔴 米国の祝日は本サービスが暦を持たないため落とさない（端に来ると、セッションの無い日が端に出る）。
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<ReportSessionRange> SessionRangesOf(
+        DueReport due, ReportScheduleOptions options, IReadOnlyCollection<Market> markets)
+    {
+        ArgumentNullException.ThrowIfNull(markets);
+
+        var window = SessionWindowOf(due, options);
+        return [.. SessionRangeOrder.Where(markets.Contains).Select(market => SessionRangeOf(window, market, options))];
+    }
+
+    // 「集計したセッション」の並び（米国株が主のため米国を先に書く）。
+    private static readonly Market[] SessionRangeOrder = [Market.UnitedStates, Market.Japan];
+
+    private static ReportSessionRange SessionRangeOf(ReportSessionWindow window, Market market, ReportScheduleOptions options)
+    {
+        var (from, to) = window.TradingDays(market);
+        while (from <= to && !IsSessionDay(market, from, options))
+            from = from.AddDays(1);
+        while (to >= from && !IsSessionDay(market, to, options))
+            to = to.AddDays(-1);
+
+        return new ReportSessionRange(market, from, to);
+    }
+
+    // 東証の休場日は構成された休場日（JST の営業日の暦）で読み、米国は現地の土日だけを落とす。
+    private static bool IsSessionDay(Market market, DateOnly day, ReportScheduleOptions options) =>
+        market == Market.Japan
+            ? IsBusinessDay(day, options)
+            : day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
 
     /// <summary>営業日か（土日でも構成された休場日でもない）。</summary>
     public static bool IsBusinessDay(DateOnly date, ReportScheduleOptions options)
