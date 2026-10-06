@@ -592,7 +592,10 @@ services:
       # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 3）, IADR-0445, #1059: 監査台帳の読み取り（為替の情報源・LLM 利用実績・借株料・
       # 損切りの実行機構・判断根拠）を east-west gRPC（h2c）で呼ぶ場合の宛先。
       # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。REST の宛先 `Audit__BaseUrl` も
-      # 既定では置いていない（未設定＝6 つの供給元は「照会できませんでした」の未供給）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      # 既定では置いていない（未設定＝6 つの供給元は「照会できませんでした」の未供給）。
+      # #1178: 経路B（values-local.yaml）だけは所有者の同意（2026-10-06）で REST の `Audit__BaseUrl: http://audit-service:8080` を
+      # report の env 配列へ足して結線した（本番既定は不変。helm.yml の描画検査が本番既定への混入を止める）。
+      # gRPC を有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
       #   grpcClients: { Audit: true }   # → Audit__Grpc=http://audit-service:<grpcPort>（宛先は描画が導出する）
       # 前提（同じ変更で揃える。無ければ描画で止まる）: 上の services.audit に `grpcPort: 8081` を宣言すること。
       # s2s は REST と同じ AST レルムの ServiceAuth__* をそのまま使う。deadline は Audit__GrpcTimeoutSeconds（既定 10 秒）。

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, FR-06, FR-11, FR-10, FR-16, MSP:ADR-0029, MSP:ADR-0075, IADR-0199, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427]
 author: endazon (with Claude Code)
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-10-06
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0029_grpc-rest-usage-criteria.md
   - planning:projects/microservices-platform/07_adr/ADR-0075_east-west-grpc-migration-order.md
@@ -134,6 +134,15 @@ IADR-0284 決定 5 の段 3 行（逐語）は「Audit `events/by-type`（Report
 - フォローアップ:
   1. 段 4（Report・MarketMonitor・CostControl）以降を #753 から切る。
   2. introspection の自己申告を輸送に追随させる（段 6 までに。IADR-0427 フォローアップ 3 と同じ）。
+
+## ［2026-10-06 追記 / #1178］経路B（values-local）は報告書を監査台帳へ REST で結線した
+
+上の「結果」の「稼働中の配備はそもそも `Audit__BaseUrl` も構成しておらず、6 つの供給元は未供給のまま」は、**本番既定（values.yaml）については
+今も正しいが、経路B（values-local.yaml）については 2026-10-06 で古くなった**（本文は書き換えない）。所有者の同意（#1178）により、
+values-local の report の env 配列へ `Audit__BaseUrl=http://audit-service:8080`（REST・`GET /audit/events/by-type`・OwnerOrService）を足した。
+s2s は report の既存の `ServiceAuth__*`（リスク管理の照会と同じ client）をそのまま使う。本 IADR の決定（既定は REST・gRPC は宣言したときだけ）は
+変わらない。values-local に gRPC の宣言（`grpcClients.Audit`）を重ねる場合、#6 は「初めての結線」ではなく輸送の切り替えになり、REST の基準窓も取れる
+（計測手順書の #6 の注記を同じ変更で改めた）。本番既定への混入は helm.yml の描画検査（#1178）が止める。
 
 ## 関連
 

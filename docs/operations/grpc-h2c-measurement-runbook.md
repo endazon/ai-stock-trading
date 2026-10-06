@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 <!-- trace:
 ids: [NFR]
 adrs: [MSP:ADR-0029, MSP:ADR-0075, ADR-0047]
 iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283]
 specs: [20261004_753_grpc-h2c-measurement-runbook]
-issues: [#753, #626]
+issues: [#753, #626, #1178]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -88,10 +88,11 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 > 宣言は入れておく（入れても読まないので業務は変わらない）が、#2 を実際に測るには**ゲートを有効にする判断（業務の変更）**が要る。
 > その判断が無ければ #2 は「未実測（採算評価ゲートが無効）」と記録する。チャートには取引判断の `Configuration__BaseUrl` も無く、REST の基準窓も無い。
 >
-> 🔴 **#6 は「輸送の切り替え」ではなく「初めての結線」であり、業務の入力が変わる。** チャートには報告書の `Audit__BaseUrl` が無く、今の配備では
-> 監査台帳の 6 つの供給元は「**照会できませんでした**」のままである。宣言を入れると報告書は監査台帳の実値を載せる。values-local は報告書の自動生成
-> （`Reports__AutoGeneration__Enabled=true`）が有効なので、**窓の中で生成された報告書に実値が永続化される**。そのため overlay は既定で `Audit: false` とし、
-> #6 は所有者の同意を得た**別の窓**で測る（手順 4 の 7）。比べる REST の往復（基準窓）は無い。
+> 🔴 **#6 の性質は profile で違う。** 本番既定（values.yaml）には報告書の `Audit__BaseUrl` が無く、監査台帳の 6 つの供給元は
+> 「**照会できませんでした**」のままである。そこへ宣言を入れるのは「輸送の切り替え」ではなく「初めての結線」であり、業務の入力が変わる。
+> **values-local は 2026-10-06 に所有者の同意を得て REST（`Audit__BaseUrl=http://audit-service:8080`）で結線した**（初めての結線は
+> REST で済んだ）。したがって values-local に重ねる限り、#6 は他の経路と同じ「輸送の切り替え」であり、REST の基準窓
+> （`http_route="/audit/events/by-type"`）も取れる。overlay の既定は従来どおり `Audit: false` とし、#6 は**別の窓**で測る（手順 4 の 7）。
 
 > 🔴 **#11〜#13 は失敗しても REST へ落とさない。書き込みは再試行しない。** 時間切れは「結果は不明」である。
 
@@ -134,7 +135,7 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
    以下では、提供側の要求の所要時間の系列を `<SRV>`（例 `http_server_request_duration_seconds`）、呼び出し側を `<CLI>`（例 `http_client_request_duration_seconds`）と書く。
    ラベルは OTel の属性名の `.` を `_` にしたもの（`http_route`・`network_protocol_version`・`server_address`・`server_port`）と、サービス名 `service_name`
    （`ai-stock-trading.<サービス>-service`）である。**名前が 1 つも出なければ中止する**（往復を数えられない計測は合否を出せない）。
-5. **基準窓（REST）を取る。** 適用の前の開場中に 2 時間以上、手順 4 の観測を REST のルートで取っておく（例 `http_route="/risk-controls/open-positions"`）。#2・#6 は基準が無い。
+5. **基準窓（REST）を取る。** 適用の前の開場中に 2 時間以上、手順 4 の観測を REST のルートで取っておく（例 `http_route="/risk-controls/open-positions"`）。#2 は基準が無い。#6 の基準は `http_route="/audit/events/by-type"`（values-local で REST を結線した 2026-10-06 以降の配備に限る）。
 
 ### 1. 適用の差を見る（まだ適用しない）
 
@@ -245,7 +246,10 @@ done
    読み取り（`/status`・`/stage` の `status`・`/report` の `show`・会話キーの入力補完）→ 書き込みのうち戻せるもの（`/pause` の直後に `/resume`）。
    🔴 **実測のためだけに `/killswitch`・`/stage` の昇格/降格/撤退評価・`/gfv`・`/drift`・`/report` の確定/差し戻し・`/policy` を打たない**（業務の状態が変わる）。
    本来の運用でそれらを打ったときに観測できれば記録し、無ければ「未実測（書き込み・業務の操作待ち）」と書く。
-7. **経路 #6（報告書 → 監査台帳）の別窓。** 🔴 **所有者の同意を得てから**行う（窓の中で生成・確定した報告書に監査の実値が載り、そのまま残る）。
+7. **経路 #6（報告書 → 監査台帳）の別窓。** values-local の配備が REST の `Audit__BaseUrl` を持つことを先に確かめる
+   （`kubectl -n ai-stock-trading get deploy report-service -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="Audit__BaseUrl")].value}'` が
+   `http://audit-service:8080`）。持っていれば業務の入力は変わらない（輸送だけが替わる）。🔴 **持っていなければ所有者の同意を得てから**行う
+   （窓の中で生成・確定した報告書に監査の実値が載り、そのまま残る）。
    1〜6 の窓の後（宣言が入ったまま）に、#6 だけを足す:
 
    ```bash

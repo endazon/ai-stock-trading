@@ -376,6 +376,22 @@ jobs:
             echo "::error::既定描画の Fx__Provider に fred が現れた（フォールバックを第一に据えている・ADR-0022 決定1/2）。"; exit 1
           fi
           echo "ok: 為替レート源は 3 サービスとも日銀第一（本番既定）"
+      # FR-06, #1178: 報告書 → 監査台帳（REST）の結線は**経路B（values-local）だけ**に置く（所有者の同意 2026-10-06）。
+      #   ① 本番既定の描画に Audit__BaseUrl が 1 つも無い（業務の入力が変わる結線を本番既定へ黙って持ち込まない）
+      #   ② values-local の描画では report-service だけが Audit__BaseUrl=http://audit-service:8080 を持つ
+      #      （配列の写し忘れ・宛先の取り違え・他サービスへの誤配置を捕まえる）
+      - name: Assert report → audit ledger wiring is local-only (#1178)
+        run: |
+          if helm template ast "$CHART" | grep -q 'name: Audit__BaseUrl$'; then
+            echo "::error::本番既定の描画に Audit__BaseUrl が現れた（結線は values-local だけ・#1178）。"; exit 1
+          fi
+          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml | awk 'BEGIN{RS="---"}
+            { d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
+              n=split($0, L, "\n"); for (i=1; i<n; i++) if (L[i] ~ /^ *- name: Audit__BaseUrl$/) { v=L[i+1]; sub(/^ *value: /, "", v); print d "\t" v } }')"
+          if [ "$got" != $'report-service\t"http://audit-service:8080"' ]; then
+            echo "::error::values-local の Audit__BaseUrl が report-service の http://audit-service:8080 の 1 件でない（#1178）:"; printf '%s\n' "$got"; exit 1
+          fi
+          echo "ok: 報告書 → 監査台帳の結線は values-local の report-service だけ"
       # #267 / IADR-0111: ブローカ階層（broker.tier＝provider × environment）の 3 系統検査。
       #   ① 既定（paper）描画がバイト等価であること（Broker__Environment を注入しない）
       #   ② 各 tier が期待どおり描画されること（新スイッチ・非推奨エイリアスの双方）

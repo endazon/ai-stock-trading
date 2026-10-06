@@ -29,9 +29,10 @@ services:
     grpcPort: 8081            # 段 4・5: DailyPolicyRead / ReportOwnerRead / ReportOwnerWrite
     grpcClients:
       RiskManagement: true    # 段 2: 取引台帳の 6 供給元（GetOpenPositions・GetFills・GetDriftAdoptions・GetBuyInInferences・GetSessionUptime・GetStageGate）
-      # 段 3: 監査台帳の 6 供給元（GetEventsByType）。🔴 **既定は false（この overlay では宣言しない）。** Audit__BaseUrl は chart に無く
-      # REST も未結線だった経路で、宣言すると監査の実値が報告書に載る。values-local は報告書の自動生成が有効（Reports__AutoGeneration__Enabled）
-      # なので、窓の中で生成された報告書へ実値が**永続化される**。所有者の同意を得た別の窓で
+      # 段 3: 監査台帳の 6 供給元（GetEventsByType）。🔴 **既定は false（この overlay では宣言しない）。** 本番既定（values.yaml）には
+      # Audit__BaseUrl が無く REST も未結線の経路で、宣言すると監査の実値が報告書に載る（業務の入力が変わる）。
+      # #1178（所有者の同意 2026-10-06）で values-local だけは REST（Audit__BaseUrl=http://audit-service:8080）を結線したので、
+      # values-local に重ねる限り #6 は「輸送の切り替え」になり REST の基準窓もある。宣言は従来どおり別の窓で
       # --set services.report.grpcClients.Audit=true を足して測る（Runbook「経路 #6 の別窓」）。
       Audit: false
   market-monitor:
