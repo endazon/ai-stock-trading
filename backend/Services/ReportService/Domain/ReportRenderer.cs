@@ -38,6 +38,9 @@ public static class ReportRenderer
 
         sb.Append(CultureInfo.InvariantCulture, $"# {kanji} {view.PeriodLabel}\n\n");
 
+        // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲（市場ごとの現地取引日）。
+        AppendSessionRanges(sb, view);
+
         // 1. サマリ（数値はコード集計値・FR-16）。
         sb.Append(CultureInfo.InvariantCulture, $"{summaryHeading}\n\n");
         sb.Append("| 項目 | 値 |\n");
@@ -593,6 +596,37 @@ public static class ReportRenderer
         sb.Append("  - **借株料累計**: 建玉開始からの累計の記録源がありません"
             + "（当期間の計上額は §4「空売りの記録」にあり、累計とは別物です）。\n");
         sb.Append("  - **保有日数**: 台帳の射影が建玉の開始時刻を持っていません。\n");
+    }
+
+    // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: タイトル直下の 1 行「集計したセッション」。
+    // 報告書の日付（JST）と米国のセッションの日付は 1 日ずれる（日報 daily-D は米国 ET D-1 を数える）ため、
+    // どのセッションを数えたかを市場ごとの現地取引日で書く。週報・月報は最初〜最後の取引日、セッションが無ければ「なし」。
+    // 🔴 散文（LLM）には渡さない——窓はコードが決める事実である。null（窓を持たない手動の API）は行を出さない。
+    private static void AppendSessionRanges(StringBuilder sb, ReportView view)
+    {
+        if (view.SessionRanges is not { Count: > 0 } ranges)
+            return;
+
+        sb.Append("集計したセッション: ");
+        sb.Append(string.Join("／", ranges.Select(SessionRangeText)));
+        sb.Append("\n\n");
+    }
+
+    private static string SessionRangeText(ReportSessionRange range)
+    {
+        var (label, zone) = range.Market switch
+        {
+            Market.Japan => ("東証", "JST"),
+            Market.UnitedStates => ("米国", "ET"),
+            _ => (range.Market.ToString(), "現地"),
+        };
+
+        if (!range.HasSession)
+            return $"{label} なし";
+
+        var from = range.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var to = range.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return range.From == range.To ? $"{label} {from}（{zone}）" : $"{label} {from}〜{to}（{zone}）";
     }
 
     /// <summary>表のセルで「記録源が無い」ことを表す標識（TradeHistoryRenderer と同一）。</summary>

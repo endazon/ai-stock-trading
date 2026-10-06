@@ -88,6 +88,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             PeriodKey = request.PeriodKey,
             PeriodLabel = periodLabel,
             Markets = markets,
+            // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲（散文には渡さない）。
+            SessionRanges = request.SessionRanges,
             AssumptionsVersion = request.AssumptionsVersion,
             BasedOn = request.BasedOn,
             ConfirmedAt = null, // ドラフトは未確定
@@ -326,7 +328,10 @@ public sealed record DraftRequest(
     string? UsagePurpose = null,
     // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6: 月報 §7 の作り直しの回数（試行の台帳の集計）。
     // **null＝台帳を照会できていない**（「0 回」と書かない）。月報以外は使わない。
-    ReportRegenerationTally? ReportRegeneration = null);
+    ReportRegenerationTally? ReportRegeneration = null,
+    // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲（市場ごとの現地取引日）。
+    // **null＝窓を持たない経路**（手動の API。約定は呼び出し側が渡す）で、報告書に行を出さない。
+    IReadOnlyList<ReportSessionRange>? SessionRanges = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

@@ -3,6 +3,7 @@ using ReportService.Common.Abstractions;
 using ReportService.Domain;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace ReportService.Features.Reports;
 
@@ -420,7 +421,10 @@ public sealed class ReportAutoGenerator(
                 UnsuppliedInputs: ReportInputs.Parse(ReportInputs.Serialize(unsupplied)),
                 UsagePurpose: usagePurpose,
                 // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 月報 §7 の作り直しの回数（台帳。null＝照会できていない）。
-                ReportRegeneration: due.Kind == ReportKind.Monthly ? SafeRegenerationTally(due) : null),
+                ReportRegeneration: due.Kind == ReportKind.Monthly ? SafeRegenerationTally(due) : null,
+                // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲を冒頭に書く
+                // （約定を絞った窓と同じ SessionWindowOf から引く。作り直しも同じ経路を通る）。
+                SessionRanges: ReportSchedule.SessionRangesOf(due, settings.Schedule, ReportedMarkets(settings.Markets))),
             cancellationToken).ConfigureAwait(false);
 
         // FR-06, FR-16, #892, IADR-0381: 期間より前に建てた建玉の決済を実際に検出したら、
@@ -436,6 +440,26 @@ public sealed class ReportAutoGenerator(
             unsupplied.Add(ReportInput.Narrative);
 
         return draft;
+    }
+
+    // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 「集計したセッション」に書く市場。構成の対象市場（"US"/"JP"。
+    // 列挙名も可・大小無視）のうち解釈できたものだけを書き、1 つも解釈できない（既定の空を含む）なら全市場を書く
+    // （市場を黙って落とさない側へ倒す）。
+    public static IReadOnlyCollection<Market> ReportedMarkets(IReadOnlyList<string> configured)
+    {
+        var markets = new HashSet<Market>();
+        foreach (var value in configured)
+        {
+            var text = value.Trim();
+            if (string.Equals(text, "US", StringComparison.OrdinalIgnoreCase))
+                markets.Add(Market.UnitedStates);
+            else if (string.Equals(text, "JP", StringComparison.OrdinalIgnoreCase))
+                markets.Add(Market.Japan);
+            else if (Enum.TryParse<Market>(text, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+                markets.Add(parsed);
+        }
+
+        return markets.Count > 0 ? markets : [.. ReportSessionWindow.Markets];
     }
 
     // FR-06, 計画 ADR-0052 決定 1, IADR-0491 決定 6: 月報 §7 の作り直しの回数。台帳が無い構成・読めないときは null（0 回と書かない）。
@@ -710,8 +734,12 @@ public sealed class ReportAutoGenerator(
 
         try
         {
+            // FR-06, FR-16, #1172, IADR-0492 決定 3: 判断根拠は約定ごとの突き合わせ（DecisionId 引き）であり、期間の集計ではない。
+            // 窓に入る米国の約定（ET D-1）の判断は JST D-1 の夜（22:30〜）に記録され得るため、照会は窓の始まり
+            // （前の営業日の生成境界の JST 日付）から引く。広げても DecisionId 引きなので他の約定の根拠が混ざることは無い。
+            var (from, to) = RationaleRange(due);
             return await rationaleSource
-                .GetRationalesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .GetRationalesAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -722,6 +750,17 @@ public sealed class ReportAutoGenerator(
         {
             return null;
         }
+    }
+
+    // FR-06, FR-16, #1172, IADR-0492 決定 3: 判断根拠の照会範囲（JST 取引日）。下端は期間の始まり・窓の照会範囲の始まり・
+    // 窓の始まり（ClosedAfter）の JST 日付の最小、上端は期間の終わり。窓に入る約定はいずれも ClosedAfter より後に始まる
+    // セッションに属するため、その判断の記録は下端以降にある。
+    private (DateOnly From, DateOnly To) RationaleRange(DueReport due)
+    {
+        var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
+        var windowStartJst = DateOnly.FromDateTime(window.ClosedAfter.ToOffset(ReportSchedule.JstOffset).DateTime);
+        var from = new[] { due.PeriodStart, window.QueryRange().From, windowStartJst }.Min();
+        return (from, due.PeriodEnd);
     }
 
     // FR-06, FR-16, #563, IADR-0269: 日報 §3 のポジション一覧。
@@ -756,8 +795,15 @@ public sealed class ReportAutoGenerator(
 
         try
         {
+            // FR-06, #1172, IADR-0492 決定 4: 稼働率の日次は米国東部時間の取引日で記録される（Stage 1 の観測）。約定と同じ窓の
+            // 米国の取引日で引く（報告書の期間〔JST の営業日〕で引くと、生成時点でまだ始まっていない ET の日を照会する）。
+            // 窓に米国の取引日が 1 日も無い（休場日の日報）なら、観測された取引日が無いことが事実である。
+            var (from, to) = ReportSchedule.SessionWindowOf(due, settings.Schedule).TradingDays(Market.UnitedStates);
+            if (from > to)
+                return new OpenDUptimeRecord([]);
+
             return await uptimeSource
-                .GetUptimeAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .GetUptimeAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -895,9 +941,13 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            return await driftAdoptionSource
-                .GetDriftAdoptionsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+            // FR-06, #1172, IADR-0492 決定 3: 約定と同じ窓で絞る（§2 と §2-b・在庫の畳み込みが同じセッションを見る）。
+            var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
+            var (from, to) = window.QueryRange();
+            var adoptions = await driftAdoptionSource
+                .GetDriftAdoptionsAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
+            return adoptions is null ? null : [.. adoptions.Where(a => window.Includes(a.Market, a.AdoptedAt))];
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -918,10 +968,15 @@ public sealed class ReportAutoGenerator(
     {
         try
         {
+            // FR-06, #1172, IADR-0492 決定 3: 報告書の期間（JST の営業日）を各市場の取引日としてそのまま引かない。
+            // 生成境界までに大引けを迎えたセッションの窓を市場ごとの取引日へ写し、外包で照会してから市場ごとに絞る
+            // （照会の契約〔市場の現地取引日の [from, to]〕は REST・gRPC とも変えない）。
+            var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
+            var (from, to) = window.QueryRange();
             var fills = await fillSource
-                .GetFillsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .GetFillsAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
-            return (fills, false);
+            return ([.. fills.Where(f => window.Includes(f.Market, f.ExecutedAt))], false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

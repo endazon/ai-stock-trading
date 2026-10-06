@@ -429,7 +429,8 @@ public class PeriodInventoryPhantomShortTests
     {
         // 2026-07-08（水）16:00 JST ＝ 07:00 UTC。日報だけが生成境界を越えている時刻。
         var now = new DateTimeOffset(2026, 7, 8, 7, 0, 0, TimeSpan.Zero);
-        var at = new DateTimeOffset(2026, 7, 8, 14, 30, 0, TimeSpan.Zero);
+        // 米国の約定は 2026-07-07（ET）のセッション＝日報 2026-07-08 の窓（JST 07-07 16:00〜07-08 16:00 に大引け。#1172・IADR-0492）。
+        var at = new DateTimeOffset(2026, 7, 7, 14, 30, 0, TimeSpan.Zero);
 
         async Task<IReadOnlyList<ReportInput>> UnsuppliedFor(params PeriodTradeFill[] fills)
         {

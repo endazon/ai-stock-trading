@@ -575,9 +575,11 @@ public class ReportAutoGeneratorTests
 
         await NewGenerator(store, MonthEndAfterClose, fills).RunOnceAsync();
 
-        fills.Requested.Should().Contain((new DateOnly(2026, 7, 31), new DateOnly(2026, 7, 31)));  // 日報
-        fills.Requested.Should().Contain((new DateOnly(2026, 7, 27), new DateOnly(2026, 7, 31)));  // 週報（月曜〜最終営業日）
-        fills.Requested.Should().Contain((new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));   // 月報（月初〜最終営業日）
+        // #1172, IADR-0492: 照会は「前の営業日の生成境界の後〜期間の最終営業日の生成境界まで」に大引けを迎えたセッションの
+        // 取引日の外包（米国は ET で 1 日前へずれる・東証は JST の営業日のまま）。市場ごとの絞り込みは受け取った後に行う。
+        fills.Requested.Should().Contain((new DateOnly(2026, 7, 30), new DateOnly(2026, 7, 31)));  // 日報（米 07-30・東 07-31）
+        fills.Requested.Should().Contain((new DateOnly(2026, 7, 24), new DateOnly(2026, 7, 31)));  // 週報（米 07-24〜07-30・東 07-25〜07-31）
+        fills.Requested.Should().Contain((new DateOnly(2026, 6, 30), new DateOnly(2026, 7, 31)));  // 月報（米 06-30〜07-30・東 07-01〜07-31）
     }
 
     [Fact]

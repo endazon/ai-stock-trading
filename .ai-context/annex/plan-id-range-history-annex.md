@@ -67,3 +67,6 @@ trace ブロック規約〔ADR-0029 決定4〕の値域検査が読む）。
 - **2026-10-06 に 0052 へ**〔ADR-0052 入力が未供給のまま作られた報告書の下書きは、所有者の操作（`/report regenerate`）で作り直す。対象は未確定の下書きに限り、方針の節は保って事実と散文だけを作り直し、中核の入力がなお未供給なら断る。planning#711。本リポの追随は #1156（IADR-0491）〕。
   **2026-10-06 実測**: 計画リポの作業ツリー（`c3ad458` = `origin/main`。`git rev-parse --is-shallow-repository` → `true`。ファイルの実在の検査であり履歴は使わない）で
   `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 52]・52 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。
+- **2026-10-06 に 0053 へ**〔ADR-0053 報告書の生成タイミング「閉場後」は市場ごとの閉場を指す。各報告書は前回の同種の報告書の生成の後から今回の生成までに閉場したセッションを集計し、集計したセッションの範囲を市場ごとに明記する。planning#724。本リポの追随は #1172（IADR-0492。範囲の明記〔決定 3〕の実装と同じ PR）〕。
+  **2026-10-06 実測**: 計画リポの作業ツリー（`6e8022a` = `origin/main`。`git rev-parse --is-shallow-repository` → `true`。ファイルの実在の検査であり履歴は使わない）で
+  `node tools/doc-checks/gen-plan-ranges.js --check` が exit 0、ai-stock-trading は ADR **[1, 53]・53 件・欠番なし**〔FR [1, 21] / UC [1, 7] / SC [1, 4] も宣言と一致〕。

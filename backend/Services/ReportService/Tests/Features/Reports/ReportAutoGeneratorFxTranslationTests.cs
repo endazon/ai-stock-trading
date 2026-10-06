@@ -59,10 +59,11 @@ public class ReportAutoGeneratorFxTranslationTests
             throw new HttpRequestException("為替レート源へ到達できません");
     }
 
-    // 2026-07-08 に AAPL を 10 株 $100 で買い（認識時 150 円/ドル）、期末まで持ち越す（＝期末レートが要る）。
+    // 2026-07-07（ET）のセッションで AAPL を 10 株 $100 で買い（認識時 150 円/ドル）、期末まで持ち越す（＝期末レートが要る）。
+    // ET 07-07 のセッションは JST 07-08 05:00 に大引けを迎え、日報 2026-07-08（16:00 JST 生成）の窓に入る（#1172・IADR-0492）。
     private static PeriodTradeFill UsBuyHeld(decimal? recognitionRate = 150m) =>
         new("AAPL", Market.UnitedStates, TradeSide.Buy, PositionEffect.Open, 10, 100m,
-            new DateTimeOffset(2026, 7, 8, 14, 30, 0, TimeSpan.Zero), FxRateBaseToDisplay: recognitionRate);
+            new DateTimeOffset(2026, 7, 7, 14, 30, 0, TimeSpan.Zero), FxRateBaseToDisplay: recognitionRate);
 
     private static ReportAutoGenerator NewGenerator(
         IReportStore store,
@@ -157,7 +158,7 @@ public class ReportAutoGeneratorFxTranslationTests
         {
             UsBuyHeld(),
             new PeriodTradeFill("AAPL", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, 10, 110m,
-                new DateTimeOffset(2026, 7, 8, 15, 0, 0, TimeSpan.Zero), FxRateBaseToDisplay: 155m),
+                new DateTimeOffset(2026, 7, 7, 15, 0, 0, TimeSpan.Zero), FxRateBaseToDisplay: 155m),
         };
 
         await NewGenerator(store, WedAfterClose, fills: fills).RunOnceAsync();

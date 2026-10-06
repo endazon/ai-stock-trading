@@ -10,7 +10,11 @@ namespace ReportService.Features.Reports;
 // （報告書は発注判断を行わないため、欠測が過大発注へ繋がる経路が無い）。
 public interface IPeriodFillSource
 {
-    /// <summary>期間 [fromInclusive, toInclusive]（JST 取引日）の約定を返す。取得不能なら空列（例外を投げない）。</summary>
+    /// <summary>
+    /// 約定の市場の現地取引日（米国＝ET・東証＝JST。IADR-0246）が [fromInclusive, toInclusive] に入る約定を返す。
+    /// 取得不能なら空列（例外を投げない）。報告書の期間（JST の営業日）をそのまま渡さない —— 呼び出し側は
+    /// ReportSchedule.SessionWindowOf の外包で引き、市場ごとに絞る（#1172・IADR-0492）。
+    /// </summary>
     Task<IReadOnlyList<PeriodTradeFill>> GetFillsAsync(
         DateOnly fromInclusive,
         DateOnly toInclusive,

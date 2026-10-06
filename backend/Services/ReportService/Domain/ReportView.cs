@@ -18,6 +18,16 @@ public sealed record ReportView
     /// <summary>対象市場（"JP"/"US" 等）。フロントマター markets。</summary>
     public IReadOnlyList<string> Markets { get; init; } = [];
 
+    /// <summary>
+    /// FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲（市場ごとの現地取引日）。
+    /// タイトルの直下に 1 行で書く（散文には渡さない・コードが決める事実である）。
+    /// <para>
+    /// <c>null</c> は「窓を持たない経路」（期間の約定を呼び出し側が渡す手動の生成 API）であり、行を出さない。
+    /// 自動生成と作り直しは必ず渡す。
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<ReportSessionRange>? SessionRanges { get; init; }
+
     /// <summary>適用した全体前提条件バージョン（FR-17）。</summary>
     public int AssumptionsVersion { get; init; }
 
