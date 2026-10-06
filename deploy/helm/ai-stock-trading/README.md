@@ -201,6 +201,12 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   **#611 / [IADR-0286](../../../.ai-context/adr/IADR-0286_fx-translation-supply-recognition-rate-and-period-end-rate.md) で
   risk-management（承認記録時の認識時レート＝1 USD あたりの円）と report（為替差損益の期末レート）にも同じ `Fx__*` を置いた。**
   空だと承認の認識時レートが未記録になり、報告書の為替差損益は「供給されていません（0 円ではありません）」のまま（推定で埋めない）。
+- **報告書 → 監査台帳（#1178・所有者の同意 2026-10-06）**: report の `Audit__BaseUrl=http://audit-service:8080`（REST の
+  `GET /audit/events/by-type`・OwnerOrService。s2s は report の `ServiceAuth__*` をそのまま使う）。日報・月報の 6 つの供給元
+  （為替の情報源の状態・LLM 利用実績・借株料・判断根拠・損切りの実行機構〔承認の記録／発注執行の解決結果〕）が「照会できませんでした」の
+  未供給から監査台帳の実値になる。**本番既定（values.yaml）には置かない**（業務の入力が変わる結線であり、経路B でだけ同意を得た。
+  helm.yml の描画検査が本番既定への混入を止める）。切り戻しはこの 1 行の削除と再配備。
+  借株料は記録側の計上（日次の料率の照会）がまだ結線されていないため、結線後も「記録なし」のまま（未供給ではない）。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の `Reports`/`RiskManagement` BaseUrl。
   **［2026-09-27 / #1050］** `MarketMonitor__BaseUrl`（trade-decision・information-collection・notification）は**本番既定でも結線した**
   ため経路B 固有の有効化ではない（同じ値の写し。下記「監視銘柄の権威源への結線」）。
