@@ -3,15 +3,15 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-10-04
+updated: 2026-10-06
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection]
-issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, planning#676]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1173_before-send-reservation-hold]
+issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, #1173, planning#676]
 -->
 
 
@@ -229,6 +229,41 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 - `broker.tier=moomoo-sim` 以外、実弾口座の読み取り専用の照会（`Broker__Moomoo__RealMarginQuery__Enabled=true`）と同時、
   不正な値（未知の形・銘柄なし・読めない期限・時差の無い期限）では**発注執行が起動しない**。期限を過ぎた構成は起動を止めず、注入しないだけである。
 
+🔴 **`BeforeSend` で作った新規建ては、注入したその米国東部時間（ET）の取引日のあいだ、新規建ての枠を占有する。**
+注文は送られず建玉も生じないが、リスク管理は**承認の時点で**その承認を「承認済みで終端でない新規建て」として数え、
+ET の日付が変わる（**ET 0 時**）まで次の 3 つへ算入する:
+
+| 占有するもの | 量 | その日の取引への効果 |
+| --- | --- | --- |
+| 保有建玉数 | 1 件（その銘柄に約定済みの建玉が無いとき） | 上限に達すると、保有 0 の他の銘柄は LLM を呼ぶ前に見送られる（理由 `MaxPositionsExceeded`）。審査でも拒否される |
+| 段階資金の累計と日次発注枠 | 承認数量 × 承認価格（基準通貨） | 段階の残枠と日次の新規建て枠がその分減る。大きな承認だと、その日の他の新規建ての数量が極小になる（2026-10-05 の実測では段階の発注可能額の約 25%） |
+| 注入した銘柄 | — | 取引判断が「未約定の新規建て注文あり」と読み、同じ方向の新規建てを選ばない（Hold） |
+
+- **いつまで**: 承認時刻の ET 暦日が終わるまで。翌 ET 日には算入されない（予約は Reserved のまま残るが、枠は占有しない）。
+- **それより前に解く手段は無い。** 発注執行は「届いたか不明」を確定も見送りも発行しないので、リスク管理には終端の知らせが届かない。
+  突合の「未発注」の判定・解放の門・下の手順 10 の予約行の削除は、**どれもこの枠を戻さない**。
+- **止まらないもの**: 手仕舞い・保護逆指値・損切り（枠は新規建てだけに掛かる）。
+- 現状はこの拘束を**受け入れる運用**である（注入したと分かっている予約の枠を所有者の操作で解く口は、二重発注の防止に触れるため判断待ちで、無い）。
+
+運用の指針:
+
+- **新規建てが減ってよい日に注入する。** 取引を観察したいセッション（判断や約定の挙動を見たい日・段階の評価に数えたい日）では `BeforeSend` を入れない。
+- 占有を短くしたいなら ET の取引時間の後半に注入する。ただし突合の判定まで最悪 3 時間かかる（手順 8）ので、通常取引時間の終わりまでに判定を見たいなら終了の 3 時間以上前に入れる。
+- 許可する銘柄は 1 つに絞り、承認の数量が小さくなる銘柄を選ぶ（占有の量は承認の発注代金で決まる）。
+- **確かめ方**（読み取りだけ。リスク管理の DB）:
+
+  ```sql
+  SELECT a."DecisionId", a."Symbol", a."Quantity", a."Price", a."ApprovedAt", o."TerminalAt"
+  FROM approved_orders a LEFT JOIN order_activity o ON o."DecisionId" = a."DecisionId"
+  WHERE a."DecisionId" = '<控えた DecisionId>';
+  -- o の行が無いか TerminalAt が空＝占有中。ApprovedAt を ET に直した日付が今日（ET）の間は算入される
+  ```
+
+  リスク管理の `GET /risk-controls/working-entry-orders` にもその `DecisionId` が載る（ET の日付が変わると消える）。
+- 🔴 **してはならないこと**: リスク管理の DB（`approved_orders`・`order_activity`・`trade_fills`）を手で書き換えて枠を戻さない
+  （統制の台帳であり、書き換える手順は無い。誤った行を作ると統制の全判定に響く）。承認を `_error` キューから再投入しない（手順 4）。
+  予約行の削除（手順 10）は後始末であって、枠を戻す操作ではない。
+
 手順（形ごとに 1 回ずつ、米国の通常取引時間中に行う。読み取りの確認と SIMULATE での発注だけを行う）:
 
 1. **前提を確かめる。** 発注執行の起動ログに `発注予約の自動リコンサイルを開始します（滞留閾値 2 時間・間隔 01:00:00・未発注時の解放 SIMULATE 禁止 / 実弾 禁止）`
@@ -282,6 +317,7 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
     - `BeforeSend`: 予約は門が閉じている限り Reserved のまま残る。手順 7 で注文が無いことを確かめてあるので、上の「滞留した予約を人が解決する」の
       「注文が存在しない」の手順で予約行を消す（承認は再投入しない）。保護の記録（承認時の文脈・S1 の行）が残っていたら、
       建玉が無いことを確かめたうえで、上の「エントリー注文の状態が不明なとき」の扱いに従う。
+      予約行を消しても**その ET 日の新規建ての枠は戻らない**（上の「`BeforeSend` で作った新規建ては…枠を占有する」。ET 0 時に戻る）。
     - `AfterSend`: 突合が確定した時点で、承認時の損切り手法で保護レグが張られる（確定の Critical の直後の行）。建玉は以降、通常どおり管理される。
       確定までの最悪 3 時間は、その建玉に保護レグが無い（SIMULATE なので実損は出ない）。数量の小さい新規建てで行う。
 
