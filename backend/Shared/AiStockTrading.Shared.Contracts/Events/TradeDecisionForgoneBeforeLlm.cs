@@ -9,8 +9,8 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // （IADR-0358 決定4: 流用は誤帰属。TradeDecisionHeld は市場監視が急変の基準値を進める事実であり、判断をしていない見送りで
 // 基準値を動かしてはならない〔IADR-0452 決定1〕）。
 //
-//   - Reason: 6 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
-//     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を末尾へ足した。
+//   - Reason: 7 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
+//     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を、#1174 / IADR-0500 で EntryCapacityBelowOneShare を末尾へ足した。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙（TradeDecisionHeld と同じ）。
 //   - 監査台帳だけが購読する（通知しない。日報の未確定の通知は DailyPolicyUnconfirmed が営業日ごとに出す）。
 public record TradeDecisionForgoneBeforeLlm(
@@ -52,4 +52,11 @@ public enum DecisionForgoneBeforeLlmReason
     /// サイジングの株数は LLM の後でしか決まらないが、名目額はこの上限を超えないため、LLM の結論に依らず新規建ては必ず見送られる。
     /// </summary>
     EntryCapacityBelowMinimumNotional,
+
+    /// <summary>
+    /// FR-10, #1174, IADR-0500 決定1・2: 保有が既知で 0・未約定の新規建てが既知で空の銘柄で、段階残枠と日次残枠（いずれも既知）の小さい方が
+    /// <b>現在値（基準通貨へ換算）× 1 株に満たない</b>。サイジングは現在値をそのまま参照価格に使うため、LLM の結論に依らず数量 0 で必ず見送られる。
+    /// 残枠が最小の名目額にも届かないときは <see cref="EntryCapacityBelowMinimumNotional"/> が先に当たる（こちらは「残枠はあるがこの銘柄の 1 株に届かない」）。
+    /// </summary>
+    EntryCapacityBelowOneShare,
 }
