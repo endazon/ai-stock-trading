@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [NFR, ADR-0029, MSP:ADR-0093, IADR-0200, IADR-0204, IADR-0206, IADR-0262]
 author: endazon (with Claude Code)
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-10-08
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0093_plan-id-ranges-derived-and-published.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0029_impl-docs-restructure.md
@@ -81,6 +81,7 @@ plan_refs:
 - `scanned` は実際に突き合わせられた種別の数である。🔴 **`scanned: 0` は「ずれが無い」ではなく「検査が動いていない」。**
 - 種別ごとの内訳を `ranges` に出す。既存の JSON キー（`status` / `declaredMax` / `planningMax` / `reason` / `checkedAt` / `source`）は**維持する** —— `backlog-audit.yml` のプロンプトと `scripts.repo.test.js` が読んでいる契約である。`declaredMax` / `planningMax` は従来どおり ADR の値を入れる。
 - **常に exit 0**（fail-open）。secret 不在・API 失敗・宣言不読はいずれも `status: "unverified"` ＋ 理由。
+- **［2026-10-08 追記 / #1208］** 「宣言不読」だけを改めた（[IADR-0504](IADR-0504_plan-range-lag-issue-upsert.md) 決定 3）。宣言が読めないのは計画側の到達性ではなく本リポジトリの欠陥であり、`status: "error"`・exit 1 にする。secret 不在・API 失敗は従来どおり exit 0 の `unverified`。
 
 ### 決定 4: 回帰テストから番号の直書きを外し、宣言から導出する
 

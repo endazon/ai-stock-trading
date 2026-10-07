@@ -68,12 +68,24 @@ jobs:
       # 報告するだけ（cross-repo の資格情報を AI に持たせない）。secret が無い／API が失敗しても
       # exit 0 で `status: unverified` を書く（fail-open。項目 6 の検証不能で他 5 項目を巻き込まない）。
       # 出力先はワークスペース内（AI の Read が届く範囲。contents: read のため永続しない）。
+      #
+      # NFR / #1208 / IADR-0504: 宣言のずれ（behind / ahead）を検知したら、同じステップが専用 issue
+      # （ラベル plan-range-lag）を起票し、ずれが続く間は毎週本文を上書きする（--upsert-issue。GITHUB_TOKEN・
+      # issues: write）。2026-10-05 の本監査は behind を検知したが #483 の 1 行に載っただけで誰も引き直さず、
+      # 2 日後に全体監査が同じ遅れを指摘した（#1199。同型 3 回目）。検知を「作業」へ変える段が欠けていた。
+      # 自動クローズはしない（IADR-0170 決定6）。exit 1 になるのは、宣言が読めない（本リポジトリの欠陥）か、
+      # ずれを検知したのに issue へ書けなかったときだけである。計画側に届かない（unverified）ときは exit 0 の
+      # まま warning と項目 6 の「未確認」で明示する（計画 ADR-0093 決定 3。監査の他項目を巻き込まない）。
       - name: Resolve planning ADR range
         env:
           PLANNING_REPO_TOKEN: ${{ secrets.PLANNING_REPO_TOKEN }}
-        run: node scripts/check-planning-adr-range.js --out .backlog-audit/planning-adr-range.json
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/check-planning-adr-range.js --out .backlog-audit/planning-adr-range.json --upsert-issue
 
       - name: Run backlog audit
+        # 前段（計画 ID レンジ）が exit 1 でも監査本体は走らせる（#1208。項目 6 は JSON の status で報告される）。
+        if: ${{ !cancelled() }}
         # **`id` は必須である。** 後段の権限拒否検査が `steps.claude.outputs.execution_file` を
         # 参照する（claude-coding.yml / claude-code-review.yml と同じ配線）。実行ログのパスを
         # ハードコードすると、アクション側が出力先を変えたときに**検査が黙って no-op になる**
@@ -177,7 +189,12 @@ jobs:
                「ずれが無い」ではなく「検査が動いていない」です。種別ごとの内訳は `ranges` にあります:
                `ok` = 一致（`declaredMax` を根拠に添える）／ `behind` = 宣言が計画側の実在に
                追いついていない（レンジ宣言の更新漏れ。`reason` をそのまま引用）／ `ahead` = 宣言が
-               実在を超えている／ `unverified` = 検証できなかった（`reason` を引用し「未確認」と書く）。
+               実在を超えている／ `unverified` = 検証できなかった（`reason` を引用し「未確認」と書く）／
+               `error` = 宣言そのものが読めない（`reason` を引用し、要対応として書く）。
+               **`behind` / `ahead` のときは前段が専用 issue（ラベル `plan-range-lag`）を起票・更新済みです**
+               （#1208）。番号は同じ JSON の `lagIssue.number` にあります。報告へ添えてください
+               （`lagIssue.action: failed` なら起票できなかった理由が `lagIssue.reason` にあります。そのまま引用してください）。
+               **同じ内容の issue を自分で起票しないでください**（重複になります）。
                **`endazon/project-planning` を自分で読みに行かないでください**——この run の
                トークンでは 404 になります（2026-09-09 実測）。2026-09-09 の #710 は
                `ADR-0001..0032` の宣言が計画側の実在 `0035` まで 3 件遅れていた事例です——
