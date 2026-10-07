@@ -184,6 +184,65 @@ public class CostCalculatorTests
         }
     }
 
+    // --- 事後集計（FillCost）: FR-06, FR-16, FR-17, 計画 ADR-0035 決定 4・5, 05_trading-assumptions §2, #1201, IADR-0501 ---
+
+    private static readonly UsSellRegulatoryFeeSchedule PlanFees = TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees;
+
+    [Fact]
+    public void 事後集計の米国株の売りには_SEC手数料とTAFが掛かる()
+    {
+        var a = Assumptions();
+
+        // 売却代金 100 株 × 250 = 25,000 → SEC 25,000 × 20.60 / 1,000,000 = 0.515、TAF 100 × 0.000166 = 0.0166。
+        var cost = CostCalculator.FillCost(a, Market.UnitedStates, TradeSide.Sell, 100, 250m);
+
+        cost.RegulatoryFees.Should().Be(0.515m + 0.0166m);
+        cost.Commission.Should().Be(0m);
+        cost.Total.Should().Be(0.5316m);
+    }
+
+    [Fact]
+    public void TAFは1取引あたり上限で頭打ちになる()
+    {
+        // 100,000 株 × 0.000166 = 16.6 > 上限 8.30。
+        PlanFees.Taf(100_000).Should().Be(8.30m);
+        // 上限の直前（50,000 株 × 0.000166 = 8.30）はそのまま。
+        PlanFees.Taf(50_000).Should().Be(8.30m);
+        PlanFees.Taf(49_999).Should().Be(49_999 * 0.000166m);
+    }
+
+    // 🔴 **否定形**: 諸費用は「売却時のみ」「米国株のみ」に掛かる。買い（買戻しを含む）・日本株には掛けない。
+    [Theory]
+    [InlineData(Market.UnitedStates, TradeSide.Buy)]
+    [InlineData(Market.Japan, TradeSide.Sell)]
+    [InlineData(Market.Japan, TradeSide.Buy)]
+    public void 米国株の売り以外には取引諸費用を掛けない(Market market, TradeSide side)
+    {
+        CostCalculator.FillCost(Assumptions(), market, side, 100, 250m).RegulatoryFees.Should().Be(0m);
+    }
+
+    // 🔴 **事後集計は約定ごとの為替スプレッドを持たない**（決定 4）。事前見積りには乗り、事後集計には乗らない。
+    [Fact]
+    public void 事後集計の費用は為替スプレッドを含まず_事前見積りは従来どおり含む()
+    {
+        var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), fxSpreadRatio: 0.002m);
+
+        // 事前見積り: 手数料 100 ＋ 為替 200（変わらない）。
+        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(300m);
+        // 事後集計: 手数料 100 だけ。
+        CostCalculator.FillCost(a, Market.Japan, TradeSide.Buy, 100, 1_000m).Total.Should().Be(100m);
+    }
+
+    // 料率は**設定点**（前提条件）から読む。既定値に焼き込んでいないことを、料率を変えて確かめる。
+    [Fact]
+    public void 取引諸費用の料率は前提条件の設定点から読む()
+    {
+        var a = Assumptions() with { UnitedStatesSellRegulatoryFees = new UsSellRegulatoryFeeSchedule(100m, 0.01m, 1m) };
+
+        // SEC 10,000 × 100 / 1e6 = 1、TAF 10 × 0.01 = 0.1。
+        CostCalculator.FillCost(a, Market.UnitedStates, TradeSide.Sell, 10, 1_000m).RegulatoryFees.Should().Be(1.1m);
+    }
+
     // T-10-214（**否定形**）: FR-17, FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3, #417 ——
     // **借株料を費用計算へ流し込まない。** moomoo の `ShortFeeRate`（実測 `1.5`）は**単位が未確定**であり
     //（年率 1.5% か比率 1.5 か）、取り違えると費用モデルが 100 倍ずれて採算判定（最小期待利益）が丸ごと狂う。

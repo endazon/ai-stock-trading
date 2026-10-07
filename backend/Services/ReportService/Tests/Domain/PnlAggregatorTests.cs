@@ -11,15 +11,18 @@ public class PnlAggregatorTests
 {
     private const decimal TaxRate = 0.20315m;
 
-    private static TradingAssumptions Assumptions(CommissionSchedule? commission = null, decimal fx = 0m) => new()
-    {
-        CapitalGainsTaxRate = TaxRate,
-        JapanCommission = commission ?? new CommissionSchedule(0m, 0m, 0m),
-        UnitedStatesCommission = commission ?? new CommissionSchedule(0m, 0m, 0m),
-        FxSpreadRatio = fx,
-        MinimumExpectedProfitMultiple = 1.5m,
-        CostLimits = new MonthlyCostLimits(20_000m, 15_000m, 5_000m, 0m),
-    };
+    // 諸費用（SEC・TAF）は既定で 0 にして、各テストが見る項だけを動かす（諸費用の算入は専用のテストで見る）。
+    private static TradingAssumptions Assumptions(
+        CommissionSchedule? commission = null, decimal fx = 0m, UsSellRegulatoryFeeSchedule? regulatory = null) => new()
+        {
+            UnitedStatesSellRegulatoryFees = regulatory ?? new UsSellRegulatoryFeeSchedule(0m, 0m, 0m),
+            CapitalGainsTaxRate = TaxRate,
+            JapanCommission = commission ?? new CommissionSchedule(0m, 0m, 0m),
+            UnitedStatesCommission = commission ?? new CommissionSchedule(0m, 0m, 0m),
+            FxSpreadRatio = fx,
+            MinimumExpectedProfitMultiple = 1.5m,
+            CostLimits = new MonthlyCostLimits(20_000m, 15_000m, 5_000m, 0m),
+        };
 
     private static PeriodTradeFill Fill(
         TradeSide side, PositionEffect effect, int qty, decimal price, int minute,
@@ -61,26 +64,47 @@ public class PnlAggregatorTests
         s.RealizedPnlNet.Should().Be(-1_000m);   // 費用0
     }
 
+    // ⚠️ **期待を変更した（2026-10-07・#1201・計画 ADR-0035 決定 4・IADR-0501）。** 本テストは
+    // 「費用合計は手数料と為替スプレッドを含む」（66）を固定していた。計画は為替スプレッドを**入出金時に一度だけ**計上し、
+    // 約定ごとの「為替スプレッド相当」は**事前見積りに限る**と裁定した。**最初からこうだったのではない。**
     [Fact]
-    public void 費用合計は手数料と為替スプレッドを含む()
+    public void 実現損益の控除項は手数料を含み約定ごとの為替スプレッドを含まない()
     {
-        // 手数料 0.1%、為替スプレッド 0.2%。
-        // #364, IADR-0152 決定7: 為替スプレッドは**非基準通貨市場**（基準通貨 USD では日本市場）に掛かる。
+        // 手数料 0.1%、為替スプレッド 0.2%（事前見積りの率。事後集計には乗らない）。
         var a = Assumptions(commission: new CommissionSchedule(0.001m, 0m, 0m), fx: 0.002m);
         var fills = new[]
         {
-            // notional 10,000 → 手数料10 + 為替20 = 30
+            // notional 10,000 → 手数料10（為替 20 は乗せない）
             Fill(TradeSide.Buy, PositionEffect.Open, 10, 1_000m, 0, sym: "7203", market: Market.Japan),
-            // notional 12,000 → 手数料12 + 為替24 = 36
+            // notional 12,000 → 手数料12（為替 24 は乗せない）
             Fill(TradeSide.Sell, PositionEffect.Close, 10, 1_200m, 1, sym: "7203", market: Market.Japan),
         };
 
         var s = PnlAggregator.Aggregate(fills, a);
 
-        s.TotalCost.Should().Be(66m);
+        s.TotalCost.Should().Be(22m);
         s.RealizedPnlGross.Should().Be(2_000m);
-        s.TaxWithheld.Should().Be((2_000m - 66m) * TaxRate);
-        s.RealizedPnlNet.Should().Be(2_000m - 66m - (2_000m - 66m) * TaxRate);
+        s.TaxWithheld.Should().Be((2_000m - 22m) * TaxRate);
+        s.RealizedPnlNet.Should().Be(2_000m - 22m - (2_000m - 22m) * TaxRate);
+    }
+
+    // FR-06, FR-16, FR-17, 計画 ADR-0035 決定 5, 05_trading-assumptions §2, #1201: 取引諸費用（SEC・TAF）は
+    // **米国株の売り約定だけ**に掛かり、実現損益の控除項（＝税の課税標準の控除）に入る。
+    [Fact]
+    public void 実現損益の控除項は米国株の売りの取引諸費用を含む()
+    {
+        var a = Assumptions(regulatory: TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees);
+        var fills = new[]
+        {
+            Fill(TradeSide.Buy, PositionEffect.Open, 100_000, 10m, 0),   // 買い: 諸費用 0
+            Fill(TradeSide.Sell, PositionEffect.Close, 100_000, 12m, 1), // 売り 1,200,000: SEC 24.72・TAF 16.6 → 上限 8.30
+        };
+
+        var s = PnlAggregator.Aggregate(fills, a);
+
+        s.TotalCost.Should().Be(24.72m + 8.30m);
+        s.TaxWithheld.Should().Be((200_000m - 33.02m) * TaxRate);
+        s.RealizedPnlNet.Should().Be(200_000m - 33.02m - (200_000m - 33.02m) * TaxRate);
     }
 
     [Fact]

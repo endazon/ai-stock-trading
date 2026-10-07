@@ -124,8 +124,8 @@ public class DriftAdoptionFoldingTests
         attributions.Single(a => a.Realizing).RealizedPnlGross.Should().Be(200m);
 
         // 🔴 費用の内訳（週報 §5）は帰属行だけを入力に持つため、取り込みは構造的に入らない。
-        var review = PeriodCostReviewBuilder.Build(attributions, Assumptions(), taxWithheld: 0m);
-        review.TotalCost.Should().Be(attributions.Sum(a => a.Cost));
+        var review = PeriodCostReviewBuilder.Build(attributions, Assumptions(), taxWithheld: 0m, borrowFees: null);
+        review.Total.TradingCost.Should().Be(attributions.Sum(a => a.Cost));
     }
 
     [Fact]

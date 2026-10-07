@@ -169,13 +169,14 @@ public static class ReportRenderer
         sb.Append('\n');
         sb.Append("- 日付は **JST**（報告期間の基準時刻）。**約定が 1 件も無い日は行を出しません**"
             + "（休場日を含みます。**「実現損益 0」ではありません**）。\n");
-        sb.Append("- 「実現損益」は**税引前・費用込み**（当日の決済損益 − 当日の約定に掛かる概算費用）です。"
+        sb.Append("- 「実現損益」は**税引前・費用込み**（当日の決済の約定代金差額 − 当日の約定に掛かる売買手数料・取引諸費用）です。"
             + "**源泉徴収税額は期間合計にのみ課され、日へ配分する規則がありません**——"
             + "本節の合計は §1 の「週間実現損益（税引後・費用込み）」と**源泉徴収税額のぶんだけ違います**。\n");
         sb.Append("- 「取引数」は**約定件数**（決済に至らない新規建てを含む）です。"
             + "合計は §1 の「取引回数（買/売/決済）」の 買＋売 に一致します。\n");
         sb.Append("- 「主な要因」は**当日の実現損益への寄与が最大の決済を機械的に選んだ事実**であり、"
-            + "要因の説明（散文）ではありません。**散文の要因を持つ記録源がありません。**\n");
+            + "要因の説明（散文）ではありません。**散文の要因を持つ記録源がありません。**"
+            + "金額は当該決済の**約定代金差額**（費用・税をいずれも控除しない値）です。\n");
         AppendUnvaluedSettlementNote(sb, entries);
         sb.Append('\n');
     }
@@ -246,7 +247,7 @@ public static class ReportRenderer
         }
 
         sb.Append('\n');
-        sb.Append("- 損益は**税引前・費用前**（当該決済の約定代金差額）です。"
+        sb.Append("- 金額は当該決済の**約定代金差額**（売却代金 − 取得代金。費用・税をいずれも控除しない値）です。"
             + "**費用・源泉徴収税額は期間合計にのみ集計され、約定単位へ配分する規則がありません。**\n");
         sb.Append("- 「該当日報」は**リンクではなく報告書の自然キー**です（報告書に URL 体系がありません）。"
             + "当該日の日報が生成されていない場合、対応する報告書はありません。\n");
@@ -267,7 +268,7 @@ public static class ReportRenderer
     //
     // 計画の節本文は 2 行である。
     //   - 損切り執行 <n 件>・発注拒否 <n 件>・上限使用率の週間最大 <n%>
-    //   - 費用の内訳（手数料/諸費用/税）と損益に対する費用率 <n%>
+    //   - 費用の内訳（手数料/諸費用/為替スプレッド/借株料）と費用率 <n%>（分母は約定代金差額。計画 ADR-0035, #1201）
     //
     // 🔴 **1 行目の 3 項目は記録源が無い。** それでも**行ごと落とさない**——計画が求めた項目が出ていないことは
     // 報告書自身に見えていなければならない（ADR-0030 決定3 と同じ理由）。**「0 件」とも書かない**
@@ -297,41 +298,90 @@ public static class ReportRenderer
             return;
         }
 
+        var total = review.Total;
         sb.Append("| 費用の区分 | 金額 |\n");
         sb.Append("| --- | --- |\n");
         sb.Append(CultureInfo.InvariantCulture, $"| 売買手数料 | {Amount(review.Commission)} |\n");
-        // 🔴 諸費用は**記録源が無い**。0 と書くと「諸費用が発生しなかった」と読める。
-        sb.Append(CultureInfo.InvariantCulture, $"| 取引諸費用 | {UnsuppliedCell} |\n");
-        sb.Append(CultureInfo.InvariantCulture, $"| 為替スプレッド相当額 | {Amount(review.FxSpread)} |\n");
-        sb.Append(CultureInfo.InvariantCulture, $"| 費用合計（§1 と同じ値） | {Amount(review.TotalCost)} |\n");
+        // 計画 ADR-0035 決定 5, #1201, IADR-0501: 諸費用は前提条件の設定点（計画 §2 の暫定値）から約定ごとに算出する。
+        sb.Append(CultureInfo.InvariantCulture, $"| 取引諸費用 | {Amount(review.RegulatoryFees)} |\n");
+        // 計画 ADR-0035 決定 4: 為替スプレッドは**入出金時の両替の実績**。事前見積りの値で埋めない。
+        sb.Append(CultureInfo.InvariantCulture, $"| 為替スプレッド相当額 | {CostPartCell(total.FxSpread)} |\n");
+        // 計画 ADR-0035 決定 3: 借株料は費用合計に含める（未供給は 0 を積まない）。
+        sb.Append(CultureInfo.InvariantCulture, $"| 借株料 | {BorrowFeePartCell(total)} |\n");
+        sb.Append(CultureInfo.InvariantCulture, $"| 費用合計（§1 と同じ値） | {Amount(total.Amount)} |\n");
         // #892, IADR-0381: 🔴 **税は実現損益（部分値）から算出されるため、日報 §1 と同じく数字として出さない。**
         sb.Append(CultureInfo.InvariantCulture,
             $"| 源泉徴収税額 | {AmountOrUnvalued(view.Pnl, review.TaxWithheld)} |\n");
         sb.Append('\n');
 
-        // #892, IADR-0381: 🔴 **分母（実現損益）が部分値のときは費用率を出さない。**
-        // 期間より前に建てた建玉の決済は取得原価を持たず実現損益へ算入できないため、分母が実際より小さく、
+        // #892, IADR-0381: 🔴 **分母（約定代金差額）が部分値のときは費用率を出さない。**
+        // 期間より前に建てた建玉の決済は取得原価を持たず算入できないため、分母が実際より小さく、
         // 費用率だけが跳ね上がる。**既存の「算出不能」と同じ語**で、理由を分けて書く。
         sb.Append(CultureInfo.InvariantCulture,
-            $"- 損益に対する費用率: {(view.Pnl.IsPartial ? UnvaluedCell(view.Pnl) : CostRatioCell(review))}\n");
-        sb.Append("- **「取引諸費用」（米国株の SEC Fee・TAF 等）は記録源がありません。**"
-            + "全体前提条件に設定点が無く、概算費用関数も手数料と為替スプレッドしか計算していません——"
-            + "**費用合計は諸費用のぶんだけ過小です。**\n");
-        sb.Append("- 費用率の**分母は実現損益（税引前・費用前）**です。"
+            $"- 損益に対する費用率: {CostRatioOrUnvalued(view)}\n");
+        sb.Append("- 「取引諸費用」は米国株の売り約定に掛かる **SEC 手数料（Section 31）と FINRA 取引活動料（TAF）**です。"
+            + "全体前提条件の**暫定料率**（規制当局の公表料率）から約定ごとに算出しており、"
+            + "**証券会社が上乗せする分は含みません**（口座開設後に実請求額で置き換えます）。\n");
+        sb.Append("- 「為替スプレッド相当額」は**入出金時の両替**にだけ掛かる費用です（外貨決済のため約定ごとの両替は発生しません）。"
+            + "**約定ごとの見積りは費用合計に含めていません**（取引判断の採算判定が使う事前見積りとは別の値です）。\n");
+        AppendCostTotalUnderstatedNote(sb, total);
+        sb.Append("- 費用率の**分母は約定代金差額**（売却代金 − 取得代金。費用・税をいずれも控除しない値）です。"
             + "**§1 の「週間実現損益（税引後・費用込み）」は分母に採れません**——費用と税を既に引いた値であり、"
             + "費用が増えるほど分母が縮んで比率が跳ね上がります。\n");
-        sb.Append("- 「費用合計」は §1 の「費用合計（手数料・諸費用・為替）」と**同じ値**です"
-            + "（同じ約定・同じ費用関数から数えており、期間を切って集計し直していません）。\n\n");
+        sb.Append("- 「費用合計」は §1 の「費用合計（手数料・諸費用・為替スプレッド・借株料）」と**同じ値**です"
+            + "（同じ約定・同じ費用関数・同じ借株料の記録から数えており、期間を切って集計し直していません）。"
+            + "**税は含めていません**（実現損益の計算で別に控除しています）。\n\n");
     }
 
-    // 費用率のセル。**分母 0 以下は「算出不能」であり「未供給」でも「0%」でもない。**
+    // 費用率のセル（週報 §5・月報 §1 で共有）。部分値の期間は「算出不能」（#892）、内訳を組み立てていなければ未供給。
+    private static string CostRatioOrUnvalued(ReportView view) =>
+        view.Pnl.IsPartial
+            ? UnvaluedCell(view.Pnl)
+            : view.CostReview is { } review
+                ? CostRatioCell(review)
+                : UnsuppliedCell;
+
+    // 費用率のセル。**分母 0 以下は「算出不能」であり「未供給」でも「0%」でもない**（計画 ADR-0035 決定 2）。
     private static string CostRatioCell(PeriodCostReview review) =>
         review.CostRatio is { } ratio
-            ? string.Format(CultureInfo.InvariantCulture, "{0}（費用合計 {1} ÷ 実現損益〔税引前・費用前〕 {2}）",
-                Percent(ratio), Amount(review.TotalCost), Amount(review.RealizedPnlGross))
+            ? string.Format(CultureInfo.InvariantCulture, "{0}（費用合計 {1} ÷ 約定代金差額 {2}）",
+                Percent(ratio), Amount(review.Total.Amount), Amount(review.TradeValueDifference))
             : string.Format(CultureInfo.InvariantCulture,
-                "**算出不能**（分母となる実現損益〔税引前・費用前〕が {0} で、0 以下です）。**0% ではありません。**",
-                Amount(review.RealizedPnlGross));
+                "**算出不能**（分母となる約定代金差額が {0} で、0 以下です）。**0% ではありません。**",
+                Amount(review.TradeValueDifference));
+
+    // FR-06, FR-16, 04_report-templates §数値の定義「費用合計」, 計画 ADR-0035 決定 3, #1201, IADR-0501:
+    // §1 の費用合計のセル（日報・週報・月報で共有）。**未供給の区分を名指しし、過小である旨を同じセルに書く**
+    //（§1 の表には凡例を置く場所が無い。値だけを出すと「費用はこれで全部」と読める）。
+    private static string CostTotalCell(PeriodCostTotal total)
+    {
+        var parts = string.Format(CultureInfo.InvariantCulture, "為替スプレッド {0}・借株料 {1}",
+            CostPartCell(total.FxSpread), BorrowFeePartCell(total));
+        return total.IsUnderstated
+            ? string.Format(CultureInfo.InvariantCulture,
+                "{0}（うち {1}。**未供給・未計上の区分を含まないため、費用合計は過小です**）", Amount(total.Amount), parts)
+            : string.Format(CultureInfo.InvariantCulture, "{0}（うち {1}）", Amount(total.Amount), parts);
+    }
+
+    // 費用の区分のセル。`null`（未供給）を 0 円へ潰さない。
+    private static string CostPartCell(decimal? amount) => amount is { } v ? Amount(v) : UnsuppliedCell;
+
+    // 借株料の区分のセル。未計上の件数があれば添える（ADR-0027 決定4: 0 円として合計へ混ぜない）。
+    private static string BorrowFeePartCell(PeriodCostTotal total) =>
+        total.BorrowFee is { } fee && total.BorrowFeeUnrecordedCount > 0
+            ? string.Format(CultureInfo.InvariantCulture, "{0}〔未計上 {1} 件〕", Amount(fee), total.BorrowFeeUnrecordedCount)
+            : CostPartCell(total.BorrowFee);
+
+    // 計画 ADR-0035 決定 3・統制の暫定手段: **費用合計が過小である旨を凡例へ明記する**（0 を積まない）。
+    private static void AppendCostTotalUnderstatedNote(StringBuilder sb, PeriodCostTotal total)
+    {
+        if (!total.IsUnderstated)
+            return;
+
+        sb.Append("- **未供給・未計上の区分は 0 円として費用合計へ足していません——費用合計はそのぶんだけ過小です。**"
+            + "為替スプレッドは入出金の両替の実績を本サービスが受け取る経路が無く、"
+            + "借株料は照会できなかった期間・料率が取れず未計上の日があると欠けます。\n");
+    }
 
     // FR-06, FR-07, FR-16, #615, IADR-0306, 04_report-templates 月報 §2: 週別・市場別の内訳（表 3 つ）。
     //
@@ -359,23 +409,25 @@ public static class ReportRenderer
         sb.Append("- 週は **ISO 週**（月曜起点。ラベルは年を含みます）です。"
             + "**約定が 1 件も無い週は行を出しません**（休場を含みます。**「実現損益 0」ではありません**）。"
             + "月初・月末の週は前月・翌月にまたがるため、**当月に約定があった分だけ**が入ります。\n");
-        sb.Append("- 週別の「実現損益」は**税引前・費用込み**、市場別・方向別の「実現損益」は"
-            + "**税引前・費用前**です（後者は同じ行に費用の列があるため）。"
+        // 計画 ADR-0035 決定 1, #1201, IADR-0501: 🔴 「実現損益」の列に約定代金差額を載せない（同じ語に 2 つの意味を持たせない）。
+        sb.Append("- 3 表の「実現損益」はいずれも**税引前・費用込み**（約定代金差額 − 売買手数料・取引諸費用）です。"
             + "**源泉徴収税額はいずれの表にも配分していません**——期間合計にのみ課され、配分する規則がありません。\n");
         sb.Append("- 「取引数」は**約定件数**（決済に至らない新規建てを含む）です。"
             + "合計は §1 の「取引回数」に一致します。\n");
         sb.Append("- **約定が 1 件も無い市場も行を出します**（「（当月の約定なし）」と明記）。"
             + "**数値の 0 は「取引して収支が 0 だった」ではありません。**\n");
         sb.Append("- 「主要銘柄」の母集合は**決済**です（新規建ては実現損益 0 であり、上位・下位の意味を持ちません）。"
+            + "金額は銘柄ごとの**約定代金差額**（費用・税をいずれも控除しない値）です。"
             + "**上位と下位が同じ銘柄のときは、当該市場の決済銘柄が 1 種類だった**ことを表します"
             + "（2 銘柄あったようには読まないでください）。\n");
         sb.Append("- 建玉の方向は約定の記録から導いています"
             + "（決済は必ず反対方向の約定であるため、決済かどうかと売買方向の組み合わせで一意に決まります）。"
             + "**反転（建玉を跨いで反対側へ抜ける約定）は決済した側に数えます**——1 約定を 2 行へ割っていません。\n");
         // 報告書の本文に絵文字は出さない（他節と同じ体裁を保つ）。強調は太字だけで行う。
-        sb.Append("- **借株料は「費用」の列に含めていません**（別掲）。"
-            + "本サービスの費用合計は**売買手数料と為替スプレッド相当額だけ**であり、借株料はそこに入っていません"
-            + "——足すと本節の費用の合計が §1 の「費用合計」と一致しなくなります。"
+        // 計画 ADR-0035 決定 3, #1201, IADR-0501: 借株料は費用合計に含まれるため、方向別の「費用（うち借株料）」へ含める。
+        sb.Append("- 「費用」は**売買手数料・取引諸費用**です。**借株料は建玉の方向別の表のショートの行の費用に含めています**"
+            + "（「うち借株料」。空売りにだけ掛かるため）。市場別の表の費用には含めていません。"
+            + "借株料は実現損益から控除していません（実現損益の定義は借株料を控除項に持ちません）。"
             + "借株コストの明細は §6.1 にあります。\n");
         AppendUnvaluedSettlementNote(sb, entries);
         sb.Append('\n');
@@ -414,7 +466,7 @@ public static class ReportRenderer
         foreach (var r in PeriodBreakdownBuilder.ByMarket(entries))
         {
             sb.Append(CultureInfo.InvariantCulture,
-                $"| {MarketRowLabel(r.Market)} | {Amount(r.RealizedPnlGross)} | {Amount(r.Cost)} | {LeadersCell(r)} |\n");
+                $"| {MarketRowLabel(r.Market)} | {Amount(r.RealizedPnlAfterCost)} | {Amount(r.Cost)} | {LeadersCell(r)} |\n");
         }
 
         sb.Append('\n');
@@ -432,8 +484,8 @@ public static class ReportRenderer
             // 04_report-templates 月報 §2 の表本文がこの語で行を持っている。
             var label = r.IsLong ? "ロング（現物・信用買い）" : "ショート（空売り）";
             sb.Append(CultureInfo.InvariantCulture,
-                $"| {label} | {Amount(r.RealizedPnlGross)} | {r.FillCount} | {WinRateOf(r.WinningCount, r.RealizingCount)} | "
-                    + $"{Amount(r.Cost)}（借株料 {BorrowFeeCell(view, r.IsLong)}） |\n");
+                $"| {label} | {Amount(r.RealizedPnlAfterCost)} | {r.FillCount} | {WinRateOf(r.WinningCount, r.RealizingCount)} | "
+                    + $"{DirectionCostCell(view, r)} |\n");
         }
 
         sb.Append('\n');
@@ -459,25 +511,29 @@ public static class ReportRenderer
             best.Symbol, Amount(best.RealizedPnlGross), worst.Symbol, Amount(worst.RealizedPnlGross));
     }
 
-    // 「費用（うち借株料）」の借株料部分。
+    // 「費用（うち借株料）」のセル。
     //
-    // 🔴 **借株料を費用へ足さない。** 本サービスの費用合計は手数料と為替スプレッドだけであり、
-    // 足すと本節の費用の合計が §1 の「費用合計」と一致しなくなる（IADR-0306 決定4）。
+    // 🔴 計画 ADR-0035 決定 3, #1201, IADR-0501: **借株料は費用合計に含まれる**ため、ショートの行の費用へ足し「うち借株料」を添える
+    //（旧 IADR-0306 決定 4 の「別掲」を改めた）。**未供給は 0 円として足さない**——その行の費用は過小である旨を書く。
     // ロングには借株料が発生しないため「—」（日報 §3 の借株料列と同じ規則）。
-    private static string BorrowFeeCell(ReportView view, bool isLong)
+    private static string DirectionCostCell(ReportView view, DirectionPnlRow row)
     {
-        if (isLong)
-            return "—";
+        if (row.IsLong)
+            return string.Format(CultureInfo.InvariantCulture, "{0}（うち借株料 —）", Amount(row.Cost));
 
         // 🔴 `null`（照会できていない）を 0 円へ潰さない。
         if (view.BorrowFees is not { } record)
-            return UnsuppliedCell;
+        {
+            return string.Format(CultureInfo.InvariantCulture,
+                "{0}（うち借株料 {1}。**借株料を含まないため過小です**）", Amount(row.Cost), UnsuppliedCell);
+        }
 
         var summary = BorrowFeeAggregator.Aggregate(record);
-        var note = summary.UnavailableDayCount > 0
-            ? string.Format(CultureInfo.InvariantCulture, "・未計上 {0} 件あり", summary.UnavailableDayCount)
-            : string.Empty;
-        return string.Format(CultureInfo.InvariantCulture, "{0} は別掲・§6.1{1}", Amount(summary.TotalUsd), note);
+        return summary.UnavailableDayCount > 0
+            ? string.Format(CultureInfo.InvariantCulture, "{0}（うち借株料 {1}〔未計上 {2} 件〕・明細は §6.1。**未計上のぶん過小です**）",
+                Amount(row.Cost + summary.TotalUsd), Amount(summary.TotalUsd), summary.UnavailableDayCount)
+            : string.Format(CultureInfo.InvariantCulture, "{0}（うち借株料 {1}・明細は §6.1）",
+                Amount(row.Cost + summary.TotalUsd), Amount(summary.TotalUsd));
     }
 
     // 散文（LLM ドラフト）。数値は含めない。
@@ -1617,7 +1673,7 @@ public static class ReportRenderer
     private const string Pending = "（データ連携後）";
 
     // 種別ごとのサマリ表の行（04_report-templates の各サマリ定義に一致）。数値は PnlSummary（コード集計値）から埋め、
-    // データ依存の行（総資産・年初来・費用率・トリガー内訳・目標達成）は Pending プレースホルダで形式を保つ。
+    // データ依存の行（総資産・年初来・トリガー内訳・目標達成）は Pending プレースホルダで形式を保つ。
     // 取引回数（買/売/決済）は計画の「うち変動トリガー・損切り」内訳（#63 台帳連携待ち）の代替表記（仕様書に明記）。
     private static IEnumerable<(string Label, string Value)> SummaryRows(ReportView view)
     {
@@ -1630,7 +1686,8 @@ public static class ReportRenderer
                 yield return ("週間実現損益（税引後・費用込み）", AmountOrUnvalued(p, p.RealizedPnlNet));
                 yield return ("勝率（勝ち取引/全決済取引）", WinRateCell(p));
                 yield return ("取引回数（買/売/決済）", counts);
-                yield return ("費用合計（手数料・諸費用・為替）", Amount(p.TotalCost));
+                // 計画 ADR-0035 決定 3, #1201, IADR-0501: 計画の 4 区分のラベル。借株料を含め、未供給は過小である旨を書く。
+                yield return ("費用合計（手数料・諸費用・為替スプレッド・借株料）", CostTotalCell(CostTotalOf(view)));
                 yield return ("週次目標に対する達成", Pending);
                 break;
 
@@ -1640,7 +1697,8 @@ public static class ReportRenderer
                 yield return ("為替差損益（独立表示）", FxTranslationCell(view));
                 yield return ("総資産（月初 → 月末）", Pending); // 04_report-templates の表記に一致（矢印前後に半角スペース）
                 yield return ("年初来累計損益", Pending);
-                yield return ("費用合計 / 費用率", $"{Amount(p.TotalCost)} / {Pending}");
+                // 計画 ADR-0035 決定 1・2・3 / フォローアップ 2, #1201, IADR-0501: 費用率は週報 §5 と同じ規則（分母は約定代金差額）。
+                yield return ("費用合計 / 費用率", $"{CostTotalCell(CostTotalOf(view))} / {CostRatioOrUnvalued(view)}");
                 yield return ("月次目標に対する達成", Pending);
                 break;
 
@@ -1650,7 +1708,7 @@ public static class ReportRenderer
                 yield return ("為替差損益（独立表示）", FxTranslationCell(view));
                 yield return ("評価損益（税引前・参考）", AmountOrUnvalued(p, p.UnrealizedPnl));
                 yield return ("取引回数（買/売/決済）", counts);
-                yield return ("費用合計（手数料・諸費用・為替）", Amount(p.TotalCost));
+                yield return ("費用合計（手数料・諸費用・為替スプレッド・借株料）", CostTotalCell(CostTotalOf(view)));
                 yield return ("源泉徴収税額", AmountOrUnvalued(p, p.TaxWithheld));
                 // INDEX 決定34: 当日の稼働率と Stage 1 日数への算入可否。
                 yield return ("OpenD 稼働率（当日の通常取引時間に対する比率）", DailyUptimeCell(view));
@@ -1660,6 +1718,11 @@ public static class ReportRenderer
                 break;
         }
     }
+
+    // FR-06, FR-16, 計画 ADR-0035 決定 3, #1201, IADR-0501: §1 の費用合計。週報・月報は費用レビューと**同じ値**を使い
+    //（同じ帰属・同じ借株料の記録から数えている）、費用レビューが無ければ（日報・帰属が未供給）§1 の手数料・諸費用から組み立てる。
+    private static PeriodCostTotal CostTotalOf(ReportView view) =>
+        view.CostReview?.Total ?? PeriodCostTotal.From(view.Pnl.TotalCost, view.BorrowFees);
 
     // #338, 04_report-templates §数値の定義: 為替差損益（円換算により生じた損益）。
     //

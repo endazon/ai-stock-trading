@@ -14,7 +14,7 @@ namespace ReportService.Domain;
 // 一致しなくなる。しかも**各スライスは自分の中では整合しているため、全テストが緑のままそうなる。**
 //
 // 🔴 **数値はコード集計値・文章は記録の転記であり、いずれも LLM に作らせない**（FR-16・IADR-0251）。
-// 費用は `CostCalculator.EstimateOneWayCost`（PnlAggregator と**同じ関数**）、実現損益は
+// 費用は `CostCalculator.FillCost`（PnlAggregator と**同じ関数**。#1201）、実現損益は
 // `PeriodInventory.Apply`（PnlAggregator と**同じ畳み込み**）、判断根拠は監査台帳の記録の転記である。
 public sealed record FillPnlAttribution(
     /// <summary>畳み込み順（1 起点）。同値の並び替えを入力順へ依存させないための最終キー。</summary>
@@ -49,11 +49,11 @@ public sealed record FillPnlAttribution(
     /// <summary>約定単価（基準通貨建て・PnlAggregator と同じ入力）。</summary>
     decimal Price,
 
-    /// <summary>この約定に掛かる概算費用（CostCalculator。**PnlAggregator と同じ関数**）。</summary>
+    /// <summary>この約定に掛かる費用＝売買手数料＋取引諸費用（<c>CostCalculator.FillCost</c>。**PnlAggregator と同じ関数**）。為替スプレッド・借株料は含まない。</summary>
     decimal Cost,
 
     /// <summary>
-    /// この約定で実現した損益（<b>税引前・費用前</b>）。決済でない約定は 0（<b>事実であり未供給ではない</b>）。
+    /// この決済の<b>約定代金差額</b>（費用・税をいずれも控除しない値。計画 ADR-0035 決定 1）。決済でない約定は 0（<b>事実であり未供給ではない</b>）。
     /// <para>🔴 <b>源泉徴収税額は期間合計にのみ課され、約定単位へ配分する規則が無い</b>（日報 §2 と同じ理由）。
     /// ここに税を按分して載せない。</para>
     /// </summary>
@@ -84,7 +84,7 @@ public sealed record FillPnlAttribution(
 public sealed record DailyPnlRow(
     DateOnly SessionDateJst,
 
-    /// <summary>当日の決済損益の合計（税引前・費用前）。</summary>
+    /// <summary>当日の決済の約定代金差額の合計（費用・税の控除前）。</summary>
     decimal RealizedPnlGross,
 
     /// <summary>当日の約定に掛かる概算費用の合計。</summary>
@@ -184,7 +184,7 @@ public static class FillPnlAttributionBuilder
                 fill.Side,
                 fill.Quantity,
                 fill.Price,
-                CostCalculator.EstimateOneWayCost(assumptions, fill.Market, fill.Quantity * fill.Price),
+                CostCalculator.FillCost(assumptions, fill.Market, fill.Side, fill.Quantity, fill.Price).Total,
                 // 在庫が減らない約定の実現損益は 0（事実）。未供給ではない。
                 applied.Reduced ? applied.RealizedPnl : 0m,
                 applied.Reduced,

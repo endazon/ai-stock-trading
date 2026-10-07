@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-06, FR-07, FR-16, FR-17, UC-05, ADR-0030, IADR-0025, IADR-0033, IADR-0269, IADR-0291, IADR-0301, IADR-0305]
 author: endazon (with Claude Code)
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/04_report-templates.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0030_report-section-numbering-is-plan-canonical.md
@@ -169,3 +169,11 @@ plan_refs:
 
 - Supersedes: なし（IADR-0301 のフォローアップ 2 を実施する）
 - Superseded by: なし
+
+## ［2026-10-07 追記 / #1201］計画 ADR-0035 による裁定と追随
+
+計画 ADR-0035（2026-09-05 Accepted）が本 IADR の環流（planning#535 への追記）に裁定を与えた。本文は当時の記録として残し、現在の扱いを次に記す（実装判断は [IADR-0501](./IADR-0501_report-cost-total-composition-and-post-trade-cost.md)）。
+
+- **決定 4（借株料は費用へ足さず別掲）を改めた。** ADR-0035 決定 3 は費用合計に借株料を含めると定め、月報 §2 表 3「費用（うち借株料）」は「うち」が成立する形とした。ショートの行の費用へ借株料（計上分）を含め、「うち借株料」を添える。未供給なら「うち借株料 **未供給**」と過小である旨を書く（0 を積まない）。市場別の表の費用には含めない旨を凡例に書く。
+- **市場別・方向別の「実現損益」**: 約定代金差額（税引前・費用前）を載せていたが、ADR-0035 決定 1（約定代金差額を「実現損益（税引前・費用前）」と呼ばない）に合わせ、週別と同じ**税引前・費用込み**（約定代金差額 −（手数料＋取引諸費用））へ揃えた。
+- 決定 1〜3・5〜7 は変更なし。

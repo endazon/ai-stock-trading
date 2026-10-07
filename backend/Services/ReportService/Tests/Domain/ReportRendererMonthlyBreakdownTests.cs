@@ -6,7 +6,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-06, FR-07, FR-16, #615, IADR-0306, 04_report-templates 月報 §2「週別・市場別の内訳」:
+// FR-06, FR-07, FR-16, #615, IADR-0306, 計画 ADR-0035, #1201, 04_report-templates 月報 §2「週別・市場別の内訳」:
 // **出口（`ReportRenderer` の本文）で** 3 表が出ることを固定する。
 //
 // 🔴 **純関数のテスト（PeriodBreakdownTests）だけでは、結線が無くても緑になる**（IADR-0269 決定1）。
@@ -133,11 +133,13 @@ public class ReportRendererMonthlyBreakdownTests
         section.Should().Contain("**数値の 0 は「取引して収支が 0 だった」ではありません。**");
     }
 
-    // --- 借株料（費用へ足さない・未供給と 0 を区別する） ---
+    // --- 借株料（費用に含める・未供給と 0 を区別する） ---
 
-    // 🔴 借株料を費用へ足すと、本節の費用の合計が §1 の費用合計と一致しなくなる。
+    // ⚠️ **期待を変更した（2026-10-07・#1201・計画 ADR-0035 決定 3・IADR-0501）。** 本テストは
+    // 「借株料は費用へ足さず別掲する」（IADR-0306 決定 4）を固定していた。計画は費用合計に借株料を含めると裁定し、
+    // 月報 §2 表 3「費用（うち借株料）」は「うち」が成立する形になった。**最初からこうだったのではない。**
     [Fact]
-    public void 借株料は費用へ足さず別掲する()
+    public void 借株料はショートの費用に含めうち借株料を添える()
     {
         var borrowFees = new BorrowFeeRecord(
             [new BorrowFeeAccrued("AAPL", Market.UnitedStates, new DateOnly(2026, 8, 3), 0.06m, 10_000m, 1.64m,
@@ -148,10 +150,27 @@ public class ReportRendererMonthlyBreakdownTests
             ReportRenderer.RenderMarkdown(Monthly(Month(), borrowFees)),
             "## 2. 週別・市場別の内訳", "## 3. 税金レビュー");
 
-        section.Should().Contain("（借株料 +1.64 USD は別掲・§6.1）");
-        // ロングには借株料が発生しない。
-        section.Should().Contain("（借株料 —）");
-        section.Should().Contain("**借株料は「費用」の列に含めていません**");
+        // ショートの費用（手数料・諸費用 0）＋借株料 1.64。
+        section.Should().Contain("| +1.64 USD（うち借株料 +1.64 USD・明細は §6.1） |");
+        // ロングには借株料が発生しない（費用は手数料・諸費用 4 件 × 120）。
+        section.Should().Contain("| +480.00 USD（うち借株料 —） |");
+        section.Should().Contain("**借株料は建玉の方向別の表のショートの行の費用に含めています**");
+        section.Should().NotContain("別掲");
+    }
+
+    // FR-06, 計画 ADR-0035 決定 1, #1201: 市場別・方向別の「実現損益」は週別と同じ税引前・費用込み（約定代金差額を載せない）。
+    [Fact]
+    public void 市場別と方向別の実現損益は約定代金差額から費用を引いた値を出す()
+    {
+        var section = Section(
+            ReportRenderer.RenderMarkdown(Monthly(Month())), "## 2. 週別・市場別の内訳", "## 3. 税金レビュー");
+
+        // 日本株: 約定代金差額 -2,000 − 費用 240 ／ 米国株: 250 − 240 ／ ロング: -1,750 − 480。
+        section.Should().Contain("| 日本株 | -2,240.00 USD | +240.00 USD |");
+        section.Should().Contain("| 米国株 | +10.00 USD | +240.00 USD |");
+        section.Should().Contain("| ロング（現物・信用買い） | -2,230.00 USD |");
+        section.Should().Contain("3 表の「実現損益」はいずれも**税引前・費用込み**");
+        section.Should().NotContain("税引前・費用前");
     }
 
     [Fact]
@@ -161,7 +180,7 @@ public class ReportRendererMonthlyBreakdownTests
             ReportRenderer.RenderMarkdown(Monthly(Month())),
             "## 2. 週別・市場別の内訳", "## 3. 税金レビュー");
 
-        section.Should().Contain("（借株料 **未供給**）");
+        section.Should().Contain("（うち借株料 **未供給**。**借株料を含まないため過小です**）");
     }
 
     [Fact]
@@ -177,7 +196,7 @@ public class ReportRendererMonthlyBreakdownTests
             ReportRenderer.RenderMarkdown(Monthly(Month(), borrowFees)),
             "## 2. 週別・市場別の内訳", "## 3. 税金レビュー");
 
-        section.Should().Contain("未計上 1 件あり");
+        section.Should().Contain("（うち借株料 +1.64 USD〔未計上 1 件〕・明細は §6.1。**未計上のぶん過小です**）");
     }
 
     // --- 内容 ---

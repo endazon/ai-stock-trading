@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-15, FR-20, ADR-0016, IADR-0089, IADR-0281, IADR-0139]
 author: claude (Claude Code)
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
@@ -167,3 +167,12 @@ IADR-0281 決定6 は「借株照会・維持率の供給（[#417](https://githu
 - 決定4 の据え置きにより、**verdict は今も発注審査へ届かない。** これは #388 の残件であり、
   借株照会・維持率の供給が入るまで解けない（`ShortFeeRate` の単位確定＝計画 ADR-0026 の PoC 項目 9 が
   連鎖の起点である）。
+
+## ［2026-10-07 追記 / #1201］計画 ADR-0034 による追認
+
+計画 ADR-0034（2026-09-05 Accepted）が本 IADR を**前提として扱い追認した**（同 ADR フォローアップ 1）。
+
+- **決定 1（申告ではなく観測。申告する引数を公開面から消す）**: ADR-0034 決定 1 が追認した。実装の差し替えは不要。
+- **決定 2（未約定は「含まない」へ倒す）**: ADR-0034 決定 2 が追認した。実装の差し替えは不要。
+- 本 IADR の「判定方法が計画に無いまま実装が先行している」（残余リスク）は解消した。
+- ADR-0034 決定 3〜5（件数の下限を置かない・空売り建玉が 1 件も成立しない走行は解禁条件を満たさない・verdict を無効化する「戦略の変更」）は本追記の射程外である（追認の記録のみ）。
