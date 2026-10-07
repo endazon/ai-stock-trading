@@ -17,15 +17,23 @@ namespace AiStockTrading.IntegrationTests;
 // ExecuteUpdate を持たず SQL も発行しないので、**この経路は実 DB でしか固定できない**
 // （先例は `ApprovedOrderTerminalConcurrencyE2ETests`。同じ流儀で置く）。
 //
-// [Trait("Category","Integration")]: 既定 CI では除外し、専用ワークフロー（integration.yml）で実走する（Docker 必須）。
+// [Trait("Category","Integration")]: 既定 CI では除外し、専用ワークフロー（integration.yml）で実走する（実 PostgreSQL 等の依存を得られなければ理由つきで skip。門は RequiredServices・IADR-0497）。
 [Trait("Category", "Integration")]
 public sealed class LedgerStopLineWideningConcurrencyE2ETests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer? _postgres = E2EInfrastructure.UseExternal
-        ? null
-        : new PostgreSqlBuilder("postgres:16").Build();
+    private readonly PostgreSqlContainer? _postgres;
 
     private string _connectionString = string.Empty;
+
+    public LedgerStopLineWideningConcurrencyE2ETests()
+    {
+        // NFR, MSP/ADR-0090 決定 1・2, IADR-0497 (#1200): 要る依存を得られなければ、コンテナを組み立てる前に理由つきで skip する
+        // （Docker に届かない環境では `Build()` 自体が投げるため、門はフィールド初期化子より前＝ここに置く）。
+        RequiredServices.SkipUnlessObtainable(RequiredServices.Postgres);
+
+        // 外部インフラ注入時（E2E_*。E2EInfrastructure 参照）はコンテナを起動しない。
+        _postgres = E2EInfrastructure.UseExternal ? null : new PostgreSqlBuilder("postgres:16").Build();
+    }
 
     public async ValueTask InitializeAsync()
     {

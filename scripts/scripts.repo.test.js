@@ -2902,6 +2902,42 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- check-integration-skips: integration.yml の「全 skip で緑」を検知する（NFR / #1200 / IADR-0497） ---
+  //
+  // 🔴 統合テストの門（RequiredServices）は依存を得られなければ skip する。門と担保は対で 1 つの統制であり、
+  // **担保だけが配線から外れると「1 件も実走していないのに緑」が通る**（MSP/ADR-0090 決定 3）。
+  // 自己試験（発火・非発火の両側）と integration.yml の配線をここで固定する。
+  {
+    const fsIs = require('fs');
+    const pathIs = require('path');
+    const { execFileSync: execIs } = require('child_process');
+    const REPO_ROOT_IS = pathIs.resolve(__dirname, '..');
+
+    ok('check-integration-skips: 自己試験が全件通る', () => {
+      execIs(process.execPath, [pathIs.join(__dirname, 'check-integration-skips.js'), '--self-test'], {
+        cwd: REPO_ROOT_IS,
+        stdio: 'pipe',
+      });
+    });
+
+    ok('integration.yml: テストが TRX を残し、skip 検査（自己試験＋本検査）がテストの合否によらず走る', () => {
+      const yml = fsIs.readFileSync(pathIs.join(REPO_ROOT_IS, '.github', 'workflows', 'integration.yml'), 'utf8');
+      // 🔴 TRX が出ていなければ検査は何も読めない（そのときは赤になるが、配線の欠落は先にここで止める）。
+      assert.match(yml, /--logger trx --results-directory "\$PWD\/integration-results"/, 'TRX の出力先が integration.yml に無い');
+      assert.match(yml, /check-integration-skips\.js --self-test/, '検査器の自己試験が integration.yml に無い');
+      assert.match(yml, /check-integration-skips\.js integration-results/, '本検査が integration.yml に無い');
+      // テストが赤くても評価する（skip と失敗は独立した観測）。`if:` が `success()` 既定へ戻ると赤の run で検査が消える。
+      const guards = yml.split('\n').filter((l) => l.includes("steps.tests.outcome != 'skipped'"));
+      assert.ok(guards.length >= 3, `!cancelled() の条件つき step が ${guards.length} 本（setup-node・自己試験・本検査の 3 本が要る）`);
+      assert.match(yml, /id: tests/, 'テストの step に id: tests が無い（条件が常に偽になる）');
+    });
+
+    ok('scripts/README.md: 本リポジトリ固有の表に check-integration-skips.js を記載している', () => {
+      const readme = fsIs.readFileSync(pathIs.join(REPO_ROOT_IS, 'scripts', 'README.md'), 'utf8');
+      assert.match(readme, /check-integration-skips\.js/, 'scripts/README.md に記載が無い');
+    });
+  }
+
   // --- summarize-test-failures: backend-test の失敗を TRX から名指しする（NFR / #596 / IADR-0277） ---
   //
   // 🔴 `dotnet test <solution>` の並列実行では、各 VSTest のコンソールロガーが同じ標準出力へ
