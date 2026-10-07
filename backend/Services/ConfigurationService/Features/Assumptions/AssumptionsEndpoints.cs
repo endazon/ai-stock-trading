@@ -37,9 +37,9 @@ internal static class AssumptionsEndpoints
                 }
                 catch (ArgumentException e)
                 {
-                    // NFR-06, IADR-0503, #1206: 文言は自前のコードが投げたものだけ載せる（それ以外は固定文言・元の例外はログ。400 は維持）。
+                    // NFR-06, IADR-0503, IADR-0509, #1206, #1230: 文言は利用者へ見せる印（ClientVisibleArgument）のあるものだけ載せる（印の無いものは固定文言・元の例外はログ。400 は維持）。
                     var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AssumptionsEndpoints));
-                    return Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, typeof(AssumptionsEndpoints).Assembly, logger) });
+                    return Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, logger) });
                 }
                 catch (AssumptionsConcurrencyException e)
                 {

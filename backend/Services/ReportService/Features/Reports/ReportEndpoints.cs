@@ -92,10 +92,10 @@ internal static class ReportEndpoints
     // 写さない例外は null（そのまま上げる）。各型は互いに派生しないので、分類は元の catch の並びと同じ結果になる。
     // NFR-06, IADR-0503, #1206: 🔴 409 と文言を返す InvalidOperationException は業務の型（ReportAlreadyConfirmedException）だけ。
     // ほかの InvalidOperationException（EF・フレームワーク由来）は写さず、共通の例外処理が ProblemDetails の 500 にして例外ごとログへ出す。
-    // ArgumentException の文言は自前のコードが投げたものだけ載せる（それ以外は固定文言。400 は維持）。
+    // IADR-0509, #1230: ArgumentException の文言は利用者へ見せる印（ClientVisibleArgument）のあるものだけ載せる（印の無いものは固定文言。400 は維持）。
     internal static IResult? MapException(Exception e, ILogger logger) => e switch
     {
-        ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, typeof(ReportEndpoints).Assembly, logger) }),
+        ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, logger) }),
         ReportConcurrencyException => Results.Conflict(new { error = e.Message }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "報告書が他の更新と競合しました。最新を取得して再試行してください。" }),
         ReportAlreadyConfirmedException => Results.Conflict(new { error = e.Message }),

@@ -4,6 +4,7 @@ using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
 using Grpc.Core;
@@ -116,6 +117,37 @@ public class RiskControlsOwnerWriteGrpcServiceTests
         var resumed = await grpc.ResumeTradingAsync(new Proto.TradingPauseChangeRequest { Reason = "再開" });
         (disengaged.HasEngaged, disengaged.Engaged, resumed.HasPaused, resumed.Paused).Should().Be((true, false, true, false),
             "false も値として運ぶ（欠落と区別する）");
+    }
+
+    // T-10-2423（NFR-06, IADR-0509, #1230）: 利用者（Discord・画面）が入力する理由の空欄検査は印つき（ClientVisibleArgument）なので、
+    // kill switch・一時停止・設定の変更のいずれも REST の 400 と gRPC の INVALID_ARGUMENT で文言（'reason'）を保ち、固定文言にならない。
+    [Fact]
+    public async Task T_10_2423_理由の空欄は印つきで_REST_と_gRPC_の文言を保つ()
+    {
+        await using var factory = new RiskWorkerWebApplicationFactory();
+
+        var cases = new (string Path, Func<Task> Grpc)[]
+        {
+            ("/risk-controls/kill-switch/engage",
+                async () => await Grpc(factory).EngageKillSwitchAsync(new Proto.KillSwitchChangeRequest { Reason = " " })),
+            ("/risk-controls/pause",
+                async () => await Grpc(factory).PauseTradingAsync(new Proto.TradingPauseChangeRequest { Reason = " " })),
+        };
+
+        foreach (var (path, grpc) in cases)
+        {
+            var (status, error) = await PostAsync(Rest(factory), path, new { reason = " " });
+            var ex = await FailsAsync(grpc);
+
+            status.Should().Be(400, path);
+            error.Should().Contain("'reason'", path).And.NotBe(ClientFacingErrors.InvalidRequestMessage);
+            (ex.StatusCode, ex.Status.Detail).Should().Be((StatusCode.InvalidArgument, error!), path);
+        }
+
+        using var stage = await Rest(factory).PutAsJsonAsync(
+            "/risk-controls/settings/stage1-minimum-trade-count", new { minimumTradeCount = 100, reason = " " });
+        stage.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await stage.Content.ReadAsStringAsync()).Should().Contain("'reason'");
     }
 
     // 群のフィルタの例外の写し（ArgumentException → 400）を REST と共有する: 理由の欠如は INVALID_ARGUMENT で同じ文言。

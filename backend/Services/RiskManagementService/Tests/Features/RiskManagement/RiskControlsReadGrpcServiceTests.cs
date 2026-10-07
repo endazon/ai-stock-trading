@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AiStockTrading.Shared.Contracts.Errors;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
@@ -318,6 +320,65 @@ public class RiskControlsReadGrpcServiceTests
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         JsonNode.Parse(body)!["error"]!.GetValue<string>().Should().Be(ClientFacingErrors.InvalidRequestMessage);
         body.Should().NotContain("壊れた入力");
+    }
+
+    // 第三者のライブラリの小さな補助の代役（呼び出し元へインライン化を強制）。重複キーの文言はキーの値を引用する。
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ThirdPartyStyleAdd(Dictionary<string, int> map, string key) => map.Add(key, map.Count);
+
+    // どのメンバーを呼んでも、第三者相当の補助がインライン化される経路で CoreLib の ArgumentException を投げる。
+    public class ThrowsInlinedThirdPartyArgumentException : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            var map = new Dictionary<string, int>();
+            ThirdPartyStyleAdd(map, "risk-db.internal");
+            ThirdPartyStyleAdd(map, "risk-db.internal");
+            throw new InvalidOperationException("重複キーが例外を投げなかった（前提の崩れ）。");
+        }
+    }
+
+    // どのメンバーを呼んでも印（利用者へ見せる文言）のある ArgumentException を投げる。
+    public class ThrowsClientVisibleArgumentException : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            throw new ArgumentException("期間の指定が正しくありません（利用者へ見せる文言）。").ClientVisible();
+    }
+
+    private static async Task<(HttpStatusCode Status, string? Error, RpcException Grpc)> SessionUptimeOnBothAsync<TProxy>(
+        RiskWorkerWebApplicationFactory baseFactory)
+        where TProxy : DispatchProxy
+    {
+        using var factory = baseFactory.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+            s.AddScoped(_ => DispatchProxy.Create<IStage1TradingDayObservationStore, TProxy>())));
+        using var rest = factory.CreateClient();
+        rest.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+        using var res = await rest.GetAsync("/risk-controls/session-uptime?from=2026-09-01&to=2026-09-30", TestContext.Current.CancellationToken);
+        var body = await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        using var channel = ChannelFor(factory, Service);
+        var act = async () => await new Proto.RiskControlsRead.RiskControlsReadClient(channel)
+            .GetSessionUptimeAsync(new Proto.GetSessionUptimeRequest { From = "2026-09-01", To = "2026-09-30" });
+        var ex = (await act.Should().ThrowAsync<RpcException>()).Which;
+        return (res.StatusCode, JsonNode.Parse(body)!["error"]?.GetValue<string>(), ex);
+    }
+
+    // T-10-2424（NFR-06, IADR-0509, #1230）: REST の群のフィルタと gRPC の読み取りは、第三者相当の補助がインライン化される送出（印なし）を
+    // 400／INVALID_ARGUMENT の固定文言にし、印のある送出は文言を保つ（同じ投げ手で両方の経路を見る）。
+    [Fact]
+    public async Task T_10_2424_印の無い送出は固定文言で印のある送出は文言を保つ_REST_と_gRPC()
+    {
+        await using var baseFactory = new RiskWorkerWebApplicationFactory();
+
+        var (status, error, grpc) = await SessionUptimeOnBothAsync<ThrowsInlinedThirdPartyArgumentException>(baseFactory);
+        status.Should().Be(HttpStatusCode.BadRequest);
+        error.Should().Be(ClientFacingErrors.InvalidRequestMessage);
+        (grpc.StatusCode, grpc.Status.Detail).Should().Be((StatusCode.InvalidArgument, ClientFacingErrors.InvalidRequestMessage));
+
+        (status, error, grpc) = await SessionUptimeOnBothAsync<ThrowsClientVisibleArgumentException>(baseFactory);
+        status.Should().Be(HttpStatusCode.BadRequest);
+        error.Should().Be("期間の指定が正しくありません（利用者へ見せる文言）。");
+        (grpc.StatusCode, grpc.Status.Detail).Should().Be((StatusCode.InvalidArgument, error!));
     }
 
     // どのメンバーを呼んでも ArgumentException を投げる（ストアの実装に依らず「処理中の検証失敗」を再現する）。

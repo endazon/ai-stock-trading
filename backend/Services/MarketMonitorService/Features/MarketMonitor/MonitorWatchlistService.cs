@@ -1,5 +1,6 @@
 using MarketMonitorService.Common.Abstractions;
 using MarketMonitorService.Domain;
+using AiStockTrading.Shared.Contracts.Errors;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace MarketMonitorService.Features.MarketMonitor;
@@ -31,7 +32,7 @@ public sealed class MonitorWatchlistService(
         // FR-13: 重複追加は検証エラー（400）。楽観排他競合（409）とは区別する。
         if (symbols.Any(s => Same(s, target)))
         {
-            throw new ArgumentException($"銘柄 {target.Symbol}（{market}）は既に監視対象です。", nameof(symbol));
+            throw new ArgumentException($"銘柄 {target.Symbol}（{market}）は既に監視対象です。", nameof(symbol)).ClientVisible();
         }
 
         List<MonitoredSymbol> after = [.. symbols, target];
@@ -40,7 +41,7 @@ public sealed class MonitorWatchlistService(
             throw new ArgumentException(
                 $"銘柄 {target.Symbol}（{market}）を足すと Finnhub の巡回に収まりません（{cycleFit.Describe(after)}）。"
                 + "先に他の銘柄を外すか、自制レート・巡回間隔の設定を見直してください。",
-                nameof(symbol));
+                nameof(symbol)).ClientVisible();
         }
 
         var updated = current with { MonitoredSymbols = [.. symbols, target] };
@@ -58,7 +59,7 @@ public sealed class MonitorWatchlistService(
         // FR-13: 不在銘柄の削除は検証エラー（400）。写像の単一情報源を保つため 404/409 は新設しない（IADR-0088）。
         if (remaining.Count == current.MonitoredSymbols.Count)
         {
-            throw new ArgumentException($"銘柄 {target.Symbol}（{market}）は監視対象にありません。", nameof(symbol));
+            throw new ArgumentException($"銘柄 {target.Symbol}（{market}）は監視対象にありません。", nameof(symbol)).ClientVisible();
         }
 
         var updated = current with { MonitoredSymbols = remaining };
@@ -86,7 +87,7 @@ public sealed class MonitorWatchlistService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         if (WatchlistProposalPlan.ValidateShape(changes, expected) is { } invalid)
-            throw new ArgumentException(invalid, nameof(changes));
+            throw new ArgumentException(invalid, nameof(changes)).ClientVisible();
 
         var current = store.GetSettings();
         var plan = WatchlistProposalPlan.Plan(current.MonitoredSymbols, expected!, changes!, cycleFit);
@@ -141,10 +142,11 @@ public sealed class MonitorWatchlistService(
     // 監視銘柄を検証・正規化する。空 symbol・未定義 market は検証エラー（400）。
     private static MonitoredSymbol Normalize(string symbol, Market market)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
+        // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(symbol);
         if (!Enum.IsDefined(market))
         {
-            throw new ArgumentException($"市場 {market} は未定義です。", nameof(market));
+            throw new ArgumentException($"市場 {market} は未定義です。", nameof(market)).ClientVisible();
         }
 
         return new MonitoredSymbol(symbol.Trim(), market);
@@ -161,6 +163,7 @@ public sealed class MonitorWatchlistService(
     private static void RequireActorAndReason(string actor, string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
     }
 }

@@ -1,5 +1,6 @@
 using RiskManagementService.Common.Abstractions;
 using RiskManagementService.Domain;
+using AiStockTrading.Shared.Contracts.Errors;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace RiskManagementService.Features.RiskManagement;
@@ -57,7 +58,7 @@ public sealed class RiskSettingsService(
             throw new ArgumentException(
                 $"口座種別 {account.AccountType} では商品種別 {string.Join(" / ", unsupported)} を有効にできません"
                     + "（現金口座では株を借りられないため信用買い・空売りが成立しません。ADR-0021 決定4-4）。",
-                nameof(guard));
+                nameof(guard)).ClientVisible();
         }
     }
 
@@ -103,7 +104,7 @@ public sealed class RiskSettingsService(
         {
             throw new ArgumentException(
                 "段階の既定発注先は 0=内蔵 paper / 1=moomoo REAL / 2=moomoo SIMULATE のいずれかを指定してください。",
-                nameof(stage));
+                nameof(stage)).ClientVisible();
         }
 
         var current = store.GetCurrent();
@@ -232,6 +233,7 @@ public sealed class RiskSettingsService(
     private static void RequireActorAndReason(string actor, string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
     }
 }
