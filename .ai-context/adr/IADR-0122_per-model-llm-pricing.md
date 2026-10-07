@@ -13,9 +13,10 @@ related_ids:
   - IADR-0107
   - IADR-0114
   - IADR-0120
+  - IADR-0499
 author: claude
 created: 2026-07-31
-updated: 2026-09-17
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-04／NFR 費用: 月次上限 15,000 円)
   - planning:projects/ai-stock-trading/07_adr/ADR-0014_llm-model-assignment-revision.md (用途別モデル割当・Accepted)
@@ -172,6 +173,18 @@ AST 側で「用途→単価」を静的に対応付けても実際の呼び出�
 >    env 名を `^[A-Za-z_][A-Za-z0-9_]*$` で検査する。負の対照: 是正前の values-local で 20 件を検出して失敗する。
 >
 > 作業仕様書 `.ai-context/specs/20260917_817_llm-pricing-env-names.md`。反映後の確認（非 0 計上）は同仕様書の基準 10。
+
+> ［2026-10-07 追記 / #1197］**決定 4 の「本番 `values.yaml` へは置かない」は維持し、本番での投入手段と与え忘れの扱いを決めた**
+> （第 4 回全体監査 A-3。[IADR-0499](./IADR-0499_llm-pricing-unset-refuses-production-start.md)）。
+>
+> 1. **現在の実現手段**: 配備時の values の上書き（ArgoCD の `valueFiles` に足す `values-<env>.yaml`／helm の `-f`）で、
+>    trade-decision と report の両方の `extraEnv` へ本表と同じ `LlmPricing__PerModel__<model>__*` を足す（`extraEnv` は配列なので
+>    `values.yaml` の同じ配列を写してから足す）。手順は `docs/operations/operations.md`「本番の LLM 単価の投入」。
+> 2. **#817 追記の 3（「例外は投げない」）を、配備に限って改める**: LLM ゲートウェイを構成したのに単価が実質 0 なら、
+>    環境名 Production の trade-decision / report は**起動しない**（`LlmPricingStartupGuard`）。Production 以外は警告のまま。
+>    計上時の解決（決定 3・IADR-0055 の best-effort）は変えない。
+> 3. 決定 3（未知モデルは最大単価）と経路B（`values-local.yaml`）の単価表は変えない。`values-local.yaml` の
+>    「本番 values.yaml へ本表を移植した」というコメントは実物と逆だったので、「本番は表を持たない・投入は 1. による」へ直した。
 
 ## 理由
 

@@ -71,7 +71,8 @@ public sealed class LlmPriceTable
 
     /// <summary>
     /// 単価が実質 0 か（モデル別の表が空 かつ 既定ペアも入出力とも 0）。真なら全呼び出しが 0 円で計上される。
-    /// 解決は変えない（0 は IADR-0055 の無害な fail-safe）。起動時の警告（#817）の判定にだけ使う。
+    /// 解決は変えない（0 は IADR-0055 の無害な fail-safe）。起動時の判定（#817 の警告・#1197 / IADR-0499 の配備での起動拒否。
+    /// <see cref="LlmPricingStartupGuard"/>）にだけ使う。
     /// </summary>
     public bool IsEffectivelyZero => _perModel.Count == 0 && _fallback == LlmPrice.Zero;
 
