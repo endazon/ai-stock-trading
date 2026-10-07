@@ -49,6 +49,9 @@ related_specs:
 ### 予算表（着手時点の実測。`git grep` と chart・appsettings の読み取りによる）
 
 稼働構成は `ASPNETCORE_ENVIRONMENT=Development`（`templates/deployment.yaml`）なので、`appsettings.Development.json` の値が効き、helm の env がその上に乗る。
+> **［2026-10-07 追記 / #1192］** 稼働構成は `ASPNETCORE_ENVIRONMENT=Production` になり、`appsettings.Development.json` は読まれない
+> （[IADR-0496](./IADR-0496_aspnetcore-environment-production-and-problem-details.md)）。下表の情報収集の巡回 300 秒は helm の env
+> `Collection__PollIntervalSeconds: "300"`（values.yaml・values-local）で明示した（コード既定 1800 秒へ黙って延びない）。予算の値は変わらない。
 
 | プロセス | 鍵（`ast-secrets`） | 自制レート（回/分） | 1 巡回の要求数（現況） | 巡回間隔 | 1 巡回に収まる要求数（レート × 間隔） | (b) |
 | --- | --- | ---: | --- | --- | ---: | --- |

@@ -3,15 +3,15 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-09-25
+updated: 2026-10-07
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census]
-issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, MSP#446]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate]
+issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, MSP#446, planning#575]
 -->
 
 
@@ -152,7 +152,7 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 | 層の依存規律（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（csproj の静的解析。プロジェクト境界で層を強制） | 同上（ソース走査を併置。プロジェクト境界が無い新構成はこちらが本体） | 既定 CI |
 | DI 登録の結線（横断） | `backend/Tests/AiStockTrading.Architecture.Tests`（DI に登録した型に本番の利用箇所があるかをソース走査で突き合わせる。常駐サービスは対象外、既知の未結線は理由と外す条件つきのラチェット） | 新旧不変（横断テストは統合しない） | 既定 CI |
 | 計画適合（横断） | `backend/Tests/AiStockTrading.PlanConformance.Tests` | 新旧不変（横断テストは統合しない） | 既定 CI |
-| 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | 新旧不変（横断テストは統合しない） | `Category=Integration`。既定 CI から除外し `integration.yml`（夜間/手動）で実走 |
+| 実基盤結合（Testcontainers） | `backend/Tests/AiStockTrading.IntegrationTests` | 新旧不変（横断テストは統合しない） | `Category=Integration`。既定 CI から除外し `integration.yml`（develop への push・日次・手動）で実走。要る依存（PostgreSQL・RabbitMQ・Keycloak）を外部供給でもコンテナでも得られなければ、どうすれば走るかを理由に書いて skip する（fail にしない）。`integration.yml` は対象アセンブリの skip が 1 件でもあれば赤にする（全 skip で緑にしない。`scripts/check-integration-skips.js`） |
 
 ## 6. 未整備（担当 issue で追加する）
 

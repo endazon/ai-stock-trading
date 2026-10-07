@@ -7,11 +7,11 @@ updated: 2026-10-07
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-02, FR-03, FR-06, FR-10, NFR-09, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09, FR-08, NFR-06, UC-03, UC-04, UC-05, NFR-02]
+ids: [FR-01, FR-02, FR-03, FR-06, FR-10, NFR-09, FR-11, FR-15, FR-17, FR-19, FR-20, FR-21, SC-01, SC-02, SC-03, UC-01, UC-06, NFR-07, FR-04, UC-02, FR-05, FR-07, FR-14, FR-16, FR-13, UC-07, FR-09, FR-08, NFR-06, UC-03, UC-04, UC-05, NFR-02, NFR-05]
 adrs: [ADR-0003, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0042, ADR-0043, ADR-0031, ADR-0045, ADR-0033, ADR-0036, ADR-0044, ADR-0046, ADR-0047, ADR-0049, ADR-0050, ADR-0048, ADR-0023, ADR-0052, ADR-0051]
-iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0437, IADR-0435, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0440, IADR-0442, IADR-0445, IADR-0446, IADR-0447, IADR-0448, IADR-0449, IADR-0450, IADR-0458, IADR-0459, IADR-0460, IADR-0461, IADR-0462, IADR-0463, IADR-0465, IADR-0351, IADR-0466, IADR-0467, IADR-0451, IADR-0464, IADR-0471, IADR-0469, IADR-0473, IADR-0472, IADR-0475, IADR-0476, IADR-0454, IADR-0474, IADR-0477, IADR-0478, IADR-0470, IADR-0479, IADR-0480, IADR-0483, IADR-0481, IADR-0482, IADR-0486, IADR-0487, IADR-0488, IADR-0490, IADR-0491, IADR-0248, IADR-0494]
-specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260926_1044_monitor-replace-residuals, 20260926_826_stop-method-audit-residuals, 20260927_1051_release-gate-per-trading-env, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_1063_grpc-read-latent-residuals, 20260927_1067_grpc-owner-gate-bot-azp, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260929_1093_guard-position-query-retry, 20260929_1099_finnhub-estimate-log-wording, 20260929_1093_stagger-startup-position-queries, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1108_t786-otel-collect-race, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20260930_1118_daily-volume-from-kline, 20261001_1130_held-add-on-before-llm, 20261001_1133_finnhub-timeout, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1136_retro-stop-floor, 20261001_1134_watchlist-no-fallback, 20261001_1148_redact-retmsg-account-id, 20261001_1138_kb-market-docs-topk, 20261001_1132_finnhub-request-estimate, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261001_1129_policy-exit-numeric, 20261001_1139_stage0-decision-volume, 20261002_1156_report-unsupplied-inputs, 20261002_1111_decision-final-failure-record, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query, 20261003_1122_atr14-stop-floor, 20261003_1164_position-query-classification-single-entry, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261006_1156_report-regenerate, 20261006_1182_report-regenerate-present-notice, 20261007_1187_close-decision-stop-distance-optional, 20261007_1189_dedupe-quote-per-cycle, 20261007_1175_take-profit-unreached-explicit]
-issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1030, #1015, #1028, #1039, #1022, #856, #1044, #1051, #1034, #1049, #1059, #1061, #1063, #1065, #1067, #1093, #1099, #1104, #1105, #1108, #1114, #1113, #1120, #1121, #1118, #1130, #1133, #1131, #1135, #1136, #1134, #1148, #1138, #1132, #1140, #1129, #1139, #1156, #1111, #1048, #1122, #1164, #1169, #1182, #1187, #1189, #1175, planning#703, planning#704, planning#702, planning#711]
+iadrs: [IADR-0018, IADR-0067, IADR-0107, IADR-0113, IADR-0117, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0134, IADR-0144, IADR-0148, IADR-0152, IADR-0154, IADR-0158, IADR-0159, IADR-0160, IADR-0162, IADR-0163, IADR-0174, IADR-0178, IADR-0181, IADR-0183, IADR-0186, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0347, IADR-0350, IADR-0354, IADR-0355, IADR-0356, IADR-0357, IADR-0362, IADR-0371, IADR-0365, IADR-0389, IADR-0373, IADR-0369, IADR-0374, IADR-0380, IADR-0023, IADR-0245, IADR-0260, IADR-0370, IADR-0390, IADR-0393, IADR-0398, IADR-0399, IADR-0395, IADR-0394, IADR-0396, IADR-0405, IADR-0412, IADR-0406, IADR-0407, IADR-0408, IADR-0413, IADR-0418, IADR-0062, IADR-0075, IADR-0095, IADR-0182, IADR-0271, IADR-0419, IADR-0383, IADR-0423, IADR-0420, IADR-0422, IADR-0424, IADR-0284, IADR-0331, IADR-0352, IADR-0427, IADR-0429, IADR-0428, IADR-0425, IADR-0431, IADR-0432, IADR-0433, IADR-0437, IADR-0435, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0440, IADR-0442, IADR-0445, IADR-0446, IADR-0447, IADR-0448, IADR-0449, IADR-0450, IADR-0458, IADR-0459, IADR-0460, IADR-0461, IADR-0462, IADR-0463, IADR-0465, IADR-0351, IADR-0466, IADR-0467, IADR-0451, IADR-0464, IADR-0471, IADR-0469, IADR-0473, IADR-0472, IADR-0475, IADR-0476, IADR-0454, IADR-0474, IADR-0477, IADR-0478, IADR-0470, IADR-0479, IADR-0480, IADR-0483, IADR-0481, IADR-0482, IADR-0486, IADR-0487, IADR-0488, IADR-0490, IADR-0491, IADR-0248, IADR-0494, IADR-0495, IADR-0496]
+specs: [20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260807_424_unsupplied-metric-display-convention, FR-10_risk-controls, FR-10_risk-guard-core-tests, IADR-0130_equity-ratio-risk-limits, IADR-0131_short-selling-controls-fail-closed, IADR-0158_short-sell-borrow-permit-primary-gate, IADR-0159_buy-in-post-hoc-inference, IADR-0160_maintenance-margin-applied-threshold-account-wide, IADR-0162_unsupplied-metric-display-convention-all-screens, README, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260918_829_count-working-entry-orders, 20260918_844_alternative-stop-price-precision, 20260919_846_entry-and-stop-price-precision, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_869_capital-baseline-from-broker-account, 20260919_852_forgone-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_890_reconciliation-per-item-emission, 20260923_902_s1-stop-evaluation-liveness, IADR-0365_s1-stop-evaluation-liveness-summary, 20260923_833_rearm-accepted-close-not-filled, 20260923_899_currency-disproof-non-usd-account, 20260923_857_rejected-close-is-not-closed, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_909_us-market-session-schedule, 20260923_858_drift-adoption-protective-stop-followup, 20260925_833_software-stop-close-backoff, 20260924_934_working-entries-in-decision-input, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_938_guard-tracker-completion-and-close-failed-count, 20260925_943_cross-service-read-contracts, 20260925_936_most-protective-stop-line, 20260925_876_forgone-decision-never-redispatched, 20260925_957_monitor-position-row-tolerance, 20260925_942_drift-followup-abandoned-alert, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_833_protective-stop-optimistic-concurrency, 20260925_842_s3-audit-followups, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_832_rescreen-idempotency, 20260925_957_cross-service-read-contracts-rest, 20260925_826_stop-method-audit-followups, 20260925_843_report-period-keys-projection, 20260925_957_cross-service-read-contracts-c, 20260925_990_status-nullable-daily-amount, 20260925_984_audit-free-text-linear-redaction, 20260925_871_discord-drift-adopt, 20260925_952_cross-service-read-contract-guard, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_997_grpc-stage2-risk-read, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20260926_1015_watchlist-driven-finnhub-symbols, 20260926_1028_report-kb-reingest, 20260926_1039_policy-confirmed-reply-guidance, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260926_1044_monitor-replace-residuals, 20260926_826_stop-method-audit-residuals, 20260927_1051_release-gate-per-trading-env, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_1063_grpc-read-latent-residuals, 20260927_1067_grpc-owner-gate-bot-azp, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260929_1093_guard-position-query-retry, 20260929_1099_finnhub-estimate-log-wording, 20260929_1093_stagger-startup-position-queries, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1108_t786-otel-collect-race, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20260930_1118_daily-volume-from-kline, 20261001_1130_held-add-on-before-llm, 20261001_1133_finnhub-timeout, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1136_retro-stop-floor, 20261001_1134_watchlist-no-fallback, 20261001_1148_redact-retmsg-account-id, 20261001_1138_kb-market-docs-topk, 20261001_1132_finnhub-request-estimate, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261001_1129_policy-exit-numeric, 20261001_1139_stage0-decision-volume, 20261002_1156_report-unsupplied-inputs, 20261002_1111_decision-final-failure-record, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query, 20261003_1122_atr14-stop-floor, 20261003_1164_position-query-classification-single-entry, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261006_1156_report-regenerate, 20261006_1182_report-regenerate-present-notice, 20261007_1187_close-decision-stop-distance-optional, 20261007_1189_dedupe-quote-per-cycle, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1175_take-profit-unreached-explicit, 20261007_1192_aspnetcore-env-production]
+issues: [#204, #329, #330, #331, #332, #333, #334, #340, #342, #344, #364, #374, #381, #387, #417, #419, #420, #424, #428, #459, #463, #465, #470, #564, #634, #686, #809, #819, #820, #821, #829, #844, #846, #847, #848, #849, #852, #864, #869, #879, #890, #902, #833, #899, #857, #891, #909, #21, #858, #934, #935, #941, #938, #943, #936, #876, #957, #942, #948, #842, #880, #958, #832, #826, #843, #990, #984, #871, #952, #823, #937, #753, #997, #1002, #853, #967, #1000, #1010, #1006, #1013, #1016, #1024, #1025, #1030, #1015, #1028, #1039, #1022, #856, #1044, #1051, #1034, #1049, #1059, #1061, #1063, #1065, #1067, #1093, #1099, #1104, #1105, #1108, #1114, #1113, #1120, #1121, #1118, #1130, #1133, #1131, #1135, #1136, #1134, #1148, #1138, #1132, #1140, #1129, #1139, #1156, #1111, #1048, #1122, #1164, #1169, #1182, #1187, #1189, #1175, #1176, #1192, planning#703, planning#704, planning#702, planning#711]
 -->
 
 
@@ -5590,3 +5590,151 @@ T-10-2245〜T-10-2249・T-10-2251・T-10-2252 は `ScheduledCycleRedeliveryTests
 - 予算の判定は確定時点の保有で数える。後から監視銘柄の外の銘柄を保有すると、巡回は判定より多く照会する（重なる保有を 2 回数えていたぶんの余裕が無くなった）。超えた巡回はトークンバケットが待たせるだけで要求を落とさず、巡回と損切りの判定が遅れる（超えた 1 要求あたり約 5 秒）。
 - 重なる銘柄が取れなかった巡回では、従来の 2 回目の照会で偶然取れていた急変の検知も飛ばす（次の巡回で取り直す）。
 - 稼働での確認（配備後に `/policy` で 5 銘柄を足し直して適用されること・1 巡回の照会が和集合の数になること）は本節の試験では確かめられない。
+
+## 最小の名目額に満たない新規建ての見送りと、判断由来の決済（利確）の後の同日・同方向の再エントリー禁止
+
+稼働中に、利確で全量を売った 5 分後に同じ銘柄をほぼ同じ価格で買い直す事象（NVDA・AMZN）と、段階資金の残枠が小さくなった状態で equity の約 0.45% の
+極小の新規建て（AAPL 13 株 @334.11）が実測された。利用者の裁定により、(1) サイジングの結果の名目額が equity の 1%（構成で変えられる）に満たない新規建ては
+見送り、(2) 判断由来の決済（利確・判断の手仕舞い）で手仕舞った銘柄は、その市場の現地取引日のうち同じ方向の新規建てを審査で止める。
+
+(1) はサイジング（取引判断サービス）で判定する。名目額は「1 注文上限・段階残枠・日次残枠の最小」を超えないため、保有 0・未約定なしの銘柄でこの上限が最小に
+届かなければ LLM を呼ばずに見送る。(2) は損切りの後の同日・同方向の統制と同じ形の別の統制で、審査が判断を承認した承認イベントの印を取引台帳が由来として残し、
+その由来の決済が当日にあれば同じ方向の新規建てを別の理由で拒否する。新規建ての可否の読み取り口も同じ理由を返す。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2310** | equity 100,000・しきい値 1%。名目額 999.99／1,000／1,000.01。AAPL 13 株 @334.11・equity 970,000 | 最小を割るかを判定する／上限（1 注文・残枠）が最小に届くかを判定する | 999.99 だけが割る（ちょうどは通す）。13 株（4,343.43）は最小 9,700 を割る。上限が 999 なら届かず、1,000 なら届く。しきい値 0 は常に割らない | 「1% 未満」の境界 | 自動 |
+| **T-10-2311** | 構成の未設定・空・0〜0.25・負・0.25 超・数値でない・「1%」 | 起動時に読む | 未設定・空は既定 0.01、範囲内はその値、それ以外は例外（起動を止める）。既定値は全体前提条件の既定値と並べて固定する（1 注文上限 25% 未満） | 誤設定を黙って既定へ倒さない | 自動 |
+| **T-10-2312** | equity 100,000・残枠 1,500（最小以上）・価格 999.99／1,000／1,000.01 で 1 株。equity 970,000・残枠 9,800・価格 334.11 で 29 株 | 判断を回す | 999.99 は判断後の見送り（`SizedBelowMinimumNotional`・判断後の見送りの記録あり）、1,000 と 1,000.01 は 1 株の発注意図。29 株（9,689.19）は LLM の後に見送る | 統制の本体はサイジングの後 | 自動（**否定形・最重要**） |
+| **T-10-2313** | AAPL の実例（equity 970,000・段階残枠 4,500）。保有 0・未約定なし／保有 10／未約定あり／資金または残枠が未供給／しきい値 0／しきい値 0.4% | 判断を回す | 保有 0・未約定なしは LLM を呼ばず `EntryCapacityBelowMinimumNotional`（LLM を呼ぶ前の見送りの記録 1 件・判断後の見送りなし）。構成を渡さなくても既定 1% で効く。保有中・未約定ありは LLM を呼んで `SizedBelowMinimumNotional`。未供給は LLM を呼んで従来どおり数量 0。しきい値 0 と 0.4% は 13 株の発注意図 | LLM の前に省くのは結論に依らず見送るときだけ | 自動 |
+| **T-10-2314** | 保有 13 株（約 0.45%）。LLM が利確の売り／Hold | 判断を回す | 売りは全量 13 株の決済の発注意図（名目額で止めない）。Hold は従来どおり | 手仕舞いは止めない | 自動（**否定形**） |
+| **T-10-2315** | 当日にロング（またはショート）を判断で決済した。AMZN を 17:34:50Z に利確し 17:39:56Z に買い直す | 射影する／同じ方向・反対方向の新規建てと決済を審査する | 売りの決済はロング側、買いの決済はショート側に立ち、同じ方向の新規建てだけが `DecisionExitSameDay`（単独）で拒否される。反対方向・決済は止めない。翌取引日・別市場は数えない | 同じ方向に限る | 自動 |
+| **T-10-2316** | 米国株（夏時間 UTC−4・冬時間 UTC−5・夏時間の終わりを跨ぐ日）・日本株 | 当日の判定 | 米国東部の暦日で区切る（JST の日付が変わっても解けない。夏時間は 04:00Z、冬時間は 05:00Z で解ける）。日本株は JST の暦日（15:00Z で解ける） | 市場の現地取引日 | 自動 |
+| **T-10-2317** | 当日の S1・S0・保護喪失・利用者の手仕舞い・由来なしの決済 | 射影する／審査する | 本統制では数えない。損切りの射影は判断由来の決済を数えない。損切りと判断由来の決済が並べば両方の名前が審査の到達順に並ぶ | 理由を混ぜない | 自動（**否定形**） |
+| **T-10-2318** | 判断の決済の承認だけ（約定なし）／部分約定（約定 2 行）／承認は前日・約定は当日／承認・約定とも前日 | 射影する | 前 3 つは数え、最後は数えない | 約定を待たない | 自動 |
+| **T-10-2319** | 新規建ての可否の口と審査を、損切り・判断由来の決済（両方向の有無）・建玉数・kill switch ほかの全組み合わせで比べる | 判定する | 口の答えは審査の拒否と一致する（健全性・完全性）。判断由来の決済は同じ方向だけを塞ぎ、損切りと別の名前で返す。プロンプトの理由の日本語名は 8 理由を並びのまま書く | 規則は 1 か所 | 自動 |
+| **T-10-2320** | 本番の構成（`Program.cs`）。判断の決済を本番の購読で審査し、その承認を本番の構成へ流す。別の銘柄は利用者の手仕舞い（印の無い承認）で流す | 同じ銘柄・別の銘柄の買いを審査し、口を読み、判断イベントの購読を通す | 承認に判断由来の印が立ち、台帳に判断由来として残る。同じ銘柄の買いは `DecisionExitSameDay` だけで拒否され計器に名前で出る。利用者の手仕舞いの銘柄の買いは承認される。口はロング側だけに同じ理由を返す。単体の購読でも印が由来へ写る | 配線 | 自動 |
+| **T-10-2321** | 判断由来の決済の承認と約定を書いた後、別の DB 接続で読む | 決済の承認を読み、2 つの射影へ渡す | 由来は判断由来のまま返り、判断由来の決済の射影はロング側、損切りの射影は無し | 再起動で消えない | 自動 |
+| **T-10-2322** | 拒否理由・承認行の由来・見送りの語彙・LLM を呼ぶ前の見送りの語彙 | 序数・分類・数を確かめる | `DecisionExitSameDay` は序数 32・クラス A、判断由来の承認は序数 4。見送りの語彙は 17 値（末尾は `SizedBelowMinimumNotional`）、LLM を呼ぶ前は 6 値（末尾は `EntryCapacityBelowMinimumNotional`）で、同名の写像が成り立つ | 末尾へ足す | 自動 |
+| **T-10-2335** | 日本株（JPY）・換算レート 0.0064（約 1/156）・equity 100,000 USD（1%＝1,000 USD）・残枠 1,500 USD。1 株 ¥156,249／¥156,250 | 判断を回す | ¥156,249（999.9936 USD）は判断後の見送り（`SizedBelowMinimumNotional`）、¥156,250（1,000 USD ちょうど）は 1 株の発注意図（価格は円のまま・基準通貨の名目額 1,000） | 名目額は基準通貨へ換算して比べる | 自動（**否定形**） |
+| **T-10-2336** | equity 100,000・保有 0・未約定なし。段階残枠 1,000（最小ちょうど）／段階残枠 5,000・日次残枠 900 | 判断を回す | 最小ちょうどは LLM を呼び、1 株 @1,000 の発注意図になる。日次だけが最小に届かなければ LLM を呼ばずに `EntryCapacityBelowMinimumNotional` | LLM の前の下界は「満たない」、上限は段階・日次の小さい方 | 自動 |
+| **T-10-2337** | 判断由来の印（`FromTradeDecision`）を持たない旧い承認の本文／印つきの承認 | 読む・JSON を往復する | 旧い本文は判断を経ない承認（false）として読め、印つきは true を保つ。明示しない承認は false | 旧いメッセージを判断由来と読まない | 自動 |
+
+試験の置き場所: T-10-2310 は `MinimumEntryNotionalTests`、T-10-2311 は `TradingDefaultsTests`・`MinimumEntryNotionalTests`・`MinimumEntryNotionalOptionsLoaderTests`、
+T-10-2312〜T-10-2314 は `MinimumEntryNotionalDecisionTests`（判断サービスの端から端）と見送りの表（`DecisionSkipReasonTests`・`DecisionHeldReportTests`）、
+T-10-2315〜T-10-2318 は `DecisionExitProjectionTests`・`DecisionExitReentryEvaluationTests`、T-10-2319 は `EntryStateBlockersTests`（T-10-1782 の全組み合わせに次元を足した）と
+`HeldAddOnBlockersTests`、T-10-2320 は `DecisionExitReentryWiringTests`・`PortfolioLedgerConsumersTests`、T-10-2321 は `LedgerCloseApprovalsTests`、
+T-10-2322 は序数・分類の試験（`RejectionReasonOrdinalStabilityTests`・`RejectionReasonClassificationTests`・`ApprovalSourceTests`）と語彙の試験（`DecisionSkipReasonTests`・`DecisionHeldReportTests`・`LedgerGapEventsTests`）、
+T-10-2335・T-10-2336 は `MinimumEntryNotionalDecisionTests`、T-10-2337 は `OrderApprovedFromTradeDecisionContractTests`。
+
+**変異で確かめたこと**（実装のコミットに対して 1 本ずつ当て、関係するサービスの試験を全件走らせ、`git checkout` で戻した。リスク管理 2,211 件・取引判断 1,522 件）:
+
+| 変異 | 内容 | 赤になる試験（落ちた数） |
+| --- | --- | --- |
+| M1 | 名目額の比較を「以下」にする（ちょうど 1% を見送る） | T-10-2310（2）・T-10-2312（1） |
+| M2 | 🔴 サイジングの後の判定を外す | T-10-2312（2）・T-10-2313（2）・見送りの表（2） |
+| M3 | LLM の前の下界を外す | T-10-2313（1）・見送りの表（1） |
+| M4 | 🔴 LLM の前の下界で保有 0・未約定なしの条件を外す（保有中でも省く） | T-10-2313（2）・T-10-2314（2）・見送りの表（2）と既存の決済・観測の試験（2） |
+| M5 | しきい値の範囲検査を外す | T-10-2311（リスク管理 3・取引判断 4） |
+| M6 | 判断由来の決済の射影で方向を反転する | T-10-2315（1）・T-10-2316（5）・T-10-2318（1）・T-10-2320（1）・T-10-2321（1） |
+| M7 | 当日の判定を UTC の日付にする | T-10-2316（4） |
+| M8 | 🔴 審査で判断由来の決済の理由を評価しない | T-10-1782（1）・T-10-2315（2）・T-10-2317（1）・T-10-2320（1） |
+| M9 | 口に判断由来の決済を足さない | T-10-1782（1）・T-10-2319（1）・T-10-2320（1） |
+| M10 | 🔴 台帳の由来を常に判断を経ない承認で書く（印を無視） | T-10-2320（2） |
+| M11 | 審査が判断由来の印を立てない | T-10-2320（1） |
+| M12 | 射影が利用者の手仕舞いも数える | T-10-2317（1）・T-10-2320（1）と既存の損切りの回帰試験（1） |
+| M13 | 射影が約定だけで数える（承認を見ない） | T-10-2315（1）・T-10-2316（5）・T-10-2318（1）・T-10-2320（1） |
+| M14 | 口が判断由来の決済を供給しない | T-10-2320（1） |
+| M15 | 審査が判断由来の決済を供給しない | T-10-2320（1） |
+| M16 | 🔴 サイジングの後の名目額を換算前の価格（数量 × 現地通貨の参照価格）で数える | T-10-2335（1） |
+| M17 | LLM の前の下界を「以下」にする（最小ちょうどの上限で LLM を呼ばない。サイジングの後の判定は変えない） | T-10-2336（1） |
+| M18 | LLM の前の下界を段階残枠だけで読む（日次残枠を見ない） | T-10-2336（1） |
+
+15 本すべて赤（生存 0）。独立監査の後に足した M16〜M18 は、`MinimumEntryNotionalDecisionTests` を走らせて 3 本とも赤（生存 0）。
+
+🔴 **本節が固定していない残余リスク**:
+- 導入前に記録された当日の判断由来の決済は数えない（利用者の手仕舞いと区別できない）。導入の取引日だけの取りこぼしである。
+- 疑似の検証（Stage 0 の記録）・バックテストは本節の 2 統制を再現しない。
+- しきい値は equity に対する 1 つの比率で、市場・段階では分けない。
+- 稼働での確認（同じ形の買い直し・極小の新規建てが、見送り・拒否として計器と監査台帳に名前で出る）は本節の試験では確かめられない。
+## 配備の環境名を Production にし、未処理例外の応答を ProblemDetails に固定する（要求ヘッダー・スタックを返さない）
+
+Helm チャートが全 Worker の環境名を Development に固定しており、例外時に ASP.NET Core の開発者向け例外ページが要求の
+`Authorization: Bearer` とスタックを応答へ載せた（運用のチャットへトークンが流れた）。チャートは環境名を values（既定 Production）から描き、
+Development は描画で止める。コードは環境名に依らず、全サービスの共通ミドルウェアの先頭で未処理例外を ProblemDetails に写す。
+付随して、監視銘柄の追加・削除の要求の `market` は列挙名の文字列も受ける。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2350** | 共通の例外処理を入れた最小のホスト（Development／Production）。例外メッセージに目印を混ぜた端点 | 実行時に組み立てた非秘密の目印を `Authorization` に載せて呼ぶ | 500・`application/problem+json`。本文に目印・`Authorization`・例外メッセージ・型名・スタック（`   at `）を含まない（対照: 例外処理を入れない Development は目印を返す） | エラー応答は要求ヘッダーもスタックも返さない（環境名に依らない） | 自動（**否定形**） |
+| **T-10-2351** | 同上（Development） | 型の違う JSON を本文に送る（束縛失敗＝`BadHttpRequestException`） | 400 の ProblemDetails・目印とスタックを含まない | 束縛失敗の状態を 500 にすり替えない | 自動 |
+| **T-10-2352** | 例外処理を入れていないホスト／共通ミドルウェアを通したホスト | 共通の終端が導入を確かめる | 前者は起動を止める（例外）・後者は止めない | 付け忘れたサービスを黙って稼働させない | 自動（**否定形**） |
+| **T-10-2353** | 市場監視の実 Program.cs（Production／Development）。監視銘柄の保存が例外を投げる | 所有者として `GET /monitor/watchlist`（`Authorization` に目印） | 500 の ProblemDetails。目印・例外メッセージ・型名・スタックを含まない | 代表サービスの実パイプラインで同じ | 自動（**否定形**） |
+| **T-10-2354** | 市場監視（試験環境） | `market` を `"UnitedStates"`・`"unitedstates"`・`1` で追加し、`"UnitedStates"` で削除する | すべて 200。読み取りの `market` は数値 1 のまま | 文字列も数値も受け、読み取り口の数値の契約（T-10-931）は変えない | 自動 |
+| **T-10-2355** | 同上 | `market` を `"Mars"` で追加する | 400・監視銘柄へ足さない | 未知の市場名を黙って既定へ倒さない | 自動（**否定形**） |
+| **T-10-2356** | Helm チャート（既定・経路B・全フラグ ON） | 描画する／`global` やサービス単位で `Development`（大小無視）を指定して描画する／`Staging` を指定して描画する | 全 Worker（11 件）が `Production`・`Development` の指定は描画が失敗・`Staging` の上書きは効く | 配備で開発者向けの挙動を取らない | 自動（CI の描画検査。**否定形**） |
+| **T-10-2357** | 同上 | 既定・経路B を描画する | 経路B は全 Worker に `Serilog__MinimumLevel__Default=Debug`、本番既定は描かない。情報収集の `Collection__PollIntervalSeconds=300` は両方で描く | Development でしか読まれなかった値で経路B が要るものを黙って失わない（巡回 300 秒＝鮮度の上限 600 秒の前提） | 自動（CI の描画検査） |
+
+試験の置き場所: T-10-2350〜T-10-2352 は `ExceptionHandlingTests`（`AiStockTrading.TestSupport.PlatformShim.Tests`）、T-10-2353〜T-10-2355 は
+`WatchlistErrorResponseAndMarketNameTests`（`MarketMonitorService.Tests`）、T-10-2356・T-10-2357 は `.github/workflows/helm.yml` の
+「Assert ASPNETCORE_ENVIRONMENT is never Development」。
+
+
+**変異で確かめたこと**（各変異で対応する試験クラス・描画検査を走らせた）:
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| E1 | 🔴 例外処理の委譲を入れない（印だけ立てる） | T-10-2350（2 件）・T-10-2351・T-10-2353（2 件） |
+| E2 | 🔴 共通ミドルウェアから例外処理を外す | T-10-2352・T-10-2353〜T-10-2355（市場監視は起動で止まり全件） |
+| E3 | 🔴 共通の終端から付け忘れの表明を外す | T-10-2352 |
+| E4 | 付け忘れの表明を常に通す | T-10-2352 |
+| E5 | 状態を常に 500 にする | T-10-2351 |
+| E6 | 🔴 例外の全文（型・メッセージ・スタック）を `detail` に載せる | T-10-2350（2 件）・T-10-2351・T-10-2353（2 件） |
+| E7 | 🔴 要求ヘッダーを応答へ写す | T-10-2350（2 件）・T-10-2351・T-10-2353（2 件） |
+| E8 | `market` の変換器を外す | T-10-2354 |
+| H1 | 🔴 チャートの `Development` の拒否を外す | T-10-2356 |
+| H2 | 拒否を大小区別にする | T-10-2356（`development` の陰性対照） |
+| H3 | 既定の環境名を Production 以外にする | T-10-2356 |
+| H4 | 経路B の巡回 300 秒を落とす | T-10-2357 |
+| H5 | 経路B の Debug を落とす | T-10-2357 |
+| H6 | 本番既定に Debug を入れる | T-10-2357 |
+
+15 本すべて赤（生存 0）。E3 は当初生き残り（表明の関数を直接呼ぶだけだった）、終端そのものを呼ぶ形へ T-10-2352 を改めて赤にした。
+
+**独立監査を受けた追加**: 認証・認可を明示しないサービスでは `WebApplication` がそれらを例外処理の**外側**へ自動で挿入するため、
+認証スキームの例外（Keycloak 不達時の JwtBearer の鍵取得失敗など）が例外処理を素通りし、Development（docker-compose）では開発者向けページが
+`Authorization` ごと応答した（情報収集が該当）。あわせて、Production 化で外れた DI の起動時検証を全環境で有効にし、チャートの `extraEnv` による
+環境名の抜け道と、`market` の曖昧な文字列（ビット和・空白・数字）を塞いだ。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2358** | 最小のホスト（Development）。認証のたびに投げる認証スキームを既定にする。例外処理の直後に `UseAuthentication`・`UseAuthorization` を明示（情報収集の形） | 目印を `Authorization` に載せて認可つきの端点を呼ぶ | 500・`application/problem+json`。目印・`Authorization`・例外メッセージ・スタックを含まない（対照: 認証を明示しないと開発者向けページが目印を返す） | 認証スキームの例外も例外処理の内側で受ける | 自動（**否定形**） |
+| **T-10-2359** | 同上。共通ミドルウェア（8 サービスの形）を通す | 同上 | 同上 | 共通ミドルウェアの並び（例外処理 → 認証 → 認可）を崩さない | 自動（**否定形**） |
+| **T-10-2360** | 認証・認可を登録した最小のホスト | `UseAuthentication`・`UseAuthorization` を呼ぶ | 呼ぶ前は印が無く、呼んだ後は ASP.NET Core の印（`__AuthenticationMiddlewareSet`・`__AuthorizationMiddlewareSet`）が在る | 表明が拠り所にする内部の印の名前を実測で固定する | 自動 |
+| **T-10-2361** | 認証を登録して明示しないホスト／認可だけ明示しないホスト／認証を先に入れてから例外処理を呼ぶホスト／明示したホスト・認証を登録しないホスト | 共通の終端（または表明）を通す・例外処理を入れる | 前 3 者は起動前に止まる（例外）・後 2 者は止まらない | 例外処理の外側に入る認証を黙って稼働させない | 自動（**否定形**） |
+| **T-10-2362** | Production のホスト。singleton が scoped を捕まえる誤配線 | DI 検証の有無で組み立てる・共通の終端の表明を通す | 検証なしは組み立てられ表明（共通の終端そのものを含む）が止める、検証ありは組み立ての時点で止まる、誤配線が無く導入が揃えば終端は正常に終わる | DI 検証を環境名に依らず有効にし、付け忘れを黙って稼働させない | 自動（**否定形**） |
+| **T-10-2363** | 情報収集の実 Program.cs（Development）。投げる認証スキームを既定にする | 目印を `Authorization` に載せて `POST /internal/collection/run-once` | 500 の ProblemDetails。目印・`Authorization`・例外メッセージ・スタックを含まない | 共通ミドルウェアを使わないサービスの実パイプラインで同じ | 自動（**否定形**） |
+| **T-10-2364** | 市場監視（試験環境） | `market` を `"Japan, UnitedStates"`・`"Japan,UnitedStates"`・前後に空白・`"1"`・`""`・`99`・`1.5`・`null`・`true` で追加する／`0`・`"JAPAN"` で追加・省略する | 前者はすべて 400 で足さない。`0` と `"JAPAN"` は 200（読み取りは数値 0）、省略は 400 | 文字列は列挙名そのもの（大小無視）だけを受け、数値の扱いは変えない | 自動（**否定形**） |
+| **T-10-2365** | Helm チャート（既定・経路B） | サービスの `extraEnv` に `ASPNETCORE_ENVIRONMENT`（大小無視）・`DOTNET_ENVIRONMENT` を値に依らず足して描画する | 描画が失敗し、理由に `extraEnv` の名前が出る | 環境名を `extraEnv` の後勝ちで戻させない | 自動（CI の描画検査。**否定形**） |
+
+試験の置き場所: T-10-2358〜T-10-2362 は `ExceptionHandlingAuthenticationTests`（`AiStockTrading.TestSupport.PlatformShim.Tests`）、
+T-10-2363 は `AuthenticationExceptionProblemDetailsTests`（`InformationCollectionService.Tests`）、T-10-2364 は
+`WatchlistErrorResponseAndMarketNameTests`（`MarketMonitorService.Tests`）、T-10-2365 は `.github/workflows/helm.yml` の
+「Assert ASPNETCORE_ENVIRONMENT is never Development」。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| A1 | 🔴 共通ミドルウェアで例外処理を `UseAuthorization` の後ろへ動かす | T-10-2359・T-10-2361・T-10-2352（順序の表明が呼び出し時に止める） |
+| A2 | 🔴 A1 ＋ 順序の表明を外す | T-10-2359（応答が ProblemDetails でなくなる）・T-10-2361 |
+| A3 | 🔴 情報収集の `UseAuthentication`・`UseAuthorization` を外す | T-10-2363（起動前に止まる） |
+| A4 | 🔴 A3 ＋ 終端の認証の表明を外す | T-10-2363（応答が ProblemDetails でなくなる） |
+| A5 | 終端の DI 検証の表明を外す | T-10-2362 |
+| A6 | DI 検証の `ValidateOnBuild` を外す | T-10-2362 |
+| A7 | `market` の変換器を `JsonStringEnumConverter` へ戻す | T-10-2364（ビット和・空白・数字の文字列） |
+| A8 | 🔴 チャートの `extraEnv` の拒否を外す | T-10-2365 |
+
+8 本すべて赤（生存 0）。A5 は当初生き残り（表明の関数を直接呼ぶだけだった）、共通の終端そのものを通す形へ T-10-2362 を改めて赤にした。
+
+🔴 **本節が固定していない残余リスク**:
+- `WebApplication` が利用者のミドルウェアの外側に自動で挿入するルーティングの例外は委譲が受けない（配備は Production でページ自体が無い）。docker-compose（Development）だけの残余で、認証・認可は上の追加で内側へ入った。
+- 稼働での確認（配備後に全 Worker の環境名が Production であること・文字列の `market` で監視銘柄を足せること）は本節の試験では確かめられない。

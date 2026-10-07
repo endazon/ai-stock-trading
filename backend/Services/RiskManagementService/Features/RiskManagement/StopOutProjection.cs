@@ -13,7 +13,8 @@ namespace RiskManagementService.Features.RiskManagement;
 //   | SoftwareStopS1        | 数える   | 承認（＝発動）または約定の時刻が当日          |
 //   | ProtectiveStopS0      | 数える   | **約定**の時刻が当日（武装しただけでは数えない）|
 //   | ProtectionLostClose   | 数えない | —                                              |
-//   | OrderApproved         | 数えない | —（判断由来・owner の手仕舞い・維持率の自動縮小）|
+//   | OrderApproved         | 数えない | —（owner の手仕舞い・維持率の自動縮小）        |
+//   | TradeDecision         | 数えない | —（判断由来の決済。#1176 / IADR-0495 の DecisionExitProjection が別の理由で数える）|
 //   | null（記録されていない）| **不明** | 承認または約定の時刻が当日                    |
 //
 // 当日は**その市場の現地取引日**（TradingDay.Of。米国株は米国東部の暦日。夏時間は TimeZoneInfo が吸収）。

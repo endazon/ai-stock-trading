@@ -15,7 +15,8 @@ public static class RiskEvaluator
         ShortSellOrderContext? shortSellContext = null,
         StageProductPolicy.StageReleaseContext? stageRelease = null,
         BuyInBanSupply? buyInBan = null,
-        StopOutReentrySupply? stopOuts = null)
+        StopOutReentrySupply? stopOuts = null,
+        DecisionExitReentrySupply? decisionExits = null)
     {
         var reasons = new List<RejectionReason>();
         // FR-10, FR-19, IADR-0004: エントリー判定は建玉効果（PositionEffect）で行う。売買方向（Side）ではない。
@@ -208,6 +209,15 @@ public static class RiskEvaluator
         if (isEntry && stopOuts is { } stopOut && EntryStateBlockers.StopOut(stopOut, intent.Side) is { } stopOutReason)
         {
             reasons.Add(stopOutReason);
+        }
+
+        // FR-10, #1176, IADR-0495 決定3: **判断由来の決済（利確・判断の手仕舞い）で手仕舞った銘柄は、その取引日のうちは同じ方向の
+        // 新規建てをしない**（オーナー裁定 2026-10-07。損切りの統制と同じ形・別の理由）。方向は建玉の方向（ForEntry）で、反対方向は止めない。
+        // **手仕舞い（Close）は止めない**（isEntry の短絡）。decisionExits が null（＝この呼び出し元は供給していない）なら評価しない。
+        // 本番の呼び出し元（OrderScreeningService）は新規建てで**常に**供給する。
+        if (isEntry && decisionExits is { } exits && EntryStateBlockers.DecisionExit(exits, intent.Side))
+        {
+            reasons.Add(RejectionReason.DecisionExitSameDay);
         }
 
         // FR-19, #375, ADR-0021 決定4-2/決定4-3: **現金口座でのみ**加わる 2 統制。

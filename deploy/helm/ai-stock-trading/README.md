@@ -212,7 +212,7 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   サイクルの上限（90 秒 × 前提 ＋ 60 秒）の上界が崩れていた。12 で上限は 1,140 秒。**12 を超えて上げない** —— 上限が情報収集の巡回間隔より長いときは
   次の起点が先読みされたまま待ち（鮮度の上限までは判断される）、配信から ack まで最大「鮮度の上限 ＋ 上限」秒になるので、これを RabbitMQ の
   `consumer_timeout`（既定 1,800 秒）未満に収める（上限が巡回間隔以下なら、上限 ＜ `consumer_timeout` でよい）。経路B は巡回 300 秒・鮮度の上限 600 秒
-  （情報収集の `appsettings.Development.json` 由来。#1192 で Production へ切り替えるときは `Collection__PollIntervalSeconds=300` を明示する予定）なので前者で、
+  （情報収集の env `Collection__PollIntervalSeconds=300` で明示。#1192 で Production へ切り替えた。以前は `appsettings.Development.json` 由来）なので前者で、
   13 では 1,830 秒となり超える。この上限は 1 回の試行についてで、共通のエラー方針（2 秒・10 秒・30 秒の再試行。同じ配信の中で行う）の連鎖全体は
   数えていない（既知の穴。連鎖全体の起動時の検査は #1194）。13 件以上にするなら LLM の timeout・票数から引き直す（手順は運用手順書「定時サイクルの実行時間の上限」）。
   **本番既定（values.yaml）には置かない**（10 件を超えた実績が無い。helm.yml の描画検査が混入を止める）。
@@ -695,6 +695,22 @@ scripts/k8s-local-deploy.sh
 > **旧 `overlay-cycle.yaml` は不要**: MSP 側ホストの臨時 overlay（`microservices-platform/overlay-cycle.yaml`）を
 > `helm upgrade -f overlay-cycle.yaml` で手当てする従来運用は、本プロファイルの committed 化により**不要**になった
 > （overlay には #236 の価格文脈が欠けていた点も本プロファイルで解消済み）。overlay ファイルの物理削除は任意。
+
+## 実行環境名（`ASPNETCORE_ENVIRONMENT`）は Production（#1192 / [IADR-0496](../../../.ai-context/adr/IADR-0496_aspnetcore-environment-production-and-problem-details.md)）
+
+- 全 Worker の `ASPNETCORE_ENVIRONMENT` は `services.<name>.aspnetcoreEnvironment` ＞ `global.aspnetcoreEnvironment`（既定 `Production`）の順で決まる。
+  🔴 **`Development`（大小無視）は描画で止まる**（`helm template` / `helm upgrade` が失敗する）。以前は固定値 `Development` で、例外時に
+  ASP.NET Core の開発者向け例外ページがスタックと**全要求ヘッダー（`Authorization: Bearer`）**を応答へ載せていた。
+  **`extraEnv` に `ASPNETCORE_ENVIRONMENT` / `DOTNET_ENVIRONMENT`（名前の大小無視・値に依らず）を書いても描画で止まる**（#1205 監査。
+  同名 env は後ろが勝つため、以前は上の検査を素通りして環境名を戻せた）。環境名は `aspnetcoreEnvironment` でだけ与える。
+- Production では `appsettings.Development.json` が読まれない。経路B（`values-local.yaml`）が従来その値で動いていたものは明示の設定へ移した:
+  - `global.serilogMinimumLevel: Debug` → 全 Worker に `Serilog__MinimumLevel__Default=Debug`（本番既定は空＝描かない＝`Information`）。
+  - `Collection__PollIntervalSeconds: "300"`（情報収集の巡回 300 秒。`values.yaml`・`values-local.yaml` の両方。コード既定は 1800 秒）。
+    巡回間隔の 2 倍が定時サイクルの鮮度の上限（600 秒）になる。
+  - それ以外の `appsettings.Development.json` の値は、描画される env が上書きしているかコード既定と同値である（棚卸しの全件は IADR-0496）。
+- 未処理例外の応答は全サービスで ProblemDetails（`type`・`title`・`status`・`traceId` だけ）。要求の束縛失敗（JSON の型違い等）は本文なしの 400。
+  原因は Pod のログ（`traceId` で突き合わせる）で見る。
+- 一時的に詳しいログが要るときは、そのサービスの `extraEnv` へ `Serilog__MinimumLevel__Default` を足す（環境名は変えない）。
 
 ## 外部連携（fail-safe 既定）
 

@@ -249,4 +249,21 @@ public enum RejectionReason
     /// <para>**序数は 31（末尾追加）で不変**（IADR-0134 決定2）。</para>
     /// </summary>
     StopOutStatusUnknown,
+
+    /// <summary>
+    /// FR-10, #1176, IADR-0495: <b>その取引日のうちに判断由来の決済（利確・判断の手仕舞い）で手仕舞った銘柄へ、同じ方向の新規建てを
+    /// しようとした。</b>
+    /// <para>
+    /// 「判断由来の決済」は発注前審査が取引判断（<c>TradeDecisionMade</c>）を承認した決済だけを数える（承認行の由来
+    /// <c>TradeDecision</c>）。損切り（S0 / S1）は <see cref="StoppedOutSameDay"/> が別の理由で止め、owner の手仕舞い・維持率割れの
+    /// 自動縮小・保護喪失の成行手仕舞いは数えない。利益か損失かは問わない（裁定が「利確（判断由来の決済）」と括った）。
+    /// 区切りは<b>市場の現地取引日</b>（<c>TradingDay.Of</c>）。反対方向の新規建ては止めない。
+    /// </para>
+    /// <para>
+    /// 由来が記録されていない当日の決済は <see cref="StopOutStatusUnknown"/> が既に同じ方向を止めているため、本理由に不明の対は無い。
+    /// </para>
+    /// <para><b>手仕舞い（Close）は止めない。</b>クラス分類は<b>クラス A</b>（統制が設計どおり作動した記録）。</para>
+    /// <para>**序数は 32（末尾追加）で不変**（IADR-0134 決定2）。</para>
+    /// </summary>
+    DecisionExitSameDay,
 }

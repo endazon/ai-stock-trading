@@ -84,17 +84,18 @@ public sealed class OrderScreeningService(
         // **新規建てのときだけ読む**——手仕舞い（Close）は判定対象外であり、台帳の読み取りの失敗が
         // 手仕舞いの審査を巻き込まないようにする（ADR-0009）。読み取りが例外で終われば新規建ての審査も例外で終わり、
         // 承認は出ない（fail-closed）。
-        var stopOuts = isEntry
-            ? StopOutProjection.Project(
-                ledger.GetCloseApprovals(intent.Symbol, intent.Market, clock.UtcNow - StopOutProjection.Lookback),
-                intent.Market,
-                clock.UtcNow)
+        // FR-10, #1176, IADR-0495 決定3: 同じ決済の読み取りから当日の判断由来の決済（利確・判断の手仕舞い）も射影する
+        // （読み取りは 1 回。新規建てだけ読む規律も同じ）。
+        var closes = isEntry
+            ? ledger.GetCloseApprovals(intent.Symbol, intent.Market, clock.UtcNow - StopOutProjection.Lookback)
             : null;
+        var stopOuts = closes is null ? null : StopOutProjection.Project(closes, intent.Market, clock.UtcNow);
+        var decisionExits = closes is null ? null : DecisionExitProjection.Project(closes, intent.Market, clock.UtcNow);
 
         // 判定コア（決定的）を実行し、違反理由を集約する。
         var result = RiskEvaluator.Evaluate(
             intent, settings, snapshot, patternDetector,
-            shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts);
+            shortSellContext: shortSellContext, buyInBan: buyInBan, stopOuts: stopOuts, decisionExits: decisionExits);
         var reasons = new List<RejectionReason>(result.Reasons);
 
         // 日次損失上限に「新規到達」したら当日ロックアウトを設定する（翌営業日まで）。
@@ -134,7 +135,9 @@ public sealed class OrderScreeningService(
         return ScreeningOutcome.Approve(
             new OrderApproved(
                 decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow,
-                decision.CycleTrigger, decision.CycleStartedAt, settings.StopLossMethod),
+                decision.CycleTrigger, decision.CycleStartedAt, settings.StopLossMethod,
+                // FR-10, #1176, IADR-0495 決定4: 審査が取引判断を承認した印（台帳が判断由来の承認行として書く）。
+                FromTradeDecision: true),
             observation);
     }
 
