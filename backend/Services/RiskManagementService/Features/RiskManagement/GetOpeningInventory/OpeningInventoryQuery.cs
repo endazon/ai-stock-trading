@@ -18,6 +18,20 @@ namespace RiskManagementService.Features.RiskManagement.GetOpeningInventory;
 public static class OpeningInventoryQuery
 {
     /// <summary>
+    /// FR-06, FR-16, #1186, IADR-0506 決定 3: 台帳から<b>市場と約定時刻の外包（<see cref="LedgerScanBounds"/>）だけ</b>を読み、
+    /// 下の純関数で正確に畳む。REST・gRPC の入口はこちらを呼ぶ（台帳の全行を読まない）。結果は全行を畳んだときと同じである。
+    /// </summary>
+    public static IReadOnlyList<OpeningInventoryView> AsOf(
+        IPortfolioLedgerStore ledger, Market market, DateOnly beforeTradingDay)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+
+        var candidates = ledger.GetFillsExecutedBetween(
+            market, executedAtOrAfter: null, LedgerScanBounds.ExecutedBeforeForTradingDayBefore(beforeTradingDay));
+        return AsOf(candidates, market, beforeTradingDay);
+    }
+
+    /// <summary>
     /// <paramref name="market"/> の台帳行（約定と取り込み）のうち、取引日が <paramref name="beforeTradingDay"/> より前のものを
     /// 約定時刻の昇順で畳み、数量が 0 でない銘柄を銘柄コードの序数順で返す（決定的）。
     /// </summary>

@@ -176,6 +176,8 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.Property(r => r.OrderId).HasMaxLength(128).ValueGeneratedNever();
             // 承認 Intent との相関・時系列畳み込みのため DecisionId にインデックスを張る。
             e.HasIndex(r => r.DecisionId);
+            // FR-06, FR-16, #1186, IADR-0506 決定 4: 期間の約定・期間開始時点の在庫の照会は約定時刻の範囲（取引日の外包）で読む。
+            e.HasIndex(r => r.ExecutedAt);
         });
 
         // FR-19, #154, IADR-0067: 注文アクティビティの射影（DecisionId で 1 注文＝1 行・更新される）。

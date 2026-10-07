@@ -102,7 +102,7 @@ public sealed class RiskControlsReadGrpcService(
             var (from, to) = RequirePeriod(request.From, request.To, rejectReversed: false);
             var response = new Proto.GetFillsResponse();
             response.Fills.AddRange(
-                PeriodFillQuery.InTradingDayRange(ledger.GetFills(), from, to).Select(RiskReadWireMapping.ToProto));
+                PeriodFillQuery.InTradingDayRange(ledger, from, to).Select(RiskReadWireMapping.ToProto));
             return response;
         });
 
@@ -170,7 +170,7 @@ public sealed class RiskControlsReadGrpcService(
 
             var response = new Proto.GetOpeningInventoryResponse();
             response.Lots.AddRange(
-                OpeningInventoryQuery.AsOf(ledger.GetFills(), m, before).Select(RiskReadWireMapping.ToProto));
+                OpeningInventoryQuery.AsOf(ledger, m, before).Select(RiskReadWireMapping.ToProto));
             return response;
         });
 

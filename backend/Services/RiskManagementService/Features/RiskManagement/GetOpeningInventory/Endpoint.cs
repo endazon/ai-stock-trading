@@ -14,5 +14,5 @@ internal static class GetOpeningInventoryEndpoint
         read.MapGet("/opening-inventory", (Market? market, DateOnly? before, IPortfolioLedgerStore ledger) =>
             market is not { } m || !Enum.IsDefined(m) || before is not { } beforeDay
                 ? Results.BadRequest(new { error = "market・before（yyyy-MM-dd）は必須です。" })
-                : Results.Ok(OpeningInventoryQuery.AsOf(ledger.GetFills(), m, beforeDay)));
+                : Results.Ok(OpeningInventoryQuery.AsOf(ledger, m, beforeDay)));
 }
