@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Kernel.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -296,7 +297,27 @@ public class RiskControlsReadGrpcServiceTests
 
         var ex = (await act.Should().ThrowAsync<RpcException>()).Which;
         ex.StatusCode.Should().Be(StatusCode.InvalidArgument, "UNKNOWN（＝一過性）に化けさせない");
-        ex.Status.Detail.Should().Contain("壊れた入力");
+        // NFR-06, IADR-0503, #1206: 投げ手（試験の代役）はサービスのコードではないので、文言は載せず固定文言にする（状態の分類は不変）。
+        ex.Status.Detail.Should().Be(ClientFacingErrors.InvalidRequestMessage).And.NotContain("壊れた入力");
+    }
+
+    // T-10-2397（NFR-06, IADR-0503, #1206）: REST の群のフィルタも、サービスのコードでない投げ手の ArgumentException は 400 を保ち、
+    // 文言は固定文言にする（gRPC の INVALID_ARGUMENT と同じ扱い）。
+    [Fact]
+    public async Task T_10_2397_REST_の群のフィルタはサービスのコードでない_ArgumentException_の文言を返さない()
+    {
+        await using var baseFactory = new RiskWorkerWebApplicationFactory();
+        using var factory = baseFactory.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+            s.AddScoped(_ => DispatchProxy.Create<IStage1TradingDayObservationStore, ThrowsArgumentException>())));
+        using var rest = factory.CreateClient();
+        rest.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "trading-owner");
+
+        using var res = await rest.GetAsync("/risk-controls/session-uptime?from=2026-09-01&to=2026-09-30", TestContext.Current.CancellationToken);
+        var body = await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        JsonNode.Parse(body)!["error"]!.GetValue<string>().Should().Be(ClientFacingErrors.InvalidRequestMessage);
+        body.Should().NotContain("壊れた入力");
     }
 
     // どのメンバーを呼んでも ArgumentException を投げる（ストアの実装に依らず「処理中の検証失敗」を再現する）。

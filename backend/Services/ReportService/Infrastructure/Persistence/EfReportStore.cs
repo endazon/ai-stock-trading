@@ -78,7 +78,7 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         }
 
         if (row.State == ReportState.Confirmed)
-            throw new InvalidOperationException($"確定済み報告書 {report.PeriodKey} は変更できません。");
+            throw new ReportAlreadyConfirmedException(report.PeriodKey);
 
         if (expectedVersion != row.Version)
             throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, row.Version);

@@ -54,7 +54,7 @@ public sealed class InMemoryReportStore : IReportStore
             }
 
             if (existing.Report.State == ReportState.Confirmed)
-                throw new InvalidOperationException($"確定済み報告書 {report.PeriodKey} は変更できません。");
+                throw new ReportAlreadyConfirmedException(report.PeriodKey);
 
             if (expectedVersion != existing.Version)
                 throw new ReportConcurrencyException(report.PeriodKey, expectedVersion, existing.Version);

@@ -41,10 +41,13 @@ public sealed class ReportOwnerWriteGrpcService(
     ReportRegenerationService regenerations)
     : Proto.ReportOwnerWrite.ReportOwnerWriteBase
 {
+    // NFR-06, IADR-0503, #1206: 例外の写しが固定文言に置き換えたときの元の例外の出し先。
+    private ILogger Logger => loggerFactory.CreateLogger<ReportOwnerWriteGrpcService>();
+
     public override async Task<Proto.ReportConfirmationResponse> ConfirmReport(
         Proto.ReportConfirmationRequest request, ServerCallContext context)
     {
-        var reply = await ReportWriteGrpcReplies.RunAsync(() => ConfirmReportEndpoint.HandleAsync(
+        var reply = await ReportWriteGrpcReplies.RunAsync(Logger, () => ConfirmReportEndpoint.HandleAsync(
             PeriodKeyOf(request.PeriodKey),
             new ConfirmReportRequest(request.ExpectedVersion, request.HasOnBehalfOf ? request.OnBehalfOf : null),
             reports, bus, kb, loggerFactory, delegated, ledger, context.GetHttpContext()));
@@ -55,7 +58,7 @@ public sealed class ReportOwnerWriteGrpcService(
     public override async Task<Proto.ReportChangesResponse> RequestReportChanges(
         Proto.ReportChangesRequest request, ServerCallContext context)
     {
-        var reply = await ReportWriteGrpcReplies.RunAsync(() => RequestReportChangesEndpoint.Handle(
+        var reply = await ReportWriteGrpcReplies.RunAsync(Logger, () => RequestReportChangesEndpoint.Handle(
             PeriodKeyOf(request.PeriodKey), new ReviewCommandRequest(request.ExpectedVersion), reports, context.GetHttpContext()));
         return new Proto.ReportChangesResponse { Version = reply.ValueOrThrow<ReportReview>().Version };
     }
@@ -63,7 +66,7 @@ public sealed class ReportOwnerWriteGrpcService(
     public override async Task<Proto.PolicyRevisionProposalResponse> RevisePolicy(
         Proto.PolicyRevisionProposalRequest request, ServerCallContext context)
     {
-        var reply = await ReportWriteGrpcReplies.RunAsync(() => RevisePolicyEndpoint.HandleAsync(
+        var reply = await ReportWriteGrpcReplies.RunAsync(Logger, () => RevisePolicyEndpoint.HandleAsync(
             new RevisePolicyRequest(
                 request.Instruction,
                 request.HasPeriodKey ? request.PeriodKey : null,
@@ -83,7 +86,7 @@ public sealed class ReportOwnerWriteGrpcService(
         if (!Guid.TryParse(request.AttemptId, out var attemptId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "試行 ID（attemptId）が Guid ではありません。"));
 
-        var reply = await ReportWriteGrpcReplies.RunAsync(() => WatchlistProposalEndpoints.RecordApplyResult(
+        var reply = await ReportWriteGrpcReplies.RunAsync(Logger, () => WatchlistProposalEndpoints.RecordApplyResult(
             attemptId,
             new WatchlistApplyResultRequest(
                 request.Outcome,
@@ -99,7 +102,7 @@ public sealed class ReportOwnerWriteGrpcService(
     public override async Task<Proto.ReportRegenerationReply> RegenerateReport(
         Proto.ReportRegenerationRequest request, ServerCallContext context)
     {
-        var reply = await ReportWriteGrpcReplies.RunAsync(() => RegenerateReportEndpoint.HandleAsync(
+        var reply = await ReportWriteGrpcReplies.RunAsync(Logger, () => RegenerateReportEndpoint.HandleAsync(
             PeriodKeyOf(request.PeriodKey),
             new RegenerateReportRequest(request.HasOnBehalfOf ? request.OnBehalfOf : null),
             regenerations, delegated, loggerFactory, context.GetHttpContext()));
@@ -119,16 +122,16 @@ internal static class ReportWriteGrpcReplies
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
-    internal static Task<Reply> RunAsync(Func<IResult> handler) => RunAsync(() => Task.FromResult(handler()));
+    internal static Task<Reply> RunAsync(ILogger logger, Func<IResult> handler) => RunAsync(logger, () => Task.FromResult(handler()));
 
-    internal static async Task<Reply> RunAsync(Func<Task<IResult>> handler)
+    internal static async Task<Reply> RunAsync(ILogger logger, Func<Task<IResult>> handler)
     {
         IResult result;
         try
         {
             result = await handler().ConfigureAwait(false);
         }
-        catch (Exception e) when (ReportEndpoints.MapException(e) is { } mapped)
+        catch (Exception e) when (ReportEndpoints.MapException(e, logger) is { } mapped)
         {
             result = mapped;
         }

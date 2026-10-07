@@ -47,7 +47,7 @@ public sealed class WatchlistOwnerWriteGrpcService(
             result = await ApplyWatchlistProposalEndpoint.HandleAsync(
                 body, watchlist, delegated, estimator, guard, loggerFactory, context.GetHttpContext()).ConfigureAwait(false);
         }
-        catch (Exception e) when (MonitorSettingsEndpoints.MapException(e) is { } mapped)
+        catch (Exception e) when (MonitorSettingsEndpoints.MapException(e, loggerFactory.CreateLogger<WatchlistOwnerWriteGrpcService>()) is { } mapped)
         {
             result = mapped;
         }

@@ -42,7 +42,7 @@ internal static class ReportEndpoints
                 {
                     return await next(ctx);
                 }
-                catch (Exception e) when (MapException(e) is { } mapped)
+                catch (Exception e) when (MapException(e, LoggerOf(ctx.HttpContext)) is { } mapped)
                 {
                     return mapped;
                 }
@@ -90,14 +90,20 @@ internal static class ReportEndpoints
 
     // NFR, IADR-0450, #753（段 5）: 群のフィルタの例外の写し。gRPC 面（ReportOwnerWriteGrpcService）も同じ写しを使う（2 箇所に書かない）。
     // 写さない例外は null（そのまま上げる）。各型は互いに派生しないので、分類は元の catch の並びと同じ結果になる。
-    internal static IResult? MapException(Exception e) => e switch
+    // NFR-06, IADR-0503, #1206: 🔴 409 と文言を返す InvalidOperationException は業務の型（ReportAlreadyConfirmedException）だけ。
+    // ほかの InvalidOperationException（EF・フレームワーク由来）は写さず、共通の例外処理が ProblemDetails の 500 にして例外ごとログへ出す。
+    // ArgumentException の文言は自前のコードが投げたものだけ載せる（それ以外は固定文言。400 は維持）。
+    internal static IResult? MapException(Exception e, ILogger logger) => e switch
     {
-        ArgumentException => Results.BadRequest(new { error = e.Message }),
+        ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, typeof(ReportEndpoints).Assembly, logger) }),
         ReportConcurrencyException => Results.Conflict(new { error = e.Message }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "報告書が他の更新と競合しました。最新を取得して再試行してください。" }),
-        InvalidOperationException => Results.Conflict(new { error = e.Message }),
+        ReportAlreadyConfirmedException => Results.Conflict(new { error = e.Message }),
         _ => null,
     };
+
+    internal static ILogger LoggerOf(HttpContext http) =>
+        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(ReportEndpoints));
 
     // NFR, IADR-0289 決定3: 書き込み系の複数操作（present / request-changes）が使うため 2 段目に残す。
     // #774, IADR-0240 決定11: **confirm はここを使わない**（確定者は発行・監査されるため

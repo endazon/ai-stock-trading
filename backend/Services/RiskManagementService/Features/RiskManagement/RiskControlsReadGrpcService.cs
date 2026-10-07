@@ -47,7 +47,8 @@ public sealed class RiskControlsReadGrpcService(
     IBuyInInferenceStore inferences,
     IPositionObservationArrivalStore arrivals,
     IBusinessCalendar calendar,
-    IStage1TradingDayObservationStore uptimeObservations)
+    IStage1TradingDayObservationStore uptimeObservations,
+    ILoggerFactory loggerFactory)
     : Proto.RiskControlsRead.RiskControlsReadBase
 {
     public override Task<Proto.GetOpenPositionsResponse> GetOpenPositions(
@@ -175,7 +176,8 @@ public sealed class RiskControlsReadGrpcService(
 
     // REST の群のフィルタ（RiskControlEndpoints）と同じ分類: ArgumentException は 400 ＝ INVALID_ARGUMENT。
     // 既に RpcException のもの（RequirePeriod の INVALID_ARGUMENT）はそのまま通す。
-    private static Task<T> Reply<T>(Func<T> handler)
+    // NFR-06, IADR-0503, #1206: detail へ載せる文言は自前のコードが投げたものだけ（それ以外は固定文言・元の例外はログ）。
+    private Task<T> Reply<T>(Func<T> handler)
     {
         try
         {
@@ -183,7 +185,10 @@ public sealed class RiskControlsReadGrpcService(
         }
         catch (ArgumentException e)
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, e.Message));
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                ClientFacingErrors.MessageFor(
+                    e, typeof(RiskControlsReadGrpcService).Assembly, loggerFactory.CreateLogger<RiskControlsReadGrpcService>())));
         }
     }
 
