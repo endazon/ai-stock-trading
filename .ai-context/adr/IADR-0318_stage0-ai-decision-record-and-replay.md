@@ -2,10 +2,10 @@
 title: IADR-0318 Stage 0 の評価対象は「記録した AI 判断」とし、記録は取引判断サービス・再生は純関数戦略に分ける
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-11, FR-15, FR-20, NFR, ADR-0003, ADR-0008, ADR-0011, ADR-0014, ADR-0017, ADR-0018, ADR-0033, ADR-0034, IADR-0035, IADR-0043, IADR-0045, IADR-0055, IADR-0076, IADR-0089, IADR-0105, IADR-0110, IADR-0119, IADR-0122, IADR-0212, IADR-0248, IADR-0276, IADR-0281, IADR-0296, IADR-0304, IADR-0310]
+related_ids: [FR-04, FR-11, FR-15, FR-20, NFR, ADR-0003, ADR-0008, ADR-0011, ADR-0014, ADR-0017, ADR-0018, ADR-0033, ADR-0034, IADR-0035, IADR-0043, IADR-0045, IADR-0055, IADR-0076, IADR-0089, IADR-0105, IADR-0110, IADR-0119, IADR-0122, IADR-0212, IADR-0248, IADR-0276, IADR-0281, IADR-0296, IADR-0304, IADR-0310, ADR-0054, IADR-0216, IADR-0498]
 author: endazon (with Claude Code)
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0033_stage0-evaluation-target-is-ai-decision-replay.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0008_staged-gates-and-backtest.md
@@ -250,6 +250,37 @@ ADR-0033 決定1 が評価対象と定めたのは「FR-04 の AI 判断（Hold/
   - **計画側へ**: 実 LLM での 1 判断あたりトークン量の実測と、見積り・実績の記録先（同 §6.1。決定5.2・5.4）。
   - **探索（試行）の実装**。`MinTrials=20` を満たす候補群をどう作るかは本 IADR の射程外である。
   - 実 RabbitMQ / 実過去データでの E2E は [#82](https://github.com/endazon/ai-stock-trading/issues/82) に残る（IADR-0310 決定5 のまま）。
+
+## 追記（2026-10-07・#1196）: 記録は本番と同じ二段で走らせ、両層の実効モデルを残す（計画 ADR-0054 決定 3・4／フォローアップ 1）
+
+［2026-10-07 追記 / #1196］計画 ADR-0054（2026-10-07 Accepted）決定 3 は「Stage 0 は本番と同じ二段（`trade-decision-screening` → `trade-decision`）を通した判断を評価し、
+両層の組（`claude-haiku-4-5` ＋ `claude-sonnet-5`）での通過を実弾解禁の必須ゲートにする」と定め、決定 4 で本 IADR の記録器が本判断しか呼ばないことを
+「実現手段が無い」と記録した（同 ADR の実測 3）。**本 IADR の次の記述はこの日から改まる**（本文は凍結のため書き換えない。改め先は
+[IADR-0498](./IADR-0498_stage0-two-tier-recording-and-live-gate-prerequisite.md)）。
+
+- **決定 4「記録の LLM 呼び出しは `LlmPurposes.TradeDecision` を名乗る」** → 記録は本番の `DecisionOrchestrator` で二段を走らせ、一次は `trade-decision-screening`、
+  本判断は `trade-decision` を名乗る（層ごとに本番と同じ用途。ピンの照合とフォールバック禁止を両層に効かせる）。一次で見送れば本判断を呼ばない。
+  費用の付け替え（`stage0-recording`）は一次にも掛かる。
+- **決定 1 の記録の契約** → `Stage0DecisionRecord.Screening`（一次の判断と一次の実効モデル）と `Stage0RawDecision.EffectiveModelId`（各票の実効モデル）を足した。
+  `Screening == null` は「一次を記録していない」（旧記録）であり、再生は**評価不能**（`Stage0GateCheck.ScreeningNotRecorded`）として判定を組まない。
+  実効モデルがピンと違う判断は判定母集団から外す。戦略 ID のハッシュは一次を持つ記録だけ一次と実効モデルを含める（旧記録の ID は不変）。
+- **決定 5 の見積りの式** → 判断時点ごとに一次 1 回を足す（`判断時点数 ×（一次 1 ＋ 多数決回数）`。一次のトークン量と一次の層の単価で換算）。
+  超過停止の上振れ幅は「一次 1 ＋ 多数決回数」回ぶんになる。
+
+## 追記（2026-10-07・#1196）: 日報のスキップ回数はスクリーニングの見送りを含む（計画 ADR-0054 フォローアップ 2 の確認結果）
+
+［2026-10-07 追記 / #1196］計画 ADR-0054 決定 2 は「見送りの記録と通知・日報のスキップ回数（ADR-0017 決定 2・4）は、スクリーニングで見送った分も含める」と定め、
+フォローアップ 2 で実装がそうなっているかの確認を求めた。**確認した結果、含む**（develop `ac8095be` で実測。コードの変更は無い）。
+
+| 経路 | 事実 | 出典 |
+| --- | --- | --- |
+| 見送りの publish | 割当外（`model-mismatch` / `forbidden-model`）・モデル不可（`model-unavailable`）で、呼び出しの**実効用途**（一次なら `trade-decision-screening`）を載せた `TradeDecisionSkipped` を出す。用途で絞らない | `HttpLlmCompletionClient.cs:139-147`・`:214-232`・`:278-290`（`ReportSkipAsync` → `ILlmGovernanceReporter.DecisionSkippedAsync`） |
+| 一次でも発火すること | 一次の層でピン以外が答えると見送り、`TradeDecisionSkipped` が 1 件出る | 既存試験 `HttpLlmCompletionClientFallbackBanTests.スクリーニング層もピン以外なら見送る` |
+| 集計 | 報告サービスは監査台帳の `TradeDecisionSkipped` を**用途で絞らずに**読み、件数を `LlmUsageRecord.Skips.Count` で数える | `ReportService/Infrastructure/ExternalServices/HttpLlmUsageRecordSource.cs:106-125`・`ReportService/Domain/LlmUsageRecord.cs:192` |
+
+- 例外（従来どおり）: 認可の失敗（401/403）は**どちらの層でも** `TradeDecisionSkipped` を出さない（IADR-0323 決定 3。通知本文が「割当モデルが利用できません」と誤帰属するため）。
+- 観測（是正しない）: Stage 0 の記録中に起きた割当外の見送りも同じ経路で publish される（費用と違い用途を付け替えない）。記録は承認制の run-once で頻度は低い。
+  日報・月報の件数に混ざることを [IADR-0498](./IADR-0498_stage0-two-tier-recording-and-live-gate-prerequisite.md) の残余リスクに記録した。
 
 ## 関連
 

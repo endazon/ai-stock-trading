@@ -83,6 +83,16 @@ public enum Stage0GateCheck
     /// </para>
     /// </summary>
     ExcludedDecisionAltersReplayPath,
+
+    /// <summary>
+    /// FR-04, FR-15, ADR-0054 決定3, #1196, IADR-0498: 記録が**一次スクリーニングを記録していない**（二段化より前の記録）。
+    /// <para>
+    /// 🔴 **評価不能である（合格にも、7 条件の判定による不合格にも数えない）。** その記録は「スクリーニングを通さず本判断だけで
+    /// 全銘柄を判断した系」を測っており、本番の二段の系（ADR-0054 決定3）の評価ではない。判定器を呼ばず、理由をこの値で運ぶ
+    /// （`NoDecisionRecords` と同じ「判定を走らせていない」側の値）。記録を二段で採り直すまで合格は出ない（同決定4 の暫定手段）。
+    /// </para>
+    /// </summary>
+    ScreeningNotRecorded,
 }
 
 // FR-15, ADR-0008, 06_daytrading-review §4: Stage 0 合格基準の閾値。

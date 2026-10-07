@@ -60,7 +60,24 @@ public sealed class Stage0RecordingOptions
     public string? OutputPath { get; set; }
 
     /// <summary>記録に用いるモデル識別子（ADR-0011 のピン留めモデル）。未設定ならゲートウェイの用途別割当に委ねる。</summary>
+    /// <remarks>FR-15, ADR-0054 決定3, #1196, IADR-0498: 本判断（`trade-decision`）の層の希望値。一次は <see cref="ScreeningModel"/>。</remarks>
     public string? Model { get; set; }
+
+    /// <summary>
+    /// FR-15, ADR-0054 決定1・決定3, #1196, IADR-0498: 一次スクリーニング（`trade-decision-screening`）の層のモデルの希望値。
+    /// 未設定ならゲートウェイの用途別割当に委ねる（本番の `Decision:PrimaryModel` と同じ扱い）。
+    /// 🔴 希望値は合否を決めない —— 再生側は応答が名乗った実効モデルを用途ごとのピン（`LlmAssignments`）と照合する。
+    /// </summary>
+    public string? ScreeningModel { get; set; }
+
+    /// <summary>
+    /// FR-15, ADR-0033 決定5, ADR-0054 決定3, #1196, IADR-0498: 見積りに用いる**一次スクリーニング 1 回あたり**の入力トークン量
+    /// （**実測値を入れる**。既定 0＝一次の見積り 0 円。既定値を発明しない）。
+    /// </summary>
+    public int ScreeningInputTokensPerDecision { get; set; }
+
+    /// <summary>一次スクリーニング 1 回あたりの出力トークン量（同上）。</summary>
+    public int ScreeningOutputTokensPerDecision { get; set; }
 
     /// <summary>期間 [From, To]。いずれかが解釈不能なら null（＝実行しない）。</summary>
     public (DateOnly From, DateOnly To)? ParsePeriod()

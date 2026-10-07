@@ -566,6 +566,8 @@ builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
 });
 builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     sp.GetRequiredService<ILlmCompletionClient>(),
+    // FR-15, ADR-0054 決定3, #1196, IADR-0498: 本番の二段の構成（一次プロンプトの形を本番に合わせる。二段は記録側で必ず有効にする）。
+    sp.GetRequiredService<DecisionOrchestrationOptions>(),
     sp.GetRequiredService<IAsOfDecisionInputProvider>(),
     sp.GetRequiredService<IStage0DecisionRecordSink>(),
     sp.GetRequiredService<Stage0RecordingUsageCollector>(),

@@ -12,7 +12,7 @@
 {{- end -}}
 {{- /* IADR-0111 外周の閂: 実弾は未解禁。誤設定をクラスタへ届かせない（アプリ側は LiveTradingGate が閂 0 として停止させる）。 */ -}}
 {{- if eq $tier "moomoo-live" -}}
-{{- fail "broker.tier=moomoo-live（実弾）は受理しません。実弾は未解禁です（IADR-0016 / IADR-0056 / IADR-0111）。解禁には別の実装 ADR と IADR-0056 §3 の前提充足（リスク統制・監査・上限の実弾向け再確認、秘匿情報の Vault 化、発注予約 Reserved 滞留の自動リコンサイル #141）が要ります。シミュレーションには broker.tier=moomoo-sim を使ってください。" -}}
+{{- fail "broker.tier=moomoo-live（実弾）は受理しません。実弾は未解禁です（IADR-0016 / IADR-0056 / IADR-0111）。解禁には別の実装 ADR と IADR-0056 §3 の前提充足（リスク統制・監査・上限の実弾向け再確認、秘匿情報の Vault 化、発注予約 Reserved 滞留の自動リコンサイル #141、両層の組〔一次スクリーニング claude-haiku-4-5 ＋ 本判断 claude-sonnet-5〕での Stage 0 合格・IADR-0498）が要ります。シミュレーションには broker.tier=moomoo-sim を使ってください。" -}}
 {{- end -}}
 {{- $brokerTiers := dict "paper" (dict "provider" "paper" "environment" "sim") "moomoo-sim" (dict "provider" "moomoo" "environment" "sim") -}}
 {{- if not (hasKey $brokerTiers $tier) -}}
