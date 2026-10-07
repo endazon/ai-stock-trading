@@ -12,6 +12,8 @@ namespace MarketMonitorService.Features.MarketMonitor;
 //   Program.cs が渡す（値の出所を巡回・送出と 1 つにする）。
 // - 保有は巡回と同じ `IPositionStore` から、Finnhub の要求を使う（米国の）建玉だけを数える（#1037 の監査）。照会の失敗は空列（0 件）になるが、そのとき巡回も保有を照会しないため、
 //   その瞬間の 1 巡回の要求数とは一致する（残余リスクは IADR-0437）。
+// - #1189, IADR-0494: 保有は件数ではなく（銘柄・市場）の一覧で渡す。巡回は同じ（銘柄・市場）を 1 回だけ照会するので、
+//   判定と見積りは保有と監視銘柄の和集合で数える（`CycleQuoteTargets`）。
 public sealed class WatchlistCycleFitGuard(
     string? provider,
     int requestsPerMinute,
@@ -28,10 +30,17 @@ public sealed class WatchlistCycleFitGuard(
 
         var held = await positions.GetOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
         return new WatchlistCycleFitSnapshot(
-            new WatchlistCycleFit(requestsPerMinute, pollIntervalSeconds, held.Sum(p => WatchlistCycleFit.RequestsPerSymbol(p.Market))),
-            [.. held.Select(p => p.Market)]);
+            new WatchlistCycleFit(requestsPerMinute, pollIntervalSeconds, [.. held.Select(CycleQuoteTargets.Of)]));
     }
 }
 
-// 判定（Fit）と、1 日の要求数の見積りに使う保有の市場（HoldingMarkets。市場ごとの場中の長さで数えるため）。
-public sealed record WatchlistCycleFitSnapshot(WatchlistCycleFit Fit, IReadOnlyList<Market> HoldingMarkets);
+// 判定（Fit。保有の〔銘柄・市場〕を持つ）。
+public sealed record WatchlistCycleFitSnapshot(WatchlistCycleFit Fit)
+{
+    /// <summary>
+    /// #1132, #1189, IADR-0494: 監視銘柄が <paramref name="watchlist"/> のとき 1 巡回で照会する銘柄の市場（保有と監視銘柄の和集合。
+    /// 1 日の要求数の見積りに使う。市場ごとの場中の長さで数えるため）。
+    /// </summary>
+    public IEnumerable<Market> QuotedMarkets(IEnumerable<MonitoredSymbol> watchlist) =>
+        CycleQuoteTargets.Union(Fit.Holdings, watchlist).Select(s => s.Market);
+}

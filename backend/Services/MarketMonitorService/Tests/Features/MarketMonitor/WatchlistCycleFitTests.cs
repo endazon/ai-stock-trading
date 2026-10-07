@@ -27,6 +27,10 @@ public class WatchlistCycleFitTests
     private static readonly MonitoredSymbol Toyota = new("7203", Market.Japan);
     private static readonly MonitoredSymbol Sony = new("6758", Market.Japan);
 
+    // 監視銘柄と重ならない米国の保有（H0, H1, …）。#1189, IADR-0494: 予算は保有の（銘柄・市場）の一覧で数える。
+    private static MonitoredSymbol[] HeldUs(int count) =>
+        [.. Enumerable.Range(0, count).Select(i => new MonitoredSymbol($"H{i}", Market.UnitedStates))];
+
     private static ProposedWatchlistChange Add(string symbol) => new(ProposedWatchlistAction.Add, symbol, "理由");
 
     private static ProposedWatchlistChange Remove(string symbol) => new(ProposedWatchlistAction.Remove, symbol, "理由");
@@ -44,7 +48,7 @@ public class WatchlistCycleFitTests
     [InlineData(0, 60, 0, 2, false)]
     public void 巡回が間隔に収まるかは整数で比べる(int rate, int interval, int holdings, int watchlist, bool fits)
     {
-        var fit = new WatchlistCycleFit(rate, interval, holdings);
+        var fit = new WatchlistCycleFit(rate, interval, HeldUs(holdings));
         MonitoredSymbol[] symbols = [.. Enumerable.Range(0, watchlist).Select(i => new MonitoredSymbol($"S{i}", Market.UnitedStates))];
 
         fit.Fits(symbols).Should().Be(fits);
@@ -59,7 +63,7 @@ public class WatchlistCycleFitTests
     {
         WatchlistCycleFit.RequestsPerSymbol(Market.UnitedStates).Should().Be(1);
         WatchlistCycleFit.RequestsPerSymbol(Market.Japan).Should().Be(0);
-        var full = new WatchlistCycleFit(RequestsPerMinute: 1, PollIntervalSeconds: 60, HoldingRequests: 0); // 1 要求まで
+        var full = new WatchlistCycleFit(RequestsPerMinute: 1, PollIntervalSeconds: 60, Holdings: []); // 1 要求まで
         full.RequestsPerCycle([Aapl, Toyota, Sony]).Should().Be(1);
         full.Refuses(Toyota, [Aapl, Msft, Toyota]).Should().BeFalse("予算を超えていても要求を使わない追加は拒否しない");
         full.Refuses(Msft, [Aapl, Msft]).Should().BeTrue();
@@ -69,7 +73,7 @@ public class WatchlistCycleFitTests
         var watch = new MonitorWatchlistService(store, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
         watch.Add("7203", Market.Japan, "owner", "追加", full).Should().HaveCount(2);
         var us = () => watch.Add("MSFT", Market.UnitedStates, "owner", "追加", full);
-        us.Should().Throw<ArgumentException>().WithMessage("*1 巡回 2 要求（保有 0 ＋ 監視銘柄 2）*");
+        us.Should().Throw<ArgumentException>().WithMessage("*1 巡回 2 要求（保有 0 ＋ 監視銘柄 2 − 重複 0）*");
 
         // 入れ替え案（案は米国のティッカーだけなので、東証は現在の監視銘柄の側で数えないことを確かめる）
         var plan = WatchlistProposalPlan.Plan([Toyota, Sony], [Toyota, Sony], [Add("NVDA")], full);
@@ -89,8 +93,8 @@ public class WatchlistCycleFitTests
             new HeldPosition("7203", Market.Japan, TradeSide.Buy, 100, 2000m, 1800m),
         ]);
         var snapshot = await new WatchlistCycleFitGuard("finnhub", 12, 60, positions).ResolveAsync();
-        snapshot!.Fit.HoldingRequests.Should().Be(1, "東証の建玉は要求を使わない");
-        snapshot.HoldingMarkets.Should().Equal(Market.UnitedStates, Market.Japan);
+        snapshot!.Fit.RequestsPerCycle([]).Should().Be(1, "東証の建玉は要求を使わない");
+        snapshot.QuotedMarkets([]).Should().Equal(Market.UnitedStates, Market.Japan);
     }
 
     // T-10-1437: 入れ替え案では除外を先に当て、追加は案の順に収まる範囲だけ適用する。収まらない追加は理由つきで適用しない。
@@ -98,7 +102,7 @@ public class WatchlistCycleFitTests
     [Fact]
     public void 入れ替え案は除外を先に当て収まる範囲だけ追加する()
     {
-        var fit = new WatchlistCycleFit(RequestsPerMinute: 3, PollIntervalSeconds: 60, HoldingRequests: 1); // 3 要求まで
+        var fit = new WatchlistCycleFit(RequestsPerMinute: 3, PollIntervalSeconds: 60, Holdings: HeldUs(1)); // 3 要求まで
 
         var plan = WatchlistProposalPlan.Plan([Aapl], [Aapl], [Add("NVDA"), Add("AMZN"), Remove("AAPL"), Add("META")], fit);
 
@@ -108,7 +112,7 @@ public class WatchlistCycleFitTests
         plan.Resulting.Select(s => s.Symbol).Should().BeEquivalentTo(["NVDA", "AMZN"]);
 
         var over = WatchlistProposalPlan.Plan([Aapl, Msft, Nvda], [Aapl, Msft, Nvda], [Remove("MSFT"), Add("META")],
-            new WatchlistCycleFit(1, 60, 0));
+            new WatchlistCycleFit(1, 60, []));
         over.Items.Select(i => (i.Change.Symbol, i.Applied)).Should().Equal(("MSFT", true), ("META", false));
 
         WatchlistProposalPlan.Plan([Aapl], [Aapl], [Add("NVDA"), Add("AMZN")], cycleFit: null).Items
@@ -122,14 +126,14 @@ public class WatchlistCycleFitTests
         var store = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl, Msft]));
         var log = new InMemoryMonitorSettingsChangeLog();
         var svc = new MonitorWatchlistService(store, log, new FakeClock(DateTimeOffset.UnixEpoch));
-        var fit = new WatchlistCycleFit(RequestsPerMinute: 3, PollIntervalSeconds: 60, HoldingRequests: 1);
+        var fit = new WatchlistCycleFit(RequestsPerMinute: 3, PollIntervalSeconds: 60, Holdings: HeldUs(1));
 
         var reject = () => svc.Add("NVDA", Market.UnitedStates, "owner", "追加", fit);
         reject.Should().Throw<ArgumentException>().WithMessage("*Finnhub の巡回に収まりません*1 巡回 4 要求*");
         store.GetSettings().MonitoredSymbols.Should().HaveCount(2);
         log.GetHistory().Should().BeEmpty("拒否した追加は変更ではない");
 
-        svc.Add("NVDA", Market.UnitedStates, "owner", "追加", new WatchlistCycleFit(4, 60, 1)).Should().HaveCount(3);
+        svc.Add("NVDA", Market.UnitedStates, "owner", "追加", new WatchlistCycleFit(4, 60, HeldUs(1))).Should().HaveCount(3);
 
         svc.Remove("MSFT", Market.UnitedStates, "owner", "除外").Should().HaveCount(2, "除外は検査しない（予算を減らす向き）");
     }
@@ -141,7 +145,7 @@ public class WatchlistCycleFitTests
         var store = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl, Msft, Nvda]));
         var svc = new MonitorSettingsService(store, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
         var current = store.GetSettings();
-        var tight = new WatchlistCycleFit(RequestsPerMinute: 2, PollIntervalSeconds: 60, HoldingRequests: 0);
+        var tight = new WatchlistCycleFit(RequestsPerMinute: 2, PollIntervalSeconds: 60, Holdings: []);
 
         var swap = () => svc.Replace(current with { MonitoredSymbols = [Aapl, Msft, new("META", Market.UnitedStates)] }, "owner", "入れ替え", tight);
         swap.Should().Throw<ArgumentException>().WithMessage("*Finnhub の巡回に収まりません*収まらない追加: META@UnitedStates*除外だけなら*");
@@ -164,7 +168,7 @@ public class WatchlistCycleFitTests
         var current = store.GetSettings();
         MonitoredSymbol[] padded = [Aapl, new("aapl", Market.UnitedStates), .. Enumerable.Repeat(Aapl, 10)];
 
-        var withFit = () => svc.Replace(current with { MonitoredSymbols = [.. padded] }, "owner", "重複", new WatchlistCycleFit(2, 60, 0));
+        var withFit = () => svc.Replace(current with { MonitoredSymbols = [.. padded] }, "owner", "重複", new WatchlistCycleFit(2, 60, []));
         withFit.Should().Throw<ArgumentException>().WithMessage("*重複*AAPL@UnitedStates*");
         var withoutFit = () => svc.Replace(current with { MonitoredSymbols = [Aapl, new(" aapl ", Market.UnitedStates)] }, "owner", "重複");
         withoutFit.Should().Throw<ArgumentException>().WithMessage("*重複*");
@@ -177,7 +181,7 @@ public class WatchlistCycleFitTests
         withoutFit.Should().Throw<ArgumentException>().WithMessage("*保存済みの一覧に残っている重複も、1 件ずつに減らして送れば適用されます*");
         var legacy = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl, new("aapl", Market.UnitedStates), Msft]));
         var legacySvc = new MonitorSettingsService(legacy, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
-        legacySvc.Replace(legacy.GetSettings() with { MonitoredSymbols = [Aapl, Msft] }, "owner", "重複を減らす", new WatchlistCycleFit(1, 60, 0))
+        legacySvc.Replace(legacy.GetSettings() with { MonitoredSymbols = [Aapl, Msft] }, "owner", "重複を減らす", new WatchlistCycleFit(1, 60, []))
             .MonitoredSymbols.Should().Equal([Aapl, Msft], "重複を減らすのは除外なので、予算を超えていても通る");
     }
 
@@ -215,7 +219,7 @@ public class WatchlistCycleFitTests
     {
         var store = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl, Msft]));
         var svc = new MonitorSettingsService(store, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
-        var over = new WatchlistCycleFit(RequestsPerMinute: 1, PollIntervalSeconds: 60, HoldingRequests: 0); // 1 要求まで（監視 2 で超過中）
+        var over = new WatchlistCycleFit(RequestsPerMinute: 1, PollIntervalSeconds: 60, Holdings: []); // 1 要求まで（監視 2 で超過中）
 
         var mixed = () => svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, Msft, Toyota, Nvda] }, "owner", "混在", over);
         mixed.Should().Throw<ArgumentException>().Which.Message.Should()
@@ -239,6 +243,54 @@ public class WatchlistCycleFitTests
 
         new WatchlistVolumeEstimator("finnhub", 120, dailyLimit: 300).Estimate(markets)!
             .Should().Be(new MarketMonitorService.Features.MarketMonitor.ApplyWatchlistProposal.FinnhubDailyVolumeEstimateView(195 + 195, 300, true));
+    }
+
+    // ---- 🔴 FR-03, FR-13, ADR-0043（計画）決定 2 (b), #1189, IADR-0494: 予算と見積りは保有と監視銘柄の和集合で数える ----
+
+    private static readonly string[] SixHeld = ["NVDA", "META", "MSFT", "AMZN", "GOOGL", "AAPL"];
+
+    private static MonitoredSymbol Us(string symbol) => new(symbol, Market.UnitedStates);
+
+    // T-10-2292（issue #1189 の場面）: 保有 6 がすべて監視銘柄 6 と重なり、自制 12 回/分・60 秒。入れ替え案で 5 銘柄を足すと
+    // 1 巡回は 11 要求（和集合）で収まり、全件を適用する（是正前は足し算で 13 要求となり、5 件すべてを拒否していた）。
+    // 12 銘柄目は 12 要求ちょうどで通り、13 銘柄目は「保有 6 ＋ 監視銘柄 13 − 重複 6」の文言で拒否する。
+    [Fact]
+    public void 予算は保有と監視銘柄の和集合で数え重なる保有を2回数えない()
+    {
+        MonitoredSymbol[] six = [.. SixHeld.Select(Us)];
+        var fit = new WatchlistCycleFit(RequestsPerMinute: 12, PollIntervalSeconds: 60, Holdings: six);
+
+        fit.RequestsPerCycle(six).Should().Be(6, "重なる保有は 1 回だけ照会する");
+        var plan = WatchlistProposalPlan.Plan(six, six, [Add("TSLA"), Add("COIN"), Add("MARA"), Add("MSTR"), Add("SMCI")], fit);
+        plan.Items.Should().OnlyContain(i => i.Applied, "11 要求 ≤ 12 要求");
+        plan.Resulting.Should().HaveCount(11);
+        fit.RequestsPerCycle(plan.Resulting).Should().Be(11);
+
+        var twelve = WatchlistProposalPlan.Plan(plan.Resulting, [.. plan.Resulting], [Add("PLTR"), Add("AMD")], fit);
+        twelve.Items.Select(i => i.Applied).Should().Equal(true, false);
+        twelve.Items[1].SkipReason.Should().Contain("1 巡回 13 要求（保有 6 ＋ 監視銘柄 13 − 重複 6）").And.Contain("12 要求を超えます");
+
+        // 監視銘柄の外の保有は数える（手動・採用の建玉、保有中に監視銘柄から外した銘柄）。
+        var outside = fit with { Holdings = [.. six, Us("IBM")] };
+        outside.RequestsPerCycle(plan.Resulting).Should().Be(12);
+        outside.Describe([.. plan.Resulting, Us("PLTR")]).Should().StartWith("1 巡回 13 要求（保有 7 ＋ 監視銘柄 12 − 重複 6）");
+
+        // 東証の保有・監視銘柄は要求を使わないので内訳にも数えない（#1037 の監査）。
+        var japan = new WatchlistCycleFit(1, 60, [Toyota, Aapl]);
+        japan.Describe([Toyota, Sony, Aapl, Msft]).Should().StartWith("1 巡回 2 要求（保有 1 ＋ 監視銘柄 2 − 重複 1）");
+    }
+
+    // T-10-2293: 1 日の要求数の見積りも和集合で数える（入れ替え案の応答と巡回の記録が同じ形）。
+    [Fact]
+    public void 見積りの母数は保有と監視銘柄の和集合()
+    {
+        var snapshot = new WatchlistCycleFitSnapshot(new WatchlistCycleFit(12, 60, [Aapl, Msft, Toyota]));
+
+        var markets = snapshot.QuotedMarkets([Aapl, Nvda, Toyota]).ToList();
+
+        markets.Should().Equal(Market.UnitedStates, Market.UnitedStates, Market.Japan, Market.UnitedStates);
+        new WatchlistVolumeEstimator("finnhub", 60, null).Estimate(markets)!.EstimatedDailyRequests
+            .Should().Be(3 * 390, "AAPL・MSFT・NVDA の 3 銘柄（重なる AAPL は 1 回、東証は 0）");
     }
 
     // ---- 本番の組み立て（Program.cs）を通す ----
@@ -411,6 +463,31 @@ public class WatchlistCycleFitTests
             (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString().Should().Contain("銘柄コードの無い要素");
             (await WatchlistOf(owner)).Should().BeEquivalentTo(["MSFT"]);
         }
+    }
+
+    // T-10-2292（結線）: 本番の組み立てで、保有 6 ⊆ 監視銘柄 6・自制 12 回/分の状態から入れ替え案で 5 銘柄を足すと全件を適用する。
+    [Fact]
+    public async Task 入れ替え案の口は重なる保有を2回数えず5銘柄を適用する()
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        await using var factory = Configured(baseFactory, Holding(SixHeld), rate: "12");
+        var owner = Owner(factory);
+        foreach (var s in SixHeld)
+            (await PostAdd(owner, s)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await owner.PostAsJsonAsync("/monitor/watchlist/proposal-apply", new
+        {
+            ExpectedWatchlist = SixHeld.Select(s => new { Symbol = s, Market = Market.UnitedStates }).ToArray(),
+            Changes = new[] { "TSLA", "COIN", "MARA", "MSTR", "SMCI" }.Select(s => new { Action = "add", Symbol = s, Reason = "急変の監視" }).ToArray(),
+            ProposalRef = "daily-2026-10-07-v1",
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("items").EnumerateArray().Should().OnlyContain(i => i.GetProperty("applied").GetBoolean());
+        (await WatchlistOf(owner)).Should().HaveCount(11);
+        body.GetProperty("estimate").GetProperty("estimatedDailyRequests").GetInt64()
+            .Should().Be(11 * 390, "T-10-2293: 見積りも和集合（保有 6 は監視銘柄と重なり 1 回）");
     }
 
     // T-10-1445（ADR-0043 決定 3）: 入れ替え案の応答の推定は、適用後の監視銘柄 ＋ 保有を開場中の巡回（390）で数え、上限とは比べない。

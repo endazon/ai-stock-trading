@@ -76,7 +76,8 @@ internal static partial class ApplyWatchlistProposalEndpoint
             [.. plan.Items.Select(i => new WatchlistProposalItemResult(
                     i.Change.Action == ProposedWatchlistAction.Add ? "add" : "remove", i.Change.Symbol, i.Applied, i.SkipReason))],
             applying.Actor,
-            estimator.Estimate(plan.Resulting.Select(s => s.Market).Concat(fit?.HoldingMarkets ?? []))));
+            // #1189, IADR-0494: 見積りも巡回の照会の形（保有と監視銘柄の和集合）で数える。
+            estimator.Estimate(fit?.QuotedMarkets(plan.Resulting) ?? CycleQuoteTargets.Union([], plan.Resulting).Select(s => s.Market))));
     }
 
     // 期待値（案を作った時点の監視銘柄）の 1 件。銘柄が空・市場の省略は形式違反（null＝400）。期待値は現在の監視銘柄の写しであり、
@@ -113,6 +114,6 @@ public sealed record WatchlistProposalApplyResponse(
 public sealed record WatchlistProposalItemResult(string Action, string Symbol, bool Applied, string? SkipReason);
 
 // ADR-0031, ADR-0042 決定 1（2026-09-26 利用者裁定＝警告のみ）: 推定 1 日の要求数。**適用を止めない。**
-// ADR-0043（計画）決定 1・3, #1030, IADR-0437: 推定は開場中の巡回で数えた値（監視銘柄 ＋ 保有）。暫定の 300 回/日は撤回したため、
+// ADR-0043（計画）決定 1・3, #1030, IADR-0437: 推定は開場中の巡回で数えた値（監視銘柄と保有の和集合。#1189, IADR-0494）。暫定の 300 回/日は撤回したため、
 // ProvisionalDailyLimit は日次上限を実測して設定したときだけ値を持ち、未設定（既定）なら null・Exceeds は false（比べない）。
 public sealed record FinnhubDailyVolumeEstimateView(long EstimatedDailyRequests, int? ProvisionalDailyLimit, bool Exceeds);

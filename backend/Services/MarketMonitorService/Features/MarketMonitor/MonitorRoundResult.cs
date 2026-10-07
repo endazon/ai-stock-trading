@@ -24,7 +24,8 @@ public record MonitorRoundResult(
     public IReadOnlyList<StopLossEvaluation> ClosedMarketPositions { get; init; } = [];
 
     /// <summary>
-    /// FR-01, #1132, IADR-0477: この巡回の照会の対象（保有 ＋ 監視銘柄。同じ銘柄でも別々に照会するので 2 件）の市場。
+    /// FR-01, #1132, IADR-0477: この巡回の照会の対象の市場。
+    /// #1189, IADR-0494: 保有と監視銘柄の（銘柄・市場）の和集合（重なる銘柄は 1 巡回に 1 回だけ照会するので 1 件）。
     /// <b>閉場中で照会を飛ばした銘柄も含める</b>（日次要求見積りは開場中の量であり、照会した数で数えると、ある市場だけ
     /// 閉じた巡回で値が落ちる）。日次要求見積りの記録（FinnhubDailyVolumeRecorder）だけが読む。
     /// </summary>

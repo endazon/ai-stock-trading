@@ -21,6 +21,11 @@ namespace MarketMonitorService.Features.MarketMonitor;
 // 🔴 FR-03, FR-10, #957, IADR-0399 決定3: **市況の照会は銘柄ごとに閉じる。** 1 銘柄の照会の例外（呼び出し側の停止要求以外の
 // 打ち切りを含む）はその銘柄の「価格が取れない」として扱い、次の銘柄へ進む。以前は例外が巡回全体を落とし、全建玉の
 // 損切り検知・変動検知・生存要約が止まっていた（実運用の市況源 Finnhub は銘柄 null で ArgumentNullException を投げる）。
+//
+// 🔴 FR-03, FR-01, ADR-0043（計画）決定 2 (b), #1189, IADR-0494: **1 巡回の中で同じ（銘柄・市場）は 1 回だけ照会する。**
+// 保有のループで取った値（取れなかった＝null も）を、同じ巡回の監視銘柄のループが使い回す。以前は保有と監視銘柄で別々に照会し、
+// 重なる銘柄で Finnhub の巡回の予算を倍に使っていた。順序（保有＝損切りを先に全部評価する）と損切りの鮮度（評価の直前に
+// この巡回で照会した値）は変えない。値は巡回をまたいで持たない。鍵は `CycleQuoteTargets`（序数比較の銘柄・市場）。
 public sealed class MarketMonitorAppService(
     IMonitoredSymbolStore settingsStore,
     IPositionStore positionStore,
@@ -43,6 +48,9 @@ public sealed class MarketMonitorAppService(
         var evaluations = new List<StopLossEvaluation>();
         var closedMarketPositions = new List<StopLossEvaluation>();
 
+        // #1189, IADR-0494: この巡回で照会した値（null も入れる）。巡回ごとに作り直す（前の巡回の値を損切りに使わない）。
+        var quotes = new Dictionary<MonitoredSymbol, Quote?>();
+
         // (1) 損切りライン検知（保有銘柄）。変動判定・クールダウンと独立に常に評価する（フェイルセーフ）。
         // 保有ポジションはリスク管理（#63 台帳）を同期照会する（IADR-0030）。照会失敗は空列（＝検知対象なし）。
         var openPositions = await positionStore.GetOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
@@ -61,7 +69,9 @@ public sealed class MarketMonitorAppService(
                 continue;
             }
 
-            var quote = await GetQuoteOrNullAsync(position.Symbol, position.Market, cancellationToken).ConfigureAwait(false);
+            // 保有のループが巡回で最初の消費者なので、損切りの評価はこの場で照会した値を使う（従来と同じ鮮度）。
+            var quote = await GetQuoteOnceAsync(
+                quotes, CycleQuoteTargets.Of(position), cancellationToken).ConfigureAwait(false);
 
             // FR-10, #902, IADR-0365 決定1: 評価の記録を残す（価格欠落も含む）。判定・発行は下の従来の経路のまま。
             evaluations.Add(new StopLossEvaluation(
@@ -92,7 +102,9 @@ public sealed class MarketMonitorAppService(
                 continue; // #909: 閉場中の変動判定は終値同士の比較にしかならない（照会もしない）
             }
 
-            var quote = await GetQuoteOrNullAsync(monitored.Symbol, monitored.Market, cancellationToken).ConfigureAwait(false);
+            // #1189, IADR-0494: 保有と重なる銘柄は保有のループで取った値を使う（照会し直さない。取れなかった銘柄も
+            // この巡回では取り直さず、次の巡回で取る＝429 のような失敗で予算を余計に使わない）。
+            var quote = await GetQuoteOnceAsync(quotes, monitored, cancellationToken).ConfigureAwait(false);
             if (quote is null)
             {
                 continue;
@@ -125,13 +137,29 @@ public sealed class MarketMonitorAppService(
         {
             StopLossEvaluations = evaluations,
             ClosedMarketPositions = closedMarketPositions,
-            // #1132, IADR-0477: 日次要求見積りの母数。開場に関係なく、保有と監視銘柄を別々に数える（照会の形と同じ）。
+            // #1132, IADR-0477: 日次要求見積りの母数。開場に関係なく数える。
+            // #1189, IADR-0494: 保有と監視銘柄の和集合（重なりは 1 回。照会の形と同じ）。
             QuotedSymbolMarkets =
             [
-                .. openPositions.Select(p => p.Market),
-                .. settings.MonitoredSymbols.Select(s => s.Market),
+                .. CycleQuoteTargets.Union(openPositions.Select(CycleQuoteTargets.Of), settings.MonitoredSymbols)
+                    .Select(s => s.Market),
             ],
         };
+    }
+
+    // #1189, IADR-0494: この巡回で既に照会した（銘柄・市場）なら、その結果（null も）を返す。無ければ照会して覚える。
+    // 呼び出し側の停止要求は例外のまま伝わり、覚えない。
+    private async Task<Quote?> GetQuoteOnceAsync(
+        Dictionary<MonitoredSymbol, Quote?> quotes, MonitoredSymbol target, CancellationToken cancellationToken)
+    {
+        if (quotes.TryGetValue(target, out var known))
+        {
+            return known;
+        }
+
+        var quote = await GetQuoteOrNullAsync(target.Symbol, target.Market, cancellationToken).ConfigureAwait(false);
+        quotes[target] = quote;
+        return quote;
     }
 
     // #957, IADR-0399 決定3: 1 銘柄の照会の失敗をその銘柄に閉じる。呼び出し側の停止要求だけは伝える（監視の停止）。
