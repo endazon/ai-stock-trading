@@ -106,7 +106,9 @@ public class PositionDriftAdoptedCrossServiceContractTests
         received.LedgerQuantityBefore.Should().Be(100);
         received.LedgerQuantityAfter.Should().Be(40);
 
-        await factory.Services.GetRequiredService<IMessageBus>().InvokeAsync(received);
+        // NFR-06, IADR-0496（#1192 独立監査）: IMessageBus は scoped。DI のスコープ検証が全環境で有効なので、ルートからは解決しない。
+        using var busScope = factory.Services.CreateScope();
+        await busScope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync(received);
 
         using var check = factory.Services.CreateScope();
         var row = check.ServiceProvider.GetRequiredService<IProtectiveStopOrderStore>().Find(entry)!;

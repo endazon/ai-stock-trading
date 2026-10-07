@@ -180,8 +180,10 @@ public static class WolverineExtensions
         // 生成コードを DLL に取り込んだうえで Static で読む（Roslyn はロードされない）。
         //
         // 解決順: 呼び出し側の明示設定（テストの固定用）＞ 環境変数 WOLVERINE_TYPE_LOAD_MODE ＞ 生成コードの有無 ＞ Dynamic。
-        // JasperFx のプロファイル（ASPNETCORE_ENVIRONMENT）で決めない —— 稼働クラスタは Development で動いており、
-        // 「Production なら Static」の慣用形は効かない（明示設定は TypeLoadModeHasChanged によりプロファイルに上書きされない）。
+        // JasperFx のプロファイル（ASPNETCORE_ENVIRONMENT）で決めない —— 決定時（#811）の稼働クラスタは Development で動いており、
+        // 「Production なら Static」の慣用形は効かなかった（明示設定は TypeLoadModeHasChanged によりプロファイルに上書きされない）。
+        // ［2026-10-07 追記 / #1192, IADR-0496］配備は Production になったが、docker-compose は Development のままであり、環境名に
+        // 依らない本解決順を据え置く（JasperFx の Development / Production プロファイルの既定は同値であることを実測した）。
         if (!options.CodeGeneration.TypeLoadModeHasChanged)
         {
             options.CodeGeneration.TypeLoadMode = ResolveTypeLoadMode(

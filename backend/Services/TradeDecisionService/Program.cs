@@ -37,6 +37,10 @@ const string ServiceName = "ai-stock-trading.trade-decision-service";
 // IADR-0017: 実 LLM/実データはプレースホルダ（安全既定＝取引しない）。実 LLM（platform /complete）・実データは後続。
 var builder = WebApplication.CreateBuilder(args);
 
+// NFR-06, IADR-0496（#1205 監査の追記）, #1192: DI 検証（ValidateScopes・ValidateOnBuild）を環境名に依らず有効にする
+// （Production では既定で外れる）。付け忘れは共通の終端 RunAiStockTradingAsync が起動時に止める。
+builder.UseAiStockTradingServiceProviderValidation();
+
 builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);
@@ -590,6 +594,9 @@ builder.Host.UseWolverine(opts =>
 });
 
 var app = builder.Build();
+
+// NFR-06, IADR-0496, #1192: 未処理例外は ProblemDetails（要求ヘッダー・スタックを返さない）。パイプラインの先頭に置く。
+app.UseAiStockTradingExceptionHandler();
 
 // NFR（費用）, FR-04, #817, IADR-0122（2026-09-17 追記）: LLM ゲートウェイ（REST の BaseUrl か gRPC）が構成されているのに
 // 単価が実質 0（モデル別の表が空 かつ 従来キーも無い）なら起動時に警告する。稼働では env 名のハイフンがイメージの

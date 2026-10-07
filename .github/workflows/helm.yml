@@ -240,6 +240,67 @@ jobs:
             echo "::error::既定値の描画でリソースが 1 件も生成されなかった（chart またはテンプレート条件の破綻）。"
             exit 1
           fi
+      # 🔴 NFR-06, NFR-05, IADR-0496, #1192（T-10-2356・T-10-2357）: 全 Worker の ASPNETCORE_ENVIRONMENT は Production で、Development は
+      # どのプロファイルでも描画されない（以前は固定値 Development で、例外時の開発者向けページが Authorization ヘッダーを応答へ載せた）。
+      # 陰性対照: global／サービス単位の Development（大小無視）は描画が失敗し、Development 以外の上書きは効く（検査の空振りを作らない）。
+      # Production 化で読まれなくなった appsettings.Development.json の値のうち経路B が要るもの（Serilog Debug・情報収集の巡回 300 秒）が
+      # 明示の env で描かれることも確かめる。
+      - name: Assert ASPNETCORE_ENVIRONMENT is never Development (#1192)
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          env_rows() {
+            helm template ast "$CHART" "$@" -s templates/deployment.yaml | awk 'BEGIN{RS="---"} /\nkind: Deployment\n/ {
+              d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
+              v="<none>"; n=split($0, L, "\n")
+              for (i=1; i<n; i++) if (L[i] ~ /^ *- name: ASPNETCORE_ENVIRONMENT$/) { v=L[i+1]; sub(/^ *value: /, "", v); gsub(/"/, "", v) }
+              print d "\t" v }'
+          }
+          for profile in default values-local all-flags; do
+            case "$profile" in
+              default) rows="$(env_rows)" ;;
+              values-local) rows="$(env_rows -f "$CHART/values-local.yaml")" ;;
+              all-flags) rows="$(env_rows --set tradingCycle.cronjob.enabled=true --set moomoo.enabled=true --set opend.enabled=true \
+                --set externalSecrets.enabled=true --set externalSecrets.appSecrets.enabled=true)" ;;
+            esac
+            count="$(printf '%s\n' "$rows" | grep -c . || true)"
+            [ "$count" -ge 11 ] || fail "[$profile] Worker の Deployment が $count 件しか抽出できない（抽出器の破綻）。"
+            bad="$(printf '%s\n' "$rows" | awk -F'\t' '$2 != "Production"')"
+            [ -z "$bad" ] || fail "[$profile] ASPNETCORE_ENVIRONMENT が Production でない Deployment がある: $bad"
+            echo "ok [$profile]: $count 件すべて Production"
+          done
+          for neg in "global.aspnetcoreEnvironment=Development" "global.aspnetcoreEnvironment=development" "services.audit.aspnetcoreEnvironment=Development"; do
+            if helm template ast "$CHART" --set "$neg" > /dev/null 2>&1; then fail "--set $neg が描画できてしまった（Development を止めていない）。"; fi
+            if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set "$neg" > /dev/null 2>&1; then fail "values-local ＋ --set $neg が描画できてしまった。"; fi
+          done
+          # #1205 監査（T-10-2365）: extraEnv で環境名を与える抜け道（同名 env は後ろが勝つ）は、名前の大小・読み元（DOTNET_）・値に依らず**その理由で**止まる。
+          for spec in "audit ASPNETCORE_ENVIRONMENT Development" "audit aspnetcore_environment Development" \
+                      "report DOTNET_ENVIRONMENT Development" "configuration ASPNETCORE_ENVIRONMENT Production"; do
+            set -- $spec
+            for base in default local; do
+              if [ "$base" = local ]; then b=(-f "$CHART/values-local.yaml"); else b=(); fi
+              if out="$(helm template ast "$CHART" "${b[@]}" --set "services.$1.extraEnv[0].name=$2" --set "services.$1.extraEnv[0].value=$3" 2>&1)"; then
+                fail "[$base] services.$1.extraEnv の $2=$3 が描画できてしまった（環境名の抜け道・#1205）。"
+              fi
+              grep -qF "services.$1 の extraEnv に $2 は書けません" <<<"$out" || fail "[$base] extraEnv の $2 が期待した理由で止まっていない: $(printf '%s' "$out" | tail -2)"
+            done
+          done
+          # 上書きが効くこと（陽性対照）。
+          env_rows --set global.aspnetcoreEnvironment=Staging | awk -F'\t' '$2 != "Staging" {exit 1}' || fail "global.aspnetcoreEnvironment の上書きが効かない。"
+          env_rows --set services.audit.aspnetcoreEnvironment=Staging | grep -qx "audit-service	Staging" || fail "サービス単位の上書きが効かない。"
+          # T-10-2357: Development でしか読まれなかった値の明示（経路B は保持・本番は Serilog を描かない）。
+          local_out="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml)"
+          prod_out="$(helm template ast "$CHART" -s templates/deployment.yaml)"
+          workers="$(printf '%s' "$local_out" | grep -c '^kind: Deployment' || true)"
+          debug="$(printf '%s\n' "$local_out" | grep -A1 -E '^ *- name: Serilog__MinimumLevel__Default$' | grep -c 'value: "Debug"' || true)"
+          [ "$debug" -eq "$workers" ] || fail "values-local の Serilog__MinimumLevel__Default=Debug が $debug / $workers 件（経路B のログ量が黙って変わる）。"
+          if printf '%s' "$prod_out" | grep -q 'name: Serilog__MinimumLevel__Default$'; then fail "本番既定に Serilog__MinimumLevel__Default が描画された（空既定のはず）。"; fi
+          for out_label in local prod; do
+            if [ "$out_label" = local ]; then out="$local_out"; else out="$prod_out"; fi
+            printf '%s' "$out" | awk 'BEGIN{RS="---"} /\n  name: information-collection-service\n/' \
+              | grep -A1 -E '^ *- name: Collection__PollIntervalSeconds$' | grep -q 'value: "300"' \
+              || fail "[$out_label] information-collection の Collection__PollIntervalSeconds=300 が描画されない（コード既定 1800 へ黙って延び、鮮度の上限 600 秒の前提が崩れる）。"
+          done
+          echo "ok: ASPNETCORE_ENVIRONMENT=Production・Development は描画で止まる・経路B の Debug と巡回 300 秒を明示"
       # #817 / IADR-0122 追記: コンテナの env 名はシェル識別子（^[A-Za-z_][A-Za-z0-9_]*$）に限る。イメージの
       # ENTRYPOINT は `sh -c "exec dotnet …"` であり、シェル（dash）は識別子でない env 名（例: `-` を含む
       # LlmPricing__PerModel__claude-sonnet-5__*）を exec 先へ渡さない。Pod 定義には在るのにプロセスへ 0 件しか届かず、

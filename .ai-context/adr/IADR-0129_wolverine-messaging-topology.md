@@ -17,7 +17,7 @@ related_ids:
   - IADR-0128
 author: claude
 created: 2026-08-03
-updated: 2026-09-23
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md
   - planning:projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md
@@ -339,6 +339,9 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
   在れば `Static` ＞ ④`Dynamic`。**JasperFx のプロファイル（`CritterStackDefaults(x => x.Production.GeneratedCodeMode = Static)`）
   では決めない** —— 稼働クラスタは `ASPNETCORE_ENVIRONMENT=Development` で動いており（chart）、その慣用形は効かない。
   明示設定は `WolverineOptions.ReadJasperFxOptions` が `TypeLoadModeHasChanged` を見てプロファイルで上書きしない（実測・6.24.5 のソース）。
+  > **［2026-10-07 追記 / #1192］** 稼働クラスタは `ASPNETCORE_ENVIRONMENT=Production` になった（[IADR-0496](./IADR-0496_aspnetcore-environment-production-and-problem-details.md)）。
+  > 本決定の解決順は据え置く —— docker-compose は Development のままであり、JasperFx の Development / Production プロファイルの既定は同値
+  > （`GeneratedCodeMode=Dynamic`・`ResourceAutoCreate=CreateOrUpdate`。6.24.5 で実測）で、環境名で読み込み方式を決める理由は無い。
 - **決定 6-3: `Static` のときは起動時に全生成型の存在を表明する**（hosted service `WolverinePreGeneratedCodeAssertion`。
   `ICodeFileCollection.AssertPreBuildTypesExist` を全集合に適用）。Wolverine のチェーン組み立ては遅延（`HandlerGraph.HandlerFor` →
   1 通目の受信時）であり、`Static` だけでは生成コードの無い型が**起動・readiness・キュー宣言・consumer 接続はすべて成功したまま

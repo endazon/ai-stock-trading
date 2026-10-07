@@ -150,6 +150,8 @@ plan_refs:
   決定 3 の「サイクルの上限の既定 960 秒は 30 分より短い」は前者の待ちを数えていなかった。経路B は巡回 300 秒・鮮度の上限 600 秒
   （情報収集の `appsettings.Development.json` 由来。#1192 で Production へ切り替えるときは `Collection__PollIntervalSeconds=300` を明示する予定）で前者に当たり、
   600 ＋ T ＜ 1,800、すなわち T ＜ 1,200 秒。**前提 12 が最大**（12 → 1,740 秒／13 → 1,830 秒／依頼の例 15 → 2,010 秒）。既定 10 は 1,560 秒で収まる。
+  > **［2026-10-07 追記 / #1192］** 予定どおり明示した: 配備の環境名は Production になり（[IADR-0496](./IADR-0496_aspnetcore-environment-production-and-problem-details.md)）、
+  > 巡回 300 秒は情報収集の env `Collection__PollIntervalSeconds: "300"`（values.yaml・values-local）が与える。鮮度の上限 600 秒と本節の計算は変わらない。
 - 🔴 **この上限は 1 回の試行についてである（既知の穴）。** 共通のエラー方針（`WolverineExtensions.cs:38-39`・`:216-217` の `OnAnyException().RetryWithCooldown(2s, 10s, 30s)`）は
   同じ配信の中で再試行する（ack しないまま）。ハンドラの上限による打ち切りや、銘柄の catch の外へ漏れた例外では、再試行 1 回ごとに最大 T（＋待ち）が足される。
   再試行の連鎖全体は上の式に数えていない。**再試行の連鎖全体が `consumer_timeout` に収まることの起動時の検査は #1194**
