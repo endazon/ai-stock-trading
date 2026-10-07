@@ -119,4 +119,51 @@ public class WatchlistErrorResponseAndMarketNameTests
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await WatchlistAsync(client)).Should().NotContain(n => n!["symbol"]!.GetValue<string>() == "ZZMARS");
     }
+
+    // T-10-2364: market の文字列は列挙名そのもの（大小無視）だけを受ける。ビット和（"Japan, UnitedStates"）・前後の空白・数字の文字列は
+    // 400 で、監視銘柄へ足さない（否定形）。数値の扱いは従来どおり（1 は受け、未定義の 99・null・省略は 400）。
+    [Theory]
+    [InlineData("\"Japan, UnitedStates\"", "ZZCOMMA")]
+    [InlineData("\"Japan,UnitedStates\"", "ZZCOMMA2")]
+    [InlineData("\" UnitedStates\"", "ZZPADL")]
+    [InlineData("\"UnitedStates \"", "ZZPADR")]
+    [InlineData("\"1\"", "ZZDIGIT")]
+    [InlineData("\"\"", "ZZEMPTY")]
+    [InlineData("99", "ZZUNDEF")]
+    [InlineData("1.5", "ZZFRAC")]
+    [InlineData("null", "ZZNULL")]
+    [InlineData("true", "ZZBOOL")]
+    public async Task market_の曖昧な文字列と未定義の値は_400_で追加しない(string marketJson, string symbol)
+    {
+        await using var factory = new MonitorWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        var res = await client.PostAsync("/monitor/watchlist",
+            Json($"{{\"symbol\":\"{symbol}\",\"market\":{marketJson},\"reason\":\"厳格\"}}"), ct);
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await WatchlistAsync(client)).Should().NotContain(n => n!["symbol"]!.GetValue<string>() == symbol);
+    }
+
+    // T-10-2364（陽性対照）: 数値 0 / 1 と列挙名（大小無視）は受け、省略は 400（従来どおり）。
+    [Fact]
+    public async Task market_の数値と列挙名は従来どおり受け_省略は_400()
+    {
+        await using var factory = new MonitorWorkerWebApplicationFactory();
+        var client = OwnerClient(factory);
+        var ct = TestContext.Current.CancellationToken;
+
+        (await client.PostAsync("/monitor/watchlist",
+            Json("{\"symbol\":\"ZZZERO\",\"market\":0,\"reason\":\"数値0\"}"), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PostAsync("/monitor/watchlist",
+            Json("{\"symbol\":\"ZZJAPAN\",\"market\":\"JAPAN\",\"reason\":\"大文字\"}"), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.PostAsync("/monitor/watchlist",
+            Json("{\"symbol\":\"ZZOMIT\",\"reason\":\"省略\"}"), ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var list = await WatchlistAsync(client);
+        list.Single(n => n!["symbol"]!.GetValue<string>() == "ZZZERO")!["market"]!.GetValue<int>().Should().Be(0);
+        list.Single(n => n!["symbol"]!.GetValue<string>() == "ZZJAPAN")!["market"]!.GetValue<int>().Should().Be(0);
+        list.Should().NotContain(n => n!["symbol"]!.GetValue<string>() == "ZZOMIT");
+    }
 }
