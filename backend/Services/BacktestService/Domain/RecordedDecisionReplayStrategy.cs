@@ -36,6 +36,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
         }
 
         var excluded = 0;
+        var modelMismatch = 0;
         var excludedWithQuantity = 0;
         var evaluated = 0;
         var excludedKinds = new HashSet<Stage0AsOfInputKind>();
@@ -58,9 +59,16 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
             // 同じ振る舞いになるが、**母集団から外れたという事実は数量と無関係**であり、混ぜると
             // 「AI が見送った」と「合否から外した」が件数の上で区別できなくなる。
             var kinds = Stage0AsOfInputs.NotReconstructableKinds(record.AsOfInputs);
-            if (kinds.Count > 0)
+            // 🔴 FR-15, ADR-0011, ADR-0054 決定3, #1196, IADR-0498: **両層のどちらかの実効モデルがピン（`LlmAssignments`）と違う判断は
+            // 判定母集団から外す**（不明も一致と読まない）。別モデルが答えた判断で合格すれば、両層の組での合格（実弾解禁の必須ゲート）
+            // にならない。一次を記録していない記録は対象外 —— 記録集合ごと評価不能として `Stage0ReplayEvaluation` が判定を組ませない。
+            var mismatched = Stage0TwoTierModels.IsScreeningRecorded(record)
+                && !Stage0TwoTierModels.MatchesPinnedAssignments(record);
+            if (kinds.Count > 0 || mismatched)
             {
                 excluded++;
+                if (mismatched)
+                    modelMismatch++;
                 // IADR-0387 決定3［2026-09-24 追記 / PR #931 監査］: 数量を持つ判断を外すと、差分で積み上がる
                 // 再生では残した判断の経路が歪む。ここでは数えるだけで、遮断は `Stage0ReplayEvaluation` が行う。
                 if (record.SignedQuantity != 0)
@@ -87,6 +95,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
         }
 
         ExcludedDecisionCount = excluded;
+        ModelMismatchDecisionCount = modelMismatch;
         ExcludedDecisionWithQuantityCount = excludedWithQuantity;
         EvaluatedDecisionCount = evaluated;
         ExcludedInputKinds = [.. Stage0AsOfInputs.DeclarableKinds.Where(excludedKinds.Contains)];
@@ -120,6 +129,12 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
     /// </para>
     /// </summary>
     public int ExcludedDecisionWithQuantityCount { get; }
+
+    /// <summary>
+    /// FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次か本判断の実効モデルがピンと違った（不明を含む）ため判定母集団から外した
+    /// 判断の件数（<see cref="ExcludedDecisionCount"/> の内数・重複を畳んだ後の数）。
+    /// </summary>
+    public int ModelMismatchDecisionCount { get; }
 
     /// <summary>判定母集団に残った判断の件数（重複を畳んだ後の数）。**0 なら評価対象が成立していない。**</summary>
     public int EvaluatedDecisionCount { get; }

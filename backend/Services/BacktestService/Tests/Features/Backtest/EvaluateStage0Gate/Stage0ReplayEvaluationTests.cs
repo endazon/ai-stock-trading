@@ -42,10 +42,12 @@ public class Stage0ReplayEvaluationTests
         int signedQuantity,
         IReadOnlyList<Stage0AsOfInputStatus>? asOfInputs = null) =>
         new(symbol, Market.UnitedStates, asOf, "fp", "claude-sonnet-5", VoteCount: 3,
-            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
+            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false, "claude-sonnet-5")],
             MajorityAction: signedQuantity > 0 ? Stage0DecisionAction.Buy : Stage0DecisionAction.Hold,
             MajorityRationale: "根拠", SignedQuantity: signedQuantity, CostJpy: 1m,
-            InputTokens: 300, OutputTokens: 60, AsOfInputs: asOfInputs ?? AllReconstructed);
+            InputTokens: 300, OutputTokens: 60, AsOfInputs: asOfInputs ?? AllReconstructed,
+            // FR-15, ADR-0054 決定3, #1196, IADR-0498: 二段で記録した記録（一次・本判断ともピンが応答）。一次の無い記録は評価不能になる。
+            Screening: new Stage0ScreeningDecision(Stage0DecisionAction.Buy, false, "関心あり", 50, 10, "claude-haiku-4-5"));
 
     private static Stage0DecisionRecordSet SetOf(
         DateOnly? from = null,
@@ -523,5 +525,114 @@ public class Stage0ReplayEvaluationTests
             replayed.DecideOrders(FlatContext(day))
                 .Should().Equal(reference.DecideOrders(FlatContext(day)));
         }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // FR-04, FR-15, ADR-0054 決定3・4, #1196, IADR-0498: **両層の組（一次スクリーニング ＋ 本判断）での評価**
+    // ------------------------------------------------------------------------------------------------
+
+    // 一次を記録していない記録（二段化より前の記録・欄の無い旧 JSON が復元される形）。
+    private static Stage0DecisionRecord Legacy(DateOnly asOf, int signedQuantity = 10) =>
+        Record(asOf, "AAPL", signedQuantity) with { Screening = null };
+
+    // 実効モデルを差し替えた記録（一次・本判断）。null は「名乗らなかった」。
+    private static Stage0DecisionRecord WithModels(
+        DateOnly asOf, int signedQuantity, string? screeningModel, string? decisionModel)
+    {
+        var record = Record(asOf, "AAPL", signedQuantity);
+        return record with
+        {
+            Screening = record.Screening! with { EffectiveModelId = screeningModel },
+            RawDecisions = [.. record.RawDecisions.Select(r => r with { EffectiveModelId = decisionModel })],
+        };
+    }
+
+    // 🔴 T-15-119 **否定形（受け入れ基準 5・最重要）**: 一次を記録していない記録は**評価不能**。判定器を呼ばず（7 条件の判定に
+    // 入らない＝不合格とも数えない）、合格も出さない。1 件でも混ざれば止める（混在は評価した系が本番と一致しない）。
+    // 除外件数は名乗らず、理由（一次を記録していない）で読み分ける。
+    [Theory]
+    [InlineData(3)] // 全件が旧記録
+    [InlineData(1)] // 旧記録が 1 件だけ混ざる
+    public void 一次を記録していない記録は評価不能で判定を組まない_failclosed(int legacyCount)
+    {
+        var records = Enumerable.Range(1, 3)
+            .Select(i => i <= legacyCount ? Legacy(From.AddDays(i)) : Record(From.AddDays(i), "AAPL", 10))
+            .ToArray();
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.IsReady.Should().BeFalse();
+        preparation.BlockingChecks.Should().Equal(Stage0GateCheck.ScreeningNotRecorded);
+        preparation.GateContext.Should().BeNull();
+        preparation.BaselineRun.Should().BeNull("評価不能の記録は再生もしない");
+
+        var decision = Stage0DriverVerdict.RecordingUnusable(preparation.BlockingChecks);
+        decision.Gate.Passed.Should().BeFalse("評価不能は合格ではない");
+        decision.Gate.FailedChecks.Should().Equal(Stage0GateCheck.ScreeningNotRecorded);
+        decision.Exclusions.Should().BeOfType<Stage0ExclusionSummary.Unknown>()
+            .Which.Reason.Should().Be(Stage0ExclusionUnknownReason.ScreeningNotRecorded);
+        decision.Exclusions.Format().Should().NotContain("0");
+    }
+
+    // T-15-119 陰性対照: 二段で記録した記録（一次あり・両層ともピン）は従来どおり本物の判定器へ到達する。
+    [Fact]
+    public void 二段で記録しピンが応答した記録は判定器へ到達する()
+    {
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: Daily(3))));
+
+        preparation.BlockingChecks.Should().BeEmpty();
+        preparation.IsReady.Should().BeTrue();
+        preparation.GateContext!.Exclusions.Should().BeOfType<Stage0ExclusionSummary.Counted>()
+            .Which.ModelMismatch.Should().Be(0);
+    }
+
+    // 🔴 T-15-118（受け入れ基準 2）: 一次か本判断のどちらかの実効モデルがピン（LlmAssignments）と違う判断は判定母集団から外れ、
+    // 件数が「実効モデル不一致」として verdict まで載る（見送りなら残りで判定器へ到達する）。不明（名乗らない）も一致と読まない。
+    [Theory]
+    [InlineData("claude-sonnet-5", "claude-sonnet-5")]   // 一次がピン（haiku）以外
+    [InlineData("claude-haiku-4-5", "claude-haiku-4-5")] // 本判断がピン（sonnet）以外
+    [InlineData(null, "claude-sonnet-5")]                // 一次が名乗らない
+    [InlineData("claude-haiku-4-5", null)]               // 本判断が名乗らない
+    public void 実効モデルがピンと違う判断は母集団から外れ件数が載る(string? screeningModel, string? decisionModel)
+    {
+        var records = Daily(3).Concat([WithModels(From.AddDays(4), 0, screeningModel, decisionModel)]).ToArray();
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.IsReady.Should().BeTrue();
+        var counted = preparation.GateContext!.Exclusions.Should()
+            .BeOfType<Stage0ExclusionSummary.Counted>().Subject;
+        counted.Excluded.Should().Be(1);
+        counted.Evaluated.Should().Be(3);
+        counted.ModelMismatch.Should().Be(1);
+        counted.Kinds.Should().BeEmpty("as-of 入力の除外ではない");
+        new Stage0GateService().Evaluate(preparation.GateContext!).Exclusions.Format()
+            .Should().Contain("実効モデル不一致 1 件");
+    }
+
+    // 🔴 T-15-118: 実効モデルが違う判断が**数量を持つ**なら、外すと残した判断の経路が歪むため判定を組まない
+    // （as-of 入力の除外と同じ遮断。別モデルの判断を合格根拠にも、歪んだ経路の成績にもしない）。
+    [Fact]
+    public void 実効モデルがピンと違う判断が数量を持てば判定を組まない_failclosed()
+    {
+        var records = Daily(3).Concat([WithModels(From.AddDays(4), 10, "claude-sonnet-5", "claude-sonnet-5")]).ToArray();
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.IsReady.Should().BeFalse();
+        preparation.BlockingChecks.Should().Equal(Stage0GateCheck.ExcludedDecisionAltersReplayPath);
+    }
+
+    // 🔴 T-15-118: 全件の実効モデルがピンと違えば母集団が残らず判定を組まない（別モデルの記録で合格を作らない）。
+    [Fact]
+    public void 全件の実効モデルがピンと違えば判定を組まない_failclosed()
+    {
+        var records = Enumerable.Range(1, 3)
+            .Select(i => WithModels(From.AddDays(i), 0, "claude-haiku-4-5", "claude-opus-5"))
+            .ToArray();
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.BlockingChecks.Should().Equal(Stage0GateCheck.AllDecisionsExcluded);
     }
 }

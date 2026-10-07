@@ -2,8 +2,9 @@
 # issue #82 / IADR-0049 補足: Docker API が無い環境（例: Rancher Desktop の containerd/nerdctl 構成）で
 # 統合 E2E を実走するための実インフラ（実 PostgreSQL / 実 RabbitMQ / 実 Keycloak）を起動・破棄する。
 #
-# Testcontainers は Docker API（npipe/unix socket）必須のため containerd 系では
-# "Failed to connect to Docker endpoint" となる。本スクリプトでコンテナを用意し、
+# Testcontainers は Docker API（npipe/unix socket）必須のため containerd 系では使えない。
+# その環境では統合テストの門（RequiredServices。NFR / #1200 / IADR-0497）が理由つきで skip し、理由に本スクリプトを挙げる
+# （従前は "Failed to connect to Docker endpoint" で fail していた）。本スクリプトでコンテナを用意し、
 # E2E_* 環境変数でエンドポイントを注入すると、テストは Testcontainers を使わず実インフラへ結線する
 # （検証対象が実基盤である点は同じ。E2EInfrastructure.cs 参照）。
 #

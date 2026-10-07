@@ -233,7 +233,7 @@ public class Stage0DriverToRiskProjectionTests
     {
         Stage0DecisionRecord record = new(
             "AAPL", Market.UnitedStates, ReplayFrom.AddDays(1), "fp", "claude-sonnet-5", VoteCount: 3,
-            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
+            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false, "claude-sonnet-5")],
             MajorityAction: Stage0DecisionAction.Buy, MajorityRationale: "根拠", SignedQuantity: 10,
             CostJpy: 1m, InputTokens: 300, OutputTokens: 60,
             // FR-15, ADR-0036 決定1, #749, IADR-0387: 3 種すべて再構成可の申告（陰性対照側）。
@@ -242,7 +242,9 @@ public class Stage0DriverToRiskProjectionTests
                 new(Stage0AsOfInputKind.NewsAndDisclosures, Stage0AsOfInputAvailability.Reconstructed),
                 new(Stage0AsOfInputKind.DailyPolicy, Stage0AsOfInputAvailability.Reconstructed),
                 new(Stage0AsOfInputKind.FxRateToBase, Stage0AsOfInputAvailability.Reconstructed),
-            ]);
+            ],
+            // FR-15, ADR-0054 決定3, #1196, IADR-0498: 二段で記録した記録（一次・本判断ともピンが応答）。一次の無い記録は評価不能になる。
+            Screening: new Stage0ScreeningDecision(Stage0DecisionAction.Buy, false, "関心あり", 50, 10, "claude-haiku-4-5"));
 
         return new Stage0DecisionRecordSet(
             ReplayFrom, ReplayTo, [new Stage0RecordedSymbol("AAPL", Market.UnitedStates)],

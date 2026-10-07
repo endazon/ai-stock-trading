@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-09-27
+updated: 2026-10-07
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04]
-adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034]
+ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04, FR-05]
+adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196]
 -->
 
 
@@ -328,6 +328,38 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | 数量を持つ判断を外しても遮断しない（経路の歪みを見逃す） | **2 件が赤**（T-15-113 の 2 ケース） |
 | 見送りの除外も経路を歪めるものとして数える（見送りの除外まで遮断する） | **4 件が赤**（T-15-108 の 1 件・T-15-114 の 3 件） |
 | 経路の遮断を全件除外より先に判定する | **1 件が赤**（T-15-111 の数量を持つケース） |
+
+### 本番と同じ二段で記録し、両層の組で評価する（2026-10-07 の計画裁定・#1196）
+
+> 計画は取引判断の割当モデルを層別（一次スクリーニング＝`claude-haiku-4-5`・本判断＝`claude-sonnet-5`）とし、
+> 「**Stage 0 は本番と同じ二段を通した判断を評価する。実弾解禁の必須ゲートは両層の組での Stage 0 の通過である**」と定めた。
+> 🔴 **本節の核心は 2 つ** —— 記録器が本番の二段の順序（一次で見送れば本判断を呼ばない）をそのまま通ること、
+> および **「一次を記録していない」を「一次を通過した」と読まない**こと（旧記録は評価不能。合格にも不合格にも数えない）。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-115 | 🔴 記録器は一次 → 本判断の順に呼び、**一次が見送り（Hold）なら本判断を呼ばない**（記録には一次の見送りが残り、本判断の票は 0・数量 0）／一次の**解析不能も打ち切る**（見送りとは区別して記録）／判断時点ごとに一次の結果で本判断の有無が決まる | `Stage0DecisionRecorderTests.一次がHoldなら本判断を呼ばず一次の見送りを記録する` / `一次が解析不能なら本判断を呼ばず解析不能として記録する` / `判断時点ごとに一次の結果で本判断の有無が決まる` / `LLM呼び出しの用途は本番と同じである`（改） | 自動 |
+| T-15-116 | 一次のプロンプトは本番の一次の枝と同じ組み立て（予算なし／予算あり＝縮退込みの 2 枝）で、本判断のプロンプトとは別物／費用・トークン量は両層の合計 | `Stage0DecisionRecorderTests.一次のプロンプトは本番と同じ組み立てで費用は両層の合計である` | 自動 |
+| T-15-117 | 🔴 記録には**両層の実効モデル（応答が名乗った値）が別々に**残る／希望値と違うモデルが答えたら答えたモデルが残り、名乗らなければ不明（null）／希望値は層ごとに渡る | `Stage0DecisionRecorderTests.記録は両層の実効モデルを別々に持つ` / `記録の実効モデルは応答が名乗った値で希望値ではない` / `モデルの希望値は層ごとに渡る` | 自動 |
+| T-15-118 | 🔴 一次か本判断の実効モデルがピンと違う（不明を含む）判断は**判定母集団から外れ**、件数が「実効モデル不一致」として verdict の表示まで載る／その判断が数量を持てば判定を組まない／全件が違えば判定を組まない | `Stage0ReplayEvaluationTests.実効モデルがピンと違う判断は母集団から外れ件数が載る`（4 ケース） / `実効モデルがピンと違う判断が数量を持てば判定を組まない_failclosed` / `全件の実効モデルがピンと違えば判定を組まない_failclosed` | 自動 |
+| T-15-119 | 🔴 **否定形（最重要）**: 一次を記録していない記録が 1 件でもあれば**評価不能**（判定器を呼ばず、合格を出さず、除外件数を名乗らず理由で読み分ける）／陰性対照: 二段で記録しピンが応答した記録は判定器へ到達する | `Stage0ReplayEvaluationTests.一次を記録していない記録は評価不能で判定を組まない_failclosed`（全件・1 件混在） / `二段で記録しピンが応答した記録は判定器へ到達する` | 自動 |
+| T-15-120 | 契約: 一次と両層の実効モデルは JSON 往復で落ちない／**一次の欄の無い旧 JSON は「一次を記録していない」へ復元され二段の記録へ倒れない**／ピンとの照合は用途ごと（層の取り違え・不明は不一致）／一次で見送った判断は一次だけで照合／一次と実効モデルが違えば戦略識別子が変わり、旧記録の戦略識別子は変わらない | `Stage0DecisionRecordTests.一次と両層の実効モデルは往復で落ちない` / `一次の無い旧記録はnullへ復元され二段の記録へ倒れない` / `両層の実効モデルは用途ごとのピンと照合される`（7 ケース） / `一次で見送った判断は一次の実効モデルだけで照合される` / `一次と両層の実効モデルが違えば戦略IDが変わる` / `監視銘柄を申告しない記録の戦略IDは変わらない`（既存・固定値） | 自動 |
+| T-15-121 | 見積りは判断時点ごとに一次 1 回を足し（判断時点 ×（一次 1 ＋ 多数決回数））、一次のトークン量と一次の層の単価で換算する／一次を数えない旧式の見積り額での承認は通らない | `Stage0RecordingBudgetTests.見積りは一次スクリーニングを判断時点ごとに1回ずつ一次の単価で含める` / `見積りは計画の式どおりに算出される`（改） / `Stage0DecisionRecorderTests.見積りは実行せずに取得できる`（改） / `未承認ならLLMを1回も呼ばない`（改） | 自動 |
+| T-15-122 | 🔴 実弾解禁の前提の一覧（起動時の停止の告知文。発注先の取引環境の告知文も同じ）に**両層の組での Stage 0 合格**が項目として並び、既存の前提は消えない／閂は未解禁のまま | `LiveTradingGateTests.live選択の告知は両層の組でのStage0合格を解禁前提に含む` / `MoomooBrokerOptionsTests.TrdEnv_に実弾を要求されたら起動時に停止する`（改） | 自動 |
+
+**突然変異による証跡**（実装を壊して赤くなることを実測した。いずれも復元済み）:
+
+| 壊し方 | 結果 |
+| --- | --- |
+| 記録の二段を無効にする（一次を呼ばない） | **52 件が赤**（記録器の試験） |
+| 一次が見送りでも本判断へ進む | **3 件が赤**（T-15-115） |
+| 一次の実効モデルを捨てる／本判断の実効モデルを捨てる／一次に希望値を入れる | **2 件／3 件／3 件が赤**（T-15-117） |
+| 実効モデルがピンと違う判断を母集団から外さない | **6 件が赤**（T-15-118） |
+| ピンとの照合が一次の実効モデルを見ない | **3 件が赤**（T-15-120） |
+| 一次の無い旧記録を評価へ通す／一次の有無の判定を常に「あり」にする | **2 件／1 件が赤**（T-15-119／T-15-120） |
+| 戦略識別子が一次を含まない／旧記録の戦略識別子を変える | **1 件／2 件が赤**（T-15-120。後者は既存の固定値の試験を含む） |
+| 起動時の停止の告知から Stage 0 を外す／取引環境の告知から外す | **1 件／5 件が赤**（T-15-122） |
+| 見積りが一次を数えない | **62 件が赤**（T-15-121 ほか、見積りと一致させた承認値で回る記録器の試験） |
 
 ### 合格基準の閾値較正（#208。Stage 0 の最小試行数を 1 → 20 へ較正する）
 

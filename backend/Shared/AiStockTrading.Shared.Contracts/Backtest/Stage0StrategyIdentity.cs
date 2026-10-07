@@ -104,6 +104,19 @@ public static class Stage0StrategyIdentity
                 }
             }
 
+            // FR-15, ADR-0054 決定3, #1196, IADR-0498: **一次スクリーニングと両層の実効モデルも同一性に含める。**
+            // 一次が違えば本判断へ届く判断の集合が違い、実効モデルが違えば判定母集団（ピン不一致は外す）が違う ——
+            // どちらも「評価したもの」が違う。**一次を持つ記録のときだけ**含める（二段化より前の記録の戦略 ID を変えない。
+            // その記録は再生側で評価不能になり、合格の鍵としては使われない）。
+            if (r.Screening is { } screening)
+            {
+                sb.Append("|s:").Append(screening.Action).Append(':')
+                  .Append(screening.Unparseable ? '1' : '0').Append(':')
+                  .Append(Normalize(screening.EffectiveModelId)).Append("|m:");
+                foreach (var raw in r.RawDecisions.OrderBy(v => v.Attempt))
+                    sb.Append(Normalize(raw.EffectiveModelId)).Append(';');
+            }
+
             sb.Append('\n');
         }
 

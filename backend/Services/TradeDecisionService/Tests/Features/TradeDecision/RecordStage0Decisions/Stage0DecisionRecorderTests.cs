@@ -29,7 +29,7 @@ public class Stage0DecisionRecorderTests
 
     // 単価: 入力 1 円 / 1k・出力 1 円 / 1k（計算を読みやすくするための任意値。計画の確定値ではない）。
     private static LlmPriceTable Prices() =>
-        LlmPriceTable.From([("claude-sonnet-5", "1", "1")], "1", "1");
+        LlmPriceTable.From([("claude-sonnet-5", "1", "1"), ("claude-haiku-4-5", "1", "1")], "1", "1");
 
     private static Stage0RecordingOptions Options(
         bool enabled = true,
@@ -51,9 +51,12 @@ public class Stage0DecisionRecorderTests
             DecisionsPerDay = 1,
             InputTokensPerDecision = 1_000,
             OutputTokensPerDecision = 1_000,
+            // #1196, IADR-0498: 一次スクリーニングのトークン量（見積りの一次の項）。
+            ScreeningInputTokensPerDecision = 1_000,
+            ScreeningOutputTokensPerDecision = 1_000,
             ApprovedVoteCount = approvedVotes,
-            // 見積り = 銘柄1 × 平日2 × 1 × votes × (1000/1000×1 + 1000/1000×1) = 4 × votes 円
-            ApprovedEstimateJpy = approvedJpy ?? 4m * voteCount,
+            // 見積り = 銘柄1 × 平日2 × 1 ×（一次 1 ＋ votes）× (1000/1000×1 + 1000/1000×1) = 4 ×（1 ＋ votes）円
+            ApprovedEstimateJpy = approvedJpy ?? 4m * (voteCount + 1),
             OutputPath = outputPath,
             Model = "claude-sonnet-5",
         };
@@ -64,14 +67,18 @@ public class Stage0DecisionRecorderTests
             int tokensPerCall = 1_000,
             IReadOnlyList<Stage0AsOfInputKind>? notReconstructable = null,
             IReadOnlyList<WatchedSymbol>? asOfWatchlist = null,
-            Func<IAsOfDecisionInputProvider, IAsOfDecisionInputProvider>? wrapInputs = null)
+            Func<IAsOfDecisionInputProvider, IAsOfDecisionInputProvider>? wrapInputs = null,
+            IReadOnlyList<string>? screening = null,
+            Func<string?, string?>? effectiveModel = null,
+            DecisionOrchestrationOptions? production = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
-        var llm = new FakeLlmClient(responses, collector, tokensPerCall);
+        var llm = new FakeLlmClient(responses, collector, tokensPerCall, screening, effectiveModel);
         var sink = new CapturingSink();
         var recorder = new Stage0DecisionRecorder(
             llm,
+            production ?? DecisionOrchestrationOptions.Default,
             wrapInputs is null
                 ? new StubInputProvider(notReconstructable, asOfWatchlist)
                 : wrapInputs(new StubInputProvider(notReconstructable, asOfWatchlist)),
@@ -105,10 +112,11 @@ public class Stage0DecisionRecorderTests
     [Theory]
     [InlineData(null, null)]     // 何も承認していない
     [InlineData(1, null)]        // 回数だけ承認
-    [InlineData(null, 4.0)]      // 金額だけ承認
-    [InlineData(2, 4.0)]         // 回数が食い違う（VoteCount=1）
-    [InlineData(1, 3.99)]        // 金額が食い違う
-    [InlineData(1, 400.0)]       // 桁を取り違えた承認も通さない
+    [InlineData(null, 8.0)]      // 金額だけ承認
+    [InlineData(2, 8.0)]         // 回数が食い違う（VoteCount=1）
+    [InlineData(1, 7.99)]        // 金額が食い違う
+    [InlineData(1, 800.0)]       // 桁を取り違えた承認も通さない
+    [InlineData(1, 4.0)]         // #1196: 一次を数えない旧式の見積り額での承認も通さない
     public async Task 未承認ならLLMを1回も呼ばない(int? approvedVotes, double? approvedJpy)
     {
         var (recorder, llm, sink, _) = Build([Decision("Buy")]);
@@ -152,8 +160,9 @@ public class Stage0DecisionRecorderTests
 
         var estimate = recorder.Estimate(Options(voteCount: 3));
 
-        estimate.CallCount.Should().Be(6); // 銘柄 1 × 平日 2 × 1 日 1 回 × 多数決 3 回
-        estimate.TotalJpy.Should().Be(12m);
+        // T-15-121, #1196: 銘柄 1 × 平日 2 × 1 日 1 回 ×（一次 1 ＋ 多数決 3 回）
+        estimate.CallCount.Should().Be(8);
+        estimate.TotalJpy.Should().Be(16m);
         llm.CallCount.Should().Be(0);
     }
 
@@ -166,7 +175,7 @@ public class Stage0DecisionRecorderTests
         var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
 
         outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
-        llm.CallCount.Should().Be(2); // 平日 2 日 × 1 銘柄 × 多数決 1 回
+        llm.CallCount.Should().Be(4); // 平日 2 日 × 1 銘柄 ×（一次 1 ＋ 多数決 1 回）
         sink.Saved.Should().NotBeNull();
         sink.Saved!.Records.Should().HaveCount(2);
         sink.Saved.StrategyId.Should().StartWith($"{Stage0StrategyIdentity.Prefix}/claude-sonnet-5/");
@@ -181,15 +190,15 @@ public class Stage0DecisionRecorderTests
     [Fact]
     public async Task 見積り額を超えたら停止し途中までの記録を保存する()
     {
-        // 1 呼び出しあたり入力・出力とも 10,000 トークン ＝ 20 円（見積りは 4 円）。1 判断目で超える。
+        // 1 呼び出しあたり入力・出力とも 10,000 トークン ＝ 20 円（見積りは 8 円）。1 判断目で超える。
         var (recorder, llm, sink, _) = Build([Decision("Buy")], tokensPerCall: 10_000);
 
         var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
 
         outcome.Status.Should().Be(Stage0RecordingStatus.StoppedOverBudget);
         outcome.ActualCostJpy.Should().BeGreaterThan(outcome.Estimate.TotalJpy);
-        // 超過は 1 判断ぶんに限られる（2 日目は呼ばれない）。
-        llm.CallCount.Should().Be(1);
+        // 超過は 1 判断ぶん（一次 1 ＋ 本判断 1）に限られる（2 日目は呼ばれない）。
+        llm.CallCount.Should().Be(2);
         sink.Saved.Should().NotBeNull();
         sink.Saved!.Records.Should().ContainSingle();
     }
@@ -388,8 +397,12 @@ public class Stage0DecisionRecorderTests
 
         await recorder.RunAsync(Options(), CancellationToken.None);
 
-        llm.Purposes.Should().OnlyContain(p => p == LlmPurposes.TradeDecision);
-        llm.Models.Should().OnlyContain(m => m == "claude-sonnet-5");
+        // #1196, IADR-0498: 層ごとに本番と同じ用途を名乗る（一次 → 本判断の順）。
+        llm.Purposes.Should().Equal(
+            LlmPurposes.TradeDecisionScreening, LlmPurposes.TradeDecision,
+            LlmPurposes.TradeDecisionScreening, LlmPurposes.TradeDecision);
+        llm.Models.Where((_, i) => llm.Purposes[i] == LlmPurposes.TradeDecision)
+            .Should().OnlyContain(m => m == "claude-sonnet-5");
     }
 
     // 🔴 #854, IADR-0351 決定7: 記録器は**保有なしを明示して**プロンプトを組む。記録は銘柄 × 判断時点で独立であり、
@@ -436,7 +449,7 @@ public class Stage0DecisionRecorderTests
 
         var outcome = await recorder.RunAsync(
             Options(
-                approvedJpy: 8m,
+                approvedJpy: 16m,
                 symbols:
                 [
                     new Stage0RecordingOptions.SymbolEntry { Symbol = "AAPL", Market = Market.UnitedStates },
@@ -494,7 +507,7 @@ public class Stage0DecisionRecorderTests
 
         await recorder.RunAsync(
             Options(
-                approvedJpy: 8m,
+                approvedJpy: 16m,
                 symbols:
                 [
                     new Stage0RecordingOptions.SymbolEntry { Symbol = "AAPL", Market = Market.UnitedStates },
@@ -559,15 +572,186 @@ public class Stage0DecisionRecorderTests
     }
 
     // ------------------------------------------------------------------------------------------------
+    // 5. 本番と同じ二段（FR-15, ADR-0054 決定3・4, #1196, IADR-0498）
+    // ------------------------------------------------------------------------------------------------
+
+    private const string ScreeningHold = """{"action":"Hold","rationale":"関心なし"}""";
+
+    // 🔴 T-15-115（受け入れ基準 1）: 一次（trade-decision-screening）→ 本判断（trade-decision）の順に呼び、
+    // **一次が Hold なら本判断を呼ばない**。記録には一次の見送りが残り、本判断の票は 0（数量 0・Hold）。
+    [Fact]
+    public async Task 一次がHoldなら本判断を呼ばず一次の見送りを記録する()
+    {
+        var (recorder, llm, sink, _) = Build([Decision("Buy")], screening: [ScreeningHold]);
+
+        var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        llm.Purposes.Should().Equal(LlmPurposes.TradeDecisionScreening, LlmPurposes.TradeDecisionScreening);
+        llm.Prompts.Should().BeEmpty("一次で見送れば本判断のプロンプトは送られない");
+        sink.Saved!.Records.Should().HaveCount(2).And.OnlyContain(r =>
+            r.MajorityAction == Stage0DecisionAction.Hold
+            && r.SignedQuantity == 0
+            && r.RawDecisions.Count == 0
+            && r.Screening != null
+            && r.Screening.Action == Stage0DecisionAction.Hold
+            && !r.Screening.Interested
+            && r.MajorityRationale == "関心なし");
+    }
+
+    // 🔴 T-15-115: 一次の**解析不能も打ち切る**（本番の `ParseScreening` と同じ。見送りとは区別して記録する・IADR-0248）。
+    [Fact]
+    public async Task 一次が解析不能なら本判断を呼ばず解析不能として記録する()
+    {
+        var (recorder, llm, sink, _) = Build([Decision("Buy")], screening: ["これは JSON ではない"]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Purposes.Should().OnlyContain(p => p == LlmPurposes.TradeDecisionScreening);
+        var screening = sink.Saved!.Records[0].Screening!;
+        screening.Unparseable.Should().BeTrue();
+        screening.Interested.Should().BeFalse();
+        sink.Saved.Records[0].RawDecisions.Should().BeEmpty();
+    }
+
+    // T-15-115: 判断時点ごとに一次 → 本判断の順。一次が関心ありの日だけ本判断が多数決回数ぶん走る（1 日目 Hold・2 日目 Buy）。
+    [Fact]
+    public async Task 判断時点ごとに一次の結果で本判断の有無が決まる()
+    {
+        var (recorder, llm, sink, _) = Build(
+            [Decision("Buy"), Decision("Buy"), Decision("Hold")],
+            screening: [ScreeningHold, FakeLlmClient.Interested]);
+
+        await recorder.RunAsync(Options(voteCount: 3, approvedVotes: 3), CancellationToken.None);
+
+        llm.Purposes.Should().Equal(
+            LlmPurposes.TradeDecisionScreening,
+            LlmPurposes.TradeDecisionScreening, LlmPurposes.TradeDecision, LlmPurposes.TradeDecision, LlmPurposes.TradeDecision);
+        var records = sink.Saved!.Records;
+        records[0].RawDecisions.Should().BeEmpty();
+        records[0].MajorityAction.Should().Be(Stage0DecisionAction.Hold);
+        records[1].Screening!.Interested.Should().BeTrue();
+        records[1].RawDecisions.Select(r => r.Attempt).Should().Equal(1, 2, 3);
+        records[1].MajorityAction.Should().Be(Stage0DecisionAction.Buy);
+    }
+
+    // T-15-116: 一次のプロンプトは本番と同じ組み立て（`TradeDecisionPromptBuilder.BuildScreening`。保有なし・未約定なし・
+    // ニュースは不明）で、本判断のプロンプトとは別物である。本番の構成に予算があれば縮退の枝（参考情報を載せる形）を通る。
+    // 費用は両層の合計（1 呼び出し 2 円 × 2）。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 一次のプロンプトは本番と同じ組み立てで費用は両層の合計である(bool budgeted)
+    {
+        var production = budgeted
+            ? DecisionOrchestrationOptions.Default with
+            {
+                ScreeningContextBudgetChars = DecisionOrchestrationOptions.DefaultScreeningContextBudgetChars,
+            }
+            : DecisionOrchestrationOptions.Default;
+        var (recorder, llm, sink, _) = Build([Decision("Buy")], production: production);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        var input = (await new StubInputProvider().GetAsync(
+            "AAPL", Market.UnitedStates, new DateOnly(2026, 6, 1), CancellationToken.None))!;
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+        var expected = budgeted
+            ? TradeDecisionPromptBuilder.BuildScreening(
+                trigger, input.Policy, input.Sizing, input.ReferencePrice,
+                ScreeningContextAssembler.Assemble(
+                    trigger, input.Policy, input.References, input.ReferencePrice,
+                    DecisionOrchestrationOptions.DefaultScreeningContextBudgetChars, input.Watchlist).RetainedReferences,
+                HeldPosition.None, WorkingEntryOrders.None, input.Watchlist, input.Intraday, news: null, input.Volume)
+            : TradeDecisionPromptBuilder.BuildScreening(
+                trigger, input.Policy, input.Sizing, input.ReferencePrice, held: HeldPosition.None,
+                working: WorkingEntryOrders.None, watchlist: input.Watchlist, intraday: input.Intraday, volume: input.Volume);
+
+        llm.ScreeningPrompts.Should().HaveCount(2);
+        llm.ScreeningPrompts[0].Should().Be(expected);
+        llm.ScreeningPrompts.Should().OnlyContain(p =>
+            p.Contains(TradeDecisionPromptBuilder.HeldNoneLine) && p.Contains(TradeDecisionPromptBuilder.NewsUnknownLine));
+        llm.ScreeningPrompts.Should().NotIntersectWith(llm.Prompts);
+
+        var record = sink.Saved!.Records[0];
+        record.CostJpy.Should().Be(4m);
+        record.InputTokens.Should().Be(2_000);
+        record.Screening!.InputTokens.Should().Be(1_000);
+        record.RawDecisions[0].InputTokens.Should().Be(1_000);
+    }
+
+    // 🔴 T-15-117（受け入れ基準 2）: 記録には**両層の実効モデル（応答が名乗った値）が別々に**残る。構成の希望値ではない。
+    [Fact]
+    public async Task 記録は両層の実効モデルを別々に持つ()
+    {
+        var (recorder, _, sink, _) = Build([Decision("Buy"), Decision("Buy")]);
+        var options = Options(voteCount: 2, approvedVotes: 2);
+
+        await recorder.RunAsync(options, CancellationToken.None);
+
+        var record = sink.Saved!.Records[0];
+        record.Screening!.EffectiveModelId.Should().Be("claude-haiku-4-5");
+        record.RawDecisions.Should().HaveCount(2).And.OnlyContain(r => r.EffectiveModelId == "claude-sonnet-5");
+        Stage0TwoTierModels.MatchesPinnedAssignments(record).Should().BeTrue();
+    }
+
+    // 🔴 T-15-117: 希望値と違うモデルが答えたら、記録に残るのは**答えたモデル**である（希望値で上書きしない）。
+    // 名乗らなかった応答（計測にモデルが無い）は null ＝不明。どちらもピンとの照合で一致にならない。
+    [Theory]
+    [InlineData("claude-sonnet-5", "claude-sonnet-5")]  // 一次がピン（haiku）以外
+    [InlineData(null, null)]                            // 一次が名乗らない
+    public async Task 記録の実効モデルは応答が名乗った値で希望値ではない(string? screeningEffective, string? expected)
+    {
+        var (recorder, _, sink, _) = Build(
+            [Decision("Buy")],
+            effectiveModel: p => p == LlmPurposes.TradeDecisionScreening ? screeningEffective : "claude-sonnet-5");
+        var options = Options();
+        options.ScreeningModel = "claude-haiku-4-5"; // 希望値
+
+        await recorder.RunAsync(options, CancellationToken.None);
+
+        var record = sink.Saved!.Records[0];
+        record.Screening!.EffectiveModelId.Should().Be(expected);
+        record.RawDecisions[0].EffectiveModelId.Should().Be("claude-sonnet-5");
+        Stage0TwoTierModels.MatchesPinnedAssignments(record).Should().BeFalse();
+    }
+
+    // T-15-117: 一次の希望値は一次の呼び出しへ、本判断の希望値は本判断の呼び出しへ渡る（層を取り違えない）。
+    [Fact]
+    public async Task モデルの希望値は層ごとに渡る()
+    {
+        var (recorder, llm, _, _) = Build([Decision("Buy")]);
+        var options = Options();
+        options.ScreeningModel = "claude-haiku-4-5";
+
+        await recorder.RunAsync(options, CancellationToken.None);
+
+        llm.Models.Should().Equal("claude-haiku-4-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-sonnet-5");
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // テストダブル
     // ------------------------------------------------------------------------------------------------
 
     // LLM 客の偽装。**本番の egress と同じく、成功応答のトークンを計測へ渡す**
     // （HttpLlmCompletionClient と同じ位置で報告しないと、費用の付け替えを検証できない）。
+    // FR-15, ADR-0054 決定3, #1196, IADR-0498: 二段の偽装。一次（trade-decision-screening）は screening を順に返し
+    // （既定は関心あり＝本判断へ進める）、本判断（trade-decision）は responses を順に返す。計測の実効モデルは既定で用途のピン
+    // （LlmAssignments）であり、effectiveModel で用途ごとに差し替えられる（null を返せば「名乗らなかった」）。
+    // **Prompts は本判断のプロンプトだけ**を集める（既存の試験は本判断のプロンプトを検証している）。一次は ScreeningPrompts。
     private sealed class FakeLlmClient(
-        IReadOnlyList<string> responses, Stage0RecordingUsageCollector usage, int tokensPerCall)
+        IReadOnlyList<string> responses,
+        Stage0RecordingUsageCollector usage,
+        int tokensPerCall,
+        IReadOnlyList<string>? screening = null,
+        Func<string?, string?>? effectiveModel = null)
         : ILlmCompletionClient
     {
+        public const string Interested = """{"action":"Buy","rationale":"関心あり"}""";
+
+        private int _decisionCalls;
+        private int _screeningCalls;
+
         public int CallCount { get; private set; }
 
         public List<string?> Purposes { get; } = [];
@@ -576,21 +760,33 @@ public class Stage0DecisionRecorderTests
 
         public List<string> Prompts { get; } = [];
 
+        public List<string> ScreeningPrompts { get; } = [];
+
         public async Task<string> CompleteAsync(
             string prompt, string? model = null, string? purpose = null,
             CancellationToken cancellationToken = default)
         {
-            var index = CallCount;
             CallCount++;
             Purposes.Add(purpose);
             Models.Add(model);
-            Prompts.Add(prompt);
 
+            var effective = effectiveModel is null
+                ? LlmAssignments.For(purpose)?.PrimaryModel
+                : effectiveModel(purpose);
             await usage.ReportAsync(
-                new LlmUsage(purpose ?? LlmPurposes.TradeDecision, tokensPerCall, tokensPerCall, model),
+                new LlmUsage(purpose ?? LlmPurposes.TradeDecision, tokensPerCall, tokensPerCall, effective),
                 cancellationToken);
 
-            return responses.Count == 0 ? string.Empty : responses[index % responses.Count];
+            if (purpose == LlmPurposes.TradeDecisionScreening)
+            {
+                ScreeningPrompts.Add(prompt);
+                var index = _screeningCalls++;
+                return screening is null || screening.Count == 0 ? Interested : screening[index % screening.Count];
+            }
+
+            Prompts.Add(prompt);
+            var decision = _decisionCalls++;
+            return responses.Count == 0 ? string.Empty : responses[decision % responses.Count];
         }
     }
 

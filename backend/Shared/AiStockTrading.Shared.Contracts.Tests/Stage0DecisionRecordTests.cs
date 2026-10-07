@@ -283,4 +283,99 @@ public class Stage0DecisionRecordTests
 
         april.Should().NotBe(march);
     }
+
+    // ---- T-15-120 FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次スクリーニングと両層の実効モデル ----
+
+    private static Stage0DecisionRecord TwoTier(
+        string? screeningModel = "claude-haiku-4-5", string? decisionModel = "claude-sonnet-5") =>
+        RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(),
+            Raw(1, Stage0DecisionAction.Buy) with { EffectiveModelId = decisionModel }) with
+        {
+            Screening = new Stage0ScreeningDecision(
+                Stage0DecisionAction.Buy, Unparseable: false, "関心あり", 300, 40, screeningModel),
+        };
+
+    // 🔴 T-15-120（受け入れ基準 2）: 一次の判断と両層の実効モデルは JSON 往復で落ちない（層ごとに別々に残る）。
+    [Fact]
+    public void 一次と両層の実効モデルは往復で落ちない()
+    {
+        var restored = Stage0DecisionRecordJson.TryDeserialize(Stage0DecisionRecordJson.Serialize(SetOf(TwoTier())))!;
+
+        var record = restored.Records.Should().ContainSingle().Subject;
+        record.Screening.Should().Be(new Stage0ScreeningDecision(
+            Stage0DecisionAction.Buy, false, "関心あり", 300, 40, "claude-haiku-4-5"));
+        record.RawDecisions.Should().ContainSingle().Which.EffectiveModelId.Should().Be("claude-sonnet-5");
+        Stage0TwoTierModels.IsScreeningRecorded(record).Should().BeTrue();
+        Stage0TwoTierModels.MatchesPinnedAssignments(record).Should().BeTrue();
+    }
+
+    // 🔴 T-15-120 **否定形（受け入れ基準 5）**: 一次の欄を持たない旧 JSON は **null（一次を記録していない）**へ復元され、
+    // 二段の記録へは倒れない（再生側で評価不能になる）。ピンとの一致も主張しない。
+    [Fact]
+    public void 一次の無い旧記録はnullへ復元され二段の記録へ倒れない()
+    {
+        var json = Stage0DecisionRecordJson.Serialize(SetOf(RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(), Raw(1, Stage0DecisionAction.Buy))));
+        var withoutField = json.Replace(",\"screening\":null", string.Empty, StringComparison.Ordinal);
+
+        withoutField.Should().NotContain("screening");
+        var record = Stage0DecisionRecordJson.TryDeserialize(withoutField)!.Records.Should().ContainSingle().Subject;
+        record.Screening.Should().BeNull();
+        record.RawDecisions[0].EffectiveModelId.Should().BeNull();
+        Stage0TwoTierModels.IsScreeningRecorded(record).Should().BeFalse();
+        Stage0TwoTierModels.MatchesPinnedAssignments(record).Should().BeFalse();
+    }
+
+    // 🔴 T-15-120: ピンとの照合は用途ごと（一次＝haiku・本判断＝sonnet）で、層を取り違えた・名乗らない記録は一致にならない。
+    [Theory]
+    [InlineData("claude-haiku-4-5", "claude-sonnet-5", true)]
+    [InlineData("CLAUDE-HAIKU-4-5", " claude-sonnet-5 ", true)]  // 大小・前後空白は照合器の規則どおり
+    [InlineData("claude-sonnet-5", "claude-haiku-4-5", false)]   // 層の取り違え
+    [InlineData("claude-sonnet-5", "claude-sonnet-5", false)]    // 一次だけピン外
+    [InlineData("claude-haiku-4-5", "claude-opus-5", false)]     // 本判断だけピン外
+    [InlineData(null, "claude-sonnet-5", false)]                 // 一次が不明
+    [InlineData("claude-haiku-4-5", null, false)]                // 本判断が不明
+    public void 両層の実効モデルは用途ごとのピンと照合される(string? screeningModel, string? decisionModel, bool expected) =>
+        Stage0TwoTierModels.MatchesPinnedAssignments(TwoTier(screeningModel, decisionModel)).Should().Be(expected);
+
+    // T-15-120: 一次で見送った判断（本判断の票 0）は一次の実効モデルだけで照合する。
+    [Fact]
+    public void 一次で見送った判断は一次の実効モデルだけで照合される()
+    {
+        var screenedOut = TwoTier() with
+        {
+            RawDecisions = [],
+            Screening = new Stage0ScreeningDecision(Stage0DecisionAction.Hold, false, "関心なし", 300, 40, "claude-haiku-4-5"),
+        };
+
+        screenedOut.Screening!.Interested.Should().BeFalse();
+        Stage0TwoTierModels.MatchesPinnedAssignments(screenedOut).Should().BeTrue();
+        Stage0TwoTierModels.MatchesPinnedAssignments(
+            screenedOut with { Screening = screenedOut.Screening with { EffectiveModelId = "claude-sonnet-5" } })
+            .Should().BeFalse();
+    }
+
+    // 🔴 T-15-120: 一次と実効モデルは戦略 ID に入る（違えば別の戦略）。一次の無い旧記録の戦略 ID は変わらない
+    // （`監視銘柄を申告しない記録の戦略IDは変わらない` の固定値 LegacyDeclaredHash がその陰性対照である）。
+    [Fact]
+    public void 一次と両層の実効モデルが違えば戦略IDが変わる()
+    {
+        var legacy = RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(), Raw(1, Stage0DecisionAction.Buy));
+        var screenedHold = TwoTier() with
+        {
+            Screening = TwoTier().Screening! with { Action = Stage0DecisionAction.Hold },
+        };
+
+        HashOf(legacy).Should().Be(LegacyDeclaredHash);
+        new[]
+        {
+            HashOf(legacy),
+            HashOf(TwoTier()),
+            HashOf(TwoTier(screeningModel: "claude-sonnet-5")),
+            HashOf(TwoTier(decisionModel: "claude-opus-5")),
+            HashOf(screenedHold),
+        }.Distinct().Should().HaveCount(5);
+    }
 }
