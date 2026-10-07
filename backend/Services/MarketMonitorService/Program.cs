@@ -168,7 +168,7 @@ builder.Services.Configure<MonitorOptions>(builder.Configuration.GetSection(Moni
 // FR-10, #902, IADR-0365: 損切り評価の生存要約・価格欠落の Warning（観測のみ・巡回をまたいで状態を持つため singleton）。
 builder.Services.AddSingleton<StopLossLivenessReporter>();
 // FR-01, ADR-0031（計画）決定2〜4, ADR-0043（計画）決定 3, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに
-// 保有＋監視銘柄の実数から記録する（MonitorPollingService）。運用者の申告（旧 EstimatedSymbolCount）は撤去した。
+// 保有と監視銘柄の和集合（#1189, IADR-0494）の実数から記録する（MonitorPollingService）。運用者の申告（旧 EstimatedSymbolCount）は撤去した。
 builder.Services.AddSingleton(sp => new FinnhubDailyVolumeRecorder(
     sp.GetRequiredService<IConfiguration>().GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new(),
     FinnhubDailyVolumeGuardOptions.Read(sp.GetRequiredService<IConfiguration>()),

@@ -441,7 +441,7 @@ services:
       - { name: MarketData__Provider, value: "" }
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
-      # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434: 市場監視の自制レート（回/分）。1 巡回（保有＋監視銘柄）が巡回間隔に収まる
+      # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434: 市場監視の自制レート（回/分）。1 巡回（保有と監視銘柄の和集合。#1189, IADR-0494）が巡回間隔に収まる
       # 要求数は「自制レート × 間隔（分）」。既定 60 秒なら 12 要求まで。同一鍵の合計は 30 ＋ 12 ＋ 5 × 3 ＝ 57 ≤ 60 回/分。
       # Provider が空（既定）の間は送出しないため効かない。finnhub を有効化したときの予算をここで固定する。
       - { name: MarketData__Finnhub__RequestsPerMinute, value: "12" }

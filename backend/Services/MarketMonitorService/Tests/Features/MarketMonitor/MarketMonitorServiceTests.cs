@@ -298,6 +298,146 @@ public class MarketMonitorServiceTests
         await act.Should().ThrowAsync<OperationCanceledException>("監視の停止を「価格が取れない」と読み替えない");
     }
 
+    // ---- 🔴 FR-03, FR-01, ADR-0043（計画）決定 2 (b), #1189, IADR-0494: 1 巡回の中で同じ（銘柄・市場）は 1 回だけ照会する ----
+    //
+    // 以前は保有のループと監視銘柄のループが別々に照会し、重なる銘柄で Finnhub の巡回の予算を倍に使っていた。
+    // 順序（保有＝損切りを先に全部評価）・損切りの鮮度（評価の直前にこの巡回で照会した値）・失敗の意味は変えない。
+
+    private static readonly HeldPosition HeldAapl = new("AAPL", Market.UnitedStates, TradeSide.Buy, 707, 350m, 338.51m);
+    private static readonly HeldPosition HeldMsft = new("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m);
+    private static readonly MonitoredSymbol Nvda = new("NVDA", Market.UnitedStates);
+
+    [Fact]
+    public async Task T_10_2288_重なる銘柄は1巡回に1回だけ照会し損切り評価と急変検知が同じ値を使う()
+    {
+        // T-10-2288: AAPL は保有と監視銘柄の両方（照会 1 回）、MSFT は保有だけ、NVDA は監視銘柄だけ（それぞれ照会する）。
+        // 照会のたびに値が変わる市況源で、2 回目の値（999）がどちらの消費者にも届かないことを確かめる。
+        var h = new Harness(Settings(Aapl, Nvda));
+        h.Positions.Set([HeldAapl, HeldMsft]);
+        var source = new SequenceSource()
+            .Then("AAPL", 330m, 999m)  // 1 回目: ライン 338.51 割れ・基準 300 比 +10%
+            .Then("MSFT", 1_950m)      // 未到達
+            .Then("NVDA", 110m);       // 基準 100 比 +10%
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 300m);
+        h.Baselines.SetBaseline("NVDA", Market.UnitedStates, 100m);
+
+        var result = await Service(h, source).EvaluateRoundAsync();
+
+        source.Requested.Should().Equal(
+            [("AAPL", Market.UnitedStates), ("MSFT", Market.UnitedStates), ("NVDA", Market.UnitedStates)],
+            "重なる AAPL は 1 回だけ。保有だけ・監視銘柄だけの銘柄はそれぞれ照会する");
+        result.StopLossEvaluations.Select(e => (e.Symbol, e.Price)).Should().Equal(("AAPL", 330m), ("MSFT", 1_950m));
+        result.StopLosses.Should().ContainSingle().Which.Price.Should().Be(330m);
+        result.PriceMovements.Select(m => (m.Symbol, m.Price)).Should().Equal(("AAPL", 330m), ("NVDA", 110m));
+        result.QuotedSymbolMarkets.Should().HaveCount(3, "日次見積りの母数も和集合（AAPL は 1 件）");
+    }
+
+    [Fact]
+    public async Task T_10_2289_保有を先に評価し損切りはこの巡回で照会した値を使う()
+    {
+        // T-10-2289: 照会の順は保有（損切り）の銘柄が先、監視銘柄だけの銘柄が後（従来どおり）。
+        // 値は巡回をまたいで持たない —— 2 巡回目の損切りの評価は 2 巡回目に照会した値で行う（前の巡回の値で判定しない）。
+        var h = new Harness(Settings(Nvda, Aapl));
+        h.Positions.Set([HeldAapl]);
+        var source = new SequenceSource()
+            .Then("AAPL", 330m, 345m) // 1 巡回目は到達・2 巡回目は回復（ライン 338.51 の上）
+            .Then("NVDA", 100m, 100m);
+        var service = Service(h, source);
+
+        var first = await service.EvaluateRoundAsync();
+        source.Requested.Should().Equal(
+            [("AAPL", Market.UnitedStates), ("NVDA", Market.UnitedStates)],
+            "監視銘柄の並びで NVDA が先でも、保有のループが先に照会・評価する");
+        first.StopLosses.Should().ContainSingle().Which.Price.Should().Be(330m);
+
+        var second = await service.EvaluateRoundAsync();
+        source.Requested.Should().HaveCount(4, "巡回ごとに照会し直す");
+        second.StopLossEvaluations.Should().ContainSingle().Which.Price.Should().Be(345m, "前の巡回の値を使わない");
+        second.StopLosses.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task T_10_2290_重なる銘柄の照会が取れなければ両方の消費者が従来どおりに扱い照会し直さない()
+    {
+        // T-10-2290: 取得不可（null）— 保有側は価格欠落の評価記録・到達なし、監視銘柄側は飛ばす。同じ巡回で照会し直さない
+        // （2 回目の照会なら 999 が返り変動を検知してしまう）。他の銘柄は続く。
+        var h = new Harness(Settings(Aapl, Nvda));
+        h.Positions.Set([HeldAapl, HeldMsft]);
+        var source = new SequenceSource()
+            .Then("AAPL", null, 999m)
+            .Then("MSFT", 1_850m)
+            .Then("NVDA", 110m);
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 300m);
+        h.Baselines.SetBaseline("NVDA", Market.UnitedStates, 100m);
+
+        var result = await Service(h, source).EvaluateRoundAsync();
+
+        source.Requested.Count(r => r.Symbol == "AAPL").Should().Be(1);
+        result.StopLossEvaluations.Select(e => (e.Symbol, e.Price)).Should().Equal(("AAPL", (decimal?)null), ("MSFT", 1_850m));
+        result.StopLosses.Should().ContainSingle().Which.Symbol.Should().Be("MSFT");
+        result.PriceMovements.Should().ContainSingle().Which.Symbol.Should().Be("NVDA");
+    }
+
+    [Fact]
+    public async Task T_10_2290_重なる銘柄の照会の例外はErrorログ1件で両方の消費者が価格欠落として扱う()
+    {
+        // T-10-2290（例外）: 例外はその銘柄の価格欠落に閉じ（IADR-0399 決定3）、監視銘柄側で照会し直さない（Error ログは 1 件）。
+        var h = new Harness(Settings(Aapl, Nvda));
+        h.Positions.Set([HeldAapl, HeldMsft]);
+        h.Market.Set("AAPL", Market.UnitedStates, 999m).Set("MSFT", Market.UnitedStates, 1_850m).Set("NVDA", Market.UnitedStates, 110m);
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 300m);
+        h.Baselines.SetBaseline("NVDA", Market.UnitedStates, 100m);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<AppSvc>();
+        var service = new AppSvc(
+            h.Settings, h.Positions, h.Baselines, h.Cooldowns,
+            new ThrowingForSymbol(h.Market, "AAPL", new InvalidOperationException("市況源の不具合")), h.Schedule, h.Clock, log);
+
+        var result = await service.EvaluateRoundAsync();
+
+        log.Entries.Count(e => e.Level == LogLevel.Error && e.Message.Contains("AAPL/UnitedStates")).Should().Be(1);
+        result.StopLossEvaluations.Should().Contain(e => e.Symbol == "AAPL" && e.Price == null);
+        result.StopLosses.Should().ContainSingle().Which.Symbol.Should().Be("MSFT");
+        result.PriceMovements.Should().ContainSingle().Which.Symbol.Should().Be("NVDA");
+    }
+
+    [Fact]
+    public async Task T_10_2291_畳む鍵は序数比較の銘柄と市場で大小文字や市場が違えば別に照会する()
+    {
+        // T-10-2291: 照会は銘柄をそのまま提供元へ送る（正規化しない）ので、aapl と AAPL は別の要求。市場が違えば別の銘柄。
+        var h = new Harness(Settings(new MonitoredSymbol("aapl", Market.UnitedStates), new MonitoredSymbol("AAPL", Market.Japan)));
+        h.Positions.Set([HeldAapl]);
+
+        var result = await h.Service().EvaluateRoundAsync();
+
+        h.Market.Requested.Should().Equal(
+            ("AAPL", Market.UnitedStates), ("aapl", Market.UnitedStates), ("AAPL", Market.Japan));
+        result.QuotedSymbolMarkets.Should().HaveCount(3);
+    }
+
+    private static AppSvc Service(Harness h, IMarketDataSource source) =>
+        new(h.Settings, h.Positions, h.Baselines, h.Cooldowns, source, h.Schedule, h.Clock);
+
+    // 銘柄ごとに、照会のたびに次の値を返す市況源（尽きたら null）。照会した順を記録する。
+    private sealed class SequenceSource : IMarketDataSource
+    {
+        private readonly Dictionary<string, Queue<decimal?>> _prices = [];
+
+        public List<(string Symbol, Market Market)> Requested { get; } = [];
+
+        public SequenceSource Then(string symbol, params decimal?[] prices)
+        {
+            _prices[symbol] = new Queue<decimal?>(prices);
+            return this;
+        }
+
+        public Task<Quote?> GetLatestQuoteAsync(string symbol, Market market, CancellationToken cancellationToken = default)
+        {
+            Requested.Add((symbol, market));
+            var price = _prices.TryGetValue(symbol, out var queue) && queue.Count > 0 ? queue.Dequeue() : null;
+            return Task.FromResult(price is { } p ? new Quote(symbol, market, p, DateTimeOffset.UtcNow) : null);
+        }
+    }
+
     // 指定の銘柄だけ照会で例外を投げる市況源（他の銘柄は inner に委ねる）。例外が null なら呼び出し側のトークンで打ち切る。
     private sealed class ThrowingForSymbol(IMarketDataSource inner, string symbol, Exception? failure) : IMarketDataSource
     {
