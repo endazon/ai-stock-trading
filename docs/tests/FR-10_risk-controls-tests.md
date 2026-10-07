@@ -5800,11 +5800,13 @@ EF やフレームワークの例外の文言（テーブル名・制約名・�
 | **T-10-2424** | リスク管理。取引日の観測の保存が印の無い送出（第三者相当の補助のインライン化）／印のある送出を投げる | `GET /risk-controls/session-uptime` と gRPC の稼働率 | 印なしは 400／`INVALID_ARGUMENT` の固定文言、印ありは両方で文言を保つ | 同じ投げ手で REST と gRPC の判定が揃う | 自動 |
 | **T-10-2425** | 市場監視（Bot の gRPC 書き込み） | 米国のティッカーでない銘柄を含む入れ替え案を REST と gRPC で適用する | 400／`INVALID_ARGUMENT` で案の形の検証の文言（固定文言ではない）。REST と gRPC で同じ | 両者の一致だけでなく、文言が載ることを見る | 自動 |
 | **T-10-2426** | 市場監視の実 Program.cs。監視銘柄の保存が第三者相当の補助のインライン化で CoreLib の `ArgumentException`（目印）を投げる | `GET /monitor/watchlist` | 400・固定文言・目印なし | 印の無い送出は固定文言 | 自動（**否定形**） |
+| **T-10-2427** | 本番の C# ソース全体（テスト・ビルド成果物を除く） | `.ClientVisible()` の付け所を走査する | すべて `throw new …(…).ClientVisible()` の形。例外は印の定義だけ | 捕まえた例外へ後から印を付けて第三者の文言を載せる形を止める | 自動（構造） |
+| **T-10-2428** | 文言を載せる判定の 2 ファイル | スタックの読み取り（`StackTrace` / `StackFrame`）の有無を走査する | 読み取りが無い | 判定がスタックへ戻るとインライン化で結果が揺れる | 自動（構造） |
 
 試験の置き場所: T-10-2388〜T-10-2393 と T-10-2420〜T-10-2422 は `ReportExceptionMessageExposureTests`（`ReportService.Tests`）、T-10-2396・T-10-2418・T-10-2419 は `ClientFacingErrorsTests`
 （`AiStockTrading.TestSupport.PlatformShim.Tests`）、T-10-2397・T-10-2424 は `RiskControlsReadGrpcServiceTests`、T-10-2423 は `RiskControlsOwnerWriteGrpcServiceTests`、
 T-10-2398・T-10-2399・T-10-2426 は `WatchlistArgumentExceptionMessageTests`、T-10-2425 は `WatchlistOwnerWriteGrpcServiceTests`、
-T-10-2400・T-10-2401 は `AssumptionsArgumentExceptionMessageTests`、T-10-2402 は `CostControlArgumentExceptionMessageTests`。
+T-10-2400・T-10-2401 は `AssumptionsArgumentExceptionMessageTests`、T-10-2402 は `CostControlArgumentExceptionMessageTests`、T-10-2427・T-10-2428 は `ClientVisibleMarkerUsageTests`（`AiStockTrading.Architecture.Tests`）。
 
 **変異で確かめたこと**（各変異で上の 6 つの試験クラスと `T-10-1051` を走らせた）:
 
