@@ -50,6 +50,14 @@ public static class WolverineExtensions
     /// </summary>
     public static int MaxDeliveryAttempts => RetryIntervals.Length + 1;
 
+    /// <summary>
+    /// FR-04, FR-02, #1194, IADR-0505: 共通の再試行の間隔（試行の間の待ち。要素数が再試行の回数）。
+    /// <b>同じ配信の中で</b>回る（RabbitMQ の受信は Inline で、ack は最後の試行の後）ので、1 通が配信を握る時間の上限は
+    /// 「試行の上限 × ハンドラの上限 ＋ これの和」である。ハンドラの上限が長い受け口（定時サイクル）が、この連鎖全体が
+    /// ブローカの <c>consumer_timeout</c> に収まるかを起動時に検査するために読む（間隔を 2 箇所に持たない）。
+    /// </summary>
+    public static IReadOnlyList<TimeSpan> RetryCooldowns { get; } = Array.AsReadOnly(RetryIntervals);
+
     // 既定の RabbitMQ 接続文字列（dev/test/CI のローカル単体実行用。IADR-0013）。
     public const string DefaultRabbitMqConnectionString = "amqp://guest:guest@rabbitmq:5672";
 
