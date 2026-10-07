@@ -106,7 +106,8 @@ public class LlmPriceTableTests
             .Resolve("claude-sonnet-5").Should().Be(new LlmPrice(0.819m, 4.093m));
     }
 
-    // 単価が一切設定されていなければ 0 円（IADR-0055 の安全既定・本番 values.yaml の現状）。
+    // 単価が一切設定されていなければ 0 円（IADR-0055 の安全既定・本番 values.yaml の現状）。解決は 0 のまま変えない。
+    // LLM ゲートウェイを構成した配備（Production）は起動時に止まる（LlmPricingStartupGuard・IADR-0499 / #1197）。
     [Fact]
     public void 何も設定が無ければ_0_円()
     {

@@ -605,16 +605,20 @@ var app = builder.Build();
 app.UseAiStockTradingExceptionHandler();
 
 // NFR（費用）, FR-04, #817, IADR-0122（2026-09-17 追記）: LLM ゲートウェイ（REST の BaseUrl か gRPC）が構成されているのに
-// 単価が実質 0（モデル別の表が空 かつ 従来キーも無い）なら起動時に警告する。稼働では env 名のハイフンがイメージの
+// 単価が実質 0（モデル別の表が空 かつ 従来キーも無い）なら起動時に知らせる。稼働では env 名のハイフンがイメージの
 // `sh -c` 起動で落ちて表が空になり、**無音で**全呼び出しが 0 円計上＝月次費用上限が発火しなかった。
-// 例外は投げない（IADR-0055: 0 は無害な fail-safe のまま。目的は可視化）。
-if (BuildLlmPriceTable(app.Configuration).IsEffectivelyZero
-    && (llmGrpcAddress is not null || Uri.TryCreate(app.Configuration["LlmGateway:BaseUrl"], UriKind.Absolute, out _)))
+// NFR-13, #1197, IADR-0499: 配備（環境名 Production）では警告に留めず**起動しない**（0 円計上で上限が黙って無効になる経路を塞ぐ）。
+// 配備でない環境（docker-compose の Development・試験の Testing）は従来どおり警告。計上時の解決は変えない（IADR-0055）。
+var llmGatewayConfigured = llmGrpcAddress is not null
+    || Uri.TryCreate(app.Configuration["LlmGateway:BaseUrl"], UriKind.Absolute, out _);
+switch (LlmPricingStartupGuard.Evaluate(
+    BuildLlmPriceTable(app.Configuration), llmGatewayConfigured, app.Environment.IsProduction()))
 {
-    app.Logger.LogWarning(
-        "LLM 単価が未設定のため、LLM 費用は全呼び出し 0 円で計上される（月次費用上限が発火しない）。" +
-        "LlmPricing__PerModel__<model>__InputPer1kTokens / __OutputPer1kTokens を設定する" +
-        "（env 名ではモデル ID の - を _ で書く。- を含む env 名は起動シェルが落とす・#817）。");
+    case LlmPricingStartupVerdict.Refuse:
+        throw new InvalidOperationException(LlmPricingStartupGuard.RefusalMessage);
+    case LlmPricingStartupVerdict.Warn:
+        app.Logger.LogWarning(LlmPricingStartupGuard.WarningMessage);
+        break;
 }
 
 // FR-02, #1169, IADR-0490: 導いた上限を起動時に 1 行出す（運用者が監視銘柄数・LLM の timeout と突き合わせられるように）。

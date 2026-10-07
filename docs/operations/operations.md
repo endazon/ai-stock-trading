@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, MSP#266, MSP#635, planning#54, planning#676, planning#704]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0499]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1197_llm-pricing-unset-guard]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1197, MSP#266, MSP#635, planning#54, planning#676, planning#704]
 -->
 
 
@@ -492,8 +492,9 @@ Reconciliation:
 LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__PerModel__<model-id>__*`・円/1k トークン）で計上する。
 **env 名ではモデル ID の `-` を `_` で書く**（例: `LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens`）。
 コンテナはシェル経由で起動するため、`-` を含む env 名はプロセスへ届かず、単価表が空のまま全呼び出しが 0 円で計上される
-（照合側は `-` と `_` を同一視する）。LLM ゲートウェイを構成しているのに単価が実質 0 なら、trade-decision / report が
-起動時に `LLM 単価が未設定` で始まる WARNING を出す。**反映後は起動ログにこの WARNING が無いこと、
+（照合側は `-` と `_` を同一視する）。LLM ゲートウェイを構成しているのに単価が実質 0 なら、trade-decision / report は
+`LLM 単価が未設定` で始まる文言を出す —— 環境名が Production（配備の既定）なら例外で**起動しない**、それ以外
+（docker-compose の Development など）は起動時の WARNING に留める。**反映後は起動ログにこの文言が無いこと、
 `LLM 費用計上イベントを発行 … amount=` が 0 より大きいことを確認する。**
 単価は外部の公開価格と為替から導いた値であり、**恒久値ではない**。放置すると月次上限（¥15,000）の判定が
 実態からずれる（過大なら取引機会を失い、過小なら上限を素通りする）。
@@ -508,8 +509,30 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
   [#243](https://github.com/endazon/ai-stock-trading/issues/243)、計画側の上限評価は
   計画リポジトリの担当 issue が担う。本節は**単価の鮮度**のみを扱う。
 - 単価の出所・換算・丸めは `deploy/helm/ai-stock-trading/README.md`「LLM 費用の単価」に表で残している。
-- 本番（ArgoCD＝`values.yaml`）には単価を置かない。よって本番の計上は従来どおり ¥0 であり、
-  本節の見直しは経路B（`values-local.yaml`）に対して行う。
+- 本番（ArgoCD＝`values.yaml`）には単価を置かない。本番既定は LLM ゲートウェイも空（LLM を呼ばない）なので、
+  計上 ¥0 に実害は無い。本番で LLM を有効にするときは次節の手順で単価を配備時に与え、本節の見直しはその配備時の
+  values と経路B（`values-local.yaml`）の**両方**に対して行う。
+
+## 本番の LLM 単価の投入（#1197。単価が無いまま LLM を有効にすると起動しない）
+
+**現在の実現手段**: 配備時の values の上書き（ArgoCD の `valueFiles` に足す `values-<env>.yaml`、または helm の `-f`）。
+単価は機密ではないので Secret は使わない。チャートの `values.yaml` には置かない（変動する外部価格を本番既定に固定すると
+陳腐化が検出されない。既定描画に `LlmPricing__` が現れると CI の描画検査が失敗する）。
+
+| 手順 | 内容 |
+| --- | --- |
+| 1. 対象 | LLM を呼ぶ **trade-decision と report の両方**（単価表はサービスごとに独立して構成される。片方だけでは他方が 0 円計上か起動拒否になる） |
+| 2. 配列を写す | 上書きの values に `services.trade-decision.extraEnv` / `services.report.extraEnv` を、`values.yaml` の同じ配列を**全部写してから**書く。配列は重ねた values で丸ごと置き換わり、写さなかった env は消える（経路B の `values-local.yaml` がこの形） |
+| 3. 行を足す | `LlmGateway__BaseUrl`（または gRPC の宛先）と同じ変更で、`LlmPricing__PerModel__<model>__InputPer1kTokens` / `__OutputPer1kTokens` を足す。**env 名ではモデル ID の `-` を `_` で書く**。値・出典・換算は `deploy/helm/ai-stock-trading/README.md`「LLM 費用の単価」の表（経路B と同じ値） |
+| 4. 描画で確かめる | `helm template … -f values-<env>.yaml` の trade-decision / report に `LlmPricing__PerModel__` の行が在ること |
+| 5. 起動で確かめる | 両 Pod が Running になり、起動ログに `LLM 単価が未設定` が無いこと。LLM の呼び出し後に `LLM 費用計上イベントを発行 … amount=` が 0 より大きいこと |
+
+- **与え忘れたとき**: 環境名 Production の trade-decision / report は `LLM 単価が未設定` で始まる例外で起動に失敗し、
+  Pod は CrashLoopBackOff になる（0 円計上のまま月次上限 ¥15,000 の 80% / 100% 判定が黙って効かなくなるより、
+  止まって表に出る側を選んだ）。取引判断と報告書は止まるので、単価を与えて配備し直すか、LLM の宛先を外して戻す。
+- 判定は broker の階層（paper / moomoo-sim）に依らない。LLM の費用はブローカに関係なく実費である。
+- 従来キー（`LlmPricing__InputPer1kTokens` / `__OutputPer1kTokens` の単一ペア）だけでも起動は通るが、モデル別の単価にならない。
+  本番ではモデル別の表を使う。
 
 ## Stage 1 の営業日カウントと市場の祝日（#407。祝日を判別しないのは裁定であり、祝日表を足すことは裁定違反である）
 
