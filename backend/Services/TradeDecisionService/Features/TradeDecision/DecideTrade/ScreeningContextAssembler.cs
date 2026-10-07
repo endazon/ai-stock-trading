@@ -53,6 +53,8 @@ public static class ScreeningContextAssembler
     // **保護分**である（削ると、利確条件に達した保有を一次が落とす）。並べる条件は 3 件までで、最悪長が予約を超えないことを試験で固定する。
     // 🔴 予約は**その銘柄に掛かる読める「利確:」条件があるときだけ**掛ける（#1129 第 3 回監査 F4）。条件が無ければ到達の行は出ず、
     // 無条件に予約すると「利確:」行の無い方針でも記事を余計に削る（裁定「未到達なら develop と一字一句同じ」から外れる）。
+    // ［2026-10-07 / #1175・IADR-0470 追記］未到達の行（TradeDecisionPromptBuilder.TakeProfitNotReachedLine）と含み損益率の直後の判定の注記も
+    // この予約で守る（どちらも条件があるときだけ出る＝予約を掛ける条件と同じ）。到達・未到達の行の最悪長に注記を足しても予約に収まることを試験で固定する。
     public const int TakeProfitReachedReserveChars = 400;
 
     private const int PerSymbolLineChars = 400 + PriceContextReserveChars + NewsStatusReserveChars;
