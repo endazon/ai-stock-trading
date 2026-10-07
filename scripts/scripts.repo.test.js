@@ -4660,6 +4660,126 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- check-finnhub-key-budget.js: Finnhub の同一鍵の自制レートの合計 ≤ 60 回/分（FR-01, FR-03, ADR-0043 決定2, #1225, IADR-0512）---
+  //
+  // 描画済みの manifest を文字列で与え、判定だけを固定する（実 chart の正例・陰性対照は helm.yml が当てる）。
+  // 母集合と既定値は実物の scripts/finnhub-key-budget.json を使う（JSON とコードの一致は C# の試験が固定する）。
+  {
+    const fb = require('./check-finnhub-key-budget.js');
+    const fsFb = require('fs');
+    const pathFb = require('path');
+    const budget = fb.loadBudget();
+    const dep = (name, envLines = [], replicas = 1, kind = 'Deployment') => [
+      'apiVersion: apps/v1', `kind: ${kind}`, 'metadata:', `  name: ${name}`, '  namespace: ai-stock-trading', 'spec:',
+      ...(replicas === null ? [] : [`  replicas: ${replicas}`]),
+      '  template:', '    spec:', '      containers:', `        - name: ${name}`, '          image: "img:1"', '          env:',
+      '            - name: ASPNETCORE_URLS', '              value: http://+:8080',
+      ...envLines.map((l) => `            ${l}`),
+    ].join('\n');
+    const env = (name, v) => [`- name: ${name}`, `  value: ${v}`];
+    const RATE = 'MarketData__Finnhub__RequestsPerMinute';
+    const IC_RATE = 'Collection__Source__Finnhub__RateLimitPerMinute';
+    // 既定の chart と同じ形: 市場監視だけ 12、他は env なし（コードの既定）。
+    const base = () => ({
+      'information-collection-service': [],
+      'market-monitor-service': env(RATE, '"12"'),
+      'risk-management-service': [],
+      'report-service': [],
+      'trade-decision-service': [],
+    });
+    const render = (over = {}, extra = []) => {
+      const m = { ...base(), ...over };
+      return [...Object.entries(m).filter(([, v]) => v !== null).map(([n, v]) => dep(n, v)), ...extra].map((d) => `---\n${d}`).join('\n');
+    };
+
+    ok('finnhub-key-budget: 既定の chart の形は 57・env がすべて無ければコードの既定だけで 50・(b) は 12 で緑', () => {
+      const r = fb.checkManifest(render(), budget);
+      assert.strictEqual(r.ok, true, r.errors.join('\n'));
+      assert.strictEqual(r.total, 57);
+      assert.strictEqual(r.capacity, 12);
+      const d = fb.checkManifest(render({ 'market-monitor-service': [] }), budget);
+      assert.strictEqual(d.total, 50, 'コードの既定（30 ＋ 5 × 4）');
+      assert.strictEqual(d.ok, false, '既定 5 では (b) が 5 で 12 未満');
+      assert.match(d.errors.join('\n'), /1 巡回に収まる要求数が 5/);
+      // ちょうど 60 は通る（≤）。
+      assert.strictEqual(fb.checkManifest(render({ 'information-collection-service': env(IC_RATE, '"33"') }), budget).ok, true);
+    });
+
+    ok('finnhub-key-budget: 陰性対照 — 5 プロセスのどれか 1 つを合計 61 へ上げると赤・レプリカは掛けて数える', () => {
+      const raised = {
+        'information-collection-service': env(IC_RATE, '"34"'),
+        'market-monitor-service': env(RATE, '"16"'),
+        'risk-management-service': env(RATE, '"9"'),
+        'report-service': env(RATE, '"9"'),
+        'trade-decision-service': env(RATE, '"9"'),
+      };
+      for (const [svc, lines] of Object.entries(raised)) {
+        const r = fb.checkManifest(render({ [svc]: lines }), budget);
+        assert.strictEqual(r.ok, false, `${svc} を上げても緑`);
+        assert.match(r.errors.join('\n'), /合計が 61 回\/分で 60 を超える/, svc);
+      }
+      // 名前の大小文字は区別しない（.NET の構成キーと同じ）。
+      assert.strictEqual(fb.checkManifest(render({ 'report-service': env(RATE.toLowerCase(), '"9"') }), budget).ok, false);
+      // レプリカ 2 の report（5 × 2）で 62。
+      const two = render({ 'report-service': null }, [dep('report-service', [], 2)]);
+      const r2 = fb.checkManifest(two, budget);
+      assert.strictEqual(r2.total, 62);
+      assert.strictEqual(r2.ok, false);
+      assert.strictEqual(fb.replicasOf({ lines: dep('x', [], null).split('\n') }), 1, 'replicas が無ければ 1');
+      // 0 以下は限流器と同じく 1 として数える。
+      assert.strictEqual(fb.checkManifest(render({ 'report-service': env(RATE, '"0"') }), budget).total, 53);
+      // (b): 巡回間隔 59 秒で 11。
+      const poll = fb.checkManifest(render({ 'market-monitor-service': [...env(RATE, '"12"'), ...env('Monitor__PollIntervalSeconds', '"59"')] }), budget);
+      assert.strictEqual(poll.ok, false);
+      assert.match(poll.errors.join('\n'), /1 巡回に収まる要求数が 11/);
+    });
+
+    ok('finnhub-key-budget: 読めない描画は通さない（欠け・重複・空・整数でない・secretKeyRef・宣言外のワークロードの Finnhub の env）', () => {
+      const missing = fb.checkManifest(render({ 'trade-decision-service': null }), budget);
+      assert.strictEqual(missing.ok, false);
+      assert.match(missing.errors.join('\n'), /trade-decision-service が描画に 0 本/);
+      const dupDeploy = fb.checkManifest(render({}, [dep('report-service')]), budget);
+      assert.match(dupDeploy.errors.join('\n'), /report-service が描画に 2 本/);
+      const dupEnv = fb.checkManifest(render({ 'report-service': [...env(RATE, '"5"'), ...env(RATE.toUpperCase(), '"5"')] }), budget);
+      assert.match(dupEnv.errors.join('\n'), /2 つある/);
+      for (const v of ['""', '"12.5"', '"abc"']) {
+        const r = fb.checkManifest(render({ 'report-service': env(RATE, v) }), budget);
+        assert.strictEqual(r.ok, false, v);
+        assert.match(r.errors.join('\n'), /整数として読めない/, v);
+      }
+      const secret = fb.checkManifest(render({ 'report-service': [`- name: ${RATE}`, '  valueFrom:', '    secretKeyRef:', '      name: s', '      key: k'] }), budget);
+      assert.match(secret.errors.join('\n'), /平文の value でない/);
+      // 宣言外のワークロード（Deployment・CronJob）が Finnhub の鍵や自制レートを持つ＝母集合の漂流。
+      const stray = fb.checkManifest(render({}, [dep('backtest-service', env('BarData__Finnhub__ApiKey', '"x"'))]), budget);
+      assert.match(stray.errors.join('\n'), /Deployment backtest-service が Finnhub の env/);
+      const strayCron = fb.checkManifest(render({}, [dep('cycle', env('MarketData__Finnhub__RequestsPerMinute', '"5"'), null, 'CronJob')]), budget);
+      assert.match(strayCron.errors.join('\n'), /CronJob cycle が Finnhub の env/);
+      assert.strictEqual(fb.checkManifest('', budget).ok, false, '空の描画は空振りとして落とす');
+    });
+
+    ok('finnhub-key-budget: 文書の主張（N ≤ 60 回/分）は描画の合計と一致しなければ赤・主張が無いファイルも赤・main の終了コード', () => {
+      assert.deepStrictEqual(fb.checkClaims([{ name: 'a', text: '合計 57 ≤ 60 回/分。また（57 ≤ 60 回/分）' }], 57), []);
+      assert.match(fb.checkClaims([{ name: 'a', text: '＝ 57 ≤ 60 回/分' }], 58).join('\n'), /a の主張（57 ≤ 60 回\/分）が描画の合計 58 と食い違う/);
+      assert.match(fb.checkClaims([{ name: 'b', text: '合計 ≤ 60 回/分' }], 57).join('\n'), /主張が 1 つも無い/);
+      // 実物の chart の文書は現況の合計 57 を主張している（helm.yml が描画と突き合わせる）。
+      for (const f of ['README.md', 'values.yaml', 'values-local.yaml']) {
+        const text = fsFb.readFileSync(pathFb.join(__dirname, '..', 'deploy/helm/ai-stock-trading', f), 'utf8');
+        assert.deepStrictEqual(fb.checkClaims([{ name: f, text }], 57), [], f);
+      }
+      const lines = [];
+      const io = { out: (s) => lines.push(s), err: (s) => lines.push(s) };
+      const files = { 'doc57.md': '＝ 57 ≤ 60 回/分', 'doc58.md': '＝ 58 ≤ 60 回/分' };
+      const readFile = (f) => files[f];
+      assert.strictEqual(fb.main(['--label', 'x', '--claims', 'doc57.md'], { ...io, readFile, stdin: () => render() }), 0);
+      assert.strictEqual(fb.main(['--label', 'y', '--claims', 'doc58.md'], { ...io, readFile, stdin: () => render() }), 1);
+      assert.strictEqual(fb.main(['--label', 'z'], { ...io, readFile, stdin: () => render({ 'report-service': env(RATE, '"9"') }) }), 1);
+      assert.strictEqual(fb.main(['--bogus'], { ...io, stdin: () => '' }), 2);
+      assert.ok(lines.some((l) => l.startsWith('[x] ok: (a) 30 + 12 + 5 + 5 + 5 = 57 ≤ 60 回/分')), lines.join('\n'));
+      assert.ok(lines.some((l) => l.startsWith('::error::[y] doc58.md の主張')), lines.join('\n'));
+      assert.ok(lines.some((l) => l.startsWith('::error::[z] Finnhub の同一鍵の自制レートの合計が 61 回/分')), lines.join('\n'));
+    });
+  }
+
   // --- NFR（費用）, #1140, IADR-0478 決定 2: 夜間の要約の §13 が読む費用のカテゴリの序数を、費用統制の enum と突き合わせる（T-10-2027）---
   // cost_entries の Category は CostCategory の序数で永続化されている。SQL は Llm=0・LlmUncapped=3 を直に書くため、
   // enum の並びが変わったら（enum 側は末尾にだけ足すと定めている）ここで赤にする。

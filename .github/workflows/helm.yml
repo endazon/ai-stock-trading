@@ -18,11 +18,17 @@ on:
     paths:
       - "deploy/helm/**"
       - ".github/workflows/helm.yml"
+      # #1225, IADR-0512: Finnhub の予算の検査器と母集合・既定値を変えたら描画検査を回す。
+      - "scripts/check-finnhub-key-budget.js"
+      - "scripts/finnhub-key-budget.json"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - "deploy/helm/**"
       - ".github/workflows/helm.yml"
+      # #1225, IADR-0512: Finnhub の予算の検査器と母集合・既定値を変えたら描画検査を回す。
+      - "scripts/check-finnhub-key-budget.js"
+      - "scripts/finnhub-key-budget.json"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる（PR のみ）。
 # 本ワークフローは約 40 回の `helm template` を直列に回すため、重複実行の無駄が大きい。
@@ -977,38 +983,43 @@ jobs:
           }
           check "既定"
           check "values-local" -f "$CHART/values-local.yaml"
-      # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434 / IADR-0437: Finnhub の予算を描画で固定する（PR #1032 のレビュー推奨）。
-      #   (a) 同一鍵の自制レートの合計 ≤ 60 回/分（情報収集＋実市況 4 サービス。IADR-0275 の実測で同一鍵）
-      #   (b) 市場監視の 1 巡回に収まる要求数（自制レート × 巡回間隔 ÷ 60）≥ 12（稼働中の保有と監視銘柄の和集合〔#1189, IADR-0494〕に余裕を持たせた値）
-      # env が無いサービスはコードの既定で数える（情報収集 30＝CollectionSourceOptions・実市況 5＝FinnhubMarketDataOptions・
-      # 巡回間隔 60 秒＝MonitorOptions）。既定を変えたらここも直す。
-      - name: Assert Finnhub budget and market-monitor cycle fit (ADR-0043 決定2)
+      # FR-01, FR-03, ADR-0043（計画）決定2, #1030 / #1225, IADR-0434 / IADR-0437 / IADR-0512: Finnhub の予算を描画で固定する。
+      #   (a) 同じ鍵を使い得る全プロセス（情報収集＋実市況 4 サービス＝5。IADR-0275 の実測で同一鍵）の自制レート × レプリカの合計 ≤ 60 回/分
+      #   (b) 市場監視の 1 巡回に収まる要求数（自制レート × 巡回間隔 ÷ 60）≥ 12（保有と監視銘柄の和集合〔#1189, IADR-0494〕に余裕を持たせた値）
+      # 判定は scripts/check-finnhub-key-budget.js、母集合とコードの既定値（30・5・60）は scripts/finnhub-key-budget.json の 1 か所
+      # （C# の試験がコードと突き合わせる）。values と chart README の「N ≤ 60 回/分」の N も描画の合計と一致させる（--claims）。
+      # 陰性対照: 5 プロセスのどれか 1 つを合計 61 になるよう上げると赤・(b) を 11 にすると赤・主張と合計の食い違いで赤（緑の空振りを作らない）。
+      # 試験は scripts.repo.test.js の finnhub-key-budget。
+      - name: Assert Finnhub shared-key budget and market-monitor cycle fit (#1225)
         run: |
-          check() {
-            local label="$1"; shift
-            helm template ast "$CHART" "$@" -s templates/deployment.yaml \
-              | awk '/^  name: /{svc=$2} /^            - name: /{n=$3} /^              value: /{v=$2; gsub(/"/, "", v); print svc" "n" "v}' \
-              > /tmp/env-values.txt
-            val() { awk -v s="$1" -v n="$2" -v d="$3" '$1==s && $2==n && $3!="" {x=$3} END{print (x=="" ? d : x)}' /tmp/env-values.txt; }
-            local ic mm rm rp td poll
-            ic="$(val information-collection-service Collection__Source__Finnhub__RateLimitPerMinute 30)"
-            mm="$(val market-monitor-service MarketData__Finnhub__RequestsPerMinute 5)"
-            rm="$(val risk-management-service MarketData__Finnhub__RequestsPerMinute 5)"
-            rp="$(val report-service MarketData__Finnhub__RequestsPerMinute 5)"
-            td="$(val trade-decision-service MarketData__Finnhub__RequestsPerMinute 5)"
-            poll="$(val market-monitor-service Monitor__PollIntervalSeconds 60)"
-            local total=$((ic + mm + rm + rp + td)) capacity=$((mm * poll / 60))
-            echo "[$label] (a) $ic + $mm + $rm + $rp + $td = $total 回/分・(b) 市場監視 $mm 回/分 × $poll 秒 = $capacity 要求/巡回"
-            if [ "$total" -gt 60 ]; then
-              echo "::error::[$label] Finnhub の同一鍵の自制レートの合計が $total 回/分で 60 を超える（ADR-0043 決定2 (a)）。"; exit 1
+          budget() { local label="$1"; shift; helm template ast "$CHART" -s templates/deployment.yaml "$@" \
+            | node scripts/check-finnhub-key-budget.js --label "$label" --claims "$CHART/README.md" ${CLAIMS:+--claims "$CLAIMS"}; }
+          CLAIMS="$CHART/values.yaml" budget "既定" || exit 1
+          CLAIMS="$CHART/values-local.yaml" budget "values-local" -f "$CHART/values-local.yaml" || exit 1
+          tmp="$(mktemp -d)"
+          # 陰性対照: 1 つのサービスの extraEnv を自制レートの 1 行だけに置き換え、合計が 61 になる値を与える（他の 4 つは描画のまま）。
+          expect_red() {
+            local label="$1" pattern="$2"; shift 2
+            local log="$tmp/$label.log"
+            if helm template ast "$CHART" -s templates/deployment.yaml "$@" \
+                | node scripts/check-finnhub-key-budget.js --label "$label" --claims "$CHART/README.md" 2> "$log"; then
+              echo "::error::陰性対照 $label が緑になった（検査の空振り）。"; exit 1
             fi
-            if [ "$capacity" -lt 12 ]; then
-              echo "::error::[$label] 市場監視の 1 巡回に収まる要求数が $capacity で 12 未満（IADR-0434。保有と監視銘柄の和集合が巡回間隔に収まらない）。"; exit 1
-            fi
+            grep -q "$pattern" "$log" || { echo "::error::陰性対照 $label が想定外の理由で赤:"; cat "$log"; exit 1; }
+            echo "ok: 陰性対照 $label は赤（$pattern）"
           }
-          check "既定"
-          check "values-local" -f "$CHART/values-local.yaml"
-          echo "ok: Finnhub の予算 (a) と市場監視の巡回 (b) が描画で保たれている"
+          env_file() { local svc="$1"; shift; { printf '%s\n' 'services:' "  $svc:" '    extraEnv:'; for kv in "$@"; do
+            printf '      - { name: %s, value: "%s" }\n' "${kv%%=*}" "${kv#*=}"; done; } > "$tmp/$svc.yaml"; echo "$tmp/$svc.yaml"; }
+          expect_red ic+4 '合計が 61 回/分' -f "$(env_file information-collection Collection__Source__Finnhub__RateLimitPerMinute=34)"
+          expect_red mm+4 '合計が 61 回/分' -f "$(env_file market-monitor MarketData__Finnhub__RequestsPerMinute=16)"
+          expect_red rm+4 '合計が 61 回/分' -f "$(env_file risk-management MarketData__Finnhub__RequestsPerMinute=9)"
+          expect_red rp+4 '合計が 61 回/分' -f "$(env_file report MarketData__Finnhub__RequestsPerMinute=9)"
+          expect_red td+4 '合計が 61 回/分' -f "$(env_file trade-decision MarketData__Finnhub__RequestsPerMinute=9)"
+          expect_red cycle59 '1 巡回に収まる要求数が 11' \
+            -f "$(env_file market-monitor MarketData__Finnhub__RequestsPerMinute=12 Monitor__PollIntervalSeconds=59)"
+          # 合計 58（≤ 60）でも、57 と書いた README とは食い違うので赤。
+          expect_red claims58 '描画の合計 58 と食い違う' -f "$(env_file information-collection Collection__Source__Finnhub__RateLimitPerMinute=31)"
+          echo "ok: Finnhub の予算 (a)・市場監視の巡回 (b)・文書の主張が描画で保たれ、陰性対照 7 件が赤になる"
       # FR-04, FR-07, ADR-0048 決定 4, #1140, IADR-0478 決定 1: 判断へ渡す出来高の設定 DecisionVolume__Enabled は trade-decision と
       # report が別々に読む（IADR-0467 決定 6・7）。report だけ true だと、判断へ渡らない出来高を方針の改訂 LLM へ「渡る」と示す。
       # 全プロファイルの描画で 2 つの実効値が等しいこと（両方 true なら trade-decision の OrderExecution__BaseUrl が絶対 URL）を検査し、
