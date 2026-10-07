@@ -108,7 +108,7 @@
 | IADR-0046 | ユニットリポジトリレイアウト（ルート直下 backend/・import-chain フォールバック props）を採る。**［2026-08-28 追記 / IADR-0259］決定 1 の `{src,tests}` 2 段のみ [IADR-0259](./IADR-0259_single-project-vsa-structure.md) が改定する**（props の import-chain・その場の構造移動では名前空間を変えない方針・CI のパスは存続。名前空間の完全整合は IADR-0259 決定5③の独立した後続波で扱う） | Accepted |
 | IADR-0047 | kit テンプレート更新には追随し、restore 系 CI/スクリプトは slnx 自動発見形を採る（IADR-0046 決定 4 の部分変更） | Accepted |
 | IADR-0048 | ユニット実行環境スキャフォールド（docker-compose / appsettings / .env.example）の構成方針 | Accepted |
-| IADR-0049 | 実コンテナ統合 E2E は Testcontainers を基盤とし、CI から分離する | Accepted |
+| IADR-0049 | 実コンテナ統合 E2E は Testcontainers を基盤とし、CI から分離する。［2026-10-07 追記 / #1200］Docker に届かず外部注入も無いときは fail ではなく、依存ごとに訊く門が理由つきで skip する。CI（`integration.yml`）で skip が出たら赤にする担保を同時に置いた（[IADR-0497](./IADR-0497_integration-gate-asks-for-services-and-skip-guard.md)） | Accepted |
 | IADR-0050 | マルチサービス/認証つき統合 E2E の構成（extern alias・共有 DB・実 Keycloak トークン） | Accepted |
 | IADR-0051 | サービス間同期照会の s2s 認証（client_credentials・呼び出し側トークン伝播・least-privilege サービスロール） | Accepted |
 | IADR-0052 | AST の k8s デプロイは Helm chart（10 Worker 同型テンプレート）とし、共有インフラは MSP platform-infra を ExternalName で参照する | Accepted |
