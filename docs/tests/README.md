@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
-iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate, 20261008_1235_test-trace-declared-ranges]
-issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, #1235, MSP#446, planning#575]
+iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497, IADR-0510]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate, 20261008_1235_test-trace-declared-ranges, 20261008_1240_t17-test-id-collision]
+issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, #1235, #1240, MSP#446, planning#575]
 -->
 
 
@@ -40,6 +40,7 @@ CI の `test-traceability` ジョブ（`scripts/check-test-traceability.js`）�
 2. 必須範囲の機能要求に機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）が存在すること
 3. テストが参照する機能要求・ユースケース・画面の ID が計画書に実在すること（実在集合は `.claude/rules/traceability.repo.md` に宣言した計画 ID のレンジ。宣言が読めなければ落ちる）
 4. **テスト ID（`T-…`）が一意であること**（次節）
+5. **テストコードが使うテスト ID が、テスト仕様書に採番されていること**（次節。テスト仕様書がその機能要求の帯を 1 件でも採番している場合）
 
 ### テスト ID（`T-<機能要求番号>-<連番>`）の採番規約
 
@@ -60,6 +61,16 @@ CI の `test-traceability` ジョブ（`scripts/check-test-traceability.js`）�
   **1 ファイルだけを見て最大値を測ると衝突する。**
 - **再利用しない・改番しない・欠番は許す。** 実装 ADR の採番と同じ思想である（改番のコストは参照数に
   比例して肥大化し、テスト ID は `backend/**/Tests/*.cs` のコメントと `.ai-context/` の凍結記録から参照される）。
+  - **例外（参照の無い側の改番）**: 同じ番号が 2 つの試験を指していて、外部の参照（テストコードのコメント・
+    `.ai-context/` の記録）が**片側にだけ**在るときは、**参照を 1 件も持たない側**を最大値＋1 へ改番してよい。
+    参照を持つ側の意味を正とする。改番した節には旧番号を注記する。**両側に参照があるときは改番せず**、
+    下の baseline へ記録する（どちらを改番しても残った参照が別の試験を指すため）。
+- 🔴 **テストコードで番号を使うときは、同じ PR でテスト仕様書の表へ採番行を足す。** テスト仕様書が任意の
+  機能要求でも、その帯（`T-17-…` 等）を `docs/tests/*.md` が 1 件でも採番していれば対象になる
+  （検査 5。表に無い番号は「採番の最大値」に現れず、次の採番者が同じ番号を別の意味で採る）。
+  検査の対象はテスト `.cs` に**完全な形で書いた** ID であり、`T-17-01/02/03` のような略記の 2 つ目以降は拾わない。
+  既知の未採番は `scripts/test-id-unassigned-baseline.json` に記録してあり、**増やせない**（マージベースの版より
+  増えたら赤。解消はテスト仕様書へ行を足すことで常にできるので、宣言による例外は無い）。解消したら消す。
 - **新規採番は「その時点の最大値 ＋ 1」。** 最大値は検査器が出す。
 
   ```
@@ -169,6 +180,7 @@ public void 空売りは株価5ドル未満を拒否する(decimal price, bool a
 
 | 日付 | 内容 |
 | --- | --- |
+| 2026-10-08 | テストコードが使うテスト ID の採番を検査 5 として追加し、参照の無い側に限る改番の例外を定めた（[#1240](https://github.com/endazon/ai-stock-trading/issues/1240)）。`T-17-…` の帯で、採算の見積りの試験と既定値の試験が同じ番号を使い、採算側の後続番号が表に無かったため。採算の見積りのテスト仕様書を起こし、既定値の 4 件を改番した。 |
 | 2026-09-25 | 既知の重複の baseline に「増える側」のラチェットを追加（[#923](https://github.com/endazon/ai-stock-trading/issues/923)）。entry をマージベースより増やすと赤になり、足すときはコミット本文での ID ごとの宣言と PR での説明を要する。 |
 | 2026-09-23 | テスト ID の採番規約を新設（[#887](https://github.com/endazon/ai-stock-trading/issues/887)）。採番行・枝番・参照行の区別、機能要求ごと・ファイル横断の採番空間、再利用と改番の禁止、並行レーンでの帯の確保、既知の重複のラチェット（`scripts/test-id-duplicate-baseline.json`）。検査は `scripts/check-test-traceability.js` の検査 4 |
 | 2026-09-11 | 「性能ゲート」行の追跡先を是正（#637）。#203 は 2026-08-02 に DUPLICATE でクローズされ後継が無いまま残っていた。計器の新設は #689 で完了済み、実測（実 LLM＋開場中）は #690 が引き継ぐ |

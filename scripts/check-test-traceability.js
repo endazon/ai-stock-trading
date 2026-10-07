@@ -18,6 +18,9 @@
  *   T2. テスト仕様書のテスト ID（`T-<FR>-<N>`）が一意であること（#887 / IADR-0376。既知の重複は baseline）。
  *   T2b. その baseline の entry が**マージベースの版より増えていない**こと（#923 / IADR-0376 追記。
  *       増やすならコミット本文で ID ごとに宣言する。下の「検査 4b」参照）。
+ *   T3. テストコード（backend 配下のテスト .cs）が使うテスト ID のうち、docs/tests が採番している帯
+ *       （機能要求）に属するものが、docs/tests に採番されていること（#1240 / IADR-0510。既知の未採番は
+ *       `scripts/test-id-unassigned-baseline.json`）。T3b はその baseline がマージベースより増えていないこと。
  *
  * 「テストが 1 本もない FR」を CI で止めることが目的であり、テストの中身の妥当性は見ない。
  * 中身は 3 点セット（境界値・プロパティベース・否定形。docs/tests/README.md）と人手レビューが担う。
@@ -550,7 +553,7 @@ function checkTestIdUniqueness(root = REPO_ROOT, baseline = null) {
     if (!d) {
       errors.push(
         `[T2] テスト ID ${key} が重複して採番されています（${where}）。`
-          + '**既存 ID の改番はしない**（IADR-0376）。新しいテストには採番の最大値＋1 を使い、'
+          + '**既存 ID の改番はしない**（IADR-0376。外部参照が片側にだけ在るときに限り、参照の無い側を改番してよい＝IADR-0510）。新しいテストには採番の最大値＋1 を使い、'
           + `既に重複しているなら ${DUP_BASELINE_FILE.replace(/\\/g, '/')} へ理由付きで記録すること。`
       );
       continue;
@@ -749,6 +752,183 @@ function checkBaselineGrowth(root = REPO_ROOT, opts = {}) {
   return { ...evaluateBaselineGrowth({ base, head, commitBodies }), range, base: baseRev };
 }
 
+// --- 検査 5（T3）: テストコードが使うテスト ID は docs/tests に採番されていること（#1240 / IADR-0510） ---
+//
+// T2 は `docs/tests/*.md` の**中だけ**で一意性を見る。テストコード（`backend/**/Tests/*.cs` のコメント）が
+// docs/tests に無い番号を使うと、T2 には何も見えない。#1240 はこの経路で起きた:
+//   - FR-17 の採算の試験が `T-17-05`〜`T-17-13` をコードと IADR にだけ書き、docs/tests へ載せなかった
+//     → 採番の最大値は `T-17-4` のまま出力され、次の採番者が `T-17-05` 以降を**別の意味で**採り得た。
+// T3 は「テストコードが使う ID のうち、その機能要求の帯を docs/tests が採番しているものは、docs/tests に
+// 採番行が在ること」を求める。docs/tests に 1 行も無い帯（例 `T-6-…` / `T-16-…`。テスト仕様書が任意の
+// 機能要求）は**対象外**——採番の単一情報源がその帯を持っていないので、衝突の比較先が無い（件数は出力する）。
+//
+// ■ 機械で捕まえられないもの（IADR-0510 残余リスク）: docs/tests に**意味 A で採番済み**の ID を
+//   コードが**意味 B で**使う形（#461 の `T-17-01`〜`04` はこれだった）。コメントと表の行を突き合わせる
+//   手掛かり（テストメソッド名・クラス名）は表に書かれていない行が多く、実測で 1,007 ID が「不一致」と
+//   出て判定に使えない。ここは採番時に docs/tests の行を引く運用（規約）が担う。
+// ■ 既存の未採番は `scripts/test-id-unassigned-baseline.json` にラチェットで固定する（T2 と同じ形）。
+//   baseline に無い未採番・在り処の食い違い・解消済みの残置を赤にする。T3b は baseline の entry が
+//   マージベースの版より**増えていたら**赤にする（宣言による例外は持たない——未採番は docs/tests に
+//   行を足せば常に解消できるので、T2b の `[add-test-id-duplicate]` に当たる逃げ道は要らない）。
+
+const UNASSIGNED_BASELINE_FILE = path.join('scripts', 'test-id-unassigned-baseline.json');
+
+/** テストコード中のテスト ID の書式。`T-17-01/02/03`・`T-10-917〜920` のような略記の 2 つ目以降は拾わない。 */
+const CODE_TEST_ID_PATTERN = /\bT-(\d{1,3})-(\d{1,4})([a-z]?)\b/g;
+
+/** テストコードからテスト ID の出現を集める。戻り値は正規化キー → `{ fr, files: Set<相対パス> }`。 */
+function collectCodeTestIds(files, root = REPO_ROOT) {
+  const out = new Map();
+  for (const fp of files) {
+    let text;
+    try {
+      text = fs.readFileSync(fp, 'utf8');
+    } catch {
+      continue;
+    }
+    const rel = path.relative(root, fp).split(path.sep).join('/');
+    for (const m of text.matchAll(CODE_TEST_ID_PATTERN)) {
+      const key = `T-${Number(m[1])}-${Number(m[2])}${m[3]}`;
+      const rec = out.get(key) || { fr: Number(m[1]), files: new Set() };
+      rec.files.add(rel);
+      out.set(key, rec);
+    }
+  }
+  return out;
+}
+
+/** 既知の未採番（ラチェット）を読む。無ければ空。壊れていれば例外（黙って 0 件へ落とさない）。 */
+function loadUnassignedBaseline(root = REPO_ROOT) {
+  const p = path.join(root, UNASSIGNED_BASELINE_FILE);
+  if (!fs.existsSync(p)) return { unassigned: [] };
+  const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+  if (!Array.isArray(parsed.unassigned)) {
+    throw new Error(`${UNASSIGNED_BASELINE_FILE.replace(/\\/g, '/')} に unassigned 配列がありません`);
+  }
+  return parsed;
+}
+
+/**
+ * T3 を検査する（純関数に近い形。`files` はテストコードの絶対パス）。
+ * 戻り値: `{ errors, summary: { checked, unassigned, unmanaged } }`。
+ *   checked   … 採番済みの帯に属し、検査の対象になった ID の種類数
+ *   unassigned … 未採番（baseline 記載分を含む）の種類数
+ *   unmanaged … docs/tests が採番していない帯の ID（帯 → 種類数）
+ */
+function checkCodeTestIdsAssigned(files, root = REPO_ROOT, collected = null, baseline = null) {
+  const docIds = collected || collectTestIds(root);
+  const bl = baseline || loadUnassignedBaseline(root);
+  const codeIds = collectCodeTestIds(files, root);
+  const managed = new Set(Object.keys(docIds.maxByFr).map(Number));
+  const declared = new Map(bl.unassigned.map((d) => [normalizeTestId(d.id), d]));
+  const rel = UNASSIGNED_BASELINE_FILE.replace(/\\/g, '/');
+  const errors = [];
+  const found = new Map(); // 未採番 key -> files（ソート済み）
+  const unmanaged = {};
+  let checked = 0;
+
+  for (const [key, rec] of codeIds) {
+    if (!managed.has(rec.fr)) {
+      unmanaged[rec.fr] = (unmanaged[rec.fr] || 0) + 1;
+      continue;
+    }
+    checked++;
+    if (docIds.assignments.has(key)) continue;
+    found.set(key, [...rec.files].sort());
+  }
+
+  for (const [key, files_] of [...found].sort()) {
+    const d = declared.get(key);
+    if (!d) {
+      errors.push(
+        `[T3] テスト ID ${key} をテストコードが使っていますが、${TEST_DOC_DIR.replace(/\\/g, '/')}/ のどの表にも`
+          + `採番されていません（${files_.slice(0, 5).join(' / ')}）。採番の最大値に現れないため、次の採番者が`
+          + '同じ番号を別の意味で採り得ます。テスト仕様書の表へ採番行を足すこと（規約は docs/tests/README.md）。'
+      );
+      continue;
+    }
+    const declaredFiles = [...new Set(d.files || [])].sort();
+    if (files_.join(',') !== declaredFiles.join(',')) {
+      errors.push(
+        `[T3] ${key} の在り処が ${rel} と食い違います（実測 ${files_.join(' / ')} / baseline ${declaredFiles.join(' / ') || '（記載なし）'}）。`
+          + '未採番の ID を使う箇所を増やさず、テスト仕様書へ採番行を足すこと。'
+      );
+    }
+  }
+
+  for (const d of bl.unassigned) {
+    if (found.has(normalizeTestId(d.id))) continue;
+    errors.push(
+      `[T3] ${rel} に記載された未採番 ${d.id} は解消しています（採番された、またはテストコードから消えた）。`
+        + '当該エントリを削除してください（ラチェット）。'
+    );
+  }
+
+  return { errors, summary: { checked, unassigned: found.size, unmanaged } };
+}
+
+/** 2 つの版の未採番 baseline を比べ、増えた entry を返す（純関数）。戻り値: `[{ id, reasons }]`。 */
+function findUnassignedBaselineGrowth(baseBaseline, headBaseline) {
+  const baseMap = new Map(((baseBaseline && baseBaseline.unassigned) || []).map((d) => [normalizeTestId(d.id), d]));
+  const growth = [];
+  for (const h of (headBaseline && headBaseline.unassigned) || []) {
+    const id = normalizeTestId(h.id);
+    const b = baseMap.get(id);
+    const reasons = [];
+    if (!b) {
+      reasons.push('マージベースの baseline に無い entry');
+    } else {
+      const baseFiles = new Set(b.files || []);
+      const added = [...new Set(h.files || [])].filter((f) => !baseFiles.has(f)).sort();
+      if (added.length) reasons.push(`在り処の追加 ${added.join(' / ')}`);
+    }
+    if (reasons.length) growth.push({ id, reasons });
+  }
+  return growth.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+}
+
+/**
+ * T3b を git 上で実行する。戻り値は `{ skipped: 理由 }` か `{ errors, range, base }`。
+ * 範囲の解決は T2b と同じ（`resolveDupBaselineRange`）。**基準の版に baseline が無いときは skip**
+ * （baseline を導入する PR。全件が「増加」になるが、導入時の中身は PR のレビューが見る）。
+ */
+function checkUnassignedBaselineGrowth(root = REPO_ROOT, opts = {}) {
+  const env = opts.env || process.env;
+  if (!isGitTopLevel(root)) return { skipped: 'git の作業ツリーの最上位ではない（模擬ツリー・git 不在）' };
+  const range = resolveDupBaselineRange(root, opts.range || null, env);
+  if (!range) return { skipped: '比較の基準（origin/<base> / origin/develop / develop）を解決できない' };
+  const three = range.includes('...');
+  const [leftRaw, rightRaw] = range.split(three ? '...' : '..');
+  const left = leftRaw || 'HEAD';
+  const right = rightRaw || 'HEAD';
+  let baseRev;
+  try {
+    baseRev = three ? git(root, ['merge-base', left, right]).trim() : git(root, ['rev-parse', '--verify', `${left}^{commit}`]).trim();
+  } catch {
+    return { skipped: `範囲 ${range} の基準コミットを取れない` };
+  }
+  const rel = UNASSIGNED_BASELINE_FILE.replace(/\\/g, '/');
+  let base;
+  try {
+    git(root, ['cat-file', '-e', `${baseRev}:${rel}`]);
+    base = JSON.parse(git(root, ['show', `${baseRev}:${rel}`]));
+  } catch {
+    return { skipped: `基準の版（${baseRev.slice(0, 8)}）に ${rel} が無い（baseline を導入する変更）` };
+  }
+  let head;
+  try {
+    head = right === 'HEAD' ? loadUnassignedBaseline(root) : JSON.parse(git(root, ['show', `${right}:${rel}`]));
+  } catch (e) {
+    return { skipped: `${right} の baseline を読めない: ${e.message.split('\n')[0]}` };
+  }
+  const errors = findUnassignedBaselineGrowth(base, head).map(
+    (g) =>
+      `[T3b] ${rel} の ${g.id} がマージベースより増えています（${g.reasons.join('・')}）。`
+        + '**未採番の baseline へ足して通すことはできない**（ラチェット）。テスト仕様書の表へ採番行を足すこと（IADR-0510）。'
+  );
+  return { errors, range, base: baseRev };
+}
+
 /**
  * T2b の skip を赤へ倒すべき実行かを返す（fail-loud）。CI の pull_request で、模擬ツリーでない本走のとき。
  */
@@ -826,6 +1006,20 @@ function main() {
       + `${growth.declared.length ? `・宣言つきの追加 ${growth.declared.length} 件` : ''}）`;
   }
 
+  // 5（T3）. テストコードが使うテスト ID が docs/tests に採番されていること（#1240 / IADR-0510）
+  const codeIds = checkCodeTestIdsAssigned(files, REPO_ROOT, testIds.summary);
+  for (const e of codeIds.errors) errors.push(e);
+  // 5b（T3b）. 未採番の baseline がマージベースより増えていないこと
+  const unassignedGrowth = checkUnassignedBaselineGrowth(REPO_ROOT, { range: args.dupBaselineRange });
+  let unassignedGrowthLine;
+  if (unassignedGrowth.skipped) {
+    notice(`check-test-traceability[T3b]: 未採番の baseline の増加ラチェットを skip しました（${unassignedGrowth.skipped}）。`);
+    unassignedGrowthLine = `skip（${unassignedGrowth.skipped}）`;
+  } else {
+    for (const e of unassignedGrowth.errors) errors.push(e);
+    unassignedGrowthLine = `増加なし（範囲 ${unassignedGrowth.range}・基準 ${unassignedGrowth.base.slice(0, 8)}）`;
+  }
+
   // 3. 参照 ID が計画書に実在すること（#1235）
   // planning submodule は ADR-0029 決定 2 で撤去済みのため planIds() は常に null を返す。従前はここで
   // notice を出して skip しており、テストに `FR-99` と書いても何にも掛からなかった。null のときは
@@ -866,6 +1060,10 @@ function main() {
         + `\n  テスト ID: 採番 ${testIds.summary.assignments.size} 件 / 参照行 ${testIds.summary.references.length} 件`
         + ` / 重複 ${dupCount} 件（すべて baseline 記載済み）。`
         + `\n  baseline の増加（T2b）: ${growthLine}。`
+        + `\n  テストコードのテスト ID（T3）: 採番済みの帯 ${codeIds.summary.checked} 種を照合`
+        + ` / 未採番 ${codeIds.summary.unassigned} 種（すべて baseline 記載済み）`
+        + ` / docs/tests が採番していない帯 ${Object.entries(codeIds.summary.unmanaged).map(([fr, n]) => `T-${fr} ${n} 種`).join('・') || 'なし'}（対象外）。`
+        + `\n  未採番の baseline の増加（T3b）: ${unassignedGrowthLine}。`
         + `\n  採番の最大値: ${maxLine}`
         + '\n  🔴 新規採番は「最大値＋1」。並行レーンが develop 未反映の帯を確保していることがあるため、'
         + '着手時に互いに素な帯を宣言して確保すること（docs/tests/README.md）。'
@@ -908,6 +1106,14 @@ module.exports = {
   resolveDupBaselineRange,
   checkBaselineGrowth,
   dupBaselineSkipIsFatal,
+  // #1240 / IADR-0510: テストコードのテスト ID の採番（検査 5＝T3 / T3b）。
+  UNASSIGNED_BASELINE_FILE,
+  CODE_TEST_ID_PATTERN,
+  collectCodeTestIds,
+  loadUnassignedBaseline,
+  checkCodeTestIdsAssigned,
+  findUnassignedBaselineGrowth,
+  checkUnassignedBaselineGrowth,
   // #775: census の出典（git ls-files）。
   censusSource,
   isGitTopLevel,

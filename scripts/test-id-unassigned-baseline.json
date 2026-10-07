@@ -1,0 +1,127 @@
+{
+  "$comment": [
+    "テストコード（backend 配下のテスト .cs）が使うのに docs/tests に採番されていないテスト ID の既知分。scripts/check-test-traceability.js の検査 5（T3）が読む。",
+    "🔴 ラチェットである — 新しい未採番を足すことは許さず（T3b がマージベースの版と比べて赤にする。宣言による例外は無い）、解消した entry は本ファイルから消さないと赤くなる。",
+    "解消の仕方はテスト仕様書（docs/tests/*.md）の表へ採番行を足すこと。未採番は行を足せば常に解消できる（IADR-0510）。"
+  ],
+  "measuredAt": "2026-10-08",
+  "measuredFrom": "origin/develop f0bbaa42",
+  "unassigned": [
+    {
+      "id": "T-10-483",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ExecuteSoftwareStops/SoftwareStopBlockingRegressionTests.cs"
+      ],
+      "reason": "docs/tests の行頭セルが `🔴 **T-10-483**` で、採番行の形（ID がセル全体）でない。T2 の解析は採番として数えない。行頭の印を外すか解析を広げるかは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-600",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/GuardProtectiveStops/ProtectiveStopGuardIndeterminateCloseTests.cs",
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/OrderReservationReconcilerTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-601",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/OrderReservationReconcilerTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-602",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/OrderReservationReconcilerTests.cs",
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/ReleaseGatePerTradingEnvironmentTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-603",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/OrderReservationReconcilerTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-604",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/OrderReservationReconcilerTests.cs",
+        "backend/Services/OrderExecutionService/Tests/Hosted/OrderReservationReconciliationServiceTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-605",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/OrderReservationReconcilerTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-606",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Hosted/OrderReservationReconciliationServiceTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-607",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Features/OrderExecution/ReconcileOrderReservations/OrderReservationReconcilerTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-609",
+      "files": [
+        "backend/Services/OrderExecutionService/Tests/Hosted/OrderReservationReconciliationServiceTests.cs"
+      ],
+      "reason": "予約の照合（#856 / #890 / #853）の試験。作業仕様書と IADR にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-682",
+      "files": [
+        "backend/Services/RiskManagementService/Tests/CapitalBaselineSeedTests.cs"
+      ],
+      "reason": "前営業日の資本基準の種（#905）の試験。作業仕様書にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-683",
+      "files": [
+        "backend/Services/RiskManagementService/Tests/CapitalBaselineSeedTests.cs"
+      ],
+      "reason": "前営業日の資本基準の種（#905）の試験。作業仕様書にだけ番号があり、docs/tests の表に行が無い。行を足すのは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-917",
+      "files": [
+        "backend/Services/AuditService/Tests/Features/AuditEvents/ReadContractWireFormatTests.cs",
+        "backend/Services/ReportService/Tests/Infrastructure/ExternalServices/AuditLedgerReadContractTests.cs"
+      ],
+      "reason": "docs/tests の行頭セルが範囲表記 `**T-10-917〜920**` で、採番行の形でない。T2 の解析は採番として数えない。4 行へ分けるかは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-918",
+      "files": [
+        "backend/Services/ReportService/Tests/Infrastructure/ExternalServices/AuditLedgerReadContractTests.cs"
+      ],
+      "reason": "docs/tests の行頭セルが範囲表記 `**T-10-917〜920**` で、採番行の形でない。T2 の解析は採番として数えない。4 行へ分けるかは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-919",
+      "files": [
+        "backend/Services/ReportService/Tests/Infrastructure/ExternalServices/AuditLedgerReadContractTests.cs"
+      ],
+      "reason": "docs/tests の行頭セルが範囲表記 `**T-10-917〜920**` で、採番行の形でない。T2 の解析は採番として数えない。4 行へ分けるかは別 issue（#1240 では範囲外）。"
+    },
+    {
+      "id": "T-10-920",
+      "files": [
+        "backend/Services/ReportService/Tests/Infrastructure/ExternalServices/AuditLedgerReadContractTests.cs"
+      ],
+      "reason": "docs/tests の行頭セルが範囲表記 `**T-10-917〜920**` で、採番行の形でない。T2 の解析は採番として数えない。4 行へ分けるかは別 issue（#1240 では範囲外）。"
+    }
+  ]
+}
