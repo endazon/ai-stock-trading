@@ -7,9 +7,9 @@ namespace RiskManagementService.Domain;
 // 審査（RiskEvaluator.Evaluate）と、判断が LLM を呼ぶ前に読む「新規建ての可否」の口（EntryBlockersService）が
 // **同じ関数を呼ぶ**。規則を 2 か所に置かない（IADR-0394 が案 B を退けた理由そのもの）。述語を直すときはここだけを直す。
 //
-// 対象は「新規建てだけを拒否し、注文の数量・価格・商品種別に依存せず、状態が既知」の 7 理由である
-// （母集合と除外の理由は作業仕様書 20260930_1113_entry-blockers-before-llm）。
-// ［2026-10-07 / #1176・IADR-0495 決定3］判断由来の決済の後の同日・同方向（DecisionExitSameDay）を足して 8 理由。
+// 対象は「新規建てだけを拒否し、注文の数量・価格・商品種別に依存せず、状態が既知」の 8 理由である
+// （#1113 の 7 理由。母集合と除外の理由は作業仕様書 20260930_1113_entry-blockers-before-llm。
+// ［2026-10-07 / #1176・IADR-0495 決定3］判断由来の決済の後の同日・同方向〔DecisionExitSameDay〕を足して 7 → 8 理由）。
 // 🔴 **不明は返さない**（裁定 3）。StopOutStatusUnknown・資金の未供給・口座種別の未確認・縮退の不明・GFV 件数の未供給は
 // 審査では止まるが、口は「確定した」とは答えない —— 判断側は LLM を呼ぶ側へ倒れる（審査が止める）。
 public static class EntryStateBlockers

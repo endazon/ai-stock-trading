@@ -320,9 +320,10 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 10 地点と判断前の 5 地点で語彙 15 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断後の 11 地点と判断前の 6 地点で語彙 17 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
     // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
-    // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する）。
+    // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する。#1176 の 2 値〔判断前の EntryCapacityBelowMinimumNotional・判断後の
+    // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が固定する）。
     [Fact]
     public void 判断前と判断後の見送りは語彙17値を過不足なく覆う()
     {

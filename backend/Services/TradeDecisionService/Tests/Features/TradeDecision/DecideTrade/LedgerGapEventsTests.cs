@@ -17,7 +17,7 @@ using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDeci
 namespace TradeDecisionService.Tests;
 
 // 🔴 NFR, FR-04, FR-10, FR-11, #1092, IADR-0462 決定2・決定4: 取引判断の側で、ログとメトリクスにしか残らなかった 2 つを台帳へ出す。
-//   - LLM を呼ぶ前の見送り（4 地点）: 1 回につき 1 件の TradeDecisionForgoneBeforeLlm（TradeDecisionHeld は流用しない）。
+//   - LLM を呼ぶ前の見送り（6 地点。#1113・#1176 で 1 地点ずつ足した）: 1 回につき 1 件の TradeDecisionForgoneBeforeLlm（TradeDecisionHeld は流用しない）。
 //   - 保有照会・未約定の照会の成否: 発生源を分けて報告する（状態が変わったときだけ出るのは報告口の側）。
 // 🔴 **見送るかどうかの判定は変えない**。どのケースも従来どおり null（見送り）で、見送りの理由の計上も 1 件のままである。
 public class LedgerGapEventsTests
@@ -314,8 +314,8 @@ public class LedgerGapEventsTests
             AppSvc.ToSkipReason(reason).ToString().Should().Be(reason.ToString());
         }
 
-        // #1113, IADR-0463 決定 4: 新規建てが審査で必ず拒否される銘柄の見送りを末尾へ足した（5 地点）。
-        // T-10-2322, #1176, IADR-0495 決定2: 新規建てに使える金額の上限が最小の名目額に届かない見送りを末尾へ足した（6 地点）。
+        // #1113, IADR-0463 決定 4: 新規建てが審査で必ず拒否される銘柄の見送りを末尾へ足した（4 → 5 地点）。
+        // T-10-2322, #1176, IADR-0495 決定2: 新規建てに使える金額の上限が最小の名目額に届かない見送りを末尾へ足した（5 → 6 地点）。
         Enum.GetValues<DecisionForgoneBeforeLlmReason>().Should().HaveCount(6, "LLM より前の見送りは 6 地点（仕様書の母集合）");
         Enum.GetValues<DecisionForgoneBeforeLlmReason>()[^1].Should().Be(
             DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, "値は末尾へ足す");
