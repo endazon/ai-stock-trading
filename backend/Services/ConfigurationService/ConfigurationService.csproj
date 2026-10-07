@@ -3,7 +3,7 @@
      クライアント .Client は撤去し、Features/・Common/・Infrastructure/ のフォルダで境界を表す。基盤
      MSP:IADR-0282 決定1 と同一樹形）。全体前提条件のバージョン管理・変更履歴・利用者変更（Keycloak 認可）と
      ヘルスチェックのため Web SDK を使用。更新時に AssumptionsChanged を発行する（Wolverine）。実行時基盤は
-     test-support shim（本番非使用・IADR-0013）。 -->
+     test-support shim（名は足場だが配備でも動く実行時の配線・IADR-0013 の 2026-10-07 追記）。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
@@ -41,7 +41,7 @@
     <!-- FR-17, NFR/IADR-0260/IADR-0264 決定2: 全体前提条件（TradingAssumptions）と版付きの型
          （VersionedAssumptions）はサービスを跨いで消費されるため共有カーネルに置く。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Kernel\AiStockTrading.Shared.Kernel.csproj" />
-    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（名は足場だが配備でも動く実行時の配線。IADR-0013 の 2026-10-07 追記）を参照する。 -->
     <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>
 </Project>

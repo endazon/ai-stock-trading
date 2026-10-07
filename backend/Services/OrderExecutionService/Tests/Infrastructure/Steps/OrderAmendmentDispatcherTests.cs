@@ -22,7 +22,7 @@ namespace OrderExecutionService.Tests;
 // #154, FR-05, FR-19, IADR-0067: 訂正・取消の発行を Wolverine のテストハーネス（Wolverine.Tracking）で検証する。
 // ADR-0013, IADR-0129, #354: harness.Published → session.Sent への移行。表明の意味は同じ。
 // #847, IADR-0357: 取消の駆動元は PositionCloseCancellationHandler（PositionCloseCancellationHandlerTests が固定）。
-// 訂正の駆動元（#141/#152・時限取消）は未実装であり、ここが配管の終端（発行）の担保になる。
+// 訂正の駆動元は無く（#141/#152 は設計どおり呼ばない。#1204, IADR-0067 の 2026-10-07 追記）、ここが配管の終端（発行）の担保になる。
 public class OrderAmendmentDispatcherTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 17, 6, 0, 0, TimeSpan.Zero);

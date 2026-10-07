@@ -42,7 +42,7 @@
          Domain/CostGovernor.cs が MonthlyCostLimits を、Infrastructure/ExternalServices の複製ファイルが
          TradingAssumptions 系の型を使う。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Kernel\AiStockTrading.Shared.Kernel.csproj" />
-    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（名は足場だが配備でも動く実行時の配線。IADR-0013 の 2026-10-07 追記）を参照する。
          NFR, #526, IADR-0264 決定1: 前提条件の解決（Infrastructure/ExternalServices/）は s2s トークン付与
          （AddAiStockTradingServiceToken）を使うため、旧 ConfigurationService.Client が持っていた参照を
          本プロジェクトが引き継いでいる。 -->

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [ADR-0001, NFR]
 author: endazon (with Claude Code)
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/01_architecture-overview.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
@@ -81,6 +81,16 @@ IADR-0011 で platform（`../microservices-platform`）の Foundation を最小�
   命名・文言だけを見て「このフォルダは削除・変更してもデプロイ後の挙動に影響しない」と誤解しないよう、README にも同旨を明記した
   （今回の「誤読防止」目的が逆方向に取り違えられるのを防ぐため）。
 - フォローアップ: #22 で platform 本体との本番統合（shim の置き換え）を扱う。#12/#22 に本位置づけを注記する。
+
+🔴 **［2026-10-07 追記 / [#1204](https://github.com/endazon/ai-stock-trading/issues/1204)］「本番非使用」の前提は失効した。shim は配備で動く実行時の配線として扱う。**
+
+- **#22 は 2026-07-20 に shim を置き換えずにクローズした**（platform 拡張規約の 3 要求〔共通エンベロープ・宣言的バインディング・構成情報 API〕の充足でクローズ）。
+  置き換えの追跡は他に無い。上の「重要な留意（#22 完了まで）」の「#22 完了後は本番非使用になる」は起きなかった。
+- 実物（2026-10-07 の `origin/develop` `2458fc95`）: shim を `ProjectReference` する本番プロジェクトは 11 サービスと `Shared.KnowledgeBase`。
+  shim は配備で効く判定を持つ —— 例外応答の終端（IADR-0496）、east-west gRPC の所有者の門（`GrpcOwnerClientGate`。Discord ボットの `azp`。IADR-0448）。
+- 決定のうち**物理配置（`TestSupport/`）と名前空間は改めない**（改名は参照する本番プロジェクトと試験の全部へ波及し、得るのは名前の正しさだけ）。
+  代わりに、各 csproj のコメント・`backend/TestSupport/README.md` の「本番非使用」を「名は足場だが配備でも動く実行時の配線」に直した。
+- **外す条件**: platform 本体の Foundation へ実際に差し替える計画・issue が立ったら、その時点で本追記を見直す。
 
 ## 関連
 

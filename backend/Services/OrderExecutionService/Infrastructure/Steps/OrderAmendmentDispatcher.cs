@@ -11,8 +11,10 @@ namespace OrderExecutionService.Infrastructure.Steps;
 // 発行は本 Worker 層が担う（OrderApprovedHandler が OrderExecuted を発行するのと同じ形）。
 //
 // 🔴 **駆動元は `PositionCloseCancellationHandler`（利用者による手仕舞いの取消）である**（#847 で配線した）。
-// #768 が「DI 登録だけで本番の呼び出し元が無い」を台帳（UnwiredDiRegistrationTests）へ載せていた状態は解消した
-// ——#141（リコンサイルの取消基点）・#152（pause による強制取消）は依然として本クラスを呼んでいない。
+// #768 が「DI 登録だけで本番の呼び出し元が無い」を台帳（UnwiredDiRegistrationTests）へ載せていた状態は解消した。
+// #1204, IADR-0067（2026-10-07 追記）: IADR-0067 が見込んだ駆動元 #141・#152 は**設計どおり本クラスを呼ばない**
+// （未配線ではない）。#141 のリコンサイルは注文 ID を持たない Reserved 予約を確定・解放するだけで取り消す注文が無く、
+// #152 の一時停止は新規建てを止めるゲートであって板の注文を取り消さない（計画 ADR-0009）。訂正の駆動元の予定は無い。
 //
 // 🔴 #847, IADR-0117（2026-09-19 追記・改定 1/4）: **`OrderCancelled` は「確実に取り消せた」ときだけ発行する。**
 // このイベントは取引台帳で `MarkTerminal` → **在庫の押さえを解く引き金**であり、取消の結果が不明なまま出すと

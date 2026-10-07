@@ -4,7 +4,7 @@
      同一樹形）。定時ポーリングで収集→正規化→サニタイズ→KB保存→収集完了イベント発行（Hosted/）。
      公式情報源アダプタ・費用統制ゲート・KB シンク（Infrastructure/ExternalServices/）を持つ。DB なし。
      ヘルスチェック・run-once トリガの HTTP サーフェスのため Web SDK を使用。外部情報源・KB 保存は既定で無効
-     （安全既定）。実行時基盤は test-support shim（本番非使用・IADR-0013）を参照する。 -->
+     （安全既定）。実行時基盤は test-support shim（名は足場だが配備でも動く実行時の配線・IADR-0013 の 2026-10-07 追記）を参照する。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
@@ -29,7 +29,7 @@
     <!-- FR-08, IADR-0069: 実 KB 保存（IKnowledgeBaseWriter）へ委譲する KnowledgeBaseWriterSink の登録・参照に
          共有 KB クライアントを参照する。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.KnowledgeBase\AiStockTrading.Shared.KnowledgeBase.csproj" />
-    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（名は足場だが配備でも動く実行時の配線。IADR-0013 の 2026-10-07 追記）を参照する。 -->
     <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>
 </Project>

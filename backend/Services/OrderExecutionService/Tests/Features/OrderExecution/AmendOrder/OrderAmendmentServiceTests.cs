@@ -14,7 +14,7 @@ namespace OrderExecutionService.Tests;
 // FR-05, FR-19, #154, #847, IADR-0067, IADR-0357: 注文の訂正・取消（ブローカ適用＋永続化＋イベント生成）の検証。
 // イベントの発行そのものは Worker 層の OrderAmendmentDispatcher が行う。
 // 取消の駆動元は利用者の手仕舞い取消（#847 で配線した PositionCloseCancellationHandler）であり、
-// 訂正の駆動元（時限取消・#141 リコンサイル・#152 pause 強制取消）は依然として未実装である。
+// 訂正の駆動元は無い（#141 リコンサイル・#152 一時停止は設計どおり呼ばない。#1204, IADR-0067 の 2026-10-07 追記）。
 // 取消の**確認**（在庫を戻してよいか）は OrderCancellationConfirmationTests が固定する。
 public class OrderAmendmentServiceTests
 {
