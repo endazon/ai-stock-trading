@@ -73,6 +73,10 @@ if (KLineQuotaProbeCommand.IsRequested(args))
 // IADR-0016: ブローカ既定はペーパー（実弾を撃たない）。moomoo は PoC まで構成ゲートで停止する。
 var builder = WebApplication.CreateBuilder(args);
 
+// NFR-06, IADR-0496（#1205 監査の追記）, #1192: DI 検証（ValidateScopes・ValidateOnBuild）を環境名に依らず有効にする
+// （Production では既定で外れる）。付け忘れは共通の終端 RunAiStockTradingAsync が起動時に止める。
+builder.UseAiStockTradingServiceProviderValidation();
+
 builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);

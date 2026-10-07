@@ -108,7 +108,9 @@ public class OrderDispatchForgoneProtectionContractTests
         await using var host = ReceiverHost(sender);
 
         var received = ThroughWire(host.Services, sent);
-        await host.Services.GetRequiredService<IMessageBus>().InvokeAsync(received);
+        // NFR-06, IADR-0496（#1192 独立監査）: IMessageBus は scoped。DI のスコープ検証が全環境で有効なので、ルートからは解決しない。
+        using var busScope = host.Services.CreateScope();
+        await busScope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync(received);
 
         received.Protection.Should().Be(new ForgoneCloseProtection(ForgoneCloseProtectionStatus.NoneRecorded, 0, 0));
         var msg = sender.Sent.Should().ContainSingle().Which;
@@ -129,7 +131,9 @@ public class OrderDispatchForgoneProtectionContractTests
         await using var host = ReceiverHost(sender);
 
         var received = ThroughWire(host.Services, sent);
-        await host.Services.GetRequiredService<IMessageBus>().InvokeAsync(received);
+        // NFR-06, IADR-0496（#1192 独立監査）: IMessageBus は scoped。DI のスコープ検証が全環境で有効なので、ルートからは解決しない。
+        using var busScope = host.Services.CreateScope();
+        await busScope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync(received);
 
         received.Protection.Should().Be(new ForgoneCloseProtection(ForgoneCloseProtectionStatus.Recorded, 120, 0));
         sender.Sent.Should().ContainSingle().Which.Content.Should()
@@ -145,7 +149,9 @@ public class OrderDispatchForgoneProtectionContractTests
         await using var host = ReceiverHost(sender);
 
         var received = ThroughWire(host.Services, sent);
-        await host.Services.GetRequiredService<IMessageBus>().InvokeAsync(received);
+        // NFR-06, IADR-0496（#1192 独立監査）: IMessageBus は scoped。DI のスコープ検証が全環境で有効なので、ルートからは解決しない。
+        using var busScope = host.Services.CreateScope();
+        await busScope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync(received);
 
         received.Protection!.Status.Should().Be(ForgoneCloseProtectionStatus.Unknown);
         sender.Sent.Should().ContainSingle().Which.Content.Should().Contain("この建玉は保護レグを持たない可能性があります");

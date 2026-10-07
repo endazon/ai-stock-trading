@@ -31,6 +31,10 @@ const string ServiceName = "ai-stock-trading.market-monitor-service";
 // （MonitorPollingService・TradeDecisionMadeBaselineConsumer・EF ストア・エンドポイントハンドラ）である。
 var builder = WebApplication.CreateBuilder(args);
 
+// NFR-06, IADR-0496（#1205 監査の追記）, #1192: DI 検証（ValidateScopes・ValidateOnBuild）を環境名に依らず有効にする
+// （Production では既定で外れる）。付け忘れは共通の終端 RunAiStockTradingAsync が起動時に止める。
+builder.UseAiStockTradingServiceProviderValidation();
+
 // IADR-0011/0013: 可観測性（Serilog + OTel）。
 builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));

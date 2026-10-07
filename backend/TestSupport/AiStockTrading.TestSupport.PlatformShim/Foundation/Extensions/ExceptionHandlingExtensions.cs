@@ -21,6 +21,16 @@ public static class ExceptionHandlingExtensions
     public const string InstalledPropertyKey = "AiStockTrading.ExceptionHandlerInstalled";
 
     /// <summary>
+    /// ASP.NET Core が <c>UseAuthentication()</c> の呼び出しで <see cref="IApplicationBuilder.Properties"/> に置く印。
+    /// WebApplication は起動時にこの印が無く、かつ認証スキームが DI に在れば、認証ミドルウェアを**利用者のパイプラインより外側**
+    /// （＝本委譲の外側）へ自動で挿入する（#1205 監査。キー名は ExceptionHandlingTests が実測で固定する）。
+    /// </summary>
+    public const string AuthenticationMiddlewareSetKey = "__AuthenticationMiddlewareSet";
+
+    /// <summary><see cref="AuthenticationMiddlewareSetKey"/> の認可版（<c>UseAuthorization()</c> が置く）。</summary>
+    public const string AuthorizationMiddlewareSetKey = "__AuthorizationMiddlewareSet";
+
+    /// <summary>
     /// 未処理例外を ProblemDetails（ヘッダー・スタック・例外メッセージなし）に写す。パイプラインの**先頭**で呼ぶ
     /// （認証など後続のミドルウェアの例外も受けるため）。2 回呼んでも 1 回だけ入れる。
     /// </summary>
@@ -30,6 +40,14 @@ public static class ExceptionHandlingExtensions
         if (IsInstalled(app))
         {
             return app;
+        }
+
+        // #1205 監査: 認証・認可を先に入れてから呼ぶと、それらの例外（JwtBearer の鍵取得失敗など）が本委譲の外側へ抜ける。
+        var properties = ((IApplicationBuilder)app).Properties;
+        if (properties.ContainsKey(AuthenticationMiddlewareSetKey) || properties.ContainsKey(AuthorizationMiddlewareSetKey))
+        {
+            throw new InvalidOperationException(
+                "例外処理は UseAuthentication / UseAuthorization より前（パイプラインの先頭）で呼んでください（IADR-0496）。");
         }
 
         app.UseExceptionHandler(new ExceptionHandlerOptions { ExceptionHandler = WriteProblemAsync });

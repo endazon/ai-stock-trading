@@ -26,6 +26,10 @@ const string ServiceName = "ai-stock-trading.information-collection-service";
 // ローカル単体実行のためのもの。本番は platform 統合（#22）で共通基盤に置き換わる。
 var builder = WebApplication.CreateBuilder(args);
 
+// NFR-06, IADR-0496（#1205 監査の追記）, #1192: DI 検証（ValidateScopes・ValidateOnBuild）を環境名に依らず有効にする
+// （Production では既定で外れる）。付け忘れは共通の終端 RunAiStockTradingAsync が起動時に止める。
+builder.UseAiStockTradingServiceProviderValidation();
+
 // IADR-0011: 可観測性（Serilog + OTel）。
 builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
@@ -241,6 +245,12 @@ var app = builder.Build();
 
 // NFR-06, IADR-0496, #1192: 未処理例外は ProblemDetails（要求ヘッダー・スタックを返さない）。パイプラインの先頭に置く。
 app.UseAiStockTradingExceptionHandler();
+
+// NFR-06, IADR-0496（#1205 監査の追記）, #1192: 認証・認可は例外処理の**内側**へ明示で入れる。省くと WebApplication が
+// 利用者のパイプラインより外側に自動で挿入し、JwtBearer の例外（Keycloak 不達時の鍵取得失敗など）が例外処理を素通りして、
+// Development では開発者向けページが Authorization ヘッダーごと応答する。付け忘れは RunAiStockTradingAsync が起動時に止める。
+app.UseAuthentication();
+app.UseAuthorization();
 
 // /health/live・/health/ready。
 app.MapAiStockTradingHealthChecks();
