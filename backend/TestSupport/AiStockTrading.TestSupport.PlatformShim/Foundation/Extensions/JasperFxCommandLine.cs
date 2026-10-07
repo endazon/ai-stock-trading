@@ -53,6 +53,7 @@ public static class JasperFxCommandLine
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(args);
+        EnsureExceptionHandlerInstalled(app);
 
         if (UsesJasperFxCommands(args))
         {
@@ -61,5 +62,20 @@ public static class JasperFxCommandLine
 
         await app.RunAsync();
         return 0;
+    }
+
+    /// <summary>
+    /// NFR-06, IADR-0496, #1192: 例外処理（<see cref="ExceptionHandlingExtensions.UseAiStockTradingExceptionHandler"/>）の付け忘れを
+    /// 起動時に止める。付け忘れたサービスは、例外時に（Development なら開発者向けページで要求ヘッダーごと）素の応答を返すため、
+    /// 黙って稼働させない（WebApplicationFactory の試験も同じ終端を通るので、試験でも赤になる）。
+    /// </summary>
+    internal static void EnsureExceptionHandlerInstalled(WebApplication app)
+    {
+        if (!ExceptionHandlingExtensions.IsInstalled(app))
+        {
+            throw new InvalidOperationException(
+                "例外処理が導入されていません。Program.cs で app.UseAiStockTradingMiddleware() か "
+                + "app.UseAiStockTradingExceptionHandler() を Build() の直後に呼んでください（IADR-0496）。");
+        }
     }
 }

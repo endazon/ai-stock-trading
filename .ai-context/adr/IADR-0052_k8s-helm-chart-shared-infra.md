@@ -8,7 +8,7 @@ related_ids:
   - IADR-0048 # ユニット実行環境（compose）
 author: claude
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0001_platform-reuse.md
@@ -65,3 +65,10 @@ AST には k8s デプロイ資産が無く（`backend/Dockerfile` ＋ compose �
 - **各 Worker 個別マニフェスト**: 重複が大きい。→ 不採用（同型テンプレート）。
 - **AST 側で infra を再デプロイ**: 二重運用・リソース増。→ 不採用（platform-infra 共有）。
 - **CronJob を既定有効**: run-once 未実装で毎回失敗する。→ 不採用（既定無効・fail-safe）。
+
+## 追記
+
+> **［2026-10-07 追記 / #1192］** テンプレートは全 Worker の env に `ASPNETCORE_ENVIRONMENT: Development` を**固定値で**描いていた（values で変えられず、
+> 本番の `values.yaml` でも同じ）。例外時に ASP.NET Core の開発者向け例外ページが要求ヘッダー（`Authorization: Bearer`）とスタックを応答へ載せ、
+> PoC でトークンが漏れた。環境名は values（既定 `Production`）から描き、`Development` は描画で止めるよう改めた
+> （[IADR-0496](./IADR-0496_aspnetcore-environment-production-and-problem-details.md)）。

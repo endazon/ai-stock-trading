@@ -262,6 +262,9 @@ builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
 
 var app = builder.Build();
 
+// NFR-06, IADR-0496, #1192: 未処理例外は ProblemDetails（要求ヘッダー・スタックを返さない）。パイプラインの先頭に置く。
+app.UseAiStockTradingExceptionHandler();
+
 // /health/live・/health/ready。
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();

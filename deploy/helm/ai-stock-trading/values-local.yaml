@@ -39,6 +39,10 @@
 # realm-export.json＝単体 E2E 用）は不変。
 global:
   authAuthority: http://keycloak:8080/realms/platform
+  # NFR-06, IADR-0496, #1192: ASPNETCORE_ENVIRONMENT は values.yaml の Production を継ぐ（Development は描画で止まる）。
+  # Production では appsettings.Development.json が読まれないため、経路B が従来その値で動いていたログの最小レベル（Debug）を
+  # ここで明示する（情報収集の巡回 300 秒は services.information-collection の env）。棚卸しの全件は IADR-0496。
+  serilogMinimumLevel: Debug
 
 # #723 / #727: MSP 連結プロファイルでは SC-04（OpenD 認証操作）のサイドカー opend-auth を立てる。イメージは
 # scripts/k8s-local-images.sh が opend-auth-gateway を build/import する。--set で立てると k8s-local-deploy.sh の
@@ -169,12 +173,14 @@ services:
       # edinet は API キー（EDINET_SUBSCRIPTION_KEY）、boj は統計分類/系列コードの一次確認が要るため列挙しない（#279 残置）。
       # FR-01, ADR-0020 決定2, #1082, IADR-0453: ニュース源（finnhub-news・google-news）も列挙する（以前は未構成で、判断へニュースが届かなかった）。
       - { name: Collection__Source__Provider, value: "finnhub,finnhub-news,google-news,sec-edgar,fred" }  # ← 収集起動（既定 ""）
+      # IADR-0496, #1192: 巡回間隔 300 秒（values.yaml と同値。リストは置換されるので写す）。鮮度の上限 600 秒（IADR-0490）の前提。
+      - { name: Collection__PollIntervalSeconds, value: "300" }
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
       # FR-01/13, #1015, IADR-0435: Finnhub の対象銘柄は市場監視の監視銘柄（米国の銘柄）に追随する（取引判断の
       # MarketMonitor__BaseUrl と同じ宛先・同じ s2s〔下の ServiceAuth__*〕）。SC-02・/policy で監視銘柄を変えると次の巡回から収集対象も変わる。
       # 自制レートは Collection__Source__Finnhub__RateLimitPerMinute（既定 30・finnhub と finnhub-news で共有）。巡回間隔 300 秒
-      # （appsettings.Development.json）・finnhub と finnhub-news の両方で 1 銘柄 2 要求なので、1 巡回 75 銘柄まで収まる
+      # （上の Collection__PollIntervalSeconds。#1192 以前は appsettings.Development.json）・finnhub と finnhub-news の両方で 1 銘柄 2 要求なので、1 巡回 75 銘柄まで収まる
       # （計画 ADR-0043 決定2 (b)。超えた分は後回しにして警告。#1082 以前の finnhub だけのときは 150 銘柄）。
       # #1082, IADR-0453: 同一鍵の合計（情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3 ＝ 57 ≤ 60 回/分）は変わらない。日次は約 2 倍
       # （6 銘柄 × 2 要求 × 288 巡回 ≒ 3,456 回/日）。日次上限は未実測（ADR-0043 決定1）のため、429 を運用ログで見張る（helm README）。

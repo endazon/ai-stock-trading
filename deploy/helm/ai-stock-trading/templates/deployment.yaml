@@ -124,8 +124,25 @@ spec:
               name: grpc
             {{- end }}
           env:
+            {{- /* NFR-06, NFR-05, IADR-0496, #1192: 環境名は values から与える（サービス単位 aspnetcoreEnvironment ＞ global ＞ Production）。
+                   🔴 従来は全サービスに Development を固定値で描いており、例外時に ASP.NET Core の開発者向けページが
+                   スタックと全要求ヘッダー（Authorization: Bearer）を応答へ載せた（PoC でトークンが漏れた）。
+                   Development は**どのプロファイルでも描画で止める**（配備では開発者向けの挙動を取らない）。
+                   Development だけが読んでいた appsettings.Development.json の値で経路B が要るもの（Serilog の Debug・
+                   情報収集の巡回 300 秒）は values の明示の設定へ移した（下の Serilog__MinimumLevel__Default と
+                   services.information-collection の Collection__PollIntervalSeconds。棚卸しは IADR-0496）。 */}}
+            {{- $aspEnv := $svc.aspnetcoreEnvironment | default $g.aspnetcoreEnvironment | default "Production" }}
+            {{- if eq (lower $aspEnv) "development" }}
+            {{- fail (printf "services.%s の ASPNETCORE_ENVIRONMENT=%q は受理しません。配備では開発者向け例外ページ（要求ヘッダー・スタックを応答へ載せる）を開かないため、Development は使えません（IADR-0496 / #1192）。Development でしか読まれない設定は values の env で明示してください。" $name $aspEnv) }}
+            {{- end }}
             - name: ASPNETCORE_ENVIRONMENT
-              value: Development
+              value: {{ $aspEnv | quote }}
+            {{- with $g.serilogMinimumLevel }}
+            {{- /* IADR-0496, #1192: 空（本番既定）なら描かない＝appsettings.json の Information。経路B は Debug を明示する
+                   （Production では appsettings.Development.json の Debug が読まれなくなるため）。 */}}
+            - name: Serilog__MinimumLevel__Default
+              value: {{ . | quote }}
+            {{- end }}
             - name: ASPNETCORE_URLS
               value: http://+:8080
             {{- /* NFR, ADR-0006, #778: 512Mi の小容器で ASP.NET Core 既定の Server GC は、ヒープ上限（limit の 75%）に

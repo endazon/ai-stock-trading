@@ -591,6 +591,9 @@ builder.Host.UseWolverine(opts =>
 
 var app = builder.Build();
 
+// NFR-06, IADR-0496, #1192: 未処理例外は ProblemDetails（要求ヘッダー・スタックを返さない）。パイプラインの先頭に置く。
+app.UseAiStockTradingExceptionHandler();
+
 // NFR（費用）, FR-04, #817, IADR-0122（2026-09-17 追記）: LLM ゲートウェイ（REST の BaseUrl か gRPC）が構成されているのに
 // 単価が実質 0（モデル別の表が空 かつ 従来キーも無い）なら起動時に警告する。稼働では env 名のハイフンがイメージの
 // `sh -c` 起動で落ちて表が空になり、**無音で**全呼び出しが 0 円計上＝月次費用上限が発火しなかった。
