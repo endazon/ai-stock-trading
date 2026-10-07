@@ -107,6 +107,7 @@ public class TakeProfitNotReachedInPromptTests
     [InlineData("利確: AAPL $230", 10, "200", "229.99", "（現在 229.99 / 基準 230）", "手仕舞い（Sell）", false)]
     [InlineData("利確: AAPL 190 ドル", -10, "200", "190.5", "（現在 190.5 / 基準 190）", "手仕舞い（Buy）", false)]
     [InlineData("利確: AAPL +5%\n利確: AAPL $230", 10, "200", "220", "（現在 +10.00%・220 / 基準 +5%・230）", "手仕舞い（Sell）", true)]
+    [InlineData("利確: AAPL $230\n利確: AAPL +5%", 10, "200", "220", "（現在 220・+10.00% / 基準 230・+5%）", "手仕舞い（Sell）", true)]
     [InlineData("利確: AAPL +1%\n利確: AAPL +2%\n利確: AAPL +3%\n利確: AAPL +40%\n利確: AAPL +50%", 10, "100", "110",
         "（現在 +10.00% / 基準 +1%・+2%・+3%・ほか 2 件）", "手仕舞い（Sell）", true)]
     public void 未到達の行は現在と基準を条件の種類と件数で書き分ける(

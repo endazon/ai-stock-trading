@@ -893,16 +893,15 @@ public static class TradeDecisionPromptBuilder
             + $"{partialNote}手仕舞い（{(held.IsLong ? "Sell" : "Buy")}）を選ぶかは、方針とリスク制約に照らして判断します。";
     }
 
-    // 「方針の利確条件に未到達（現在 +2.98% / 基準 +3%）: …」。現在は条件に率があれば含み益の率、価格があれば現在値（両方なら「・」で並べる）。
+    // 「方針の利確条件に未到達（現在 +2.98% / 基準 +3%）: …」。現在は条件に率があれば含み益の率、価格があれば現在値（両方なら基準と同じ宣言順で「・」で並べる）。
     // 基準は条件のしきい値を 3 件まで（超えれば「ほか N 件」）。丸めた率と基準が同じに見えても未到達であることを「丸めずに比べた」で示す。
     private static string NotReachedLineText(TakeProfitComparison j, HeldPosition held, string priceUnit)
     {
         var ci = CultureInfo.InvariantCulture;
-        var current = new List<string>(2);
-        if (j.Conditions.Any(c => c.Kind == TakeProfitThresholdKind.GainPercent))
-            current.Add($"{j.Gain.ToString("+0.00;-0.00;0.00", ci)}%");
-        if (j.Conditions.Any(c => c.Kind == TakeProfitThresholdKind.Price))
-            current.Add($"{j.Mark.ToString(ci)}{priceUnit}");
+        // 現在の並びは基準と同じく方針の宣言順（種類ごとに最初に現れた順）に揃える。
+        var current = j.Conditions.Select(c => c.Kind).Distinct().Select(kind => kind == TakeProfitThresholdKind.GainPercent
+            ? $"{j.Gain.ToString("+0.00;-0.00;0.00", ci)}%"
+            : $"{j.Mark.ToString(ci)}{priceUnit}");
         var thresholds = j.Conditions.Take(MaxTakeProfitConditionsShown).Select(c => c.Kind == TakeProfitThresholdKind.GainPercent
             ? $"+{c.Threshold.ToString("0.####", ci)}%"
             : $"{c.Threshold.ToString("0.####", ci)}{priceUnit}");
