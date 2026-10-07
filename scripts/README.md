@@ -115,6 +115,14 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 > テストが参照する FR/UC/SC の計画書実在検査が `notice` 付きで恒久的に skip へ倒れるだけで、
 > 必須 FR のテスト・仕様書の存在チェック（本検査器の主眼）は元々 planning 非依存のため引き続き
 > 実効する。**ローカルでも付けない。**
+>
+> 🔴 **［2026-10-08 変更・#1235］実在検査は skip しなくなった。** `planIds()`（submodule 走査）が
+> `null` のときは `.claude/rules/traceability.repo.md` の宣言レンジ（`readPlanIds()`。
+> `check-commit-messages.js` と同じ一次情報）を実在集合に使う。**宣言が読めなければ exit 1**
+> （fail-loud。#1233 と同じ）。前段の「恒久的に skip へ倒れる」「`--require-planning` は恒久的に
+> `exit 1`」は **#1235 以前の記述**である。**`--require-planning` は受理するが、実在検査が常に走るため
+> 付けても付けなくても同じ結果になる**（満たされた状態。CI は従来どおりフラグ無し）。旧経路
+> （`planIds()`・同フラグ）の撤去は別 PR に残している。
 
 > **［2026-08-28 変更］`check-test-traceability.js` は構造依存の検査器の 3 本目である（NFR / IADR-0258）。**
 > `testFiles()` はサービス配下のテストを新旧 2 通りの樹形から拾う —— 旧: `backend/Services/<Svc>/tests/**`
@@ -213,7 +221,7 @@ node scripts/scripts.test.js                       # 上記スクリプト群の
 | `plan-id-qualification` | `check-plan-id-qualification.js`（他プロジェクトの計画 ID の `<PROJ>/<ID>` 修飾。`PLAN_ID_PREFIXES` を明示） |
 | `cross-repo-refs`（#712 で新設。**#487 実装時は `scripts.repo.test.js` の中でしか本走していなかった**） | `check-cross-repo-refs.js --self-test` と本検査（他リポジトリの issue / PR 番号の修飾。`CROSS_REPO_NAMES` / `CROSS_REPO_SELF_NAMES` / `CROSS_REPO_EXCLUDES` を明示。実データ本走は違反 0 件・exit 0） |
 | `reading-budget` | `check-reading-budget.js --self-test` と本検査（必読規約の総量予算。エージェントごとに判定・合算しない。#524） |
-| `test-traceability` | `check-test-traceability.js`（**`--require-planning` は付けない** —— ADR-0029 以降は恒久的に `exit 1` になるため使えない。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有）。**検査 4（T2）でテスト ID（`T-<機能要求番号>-<連番>`）の一意性も見る**（#887 / IADR-0376。既知の重複は `scripts/test-id-duplicate-baseline.json` のラチェットで固定し、**新規の衝突だけを落とす**。採番の最大値を毎回出力し、これが次の採番者の単一情報源になる。規約は `docs/tests/README.md`）。**検査 T2b で baseline の「増える側」も止める**（#923。baseline をマージベースの版と比べ、新しい ID・件数の増加・在り処の追加で赤。正当な追加はコミット本文に行単独の `[add-test-id-duplicate] <ID>` を ID ごとに書く。範囲は `--dup-baseline-range=` / `COMMIT_RANGE` / `GITHUB_BASE_REF` / `origin/develop` の順。`fetch-depth: 0` が必要で、**CI の pull_request で基準を取れなければ赤**、それ以外は理由つき skip） |
+| `test-traceability` | `check-test-traceability.js`（`--require-planning` は付けない —— #1235 以降は受理するが効果は無い。前掲コラム参照）。必須範囲の機能要求のテスト・仕様書の存在を検査（本リポ固有）。**検査 3 でテストが参照する FR/UC/SC の実在を `.claude/rules/traceability.repo.md` の宣言レンジで検査する**（#1235。旧は planning submodule 不在で恒久的に skip していた。宣言が読めなければ exit 1）。**検査 4（T2）でテスト ID（`T-<機能要求番号>-<連番>`）の一意性も見る**（#887 / IADR-0376。既知の重複は `scripts/test-id-duplicate-baseline.json` のラチェットで固定し、**新規の衝突だけを落とす**。採番の最大値を毎回出力し、これが次の採番者の単一情報源になる。規約は `docs/tests/README.md`）。**検査 T2b で baseline の「増える側」も止める**（#923。baseline をマージベースの版と比べ、新しい ID・件数の増加・在り処の追加で赤。正当な追加はコミット本文に行単独の `[add-test-id-duplicate] <ID>` を ID ごとに書く。範囲は `--dup-baseline-range=` / `COMMIT_RANGE` / `GITHUB_BASE_REF` / `origin/develop` の順。`fetch-depth: 0` が必要で、**CI の pull_request で基準を取れなければ赤**、それ以外は理由つき skip） |
 | `banned-libraries` | `check-banned-libraries.js`（不採用ライブラリの再混入。本リポ固有） |
 | `tracked-session-timeout` | `check-tracked-session-timeout.js`（本リポ固有） |
 | `wall-clock-timeout-tests` | `check-wall-clock-timeout-tests.js`（壁時計どうしの競争で合否が決まる試験。形 (a): 同一テストファイル内で有限の実時間の打ち切りが実時間の遅延より小さいと落とす。形 (c): Wolverine の待ちヘルパ（`ExecuteAndWaitAsync` 等）の受け手が予算つきの入口 `TrackActivityForTest()` を経ていない＝既定 5 秒の窓なら落とす（`IServiceProvider` からは `ExecuteAndWaitForTestAsync()` を使う）。allowlist は `ALLOWED`・空で開始。模擬ツリーは `WALL_CLOCK_RACE_CHECK_ROOT`。本リポ固有） |
