@@ -49,11 +49,16 @@ function loadBudget(file = DEFAULT_BUDGET) {
   return b;
 }
 
+/** .NET の構成は `:` と `__` を同じ区切りとして読む。比較はどちらの綴りでも同じ名前に揃える（#1225 監査）。 */
+function normalizeEnvName(name) {
+  return String(name).replace(/:/g, '__').toLowerCase();
+}
+
 function findEnv(workload, name) {
-  const want = name.toLowerCase();
+  const want = normalizeEnvName(name);
   const hits = [];
   for (const c of workload.containers ?? []) {
-    for (const [n, e] of c.env) if (n.toLowerCase() === want) hits.push({ container: c.key, name: n, ...e });
+    for (const [n, e] of c.env) if (normalizeEnvName(n) === want) hits.push({ container: c.key, name: n, ...e });
   }
   return hits;
 }
@@ -98,7 +103,7 @@ function checkManifest(text, budget = loadBudget()) {
   // 2. 宣言外のワークロードが Finnhub の env を持たない。
   for (const w of workloads) {
     if (w.kind === 'Deployment' && declared.has(w.name)) continue;
-    const names = (w.containers ?? []).flatMap((c) => [...c.env.keys()]).filter((n) => suffixes.some((s) => n.toLowerCase().endsWith(s)));
+    const names = (w.containers ?? []).flatMap((c) => [...c.env.keys()]).filter((n) => suffixes.some((s) => normalizeEnvName(n).endsWith(s)));
     if (names.length) {
       errors.push(`${w.kind} ${w.name} が Finnhub の env（${names.join(', ')}）を持つが、予算の母集合（finnhub-key-budget.json）に無い。母集合へ足して合計を数え直す。`);
     }

@@ -117,7 +117,7 @@ bash の awk のままにしない理由: 陰性対照・母集合の欠け・�
 | --- | --- |
 | `scripts/scripts.repo.test.js`（`finnhub-key-budget:` の 4 件） | 正例（57・既定だけで 50）・陰性対照（5 プロセスそれぞれ +4 で 61）・レプリカ・(b)・読めない描画（欠け・重複・空・secretKeyRef・宣言外の鍵）・文書の主張・main の終了コード |
 | `backend/Shared/AiStockTrading.Shared.Infrastructure.Tests/MarketData/FinnhubSharedKeyBudgetTests.cs` | JSON の市況の既定・件数・上限をコードと突き合わせ、情報収集の既定を JSON から読む |
-| `backend/Services/InformationCollectionService/Tests/FinnhubKeyBudgetDefaultsTests.cs` | JSON の情報収集の既定 ＝ `CollectionSourceOptions` |
+| `backend/Services/InformationCollectionService/Tests/Infrastructure/ExternalServices/FinnhubKeyBudgetDefaultsTests.cs` | JSON の情報収集の既定 ＝ `CollectionSourceOptions` |
 | `backend/Services/MarketMonitorService/Tests/FinnhubKeyBudgetDefaultsTests.cs` | JSON の巡回間隔の既定 ＝ `MonitorOptions` |
 | `helm.yml` | 実 chart の正例 2・陰性対照 7 |
 

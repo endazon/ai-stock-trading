@@ -4719,6 +4719,8 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         assert.match(r.errors.join('\n'), /合計が 61 回\/分で 60 を超える/, svc);
       }
       // 名前の大小文字は区別しない（.NET の構成キーと同じ）。
+      // `:` 区切りの綴りも .NET は同じキーとして読む（#1225 監査）。すり抜けずに数える。
+      assert.strictEqual(fb.checkManifest(render({ 'report-service': env(RATE.replace(/__/g, ':'), '"9"') }), budget).ok, false);
       assert.strictEqual(fb.checkManifest(render({ 'report-service': env(RATE.toLowerCase(), '"9"') }), budget).ok, false);
       // レプリカ 2 の report（5 × 2）で 62。
       const two = render({ 'report-service': null }, [dep('report-service', [], 2)]);

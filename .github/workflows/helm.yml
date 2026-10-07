@@ -990,9 +990,10 @@ jobs:
       # （C# の試験がコードと突き合わせる）。values と chart README の「N ≤ 60 回/分」の N も描画の合計と一致させる（--claims）。
       # 陰性対照: 5 プロセスのどれか 1 つを合計 61 になるよう上げると赤・(b) を 11 にすると赤・主張と合計の食い違いで赤（緑の空振りを作らない）。
       # 試験は scripts.repo.test.js の finnhub-key-budget。
+      # 陽性の描画は chart 全体を描く（-s で deployment.yaml に絞ると、CronJob 等の宣言外ワークロードが Finnhub の env を持っても見えない。#1225 監査）。
       - name: Assert Finnhub shared-key budget and market-monitor cycle fit (#1225)
         run: |
-          budget() { local label="$1"; shift; helm template ast "$CHART" -s templates/deployment.yaml "$@" \
+          budget() { local label="$1"; shift; helm template ast "$CHART" "$@" \
             | node scripts/check-finnhub-key-budget.js --label "$label" --claims "$CHART/README.md" ${CLAIMS:+--claims "$CLAIMS"}; }
           CLAIMS="$CHART/values.yaml" budget "既定" || exit 1
           CLAIMS="$CHART/values-local.yaml" budget "values-local" -f "$CHART/values-local.yaml" || exit 1
