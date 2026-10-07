@@ -25,6 +25,10 @@ const string ServiceName = "ai-stock-trading.backtest-service";
 // IADR-0013: 本 Program.cs の standalone 配線は dev/test/CI のローカル単体実行のためのもの。本番は platform 統合（#22）で置換。
 var builder = WebApplication.CreateBuilder(args);
 
+// NFR-06, IADR-0496（#1205 監査の追記）, #1192: DI 検証（ValidateScopes・ValidateOnBuild）を環境名に依らず有効にする
+// （Production では既定で外れる）。付け忘れは共通の終端 RunAiStockTradingAsync が起動時に止める。
+builder.UseAiStockTradingServiceProviderValidation();
+
 builder.Services.AddSerilog((_, logConfig) =>
     logConfig.ConfigureAiStockTradingSerilog(builder.Configuration, ServiceName));
 builder.Services.AddAiStockTradingObservability(builder.Configuration, ServiceName);

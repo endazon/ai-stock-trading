@@ -3,15 +3,15 @@ title: セキュリティ仕様書
 type: security-spec
 status: review
 created: 2026-08-07
-updated: 2026-09-10
+updated: 2026-10-07
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-02, FR-08, FR-10, FR-11, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, NFR, UC-06, UC-07]
+ids: [FR-02, FR-08, FR-10, FR-11, FR-13, FR-14, FR-19, FR-20, NFR-05, NFR-06, NFR-10, NFR, UC-06, UC-07]
 adrs: [ADR-0003, ADR-0004, ADR-0012, MSP:ADR-0004, MSP:ADR-0024]
-iadrs: [IADR-0011, IADR-0019, IADR-0324, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316]
-specs: [20260807_450_security-spec-from-measurement, 20260910_727_msp-linked-realm-unification, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization]
-issues: [#24, #318, #346, #450, #456, #627, #708, #727, MSP#445, MSP#1015, MSP#1372]
+iadrs: [IADR-0011, IADR-0019, IADR-0324, IADR-0051, IADR-0056, IADR-0059, IADR-0060, IADR-0062, IADR-0072, IADR-0111, IADR-0164, IADR-0169, IADR-0171, IADR-0174, IADR-0175, IADR-0176, IADR-0314, IADR-0061, IADR-0316, IADR-0496]
+specs: [20260807_450_security-spec-from-measurement, 20260910_727_msp-linked-realm-unification, 20260909_627_mesh-sidecar-injection-switch, 20260909_708_log-forging-sanitization, 20261007_1192_aspnetcore-env-production]
+issues: [#24, #318, #346, #450, #456, #627, #708, #727, #1192, MSP#445, MSP#1015, MSP#1372]
 -->
 
 
@@ -205,6 +205,7 @@ issues: [#24, #318, #346, #450, #456, #627, #708, #727, MSP#445, MSP#1015, MSP#1
 | T-10 | **クラスタ内の平文通信を傍受される** | 資格情報・取引データの露出。**基盤側の mTLS 方針が STRICT へ変わったことで、本リポジトリの namespace が未注入のままだと露出どころか基盤方向の HTTP 呼び出し自体が全断する事象を確認した**（逆方向は到達可能） | 🔴 **未対策のまま（設定点のみ用意）**。mTLS・NetworkPolicy はいずれも無い。**インフラの管掌**（[#24](https://github.com/endazon/ai-stock-trading/issues/24)）。chart にメッシュ参加の設定点（既定 off）を追加したが、**有効化・実クラスタでの疎通確認は未実施**（[#627](https://github.com/endazon/ai-stock-trading/issues/627)。手順は chart README・実装ADR 参照）。**LLM ゲートウェイの結線時に TLS を前提にすること**（未結線の今が是正の好機である） |
 | T-11 | **監査証跡が失われる** | 事後追跡の不能 | 🔴 **保管期間・バックアップは未実装**（上記「監査ログ」）。記録項目とパージ除外は実装済み。担当 [#346](https://github.com/endazon/ai-stock-trading/issues/346) |
 | T-12 | **外部由来の文字列にログ行を偽装される**（ログインジェクション・CWE-117） | 監査・障害調査の記録が汚染され、「起きたこと」と「注入された行」を読み分けられなくなる | ✅ **発生源で正規化する**（[#708](https://github.com/endazon/ai-stock-trading/issues/708)）。LLM の生出力・プロンプト・KB 文書の表題・通知本文・外部データ源の失敗理由をログの引数へ渡す前に、制御文字（C0・C1）と U+2028 / U+2029 を置換し、長さ上限で切って切った旨を明示する共有純関数を通す（実測 13 箇所 / 8 ファイル）。🔴 **プロンプト・生出力の全量記録が既定オフであることは代替にならない**（障害調査で有効化した瞬間に露出する）ため、既定オフに**加えて**適用している。ログ基盤側（sink / collector）での正規化は**対象外**＝基盤の管掌である |
+| T-13 | **エラー応答に要求ヘッダー（`Authorization: Bearer`）・スタックトレースが載り、アクセストークンが漏れる** | 所有者・サービスのトークンで本人になりすまして発注系の API を呼ばれる。内部の型名・ファイルパスの露出 | ✅ **2 段**（[#1192](https://github.com/endazon/ai-stock-trading/issues/1192)。2026-10-07 の運用で、開発者向け例外ページの応答からトークンが運用のチャットへ流れた）。①**配備の環境名は Production**: Helm チャートが全 Worker の `ASPNETCORE_ENVIRONMENT` を values（既定 `Production`）から描き、**`Development` はどのプロファイルでも描画で止める**（以前は固定値 `Development` で、ASP.NET Core が開発者向け例外ページを自動で挿入していた）。サービスの `extraEnv` に環境名（`ASPNETCORE_ENVIRONMENT` / `DOTNET_ENVIRONMENT`）を書くことも描画で止める（同名の env は後ろが勝つため、書けると上の検査を素通りする）。CI の描画検査が既定・経路B・全フラグ ON の描画と陰性対照（`Development` や `extraEnv` の環境名の指定で描画が失敗すること）を固定する。②**環境名に依らない例外応答**: 全サービスが共通ミドルウェアの先頭で未処理例外を ProblemDetails（`type`・`title`・`status`・`traceId` のみ）に写し、例外の型・メッセージ・スタック・要求ヘッダーを返さない。認証・認可も例外処理の**内側**へ明示で入れる（明示しないと `WebApplication` が外側へ自動で挿入し、認証スキームの例外〔Keycloak 不達時の JwtBearer の鍵取得失敗など〕が例外処理を素通りする。独立監査で、共通ミドルウェアを使わない情報収集がこの形で、Development〔docker-compose〕では開発者向けページへ届くことを確認して是正した）。例外処理の付け忘れ・認証の明示漏れ・順序違い・DI 検証の付け忘れは**起動を止める**（共通の終端が確かめる）。**残余**: `WebApplication` がパイプラインの外側に自動で挿入するルーティングの例外（あいまいな経路の一致など）は②が受けない。Production ではページ自体が無いので漏れないが、Development の docker-compose ではページへ届き得る（ローカル開発だけの残余） |
 
 ## 未決事項
 

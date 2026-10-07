@@ -19,6 +19,11 @@ global:
   # #22 受け入れ基準③: 実効構成バージョン（適用中の構成の Git コミット等）。GitOps（ArgoCD）で注入する。
   # 空既定 = 自己申告の configVersion は null（fail-safe）。
   configVersion: ""
+  # NFR-06, NFR-05, IADR-0496, #1192: 全 Worker の ASPNETCORE_ENVIRONMENT（サービス単位は services.<name>.aspnetcoreEnvironment で上書き可）。
+  # 🔴 Development は描画で止める（開発者向け例外ページが要求ヘッダー・スタックを応答へ載せるため）。
+  aspnetcoreEnvironment: Production
+  # IADR-0496: Serilog の既定の最小レベル（env Serilog__MinimumLevel__Default）。空＝描かない＝appsettings.json の Information。
+  serilogMinimumLevel: ""
   db:
     host: postgres
     port: 5432
@@ -352,6 +357,10 @@ services:
       # （例: "finnhub,finnhub-news,google-news,sec-edgar,edinet,boj,fred"）。列挙しても必須設定（キー・銘柄・CIK・系列コード）が
       # 空のソースは、そのソースだけ無効に倒れる（他ソースは有効なまま・IADR-0064）。
       - { name: Collection__Source__Provider, value: "" }
+      # IADR-0496, #1192: 巡回間隔（秒）。コード既定は 1800 だが、配備は従来 appsettings.Development.json の 300 で動いていた
+      # （チャートが Development を固定していたため）。Production 化で黙って 6 倍に延びないよう明示する。巡回間隔は
+      # InformationCollected の鮮度の上限（2 倍＝600 秒。IADR-0490）と Finnhub の日次見積り（IADR-0434）にも効く。
+      - { name: Collection__PollIntervalSeconds, value: "300" }
       # Finnhub Free（米国株の市況・60回/60秒固定ウィンドウ。IADR-0275 で実測確認済み）。
       - name: Collection__Source__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
