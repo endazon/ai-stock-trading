@@ -99,6 +99,31 @@ public class LedgerCloseApprovalsTests
         reader.ApprovedOrders.Single(a => a.DecisionId == ids.S1Today).Source.Should().Be(ApprovalSource.SoftwareStopS1);
     }
 
+    // T-10-2321, FR-10, #1176, IADR-0495 決定3: 🔴 **再起動で消えない。** 判断由来の決済の由来（TradeDecision）は approved_orders.Source へ
+    // 永続化され、別の DbContext（＝再起動後のプロセスと同じく保存された列だけを読む）で読んでも同じ射影になる。
+    [Fact]
+    public void T_10_2321_判断由来の決済の由来は永続化され再起動後も同じ射影になる()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var exitAt = new DateTimeOffset(2026, 9, 23, 13, 40, 0, TimeSpan.Zero);
+        var id = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var writer = new EfPortfolioLedgerStore(db);
+            writer.AppendApproval(id, Intent(), exitAt, source: ApprovalSource.TradeDecision);
+            writer.AppendFill(id, "TP-1", 707, 337.5m, exitAt.AddSeconds(2));
+        }
+
+        using var reader = NewContext(dbName);
+        var closes = new EfPortfolioLedgerStore(reader).GetCloseApprovals("AAPL", Market.UnitedStates, Since);
+
+        closes.Should().ContainSingle().Which.Source.Should().Be(ApprovalSource.TradeDecision);
+        reader.ApprovedOrders.Single(a => a.DecisionId == id).Source.Should().Be(ApprovalSource.TradeDecision);
+        DecisionExitProjection.Project(closes, Market.UnitedStates, Now)
+            .Should().Be(new RiskManagementService.Domain.DecisionExitReentrySupply(LongSide: true, ShortSide: false));
+        StopOutProjection.Project(closes, Market.UnitedStates, Now).Should().Be(RiskManagementService.Domain.StopOutReentrySupply.NoneToday);
+    }
+
     // 承認は冪等（同じ DecisionId の再送は無視）。再送が由来を運んでも、最初の行の由来は書き換わらない。
     [Fact]
     public void 由来は最初の承認で固定され再送で書き換わらない()

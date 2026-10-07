@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-03
+updated: 2026-10-07
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR]
 adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176]
 -->
 
 
@@ -120,17 +120,23 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   処理中の株数（件数）・送った株数を書き、🔴 **「台帳の乖離ではない」と書く**（乖離の記録と読み違えさせない）。
   payload には引いた処理中の決済の `DecisionId` が残り、その決済の記録と突き合わせられる。
   処理中の決済が建玉をすべて覆ったときは本記録ではなく**見送り**（`OrderDispatchForgone`・理由は処理中の決済が建玉を覆う）が残る。
-- 取引判断が **LLM を呼ぶ前に見送った**事実（`TradeDecisionForgoneBeforeLlm`）を、見送り 1 回につき 1 件記録する。理由は 5 つ
-  （確定済みの日報が無い・現在値が取れない・為替が決まらない・為替が古く保有も無い・新規建てが審査で必ず拒否される）。
+- 取引判断が **LLM を呼ぶ前に見送った**事実（`TradeDecisionForgoneBeforeLlm`）を、見送り 1 回につき 1 件記録する。理由は 6 つ
+  （確定済みの日報が無い・現在値が取れない・為替が決まらない・為替が古く保有も無い・新規建てが審査で必ず拒否される・
+  新規建てに使える金額の上限が最小の名目額に届かない）。
   最後の理由（`EntryBlockedByRiskControls`）は、保有 0・未約定なしの銘柄でリスク管理の新規建ての可否の口が買いの新規建てを
   塞いでいると答えたときに出る。🔴 **従来はその新規建てが LLM の後に審査で拒否され `OrderRejected` として残っていた**
   （損切りした当日・保有建玉数の上限・kill switch など）。その一部がこちらへ移る（審査は変わらない）。相関は事実ごとの `EventId`、時刻は見送った時刻。
   要約に「LLM を呼ぶ前」と理由・起点（定時／価格変動）を書く。LLM が結論を出した**後**の見送り（`TradeDecisionHeld`）とは別の事実であり、
   急変の基準値を進めない。夜間の要約は Detail の `Reason` を名前で数える。
+  `EntryCapacityBelowMinimumNotional` は、保有 0・未約定なしの銘柄で、1 注文上限・段階残枠・日次残枠の最小が最小の名目額（equity の 1%。構成で変えられる）に
+  届かないときに出る（その銘柄の新規建ては結論に依らず必ず見送られるため、LLM を呼ばない）。
 - 取引判断が LLM の結論を得た**後**に見送った事実（`TradeDecisionHeld`。要約「判断後の見送り（理由）判断時点価格」）のうち、理由
   `AddOnBlockedByRiskControls` は、保有中の銘柄で LLM が買い増し・売り増しを返したが、LLM を呼ぶ前に読んだリスク管理の新規建ての可否の口が
   その方向を塞いでいると答えていたときに出る（発注しない）。🔴 **従来はその買い増しが審査で拒否され `OrderRejected` として残っていた**
   （保有建玉数の上限など）。その一部がこちらへ移る（審査は変わらない）。決済の判断はこの理由で見送らない。
+  理由 `SizedBelowMinimumNotional` は、新規建てのサイジングの名目額（数量 × 参照価格）が最小の名目額（equity の 1%）に満たないときに出る（発注しない）。
+  判断由来の決済（利確）の後の同日・同方向の新規建ては、審査の拒否（`OrderRejected`）の理由 `DecisionExitSameDay` として残る
+  （保有 0・未約定なしの銘柄では LLM を呼ぶ前の見送り `EntryBlockedByRiskControls` へ移る）。
 - 建玉照会・保有照会の**状態の変化**（`PositionQueryStatusChanged`）を、発生源ごとに成功⇄失敗が変わったときだけ記録する
   （周期ごとの成功・失敗の連続は記録しない）。相関は発生源ごとの決定的 GUID（`position-query:<発生源>`）で、1 つの発生源の失敗と回復を
   1 本で辿れる。要約は「照会の失敗が始まった（種類）」「照会が回復した（失敗の回数・始まり）」「照会できている」のいずれかで、

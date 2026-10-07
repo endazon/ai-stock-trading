@@ -73,6 +73,14 @@ public static class TradingDefaults
     /// </summary>
     public const int StopWidthFloorAtrPeriod = 14;
 
+    /// <summary>
+    /// FR-10, #1176, IADR-0495 決定1: <b>新規建ての最小の名目額＝equity の 1%</b>（オーナー裁定 2026-10-07）。サイジングの結果
+    /// （数量 × 参照価格・基準通貨）がこれに満たない新規建ては見送る（建玉枠・承認・LLM 費用を消費しない）。ちょうど等しいときは通す。
+    /// 判定は <see cref="MinimumEntryNotional"/>、構成は取引判断サービスの <c>Sizing:MinEntryNotionalRatio</c>（未設定は本値）。
+    /// 🔴 <b>計画の 05_trading-assumptions §5 にはまだ行が無い</b>（実装側の裁定値。計画への記録は planning への issue で行う）。
+    /// </summary>
+    public const decimal MinEntryNotionalRatio = 0.01m;
+
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。
     public static RiskLimitSettings CreateRiskLimits() => new()
