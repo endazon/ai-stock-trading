@@ -136,7 +136,7 @@ public class FillPnlAttributionTests
         entry.RealizedPnlGross.Should().Be(0m);
         // 費用は新規建てにも掛かり、**PnlAggregator と同じ関数**で積む（片方だけ変わる余地を残さない）。
         entry.Cost.Should().Be(
-            CostCalculator.EstimateOneWayCost(assumptions, Market.UnitedStates, fill.Quantity * fill.Price));
+            CostCalculator.FillCost(assumptions, Market.UnitedStates, fill.Side, fill.Quantity, fill.Price).Total);
         entry.Cost.Should().BeGreaterThan(0m);
     }
 

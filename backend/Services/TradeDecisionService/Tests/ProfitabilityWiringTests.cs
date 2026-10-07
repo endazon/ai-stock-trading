@@ -34,7 +34,7 @@ public class ProfitabilityWiringTests(ProfitabilityWiringTests.Factory factory)
         using var scope = factory.Services.CreateScope();
         var provider = scope.ServiceProvider.GetRequiredService<IProfitabilityAssumptionsProvider>();
 
-        var assessment = await provider.AssessAsync(Market.UnitedStates, notional: 20_000m);
+        var assessment = await provider.AssessAsync(Market.UnitedStates, quantity: 100, notional: 20_000m);
 
         // Configuration:BaseUrl 未設定 → DefaultAssumptionsProvider（未解決）→ アダプタは null（安全側）。
         assessment.Should().BeNull();

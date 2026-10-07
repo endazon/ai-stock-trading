@@ -117,6 +117,39 @@ public class GrpcAssumptionsClientIntegrationTests
         host.Stub.Calls.Should().Be(1);
     }
 
+    // T-17-12: FR-17, 計画 ADR-0035 決定 5, #1217, IADR-0508 決定3 —— 採算判定（事前見積り）が読む取引諸費用の料率を運ぶ。
+    // 計画値以外の料率で、受け手が既定値で埋めていない（＝線上の値を読んでいる）ことを確かめる。
+    [Fact]
+    public async Task 取引諸費用の料率を運ぶ()
+    {
+        await using var host = await GrpcStubHost.StartAsync(StubAssumptions.Returns(r =>
+            r.Assumptions.UnitedStatesSellRegulatoryFees = new Proto.UsSellRegulatoryFeeSchedule
+            {
+                SecFeePerMillion = "27.80",
+                TafPerShare = "0.000195",
+                TafCapPerTrade = "9.79",
+            }));
+
+        var current = await ResolveAsync(host.Address, new() { ["Configuration:GrpcTimeoutSeconds"] = "5" });
+
+        current.IsResolved.Should().BeTrue();
+        current.Assumptions.UnitedStatesSellRegulatoryFees.Should().Be(
+            new UsSellRegulatoryFeeSchedule(27.80m, 0.000195m, 9.79m));
+    }
+
+    // T-17-13（**否定形**）: 欄の無い応答（旧提供側との並走）では**計画の既定値**で埋める。0 で埋めると諸費用が消え費用を過小に見積もる。
+    [Fact]
+    public async Task 取引諸費用の欄が無い応答では計画の既定値で埋める()
+    {
+        await using var host = await GrpcStubHost.StartAsync(StubAssumptions.Returns(r =>
+            r.Assumptions.UnitedStatesSellRegulatoryFees = null));
+
+        var current = await ResolveAsync(host.Address, new() { ["Configuration:GrpcTimeoutSeconds"] = "5" });
+
+        current.IsResolved.Should().BeTrue();
+        current.Assumptions.UnitedStatesSellRegulatoryFees.Should().Be(TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees);
+    }
+
     // 🔴 陰性対照: 提供側が黙り込んだら **構成した deadline で打ち切って** 安全側既定へ倒れる（無限に待たない）。
     //
     // 🔴 **経過時間まで測る。** 「未解決へ倒れた」だけを見る試験は弱い —— deadline を無視して 30 秒待つ
@@ -324,6 +357,15 @@ internal sealed class StubAssumptions(Func<int, CancellationToken, Task<Proto.Ge
         new((call, _) => call <= failures
             ? throw new RpcException(new Status(status, $"stub failure #{call}"))
             : Task.FromResult(Ok()));
+
+    // 正常応答を加工して返す（#1217: 取引諸費用の料率の有無を変える）。
+    internal static StubAssumptions Returns(Action<Proto.GetAssumptionsResponse> mutate) =>
+        new((_, _) =>
+        {
+            var response = Ok();
+            mutate(response);
+            return Task.FromResult(response);
+        });
 
     // 線上の 10 進が読めない応答（提供側の写しが壊れた場合・別実装のピアが繋がった場合）。
     internal static StubAssumptions ReturnsMalformedDecimal(string malformed = "not-a-decimal") =>

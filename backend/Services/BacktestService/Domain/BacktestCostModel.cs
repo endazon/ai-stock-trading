@@ -20,15 +20,19 @@ public sealed record BacktestCostModel(TradingAssumptions Assumptions, decimal S
     public static decimal Multiplier(CostSensitivity sensitivity) =>
         sensitivity == CostSensitivity.Doubled ? 2m : 1m;
 
-    // 片道の費用 = (FR-17 概算費用 ＋ スリッページ) × 感度倍率。
-    public decimal OneWayCost(Market market, decimal notional, CostSensitivity sensitivity)
+    // 片道の費用 = (FR-17 概算費用〔手数料＋取引諸費用＋為替スプレッド相当〕 ＋ スリッページ) × 感度倍率。
+    // FR-15, FR-17, 計画 ADR-0035 決定 5, #1217, IADR-0508 決定4: 取引諸費用（米国株の売りの SEC・TAF）は約定の方向と株数で決まるため、
+    // 約定ごとに方向と数量を受け取る。感度倍率（コスト 2 倍）は諸費用にも掛かる（全費用の倍率）。
+    public decimal OneWayCost(
+        Market market, TradeSide side, int quantity, decimal notional, CostSensitivity sensitivity)
     {
         var slippage = Math.Max(0m, notional) * SlippageRatio;
-        var baseCost = CostCalculator.EstimateOneWayCost(Assumptions, market, notional) + slippage;
+        var baseCost = CostCalculator.EstimateOneWayCost(Assumptions, market, side, quantity, notional) + slippage;
         return baseCost * Multiplier(sensitivity);
     }
 
-    // 往復（建て＋手仕舞い）の費用 = 片道 × 2。
-    public decimal RoundTripCost(Market market, decimal notional, CostSensitivity sensitivity) =>
-        2m * OneWayCost(market, notional, sensitivity);
+    // 往復（建て＋手仕舞い）の費用 = 買いの片道 ＋ 売りの片道（売りはロングでもショートでも 1 回。IADR-0508 決定1）。
+    public decimal RoundTripCost(Market market, int quantity, decimal notional, CostSensitivity sensitivity) =>
+        OneWayCost(market, TradeSide.Buy, quantity, notional, sensitivity)
+        + OneWayCost(market, TradeSide.Sell, quantity, notional, sensitivity);
 }

@@ -106,7 +106,10 @@ public static class BacktestSimulator
 
                 var price = bar.Open;
                 var notional = Math.Abs(order.SignedQuantity) * price;
-                var cost = config.CostModel.OneWayCost(order.Market, notional, config.Sensitivity);
+                // #1217, IADR-0508 決定4: 方向（負＝売り）と株数を渡す（米国株の売りに取引諸費用が掛かる）。
+                var side = order.SignedQuantity < 0 ? TradeSide.Sell : TradeSide.Buy;
+                var cost = config.CostModel.OneWayCost(
+                    order.Market, side, Math.Abs(order.SignedQuantity), notional, config.Sensitivity);
 
                 var current = positions.TryGetValue(key, out var lot) ? lot : new InventoryLot(0, 0m);
                 var result = SignedInventory.Apply(current, order.SignedQuantity, price);

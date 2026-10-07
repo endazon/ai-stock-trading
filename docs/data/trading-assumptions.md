@@ -3,15 +3,15 @@ title: 全体前提条件（assumptions / assumptions_change_log）データ仕�
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-07
+updated: 2026-10-08
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-13, FR-17, FR-18, UC-06]
 adrs: [ADR-0001, ADR-0035]
-iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173, IADR-0259, IADR-0260, IADR-0264, IADR-0501]
-specs: [20260710_configuration-assumptions, 20261007_1201_report-cost-adr0035]
-issues: [#14, #19, #139, #358, #526, #1201]
+iadrs: [IADR-0012, IADR-0020, IADR-0021, IADR-0063, IADR-0173, IADR-0259, IADR-0260, IADR-0264, IADR-0501, IADR-0508]
+specs: [20260710_configuration-assumptions, 20261007_1201_report-cost-adr0035, 20261008_1217_us-sell-fees-pre-trade-estimate]
+issues: [#14, #19, #139, #358, #526, #1201, #1217]
 -->
 
 
@@ -47,12 +47,12 @@ issues: [#14, #19, #139, #358, #526, #1201]
 | FxSpreadRatio | decimal | 0 未登録 | 非 JPY 市場の為替スプレッド率（約定代金比・片道。実 FX レート連携までの近似） |
 | MinimumExpectedProfitMultiple | decimal | **2** | 最小期待利益倍率。**基準は「往復費用＋税」**であり往復費用のみではない（§4・利用者決定 2026-07-23。#358。最小期待利益は税込み基準で評価する。**旧記載の 1.5・往復費用のみは計画確定前の暫定値**） |
 | CostLimits | MonthlyCostLimits | (20000,15000,5000,0) | 月次費用上限（総額/LLM/インフラ/データ・円） |
-| UnitedStatesSellRegulatoryFees | UsSellRegulatoryFeeSchedule | (20.60, 0.000166, 8.30) | 米国株の売却時諸費用（取引諸費用）。SEC 手数料（売却代金 100 万ドルあたり）・FINRA 取引活動料（1 株あたり）・同 1 取引あたり上限（いずれも USD）。**計画の暫定値（確認日 2026-09-05）**で、口座開設後に証券会社の実請求額で置き換える。**必須欄ではない** —— 欄の無い永続化行・gRPC／HTTP の受け手では既定値で埋まる |
+| UnitedStatesSellRegulatoryFees | UsSellRegulatoryFeeSchedule | (20.60, 0.000166, 8.30) | 米国株の売却時諸費用（取引諸費用）。SEC 手数料（売却代金 100 万ドルあたり）・FINRA 取引活動料（1 株あたり）・同 1 取引あたり上限（いずれも USD）。**計画の暫定値（確認日 2026-09-05）**で、口座開設後に証券会社の実請求額で置き換える。**必須欄ではない** —— 欄の無い永続化行・欄を運ばない受け手（費用統制の gRPC・旧提供側の応答）では既定値で埋まる。取引判断の gRPC の受け手は本欄を運ぶ（事前見積りが読む） |
 
 - `CommissionSchedule(Rate, Minimum, Cap)`: 手数料 = clamp(約定代金×Rate, Minimum, Cap)。Cap≤0 は上限なし。
 - `UsSellRegulatoryFeeSchedule(SecFeePerMillion, TafPerShare, TafCapPerTrade)`: 諸費用 = 売却代金×SecFeePerMillion÷1,000,000 ＋ min(数量×TafPerShare, TafCapPerTrade)。**米国株の売り約定（空売りを含む）だけ**に掛かる。
 - `CostCalculator.FillCost`（純関数・**事後集計**）: 約定 1 件の費用＝手数料＋諸費用。**為替スプレッドを約定ごとに乗せない**（外貨決済では両替は入出金時にだけ起きる）。報告書の損益集計・費用合計が使う。
-- `CostCalculator`（純関数・05 §4・**事前見積り**）: 片道費用＝手数料＋為替スプレッド、往復＝×2、最小期待利益＝**不動点** `T = m × C × (1 − r) / (1 − m × r)`（C＝往復費用＋判断費用・r＝譲渡益税率）。
+- `CostCalculator`（純関数・05 §4・**事前見積り**）: 片道費用＝手数料＋諸費用＋為替スプレッド（売買方向と数量を受け取る。諸費用は `FillCost` と同じ式で米国株の売りだけ）、往復＝買いの片道＋売りの片道（売りはロングでもショートでも 1 回）、最小期待利益＝**不動点** `T = m × C × (1 − r) / (1 − m × r)`（C＝往復費用＋判断費用・r＝譲渡益税率）。
   **税は譲渡益（＝利益−費用）に掛かるため結果に依存し、単純な「往復×倍率」では解けない**。式の単一情報源は `AiStockTrading.Shared.Contracts.Trading.MinimumExpectedProfit`。
   **m × r ≥ 1 では解が無く、負のしきい値で全通過させないよう安全側へ倒す。**
 

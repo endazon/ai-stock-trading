@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-10-07
+updated: 2026-10-08
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04, FR-05]
-adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196]
+adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014, ADR-0035]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217]
 -->
 
 
@@ -95,9 +95,10 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 
 | ID | 受け入れ基準（検証条件） | テストメソッド | 区分 |
 | --- | --- | --- | --- |
-| T-15-05 | 片道費用＝手数料＋為替スプレッド＋スリッページ・往復は片道の 2 倍 | `片道費用は手数料と為替スプレッドとスリッページの合算` / `往復費用は片道の2倍` | 自動 |
+| T-15-05 | 片道費用＝手数料＋為替スプレッド＋スリッページ・往復は片道の 2 倍（日本株。米国株の売りの諸費用は T-15-123） | `片道費用は手数料と為替スプレッドとスリッページの合算` / `往復費用は片道の2倍` | 自動 |
 | T-15-06 | コスト 2 倍感度は片道費用を 2 倍にする | `コスト2倍感度は片道費用を2倍にする` | 自動 |
 | T-15-07 | 日本株は為替スプレッドを課さない（全体前提条件に準拠） | `日本株は為替スプレッドを課さない` | 自動 |
+| T-15-123 | 米国株の**売り**の約定には取引諸費用（SEC 手数料・FINRA 取引活動料。上限つき）が掛かり、買い・日本株には掛からない。コスト 2 倍の感度は諸費用にも掛かり、往復は売り 1 回分の諸費用を含む。料率は全体前提条件の設定点（計画の暫定値が既定）から読み、報告書の事後集計と同じ式で数える（2026-10-08 から。以前のバックテストの費用は諸費用を含まなかった） | `米国株の売りには取引諸費用が掛かり買いには掛からない` / `BacktestSimulatorTests.決済で実現損益が計上され費用が現金から差し引かれる` | 自動 |
 | **T-15-69** | **否定形**: 借株料を費用モデルへ接続しない（**`ShortFeeRate = 1.5` の単位が未確定**であり、取り違えると費用が 100 倍ずれて「コスト 2 倍でも期待値が正」の判定が意味を失う）。**値ではなく構造で塞ぐ**——公開面に `Borrow` / `ShortFee` を含む名前が生えたら赤くなる。空売り段階解禁の計画 ADR の決定 3 の 2026-08-06 改訂・空売りの一次ゲートを借株可否とする決定 3・[#417](https://github.com/endazon/ai-stock-trading/issues/417) | `借株料は費用モデルの入口に存在しない` | 自動 |
 
 ### 検証条件③: ウォークフォワード検証（WalkForwardSplitterTests）

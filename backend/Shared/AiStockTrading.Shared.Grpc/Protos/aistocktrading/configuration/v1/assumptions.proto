@@ -61,6 +61,18 @@ message MonthlyCostLimits {
   string data = 4;
 }
 
+// REST の UsSellRegulatoryFeeSchedule と同じ形（USD）。米国株の売却時諸費用（SEC Section 31 手数料・FINRA 取引活動料）。
+// FR-17, 計画 ADR-0035 決定 5, #1217, IADR-0508 決定3: 取引判断の採算判定（事前見積り）が料率を読むために足した。
+message UsSellRegulatoryFeeSchedule {
+  // 10 進表記の文字列（上の 🔴 を参照）。
+  // SEC 手数料の料率（売却代金 100 万ドルあたり。例 "20.60"）。
+  string sec_fee_per_million = 1;
+  // FINRA 取引活動料（1 株あたり。例 "0.000166"）。
+  string taf_per_share = 2;
+  // FINRA 取引活動料の 1 取引あたり上限（例 "8.30"。0 以下は上限なし）。
+  string taf_cap_per_trade = 3;
+}
+
 // REST の TradingAssumptions と同じ形。
 message TradingAssumptions {
   // 譲渡益税率（例 "0.20315"）。
@@ -72,6 +84,9 @@ message TradingAssumptions {
   // 最小期待利益倍率（往復費用の何倍を下回る期待利益の取引を見送るか）。
   string minimum_expected_profit_multiple = 5;
   MonthlyCostLimits cost_limits = 6;
+  // 米国株の売却時諸費用の料率（#1217, IADR-0508 決定3）。**提供側は常に書く。** 欄の無い応答（旧提供側）を受けた
+  // 取引判断は計画の既定値で埋める（0 にしない）。費用統制の受け手は本欄を読まない。
+  UsSellRegulatoryFeeSchedule united_states_sell_regulatory_fees = 7;
 }
 
 // REST の VersionedAssumptions と同じ形。

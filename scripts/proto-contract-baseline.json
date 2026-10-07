@@ -202,6 +202,34 @@
               "number": 3,
               "type": "CommissionSchedule",
               "label": "singular"
+            },
+            "united_states_sell_regulatory_fees": {
+              "number": 7,
+              "type": "UsSellRegulatoryFeeSchedule",
+              "label": "singular"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "UsSellRegulatoryFeeSchedule": {
+          "fields": {
+            "sec_fee_per_million": {
+              "number": 1,
+              "type": "string",
+              "label": "singular"
+            },
+            "taf_cap_per_trade": {
+              "number": 3,
+              "type": "string",
+              "label": "singular"
+            },
+            "taf_per_share": {
+              "number": 2,
+              "type": "string",
+              "label": "singular"
             }
           },
           "reserved": {

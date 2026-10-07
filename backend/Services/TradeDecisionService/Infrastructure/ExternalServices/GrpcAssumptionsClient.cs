@@ -110,6 +110,12 @@ public sealed class GrpcAssumptionsClient(
                     FromWire(a.CostLimits?.Llm),
                     FromWire(a.CostLimits?.Infrastructure),
                     FromWire(a.CostLimits?.Data)),
+                // FR-17, 計画 ADR-0035 決定 5, #1217, IADR-0508 決定3: 採算判定（事前見積り）が取引諸費用の料率を読む。
+                // 🔴 欄の無い応答（旧提供側）は**計画の既定値**で埋める——0 で埋めると諸費用が消え、費用を過小に見積もる。
+                UnitedStatesSellRegulatoryFees = a.UnitedStatesSellRegulatoryFees is { } fees
+                    ? new UsSellRegulatoryFeeSchedule(
+                        FromWire(fees.SecFeePerMillion), FromWire(fees.TafPerShare), FromWire(fees.TafCapPerTrade))
+                    : TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees,
             },
             response.Version);
     }

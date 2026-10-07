@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-06, FR-16, FR-17, ADR-0035, ADR-0034, ADR-0027, ADR-0016, ADR-0030, IADR-0305, IADR-0306, IADR-0304, IADR-0301, IADR-0381, IADR-0152]
 author: claude (Claude Code)
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-10-08
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0035_cost-ratio-denominator-and-cost-total-composition.md (決定 1〜5、フォローアップ 1・2)
   - planning:projects/ai-stock-trading/06_technical/04_report-templates.md (§数値の定義・日報 §1・週報 §5・月報 §1/§2)
@@ -120,3 +120,11 @@ related_specs:
 
 - Supersedes: なし（IADR-0305 決定 2〜4・IADR-0306 決定 4 の暫定を計画の裁定へ追随させる。両 IADR の本文は残し、末尾に追記した）
 - Superseded by: なし
+
+## ［2026-10-08 追記 / #1217］残余リスク 1・2 の解消
+
+本文（決定 2「事前見積りは不変」・残余リスク）は当時の記録として残し、現在の扱いを次に記す（実装判断は [IADR-0508](./IADR-0508_us-sell-fees-in-pre-trade-estimate.md)）。
+
+- **事前見積りは諸費用を含むようになった。** `EstimateOneWayCost` / `EstimateRoundTripCost` は売買方向と数量を受け取り、諸費用を本 IADR の `FillCost` と同じ式で数える（採算判定・バックテスト）。手数料・為替スプレッドが未登録なら採算判定は従来どおり見積り不能（IADR-0076 決定 3 を保つ）。
+- **設定画面は前提条件を往復させるようになった**（取得値を土台に編集欄だけを上書きする）。取引判断の gRPC の受け手も料率を運ぶ。
+- 残る残余: 日報 §2 の明細の「実現損益」列・Discord 要約の「費用」（本文の 3 点目）は変わらない。

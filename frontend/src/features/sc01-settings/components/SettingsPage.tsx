@@ -125,8 +125,12 @@ function num(s: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function fromForm(f: FormModel): TradingAssumptions {
+// SC-01, FR-17, #1217: 送信する前提条件は**取得した値を土台に編集欄だけを上書きする**。
+// 更新はレコード全体の置き換えであり、本画面が編集しない欄（取引諸費用の料率など）を落とすとサーバが既定値で埋め、
+// 保存のたびに料率が既定値へ戻る。
+function fromForm(f: FormModel, base: TradingAssumptions): TradingAssumptions {
   return {
+    ...base,
     capitalGainsTaxRate: num(f.capitalGainsTaxRate),
     fxSpreadRatio: num(f.fxSpreadRatio),
     minimumExpectedProfitMultiple: num(f.minimumExpectedProfitMultiple),
@@ -211,7 +215,7 @@ export function SettingsPage() {
     try {
       // 成功時は mutation が現在値・履歴を無効化して最新化する。破壊的操作はしない。
       await saveAssumptions.mutateAsync({
-        assumptions: fromForm(form),
+        assumptions: fromForm(form, current.assumptions),
         expectedVersion: current.version,
         reason: reason.trim(),
       });

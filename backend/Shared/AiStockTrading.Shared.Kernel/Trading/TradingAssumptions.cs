@@ -62,9 +62,12 @@ public sealed record TradingAssumptions
     /// <summary>
     /// FR-17, 05_trading-assumptions §2, 計画 ADR-0035 決定 5, #1201, IADR-0501: 米国株の売却時諸費用（取引諸費用）の料率。
     /// <para>
-    /// 🔴 <b><c>required</c> にしない。</b> 既存の永続化行（JSON）と、gRPC／HTTP で前提条件を受け取る側（取引判断・費用統制）は
-    /// この欄を運ばない。欠けたときは<b>計画の暫定値</b>（<see cref="TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees"/>）で埋まる
-    /// ——受け取る側は事前見積り（<see cref="CostCalculator.EstimateOneWayCost"/>）しか使わず、本欄を読まない。
+    /// 🔴 <b><c>required</c> にしない。</b> 既存の永続化行（JSON）と、欄を運ばない受け手（費用統制の gRPC・旧提供側の応答）では
+    /// <b>計画の暫定値</b>（<see cref="TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees"/>）で埋まる。
+    /// </para>
+    /// <para>
+    /// #1217, IADR-0508 決定1・3: 本欄は事後集計（<see cref="CostCalculator.FillCost"/>）だけでなく<b>事前見積り</b>
+    /// （<see cref="CostCalculator.EstimateOneWayCost"/>・採算判定・バックテスト）も読む。取引判断の gRPC の受け手は本欄を運ぶ。
     /// </para>
     /// </summary>
     public UsSellRegulatoryFeeSchedule UnitedStatesSellRegulatoryFees { get; init; } =

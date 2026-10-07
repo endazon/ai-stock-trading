@@ -66,9 +66,19 @@ internal static class AssumptionsWireMapping
                     Infrastructure = ToWire(current.Assumptions.CostLimits.Infrastructure),
                     Data = ToWire(current.Assumptions.CostLimits.Data),
                 },
+                // FR-17, 計画 ADR-0035 決定 5, #1217, IADR-0508 決定3: 取引判断の採算判定（事前見積り）が料率を読む。常に書く。
+                UnitedStatesSellRegulatoryFees = ToProto(current.Assumptions.UnitedStatesSellRegulatoryFees),
             },
         };
     }
+
+    private static Proto.UsSellRegulatoryFeeSchedule ToProto(UsSellRegulatoryFeeSchedule schedule) =>
+        new()
+        {
+            SecFeePerMillion = ToWire(schedule.SecFeePerMillion),
+            TafPerShare = ToWire(schedule.TafPerShare),
+            TafCapPerTrade = ToWire(schedule.TafCapPerTrade),
+        };
 
     private static Proto.CommissionSchedule ToProto(CommissionSchedule schedule) =>
         new()

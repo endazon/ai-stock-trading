@@ -450,11 +450,14 @@ public class TradeDecisionServiceTests
     {
         public int Calls { get; private set; }
         public decimal LastNotional { get; private set; }
+        public int LastQuantity { get; private set; }
 
-        public Task<TradeCostAssessment?> AssessAsync(Market market, decimal notional, CancellationToken ct = default)
+        public Task<TradeCostAssessment?> AssessAsync(
+            Market market, int quantity, decimal notional, CancellationToken ct = default)
         {
             Calls++;
             LastNotional = notional;
+            LastQuantity = quantity;
             return Task.FromResult(assessment);
         }
     }
@@ -697,6 +700,8 @@ public class TradeDecisionServiceTests
         // 数量＝floor(min(50,000,20,000)/1,200)=16。notional＝1,200 × 16 = 19,200。
         prof.Calls.Should().Be(1);
         prof.LastNotional.Should().Be(19_200m);
+        // T-17-09: #1217, IADR-0508 決定1 — 採算見積りには発注する数量が渡る（往復費用の TAF は株数に比例する）。
+        prof.LastQuantity.Should().Be(16);
     }
 
     // #247, FR-04, FR-11, IADR-0104: LLM 拒否に由来する Hold は発注意図を作らず、その理由が監査ログへ到達する

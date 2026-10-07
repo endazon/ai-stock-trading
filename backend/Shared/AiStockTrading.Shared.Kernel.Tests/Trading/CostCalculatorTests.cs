@@ -26,21 +26,21 @@ public class CostCalculatorTests
     public void 手数料は定率で算出される()
     {
         var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m));
-        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(100m); // 0.1%
+        CostCalculator.EstimateOneWayCost(a, Market.Japan, TradeSide.Buy, 100, 100_000m).Should().Be(100m); // 0.1%
     }
 
     [Fact]
     public void 手数料は最低額でフロアされる()
     {
         var a = Assumptions(jp: new CommissionSchedule(0.001m, 150m, 0m));
-        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(150m); // 100 < 最低150
+        CostCalculator.EstimateOneWayCost(a, Market.Japan, TradeSide.Buy, 100, 100_000m).Should().Be(150m); // 100 < 最低150
     }
 
     [Fact]
     public void 手数料は上限でキャップされる()
     {
         var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 50m));
-        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(50m); // 100 > 上限50
+        CostCalculator.EstimateOneWayCost(a, Market.Japan, TradeSide.Buy, 100, 100_000m).Should().Be(50m); // 100 > 上限50
     }
 
     // FR-17, #364, IADR-0152 決定7: 為替スプレッドは通貨の交換に伴う費用であり、**非基準通貨市場**に掛かる。
@@ -50,7 +50,7 @@ public class CostCalculatorTests
     {
         var a = Assumptions(jp: new CommissionSchedule(0m, 0m, 0m), fxSpreadRatio: 0.002m);
         // 手数料0 + 為替スプレッド 100,000*0.002 = 200。
-        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(200m);
+        CostCalculator.EstimateOneWayCost(a, Market.Japan, TradeSide.Buy, 100, 100_000m).Should().Be(200m);
     }
 
     // **否定形**: 基準通貨の市場では通貨の交換が起こらないため、為替スプレッドを課さない。
@@ -60,14 +60,14 @@ public class CostCalculatorTests
         var a = Assumptions(us: new CommissionSchedule(0m, 0m, 0m), fxSpreadRatio: 0.002m);
 
         MarketCurrency.IsBaseCurrency(Market.UnitedStates).Should().BeTrue();
-        CostCalculator.EstimateOneWayCost(a, Market.UnitedStates, 100_000m).Should().Be(0m);
+        CostCalculator.EstimateOneWayCost(a, Market.UnitedStates, TradeSide.Buy, 100, 100_000m).Should().Be(0m);
     }
 
     [Fact]
     public void 往復費用は片道の2倍()
     {
         var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m));
-        CostCalculator.EstimateRoundTripCost(a, Market.Japan, 100_000m).Should().Be(200m);
+        CostCalculator.EstimateRoundTripCost(a, Market.Japan, 100, 100_000m).Should().Be(200m);
     }
 
     // FR-17, §4, #358, IADR-0173: しきい値の基準は **往復費用＋税** である（往復費用のみではない）。
@@ -82,9 +82,9 @@ public class CostCalculatorTests
         var expected = 2m * 200m * (1m - TradingAssumptionsDefaults.CapitalGainsTaxRate)
             / (1m - 2m * TradingAssumptionsDefaults.CapitalGainsTaxRate);
 
-        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().Be(expected);
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100, 100_000m).Should().Be(expected);
         // 期待値そのものが式の写しにならないよう、桁の水準も併せて固定する（下 2 桁は decimal の除算に依存）。
-        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().BeApproximately(536.87m, 0.01m);
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100, 100_000m).Should().BeApproximately(536.87m, 0.01m);
     }
 
     // 対照（退化）: 税率 0 なら従来式 m × C に一致する。式の書き換えが値を壊していないことを示す。
@@ -96,7 +96,7 @@ public class CostCalculatorTests
             CapitalGainsTaxRate = 0m,
         };
 
-        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().Be(300m);
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100, 100_000m).Should().Be(300m);
     }
 
     // **fail-closed**: 倍率 × 税率 >= 1 では解が無い（利益を増やすと税も同じ速さで増える）。
@@ -115,7 +115,7 @@ public class CostCalculatorTests
             CapitalGainsTaxRate = 0.20315m,   // 5 × 0.20315 = 1.01575 >= 1
         };
 
-        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().BeNull();
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100, 100_000m).Should().BeNull();
     }
 
     // T-17-01/02/03（#461, IADR-0177）: **境界そのもの**を固定する。上のテストは境界の「かなり内側」を
@@ -136,7 +136,7 @@ public class CostCalculatorTests
             CapitalGainsTaxRate = Rate,
         };
 
-        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m).Should().BeNull();
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100, 100_000m).Should().BeNull();
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class CostCalculatorTests
 
         // **境界の直前でも「解がある」＝ null にならない。** 安全側へ倒しすぎて
         // 正常な構成まで見送るようになっていないことを固定する（fail-closed の行き過ぎ検知）。
-        CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m)
+        CostCalculator.MinimumViableProfit(a, Market.Japan, 100, 100_000m)
             .Should().NotBeNull().And.BeGreaterThan(0m);
     }
 
@@ -175,7 +175,7 @@ public class CostCalculatorTests
             CapitalGainsTaxRate = (decimal)taxRate,
         };
 
-        var threshold = CostCalculator.MinimumViableProfit(a, Market.Japan, 100_000m);
+        var threshold = CostCalculator.MinimumViableProfit(a, Market.Japan, 100, 100_000m);
 
         // null（見送り）であるか、非負であるかのいずれか。**負の値は許さない。**
         if (threshold is { } value)
@@ -228,7 +228,7 @@ public class CostCalculatorTests
         var a = Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m), fxSpreadRatio: 0.002m);
 
         // 事前見積り: 手数料 100 ＋ 為替 200（変わらない）。
-        CostCalculator.EstimateOneWayCost(a, Market.Japan, 100_000m).Should().Be(300m);
+        CostCalculator.EstimateOneWayCost(a, Market.Japan, TradeSide.Buy, 100, 100_000m).Should().Be(300m);
         // 事後集計: 手数料 100 だけ。
         CostCalculator.FillCost(a, Market.Japan, TradeSide.Buy, 100, 1_000m).Total.Should().Be(100m);
     }
@@ -241,6 +241,73 @@ public class CostCalculatorTests
 
         // SEC 10,000 × 100 / 1e6 = 1、TAF 10 × 0.01 = 0.1。
         CostCalculator.FillCost(a, Market.UnitedStates, TradeSide.Sell, 10, 1_000m).RegulatoryFees.Should().Be(1.1m);
+    }
+
+    // --- 事前見積りの取引諸費用: FR-06, FR-16, FR-17, 計画 ADR-0035 決定 5, 05_trading-assumptions §4, #1217, IADR-0508 決定1 ---
+    // §4「費用(市場, 売買, 約定代金) = 手数料 + 諸費用 + 為替スプレッド相当」。2026-10-08 までの事前見積りは諸費用を含まなかった。
+
+    // T-17-05: 米国株の売りの事前見積りに SEC 料・TAF が掛かり、値は事後集計（FillCost）と同じ式・同じ設定点から出る。
+    [Fact]
+    public void 事前見積りの米国株の売りには取引諸費用が掛かり事後集計と同値である()
+    {
+        var a = Assumptions(us: new CommissionSchedule(0.001m, 0m, 0m));
+
+        // 100 株 × 250 = 25,000 → 手数料 25、SEC 0.515、TAF 0.0166。
+        var estimate = CostCalculator.EstimateOneWayCostBreakdown(a, Market.UnitedStates, TradeSide.Sell, 100, 25_000m);
+
+        estimate.RegulatoryFees.Should().Be(0.5316m);
+        estimate.RegulatoryFees.Should().Be(
+            CostCalculator.FillCost(a, Market.UnitedStates, TradeSide.Sell, 100, 250m).RegulatoryFees);
+        estimate.Commission.Should().Be(25m);
+        estimate.FxSpread.Should().Be(0m);
+        estimate.Total.Should().Be(25.5316m);
+        // 式は 1 か所: 合計版は内訳版の Total。
+        CostCalculator.EstimateOneWayCost(a, Market.UnitedStates, TradeSide.Sell, 100, 25_000m).Should().Be(estimate.Total);
+    }
+
+    // T-17-06（**否定形**）: 事前見積りでも諸費用は「米国株の売り」だけ。買い（買戻しを含む）・日本株には掛けない。
+    [Theory]
+    [InlineData(Market.UnitedStates, TradeSide.Buy)]
+    [InlineData(Market.Japan, TradeSide.Sell)]
+    [InlineData(Market.Japan, TradeSide.Buy)]
+    public void 事前見積りでも米国株の売り以外には取引諸費用を掛けない(Market market, TradeSide side)
+    {
+        CostCalculator.EstimateOneWayCostBreakdown(Assumptions(), market, side, 100, 25_000m)
+            .RegulatoryFees.Should().Be(0m);
+    }
+
+    // T-17-07: 往復は買いの片道＋売りの片道。売りはロングでもショートでも 1 回なので諸費用は 1 回分（TAF は上限つき）。
+    [Fact]
+    public void 往復の事前見積りは売り1回分の取引諸費用を含みTAFは上限で頭打ちになる()
+    {
+        var a = Assumptions(us: new CommissionSchedule(0.001m, 0m, 0m));
+
+        // 100,000 株 × 10 = 1,000,000 → 手数料 1,000 × 2、SEC 20.60、TAF 16.6 → 上限 8.30。
+        var roundTrip = CostCalculator.EstimateRoundTripCostBreakdown(a, Market.UnitedStates, 100_000, 1_000_000m);
+
+        roundTrip.Commission.Should().Be(2_000m);
+        roundTrip.RegulatoryFees.Should().Be(20.60m + 8.30m);
+        roundTrip.Total.Should().Be(2_028.90m);
+        CostCalculator.EstimateRoundTripCost(a, Market.UnitedStates, 100_000, 1_000_000m).Should().Be(2_028.90m);
+        // 日本株の往復には諸費用が入らない（片道の 2 倍のまま）。
+        CostCalculator.EstimateRoundTripCost(Assumptions(jp: new CommissionSchedule(0.001m, 0m, 0m)), Market.Japan, 100, 100_000m)
+            .Should().Be(200m);
+    }
+
+    // T-17-08: 最小期待利益（不動点）の C は諸費用を含む往復費用である（採算判定の見送りの閾値が諸費用のぶん上がる）。
+    [Fact]
+    public void 最小期待利益は取引諸費用を含む往復費用から解く()
+    {
+        var a = Assumptions(us: new CommissionSchedule(0.001m, 0m, 0m), minMultiple: 2m);
+
+        // 400 株 × 250 = 100,000 → 手数料 100 × 2 ＋ SEC 2.06 ＋ TAF 0.0664 = 202.1264。
+        const decimal roundTrip = 202.1264m;
+        var expected = 2m * roundTrip * (1m - TradingAssumptionsDefaults.CapitalGainsTaxRate)
+            / (1m - 2m * TradingAssumptionsDefaults.CapitalGainsTaxRate);
+
+        CostCalculator.MinimumViableProfit(a, Market.UnitedStates, 400, 100_000m).Should().Be(expected);
+        // 諸費用を含まない旧値（往復 200 → 536.87…）より大きい。
+        CostCalculator.MinimumViableProfit(a, Market.UnitedStates, 400, 100_000m).Should().BeGreaterThan(536.88m);
     }
 
     // T-10-214（**否定形**）: FR-17, FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3, #417 ——
