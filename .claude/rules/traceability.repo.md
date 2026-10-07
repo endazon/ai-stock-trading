@@ -13,10 +13,10 @@ project-planning `projects/ai-stock-trading/` の実ファイルと一致）。
 **引き直しの日付つき履歴・実測の記録は[別紙](../../.ai-context/annex/plan-id-range-history-annex.md)へ移した（#1052。引き直すたびに別紙へ追記する）。**
 
 - **この節は機械の単一情報源である。** `scripts/check-test-traceability.js` の `readPlanIds()` が
-  本節の FR/UC/SC レンジ表記（バッククォート囲みの `FR-01..21` の形）を読み、`check-commit-messages.js` が
+  本節の FR/UC/SC レンジ表記（バッククォート囲みの `FR-01..NN` の形）を読み、`check-commit-messages.js` が
   コミット件名・PR タイトルの起点 ID の**実在性**を検査する。`scripts/check-trace-blocks.js` は
   `scripts/lib/plan-ranges.js`（`readPlanIds()` と同じ節を再利用する拡張点）経由で計画 ADR の
-  レンジ（`` `ADR-0001..0037` `` の形）も読む。**節を消す・改名する・書式を崩すと
+  レンジ（`` `ADR-0001..NNNN` `` の形）も読む。**節を消す・改名する・書式を崩すと
   検査器は例外で落ちる**（黙って 0 件検査へ落ちない fail-loud）。**資料再編（ADR-0029）で
   planning submodule への依存を撤去したため、レンジの更新は計画リポジトリ（GitHub URL または
   隣接クローンの読み取り専用）を直接確認して行う。以前あった「pin も直す」手順（走査基準の

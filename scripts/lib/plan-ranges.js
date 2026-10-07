@@ -13,7 +13,7 @@
  * かわりに `planRangeSection()`（節の本文だけを切り出す既存のエクスポート）を再利用し、
  * 同じ節の中から `ADR-from..to` だけを別パーサで拾う。
  *
- * 外部依存ゼロ。読めない／節が無い／レンジが無い場合は例外を投げる（fail-loud。
+ * 外部依存ゼロ。読めない／節が無い／レンジが無い／レンジ表記が 2 個以上ある（#1233）場合は例外を投げる（fail-loud。
  * `readPlanIds()` と同じ理由 —— 黙って skip すると「実在しない ADR の違反 0 件」という
  * 最も安全に見える出力で素通りする）。
  */
@@ -41,6 +41,15 @@ function readPlanAdrRange(rulesPath = DEFAULT_RULES_PATH) {
   const section = tt.planRangeSection(md);
   if (section === null) {
     throw new Error(`${tt.RULES_FILE} に「${tt.PLAN_RANGE_HEADING}」節が見つかりません`);
+  }
+  // 節内の全一致を数える（#1233）。1 個目だけを取ると、宣言行が消えたときに同じ節の
+  // 書式例を拾って黙ってレンジが縮む。宣言はちょうど 1 個——2 個以上は値が同じでも例外にする。
+  const all = section.match(new RegExp(ADR_RANGE_RE.source, 'g')) || [];
+  if (all.length > 1) {
+    throw new Error(
+      `${tt.RULES_FILE} の「${tt.PLAN_RANGE_HEADING}」節に計画 ADR のレンジ表記が ${all.length} 個あります`
+        + `（${all.join(' / ')}）。宣言は 1 個に限り、書式例はレンジとして読めない形（例: \`ADR-0001..NNNN\`）で書く`
+    );
   }
   const m = ADR_RANGE_RE.exec(section);
   if (!m) {

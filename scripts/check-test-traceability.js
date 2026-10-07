@@ -352,15 +352,30 @@ function planRangeSection(md) {
 /**
  * 節の本文から `FR-01..21` の形（バッククォート囲み）のレンジを拾う。
  * 戻り値: { FR: { from, to }, UC: {...}, SC: {...} }。
+ *
+ * **同じ種別のトークンが節内に 2 個以上あれば例外にする**（#1233。値が同じでも）。従前は
+ * 後勝ちで上書きしており、地の文の書式例が宣言と同じ形をしていると、宣言行が消えても
+ * 書式例を拾って黙って通り、宣言だけを前進させれば書式例の古い値へ黙って縮んだ。
+ * 宣言は種別ごとにちょうど 1 個であり、書式例はレンジとして読めない形（`FR-01..NN`）で書く。
  */
 function parsePlanRanges(sectionText) {
   const out = {};
+  const seen = {};
   const re = /`(FR|UC|SC)-(\d+)\.\.(\d+)`/g;
   let m;
   while ((m = re.exec(String(sectionText))) !== null) {
-    const [, kind, from, to] = m;
+    const [token, kind, from, to] = m;
     if (!PLAN_KINDS.includes(kind)) continue;
+    (seen[kind] = seen[kind] || []).push(token);
     out[kind] = { from: Number(from), to: Number(to) };
+  }
+  for (const kind of PLAN_KINDS) {
+    if (seen[kind] && seen[kind].length > 1) {
+      throw new Error(
+        `計画レンジ ${kind} のトークンが節内に ${seen[kind].length} 個あります（${seen[kind].join(' / ')}）。`
+          + '宣言は種別ごとに 1 個に限り、書式例はレンジとして読めない形（例: `FR-01..NN`）で書く'
+      );
+    }
   }
   return out;
 }

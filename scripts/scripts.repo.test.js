@@ -2618,6 +2618,43 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.throws(() => ttRp.expandPlanIds({ FR: { from: 5, to: 1 }, UC: { from: 1, to: 2 }, SC: { from: 1, to: 2 } }));
     });
 
+    // --- #1233: 宣言行が消えても同じ節の書式例を拾って黙って通る／縮む ---------------------
+    //
+    // 従前、ADR は 1 個目の一致、FR/UC/SC は後勝ちで拾っていた。地の文の書式例が宣言と同じ形だと、
+    // 宣言行だけが消えた写しで `{from:1,to:37}` が返った（#1231 の独立監査の実測）。
+    // **宣言は種別ごとにちょうど 1 個**を契約にし、2 個以上は値が同じでも例外にする。
+    ok('#1233: 宣言が消えて書式例だけが残る／宣言が 2 個ある規約は例外、正常な規約は宣言の値を返す', () => {
+      const prRp = require('./lib/plan-ranges.js');
+      const dir = fsRp.mkdtempSync(pathRp.join(osRp.tmpdir(), 'rp1233-'));
+      const write = (name, body) => {
+        const f = pathRp.join(dir, name);
+        fsRp.writeFileSync(f, `## 起点 ID の種別（固有）\n\n${body}\n\n## 次の節\n\n\`ADR-0001..0099\` \`FR-01..99\`\n`);
+        return f;
+      };
+      const decl = '`FR-01..21` / `UC-01..07` / `SC-01..04`、計画 ADR は `ADR-0001..0055`';
+      // (b) 正常: 宣言 1 個＋読めない形の書式例。次の節のトークンは拾わない。
+      const normal = write('normal.md', `${decl}\n\n書式例は \`FR-01..NN\` / \`\` \`ADR-0001..NNNN\` \`\` の形。`);
+      assert.deepStrictEqual(prRp.readPlanAdrRange(normal), { from: 1, to: 55 });
+      assert.strictEqual(ttRp.readPlanIds(normal).length, 32);
+      // (a) 実ファイルから宣言トークンだけを除いた写し（#1231 の監査と同じ操作）→ 縮まずに例外。
+      const realMd = fsRp.readFileSync(pathRp.join(__dirname, '..', ttRp.RULES_FILE), 'utf8');
+      const declLine = realMd.split('\n').find((l) => /`ADR-\d+\.\.\d+`/.test(l) && /`FR-\d+\.\.\d+`/.test(l));
+      assert.ok(declLine, '実ファイルに宣言行が見つからない');
+      const removed = pathRp.join(dir, 'removed.md');
+      fsRp.writeFileSync(removed, realMd.replace(declLine, declLine.replace(/`(FR|UC|SC|ADR)-\d+\.\.\d+`/g, '')));
+      assert.throws(() => prRp.readPlanAdrRange(removed), /見つかりません/);
+      assert.throws(() => ttRp.readPlanIds(removed), /見つかりません/);
+      // (c) 宣言＋旧来の書式例（値が違う）→ 曖昧なので例外。値が同じでも例外。
+      const twoAdr = write('two-adr.md', `${decl}\n\n書式例は \`\` \`ADR-0001..0037\` \`\` の形。`);
+      assert.throws(() => prRp.readPlanAdrRange(twoAdr), /2 個あります/);
+      const twoFr = write('two-fr.md', `${decl}\n\n書式例は \`FR-01..21\` の形。`);
+      assert.throws(() => ttRp.readPlanIds(twoFr), /FR のトークンが節内に 2 個/);
+      // 実ファイルは宣言 1 個ずつ（書式例が読めない形で書かれている）。
+      const real = ttRp.planRangeSection(fsRp.readFileSync(pathRp.join(__dirname, '..', ttRp.RULES_FILE), 'utf8'));
+      assert.strictEqual(real.match(new RegExp(prRp.ADR_RANGE_RE.source, 'g')).length, 1);
+      assert.strictEqual(real.match(/`(FR|UC|SC)-\d+\.\.\d+`/g).length, 3);
+    });
+
     ok('#532: 規約ファイルが機械の単一情報源であることを明記している（節を消させない）', () => {
       const md = fsRp.readFileSync(pathRp.join(__dirname, '..', ttRp.RULES_FILE), 'utf8');
       const section = ttRp.planRangeSection(md);
