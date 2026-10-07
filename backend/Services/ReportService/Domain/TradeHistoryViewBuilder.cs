@@ -7,7 +7,7 @@ namespace ReportService.Domain;
 // 日報 §2 の入力（TradeHistoryView）を組み立てる純関数。
 //
 // 🔴 **数値はコード集計値・文章は記録の転記であり、いずれも LLM に作らせない**（FR-16・IADR-0251）。
-//   - 手数料・費用: `CostCalculator.EstimateOneWayCost`（`PnlAggregator` と**同じ関数**）
+//   - 手数料・費用: `CostCalculator.FillCost`（売買手数料＋取引諸費用。`PnlAggregator` と**同じ関数**。#1201）
 //   - 実現損益: `PeriodInventory.Apply`（`PnlAggregator` と**同じ畳み込み**）——在庫が減る約定でのみ計上する
 //     （🔴 #892: 期間より前に建てた建玉の決済は算定できないため `RealizedPnlUnvalued` を立て、値を描かせない）
 //   - 判断根拠: 監査台帳 `TradeDecisionMade.Rationale` を `DecisionId` で引いて**そのまま**載せる
@@ -79,7 +79,7 @@ public static class TradeHistoryViewBuilder
                 fill.Side,
                 fill.Quantity,
                 fill.Price,
-                CostCalculator.EstimateOneWayCost(assumptions, fill.Market, fill.Quantity * fill.Price),
+                CostCalculator.FillCost(assumptions, fill.Market, fill.Side, fill.Quantity, fill.Price).Total,
                 // 🔴 税は**期間合計にのみ**課される（PnlAggregator）。約定単位へ配分する規則が無いため未供給。
                 // ここで 0 と書くと「この約定に税は掛かっていない」と読める。
                 Tax: null,

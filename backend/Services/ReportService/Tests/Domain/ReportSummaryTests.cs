@@ -8,7 +8,7 @@ namespace ReportService.Tests;
 // 数値はコード集計値（PnlSummary）だけを使い、散文（LLM 出力）は必ずサニタイズを通す。
 public class ReportSummaryTests
 {
-    // 実現損益(税引前) 15,000 / 費用 450 / 税 2,250 / 実現損益(税引後) 12,300 / 評価損益 -800 / 約定 4・決済 2・勝ち 1
+    // 約定代金差額 15,000 / 費用 450 / 税 2,250 / 実現損益(税引後) 12,300 / 評価損益 -800 / 約定 4・決済 2・勝ち 1
     private static readonly PnlSummary Pnl = new(15_000m, 450m, 2_250m, 12_300m, -800m, 4, 2, 1);
 
     [Fact]

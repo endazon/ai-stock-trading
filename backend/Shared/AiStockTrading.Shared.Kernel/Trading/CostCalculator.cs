@@ -2,8 +2,13 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AiStockTrading.Shared.Kernel.Trading;
 
-// FR-17, 05_trading-assumptions §4: 概算費用関数（純関数）。判断時の事前見積り・リスク判定・事後集計で共通利用する。
-// 費用(市場, 約定代金) = 手数料 + 為替スプレッド相当。数値計算はコードで行い LLM には計算させない（05 採用方針）。
+// FR-17, 05_trading-assumptions §4: 費用関数（純関数）。数値計算はコードで行い LLM には計算させない（05 採用方針）。
+//
+// 🔴 FR-06, FR-16, 計画 ADR-0035 決定 4・5, #1201, IADR-0501: **事前見積りと事後集計を別の関数にする。**
+//   - 事前見積り（判断時の採算判定・バックテスト）: EstimateOneWayCost＝手数料 + 為替スプレッド相当。
+//     §4 の「為替スプレッド相当」は円建てで調達した資金の実効コストを採算へ織り込むためのもので、**事前見積りに限る**。
+//   - 事後集計（報告書の費用合計・実現損益の控除項）: FillCost＝手数料 + 取引諸費用（米国株の売却時の SEC・TAF）。
+//     **為替スプレッドを約定ごとに乗せない**——外貨決済では約定ごとの両替が発生せず、両替は入出金時にだけ起きる（決定 4）。
 public static class CostCalculator
 {
     // 片道の概算費用 = 市場別手数料 ＋ 為替スプレッド（**非基準通貨市場**に約定代金比で適用）。
@@ -14,22 +19,15 @@ public static class CostCalculator
     public static decimal EstimateOneWayCost(TradingAssumptions assumptions, Market market, decimal notional) =>
         EstimateOneWayCostBreakdown(assumptions, market, notional).Total;
 
-    // FR-06, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5「費用の内訳（手数料/諸費用/税）」:
-    // 片道の概算費用を**区分ごとに**返す。報告書が内訳を出すために要る。
+    // FR-17, #615, IADR-0305: 片道の概算費用（**事前見積り**）を区分ごとに返す。
     //
     // 🔴 **式は 1 か所にしか無い。** EstimateOneWayCost は本関数の Total を返す——内訳版を別式で書くと、
     // 内訳の合計が費用合計と一致しなくなる（しかも両方とも「それらしい数字」なので気付けない）。
     //
-    // 🔴 **計画が定める「取引諸費用」（05_trading-assumptions §2「米国株 売却時諸費用（SEC Fee・TAF 等）」）は
-    // 本関数に無い**——同項は計画側で **要確認** のままであり、前提条件にも設定点が無い。
-    // **本型は諸費用の区分を持たない**ことで、「0 円の諸費用が計上された」と読める形を構造的に作らない
-    //（報告書は該当欄を**未供給**と描く。**0 と書かない**）。
+    // 🔴 FR-06, 計画 ADR-0035 決定 4, #1201, IADR-0501: 本型の <c>FxSpread</c> は**判断時の事前見積り**であり、
+    // 報告書の事後集計には使わない（事後集計は <see cref="FillCost"/>。為替スプレッドの実績は入出金時の両替にだけ掛かる）。
     /// <summary>
-    /// 片道の概算費用の内訳。<b><see cref="Total"/> は <see cref="EstimateOneWayCost"/> と同値である</b>。
-    /// <para>
-    /// 🔴 <b>計画の「取引諸費用」はここに含まれない</b>（前提条件が値を持っていない）。
-    /// したがって <see cref="Total"/> は<b>諸費用のぶんだけ過小である</b>。
-    /// </para>
+    /// 片道の概算費用の内訳（事前見積り）。<b><see cref="Total"/> は <see cref="EstimateOneWayCost"/> と同値である</b>。
     /// </summary>
     public readonly record struct OneWayCostBreakdown(decimal Commission, decimal FxSpread)
     {
@@ -43,11 +41,49 @@ public static class CostCalculator
     {
         ArgumentNullException.ThrowIfNull(assumptions);
 
-        var schedule = market == Market.Japan ? assumptions.JapanCommission : assumptions.UnitedStatesCommission;
-        var commission = schedule.For(notional);
+        var commission = Commission(assumptions, market, notional);
         var fxSpread = MarketCurrency.IsBaseCurrency(market) ? 0m : notional * assumptions.FxSpreadRatio;
         return new OneWayCostBreakdown(commission, fxSpread);
     }
+
+    // FR-06, FR-16, FR-17, 計画 ADR-0035 決定 3・4・5, 04_report-templates §数値の定義, #1201, IADR-0501:
+    // **事後集計**（報告書）の約定 1 件の費用。実現損益の定義「約定代金差額 −（売買手数料＋取引諸費用）− 源泉徴収税額」の
+    // 控除項そのものである。
+    //
+    // 🔴 **為替スプレッドを持たない**（決定 4。約定ごとの両替は発生しない）。事前見積りの為替スプレッドと同じ値にしない。
+    // 🔴 **借株料も持たない**——単位が確定するまで費用計算の入口へ接続しない（ADR-0016 決定3。構造テストが固定する）。
+    //    報告書は借株料を記録（借株料の計上）から別に受け取り、費用合計へ足す。
+    /// <summary>
+    /// 事後集計の約定 1 件の費用内訳（売買手数料＋取引諸費用）。
+    /// </summary>
+    /// <param name="Commission">売買手数料（事前見積りと同じ式）。</param>
+    /// <param name="RegulatoryFees">取引諸費用（米国株の売り約定の SEC Section 31 手数料＋FINRA 取引活動料。それ以外は 0）。</param>
+    public readonly record struct FillCostBreakdown(decimal Commission, decimal RegulatoryFees)
+    {
+        /// <summary>売買手数料＋取引諸費用。</summary>
+        public decimal Total => Commission + RegulatoryFees;
+    }
+
+    /// <summary>
+    /// 約定 1 件の事後集計の費用（純関数）。取引諸費用は<b>米国市場の売り約定（空売りを含む）だけ</b>に掛かる
+    /// （05_trading-assumptions §2「いずれも売却時のみ発生する」）。料率は前提条件の設定点
+    /// <see cref="TradingAssumptions.UnitedStatesSellRegulatoryFees"/> から読む。
+    /// </summary>
+    public static FillCostBreakdown FillCost(
+        TradingAssumptions assumptions, Market market, TradeSide side, int quantity, decimal price)
+    {
+        ArgumentNullException.ThrowIfNull(assumptions);
+
+        var notional = quantity * price;
+        var regulatory = market == Market.UnitedStates && side == TradeSide.Sell
+            ? assumptions.UnitedStatesSellRegulatoryFees.For(notional, quantity)
+            : 0m;
+        return new FillCostBreakdown(Commission(assumptions, market, notional), regulatory);
+    }
+
+    // 売買手数料の式は 1 か所（事前見積りと事後集計で同じ値になる）。
+    private static decimal Commission(TradingAssumptions assumptions, Market market, decimal notional) =>
+        (market == Market.Japan ? assumptions.JapanCommission : assumptions.UnitedStatesCommission).For(notional);
 
     // 往復（建て＋手仕舞い）の概算費用。
     public static decimal EstimateRoundTripCost(TradingAssumptions assumptions, Market market, decimal notional) =>

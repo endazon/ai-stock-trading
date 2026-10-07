@@ -4,7 +4,7 @@ using AiStockTrading.Shared.Kernel.Trading;
 namespace ReportService.Domain;
 
 // FR-16, 04_report-templates 数値定義, IADR-0025: 損益集計の純関数。約定列を平均取得単価法で畳み込み、
-// 前提条件（手数料/為替/税率）を用いてテンプレート定義どおりに実現損益・費用・税・評価損益を集計する（数値は LLM に計算させない）。
+// 前提条件（手数料/取引諸費用/税率）を用いてテンプレート定義どおりに実現損益・費用・税・評価損益を集計する（数値は LLM に計算させない）。
 //
 // 🔴 #892, IADR-0381: 報告書は期間内の約定しか受け取らない。期間より前に建てた建玉の取得原価は
 // **期間開始時点の在庫**（#1181, IADR-0493。取引台帳が窓の下端まで畳んだもの）を初期在庫に置いて持ち込む。
@@ -65,8 +65,9 @@ public static class PnlAggregator
 
             var fill = entry.Fill!;
 
-            // 費用合計 = Σ 概算費用（手数料＋為替スプレッド・#19 CostCalculator）。全約定に対して計上する。
-            totalCost += CostCalculator.EstimateOneWayCost(assumptions, fill.Market, fill.Quantity * fill.Price);
+            // 実現損益の控除項 = Σ 事後集計の費用（売買手数料＋取引諸費用。CostCalculator.FillCost）。全約定に対して計上する。
+            // 🔴 計画 ADR-0035 決定 4, #1201, IADR-0501: **為替スプレッドを約定ごとに乗せない**（事前見積りの EstimateOneWayCost を使わない）。
+            totalCost += CostCalculator.FillCost(assumptions, fill.Market, fill.Side, fill.Quantity, fill.Price).Total;
 
             var key = (fill.Symbol, fill.Market);
             var signedQ = fill.Side == TradeSide.Buy ? fill.Quantity : -fill.Quantity;
@@ -101,7 +102,7 @@ public static class PnlAggregator
                 unrealized += (price - pos.AvgCost) * pos.Qty;
         }
 
-        // 源泉徴収税額＝利益にのみ課税（max(0, 実現損益(税引前) − 費用合計) × 譲渡益税率）。
+        // 源泉徴収税額＝利益にのみ課税（max(0, 約定代金差額 −（売買手数料＋取引諸費用）) × 譲渡益税率）。
         var taxableGain = realizedGross - totalCost;
         var tax = taxableGain > 0m ? taxableGain * assumptions.CapitalGainsTaxRate : 0m;
         var net = realizedGross - totalCost - tax;
