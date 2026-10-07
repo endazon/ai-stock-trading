@@ -3,15 +3,15 @@ title: テスト戦略 — 受け入れ基準の写像規約と統制系の網�
 type: test
 status: approved
 created: 2026-08-03
-updated: 2026-10-07
+updated: 2026-10-08
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-12, FR-15, FR-19, FR-20]
 adrs: [ADR-0008, ADR-0016, ADR-0018]
 iadrs: [IADR-0049, IADR-0127, IADR-0128, IADR-0259, IADR-0280, IADR-0307, IADR-0335, IADR-0376, IADR-0497]
-specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate]
-issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, MSP#446, planning#575]
+specs: [20260803_343_regression-test-foundation, DEFINITION_OF_DONE, IADR-0127_plan-conformance-known-deviation-registry, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260923_887_test-id-duplicate-numbering, 20260925_923_775_test-id-baseline-ratchet-and-git-census, 20261007_1200_integration-skip-gate, 20261008_1235_test-trace-declared-ranges]
+issues: [#204, #211, #331, #335, #337, #340, #342, #343, #344, #689, #690, #752, #887, #923, #1200, #1235, MSP#446, planning#575]
 -->
 
 
@@ -38,7 +38,7 @@ CI の `test-traceability` ジョブ（`scripts/check-test-traceability.js`）�
 
 1. **必須範囲の機能要求**（網羅裁定 [#211](https://github.com/endazon/ai-stock-trading/issues/211): リスク統制・ペーパートレード・バックテスト・取引ガード・段階ゲート）が、それぞれ 1 本以上のテストから参照されていること
 2. 必須範囲の機能要求に機能仕様書（`docs/functional/`）とテスト仕様書（`docs/tests/`）が存在すること
-3. テストが参照する機能要求・ユースケース・画面の ID が計画書に実在すること（PR CI では planning submodule を取得しないため skip し、夜間の `doc-links-planning` が担う）
+3. テストが参照する機能要求・ユースケース・画面の ID が計画書に実在すること（実在集合は `.claude/rules/traceability.repo.md` に宣言した計画 ID のレンジ。宣言が読めなければ落ちる）
 4. **テスト ID（`T-…`）が一意であること**（次節）
 
 ### テスト ID（`T-<機能要求番号>-<連番>`）の採番規約

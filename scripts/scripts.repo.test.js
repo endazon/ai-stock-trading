@@ -721,7 +721,7 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.ok(!missing.some((m) => m.startsWith('FR-10:')));
   });
 
-  ok('check-test-traceability: planning 未 populate なら planIds は null（実在検査を skip する合図）', () => {
+  ok('check-test-traceability: planning 未 populate なら planIds は null（宣言レンジへ切り替える合図。#1235）', () => {
     const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-noplan-'));
     assert.strictEqual(tt.planIds(root), null);
   });
@@ -871,7 +871,83 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         fsTt.writeFileSync(pathTt.join(specDir, `${id}_x.md`), body);
       }
     }
+    // 検査 3（実在検査）の一次情報＝計画 ID の宣言レンジ（#1235）。模擬ツリーは planning submodule を
+    // 持たないため、宣言が無いと fail-loud で落ちる。範囲は**実ファイルと違う値**（FR-01..20）にして、
+    // 模擬ツリー側の宣言が読まれていることを否定形（FR-21 で落ちる）で確かめられるようにする。
+    writeTraceabilityRules(root, '`FR-01..20` / `UC-01..07` / `SC-01..04`');
   };
+
+  const writeTraceabilityRules = (root, declaration) => {
+    const rulesDir = pathTt.join(root, '.claude', 'rules');
+    fsTt.mkdirSync(rulesDir, { recursive: true });
+    fsTt.writeFileSync(
+      pathTt.join(rulesDir, 'traceability.repo.md'),
+      `# 模擬\n\n${tt.PLAN_RANGE_HEADING}\n\nレンジは ${declaration}。\n\n## 次の節\n`
+    );
+  };
+
+  const addFixtureTest = (root, body) => {
+    const dir = pathTt.join(root, 'backend', 'Tests', 'AiStockTrading.Fixture.Tests');
+    fsTt.mkdirSync(dir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'Extra.cs'), body);
+  };
+
+  // --- 検査 3: 参照 ID の実在検査を宣言レンジで行う（#1235） ---
+  // 従前は planning submodule（撤去済み）が無いと notice だけで skip し、`FR-99` を書いても緑だった。
+  ok('🔴 [陽性対照/#1235] check-test-traceability: 宣言レンジに無い ID をテストが参照したら exit 1', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-bad-'));
+    mkTraceabilityFixture(root);
+    addFixtureTest(root, '// FR-99, UC-08, SC-05\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `実在しない ID を参照しているのに緑になった（実在検査が skip している）:\n${r.out}`);
+    for (const id of ['FR-99', 'UC-08', 'SC-05']) {
+      assert.match(r.out, new RegExp(`計画書に存在しない ID ${id} を参照しています`));
+    }
+    assert.doesNotMatch(r.out, /skip しました（planning|実在検査を skip/);
+  });
+
+  ok('🔴 [陽性対照/#1235] check-test-traceability: 実在集合は模擬ツリーの宣言から作る（宣言の上端の 1 つ上で落ちる）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-edge-'));
+    mkTraceabilityFixture(root); // 宣言は FR-01..20（実ファイルの値とは別）
+    addFixtureTest(root, '// FR-21\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `宣言の範囲外（FR-21）が緑になった:\n${r.out}`);
+    assert.match(r.out, /計画書に存在しない ID FR-21 を参照しています（実在集合: 宣言レンジ/);
+  });
+
+  ok('check-test-traceability: 宣言レンジ内の ID だけを参照していれば exit 0（正の確認・#1235）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-ok-'));
+    mkTraceabilityFixture(root);
+    addFixtureTest(root, '// FR-01, FR-20, UC-07, SC-04\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 0, `範囲内の ID だけなのに落ちた:\n${r.out}`);
+    assert.match(r.out, /実在集合: 宣言レンジ \.claude\/rules\/traceability\.repo\.md・31 件）/); // FR 20 + UC 7 + SC 4
+  });
+
+  ok('🔴 [否定形/#1235] check-test-traceability: 宣言が読めなければ skip せず exit 1（fail-loud）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-norules-'));
+    mkTraceabilityFixture(root);
+    fsTt.rmSync(pathTt.join(root, '.claude'), { recursive: true, force: true });
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `宣言が無いのに緑になった:\n${r.out}`);
+    assert.match(r.out, /実在検査の一次情報（計画 ID の宣言レンジ）を読めません/);
+  });
+
+  ok('🔴 [否定形/#1235] check-test-traceability: 宣言の書式が崩れていても exit 1（FR が拾えない）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-broken-'));
+    mkTraceabilityFixture(root);
+    writeTraceabilityRules(root, 'FR-01..20 / `UC-01..07` / `SC-01..04`');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `宣言の書式が崩れているのに緑になった:\n${r.out}`);
+    assert.match(r.out, /計画レンジに FR が見つかりません/);
+  });
+
+  ok('check-test-traceability: --require-planning は宣言レンジが読めれば exit 0（実在検査は skip しない・#1235）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-req-'));
+    mkTraceabilityFixture(root);
+    const r = runTraceability(root, ['--require-planning']);
+    assert.strictEqual(r.code, 0, `宣言が読めるのに --require-planning で落ちた:\n${r.out}`);
+  });
 
   ok('🔴 [否定形] check-test-traceability: 旧樹形のディレクトリがあるのに旧樹形が 0 件走査なら T1 が落とす', () => {
     const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t1-old-'));

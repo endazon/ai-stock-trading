@@ -198,10 +198,10 @@ jobs:
       # 必須範囲 FR（網羅裁定 #211: FR-10/12/15/19/20）にテストと必須仕様書が存在することを機械的に強制する。
       #
       # 資料再編（ADR-0029 決定 2）で本リポジトリは planning への依存を持たない。テストが参照する
-      # FR/UC/SC が計画書へ実在するかの突合（旧 --require-planning。取得用トークンの受け渡しも含む）は、
-      # 突合先の planning submodule 自体が撤去されたため恒久的に skip へ倒れる（`planIds()` が
-      # null を返す。notice で可視化される）。**本ジョブ自体は存続する** —— 必須 FR のテスト・仕様書の
-      # 存在チェック（本検査の主眼）は元から planning 非依存であり、引き続き実効する。
+      # FR/UC/SC の実在検査は、撤去済みの planning submodule ではなく .claude/rules/traceability.repo.md の
+      # 宣言レンジ（readPlanIds()。コミット件名の実在性検査と同じ一次情報）を実在集合に使う（#1235。
+      # 従前は submodule 不在で恒久的に skip していた）。宣言が読めなければ exit 1（fail-loud）。
+      # 取得用トークン・submodule の取得・--require-planning はいずれも不要。
       #
       # #923: 検査 T2b（テスト ID 重複 baseline の増加ラチェット）は baseline をマージベースの版と比べる。
       # 本ジョブの checkout が fetch-depth: 0 であることに依存する（origin/<base> と merge-base を解決する）。

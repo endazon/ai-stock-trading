@@ -8,8 +8,11 @@
  *   1. 必須範囲の FR（網羅裁定 #211: FR-10 / 12 / 15 / 19 / 20）が、それぞれ 1 本以上の
  *      テストファイルから起点 ID として参照されていること。
  *   2. 必須範囲の FR にテスト仕様書（docs/tests/*.md）と機能仕様書（docs/functional/*.md）が存在すること。
- *   3. テストが参照する FR / UC / SC が計画書に実在すること
- *      （planning submodule が未 populate の環境では本検査のみ skip。check-doc-links.js と同じ扱い）。
+ *   3. テストが参照する FR / UC / SC が計画書に実在すること（#1235）。実在集合は
+ *      `.claude/rules/traceability.repo.md` の宣言レンジ（`readPlanIds()`。check-commit-messages.js と同じ一次情報）
+ *      から作る。宣言が読めなければ例外で落とす（fail-loud。#1233 と同じ）。planning submodule
+ *      （`planIds()`）が populate されている環境だけ旧経路で計画書の実物を走査する —— ADR-0029 決定 2 で
+ *      submodule は撤去済みのため、実際には常に宣言レンジが使われる（旧経路の撤去は別 PR）。
  *   T1. サービス配下の新旧テスト樹形のうち、**実在するほうの走査件数が 0 でない**こと
  *       （NFR / IADR-0258。下の「プロジェクト構成への依存」参照）。
  *   T2. テスト仕様書のテスト ID（`T-<FR>-<N>`）が一意であること（#887 / IADR-0376。既知の重複は baseline）。
@@ -48,9 +51,9 @@
  *   node scripts/check-test-traceability.js
  *   node scripts/check-test-traceability.js --dup-baseline-range=origin/develop...HEAD  # T2b の比較範囲を明示
  *   node scripts/check-test-traceability.js --require-planning   # 計画書実在検査の skip を許さない
- *     🔴 ADR-0029 以降、本リポジトリに `planning` submodule は存在しない（撤去済み）ため、
- *     このフラグは環境に関わらず恒久的に exit 1 になる（#712）。CI・ローカルとも付けないこと
- *     （詳細は scripts/README.md）。
+ *     #1235 以降、実在検査は宣言レンジで必ず走り skip しないため、このフラグは**満たされた状態**であり
+ *     付けても付けなくても同じ結果になる（旧: submodule 撤去により恒久的に exit 1。#712）。
+ *     受理だけを残す（未知の引数として落とすと既存の呼び出しが壊れる）。撤去は別 PR（#1235 の選択肢 2）。
  *   TEST_TRACE_ROOT=<dir> node scripts/check-test-traceability.js  # 任意のツリーを検査する（模擬ツリーの実証用）
  */
 const fs = require('fs');
@@ -823,23 +826,28 @@ function main() {
       + `${growth.declared.length ? `・宣言つきの追加 ${growth.declared.length} 件` : ''}）`;
   }
 
-  // 3. 参照 ID が計画書に実在すること
-  const ids = planIds(REPO_ROOT);
-  let skipNote = '';
+  // 3. 参照 ID が計画書に実在すること（#1235）
+  // planning submodule は ADR-0029 決定 2 で撤去済みのため planIds() は常に null を返す。従前はここで
+  // notice を出して skip しており、テストに `FR-99` と書いても何にも掛からなかった。null のときは
+  // 宣言レンジ（readPlanIds()。check-commit-messages.js と同じ一次情報）を実在集合に使う。
+  // **宣言が読めなければ readPlanIds() が例外を投げ、そのまま exit 1 で落ちる**（fail-loud。黙って skip しない）。
+  // args.requirePlanning は「実在検査を skip しない」を求めるフラグであり、ここでは常に満たされる。
+  const scanned = planIds(REPO_ROOT);
+  let ids = scanned;
   if (ids === null) {
-    if (args.requirePlanning) {
-      console.error('[check-test-traceability] planning submodule が未 populate のため実在検査を行えません（--require-planning）。');
+    try {
+      ids = new Set(readPlanIds(path.join(REPO_ROOT, RULES_FILE)));
+    } catch (e) {
+      console.error(`[check-test-traceability] 実在検査の一次情報（計画 ID の宣言レンジ）を読めません: ${e.message}`);
       process.exit(1);
     }
-    skipNote = '（planning 未 populate のため計画書実在検査は skip）';
-    notice(
-      'check-test-traceability: planning submodule が未 populate のため、テストが参照する FR/UC/SC の実在検査を skip しました'
-    );
-  } else {
-    for (const [id, where] of [...refs].sort()) {
-      if (!ids.has(id)) {
-        errors.push(`計画書に存在しない ID ${id} を参照しています: ${[...new Set(where)].slice(0, 5).join(', ')}`);
-      }
+  }
+  const idSource = scanned === null ? `宣言レンジ ${RULES_FILE}` : 'planning submodule';
+  for (const [id, where] of [...refs].sort()) {
+    if (!ids.has(id)) {
+      errors.push(
+        `計画書に存在しない ID ${id} を参照しています（実在集合: ${idSource}）: ${[...new Set(where)].slice(0, 5).join(', ')}`
+      );
     }
   }
 
@@ -852,7 +860,7 @@ function main() {
 
   if (errors.length === 0) {
     console.log(
-      `[check-test-traceability] OK: テスト ${files.length} ファイル・起点 ID ${refs.size} 種を検査しました${skipNote}。`
+      `[check-test-traceability] OK: テスト ${files.length} ファイル・起点 ID ${refs.size} 種を検査しました（実在集合: ${idSource}・${ids.size} 件）。`
         + `\n  サービス配下テスト: 旧樹形 ${testLayoutCounts.old} 件 / 新樹形 ${testLayoutCounts.new} 件`
         + `（サービスディレクトリ: 旧 ${testDirs.old} 件 / 新 ${testDirs.new} 件・census: ${census.source}）。`
         + `\n  テスト ID: 採番 ${testIds.summary.assignments.size} 件 / 参照行 ${testIds.summary.references.length} 件`
