@@ -89,6 +89,28 @@ public interface IPortfolioLedgerStore
     IReadOnlyList<LedgerFill> GetFills();
 
     /// <summary>
+    /// FR-06, FR-16, #1186, IADR-0506 決定 1: <see cref="GetFills"/> のうち、<paramref name="market"/>（null＝全市場）の行で
+    /// 約定時刻（取り込み行は取り込み日時）が [<paramref name="executedAtOrAfter"/>, <paramref name="executedBefore"/>)
+    /// に入るもの（null の側は無制限）を返す。
+    /// <para>
+    /// 🔴 <b>取引日では絞らない。</b> 取引日の判定は呼び出し側の純関数が行い、ここへは
+    /// <see cref="LedgerScanBounds"/> の外包（取りこぼさない上位集合）を渡す。残った行の相対順は <see cref="GetFills"/> と同じである
+    /// （約定の後に取り込み。同時刻の並びを変えない）。
+    /// </para>
+    /// <para>
+    /// 既定の実装は <see cref="GetFills"/> をメモリで絞る（インメモリ実装・試験の偽物はこれで通る）。EF 実装は SQL の条件へ下ろす。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<LedgerFill> GetFillsExecutedBetween(
+        Market? market, DateTimeOffset? executedAtOrAfter, DateTimeOffset? executedBefore) =>
+    [
+        .. GetFills().Where(f =>
+            (market is not { } m || f.Market == m)
+            && (executedAtOrAfter is not { } lo || f.ExecutedAt >= lo)
+            && (executedBefore is not { } hi || f.ExecutedAt < hi)),
+    ];
+
+    /// <summary>
     /// FR-10, FR-11, UC-06, #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込みを追記する（追記専用）。
     /// <para>
     /// <b>同じ冪等キー（<see cref="LedgerDriftAdoption.IdempotencyKey"/>）が既にあれば何も書かずに false を返す。</b>

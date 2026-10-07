@@ -13,6 +13,27 @@ namespace RiskManagementService.Features.RiskManagement.GetFills;
 // セッションの窓の外包で引き、市場ごとに絞り直す。本関数の契約（市場の現地取引日の [from, to]）は変えない。
 public static class PeriodFillQuery
 {
+    /// <summary>
+    /// FR-06, FR-16, #1186, IADR-0506 決定 3: 台帳から<b>約定時刻の外包（<see cref="LedgerScanBounds"/>）だけ</b>を読み、
+    /// 下の純関数で正確に絞る。REST・gRPC の入口はこちらを呼ぶ（台帳の全行を読まない）。結果は全行を絞ったときと同じである。
+    /// </summary>
+    public static IReadOnlyList<LedgerFill> InTradingDayRange(
+        IPortfolioLedgerStore ledger,
+        DateOnly fromInclusive,
+        DateOnly toInclusive)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+
+        if (fromInclusive > toInclusive)
+            return [];
+
+        var candidates = ledger.GetFillsExecutedBetween(
+            market: null,
+            LedgerScanBounds.ExecutedAtOrAfterForTradingDayFrom(fromInclusive),
+            LedgerScanBounds.ExecutedBeforeForTradingDayTo(toInclusive));
+        return InTradingDayRange(candidates, fromInclusive, toInclusive);
+    }
+
     /// <summary>取引日が [fromInclusive, toInclusive] に入る約定を約定時刻の昇順で返す。逆順の期間は空。</summary>
     public static IReadOnlyList<LedgerFill> InTradingDayRange(
         IReadOnlyList<LedgerFill> fills,

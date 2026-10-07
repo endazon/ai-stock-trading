@@ -11,6 +11,6 @@ internal static class GetFillsEndpoint
             if (from is not { } fromDay || to is not { } toDay)
                 return Results.BadRequest(new { error = "from・to（yyyy-MM-dd）は必須です。" });
 
-            return Results.Ok(PeriodFillQuery.InTradingDayRange(ledger.GetFills(), fromDay, toDay));
+            return Results.Ok(PeriodFillQuery.InTradingDayRange(ledger, fromDay, toDay));
         });
 }
