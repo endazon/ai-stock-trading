@@ -68,7 +68,7 @@ related_specs:
 
 ### 決定 4: 監視銘柄の要求の `market` は列挙名の文字列も受ける（要求型のプロパティにだけ）
 
-- `WatchlistChangeRequest.Market` に `JsonStringEnumConverter<Market>`（大小無視・数値も従来どおり）。
+- `WatchlistChangeRequest.Market` に `JsonStringEnumConverter<Market>`（大小無視・数値も従来どおり）。**［2026-10-07 追記 / #1192（独立監査）］** 列挙名の完全一致だけを受ける専用の変換器へ替えた（決定 8）。
 - サービス全体の JSON 設定へは足さない。市場監視の読み取り口は数値の列挙が契約で（T-10-931）、受け手が実行時に壊れる。
 
 ## 却下した案
@@ -84,13 +84,52 @@ related_specs:
 
 - 全 Deployment の env が変わり、`helm upgrade` で全 Worker が再起動する。描画の差分は `ASPNETCORE_ENVIRONMENT` が全件 `Production`、
   情報収集に `Collection__PollIntervalSeconds=300`（両プロファイル）、経路B に `Serilog__MinimumLevel__Default=Debug`（全 Worker）。
-- 変わる挙動: 開発者向けページが無い／束縛失敗は本文なしの 400／未処理例外は ProblemDetails／DI の起動時検証が無い／本番のログは Information。
-- 試験: T-10-2350〜T-10-2357（shim・市場監視の WebApplicationFactory・helm の描画検査）。
+- 変わる挙動: 開発者向けページが無い／束縛失敗は本文なしの 400／未処理例外は ProblemDetails／~~DI の起動時検証が無い~~（決定 7 で全環境に有効）／本番のログは Information。
+- 試験: T-10-2350〜T-10-2357（shim・市場監視の WebApplicationFactory・helm の描画検査）。独立監査の是正は T-10-2358〜T-10-2365（追記）。
 
 ### 残余リスク
 
 - `WebApplication` が利用者のミドルウェアの外側に自動挿入するルーティングの例外（あいまいな経路の一致等）は決定 3 の委譲が受けない。
   配備は Production なのでページ自体が無く漏れない（本文なしの 500）。docker-compose の開発環境だけの残余。
-- DI の起動時検証（Development の既定）が無くなるため、スコープの取り違えは起動で落ちず実行時まで残る。試験（`Testing` 環境）は従来から検証なし。
+  **［2026-10-07 追記 / #1192（独立監査）］** 当初ここに「認証・認可」が含まれることを見落としていた（決定 5 で是正）。残るのはルーティングだけである。
+- ~~DI の起動時検証（Development の既定）が無くなるため、スコープの取り違えは起動で落ちず実行時まで残る。~~
+  **［2026-10-07 追記 / #1192（独立監査）］** 決定 7 で全環境に有効化したため解消（試験の `Testing` 環境でも有効になった）。
 - 入れ替え案の適用の `WatchlistSymbolRef.Market` は数値のまま（通知サービスの送り手契約が参照する公開型）。
 - opend-auth-gateway は env に `ASPNETCORE_ENVIRONMENT` を持たず（`templates/opend.yaml`）、従来から Production。shim を使わないため決定 3 の対象外。
+
+## 追記: 独立監査の指摘への是正（2026-10-07 / #1192）
+
+PR の独立監査（diff と受け入れ基準のみで実施）の指摘 5 件を同じ PR で是正した。試験は T-10-2358〜T-10-2365、変異は作業仕様書の追記。
+
+### 決定 5: 認証・認可は例外処理の内側へ明示で入れ、明示漏れと順序違いは起動前に止める
+
+- **指摘**: 情報収集は `AddAiStockTradingAuth` と `RequireAuthorization` を使うのに `UseAuthentication` / `UseAuthorization` を呼ばない。
+  `WebApplication` は認証スキーム（`IAuthenticationSchemeProvider`）・認可（`IAuthorizationHandlerProvider`）が DI に在り、
+  かつ `IApplicationBuilder.Properties` に `__AuthenticationMiddlewareSet` / `__AuthorizationMiddlewareSet` の印が無ければ、
+  それらを**利用者のパイプラインより外側**へ自動で挿入する。決定 3 の委譲の外なので、認証スキームの例外（Keycloak 不達時の JwtBearer の鍵取得失敗など）は
+  Development（docker-compose）で開発者向けページへ届き、`Authorization` を返す（試験の対照で再現した）。
+- 情報収集の `Program.cs` は例外処理の直後に `UseAuthentication()`・`UseAuthorization()` を明示する。
+- 共通の終端 `RunAiStockTradingAsync` は、認証・認可のサービスが在るのに印が無ければ起動を止める（印の名前は ASP.NET Core の内部名なので、
+  試験 T-10-2360 が実測で固定する）。`UseAiStockTradingExceptionHandler` は、呼ばれた時点で印が既に在れば（認証を先に入れた順序違い）その場で止める。
+- 11 サービスの内訳: 共通ミドルウェアの 8 サービスは内部で明示しており通る。通知・取引判断は認証・認可を登録しておらず対象外（表明は通る）。
+  全サービスの WebApplicationFactory 試験が同じ終端を通ることで確かめた。opend-auth-gateway は shim を使わず対象外（従来どおり）。
+
+### 決定 6: チャートは `extraEnv` の環境名を描画で止める
+
+- **指摘**: Kubernetes は同名 env の後ろを採るため、`extraEnv` に `ASPNETCORE_ENVIRONMENT=Development` を書けば決定 1 の検査を素通りできた。
+- `extraEnv` の名前が `ASPNETCORE_ENVIRONMENT` / `DOTNET_ENVIRONMENT`（大小無視・値に依らず）なら `fail` する（`grpcClients` の二重定義の検査と同じ形）。
+  CI の描画検査に陰性対照を足した。
+
+### 決定 7: DI 検証（ValidateScopes・ValidateOnBuild）は全環境で有効にする
+
+- **指摘**: 決定 1 で Pod の環境名を Production にした結果、ASP.NET Core が Development でだけ既定で有効にする DI 検証が Pod から外れた。
+- shim に `UseAiStockTradingServiceProviderValidation()`（`WebApplicationBuilder` の拡張）を置き、11 サービスの `CreateBuilder` 直後で呼ぶ。
+  サービスに共通のホスト構築の経路は無い（各サービスが `WebApplication.CreateBuilder` を直に呼ぶ）ため、付け忘れは導入の印（DI の登録）で
+  共通の終端が起動時に止める。全試験（`Testing` 環境を含む）で `ValidateOnBuild` まで有効にして通ることを確かめた。
+
+### 決定 8: `market` の文字列は列挙名そのものだけを受ける（決定 4 の改め）
+
+- **指摘**: `JsonStringEnumConverter` は `Enum.Parse` と同じく `"Japan, UnitedStates"`（ビット和＝`UnitedStates`）・前後の空白・数字の文字列を受ける。
+- 要求型のプロパティの変換器を、列挙名（大小無視）の完全一致だけを受ける専用の変換器に替えた。数値（JSON の数）の扱いは従来どおり
+  （`(Market)n` へ写し、未定義の値は監視銘柄の検証が 400、`null`・省略も 400）。
+

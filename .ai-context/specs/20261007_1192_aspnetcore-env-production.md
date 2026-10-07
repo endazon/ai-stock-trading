@@ -116,3 +116,43 @@ Deployment ごとの env 名（`__` を `:` に戻す）が覆うキーを除い
   Production ではページ自体が無いので漏れない（本文なしの 500）。Development（docker-compose）だけの残余。
 - docker-compose（ローカル開発）は Development のまま（例外処理の委譲でページへは届かない）。
 - 入れ替え案の適用の `WatchlistSymbolRef.Market` は数値のまま。
+
+## ［2026-10-07 追記 / #1192］独立監査の指摘への是正（同じ PR）
+
+PR の独立監査（diff と受け入れ基準のみ）の指摘 6 件（コード 5・文書 1）。判断は IADR-0496 の追記（決定 5〜8）。
+
+| # | 指摘 | 是正 |
+| --- | --- | --- |
+| 1 | 情報収集は認証・認可を登録して `RequireAuthorization` を使うのに `UseAuthentication` / `UseAuthorization` を呼ばない。`WebApplication` が例外処理の外側へ自動挿入し、Development で認証スキームの例外が開発者向けページ（`Authorization` 入り）へ届く | `Program.cs` で例外処理の直後に明示。共通の終端が「認証・認可のサービスが在るのに印〔`__AuthenticationMiddlewareSet` / `__AuthorizationMiddlewareSet`〕が無い」を起動時に止め、例外処理の導入時に印が既に在れば（順序違い）止める |
+| 2 | 共通ミドルウェア経由の並び（例外処理 → 認証 → 認可）を固定する試験が無い | 投げる認証スキーム ＋ Development で `UseAiStockTradingMiddleware` を通す試験（T-10-2359）。変異 A1・A2 で赤 |
+| 3 | Production 化で DI 検証（ValidateScopes / ValidateOnBuild）が Pod から外れた | shim の `UseAiStockTradingServiceProviderValidation()` を 11 サービスの `CreateBuilder` 直後で呼ぶ（共通のホスト構築の経路は無い）。付け忘れは終端が止める。**ValidateOnBuild まで有効にして全試験が通った**（後述の実測） |
+| 4 | チャートの `extraEnv` に `ASPNETCORE_ENVIRONMENT` を書けば後勝ちで Development に戻せる | `extraEnv` の `ASPNETCORE_ENVIRONMENT` / `DOTNET_ENVIRONMENT`（大小無視）を `fail`。helm.yml の #1192 の検査へ陰性対照を追加 |
+| 5 | `JsonStringEnumConverter` が `"Japan, UnitedStates"`（ビット和）・空白つき・数字の文字列を受ける | 列挙名の完全一致（大小無視）だけを受ける専用の変換器。数値は従来どおり |
+| 6 | セキュリティ仕様書・IADR の残余が「docker-compose の Development でもページへ届かない」と言い過ぎていた | 認証・認可を含んでいたことを明記し、残余をルーティングだけに改めた |
+
+### 実測
+
+- 印の名前: `UseAuthentication()` / `UseAuthorization()` の呼び出しで `IApplicationBuilder.Properties` に `__AuthenticationMiddlewareSet` /
+  `__AuthorizationMiddlewareSet` が置かれる（T-10-2360 が固定）。
+- 再現: 例外処理だけを入れ認証を明示しない Development のホストで、投げる認証スキーム ＋ Bearer の要求は開発者向けページで目印を返した（対照試験）。
+- 11 サービスの表明: 共通ミドルウェアの 8 サービスは内部で明示、通知・取引判断は認証・認可を登録していない。全サービスの WebApplicationFactory 試験が同じ終端を通り、表明で止まったサービスは 0。
+- DI 検証: `ValidateOnBuild` まで有効にした状態で `dotnet test backend/backend.slnx` の単体試験が全件通った（統合試験〔`Category=Integration`〕は Docker が無い環境のため未実行。CI と同じ除外）。
+  有効化で赤になったのは、試験コードがルートのプロバイダから scoped の `IMessageBus` を解決していた 3 クラス 5 箇所だけ（`ForgoneCloseProtectionCompositionTests`・
+  `PositionDriftAdoptedCrossServiceContractTests`・`OrderDispatchForgoneProtectionContractTests`）で、スコープ経由へ改めた。本番コードの `IMessageBus` の解決は
+  すべてスコープ経由（走査で確認）。サービスの起動（`ValidateOnBuild`）で止まったものは 0。
+
+### 試験（T-10-2358〜T-10-2365）と変異
+
+| 試験 | 内容 | 置き場所 |
+| --- | --- | --- |
+| T-10-2358 | 例外処理の直後に認証・認可を明示した形で、Development の認証例外が ProblemDetails（対照: 明示しないとページが目印を返す） | `AiStockTrading.TestSupport.PlatformShim.Tests`（`ExceptionHandlingAuthenticationTests`） |
+| T-10-2359 | 共通ミドルウェア経由でも同じ | 同上 |
+| T-10-2360 | 印の名前の実測 | 同上 |
+| T-10-2361 | 明示漏れ（認証／認可）・順序違いは起動前に止まり、明示した形・認証なしの形は通る | 同上 |
+| T-10-2362 | DI 検証は Production でも有効で、付け忘れは終端が止める | 同上 |
+| T-10-2363 | 情報収集の実 Program.cs（Development）＋ 投げる認証スキーム → ProblemDetails | `InformationCollectionService.Tests`（`AuthenticationExceptionProblemDetailsTests`） |
+| T-10-2364 | `market` の曖昧な文字列・未定義の値は 400、数値と列挙名は従来どおり | `MarketMonitorService.Tests`（`WatchlistErrorResponseAndMarketNameTests`） |
+| T-10-2365 | `extraEnv` の環境名は描画が失敗する（既定・経路B） | `.github/workflows/helm.yml` |
+
+変異 A1〜A8（テスト仕様書の表）はすべて赤（生存 0）。A5（終端の DI 検証の表明を外す）は当初生き残った（T-10-2362 が表明の関数を直接呼ぶだけだった）ため、終端そのものを通す形へ改めて赤にした。
+

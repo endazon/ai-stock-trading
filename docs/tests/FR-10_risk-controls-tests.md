@@ -5594,6 +5594,40 @@ Development は描画で止める。コードは環境名に依らず、全サ�
 
 15 本すべて赤（生存 0）。E3 は当初生き残り（表明の関数を直接呼ぶだけだった）、終端そのものを呼ぶ形へ T-10-2352 を改めて赤にした。
 
+**独立監査を受けた追加**: 認証・認可を明示しないサービスでは `WebApplication` がそれらを例外処理の**外側**へ自動で挿入するため、
+認証スキームの例外（Keycloak 不達時の JwtBearer の鍵取得失敗など）が例外処理を素通りし、Development（docker-compose）では開発者向けページが
+`Authorization` ごと応答した（情報収集が該当）。あわせて、Production 化で外れた DI の起動時検証を全環境で有効にし、チャートの `extraEnv` による
+環境名の抜け道と、`market` の曖昧な文字列（ビット和・空白・数字）を塞いだ。
+
+| ID | 前提 | 操作 | 期待 | 守る不変条件 | 種別 |
+| --- | --- | --- | --- | --- | --- |
+| **T-10-2358** | 最小のホスト（Development）。認証のたびに投げる認証スキームを既定にする。例外処理の直後に `UseAuthentication`・`UseAuthorization` を明示（情報収集の形） | 目印を `Authorization` に載せて認可つきの端点を呼ぶ | 500・`application/problem+json`。目印・`Authorization`・例外メッセージ・スタックを含まない（対照: 認証を明示しないと開発者向けページが目印を返す） | 認証スキームの例外も例外処理の内側で受ける | 自動（**否定形**） |
+| **T-10-2359** | 同上。共通ミドルウェア（8 サービスの形）を通す | 同上 | 同上 | 共通ミドルウェアの並び（例外処理 → 認証 → 認可）を崩さない | 自動（**否定形**） |
+| **T-10-2360** | 認証・認可を登録した最小のホスト | `UseAuthentication`・`UseAuthorization` を呼ぶ | 呼ぶ前は印が無く、呼んだ後は ASP.NET Core の印（`__AuthenticationMiddlewareSet`・`__AuthorizationMiddlewareSet`）が在る | 表明が拠り所にする内部の印の名前を実測で固定する | 自動 |
+| **T-10-2361** | 認証を登録して明示しないホスト／認可だけ明示しないホスト／認証を先に入れてから例外処理を呼ぶホスト／明示したホスト・認証を登録しないホスト | 共通の終端（または表明）を通す・例外処理を入れる | 前 3 者は起動前に止まる（例外）・後 2 者は止まらない | 例外処理の外側に入る認証を黙って稼働させない | 自動（**否定形**） |
+| **T-10-2362** | Production のホスト。singleton が scoped を捕まえる誤配線 | DI 検証の有無で組み立てる・共通の終端の表明を通す | 検証なしは組み立てられ表明（共通の終端そのものを含む）が止める、検証ありは組み立ての時点で止まる、誤配線が無く導入が揃えば終端は正常に終わる | DI 検証を環境名に依らず有効にし、付け忘れを黙って稼働させない | 自動（**否定形**） |
+| **T-10-2363** | 情報収集の実 Program.cs（Development）。投げる認証スキームを既定にする | 目印を `Authorization` に載せて `POST /internal/collection/run-once` | 500 の ProblemDetails。目印・`Authorization`・例外メッセージ・スタックを含まない | 共通ミドルウェアを使わないサービスの実パイプラインで同じ | 自動（**否定形**） |
+| **T-10-2364** | 市場監視（試験環境） | `market` を `"Japan, UnitedStates"`・`"Japan,UnitedStates"`・前後に空白・`"1"`・`""`・`99`・`1.5`・`null`・`true` で追加する／`0`・`"JAPAN"` で追加・省略する | 前者はすべて 400 で足さない。`0` と `"JAPAN"` は 200（読み取りは数値 0）、省略は 400 | 文字列は列挙名そのもの（大小無視）だけを受け、数値の扱いは変えない | 自動（**否定形**） |
+| **T-10-2365** | Helm チャート（既定・経路B） | サービスの `extraEnv` に `ASPNETCORE_ENVIRONMENT`（大小無視）・`DOTNET_ENVIRONMENT` を値に依らず足して描画する | 描画が失敗し、理由に `extraEnv` の名前が出る | 環境名を `extraEnv` の後勝ちで戻させない | 自動（CI の描画検査。**否定形**） |
+
+試験の置き場所: T-10-2358〜T-10-2362 は `ExceptionHandlingAuthenticationTests`（`AiStockTrading.TestSupport.PlatformShim.Tests`）、
+T-10-2363 は `AuthenticationExceptionProblemDetailsTests`（`InformationCollectionService.Tests`）、T-10-2364 は
+`WatchlistErrorResponseAndMarketNameTests`（`MarketMonitorService.Tests`）、T-10-2365 は `.github/workflows/helm.yml` の
+「Assert ASPNETCORE_ENVIRONMENT is never Development」。
+
+| 変異 | 内容 | 赤になる試験 |
+| --- | --- | --- |
+| A1 | 🔴 共通ミドルウェアで例外処理を `UseAuthorization` の後ろへ動かす | T-10-2359・T-10-2361・T-10-2352（順序の表明が呼び出し時に止める） |
+| A2 | 🔴 A1 ＋ 順序の表明を外す | T-10-2359（応答が ProblemDetails でなくなる）・T-10-2361 |
+| A3 | 🔴 情報収集の `UseAuthentication`・`UseAuthorization` を外す | T-10-2363（起動前に止まる） |
+| A4 | 🔴 A3 ＋ 終端の認証の表明を外す | T-10-2363（応答が ProblemDetails でなくなる） |
+| A5 | 終端の DI 検証の表明を外す | T-10-2362 |
+| A6 | DI 検証の `ValidateOnBuild` を外す | T-10-2362 |
+| A7 | `market` の変換器を `JsonStringEnumConverter` へ戻す | T-10-2364（ビット和・空白・数字の文字列） |
+| A8 | 🔴 チャートの `extraEnv` の拒否を外す | T-10-2365 |
+
+8 本すべて赤（生存 0）。A5 は当初生き残り（表明の関数を直接呼ぶだけだった）、共通の終端そのものを通す形へ T-10-2362 を改めて赤にした。
+
 🔴 **本節が固定していない残余リスク**:
-- `WebApplication` が利用者のミドルウェアの外側に自動で挿入するルーティングの例外は委譲が受けない（配備は Production でページ自体が無い）。
+- `WebApplication` が利用者のミドルウェアの外側に自動で挿入するルーティングの例外は委譲が受けない（配備は Production でページ自体が無い）。docker-compose（Development）だけの残余で、認証・認可は上の追加で内側へ入った。
 - 稼働での確認（配備後に全 Worker の環境名が Production であること・文字列の `market` で監視銘柄を足せること）は本節の試験では確かめられない。
