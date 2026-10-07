@@ -3290,6 +3290,38 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.ok(Number.isInteger(j.declaredMax) && j.declaredMax >= 35, '宣言側の上限が読めていない');
     });
 
+    // #1208 / IADR-0504: 宣言の不読は unverified（計画側に届かない）に混ぜず exit 1。実バイナリで確かめる。
+    ok('check-planning-adr-range: 宣言の書式が崩れていれば exit 1・status error（実バイナリ・fail-loud。#1208）', () => {
+      const os = require('os');
+      const dir = fsBa.mkdtempSync(pathBa.join(os.tmpdir(), 'plan-range-1208-'));
+      const rules = pathBa.join(dir, 'traceability.repo.md');
+      const out = pathBa.join(dir, 'out.json');
+      fsBa.writeFileSync(rules, '# x\n\n## 起点 ID の種別（固有）\n\n`FR-01..21` / `UC-01..07` / `SC-01..04`（ADR の宣言が無い）\n', 'utf8');
+      const env = { ...process.env };
+      delete env.PLANNING_REPO_TOKEN;
+      let status = 0;
+      try {
+        execFileSyncBa(process.execPath, [pathBa.join(__dirname, 'check-planning-adr-range.js'), '--out', out, '--rules', rules], { cwd: REPO_ROOT_BA, stdio: 'pipe', env });
+      } catch (e) { status = e.status; }
+      const j = JSON.parse(fsBa.readFileSync(out, 'utf8'));
+      fsBa.rmSync(dir, { recursive: true, force: true });
+      assert.strictEqual(status, 1, '宣言が読めないのに exit 0 で終わった（unverified と区別できない）');
+      assert.strictEqual(j.status, 'error');
+      assert.match(j.reason, /宣言を読めない/);
+    });
+
+    ok('backlog-audit.yml: 宣言のずれを専用 issue へ upsert し、前段が落ちても監査本体は走る（#1208）', () => {
+      const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
+      const step = wf.slice(wf.indexOf('- name: Resolve planning ADR range'), wf.indexOf('- name: Run backlog audit'));
+      assert.match(step, /check-planning-adr-range\.js --out \S+ --upsert-issue/, '前段が --upsert-issue を渡していない（検知が作業にならない）');
+      assert.match(step, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/, '起票用の GITHUB_TOKEN が渡されていない');
+      assert.match(step, /GITHUB_REPOSITORY: \$\{\{ github\.repository \}\}/, '起票先の GITHUB_REPOSITORY が渡されていない');
+      const claude = wf.slice(wf.indexOf('- name: Run backlog audit'), wf.indexOf('uses: anthropics/claude-code-action'));
+      assert.match(claude, /if: \$\{\{ !cancelled\(\) \}\}/, '前段が exit 1 のとき監査本体まで止まる');
+      assert.match(wf, /\n {6}issues: write\n/, 'ジョブに issues: write が無い（起票できない）');
+      assert.match(wf, /plan-range-lag/, 'プロンプトが専用 issue に触れていない（AI が重複起票し得る）');
+    });
+
     ok('backlog-audit.yml: 項目 6 は前段ステップの JSON を読む配線になっている（#717）', () => {
       const wf = fsBa.readFileSync(pathBa.join(REPO_ROOT_BA, '.github', 'workflows', 'backlog-audit.yml'), 'utf8');
       const stepIdx = wf.indexOf('- name: Resolve planning ADR range');
