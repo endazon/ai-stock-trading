@@ -5616,12 +5616,16 @@ T-10-2245〜T-10-2249・T-10-2251・T-10-2252 は `ScheduledCycleRedeliveryTests
 | **T-10-2320** | 本番の構成（`Program.cs`）。判断の決済を本番の購読で審査し、その承認を本番の構成へ流す。別の銘柄は利用者の手仕舞い（印の無い承認）で流す | 同じ銘柄・別の銘柄の買いを審査し、口を読み、判断イベントの購読を通す | 承認に判断由来の印が立ち、台帳に判断由来として残る。同じ銘柄の買いは `DecisionExitSameDay` だけで拒否され計器に名前で出る。利用者の手仕舞いの銘柄の買いは承認される。口はロング側だけに同じ理由を返す。単体の購読でも印が由来へ写る | 配線 | 自動 |
 | **T-10-2321** | 判断由来の決済の承認と約定を書いた後、別の DB 接続で読む | 決済の承認を読み、2 つの射影へ渡す | 由来は判断由来のまま返り、判断由来の決済の射影はロング側、損切りの射影は無し | 再起動で消えない | 自動 |
 | **T-10-2322** | 拒否理由・承認行の由来・見送りの語彙・LLM を呼ぶ前の見送りの語彙 | 序数・分類・数を確かめる | `DecisionExitSameDay` は序数 32・クラス A、判断由来の承認は序数 4。見送りの語彙は 17 値（末尾は `SizedBelowMinimumNotional`）、LLM を呼ぶ前は 6 値（末尾は `EntryCapacityBelowMinimumNotional`）で、同名の写像が成り立つ | 末尾へ足す | 自動 |
+| **T-10-2335** | 日本株（JPY）・換算レート 0.0064（約 1/156）・equity 100,000 USD（1%＝1,000 USD）・残枠 1,500 USD。1 株 ¥156,249／¥156,250 | 判断を回す | ¥156,249（999.9936 USD）は判断後の見送り（`SizedBelowMinimumNotional`）、¥156,250（1,000 USD ちょうど）は 1 株の発注意図（価格は円のまま・基準通貨の名目額 1,000） | 名目額は基準通貨へ換算して比べる | 自動（**否定形**） |
+| **T-10-2336** | equity 100,000・保有 0・未約定なし。段階残枠 1,000（最小ちょうど）／段階残枠 5,000・日次残枠 900 | 判断を回す | 最小ちょうどは LLM を呼び、1 株 @1,000 の発注意図になる。日次だけが最小に届かなければ LLM を呼ばずに `EntryCapacityBelowMinimumNotional` | LLM の前の下界は「満たない」、上限は段階・日次の小さい方 | 自動 |
+| **T-10-2337** | 判断由来の印（`FromTradeDecision`）を持たない旧い承認の本文／印つきの承認 | 読む・JSON を往復する | 旧い本文は判断を経ない承認（false）として読め、印つきは true を保つ。明示しない承認は false | 旧いメッセージを判断由来と読まない | 自動 |
 
 試験の置き場所: T-10-2310 は `MinimumEntryNotionalTests`、T-10-2311 は `TradingDefaultsTests`・`MinimumEntryNotionalTests`・`MinimumEntryNotionalOptionsLoaderTests`、
 T-10-2312〜T-10-2314 は `MinimumEntryNotionalDecisionTests`（判断サービスの端から端）と見送りの表（`DecisionSkipReasonTests`・`DecisionHeldReportTests`）、
 T-10-2315〜T-10-2318 は `DecisionExitProjectionTests`・`DecisionExitReentryEvaluationTests`、T-10-2319 は `EntryStateBlockersTests`（T-10-1782 の全組み合わせに次元を足した）と
 `HeldAddOnBlockersTests`、T-10-2320 は `DecisionExitReentryWiringTests`・`PortfolioLedgerConsumersTests`、T-10-2321 は `LedgerCloseApprovalsTests`、
-T-10-2322 は序数・分類の試験（`RejectionReasonOrdinalStabilityTests`・`RejectionReasonClassificationTests`・`ApprovalSourceTests`）と語彙の試験（`DecisionSkipReasonTests`・`DecisionHeldReportTests`・`LedgerGapEventsTests`）。
+T-10-2322 は序数・分類の試験（`RejectionReasonOrdinalStabilityTests`・`RejectionReasonClassificationTests`・`ApprovalSourceTests`）と語彙の試験（`DecisionSkipReasonTests`・`DecisionHeldReportTests`・`LedgerGapEventsTests`）、
+T-10-2335・T-10-2336 は `MinimumEntryNotionalDecisionTests`、T-10-2337 は `OrderApprovedFromTradeDecisionContractTests`。
 
 **変異で確かめたこと**（実装のコミットに対して 1 本ずつ当て、関係するサービスの試験を全件走らせ、`git checkout` で戻した。リスク管理 2,211 件・取引判断 1,522 件）:
 
@@ -5642,8 +5646,11 @@ T-10-2322 は序数・分類の試験（`RejectionReasonOrdinalStabilityTests`�
 | M13 | 射影が約定だけで数える（承認を見ない） | T-10-2315（1）・T-10-2316（5）・T-10-2318（1）・T-10-2320（1） |
 | M14 | 口が判断由来の決済を供給しない | T-10-2320（1） |
 | M15 | 審査が判断由来の決済を供給しない | T-10-2320（1） |
+| M16 | 🔴 サイジングの後の名目額を換算前の価格（数量 × 現地通貨の参照価格）で数える | T-10-2335（1） |
+| M17 | LLM の前の下界を「以下」にする（最小ちょうどの上限で LLM を呼ばない。サイジングの後の判定は変えない） | T-10-2336（1） |
+| M18 | LLM の前の下界を段階残枠だけで読む（日次残枠を見ない） | T-10-2336（1） |
 
-15 本すべて赤（生存 0）。
+15 本すべて赤（生存 0）。独立監査の後に足した M16〜M18 は、`MinimumEntryNotionalDecisionTests` を走らせて 3 本とも赤（生存 0）。
 
 🔴 **本節が固定していない残余リスク**:
 - 導入前に記録された当日の判断由来の決済は数えない（利用者の手仕舞いと区別できない）。導入の取引日だけの取りこぼしである。

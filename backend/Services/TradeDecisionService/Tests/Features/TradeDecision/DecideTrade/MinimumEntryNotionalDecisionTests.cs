@@ -82,6 +82,13 @@ public class MinimumEntryNotionalDecisionTests
                 : WorkingEntryOrders.None);
     }
 
+    // 非基準通貨（日本株・JPY）の換算レート。鮮度は判定しない供給元（既定実装の Unknown＝新規建てに使える）。
+    private sealed class FixedFxRate(decimal rate) : IFxRateProvider
+    {
+        public Task<decimal?> GetRateToBaseAsync(Market market, CancellationToken ct = default) =>
+            Task.FromResult<decimal?>(market == Market.UnitedStates ? 1m : rate);
+    }
+
     private sealed class RecordingForgone : IDecisionForgoneBeforeLlmReporter
     {
         public List<TradeDecisionForgoneBeforeLlm> Reports { get; } = [];
@@ -120,7 +127,7 @@ public class MinimumEntryNotionalDecisionTests
     // options が null なら**構成を渡さない**（既定で効くことを確かめる経路）。
     private static Probe Create(
         SizingContext context, IHeldPositionProvider held, decimal price = AaplPrice, string llmOutput = AaplBuyJson,
-        MinimumEntryNotionalOptions? options = null)
+        MinimumEntryNotionalOptions? options = null, IFxRateProvider? fxRate = null)
     {
         var llm = new FixedLlm(llmOutput);
         var forgone = new RecordingForgone();
@@ -129,7 +136,7 @@ public class MinimumEntryNotionalDecisionTests
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(context), new FakeClock(), NullLogger<AppSvc>.Instance,
             currentPrice: new FakeCurrentPrice(price), heldPosition: held, skipReporter: skips, heldReporter: heldReporter,
-            forgoneReporter: forgone, minimumEntryNotional: options);
+            forgoneReporter: forgone, minimumEntryNotional: options, fxRate: fxRate);
         return new Probe(service, llm, forgone, heldReporter, skips);
     }
 
@@ -270,5 +277,70 @@ public class MinimumEntryNotionalDecisionTests
         (await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken)).Should().BeNull();
 
         probe.Skips.Reasons.Should().Equal(DecisionSkipReason.LlmHold);
+    }
+
+    // T-10-2335: 🔴 非基準通貨（日本株・JPY）は**基準通貨（USD）へ換算した名目額**で比べる。レート 0.0064（≈ 1/156）・equity $100,000 の 1%＝$1,000。
+    // 段階残枠 $1,500（LLM の前の下界には掛からない）で 1 株だけ買える価格を動かす。¥156,249 × 0.0064 ＝ $999.9936 は見送り、
+    // ¥156,250 × 0.0064 ＝ $1,000 ちょうどは通す。ローカル通貨の名目額（¥156,249）で比べると桁で誤り、見送りが消える。
+    [Theory]
+    [InlineData("156249", false)]
+    [InlineData("156250", true)]
+    public async Task T_10_2335_日本株は基準通貨へ換算した名目額で最小と比べる(string priceText, bool expectsOrder)
+    {
+        const decimal JpyToUsd = 0.0064m;
+        var price = decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);
+        var json = $$"""{"action":"Buy","rationale":"押し目","referencePrice":{{priceText}},"stopLossDistancePerShare":4000}""";
+        var probe = Create(Context(100_000m, 1_500m), new FakeHeld(0), price, json, fxRate: new FixedFxRate(JpyToUsd));
+
+        var decision = await probe.Service.DecideAsync(
+            DecisionTrigger.Scheduled("7203", Market.Japan, Now), TestContext.Current.CancellationToken);
+
+        probe.Llm.Calls.Should().BeGreaterThan(0, "残枠 $1,500 は最小 $1,000 以上なので LLM の前には省かない");
+        probe.Forgone.Reports.Should().BeEmpty();
+        if (expectsOrder)
+        {
+            decision.Should().NotBeNull("¥156,250 × 0.0064 ＝ $1,000 は equity の 1% ちょうど（ちょうどは通す）");
+            decision!.Intent.Quantity.Should().Be(1);
+            decision.Intent.Price.Should().Be(price, "発注意図の価格はローカル通貨（JPY）のまま");
+            decision.Intent.NotionalInBase.Should().Be(1_000m);
+            probe.Skips.Reasons.Should().BeEmpty();
+        }
+        else
+        {
+            decision.Should().BeNull("¥156,249 × 0.0064 ＝ $999.9936 は equity の 1%（$1,000）に満たない");
+            probe.Skips.Reasons.Should().Equal(DecisionSkipReason.SizedBelowMinimumNotional);
+        }
+    }
+
+    // T-10-2336: 🔴 LLM の前の下界の境界。新規建てに使える金額の上限が最小の名目額**ちょうど**（段階残枠 $1,000＝equity $100,000 の 1%）なら
+    // 届かないとは言えないので LLM を呼ぶ（下界は「満たない」＝厳密な不等号）。参照価格 $1,000 で 1 株＝名目 $1,000 ちょうどは発注意図になる。
+    [Fact]
+    public async Task T_10_2336_使える金額の上限が最小ちょうどならLLMを呼ぶ()
+    {
+        const string json = """{"action":"Buy","rationale":"押し目","referencePrice":1000,"stopLossDistancePerShare":30}""";
+        var probe = Create(Context(100_000m, 1_000m), new FakeHeld(0), 1_000m, json);
+
+        var decision = await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken);
+
+        probe.Llm.Calls.Should().BeGreaterThan(0, "上限 $1,000 は最小 $1,000 に届いている");
+        probe.Forgone.Reports.Should().BeEmpty();
+        decision.Should().NotBeNull();
+        decision!.Intent.Quantity.Should().Be(1);
+        probe.Skips.Reasons.Should().BeEmpty();
+    }
+
+    // T-10-2336: 🔴 日次の発注残枠が段階残枠より小さく、日次だけが最小に届かない（段階 $5,000 ≥ 最小 $1,000 ＞ 日次 $900）なら、
+    // LLM を呼ばずに見送る。上限は段階残枠・日次残枠の**小さい方**で読む（段階残枠だけで読むと LLM を呼んでしまう）。
+    [Fact]
+    public async Task T_10_2336_日次の残枠だけが最小に届かなくてもLLMを呼ばずに見送る()
+    {
+        var probe = Create(Context(100_000m, 5_000m, dailyRemaining: 900m), new FakeHeld(0));
+
+        (await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken)).Should().BeNull();
+
+        probe.Llm.Calls.Should().Be(0, "日次の残枠 $900 は最小 $1,000 に届かない");
+        probe.Forgone.Reports.Should().ContainSingle().Which.Reason
+            .Should().Be(DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional);
+        probe.Skips.Reasons.Should().Equal(DecisionSkipReason.EntryCapacityBelowMinimumNotional);
     }
 }
