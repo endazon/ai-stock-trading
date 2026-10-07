@@ -1,34 +1,25 @@
-# TestSupport — テスト実行・単体実行のための足場（本番非使用）
+# TestSupport — 実行時の配線（PlatformShim）とテスト専用の部品
 
-このディレクトリには、**本番実装ではない**「足場（scaffold / shim）」を置く。本番の取引ドメイン実装
-（`backend/Services/**`・`backend/Shared/AiStockTrading.Shared.*`）とは物理的に分離し、
-「実際に本番で使っている」と誤解されないようにするためのものである（[IADR-0013](../../.ai-context/adr/IADR-0013_platform-foundation-testsupport-shim.md)）。
+このディレクトリは、本番の取引ドメイン実装（`backend/Services/**`・`backend/Shared/AiStockTrading.Shared.*`）と物理的に分けた
+「足場（scaffold / shim）」の置き場として作った（[IADR-0013](../../.ai-context/adr/IADR-0013_platform-foundation-testsupport-shim.md)）。
+🔴 **ただし `AiStockTrading.TestSupport.PlatformShim` は、名に反して配備でも動く**（次節）。それ以外
+（`Composition`・`ContractFixtures`・`Messaging`・`Metrics` と各 `*.Tests`）は本番プロジェクトから参照されず、テスト専用である。
 
 ## AiStockTrading.TestSupport.PlatformShim
 
 `microservices-platform`（基盤リポ `../microservices-platform`）の `KnowledgePlatform.Shared.Infrastructure/Foundation`
-から**最小移植**したランタイム Foundation（MassTransit 共通再試行・可観測性 OTel/Serilog・ヘルスチェック・
-Keycloak 認証・相関ID）。
+から**最小移植**したランタイム Foundation（Wolverine の共通配線・可観測性 OTel/Serilog・ヘルスチェック・
+Keycloak 認証・相関ID・例外応答・east-west gRPC の共通配線と所有者の門）。
 
-- **位置づけ**: 本リポ単体でのビルド・テスト・ローカル単体実行を成立させるための **shim（最小構成）**。
-- **本番非使用**: 本番（実運用）では ai-stock-trading の各サービスは platform の可変部分へ組み込まれ、**platform 本体の
-  Foundation** が提供する共通基盤（バス設定・可観測性・認証など）を用いる。本プロジェクトはそれを本番で置き換えるもの
-  **ではない**。
+- 🔴 **位置づけ（2026-10-07 に実物へ合わせた。#1204 / IADR-0013 の追記）**: 本リポから組む各サービスは本 shim を
+  `ProjectReference` しており、`Program.cs` の起動配線は**配備でもこの shim の実装で動く**。変更・削除は配備の挙動を変える。
+  - 当初は「本番では platform 本体の Foundation に差し替えるので本番非使用」としていたが、差し替えを扱うはずだった #22 は
+    差し替えをせずにクローズし（拡張規約の 3 要求の充足でクローズ）、差し替えの予定は無い。「本番非使用」は成り立たない。
+  - 認可の判定を含む: gRPC の所有者の門（`Foundation/Auth/GrpcOwnerClientGate.cs`。Discord ボットのトークンの `azp` を確かめる）、
+    例外応答の終端（`UseAiStockTradingExceptionHandler`）。
 - **基盤リポは無改修**（ADR-0001）。ここは基盤コードのコピーであり、由来は各ファイル冒頭コメントに明記する。
-- 名前空間 `AiStockTrading.TestSupport.PlatformShim.*` とすることで、利用側の `using` から「本番非使用の足場」で
-  あることが一目で分かる。
-
-> 本番統合（platform 側のホスト・基盤との結線）は #22（platform 拡張規約への準拠）で扱う。本 shim はそれまでの間、
-> および CI・ローカルでの単体実行のための最小の代替である。
-
-## ⚠️ 現時点の注意（#22 完了まで）
-
-**#22（本番統合）が未完了の現時点では、この shim が Worker の実行時動作を規定する de facto な配線である。**
-`RiskManagementService.Worker` は本 shim を `ProjectReference` しており、`Program.cs` の起動配線（MassTransit/RabbitMQ・
-OTel・Keycloak 認証）は現状この shim の実装だけで動く。したがって **いまこのサービスをデプロイすれば、実際に動くのは
-この shim のコードそのもの** である。「TestSupport」「本番非使用」という名前だけを見て「このフォルダは削除・変更しても
-デプロイ後の挙動に影響しない」と誤解しないこと。本 shim が「本番非使用」になるのは **#22 で platform 本体の Foundation へ
-差し替えた後** である。それまでは実行時の振る舞いを担う本番相当の配線として扱う。
+- 名前空間 `AiStockTrading.TestSupport.PlatformShim.*` は**改めない**（参照する本番プロジェクトと試験の全部へ波及し、得るのは名前の
+  正しさだけ。IADR-0013 の 2026-10-07 追記）。名前ではなく本節で位置づけを読むこと。
 
 ## AiStockTrading.TestSupport.Composition
 

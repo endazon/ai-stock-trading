@@ -20,7 +20,7 @@ related_ids:
   - IADR-0057
 author: claude
 created: 2026-07-17
-updated: 2026-07-17
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-19, FR-05, FR-11)
   - planning:projects/ai-stock-trading/07_adr/ADR-0007_trading-guard-and-margin.md (取引ガード)
@@ -100,6 +100,19 @@ plan_refs:
   （`PositionCloseCancellationHandler`）である。訂正の駆動元（時限取消・#141・#152）は依然として無い。
 - 🔴 **教訓**: 「型で塞いだ」と書いた fail-safe が、**同じ操作の別の口が既に開いていたために成立していなかった**。
   ポートを足すときは、**その操作が既存のポートに無いことを実測する**（IADR-0117 改定 8 の「変えない側も主張である」と同型）。
+
+🔴 **［2026-10-07 追記 / [#1204](https://github.com/endazon/ai-stock-trading/issues/1204)］決定 6 と §結果の「#141/#152 が呼ぶ」は見込みのまま外れた。両 issue は設計どおり本配管を呼ばない（未配線ではない）。**
+
+- **#141（2026-07-20 クローズ）**: 自動リコンサイル（`OrderReservationReconciler`・IADR-0074 / IADR-0092）は、滞留した `Reserved` 予約を
+  ブローカーの照会で「発注済み→確定／未発注→解放／不明→据え置き」に写すだけである。`Reserved` は注文 ID を持たず、**取り消す注文が無い**。
+- **#152（2026-07-18 クローズ）**: 一時停止は計画 ADR-0009 のとおり**新規建てだけを止めるゲート**（`RiskEvaluator`。IADR-0075）であり、
+  板に残った注文を取り消す要求は計画にも実装にも無い（ADR-0009 に「取消」「未約定」の語は無い）。
+- 本 ADR の起草（2026-07-17）は両 issue の実装より前であり、「#141/#152 が呼ぶ」はその時点の見込みだった。両 issue はその形を採らずに閉じた。
+  **時限取消**も起票・計画の要求とも無い見込みである。したがって**訂正の駆動元の予定は無い**。取消の駆動元は利用者の手仕舞いの取消
+  （`PositionCloseCancellationHandler`。#847）と、乖離の取り込みに保護逆指値を追随させる取消（`ProtectiveStopDriftAdopter`。#858。`OrderAmendmentService` を直接呼ぶ）である。
+- コード・試験のコメントの「依然として本クラスを呼んでいない／未配線／未実装」は「呼ぶべきだが呼んでいない」と読めるため、本追記に合わせて直した
+  （`OrderAmendmentDispatcher.cs`・OES `Program.cs`・`OrderCancelled.cs`・`OrderAmendmentDispatcherTests.cs`・`OrderAmendmentServiceTests.cs`）。新しい駆動元は配線していない。
+- **外す条件**: 計画が一時停止・リコンサイル・時限で板の注文を取り消すことを求めたら、その駆動元は本配管（`OrderAmendmentDispatcher`）を呼ぶ（発行・永続化を再実装しない。決定 5 は有効）。
 
 ## 理由
 

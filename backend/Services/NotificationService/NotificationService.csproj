@@ -2,7 +2,7 @@
      （層プロジェクト .Api/.Application/.Infrastructure は撤去し、Features/・Infrastructure/ のフォルダで
      境界を表す。基盤 MSP:IADR-0282 決定1 と同一樹形）。イベント購読と Discord アウトバウンド通知の
      DI 構成、ヘルスチェックのため Web SDK を使用。DB・認可なし（送信は fire-and-forget）。実 Discord 送信は
-     既定で無効（安全既定）。実行時基盤は test-support shim（本番非使用・IADR-0013）。 -->
+     既定で無効（安全既定）。実行時基盤は test-support shim（名は足場だが配備でも動く実行時の配線・IADR-0013 の 2026-10-07 追記）。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す
@@ -29,7 +29,7 @@
     <!-- NFR, FR-14, ADR-0047 決定 1・2, IADR-0449, #753（段 5）: east-west gRPC（ボットの読み取り）の proto 契約と生成物。
          Shared.Contracts へは置けない（Domain 到達可能・外部ライブラリ依存ゼロの制約。IADR-0331 決定 7）。 -->
     <ProjectReference Include="..\..\Shared\AiStockTrading.Shared.Grpc\AiStockTrading.Shared.Grpc.csproj" />
-    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（本番非使用の足場）を参照する。 -->
+    <!-- IADR-0013: ランタイム基盤は platform 由来の最小移植 shim（名は足場だが配備でも動く実行時の配線。IADR-0013 の 2026-10-07 追記）を参照する。 -->
     <ProjectReference Include="..\..\TestSupport\AiStockTrading.TestSupport.PlatformShim\AiStockTrading.TestSupport.PlatformShim.csproj" />
   </ItemGroup>
 </Project>

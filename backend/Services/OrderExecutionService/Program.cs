@@ -219,7 +219,7 @@ builder.Services.AddScoped<TradeExpenseRecordingService>();
 // **訂正（ModifyOrderAsync）はペーパー専用のまま**である（IADR-0067）。実 OpenD へ TrdModifyOrder を
 // 配線していないためで、IOrderAmendmentBroker は moomoo 構成では登録せず、OrderAmendmentService は
 // それを任意依存として受けて ModifyAsync を NotSupportedException で閉じる（型と実行時の二重の遮断）。
-// #141（リコンサイルの取消基点）・#152（pause による強制取消）は依然として未配線である。
+// #1204, IADR-0067（2026-10-07 追記）: #141（リコンサイル）・#152（一時停止）は設計どおり本配管を呼ばない（未配線ではない）。
 builder.Services.AddScoped<IOrderLifecycleStore, EfOrderLifecycleStore>();
 if (!brokerSelection.IsMoomoo)
 {

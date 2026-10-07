@@ -5,7 +5,7 @@
      LLM/為替/監視銘柄/日報/建玉の各アダプタ・PriceMovementDetected / InformationCollected の consumer は
      Infrastructure/ に置く。FR-17, NFR, #526, IADR-0264 決定1: 旧 ConfigurationService.Client の呼び出し元
      複製（前提条件解決）は Infrastructure/ExternalServices/ にある。実行時基盤は test-support shim
-     （本番非使用・IADR-0013）を参照する。実 LLM/実データはプレースホルダ（安全既定＝取引しない）。 -->
+     （名は足場だが配備でも動く実行時の配線・IADR-0013 の 2026-10-07 追記）を参照する。実 LLM/実データはプレースホルダ（安全既定＝取引しない）。 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <!-- Tests/ は独立プロジェクトなので本プロジェクトのコンパイル対象から外す

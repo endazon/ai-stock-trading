@@ -1,6 +1,8 @@
 <!-- IADR-0013: microservices-platform 由来のランタイム Foundation の最小移植（shim）。
-     ローカルのビルド・テスト・単体実行を成立させるための「足場」であり、本番では platform 本体の
-     Shared.Infrastructure/Foundation を用いるため本プロジェクトは本番非使用。詳細は本フォルダの README を参照。
+     🔴 #1204, IADR-0013（2026-10-07 追記）: 名は「足場」だが、**本リポから組む各サービスの配備で実際に動く実行時の配線**
+     である（バス・可観測性・認証・例外応答〔IADR-0496〕・gRPC の所有者の門〔GrpcOwnerClientGate。Discord ボットの azp。IADR-0448〕）。
+     「本番では platform 本体の Foundation を用いるので本番非使用」という当初の前提は、差し替え（#22）が行われずに
+     クローズしたため成り立たない。変更は配備の挙動を変える。詳細は ../README.md。
      ASP.NET 型（WebApplication/HttpContext/HealthChecks）を使うため共有フレームワークを参照する。 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>

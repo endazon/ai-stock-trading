@@ -45,7 +45,7 @@ public class UnwiredDiRegistrationTests
         RepositoryLayout.ProductionProjectFiles.Should().HaveCountGreaterThan(
             14,
             "backend 配下の本番プロジェクト（テスト・TestSupport・横断テストを除く）は "
-                + "12 サービス＋BFF＋共有 4 本＝17 本ある。これを下回るなら探索が壊れている。実際に見つかったのは: {0}",
+                + "12 サービス＋BFF＋共有 5 本＝18 本ある（#1204 で再計数）。これを下回るなら探索が壊れている。実際に見つかったのは: {0}",
             string.Join(", ", RepositoryLayout.ProductionProjectFiles.Select(Path.GetFileNameWithoutExtension)));
 
         Repository.Projects.Sum(p => p.Sources.Count).Should().BeGreaterThan(
