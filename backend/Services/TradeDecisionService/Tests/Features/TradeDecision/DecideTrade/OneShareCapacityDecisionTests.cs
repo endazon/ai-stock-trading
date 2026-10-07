@@ -149,9 +149,9 @@ public class OneShareCapacityDecisionTests
         probe.Held.Reports.Should().BeEmpty("判断をしていない見送りで急変の基準値を進めない（IADR-0452 決定1）");
     }
 
-    // T-10-2371: 🔴 issue の形（GOOGL）。残枠 $2,000 は最小の名目額 $1,000 以上だが、現在値 $2,500 × 1 株に満たない → LLM を呼ばずに見送る。
+    // T-10-2381: 🔴 issue の形（GOOGL）。残枠 $2,000 は最小の名目額 $1,000 以上だが、現在値 $2,500 × 1 株に満たない → LLM を呼ばずに見送る。
     [Fact]
-    public async Task T_10_2371_残枠が現在値の1株に満たない銘柄はLLMを呼ばずに見送る()
+    public async Task T_10_2381_残枠が現在値の1株に満たない銘柄はLLMを呼ばずに見送る()
     {
         var probe = Create(Context(stageRemaining: 2_000m), new FakeHeld(0));
 
@@ -162,14 +162,14 @@ public class OneShareCapacityDecisionTests
         probe.Forgone.Reports[0].Symbol.Should().Be("GOOGL");
     }
 
-    // T-10-2372: 🔴 境界。残枠 ＝ 現在値（1 株ちょうど買える）は LLM を呼び、1 株の発注意図になる。1 セント足りなければ LLM を呼ばずに見送る。
+    // T-10-2382: 🔴 境界。残枠 ＝ 現在値（1 株ちょうど買える）は LLM を呼び、1 株の発注意図になる。1 セント足りなければ LLM を呼ばずに見送る。
     // 日次の発注残枠だけが足りない（段階残枠は十分）ときも見送る（小さい方で読む）。
     [Theory]
     [InlineData("2500", "1000000", true)]
     [InlineData("2499.99", "1000000", false)]
     [InlineData("1000000", "2499.99", false)]
     [InlineData("1000000", "2500", true)]
-    public async Task T_10_2372_残枠がちょうど1株の価格ならLLMを呼び1セント足りなければ見送る(
+    public async Task T_10_2382_残枠がちょうど1株の価格ならLLMを呼び1セント足りなければ見送る(
         string stageText, string dailyText, bool expectsOrder)
     {
         var stage = decimal.Parse(stageText, System.Globalization.CultureInfo.InvariantCulture);
@@ -195,13 +195,13 @@ public class OneShareCapacityDecisionTests
         }
     }
 
-    // T-10-2373: 🔴 日本株（JPY）は**基準通貨（USD）へ換算した 1 株の価格**で比べる。レート 0.0064・残枠 $2,000。
+    // T-10-2383: 🔴 日本株（JPY）は**基準通貨（USD）へ換算した 1 株の価格**で比べる。レート 0.0064・残枠 $2,000。
     // ¥312,500 × 0.0064 ＝ $2,000 ちょうどは LLM を呼んで 1 株、¥312,501（$2,000.0064）は LLM を呼ばずに見送る。
     // 円の価格（312,500）のまま比べると常に足りないと読み、日本株の判断が全部消える。
     [Theory]
     [InlineData("312500", true)]
     [InlineData("312501", false)]
-    public async Task T_10_2373_日本株は基準通貨へ換算した1株の価格で残枠と比べる(string priceText, bool expectsOrder)
+    public async Task T_10_2383_日本株は基準通貨へ換算した1株の価格で残枠と比べる(string priceText, bool expectsOrder)
     {
         const decimal JpyToUsd = 0.0064m;
         var price = decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);
@@ -228,7 +228,7 @@ public class OneShareCapacityDecisionTests
         }
     }
 
-    // T-10-2374: 🔴 省かない経路（LLM を呼ぶ）。保有中（決済の判断を残す。買い増しは LLM の後に数量 0）・未約定あり・現在値ソースが未有効
+    // T-10-2384: 🔴 省かない経路（LLM を呼ぶ）。保有中（決済の判断を残す。買い増しは LLM の後に数量 0）・未約定あり・現在値ソースが未有効
     // （サイジングは LLM の参照価格を使うので LLM の前には分からない）・段階残枠または日次残枠が未供給（「分からない」を「足りない」と読まない）。
     // どれも従来どおり LLM の後にサイジングの数量 0 で見送る。
     [Theory]
@@ -237,7 +237,7 @@ public class OneShareCapacityDecisionTests
     [InlineData("noCurrentPrice")]
     [InlineData("stageUnknown")]
     [InlineData("dailyUnknown")]
-    public async Task T_10_2374_保有中や未約定ありや現在値なしや残枠の未供給ではLLMを呼ぶ(string kind)
+    public async Task T_10_2384_保有中や未約定ありや現在値なしや残枠の未供給ではLLMを呼ぶ(string kind)
     {
         var probe = kind switch
         {
@@ -257,13 +257,13 @@ public class OneShareCapacityDecisionTests
         probe.Skips.Reasons.Should().Equal(DecisionSkipReason.SizingZeroQuantity);
     }
 
-    // T-10-2375: 🔴 2 つの LLM 前の金額の判定の順序。残枠 $500 は最小の名目額（$1,000）にも 1 株（$2,500）にも届かない → 資金の枯渇として
+    // T-10-2385: 🔴 2 つの LLM 前の金額の判定の順序。残枠 $500 は最小の名目額（$1,000）にも 1 株（$2,500）にも届かない → 資金の枯渇として
     // #1176 の EntryCapacityBelowMinimumNotional が勝つ。しきい値 0（#1176 の統制を外す）・equity の未供給（#1176 の判定が働かない）では本件の理由。
     [Theory]
     [InlineData("default")]
     [InlineData("ratioZero")]
     [InlineData("equityUnknown")]
-    public async Task T_10_2375_残枠が最小の名目額にも届かなければ最小の名目額の理由が先に当たる(string kind)
+    public async Task T_10_2385_残枠が最小の名目額にも届かなければ最小の名目額の理由が先に当たる(string kind)
     {
         var probe = kind switch
         {

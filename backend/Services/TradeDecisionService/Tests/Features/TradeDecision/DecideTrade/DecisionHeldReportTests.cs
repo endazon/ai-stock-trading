@@ -327,7 +327,7 @@ public class DecisionHeldReportTests
     [Fact]
     public void 判断前と判断後の見送りは語彙18値を過不足なく覆う()
     {
-        // T-10-2376, #1174, IADR-0500: 判断前に EntryCapacityBelowOneShare を足した（17 → 18）。
+        // T-10-2386, #1174, IADR-0500: 判断前に EntryCapacityBelowOneShare を足した（17 → 18）。
         // T-10-2322, #1176, IADR-0495: 判断前に EntryCapacityBelowMinimumNotional、判断後に SizedBelowMinimumNotional を足した（15 → 17）。
         DecisionSkipReason[] before =
         [

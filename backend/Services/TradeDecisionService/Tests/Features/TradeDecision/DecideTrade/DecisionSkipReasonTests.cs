@@ -256,7 +256,7 @@ public class DecisionSkipReasonTests
             Create(r12, BuyJson, ctx: Context(stageRemaining: 1_999m, dailyRemaining: 1_999m, capital: 110_000m), held: new FakeHeld(0)),
             r12, Trigger()));
 
-        // 13. T-10-2376, #1174, IADR-0500 決定1・2: 保有 0・未約定なしで、残枠（2,000 ≥ 最小 1,000）が現在値 × 1 株（2,500）に満たない（LLM の前）
+        // 13. T-10-2386, #1174, IADR-0500 決定1・2: 保有 0・未約定なしで、残枠（2,000 ≥ 最小 1,000）が現在値 × 1 株（2,500）に満たない（LLM の前）
         var r13 = new RecordingSkipReporter();
         observed.Add(await SkipReasonOf(
             Create(r13, BuyJson, ctx: Context(stageRemaining: 2_000m, dailyRemaining: 2_000m),
@@ -286,14 +286,14 @@ public class DecisionSkipReasonTests
     // T-10-1907, #1130 / IADR-0471 決定 3 が末尾に AddOnBlockedByRiskControls を足して 14 → 15。LLM の後の見送りで、振る舞いは
     // HeldAddOnBlockersTests が固定する。T-10-2322, #1176 / IADR-0495 決定1・2 が末尾に EntryCapacityBelowMinimumNotional と
     // SizedBelowMinimumNotional を足して 15 → 17。振る舞いは上の表〔11・12 番〕と MinimumEntryNotionalDecisionTests が固定する。
-    // T-10-2376, #1174 / IADR-0500 が末尾に EntryCapacityBelowOneShare〔LLM の前〕を足して 17 → 18。振る舞いは上の表〔13 番〕と OneShareCapacityDecisionTests が固定する）。
+    // T-10-2386, #1174 / IADR-0500 が末尾に EntryCapacityBelowOneShare〔LLM の前〕を足して 17 → 18。振る舞いは上の表〔13 番〕と OneShareCapacityDecisionTests が固定する）。
     // 値を足したのに報告点を足さない／報告点を消したのに値を残す、を気付けるようにする。
     // 上のテストが 13 値を**振る舞いで**固定し（EntryBlockedByRiskControls・AddOnBlockedByRiskControls の 2 値は上記の別の試験が固定する）、残る 3 値は到達に LLM 出力の不正（参照価格 0・損切り幅の異常）か
     // 採算ゲートの構成が要るため、ここでは語彙の側だけを固定する（IADR-0374 §結果 に明記）。
     [Fact]
     public void 見送り理由の語彙は洗い出した18値である()
     {
-        // T-10-2376, #1174 / IADR-0500 決定2 が末尾に EntryCapacityBelowOneShare（LLM の前）を足して 17 → 18。
+        // T-10-2386, #1174 / IADR-0500 決定2 が末尾に EntryCapacityBelowOneShare（LLM の前）を足して 17 → 18。
         // T-10-2322, #1176 / IADR-0495 決定1・2 が末尾に EntryCapacityBelowMinimumNotional（LLM の前）と SizedBelowMinimumNotional
         // （LLM の後）を足して 15 → 17。振る舞いは上の表（11・12 番）と MinimumEntryNotionalDecisionTests が固定する。
         Enum.GetValues<DecisionSkipReason>().Should().HaveCount(18);

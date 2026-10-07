@@ -124,7 +124,7 @@ public class PositionSizerTests
         PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 0m, 1_000m, 35_000m, 100_000m).Should().Be(0);
         PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, -5m, 1_000m, 35_000m, 100_000m).Should().Be(0);
     }
-    // T-10-2370, FR-10, #1174, IADR-0500 決定1: 投入可能な資金が参照価格 × 1 株に満たないか（LLM を呼ぶ前の見送りの下界）。
+    // T-10-2380, FR-10, #1174, IADR-0500 決定1: 投入可能な資金が参照価格 × 1 株に満たないか（LLM を呼ぶ前の見送りの下界）。
     // ちょうど等しい（1 株ちょうど買える）は偽、1 セント足りなければ真。資金 0 以下は真。参照価格が正でなければ偽（下界として何も言えない）。
     [Theory]
     [InlineData("2500", "2500", false)]
@@ -135,7 +135,7 @@ public class PositionSizerTests
     [InlineData("-1", "2500", true)]
     [InlineData("100", "0", false)]
     [InlineData("100", "-1", false)]
-    public void T_10_2370_投入可能な資金が1株の価格に満たないかを判定する(string availableText, string priceText, bool expected)
+    public void T_10_2380_投入可能な資金が1株の価格に満たないかを判定する(string availableText, string priceText, bool expected)
     {
         var available = decimal.Parse(availableText, System.Globalization.CultureInfo.InvariantCulture);
         var price = decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);
@@ -143,7 +143,7 @@ public class PositionSizerTests
         PositionSizer.CannotAffordOneShare(available, price).Should().Be(expected);
     }
 
-    // T-10-2370: 🔴 **下界はサイジングと一致する**（LLM の前に省いてよい根拠）。下界が真なら、損切り幅（LLM 依存）・1 注文上限・縮小係数を
+    // T-10-2380: 🔴 **下界はサイジングと一致する**（LLM の前に省いてよい根拠）。下界が真なら、損切り幅（LLM 依存）・1 注文上限・縮小係数を
     // どう選んでもサイジングの数量は 0。偽なら、リスク予算と 1 注文上限が十分なとき残枠の金額キャップで 1 株以上買える（＝省くと結論が変わる）。
     // 日本株（JPY）の換算後の価格（端数のある基準通貨）も含める。
     [Theory]
@@ -155,7 +155,7 @@ public class PositionSizerTests
     [InlineData("0", "334.11")]
     [InlineData("334.11", "334.11")]
     [InlineData("334.10", "334.11")]
-    public void T_10_2370_下界が真ならどの損切り幅と上限でもサイジングは0株で偽なら1株以上(string availableText, string priceText)
+    public void T_10_2380_下界が真ならどの損切り幅と上限でもサイジングは0株で偽なら1株以上(string availableText, string priceText)
     {
         var available = decimal.Parse(availableText, System.Globalization.CultureInfo.InvariantCulture);
         var price = decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);

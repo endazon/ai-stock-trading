@@ -47,7 +47,7 @@ IADR-0463 は LLM の前の見送りを「金額に依存しない理由」（�
 
 - `PositionSizer.CannotAffordOneShare(availableCapital, referencePrice)` ＝ **`referencePrice > 0` かつ（`availableCapital <= 0` または `availableCapital / referencePrice < 1`）**。
   サイジング（`CalculateCappedQuantity`）の金額キャップ `min(1 注文上限, availableCapital)` は `availableCapital` 以下で、decimal の除算は被除数について単調だから、
-  真なら損切り幅（LLM 依存）・equity・1 注文上限・縮小係数に依らず数量は 0 である（試験 T-10-2370 が網羅で確かめる）。
+  真なら損切り幅（LLM 依存）・equity・1 注文上限・縮小係数に依らず数量は 0 である（試験 T-10-2380 が網羅で確かめる）。
 - **ちょうど等しい（残枠 ＝ 1 株の価格）は偽**（1 株買える）。参照価格が正でなければ偽（下界として何も言えない。LLM の後の `ReferencePriceInvalid` のまま）。
 - 関数は `PositionSizer` に置く（サイジングの式の単一の情報源の隣。判断サービスは extern alias で読む）。
 
@@ -93,4 +93,4 @@ IADR-0463 は LLM の前の見送りを「金額に依存しない理由」（�
 - 実装（`backend/` 配下）: `Services/RiskManagementService/Domain/PositionSizer.cs`・
   `Services/TradeDecisionService/Features/TradeDecision/DecideTrade/TradeDecisionAppService.cs`・
   `Shared/AiStockTrading.Shared.Contracts/{Events/TradeDecisionForgoneBeforeLlm,Observability/DecisionSkipReason}.cs`
-- テスト: T-10-2370〜T-10-2377（`docs/tests/FR-10_risk-controls-tests.md`）
+- テスト: T-10-2380〜T-10-2387（`docs/tests/FR-10_risk-controls-tests.md`）

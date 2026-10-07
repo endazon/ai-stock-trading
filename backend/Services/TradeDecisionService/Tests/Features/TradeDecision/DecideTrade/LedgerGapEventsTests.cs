@@ -305,7 +305,7 @@ public class LedgerGapEventsTests
         cancelled.Skips.Reasons.Should().BeEmpty("取り消された判断を見送りとして数えない");
     }
 
-    // T-10-1772 / T-10-1793 / T-10-2322 / T-10-2376: 台帳の語彙（7 値）は観測の語彙（DecisionSkipReason）と同じ名前で、写像は名前どおりである。
+    // T-10-1772 / T-10-1793 / T-10-2322 / T-10-2386: 台帳の語彙（7 値）は観測の語彙（DecisionSkipReason）と同じ名前で、写像は名前どおりである。
     [Fact]
     public void T_10_1772_台帳の理由は観測の理由と同じ名前で写る()
     {
@@ -316,7 +316,7 @@ public class LedgerGapEventsTests
 
         // #1113, IADR-0463 決定 4: 新規建てが審査で必ず拒否される銘柄の見送りを末尾へ足した（4 → 5 地点）。
         // T-10-2322, #1176, IADR-0495 決定2: 新規建てに使える金額の上限が最小の名目額に届かない見送りを末尾へ足した（5 → 6 地点）。
-        // T-10-2376, #1174, IADR-0500 決定2: 残枠が現在値 × 1 株に満たない見送りを末尾へ足した（6 → 7 地点）。
+        // T-10-2386, #1174, IADR-0500 決定2: 残枠が現在値 × 1 株に満たない見送りを末尾へ足した（6 → 7 地点）。
         Enum.GetValues<DecisionForgoneBeforeLlmReason>().Should().HaveCount(7, "LLM より前の見送りは 7 地点（仕様書の母集合）");
         Enum.GetValues<DecisionForgoneBeforeLlmReason>()[^1].Should().Be(
             DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare, "値は末尾へ足す");
