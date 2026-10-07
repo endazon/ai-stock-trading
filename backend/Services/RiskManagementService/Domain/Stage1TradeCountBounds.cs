@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Errors;
 using System.Globalization;
 
 namespace RiskManagementService.Domain;
@@ -65,7 +66,7 @@ public static class Stage1TradeCountBounds
     {
         if (Validate(minimumTradeCount) is { } message)
         {
-            throw new ArgumentOutOfRangeException(nameof(minimumTradeCount), minimumTradeCount, message);
+            throw new ArgumentOutOfRangeException(nameof(minimumTradeCount), minimumTradeCount, message).ClientVisible();
         }
     }
 

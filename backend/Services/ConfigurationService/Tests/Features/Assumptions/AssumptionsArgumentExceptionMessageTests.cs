@@ -54,7 +54,7 @@ public class AssumptionsArgumentExceptionMessageTests
         body.Should().NotContain("config-db.internal");
     }
 
-    // T-10-2401: 自前の入力検証（理由が空。ThrowIfNullOrWhiteSpace の送出は呼び出し元の検証として扱う）は 400 で文言を保つ。
+    // T-10-2401: 自前の入力検証（理由が空）は 400 で文言を保つ（NFR-06, IADR-0509, #1230: 理由の空欄検査は印つきの ClientVisibleArgument.ThrowIfNullOrWhiteSpace）。
     [Fact]
     public async Task 自前の入力検証の_ArgumentException_は_400_で文言を保つ()
     {

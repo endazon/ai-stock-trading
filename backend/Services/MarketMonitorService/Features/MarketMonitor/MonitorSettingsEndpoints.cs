@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Errors;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Microsoft.EntityFrameworkCore;
@@ -88,14 +89,14 @@ internal static class MonitorSettingsEndpoints
     // されるため、要求では nullable で受けて明示的な指定を必須にする。
     // **2 段目に残る共通部分**——追加・削除の 2 操作が使う。
     internal static Market MarketOf(WatchlistChangeRequest req) =>
-        req.Market ?? throw new ArgumentException("market は必須です。", nameof(req));
+        req.Market ?? throw new ArgumentException("market は必須です。", nameof(req)).ClientVisible();
 
     // NFR, IADR-0450, #753（段 5）: 群のフィルタの例外の写し。gRPC 面（WatchlistOwnerWriteGrpcService）も同じ写しを使う（2 箇所に書かない）。
     // 写さない例外は null（そのまま上げる）。
-    // NFR-06, IADR-0503, #1206: ArgumentException の文言は自前のコードが投げたものだけ載せる（それ以外は固定文言・元の例外はログ。400 は維持）。
+    // NFR-06, IADR-0503, IADR-0509, #1206, #1230: ArgumentException の文言は利用者へ見せる印（ClientVisibleArgument）のあるものだけ載せる（印の無いものは固定文言・元の例外はログ。400 は維持）。
     internal static IResult? MapException(Exception e, ILogger logger) => e switch
     {
-        ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, typeof(MonitorSettingsEndpoints).Assembly, logger) }),
+        ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, logger) }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" }),
         _ => null,
     };

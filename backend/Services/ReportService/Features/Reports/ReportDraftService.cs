@@ -1,4 +1,5 @@
 using ReportService.Domain;
+using AiStockTrading.Shared.Contracts.Errors;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -23,7 +24,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         var periodLabel = ReportPeriod.Label(request.Kind, request.Date);
         var expectedKey = ReportPeriod.ExpectedKey(request.Kind, request.Date);
         if (!string.Equals(request.PeriodKey, expectedKey, StringComparison.Ordinal))
-            throw new ArgumentException($"{request.Kind} 報告書の PeriodKey は種別・対象日と一致する必要があります（期待 '{expectedKey}'・実際 '{request.PeriodKey}'）。");
+            throw new ArgumentException($"{request.Kind} 報告書の PeriodKey は種別・対象日と一致する必要があります（期待 '{expectedKey}'・実際 '{request.PeriodKey}'）。").ClientVisible();
 
         var markets = request.Markets ?? [];
         var fills = request.Fills ?? [];

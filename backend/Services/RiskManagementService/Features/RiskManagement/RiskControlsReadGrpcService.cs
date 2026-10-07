@@ -176,7 +176,7 @@ public sealed class RiskControlsReadGrpcService(
 
     // REST の群のフィルタ（RiskControlEndpoints）と同じ分類: ArgumentException は 400 ＝ INVALID_ARGUMENT。
     // 既に RpcException のもの（RequirePeriod の INVALID_ARGUMENT）はそのまま通す。
-    // NFR-06, IADR-0503, #1206: detail へ載せる文言は自前のコードが投げたものだけ（それ以外は固定文言・元の例外はログ）。
+    // NFR-06, IADR-0503, IADR-0509, #1206, #1230: detail へ載せる文言は利用者へ見せる印（ClientVisibleArgument）のあるものだけ（印の無いものは固定文言・元の例外はログ）。
     private Task<T> Reply<T>(Func<T> handler)
     {
         try
@@ -188,7 +188,7 @@ public sealed class RiskControlsReadGrpcService(
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
                 ClientFacingErrors.MessageFor(
-                    e, typeof(RiskControlsReadGrpcService).Assembly, loggerFactory.CreateLogger<RiskControlsReadGrpcService>())));
+                    e, loggerFactory.CreateLogger<RiskControlsReadGrpcService>())));
         }
     }
 

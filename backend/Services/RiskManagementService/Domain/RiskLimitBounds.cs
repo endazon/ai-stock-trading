@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Errors;
 using System.Globalization;
 
 namespace RiskManagementService.Domain;
@@ -111,7 +112,7 @@ public static class RiskLimitBounds
         {
             throw new ArgumentException(
                 $"リスク上限の値が設定可能な範囲を外れています。{string.Join(" / ", violations)}",
-                nameof(limits));
+                nameof(limits)).ClientVisible();
         }
     }
 

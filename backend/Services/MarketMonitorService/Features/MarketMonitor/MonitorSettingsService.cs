@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Errors;
 using MarketMonitorService.Common.Abstractions;
 using MarketMonitorService.Domain;
 
@@ -31,7 +32,7 @@ public sealed class MonitorSettingsService(
         RequireActorAndReason(actor, reason);
         if (MonitorSettingsBounds.ValidateMovementThresholdRatio(ratio) is { } message)
         {
-            throw new ArgumentException(message, nameof(ratio));
+            throw new ArgumentException(message, nameof(ratio)).ClientVisible();
         }
 
         var current = store.GetSettings();
@@ -54,7 +55,7 @@ public sealed class MonitorSettingsService(
         RequireActorAndReason(actor, reason);
         if (MonitorSettingsBounds.ValidateCooldown(cooldown) is { } message)
         {
-            throw new ArgumentException(message, nameof(cooldown));
+            throw new ArgumentException(message, nameof(cooldown)).ClientVisible();
         }
 
         var current = store.GetSettings();
@@ -107,19 +108,19 @@ public sealed class MonitorSettingsService(
         RequireActorAndReason(actor, reason);
         if (MonitorSettingsBounds.ValidateMovementThresholdRatio(settings.MovementThresholdRatio) is { } thresholdError)
         {
-            throw new ArgumentException(thresholdError, nameof(settings));
+            throw new ArgumentException(thresholdError, nameof(settings)).ClientVisible();
         }
 
         if (MonitorSettingsBounds.ValidateCooldown(settings.Cooldown) is { } cooldownError)
         {
-            throw new ArgumentException(cooldownError, nameof(settings));
+            throw new ArgumentException(cooldownError, nameof(settings)).ClientVisible();
         }
 
         // FR-13, #1044 項目 1: 銘柄コードの無い要素（要素そのものが null・symbol が null／空白）は 400。重複検査の Trim が
         // NullReferenceException を投げ、エンドポイントが 500 を返していた（ArgumentException だけを 400 に写すため）。
         if (settings.MonitoredSymbols.Any(s => s is null || string.IsNullOrWhiteSpace(s.Symbol)))
         {
-            throw new ArgumentException("監視銘柄に銘柄コードの無い要素があります（symbol は必須です）。", nameof(settings));
+            throw new ArgumentException("監視銘柄に銘柄コードの無い要素があります（symbol は必須です）。", nameof(settings)).ClientVisible();
         }
 
         // FR-02, FR-13, #1065 F1: 未定義の市場（例 `"market":7`）は 400。1 件の追加（MonitorWatchlistService.Add）は拒否していたが、
@@ -129,7 +130,7 @@ public sealed class MonitorSettingsService(
         {
             throw new ArgumentException(
                 $"監視銘柄に未定義の市場があります（{string.Join(", ", undefinedMarkets.Select(s => $"{s.Symbol}@{(int)s.Market}"))}）。",
-                nameof(settings));
+                nameof(settings)).ClientVisible();
         }
 
         var duplicates = settings.MonitoredSymbols
@@ -144,7 +145,7 @@ public sealed class MonitorSettingsService(
             throw new ArgumentException(
                 $"監視銘柄に重複があります（{string.Join(", ", duplicates)}。銘柄コードの大小文字は区別しません）。"
                 + "保存済みの一覧に残っている重複も、1 件ずつに減らして送れば適用されます（減らすのは除外なので止めません）。",
-                nameof(settings));
+                nameof(settings)).ClientVisible();
         }
 
         var current = store.GetSettings();
@@ -160,7 +161,7 @@ public sealed class MonitorSettingsService(
                 $"監視銘柄を増やす置換は Finnhub の巡回に収まりません（{cycleFit.Describe(settings.MonitoredSymbols)}）。"
                 + $"収まらない追加: {string.Join(", ", costlyAdditions.Select(s => $"{s.Symbol}@{s.Market}"))}。"
                 + "置換は一部だけ適用しません。除外だけなら、追加を含めずに送れば適用されます（除外は止めません）。",
-                nameof(settings));
+                nameof(settings)).ClientVisible();
         }
 
         // 永続化を先に確定させる（fail-safe）。競合はここで送出され、履歴は 1 件も残らない。
@@ -241,6 +242,7 @@ public sealed class MonitorSettingsService(
     private static void RequireActorAndReason(string actor, string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        // NFR-06, IADR-0509, #1230: 利用者（Discord・画面）が入力する欄の空欄検査。文言を 400 / INVALID_ARGUMENT へ載せる印を付ける。
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
     }
 }

@@ -2,7 +2,7 @@
 title: IADR-0503 例外の文言を応答へ載せるのは業務の例外だけにする（報告書の 409 は専用の型・400 / INVALID_ARGUMENT は自前のコードの送出だけ・それ以外は固定文言か未処理例外）
 type: impl-adr
 status: Accepted
-related_ids: [NFR-06, NFR-05, FR-06, FR-07, FR-10, FR-13, FR-17, ADR-0003, IADR-0496, IADR-0450, IADR-0449, IADR-0405, IADR-0024]
+related_ids: [NFR-06, NFR-05, FR-06, FR-07, FR-10, FR-13, FR-17, ADR-0003, IADR-0496, IADR-0450, IADR-0449, IADR-0405, IADR-0024, IADR-0509]
 author: claude (Claude Code)
 created: 2026-10-08
 updated: 2026-10-08
@@ -97,3 +97,9 @@ plan_refs:
 - 自前の型の `ReportConcurrencyException`・`AssumptionsConcurrencyException` の文言は従来どおり載る（期間キー・版番号だけを含む業務の文言）。
 - 応答以外の記録（監査台帳の自由記述・バックテストの欠測・判断の記録）への例外の文言の転記は本決定の対象外（IADR-0405 の線引きが受け持つ）。
 - 🔴 **JIT の最適化（段階コンパイルの tier-1 での インライン化）で、判定が実行中に変わり得る。** 第三者のライブラリの小さなメソッドが CoreLib の検証補助（`ThrowIfNullOrEmpty` 等）やコレクション（`Dictionary.Add` の重複キー）経由で投げる場合、そのメソッドが呼び出し元のサービスのフレームへインライン化されると、先頭のフレームがサービスの自前に見え、文言（キーの値を引用する）が載る（独立監査が Release の実験で再現した。冷えたコードの試験では再現しない）。第三者のメソッドが自分で `throw new` する場合はインライン化されず正しく判定された。現行のコードに機密を含む経路は見つかっていない。判定をスタックに依らない形（応答へ載せてよい文言を型や印で明示する）へ狭める作業は #1230 で扱う。
+
+［2026-10-08 追記 / #1230］**上の 🔴 の残余リスク（JIT のインライン化で判定が揺れる）と、1 つ目の残余リスク（自前のコードが CoreLib の API を呼んで投げられた
+`ArgumentException` の文言が載る）は [IADR-0509](IADR-0509_explicit-client-visible-argument-marker.md) で解消した。** 決定 2 のスタックの先頭のフレームによる判定
+（`IsRaisedByOwnCode`）を廃し、文言を載せるのは送出点で明示の印（`Exception.Data` の `ClientVisibleArgument`）を付けた `ArgumentException` だけにした。
+印の無いものは、自前のコードの送出（`ThrowIfNullOrWhiteSpace` 等）や `AiStockTrading.Shared.*` の送出でも固定文言になる。印を付けた箇所の一覧は
+作業仕様書 `20261008_1230_explicit-client-visible-marker`。決定 1（報告書の 409 は専用の型）・決定 3（状態の分類は不変）は変わらない。

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -167,6 +168,28 @@ public class WatchlistOwnerWriteGrpcServiceTests
         }
 
         (await SymbolsAsync(factory)).Should().Equal(before, "拒否では 1 件も適用しない");
+    }
+
+    // T-10-2425（NFR-06, IADR-0509, #1230）: 案の形の検証（自前の入力検証）は印つき（ClientVisibleArgument）なので、REST の 400 と
+    // gRPC の INVALID_ARGUMENT が固定文言ではなく利用者へ見せる文言を返す（T-10-1734 は両者の一致だけを見ており、両方が固定文言でも通る）。
+    [Fact]
+    public async Task T_10_2425_案の形の検証の文言は印つきで_REST_と_gRPC_に載る()
+    {
+        await using var baseFactory = new MonitorWorkerWebApplicationFactory();
+        await using var factory = Configured(baseFactory);
+        await SeedAsync(factory);
+        var before = await SymbolsAsync(factory);
+        // 米国のティッカーでない銘柄（小文字）。操作の語彙は端点で弾かれるため、ここでは案の形の検証（ApplyProposal）まで届く値を使う。
+        (string, string, string)[] invalid = [("add", "nvda", "r")];
+
+        using var response = await Rest(factory).PostAsJsonAsync("/monitor/watchlist/proposal-apply", RestBody(before, invalid));
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
+        error.Should().StartWith("銘柄は米国のティッカー（大文字。例 AAPL / BRK.B）に限ります。").And.NotBe(ClientFacingErrors.InvalidRequestMessage);
+
+        var act = async () => await Grpc(factory).ApplyWatchlistProposalAsync(GrpcBody(before, invalid));
+        var ex = (await act.Should().ThrowAsync<RpcException>()).Which;
+        (ex.StatusCode, ex.Status.Detail).Should().Be((StatusCode.InvalidArgument, error!));
     }
 
     // ---- 門（GrpcOwnerOnly） ----

@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Errors;
 using ConfigurationService.Common.Abstractions;
 using AiStockTrading.Shared.Kernel.Trading;
 
@@ -20,7 +21,8 @@ public sealed class AssumptionsService(
     {
         ArgumentNullException.ThrowIfNull(assumptions);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        // NFR-06, IADR-0509, #1230: 理由は利用者（画面）が入力する欄。空欄の文言を 400 へ載せる印を付ける（actor は認証から入るので印なし＝固定文言）。
+        ClientVisibleArgument.ThrowIfNullOrWhiteSpace(reason);
 
         var before = store.GetCurrent().Assumptions;
         var newVersion = store.Save(assumptions, expectedVersion);

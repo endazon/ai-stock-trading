@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AiStockTrading.Shared.Contracts.Errors;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AwesomeAssertions;
 using Grpc.Core;
@@ -161,6 +163,7 @@ public class ReportExceptionMessageExposureTests
     }
 
     // T-10-2391（受け入れ基準 2・400）: 自前の入力検証（PeriodKey と種別・対象日の不一致）は 400 で文言を保つ。
+    // NFR-06, IADR-0509, #1230: 文言が載るのは送出点に印（ClientVisibleArgument）があるため。
     [Fact]
     public async Task 自前の入力検証の_ArgumentException_は_400_で文言を保つ()
     {
@@ -223,6 +226,104 @@ public class ReportExceptionMessageExposureTests
         var ex = (await act.Should().ThrowAsync<RpcException>()).Which;
         ex.StatusCode.Should().Be(StatusCode.Aborted);
         ex.Status.Detail.Should().Be($"確定済み報告書 {Key} は変更できません。");
+    }
+
+    // 第三者のライブラリの小さな補助の代役（呼び出し元へインライン化を強制）。CoreLib のコレクションに重複キーで投げさせる
+    // （文言はキーの値＝目印を引用する）。NFR-06, IADR-0509, #1230: 判定がスタックに依らないことを固定するための送出元。
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ThirdPartyStyleAdd(Dictionary<string, int> map, string key) => map.Add(key, map.Count);
+
+    private static Exception RaiseInlinedThirdPartyDuplicateKey()
+    {
+        var map = new Dictionary<string, int>();
+        ThirdPartyStyleAdd(map, ConnectionLikeMarker);
+        ThirdPartyStyleAdd(map, ConnectionLikeMarker);
+        throw new InvalidOperationException("重複キーが例外を投げなかった（前提の崩れ）。");
+    }
+
+    // 印の無い自前の検証（CoreLib の補助）の代役。
+    private static Exception RaiseUnmarkedThrowIf()
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(" ", ConnectionLikeMarker);
+        throw new InvalidOperationException("ThrowIfNullOrWhiteSpace が例外を投げなかった（前提の崩れ）。");
+    }
+
+    public static TheoryData<string> UnmarkedArgumentCases => new() { "inlined-third-party", "unmarked-throw-if" };
+
+    private static Func<Exception> UnmarkedArgumentCase(string kind) => kind switch
+    {
+        "inlined-third-party" => RaiseInlinedThirdPartyDuplicateKey,
+        _ => RaiseUnmarkedThrowIf,
+    };
+
+    private static async Task<(HttpStatusCode Status, string? Error, RpcException Read, RpcException Write)> AllPathsAsync(
+        WebApplicationFactory<Program> factory)
+    {
+        using var rest = await Owner(factory).GetAsync("/reports", TestContext.Current.CancellationToken);
+        var error = await ErrorOf(rest);
+
+        using var channel = Channel(factory);
+        var read = async () => await new Proto.ReportOwnerRead.ReportOwnerReadClient(channel)
+            .ListReportPeriodKeysAsync(new Proto.ListReportPeriodKeysRequest(), cancellationToken: TestContext.Current.CancellationToken);
+        var readEx = (await read.Should().ThrowAsync<RpcException>()).Which;
+
+        var write = async () => await new Proto.ReportOwnerWrite.ReportOwnerWriteClient(channel)
+            .ConfirmReportAsync(new Proto.ReportConfirmationRequest { PeriodKey = Key, ExpectedVersion = 1 },
+                cancellationToken: TestContext.Current.CancellationToken);
+        var writeEx = (await write.Should().ThrowAsync<RpcException>()).Which;
+        return (rest.StatusCode, error, readEx, writeEx);
+    }
+
+    // T-10-2420（否定形・NFR-06, IADR-0509, #1230）: 印の無い ArgumentException（第三者相当の補助がインライン化される送出・印の無い
+    // ThrowIfNullOrWhiteSpace）は、REST・gRPC の読み取り・gRPC の書き込みのいずれでも 400／INVALID_ARGUMENT の固定文言。
+    // 200 回繰り返す（ホストが温まって段階コンパイルが上がっても応答の文言が変わらないこと）。
+    [Theory]
+    [MemberData(nameof(UnmarkedArgumentCases))]
+    public async Task 印の無い_ArgumentException_は_REST_と_gRPC_で固定文言(string kind)
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = WithThrowingStore(baseFactory, UnmarkedArgumentCase(kind));
+
+        for (var i = 0; i < 200; i++)
+        {
+            var (status, error, read, write) = await AllPathsAsync(factory);
+            status.Should().Be(HttpStatusCode.BadRequest);
+            error.Should().Be(ClientFacingErrors.InvalidRequestMessage);
+            (read.StatusCode, read.Status.Detail).Should().Be((StatusCode.InvalidArgument, ClientFacingErrors.InvalidRequestMessage));
+            (write.StatusCode, write.Status.Detail).Should().Be((StatusCode.InvalidArgument, ClientFacingErrors.InvalidRequestMessage));
+        }
+    }
+
+    // T-10-2421（NFR-06, IADR-0509, #1230）: 印のある ArgumentException は、REST・gRPC の読み取り・gRPC の書き込みのいずれでも文言を保つ。
+    [Fact]
+    public async Task 印のある_ArgumentException_は_REST_と_gRPC_で文言を保つ()
+    {
+        const string Visible = "期間キーが不正です（利用者へ見せる文言）。";
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = WithThrowingStore(baseFactory, () => new ArgumentException(Visible).ClientVisible());
+
+        var (status, error, read, write) = await AllPathsAsync(factory);
+
+        status.Should().Be(HttpStatusCode.BadRequest);
+        error.Should().Be(Visible);
+        (read.StatusCode, read.Status.Detail).Should().Be((StatusCode.InvalidArgument, Visible));
+        (write.StatusCode, write.Status.Detail).Should().Be((StatusCode.InvalidArgument, Visible));
+    }
+
+    // T-10-2422（否定形・NFR-06, IADR-0509, #1230）: 自前のコードの印の無い検証（下書きの生成の ThrowIfNullOrWhiteSpace(PeriodKey)）は、
+    // 実際の経路でも 400 の固定文言になる（印を付けた期間キーの不一致の文言は T-10-2391 が保つ）。
+    [Fact]
+    public async Task 自前のコードの印の無い_ThrowIfNullOrWhiteSpace_は_400_で固定文言()
+    {
+        await using var factory = new ReportWorkerWebApplicationFactory();
+
+        using var res = await Owner(factory).PostAsJsonAsync(
+            "/reports/%20/draft",
+            new { Kind = "Daily", Date = "2026-07-10", AssumptionsVersion = 1 },
+            TestContext.Current.CancellationToken);
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ErrorOf(res)).Should().Be(ClientFacingErrors.InvalidRequestMessage);
     }
 
     private static async Task<string?> ErrorOf(HttpResponseMessage res)
