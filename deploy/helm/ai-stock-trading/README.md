@@ -591,7 +591,7 @@ watchlist。結線時は照会に失敗しても使わない＝IADR-0475）と�
 > exec 先へ渡さない。ハイフン形のままだと Pod 定義には在るのに dotnet へ届かず、単価表が空＝全呼び出し ¥0 計上になる
 > （稼働実測: Pod env 10 件 → `/proc/1/environ` 0 件）。`LlmPriceTable` は `-` と `_` を同一視して応答の実効モデル名と照合する。
 > CI（`helm.yml`）は描画後の全 env 名が `^[A-Za-z_][A-Za-z0-9_]*$` であることを検査し、ゲートウェイ構成ありで単価が実質 0 なら
-> trade-decision / report が起動時に WARNING（`LLM 単価が未設定 …`）を出す。
+> trade-decision / report が起動時に `LLM 単価が未設定 …` を出す（環境名 Production では例外で起動しない・それ以外は WARNING。#1197）。
 未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
 80%／100% 判定が**構造的に発火しない**（台帳は動くが金額が積み上がらない）。
 
@@ -622,6 +622,16 @@ USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同�
 の注記 `claude-sonnet-5-introductory-pricing`）、**本表の値は変更不要**である（[#243](https://github.com/endazon/ai-stock-trading/issues/243)）。
 他モデルの単価・為替レートは引き続き変動し得るため、乖離が出たら本値を更新する。
 本番 `values.yaml` には置かない（変動する外部価格を本番既定に固定しない）。
+
+**本番で LLM を有効にするときの投入**（[#1197](https://github.com/endazon/ai-stock-trading/issues/1197) /
+[IADR-0499](../../../.ai-context/adr/IADR-0499_llm-pricing-unset-refuses-production-start.md)）: 本番既定は
+`LlmGateway__BaseUrl` が空（LLM を呼ばない）で単価も無い。`LlmGateway__BaseUrl`（または `LlmGateway__Grpc`）を与える
+同じ配備時の values（ArgoCD の `valueFiles` に足す `values-<env>.yaml`・helm の `-f`）で、trade-decision と report の
+**両方**の `extraEnv` へ本表と同じ `LlmPricing__PerModel__<model>__*` 行を足す（単価表はサービスごとに独立）。
+🔴 `extraEnv` は配列なので、重ねた values では**丸ごと置き換わる** —— `values.yaml` の同サービスの配列を全部写してから
+行を足す（経路B の `values-local.yaml` がこの形）。単価が無いまま LLM を有効にすると、環境名 Production の
+trade-decision / report は `LLM 単価が未設定` で始まる例外で**起動しない**（0 円計上で月次上限が黙って無効になるより、
+Pod の起動失敗として表に出す）。手順は `docs/operations/operations.md`「本番の LLM 単価の投入」。
 
 > **過少申告が残る点**: report-service の実 LLM 散文費用は計上経路自体が無いため、単価を入れても実消費より
 > 少なく見積もられる（[#282](https://github.com/endazon/ai-stock-trading/issues/282)）。本表は #282 の解消後に

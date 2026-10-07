@@ -609,6 +609,8 @@ services:
       # 前提（同じ変更で揃える。無ければ描画で止まる）: 上の services.audit に `grpcPort: 8081` を宣言すること。
       # s2s は REST と同じ AST レルムの ServiceAuth__* をそのまま使う。deadline は Audit__GrpcTimeoutSeconds（既定 10 秒）。
       # FR-06/16, ADR-0010, IADR-0071 決定1: 報告書散文の実 LLM ドラフト。fail-safe: 空=Placeholder（定型散文＝既定オフ）。
+      # NFR-13, #1197, IADR-0499: 有効化するときは LLM 単価（LlmPricing__PerModel__*）を同じ配備時の values で与える
+      # （本ファイルには置かない・IADR-0122 決定4）。単価が無いまま有効化すると Production では起動しない。
       - { name: LlmGateway__BaseUrl, value: "" }
       # NFR, MSP:ADR-0029, IADR-0284, IADR-0328, IADR-0332, #746: east-west gRPC（h2c）で呼ぶ場合の宛先。
       # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる。IADR-0332 決定 2）。
@@ -763,6 +765,8 @@ services:
       # FR-04, ADR-0010, IADR-0061: 実 LLM は platform LLM ゲートウェイ（POST /complete）へ委譲する。
       # fail-safe: 空=Placeholder LLM（呼ばない＝常に Hold）。実結線時は MSP のゲートウェイ URL を入れる
       # （例: http://llmgateway-service.microservices-platform:8080）。本 PR では実 URL を投入しない。
+      # NFR-13, #1197, IADR-0499: 有効化するときは LLM 単価（LlmPricing__PerModel__*）を同じ配備時の values で与える
+      # （本ファイルには置かない・IADR-0122 決定4）。単価が無いまま有効化すると Production では起動しない。
       - { name: LlmGateway__BaseUrl, value: "" }
       # NFR, MSP:ADR-0029, IADR-0284, IADR-0328, IADR-0332, #746: east-west gRPC（h2c）で呼ぶ場合の宛先。
       # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる。IADR-0332 決定 2）。
