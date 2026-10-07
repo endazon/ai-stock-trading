@@ -13,6 +13,7 @@ namespace TradeDecisionService.Tests;
 // （IADR-0470 の 2026-10-01 追記 / #1129 再監査。自由文は読まない）の条件にすべて達しているときだけ、保有状況の節で「方針の利確条件に達している」と
 // 明示する。数値（含み益の率・条件との比較）はコードで計算する。既定の Hold の規則（ExitFollowsPolicyRule）は変えない。自動の利確は採らない。
 // T-10-1889〜1891・T-10-1897〜1899・T-10-1940〜1941・T-10-1945。
+// #1175, IADR-0470（2026-10-07 追記）: 比べられて未到達なら未到達を明示する（T-10-1890・T-10-1898 を改めた。未到達の試験は TakeProfitNotReachedInPromptTests）。
 public class TakeProfitReachedInPromptTests
 {
     private static readonly SizingContext Context =
@@ -72,12 +73,11 @@ public class TakeProfitReachedInPromptTests
         ReachedLine(prompt).Should().Contain("+6.00%").And.Contain("手仕舞い（Buy）");
     }
 
-    // T-10-1890（否定形）: 達していない・読める「利確:」行が無い・他の銘柄の行・取得単価や現在値が不明・保有なしでは何も書かない
-    // （プロンプトは方針の文以外、到達の行を持たない構成〔develop〕と一字一句同じ）。既定の Hold の規則は変えない。
+    // T-10-1890（否定形）: 比べられない（読める「利確:」行が無い・他の銘柄の行・取得単価や現在値が不明・保有なし・損の側や市場の通貨と違う価格）では
+    // 到達の行も未到達の行も含み損益率の注記も書かない（プロンプトは方針の文以外、「利確:」行の無い方針と一字一句同じ）。既定の Hold の規則は変えない。
+    // ［#1175 で改めた］比べられて未到達の場面（104.99・同じ銘柄の 2 行の片方だけ・名指しの行が未到達）は未到達の行を出すようになり、
+    // TakeProfitNotReachedInPromptTests（T-10-2331）へ移した。
     [Theory]
-    [InlineData("利確: AAPL +5%", 10, "100", "104.99")]
-    [InlineData("利確: AAPL +5%\n利確: AAPL +8%", 10, "100", "106")]
-    [InlineData("利確: 全銘柄 +3%\n利確: AAPL +8%", 10, "100", "106")]
     [InlineData("利確: AAPL $250", -10, "200", "190")]
     [InlineData("利確: AAPL 230円", 10, "200", "231")]
     [InlineData("含み益が十分に出た段階で利確する。", 10, "100", "150")]
@@ -97,8 +97,14 @@ public class TakeProfitReachedInPromptTests
             var prompt = MainPrompt(policy, held, p, blockers);
             var screening = Screening(policy, held, p, blockers);
 
-            prompt.Should().NotContain(TradeDecisionPromptBuilder.TakeProfitReachedLinePrefix);
-            screening.Should().NotContain(TradeDecisionPromptBuilder.TakeProfitReachedLinePrefix);
+            foreach (var text in new[] { prompt, screening })
+            {
+                text.Should().NotContain(TradeDecisionPromptBuilder.TakeProfitReachedLinePrefix)
+                    .And.NotContain(TradeDecisionPromptBuilder.TakeProfitNotReachedLinePrefix)
+                    .And.NotContain(TradeDecisionPromptBuilder.TakeProfitReachedNote)
+                    .And.NotContain(TradeDecisionPromptBuilder.TakeProfitNotReachedNote);
+            }
+
             // 方針の文以外は、「利確:」行の無い方針と一字一句同じ。
             prompt.Replace(policy, "X", StringComparison.Ordinal).Should().Be(MainPrompt("X", held, p, blockers));
             screening.Replace(policy, "X", StringComparison.Ordinal).Should().Be(Screening("X", held, p, blockers));
@@ -139,9 +145,10 @@ public class TakeProfitReachedInPromptTests
             ReachedLine(prompt).Should().Contain("手仕舞い（Buy）").And.NotContain("Sell");
     }
 
-    // T-10-1898（#1129 監査 F6）: 一次（短縮版）のショートの保有状況の節は、到達していなければ「利確:」行の無い方針と一字一句同じ（全文で固定）。
+    // T-10-1898（#1129 監査 F6）: 一次（短縮版）のショートの保有状況の節を全文で固定する。
+    // ［#1175 で改めた］未到達（含み損 -4.00% と基準 +5%）は、含み損益率の直後の注記と未到達の行（手仕舞いは Buy）を出す。到達の行は出ない。
     [Fact]
-    public void 一次のショートの保有状況の節は未到達なら全文が変わらない()
+    public void 一次のショートの保有状況の節は未到達を明示する()
     {
         var held = new HeldPosition(-10, 100m, 102m);
 
@@ -149,9 +156,11 @@ public class TakeProfitReachedInPromptTests
 
         section.Should().Be(
             "# 保有状況（この銘柄）\n"
-            + "- 保有: ショート 10 株 / 平均取得単価: 100 / 含み損益率: -4.00% / 記録上の損切りライン: 102（現在値は損切りラインに達しています）\n"
+            + "- 保有: ショート 10 株 / 平均取得単価: 100 / 含み損益率: -4.00%（方針の利確条件: 未到達） / 記録上の損切りライン: 102（現在値は損切りラインに達しています）\n"
             + "- 保有中の銘柄は、買い増し・売り増しに加えて、手仕舞いの検討に値する場合も本判断へ進めます。"
             + "現在値が記録上の損切りラインに達している建玉は手仕舞いの候補です。（この建玉の手仕舞いは Buy）\n"
+            + "- 方針の利確条件に未到達（現在 -4.00% / 基準 +5%）: システムが平均取得単価 100 と現在値 104 から計算し、丸めずに比べた結果です。"
+            + "手仕舞い（Buy）を選ぶかは、方針とリスク制約に照らして判断します。\n"
             + "\n");
     }
 

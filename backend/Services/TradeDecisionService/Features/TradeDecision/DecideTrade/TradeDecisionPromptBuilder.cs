@@ -653,7 +653,9 @@ public static class TradeDecisionPromptBuilder
             return;
         }
 
-        var view = HeldPositionView.Of(held, markPrice, priceUnit);
+        // FR-04, #1175, IADR-0470（2026-10-07 追記）: 方針の「利確:」行との比較を 1 回だけ計算し、含み損益率の直後の注記と節の行に使う。
+        var takeProfit = TakeProfitStatus(policySummary, symbol, held, markPrice, priceUnit, currency);
+        var view = HeldPositionView.Of(held, markPrice, priceUnit, takeProfit?.Note);
         sb.AppendLine($"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice}");
         sb.AppendLine($"- 含み損益: {view.UnrealizedPnl}");
         sb.AppendLine($"- 記録上の損切りライン: {view.StopLossLine}");
@@ -664,10 +666,11 @@ public static class TradeDecisionPromptBuilder
             ? $"- この銘柄は保有中です。{AddOnBlockedLine(view, addOnBlockers!)}保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{AddOnBlockedConversionNote}{CloseQuantityIsWholeRule}"
             : $"- この銘柄は保有中です。{view.AddWord}（{view.AddAction}）・保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{CloseQuantityIsWholeRule}");
         sb.AppendLine($"- {ExitFollowsPolicyRule}");
-        // FR-04, ADR-0003, #1129, IADR-0470 決定 3: 方針の「利確:」行の条件に達していれば、コードで比べた結果を明示する
-        // （達していない・読める「利確:」行が無い・値が不明なら何も足さない＝従来どおり）。
-        if (TakeProfitReachedLine(policySummary, symbol, held, markPrice, priceUnit, currency) is { } takeProfitLine)
-            sb.AppendLine($"- {takeProfitLine}");
+        // FR-04, ADR-0003, #1129, IADR-0470 決定 3: 方針の「利確:」行の条件に達していれば、コードで比べた結果を明示する。
+        // #1175, IADR-0470（2026-10-07 追記）: 比べられて未到達なら未到達を明示する（LLM の裁量は残す）。
+        // 比べられない（読める「利確:」行が無い・値が不明・通貨や向きの合わない価格の条件）なら何も足さない＝従来どおり。
+        if (takeProfit is { } takeProfitStatus)
+            sb.AppendLine($"- {takeProfitStatus.Line}");
         sb.AppendLine(UsesStopLineExitGuidance(stopLossMethod)
             ? $"- {StopLossLineIsRiskConstraintRule}"
             : $"- {StopLossIsMechanicalRule}");
@@ -754,7 +757,9 @@ public static class TradeDecisionPromptBuilder
         }
         else
         {
-            var view = HeldPositionView.Of(held, markPrice, priceUnit);
+            // FR-04, #1175, IADR-0470（2026-10-07 追記）: 本判断と同じ比較（含み損益率の直後の注記と節の行）。
+            var takeProfit = TakeProfitStatus(policySummary, symbol, held, markPrice, priceUnit, currency);
+            var view = HeldPositionView.Of(held, markPrice, priceUnit, takeProfit?.Note);
             sb.AppendLine(
                 $"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice} / 含み損益率: {view.UnrealizedPnlRatio} / 記録上の損切りライン: {view.StopLossLine}");
             var stopLineCandidate = UsesStopLineExitGuidance(stopLossMethod) ? ScreeningStopLineCandidateRule : string.Empty;
@@ -763,9 +768,9 @@ public static class TradeDecisionPromptBuilder
                 ? $"- 保有中の銘柄です。{AddOnBlockedLine(view, addOnBlockers)}{ScreeningAddOnBlockedTail}{stopLineCandidate}（この建玉の手仕舞いは {view.CloseAction}）"
                 : $"- {ScreeningHeldRule}{stopLineCandidate}（この建玉の手仕舞いは {view.CloseAction}）");
             // #1129, IADR-0470 決定 3: 一次は門である（Hold で本判断が走らない）。利確条件への到達も本判断と同じ行で知らせる
-            // （縮退の保護分 ScreeningContextAssembler.TakeProfitReachedReserveChars）。
-            if (TakeProfitReachedLine(policySummary, symbol, held, markPrice, priceUnit, currency) is { } takeProfitLine)
-                sb.AppendLine($"- {takeProfitLine}");
+            // （縮退の保護分 ScreeningContextAssembler.TakeProfitReachedReserveChars）。#1175: 未到達も本判断と同じ行で知らせる（同じ予約に収まる）。
+            if (takeProfit is { } takeProfitStatus)
+                sb.AppendLine($"- {takeProfitStatus.Line}");
             if (working is null)
                 sb.AppendLine($"- {WorkingUnknownLine}");
             else if (working.Any)
@@ -811,13 +816,52 @@ public static class TradeDecisionPromptBuilder
     /// <summary>行に並べる条件の上限（縮退の予約の最悪長を有限に保つ）。</summary>
     public const int MaxTakeProfitConditionsShown = 3;
 
+    // FR-04, ADR-0003, #1175, IADR-0470（2026-10-07 追記）: 方針の利確条件に未到達の行の先頭（試験が直接参照する）。
+    public const string TakeProfitNotReachedLinePrefix = "方針の利確条件に未到達";
+
+    // FR-04, #1175, IADR-0470（2026-10-07 追記・オーナー裁定 2026-10-07）: 含み損益率（小数 2 桁の丸め）の直後に並べる判定の注記。
+    // 丸めた数字（例 +2.9986% → +3.00%）だけで到達と読ませない。判定は丸めない比較（PolicyTakeProfitConditions.Judge）。
+    public const string TakeProfitReachedNote = "（方針の利確条件: 到達）";
+
+    public const string TakeProfitNotReachedNote = "（方針の利確条件: 未到達）";
+
     // FR-04, ADR-0003, #1129, IADR-0470 決定 3（オーナー裁定 2026-10-01）: **判断は LLM が方針を見て行う**まま、方針の決まった書式の
     // 「利確:」行（IADR-0470 の 2026-10-01 追記 / #1129 再監査。自由文は読まない）がこの銘柄に掛かり、その**すべてに**達しているときだけ、
     // 達していることを明示する。数値（含み益の率・条件との比較）は**コードで計算する**（LLM に計算させない）。価格の条件は市場の通貨（currency）のものだけを比べる。
-    // 🔴 読める「利確:」行が無い・1 つでも達していない・取得単価や現在値が不明なら null（何も足さない）。既定の Hold の規則（ExitFollowsPolicyRule）は変えない。
+    // 🔴 読める「利確:」行が無い・1 つでも達していない・取得単価や現在値が不明なら null。既定の Hold の規則（ExitFollowsPolicyRule）は変えない。
     // 🔴 自動の利確（S1 と対になる機械的な売り）は採らない（同裁定）。手仕舞うかは判断が決める。
+    // #1175: 未到達の行は TakeProfitNotReachedLine。節は TakeProfitStatus で両方を書き分ける。
     internal static string? TakeProfitReachedLine(
-        string? policySummary, string? symbol, HeldPosition held, decimal? markPrice, string priceUnit, Currency currency)
+        string? policySummary, string? symbol, HeldPosition held, decimal? markPrice, string priceUnit, Currency currency) =>
+        JudgeTakeProfit(policySummary, symbol, held, markPrice, currency) is { Judgement: TakeProfitJudgement.Reached } j
+            ? ReachedLineText(j, held, priceUnit)
+            : null;
+
+    // FR-04, ADR-0003, #1175, IADR-0470（2026-10-07 追記・オーナー裁定 2026-10-07）: 方針の「利確:」行がこの銘柄に掛かり、比べられて
+    // **達していない**ときに、未到達であることと現在値・基準を明示する（「方針の利確条件に未到達（現在 +x.xx% / 基準 +y%）」）。
+    // 判断の材料であり、売りを禁じない（LLM の裁量は残す）。比べられない（行が無い・値が不明・通貨や向きの合わない価格の条件）なら null。
+    internal static string? TakeProfitNotReachedLine(
+        string? policySummary, string? symbol, HeldPosition held, decimal? markPrice, string priceUnit, Currency currency) =>
+        JudgeTakeProfit(policySummary, symbol, held, markPrice, currency) is { Judgement: TakeProfitJudgement.NotReached } j
+            ? NotReachedLineText(j, held, priceUnit)
+            : null;
+
+    // FR-04, #1175: 保有状況の節に出す行と、含み損益率の直後の注記。比べられなければ null（何も足さない＝従来どおり）。
+    private static (string Line, string Note)? TakeProfitStatus(
+        string? policySummary, string? symbol, HeldPosition held, decimal? markPrice, string priceUnit, Currency currency) =>
+        JudgeTakeProfit(policySummary, symbol, held, markPrice, currency) switch
+        {
+            { Judgement: TakeProfitJudgement.Reached } j => (ReachedLineText(j, held, priceUnit), TakeProfitReachedNote),
+            { Judgement: TakeProfitJudgement.NotReached } j => (NotReachedLineText(j, held, priceUnit), TakeProfitNotReachedNote),
+            _ => null,
+        };
+
+    private sealed record TakeProfitComparison(
+        TakeProfitJudgement Judgement, IReadOnlyList<PolicyTakeProfitCondition> Conditions, decimal Entry, decimal Mark, decimal Gain);
+
+    // 判定は共有カーネル（PolicyTakeProfitConditions.Judge）だけが行う（しきい値の比較をここで書かない）。比べられなければ null。
+    private static TakeProfitComparison? JudgeTakeProfit(
+        string? policySummary, string? symbol, HeldPosition held, decimal? markPrice, Currency currency)
     {
         if (string.IsNullOrWhiteSpace(policySummary) || string.IsNullOrWhiteSpace(symbol) || !held.IsHeld)
             return null;
@@ -826,13 +870,17 @@ public static class TradeDecisionPromptBuilder
 
         var entry = held.AverageEntryPrice.Value;
         var mark = markPrice.Value;
-        var reached = PolicyTakeProfitConditions.Reached(
-            PolicyTakeProfitConditions.ForSymbol(policySummary, symbol), held.IsLong, entry, mark, currency);
-        if (reached.Count == 0)
-            return null;
+        var conditions = PolicyTakeProfitConditions.ForSymbol(policySummary, symbol);
+        var judgement = PolicyTakeProfitConditions.Judge(conditions, held.IsLong, entry, mark, currency);
+        return judgement == TakeProfitJudgement.Unknown
+            ? null
+            : new TakeProfitComparison(judgement, conditions, entry, mark, PolicyTakeProfitConditions.GainPercent(held.IsLong, entry, mark));
+    }
 
+    private static string ReachedLineText(TakeProfitComparison j, HeldPosition held, string priceUnit)
+    {
         var ci = CultureInfo.InvariantCulture;
-        var gain = PolicyTakeProfitConditions.GainPercent(held.IsLong, entry, mark);
+        var reached = j.Conditions;
         var shown = string.Join("／", reached.Take(MaxTakeProfitConditionsShown).Select(PolicyTakeProfitConditions.Describe));
         var more = reached.Count > MaxTakeProfitConditionsShown
             ? $" ほか {(reached.Count - MaxTakeProfitConditionsShown).ToString(ci)} 件"
@@ -840,9 +888,31 @@ public static class TradeDecisionPromptBuilder
         var partialNote = reached.Any(c => c.PartialPercent is not null)
             ? "方針の一部利確の割合はそのままは実行できません（手仕舞いは保有の全量の決済です）。"
             : string.Empty;
-        return $"{TakeProfitReachedLinePrefix}: 方針の条件「{shown}」{more}に対し、現在の含み益の率は {gain.ToString("+0.00;-0.00;0.00", ci)}%"
-            + $"（平均取得単価 {entry.ToString("0.####", ci)}{priceUnit}・現在値 {mark.ToString(ci)}{priceUnit}）。"
+        return $"{TakeProfitReachedLinePrefix}: 方針の条件「{shown}」{more}に対し、現在の含み益の率は {j.Gain.ToString("+0.00;-0.00;0.00", ci)}%"
+            + $"（平均取得単価 {j.Entry.ToString("0.####", ci)}{priceUnit}・現在値 {j.Mark.ToString(ci)}{priceUnit}）。"
             + $"{partialNote}手仕舞い（{(held.IsLong ? "Sell" : "Buy")}）を選ぶかは、方針とリスク制約に照らして判断します。";
+    }
+
+    // 「方針の利確条件に未到達（現在 +2.98% / 基準 +3%）: …」。現在は条件に率があれば含み益の率、価格があれば現在値（両方なら「・」で並べる）。
+    // 基準は条件のしきい値を 3 件まで（超えれば「ほか N 件」）。丸めた率と基準が同じに見えても未到達であることを「丸めずに比べた」で示す。
+    private static string NotReachedLineText(TakeProfitComparison j, HeldPosition held, string priceUnit)
+    {
+        var ci = CultureInfo.InvariantCulture;
+        var current = new List<string>(2);
+        if (j.Conditions.Any(c => c.Kind == TakeProfitThresholdKind.GainPercent))
+            current.Add($"{j.Gain.ToString("+0.00;-0.00;0.00", ci)}%");
+        if (j.Conditions.Any(c => c.Kind == TakeProfitThresholdKind.Price))
+            current.Add($"{j.Mark.ToString(ci)}{priceUnit}");
+        var thresholds = j.Conditions.Take(MaxTakeProfitConditionsShown).Select(c => c.Kind == TakeProfitThresholdKind.GainPercent
+            ? $"+{c.Threshold.ToString("0.####", ci)}%"
+            : $"{c.Threshold.ToString("0.####", ci)}{priceUnit}");
+        var more = j.Conditions.Count > MaxTakeProfitConditionsShown
+            ? $"・ほか {(j.Conditions.Count - MaxTakeProfitConditionsShown).ToString(ci)} 件"
+            : string.Empty;
+        var multiple = j.Conditions.Count > 1 ? "基準が複数あるときは、すべてに達したときが到達です。" : string.Empty;
+        return $"{TakeProfitNotReachedLinePrefix}（現在 {string.Join("・", current)} / 基準 {string.Join("・", thresholds)}{more}）: "
+            + $"システムが平均取得単価 {j.Entry.ToString("0.####", ci)}{priceUnit} と現在値 {j.Mark.ToString(ci)}{priceUnit} から計算し、丸めずに比べた結果です。"
+            + $"{multiple}手仕舞い（{(held.IsLong ? "Sell" : "Buy")}）を選ぶかは、方針とリスク制約に照らして判断します。";
     }
 
     // FR-10, #1130, IADR-0471 決定 2: 「本日は買い増し（Buy）を選べません。…（理由: …）。」（本判断・一次で共用）。
@@ -869,7 +939,8 @@ public static class TradeDecisionPromptBuilder
     {
         private const string Unknown = "不明";
 
-        public static HeldPositionView Of(HeldPosition held, decimal? markPrice, string priceUnit)
+        // #1175: ratioNote は含み損益率の直後に並べる利確の判定の注記（null＝比べられない＝従来どおり何も並べない）。
+        public static HeldPositionView Of(HeldPosition held, decimal? markPrice, string priceUnit, string? ratioNote = null)
         {
             var ci = CultureInfo.InvariantCulture;
             var quantity = Math.Abs(held.SignedQuantity);
@@ -886,7 +957,7 @@ public static class TradeDecisionPromptBuilder
             {
                 var amount = (mark - entryPrice) * held.SignedQuantity;
                 var rate = amount / (entryPrice * quantity) * 100m;
-                ratio = $"{rate.ToString("+0.00;-0.00;0.00", ci)}%";
+                ratio = $"{rate.ToString("+0.00;-0.00;0.00", ci)}%{ratioNote}";
                 pnl = $"{amount.ToString("+0.##;-0.##;0", ci)}{priceUnit}（{ratio}・現在値 {mark.ToString(ci)}{priceUnit} で評価）";
             }
             else if (markPrice is null)
