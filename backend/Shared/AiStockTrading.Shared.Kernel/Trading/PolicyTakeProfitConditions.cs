@@ -16,6 +16,21 @@ public enum TakeProfitThresholdKind
 }
 
 /// <summary>
+/// 方針の利確条件と保有を比べた結果（FR-04, #1175, IADR-0470 の 2026-10-07 追記）。
+/// </summary>
+public enum TakeProfitJudgement
+{
+    /// <summary>比べられない（条件が無い・取得単価や現在値が正でない・市場の通貨と違う価格や損の側の価格の条件を含む）。何も書かない。</summary>
+    Unknown,
+
+    /// <summary>比べられて、条件の少なくとも 1 つに達していない（含み益の率が 0 以下を含む）。</summary>
+    NotReached,
+
+    /// <summary>比べられて、条件のすべてに達している。</summary>
+    Reached,
+}
+
+/// <summary>
 /// 方針の「利確:」行から読んだ利確条件の 1 件。
 /// </summary>
 /// <param name="Symbol">対象の銘柄（大文字のティッカー）。null＝「全銘柄」。</param>
@@ -137,34 +152,56 @@ public static class PolicyTakeProfitConditions
 
     /// <summary>
     /// 条件の**すべて**に達していれば条件を（出現順）、1 つでも達していなければ空を返す（同じ銘柄の行が複数あるときは最も控えめに読む）。
-    /// 含み益の率は (現在値 − 平均取得単価) ÷ 平均取得単価 × 100 をロングで、符号を反転してショートで計算する。
-    /// 価格はロングで現在値 ≥ 価格、ショートで現在値 ≤ 価格で、価格が利益の側（ロングは価格 &gt; 平均取得単価、
-    /// ショートは価格 &lt; 平均取得単価）にあり、通貨が <paramref name="marketCurrency"/> と同じものだけ。
-    /// 条件が空・取得単価や現在値が正でない・含み益の率が 0 以下なら空（推測しない・含み損の建玉を「達した」と書かない）。
+    /// 判定は <see cref="Judge"/> と同じ（<see cref="TakeProfitJudgement.Reached"/> のときだけ条件を返す）。
     /// </summary>
     public static IReadOnlyList<PolicyTakeProfitCondition> Reached(
+        IReadOnlyList<PolicyTakeProfitCondition> conditions, bool isLong, decimal averageEntryPrice, decimal markPrice,
+        Currency marketCurrency) =>
+        Judge(conditions, isLong, averageEntryPrice, markPrice, marketCurrency) == TakeProfitJudgement.Reached
+            ? conditions
+            : [];
+
+    /// <summary>
+    /// 条件と保有を比べる（到達・未到達・比べられない）。到達は条件の**すべて**に達したときだけ。
+    /// 含み益の率は (現在値 − 平均取得単価) ÷ 平均取得単価 × 100 をロングで、符号を反転してショートで計算し、しきい値と**丸めずに**比べる（ちょうどは到達）。
+    /// 価格はロングで現在値 ≥ 価格、ショートで現在値 ≤ 価格。
+    /// 比べられない（<see cref="TakeProfitJudgement.Unknown"/>）のは、条件が空・取得単価や現在値が正でない・価格の条件が
+    /// 市場の通貨（<paramref name="marketCurrency"/>）と違うか利益の側（ロングは価格 &gt; 平均取得単価、ショートは価格 &lt; 平均取得単価）に無いとき
+    /// （その条件は利確の水準として読めず、「未到達」とも書けない。推測しない）。比べられて含み益の率が 0 以下なら未到達
+    /// （含み損の建玉を「達した」と書かない）。
+    /// </summary>
+    public static TakeProfitJudgement Judge(
         IReadOnlyList<PolicyTakeProfitCondition> conditions, bool isLong, decimal averageEntryPrice, decimal markPrice,
         Currency marketCurrency)
     {
         ArgumentNullException.ThrowIfNull(conditions);
         if (conditions.Count == 0 || averageEntryPrice <= 0m || markPrice <= 0m)
-            return [];
+            return TakeProfitJudgement.Unknown;
+
+        // FR-04, #1129（監査 F2）: 価格は利益の側にあり市場の通貨と同じものだけを利確の水準と読む（ショートで取得単価より上の価格は損の側）。
+        // #1175, IADR-0470（2026-10-07 追記）: 読めない価格の条件を含むときは「未到達」とも書かない（比べられない）。
+        var comparable = conditions.All(c => c.Kind switch
+        {
+            TakeProfitThresholdKind.GainPercent => true,
+            TakeProfitThresholdKind.Price => c.PriceCurrency == marketCurrency
+                && (isLong ? c.Threshold > averageEntryPrice : c.Threshold < averageEntryPrice),
+            _ => false,
+        });
+        if (!comparable)
+            return TakeProfitJudgement.Unknown;
 
         var gain = GainPercent(isLong, averageEntryPrice, markPrice);
         // FR-04, #1129（監査 F2）: 多重の防御。含み益が無い建玉に「利確条件に達した」とは書かない。
         if (gain <= 0m)
-            return [];
+            return TakeProfitJudgement.NotReached;
 
         var all = conditions.All(c => c.Kind switch
         {
             TakeProfitThresholdKind.GainPercent => gain >= c.Threshold,
-            // FR-04, #1129（監査 F2）: 価格は利益の側にあるものだけを利確の水準と読む（ショートで取得単価より上の価格は損の側）。
-            TakeProfitThresholdKind.Price => c.PriceCurrency == marketCurrency && (isLong
-                ? c.Threshold > averageEntryPrice && markPrice >= c.Threshold
-                : c.Threshold < averageEntryPrice && markPrice <= c.Threshold),
+            TakeProfitThresholdKind.Price => isLong ? markPrice >= c.Threshold : markPrice <= c.Threshold,
             _ => false,
         });
-        return all ? conditions : [];
+        return all ? TakeProfitJudgement.Reached : TakeProfitJudgement.NotReached;
     }
 
     /// <summary>平均取得単価からの含み益の率（%）。ショートは値下がりが正。</summary>
