@@ -1,12 +1,20 @@
 using AiStockTrading.Shared.Contracts.Backtest;
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace BacktestService.Domain;
 
 // FR-04, FR-15, FR-20, ADR-0008, ADR-0033 決定2, #632, IADR-0318: **記録再生戦略**。
 //
 // ADR-0033 は Stage 0 の評価対象を「取引判断サービスの AI 判断そのもの」と定め、記録・再生方式を採った。
-// 本型はその「再生」であり、**記録した判断列をそのまま注文へ写すだけの純関数**である。
+// 本型はその「再生」であり、**記録した判断列を注文へ写す純関数**である。
+// 🔴 FR-10, #1209, IADR-0507: ただし再生の時点で**新規建て**になる注文は、本番と同じ 2 統制に当たれば写さない（見送る）——
+// (1) 最小の名目額（記録器が本番と同じ関数で判定した `EntryBelowMinimumNotional`。理由 `SizedBelowMinimumNotional`）、
+// (2) 判断由来の決済の後の同日・同方向（共有カーネルの `DecisionExitReentry`＝本番の審査と同じ述語。理由 `DecisionExitSameDay`）。
+// 建玉は記録器が知らず再生にしか無いため、判定はここで行う。判定に要る建玉と決済は、その走行で当日までに渡されたバー
+// （`BacktestContext.History`）から決定的に組み直す —— 同じ戦略を基準・コスト 2 倍・ウォークフォワードの各窓で使い回すので、
+// 走行をまたぐ状態を持たない（同じ入力なら同じ出力）。
 //
 // 🔴 **LLM をここから呼ばない。** IADR-0043 は `IBacktestStrategy` を「I/O・時刻・乱数・外部 API に依存しない
 // 純関数」と定義した。ADR-0033 決定2 はその契約を**覆さない**と明記しており、非決定性は記録の側へ閉じ込める。
@@ -17,7 +25,7 @@ namespace BacktestService.Domain;
 // 評価対象が本番と一致しなくなる（ADR-0011 が段階ゲートの前提とした一致が崩れる）。
 public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
 {
-    private readonly Dictionary<DateOnly, List<BacktestOrder>> _ordersByDay;
+    private readonly Dictionary<DateOnly, List<RecordedOrder>> _ordersByDay;
 
     public RecordedDecisionReplayStrategy(Stage0DecisionRecordSet recordSet)
     {
@@ -91,7 +99,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
                 _ordersByDay[asOf] = orders;
             }
 
-            orders.Add(new BacktestOrder(symbol, market, quantity));
+            orders.Add(new RecordedOrder(new BacktestOrder(symbol, market, quantity), record.EntryBelowMinimumNotional == true));
         }
 
         ExcludedDecisionCount = excluded;
@@ -151,14 +159,148 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
     /// 記録の取り違えで別期間の判断が紛れ込む経路を断つためである）。
     /// </para>
     /// <para>記録の無い日も無発注である（判断していない日に注文を発明しない）。</para>
+    /// <para>FR-10, #1209, IADR-0507: 新規建てになる注文のうち本番の 2 統制に当たるものは写さない（<see cref="Replay"/>）。</para>
     /// </summary>
     public IReadOnlyList<BacktestOrder> DecideOrders(BacktestContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (context.AsOf < From || context.AsOf > To)
+        if (context.AsOf < From || context.AsOf > To || !_ordersByDay.ContainsKey(context.AsOf))
             return [];
 
-        return _ordersByDay.TryGetValue(context.AsOf, out var orders) ? orders : [];
+        return Replay(context.History, context.AsOf).Orders;
+    }
+
+    /// <summary>
+    /// FR-10, FR-15, #1209, IADR-0507: その走行で当日（<paramref name="asOf"/>）までに渡されたバー（<paramref name="history"/>）から、
+    /// 建玉と判断由来の決済を判断日ごとに組み直し、当日に写す注文と、当日までに見送った新規建てを返す（純関数）。
+    /// <para>
+    /// 組み直しは <see cref="BacktestSimulator"/> と同じ規則に従う —— 建玉ゼロから始め、判断日の注文は<b>次の取引日</b>（バーのある日）の始値で、
+    /// その銘柄のバーがあるときだけ約定する。したがって当日の建玉はシミュレータの建玉と一致する。
+    /// </para>
+    /// </summary>
+    public Stage0ReplayDay Replay(IReadOnlyList<PriceBar> history, DateOnly asOf)
+    {
+        ArgumentNullException.ThrowIfNull(history);
+
+        var barsByDay = history
+            .Where(b => b.Date <= asOf)
+            .GroupBy(b => b.Date)
+            .ToDictionary(g => g.Key, g => g.Select(b => (b.Symbol, b.Market)).ToHashSet());
+        // 当日は必ず判断日に含める（シミュレータは当日のバーを足してから呼ぶが、バーの無い文脈でも当日の記録は引く＝建玉ゼロとして扱う）。
+        if (!barsByDay.ContainsKey(asOf))
+            barsByDay[asOf] = [];
+        var days = barsByDay.OrderBy(e => e.Key).Select(e => (Day: e.Key, Bars: e.Value));
+
+        var inventory = new Dictionary<(string Symbol, Market Market), int>();
+        var exits = new Dictionary<(string Symbol, Market Market), List<ReplayExit>>();
+        var skipped = new List<Stage0ReplaySkippedEntry>();
+        IReadOnlyList<(BacktestOrder Order, ReplayExit? Exit)> pending = [];
+        IReadOnlyList<BacktestOrder> todays = [];
+
+        foreach (var (day, bars) in days)
+        {
+            // 1) 前の取引日に決めた注文を当日の始値で約定させる（バーの無い銘柄は約定しない。シミュレータと同じ）。
+            foreach (var (order, exit) in pending)
+            {
+                var key = (order.Symbol, order.Market);
+                if (!bars.Contains(key))
+                    continue;
+
+                inventory[key] = inventory.GetValueOrDefault(key) + order.SignedQuantity;
+                exit?.FilledOn.Add(day);
+            }
+
+            // 2) 当日の記録を、当日の建玉に照らして注文へ写す（期間外・記録の無い日は無発注）。
+            var decided = new List<(BacktestOrder Order, ReplayExit? Exit)>();
+            if (day >= From && day <= To && _ordersByDay.TryGetValue(day, out var recorded))
+            {
+                foreach (var (order, belowMinimumNotional) in recorded)
+                {
+                    var key = (order.Symbol, order.Market);
+                    var held = inventory.GetValueOrDefault(key);
+
+                    // 建玉を減らす（符号が逆の）注文は判断由来の決済。建玉を跨ぐ注文も決済として扱う（新規建ての判定を掛けない）。
+                    if (held != 0 && Math.Sign(held) != Math.Sign(order.SignedQuantity))
+                    {
+                        var exit = new ReplayExit(order.SignedQuantity > 0 ? TradeSide.Buy : TradeSide.Sell, day);
+                        if (!exits.TryGetValue(key, out var list))
+                        {
+                            list = [];
+                            exits[key] = list;
+                        }
+
+                        list.Add(exit);
+                        decided.Add((order, exit));
+                        continue;
+                    }
+
+                    var reason = EntryControl(order, belowMinimumNotional, exits.GetValueOrDefault(key), day);
+                    if (reason is { } r)
+                    {
+                        skipped.Add(new Stage0ReplaySkippedEntry(
+                            day, order.Symbol, order.Market, order.SignedQuantity, r.Skip, r.Rejection));
+                        continue;
+                    }
+
+                    decided.Add((order, null));
+                }
+            }
+
+            pending = decided;
+            todays = [.. decided.Select(d => d.Order)];
+        }
+
+        return new Stage0ReplayDay(todays, skipped);
+    }
+
+    // FR-10, #1209, IADR-0507: 新規建て（建玉 0、または建玉と同じ符号）に本番の 2 統制を当てる。本番と同じ順で評価する ——
+    // 判断由来の決済の後の同日・同方向は新規建ての可否の口が LLM の前に止める（名目額の判定まで届かない）。
+    private static (DecisionSkipReason? Skip, RejectionReason? Rejection)? EntryControl(
+        BacktestOrder order, bool belowMinimumNotional, List<ReplayExit>? exits, DateOnly day)
+    {
+        var entrySide = order.SignedQuantity > 0 ? TradeSide.Buy : TradeSide.Sell;
+        if (exits is not null)
+        {
+            // 承認の取引日＝判断日、約定の取引日＝約定したバーの日（本番の射影が時刻から写す値と同じ意味）。
+            var sides = DecisionExitReentry.Project(
+                exits.Select(e => new DecisionExitOnTradingDays(e.CloseSide, e.ApprovedOn, e.FilledOn)), day);
+            if (DecisionExitReentry.BlocksEntry(sides.LongSide, sides.ShortSide, entrySide))
+                return (null, RejectionReason.DecisionExitSameDay);
+        }
+
+        if (belowMinimumNotional)
+            return (DecisionSkipReason.SizedBelowMinimumNotional, null);
+
+        return null;
+    }
+
+    private readonly record struct RecordedOrder(BacktestOrder Order, bool BelowMinimumNotional);
+
+    // 再生の中の 1 つの判断由来の決済（約定日は約定したときに足す）。
+    private sealed record ReplayExit(TradeSide CloseSide, DateOnly ApprovedOn)
+    {
+        public List<DateOnly> FilledOn { get; } = [];
     }
 }
+
+/// <summary>
+/// FR-10, FR-15, #1209, IADR-0507: 再生の 1 日分の結果。<see cref="Orders"/> は当日に写す注文、<see cref="SkippedEntries"/> は
+/// その走行で当日までに本番の統制に当たって見送った新規建て（判断日順）。
+/// </summary>
+public sealed record Stage0ReplayDay(
+    IReadOnlyList<BacktestOrder> Orders,
+    IReadOnlyList<Stage0ReplaySkippedEntry> SkippedEntries);
+
+/// <summary>
+/// FR-10, FR-15, #1209, IADR-0507: 再生で見送った新規建て。理由は本番の列挙そのもの —— 最小の名目額は判断の見送り
+/// （<see cref="DecisionSkipReason.SizedBelowMinimumNotional"/>）、判断由来の決済の後の同日・同方向は審査の拒否
+/// （<see cref="RejectionReason.DecisionExitSameDay"/>）。どちらか一方だけが入る。
+/// </summary>
+public sealed record Stage0ReplaySkippedEntry(
+    DateOnly AsOf,
+    string Symbol,
+    Market Market,
+    int SignedQuantity,
+    DecisionSkipReason? SkipReason,
+    RejectionReason? RejectionReason);

@@ -378,4 +378,39 @@ public class Stage0DecisionRecordTests
             HashOf(screenedHold),
         }.Distinct().Should().HaveCount(5);
     }
+
+    // ---- T-10-2417 FR-10, #1209, IADR-0507: 最小の名目額の判定（EntryBelowMinimumNotional）と戦略 ID ----
+
+    // T-10-2417: 判定は往復で落ちず、項目を持たない旧い JSON は null（判定していない）へ復元される（判定済みへ倒れない）。
+    [Fact]
+    public void T_10_2417_最小の名目額の判定は往復で落ちず旧い記録はnullへ復元される()
+    {
+        var legacy = RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(), Raw(1, Stage0DecisionAction.Buy));
+        var judged = SetOf(legacy with { EntryBelowMinimumNotional = true });
+
+        Stage0DecisionRecordJson.TryDeserialize(Stage0DecisionRecordJson.Serialize(judged))!
+            .Records.Single().EntryBelowMinimumNotional.Should().BeTrue();
+
+        var json = Stage0DecisionRecordJson.Serialize(SetOf(legacy)).Replace(",\"entryBelowMinimumNotional\":null", string.Empty);
+        json.Should().NotContain("entryBelowMinimumNotional");
+        Stage0DecisionRecordJson.TryDeserialize(json)!.Records.Single().EntryBelowMinimumNotional.Should().BeNull();
+    }
+
+    // T-10-2417: 🔴 判定を持つ記録は判定の値ごとに戦略 ID が変わる（見送る新規建ての集合が違えば評価したものが違う）。
+    // 判定を持たない記録（本項目より前の形）の戦略 ID は変わらない（期待値は本項目を足す前の値 LegacyDeclaredHash）。
+    [Fact]
+    public void T_10_2417_最小の名目額の判定は戦略IDに入り持たない記録のIDは変わらない()
+    {
+        var legacy = RecordWith(
+            new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(), Raw(1, Stage0DecisionAction.Buy));
+
+        HashOf(legacy).Should().Be(LegacyDeclaredHash);
+        new[]
+        {
+            HashOf(legacy),
+            HashOf(legacy with { EntryBelowMinimumNotional = true }),
+            HashOf(legacy with { EntryBelowMinimumNotional = false }),
+        }.Distinct().Should().HaveCount(3);
+    }
 }

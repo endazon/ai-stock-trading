@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-10-07
+updated: 2026-10-08
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13]
+ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209]
 -->
 
 
@@ -189,6 +189,20 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 - 照合の基準は割当表（用途ごとのピン）であり、記録の構成の希望値ではない —— 希望値ごと別モデルへ向けた記録を「一致」と読まないためである。
 - 一次で見送った判断（本判断の票が 0）は一次の実効モデルだけで照合する。
 - **一次と両層の実効モデルは戦略識別子に入る**（違えば評価したものが違う）。一次を持たない旧記録の戦略識別子は変わらない。
+
+#### 🔴 再生で当てる本番の統制（最小の名目額・判断由来の決済の後の同日・同方向）
+
+再生は記録した数量を注文として写すが、**再生の時点で新規建てになる注文**（建玉 0、または建玉と同じ符号）には、本番の 2 つの統制を
+本番と同じ順・同じ理由で当て、当たれば写さない（見送る）。建玉を減らす注文（判断由来の決済）は止めない。
+
+| 統制 | 再生での判定 | 見送りの理由 |
+| --- | --- | --- |
+| 判断由来の決済の後は、同じ取引日のうち同じ方向の新規建てをしない | 本番の審査と共有する純関数で判定する。再生の決済は「承認＝判断日・約定＝約定したバーの日（判断日の次の取引日の始値）」として数え、当日＝新規建ての判断日 | `DecisionExitSameDay` |
+| 最小の名目額（equity の 1%）に満たない新規建ては見送る | 記録器が本番と同じ関数・同じしきい値の構成で判定して記録に残した値（記録の「新規建てとして最小の名目額に満たない」）を使う。判定を持たない記録には当てない | `SizedBelowMinimumNotional` |
+
+- 🔴 **走行をまたいで状態を持たない。** 同じ記録をコスト 2 倍・ウォークフォワードの各窓で走らせ直すため、建玉と決済はその走行で当日までに渡された
+  バーから組み直す（シミュレータと同じ規則）。窓は建玉ゼロから始まり、窓の前の決済を知らない。
+- 記録の判定（最小の名目額）は戦略識別子に入る。判定を持たない記録の戦略識別子は変わらない。
 
 #### 🔴 再構成できなかった as-of 入力と、判定母集団からの除外
 
