@@ -14,7 +14,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 public sealed class AssumptionsProfitabilityProvider(IAssumptionsProvider assumptions) : IProfitabilityAssumptionsProvider
 {
     public async Task<TradeCostAssessment?> AssessAsync(
-        Market market, decimal notional, CancellationToken cancellationToken = default)
+        Market market, int quantity, decimal notional, CancellationToken cancellationToken = default)
     {
         var current = await assumptions.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
@@ -25,9 +25,19 @@ public sealed class AssumptionsProfitabilityProvider(IAssumptionsProvider assump
             return null;
         }
 
-        var roundTripCost = CostCalculator.EstimateRoundTripCost(current.Assumptions, market, notional);
+        // FR-17, 計画 ADR-0035 決定 5, 05_trading-assumptions §4, #1217, IADR-0508 決定1: 往復費用は取引諸費用（米国株の売りの SEC・TAF）を含む。
+        var roundTrip = CostCalculator.EstimateRoundTripCostBreakdown(current.Assumptions, market, quantity, notional);
+
+        // 🔴 #1217, IADR-0508 決定2（IADR-0076 決定3 の維持）: **利用者が登録する費用（手数料＋為替スプレッド相当）が 0 なら見積り不能。**
+        // 取引諸費用は計画の暫定値で常に埋まるため、それだけで往復費用が正になる。ゲートの「往復費用 ≤ 0 は見送り」は
+        // 「手数料（moomoo の実額）が未登録」の安全網であり、諸費用だけを基準にしきい値をほぼ 0 へ緩めてはならない。
+        if (roundTrip.RegisteredCost <= 0m)
+        {
+            return null;
+        }
+
         return new TradeCostAssessment(
-            roundTripCost, current.Assumptions.MinimumExpectedProfitMultiple, current.Version,
+            roundTrip.Total, current.Assumptions.MinimumExpectedProfitMultiple, current.Version,
             current.Assumptions.CapitalGainsTaxRate);
     }
 }

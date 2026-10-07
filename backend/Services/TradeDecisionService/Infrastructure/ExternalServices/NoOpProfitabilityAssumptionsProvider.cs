@@ -9,6 +9,6 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 public sealed class NoOpProfitabilityAssumptionsProvider : IProfitabilityAssumptionsProvider
 {
     public Task<TradeCostAssessment?> AssessAsync(
-        Market market, decimal notional, CancellationToken cancellationToken = default) =>
+        Market market, int quantity, decimal notional, CancellationToken cancellationToken = default) =>
         Task.FromResult<TradeCostAssessment?>(null);
 }

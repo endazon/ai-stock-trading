@@ -48,6 +48,7 @@ export const ASSUMPTIONS = {
     fxSpreadRatio: 0.0025,
     minimumExpectedProfitMultiple: 1.5,
     costLimits: { total: 50000, llm: 30000, infrastructure: 15000, data: 5000 },
+    unitedStatesSellRegulatoryFees: { secFeePerMillion: 20.6, tafPerShare: 0.000166, tafCapPerTrade: 8.3 },
   },
   version: 3,
   isResolved: true,

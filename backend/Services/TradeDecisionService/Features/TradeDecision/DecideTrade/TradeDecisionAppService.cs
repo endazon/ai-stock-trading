@@ -1007,7 +1007,7 @@ public sealed class TradeDecisionAppService(
     // fail-safe: 見積り取得の例外は「見積り不能」に縮退して false（安全側）へ倒す。キャンセルは伝播させる。
     private async Task<bool> IsProfitableAsync(
         DecisionTrigger trigger, LlmDecision decision, decimal referencePriceBase, decimal fxRateToBase,
-        decimal quantity, CancellationToken cancellationToken)
+        int quantity, CancellationToken cancellationToken)
     {
         // IADR-0099: notional はアンカリング済みの参照価格（現在値ありなら権威価格）× 数量で算出する。
         // IADR-0107: 参照価格は基準通貨へ換算済み（費用見積りの単位と揃える）。
@@ -1015,7 +1015,9 @@ public sealed class TradeDecisionAppService(
         TradeCostAssessment? assessment;
         try
         {
-            assessment = await _profitability.AssessAsync(trigger.Market, notional, cancellationToken).ConfigureAwait(false);
+            // #1217, IADR-0508 決定1: 数量を渡す（往復費用に取引諸費用〔米国株の売りの TAF は株数比例〕を含める）。
+            assessment = await _profitability.AssessAsync(trigger.Market, quantity, notional, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

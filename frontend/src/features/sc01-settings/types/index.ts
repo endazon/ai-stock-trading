@@ -17,6 +17,16 @@ export interface MonthlyCostLimits {
   data: number;
 }
 
+/**
+ * 米国株の売却時諸費用（SEC 手数料・FINRA 取引活動料）の料率（USD）。
+ * #1217: 本画面は編集欄を持たないが、保存で**取得した値をそのまま送り返す**（送らないとサーバが既定値で埋め、料率が戻る）。
+ */
+export interface UsSellRegulatoryFeeSchedule {
+  secFeePerMillion: number;
+  tafPerShare: number;
+  tafCapPerTrade: number;
+}
+
 export interface TradingAssumptions {
   capitalGainsTaxRate: number;
   japanCommission: CommissionSchedule;
@@ -24,6 +34,7 @@ export interface TradingAssumptions {
   fxSpreadRatio: number;
   minimumExpectedProfitMultiple: number;
   costLimits: MonthlyCostLimits;
+  unitedStatesSellRegulatoryFees: UsSellRegulatoryFeeSchedule;
 }
 
 export interface VersionedAssumptions {

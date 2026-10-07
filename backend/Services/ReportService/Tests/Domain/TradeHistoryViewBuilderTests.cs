@@ -63,7 +63,7 @@ public class TradeHistoryViewBuilderTests
         var view = TradeHistoryViewBuilder.Build([fill], assumptions, null);
 
         view.Lines.Should().ContainSingle().Which.Cost
-            .Should().Be(CostCalculator.EstimateOneWayCost(assumptions, Market.Japan, 100 * 2_500m));
+            .Should().Be(CostCalculator.FillCost(assumptions, Market.Japan, TradeSide.Buy, 100, 2_500m).Total);
     }
 
     [Fact]

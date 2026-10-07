@@ -80,6 +80,9 @@ public class AssumptionsGrpcServiceTests
             .Should().Be(rest.Assumptions.MinimumExpectedProfitMultiple);
         AssumptionsWireMapping.FromWire(grpc.Assumptions.CostLimits.Llm)
             .Should().Be(rest.Assumptions.CostLimits.Llm);
+        // #1217, IADR-0508 決定3: 取引諸費用の料率も REST と同じ値で運ぶ。
+        AssumptionsWireMapping.FromWire(grpc.Assumptions.UnitedStatesSellRegulatoryFees.TafPerShare)
+            .Should().Be(rest.Assumptions.UnitedStatesSellRegulatoryFees.TafPerShare);
     }
 
     // 陰性対照 1: s2s トークン（テストでは X-Test-Roles）が無ければ UNAUTHENTICATED。
@@ -242,6 +245,7 @@ public class AssumptionsWireMappingTests
                 FxSpreadRatio = 0.003m,
                 MinimumExpectedProfitMultiple = 2m,
                 CostLimits = new MonthlyCostLimits(20000m, 15000m, 5000m, 0m),
+                UnitedStatesSellRegulatoryFees = new UsSellRegulatoryFeeSchedule(27.80m, 0.000195m, 9.79m),
             },
             Version: 7);
 
@@ -261,6 +265,10 @@ public class AssumptionsWireMappingTests
         proto.Assumptions.CostLimits.Llm.Should().Be("15000");
         proto.Assumptions.CostLimits.Infrastructure.Should().Be("5000");
         proto.Assumptions.CostLimits.Data.Should().Be("0");
+        // FR-17, 計画 ADR-0035 決定 5, #1217, IADR-0508 決定3: 取引判断の採算判定が読む取引諸費用の料率（計画値以外で写りを確かめる）。
+        proto.Assumptions.UnitedStatesSellRegulatoryFees.SecFeePerMillion.Should().Be("27.80");
+        proto.Assumptions.UnitedStatesSellRegulatoryFees.TafPerShare.Should().Be("0.000195");
+        proto.Assumptions.UnitedStatesSellRegulatoryFees.TafCapPerTrade.Should().Be("9.79");
     }
 }
 

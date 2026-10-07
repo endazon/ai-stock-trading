@@ -23,6 +23,8 @@ const SAMPLE = {
     fxSpreadRatio: 0.0025,
     minimumExpectedProfitMultiple: 1.5,
     costLimits: { total: 50000, llm: 30000, infrastructure: 15000, data: 5000 },
+    // #1217: 計画値（20.60 / 0.000166 / 8.30）以外の料率。保存で既定値へ戻らないことを下の試験で確かめる。
+    unitedStatesSellRegulatoryFees: { secFeePerMillion: 27.8, tafPerShare: 0.000195, tafCapPerTrade: 9.79 },
   },
   version: 3,
   isResolved: true,
@@ -125,6 +127,27 @@ describe('SettingsPage (SC-01, FR-17)', () => {
     const [, req] = mocks.apiFetch.mock.calls.find(([p, r]) => p === '/assumptions' && r?.method === 'PUT')!;
     expect(req.json.assumptions.capitalGainsTaxRate).toBe(0.25);
     expect(req.json.expectedVersion).toBe(3);
+  });
+
+  // SC-01, FR-17, ADR-0035, #1217: 画面は取引諸費用の料率の編集欄を持たないが、保存で取得値をそのまま送り返す。
+  // 送らないとサーバが既定値（計画値）で埋め、API で変えた料率が保存のたびに戻る。
+  it('round-trips the sell-side regulatory fee rates it does not edit when saving', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+    await screen.findByRole('form', { name: '全体前提条件の変更' });
+    const taxInput = screen.getByLabelText('譲渡益税率');
+    await user.clear(taxInput);
+    await user.type(taxInput, '0.25');
+    await user.type(screen.getByLabelText('変更理由'), '税率引き上げ');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    const [, req] = mocks.apiFetch.mock.calls.find(([p, r]) => p === '/assumptions' && r?.method === 'PUT')!;
+    expect(req.json.assumptions.capitalGainsTaxRate).toBe(0.25);
+    expect(req.json.assumptions.unitedStatesSellRegulatoryFees).toEqual({
+      secFeePerMillion: 27.8,
+      tafPerShare: 0.000195,
+      tafCapPerTrade: 9.79,
+    });
   });
 
   it('shows a conflict message on 409 without destructive retry', async () => {

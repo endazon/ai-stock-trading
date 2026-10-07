@@ -94,7 +94,7 @@ public class PeriodCostReviewTests
             FillPnlAttributionBuilder.Build(fills, withSpread, null), withSpread, 0m, null);
 
         // 事前見積りには為替スプレッドが乗る（判断時の採算判定）。
-        CostCalculator.EstimateOneWayCostBreakdown(withSpread, Market.Japan, 250_000m).FxSpread.Should().Be(2_500m);
+        CostCalculator.EstimateOneWayCostBreakdown(withSpread, Market.Japan, TradeSide.Buy, 100, 250_000m).FxSpread.Should().Be(2_500m);
         // 事後集計には乗らない。実績（入出金時の両替）の供給元が無いため未供給。
         review.Total.TradingCost.Should().Be(0m);
         review.Total.FxSpread.Should().BeNull();
@@ -182,14 +182,16 @@ public class PeriodCostReviewTests
 
     // --- 概算費用関数の非破壊追加（既存の値が変わっていないこと） ---
 
+    // #1217, IADR-0508: 事前見積りは売買方向と数量を受け取る（米国株の売りに取引諸費用）。売りの行を足した（2026-10-08）。
     [Theory]
-    [InlineData(Market.Japan, 250_000)]
-    [InlineData(Market.UnitedStates, 10_000)]
-    public void 内訳版の合計は既存の概算費用関数と同値である(Market market, double notional)
+    [InlineData(Market.Japan, TradeSide.Buy, 250_000)]
+    [InlineData(Market.UnitedStates, TradeSide.Buy, 10_000)]
+    [InlineData(Market.UnitedStates, TradeSide.Sell, 10_000)]
+    public void 内訳版の合計は既存の概算費用関数と同値である(Market market, TradeSide side, double notional)
     {
         var amount = (decimal)notional;
 
-        CostCalculator.EstimateOneWayCostBreakdown(Assumptions, market, amount).Total
-            .Should().Be(CostCalculator.EstimateOneWayCost(Assumptions, market, amount));
+        CostCalculator.EstimateOneWayCostBreakdown(Assumptions, market, side, 100, amount).Total
+            .Should().Be(CostCalculator.EstimateOneWayCost(Assumptions, market, side, 100, amount));
     }
 }

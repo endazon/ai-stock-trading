@@ -27,21 +27,21 @@ public class BacktestCostModelTests
     public void 片道費用は手数料と為替スプレッドとスリッページの合算()
     {
         // 手数料 10000*0.001=10 ＋ 為替 10000*0.002=20 ＋ スリッページ 10000*0.0005=5 = 35。
-        Model.OneWayCost(Market.Japan, 10_000m, CostSensitivity.Baseline)
+        Model.OneWayCost(Market.Japan, TradeSide.Buy, 100, 10_000m, CostSensitivity.Baseline)
             .Should().Be(35m);
     }
 
     [Fact]
     public void コスト2倍感度は片道費用を2倍にする()
     {
-        Model.OneWayCost(Market.Japan, 10_000m, CostSensitivity.Doubled)
+        Model.OneWayCost(Market.Japan, TradeSide.Buy, 100, 10_000m, CostSensitivity.Doubled)
             .Should().Be(70m);
     }
 
     [Fact]
     public void 往復費用は片道の2倍()
     {
-        Model.RoundTripCost(Market.Japan, 10_000m, CostSensitivity.Baseline)
+        Model.RoundTripCost(Market.Japan, 100, 10_000m, CostSensitivity.Baseline)
             .Should().Be(70m);
     }
 
@@ -50,7 +50,29 @@ public class BacktestCostModelTests
     public void 基準通貨の市場は為替スプレッドを課さない()
     {
         // 手数料 10000*0.001=10 ＋ スリッページ 5 = 15（為替スプレッドなし）。
-        Model.OneWayCost(Market.UnitedStates, 10_000m, CostSensitivity.Baseline).Should().Be(15m);
+        Model.OneWayCost(Market.UnitedStates, TradeSide.Buy, 100, 10_000m, CostSensitivity.Baseline).Should().Be(15m);
+    }
+
+    // T-15-123: FR-15, FR-17, 計画 ADR-0035 決定 5, 05_trading-assumptions §4, #1217, IADR-0508 決定4 ——
+    // **米国株の売りの約定には取引諸費用（SEC 料・TAF）が掛かる**（事前見積りの費用関数と同じ式・同じ設定点）。買いには掛からない。
+    // コスト 2 倍の感度は諸費用にも掛かる（全費用の倍率）。2026-10-08 までバックテストの費用は諸費用を含まなかった。
+    [Fact]
+    public void 米国株の売りには取引諸費用が掛かり買いには掛からない()
+    {
+        // 手数料 10000*0.001=10 ＋ スリッページ 5 ＋ 諸費用（SEC 10000*20.60/1e6=0.206 ＋ TAF 100*0.000166=0.0166）。
+        const decimal regulatory = 0.206m + 0.0166m;
+
+        Model.OneWayCost(Market.UnitedStates, TradeSide.Sell, 100, 10_000m, CostSensitivity.Baseline)
+            .Should().Be(15m + regulatory);
+        Model.OneWayCost(Market.UnitedStates, TradeSide.Buy, 100, 10_000m, CostSensitivity.Baseline)
+            .Should().Be(15m);
+        Model.OneWayCost(Market.UnitedStates, TradeSide.Sell, 100, 10_000m, CostSensitivity.Doubled)
+            .Should().Be(2m * (15m + regulatory));
+        // 往復は売り 1 回分の諸費用。日本株の売りには掛からない。
+        Model.RoundTripCost(Market.UnitedStates, 100, 10_000m, CostSensitivity.Baseline)
+            .Should().Be(30m + regulatory);
+        Model.OneWayCost(Market.Japan, TradeSide.Sell, 100, 10_000m, CostSensitivity.Baseline)
+            .Should().Be(35m);
     }
 
     // T-15-69（**否定形**）: FR-15, FR-17, FR-10, ADR-0016 決定3（2026-08-06 改訂）, IADR-0158 決定3, #417 ——

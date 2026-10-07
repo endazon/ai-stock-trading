@@ -114,8 +114,12 @@ public class BacktestSimulatorTests
             new BacktestConfig(1_000m, costModel, CostSensitivity.Baseline));
 
         run.RealizedTradePnls.Should().ContainSingle().Which.Should().Be(50m);
-        // 現金: 1000 −100(買い) −1(費用) +150(売り) −1.5(費用) = 1047.5。
-        run.EquityCurve[^1].Should().Be(1_047.5m);
+        // ⚠️ 期待を変更した（2026-10-08・#1217・IADR-0508 決定4）: 米国株の売りの約定に取引諸費用（計画の暫定値）が掛かる。
+        // 旧期待 1047.5 は諸費用を含まなかった。売りの費用 = 1.5 ＋ SEC 150 × 20.60 / 1e6（0.00309）＋ TAF 10 × 0.000166（0.00166）。
+        run.Fills[1].Cost.Should().Be(1.5m + 0.00309m + 0.00166m);
+        run.Fills[0].Cost.Should().Be(1m); // 買いには掛からない
+        // 現金: 1000 −100(買い) −1(費用) +150(売り) −1.50475(費用) = 1047.49525。
+        run.EquityCurve[^1].Should().Be(1_047.49525m);
     }
 
     [Fact]
