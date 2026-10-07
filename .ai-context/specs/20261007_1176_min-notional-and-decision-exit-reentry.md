@@ -42,7 +42,7 @@ plan_refs:
 - 損切りの統制の入力（`IPortfolioLedgerStore.GetCloseApprovals`・`StopOutProjection.Lookback`＝2 日）は EF（PostgreSQL）の台帳であり、**再起動で消えない**。
 - 審査は数量を減らさない（`OrderScreeningResult.Approved(quantity)` は意図の数量のまま）。判断が決めた名目額がそのまま発注される。
 - `RejectionReason` の末尾は `StopOutStatusUnknown`（序数 31）。`ApprovalSource` の末尾は `ProtectionLostClose`（3）。`DecisionSkipReason` は 15 値、`DecisionForgoneBeforeLlmReason` は 5 値。gRPC の `EntryBlocker` は 1〜7。
-- 採番: origin/develop の T-10 の最大は 2287、IADR の最大は 0493。並行の #1189 が **IADR-0494** と **T-10-2288〜T-10-2293** を先に使う（先にマージされる）ため、本件は **IADR-0495**・**T-10-2294〜** を使う（衝突したら最大＋1 へ改番する。欠番受容の規則）。
+- 採番: origin/develop の T-10 の最大は 2287、IADR の最大は 0493。並行の #1189 が **IADR-0494** と **T-10-2288〜T-10-2293** を先に使い（先にマージされる）、#1190 が T-10-2300 以降を使うため、本件は **IADR-0495**・**T-10-2310〜T-10-2322** を使う（衝突したら最大＋1 へ改番する。欠番受容の規則）。
 
 ## 設計
 
@@ -114,7 +114,7 @@ plan_refs:
 | `scripts/nightly-ledger-summary.sh` | 据え置き（§5・§11 は理由を名前で数える。新しい名前は自動で出る） |
 | `deploy/observability/dashboards/ai-stock-trading-business.json` | 据え置き（理由はタグ値で、列挙しない。説明文は既存の 2 理由の読み方だけ） |
 | `docs/functional/FR-10_risk-controls.md` | 追記（2 統制の節。「数えない決済」の行に判断由来の決済は別の理由で止まると注記。対象の理由の行に `DecisionExitSameDay`） |
-| `docs/tests/FR-10_risk-controls-tests.md` | 節を追加（T-10-2294〜） |
+| `docs/tests/FR-10_risk-controls-tests.md` | 節を追加（T-10-2310〜） |
 | `docs/data/audit-events.md`・`docs/api/events-and-ports.md`・`docs/observability/observability.md`・`docs/operations/nightly-ledger-summary-runbook.md` | 追記（理由の列挙・`OrderApproved` の項目・数の更新「5 つ」→「6 つ」・「15 種」→「17 種」） |
 | `.ai-context/adr/IADR-0394`・`IADR-0463`・`IADR-0471`・`IADR-0003`・`IADR-0017` | 日付つき追記（本文は書き換えない）。索引 `README.md` に IADR-0495 の行と追記の注記 |
 | `deploy/helm/ai-stock-trading/values.yaml` | 注記だけ（既定は既定値で効くため env は足さない。変えるときのキー名を書く） |
@@ -125,19 +125,19 @@ plan_refs:
 
 | # | 受け入れ基準 | 試験 |
 | --- | --- | --- |
-| 1 | 名目額が equity の 1% 未満は見送り、ちょうど 1% と超過は通す（純関数） | T-10-2294 `MinimumEntryNotionalTests` |
-| 2 | 既定値は 1%（`TradingDefaults`）。構成の未設定は既定、0〜0.25 は採用、読めない値・負・0.25 超は起動を止める（例外） | T-10-2295 `TradingDefaultsTests`・`MinimumEntryNotionalOptionsLoaderTests` |
-| 3 | 判断（端から端）: サイジングの名目額が 1% 未満なら発注意図を作らず `SizedBelowMinimumNotional`（判断後の見送り）。ちょうど 1% は発注意図を作る。AAPL 13 株（約 $4.3k・equity $970k）の例 | T-10-2296 `MinimumEntryNotionalDecisionTests` |
-| 4 | LLM の前: 保有 0・未約定なし・`min(1 注文上限, 残枠)` が 1% 未満なら LLM を呼ばず `EntryCapacityBelowMinimumNotional`。保有中・残枠の未供給・しきい値 0 なら LLM を呼ぶ | T-10-2297 同上 |
-| 5 | 決済は名目額で止めない（保有 13 株の利確の売りは通る） | T-10-2298 同上 |
-| 6 | 判断由来の決済の当日・同方向（ロング → 買い、ショート → 売り）は `DecisionExitSameDay`。反対方向は止めない。翌取引日は止めない。別市場は数えない | T-10-2299 `DecisionExitProjectionTests`・`DecisionExitReentryEvaluationTests` |
-| 7 | 区切りは市場の現地取引日（米国東部。夏時間の開始・終了、JST の日付変更で解けない。東証は JST） | T-10-2300 `DecisionExitProjectionTests` |
-| 8 | 損切り（S0 / S1）・保護喪失・owner の手仕舞い（`OrderApproved`）・由来なしは本統制では数えない（損切りは `StoppedOutSameDay`、由来なしは `StopOutStatusUnknown` のまま） | T-10-2301 同上・`StopOutProjectionTests` の既存 |
-| 9 | 承認だけ（約定なし）・部分約定でも数える | T-10-2302 同上 |
-| 10 | 口（`EntryStateBlockers.Determine`）は審査と同じ答え（組み合わせの全数に判断由来の決済の次元を足す）。gRPC・REST の写像 | T-10-2303 `EntryStateBlockersTests`（T-10-1782 の拡張）・`EntryBlockersEndpointTests`（T-10-1786 の全写像）・`GrpcEntryBlockersProvider` の試験 |
-| 11 | 本番構成（`Program.cs`）: 判断由来の決済の `OrderApproved` を流すと台帳に `TradeDecision` の由来で残り、同じ銘柄の買いが `DecisionExitSameDay` で拒否され計器に出る。owner の手仕舞いの `OrderApproved` では止まらない。AMZN の例（02:34:50 JST の利確の 5 分後の買い） | T-10-2304 `DecisionExitReentryWiringTests` |
-| 12 | 再起動: 別の DbContext（＝別プロセス相当）で読んでも由来 `TradeDecision` が残り、同じ答えになる | T-10-2305 `LedgerCloseApprovalsTests` の拡張 |
-| 13 | 序数（`RejectionReason` 32・`ApprovalSource` 4）・分類（クラス A）・見送りの語彙の数（17 値・6 値）・LLM の前の見送りの写像 | T-10-2306 既存の序数・分類・語彙の試験の更新 |
+| 1 | 名目額が equity の 1% 未満は見送り、ちょうど 1% と超過は通す（純関数） | T-10-2310 `MinimumEntryNotionalTests` |
+| 2 | 既定値は 1%（`TradingDefaults`）。構成の未設定は既定、0〜0.25 は採用、読めない値・負・0.25 超は起動を止める（例外） | T-10-2311 `TradingDefaultsTests`・`MinimumEntryNotionalOptionsLoaderTests` |
+| 3 | 判断（端から端）: サイジングの名目額が 1% 未満なら発注意図を作らず `SizedBelowMinimumNotional`（判断後の見送り）。ちょうど 1% は発注意図を作る。AAPL 13 株（約 $4.3k・equity $970k）の例 | T-10-2312 `MinimumEntryNotionalDecisionTests` |
+| 4 | LLM の前: 保有 0・未約定なし・`min(1 注文上限, 残枠)` が 1% 未満なら LLM を呼ばず `EntryCapacityBelowMinimumNotional`。保有中・残枠の未供給・しきい値 0 なら LLM を呼ぶ | T-10-2313 同上 |
+| 5 | 決済は名目額で止めない（保有 13 株の利確の売りは通る） | T-10-2314 同上 |
+| 6 | 判断由来の決済の当日・同方向（ロング → 買い、ショート → 売り）は `DecisionExitSameDay`。反対方向は止めない。翌取引日は止めない。別市場は数えない | T-10-2315 `DecisionExitProjectionTests`・`DecisionExitReentryEvaluationTests` |
+| 7 | 区切りは市場の現地取引日（米国東部。夏時間の開始・終了、JST の日付変更で解けない。東証は JST） | T-10-2316 `DecisionExitProjectionTests` |
+| 8 | 損切り（S0 / S1）・保護喪失・owner の手仕舞い（`OrderApproved`）・由来なしは本統制では数えない（損切りは `StoppedOutSameDay`、由来なしは `StopOutStatusUnknown` のまま） | T-10-2317 同上・`StopOutProjectionTests` の既存 |
+| 9 | 承認だけ（約定なし）・部分約定でも数える | T-10-2318 同上 |
+| 10 | 口（`EntryStateBlockers.Determine`）は審査と同じ答え（組み合わせの全数に判断由来の決済の次元を足す）。gRPC・REST の写像 | T-10-2319 `EntryStateBlockersTests`（T-10-1782 の拡張）・`EntryBlockersEndpointTests`（T-10-1786 の全写像）・`GrpcEntryBlockersProvider` の試験 |
+| 11 | 本番構成（`Program.cs`）: 判断由来の決済の `OrderApproved` を流すと台帳に `TradeDecision` の由来で残り、同じ銘柄の買いが `DecisionExitSameDay` で拒否され計器に出る。owner の手仕舞いの `OrderApproved` では止まらない。AMZN の例（02:34:50 JST の利確の 5 分後の買い） | T-10-2320 `DecisionExitReentryWiringTests` |
+| 12 | 再起動: 別の DbContext（＝別プロセス相当）で読んでも由来 `TradeDecision` が残り、同じ答えになる | T-10-2321 `LedgerCloseApprovalsTests` の拡張 |
+| 13 | 序数（`RejectionReason` 32・`ApprovalSource` 4）・分類（クラス A）・見送りの語彙の数（17 値・6 値）・LLM の前の見送りの写像 | T-10-2322 既存の序数・分類・語彙の試験の更新 |
 | 14 | `dotnet build` 警告 0・関係するサービスの試験が緑・`dotnet format --verify-no-changes`・CI の node 検査緑 | 実測（PR 本文） |
 
 ### 変異（主要な分岐）
@@ -159,6 +159,12 @@ plan_refs:
 | M11 | 審査が `FromTradeDecision` を立てない |
 | M12 | 射影が `OrderApproved`（owner の手仕舞い）も数える |
 | M13 | 射影が約定だけで数える（承認を見ない） |
+| M14 | 口が判断由来の決済を供給しない |
+| M15 | 審査が判断由来の決済を供給しない |
+
+実測（コミット 3562f081 に当て、リスク管理 2,211 件・取引判断 1,522 件を全件実行。M1・M5・M9 は両方）: **15 本すべて赤（生存 0）**。
+変異ごとの赤の内訳は試験仕様書 FR-10 の本件の節。最少は M11・M14・M15（各 1 件・本番構成の配線の試験 T-10-2320）。
+（試験の ID は実測の後に並行 PR との衝突を避けて T-10-2310〜へ改番した。試験の中身は同じ。）
 
 ## 残余
 

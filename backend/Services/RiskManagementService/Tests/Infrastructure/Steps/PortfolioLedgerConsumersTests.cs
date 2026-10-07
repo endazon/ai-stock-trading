@@ -82,10 +82,10 @@ public class PortfolioLedgerConsumersTests
         await host.StopAsync();
     }
 
-    // T-10-2304, FR-10, #1176, IADR-0495 決定4: 承認行の由来は OrderApproved の印で書き分ける。審査が判断を承認したもの
+    // T-10-2320, FR-10, #1176, IADR-0495 決定4: 承認行の由来は OrderApproved の印で書き分ける。審査が判断を承認したもの
     // （FromTradeDecision）は TradeDecision、判断を経ない承認（owner の手仕舞い・自動縮小。印なし）は従来どおり OrderApproved。
     [Fact]
-    public async Task T_10_2298_判断由来の承認は由来TradeDecisionで判断を経ない承認はOrderApprovedで記録する()
+    public async Task T_10_2320_判断由来の承認は由来TradeDecisionで判断を経ない承認はOrderApprovedで記録する()
     {
         var ledger = new InMemoryPortfolioLedgerStore();
         using var host = await BuildHostAsync(ledger);

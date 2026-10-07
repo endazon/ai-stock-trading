@@ -243,13 +243,13 @@ public class DecisionSkipReasonTests
         observed.Add(await SkipReasonOf(
             Create(r10, BuyJson, held: new FakeHeld(0, workingUnknown: true)), r10, Trigger()));
 
-        // 11. T-10-2297, #1176, IADR-0495 決定2: 保有 0・未約定なしで新規建てに使える金額の上限（残枠 0）が最小の名目額に届かない（LLM の前）
+        // 11. T-10-2313, #1176, IADR-0495 決定2: 保有 0・未約定なしで新規建てに使える金額の上限（残枠 0）が最小の名目額に届かない（LLM の前）
         var r11 = new RecordingSkipReporter();
         observed.Add(await SkipReasonOf(
             Create(r11, BuyJson, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(0)),
             r11, Trigger()));
 
-        // 12. T-10-2296, #1176, IADR-0495 決定1: サイジングの名目額が最小に満たない（LLM の後）。equity 110,000 の 1%＝1,100、
+        // 12. T-10-2312, #1176, IADR-0495 決定1: サイジングの名目額が最小に満たない（LLM の後）。equity 110,000 の 1%＝1,100、
         // 残枠 1,999（最小以上なので LLM の前の下界には掛からない）・参照価格 1,000 → 金額キャップで 1 株＝名目 1,000 ＜ 1,100。
         var r12 = new RecordingSkipReporter();
         observed.Add(await SkipReasonOf(
@@ -283,7 +283,7 @@ public class DecisionSkipReasonTests
     [Fact]
     public void 見送り理由の語彙は洗い出した17値である()
     {
-        // T-10-2306, #1176 / IADR-0495 決定1・2 が末尾に EntryCapacityBelowMinimumNotional（LLM の前）と SizedBelowMinimumNotional
+        // T-10-2322, #1176 / IADR-0495 決定1・2 が末尾に EntryCapacityBelowMinimumNotional（LLM の前）と SizedBelowMinimumNotional
         // （LLM の後）を足して 15 → 17。振る舞いは上の表（11・12 番）と MinimumEntryNotionalDecisionTests が固定する。
         Enum.GetValues<DecisionSkipReason>().Should().HaveCount(17);
         Enum.GetValues<DecisionSkipReason>()[^1].Should().Be(DecisionSkipReason.SizedBelowMinimumNotional, "値は末尾へ足す");

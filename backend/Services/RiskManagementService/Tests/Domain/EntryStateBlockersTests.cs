@@ -92,7 +92,7 @@ public class EntryStateBlockersTests
         {
             var snapshot = Snapshot(positions, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown);
             var stopOuts = new StopOutReentrySupply(longStop, shortStop);
-            // T-10-2303, #1176, IADR-0495 決定3: 判断由来の決済（両方向の有無）の次元を足した。
+            // T-10-2319, #1176, IADR-0495 決定3: 判断由来の決済（両方向の有無）の次元を足した。
             var exits = new DecisionExitReentrySupply(longExit, shortExit);
 
             var blockers = EntryStateBlockers.Determine(side, Settings, snapshot, stopOuts, exits, lockedOut: false);
@@ -159,9 +159,9 @@ public class EntryStateBlockersTests
             .Should().BeEmpty("不明は確定した拒否ではない（審査は StopOutStatusUnknown で止める）");
     }
 
-    // T-10-2303, #1176, IADR-0495 決定3: 判断由来の決済（利確）はその方向の新規建てだけを塞ぎ、損切りと別の名前で返す。
+    // T-10-2319, #1176, IADR-0495 決定3: 判断由来の決済（利確）はその方向の新規建てだけを塞ぎ、損切りと別の名前で返す。
     [Fact]
-    public void T_10_2297_判断由来の決済は同じ方向だけを塞ぎ損切りと別の名前で返す()
+    public void T_10_2319_判断由来の決済は同じ方向だけを塞ぎ損切りと別の名前で返す()
     {
         var snapshot = Snapshot(0, false, false, false, false, Gfv.NotCashAccount, capitalKnown: true);
         var longExited = new DecisionExitReentrySupply(LongSide: true, ShortSide: false);

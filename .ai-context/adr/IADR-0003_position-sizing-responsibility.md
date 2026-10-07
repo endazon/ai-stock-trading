@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, UC-01, UC-02, ADR-0003]
 author: endazon (with Claude Code)
 created: 2026-07-08
-updated: 2026-09-30
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -109,3 +109,9 @@ plan_refs:
 取引判断は LLM の幅に下限を掛け、割った幅は下限まで広げてからサイジングする（見送らない）。ATR はまだ供給されておらず、2% が効いている
 （[IADR-0465](IADR-0465_stop-width-floor-fallback-2pct-widen-and-audit.md)）。サイジングを判断サービスに置く本 IADR の決定は変わらず、
 下限もサイジングの直前に同じサービスで掛ける。
+
+## ［2026-10-07 追記 / #1176］サイジングの後の最小の名目額
+
+サイジングの結果の名目額（数量 × 参照価格・基準通貨）が equity × しきい値（構成 `Sizing:MinEntryNotionalRatio`・既定 1%）に満たない新規建ては、
+同じ判断サービスがサイジングの直後に見送る（[IADR-0495](IADR-0495_min-entry-notional-and-decision-exit-same-day-reentry.md) 決定 1）。判定の関数 `MinimumEntryNotional` は `PositionSizer` と同じ置き場に置いた。
+サイジングを判断サービスに置き、審査は検証のみとする本 IADR の決定は変わらない（審査は名目額を見ない）。

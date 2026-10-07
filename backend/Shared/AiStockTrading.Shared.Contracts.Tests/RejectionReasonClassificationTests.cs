@@ -71,7 +71,7 @@ public class RejectionReasonClassificationTests
     // 統制の正常作動（A）、確かめられない状態は「取引を止めている状態そのものの記録」（B）。どちらもクラス C ではない。
     [InlineData(RejectionReason.StoppedOutSameDay, RejectionReasonClass.A)]
     [InlineData(RejectionReason.StopOutStatusUnknown, RejectionReasonClass.B)]
-    // T-10-2306, FR-10, #1176, IADR-0495: 判断由来の決済の後の同日・同方向は確かめられた事実の統制の正常作動（A）。クラス C ではない。
+    // T-10-2322, FR-10, #1176, IADR-0495: 判断由来の決済の後の同日・同方向は確かめられた事実の統制の正常作動（A）。クラス C ではない。
     [InlineData(RejectionReason.DecisionExitSameDay, RejectionReasonClass.A)]
     public void 上限超過と停止中の拒否はクラスAとBに分かれる(
         RejectionReason reason, RejectionReasonClass expected)

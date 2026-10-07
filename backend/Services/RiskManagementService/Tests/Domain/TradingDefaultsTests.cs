@@ -55,7 +55,7 @@ public class TradingDefaultsTests
         TradingDefaults.StopWidthFloorAtrPeriod.Should().Be(14);
     }
 
-    // T-10-2295, FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額は equity の 1%（オーナー裁定 2026-10-07）。
+    // T-10-2311, FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額は equity の 1%（オーナー裁定 2026-10-07）。
     // 🔴 計画の 05_trading-assumptions §5 にはまだ行が無い（実装側の裁定値。計画への記録は planning への issue で求める）。
     // 1 注文上限（25%）より小さい（上限より大きいと新規建てが構造的に成立しない）。
     [Fact]

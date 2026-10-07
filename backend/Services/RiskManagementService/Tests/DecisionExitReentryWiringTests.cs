@@ -17,7 +17,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// T-10-2304, FR-10, #1176, IADR-0495 決定3・4: **Program.cs の実構成**で、判断由来の決済（利確）の印が審査 → 承認 → 台帳 → 次の審査まで届くこと。
+// T-10-2320, FR-10, #1176, IADR-0495 決定3・4: **Program.cs の実構成**で、判断由来の決済（利確）の印が審査 → 承認 → 台帳 → 次の審査まで届くこと。
 //
 //   1. 判断の決済（TradeDecisionMade・Close）を本番の購読（TradeDecisionMadeHandler）で審査すると、承認（OrderApproved）に
 //      FromTradeDecision が立つ。
@@ -42,7 +42,7 @@ public class DecisionExitReentryWiringTests
             1, 20m, PositionEffect.Close);
 
     [Fact]
-    public async Task T_10_2298_本番構成で判断の利確の後の同じ銘柄の買いは名前付きの理由で拒否され手仕舞いの種類で分かれる()
+    public async Task T_10_2320_本番構成で判断の利確の後の同じ銘柄の買いは名前付きの理由で拒否され手仕舞いの種類で分かれる()
     {
         using var capture = new MeterCapture(BusinessMetricNames.MeterName);
         await using var factory = new RiskWorkerWebApplicationFactory();

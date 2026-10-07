@@ -50,7 +50,7 @@ public class RejectionReasonOrdinalStabilityTests
         // FR-10, #935, IADR-0394: 損切りした銘柄の同日・同方向の新規建て（確かめられた／確かめられない）。**末尾へ追加**している。
         { RejectionReason.StoppedOutSameDay, 30 },
         { RejectionReason.StopOutStatusUnknown, 31 },
-        // T-10-2306, FR-10, #1176, IADR-0495: 判断由来の決済（利確）の後の同日・同方向の新規建て。**末尾へ追加**している。
+        // T-10-2322, FR-10, #1176, IADR-0495: 判断由来の決済（利確）の後の同日・同方向の新規建て。**末尾へ追加**している。
         { RejectionReason.DecisionExitSameDay, 32 },
     };
 

@@ -285,7 +285,7 @@ public class DecisionHeldReportTests
                 MovementTrigger(), DecisionSkipReason.SizingZeroQuantity, 1_040m),
             ((h, s) => Create(h, BuyJson, s, held: new FakeHeld(0, workingUnknown: true)), MovementTrigger(),
                 DecisionSkipReason.WorkingEntriesUnknownOpen, 1_040m),
-            // T-10-2296, #1176, IADR-0495 決定1: サイジングの名目額（1 株 × 1,000）が最小（equity 110,000 の 1%＝1,100）に満たない。
+            // T-10-2312, #1176, IADR-0495 決定1: サイジングの名目額（1 株 × 1,000）が最小（equity 110,000 の 1%＝1,100）に満たない。
             ((h, s) => Create(h, BuyJson, s, ctx: Context(stageRemaining: 1_999m, dailyRemaining: 1_999m, capital: 110_000m),
                     held: new FakeHeld(0)),
                 MovementTrigger(), DecisionSkipReason.SizedBelowMinimumNotional, 1_040m),
@@ -326,7 +326,7 @@ public class DecisionHeldReportTests
     [Fact]
     public void 判断前と判断後の見送りは語彙17値を過不足なく覆う()
     {
-        // T-10-2306, #1176, IADR-0495: 判断前に EntryCapacityBelowMinimumNotional、判断後に SizedBelowMinimumNotional を足した（15 → 17）。
+        // T-10-2322, #1176, IADR-0495: 判断前に EntryCapacityBelowMinimumNotional、判断後に SizedBelowMinimumNotional を足した（15 → 17）。
         DecisionSkipReason[] before =
         [
             DecisionSkipReason.DailyPolicyUnconfirmed, DecisionSkipReason.CurrentPriceUnavailable,

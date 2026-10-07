@@ -135,13 +135,13 @@ public class MinimumEntryNotionalDecisionTests
 
     private static DecisionTrigger Trigger(string symbol = "AAPL") => DecisionTrigger.Scheduled(symbol, Market.UnitedStates, Now);
 
-    // T-10-2296: 境界（サイジングの後）。equity 100,000 の 1%＝1,000。残枠 1,500（LLM の前の下界には掛からない）で 1 株だけ買える価格を動かす。
+    // T-10-2312: 境界（サイジングの後）。equity 100,000 の 1%＝1,000。残枠 1,500（LLM の前の下界には掛からない）で 1 株だけ買える価格を動かす。
     // 1 株 × 999.99 は見送り、1,000 ちょうどと 1,000.01 は発注意図を作る。
     [Theory]
     [InlineData("999.99", false)]
     [InlineData("1000", true)]
     [InlineData("1000.01", true)]
-    public async Task T_10_2290_サイジングの名目額がequityの1パーセント未満なら見送りちょうどは通す(string priceText, bool expectsOrder)
+    public async Task T_10_2312_サイジングの名目額がequityの1パーセント未満なら見送りちょうどは通す(string priceText, bool expectsOrder)
     {
         var price = decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);
         var json = $$"""{"action":"Buy","rationale":"押し目","referencePrice":{{priceText}},"stopLossDistancePerShare":30}""";
@@ -166,9 +166,9 @@ public class MinimumEntryNotionalDecisionTests
         }
     }
 
-    // T-10-2296: 価格で割る端数（LLM の前には分からない）。残枠 9,800 ≥ 最小 9,700 だが、334.11 で 29 株＝9,689.19 ＜ 9,700 で見送る。
+    // T-10-2312: 価格で割る端数（LLM の前には分からない）。残枠 9,800 ≥ 最小 9,700 だが、334.11 で 29 株＝9,689.19 ＜ 9,700 で見送る。
     [Fact]
-    public async Task T_10_2290_残枠が最小以上でも株数の端数で最小を割ればLLMの後に見送る()
+    public async Task T_10_2312_残枠が最小以上でも株数の端数で最小を割ればLLMの後に見送る()
     {
         var probe = Create(Context(PocEquity, 9_800m), new FakeHeld(0));
 
@@ -178,10 +178,10 @@ public class MinimumEntryNotionalDecisionTests
         probe.Skips.Reasons.Should().Equal(DecisionSkipReason.SizedBelowMinimumNotional);
     }
 
-    // T-10-2297: 🔴 issue の実例（AAPL 13 株 @334.11・equity 約 $970k・段階残枠 $4.5k）。保有 0・未約定なしでは、残枠（4,500）が最小（9,700）に
+    // T-10-2313: 🔴 issue の実例（AAPL 13 株 @334.11・equity 約 $970k・段階残枠 $4.5k）。保有 0・未約定なしでは、残枠（4,500）が最小（9,700）に
     // 届かないので LLM を呼ばずに見送る。構成を渡さない（既定の 1% が効く）。
     [Fact]
-    public async Task T_10_2291_AAPLの13株の実例は保有0ならLLMを呼ばずに見送る()
+    public async Task T_10_2313_AAPLの13株の実例は保有0ならLLMを呼ばずに見送る()
     {
         var probe = Create(Context(PocEquity, 4_500m), new FakeHeld(0));
 
@@ -195,11 +195,11 @@ public class MinimumEntryNotionalDecisionTests
         probe.Held.Reports.Should().BeEmpty("判断をしていない見送りで急変の基準値を進めない（IADR-0452 決定1）");
     }
 
-    // T-10-2297: 同じ AAPL の 13 株でも、保有中（買い増し）・未約定ありでは LLM を呼ぶ（決済の判断を残す）。買いの結論は LLM の後に見送る。
+    // T-10-2313: 同じ AAPL の 13 株でも、保有中（買い増し）・未約定ありでは LLM を呼ぶ（決済の判断を残す）。買いの結論は LLM の後に見送る。
     [Theory]
     [InlineData(10, false)]
     [InlineData(0, true)]
-    public async Task T_10_2291_保有中や未約定ありではLLMを呼び買いはサイジングの後に見送る(int held, bool working)
+    public async Task T_10_2313_保有中や未約定ありではLLMを呼び買いはサイジングの後に見送る(int held, bool working)
     {
         var probe = Create(Context(PocEquity, 4_500m), new FakeHeld(held, working));
 
@@ -210,11 +210,11 @@ public class MinimumEntryNotionalDecisionTests
         probe.Skips.Reasons.Should().Equal(DecisionSkipReason.SizedBelowMinimumNotional);
     }
 
-    // T-10-2297: 資金・残枠が未供給（null）なら「届かない」とは読まず LLM を呼ぶ（従来どおり LLM の後に数量 0 で見送る）。
+    // T-10-2313: 資金・残枠が未供給（null）なら「届かない」とは読まず LLM を呼ぶ（従来どおり LLM の後に数量 0 で見送る）。
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    public async Task T_10_2291_資金か残枠が未供給ならLLMの前には省かない(bool equityUnknown, bool stageUnknown)
+    public async Task T_10_2313_資金か残枠が未供給ならLLMの前には省かない(bool equityUnknown, bool stageUnknown)
     {
         var probe = Create(Context(equityUnknown ? null : PocEquity, stageUnknown ? null : 4_500m), new FakeHeld(0));
 
@@ -225,9 +225,9 @@ public class MinimumEntryNotionalDecisionTests
         probe.Skips.Reasons.Should().Equal(DecisionSkipReason.SizingZeroQuantity);
     }
 
-    // T-10-2297: しきい値 0 は統制を外す（AAPL の 13 株がそのまま発注意図になる＝是正前と同じ）。
+    // T-10-2313: しきい値 0 は統制を外す（AAPL の 13 株がそのまま発注意図になる＝是正前と同じ）。
     [Fact]
-    public async Task T_10_2291_しきい値0なら最小の名目額で見送らない()
+    public async Task T_10_2313_しきい値0なら最小の名目額で見送らない()
     {
         var probe = Create(Context(PocEquity, 4_500m), new FakeHeld(0), options: new MinimumEntryNotionalOptions(0m));
 
@@ -238,18 +238,18 @@ public class MinimumEntryNotionalDecisionTests
         probe.Skips.Reasons.Should().BeEmpty();
     }
 
-    // T-10-2297: しきい値は構成どおりに効く（0.4% なら 13 株 ≈ 4,343 ≥ 3,880 で通る）。
+    // T-10-2313: しきい値は構成どおりに効く（0.4% なら 13 株 ≈ 4,343 ≥ 3,880 で通る）。
     [Fact]
-    public async Task T_10_2291_構成したしきい値で判定する()
+    public async Task T_10_2313_構成したしきい値で判定する()
     {
         var probe = Create(Context(PocEquity, 4_500m), new FakeHeld(0), options: new MinimumEntryNotionalOptions(0.004m));
 
         (await probe.Service.DecideAsync(Trigger(), TestContext.Current.CancellationToken))!.Intent.Quantity.Should().Be(13);
     }
 
-    // T-10-2298: 🔴 決済は名目額で止めない（FR-10「手仕舞いは止めない」）。保有 13 株（約 0.45%）の利確の売りは全量の決済になる。
+    // T-10-2314: 🔴 決済は名目額で止めない（FR-10「手仕舞いは止めない」）。保有 13 株（約 0.45%）の利確の売りは全量の決済になる。
     [Fact]
-    public async Task T_10_2292_極小の保有の決済は最小の名目額で止めない()
+    public async Task T_10_2314_極小の保有の決済は最小の名目額で止めない()
     {
         var probe = Create(Context(PocEquity, 4_500m), new FakeHeld(13), llmOutput: AaplSellJson);
 
@@ -261,9 +261,9 @@ public class MinimumEntryNotionalDecisionTests
         probe.Skips.Reasons.Should().BeEmpty();
     }
 
-    // T-10-2298: LLM の前に省いた銘柄でも Hold は従来どおり（ここでは LLM を呼ばないので結論は無い）。保有中の Hold は LlmHold のまま。
+    // T-10-2314: LLM の前に省いた銘柄でも Hold は従来どおり（ここでは LLM を呼ばないので結論は無い）。保有中の Hold は LlmHold のまま。
     [Fact]
-    public async Task T_10_2292_保有中のHoldは従来どおり()
+    public async Task T_10_2314_保有中のHoldは従来どおり()
     {
         var probe = Create(Context(PocEquity, 4_500m), new FakeHeld(13), llmOutput: HoldJson);
 

@@ -3,15 +3,15 @@ title: リスク統制（FR-10）機能仕様書
 type: functional-spec
 status: approved
 created: 2026-07-09
-updated: 2026-10-03
+updated: 2026-10-07
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03, FR-04]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0049, ADR-0050, ADR-0048]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471, IADR-0481, IADR-0482, IADR-0486, IADR-0467, IADR-0479]
-specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query, 20261003_1122_atr14-stop-floor]
-issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1120, #1121, #1136, #1130, #1048, #1122, planning#292, planning#644, planning#646, planning#703, planning#704]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471, IADR-0481, IADR-0482, IADR-0486, IADR-0467, IADR-0479, IADR-0495]
+specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query, 20261003_1122_atr14-stop-floor, 20261007_1176_min-notional-and-decision-exit-reentry]
+issues: [#12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1120, #1121, #1136, #1130, #1048, #1122, planning#292, planning#644, planning#646, planning#703, planning#704, #1176]
 -->
 
 
@@ -961,7 +961,7 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | 項目 | 規則 |
 | --- | --- |
 | 損切りと数える決済 | **ソフトウェア逆指値の成行決済の発動**（約定を待たない）と、**ブローカー側逆指値の約定**（武装しただけでは数えない） |
-| 数えない決済 | 保護が成立しないときの成行手仕舞い・利用者の手仕舞い・判断由来の決済・維持率割れの自動縮小（いずれも損切りラインへの到達ではない） |
+| 数えない決済 | 保護が成立しないときの成行手仕舞い・利用者の手仕舞い・判断由来の決済・維持率割れの自動縮小（いずれも損切りラインへの到達ではない）。判断由来の決済の後の同じ方向は、次の節の別の統制が止める |
 | 止める新規建て | 損切りした建玉と**同じ方向**だけ（ロングの損切りは買いの新規建て、ショートの損切りは売りの新規建て）。反対方向は止めない |
 | 区切り | **市場の現地取引日**（米国株は米国東部の暦日。夏時間は自動で吸収）。日本時間の日付が変わっても解けない |
 | 拒否理由 | `StoppedOutSameDay`（クラス A）。拒否理由の計器（理由別の拒否件数）・監査・通知にこの名前で出る |
@@ -989,6 +989,48 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
   逆指値なしの建玉の免除は発注数量のまま残るが、その理由を相関で辿れる。打ち切りは追跡の起点ごとに 1 回だけ記録する
   （起点が窓へ戻されてから再び期限を過ぎたときは別に記録する）。Discord 通知は出さない（警告ログが 1 行出る）。
 
+### 判断由来の決済（利確）の後は、その取引日のうちは同じ方向の新規建てをしない（#1176）
+
+稼働中に**利確で全量を売った 5 分後に、同じ銘柄をほぼ同じ価格で買い直す**事象が実測された（取得単価が付け替わり、次の利確の基準が上がる。
+費用のある本番では往復のたびに損になる）。利用者は「利確（判断由来の決済）で手仕舞った銘柄は、同じ取引日（その市場の現地取引日）のうちは
+同じ方向の新規建てをしない。損切りの後と同じ形の統制で行い、方針の文言に頼らない」と裁定した。
+
+| 項目 | 規則 |
+| --- | --- |
+| 数える決済 | **発注前審査が取引判断の決済を承認したもの**（判断の利確・判断の手仕舞い。利益か損失かは問わない）。承認（約定を待たない）または約定の時刻が当日なら数える。部分約定でも同じ |
+| 数えない決済 | 損切り（前節の統制が別の理由で止める）・保護が成立しないときの成行手仕舞い・利用者の手仕舞い・維持率割れの自動縮小 |
+| 止める新規建て | 手仕舞った建玉と**同じ方向**だけ（ロングの手仕舞いは買いの新規建て、ショートの手仕舞いは売りの新規建て）。反対方向は止めない |
+| 区切り | **市場の現地取引日**（米国株は米国東部の暦日。夏時間は自動で吸収。日本株は日本時間の暦日） |
+| 拒否理由 | `DecisionExitSameDay`（クラス A）。拒否理由の計器・監査・通知にこの名前で出る。新規建ての可否の読み取り口も同じ理由を返す |
+| 分からないとき | 本統制に「分からない」の理由は無い。由来が記録されていない当日の決済は、前節の `StopOutStatusUnknown` が同じ方向を既に止めている |
+| 手仕舞い（Close） | **止めない** |
+
+判定の入力は前節と同じ取引台帳の**承認行の由来**である。審査が判断を承認した承認イベントに「判断由来」の印を載せ、台帳はその印で
+判断由来の承認と、判断を経ない承認（利用者の手仕舞い・自動縮小）を書き分ける。台帳は永続化されているので、再起動の後も同じ答えになる。
+
+- 判断側は規則を持たない。保有 0・未約定なしの銘柄では、判断は「新規建てが審査で必ず拒否される銘柄は、LLM を呼ぶ前に見送る」の読み取り口の
+  答えを読み、LLM を呼ばずに見送る。保有中の買い増しは「保有中の銘柄の買い増し・売り増し…」の節のとおり選ばせない。
+- 🔴 **導入日の取りこぼし**: 導入前に記録された当日の判断由来の決済は、利用者の手仕舞いと区別できない（印が無い）ため数えない。
+  翌取引日から効く。導入はセッションの外で行う。
+
+### 最小の名目額（equity の 1%）に満たない新規建ては見送る（#1176）
+
+段階資金の残枠が小さくなった状態で、equity の 0.25〜0.45% ほどの極小の新規建て（例: 13 株・約 $4.3k）が実測された。建玉の枠・承認・LLM の費用を
+消費するのに、経済的な意味がほとんど無い。利用者は「サイジングの結果が equity の 1% 未満の新規建ては見送る。しきい値は構成で持つ」と裁定した。
+
+| 項目 | 規則 |
+| --- | --- |
+| 判定 | 新規建て（買い増し・売り増しを含む）の**数量 × 参照価格（基準通貨）**が **equity × しきい値** に**満たなければ**見送る。ちょうど等しいときは通す |
+| しきい値 | 取引判断サービスの構成 `Sizing:MinEntryNotionalRatio`（環境変数 `Sizing__MinEntryNotionalRatio`）。**既定 0.01（1%）**。範囲は 0 以上 0.25 以下。**未設定は既定、読めない値・範囲外は起動を止める**。0 は統制を外す |
+| 置き場 | サイジング（取引判断サービス）。審査は名目額を見ない（審査は数量を減らさないので、判断が決めた名目額がそのまま発注される） |
+| LLM の前 | 保有が分かっていて 0・未約定の新規建てが分かっていて空・資金と残枠が分かっているとき、**新規建てに使える金額の上限**（1 注文上限・段階残枠・日次残枠の最小）が最小の名目額に届かなければ、**LLM を呼ばずに見送る**（名目額はこの上限を超えないので、結論に依らず必ず見送られる）。記録は「LLM を呼ぶ前の見送り」（理由 `EntryCapacityBelowMinimumNotional`） |
+| LLM の後 | 上に当たらない場合（保有中・未約定あり・資金や残枠が分からない・価格の端数で割る）は、サイジングの直後に見送る（判断後の見送り。理由 `SizedBelowMinimumNotional`）。この経路では LLM の費用は節約されない（株数は LLM の損切り幅で決まるため） |
+| 手仕舞い（Close） | **止めない**（保有がどれだけ小さくても全量の決済は出る） |
+
+- 🔴 **計器の読み方が変わる**: 保有 0 の銘柄で残枠を使い切った状態は、従来 LLM の後の「数量 0」（`SizingZeroQuantity`）として数えていたが、
+  LLM の前の `EntryCapacityBelowMinimumNotional` へ移る（LLM を呼ばなくなる）。
+- しきい値は equity に対する 1 つの比率であり、市場・段階では分けない。
+
 ### 新規建てが審査で必ず拒否される銘柄は、LLM を呼ぶ前に見送る
 
 審査で**必ず**落ちる新規建てのために、判断が毎サイクル LLM（一次＋本判断）を呼んでいた（同じ日に損切りした銘柄や、
@@ -999,7 +1041,7 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 | --- | --- |
 | 読み取り口 | 銘柄単位の「新規建ての可否」（REST `GET /risk-controls/entry-blockers?symbol&market`・gRPC `GetEntryBlockers`。サービスまたは利用者が読める）。買いの新規建て（ロング）と売りの新規建て（ショート）の**方向別**に、状態から確定する拒否理由を返す |
 | 述語 | **審査と同じ関数**（状態だけで確定する述語の置き場を 1 つにし、審査の判定コアも同じ関数を同じ位置で呼ぶ）。入力も審査と同じ（設定・ポートフォリオの状態・当日の損切り・日次損失のロックアウト・市場の現地取引日） |
-| 対象の理由 | `KillSwitchActive`・`TradingPaused`・`StoppedOutSameDay`（方向別）・`GoodFaithViolationLimitReached`（件数が分かっているとき）・`MaxPositionsExceeded`・`DailyLossLimitReached`（到達またはロックアウト中）・`MaxDrawdownReached` |
+| 対象の理由 | `KillSwitchActive`・`TradingPaused`・`StoppedOutSameDay`（方向別）・`DecisionExitSameDay`（方向別）・`GoodFaithViolationLimitReached`（件数が分かっているとき）・`MaxPositionsExceeded`・`DailyLossLimitReached`（到達またはロックアウト中）・`MaxDrawdownReached` |
 | 返さない理由 | **状態が分からないもの**（損切りしたか分からない・資金を照会できていない・口座種別を確かめられない・情報収集の縮退かどうか分からない・GFV の件数が無い）。**注文の数量・価格・商品種別に依存するもの**（1 注文・日次枠・段階の資金・現金口座の決済済み資金・商品種別・差金決済防止・相場操縦）。**決済にも掛かる規則**（禁止銘柄・無効な市場）。空売り専用の規則 |
 | 判断側が省く条件 | 保有が**分かっていて 0**、未約定の新規建てが**分かっていて空**、照会が成功し、**買いの新規建て**に理由があるとき。記録は「LLM を呼ぶ前の見送り」（理由 `EntryBlockedByRiskControls`） |
 | 省かない | 保有中（決済の判断は必ず残す。買い増し・売り増しの扱いは次の節）・未約定あり・保有や未約定が分からない・照会の失敗・照会先が未設定・売りの新規建てだけが塞がっている（保有 0 の売りは判断の後で必ず見送られる） |

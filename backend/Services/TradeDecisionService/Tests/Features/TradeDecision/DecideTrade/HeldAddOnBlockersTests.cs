@@ -383,7 +383,7 @@ public class HeldAddOnBlockersTests
             RejectionReason.GoodFaithViolationLimitReached, RejectionReason.MaxPositionsExceeded,
             RejectionReason.DailyLossLimitReached, RejectionReason.MaxDrawdownReached,
         ];
-        // T-10-2303, #1176, IADR-0495 決定3: 判断由来の決済の後の同日・同方向を足して 8 理由。
+        // T-10-2319, #1176, IADR-0495 決定3: 判断由来の決済の後の同日・同方向を足して 8 理由。
         all.Should().BeEquivalentTo(EntryStateBlockers.Determinable, "口が返し得る 8 理由をすべて名付ける");
         var blocked = TradeDecisionPromptBuilder.Build(
             trigger, Policy, context, held: held, working: WorkingEntryOrders.None, addOnBlockers: all);

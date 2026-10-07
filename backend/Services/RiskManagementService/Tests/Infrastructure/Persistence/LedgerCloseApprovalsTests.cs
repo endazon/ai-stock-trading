@@ -99,10 +99,10 @@ public class LedgerCloseApprovalsTests
         reader.ApprovedOrders.Single(a => a.DecisionId == ids.S1Today).Source.Should().Be(ApprovalSource.SoftwareStopS1);
     }
 
-    // T-10-2305, FR-10, #1176, IADR-0495 決定3: 🔴 **再起動で消えない。** 判断由来の決済の由来（TradeDecision）は approved_orders.Source へ
+    // T-10-2321, FR-10, #1176, IADR-0495 決定3: 🔴 **再起動で消えない。** 判断由来の決済の由来（TradeDecision）は approved_orders.Source へ
     // 永続化され、別の DbContext（＝再起動後のプロセスと同じく保存された列だけを読む）で読んでも同じ射影になる。
     [Fact]
-    public void T_10_2299_判断由来の決済の由来は永続化され再起動後も同じ射影になる()
+    public void T_10_2321_判断由来の決済の由来は永続化され再起動後も同じ射影になる()
     {
         var dbName = Guid.NewGuid().ToString();
         var exitAt = new DateTimeOffset(2026, 9, 23, 13, 40, 0, TimeSpan.Zero);
