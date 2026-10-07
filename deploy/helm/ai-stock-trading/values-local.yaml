@@ -443,6 +443,17 @@ services:
       #     権威源側（market-monitor.Monitor__SeedSymbols__0）と同じ銘柄に揃える。Market は列挙名。
       - { name: TradeCycle__Watchlist__0__Symbol, value: "AAPL" }
       - { name: TradeCycle__Watchlist__0__Market, value: "UnitedStates" }
+      # FR-02, FR-04, NFR-02, #1169, IADR-0490 決定1（［2026-10-07 追記］）: 定時サイクルの実行時間の上限を導く「監視銘柄数の前提」。
+      #   既定 10（本番既定は置かない）。経路B は監視銘柄が 11 件（#1189 の後に追加）で前提を超え、毎サイクル警告が出て上界が崩れていた。
+      #   上限 T ＝ 90 秒（LLM 30 秒 × スクリーニング＋本判断 2 回 ＋ 30 秒）× 前提 ＋ 60 秒。
+      # 🔴 12 を超えて上げない: 配信から ack までが RabbitMQ の consumer_timeout（既定 1,800 秒）を超えると処理中のサイクルが再配送される。
+      #   T が情報収集の巡回間隔より長いときは、次の起点が先読みされたまま待ち（鮮度の上限まで判断される）、配信から ack まで最大
+      #   「鮮度の上限 ＋ T」秒になる → 鮮度の上限 ＋ T ＜ consumer_timeout が要る。T が巡回間隔以下なら T ＜ consumer_timeout でよい。
+      #   経路B は巡回 300 秒・鮮度の上限 600 秒（情報収集の appsettings.Development.json 由来。#1192 で Production へ切り替えるときは
+      #   Collection__PollIntervalSeconds=300 を明示する予定）なので前者: 12 → T＝1,140・600＋T＝1,740（収まる）／13 → 1,830（超える）。
+      #   この上限は 1 回の試行についてで、共通のエラー方針（2s/10s/30s の再試行。同じ配信の中で ack せずに再試行する）の連鎖全体は
+      #   数えていない（既知の穴。連鎖全体の起動時の検査は #1194）。13 件以上にするなら LLM の timeout・票数から引き直す。
+      - { name: TradeCycle__MaxWatchedSymbols, value: "12" }
       # --- 価格文脈（#236/IADR-0099）: 判断へ現在値を供給し権威価格でサイジング。MarketData:Provider=finnhub＋鍵で実結線
       #     （ICurrentPriceProvider.IsEnabled が真）。鮮度 MaxQuoteStalenessSeconds 超過・取得不可は現在値なし（fail-safe）。
       - { name: MarketData__Provider, value: "finnhub" }          # ← 価格文脈（既定 ""＝no-op・IsEnabled=false）
