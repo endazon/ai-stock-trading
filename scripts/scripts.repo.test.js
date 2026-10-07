@@ -1409,6 +1409,19 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(g[0].reasons.join(), /在り処の追加 b\.cs/);
     });
 
+    ok('[T3b] 在り処の数が同じ付け替え（移送・改名）は「増えた」に数えない', () => {
+      const e = (id, files) => ({ id, files, reason: 'x' });
+      assert.deepStrictEqual(
+        tt.findUnassignedBaselineGrowth({ unassigned: [e('T-10-1', ['old/a.cs'])] }, { unassigned: [e('T-10-1', ['new/a.cs'])] }),
+        []
+      );
+      const g = tt.findUnassignedBaselineGrowth(
+        { unassigned: [e('T-10-1', ['old/a.cs'])] },
+        { unassigned: [e('T-10-1', ['new/a.cs', 'b.cs'])] }
+      );
+      assert.deepStrictEqual(g.map((x) => x.id), ['T-10-1']);
+    });
+
     const { execFileSync: execG } = require('child_process');
     const g = (root, ...args) => execG('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const commit = (root, msg) => {

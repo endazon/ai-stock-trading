@@ -878,9 +878,12 @@ function findUnassignedBaselineGrowth(baseBaseline, headBaseline) {
     if (!b) {
       reasons.push('マージベースの baseline に無い entry');
     } else {
+      // 在り処の数が増えたときだけ「増えた」に数える。数が同じ在り処の付け替え（ファイルの移送・改名）は
+      // T3 の完全一致で baseline の書き直しを求めるだけで、増加ではない（#1240 監査 Y1）。
       const baseFiles = new Set(b.files || []);
-      const added = [...new Set(h.files || [])].filter((f) => !baseFiles.has(f)).sort();
-      if (added.length) reasons.push(`在り処の追加 ${added.join(' / ')}`);
+      const headFiles = [...new Set(h.files || [])];
+      const added = headFiles.filter((f) => !baseFiles.has(f)).sort();
+      if (headFiles.length > baseFiles.size) reasons.push(`在り処の追加 ${added.join(' / ')}`);
     }
     if (reasons.length) growth.push({ id, reasons });
   }
