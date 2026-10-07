@@ -2,8 +2,8 @@
 ids: [FR-10]
 adrs: [ADR-0029]
 iadrs: [IADR-0140, IADR-0280]
-specs: [20260902_573_iadr-gap-acceptance]
-issues: [#573, planning#202, planning#237, planning#244, planning#354, planning#395, planning#415]
+specs: [20260902_573_iadr-gap-acceptance, 20261008_1235_test-trace-declared-ranges]
+issues: [#573, #1235, planning#202, planning#237, planning#244, planning#354, planning#395, planning#415]
 -->
 
 # トレーサビリティ規約の別紙（該当作業のときだけ読む）
@@ -98,18 +98,13 @@ issues: [#573, planning#202, planning#237, planning#244, planning#354, planning#
   `pr-title.yml` が `PR_NUMBER` を渡す構成では、`check-commit-messages.js` が一致を検査する。
 - **実装ADR の実在性**: スコープの実装ADR は本リポ **`.ai-context/adr/`** に該当ファイルが実在することを
   検査する（PR コミットと PR タイトルの両方）。
-- 🔴 **コミット件名の計画 ADR 実在性検査は、いま働いていない。** `check-commit-messages.js` は計画 ADR を
-  **planning submodule の `projects/<name>/07_adr/` のファイル実在**で見る作りのままであり、資料再編
-  （計画 ADR 決定 2）で submodule を撤去したため**恒久的に skip される**。実行時に
-  `notice: planning submodule が未 populate のため計画 ADR 実在性チェックをスキップした` が出る
-  —— **この notice は「違反 0 件」ではなく「検査していない」と読む。**
-  - **旧**（submodule あり）: PR CI が submodule を取得しない構成だったため、実効していたのは実装ADR 検査
-    だけだった。取得するジョブへ結線すれば計画 ADR まで効かせられた。
-  - **新**（submodule なし）: 結線先が存在しないため、**件名の計画 ADR は書き手と PR レビューが守る**。
-    **配備までの暫定手段**はこれである。なお `docs/` の trace ブロックの `adrs:` は別経路で、
-    `.claude/rules/traceability.repo.md` が宣言するレンジを `scripts/lib/plan-ranges.js` 経由で
-    `check-trace-blocks.js` が検査する（そちらは実効している）。**件名側を同じレンジで見るように
-    直すのは未実施であり、直すなら `loadPlanAdrIds()` の取得元をレンジ宣言へ差し替える。**
+- **コミット件名の計画 ADR 実在性**: `check-commit-messages.js` は、submodule が無い既定構成では
+  `.claude/rules/traceability.repo.md` が宣言するレンジ（`scripts/lib/plan-ranges.js` の `readPlanAdrRange()`）を
+  実在集合に使う。宣言が読めない（消えた・種別ごとに 1 個でない）ときは検査を飛ばさず例外で落ちる。
+  `docs/` の trace ブロックの `adrs:` を検査する `check-trace-blocks.js` と同じ一次情報である。
+  - **旧**（submodule の撤去直後）: 取得元が submodule の `07_adr/` のままで恒久的に skip され、notice
+    （`…計画 ADR 実在性チェックをスキップした`）だけが出ていた。この notice は「違反 0 件」ではなく
+    「検査していない」の意味だった。
 - **`FR` / `UC` / `SC` の実在性**: 同様にスコープの計画レンジも実在を検査する。**この検査が無い間、
   実在しない画面 ID を騙る件名も exit 0 で受理され、スカッシュ後件名として恒久履歴へ載れた**（force push 禁止で
   事後修正できない面である）。**レンジの正はリポジトリ固有**（配布先ごとに計画プロジェクトが違う）の

@@ -19,7 +19,7 @@ namespace RiskManagementService.Features.RiskManagement;
 //   | null（記録されていない）  | 数えない | —（StopOutStatusUnknown が既に同じ方向を止める） |
 //
 // 当日は**その市場の現地取引日**（TradingDay.Of。米国株は米国東部の暦日・夏時間は TimeZoneInfo が吸収、日本株は JST の暦日）。
-// 🔴 #1209, IADR-0506: 「当日」と「方向」の規則そのものは共有カーネルの DecisionExitReentry（純関数）に置き、ここは由来・市場で絞って
+// 🔴 #1209, IADR-0507: 「当日」と「方向」の規則そのものは共有カーネルの DecisionExitReentry（純関数）に置き、ここは由来・市場で絞って
 // 時刻を市場の現地取引日へ写すだけにする。Stage 0 の再生（バックテスト）が同じ述語を通るためである（規則を 2 か所に置かない）。
 public static class DecisionExitProjection
 {

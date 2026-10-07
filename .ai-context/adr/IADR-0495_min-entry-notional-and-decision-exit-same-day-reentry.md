@@ -171,7 +171,7 @@ PoC で 3 つの形が観測された（#1176 本文と追加の実例）。
 
 ## ［2026-10-08 追記 / #1209］Stage 0 の記録・再生でも 2 統制を再現した
 
-§結果の「Stage 0 の記録（`Stage0DecisionRecorder`）・バックテストは本件の 2 統制を再現しない」は、[IADR-0506](IADR-0506_stage0-replay-min-notional-and-decision-exit.md) で
+§結果の「Stage 0 の記録（`Stage0DecisionRecorder`）・バックテストは本件の 2 統制を再現しない」は、[IADR-0507](IADR-0507_stage0-replay-min-notional-and-decision-exit.md) で
 解消した。記録器は最小の名目額を本番と同じ関数・同じしきい値の構成で判定して記録に残し（数量は変えない）、再生器は再生の時点で新規建てになる注文にだけ、
 判断由来の決済の後の同日・同方向（決定 3 の規則を共有カーネル `DecisionExitReentry` へ移したもの。本番の射影は委ねるだけで挙動は不変）と最小の名目額を、
 本番と同じ順・同じ理由（`DecisionExitSameDay` / `SizedBelowMinimumNotional`）で当てる。「名目額の床だけを足すと記録の指紋が変わる」の懸念は、プロンプトの指紋

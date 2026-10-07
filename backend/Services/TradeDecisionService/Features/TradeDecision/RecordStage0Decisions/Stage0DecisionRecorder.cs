@@ -73,7 +73,7 @@ public sealed class Stage0DecisionRecorder(
     ILogger<Stage0DecisionRecorder> logger,
     MinimumEntryNotionalOptions? minimumEntryNotional = null)
 {
-    // 🔴 FR-10, #1209, IADR-0506: 最小の名目額のしきい値は**本番の判断と同じ構成**（DI の単一の値＝Sizing:MinEntryNotionalRatio）を使う。
+    // 🔴 FR-10, #1209, IADR-0507: 最小の名目額のしきい値は**本番の判断と同じ構成**（DI の単一の値＝Sizing:MinEntryNotionalRatio）を使う。
     // 未指定は既定（1%）で効く（不在を「統制なし」にしない。IADR-0163 決定2 の規律・TradeDecisionAppService と同じ）。
     private readonly MinimumEntryNotionalOptions _minimumEntryNotional =
         minimumEntryNotional ?? MinimumEntryNotionalOptions.Default;
@@ -355,7 +355,7 @@ public sealed class Stage0DecisionRecorder(
         var (signedQuantity, belowMinimumNotional) = SignedQuantity(decision, input);
         if (belowMinimumNotional == true)
         {
-            // FR-10, #1209, IADR-0506: 本番ならサイジングの直後に SizedBelowMinimumNotional で見送る判断。数量は消さずに判定を記録へ残し、
+            // FR-10, #1209, IADR-0507: 本番ならサイジングの直後に SizedBelowMinimumNotional で見送る判断。数量は消さずに判定を記録へ残し、
             // 再生が新規建てにだけ適用する（記録器は保有を知らない）。
             logger.LogInformation(
                 "Stage 0 記録: {Symbol} {AsOf} は新規建てとして最小の名目額に満たない（本番は SizedBelowMinimumNotional で見送る。"
@@ -371,7 +371,7 @@ public sealed class Stage0DecisionRecorder(
             input.AsOfInputs,
             // FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次の判断と一次に応答したモデルを本判断と別に残す。
             screening,
-            // FR-10, #1209, IADR-0506: 新規建てとして最小の名目額に満たないか（本番と同じ判定。null は判定していない）。
+            // FR-10, #1209, IADR-0507: 新規建てとして最小の名目額に満たないか（本番と同じ判定。null は判定していない）。
             belowMinimumNotional), capturing.Calls.Count, cost);
     }
 
@@ -430,7 +430,7 @@ public sealed class Stage0DecisionRecorder(
     // 採算ゲート（IADR-0076）は判断そのものではない。再生側は建玉をシミュレータが持つため、
     // 決済は「反対方向の数量」として自然に畳まれる（`SignedInventory`）。
     //
-    // 🔴 FR-10, #1176, IADR-0495 決定1, #1209, IADR-0506: **最小の名目額は本番と同じ関数・同じしきい値で判定する**（数量 > 0 のとき）。
+    // 🔴 FR-10, #1176, IADR-0495 決定1, #1209, IADR-0507: **最小の名目額は本番と同じ関数・同じしきい値で判定する**（数量 > 0 のとき）。
     // 記録器が評価するのは保有なしの枝だけ（IADR-0351 決定7）なので、Buy / Sell はすべて新規建てとして判定する。
     // 数量は 0 にしない —— 再生ではこの注文が建玉の決済として働くことがあり、本番は決済に名目額を掛けない（適用は再生側が新規建てにだけ行う）。
     private (int SignedQuantity, bool? BelowMinimumNotional) SignedQuantity(LlmDecision decision, AsOfDecisionInput input)

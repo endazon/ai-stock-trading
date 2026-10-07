@@ -577,6 +577,30 @@ function selfTest() {
     })()
   );
 
+  // #1233: 宣言行が消えても書式例を拾って黙って縮まない／宣言が 2 個あれば曖昧として例外
+  {
+    const fs3 = require('fs');
+    const os3 = require('os');
+    const path3 = require('path');
+    const dir = fs3.mkdtempSync(path3.join(os3.tmpdir(), 'trace-adr-range-1233-'));
+    const rangeOf = (body) => {
+      const f = path3.join(dir, `r${Math.random().toString(36).slice(2)}.md`);
+      fs3.writeFileSync(f, `## 起点 ID の種別（固有）\n\n${body}\n`);
+      try {
+        return planRanges.readPlanAdrRange(f);
+      } catch {
+        return 'threw';
+      }
+    };
+    t('plan-ranges: 宣言行が消えて書式例（読めない形）だけ残る規約は例外（#1233）',
+      rangeOf('書式例は `` `ADR-0001..NNNN` `` の形') === 'threw');
+    t('plan-ranges: 宣言＋読めない形の書式例は宣言の値（#1233）',
+      JSON.stringify(rangeOf('計画 ADR は `ADR-0001..0055`。書式例は `` `ADR-0001..NNNN` `` の形'))
+        === JSON.stringify({ from: 1, to: 55 }));
+    t('plan-ranges: レンジ表記が 2 個ある規約は曖昧として例外（#1233）',
+      rangeOf('計画 ADR は `ADR-0001..0055`。書式例は `` `ADR-0001..0037` `` の形') === 'threw');
+  }
+
   let failed = 0;
   for (const c of cases) {
     process.stdout.write(`  ${c.pass ? 'ok  ' : 'FAIL'} ${c.name}\n`);

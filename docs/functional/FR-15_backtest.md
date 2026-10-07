@@ -9,7 +9,7 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0506, IADR-0495]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495]
 specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit]
 issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209]
 -->

@@ -25,6 +25,6 @@ public sealed record DecisionExitReentrySupply(bool LongSide, bool ShortSide)
     /// 買いの新規建て＝ロングを建てる → ロングの決済を見る。売りの新規建て＝ショートを建てる → ショートの決済を見る。
     /// </summary>
     public bool ForEntry(TradeSide entrySide) =>
-        // #1209, IADR-0506: 方向の規則は共有カーネル（Stage 0 の再生と同じ述語）。
+        // #1209, IADR-0507: 方向の規則は共有カーネル（Stage 0 の再生と同じ述語）。
         DecisionExitReentry.BlocksEntry(LongSide, ShortSide, entrySide);
 }

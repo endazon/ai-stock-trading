@@ -178,6 +178,7 @@ public class ScheduledCycleRedeliveryTests
         IClock? clock = null,
         IMarketCalendar? calendar = null,
         IHeldPositionProvider? held = null,
+        ScheduledCycleRetryChain? retryChain = null,
         params WatchedSymbol[] watchlist) =>
         Host.CreateDefaultBuilder()
             .ConfigureLogging(l =>
@@ -210,6 +211,13 @@ public class ScheduledCycleRedeliveryTests
                 opts.PublishMessage<InformationCollected>().ToLocalQueue(CycleQueue);
                 if (cycleTimeoutSeconds is { } seconds)
                     opts.Policies.Add(new ShortCycleTimeout(seconds));
+
+                // #1194, IADR-0505: 本番の定時サイクルの試行の上限（ポリシーは本番と同じ型。連鎖の値だけ試験が与える）。
+                if (retryChain is not null)
+                {
+                    opts.Services.AddSingleton(retryChain);
+                    opts.Policies.Add<ScheduledCycleRetryPolicy>();
+                }
             })
             .StartAsync();
 
@@ -220,6 +228,8 @@ public class ScheduledCycleRedeliveryTests
     // 🔴 T-10-2246（最重要・否定形）: サイクルが実行時間の上限で打ち切られて再試行されても、判断は銘柄ごとに 1 件だけ発行される。
     // 1 回目の試行で判断済みの銘柄（AAPL）の発行は送られずに捨てられ、再試行の判断が同じ DecisionId で 1 件だけ出る。
     // #1169 の実測（1 回目の MSFT の判断が下流へ届かず、再試行が新しい DecisionId で出した）を、上限を 2 秒にして再現する。
+    // ［2026-10-08 追記 / #1194・IADR-0505］本試験は共通の失敗方針（再試行 3 回）の経路である。本番の定時サイクルの試行の上限は
+    // ScheduledCycleRetryPolicy が与え、既定・経路B では 1（再試行しない。T-10-2405）。本試験は試行の上限が 2 以上の構成の不変条件として残す。
     [Fact]
     public async Task T_10_2246_打ち切られて再試行されたサイクルは判断を二重に発行しない()
     {
@@ -243,6 +253,69 @@ public class ScheduledCycleRedeliveryTests
         decisions.Single(d => d.Intent.Symbol == "MSFT").DecisionId
             .Should().Be(ScheduledDecisionIds.For(message.EventId, "MSFT", Market.UnitedStates)!.Value);
         failures.Calls.Should().BeEmpty("サイクルの打ち切りは銘柄の失敗ではない（銘柄の catch で握り潰さず再試行へ伝える）");
+
+        await host.StopAsync();
+    }
+
+    // 試行の上限を指定した連鎖（T＝2 秒の短いサイクルで、consumer_timeout を握り(n) と握り(n＋1) の間に置く）。
+    private static ScheduledCycleRetryChain RetryChainOf(int attempts)
+    {
+        var handler = TimeSpan.FromSeconds(2);
+        var cooldowns = WolverineExtensions.RetryCooldowns;
+        var holdNext = handler * (attempts + 1) + cooldowns.Take(attempts).Aggregate(TimeSpan.Zero, (a, b) => a + b);
+        var chain = ScheduledCycleRetryChain.Derive(handler, cooldowns, TimeSpan.Zero, holdNext);
+        chain.Attempts.Should().Be(attempts, "前提: 試験の連鎖の試行の上限");
+        return chain;
+    }
+
+    // 🔴 T-10-2405（否定形・最重要）: 試行の上限が 1（既定・経路B）の定時サイクルは、上限で打ち切られても**同じ配信の中で再試行しない**
+    // （共通の失敗方針の再試行 3 回を上書きする。チェーンの規則が共通の規則より先に当たることの実測）。
+    // 打ち切られた試行の判断の発行は捨てられ、配信は _error へ送られる。LLM を二重に呼ばない。
+    [Fact]
+    public async Task T_10_2405_試行の上限が1の定時サイクルは打ち切られても再試行せずエラーキューへ送る()
+    {
+        var llm = new HangOnceLlm("MSFT");
+        var failures = new RecordingTradeDecisionFailureReporter();
+        using var host = await BuildAsync(
+            llm, ProductionLikeBudget(), failures, cycleTimeoutSeconds: 2, retryChain: RetryChainOf(1), watchlist: [Aapl, Msft]);
+        var message = new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow);
+
+        var session = await host.TrackActivityForTest()
+            .DoNotAssertOnExceptionsDetected()
+            .PublishMessageAndWaitAsync(message);
+
+        llm.CancelledHangs.Should().Be(1, "前提: 1 回目の試行がサイクルの上限で打ち切られた");
+        llm.Targets.Count(t => t == "MSFT").Should().Be(1, "再試行しない（MSFT の LLM は 1 回だけ）");
+        llm.Targets.Count(t => t == "other").Should().Be(1, "再試行しない（AAPL の LLM は 1 回だけ）");
+        session.Sent.MessagesOf<TradeDecisionMade>().Should().BeEmpty("打ち切られた試行の発行は捨てられる");
+        session.MovedToErrorQueue.MessagesOf<InformationCollected>().Should().ContainSingle()
+            .Which.EventId.Should().Be(message.EventId);
+        failures.Calls.Should().BeEmpty("サイクルの打ち切りは銘柄の失敗ではない");
+
+        await host.StopAsync();
+    }
+
+    // T-10-2405: 試行の上限が 2 の構成では、打ち切られたサイクルを**1 回だけ**再試行する（共通の間隔の先頭 2 秒）。
+    // 再試行で銘柄ごとに 1 件だけ、導いた DecisionId で出る（T-10-2246 と同じ不変条件を本番のポリシーの経路で確かめる）。
+    [Fact]
+    public async Task T_10_2405_試行の上限が2なら打ち切られたサイクルを1回だけ再試行する()
+    {
+        var llm = new HangOnceLlm("MSFT");
+        var failures = new RecordingTradeDecisionFailureReporter();
+        using var host = await BuildAsync(
+            llm, ProductionLikeBudget(), failures, cycleTimeoutSeconds: 2, retryChain: RetryChainOf(2), watchlist: [Aapl, Msft]);
+        var message = new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow);
+
+        var session = await host.TrackActivityForTest()
+            .DoNotAssertOnExceptionsDetected()
+            .PublishMessageAndWaitAsync(message);
+
+        llm.CancelledHangs.Should().Be(1);
+        llm.Targets.Count(t => t == "MSFT").Should().Be(2, "1 回目は打ち切り・2 回目（再試行）は応答する");
+        session.Sent.MessagesOf<TradeDecisionMade>().Select(d => d.DecisionId).Should().BeEquivalentTo(
+            [ScheduledDecisionIds.For(message.EventId, "AAPL", Market.UnitedStates)!.Value,
+             ScheduledDecisionIds.For(message.EventId, "MSFT", Market.UnitedStates)!.Value]);
+        session.MovedToErrorQueue.MessagesOf<InformationCollected>().Should().BeEmpty();
 
         await host.StopAsync();
     }

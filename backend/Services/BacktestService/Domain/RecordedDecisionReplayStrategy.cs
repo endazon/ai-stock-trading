@@ -9,7 +9,7 @@ namespace BacktestService.Domain;
 //
 // ADR-0033 は Stage 0 の評価対象を「取引判断サービスの AI 判断そのもの」と定め、記録・再生方式を採った。
 // 本型はその「再生」であり、**記録した判断列を注文へ写す純関数**である。
-// 🔴 FR-10, #1209, IADR-0506: ただし再生の時点で**新規建て**になる注文は、本番と同じ 2 統制に当たれば写さない（見送る）——
+// 🔴 FR-10, #1209, IADR-0507: ただし再生の時点で**新規建て**になる注文は、本番と同じ 2 統制に当たれば写さない（見送る）——
 // (1) 最小の名目額（記録器が本番と同じ関数で判定した `EntryBelowMinimumNotional`。理由 `SizedBelowMinimumNotional`）、
 // (2) 判断由来の決済の後の同日・同方向（共有カーネルの `DecisionExitReentry`＝本番の審査と同じ述語。理由 `DecisionExitSameDay`）。
 // 建玉は記録器が知らず再生にしか無いため、判定はここで行う。判定に要る建玉と決済は、その走行で当日までに渡されたバー
@@ -159,7 +159,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
     /// 記録の取り違えで別期間の判断が紛れ込む経路を断つためである）。
     /// </para>
     /// <para>記録の無い日も無発注である（判断していない日に注文を発明しない）。</para>
-    /// <para>FR-10, #1209, IADR-0506: 新規建てになる注文のうち本番の 2 統制に当たるものは写さない（<see cref="Replay"/>）。</para>
+    /// <para>FR-10, #1209, IADR-0507: 新規建てになる注文のうち本番の 2 統制に当たるものは写さない（<see cref="Replay"/>）。</para>
     /// </summary>
     public IReadOnlyList<BacktestOrder> DecideOrders(BacktestContext context)
     {
@@ -172,7 +172,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
     }
 
     /// <summary>
-    /// FR-10, FR-15, #1209, IADR-0506: その走行で当日（<paramref name="asOf"/>）までに渡されたバー（<paramref name="history"/>）から、
+    /// FR-10, FR-15, #1209, IADR-0507: その走行で当日（<paramref name="asOf"/>）までに渡されたバー（<paramref name="history"/>）から、
     /// 建玉と判断由来の決済を判断日ごとに組み直し、当日に写す注文と、当日までに見送った新規建てを返す（純関数）。
     /// <para>
     /// 組み直しは <see cref="BacktestSimulator"/> と同じ規則に従う —— 建玉ゼロから始め、判断日の注文は<b>次の取引日</b>（バーのある日）の始値で、
@@ -254,7 +254,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
         return new Stage0ReplayDay(todays, skipped);
     }
 
-    // FR-10, #1209, IADR-0506: 新規建て（建玉 0、または建玉と同じ符号）に本番の 2 統制を当てる。本番と同じ順で評価する ——
+    // FR-10, #1209, IADR-0507: 新規建て（建玉 0、または建玉と同じ符号）に本番の 2 統制を当てる。本番と同じ順で評価する ——
     // 判断由来の決済の後の同日・同方向は新規建ての可否の口が LLM の前に止める（名目額の判定まで届かない）。
     private static (DecisionSkipReason? Skip, RejectionReason? Rejection)? EntryControl(
         BacktestOrder order, bool belowMinimumNotional, List<ReplayExit>? exits, DateOnly day)
@@ -285,7 +285,7 @@ public sealed class RecordedDecisionReplayStrategy : IBacktestStrategy
 }
 
 /// <summary>
-/// FR-10, FR-15, #1209, IADR-0506: 再生の 1 日分の結果。<see cref="Orders"/> は当日に写す注文、<see cref="SkippedEntries"/> は
+/// FR-10, FR-15, #1209, IADR-0507: 再生の 1 日分の結果。<see cref="Orders"/> は当日に写す注文、<see cref="SkippedEntries"/> は
 /// その走行で当日までに本番の統制に当たって見送った新規建て（判断日順）。
 /// </summary>
 public sealed record Stage0ReplayDay(
@@ -293,7 +293,7 @@ public sealed record Stage0ReplayDay(
     IReadOnlyList<Stage0ReplaySkippedEntry> SkippedEntries);
 
 /// <summary>
-/// FR-10, FR-15, #1209, IADR-0506: 再生で見送った新規建て。理由は本番の列挙そのもの —— 最小の名目額は判断の見送り
+/// FR-10, FR-15, #1209, IADR-0507: 再生で見送った新規建て。理由は本番の列挙そのもの —— 最小の名目額は判断の見送り
 /// （<see cref="DecisionSkipReason.SizedBelowMinimumNotional"/>）、判断由来の決済の後の同日・同方向は審査の拒否
 /// （<see cref="RejectionReason.DecisionExitSameDay"/>）。どちらか一方だけが入る。
 /// </summary>

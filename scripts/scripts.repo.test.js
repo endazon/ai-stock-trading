@@ -721,7 +721,7 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     assert.ok(!missing.some((m) => m.startsWith('FR-10:')));
   });
 
-  ok('check-test-traceability: planning 未 populate なら planIds は null（実在検査を skip する合図）', () => {
+  ok('check-test-traceability: planning 未 populate なら planIds は null（宣言レンジへ切り替える合図。#1235）', () => {
     const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-noplan-'));
     assert.strictEqual(tt.planIds(root), null);
   });
@@ -871,7 +871,83 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
         fsTt.writeFileSync(pathTt.join(specDir, `${id}_x.md`), body);
       }
     }
+    // 検査 3（実在検査）の一次情報＝計画 ID の宣言レンジ（#1235）。模擬ツリーは planning submodule を
+    // 持たないため、宣言が無いと fail-loud で落ちる。範囲は**実ファイルと違う値**（FR-01..20）にして、
+    // 模擬ツリー側の宣言が読まれていることを否定形（FR-21 で落ちる）で確かめられるようにする。
+    writeTraceabilityRules(root, '`FR-01..20` / `UC-01..07` / `SC-01..04`');
   };
+
+  const writeTraceabilityRules = (root, declaration) => {
+    const rulesDir = pathTt.join(root, '.claude', 'rules');
+    fsTt.mkdirSync(rulesDir, { recursive: true });
+    fsTt.writeFileSync(
+      pathTt.join(rulesDir, 'traceability.repo.md'),
+      `# 模擬\n\n${tt.PLAN_RANGE_HEADING}\n\nレンジは ${declaration}。\n\n## 次の節\n`
+    );
+  };
+
+  const addFixtureTest = (root, body) => {
+    const dir = pathTt.join(root, 'backend', 'Tests', 'AiStockTrading.Fixture.Tests');
+    fsTt.mkdirSync(dir, { recursive: true });
+    fsTt.writeFileSync(pathTt.join(dir, 'Extra.cs'), body);
+  };
+
+  // --- 検査 3: 参照 ID の実在検査を宣言レンジで行う（#1235） ---
+  // 従前は planning submodule（撤去済み）が無いと notice だけで skip し、`FR-99` を書いても緑だった。
+  ok('🔴 [陽性対照/#1235] check-test-traceability: 宣言レンジに無い ID をテストが参照したら exit 1', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-bad-'));
+    mkTraceabilityFixture(root);
+    addFixtureTest(root, '// FR-99, UC-08, SC-05\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `実在しない ID を参照しているのに緑になった（実在検査が skip している）:\n${r.out}`);
+    for (const id of ['FR-99', 'UC-08', 'SC-05']) {
+      assert.match(r.out, new RegExp(`計画書に存在しない ID ${id} を参照しています`));
+    }
+    assert.doesNotMatch(r.out, /skip しました（planning|実在検査を skip/);
+  });
+
+  ok('🔴 [陽性対照/#1235] check-test-traceability: 実在集合は模擬ツリーの宣言から作る（宣言の上端の 1 つ上で落ちる）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-edge-'));
+    mkTraceabilityFixture(root); // 宣言は FR-01..20（実ファイルの値とは別）
+    addFixtureTest(root, '// FR-21\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `宣言の範囲外（FR-21）が緑になった:\n${r.out}`);
+    assert.match(r.out, /計画書に存在しない ID FR-21 を参照しています（実在集合: 宣言レンジ/);
+  });
+
+  ok('check-test-traceability: 宣言レンジ内の ID だけを参照していれば exit 0（正の確認・#1235）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-ok-'));
+    mkTraceabilityFixture(root);
+    addFixtureTest(root, '// FR-01, FR-20, UC-07, SC-04\n');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 0, `範囲内の ID だけなのに落ちた:\n${r.out}`);
+    assert.match(r.out, /実在集合: 宣言レンジ \.claude\/rules\/traceability\.repo\.md・31 件）/); // FR 20 + UC 7 + SC 4
+  });
+
+  ok('🔴 [否定形/#1235] check-test-traceability: 宣言が読めなければ skip せず exit 1（fail-loud）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-norules-'));
+    mkTraceabilityFixture(root);
+    fsTt.rmSync(pathTt.join(root, '.claude'), { recursive: true, force: true });
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `宣言が無いのに緑になった:\n${r.out}`);
+    assert.match(r.out, /実在検査の一次情報（計画 ID の宣言レンジ）を読めません/);
+  });
+
+  ok('🔴 [否定形/#1235] check-test-traceability: 宣言の書式が崩れていても exit 1（FR が拾えない）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-broken-'));
+    mkTraceabilityFixture(root);
+    writeTraceabilityRules(root, 'FR-01..20 / `UC-01..07` / `SC-01..04`');
+    const r = runTraceability(root);
+    assert.strictEqual(r.code, 1, `宣言の書式が崩れているのに緑になった:\n${r.out}`);
+    assert.match(r.out, /計画レンジに FR が見つかりません/);
+  });
+
+  ok('check-test-traceability: --require-planning は宣言レンジが読めれば exit 0（実在検査は skip しない・#1235）', () => {
+    const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-1235-req-'));
+    mkTraceabilityFixture(root);
+    const r = runTraceability(root, ['--require-planning']);
+    assert.strictEqual(r.code, 0, `宣言が読めるのに --require-planning で落ちた:\n${r.out}`);
+  });
 
   ok('🔴 [否定形] check-test-traceability: 旧樹形のディレクトリがあるのに旧樹形が 0 件走査なら T1 が落とす', () => {
     const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t1-old-'));
@@ -2616,6 +2692,44 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       // 種別の欠落・範囲の不正も例外。
       assert.throws(() => ttRp.expandPlanIds({ FR: { from: 1, to: 3 }, UC: { from: 1, to: 2 } }));
       assert.throws(() => ttRp.expandPlanIds({ FR: { from: 5, to: 1 }, UC: { from: 1, to: 2 }, SC: { from: 1, to: 2 } }));
+    });
+
+    // --- #1233: 宣言行が消えても同じ節の書式例を拾って黙って通る／縮む ---------------------
+    //
+    // 従前、ADR は 1 個目の一致、FR/UC/SC は後勝ちで拾っていた。地の文の書式例が宣言と同じ形だと、
+    // 宣言行だけが消えた写しで `{from:1,to:37}` が返った（#1231 の独立監査の実測）。
+    // **宣言は種別ごとにちょうど 1 個**を契約にし、2 個以上は値が同じでも例外にする。
+    ok('#1233: 宣言が消えて書式例だけが残る／宣言が 2 個ある規約は例外、正常な規約は宣言の値を返す', () => {
+      const prRp = require('./lib/plan-ranges.js');
+      const dir = fsRp.mkdtempSync(pathRp.join(osRp.tmpdir(), 'rp1233-'));
+      const write = (name, body) => {
+        const f = pathRp.join(dir, name);
+        fsRp.writeFileSync(f, `## 起点 ID の種別（固有）\n\n${body}\n\n## 次の節\n\n\`ADR-0001..0099\` \`FR-01..99\`\n`);
+        return f;
+      };
+      const decl = '`FR-01..21` / `UC-01..07` / `SC-01..04`、計画 ADR は `ADR-0001..0055`';
+      // (b) 正常: 宣言 1 個＋読めない形の書式例。次の節のトークンは拾わない。
+      const normal = write('normal.md', `${decl}\n\n書式例は \`FR-01..NN\` / \`\` \`ADR-0001..NNNN\` \`\` の形。`);
+      assert.deepStrictEqual(prRp.readPlanAdrRange(normal), { from: 1, to: 55 });
+      assert.strictEqual(ttRp.readPlanIds(normal).length, 32);
+      // (a) 実ファイルから宣言トークンだけを除いた写し（#1231 の監査と同じ操作）→ 縮まずに例外。
+      const realMd = fsRp.readFileSync(pathRp.join(__dirname, '..', ttRp.RULES_FILE), 'utf8');
+      const declLine = realMd.split('\n').find((l) => /`ADR-\d+\.\.\d+`/.test(l) && /`FR-\d+\.\.\d+`/.test(l));
+      assert.ok(declLine, '実ファイルに宣言行が見つからない');
+      const removed = pathRp.join(dir, 'removed.md');
+      fsRp.writeFileSync(removed, realMd.replace(declLine, declLine.replace(/`(FR|UC|SC|ADR)-\d+\.\.\d+`/g, '')));
+      assert.throws(() => prRp.readPlanAdrRange(removed), /見つかりません/);
+      assert.throws(() => ttRp.readPlanIds(removed), /見つかりません/);
+      // (c) 宣言＋旧来の書式例（値が違う）→ 曖昧なので例外。値が同じでも例外。
+      const twoAdr = write('two-adr.md', `${decl}\n\n書式例は \`\` \`ADR-0001..0037\` \`\` の形。`);
+      assert.throws(() => prRp.readPlanAdrRange(twoAdr), /2 個あります/);
+      const twoFr = write('two-fr.md', `${decl}\n\n書式例は \`FR-01..21\` の形。`);
+      assert.throws(() => ttRp.readPlanIds(twoFr), /FR のトークンが節内に 2 個/);
+      // 実ファイルは宣言 1 個ずつ（書式例が読めない形で書かれている）。
+      const real = ttRp.planRangeSection(fsRp.readFileSync(pathRp.join(__dirname, '..', ttRp.RULES_FILE), 'utf8'));
+      assert.strictEqual(real.match(new RegExp(prRp.ADR_RANGE_RE.source, 'g')).length, 1);
+      assert.strictEqual(real.match(/`(FR|UC|SC)-\d+\.\.\d+`/g).length, 3);
+      fsRp.rmSync(dir, { recursive: true, force: true });
     });
 
     ok('#532: 規約ファイルが機械の単一情報源であることを明記している（節を消させない）', () => {

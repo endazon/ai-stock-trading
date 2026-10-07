@@ -379,7 +379,7 @@ public class Stage0DecisionRecordTests
         }.Distinct().Should().HaveCount(5);
     }
 
-    // ---- T-10-2417 FR-10, #1209, IADR-0506: 最小の名目額の判定（EntryBelowMinimumNotional）と戦略 ID ----
+    // ---- T-10-2417 FR-10, #1209, IADR-0507: 最小の名目額の判定（EntryBelowMinimumNotional）と戦略 ID ----
 
     // T-10-2417: 判定は往復で落ちず、項目を持たない旧い JSON は null（判定していない）へ復元される（判定済みへ倒れない）。
     [Fact]

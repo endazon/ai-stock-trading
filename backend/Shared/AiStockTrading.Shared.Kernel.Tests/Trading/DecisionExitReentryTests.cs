@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Kernel.Tests.Trading;
 
-// FR-10, FR-15, #1176, IADR-0495 決定3, #1209, IADR-0506: 「判断由来の決済の後は、同じ取引日のうち同じ方向の新規建てをしない」の共有の述語。
+// FR-10, FR-15, #1176, IADR-0495 決定3, #1209, IADR-0507: 「判断由来の決済の後は、同じ取引日のうち同じ方向の新規建てをしない」の共有の述語。
 // 本番の審査（リスク管理の射影が時刻を取引日へ写して委ねる）と Stage 0 の再生（判断日・約定日を渡す）が同じ規則を通る。
 public class DecisionExitReentryTests
 {

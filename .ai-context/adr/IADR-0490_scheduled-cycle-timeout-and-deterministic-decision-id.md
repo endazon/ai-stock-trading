@@ -2,10 +2,10 @@
 title: IADR-0490 定時サイクルのハンドラの実行時間の上限を構成から導いて明示し（1 銘柄の締め切りを強制）、定時判断の DecisionId を起点の巡回・市場・銘柄から決定的に導く。古い起点は捨て、開場は銘柄ごとに判定する。銘柄ごとのメッセージへの分割は採らない
 type: impl-adr
 status: Accepted
-related_ids: [FR-02, FR-10, NFR-02, NFR-13, UC-01, ADR-0003, ADR-0013, IADR-0023, IADR-0129, IADR-0057, IADR-0407, IADR-0463, IADR-0483, IADR-0061, IADR-0039, IADR-0307, IADR-0379, IADR-0163]
+related_ids: [FR-02, FR-10, NFR-02, NFR-13, UC-01, ADR-0003, ADR-0013, IADR-0023, IADR-0129, IADR-0057, IADR-0407, IADR-0463, IADR-0483, IADR-0061, IADR-0039, IADR-0307, IADR-0379, IADR-0163, IADR-0505]
 author: claude (Claude Code)
 created: 2026-10-06
-updated: 2026-10-07
+updated: 2026-10-08
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-02, NFR-02, NFR-13)
   - planning:projects/ai-stock-trading/04_workflows/01_scheduled-trading-cycle.md
@@ -156,6 +156,10 @@ plan_refs:
   同じ配信の中で再試行する（ack しないまま）。ハンドラの上限による打ち切りや、銘柄の catch の外へ漏れた例外では、再試行 1 回ごとに最大 T（＋待ち）が足される。
   再試行の連鎖全体は上の式に数えていない。**再試行の連鎖全体が `consumer_timeout` に収まることの起動時の検査は #1194**
   （MSP の IADR-0478 決定 7 `EnsureRetryChainFits` と同型）。前提以内の監視銘柄では 1 銘柄の締め切りが打ち切りを防ぐので、再試行の連鎖は通常起きない。
+  > **［2026-10-08 追記 / #1194］** 穴を閉じた（[IADR-0505](./IADR-0505_scheduled-cycle-retry-chain-within-consumer-timeout.md)）。定時サイクルの試行の上限を
+  > 「起点の待ち 600 秒 ＋ 試行 × T ＋ 再試行の待ち ＜ `consumer_timeout`」となる最大の回数として起動時に導き、定時サイクルのチェーンにだけ適用する
+  > （既定・経路B は 1 回＝再試行しない。失敗した配信は `_error` へ）。1 回でも収まらない構成（経路B で前提 13 など）は起動しない。
+  > 前提の上限の式は「600 ＋ n × T ＋ 再試行の待ち ＜ `consumer_timeout`」になり、n ＝ 1 の既定・経路B では上の数値（前提 12 が最大）と変わらない。
 - 13 件以上を監視するときは、前提を上げる前に 1 銘柄の締め切り（LLM の timeout・票数）の側を見直す。前提は**上限の導出にだけ**使われ、
   LLM の費用・Finnhub の要求数は実際の監視銘柄数で決まる（前提を上げても増えない）。
 - 実現手段: `values-local.yaml` の 1 行と、`.github/workflows/helm.yml` の描画検査（本番既定に現れない・経路B では trade-decision だけが 12）。

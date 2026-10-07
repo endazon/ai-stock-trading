@@ -402,6 +402,19 @@ builder.Services.AddSingleton(sp =>
         ScheduledCycleBudget.LlmCallsPerDecision(sp.GetRequiredService<DecisionOrchestrationOptions>()),
         ScheduledCycleBudget.ParseMaxWatchedSymbols(cfg[ScheduledCycleBudget.MaxWatchedSymbolsKey]));
 });
+// 🔴 FR-04, FR-02, NFR-13, #1194, IADR-0505: 定時サイクルの再試行の連鎖全体（起点の待ち ＋ 試行 × 上の上限 ＋ 再試行の待ち）を
+// ブローカの consumer_timeout（Messaging:BrokerConsumerTimeoutSeconds。既定 1,800 秒）に収める試行の上限。共通の再試行は同じ配信の中で回るため、
+// 1 回の試行だけを比べると再試行 1 回ごとに上限が足されて consumer_timeout を超え得た。n＝1 でも収まらなければ解決が例外を投げ、起動が止まる
+// （下の ScheduledCycleRetryPolicy が Wolverine の起動中に解決する）。間隔は共通の配線（shim）の値を読む（2 箇所に持たない）。
+builder.Services.AddSingleton(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    return ScheduledCycleRetryChain.Derive(
+        TimeSpan.FromSeconds(sp.GetRequiredService<ScheduledCycleBudget>().HandlerTimeoutSeconds),
+        WolverineExtensions.RetryCooldowns,
+        ScheduledCycleRetryChain.QueueWaitAllowance,
+        ScheduledCycleRetryChain.ParseBrokerConsumerTimeout(cfg[ScheduledCycleRetryChain.BrokerConsumerTimeoutKey]));
+});
 // FR-02, FR-04, FR-06, FR-11, #337, #567, IADR-0247, IADR-0313: スクリーニング入力の縮退の記録経路。
 // 発生時に ScreeningContextReduced を publish し、監査台帳（月報の件数集計の集計経路）へ届ける。
 // 予算は既定で有効（150,000 文字。IADR-0313 決定1）。ただし現行構成（Retrieval:TopK=5・参考情報 1 件あたり
@@ -582,7 +595,7 @@ builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILogger<Stage0DecisionRecorder>>(),
-    // FR-10, #1209, IADR-0506: 最小の名目額のしきい値は本番の判断と同じ単一の値（Sizing:MinEntryNotionalRatio）。
+    // FR-10, #1209, IADR-0507: 最小の名目額のしきい値は本番の判断と同じ単一の値（Sizing:MinEntryNotionalRatio）。
     sp.GetRequiredService<MinimumEntryNotionalOptions>()));
 builder.Services.AddHostedService<Stage0RecordingService>();
 
@@ -599,6 +612,8 @@ builder.Host.UseWolverine(opts =>
         builder.Configuration["RabbitMq:ConnectionString"],
         typeof(PriceMovementDetectedHandler).Assembly);
     opts.Policies.Add<ScheduledCycleTimeoutPolicy>();
+    // 🔴 #1194, IADR-0505: 定時サイクルだけ、再試行の連鎖が consumer_timeout に収まる試行の上限にする（既定・経路B は再試行しない）。
+    opts.Policies.Add<ScheduledCycleRetryPolicy>();
 });
 
 var app = builder.Build();
@@ -628,6 +643,10 @@ var cycleBudget = app.Services.GetRequiredService<ScheduledCycleBudget>();
 app.Logger.LogInformation(
     "定時サイクルの実行時間の上限: {HandlerTimeout}（1 銘柄の締め切り {PerSymbol} × 監視銘柄数の前提 {MaxWatchedSymbols} ＋ 余裕 {Margin}）",
     cycleBudget.HandlerTimeout, cycleBudget.PerSymbol, cycleBudget.MaxWatchedSymbols, ScheduledCycleBudget.CycleMargin);
+var cycleRetry = app.Services.GetRequiredService<ScheduledCycleRetryChain>();
+app.Logger.LogInformation(
+    "定時サイクルの試行の上限: {Attempts} 回（1 回の配信の握り {Hold} ＜ consumer_timeout {BrokerConsumerTimeout}。起点の待ち {QueueWait} を含む）",
+    cycleRetry.Attempts, cycleRetry.Hold, cycleRetry.BrokerConsumerTimeout, ScheduledCycleRetryChain.QueueWaitAllowance);
 
 app.MapAiStockTradingHealthChecks();
 app.MapAiStockTradingIntrospection();

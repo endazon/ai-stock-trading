@@ -8,7 +8,7 @@ using Xunit;
 
 namespace BacktestService.Tests.Domain;
 
-// 🔴 FR-10, FR-15, #1176, IADR-0495, #1209, IADR-0506: Stage 0 の再生は、再生の時点で**新規建て**になる注文に本番と同じ 2 統制を当て、
+// 🔴 FR-10, FR-15, #1176, IADR-0495, #1209, IADR-0507: Stage 0 の再生は、再生の時点で**新規建て**になる注文に本番と同じ 2 統制を当て、
 // 当たれば写さない（見送る）。
 //   - 最小の名目額: 記録器が本番と同じ関数で判定した EntryBelowMinimumNotional = true → SizedBelowMinimumNotional（本番の判断の見送りの理由）
 //   - 判断由来の決済の後の同日・同方向: 共有カーネルの DecisionExitReentry（本番の審査と同じ述語）→ DecisionExitSameDay（本番の拒否理由）

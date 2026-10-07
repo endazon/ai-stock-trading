@@ -18,7 +18,7 @@ using Xunit;
 
 namespace TradeDecisionService.Tests.Features.TradeDecision.RecordStage0Decisions;
 
-// 🔴 FR-10, FR-15, #1176, IADR-0495 決定1, #1209, IADR-0506: Stage 0 の記録器は、本番がサイジングの直後に SizedBelowMinimumNotional で見送る判断に
+// 🔴 FR-10, FR-15, #1176, IADR-0495 決定1, #1209, IADR-0507: Stage 0 の記録器は、本番がサイジングの直後に SizedBelowMinimumNotional で見送る判断に
 // 「新規建てとして最小の名目額に満たない」（EntryBelowMinimumNotional = true）を記録する。判定は本番と同じ関数・同じしきい値の構成。
 // 数量は 0 にしない（再生で決済として働くことがあるため。適用は再生側が新規建てにだけ行う）。
 public class Stage0MinimumEntryNotionalTests

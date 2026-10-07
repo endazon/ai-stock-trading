@@ -89,7 +89,7 @@ public sealed record Stage0ScreeningDecision(
 /// <param name="SignedQuantity">
 /// 多数決結果に対応する目標注文数量（+ 買い / − 売り / 0 は見送り）。再生はこの値を
 /// <c>BacktestOrder</c> へ写す（再生側でサイジングを再計算しない＝決定性を保つ）。
-/// FR-10, #1209, IADR-0506: ただし再生の時点で新規建てになる注文は、本番と同じ 2 統制（最小の名目額・判断由来の決済の後の
+/// FR-10, #1209, IADR-0507: ただし再生の時点で新規建てになる注文は、本番と同じ 2 統制（最小の名目額・判断由来の決済の後の
 /// 同日・同方向）に当たれば写さない（数量は変えずに見送る）。
 /// </param>
 /// <param name="CostJpy">この判断時点で実際に発生した LLM 費用（円）。多数決の全回分の合計。</param>
@@ -116,7 +116,7 @@ public sealed record Stage0ScreeningDecision(
 /// </para>
 /// </param>
 /// <param name="EntryBelowMinimumNotional">
-/// FR-10, #1176, IADR-0495 決定1, #1209, IADR-0506: 記録器が、この判断を<b>新規建てとして</b>発注すれば名目額（数量 × 参照価格・基準通貨）が
+/// FR-10, #1176, IADR-0495 決定1, #1209, IADR-0507: 記録器が、この判断を<b>新規建てとして</b>発注すれば名目額（数量 × 参照価格・基準通貨）が
 /// 最小の名目額（equity × <c>Sizing:MinEntryNotionalRatio</c>。既定 1%）に満たないと判定したか。本番の判定（サイジングの直後・
 /// 理由 <c>SizedBelowMinimumNotional</c>）と同じ関数・同じしきい値の構成で判定する。
 /// <para>

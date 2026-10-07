@@ -129,7 +129,7 @@ public class DecisionExitProjectionTests
         Project(RebuyAt, Close(ApprovalSource.TradeDecision, yesterday, fills: [yesterday])).LongSide.Should().BeFalse();
     }
 
-    // T-10-2411: 🔴 #1209, IADR-0506: 本番の射影（時刻）と共有の述語（取引日）は同値 —— Stage 0 の再生は後者を判断日・約定日で通す。
+    // T-10-2411: 🔴 #1209, IADR-0507: 本番の射影（時刻）と共有の述語（取引日）は同値 —— Stage 0 の再生は後者を判断日・約定日で通す。
     // 再生の時間軸（判断日 D に決済を決め、D+1 の始値で約定）を本番の時刻に置いた 3 つの場面で、両方向の答えが一致する:
     //   P1: D の決済が D+1 に約定・D+1 に同じ方向 → 止める／P2: D+2 に同じ方向 → 止めない／P3: 決済が約定しない・D+1 → 止めない。
     [Theory]

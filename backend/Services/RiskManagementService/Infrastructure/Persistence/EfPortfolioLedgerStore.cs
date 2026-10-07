@@ -293,12 +293,52 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
         return approvals.Sum(a => Math.Max(0, a.Quantity - filledByDecision.GetValueOrDefault(a.DecisionId)));
     }
 
-    public IReadOnlyList<LedgerFill> GetFills()
+    public IReadOnlyList<LedgerFill> GetFills() =>
+        ReadFills(db.TradeFills, db.ApprovedOrders, db.PositionDriftAdoptions.AsNoTracking());
+
+    // FR-06, FR-16, #1186, IADR-0506 決定 1: 市場と約定時刻の条件を SQL の WHERE へ下ろす（取引日の正確な判定は呼び出し側の純関数）。
+    // 結合・射影・「約定の後に取り込み」の連結は GetFills と同じ ReadFills を通す（列の補完規則を 2 か所に持たない）。
+    public IReadOnlyList<LedgerFill> GetFillsExecutedBetween(
+        Market? market, DateTimeOffset? executedAtOrAfter, DateTimeOffset? executedBefore)
+    {
+        // Npgsql の timestamptz の引数はオフセット 0 を要する（比較の意味は瞬間なので UTC へ寄せても変わらない）。
+        var lo = executedAtOrAfter?.ToUniversalTime();
+        var hi = executedBefore?.ToUniversalTime();
+
+        IQueryable<TradeFillRow> fills = db.TradeFills;
+        IQueryable<ApprovedOrderRow> approvals = db.ApprovedOrders;
+        var adoptions = db.PositionDriftAdoptions.AsNoTracking();
+
+        if (market is { } m)
+        {
+            approvals = approvals.Where(a => a.Market == m);
+            adoptions = adoptions.Where(r => r.Market == m);
+        }
+
+        if (lo is { } from)
+        {
+            fills = fills.Where(f => f.ExecutedAt >= from);
+            adoptions = adoptions.Where(r => r.AdoptedAtUtc >= from);
+        }
+
+        if (hi is { } before)
+        {
+            fills = fills.Where(f => f.ExecutedAt < before);
+            adoptions = adoptions.Where(r => r.AdoptedAtUtc < before);
+        }
+
+        return ReadFills(fills, approvals, adoptions);
+    }
+
+    private static List<LedgerFill> ReadFills(
+        IQueryable<TradeFillRow> tradeFills,
+        IQueryable<ApprovedOrderRow> approvedOrders,
+        IQueryable<PositionDriftAdoptionRow> driftAdoptions)
     {
         // 約定 × 承認 Intent を DecisionId で結合し、銘柄・方向・建玉効果を補完して射影入力を返す。
         var query =
-            from f in db.TradeFills
-            join a in db.ApprovedOrders on f.DecisionId equals a.DecisionId
+            from f in tradeFills
+            join a in approvedOrders on f.DecisionId equals a.DecisionId
             // IADR-0107: 列追加前の既存行（FxRateToBase が null）はレート 1＝基準通貨建てとして扱う（当時の暗黙の前提）。
             select new LedgerFill(
                 a.Symbol, a.Market, a.Side, a.PositionEffect,
@@ -323,7 +363,7 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
         // FR-10, FR-11, #849, IADR-0350 決定 2: 利用者が承認した乖離の取り込み行を合流させる。
         // **約定ではない**ため由来を ManualAdoption にし、射影が数量だけで畳めるようにする（Price は参考の取得単価）。
         // 承認行を持たないため StopLossPrice・DecisionId・Provider・認識時レートは既定（無し）のままにする。
-        fills.AddRange(db.PositionDriftAdoptions.AsNoTracking().AsEnumerable().Select(ToLedgerFill));
+        fills.AddRange(driftAdoptions.AsEnumerable().Select(ToLedgerFill));
         return fills;
     }
 

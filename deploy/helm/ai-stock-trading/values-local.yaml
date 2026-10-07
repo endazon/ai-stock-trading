@@ -461,8 +461,9 @@ services:
       #   「鮮度の上限 ＋ T」秒になる → 鮮度の上限 ＋ T ＜ consumer_timeout が要る。T が巡回間隔以下なら T ＜ consumer_timeout でよい。
       #   経路B は巡回 300 秒・鮮度の上限 600 秒（information-collection の env Collection__PollIntervalSeconds=300 で明示。#1192 で
       #   Production へ切り替えた。以前は appsettings.Development.json 由来）なので前者: 12 → T＝1,140・600＋T＝1,740（収まる）／13 → 1,830（超える）。
-      #   この上限は 1 回の試行についてで、共通のエラー方針（2s/10s/30s の再試行。同じ配信の中で ack せずに再試行する）の連鎖全体は
-      #   数えていない（既知の穴。連鎖全体の起動時の検査は #1194）。13 件以上にするなら LLM の timeout・票数から引き直す。
+      #   共通のエラー方針（2s/10s/30s の再試行。同じ配信の中で ack せずに再試行する）の連鎖全体も数える（#1194, IADR-0505）: 定時サイクルの
+      #   試行の回数は「600 ＋ 回数 × T ＋ 再試行の待ち ＜ consumer_timeout」の最大（12 では 1 回＝再試行しない）。1 回でも収まらない値
+      #   （13 など）では trade-decision が起動しない。13 件以上にするなら LLM の timeout・票数から引き直す。
       - { name: TradeCycle__MaxWatchedSymbols, value: "12" }
       # --- 価格文脈（#236/IADR-0099）: 判断へ現在値を供給し権威価格でサイジング。MarketData:Provider=finnhub＋鍵で実結線
       #     （ICurrentPriceProvider.IsEnabled が真）。鮮度 MaxQuoteStalenessSeconds 超過・取得不可は現在値なし（fail-safe）。

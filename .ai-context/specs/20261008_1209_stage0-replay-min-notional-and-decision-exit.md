@@ -2,7 +2,7 @@
 title: Stage 0 の記録器・バックテストの再生に、最小の名目額と判断由来の決済の後の同日・同方向の再エントリー禁止を本番と同じ判定で再現させる（#1209）
 type: spec
 status: accepted
-related_ids: [FR-10, FR-15, FR-04, ADR-0033, ADR-0054, ADR-0011, IADR-0506, IADR-0495, IADR-0318, IADR-0498, IADR-0351, IADR-0387, IADR-0043, IADR-0260]
+related_ids: [FR-10, FR-15, FR-04, ADR-0033, ADR-0054, ADR-0011, IADR-0507, IADR-0495, IADR-0318, IADR-0498, IADR-0351, IADR-0387, IADR-0043, IADR-0260]
 author: claude (Claude Code)
 created: 2026-10-08
 updated: 2026-10-08
@@ -48,7 +48,7 @@ plan_refs:
 - 再生側（BacktestService）はリスク管理サービスを参照できない（サービス間の直接参照は禁止。取引判断サービスだけが extern alias で読む既存の例外）。
   共有カーネル（`AiStockTrading.Shared.Kernel`）は両方から読める。
 - 記録はまだ 1 件も作られていない（`docs/blocked-tasks.md` B-7: as-of 入力の実供給が未実装・承認値未設定）。記録の形を足しても既存の記録の読み替えは生じない。
-- 採番: origin/develop の IADR の最大は 0504、開いている PR #1232 が IADR-0505 と T-10-2402〜T-10-2406 を使う。本件は **IADR-0506**・**T-10-2410〜**。
+- 採番: origin/develop の IADR の最大は 0504、開いている PR #1232 が IADR-0505 と T-10-2402〜T-10-2406 を使う。本件は **IADR-0507**・**T-10-2410〜**。
 
 ## 設計
 
@@ -89,7 +89,7 @@ plan_refs:
 
 | 箇所 | 種別 | 扱い |
 | --- | --- | --- |
-| `.ai-context/adr/IADR-0495_*.md` §結果「Stage 0 の記録・バックテストは本件の 2 統制を再現しない」 | 凍結記録 | 本文は書き換えず、日付つき追記（IADR-0506 で再現した）を足す |
+| `.ai-context/adr/IADR-0495_*.md` §結果「Stage 0 の記録・バックテストは本件の 2 統制を再現しない」 | 凍結記録 | 本文は書き換えず、日付つき追記（IADR-0507 で再現した）を足す |
 | `docs/tests/FR-10_risk-controls-tests.md` の #1176 節の残余リスク「疑似の検証（Stage 0 の記録）・バックテストは本節の 2 統制を再現しない」 | 生きた文書 | 是正する（再現した。残る差を書く）。本件の試験の表を足す |
 | `backend/Services/BacktestService/Domain/RecordedDecisionReplayStrategy.cs` の冒頭「記録した判断列をそのまま注文へ写すだけの純関数」 | コード | 是正する（2 統制の見送りを除いて写す。サイジングは再計算しない点は不変） |
 | `backend/Shared/.../Stage0DecisionRecord.cs` の `SignedQuantity`「再生はこの値をそのまま `BacktestOrder` へ写す」 | コード | 是正する |

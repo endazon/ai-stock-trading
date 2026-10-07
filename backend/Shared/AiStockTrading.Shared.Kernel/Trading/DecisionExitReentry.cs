@@ -3,7 +3,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 namespace AiStockTrading.Shared.Kernel.Trading;
 
 /// <summary>
-/// FR-10, FR-15, #1176, IADR-0495 決定3, #1209, IADR-0506: 1 つの<b>判断由来の決済</b>を取引日で表したもの。
+/// FR-10, FR-15, #1176, IADR-0495 決定3, #1209, IADR-0507: 1 つの<b>判断由来の決済</b>を取引日で表したもの。
 /// </summary>
 /// <param name="CloseSide">決済の売買方向。売りの決済はロング建玉を、買いの決済はショート建玉を閉じた。</param>
 /// <param name="ApprovedOn">決済を承認した取引日（その市場の現地取引日）。</param>
@@ -16,7 +16,7 @@ public sealed record DecisionExitOnTradingDays(TradeSide CloseSide, DateOnly App
 public readonly record struct DecisionExitSides(bool LongSide, bool ShortSide);
 
 /// <summary>
-/// FR-10, FR-15, #1176, IADR-0495 決定3, #1209, IADR-0506: <b>判断由来の決済の後は、同じ取引日のうち同じ方向の新規建てをしない</b>の述語（純関数）。
+/// FR-10, FR-15, #1176, IADR-0495 決定3, #1209, IADR-0507: <b>判断由来の決済の後は、同じ取引日のうち同じ方向の新規建てをしない</b>の述語（純関数）。
 /// <para>
 /// 本番の審査・新規建ての可否の口（リスク管理の <c>DecisionExitProjection</c>。時刻を市場の現地取引日へ写してから本型へ委ねる）と、
 /// Stage 0 の再生（バックテストの <c>RecordedDecisionReplayStrategy</c>。判断日と約定日をそのまま渡す）が<b>同じ規則</b>を通るために共有カーネルへ置く。
