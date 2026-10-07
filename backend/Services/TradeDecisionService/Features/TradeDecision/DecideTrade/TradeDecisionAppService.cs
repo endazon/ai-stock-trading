@@ -43,8 +43,14 @@ public sealed class TradeDecisionAppService(
     IPositionQueryHealthReporter? positionQueryHealth = null,
     IEntryBlockersProvider? entryBlockers = null,
     IStopWidthFloorSource? stopWidthFloor = null,
-    IDailyBarsProvider? dailyBars = null)
+    IDailyBarsProvider? dailyBars = null,
+    MinimumEntryNotionalOptions? minimumEntryNotional = null)
 {
+    // 🔴 FR-10, #1176, IADR-0495 決定1・2: 新規建ての最小の名目額（equity 比）。未指定＝既定（1%）で**効く**（不在を「統制なし」に
+    // しない。IADR-0163 決定2 の規律）。本番は Program.cs が Sizing:MinEntryNotionalRatio から読んで明示的に渡す（範囲外は起動を止める）。
+    private readonly MinimumEntryNotionalOptions _minimumEntryNotional =
+        minimumEntryNotional ?? MinimumEntryNotionalOptions.Default;
+
     // FR-04, ADR-0048 決定 2・3, #1118, IADR-0467 決定 3・6: 判断へ渡す出来高の日足の口。未指定＝NoOp（IsEnabled=false・要求しない）＝
     // プロンプトは従来の「出来高: 未提供」の行のまま。本番は Program.cs が DecisionVolume:Enabled（既定 false）で選んで明示的に渡す。
     private readonly IDailyBarsProvider _dailyBars = dailyBars ?? new NoOpDailyBarsProvider();
@@ -204,7 +210,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, reason);
     }
 
-    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: **LLM を呼ぶ前の見送り**（4 地点。#1113 / IADR-0463 で 5 地点）の出口。1 回の見送りにつき 1 件
+    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: **LLM を呼ぶ前の見送り**（4 地点。#1113 / IADR-0463 で 5 地点。#1176 / IADR-0495 で 6 地点）の出口。1 回の見送りにつき 1 件
     // TradeDecisionForgoneBeforeLlm を発行してから、唯一の出口 Skip を通す（計上は Skip の 1 件のまま）。
     // 🔴 TradeDecisionHeld は出さない（判断をしていない見送りで急変の基準値を進めない。IADR-0452 決定1）。
     // 🔴 **発行の失敗で見送りを壊さない**（SkipJudgedAsync と同じ規律）。伝えるのは本判断のキャンセルだけである。
@@ -228,7 +234,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, ToSkipReason(reason));
     }
 
-    // #1092, IADR-0462 決定4: 台帳の語彙（5 値。#1113 で 1 値を足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    // #1092, IADR-0462 決定4: 台帳の語彙（6 値。#1113・#1176 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
     internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
     {
         DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
@@ -236,6 +242,7 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.FxRateUnresolved => DecisionSkipReason.FxRateUnresolved,
         DecisionForgoneBeforeLlmReason.FxRateStaleNoHolding => DecisionSkipReason.FxRateStaleNoHolding,
         DecisionForgoneBeforeLlmReason.EntryBlockedByRiskControls => DecisionSkipReason.EntryBlockedByRiskControls,
+        DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional => DecisionSkipReason.EntryCapacityBelowMinimumNotional,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -369,6 +376,31 @@ public sealed class TradeDecisionAppService(
                 "換算レートが鮮度切れだが保有があるため判断を続行する（手仕舞いのみ許可・ADR-0022 決定5）: " +
                 "{Symbol} held={Held} asOf={AsOf}",
                 trigger.Symbol, held, fxReading.Rate.AsOf);
+        }
+
+        // 🔴 FR-10, #1176, IADR-0495 決定2: **新規建てに使える金額の上限が最小の名目額に届かない銘柄は、LLM を呼ぶ前に見送る。**
+        // 名目額はサイジングの金額キャップ（1 注文上限・段階残枠・日次残枠の最小）を超えないため、上限が equity × しきい値を下回れば
+        // LLM の結論に依らず新規建ては必ず見送られる（下のサイジングの後の判定）。省くのは #1113 と同じ線引き（保有が既知で 0・未約定が既知で空。
+        // この銘柄では LLM の結論は新規の買い〔必ず見送り〕・売り〔裸の新規売りとして必ず見送り〕・Hold しか無い）。資金・残枠が未供給（null）なら
+        // 省かない（「分からない」を「届かない」と読まない。従来どおり LLM の後に数量 0 で見送る）。手元の値だけで決まるので照会より先に置く。
+        if (heldPosition is { SignedQuantity: 0 } && workingEntries is { Any: false }
+            && context is { Capital: { } entryEquity, StageCapitalRemaining: { } stageRemaining, DailyOrderRemaining: { } dailyRemaining }
+            && MinimumEntryNotional.CapacityCannotReach(
+                entryEquity,
+                context.Limits.MaxOrderAmountFor(entryEquity),
+                Math.Max(0m, Math.Min(stageRemaining, dailyRemaining)),
+                _minimumEntryNotional.Ratio))
+        {
+            logger.LogInformation(
+                "新規建てに使える金額の上限が最小の名目額に届かないため LLM を呼ばずに見送り（保有 0・未約定なし・IADR-0495）: " +
+                "{Symbol} capacity={Capacity} minimum={Minimum} ratio={Ratio}",
+                trigger.Symbol,
+                Math.Min(context.Limits.MaxOrderAmountFor(entryEquity), Math.Max(0m, Math.Min(stageRemaining, dailyRemaining))),
+                MinimumEntryNotional.MinimumFor(entryEquity, _minimumEntryNotional.Ratio),
+                _minimumEntryNotional.Ratio);
+            return await SkipBeforeLlmAsync(
+                    trigger, DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         // 🔴 FR-10, FR-04, ADR-0003, #1113, IADR-0463 決定 1・4: **新規建てが審査で必ず拒否される銘柄は、LLM を呼ぶ前に見送る。**
@@ -684,6 +716,21 @@ public sealed class TradeDecisionAppService(
         {
             logger.LogInformation("サイジングで数量 0 のため見送り: {Symbol}", trigger.Symbol);
             return await SkipJudgedAsync(trigger, DecisionSkipReason.SizingZeroQuantity, judgedPrice, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // 🔴 FR-10, #1176, IADR-0495 決定1: **最小の名目額（equity × しきい値。既定 1%）に満たない新規建ては見送る**（建玉枠・承認を消費しない）。
+        // 名目額は発注する数量 × 参照価格（基準通貨）。ちょうど等しいときは通す。新規建て（買い増し・売り増しを含む）だけで、決済は上で確定済み。
+        // 審査は数量を減らさない（承認の数量＝意図の数量）ので、ここで判定した名目額がそのまま発注される。
+        var notionalBase = quantity * referencePriceBase;
+        if (MinimumEntryNotional.IsBelow(notionalBase, capital, _minimumEntryNotional.Ratio))
+        {
+            logger.LogInformation(
+                "サイジングの名目額が最小の名目額に満たないため見送り（IADR-0495）: {Symbol} quantity={Quantity} notional={Notional} " +
+                "minimum={Minimum} ratio={Ratio}",
+                trigger.Symbol, quantity, notionalBase,
+                MinimumEntryNotional.MinimumFor(capital, _minimumEntryNotional.Ratio), _minimumEntryNotional.Ratio);
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizedBelowMinimumNotional, judgedPrice, cancellationToken)
                 .ConfigureAwait(false);
         }
 

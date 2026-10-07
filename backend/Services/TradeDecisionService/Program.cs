@@ -519,6 +519,10 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
     sp.GetRequiredService<IFxRateSource>(),
     sp.GetRequiredService<ILogger<MarketFxRateProvider>>()));
 
+// 🔴 FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額のしきい値（Sizing:MinEntryNotionalRatio。equity 比・既定 0.01＝1%）。
+// **構築時に読む**ので、読めない値・範囲外（0 未満・0.25 超）はここで例外になり起動が止まる（fail-fast）。0 は統制を外す明示の値。
+builder.Services.AddSingleton(MinimumEntryNotionalOptionsLoader.FromConfiguration(builder.Configuration));
+
 builder.Services.AddScoped<TradeDecisionAppService>();
 
 // FR-04, FR-15, NFR（費用）, ADR-0033 決定2/決定4/決定5, #632, IADR-0318: Stage 0 の記録（AI 判断の記録・再生）。

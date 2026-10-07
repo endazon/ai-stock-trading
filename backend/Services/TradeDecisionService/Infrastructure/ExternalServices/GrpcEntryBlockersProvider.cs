@@ -51,6 +51,7 @@ public sealed class GrpcEntryBlockersProvider(
         Proto.EntryBlocker.KillSwitchActive => RejectionReason.KillSwitchActive,
         Proto.EntryBlocker.TradingPaused => RejectionReason.TradingPaused,
         Proto.EntryBlocker.StoppedOutSameDay => RejectionReason.StoppedOutSameDay,
+        Proto.EntryBlocker.DecisionExitSameDay => RejectionReason.DecisionExitSameDay,
         Proto.EntryBlocker.GoodFaithViolationLimitReached => RejectionReason.GoodFaithViolationLimitReached,
         Proto.EntryBlocker.MaxPositionsExceeded => RejectionReason.MaxPositionsExceeded,
         Proto.EntryBlocker.DailyLossLimitReached => RejectionReason.DailyLossLimitReached,

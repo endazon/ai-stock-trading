@@ -229,6 +229,8 @@ enum EntryBlocker {
   ENTRY_BLOCKER_MAX_POSITIONS_EXCEEDED = 5;
   ENTRY_BLOCKER_DAILY_LOSS_LIMIT_REACHED = 6;
   ENTRY_BLOCKER_MAX_DRAWDOWN_REACHED = 7;
+  // #1176 / IADR-0495: 当日に判断由来の決済（利確・判断の手仕舞い）をした銘柄の同じ方向の新規建て。
+  ENTRY_BLOCKER_DECISION_EXIT_SAME_DAY = 8;
 }
 
 // 1 方向の理由の一覧。🔴 入れ物の欠落は「不明」、空の入れ物は「確定する拒否は無い」。

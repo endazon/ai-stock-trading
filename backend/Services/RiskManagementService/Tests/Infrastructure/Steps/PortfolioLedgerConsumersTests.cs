@@ -82,6 +82,28 @@ public class PortfolioLedgerConsumersTests
         await host.StopAsync();
     }
 
+    // T-10-2304, FR-10, #1176, IADR-0495 決定4: 承認行の由来は OrderApproved の印で書き分ける。審査が判断を承認したもの
+    // （FromTradeDecision）は TradeDecision、判断を経ない承認（owner の手仕舞い・自動縮小。印なし）は従来どおり OrderApproved。
+    [Fact]
+    public async Task T_10_2298_判断由来の承認は由来TradeDecisionで判断を経ない承認はOrderApprovedで記録する()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        using var host = await BuildHostAsync(ledger);
+        var at = DateTimeOffset.UtcNow;
+        var fromDecision = Guid.NewGuid();
+        var ownerClose = Guid.NewGuid();
+
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new OrderApproved(fromDecision, CloseIntent(10, 1_000m), 10, at, FromTradeDecision: true));
+        await host.TrackActivityForTest().InvokeMessageAndWaitAsync(new OrderApproved(ownerClose, CloseIntent(5, 1_000m), 5, at));
+
+        var byId = ledger.GetCloseApprovals("AAPL", Market.UnitedStates, at.AddDays(-1)).ToDictionary(c => c.DecisionId);
+        byId[fromDecision].Source.Should().Be(ApprovalSource.TradeDecision);
+        byId[ownerClose].Source.Should().Be(ApprovalSource.OrderApproved);
+
+        await host.StopAsync();
+    }
+
     // 🔴 #611, IADR-0286 決定1（否定形）: 為替レート源が解決できなくても**承認は記録される**（fail-safe）。
     // 認識時レートは null（未記録）のまま——推定で埋めない。報告書はこの約定を含む期間を未供給にする。
     [Fact]

@@ -36,10 +36,13 @@ public sealed class OrderApprovedLedgerHandler(
         // 冪等（同一 DecisionId の再送は無視）はストア側で担保する。
         // FR-10, #935, IADR-0394 決定1/6: 由来を明示する。OrderApproved の発行元（審査・owner の手仕舞い・維持率の
         // 自動縮小）はいずれも損切りではない。**省略すると不明（null）になり、同方向の新規建てを止める側へ倒れる。**
+        // FR-10, #1176, IADR-0495 決定4: 審査が取引判断を承認したもの（FromTradeDecision）は判断由来として書き分ける
+        // （判断由来の決済＝利確の後の同日・同方向の新規建てを止める入力）。判断を経ない承認は従来どおり OrderApproved。
+        var source = message.FromTradeDecision ? ApprovalSource.TradeDecision : ApprovalSource.OrderApproved;
         ledger.AppendApproval(
-            message.DecisionId, message.Intent, message.ApprovedAt, fxRateBaseToDisplay, ApprovalSource.OrderApproved);
+            message.DecisionId, message.Intent, message.ApprovedAt, fxRateBaseToDisplay, source);
         logger.LogDebug(
-            "台帳に承認を記録: DecisionId={DecisionId} 銘柄={Symbol} 効果={Effect} 認識時レート(JPY/USD)={FxRateBaseToDisplay}",
-            message.DecisionId, message.Intent.Symbol, message.Intent.PositionEffect, fxRateBaseToDisplay);
+            "台帳に承認を記録: DecisionId={DecisionId} 銘柄={Symbol} 効果={Effect} 由来={Source} 認識時レート(JPY/USD)={FxRateBaseToDisplay}",
+            message.DecisionId, message.Intent.Symbol, message.Intent.PositionEffect, source, fxRateBaseToDisplay);
     }
 }

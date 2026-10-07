@@ -96,4 +96,18 @@ public enum DecisionSkipReason
     /// </para>
     /// </summary>
     AddOnBlockedByRiskControls,
+
+    /// <summary>
+    /// FR-10, #1176, IADR-0495 決定2: <b>LLM を呼ぶ前</b>の見送り。保有が既知で 0・未約定の新規建てが既知で空の銘柄で、新規建てに使える
+    /// 金額の上限（1 注文上限・段階残枠・日次残枠の最小）が最小の名目額（equity × しきい値。既定 1%）に届かない。
+    /// <c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </summary>
+    EntryCapacityBelowMinimumNotional,
+
+    /// <summary>
+    /// FR-10, #1176, IADR-0495 決定1: <b>LLM を呼んだ後</b>の見送り。新規建て（買い増し・売り増しを含む）のサイジングの結果
+    /// （数量 × 参照価格・基準通貨）が最小の名目額（equity × しきい値。既定 1%）に満たない。ちょうど等しいときは見送らない。
+    /// <c>TradeDecisionHeld</c> の理由にもこの名前が載る。決済は対象外。
+    /// </summary>
+    SizedBelowMinimumNotional,
 }

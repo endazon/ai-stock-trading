@@ -76,6 +76,8 @@ public class EntryStateBlockersTests
             from positions in new[] { MaxPositions - 1, MaxPositions, MaxPositions + 1 }
             from longStop in statuses
             from shortStop in statuses
+            from longExit in bools
+            from shortExit in bools
             from side in new[] { TradeSide.Buy, TradeSide.Sell }
             from killSwitch in bools
             from paused in bools
@@ -83,19 +85,22 @@ public class EntryStateBlockersTests
             from drawdown in bools
             from gfv in Enum.GetValues<Gfv>()
             from capitalKnown in bools
-            select (positions, longStop, shortStop, side, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown);
+            select (positions, longStop, shortStop, longExit, shortExit, side, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown);
 
-        foreach (var (positions, longStop, shortStop, side, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown) in cases)
+        foreach (var (positions, longStop, shortStop, longExit, shortExit, side, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown)
+            in cases)
         {
             var snapshot = Snapshot(positions, killSwitch, paused, dailyLoss, drawdown, gfv, capitalKnown);
             var stopOuts = new StopOutReentrySupply(longStop, shortStop);
+            // T-10-2303, #1176, IADR-0495 決定3: 判断由来の決済（両方向の有無）の次元を足した。
+            var exits = new DecisionExitReentrySupply(longExit, shortExit);
 
-            var blockers = EntryStateBlockers.Determine(side, Settings, snapshot, stopOuts, lockedOut: false);
-            var screened = RiskEvaluator.Evaluate(Entry(side), Settings, snapshot, stopOuts: stopOuts).Reasons;
+            var blockers = EntryStateBlockers.Determine(side, Settings, snapshot, stopOuts, exits, lockedOut: false);
+            var screened = RiskEvaluator.Evaluate(Entry(side), Settings, snapshot, stopOuts: stopOuts, decisionExits: exits).Reasons;
             var screenedDeterminable = screened.Where(EntryStateBlockers.Determinable.Contains).ToList();
             var known = gfv != Gfv.CashUnknownCount;
 
-            var label = $"positions={positions} stop={longStop}/{shortStop} side={side} kill={killSwitch} pause={paused} " +
+            var label = $"positions={positions} stop={longStop}/{shortStop} exit={longExit}/{shortExit} side={side} kill={killSwitch} pause={paused} " +
                 $"loss={dailyLoss} dd={drawdown} gfv={gfv} capital={capitalKnown}: 口=[{string.Join(",", blockers)}] " +
                 $"審査=[{string.Join(",", screenedDeterminable)}]";
             if (!blockers.All(screened.Contains))
@@ -111,7 +116,7 @@ public class EntryStateBlockersTests
         }
 
         failures.Should().BeEmpty();
-        checkedCases.Should().Be(3 * 3 * 3 * 2 * 2 * 2 * 2 * 2 * 5 * 2);
+        checkedCases.Should().Be(3 * 3 * 3 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 5 * 2);
         blockedCases.Should().BeGreaterThan(0).And.BeLessThan(checkedCases, "塞がる組と塞がらない組の両方を試す");
     }
 
@@ -126,7 +131,7 @@ public class EntryStateBlockersTests
 
         foreach (var side in new[] { TradeSide.Buy, TradeSide.Sell })
         {
-            var blockers = EntryStateBlockers.Determine(side, Settings, snapshot, StopOutReentrySupply.NoneToday, false);
+            var blockers = EntryStateBlockers.Determine(side, Settings, snapshot, StopOutReentrySupply.NoneToday, DecisionExitReentrySupply.NoneToday, false);
             if (blocked)
                 blockers.Should().Equal(RejectionReason.MaxPositionsExceeded);
             else
@@ -141,17 +146,38 @@ public class EntryStateBlockersTests
         var snapshot = Snapshot(0, false, false, false, false, Gfv.NotCashAccount, capitalKnown: true);
 
         EntryStateBlockers.Determine(
-                TradeSide.Buy, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.StoppedOut, StopOutStatus.None), false)
+                TradeSide.Buy, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.StoppedOut, StopOutStatus.None), DecisionExitReentrySupply.NoneToday, false)
             .Should().Equal(RejectionReason.StoppedOutSameDay);
         EntryStateBlockers.Determine(
-                TradeSide.Sell, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.StoppedOut, StopOutStatus.None), false)
+                TradeSide.Sell, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.StoppedOut, StopOutStatus.None), DecisionExitReentrySupply.NoneToday, false)
             .Should().BeEmpty("ロングの損切りは売りの新規建てを止めない");
         EntryStateBlockers.Determine(
-                TradeSide.Sell, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.None, StopOutStatus.StoppedOut), false)
+                TradeSide.Sell, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.None, StopOutStatus.StoppedOut), DecisionExitReentrySupply.NoneToday, false)
             .Should().Equal(RejectionReason.StoppedOutSameDay);
         EntryStateBlockers.Determine(
-                TradeSide.Buy, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.Unknown, StopOutStatus.Unknown), false)
+                TradeSide.Buy, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.Unknown, StopOutStatus.Unknown), DecisionExitReentrySupply.NoneToday, false)
             .Should().BeEmpty("不明は確定した拒否ではない（審査は StopOutStatusUnknown で止める）");
+    }
+
+    // T-10-2303, #1176, IADR-0495 決定3: 判断由来の決済（利確）はその方向の新規建てだけを塞ぎ、損切りと別の名前で返す。
+    [Fact]
+    public void T_10_2297_判断由来の決済は同じ方向だけを塞ぎ損切りと別の名前で返す()
+    {
+        var snapshot = Snapshot(0, false, false, false, false, Gfv.NotCashAccount, capitalKnown: true);
+        var longExited = new DecisionExitReentrySupply(LongSide: true, ShortSide: false);
+
+        EntryStateBlockers.Determine(TradeSide.Buy, Settings, snapshot, StopOutReentrySupply.NoneToday, longExited, false)
+            .Should().Equal(RejectionReason.DecisionExitSameDay);
+        EntryStateBlockers.Determine(TradeSide.Sell, Settings, snapshot, StopOutReentrySupply.NoneToday, longExited, false)
+            .Should().BeEmpty("ロングの利確は売りの新規建てを止めない（裁定「同じ方向」）");
+        EntryStateBlockers.Determine(
+                TradeSide.Sell, Settings, snapshot, StopOutReentrySupply.NoneToday, new DecisionExitReentrySupply(false, true), false)
+            .Should().Equal(RejectionReason.DecisionExitSameDay);
+        // 損切りと利確が同じ日に並べば両方の名前（審査の到達順）。
+        EntryStateBlockers.Determine(
+                TradeSide.Buy, Settings, snapshot, new StopOutReentrySupply(StopOutStatus.StoppedOut, StopOutStatus.None), longExited, false)
+            .Should().Equal(RejectionReason.StoppedOutSameDay, RejectionReason.DecisionExitSameDay);
+        EntryStateBlockers.Determinable.Should().Contain(RejectionReason.DecisionExitSameDay);
     }
 
     // T-10-1784: kill switch・一時停止・日次損失・ロックアウト・DD・GFV（現金口座で件数が既知のとき）をそれぞれ名前で返す。
@@ -159,7 +185,7 @@ public class EntryStateBlockersTests
     public void T_10_1784_各ブロッカーを名前で返し_GFV_の件数が不明なら返さない()
     {
         static IReadOnlyList<RejectionReason> Long(PortfolioSnapshot s, bool lockedOut = false) =>
-            EntryStateBlockers.Determine(TradeSide.Buy, Settings, s, StopOutReentrySupply.NoneToday, lockedOut);
+            EntryStateBlockers.Determine(TradeSide.Buy, Settings, s, StopOutReentrySupply.NoneToday, DecisionExitReentrySupply.NoneToday, lockedOut);
 
         var clear = Snapshot(0, false, false, false, false, Gfv.NotCashAccount, capitalKnown: true);
         Long(clear).Should().BeEmpty();

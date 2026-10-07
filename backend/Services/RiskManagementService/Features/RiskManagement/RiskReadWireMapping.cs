@@ -234,6 +234,7 @@ public static class RiskReadWireMapping
         RejectionReason.KillSwitchActive => Proto.EntryBlocker.KillSwitchActive,
         RejectionReason.TradingPaused => Proto.EntryBlocker.TradingPaused,
         RejectionReason.StoppedOutSameDay => Proto.EntryBlocker.StoppedOutSameDay,
+        RejectionReason.DecisionExitSameDay => Proto.EntryBlocker.DecisionExitSameDay,
         RejectionReason.GoodFaithViolationLimitReached => Proto.EntryBlocker.GoodFaithViolationLimitReached,
         RejectionReason.MaxPositionsExceeded => Proto.EntryBlocker.MaxPositionsExceeded,
         RejectionReason.DailyLossLimitReached => Proto.EntryBlocker.DailyLossLimitReached,

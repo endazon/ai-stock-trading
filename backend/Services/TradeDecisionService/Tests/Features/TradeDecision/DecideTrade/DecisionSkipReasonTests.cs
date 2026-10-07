@@ -116,8 +116,9 @@ public class DecisionSkipReasonTests
         public void Report(string trigger, DecisionSkipReason reason) => Reports.Add((trigger, reason));
     }
 
-    private static SizingContext Context(decimal stageRemaining = 50_000m, decimal dailyRemaining = 20_000m) =>
-        new(100_000m, stageRemaining, dailyRemaining, 0, 0m,
+    private static SizingContext Context(
+        decimal stageRemaining = 50_000m, decimal dailyRemaining = 20_000m, decimal capital = 100_000m) =>
+        new(capital, stageRemaining, dailyRemaining, 0, 0m,
             BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits());
 
     private static AppSvc Create(
@@ -230,16 +231,30 @@ public class DecisionSkipReasonTests
                 held: new FakeHeld(10)),
             r8, NonBaseTrigger()));
 
-        // 9. サイジングで数量 0（残枠が無い）
+        // 9. サイジングで数量 0（残枠が無い）。#1176 / IADR-0495 決定2: 保有 0 の銘柄で残枠 0 は LLM の前に
+        // EntryCapacityBelowMinimumNotional で見送るため（11 番）、ここは保有中の買い増し（LLM の前の下界を使わない経路）で踏む。
         var r9 = new RecordingSkipReporter();
         observed.Add(await SkipReasonOf(
-            Create(r9, BuyJson, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(0)),
+            Create(r9, BuyJson, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(10)),
             r9, Trigger()));
 
         // 10. 実結線の照会で未約定の新規建て注文が不明なのに新規建て（#934 / IADR-0390 決定5）
         var r10 = new RecordingSkipReporter();
         observed.Add(await SkipReasonOf(
             Create(r10, BuyJson, held: new FakeHeld(0, workingUnknown: true)), r10, Trigger()));
+
+        // 11. T-10-2297, #1176, IADR-0495 決定2: 保有 0・未約定なしで新規建てに使える金額の上限（残枠 0）が最小の名目額に届かない（LLM の前）
+        var r11 = new RecordingSkipReporter();
+        observed.Add(await SkipReasonOf(
+            Create(r11, BuyJson, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(0)),
+            r11, Trigger()));
+
+        // 12. T-10-2296, #1176, IADR-0495 決定1: サイジングの名目額が最小に満たない（LLM の後）。equity 110,000 の 1%＝1,100、
+        // 残枠 1,999（最小以上なので LLM の前の下界には掛からない）・参照価格 1,000 → 金額キャップで 1 株＝名目 1,000 ＜ 1,100。
+        var r12 = new RecordingSkipReporter();
+        observed.Add(await SkipReasonOf(
+            Create(r12, BuyJson, ctx: Context(stageRemaining: 1_999m, dailyRemaining: 1_999m, capital: 110_000m), held: new FakeHeld(0)),
+            r12, Trigger()));
 
         observed.Should().Equal(
             DecisionSkipReason.DailyPolicyUnconfirmed,
@@ -251,7 +266,9 @@ public class DecisionSkipReasonTests
             DecisionSkipReason.NakedShortOpen,
             DecisionSkipReason.FxRateStaleOpen,
             DecisionSkipReason.SizingZeroQuantity,
-            DecisionSkipReason.WorkingEntriesUnknownOpen);
+            DecisionSkipReason.WorkingEntriesUnknownOpen,
+            DecisionSkipReason.EntryCapacityBelowMinimumNotional,
+            DecisionSkipReason.SizedBelowMinimumNotional);
         observed.Should().OnlyHaveUniqueItems("理由が重なると内訳が読めなくなる");
     }
 
@@ -264,10 +281,12 @@ public class DecisionSkipReasonTests
     // 上のテストが 10 値を**振る舞いで**固定し、残る 3 値は到達に LLM 出力の不正（参照価格 0・損切り幅の異常）か
     // 採算ゲートの構成が要るため、ここでは語彙の側だけを固定する（IADR-0374 §結果 に明記）。
     [Fact]
-    public void 見送り理由の語彙は洗い出した15値である()
+    public void 見送り理由の語彙は洗い出した17値である()
     {
-        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(15);
-        Enum.GetValues<DecisionSkipReason>()[^1].Should().Be(DecisionSkipReason.AddOnBlockedByRiskControls, "値は末尾へ足す");
+        // T-10-2306, #1176 / IADR-0495 決定1・2 が末尾に EntryCapacityBelowMinimumNotional（LLM の前）と SizedBelowMinimumNotional
+        // （LLM の後）を足して 15 → 17。振る舞いは上の表（11・12 番）と MinimumEntryNotionalDecisionTests が固定する。
+        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(17);
+        Enum.GetValues<DecisionSkipReason>()[^1].Should().Be(DecisionSkipReason.SizedBelowMinimumNotional, "値は末尾へ足す");
         Enum.GetValues<DecisionSkipReason>().Should().Contain(
         [
             DecisionSkipReason.ReferencePriceInvalid,
