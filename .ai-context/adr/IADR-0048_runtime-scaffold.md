@@ -10,7 +10,7 @@ related_ids:
   - IADR-0046 # ユニットリポジトリレイアウト（import-chain フォールバック props）
 author: claude
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_hosting-hetzner.md
   - microservices-platform IADR-0060（submodule ユニット運用・単一情報源継承）
@@ -61,6 +61,10 @@ plan_refs:
   これによりテスト（例: `CostControlGateSelectionTests` の「未設定→プレースホルダ」）を壊さない。
 - 実行時（compose）は環境変数（`__` 区切り）が最優先で上書きするため、appsettings の値は
   ローカル `dotnet run` 用の説明的プレースホルダとして機能する。
+
+> **［2026-10-07 追記 / #1192］** k8s の配備（chart）は `ASPNETCORE_ENVIRONMENT=Production` になり、`appsettings.Development.json` を**読まない**
+> （以前は chart が Development を固定しており、配備でも本ファイルが効いていた）。本ファイルを読むのは docker-compose（ローカル開発）だけである。
+> 配備で要る値は chart の env で明示する（[IADR-0496](./IADR-0496_aspnetcore-environment-production-and-problem-details.md) 決定 2）。
 
 ### 決定 2: fail-safe 選択キーは既定で未設定（空）にする
 

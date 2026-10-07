@@ -199,7 +199,9 @@ public class ForgoneCloseProtectionCompositionTests
                 Mechanism: StopLossExecutionMethod.SoftwareStop, RemainingProtected: 10));
         }
 
-        await factory.Services.GetRequiredService<IMessageBus>().InvokeAsync(new PositionDriftAdopted(
+        // NFR-06, IADR-0496（#1192 独立監査）: IMessageBus は scoped。DI のスコープ検証が全環境で有効なので、ルートからは解決しない。
+        using var busScope = factory.Services.CreateScope();
+        await busScope.ServiceProvider.GetRequiredService<IMessageBus>().InvokeAsync(new PositionDriftAdopted(
             Guid.NewGuid(), "AAPL", Market.UnitedStates, 10, 0, 0, now.AddMinutes(-5), 100m,
             RealizedPnlRecorded: false, ReferencePrice: null, EstimatedPnlInBase: null,
             Actor: "owner", Reason: "証券会社のアプリで全株売却", AdoptedAt: now));

@@ -1,5 +1,8 @@
 using JasperFx;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 
@@ -53,6 +56,9 @@ public static class JasperFxCommandLine
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(args);
+        EnsureExceptionHandlerInstalled(app);
+        EnsureAuthenticationInsideExceptionHandler(app);
+        EnsureServiceProviderValidation(app);
 
         if (UsesJasperFxCommands(args))
         {
@@ -61,5 +67,64 @@ public static class JasperFxCommandLine
 
         await app.RunAsync();
         return 0;
+    }
+
+    /// <summary>
+    /// NFR-06, IADR-0496, #1192: 例外処理（<see cref="ExceptionHandlingExtensions.UseAiStockTradingExceptionHandler"/>）の付け忘れを
+    /// 起動時に止める。付け忘れたサービスは、例外時に（Development なら開発者向けページで要求ヘッダーごと）素の応答を返すため、
+    /// 黙って稼働させない（WebApplicationFactory の試験も同じ終端を通るので、試験でも赤になる）。
+    /// </summary>
+    internal static void EnsureExceptionHandlerInstalled(WebApplication app)
+    {
+        if (!ExceptionHandlingExtensions.IsInstalled(app))
+        {
+            throw new InvalidOperationException(
+                "例外処理が導入されていません。Program.cs で app.UseAiStockTradingMiddleware() か "
+                + "app.UseAiStockTradingExceptionHandler() を Build() の直後に呼んでください（IADR-0496）。");
+        }
+    }
+
+    /// <summary>
+    /// NFR-06, IADR-0496（#1205 監査の追記）, #1192: 認証・認可のサービスを登録しているのに、パイプラインへ明示で入れていなければ
+    /// 起動を止める。WebApplication はその場合 UseAuthentication / UseAuthorization を**利用者のパイプラインより外側**に自動で挿入する
+    /// ため、認証スキームの例外（例: Keycloak 不達時の JwtBearer の鍵取得失敗）が例外処理の外へ抜け、Development なら
+    /// 開発者向けページが Authorization ヘッダーごと応答する。明示の挿入（例外処理の後ろ）は
+    /// <see cref="ExceptionHandlingExtensions.UseAiStockTradingExceptionHandler"/> が順序を、本表明が有無を守る。
+    /// </summary>
+    internal static void EnsureAuthenticationInsideExceptionHandler(WebApplication app)
+    {
+        var isService = app.Services.GetService<IServiceProviderIsService>();
+        var properties = ((IApplicationBuilder)app).Properties;
+        if (isService?.IsService(typeof(IAuthenticationSchemeProvider)) is true
+            && !properties.ContainsKey(ExceptionHandlingExtensions.AuthenticationMiddlewareSetKey))
+        {
+            throw new InvalidOperationException(
+                "認証を登録しているのに app.UseAuthentication() が明示されていません。例外処理の直後に "
+                + "app.UseAuthentication(); app.UseAuthorization(); を呼ぶか app.UseAiStockTradingMiddleware() を使ってください"
+                + "（自動挿入は例外処理の外側に入る。IADR-0496）。");
+        }
+
+        if (isService?.IsService(typeof(IAuthorizationHandlerProvider)) is true
+            && !properties.ContainsKey(ExceptionHandlingExtensions.AuthorizationMiddlewareSetKey))
+        {
+            throw new InvalidOperationException(
+                "認可を登録しているのに app.UseAuthorization() が明示されていません。例外処理の直後に "
+                + "app.UseAuthentication(); app.UseAuthorization(); を呼ぶか app.UseAiStockTradingMiddleware() を使ってください"
+                + "（自動挿入は例外処理の外側に入る。IADR-0496）。");
+        }
+    }
+
+    /// <summary>
+    /// NFR-06, IADR-0496（#1205 監査の追記）, #1192: DI 検証（<see cref="ServiceProviderValidationExtensions.UseAiStockTradingServiceProviderValidation"/>）の
+    /// 付け忘れを起動時に止める（Production では既定で外れるため、付け忘れは黙って検証の無い Pod になる）。
+    /// </summary>
+    internal static void EnsureServiceProviderValidation(WebApplication app)
+    {
+        if (!ServiceProviderValidationExtensions.IsEnabled(app.Services))
+        {
+            throw new InvalidOperationException(
+                "DI 検証が有効になっていません。Program.cs で WebApplication.CreateBuilder の直後に "
+                + "builder.UseAiStockTradingServiceProviderValidation() を呼んでください（IADR-0496）。");
+        }
     }
 }
