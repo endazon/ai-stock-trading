@@ -2,10 +2,10 @@
 title: IADR-0296 LLM 単価は経路B 限定を維持し、計画適合検査の復活は見送る
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-06, FR-16, FR-10, NFR, ADR-0011, ADR-0014, ADR-0015, ADR-0016, ADR-0029]
+related_ids: [FR-04, FR-06, FR-16, FR-10, NFR, ADR-0011, ADR-0014, ADR-0015, ADR-0016, ADR-0029, IADR-0499]
 author: claude (worker)
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-10-07
 plan_refs: [ADR-0016 決定6, ADR-0014, ADR-0015]
 ---
 
@@ -104,6 +104,11 @@ plan_refs: [ADR-0016 決定6, ADR-0014, ADR-0015]
   手段が引き続き存在しない（棚卸し・監査セッションでの人手突合のみ）。`MaxTokens` の再調整には
   今後もコード変更＋デプロイが要る。
 - フォローアップ: #675（検査復活の是非）／#243（稼働環境での実測・MaxTokens 再調整・MSP#380 との整合）。
+
+> ［2026-10-07 追記 / #1197］**「本番の単価をどこから与えるか」という未決の設計課題を決めた**（[IADR-0499](./IADR-0499_llm-pricing-unset-refuses-production-start.md)）。
+> 本番 `values.yaml` へは引き続き置かず、配備時の values の上書き（ArgoCD の `valueFiles`）で trade-decision と report の両方に与える。
+> 与え忘れたまま LLM を有効にした配備（環境名 Production）は起動しない。上の「良い影響: 月次 LLM 費用上限が … 実効化される」は
+> 経路B についての記述であり、本番では本追記の手段で単価を与えたときに限って成り立つ。
 
 ## 関連
 

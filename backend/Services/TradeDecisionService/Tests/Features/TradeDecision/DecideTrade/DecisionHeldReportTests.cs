@@ -320,19 +320,21 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 11 地点と判断前の 6 地点で語彙 17 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断後の 11 地点と判断前の 7 地点で語彙 18 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
     // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
     // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する。#1176 の 2 値〔判断前の EntryCapacityBelowMinimumNotional・判断後の
-    // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が固定する）。
+    // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が、#1174 の判断前の EntryCapacityBelowOneShare は OneShareCapacityDecisionTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙17値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙18値を過不足なく覆う()
     {
+        // T-10-2386, #1174, IADR-0500: 判断前に EntryCapacityBelowOneShare を足した（17 → 18）。
         // T-10-2322, #1176, IADR-0495: 判断前に EntryCapacityBelowMinimumNotional、判断後に SizedBelowMinimumNotional を足した（15 → 17）。
         DecisionSkipReason[] before =
         [
             DecisionSkipReason.DailyPolicyUnconfirmed, DecisionSkipReason.CurrentPriceUnavailable,
             DecisionSkipReason.FxRateUnresolved, DecisionSkipReason.FxRateStaleNoHolding,
             DecisionSkipReason.EntryBlockedByRiskControls, DecisionSkipReason.EntryCapacityBelowMinimumNotional,
+            DecisionSkipReason.EntryCapacityBelowOneShare,
         ];
         DecisionSkipReason[] after =
         [

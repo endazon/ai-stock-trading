@@ -124,4 +124,66 @@ public class PositionSizerTests
         PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, 0m, 1_000m, 35_000m, 100_000m).Should().Be(0);
         PositionSizer.CalculateCappedQuantity(100_000m, 0.01m, -5m, 1_000m, 35_000m, 100_000m).Should().Be(0);
     }
+    // T-10-2380, FR-10, #1174, IADR-0500 決定1: 投入可能な資金が参照価格 × 1 株に満たないか（LLM を呼ぶ前の見送りの下界）。
+    // ちょうど等しい（1 株ちょうど買える）は偽、1 セント足りなければ真。資金 0 以下は真。参照価格が正でなければ偽（下界として何も言えない）。
+    [Theory]
+    [InlineData("2500", "2500", false)]
+    [InlineData("2499.99", "2500", true)]
+    [InlineData("2500.01", "2500", false)]
+    [InlineData("2000", "2500", true)]
+    [InlineData("0", "2500", true)]
+    [InlineData("-1", "2500", true)]
+    [InlineData("100", "0", false)]
+    [InlineData("100", "-1", false)]
+    public void T_10_2380_投入可能な資金が1株の価格に満たないかを判定する(string availableText, string priceText, bool expected)
+    {
+        var available = decimal.Parse(availableText, System.Globalization.CultureInfo.InvariantCulture);
+        var price = decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);
+
+        PositionSizer.CannotAffordOneShare(available, price).Should().Be(expected);
+    }
+
+    // T-10-2380: 🔴 **下界はサイジングと一致する**（LLM の前に省いてよい根拠）。下界が真なら、損切り幅（LLM 依存）・1 注文上限・縮小係数を
+    // どう選んでもサイジングの数量は 0。偽なら、リスク予算と 1 注文上限が十分なとき残枠の金額キャップで 1 株以上買える（＝省くと結論が変わる）。
+    // 日本株（JPY）の換算後の価格（端数のある基準通貨）も含める。
+    [Theory]
+    [InlineData("2000", "2500")]
+    [InlineData("2500", "2500")]
+    [InlineData("2499.99", "2500")]
+    [InlineData("1999.9936", "1999.9936")]
+    [InlineData("1999.99", "1999.9936")]
+    [InlineData("0", "334.11")]
+    [InlineData("334.11", "334.11")]
+    [InlineData("334.10", "334.11")]
+    public void T_10_2380_下界が真ならどの損切り幅と上限でもサイジングは0株で偽なら1株以上(string availableText, string priceText)
+    {
+        var available = decimal.Parse(availableText, System.Globalization.CultureInfo.InvariantCulture);
+        var price = decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);
+        var cannot = PositionSizer.CannotAffordOneShare(available, price);
+
+        foreach (var stop in new[] { 0.01m, 1m, 50m })
+        {
+            foreach (var maxOrder in new[] { 1_000m, 25_000m, 1_000_000m })
+            {
+                foreach (var factor in new[] { 1m, 0.5m, 0.25m })
+                {
+                    var quantity = PositionSizer.CalculateCappedQuantity(
+                        capital: 1_000_000m, perTradeRiskRatio: 0.01m, stopLossDistancePerShare: stop,
+                        referencePrice: price, maxOrderAmount: maxOrder, availableCapital: available, sizeFactor: factor);
+                    if (cannot)
+                    {
+                        quantity.Should().Be(0, "下界が真なら結論（損切り幅）に依らず数量 0（available={0} price={1}）", available, price);
+                    }
+                }
+            }
+        }
+
+        if (!cannot)
+        {
+            PositionSizer.CalculateCappedQuantity(
+                    capital: 1_000_000m, perTradeRiskRatio: 0.01m, stopLossDistancePerShare: 0.01m,
+                    referencePrice: price, maxOrderAmount: 1_000_000m, availableCapital: available)
+                .Should().BeGreaterThanOrEqualTo(1, "下界が偽なら残枠の金額キャップで 1 株は買える（省けば結論が変わる）");
+        }
+    }
 }
