@@ -272,6 +272,18 @@ jobs:
             if helm template ast "$CHART" --set "$neg" > /dev/null 2>&1; then fail "--set $neg が描画できてしまった（Development を止めていない）。"; fi
             if helm template ast "$CHART" -f "$CHART/values-local.yaml" --set "$neg" > /dev/null 2>&1; then fail "values-local ＋ --set $neg が描画できてしまった。"; fi
           done
+          # #1205 監査（T-10-2365）: extraEnv で環境名を与える抜け道（同名 env は後ろが勝つ）は、名前の大小・読み元（DOTNET_）・値に依らず**その理由で**止まる。
+          for spec in "audit ASPNETCORE_ENVIRONMENT Development" "audit aspnetcore_environment Development" \
+                      "report DOTNET_ENVIRONMENT Development" "configuration ASPNETCORE_ENVIRONMENT Production"; do
+            set -- $spec
+            for base in default local; do
+              if [ "$base" = local ]; then b=(-f "$CHART/values-local.yaml"); else b=(); fi
+              if out="$(helm template ast "$CHART" "${b[@]}" --set "services.$1.extraEnv[0].name=$2" --set "services.$1.extraEnv[0].value=$3" 2>&1)"; then
+                fail "[$base] services.$1.extraEnv の $2=$3 が描画できてしまった（環境名の抜け道・#1205）。"
+              fi
+              grep -qF "services.$1 の extraEnv に $2 は書けません" <<<"$out" || fail "[$base] extraEnv の $2 が期待した理由で止まっていない: $(printf '%s' "$out" | tail -2)"
+            done
+          done
           # 上書きが効くこと（陽性対照）。
           env_rows --set global.aspnetcoreEnvironment=Staging | awk -F'\t' '$2 != "Staging" {exit 1}' || fail "global.aspnetcoreEnvironment の上書きが効かない。"
           env_rows --set services.audit.aspnetcoreEnvironment=Staging | grep -qx "audit-service	Staging" || fail "サービス単位の上書きが効かない。"

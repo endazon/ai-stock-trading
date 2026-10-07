@@ -701,6 +701,8 @@ scripts/k8s-local-deploy.sh
 - 全 Worker の `ASPNETCORE_ENVIRONMENT` は `services.<name>.aspnetcoreEnvironment` ＞ `global.aspnetcoreEnvironment`（既定 `Production`）の順で決まる。
   🔴 **`Development`（大小無視）は描画で止まる**（`helm template` / `helm upgrade` が失敗する）。以前は固定値 `Development` で、例外時に
   ASP.NET Core の開発者向け例外ページがスタックと**全要求ヘッダー（`Authorization: Bearer`）**を応答へ載せていた。
+  **`extraEnv` に `ASPNETCORE_ENVIRONMENT` / `DOTNET_ENVIRONMENT`（名前の大小無視・値に依らず）を書いても描画で止まる**（#1205 監査。
+  同名 env は後ろが勝つため、以前は上の検査を素通りして環境名を戻せた）。環境名は `aspnetcoreEnvironment` でだけ与える。
 - Production では `appsettings.Development.json` が読まれない。経路B（`values-local.yaml`）が従来その値で動いていたものは明示の設定へ移した:
   - `global.serilogMinimumLevel: Debug` → 全 Worker に `Serilog__MinimumLevel__Default=Debug`（本番既定は空＝描かない＝`Information`）。
   - `Collection__PollIntervalSeconds: "300"`（情報収集の巡回 300 秒。`values.yaml`・`values-local.yaml` の両方。コード既定は 1800 秒）。

@@ -135,6 +135,14 @@ spec:
             {{- if eq (lower $aspEnv) "development" }}
             {{- fail (printf "services.%s の ASPNETCORE_ENVIRONMENT=%q は受理しません。配備では開発者向け例外ページ（要求ヘッダー・スタックを応答へ載せる）を開かないため、Development は使えません（IADR-0496 / #1192）。Development でしか読まれない設定は values の env で明示してください。" $name $aspEnv) }}
             {{- end }}
+            {{- /* NFR-06, IADR-0496（#1205 監査の追記）, #1192: 環境名を extraEnv で与える抜け道を塞ぐ。Kubernetes は同名 env の**後ろ**を採るため、
+                   extraEnv の ASPNETCORE_ENVIRONMENT（または既定の読み元 DOTNET_ENVIRONMENT）は上の検査を素通りして Development へ戻せた。
+                   環境名は aspnetcoreEnvironment（サービス単位／global）でだけ与える（名前は大小無視で比べる）。 */}}
+            {{- range $e := $svc.extraEnv }}
+            {{- if has (upper ($e.name | toString)) (list "ASPNETCORE_ENVIRONMENT" "DOTNET_ENVIRONMENT") }}
+            {{- fail (printf "services.%s の extraEnv に %s は書けません。環境名は services.%s.aspnetcoreEnvironment か global.aspnetcoreEnvironment で与えてください（Development は受理しない。IADR-0496 / #1192）。" $name $e.name $name) }}
+            {{- end }}
+            {{- end }}
             - name: ASPNETCORE_ENVIRONMENT
               value: {{ $aspEnv | quote }}
             {{- with $g.serilogMinimumLevel }}
