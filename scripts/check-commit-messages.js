@@ -355,16 +355,13 @@ function loadExistingPlanAdrIds(
     // 明示パス指定（テスト・別構成）で読めない場合は従来どおり null（skip）。
     if (projectsDir !== DEFAULT_PLAN_PROJECTS_DIR) return null;
     // 既定パス（旧 submodule）は資料再編で実在しない。宣言レンジから実在集合を構築する。
-    try {
-      const { readPlanAdrRange } = require('./lib/plan-ranges.js');
-      const range = readPlanAdrRange();
-      if (!range) return null;
-      const set = new Set();
-      for (let n = range.from; n <= range.to; n++) set.add(`ADR-${String(n).padStart(4, '0')}`);
-      return set;
-    } catch (e2) {
-      return null;
-    }
+    // #1233: 宣言が読めない（消えた・種別ごとに 1 個でない）ときは skip せず例外で落とす。
+    //   FR / UC / SC の readPlanIds() と同じ fail-loud に揃える（従前は null → notice で検査を黙って飛ばした）。
+    const { readPlanAdrRange } = require('./lib/plan-ranges.js');
+    const range = readPlanAdrRange();
+    const set = new Set();
+    for (let n = range.from; n <= range.to; n++) set.add(`ADR-${String(n).padStart(4, '0')}`);
+    return set;
   }
   // 自プロジェクトの名前空間だけを実在集合とする（規約どおりの厳密な検査）。
   const own = loadExistingAdrIds('ADR', path.join(projectsDir, project, '07_adr'));
@@ -662,7 +659,7 @@ function main() {
       '計画 ADR の宣言レンジを読めないため計画 ADR 実在性チェックをスキップした' +
         '（この範囲は検査されていない。実効しているのは IADR 検査のみである）。' +
         '.claude/rules/traceability.repo.md「起点 ID の種別（固有）」節の ADR レンジ宣言' +
-        '（`ADR-0001..0029` の形）を確認すること'
+        '（`ADR-0001..NNNN` の形・種別ごとに 1 個）を確認すること'
     );
   }
   if (!planIds) {

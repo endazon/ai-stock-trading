@@ -2653,6 +2653,7 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       const real = ttRp.planRangeSection(fsRp.readFileSync(pathRp.join(__dirname, '..', ttRp.RULES_FILE), 'utf8'));
       assert.strictEqual(real.match(new RegExp(prRp.ADR_RANGE_RE.source, 'g')).length, 1);
       assert.strictEqual(real.match(/`(FR|UC|SC)-\d+\.\.\d+`/g).length, 3);
+      fsRp.rmSync(dir, { recursive: true, force: true });
     });
 
     ok('#532: 規約ファイルが機械の単一情報源であることを明記している（節を消させない）', () => {
