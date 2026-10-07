@@ -1304,6 +1304,175 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
     });
   }
 
+  // --- check-test-traceability.js: 検査 5（T3 / T3b）＝テストコードのテスト ID の採番（#1240 / IADR-0510） ---
+  //
+  // 陽性対照は #1240 の実例の再現（docs/tests が T-17-1〜4 を採番、コードが T-17-05 を使う）。
+  {
+    const mkTree = ({ docs = {}, code = {}, unassigned } = {}) => {
+      const root = fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t3-'));
+      fsTt.mkdirSync(pathTt.join(root, 'docs', 'tests'), { recursive: true });
+      for (const [name, body] of Object.entries(docs)) fsTt.writeFileSync(pathTt.join(root, 'docs', 'tests', name), body);
+      const files = [];
+      for (const [rel, body] of Object.entries(code)) {
+        const p = pathTt.join(root, ...rel.split('/'));
+        fsTt.mkdirSync(pathTt.dirname(p), { recursive: true });
+        fsTt.writeFileSync(p, body);
+        files.push(p);
+      }
+      if (unassigned !== undefined) {
+        fsTt.mkdirSync(pathTt.join(root, 'scripts'), { recursive: true });
+        fsTt.writeFileSync(
+          pathTt.join(root, 'scripts', 'test-id-unassigned-baseline.json'),
+          JSON.stringify({ unassigned }, null, 2)
+        );
+      }
+      return { root, files };
+    };
+    const table = (...cells) => `| ID | 観点 |\n| --- | --- |\n${cells.join('\n')}\n`;
+    const fr17 = { 'FR-17_a.md': table('| T-17-01 | a |', '| T-17-02 | b |', '| T-17-03 | c |', '| T-17-04 | d |') };
+    const csA = 'backend/X/Tests/ATests.cs';
+    const csB = 'backend/X/Tests/BTests.cs';
+    const run = ({ root, files }) => tt.checkCodeTestIdsAssigned(files, root);
+
+    ok('check-test-traceability[T3]: テストコードの ID が採番済みなら緑', () => {
+      const r = run(mkTree({ docs: fr17, code: { [csA]: '// T-17-01: x\n// T-17-04（否定形）: y\n' } }));
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.strictEqual(r.summary.checked, 2);
+    });
+
+    ok('🔴 [陽性対照/#1240] check-test-traceability[T3]: 採番済みの帯で表に無い番号をコードが使ったら落とす', () => {
+      const r = run(mkTree({ docs: fr17, code: { [csA]: '// T-17-05: 事前見積りの諸費用\n' } }));
+      assert.strictEqual(r.errors.length, 1, r.errors.join('\n'));
+      assert.match(r.errors[0], /T-17-5 をテストコードが使っていますが/);
+    });
+
+    ok('check-test-traceability[T3]: ゼロ埋めの揺れを同一視する（コード `T-17-03` と表 `T-17-3`）', () => {
+      const r = run(mkTree({ docs: { 'FR-17_a.md': table('| T-17-3 | a |') }, code: { [csA]: '// T-17-03\n' } }));
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+    });
+
+    ok('check-test-traceability[T3]: docs/tests が採番していない帯は対象外（件数だけ数える）', () => {
+      const r = run(mkTree({ docs: fr17, code: { [csA]: '// T-6-40 / T-16-1\n' } }));
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+      assert.deepStrictEqual(r.summary.unmanaged, { 6: 1, 16: 1 });
+    });
+
+    ok('check-test-traceability[T3]: baseline に記載した未採番は通す', () => {
+      const r = run(mkTree({ docs: fr17, code: { [csA]: '// T-17-05\n' }, unassigned: [{ id: 'T-17-5', files: [csA], reason: 'x' }] }));
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+    });
+
+    ok('🔴 check-test-traceability[T3]: baseline の未採番を別のファイルでも使い始めたら落とす', () => {
+      const r = run(
+        mkTree({
+          docs: fr17,
+          code: { [csA]: '// T-17-05\n', [csB]: '// T-17-05\n' },
+          unassigned: [{ id: 'T-17-5', files: [csA], reason: 'x' }],
+        })
+      );
+      assert.match(r.errors.join('\n'), /在り処が .* と食い違います/);
+    });
+
+    ok('🔴 check-test-traceability[T3]: 採番して解消した未採番が baseline に残っていたら落とす（ラチェット）', () => {
+      const r = run(
+        mkTree({
+          docs: { 'FR-17_a.md': table('| T-17-01 | a |', '| T-17-05 | e |') },
+          code: { [csA]: '// T-17-05\n' },
+          unassigned: [{ id: 'T-17-5', files: [csA], reason: 'x' }],
+        })
+      );
+      assert.strictEqual(r.errors.length, 1, r.errors.join('\n'));
+      assert.match(r.errors[0], /解消しています/);
+    });
+
+    ok('check-test-traceability[T3]: 実ツリーは緑である（既知の未採番はすべて baseline 記載済み）', () => {
+      const root = pathTt.resolve(__dirname, '..');
+      const r = tt.checkCodeTestIdsAssigned(tt.testFiles(root), root);
+      assert.deepStrictEqual(r.errors, [], r.errors.join('\n'));
+    });
+
+    ok('check-test-traceability[T3]: 未採番の baseline の各エントリが理由と在り処を持つ', () => {
+      for (const d of tt.loadUnassignedBaseline().unassigned) {
+        assert.ok(typeof d.reason === 'string' && d.reason.length > 20, `${d.id} の reason が薄い`);
+        assert.ok(Array.isArray(d.files) && d.files.length > 0, `${d.id} の files が無い`);
+      }
+    });
+
+    ok('[T3b] 増えた entry・在り処の追加を「増えた」に数え、減った entry は数えない', () => {
+      const e = (id, files = ['a.cs']) => ({ id, files, reason: 'x' });
+      assert.deepStrictEqual(tt.findUnassignedBaselineGrowth({ unassigned: [e('T-10-1'), e('T-10-2')] }, { unassigned: [e('T-10-1')] }), []);
+      const g = tt.findUnassignedBaselineGrowth(
+        { unassigned: [e('T-10-1')] },
+        { unassigned: [e('T-10-1', ['a.cs', 'b.cs']), e('T-10-3')] }
+      );
+      assert.deepStrictEqual(g.map((x) => x.id), ['T-10-1', 'T-10-3']);
+      assert.match(g[0].reasons.join(), /在り処の追加 b\.cs/);
+    });
+
+    ok('[T3b] 在り処の数が同じ付け替え（移送・改名）は「増えた」に数えない', () => {
+      const e = (id, files) => ({ id, files, reason: 'x' });
+      assert.deepStrictEqual(
+        tt.findUnassignedBaselineGrowth({ unassigned: [e('T-10-1', ['old/a.cs'])] }, { unassigned: [e('T-10-1', ['new/a.cs'])] }),
+        []
+      );
+      const g = tt.findUnassignedBaselineGrowth(
+        { unassigned: [e('T-10-1', ['old/a.cs'])] },
+        { unassigned: [e('T-10-1', ['new/a.cs', 'b.cs'])] }
+      );
+      assert.deepStrictEqual(g.map((x) => x.id), ['T-10-1']);
+    });
+
+    const { execFileSync: execG } = require('child_process');
+    const g = (root, ...args) => execG('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const commit = (root, msg) => {
+      g(root, 'add', '-A');
+      g(root, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', msg);
+    };
+    const writeUa = (root, ids) => {
+      fsTt.mkdirSync(pathTt.join(root, 'scripts'), { recursive: true });
+      fsTt.writeFileSync(
+        pathTt.join(root, 'scripts', 'test-id-unassigned-baseline.json'),
+        JSON.stringify({ unassigned: ids.map((id) => ({ id, files: ['a.cs'], reason: 'x' })) }, null, 2)
+      );
+    };
+    const mkRepo = (baseIds) => {
+      const root = fsTt.realpathSync(fsTt.mkdtempSync(pathTt.join(osTt.tmpdir(), 'tt-t3b-')));
+      g(root, 'init', '-q', '-b', 'develop');
+      if (baseIds) writeUa(root, baseIds);
+      fsTt.writeFileSync(pathTt.join(root, 'seed.txt'), 's');
+      commit(root, 'chore: base');
+      g(root, 'checkout', '-q', '-b', 'feature');
+      return root;
+    };
+
+    ok('🔴 [T3b/増える側] 未採番の baseline へ entry を足したら赤（宣言による例外は無い）', () => {
+      const root = mkRepo(['T-10-1']);
+      writeUa(root, ['T-10-1', 'T-10-2']);
+      commit(root, 'chore: add\n\n[add-test-id-duplicate] T-10-2');
+      const r = tt.checkUnassignedBaselineGrowth(root, { range: 'develop...HEAD', env: {} });
+      assert.ok(!r.skipped, r.skipped);
+      assert.strictEqual(r.errors.length, 1, r.errors.join('\n'));
+      assert.match(r.errors[0], /T-10-2 がマージベースより増えています/);
+    });
+
+    ok('[T3b/減る側] entry を消しただけなら緑', () => {
+      const root = mkRepo(['T-10-1', 'T-10-2']);
+      writeUa(root, ['T-10-1']);
+      commit(root, 'chore: resolve');
+      const r = tt.checkUnassignedBaselineGrowth(root, { range: 'develop...HEAD', env: {} });
+      assert.ok(!r.skipped, r.skipped);
+      assert.deepStrictEqual(r.errors, []);
+    });
+
+    ok('[T3b] 基準の版に baseline が無い（導入する変更）なら理由つきで skip する', () => {
+      const root = mkRepo(null);
+      writeUa(root, ['T-10-1']);
+      commit(root, 'chore: introduce');
+      const r = tt.checkUnassignedBaselineGrowth(root, { range: 'develop...HEAD', env: {} });
+      assert.match(r.skipped || '', /baseline を導入する変更/);
+    });
+  }
+
   // --- check-coverage.js: カバレッジ floor / ratchet（#343） ---
   const cov = require('./check-coverage.js');
 
