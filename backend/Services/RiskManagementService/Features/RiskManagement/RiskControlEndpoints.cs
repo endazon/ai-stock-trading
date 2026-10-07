@@ -60,7 +60,7 @@ internal static class RiskControlEndpoints
                 {
                     return await next(ctx);
                 }
-                catch (Exception e) when (MapException(e) is { } mapped)
+                catch (Exception e) when (MapException(e, LoggerOf(ctx.HttpContext)) is { } mapped)
                 {
                     return mapped;
                 }
@@ -134,12 +134,16 @@ internal static class RiskControlEndpoints
 
     // NFR, IADR-0450, #753（段 5）: 群のフィルタの例外の写し。gRPC 面（RiskControlsOwnerWriteGrpcService）も同じ写しを使う（2 箇所に書かない）。
     // 写さない例外は null（そのまま上げる）。
-    internal static IResult? MapException(Exception e) => e switch
+    // NFR-06, IADR-0503, #1206: ArgumentException の文言は自前のコードが投げたものだけ載せる（それ以外は固定文言・元の例外はログ。400 は維持）。
+    internal static IResult? MapException(Exception e, ILogger logger) => e switch
     {
-        ArgumentException => Results.BadRequest(new { error = e.Message }),
+        ArgumentException => Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, typeof(RiskControlEndpoints).Assembly, logger) }),
         DbUpdateConcurrencyException => Results.Conflict(new { error = "設定が他の更新と競合しました。最新を取得して再試行してください。" }),
         _ => null,
     };
+
+    internal static ILogger LoggerOf(HttpContext http) =>
+        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(RiskControlEndpoints));
 
     // 認証済みトークンの名前（preferred_username）。OwnerOnly を通過している前提だが、null は unknown に倒す。
     // **2 段目に残る共通部分**（platform ADR-0068 決定3）——書き込み系の全操作が使う。

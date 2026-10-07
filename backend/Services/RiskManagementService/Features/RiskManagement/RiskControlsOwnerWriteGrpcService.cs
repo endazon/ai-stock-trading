@@ -39,10 +39,13 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     ILoggerFactory loggerFactory)
     : Proto.RiskControlsOwnerWrite.RiskControlsOwnerWriteBase
 {
+    // NFR-06, IADR-0503, #1206: 例外の写しが固定文言に置き換えたときの元の例外の出し先。
+    private ILogger Logger => loggerFactory.CreateLogger<RiskControlsOwnerWriteGrpcService>();
+
     public override async Task<Proto.KillSwitchChangeResponse> EngageKillSwitch(
         Proto.KillSwitchChangeRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() =>
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             EngageKillSwitchEndpoint.Handle(new KillSwitchRequest(request.Reason), killSwitch, context.GetHttpContext()));
         return new Proto.KillSwitchChangeResponse { Engaged = reply.ValueOrThrow<KillSwitchState>().Engaged };
     }
@@ -50,7 +53,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     public override async Task<Proto.KillSwitchChangeResponse> DisengageKillSwitch(
         Proto.KillSwitchChangeRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() =>
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             DisengageKillSwitchEndpoint.Handle(new KillSwitchRequest(request.Reason), killSwitch, context.GetHttpContext()));
         return new Proto.KillSwitchChangeResponse { Engaged = reply.ValueOrThrow<KillSwitchState>().Engaged };
     }
@@ -58,7 +61,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     public override async Task<Proto.TradingPauseChangeResponse> PauseTrading(
         Proto.TradingPauseChangeRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() =>
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             PauseTradingEndpoint.Handle(new PauseRequest(request.Reason), pause, context.GetHttpContext()));
         return new Proto.TradingPauseChangeResponse { Paused = reply.ValueOrThrow<PauseState>().Paused };
     }
@@ -66,7 +69,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     public override async Task<Proto.TradingPauseChangeResponse> ResumeTrading(
         Proto.TradingPauseChangeRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() =>
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             ResumeTradingEndpoint.Handle(new PauseRequest(request.Reason), pause, context.GetHttpContext()));
         return new Proto.TradingPauseChangeResponse { Paused = reply.ValueOrThrow<PauseState>().Paused };
     }
@@ -74,7 +77,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     public override async Task<Proto.GoodFaithViolationClearanceResponse> ClearGoodFaithViolations(
         Proto.GoodFaithViolationClearanceRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() =>
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             ClearGoodFaithViolationsEndpoint.HandleAsync(
                 new GoodFaithViolationClearRequest(request.Reason), goodFaith, bus, context.GetHttpContext()));
         var cleared = reply.ValueOrThrow<GoodFaithViolationClearResponse>();
@@ -89,7 +92,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     public override async Task<Proto.StageTransitionApprovalResponse> RequestStageTransition(
         Proto.StageTransitionApprovalRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() =>
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             RequestStageTransitionEndpoint.HandleAsync(
                 new StageTransitionRequest(ToStage(request.TargetStage), OnBehalfOf: request.HasOnBehalfOf ? request.OnBehalfOf : null),
                 stageGate, bus, delegated, loggerFactory, context.GetHttpContext()));
@@ -104,7 +107,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     public override async Task<Proto.WithdrawalEvaluationResponse> EvaluateWithdrawal(
         Proto.WithdrawalEvaluationRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() => EvaluateWithdrawalEndpoint.Handle(stageGate));
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () => EvaluateWithdrawalEndpoint.Handle(stageGate));
         return new Proto.WithdrawalEvaluationResponse
         {
             Assessment = RiskWriteWireMapping.ToProto(reply.ValueOrThrow<WithdrawalAssessment>()),
@@ -114,7 +117,7 @@ public sealed class RiskControlsOwnerWriteGrpcService(
     public override async Task<Proto.DriftAdoptionCommandResponse> AdoptPositionDrift(
         Proto.DriftAdoptionCommandRequest request, ServerCallContext context)
     {
-        var reply = await RiskWriteGrpcReplies.RunAsync(() =>
+        var reply = await RiskWriteGrpcReplies.RunAsync(Logger, () =>
             AdoptPositionDriftEndpoint.HandleAsync(
                 new PositionDriftAdoptionRequest(
                     request.Symbol, ToMarket(request.Market), request.Reason, request.HasOnBehalfOf ? request.OnBehalfOf : null),
@@ -146,16 +149,16 @@ internal static class RiskWriteGrpcReplies
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
-    internal static Task<Reply> RunAsync(Func<IResult> handler) => RunAsync(() => Task.FromResult(handler()));
+    internal static Task<Reply> RunAsync(ILogger logger, Func<IResult> handler) => RunAsync(logger, () => Task.FromResult(handler()));
 
-    internal static async Task<Reply> RunAsync(Func<Task<IResult>> handler)
+    internal static async Task<Reply> RunAsync(ILogger logger, Func<Task<IResult>> handler)
     {
         IResult result;
         try
         {
             result = await handler().ConfigureAwait(false);
         }
-        catch (Exception e) when (RiskControlEndpoints.MapException(e) is { } mapped)
+        catch (Exception e) when (RiskControlEndpoints.MapException(e, logger) is { } mapped)
         {
             result = mapped;
         }

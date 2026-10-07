@@ -36,7 +36,9 @@ internal static class CostControlEndpoints
                 }
                 catch (ArgumentException e)
                 {
-                    return Results.BadRequest(new { error = e.Message });
+                    // NFR-06, IADR-0503, #1206: 文言は自前のコードが投げたものだけ載せる（それ以外は固定文言・元の例外はログ。400 は維持）。
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(CostControlEndpoints));
+                    return Results.BadRequest(new { error = ClientFacingErrors.MessageFor(e, typeof(CostControlEndpoints).Assembly, logger) });
                 }
             });
 
