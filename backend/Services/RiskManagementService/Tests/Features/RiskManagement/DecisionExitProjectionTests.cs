@@ -1,6 +1,7 @@
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 using AwesomeAssertions;
 using Xunit;
 
@@ -126,5 +127,35 @@ public class DecisionExitProjectionTests
         var yesterday = ExitAt.AddDays(-1);
         Project(RebuyAt, Close(ApprovalSource.TradeDecision, yesterday, fills: [ExitAt])).LongSide.Should().BeTrue();
         Project(RebuyAt, Close(ApprovalSource.TradeDecision, yesterday, fills: [yesterday])).LongSide.Should().BeFalse();
+    }
+
+    // T-10-2411: 🔴 #1209, IADR-0506: 本番の射影（時刻）と共有の述語（取引日）は同値 —— Stage 0 の再生は後者を判断日・約定日で通す。
+    // 再生の時間軸（判断日 D に決済を決め、D+1 の始値で約定）を本番の時刻に置いた 3 つの場面で、両方向の答えが一致する:
+    //   P1: D の決済が D+1 に約定・D+1 に同じ方向 → 止める／P2: D+2 に同じ方向 → 止めない／P3: 決済が約定しない・D+1 → 止めない。
+    [Theory]
+    [InlineData("P1", true)]
+    [InlineData("P2", false)]
+    [InlineData("P3", false)]
+    public void T_10_2411_本番の射影と共有の述語は再生の時間軸で同じ答えを返す(string probe, bool blocked)
+    {
+        var decidedOn = new DateOnly(2026, 10, 5);                                     // 月曜（ET）
+        var approvedAt = new DateTimeOffset(2026, 10, 5, 19, 0, 0, TimeSpan.Zero);      // 10-05 15:00 EDT
+        var filledAt = new DateTimeOffset(2026, 10, 6, 13, 30, 0, TimeSpan.Zero);       // 10-06 09:30 EDT（翌取引日の始値）
+        var (now, fills, filledDays) = probe switch
+        {
+            "P1" => (new DateTimeOffset(2026, 10, 6, 19, 0, 0, TimeSpan.Zero), new[] { filledAt }, new[] { decidedOn.AddDays(1) }),
+            "P2" => (new DateTimeOffset(2026, 10, 7, 19, 0, 0, TimeSpan.Zero), new[] { filledAt }, new[] { decidedOn.AddDays(1) }),
+            _ => (new DateTimeOffset(2026, 10, 6, 19, 0, 0, TimeSpan.Zero), Array.Empty<DateTimeOffset>(), Array.Empty<DateOnly>()),
+        };
+        var today = DateOnly.FromDateTime(now.AddHours(-4).DateTime);
+
+        var production = DecisionExitProjection.Project(
+            [Close(ApprovalSource.TradeDecision, approvedAt, TradeSide.Sell, fills: fills)], Market.UnitedStates, now);
+        var shared = DecisionExitReentry.Project([new DecisionExitOnTradingDays(TradeSide.Sell, decidedOn, filledDays)], today);
+
+        production.Should().Be(new DecisionExitReentrySupply(shared.LongSide, shared.ShortSide));
+        production.ForEntry(TradeSide.Buy).Should().Be(blocked);
+        DecisionExitReentry.BlocksEntry(shared.LongSide, shared.ShortSide, TradeSide.Buy).Should().Be(blocked);
+        production.ForEntry(TradeSide.Sell).Should().BeFalse("反対方向は止めない");
     }
 }

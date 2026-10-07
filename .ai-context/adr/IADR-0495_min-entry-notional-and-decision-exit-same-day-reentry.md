@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-04, FR-11, UC-01, UC-02, ADR-0003, ADR-0009, ADR-0018, IADR-0394, IADR-0463, IADR-0471, IADR-0003, IADR-0017, IADR-0130, IADR-0134, IADR-0163, IADR-0246, IADR-0307, IADR-0374, IADR-0452, IADR-0462]
 author: claude (Claude Code)
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-10-08
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 リスク統制・手仕舞いは止めない・生成 AI は上書きできない)
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md (§5 リスク統制・取引ガードの既定値。本件の 2 統制の行は無い)
@@ -168,3 +168,11 @@ PoC で 3 つの形が観測された（#1176 本文と追加の実例）。
 そのまま参照価格に使うので、数量 0 が LLM の前に確定する）。線引き（保有 0・未約定なし・残枠が既知）は本決定と同じで、加えて現在値が既知であることを要する。
 **本決定の判定を先に評価する**（残枠が最小の名目額にも届かない銘柄は従来どおり `EntryCapacityBelowMinimumNotional`）。株数の端数で最小を割る場合（1 株以上は買える）は
 従来どおり LLM の後の `SizedBelowMinimumNotional`。本文は書き換えない。
+
+## ［2026-10-08 追記 / #1209］Stage 0 の記録・再生でも 2 統制を再現した
+
+§結果の「Stage 0 の記録（`Stage0DecisionRecorder`）・バックテストは本件の 2 統制を再現しない」は、[IADR-0506](IADR-0506_stage0-replay-min-notional-and-decision-exit.md) で
+解消した。記録器は最小の名目額を本番と同じ関数・同じしきい値の構成で判定して記録に残し（数量は変えない）、再生器は再生の時点で新規建てになる注文にだけ、
+判断由来の決済の後の同日・同方向（決定 3 の規則を共有カーネル `DecisionExitReentry` へ移したもの。本番の射影は委ねるだけで挙動は不変）と最小の名目額を、
+本番と同じ順・同じ理由（`DecisionExitSameDay` / `SizedBelowMinimumNotional`）で当てる。「名目額の床だけを足すと記録の指紋が変わる」の懸念は、プロンプトの指紋
+（`InputFingerprint`）を変えず、判定を別の項目に持つことで避けた（戦略 ID は判定を持つ記録のときだけ変わる）。本文は書き換えない。

@@ -581,7 +581,9 @@ builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     sp.GetRequiredService<Stage0RecordingUsageCollector>(),
     BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
     sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ILogger<Stage0DecisionRecorder>>()));
+    sp.GetRequiredService<ILogger<Stage0DecisionRecorder>>(),
+    // FR-10, #1209, IADR-0506: 最小の名目額のしきい値は本番の判断と同じ単一の値（Sizing:MinEntryNotionalRatio）。
+    sp.GetRequiredService<MinimumEntryNotionalOptions>()));
 builder.Services.AddHostedService<Stage0RecordingService>();
 
 // ADR-0003, IADR-0011, IADR-0023: 価格変動（イベント駆動）と収集完了（定時）の両系統を購読し、

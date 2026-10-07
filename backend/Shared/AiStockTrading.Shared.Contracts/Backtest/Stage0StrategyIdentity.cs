@@ -117,6 +117,12 @@ public static class Stage0StrategyIdentity
                     sb.Append(Normalize(raw.EffectiveModelId)).Append(';');
             }
 
+            // FR-10, #1209, IADR-0506: **最小の名目額の判定も同一性に含める。** 判定が違えば再生で見送る新規建ての集合が違い、
+            // 評価したものが違う（しきい値を変えて採り直した記録を同じ戦略と読ませない）。**判定を持つ記録のときだけ**含める
+            // （本項目より前の記録の戦略 ID を変えない）。
+            if (r.EntryBelowMinimumNotional is { } belowMinimum)
+                sb.Append("|n:").Append(belowMinimum ? '1' : '0');
+
             sb.Append('\n');
         }
 

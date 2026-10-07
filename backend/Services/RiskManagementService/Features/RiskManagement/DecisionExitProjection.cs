@@ -1,6 +1,7 @@
 using RiskManagementService.Common.Abstractions;
 using RiskManagementService.Domain;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.Shared.Kernel.Trading;
 
 namespace RiskManagementService.Features.RiskManagement;
 
@@ -18,6 +19,8 @@ namespace RiskManagementService.Features.RiskManagement;
 //   | null（記録されていない）  | 数えない | —（StopOutStatusUnknown が既に同じ方向を止める） |
 //
 // 当日は**その市場の現地取引日**（TradingDay.Of。米国株は米国東部の暦日・夏時間は TimeZoneInfo が吸収、日本株は JST の暦日）。
+// 🔴 #1209, IADR-0506: 「当日」と「方向」の規則そのものは共有カーネルの DecisionExitReentry（純関数）に置き、ここは由来・市場で絞って
+// 時刻を市場の現地取引日へ写すだけにする。Stage 0 の再生（バックテスト）が同じ述語を通るためである（規則を 2 か所に置かない）。
 public static class DecisionExitProjection
 {
     public static DecisionExitReentrySupply Project(
@@ -25,29 +28,16 @@ public static class DecisionExitProjection
     {
         ArgumentNullException.ThrowIfNull(closes);
 
-        var today = TradingDay.Of(now, market);
-        var longSide = false;
-        var shortSide = false;
+        var exits = closes
+            // 別市場の同一コードを混ぜない（呼び出し側が絞っているが、純関数としても守る）。判断由来の決済だけを数える。
+            .Where(close => close.Market == market && close.Source == ApprovalSource.TradeDecision)
+            // 承認（判断の決済の承認）または約定が当日なら数える（約定を待たない——約定が台帳へ届く前に次の判断の審査が来得る）。
+            .Select(close => new DecisionExitOnTradingDays(
+                close.Side,
+                TradingDay.Of(close.ApprovedAt, market),
+                [.. close.FillTimes.Select(t => TradingDay.Of(t, market))]));
 
-        foreach (var close in closes)
-        {
-            // 別市場の同一コードを混ぜない（呼び出し側が絞っているが、純関数としても守る）。
-            if (close.Market != market || close.Source != ApprovalSource.TradeDecision)
-                continue;
-
-            // 承認（判断の決済の承認）または約定が当日。承認だけで数える——約定が台帳へ届く前に次の判断の審査が来得る。
-            var onToday = TradingDay.Of(close.ApprovedAt, market) == today
-                || close.FillTimes.Any(t => TradingDay.Of(t, market) == today);
-            if (!onToday)
-                continue;
-
-            // 売りの決済はロング建玉を、買いの決済はショート建玉を閉じた。
-            if (close.Side == TradeSide.Sell)
-                longSide = true;
-            else
-                shortSide = true;
-        }
-
-        return new DecisionExitReentrySupply(longSide, shortSide);
+        var sides = DecisionExitReentry.Project(exits, TradingDay.Of(now, market));
+        return new DecisionExitReentrySupply(sides.LongSide, sides.ShortSide);
     }
 }
