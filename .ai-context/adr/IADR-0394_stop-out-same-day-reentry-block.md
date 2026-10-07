@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-04, FR-19, UC-01, UC-02, ADR-0003, ADR-0009, ADR-0040, IADR-0246, IADR-0210, IADR-0344, IADR-0132, IADR-0163, IADR-0374, IADR-0358, IADR-0134]
 author: claude (Claude Code)
 created: 2026-09-25
-updated: 2026-09-30
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10)
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md (§5 差金決済防止)
@@ -199,6 +199,15 @@ PR でオーナーの確認を求める（足すなら判断側へ損切りの�
   （`StopOutStatusUnknown`）を返さず、判断は LLM を呼ぶ側へ倒れ、審査が止める。
 - 計器: 塞がっている銘柄の新規建ての一部が `ast.risk.rejections{reason="StoppedOutSameDay"}` から判断側の見送りへ移る。
   §フォローアップ「判断側の見送りとしても数えるかのオーナー確認（決定 8）」はこれで済んだ。
+
+［2026-10-07 追記 / #1176］**決定 1 の「判断由来の決済は数えない」は本統制（`StoppedOutSameDay`）について変わらない。** そのうえで、判断由来の決済
+（利確・判断の手仕舞い）の後の同日・同方向の新規建ても、オーナー裁定（2026-10-07）により**同じ形の別の統制**で止める（[IADR-0495](IADR-0495_min-entry-notional-and-decision-exit-same-day-reentry.md)）。本文は書き換えない。
+
+- 承認行の由来に `TradeDecision`（序数 4）を足した。発注前審査が取引判断を承認した `OrderApproved`（新設の印 `FromTradeDecision`）は、決定 1 の表の
+  `OrderApproved` ではなく `TradeDecision` で書かれる。`OrderApproved` に残るのは owner の手仕舞い・維持率の自動縮小（と本追記より前の判断由来の行）である。
+- 本統制の射影（`StopOutProjection`）は `TradeDecision` を数えない（損切りではない）。判断由来の決済は `DecisionExitProjection` が数え、
+  拒否理由は `DecisionExitSameDay`（序数 32・クラス A）。由来の無い当日の決済は引き続き本統制の `StopOutStatusUnknown` が止める（向こうは不明を持たない）。
+- 審査・新規建ての可否の口は台帳の決済の読み取りを 1 回にして、2 つの射影へ渡す。
 
 ## 関連
 

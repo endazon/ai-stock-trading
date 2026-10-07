@@ -118,7 +118,10 @@ public sealed record MoomooBrokerOptions(string OpenDHost, ushort OpenDPort, str
             throw new InvalidOperationException(
                 $"Broker:Moomoo:TrdEnv '{configured}' は受理しません。本実装は SIMULATE 固定です（IADR-0016 / IADR-0056）。"
                 + "実弾（TrdEnv_Real）の解禁には、別の実装 ADR と前提条件（リスク統制・監査・上限の再確認、"
-                + "秘匿情報の Vault 化、発注予約 Reserved 滞留の自動リコンサイル #141）の充足が要ります（IADR-0056 §3）。");
+                + "秘匿情報の Vault 化、発注予約 Reserved 滞留の自動リコンサイル #141、"
+                // FR-15, FR-20, ADR-0054 決定3, #1196, IADR-0498: 閂 0 と同じ列挙を告知する（面ごとに前提を食い違わせない）。
+                + LiveTradingGate.StageZeroTwoTierPrerequisite
+                + "）の充足が要ります（IADR-0056 §3 / IADR-0498）。");
         }
         return SimulateTrdEnv;
     }

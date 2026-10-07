@@ -15,6 +15,8 @@ public class ApprovalSourceTests
         { ApprovalSource.ProtectiveStopS0, 1 },
         { ApprovalSource.SoftwareStopS1, 2 },
         { ApprovalSource.ProtectionLostClose, 3 },
+        // T-10-2322, FR-10, #1176, IADR-0495 決定4: 判断由来の承認（審査が取引判断を承認したもの）。末尾へ追加。
+        { ApprovalSource.TradeDecision, 4 },
     };
 
     [Theory]

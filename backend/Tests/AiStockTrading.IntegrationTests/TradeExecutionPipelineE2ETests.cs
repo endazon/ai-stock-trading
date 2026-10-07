@@ -34,19 +34,24 @@ public sealed class TradeExecutionPipelineE2ETests : IAsyncLifetime
     private const string RiskServiceName = "ai-stock-trading.risk-management-service";
     private const string ExecutionServiceName = "ai-stock-trading.order-execution-service";
 
-    // 外部インフラ注入時（Docker API が無い環境・E2EInfrastructure 参照）はコンテナを起動しない。
-    private readonly PostgreSqlContainer? _postgres = E2EInfrastructure.UseExternal
-        ? null
-        : new PostgreSqlBuilder("postgres:16").Build();
-
-    private readonly RabbitMqContainer? _rabbitMq = E2EInfrastructure.UseExternal
-        ? null
-        : new RabbitMqBuilder("rabbitmq:3.13-management").Build();
+    private readonly PostgreSqlContainer? _postgres;
+    private readonly RabbitMqContainer? _rabbitMq;
 
     // 発注執行の Program は global（無名参照）、リスク管理は extern alias（IADR-0050 決定1）。
     private WebApplicationFactory<Program>? _executionFactory;
     private WebApplicationFactory<RiskManagementWorker::Program>? _riskFactory;
     private string _rabbitMqConnection = string.Empty;
+
+    public TradeExecutionPipelineE2ETests()
+    {
+        // NFR, MSP/ADR-0090 決定 1・2, IADR-0497 (#1200): 要る依存を得られなければ、コンテナを組み立てる前に理由つきで skip する
+        // （Docker に届かない環境では `Build()` 自体が投げるため、門はフィールド初期化子より前＝ここに置く）。
+        RequiredServices.SkipUnlessObtainable(RequiredServices.Postgres, RequiredServices.RabbitMq);
+
+        // 外部インフラ注入時（E2E_*。E2EInfrastructure 参照）はコンテナを起動しない。
+        _postgres = E2EInfrastructure.UseExternal ? null : new PostgreSqlBuilder("postgres:16").Build();
+        _rabbitMq = E2EInfrastructure.UseExternal ? null : new RabbitMqBuilder("rabbitmq:3.13-management").Build();
+    }
 
     public async ValueTask InitializeAsync()
     {

@@ -33,7 +33,7 @@ public class RecordedDecisionReplayStrategyTests
         int signedQuantity,
         IReadOnlyList<Stage0AsOfInputStatus>? asOfInputs = null) =>
         new(symbol, Market.UnitedStates, asOf, "fp", "claude-sonnet-5", VoteCount: 3,
-            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
+            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false, "claude-sonnet-5")],
             MajorityAction: signedQuantity switch
             {
                 > 0 => Stage0DecisionAction.Buy,
@@ -42,7 +42,9 @@ public class RecordedDecisionReplayStrategyTests
             },
             MajorityRationale: "根拠", SignedQuantity: signedQuantity,
             CostJpy: 1m, InputTokens: 300, OutputTokens: 60,
-            AsOfInputs: asOfInputs ?? AllReconstructed);
+            AsOfInputs: asOfInputs ?? AllReconstructed,
+            // FR-15, ADR-0054 決定3, #1196, IADR-0498: 二段で記録した記録（一次・本判断ともピンが応答）。一次の無い記録は評価不能になる。
+            Screening: new Stage0ScreeningDecision(Stage0DecisionAction.Buy, false, "関心あり", 50, 10, "claude-haiku-4-5"));
 
     private static Stage0DecisionRecordSet SetOf(params Stage0DecisionRecord[] records) =>
         new(From, To, [new Stage0RecordedSymbol("AAPL", Market.UnitedStates)],

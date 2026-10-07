@@ -52,13 +52,19 @@ public sealed record Stage0RecordingOutcome(
 // **Stage 0 の記録器** —— 過去の各判断時点に「その時点までの情報だけ」を与えて AI 判断を記録する。
 //
 // 記録側を取引判断サービスに置くのは、**本番の判断経路がここにあるから**である
-// （プロンプト構築 `TradeDecisionPromptBuilder`・構造化解析 `TradeDecisionParser`・多数決 `DecisionAggregator`・
-// サイジング `PositionSizer`・LLM 客・費用計測）。バックテスト側へ複製すれば、本番と検証で判断経路が二重になり、
+// （プロンプト構築 `TradeDecisionPromptBuilder`・二段の順序と多数決 `DecisionOrchestrator`（`DecisionAggregator`）・
+// 構造化解析 `TradeDecisionParser`・サイジング `PositionSizer`・LLM 客・費用計測）。
+// 🔴 FR-15, ADR-0054 決定3, #1196, IADR-0498: **一次スクリーニング → 本判断の二段も本番のオーケストレータをそのまま使う**
+// （順序を複製しない）。一次で見送れば本判断を呼ばない —— 本番で走る系そのものを記録する。バックテスト側へ複製すれば、本番と検証で判断経路が二重になり、
 // ADR-0011 が段階ゲートの前提とした「検証したものと本番で走るものの一致」が構造的に保てない。
 //
 // 🔴 **既定では何もしない。** 無効・未構成・未承認のいずれでも `ILlmCompletionClient` は 1 回も呼ばれない。
+// 🔴 #1196, IADR-0498: production は本番の二段オーケストレーションの構成（DI の単一の値）。一次プロンプトの形
+// （スクリーニング入力の予算＝縮退の有無）を本番に合わせるために読む。二段の有効化・多数決回数・モデルの希望値は
+// 記録の構成（承認した値）で上書きする —— 二段は本番の構成によらず必ず通す（ADR-0054 決定3）。
 public sealed class Stage0DecisionRecorder(
     ILlmCompletionClient llm,
+    DecisionOrchestrationOptions production,
     IAsOfDecisionInputProvider inputs,
     IStage0DecisionRecordSink sink,
     Stage0RecordingUsageCollector usage,
@@ -84,8 +90,12 @@ public sealed class Stage0DecisionRecorder(
                 DecisionsPerDay: options.DecisionsPerDay,
                 VoteCount: options.VoteCount,
                 InputTokensPerDecision: options.InputTokensPerDecision,
-                OutputTokensPerDecision: options.OutputTokensPerDecision),
-            priceTable.Resolve(options.Model));
+                OutputTokensPerDecision: options.OutputTokensPerDecision,
+                ScreeningInputTokensPerDecision: options.ScreeningInputTokensPerDecision,
+                ScreeningOutputTokensPerDecision: options.ScreeningOutputTokensPerDecision),
+            priceTable.Resolve(options.Model),
+            // FR-15, ADR-0054 決定1・決定3, #1196: 一次の層の単価。希望値が無ければ一次のピン（応答するはずのモデル）で引く。
+            priceTable.Resolve(options.ScreeningModel ?? LlmAssignments.For(LlmPurposes.TradeDecisionScreening)?.PrimaryModel));
     }
 
     public async Task<Stage0RecordingOutcome> RunAsync(
@@ -97,7 +107,7 @@ public sealed class Stage0DecisionRecorder(
 
         // ADR-0033 決定5: 見積りは**実行の可否によらず提示する**（承認の材料になる）。
         logger.LogInformation(
-            "Stage 0 記録の見積り: 呼び出し {Calls} 回（銘柄 {Symbols} × 平日 {Days} × 1 日 {PerDay} 回 × 多数決 {Votes} 回）"
+            "Stage 0 記録の見積り: 呼び出し {Calls} 回（銘柄 {Symbols} × 平日 {Days} × 1 日 {PerDay} 回 ×（一次 1 ＋ 多数決 {Votes} 回））"
             + "・入力 {InputTokens} トークン / 出力 {OutputTokens} トークン・合計 {TotalJpy} 円。"
             + "承認するには Stage0Recording:ApprovedEstimateJpy と ApprovedVoteCount を設定してください。",
             estimate.CallCount, options.ResolveSymbols().Count,
@@ -192,8 +202,8 @@ public sealed class Stage0DecisionRecorder(
                     actualCost += cost;
 
                     // 🔴 ADR-0033 決定5: 実行中に見積り額を超えたら停止して報告する（黙って消費しない）。
-                    // 判断時点の単位で見るため、超過は最大 1 判断ぶん（多数決回数だけの呼び出し）に限られる。
-                    // 裏返すと超過幅は VoteCount に比例する（VoteCount 回 × 1 判断あたりの費用まで上振れし得る）。
+                    // 判断時点の単位で見るため、超過は最大 1 判断ぶん（一次 1 回＋多数決回数だけの呼び出し。#1196）に限られる。
+                    // 裏返すと超過幅は VoteCount に比例する（一次＋VoteCount 回 × 1 呼び出しあたりの費用まで上振れし得る）。
                     // 判断の途中で打ち切ると多数決が成立せず記録が壊れるため、判断単位で見る（IADR-0318）。
                     if (actualCost > estimate.TotalJpy)
                     {
@@ -281,58 +291,112 @@ public sealed class Stage0DecisionRecorder(
                 symbol, input.AsOf, string.Join(", ", input.NotReconstructableKinds));
         }
 
+        // 🔴 FR-04, FR-15, ADR-0054 決定3, #1196, IADR-0498: **本番と同じ二段を本番のオーケストレータで走らせる。**
+        // 一次（`trade-decision-screening`・1 回）で関心なし・解析不能なら本判断（`trade-decision`・多数決回数）を呼ばない。
+        // 順序・打ち切り・多数決は `DecisionOrchestrator` のものであり、ここで複製しない（複製すれば検証した系と本番の系がずれ始める）。
+        // 🔴 ADR-0011 / IADR-0318 決定4: 用途は**本番と同じ**（層ごと）。ピン留めモデルの照合とフォールバック禁止（ADR-0017 決定2）を
+        // 本番と同一に効かせる。費用の計上区分だけを `Stage0RecordingUsageCollector` が `stage0-recording` へ付け替える。
+        // 各呼び出しの出力と実効モデルは、オーケストレータへ渡す LLM 客を包んで呼び出しの直後に切り出す（記録用・挙動は変えない）。
+        var capturing = new CapturingLlmClient(llm, usage);
+        var orchestrator = new DecisionOrchestrator(capturing, OrchestrationFor(options), logger);
+        var orchestrated = await orchestrator
+            .DecideAsync(
+                () => BuildScreeningPrompt(trigger, input),
+                prompt,
+                // #1187: 保有なし（プロンプトと同じ HeldPosition.None）を明示する。記録の判断は新規建ての枝だけであり、
+                // 決済の損切り幅の任意化（本番の二次本判断）は掛からない（挙動は従来どおり）。
+                HeldPosition.None.SignedQuantity,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var screeningCall = capturing.Calls.First(c => c.Purpose == LlmPurposes.TradeDecisionScreening);
+        var screen = TradeDecisionParser.ParseScreening(screeningCall.Output);
+        var screening = new Stage0ScreeningDecision(
+            ToRecordAction(screen.Action),
+            screen.IsUnparseable,
+            screen.Rationale,
+            screeningCall.Usages.Sum(u => u.InputTokens),
+            screeningCall.Usages.Sum(u => u.OutputTokens),
+            EffectiveModelOf(screeningCall.Usages));
+
         var raws = new List<Stage0RawDecision>(options.VoteCount);
-        var votes = new List<LlmDecision>(options.VoteCount);
-        var calls = 0;
-        var cost = 0m;
-        var inputTokens = 0;
-        var outputTokens = 0;
-
-        for (var attempt = 1; attempt <= options.VoteCount; attempt++)
+        foreach (var (call, index) in capturing.Calls
+            .Where(c => c.Purpose == LlmPurposes.TradeDecision)
+            .Select((c, i) => (c, i)))
         {
-            // 🔴 ADR-0011 / IADR-0318 決定4: 用途は**本番と同じ** `trade-decision`。
-            // ピン留めモデルの照合とフォールバック禁止（ADR-0017 決定2）を本番と同一に効かせる。
-            // 費用の計上区分だけを `Stage0RecordingUsageCollector` が `stage0-recording` へ付け替える。
-            var output = await llm
-                .CompleteAsync(prompt, options.Model, LlmPurposes.TradeDecision, cancellationToken)
-                .ConfigureAwait(false);
-            calls++;
-
-            // #1187: 保有なし（プロンプトと同じ HeldPosition.None）を明示する。記録の判断は新規建ての枝だけであり、
-            // 決済の損切り幅の任意化（本番の二次本判断）は掛からない（挙動は従来どおり）。
-            var parsed = TradeDecisionParser.ParseDetailed(output, HeldPosition.None.SignedQuantity);
-            votes.Add(parsed.Decision);
-
-            // この 1 回で発生した計測を切り出して費用へ積む（実効モデルで単価を引く。IADR-0122 決定1）。
-            var captured = usage.DrainCaptured();
-            var callInput = captured.Sum(u => u.InputTokens);
-            var callOutput = captured.Sum(u => u.OutputTokens);
-            var callCost = Stage0RecordingUsageCollector.CostOf(captured, priceTable);
-            inputTokens += callInput;
-            outputTokens += callOutput;
-            cost += callCost;
-
+            // 本番と同じ解析器で読み直す（決定的）。多数決そのものはオーケストレータの結果を使う。
+            var parsed = TradeDecisionParser.ParseDetailed(call.Output, HeldPosition.None.SignedQuantity);
             raws.Add(new Stage0RawDecision(
-                attempt,
+                index + 1,
                 ToRecordAction(parsed.Decision.Action),
                 parsed.Decision.Rationale,
                 parsed.Decision.ReferencePrice,
                 parsed.Decision.StopLossDistancePerShare,
-                callInput,
-                callOutput,
-                parsed.IsUnparseable));
+                call.Usages.Sum(u => u.InputTokens),
+                call.Usages.Sum(u => u.OutputTokens),
+                parsed.IsUnparseable,
+                EffectiveModelOf(call.Usages)));
         }
 
-        // ADR-0033 決定4: 多数決は本番と同じ規則（同数・空は安全側 Hold）。
-        var aggregated = DecisionAggregator.Aggregate(votes);
-        var signedQuantity = SignedQuantity(aggregated.Decision, input);
+        // 実効モデルで単価を引く（IADR-0122 決定1）。費用は両層の全呼び出しの合計。
+        var allUsages = capturing.Calls.SelectMany(c => c.Usages).ToArray();
+        var cost = Stage0RecordingUsageCollector.CostOf(allUsages, priceTable);
+        var inputTokens = allUsages.Sum(u => u.InputTokens);
+        var outputTokens = allUsages.Sum(u => u.OutputTokens);
+
+        // ADR-0033 決定4: 多数決は本番と同じ規則（同数・空は安全側 Hold）。一次で見送れば一次の Hold（根拠つき）。
+        var decision = orchestrated.Decision;
+        var signedQuantity = SignedQuantity(decision, input);
 
         return (new Stage0DecisionRecord(
             symbol, market, input.AsOf, fingerprint, options.Model ?? string.Empty, options.VoteCount,
-            raws, ToRecordAction(aggregated.Decision.Action), MajorityRationale(aggregated.Decision, signedQuantity),
+            raws, ToRecordAction(decision.Action), MajorityRationale(decision, signedQuantity),
             signedQuantity, cost, inputTokens, outputTokens,
             // FR-15, ADR-0036 決定1, #749, IADR-0387: 入力ごとの再構成可否を記録へ残す（**外した範囲が読めるようにする**）。
-            input.AsOfInputs), calls, cost);
+            input.AsOfInputs,
+            // FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次の判断と一次に応答したモデルを本判断と別に残す。
+            screening), capturing.Calls.Count, cost);
+    }
+
+    // FR-15, ADR-0054 決定3, #1196, IADR-0498: 記録の二段の構成。本番の構成（一次プロンプトの予算）を引き継ぎ、
+    // 二段は必ず有効にし、多数決回数とモデルの希望値は記録の構成（承認した値）にする。
+    private DecisionOrchestrationOptions OrchestrationFor(Stage0RecordingOptions options) => production with
+    {
+        EnableScreening = true,
+        VoteCount = options.VoteCount,
+        PrimaryModel = options.ScreeningModel,
+        SecondaryModel = options.Model,
+    };
+
+    // FR-04, FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次のプロンプトを**本番と同じ形**で組む（`TradeDecisionAppService` の一次の枝と同じ分岐）。
+    // 予算（ScreeningContextBudgetChars）があれば参考情報を縮退して載せ、無ければ参考情報なし（IADR-0072 決定2 / IADR-0247 / IADR-0313）。
+    // 保有なし・未約定なし・ニュースの状態は不明（二次と同じ。as-of で再構成しない）・買い増しの審査は無い（保有なし）。
+    private string BuildScreeningPrompt(DecisionTrigger trigger, AsOfDecisionInput input)
+    {
+        if (production.ScreeningContextBudgetChars is { } budget)
+        {
+            var assembled = ScreeningContextAssembler.Assemble(
+                trigger, input.Policy, input.References, input.ReferencePrice, budget, input.Watchlist);
+            return TradeDecisionPromptBuilder.BuildScreening(
+                trigger, input.Policy, input.Sizing, input.ReferencePrice, assembled.RetainedReferences,
+                HeldPosition.None, WorkingEntryOrders.None, input.Watchlist, input.Intraday, news: null, input.Volume,
+                addOnBlockers: null);
+        }
+
+        return TradeDecisionPromptBuilder.BuildScreening(
+            trigger, input.Policy, input.Sizing, input.ReferencePrice, held: HeldPosition.None,
+            working: WorkingEntryOrders.None, watchlist: input.Watchlist, intraday: input.Intraday, news: null,
+            volume: input.Volume, addOnBlockers: null);
+    }
+
+    // 呼び出しの実効モデル（応答が名乗った値）。計測が無い・値が割れる・空は null（＝不明。再生側はピンと一致したと読まない）。
+    private static string? EffectiveModelOf(IReadOnlyList<LlmUsage> usages)
+    {
+        var models = usages
+            .Select(u => u.Model?.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return models is [{ Length: > 0 } single] ? single : null;
     }
 
     // FR-04, FR-11, ADR-0040 決定5, #822, IADR-0343 決定3: 記録の多数決根拠も本番の発行と同じ突合を掛ける
@@ -416,6 +480,24 @@ public sealed class Stage0DecisionRecorder(
     // 入力の指紋。**プロンプト本文は記録に載せない**（保有ポジション・資金残枠等の機微を含む）。
     private static string Fingerprint(string prompt) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(prompt)));
+
+    // FR-15, ADR-0054 決定3, #1196, IADR-0498: オーケストレータへ渡す LLM 客の包み。呼び出しをそのまま委ね、直後に
+    // その 1 回で発生した計測（実効モデル・トークン量）を切り出して層（用途）と出力に結びつける。**挙動は 1 バイトも変えない。**
+    private sealed class CapturingLlmClient(ILlmCompletionClient inner, Stage0RecordingUsageCollector usage)
+        : ILlmCompletionClient
+    {
+        public List<CapturedCall> Calls { get; } = [];
+
+        public async Task<string> CompleteAsync(
+            string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
+        {
+            var output = await inner.CompleteAsync(prompt, model, purpose, cancellationToken).ConfigureAwait(false);
+            Calls.Add(new CapturedCall(purpose, output, usage.DrainCaptured()));
+            return output;
+        }
+    }
+
+    private sealed record CapturedCall(string? Purpose, string Output, IReadOnlyList<LlmUsage> Usages);
 
     private static Stage0RecordingOutcome Outcome(
         Stage0RecordingStatus status, string reason, Stage0RecordingEstimate estimate) =>

@@ -16,10 +16,27 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 //   閂 3: Broker:Moomoo:TrdEnv は 'simulate' のみ受理                … MoomooBrokerOptions.EnsureSimulate
 //   閂 4: SIMULATE 口座のみ採用                                       … MMApiMoomooTradeClient.FetchSimulateAccIdAsync
 //   外周: Helm は broker.tier=moomoo-live を描画時に fail            … deploy/helm/.../templates/deployment.yaml
+//
+// 解禁の前提（下の例外文が「前提の一覧」として告知する。解禁 IADR はこれらの充足を根拠づける）:
+//   1. リスク統制・監査・上限（TradingDefaults）の実弾向け再確認（IADR-0056 §3）
+//   2. 秘匿情報の Vault 化（IADR-0056 §3）
+//   3. 発注予約 Reserved 滞留の自動リコンサイル（#141・IADR-0056 §3）
+//   4. 🔴 FR-15, FR-20, ADR-0014 決定3, ADR-0054 決定3, #204 C-8, #1196, IADR-0498: **両層の組での Stage 0 合格**
+//      （一次スクリーニング trade-decision-screening = claude-haiku-4-5 ＋ 本判断 trade-decision = claude-sonnet-5 の二段を
+//      通した記録で、両層の実効モデルがピンと一致した判断による合格）。一次を記録していない旧記録の評価は評価不能であり合格ではない。
+//      どちらの層のモデルを変えても再実施する。**これが満たされるまで本定数を true にしない**（ADR-0054 決定4 の暫定手段）。
 public static class LiveTradingGate
 {
     // 実弾は未解禁。この定数を true にすることが「解禁」そのものであり、別 IADR の承認を要する。
     public const bool LiveTradingReleased = false;
+
+    /// <summary>
+    /// FR-15, FR-20, ADR-0014 決定3, ADR-0054 決定3, #1196, IADR-0498: 解禁前提「両層の組での Stage 0 合格」の告知文
+    /// （閂 0 の例外文と閂 3 の例外文が同じ文を使う。列挙が面ごとに食い違わないようにする）。
+    /// </summary>
+    public const string StageZeroTwoTierPrerequisite =
+        "両層の組（一次スクリーニング claude-haiku-4-5 ＋ 本判断 claude-sonnet-5）での Stage 0 合格"
+        + "（本番と同じ二段で記録し、両層の実効モデルがピンと一致した判断で合格すること。どちらの層のモデルを変えても再実施）";
 
     // live 階層が選ばれていれば停止する。sim / paper は素通し（現行のペーパー・SIMULATE 運用を妨げない）。
     public static void Ensure(BrokerSelection selection)
@@ -35,7 +52,9 @@ public static class LiveTradingGate
             $"ブローカ階層 '{selection.Tier}'（実弾）は受理しません。実弾（TrdEnv_Real）は未解禁です"
             + "（IADR-0016 / IADR-0056 / IADR-0111）。解禁には別の実装 ADR と、IADR-0056 §3 の前提充足が要ります: "
             + "リスク統制・監査・上限（TradingDefaults）の実弾向け再確認、秘匿情報の Vault 化、"
-            + "発注予約 Reserved 滞留の自動リコンサイル（#141）。"
+            + "発注予約 Reserved 滞留の自動リコンサイル（#141）、"
+            // FR-15, FR-20, ADR-0014 決定3, ADR-0054 決定3, #204 C-8, #1196, IADR-0498: 両層の組での Stage 0 合格。
+            + StageZeroTwoTierPrerequisite + "。"
             + $"シミュレーションで実行するには {BrokerSelection.EnvironmentKey}='{BrokerSelection.SimulatedEnvironment}'"
             + "（Helm では broker.tier=moomoo-sim）を指定してください。");
     }

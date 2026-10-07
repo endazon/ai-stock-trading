@@ -186,8 +186,11 @@ public class Stage0StopWidthFloorTests
         DecisionsPerDay = 1,
         InputTokensPerDecision = 1_000,
         OutputTokensPerDecision = 1_000,
+        // #1196, IADR-0498: 記録は二段（一次 1 回＋本判断 1 回）で走る。見積りは 1 判断時点 ×（1 ＋ 1）× 2 円。
+        ScreeningInputTokensPerDecision = 1_000,
+        ScreeningOutputTokensPerDecision = 1_000,
         ApprovedVoteCount = 1,
-        ApprovedEstimateJpy = 2m,
+        ApprovedEstimateJpy = 4m,
         OutputPath = "records.json",
         Model = "claude-sonnet-5",
     };
@@ -199,7 +202,7 @@ public class Stage0StopWidthFloorTests
         var llm = new FakeLlm(collector);
         var sink = new CapturingSink();
         var recorder = new Stage0DecisionRecorder(
-            llm, wrap(new StubInputs()), sink, collector,
+            llm, DecisionOrchestrationOptions.Default, wrap(new StubInputs()), sink, collector,
             LlmPriceTable.From([("claude-sonnet-5", "1", "1")], "1", "1"),
             new ManualTimeProvider(FarFuture), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink);
@@ -236,8 +239,11 @@ public class Stage0StopWidthFloorTests
         public async Task<string> CompleteAsync(
             string prompt, string? model = null, string? purpose = null, CancellationToken cancellationToken = default)
         {
-            Prompts.Add(prompt);
+            // #1196, IADR-0498: 記録は二段で走る。一次は関心あり（本判断へ進める）を返し、本判断のプロンプトだけを集める。
             await usage.ReportAsync(new LlmUsage(purpose ?? LlmPurposes.TradeDecision, 1_000, 1_000, model), cancellationToken);
+            if (purpose == LlmPurposes.TradeDecisionScreening)
+                return """{"action":"Buy","rationale":"関心あり"}""";
+            Prompts.Add(prompt);
             return """{"action":"Buy","rationale":"根拠","referencePrice":100,"stopLossDistancePerShare":0.5}""";
         }
     }

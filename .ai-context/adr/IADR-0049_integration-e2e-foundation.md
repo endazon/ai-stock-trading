@@ -7,7 +7,7 @@ related_ids:
   - IADR-0048 # 実行環境スキャフォールド（compose/appsettings/.env.example）
 author: claude
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-10-07
 plan_refs:
   - planning:projects/microservices-platform/07_adr/ADR-0003_messaging-masstransit-rabbitmq.md
 ---
@@ -91,6 +91,10 @@ E2E を成立させ、かつ **既定 CI を不安定化させない**ことを�
     注入する経路を用意する（`E2EInfrastructure.cs`・`scripts/e2e-local-infra.sh`）。**検証対象が実 PostgreSQL/
     RabbitMQ/Keycloak である点は同じ**で、差は「コンテナの起動主体（Testcontainers か外部か）」のみ。
     本決定（Testcontainers を基盤とする）は CI 既定として維持し、外部注入は未設定時に発動しない補助経路。
+  - ［2026-10-07 追記 / #1200］**Docker に届かず外部注入も無いときの挙動は fail ではなく skip になった。**
+    門（`RequiredServices.SkipUnlessObtainable`）が依存ごとに「外部注入 または コンテナ実行環境」を訊き、得られなければ
+    どうすれば走るか（環境変数・値の例・`scripts/e2e-local-infra.sh`）を理由に書いて skip する。CI（`integration.yml`）で
+    skip が出たら赤にする担保を同時に置いた（MSP/ADR-0090・planning#575。決定と担保の形は [IADR-0497](./IADR-0497_integration-gate-asks-for-services-and-skip-guard.md)）。
 - compose の healthcheck・runtime イメージへの `curl` 追加は dev/E2E 目的。本番配備は platform（#24）の管掌。
 
 ## 却下した代替案

@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-04, FR-11, NFR, UC-01, UC-02, ADR-0003, ADR-0009, IADR-0471, IADR-0394, IADR-0358, IADR-0462, IADR-0374, IADR-0390, IADR-0346, IADR-0420, IADR-0427, IADR-0008, IADR-0119, IADR-0452]
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-10-01
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10, FR-04)
   - planning:projects/ai-stock-trading/07_adr/ADR-0003 (リスク管理の権威と直列の配置)
@@ -112,3 +112,8 @@ IADR-0394 は案 B（判断側で損切りを知って見送る）を「同じ�
   - LLM の遅延の間に枠が空いた場合、1 サイクル分の機会損失（決定 1 の表）。
   - `MarketDisabled`・`BannedSymbol` は対象外（決済にも掛かる規則。監視銘柄の設定と重なるため費用の実害は小さい）。
 - 試験: T-10-1782〜T-10-1796（`docs/tests/FR-10_risk-controls-tests.md`）。
+
+［2026-10-07 追記 / #1176］口の対象の理由に `DecisionExitSameDay`（判断由来の決済の後の同日・同方向。[IADR-0495](IADR-0495_min-entry-notional-and-decision-exit-same-day-reentry.md) 決定 3）を `StoppedOutSameDay` の直後へ足した（**8 理由**）。
+同じ述語を審査と同じ位置で呼ぶ規律・不明を返さない規律は変わらない。gRPC `EntryBlocker` に `ENTRY_BLOCKER_DECISION_EXIT_SAME_DAY = 8` を足した（非破壊）。
+あわせて、LLM の前の見送りに `EntryCapacityBelowMinimumNotional`（新規建てに使える金額の上限が最小の名目額に届かない。同 決定 2）を足した（**6 地点**）。
+これは手元のサイジング文脈だけで決まるため、本 IADR の照会より先に評価する（両方に当たる銘柄は後者の理由で記録される）。本文は書き換えない。

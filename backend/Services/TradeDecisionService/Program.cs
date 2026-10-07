@@ -523,6 +523,10 @@ builder.Services.AddScoped<IFxRateProvider>(sp => new MarketFxRateProvider(
     sp.GetRequiredService<IFxRateSource>(),
     sp.GetRequiredService<ILogger<MarketFxRateProvider>>()));
 
+// 🔴 FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額のしきい値（Sizing:MinEntryNotionalRatio。equity 比・既定 0.01＝1%）。
+// **構築時に読む**ので、読めない値・範囲外（0 未満・0.25 超）はここで例外になり起動が止まる（fail-fast）。0 は統制を外す明示の値。
+builder.Services.AddSingleton(MinimumEntryNotionalOptionsLoader.FromConfiguration(builder.Configuration));
+
 builder.Services.AddScoped<TradeDecisionAppService>();
 
 // FR-04, FR-15, NFR（費用）, ADR-0033 決定2/決定4/決定5, #632, IADR-0318: Stage 0 の記録（AI 判断の記録・再生）。
@@ -570,6 +574,8 @@ builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
 });
 builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     sp.GetRequiredService<ILlmCompletionClient>(),
+    // FR-15, ADR-0054 決定3, #1196, IADR-0498: 本番の二段の構成（一次プロンプトの形を本番に合わせる。二段は記録側で必ず有効にする）。
+    sp.GetRequiredService<DecisionOrchestrationOptions>(),
     sp.GetRequiredService<IAsOfDecisionInputProvider>(),
     sp.GetRequiredService<IStage0DecisionRecordSink>(),
     sp.GetRequiredService<Stage0RecordingUsageCollector>(),

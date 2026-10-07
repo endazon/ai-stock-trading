@@ -25,8 +25,13 @@ public abstract record Stage0ExclusionSummary
     /// <param name="Excluded">再構成不可に依存するため判定母集団から外した判断の件数。</param>
     /// <param name="Evaluated">判定母集団に残った判断の件数（**合格が何についての合格かを読む分母**）。</param>
     /// <param name="Kinds">外す理由になった入力の種別（安定順・除外 0 件なら空）。</param>
+    /// <param name="ModelMismatch">
+    /// FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次か本判断の実効モデルがピンと違った（不明を含む）ため外した判断の件数
+    /// （<paramref name="Excluded"/> の内数。as-of 入力の除外と重なる判断は両方に数える）。
+    /// </param>
     public sealed record Counted(
-        int Excluded, int Evaluated, IReadOnlyList<Stage0AsOfInputKind> Kinds) : Stage0ExclusionSummary;
+        int Excluded, int Evaluated, IReadOnlyList<Stage0AsOfInputKind> Kinds, int ModelMismatch = 0)
+        : Stage0ExclusionSummary;
 
     /// <summary>
     /// FR-15, ADR-0036 決定1: 件数が**分からない**。🔴 これは「除外 0 件」ではない。
@@ -46,10 +51,17 @@ public abstract record Stage0ExclusionSummary
             $"除外なし(母集団 {c.Evaluated.ToString(CultureInfo.InvariantCulture)} 件)",
         Counted c =>
             $"除外 {c.Excluded.ToString(CultureInfo.InvariantCulture)} 件"
-            + $"/母集団 {c.Evaluated.ToString(CultureInfo.InvariantCulture)} 件({string.Join("・", c.Kinds)})",
+            + $"/母集団 {c.Evaluated.ToString(CultureInfo.InvariantCulture)} 件({string.Join("・", Reasons(c))})",
         Unknown u => $"不明({u.Reason})",
         _ => throw new InvalidOperationException($"未知の除外集計です: {GetType().Name}"),
     };
+
+    // 外した理由の並び（入力の種別 → 実効モデル不一致。#1196）。
+    private static IEnumerable<string> Reasons(Counted c) =>
+        c.ModelMismatch > 0
+            ? c.Kinds.Select(k => k.ToString())
+                .Append($"実効モデル不一致 {c.ModelMismatch.ToString(CultureInfo.InvariantCulture)} 件")
+            : c.Kinds.Select(k => k.ToString());
 }
 
 // FR-15, ADR-0036 決定1, #749, IADR-0387: 除外件数が分からない理由。
@@ -69,4 +81,10 @@ public enum Stage0ExclusionUnknownReason
     /// 不整合・標本不足）。再生していないのだから件数を名乗らない。
     /// </summary>
     NotEvaluated,
+
+    /// <summary>
+    /// FR-15, ADR-0054 決定3, #1196, IADR-0498: **記録が一次スクリーニングを記録していない**（二段化より前の記録）。
+    /// 評価不能であり判定を組ませない（`Stage0GateCheck.ScreeningNotRecorded`）。再生していないので件数を名乗らない。
+    /// </summary>
+    ScreeningNotRecorded,
 }

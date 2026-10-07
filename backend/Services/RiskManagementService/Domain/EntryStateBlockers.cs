@@ -7,8 +7,9 @@ namespace RiskManagementService.Domain;
 // 審査（RiskEvaluator.Evaluate）と、判断が LLM を呼ぶ前に読む「新規建ての可否」の口（EntryBlockersService）が
 // **同じ関数を呼ぶ**。規則を 2 か所に置かない（IADR-0394 が案 B を退けた理由そのもの）。述語を直すときはここだけを直す。
 //
-// 対象は「新規建てだけを拒否し、注文の数量・価格・商品種別に依存せず、状態が既知」の 7 理由である
-// （母集合と除外の理由は作業仕様書 20260930_1113_entry-blockers-before-llm）。
+// 対象は「新規建てだけを拒否し、注文の数量・価格・商品種別に依存せず、状態が既知」の 8 理由である
+// （#1113 の 7 理由。母集合と除外の理由は作業仕様書 20260930_1113_entry-blockers-before-llm。
+// ［2026-10-07 / #1176・IADR-0495 決定3］判断由来の決済の後の同日・同方向〔DecisionExitSameDay〕を足して 7 → 8 理由）。
 // 🔴 **不明は返さない**（裁定 3）。StopOutStatusUnknown・資金の未供給・口座種別の未確認・縮退の不明・GFV 件数の未供給は
 // 審査では止まるが、口は「確定した」とは答えない —— 判断側は LLM を呼ぶ側へ倒れる（審査が止める）。
 public static class EntryStateBlockers
@@ -19,6 +20,7 @@ public static class EntryStateBlockers
         RejectionReason.KillSwitchActive,
         RejectionReason.TradingPaused,
         RejectionReason.StoppedOutSameDay,
+        RejectionReason.DecisionExitSameDay,
         RejectionReason.GoodFaithViolationLimitReached,
         RejectionReason.MaxPositionsExceeded,
         RejectionReason.DailyLossLimitReached,
@@ -42,6 +44,13 @@ public static class EntryStateBlockers
             StopOutStatus.Unknown => RejectionReason.StopOutStatusUnknown,
             _ => null,
         };
+
+    /// <summary>
+    /// 当日の判断由来の決済（IADR-0495 決定3）。新規建て（<paramref name="entrySide"/>）と同じ方向の建玉を当日に判断で決済していれば真。
+    /// 不明の値は持たない（由来の無い当日の決済は <see cref="StopOut"/> の不明が止める）。
+    /// </summary>
+    public static bool DecisionExit(DecisionExitReentrySupply decisionExits, TradeSide entrySide) =>
+        decisionExits.ForEntry(entrySide);
 
     /// <summary>保有建玉数の上限（ADR-0016 決定 9。未約定の新規建てを含めて数える＝IADR-0346）。</summary>
     public static bool MaxPositions(RiskManagementSettings settings, PortfolioSnapshot snapshot) =>
@@ -67,11 +76,13 @@ public static class EntryStateBlockers
         RiskManagementSettings settings,
         PortfolioSnapshot snapshot,
         StopOutReentrySupply stopOuts,
+        DecisionExitReentrySupply decisionExits,
         bool lockedOut)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(stopOuts);
+        ArgumentNullException.ThrowIfNull(decisionExits);
 
         var reasons = new List<RejectionReason>();
         if (KillSwitch(snapshot))
@@ -83,6 +94,10 @@ public static class EntryStateBlockers
         // 🔴 不明（StopOutStatusUnknown）は返さない。
         if (StopOut(stopOuts, entrySide) == RejectionReason.StoppedOutSameDay)
             reasons.Add(RejectionReason.StoppedOutSameDay);
+
+        // #1176, IADR-0495 決定3: 判断由来の決済の後の同日・同方向（審査と同じ位置）。
+        if (DecisionExit(decisionExits, entrySide))
+            reasons.Add(RejectionReason.DecisionExitSameDay);
 
         // 🔴 GFV は**件数が既知**のときだけ（審査は未供給〔null〕でも止めるが、それは不明である）。
         // 口座種別は審査と同じく照会結果で見る（現金口座でのみ加わる統制）。

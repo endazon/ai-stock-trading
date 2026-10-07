@@ -70,7 +70,10 @@ public static class Stage0DriverVerdict
             // 🔴 **どちらでも件数は名乗らない**（0 件は実測でだけ名乗る）。
             exclusionReason: checks.Contains(Stage0GateCheck.InputCompletenessNotDeclared)
                 ? Stage0ExclusionUnknownReason.CompletenessNotDeclared
-                : Stage0ExclusionUnknownReason.NotEvaluated);
+                // FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次を記録していない記録は評価不能（理由を読み分ける）。
+                : checks.Contains(Stage0GateCheck.ScreeningNotRecorded)
+                    ? Stage0ExclusionUnknownReason.ScreeningNotRecorded
+                    : Stage0ExclusionUnknownReason.NotEvaluated);
     }
 
     // 不合格固定の組み立て。プレースホルダの走行から意味のある値は出ない（試行台帳も PBO 行列も、

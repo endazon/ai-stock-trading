@@ -104,8 +104,10 @@ public class MoomooBrokerOptionsTests
         // 黙って SIMULATE へ倒すと「実弾で動いている」と運用者が誤認する。明示的に落とす（IADR-0060 決定 5）。
         var act = () => MoomooBrokerOptions.FromConfiguration(Config(("Broker:Moomoo:TrdEnv", configured)));
 
-        act.Should().Throw<InvalidOperationException>()
-            .Which.Message.Should().Contain("IADR-0056"); // 実弾解禁には別 IADR＋明示 config が要る旨を案内する。
+        var message = act.Should().Throw<InvalidOperationException>().Which.Message;
+        message.Should().Contain("IADR-0056"); // 実弾解禁には別 IADR＋明示 config が要る旨を案内する。
+        // T-15-122, ADR-0054 決定3, #1196, IADR-0498: 閂 3 の告知も閂 0 と同じ前提（両層の組での Stage 0 合格）を並べる。
+        message.Should().Contain(LiveTradingGate.StageZeroTwoTierPrerequisite);
     }
 
     // ---- preflight（本番切替でいちばん踏みやすい罠を起動時に落とす）----

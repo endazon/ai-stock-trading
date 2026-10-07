@@ -74,8 +74,34 @@ jobs:
       # 🔴 **ここに --filter を戻すなら、fail-closed の門を必ず併設すること。**
       # `dotnet test` はフィルタに 1 件も一致しなくても exit 0 で終わるため、
       # 門が無いと「0 件実行のまま緑」で通り続ける。
+      #
+      # NFR / #1200 / IADR-0497: --logger trx は下の skip 検査の入力である（TRX が無ければ検査は赤）。
       - name: All tests including real containers
-        run: dotnet test backend/backend.slnx --no-build --configuration Release --verbosity normal
+        id: tests
+        run: >-
+          dotnet test backend/backend.slnx --no-build --configuration Release --verbosity normal
+          --logger trx --results-directory "$PWD/integration-results"
+      # 🔴 **「全 skip で緑」を検知する担保**（NFR / #1200 / IADR-0497。正本は MSP/ADR-0090 決定 3・planning#575）。
+      #
+      # 統合テストは要る依存（PostgreSQL・RabbitMQ・Keycloak）を得られなければ理由つきで skip する
+      # （門は backend/Tests/AiStockTrading.IntegrationTests/RequiredServices.cs）。**Docker のある本ワークフローで
+      # skip が出たら、それは依存が揃っていない実行である** —— skip 件数の上限 0 で赤にし、件数・試験名・理由をログへ出す。
+      # 従前は Docker に届かないと fail しており、その fail が偶然この守りを担っていた。門と同じ PR で置き直した。
+      #
+      # 🔴 上の「fail-closed の門（0 件実行で落とす）も要らなくなった」は --filter 由来の 0 件の話であり、
+      # 本検査（skip 由来の未実走）とは別物である。取り違えて外さないこと。
+      #
+      # テストが赤くても評価する（skip と失敗は独立した観測）。テスト step 自体が走らなかったとき（force_failure）だけ走らない。
+      - uses: actions/setup-node@v7
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        with:
+          node-version: "22"
+      - name: Self-test integration skip checker
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        run: node scripts/check-integration-skips.js --self-test
+      - name: Check integration tests were not skipped (全 skip で緑にしない)
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        run: node scripts/check-integration-skips.js integration-results
 
   # 🔴 PR から外した検証の回収が落ちたことを issue に残す（IADR-0208 決定 1）。
   # これが無ければ「PR から外した」は「やめた」と同義になる。
