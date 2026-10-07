@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-04, FR-11, NFR, UC-01, UC-02, ADR-0003, ADR-0016, IADR-0463, IADR-0394, IADR-0358, IADR-0351, IADR-0390, IADR-0452, IADR-0374, IADR-0119, IADR-0346]
 author: claude (Claude Code)
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10, FR-04)
   - planning:projects/ai-stock-trading/07_adr/ADR-0003 (リスク管理の権威と直列の配置)
@@ -103,3 +103,6 @@ IADR-0463 は保有 0・未約定なしの銘柄しか可否を照会せず、�
   - 建玉数の上限で、建玉を増やさない買い増しを拒否するか（審査の意味論。変えるならオーナー確認と別 issue）。
   - 保有 0 で未約定の新規建てがある銘柄の追加の新規建ては対象外（LLM を呼び、審査が止める）。
 - 試験: T-10-1900〜T-10-1909（`docs/tests/FR-10_risk-controls-tests.md`）。
+
+［2026-10-07 追記 / #1176］口が返す理由が 8 つになった（`DecisionExitSameDay`。[IADR-0495](IADR-0495_min-entry-notional-and-decision-exit-same-day-reentry.md) 決定 3）。プロンプトの日本語名は「本日この方向で判断による手仕舞い（利確など）済み」。
+保有中の銘柄の買い増しは、加えて LLM の後に最小の名目額（同 決定 1。`SizedBelowMinimumNotional`）でも見送られる。本文は書き換えない。

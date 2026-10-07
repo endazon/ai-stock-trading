@@ -9,6 +9,7 @@ namespace RiskManagementService.Features.RiskManagement.GetEntryBlockers;
 //
 //   - 設定・スナップショット: 審査と同じ IRiskSettingsStore / PortfolioSnapshotBuilder。
 //   - 当日の損切り: 審査と同じ StopOutProjection.Project（台帳の決済の承認・同じ走査の下限）。
+//   - 当日の判断由来の決済: 審査と同じ DecisionExitProjection.Project（同じ読み取り。#1176 / IADR-0495）。
 //   - 日次損失のロックアウト: 審査と同じ OrderScreeningService.IsLockoutActive（口は掃除しない）。
 //   - 当日: 審査と同じ TradingDay.Of（銘柄の市場の現地取引日。IADR-0246）。
 //
@@ -31,14 +32,16 @@ public sealed class EntryBlockersService(
         var tradingDay = TradingDay.Of(now, market);
         var settings = settingsStore.GetCurrent();
         var snapshot = snapshotBuilder.Build();
-        var stopOuts = StopOutProjection.Project(
-            ledger.GetCloseApprovals(symbol, market, now - StopOutProjection.Lookback), market, now);
+        var closes = ledger.GetCloseApprovals(symbol, market, now - StopOutProjection.Lookback);
+        var stopOuts = StopOutProjection.Project(closes, market, now);
+        // #1176, IADR-0495 決定3: 審査と同じ射影（同じ読み取り）で当日の判断由来の決済を返す。
+        var decisionExits = DecisionExitProjection.Project(closes, market, now);
         var lockedOut = OrderScreeningService.IsLockoutActive(lockoutStore.Get(), tradingDay);
 
         return new EntryBlockersView(
             symbol,
             market,
-            EntryStateBlockers.Determine(TradeSide.Buy, settings, snapshot, stopOuts, lockedOut),
-            EntryStateBlockers.Determine(TradeSide.Sell, settings, snapshot, stopOuts, lockedOut));
+            EntryStateBlockers.Determine(TradeSide.Buy, settings, snapshot, stopOuts, decisionExits, lockedOut),
+            EntryStateBlockers.Determine(TradeSide.Sell, settings, snapshot, stopOuts, decisionExits, lockedOut));
     }
 }

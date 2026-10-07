@@ -12,6 +12,11 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // 損切りの実行機構**である。発注執行は承認が運ぶ値で保護レグを扱う（走行中の設定変更と承認の競合を避ける）。
 // **任意項目・既定 S0**——本項目を持たない旧いメッセージは S0（序数 0）として読まれ、従来と同一に動く。
 // 手法は Open（新規建て）にしか効かないため、Close の承認（owner 手仕舞い・自動縮小）は既定のままにする。
+//
+// FR-10, #1176, IADR-0495 決定4: FromTradeDecision は**この承認が取引判断（TradeDecisionMade）を発注前審査が承認したものか**の印である。
+// 取引台帳は承認行の由来（判断由来の決済＝利確・判断の手仕舞い）をこの印から書き、判断由来の決済の後の同日・同方向の新規建てを止める。
+// **true にするのは審査（OrderScreeningService）だけ**。owner の手仕舞い・維持率の自動縮小は判断を経ないので既定（false）のまま。
+// 🔴 CycleTrigger（観測の値。IADR-0307「統制の判定には一切使わない」）で代用しない。本項目を持たない旧いメッセージは false として読まれる。
 public record OrderApproved(
     Guid DecisionId,
     OrderIntent Intent,
@@ -19,4 +24,5 @@ public record OrderApproved(
     DateTimeOffset ApprovedAt,
     string? CycleTrigger = null,
     DateTimeOffset? CycleStartedAt = null,
-    StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder);
+    StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder,
+    bool FromTradeDecision = false);

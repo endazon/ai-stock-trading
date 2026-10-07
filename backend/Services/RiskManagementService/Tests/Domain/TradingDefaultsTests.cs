@@ -55,6 +55,19 @@ public class TradingDefaultsTests
         TradingDefaults.StopWidthFloorAtrPeriod.Should().Be(14);
     }
 
+    // T-10-2311, FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額は equity の 1%（オーナー裁定 2026-10-07）。
+    // 🔴 計画の 05_trading-assumptions §5 にはまだ行が無い（実装側の裁定値。計画への記録は planning への issue で求める）。
+    // 1 注文上限（25%）より小さい（上限より大きいと新規建てが構造的に成立しない）。
+    [Fact]
+    public void 新規建ての最小の名目額はequityの1パーセント()
+    {
+        TradingDefaults.MinEntryNotionalRatio.Should().Be(0.01m);
+        var limits = TradingDefaults.CreateRiskLimits();
+        TradingDefaults.MinEntryNotionalRatio.Should().BeLessThan(limits.MaxOrderAmountRatio);
+        MinimumEntryNotional.Validate(TradingDefaults.MinEntryNotionalRatio).Should().Be(0.01m);
+        MinimumEntryNotional.MaxRatio.Should().Be(limits.MaxOrderAmountRatio, "しきい値の上限は 1 注文上限の既定（25%）");
+    }
+
     // FR-10, FR-17, #329, #364, IADR-0130 決定3 / IADR-0152 決定3: 初期投入資金は USD 3,000
     // （計画 §5・利用者決定 2026-07-31）。基準通貨が USD になったため、基準通貨建ての供給値は権威値そのものであり、
     // 参照レートによる 1 点換算は消えた（`ReferenceUsdToJpyRate` は削除済み）。

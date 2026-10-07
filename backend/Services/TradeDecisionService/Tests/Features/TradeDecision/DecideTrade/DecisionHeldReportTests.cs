@@ -137,8 +137,9 @@ public class DecisionHeldReportTests
         public void Report(string trigger, DecisionSkipReason reason) => Reasons.Add(reason);
     }
 
-    private static SizingContext Context(decimal stageRemaining = 50_000m, decimal dailyRemaining = 20_000m) =>
-        new(100_000m, stageRemaining, dailyRemaining, 0, 0m,
+    private static SizingContext Context(
+        decimal stageRemaining = 50_000m, decimal dailyRemaining = 20_000m, decimal capital = 100_000m) =>
+        new(capital, stageRemaining, dailyRemaining, 0, 0m,
             BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits());
 
     private static AppSvc Create(
@@ -280,10 +281,14 @@ public class DecisionHeldReportTests
                 DecisionSkipReason.NakedShortOpen, 1_040m),
             ((h, s) => Create(h, NonBaseBuyJson, s, fxRate: new FakeFxRate(0.01m, FxRateFreshness.Expired),
                 held: new FakeHeld(10)), NonBaseTrigger(), DecisionSkipReason.FxRateStaleOpen, 315_000m),
-            ((h, s) => Create(h, BuyJson, s, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(0)),
+            ((h, s) => Create(h, BuyJson, s, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(10)),
                 MovementTrigger(), DecisionSkipReason.SizingZeroQuantity, 1_040m),
             ((h, s) => Create(h, BuyJson, s, held: new FakeHeld(0, workingUnknown: true)), MovementTrigger(),
                 DecisionSkipReason.WorkingEntriesUnknownOpen, 1_040m),
+            // T-10-2312, #1176, IADR-0495 決定1: サイジングの名目額（1 株 × 1,000）が最小（equity 110,000 の 1%＝1,100）に満たない。
+            ((h, s) => Create(h, BuyJson, s, ctx: Context(stageRemaining: 1_999m, dailyRemaining: 1_999m, capital: 110_000m),
+                    held: new FakeHeld(0)),
+                MovementTrigger(), DecisionSkipReason.SizedBelowMinimumNotional, 1_040m),
             // PR #1080 監査（生存変異 M2）: 残る判断後の 3 地点。
             // 現在値が 0（正でない）→ 参照価格が不正。判断時点の価格は正の候補（起点の価格）へ進む。
             ((h, s) => Create(h, BuyJson, s, currentPrice: new FakeCurrentPrice(0m), held: new FakeHeld(0)),
@@ -296,7 +301,7 @@ public class DecisionHeldReportTests
                     profitabilityOptions: ProfitabilityGateOptions.Default with { Enabled = true }),
                 MovementTrigger(), DecisionSkipReason.ProfitabilityNotViable, 1_040m),
             // 起点の価格も現在値も無い定時判断では、Buy/Sell の結論が出した参照価格（正）を使う（TradeDecisionMade と同じ源）。
-            ((h, s) => Create(h, BuyJson, s, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(0)),
+            ((h, s) => Create(h, BuyJson, s, ctx: Context(stageRemaining: 0m, dailyRemaining: 0m), held: new FakeHeld(10)),
                 ScheduledTrigger(), DecisionSkipReason.SizingZeroQuantity, 1_000m),
         };
 
@@ -315,17 +320,19 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 10 地点と判断前の 5 地点で語彙 15 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断後の 11 地点と判断前の 6 地点で語彙 17 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
     // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
-    // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する）。
+    // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する。#1176 の 2 値〔判断前の EntryCapacityBelowMinimumNotional・判断後の
+    // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙15値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙17値を過不足なく覆う()
     {
+        // T-10-2322, #1176, IADR-0495: 判断前に EntryCapacityBelowMinimumNotional、判断後に SizedBelowMinimumNotional を足した（15 → 17）。
         DecisionSkipReason[] before =
         [
             DecisionSkipReason.DailyPolicyUnconfirmed, DecisionSkipReason.CurrentPriceUnavailable,
             DecisionSkipReason.FxRateUnresolved, DecisionSkipReason.FxRateStaleNoHolding,
-            DecisionSkipReason.EntryBlockedByRiskControls,
+            DecisionSkipReason.EntryBlockedByRiskControls, DecisionSkipReason.EntryCapacityBelowMinimumNotional,
         ];
         DecisionSkipReason[] after =
         [
@@ -333,7 +340,7 @@ public class DecisionHeldReportTests
             DecisionSkipReason.FxRateStaleOpen, DecisionSkipReason.SizingZeroQuantity,
             DecisionSkipReason.WorkingEntriesUnknownOpen, DecisionSkipReason.ReferencePriceInvalid,
             DecisionSkipReason.StopLossDistanceInvalid, DecisionSkipReason.ProfitabilityNotViable,
-            DecisionSkipReason.AddOnBlockedByRiskControls,
+            DecisionSkipReason.AddOnBlockedByRiskControls, DecisionSkipReason.SizedBelowMinimumNotional,
         ];
 
         before.Concat(after).Should().BeEquivalentTo(Enum.GetValues<DecisionSkipReason>());
