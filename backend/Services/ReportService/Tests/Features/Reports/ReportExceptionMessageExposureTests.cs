@@ -47,17 +47,11 @@ public class ReportExceptionMessageExposureTests
     }
 
     // フレームワーク（System.Text.RegularExpressions）が実際に投げる ArgumentException。文言に目印を含む（パターンを引用する）。
-    private static ArgumentException FrameworkArgumentException()
+    // 🔴 捕まえて返し直すと `throw ex` でスタックが投げ直した側（試験のアセンブリ）へ付け替わり、「フレームワーク由来」を
+    // 試せなくなる（独立監査の指摘）。保存の呼び出しの中で Regex にそのまま投げさせ、スタックの先頭をフレームワークに保つ。
+    private static Exception RaiseFrameworkArgumentException()
     {
-        try
-        {
-            _ = new Regex(ConnectionLikeMarker + "(");
-        }
-        catch (ArgumentException ex)
-        {
-            return ex;
-        }
-
+        _ = new Regex(ConnectionLikeMarker + "(");
         throw new InvalidOperationException("Regex が例外を投げなかった（前提の崩れ）。");
     }
 
@@ -186,7 +180,7 @@ public class ReportExceptionMessageExposureTests
     public async Task フレームワークの_ArgumentException_は_400_と_INVALID_ARGUMENT_を保ち文言は固定文言()
     {
         await using var baseFactory = new ReportWorkerWebApplicationFactory();
-        await using var factory = WithThrowingStore(baseFactory, FrameworkArgumentException);
+        await using var factory = WithThrowingStore(baseFactory, RaiseFrameworkArgumentException);
 
         using var rest = await Owner(factory).GetAsync("/reports", TestContext.Current.CancellationToken);
         var body = await rest.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
