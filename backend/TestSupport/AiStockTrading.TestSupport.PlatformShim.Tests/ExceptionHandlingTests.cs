@@ -109,6 +109,14 @@ public class ExceptionHandlingTests
         var act = () => JasperFxCommandLine.EnsureExceptionHandlerInstalled(bare);
         act.Should().Throw<InvalidOperationException>().WithMessage("*IADR-0496*");
 
+        // 終端そのもの（各サービスの Program.cs が通る経路）でも止まる。表明が外れていれば起動して直ちに止まる（＝例外にならない）。
+        var builder0 = WebApplication.CreateBuilder();
+        builder0.WebHost.UseTestServer();
+        await using var bareHost = builder0.Build();
+        bareHost.Lifetime.ApplicationStarted.Register(() => bareHost.Lifetime.StopApplication());
+        var run = () => bareHost.RunAiStockTradingAsync(["--environment=Testing"]);
+        await run.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IADR-0496*");
+
         // 共通ミドルウェア（8 サービスが呼ぶ）経由でも導入される。
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddAuthentication();
