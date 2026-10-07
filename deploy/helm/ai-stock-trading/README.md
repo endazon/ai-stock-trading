@@ -213,8 +213,11 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   次の起点が先読みされたまま待ち（鮮度の上限までは判断される）、配信から ack まで最大「鮮度の上限 ＋ 上限」秒になるので、これを RabbitMQ の
   `consumer_timeout`（既定 1,800 秒）未満に収める（上限が巡回間隔以下なら、上限 ＜ `consumer_timeout` でよい）。経路B は巡回 300 秒・鮮度の上限 600 秒
   （情報収集の env `Collection__PollIntervalSeconds=300` で明示。#1192 で Production へ切り替えた。以前は `appsettings.Development.json` 由来）なので前者で、
-  13 では 1,830 秒となり超える。この上限は 1 回の試行についてで、共通のエラー方針（2 秒・10 秒・30 秒の再試行。同じ配信の中で行う）の連鎖全体は
-  数えていない（既知の穴。連鎖全体の起動時の検査は #1194）。13 件以上にするなら LLM の timeout・票数から引き直す（手順は運用手順書「定時サイクルの実行時間の上限」）。
+  13 では 1,830 秒となり超える。共通のエラー方針（2 秒・10 秒・30 秒の再試行。同じ配信の中で行う）の連鎖全体も数える: 定時サイクルの試行の回数は
+  「600 ＋ 回数 × 上限 ＋ 再試行の待ち ＜ `consumer_timeout`」の最大に絞られ（経路B・本番既定とも 1 回＝再試行しない）、1 回でも収まらない構成
+  （13 など）では **trade-decision が起動しない**（#1194 / [IADR-0505](../../../.ai-context/adr/IADR-0505_scheduled-cycle-retry-chain-within-consumer-timeout.md)。
+  `consumer_timeout` を変えたら trade-decision の env `Messaging__BrokerConsumerTimeoutSeconds` も合わせる）。
+  13 件以上にするなら LLM の timeout・票数から引き直す（手順は運用手順書「定時サイクルの実行時間の上限」）。
   **本番既定（values.yaml）には置かない**（10 件を超えた実績が無い。helm.yml の描画検査が混入を止める）。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の `Reports`/`RiskManagement` BaseUrl。
   **［2026-09-27 / #1050］** `MarketMonitor__BaseUrl`（trade-decision・information-collection・notification）は**本番既定でも結線した**

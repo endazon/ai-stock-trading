@@ -46,7 +46,9 @@ public class LlmCompletionClientSelectionTests
     [InlineData("abc", 30)]     // 非数値
     [InlineData("0", 30)]       // 0 秒（即時タイムアウト）は既定へ
     [InlineData("-5", 30)]      // 負値は既定へ
-    [InlineData("90", 90)]      // 明示設定は反映
+    // ［2026-10-08 / #1194, IADR-0505］明示設定の例は 90 → 40 秒。既定の前提 10 銘柄で 90 秒は定時サイクルの上限が 2,160 秒になり、
+    // 再試行の連鎖（起点の待ち 600 秒 ＋ 1 回）が consumer_timeout 1,800 秒に収まらず起動しない（本試験の主題ではない）。40 秒は 1,760 秒で収まる。
+    [InlineData("40", 40)]      // 明示設定は反映
     public void TimeoutSeconds_は不正値を既定30秒へ倒す(string? configured, int expectedSeconds)
     {
         using var factory = new Factory(llmGatewayBaseUrl: "http://llm-gateway", timeoutSeconds: configured);

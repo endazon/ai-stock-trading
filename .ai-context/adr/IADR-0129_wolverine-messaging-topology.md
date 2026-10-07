@@ -15,9 +15,10 @@ related_ids:
   - IADR-0001
   - IADR-0106
   - IADR-0128
+  - IADR-0505
 author: claude
 created: 2026-08-03
-updated: 2026-10-07
+updated: 2026-10-08
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md
   - planning:projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md
@@ -422,6 +423,14 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
   プロセス全体の状態を触るため使うクラスを並列化なしのコレクションへ入れる必要があり、射程が広い。
   退避・復元が要るのは**環境変数を読む枝そのもの**を固定する `WolverineTypeLoadModeTests.共通配線の既定は_Dynamic_である`
   だけで、そちらは据え置く。作業仕様書は `../specs/20260923_816_wolverine-static-codegen-followups.md`。
+
+## ［2026-10-08 追記 / #1194］決定 5 の共通の再試行を、定時サイクル（取引判断の `InformationCollected`）のチェーンだけ上書きする
+
+- 共通の失敗方針は同じ配信の中で再試行する（Inline の受信。ack は最後の試行の後）。定時サイクルはハンドラの上限が長く（既定 960 秒）、
+  4 回の連鎖はブローカの `consumer_timeout`（既定 1,800 秒）を超える。
+- [IADR-0505](./IADR-0505_scheduled-cycle-retry-chain-within-consumer-timeout.md) が、連鎖全体が `consumer_timeout` に収まる試行の上限を起動時に導き、
+  `ScheduledCycleRetryPolicy` で定時サイクルのチェーンにだけ載せる（既定・経路B は 1 回＝再試行せず `_error` へ）。**共通の配線（本決定）は変えない**——
+  他のハンドラの再試行は 2s/10s/30s のまま。共通の間隔は `WolverineExtensions.RetryCooldowns`（読み取り専用の公開）から読み、2 箇所に持たない。
 
 ## 関連
 
