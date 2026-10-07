@@ -36,10 +36,10 @@ IADR-0490 決定 1 は、定時サイクルのハンドラの実行時間の上�
 
 | 事実 | 出典 |
 | --- | --- |
-| 1 銘柄の締め切り ＝ LLM の timeout × 呼び出し回数 ＋ 30 秒。サイクル ＝ 1 銘柄 × 前提 ＋ 60 秒（秒は切り上げ） | `backend/Services/TradeDecisionService/Features/TradeDecision/ScheduledCycleBudget.cs:69-82` |
-| 前提は `TradeCycle:MaxWatchedSymbols`。未設定・不正・非正値は 10 | 同 `:131-134`・`Program.cs:390-399` |
+| 1 銘柄の締め切り ＝ LLM の timeout × 呼び出し回数 ＋ 30 秒。サイクル ＝ 1 銘柄 × 前提 ＋ 60 秒（秒は切り上げ） | `backend/Services/TradeDecisionService/Features/TradeDecision/ScheduledCycleBudget.cs:64-76`（式は `:73-74`） |
+| 前提は `TradeCycle:MaxWatchedSymbols`。未設定・不正・非正値は 10 | 同 `:112-115`・`Program.cs:390-399` |
 | 前提超過は警告のみ（判断は止めない。打ち切りはハンドラの上限で起きる） | `Infrastructure/Steps/InformationCollectedHandler.cs:75-83` |
-| 古い起点（`now − CollectedAt` が鮮度の上限を超えた）は判断せず捨てる。鮮度の上限は `NewsStatusValidFor`（巡回間隔の 2 倍・下限 5 分）をクランプ | 同 `:49-60`・`ScheduledCycleBudget.cs:107-119` |
+| 古い起点（`now − CollectedAt` が鮮度の上限を超えた）は判断せず捨てる。鮮度の上限は `NewsStatusValidFor`（巡回間隔の 2 倍・下限 5 分）をクランプ | 同 `:49-60`・`ScheduledCycleBudget.cs:98-106` |
 
 ### 2. 経路B の値（基点コミットの `values-local.yaml`）
 
@@ -78,6 +78,13 @@ IADR-0490 決定 1 は、定時サイクルのハンドラの実行時間の上�
   費用の統制は既存の月次上限（台帳）が担う。
 - **NFR-02（10 分）**: 最悪の T は 10 分を超える（既定 960 秒でも超える。IADR-0490 の残余リスクに記載済み）。実測の所要（1 銘柄 7〜10 秒の LLM × 2 回）では 11 件で 3〜4 分程度。
 - k8s のプローブ・Pod の停止猶予はハンドラの実行時間と無関係（ハンドラは HTTP の応答を塞がない）。
+
+- **T が巡回間隔以下のとき**は起点が溜まらないので、制約は T ＜ 1,800 だけである（上の式は T ＞ 巡回間隔のときに限る。巡回間隔が長い構成に当てると前提 1 でも誤って弾く。独立監査 🟡2）。
+  経路B の巡回 300 秒・鮮度の上限 600 秒は情報収集の `appsettings.Development.json` 由来（#1192 で Production へ切り替えるときは `Collection__PollIntervalSeconds=300` を明示する予定）。
+- 🔴 **上の式は 1 回の試行についてである（既知の穴。独立監査 🟡1）。** 共通のエラー方針 `OnAnyException().RetryWithCooldown(2s, 10s, 30s)`
+  （`backend/TestSupport/AiStockTrading.TestSupport.PlatformShim/Foundation/Extensions/WolverineExtensions.cs:38-39`・`:216-217`）は同じ配信の中で ack せずに再試行するので、
+  ハンドラの上限による打ち切りや銘柄の catch の外へ漏れた例外では、再試行 1 回ごとに最大 T が足される。**再試行の連鎖全体の検査は #1194**
+  （MSP の IADR-0478 決定 7 `EnsureRetryChainFits` と同型の起動時の検査）。本件では値を変えない（前提以内なら 1 銘柄の締め切りが打ち切りを防ぐ）。
 
 ### 4. 本番既定（values.yaml）を変えない理由
 

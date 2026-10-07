@@ -10,8 +10,8 @@ author: endazon (with Claude Code)
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044]
 iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, MSP#266, MSP#635, planning#54, planning#676, planning#704]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, MSP#266, MSP#635, planning#54, planning#676, planning#704]
 -->
 
 
@@ -268,10 +268,16 @@ done
 - 1 銘柄の締め切りを超えた銘柄は**その銘柄の失敗**として扱い（最終の失敗を監査台帳へ 1 件）、次の銘柄へ進む。サイクル全体はやり直さない。
 - 監視銘柄が前提の数を超えると、各サイクルで `監視銘柄 … 件が定時サイクルの上限の前提 … 件を超えています` の警告が出る。
   **監視銘柄を増やしたら `TradeCycle__MaxWatchedSymbols` を trade-decision の env に足して合わせる**（超えたままだとサイクルが上限で打ち切られ得る）。
-- 🔴 **前提には上がある（巡回 300 秒・LLM 30 秒・二段のとき 12）。** サイクルが巡回間隔より長い間、次の起点は先読みされたまま待ち、
-  鮮度の上限（600 秒）以内なら判断される。配信から完了（ack）までは最大「鮮度の上限 ＋ サイクルの上限」になり、これが RabbitMQ の
-  `consumer_timeout`（既定 1,800 秒）を超えると、前提以内の監視銘柄でも処理中のサイクルが再配送される。
-  **前提を上げる前に「鮮度の上限 ＋ 1 銘柄の締め切り × 前提 ＋ 60 秒 ＜ 1,800 秒」を確かめる**（12 → 1,740 秒で収まる／13 → 1,830 秒で超える）。
+- 🔴 **前提には上限がある（巡回 300 秒・LLM 30 秒・二段のとき 12）。** 配信から完了（ack）までが RabbitMQ の `consumer_timeout`
+  （既定 1,800 秒）を超えると、前提以内の監視銘柄でも処理中のサイクルが再配送される。サイクルの上限を T として、**前提を上げる前に次を確かめる**:
+  - **T が情報収集の巡回間隔より長いとき**: 次の起点は先読みされたまま待ち、鮮度の上限以内なら判断されるので、配信から完了までは最大
+    「鮮度の上限 ＋ T」になる。**鮮度の上限 ＋ T ＜ `consumer_timeout`** が要る（経路B: 12 → 600 ＋ 1,140 ＝ 1,740 秒で収まる／13 → 1,830 秒で超える）。
+  - **T が巡回間隔以下のとき**: 起点は溜まらないので **T ＜ `consumer_timeout`** でよい（巡回間隔が長い構成で上の式を当てると、前提 1 でも誤って弾く）。
+  - 巡回間隔 300 秒（鮮度の上限 600 秒）は、現在は情報収集の `appsettings.Development.json` から来ている（chart が Development で起動するため）。
+    環境を切り替えるときは `Collection__PollIntervalSeconds` を明示して、この前提を保つ。
+  - 🔴 **この上限は 1 回の試行についてである。** 共通のエラー方針（全例外を 2 秒・10 秒・30 秒で再試行）は同じ配信の中で再試行し（ack しないまま）、
+    ハンドラの上限による打ち切りや銘柄の外へ漏れた例外では、再試行 1 回ごとに最大 T が足される。**再試行の連鎖全体は上の式に数えていない**（既知の穴。
+    連鎖全体が `consumer_timeout` に収まることの起動時の検査は後続の課題）。
   超えるなら前提ではなく、LLM の timeout・票数（1 銘柄の締め切り）の側を見直す。
 - 🔴 **古い起点は判断せずに捨てる。** 受信は 1 本ずつなので、サイクルが巡回間隔より長くなると情報収集の完了がキューに溜まる。溜まった起点を順に判断すると
   どれも所要の目標（10 分）を満たさず、受信から完了までが RabbitMQ の `consumer_timeout`（既定 30 分）を超えると処理中のサイクルまでやり直しになる。
