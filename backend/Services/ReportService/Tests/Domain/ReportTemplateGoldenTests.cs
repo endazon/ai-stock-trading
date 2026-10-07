@@ -227,13 +227,14 @@ public class ReportTemplateGoldenTests
         ],
         // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5:
         // **現在の供給経路（PeriodCostReviewBuilder）が実際に組み立てる形**を置く。
-        //   - 手数料と為替スプレッドの和が「費用合計」であり、それが `Bare()` の `Pnl.TotalCost`（+100）と一致する
-        //   - **「取引諸費用」は本型に無い**（記録源が無い）ため、描画は未供給になる
-        //   - 費用率の分母は `Pnl.RealizedPnlGross`（+2,000）＝ 100 / 2,000 = 5.0%
-        //   - 週報以外では描画されない
+        //   - 手数料と取引諸費用の和が `Bare()` の `Pnl.TotalCost`（+100）と一致する（計画 ADR-0035 決定 5, #1201）
+        //   - 為替スプレッド（入出金時の実績）は未供給、借株料は上の `BorrowFees`（+1.64・未計上 1 件）を足す（決定 3・4）
+        //   - 費用率の分母は約定代金差額（`Pnl.RealizedPnlGross` +2,000）＝ 101.64 / 2,000 = 5.1%（決定 1）
+        //   - §5 は週報、§1 の費用率は月報で描画される（日報は持たない）
         CostReview = new PeriodCostReview(
-            Commission: 80m, FxSpread: 20m, TotalCost: 100m,
-            TaxWithheld: 380m, RealizedPnlGross: 2_000m, CostRatio: 0.05m),
+            Commission: 80m, RegulatoryFees: 20m,
+            Total: new PeriodCostTotal(100m, FxSpread: null, BorrowFee: 1.64m, BorrowFeeUnrecordedCount: 1),
+            TaxWithheld: 380m, TradeValueDifference: 2_000m, CostRatio: 101.64m / 2_000m),
         // FR-06, FR-15, FR-20, #569, IADR-0271, 04_report-templates 月報 §5:
         // **現在の供給経路（ThreeWayComparisonAggregator）が実際に組み立てる形**を置く。
         //   - バックテスト列は常に空欄（BacktestService は永続化もイベント発行も持たない）

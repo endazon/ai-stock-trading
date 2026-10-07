@@ -95,8 +95,11 @@ public class ReportOpeningInventoryWiringTests
 
         var report = store.Get("daily-2026-10-06")!.Report;
         report.UnsuppliedInputs.Should().NotContain(ReportInput.OpeningInventory);
-        // 税引後の手計算 11,467.0412384（OpeningInventoryAggregationTests の T06_040）。
-        report.Body.Should().Contain($"| 実現損益（税引後・費用込み） | {ReportAmountFormat.Base(11_467.0412384m)} |")
+        // 税引後の手計算（OpeningInventoryAggregationTests の T06_040 の約定代金差額 14,390.464 から）。生成器は既定の前提条件を使うため、
+        // #1201・計画 ADR-0035 決定 5 の取引諸費用（米国株の売り: MSFT 246,706.2 USD・468 株／NVDA 249,336.81 USD・1,049 株
+        // → SEC 10.21848… ＋ TAF 0.251822 ＝ 10.470308006）が控除される: 税 = (14,390.464 − 10.470308006) × 0.20315 = 2,921.2957…
+        // → 税引後 11,458.6979734654189。
+        report.Body.Should().Contain($"| 実現損益（税引後・費用込み） | {ReportAmountFormat.Base(11_458.6979734654189m)} |")
             .And.NotContain("算出不能");
     }
 

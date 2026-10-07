@@ -53,8 +53,9 @@ public static class ReportNarrativePromptBuilder
             ?? (unsupplied.Contains(ReportInput.DriftAdoptions) ? UnsuppliedValue : null);
 
         sb.AppendLine("集計値（参考・再計算不可）:");
-        sb.AppendLine($"- 実現損益(税引前): {fillsUnsupplied ?? unvalued ?? Num(p.RealizedPnlGross)}");
-        // #1156, IADR-0480 決定 2: 費用合計は**概算**である（前提条件の料率から見積もった手数料・為替スプレッド相当）。
+        // 計画 ADR-0035 決定 1, #1201, IADR-0501: 🔴 費用・税の控除前の値を「実現損益」と呼ばない（LLM が本文へ写し得る）。
+        sb.AppendLine($"- 約定代金差額(費用・税の控除前): {fillsUnsupplied ?? unvalued ?? Num(p.RealizedPnlGross)}");
+        // #1156, IADR-0480 決定 2: 費用合計は**概算**である（前提条件の料率から算出した売買手数料・取引諸費用）。
         // 実際の経費明細は本サービスへ取り込まれていない（#1086）。0 を「費用負担は無かった」と読ませない。
         // 🔴 行頭の「- 費用合計: <値>」の形は変えない（既存の試験・読み手が値をこの形で引く）。
         sb.AppendLine($"- 費用合計: {fillsUnsupplied ?? Num(p.TotalCost)}（概算）");
@@ -136,8 +137,8 @@ public static class ReportNarrativePromptBuilder
     /// 取り込まれていない（#1086）。🔴 経費明細を取り込んだら、この注記を見直す（IADR-0480 の残余）。
     /// </summary>
     public const string CostEstimateNote =
-        "注意: 費用合計は前提条件の料率から見積もった概算（売買手数料と為替スプレッド相当額）です。"
-        + "実際の経費明細は取り込まれておらず、取引諸費用・借株料を含みません。"
+        "注意: 費用合計は前提条件の料率から算出した概算（売買手数料と取引諸費用）です。"
+        + "実際の経費明細は取り込まれておらず、為替スプレッド・借株料を含みません。"
         + "費用合計が 0 でも「費用負担は無かった」「費用は発生しなかった」とは書かないでください。";
 
     /// <summary>FR-06, FR-16, #1156, IADR-0480 決定 1: 評価損益の範囲の注記（建玉の有無を推測させない）。</summary>

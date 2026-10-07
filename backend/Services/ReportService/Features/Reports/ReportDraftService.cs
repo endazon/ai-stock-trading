@@ -147,12 +147,13 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                 ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening)
                 : null,
             FillAttributions = fillAttributions,
-            // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: 費用の内訳と費用率。
+            // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5・月報 §1: 費用の内訳と費用率。
             // 🔴 **同じ帰属から数える**（費用合計が §1 サマリと一致する唯一の形である）。
             // 税は期間合計にのみ課されるため PnlSummary の値をそのまま渡す（約定単位へ按分しない）。
-            // **週報だけが持つ**（月報 §1 の「費用合計 / 費用率」は分母の裁定〔planning#535〕待ちで、まだ埋めない）。
-            CostReview = request.Kind == ReportKind.Weekly && fillAttributions is { } attributions
-                ? PeriodCostReviewBuilder.Build(attributions, assumptions, pnl.TaxWithheld)
+            // 借株料は §1 と同じ記録を渡す（計画 ADR-0035 決定 3: 費用合計に含める。未供給は 0 を積まない）。
+            // 計画 ADR-0035 フォローアップ 2, #1201, IADR-0501: 分母の裁定（約定代金差額）が下りたため**月報 §1 の費用率も埋める**。
+            CostReview = fillAttributions is { } attributions
+                ? PeriodCostReviewBuilder.Build(attributions, assumptions, pnl.TaxWithheld, request.BorrowFees)
                 : null,
             // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧。**日報だけが持つ**。
             // **null（照会できていない）を空列（建玉なし）へ潰さない。**

@@ -15,6 +15,25 @@ public sealed record CommissionSchedule(decimal Rate, decimal Minimum, decimal C
     }
 }
 
+// FR-17, 05_trading-assumptions §2「米国株 売却時諸費用」, 計画 ADR-0035 決定 5, #1201, IADR-0501:
+// 米国株の売却時に掛かる規制料（SEC Section 31 手数料・FINRA 取引活動料〔TAF〕）。**売り約定（空売りを含む）だけ**に掛かる。
+// 値は規制当局の公表料率の暫定値であり、口座開設後に証券会社の実請求額で置き換える（計画の確認日つき登録）。
+public sealed record UsSellRegulatoryFeeSchedule(decimal SecFeePerMillion, decimal TafPerShare, decimal TafCapPerTrade)
+{
+    /// <summary>SEC Section 31 手数料＝売却代金 × 料率 ÷ 1,000,000。</summary>
+    public decimal SecFee(decimal notional) => notional * SecFeePerMillion / 1_000_000m;
+
+    /// <summary>FINRA 取引活動料＝数量 × 1 株あたり料率（1 取引あたり上限で頭打ち。上限 0 以下は上限なし）。</summary>
+    public decimal Taf(int quantity)
+    {
+        var fee = quantity * TafPerShare;
+        return TafCapPerTrade > 0m && fee > TafCapPerTrade ? TafCapPerTrade : fee;
+    }
+
+    /// <summary>売り約定 1 件の規制料の合計。</summary>
+    public decimal For(decimal notional, int quantity) => SecFee(notional) + Taf(quantity);
+}
+
 // FR-17, 05_trading-assumptions §6: 月次費用上限（円）。総額と内訳（LLM・インフラ・データ）。
 public sealed record MonthlyCostLimits(decimal Total, decimal Llm, decimal Infrastructure, decimal Data);
 
@@ -39,4 +58,15 @@ public sealed record TradingAssumptions
 
     /// <summary>月次費用上限。</summary>
     public required MonthlyCostLimits CostLimits { get; init; }
+
+    /// <summary>
+    /// FR-17, 05_trading-assumptions §2, 計画 ADR-0035 決定 5, #1201, IADR-0501: 米国株の売却時諸費用（取引諸費用）の料率。
+    /// <para>
+    /// 🔴 <b><c>required</c> にしない。</b> 既存の永続化行（JSON）と、gRPC／HTTP で前提条件を受け取る側（取引判断・費用統制）は
+    /// この欄を運ばない。欠けたときは<b>計画の暫定値</b>（<see cref="TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees"/>）で埋まる
+    /// ——受け取る側は事前見積り（<see cref="CostCalculator.EstimateOneWayCost"/>）しか使わず、本欄を読まない。
+    /// </para>
+    /// </summary>
+    public UsSellRegulatoryFeeSchedule UnitedStatesSellRegulatoryFees { get; init; } =
+        TradingAssumptionsDefaults.UnitedStatesSellRegulatoryFees;
 }

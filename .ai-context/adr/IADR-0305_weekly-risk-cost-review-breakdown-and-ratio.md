@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-06, FR-07, FR-16, FR-17, UC-05, ADR-0030, IADR-0025, IADR-0269, IADR-0291, IADR-0301]
 author: endazon (with Claude Code)
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/06_technical/04_report-templates.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -174,3 +174,14 @@ ADR-0030 決定3 と同じ理由である——**計画が求めた項目が出�
 
 - Supersedes: なし（IADR-0301 のフォローアップ 1 を実施する）
 - Superseded by: なし
+
+## ［2026-10-07 追記 / #1201］計画 ADR-0035 による裁定と追随
+
+計画 ADR-0035（2026-09-05 Accepted）が本 IADR の暫定に確定値を与えた。本文（決定 1〜6）は当時の記録として残し、現在の扱いを次に記す（実装判断は [IADR-0501](./IADR-0501_report-cost-total-composition-and-post-trade-cost.md)）。
+
+- **決定 1（同じ帰属から数える）・決定 5（記録源の無い 3 項目）**: 変更なし。
+- **決定 2（`EstimateOneWayCostBreakdown`）**: 事前見積り専用になった。報告書の内訳は事後集計の関数 `CostCalculator.FillCost`（手数料＋取引諸費用。約定ごとの為替スプレッドを乗せない＝ADR-0035 決定 4）から数える。
+- **決定 3（諸費用は未供給）**: ADR-0035 決定 5 が暫定値（SEC $20.60 / 百万ドル・TAF $0.000166 / 株・上限 $8.30）を与えたため、前提条件の設定点 `TradingAssumptions.UnitedStatesSellRegulatoryFees` から算出して描く。「計画側で要確認」の記述は消した。
+- **決定 4（分母）**: ADR-0035 決定 1・2 が**追認**した（分母を併記する形・分母 ≤ 0 は算出不能）。ただし呼称は「実現損益（税引前・費用前）」ではなく**約定代金差額**である（同じ語に 2 つの意味を持たせない）。本文・ゴールデンの呼称を改めた。
+- **費用合計の構成**: ADR-0035 決定 3 により、売買手数料＋取引諸費用＋為替スプレッド相当額（入出金時の実績）＋借株料。未供給の区分は 0 を積まず「未供給」と描き、費用合計が過小である旨を凡例へ書く。§1 のラベルは「費用合計（手数料・諸費用・為替スプレッド・借株料）」。
+- **決定 6（射程）・フォローアップ 2（月報 §1 の費用率）**: ADR-0035 フォローアップ 2 により月報 §1 の費用率も同じ規則で埋めた。

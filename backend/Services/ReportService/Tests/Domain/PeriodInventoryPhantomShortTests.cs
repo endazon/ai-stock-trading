@@ -139,8 +139,9 @@ public class PeriodInventoryPhantomShortTests
         var s = PnlAggregator.Aggregate(fills, assumptions, currentPrices: null);
 
         s.TradeCount.Should().Be(1);
+        // #1201, 計画 ADR-0035 決定 4・5: 事後集計の費用（手数料＋取引諸費用。為替スプレッドは乗せない）。
         s.TotalCost.Should().Be(
-            CostCalculator.EstimateOneWayCost(assumptions, Market.UnitedStates, 100 * 250m));
+            CostCalculator.FillCost(assumptions, Market.UnitedStates, TradeSide.Sell, 100, 250m).Total);
         s.TotalCost.Should().BeGreaterThan(0m);
     }
 
@@ -341,7 +342,7 @@ public class PeriodInventoryPhantomShortTests
     {
         var prompt = ReportNarrativePromptBuilder.Build(NarrativeContext(unvalued: 1));
 
-        prompt.Should().Contain("- 実現損益(税引前): 算出不能（1件）");
+        prompt.Should().Contain("- 約定代金差額(費用・税の控除前): 算出不能（1件）");
         prompt.Should().Contain("- 源泉徴収税額: 算出不能（1件）");
         prompt.Should().Contain("- 実現損益(税引後): 算出不能（1件）");
         prompt.Should().Contain("- 評価損益(参考): 算出不能（1件）");
@@ -357,7 +358,7 @@ public class PeriodInventoryPhantomShortTests
 
         // 対の肯定形: 算定できない決済が無ければ従来どおり数値を渡し、指示も付けない。
         var normal = ReportNarrativePromptBuilder.Build(NarrativeContext(unvalued: 0));
-        normal.Should().Contain("- 実現損益(税引前): 777");
+        normal.Should().Contain("- 約定代金差額(費用・税の控除前): 777");
         normal.Should().Contain("決済件数: 3 / 勝ち決済: 2");
         normal.Should().NotContain("算出不能");
         normal.Should().NotContain("一切言及しないでください");
@@ -377,7 +378,8 @@ public class PeriodInventoryPhantomShortTests
         Narrative = "散文",
         FillAttributions = entries,
         CostReview = new PeriodCostReview(
-            Commission: 40m, FxSpread: 16m, TotalCost: 56m, TaxWithheld: 131m, RealizedPnlGross: 777m, CostRatio: 0.0721m),
+            Commission: 40m, RegulatoryFees: 16m, Total: new PeriodCostTotal(56m, FxSpread: null, BorrowFee: null, 0),
+            TaxWithheld: 131m, TradeValueDifference: 777m, CostRatio: 0.0721m),
     };
 
     private static string RiskCostSection(string md)

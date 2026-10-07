@@ -2,16 +2,23 @@ namespace ReportService.Domain;
 
 // FR-16, 04_report-templates 数値定義: 期間の損益集計結果。数値はコードで集計する（LLM に計算させない）。
 public sealed record PnlSummary(
-    /// <summary>実現損益（税引前・費用前）＝約定代金差額の合計。</summary>
+    /// <summary>
+    /// <b>約定代金差額</b>の合計（売却代金 − 取得代金。費用・税をいずれも控除しない値）。
+    /// 🔴 計画 ADR-0035 決定 1, #1201: 本文では「約定代金差額」と呼び、<b>「実現損益」の語を当てない</b>（識別子は互換のため据え置く）。
+    /// </summary>
     decimal RealizedPnlGross,
 
-    /// <summary>費用合計＝売買手数料＋取引諸費用＋為替スプレッド相当（CostCalculator）。</summary>
+    /// <summary>
+    /// 実現損益の控除項＝<b>売買手数料＋取引諸費用</b>（<c>CostCalculator.FillCost</c>。計画 ADR-0035 決定 4・5, #1201, IADR-0501）。
+    /// 🔴 <b>報告書の「費用合計」そのものではない</b>——費用合計は本値に為替スプレッド（入出金時の実績）と借株料を足したもの
+    /// （<see cref="PeriodCostTotal"/>）。約定ごとの為替スプレッドは含まない。
+    /// </summary>
     decimal TotalCost,
 
-    /// <summary>源泉徴収税額＝max(0, 実現損益(税引前) − 費用合計) × 譲渡益税率（利益にのみ課税）。</summary>
+    /// <summary>源泉徴収税額＝max(0, 約定代金差額 − <see cref="TotalCost"/>) × 譲渡益税率（利益にのみ課税）。</summary>
     decimal TaxWithheld,
 
-    /// <summary>実現損益（税引後・費用込み）＝実現損益(税引前) − 費用合計 − 源泉徴収税額。</summary>
+    /// <summary>実現損益（税引後・費用込み）＝約定代金差額 −（売買手数料＋取引諸費用）− 源泉徴収税額。</summary>
     decimal RealizedPnlNet,
 
     /// <summary>評価損益（税引前・参考）＝Σ 建玉 (現在値 − 平均取得単価)×数量。現在値の無い建玉は 0。</summary>

@@ -64,16 +64,18 @@ public class ReportDraftWeeklyBreakdownTests
         var fills = new[]
         {
             Fill(TradeSide.Buy, 10, 1_000m, 0),
-            Fill(TradeSide.Sell, 10, 1_200m, 2_880), // 実現損益（税引前・費用前）= 2,000
+            Fill(TradeSide.Sell, 10, 1_200m, 2_880), // 約定代金差額 = 2,000
         };
         var svc = new ReportDraftService(new FakeDrafter());
 
         var draft = await svc.BuildDraftAsync(Request(
             ReportKind.Weekly, "weekly-2026-W35", new DateOnly(2026, 8, 24), fills));
 
-        // 既定前提（手数料・為替 0）では、日別の実現損益の合計 = 税引前の実現損益 = 2,000。
+        // 既定前提（手数料・為替 0、米国株の売りに取引諸費用。#1201）では、日別の実現損益（税引前・費用込み）の合計
+        // = 約定代金差額 − 費用 = 2,000 − 0.24886（SEC 0.2472 ＋ TAF 0.00166）。
         draft.Pnl.RealizedPnlGross.Should().Be(2_000m);
-        draft.Markdown.Should().Contain("| 2026-08-26 | +2,000.00 USD | 1 |");
+        draft.Pnl.TotalCost.Should().Be(0.24886m);
+        draft.Markdown.Should().Contain("| 2026-08-26 | +1,999.75 USD | 1 |");
         // §1 の取引回数（買/売/決済）の 買＋売 と、日別の取引数の合計（1 + 1）が一致する。
         draft.Markdown.Should().Contain("取引回数（買/売/決済） | 1 / 1 / 1");
     }
@@ -96,11 +98,13 @@ public class ReportDraftWeeklyBreakdownTests
         draft.Markdown.Should().Contain("## 5. リスク・費用レビュー");
         draft.Markdown.Should().Contain("| 費用の区分 | 金額 |");
         // §1 の費用合計と §5 の「費用合計」が**同じ文字列**で出る（表記も 1 か所に単一化されている）。
+        // 借株料は照会していない（未供給）ため、手数料・諸費用だけの和であり過小である旨が出る（計画 ADR-0035 決定 3, #1201）。
         var total = ReportAmountFormat.Base(draft.Pnl.TotalCost);
         draft.Markdown.Should().Contain($"| 費用合計（§1 と同じ値） | {total} |");
-        draft.Markdown.Should().Contain($"| 費用合計（手数料・諸費用・為替） | {total} |");
-        // 諸費用は記録源が無い（0 と書かない）。
-        draft.Markdown.Should().Contain("| 取引諸費用 | **未供給** |");
+        draft.Markdown.Should().Contain($"| 費用合計（手数料・諸費用・為替スプレッド・借株料） | {total}（うち 為替スプレッド **未供給**・借株料 **未供給**。");
+        // 諸費用は設定点（計画 §2 の暫定値）から算出する（#1201, 計画 ADR-0035 決定 5）。米国株の売り 12,000 USD → 0.24886。
+        draft.Markdown.Should().Contain($"| 取引諸費用 | {ReportAmountFormat.Base(0.24886m)} |");
+        draft.Markdown.Should().Contain("損益に対する費用率: 0.0%（費用合計 +0.25 USD ÷ 約定代金差額 +2,000.00 USD）");
     }
 
     [Theory]
@@ -161,11 +165,15 @@ public class ReportDraftWeeklyBreakdownTests
         var draft = await svc.BuildDraftAsync(Request(
             ReportKind.Monthly, "monthly-2026-08", new DateOnly(2026, 8, 24), fills));
 
-        // 既定前提（US・手数料 0）では費用が 0 であり、実現損益（税引前・費用前）は 2,000。
+        // 既定前提（US・手数料 0）では費用は売りの取引諸費用だけであり、約定代金差額は 2,000。
+        // 市場別の「実現損益」は週別と同じ税引前・費用込み（約定代金差額 − 費用。計画 ADR-0035 決定 1, #1201）。
         draft.Pnl.RealizedPnlGross.Should().Be(2_000m);
+        var afterCost = draft.Pnl.RealizedPnlGross - draft.Pnl.TotalCost;
         draft.Markdown.Should().Contain(
-            $"| 米国株 | {ReportAmountFormat.Base(draft.Pnl.RealizedPnlGross)} | {ReportAmountFormat.Base(draft.Pnl.TotalCost)} |");
+            $"| 米国株 | {ReportAmountFormat.Base(afterCost)} | {ReportAmountFormat.Base(draft.Pnl.TotalCost)} |");
         // 建てた週と決済した週が分かれても、実現損益は決済した週の行に丸ごと出る（再畳み込みしていない証跡）。
-        draft.Markdown.Should().Contain($"| 2026-W37 | {ReportAmountFormat.Base(2_000m)} | 1 |");
+        draft.Markdown.Should().Contain($"| 2026-W37 | {ReportAmountFormat.Base(afterCost)} | 1 |");
+        // 月報 §1 の費用率も同じ帰属から埋まる（フォローアップ 2）。
+        draft.Markdown.Should().Contain("÷ 約定代金差額 +2,000.00 USD）");
     }
 }
