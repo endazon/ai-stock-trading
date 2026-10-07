@@ -212,13 +212,14 @@ public sealed record ReportView
     public IReadOnlyList<FillPnlAttribution>? FillAttributions { get; init; }
 
     /// <summary>
-    /// FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5: <b>費用の内訳と費用率</b>。
+    /// FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5・月報 §1（計画 ADR-0035, #1201, IADR-0501）:
+    /// <b>費用の内訳と費用率</b>。週報と月報が持つ（日報は持たない）。
     /// <para>
     /// 🔴 <c>null</c> は「<b>内訳を組み立てていない</b>」であり「費用 0」ではない。
     /// <see cref="FillAttributions"/> と同じ規律で、<b>0 円と未供給を潰さない</b>。
     /// </para>
     /// <para>
-    /// 🔴 <b>本型の <c>TotalCost</c> は <see cref="Pnl"/> の費用合計と一致する</b>——
+    /// 🔴 <b>本型の <c>Total</c> は §1 の費用合計（<see cref="Pnl"/> の手数料・諸費用＋<see cref="BorrowFees"/>）と一致する</b>——
     /// 同じ約定・同じ費用関数から数えているためである。<b>期間を切って集計し直した値を入れてはならない。</b>
     /// </para>
     /// </summary>

@@ -181,8 +181,10 @@ public class TradeHistoryViewBuilderTests
         line.Side.Should().Be(TradeSide.Sell);
         line.Quantity.Should().Be(10);
         line.FillPrice.Should().Be(315m);
-        // 米国市場は手数料無料かつ基準通貨のため概算費用は 0 になる（**未供給ではなく事実としての 0**）。
-        line.Cost.Should().Be(CostCalculator.EstimateOneWayCost(Assumptions(), Market.UnitedStates, 10 * 315m));
+        // 米国市場は手数料無料（既定）かつ為替スプレッドを約定ごとに乗せないため、費用は売りの取引諸費用（SEC・TAF）だけになる
+        //（#1201, 計画 ADR-0035 決定 4・5。PnlAggregator と同じ関数）。
+        line.Cost.Should().Be(CostCalculator.FillCost(Assumptions(), Market.UnitedStates, TradeSide.Sell, 10, 315m).Total);
+        line.Cost.Should().BeGreaterThan(0m, "米国株の売りには取引諸費用が掛かる");
     }
 
     // 取引詳細・見送り判断は記録源そのものが無い（空列＝「該当なし」へ倒さない）。

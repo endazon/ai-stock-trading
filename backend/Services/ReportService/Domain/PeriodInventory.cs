@@ -91,7 +91,7 @@ public static class PeriodInventory
 /// </summary>
 /// <param name="Lot">適用後の在庫（🔴 <b>幻の建玉を含まない</b>）。</param>
 /// <param name="RealizedPnl">
-/// <b>賄えた分だけ</b>の実現損益（税引前・費用前）。<see cref="UnvaluedQuantity"/> のぶんは含まない。
+/// <b>賄えた分だけ</b>の約定代金差額（費用・税の控除前）。<see cref="UnvaluedQuantity"/> のぶんは含まない。
 /// </param>
 /// <param name="Reduced">期間の在庫が実際に減った（＝算定できる決済が発生した）か。</param>
 /// <param name="UnvaluedQuantity">

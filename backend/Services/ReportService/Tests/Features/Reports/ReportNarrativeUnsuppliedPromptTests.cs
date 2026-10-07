@@ -137,6 +137,8 @@ public class ReportNarrativeUnsuppliedPromptTests
         var prompt = ReportNarrativePromptBuilder.Build(Context(kind));
 
         prompt.Should().Contain("- 費用合計: 0（概算）");
+        // 計画 ADR-0035 決定 1・3, #1201: §1 の費用合計（借株料・為替スプレッドを含む）と同じ語で別の値を渡さない。
+        prompt.Should().Contain("- 費用合計: 0（概算）（売買手数料・取引諸費用のみ。借株料・為替スプレッドは含まない）");
         prompt.Should().Contain(ReportNarrativePromptBuilder.CostEstimateNote);
         prompt.Should().Contain("「費用負担は無かった」");
     }
@@ -153,14 +155,14 @@ public class ReportNarrativeUnsuppliedPromptTests
             Positions = [Position("NVDA", 1049)],
         });
 
-        prompt.Should().Contain("- 実現損益(税引前): 未供給（取得できなかった）");
+        prompt.Should().Contain("- 約定代金差額(費用・税の控除前): 未供給（取得できなかった）");
         prompt.Should().Contain("- 費用合計: 未供給（取得できなかった）（概算）");
         prompt.Should().Contain("- 評価損益(参考): 未供給（取得できなかった）");
         prompt.Should().Contain("- 約定件数: 未供給（取得できなかった） / 決済件数: 未供給（取得できなかった）");
         prompt.Should().Contain("「取引は無かった」「損益は 0 だった」等とも書かないでください");
         // 🔴 否定形: 0 件・損益 0 を確定値として渡していない。
         prompt.Should().NotContain("- 約定件数: 0");
-        prompt.Should().NotContain("- 実現損益(税引前): 0");
+        prompt.Should().NotContain("- 約定代金差額(費用・税の控除前): 0");
     }
 
     // T-10-2166
@@ -176,7 +178,7 @@ public class ReportNarrativeUnsuppliedPromptTests
         prompt.Should().Contain("- 評価損益(参考): 未供給（取得できなかった）");
         // 約定は供給されているので、約定から数える値は渡す。
         prompt.Should().Contain("- 約定件数: 0 / 決済件数: 0 / 勝ち決済: 0");
-        prompt.Should().Contain("- 実現損益(税引前): 0");
+        prompt.Should().Contain("- 約定代金差額(費用・税の控除前): 0");
     }
 
     // T-10-2177, IADR-0071 決定1: 未供給の一覧と建玉を足しても、プロンプトは決定的である。

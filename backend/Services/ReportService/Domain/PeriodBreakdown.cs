@@ -19,7 +19,7 @@ public sealed record WeeklyPnlRow(
     /// <summary>ISO 週ラベル（<c>2026-W35</c>）。<b>年を含む</b>ため年跨ぎでも取り違えない。</summary>
     string WeekLabel,
 
-    /// <summary>当週の決済損益の合計（税引前・費用前）。</summary>
+    /// <summary>当週の決済の約定代金差額の合計（費用・税の控除前）。</summary>
     decimal RealizedPnlGross,
 
     /// <summary>当週の約定に掛かる概算費用の合計。</summary>
@@ -56,7 +56,14 @@ public sealed record MarketPnlRow(
     (string Symbol, decimal RealizedPnlGross)? Best,
 
     /// <summary>当該市場で実現損益が最小の銘柄（同上）。決済が 1 銘柄だけなら <see cref="Best"/> と同一。</summary>
-    (string Symbol, decimal RealizedPnlGross)? Worst);
+    (string Symbol, decimal RealizedPnlGross)? Worst)
+{
+    /// <summary>
+    /// 当月の実現損益（<b>税引前・費用込み</b>＝約定代金差額 −（売買手数料＋取引諸費用））。
+    /// 🔴 計画 ADR-0035 決定 1, #1201, IADR-0501: 「実現損益」の列に約定代金差額を載せない（週別と同じ意味に揃える）。
+    /// </summary>
+    public decimal RealizedPnlAfterCost => RealizedPnlGross - Cost;
+}
 
 // 04_report-templates 月報 §2 表 3「建玉の方向別」の 1 行。
 public sealed record DirectionPnlRow(
@@ -65,7 +72,14 @@ public sealed record DirectionPnlRow(
     decimal Cost,
     int FillCount,
     int RealizingCount,
-    int WinningCount);
+    int WinningCount)
+{
+    /// <summary>
+    /// 当月の実現損益（<b>税引前・費用込み</b>＝約定代金差額 −（売買手数料＋取引諸費用））。借株料は控除しない
+    /// （計画 §数値の定義の実現損益は借株料を控除項に持たない）。計画 ADR-0035 決定 1, #1201, IADR-0501。
+    /// </summary>
+    public decimal RealizedPnlAfterCost => RealizedPnlGross - Cost;
+}
 
 public static class PeriodBreakdownBuilder
 {

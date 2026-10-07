@@ -64,8 +64,10 @@ public static class TradeHistoryRenderer
     // 表の読み方。**セルごとに長文を書くと 12 列 × N 行が読めなくなる**ため、標識の意味は 1 箇所で定義する。
     private static void AppendLegend(StringBuilder sb, bool hasUnvaluedRealizedPnl)
     {
-        sb.Append("- 時刻は **JST**（報告期間の基準時刻）。**手数料・費用は前提条件からの概算**であり、"
-            + "ブローカの請求実額ではありません。\n");
+        // FR-06, 計画 ADR-0035 決定 4・5, #1201, IADR-0501: 費用の内訳を名指しする（約定ごとの為替スプレッドは乗せない）。
+        sb.Append("- 時刻は **JST**（報告期間の基準時刻）。**手数料・費用は前提条件の料率から算出した売買手数料と取引諸費用**"
+            + "（米国株の売り約定の SEC 手数料・FINRA 取引活動料）であり、ブローカの請求実額ではありません。"
+            + "為替スプレッドは入出金時の両替にだけ掛かるため約定ごとには含めていません。\n");
         sb.Append(CultureInfo.InvariantCulture,
             $"- `{Unsupplied}` は**記録源が無い**ことを表します。**「該当なし」「0」とは区別しています。**\n");
         sb.Append("  - **銘柄名**: 台帳は銘柄コードのみを保持しています。\n");

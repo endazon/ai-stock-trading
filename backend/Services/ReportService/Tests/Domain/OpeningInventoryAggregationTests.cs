@@ -12,7 +12,12 @@ namespace ReportService.Tests;
 // 期待値は**平均取得単価法の手計算**である（コードの出力を写していない）。前提条件は既定（手数料・為替スプレッド 0・譲渡益税率 20.315%）。
 public class OpeningInventoryAggregationTests
 {
-    private static readonly TradingAssumptions Assumptions = TradingAssumptionsDefaults.Create();
+    // 本ファイルは期間開始時点の在庫の畳み込みを手計算と突き合わせる。米国株の売却時諸費用（#1201・計画 ADR-0035 決定 5）は
+    // 0 にして費用の項を動かさない（諸費用の算入は PnlAggregatorTests・CostCalculatorTests が見る）。
+    private static readonly TradingAssumptions Assumptions = TradingAssumptionsDefaults.Create() with
+    {
+        UnitedStatesSellRegulatoryFees = new UsSellRegulatoryFeeSchedule(0m, 0m, 0m),
+    };
 
     // ET 2026-10-05 のセッション（EDT・UTC−4）。
     private static DateTimeOffset Et(int hour, int minute) => new(2026, 10, 5, hour + 4, minute, 0, TimeSpan.Zero);

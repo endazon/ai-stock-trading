@@ -31,7 +31,7 @@ public class ReportDraftServiceTests
     [Fact]
     public async Task 日報_約定列から数値を集計し散文を含むMarkdownを生成する()
     {
-        // 10株@1,000 買い → 10株@1,200 売り。既定前提（手数料/為替0）で実現損益(税引前)=2,000（勝ち決済1）。
+        // 10株@1,000 買い → 10株@1,200 売り。既定前提（手数料/為替0）で約定代金差額=2,000（勝ち決済1）。
         var fills = new[] { Fill(TradeSide.Buy, 10, 1_000m, 0), Fill(TradeSide.Sell, 10, 1_200m, 1) };
         var drafter = new FakeDrafter("市況の散文ドラフト");
         var svc = new ReportDraftService(drafter);
