@@ -38,6 +38,11 @@ public enum Stage0DecisionAction
 /// 構造化出力を解析できなかったか（#290 / IADR-0248 の区別）。true のとき <see cref="Action"/> は
 /// 安全既定の Hold であり、**「LLM が見送りを選んだ」のではない**。
 /// </param>
+/// <param name="EffectiveModelId">
+/// FR-15, ADR-0054 決定3, #1196, IADR-0498: この票（本判断 `trade-decision`）に**応答したモデル**（応答が名乗った実効モデル。
+/// 構成の希望値ではない）。計測が無い（送信できなかった等）ときは null ＝**不明**であり、再生側はピンと一致したと読まない。
+/// 既定 null は二段化より前の記録の形である。
+/// </param>
 public sealed record Stage0RawDecision(
     int Attempt,
     Stage0DecisionAction Action,
@@ -46,7 +51,30 @@ public sealed record Stage0RawDecision(
     decimal StopLossDistancePerShare,
     int InputTokens,
     int OutputTokens,
-    bool Unparseable);
+    bool Unparseable,
+    string? EffectiveModelId = null);
+
+/// <summary>
+/// FR-04, FR-15, ADR-0054 決定3, #1196, IADR-0498: **一次スクリーニング（`trade-decision-screening`）の判断**。
+/// <para>
+/// 本番は一次で関心なし（Hold）・解析不能なら本判断を呼ばない（`DecisionOrchestrator`）。Stage 0 は本番と同じ二段を通した
+/// 判断を評価する（ADR-0054 決定3）ため、記録は一次の結果と一次に応答したモデルを本判断と**別に**持つ。
+/// </para>
+/// </summary>
+/// <param name="Action">一次の方向（Hold は見送り＝本判断へ進まない）。解析不能のときは安全既定の Hold。</param>
+/// <param name="Unparseable">構造化出力を解析できなかったか（#290 / IADR-0248 の区別）。true も本判断へ進まない。</param>
+/// <param name="EffectiveModelId">一次に応答したモデル（応答が名乗った実効モデル）。null は不明。</param>
+public sealed record Stage0ScreeningDecision(
+    Stage0DecisionAction Action,
+    bool Unparseable,
+    string Rationale,
+    int InputTokens,
+    int OutputTokens,
+    string? EffectiveModelId)
+{
+    /// <summary>本判断へ進んだか（関心あり＝Buy/Sell かつ解析できた）。本番の `ParsedScreening.IsInterested` と同じ規則。</summary>
+    public bool Interested => !Unparseable && Action != Stage0DecisionAction.Hold;
+}
 
 /// <summary>
 /// FR-04, FR-15, ADR-0033 決定2: **1 判断時点分**の記録（銘柄 × AsOf）。
@@ -76,6 +104,15 @@ public sealed record Stage0RawDecision(
 /// 除くのは合否の集計からであって、記録することそのものは止めない（同決定「『外す』は『走らせない』ではない」）。
 /// </para>
 /// </param>
+/// <param name="Screening">
+/// FR-15, ADR-0054 決定3, #1196, IADR-0498: **一次スクリーニングの判断**。一次で見送ったときは <see cref="RawDecisions"/> が空
+/// （本判断を呼んでいない）。
+/// <para>
+/// 🔴 **`null` は「一次を記録していない」（二段化より前の記録）であり「一次を通過した」ではない。** その記録で組んだ評価は、
+/// 本番の二段の系を測っていない（ADR-0054 決定3）ため、再生側は**評価不能**として判定を組まない（合格にも不合格にも数えない）。
+/// 既定を `null` にしているのは、旧記録・手書きの記録が黙って二段の記録へ倒れないようにするためである（<see cref="AsOfInputs"/> と同じ向き）。
+/// </para>
+/// </param>
 public sealed record Stage0DecisionRecord(
     string Symbol,
     Market Market,
@@ -90,7 +127,8 @@ public sealed record Stage0DecisionRecord(
     decimal CostJpy,
     int InputTokens,
     int OutputTokens,
-    IReadOnlyList<Stage0AsOfInputStatus>? AsOfInputs = null);
+    IReadOnlyList<Stage0AsOfInputStatus>? AsOfInputs = null,
+    Stage0ScreeningDecision? Screening = null);
 
 /// <summary>記録集合が対象とした銘柄。</summary>
 public sealed record Stage0RecordedSymbol(string Symbol, Market Market);

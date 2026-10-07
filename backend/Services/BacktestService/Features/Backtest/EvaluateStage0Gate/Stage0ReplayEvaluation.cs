@@ -136,7 +136,9 @@ public static class Stage0ReplayEvaluation
         }
 
         var exclusions = new Stage0ExclusionSummary.Counted(
-            strategy.ExcludedDecisionCount, strategy.EvaluatedDecisionCount, strategy.ExcludedInputKinds);
+            strategy.ExcludedDecisionCount, strategy.EvaluatedDecisionCount, strategy.ExcludedInputKinds,
+            // FR-15, ADR-0054 決定3, #1196, IADR-0498: 実効モデルがピンと違った判断の件数（Excluded の内数）。
+            ModelMismatch: strategy.ModelMismatchDecisionCount);
 
         var baseline = Run(request, strategy, CostSensitivity.Baseline, request.From, request.To);
         var doubled = Run(request, strategy, CostSensitivity.Doubled, request.From, request.To);
@@ -220,6 +222,12 @@ public static class Stage0ReplayEvaluation
         // （3 種を覆わない部分申告も未申告として扱う。抜けた種別が黙って充足側へ倒れるため）。
         if ((recordSet.Records ?? []).Any(r => !Stage0AsOfInputs.IsDeclared(r.AsOfInputs)))
             blocking.Add(Stage0GateCheck.InputCompletenessNotDeclared);
+
+        // 🔴 FR-04, FR-15, ADR-0054 決定3, #1196, IADR-0498: **1 件でも一次スクリーニングを記録していない記録があれば評価不能。**
+        // 二段化より前の記録は本判断だけで全銘柄を判断した系を測っており、本番の二段の系の評価ではない。合格にも不合格（7 条件の判定）
+        // にも数えず、判定を組まない。混在（一部だけ二段）も同じ —— 一次を通っていない判断が母集団に混ざれば、評価した系が本番と一致しない。
+        if ((recordSet.Records ?? []).Any(r => !Stage0TwoTierModels.IsScreeningRecorded(r)))
+            blocking.Add(Stage0GateCheck.ScreeningNotRecorded);
 
         return blocking;
     }
