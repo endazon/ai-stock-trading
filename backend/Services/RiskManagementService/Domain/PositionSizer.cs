@@ -60,6 +60,17 @@ public static class PositionSizer
     }
 
     /// <summary>
+    /// 🔴 FR-10, #1174, IADR-0500 決定1: 投入可能な資金（段階残枠と日次発注残枠の小さい方）が<b>参照価格 × 1 株に満たない</b>か。
+    /// 真なら <see cref="CalculateCappedQuantity"/> の数量は損切り幅・equity・1 注文上限に依らず必ず 0 になる
+    /// （金額キャップは <c>min(maxOrderAmount, availableCapital)</c> 以下で、decimal の除算は被除数について単調。同じ式 <c>availableCapital / referencePrice</c> で比べる）。
+    /// 取引判断が LLM を呼ぶ前の見送りの下界に使う。<b>ちょうど等しい（1 株ちょうど買える）は偽</b>。参照価格が正でなければ偽（下界として何も言えない）。
+    /// </summary>
+    /// <param name="availableCapital">この注文に投入可能な資金（基準通貨・USD）。0 以下は 1 株も買えない。</param>
+    /// <param name="referencePrice">1 株あたり参照価格（基準通貨・USD）。</param>
+    public static bool CannotAffordOneShare(decimal availableCapital, decimal referencePrice) =>
+        referencePrice > 0m && (availableCapital <= 0m || availableCapital / referencePrice < 1m);
+
+    /// <summary>
     /// 連敗・ドローダウンに応じたサイズ縮小係数を返す（裁量で戻さない機械的ルール）。
     /// - 連敗がしきい値以上: 縮小係数（既定 0.5）を乗算
     /// - ドローダウンが上限の 1/2 以上: 0.5 を乗算（DD が深まるほど縮小する決定的ルール）

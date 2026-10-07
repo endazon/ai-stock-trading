@@ -396,8 +396,12 @@ services:
       #   希望モデルではない（ゲートウェイは越境ルーティング〈ADR-0010〉で別モデルへ着地し得る）。
       # fail-safe（IADR-0122 決定3・**「安全側 = 0」ではない**）:
       #   表に無いモデル・モデル名なし → **表の最大単価**（現行 fable-5）。0 に倒すと上限が構造的に効かなくなる。
-      #   表が空 → 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。#243 実測で
-      #   本番 values.yaml が表 0 件のまま残っていた瑕疵を発見・是正済み（本表を移植した）。
+      #   表が空 → 従来キー LlmPricing__InputPer1kTokens/__OutputPer1kTokens（未設定 0）。
+      #   本番 values.yaml は**表を持たない**（設計。IADR-0114 決定6 / IADR-0122 決定4 / IADR-0296。#243 で
+      #   「移植」を試みたが helm.yml の既定描画ゲートが止め、経路B 限定を維持した）。本番で LLM を有効にするときは
+      #   配備時の values（ArgoCD の valueFiles）で本表と同じ行を与える（docs/operations/operations.md の
+      #   「本番の LLM 単価の投入」）。与え忘れると Production の trade-decision / report は起動しない
+      #   （#1197 / IADR-0499。0 円計上で月次上限が黙って無効になる経路を塞ぐ）。
       #
       # 出典・前提（2026-07 時点・**恒久値ではない**）:
       #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50、opus-5 / opus-4-8 = 5/25、

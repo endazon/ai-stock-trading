@@ -160,3 +160,11 @@ PoC で 3 つの形が観測された（#1176 本文と追加の実例）。
   `Shared/AiStockTrading.Shared.Contracts/{Events/OrderApproved,Events/TradeDecisionForgoneBeforeLlm,Observability/DecisionSkipReason,Trading/RejectionReason}.cs`・
   `Shared/AiStockTrading.Shared.Grpc/Protos/aistocktrading/riskmanagement/v1/risk_controls_read.proto`
 - テスト: T-10-2310〜T-10-2322（`docs/tests/FR-10_risk-controls-tests.md`）
+
+## ［2026-10-07 追記 / #1174］1 株に届かない残枠も LLM の前へ移した
+
+決定 2 の「省かない: …価格に依存して最小を割る場合」「これらの経路では LLM の費用は節約されない」のうち、**段階残枠と日次残枠の小さい方が現在値 × 1 株（基準通貨）に
+満たない場合**は、[IADR-0500](IADR-0500_pre-llm-skip-when-capacity-below-one-share.md) が LLM の前の見送り `EntryCapacityBelowOneShare` へ移した（サイジングは現在値を
+そのまま参照価格に使うので、数量 0 が LLM の前に確定する）。線引き（保有 0・未約定なし・残枠が既知）は本決定と同じで、加えて現在値が既知であることを要する。
+**本決定の判定を先に評価する**（残枠が最小の名目額にも届かない銘柄は従来どおり `EntryCapacityBelowMinimumNotional`）。株数の端数で最小を割る場合（1 株以上は買える）は
+従来どおり LLM の後の `SizedBelowMinimumNotional`。本文は書き換えない。

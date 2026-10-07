@@ -110,4 +110,14 @@ public enum DecisionSkipReason
     /// <c>TradeDecisionHeld</c> の理由にもこの名前が載る。決済は対象外。
     /// </summary>
     SizedBelowMinimumNotional,
+
+    /// <summary>
+    /// FR-10, #1174, IADR-0500 決定1・2: <b>LLM を呼ぶ前</b>の見送り。保有が既知で 0・未約定の新規建てが既知で空の銘柄で、段階残枠と日次残枠
+    /// （いずれも既知）の小さい方が現在値（基準通貨へ換算）× 1 株に満たない（サイジングは必ず数量 0）。
+    /// <para>
+    /// 🔴 計器の移動: 是正前は同じ判断が LLM を呼んだ後に <see cref="SizingZeroQuantity"/> で数えられていた（GOOGL で 1 セッション 48 回）。その一部がこの値へ移る。
+    /// 残枠が最小の名目額にも届かないときは <see cref="EntryCapacityBelowMinimumNotional"/> が先に当たる。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </para>
+    /// </summary>
+    EntryCapacityBelowOneShare,
 }

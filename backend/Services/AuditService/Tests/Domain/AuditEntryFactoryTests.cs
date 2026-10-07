@@ -1308,6 +1308,31 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("\"Reason\":\"EntryBlockedByRiskControls\"");
     }
 
+    // T-10-2387, FR-10, FR-11, #1174, IADR-0500 決定2: 残枠が現在値 × 1 株に満たない LLM を呼ぶ前の見送りは、最小の名目額に届かない見送り
+    // （#1176 の EntryCapacityBelowMinimumNotional）と**区別できる名前**で台帳に残る（裁定「見送りの理由は監査台帳で区別できる形で残す」）。
+    [Fact]
+    public void T_10_2387_残枠が1株に届かない見送りは最小の名目額の見送りと区別できる名前で台帳に残る()
+    {
+        var at = new DateTimeOffset(2026, 10, 5, 17, 0, 0, TimeSpan.Zero);
+        var oneShare = AuditEntryFactory.From(
+            new TradeDecisionForgoneBeforeLlm(
+                Guid.NewGuid(), "GOOGL", Market.UnitedStates, DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare, at,
+                "price-movement"),
+            Id, RecordedAt);
+        var minimumNotional = AuditEntryFactory.From(
+            new TradeDecisionForgoneBeforeLlm(
+                Guid.NewGuid(), "GOOGL", Market.UnitedStates, DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, at,
+                "price-movement"),
+            Id, RecordedAt);
+
+        oneShare.EventType.Should().Be(nameof(TradeDecisionForgoneBeforeLlm));
+        oneShare.Summary.Should().Be("GOOGL LLM を呼ぶ前の見送り（EntryCapacityBelowOneShare・price-movement）");
+        oneShare.Detail.Should().Contain("\"Reason\":\"EntryCapacityBelowOneShare\"");
+        oneShare.Detail.Should().NotContain("\"Reason\":\"EntryCapacityBelowMinimumNotional\"");
+        minimumNotional.Detail.Should().Contain("\"Reason\":\"EntryCapacityBelowMinimumNotional\"");
+        oneShare.Summary.Should().NotBe(minimumNotional.Summary);
+    }
+
     // T-10-2183, NFR, FR-04, FR-11, #1111, IADR-0483 決定4: 取引判断の最中の例外の最終の失敗は EventId 相関で、型名と起点が読める。
     // 「最終の失敗」と書く。事実にメッセージ・スタックの欄が無いので、要約と Detail にも出ない（夜間の要約は Detail の ExceptionType を数える）。
     [Fact]

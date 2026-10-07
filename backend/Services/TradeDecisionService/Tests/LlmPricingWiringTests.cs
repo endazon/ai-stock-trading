@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using TradeDecisionService.Features.TradeDecision;
 using AiStockTrading.TestSupport.Messaging;
 using AwesomeAssertions;
@@ -67,6 +68,7 @@ public class LlmPricingWiringTests
 
     // #817 fail-loud: ゲートウェイが構成されているのに単価が実質 0（表が空・従来キーも無い）なら起動時に警告する。
     // 例外は投げない（IADR-0055: 0 は無害な fail-safe のまま。目的は無音で 0 円計上にしないこと）。
+    // 警告に留めるのは配備でない環境（ここは試験の Testing）だけ。配備（Production）は起動しない（T-10-2369・IADR-0499 / #1197）。
     [Fact]
     public void ゲートウェイ構成ありで単価が無ければ起動時に警告する()
     {
@@ -109,6 +111,44 @@ public class LlmPricingWiringTests
         logs.Warnings.Should().NotContain(m => m.Contains("LLM 単価が未設定"));
     }
 
+    // T-10-2369（NFR-13, #1197, IADR-0499）: 配備（Production）でゲートウェイ（REST / gRPC）が構成されているのに単価が実質 0 なら
+    // 起動しない（0 円計上のまま月次費用上限が黙って無効になる経路を塞ぐ）。警告に留めない。
+    [Theory]
+    [InlineData("LlmGateway:BaseUrl", "http://llmgateway.invalid")]
+    [InlineData(LlmGatewayGrpc.AddressKey, "http://llmgateway-service:8081")]
+    public void 配備でゲートウェイ構成ありで単価が無ければ起動しない(string key, string value)
+    {
+        using var factory = new Factory(new Dictionary<string, string?> { [key] = value }, environment: "Production");
+
+        var start = () => factory.CreateClient();
+
+        start.Should().Throw<InvalidOperationException>()
+            .Which.Message.Should().Contain(LlmPricingStartupGuard.Marker);
+    }
+
+    // T-10-2370（NFR-13, #1197, IADR-0499）: 配備でも単価があれば起動する・ゲートウェイ未構成（本番既定 values.yaml）なら起動する。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void 配備でも単価があるかゲートウェイ未構成なら起動する(bool gatewayWithPrices)
+    {
+        var logs = new CapturingLoggerProvider();
+        var settings = gatewayWithPrices
+            ? new Dictionary<string, string?>
+            {
+                ["LlmGateway:BaseUrl"] = "http://llmgateway.invalid",
+                ["LlmPricing:PerModel:claude_sonnet_5:InputPer1kTokens"] = "0.327",
+                ["LlmPricing:PerModel:claude_sonnet_5:OutputPer1kTokens"] = "1.637",
+            }
+            : new Dictionary<string, string?>();
+        using var factory = new Factory(settings, logs, environment: "Production");
+
+        var start = () => factory.CreateClient();
+
+        start.Should().NotThrow();
+        logs.Warnings.Should().NotContain(m => m.Contains(LlmPricingStartupGuard.Marker));
+    }
+
     // 基準4（#303）: 表に無いモデルは最大単価（fable-5）へ倒れる＝過小計上を作らない。
     [Fact]
     public async Task 表に無いモデルは最大単価で計上される()
@@ -138,6 +178,7 @@ public class LlmPricingWiringTests
     }
 
     // 本番既定（values.yaml に単価を置かない・IADR-0114 決定6 / IADR-0122 決定4）は従来どおり ¥0 計上＝挙動不変。
+    // 本番既定はゲートウェイも未構成（LLM を呼ばない）。ゲートウェイを構成した配備で単価が無ければ起動しない（T-10-2369）。
     [Fact]
     public async Task 単価未設定なら_0_円で計上される()
     {
@@ -171,12 +212,13 @@ public class LlmPricingWiringTests
         }
     }
 
-    private sealed class Factory(IDictionary<string, string?>? settings = null, ILoggerProvider? logs = null)
+    private sealed class Factory(
+        IDictionary<string, string?>? settings = null, ILoggerProvider? logs = null, string environment = "Testing")
         : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.UseEnvironment("Testing");
+            builder.UseEnvironment(environment);
             // 単価は Program.cs が登録時に構成を読むため、UseSetting（ホスト構成）で与える。
             builder.UseSetting("RabbitMq:ConnectionString", "amqp://localhost");
             builder.UseSetting("Otlp:Endpoint", "http://localhost:4317");

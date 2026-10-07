@@ -210,7 +210,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, reason);
     }
 
-    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: **LLM を呼ぶ前の見送り**（4 地点。#1113 / IADR-0463 で 5 地点。#1176 / IADR-0495 で 6 地点）の出口。1 回の見送りにつき 1 件
+    // 🔴 NFR, FR-04, FR-11, #1092, IADR-0462 決定4: **LLM を呼ぶ前の見送り**（4 地点。#1113 / IADR-0463 で 5 地点。#1176 / IADR-0495 で 6 地点。#1174 / IADR-0500 で 7 地点）の出口。1 回の見送りにつき 1 件
     // TradeDecisionForgoneBeforeLlm を発行してから、唯一の出口 Skip を通す（計上は Skip の 1 件のまま）。
     // 🔴 TradeDecisionHeld は出さない（判断をしていない見送りで急変の基準値を進めない。IADR-0452 決定1）。
     // 🔴 **発行の失敗で見送りを壊さない**（SkipJudgedAsync と同じ規律）。伝えるのは本判断のキャンセルだけである。
@@ -234,7 +234,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, ToSkipReason(reason));
     }
 
-    // #1092, IADR-0462 決定4: 台帳の語彙（6 値。#1113・#1176 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    // #1092, IADR-0462 決定4: 台帳の語彙（7 値。#1113・#1176・#1174 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
     internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
     {
         DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
@@ -243,6 +243,7 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.FxRateStaleNoHolding => DecisionSkipReason.FxRateStaleNoHolding,
         DecisionForgoneBeforeLlmReason.EntryBlockedByRiskControls => DecisionSkipReason.EntryBlockedByRiskControls,
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional => DecisionSkipReason.EntryCapacityBelowMinimumNotional,
+        DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare => DecisionSkipReason.EntryCapacityBelowOneShare,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -400,6 +401,27 @@ public sealed class TradeDecisionAppService(
                 _minimumEntryNotional.Ratio);
             return await SkipBeforeLlmAsync(
                     trigger, DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // 🔴 FR-10, #1174, IADR-0500 決定1・2: **段階残枠と日次残枠の小さい方が現在値 × 1 株（基準通貨）に満たない銘柄は、LLM を呼ぶ前に見送る。**
+        // サイジングの参照価格は現在値があれば現在値そのもの（下のアンカリング・IADR-0099 決定2）、換算は同じ rateToBase であり、金額キャップは
+        // この残枠以下なので、判定が真なら LLM の結論（損切り幅）に依らず数量は必ず 0 になる（同じ式で比べる PositionSizer.CannotAffordOneShare）。
+        // 線引きは上の #1176 と同じ（保有が既知で 0・未約定が既知で空）。省かない: 現在値が無い（LLM の参照価格を使う構成）・残枠が未供給（null）。
+        // equity は使わない（1 株の判定は equity に依存しない）。🔴 **#1176 の判定の後に置く**——残枠が最小の名目額にも届かないときは資金の枯渇が
+        // 原因であり、そちらの理由で記録する（本理由は「残枠はあるがこの銘柄の 1 株に届かない」に絞る）。ちょうど 1 株の価格は省かない。
+        if (heldPosition is { SignedQuantity: 0 } && workingEntries is { Any: false }
+            && currentPrice is > 0m
+            && context is { StageCapitalRemaining: { } oneShareStage, DailyOrderRemaining: { } oneShareDaily }
+            && PositionSizer.CannotAffordOneShare(
+                Math.Max(0m, Math.Min(oneShareStage, oneShareDaily)), currentPrice.Value * rateToBase))
+        {
+            logger.LogInformation(
+                "段階残枠・日次残枠が現在値 × 1 株に満たないため LLM を呼ばずに見送り（保有 0・未約定なし・IADR-0500）: " +
+                "{Symbol} available={Available} priceInBase={PriceInBase}",
+                trigger.Symbol, Math.Max(0m, Math.Min(oneShareStage, oneShareDaily)), currentPrice.Value * rateToBase);
+            return await SkipBeforeLlmAsync(
+                    trigger, DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare, cancellationToken)
                 .ConfigureAwait(false);
         }
 

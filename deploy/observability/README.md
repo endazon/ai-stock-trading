@@ -23,7 +23,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | --- | --- | --- |
 | `ast_information_items_collected_total` | — | 収集件数（サイクルの起点が動いているか。**空巡回も 0 として出る**） |
 | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
-| `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | **見送りの理由**の内訳（#891）。上の `action=no-trade` を**置き換えない**——1 回の見送りで両方が 1 ずつ増える。最小の名目額（既定 equity の 1%。#1176）に満たない新規建ては、使える金額の上限が最小に届かず LLM を呼ぶ前に見送った分が `EntryCapacityBelowMinimumNotional`、サイジングの後に見送った分が `SizedBelowMinimumNotional` に出る（どちらも審査へ届かないので下の拒否には出ない） |
+| `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | **見送りの理由**の内訳（#891）。上の `action=no-trade` を**置き換えない**——1 回の見送りで両方が 1 ずつ増える。最小の名目額（既定 equity の 1%。#1176）に満たない新規建ては、使える金額の上限が最小に届かず LLM を呼ぶ前に見送った分が `EntryCapacityBelowMinimumNotional`、サイジングの後に見送った分が `SizedBelowMinimumNotional` に出る（どちらも審査へ届かないので下の拒否には出ない）。残枠（段階・日次の小さい方）が現在値の 1 株に届かない新規建ては LLM を呼ぶ前に `EntryCapacityBelowOneShare` で見送る（#1174。従来は LLM の後の `SizingZeroQuantity` に出ていた分が移る） |
 | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム） |
 | `ast_risk_screenings_total` | `outcome` | 発注前審査（**承認も拒否も数える**） |
 | `ast_risk_rejections_total` | `reason` | 見送り理由の内訳。保有 0・未約定なしで新規建てが必ず拒否される銘柄は判断が LLM を呼ぶ前に見送り、上の `decision_skips{reason="EntryBlockedByRiskControls"}` に出る。保有中の銘柄の買い増し・売り増しで可否が塞がっていたものは判断が発注せず `decision_skips{reason="AddOnBlockedByRiskControls"}` に出る（審査は不変。推移は両方を足して読む）。判断由来の決済（利確・判断の手仕舞い）の後の同じ取引日・同じ方向の新規建ては `DecisionExitSameDay` で拒否される（#1176）。可否の口が返す理由の 1 つなので、上の 2 つの見送りへ移る分も同じ読み方をする |
