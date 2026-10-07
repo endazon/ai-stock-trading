@@ -57,8 +57,10 @@ public static class ReportNarrativePromptBuilder
         sb.AppendLine($"- 約定代金差額(費用・税の控除前): {fillsUnsupplied ?? unvalued ?? Num(p.RealizedPnlGross)}");
         // #1156, IADR-0480 決定 2: 費用合計は**概算**である（前提条件の料率から算出した売買手数料・取引諸費用）。
         // 実際の経費明細は本サービスへ取り込まれていない（#1086）。0 を「費用負担は無かった」と読ませない。
-        // 🔴 行頭の「- 費用合計: <値>」の形は変えない（既存の試験・読み手が値をこの形で引く）。
-        sb.AppendLine($"- 費用合計: {fillsUnsupplied ?? Num(p.TotalCost)}（概算）");
+        // 🔴 行頭の「- 費用合計: <値>（概算）」の形は変えない（既存の試験・読み手が値をこの形で引く）。
+        // 計画 ADR-0035 決定 1・3, #1201: §1 の「費用合計」は借株料・為替スプレッドを含むが、この値は含まない。
+        // 1 つの語が 2 つの値を指さないよう、含む区分を行内で明記する。
+        sb.AppendLine($"- 費用合計: {fillsUnsupplied ?? Num(p.TotalCost)}（概算）（売買手数料・取引諸費用のみ。借株料・為替スプレッドは含まない）");
         sb.AppendLine($"- 源泉徴収税額: {fillsUnsupplied ?? unvalued ?? Num(p.TaxWithheld)}");
         sb.AppendLine($"- 実現損益(税引後): {fillsUnsupplied ?? unvalued ?? Num(p.RealizedPnlNet)}");
         sb.AppendLine($"- 評価損益(参考): {unrealizedUnsupplied ?? unvalued ?? Num(p.UnrealizedPnl)}");

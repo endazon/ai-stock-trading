@@ -137,6 +137,8 @@ public class ReportNarrativeUnsuppliedPromptTests
         var prompt = ReportNarrativePromptBuilder.Build(Context(kind));
 
         prompt.Should().Contain("- 費用合計: 0（概算）");
+        // 計画 ADR-0035 決定 1・3, #1201: §1 の費用合計（借株料・為替スプレッドを含む）と同じ語で別の値を渡さない。
+        prompt.Should().Contain("- 費用合計: 0（概算）（売買手数料・取引諸費用のみ。借株料・為替スプレッドは含まない）");
         prompt.Should().Contain(ReportNarrativePromptBuilder.CostEstimateNote);
         prompt.Should().Contain("「費用負担は無かった」");
     }

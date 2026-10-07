@@ -128,6 +128,15 @@ public class PeriodCostReviewTests
         review.Total.IsUnderstated.Should().BeTrue();
     }
 
+    // FR-06, 計画 ADR-0035 決定 3, #1201: 為替スプレッドと借株料がどちらも供給されていても、未計上の借株料が 1 件でもあれば過小である。
+    // 現在は為替スプレッドが常に未供給なので、この条件だけを外しても他の試験は赤にならない（独立監査の変異 M3）。
+    [Fact]
+    public void 全区分が供給されていても借株料の未計上が残れば過小と判定される()
+    {
+        new PeriodCostTotal(10m, FxSpread: 1m, BorrowFee: 2m, BorrowFeeUnrecordedCount: 1).IsUnderstated.Should().BeTrue();
+        new PeriodCostTotal(10m, FxSpread: 1m, BorrowFee: 2m, BorrowFeeUnrecordedCount: 0).IsUnderstated.Should().BeFalse();
+    }
+
     // --- 費用率（分母の 3 通り） ---
 
     [Fact]
