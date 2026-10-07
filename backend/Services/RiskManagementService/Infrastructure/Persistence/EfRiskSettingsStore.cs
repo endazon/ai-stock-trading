@@ -57,12 +57,24 @@ public sealed class EfRiskSettingsStore(RiskManagementDbContext db) : IRiskSetti
         ArgumentNullException.ThrowIfNull(settings);
 
         var row = db.RiskSettings.Find(SingletonKeys.Id);
+
+        // FR-19, FR-20, ADR-0034 決定5 契機2, #1220, IADR-0511: **商品種別設定の改訂番号はストアが進める。**
+        // 保存の直前の行（無ければ既定値＝GetCurrent がシードする値）と集合を比べ、違えば +1 して同じ JSON 行へ書く。
+        // 呼び出し側の設定値は番号を持たないため、`with` で運んだ古い値が番号を巻き戻すことは無い。
+        // 読み込んだ版と DB の版が食い違えば並行トークンが保存ごと止めるため、番号の加算も失われない。
+        var previous = row is null ? TradingDefaults.CreateSettings() : RiskSettingsSerialization.Deserialize(row.Json);
+        var previousRevision = row is null
+            ? ProductTypeSettingsRevision.Initial
+            : RiskSettingsSerialization.ReadProductTypesRevision(row.Json);
+        var revision = ProductTypeSettingsRevision.Next(
+            previous.Guard.EnabledProductTypes, settings.Guard.EnabledProductTypes, previousRevision);
+
         if (row is null)
         {
             db.RiskSettings.Add(new RiskSettingsRow
             {
                 Id = SingletonKeys.Id,
-                Json = RiskSettingsSerialization.Serialize(settings),
+                Json = RiskSettingsSerialization.Serialize(settings, revision),
                 Version = 1,
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
@@ -72,11 +84,21 @@ public sealed class EfRiskSettingsStore(RiskManagementDbContext db) : IRiskSetti
             // IADR-0012: Version をインクリメントする。EF の並行トークン（IsConcurrencyToken）により、
             // 読み込んだ版と DB の現在版が一致しない場合は SaveChanges が DbUpdateConcurrencyException を投げ、
             // ロストアップデートを防ぐ（Slice A レビュー指摘への対応）。
-            row.Json = RiskSettingsSerialization.Serialize(settings);
+            row.Json = RiskSettingsSerialization.Serialize(settings, revision);
             row.Version += 1;
             row.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         db.SaveChanges();
+    }
+
+    // FR-19, FR-20, #1220, IADR-0511: 行が無い＝既定値のまま一度も変わっていない（番号は初期値）。
+    // 行が有れば JSON の `productTypesRevision`（キーの無い旧行は初期値）。**行のシードはしない**（読み取り専用）。
+    public long GetProductTypesRevision()
+    {
+        var row = db.RiskSettings.Find(SingletonKeys.Id);
+        return row is null
+            ? ProductTypeSettingsRevision.Initial
+            : RiskSettingsSerialization.ReadProductTypesRevision(row.Json);
     }
 }

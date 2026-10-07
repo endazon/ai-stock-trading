@@ -36,6 +36,8 @@ public class BrokerProviderAlignmentTests
         public RiskManagementSettings GetCurrent() => throw new InvalidOperationException("DB 障害（テスト）");
 
         public void Save(RiskManagementSettings settings) => throw new InvalidOperationException();
+
+        public long GetProductTypesRevision() => throw new InvalidOperationException();
     }
 
     private static BrokerAccountObserved Observation(BrokerProvider actual) =>

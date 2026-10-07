@@ -3,15 +3,15 @@ title: 段階ゲートと発注先の 2 軸分離（FR-20）テスト仕様書
 type: test-spec
 status: draft
 created: 2026-08-03
-updated: 2026-09-24
+updated: 2026-10-08
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
-adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0018]
-iadrs: [IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304, IADR-0062, IADR-0240, IADR-0383]
-specs: [20260803_343_regression-test-foundation, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260923_868_stage-transition-approver-on-behalf-of, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
-issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #434, #466, #569, #774, #861, #868]
+adrs: [ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0034]
+iadrs: [IADR-0127, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304, IADR-0062, IADR-0240, IADR-0383, IADR-0511]
+specs: [20260803_343_regression-test-foundation, 20261008_1220_shortsell-verdict-product-types-revision, 20260804_333_stage-gate, 20260805_334_broker-provider-axis, 20260805_387_class-c-violation-count, 20260923_868_stage-transition-approver-on-behalf-of, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-12_paper-trade-tests, FR-15_backtest-tests, FR-20_staged-gates, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply, README]
+issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #434, #466, #569, #774, #861, #868, #1220]
 -->
 
 
@@ -369,6 +369,13 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 | T-126 | 承認種別を**省略**して段階遷移を要求 | 同上 | 従来どおり段階遷移として扱われる（後方互換） | 後方互換 | 自動 |
 | T-127 | サービスロール | 承認種別に verdict を指定して要求する | **403**（verdict は**利用者承認**であり、生成AI・自動処理では出せない） | 承認の要件 | 自動（否定形） |
 | **T-128** | バックテスト verdict の純写像（供給の**先頭**） | 「空売りを含む戦略か」の供給元を走査する | **申告できる引数が公開面に存在しない**（走行そのものを受け取り、約定列から観測する）。詳細はバックテストのテスト仕様書 T-15-70 / T-15-71 | 条件 2 の供給 | 自動（構造・否定形） |
+| T-20-4 | 期限内・情報源も戦略識別子も発行時と同じ・**商品種別設定の改訂番号だけが違う**（+1 / +2 / −1） | verdict の有効性を判定し、空売りの新規建てを試みる | **無効**（`ProductTypesChanged`）。空売りは開かない | 無効化の契機②（商品種別設定） | 自動（否定形） |
+| T-20-5 | verdict を発行した後に**空売りを無効化して再度有効化**する（集合は発行時と同じに戻る）／信用買いを有効化する | 段階ゲート現況と発注審査の文脈を読む | **無効**（`ProductTypesChanged`。番号は発行時 1 → 現在 3）。空売りは開かない。再発行すれば再び有効 | 無効化の契機②（商品種別設定） | 自動（否定形・結線） |
+| T-20-6 | 商品種別設定の改訂番号が発行時と同じ（他の契機なし） | 同上 | **有効**。空売りは開く | 従来どおり | 自動 |
+| T-20-7 | verdict 側・現在側・両方の改訂番号が**無い**（現在 0・verdict 無しも含む） | verdict の有効性を判定する | **無効**（`ProductTypesUnknown`。「変わっていない」と読まない）。空売りは開かない。追加した状態値は末尾の序数 5 / 6 | 判定材料なしのフェイルクローズ | 自動（否定形） |
+| T-20-8 | 改訂番号の列の追加前に発行した verdict の行（列が空）を台帳から読む／番号つきの行を書いて読む | 最新の verdict を復元する | 空の行は**添付つきで復元**され（未承認にならない）状態は `ProductTypesUnknown`。番号つきの行は番号が往復する | 判定材料なしのフェイルクローズ | 自動（否定形） |
+| T-20-9 | verdict を発行した後に禁止銘柄・市場・同日再エントリー・上限・最小取引件数を変える（商品種別は同じ集合を別順序で送る）／判定関数の入力を走査する | 段階ゲート現況を読む | **有効のまま**（番号は進まない）。判定の入力にプロンプト・方針が無い | プロンプト・方針は契機に入れない | 自動（否定形・構造） |
+| T-20-10 | 商品種別の集合の変更・同じ集合の再送・往復・商品種別以外の保存・番号を持たない旧い設定行 | 設定ストアへ保存して改訂番号を読む | 集合が変わったときだけ 1 進む（順序に依らない）／往復で 2 進む／永続化され別スコープから読める／旧い設定行は 0 と読み次の変更で 1 | 改訂番号の進め方 | 自動（プロパティ・否定形） |
 
 ### 段階の発注可能額（総資金比）
 
@@ -397,6 +404,7 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 | T-61〜T-74 | #385 | 実装済み（`Stage1SessionUptimeTests` / `BrokerAvailabilityObservedConsumerTests` / `EfStage1TradingDayObservationStoreTests` / `StageGateServiceTests` / `BrokerAvailabilityProbeServiceTests`）。**供給元は本 issue で実装済み**（OpenD へ到達できる限り営業日が積まれる）。**T-74 のとおり市場の祝日は判別しない —— 裁定どおりである**（2026-08-07・#407。「除外しない」と決まった。**祝日表を足すことは裁定違反**） |
 | T-13・T-14・T-39・T-40 | #333 | 実装済み（`RiskEvaluatorTests` / `EquityRatioRiskLimitsTests` / `SimulatorProfileWiringTests`） |
 | T-15〜T-18・T-34〜T-38 | #333 | 実装済み（`StageProductPolicyTests` / `RiskEvaluatorTests`）。**T-18 相当（Stage 0 再充足）は供給元が無く常に拒否側** |
+| T-20-4〜T-20-10 | #1220 | 実装済み（`ShortSellReleaseProductTypesTests`）。**発注審査への供給は未結線のまま**（空売りの実弾は引き続き常に拒否） |
 | T-129〜T-141 | #868 | 実装済み（`StageTransitionApproverTests` / `StageGateCommandHandlerTests` / `HttpStageGateControllerTests` / `DelegatedActorNameTests` / `DiscordBotUserMappingWarningTests` / `StageTransitionedContractTests` / `AuditEntryFactoryTests`）。**代理の値域は 3 サービスに同じ形で存在し、機械検査は無い**（片方だけ変えると送り手と受け手が割れる） |
 
 ## 変更履歴
@@ -412,6 +420,7 @@ issues: [#333, #334, #340, #342, #343, #344, #382, #385, #386, #387, #388, #407,
 | 2026-08-07 | #434（`Stage.Mode` の書き込み経路 allow-list）の実装に合わせて T-105〜T-108 を追加。**読み書きの非対称**（書き込みは拒否・読み取りは倒す）を両方向で固定した |
 | 2026-09-23 | #868（段階遷移の承認者）の実装に合わせて T-129〜T-140 を追加。**なりすましの否定形**（利用者トークン直叩き・一覧外クライアント・`azp` の欠落と大文字違い・一覧未設定）と**承認者不明の拒否**（相乗りの経路を含む）を固定した |
 | 2026-09-24 | #868 のレビューで生き残った変異 2 件を殺すため T-141（Bot 経由の空売り実弾解禁 verdict の承認者）を追加し、T-136 に**末尾 LF だけ**の値を足した |
+| 2026-10-08 | #1220（verdict の無効化契機に取引ガードの商品種別設定の変更を入れる）の実装に合わせて T-20-4〜T-20-10 を追加。**無効化 → 再有効化の往復**と**判定材料なしのフェイルクローズ**を否定形で固定した |
 
 <!-- trace-table:
 row1: FR-20

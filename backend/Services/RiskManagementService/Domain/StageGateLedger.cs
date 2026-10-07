@@ -42,7 +42,9 @@ public record StageGateLedger
                 {
                     return new ShortSellReleaseVerdict(
                         entry.Sequence, entry.ApprovedBy, entry.OccurredAtUtc,
-                        attestation.SourceFingerprint, attestation.StrategyId);
+                        attestation.SourceFingerprint, attestation.StrategyId,
+                        // FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 発行時点の商品種別設定の改訂番号（旧い行は null）。
+                        attestation.ProductTypesRevision);
                 }
             }
 

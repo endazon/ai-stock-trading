@@ -18,7 +18,14 @@ public static class RiskSettingsSerialization
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
-    public static string Serialize(RiskManagementSettings settings)
+    /// <param name="settings">保存する設定。</param>
+    /// <param name="productTypesRevision">
+    /// FR-19, #1220, IADR-0511: 商品種別設定の改訂番号（設定行の JSON に同居させる。ドメインの設定には載せない）。
+    /// 進めるのは設定ストアの保存だけであり（<see cref="ProductTypeSettingsRevision.Next"/>）、
+    /// 既定値 0 は「既定値のまま一度も変わっていない」行のシード・試験の往復に限って使う。
+    /// </param>
+    public static string Serialize(
+        RiskManagementSettings settings, long productTypesRevision = ProductTypeSettingsRevision.Initial)
     {
         var dto = new SettingsDto(
             new GuardDto(
@@ -33,8 +40,25 @@ public static class RiskSettingsSerialization
             settings.ShortSell,
             settings.BrokerProvider,
             settings.Stage1MinimumTradeCount,
-            settings.StopLossMethod);
+            settings.StopLossMethod,
+            productTypesRevision);
         return JsonSerializer.Serialize(dto, Options);
+    }
+
+    /// <summary>
+    /// FR-19, FR-20, ADR-0034 決定5 契機2, #1220, IADR-0511: 設定行の JSON から**商品種別設定の改訂番号**を読む。
+    /// <para>
+    /// キーを持たない旧行（本項目の追加前に書かれた行）は初期値 0 と読む。**これで旧い verdict が有効に見えることは無い**
+    /// ——本項目の追加前に発行された verdict は番号を持たず（台帳の列が null）、判定は番号の一致を見る前に
+    /// 無効へ倒す（<see cref="ShortSellReleaseVerdictStatus.ProductTypesUnknown"/>）。追加後に発行した verdict と
+    /// 追加後の変更の数え方は 0 起点で一貫する。**マイグレーションで既存行を書き換えない**（IADR-0161 決定2 と同じ規律）。
+    /// </para>
+    /// </summary>
+    public static long ReadProductTypesRevision(string json)
+    {
+        var dto = JsonSerializer.Deserialize<SettingsDto>(json, Options)
+            ?? throw new InvalidOperationException("リスク管理設定の JSON を逆直列化できませんでした。");
+        return dto.ProductTypesRevision ?? ProductTypeSettingsRevision.Initial;
     }
 
     public static RiskManagementSettings Deserialize(string json)
@@ -103,7 +127,11 @@ public static class RiskSettingsSerialization
         // **マイグレーションで既存行を書き換えない**（BrokerProvider と同じ規律・IADR-0161 決定2）。
         // 🔴 文字列トークン等の不正な型は標準の enum 変換が JsonException を投げ設定行全体が読めなくなるが、
         // 本項目は API（数値 enum）だけが書くため BrokerProvider 用の寛容な変換器は付けない（IADR-0342 決定2）。
-        StopLossExecutionMethod? StopLossMethod = null);
+        StopLossExecutionMethod? StopLossMethod = null,
+        // FR-19, FR-20, ADR-0034 決定5 契機2, #1220, IADR-0511: 商品種別設定の改訂番号。nullable＝本プロパティの
+        // 追加前に書かれた行（`ReadProductTypesRevision` が初期値 0 を与える）。**ドメインの設定には載せない**
+        // ——載せると `with` で運ばれ、呼び出し側が番号を作れてしまう。番号を進めるのは設定ストアの保存だけである。
+        long? ProductTypesRevision = null);
 
     private sealed record GuardDto(
         List<ProductType> EnabledProductTypes,

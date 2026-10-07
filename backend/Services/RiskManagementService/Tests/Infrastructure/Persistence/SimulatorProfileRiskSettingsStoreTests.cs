@@ -26,6 +26,8 @@ public class SimulatorProfileRiskSettingsStoreTests
             Saves++;
             Current = settings;
         }
+
+        public long GetProductTypesRevision() => 42;
     }
 
     private static RiskManagementSettings Production(TradingStage stage = TradingStage.Stage0Verification) =>

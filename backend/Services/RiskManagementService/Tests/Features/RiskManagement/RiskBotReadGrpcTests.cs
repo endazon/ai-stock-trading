@@ -175,7 +175,7 @@ public class RiskBotReadWireMappingTests
             new WithdrawalAssessment(false, null, false, null),
             new Stage1Progress(0, 0),
             new Stage1GateCriteria(60, 50, 120),
-            new ShortSellReleaseState(ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null));
+            new ShortSellReleaseState(ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null, 0));
 
         var wire = RiskReadWireMapping.ToProto(status);
 

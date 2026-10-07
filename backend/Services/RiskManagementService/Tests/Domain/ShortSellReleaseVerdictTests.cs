@@ -40,6 +40,7 @@ public class ShortSellReleaseVerdictTests
                 verdict: null,
                 ShortSellReleaseFixtures.Fingerprint,
                 ShortSellReleaseFixtures.StrategyId,
+                ShortSellReleaseFixtures.ProductTypesRevision,
                 Issued)
             .Should().Be(ShortSellReleaseVerdictStatus.Missing);
     }
@@ -57,6 +58,7 @@ public class ShortSellReleaseVerdictTests
                 ShortSellReleaseFixtures.Verdict(),
                 ShortSellReleaseFixtures.Fingerprint,
                 ShortSellReleaseFixtures.StrategyId,
+                ShortSellReleaseFixtures.ProductTypesRevision,
                 Issued.AddDays(elapsedDays))
             .Should().Be(expected);
     }
@@ -70,6 +72,7 @@ public class ShortSellReleaseVerdictTests
                 ShortSellReleaseFixtures.Verdict(),
                 ShortSellReleaseFixtures.Fingerprint,
                 ShortSellReleaseFixtures.StrategyId,
+                ShortSellReleaseFixtures.ProductTypesRevision,
                 justOver)
             .Should().Be(ShortSellReleaseVerdictStatus.Expired);
     }
@@ -82,6 +85,7 @@ public class ShortSellReleaseVerdictTests
                 ShortSellReleaseFixtures.Verdict(issuedAt: Issued.AddDays(1)),
                 ShortSellReleaseFixtures.Fingerprint,
                 ShortSellReleaseFixtures.StrategyId,
+                ShortSellReleaseFixtures.ProductTypesRevision,
                 Issued)
             .Should().Be(ShortSellReleaseVerdictStatus.Expired);
     }
@@ -95,6 +99,7 @@ public class ShortSellReleaseVerdictTests
                 // 借株照会の経路が差し替わった（アダプタの登録が変わった）状態。
                 currentSourceFingerprint: "borrow=other-broker;margin=broker-funds",
                 ShortSellReleaseFixtures.StrategyId,
+                ShortSellReleaseFixtures.ProductTypesRevision,
                 Issued.AddDays(1))
             .Should().Be(ShortSellReleaseVerdictStatus.SourceChanged);
     }
@@ -107,6 +112,7 @@ public class ShortSellReleaseVerdictTests
                 ShortSellReleaseFixtures.Verdict(),
                 ShortSellReleaseFixtures.Fingerprint,
                 currentStrategyId: "short-momentum-v3",
+                ShortSellReleaseFixtures.ProductTypesRevision,
                 Issued.AddDays(1))
             .Should().Be(ShortSellReleaseVerdictStatus.StrategyChanged);
     }
@@ -124,6 +130,7 @@ public class ShortSellReleaseVerdictTests
                 ShortSellReleaseFixtures.Verdict(strategyId: verdictStrategy),
                 ShortSellReleaseFixtures.Fingerprint,
                 currentStrategy,
+                ShortSellReleaseFixtures.ProductTypesRevision,
                 Issued.AddDays(1))
             .Should().Be(ShortSellReleaseVerdictStatus.StrategyChanged);
     }

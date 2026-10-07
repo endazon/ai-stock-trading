@@ -68,7 +68,7 @@ public class RiskManagementStageReadContractTests
             new RiskDomain.WithdrawalAssessment(false, null, false, null),
             new RiskDomain.Stage1Progress(60, 120),
             RiskDomain.Stage1GateCriteria.Default,
-            new RiskFeatures.ShortSellReleaseState(RiskDomain.ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null));
+            new RiskFeatures.ShortSellReleaseState(RiskDomain.ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null, 0));
         var source = new HttpStageProgressSource(
             Client(JsonSerializer.Serialize(status, Web)), NullLogger<HttpStageProgressSource>.Instance);
 

@@ -226,6 +226,12 @@ public sealed class StageTransitionRow
 
     /// <summary>発行時点の戦略識別子（バックテスト verdict が名乗る戦略 ID）。</summary>
     public string? ShortSellReleaseStrategyId { get; set; }
+
+    /// <summary>
+    /// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 発行時点の**商品種別設定の改訂番号**。
+    /// 段階遷移の行と、本列の追加前に発行された verdict の行は null（**旧い verdict は判定で無効へ倒れる**）。
+    /// </summary>
+    public long? ShortSellReleaseProductTypesRevision { get; set; }
 }
 
 // FR-20, FR-15, IADR-0070: 段階ゲートの合格・撤退基準の入力＝段階別実績の単一行。未記録時は fail-safe 既定

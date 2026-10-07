@@ -26,4 +26,7 @@ public sealed class SimulatorProfileRiskSettingsStore(IRiskSettingsStore inner) 
 
     // 永続化は素通しする（プロファイルはメモリ上の上書きに留め、DB を汚さない）。
     public void Save(RiskManagementSettings settings) => inner.Save(settings);
+
+    // FR-19, #1220, IADR-0511: 商品種別設定の改訂番号も素通しする（番号を進めるのは内側の保存だけ）。
+    public long GetProductTypesRevision() => inner.GetProductTypesRevision();
 }

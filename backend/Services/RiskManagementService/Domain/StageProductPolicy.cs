@@ -78,6 +78,10 @@ public static class StageProductPolicy
     /// **評価時点**の戦略識別子（バックテスト verdict が名乗る戦略 ID）。
     /// verdict の発行時の値と異なれば無効（裁定の無効化契機 ②）。
     /// </param>
+    /// <param name="CurrentProductTypesRevision">
+    /// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: **評価時点**の商品種別設定の改訂番号（設定ストアが持つ）。
+    /// verdict の発行時の値と異なれば無効（無効化契機 ② の契機 2）。<c>null</c>＝未供給であり無効へ倒す。
+    /// </param>
     /// <param name="EvaluatedAtUtc">評価時刻。verdict の有効期限 30 日（無効化契機 ③）の判定に用いる。</param>
     /// <remarks>
     /// **追加メンバに既定値を与えていない。** 構築点すべてに材料を渡させ、渡し忘れをコンパイルで止めるためである
@@ -89,6 +93,7 @@ public static class StageProductPolicy
         ShortSellReleaseVerdict? Verdict,
         string CurrentSourceFingerprint,
         string CurrentStrategyId,
+        long? CurrentProductTypesRevision,
         DateTimeOffset EvaluatedAtUtc)
     {
         /// <summary>
@@ -96,7 +101,7 @@ public static class StageProductPolicy
         /// </summary>
         public ShortSellReleaseVerdictStatus VerdictStatus =>
             ShortSellReleasePolicy.Evaluate(
-                Verdict, CurrentSourceFingerprint, CurrentStrategyId, EvaluatedAtUtc);
+                Verdict, CurrentSourceFingerprint, CurrentStrategyId, CurrentProductTypesRevision, EvaluatedAtUtc);
     }
 
     /// <summary>

@@ -10,6 +10,9 @@ public sealed class InMemoryRiskSettingsStore : IRiskSettingsStore
     private readonly Lock _gate = new();
     private RiskManagementSettings _current;
 
+    // FR-19, #1220, IADR-0511: 商品種別設定の改訂番号。保存のたびにストアが進める（呼び出し側は書けない）。
+    private long _productTypesRevision = ProductTypeSettingsRevision.Initial;
+
     public InMemoryRiskSettingsStore(RiskManagementSettings? initial = null)
     {
         _current = initial ?? TradingDefaults.CreateSettings();
@@ -28,7 +31,17 @@ public sealed class InMemoryRiskSettingsStore : IRiskSettingsStore
         ArgumentNullException.ThrowIfNull(settings);
         lock (_gate)
         {
+            _productTypesRevision = ProductTypeSettingsRevision.Next(
+                _current.Guard.EnabledProductTypes, settings.Guard.EnabledProductTypes, _productTypesRevision);
             _current = settings;
+        }
+    }
+
+    public long GetProductTypesRevision()
+    {
+        lock (_gate)
+        {
+            return _productTypesRevision;
         }
     }
 }

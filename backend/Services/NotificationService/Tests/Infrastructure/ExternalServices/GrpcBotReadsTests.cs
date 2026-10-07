@@ -106,7 +106,7 @@ public class GrpcBotReadsTests
             : new RiskDomain.WithdrawalAssessment(false, null, false, null),
         new RiskDomain.Stage1Progress(60, 120),
         criteria,
-        new RiskFeatures.ShortSellReleaseState(RiskDomain.ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null));
+        new RiskFeatures.ShortSellReleaseState(RiskDomain.ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null, 0));
 
     // ---- パリティ（REST と gRPC で同じ結果） ----
 
