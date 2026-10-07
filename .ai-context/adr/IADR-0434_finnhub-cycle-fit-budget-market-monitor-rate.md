@@ -2,10 +2,10 @@
 title: IADR-0434 市場監視の Finnhub 自制レートを 5→12 回/分へ引き上げ、1 巡回（保有＋監視銘柄）が巡回間隔 60 秒に収まる要求数を 12 にする（同一鍵の合計 57 回/分）
 type: impl-adr
 status: Accepted
-related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0031, ADR-0042, IADR-0275, IADR-0224, IADR-0294, IADR-0433, IADR-0068]
+related_ids: [FR-03, FR-01, FR-13, SC-02, ADR-0031, ADR-0042, IADR-0275, IADR-0224, IADR-0294, IADR-0433, IADR-0068, IADR-0494]
 author: claude (Claude Code)
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0043_finnhub-daily-premise-withdrawn-and-cycle-fit-control.md (決定 2・5)
   - planning:projects/ai-stock-trading/07_adr/ADR-0031_finnhub-rate-limit-minute-confirmed-daily-open.md (決定 4)
@@ -41,6 +41,8 @@ related_specs:
 
 稼働中の PoC（経路 B・`values-local.yaml`）は監視銘柄 6 件（AAPL・MSFT・NVDA・AMZN・GOOGL・META）と保有 AAPL を持つ。市場監視
 （`MarketMonitorAppService.EvaluateRoundAsync`）は保有と監視銘柄を**別々のループで**照会し、重複を除かない。したがって 1 巡回は **7 要求**である。
+> **［2026-10-07 追記 / #1189］** 市場監視は 1 巡回の中で同じ（銘柄・市場）を 1 回だけ照会するようになった（[IADR-0494](./IADR-0494_market-monitor-quote-once-per-cycle-union-budget.md)）。
+> 1 巡回の要求数は保有と監視銘柄の**和集合**で数える（この時点の構成なら 6 要求）。本 IADR の自制 12 回/分・1 巡回 12 要求の予算は変えない。
 市場監視の自制レートは既定 5 回/分（helm に上書きなし）、巡回間隔は既定 60 秒（同）なので、7 要求は 84 秒かかり **(b) を満たさない**
 （ADR-0043 実測 7 の 6 銘柄・72 秒より悪い）。米国市場は 2026-09-28 22:30 JST に開くため、コードの統制（後続の PR）より先に構成で (b) を回復する。
 

@@ -2,10 +2,10 @@
 title: IADR-0477 実市況 4 サービスの Finnhub 日次要求見積りを運用者の申告銘柄数から外し、巡回するサービス（市場監視・リスク管理）は巡回ごとに保有・監視銘柄の実数から導出し、事象ごとに引くサービス（取引判断・報告書）は見積らない
 type: impl-adr
 status: Accepted
-related_ids: [FR-01, FR-03, FR-10, ADR-0031, ADR-0043, IADR-0294, IADR-0433, IADR-0437, IADR-0473]
+related_ids: [FR-01, FR-03, FR-10, ADR-0031, ADR-0043, IADR-0294, IADR-0433, IADR-0437, IADR-0473, IADR-0494]
 author: claude (Claude Code)
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0031 (決定 2〜4: 日次総量の見積り・同一鍵の合算)
   - planning:projects/ai-stock-trading/07_adr/ADR-0043 (決定 1: 日次上限は未実測で比べない／決定 3: 開場中の巡回で数え、見積りは 429 のときに総量を読む材料)
@@ -61,7 +61,9 @@ plan_refs:
 
 - 共有の純関数 `FinnhubDailyVolumeEstimator.EstimateForSymbols(symbolMarkets, pollIntervalSeconds, sessionMinutes)` ＝ Σ `RequestsPerSymbol(市場)` × `CyclesPerDay(間隔, 場中の分(市場))`。`RequestsPerSymbol` は米国 1・それ以外 0（`FinnhubMarketDataSource` は米国以外で送らない）。場中の分は呼び出し側が共有カーネルの `MarketSessions.RegularSessionMinutes` を渡す（`Shared.Infrastructure` はカーネルを参照しない）。
 - 共有の記録器 `FinnhubDailyVolumeRecorder`（singleton）: `MarketDataSourceFactory.SendsToFinnhub`（Provider が finnhub で鍵がある）のときだけ記録する。メトリクスは毎回、ログは値が変わったときだけ（上限未設定＝Information、超過＝Warning、以内＝出さない）。
-- 市場監視: `MonitorRoundResult.QuotedSymbolMarkets`（保有＋監視銘柄の市場。同じ銘柄でも 2 件。**開場に関係なく**）を `MonitorPollingService` が発行の後に記録器へ渡す（失敗は Warning で握り、巡回を止めない）。全市場が閉じた巡回は従来どおり評価しないので記録もしない（ゲージは最後の値）。
+- 市場監視: `MonitorRoundResult.QuotedSymbolMarkets`（保有＋監視銘柄の市場。同じ銘柄でも 2 件。**開場に関係なく**。
+  **［2026-10-07 追記 / #1189］** 保有と監視銘柄の（銘柄・市場）の**和集合**の市場に改めた。巡回が同じ銘柄を 1 回だけ照会するようになったため
+  ＝[IADR-0494](./IADR-0494_market-monitor-quote-once-per-cycle-union-budget.md) 決定 3。開場に関係なく数えることは不変）を `MonitorPollingService` が発行の後に記録器へ渡す（失敗は Warning で握り、巡回を止めない）。全市場が閉じた巡回は従来どおり評価しないので記録もしない（ゲージは最後の値）。
 - リスク管理: `QuoteRefreshService.RunOnceAsync` が保有建玉の市場を記録器へ渡す（閉場中の巡回でも同じ値）。記録器は `EnableMarkToMarket=true` のとき（補充を起動するとき）だけ登録する。`QuoteRefreshService.ActiveMinutesPerDay` は呼び出し元が無くなったので撤去した（場中の分は市場ごとに渡す）。
 - 市場監視の `WatchlistVolumeEstimator`（入れ替え案の適用時）も同じ純関数を使う（数え方を 1 つにする。値は不変）。
 

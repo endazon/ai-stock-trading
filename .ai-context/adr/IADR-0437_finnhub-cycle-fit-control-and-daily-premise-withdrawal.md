@@ -2,10 +2,10 @@
 title: IADR-0437 監視銘柄を増やす 3 つの口（SC-02 の追加・全置換・Discord の入れ替え案の適用）は「1 巡回（保有＋監視銘柄）が巡回間隔に収まること」を満たさない追加を適用せず、1 日の見積りは開場中の巡回で数えて 300 回/日と比べず、分次で説明できない 429 を日次の手がかりとして別に記録する
 type: impl-adr
 status: Accepted
-related_ids: [FR-03, FR-01, FR-13, FR-14, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0435, IADR-0433, IADR-0294, IADR-0275, IADR-0224, IADR-0164, IADR-0380]
+related_ids: [FR-03, FR-01, FR-13, FR-14, SC-02, ADR-0043, ADR-0031, ADR-0042, IADR-0434, IADR-0435, IADR-0433, IADR-0294, IADR-0275, IADR-0224, IADR-0164, IADR-0380, IADR-0494]
 author: claude (Claude Code)
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-07
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0043_finnhub-daily-premise-withdrawn-and-cycle-fit-control.md (決定 1〜4)
   - planning:projects/ai-stock-trading/07_adr/ADR-0031_finnhub-rate-limit-minute-confirmed-daily-open.md (決定 2〜4)
@@ -54,6 +54,10 @@ SC-02 と Discord の両方で適用しない（決定 4）と定めた。(a) �
 
 - **収まる ⇔ (保有数 ＋ 監視銘柄数) × 60 ≤ 自制レート × 巡回間隔（秒）**。整数で比べる（分へ割ると丸めで境界がずれる）。
   自制レート・巡回間隔の 0 以下は実装（`MarketDataSourceFactory.Limiter`・`MonitorPollingService`）と同じく 1 へ寄せる。
+- **［2026-10-07 追記 / #1189］** **保有と監視銘柄の和集合で数える**（重なる銘柄は 1 回）。巡回は 1 巡回の中で同じ（銘柄・市場）を 1 回だけ照会し、保有の損切り評価と
+  監視銘柄の急変検知の両方に使うようになった。`WatchlistCycleFit` は保有の件数ではなく（銘柄・市場）の一覧を持ち、拒否の文言は
+  「保有 a ＋ 監視銘柄 b − 重複 c」になる。3 つの口・`Refuses`・除外を止めないことは変えない（[IADR-0494](./IADR-0494_market-monitor-quote-once-per-cycle-union-budget.md) 決定 2）。
+  以下の旧記述は当時の照会の形の記録として残す。
 - **保有も数える。** 巡回（`MarketMonitorAppService`）は保有と監視銘柄を別々のループで照会し重複を除かない（同じ銘柄でも 2 要求）。
 - ~~市場を問わず全銘柄を数える~~ **［2026-09-26 改訂 / PR #1037 の監査］1 銘柄あたりの要求数は市場で決まる（米国 1・それ以外 0）。**
   `FinnhubMarketDataSource` は米国以外の銘柄で要求を出さないため、東証の銘柄を数えると予算を使わない追加を誤って拒否する。
@@ -80,6 +84,7 @@ SC-02 と Discord の両方で適用しない（決定 4）と定めた。(a) �
   場中判定と同じ時刻の定数から導く）を渡す。開場に関係なく 24 時間巡回するプロセス（リスク管理の現在値の補充・情報収集）は既定の 24 時間のまま。
   - 市場監視の起動時の見積りと自己申告（申告銘柄数 × 390 分 ÷ 巡回間隔）は米国の 390 分で数える（申告値は市場を持たない）。
   - 入れ替え案の応答の見積りは、適用後の監視銘柄 ＋ 保有を**銘柄ごとにその市場の場中**で数える。
+    **［2026-10-07 追記 / #1189］** 適用後の監視銘柄と保有の**和集合**で数える（重なる銘柄は 1 回。IADR-0494 決定 3）。
 - **`Finnhub:ProvisionalDailyLimit` の既定を 300 から未設定（null）に変える。** 未設定なら比べない（`Verdict.NotCompared`・比率を記録しない・
   起動時は情報ログ）。日次上限を実測して設定したときだけ、従来どおり超過を警告し比率を記録する（ADR-0031 決定 3 の「統制（確定）」の文は有効）。
   構成キー名は chart の 5 サービスが既に持つため据え置く（名前の「暫定」は歴史的な呼び名）。

@@ -132,13 +132,14 @@ services:
       - { name: MarketData__Provider, value: "finnhub" }          # ← ①
       - name: MarketData__Finnhub__ApiKey
         secretKeyRef: { name: ast-secrets, key: marketdata-finnhub-api-key, optional: true }
-      # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434: 自制レートを 5→12 回/分へ。1 巡回（保有＋監視銘柄。別々に照会する）が
-      # 巡回間隔 60 秒に収まる要求数は「自制レート × 間隔（分）」＝12。既定 5 では 6 銘柄＋保有 1 の 7 要求が 84 秒かかり (b) を破っていた。
+      # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434: 自制レートを 5→12 回/分へ。1 巡回（保有と監視銘柄の和集合。#1189, IADR-0494 で
+      # 同じ銘柄は 1 巡回に 1 回だけ照会する）が巡回間隔 60 秒に収まる要求数は「自制レート × 間隔（分）」＝12。
+      # 既定 5 では 6 銘柄＋保有 1 の 7 要求（当時は別々に照会）が 84 秒かかり (b) を破っていた。
       # (a) 同一鍵の合計は 情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3（risk-management / report / trade-decision）＝ 57 ≤ 60 回/分。
       # 🔴 他のプロセスのレートを上げるときは合計 60 を超えないこと（予算表は IADR-0434）。巡回間隔（Monitor__PollIntervalSeconds）は
       # 損切り判定の遅れになるため延ばさない（既定 60 秒のまま）。
       - { name: MarketData__Finnhub__RequestsPerMinute, value: "12" }
-      # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有・監視銘柄の実数から数える（旧 EstimatedSymbolCount の申告 1 は撤去。実測と桁で外れた）。
+      # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有・監視銘柄の実数（和集合。#1189）から数える（旧 EstimatedSymbolCount の申告 1 は撤去。実測と桁で外れた）。
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
       # --- 監視銘柄（watchlist）の初回シード（#286/IADR-0282。利用者裁定・案(b)）。
       #     trade-decision 側で下記 MarketMonitor__BaseUrl を結線するため、権威源（本サービス）の watchlist を

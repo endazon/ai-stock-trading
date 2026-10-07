@@ -271,7 +271,7 @@ public class MonitorPollingServiceTests
         ClosedLines(Market.UnitedStates).Should().Be(2);
     }
 
-    // ---- FR-01, #1132, IADR-0477: Finnhub の日次要求見積りを巡回ごとに保有＋監視銘柄の実数から記録する ----
+    // ---- FR-01, #1132, IADR-0477: Finnhub の日次要求見積りを巡回ごとに保有と監視銘柄の和集合（#1189, IADR-0494）の実数から記録する ----
 
     private static FinnhubDailyVolumeRecorder Recorder(BusinessMetrics metrics) => new(
         new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } },
@@ -279,8 +279,9 @@ public class MonitorPollingServiceTests
 
     private static HeldPosition HeldUs(string symbol) => new(symbol, Market.UnitedStates, TradeSide.Buy, 10, 100m, 50m);
 
-    // 🔴 T-10-2015: 保有 3 ＋ 監視銘柄 6（米国・60 秒巡回）なら 1 巡回 9 要求 × 390 ＝ 3,510 を記録する（#1132 の実測 ≈ 9 要求/分と一致）。
-    // 保有と監視銘柄に同じ銘柄があれば 2 要求として数える（照会の形と同じ）。是正前は申告 1 銘柄で 390 だった。
+    // 🔴 T-10-2015: 保有 3 ＋ 監視銘柄 6（米国・60 秒巡回。AAPL が重なる）なら 1 巡回 8 要求 × 390 ＝ 3,120 を記録する。
+    // #1189, IADR-0494: 同じ銘柄は 1 巡回に 1 回だけ照会するので 1 要求として数える（照会の形と同じ。#1132 の当時は 2 要求＝9 要求・3,510）。
+    // 是正前（#1132）は申告 1 銘柄で 390 だった。
     [Fact]
     public async Task 巡回ごとに保有と監視銘柄の実数から日次見積りを記録する()
     {
@@ -298,12 +299,12 @@ public class MonitorPollingServiceTests
 
         await service.RunOnceAsync(CancellationToken.None);
 
-        h.Market.Requested.Should().HaveCount(9, "1 巡回の照会は保有 3 ＋ 監視銘柄 6（AAPL は 2 回）");
-        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(3_510);
+        h.Market.Requested.Should().HaveCount(8, "1 巡回の照会は保有 3 と監視銘柄 6 の和集合（AAPL は 1 回）");
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(3_120);
     }
 
-    // T-10-2015, #1132（独立監査 🟡）: 見積りは構成の巡回間隔で数える。120 秒なら 1 日 195 巡回 × 9 要求 ＝ 1,755
-    //（巡回間隔を定数 60 に取り違えると 3,510 になる）。
+    // T-10-2015, #1132（独立監査 🟡）: 見積りは構成の巡回間隔で数える。120 秒なら 1 日 195 巡回 × 8 要求 ＝ 1,560
+    //（巡回間隔を定数 60 に取り違えると 3,120 になる。#1189 で 9 要求→8 要求）。
     [Fact]
     public async Task 日次見積りは構成の巡回間隔で数える()
     {
@@ -322,7 +323,7 @@ public class MonitorPollingServiceTests
 
         await service.RunOnceAsync(CancellationToken.None);
 
-        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(9 * 195);
+        capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().ContainSingle().Which.Value.Should().Be(8 * 195);
     }
 
     // 🔴 T-10-2016: 米国が閉場で東証だけ開いた巡回でも、米国の銘柄を数える（見積りは開場中の量。照会した数で数えると 0 に落ちる）。
