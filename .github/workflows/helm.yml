@@ -392,6 +392,22 @@ jobs:
             echo "::error::values-local の Audit__BaseUrl が report-service の http://audit-service:8080 の 1 件でない（#1178）:"; printf '%s\n' "$got"; exit 1
           fi
           echo "ok: 報告書 → 監査台帳の結線は values-local の report-service だけ"
+      # FR-02, FR-04, #1169, IADR-0490（2026-10-07 追記）: 定時サイクルの監視銘柄数の前提は**経路B（values-local）だけ**で 12 に上げる。
+      #   ① 本番既定の描画に TradeCycle__MaxWatchedSymbols が無い（コード既定 10 のまま）
+      #   ② values-local の描画では trade-decision-service だけが 12 を持つ（配列の写し忘れ・他サービスへの誤配置を捕まえる）。
+      #      🔴 12 を超えると「鮮度の上限 600 秒 ＋ サイクルの上限」が RabbitMQ の consumer_timeout 1,800 秒を超える（値の根拠は values-local の注記）。
+      - name: Assert scheduled-cycle watched-symbol assumption is local-only (#1169)
+        run: |
+          if helm template ast "$CHART" | grep -q 'name: TradeCycle__MaxWatchedSymbols$'; then
+            echo "::error::本番既定の描画に TradeCycle__MaxWatchedSymbols が現れた（前提の引き上げは values-local だけ・#1169）。"; exit 1
+          fi
+          got="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml | awk 'BEGIN{RS="---"}
+            { d=""; if (match($0, /\n  name: [a-z-]+/)) d=substr($0, RSTART+9, RLENGTH-9)
+              n=split($0, L, "\n"); for (i=1; i<n; i++) if (L[i] ~ /^ *- name: TradeCycle__MaxWatchedSymbols$/) { v=L[i+1]; sub(/^ *value: /, "", v); print d "\t" v } }')"
+          if [ "$got" != $'trade-decision-service\t"12"' ]; then
+            echo "::error::values-local の TradeCycle__MaxWatchedSymbols が trade-decision-service の 12 の 1 件でない（#1169）:"; printf '%s\n' "$got"; exit 1
+          fi
+          echo "ok: 監視銘柄数の前提は values-local の trade-decision-service だけ（12）"
       # #267 / IADR-0111: ブローカ階層（broker.tier＝provider × environment）の 3 系統検査。
       #   ① 既定（paper）描画がバイト等価であること（Broker__Environment を注入しない）
       #   ② 各 tier が期待どおり描画されること（新スイッチ・非推奨エイリアスの双方）

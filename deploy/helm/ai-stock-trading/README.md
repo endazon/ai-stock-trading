@@ -207,6 +207,12 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
   未供給から監査台帳の実値になる。**本番既定（values.yaml）には置かない**（業務の入力が変わる結線であり、経路B でだけ同意を得た。
   helm.yml の描画検査が本番既定への混入を止める）。切り戻しはこの 1 行の削除と再配備。
   借株料は記録側の計上（日次の料率の照会）がまだ結線されていないため、結線後も「記録なし」のまま（未供給ではない）。
+- **定時サイクルの監視銘柄数の前提（#1169 / [IADR-0490](../../../.ai-context/adr/IADR-0490_scheduled-cycle-timeout-and-deterministic-decision-id.md) の 2026-10-07 追記）**:
+  trade-decision の `TradeCycle__MaxWatchedSymbols=12`（コード既定 10）。経路B の監視銘柄は 11 件（#1189 の後に追加）で既定を超え、
+  サイクルの上限（90 秒 × 前提 ＋ 60 秒）の上界が崩れていた。12 で上限は 1,140 秒。**12 を超えて上げない** —— 巡回（300 秒）より長いサイクルの間は
+  次の起点が先読みされたまま待ち（鮮度の上限 600 秒までは判断される）、配信から ack まで最大 600 ＋ 上限 秒になる。13 では 1,830 秒となり
+  RabbitMQ の `consumer_timeout`（既定 1,800 秒）を超える。13 件以上にするなら LLM の timeout・票数から引き直す（手順は運用手順書「定時サイクルの実行時間の上限」）。
+  **本番既定（values.yaml）には置かない**（10 件を超えた実績が無い。helm.yml の描画検査が混入を止める）。
 - **サイクル配線**: 収集の finnhub＋AAPL、trade-decision の `Reports`/`RiskManagement` BaseUrl。
   **［2026-09-27 / #1050］** `MarketMonitor__BaseUrl`（trade-decision・information-collection・notification）は**本番既定でも結線した**
   ため経路B 固有の有効化ではない（同じ値の写し。下記「監視銘柄の権威源への結線」）。
