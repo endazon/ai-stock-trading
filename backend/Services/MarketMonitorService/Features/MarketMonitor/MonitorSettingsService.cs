@@ -148,8 +148,11 @@ public sealed class MonitorSettingsService(
         }
 
         var current = store.GetSettings();
+        // #1189, IADR-0494 決定 2: 「費用のかかる追加」は要求を増やす追加だけ（米国の銘柄で、今の監視銘柄にも保有にも無いもの）。
+        // 既に保有している銘柄は巡回が保有のループで照会済みなので、足しても要求は増えない（保有だけで予算を超えていても止めない）。
         var costlyAdditions = settings.MonitoredSymbols
             .Where(s => WatchlistCycleFit.RequestsPerSymbol(s.Market) > 0 && !current.MonitoredSymbols.Any(c => Same(c, s)))
+            .Where(s => cycleFit is null || !cycleFit.Holdings.Contains(s))
             .ToList();
         if (cycleFit is not null && costlyAdditions.Count > 0 && !cycleFit.Fits(settings.MonitoredSymbols))
         {

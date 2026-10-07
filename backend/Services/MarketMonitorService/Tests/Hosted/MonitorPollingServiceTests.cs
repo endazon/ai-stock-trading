@@ -271,7 +271,7 @@ public class MonitorPollingServiceTests
         ClosedLines(Market.UnitedStates).Should().Be(2);
     }
 
-    // ---- FR-01, #1132, IADR-0477: Finnhub の日次要求見積りを巡回ごとに保有＋監視銘柄の実数から記録する ----
+    // ---- FR-01, #1132, IADR-0477: Finnhub の日次要求見積りを巡回ごとに保有と監視銘柄の和集合（#1189, IADR-0494）の実数から記録する ----
 
     private static FinnhubDailyVolumeRecorder Recorder(BusinessMetrics metrics) => new(
         new MarketDataOptions { Provider = "finnhub", Finnhub = new FinnhubMarketDataOptions { ApiKey = "k" } },

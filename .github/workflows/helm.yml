@@ -926,7 +926,7 @@ jobs:
               echo "::error::[$label] Finnhub の同一鍵の自制レートの合計が $total 回/分で 60 を超える（ADR-0043 決定2 (a)）。"; exit 1
             fi
             if [ "$capacity" -lt 12 ]; then
-              echo "::error::[$label] 市場監視の 1 巡回に収まる要求数が $capacity で 12 未満（IADR-0434。保有＋監視銘柄が巡回間隔に収まらない）。"; exit 1
+              echo "::error::[$label] 市場監視の 1 巡回に収まる要求数が $capacity で 12 未満（IADR-0434。保有と監視銘柄の和集合が巡回間隔に収まらない）。"; exit 1
             fi
           }
           check "既定"

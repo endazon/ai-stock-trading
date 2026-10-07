@@ -17,7 +17,7 @@ using Xunit;
 namespace MarketMonitorService.Tests;
 
 // FR-03, FR-13, SC-02, ADR-0043（計画）決定 2 (b)・3・4, ADR-0042 決定 1, #1030, IADR-0437（T-10-1436〜T-10-1445）:
-// 監視銘柄を増やす変更は「1 巡回（保有 ＋ 監視銘柄）が巡回間隔に収まること」を満たさなければ適用しない。SC-02 の追加・全置換・
+// 監視銘柄を増やす変更は「1 巡回（保有と監視銘柄の和集合。#1189, IADR-0494）が巡回間隔に収まること」を満たさなければ適用しない。SC-02 の追加・全置換・
 // Discord の入れ替え案の適用の 3 つの口で同じ検査を通す。除外は止めない。1 日の見積りは開場中の巡回で数え、300 回/日と比べない。
 public class WatchlistCycleFitTests
 {
@@ -35,7 +35,7 @@ public class WatchlistCycleFitTests
 
     private static ProposedWatchlistChange Remove(string symbol) => new(ProposedWatchlistAction.Remove, symbol, "理由");
 
-    // T-10-1436: 収まる ⇔ (保有 ＋ 監視銘柄) × 60 ≤ 自制レート × 巡回間隔（秒）。境界は整数で比べる。
+    // T-10-1436: 収まる ⇔ (保有 ∪ 監視銘柄) × 60 ≤ 自制レート × 巡回間隔（秒）。境界は整数で比べる（ここでは保有と監視銘柄は重ならない）。
     [Theory]
     [InlineData(5, 60, 0, 5, true)]    // 既定の組は 5 銘柄まで（ADR-0043 実測 7）
     [InlineData(5, 60, 0, 6, false)]   // 6 銘柄は 72 秒かかる
@@ -280,6 +280,57 @@ public class WatchlistCycleFitTests
         japan.Describe([Toyota, Sony, Aapl, Msft]).Should().StartWith("1 巡回 2 要求（保有 1 ＋ 監視銘柄 2 − 重複 1）");
     }
 
+    // 監視銘柄の外の米国の保有 13（QA〜QM）。自制 12 回/分・60 秒の 12 要求を保有だけで超えている（手動・採用の建玉など）。
+    private static MonitoredSymbol[] ThirteenHeldOutside() =>
+        [.. Enumerable.Range(0, 13).Select(i => Us($"Q{(char)('A' + i)}"))];
+
+    // T-10-2300（PR #1190 の独立監査 🟡1）: 追加の拒否は限界の要求数で決める。保有だけで予算を超えていても、既に保有している
+    // 銘柄を監視銘柄に足すのは要求を増やさない（巡回は保有のループで照会済み）ので拒否しない。保有していない米国の銘柄は拒否する。
+    [Fact]
+    public void 保有だけで予算を超えていても保有中の銘柄の追加は拒否しない()
+    {
+        var held = ThirteenHeldOutside();
+        var fit = new WatchlistCycleFit(RequestsPerMinute: 12, PollIntervalSeconds: 60, Holdings: held);
+        fit.Fits([Aapl]).Should().BeFalse("保有 13 ＋ 監視銘柄 AAPL ＝ 14 要求");
+
+        fit.AddsRequests(held[0], [Aapl]).Should().BeFalse();
+        fit.AddsRequests(Msft, [Aapl]).Should().BeTrue();
+        fit.AddsRequests(Toyota, [Aapl]).Should().BeFalse("東証は要求を使わない");
+        fit.Refuses(held[0], [Aapl, held[0]]).Should().BeFalse("保有中の銘柄は要求を増やさない");
+        fit.Refuses(Msft, [Aapl, Msft]).Should().BeTrue();
+
+        // 入れ替え案: 保有中の QA は適用し、保有していない MSFT は理由つきで適用しない。
+        var plan = WatchlistProposalPlan.Plan([Aapl], [Aapl], [Add("QA"), Add("MSFT")], fit);
+        plan.Items.Select(i => (i.Change.Symbol, i.Applied)).Should().Equal(("QA", true), ("MSFT", false));
+        plan.Items[1].SkipReason.Should().Contain("1 巡回 15 要求（保有 13 ＋ 監視銘柄 3 − 重複 1）");
+
+        // SC-02 の追加
+        var store = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl]));
+        var watch = new MonitorWatchlistService(store, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
+        watch.Add("QB", Market.UnitedStates, "owner", "保有中の銘柄を監視する", fit).Should().HaveCount(2);
+        var notHeld = () => watch.Add("NVDA", Market.UnitedStates, "owner", "追加", fit);
+        notHeld.Should().Throw<ArgumentException>().WithMessage("*Finnhub の巡回に収まりません*");
+    }
+
+    // T-10-2301（同 🟡1）: 全置換の「費用のかかる追加」も限界で数える。保有中の銘柄だけを足す置換は、保有だけで予算を超えていても通る。
+    // 保有していない米国の銘柄を含む置換は拒否し、「収まらない追加」には保有していない銘柄だけを挙げる。
+    [Fact]
+    public void 全置換は保有中の銘柄の追加を費用のかかる追加に数えない()
+    {
+        var held = ThirteenHeldOutside();
+        var fit = new WatchlistCycleFit(RequestsPerMinute: 12, PollIntervalSeconds: 60, Holdings: held);
+        var store = new InMemoryMonitoredSymbolStore(MonitorDefaults.CreateSettings([Aapl]));
+        var svc = new MonitorSettingsService(store, new InMemoryMonitorSettingsChangeLog(), new FakeClock(DateTimeOffset.UnixEpoch));
+
+        var mixed = () => svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, held[0], Msft] }, "owner", "混在", fit);
+        mixed.Should().Throw<ArgumentException>().Which.Message.Should()
+            .Contain("収まらない追加: MSFT@UnitedStates。").And.NotContain("QA@");
+        store.GetSettings().MonitoredSymbols.Should().Equal([Aapl]);
+
+        svc.Replace(store.GetSettings() with { MonitoredSymbols = [Aapl, held[0], held[1]] }, "owner", "保有中の銘柄を監視する", fit)
+            .MonitoredSymbols.Should().HaveCount(3, "保有中の銘柄の追加は要求を増やさない");
+    }
+
     // T-10-2293: 1 日の要求数の見積りも和集合で数える（入れ替え案の応答と巡回の記録が同じ形）。
     [Fact]
     public void 見積りの母数は保有と監視銘柄の和集合()
@@ -490,7 +541,7 @@ public class WatchlistCycleFitTests
             .Should().Be(11 * 390, "T-10-2293: 見積りも和集合（保有 6 は監視銘柄と重なり 1 回）");
     }
 
-    // T-10-1445（ADR-0043 決定 3）: 入れ替え案の応答の推定は、適用後の監視銘柄 ＋ 保有を開場中の巡回（390）で数え、上限とは比べない。
+    // T-10-1445（ADR-0043 決定 3）: 入れ替え案の応答の推定は、適用後の監視銘柄と保有の和集合（#1189）を開場中の巡回（390）で数え、上限とは比べない。
     [Fact]
     public async Task 入れ替え案の応答の推定は開場中の巡回で数え上限と比べない()
     {

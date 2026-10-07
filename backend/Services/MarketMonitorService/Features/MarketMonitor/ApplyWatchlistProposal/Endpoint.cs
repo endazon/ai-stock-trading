@@ -76,8 +76,9 @@ internal static partial class ApplyWatchlistProposalEndpoint
             [.. plan.Items.Select(i => new WatchlistProposalItemResult(
                     i.Change.Action == ProposedWatchlistAction.Add ? "add" : "remove", i.Change.Symbol, i.Applied, i.SkipReason))],
             applying.Actor,
-            // #1189, IADR-0494: 見積りも巡回の照会の形（保有と監視銘柄の和集合）で数える。
-            estimator.Estimate(fit?.QuotedMarkets(plan.Resulting) ?? CycleQuoteTargets.Union([], plan.Resulting).Select(s => s.Market))));
+            // #1189, IADR-0494: 見積りも巡回の照会の形（保有と監視銘柄の和集合）で数える。fit が null なのは Finnhub を使わない構成だけで、
+            // そのとき見積りも null（対象外）なので、保有なしで数える。
+            estimator.Estimate(fit?.QuotedMarkets(plan.Resulting) ?? plan.Resulting.Select(s => s.Market))));
     }
 
     // 期待値（案を作った時点の監視銘柄）の 1 件。銘柄が空・市場の省略は形式違反（null＝400）。期待値は現在の監視銘柄の写しであり、

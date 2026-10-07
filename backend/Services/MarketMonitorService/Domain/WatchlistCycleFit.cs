@@ -41,11 +41,32 @@ public sealed record WatchlistCycleFit(int RequestsPerMinute, int PollIntervalSe
     public bool Fits(IEnumerable<MonitoredSymbol> watchlist) => RequestsPerCycle(watchlist) * 60 <= Rate * Interval;
 
     /// <summary>
-    /// <paramref name="added"/> を足して <paramref name="after"/> になる追加を拒否するか。要求を使わない追加（米国以外）は、
+    /// <paramref name="added"/> を足して <paramref name="after"/> になる追加を拒否するか。要求を使わない追加は、
     /// 予算を超えていても拒否しない（予算を増やさないため）。
     /// </summary>
-    public bool Refuses(MonitoredSymbol added, IEnumerable<MonitoredSymbol> after) =>
-        RequestsPerSymbol(added.Market) > 0 && !Fits(after);
+    /// <remarks>
+    /// #1189, IADR-0494 決定 2: 「要求を使わない」は<b>限界の要求数</b>で判定する（足す前と後の 1 巡回の要求数を比べる）。
+    /// 米国以外の銘柄に加え、<b>既に保有している銘柄</b>も、巡回は保有のループで既に照会しているので要求を増やさない
+    /// （保有だけで予算を超えていても、保有中の銘柄を監視銘柄に足すことは止めない）。
+    /// </remarks>
+    public bool Refuses(MonitoredSymbol added, IEnumerable<MonitoredSymbol> after)
+    {
+        ArgumentNullException.ThrowIfNull(added);
+        var afterList = after as IReadOnlyCollection<MonitoredSymbol> ?? [.. after];
+        var before = afterList.Where(s => !Equals(s, added));
+        return AddsRequests(added, before) && !Fits(afterList);
+    }
+
+    /// <summary>
+    /// #1189, IADR-0494 決定 2: 監視銘柄 <paramref name="watchlist"/> に <paramref name="added"/> を足すと 1 巡回の要求数が増えるか
+    /// （米国の銘柄で、保有にも <paramref name="watchlist"/> にも無いとき＝和集合が増えるとき）。
+    /// </summary>
+    public bool AddsRequests(MonitoredSymbol added, IEnumerable<MonitoredSymbol> watchlist)
+    {
+        ArgumentNullException.ThrowIfNull(added);
+        var without = watchlist as IReadOnlyCollection<MonitoredSymbol> ?? [.. watchlist];
+        return RequestsPerCycle([.. without, added]) > RequestsPerCycle(without);
+    }
 
     /// <summary>収まらないときの理由（SC-02 の 400・入れ替え案の内訳に載せる短い文）。</summary>
     /// <remarks>
