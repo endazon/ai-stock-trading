@@ -902,7 +902,7 @@ jobs:
           check "values-local" -f "$CHART/values-local.yaml"
       # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434 / IADR-0437: Finnhub の予算を描画で固定する（PR #1032 のレビュー推奨）。
       #   (a) 同一鍵の自制レートの合計 ≤ 60 回/分（情報収集＋実市況 4 サービス。IADR-0275 の実測で同一鍵）
-      #   (b) 市場監視の 1 巡回に収まる要求数（自制レート × 巡回間隔 ÷ 60）≥ 12（稼働中の保有＋監視銘柄に余裕を持たせた値）
+      #   (b) 市場監視の 1 巡回に収まる要求数（自制レート × 巡回間隔 ÷ 60）≥ 12（稼働中の保有と監視銘柄の和集合〔#1189, IADR-0494〕に余裕を持たせた値）
       # env が無いサービスはコードの既定で数える（情報収集 30＝CollectionSourceOptions・実市況 5＝FinnhubMarketDataOptions・
       # 巡回間隔 60 秒＝MonitorOptions）。既定を変えたらここも直す。
       - name: Assert Finnhub budget and market-monitor cycle fit (ADR-0043 決定2)
