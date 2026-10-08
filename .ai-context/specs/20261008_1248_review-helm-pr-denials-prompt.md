@@ -40,7 +40,7 @@ Helm の chart を変える PR #1245 で、レビュー本文は完了してい�
 | `Bash(helm version)` | 2 | 無い | 許可外（`helm template:*` / `helm lint:*` だけ） |
 | `Bash(mkdir \| printf \| cat)` | 1 | `cat` だけ許可済み | `mkdir` が無い。1 回目の「リダイレクト 1 件」は `hasRedirect` がファイルへの `>` だけを数えるので、`printf … > <一時ファイル>` を含むこの鎖と読める |
 | `Bash(mkdir)` | 1 | 無い | 許可外 |
-| `Write` | 2 | 無い | 書き込みツールは設計上持たない |
+| `Write` | 2 | 無い | ワークスペース外への書き込みは拒否される（内側は acceptEdits で通るが、レビューの役割外として prompt で禁じる） |
 | `Bash(python3 \| yaml.safe_load \| …)` | 1 | 無い | `python3` が許可外（`-c "…; …"` の `;` で分割された姿） |
 | `Bash(ls)` | 1・2 | **`Bash(ls:*)` は許可済み** | 下記 |
 | `Bash(ls \| head \| echo)` | 1・2 | **3 つとも許可済み** | 下記 |
@@ -83,7 +83,7 @@ Helm の chart を変える PR #1245 で、レビュー本文は完了してい�
 ## 受け入れ基準
 
 - [x] prompt に Helm の PR 向けの明示ブロックがあり、`helm template` / `helm lint` だけを使う・`helm version` / `which` / `mkdir` / `Write` / リダイレクトを使わない・陰性対照は PR 自身の Helm ワークフローの結果を引用する・`ls` の使い方、を書いている。
-- [x] 一時ファイルを作る検証は設計上許可しない旨を prompt に明記している。
+- [x] 一時ファイルを作る検証はレビューでは行わない（ワークスペース外は拒否・内側は役割外）旨を prompt に明記している。
 - [x] `--allowedTools` と `.claude/settings.json` は差分なし。
 - [x] 固定の試験が、ブロックを消すと赤になる（陰性対照を手元で確認）。
 - [ ] 回帰の確認（Helm の chart を変える PR で `Check permission denials` が緑）は、本 PR のマージ後に次の Helm PR で観測する。本 PR 自身は Helm を変えないので確かめられない。

@@ -30,7 +30,7 @@ related_specs:
 PR #1245（Helm の chart と `helm.yml` を変える）で、レビュー本文は完了していたのに `check-permission-denials` が
 許容値 4 件を超えてジョブを赤にした（6 件・5 件）。拒否の内訳と原因の推定は作業仕様書の表に置いた。要点は次の 3 つである。
 
-1. `helm version`・`mkdir`・`Write`・リダイレクト・`python3` は、許可に無い（書き込み系は設計上持たない）。
+1. `helm version`・`mkdir`・`Write`・リダイレクト・`python3` は、許可に無い。書き込みは、ワークスペース外への書き込みとリダイレクトが拒否される（ワークスペース内への書き込みは tag モードの acceptEdits で通るが、レビューの役割外である）。
 2. `ls` / `head` / `echo` / `which` は許可済みである。`ls` の拒否は**作業ディレクトリ外のパス**が原因と読んだ。
    Claude Code は読み取り系のコマンドでもワークスペースの外を指すパスを拒否する。
 3. 2 の引き金はプロンプト自身だった。旧【計画書の場所】節が、submodule の撤去前の前提で
@@ -50,7 +50,7 @@ PR #1245（Helm の chart と `helm.yml` を変える）で、レビュー本文
 ### 決定 1: Helm の検証は許可済みの範囲で完結させる
 
 - helm は `helm template` / `helm lint` だけ。`helm version` と `which helm` は使わない（helm の有無は `helm lint` が動けば判る）。
-- 一時ファイル・一時ディレクトリを作らない（`mkdir` / `mktemp`・`Write`・`>` `>>`）。**書き込みを伴う検証は設計上許可しない。**
+- 一時ファイル・一時ディレクトリを作らない（`mkdir` / `mktemp`・`Write`・`>` `>>`）。**書き込みを伴う検証はしない**（ワークスペース外とリダイレクトは拒否され、ワークスペース内はレビューの役割外として prompt で禁じる）。
 - values を変える陰性対照は `--set` で足りる範囲だけ自分で実走する（`helm template … --set k=v | node scripts/<検査器>.js`）。
 - `-f <一時ファイル>` が要る陰性対照は再現せず、**この PR 自身の `Helm` ワークフロー（ジョブ `Lint and render chart`）の結果を引用する**。
 - YAML の構文確認は `yq` か `helm lint`（`python3` は許可に無い）。
