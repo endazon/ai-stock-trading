@@ -45,7 +45,8 @@ plan_refs:
   DI は両方とも登録済み（`AddSingleton(TimeProvider.System)`・`AddAiStockTradingObservability` の `TryAddSingleton<BusinessMetrics>`）。
 - `RunOnceAsync` の頭で `GetTimestamp()`、**開場して評価に進んだ巡回だけ**、終わり（例外で抜けた場合も含む。`finally`）で経過を測る。
   - 全市場が閉場の巡回は記録しない（評価をしない巡回の 0 秒でヒストグラムを薄めない。日次見積りと同じ扱い）。
-  - 停止要求（`cancellationToken` が取り消し済み）で抜けた巡回は記録しない。
+  - 停止要求で中断した巡回（取り消し済みのトークンで `OperationCanceledException` が抜けた巡回）は記録しない。トークンの状態だけでは判定しない
+    （停止の直前に回り切った巡回まで落とす。PR #1266 の AI レビュー 🟢）。
   - 所要 ≥ 巡回間隔（`max(1, PollIntervalSeconds)` 秒）なら Warning を 1 行出す（所要・巡回間隔・`PeriodicTimer` が逃した刻みを畳むので価格の確認の周期が延びること・見直しの手がかり）。
   - 観測の失敗は巡回を失敗させない（`try/catch` で Warning。既存の生存の報告と同じ作法）。
 - ダッシュボード `ai-stock-trading-business.json` にパネル 21（P95 と 60 秒超の件数）を足し、`deploy/observability/README.md` の計器表へ 1 行足す。
@@ -82,13 +83,15 @@ plan_refs:
 
 ## 受け入れ基準 → 試験
 
-| # | 受け入れ基準 | 試験（T-10 帯。develop の最大 T-10-2455 の後、並行の #1265 が T-10-2456〜T-10-2460 を確保したので T-10-2461 から採番） |
+| # | 受け入れ基準 | 試験（T-10 帯。develop の最大 T-10-2455 の後、並行の #1265 が T-10-2456〜T-10-2460・T-10-2466 を確保したので T-10-2461〜T-10-2465・T-10-2467〜T-10-2468） |
 | --- | --- | --- |
 | AC1-a | 開場した巡回の所要が巡回間隔に達する（60 秒ちょうど・超える）と、計量に所要の秒数が 1 件入り、Warning が 1 行出る | `MonitorPollingServiceTests`（T-10-2461。偽の `TimeProvider` を照会ごとに進める） |
 | AC1-b | 所要が巡回間隔未満なら計量は入るが Warning は出ない（否定形） | 同（T-10-2462） |
-| AC1-c | 巡回間隔は構成の値で判定する（120 秒の構成で 90 秒の巡回は Warning を出さない） | 同（T-10-2462 の `Theory` の行） |
+| AC1-c | 巡回間隔は構成の値で判定する（120 秒の構成で 64 秒〔4 銘柄 × 16 秒〕の巡回は Warning を出さない。定数 60 と取り違えると出る） | 同（T-10-2462 の `Theory` の行） |
 | AC1-d | 全市場が閉場の巡回は記録しない | 同（T-10-2463） |
 | AC1-e | 計器名がレジストリと一致し、ヒストグラムは既定ではなく明示した境界（55・60 を含む）で出ていく | `BusinessMetricsTests`（既存の一致検査へ足す）・`BusinessMetricsWiringTests`（T-10-2464） |
+| AC1-f | 例外で抜けた巡回も所要を記録する（遅い失敗も次の刻みを遅らせる）。所要は評価の後（発行・生存の報告）まで数える（PR #1266 の AI レビュー 🟡・独立監査 🟡-2） | 同（T-10-2467。2 本） |
+| AC1-g | 停止要求で中断した巡回（取り消し済みのトークンで `OperationCanceledException`）は記録しない。回り切ってから停止要求が来た巡回は記録する（AI レビュー 🟡・🟢） | 同（T-10-2468。`Theory` の 2 行） |
 | AC2 | (b) の式は変えない理由を IADR-0513 へ追記・索引の行も更新 | 文書（`check-adr-index-sync`・`check-adr-index-addendum-loss`） |
 | AC3 | 巡回の途中の発行は範囲外とする理由を IADR-0513 へ追記 | 文書 |
 | 補足 | 既定の待機は `TimeProvider` のタイマーで待つ（偽の時計のタイマーを発火させるまで通らず、発火させると通る） | `DelayingRateLimiterTests`（T-10-2465） |

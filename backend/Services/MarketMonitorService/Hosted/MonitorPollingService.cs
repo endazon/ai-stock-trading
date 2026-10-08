@@ -77,15 +77,22 @@ public sealed class MonitorPollingService(
             return; // 閉場中は監視停止（04_workflows/02）
         }
 
+        // FR-04, NFR-01, ADR-0043, #1251, IADR-0513: 例外で抜けた巡回も所要を数える（遅い失敗も次の刻みを遅らせる）。
+        // 停止要求で**中断した**巡回（取り消し済みのトークンで OperationCanceledException）だけを除く（途中で切った所要は巡回の所要ではない）。
+        // トークンの状態だけで判定すると、停止の直前に最後まで回った巡回まで落とす（PR #1266 の AI レビュー 🟢）。
+        var canceled = false;
         try
         {
             await RunOpenCycleAsync(closedMarkets, markets, now, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            canceled = true;
+            throw;
+        }
         finally
         {
-            // FR-04, NFR-01, ADR-0043, #1251, IADR-0513: 例外で抜けた巡回も所要を数える（遅い失敗も次の刻みを遅らせる）。
-            // 停止要求で抜けた巡回は数えない（途中で切った所要は巡回の所要ではない）。
-            if (!cancellationToken.IsCancellationRequested)
+            if (!canceled)
                 ObserveCycleDuration(_time.GetElapsedTime(startedAt));
         }
     }

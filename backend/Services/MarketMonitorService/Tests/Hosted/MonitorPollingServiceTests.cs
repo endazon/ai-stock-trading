@@ -44,6 +44,9 @@ public class MonitorPollingServiceTests
         public FakeMarketDataSource Market { get; } = new();
         public InMemoryMonitoredSymbolStore Settings { get; }
         public InMemoryPositionStore Positions { get; } = new();
+
+        // #1251: 保有の照会を差し替える（null なら Positions）。巡回が例外で抜ける形を作るため。
+        public IPositionStore? PositionStore { get; init; }
         public InMemoryPriceBaselineStore Baselines { get; } = new();
         public InMemoryCooldownStore Cooldowns { get; } = new();
 
@@ -73,7 +76,7 @@ public class MonitorPollingServiceTests
                 .UseWolverine(opts =>
                 {
                     opts.Services.AddSingleton<IMonitoredSymbolStore>(Settings);
-                    opts.Services.AddSingleton<IPositionStore>(Positions);
+                    opts.Services.AddSingleton<IPositionStore>(PositionStore ?? Positions);
                     opts.Services.AddSingleton<IPriceBaselineStore>(Baselines);
                     opts.Services.AddSingleton<ICooldownStore>(Cooldowns);
                     opts.Services.AddSingleton<IMarketDataSource>(Market);
@@ -446,5 +449,124 @@ public class MonitorPollingServiceTests
 
         capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds).Should().BeEmpty();
         log.Warnings.Should().NotContain(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
+    }
+
+    // T-10-2467, FR-04, NFR-01, ADR-0043, #1251（PR #1266 の AI レビュー 🟡）: 例外で抜けた巡回も所要を記録する
+    // （遅い失敗も次の刻みを遅らせる）。保有の照会が 70 秒かかってから失敗する → 70 秒が 1 件入り、Warning も出る。
+    [Fact]
+    public async Task T_10_2467_例外で抜けた巡回も所要を記録する()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        SteppedTimeProvider? time = null;
+        await using var h = new Harness(Settings(Aapl))
+        {
+            Metrics = metrics,
+            Logger = log,
+            PositionStore = new ThrowingPositionStore(() => time!.Advance(TimeSpan.FromSeconds(70))),
+        };
+        time = h.Time;
+        var (service, _) = await h.StartAsync();
+
+        var act = () => service.RunOnceAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
+            .Should().ContainSingle().Which.Value.Should().Be(70d);
+        log.Warnings.Should().ContainSingle(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
+    }
+
+    // T-10-2467, FR-04, NFR-01, ADR-0043, #1251（PR #1266 の独立監査 🟡-2）: 所要は評価の後（発行・生存の報告）まで数える。
+    // 照会に 50 秒・生存の報告（評価の後に置く）に 15 秒かかる → 65 秒が入り Warning が出る（評価の直後で測り止めると 50 秒になる）。
+    [Fact]
+    public async Task T_10_2467_評価の後の発行と生存の報告にかかった時間も所要に数える()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        SteppedTimeProvider? time = null;
+        await using var h = new Harness(Settings()) // 監視銘柄なし・保有のみ
+        {
+            Metrics = metrics,
+            Logger = log,
+            Liveness = new StopLossLivenessReporter(
+                Options.Create(new MonitorOptions()),
+                new AdvancingLogger<StopLossLivenessReporter>(() => time!.Advance(TimeSpan.FromSeconds(15)))),
+        };
+        time = h.Time;
+        h.Positions.Set([HeldUs("AAPL")]);
+        h.Market.Set("AAPL", Market.UnitedStates, 100m);
+        h.Market.OnRequest = () => h.Time.Advance(TimeSpan.FromSeconds(50));
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
+            .Should().ContainSingle().Which.Value.Should().Be(65d, "生存の報告（評価の後）の 15 秒も巡回の所要である");
+        log.Warnings.Should().ContainSingle(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
+    }
+
+    // T-10-2468, FR-04, NFR-01, ADR-0043, #1251（PR #1266 の AI レビュー 🟡・🟢）: 停止要求で中断した巡回
+    // （取り消し済みのトークンで OperationCanceledException）は記録しない。最後まで回ってから停止要求が来た巡回は記録する
+    // （トークンの状態だけで判定すると、停止の直前に回り切った巡回まで落とす）。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_2468_停止要求で中断した巡回は記録せず回り切った巡回は停止要求の後でも記録する(bool aborted)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        await using var h = new Harness(Settings(Aapl)) { Metrics = metrics, Logger = log }; // 照会 1 件だけの巡回
+        using var stopping = new CancellationTokenSource();
+        h.Market.OnRequest = () =>
+        {
+            h.Time.Advance(TimeSpan.FromSeconds(20));
+            stopping.Cancel(); // 照会の最中に停止要求が来る
+            if (aborted)
+                throw new OperationCanceledException(stopping.Token); // 照会が停止要求で中断する
+        };
+        var (service, _) = await h.StartAsync();
+
+        var act = () => service.RunOnceAsync(stopping.Token);
+
+        if (aborted)
+        {
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds).Should().BeEmpty();
+        }
+        else
+        {
+            await act.Should().NotThrowAsync();
+            stopping.IsCancellationRequested.Should().BeTrue();
+            capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
+                .Should().ContainSingle().Which.Value.Should().Be(20d);
+        }
+    }
+
+    // T-10-2467: 保有の照会に時間がかかってから失敗する（巡回を例外で抜けさせる）。
+    private sealed class ThrowingPositionStore(Action beforeThrow) : IPositionStore
+    {
+        public Task<IReadOnlyCollection<HeldPosition>> GetOpenPositionsAsync(CancellationToken cancellationToken = default)
+        {
+            beforeThrow();
+            throw new InvalidOperationException("保有の照会に失敗した（試験）");
+        }
+    }
+
+    // T-10-2467: ログを書くたびに偽の時計を進める（評価の後の生存の報告に時間がかかる形を作る）。
+    private sealed class AdvancingLogger<T>(Action onLog) : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => onLog();
     }
 }
