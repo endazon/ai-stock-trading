@@ -159,7 +159,7 @@ public class ReportRegenerationServiceTests
         }
 
         // 縮退した下書き（版 1）＋利用者の /policy の改訂（版 2）を置く。改訂の記録は本文の末尾にある。
-        public int SeedDegradedDraft(string key, DateOnly start, bool confirmed = false)
+        public int SeedDegradedDraft(string key, DateOnly start, bool confirmed = false, string policy = RevisedPolicy)
         {
             var body = $"# 日報 {key}\n\n## 1. サマリ\n\n{OldNarrativeMarker}\n\n"
                 + $"{ReportPolicyRevisionService.RevisionRecordHeadingPrefix}2）\n\n- 指示者: owner\n- 指示（原文）:\n\n> 押し目買い\n";
@@ -170,7 +170,7 @@ public class ReportRegenerationServiceTests
                 PeriodStart = start,
                 BasedOn = "weekly-2026-W40",
                 AssumptionsVersion = 3,
-                PolicySummary = RevisedPolicy,
+                PolicySummary = policy,
                 Body = body,
                 UnsuppliedInputs = [ReportInput.OpenPositions, ReportInput.Fills, ReportInput.ParentPolicy],
             };
@@ -536,6 +536,28 @@ public class ReportRegenerationServiceTests
     }
 
     // ---- 再提示の通知（ADR-0052 決定 3・5・#1182） ----
+
+    // T-10-2451, FR-04, FR-07, ADR-0051 フォローアップ 1, #1223, IADR-0470（2026-10-08 追記）: 期間の時点に復元できる日報の作り直しは、
+    // 引いた建玉で保有中の銘柄ごとにも見る。方針「利確: AAPL +5%」と保有 AAPL・NVDA なら、再提示の要約に NVDA を名指しする警告が出る。
+    [Fact]
+    public async Task 作り直しの再提示は保有中の銘柄に掛かる利確の行が無ければ名指しして警告する()
+    {
+        IReadOnlyList<ReportPosition> held =
+        [
+            new(Market.UnitedStates, "AAPL", TradeSide.Buy, 10, 100m, 95m, null, null, null, 3),
+            new(Market.UnitedStates, "NVDA", TradeSide.Buy, 10, 100m, 95m, null, null, null, 3),
+        ];
+        var h = new Harness { Positions = new CountingPositionSource(held) };
+        h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5), policy: "押し目買いを優先する。\n利確: AAPL +5%");
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        h.Positions.Calls.Should().BeGreaterThan(0, "期間の時点に復元できる日報は建玉を引く");
+        var summary = h.Notifier.Notices.Should().ContainSingle().Which.Summary;
+        summary.Should().Contain(PolicyTakeProfitCheck.HeldSymbolsWarning(["NVDA"]))
+            .And.NotContain(PolicyTakeProfitCheck.Warning);
+    }
 
     // T-10-2279, FR-06, FR-09, 計画 ADR-0052 決定 3・5, #1182, IADR-0491 決定 5（2026-10-06 追記）: 作り直して承認待ちにした版は、
     // **初版の自動生成と同じ要約**で提示の通知を**ちょうど 1 件**・**新しい版**で出す（`/report show` は本文を返さないので、

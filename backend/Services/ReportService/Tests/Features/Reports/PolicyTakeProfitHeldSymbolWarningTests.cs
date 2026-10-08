@@ -165,6 +165,40 @@ public class PolicyTakeProfitHeldSymbolWarningTests
         noLine.Calls.Should().Be(0);
     }
 
+    // T-10-2449（#1257 監査 F1）: 建玉の照会の最中に取り消されても、費用を払った案を失わず保存し、台帳の試行を Pending のまま残さない。
+    [Fact]
+    public async Task 建玉の照会の最中に取り消されても案を保存し台帳の試行を完了する()
+    {
+        using var cts = new CancellationTokenSource();
+        var store = new InMemoryReportStore();
+        var ledger = new InMemoryPolicyRevisionLedger();
+        var source = new StubPositions(() =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+        var service = new ReportPolicyRevisionService(
+            store, new FixedClock(SundayMorning), new FakeReviser(AaplOnly),
+            new PolicyRevisionSchedule(new ReportScheduleOptions(), AutoDailyEnabled: true),
+            ledger, new PolicyRevisionLimit(10), NullLogger<ReportPolicyRevisionService>.Instance, source);
+        store.UpsertDraft(new TradingReport
+        {
+            PeriodKey = "daily-2026-09-25",
+            Kind = ReportKind.Daily,
+            PeriodStart = new DateOnly(2026, 9, 25),
+            PolicySummary = "自動生成の方針",
+            Body = "# 日報",
+        }, 0);
+        store.ApplyReview("daily-2026-09-25", new ReviewCommand(ReviewAction.Present, "scheduler", 1));
+
+        var result = await service.ReviseAsync("daily-2026-09-25", "指示", "developer", cancellationToken: cts.Token);
+
+        result.Status.Should().Be(PolicyRevisionStatus.Proposed);
+        result.Message.Should().NotContain(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, "方針全体の判定へ戻る（案には行がある）");
+        store.Get("daily-2026-09-25")!.Report.PolicySummary.Should().Be(AaplOnly);
+        ledger.FindProposed("daily-2026-09-25", result.Version).Should().NotBeNull("台帳の試行は Proposed で完了する");
+    }
+
     // ---- T-10-2450: 自動生成の日報の初稿（提示の要約） ----
 
     // 2026-07-08（水）16:00 JST。日報だけが生成境界を越えている時刻。

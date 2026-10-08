@@ -189,9 +189,15 @@ public sealed partial class ReportPolicyRevisionService(
 
         if (takeProfitWarning is not null)
         {
-            logger.LogWarning(
-                "方針の改訂案に書式どおりの「利確:」行がありません（PeriodKey={PeriodKey}・版={Version}・銘柄ごと={PerSymbol}）。確定の前に利用者へ警告します（確定は止めません）。",
-                LogSanitizer.Sanitize(key), version, heldPositions is not null);
+            // 建玉を得たときの警告は銘柄ごとの名指しである（建玉は案に読める行があるときだけ照会するため）。#1257 監査 F5。
+            if (heldPositions is not null)
+                logger.LogWarning(
+                    "方針の改訂案に、掛かる「利確:」行の無い保有銘柄があります（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
+                    LogSanitizer.Sanitize(key), version);
+            else
+                logger.LogWarning(
+                    "方針の改訂案に書式どおりの「利確:」行がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
+                    LogSanitizer.Sanitize(key), version);
         }
 
         var usage = $"（本日の /policy: {attemptNumber}/{limit.DailyLimit} 回目）";
@@ -212,6 +218,8 @@ public sealed partial class ReportPolicyRevisionService(
     // FR-04, FR-07, ADR-0051 フォローアップ 1, #1223, IADR-0470（2026-10-08 追記）: 案の利確の行を保有中の銘柄ごとに見るための建玉。
     // 日報で、案に読める「利確:」行があるときだけ照会する（無ければ方針全体の警告で足り、照会を増やさない）。
     // 🔴 未注入・null・例外は null（得られない）へ倒し、方針全体の判定へ戻る。改訂の保存は止めない（警告は確定を止めない）。
+    // 🔴 **取消（OperationCanceledException）も null へ倒して保存を続ける**（#1257 監査 F1）。費用を払った LLM の案を失わず、
+    // 台帳の試行を Pending のまま残さない（この照会が入る前は、LLM の結果から保存までの間に待つものが無かった）。
     private async Task<IReadOnlyList<ReportPosition>?> HeldPositionsForTakeProfitCheckAsync(
         ReportKind kind, string? proposedPolicy, string key, CancellationToken cancellationToken)
     {
@@ -223,10 +231,6 @@ public sealed partial class ReportPolicyRevisionService(
         try
         {
             positions = await openPositionSource.GetOpenPositionsAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
         }
         catch (Exception ex)
         {
