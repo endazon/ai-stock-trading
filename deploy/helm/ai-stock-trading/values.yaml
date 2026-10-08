@@ -453,6 +453,7 @@ services:
       # FR-03, ADR-0043（計画）決定2, #1030, IADR-0434: 市場監視の自制レート（回/分）。1 巡回（保有と監視銘柄の和集合。#1189, IADR-0494）が巡回間隔に収まる
       # 要求数は「自制レート × 間隔（分）」。既定 60 秒なら 12 要求まで。同一鍵の合計は 30 ＋ 12 ＋ 5 × 3 ＝ 57 ≤ 60 回/分。
       # Provider が空（既定）の間は送出しないため効かない。finnhub を有効化したときの予算をここで固定する。
+      # #1225, IADR-0512: 合計と上の「57 ≤ 60 回/分」は helm.yml が描画で検査する（scripts/check-finnhub-key-budget.js。値を変えたらこの数字も直す）。
       - { name: MarketData__Finnhub__RequestsPerMinute, value: "12" }
       # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有・監視銘柄の実数から数える（旧 EstimatedSymbolCount の申告は撤去）。
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }

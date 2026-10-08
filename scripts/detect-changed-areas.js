@@ -71,6 +71,9 @@ const FORCE = [
   /^nuget\.config$/i,
   /^\.github\/workflows\//, // CI 自身を変える PR は必ず検証する
   /^deploy\//, // helm の pipeline.json 等をテストが読み得る。切り分けが済むまで保守的に
+  // #1225: Finnhub の同一鍵の予算の母集合と既定値の唯一の置き場。C# の試験がコードの既定値と突き合わせるので、
+  // scripts/ を SAFE としたままだとこのファイルだけを変える PR で backend-test が skip され、食い違いが develop へ入る。
+  /^scripts\/finnhub-key-budget\.json$/,
 ];
 
 /**
@@ -169,6 +172,7 @@ function selfTest() {
   ok('Directory.Build.props は走らせる', () => isRun(['Directory.Build.props']));
   ok('global.json は走らせる', () => isRun(['global.json']));
   ok('deploy/ は走らせる（テストが読み得るため保守的に）', () => isRun(['deploy/helm/x/files/pipeline.json']));
+  ok('#1225: Finnhub の予算 JSON は scripts/ 配下でも走らせる（C# の試験が読む）', () => isRun(['scripts/finnhub-key-budget.json']));
 
   // 🔴 自己言及の罠の回帰テスト: この PR 自身が ci.yml を変える。
   ok('🔴 .github/workflows/ を変える PR は必ず走らせる（CI 自身の変更を検証するため）', () =>

@@ -142,6 +142,7 @@ services:
       # (a) 同一鍵の合計は 情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3（risk-management / report / trade-decision）＝ 57 ≤ 60 回/分。
       # 🔴 他のプロセスのレートを上げるときは合計 60 を超えないこと（予算表は IADR-0434）。巡回間隔（Monitor__PollIntervalSeconds）は
       # 損切り判定の遅れになるため延ばさない（既定 60 秒のまま）。
+      # #1225, IADR-0512: 合計と上の「57 ≤ 60 回/分」は helm.yml が描画で検査する（scripts/check-finnhub-key-budget.js。値を変えたらこの数字も直す）。
       - { name: MarketData__Finnhub__RequestsPerMinute, value: "12" }
       # FR-01, #1132, IADR-0477: Finnhub の日次要求見積りは巡回ごとに保有・監視銘柄の実数（和集合。#1189）から数える（旧 EstimatedSymbolCount の申告 1 は撤去。実測と桁で外れた）。
       - { name: Finnhub__ProvisionalDailyLimit, value: "" }
