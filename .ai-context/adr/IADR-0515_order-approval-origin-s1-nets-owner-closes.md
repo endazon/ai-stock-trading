@@ -2,7 +2,7 @@
 title: IADR-0515 発注の記録に承認の出どころを持たせ、S1 の決済の前に取り消すのは判断の手仕舞いに限る（利用者の手仕舞い・維持率割れの自動縮小は取り消さず差し引く。出どころが分からなければ取り消す側）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, UC-06, UC-02, ADR-0050, ADR-0003, IADR-0466, IADR-0461, IADR-0344, IADR-0357, IADR-0495, IADR-0486, IADR-0211]
+related_ids: [FR-10, UC-06, UC-02, ADR-0050, ADR-0003, IADR-0466, IADR-0461, IADR-0344, IADR-0357, IADR-0495, IADR-0486, IADR-0211, IADR-0057, IADR-0092]
 author: claude (Claude Code)
 created: 2026-10-08
 updated: 2026-10-08
@@ -10,6 +10,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0050_decision-close-nets-in-flight-closes-and-stop-line-exit-only-without-mechanical-stop.md
 related_specs:
   - ../specs/20261008_1222_order-approval-origin.md
+  - ../specs/20261008_1253_reservation-approval-origin.md
 ---
 
 # IADR-0515: 発注の記録に承認の出どころを持たせ、S1 の決済の前に取り消すのは判断の手仕舞いに限る（#1222）
@@ -104,3 +105,25 @@ S1 の決済の前の取消（IADR-0466）は、発注の記録に出どころ�
   - 猶予を過ぎた決済の取消が確定しないあいだは据え置く（IADR-0466 決定 4。据え置きが 15 分を超えれば `CloseStalled` の Critical）。
   - 照会の順により、窓の中で約定が進むと少なく売る（次の巡回で残りを売る）。
   - 🔴 ブローカー側の逆指値（S0/S3）が実弾で売れる数量を押さえるかは未確認（ADR-0050 決定 3）。差し引きは保護レグを引かない（IADR-0461 と同じ前提）。
+
+## ［2026-10-08 追記 / #1253］(1) 予約の行にも出どころを残し、突合で確定した記録へ写す
+
+- 「採らなかった案」の 3 つ目（予約の行 `order_dispatch_reservations` にも列を足し、突合で確定した記録へ写す）を**採る**。残余「突合で確定した記録は
+  出どころを持たない」を塞ぐ（[#1253](https://github.com/endazon/ai-stock-trading/issues/1253)。作業仕様書
+  [`.ai-context/specs/20261008_1253_reservation-approval-origin.md`](../specs/20261008_1253_reservation-approval-origin.md)）。形は
+  [IADR-0486](IADR-0486_stop-width-floor-atr14-flag-and-floor-marker-on-order-intent.md) 決定 6（`StopFloorSource`）と同じ。
+- **予約の行**: `OrderDispatchReservationRow.ApprovalOrigin` と列 `order_dispatch_reservations.ApprovalOrigin`（integer NULL）。マイグレーション
+  `20261008045915_AddReservationApprovalOrigin` は**列の追加だけ**で、🔴 **既存行は null のまま埋めない**（分からない＝決定 3 のとおり取り消す側）。
+- **書き手**: 承認の経路の相 1（`OrderExecutionAppService` の `TryReserve`）だけが、相 4 と同じ値（`Unknown` は null）を渡す。
+  `IOrderReservationStore.TryReserve` の末尾引数 `approvalOrigin`（既定 null）・`OrderDispatchReservation.ApprovalOrigin`。保護の機構の予約は渡さない（null）。
+  EF・インメモリの両方が保存し、`Find` / `FindStalledReserved` で読み戻す。`MarkCompleted` は触れない。
+- **突合**: `OrderReservationReconciler.BuildRecord` が予約の行の出どころを組み直した記録の `ApprovalOrigin` へ写す（決定 2 の「突合で確定した記録は null」を改める）。
+  予約の行が null なら null。自己修復・競合の経路は既存の記録を使う（変えない）。
+- 決定 3・4（取消・差し引き・猶予）は変えない。突合で確定した記録も通常の経路の記録と同じ規則で扱う（突合の経路だけ猶予を延ばさない）。
+- 試験 T-10-2452〜T-10-2455。
+- **残余（本追記で新たに分かったもの）**:
+  - 🔴 本番の照会（`MoomooReservationBrokerProbe`）は発注意図の `PositionEffect` を Open で近似する（`ToBrokerOrder`。moomoo の注文から一意に復元できない。照会は [IADR-0092](IADR-0092_reservation-broker-probe-moomoo.md)）。突合で確定した決済の記録は
+    Open として残り、S1 の処理中の決済の読み出し（Close だけ）に載らない。本追記の是正は照会が Close を復元できるときに効き、現状の本番では
+    突合で確定した決済は S1 に取り消されも差し引かれもしない。決済の向きの復元は別の件。
+  - 猶予の起点は記録の時刻（証券会社が答えた発注の時刻。答えなければ突合の時刻）。突合は滞留の閾値（下限 1 時間）より古い予約しか扱わないので、
+    発注の時刻が分かる限り記録は猶予を過ぎており、取り消される（通常の経路と同じ）。差し引かれるのは発注の時刻が分からないときに限られる。

@@ -35,4 +35,11 @@ public sealed class OrderDispatchReservationRow
     /// 発注意図の印を持たない——ここに残した値を記録へ写す。<b>null は分からない</b>（列を足す前の行・決済・保護レグ）。
     /// </summary>
     public StopWidthFloorSource? StopFloorSource { get; set; }
+
+    /// <summary>
+    /// 🔴 FR-10, UC-06, ADR-0050 決定1, #1253, IADR-0515 追記(1): 予約を取った承認の出どころ（<c>OrderApproved.Origin</c>。<c>Unknown</c> は null で書く）。
+    /// 送信結果が不明のまま突合が発注済みと確定したとき、ブローカーの注文から組み直す記録へ写す（S1 の決済の前の取消が利用者の手仕舞い・
+    /// 維持率割れの自動縮小を見分けるため）。<b>null は分からない</b>（列を足す前の行・保護の機構の予約・出どころの無い承認）＝取り消す側。
+    /// </summary>
+    public OrderApprovalOrigin? ApprovalOrigin { get; set; }
 }
