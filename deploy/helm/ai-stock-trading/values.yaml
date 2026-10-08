@@ -619,7 +619,7 @@ services:
       #   - { name: LlmGateway__Grpc, value: "http://llmgateway-service.microservices-platform:8081" }
       # 前提（クラスタ側の作業と一体）: 基盤の LlmGateway が h2c ポート（Grpc__Port）を配備していること、
       # AST から当該ポートへ到達できること（Istio PeerAuthentication）。s2s は下の LlmGateway__Auth__* をそのまま使う。
-      # #1256, MSP#1812, MSP/IADR-0513: 🔴 到達には L4 も入る。MSP の本番の NetworkPolicy `networkPolicy.fromAst.llmGateway`
+      # #1256, MSP#1811, MSP#1812, MSP/IADR-0513: 🔴 到達には L4 も入る。MSP の本番の NetworkPolicy `networkPolicy.fromAst.llmGateway`
       # （既定は閉）は、開けても AST の report・trade-decision から LLM ゲートウェイの REST 8080 だけを通し、gRPC 8081 は開けない
       # （KB の `kbReader`（検索）・`kbWriter`（文書）も REST だけ）。このまま gRPC へ切り替えると 8081 は L4 で塞がれ、接続できない。
       # gRPC へ切り替えるなら、先に MSP 側で穴の形（REST だけ）を改めて判断してもらう（MSP/IADR-0513）。
@@ -782,7 +782,7 @@ services:
       #   - { name: LlmGateway__Grpc, value: "http://llmgateway-service.microservices-platform:8081" }
       # 前提（クラスタ側の作業と一体）: 基盤の LlmGateway が h2c ポート（Grpc__Port）を配備していること、
       # AST から当該ポートへ到達できること（Istio PeerAuthentication）。s2s は下の LlmGateway__Auth__* をそのまま使う。
-      # #1256, MSP#1812, MSP/IADR-0513: 🔴 到達には L4 も入る。MSP の本番の NetworkPolicy `networkPolicy.fromAst.llmGateway`
+      # #1256, MSP#1811, MSP#1812, MSP/IADR-0513: 🔴 到達には L4 も入る。MSP の本番の NetworkPolicy `networkPolicy.fromAst.llmGateway`
       # （既定は閉）は、開けても AST の report・trade-decision から LLM ゲートウェイの REST 8080 だけを通し、gRPC 8081 は開けない
       # （KB の `kbReader`（検索）・`kbWriter`（文書）も REST だけ）。このまま gRPC へ切り替えると 8081 は L4 で塞がれ、接続できない。
       # gRPC へ切り替えるなら、先に MSP 側で穴の形（REST だけ）を改めて判断してもらう（MSP/IADR-0513）。

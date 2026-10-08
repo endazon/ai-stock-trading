@@ -31,7 +31,7 @@ plan_refs: []
   いずれも `enabled: false`。`llmGateway` の注記は「AST は REST だけを使う（LlmGateway__Grpc は置いていない）ので gRPC 8081 は開けない」。
 - `templates/networkpolicy.yaml` 146〜201 行: 3 用途とも `ports` は `services.<target>.port` の 1 本だけを描く
   （注記「ポートは services.<target>.port（REST）だけ。east-west gRPC（grpcPort）は開けない」）。`llmgateway` の `port` は 8080
-  （values 691 行）、`grpcPort` は別に宣言されている（693 行〜）。
+  （values 691 行）、`grpcPort` は別に宣言されている（`grpcPort: 8081` は 700 行）。
 - `.ai-context/adr/IADR-0513_ast-kb-ingress-network-policy.md` 決定 2 と 2026-10-08 追記（#1811）: gRPC 8081 は開けない。
   AST が gRPC へ切り替えるときは、別のポートを足すのではなく、用途の形（REST だけ）を変える判断として改めて扱う。
 
