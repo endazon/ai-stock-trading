@@ -10,7 +10,7 @@ author: endazon (with Claude Code)
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052, ADR-0053]
 iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at]
 issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, planning#711, planning#746, planning#724]
 -->
 
@@ -181,7 +181,7 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 | 入力 | 扱い | 数える瞬間 |
 | --- | --- | --- |
 | 借株料（計上・未計上） | 窓 | 市場・記録の時刻（他の入力と同じ。計上の帰属日〔JST の取引日〕は配置に使わない）。週末に記録された計上は月曜の日報 |
-| 損切りの手法（承認時点） | 窓 | 承認の市場・承認の時刻。月報の日数は承認を数える日報の日付（JST）で数える |
+| 損切りの手法（承認時点） | 窓 | 承認の市場・承認の時刻。月報の日数は承認を数える日報の日付（JST）で数える。本文を復元できなかった承認の記録は市場が分からないため台帳の記録時刻で数える（記録時刻を運ばない旧い台帳の応答では照会の範囲で数える） |
 | 損切りの手法の解決 | 承認に従う | 承認と決定 ID で突き合わせる（解決の時刻では数えない） |
 | 強制買戻しの推定 | 窓 | 市場・推定の時刻 |
 | 維持率割れの自動縮小 | 窓 | 明細の市場ごとの瞬間の最も早いもの（明細が無ければ執行の時刻） |

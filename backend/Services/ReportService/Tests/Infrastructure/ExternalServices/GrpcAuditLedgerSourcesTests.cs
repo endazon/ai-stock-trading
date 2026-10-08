@@ -238,6 +238,67 @@ public class GrpcAuditLedgerSourcesTests
         grpcRationale.Should().BeEquivalentTo(restRationale);
     }
 
+    // ---- T-06-073: 台帳の記録時刻（OccurredAt）を両経路で運ぶ（#1255 / IADR-0516 の 2026-10-08 追記） ----
+
+    // FR-06, #1255, IADR-0516（2026-10-08 追記）: 本物の提供側の REST と gRPC の両方から読んだ承認の供給は、本文を復元できなかった記録の
+    // 台帳の記録時刻を同じ値で持つ（REST は応答の occurredAt、gRPC は occurred_at）。時刻の取り違え・片側の落としは赤になる。
+    [Fact]
+    public async Task T_06_073_本文の読めない記録の記録時刻を_REST_と_gRPC_の両方で同じ値で運ぶ()
+    {
+        await using var audit = new AuditHost();
+        var approved = new OrderApproved(
+            Guid.NewGuid(),
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 200m),
+            10, T0, StopLossMethod: StopLossExecutionMethod.BrokerStopOrder);
+        var unreadableAt = T0.AddHours(2).AddTicks(1234567);
+        using (var scope = audit.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IAuditEventStore>();
+            store.Append(AuditEntryFactory.From(approved, Guid.NewGuid(), T0));
+            store.Append(AuditEntryFactory.From(approved, Guid.NewGuid(), T0) with
+            {
+                Id = Guid.NewGuid(),
+                Detail = "{not json",
+                OccurredAt = unreadableAt,
+            });
+        }
+
+        var rest = audit.CreateClient();
+        var channel = GrpcChannel.ForAddress(
+            audit.Server.BaseAddress, new GrpcChannelOptions { HttpHandler = audit.Server.CreateHandler() });
+        using var grpc = new AuditGrpcTransport(
+            channel, TimeSpan.FromSeconds(10), 1, new ReportDependencyProbe(), null, Log<AuditGrpcTransport>());
+
+        var restUsage = await new HttpStopLossMethodUsageSource(rest, Log<HttpStopLossMethodUsageSource>()).GetUsageAsync(From, To);
+        var grpcUsage = await new GrpcStopLossMethodUsageSource(grpc, Log<GrpcStopLossMethodUsageSource>()).GetUsageAsync(From, To);
+
+        restUsage!.UnreadableCount.Should().Be(1);
+        restUsage.UnreadableOccurredAt.Should().Equal(unreadableAt);
+        grpcUsage!.UnreadableOccurredAt.Should().Equal(unreadableAt);
+        grpcUsage.Should().BeEquivalentTo(restUsage);
+    }
+
+    // FR-06, #1255: gRPC の occurred_at が無い記録（旧版の提供側）は時刻なし（null）で受け、在るのに読めない値は id と同じく契約の食い違い
+    // （応答全体を未供給）。在る値は往復書式のまま読む。線上で実際に符号化・復号された記録で確かめる（偽の提供側）。
+    [Fact]
+    public async Task T_06_073_gRPC_の記録時刻は無ければ時刻なし_読めなければ応答全体を未供給にする()
+    {
+        var absent = Record(nameof(OrderApproved), "{not json");
+        var present = Record(nameof(OrderApproved), "{not json");
+        present.OccurredAt = "2026-08-03T19:00:00.1234567+09:00";
+
+        var usage = (StopLossMethodUsage?)await ReadThroughStubAsync("承認の手法", absent, present);
+
+        usage.Should().NotBeNull();
+        usage!.UnreadableCount.Should().Be(2);
+        usage.UnreadableOccurredAt.Should().Equal(
+            null, new DateTimeOffset(2026, 8, 3, 19, 0, 0, TimeSpan.FromHours(9)).AddTicks(1234567));
+
+        var broken = Record(nameof(OrderApproved), "{not json");
+        broken.OccurredAt = "not-a-time";
+        (await ReadThroughStubAsync("承認の手法", broken)).Should().BeNull();
+    }
+
     // ---- T-10-1677: 照会の窓と種別は REST と同じ ----
 
     // 🔴 窓（JST の半開区間・解決結果は前後 1 日を含む）と引く種別を、REST の要求（クエリ）と gRPC の要求で突き合わせる。

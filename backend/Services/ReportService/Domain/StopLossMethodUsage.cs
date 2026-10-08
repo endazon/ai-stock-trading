@@ -29,6 +29,13 @@ public sealed record StopLossMethodUsage(
     /// </summary>
     public IReadOnlyList<StopLossMethodApproval> Approvals { get; init; } = [];
 
+    /// <summary>
+    /// FR-06, IADR-0516（2026-10-08 追記）, #1255: 本文を復元できなかった記録ごとの台帳の記録時刻（<see cref="UnreadableCount"/> と同じ数・
+    /// <c>null</c> は時刻なし＝記録時刻を運ばない旧版の台帳）。セッションの窓で絞るために持つ（<see cref="ReportLedgerWindowing"/>）。
+    /// 件数だけで作った値（旧い呼び出し）では空であり、そのとき窓では絞らない。
+    /// </summary>
+    public IReadOnlyList<DateTimeOffset?> UnreadableOccurredAt { get; init; } = [];
+
     /// <summary>新規建ての承認の総数（手法を問わない）。</summary>
     public int TotalApprovals => Counts.Sum(c => c.Count);
 
