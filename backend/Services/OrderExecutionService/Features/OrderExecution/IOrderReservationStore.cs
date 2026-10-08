@@ -59,7 +59,9 @@ public sealed record OrderDispatchReservation(
     string? BrokerOrderId,
     DateTimeOffset? CompletedAt = null,
     BrokerProvider? BrokerProvider = null,
-    StopWidthFloorSource? StopFloorSource = null);
+    StopWidthFloorSource? StopFloorSource = null,
+    // 🔴 FR-10, UC-06, ADR-0050 決定1, #1253, IADR-0515 追記(1): 予約を取った承認の出どころ（null＝分からない）。突合が組み直す記録へ写す。
+    OrderApprovalOrigin? ApprovalOrigin = null);
 
 // #131, FR-05, IADR-0057: 発注前 DecisionId 予約のストア。ブローカ発注の「前」に一意予約をコミットし、
 // 「発注成功 → 永続化失敗」の窓での二重発注を防ぐ。実運用では PostgreSQL（DecisionId が主キー＝一意制約）。
@@ -80,9 +82,15 @@ public interface IOrderReservationStore
     /// （<c>OrderIntent.StopFloorSource</c>。新規建てだけが持つ）。突合（<c>OrderReservationReconciler</c>）が発注済みと確定したとき、
     /// ブローカーの注文から組み直す記録へ写す。省略は null（分からない＝決済・保護レグ）。
     /// </para>
+    /// <para>
+    /// 🔴 FR-10, UC-06, ADR-0050 決定1, #1253, IADR-0515 追記(1): <paramref name="approvalOrigin"/> は承認の出どころ
+    /// （<c>OrderApproved.Origin</c>。<c>Unknown</c> は呼び出し側が null にして渡す）。突合が発注済みと確定したとき、組み直す記録の
+    /// <c>ApprovalOrigin</c> へ写す。省略は null（分からない＝保護の機構の予約。S1 の取消は取り消す側へ倒す）。
+    /// </para>
     /// </summary>
     bool TryReserve(
-        Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null);
+        Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
+        OrderApprovalOrigin? approvalOrigin = null);
 
     /// <summary>発注結果の永続化後に予約を Completed へ確定する（ブローカ注文 ID を記録する）。</summary>
     void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt);

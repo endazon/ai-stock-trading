@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
+using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -168,7 +170,8 @@ public class SoftwareStopDecisionCloseYieldTests
 
     private sealed record Fixture(
         SoftwareStopExecutor Executor, FakeBroker Broker, InMemoryProtectiveStopOrderStore Stops,
-        InMemoryExecutedOrderStore Store, MutableClock Clock, RecordingLogger<SoftwareStopExecutor> Log);
+        InMemoryExecutedOrderStore Store, MutableClock Clock, RecordingLogger<SoftwareStopExecutor> Log,
+        InMemoryOrderReservationStore Reservations);
 
     // 発注の記録の読み出し（FindPendingCloses）が落ちるストア（T-10-1825）。他は包んだ実装へ渡す。
     private sealed class PendingClosesThrowingStore(IExecutedOrderStore inner) : IExecutedOrderStore
@@ -196,9 +199,10 @@ public class SoftwareStopDecisionCloseYieldTests
         var store = new InMemoryExecutedOrderStore();
         var log = new RecordingLogger<SoftwareStopExecutor>();
         IExecutedOrderStore executorStore = wrapStore is null ? store : wrapStore(store);
+        var reservations = new InMemoryOrderReservationStore();
         return new Fixture(
-            new SoftwareStopExecutor(broker, broker, stops, executorStore, new InMemoryOrderReservationStore(), clock, log),
-            broker, stops, store, clock, log);
+            new SoftwareStopExecutor(broker, broker, stops, executorStore, reservations, clock, log),
+            broker, stops, store, clock, log, reservations);
     }
 
     // S1 の記録（エントリーは約定済み・未到達）。
@@ -894,5 +898,84 @@ public class SoftwareStopDecisionCloseYieldTests
         f.Broker.MarketCloses.Should().NotBeEmpty();
         f.Broker.MarketCloses.Should().OnlyContain(c => c.Status == OrderStatus.Accepted, "差し引いた残りなので拒否されない");
         f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(428, "建玉 1,428 − 利用者の手仕舞い 1,000");
+    }
+
+    // #1253, IADR-0515 追記(1): 利用者の手仕舞い（または自動縮小）の承認を予約したまま送信結果が不明になり、突合が証券会社の注文から
+    // 発注済みと確定した記録を作る（発注執行の通常の経路を通らない）。placedAt＝証券会社が答えた発注の時刻（null＝答えない＝突合の時刻）。
+    // 突合は記録が出来る前の時刻（到達の 30 秒前）に回り、注文は証券会社に生きている（受理・未約定）。
+    private static async Task<ExecutionRecord> ReconciledClose(
+        Fixture f, int quantity, OrderApprovalOrigin? reservedOrigin, DateTimeOffset? placedAt)
+    {
+        var decisionId = Guid.NewGuid();
+        var orderId = $"reconciled-{decisionId:N}";
+        f.Reservations.TryReserve(decisionId, T0.AddHours(-2), BrokerProvider.MoomooSimulate, approvalOrigin: reservedOrigin)
+            .Should().BeTrue();
+        var intent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.MoomooSimulate, quantity, 331.67m,
+            PositionEffect.Close, StopLossPrice: null);
+        var brokerOrder = new BrokerOrder(orderId, intent, OrderStatus.Accepted, 0, 0m, placedAt ?? default, null);
+        f.Broker.Orders[orderId] = new Order(quantity);
+        var reconciler = new OrderReservationReconciler(
+            f.Reservations, f.Store, new PlacedProbe(brokerOrder), f.Broker, f.Clock,
+            Options.Create(new ReconciliationOptions { Enabled = true }));
+        var now = f.Clock.UtcNow;
+        f.Clock.UtcNow = T0.AddSeconds(-30);
+        (await reconciler.ReconcileAsync(T0.AddHours(-1), batchSize: 10)).Terminalized.Should().Be(1);
+        f.Clock.UtcNow = now;
+        return f.Store.FindByDecisionId(decisionId)!;
+    }
+
+    private sealed class PlacedProbe(BrokerOrder order) : IReservationBrokerProbe
+    {
+        public Task<ReservationProbeResult> ProbeAsync(
+            OrderDispatchReservation reservation, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ReservationProbeResult.Placed(order));
+    }
+
+    // T-10-2454（#1253 受け入れ基準 1・端から端まで）: 送信結果が不明だった利用者の手仕舞い（自動縮小）1,000 株を突合が発注済みと確定し
+    // （証券会社は発注の時刻を答えない＝記録の時刻は突合の時刻）、30 秒後に S1 が到達する → 予約の行の出どころが記録へ運ばれているので
+    // S1 は取り消さず、処理中の残りを差し引いた 428 株だけを送って受理される（#1222 の是正が突合の経路でも効く）。
+    [Theory]
+    [InlineData(OrderApprovalOrigin.OwnerClose)]
+    [InlineData(OrderApprovalOrigin.MaintenanceMarginReduction)]
+    public async Task T_10_2454_突合で確定した利用者の手仕舞いはS1に取り消されず差し引かれる(OrderApprovalOrigin origin)
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var reconciled = await ReconciledClose(f, 1_000, origin, placedAt: null);
+        reconciled.ApprovalOrigin.Should().Be(origin, "突合が予約の行の出どころを写す");
+        reconciled.PositionEffect.Should().Be(PositionEffect.Close);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("突合で確定した利用者の手仕舞いも取り消さない");
+        f.Broker.Orders[reconciled.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle();
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted, "差し引いた残りなので建玉不足で拒否されない");
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(428, "1,428 − 1,000");
+        f.Stops.Find(upper.EntryDecisionId)!.RemainingProtected.Should().Be(713 - 428);
+    }
+
+    // T-10-2455（#1253 受け入れ基準 2・否定形）: 🔴 出どころを持たない予約の行（列を足す前の行）から突合が確定した記録は null のままで、
+    // S1 は従来どおり取り消してから 713 株を送る（推測で利用者の手仕舞いと読まない）。出どころを持っていても、証券会社が答えた発注の時刻が
+    // 猶予（NettedCloseGrace）を過ぎていれば、通常の経路と同じく取り消してから送る（突合の経路だけ猶予を延ばさない）。
+    [Theory]
+    [InlineData("null-origin")]
+    [InlineData("owner-past-grace")]
+    public async Task T_10_2455_出どころの無い予約や猶予を過ぎた突合の記録はS1が取り消してから送る(string shape)
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var reconciled = shape == "null-origin"
+            ? await ReconciledClose(f, 1_428, reservedOrigin: null, placedAt: null)
+            : await ReconciledClose(f, 1_428, OrderApprovalOrigin.OwnerClose, placedAt: T0.AddHours(-2));
+        reconciled.ApprovalOrigin.Should().Be(shape == "null-origin" ? null : OrderApprovalOrigin.OwnerClose);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().Equal([reconciled.OrderId], "分からない・猶予を過ぎたものは取り消す側へ倒す");
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted, "損切りは止まらない");
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(713);
+        f.Stops.Find(upper.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
     }
 }

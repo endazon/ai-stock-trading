@@ -347,7 +347,10 @@ public sealed class OrderExecutionAppService(
         // 滞留したときにリコンサイラが解放の門（SIMULATE / 実弾）をこの値で選ぶ。intent.Mode（段階の既定）は渡さない。
         // 🔴 FR-10, #1122, IADR-0486 決定6: 予約には承認の発注意図の「下限を掛けてラインを引いた」印も残す（新規建てだけが持つ）。
         // 送信結果が不明のまま突合が発注済みと確定すると、突合はブローカーの注文から記録を組み直すため、印はここにしか残らない。
-        if (!reservations.TryReserve(approved.DecisionId, clock.UtcNow, broker.Provider, intent.StopFloorSource))
+        // 🔴 FR-10, UC-06, #1253, IADR-0515 追記(1): 承認の出どころも予約の行に残す（突合が組み直す記録へ写す。Unknown は null で書く＝相 4 と同じ）。
+        if (!reservations.TryReserve(
+                approved.DecisionId, clock.UtcNow, broker.Provider, intent.StopFloorSource,
+                approved.Origin == OrderApprovalOrigin.Unknown ? null : approved.Origin))
             throw new OrderDispatchReservationConflictException(approved.DecisionId);
 
         // 🔴 FR-10, #853, IADR-0428 決定3: **予約を取った後・送る前に**、承認時の保護の文脈（手法・損切りライン・数量）を残す（S0 / S3）。
