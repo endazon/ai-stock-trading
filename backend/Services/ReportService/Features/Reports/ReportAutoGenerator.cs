@@ -225,7 +225,9 @@ public sealed class ReportAutoGenerator(
         // FR-04, FR-07, #1129, IADR-0470 決定 4: 日報の初稿（直近の確定済み方針の継続）に書式どおりの「利確:」行が無ければ、
         // 提示の要約で確定の前に警告する（確定は止めない。方針の本文は変えない）。要約に印が入ると、通知サービスが
         // 提示の通知を Warning へ上げる（未供給の警告と同じ経路。本クラスはロガーを持たない）。
-        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(due.Kind, policy);
+        // ADR-0051 フォローアップ 1, #1223, IADR-0470（2026-10-08 追記）: 本文の §3 と同じ建玉で、行の掛からない保有中の銘柄を名指しする。
+        // 建玉が未供給なら方針全体の判定へ戻る（未供給は要約の「建玉」の警告で見える）。
+        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(due.Kind, policy, inputs.Positions);
 
         var summary = ReportSummary.Build(
             due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative, unsuppliedInputs,
