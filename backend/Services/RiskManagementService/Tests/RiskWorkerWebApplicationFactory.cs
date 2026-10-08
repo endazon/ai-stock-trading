@@ -78,6 +78,17 @@ public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Prog
     /// </summary>
     internal const int CapitalBaselineSeedDaysAgo = 2;
 
+    /// <summary>
+    /// FR-10, #1258: 基準資金の行を仕込む<b>起点の時刻</b>。既定（<c>null</c>）は実時刻。
+    /// <para>
+    /// 🔴 <c>FakeClock</c> を固定日へ置く試験は、<b>同じ時刻をここへ渡す</b>。<c>EfCapitalBaselineStore</c> は
+    /// 偽の時計の当日（<c>TradingDay &lt; today</c>）より前の行しか使わないため、実時刻から仕込むと
+    /// 実時刻が固定日の翌々日（ET）に入った時点で仕込みの行が当日扱いになり外れ、基準資金が <c>null</c> になる
+    /// （新規建てが <c>CapitalBaselineUnavailable</c> で止まる。T-10-2320 が 2026-10-08 に決定的に赤になった）。
+    /// </para>
+    /// </summary>
+    public DateTimeOffset? CapitalBaselineSeedNow { get; init; }
+
     protected override IHost CreateHost(IHostBuilder builder)
     {
         var host = base.CreateHost(builder);
@@ -86,7 +97,7 @@ public sealed class RiskWorkerWebApplicationFactory : WebApplicationFactory<Prog
         {
             using var scope = host.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<RiskManagementDbContext>();
-            var observedAt = DateTimeOffset.UtcNow.AddDays(-CapitalBaselineSeedDaysAgo);
+            var observedAt = (CapitalBaselineSeedNow ?? DateTimeOffset.UtcNow).AddDays(-CapitalBaselineSeedDaysAgo);
             // 取引日は米国東部時間の暦日（EfCapitalBaselineStore と同じ基準）。当日より前を仕込む
             // （さかのぼり日数の根拠は CapitalBaselineSeedDaysAgo の注記・#905）。
             var tradingDay = Common.Abstractions.TradingDay.Of(

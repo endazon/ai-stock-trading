@@ -44,7 +44,8 @@ public class StopOutReentryWiringTests
     public async Task 本番構成で損切りを流すと同じ銘柄の買いが名前付きの理由で拒否され計器に出る()
     {
         using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        await using var factory = new RiskWorkerWebApplicationFactory();
+        // #1258: 基準資金の仕込みも偽の時計から数える（実時刻から数えると固定日と食い違う）。
+        await using var factory = new RiskWorkerWebApplicationFactory { CapitalBaselineSeedNow = BuyAttemptAt };
         using var wired = factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
             services.AddSingleton<IClock>(new FakeClock(BuyAttemptAt, TradingDay.Of(BuyAttemptAt)))));
 
