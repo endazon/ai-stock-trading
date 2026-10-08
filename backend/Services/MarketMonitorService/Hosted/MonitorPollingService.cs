@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using MarketMonitorService.Common.Abstractions;
@@ -15,6 +16,9 @@ namespace MarketMonitorService.Hosted;
 // FR-03, UC-02, ADR-0003: 監視間隔ごとのポーリング。市場開場時に 1 巡回評価し、検知イベント（損切り・変動）を発行する。
 // 閉場中はスキップ（監視停止）。個々の巡回の例外は監視を止めないよう握りつぶしてログする（フェイルセーフ）。
 // EvaluateRoundAsync は scoped な EF ストアに依存するため、巡回ごとに DI スコープを作る。
+//
+// FR-04, NFR-01, ADR-0043, #1251, IADR-0513: 開場して評価した巡回の所要を計量（ast.market_monitor.cycle_duration_seconds）し、
+// 巡回間隔に達したら Warning を出す（観測のみ。巡回の挙動は変えない）。経過は TimeProvider で測る（試験は偽の時計で進める）。
 public sealed class MonitorPollingService(
     IServiceScopeFactory scopeFactory,
     IMarketSchedule schedule,
@@ -22,12 +26,18 @@ public sealed class MonitorPollingService(
     IOptions<MonitorOptions> options,
     ILogger<MonitorPollingService> logger,
     StopLossLivenessReporter? liveness = null,
-    FinnhubDailyVolumeRecorder? dailyVolume = null) : BackgroundService
+    FinnhubDailyVolumeRecorder? dailyVolume = null,
+    BusinessMetrics? metrics = null,
+    TimeProvider? timeProvider = null) : BackgroundService
 {
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+
+    // 巡回間隔（ExecuteAsync の PeriodicTimer と同じ値。1 未満は 1 秒）。
+    private TimeSpan Interval => TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds));
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var interval = TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds));
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(Interval);
 
         do
         {
@@ -54,6 +64,7 @@ public sealed class MonitorPollingService(
     // 1 つでも開いていれば巡回し、閉場している市場の銘柄は評価の中で飛ばす（MarketMonitorAppService）。
     public async Task RunOnceAsync(CancellationToken cancellationToken)
     {
+        var startedAt = _time.GetTimestamp();
         var now = clock.UtcNow;
         var markets = Enum.GetValues<Market>();
         var closedMarkets = Array.FindAll(markets, m => !schedule.IsOpen(m, now));
@@ -66,6 +77,30 @@ public sealed class MonitorPollingService(
             return; // 閉場中は監視停止（04_workflows/02）
         }
 
+        // FR-04, NFR-01, ADR-0043, #1251, IADR-0513: 例外で抜けた巡回も所要を数える（遅い失敗も次の刻みを遅らせる）。
+        // 停止要求で**中断した**巡回（取り消し済みのトークンで OperationCanceledException）だけを除く（途中で切った所要は巡回の所要ではない）。
+        // トークンの状態だけで判定すると、停止の直前に最後まで回った巡回まで落とす（PR #1266 の AI レビュー 🟢）。
+        var canceled = false;
+        try
+        {
+            await RunOpenCycleAsync(closedMarkets, markets, now, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            canceled = true;
+            throw;
+        }
+        finally
+        {
+            if (!canceled)
+                ObserveCycleDuration(_time.GetElapsedTime(startedAt));
+        }
+    }
+
+    // 開場している市場が 1 つ以上ある巡回の本体（評価・発行・観測）。
+    private async Task RunOpenCycleAsync(
+        Market[] closedMarkets, Market[] markets, DateTimeOffset now, CancellationToken cancellationToken)
+    {
         using var scope = scopeFactory.CreateScope();
         var monitor = scope.ServiceProvider.GetRequiredService<AppSvc>();
         // ADR-0013, IADR-0129, #354: 発行は Wolverine の IMessageBus（scoped）。巡回ごとのスコープから解決する
@@ -117,6 +152,31 @@ public sealed class MonitorPollingService(
             {
                 logger.LogWarning(ex, "損切り評価の生存要約の記録に失敗しました（監視・発行には影響しません）。");
             }
+        }
+    }
+
+    // FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 1 巡回の所要を計量し、巡回間隔に達したら Warning を出す。
+    // PeriodicTimer は逃した刻みを 1 つに畳むため、達した巡回の次は待たずに始まり、1 銘柄あたりの価格の確認の周期が間隔を超える。
+    // 観測のみ。失敗しても巡回を失敗させない（生存の報告と同じ作法）。
+    private void ObserveCycleDuration(TimeSpan elapsed)
+    {
+        try
+        {
+            metrics?.RecordMarketMonitorCycleDuration(elapsed.TotalSeconds);
+
+            var interval = Interval;
+            if (elapsed >= interval)
+            {
+                logger.LogWarning(
+                    "市場監視の 1 巡回の所要 {ElapsedSeconds:F1} 秒が巡回間隔 {IntervalSeconds} 秒に達しました。"
+                        + "次の巡回は待たずに始まり、1 銘柄あたりの価格の確認の周期が巡回間隔を超えます（損切りの検知が遅れます）。"
+                        + "保有の照会・Finnhub の往復・発行の所要と、1 巡回の照会の数（自制レート × 巡回間隔の内側か）を確認してください。",
+                    elapsed.TotalSeconds, interval.TotalSeconds);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "市場監視の巡回の所要の記録に失敗しました（監視・発行には影響しません）。");
         }
     }
 

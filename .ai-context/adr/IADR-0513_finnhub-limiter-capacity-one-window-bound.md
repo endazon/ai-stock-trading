@@ -112,3 +112,50 @@ plan_refs:
 - 市場監視の巡回の余裕は「5 秒 − 限流器の外の所要」しかない（決定 3）。巡回の所要が巡回間隔に達したことを知らせる計量・警告は置いていない（後続で扱う）。
 - 損切りの発行の遅れ（決定 4）は残る。保有の評価の直後に発行する形（巡回の途中の発行）は本 IADR の範囲外とした。
 - 稼働中の Pod の実際の送出間隔は見ていない（配備後に Finnhub の `X-Ratelimit-Remaining` の推移で確かめられる）。
+
+## ［2026-10-08 追記 / #1251］巡回の所要の観測を置き、限流器の外の余裕は (b) の式へ入れず、巡回の途中の発行は範囲外とする
+
+起票: [#1251](https://github.com/endazon/ai-stock-trading/issues/1251)（PR #1250 の独立監査 🟡-1・🟢-3）。作業仕様書 [`20261008_1251_market-monitor-cycle-duration-observe`](../specs/20261008_1251_market-monitor-cycle-duration-observe.md)。
+上の本文（決定 3・4・残余リスク）は書き換えない。
+
+### (1) 巡回の所要を計量と Warning で観測する（残余リスク「計量・警告は置いていない」の解消）
+
+- `MonitorPollingService.RunOnceAsync` が、開場して評価した巡回の所要（頭から発行・生存の報告の後まで。例外で抜けた巡回も含み、停止要求で中断した巡回〔取り消し済みのトークンで `OperationCanceledException`〕だけを除く。トークンの状態だけでは判定しない）を
+  計器 `ast.market_monitor.cycle_duration_seconds`（ヒストグラム・秒・タグなし）へ記録し、所要 ≥ 巡回間隔（構成の `max(1, PollIntervalSeconds)` 秒）なら Warning を 1 行出す。
+  全市場が閉場の巡回は記録しない。経過は `TimeProvider` で測る（試験は偽の時計）。観測の失敗は巡回を失敗させない。
+- 境界は `ObservabilityExtensions.MarketMonitorCycleDurationBucketsSeconds` を View で明示し、55・60 秒を境界そのものに置く（既定の境界では 60 秒が 50〜75 に埋もれる。IADR-0307 と同じ作法）。
+  ダッシュボードにパネル（P95 と 60 秒超の件数）を足した。アラートは置かない（鳴らす基準は運用で決める）。
+- 試験 T-10-2461〜T-10-2464・T-10-2467〜T-10-2468。
+
+### (2) 限流器の外の所要の余裕は (b) の式へ入れない
+
+- 等間隔の送出では `n × 60 ≤ r × 間隔` は「最後の要求の開始 ≤ 間隔 − 60/r」と同値で、既に 1 要求ぶん（12 回/分で 5 秒）の余裕を残している（決定 3）。
+- issue の例 `n ≤ r × 間隔 / 60 − 1` は 12 ≤ 11 となり、**現在の構成（市場監視 12 回/分・巡回 60 秒・`finnhub-key-budget.json` の最低 12 要求/巡回）を赤にし、
+  監視銘柄の追加の上限を 12 から 11 へ黙って下げる**。観測の前に容量を下げない。
+- 限流器の外の所要（gRPC の保有照会・最後の往復・発行・生存の報告）は構成から計算できる静的な量ではなく、定数として式へ入れても根拠が無い。
+  (1) の計量で実測し、所要が間隔に達する巡回が観測されたら、そのときに式・自制レート・巡回間隔・監視銘柄の数を見直す（`check-finnhub-key-budget.js`・`WatchlistCycleFit`・JSON・ピンの試験は変えない）。
+
+### (3) 損切りの到達の巡回の途中の発行は範囲外とする
+
+- 発行は巡回ごとのスコープの `IMessageBus` で評価の後にまとめ、損切りを先に出す（IADR-0014）。巡回の途中の発行は `EvaluateRoundAsync` を保有の評価と監視銘柄の評価の間で分ける形を要し、観測の追加である本件を超える。
+- 遅れ（最大約 55 秒）は NFR-01 の 5 分の内側であり、損切りそのものは証券会社側の逆指値で、発行の遅れは決済の遅れではない（決定 4）。
+- 🔴 **ただし S1（ソフトウェア逆指値。`StopLossMethod=S1`・moomoo SIMULATE でだけ選べる。既定は S0）では、発行の遅れがそのまま決済の遅れになる**
+  （発注執行の `StopLossTriggeredHandler` が `StopLossTriggered` を受けて成行で決済する。PR #1266 の独立監査 🟡-1）。
+  S1 は SIMULATE（紙の統制の観測）に限られるため、最大約 55 秒の決済の遅れは観測として受け入れる。範囲外の結論は変えない。
+- 見直しの条件: NFR-01 の計器（`ast.trade_cycle.order_completion_latency_ms` の `trigger=price-movement`）の P95 が 5 分へ近づく、証券会社側の逆指値に頼れない運用へ変わる、
+  または S1 を選ぶ（SIMULATE で S1 を常用する・S1 を実弾へ広げる）とき。
+
+### (4) 送信前のレート制限の既定の待機を `TimeProvider` のタイマーで待つ（PR #1250 の監査 🟢-3）
+
+- `DelayingRateLimiter` の既定の待機を `Task.Delay(d, ct)` から `Task.Delay(d, timeProvider, ct)` に替えた。`TimeProvider.System` では同じ挙動である。
+- 母集合: 待機を注入しない生成は `FinnhubRateLimiter.Create`・`InformationSourceFactory`・`FxRateSourceFactory`・`HistoricalBarSourceFactory` の 4 か所。
+  `CreateTimer` を上書きする偽の時計は `OrderExecutionService.Tests` の `ManualTimerTimeProvider` だけで、限流器の経路では使っていない。他の手製の偽の時計は `GetUtcNow` だけを上書きし、
+  基底の `CreateTimer` が実の時計のタイマーを作るので既存の試験の待ち方は変わらない。試験 T-10-2465。
+
+### 残余リスク（本追記）
+
+- アラートは置いていない（Warning ログとダッシュボードで足りるかは運用で見る）。
+- 稼働中の所要は配備後に計器で見る（本追記の試験は偽の時計で形を固定しただけ）。
+- 損切りの発行の遅れ（決定 4）は残る（(3)）。S1 ではそれが決済の遅れになる。
+- 刻みは位相が固定である。所要が間隔を超えた巡回の次の巡回は遅れて始まり、間隔に満たない所要でも次の刻みを逃し得る（その巡回は Warning を出さない）。
+  予定の刻みからの遅れ（ラグ）の計量は後続とする。

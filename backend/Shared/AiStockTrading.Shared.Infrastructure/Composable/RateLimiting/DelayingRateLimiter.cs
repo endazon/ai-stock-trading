@@ -1,7 +1,9 @@
 namespace AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 
 // FR-01, ADR-0004, IADR-0064: トークンバケット（純粋な状態機械）に基づき、消費できるまで待ってから通すレート制限。
-// 待機は注入可能（既定は Task.Delay。テストは実時間を待たずフェイク待機で検証する）。
+// 待機は注入可能（既定は TimeProvider のタイマーで待つ Task.Delay。テストは実時間を待たずフェイク待機で検証する）。
+// FR-04, NFR-01, ADR-0043, #1251（PR #1250 の監査 🟢-3）: 既定の待機を Task.Delay(d, timeProvider, ct) にした
+// （TimeProvider.System では従来の Task.Delay(d, ct) と同じ。偽の時計のタイマーで待機まで決定的に試験できる）。
 // TokenBucket はスレッド安全ではないため、ここでセマフォにより直列化する。
 //
 // IADR-0068: 情報収集・市況の両系統から使うため共有物へ移した（元は InformationCollection.Worker）。
@@ -12,7 +14,7 @@ public sealed class DelayingRateLimiter(
     TimeProvider timeProvider,
     Func<TimeSpan, CancellationToken, Task>? delay = null) : IRateLimiter
 {
-    private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? Task.Delay;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay = delay ?? ((d, ct) => Task.Delay(d, timeProvider, ct));
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public async Task WaitAsync(CancellationToken cancellationToken = default)

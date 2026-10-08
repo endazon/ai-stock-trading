@@ -144,6 +144,7 @@ public sealed class BusinessMetrics : IDisposable
     private readonly Gauge<double> _finnhubDailyVolumeLimitRatioPercent;
     private readonly Counter<long> _riskCapitalBaselineReads;
     private readonly Counter<long> _marketMonitorPositionRowsDegraded;
+    private readonly Histogram<double> _marketMonitorCycleDurationSeconds;
     private readonly Counter<long> _finnhubSymbolSetResolutions;
     private readonly Gauge<long> _finnhubSymbolsDeferred;
     private readonly Counter<long> _klineDailyRequests;
@@ -275,6 +276,11 @@ public sealed class BusinessMetrics : IDisposable
         _marketMonitorPositionRowsDegraded = _meter.CreateCounter<long>(
             BusinessMetricNames.MarketMonitorPositionRowsDegraded,
             description: "市場監視が保有照会の応答をそのまま評価できなかった行の件数（reason 別。FR-03/FR-10）");
+
+        // FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 市場監視の 1 巡回の所要（秒）。境界は View で明示する（ObservabilityExtensions）。
+        _marketMonitorCycleDurationSeconds = _meter.CreateHistogram<double>(
+            BusinessMetricNames.MarketMonitorCycleDurationSeconds,
+            description: "市場監視の 1 巡回の所要秒数（開場して評価した巡回のみ。巡回間隔に達すると価格の確認の周期が延びる。FR-03/NFR-01）");
 
         // FR-01, FR-13, #1015, IADR-0435: 情報収集の Finnhub の対象銘柄の出所（watchlist 以外は変更が収集に届いていない印）。
         _finnhubSymbolSetResolutions = _meter.CreateCounter<long>(
@@ -572,6 +578,11 @@ public sealed class BusinessMetrics : IDisposable
             count,
             new KeyValuePair<string, object?>(BusinessMetricNames.TagReason, reason));
     }
+
+    /// <summary>
+    /// FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 市場監視の 1 巡回の所要（秒）を記録する。
+    /// </summary>
+    public void RecordMarketMonitorCycleDuration(double seconds) => _marketMonitorCycleDurationSeconds.Record(seconds);
 
     /// <summary>
     /// FR-01, FR-13, #1015, IADR-0435: 情報収集が Finnhub の対象銘柄を決めた出所を 1 件計上する

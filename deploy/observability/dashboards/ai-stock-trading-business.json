@@ -306,6 +306,25 @@
           "legendFormat": "quota remaining"
         }
       ]
+    },
+    {
+      "id": 21,
+      "title": "損切り検知: 市場監視の 1 巡回の所要 P95（秒）と、巡回間隔 60 秒を超えた巡回の件数（1h あたり）",
+      "description": "開場して評価した巡回 1 回の所要（保有の照会・Finnhub の照会・評価・発行・生存の報告）。Finnhub の限流器は 12 回/分の等間隔なので 1 巡回 12 要求は送出だけで 55 秒を使い、余裕は 5 秒しかない。所要が巡回間隔（既定 60 秒）に達すると次の巡回は待たずに始まり、1 銘柄あたりの価格の確認の周期が延びる（損切りの検知が遅れる）。over-60s は 60 秒を超えた巡回の件数で平常時 0（ちょうど 60 秒は over-60s に入らない。Warning は出る）。巡回間隔を 60 秒以外に構成したときは over-60s ではなく P95 を構成の間隔と比べる。達した巡回は市場監視が Warning ログも出す。",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 77, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(ast_market_monitor_cycle_duration_seconds_bucket[15m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(increase(ast_market_monitor_cycle_duration_seconds_count[1h])) - sum(increase(ast_market_monitor_cycle_duration_seconds_bucket{le=\"60\"}[1h]))",
+          "legendFormat": "over-60s"
+        }
+      ]
     }
   ]
 }
