@@ -316,4 +316,17 @@ public class AuditReadWireMappingTests
         missing.HasEventType.Should().BeFalse();
         missing.HasDetail.Should().BeFalse();
     }
+
+    // T-06-073, FR-06, #1255, IADR-0516（2026-10-08 追記）: 発生時刻（OccurredAt。照会の絞り込みと同じ列）を往復書式で書く
+    // （REST の応答の occurredAt と同じ瞬間・同じオフセット）。記録時刻（RecordedAt）ではない。
+    [Fact]
+    public void T_06_073_発生時刻_OccurredAt_を往復書式で写す()
+    {
+        var occurredAt = new DateTimeOffset(2026, 10, 5, 23, 0, 0, TimeSpan.FromHours(9)).AddTicks(1234567);
+        var record = AuditReadWireMapping.ToProto(new AuditEntry(
+            Guid.NewGuid(), "OrderApproved", Guid.NewGuid(), null, "要約", "{}", occurredAt, occurredAt.AddSeconds(1)));
+
+        record.HasOccurredAt.Should().BeTrue();
+        record.OccurredAt.Should().Be("2026-10-05T23:00:00.1234567+09:00");
+    }
 }
