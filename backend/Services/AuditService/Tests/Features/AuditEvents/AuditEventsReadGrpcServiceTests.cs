@@ -317,10 +317,10 @@ public class AuditReadWireMappingTests
         missing.HasDetail.Should().BeFalse();
     }
 
-    // T-06-073, FR-06, #1255, IADR-0516（2026-10-08 追記）: 台帳の記録時刻（OccurredAt。照会の期間を絞るのと同じ時刻）を往復書式で書く
+    // T-06-073, FR-06, #1255, IADR-0516（2026-10-08 追記）: 発生時刻（OccurredAt。照会の絞り込みと同じ列）を往復書式で書く
     // （REST の応答の occurredAt と同じ瞬間・同じオフセット）。記録時刻（RecordedAt）ではない。
     [Fact]
-    public void T_06_073_台帳の記録時刻_OccurredAt_を往復書式で写す()
+    public void T_06_073_発生時刻_OccurredAt_を往復書式で写す()
     {
         var occurredAt = new DateTimeOffset(2026, 10, 5, 23, 0, 0, TimeSpan.FromHours(9)).AddTicks(1234567);
         var record = AuditReadWireMapping.ToProto(new AuditEntry(

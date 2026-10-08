@@ -198,11 +198,11 @@ public class ReportLedgerWindowingTests
     private static StopLossMethodUsage Unreadable(IEnumerable<OrderApproved> approvals, params DateTimeOffset?[] occurredAt) =>
         StopLossMethodUsage.From(approvals, occurredAt.Length) with { UnreadableOccurredAt = occurredAt };
 
-    // T-06-074, FR-06, ADR-0053 決定 2, #1255, IADR-0516（2026-10-08 追記）: 本文を復元できなかった承認の記録は台帳の記録時刻（市場を持たない
+    // T-06-074, FR-06, ADR-0053 決定 2, #1255, IADR-0516（2026-10-08 追記）: 本文を復元できなかった承認の記録は発生時刻（市場を持たない
     // 記録と同じ Contains）で数え、隣り合う日報の両方には数えない。外包（JST 10-05〜10-06 ほか）で引いた同じ記録を日報 10-05・10-06・10-07 の
     // それぞれで絞っても、各記録はちょうど 1 つの日報に入る（承認の明細があってもなくても同じ）。
     [Fact]
-    public void T06_074_復元できなかった承認の記録は記録時刻が窓に入る日報のちょうど1つに数える()
+    public void T06_074_復元できなかった承認の記録は発生時刻が窓に入る日報のちょうど1つに数える()
     {
         DateTimeOffset?[] times = [Jst(10, 5, 15), Jst(10, 5, 23), Jst(10, 6, 10), Jst(10, 6, 16), Jst(10, 6, 17)];
         var withoutApprovals = Unreadable([], times);
@@ -227,7 +227,7 @@ public class ReportLedgerWindowingTests
     }
 
     // T-06-075, FR-06, ADR-0053 決定 2, #1255, IADR-0516（2026-10-08 追記）: 月報の「本文を復元できなかった承認の記録」の数は、その月の日報の和に
-    // 等しい（東証の祝日・米国の夏時間の終わりを含む 2026-09〜11 に記録時刻をばらまく）。
+    // 等しい（東証の祝日・米国の夏時間の終わりを含む 2026-09〜11 に発生時刻をばらまく）。
     [Fact]
     public void T06_075_月報の復元できなかった承認の記録の数は日報の和に一致する()
     {
@@ -252,10 +252,10 @@ public class ReportLedgerWindowingTests
         monthly.Should().BeLessThan(times.Count, "月の外の記録は数えない");
     }
 
-    // T-06-076, FR-06, #1255, IADR-0516（2026-10-08 追記）（否定形）: 記録時刻を欠く応答（旧版の台帳）の記録は従来どおり照会の範囲（外包）で
+    // T-06-076, FR-06, #1255, IADR-0516（2026-10-08 追記）（否定形）: 発生時刻を欠く応答（旧版の台帳）の記録は従来どおり照会の範囲（外包）で
     // 数える——黙って 0 件にしない。時刻のある記録と混ざっても時刻なしの記録は残す。件数だけで作った旧い値（時刻の列なし）は絞らない。
     [Fact]
-    public void T06_076_記録時刻の無い記録は従来どおり外包の範囲で数える()
+    public void T06_076_発生時刻の無い記録は従来どおり外包の範囲で数える()
     {
         var legacy = Unreadable([], null, null);
         foreach (var d in new[] { 5, 6, 7 })

@@ -99,7 +99,7 @@ public sealed class AuditGrpcTransport : IDisposable
             if (ToEntry(record) is not { } entry)
             {
                 logger.LogError(
-                    "{Subject}の gRPC 応答に id・種別・本文の欠けた（または記録時刻の読めない）記録がありました（{Records} 件中）。"
+                    "{Subject}の gRPC 応答に id・種別・本文の欠けた（または発生時刻の読めない）記録がありました（{Records} 件中）。"
                         + "送り手との契約の食い違いとみなし、**未供給として扱います**。",
                     subject, response.Records.Count);
                 return null;
@@ -122,7 +122,7 @@ public sealed class AuditGrpcTransport : IDisposable
 
     /// <summary>線上の記録 → REST と同じ受け皿。欠落・読めない id は <c>null</c>（原則 A）。</summary>
     /// <remarks>
-    /// FR-06, IADR-0516（2026-10-08 追記）, #1255: 記録時刻 <c>occurred_at</c> は<b>無ければ時刻なし</b>（旧版の提供側。従来どおり照会の範囲で数える）、
+    /// FR-06, IADR-0516（2026-10-08 追記）, #1255: 発生時刻 <c>occurred_at</c> は<b>無ければ時刻なし</b>（旧版の提供側。従来どおり照会の範囲で数える）、
     /// <b>在るのに読めなければ</b> id と同じく契約の食い違い（<c>null</c>＝応答全体を未供給）。
     /// </remarks>
     internal static AuditLedgerEntry? ToEntry(Proto.LedgerRecord record)
@@ -137,8 +137,9 @@ public sealed class AuditGrpcTransport : IDisposable
         if (!record.HasOccurredAt)
             return new AuditLedgerEntry(id, record.EventType, record.Detail);
 
-        return DateTimeOffset.TryParseExact(
-            record.OccurredAt, "o", CultureInfo.InvariantCulture, DateTimeStyles.None, out var occurredAt)
+        // REST（System.Text.Json の ISO 8601）と同じく秒精度の表記も受ける（往復書式の固定に縛らない。独立監査 🟢-1）。
+        return DateTimeOffset.TryParse(
+            record.OccurredAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var occurredAt)
             ? new AuditLedgerEntry(id, record.EventType, record.Detail, occurredAt)
             : null;
     }

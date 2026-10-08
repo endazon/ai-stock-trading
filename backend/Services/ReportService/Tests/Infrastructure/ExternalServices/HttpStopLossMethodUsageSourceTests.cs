@@ -120,10 +120,10 @@ public class HttpStopLossMethodUsageSourceTests
         usage.UnreadableCount.Should().Be(1);
     }
 
-    // T-06-073, FR-06, #1255, IADR-0516（2026-10-08 追記）: REST の応答の occurredAt（台帳の記録時刻）を読み、復元できなかった記録ごとに返す。
-    // 記録時刻を持たない応答（旧版の台帳）は null（時刻なし）として返し、件数は従来どおり数える。
+    // T-06-073, FR-06, #1255, IADR-0516（2026-10-08 追記）: REST の応答の occurredAt（発生時刻）を読み、復元できなかった記録ごとに返す。
+    // 発生時刻を持たない応答（旧版の台帳）は null（時刻なし）として返し、件数は従来どおり数える。
     [Fact]
-    public async Task T06_073_復元できなかった記録の台帳の記録時刻を返し_時刻の無い応答はnullで数える()
+    public async Task T06_073_復元できなかった記録の発生時刻を返し_時刻の無い応答はnullで数える()
     {
         var at = new DateTimeOffset(2026, 9, 24, 23, 30, 0, TimeSpan.FromHours(9));
         var body = JsonSerializer.Serialize(new object[]

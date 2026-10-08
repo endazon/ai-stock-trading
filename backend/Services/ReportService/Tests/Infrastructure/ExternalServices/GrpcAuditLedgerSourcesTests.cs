@@ -238,12 +238,12 @@ public class GrpcAuditLedgerSourcesTests
         grpcRationale.Should().BeEquivalentTo(restRationale);
     }
 
-    // ---- T-06-073: 台帳の記録時刻（OccurredAt）を両経路で運ぶ（#1255 / IADR-0516 の 2026-10-08 追記） ----
+    // ---- T-06-073: 発生時刻（OccurredAt）を両経路で運ぶ（#1255 / IADR-0516 の 2026-10-08 追記） ----
 
     // FR-06, #1255, IADR-0516（2026-10-08 追記）: 本物の提供側の REST と gRPC の両方から読んだ承認の供給は、本文を復元できなかった記録の
-    // 台帳の記録時刻を同じ値で持つ（REST は応答の occurredAt、gRPC は occurred_at）。時刻の取り違え・片側の落としは赤になる。
+    // 発生時刻を同じ値で持つ（REST は応答の occurredAt、gRPC は occurred_at）。時刻の取り違え・片側の落としは赤になる。
     [Fact]
-    public async Task T_06_073_本文の読めない記録の記録時刻を_REST_と_gRPC_の両方で同じ値で運ぶ()
+    public async Task T_06_073_本文の読めない記録の発生時刻を_REST_と_gRPC_の両方で同じ値で運ぶ()
     {
         await using var audit = new AuditHost();
         var approved = new OrderApproved(
@@ -281,22 +281,30 @@ public class GrpcAuditLedgerSourcesTests
     // FR-06, #1255: gRPC の occurred_at が無い記録（旧版の提供側）は時刻なし（null）で受け、在るのに読めない値は id と同じく契約の食い違い
     // （応答全体を未供給）。在る値は往復書式のまま読む。線上で実際に符号化・復号された記録で確かめる（偽の提供側）。
     [Fact]
-    public async Task T_06_073_gRPC_の記録時刻は無ければ時刻なし_読めなければ応答全体を未供給にする()
+    public async Task T_06_073_gRPC_の発生時刻は無ければ時刻なし_読めなければ応答全体を未供給にする()
     {
         var absent = Record(nameof(OrderApproved), "{not json");
         var present = Record(nameof(OrderApproved), "{not json");
         present.OccurredAt = "2026-08-03T19:00:00.1234567+09:00";
+        // 秒精度の ISO 8601 も受ける（REST の JSON と同じく往復書式に縛らない）。
+        var secondPrecision = Record(nameof(OrderApproved), "{not json");
+        secondPrecision.OccurredAt = "2026-08-03T20:00:00+09:00";
 
-        var usage = (StopLossMethodUsage?)await ReadThroughStubAsync("承認の手法", absent, present);
+        var usage = (StopLossMethodUsage?)await ReadThroughStubAsync("承認の手法", absent, present, secondPrecision);
 
         usage.Should().NotBeNull();
-        usage!.UnreadableCount.Should().Be(2);
+        usage!.UnreadableCount.Should().Be(3);
         usage.UnreadableOccurredAt.Should().Equal(
-            null, new DateTimeOffset(2026, 8, 3, 19, 0, 0, TimeSpan.FromHours(9)).AddTicks(1234567));
+            null,
+            new DateTimeOffset(2026, 8, 3, 19, 0, 0, TimeSpan.FromHours(9)).AddTicks(1234567),
+            new DateTimeOffset(2026, 8, 3, 20, 0, 0, TimeSpan.FromHours(9)));
 
-        var broken = Record(nameof(OrderApproved), "{not json");
-        broken.OccurredAt = "not-a-time";
-        (await ReadThroughStubAsync("承認の手法", broken)).Should().BeNull();
+        foreach (var garbage in new[] { "not-a-time", "", "2026-13-45T99:00:00+09:00" })
+        {
+            var broken = Record(nameof(OrderApproved), "{not json");
+            broken.OccurredAt = garbage;
+            (await ReadThroughStubAsync("承認の手法", broken)).Should().BeNull($"読めない発生時刻「{garbage}」");
+        }
     }
 
     // ---- T-10-1677: 照会の窓と種別は REST と同じ ----
