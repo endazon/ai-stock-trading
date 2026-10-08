@@ -314,6 +314,8 @@ public class OrderExecutionServiceProtectiveStopTests
         reservation.Should().NotBeNull();
         reservation!.State.Should().Be(OrderExecutionService.Features.OrderExecution.OrderDispatchState.Reserved);
         store.FindByDecisionId(closeDecisionId).Should().BeNull();
+        // T-10-2457（#1262, IADR-0515 追記(2)）: 保護の機構の予約は建て・決済の別に Close を残す（突合が組み直す記録を通常の経路と同じ値にする）。
+        reservation.PositionEffect.Should().Be(PositionEffect.Close);
     }
 
     private sealed class MutableClock(DateTimeOffset start) : IClock

@@ -195,6 +195,83 @@ public class ReportLedgerWindowingTests
                 .ApprovalDays;
     }
 
+    private static StopLossMethodUsage Unreadable(IEnumerable<OrderApproved> approvals, params DateTimeOffset?[] occurredAt) =>
+        StopLossMethodUsage.From(approvals, occurredAt.Length) with { UnreadableOccurredAt = occurredAt };
+
+    // T-06-074, FR-06, ADR-0053 決定 2, #1255, IADR-0516（2026-10-08 追記）: 本文を復元できなかった承認の記録は発生時刻（市場を持たない
+    // 記録と同じ Contains）で数え、隣り合う日報の両方には数えない。外包（JST 10-05〜10-06 ほか）で引いた同じ記録を日報 10-05・10-06・10-07 の
+    // それぞれで絞っても、各記録はちょうど 1 つの日報に入る（承認の明細があってもなくても同じ）。
+    [Fact]
+    public void T06_074_復元できなかった承認の記録は発生時刻が窓に入る日報のちょうど1つに数える()
+    {
+        DateTimeOffset?[] times = [Jst(10, 5, 15), Jst(10, 5, 23), Jst(10, 6, 10), Jst(10, 6, 16), Jst(10, 6, 17)];
+        var withoutApprovals = Unreadable([], times);
+        var withApprovals = Unreadable(
+            [Approval(Guid.NewGuid(), Market.UnitedStates, Et(10, 5, 10), StopLossExecutionMethod.BrokerStopOrder)], times);
+
+        foreach (var usage in new[] { withoutApprovals, withApprovals })
+        {
+            var byDay = new[] { 5, 6, 7 }.ToDictionary(d => d, d => usage.Within(Daily(10, d), DayOf));
+
+            // 日報 10-05 の窓 (10-04 16:00, 10-05 16:00]・10-06 は (10-05 16:00, 10-06 16:00]（境界ちょうどは前の日報）・10-07 は生成境界の後。
+            byDay[5].UnreadableOccurredAt.Should().Equal(Jst(10, 5, 15));
+            byDay[6].UnreadableOccurredAt.Should().Equal(Jst(10, 5, 23), Jst(10, 6, 10), Jst(10, 6, 16));
+            byDay[7].UnreadableOccurredAt.Should().Equal(Jst(10, 6, 17));
+            byDay.Values.Select(u => u.UnreadableCount).Should().Equal(1, 3, 1);
+            foreach (var at in times)
+                byDay.Values.Count(u => u.UnreadableOccurredAt.Contains(at)).Should().Be(1, $"記録 {at:o}");
+        }
+
+        // 承認の明細の絞り込み（T-06-065）は変わらない。
+        withApprovals.Within(Daily(10, 6), DayOf).Approvals.Should().ContainSingle();
+    }
+
+    // T-06-075, FR-06, ADR-0053 決定 2, #1255, IADR-0516（2026-10-08 追記）: 月報の「本文を復元できなかった承認の記録」の数は、その月の日報の和に
+    // 等しい（東証の祝日・米国の夏時間の終わりを含む 2026-09〜11 に発生時刻をばらまく）。
+    [Fact]
+    public void T06_075_月報の復元できなかった承認の記録の数は日報の和に一致する()
+    {
+        var options = new ReportScheduleOptions { Holidays = new HashSet<DateOnly>(JpHolidays2026Autumn) };
+        var times = new List<DateTimeOffset?>();
+        for (var at = Jst(9, 25, 0); at <= Jst(11, 5, 0); at = at.AddMinutes(173))
+            times.Add(at);
+        var usage = Unreadable([], [.. times]);
+
+        var octoberDailies = new List<DateOnly>();
+        for (var d = new DateOnly(2026, 10, 1); d <= new DateOnly(2026, 10, 31); d = d.AddDays(1))
+        {
+            if (ReportSchedule.IsBusinessDay(d, options))
+                octoberDailies.Add(d);
+        }
+
+        var sumOfDailies = octoberDailies.Sum(d => usage.Within(WindowOf(ReportKind.Daily, d, options), DayOf).UnreadableCount);
+        var monthly = usage.Within(WindowOf(ReportKind.Monthly, new DateOnly(2026, 10, 1), options), DayOf).UnreadableCount;
+
+        monthly.Should().Be(sumOfDailies);
+        monthly.Should().BeGreaterThan(200, "空どうしの一致は何も証明しない");
+        monthly.Should().BeLessThan(times.Count, "月の外の記録は数えない");
+    }
+
+    // T-06-076, FR-06, #1255, IADR-0516（2026-10-08 追記）（否定形）: 発生時刻を欠く応答（旧版の台帳）の記録は従来どおり照会の範囲（外包）で
+    // 数える——黙って 0 件にしない。時刻のある記録と混ざっても時刻なしの記録は残す。件数だけで作った旧い値（時刻の列なし）は絞らない。
+    [Fact]
+    public void T06_076_発生時刻の無い記録は従来どおり外包の範囲で数える()
+    {
+        var legacy = Unreadable([], null, null);
+        foreach (var d in new[] { 5, 6, 7 })
+            legacy.Within(Daily(10, d), DayOf).UnreadableCount.Should().Be(2, $"日報 10-0{d}");
+
+        var mixed = Unreadable([], null, Jst(10, 6, 10));
+        mixed.Within(Daily(10, 6), DayOf).UnreadableCount.Should().Be(2);
+        mixed.Within(Daily(10, 7), DayOf).UnreadableOccurredAt.Should().Equal(new DateTimeOffset?[] { null });
+
+        var countsOnly = StopLossMethodUsage.From([], unreadableCount: 3);
+        countsOnly.Within(Daily(10, 6), DayOf).Should().BeSameAs(countsOnly);
+        var countsOnlyWithApprovals = StopLossMethodUsage.From(
+            [Approval(Guid.NewGuid(), Market.UnitedStates, Et(10, 5, 10), StopLossExecutionMethod.BrokerStopOrder)], unreadableCount: 3);
+        countsOnlyWithApprovals.Within(Daily(10, 6), DayOf).UnreadableCount.Should().Be(3);
+    }
+
     // ReportSchedule.DailyReportDayOf: 金曜の米国のセッション（土曜 05:00 JST に閉場）は月曜の日報、生成境界ちょうどはその日の日報。
     [Fact]
     public void T06_072_日報の日付は窓を含む最初の営業日()

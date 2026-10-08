@@ -61,7 +61,10 @@ public sealed record OrderDispatchReservation(
     BrokerProvider? BrokerProvider = null,
     StopWidthFloorSource? StopFloorSource = null,
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1253, IADR-0515 追記(1): 予約を取った承認の出どころ（null＝分からない）。突合が組み直す記録へ写す。
-    OrderApprovalOrigin? ApprovalOrigin = null);
+    OrderApprovalOrigin? ApprovalOrigin = null,
+    // 🔴 FR-10, UC-06, ADR-0050 決定1, #1262, IADR-0515 追記(2): 予約を取った発注の建て・決済の別（null＝分からない＝列を足す前の行）。
+    // 証券会社の照会は返さない（moomoo）。突合が組み直す記録の PositionEffect をこの値で書く。
+    PositionEffect? PositionEffect = null);
 
 // #131, FR-05, IADR-0057: 発注前 DecisionId 予約のストア。ブローカ発注の「前」に一意予約をコミットし、
 // 「発注成功 → 永続化失敗」の窓での二重発注を防ぐ。実運用では PostgreSQL（DecisionId が主キー＝一意制約）。
@@ -87,10 +90,15 @@ public interface IOrderReservationStore
     /// （<c>OrderApproved.Origin</c>。<c>Unknown</c> は呼び出し側が null にして渡す）。突合が発注済みと確定したとき、組み直す記録の
     /// <c>ApprovalOrigin</c> へ写す。省略は null（分からない＝保護の機構の予約。S1 の取消は取り消す側へ倒す）。
     /// </para>
+    /// <para>
+    /// 🔴 FR-10, UC-06, ADR-0050 決定1, #1262, IADR-0515 追記(2): <paramref name="positionEffect"/> は送る発注の建て・決済の別
+    /// （<b>通常の経路が発注の記録に書くのと同じ値</b>。承認の経路は発注意図の値、保護の機構の決済は Close）。証券会社の照会は建て・決済の別を
+    /// 返さないため、突合が発注済みと確定したとき組み直す記録の <c>PositionEffect</c> をこの値で書く。省略は null（分からない＝照会の値のまま）。
+    /// </para>
     /// </summary>
     bool TryReserve(
         Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
-        OrderApprovalOrigin? approvalOrigin = null);
+        OrderApprovalOrigin? approvalOrigin = null, PositionEffect? positionEffect = null);
 
     /// <summary>発注結果の永続化後に予約を Completed へ確定する（ブローカ注文 ID を記録する）。</summary>
     void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt);

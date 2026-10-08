@@ -154,8 +154,8 @@ public class OrderExecutionServiceTests
 
         public bool TryReserve(
             Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
-            OrderApprovalOrigin? approvalOrigin = null) =>
-            _inner.TryReserve(decisionId, reservedAt, brokerProvider, stopFloorSource, approvalOrigin);
+            OrderApprovalOrigin? approvalOrigin = null, PositionEffect? positionEffect = null) =>
+            _inner.TryReserve(decisionId, reservedAt, brokerProvider, stopFloorSource, approvalOrigin, positionEffect);
 
         public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt)
         {

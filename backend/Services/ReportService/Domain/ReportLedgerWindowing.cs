@@ -33,8 +33,9 @@ public static class ReportLedgerWindowing
     /// 損切りの手法（承認時点）: 承認の市場・承認時刻で数え、手法別の件数を残った承認から引き直す。残った承認には
     /// 数える日報の日付（<paramref name="dailyReportDayOf"/>。報告可能になる瞬間を窓に含む日報。月報 §6 の日数の単位）を付ける。
     /// 明細を持たない値（件数だけで作った旧い値）と市場を持たない承認は絞らない（窓へ割り当てる手掛かりが無い）。
-    /// 🔴 本文を復元できなかった記録の数は時刻を持たない（<c>AuditLedgerEntry</c> が記録時刻を運ばない）ため、照会の範囲（外包）の数を
-    /// そのまま残す——隣り合う報告書の両方に数えられ得る（残余。#1255 で記録時刻を運ぶ）。
+    /// FR-06, IADR-0516（2026-10-08 追記）, #1255: 本文を復元できなかった記録は発生時刻（市場を持たない記録と同じ <c>Contains</c>）で数え、
+    /// 同じ種別の報告書のちょうど 1 つに入れる。🔴 発生時刻の無い記録（旧版の台帳）は従来どおり照会の範囲（外包）で数える（黙って 0 件にしない）。
+    /// 時刻の列が件数と食い違う値（件数だけで作った旧い値）も絞らない。
     /// </summary>
     public static StopLossMethodUsage Within(
         this StopLossMethodUsage usage, ReportSessionWindow window, Func<DateTimeOffset, DateOnly> dailyReportDayOf)
@@ -43,8 +44,13 @@ public static class ReportLedgerWindowing
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(dailyReportDayOf);
 
+        var unreadable = UnreadableWithin(usage, window);
         if (usage.Approvals.Count == 0)
-            return usage;
+        {
+            return unreadable is null
+                ? usage
+                : usage with { UnreadableCount = unreadable.Count, UnreadableOccurredAt = unreadable };
+        }
 
         var kept = usage.Approvals
             .Where(a => a.Market is not { } market || window.Counts(market, a.ApprovedAt))
@@ -57,8 +63,16 @@ public static class ReportLedgerWindowing
             .OrderBy(g => (int)g.Key)
             .Select(g => new StopLossMethodCount(g.Key, g.Count()))
             .ToList();
-        return new StopLossMethodUsage(counts, usage.UnreadableCount) { Approvals = kept };
+        return unreadable is null
+            ? new StopLossMethodUsage(counts, usage.UnreadableCount) { Approvals = kept, UnreadableOccurredAt = usage.UnreadableOccurredAt }
+            : new StopLossMethodUsage(counts, unreadable.Count) { Approvals = kept, UnreadableOccurredAt = unreadable };
     }
+
+    // #1255: 復元できなかった記録のうち窓に入るもの（時刻なしは残す）。時刻の列を持たない値（件数と食い違う）は null＝絞らない。
+    private static List<DateTimeOffset?>? UnreadableWithin(StopLossMethodUsage usage, ReportSessionWindow window) =>
+        usage.UnreadableCount > 0 && usage.UnreadableOccurredAt.Count == usage.UnreadableCount
+            ? [.. usage.UnreadableOccurredAt.Where(at => at is not { } t || window.Contains(t))]
+            : null;
 
     /// <summary>強制買戻しの推定: 市場・推定時刻で数える。</summary>
     public static IReadOnlyList<BuyInInferred> Within(this IReadOnlyList<BuyInInferred> inferences, ReportSessionWindow window)

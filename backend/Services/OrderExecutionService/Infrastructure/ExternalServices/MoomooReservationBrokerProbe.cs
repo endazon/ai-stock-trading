@@ -55,7 +55,9 @@ public sealed class MoomooReservationBrokerProbe(
 
     // moomoo 注文スナップショット → BrokerOrder（+ OrderIntent 再構成）。
     // 状態・約定はブローカ実体に由来し正確。intent の ProductType/PositionEffect/Mode は moomoo 注文から一意に復元
-    // できないため既定（Cash/Open/Paper）で近似する（ローカル永続の報告用途に限られ、下流 OrderExecuted は非依存・IADR-0092）。
+    // できないため既定（Cash/Open/Paper）で近似する（下流 OrderExecuted は非依存・IADR-0092）。
+    // 🔴 FR-10, UC-06, #1262, IADR-0515 追記(2): 記録の PositionEffect は処理中の決済の読み出し（Close だけ）に使われる。ここでは近似のままにし、
+    // 突合（OrderReservationReconciler.BuildRecord）が予約の行に残した建て・決済の別で上書きする（照会ごとに直さず 1 か所で直す）。
     private static BrokerOrder ToBrokerOrder(MoomooOrderSnapshot s)
     {
         var intent = new OrderIntent(

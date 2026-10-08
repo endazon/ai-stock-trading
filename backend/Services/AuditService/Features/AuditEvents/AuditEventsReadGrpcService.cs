@@ -59,7 +59,8 @@ public sealed class AuditEventsReadGrpcService(IAuditEventStore store) : Proto.A
 // NFR, IADR-0445 決定 3: 送り手の型 → 線上表現（提供側の写し）。
 //
 // 🔴 **原則 A**: C# の null は**設定しない**（proto の optional の「無い」で運ぶ）。受け手は欠けた記録を既定値で作らず、
-// 応答全体を未供給へ倒す。**運ぶのは報告書が読む 3 項目だけ**（REST の応答はより多くを持つ）。
+// 応答全体を未供給へ倒す。**運ぶのは報告書が読む 4 項目だけ**（REST の応答はより多くを持つ）。
+// FR-06, IADR-0516（2026-10-08 追記）, #1255: 4 項目目の発生時刻（`OccurredAt`）は REST の応答の `occurredAt` と同じ値を往復書式で運ぶ。
 public static class AuditReadWireMapping
 {
     public static Proto.LedgerRecord ToProto(AuditEntry entry)
@@ -71,6 +72,7 @@ public static class AuditReadWireMapping
             record.EventType = entry.EventType;
         if (entry.Detail is not null)
             record.Detail = entry.Detail;
+        record.OccurredAt = entry.OccurredAt.ToString("o", CultureInfo.InvariantCulture);
         return record;
     }
 }

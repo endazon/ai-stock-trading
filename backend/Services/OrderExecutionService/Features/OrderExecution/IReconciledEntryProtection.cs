@@ -9,6 +9,8 @@ namespace OrderExecutionService.Features.OrderExecution;
 // 🔴 エントリーかどうかは**保護記録の有無**で判別する。予約は PositionEffect を持たず、プローブが返す注文の PositionEffect は
 // Open に固定された近似である（IADR-0362 決定 3）——予約やプローブの値でエントリーと決めつけて張ると、手仕舞いレグに
 // 逆指値を重ねる（決済後に残って反対建玉を生む）。記録が無いものには張らない。
+// ［#1262, IADR-0515 追記(2)］予約は建て・決済の別を持つようになり、突合で確定した記録の PositionEffect はその値で書かれる。ただし列を足す前の
+// 予約は持たない（照会の Open のまま）ため、判別は引き続き保護記録で行う（この規則は変えない）。
 public interface IReconciledEntryProtection
 {
     /// <summary>

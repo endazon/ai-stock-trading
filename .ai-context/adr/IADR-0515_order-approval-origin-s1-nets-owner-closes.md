@@ -2,7 +2,7 @@
 title: IADR-0515 発注の記録に承認の出どころを持たせ、S1 の決済の前に取り消すのは判断の手仕舞いに限る（利用者の手仕舞い・維持率割れの自動縮小は取り消さず差し引く。出どころが分からなければ取り消す側）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, UC-06, UC-02, ADR-0050, ADR-0003, IADR-0466, IADR-0461, IADR-0344, IADR-0357, IADR-0495, IADR-0486, IADR-0211, IADR-0057, IADR-0092]
+related_ids: [FR-10, UC-06, UC-02, ADR-0050, ADR-0003, IADR-0466, IADR-0461, IADR-0344, IADR-0357, IADR-0495, IADR-0486, IADR-0211, IADR-0057, IADR-0092, IADR-0389, IADR-0362]
 author: claude (Claude Code)
 created: 2026-10-08
 updated: 2026-10-08
@@ -11,6 +11,7 @@ plan_refs:
 related_specs:
   - ../specs/20261008_1222_order-approval-origin.md
   - ../specs/20261008_1253_reservation-approval-origin.md
+  - ../specs/20261008_1262_reservation-position-effect.md
 ---
 
 # IADR-0515: 発注の記録に承認の出どころを持たせ、S1 の決済の前に取り消すのは判断の手仕舞いに限る（#1222）
@@ -127,3 +128,29 @@ S1 の決済の前の取消（IADR-0466）は、発注の記録に出どころ�
     突合で確定した決済は S1 に取り消されも差し引かれもしない。決済の向きの復元は別の件。
   - 猶予の起点は記録の時刻（証券会社が答えた発注の時刻。答えなければ突合の時刻）。突合は滞留の閾値（下限 1 時間）より古い予約しか扱わないので、
     発注の時刻が分かる限り記録は猶予を過ぎており、取り消される（通常の経路と同じ）。差し引かれるのは発注の時刻が分からないときに限られる。
+
+## ［2026-10-08 追記 / #1262］(2) 予約の行に建て・決済の別も残し、突合で確定した記録をその値で書く
+
+- 追記(1) の残余 1 つ目（本番の照会は `PositionEffect` を Open で近似し、突合で確定した決済が S1 の読み出しに載らない）を塞ぐ
+  （[#1262](https://github.com/endazon/ai-stock-trading/issues/1262)。作業仕様書
+  [`.ai-context/specs/20261008_1262_reservation-position-effect.md`](../specs/20261008_1262_reservation-position-effect.md)）。形は追記(1)・
+  [IADR-0486](IADR-0486_stop-width-floor-atr14-flag-and-floor-marker-on-order-intent.md) 決定 6 と同じ（照会の写像は直さず、予約の行に残して突合の 1 か所で写す）。
+- **予約の行**: `OrderDispatchReservationRow.PositionEffect` と列 `order_dispatch_reservations.PositionEffect`（integer NULL。0＝Open / 1＝Close）。マイグレーション
+  `20261008053053_AddReservationPositionEffect` は**列の追加だけ**で、🔴 **既存行は null のまま埋めない**。
+- **書き手（`TryReserve` の呼び出し 6 か所すべて）**: 通常の経路が発注の記録に書くのと同じ値を、末尾引数 `positionEffect`（既定 null）で渡す。
+  承認の相 1 は `intent.PositionEffect`、保護の機構の 5 か所（S0 の逆指値レグ・保護喪失の成行・S1 の決済・常駐ガードの逆指値・常駐ガードの成行）は `Close`。
+  突合で確定した記録は通常の経路の記録と同じ形になり、読み出し側の除外の規則（S0/S3 の保護レグを引かない等）は変えない。
+- **突合**: `OrderReservationReconciler.BuildRecord` は記録の `PositionEffect` を `予約の行の値 ?? 照会の値` で書く。`MoomooReservationBrokerProbe` は Open の近似のまま（注記のみ改める）。
+  自己修復・競合の経路は既存の記録を使う（変えない）。保護レグを張るかの判別は引き続き保護記録で行う（IADR-0362 決定 3。列を足す前の予約は値を持たないため）。
+- 🔴 **列を足す前の行（null）は照会の値（本番では Open）のまま＝是正前と同じ。保守側としてこちらを採る。**
+  - 推測で `Close` に倒すと、実際はエントリーだった予約が決済として記録され、`FindPendingCloses` に載る（売り建てでは買いのエントリーが処理中の買い戻しになり、
+    S1 の取消の段がエントリーを取り消し得る・判断の手仕舞いが差し引き過ぎる）。`FindRecentOpens` と床の遡及（Open の記録だけが対象）からもエントリーが消える。
+    誤りの害がエントリー側へ広がり、損切りの経路の外にも及ぶ。
+  - Open のままの害は、配備の時点で滞留していた決済の予約が S1 に取り消されも差し引かれもしないこと（#1262 以前と同じ）に限られ、
+    突合で確定した 1 件は既存の Critical の所見（IADR-0362 の ProbeTerminalized）で人に知らされる。対象は時間とともに 0 になる。
+  - 保護記録の有無で推測する案も採らない（保護記録を書く前に止まったエントリーを決済と読む）。
+- 是正で新たに載るもの: 突合で確定した S1 の決済が取り消された・照会できないとき、再武装・通知（[IADR-0389](IADR-0389_rearm-software-stop-on-confirmed-unfilled-close.md)。Close の記録だけが対象）に載る
+  （是正前は Open のため黙って外れていた）。判断の手仕舞いの差し引き（[IADR-0461](IADR-0461_close-quantity-subtracts-in-flight-closes.md)）も突合で確定した決済を数える。
+- 試験 T-10-2456〜T-10-2460・T-10-2466（本番の照会の写像を通す端から端までの試験を含む。T-10-2466 は突合で確定した S1 の決済の再武装）。
+- **残余**: 列を足す前の予約の行は是正前と同じ（上）。突合で確定した S0/S3 の逆指値レグも Close になり、Active でない行の古い試行のレグが生きていれば
+  判断の手仕舞いの差し引きに数えられる（通常の経路で送ったレグと同じ扱いで、新しい型ではない。少なく売る側）。

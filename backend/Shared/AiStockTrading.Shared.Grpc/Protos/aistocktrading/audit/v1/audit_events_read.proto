@@ -51,7 +51,7 @@ message GetEventsByTypeResponse {
   repeated LedgerRecord records = 1;
 }
 
-// 監査台帳の 1 記録のうち、報告書が読む 3 項目。
+// 監査台帳の 1 記録のうち、報告書が読む 4 項目。
 message LedgerRecord {
   // 記録の ID（GUID・`D` 書式）。
   optional string id = 1;
@@ -59,4 +59,8 @@ message LedgerRecord {
   optional string event_type = 2;
   // イベント全量の JSON（書き手の直列化設定のまま）。
   optional string detail = 3;
+  // FR-06, IADR-0516（2026-10-08 追記）, #1255: 発生時刻（OccurredAt。照会の絞り込みと同じ列）。往復書式（`O`）。
+  // 本文を復元できなかった記録を報告書のセッションの窓に置くために運ぶ。**無い**（旧版の提供側）は受け手が「時刻なし」として従来どおり扱い、
+  // **在るのに読めない**値は id と同じく応答全体を未供給にする（原則 A）。
+  optional string occurred_at = 4;
 }

@@ -464,7 +464,9 @@ public sealed class SoftwareStopExecutor(
             closeIntent = closeIntent with { Quantity = quantity };
         }
 
-        if (!reservations.TryReserve(closeDecisionId, now, broker.Provider)) // #1051, IADR-0444 決定1: 送る先の取引環境
+        // #1051, IADR-0444 決定1: 送る先の取引環境。FR-10, UC-06, #1262, IADR-0515 追記(2): 決済（通常の経路の記録と同じ値）。
+        // 残さないと、突合で確定した S1 の決済が新規建てとして記録され、取り消された残りを再武装（IADR-0389）が拾わない。
+        if (!reservations.TryReserve(closeDecisionId, now, broker.Provider, positionEffect: PositionEffect.Close))
         {
             // 予約済みで記録が無い＝並行処理が送信中か、送信の成否が不明。重ねて送らない（IADR-0057）。
             _logger.LogWarning(

@@ -42,4 +42,12 @@ public sealed class OrderDispatchReservationRow
     /// 維持率割れの自動縮小を見分けるため）。<b>null は分からない</b>（列を足す前の行・保護の機構の予約・出どころの無い承認）＝取り消す側。
     /// </summary>
     public OrderApprovalOrigin? ApprovalOrigin { get; set; }
+
+    /// <summary>
+    /// 🔴 FR-10, UC-06, ADR-0050 決定1, #1262, IADR-0515 追記(2): 予約を取った発注の建て・決済の別（通常の経路が発注の記録に書くのと同じ値）。
+    /// 送信結果が不明のまま突合が発注済みと確定したとき、証券会社の照会は建て・決済の別を返さない（moomoo）ため、ここに残した値で記録を書く
+    /// （書かないと、利用者の手仕舞い・保護の機構の決済が新規建てとして残り、処理中の決済の読み出しに載らない）。
+    /// <b>null は分からない</b>（列を足す前の行）＝照会の値のまま（是正前と同じ）。
+    /// </summary>
+    public PositionEffect? PositionEffect { get; set; }
 }

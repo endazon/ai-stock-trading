@@ -173,6 +173,8 @@ public class ProtectiveStopGuardIndeterminateStopTests
         var reservation = h.Reservations.Find(leg)!;
         reservation.State.Should().Be(OrderDispatchState.Completed);
         reservation.BrokerOrderId.Should().Be(h.Stops.Find(h.EntryDecisionId)!.StopOrderId);
+        // T-10-2457（#1262, IADR-0515 追記(2)）: 保護の機構の予約は建て・決済の別に Close を残す（突合が組み直す記録を通常の経路と同じ値にする）。
+        reservation.PositionEffect.Should().Be(PositionEffect.Close);
     }
 
     // ---- T-10-1065: 突合が記録を作ったら注文 ID を採用する ----
