@@ -4994,4 +4994,53 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       }
     });
   }
+  // --- NFR, #1248, IADR-0514: AI レビューの prompt の【Helm の chart を変える PR】節を固定する ---
+  // 許可を広げずに prompt だけで拒否を止めたので、節が黙って消える・案内するコマンドが許可から外れる・
+  // 旧【計画書の場所】のワークスペース外への誘導が戻る、の 3 つを止める（文言の全文は固定しない）。
+  {
+    const fs1248 = require('fs');
+    const path1248 = require('path');
+    const wf1248 = fs1248.readFileSync(path1248.resolve(__dirname, '../.github/workflows/claude-code-review.yml'), 'utf8');
+    const promptOf1248 = (text) => {
+      const start = text.indexOf('          prompt: |\n');
+      const end = text.indexOf('- name: Check permission denials', start);
+      assert.ok(start >= 0 && end > start, 'claude-code-review.yml から prompt: | の範囲を切り出せない（書式が変わったら本試験を直す）');
+      return text.slice(start, end);
+    };
+    const toolsOf1248 = (text) => {
+      const m = text.match(/^ +--allowedTools "([^"]+)"/m); // 行頭のもの（YAML コメント内の記法例 `#   正: --allowedTools …` を拾わない）
+      assert.ok(m, 'claude-code-review.yml に --allowedTools "…" が無い');
+      return m[1].split(',');
+    };
+    const helmBlockProblems1248 = (text) => {
+      const prompt = promptOf1248(text);
+      const tools = toolsOf1248(text);
+      const problems = [];
+      const i = prompt.indexOf('【Helm の chart を変える PR】');
+      if (i < 0) return ['prompt に【Helm の chart を変える PR】節が無い'];
+      const j = prompt.indexOf('\n\n', i); // 節は次の空行で終わる
+      const block = prompt.slice(i, j < 0 ? undefined : j);
+      for (const word of ['helm version', 'which helm', 'mkdir', 'Write', 'リダイレクト', 'Lint and render chart', '--set']) {
+        if (!block.includes(word)) problems.push(`【Helm】節に「${word}」が無い`);
+      }
+      // 節が案内するコマンドは許可にある（無ければ案内そのものが拒否を誘う）
+      for (const t of ['Bash(helm template:*)', 'Bash(helm lint:*)', 'Bash(yq:*)', 'Bash(ls:*)', 'Bash(gh run list:*)', 'Bash(node:*)']) {
+        if (!tools.includes(t)) problems.push(`【Helm】節が案内する ${t} が --allowedTools に無い`);
+      }
+      // 旧【計画書の場所】節はワークスペース外（../project-planning）を探させ、ls の拒否を誘っていた
+      if (/CI ではこちら|1 を試さずに/.test(prompt)) problems.push('prompt に旧【計画書の場所】の誘導（planning/ を CI で探す）が戻っている');
+      return problems;
+    };
+    ok('claude-code-review.yml[#1248]: prompt に【Helm の chart を変える PR】節があり、案内するコマンドが許可にある', () => {
+      assert.deepStrictEqual(helmBlockProblems1248(wf1248), []);
+    });
+    ok('claude-code-review.yml[#1248]: 陰性対照（節を消す・helm template の許可を外す・旧誘導を戻す）はそれぞれ赤になる', () => {
+      const noBlock = wf1248.replaceAll('【Helm の chart を変える PR】', '【削除】'); // YAML コメントにも同じ見出しがあるので全置換
+      assert.match(helmBlockProblems1248(noBlock).join('\n'), /節が無い/);
+      const noTemplate = wf1248.replace('Bash(helm template:*),', '');
+      assert.match(helmBlockProblems1248(noTemplate).join('\n'), /helm template:\*\) が --allowedTools に無い/);
+      const oldPlace = wf1248.replaceAll('【計画書の場所】', '【計画書の場所】1. `planning/projects/<name>/` — **CI ではこちら**。');
+      assert.match(helmBlockProblems1248(oldPlace).join('\n'), /旧【計画書の場所】/);
+    });
+  }
 };
