@@ -55,7 +55,8 @@ public static class InformationSourceFactory
         var finnhub = new FinnhubFamily(
             finnhubSymbols ?? new FixedFinnhubSymbolSet(options.Finnhub.Symbols),
             FollowsDynamicSet: finnhubSymbols is not null,
-            new Lazy<IRateLimiter>(() => Limiter(options.Finnhub.RateLimitPerMinute, TimeSpan.FromMinutes(1), timeProvider)),
+            // #1247, IADR-0513: Finnhub は容量 1（等間隔）。どの 60 秒の固定窓でも自制レート以下に収める（他の情報源の Limiter は変えない）。
+            new Lazy<IRateLimiter>(() => FinnhubRateLimiter.Create(options.Finnhub.RateLimitPerMinute, timeProvider)),
             new FinnhubLastRequestTracker(timeProvider));
 
         foreach (var provider in ParseProviders(options.Provider))

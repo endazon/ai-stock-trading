@@ -17,7 +17,7 @@ public class FinnhubSharedLastRequestTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_800_000_000);
 
-    // T-10-1574: 企業ニュースの直後（同じ時刻）の現在値の 429（残り 5）は 4301 にならない。企業ニュースを挟まずに受けた最初の
+    // T-10-1574: 企業ニュースの直後（1 秒以内）の現在値の 429（残り 5）は 4301 にならない。企業ニュースを挟まずに受けた最初の
     // 429（残り 5）は従来どおり 4301（同じ応答が手がかりになる状況であることの陽性対照）。
     [Fact]
     public async Task 企業ニュースの直後の現在値の429は日次の手がかりにしない()
@@ -40,11 +40,15 @@ public class FinnhubSharedLastRequestTests
             new CollectionSourceOptions
             {
                 Provider = "finnhub,finnhub-news",
-                Finnhub = new FinnhubOptions { ApiKey = "key", Symbols = ["AAPL"] },
+                // #1247, IADR-0513: Finnhub の限流器は容量 1（60/r 秒に 1 回）になり、既定の 30 回/分では同じプロセスの要求の間隔が
+                // 2 秒を割らない（BurstWindow 1 秒の「直後」は起きない）。「直後」を作るため自制を 600 回/分（100 ms 間隔）にし、
+                // 時計は読むたびに仮想時刻を一定量進める（固定の時計では 2 回目の要求が永遠に待つ）。実時間には依らないため、
+                // CI の停止（GC・スレッドプール飢餓）で「直後」の判定が揺れない。
+                Finnhub = new FinnhubOptions { ApiKey = "key", Symbols = ["AAPL"], RateLimitPerMinute = 600 },
             },
             new HttpClient(new FinnhubRouteHandler()),
             new FixedClock(),
-            new FixedTimeProvider(),
+            new SteppingTimeProvider(),
             logs);
 
     private static IInformationSource Source(IReadOnlyList<NamedInformationSource> sources, string name) =>
@@ -72,9 +76,14 @@ public class FinnhubSharedLastRequestTests
         public DateTimeOffset UtcNow => Now;
     }
 
-    private sealed class FixedTimeProvider : TimeProvider
+    // 読むたびに Now から 10 ms ずつ進む仮想の時計。限流器は 100 ms 分（約 10 回の読み）で次のトークンを得るので、
+    // 企業ニュースから現在値までの仮想の経過は BurstWindow（1 秒）を大きく下回る。実時間の経過は判定に入らない。
+    private sealed class SteppingTimeProvider : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => Now;
+        private static readonly TimeSpan Step = TimeSpan.FromMilliseconds(10);
+        private long _reads;
+
+        public override DateTimeOffset GetUtcNow() => Now + Step * Interlocked.Increment(ref _reads);
     }
 
     private sealed class CapturingLoggerFactory : ILoggerFactory
