@@ -10,7 +10,8 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //   - FailureKind: `LlmGatewayUnsentKind` の名前（"EgressDenied" / "ProviderMissing" / "UpstreamError"）。未報告は null。
 //   - UpstreamStatusCode: 上流の HTTP 状態コード。未報告は null。
 //   - RoutingReason / GatewayText: ゲートウェイの理由と本文の説明の要約（1 行・切り詰め・秘密の伏せ字済み）。
-//   原因の各値は**しきい値に達した呼び出しのもの**である（連続の途中で原因が変わり得る）。
+//   原因の各値と Purpose は**しきい値に達した呼び出しのもの**である（連続の途中で原因・用途が変わり得る）。
+//   - UnsentByPurpose: 連続の用途別の件数（一次と二次の内訳。連続は用途を分けずに数える・IADR-0517 決定4）。旧い発行元は null。
 public record LlmGatewayUnsentDetected(
     string Purpose,
     int ConsecutiveUnsent,
@@ -19,4 +20,5 @@ public record LlmGatewayUnsentDetected(
     string? RoutingReason,
     string? GatewayText,
     DateTimeOffset FirstUnsentAt,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    IReadOnlyDictionary<string, int>? UnsentByPurpose = null);

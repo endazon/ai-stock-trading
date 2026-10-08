@@ -168,7 +168,9 @@ public static class AuditEntryFactory
     // 🔴 要約は原因をゲートウェイの申告のまま書く（「機密区分」と推測で書かない）。
     public static AuditEntry From(LlmGatewayUnsentDetected e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(LlmGatewayUnsentDetected), LlmGatewayUnsentCorrelation(e.FirstUnsentAt), Symbol: null,
-        Truncate($"LLM ゲートウェイの送信不可が {e.ConsecutiveUnsent} 回連続（用途 {e.Purpose}・{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z 〜）: "
+        Truncate($"LLM ゲートウェイの送信不可が {e.ConsecutiveUnsent} 回連続（"
+            + (e.UnsentByPurpose is { Count: > 0 } ? LlmGatewayUnsent.FormatBreakdown(e.UnsentByPurpose) : $"用途 {e.Purpose}")
+            + $"・{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z 〜）: "
             + new LlmGatewayUnsentCause(
                 LlmGatewayUnsent.ParseKind(e.FailureKind), e.UpstreamStatusCode, e.RoutingReason, e.GatewayText).Describe()
             + "。取引判断は LLM なしの Hold（取引しない）"),
@@ -177,7 +179,8 @@ public static class AuditEntryFactory
     public static AuditEntry From(LlmGatewayUnsentRecovered e, Guid id, DateTimeOffset recordedAt) => new(
         id, nameof(LlmGatewayUnsentRecovered), LlmGatewayUnsentCorrelation(e.FirstUnsentAt), Symbol: null,
         $"LLM ゲートウェイの送信が回復: 継続 {FormatDuration(e.UnsentDuration)}"
-            + $"（{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z 〜）・送信不可 {e.UnsentCalls} 件",
+            + $"（{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z 〜）・送信不可 {e.UnsentCalls} 件"
+            + (e.UnsentByPurpose is { Count: > 0 } ? $"（{LlmGatewayUnsent.FormatBreakdown(e.UnsentByPurpose)}）" : string.Empty),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
 
     private static Guid LlmGatewayUnsentCorrelation(DateTimeOffset firstUnsentAt) =>

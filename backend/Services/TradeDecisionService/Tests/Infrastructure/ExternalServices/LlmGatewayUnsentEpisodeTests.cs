@@ -165,6 +165,48 @@ public class LlmGatewayUnsentEpisodeTests
         retried.FirstUnsentAt.Should().Be(T0);
     }
 
+    // ---- T-04-022: 用途を分けずに 1 本で数え、内訳を運ぶ（#1267 の AI レビュー 🟡・IADR-0517 決定4） ------------
+
+    // 一次と二次が交互に Sent=false でも 1 本の連続（同じゲートウェイの障害）。通知と回復は用途別の件数を運ぶ。
+    [Fact]
+    public void T_04_022_一次と二次が交互でも1本の連続として数え_用途別の件数を運ぶ()
+    {
+        var tracker = new LlmGatewayUnsentEpisodeTracker(threshold: 5);
+        LlmGatewayUnsentDetected? detected = null;
+        for (var i = 0; i < 5; i++)
+            detected = tracker.OnUnsent(i % 2 == 0 ? Purpose : LlmPurposes.TradeDecision, Upstream, T0.AddMinutes(i));
+
+        detected.Should().NotBeNull("用途ごとに数えるなら 5 回目でも通知されない（3 と 2）");
+        detected!.UnsentByPurpose.Should().BeEquivalentTo(
+            new Dictionary<string, int> { [Purpose] = 3, [LlmPurposes.TradeDecision] = 2 });
+        detected.Purpose.Should().Be(Purpose, "しきい値に達した呼び出しの用途");
+
+        tracker.OnUnsent(LlmPurposes.TradeDecision, Upstream, T0.AddMinutes(5));
+        var recovered = tracker.OnSent(T0.AddMinutes(10))!;
+        recovered.UnsentByPurpose.Should().BeEquivalentTo(
+            new Dictionary<string, int> { [Purpose] = 3, [LlmPurposes.TradeDecision] = 3 });
+
+        // 回復の後は内訳も 0 から（前の連続を持ち越さない）。
+        tracker.OnUnsent(Purpose, Upstream, T0.AddHours(1));
+        for (var i = 0; i < 3; i++)
+            tracker.OnUnsent(Purpose, Upstream, T0.AddHours(1));
+        tracker.OnUnsent(Purpose, Upstream, T0.AddHours(1))!.UnsentByPurpose.Should().BeEquivalentTo(
+            new Dictionary<string, int> { [Purpose] = 5 });
+    }
+
+    // 回復の発行に失敗して巻き戻したら、内訳も戻る（再発行の回復が内訳を失わない）。
+    [Fact]
+    public void T_04_022_回復の巻き戻しは内訳も戻す()
+    {
+        var tracker = new LlmGatewayUnsentEpisodeTracker(threshold: 2);
+        tracker.OnUnsent(Purpose, Upstream, T0);
+        tracker.OnUnsent(LlmPurposes.TradeDecision, Upstream, T0);
+        tracker.Rollback(tracker.OnSent(T0.AddMinutes(1))!);
+
+        tracker.OnSent(T0.AddMinutes(2))!.UnsentByPurpose.Should().BeEquivalentTo(
+            new Dictionary<string, int> { [Purpose] = 1, [LlmPurposes.TradeDecision] = 1 });
+    }
+
     // ---- T-04-017: 発行（Wolverine・偽の時計） ------------------------------------------------------
 
     private const string ServiceName = "ai-stock-trading.trade-decision-service";

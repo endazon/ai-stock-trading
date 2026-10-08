@@ -54,12 +54,14 @@ public class LlmGatewayUnsentReportTests
         log.Should().NotContain("機密区分");
     }
 
-    // T-04-021: 方針の改訂。利用者へ返す理由に申告の要約が載り、「縮退中」と一括りにしない。案なし（Refused）は不変。
+    // T-04-021: 方針の改訂。利用者へ返す理由は原因の種類の定型文だけ（上流の生の文言を画面に出さない）。
+    // 「縮退中」「機密区分」と一括りにしない。申告の要約はログへ残す。案なし（Refused）は不変。
     [Fact]
     public async Task T_04_021_方針の改訂は利用者への理由へ申告を載せる()
     {
+        var logger = new RecordingLogger<LlmReportPolicyReviser>();
         var reviser = new LlmReportPolicyReviser(
-            new FakeTransport(Unsent()), NullLogger<LlmReportPolicyReviser>.Instance, "internal", purposeOverride: null,
+            new FakeTransport(Unsent(LlmGatewayUnsentKind.UpstreamError, 503)), logger, "internal", purposeOverride: null,
             TimeSpan.FromSeconds(5), new RecordingUsage(), new NoOpGovernance());
 
         var outcome = await reviser.ReviseAsync(new PolicyRevisionContext(
@@ -67,8 +69,9 @@ public class LlmGatewayUnsentReportTests
 
         outcome.Succeeded.Should().BeFalse();
         outcome.Failure.Should().Be(PolicyRevisionFailure.Refused);
-        outcome.Message.Should().StartWith("AI へ送信できませんでした").And.Contain("種別: 種別不明")
-            .And.Contain(RoutingAllowed).And.Contain("現在利用できません");
-        outcome.Message.Should().NotContain("縮退中").And.NotContain("機密区分");
+        outcome.Message.Should().Be("AI へ送信できませんでした（上流の不調。詳細は運用ログを参照）");
+        outcome.Message.Should().NotContain(RoutingAllowed).And.NotContain("現在利用できません").And.NotContain("縮退中");
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Which.Message
+            .Should().Contain(RoutingAllowed).And.Contain("現在利用できません").And.Contain("503");
     }
 }

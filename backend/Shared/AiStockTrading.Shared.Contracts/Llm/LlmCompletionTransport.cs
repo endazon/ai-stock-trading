@@ -63,7 +63,7 @@ public sealed record LlmCompletionCall(
 /// 未報告は <c>null</c>。🔴 <c>Sent=false</c> を「機密区分による縮退」と断定しないための材料である。
 /// </param>
 /// <param name="FailureKind">
-/// #1267, IADR-0517: <c>Sent=false</c> の原因の種類（MSP#1819 が構造化して返す予定）。
+/// #1267, IADR-0517: <c>Sent=false</c> の原因の種類（MSP#1819 の <c>failureKind</c>。任意）。
 /// 未報告・未知の値は <c>null</c>（読み取りで例外にしない）。
 /// </param>
 /// <param name="UpstreamStatusCode">#1267, IADR-0517: 上流（LLM 提供側）の HTTP 状態コード。未報告は <c>null</c>。</param>

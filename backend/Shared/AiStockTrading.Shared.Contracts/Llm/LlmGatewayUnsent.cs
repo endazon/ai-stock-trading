@@ -13,9 +13,10 @@ namespace AiStockTrading.Shared.Contracts.Llm;
 // 判断 132 件が「機密区分による縮退」という誤った理由だけを残して Hold に固定され、原因を追えなかった（#1267）。
 // 呼び出し元 3 か所（取引判断・報告書の散文・方針の改訂）が同じ要約を使い、片方だけ直る事故を入れない。
 //
-// 🔴 **原因の種類（FailureKind）と上流の状態コードは MSP#1819 が足す予定のフィールドで、名前は未確定である。**
-// 読み取りは寛容にする: 欠落・未知の値・想定外の型はすべて null へ落とし、例外にしない（MSP の PR の
-// マージ順に依存しない）。名前は MSP#1819 の PR で確定してから突き合わせる（作業仕様書 20261008_1267）。
+// 原因の種類（`failureKind`: 文字列 "egress_denied" / "provider_missing" / "upstream_error"）と上流の状態コード
+// （`upstreamStatusCode`: upstream_error で上流が HTTP ステータスを返したときだけ）は MSP#1819（MSP#1824）が足す任意の
+// フィールドである。読み取りは寛容にする: 欠落（旧い基盤）・未知の値・想定外の型はすべて null（原因不明）へ落とし、
+// 例外にしない（MSP の PR のマージ順に依存しない）。
 public enum LlmGatewayUnsentKind
 {
     /// <summary>越境の拒否（機密区分・用途で送信先が許されない）。</summary>
@@ -76,6 +77,17 @@ public static class LlmGatewayUnsent
             Summarize(payload.RoutingReason),
             Summarize(payload.Text));
     }
+
+    /// <summary>
+    /// 連続の用途別の件数の表示（例: <c>内訳 trade-decision 1・trade-decision-screening 4</c>）。無ければ空文字。
+    /// 通知と台帳の要約で共通に使う（#1267 の AI レビュー 🟡）。
+    /// </summary>
+    public static string FormatBreakdown(IReadOnlyDictionary<string, int>? byPurpose) =>
+        byPurpose is null || byPurpose.Count == 0
+            ? string.Empty
+            : "内訳 " + string.Join("・", byPurpose
+                .OrderBy(p => p.Key, StringComparer.Ordinal)
+                .Select(p => $"{p.Key} {p.Value.ToString(CultureInfo.InvariantCulture)}"));
 
     /// <summary>種類の表示名。</summary>
     public static string Label(LlmGatewayUnsentKind? kind) => kind switch

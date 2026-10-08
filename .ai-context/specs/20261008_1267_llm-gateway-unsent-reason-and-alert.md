@@ -20,7 +20,9 @@ plan_refs:
   `LLM ゲートウェイが送信不可（Sent=false・機密区分による縮退）` のログだけを残して Hold に固定された。同じ purpose・機密区分で 18:06 まで成功していたため誤帰属の可能性が高い）。
 - 計画: FR-04（判断根拠を必ず記録）・FR-09（エラーを Discord に通知）・FR-11（後から監査できる）・ADR-0010・ADR-0017 決定2/決定4（沈黙させない）。計画の裁定は要らない
   （計画は「Sent=false＝機密区分」とは定めていない。断定は実装の誤り）。
-- 並行: MSP#1819（ゲートウェイが Sent=false の原因の種類〔EgressDenied / ProviderMissing / UpstreamError〕と上流の状態コードを構造化して返す。**フィールド名は未確定**）。
+- 並行: MSP#1819（ゲートウェイが Sent=false の原因の種類と上流の状態コードを構造化して返す）。**応答契約は MSP#1824（head 9c348848・未マージ）で確定**:
+  `/complete` 応答と SSE の `done` に任意の `failureKind`（string?。"egress_denied" / "provider_missing" / "upstream_error"。Sent=true は null。未知の値は原因不明として扱う）と
+  `upstreamStatusCode`（int?。upstream_error で上流が HTTP ステータスを返したときだけ）。transport が自分で組み立てた done（ゲートウェイに届かなかった）は failureKind を持たない。
 
 ## 現況（origin/develop 5a7a1473 で確認）
 
@@ -42,7 +44,7 @@ plan_refs:
 | --- | --- | --- |
 | `TradeDecisionService/.../HttpLlmCompletionClient.cs`（ログ・`HoldFallback`） | ✅ | **是正**（ログ・判断理由・通知） |
 | `ReportService/.../HttpReportNarrativeDrafter.cs:148`（ログ「機密区分による縮退」）・同 :133 のコメント | ✅ | **是正**（ログに申告。倒れ先〔プレースホルダ散文〕は不変） |
-| `ReportService/.../LlmReportPolicyReviser.cs:76-77`（ログ「機密区分による縮退」・利用者への理由「縮退中」） | ✅ | **是正**（ログと利用者への理由に申告。失敗の種別 `Refused` は不変） |
+| `ReportService/.../LlmReportPolicyReviser.cs:76-77`（ログ「機密区分による縮退」・利用者への理由「縮退中」） | ✅ | **是正**（ログに申告・利用者への理由は種類の定型文。失敗の種別 `Refused` は不変） |
 | `ReportService/Features/Reports/IReportPolicyReviser.cs:39`（`Refused` の説明「機密区分による縮退」） | ✅（文書） | **是正** |
 | `RestLlmCompletionTransport` / `GrpcLlmCompletionTransport`（`RoutingReason` を落とす） | 原因（材料を捨てる） | **是正**（`RoutingReason` を運ぶ。REST は予定のフィールドも寛容に読む） |
 | `Shared.Contracts/Llm/LlmCompletionTransport.cs`（`Sent` の説明は「越境拒否・プロバイダ未登録・上流不調」で正しい） | — | 対象外（誤りなし） |
@@ -61,11 +63,11 @@ plan_refs:
 ## 設計（IADR-0517）
 
 1. **応答の材料**: `LlmCompletionPayload` に `RoutingReason`・`FailureKind`（`LlmGatewayUnsentKind?`）・`UpstreamStatusCode`（`int?`）を末尾の省略可能な引数で足す（既存の呼び出しは不変）。
-   - REST: `routingReason` は現行の基盤が返す。`failureKind` / `upstreamStatusCode`（別名 `upstreamStatus`）は **`JsonElement?` で受けて寛容に読む** —
-     文字列の既知の値（大小・`_`・`-` を無視）だけを種類にし、未知の値・数値（序数は双方で揃う保証が無い）・オブジェクト・`null` は `null`。状態コードは 100〜599 の整数（数値・数字の文字列）だけ。
+   - REST: `routingReason` は現行の基盤が返す。`failureKind` / `upstreamStatusCode`（MSP#1824 の確定名）は **`JsonElement?` で受けて寛容に読む** —
+     文字列の既知の値（`egress_denied` 等。大小・`_`・`-` を無視）だけを種類にし、未知の値・数値・オブジェクト・`null`・欠落（旧い基盤）は `null`（原因不明）。状態コードは 100〜599 の整数（数値・数字の文字列）だけ。
      🔴 enum / int で受けると未知の値で `JsonException` になり、Sent=false の 1 件が「応答不正」へ化ける（変異 M5 で実測）。
    - gRPC: `routing_reason`（既存のフィールド 7）を運ぶ（空文字は null）。原因の種類・状態コードは proto の写しに無いため null のまま。
-   - 🔴 **フィールド名は MSP#1819 の PR で確定してからマージ前に突き合わせる**（利用者から最終名の連絡を受ける）。
+   - フィールド名は MSP#1824（head 9c348848）の確定名に合わせた（当初の予定の別名 `upstreamStatus` は採らず削除）。SSE の `done` は本リポが消費していないため対象外。
 2. **要約**（`LlmGatewayUnsent.Summarize`・3 か所の呼び出し元で共通）: Bearer トークン・`sk-`/`pk-`/`rk-` 形式の鍵・`key=値`（api_key / token / secret / password / authorization）・
    32 文字以上の連続した英数字列を伏せ、`LogSanitizer` で行区切りを潰して 160 文字で切る（正規表現へ渡す前に 2,000 文字で切る・タイムアウト 100 ms）。
 3. **記録する場所（3 つ）**:
@@ -77,11 +79,12 @@ plan_refs:
 4. **通知**（`LlmGatewayUnsentEpisodeTracker`・`PublishingLlmGatewayUnsentNotifier`〔singleton・`TimeProvider`〕）:
    - **しきい値: Sent=false が 5 回連続**（`LlmGateway:UnsentAlertThreshold`。未設定・不正・1 未満は 5）。サイクルを数えず呼び出しの順だけを見る —
      定時の 1 サイクル（保有 6 件の一次＝6 回）の全件なら 1 サイクル内で、急変の 1 銘柄のサイクル（1〜数回）なら複数サイクルにまたがって達する。
+   - **用途: 一次・二次を分けずに 1 本で数え、用途別の件数 `UnsentByPurpose` を検知・回復のイベント（通知・台帳）へ載せる**（PR #1268 の AI レビュー 🟡。用途ごとに数えると同じ障害の検知が遅れ通知が割れる。IADR-0517 却下案）。
    - **抑止: 連続 1 回につき Warning 1 通**（Discord）。Sent=true が来たら、通知済みなら**回復（Info）1 通**（期間・件数）、未通知なら黙って数え直す。
    - 非 2xx・タイムアウト・応答不正・例外は連続を進めも戻しもしない（別の Hold の系統。IADR-0104 / 0216 / 0323）。
    - 発行の失敗は状態を戻して投げ直し、`HttpLlmCompletionClient` は best-effort で握る（Hold・応答は不変）。
    - 重大度: Warning（損切りは別機構で動いており発注は出ない。Critical にすると止まった事象が埋もれる）。
-5. **報告書の 2 か所**: ログ（と方針の改訂の利用者への理由）に同じ要約を載せる。倒れ先（プレースホルダ散文・案なし `Refused`）は不変。
+5. **報告書の 2 か所**: ログに同じ要約を載せる。方針の改訂の利用者への理由は原因の種類の定型文だけ（生の文言は運用ログ。PR #1268 の AI レビュー 🟢）。倒れ先（プレースホルダ散文・案なし `Refused`）は不変。
 
 ## 受け入れ基準
 
@@ -90,7 +93,8 @@ plan_refs:
 3. 要約は秘密を伏せ、1 行・切り詰め。
 4. ログ・判断の理由（一次・二次）・台帳・通知へ申告が届く。
 5. 5 回連続で Warning 1 通、続く間は黙る、送信で回復 1 通、未通知の途切れは何も出さない、交互は通知しない、発行の失敗は再発行する。
-6. 報告書の散文・方針の改訂のログ（と利用者への理由）も申告を運ぶ。
+6. 報告書の散文・方針の改訂のログも申告を運ぶ。方針の改訂の利用者への理由は種類の定型文で、上流の生の文言を出さない。
+7. 一次・二次の Sent=false が交互でも 1 本の連続として数え、用途別の件数を通知・台帳へ載せる。
 
 ## 試験（T-04 帯。`docs/tests` が FR-04 を採番していないため検査 5 の対象外。origin/develop で `T-0?4-` の使用 0 件を確認）
 
@@ -100,8 +104,8 @@ plan_refs:
 | T-04-002 | 上流の不調: 状態コード・本文・機密区分と書かない | 同上 |
 | T-04-003 | プロバイダ未登録 | 同上 |
 | T-04-004 | 種別なし（現行の基盤）は「種別不明」・申告なしは「申告なし」（否定形） | 同上 |
-| T-04-005 | 原因の種類: 既知の値（3）／未知・序数・型違い・null・bool（6。否定形） | 同上（REST の実 JSON） |
-| T-04-006 | 上流の状態コード: 数値・文字列・別名（3）／範囲外・非数・小数・配列（5。否定形） | 同上 |
+| T-04-005 | 原因の種類: 確定値 3＋大小違い 1／未知・序数・型違い・null・bool（6。否定形）／フィールドの無い旧い応答（後方互換） | 同上（REST の実 JSON） |
+| T-04-006 | 上流の状態コード: 数値・文字列（3）／範囲外・非数・小数・配列（5。否定形） | 同上 |
 | T-04-007 | 要約: 秘密の伏せ字・行区切り・切り詰め（ログと理由の両方） | 同上 |
 | T-04-008 | Warning ログに申告・機密区分と書かない | 同上 |
 | T-04-009 | 一次の打ち切り・二次の判断の理由へ届く／引用符で JSON が壊れない | 同上 |
@@ -116,7 +120,8 @@ plan_refs:
 | T-04-018 | 台帳: 要約に申告・機密区分と書かない・連続と回復は同じ相関 | `AuditService/Tests/Domain/LlmGatewayUnsentAuditEntryTests.cs` |
 | T-04-019 | gRPC: `routing_reason` を運び空文字は null | `Shared.Infrastructure.Tests/GrpcLlmCompletionTransportTests.cs` |
 | T-04-020 | 報告書の散文のログ | `ReportService/Tests/.../LlmGatewayUnsentReportTests.cs` |
-| T-04-021 | 方針の改訂の利用者への理由 | 同上 |
+| T-04-021 | 方針の改訂: 利用者への理由は種類の定型文だけ・生の文言はログ | 同上 |
+| T-04-022 | 一次・二次が交互でも 1 本の連続・用途別の件数（検知・回復・巻き戻し・ゴールデン・台帳） | `.../LlmGatewayUnsentEpisodeTests.cs` ほか |
 
 網羅の検査（`AuditCycleCompletenessTests`・`NotificationTemplateGoldenTests`・`EventMessageTypeNameTests`・`event-schemas.baseline.json`）へ新しい 2 イベントを足した。
 
@@ -134,7 +139,7 @@ plan_refs:
 
 ## 残余
 
-- **MSP#1819 のフィールド名・直列化（文字列か序数か）は未確定。** マージ前に MSP の PR で突き合わせる。序数で返る場合は種類が「種別不明」のままになる（安全側）。
+- 名前は MSP#1824（未マージ）の確定名に合わせた。同 PR がマージ前に変われば追随が要る。マージ前の基盤では両フィールドが欠落し「種別不明」になる（後方互換・安全側）。
 - gRPC の写しの proto に原因の種類・状態コードが無い（MSP#1819 の確定後に写しを更新する）。
 - 報告書の 2 か所は通知しない（上表）。
 - しきい値の env（`LlmGateway__UnsentAlertThreshold`）は helm の values に載せていない（既定 5 で動く）。

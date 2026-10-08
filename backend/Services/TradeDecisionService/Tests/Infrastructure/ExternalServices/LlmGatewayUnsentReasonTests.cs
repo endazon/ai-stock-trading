@@ -164,13 +164,24 @@ public class LlmGatewayUnsentReasonTests
         decision.Rationale.Should().Contain("（ゲートウェイの申告なし）").And.NotContain("機密区分");
     }
 
-    // ---- T-04-005〜006: 予定のフィールド（MSP#1819）の寛容な読み取り（REST の実 JSON を通す） ---------------
+    // ---- T-04-005〜006: MSP#1819（MSP#1824）の任意のフィールドの寛容な読み取り（REST の実 JSON を通す） ----
+
+    // T-04-005（後方互換）: フィールドが無い旧い基盤の応答でも Sent=false の Hold として読み、原因不明と書く。
+    [Fact]
+    public async Task T_04_005_フィールドの無い旧い応答は原因不明として読む()
+    {
+        var output = await RestClient("""{"text":"x","sent":false,"routingReason":"r"}""").CompleteAsync("p");
+
+        RationaleOf(output).Should().StartWith(HttpLlmCompletionClient.UnsentRationalePrefix)
+            .And.Contain("種別: 種別不明").And.NotContain("上流 ");
+    }
 
     // T-04-005: 既知の値（大小・区切りの差を許す）は読む。
     [Theory]
-    [InlineData("\"EgressDenied\"", "越境の拒否")]
+    [InlineData("\"egress_denied\"", "越境の拒否")]
     [InlineData("\"upstream_error\"", "上流の不調")]
-    [InlineData("\"provider-missing\"", "プロバイダ未登録")]
+    [InlineData("\"provider_missing\"", "プロバイダ未登録")]
+    [InlineData("\"EgressDenied\"", "越境の拒否")]
     public async Task T_04_005_原因の種類の既知の値は読む(string json, string label)
     {
         var output = await RestClient($$"""{"text":"x","sent":false,"routingReason":"r","failureKind":{{json}}}""").CompleteAsync("p");
@@ -196,11 +207,11 @@ public class LlmGatewayUnsentReasonTests
         rationale.Should().NotContain("応答不正");
     }
 
-    // T-04-006: 上流の状態コードは数値・数字の文字列・別名（upstreamStatus）を読み、範囲外・非数は捨てる。
+    // T-04-006: 上流の状態コード（upstreamStatusCode）は数値・数字の文字列を読み、範囲外・非数は捨てる。
     [Theory]
     [InlineData("\"upstreamStatusCode\":503", "上流 503")]
     [InlineData("\"upstreamStatusCode\":\"401\"", "上流 401")]
-    [InlineData("\"upstreamStatus\":429", "上流 429")]
+    [InlineData("\"upstreamStatusCode\":429", "上流 429")]
     public async Task T_04_006_上流の状態コードを読む(string field, string expected)
     {
         var output = await RestClient($$"""{"text":"x","sent":false,"routingReason":"r",{{field}}}""").CompleteAsync("p");

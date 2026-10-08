@@ -58,11 +58,12 @@ public sealed class RestLlmCompletionTransport(HttpClient httpClient) : ILlmComp
             : LlmCompletionExchange.Completed(new LlmCompletionPayload(
                 dto.Text, dto.Sent, dto.Model, dto.StopReason, dto.InputTokens, dto.OutputTokens,
                 // FR-04, FR-11, #1267, IADR-0517: Sent=false の原因をゲートウェイの申告のまま運ぶ。
-                // 原因の種類・上流の状態コードは MSP#1819 の予定のフィールドで名前が未確定のため、JsonElement で受けて
-                // 寛容に読む（欠落・未知の値・想定外の型は null。応答全体を不正にしない）。
+                // 原因の種類 `failureKind`（文字列 "egress_denied" / "provider_missing" / "upstream_error"）と上流の状態コード
+                // `upstreamStatusCode` は MSP#1819（MSP#1824）が足す任意のフィールド。JsonElement で受けて寛容に読む
+                // （欠落〔旧い基盤〕・未知の値・想定外の型は null。応答全体を不正にしない）。
                 dto.RoutingReason,
                 LlmGatewayUnsent.ParseKind(dto.FailureKind),
-                LlmGatewayUnsent.ParseStatusCode(dto.UpstreamStatusCode) ?? LlmGatewayUnsent.ParseStatusCode(dto.UpstreamStatus)));
+                LlmGatewayUnsent.ParseStatusCode(dto.UpstreamStatusCode)));
     }
 
     // POST /complete の要求（基盤 LlmGateway CompletionApiRequest 相当・camelCase JSON）。
@@ -71,12 +72,12 @@ public sealed class RestLlmCompletionTransport(HttpClient httpClient) : ILlmComp
 
     // POST /complete の応答（CompletionApiResponse の必要部分）。**部分写像**であり、欠落しても
     // 既定値へ落ちるだけで安全側は崩れない（IADR-0104 / IADR-0219 の非破壊の扱いを踏襲）。
-    // #1267, IADR-0517: RoutingReason は現行の基盤が返す。FailureKind / UpstreamStatusCode（別名 UpstreamStatus）は
-    // MSP#1819 の予定の名前で、確定後に突き合わせる。🔴 型を enum / int にしない —— 未知の列挙値・文字列の数値で
-    // JsonException になり、送信不可の 1 件が「応答不正」へ化ける。
+    // #1267, IADR-0517: RoutingReason は現行の基盤が返す。FailureKind / UpstreamStatusCode は MSP#1819（MSP#1824）の
+    // 確定した名前（どちらも任意）。🔴 型を enum / int にしない —— 未知の値・想定外の型で JsonException になり、
+    // 送信不可の 1 件が「応答不正」へ化ける。
     private sealed record CompletionResponse(
         string? Text, bool Sent, string? Model, string? StopReason = null,
         int? InputTokens = null, int? OutputTokens = null,
         string? RoutingReason = null, JsonElement? FailureKind = null,
-        JsonElement? UpstreamStatusCode = null, JsonElement? UpstreamStatus = null);
+        JsonElement? UpstreamStatusCode = null);
 }

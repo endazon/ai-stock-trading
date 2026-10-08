@@ -308,6 +308,30 @@ public class NotificationTemplateGoldenTests
                     + "ゲートウェイの状態・構成・上流の提供側を確認してください（回復したら通知します）。",
                 NotificationSeverity.Warning)),
 
+        // FR-04, FR-09, #1267, IADR-0517（T-04-022）: 内訳つき（連続は用途を分けずに数え、用途別の件数を載せる）。
+        ["LlmGatewayUnsentDetected/内訳"] = (
+            new LlmGatewayUnsentDetected(
+                "trade-decision", 5, null, null, null, null, T.AddMinutes(-10), T,
+                new Dictionary<string, int> { ["trade-decision-screening"] = 3, ["trade-decision"] = 2 }),
+            new NotificationMessage(
+                "取引判断: LLM ゲートウェイが送信しない状態が続いています",
+                "LLM ゲートウェイが 5 回連続で送信しませんでした（Sent=false・内訳 trade-decision 2・trade-decision-screening 3・"
+                    + "2026-08-28 02:50Z から）。"
+                    + "種別: 種別不明／理由: （ゲートウェイの申告なし）。"
+                    + "取引判断は LLM なしで見送り（Hold・取引しない）になっています。損切りは別の機構で動いています。"
+                    + "ゲートウェイの状態・構成・上流の提供側を確認してください（回復したら通知します）。",
+                NotificationSeverity.Warning)),
+
+        ["LlmGatewayUnsentRecovered/内訳"] = (
+            new LlmGatewayUnsentRecovered(
+                132, T.AddMinutes(-109), T,
+                new Dictionary<string, int> { ["trade-decision-screening"] = 120, ["trade-decision"] = 12 }),
+            new NotificationMessage(
+                "取引判断: LLM ゲートウェイの送信が回復",
+                "LLM ゲートウェイが再び送信しました。送信しなかった期間: 1.8 時間（2026-08-28 01:11Z から）・送信不可 132 件"
+                    + "（内訳 trade-decision 12・trade-decision-screening 120）。",
+                NotificationSeverity.Info)),
+
         // FR-04, FR-09, #1267, IADR-0517（T-04-016）: 回復は Info。期間と件数を本文へ入れる。
         ["LlmGatewayUnsentRecovered"] = (
             new LlmGatewayUnsentRecovered(132, T.AddMinutes(-109), T),

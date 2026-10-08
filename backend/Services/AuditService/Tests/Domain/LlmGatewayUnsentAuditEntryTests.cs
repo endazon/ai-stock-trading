@@ -43,6 +43,11 @@ public class LlmGatewayUnsentAuditEntryTests
             new LlmGatewayUnsentDetected("trade-decision", 5, null, null, null, null, T0.AddDays(1), T0.AddDays(1)), Id, T0);
 
         recovered.CorrelationId.Should().Be(detected.CorrelationId);
+        // T-04-022: 内訳があれば要約へ載せる（連続は用途を分けずに数える）。
+        AuditEntryFactory.From(
+            new LlmGatewayUnsentRecovered(6, T0, T0.AddMinutes(30),
+                new Dictionary<string, int> { ["trade-decision-screening"] = 4, ["trade-decision"] = 2 }), Id, T0)
+            .Summary.Should().Contain("内訳 trade-decision 2・trade-decision-screening 4");
         other.CorrelationId.Should().NotBe(detected.CorrelationId);
         recovered.Summary.Should().Contain("1.8 時間").And.Contain("132 件");
         detected.Summary.Should().Contain("種別不明").And.Contain("（ゲートウェイの申告なし）");

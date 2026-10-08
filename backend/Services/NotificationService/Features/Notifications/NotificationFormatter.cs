@@ -571,7 +571,7 @@ public static class NotificationFormatter
     // 🔴 **原因はゲートウェイの申告のまま書く**（「機密区分」と推測で書かない）。種別が不明なら不明と書く。
     public static NotificationMessage From(LlmGatewayUnsentDetected e) => new(
         "取引判断: LLM ゲートウェイが送信しない状態が続いています",
-        $"LLM ゲートウェイが {e.ConsecutiveUnsent} 回連続で送信しませんでした（Sent=false・用途 {e.Purpose}・"
+        $"LLM ゲートウェイが {e.ConsecutiveUnsent} 回連続で送信しませんでした（Sent=false・{UnsentPurposes(e.Purpose, e.UnsentByPurpose)}・"
             + $"{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z から）。"
             + new LlmGatewayUnsentCause(
                 LlmGatewayUnsent.ParseKind(e.FailureKind), e.UpstreamStatusCode, e.RoutingReason, e.GatewayText).Describe()
@@ -583,8 +583,14 @@ public static class NotificationFormatter
     public static NotificationMessage From(LlmGatewayUnsentRecovered e) => new(
         "取引判断: LLM ゲートウェイの送信が回復",
         $"LLM ゲートウェイが再び送信しました。送信しなかった期間: {FormatDuration(e.UnsentDuration)}"
-            + $"（{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z から）・送信不可 {e.UnsentCalls} 件。",
+            + $"（{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z から）・送信不可 {e.UnsentCalls} 件"
+            + (e.UnsentByPurpose is { Count: > 0 } ? $"（{LlmGatewayUnsent.FormatBreakdown(e.UnsentByPurpose)}）" : string.Empty)
+            + "。",
         NotificationSeverity.Info);
+
+    // #1267: 連続は用途を分けずに数える（IADR-0517 決定4）。内訳があればそれを、無ければ（旧い発行元）しきい値に達した呼び出しの用途を書く。
+    private static string UnsentPurposes(string purpose, IReadOnlyDictionary<string, int>? byPurpose) =>
+        byPurpose is { Count: > 0 } ? LlmGatewayUnsent.FormatBreakdown(byPurpose) : $"用途 {purpose}";
 
     // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ。確定を促す注意喚起（Warning）。
     // 日報が未確定の間は取引が見送られ続けるため、利用者に確定を促す（同一営業日内は 1 回に抑止済み・IADR-0096）。

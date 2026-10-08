@@ -14,6 +14,10 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // 🔴 **サイクルを数えない。** 判定器は呼び出しの順だけを見る。1 サイクルの全件（定時の保有 6 件の一次＝6 回）でも、
 // 呼び出しの少ないサイクルの連続（急変の 1 銘柄＝1〜数回）でも、Sent=true が挟まらない限り同じ連続として数える。
 // サイクルの境界を判定器へ渡すと、境界を運ぶ経路（定時・急変・再配信）ごとに配線が要り、片方だけ漏れる。
+//
+// 🔴 **用途（purpose）も分けずに 1 本で数え、内訳を運ぶ**（#1267 の AI レビュー 🟡・IADR-0517 決定4）。Sent=false は
+// ゲートウェイの状態であって用途の性質ではない。一次（screening）と二次（trade-decision）は同じサイクルで交互に呼ばれ得るため、
+// 用途ごとに数えると同じ障害の検知が遅れ、通知も 2 通に割れる。代わりに用途別の件数（UnsentByPurpose）を通知・台帳へ載せる。
 public sealed class LlmGatewayUnsentEpisodeTracker
 {
     /// <summary>既定のしきい値（連続回数）。定時の 1 サイクル（保有 6 件の一次）に収まる回数にする。</summary>
@@ -23,6 +27,7 @@ public sealed class LlmGatewayUnsentEpisodeTracker
     private readonly int _threshold;
 
     private int _consecutive;
+    private readonly SortedDictionary<string, int> _byPurpose = new(StringComparer.Ordinal);
     private DateTimeOffset? _firstUnsentAt;
     private bool _notified;
 
@@ -43,6 +48,7 @@ public sealed class LlmGatewayUnsentEpisodeTracker
         {
             _consecutive++;
             _firstUnsentAt ??= now;
+            _byPurpose[purpose] = _byPurpose.GetValueOrDefault(purpose) + 1;
 
             if (_notified || _consecutive < _threshold)
                 return null;
@@ -50,7 +56,7 @@ public sealed class LlmGatewayUnsentEpisodeTracker
             _notified = true;
             return new LlmGatewayUnsentDetected(
                 purpose, _consecutive, cause.Kind?.ToString(), cause.UpstreamStatusCode, cause.RoutingReason,
-                cause.GatewayText, _firstUnsentAt.Value, now);
+                cause.GatewayText, _firstUnsentAt.Value, now, Snapshot());
         }
     }
 
@@ -63,10 +69,11 @@ public sealed class LlmGatewayUnsentEpisodeTracker
                 return null;
 
             LlmGatewayUnsentRecovered? recovered = _notified
-                ? new LlmGatewayUnsentRecovered(_consecutive, _firstUnsentAt!.Value, now)
+                ? new LlmGatewayUnsentRecovered(_consecutive, _firstUnsentAt!.Value, now, Snapshot())
                 : null;
 
             _consecutive = 0;
+            _byPurpose.Clear();
             _firstUnsentAt = null;
             _notified = false;
             return recovered;
@@ -92,8 +99,13 @@ public sealed class LlmGatewayUnsentEpisodeTracker
                     _consecutive = recovered.UnsentCalls;
                     _firstUnsentAt = recovered.FirstUnsentAt;
                     _notified = true;
+                    foreach (var (purpose, count) in recovered.UnsentByPurpose ?? new Dictionary<string, int>())
+                        _byPurpose[purpose] = count;
                     break;
             }
         }
     }
+
+    // 呼び出し時点の用途別の件数の写し（イベントは不変の値を持つ）。
+    private Dictionary<string, int> Snapshot() => new(_byPurpose, StringComparer.Ordinal);
 }
