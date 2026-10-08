@@ -458,12 +458,14 @@ jobs:
             - helm は **`helm template …` と `helm lint …` だけ**を使う。**`helm version` と
               `which helm` は実行しない**（許可外で拒否される。helm の有無は `helm lint` が動けば判る）。
             - **一時ファイル・一時ディレクトリを作る検証はしない。** `mkdir` / `mktemp`・`Write` ツール・
-              リダイレクト（`>` `>>`）はレビュー用には設計上許可されておらず、必ず拒否される。
+              リダイレクト（`>` `>>`）は使わない（リダイレクトとワークスペース外への書き込みは拒否される。
+              ワークスペース内への書き込みは通ってしまうが、レビューの役割外であり行わない）。
               values を変える検証は `--set キー=値` で足りる範囲だけ自分で実走する
               （例: `helm template ast <chart> --set a.b=1 | node scripts/<検査器>.js`）。
             - **`-f <一時ファイル>` が要る陰性対照は再現しない。** この PR 自身の `Helm` ワークフロー
               （ジョブ `Lint and render chart`）の結果を `mcp__github_ci__*` か `gh run list` で確かめ、
-              run ID と結論を引用する。再現しなかったことは「実行できなかったこと」節へ書く。
+              run ID と結論を引用する（`gh run view` は許可外。結論は `gh run list --json conclusion` か
+              `mcp__github_ci__get_workflow_run_details` で取る）。再現しなかったことは「実行できなかったこと」節へ書く。
             - YAML の構文確認に `python3` は使えない。`yq` か `helm lint` を使う。
             - `ls` は引数つきで使ってよい（`ls deploy/helm/<chart>/templates`）。ただしパスは
               ワークスペース内に限る（`/tmp` 等の外は拒否される）。`ls … | head; echo …` のように
