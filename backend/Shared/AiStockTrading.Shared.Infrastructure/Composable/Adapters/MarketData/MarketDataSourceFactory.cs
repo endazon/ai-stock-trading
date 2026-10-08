@@ -76,9 +76,9 @@ public static class MarketDataSourceFactory
     private static IMarketDataSource NoOp(ILoggerFactory loggerFactory) =>
         new NoOpMarketDataSource(loggerFactory.CreateLogger<NoOpMarketDataSource>());
 
-    // IADR-0064/0068: 公表上限（Finnhub Free = 60回/分）に対し、サービスごとの予算を配る（既定 10回/分）。
+    // IADR-0064/0068: 公表上限（Finnhub Free = 60回/分）に対し、サービスごとの予算を配る（既定 5回/分。IADR-0275）。
     // 0 以下の指定は「無制限」ではなく最小の 1 回/分へクランプする（構成ミスで枠を焼き切らない・fail-safe）。
+    // #1247, IADR-0513: 容量 1（等間隔）のバケットで、どの 60 秒の固定窓でも自制レート以下に収める（FinnhubRateLimiter）。
     private static IRateLimiter Limiter(int requestsPerMinute, TimeProvider timeProvider) =>
-        new DelayingRateLimiter(
-            new TokenBucket(Math.Max(1, requestsPerMinute), TimeSpan.FromMinutes(1)), timeProvider);
+        FinnhubRateLimiter.Create(requestsPerMinute, timeProvider);
 }
