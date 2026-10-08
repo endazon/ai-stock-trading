@@ -125,7 +125,7 @@ plan_refs:
   全市場が閉場の巡回は記録しない。経過は `TimeProvider` で測る（試験は偽の時計）。観測の失敗は巡回を失敗させない。
 - 境界は `ObservabilityExtensions.MarketMonitorCycleDurationBucketsSeconds` を View で明示し、55・60 秒を境界そのものに置く（既定の境界では 60 秒が 50〜75 に埋もれる。IADR-0307 と同じ作法）。
   ダッシュボードにパネル（P95 と 60 秒超の件数）を足した。アラートは置かない（鳴らす基準は運用で決める）。
-- 試験 T-10-2456〜T-10-2459。
+- 試験 T-10-2461〜T-10-2464。
 
 ### (2) 限流器の外の所要の余裕は (b) の式へ入れない
 
@@ -146,7 +146,7 @@ plan_refs:
 - `DelayingRateLimiter` の既定の待機を `Task.Delay(d, ct)` から `Task.Delay(d, timeProvider, ct)` に替えた。`TimeProvider.System` では同じ挙動である。
 - 母集合: 待機を注入しない生成は `FinnhubRateLimiter.Create`・`InformationSourceFactory`・`FxRateSourceFactory`・`HistoricalBarSourceFactory` の 4 か所。
   `CreateTimer` を上書きする偽の時計は `OrderExecutionService.Tests` の `ManualTimerTimeProvider` だけで、限流器の経路では使っていない。他の手製の偽の時計は `GetUtcNow` だけを上書きし、
-  基底の `CreateTimer` が実の時計のタイマーを作るので既存の試験の待ち方は変わらない。試験 T-10-2460。
+  基底の `CreateTimer` が実の時計のタイマーを作るので既存の試験の待ち方は変わらない。試験 T-10-2465。
 
 ### 残余リスク（本追記）
 

@@ -82,16 +82,16 @@ plan_refs:
 
 ## 受け入れ基準 → 試験
 
-| # | 受け入れ基準 | 試験（T-10 帯。develop の最大 T-10-2455 の次から採番） |
+| # | 受け入れ基準 | 試験（T-10 帯。develop の最大 T-10-2455 の後、並行の #1265 が T-10-2456〜T-10-2460 を確保したので T-10-2461 から採番） |
 | --- | --- | --- |
-| AC1-a | 開場した巡回の所要が巡回間隔に達する（60 秒ちょうど・超える）と、計量に所要の秒数が 1 件入り、Warning が 1 行出る | `MonitorPollingServiceTests`（T-10-2456。偽の `TimeProvider` を照会ごとに進める） |
-| AC1-b | 所要が巡回間隔未満なら計量は入るが Warning は出ない（否定形） | 同（T-10-2457） |
-| AC1-c | 巡回間隔は構成の値で判定する（120 秒の構成で 90 秒の巡回は Warning を出さない） | 同（T-10-2457 の `Theory` の行） |
-| AC1-d | 全市場が閉場の巡回は記録しない | 同（T-10-2458） |
-| AC1-e | 計器名がレジストリと一致し、ヒストグラムは既定ではなく明示した境界（55・60 を含む）で出ていく | `BusinessMetricsTests`（既存の一致検査へ足す）・`BusinessMetricsWiringTests`（T-10-2459） |
+| AC1-a | 開場した巡回の所要が巡回間隔に達する（60 秒ちょうど・超える）と、計量に所要の秒数が 1 件入り、Warning が 1 行出る | `MonitorPollingServiceTests`（T-10-2461。偽の `TimeProvider` を照会ごとに進める） |
+| AC1-b | 所要が巡回間隔未満なら計量は入るが Warning は出ない（否定形） | 同（T-10-2462） |
+| AC1-c | 巡回間隔は構成の値で判定する（120 秒の構成で 90 秒の巡回は Warning を出さない） | 同（T-10-2462 の `Theory` の行） |
+| AC1-d | 全市場が閉場の巡回は記録しない | 同（T-10-2463） |
+| AC1-e | 計器名がレジストリと一致し、ヒストグラムは既定ではなく明示した境界（55・60 を含む）で出ていく | `BusinessMetricsTests`（既存の一致検査へ足す）・`BusinessMetricsWiringTests`（T-10-2464） |
 | AC2 | (b) の式は変えない理由を IADR-0513 へ追記・索引の行も更新 | 文書（`check-adr-index-sync`・`check-adr-index-addendum-loss`） |
 | AC3 | 巡回の途中の発行は範囲外とする理由を IADR-0513 へ追記 | 文書 |
-| 補足 | 既定の待機は `TimeProvider` のタイマーで待つ（偽の時計のタイマーを発火させるまで通らず、発火させると通る） | `DelayingRateLimiterTests`（T-10-2460） |
+| 補足 | 既定の待機は `TimeProvider` のタイマーで待つ（偽の時計のタイマーを発火させるまで通らず、発火させると通る） | `DelayingRateLimiterTests`（T-10-2465） |
 
 実時間の待機（`Task.Delay` / `Thread.Sleep`）は試験に使わない。経過は偽の `TimeProvider`（`GetTimestamp` を手で進める）で作る。
 

@@ -383,12 +383,12 @@ public class MonitorPollingServiceTests
             MonitorOptions = new MonitorOptions { PollIntervalSeconds = pollIntervalSeconds },
         };
 
-    // 🔴 T-10-2456: 巡回の所要が巡回間隔（60 秒）に達する・超えると、所要の秒数が計量に 1 件入り、Warning が 1 行出る。
+    // 🔴 T-10-2461: 巡回の所要が巡回間隔（60 秒）に達する・超えると、所要の秒数が計量に 1 件入り、Warning が 1 行出る。
     // 4 銘柄 × 15 秒 ＝ 60 秒（ちょうど達する）・4 銘柄 × 16 秒 ＝ 64 秒（超える）。
     [Theory]
     [InlineData(15, 60d)]
     [InlineData(16, 64d)]
-    public async Task T_10_2456_巡回の所要が巡回間隔に達すると秒数を計量しWarningを出す(int secondsPerQuote, double expectedSeconds)
+    public async Task T_10_2461_巡回の所要が巡回間隔に達すると秒数を計量しWarningを出す(int secondsPerQuote, double expectedSeconds)
     {
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
@@ -407,12 +407,12 @@ public class MonitorPollingServiceTests
             .Which.Should().Contain("巡回間隔 60 秒");
     }
 
-    // T-10-2457（否定形）: 所要が巡回間隔に満たなければ計量は入るが Warning は出ない。
+    // T-10-2462（否定形）: 所要が巡回間隔に満たなければ計量は入るが Warning は出ない。
     // 巡回間隔は構成の値で判定する（120 秒の構成で 4 × 16 ＝ 64 秒の巡回は達していない。定数 60 と取り違えると Warning が出る）。
     [Theory]
     [InlineData(60, 14, 56d)]
     [InlineData(120, 16, 64d)]
-    public async Task T_10_2457_巡回の所要が巡回間隔に満たなければWarningを出さない(
+    public async Task T_10_2462_巡回の所要が巡回間隔に満たなければWarningを出さない(
         int pollIntervalSeconds, int secondsPerQuote, double expectedSeconds)
     {
         var meterName = MeterCapture.NewIsolatedMeterName();
@@ -430,9 +430,9 @@ public class MonitorPollingServiceTests
         log.Warnings.Should().NotContain(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
     }
 
-    // T-10-2458: 全市場が閉場の巡回は評価しないので所要を記録しない（0 秒でヒストグラムを薄めない）。
+    // T-10-2463: 全市場が閉場の巡回は評価しないので所要を記録しない（0 秒でヒストグラムを薄めない）。
     [Fact]
-    public async Task T_10_2458_全市場が閉場の巡回は所要を記録しない()
+    public async Task T_10_2463_全市場が閉場の巡回は所要を記録しない()
     {
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);

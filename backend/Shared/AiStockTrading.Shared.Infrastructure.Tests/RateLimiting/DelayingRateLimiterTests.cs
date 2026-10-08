@@ -51,11 +51,11 @@ public class DelayingRateLimiterTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    // T-10-2460, FR-04, NFR-01, ADR-0043, #1251（PR #1250 の監査 🟢-3）: 待機を注入しないとき、既定の待機は
+    // T-10-2465, FR-04, NFR-01, ADR-0043, #1251（PR #1250 の監査 🟢-3）: 待機を注入しないとき、既定の待機は
     // TimeProvider のタイマーで待つ（Task.Delay(d, timeProvider, ct)）。偽の時計のタイマーを発火させるまで通らず、
     // 発火させると通る（実時間は待たない）。是正前の既定（Task.Delay(d, ct)）では偽の時計のタイマーが作られず、待機が実時間に依る。
     [Fact]
-    public async Task T_10_2460_既定の待機はTimeProviderのタイマーで待つ()
+    public async Task T_10_2465_既定の待機はTimeProviderのタイマーで待つ()
     {
         var time = new ManualTimerTimeProvider();
         var limiter = new DelayingRateLimiter(new TokenBucket(1, TimeSpan.FromMinutes(1)), time);
@@ -94,7 +94,7 @@ public class DelayingRateLimiterTests
         public void Advance(TimeSpan by) => _now += by;
     }
 
-    // T-10-2460: CreateTimer を上書きし、発火を手で起こす偽の時計（発火の時刻まで現在時刻を進める）。
+    // T-10-2465: CreateTimer を上書きし、発火を手で起こす偽の時計（発火の時刻まで現在時刻を進める）。
     private sealed class ManualTimerTimeProvider : TimeProvider
     {
         private DateTimeOffset _now = new(2026, 10, 8, 0, 0, 0, TimeSpan.Zero);
