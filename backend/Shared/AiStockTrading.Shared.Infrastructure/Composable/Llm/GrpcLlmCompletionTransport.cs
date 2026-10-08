@@ -4,7 +4,7 @@ using Grpc.Core;
 
 namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 
-// NFR, FR-04, FR-06, MSP:ADR-0029, MSP:ADR-0075, IADR-0284, IADR-0323, IADR-0328, IADR-0332, #746:
+// NFR, FR-04, FR-06, FR-11, MSP:ADR-0029, MSP:ADR-0075, IADR-0284, IADR-0323, IADR-0328, IADR-0332, IADR-0517, #746, #1269:
 // `platform.llmgateway.v1.LlmCompletion/Complete`（east-west gRPC・h2c）の輸送。
 // **`LlmGateway:Grpc` を設定したときだけ**選ばれる。既定は REST（IADR-0332 決定 2）。
 //
@@ -62,9 +62,14 @@ public sealed class GrpcLlmCompletionTransport(
                 NullIfEmpty(response.StopReason),
                 response.InputTokens,
                 response.OutputTokens,
-                // FR-04, FR-11, #1267, IADR-0517: Sent=false の原因（判定理由）を運ぶ。原因の種類・上流の状態コードは
-                // proto の写しにまだ無い（MSP#1819 の確定後に写しを更新する）ため null のまま。
-                NullIfEmpty(response.RoutingReason)));
+                // FR-04, FR-11, #1267, IADR-0517: Sent=false の原因（判定理由）を運ぶ。
+                NullIfEmpty(response.RoutingReason),
+                // FR-04, FR-11, #1269, IADR-0517: 原因の種類と上流の状態コード（MSP#1824 の failure_kind = 9 /
+                // upstream_status_code = 10）。🔴 REST と同じ読み取り（`LlmGatewayUnsent`）を通す —— 輸送ごとに
+                // 解釈を分けると、同じ申告が経路によって別の記録になる。proto3 の既定（"" / 0。旧い基盤も同じ）は
+                // 「無い」＝null、未知の値・範囲外の状態コードも null（種別不明）。
+                LlmGatewayUnsent.ParseKind(response.FailureKind),
+                LlmGatewayUnsent.ParseStatusCode(response.UpstreamStatusCode)));
         }
         catch (RpcException ex) when (IsCancellation(ex))
         {
