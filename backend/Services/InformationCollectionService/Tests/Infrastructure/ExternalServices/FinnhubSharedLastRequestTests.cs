@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AwesomeAssertions;
@@ -43,12 +42,13 @@ public class FinnhubSharedLastRequestTests
                 Provider = "finnhub,finnhub-news",
                 // #1247, IADR-0513: Finnhub の限流器は容量 1（60/r 秒に 1 回）になり、既定の 30 回/分では同じプロセスの要求の間隔が
                 // 2 秒を割らない（BurstWindow 1 秒の「直後」は起きない）。「直後」を作るため自制を 600 回/分（100 ms 間隔）にし、
-                // 時計は実時間の経過を足す（固定の時計では 2 回目の要求が永遠に待つ）。
+                // 時計は読むたびに仮想時刻を一定量進める（固定の時計では 2 回目の要求が永遠に待つ）。実時間には依らないため、
+                // CI の停止（GC・スレッドプール飢餓）で「直後」の判定が揺れない。
                 Finnhub = new FinnhubOptions { ApiKey = "key", Symbols = ["AAPL"], RateLimitPerMinute = 600 },
             },
             new HttpClient(new FinnhubRouteHandler()),
             new FixedClock(),
-            new ElapsedTimeProvider(),
+            new SteppingTimeProvider(),
             logs);
 
     private static IInformationSource Source(IReadOnlyList<NamedInformationSource> sources, string name) =>
@@ -76,12 +76,14 @@ public class FinnhubSharedLastRequestTests
         public DateTimeOffset UtcNow => Now;
     }
 
-    // Now に実時間の経過を足す（限流器の待ち〔実の Task.Delay〕の分だけ進む）。
-    private sealed class ElapsedTimeProvider : TimeProvider
+    // 読むたびに Now から 10 ms ずつ進む仮想の時計。限流器は 100 ms 分（約 10 回の読み）で次のトークンを得るので、
+    // 企業ニュースから現在値までの仮想の経過は BurstWindow（1 秒）を大きく下回る。実時間の経過は判定に入らない。
+    private sealed class SteppingTimeProvider : TimeProvider
     {
-        private readonly Stopwatch _elapsed = Stopwatch.StartNew();
+        private static readonly TimeSpan Step = TimeSpan.FromMilliseconds(10);
+        private long _reads;
 
-        public override DateTimeOffset GetUtcNow() => Now + _elapsed.Elapsed;
+        public override DateTimeOffset GetUtcNow() => Now + Step * Interlocked.Increment(ref _reads);
     }
 
     private sealed class CapturingLoggerFactory : ILoggerFactory
