@@ -26,6 +26,9 @@ owner クライアントの dev secret は `dev-only-owner-secret`（`scripts/k8
 > （`microservices-platform` リポジトリの `deploy/keycloak/microservices-platform-realm.json`。MSP#1372）。
 > 連結配備では基盤レルム側しか読まれないため、**写しが古くなっても連結配備の挙動には出ない** ——
 > 出るのは単体 E2E であり、それは統制ではなく副作用である。**突合の受け皿は基盤側**（ADR-0038 フォローアップ 2）。
+> **突合は基盤側の CI が行う**（MSP#1412。基盤リポジトリの `scripts/check-realm-copy-drift.js` が `static-checks-units` で
+> 正本と submodule `src/ai-stock-trading` のこのファイルを突き合わせる。置き場所の決定は IADR-0324 の 2026-10-08 追記 / #1221）。
+> 🔴 **このリポジトリの PR では赤にならない** —— ずれは次の基盤の submodule pin 更新 PR で赤になる。
 > JSON にコメント構文が無いため、この位置づけはファイル冒頭の `attributes`（Keycloak の自由形式フィールド。
 > import されるが挙動に影響しない）と各 `description` にも書いてある。
 

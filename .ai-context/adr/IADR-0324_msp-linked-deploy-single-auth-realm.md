@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-13, FR-17, FR-19, FR-20, UC-06, SC-01, SC-02, SC-03, ADR-0038, IADR-0011, IADR-0050, IADR-0051, IADR-0093, IADR-0098, IADR-0176, IADR-0283]
 author: endazon (with Claude Code)
 created: 2026-09-10
-updated: 2026-09-24
+updated: 2026-10-08
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/05_screens/01_screens.md
@@ -157,6 +157,44 @@ IADR-0098 は「owner クライアントを MSP レルムに置く」案を「�
 >   作業仕様書は [`../specs/20260923_781_kb-llm-authority-derivation.md`](../specs/20260923_781_kb-llm-authority-derivation.md)。
 > - 残余: 「BaseUrl を設定したうえで Authority を意図的に空にする」構成は作れなくなる（導出が埋める）。
 >   現況に該当は無く、KB / LLM はいずれも匿名では 401 なので実害は想定しない。必要になれば明示の opt-out を足す。
+
+> ［2026-10-08 追記 / #1221］**#776 追記 3. の「写しのずれを検知する手段は無い」は、同日に基盤側で解消していた。
+> 検知の置き場所は基盤側の CI と決める（ADR-0038 フォローアップ 2）。** あわせてフォローアップ 4 の件数を数えた。
+>
+> 1. **置き場所: 基盤側の CI（既設）。** MSP#1412（2026-09-11 close・MSP#1415・MSP の IADR-0434）が
+>    基盤リポジトリに `scripts/check-realm-copy-drift.js` を置き、`ci.yml` の `static-checks-units`
+>    （`src/*` の submodule を取得するジョブ。`pull_request` と develop / main への push で走る）で、
+>    正本 `deploy/keycloak/microservices-platform-realm.json` と submodule `src/ai-stock-trading` の
+>    `infra/keycloak/realm-export.json` を突き合わせる。客体は接頭辞（`trading-` / `ai-stock-trading-`）で導出した
+>    **和集合**、比べるのはロールの存在・`composite`・`composites`・`attributes`・`description` の有無と、クライアントの
+>    存在・4 フラグ・**service account の realm ロール付与**であり、ロール名と、接頭辞 `ai-stock-trading-` のクライアントの service account への付与を覆う
+>    （#1221 の受け入れ基準 1 の全項目ではない。下の 4.）。片側だけに在る客体は理由つきで宣言し、宣言外は赤。
+>    🔴 **新しい MSP issue は起票しない**（同件の起票・実装・close が MSP#1412 で済んでおり、重複になる）。
+> 2. **却下した置き場所**: AST 側の定期ジョブ —— 基盤リポジトリを取得する形になり ADR-0029 決定 2 に反する
+>    （AST から基盤は読めないが、基盤は AST を submodule で読める。両辺が揃うのは基盤側だけ）。手順書の点検項目
+>    —— 機械で検知されず、既に機械の検知が在る。AST 側に正本の写しを置いて突合する —— 3 つ目の正本になる。
+> 3. **実測**（2026-10-08）: 基盤の検査器と正本を作業用の写しへ移し、AST develop `dec20e68` の写しを置いて実行 →
+>    `差分はありません（突合: realm ロール 2 件 / クライアント 6 件、片側宣言 4 件）`・exit 0、自己試験 32 件 OK。
+>    基盤 develop の submodule pin `58fe8c24` の写しは AST develop の写しとバイト一致。
+> 4. 🔴 **検知は AST の PR では起きない。** AST 側だけで写しを変えたとき赤になるのは、次の基盤側の submodule pin
+>    更新 PR である。検知の遅れは pin 更新の間隔に等しい（2026-09-28〜10-05 の pin 更新 PR は 17 本（MSP#1687〜MSP#1744）、
+>    マージ日の間隔は 0〜1 日）。上限は dependabot の週次 submodule 更新（MSP の .github/dependabot.yml）。
+>    散文（`description` の本文）の陳腐化と `secret` の差は検知しない（基盤の IADR-0434 決定 2 の設計どおり）。
+>    🔴 接頭辞外のクライアントへの付与・人の利用者へのロール付与・client scope（defaultClientScopes）は突合しない（変異で実測。client scope の欠けは 401 でなく 403 になる）。
+> 5. **フォローアップ 4（レルム不整合による 401 の事故件数）: 0 件**（2026-09-11〜2026-10-08。基準値 2 件＝
+>    #456 CronJob・#736 s2s 発信者は期間前）。**数え方**: 発行元レルムと検証側レルムの不一致（issuer 不一致）を
+>    原因とする 401 を 1 件とする。Keycloak の未起動・再起動中のトークン取得失敗と、仕様どおりの拒否は数えない。
+>    母集合は作成日 2026-09-11 以降の issue / PR（AST 512 件・基盤 423 件）で、タイトルの `401` または本文の
+>    `issuer…invalid|不一致`・`invalid_token`・`レルム不整合` で抽出した。ヒットは #1134・#840（Keycloak の起動中・
+>    全 Pod 再起動直後のトークン取得失敗）・MSP#1399（Keycloak の OOMKilled）・MSP#1579（無効化利用者の拒否。仕様どおり）
+>    で、いずれもレルム不整合ではない。**0 件のため planning へは環流しない。**
+>    🔴 **自動で数える手段は無い**（issuer 不一致の 401 を他の 401 と分けるメトリクス・アラートはリポジトリに無い）。
+>    **暫定手段は棚卸し時の上記 issue 走査（手作業）である**。issue にならなかった事故は数えられない。
+> 6. **計画への環流: planning#749**（ADR-0038 決定 3 と §残るもの の「写しのずれを検知する手段が無い」は
+>    2026-09-11 から事実と食い違う）。
+> 7. #1204 の台帳（行 4）と #1221 本文は「基盤側にも AST 側にも追跡が無い」と書いたが、基盤側の追跡は在った。
+>    AST 側から参照されていなかったのが実態であり、本追記で参照を足す（台帳は凍結記録なので書き換えない）。
+>    作業仕様書は [`../specs/20261008_1221_realm-copy-drift-and-401-count.md`](../specs/20261008_1221_realm-copy-drift-and-401-count.md)。
 
 ## 検討した選択肢
 
