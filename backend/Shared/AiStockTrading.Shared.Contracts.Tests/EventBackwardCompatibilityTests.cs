@@ -65,8 +65,13 @@ public class EventBackwardCompatibilityTests
     //
     // よってここで「基準への登録漏れ」を別立てで落とす。承認は従来どおり UPDATE_EVENT_BASELINE=1 の
     // 再生成＋PR レビューであり、**手順は増えない。忘れたときに気づけるようになるだけである。**
+    //
+    // 🔴 NFR, #1270, IADR-0518: **フィールドも同じである。** 上の照合はイベント単位だったため、基準に載っている
+    // イベントへ足したフィールドは、誰かが再生成するまで削除・改名・型変更を検出されなかった。実測で同型 3 回
+    // （OrderExecuted.Provider〔#405〕・StageTransitioned.AuthorizedBy〔#928〕・OrderApproved.FromTradeDecision〔#1191〕。
+    // いずれも後続の別 PR の再生成で初めて基準に載った）。よってイベントとフィールドの両方で登録漏れを落とす。
     [Fact]
-    public void 全イベントが基準に登録されている_追加は許容するが記録漏れは許容しない()
+    public void 全イベントと全フィールドが基準に登録されている_追加は許容するが記録漏れは許容しない()
     {
         var baselinePath = BaselinePath();
         File.Exists(baselinePath).Should().BeTrue(
@@ -75,10 +80,10 @@ public class EventBackwardCompatibilityTests
         var baseline = JsonSerializer.Deserialize<SortedDictionary<string, SortedDictionary<string, string>>>(
             File.ReadAllText(baselinePath))!;
 
-        var unpinned = ComputeSchema().Keys.Where(evt => !baseline.ContainsKey(evt)).ToArray();
+        var unpinned = FindUnpinned(baseline, ComputeSchema());
 
         unpinned.Should().BeEmpty(
-            "基準に無いイベントは後方互換の検査対象外＝**追加した瞬間から無保護**になります。"
+            "基準に無いイベント・フィールドは後方互換の検査対象外＝**追加した瞬間から無保護**になります。"
             + "UPDATE_EVENT_BASELINE=1 で基準を再生成し、差分を PR レビューで確認してください。"
             + "\n未登録: " + string.Join(", ", unpinned));
     }
@@ -117,6 +122,53 @@ public class EventBackwardCompatibilityTests
             ("Evt", Props(("A", "Int32"), ("B", "String"))), // フィールド追加
             ("NewEvt", Props(("X", "Guid"))));               // イベント追加
         FindViolations(baseline, current).Should().BeEmpty();
+    }
+
+    // NFR, #1270, IADR-0518: 登録漏れの照合自体の回帰テスト（イベント単位・フィールド単位の両方を落とす）。
+
+    [Fact]
+    public void FindUnpinned_基準に無いフィールドを検出する()
+    {
+        // #1270 の形: 基準に載っているイベントへフィールドだけ足し、基準を再生成しなかった。
+        var baseline = Schema(("OrderApproved", Props(("DecisionId", "Guid"))));
+        var current = Schema(("OrderApproved", Props(("DecisionId", "Guid"), ("FromTradeDecision", "Boolean"))));
+        FindUnpinned(baseline, current).Should().ContainSingle().Which.Should().Be("OrderApproved.FromTradeDecision");
+    }
+
+    [Fact]
+    public void FindUnpinned_基準に無いイベントを検出する()
+    {
+        var baseline = Schema(("Evt", Props(("A", "Int32"))));
+        var current = Schema(("Evt", Props(("A", "Int32"))), ("NewEvt", Props(("X", "Guid"))));
+        FindUnpinned(baseline, current).Should().ContainSingle().Which.Should().Be("NewEvt");
+    }
+
+    [Fact]
+    public void FindUnpinned_基準と一致すれば空()
+    {
+        var baseline = Schema(("Evt", Props(("A", "Int32"), ("B", "String"))));
+        var current = Schema(("Evt", Props(("A", "Int32"), ("B", "String"))));
+        FindUnpinned(baseline, current).Should().BeEmpty();
+    }
+
+    // 基準への登録漏れ（基準に無いイベント・基準のイベントに無いフィールド）を列挙する純関数。
+    // 削除・改名・型変更は FindViolations の担当であり、ここでは見ない。
+    internal static IReadOnlyList<string> FindUnpinned(
+        IReadOnlyDictionary<string, SortedDictionary<string, string>> baseline,
+        IReadOnlyDictionary<string, SortedDictionary<string, string>> current)
+    {
+        var unpinned = new List<string>();
+        foreach (var (evt, props) in current)
+        {
+            if (!baseline.TryGetValue(evt, out var baselineProps))
+            {
+                unpinned.Add(evt);
+                continue;
+            }
+
+            unpinned.AddRange(props.Keys.Where(prop => !baselineProps.ContainsKey(prop)).Select(prop => $"{evt}.{prop}"));
+        }
+        return unpinned;
     }
 
     // 後方互換違反（削除・改名・型変更）を列挙する純関数。追加は違反にしない。

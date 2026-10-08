@@ -235,6 +235,7 @@
     "CycleStartedAt": "DateTimeOffset?",
     "CycleTrigger": "String",
     "DecisionId": "Guid",
+    "FromTradeDecision": "Boolean",
     "Intent": "OrderIntent",
     "Origin": "OrderApprovalOrigin",
     "StopLossMethod": "StopLossExecutionMethod"
