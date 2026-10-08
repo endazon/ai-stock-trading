@@ -13,32 +13,44 @@ namespace ReportService.Domain;
 // 🔴 **損切りの手法の解決はここで絞らない**——承認と DecisionId で突き合わせる（解決の時刻で数えない。StopLossMethodComparison）。
 public static class ReportLedgerWindowing
 {
-    /// <summary>借株料: 計上日（<c>TradingDay</c>・市場の現地の日）のセッションの大引けと記録の時刻の遅いほうで数える（ADR-0027 決定 3 の計上日への帰属）。</summary>
+    /// <summary>
+    /// 借株料: 他の入力と同じく市場・記録の時刻（計上 <c>AccruedAt</c>・未計上 <c>ObservedAt</c>）で数える。
+    /// 🔴 <c>TradingDay</c>（契約上は基準タイムゾーン＝JST の取引日。リスク管理の <c>TradingDay.Of(instant)</c>）は配置に使わない——
+    /// 市場の現地の日として読むと契約の意味を変えてしまう（独立監査 🔴-1）。計上日の月への帰属（ADR-0027 決定 3）を暦で読むか窓で読むかは
+    /// planning#746 の裁定待ちである。
+    /// </summary>
     public static BorrowFeeRecord Within(this BorrowFeeRecord record, ReportSessionWindow window)
     {
         ArgumentNullException.ThrowIfNull(record);
         ArgumentNullException.ThrowIfNull(window);
 
         return new BorrowFeeRecord(
-            [.. record.Accruals.Where(a => window.Counts(a.Market, a.TradingDay, a.AccruedAt))],
-            [.. record.Unavailable.Where(u => window.Counts(u.Market, u.TradingDay, u.ObservedAt))]);
+            [.. record.Accruals.Where(a => window.Counts(a.Market, a.AccruedAt))],
+            [.. record.Unavailable.Where(u => window.Counts(u.Market, u.ObservedAt))]);
     }
 
     /// <summary>
-    /// 損切りの手法（承認時点）: 承認の市場・承認時刻で数え、手法別の件数を残った承認から引き直す。
+    /// 損切りの手法（承認時点）: 承認の市場・承認時刻で数え、手法別の件数を残った承認から引き直す。残った承認には
+    /// 数える日報の日付（<paramref name="dailyReportDayOf"/>。報告可能になる瞬間を窓に含む日報。月報 §6 の日数の単位）を付ける。
     /// 明細を持たない値（件数だけで作った旧い値）と市場を持たない承認は絞らない（窓へ割り当てる手掛かりが無い）。
-    /// 本文を復元できなかった記録の数は時刻を持たないため、そのまま残す。
+    /// 🔴 本文を復元できなかった記録の数は時刻を持たない（<c>AuditLedgerEntry</c> が記録時刻を運ばない）ため、照会の範囲（外包）の数を
+    /// そのまま残す——隣り合う報告書の両方に数えられ得る（残余。#1255 で記録時刻を運ぶ）。
     /// </summary>
-    public static StopLossMethodUsage Within(this StopLossMethodUsage usage, ReportSessionWindow window)
+    public static StopLossMethodUsage Within(
+        this StopLossMethodUsage usage, ReportSessionWindow window, Func<DateTimeOffset, DateOnly> dailyReportDayOf)
     {
         ArgumentNullException.ThrowIfNull(usage);
         ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(dailyReportDayOf);
 
         if (usage.Approvals.Count == 0)
             return usage;
 
         var kept = usage.Approvals
             .Where(a => a.Market is not { } market || window.Counts(market, a.ApprovedAt))
+            .Select(a => a.Market is { } market
+                ? a with { ReportDay = dailyReportDayOf(ReportSessionWindow.ReportableAt(market, a.ApprovedAt)) }
+                : a)
             .ToList();
         var counts = kept
             .GroupBy(a => a.Method)

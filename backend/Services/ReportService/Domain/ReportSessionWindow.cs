@@ -91,10 +91,6 @@ public sealed record ReportSessionWindow(DateTimeOffset ClosedAfter, DateTimeOff
     public static DateTimeOffset ReportableAt(Market market, DateTimeOffset recordedAt) =>
         ReportableAt(market, LocalDate(recordedAt, MarketHours.ZoneOf(market)), recordedAt);
 
-    /// <summary>FR-06, #1224, IADR-0516 決定 1: 市場を持つ記録（セッションの日つき）がこの窓の報告書に載るか。</summary>
-    public bool Counts(Market market, DateOnly sessionDay, DateTimeOffset recordedAt) =>
-        Contains(ReportableAt(market, sessionDay, recordedAt));
-
     /// <summary>FR-06, #1224, IADR-0516 決定 1: 市場を持つ記録（記録の時刻の現地取引日をセッションとみなす）がこの窓の報告書に載るか。</summary>
     public bool Counts(Market market, DateTimeOffset recordedAt) => Contains(ReportableAt(market, recordedAt));
 

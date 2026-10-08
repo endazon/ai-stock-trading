@@ -1,16 +1,15 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
-using AiStockTrading.Shared.Kernel.Trading;
 
 namespace ReportService.Domain;
 
 // FR-06, FR-10, ADR-0040 決定1, #1002, IADR-0429 決定3: 日報の「選ばれていた手法（承認時点）」と「実際に適用された手法
 // （発注執行の解決結果）」の突き合わせ、および月報 §6 の日数ベースの内訳（純関数）。
 //
-// 🔴 **母集合は承認である。** 解決結果は DecisionId で承認に結び付け、**承認のセッションの日**（承認の市場の現地取引日。
-// #1224, IADR-0516 決定 4。市場を持たない旧い値は承認の JST 暦日）に数える（解決した時刻の日付では数えない）。
-// 米国の取引時間は JST の日付を跨ぐため、解決の時刻で数えると 1 行目と 2 行目の母集合がずれ、JST の暦日で数えると
-// 米国の 1 セッションが 2 日に割れる。
+// 🔴 **母集合は承認である。** 解決結果は DecisionId で承認に結び付け、**承認を数える日報の日付**（報告可能になる瞬間を窓に含む
+// 日報の JST の日付。#1224, IADR-0516 決定 4。窓で絞っていない値は承認の JST 暦日）に数える（解決した時刻の日付では数えない）。
+// 米国の取引時間は JST の日付を跨ぐため、解決の時刻で数えると 1 行目と 2 行目の母集合がずれ、承認の JST 暦日で数えると
+// 米国の 1 セッションが 2 日に割れる。日報の日付なら市場を混ぜても 1 つの暦（JST）で数えられる。
 //
 // 🔴 **解決結果が見つからない承認は、一致とも食い違いとも言わない**（別に数える）。「不明」を「なし」へ潰さない。
 //
@@ -65,11 +64,11 @@ public sealed record StopLossMethodComparison(
 
     // ---- 月報 §6（日数ベース）-----------------------------------------------------------------
 
-    /// <summary>新規建ての承認が 1 件以上あった日（承認のセッションの日・#1224）の数。</summary>
+    /// <summary>新規建ての承認が 1 件以上あった日（承認を数える日報の日付・#1224）の数。</summary>
     public int ApprovalDays => Outcomes.Select(o => o.Day).Distinct().Count();
 
     /// <summary>
-    /// 実際に適用された手法（S0〜S3）ごとに、それが 1 件以上あった日（承認のセッションの日）の数（手法の序数順）。
+    /// 実際に適用された手法（S0〜S3）ごとに、それが 1 件以上あった日（承認を数える日報の日付）の数（手法の序数順）。
     /// #1006, IADR-0429（2026-09-25 追記）: **見送りは数えない**——計画の月報 §6 の内訳は S0〜S3 の 4 区分であり、
     /// 見送りは実行機構が働かなかった承認である（食い違った日数には数える。<see cref="ForgoneDays"/>）。
     /// </summary>
@@ -114,7 +113,7 @@ public sealed record StopLossMethodComparison(
         }
 
         var outcomes = usage.Approvals
-            .Select(a => new StopLossMethodOutcome(a, SessionDayOf(a), latest.GetValueOrDefault(a.DecisionId)))
+            .Select(a => new StopLossMethodOutcome(a, ReportDayOf(a), latest.GetValueOrDefault(a.DecisionId)))
             .ToList();
         return new StopLossMethodComparison(outcomes, feed.UnreadableCount);
     }
@@ -124,15 +123,13 @@ public sealed record StopLossMethodComparison(
         DateOnly.FromDateTime(instant.ToOffset(ReportSchedule.JstOffset).DateTime);
 
     /// <summary>
-    /// FR-06, #1224, IADR-0516 決定 4: 承認の<b>セッションの日</b>（承認の市場の現地取引日。報告書はセッションの窓で承認を絞るため、
-    /// 日もセッションで数える）。市場を持たない旧い値は <see cref="JstDayOf"/>。
+    /// FR-06, #1224, IADR-0516 決定 4: 承認を数える<b>日報の日付</b>（JST。<see cref="StopLossMethodApproval.ReportDay"/>）。
+    /// 窓で絞っていない値は <see cref="JstDayOf"/>。
     /// </summary>
-    public static DateOnly SessionDayOf(StopLossMethodApproval approval)
+    public static DateOnly ReportDayOf(StopLossMethodApproval approval)
     {
         ArgumentNullException.ThrowIfNull(approval);
-        return approval.Market is { } market
-            ? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(approval.ApprovedAt, MarketHours.ZoneOf(market)).DateTime)
-            : JstDayOf(approval.ApprovedAt);
+        return approval.ReportDay ?? JstDayOf(approval.ApprovedAt);
     }
 
     /// <summary>
@@ -168,7 +165,7 @@ public sealed record StopLossMethodComparison(
     };
 }
 
-/// <summary>#1002: 承認 1 件と、その解決結果（見つからなければ null）。<see cref="Day"/> は承認のセッションの日（#1224。市場を持たない旧い値は JST 暦日）。</summary>
+/// <summary>#1002: 承認 1 件と、その解決結果（見つからなければ null）。<see cref="Day"/> は承認を数える日報の日付（#1224。窓で絞っていない値は JST 暦日）。</summary>
 public sealed record StopLossMethodOutcome(StopLossMethodApproval Approval, DateOnly Day, StopLossMethodResolved? Resolution)
 {
     /// <summary>解決結果が見つかり、適用した手法が承認の手法と違う（拒否を含む）。</summary>

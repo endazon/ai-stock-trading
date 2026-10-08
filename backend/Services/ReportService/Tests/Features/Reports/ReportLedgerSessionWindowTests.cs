@@ -150,8 +150,9 @@ public class ReportLedgerSessionWindowTests
     private static readonly Guid UsDecision = Guid.NewGuid();
     private static readonly Guid JpDecision = Guid.NewGuid();
 
+    // TradingDay は契約どおり JST の取引日（記録 ET 10-05 17:00 ＝ JST 10-06 06:00）。配置は市場・記録の時刻で決まる。
     private static readonly BorrowFeeAccrued UsAccrual =
-        new("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 5), 0.05m, 1_000m, 0.137m, Et(10, 5, 17));
+        new("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 6), 0.05m, 1_000m, 0.137m, Et(10, 5, 17));
 
     private static readonly BorrowFeeAccrued JpAccrual =
         new("7203", Market.Japan, new DateOnly(2026, 10, 6), 0.011m, 2_000m, 0.06m, Jst(10, 6, 11));
@@ -255,7 +256,7 @@ public class ReportLedgerSessionWindowTests
         await generator.RunOnceAsync();
 
         store.Get("daily-2026-10-06")!.Report.Body.Should().Contain(
-            "# 日報 2026-10-06\n\n集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）・LLM 利用実績は JST の暦日 2026-10-06\n\n");
+            "# 日報 2026-10-06\n\n集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）・LLM 利用実績は JST の暦日 2026-10-06（生成時点まで）\n\n");
         requests.Seen.Should().Contain(("llm", new DateOnly(2026, 10, 6), new DateOnly(2026, 10, 6)));
         foreach (var input in new[] { "borrow", "reduction", "buyin", "approval", "resolution", "fx" })
             requests.Seen.Should().Contain((input, new DateOnly(2026, 10, 5), new DateOnly(2026, 10, 6)), input);

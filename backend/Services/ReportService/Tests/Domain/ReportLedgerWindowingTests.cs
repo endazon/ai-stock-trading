@@ -103,14 +103,16 @@ public class ReportLedgerWindowingTests
         checkedCount.Should().BeGreaterThan(9_000);
     }
 
-    // T-06-064, FR-06, ADR-0027 決定 3, #1224, IADR-0516 決定 2: 借株料は計上日（市場の現地の日）のセッションで帰属する。
-    // 週末（ET 土曜）の計上日は月曜の日報に、ET 10-05 の計上（翌未明の記録）は日報 10-06 に、東証の夜の記録は翌日報に入る。
+    // T-06-064, FR-06, #1224, IADR-0516 決定 2（独立監査 🔴-1）: 借株料は他の入力と同じく市場・記録の時刻（AccruedAt / ObservedAt）で数え、
+    // TradingDay（契約上は JST の取引日）は配置に使わない。ET 10-05 の閉場後の計上は約定と同じ日報 10-06 に、週末（ET 土曜の夜）の計上は
+    // 月曜の日報に、東証の夜（生成境界の後）の計上は翌日報に入る。TradingDay を変えても配置は変わらない。
     [Fact]
-    public void T06_064_借株料は計上日のセッションで帰属し_週末の計上日は月曜の日報に入る()
+    public void T06_064_借株料は市場と記録の時刻で数え_TradingDayは配置に使わない()
     {
-        var saturday = new BorrowFeeAccrued("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 3), 0.05m, 1_000m, 0.137m, Et(10, 3, 17));
-        var monday = new BorrowFeeAccrued("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 5), 0.05m, 1_000m, 0.137m, Et(10, 6, 1));
-        var unavailable = new BorrowFeeAccrualUnavailable("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 5), "料率が取れない", Et(10, 5, 20));
+        // TradingDay は契約どおり JST の日付（記録の時刻の JST 日付）を入れる。
+        var saturday = new BorrowFeeAccrued("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 4), 0.05m, 1_000m, 0.137m, Et(10, 3, 17));
+        var monday = new BorrowFeeAccrued("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 6), 0.05m, 1_000m, 0.137m, Et(10, 5, 17));
+        var unavailable = new BorrowFeeAccrualUnavailable("TSLA", Market.UnitedStates, new DateOnly(2026, 10, 6), "料率が取れない", Et(10, 5, 20));
         var jpEvening = new BorrowFeeAccrued("7203", Market.Japan, new DateOnly(2026, 10, 6), 0.011m, 2_000m, 0.06m, Jst(10, 6, 18));
         var record = new BorrowFeeRecord([saturday, monday, jpEvening], [unavailable]);
 
@@ -123,6 +125,10 @@ public class ReportLedgerWindowingTests
         dailyTue.Accruals.Should().Equal(monday);
         dailyTue.Unavailable.Should().Equal(unavailable);
         dailyWed.Accruals.Should().Equal(jpEvening);
+
+        // TradingDay を別の日にしても配置は記録の時刻で決まる。
+        var shifted = monday with { TradingDay = new DateOnly(2026, 10, 1) };
+        new BorrowFeeRecord([shifted], []).Within(Daily(10, 6)).Accruals.Should().Equal(shifted);
     }
 
     private static OrderApproved Approval(Guid id, Market market, DateTimeOffset at, StopLossExecutionMethod method) =>
@@ -145,7 +151,7 @@ public class ReportLedgerWindowingTests
             Approval(next, Market.UnitedStates, Et(10, 6, 10), StopLossExecutionMethod.BrokerStopOrder),
         ], unreadableCount: 1);
 
-        var within = usage.Within(Daily(10, 6));
+        var within = usage.Within(Daily(10, 6), DayOf);
 
         within.Approvals.Select(a => a.DecisionId).Should().Equal(a1, a2);
         within.Counts.Should().Equal(
@@ -155,16 +161,47 @@ public class ReportLedgerWindowingTests
 
         var comparison = StopLossMethodComparison.From(within, new StopLossMethodResolutionFeed([]));
         comparison.ApprovalDays.Should().Be(1);
-        comparison.Outcomes.Select(o => o.Day).Distinct().Should().Equal(new DateOnly(2026, 10, 5));
+        // 日は承認を数える日報の日付（ET 10-05 のセッション＝日報 10-06）。
+        comparison.Outcomes.Select(o => o.Day).Distinct().Should().Equal(new DateOnly(2026, 10, 6));
 
         // 市場を持たない旧い明細は絞らず、件数だけの値（明細なし）はそのまま返す。
         var legacy = new StopLossMethodUsage([new StopLossMethodCount(StopLossExecutionMethod.BrokerStopOrder, 1)], 0)
         {
             Approvals = [new StopLossMethodApproval(Guid.NewGuid(), StopLossExecutionMethod.BrokerStopOrder, Et(10, 9, 10))],
         };
-        legacy.Within(Daily(10, 6)).Approvals.Should().HaveCount(1);
+        legacy.Within(Daily(10, 6), DayOf).Approvals.Should().HaveCount(1);
         var countsOnly = new StopLossMethodUsage([new StopLossMethodCount(StopLossExecutionMethod.SoftwareStop, 2)], 0);
-        countsOnly.Within(Daily(10, 6)).Should().BeSameAs(countsOnly);
+        countsOnly.Within(Daily(10, 6), DayOf).Should().BeSameAs(countsOnly);
+    }
+
+    private static DateOnly DayOf(DateTimeOffset reportableAt) => ReportSchedule.DailyReportDayOf(reportableAt, Defaults);
+
+    // T-06-072, FR-06, FR-10, ADR-0040 決定 1, #1224, IADR-0516 決定 4（独立監査 🟡-4）: 月報 §6 の「日」は、承認を数える日報の日付（JST）で
+    // 数える（ET と JST の日付を混ぜない）。米国 ET 10-05 の承認（日報 10-06 が数える）と東証 JST 10-05 の承認（日報 10-05）は 2 日、
+    // 米国 ET 10-05 の承認と東証 JST 10-06 の承認は同じ日報 10-06 に入るので 1 日。
+    [Fact]
+    public void T06_072_月報の日数は承認を数える日報の日付で数え_市場の日付を混ぜない()
+    {
+        var month = WindowOf(ReportKind.Monthly, new DateOnly(2026, 10, 1));
+        var us = Approval(Guid.NewGuid(), Market.UnitedStates, Et(10, 5, 10), StopLossExecutionMethod.BrokerStopOrder);
+        var jpSameDate = Approval(Guid.NewGuid(), Market.Japan, Jst(10, 5, 10), StopLossExecutionMethod.BrokerStopOrder);
+        var jpNextDate = Approval(Guid.NewGuid(), Market.Japan, Jst(10, 6, 10), StopLossExecutionMethod.BrokerStopOrder);
+
+        Days(us, jpSameDate).Should().Be(2, "ET 10-05 の米国は日報 10-06、JST 10-05 の東証は日報 10-05");
+        Days(us, jpNextDate).Should().Be(1, "どちらも日報 10-06 が数える");
+
+        int Days(params OrderApproved[] approvals) =>
+            StopLossMethodComparison.From(StopLossMethodUsage.From(approvals).Within(month, DayOf), new StopLossMethodResolutionFeed([]))
+                .ApprovalDays;
+    }
+
+    // ReportSchedule.DailyReportDayOf: 金曜の米国のセッション（土曜 05:00 JST に閉場）は月曜の日報、生成境界ちょうどはその日の日報。
+    [Fact]
+    public void T06_072_日報の日付は窓を含む最初の営業日()
+    {
+        DayOf(Et(10, 2, 16)).Should().Be(new DateOnly(2026, 10, 5));
+        DayOf(Jst(10, 6, 16)).Should().Be(new DateOnly(2026, 10, 6));
+        DayOf(Jst(10, 6, 16, 1)).Should().Be(new DateOnly(2026, 10, 7));
     }
 
     // T-06-066, FR-06, FR-10, ADR-0022 決定 1・2, #1224, IADR-0516 決定 2: 為替の情報源の状態は発生時刻で絞り（市場を持たない）、
@@ -195,10 +232,10 @@ public class ReportLedgerWindowingTests
         status.Within(Daily(10, 7)).StaleWarnings.Should().Equal(staleAfter);
     }
 
-    // T-06-062（自動縮小）, FR-06, FR-10, UC-06, #1224, IADR-0516 決定 2: 自動縮小 1 回は明細の市場ごとの報告可能になる瞬間の最も早いもので
+    // T-06-071, FR-06, FR-10, UC-06, #1224, IADR-0516 決定 2: 自動縮小 1 回は明細の市場ごとの報告可能になる瞬間の最も早いもので
     // 1 つの日報に入る（市場が混ざっても 2 つへ割れない）。明細が無ければ執行の時刻で数える。強制買戻しの推定は市場・推定時刻で数える。
     [Fact]
-    public void T06_062_自動縮小と強制買戻しの推定もセッションの窓で1つの日報に入る()
+    public void T06_071_自動縮小と強制買戻しの推定もセッションの窓で1つの日報に入る()
     {
         var usDuringSession = new MaintenanceMarginReductionExecuted(
             Guid.NewGuid(), 1.2m, 1.3m, 1.5m, 1.6m,

@@ -740,7 +740,7 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            // FR-06, #1224, IADR-0516 決定 2・3: 窓を覆う JST の暦日の外包で引き、計上日のセッションで絞る。
+            // FR-06, #1224, IADR-0516 決定 2・3: 窓を覆う JST の暦日の外包で引き、市場・記録の時刻で絞る（TradingDay は配置に使わない）。
             var (window, from, to) = LedgerScope(due);
             var record = await borrowFeeSource
                 .GetBorrowFeesAsync(from, to, cancellationToken)
@@ -980,7 +980,8 @@ public sealed class ReportAutoGenerator(
             var usage = await stopLossMethodUsageSource
                 .GetUsageAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
-            return usage?.Within(window);
+            // #1224, IADR-0516 決定 4: 月報 §6 の日数は、承認を数える日報の日付（報告可能になる瞬間を窓に含む日報）で数える。
+            return usage?.Within(window, at => ReportSchedule.DailyReportDayOf(at, settings.Schedule));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

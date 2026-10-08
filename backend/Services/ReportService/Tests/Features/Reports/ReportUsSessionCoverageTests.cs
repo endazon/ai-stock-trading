@@ -143,8 +143,8 @@ public class ReportUsSessionCoverageTests
         clock.UtcNow = TueAfterBoundary;
         await Generator(store, clock, new LedgerFillSource(UsSessionFills)).RunOnceAsync();
 
-        DailyBody(store, "daily-2026-10-05").Should().Contain("# 日報 2026-10-05\n\n集計したセッション: 米国 2026-10-02（ET）／東証 2026-10-05（JST）・LLM 利用実績は JST の暦日 2026-10-05\n\n");
-        DailyBody(store, "daily-2026-10-06").Should().Contain("# 日報 2026-10-06\n\n集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）・LLM 利用実績は JST の暦日 2026-10-06\n\n");
+        DailyBody(store, "daily-2026-10-05").Should().Contain("# 日報 2026-10-05\n\n集計したセッション: 米国 2026-10-02（ET）／東証 2026-10-05（JST）・LLM 利用実績は JST の暦日 2026-10-05（生成時点まで）\n\n");
+        DailyBody(store, "daily-2026-10-06").Should().Contain("# 日報 2026-10-06\n\n集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）・LLM 利用実績は JST の暦日 2026-10-06（生成時点まで）\n\n");
     }
 
     // T-06-024, FR-06, 計画 ADR-0052 決定 2, #1172: `/report regenerate` は自動生成と同じ窓で引く。

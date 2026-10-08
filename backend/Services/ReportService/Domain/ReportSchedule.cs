@@ -137,6 +137,25 @@ public static class ReportSchedule
             ? IsBusinessDay(day, options)
             : day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
 
+    /// <summary>
+    /// FR-06, #1224, IADR-0516 決定 4: 瞬間 <paramref name="reportableAt"/> を窓に含む<b>日報の日付</b>（JST）。
+    /// 日報 D の窓は (前の営業日の DailyAt, D の DailyAt] なので、DailyAt が瞬間以後になる最初の営業日である。
+    /// 遡り・先送りは <see cref="SessionLookbackDays"/> で打ち切る（全日休場という構成の誤りで無限に進めない）。
+    /// </summary>
+    public static DateOnly DailyReportDayOf(DateTimeOffset reportableAt, ReportScheduleOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var jst = reportableAt.ToOffset(JstOffset);
+        var day = DateOnly.FromDateTime(jst.DateTime);
+        if (new DateTimeOffset(day.ToDateTime(options.DailyAt), JstOffset) < reportableAt)
+            day = day.AddDays(1);
+        for (var ahead = 0; ahead < SessionLookbackDays && !IsBusinessDay(day, options); ahead++)
+            day = day.AddDays(1);
+
+        return day;
+    }
+
     /// <summary>営業日か（土日でも構成された休場日でもない）。</summary>
     public static bool IsBusinessDay(DateOnly date, ReportScheduleOptions options)
     {
