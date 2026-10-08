@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
 using AwesomeAssertions;
@@ -17,7 +18,7 @@ public class FinnhubSharedLastRequestTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_800_000_000);
 
-    // T-10-1574: 企業ニュースの直後（同じ時刻）の現在値の 429（残り 5）は 4301 にならない。企業ニュースを挟まずに受けた最初の
+    // T-10-1574: 企業ニュースの直後（1 秒以内）の現在値の 429（残り 5）は 4301 にならない。企業ニュースを挟まずに受けた最初の
     // 429（残り 5）は従来どおり 4301（同じ応答が手がかりになる状況であることの陽性対照）。
     [Fact]
     public async Task 企業ニュースの直後の現在値の429は日次の手がかりにしない()
@@ -40,11 +41,14 @@ public class FinnhubSharedLastRequestTests
             new CollectionSourceOptions
             {
                 Provider = "finnhub,finnhub-news",
-                Finnhub = new FinnhubOptions { ApiKey = "key", Symbols = ["AAPL"] },
+                // #1247, IADR-0513: Finnhub の限流器は容量 1（60/r 秒に 1 回）になり、既定の 30 回/分では同じプロセスの要求の間隔が
+                // 2 秒を割らない（BurstWindow 1 秒の「直後」は起きない）。「直後」を作るため自制を 600 回/分（100 ms 間隔）にし、
+                // 時計は実時間の経過を足す（固定の時計では 2 回目の要求が永遠に待つ）。
+                Finnhub = new FinnhubOptions { ApiKey = "key", Symbols = ["AAPL"], RateLimitPerMinute = 600 },
             },
             new HttpClient(new FinnhubRouteHandler()),
             new FixedClock(),
-            new FixedTimeProvider(),
+            new ElapsedTimeProvider(),
             logs);
 
     private static IInformationSource Source(IReadOnlyList<NamedInformationSource> sources, string name) =>
@@ -72,9 +76,12 @@ public class FinnhubSharedLastRequestTests
         public DateTimeOffset UtcNow => Now;
     }
 
-    private sealed class FixedTimeProvider : TimeProvider
+    // Now に実時間の経過を足す（限流器の待ち〔実の Task.Delay〕の分だけ進む）。
+    private sealed class ElapsedTimeProvider : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => Now;
+        private readonly Stopwatch _elapsed = Stopwatch.StartNew();
+
+        public override DateTimeOffset GetUtcNow() => Now + _elapsed.Elapsed;
     }
 
     private sealed class CapturingLoggerFactory : ILoggerFactory
