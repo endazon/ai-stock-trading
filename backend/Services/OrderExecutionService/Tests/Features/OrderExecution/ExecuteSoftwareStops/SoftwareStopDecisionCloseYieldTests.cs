@@ -814,4 +814,85 @@ public class SoftwareStopDecisionCloseYieldTests
         f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(713, "確かめられないものは差し引かない");
         f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted);
     }
+
+    // ---- #1222 独立監査（R1・Y2）: T-10-2445..T-10-2447 ----
+
+    // T-10-2445（R1・猶予の境界）: 利用者の手仕舞い 1,200 株が猶予の終わる 1 秒前に置かれ、判断の手仕舞い 228 株も処理中。判断の手仕舞いの照会の
+    // 最中に時計が 3 秒進む（取消の段では猶予の内・差し引きの段では猶予の外）→ 🔴 利用者の手仕舞いは取り消さず、**差し引いて**残り 228 株だけを送る。
+    // 是正前は差し引きの段が猶予を見直して素通りさせ、713 株を送った（押さえない証券会社では二重に売る）。
+    [Fact]
+    public async Task T_10_2445_試行の中で猶予をまたいだ利用者の手仕舞いも取り消さなければ必ず差し引く()
+    {
+        var f = NewFixture();
+        PocStops(f);
+        var decision = PendingClose(f, 228, origin: OrderApprovalOrigin.TradeDecision);
+        var owner = PendingClose(
+            f, 1_200, origin: OrderApprovalOrigin.OwnerClose, at: T0 - SoftwareStopExecutor.NettedCloseGrace + TimeSpan.FromSeconds(1));
+        var advanced = false;
+        f.Broker.QueryThrowsFor = id =>
+        {
+            if (id == decision.OrderId && !advanced)
+            {
+                advanced = true;
+                f.Clock.UtcNow = f.Clock.UtcNow.AddSeconds(3);
+            }
+
+            return null;
+        };
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        advanced.Should().BeTrue("前提: 判断の手仕舞いの照会の最中に猶予をまたぐ");
+        f.Broker.Cancels.Should().Equal([decision.OrderId], "取消の段では猶予の内なので利用者の手仕舞いは取り消さない");
+        f.Broker.Orders[owner.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle();
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(228, "取り消さなかった生きている利用者の手仕舞いは必ず差し引く");
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted);
+        (f.Broker.MarketCloses[0].Intent.Quantity + 1_200).Should().BeLessThanOrEqualTo(1_428, "二重に売らない");
+    }
+
+    // T-10-2446（Y2）: 利用者の手仕舞い 1,000 株のうち 600 株が約定済み（記録にも反映済み／記録はまだ 0 で証券会社だけが 600 と答える）。
+    // 建玉は約定の後の 1,428 株。残り 400 株だけを処理中として引き、713 株を送る（数量の全量 1,000 で引くと 428 株に縮めてしまう）。
+    [Theory]
+    [InlineData(600)]
+    [InlineData(0)]
+    public async Task T_10_2446_一部約定した利用者の手仕舞いは約定の残りだけを差し引く(int recordedFilled)
+    {
+        var f = NewFixture();
+        PocStops(f);
+        var id = Guid.NewGuid();
+        var oid = $"order-{id:N}";
+        f.Store.Save(new ExecutionRecord(
+            id, oid, "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, PositionEffect.Close,
+            1_000, 331.67m, recordedFilled, recordedFilled > 0 ? 331m : 0m, OrderStatus.PartiallyFilled, 0m, T0.AddSeconds(-25),
+            ApprovalOrigin: OrderApprovalOrigin.OwnerClose));
+        f.Broker.Orders[oid] = new Order(1_000) { Status = OrderStatus.PartiallyFilled, Filled = 600 };
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty();
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(713, "1,428 − 残り 400 ≧ 713");
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted);
+    }
+
+    // T-10-2447（Y2）: 同じ銘柄の S1 の記録 2 件がともに到達し、利用者の手仕舞い 1,000 株が処理中。先に送った S1 の決済（生きている）も
+    // 処理中の決済として引くので、2 件の合計は残りの 428 株を超えず、どちらも拒否されない。
+    [Fact]
+    public async Task T_10_2447_到達した2件のS1は先の決済も差し引き合計で建玉の残りを超えない()
+    {
+        var f = NewFixture();
+        var (upper, lower) = PocStops(f);
+        PendingClose(f, 1_000, origin: OrderApprovalOrigin.OwnerClose);
+
+        await f.Executor.OnTriggeredAsync(
+            new StopLossTriggered(Guid.NewGuid(), "AAPL", Market.UnitedStates, TradeSide.Buy, 1_428, 330.50m, 330.88m, T0));
+
+        f.Stops.Find(upper.EntryDecisionId)!.TriggeredAt.Should().NotBeNull("前提: 2 件とも到達した");
+        f.Stops.Find(lower.EntryDecisionId)!.TriggeredAt.Should().NotBeNull("前提: 2 件とも到達した");
+
+        f.Broker.Cancels.Should().BeEmpty("利用者の手仕舞いは取り消さない");
+        f.Broker.MarketCloses.Should().NotBeEmpty();
+        f.Broker.MarketCloses.Should().OnlyContain(c => c.Status == OrderStatus.Accepted, "差し引いた残りなので拒否されない");
+        f.Broker.MarketCloses.Sum(c => c.Intent.Quantity).Should().Be(428, "建玉 1,428 − 利用者の手仕舞い 1,000");
+    }
 }

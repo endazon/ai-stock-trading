@@ -95,8 +95,10 @@ public sealed class SoftwareStopExecutor(
 
     /// <summary>
     /// 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定4: 利用者の手仕舞い・維持率割れの自動縮小の決済を**取り消さず差し引く**のは、
-    /// 発注の記録の時刻（<c>ExecutionRecord.ExecutedAt</c>。約定の進みで前へ進む）からこの時間のあいだだけ。過ぎても処理中なら
-    /// 判断の手仕舞いと同じく取り消してから送る（約定しない指値が S1 を据え置き続けて損切りを止めないため）。
+    /// 発注の記録の時刻（<c>ExecutionRecord.ExecutedAt</c>。約定追跡は非終端のあいだこの値を進めない＝発注の時刻）からこの時間のあいだだけ。
+    /// 過ぎても処理中なら判断の手仕舞いと同じく取り消してから送る（約定しない指値が S1 を据え置き続けて損切りを止めないため）。
+    /// 猶予を見るのは**取消の段だけ**である。差し引きの段は猶予を見ず、取り消さなかった生きている利用者・自動縮小の決済をすべて引く
+    /// （1 回の試行の中で猶予をまたいだ決済を、取り消しも差し引きもせずに素通りさせない）。
     /// 常駐ガードの巡回（30 秒）4 回分。成行（利用者の既定・#847）は通常この間に約定する。
     /// </summary>
     public static readonly TimeSpan NettedCloseGrace = TimeSpan.FromMinutes(2);
@@ -707,11 +709,13 @@ public sealed class SoftwareStopExecutor(
         return result;
     }
 
-    // 🔴 #1222, IADR-0515 決定3: 取り消さずに差し引く決済か（出どころが利用者の手仕舞い・維持率割れの自動縮小で、猶予の内）。
-    // null（分からない）・TradeDecision は false＝判断の手仕舞いとして取り消す側。
+    // 🔴 #1222, IADR-0515 決定3: 出どころが利用者の手仕舞い・維持率割れの自動縮小か。null（分からない）・TradeDecision は false。
+    private static bool IsOwnerOrigin(ExecutionRecord record) =>
+        record.ApprovalOrigin is OrderApprovalOrigin.OwnerClose or OrderApprovalOrigin.MaintenanceMarginReduction;
+
+    // 🔴 #1222, IADR-0515 決定3: 取消の段で取り消さずに残す決済か（利用者・自動縮小で、猶予の内）。差し引きの段はこれを使わない。
     private static bool IsNettedOwnerClose(ExecutionRecord record, DateTimeOffset now) =>
-        record.ApprovalOrigin is OrderApprovalOrigin.OwnerClose or OrderApprovalOrigin.MaintenanceMarginReduction
-        && now - record.ExecutedAt < NettedCloseGrace;
+        IsOwnerOrigin(record) && now - record.ExecutedAt < NettedCloseGrace;
 
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定4: 取り消さなかった利用者の手仕舞い・維持率割れの自動縮小が生きているとき、
     // **送れる数量＝決済方向の建玉 − 処理中の決済の残りの合計**を返す（判断側 IADR-0461 の CountInFlightClosesAsync と同じ物差し）。
@@ -720,6 +724,9 @@ public sealed class SoftwareStopExecutor(
     //     （IADR-0461 と同じ。押さえるかは ADR-0050 決定 3 の実弾の確認項目）。残り＝記録の数量 − 約定（記録と照会の大きい方）。
     //   - 🔴 **証券会社が生きていると答えたものだけを数える**。確かめられない（null・例外）・終端は数えない＝差し引かずに送る側（損切りを止めない）。
     //   - 生きている利用者・自動縮小の決済が 1 本も無ければ NotApplicable（建玉照会を増やさない・従来の挙動）。
+    //   - 🔴 **猶予（NettedCloseGrace）はここでは見ない。** 取消の段が取り消さなかった生きている利用者・自動縮小の決済はすべて引く。
+    //     取消の段と別に時計を読んで猶予を判定すると、1 回の試行の中で猶予をまたいだ決済が「取消の段では猶予の内・ここでは猶予の外」になり、
+    //     取り消しも差し引きもされずに全量を送る（独立監査 R1。押さえない証券会社では二重に売る）。猶予を過ぎて取り消した決済は終端なので数えない。
     //   - 照会の順は「記録 → 注文照会 → 建玉照会（新しく）」。間に約定が進むと建玉は約定の後・残りは約定の前になり、**差し引き過ぎる**
     //     （少なく売り、残りは次の巡回で売る）。逆の順は差し引き不足（二重に売り得る）になるので採らない（作業仕様書の窓の表）。
     //   - 記録の読み出しの失敗は NotApplicable（差し引かずに送る。是正前と同じ側）。建玉照会の不明は PositionsUnknown（据え置き）。
@@ -729,9 +736,8 @@ public sealed class SoftwareStopExecutor(
         List<ExecutionRecord> candidates;
         try
         {
-            var now = clock.UtcNow;
             var pending = store.FindPendingCloses(stop.Symbol, stop.Market, stop.CloseSide);
-            if (!pending.Any(r => IsNettedOwnerClose(r, now)))
+            if (!pending.Any(IsOwnerOrigin))
                 return OwnerCloseNettingResult.NotApplicable;
 
             var legDecisionIds = new HashSet<Guid>();
@@ -762,7 +768,6 @@ public sealed class SoftwareStopExecutor(
 
         var inFlight = 0;
         var ownerCloses = new List<Guid>();
-        var checkedAt = clock.UtcNow;
         foreach (var record in candidates)
         {
             var live = await TryGetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
@@ -774,7 +779,7 @@ public sealed class SoftwareStopExecutor(
                 continue;
 
             inFlight += remaining;
-            if (IsNettedOwnerClose(record, checkedAt))
+            if (IsOwnerOrigin(record))
                 ownerCloses.Add(record.DecisionId);
         }
 
