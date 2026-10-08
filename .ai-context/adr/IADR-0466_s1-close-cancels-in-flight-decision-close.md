@@ -2,10 +2,10 @@
 title: IADR-0466 S1 の決済を送る前に、同じ建玉を売る判断の手仕舞い（処理中）を取り消し、取消が確定してから送る（保護の機構が出した決済は取り消さない）
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-05, UC-02, ADR-0040, ADR-0003, IADR-0344, IADR-0461, IADR-0355, IADR-0211, IADR-0396, IADR-0389, IADR-0351, IADR-0210, IADR-0113, ADR-0050]
+related_ids: [FR-10, FR-05, UC-02, ADR-0040, ADR-0003, IADR-0344, IADR-0461, IADR-0355, IADR-0211, IADR-0396, IADR-0389, IADR-0351, IADR-0210, IADR-0113, ADR-0050, UC-06, IADR-0515]
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-08
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0050_decision-close-nets-in-flight-closes-and-stop-line-exit-only-without-mechanical-stop.md
 ---
@@ -111,3 +111,11 @@ plan_refs:
     取消の最中に約定した分を差し引けず、残りの建玉を超える数量を送り得る。上は S1 の記録の残保護数量で押さえられ（自分の記録の株数を超えては売らない）、
     超えた分は証券会社に「建玉が足りない」で拒否され、撃ち直し（次の照会は約定を映す）で正しい数量になる。映る遅れの実測は無い（実弾解禁前の確認項目）。
   - 🔴 ブローカー側の逆指値（S0 / S3）が実弾で売れる数量を押さえるかは未確認（ADR-0050 決定 3）。押さえるなら、判断の手仕舞いの前に保護レグを取り消す経路が別に要る（未起案）。
+
+## 追記: 利用者の手仕舞い・維持率割れの自動縮小は取り消さない（2026-10-08 / #1222）
+
+- 上の残余「🔴 利用者の成行の手仕舞い（UC-06）・維持率割れの自動縮小は判断の手仕舞いと見分けられず、取り消す」は
+  [IADR-0515](IADR-0515_order-approval-origin-s1-nets-owner-closes.md) で解消した。決定 2 の 3 つ目の小項目（見分けない）を改める。
+- 発注の記録に承認の出どころ（`executed_orders.ApprovalOrigin`）を持たせ、出どころが利用者の手仕舞い・維持率割れの自動縮小で記録から 2 分以内の決済は
+  取り消さず、S1 は処理中の決済を差し引いた残りだけを送る。出どころが分からない記録（列を足す前の行を含む）と猶予を過ぎた決済は、本 IADR のとおり取り消す。
+- 本 IADR の他の決定（保護の機構の見分け・確かめ方・据え置き・窓の形）は変えない。

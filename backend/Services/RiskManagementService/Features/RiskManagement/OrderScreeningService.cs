@@ -137,7 +137,9 @@ public sealed class OrderScreeningService(
                 decision.DecisionId, intent, result.ApprovedQuantity, clock.UtcNow,
                 decision.CycleTrigger, decision.CycleStartedAt, settings.StopLossMethod,
                 // FR-10, #1176, IADR-0495 決定4: 審査が取引判断を承認した印（台帳が判断由来の承認行として書く）。
-                FromTradeDecision: true),
+                FromTradeDecision: true,
+                // FR-10, ADR-0050 決定1, #1222, IADR-0515 決定1: 出どころ＝判断（決済なら S1 の決済の前に取り消される判断の手仕舞い）。
+                Origin: OrderApprovalOrigin.TradeDecision),
             observation);
     }
 

@@ -70,6 +70,8 @@ public class DecisionExitReentryWiringTests
         var exitDecision = new TradeDecisionMade(Guid.NewGuid(), CloseLong("AMZN"), "利確（+3%）", ExitAt);
         var approved = await DecideAsync(wired, exitDecision);
         approved.Should().ContainSingle().Which.FromTradeDecision.Should().BeTrue("審査が判断を承認した");
+        // T-10-2444, #1222, IADR-0515 決定1: 審査の承認は出どころ TradeDecision を明示する（S1 の決済の前に取り消される判断の手仕舞い）。
+        approved[0].Origin.Should().Be(OrderApprovalOrigin.TradeDecision);
 
         // 2. 承認を本番の Wolverine 構成へ流す（台帳が判断由来として書く）。owner の手仕舞いは印の無い承認で流す。
         await InvokeAsync(wired, approved[0]);

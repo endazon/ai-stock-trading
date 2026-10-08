@@ -42,4 +42,8 @@ public sealed class ExecutedOrderRow
     // 🔴 FR-10, ADR-0049 決定1, #1122, IADR-0486 決定6: 新規建ての損切り幅に下限を掛けてラインを引いた印（出所の序数。1＝Fallback2Pct / 2＝Atr14）。
     // null＝分からない（列を足す前の行・決済・保護レグ）。**列の追加だけ**（既存行は null＝従来どおり遡及の判定をする）。
     public StopWidthFloorSource? StopFloorSource { get; set; }
+
+    // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定2: 承認の出どころ（序数。1＝TradeDecision / 2＝OwnerClose / 3＝MaintenanceMarginReduction）。
+    // null＝分からない。**列の追加だけ**（既存行は null＝S1 は判断の手仕舞いと同じく取り消す側。是正前と同じ挙動）。
+    public OrderApprovalOrigin? ApprovalOrigin { get; set; }
 }

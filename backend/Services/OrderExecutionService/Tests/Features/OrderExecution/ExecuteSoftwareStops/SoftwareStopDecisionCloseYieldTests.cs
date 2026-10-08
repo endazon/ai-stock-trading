@@ -133,9 +133,14 @@ public class SoftwareStopDecisionCloseYieldTests
             return Task.CompletedTask;
         }
 
+        /// <summary>#1222: この回数目以降の建玉照会を不明（null）で返す。</summary>
+        public int? PositionsUnknownFrom { get; set; }
+
         public Task<IReadOnlyList<BrokerPositionSnapshot>?> GetPositionsAsync(CancellationToken ct = default)
         {
             PositionQueries++;
+            if (PositionsUnknownFrom is { } from && PositionQueries >= from)
+                return Task.FromResult<IReadOnlyList<BrokerPositionSnapshot>?>(null);
             return Task.FromResult<IReadOnlyList<BrokerPositionSnapshot>?>(Snapshot());
         }
 
@@ -217,13 +222,16 @@ public class SoftwareStopDecisionCloseYieldTests
         (S1(f, 713, 331.67m, minutesOld: 120), S1(f, 715, 330.88m, minutesOld: 60));
 
     // 板に残っている処理中の決済（発注執行の非終端の Close の記録＋証券会社の生きている注文）。
-    private static ExecutionRecord PendingClose(Fixture f, int quantity, Guid? decisionId = null, string? orderId = null)
+    // #1222, IADR-0515: origin＝承認の出どころ（null＝分からない）。at＝記録の時刻（既定は到達の 25 秒前）。
+    private static ExecutionRecord PendingClose(
+        Fixture f, int quantity, Guid? decisionId = null, string? orderId = null, OrderApprovalOrigin? origin = null,
+        DateTimeOffset? at = null)
     {
         var id = decisionId ?? Guid.NewGuid();
         var oid = orderId ?? $"order-{id:N}";
         var record = new ExecutionRecord(
             id, oid, "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, PositionEffect.Close,
-            quantity, 331.67m, 0, 0m, OrderStatus.Accepted, 0m, T0.AddSeconds(-25));
+            quantity, 331.67m, 0, 0m, OrderStatus.Accepted, 0m, at ?? T0.AddSeconds(-25), ApprovalOrigin: origin);
         f.Store.Save(record);
         f.Broker.Orders[oid] = new Order(quantity);
         return record;
@@ -623,5 +631,187 @@ public class SoftwareStopDecisionCloseYieldTests
         f.Broker.Cancels.Should().BeEmpty("保護記録の StopDecisionId を持つ決済は保護レグである");
         f.Broker.Orders[leg.OrderId].Status.Should().Be(OrderStatus.Accepted);
         f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted);
+    }
+
+    // ---- #1222, IADR-0515: 利用者の手仕舞い・維持率割れの自動縮小は取り消さず差し引く（T-10-2435..T-10-2440） ----
+
+    // 利用者・自動縮小の決済が約定し切った（証券会社の注文が終端・建玉が減った・約定追跡が記録を終端にした）。
+    private static void FillOwnerClose(Fixture f, ExecutionRecord record)
+    {
+        var order = f.Broker.Orders[record.OrderId];
+        f.Broker.Position -= order.Quantity - order.Filled;
+        order.Filled = order.Quantity;
+        order.Status = OrderStatus.Filled;
+        f.Store.UpdateOutcome(record.OrderId, OrderStatus.Filled, order.Quantity, 331m, 0m, f.Clock.UtcNow);
+    }
+
+    // T-10-2435（受け入れ基準 1）: 利用者の成行の手仕舞いが建玉の全量（1,428 株）を処理中 → S1 は取り消さず、残り 0 なので送らない
+    // （据え置き・失敗に数えない・待ち時間を置かない）。利用者の決済が約定し切ると、減少は外部要因の観測に割り当てられ、S1 は 1 株も重ねて売らない。
+    [Fact]
+    public async Task T_10_2435_利用者の手仕舞いが全量を処理中ならS1は取り消さず送らず約定の後も重ねて売らない()
+    {
+        var f = NewFixture();
+        var (upper, lower) = PocStops(f);
+        var owner = PendingClose(f, 1_428, origin: OrderApprovalOrigin.OwnerClose);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("利用者の手仕舞いは取り消さない");
+        f.Broker.MarketCloses.Should().BeEmpty("処理中の決済を差し引いた残りが 0 なので送らない（二重に売らない）");
+        result.Deferred.Should().Be(1);
+        var row = f.Stops.Find(upper.EntryDecisionId)!;
+        row.State.Should().Be(ProtectiveStopState.Active);
+        row.TriggeredAt.Should().NotBeNull("到達の記録は残す（損切りを止めない）");
+        row.CloseFailures.Should().Be(0, "失敗に数えない");
+        row.NextCloseAttemptAt.Should().BeNull("待ち時間を置かない");
+        f.Log.Entries.Should().Contain(e => e.Level == LogLevel.Warning
+            && e.Message.Contains("すべて覆っています", StringComparison.Ordinal)
+            && e.Message.Contains(owner.DecisionId.ToString(), StringComparison.Ordinal));
+
+        FillOwnerClose(f, owner);
+        for (var cycle = 0; cycle < 3; cycle++)
+        {
+            f.Clock.UtcNow = f.Clock.UtcNow.AddSeconds(30);
+            await Guard(f, upper, f.Broker.Snapshot());
+        }
+
+        f.Broker.MarketCloses.Should().BeEmpty("利用者が売り切った建玉を S1 が重ねて売らない");
+        f.Broker.Cancels.Should().BeEmpty();
+        // 建玉の減少は外部要因の観測として割り当てられる（記録を閉じる確定は常駐ガードの巡回の観測が行う。IADR-0344 追記(7)）。
+        f.Stops.Find(upper.EntryDecisionId)!.EffectiveProtectedQuantity.Should().Be(0, "利用者が売った分を S1 の上限から外す");
+        f.Stops.Find(lower.EntryDecisionId)!.TriggeredAt.Should().BeNull("到達していない記録は撃たない");
+    }
+
+    // T-10-2436（受け入れ基準 1）: 利用者の手仕舞いが一部（500 株・1,000 株）を処理中 → 取り消さず、建玉 − 処理中の残りを上限に送り、受理される。
+    // 送る数量と利用者の決済の合計は建玉（1,428 株）を超えない。
+    [Theory]
+    [InlineData(500, 713)]
+    [InlineData(1_000, 428)]
+    public async Task T_10_2436_利用者の手仕舞いが一部を処理中なら取り消さず差し引いた残りだけを送る(int ownerQuantity, int expectedSent)
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var owner = PendingClose(f, ownerQuantity, origin: OrderApprovalOrigin.OwnerClose);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("利用者の手仕舞いは取り消さない");
+        f.Broker.Orders[owner.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle();
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted, "差し引いた残りなので建玉不足で拒否されない");
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(expectedSent);
+        (f.Broker.MarketCloses[0].Intent.Quantity + ownerQuantity).Should().BeLessThanOrEqualTo(1_428, "二重に売らない");
+        f.Stops.Find(upper.EntryDecisionId)!.RemainingProtected.Should().Be(713 - expectedSent);
+        f.Stops.Find(upper.EntryDecisionId)!.CloseFailures.Should().Be(0);
+    }
+
+    // T-10-2437（受け入れ基準 2）: 維持率割れの自動縮小の決済が処理中 → 利用者の手仕舞いと同じく取り消さず差し引く（一部・全量）。
+    [Theory]
+    [InlineData(1_000, 428)]
+    [InlineData(1_428, 0)]
+    public async Task T_10_2437_維持率割れの自動縮小が処理中なら取り消さず差し引いた残りだけを送る(int reductionQuantity, int expectedSent)
+    {
+        var f = NewFixture();
+        PocStops(f);
+        var reduction = PendingClose(f, reductionQuantity, origin: OrderApprovalOrigin.MaintenanceMarginReduction);
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("自動縮小は取り消さない");
+        f.Broker.Orders[reduction.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        if (expectedSent == 0)
+        {
+            f.Broker.MarketCloses.Should().BeEmpty();
+            result.Deferred.Should().Be(1);
+        }
+        else
+        {
+            f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(expectedSent);
+            f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted);
+        }
+    }
+
+    // T-10-2438（受け入れ基準 3・5）: 判断の手仕舞い（出どころ TradeDecision）と利用者の手仕舞い（200 株）が並ぶ → 判断の手仕舞いだけを
+    // 取り消し、利用者の手仕舞いは残して差し引く。S1 は 713 株を送って受理される。
+    [Fact]
+    public async Task T_10_2438_判断の手仕舞いは従来どおり取り消し並ぶ利用者の手仕舞いは残して差し引く()
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var decision = PendingClose(f, 1_228, origin: OrderApprovalOrigin.TradeDecision);
+        var owner = PendingClose(f, 200, origin: OrderApprovalOrigin.OwnerClose);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().Equal([decision.OrderId], "判断の手仕舞いだけを取り消す");
+        f.Broker.Orders[owner.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle();
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(713, "1,428 − 200 ≧ 713 なので縮めない");
+        f.Stops.Find(upper.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // T-10-2439（受け入れ基準 4・否定形）: 🔴 出どころが分からない（null・Unknown）記録、および猶予（NettedCloseGrace）を過ぎても処理中の
+    // 利用者の手仕舞いは、判断の手仕舞いと同じく取り消してから送る（損切りを止めない側。是正前と同じ）。
+    [Theory]
+    [InlineData("null")]
+    [InlineData("unknown")]
+    [InlineData("owner-stale")]
+    [InlineData("reduction-stale")]
+    public async Task T_10_2439_出どころが分からない決済と猶予を過ぎた利用者の決済は取り消してから送る(string shape)
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var stale = T0 - SoftwareStopExecutor.NettedCloseGrace;
+        var pending = shape switch
+        {
+            "null" => PendingClose(f, 1_428),
+            "unknown" => PendingClose(f, 1_428, origin: OrderApprovalOrigin.Unknown),
+            "owner-stale" => PendingClose(f, 1_428, origin: OrderApprovalOrigin.OwnerClose, at: stale),
+            _ => PendingClose(f, 1_428, origin: OrderApprovalOrigin.MaintenanceMarginReduction, at: stale),
+        };
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().Equal([pending.OrderId], "分からない・猶予を過ぎたものは取り消す側へ倒す");
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted, "損切りは止まらない");
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(713);
+        f.Stops.Find(upper.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // T-10-2440（受け入れ基準 4・否定形）: 利用者の手仕舞いを確かめられない（照会 null・例外）／読み出しが例外 → 取り消さず、差し引かずに送る
+    // （損切りを止めない）。差し引くための建玉照会が不明 → 据え置く（既存の「建玉不明は据え置き」と同じ・失敗に数えない）。
+    [Theory]
+    [InlineData("query-null")]
+    [InlineData("query-throws")]
+    [InlineData("read-throws")]
+    [InlineData("positions-unknown")]
+    public async Task T_10_2440_利用者の手仕舞いを確かめられなければ差し引かずに送り建玉が不明なら据え置く(string shape)
+    {
+        var f = shape == "read-throws"
+            ? NewFixture(wrapStore: inner => new PendingClosesThrowingStore(inner))
+            : NewFixture();
+        var (upper, _) = PocStops(f);
+        var owner = PendingClose(f, 500, origin: OrderApprovalOrigin.OwnerClose);
+        if (shape == "query-null")
+            f.Broker.QueryReturnsNull.Add(owner.OrderId);
+        if (shape == "query-throws")
+            f.Broker.QueryThrows.Add(owner.OrderId);
+        if (shape == "positions-unknown")
+            f.Broker.PositionsUnknownFrom = 2; // 1 回目（S1 の建玉照会）は答え、差し引きのための照会し直しが不明。
+
+        var result = await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("利用者の手仕舞いは取り消さない");
+        if (shape == "positions-unknown")
+        {
+            f.Broker.MarketCloses.Should().BeEmpty();
+            result.Deferred.Should().Be(1);
+            f.Stops.Find(upper.EntryDecisionId)!.CloseFailures.Should().Be(0);
+            return;
+        }
+
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Intent.Quantity.Should().Be(713, "確かめられないものは差し引かない");
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted);
     }
 }

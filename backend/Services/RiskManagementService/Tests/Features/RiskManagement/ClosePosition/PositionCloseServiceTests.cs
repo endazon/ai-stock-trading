@@ -101,6 +101,17 @@ public class PositionCloseServiceTests
         outcome.Approval.ApprovedAt.Should().Be(Now);
     }
 
+    // T-10-2444, FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定1: 利用者の手仕舞いの承認は出どころ OwnerClose を明示する
+    // （発注執行の S1 の決済の前の取消が、これを取り消さず差し引く）。判断由来の印は立てない。
+    [Fact]
+    public void T_10_2444_利用者の手仕舞いの承認は出どころを利用者の手仕舞いと明示する()
+    {
+        var outcome = Create(LedgerWithLong()).Request(Command(), Actor);
+
+        outcome.Approval!.Origin.Should().Be(OrderApprovalOrigin.OwnerClose);
+        outcome.Approval.FromTradeDecision.Should().BeFalse();
+    }
+
     [Fact]
     public void 部分決済は指定数量だけを発行する()
     {

@@ -17,6 +17,11 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // 取引台帳は承認行の由来（判断由来の決済＝利確・判断の手仕舞い）をこの印から書き、判断由来の決済の後の同日・同方向の新規建てを止める。
 // **true にするのは審査（OrderScreeningService）だけ**。owner の手仕舞い・維持率の自動縮小は判断を経ないので既定（false）のまま。
 // 🔴 CycleTrigger（観測の値。IADR-0307「統制の判定には一切使わない」）で代用しない。本項目を持たない旧いメッセージは false として読まれる。
+//
+// 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定1: Origin は**この承認の出どころ**（判断・利用者の手仕舞い・維持率割れの自動縮小）である。
+// 書き手 3 つ（審査・PositionCloseService・MaintenanceMarginReductionService）がそれぞれ明示する。発注執行は発注の記録へ写し、
+// S1 の決済の前の取消が利用者の手仕舞い・自動縮小を取り消さず差し引くために読む。**既定 Unknown＝分からない**（旧いメッセージ）であり、
+// S1 は判断の手仕舞いと同じく取り消す側へ倒す。FromTradeDecision（既定 false が「判断ではない」と「旧い」を区別できない）で代用しない。
 public record OrderApproved(
     Guid DecisionId,
     OrderIntent Intent,
@@ -25,4 +30,5 @@ public record OrderApproved(
     string? CycleTrigger = null,
     DateTimeOffset? CycleStartedAt = null,
     StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder,
-    bool FromTradeDecision = false);
+    bool FromTradeDecision = false,
+    OrderApprovalOrigin Origin = OrderApprovalOrigin.Unknown);

@@ -218,6 +218,7 @@
     "CycleTrigger": "String",
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
+    "Origin": "OrderApprovalOrigin",
     "StopLossMethod": "StopLossExecutionMethod"
   },
   "OrderCancelled": {

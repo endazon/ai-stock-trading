@@ -93,6 +93,16 @@ public class MaintenanceMarginReductionServiceTests
     }
 
     // T-10-196: 記録イベントは日報の表が要求する 7 列（04_report-templates）をすべて持つ。
+    // T-10-2444, FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定1: 自動縮小の承認は出どころ MaintenanceMarginReduction を明示する。
+    [Fact]
+    public void T_10_2444_自動縮小の承認は出どころを維持率割れの自動縮小と明示する()
+    {
+        var outcome = Create(BreachedSnapshot()).Evaluate().Outcome!;
+
+        outcome.Approvals.Should().NotBeEmpty()
+            .And.OnlyContain(a => a.Origin == OrderApprovalOrigin.MaintenanceMarginReduction && !a.FromTradeDecision);
+    }
+
     [Fact]
     public void 記録イベントは日報が要求する項目をすべて持つ()
     {
