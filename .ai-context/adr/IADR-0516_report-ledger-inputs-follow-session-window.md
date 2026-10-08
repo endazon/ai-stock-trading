@@ -13,6 +13,7 @@ plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0027 (借株料 決定 3 計上日の属する日・月へ帰属)
 related_specs:
   - ../specs/20261008_1224_report-ledger-inputs-session-window.md
+  - ../specs/20261008_1255_ledger-entry-occurred-at.md
 ---
 
 # IADR-0516: 監査台帳を引く報告書の入力をセッションの窓に揃える（#1224）
@@ -106,6 +107,16 @@ related_specs:
     集計を改める（本 IADR の改定または新 IADR）。
   - 本文を復元できなかった承認の記録の数（`StopLossMethodUsage.UnreadableCount`）は、台帳の記録（`AuditLedgerEntry`）が記録時刻を運ばないため絞れず、
     外包の範囲で数える（隣り合う報告書の両方に出得る。独立監査 🟡-1）。記録時刻を運ぶ是正は #1255。
+    - ［2026-10-08 追記・#1255］**本項は解消した（残余から外す）。** 台帳の記録（`AuditLedgerEntry`）は発生時刻（`OccurredAt`。照会の絞り込みと同じ列）を
+      運ぶ——REST は応答の `occurredAt` を読み（契約の変更なし）、gRPC は `LedgerRecord` に `optional string occurred_at = 4`（往復書式・フィールド追加＝非破壊）を足した。
+      本文を復元できなかった承認の記録は、本文が読めず市場が分からないため**市場を持たない記録と同じく発生時刻**（`ReportSessionWindow.Contains`）で数え、
+      同じ種別の報告書のちょうど 1 つに入る（月報は日報の和。`StopLossMethodUsage.UnreadableOccurredAt`）。発生時刻を欠く応答（旧版の台帳）の記録は従来どおり外包の範囲で数え
+      （黙って 0 件にしない）、gRPC の `occurred_at` が在るのに読めない値は id と同じく応答全体を未供給にする（原則 A・IADR-0445 決定 3）。
+      損切りの手法の解決の復元できなかった数（`StopLossMethodResolutionFeed.UnreadableCount`）は決定 2 のとおり窓で絞らない入力のまま。
+      試験 T-06-073〜T-06-076。作業仕様書 [`.ai-context/specs/20261008_1255_ledger-entry-occurred-at.md`](../specs/20261008_1255_ledger-entry-occurred-at.md)。
+      - 残余（独立監査 🟡-2）: 本文の読める承認は市場の形（米国は大引けと承認時刻の遅いほう）で、読めない承認は発生時刻で窓に入れるため、**同じ瞬間の承認でも
+        読めるか否かで載る日報が違い得る**（例: 米国の寄り付き前＝JST 13:00〜16:00 の承認は、読めれば同じ日の夜のセッションの日報＝翌日報、読めなければ当日の日報）。
+        どちらも同じ種別の報告書のちょうど 1 つに入る性質は保つ。根本の是正（台帳の記録に市場を運ぶ）は本追記の範囲外。
   - 記録の書き込みが生成より遅れた場合（報告可能になる瞬間は窓の中だが、生成の時点で台帳に無い）は載らない。作り直しで拾える。
   - 借株料の計上・自動縮小の発火元は未結線（呼び出し元が無い・既定は空列）。結線時に記録の時刻（`AccruedAt`・`ExecutedAt`）を実時刻で書くこと。
     借株料は記録の時刻で配置するため、計上の処理を走らせる時刻（例: 米国の閉場後か、JST の深夜の一括か）がどの日報に載るかを決める。

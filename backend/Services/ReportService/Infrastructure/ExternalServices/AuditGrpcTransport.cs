@@ -99,7 +99,7 @@ public sealed class AuditGrpcTransport : IDisposable
             if (ToEntry(record) is not { } entry)
             {
                 logger.LogError(
-                    "{Subject}の gRPC 応答に id・種別・本文の欠けた記録がありました（{Records} 件中）。"
+                    "{Subject}の gRPC 応答に id・種別・本文の欠けた（または発生時刻の読めない）記録がありました（{Records} 件中）。"
                         + "送り手との契約の食い違いとみなし、**未供給として扱います**。",
                     subject, response.Records.Count);
                 return null;
@@ -121,12 +121,28 @@ public sealed class AuditGrpcTransport : IDisposable
     }
 
     /// <summary>線上の記録 → REST と同じ受け皿。欠落・読めない id は <c>null</c>（原則 A）。</summary>
-    internal static AuditLedgerEntry? ToEntry(Proto.LedgerRecord record) =>
-        record.HasId && Guid.TryParseExact(record.Id, "D", out var id)
-        && record.HasEventType && !string.IsNullOrEmpty(record.EventType)
-        && record.HasDetail
-            ? new AuditLedgerEntry(id, record.EventType, record.Detail)
+    /// <remarks>
+    /// FR-06, IADR-0516（2026-10-08 追記）, #1255: 発生時刻 <c>occurred_at</c> は<b>無ければ時刻なし</b>（旧版の提供側。従来どおり照会の範囲で数える）、
+    /// <b>在るのに読めなければ</b> id と同じく契約の食い違い（<c>null</c>＝応答全体を未供給）。
+    /// </remarks>
+    internal static AuditLedgerEntry? ToEntry(Proto.LedgerRecord record)
+    {
+        if (!(record.HasId && Guid.TryParseExact(record.Id, "D", out var id)
+            && record.HasEventType && !string.IsNullOrEmpty(record.EventType)
+            && record.HasDetail))
+        {
+            return null;
+        }
+
+        if (!record.HasOccurredAt)
+            return new AuditLedgerEntry(id, record.EventType, record.Detail);
+
+        // REST（System.Text.Json の ISO 8601）と同じく秒精度の表記も受ける（往復書式の固定に縛らない。独立監査 🟢-1）。
+        return DateTimeOffset.TryParse(
+            record.OccurredAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var occurredAt)
+            ? new AuditLedgerEntry(id, record.EventType, record.Detail, occurredAt)
             : null;
+    }
 
     public void Dispose() => _channel.Dispose();
 }

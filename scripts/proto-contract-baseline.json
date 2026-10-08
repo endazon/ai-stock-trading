@@ -67,6 +67,11 @@
               "number": 1,
               "type": "string",
               "label": "optional"
+            },
+            "occurred_at": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
             }
           },
           "reserved": {
