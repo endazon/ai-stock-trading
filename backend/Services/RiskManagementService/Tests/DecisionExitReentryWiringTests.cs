@@ -45,7 +45,8 @@ public class DecisionExitReentryWiringTests
     public async Task T_10_2320_本番構成で判断の利確の後の同じ銘柄の買いは名前付きの理由で拒否され手仕舞いの種類で分かれる()
     {
         using var capture = new MeterCapture(BusinessMetricNames.MeterName);
-        await using var factory = new RiskWorkerWebApplicationFactory();
+        // #1258: 基準資金の仕込みも偽の時計から数える（実時刻から数えると固定日の翌々日以降に外れて赤になる）。
+        await using var factory = new RiskWorkerWebApplicationFactory { CapitalBaselineSeedNow = RebuyAt };
         using var wired = factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
         {
             services.AddSingleton<IClock>(new FakeClock(RebuyAt, TradingDay.Of(RebuyAt)));
