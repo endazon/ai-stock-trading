@@ -1,0 +1,44 @@
+{
+  "$comment": "FR-01, FR-03, ADR-0043 決定2, #1225, IADR-0512: Finnhub の同一鍵の予算。check-finnhub-key-budget.js が読む。codeDefault / pollCodeDefault はコードの既定値の複写であり、C# の試験（FinnhubSharedKeyBudgetTests・InformationCollectionService.Tests / MarketMonitorService.Tests の FinnhubKeyBudgetDefaultsTests）がコードと突き合わせる。",
+  "limitPerMinute": 60,
+  "keyEnvSuffixes": ["Finnhub__ApiKey", "Finnhub__RequestsPerMinute", "Finnhub__RateLimitPerMinute"],
+  "consumers": [
+    {
+      "deployment": "information-collection-service",
+      "rateEnv": "Collection__Source__Finnhub__RateLimitPerMinute",
+      "codeDefault": 30,
+      "codeSource": "InformationCollectionService.Infrastructure.ExternalServices.FinnhubOptions.RateLimitPerMinute"
+    },
+    {
+      "deployment": "market-monitor-service",
+      "rateEnv": "MarketData__Finnhub__RequestsPerMinute",
+      "codeDefault": 5,
+      "codeSource": "AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData.FinnhubMarketDataOptions.RequestsPerMinute"
+    },
+    {
+      "deployment": "risk-management-service",
+      "rateEnv": "MarketData__Finnhub__RequestsPerMinute",
+      "codeDefault": 5,
+      "codeSource": "AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData.FinnhubMarketDataOptions.RequestsPerMinute"
+    },
+    {
+      "deployment": "report-service",
+      "rateEnv": "MarketData__Finnhub__RequestsPerMinute",
+      "codeDefault": 5,
+      "codeSource": "AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData.FinnhubMarketDataOptions.RequestsPerMinute"
+    },
+    {
+      "deployment": "trade-decision-service",
+      "rateEnv": "MarketData__Finnhub__RequestsPerMinute",
+      "codeDefault": 5,
+      "codeSource": "AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData.FinnhubMarketDataOptions.RequestsPerMinute"
+    }
+  ],
+  "cycleFit": {
+    "deployment": "market-monitor-service",
+    "pollEnv": "Monitor__PollIntervalSeconds",
+    "pollCodeDefault": 60,
+    "pollCodeSource": "MarketMonitorService.Hosted.MonitorOptions.PollIntervalSeconds",
+    "minRequestsPerCycle": 12
+  }
+}

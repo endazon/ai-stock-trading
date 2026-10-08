@@ -254,7 +254,7 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 
 | 環境変数 | `ast-secrets` キー | 用途 | 既定 |
 | --- | --- | --- | --- |
-| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない）。**同一の Finnhub アカウント鍵を両方へ設定するとレート予算を共有する**（IADR-0275 実測で確認済みの構成。コードの既定のレート予算〔情報収集30/分＋市況5/分×4サービス=50/分〕はこの共有を前提に実測上限〔60/分・固定60秒ウィンドウ〕内へ調整済み。**chart は市場監視だけ `MarketData__Finnhub__RequestsPerMinute=12` を与え、合計 57/分**〔1 巡回が巡回間隔 60 秒に収まる要求数を 12 にするため。ADR-0043 決定2・IADR-0434。下記「巡回が間隔に収まること」〕。別アカウントの鍵を使うなら市況側の `RequestsPerMinute` を引き上げてよい） | 空=NoOp |
+| `MARKETDATA_FINNHUB_API_KEY` | `marketdata-finnhub-api-key` | ①時価・価格文脈（情報収集の `FINNHUB_API_KEY` とは**別枠**の opt-in・IADR-0068。フォールバックしない＝収集鍵の設定だけで①が黙って有効化されない）。**同一の Finnhub アカウント鍵を両方へ設定するとレート予算を共有する**（IADR-0275 実測で確認済みの構成。コードの既定のレート予算〔情報収集30/分＋市況5/分×4サービス=50/分〕はこの共有を前提に実測上限〔60/分・固定60秒ウィンドウ〕内へ調整済み。**chart は市場監視だけ `MarketData__Finnhub__RequestsPerMinute=12` を与え、合計 57 ≤ 60 回/分**〔1 巡回が巡回間隔 60 秒に収まる要求数を 12 にするため。ADR-0043 決定2・IADR-0434。下記「巡回が間隔に収まること」〕。別アカウントの鍵を使うなら市況側の `RequestsPerMinute` を引き上げてよい） | 空=NoOp |
 | `FRED_API_KEY` | `fred-api-key` | 為替レートの**フォールバック**（第一は日銀・認証不要。#686 / IADR-0308）＋収集ソース（FRED）。基準通貨〔USD〕への換算は FRED `DEXJPUS` の**逆数**（IADR-0107 / IADR-0152） | **空=冗長化なし**（日銀単独で動く。起動時に警告 1 回）。下記「為替換算」参照 |
 | `EDINET_SUBSCRIPTION_KEY` | `edinet-subscription-key` | 収集ソース（任意） | 空=当該ソース無効 |
 | `SEC_EDGAR_USER_AGENT` | `sec-edgar-user-agent` | 収集ソース SEC EDGAR。**機密ではない**が SEC 規約が求める**連絡先（実在のメールアドレス）入り**の User-Agent＝環境固有の個人情報のため values へ直書きせず本経路で与える（#279 / IADR-0114 決定2）。例: `AiStockTrading/1.0 (you@example.com)` | 空=**SEC EDGAR だけ**が収集対象から外れる（finnhub/FRED は有効なまま） |
@@ -269,7 +269,10 @@ Helm は**リストを置換する**ため、`extraEnv` を上書きしている
 監視銘柄を増やしてよいのは、次の 2 つを両方満たす範囲だけである。
 
 - **(a) 同一鍵の予算**: 同じ鍵を使うすべてのプロセスの `RequestsPerMinute`（情報収集は `RateLimitPerMinute`）の合計 ≤ 60 回/分。
-  chart の現況は 情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3（`risk-management` / `report` / `trade-decision`）＝ **57**。
+  chart の現況は 情報収集 30 ＋ 市場監視 12 ＋ 市況 5 × 3（`risk-management` / `report` / `trade-decision`）＝ **57 ≤ 60 回/分**。
+  **［2026-10-08 / #1225 / IADR-0512］** `helm.yml` が既定と `values-local` の描画で (a)(b) を検査する（`scripts/check-finnhub-key-budget.js`。
+  env の無いプロセスはコードの既定で数え、レプリカ数を掛ける。母集合とコードの既定値は `scripts/finnhub-key-budget.json` の 1 か所で、C# の試験がコードと突き合わせる）。
+  Finnhub の鍵や自制レートの env を母集合の外のワークロードへ足すと赤になる。**この README・`values.yaml`・`values-local.yaml` の「N ≤ 60 回/分」の N も描画の合計と一致しなければ赤**になるので、値を変えたら数字も直す。
 - **(b) 1 巡回が巡回間隔に収まる**: `market-monitor` は 1 巡回で保有銘柄と監視銘柄の現在値を照会し、**同じ（銘柄・市場）は 1 回だけ**照会して
   保有の損切り評価と監視銘柄の急変検知の両方に使う（**［2026-10-07 / #1189 / IADR-0494］** 以前は別々に照会し、同じ銘柄でも 2 要求だった）。
   **米国の銘柄の（保有 ∪ 監視銘柄）の数 ≤ `MarketData__Finnhub__RequestsPerMinute` × `Monitor__PollIntervalSeconds` ÷ 60** を満たすこと
