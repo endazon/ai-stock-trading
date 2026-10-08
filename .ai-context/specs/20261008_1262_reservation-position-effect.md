@@ -107,6 +107,7 @@ plan_refs:
 | 1 | 送信結果が不明のまま突合で確定した決済（利用者の手仕舞い・自動縮小・判断の手仕舞い）の記録は、**本番の照会の写像**（`MoomooReservationBrokerProbe` が Open を返す）を通しても `Close` であり、`FindPendingCloses` に載る（EF・インメモリ） | T-10-2458 |
 | 2 | 端から端まで（本番の照会の写像）: 突合で確定した利用者の手仕舞い・自動縮小は S1 に取り消されず差し引かれ、判断の手仕舞いは取り消される | T-10-2459 |
 | 3 | 否定形: 列を足す前の予約の行（null）は照会の値（Open）のまま＝是正前と同じで、S1 はそれを取り消しも差し引きもしない。エントリーの予約（Open）は Open のまま | T-10-2460 |
+| 1・2（再武装） | 端から端まで（本番の照会の写像）: 突合で確定した S1 の決済（予約の行は Close）が 0 約定のまま取り消されて終わる → 約定追跡の再武装（IADR-0389）が S1 の行を Active へ戻し全量（707）を取り戻す（独立監査 🟡-2 で追加。T-10-2461〜2465 は PR #1266 が確保） | T-10-2466 |
 
 試験の置き場所: `ReservationPositionEffectTests`（T-10-2456〜T-10-2458・T-10-2460 の記録）・`SoftwareStopDecisionCloseYieldTests`（T-10-2459・T-10-2460 の到達・T-10-2457 の S1）・
 T-10-2457 の他の保護の機構 4 経路は既存の試験（`OrderExecutionServiceIndeterminateStopTests`・`OrderExecutionServiceProtectiveStopTests`・
@@ -125,6 +126,7 @@ T-10-2457 の他の保護の機構 4 経路は既存の試験（`OrderExecutionS
 | P6 | 常駐ガードの成行で渡さない | 2（`ProtectiveStopGuardIndeterminateCloseTests`） |
 | P7 | 承認直後の S0 の逆指値で渡さない | 1（`OrderExecutionServiceIndeterminateStopTests`） |
 | P8 | 保護喪失の成行で渡さない | 2（`OrderExecutionServiceProtectiveStopTests`） |
+| P9 | 🔴 突合が照会の値で記録を書く（P1 と同じ） | T-10-2466 が赤（記録の表明を外しても、S1 の行が Completed のまま＝再武装されずに赤） |
 
 ## 検証
 
@@ -139,4 +141,4 @@ T-10-2457 の他の保護の機構 4 経路は既存の試験（`OrderExecutionS
 - 🔴 列を足す前の予約の行（配備の時点で滞留中の Reserved）は null で、突合で確定した決済は従来どおり Open として残る（上の設計 5。是正前と同じ）。
 - 突合で確定した S0/S3 の逆指値レグも `Close` になり、Active でない行の古い試行のレグが証券会社に生きていれば判断の手仕舞いの差し引き（IADR-0461）に数えられる。
   通常の経路で送った逆指値レグと同じ扱いであり、本件で新しく生じる型ではない（少なく売る側。次の判断で残りを売る）。
-- 試験の採番: T-10-2456〜T-10-2460（着手時の最大 T-10-2455 の次）。
+- 試験の採番: T-10-2456〜T-10-2460（着手時の最大 T-10-2455 の次）と T-10-2466（独立監査の追加。T-10-2461〜T-10-2465 は PR #1266 が確保）。
