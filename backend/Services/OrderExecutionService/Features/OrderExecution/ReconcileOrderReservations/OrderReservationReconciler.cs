@@ -134,7 +134,8 @@ public sealed class OrderReservationReconciler(
                             {
                                 // 発注済みが確定 → 記録を保存し確定する。OrderExecuted は既存イベント
                                 // （監査済み・Risk/Notification が冪等消費）を再利用する。
-                                confirmed = BuildRecord(decisionId, order, clock.UtcNow, reservation.StopFloorSource);
+                                confirmed = BuildRecord(
+                                    decisionId, order, clock.UtcNow, reservation.StopFloorSource, reservation.ApprovalOrigin);
                                 executedOrders.Save(confirmed);
                                 reservations.MarkCompleted(decisionId, order.OrderId, clock.UtcNow);
                                 protectionTarget = confirmed;
@@ -249,8 +250,11 @@ public sealed class OrderReservationReconciler(
     // ブローカ照会結果（BrokerOrder）から発注結果記録を組み立てる。Intent はブローカが持つ注文実体に由来する。
     // 🔴 FR-10, #1122, IADR-0486 決定6: ブローカーの注文は「下限を掛けてラインを引いた」印を持たない。予約の行が残した印
     // （承認の発注意図の値）を写す（写さないと、ATR の下限で建てた行を既存の S1 への遡及が 2% まで広げ得る）。
+    // 🔴 FR-10, UC-06, ADR-0050 決定1, #1253, IADR-0515 追記(1): 承認の出どころも予約の行から写す（写さないと、送信結果が不明だった
+    // 利用者の手仕舞い・維持率割れの自動縮小を、S1 の決済の前の取消が判断の手仕舞いと同じく取り消す）。null（列を足す前の行）は null のまま。
     private static ExecutionRecord BuildRecord(
-        Guid decisionId, BrokerOrder order, DateTimeOffset now, StopWidthFloorSource? stopFloorSource)
+        Guid decisionId, BrokerOrder order, DateTimeOffset now, StopWidthFloorSource? stopFloorSource,
+        OrderApprovalOrigin? approvalOrigin)
     {
         var intent = order.Intent;
         var slippage = SlippageCalculator.Compute(intent.Price, order.AveragePrice, intent.Side);
@@ -274,7 +278,8 @@ public sealed class OrderReservationReconciler(
             order.Status,
             slippage,
             executedAt,
-            stopFloorSource);
+            stopFloorSource,
+            approvalOrigin);
     }
 
     private OrderExecuted ToOrderExecuted(ExecutionRecord record) =>

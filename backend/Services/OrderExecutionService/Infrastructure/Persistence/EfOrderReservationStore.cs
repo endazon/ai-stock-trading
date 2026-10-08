@@ -9,7 +9,8 @@ namespace OrderExecutionService.Infrastructure.Persistence;
 public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrderReservationStore
 {
     public bool TryReserve(
-        Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null)
+        Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
+        OrderApprovalOrigin? approvalOrigin = null)
     {
         // 先読みは高速路（再配送の大半はここで false）。並行配送の実際の排他は主キーの一意制約が担う。
         if (db.DispatchReservations.Any(r => r.DecisionId == decisionId))
@@ -24,6 +25,8 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             BrokerProvider = brokerProvider,
             // 🔴 #1122, IADR-0486 決定6: 承認の発注意図の「下限を掛けてラインを引いた」印。突合が記録へ写す。
             StopFloorSource = stopFloorSource,
+            // 🔴 #1253, IADR-0515 追記(1): 承認の出どころ。突合が記録へ写す。
+            ApprovalOrigin = approvalOrigin,
         });
 
         try
@@ -70,7 +73,7 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             ? null
             : new OrderDispatchReservation(
                 row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt, row.BrokerProvider,
-                row.StopFloorSource);
+                row.StopFloorSource, row.ApprovalOrigin);
     }
 
     // #141, IADR-0074: 滞留 Reserved（State=Reserved AND ReservedAt < reservedBefore）を ReservedAt 昇順で
@@ -82,7 +85,8 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             .OrderBy(r => r.ReservedAt)
             .Take(batchSize)
             .Select(r => new OrderDispatchReservation(
-                r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt, r.BrokerProvider, r.StopFloorSource))
+                r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt, r.BrokerProvider, r.StopFloorSource,
+                r.ApprovalOrigin))
             .ToList();
     }
 

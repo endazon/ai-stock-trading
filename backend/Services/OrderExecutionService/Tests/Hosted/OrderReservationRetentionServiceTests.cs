@@ -31,7 +31,8 @@ public class OrderReservationRetentionServiceTests
 
         public bool TryReserve(
             Guid decisionId, DateTimeOffset reservedAt, AiStockTrading.Shared.Contracts.Trading.BrokerProvider? brokerProvider,
-            AiStockTrading.Shared.Contracts.Trading.StopWidthFloorSource? stopFloorSource = null) => true;
+            AiStockTrading.Shared.Contracts.Trading.StopWidthFloorSource? stopFloorSource = null,
+            AiStockTrading.Shared.Contracts.Trading.OrderApprovalOrigin? approvalOrigin = null) => true;
 
         public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt) { }
 
