@@ -11,17 +11,19 @@ public sealed class InMemoryOrderReservationStore : IOrderReservationStore
 
     public bool TryReserve(
         Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
-        OrderApprovalOrigin? approvalOrigin = null)
+        OrderApprovalOrigin? approvalOrigin = null, PositionEffect? positionEffect = null)
     {
         lock (_gate)
         {
             // #1051, IADR-0444 決定1: 送る先の取引環境を予約に残す（EF 実装と同じ）。
             // 🔴 #1253, IADR-0515 追記(1): 承認の出どころも残す（突合が記録へ写す。EF 実装と同じ）。
+            // 🔴 #1262, IADR-0515 追記(2): 建て・決済の別も残す（突合が記録の PositionEffect をこの値で書く。EF 実装と同じ）。
             return _reservations.TryAdd(
                 decisionId,
                 new OrderDispatchReservation(
                     decisionId, OrderDispatchState.Reserved, reservedAt, BrokerOrderId: null,
-                    BrokerProvider: brokerProvider, StopFloorSource: stopFloorSource, ApprovalOrigin: approvalOrigin));
+                    BrokerProvider: brokerProvider, StopFloorSource: stopFloorSource, ApprovalOrigin: approvalOrigin,
+                    PositionEffect: positionEffect));
         }
     }
 

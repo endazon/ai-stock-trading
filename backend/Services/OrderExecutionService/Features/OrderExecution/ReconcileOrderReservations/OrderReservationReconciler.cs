@@ -26,6 +26,8 @@ namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservatio
 // 呼ぶのは**確定した 1 件の出口（sink.EmitAsync）の後**である——保護の処理（ブローカーへの発注を含む）が落ちても、
 // 確定済みの OrderExecuted と所見は既に出ている（IADR-0371）。結果は sink.EmitProtectionAsync へ渡す。
 // エントリーかどうかは保護記録の有無で判別する（予約・プローブの PositionEffect は当てにならない。IADR-0362 決定 3）。
+// ［#1262, IADR-0515 追記(2)］予約は建て・決済の別を持つようになった（記録の PositionEffect に使う）が、列を足す前の行は持たないため、
+// 保護レグを張るかの判別は引き続き保護記録で行う。
 //
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 //
@@ -135,7 +137,8 @@ public sealed class OrderReservationReconciler(
                                 // 発注済みが確定 → 記録を保存し確定する。OrderExecuted は既存イベント
                                 // （監査済み・Risk/Notification が冪等消費）を再利用する。
                                 confirmed = BuildRecord(
-                                    decisionId, order, clock.UtcNow, reservation.StopFloorSource, reservation.ApprovalOrigin);
+                                    decisionId, order, clock.UtcNow, reservation.StopFloorSource, reservation.ApprovalOrigin,
+                                    reservation.PositionEffect);
                                 executedOrders.Save(confirmed);
                                 reservations.MarkCompleted(decisionId, order.OrderId, clock.UtcNow);
                                 protectionTarget = confirmed;
@@ -252,9 +255,12 @@ public sealed class OrderReservationReconciler(
     // （承認の発注意図の値）を写す（写さないと、ATR の下限で建てた行を既存の S1 への遡及が 2% まで広げ得る）。
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1253, IADR-0515 追記(1): 承認の出どころも予約の行から写す（写さないと、送信結果が不明だった
     // 利用者の手仕舞い・維持率割れの自動縮小を、S1 の決済の前の取消が判断の手仕舞いと同じく取り消す）。null（列を足す前の行）は null のまま。
+    // 🔴 FR-10, UC-06, ADR-0050 決定1, #1262, IADR-0515 追記(2): 建て・決済の別は予約の行の値で書く。本番の照会（moomoo）は返さず Open で近似する
+    // ——照会の値を写すと、突合で確定した決済が新規建てとして残り、S1 の取消・差し引き・判断の手仕舞いの差し引き・S1 の再武装に載らない。
+    // 予約の行が null（列を足す前の行）なら照会の値のまま（是正前と同じ。推測で決済にしない＝エントリーを決済と読む害の方が広い）。
     private static ExecutionRecord BuildRecord(
         Guid decisionId, BrokerOrder order, DateTimeOffset now, StopWidthFloorSource? stopFloorSource,
-        OrderApprovalOrigin? approvalOrigin)
+        OrderApprovalOrigin? approvalOrigin, PositionEffect? reservedPositionEffect)
     {
         var intent = order.Intent;
         var slippage = SlippageCalculator.Compute(intent.Price, order.AveragePrice, intent.Side);
@@ -270,7 +276,7 @@ public sealed class OrderReservationReconciler(
             intent.Market,
             intent.Side,
             intent.ProductType,
-            intent.PositionEffect,
+            reservedPositionEffect ?? intent.PositionEffect,
             intent.Quantity,
             intent.Price,
             order.FilledQuantity,

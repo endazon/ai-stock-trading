@@ -6,6 +6,7 @@ using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
+using OrderExecutionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -977,5 +978,104 @@ public class SoftwareStopDecisionCloseYieldTests
         f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted, "損切りは止まらない");
         f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(713);
         f.Stops.Find(upper.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // #1262, IADR-0515 追記(2): 送信結果が不明だった決済の予約を、🔴 **本番の照会の写像**（MoomooReservationBrokerProbe。moomoo の注文は
+    // 建て・決済の別を返さず Open で近似する）を通して突合が発注済みと確定する。reservedEffect＝予約の行の建て・決済の別（null＝列を足す前の行）。
+    // 証券会社は発注の時刻を答えない（記録の時刻＝突合の時刻＝到達の 30 秒前）。注文は証券会社に生きている（受理・未約定）。
+    private static async Task<ExecutionRecord> ReconciledCloseViaMoomoo(
+        Fixture f, int quantity, OrderApprovalOrigin? reservedOrigin, PositionEffect? reservedEffect)
+    {
+        var decisionId = Guid.NewGuid();
+        var orderId = $"moomoo-{decisionId:N}";
+        f.Reservations.TryReserve(
+                decisionId, T0.AddHours(-2), BrokerProvider.MoomooSimulate, approvalOrigin: reservedOrigin, positionEffect: reservedEffect)
+            .Should().BeTrue();
+        f.Broker.Orders[orderId] = new Order(quantity);
+        var probe = new MoomooReservationBrokerProbe(new FoundOrderMoomooClient(new MoomooOrderSnapshot(
+            orderId, MoomooOrderState.Submitted, "AAPL", MoomooMarket.UnitedStates, MoomooSide.Sell,
+            Quantity: quantity, Price: 331.67m, FilledQuantity: 0, AveragePrice: 0m, PlacedAt: null, CompletedAt: null)));
+        var reconciler = new OrderReservationReconciler(
+            f.Reservations, f.Store, probe, f.Broker, f.Clock, Options.Create(new ReconciliationOptions { Enabled = true }));
+        var now = f.Clock.UtcNow;
+        f.Clock.UtcNow = T0.AddSeconds(-30);
+        (await reconciler.ReconcileAsync(T0.AddHours(-1), batchSize: 10)).Terminalized.Should().Be(1);
+        f.Clock.UtcNow = now;
+        return f.Store.FindByDecisionId(decisionId)!;
+    }
+
+    // T-10-2459（#1262 受け入れ基準 1・2・端から端まで）: 🔴 送信結果が不明だった利用者の手仕舞い（自動縮小）1,000 株を、本番の照会の写像で突合が
+    // 発注済みと確定し、30 秒後に S1 が到達する → 予約の行の建て・決済の別（Close）で記録されているので S1 の読み出しに載り、取り消さずに
+    // 処理中の残りを差し引いた 428 株だけを送って受理される（是正前は Open の記録として素通りし、713 株を送って建玉不足で拒否された＝二重に売り得た）。
+    [Theory]
+    [InlineData(OrderApprovalOrigin.OwnerClose)]
+    [InlineData(OrderApprovalOrigin.MaintenanceMarginReduction)]
+    public async Task T_10_2459_本番の照会で突合が確定した利用者の手仕舞いをS1は差し引く(OrderApprovalOrigin origin)
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var reconciled = await ReconciledCloseViaMoomoo(f, 1_000, origin, PositionEffect.Close);
+        reconciled.PositionEffect.Should().Be(PositionEffect.Close, "照会は Open で近似するが予約の行の値で記録する");
+        reconciled.ApprovalOrigin.Should().Be(origin);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty("突合で確定した利用者の手仕舞いも取り消さない");
+        f.Broker.Orders[reconciled.OrderId].Status.Should().Be(OrderStatus.Accepted);
+        f.Broker.MarketCloses.Should().ContainSingle();
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Accepted, "差し引いた残りなので建玉不足で拒否されない");
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(428, "1,428 − 1,000");
+        f.Stops.Find(upper.EntryDecisionId)!.RemainingProtected.Should().Be(713 - 428);
+    }
+
+    // T-10-2459（#1262 受け入れ基準 2・判断の手仕舞い）: 本番の照会の写像で突合が確定した判断の手仕舞い（全量 1,428 株）は、S1 が取り消してから
+    // 713 株を送る（是正前は Open の記録として素通りし、取り消されずに 713 株が建玉不足で拒否された）。
+    [Fact]
+    public async Task T_10_2459_本番の照会で突合が確定した判断の手仕舞いをS1は取り消してから送る()
+    {
+        var f = NewFixture();
+        var (upper, _) = PocStops(f);
+        var reconciled = await ReconciledCloseViaMoomoo(f, 1_428, OrderApprovalOrigin.TradeDecision, PositionEffect.Close);
+        reconciled.PositionEffect.Should().Be(PositionEffect.Close);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().Equal([reconciled.OrderId], "同じ建玉を売る判断の手仕舞いを取り消す");
+        f.Broker.MarketCloses.Should().ContainSingle().Which.Status.Should().Be(OrderStatus.Accepted, "損切りは止まらない");
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(713);
+        f.Stops.Find(upper.EntryDecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+    }
+
+    // T-10-2460（#1262 受け入れ基準 3・否定形）: 🔴 列を足す前の予約の行（建て・決済の別が null）から本番の照会の写像で突合が確定した決済は、
+    // 照会の値（Open）のまま記録され、S1 は取り消しも差し引きもしない＝是正前と同じ（推測で決済と読まない。IADR-0515 追記(2) の保守側の選択）。
+    // 偽の証券会社は SIMULATE の実測どおり生きている売りの残りを売れる数量から除くので、713 株の成行は建玉不足で拒否される（残余として記録）。
+    [Fact]
+    public async Task T_10_2460_列を足す前の予約の行から突合が確定した決済はS1に取り消されも差し引かれもしない()
+    {
+        var f = NewFixture();
+        PocStops(f);
+        var reconciled = await ReconciledCloseViaMoomoo(f, 1_000, OrderApprovalOrigin.OwnerClose, reservedEffect: null);
+        reconciled.PositionEffect.Should().Be(PositionEffect.Open, "列を足す前の行は照会の近似のまま（是正前と同じ）");
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        f.Broker.Cancels.Should().BeEmpty();
+        f.Broker.MarketCloses.Should().ContainSingle();
+        f.Broker.MarketCloses[0].Intent.Quantity.Should().Be(713, "差し引かない");
+        f.Broker.MarketCloses[0].Status.Should().Be(OrderStatus.Rejected, "是正前と同じ挙動（残余）");
+    }
+
+    // T-10-2457（#1262 受け入れ基準 1 の前提・保護の機構の書き手）: S1 の決済は予約の行に Close を残す（通常の経路の記録と同じ値）。
+    [Fact]
+    public async Task T_10_2457_S1の決済は予約の行に決済を残す()
+    {
+        var f = NewFixture();
+        PocStops(f);
+
+        await f.Executor.OnTriggeredAsync(Trigger());
+
+        var sent = f.Broker.MarketCloses.Should().ContainSingle().Subject;
+        f.Reservations.Find(sent.DecisionId)!.PositionEffect.Should().Be(PositionEffect.Close);
+        f.Store.FindByDecisionId(sent.DecisionId)!.PositionEffect.Should().Be(PositionEffect.Close, "予約の行と発注の記録は同じ値を持つ");
     }
 }

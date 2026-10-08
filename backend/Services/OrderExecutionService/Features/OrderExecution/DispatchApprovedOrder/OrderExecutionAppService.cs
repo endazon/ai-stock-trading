@@ -348,9 +348,11 @@ public sealed class OrderExecutionAppService(
         // 🔴 FR-10, #1122, IADR-0486 決定6: 予約には承認の発注意図の「下限を掛けてラインを引いた」印も残す（新規建てだけが持つ）。
         // 送信結果が不明のまま突合が発注済みと確定すると、突合はブローカーの注文から記録を組み直すため、印はここにしか残らない。
         // 🔴 FR-10, UC-06, #1253, IADR-0515 追記(1): 承認の出どころも予約の行に残す（突合が組み直す記録へ写す。Unknown は null で書く＝相 4 と同じ）。
+        // 🔴 FR-10, UC-06, ADR-0050 決定1, #1262, IADR-0515 追記(2): 建て・決済の別も残す（相 4 と同じ intent.PositionEffect）。証券会社の照会は
+        // 返さないため、残さないと突合で確定した利用者の手仕舞い・自動縮小・判断の手仕舞いが新規建てとして記録され、S1 が取り消しも差し引きもしない。
         if (!reservations.TryReserve(
                 approved.DecisionId, clock.UtcNow, broker.Provider, intent.StopFloorSource,
-                approved.Origin == OrderApprovalOrigin.Unknown ? null : approved.Origin))
+                approved.Origin == OrderApprovalOrigin.Unknown ? null : approved.Origin, intent.PositionEffect))
             throw new OrderDispatchReservationConflictException(approved.DecisionId);
 
         // 🔴 FR-10, #853, IADR-0428 決定3: **予約を取った後・送る前に**、承認時の保護の文脈（手法・損切りライン・数量）を残す（S0 / S3）。
@@ -902,7 +904,9 @@ public sealed class OrderExecutionAppService(
         bool reserved;
         try
         {
-            reserved = reservations.TryReserve(stopDecisionId, clock.UtcNow, broker.Provider); // #1051, IADR-0444 決定1
+            // #1051, IADR-0444 決定1 / FR-10, UC-06, #1262, IADR-0515 追記(2): 逆指値レグは決済（通常の経路の記録と同じ値）。
+            reserved = reservations.TryReserve(
+                stopDecisionId, clock.UtcNow, broker.Provider, positionEffect: PositionEffect.Close);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1276,7 +1280,8 @@ public sealed class OrderExecutionAppService(
         // 🔴 FR-10, FR-11, UC-06, #848, IADR-0117（2026-09-19 追記・改定 7）: 成行手仕舞いもエントリーと同じ
         // 予約 → 発注 → 確定の 3 相（IADR-0057）で送る。「送ったかもしれない」を予約に残し、
         // **届いたか不明を「解消に失敗した（＝未発注）」と取り違えない**。
-        if (!reservations.TryReserve(closeDecisionId, clock.UtcNow, broker.Provider)) // #1051, IADR-0444 決定1
+        // #1051, IADR-0444 決定1 / FR-10, UC-06, #1262, IADR-0515 追記(2): 成行手仕舞いは決済（通常の経路の記録と同じ値）。
+        if (!reservations.TryReserve(closeDecisionId, clock.UtcNow, broker.Provider, positionEffect: PositionEffect.Close))
         {
             // 予約済み＝送信中か成否不明。重ねて送らない。
             return IndeterminateClose(approved, quantity, closeDecisionId, closeIntent, cause: null);

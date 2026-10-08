@@ -448,7 +448,8 @@ public sealed class ProtectiveStopGuard(
             bool reserved;
             try
             {
-                reserved = reservations.TryReserve(stopDecisionId, now, broker.Provider); // #1051, IADR-0444 決定1
+                // #1051, IADR-0444 決定1 / FR-10, UC-06, #1262, IADR-0515 追記(2): 逆指値レグは決済（通常の経路の記録と同じ値）。
+                reserved = reservations.TryReserve(stopDecisionId, now, broker.Provider, positionEffect: PositionEffect.Close);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -546,7 +547,8 @@ public sealed class ProtectiveStopGuard(
 
             // 相 2（発注着手の権威・IADR-0057）: 送る「前」に決定的な DecisionId を予約する。取れなければ送らない
             //（(b) の後に並行して予約された＝送信中か成否不明。重ねて送らない）。
-            if (!reservations.TryReserve(closeDecisionId, clock.UtcNow, broker.Provider)) // #1051, IADR-0444 決定1
+            // #1051, IADR-0444 決定1 / FR-10, UC-06, #1262, IADR-0515 追記(2): 成行手仕舞いは決済（通常の経路の記録と同じ値）。
+            if (!reservations.TryReserve(closeDecisionId, clock.UtcNow, broker.Provider, positionEffect: PositionEffect.Close))
             {
                 LogHeldClose(stop, closeDecisionId);
                 return Outcome.Unknown;
