@@ -1,10 +1,13 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OrderExecutionService.Infrastructure.Persistence;
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
+using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
+using OrderExecutionService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
@@ -493,5 +496,51 @@ public class SoftwareStopReArmerTests
         a.State.Should().Be(ProtectiveStopState.Completed);
         a.RemainingProtected.Should().Be(0);
         a.UpdatedAt.Should().Be(updatedA);
+    }
+
+    // T-10-2466（FR-10, UC-06, ADR-0050 決定1, #1262, IADR-0515 追記(2) / IADR-0389）: 🔴 送信結果が不明だった S1 の決済（予約の行は Close）を、
+    // **本番の照会の写像**（MoomooReservationBrokerProbe。moomoo の注文は建て・決済の別を返さず Open で近似する）を通して突合が発注済みと確定し、
+    // その記録が 0 約定のまま取り消されて終わる → 約定追跡の再武装が S1 の行を Active へ戻し、全量を取り戻して Critical の事象を出す。
+    // 是正前は突合の記録が Open になり、再武装（Close の記録だけが候補）が黙って外れて建玉が無保護のまま残った。
+    [Fact]
+    public async Task T_10_2466_突合で確定したS1の決済が0約定で取り消されたら本番の照会の写像を通しても再武装される()
+    {
+        var f = NewFixture();
+        var entryId = Guid.NewGuid();
+        var created = Now.AddHours(-6);
+        var stop = new ProtectiveStopOrder(
+            entryId, ProtectiveStopIds.SoftwareStopId(entryId), string.Empty, "AAPL", Market.UnitedStates,
+            TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 707, 338.51m, 1m, 1,
+            ProtectiveStopState.Completed, created, Now.AddHours(-2), StopLossExecutionMethod.SoftwareStop,
+            TriggeredAt: Now.AddHours(-2), TriggeredPrice: 338.20m, RemainingProtected: 0);
+        f.Stops.Save(stop);
+        f.Store.Save(new ExecutionRecord(
+            entryId, "entry-1", "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash,
+            PositionEffect.Open, 707, 340m, 707, 340m, OrderStatus.Filled, 0m, created));
+
+        // S1 の決済の予約（SoftwareStopExecutor と同じく Close を残す）。送信結果は不明のまま滞留した。
+        var closeDecisionId = ProtectiveStopIds.SoftwareCloseDecisionId(entryId, attempt: 1);
+        var reservations = new InMemoryOrderReservationStore();
+        reservations.TryReserve(closeDecisionId, Now.AddHours(-2), BrokerProvider.MoomooSimulate, positionEffect: PositionEffect.Close)
+            .Should().BeTrue();
+        var probe = new MoomooReservationBrokerProbe(new FoundOrderMoomooClient(new MoomooOrderSnapshot(
+            "close-1", MoomooOrderState.Submitted, "AAPL", MoomooMarket.UnitedStates, MoomooSide.Sell,
+            Quantity: 707, Price: 338.20m, FilledQuantity: 0, AveragePrice: 0m, PlacedAt: Now.AddMinutes(-10), CompletedAt: null)));
+        var reconciler = new OrderReservationReconciler(
+            reservations, f.Store, probe, f.Broker, f.Clock, Options.Create(new ReconciliationOptions { Enabled = true }));
+        (await reconciler.ReconcileAsync(Now.AddHours(-1), batchSize: 10)).Terminalized.Should().Be(1);
+        f.Store.FindByDecisionId(closeDecisionId)!.PositionEffect.Should().Be(PositionEffect.Close, "予約の行の値で記録する");
+
+        // 証券会社では 0 約定のまま取り消されて終わった。
+        f.Broker.Respond("close-1", CloseSnapshot(OrderStatus.Cancelled, 0));
+        var result = await f.Poller.PollOnceAsync(MaxTracking, batchSize: 100);
+
+        var reArmed = f.Stops.Find(entryId)!;
+        reArmed.State.Should().Be(ProtectiveStopState.Active, "無保護の建玉を黙って残さない");
+        reArmed.RemainingProtected.Should().Be(707);
+        result.SoftwareStopEvents.Should().ContainSingle();
+        result.SoftwareStopEvents![0].Outcome.Should().Be(SoftwareStopOutcome.CloseUnfilled);
+        result.SoftwareStopEvents[0].CloseDecisionId.Should().Be(closeDecisionId);
+        f.ReArmLog.Errors.Should().ContainSingle(m => m.Contains("再武装"));
     }
 }

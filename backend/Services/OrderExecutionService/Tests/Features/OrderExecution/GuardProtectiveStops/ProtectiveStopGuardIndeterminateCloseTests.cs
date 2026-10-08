@@ -171,6 +171,8 @@ public class ProtectiveStopGuardIndeterminateCloseTests
         reservation!.State.Should().Be(OrderDispatchState.Reserved);
         reservation.BrokerOrderId.Should().BeNull();
         h.Store.FindByDecisionId(h.CloseDecisionId).Should().BeNull("結果を知らないまま発注結果の記録を作らない");
+        // T-10-2457（#1262, IADR-0515 追記(2)）: 保護の機構の予約は建て・決済の別に Close を残す（突合が組み直す記録を通常の経路と同じ値にする）。
+        reservation.PositionEffect.Should().Be(PositionEffect.Close);
     }
 
     [Fact]

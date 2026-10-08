@@ -79,9 +79,9 @@ public class StopLossMethodCoexistenceTests
 
         public bool TryReserve(
             Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
-            OrderApprovalOrigin? approvalOrigin = null)
+            OrderApprovalOrigin? approvalOrigin = null, PositionEffect? positionEffect = null)
         {
-            var reserved = _inner.TryReserve(decisionId, reservedAt, brokerProvider, stopFloorSource, approvalOrigin);
+            var reserved = _inner.TryReserve(decisionId, reservedAt, brokerProvider, stopFloorSource, approvalOrigin, positionEffect);
             if (reserved)
                 onReserve();
             return reserved;

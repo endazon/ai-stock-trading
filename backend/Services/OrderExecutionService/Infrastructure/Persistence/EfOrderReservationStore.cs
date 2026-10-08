@@ -10,7 +10,7 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
 {
     public bool TryReserve(
         Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
-        OrderApprovalOrigin? approvalOrigin = null)
+        OrderApprovalOrigin? approvalOrigin = null, PositionEffect? positionEffect = null)
     {
         // 先読みは高速路（再配送の大半はここで false）。並行配送の実際の排他は主キーの一意制約が担う。
         if (db.DispatchReservations.Any(r => r.DecisionId == decisionId))
@@ -27,6 +27,8 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             StopFloorSource = stopFloorSource,
             // 🔴 #1253, IADR-0515 追記(1): 承認の出どころ。突合が記録へ写す。
             ApprovalOrigin = approvalOrigin,
+            // 🔴 #1262, IADR-0515 追記(2): 建て・決済の別。突合が記録の PositionEffect をこの値で書く。
+            PositionEffect = positionEffect,
         });
 
         try
@@ -73,7 +75,7 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             ? null
             : new OrderDispatchReservation(
                 row.DecisionId, row.State, row.ReservedAt, row.BrokerOrderId, row.CompletedAt, row.BrokerProvider,
-                row.StopFloorSource, row.ApprovalOrigin);
+                row.StopFloorSource, row.ApprovalOrigin, row.PositionEffect);
     }
 
     // #141, IADR-0074: 滞留 Reserved（State=Reserved AND ReservedAt < reservedBefore）を ReservedAt 昇順で
@@ -86,7 +88,7 @@ public sealed class EfOrderReservationStore(OrderExecutionDbContext db) : IOrder
             .Take(batchSize)
             .Select(r => new OrderDispatchReservation(
                 r.DecisionId, r.State, r.ReservedAt, r.BrokerOrderId, r.CompletedAt, r.BrokerProvider, r.StopFloorSource,
-                r.ApprovalOrigin))
+                r.ApprovalOrigin, r.PositionEffect))
             .ToList();
     }
 
