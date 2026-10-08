@@ -71,10 +71,18 @@ public sealed class LlmReportPolicyReviser(
             }
 
             var dto = exchange.Payload!;
+            // FR-14, FR-11, #1267, IADR-0517: Sent=false を「機密区分による縮退」と断定しない。原因はゲートウェイの申告の要約
+            // （1 行・切り詰め・秘密の伏せ字済み）のままログへ残す。🔴 利用者への理由は**原因の種類の定型文**だけにする
+            // （上流の生の文言を画面に出さない。#1267 の AI レビュー 🟢）。
             if (!dto.Sent)
             {
-                logger.LogWarning("方針の改訂 LLM が送信不可（Sent=false・機密区分による縮退）でした。");
-                return PolicyRevisionOutcome.Failed(PolicyRevisionFailure.Refused, "AI へ送信できませんでした（縮退中）");
+                var cause = LlmGatewayUnsent.From(dto);
+                logger.LogWarning(
+                    "方針の改訂 LLM のゲートウェイが送信しませんでした（Sent=false）。failureKind={FailureKind} "
+                    + "upstreamStatus={UpstreamStatus} routingReason={RoutingReason} gatewayText={GatewayText}",
+                    cause.Kind?.ToString() ?? "不明", cause.UpstreamStatusCode, cause.RoutingReason, cause.GatewayText);
+                return PolicyRevisionOutcome.Failed(
+                    PolicyRevisionFailure.Refused, $"AI へ送信できませんでした（{cause.KindLabel}。詳細は運用ログを参照）");
             }
 
             if (logPrompts)

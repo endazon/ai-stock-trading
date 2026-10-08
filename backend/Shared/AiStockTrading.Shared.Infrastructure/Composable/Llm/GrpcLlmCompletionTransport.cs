@@ -61,7 +61,10 @@ public sealed class GrpcLlmCompletionTransport(
                 NullIfEmpty(response.Model),
                 NullIfEmpty(response.StopReason),
                 response.InputTokens,
-                response.OutputTokens));
+                response.OutputTokens,
+                // FR-04, FR-11, #1267, IADR-0517: Sent=false の原因（判定理由）を運ぶ。原因の種類・上流の状態コードは
+                // proto の写しにまだ無い（MSP#1819 の確定後に写しを更新する）ため null のまま。
+                NullIfEmpty(response.RoutingReason)));
         }
         catch (RpcException ex) when (IsCancellation(ex))
         {

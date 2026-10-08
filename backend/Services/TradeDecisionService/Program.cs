@@ -133,6 +133,15 @@ builder.Services.AddScoped<ILlmGovernanceReporter>(sp => new PublishingLlmGovern
     sp.GetRequiredService<IClock>(),
     sp.GetRequiredService<ILogger<PublishingLlmGovernanceReporter>>()));
 
+// FR-04, FR-09, FR-11, #1267, IADR-0517: LLM ゲートウェイの Sent=false の連続を Discord（Warning・回復は Info）と台帳へ。
+// singleton（連続の状態を呼び出し・サイクルを跨いで持つ）。しきい値は LlmGateway:UnsentAlertThreshold（既定 5 回連続。
+// 未設定・不正・1 未満は既定）。
+builder.Services.AddSingleton<ILlmGatewayUnsentNotifier>(sp => new PublishingLlmGatewayUnsentNotifier(
+    sp.GetRequiredService<IWolverineRuntime>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<PublishingLlmGatewayUnsentNotifier>>(),
+    ParseUnsentAlertThreshold(sp.GetRequiredService<IConfiguration>()["LlmGateway:UnsentAlertThreshold"])));
+
 builder.Services.AddScoped<ILlmCompletionClient>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -167,8 +176,15 @@ builder.Services.AddScoped<ILlmCompletionClient>(sp =>
         sp.GetRequiredService<ILlmUsageReporter>(),
         // FR-11, IADR-0061 決定1: 全量ログ（プロンプト・生出力）。既定オフ＝機微を既定でログ基盤へ流さない。
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,
-        sp.GetRequiredService<ILlmGovernanceReporter>());
+        sp.GetRequiredService<ILlmGovernanceReporter>(),
+        sp.GetRequiredService<ILlmGatewayUnsentNotifier>());
 });
+
+// #1267, IADR-0517: Sent=false の連続の通知のしきい値。未設定・不正・1 未満は既定（fail-safe＝通知を止めない側）。
+static int ParseUnsentAlertThreshold(string? value) =>
+    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var threshold) && threshold >= 1
+        ? threshold
+        : LlmGatewayUnsentEpisodeTracker.DefaultThreshold;
 
 // #11, IADR-0061 決定2: LLM ゲートウェイのタイムアウト（秒）。未設定・不正・非正値は既定 30 秒（fail-safe）。
 static TimeSpan ParseTimeout(string? value) =>

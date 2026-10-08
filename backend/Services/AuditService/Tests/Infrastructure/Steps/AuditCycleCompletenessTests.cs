@@ -247,6 +247,9 @@ public class AuditCycleCompletenessTests
             new InformationSourceStateObserved(["news"], TimeSpan.FromHours(1), t),
             new LlmCostIncurred(12.5m, t),
             new LlmFallbackFired("report-monthly", "claude-opus-5", "claude-sonnet-5", "FallbackFired", t),
+            new LlmGatewayUnsentDetected(
+                "trade-decision-screening", 5, "UpstreamError", 429, "routing", "呼び出し先が現在利用できません。", t.AddMinutes(-10), t),
+            new LlmGatewayUnsentRecovered(132, t.AddMinutes(-109), t),
             new MaintenanceMarginReductionExecuted(
                 Guid.NewGuid(), 0.38m, 0.40m, 0.45m, 0.46m,
                 [new MaintenanceMarginReductionItem(

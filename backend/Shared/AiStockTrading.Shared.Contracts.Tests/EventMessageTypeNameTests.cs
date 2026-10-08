@@ -114,6 +114,9 @@ namespace AiStockTrading.Shared.Contracts.Tests
         [InlineData(typeof(PositionClosedWithStaleFxRate), "AiStockTrading.Shared.Contracts.Events.PositionClosedWithStaleFxRate")]
         // FR-04, FR-06, FR-09, #335, ADR-0017 決定4, IADR-0217: フォールバック発火（可視化 3 経路の②③）。
         [InlineData(typeof(LlmFallbackFired), "AiStockTrading.Shared.Contracts.Events.LlmFallbackFired")]
+        // FR-04, FR-09, FR-11, #1267, IADR-0517: LLM ゲートウェイの Sent=false の連続と回復（通知・台帳）。
+        [InlineData(typeof(LlmGatewayUnsentDetected), "AiStockTrading.Shared.Contracts.Events.LlmGatewayUnsentDetected")]
+        [InlineData(typeof(LlmGatewayUnsentRecovered), "AiStockTrading.Shared.Contracts.Events.LlmGatewayUnsentRecovered")]
         // FR-04, UC-01, #335, ADR-0017 決定2, IADR-0216: 割当モデル不可による取引判断の見送り（発注しない）。
         [InlineData(typeof(TradeDecisionSkipped), "AiStockTrading.Shared.Contracts.Events.TradeDecisionSkipped")]
         [InlineData(typeof(StopLossTriggered), "AiStockTrading.Shared.Contracts.Events.StopLossTriggered")]

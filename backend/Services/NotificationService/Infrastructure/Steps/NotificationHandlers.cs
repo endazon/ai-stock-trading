@@ -206,6 +206,20 @@ public sealed class LlmFallbackFiredNotificationHandler(INotificationSender send
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
+// FR-04, FR-09, FR-11, #1267, IADR-0517: LLM ゲートウェイの Sent=false の連続と回復を Discord へ通知する。
+// 抑止（連続 1 回につき 1 通）は発行側（取引判断の LlmGatewayUnsentEpisodeTracker）が担う。
+public sealed class LlmGatewayUnsentDetectedNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(LlmGatewayUnsentDetected message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
+public sealed class LlmGatewayUnsentRecoveredNotificationHandler(INotificationSender sender)
+{
+    public Task Handle(LlmGatewayUnsentRecovered message, CancellationToken cancellationToken) =>
+        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+}
+
 // FR-04, FR-09, UC-01, ADR-0017 決定2, #335, IADR-0216: 割当モデル不可による取引判断の見送りを通知する。
 // **沈黙のスキップにしない**（同決定2）。障害ではなく設計上の正常な結果であることは文言側が担う。
 public sealed class TradeDecisionSkippedNotificationHandler(INotificationSender sender)

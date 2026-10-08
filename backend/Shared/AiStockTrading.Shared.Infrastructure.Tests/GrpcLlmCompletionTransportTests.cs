@@ -180,6 +180,26 @@ public class GrpcLlmCompletionTransportTests
         exchange.Payload!.Sent.Should().BeFalse();
     }
 
+    // T-04-019, FR-04, FR-11, #1267, IADR-0517: Sent=false の判定理由（routing_reason）を運ぶ。空文字は未報告＝null。
+    // 原因の種類・上流の状態コードは proto の写しにまだ無い（MSP#1819 の確定後）ため null のまま。
+    [Fact]
+    public async Task 縮退の判定理由を運び_空文字は_null_へ戻す()
+    {
+        var withReason = await new GrpcLlmCompletionTransport(Responding(new CompleteResponse
+        {
+            Text = "呼び出し先が現在利用できません。",
+            Sent = false,
+            RoutingReason = "internal は anthropic-managed へ送信可",
+        })).CompleteAsync(Call);
+        var withoutReason = await new GrpcLlmCompletionTransport(
+            Responding(new CompleteResponse { Text = "x", Sent = false })).CompleteAsync(Call);
+
+        withReason.Payload!.RoutingReason.Should().Be("internal は anthropic-managed へ送信可");
+        withReason.Payload.FailureKind.Should().BeNull();
+        withReason.Payload.UpstreamStatusCode.Should().BeNull();
+        withoutReason.Payload!.RoutingReason.Should().BeNull();
+    }
+
     // 未報告（proto3 の既定＝空文字）は REST の null と同じ形へ戻す。
     // これを怠ると `LlmStopReasons` / `LlmAssignmentEvaluator` が空文字を「値がある」と読む。
     [Fact]

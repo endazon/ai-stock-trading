@@ -1,5 +1,6 @@
 using System.Globalization;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace AuditService.Domain;
@@ -161,6 +162,30 @@ public static class AuditEntryFactory
         Symbol: null,
         Truncate($"LLM 割当逸脱（{e.Outcome}）用途 {e.Purpose}: 期待 {e.ExpectedModel ?? "なし"} → 実際 {e.EffectiveModel ?? "不明"}"),
         AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    // FR-04, FR-09, FR-11, #1267, IADR-0517: LLM ゲートウェイの Sent=false の連続（通知 1 件＝連続 1 回）。
+    // 相関は連続の始まりの時刻で 1 本にし、回復と同じ相関に置く（台帳から期間を 1 本で辿れる。為替・情報源と同じ形）。
+    // 🔴 要約は原因をゲートウェイの申告のまま書く（「機密区分」と推測で書かない）。
+    public static AuditEntry From(LlmGatewayUnsentDetected e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(LlmGatewayUnsentDetected), LlmGatewayUnsentCorrelation(e.FirstUnsentAt), Symbol: null,
+        Truncate($"LLM ゲートウェイの送信不可が {e.ConsecutiveUnsent} 回連続（"
+            + (e.UnsentByPurpose is { Count: > 0 } ? LlmGatewayUnsent.FormatBreakdown(e.UnsentByPurpose) : $"用途 {e.Purpose}")
+            + $"・{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z 〜）: "
+            + new LlmGatewayUnsentCause(
+                LlmGatewayUnsent.ParseKind(e.FailureKind), e.UpstreamStatusCode, e.RoutingReason, e.GatewayText).Describe()
+            + "。取引判断は LLM なしの Hold（取引しない）"),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    public static AuditEntry From(LlmGatewayUnsentRecovered e, Guid id, DateTimeOffset recordedAt) => new(
+        id, nameof(LlmGatewayUnsentRecovered), LlmGatewayUnsentCorrelation(e.FirstUnsentAt), Symbol: null,
+        $"LLM ゲートウェイの送信が回復: 継続 {FormatDuration(e.UnsentDuration)}"
+            + $"（{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z 〜）・送信不可 {e.UnsentCalls} 件"
+            + (e.UnsentByPurpose is { Count: > 0 } ? $"（{LlmGatewayUnsent.FormatBreakdown(e.UnsentByPurpose)}）" : string.Empty),
+        AuditSerialization.Serialize(e), e.OccurredAt, recordedAt);
+
+    private static Guid LlmGatewayUnsentCorrelation(DateTimeOffset firstUnsentAt) =>
+        AuditCorrelation.From(
+            $"llm-gateway-unsent:{firstUnsentAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)}");
 
     // FR-04, FR-11, UC-01, ADR-0017 決定2, #335, IADR-0216: 割当モデル不可による取引判断の見送り。
     // **障害ではなく設計上の正常な結果**であり、日報の「当日のスキップ回数」の供給元になる。

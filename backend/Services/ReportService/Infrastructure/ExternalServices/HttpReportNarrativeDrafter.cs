@@ -130,7 +130,7 @@ public sealed class HttpReportNarrativeDrafter(
                 return Placeholder(modelUsage);
             }
 
-            // Sent=false は機密区分による送信拒否（縮退）。空応答・欠落もプレースホルダ散文に倒す。
+            // Sent=false はゲートウェイが送信しなかった応答（原因は申告を読む。#1267）。空応答・欠落もプレースホルダ散文に倒す。
             // #247, IADR-0104 決定3: 縮退の理由（応答不正 / 送信拒否 / 拒否 / 空応答 / 上限到達）を区別して記録する。
             if (exchange.Outcome == LlmTransportOutcome.Malformed)
             {
@@ -143,9 +143,15 @@ public sealed class HttpReportNarrativeDrafter(
 
             var dto = exchange.Payload!;
 
+            // FR-06, FR-11, #1267, IADR-0517: Sent=false を「機密区分による縮退」と断定しない（越境の拒否・プロバイダ未登録・
+            // 上流の不調のいずれも Sent=false で返る）。原因はゲートウェイの申告の要約のまま残す（取引判断と同じ要約）。
             if (!dto.Sent)
             {
-                logger.LogWarning("報告書散文 LLM が送信不可（Sent=false・機密区分による縮退）。プレースホルダ散文に倒します。");
+                var cause = LlmGatewayUnsent.From(dto);
+                logger.LogWarning(
+                    "報告書散文 LLM のゲートウェイが送信しませんでした（Sent=false）。failureKind={FailureKind} "
+                    + "upstreamStatus={UpstreamStatus} routingReason={RoutingReason} gatewayText={GatewayText}。プレースホルダ散文に倒します。",
+                    cause.Kind?.ToString() ?? "不明", cause.UpstreamStatusCode, cause.RoutingReason, cause.GatewayText);
                 return Placeholder(modelUsage);
             }
 
