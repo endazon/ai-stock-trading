@@ -144,8 +144,15 @@ public static class LlmGatewayUnsent
                 return null;
         }
 
-        return code is >= 100 and <= 599 ? code : null;
+        return ParseStatusCode(code);
     }
+
+    /// <summary>
+    /// 整数の状態コード（gRPC の <c>upstream_status_code</c>）。100〜599 だけを読み、他は <c>null</c>。
+    /// #1269: proto3 に null は無く、<c>0</c> が「無い」を表す（REST の null と同じ意味）。
+    /// REST の JSON 値と同じ値域で読むため、範囲判定はここ 1 か所に置く。
+    /// </summary>
+    public static int? ParseStatusCode(int value) => value is >= 100 and <= 599 ? value : null;
 
     /// <summary>
     /// ゲートウェイの文字列を 1 行・短く・秘密を伏せた形にする。空白だけなら <c>null</c>。

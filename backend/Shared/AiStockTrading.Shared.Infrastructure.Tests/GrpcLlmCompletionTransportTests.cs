@@ -181,7 +181,8 @@ public class GrpcLlmCompletionTransportTests
     }
 
     // T-04-019, FR-04, FR-11, #1267, IADR-0517: Sent=false の判定理由（routing_reason）を運ぶ。空文字は未報告＝null。
-    // 原因の種類・上流の状態コードは proto の写しにまだ無い（MSP#1819 の確定後）ため null のまま。
+    // 原因の種類・上流の状態コードを載せない応答（proto3 の既定 "" / 0）は null のまま。載せた応答の写像は
+    // `LlmTransportUnsentParityTests`（T-04-023。#1269）が REST と突き合わせて固定する。
     [Fact]
     public async Task 縮退の判定理由を運び_空文字は_null_へ戻す()
     {

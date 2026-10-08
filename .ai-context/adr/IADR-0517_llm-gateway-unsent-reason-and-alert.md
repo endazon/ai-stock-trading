@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-09, FR-11, FR-06, FR-14, UC-01, UC-02, ADR-0003, ADR-0010, ADR-0017, IADR-0017, IADR-0104, IADR-0196, IADR-0216, IADR-0248, IADR-0316, IADR-0323, IADR-0332, IADR-0452]
 author: claude (Claude Code)
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-09
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-04 判断根拠を必ず記録・FR-09 エラーを Discord に通知・FR-11 後から監査できる)
   - planning:projects/ai-stock-trading/07_adr/ADR-0010 (platform LLM ゲートウェイの越境ルーティング)
@@ -42,6 +42,8 @@ related_specs:
 1. **申告を運ぶ。** `LlmCompletionPayload` に `RoutingReason`・`FailureKind`（`LlmGatewayUnsentKind?`: EgressDenied / ProviderMissing / UpstreamError）・`UpstreamStatusCode` を
    省略可能な引数で足す。REST は MSP#1824 の確定名 `failureKind`（"egress_denied" / "provider_missing" / "upstream_error"）/ `upstreamStatusCode` を `JsonElement?` で受け、
    文字列の既知の値・100〜599 の整数だけを読む（未知の値・序数・型違い・欠落〔旧い基盤〕は null＝原因不明。応答全体を不正にしない）。gRPC は `routing_reason` だけを運ぶ。
+   - ［2026-10-09 追記 / #1269］gRPC も原因の種類・上流の状態コードを運ぶ（proto の写しへ `failure_kind` / `upstream_status_code` を写した）。
+     読み取りは REST と同じ `LlmGatewayUnsent`（proto3 の `""` / `0` は null。未知の値・100〜599 の外も null）。下の残余リスクの追記を参照。
 2. **断定しない。** `Sent=false` のとき、ログ（Warning・構造化）と Hold の判断の理由（FR-11 ログの rationale＝利用者が見る理由）へ
    `種別: …／上流 N／理由: …／ゲートウェイ: …` を載せる。種別が無ければ「種別不明」、申告が無ければ「申告なし」と書き、推測で埋めない。
    要約は共通の `LlmGatewayUnsent.Summarize`（秘密の伏せ字・行区切りの無害化・160 文字）。報告書の 2 か所も同じ要約をログへ載せる。
@@ -74,5 +76,9 @@ related_specs:
 - 悪い影響 / トレードオフ: 一過性の 5 回以上の連続（上流の短い 429 の嵐）でも 1 通出る。しきい値は構成で上げられる。
 - 残余リスク:
   - 名前は MSP#1824（未マージ）の確定名。同 PR が変われば追随が要る。マージ前の基盤では両フィールドが無く「種別不明」（後方互換・安全側）。gRPC の proto の写しには原因の種類が無い（基盤の proto が足したら写しを更新する）。
+    - ［2026-10-09 追記 / #1269］**gRPC の残余は解消した。** MSP#1824 は MSP develop 51633872 でマージされ、名前は上記のまま確定した。
+      proto の写しへ `CompleteResponse.failure_kind = 9` / `upstream_status_code = 10`（`CompletionStreamEvent` は 10 / 11）を写し、
+      `GrpcLlmCompletionTransport` は REST と同じ読み取り（`LlmGatewayUnsent.ParseKind` / `ParseStatusCode`）を通す（proto3 の `""` / `0` は null）。
+      同じ申告が輸送によらず同じ記録になることを試験 T-04-023 が、写しの番号が正本と一致することを T-04-024 が固定する。
   - 状態はプロセスごと（レプリカが複数なら各 1 通。現行は 1 レプリカ）。再起動で連続は 0 から数え直す（回復の通知は出ない）。
   - しきい値の env は helm の values に載せていない（既定 5）。
