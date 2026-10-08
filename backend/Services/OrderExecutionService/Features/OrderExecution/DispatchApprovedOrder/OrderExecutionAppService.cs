@@ -471,7 +471,9 @@ public sealed class OrderExecutionAppService(
             slippage,
             now,
             // 🔴 FR-10, #1122, IADR-0486 決定6: 下限を掛けてラインを引いた印（既存の S1 への遡及が、この行を広げないために読む）。
-            intent.StopFloorSource));
+            intent.StopFloorSource,
+            // 🔴 FR-10, UC-06, #1222, IADR-0515 決定2: 承認の出どころ（S1 の決済の前の取消が利用者・自動縮小の決済を見分ける）。Unknown は null で書く。
+            approved.Origin == OrderApprovalOrigin.Unknown ? null : approved.Origin));
 
         reservations.MarkCompleted(approved.DecisionId, brokerOrder.OrderId, now);
 

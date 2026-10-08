@@ -30,6 +30,8 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             ExecutedAt = record.ExecutedAt,
             // #1122, IADR-0486 決定6: 下限を掛けてラインを引いた印（遡及が読む）。
             StopFloorSource = record.StopFloorSource,
+            // #1222, IADR-0515 決定2: 承認の出どころ（S1 の決済の前の取消が読む）。
+            ApprovalOrigin = record.ApprovalOrigin,
         });
         db.SaveChanges();
     }
@@ -178,5 +180,5 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     private static ExecutionRecord ToRecord(ExecutedOrderRow r) => new(
         r.DecisionId, r.OrderId, r.Symbol, r.Market, r.Side, r.ProductType, r.PositionEffect,
         r.Quantity, r.PlannedPrice, r.FilledQuantity, r.AveragePrice, r.Status, r.SlippageRatio, r.ExecutedAt,
-        r.StopFloorSource);
+        r.StopFloorSource, r.ApprovalOrigin);
 }

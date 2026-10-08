@@ -86,7 +86,9 @@ public sealed class MaintenanceMarginReductionService(
 
             // 各縮小は独立した決済である。再送の重複排除は発注執行側の DecisionId 予約が担う
             // （PositionCloseService と同じ。損切りのような決定的 ID は持たせない）。
-            approvals.Add(new OrderApproved(Guid.NewGuid(), intent, leg.Quantity, executedAt));
+            // FR-10, UC-06, #1222, IADR-0515 決定1: 出どころ＝維持率割れの自動縮小（S1 の決済の前に取り消されず、差し引かれる）。
+            approvals.Add(new OrderApproved(
+                Guid.NewGuid(), intent, leg.Quantity, executedAt, Origin: OrderApprovalOrigin.MaintenanceMarginReduction));
 
             items.Add(new MaintenanceMarginReductionItem(
                 leg.Symbol, leg.Market, leg.PositionSide, leg.ProductType,

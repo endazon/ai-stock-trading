@@ -91,7 +91,8 @@ public sealed class PositionCloseService(
 
         return new PositionCloseOutcome(
             PositionCloseRejection.None,
-            new OrderApproved(decisionId, intent, quantity, now),
+            // FR-10, UC-06, #1222, IADR-0515 決定1: 出どころ＝利用者の手仕舞い（S1 の決済の前に取り消されず、差し引かれる）。
+            new OrderApproved(decisionId, intent, quantity, now, Origin: OrderApprovalOrigin.OwnerClose),
             new PositionCloseRequested(
                 decisionId, command.Symbol, command.Market, closeSide, quantity, price,
                 actor, command.Reason, now));
