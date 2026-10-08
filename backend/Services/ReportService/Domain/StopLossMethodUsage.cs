@@ -47,7 +47,7 @@ public sealed record StopLossMethodUsage(
                 continue;
 
             byMethod[a.StopLossMethod] = byMethod.GetValueOrDefault(a.StopLossMethod) + 1;
-            counted.Add(new StopLossMethodApproval(a.DecisionId, a.StopLossMethod, a.ApprovedAt));
+            counted.Add(new StopLossMethodApproval(a.DecisionId, a.StopLossMethod, a.ApprovedAt, a.Intent.Market));
         }
 
         var counts = byMethod
@@ -77,5 +77,10 @@ public sealed record StopLossMethodUsage(
 /// <summary>手法 1 つぶんの新規建ての承認件数。</summary>
 public sealed record StopLossMethodCount(StopLossExecutionMethod Method, int Count);
 
-/// <summary>#1002, IADR-0429 決定3: 数えた承認 1 件（新規建て・DecisionId で重複を除いたもの）。</summary>
-public sealed record StopLossMethodApproval(Guid DecisionId, StopLossExecutionMethod Method, DateTimeOffset ApprovedAt);
+/// <summary>
+/// #1002, IADR-0429 決定3: 数えた承認 1 件（新規建て・DecisionId で重複を除いたもの）。
+/// #1224, IADR-0516 決定 2・4: <see cref="Market"/> は承認の市場（セッションの窓で絞り、セッションの日で数えるため）。
+/// 市場を持たない値（旧い呼び出し）は窓で絞らず、日は承認の JST 暦日で数える。
+/// </summary>
+public sealed record StopLossMethodApproval(
+    Guid DecisionId, StopLossExecutionMethod Method, DateTimeOffset ApprovedAt, Market? Market = null);

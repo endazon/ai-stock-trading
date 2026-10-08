@@ -130,4 +130,25 @@ public class ReportSessionRangeTests
     {
         ReportAutoGenerator.ReportedMarkets(configured).Should().BeEquivalentTo(expected);
     }
+
+    // T-06-069, FR-06, #1224, IADR-0516 決定 5: 窓に揃えない入力（LLM 利用実績）は「集計したセッション」の行の末尾に JST の暦日の範囲を書く
+    // （複数日なら `最初〜最後`）。範囲が無い（週報・null）なら書き足さない。
+    [Fact]
+    public void T06_069_窓に揃えないLLM利用実績は行の末尾に暦日の範囲を書く()
+    {
+        var ranges = RangesOf(ReportKind.Monthly, new DateOnly(2026, 10, 1), Defaults);
+        var view = new ReportView
+        {
+            Kind = ReportKind.Monthly,
+            PeriodKey = "monthly-2026-10",
+            PeriodLabel = "2026-10",
+            Pnl = new PnlSummary(0m, 0m, 0m, 0m, 0m, 0, 0, 0),
+            SessionRanges = ranges,
+            LlmUsageCalendarDays = new ReportCalendarDays(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 30)),
+        };
+
+        ReportRenderer.RenderMarkdown(view).Split('\n').Single(l => l.StartsWith("集計したセッション: ", StringComparison.Ordinal))
+            .Should().Be("集計したセッション: 米国 2026-09-30〜2026-10-29（ET）／東証 2026-10-01〜2026-10-30（JST）・LLM 利用実績は JST の暦日 2026-10-01〜2026-10-30");
+        Line(ranges).Should().Be("集計したセッション: 米国 2026-09-30〜2026-10-29（ET）／東証 2026-10-01〜2026-10-30（JST）");
+    }
 }

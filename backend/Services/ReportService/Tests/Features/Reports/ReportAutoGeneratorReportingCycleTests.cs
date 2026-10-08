@@ -138,7 +138,8 @@ public class ReportAutoGeneratorReportingCycleTests
             [],
             [new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "a", null, T0)]);
         var fees = new BorrowFeeRecord(
-            [new BorrowFeeAccrued("AAPL", Market.UnitedStates, new DateOnly(2026, 7, 8), 0.06m, 10_000m, 1.64m, T0)],
+            // #1224, IADR-0516 決定 2: 米国の借株料は計上日（ET）のセッションの日報に載る。日報 7/8 は ET 7/7 のセッションを数える。
+            [new BorrowFeeAccrued("AAPL", Market.UnitedStates, new DateOnly(2026, 7, 7), 0.06m, 10_000m, 1.64m, T0)],
             []);
 
         await NewGenerator(store, new StubLlmUsageSource(usage), new StubBorrowFeeSource(fees)).RunOnceAsync();

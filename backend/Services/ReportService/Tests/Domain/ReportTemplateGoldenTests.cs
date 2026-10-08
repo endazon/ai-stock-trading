@@ -64,6 +64,13 @@ public class ReportTemplateGoldenTests
                 new ReportSessionRange(Market.Japan, new DateOnly(2026, 8, 28), new DateOnly(2026, 8, 28)),
             ],
         },
+        // FR-06, #1224, IADR-0516 決定 5: 窓に揃えない LLM 利用実績の JST の暦日（生成器は LLM 利用実績を使う日報・月報にだけ渡す）。
+        LlmUsageCalendarDays = kind switch
+        {
+            ReportKind.Weekly => null,
+            ReportKind.Monthly => new ReportCalendarDays(new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31)),
+            _ => new ReportCalendarDays(new DateOnly(2026, 8, 28), new DateOnly(2026, 8, 28)),
+        },
         AssumptionsVersion = 3,
         BasedOn = kind == ReportKind.Monthly ? "monthly-2026-07" : "weekly-2026-W35",
         ConfirmedAt = ConfirmedAt,

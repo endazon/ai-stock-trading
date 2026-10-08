@@ -28,6 +28,12 @@ public sealed record ReportView
     /// </summary>
     public IReadOnlyList<ReportSessionRange>? SessionRanges { get; init; }
 
+    /// <summary>
+    /// FR-06, #1224, IADR-0516 決定 5: セッションの窓に揃えない入力（LLM 利用実績）を引いた JST の暦日の範囲。
+    /// 「集計したセッション」の行の末尾に書き足す（<see cref="SessionRanges"/> が無ければ行ごと出ない）。<c>null</c> は書かない。
+    /// </summary>
+    public ReportCalendarDays? LlmUsageCalendarDays { get; init; }
+
     /// <summary>適用した全体前提条件バージョン（FR-17）。</summary>
     public int AssumptionsVersion { get; init; }
 

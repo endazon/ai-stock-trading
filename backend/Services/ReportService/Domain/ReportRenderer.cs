@@ -665,7 +665,16 @@ public static class ReportRenderer
 
         sb.Append("集計したセッション: ");
         sb.Append(string.Join("／", ranges.Select(SessionRangeText)));
+        // FR-06, #1224, IADR-0516 決定 5: 窓に揃えない入力（LLM 利用実績）は JST の暦日で集計したことを同じ行で明記する。
+        if (view.LlmUsageCalendarDays is { } llm)
+            sb.Append("・LLM 利用実績は JST の暦日 ").Append(DayRangeText(llm.From, llm.To));
         sb.Append("\n\n");
+    }
+
+    private static string DayRangeText(DateOnly from, DateOnly to)
+    {
+        var f = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return from == to ? f : $"{f}〜{to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
     }
 
     private static string SessionRangeText(ReportSessionRange range)
@@ -1228,7 +1237,7 @@ public static class ReportRenderer
 
         if (view.StopLossMethodResolutions is not { } feed)
         {
-            var days = usage.Approvals.Select(a => StopLossMethodComparison.JstDayOf(a.ApprovedAt)).Distinct().Count();
+            var days = usage.Approvals.Select(StopLossMethodComparison.SessionDayOf).Distinct().Count();
             sb.Append(usage.TotalApprovals == 0
                 ? "- **新規建ての承認があった日**: なし（当月の新規建ての承認は 0 件）\n"
                 : string.Create(CultureInfo.InvariantCulture, $"- **新規建ての承認があった日**: {days} 日\n"));

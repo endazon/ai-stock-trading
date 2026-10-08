@@ -7,6 +7,9 @@ namespace ReportService.Features.Reports;
 //
 // 🔴 **供給不達は `null`（未供給）へ倒す。** 空の記録へ倒すと、承認はあるのに「解決結果の記録が見つからない」と
 // 書かれ、照会できなかったことと区別できない。
+//
+// FR-06, #1224, IADR-0516 決定 3: [from, to] は**照会の範囲**（報告書のセッションの窓を覆う JST の暦日の外包）であり、報告書に載る範囲ではない。
+// 報告書サービスが受け取った後に窓で絞る（ReportLedgerWindowing）。
 public interface IStopLossMethodResolutionSource
 {
     /// <summary>

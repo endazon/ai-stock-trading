@@ -106,7 +106,8 @@ public class ReportAutoGeneratorStopLossMethodTests
         daily.Body.Should().Contain(
             "- **選ばれていた手法（承認時点）**: 計 2 件 — S0 ブローカー側逆指値 1 件 / S2 逆指値なしの建玉を許容 1 件");
         daily.UnsuppliedInputs.Should().NotContain(ReportInput.StopLossMethods);
-        source.Requested.Should().Contain((new DateOnly(2026, 7, 8), new DateOnly(2026, 7, 8)));
+        // #1224, IADR-0516 決定 3: 窓（米国 ET 7/7・東証 JST 7/8）を覆う JST の暦日の外包で引く。
+        source.Requested.Should().Contain((new DateOnly(2026, 7, 7), new DateOnly(2026, 7, 8)));
     }
 
     // ---- T-10-1091, FR-06, FR-10, #1002, IADR-0429 決定4: 発注執行の解決結果の供給 ------------------------------
@@ -178,7 +179,7 @@ public class ReportAutoGeneratorStopLossMethodTests
         var daily = DailyOf(store);
         daily.Body.Should().Contain("- **実際に適用された手法（発注執行の解決結果）**: 計 1 件 — S2 逆指値なしの建玉を許容 1 件");
         daily.UnsuppliedInputs.Should().NotContain(ReportInput.StopLossMethodResolutions);
-        resolutions.Requested.Should().Contain((new DateOnly(2026, 7, 8), new DateOnly(2026, 7, 8)));
+        resolutions.Requested.Should().Contain((new DateOnly(2026, 7, 7), new DateOnly(2026, 7, 8)));
     }
 
     // 月報でも両入力を当月の期間で引き、§6 に日数を書く。週報は使わない（未供給にも数えない）。
@@ -195,8 +196,9 @@ public class ReportAutoGeneratorStopLossMethodTests
         var monthly = store.List().Single(r => r.Kind == ReportKind.Monthly);
         monthly.Body.Should().Contain("### 損切りの実行機構（当月）");
         monthly.Body.Should().Contain("- **当月の損切りの実行機構: S2 逆指値なしの建玉を許容 1 日／選択と実際が食い違った日数: 0 日**");
-        usage.Requested.Should().Contain((new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));
-        resolutions.Requested.Should().Contain((new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 31)));
+        // #1224, IADR-0516 決定 3: 月報の窓（前月末 6/30 16:00 JST〜7/31 16:00 JST）を覆う JST の暦日の外包で引く。
+        usage.Requested.Should().Contain((new DateOnly(2026, 6, 30), new DateOnly(2026, 7, 31)));
+        resolutions.Requested.Should().Contain((new DateOnly(2026, 6, 30), new DateOnly(2026, 7, 31)));
 
         var storeWithout = new InMemoryReportStore();
         await NewGenerator(storeWithout, null, null, MonthEndAfterClose).RunOnceAsync();

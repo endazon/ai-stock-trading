@@ -15,6 +15,9 @@ namespace ReportService.Features.Reports;
 // IMarginReductionRecordSource（IADR-0133 決定7）と同じ判断である——
 // **「照会できなかった」を「切替は無かった」と書くことは、劣化を隠したのと同じ結果になる。**
 // それは ADR-0022 決定2 の「黙って劣化させない」が禁じていることそのものである。
+//
+// FR-06, #1224, IADR-0516 決定 3: [from, to] は**照会の範囲**（報告書のセッションの窓を覆う JST の暦日の外包）であり、報告書に載る範囲ではない。
+// 報告書サービスが受け取った後に窓で絞る（ReportLedgerWindowing）。
 public interface IFxSourceStatusSource
 {
     /// <summary>

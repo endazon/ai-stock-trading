@@ -12,6 +12,9 @@ namespace ReportService.Features.Reports;
 // **供給不達を空列へ倒さない。** 決定15 は「推定経路が入るまで発生回数は供給されない。**供給が無い間は
 // 0 件と表示してはならない**（『強制買戻しは起きていない』に見えるため）」と定めている。取得できなければ
 // <c>null</c> を返し、描画側が「照会できませんでした（供給元がありません）」と明記する。
+//
+// FR-06, #1224, IADR-0516 決定 3: [from, to] は**照会の範囲**（報告書のセッションの窓を覆う JST の暦日の外包）であり、報告書に載る範囲ではない。
+// 報告書サービスが受け取った後に窓で絞る（ReportLedgerWindowing）。
 public interface IBuyInInferenceRecordSource
 {
     /// <summary>

@@ -97,6 +97,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             Markets = markets,
             // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲（散文には渡さない）。
             SessionRanges = request.SessionRanges,
+            // FR-06, #1224, IADR-0516 決定 5: 窓に揃えない入力（LLM 利用実績）の JST の暦日の範囲（散文には渡さない）。
+            LlmUsageCalendarDays = request.LlmUsageCalendarDays,
             AssumptionsVersion = request.AssumptionsVersion,
             BasedOn = request.BasedOn,
             ConfirmedAt = null, // ドラフトは未確定
@@ -346,7 +348,10 @@ public sealed record DraftRequest(
     // FR-06, FR-16, #1181, IADR-0493 決定 3: **期間開始時点の在庫**（取引台帳が窓の市場ごとの下端まで畳んだもの）。在庫の畳み込みの初期値。
     // **null＝受け取っていない**（従来どおり期間で切った在庫から畳み、期間より前に建てた建玉の決済は算定できないと数える）。
     // 照会に失敗したことは UnsuppliedInputs の OpeningInventory で渡す（手動の API は null のまま＝従来挙動）。
-    OpeningInventorySnapshot? OpeningInventory = null);
+    OpeningInventorySnapshot? OpeningInventory = null,
+    // FR-06, #1224, IADR-0516 決定 5: セッションの窓に揃えない入力（LLM 利用実績）を引いた JST の暦日の範囲。「集計したセッション」の行に書き足す。
+    // **null＝書かない**（LLM 利用実績を使わない種別〔週報〕・窓を持たない経路）。
+    ReportCalendarDays? LlmUsageCalendarDays = null);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。
