@@ -32,7 +32,9 @@ IADR-0324 の #776 追記は「写しのずれを検知する手段は無い。�
   客体は接頭辞 `trading-`（realm ロール）／`ai-stock-trading-`（クライアント）で導出した**和集合**、
   比較はロールの存在・`composite`・`composites`・`attributes`・`description` の有無、クライアントの存在・4 フラグ・
   **service account の realm ロール付与**。片側だけに在る客体は理由つき宣言（宣言外は赤）。
-  → 受け入れ基準 1 の「ロール名・付与先のクライアント・service account のロール」を覆う。
+  → ロール名と、接頭辞 `ai-stock-trading-` のクライアントの service account への付与を覆う。
+  接頭辞外のクライアントへの付与・人の利用者へのロール付与・client scope（defaultClientScopes）は突合しない（変異で実測。client scope の欠けは 401 でなく 403 になる）。手元でも client scope の全消去・人の利用者のロール全消去が exit 0、owner の service account の
+  ロール消去（陽性対照）が exit 1 になることを確かめた。
 - 実走点は MSP `ci.yml` の `static-checks-units`（`src/*` submodule を取得するジョブ）。`static-checks` の同名ステップは
   submodule 未取得で skip 警告を出す設計（IADR-0434 決定 5）。トリガは `pull_request` と develop / main への push。
 - MSP は AST を submodule `src/ai-stock-trading`（`.gitmodules`、`branch = develop`）として持つ。調査時の pin は
@@ -42,7 +44,9 @@ IADR-0324 の #776 追記は「写しのずれを検知する手段は無い。�
   `OK: 正本と写しに差分はありません（突合: realm ロール 2 件 / クライアント 6 件、片側宣言 4 件）`・exit 0、
   `--self-test` 32 件 OK。AST develop の写しは pin `58fe8c24` の写しとバイト一致。
 - AST 側の変更が検知に届く経路: MSP の submodule pin 更新 PR（MSP `static-checks-units` が走る）。
-  2026-09-28〜10-05 に pin 更新 PR が 14 本（MSP#1698〜MSP#1744）あり、間隔は 0〜2 日。
+  2026-09-28〜10-05 の pin 更新 PR は 17 本（MSP#1687〜MSP#1744）、マージ日の間隔は 0〜1 日（基盤の非浅いクローンで
+  `git log origin/develop --since=2026-09-28 --until=2026-10-06 -- src/ai-stock-trading` を数えた。初版の 14 本は
+  PR 一覧の先頭 100 件だけを見た数え落とし）。上限は dependabot の週次 submodule 更新（MSP の .github/dependabot.yml）。
 
 ### 2. 401 の事故件数
 
@@ -62,6 +66,16 @@ IADR-0324 の #776 追記は「写しのずれを検知する手段は無い。�
 - #1204 の台帳（`.ai-context/specs/20261007_1204_residual-ledger.md` 行 4）と #1221 本文は「基盤側にも AST 側にも
   追跡が無い」と書いたが、**基盤側の追跡（MSP#1412）は 2026-09-11 に起票・close 済みだった**。AST 側から参照されて
   いなかったのが実態である。台帳は凍結記録なので書き換えず、本仕様書と IADR-0324 の追記で正す。
+
+## 対象範囲
+
+- 対象: IADR-0324 の追記・索引行、`infra/README.md`。
+- 対象外: AST 側の検査器・CI（基盤リポジトリを取得しない）、基盤側の検査器の射程拡張。
+
+## 計画書との差異
+
+- ADR-0038 決定 3 の統制表と §残るもの は「写しのずれを検知する手段が無い」と書くが、基盤側 CI（MSP#1412）が
+  2026-09-11 から検知している。planning#749 で環流した（フォローアップ 4 の件数 0 件も同 issue に記載）。
 
 ## 決定（IADR-0324 への日付つき追記）
 
@@ -87,6 +101,10 @@ IADR-0324 の #776 追記は「写しのずれを検知する手段は無い。�
   `check-adr-index-addendum-loss`・`check-cross-repo-refs`・`check-plan-id-qualification`・`check-commit-messages`・
   `check-test-traceability`。C# は触らない。
 
+## テスト方針
+
+- コード・検査器の変更は無い。文書系の検査器（上記）で検証し、基盤の検査器は作業用の写しで実走と変異の実測を行う。
+
 ## 母集合（規則 9・10）
 
 - 誤りの側の文字列「写しのずれを検知する手段は無い」「突合の受け皿は基盤側」「Drift detection is owned」で
@@ -94,7 +112,13 @@ IADR-0324 の #776 追記は「写しのずれを検知する手段は無い。�
   `infra/keycloak/realm-export.json`。凍結記録（IADR-0324 本文・索引行の原文・過去の作業仕様書）は書き換えず追記で足す。
   realm-export.json は記述が事実と一致し、かつ varchar(255) 制約（#788）があるため変えない。
 
+## 未決事項
+
+- なし（ADR-0038 の記述の更新は planning#749 の裁定に委ねる）。
+
 ## 残余リスク
+
+- 接頭辞外のクライアントへの付与・人の利用者へのロール付与・client scope（defaultClientScopes）は突合しない（変異で実測。client scope の欠けは 401 でなく 403 になる）。
 
 - AST 側だけで写しを変えた場合、赤になるのは AST の PR ではなく次の MSP pin 更新 PR である（検知の遅れ＝pin 更新の間隔）。
 - 散文（`description` 本文）の陳腐化・`secret` の差は検知しない（MSP IADR-0434 決定 2 の設計どおり）。
