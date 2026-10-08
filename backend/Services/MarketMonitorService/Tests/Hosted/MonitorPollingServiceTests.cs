@@ -56,6 +56,13 @@ public class MonitorPollingServiceTests
         // 巡回の構成（既定 60 秒）。#1132 監査 🟡: 見積りに渡す巡回間隔が構成の値であることを固定する。
         public MonitorOptions MonitorOptions { get; init; } = new();
 
+        // #1251, IADR-0513: 巡回の所要の計量・Warning（null なら配線しない＝従来の構成）。
+        public BusinessMetrics? Metrics { get; init; }
+
+        public SteppedTimeProvider Time { get; } = new();
+
+        public ILogger<MonitorPollingService> Logger { get; init; } = NullLogger<MonitorPollingService>.Instance;
+
         private IHost? _host;
 
         public Harness(MarketMonitorSettings settings) => Settings = new InMemoryMonitoredSymbolStore(settings);
@@ -83,7 +90,7 @@ public class MonitorPollingServiceTests
             var service = new MonitorPollingService(
                 _host.Services.GetRequiredService<IServiceScopeFactory>(),
                 Schedule, Clock, Options.Create(MonitorOptions),
-                NullLogger<MonitorPollingService>.Instance, Liveness, DailyVolume);
+                Logger, Liveness, DailyVolume, Metrics, Time);
 
             return (service, _host);
         }
@@ -359,5 +366,85 @@ public class MonitorPollingServiceTests
         await service.RunOnceAsync(CancellationToken.None);
 
         capture.ValuesOf(BusinessMetricNames.FinnhubDailyVolumeEstimate).Should().BeEmpty();
+    }
+
+    // ---- FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 1 巡回の所要を計量（秒）と Warning で観測する ----
+    // 経過は偽の時計（SteppedTimeProvider）を照会ごとに進めて作る（実時間は待たない）。
+
+    private const string CycleOverrunMessage = "市場監視の 1 巡回の所要";
+
+    private static Harness CycleHarness(
+        BusinessMetrics metrics, StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService> log, int pollIntervalSeconds = 60) =>
+        new(Settings(
+            Aapl, new("MSFT", Market.UnitedStates), new("NVDA", Market.UnitedStates), new("AMZN", Market.UnitedStates)))
+        {
+            Metrics = metrics,
+            Logger = log,
+            MonitorOptions = new MonitorOptions { PollIntervalSeconds = pollIntervalSeconds },
+        };
+
+    // 🔴 T-10-2456: 巡回の所要が巡回間隔（60 秒）に達する・超えると、所要の秒数が計量に 1 件入り、Warning が 1 行出る。
+    // 4 銘柄 × 15 秒 ＝ 60 秒（ちょうど達する）・4 銘柄 × 16 秒 ＝ 64 秒（超える）。
+    [Theory]
+    [InlineData(15, 60d)]
+    [InlineData(16, 64d)]
+    public async Task T_10_2456_巡回の所要が巡回間隔に達すると秒数を計量しWarningを出す(int secondsPerQuote, double expectedSeconds)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        await using var h = CycleHarness(metrics, log);
+        h.Market.OnRequest = () => h.Time.Advance(TimeSpan.FromSeconds(secondsPerQuote));
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        h.Market.Requested.Should().HaveCount(4);
+        capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
+            .Should().ContainSingle().Which.Value.Should().Be(expectedSeconds);
+        log.Warnings.Should().ContainSingle(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal))
+            .Which.Should().Contain("巡回間隔 60 秒");
+    }
+
+    // T-10-2457（否定形）: 所要が巡回間隔に満たなければ計量は入るが Warning は出ない。
+    // 巡回間隔は構成の値で判定する（120 秒の構成で 4 × 16 ＝ 64 秒の巡回は達していない。定数 60 と取り違えると Warning が出る）。
+    [Theory]
+    [InlineData(60, 14, 56d)]
+    [InlineData(120, 16, 64d)]
+    public async Task T_10_2457_巡回の所要が巡回間隔に満たなければWarningを出さない(
+        int pollIntervalSeconds, int secondsPerQuote, double expectedSeconds)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        await using var h = CycleHarness(metrics, log, pollIntervalSeconds);
+        h.Market.OnRequest = () => h.Time.Advance(TimeSpan.FromSeconds(secondsPerQuote));
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
+            .Should().ContainSingle().Which.Value.Should().Be(expectedSeconds);
+        log.Warnings.Should().NotContain(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
+    }
+
+    // T-10-2458: 全市場が閉場の巡回は評価しないので所要を記録しない（0 秒でヒストグラムを薄めない）。
+    [Fact]
+    public async Task T_10_2458_全市場が閉場の巡回は所要を記録しない()
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        await using var h = CycleHarness(metrics, log);
+        h.Schedule.Open = false;
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds).Should().BeEmpty();
+        log.Warnings.Should().NotContain(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
     }
 }

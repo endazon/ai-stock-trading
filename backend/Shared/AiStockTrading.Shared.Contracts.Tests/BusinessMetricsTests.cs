@@ -672,6 +672,7 @@ public class BusinessMetricsTests
         metrics.RecordFinnhubDailyVolumeEstimate(estimatedDailyRequests: 480, limitRatioPercent: 160);
         metrics.RecordCapitalBaselineRead(CapitalBaselineReadOutcome.Supplied);
         metrics.RecordMarketMonitorPositionRowsDegraded(BusinessMetrics.PositionRowIdentityMissing);
+        metrics.RecordMarketMonitorCycleDuration(55.0); // #1251, IADR-0513
         metrics.RecordDriftAdoptionFollowUpAbandoned(BusinessMetrics.DriftFollowUpPositionsUnknown);
         metrics.RecordOrderReservationReconciliation(BusinessMetrics.ReservationReconciliationHeldNotPlaced, BrokerProvider.MoomooSimulate);
         metrics.RecordFinnhubSymbolSetResolution("watchlist");

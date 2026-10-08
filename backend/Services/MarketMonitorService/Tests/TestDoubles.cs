@@ -48,11 +48,28 @@ internal sealed class FakeMarketDataSource : IMarketDataSource
         return this;
     }
 
+    /// <summary>#1251, IADR-0513: 照会のたびに呼ぶ（偽の時計を進めて巡回の所要を作るため）。</summary>
+    public Action? OnRequest { get; set; }
+
     public Task<Quote?> GetLatestQuoteAsync(string symbol, Market market, CancellationToken cancellationToken = default)
     {
         Requested.Add((symbol, market));
+        OnRequest?.Invoke();
         return Task.FromResult(_prices.TryGetValue((symbol, market), out var price)
             ? new Quote(symbol, market, price, DateTimeOffset.UtcNow)
             : null);
     }
+}
+
+// FR-04, NFR-01, ADR-0043, #1251, IADR-0513: 経過時間（GetTimestamp / GetElapsedTime）を手で進める偽の時計。
+// 実時間を待たずに巡回の所要を作る（Microsoft.Extensions.Time.Testing は中央パッケージ管理に未登録）。
+internal sealed class SteppedTimeProvider : TimeProvider
+{
+    private long _ticks;
+
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+    public override long GetTimestamp() => _ticks;
+
+    public void Advance(TimeSpan by) => _ticks += by.Ticks;
 }

@@ -178,6 +178,18 @@ public static class BusinessMetricNames
     public const string MarketMonitorPositionRowsDegraded = "ast.market_monitor.position_rows_degraded";
 
     /// <summary>
+    /// FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: <b>市場監視の 1 巡回の所要（秒）</b>（ヒストグラム。タグなし）。
+    /// 開場して評価に進んだ巡回だけを記録する（全市場が閉場の巡回は記録しない）。
+    /// <para>
+    /// 🔴 <b>所要が巡回間隔（既定 60 秒）に達した巡回は、1 銘柄あたりの価格の確認の周期を延ばす。</b>
+    /// <c>PeriodicTimer</c> は逃した刻みを 1 つに畳むため巡回が詰めて続く。Finnhub の限流器は容量 1（12 回/分＝5 秒間隔）で、
+    /// 1 巡回 12 要求は 55 秒まで送出に使い、余裕は「5 秒 − 限流器の外の所要」しかない（IADR-0513 決定 3）。
+    /// 境界は View で明示する（55・60 を境界そのものに置く）。達した巡回はあわせて Warning ログを出す。
+    /// </para>
+    /// </summary>
+    public const string MarketMonitorCycleDurationSeconds = "ast.market_monitor.cycle_duration_seconds";
+
+    /// <summary>
     /// FR-01, FR-13, #1015, IADR-0435: <b>情報収集が Finnhub の対象銘柄をどこから決めたか</b>の内訳（市場監視に結線したとき、巡回ごとに 1 件）。
     /// タグ <c>outcome</c>（watchlist＝市場監視の監視銘柄 / last-known＝読めず直前の値 / configured-fallback＝一度も読めず構成の固定リスト）。
     /// <para>

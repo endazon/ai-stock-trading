@@ -25,6 +25,14 @@ public static class ObservabilityExtensions
         300_000, 420_000, 600_000, 900_000,
     ];
 
+    // FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 市場監視の 1 巡回の所要（秒）のバケット境界。
+    // **既定の巡回間隔 60 秒と、1 要求ぶん手前の 55 秒（12 回/分の 12 要求目の送出時刻）を境界そのものに置く** ——
+    // 既定の境界（0, 5, 10, 25, 50, 75, …）では 60 秒が 50〜75 のバケットに埋もれ、「間隔に達した巡回」の件数が読めない。
+    public static readonly double[] MarketMonitorCycleDurationBucketsSeconds =
+    [
+        5, 10, 20, 30, 40, 50, 55, 60, 65, 75, 90, 120, 180, 300,
+    ];
+
     public static IServiceCollection AddAiStockTradingObservability(
         this IServiceCollection services,
         IConfiguration config,
@@ -71,6 +79,10 @@ public static class ObservabilityExtensions
                 .AddView(
                     BusinessMetricNames.TradeCycleRecordCompletionLatencyMs,
                     new ExplicitBucketHistogramConfiguration { Boundaries = TradeCycleLatencyBucketsMs })
+                // FR-04, NFR-01, #1251, IADR-0513: 市場監視の 1 巡回の所要。60 秒（既定の巡回間隔）を境界に置く。
+                .AddView(
+                    BusinessMetricNames.MarketMonitorCycleDurationSeconds,
+                    new ExplicitBucketHistogramConfiguration { Boundaries = MarketMonitorCycleDurationBucketsSeconds })
                 .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)));
 
         return services;
