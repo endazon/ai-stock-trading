@@ -10,6 +10,11 @@ namespace RiskManagementService.Domain;
 //
 // ① は台帳（StageGateLedger）の側が担う（承認種別 StageTransitionKind.ShortSellReleaseVerdict）。
 // ②③ を判定するのが本ファイルである。
+//
+// FR-20, FR-19, ADR-0034 決定5, #1220, IADR-0511: 「戦略の変更」は 2 契機である（ADR-0034 決定5 の表）。
+//   契機 1 = 取引判断のピン留めモデルの変更 → 戦略 ID がモデルを含むため ④ で捉える
+//   契機 2 = 取引ガードの商品種別設定（現物 / 信用買い / 空売り の有効・無効）の変更 → ⑤ の改訂番号で捉える
+// **プロンプト・方針の変更は契機に含めない**（同決定が明示的に除外。判定の入力に現れない）。
 
 /// <summary>
 /// FR-20, ADR-0016 決定14: verdict の供給元の種別。裁定が名指しした 2 つだけを持つ。
@@ -69,7 +74,13 @@ public static class ShortSellReleaseSources
 /// </summary>
 /// <param name="SourceFingerprint">発行時点の情報源フィンガープリント（<see cref="ShortSellReleaseSources"/>）。</param>
 /// <param name="StrategyId">発行時点の戦略識別子（バックテスト verdict が名乗る戦略 ID）。</param>
-public sealed record ShortSellReleaseAttestation(string SourceFingerprint, string StrategyId);
+/// <param name="ProductTypesRevision">
+/// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 発行時点の**商品種別設定の改訂番号**
+/// （<see cref="ProductTypeSettingsRevision"/>）。<c>null</c>＝番号を写し取っていない旧い verdict であり、
+/// 判定は「変わっていない」と読まず無効へ倒す（<see cref="ShortSellReleaseVerdictStatus.ProductTypesUnknown"/>）。
+/// </param>
+public sealed record ShortSellReleaseAttestation(
+    string SourceFingerprint, string StrategyId, long? ProductTypesRevision);
 
 /// <summary>
 /// FR-20, ADR-0016 決定14: 承認記録に載った verdict 1 件（台帳から復元した読み取り用の形）。
@@ -79,12 +90,16 @@ public sealed record ShortSellReleaseAttestation(string SourceFingerprint, strin
 /// <param name="IssuedAtUtc">発行時刻。有効期限 30 日の起点。</param>
 /// <param name="SourceFingerprint">発行時点の情報源フィンガープリント。</param>
 /// <param name="StrategyId">発行時点の戦略識別子。</param>
+/// <param name="ProductTypesRevision">
+/// 発行時点の商品種別設定の改訂番号（#1220, IADR-0511）。<c>null</c>＝旧い verdict（無効へ倒す）。
+/// </param>
 public sealed record ShortSellReleaseVerdict(
     int ApprovalSequence,
     string ApprovedBy,
     DateTimeOffset IssuedAtUtc,
     string SourceFingerprint,
-    string StrategyId);
+    string StrategyId,
+    long? ProductTypesRevision);
 
 /// <summary>
 /// FR-20, ADR-0016 決定14: verdict の有効性。**Valid 以外はすべて「解禁しない」**（フェイルクローズ）。
@@ -95,7 +110,7 @@ public sealed record ShortSellReleaseVerdict(
 /// </summary>
 public enum ShortSellReleaseVerdictStatus
 {
-    /// <summary>有効（30 日以内・情報源も戦略も発行時と同一）。</summary>
+    /// <summary>有効（30 日以内・情報源も戦略も商品種別設定も発行時と同一）。</summary>
     Valid = 0,
 
     /// <summary>承認記録に verdict が無い（**最重要のフェイルクローズ**）。</summary>
@@ -109,6 +124,19 @@ public enum ShortSellReleaseVerdictStatus
 
     /// <summary>戦略が変わった（または戦略の同一性を名乗れない）。</summary>
     StrategyChanged = 4,
+
+    /// <summary>
+    /// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 取引ガードの商品種別設定が verdict の発行後に変わった
+    /// （改訂番号が違う。**無効化 → 再有効化で集合が発行時と同じに戻っても、番号は 2 進んでいるため無効**）。
+    /// </summary>
+    ProductTypesChanged = 5,
+
+    /// <summary>
+    /// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 商品種別設定が変わったかを判定する材料が無い
+    /// （verdict が改訂番号を写し取っていない旧い行、または現在の番号が供給されない）。
+    /// **「変わっていない」と読まない**（fail-closed。戦略 ID が空のときの扱いと同じ規律）。
+    /// </summary>
+    ProductTypesUnknown = 6,
 }
 
 /// <summary>
@@ -128,15 +156,23 @@ public static class ShortSellReleasePolicy
 
     /// <summary>
     /// verdict の有効性を判定する。**3 つの無効化契機（期限切れ・情報源の変更・戦略の変更）はいずれか 1 つで無効**。
+    /// 「戦略の変更」は戦略 ID（ADR-0034 決定5 契機1）と商品種別設定の改訂番号（同 契機2）の 2 つで判定する。
+    /// <para>
+    /// **プロンプト・方針は入力に無い**（ADR-0034 決定5 が契機から明示的に除外した。#1220）。
+    /// </para>
     /// </summary>
     /// <param name="verdict">承認記録から復元した最新の verdict。<c>null</c>＝未承認（フェイルクローズ）。</param>
     /// <param name="currentSourceFingerprint">**評価時点**の情報源フィンガープリント。</param>
     /// <param name="currentStrategyId">**評価時点**の戦略識別子。</param>
+    /// <param name="currentProductTypesRevision">
+    /// **評価時点**の商品種別設定の改訂番号（設定ストアが持つ。#1220, IADR-0511）。<c>null</c>＝未供給（無効へ倒す）。
+    /// </param>
     /// <param name="now">評価時刻（UTC）。</param>
     public static ShortSellReleaseVerdictStatus Evaluate(
         ShortSellReleaseVerdict? verdict,
         string? currentSourceFingerprint,
         string? currentStrategyId,
+        long? currentProductTypesRevision,
         DateTimeOffset now)
     {
         // ① 未承認。equity を満たしていても解禁しない（裁定「verdict が無ければ解禁されない」）。
@@ -166,6 +202,21 @@ public static class ShortSellReleasePolicy
             || !string.Equals(verdict.StrategyId, currentStrategyId, StringComparison.Ordinal))
         {
             return ShortSellReleaseVerdictStatus.StrategyChanged;
+        }
+
+        // ⑤ 戦略の変更の契機 2（ADR-0034 決定5）: 取引ガードの商品種別設定の変更。
+        // **集合ではなく改訂番号で比べる**——集合の等価比較では「空売りを無効化して再度有効化した」往復を
+        // 捉えられない（集合は発行時と同じに戻る）。番号は集合が変わる保存のたびに進むため往復で 2 進む（IADR-0511）。
+        // **どちらかの番号が無ければ「変わっていない」と読まない**（④ の空の戦略 ID と同じ fail-closed）。
+        if (verdict.ProductTypesRevision is not { } issuedRevision
+            || currentProductTypesRevision is not { } currentRevision)
+        {
+            return ShortSellReleaseVerdictStatus.ProductTypesUnknown;
+        }
+
+        if (issuedRevision != currentRevision)
+        {
+            return ShortSellReleaseVerdictStatus.ProductTypesChanged;
         }
 
         return ShortSellReleaseVerdictStatus.Valid;

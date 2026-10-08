@@ -49,6 +49,7 @@
     "currentSourceFingerprint": "borrow=none;margin=none",
     "currentStrategyId": "",
     "shortSellStrategyBacktestPassed": false,
-    "expiresAtUtc": null
+    "expiresAtUtc": null,
+    "currentProductTypesRevision": 1
   }
 }

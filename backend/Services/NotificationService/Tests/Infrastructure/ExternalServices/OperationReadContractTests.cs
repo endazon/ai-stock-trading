@@ -102,7 +102,7 @@ public class OperationReadContractTests
             new RiskDomain.WithdrawalAssessment(false, null, false, null),
             new RiskDomain.Stage1Progress(60, 120),
             Lowered,
-            new RiskFeatures.ShortSellReleaseState(RiskDomain.ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null));
+            new RiskFeatures.ShortSellReleaseState(RiskDomain.ShortSellReleaseVerdictStatus.Missing, null, "fp", "strategy", false, null, 0));
         var controller = new HttpStageGateController(Client(status, RiskWire), NullLogger<HttpStageGateController>.Instance);
 
         var result = await controller.GetStatusAsync();

@@ -3,15 +3,15 @@ title: 段階ゲート（FR-20）機能仕様書
 type: functional-spec
 status: review
 created: 2026-07-09
-updated: 2026-09-09
+updated: 2026-10-08
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-12, FR-13, FR-15, FR-19, FR-20, SC-01, SC-02, SC-03, UC-06]
-adrs: [ADR-0008, ADR-0016, ADR-0018, ADR-0023]
-iadrs: [IADR-0005, IADR-0041, IADR-0089, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304, IADR-0310]
-specs: [20260804_333_stage-gate, 20260909_688_stage0-bus-and-driver, 20260805_334_broker-provider-axis, 20260805_386_stage1-trade-count, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-10_risk-controls, FR-15_backtest, FR-19_trading-guard, FR-20_staged-gates-tests, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply]
-issues: [#27, #333, #688, #334, #342, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #466, #569]
+adrs: [ADR-0008, ADR-0016, ADR-0018, ADR-0023, ADR-0034]
+iadrs: [IADR-0005, IADR-0041, IADR-0089, IADR-0105, IADR-0111, IADR-0113, IADR-0136, IADR-0137, IADR-0138, IADR-0139, IADR-0140, IADR-0141, IADR-0142, IADR-0148, IADR-0149, IADR-0150, IADR-0154, IADR-0161, IADR-0163, IADR-0164, IADR-0180, IADR-0187, IADR-0271, IADR-0281, IADR-0304, IADR-0310, IADR-0511]
+specs: [20260804_333_stage-gate, 20260909_688_stage0-bus-and-driver, 20261008_1220_shortsell-verdict-product-types-revision, 20260805_334_broker-provider-axis, 20260805_386_stage1-trade-count, 20260805_387_class-c-violation-count, 20260902_388_short-sell-release-verdict, 20260904_388_short-sell-strategy-observation, FR-10_risk-controls, FR-15_backtest, FR-19_trading-guard, FR-20_staged-gates-tests, IADR-0136_stage-orderable-cap-ratio, IADR-0137_stage1-trading-day-counting, IADR-0138_stage0-drawdown-tolerance-tightening, IADR-0139_stage-product-type-enforcement, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0142_stage1-simulate-only-aggregation, IADR-0148_control-violation-supply-and-unavailable-state, IADR-0149_stage1-trade-count-supply]
+issues: [#27, #333, #688, #334, #342, #382, #385, #386, #387, #388, #407, #417, #419, #422, #423, #431, #466, #569, #1220]
 -->
 
 
@@ -239,7 +239,9 @@ verdict は次のいずれか 1 つでも当てはまれば**無効**であり�
 | --- | --- | --- |
 | 期限切れ | 発行から **30 日**を超えた（**30 日ちょうどは有効**）。発行時刻が未来の記録も無効へ倒す | `Expired` |
 | 情報源の変更 | 借株料の照会経路・維持率の供給の**登録アダプタ名から作った識別子**が、発行時と異なる | `SourceChanged` |
-| 戦略の変更 | バックテストの verdict が名乗る**戦略識別子**が、発行時と異なる（どちらかが空なら不一致として扱う） | `StrategyChanged` |
+| 戦略の変更（取引判断のモデル） | バックテストの verdict が名乗る**戦略識別子**が、発行時と異なる（どちらかが空なら不一致として扱う）。戦略識別子はピン留めモデルを含む | `StrategyChanged` |
+| 戦略の変更（取引ガードの商品種別設定） | 現物 / 信用買い / 空売りの有効・無効を変える保存のたびに 1 進む**改訂番号**が、発行時と異なる。**無効化して再度有効化した往復も無効**（集合は戻っても番号は 2 進む） | `ProductTypesChanged` |
+| 判定材料なし | verdict か現在の側に改訂番号が無い（改訂番号の導入前に発行した verdict／改訂番号を知らない版が書いた設定行。設定行に番号が無いことを固定値と読まない）。「変わっていない」と読まない（**フェイルクローズ**） | `ProductTypesUnknown` |
 | 未承認 | 承認記録に verdict が 1 件も無い（**フェイルクローズ**） | `Missing` |
 
 - **情報源の識別子は値そのもの（料率・維持率）から作らない。** 値は毎日変わるため、経路の変更ではなく
@@ -247,6 +249,14 @@ verdict は次のいずれか 1 つでも当てはまれば**無効**であり�
 - **識別子はハッシュにしない。** 監査で「何が変わって無効になったのか」が読めることに実益がある。
 - 借株照会・維持率の供給は未実装であり、現在の識別子は「供給元なし」を表す値である。
   **供給が結線された時点で識別子が変わり、既発行の verdict は自動的に失効する**（意図した振る舞い）。
+- **商品種別設定は集合ではなく改訂番号で比べる。** 集合の比較では「空売りを無効化して再度有効化した」往復を
+  捉えられない。時刻でもない（発行時刻と設定の更新時刻は別の時計であり、同時刻で前後が決まらない）。
+  改訂番号は設定ストアの保存だけが進め、呼び出し側からは書けない。商品種別以外の設定（禁止銘柄・市場・上限・
+  段階など）の変更では進まない。**プロンプト・方針の変更は契機に入れない**（変更の単位が定義されていないため）。
+- **設定行に改訂番号が無いとき（改訂番号を知らない版が書いた行）は、その行を判定材料なしとして扱う。** verdict の発行と
+  次の保存が、同じ行へ**行の版**を新しい番号として刻む（初期値は 1）。版は番号を知らない版の書き込みでも進むため、
+  番号を落とした書き込み（切り戻した版での保存）の後に刻んだ番号は、発行済みのどの verdict の番号とも一致しない。
+  デプロイ直後でも、設定を手で保存せずに verdict を発行できる。
 - 拒否理由は `StageShortSellReleaseUnmet` の 1 つだけであり、**拒否理由だけでは「verdict が無効」と
   「その他の解禁条件が未充足」を区別できない。** 区別は段階ゲート現況の応答（verdict の状態・現在の識別子・
   失効時刻）が担う。verdict は追記専用の承認記録に載っているため、事後に理由を確定できる。
@@ -518,7 +528,7 @@ stateDiagram-v2
 | 累計投入額が発注可能額を超過 | **新規建てのみ**拒否 | `StageCapitalCapExceeded` |
 | 段階が許さない商品種別の新規建て | 拒否（**手仕舞いは拒否しない**） | `StageProductTypeProhibited` |
 | Stage 3 で空売り解禁条件が未充足 | 拒否（フェイルクローズ） | `StageShortSellReleaseUnmet` |
-| Stage 3 で実弾解禁前の確認 verdict が無効（未承認・期限切れ・情報源の変更・戦略の変更） | 拒否（フェイルクローズ） | `StageShortSellReleaseUnmet`（理由の区別は段階ゲート現況の応答が担う） |
+| Stage 3 で実弾解禁前の確認 verdict が無効（未承認・期限切れ・情報源の変更・戦略の変更・商品種別設定の変更・判定材料なし） | 拒否（フェイルクローズ） | `StageShortSellReleaseUnmet`（理由の区別は段階ゲート現況の応答が担う） |
 | 実績の供給が無い（既定 0 / false） | **昇格しない**（fail-safe） | 未充足基準を列挙 |
 
 ## 受け入れ基準
@@ -547,6 +557,7 @@ stateDiagram-v2
 - [x] **実弾解禁前の確認 verdict が無ければ**、equity を満たしていても空売りの実弾は開かない
 - [x] **31 日前の verdict では開かず、30 日ちょうどの verdict では開く**（境界）
 - [x] **情報源を変更した直後・戦略を変更した直後**は、期限内の verdict でも開かない
+- [x] **取引ガードの商品種別設定を変えた後**（空売りの無効化 → 再有効化を含む）は、期限内の verdict でも開かない。改訂番号を持たない verdict も開かない
 - [x] verdict が**段階ゲートの承認記録と同じ経路**に載る（専用テーブル・専用 API を持たない）
 - [x] 空売りを**含まない**戦略の Stage 0 合格では開かない
 - [x] 段階遷移が利用者承認で行われ、遷移履歴が記録される
@@ -589,7 +600,7 @@ stateDiagram-v2
 | 発注先の設定値 → 実際の発注経路 | **未結線**（発注先は起動時構成 `Broker:Provider` / `Broker:Environment` が決める） | 設定変更は**記録と表示まで**。実弾は閂 0 が止める |
 | クラス C 統制違反件数 | **実装済み**（発注審査の観測ログから集計。#387） | 未供給（`null`）→ **昇格しない**。審査が動けば 0 件として供給される |
 | Stage 3 の Stage 0 再充足（空売りを含む戦略か） | **実装済み**（バックテスト verdict の射影。verdict 側の値は**走行の観測**であり申告ではない）／供給は Stage 0 合格 verdict と同じ（経路は通るが不合格固定であり、プレースホルダは注文を出さないため観測も `false`） | `false` → 空売りは開かない |
-| Stage 3 の実弾解禁前の確認 verdict | **実装済み**（承認記録へ相乗り・判定は 30 日 / 情報源 / 戦略の 3 契機）。**発注審査への供給は未結線**（借株照会・維持率の供給が未実装のため） | 承認記録に無ければ未承認 → 空売りは開かない。供給が `null` の間もフェイルクローズのまま |
+| Stage 3 の実弾解禁前の確認 verdict | **実装済み**（承認記録へ相乗り・判定は 30 日 / 情報源 / 戦略の 3 契機。戦略は識別子と商品種別設定の改訂番号の 2 つで判定）。**発注審査への供給は未結線**（借株照会・維持率の供給が未実装のため） | 承認記録に無ければ未承認 → 空売りは開かない。供給が `null` の間もフェイルクローズのまま |
 | 借株料の照会経路・維持率の供給（verdict の情報源） | **未実装**（[#417](https://github.com/endazon/ai-stock-trading/issues/417) / [#419](https://github.com/endazon/ai-stock-trading/issues/419)） | 識別子は「供給元なし」。**結線された時点で既発行の verdict は失効する** |
 | 段階別の商品種別強制・発注可能額 | — | **実効する**（`RiskEvaluator` 経路） |
 

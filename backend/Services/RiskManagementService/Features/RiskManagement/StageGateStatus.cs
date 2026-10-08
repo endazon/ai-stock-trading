@@ -27,7 +27,7 @@ public sealed record StageGateStatus(
 /// 空売り実弾解禁 verdict の現況（<c>GET /risk-controls/stage-gate</c> の応答の一部）。
 /// <para>
 /// 🔴 **拒否理由 <c>StageShortSellReleaseUnmet</c> は「verdict 無効」と「その他の解禁条件未充足」を区別しない。**
-/// 区別を担うのが本レコードである——状態（欠落 / 期限切れ / 情報源の変更 / 戦略の変更）と、
+/// 区別を担うのが本レコードである——状態（欠落 / 期限切れ / 情報源の変更 / 戦略の変更 / 商品種別設定の変更・判定材料なし）と、
 /// 突き合わせに使った**現在**の値の両方を返すため、「何が変わって無効になったのか」が読める。
 /// </para>
 /// </summary>
@@ -37,10 +37,15 @@ public sealed record StageGateStatus(
 /// <param name="CurrentStrategyId">**現在**の戦略識別子（直近のバックテスト verdict が名乗る値）。</param>
 /// <param name="ShortSellStrategyBacktestPassed">空売りを含む戦略で Stage 0 を再充足したか（解禁条件の別項）。</param>
 /// <param name="ExpiresAtUtc">verdict の失効時刻（発行 + 30 日）。未承認なら <c>null</c>。</param>
+/// <param name="CurrentProductTypesRevision">
+/// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: **現在**の商品種別設定の改訂番号（verdict の発行時の番号と突き合わせる）。
+/// <c>null</c>＝番号を知らない版が書いた設定行（判定は無効へ倒れる）。
+/// </param>
 public sealed record ShortSellReleaseState(
     ShortSellReleaseVerdictStatus Status,
     ShortSellReleaseVerdict? Verdict,
     string CurrentSourceFingerprint,
     string CurrentStrategyId,
     bool ShortSellStrategyBacktestPassed,
-    DateTimeOffset? ExpiresAtUtc);
+    DateTimeOffset? ExpiresAtUtc,
+    long? CurrentProductTypesRevision);

@@ -18,10 +18,14 @@ public sealed class EfStageGateStore(RiskManagementDbContext db) : IStageGateSto
                 r.Sequence, r.FromStage, r.ToStage, r.Kind, r.ApprovedBy, r.OccurredAtUtc, r.Reason,
                 // FR-20, ADR-0016 決定14, #388, IADR-0281 決定1: verdict の行だけが添付を持つ。
                 // 段階遷移の行は 2 列とも null であり、null のまま復元する（偽の添付を発明しない）。
+                // FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: **改訂番号の列だけが null の行（列の追加前に発行された
+                // verdict）は添付ごと落とさない**——落とすと Missing と読まれ、「番号が無いから無効」という理由
+                // （ProductTypesUnknown）が読めなくなる。null のまま復元し、判定が無効へ倒す。
                 r.ShortSellReleaseSourceFingerprint is null || r.ShortSellReleaseStrategyId is null
                     ? null
                     : new ShortSellReleaseAttestation(
-                        r.ShortSellReleaseSourceFingerprint, r.ShortSellReleaseStrategyId)))
+                        r.ShortSellReleaseSourceFingerprint, r.ShortSellReleaseStrategyId,
+                        r.ShortSellReleaseProductTypesRevision)))
             .ToList();
 
         return StageGateLedger.Empty(TradingStage.Stage0Verification) with { History = history };
@@ -42,6 +46,7 @@ public sealed class EfStageGateStore(RiskManagementDbContext db) : IStageGateSto
             Reason = transition.Reason,
             ShortSellReleaseSourceFingerprint = transition.ShortSellRelease?.SourceFingerprint,
             ShortSellReleaseStrategyId = transition.ShortSellRelease?.StrategyId,
+            ShortSellReleaseProductTypesRevision = transition.ShortSellRelease?.ProductTypesRevision,
         });
 
         try

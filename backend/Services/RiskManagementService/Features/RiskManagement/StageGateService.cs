@@ -95,6 +95,8 @@ public sealed class StageGateService(
             ledger.LatestShortSellReleaseVerdict,
             releaseSources.CurrentFingerprint(),
             performance.BacktestStrategyId,
+            // FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 現在の商品種別設定の改訂番号。
+            settingsStore.GetProductTypesRevision(),
             clock.UtcNow);
     }
 
@@ -107,8 +109,12 @@ public sealed class StageGateService(
     {
         var ledger = ledgerStore.Load();
         var performance = performanceStore.GetCurrent();
+        // FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 商品種別設定の改訂番号も**サーバが写し取る**。
+        // 写し取りと台帳への追記の間に商品種別が変わった場合は、写した番号が古くなり verdict は無効になる（安全側）。
+        // 番号を知らない版が書いた設定行（デプロイ直後・切り戻しの後）では、ここで行の版から新しい番号を刻む（IADR-0511）。
         var attestation = new ShortSellReleaseAttestation(
-            releaseSources.CurrentFingerprint(), performance.BacktestStrategyId);
+            releaseSources.CurrentFingerprint(), performance.BacktestStrategyId,
+            settingsStore.EnsureProductTypesRevision());
 
         var result = StageGate.RequestShortSellReleaseVerdict(
             ledger.CurrentStage, ledger.NextSequence,
@@ -128,14 +134,16 @@ public sealed class StageGateService(
     {
         var verdict = ledger.LatestShortSellReleaseVerdict;
         var fingerprint = releaseSources.CurrentFingerprint();
+        var productTypesRevision = settingsStore.GetProductTypesRevision();
         return new ShortSellReleaseState(
             ShortSellReleasePolicy.Evaluate(
-                verdict, fingerprint, performance.BacktestStrategyId, clock.UtcNow),
+                verdict, fingerprint, performance.BacktestStrategyId, productTypesRevision, clock.UtcNow),
             verdict,
             fingerprint,
             performance.BacktestStrategyId,
             performance.ShortSellStrategyBacktestPassed,
-            verdict is null ? null : ShortSellReleasePolicy.ExpiresAt(verdict));
+            verdict is null ? null : ShortSellReleasePolicy.ExpiresAt(verdict),
+            productTypesRevision);
     }
 
     // FR-20: 遷移履歴（追記順・監査対象）。

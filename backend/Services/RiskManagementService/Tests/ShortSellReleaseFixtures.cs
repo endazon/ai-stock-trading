@@ -14,18 +14,35 @@ internal static class ShortSellReleaseFixtures
     /// <summary>空売りを含む戦略の識別子。</summary>
     public const string StrategyId = "short-momentum-v2";
 
+    /// <summary>
+    /// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: verdict の発行時点の商品種別設定の改訂番号
+    /// （0 以外にして「初期値だから一致した」を避ける）。
+    /// </summary>
+    public const long ProductTypesRevision = 3;
+
     /// <summary>verdict の発行時刻。</summary>
     public static readonly DateTimeOffset IssuedAt = new(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>承認記録から復元した verdict（既定は上記の素材で発行されたもの）。</summary>
     public static ShortSellReleaseVerdict Verdict(
         DateTimeOffset? issuedAt = null, string? fingerprint = null, string? strategyId = null) =>
+        VerdictWithRevision(ProductTypesRevision, issuedAt, fingerprint, strategyId);
+
+    /// <summary>
+    /// 発行時点の商品種別設定の改訂番号を明示した verdict（#1220）。<c>null</c>＝番号を写し取っていない旧い verdict。
+    /// 既定の <see cref="Verdict"/> と分けるのは、任意引数の <c>null</c> が「既定の番号」と「番号なし」の
+    /// どちらを意味するかを読み分けられなくなるためである（<see cref="WithoutVerdict"/> と同じ理由）。
+    /// </summary>
+    public static ShortSellReleaseVerdict VerdictWithRevision(
+        long? productTypesRevision,
+        DateTimeOffset? issuedAt = null, string? fingerprint = null, string? strategyId = null) =>
         new(
             ApprovalSequence: 7,
             ApprovedBy: "endazon",
             IssuedAtUtc: issuedAt ?? IssuedAt,
             SourceFingerprint: fingerprint ?? Fingerprint,
-            StrategyId: strategyId ?? StrategyId);
+            StrategyId: strategyId ?? StrategyId,
+            ProductTypesRevision: productTypesRevision);
 
     /// <summary>
     /// **解禁されるべき文脈**（3 項の AND がすべて成立）。個々のテストは必要な 1 項だけを崩して否定形を書く。
@@ -35,12 +52,14 @@ internal static class ShortSellReleaseFixtures
         bool shortSellStrategyBacktestPassed = true,
         ShortSellReleaseVerdict? verdict = null,
         string? currentFingerprint = null,
-        string? currentStrategyId = null) =>
+        string? currentStrategyId = null,
+        long? currentProductTypesRevision = ProductTypesRevision) =>
         new(
             shortSellStrategyBacktestPassed,
             verdict ?? Verdict(),
             currentFingerprint ?? Fingerprint,
             currentStrategyId ?? StrategyId,
+            currentProductTypesRevision,
             now ?? IssuedAt);
 
     /// <summary>
@@ -54,5 +73,6 @@ internal static class ShortSellReleaseFixtures
             Verdict: null,
             Fingerprint,
             StrategyId,
+            ProductTypesRevision,
             now ?? IssuedAt);
 }

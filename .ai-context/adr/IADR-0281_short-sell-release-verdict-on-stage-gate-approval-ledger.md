@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-20, FR-15, FR-11, UC-06, ADR-0016, ADR-0008]
 author: endazon (with Claude Code)
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-10-08
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0016_short-selling-staged-release.md
 ---
@@ -145,3 +145,17 @@ Stage 1 の統制違反件数に効く。**区別のために統制の集計軸�
 
 - Supersedes: なし
 - Superseded by: なし
+
+## ［2026-10-08 追記 / #1220］決定 4 の判定に「⑤ 取引ガードの商品種別設定の変更」を足した
+
+計画 ADR-0034 決定 5 は、決定 14 の無効化契機「② 戦略の変更」を 2 契機（取引判断のピン留めモデルの変更・
+取引ガードの商品種別設定の変更）と定めた。本 IADR の決定 3（戦略 ID の一致）は契機 1 を捉えるが、契機 2 は判定に入っていなかった
+（空売りを無効化して再度有効化しても verdict は有効のまま）。
+
+- verdict は発行時の**商品種別設定の改訂番号**（設定ストアが商品種別の集合が変わる保存のたびに 1 進める単調増加カウンタ）を写し取る。
+  `ShortSellReleasePolicy.Evaluate` は戦略 ID の次に番号を突き合わせ、違えば `ProductTypesChanged`、verdict 側か現在側の番号が無ければ
+  `ProductTypesUnknown`（fail-closed）を返す。**無効化 → 再有効化の往復でも番号は 2 進むため失効する。**
+- 決定 4 の「`Missing / Expired / SourceChanged / StrategyChanged / Valid` を返す」は上記 2 値を加えて読む。`Evaluate` と
+  `StageReleaseContext` には現在の番号の引数・メンバが加わった（既定値なし。本 IADR 決定 4 の規律どおり）。
+- 本追記より前に発行された verdict の行は番号を持たず、デプロイ直後に無効になる（発注審査への供給は決定 6 のとおり未結線のため、発注の挙動は変わらない）。
+- 判断の詳細・却下した案（集合のスナップショット・最終変更時刻）・残余リスクは IADR-0511 に置く。

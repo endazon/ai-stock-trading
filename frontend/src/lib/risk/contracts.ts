@@ -230,6 +230,8 @@ export interface StageTransition {
 export interface ShortSellReleaseAttestation {
   sourceFingerprint: string;
   strategyId: string;
+  // FR-19, #1220: 発行時点の取引ガードの商品種別設定の改訂番号。null＝番号を写し取っていない旧い verdict（無効へ倒れる）。
+  productTypesRevision: number | null;
 }
 
 // 承認記録から復元した verdict 1 件。承認記録 ID＝段階ゲート台帳の連番である。
@@ -239,6 +241,7 @@ export interface ShortSellReleaseVerdict {
   issuedAtUtc: string; // DateTimeOffset（ISO 文字列）
   sourceFingerprint: string;
   strategyId: string;
+  productTypesRevision: number | null; // #1220: 発行時点の商品種別設定の改訂番号（null＝旧い verdict）
 }
 
 // 空売り実弾解禁 verdict の現況。
@@ -252,6 +255,9 @@ export interface ShortSellReleaseState {
   currentStrategyId: string;
   shortSellStrategyBacktestPassed: boolean;
   expiresAtUtc: string | null;
+  // FR-19, #1220: **現在**の取引ガードの商品種別設定の改訂番号（verdict の発行時の番号と突き合わせる）。
+  // null＝番号を知らない版が書いた設定行（verdict は判定材料なしで無効）。
+  currentProductTypesRevision: number | null;
 }
 
 // FR-20, #334, IADR-0142: Stage 1 の進捗（**moomoo SIMULATE の実績のみ**）と、内蔵 paper 稼働により
@@ -326,14 +332,19 @@ const TRANSITION_KIND_LABELS: Record<number, string> = {
   2: '空売り実弾解禁の verdict',
 };
 
-// ShortSellReleaseVerdictStatus（0=Valid,1=Missing,2=Expired,3=SourceChanged,4=StrategyChanged）。
+// ShortSellReleaseVerdictStatus（0=Valid,1=Missing,2=Expired,3=SourceChanged,4=StrategyChanged,
+// 5=ProductTypesChanged,6=ProductTypesUnknown）。
 // **Valid 以外はすべて「解禁しない」**（フェイルクローズ）。無効化の契機は情報源の変更・戦略の変更・期限切れの 3 つ。
+// #1220: 「戦略の変更」には取引ガードの商品種別設定の変更（無効化 → 再有効化を含む）が入る（5）。
+// 判定材料（発行時の改訂番号）を持たない旧い verdict は「変わっていない」と読まず無効（6）。
 const SHORT_SELL_RELEASE_STATUS_LABELS: Record<number, string> = {
   0: '有効',
   1: '未承認（確認が記録されていません）',
   2: '期限切れ（発行から 30 日超）',
   3: '情報源が変わったため無効',
   4: '戦略が変わったため無効',
+  5: '取引ガードの商品種別設定が変わったため無効',
+  6: '商品種別設定の変更を判定できないため無効（再発行が必要です）',
 };
 
 // StageGateCriterion（StageTransition.cs の列挙順）。

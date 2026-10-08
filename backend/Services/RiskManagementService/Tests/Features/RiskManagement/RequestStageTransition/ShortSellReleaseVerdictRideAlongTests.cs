@@ -173,7 +173,7 @@ public class ShortSellReleaseVerdictRideAlongTests
             TradingStage.Stage3ScaledLive,
             nextSequence: 1,
             new StageApproval(TradingStage.Stage3ScaledLive, "  "),
-            new ShortSellReleaseAttestation("borrow=x;margin=y", "s1"),
+            new ShortSellReleaseAttestation("borrow=x;margin=y", "s1", 0),
             TradingDefaults.CreateStagePolicy(),
             DateTimeOffset.UtcNow);
 
@@ -190,11 +190,11 @@ public class ShortSellReleaseVerdictRideAlongTests
             .Append(new StageTransition(
                 1, TradingStage.Stage3ScaledLive, TradingStage.Stage3ScaledLive,
                 StageTransitionKind.ShortSellReleaseVerdict, "endazon", now, "verdict",
-                new ShortSellReleaseAttestation("borrow=old;margin=old", "s1")))
+                new ShortSellReleaseAttestation("borrow=old;margin=old", "s1", 0)))
             .Append(new StageTransition(
                 2, TradingStage.Stage3ScaledLive, TradingStage.Stage3ScaledLive,
                 StageTransitionKind.ShortSellReleaseVerdict, "endazon", now.AddDays(1), "verdict",
-                new ShortSellReleaseAttestation("borrow=new;margin=new", "s2")));
+                new ShortSellReleaseAttestation("borrow=new;margin=new", "s2", 1)));
 
         // 段階は動かない（verdict の行は ToStage == FromStage）。
         ledger.CurrentStage.Should().Be(TradingStage.Stage3ScaledLive);
