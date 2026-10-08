@@ -299,6 +299,13 @@ jobs:
           #     うち 2 回は success で終わった（#490。check-review-verdict.js 新設の起点）。
           #   - 「検証の誠実性」節の由来: 権限拒否 12 件を伏せて「実測した ✅」と報告した事例。
           #   - cd 禁止の実測: 1 回のレビューで cd 起点の拒否が 4 件出た。
+          #   - 【Helm の chart を変える PR】節（#1248 / IADR-0514）: PR #1245 で 2 回続けて
+          #     check-permission-denials が赤になった（6 件・5 件。本文は完了・🔴🟡 なし）。拒否は
+          #     `which helm | helm version | head`・`helm version`・`mkdir`（+ `printf > 一時ファイル`）・
+          #     `Write`・`python3 -c "import yaml…"`・`ls`（2 種）。`ls` / `head` / `echo` / `which` は
+          #     許可済みで、`ls` の拒否は**作業ディレクトリ外のパス**（`../project-planning` 等）が原因と
+          #     読んだ（2 回目の本文が明記）。その誘導は旧【計画書の場所】節（submodule 撤去前の記述）に
+          #     あったため同節を書き直した。許可は広げていない（3 系統一致。案 (b) は IADR-0514 で不採用）。
           prompt: |
             このリポジトリは、上流工程リポジトリ project-planning の計画書を実装する作業リポジトリである。
             CLAUDE.md と AGENTS.md の方針に従い、この PR を以下の観点でレビューし、
@@ -391,13 +398,11 @@ jobs:
                - 仕様の表面的充足（テストを通すためだけの空実装・空テスト）。
                - 秘密情報のハードコードや不適切な扱い。
 
-            【計画書の場所】この順で探すこと:
-            1. `planning/projects/<name>/` — **CI ではこちら**。checkout 直後のステップで
-               submodule を populate 済みであり、ワークスペース内なので Read が届く。
-            2. `../project-planning/projects/<name>/` — 隣接クローン運用のローカル環境のみ。
-               CI ではワークスペース外のため Read が届かない。
-            **1 を試さずに「計画リポジトリは参照不可」と結論してはならない。**
-            両方とも存在しない場合に限り、その旨を明記したうえで PR 内の情報のみでレビューする。
+            【計画書の場所】計画リポジトリ（project-planning）は CI のワークスペースに無い
+            （submodule は撤去済み）。`planning/` や `../project-planning` を `ls` / `Read` で
+            探さないこと。**ワークスペースの外を指すパスは、許可済みの `ls` / `cat` / `Read` でも
+            拒否される。** 計画書の照合は「未検証（計画リポ参照不可）」と書き、PR 内の情報
+            （PR 本文・IADR・作業仕様書）でレビューする。
 
             【他リポジトリ・issue 参照の扱い】
             - GitHub の issue / PR を読む MCP ツール名は `mcp__github__issue_read` /
@@ -448,6 +453,21 @@ jobs:
             上記以外の `*.test.sh` を PR が追加している場合、**実行は許可されていない**。
             許可を足すにはワークフローの `--allowedTools` を変更する必要があり、
             それ自体がレビュー対象になる（IADR-0299）。
+
+            【Helm の chart を変える PR】（`deploy/helm/**` や `.github/workflows/helm.yml` の差分）
+            - helm は **`helm template …` と `helm lint …` だけ**を使う。**`helm version` と
+              `which helm` は実行しない**（許可外で拒否される。helm の有無は `helm lint` が動けば判る）。
+            - **一時ファイル・一時ディレクトリを作る検証はしない。** `mkdir` / `mktemp`・`Write` ツール・
+              リダイレクト（`>` `>>`）はレビュー用には設計上許可されておらず、必ず拒否される。
+              values を変える検証は `--set キー=値` で足りる範囲だけ自分で実走する
+              （例: `helm template ast <chart> --set a.b=1 | node scripts/<検査器>.js`）。
+            - **`-f <一時ファイル>` が要る陰性対照は再現しない。** この PR 自身の `Helm` ワークフロー
+              （ジョブ `Lint and render chart`）の結果を `mcp__github_ci__*` か `gh run list` で確かめ、
+              run ID と結論を引用する。再現しなかったことは「実行できなかったこと」節へ書く。
+            - YAML の構文確認に `python3` は使えない。`yq` か `helm lint` を使う。
+            - `ls` は引数つきで使ってよい（`ls deploy/helm/<chart>/templates`）。ただしパスは
+              ワークスペース内に限る（`/tmp` 等の外は拒否される）。`ls … | head; echo …` のように
+              つながず、1 コマンドずつ実行する。
 
             【.claude / CLAUDE.md を変更する PR での注意】
             アクションはセキュリティ上、`.claude` / `CLAUDE.md` / `.mcp.json` 等を統合ブランチ版へ
