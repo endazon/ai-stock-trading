@@ -50,6 +50,6 @@
     "currentStrategyId": "",
     "shortSellStrategyBacktestPassed": false,
     "expiresAtUtc": null,
-    "currentProductTypesRevision": 0
+    "currentProductTypesRevision": 1
   }
 }

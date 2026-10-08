@@ -111,9 +111,10 @@ public sealed class StageGateService(
         var performance = performanceStore.GetCurrent();
         // FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: 商品種別設定の改訂番号も**サーバが写し取る**。
         // 写し取りと台帳への追記の間に商品種別が変わった場合は、写した番号が古くなり verdict は無効になる（安全側）。
+        // 番号を知らない版が書いた設定行（デプロイ直後・切り戻しの後）では、ここで行の版から新しい番号を刻む（IADR-0511）。
         var attestation = new ShortSellReleaseAttestation(
             releaseSources.CurrentFingerprint(), performance.BacktestStrategyId,
-            settingsStore.GetProductTypesRevision());
+            settingsStore.EnsureProductTypesRevision());
 
         var result = StageGate.RequestShortSellReleaseVerdict(
             ledger.CurrentStage, ledger.NextSequence,

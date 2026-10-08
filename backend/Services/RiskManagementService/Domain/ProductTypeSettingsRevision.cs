@@ -21,8 +21,25 @@ namespace RiskManagementService.Domain;
 /// </summary>
 public static class ProductTypeSettingsRevision
 {
-    /// <summary>設定行が無い（既定値のまま）・番号を持たない旧行の番号。</summary>
-    public const long Initial = 0;
+    /// <summary>
+    /// 版 1 でシードした設定行・インメモリのストアの最初の番号。**0 は使わない**（永続化される番号は 1 以上）。
+    /// </summary>
+    public const long Initial = 1;
+
+    /// <summary>
+    /// 番号を持たない設定行（行が無い・番号を知らない版が書いた行）に**新しく刻む番号**＝書き込み後の行の版。
+    /// <para>
+    /// 2026-10-08 の監査 F1 への対応。永続化された番号は常に「番号 ≦ 行の版」を保つ（版は書き込みのたびに 1 進み、
+    /// <see cref="Next"/> は高々 1 進める）。番号を知らない版（切り戻した旧版）も書き込みのたびに版を進めるため、
+    /// キーが落ちた後に刻む番号（その時点の版）は、それまでに verdict が写し取ったどの番号よりも**必ず大きい**。
+    /// 固定値（0 や 1）から再開すると、その固定値で発行された verdict と一致してしまう。
+    /// </para>
+    /// </summary>
+    public static long Fresh(int rowVersion)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(rowVersion, 1);
+        return rowVersion;
+    }
 
     /// <summary>
     /// 保存の直前の集合 <paramref name="before"/> と新しい集合 <paramref name="after"/> を**集合として**比べ、

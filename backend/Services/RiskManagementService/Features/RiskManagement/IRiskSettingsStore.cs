@@ -16,9 +16,14 @@ public interface IRiskSettingsStore
     void Save(RiskManagementSettings settings);
 
     /// <summary>
-    /// FR-19, FR-20, ADR-0034 決定5 契機2, #1220, IADR-0511: 現在の**商品種別設定の改訂番号**。
-    /// 空売り実弾解禁の verdict が発行時に写し取り、評価時に突き合わせる。設定行が無い・番号を持たない旧行は
-    /// <see cref="ProductTypeSettingsRevision.Initial"/>。
+    /// FR-19, FR-20, ADR-0034 決定5 契機2, #1220, IADR-0511: 現在の**商品種別設定の改訂番号**（判定用・書き込まない）。
+    /// 設定行が無い・番号を知らない版が書いた行は <c>null</c>（判定は無効へ倒れる。固定値と読まない）。
     /// </summary>
-    long GetProductTypesRevision();
+    long? GetProductTypesRevision();
+
+    /// <summary>
+    /// FR-19, FR-20, #1220, IADR-0511: verdict の**発行用**の改訂番号。番号が無ければ同じ設定行へ新しい番号を刻んでから返す
+    /// （<see cref="ProductTypeSettingsRevision.Fresh"/>）。デプロイ直後でも設定を手で保存せずに verdict を発行できる。
+    /// </summary>
+    long EnsureProductTypesRevision();
 }

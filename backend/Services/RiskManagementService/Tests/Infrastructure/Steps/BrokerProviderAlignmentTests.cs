@@ -37,7 +37,9 @@ public class BrokerProviderAlignmentTests
 
         public void Save(RiskManagementSettings settings) => throw new InvalidOperationException();
 
-        public long GetProductTypesRevision() => throw new InvalidOperationException();
+        public long? GetProductTypesRevision() => throw new InvalidOperationException();
+
+        public long EnsureProductTypesRevision() => throw new InvalidOperationException();
     }
 
     private static BrokerAccountObserved Observation(BrokerProvider actual) =>

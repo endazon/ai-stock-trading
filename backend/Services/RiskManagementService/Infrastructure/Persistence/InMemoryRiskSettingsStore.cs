@@ -37,7 +37,10 @@ public sealed class InMemoryRiskSettingsStore : IRiskSettingsStore
         }
     }
 
-    public long GetProductTypesRevision()
+    // インメモリでは番号を知らない書き手が存在しないため、番号は常にある（Initial＝1 から）。
+    public long? GetProductTypesRevision() => EnsureProductTypesRevision();
+
+    public long EnsureProductTypesRevision()
     {
         lock (_gate)
         {

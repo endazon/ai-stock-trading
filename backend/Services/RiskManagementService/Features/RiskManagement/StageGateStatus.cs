@@ -39,6 +39,7 @@ public sealed record StageGateStatus(
 /// <param name="ExpiresAtUtc">verdict の失効時刻（発行 + 30 日）。未承認なら <c>null</c>。</param>
 /// <param name="CurrentProductTypesRevision">
 /// FR-19, ADR-0034 決定5 契機2, #1220, IADR-0511: **現在**の商品種別設定の改訂番号（verdict の発行時の番号と突き合わせる）。
+/// <c>null</c>＝番号を知らない版が書いた設定行（判定は無効へ倒れる）。
 /// </param>
 public sealed record ShortSellReleaseState(
     ShortSellReleaseVerdictStatus Status,
@@ -47,4 +48,4 @@ public sealed record ShortSellReleaseState(
     string CurrentStrategyId,
     bool ShortSellStrategyBacktestPassed,
     DateTimeOffset? ExpiresAtUtc,
-    long CurrentProductTypesRevision);
+    long? CurrentProductTypesRevision);

@@ -256,7 +256,8 @@ export interface ShortSellReleaseState {
   shortSellStrategyBacktestPassed: boolean;
   expiresAtUtc: string | null;
   // FR-19, #1220: **現在**の取引ガードの商品種別設定の改訂番号（verdict の発行時の番号と突き合わせる）。
-  currentProductTypesRevision: number;
+  // null＝番号を知らない版が書いた設定行（verdict は判定材料なしで無効）。
+  currentProductTypesRevision: number | null;
 }
 
 // FR-20, #334, IADR-0142: Stage 1 の進捗（**moomoo SIMULATE の実績のみ**）と、内蔵 paper 稼働により

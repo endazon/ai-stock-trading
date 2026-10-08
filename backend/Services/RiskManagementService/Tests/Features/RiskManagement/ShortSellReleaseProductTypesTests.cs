@@ -18,8 +18,9 @@ namespace RiskManagementService.Tests;
 //   2. 変わっていなければ従来どおり有効
 //   3. 否定形: 判定材料（発行時の改訂番号）が無い verdict は無効へ倒す（ProductTypesUnknown）
 //   4. 否定形: プロンプト・方針の変更は契機に入れない
+//   監査 F1（2026-10-08）: 切り戻した旧版がキーを落として書いた設定行は、発行済みの番号と決して一致しない
 //
-// テスト ID: T-20-4〜T-20-10（`docs/tests/FR-20_staged-gates-tests.md`）。
+// テスト ID: T-20-4〜T-20-11（`docs/tests/FR-20_staged-gates-tests.md`）。
 public class ShortSellReleaseProductTypesTests
 {
     private static readonly decimal ReleaseEquity = StageProductPolicy.ShortSellLiveReleaseEquityUsd;
@@ -74,7 +75,7 @@ public class ShortSellReleaseProductTypesTests
     [InlineData(null, ShortSellReleaseFixtures.ProductTypesRevision)]
     [InlineData(ShortSellReleaseFixtures.ProductTypesRevision, null)]
     [InlineData(null, null)]
-    // 0 と null を取り違えない（既定値のまま一度も変わっていない設定の番号は 0 であり、「無い」ではない）。
+    // 番号の値（ここでは 0）と「無い」（null）を取り違えない。
     [InlineData(null, 0L)]
     public void T_20_7_改訂番号が無ければ変わっていないと読まず無効へ倒す(long? issuedRevision, long? currentRevision)
     {
@@ -151,7 +152,7 @@ public class ShortSellReleaseProductTypesTests
     }
 
     // T-20-10: EF ストアでも番号は保存のたびにストアが進め、別スコープ（再起動相当）から読める。
-    // 行が無い間は初期値 0。商品種別以外の保存では進まない。
+    // 行が無い間は null（判定材料なし。固定値と読まない）。シードは版 1・番号 1。商品種別以外の保存では進まない。
     [Fact]
     public void T_20_10_EFストアは改訂番号を設定行へ永続化し商品種別以外の保存では進めない()
     {
@@ -160,59 +161,183 @@ public class ShortSellReleaseProductTypesTests
         using (var db = NewContext(dbName))
         {
             var store = new EfRiskSettingsStore(db);
-            store.GetProductTypesRevision().Should().Be(ProductTypeSettingsRevision.Initial, "行が無い＝既定値のまま");
+            store.GetProductTypesRevision().Should().BeNull("行が無い＝番号はまだ刻まれていない");
 
             var current = store.GetCurrent();
+            store.GetProductTypesRevision().Should().Be(ProductTypeSettingsRevision.Initial, "シードは版 1・番号 1");
             store.Save(current with { Guard = current.Guard with { EnabledProductTypes = Types(ProductType.Cash, ProductType.ShortSell) } });
-            store.GetProductTypesRevision().Should().Be(1);
+            store.GetProductTypesRevision().Should().Be(2);
 
             current = store.GetCurrent();
             store.Save(current with { Stage1MinimumTradeCount = 200 });
-            store.GetProductTypesRevision().Should().Be(1, "商品種別以外の保存では進まない");
+            store.GetProductTypesRevision().Should().Be(2, "商品種別以外の保存では進まない");
 
             current = store.GetCurrent();
             store.Save(current with { Guard = current.Guard with { EnabledProductTypes = Types(ProductType.Cash) } });
             current = store.GetCurrent();
             store.Save(current with { Guard = current.Guard with { EnabledProductTypes = Types(ProductType.Cash, ProductType.ShortSell) } });
-            store.GetProductTypesRevision().Should().Be(3, "無効化 → 再有効化で 2 進む");
+            store.GetProductTypesRevision().Should().Be(4, "無効化 → 再有効化で 2 進む");
         }
 
         using (var db2 = NewContext(dbName))
         {
-            new EfRiskSettingsStore(db2).GetProductTypesRevision().Should().Be(3);
+            new EfRiskSettingsStore(db2).GetProductTypesRevision().Should().Be(4);
         }
     }
 
-    // T-20-10: 本項目の追加前に書かれた設定行（キーを持たない）は初期値 0 と読み、次の変更で 1 へ進む。
+    // T-20-10: 番号を知らない版が書いた設定行（キーを持たない）は null と読み（判定材料なし）、
+    // 次の保存は**行の版**を新しい番号として刻む（固定値から再開しない）。
     [Fact]
-    public void T_20_10_改訂番号を持たない旧い設定行は0と読み次の変更で1へ進む()
+    public void T_20_10_改訂番号を持たない設定行はnullと読み次の保存で行の版を番号として刻む()
     {
         var dbName = Guid.NewGuid().ToString();
-        var legacyJson = RiskSettingsSerialization.Serialize(TradingDefaults.CreateSettings(), productTypesRevision: 5)
-            .Replace(",\"productTypesRevision\":5", string.Empty, StringComparison.Ordinal);
-        legacyJson.Should().NotContain("productTypesRevision", "旧行の再現（キーそのものが無い）");
+        SeedKeylessRow(dbName, TradingDefaults.CreateSettings(), version: 7);
 
+        using var db = NewContext(dbName);
+        var store = new EfRiskSettingsStore(db);
+        store.GetProductTypesRevision().Should().BeNull();
+
+        var current = store.GetCurrent();
+        store.Save(current with { Stage1MinimumTradeCount = 200 });
+        store.GetProductTypesRevision().Should().Be(8, "書き込み後の版（7 → 8）を番号にする");
+    }
+
+    // T-20-11: 監査 F1 の再現。デプロイ（キーの無い旧行）→ verdict を発行 → **切り戻した旧版**が空売りを無効化・再有効化して
+    // キーを落として書く → 再び新しい版へ戻す。キーの無い行は発行時の番号と**決して一致しない**（無効のまま）。
+    [Theory]
+    // デプロイ直後（旧版が書いたキーの無い行。版 1）に発行する。
+    [InlineData(true)]
+    // 新規導入（シード行。版 1・番号 1）で発行する。
+    [InlineData(false)]
+    public void T_20_11_切り戻した旧版がキーを落として書いた設定行では発行済みのverdictは有効に戻らない(bool legacyRowAtDeploy)
+    {
+        var dbName = Guid.NewGuid().ToString();
+        if (legacyRowAtDeploy)
+        {
+            SeedKeylessRow(dbName, WithProductTypes(ProductType.Cash, ProductType.ShortSell), version: 1);
+        }
+
+        ShortSellReleaseVerdict verdict;
         using (var db = NewContext(dbName))
         {
-            db.RiskSettings.Add(new RiskSettingsRow
+            var store = new EfRiskSettingsStore(db);
+            if (!legacyRowAtDeploy)
             {
-                Id = SingletonKeys.Id,
-                Json = legacyJson,
-                Version = 1,
-                UpdatedAt = DateTimeOffset.UnixEpoch,
-            });
-            db.SaveChanges();
+                var seeded = store.GetCurrent();
+                store.Save(seeded with { Guard = seeded.Guard with { EnabledProductTypes = Types(ProductType.Cash, ProductType.ShortSell) } });
+            }
+
+            var (gate, ledger) = BuildOver(store);
+            gate.RecordShortSellReleaseVerdict(Owner).Accepted.Should().BeTrue();
+            verdict = ledger.Load().LatestShortSellReleaseVerdict!;
+            verdict.ProductTypesRevision.Should().NotBeNull("発行時には番号を刻んでから写し取る（手で設定を保存しなくても発行できる）");
+            gate.GetStatus().ShortSellRelease.Status.Should().Be(ShortSellReleaseVerdictStatus.Valid);
         }
+
+        // 切り戻した旧版の保存（番号を知らない）: 空売りを無効化 → 再有効化。キーは落ち、版は進む。
+        OldBinaryRewrite(dbName, ProductType.Cash);
+        OldBinaryRewrite(dbName, ProductType.Cash, ProductType.ShortSell);
 
         using (var db = NewContext(dbName))
         {
             var store = new EfRiskSettingsStore(db);
-            store.GetProductTypesRevision().Should().Be(0);
+            store.GetProductTypesRevision().Should().BeNull("キーの無い行を固定値と読まない");
+            ShortSellReleasePolicy.Evaluate(
+                    verdict, verdict.SourceFingerprint, verdict.StrategyId, store.GetProductTypesRevision(), Issued)
+                .Should().Be(ShortSellReleaseVerdictStatus.ProductTypesUnknown);
 
-            var current = store.GetCurrent();
-            store.Save(current with { Guard = current.Guard with { EnabledProductTypes = Types(ProductType.Cash, ProductType.ShortSell) } });
-            store.GetProductTypesRevision().Should().Be(1);
+            // 新しい版が改めて番号を刻んでも（保存・別の verdict の発行のための刻印）、発行済みの番号とは一致しない。
+            store.EnsureProductTypesRevision().Should().BeGreaterThan(verdict.ProductTypesRevision!.Value);
+            ShortSellReleasePolicy.Evaluate(
+                    verdict, verdict.SourceFingerprint, verdict.StrategyId, store.GetProductTypesRevision(), Issued)
+                .Should().Be(ShortSellReleaseVerdictStatus.ProductTypesChanged);
         }
+    }
+
+    // T-20-11: 不変条件「番号 ≦ 行の版」。新しい版のあらゆる書き込み（シード・保存・刻印）の後で成り立つ——
+    // 旧版の書き込みも版を進めるため、キーが落ちた後に刻む番号はそれまでのどの番号よりも大きい。
+    [Fact]
+    public void T_20_11_永続化された改訂番号は常に行の版以下である()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using var db = NewContext(dbName);
+        var store = new EfRiskSettingsStore(db);
+
+        void AssertInvariant()
+        {
+            var row = db.RiskSettings.AsNoTracking().Single();
+            RiskSettingsSerialization.ReadProductTypesRevision(row.Json).Should().NotBeNull();
+            RiskSettingsSerialization.ReadProductTypesRevision(row.Json)!.Value.Should().BeLessThanOrEqualTo(row.Version);
+        }
+
+        store.EnsureProductTypesRevision().Should().Be(1, "行が無ければシード（版 1・番号 1）");
+        AssertInvariant();
+        foreach (var types in new[]
+        {
+            new[] { ProductType.Cash, ProductType.ShortSell },
+            [ProductType.Cash],
+            [ProductType.Cash],
+            [ProductType.MarginLong],
+            [ProductType.Cash, ProductType.MarginLong, ProductType.ShortSell],
+        })
+        {
+            var current = store.GetCurrent();
+            store.Save(current with { Guard = current.Guard with { EnabledProductTypes = Types(types) } });
+            AssertInvariant();
+        }
+    }
+
+    /// <summary>番号を知らない版が書いた設定行（キーそのものが無い）を置く。</summary>
+    private static void SeedKeylessRow(string dbName, RiskManagementSettings settings, int version)
+    {
+        using var db = NewContext(dbName);
+        db.RiskSettings.Add(new RiskSettingsRow
+        {
+            Id = SingletonKeys.Id,
+            Json = StripRevisionKey(RiskSettingsSerialization.Serialize(settings)),
+            Version = version,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>切り戻した旧版の保存を模す: 商品種別を書き換え、キーを落とし、版を 1 進める（旧版の EfRiskSettingsStore.Save と同じ）。</summary>
+    private static void OldBinaryRewrite(string dbName, params ProductType[] types)
+    {
+        using var db = NewContext(dbName);
+        var row = db.RiskSettings.Single();
+        var settings = RiskSettingsSerialization.Deserialize(row.Json);
+        row.Json = StripRevisionKey(RiskSettingsSerialization.Serialize(
+            settings with { Guard = settings.Guard with { EnabledProductTypes = Types(types) } }));
+        row.Version += 1;
+        db.SaveChanges();
+    }
+
+    private static string StripRevisionKey(string json)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        node.Remove("productTypesRevision").Should().BeTrue("キーを確かに落とす");
+        return node.ToJsonString();
+    }
+
+    // 設定ストアを差し替えた段階ゲート（EF の設定ストアの上で発行・評価する）。
+    private static (StageGateService Gate, InMemoryStageGateStore Ledger) BuildOver(IRiskSettingsStore store)
+    {
+        var clock = new FakeClock(Issued, DateOnly.FromDateTime(Issued.UtcDateTime));
+        var perf = new InMemoryStagePerformanceStore();
+        perf.Save(perf.GetCurrent() with { BacktestStrategyId = Strategy });
+        var ledger = new InMemoryStageGateStore(TradingStage.Stage0Verification);
+        var gate = new StageGateService(
+            ledger, perf,
+            new InMemoryControlViolationObservationStore(),
+            new InMemoryStage1FillObservationStore(),
+            new InMemoryStage1TradingDayObservationStore(),
+            TradingDefaults.CreateStagePolicy(),
+            store,
+            new KillSwitchService(new InMemoryKillSwitchStore(), new InMemorySettingsChangeLog(), clock),
+            new ShortSellReleaseSourceInventory([]),
+            clock);
+        return (gate, ledger);
     }
 
     // ------------------------------------------------------------------
@@ -234,8 +359,8 @@ public class ShortSellReleaseProductTypesTests
 
         var state = gate.GetStatus().ShortSellRelease;
         state.Status.Should().Be(ShortSellReleaseVerdictStatus.ProductTypesChanged);
-        state.Verdict!.ProductTypesRevision.Should().Be(1, "発行時に写し取った番号");
-        state.CurrentProductTypesRevision.Should().Be(3, "無効化と再有効化で 2 進んだ");
+        state.Verdict!.ProductTypesRevision.Should().Be(2, "発行時に写し取った番号（初期 1 → 空売りの有効化で 2）");
+        state.CurrentProductTypesRevision.Should().Be(4, "無効化と再有効化で 2 進んだ");
         gate.CurrentShortSellRelease().VerdictStatus.Should().Be(ShortSellReleaseVerdictStatus.ProductTypesChanged);
         StageProductPolicy.Evaluate(
                 TradingStage.Stage3ScaledLive, ProductType.ShortSell, ReleaseEquity * 100m, gate.CurrentShortSellRelease())

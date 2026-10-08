@@ -28,5 +28,7 @@ public sealed class SimulatorProfileRiskSettingsStore(IRiskSettingsStore inner) 
     public void Save(RiskManagementSettings settings) => inner.Save(settings);
 
     // FR-19, #1220, IADR-0511: 商品種別設定の改訂番号も素通しする（番号を進めるのは内側の保存だけ）。
-    public long GetProductTypesRevision() => inner.GetProductTypesRevision();
+    public long? GetProductTypesRevision() => inner.GetProductTypesRevision();
+
+    public long EnsureProductTypesRevision() => inner.EnsureProductTypesRevision();
 }
