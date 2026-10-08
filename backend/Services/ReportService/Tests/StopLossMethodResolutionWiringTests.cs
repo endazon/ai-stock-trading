@@ -66,7 +66,9 @@ public class StopLossMethodResolutionWiringTests(ReportWorkerWebApplicationFacto
     public async Task T_10_1092_本番の組み立てで台帳の解決結果が日報の2行目に載る()
     {
         var noon = new DateTimeOffset(2026, 7, 8, 3, 0, 0, TimeSpan.Zero);      // 7/8 12:00 JST
-        var lastSecond = new DateTimeOffset(2026, 7, 8, 14, 59, 59, TimeSpan.Zero); // 7/8 23:59:59 JST
+        // #1224, IADR-0516: 境界際の承認は ET 7/7 のセッション（JST 7/7 23:59:59 ＝ ET 7/7 10:59:59）。日報 7/8 が数える米国のセッションであり、
+        // 照会は窓を覆う JST の暦日の外包（7/7〜7/8）で引く。
+        var lastSecond = new DateTimeOffset(2026, 7, 7, 14, 59, 59, TimeSpan.Zero); // 7/7 23:59:59 JST
         var s0 = Approved(StopLossExecutionMethod.BrokerStopOrder, noon);
         var s2 = Approved(StopLossExecutionMethod.NoProtectiveStop, noon);
         var boundary = Approved(StopLossExecutionMethod.NoProtectiveStop, lastSecond);
@@ -79,7 +81,7 @@ public class StopLossMethodResolutionWiringTests(ReportWorkerWebApplicationFacto
                 BrokerProvider.MoomooSimulate, noon.AddSeconds(1)), Guid.NewGuid(), noon.AddSeconds(1)),
             AuditEntryFactory.From(Resolved(s2, null, StopLossMethodResolutionReason.BrokerNotMoomooSimulate,
                 BrokerProvider.MoomooReal, noon.AddSeconds(1)), Guid.NewGuid(), noon.AddSeconds(1)),
-            // 境界際の承認は JST 0 時を跨いで 7/9 00:00:02 JST に解決された（承認の日＝7/8 に数える）。
+            // 境界際の承認は JST 0 時を跨いで 7/8 00:00:02 JST に解決された（承認のセッション＝ET 7/7 に数える）。
             AuditEntryFactory.From(Resolved(boundary, StopLossExecutionMethod.NoProtectiveStop, StopLossMethodResolutionReason.AsSelected,
                 BrokerProvider.MoomooSimulate, lastSecond.AddSeconds(3)), Guid.NewGuid(), lastSecond.AddSeconds(3)),
         };

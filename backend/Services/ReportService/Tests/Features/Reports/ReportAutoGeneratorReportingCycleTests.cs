@@ -138,6 +138,8 @@ public class ReportAutoGeneratorReportingCycleTests
             [],
             [new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "a", null, T0)]);
         var fees = new BorrowFeeRecord(
+            // #1224, IADR-0516 決定 2: TradingDay は契約どおり JST の取引日。配置は市場・記録の時刻（T0＝JST 7/8 12:00＝ET 7/7 23:00）で決まり、
+            // ET 7/7 のセッション（日報 7/8 の約定と同じ）に入る。
             [new BorrowFeeAccrued("AAPL", Market.UnitedStates, new DateOnly(2026, 7, 8), 0.06m, 10_000m, 1.64m, T0)],
             []);
 

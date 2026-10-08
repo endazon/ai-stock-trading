@@ -47,7 +47,7 @@ public sealed record StopLossMethodUsage(
                 continue;
 
             byMethod[a.StopLossMethod] = byMethod.GetValueOrDefault(a.StopLossMethod) + 1;
-            counted.Add(new StopLossMethodApproval(a.DecisionId, a.StopLossMethod, a.ApprovedAt));
+            counted.Add(new StopLossMethodApproval(a.DecisionId, a.StopLossMethod, a.ApprovedAt, a.Intent.Market));
         }
 
         var counts = byMethod
@@ -77,5 +77,16 @@ public sealed record StopLossMethodUsage(
 /// <summary>手法 1 つぶんの新規建ての承認件数。</summary>
 public sealed record StopLossMethodCount(StopLossExecutionMethod Method, int Count);
 
-/// <summary>#1002, IADR-0429 決定3: 数えた承認 1 件（新規建て・DecisionId で重複を除いたもの）。</summary>
-public sealed record StopLossMethodApproval(Guid DecisionId, StopLossExecutionMethod Method, DateTimeOffset ApprovedAt);
+/// <summary>
+/// #1002, IADR-0429 決定3: 数えた承認 1 件（新規建て・DecisionId で重複を除いたもの）。
+/// #1224, IADR-0516 決定 2・4: <see cref="Market"/> は承認の市場（セッションの窓で絞るため）。市場を持たない値（旧い呼び出し）は窓で絞らない。
+/// </summary>
+public sealed record StopLossMethodApproval(
+    Guid DecisionId, StopLossExecutionMethod Method, DateTimeOffset ApprovedAt, Market? Market = null)
+{
+    /// <summary>
+    /// #1224, IADR-0516 決定 4: この承認を数える<b>日報の日付</b>（JST。報告可能になる瞬間を窓に含む日報）。窓で絞ったとき
+    /// （<see cref="ReportLedgerWindowing"/>）に決まる。<c>null</c>（絞っていない値）は承認の JST 暦日で数える。
+    /// </summary>
+    public DateOnly? ReportDay { get; init; }
+}

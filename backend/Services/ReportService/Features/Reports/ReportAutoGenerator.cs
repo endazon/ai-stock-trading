@@ -441,6 +441,10 @@ public sealed class ReportAutoGenerator(
                 // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 集計したセッションの範囲を冒頭に書く
                 // （約定を絞った窓と同じ SessionWindowOf から引く。作り直しも同じ経路を通る）。
                 SessionRanges: ReportSchedule.SessionRangesOf(due, settings.Schedule, ReportedMarkets(settings.Markets)),
+                // FR-06, #1224, IADR-0516 決定 5: 窓に揃えない入力（LLM 利用実績＝JST の暦日）を同じ行に書き足す。LLM 利用実績を使う種別だけ。
+                LlmUsageCalendarDays: ReportInputs.AppliesTo(ReportInput.LlmUsage, due.Kind)
+                    ? new ReportCalendarDays(due.PeriodStart, due.PeriodEnd)
+                    : null,
                 // FR-06, FR-16, #1181, IADR-0493 決定 3: 期間開始時点の在庫（null＝受け取っていない）。
                 OpeningInventory: inputs.OpeningInventory),
             cancellationToken).ConfigureAwait(false);
@@ -623,9 +627,12 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            return await reductionSource
-                .GetReductionsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+            // FR-06, #1224, IADR-0516 決定 2・3: 窓を覆う JST の暦日の外包で引き、セッションの窓で絞る。
+            var (window, from, to) = LedgerScope(due);
+            var reductions = await reductionSource
+                .GetReductionsAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
+            return reductions?.Within(window);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -657,9 +664,12 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            return await fxSourceStatusSource
-                .GetStatusAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+            // FR-06, #1224, IADR-0516 決定 2・3: 窓を覆う JST の暦日の外包で引き、発生時刻（鮮度切れの決済は約定と同じ形）で絞る。
+            var (window, from, to) = LedgerScope(due);
+            var status = await fxSourceStatusSource
+                .GetStatusAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
+            return status?.Within(window);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -684,6 +694,9 @@ public sealed class ReportAutoGenerator(
 
         try
         {
+            // FR-06, #1224, IADR-0516 決定 2: LLM 利用実績は**セッションの窓に揃えない**（JST の暦日 [PeriodStart, PeriodEnd]）。
+            // 月次の LLM 費用上限は暦の月であり（05_trading-assumptions §6.1・月報に消費率を記載）、市場を持たない費用の集計である。
+            // 窓と揃わないことは「集計したセッション」の行に暦日の範囲として書く（LlmUsageCalendarDays）。
             return await llmUsageSource
                 .GetUsageAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
                 .ConfigureAwait(false);
@@ -727,9 +740,12 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            return await borrowFeeSource
-                .GetBorrowFeesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+            // FR-06, #1224, IADR-0516 決定 2・3: 窓を覆う JST の暦日の外包で引き、市場・記録の時刻で絞る（TradingDay は配置に使わない）。
+            var (window, from, to) = LedgerScope(due);
+            var record = await borrowFeeSource
+                .GetBorrowFeesAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
+            return record?.Within(window);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -774,12 +790,21 @@ public sealed class ReportAutoGenerator(
     // FR-06, FR-16, #1172, IADR-0492 決定 3: 判断根拠の照会範囲（JST 取引日）。下端は期間の始まり・窓の照会範囲の始まり・
     // 窓の始まり（ClosedAfter）の JST 日付の最小、上端は期間の終わり。窓に入る約定はいずれも ClosedAfter より後に始まる
     // セッションに属するため、その判断の記録は下端以降にある。
+    // #1224, IADR-0516 決定 3: 監査台帳の他の入力と同じ外包（ReportSessionWindow.JstLedgerRange。上端は期間の終わりと ClosedUntil の
+    // JST 日付の最大＝期間の終わり）を使う。値は従来と同じ。
     private (DateOnly From, DateOnly To) RationaleRange(DueReport due)
     {
+        var (_, from, to) = LedgerScope(due);
+        return (from, to);
+    }
+
+    // FR-06, UC-03〜05, 計画 ADR-0053 決定 2, #1224, IADR-0516 決定 3: 監査台帳ほか JST の暦日で引く供給元へ渡す照会の範囲と、
+    // 受け取った記録を絞る窓（自動生成と作り直しが同じ DueReport から引く）。
+    private (ReportSessionWindow Window, DateOnly From, DateOnly To) LedgerScope(DueReport due)
+    {
         var window = ReportSchedule.SessionWindowOf(due, settings.Schedule);
-        var windowStartJst = DateOnly.FromDateTime(window.ClosedAfter.ToOffset(ReportSchedule.JstOffset).DateTime);
-        var from = new[] { due.PeriodStart, window.QueryRange().From, windowStartJst }.Min();
-        return (from, due.PeriodEnd);
+        var (from, to) = window.JstLedgerRange(due.PeriodStart, due.PeriodEnd);
+        return (window, from, to);
     }
 
     // FR-06, FR-16, #1181, IADR-0493 決定 1・4: 期間開始時点の在庫を窓の**市場ごとの下端**（その市場の窓に入る最初の現地取引日）より前で引く。
@@ -923,9 +948,13 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            return await buyInSource
-                .GetInferencesAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+            // FR-06, #1224, IADR-0516 決定 2・3: 窓を覆う JST の暦日の外包で引き、市場・推定時刻で絞る。
+            // 観測の被覆（FR-21）は外包の全日で判定される（窓は外包の前日の夜〔米国のセッション〕を含むため、その日の観測も要る）。
+            var (window, from, to) = LedgerScope(due);
+            var inferences = await buyInSource
+                .GetInferencesAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
+            return inferences?.Within(window);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -946,9 +975,13 @@ public sealed class ReportAutoGenerator(
 
         try
         {
-            return await stopLossMethodUsageSource
-                .GetUsageAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+            // FR-06, #1224, IADR-0516 決定 2・3: 窓を覆う JST の暦日の外包で引き、承認の市場・承認時刻で絞る。
+            var (window, from, to) = LedgerScope(due);
+            var usage = await stopLossMethodUsageSource
+                .GetUsageAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
+            // #1224, IADR-0516 決定 4: 月報 §6 の日数は、承認を数える日報の日付（報告可能になる瞬間を窓に含む日報）で数える。
+            return usage?.Within(window, at => ReportSchedule.DailyReportDayOf(at, settings.Schedule));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -970,8 +1003,11 @@ public sealed class ReportAutoGenerator(
 
         try
         {
+            // FR-06, #1224, IADR-0516 決定 2: 解決結果は承認と DecisionId で突き合わせる（解決の時刻では絞らない）。
+            // 承認と同じ外包で引く（供給元が前後 1 日を足す）。
+            var (_, from, to) = LedgerScope(due);
             return await stopLossMethodResolutionSource
-                .GetResolutionsAsync(due.PeriodStart, due.PeriodEnd, cancellationToken)
+                .GetResolutionsAsync(from, to, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

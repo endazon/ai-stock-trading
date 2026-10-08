@@ -132,6 +132,7 @@ public class ReportUsSessionCoverageTests
 
     // T-06-035, FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 自動生成した日報は、数えたセッションの範囲を
     // 市場ごとの現地取引日で冒頭に書く（日報 2026-10-06 は米国 ET 10-05 のセッションを数える）。
+    // #1224, IADR-0516 決定 5: 窓に揃えない LLM 利用実績の JST の暦日を同じ行に書き足す（意図した更新）。
     [Fact]
     public async Task T06_035_自動生成した日報は集計したセッションの範囲を冒頭に書く()
     {
@@ -142,8 +143,8 @@ public class ReportUsSessionCoverageTests
         clock.UtcNow = TueAfterBoundary;
         await Generator(store, clock, new LedgerFillSource(UsSessionFills)).RunOnceAsync();
 
-        DailyBody(store, "daily-2026-10-05").Should().Contain("# 日報 2026-10-05\n\n集計したセッション: 米国 2026-10-02（ET）／東証 2026-10-05（JST）\n\n");
-        DailyBody(store, "daily-2026-10-06").Should().Contain("# 日報 2026-10-06\n\n集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）\n\n");
+        DailyBody(store, "daily-2026-10-05").Should().Contain("# 日報 2026-10-05\n\n集計したセッション: 米国 2026-10-02（ET）／東証 2026-10-05（JST）・LLM 利用実績は JST の暦日 2026-10-05（生成時点まで）\n\n");
+        DailyBody(store, "daily-2026-10-06").Should().Contain("# 日報 2026-10-06\n\n集計したセッション: 米国 2026-10-05（ET）／東証 2026-10-06（JST）・LLM 利用実績は JST の暦日 2026-10-06（生成時点まで）\n\n");
     }
 
     // T-06-024, FR-06, 計画 ADR-0052 決定 2, #1172: `/report regenerate` は自動生成と同じ窓で引く。

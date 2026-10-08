@@ -142,8 +142,8 @@ public sealed class HttpFxSourceStatusSource(
             }
         }
 
-        return new FxSourceStatus(
-            fellBacks, restorations, stales, Credits(fellBacks, restorations, usages), staleCloses, usages);
+        // #1224, IADR-0516: クレジットの導出は Domain（FxSourceStatus.Compose）が持つ（窓で絞った後に引き直すため）。
+        return FxSourceStatus.Compose(fellBacks, restorations, stales, staleCloses, usages);
     }
 
     private static void Add<T>(List<T> into, AuditLedgerEntry entry, ILogger logger)
@@ -165,29 +165,6 @@ public sealed class HttpFxSourceStatusSource(
                 entry.EventType, entry.Id);
         }
     }
-
-    /// <summary>
-    /// 🔴 <b>台帳に「使った証拠」のある情報源のクレジットだけを返す</b>（IADR-0199 決定5）。
-    /// <para>
-    /// 証拠は 3 種ある——<b>切替・復帰（遷移）と、暦日ごとの使用記録</b>（#513・IADR-0225）。
-    /// 遷移だけを見ていた頃は<b>静かな期間にどの源を使ったのか証明できず</b>、
-    /// 平常時こそ出典が空になっていた。<b>使用記録が入ったことで、平常時も証拠から導ける。</b>
-    /// </para>
-    /// <para>
-    /// 🔴 <b>証拠の無い源のクレジットは今も出さない</b>——「たぶん第一の源だろう」で書かない
-    /// （<b>使っていない源のクレジットを出すのは事実に反する</b>。IADR-0196 決定4）。
-    /// </para>
-    /// </summary>
-    private static IReadOnlyList<string> Credits(
-        IReadOnlyList<FxRateSourceFellBack> fellBacks,
-        IReadOnlyList<FxRateSourcePrimaryRestored> restorations,
-        IReadOnlyList<FxRateSourceUsed> usages) =>
-        [.. fellBacks.Select(e => e.SourceName)
-            .Concat(restorations.Select(e => e.SourceName))
-            .Concat(usages.Select(e => e.SourceName))
-            .Select(FxSourceCredits.ForSource)
-            .OfType<string>()
-            .Distinct(StringComparer.Ordinal)];
 
     // 🔴 期間の作り方は AuditPeriodRange（#338 で 1 箇所へ集約）。
     // 照会元が 3 つに増えたため各アダプタで書き写さない——1 つで境界を間違えても他が正しいと気づけない。

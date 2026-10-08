@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace ReportService.Domain;
 
@@ -43,6 +44,18 @@ public sealed record FxSourceStatus(
     IReadOnlyList<FxRateSourceUsed> Usages)
 {
     /// <summary>
+    /// 記録の列から状態を組み立てる（クレジットは記録から導く）。台帳の供給元（REST / gRPC）と、窓で絞った後の引き直し
+    /// （#1224, IADR-0516 決定 2・<see cref="ReportLedgerWindowing"/>）が同じ 1 つの導出を使う。
+    /// </summary>
+    public static FxSourceStatus Compose(
+        IReadOnlyList<FxRateSourceFellBack> fellBacks,
+        IReadOnlyList<FxRateSourcePrimaryRestored> restorations,
+        IReadOnlyList<FxRateStale> staleWarnings,
+        IReadOnlyList<PositionClosedWithStaleFxRate> staleCloses,
+        IReadOnlyList<FxRateSourceUsed> usages) =>
+        new(fellBacks, restorations, staleWarnings, Credits(fellBacks, restorations, usages), staleCloses, usages);
+
+    /// <summary>
     /// 期間内に<b>使ったと台帳が示す情報源</b>の名前（重複なし）。使用記録と遷移の両方から引く——
     /// 遷移イベントも <c>SourceName</c> を運ぶ＝使用の証拠だからである（#513・IADR-0225 決定E）。
     /// </summary>
@@ -77,4 +90,27 @@ public sealed record FxSourceStatus(
     /// </para>
     public bool IsClean =>
         FellBacks.Count == 0 && StaleWarnings.Count == 0 && Restorations.Count == 0 && StaleCloses.Count == 0;
+
+    /// <summary>
+    /// 🔴 <b>台帳に「使った証拠」のある情報源のクレジットだけを返す</b>（IADR-0199 決定5）。
+    /// <para>
+    /// 証拠は 3 種ある——<b>切替・復帰（遷移）と、暦日ごとの使用記録</b>（#513・IADR-0225）。
+    /// 遷移だけを見ていた頃は<b>静かな期間にどの源を使ったのか証明できず</b>、
+    /// 平常時こそ出典が空になっていた。<b>使用記録が入ったことで、平常時も証拠から導ける。</b>
+    /// </para>
+    /// <para>
+    /// 🔴 <b>証拠の無い源のクレジットは今も出さない</b>——「たぶん第一の源だろう」で書かない
+    /// （<b>使っていない源のクレジットを出すのは事実に反する</b>。IADR-0196 決定4）。
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<string> Credits(
+        IReadOnlyList<FxRateSourceFellBack> fellBacks,
+        IReadOnlyList<FxRateSourcePrimaryRestored> restorations,
+        IReadOnlyList<FxRateSourceUsed> usages) =>
+        [.. fellBacks.Select(e => e.SourceName)
+            .Concat(restorations.Select(e => e.SourceName))
+            .Concat(usages.Select(e => e.SourceName))
+            .Select(FxSourceCredits.ForSource)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)];
 }

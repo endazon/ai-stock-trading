@@ -11,6 +11,9 @@ namespace ReportService.Features.Reports;
 //
 // 権威源（監査台帳ないしリスク管理サービスの照会 API）への結線は、発火元（維持率の供給・#331 / #342）と
 // 同時に行う。それまでの既定は空列＝「発動なし」であり、**発動があり得ない現状では事実として正しい**。
+//
+// FR-06, #1224, IADR-0516 決定 3: [from, to] は**照会の範囲**（報告書のセッションの窓を覆う JST の暦日の外包）であり、報告書に載る範囲ではない。
+// 報告書サービスが受け取った後に窓で絞る（ReportLedgerWindowing）。
 public interface IMarginReductionRecordSource
 {
     /// <summary>
