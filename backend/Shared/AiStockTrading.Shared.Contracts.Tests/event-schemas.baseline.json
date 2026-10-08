@@ -202,6 +202,22 @@
     "Outcome": "String",
     "Purpose": "String"
   },
+  "LlmGatewayUnsentDetected": {
+    "ConsecutiveUnsent": "Int32",
+    "FailureKind": "String",
+    "FirstUnsentAt": "DateTimeOffset",
+    "GatewayText": "String",
+    "OccurredAt": "DateTimeOffset",
+    "Purpose": "String",
+    "RoutingReason": "String",
+    "UpstreamStatusCode": "Int32?"
+  },
+  "LlmGatewayUnsentRecovered": {
+    "FirstUnsentAt": "DateTimeOffset",
+    "OccurredAt": "DateTimeOffset",
+    "UnsentCalls": "Int32",
+    "UnsentDuration": "TimeSpan"
+  },
   "MaintenanceMarginReductionExecuted": {
     "EventId": "Guid",
     "ExecutedAt": "DateTimeOffset",

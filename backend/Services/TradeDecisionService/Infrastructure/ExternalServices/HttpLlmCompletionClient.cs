@@ -1,6 +1,7 @@
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Logging;
+using System.Text.Json;
 using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
 using Microsoft.Extensions.Logging;
@@ -33,6 +34,9 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // 別に作らないのは、片方だけ直る事故を構造的に入れないためである。
 // クラス名 `Http…` は REST しか無かった頃の名残であり、**輸送を意味しない**（改名は挙動を変えないため
 // 別 PR。IADR-0332 決定 5）。
+// FR-04, FR-09, FR-11, #1267, IADR-0517: **Sent=false を「機密区分による縮退」と断定しない。** ゲートウェイは越境の拒否・
+// プロバイダ未登録・上流の不調をどれも Sent=false で返す。理由（RoutingReason）・本文の説明（Text）の要約・原因の種類を
+// ログ・Hold の判断理由（FR-11 ログの rationale）へ載せ、連続を ILlmGatewayUnsentNotifier へ渡す（Discord の Warning・台帳）。
 public sealed class HttpLlmCompletionClient(
     ILlmCompletionTransport transport,
     ILogger<HttpLlmCompletionClient> logger,
@@ -40,7 +44,8 @@ public sealed class HttpLlmCompletionClient(
     string? purposeOverride,
     ILlmUsageReporter usageReporter,
     bool logPrompts = false,
-    ILlmGovernanceReporter? governanceReporter = null)
+    ILlmGovernanceReporter? governanceReporter = null,
+    ILlmGatewayUnsentNotifier? unsentNotifier = null)
     : ILlmCompletionClient
 {
     /// <summary>
@@ -53,14 +58,18 @@ public sealed class HttpLlmCompletionClient(
         string? purposeOverride,
         ILlmUsageReporter usageReporter,
         bool logPrompts = false,
-        ILlmGovernanceReporter? governanceReporter = null)
+        ILlmGovernanceReporter? governanceReporter = null,
+        ILlmGatewayUnsentNotifier? unsentNotifier = null)
         : this(new RestLlmCompletionTransport(httpClient), logger, confidentiality, purposeOverride,
-            usageReporter, logPrompts, governanceReporter)
+            usageReporter, logPrompts, governanceReporter, unsentNotifier)
     {
     }
 
     // 割当統制の記録先。未注入は安全既定（記録しないだけで、見送りの統制自体は本クラスが担う）。
     private readonly ILlmGovernanceReporter _governance = governanceReporter ?? new NoOpLlmGovernanceReporter();
+
+    // #1267, IADR-0517: Sent=false の連続の通知先。未注入は安全既定（通知しないだけで Hold の統制は本クラスが担う）。
+    private readonly ILlmGatewayUnsentNotifier _unsent = unsentNotifier ?? new NoOpLlmGatewayUnsentNotifier();
 
     // IADR-0212: 用途の解決は 1 箇所に閉じる（構成の明示上書き → 呼び出し側の申告 → 安全既定の順）。
     // 安全既定を取引判断（本判断）にするのは、**費用上限の対象内**かつ**最も厳しい割当統制**が掛かる側だからである
@@ -73,6 +82,9 @@ public sealed class HttpLlmCompletionClient(
     // #247, IADR-0104 決定3: Hold へ倒れる理由を系統別に分ける。倒れる先はいずれも Hold（IADR-0017 の安全既定は不変）だが、
     // 「なぜ倒れたか」を監査（FR-11）で切り分けられなければ運用で原因を追えない。
     private const string HoldFallback = """{"action":"Hold","rationale":"LLM ゲートウェイ送信不可のため見送り"}""";
+
+    /// <summary>#1267, IADR-0517: Sent=false の Hold の判断理由の接頭辞（以降にゲートウェイの申告の要約が続く）。</summary>
+    internal const string UnsentRationalePrefix = "LLM ゲートウェイが送信しなかったため見送り";
     private const string HoldMalformed = """{"action":"Hold","rationale":"LLM ゲートウェイ応答不正のため見送り"}""";
     private const string HoldRefused = """{"action":"Hold","rationale":"LLM が要求を拒否したため見送り"}""";
     private const string HoldEmpty = """{"action":"Hold","rationale":"LLM 応答が空のため見送り"}""";
@@ -166,12 +178,25 @@ public sealed class HttpLlmCompletionClient(
 
             var dto = exchange.Payload!;
 
-            // Sent=false は機密区分による送信拒否（縮退）＝越境させておらず費用も発生していない。取引しない安全側に倒す。
+            // Sent=false はゲートウェイが送信しなかった応答（越境させておらず費用も発生していない）。取引しない安全側に倒す。
+            // 🔴 FR-04, FR-11, #1267, IADR-0517: 原因は**ゲートウェイの申告のまま**残す（越境の拒否・プロバイダ未登録・
+            // 上流の不調のいずれも Sent=false で返る）。「機密区分による縮退」と断定すると、上流の不調で 132 件が
+            // 固定されても誤った理由しか残らない（2026-10-07 の PoC）。要約は 1 行・切り詰め・秘密の伏せ字済み。
             if (!dto.Sent)
             {
-                logger.LogWarning("LLM ゲートウェイが送信不可（Sent=false・機密区分による縮退）。取引しない安全側（Hold）に倒します。");
-                return HoldFallback;
+                var cause = LlmGatewayUnsent.From(dto);
+                logger.LogWarning(
+                    "LLM ゲートウェイが送信しませんでした（Sent=false）。purpose={Purpose} failureKind={FailureKind} "
+                    + "upstreamStatus={UpstreamStatus} routingReason={RoutingReason} gatewayText={GatewayText}。"
+                    + "取引しない安全側（Hold）に倒します（原因はゲートウェイの申告を参照）。",
+                    effectivePurpose, cause.Kind?.ToString() ?? "不明", cause.UpstreamStatusCode, cause.RoutingReason,
+                    cause.GatewayText);
+                await ReportUnsentAsync(effectivePurpose, cause, cancellationToken).ConfigureAwait(false);
+                return HoldUnsent(cause);
             }
+
+            // #1267, IADR-0517: 送信が成立した＝Sent=false の連続が途切れた（回復の通知の契機）。
+            await ReportSentAsync(cancellationToken).ConfigureAwait(false);
 
             // FR-11, IADR-0061 決定1: LLM の生出力を全量記録する（構造化解析前＝パーサが Hold へ丸める前の原文）。
             // #247, IADR-0104: 拒否・空応答の判定より前に記録し、以降で破棄する本文も事後に再構成できるようにする。
@@ -291,6 +316,36 @@ public sealed class HttpLlmCompletionClient(
         }
     }
 
+    // FR-04, FR-11, #1267, IADR-0517: Sent=false の Hold。判断理由（FR-11 ログの rationale・一次の打ち切りの rationale）へ
+    // ゲートウェイの申告の要約を載せる。JSON は直列化器で組む（要約は外部由来の文字列であり、手で連結すると引用符で壊れる）。
+    internal static string HoldUnsent(LlmGatewayUnsentCause cause) =>
+        JsonSerializer.Serialize(new { action = "Hold", rationale = $"{UnsentRationalePrefix}（{cause.Describe()}）" });
+
+    // #1267, IADR-0517: 通知は best-effort（失敗しても Hold は変わらない。緩むのは可観測性だけ）。
+    private async Task ReportUnsentAsync(string purpose, LlmGatewayUnsentCause cause, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _unsent.ReportUnsentAsync(purpose, cause, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "LLM ゲートウェイの送信不可の連続の通知に失敗しました（見送り自体は成立しています）。");
+        }
+    }
+
+    private async Task ReportSentAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _unsent.ReportSentAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "LLM ゲートウェイの送信の回復の通知に失敗しました（応答は継続）。");
+        }
+    }
+
     private async Task ReportFallbackAsync(
         LlmAssignmentEvaluation evaluation, string purpose, CancellationToken cancellationToken)
     {
@@ -307,7 +362,7 @@ public sealed class HttpLlmCompletionClient(
     // 要求・応答の写像（REST の CompletionApiRequest / CompletionApiResponse、gRPC の
     // CompleteRequest / CompleteResponse）は輸送側（`RestLlmCompletionTransport` /
     // `GrpcLlmCompletionTransport`）へ移した。本クラスが読むのは輸送に依らない `LlmCompletionPayload` である。
-    // Sent=false は送信拒否（縮退）。InputTokens/OutputTokens は費用計測の入力（#79・IADR-0055）。
+    // Sent=false はゲートウェイが送信しなかった応答（越境の拒否・プロバイダ未登録・上流の不調。#1267）。InputTokens/OutputTokens は費用計測の入力（#79・IADR-0055）。
     // Model はゲートウェイが実際に選択したモデル（要求の Model は希望値であり、越境ルーティングで変わり得る）。
     // #247, IADR-0104: StopReason は**送信が成立した**場合のモデル側の終了理由（"end_turn" / "max_tokens" / "refusal" 等）で、
     // Sent とは独立した軸（Sent=false＝越境させていない／StopReason="refusal"＝送信したがモデルが拒否した）。

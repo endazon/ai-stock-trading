@@ -293,6 +293,29 @@ public class NotificationTemplateGoldenTests
                     + "（FallbackFired）。恒常的に発火している場合は割当設定を確認してください。",
                 NotificationSeverity.Warning)),
 
+        // FR-04, FR-09, #1267, IADR-0517（T-04-016）: Sent=false の連続。🔴 原因はゲートウェイの申告のまま（「機密区分」と書かない）。
+        // Warning——損切りは別の機構で動いており、Critical にすると本当に止まった事象が埋もれる。
+        ["LlmGatewayUnsentDetected"] = (
+            new LlmGatewayUnsentDetected(
+                "trade-decision-screening", 5, "UpstreamError", 429, "internal は anthropic-managed へ送信可",
+                "呼び出し先 anthropic-managed が現在利用できません。", T.AddMinutes(-10), T),
+            new NotificationMessage(
+                "取引判断: LLM ゲートウェイが送信しない状態が続いています",
+                "LLM ゲートウェイが 5 回連続で送信しませんでした（Sent=false・用途 trade-decision-screening・2026-08-28 02:50Z から）。"
+                    + "種別: 上流の不調／上流 429／理由: internal は anthropic-managed へ送信可／"
+                    + "ゲートウェイ: 呼び出し先 anthropic-managed が現在利用できません。"
+                    + "取引判断は LLM なしで見送り（Hold・取引しない）になっています。損切りは別の機構で動いています。"
+                    + "ゲートウェイの状態・構成・上流の提供側を確認してください（回復したら通知します）。",
+                NotificationSeverity.Warning)),
+
+        // FR-04, FR-09, #1267, IADR-0517（T-04-016）: 回復は Info。期間と件数を本文へ入れる。
+        ["LlmGatewayUnsentRecovered"] = (
+            new LlmGatewayUnsentRecovered(132, T.AddMinutes(-109), T),
+            new NotificationMessage(
+                "取引判断: LLM ゲートウェイの送信が回復",
+                "LLM ゲートウェイが再び送信しました。送信しなかった期間: 1.8 時間（2026-08-28 01:11Z から）・送信不可 132 件。",
+                NotificationSeverity.Info)),
+
         // #335, IADR-0216: 取引判断の見送り。**「設計上の正常な結果」が本文から欠けると
         // 運用が障害として扱い、善意のフォールバック追加を招く**（ADR-0017 決定2）。
         ["TradeDecisionSkipped"] = (

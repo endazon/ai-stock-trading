@@ -1,5 +1,6 @@
 using System.Globalization;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Llm;
 using AiStockTrading.Shared.Contracts.Trading;
 
 namespace NotificationService.Features.Notifications;
@@ -562,6 +563,28 @@ public static class NotificationFormatter
         $"用途 {e.Purpose} の割当モデル（{e.ExpectedModel ?? "なし"}）が使えないため取引判断を実行せず、発注も行いませんでした"
         + $"（理由 {e.Reason}・実際 {e.EffectiveModel ?? "不明"}）。**設計上の正常な結果**です（フォールバック禁止）。",
         NotificationSeverity.Warning);
+
+    // FR-04, FR-09, FR-11, #1267, IADR-0517: LLM ゲートウェイの Sent=false がしきい値の回数だけ連続した（連続 1 回につき 1 通）。
+    //
+    // 🔴 **Warning であって Critical ではない。** 取引判断は Hold（取引しない）へ倒れて発注は出ず、損切り（S0 の逆指値・S1）は
+    // 別の機構で動いている。ただし LLM が起点の利確・手仕舞いは止まっているため、沈黙にはしない（2026-10-07 は 1 時間 49 分気付けなかった）。
+    // 🔴 **原因はゲートウェイの申告のまま書く**（「機密区分」と推測で書かない）。種別が不明なら不明と書く。
+    public static NotificationMessage From(LlmGatewayUnsentDetected e) => new(
+        "取引判断: LLM ゲートウェイが送信しない状態が続いています",
+        $"LLM ゲートウェイが {e.ConsecutiveUnsent} 回連続で送信しませんでした（Sent=false・用途 {e.Purpose}・"
+            + $"{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z から）。"
+            + new LlmGatewayUnsentCause(
+                LlmGatewayUnsent.ParseKind(e.FailureKind), e.UpstreamStatusCode, e.RoutingReason, e.GatewayText).Describe()
+            + "。取引判断は LLM なしで見送り（Hold・取引しない）になっています。損切りは別の機構で動いています。"
+            + "ゲートウェイの状態・構成・上流の提供側を確認してください（回復したら通知します）。",
+        NotificationSeverity.Warning);
+
+    // 回復は Info。**期間と件数を本文へ入れる**（どれだけの判断が LLM なしの Hold だったかを受け手が判断できるように）。
+    public static NotificationMessage From(LlmGatewayUnsentRecovered e) => new(
+        "取引判断: LLM ゲートウェイの送信が回復",
+        $"LLM ゲートウェイが再び送信しました。送信しなかった期間: {FormatDuration(e.UnsentDuration)}"
+            + $"（{e.FirstUnsentAt:yyyy-MM-dd HH:mm}Z から）・送信不可 {e.UnsentCalls} 件。",
+        NotificationSeverity.Info);
 
     // UC-01, FR-09, FR-07, #210: 日報未確定による取引スキップ。確定を促す注意喚起（Warning）。
     // 日報が未確定の間は取引が見送られ続けるため、利用者に確定を促す（同一営業日内は 1 回に抑止済み・IADR-0096）。

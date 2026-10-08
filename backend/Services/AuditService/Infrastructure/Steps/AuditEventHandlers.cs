@@ -743,3 +743,25 @@ public sealed class ReportKnowledgeReingestedAuditHandler(IAuditEventStore store
         store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
     }
 }
+
+// FR-04, FR-09, FR-11, #1267, IADR-0517: LLM ゲートウェイの Sent=false の連続（原因はゲートウェイの申告のまま）を台帳へ記録する。
+// 取引判断の Hold（TradeDecisionHeld）は根拠を運ばない（IADR-0452 決定5）ため、「なぜ LLM なしの Hold が続いたか」の
+// 台帳上の証跡は本記録である。
+public sealed class LlmGatewayUnsentDetectedAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(LlmGatewayUnsentDetected message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}
+
+// FR-04, FR-09, FR-11, #1267, IADR-0517: Sent=false の連続からの回復（期間・件数）を台帳へ記録する。
+public sealed class LlmGatewayUnsentRecoveredAuditHandler(IAuditEventStore store, IClock clock)
+{
+    public void Handle(LlmGatewayUnsentRecovered message, Envelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        store.Append(AuditEntryFactory.From(message, envelope.Id, clock.UtcNow));
+    }
+}

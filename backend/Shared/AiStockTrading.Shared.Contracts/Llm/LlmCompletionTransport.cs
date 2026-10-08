@@ -58,8 +58,18 @@ public sealed record LlmCompletionCall(
 /// 🔴 **縮退はエラーではない** —— REST は 200 ＋ <c>Sent=false</c>、gRPC も**応答**で返る
 /// （基盤の実装ガイド「縮退はエラーではない」）。
 /// </param>
+/// <param name="RoutingReason">
+/// FR-04, FR-11, #1267, IADR-0517: ゲートウェイが返した送信先の判定理由（<c>Sent=false</c> のときは拒否・縮退の理由を含み得る）。
+/// 未報告は <c>null</c>。🔴 <c>Sent=false</c> を「機密区分による縮退」と断定しないための材料である。
+/// </param>
+/// <param name="FailureKind">
+/// #1267, IADR-0517: <c>Sent=false</c> の原因の種類（MSP#1819 が構造化して返す予定）。
+/// 未報告・未知の値は <c>null</c>（読み取りで例外にしない）。
+/// </param>
+/// <param name="UpstreamStatusCode">#1267, IADR-0517: 上流（LLM 提供側）の HTTP 状態コード。未報告は <c>null</c>。</param>
 public sealed record LlmCompletionPayload(
-    string? Text, bool Sent, string? Model, string? StopReason, int? InputTokens, int? OutputTokens);
+    string? Text, bool Sent, string? Model, string? StopReason, int? InputTokens, int? OutputTokens,
+    string? RoutingReason = null, LlmGatewayUnsentKind? FailureKind = null, int? UpstreamStatusCode = null);
 
 /// <summary>輸送の結果の種別。**打ち切り・伝送の例外はここに無い**（例外として呼び出し元へ上がる）。</summary>
 public enum LlmTransportOutcome

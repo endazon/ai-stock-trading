@@ -36,7 +36,7 @@ public enum PolicyRevisionFailure
     /// <summary>上限時間内に応答が無かった。</summary>
     TimedOut,
 
-    /// <summary>送信拒否（機密区分による縮退）・安全性分類器の拒否・禁止モデル。</summary>
+    /// <summary>ゲートウェイが送信しなかった（越境の拒否・プロバイダ未登録・上流の不調。#1267）・安全性分類器の拒否・禁止モデル。</summary>
     Refused,
 
     /// <summary>応答はあったが、案のスキーマに合わなかった（空・JSON でない・検証違反）。</summary>
