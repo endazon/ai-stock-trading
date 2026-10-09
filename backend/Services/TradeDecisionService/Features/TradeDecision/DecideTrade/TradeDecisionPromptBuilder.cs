@@ -802,6 +802,7 @@ public static class TradeDecisionPromptBuilder
     // 案内を出すか。**機械的な損切りの無い構成（S2）**と、**不明**（未供給・未知の値）だけ true。
     // 不明で出すのは、ADR-0050 決定2 が案内しないとした S0・S1・S3 のどれとも分からず、消すと実際は S2 だった建玉の出口を塞ぐため
     // （FR-10）。出したときの悪い側（判断と機械的な損切りの重なり）は IADR-0461・IADR-0466 が二重に売らないようにしている。
+    // ［2026-10-09 / #1228］不明を S2 と同じく案内する扱いは、計画 ADR-0050 決定2 の 2026-10-09 補完（planning#741 項目 3）で確定した。
     internal static bool UsesStopLineExitGuidance(StopLossExecutionMethod? method) => method switch
     {
         StopLossExecutionMethod.BrokerStopOrder => false,

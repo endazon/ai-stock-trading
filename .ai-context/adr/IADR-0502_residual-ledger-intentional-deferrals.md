@@ -2,10 +2,10 @@
 title: IADR-0502 第 4 回全体監査の残作業の台帳のうち、意図して保留する 3 件（1 注文上限の緩和・月報の税金レビュー・StageProhibitsLiveTrading）と外す条件
 type: impl-adr
 status: Accepted
-related_ids: [NFR, FR-10, FR-20, FR-06, FR-16, ADR-0049, ADR-0030, ADR-0003, IADR-0486, IADR-0272, IADR-0291, IADR-0067, IADR-0013]
+related_ids: [NFR, FR-10, FR-20, FR-06, FR-16, ADR-0049, ADR-0058, ADR-0030, ADR-0003, IADR-0486, IADR-0272, IADR-0291, IADR-0067, IADR-0013]
 author: claude (Claude Code)
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-10-09
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0049_stop-width-floor-atr14-widen-no-ceiling.md (決定 4)
   - planning:projects/ai-stock-trading/07_adr/ADR-0030_report-section-numbering-is-plan-canonical.md (フォローアップ 3)
@@ -88,3 +88,14 @@ plan_refs:
 - Superseded by: なし
 - 関連: [IADR-0486](IADR-0486_stop-width-floor-atr14-flag-and-floor-marker-on-order-intent.md)・[IADR-0272](IADR-0272_report-section-structure-arbitration.md)・
   [IADR-0291](IADR-0291_report-sections-follow-plan-numbering.md)・#204（D-5）・#1218（日報 §6）
+
+## ［2026-10-09 追記 / #1228］決定 1 の外す条件 (2) は満たされた（計画 ADR-0058）。保留は続く
+
+本文は当時の決定として残す。
+
+- planning#741 項目 1 は 2026-10-09 に裁定された（利用者裁定・案 a〔計画を実装に揃える〕）。計画 ADR-0058 が ADR-0049 決定 3 の 1 句を部分改定し、
+  丸めは保護を緩めない向き（早く発火する側）を優先し、損切り幅の下限は 1 刻み未満の誤差を許す（下限の判定は丸める前の値）と定めた。
+  **実装は既にこの形であり、変更は要らない**（[IADR-0465](IADR-0465_stop-width-floor-fallback-2pct-widen-and-audit.md) の 2026-10-09 追記。誤差の上限は T-10-2469 が固定する）。
+- したがって決定 1 の外す条件のうち **(2)「planning#741 の項 1 が裁定され実装がそれに揃う」は満たされた**。§起点・関連の「計画側の裁定待ち」と
+  決定 1 の 2. の「裁定待ち」は、本追記の時点で解消している。「下限が効いている」は ADR-0058 決定 2 の誤差（1 刻み未満）を含めて読む（同 ADR が ADR-0049 決定 4 をそう読ませる）。
+- 🔴 **保留は外さない。** (1) ATR の下限の配備での有効化と (3) 利用者が緩和を望むことは、2026-10-09 時点で未充足である。3 つが揃うまで緩和の issue は立てない（決定 1 のまま）。

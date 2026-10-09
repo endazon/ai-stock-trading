@@ -71,6 +71,39 @@ public class MoomooPriceRoundingTests
     public void 発火価格は早く発火する側へ丸める(TradeSide closeSide, decimal raw, decimal expected) =>
         MoomooPriceRounding.RoundTrigger(Market.UnitedStates, closeSide, raw).Should().Be(expected);
 
+    // T-10-2469: FR-10, ADR-0058 決定1・2, ADR-0049 決定3, #1228, IADR-0465（2026-10-09 追記）:
+    // 下限を掛けた損切りライン（丸める前）を発火価格へ丸めると、**早く発火する側**へ寄り（保護を緩めない）、
+    // 寄る量は**1 刻み未満**に限る（実効の幅が下限を割るのは 1 刻み未満だけ。1 刻み以上は割らない）。
+    // 下限の判定は丸める前の値で行い（StopWidthFloorPolicy は丸めない）、丸めは発火価格の 1 回だけである。
+    [Theory]
+    [InlineData(Market.UnitedStates, TradeSide.Sell, 100.0, 2.0001)]      // ロング: 97.9999 → 98.00
+    [InlineData(Market.UnitedStates, TradeSide.Buy, 100.0, 2.0001)]       // ショート: 102.0001 → 102.00
+    [InlineData(Market.UnitedStates, TradeSide.Sell, 100.0, 2.0)]         // 刻みに乗ったラインは動かさない
+    [InlineData(Market.UnitedStates, TradeSide.Sell, 0.98765, 0.019753)]  // サブペニー（4 桁）
+    [InlineData(Market.Japan, TradeSide.Sell, 1234.56, 24.6912)]          // 円単位: 1209.8688 → 1210
+    [InlineData(Market.Japan, TradeSide.Buy, 1234.56, 24.6912)]           // 円単位: 1259.2512 → 1259
+    public void T_10_2469_下限を掛けたラインの発火価格の丸めは早く発火する側へ寄り下限を割るのは一刻み未満に限る(
+        Market market, TradeSide closeSide, decimal entryPrice, decimal floorPerShare)
+    {
+        // ロングの保護（売り）はエントリーの下、ショートの保護（買い戻し）は上にラインを引く（下限ちょうどの幅）。
+        var rawLine = closeSide == TradeSide.Sell ? entryPrice - floorPerShare : entryPrice + floorPerShare;
+        var tick = MoomooPriceRounding.TickFor(market, rawLine);
+
+        var trigger = MoomooPriceRounding.RoundTrigger(market, closeSide, rawLine);
+
+        // 決定1: 保護を緩めない向き（早く発火する側＝エントリーへ近づく側）。
+        if (closeSide == TradeSide.Sell)
+            trigger.Should().BeGreaterThanOrEqualTo(rawLine);
+        else
+            trigger.Should().BeLessThanOrEqualTo(rawLine);
+
+        // 決定2: 寄る量は 1 刻み未満。実効の幅は下限を 1 刻み以上は割らない。
+        Math.Abs(trigger - rawLine).Should().BeLessThan(tick);
+        var effectiveWidth = Math.Abs(entryPrice - trigger);
+        effectiveWidth.Should().BeGreaterThan(floorPerShare - tick);
+        effectiveWidth.Should().BeLessThanOrEqualTo(floorPerShare);
+    }
+
     // T-10-393: 丸めで指値が発火価格へ寄り切ったら 1 刻みだけ離す。
     // ずらし幅が刻みより小さいと同値になり、「保護レグを置いたのに約定しない」を作る。
     [Fact]

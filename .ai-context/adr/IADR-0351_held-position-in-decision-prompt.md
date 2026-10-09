@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-10, FR-03, FR-11, UC-01, UC-02, ADR-0003, ADR-0040, IADR-0029, IADR-0030, IADR-0035, IADR-0039, IADR-0119, IADR-0247, IADR-0297, IADR-0318, IADR-0342, IADR-0343, IADR-0358, IADR-0390, IADR-0466, ADR-0050]
 author: endazon (with Claude Code)
 created: 2026-09-19
-updated: 2026-09-30
+updated: 2026-10-09
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/07_adr/ADR-0003_ai-decision-guardrails.md
@@ -261,3 +261,13 @@ LLM 後に 0 → **見送り**／LLM 後に不明 → **見送り**／LLM 後に
 - 🔴 **悪い側（受容）**: S0・S1・S3 で機械的な損切りが遅れた・止まったとき、AI が予備の出口として損切りライン到達で手仕舞う経路は無くなる（ADR-0050 の結果が受容した
   トレードオフ）。方針に出口の基準があれば、方針に基づく手仕舞いは選べる。S1 が止まる状態は据え置き継続・保護の停止の Critical で人手へ回る。
 - 試験: T-10-1810（本判断）・T-10-1811（一次）・T-10-1812（保護の状態の S1）。作業仕様書 `20260930_1121_s1-vs-decision-close`。
+
+## ［2026-10-09 追記 / #1228］2026-09-30 追記の「不明でも案内する」は、計画 ADR-0050 決定 2 の補完で確定した
+
+本文と 2026-09-30 追記は当時の決定として残す。
+
+- planning#741 項目 3（利用者裁定 2026-10-09・案 a）で、計画 ADR-0050 決定 2 に 2026-10-09 付の補完が入った:
+  **実行機構が不明のとき（未供給〔null〕・未知の値）は、S2 と同じく案内する。** 理由（不明は S0・S1・S3 のどれとも分からず、案内を消すと
+  実際は S2 だった建玉の出口を塞ぐ。重なりは IADR-0461・IADR-0466 が二重に売らないようにする）は、2026-09-30 追記の自認と同じである。
+- **実装の変更は無い**（`TradeDecisionPromptBuilder.UsesStopLineExitGuidance` が S0・S1・S3 で false、それ以外〔S2・null・未知の値〕で true）。
+  同メソッドのコメントに補完を引く 1 行を足しただけである。試験は T-10-1810（本判断）・T-10-1811（一次スクリーニング）の `null`・未知の値（99）の行が既に固定している。
