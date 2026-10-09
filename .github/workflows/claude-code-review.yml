@@ -14,7 +14,7 @@
 #   - このファイルは実装リポジトリ直下の .github/workflows/ に配置されたときのみ有効
 #
 # モデル:
-#   レビューは速度・コストを優先し既定で claude-sonnet-5 を使う。
+#   レビューは速度・コストを優先し既定で claude-sonnet-5-5 を使う。
 #   PR 本文/タイトルに「@claude opus / sonnet / haiku」と書くとそのモデルで起動する
 #   （"Select model from mention" ステップが解析）。既定は同ステップの MODEL="..." で変更。
 #
@@ -188,7 +188,7 @@ jobs:
         working-directory: frontend
 
       # レビューは PR オープン/更新で自動起動するため、モデル指定は PR 本文/タイトルの
-      # 「@claude opus / sonnet / haiku」で切り替える。未指定時は既定 claude-sonnet-5。
+      # 「@claude opus / sonnet / haiku」で切り替える。未指定時は既定 claude-sonnet-5-5。
       # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
       - name: Select model from mention
         id: model
@@ -198,11 +198,11 @@ jobs:
         run: |
           BODY="${PR_BODY}
           ${PR_TITLE}"
-          MODEL="claude-sonnet-5"
-          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-4-5-20251001"
+          MODEL="claude-sonnet-5-5"
+          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5-1"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-5-5"
           fi
           echo "model=$MODEL" >> "$GITHUB_OUTPUT"
           echo "Selected model: $MODEL"
@@ -232,7 +232,7 @@ jobs:
           display_report: true
           # レビュー進捗コメントを PR に表示する
           track_progress: true
-          # 既定モデル: 変更可（厳密さ優先なら claude-opus-5）。
+          # 既定モデル: 変更可（厳密さ優先なら claude-opus-5-5）。
           # GitHub MCP ツールはここで許可する（mcp__github__pull_request_review_write 等の
           # 権限拒否はこれで解消する。additional_permissions は使わない）。
           # Read はリポジトリ内の文書・コードの参照に必要（計画書は本リポジトリから参照
