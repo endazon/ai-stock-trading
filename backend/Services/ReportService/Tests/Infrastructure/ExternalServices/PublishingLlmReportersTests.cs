@@ -41,9 +41,9 @@ public class PublishingLlmReportersTests
     // IADR-0122 決定4 の投入値（換算率 163.71・2026-07 時点）。values-local.yaml と同じ表。
     private static LlmPriceTable Prices() => LlmPriceTable.From(
     [
-        ("claude-opus-5", "0.819", "4.093"),
-        ("claude-sonnet-5", "0.327", "1.637"),
-        ("claude-haiku-4-5", "0.164", "0.819"),
+        ("claude-opus-5-5", "0.655", "3.274"),  // #1295: 5.5 系の公表値（$4/$20）
+        ("claude-sonnet-5-5", "0.327", "1.637"),
+        ("claude-haiku-5-5", "0.0164", "0.0819"),
     ]);
 
     private static Task<IHost> BuildHostAsync() =>
@@ -68,14 +68,14 @@ public class PublishingLlmReportersTests
             new FixedClock(), Prices(), NullLogger<PublishingLlmUsageReporter>.Instance);
 
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(
-            _ => reporter.ReportAsync(new LlmUsage(LlmPurposes.ReportMonthly, 1000, 2000, "claude-opus-5")));
+            _ => reporter.ReportAsync(new LlmUsage(LlmPurposes.ReportMonthly, 1000, 2000, "claude-opus-5-5")));
 
         var published = session.Sent.MessagesOf<LlmCostIncurred>().Should().ContainSingle().Subject;
         published.Purpose.Should().Be(LlmPurposes.ReportMonthly);
-        published.Model.Should().Be("claude-opus-5");
+        published.Model.Should().Be("claude-opus-5-5");
         published.At.Should().Be(Now);
-        // IADR-0122 決定1: 単価は応答が名乗った実効モデルから引く。1000×0.819 + 2000×4.093（円/1k）。
-        published.Amount.Should().Be(9.005m);
+        // IADR-0122 決定1: 単価は応答が名乗った実効モデルから引く。1000×0.655 + 2000×3.274（円/1k）。
+        published.Amount.Should().Be(7.203m);
         // 🔴 報告書生成は月次上限の**対象外**である（§6.1）。対象内の用途で発行すると日報確定が止まる連鎖が生じる。
         LlmCostScope.IsGoverned(published.Purpose).Should().BeFalse();
 
@@ -93,11 +93,11 @@ public class PublishingLlmReportersTests
             new FixedClock(), Prices(), NullLogger<PublishingLlmUsageReporter>.Instance);
 
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(
-            _ => reporter.ReportAsync(new LlmUsage(LlmPurposes.ReportMonthly, 1000, 2000, "claude-sonnet-5")));
+            _ => reporter.ReportAsync(new LlmUsage(LlmPurposes.ReportMonthly, 1000, 2000, "claude-sonnet-5-5")));
 
         var published = session.Sent.MessagesOf<LlmCostIncurred>().Single();
         published.Amount.Should().Be(3.601m);
-        published.Model.Should().Be("claude-sonnet-5");
+        published.Model.Should().Be("claude-sonnet-5-5");
 
         await host.StopAsync();
     }
@@ -114,14 +114,14 @@ public class PublishingLlmReportersTests
             host.Services.GetRequiredService<IWolverineRuntime>(),
             new FixedClock(), NullLogger<PublishingLlmGovernanceReporter>.Instance);
 
-        var evaluation = LlmAssignmentEvaluator.Evaluate(LlmPurposes.ReportMonthly, "claude-sonnet-5");
+        var evaluation = LlmAssignmentEvaluator.Evaluate(LlmPurposes.ReportMonthly, "claude-sonnet-5-5");
         var session = await host.TrackActivityForTest().ExecuteAndWaitAsync(
             _ => reporter.FallbackFiredAsync(evaluation, LlmPurposes.ReportMonthly));
 
         var published = session.Sent.MessagesOf<LlmFallbackFired>().Should().ContainSingle().Subject;
         published.Purpose.Should().Be(LlmPurposes.ReportMonthly);
-        published.ExpectedModel.Should().Be(LlmAssignments.Opus5);
-        published.EffectiveModel.Should().Be("claude-sonnet-5");
+        published.ExpectedModel.Should().Be(LlmAssignments.Opus55);
+        published.EffectiveModel.Should().Be("claude-sonnet-5-5");
         published.Outcome.Should().Be(nameof(LlmAssignmentOutcome.FallbackFired));
         published.OccurredAt.Should().Be(Now);
 

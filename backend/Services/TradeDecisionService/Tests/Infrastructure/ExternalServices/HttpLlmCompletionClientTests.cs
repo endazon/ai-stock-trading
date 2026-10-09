@@ -66,7 +66,7 @@ public class HttpLlmCompletionClientTests
     public async Task 送信成功_Sent_true_は_本文を返す()
     {
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","inputTokens":10,"outputTokens":5,"sent":true}""");
+            """{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5-5","inputTokens":10,"outputTokens":5,"sent":true}""");
 
         var text = await Client(handler).CompleteAsync("prompt", "primary");
 
@@ -132,12 +132,12 @@ public class HttpLlmCompletionClientTests
     {
         var reporter = new RecordingReporter();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","inputTokens":120,"outputTokens":34,"sent":true}""");
+            """{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5-5","inputTokens":120,"outputTokens":34,"sent":true}""");
 
         await Client(handler, reporter).CompleteAsync("prompt");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 120, 34, "claude-sonnet-5"));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 120, 34, "claude-sonnet-5-5"));
     }
 
     // #303, IADR-0122 決定1: 要求の model は希望値でしかなく、越境ルーティング（ADR-0010）で別モデルへ着地し得る。
@@ -149,7 +149,7 @@ public class HttpLlmCompletionClientTests
         var handler = new StubHandler(HttpStatusCode.OK,
             """{"text":"{\"action\":\"Hold\"}","model":"claude-fable-5","inputTokens":10,"outputTokens":5,"sent":true}""");
 
-        await Client(handler, reporter).CompleteAsync("prompt", "claude-sonnet-5");
+        await Client(handler, reporter).CompleteAsync("prompt", "claude-sonnet-5-5");
 
         reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 10, 5, "claude-fable-5"));
     }
@@ -173,7 +173,7 @@ public class HttpLlmCompletionClientTests
     public async Task 費用計測の失敗は_LLM応答を壊さない()
     {
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","inputTokens":10,"outputTokens":5,"sent":true}""");
+            """{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5-5","inputTokens":10,"outputTokens":5,"sent":true}""");
 
         var text = await Client(handler, new ThrowingReporter()).CompleteAsync("prompt");
 
@@ -197,7 +197,7 @@ public class HttpLlmCompletionClientTests
     [Fact]
     public async Task 要求に_prompt_model_confidentiality_purpose_を載せる()
     {
-        var handler = new CapturingHandler("""{"text":"{}","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""");
+        var handler = new CapturingHandler("""{"text":"{}","model":"claude-sonnet-5-5","inputTokens":1,"outputTokens":1,"sent":true}""");
         await Client(handler).CompleteAsync("私のプロンプト", "primary-model");
 
         using var doc = JsonDocument.Parse(handler.LastBody!);
@@ -217,7 +217,7 @@ public class HttpLlmCompletionClientTests
     {
         var reporter = new RecordingReporter();
         var handler = new CapturingHandler(
-            """{"text":"{}","model":"claude-sonnet-5","inputTokens":7,"outputTokens":3,"sent":true}""");
+            """{"text":"{}","model":"claude-sonnet-5-5","inputTokens":7,"outputTokens":3,"sent":true}""");
 
         // 構成上書きなし（purposeOverride=null）＝呼び出し側の申告がそのまま効く配線。
         var client = new HttpLlmCompletionClient(
@@ -239,7 +239,7 @@ public class HttpLlmCompletionClientTests
     public async Task 判断の出力上限は4096のまま(string purpose)
     {
         var handler = new CapturingHandler(
-            """{"text":"{}","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""");
+            """{"text":"{}","model":"claude-sonnet-5-5","inputTokens":1,"outputTokens":1,"sent":true}""");
         var client = new HttpLlmCompletionClient(
             new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
             NullLogger<HttpLlmCompletionClient>.Instance, "internal", purposeOverride: null, new NoOpLlmUsageReporter());
@@ -255,7 +255,7 @@ public class HttpLlmCompletionClientTests
     public async Task 構成の明示上書きがあるときは呼び出し側の用途より優先する()
     {
         var handler = new CapturingHandler(
-            """{"text":"{}","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""");
+            """{"text":"{}","model":"claude-sonnet-5-5","inputTokens":1,"outputTokens":1,"sent":true}""");
 
         await Client(handler).CompleteAsync("p", model: null, LlmPurposes.TradeDecisionScreening);
 
@@ -270,7 +270,7 @@ public class HttpLlmCompletionClientTests
     {
         var logger = new RecordingLogger();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Buy\",\"rationale\":\"上昇基調\"}","model":"claude-sonnet-5","inputTokens":10,"outputTokens":5,"sent":true}""");
+            """{"text":"{\"action\":\"Buy\",\"rationale\":\"上昇基調\"}","model":"claude-sonnet-5-5","inputTokens":10,"outputTokens":5,"sent":true}""");
 
         await LoggingClient(handler, logger, logPrompts: true).CompleteAsync("私の長いプロンプト", "primary-model");
 
@@ -286,7 +286,7 @@ public class HttpLlmCompletionClientTests
     {
         var logger = new RecordingLogger();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Buy\",\"rationale\":\"上昇基調\"}","model":"claude-sonnet-5","inputTokens":10,"outputTokens":5,"sent":true}""");
+            """{"text":"{\"action\":\"Buy\",\"rationale\":\"上昇基調\"}","model":"claude-sonnet-5-5","inputTokens":10,"outputTokens":5,"sent":true}""");
 
         await LoggingClient(handler, logger, logPrompts: false).CompleteAsync("私の長いプロンプト", "primary-model");
 
@@ -309,7 +309,7 @@ public class HttpLlmCompletionClientTests
         var logger = new RecordingLogger();
         var handler = new StubHandler(
             HttpStatusCode.OK,
-            JsonSerializer.Serialize(new { text = ForgedText, model = "claude-sonnet-5", sent = true }));
+            JsonSerializer.Serialize(new { text = ForgedText, model = "claude-sonnet-5-5", sent = true }));
 
         await LoggingClient(handler, logger, logPrompts: true).CompleteAsync(ForgedText, "primary-model");
 
@@ -361,7 +361,7 @@ public class HttpLlmCompletionClientTests
     public async Task 拒否_refusal_は本文が非空でも判断へ流さず_Hold_取引しない()
     {
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Buy\",\"rationale\":\"拒否された断片\",\"referencePrice\":1000,\"stopLossDistancePerShare\":30}","model":"claude-sonnet-5","inputTokens":10,"outputTokens":5,"model":"claude-sonnet-5","sent":true,"stopReason":"refusal"}""");
+            """{"text":"{\"action\":\"Buy\",\"rationale\":\"拒否された断片\",\"referencePrice\":1000,\"stopLossDistancePerShare\":30}","model":"claude-sonnet-5-5","inputTokens":10,"outputTokens":5,"model":"claude-sonnet-5-5","sent":true,"stopReason":"refusal"}""");
 
         var text = await Client(handler).CompleteAsync("prompt");
 
@@ -381,7 +381,7 @@ public class HttpLlmCompletionClientTests
     public async Task 拒否の判定は大小を無視する(string stopReason)
     {
         var handler = new StubHandler(HttpStatusCode.OK,
-            $$"""{"text":"{\"action\":\"Buy\",\"referencePrice\":1000,\"stopLossDistancePerShare\":30}","model":"claude-sonnet-5","sent":true,"stopReason":"{{stopReason}}"}""");
+            $$"""{"text":"{\"action\":\"Buy\",\"referencePrice\":1000,\"stopLossDistancePerShare\":30}","model":"claude-sonnet-5-5","sent":true,"stopReason":"{{stopReason}}"}""");
 
         TradeDecisionParser.Parse(await Client(handler).CompleteAsync("prompt")).Rationale.Should().Contain("拒否");
     }
@@ -391,13 +391,13 @@ public class HttpLlmCompletionClientTests
     public async Task 拒否_送信拒否_空応答_上限到達は_相互に区別できる理由になる()
     {
         var refused = await Client(new StubHandler(HttpStatusCode.OK,
-            """{"text":"断片","model":"claude-sonnet-5","sent":true,"stopReason":"refusal"}""")).CompleteAsync("p");
+            """{"text":"断片","model":"claude-sonnet-5-5","sent":true,"stopReason":"refusal"}""")).CompleteAsync("p");
         var notSent = await Client(new StubHandler(HttpStatusCode.OK,
             """{"text":"機密区分により送信できません","sent":false}""")).CompleteAsync("p");
         var empty = await Client(new StubHandler(HttpStatusCode.OK,
-            """{"text":"","model":"claude-sonnet-5","sent":true,"stopReason":"end_turn"}""")).CompleteAsync("p");
+            """{"text":"","model":"claude-sonnet-5-5","sent":true,"stopReason":"end_turn"}""")).CompleteAsync("p");
         var maxTokens = await Client(new StubHandler(HttpStatusCode.OK,
-            """{"text":"","model":"claude-sonnet-5","sent":true,"stopReason":"max_tokens"}""")).CompleteAsync("p");
+            """{"text":"","model":"claude-sonnet-5-5","sent":true,"stopReason":"max_tokens"}""")).CompleteAsync("p");
         var malformed = await Client(new StubHandler(HttpStatusCode.OK, "not-json")).CompleteAsync("p");
 
         var rationales = new[] { refused, notSent, empty, maxTokens, malformed }
@@ -414,7 +414,7 @@ public class HttpLlmCompletionClientTests
     {
         var logger = new RecordingLogger();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"拒否された断片です","model":"claude-sonnet-5","sent":true,"stopReason":"refusal"}""");
+            """{"text":"拒否された断片です","model":"claude-sonnet-5-5","sent":true,"stopReason":"refusal"}""");
 
         await LoggingClient(handler, logger, logPrompts: false).CompleteAsync("p");
 
@@ -430,12 +430,12 @@ public class HttpLlmCompletionClientTests
     {
         var reporter = new RecordingReporter();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"断片","model":"claude-sonnet-5","inputTokens":80,"outputTokens":12,"model":"claude-sonnet-5","sent":true,"stopReason":"refusal"}""");
+            """{"text":"断片","model":"claude-sonnet-5-5","inputTokens":80,"outputTokens":12,"model":"claude-sonnet-5-5","sent":true,"stopReason":"refusal"}""");
 
         await Client(handler, reporter).CompleteAsync("p");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 80, 12, "claude-sonnet-5"));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 80, 12, "claude-sonnet-5-5"));
     }
 
     // IADR-0104 決定4: 上限到達で本文が空になる場合も思考トークンは課金済み（IADR-0101）。Sent=true なら計測する。
@@ -444,12 +444,12 @@ public class HttpLlmCompletionClientTests
     {
         var reporter = new RecordingReporter();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"","model":"claude-sonnet-5","inputTokens":50,"outputTokens":4096,"model":"claude-sonnet-5","sent":true,"stopReason":"max_tokens"}""");
+            """{"text":"","model":"claude-sonnet-5-5","inputTokens":50,"outputTokens":4096,"model":"claude-sonnet-5-5","sent":true,"stopReason":"max_tokens"}""");
 
         await Client(handler, reporter).CompleteAsync("p");
 
         reporter.Calls.Should().Be(1);
-        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 50, 4096, "claude-sonnet-5"));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 50, 4096, "claude-sonnet-5-5"));
     }
 
     // IADR-0104 決定5: 上限到達は劣化であり拒否ではない。本文は破棄せず判断へ渡す（IADR-0101 の劣化観測を壊さない）。
@@ -458,7 +458,7 @@ public class HttpLlmCompletionClientTests
     {
         var logger = new RecordingLogger();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Hold\",\"rationale\":\"様子見\"}","model":"claude-sonnet-5","model":"claude-sonnet-5","sent":true,"stopReason":"max_tokens"}""");
+            """{"text":"{\"action\":\"Hold\",\"rationale\":\"様子見\"}","model":"claude-sonnet-5-5","model":"claude-sonnet-5-5","sent":true,"stopReason":"max_tokens"}""");
 
         var text = await LoggingClient(handler, logger, logPrompts: false).CompleteAsync("p");
 
@@ -468,10 +468,10 @@ public class HttpLlmCompletionClientTests
 
     // 非破壊: stopReason 未設定（上流未更新・未対応プロバイダ）・未知値・正常終了は現行挙動のまま本文を返す。
     [Theory]
-    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","sent":true}""")]
-    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","sent":true,"stopReason":null}""")]
-    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","sent":true,"stopReason":"end_turn"}""")]
-    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5","sent":true,"stopReason":"future_reason"}""")]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5-5","sent":true}""")]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5-5","sent":true,"stopReason":null}""")]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5-5","sent":true,"stopReason":"end_turn"}""")]
+    [InlineData("""{"text":"{\"action\":\"Buy\"}","model":"claude-sonnet-5-5","sent":true,"stopReason":"future_reason"}""")]
     public async Task stopReason_欠落_未知値_正常終了は現行どおり本文を返す(string body)
     {
         (await Client(new StubHandler(HttpStatusCode.OK, body)).CompleteAsync("p"))

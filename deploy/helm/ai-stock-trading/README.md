@@ -236,7 +236,9 @@ echo "exit=$?"   # 0 差なし / 1 差あり（OpenD は不変）/ 3 差あり�
 - **LLM 費用の単価（#303 / IADR-0122 / #279 / IADR-0114 決定6 / IADR-0055）**: trade-decision
   `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens`（**円 / 1,000 トークン**・**モデル別**）。
   未設定（既定 0）だと毎回 ¥0 計上で月次費用上限（¥15,000）が構造的に発火しない。下記「LLM 費用の単価」参照。
-  🔴 **env 名ではモデル ID の `-` を `_` で書く**（`claude_sonnet_5`。#817）。
+  🔴 **env 名ではモデル ID の `-` を `_` で書く**（`claude_sonnet_5_5`。#817）。
+  `claude-haiku-5-5` はプロンプト長で 2 段の単価を持ち、第 2 段を `__LongContextThresholdTokens` / `__LongContextInputPer1kTokens` /
+  `__LongContextOutputPer1kTokens` で与える（#1295 / IADR-0524）。
 - **公式情報源・ニュース源の収集（#279 / IADR-0114 / IADR-0064 / #1082 / IADR-0453）**: `Collection__Source__Provider="finnhub,finnhub-news,google-news,sec-edgar,fred"`。
   SEC EDGAR は CIK `0000320193`（Apple）＋連絡先入り UA（下記 `SEC_EDGAR_USER_AGENT`）、FRED は `DEXJPUS` / `DGS10`
   （鍵は Fx と同じ `fred-api-key`）。必須構成を欠くソースだけが警告つきで除外される（他ソースは有効なまま）。
@@ -592,7 +594,7 @@ watchlist。結線時は照会に失敗しても使わない＝IADR-0475）と�
 
 `LlmPricing__PerModel__<model-id>__InputPer1kTokens` / `__OutputPer1kTokens` は **円 / 1,000 トークン**の**モデル別**単価。
 
-> 🔴 **env 名ではモデル ID の `-` を `_` で書く**（`LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens`。#817 / IADR-0122 追記）。
+> 🔴 **env 名ではモデル ID の `-` を `_` で書く**（`LlmPricing__PerModel__claude_sonnet_5_5__InputPer1kTokens`。#817 / IADR-0122 追記）。
 > イメージの ENTRYPOINT は `sh -c "exec dotnet …"` であり、シェル（dash）は**シェル識別子でない env 名**（`-` を含む）を
 > exec 先へ渡さない。ハイフン形のままだと Pod 定義には在るのに dotnet へ届かず、単価表が空＝全呼び出し ¥0 計上になる
 > （稼働実測: Pod env 10 件 → `/proc/1/environ` 0 件）。`LlmPriceTable` は `-` と `_` を同一視して応答の実効モデル名と照合する。
@@ -601,20 +603,35 @@ watchlist。結線時は照会に失敗しても使わない＝IADR-0475）と�
 未設定（既定 0）だと `PublishingLlmUsageReporter` が毎回 ¥0 を計上し、費用統制の月次上限（¥15,000）の
 80%／100% 判定が**構造的に発火しない**（台帳は動くが金額が積み上がらない）。
 
-用途別モデル割当（計画 `ADR-0014` / MSP/IADR-0112）で `trade-decision`=sonnet-5 / `report-monthly`=fable-5 /
-`report-weekly`=opus-5 / `report-daily`=sonnet-5 とモデルが混在するため、単価は**応答が名乗った実効モデル**
+用途別モデル割当（計画 `ADR-0014` / MSP/IADR-0112。#1295 で 5.5 系へ）で `trade-decision`=sonnet-5-5 /
+`trade-decision-screening`=haiku-5-5 / `report-monthly`・`report-weekly`=opus-5-5 / `report-daily`=sonnet-5-5
+とモデルが混在するため、単価は**応答が名乗った実効モデル**
 （`CompletionApiResponse.Model`）で引く。要求側の希望モデルは根拠にしない（ゲートウェイは越境ルーティング
 〈ADR-0010〉で別モデルへ着地し得る）。
 
 | モデル | 公開単価 $/1M（入力/出力） | 投入値 ¥/1k（入力/出力） | 用途 |
 | --- | --- | --- | --- |
-| `claude-fable-5` | 10 / 50 | `1.637` / `8.186` | `report-monthly`（＝表の最大単価） |
-| `claude-opus-5` | 5 / 25 | `0.819` / `4.093` | `report-weekly`・ゲートウェイ既定 |
+| `claude-fable-5` | 10 / 50 | `1.637` / `8.186` | 使用しない（禁止モデル。＝表の最大単価） |
+| `claude-opus-5-5` | 4 / 20 | `0.655` / `3.274` | `report-monthly`・`report-weekly` |
+| `claude-sonnet-5-5` | 2 / 10 | `0.327` / `1.637` | **`trade-decision`**・`report-daily`（週報・月報の第 2 候補） |
+| `claude-haiku-5-5`（入力 100,000 トークン以下） | 0.10 / 0.50 | `0.0164` / `0.0819` | **`trade-decision-screening`**（日報の第 2 候補） |
+| `claude-haiku-5-5`（入力 100,000 トークン超） | 0.50 / 2.50 | `0.0819` / `0.409` | 同上（第 2 段） |
 | `claude-opus-4-8` | 5 / 25 | `0.819` / `4.093` | ADR-0011 が意図する固定先 |
-| `claude-sonnet-5` | 2 / 10（恒久化確認済み・2026-08-28。#243） | `0.327` / `1.637` | **`trade-decision`**・`report-daily` |
-| `claude-haiku-4-5` | 1 / 5 | `0.164` / `0.819` | （基盤の `diagram-coding`） |
+| `claude-opus-5`（移行期間のみ） | 5 / 25 | `0.819` / `4.093` | 旧 `report-monthly`・`report-weekly` |
+| `claude-sonnet-5`（移行期間のみ） | 2 / 10（恒久化確認済み・2026-08-28。#243） | `0.327` / `1.637` | 旧 `trade-decision`・`report-daily` |
+| `claude-haiku-4-5`（移行期間のみ） | 1 / 5 | `0.164` / `0.819` | 旧 `trade-decision-screening` |
 
-USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同一系列・IADR-0107）、小数第 3 位で四捨五入。
+5.5 系の単価は提供元の公表値（確認日 2026-10-10。#1295 / IADR-0524。利用者裁定は planning#783）。
+**移行期間のみ**の 3 行は、MSP ゲートウェイが 5.5 系へ切り替わるまで応答が直前世代を名乗るために残す（割当表も同じ期間だけ
+直前世代を受ける）。MSP の切り替えと PoC の確認の後に外す（[#1296](https://github.com/endazon/ai-stock-trading/issues/1296)）。
+
+**プロンプト長の 2 段（`claude-haiku-5-5`）**: 入力トークン（キャッシュ読み書きを含む合計）が 100,000 を超える要求は単価が 5 倍になる。
+行に `__LongContextThresholdTokens`（`100000`）・`__LongContextInputPer1kTokens`・`__LongContextOutputPer1kTokens` を足すと、
+`LlmPriceTable` が**計上時の入力トークン数**で段を引き分ける（閾値を超えたら第 2 段）。第 2 段のキーの一部だけ書く・解析できない
+値を書くと、その行は表に載らず未知モデル（最大単価）として計上される（長い要求を安い段で通さない）。
+
+USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同一系列・IADR-0107）、小数第 3 位で四捨五入
+（1 円/1k を下回る単価は有効数字 3 桁。`claude-haiku-5-5` の `0.0164` は小数第 3 位で丸めると過小側の `0.016` になる）。
 例: `0.002×163.71=0.32742 ≒ 0.327`。
 
 **fail-safe（IADR-0122 決定3・「安全側 = 0」ではない）**: 表に無いモデル・モデル名なしは**表の最大単価**
@@ -622,7 +639,7 @@ USD→JPY 換算は **163.71**（システムの為替源 FRED `DEXJPUS` と同�
 表そのものが空なら従来キー `LlmPricing__InputPer1kTokens` / `__OutputPer1kTokens`（global 単一ペア・未設定 0）へ倒れる
 ＝ per-model を持たない既存デプロイは従来どおり動く。
 
-**恒久値ではない**: 為替も公開単価も変動する。`claude-sonnet-5` の $2/$10 は当初「2026-08-31 までの導入価格」
+**恒久値ではない**: 為替も公開単価も変動する。旧割当 `claude-sonnet-5` の $2/$10 は当初「2026-08-31 までの導入価格」
 だったが、**Anthropic が 2026-08-28 の確認時点でこれを恒久価格にすると公式発表しており**（2026-09-01 予定
 だった $3/$15 への改定は行われない。出典: [Anthropic 公式 Pricing ドキュメント](https://platform.claude.com/docs/en/about-claude/pricing)
 の注記 `claude-sonnet-5-introductory-pricing`）、**本表の値は変更不要**である（[#243](https://github.com/endazon/ai-stock-trading/issues/243)）。

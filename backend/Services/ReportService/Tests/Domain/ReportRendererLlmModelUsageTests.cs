@@ -33,12 +33,12 @@ public class ReportRendererLlmModelUsageTests
     public void 第1候補で生成された月報は発火なしと明記する()
     {
         var md = ReportRenderer.RenderMarkdown(
-            View(new LlmModelUsage("report-monthly", "claude-opus-5", "claude-opus-5", "Primary")));
+            View(new LlmModelUsage("report-monthly", "claude-opus-5-5", "claude-opus-5-5", "Primary")));
 
         md.Should().Contain("### 散文生成に使用した LLM");
         md.Should().Contain("- 用途: report-monthly");
-        md.Should().Contain("- 割当（第 1 候補）: claude-opus-5");
-        md.Should().Contain("- 実際に使用したモデル: claude-opus-5");
+        md.Should().Contain("- 割当（第 1 候補）: claude-opus-5-5");
+        md.Should().Contain("- 実際に使用したモデル: claude-opus-5-5");
         md.Should().Contain("フォールバック: 発火なし（第 1 候補で生成）");
     }
 
@@ -48,9 +48,9 @@ public class ReportRendererLlmModelUsageTests
     public void 第2候補で生成された月報は発火ありと原因つきで明記する()
     {
         var md = ReportRenderer.RenderMarkdown(
-            View(new LlmModelUsage("report-monthly", "claude-opus-5", "claude-sonnet-5", "FallbackFired")));
+            View(new LlmModelUsage("report-monthly", "claude-opus-5-5", "claude-sonnet-5-5", "FallbackFired")));
 
-        md.Should().Contain("- 実際に使用したモデル: claude-sonnet-5");
+        md.Should().Contain("- 実際に使用したモデル: claude-sonnet-5-5");
         md.Should().Contain("フォールバック: 発火あり（FallbackFired）");
         md.Should().Contain("品質が第 1 候補と同一である保証はありません");
         md.Should().NotContain("発火なし", "第 2 候補で書かれた事実を打ち消す文言を同時に出さない");
@@ -88,7 +88,7 @@ public class ReportRendererLlmModelUsageTests
     public void 実効モデルが不明なら不明と明記する()
     {
         var md = ReportRenderer.RenderMarkdown(
-            View(new LlmModelUsage("report-weekly", "claude-opus-5", null, "FallbackFired"), ReportKind.Weekly));
+            View(new LlmModelUsage("report-weekly", "claude-opus-5-5", null, "FallbackFired"), ReportKind.Weekly));
 
         md.Should().Contain("- 実際に使用したモデル: （不明）");
     }

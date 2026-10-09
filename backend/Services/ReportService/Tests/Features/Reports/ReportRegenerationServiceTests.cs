@@ -852,12 +852,12 @@ public class ReportRegenerationServiceTests
         var at = TueMorning;
         var with = LlmUsageAggregator.Aggregate(new LlmUsageRecord(
         [
-            new LlmCostIncurred(5m, at, LlmPurposes.ReportRegeneration, "claude-opus-5"),
-            new LlmCostIncurred(7m, at, "REPORT-REGENERATION", "claude-sonnet-5"),
-            new LlmCostIncurred(100m, at, LlmPurposes.ReportDaily, "claude-sonnet-5"),
+            new LlmCostIncurred(5m, at, LlmPurposes.ReportRegeneration, "claude-opus-5-5"),
+            new LlmCostIncurred(7m, at, "REPORT-REGENERATION", "claude-sonnet-5-5"),
+            new LlmCostIncurred(100m, at, LlmPurposes.ReportDaily, "claude-sonnet-5-5"),
         ], [], []));
         var without = LlmUsageAggregator.Aggregate(new LlmUsageRecord(
-            [new LlmCostIncurred(100m, at, LlmPurposes.ReportDaily, "claude-sonnet-5")], [], []));
+            [new LlmCostIncurred(100m, at, LlmPurposes.ReportDaily, "claude-sonnet-5-5")], [], []));
 
         with.ReportRegeneration.Should().Be(new PolicyRevisionUsage(2, 12m));
         with.TradeDecisionCostJpy.Should().Be(0m);

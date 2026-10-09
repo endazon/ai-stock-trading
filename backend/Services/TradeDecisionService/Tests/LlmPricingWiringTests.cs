@@ -21,7 +21,8 @@ namespace TradeDecisionService.Tests;
 public class LlmPricingWiringTests
 {
     // ADR-0013, IADR-0129, #354: MassTransit の ITestHarness に代えて Wolverine.Tracking で発行を捕捉する。
-    private static async Task<decimal> ReportAsync(Factory factory, string? model)
+    private static async Task<decimal> ReportAsync(
+        Factory factory, string? model, int inputTokens = 1000, int outputTokens = 2000, string purpose = LlmPurposes.TradeDecision)
     {
         _ = factory.CreateClient();
 
@@ -29,41 +30,63 @@ public class LlmPricingWiringTests
         {
             using var scope = factory.Services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<ILlmUsageReporter>()
-                .ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, model));
+                .ReportAsync(new LlmUsage(purpose, inputTokens, outputTokens, model));
         });
 
         return session.Sent.MessagesOf<LlmCostIncurred>().Single().Amount;
     }
 
-    // 基準1/2（#303）: 用途別割当で trade-decision=claude-sonnet-5。構成の単価がそのまま計上額になる。
+    // 基準1/2（#303）: 用途別割当で trade-decision=claude-sonnet-5-5。構成の単価がそのまま計上額になる。
     [Fact]
     public async Task モデル別単価が計上額に反映される()
     {
         using var factory = new Factory(new Dictionary<string, string?>
         {
-            ["LlmPricing:PerModel:claude-sonnet-5:InputPer1kTokens"] = "0.327",
-            ["LlmPricing:PerModel:claude-sonnet-5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:PerModel:claude-sonnet-5-5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude-sonnet-5-5:OutputPer1kTokens"] = "1.637",
             ["LlmPricing:PerModel:claude-fable-5:InputPer1kTokens"] = "1.637",
             ["LlmPricing:PerModel:claude-fable-5:OutputPer1kTokens"] = "8.186",
         });
 
-        (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(3.601m);
+        (await ReportAsync(factory, "claude-sonnet-5-5")).Should().Be(3.601m);
     }
 
-    // #817: env 名 `LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens`（シェル識別子）が構成キー
-    // `LlmPricing:PerModel:claude_sonnet_5:*` になり、応答が名乗る `claude-sonnet-5` の計上額へ届く。
+    // #817: env 名 `LlmPricing__PerModel__claude_sonnet_5_5__InputPer1kTokens`（シェル識別子）が構成キー
+    // `LlmPricing:PerModel:claude_sonnet_5_5:*` になり、応答が名乗る `claude-sonnet-5-5` の計上額へ届く。
     [Fact]
     public async Task アンダースコア形のモデル別単価が計上額に反映される()
     {
         using var factory = new Factory(new Dictionary<string, string?>
         {
-            ["LlmPricing:PerModel:claude_sonnet_5:InputPer1kTokens"] = "0.327",
-            ["LlmPricing:PerModel:claude_sonnet_5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
             ["LlmPricing:PerModel:claude_fable_5:InputPer1kTokens"] = "1.637",
             ["LlmPricing:PerModel:claude_fable_5:OutputPer1kTokens"] = "8.186",
         });
 
-        (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(3.601m);
+        (await ReportAsync(factory, "claude-sonnet-5-5")).Should().Be(3.601m);
+    }
+
+    // #1295, IADR-0524: プロンプト長の 2 段（claude-haiku-5-5）。構成の第 2 段キー（env 名と同じアンダースコア形）が
+    // 計上へ届き、入力 100,000 トークン以下は第 1 段、超は第 2 段で計上される（要求ごとに決まる）。
+    [Theory]
+    [InlineData(100_000, 1_000, 1.6400 + 0.0819)]   // 100 × 0.0164 + 1 × 0.0819
+    [InlineData(100_001, 1_000, 8.190 + 0.409)]     // 100.001 × 0.0819 + 1 × 0.409（端数は下で丸めて比べる）
+    public async Task プロンプト長の2段の単価が入力トークン数で引き分けられて計上される(int inputTokens, int outputTokens, double expected)
+    {
+        using var factory = new Factory(new Dictionary<string, string?>
+        {
+            ["LlmPricing:PerModel:claude_haiku_5_5:InputPer1kTokens"] = "0.0164",
+            ["LlmPricing:PerModel:claude_haiku_5_5:OutputPer1kTokens"] = "0.0819",
+            ["LlmPricing:PerModel:claude_haiku_5_5:LongContextThresholdTokens"] = "100000",
+            ["LlmPricing:PerModel:claude_haiku_5_5:LongContextInputPer1kTokens"] = "0.0819",
+            ["LlmPricing:PerModel:claude_haiku_5_5:LongContextOutputPer1kTokens"] = "0.409",
+        });
+
+        var amount = await ReportAsync(
+            factory, LlmAssignments.Haiku55, inputTokens, outputTokens, LlmPurposes.TradeDecisionScreening);
+
+        decimal.Round(amount, 3).Should().Be(decimal.Round((decimal)expected, 3));
     }
 
     // #817 fail-loud: ゲートウェイが構成されているのに単価が実質 0（表が空・従来キーも無い）なら起動時に警告する。
@@ -90,8 +113,8 @@ public class LlmPricingWiringTests
         using var factory = new Factory(new Dictionary<string, string?>
         {
             ["LlmGateway:BaseUrl"] = "http://llmgateway.invalid",
-            ["LlmPricing:PerModel:claude_sonnet_5:InputPer1kTokens"] = "0.327",
-            ["LlmPricing:PerModel:claude_sonnet_5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
         }, logs);
 
         _ = factory.CreateClient();
@@ -137,8 +160,8 @@ public class LlmPricingWiringTests
             ? new Dictionary<string, string?>
             {
                 ["LlmGateway:BaseUrl"] = "http://llmgateway.invalid",
-                ["LlmPricing:PerModel:claude_sonnet_5:InputPer1kTokens"] = "0.327",
-                ["LlmPricing:PerModel:claude_sonnet_5:OutputPer1kTokens"] = "1.637",
+                ["LlmPricing:PerModel:claude_sonnet_5_5:InputPer1kTokens"] = "0.327",
+                ["LlmPricing:PerModel:claude_sonnet_5_5:OutputPer1kTokens"] = "1.637",
             }
             : new Dictionary<string, string?>();
         using var factory = new Factory(settings, logs, environment: "Production");
@@ -155,8 +178,8 @@ public class LlmPricingWiringTests
     {
         using var factory = new Factory(new Dictionary<string, string?>
         {
-            ["LlmPricing:PerModel:claude-sonnet-5:InputPer1kTokens"] = "0.327",
-            ["LlmPricing:PerModel:claude-sonnet-5:OutputPer1kTokens"] = "1.637",
+            ["LlmPricing:PerModel:claude-sonnet-5-5:InputPer1kTokens"] = "0.327",
+            ["LlmPricing:PerModel:claude-sonnet-5-5:OutputPer1kTokens"] = "1.637",
             ["LlmPricing:PerModel:claude-fable-5:InputPer1kTokens"] = "1.637",
             ["LlmPricing:PerModel:claude-fable-5:OutputPer1kTokens"] = "8.186",
         });
@@ -174,7 +197,7 @@ public class LlmPricingWiringTests
             ["LlmPricing:OutputPer1kTokens"] = "4.093",
         });
 
-        (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(9.005m);
+        (await ReportAsync(factory, "claude-sonnet-5-5")).Should().Be(9.005m);
     }
 
     // 本番既定（values.yaml に単価を置かない・IADR-0114 決定6 / IADR-0122 決定4）は従来どおり ¥0 計上＝挙動不変。
@@ -184,7 +207,7 @@ public class LlmPricingWiringTests
     {
         using var factory = new Factory();
 
-        (await ReportAsync(factory, "claude-sonnet-5")).Should().Be(0m);
+        (await ReportAsync(factory, "claude-sonnet-5-5")).Should().Be(0m);
     }
 
     private sealed class CapturingLoggerProvider : ILoggerProvider

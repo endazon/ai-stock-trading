@@ -195,9 +195,12 @@ static TimeSpan ParseTimeout(string? value) =>
 // #303, IADR-0122 決定2: モデル別単価表を構成から組み立てる。単価の解析（InvariantCulture）と fail-safe
 //（未知モデル＝表の最大単価 / 表が空＝従来キー / 何も無ければ 0）は LlmPriceTable に閉じている。
 static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
-    LlmPriceTable.From(
+    LlmPriceTable.FromRows(
         cfg.GetSection("LlmPricing:PerModel").GetChildren()
-            .Select(m => (Model: m.Key, Input: m["InputPer1kTokens"], Output: m["OutputPer1kTokens"])),
+            // #1295, IADR-0524: 任意の第 2 段（プロンプト長。claude-haiku-5-5 の 100,000 トークン超）も同じ行から読む。
+            .Select(m => new LlmPriceRow(
+                m.Key, m["InputPer1kTokens"], m["OutputPer1kTokens"],
+                m["LongContextThresholdTokens"], m["LongContextInputPer1kTokens"], m["LongContextOutputPer1kTokens"])),
         cfg["LlmPricing:InputPer1kTokens"],
         cfg["LlmPricing:OutputPer1kTokens"]);
 

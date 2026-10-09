@@ -72,7 +72,7 @@ public class LlmPurposeWiringTests
 
         handler.Purposes.Should().HaveCount(2);
         // スタブは purpose から割当モデルを解決して名乗る（実ゲートウェイと同じ振る舞い）。
-        handler.RespondedModels.Should().Equal(LlmAssignments.Haiku45, LlmAssignments.Sonnet5);
+        handler.RespondedModels.Should().Equal(LlmAssignments.Haiku55, LlmAssignments.Sonnet55);
     }
 
     // NFR（費用）, #347, IADR-0218: 費用計上も層別の用途で積まれる。
@@ -122,7 +122,7 @@ public class LlmPurposeWiringTests
             Purposes.Add(purpose);
 
             // 用途エントリがあれば第 1 候補、無ければ DefaultModel（＝無音の格下げ）を名乗る。
-            var model = LlmAssignments.For(purpose)?.PrimaryModel ?? LlmAssignments.Opus5;
+            var model = LlmAssignments.For(purpose)?.PrimaryModel ?? LlmAssignments.Opus55;
             RespondedModels.Add(model);
 
             return new HttpResponseMessage(HttpStatusCode.OK)

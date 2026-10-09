@@ -699,11 +699,31 @@ jobs:
             || { echo "::error::values-local で WithdrawalEvaluation__Enabled=true が描画されない（撤退基準が発火しない）。"; exit 1; }
           # #279 / IADR-0114 決定6: LLM 単価。未設定（0）だと毎回 ¥0 計上で月次費用上限が構造的に発火しない。
           # #303 / IADR-0122: 単価は**モデル別**。用途別モデル割当（ADR-0014）に追随できないと計上が実態とずれる
-          # （global 単一ペアの opus 基準では trade-decision＝sonnet-5 が約 2.5 倍の過大計上だった）。
-          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens' | grep -q 'value: "0.327"' \
-            || { echo "::error::values-local で claude-sonnet-5 の入力単価 0.327 が描画されない（trade-decision が過大計上のまま）。"; exit 1; }
-          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens' | grep -q 'value: "1.637"' \
-            || { echo "::error::values-local で claude-sonnet-5 の出力単価 1.637 が描画されない（trade-decision が過大計上のまま）。"; exit 1; }
+          # （global 単一ペアの opus 基準では trade-decision＝sonnet が約 2.5 倍の過大計上だった）。
+          # #1295 / IADR-0524: 割当は 5.5 系（opus-5-5 / sonnet-5-5 / haiku-5-5）。旧世代の行は移行期間だけ残す（#1296 で撤去）ため、
+          # 検査は 5.5 系の行に向ける（旧行だけ残って新行が落ちると、割当どおりの応答が未知モデル＝最大単価で過大計上になる）。
+          # 単価表はサービスごとに独立して構成される（IADR-0296）ため、report-service と trade-decision-service の
+          # **両方の Deployment** で 5.5 系の全行を検査する（片方の表だけ欠けても全体 grep では緑になる）。
+          # haiku-5-5 はプロンプト長で 2 段。第 2 段の閾値・入力・出力の 3 行が落ちると 100,000 トークン超の要求が
+          # 第 1 段（1/5 の単価）で過小計上になるため、第 1 段と同じく全行を固定する。
+          for svc in report-service trade-decision-service; do
+            dep="$(printf '%s' "$out" | awk -v svc="$svc" 'BEGIN{RS="---"} /kind: Deployment/ && index($0, "\n  name: " svc "\n")')"
+            [ -n "$dep" ] || { echo "::error::values-local に $svc の Deployment が描画されない（単価の検査ができない）。"; exit 1; }
+            for row in \
+              'claude_opus_5_5__InputPer1kTokens=0.655' \
+              'claude_opus_5_5__OutputPer1kTokens=3.274' \
+              'claude_sonnet_5_5__InputPer1kTokens=0.327' \
+              'claude_sonnet_5_5__OutputPer1kTokens=1.637' \
+              'claude_haiku_5_5__InputPer1kTokens=0.0164' \
+              'claude_haiku_5_5__OutputPer1kTokens=0.0819' \
+              'claude_haiku_5_5__LongContextThresholdTokens=100000' \
+              'claude_haiku_5_5__LongContextInputPer1kTokens=0.0819' \
+              'claude_haiku_5_5__LongContextOutputPer1kTokens=0.409'; do
+              key="${row%%=*}"; val="${row#*=}"
+              printf '%s' "$dep" | grep -A1 -E "^ *- name: LlmPricing__PerModel__${key}\$" | grep -q "value: \"${val}\"" \
+                || { echo "::error::values-local の $svc で LlmPricing__PerModel__${key}=${val} が描画されない（5.5 系の計上が未知モデル＝最大単価か第 1 段へずれる）。"; exit 1; }
+            done
+          done
           # 未知モデルの倒し先＝表の最大単価（fable-5）。これが消えると未知モデルが過小計上になる（IADR-0122 決定3）。
           printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens' | grep -q 'value: "8.186"' \
             || { echo "::error::values-local で claude-fable-5 の出力単価 8.186 が描画されない（未知モデルの倒し先が下がる）。"; exit 1; }
@@ -743,10 +763,10 @@ jobs:
           need "Stage 0 評価銘柄（AAPL）" 'name: Backtest__Stage0__Symbols__0__Symbol'
           # 🔴 過去データ源は空のまま（ADR-0023 決定5 の未確認 2 点・blocked A-3）。実データ源を開けていないこと。
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__Provider' | grep -q 'value: ""'             || { echo "::error::values-local の Backtest__BarData__Provider が空でない（ADR-0023 決定5 の確認前に実データ源を開けた）。"; exit 1; }
-          # カットオフ日（ADR-0037 決定2 の登録値）は駆動側・記録側で同値であること（食い違うと RecordingMismatch）。
-          cutoffs="$(printf '%s' "$out" | grep -A1 'LlmTrainingCutoff' | grep -c 'value: "2026-01-31"')"
+          # カットオフ日（ADR-0037 決定2 の写し方。#1295 で 5.5 系の 2026-06-30）は駆動側・記録側で同値であること（食い違うと RecordingMismatch）。
+          cutoffs="$(printf '%s' "$out" | grep -A1 'LlmTrainingCutoff' | grep -c 'value: "2026-06-30"')"
           if [ "$cutoffs" -ne 2 ]; then
-            echo "::error::values-local の学習カットオフ日 2026-01-31 が 2 件でない（実測 $cutoffs 件）。駆動側と記録側で同値である必要がある（#632）。"; exit 1
+            echo "::error::values-local の学習カットオフ日 2026-06-30 が 2 件でない（実測 $cutoffs 件）。駆動側と記録側で同値である必要がある（#632 / #1295）。"; exit 1
           fi
           echo "ok: values-local は ①②③＋Discord＋価格文脈＋実DD 供給＋公式情報源＋ニュース源＋Stage 0 駆動を有効化し、実弾/危険既定は OFF のまま"
       # #736 / IADR-0324: s2s 発信者（ServiceAuth__ClientId を持つ）の token エンドポイントは global.authAuthority から

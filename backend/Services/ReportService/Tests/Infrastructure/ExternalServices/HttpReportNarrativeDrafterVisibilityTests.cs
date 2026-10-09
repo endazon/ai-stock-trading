@@ -45,9 +45,9 @@ public class HttpReportNarrativeDrafterVisibilityTests
     // ---- ①報告書メタ: 実効モデルを記録する ---------------------------------------------------
 
     [Theory]
-    [InlineData(ReportKind.Monthly, "report-monthly", "claude-opus-5")]
-    [InlineData(ReportKind.Weekly, "report-weekly", "claude-opus-5")]
-    [InlineData(ReportKind.Daily, "report-daily", "claude-sonnet-5")]
+    [InlineData(ReportKind.Monthly, "report-monthly", "claude-opus-5-5")]
+    [InlineData(ReportKind.Weekly, "report-weekly", "claude-opus-5-5")]
+    [InlineData(ReportKind.Daily, "report-daily", "claude-sonnet-5-5")]
     public async Task 第1候補で生成されたらメタ情報に_Primary_として記録する(
         ReportKind kind, string expectedPurpose, string pin)
     {
@@ -62,9 +62,9 @@ public class HttpReportNarrativeDrafterVisibilityTests
 
     // ADR-0017 決定4-(1): **フォールバック発火時はその事実も記録する。**
     [Theory]
-    [InlineData(ReportKind.Monthly, "claude-opus-5", "claude-sonnet-5")]
-    [InlineData(ReportKind.Weekly, "claude-opus-5", "claude-sonnet-5")]
-    [InlineData(ReportKind.Daily, "claude-sonnet-5", "claude-haiku-4-5")]
+    [InlineData(ReportKind.Monthly, "claude-opus-5-5", "claude-sonnet-5-5")]
+    [InlineData(ReportKind.Weekly, "claude-opus-5-5", "claude-sonnet-5-5")]
+    [InlineData(ReportKind.Daily, "claude-sonnet-5-5", "claude-haiku-5-5")]
     public async Task 第2候補で生成されたらメタ情報に_FallbackFired_として記録する(
         ReportKind kind, string pin, string fallback)
     {
@@ -96,13 +96,13 @@ public class HttpReportNarrativeDrafterVisibilityTests
     {
         var governance = new RecordingGovernanceReporter();
 
-        await Drafter(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5")), governance: governance)
+        await Drafter(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5-5")), governance: governance)
             .DraftAsync(Ctx(ReportKind.Monthly));
 
         var fired = governance.Fired.Should().ContainSingle().Subject;
         fired.Purpose.Should().Be("report-monthly");
         fired.Evaluation.Outcome.Should().Be(LlmAssignmentOutcome.FallbackFired);
-        fired.Evaluation.ExpectedModel.Should().Be("claude-opus-5");
+        fired.Evaluation.ExpectedModel.Should().Be("claude-opus-5-5");
     }
 
     // 基盤で用途エントリが未登録・ZDR 除外だと LlmRouter は無音で DefaultModel へ落ちる（platform IADR-0102）。
@@ -127,7 +127,7 @@ public class HttpReportNarrativeDrafterVisibilityTests
     {
         var governance = new RecordingGovernanceReporter();
 
-        await Drafter(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5")), governance: governance)
+        await Drafter(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5-5")), governance: governance)
             .DraftAsync(Ctx(ReportKind.Daily));
 
         governance.Fired.Should().BeEmpty();
@@ -155,7 +155,7 @@ public class HttpReportNarrativeDrafterVisibilityTests
     [Fact]
     public async Task 要求本文に禁止モデルを載せない()
     {
-        var handler = new CapturingHandler(Body("claude-sonnet-5"));
+        var handler = new CapturingHandler(Body("claude-sonnet-5-5"));
 
         await Drafter(handler).DraftAsync(Ctx(ReportKind.Daily));
 
@@ -172,14 +172,14 @@ public class HttpReportNarrativeDrafterVisibilityTests
     {
         var usage = new RecordingUsageReporter();
 
-        await Drafter(new StubHandler(HttpStatusCode.OK, Body("claude-opus-5")), usage).DraftAsync(Ctx(kind));
+        await Drafter(new StubHandler(HttpStatusCode.OK, Body("claude-opus-5-5")), usage).DraftAsync(Ctx(kind));
 
         var reported = usage.Calls.Should().ContainSingle().Subject;
         reported.Purpose.Should().Be(expectedPurpose);
         reported.InputTokens.Should().Be(1200);
         reported.OutputTokens.Should().Be(350);
         // IADR-0122 決定1: 単価解決の根拠は**応答が名乗った実効モデル**である。
-        reported.Model.Should().Be("claude-opus-5");
+        reported.Model.Should().Be("claude-opus-5-5");
         // 🔴 用途は上限の対象外側でなければならない（同じカウンタに積むと日報確定が止まる連鎖が生じる）。
         LlmCostScope.IsGoverned(reported.Purpose).Should().BeFalse();
     }
@@ -202,7 +202,7 @@ public class HttpReportNarrativeDrafterVisibilityTests
     public async Task 費用計測の失敗は散文生成を壊さない()
     {
         var drafter = new HttpReportNarrativeDrafter(
-            new HttpClient(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5")))
+            new HttpClient(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5-5")))
             {
                 BaseAddress = new Uri("http://llm-gateway"),
             },
@@ -218,7 +218,7 @@ public class HttpReportNarrativeDrafterVisibilityTests
     public async Task 発火の記録に失敗しても散文生成は壊さない()
     {
         var drafter = new HttpReportNarrativeDrafter(
-            new HttpClient(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5")))
+            new HttpClient(new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5-5")))
             {
                 BaseAddress = new Uri("http://llm-gateway"),
             },
@@ -258,11 +258,11 @@ public class HttpReportNarrativeDrafterVisibilityTests
     public async Task 応答本文が空でもモデルを名乗っていればメタ情報は残す()
     {
         var draft = await Drafter(
-            new StubHandler(HttpStatusCode.OK, """{"text":"   ","model":"claude-sonnet-5","sent":true}"""))
+            new StubHandler(HttpStatusCode.OK, """{"text":"   ","model":"claude-sonnet-5-5","sent":true}"""))
             .DraftAsync(Ctx(ReportKind.Daily));
 
         draft.Text.Should().Be(ReportNarrativeDefaults.PlaceholderText);
-        draft.ModelUsage!.EffectiveModel.Should().Be("claude-sonnet-5");
+        draft.ModelUsage!.EffectiveModel.Should().Be("claude-sonnet-5-5");
         draft.ModelUsage.IsPrimary.Should().BeTrue("日報の第 1 候補どおりに応答している");
     }
 

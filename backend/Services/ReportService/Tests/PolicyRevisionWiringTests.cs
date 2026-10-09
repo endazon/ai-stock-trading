@@ -204,7 +204,7 @@ public class PolicyRevisionWiringTests
             {
                 text = proposalText,
                 sent = true,
-                model = "claude-sonnet-5",
+                model = "claude-sonnet-5-5",
                 stopReason = "end_turn",
                 inputTokens = 10,
                 outputTokens = 20,

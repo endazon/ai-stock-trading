@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-10-08
+updated: 2026-10-10
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04, FR-05]
 adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014, ADR-0035]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, planning#783]
 -->
 
 
@@ -332,7 +332,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 
 ### 本番と同じ二段で記録し、両層の組で評価する（2026-10-07 の計画裁定・#1196）
 
-> 計画は取引判断の割当モデルを層別（一次スクリーニング＝`claude-haiku-4-5`・本判断＝`claude-sonnet-5`）とし、
+> 計画は取引判断の割当モデルを層別（一次スクリーニング＝`claude-haiku-4-5`・本判断＝`claude-sonnet-5`。2026-10-10 の利用者裁定で `claude-haiku-5-5`・`claude-sonnet-5-5` へ改めた）とし、
 > 「**Stage 0 は本番と同じ二段を通した判断を評価する。実弾解禁の必須ゲートは両層の組での Stage 0 の通過である**」と定めた。
 > 🔴 **本節の核心は 2 つ** —— 記録器が本番の二段の順序（一次で見送れば本判断を呼ばない）をそのまま通ること、
 > および **「一次を記録していない」を「一次を通過した」と読まない**こと（旧記録は評価不能。合格にも不合格にも数えない）。
@@ -347,6 +347,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | T-15-120 | 契約: 一次と両層の実効モデルは JSON 往復で落ちない／**一次の欄の無い旧 JSON は「一次を記録していない」へ復元され二段の記録へ倒れない**／ピンとの照合は用途ごと（層の取り違え・不明は不一致）／一次で見送った判断は一次だけで照合／一次と実効モデルが違えば戦略識別子が変わり、旧記録の戦略識別子は変わらない | `Stage0DecisionRecordTests.一次と両層の実効モデルは往復で落ちない` / `一次の無い旧記録はnullへ復元され二段の記録へ倒れない` / `両層の実効モデルは用途ごとのピンと照合される`（7 ケース） / `一次で見送った判断は一次の実効モデルだけで照合される` / `一次と両層の実効モデルが違えば戦略IDが変わる` / `監視銘柄を申告しない記録の戦略IDは変わらない`（既存・固定値） | 自動 |
 | T-15-121 | 見積りは判断時点ごとに一次 1 回を足し（判断時点 ×（一次 1 ＋ 多数決回数））、一次のトークン量と一次の層の単価で換算する／一次を数えない旧式の見積り額での承認は通らない | `Stage0RecordingBudgetTests.見積りは一次スクリーニングを判断時点ごとに1回ずつ一次の単価で含める` / `見積りは計画の式どおりに算出される`（改） / `Stage0DecisionRecorderTests.見積りは実行せずに取得できる`（改） / `未承認ならLLMを1回も呼ばない`（改） | 自動 |
 | T-15-122 | 🔴 実弾解禁の前提の一覧（起動時の停止の告知文。発注先の取引環境の告知文も同じ）に**両層の組での Stage 0 合格**が項目として並び、既存の前提は消えない／閂は未解禁のまま | `LiveTradingGateTests.live選択の告知は両層の組でのStage0合格を解禁前提に含む` / `MoomooBrokerOptionsTests.TrdEnv_に実弾を要求されたら起動時に停止する`（改） | 自動 |
+| T-15-124 | 🔴 両層の組は 5.5 系（一次 `claude-haiku-5-5`・本判断 `claude-sonnet-5-5`）。割当表が移行期間に受ける直前世代（旧組 `claude-haiku-4-5` ＋ `claude-sonnet-5`。片方の層だけ旧世代を含む）は**両層の照合で一致と読まない**——旧組の判断は「実効モデル不一致」として母集団から外れ、全件が旧組なら判定を組まない／実弾解禁の前提の告知文は 5.5 系の組を名乗り、旧組を名乗らない | `Stage0DecisionRecordTests.両層の実効モデルは用途ごとのピンと照合される`（旧組の 3 行）/ `Stage0ReplayEvaluationTests.実効モデルがピンと違う判断は母集団から外れ件数が載る`（旧組の 3 行）・`全件が旧組の記録なら判定を組まない_5_5系の組で再実施が要る` / `LiveTradingGateTests.live選択の告知は両層の組でのStage0合格を解禁前提に含む` | 自動 |
 
 **突然変異による証跡**（実装を壊して赤くなることを実測した。いずれも復元済み）:
 
