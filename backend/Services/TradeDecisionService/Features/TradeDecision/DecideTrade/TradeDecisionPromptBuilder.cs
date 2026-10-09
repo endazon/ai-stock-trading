@@ -177,6 +177,11 @@ public static class TradeDecisionPromptBuilder
 
     public const string WatchlistNotContainsSuffix = "は、この監視銘柄に含まれません。";
 
+    // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 2: 監視銘柄の外の保有銘柄（保有のみ）を出口専用で判断するときだけ、監視銘柄節の末尾に足す行。
+    // 選べるのは決済（保有の手仕舞い）か Hold だけであり、新規建て（買い増し・売り増し）を返してもシステムは発注しない。
+    public const string ExitOnlyLine =
+        "判断対象は監視銘柄の外にある保有銘柄です。この判断で選べるのは、保有の手仕舞い（ロング保有なら Sell、ショート保有なら Buy）か Hold だけです。買い増し・売り増し（新規建て）を返してもシステムは発注しません。手仕舞うかどうかは、方針の利確・撤退の基準と保有状況に従って判断してください。";
+
     // #1034, IADR-0440 決定 4: 表示する件数の上限と、1 銘柄の文字列の上限。監視銘柄は ADR-0043 の統制で実際には数件
     // （既定の組で 1 巡回に収まるのは 12 要求）だが、供給元（市場監視）は件数を拘束しないため、プロンプトの長さを上から抑える。
     // 所属の判定は上限と無関係に全件で行う（表示から落ちた銘柄を「含まれない」と書かない）。
@@ -568,6 +573,7 @@ public static class TradeDecisionPromptBuilder
         if (watchlist is null)
         {
             sb.AppendLine($"- {WatchlistUnknownLine}");
+            AppendExitOnly(sb, trigger);
             sb.AppendLine();
             return sb.ToString();
         }
@@ -599,8 +605,16 @@ public static class TradeDecisionPromptBuilder
             w.Market == trigger.Market && string.Equals(w.Symbol.Trim(), target, StringComparison.OrdinalIgnoreCase));
         sb.AppendLine(
             $"- 判断対象の {SymbolText(trigger)}（市場: {trigger.Market}）{(contained ? WatchlistContainsSuffix : WatchlistNotContainsSuffix)}");
+        AppendExitOnly(sb, trigger);
         sb.AppendLine();
         return sb.ToString();
+    }
+
+    // #1286, IADR-0521 決定 2: 出口専用の判断のときだけ 1 行足す（それ以外の判断のプロンプトは 1 文字も変えない）。
+    private static void AppendExitOnly(StringBuilder sb, DecisionTrigger trigger)
+    {
+        if (trigger.ExitOnly)
+            sb.AppendLine($"- {ExitOnlyLine}");
     }
 
     // 監視銘柄のデータブロックを閉じるフェンス（開きは参考情報と同じ Fence）。銘柄の文字列はバッククォートの 3 連を

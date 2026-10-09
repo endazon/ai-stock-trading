@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
+using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Infrastructure.Steps;
 using Wolverine;
 using Wolverine.Configuration;
@@ -179,6 +180,7 @@ public class ScheduledCycleRedeliveryTests
         IMarketCalendar? calendar = null,
         IHeldPositionProvider? held = null,
         ScheduledCycleRetryChain? retryChain = null,
+        IHeldSymbolsProvider? heldSymbols = null,
         params WatchedSymbol[] watchlist) =>
         Host.CreateDefaultBuilder()
             .ConfigureLogging(l =>
@@ -201,6 +203,10 @@ public class ScheduledCycleRedeliveryTests
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
                 opts.Services.AddSingleton<ITradeDecisionFailureReporter>(failures);
                 opts.Services.AddSingleton(budget);
+                // 🔴 FR-02, FR-04, #1286, IADR-0521: 定時の購読の必須依存（保有銘柄の供給口）。NoOp＝常に不明＝監視銘柄だけを判断する（従来の巡回と同じ）。
+                opts.Services.AddSingleton<IHeldSymbolsProvider>(heldSymbols ?? new NoOpHeldPositionProvider());
+                // #1286, IADR-0521 決定 4: 保有のみの銘柄の全注文の可否（定時の購読の必須依存）。NoOp＝不明＝外さない。
+                opts.Services.AddSingleton<IEntryBlockersProvider>(new NoOpEntryBlockersProvider());
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",
@@ -412,6 +418,37 @@ public class ScheduledCycleRedeliveryTests
             .Should().Be(expectWarning);
 
         await host.StopAsync();
+    }
+
+    // 🔴 T-10-2499, #1286, IADR-0521 決定 3: 前提と比べるのは判断対象の総数（監視銘柄 ＋ 監視銘柄の外の保有銘柄）である。
+    // 監視銘柄 1 件（前提 2 件以内）でも、保有のみの 2 件を足して 3 件になれば警告し、文言は内訳と consumer_timeout の制約を名指す。
+    // （監視銘柄の数だけと比べる変異 M4 では警告が出ず赤になる。）
+    [Fact]
+    public async Task T_10_2499_前提と比べるのは監視銘柄と保有のみの銘柄の総数である()
+    {
+        var logs = new CapturingLoggerProvider();
+        var failures = new RecordingTradeDecisionFailureReporter();
+        var budget = ScheduledCycleBudget.Derive(TimeSpan.FromSeconds(30), 2, 2);
+        using var host = await BuildAsync(
+            new InstantLlm(), budget, failures, logs: logs,
+            heldSymbols: new FixedHeldSymbols(Msft, Tsla), watchlist: [Aapl]);
+
+        await host.TrackActivityForTest()
+            .PublishMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+
+        var warning = logs.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("上限の前提", StringComparison.Ordinal))
+            .Subject.Message;
+        warning.Should().Contain("判断対象 3 件（監視銘柄 1 件 ＋ 監視銘柄の外の保有銘柄 2 件）");
+        warning.Should().Contain("consumer_timeout").And.NotContain("TradeCycle__MaxWatchedSymbols を見直して");
+
+        await host.StopAsync();
+    }
+
+    // #1286, IADR-0521: 保有中の銘柄を固定で返す供給口。
+    private sealed class FixedHeldSymbols(params WatchedSymbol[] symbols) : IHeldSymbolsProvider
+    {
+        public Task<IReadOnlyList<WatchedSymbol>?> GetHeldSymbolsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WatchedSymbol>?>(symbols);
     }
 
     // 試験の時刻を動かせる時計。

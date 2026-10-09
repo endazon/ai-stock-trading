@@ -42,6 +42,8 @@ public sealed class EntryBlockersService(
             symbol,
             market,
             EntryStateBlockers.Determine(TradeSide.Buy, settings, snapshot, stopOuts, decisionExits, lockedOut),
-            EntryStateBlockers.Determine(TradeSide.Sell, settings, snapshot, stopOuts, decisionExits, lockedOut));
+            EntryStateBlockers.Determine(TradeSide.Sell, settings, snapshot, stopOuts, decisionExits, lockedOut),
+            // #1286, IADR-0521 決定 4: 審査と同じ関数（OrderStateBlockers）で全注文の拒否理由を返す。
+            OrderStateBlockers.Determine(settings.Guard, symbol, market));
     }
 }

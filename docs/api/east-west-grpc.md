@@ -3,14 +3,14 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-10-06
+updated: 2026-10-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment]
 issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181]
 -->
 
@@ -167,7 +167,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181]
 | --- | --- | --- | --- |
 | `GetOpenPositions` | `GET /risk-controls/open-positions` | 取引判断・市場監視・報告書 | 不明／空列（損切り検知対象なし）／未供給 |
 | `GetWorkingEntryOrders` | `GET /risk-controls/working-entry-orders` | 取引判断 | 不明 |
-| `GetEntryBlockers` | `GET /risk-controls/entry-blockers?symbol&market`（銘柄単位の新規建ての可否。審査と同じ述語で、状態から確定する拒否理由を方向別に返す） | 取引判断 | 不明（LLM を呼ぶ。審査は変わらない） |
+| `GetEntryBlockers` | `GET /risk-controls/entry-blockers?symbol&market`（銘柄単位の新規建ての可否。審査と同じ述語で、状態から確定する拒否理由を方向別に返す。あわせて新規建て・決済を問わず全注文を拒否する理由〔市場の無効・禁止銘柄〕を `any_order` で返す） | 取引判断 | 不明（LLM を呼ぶ。審査は変わらない） |
 | `GetSizingContext` | `GET /risk-controls/sizing-context` | 取引判断 | 残枠 0 の安全既定 |
 | `GetStageGate` | `GET /risk-controls/stage-gate`（報告書は現段階だけ・ボットは §9 の項目も） | 報告書・Discord ボット | 未供給（ボットは §9） |
 | `GetFills` | `GET /risk-controls/fills?from&to` | 報告書 | 空列（数値 0 の報告書） |

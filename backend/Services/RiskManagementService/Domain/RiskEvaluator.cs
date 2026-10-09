@@ -158,17 +158,9 @@ public static class RiskEvaluator
             reasons.Add(stageReason);
         }
 
-        if (!settings.Guard.EnabledMarkets.Contains(intent.Market))
-        {
-            reasons.Add(RejectionReason.MarketDisabled);
-        }
-
-        // 禁止銘柄は銘柄コードと市場の両方で照合する（同一コードが別市場に存在し得るため）。
-        // 照合規則は BannedSymbol.Matches が単一情報源（市場は厳密一致・コードは表記差を吸収。IADR-0132 決定6）。
-        if (settings.Guard.BannedSymbols.Any(b => b.Matches(intent.Symbol, intent.Market)))
-        {
-            reasons.Add(RejectionReason.BannedSymbol);
-        }
+        // 市場の無効・禁止銘柄（全注文。決済にも効く）。述語は OrderStateBlockers が単一情報源（新規建ての可否の口の AnyOrder と同じ関数。
+        // #1286, IADR-0521 決定 4）。禁止銘柄の照合規則は BannedSymbol.Matches（市場は厳密一致・コードは表記差を吸収。IADR-0132 決定6）。
+        reasons.AddRange(OrderStateBlockers.Determine(settings.Guard, intent.Symbol, intent.Market));
 
         // FR-19, #332, #375, IADR-0132 決定5, ADR-0021 決定4-1: 差金決済防止（同一銘柄の同日再エントリー禁止）は
         // **現物**に限り、かつ**適用範囲が口座種別に依存する**。

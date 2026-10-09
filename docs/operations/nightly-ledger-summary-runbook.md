@@ -4,13 +4,13 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-09-29
-updated: 2026-10-07
+updated: 2026-10-09
 ---
 <!-- trace:
 ids: [NFR, FR-04, FR-10, FR-11, FR-09]
 adrs: []
-iadrs: [IADR-0019, IADR-0254, IADR-0287, IADR-0452, IADR-0462, IADR-0463, IADR-0478, IADR-0218, IADR-0483, IADR-0495, IADR-0500]
-specs: [20260929_1092_nightly-ledger-summary, 20260929_nightly-summary-gap-until-now, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip]
+iadrs: [IADR-0019, IADR-0254, IADR-0287, IADR-0452, IADR-0462, IADR-0463, IADR-0478, IADR-0218, IADR-0483, IADR-0495, IADR-0500, IADR-0521]
+specs: [20260929_1092_nightly-ledger-summary, 20260929_nightly-summary-gap-until-now, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1140_volume-flag-kline-rate-cost-summary, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment]
 issues: [#1092, #1102, #1113, #1140, #1111, #1176, #1174]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
@@ -74,7 +74,7 @@ issues: [#1092, #1102, #1113, #1140, #1111, #1176, #1174]
 | 9. ブローカの観測の欠け | 建玉の観測（10 分ごと）と稼働の観測（5 分ごと）が途切れた時間帯 | **照会できなかった時間帯の推定**である。Pod が止まっていた時間も欠けとして出る。照会の失敗の実測は 10 を見る（9 は 10 の記録が始まる前の夜と、Pod の停止を読み分けるために残す）。しきい値は `NIGHTLY_POSITIONS_GAP`（既定 20 分）と `NIGHTLY_AVAILABILITY_GAP`（既定 10 分）で変えられる。窓の両端も境界として数えるので、窓を夜より広く取ると、両端に長い欠けが出る。窓の途中（場中など）で走らせると、終端を現在時刻で切り、その旨の注意を 1 行出す（まだ来ていない時間を欠けとして出さない） |
 | 10. 照会の失敗の区間 | 建玉照会・保有照会が失敗していた区間（発生源別）と、その終わり方・失敗の種類 | **実測**である。照会の成功⇄失敗が変わったときだけ記録されるので、区間は「失敗の記録 → 同じ発生源の次の記録」で読む。終わり方は `回復（失敗 N 回）`・`再起動の後に成功（回復の時刻は不明）`（Pod の再起動で状態が消え、再起動の後の最初の成功で閉じた）・`再起動の後も失敗`・`窓の終端まで続いた（回復の記録なし）` の 4 通り。`窓の前から` は窓の頭より前に始まった失敗である。発生源は下の表 |
 | 10a. 状態の変化の件数 | 発生源 × 変化（前→後）の件数 | `Unknown→` の行は、そのサービスが起動した後の最初の観測である（再起動の回数の目安になる。照会しなかった発生源は出ない） |
-| 11. LLM を呼ぶ前の見送り | 理由 × 起点（`scheduled`＝定時・`price-movement`＝価格変動）ごとの件数と銘柄 | 理由は `DailyPolicyUnconfirmed`（確定済みの日報が無い）・`CurrentPriceUnavailable`（現在値が取れない・古い）・`FxRateUnresolved`（為替が決まらない）・`FxRateStaleNoHolding`（為替が古く保有も無い）・`EntryBlockedByRiskControls`（新規建てが審査で必ず拒否される。5 の拒否から移った分）・`EntryCapacityBelowMinimumNotional`（新規建てに使える金額の上限が最小の名目額〔equity の 1%〕に届かない）・`EntryCapacityBelowOneShare`（段階残枠と日次残枠の小さい方が現在値の 1 株に届かない。従来は判断後の見送りの数量 0〔`SizingZeroQuantity`〕に出ていた分）の 7 つ。1 回の見送りにつき 1 件なので、日報が未確定のまま夜が過ぎると「銘柄数 × 巡回数」になる |
+| 11. LLM を呼ぶ前の見送り | 理由 × 起点（`scheduled`＝定時・`price-movement`＝価格変動）ごとの件数と銘柄 | 理由は `DailyPolicyUnconfirmed`（確定済みの日報が無い）・`CurrentPriceUnavailable`（現在値が取れない・古い）・`FxRateUnresolved`（為替が決まらない）・`FxRateStaleNoHolding`（為替が古く保有も無い）・`EntryBlockedByRiskControls`（新規建てが審査で必ず拒否される。5 の拒否から移った分）・`EntryCapacityBelowMinimumNotional`（新規建てに使える金額の上限が最小の名目額〔equity の 1%〕に届かない）・`EntryCapacityBelowOneShare`（段階残枠と日次残枠の小さい方が現在値の 1 株に届かない。従来は判断後の見送りの数量 0〔`SizingZeroQuantity`〕に出ていた分）・`ExitOnlyWithoutHolding`（監視銘柄の外の保有銘柄を出口専用で判断しようとしたが保有が 0 または不明）の 8 つ。1 回の見送りにつき 1 件なので、日報が未確定のまま夜が過ぎると「銘柄数 × 巡回数」になる |
 | 12. LLM の費用 | 窓の中の LLM の費用（円）を、用途 × モデル別の件数と金額で出す。最後の行（`合計`）が窓の合計 | 台帳の `LlmCostIncurred` の金額である。月次上限の対象かどうかは用途で決まり（取引判断が対象。報告書の生成・情報収集・方針の改訂は対象外）、その判別は費用統制が行う。用途が `(不明)` の行は古い形の記録で、上限の対象に数えられている |
 | 13. 当月の LLM 費用と月次上限に対する使用率 | 当月の上限の対象の累計（`llm_governed_jpy`）・月次上限（`llm_limit_jpy`）・使用率（`usage`）・対象外の累計（`llm_uncapped_jpy`） | 月は費用統制と同じ **UTC の暦月**で、窓の終端（窓の途中で走らせたら現在時刻）の月である。累計はその月の頭から窓の終端までに計上された分。上限は設定サービスの前提条件の現在値で、読めなければ使用率は `不明（上限を読めない）` と出し、理由を標準エラーへ 1 行出して続ける。上限が 0 以下なら費用統制は統制しない（`上限 0 以下（費用統制は統制しない）`）。費用統制は使用率 80% で定時サイクルの間隔を延ばし、100% で取引判断を止める |
 | 14. 取引判断の最中の例外 | 起点（`scheduled`＝定時・`price-movement`＝価格変動）× 例外の型名ごとの件数と銘柄 | **再試行の後の最終の失敗だけ**の件数である（定時は銘柄ごとの失敗、価格変動は再試行〔2 秒・10 秒・30 秒〕を使い切った失敗。途中の再試行は数えない）。台帳には型名しか無く、メッセージとスタックは無い（秘密情報を含み得るため）。中身はログを見る。価格変動の失敗はメッセージの退避先（`<キュー>_error`）にも残る。出力は 12 の後・13 の前に出る（13 だけ別の DB を読むため）。0 行が平常 |

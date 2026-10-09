@@ -139,9 +139,10 @@ public class EntryBlockersEndpointTests
         var act = () => RiskReadWireMapping.ToProto(RejectionReason.StopOutStatusUnknown);
         act.Should().Throw<ArgumentOutOfRangeException>();
 
-        var empty = RiskReadWireMapping.ToProto(new EntryBlockersView("AAPL", Market.Japan, [], []));
+        var empty = RiskReadWireMapping.ToProto(new EntryBlockersView("AAPL", Market.Japan, [], [], []));
         empty.LongSide.Should().NotBeNull("空の入れ物は「確定する拒否は無い」（欠落＝不明と区別する）");
         empty.ShortSide.Should().NotBeNull();
+        empty.AnyOrder.Should().NotBeNull("#1286, IADR-0521 決定 4: 全注文の拒否も空の入れ物で送る（欠落＝不明と区別する）");
         empty.Market.Should().Be(Proto.Market.Japan, "日本は線上で 1（未指定の 0 ではない）");
     }
 }

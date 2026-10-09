@@ -17,7 +17,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 public sealed class HttpHeldPositionProvider(
     HttpClient httpClient,
     ILogger<HttpHeldPositionProvider> logger)
-    : IHeldPositionProvider
+    : IHeldPositionProvider, IHeldSymbolsProvider
 {
     // #865, IADR-0358: 実結線。RiskManagement:BaseUrl が設定されたときだけ生成されるため常に true。
     // 以後の「不明」は**照会したが答えが得られなかった**ことを意味し、判断側は新規建てを見送る。
@@ -65,6 +65,65 @@ public sealed class HttpHeldPositionProvider(
             logger.LogWarning(ex, "保有建玉の照会で例外。不明として扱います。");
             return null;
         }
+    }
+
+    // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 1: 定時サイクルの判断対象へ足す保有中の銘柄（同じ口・同じ fail-safe の区別）。
+    public async Task<IReadOnlyList<WatchedSymbol>?> GetHeldSymbolsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await httpClient
+                .GetAsync("/risk-controls/open-positions", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("保有銘柄の照会に失敗（{Status}）。このサイクルは監視銘柄だけを判断します。", (int)response.StatusCode);
+                return null;
+            }
+
+            var positions = await response.Content
+                .ReadFromJsonAsync<List<OpenPositionDto>>(cancellationToken)
+                .ConfigureAwait(false);
+            if (positions is null)
+            {
+                logger.LogWarning("保有銘柄の応答を解釈できません。このサイクルは監視銘柄だけを判断します。");
+                return null;
+            }
+
+            return InterpretHeldSymbols(positions, logger);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("保有銘柄の照会がタイムアウト。このサイクルは監視銘柄だけを判断します。");
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "保有銘柄の照会で例外。このサイクルは監視銘柄だけを判断します。");
+            return null;
+        }
+    }
+
+    // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 1: 応答の全行から保有中の (銘柄, 市場) を導く（輸送に依らず 1 つ。gRPC も呼ぶ）。
+    // 行の検証は InterpretPositions と同じ規則（#943・#854）—— 銘柄・市場・方向・数量の欠けた行、数量が正でない行が 1 つでもあれば
+    // 応答全体を解釈できない（null＝不明）。欠けた行を飛ばすと、その行の銘柄が黙って判断対象から落ちる。
+    internal static IReadOnlyList<WatchedSymbol>? InterpretHeldSymbols(
+        IReadOnlyList<OpenPositionDto> positions, ILogger logger)
+    {
+        if (positions.Any(p => p is null || string.IsNullOrEmpty(p.Symbol) || p.Market is null
+                               || p.Side is null || p.Quantity is not > 0))
+        {
+            logger.LogWarning("保有建玉の応答に銘柄・市場・方向・数量の欠けた、または数量が正でない行があります。保有銘柄は不明として扱います。");
+            return null;
+        }
+
+        // (銘柄, 市場) ごとに符号付きで合計し、0 でないものだけを残す（応答の順を保つ）。
+        return positions
+            .GroupBy(p => (Symbol: p.Symbol!, Market: p.Market!.Value))
+            .Where(g => g.Sum(p => p.Side == TradeSide.Buy ? p.Quantity!.Value : -p.Quantity!.Value) != 0)
+            .Select(g => new WatchedSymbol(g.Key.Symbol, g.Key.Market))
+            .ToList();
     }
 
     // NFR, IADR-0427 決定 5, #997: 応答の**解釈**（行の検証と一致行の畳み込み）。輸送に依らず 1 つであり、

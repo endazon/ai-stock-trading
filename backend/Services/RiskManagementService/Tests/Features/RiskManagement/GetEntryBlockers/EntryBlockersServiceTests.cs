@@ -19,13 +19,13 @@ public class EntryBlockersServiceTests
     // 2026-09-23 10:00 EDT（米国の取引日の中）。
     private static readonly DateTimeOffset Now = new(2026, 9, 23, 14, 0, 0, TimeSpan.Zero);
 
-    private sealed class Fixture(DateTimeOffset? now = null)
+    private sealed class Fixture(DateTimeOffset? now = null, RiskManagementSettings? settings = null)
     {
         public InMemoryPortfolioLedgerStore Ledger { get; } = new();
         public InMemoryKillSwitchStore KillSwitch { get; } = new();
         public InMemoryPauseStore Pause { get; } = new();
         public InMemoryLockoutStore Lockout { get; } = new();
-        public InMemoryRiskSettingsStore Settings { get; } = new();
+        public InMemoryRiskSettingsStore Settings { get; } = new(settings);
         public IClock Clock { get; } = new FakeClock(now ?? Now, TradingDay.Of(now ?? Now));
 
         private PortfolioSnapshotBuilder Snapshots() => new(
@@ -212,4 +212,30 @@ public class EntryBlockersServiceTests
     private static OrderIntent SellClose() =>
         new("AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash, BrokerProvider.InternalPaper,
             7, 99m, PositionEffect.Close, MarketOrder: true);
+
+    // 🔴 T-10-2498, FR-19, FR-10, ADR-0062, #1286, IADR-0521 決定 4: 全注文の拒否（AnyOrder）は審査と同じ述語（OrderStateBlockers）で返る。
+    // 市場の無効・禁止銘柄（コードの表記差を吸収・市場は厳密一致）。どちらにも当たらなければ空（不明ではない）。新規建ての方向の理由は変えない。
+    [Fact]
+    public void T_10_2498_全注文の拒否は市場の無効と禁止銘柄を審査と同じ述語で返す()
+    {
+        var settings = TradingDefaults.CreateSettings() with
+        {
+            Guard = TradingDefaults.CreateGuardSettings() with
+            {
+                EnabledMarkets = new HashSet<Market> { Market.UnitedStates },
+                BannedSymbols = [new BannedSymbol("TSLA", Market.UnitedStates, "試験", new DateOnly(2026, 10, 9))],
+            },
+        };
+        var blockers = new Fixture(settings: settings).Blockers();
+
+        blockers.Build("7203", Market.Japan).AnyOrder.Should().Equal(RejectionReason.MarketDisabled);
+        blockers.Build("tsla", Market.UnitedStates).AnyOrder.Should().Equal(RejectionReason.BannedSymbol);
+        blockers.Build("TSLA", Market.Japan).AnyOrder.Should().Equal(RejectionReason.MarketDisabled);
+        blockers.Build("AAPL", Market.UnitedStates).AnyOrder.Should().BeEmpty();
+        blockers.Build("AAPL", Market.UnitedStates).LongSide.Should().NotContain([RejectionReason.MarketDisabled, RejectionReason.BannedSymbol],
+            "新規建ての方向の理由（LLM を呼ぶ前の見送り）は変えない");
+
+        // 審査と同じ関数: 同じ設定の審査の理由と一致する。
+        OrderStateBlockers.Determine(settings.Guard, "7203", Market.Japan).Should().Equal(RejectionReason.MarketDisabled);
+    }
 }

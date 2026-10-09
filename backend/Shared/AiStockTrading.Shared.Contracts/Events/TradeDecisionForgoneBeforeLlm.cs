@@ -9,8 +9,9 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // （IADR-0358 決定4: 流用は誤帰属。TradeDecisionHeld は市場監視が急変の基準値を進める事実であり、判断をしていない見送りで
 // 基準値を動かしてはならない〔IADR-0452 決定1〕）。
 //
-//   - Reason: 7 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
-//     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を、#1174 / IADR-0500 で EntryCapacityBelowOneShare を末尾へ足した。
+//   - Reason: 8 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
+//     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を、#1174 / IADR-0500 で EntryCapacityBelowOneShare を、
+//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を末尾へ足した。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙（TradeDecisionHeld と同じ）。
 //   - 監査台帳だけが購読する（通知しない。日報の未確定の通知は DailyPolicyUnconfirmed が営業日ごとに出す）。
 public record TradeDecisionForgoneBeforeLlm(
@@ -59,4 +60,10 @@ public enum DecisionForgoneBeforeLlmReason
     /// 残枠が最小の名目額にも届かないときは <see cref="EntryCapacityBelowMinimumNotional"/> が先に当たる（こちらは「残枠はあるがこの銘柄の 1 株に届かない」）。
     /// </summary>
     EntryCapacityBelowOneShare,
+
+    /// <summary>
+    /// FR-02, FR-04, #1286, IADR-0521 決定 2: 監視銘柄の外の保有銘柄（保有のみ）を出口専用で判断しようとしたが、判断の前に引いた保有が
+    /// 0 または不明だった（決済は成立せず、新規建ては出口専用で出さないため、LLM の結論に依らず発注意図は作られない）。
+    /// </summary>
+    ExitOnlyWithoutHolding,
 }

@@ -382,6 +382,19 @@ public class HttpHeldPositionProviderTests
         provider.IsEnabled.Should().BeTrue();
     }
 
+    // T-10-2491（配線）, FR-02, FR-04, #1286, IADR-0521 決定 1: 定時サイクルの保有銘柄の供給口は、保有照会と同じ実装（同じ口・同じ選び方）。
+    [Theory]
+    [InlineData(null, typeof(TradeDecisionService.Infrastructure.ExternalServices.NoOpHeldPositionProvider))]
+    [InlineData("http://risk", typeof(HttpHeldPositionProvider))]
+    public void T_10_2491_保有銘柄の供給口は保有照会と同じ実装に配線される(string? riskBaseUrl, Type expected)
+    {
+        using var factory = new Factory(riskBaseUrl);
+        _ = factory.CreateClient();
+
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IHeldSymbolsProvider>().Should().BeOfType(expected);
+    }
+
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         public string? LastPath { get; private set; }

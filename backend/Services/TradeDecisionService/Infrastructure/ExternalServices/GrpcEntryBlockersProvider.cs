@@ -43,7 +43,8 @@ public sealed class GrpcEntryBlockersProvider(
         r.HasSymbol ? r.Symbol : null,
         RiskManagementWire.Market(r.Market),
         r.LongSide is null ? null : [.. r.LongSide.Reasons.Select(Reason)],
-        r.ShortSide is null ? null : [.. r.ShortSide.Reasons.Select(Reason)]);
+        r.ShortSide is null ? null : [.. r.ShortSide.Reasons.Select(Reason)],
+        r.AnyOrder is null ? null : [.. r.AnyOrder.Reasons.Select(Reason)]);
 
     // 名前で写す。未指定・未知の番号は null（不明）。
     internal static RejectionReason? Reason(Proto.EntryBlocker value) => value switch
@@ -56,6 +57,9 @@ public sealed class GrpcEntryBlockersProvider(
         Proto.EntryBlocker.MaxPositionsExceeded => RejectionReason.MaxPositionsExceeded,
         Proto.EntryBlocker.DailyLossLimitReached => RejectionReason.DailyLossLimitReached,
         Proto.EntryBlocker.MaxDrawdownReached => RejectionReason.MaxDrawdownReached,
+        // #1286, IADR-0521 決定 4: 全注文の拒否（any_order）。
+        Proto.EntryBlocker.MarketDisabled => RejectionReason.MarketDisabled,
+        Proto.EntryBlocker.BannedSymbol => RejectionReason.BannedSymbol,
         _ => null,
     };
 }

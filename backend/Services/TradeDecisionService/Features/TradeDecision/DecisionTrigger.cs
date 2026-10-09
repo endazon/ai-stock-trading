@@ -23,7 +23,11 @@ public sealed record DecisionTrigger(
     // （PriceMovementDetected.DetectedAt / InformationCollected.CollectedAt）。
     // 端点間レイテンシの t0 であり、判断が下流へ運ぶ provenance の素になる。
     // **判断サービスの現在時刻で代用しない**——それでは LLM 判断より前の区間（検知・配送）が消える。
-    DateTimeOffset? CycleStartedAt = null)
+    DateTimeOffset? CycleStartedAt = null,
+    // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 2: 監視銘柄の外の保有銘柄（保有のみ）を定時サイクルで判断するときだけ true。
+    // 判断は出口専用であり、決済（手仕舞い）か Hold だけを発注意図にする（新規建て＝買い増し・売り増しは見送る）。
+    // 監視銘柄の外への新規建ての可否は計画に定めが無いため、出口に限る。
+    bool ExitOnly = false)
 {
     // NFR-01, NFR-02, #689: メトリクスの trigger タグ値（既存の業務メトリクスと同じ語彙を使う）。
     public string MetricTrigger => Kind == DecisionTriggerKind.PriceMovement
@@ -40,6 +44,8 @@ public sealed record DecisionTrigger(
 
     // 定時サイクル（価格変動トリガーなし）から生成する。銘柄・市場は監視銘柄（watchlist）由来。
     // cycleStartedAt は起点の InformationCollected.CollectedAt（供給しなければ端点間は未観測になる）。
-    public static DecisionTrigger Scheduled(string symbol, Market market, DateTimeOffset? cycleStartedAt = null) =>
-        new(symbol, market, DecisionTriggerKind.Scheduled, CycleStartedAt: cycleStartedAt);
+    // #1286, IADR-0521 決定 2: exitOnly は監視銘柄の外の保有銘柄（保有のみ）のときだけ true。
+    public static DecisionTrigger Scheduled(
+        string symbol, Market market, DateTimeOffset? cycleStartedAt = null, bool exitOnly = false) =>
+        new(symbol, market, DecisionTriggerKind.Scheduled, CycleStartedAt: cycleStartedAt, ExitOnly: exitOnly);
 }

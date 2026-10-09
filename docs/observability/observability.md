@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-10-07
+updated: 2026-10-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02]
 adrs: [ADR-0006, ADR-0045]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip]
-issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment]
+issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286]
 -->
 
 
@@ -63,7 +63,7 @@ AST 10 Worker  --OTLP(gRPC :4317)-->  otel-collector  --export-->  Prometheus (m
 | --- | --- | --- | --- |
 | 取引サイクル | `ast_information_items_collected_total` | — | 収集件数。**空巡回も 0 として出す**（「回って 0 件」と「止まっている」を区別するため） |
 | 取引サイクル | `ast_trade_cycle_decisions_total` | `action` / `trigger` | 判断回数と buy / sell / 見送りの内訳 |
-| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕・保有中の買い増しが審査で必ず拒否される〔`AddOnBlockedByRiskControls`。LLM の後〕・新規建てに使える金額の上限が最小の名目額に届かない〔`EntryCapacityBelowMinimumNotional`。LLM の前〕・サイジングの名目額が最小に満たない〔`SizedBelowMinimumNotional`。LLM の後〕・残枠が現在値の 1 株に届かない〔`EntryCapacityBelowOneShare`。LLM の前。従来の数量 0 から移った分〕ほか 18 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
+| 取引サイクル | `ast_trade_cycle_decision_skips_total` | `reason` / `trigger` | 🔴 **見送りの理由**の内訳（方針なし・Hold・鮮度切れ・数量 0・裸の新規売り・保有不明・新規建てが審査で必ず拒否される〔`EntryBlockedByRiskControls`。LLM を呼ぶ前〕・保有中の買い増しが審査で必ず拒否される〔`AddOnBlockedByRiskControls`。LLM の後〕・新規建てに使える金額の上限が最小の名目額に届かない〔`EntryCapacityBelowMinimumNotional`。LLM の前〕・サイジングの名目額が最小に満たない〔`SizedBelowMinimumNotional`。LLM の後〕・残枠が現在値の 1 株に届かない〔`EntryCapacityBelowOneShare`。LLM の前。従来の数量 0 から移った分〕・監視銘柄の外の保有銘柄の出口専用の判断で新規建てが返った〔`ExitOnlyOpenOutsideWatchlist`。LLM の後〕・出口専用の判断で保有が 0 または不明〔`ExitOnlyWithoutHolding`。LLM の前〕ほか 20 種）。上の `action=no-trade` は「何回見送ったか」しか語らず、**平常（Hold）と異常（保有照会が壊れて新規建てだけが静かに止まっている）が同じ 1 値に落ちる**。**置き換えではなく並置**であり、1 回の見送りで両方が 1 ずつ増える |
 | 取引サイクル | `ast_trade_cycle_decision_duration_ms_*` | `trigger` | 判断レイテンシ（ヒストグラム）。**1 サービス内の判断 1 回**であり、端点間ではない |
 | 取引サイクル | `ast_trade_cycle_order_completion_latency_ms_*` | `trigger` | **起点イベント → 発注完了**の端点間所要（ヒストグラム）。価格変動検知起点は `trigger=price-movement` の系列で読む（目標 5 分＝300,000 ms） |
 | 取引サイクル | `ast_trade_cycle_record_completion_latency_ms_*` | `trigger` | **起点イベント → 記録完了**（監査台帳へ記録した時点）の端点間所要。定時サイクルは `trigger=scheduled` の系列で読む（目標 10 分＝600,000 ms） |

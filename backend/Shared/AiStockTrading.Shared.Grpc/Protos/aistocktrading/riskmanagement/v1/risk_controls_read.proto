@@ -231,6 +231,9 @@ enum EntryBlocker {
   ENTRY_BLOCKER_MAX_DRAWDOWN_REACHED = 7;
   // #1176 / IADR-0495: 当日に判断由来の決済（利確・判断の手仕舞い）をした銘柄の同じ方向の新規建て。
   ENTRY_BLOCKER_DECISION_EXIT_SAME_DAY = 8;
+  // #1286 / IADR-0521 決定 4: 全注文の拒否（any_order にだけ現れる。送り手の `OrderStateBlockers`）。
+  ENTRY_BLOCKER_MARKET_DISABLED = 9;
+  ENTRY_BLOCKER_BANNED_SYMBOL = 10;
 }
 
 // 1 方向の理由の一覧。🔴 入れ物の欠落は「不明」、空の入れ物は「確定する拒否は無い」。
@@ -246,6 +249,9 @@ message GetEntryBlockersResponse {
   EntryBlockerReasons long_side = 3;
   // 売りの新規建て（ショートを建てる）。
   EntryBlockerReasons short_side = 4;
+  // #1286 / IADR-0521 決定 4: 新規建て・決済を問わず全注文を拒否する理由（市場の無効・禁止銘柄）。追加の項目（非破壊）。
+  // 🔴 入れ物の欠落は「不明」（旧い送り手）、空の入れ物は「全注文の拒否は無い」。
+  EntryBlockerReasons any_order = 5;
 }
 
 // ---- 段階ゲート ----

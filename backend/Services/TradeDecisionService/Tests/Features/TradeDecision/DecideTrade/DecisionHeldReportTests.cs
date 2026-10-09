@@ -320,13 +320,15 @@ public class DecisionHeldReportTests
         }
     }
 
-    // 判断後の 11 地点と判断前の 7 地点で語彙 18 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
+    // 判断後の 12 地点と判断前の 8 地点で語彙 20 値を過不足なく覆う（上の 2 表・LlmHold の試験が各地点を振る舞いで固定する。
     // 判断前の 5 地点目〔#1113 の EntryBlockedByRiskControls〕は EntryBlockersBeforeLlmTests が、判断後の 10 地点目
     // 〔T-10-1907, #1130 の AddOnBlockedByRiskControls〕は HeldAddOnBlockersTests が固定する。#1176 の 2 値〔判断前の EntryCapacityBelowMinimumNotional・判断後の
     // SizedBelowMinimumNotional〕は MinimumEntryNotionalDecisionTests が、#1174 の判断前の EntryCapacityBelowOneShare は OneShareCapacityDecisionTests が固定する）。
     [Fact]
-    public void 判断前と判断後の見送りは語彙18値を過不足なく覆う()
+    public void 判断前と判断後の見送りは語彙20値を過不足なく覆う()
     {
+        // T-10-2502, #1286, IADR-0521 決定 2: 判断前に ExitOnlyWithoutHolding を足した（19 → 20）。
+        // T-10-2496, #1286, IADR-0521 決定 2: 判断後に ExitOnlyOpenOutsideWatchlist を足した（18 → 19。振る舞いは HeldOutsideWatchlistExitOnlyTests）。
         // T-10-2386, #1174, IADR-0500: 判断前に EntryCapacityBelowOneShare を足した（17 → 18）。
         // T-10-2322, #1176, IADR-0495: 判断前に EntryCapacityBelowMinimumNotional、判断後に SizedBelowMinimumNotional を足した（15 → 17）。
         DecisionSkipReason[] before =
@@ -334,7 +336,7 @@ public class DecisionHeldReportTests
             DecisionSkipReason.DailyPolicyUnconfirmed, DecisionSkipReason.CurrentPriceUnavailable,
             DecisionSkipReason.FxRateUnresolved, DecisionSkipReason.FxRateStaleNoHolding,
             DecisionSkipReason.EntryBlockedByRiskControls, DecisionSkipReason.EntryCapacityBelowMinimumNotional,
-            DecisionSkipReason.EntryCapacityBelowOneShare,
+            DecisionSkipReason.EntryCapacityBelowOneShare, DecisionSkipReason.ExitOnlyWithoutHolding,
         ];
         DecisionSkipReason[] after =
         [
@@ -343,6 +345,7 @@ public class DecisionHeldReportTests
             DecisionSkipReason.WorkingEntriesUnknownOpen, DecisionSkipReason.ReferencePriceInvalid,
             DecisionSkipReason.StopLossDistanceInvalid, DecisionSkipReason.ProfitabilityNotViable,
             DecisionSkipReason.AddOnBlockedByRiskControls, DecisionSkipReason.SizedBelowMinimumNotional,
+            DecisionSkipReason.ExitOnlyOpenOutsideWatchlist,
         ];
 
         before.Concat(after).Should().BeEquivalentTo(Enum.GetValues<DecisionSkipReason>());
