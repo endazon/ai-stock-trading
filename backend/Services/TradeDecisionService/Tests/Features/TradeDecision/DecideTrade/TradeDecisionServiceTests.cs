@@ -553,6 +553,27 @@ public class TradeDecisionServiceTests
             "構造化の値には例外のメッセージを載せない（原因は型名だけ）");
     }
 
+    // 🔴 T-10-2516（#1290, IADR-0524 決定 3）: 一次の見送りの根拠文に化けの疑いがあれば、判断の記録（FR-11。Hold の唯一の監査記録）の
+    // rationale に目印が付き、screeningRationaleGarble=True が載る。見送り自体は変えない（LLM の Hold のとおり）。疑いが無ければ False。
+    [Theory]
+    [InlineData("監視銘HeaderItemに含まれるが材料なし", true)]
+    [InlineData("AAPL はウォッチリストに含まれるが材料なし", false)]
+    public async Task T_10_2516_一次の見送りの根拠文の化けは判断の記録に目印と印を残す(string rationale, bool suspected)
+    {
+        var llm = new CapturingLlm($$"""{"action":"Hold","rationale":"{{rationale}}"}""");
+        var log = new StateLogger();
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), log, options: DecisionOrchestrationOptions.Default with { EnableScreening = true });
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().BeNull("見送りは変えない");
+        var record = DecisionRecord(log);
+        record.Values["ScreenedOut"].Should().Be(true);
+        record.Values["ScreeningRationaleGarble"].Should().Be(suspected);
+        record.Values["Rationale"].Should().Be(suspected ? $"{RationaleGarbleDetector.Marker}: {rationale}" : rationale);
+    }
+
     // 取得の最中に呼び出し元が取り消す取得ポート（T-10-2478）。取り消しまで判断が進んだことを Calls で確かめる。
     private sealed class CancelingRetrieval(CancellationTokenSource cts) : IRetrievalContextProvider
     {

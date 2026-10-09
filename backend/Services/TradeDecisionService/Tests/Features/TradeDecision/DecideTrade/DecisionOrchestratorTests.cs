@@ -361,6 +361,61 @@ public class DecisionOrchestratorTests
         result.UnparseableVotes.Should().Be(unparseable);
     }
 
+    // 🔴 T-10-2515（#1290, IADR-0524 決定 2/3）: 一次の根拠文に文字化けの疑いがあれば、受け取った地点で 1 回だけ検出して
+    // Warning を 1 行出し、印を運ぶ。見送りなら根拠に目印を前置する（原文は残す）。🔴 action は変えない（関心ありなら本判断へ進む）。
+    [Theory]
+    [InlineData("Hold")]
+    [InlineData("Buy")]
+    public async Task T_10_2515_一次の根拠文の化けは警告と印を出しactionは変えない(string screeningAction)
+    {
+        const string garbled = "監視銘HeaderItemに含まれるが材料なし";
+        var llm = new SequencedLlm(
+            $$"""{"action":"{{screeningAction}}","rationale":"{{garbled}}"}""",
+            Json("Buy"));
+        var logger = new CapturingLogger();
+        var orchestrator = new DecisionOrchestrator(
+            llm, DecisionOrchestrationOptions.Default with { EnableScreening = true }, logger);
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
+
+        result.ScreeningRationaleGarbleSuspected.Should().BeTrue();
+        var warning = logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Which;
+        warning.Message.Should().Contain("文字化けの疑い").And.Contain(garbled);
+        if (screeningAction == "Hold")
+        {
+            result.ScreenedOut.Should().BeTrue();
+            result.Decision.Action.Should().Be(TradeAction.Hold);
+            result.Decision.Rationale.Should().Be($"{RationaleGarbleDetector.Marker}: {garbled}");
+            llm.Calls.Should().ContainSingle("見送りは本判断を呼ばない（従来どおり）");
+        }
+        else
+        {
+            result.ScreenedOut.Should().BeFalse("化けを理由に Hold へ倒さない");
+            result.Decision.Action.Should().Be(TradeAction.Buy);
+            result.Decision.Rationale.Should().Be("Buy理由", "本判断の根拠文には目印を付けない（印は一次の根拠文についての記録）");
+            llm.Calls.Should().HaveCount(2);
+        }
+    }
+
+    // T-10-2515（否定形）: 化けの無い根拠文・解析不能・一次なしでは警告も印も目印も出ない。
+    [Theory]
+    [InlineData("""{"action":"Hold","rationale":"AAPL はウォッチリストに含まれるが指標RSIが過熱のため Hold"}""", true)]
+    [InlineData("not json", true)]
+    [InlineData("""{"action":"Hold","rationale":"x"}""", false)]
+    public async Task T_10_2515_化けの無い根拠文では警告も目印も出ない(string screeningOutput, bool enableScreening)
+    {
+        var llm = new SequencedLlm(enableScreening ? [screeningOutput, Json("Buy")] : [Json("Buy")]);
+        var logger = new CapturingLogger();
+        var orchestrator = new DecisionOrchestrator(
+            llm, DecisionOrchestrationOptions.Default with { EnableScreening = enableScreening }, logger);
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
+
+        result.ScreeningRationaleGarbleSuspected.Should().BeFalse();
+        result.Decision.Rationale.Should().NotContain(RationaleGarbleDetector.Marker);
+        logger.Entries.Should().NotContain(e => e.Message.Contains("文字化けの疑い", StringComparison.Ordinal));
+    }
+
     private sealed record LogEntry(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> Values);
 
     private sealed class CapturingLogger : ILogger

@@ -69,7 +69,7 @@ public sealed class TradeDecisionAppService(
     private readonly NewsCollectionStatusStore? _newsStatus = newsStatus;
 
     // FR-04, #1034, IADR-0440 決定 2: 判断のプロンプトへ載せる監視銘柄の供給口（定時サイクルが判断対象を決める口と同じ登録）。
-    // 未指定＝null＝プロンプトは「監視銘柄: 不明」と書く（空の一覧は渡さない）。本番は Program.cs の IWatchlistProvider が注入される。
+    // 未指定＝null＝プロンプトは「ウォッチリスト: 不明」（#1290 で語を言い換えた）と書く（空の一覧は渡さない）。本番は Program.cs の IWatchlistProvider が注入される。
     private readonly IWatchlistProvider? _watchlist = watchlist;
 
     // #1034, PR #1041 の監査 F5, IADR-0440 決定 2（2026-09-26 追記）: このインスタンスで監視銘柄を一度読めなかったら、以後の判断では
@@ -472,7 +472,7 @@ public sealed class TradeDecisionAppService(
         var (retrieved, ragContext) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
 
         // 🔴 FR-04, FR-02, #1034, IADR-0440 決定 2/6: 判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。null＝不明
-        // （プロンプトは「不明」と明示し、「監視銘柄なし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
+        // （プロンプトは「不明」と明示し、「ウォッチリストなし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
         // ——判断の可否は従来どおりで、変わるのはプロンプトの文言だけである。見送りの判定の後に引く（見送る判断で照会しない）。
         var watchlist = await GetWatchlistForPromptSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
 
@@ -544,14 +544,16 @@ public sealed class TradeDecisionAppService(
         // FR-11: プロンプト・LLM 出力・根拠・票数・スクリーニング可否を記録する（永続監査は #17 連携）。
         // #337（#290 吸収）, IADR-0248: 解析不能（unparseableVotes / screeningUnparseable）は見送りと区別して残す。
         // FR-08, FR-11, #1283, IADR-0072: 参考情報（RAG）の取得の状態と注入した件数も残す（取得の失敗と「本当に無い」を後から区別する）。
+        // 🔴 FR-11, #1290, IADR-0524 決定 3: 一次の根拠文の文字化けの疑い（オーケストレータが受け取った地点で 1 回だけ検出した印）を残す。
+        // 見送り（screenedOut=true）の rationale は一次の根拠文で、疑いがあれば目印が前置済み（ここで検出し直さない）。
         logger.LogInformation(
             "LLM 判断: {Symbol} action={Action} rationale={Rationale} votes={Agreement}/{Total} screenedOut={ScreenedOut} "
                 + "unparseableVotes={UnparseableVotes} screeningUnparseable={ScreeningUnparseable} "
-                + "ragContext={RagContext} ragReferences={RagReferences}",
+                + "ragContext={RagContext} ragReferences={RagReferences} screeningRationaleGarble={ScreeningRationaleGarble}",
             trigger.Symbol, decision.Action, decision.Rationale,
             orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut,
             orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable,
-            ragContext, retrieved.Count);
+            ragContext, retrieved.Count, orchestrated.ScreeningRationaleGarbleSuspected);
 
         // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1: ここから先の見送りは AI 判断の後である（基準点になる）。
         var judgedPrice = JudgedPriceOf(orchestrated, currentPrice, trigger);

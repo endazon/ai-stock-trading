@@ -320,7 +320,9 @@ public sealed class Stage0DecisionRecorder(
         var screening = new Stage0ScreeningDecision(
             ToRecordAction(screen.Action),
             screen.IsUnparseable,
-            screen.Rationale,
+            // 🔴 FR-04, FR-11, #1290, IADR-0524 決定 3: 一次の根拠文に文字化けの疑いがあれば記録にも目印を付ける。
+            // 検出はオーケストレータが受け取った地点で 1 回だけ行い、その印を使う（ここで検出し直さない）。
+            RationaleGarbleDetector.Mark(screen.Rationale, orchestrated.ScreeningRationaleGarbleSuspected),
             screeningCall.Usages.Sum(u => u.InputTokens),
             screeningCall.Usages.Sum(u => u.OutputTokens),
             EffectiveModelOf(screeningCall.Usages));
