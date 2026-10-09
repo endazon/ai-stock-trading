@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-08, FR-11, UC-01, UC-02, ADR-0003, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-09-29
+updated: 2026-10-09
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -138,3 +138,22 @@ Application 層に `IRetrievalContextProvider`（`GetContextAsync(trigger, polic
 検索要求は `project = ai-stock-trading` の Scope を主張として必ず送り（基盤は Scope が無いと空で返す）、
 銘柄の文書（`attributes["symbol"]`）と銘柄を持たない文書の 2 本を新しい順で引き、発行時刻を持つ文書を既定 168 時間で足切りする（発行時刻を持たない確定報告書は通す）。
 クエリの素材（銘柄・市場・方針要約 500 字）と `Retrieval:TopK` は本決定のまま。
+
+［2026-10-09 追記 / #1283］ **決定4（取得失敗・空は判断を止めず「文脈なし」に縮退する）の縮退は変えず、失敗を「文脈なし」と区別して残す。**
+起票: [#1283](https://github.com/endazon/ai-stock-trading/issues/1283)（PoC で本判断 37 回がどれも KB の参考情報を参照できず、取引判断のログに取得の失敗が 1 件も無かった）。
+作業仕様書 [`20261009_1283_rag-retrieval-failure-visibility`](../specs/20261009_1283_rag-retrieval-failure-visibility.md)。
+
+- 原因: KB 検索アダプタ（[IADR-0069](./IADR-0069_knowledge-base-rag-foundation.md) 決定3）が失敗を空に倒した後は、呼び出し側が「失敗で空」と「検索して 0 件」を区別できなかった。
+  判断境界の Warning は取得ポートが**例外を投げたとき**だけで、空に倒された失敗は判断の側で何も記録されなかった。
+- 決定: `IKnowledgeBaseSearch.SearchWithOutcomeAsync` と `IRetrievalContextProvider.GetContextWithStatusAsync` を**既定実装つき**で足し、結果に状態（成功・失敗・未構成）と
+  原因の符号（`http-<状態コード>` / `timeout` / `exception:<型名>`。本文・URL・資格情報・例外のメッセージを入れない）を添える。判断の取得は 1 本でも失敗なら失敗（取得できた分は運ぶ）。
+  判断は失敗のとき 1 判断 1 行の Warning（銘柄・市場・起点・原因・失敗の本数・取得できた件数）を出し、判断の記録（`LLM 判断:` の行。FR-11）へ
+  `ragContext`（`retrieved` / `empty` / `failed` / `not-configured`）と注入した件数を残す。空は Warning を出さない（記録に載せるだけで行を増やさない）。
+- 決定1（抽象ポート）・決定3（参考情報は方針・制約を上書きしない）は不変。計量・イベント契約は足さない（残余）。
+- 検索 1 本ごとの失敗の行（`HttpKnowledgeBaseSearch` の「空結果に倒します」）は Warning から Debug に下げた（PR #1287 の監査 🟡2）。原因は状態で返り、判断境界の 1 判断 1 行の Warning が
+  銘柄・起点とともに出す（下げないと 1 判断で最大 4 行の Warning になる）。本番でこのアダプタの検索を呼ぶのは取引判断の取得だけで、情報収集は配線するが検索を呼ばない（`git grep SearchAsync`）。
+- 呼び出し元の取り消しは失敗・打ち切りに分類せず伝播する（T-10-2478）。
+- 🔴 状態つきのメソッドは既定実装つきで足したので、**失敗を空に倒す実装・包む実装（デコレータ）が従来の `SearchAsync` / `GetContextAsync` だけを実装すると、失敗が既定の「成功」に見える**。
+  そうした実装は `SearchWithOutcomeAsync` / `GetContextWithStatusAsync` も実装すること（ポートの注記に同じ）。
+- 残余: 🔴 **PoC の事象（基盤の埋め込みの失敗）は `empty` として記録される**（参照できる文書があれば `retrieved`）。基盤の検索はキーワードのみへ縮退して 200 を印なしで返すため、AST からは成功に見える。
+  縮退の印は MSP#1871 で基盤に足し、取り込みは別 issue で行う。計量・イベント契約は足していない。試験 T-10-2472〜T-10-2475・T-10-2478。

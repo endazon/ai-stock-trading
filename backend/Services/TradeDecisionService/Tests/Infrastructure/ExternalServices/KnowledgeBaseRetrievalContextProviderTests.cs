@@ -416,4 +416,56 @@ public class KnowledgeBaseRetrievalContextProviderTests
         search.SymbolQuery.Query.Should().Contain("AAPL");
         search.MarketQuery.Query.Length.Should().BeLessThan(560);
     }
+
+    // T-10-2473, FR-08, FR-11, #1283: 検索ごとの状態を返す偽物（銘柄・市場・補充の検索ごとに結果と状態を決める）。
+    private sealed class OutcomeSearch(
+        KnowledgeSearchResult symbol, KnowledgeSearchResult market, KnowledgeSearchResult fallback) : IKnowledgeBaseSearch
+    {
+        public Task<IReadOnlyList<KnowledgeHit>> SearchAsync(KnowledgeQuery query, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("状態つきの検索（SearchWithOutcomeAsync）を使うこと");
+
+        public Task<KnowledgeSearchResult> SearchWithOutcomeAsync(KnowledgeQuery query, CancellationToken cancellationToken = default) =>
+            Task.FromResult(query.AttributeFilters switch
+            {
+                { } f when f.ContainsKey("symbol") => symbol,
+                { } f when f.ContainsKey("coverage") => market,
+                _ => fallback,
+            });
+    }
+
+    // 🔴 T-10-2473: 1 本でも検索が失敗したら Failed（最初の原因・失敗の本数）。取得できた分は運ぶ（縮退は不変）。
+    // 全部成功の 0 件は Succeeded の空（失敗と区別する）。全部未構成なら NotConfigured。
+    [Fact]
+    public async Task T_10_2473_検索の1本でも失敗すれば取得できた分を運んだうえでFailedを返す()
+    {
+        var ok = KnowledgeSearchResult.Succeeded([Hit("AAPL の決算", Fresh, "AAPL")]);
+        var provider = Create(new OutcomeSearch(
+            ok, KnowledgeSearchResult.Failed("http-503"), KnowledgeSearchResult.Failed("timeout")));
+
+        var result = await provider.GetContextWithStatusAsync(
+            DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), Policy);
+
+        result.Status.Should().Be(RetrievalStatus.Failed);
+        result.FailureCause.Should().Be("http-503");
+        result.FailedSearches.Should().Be(2, "市場の検索と補充の検索の 2 本が失敗した");
+        result.Contexts.Should().ContainSingle().Which.Title.Should().Be("AAPL の決算");
+    }
+
+    [Fact]
+    public async Task T_10_2473_全部成功の0件はSucceededの空で全部未構成ならNotConfigured()
+    {
+        var empty = KnowledgeSearchResult.Succeeded([]);
+        var trigger = DecisionTrigger.Scheduled("AAPL", Market.UnitedStates);
+
+        var succeeded = await Create(new OutcomeSearch(empty, empty, empty)).GetContextWithStatusAsync(trigger, Policy);
+        var notConfigured = await Create(new OutcomeSearch(
+                KnowledgeSearchResult.NotConfigured, KnowledgeSearchResult.NotConfigured, KnowledgeSearchResult.NotConfigured))
+            .GetContextWithStatusAsync(trigger, Policy);
+
+        succeeded.Status.Should().Be(RetrievalStatus.Succeeded);
+        succeeded.Contexts.Should().BeEmpty();
+        succeeded.FailedSearches.Should().Be(0);
+        notConfigured.Status.Should().Be(RetrievalStatus.NotConfigured);
+        notConfigured.Contexts.Should().BeEmpty();
+    }
 }

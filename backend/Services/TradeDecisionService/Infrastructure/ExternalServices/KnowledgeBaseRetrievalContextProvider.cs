@@ -10,6 +10,8 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // トリガー（銘柄/市場）＋確定日報方針の要約から検索クエリを組み、KnowledgeHit を Application 側 RetrievedContext へ写像する。
 // 安全既定: search は KnowledgeBase:Search:BaseUrl 未設定なら #18 の NoOpKnowledgeBaseSearch（空）＝文脈なし＝現行動作。
 // fail-safe: IKnowledgeBaseSearch は非 2xx・例外・タイムアウトを空へ倒す（IADR-0069）。判断側でも例外を握るため二重に安全。
+// FR-08, FR-11, #1283: 各検索の状態（SearchWithOutcomeAsync）を集め、1 本でも失敗なら Failed（最初の原因・失敗の本数）で返す。
+// 取得できた分はそのまま運ぶ（縮退は不変）。全部が未構成なら NotConfigured。判断側は状態で「失敗」と「本当に無い」を区別して記録する。
 //
 // FR-08, #1083, IADR-0454（IADR-0072 決定5 の「Scope は送らない」を置き換える）:
 //   - Scope（project = ai-stock-trading）はアダプタ（HttpKnowledgeBaseSearch）が全検索に載せる（決定1）。
@@ -49,6 +51,10 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
             : DefaultMaxAge;
 
     public async Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
+        DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default) =>
+        (await GetContextWithStatusAsync(trigger, policy, cancellationToken).ConfigureAwait(false)).Contexts;
+
+    public async Task<RetrievalResult> GetContextWithStatusAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(trigger);
@@ -77,8 +83,16 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
             },
             KnowledgeSearchSorts.Updated);
 
-        var symbolHits = await search.SearchAsync(symbolQuery, cancellationToken).ConfigureAwait(false);
-        var marketHits = await search.SearchAsync(marketQuery, cancellationToken).ConfigureAwait(false);
+        var outcomes = new List<KnowledgeSearchResult>(3);
+        async Task<IReadOnlyList<KnowledgeHit>> SearchTrackedAsync(KnowledgeQuery query)
+        {
+            var outcome = await search.SearchWithOutcomeAsync(query, cancellationToken).ConfigureAwait(false);
+            outcomes.Add(outcome);
+            return outcome.Hits;
+        }
+
+        var symbolHits = await SearchTrackedAsync(symbolQuery).ConfigureAwait(false);
+        var marketHits = await SearchTrackedAsync(marketQuery).ConfigureAwait(false);
 
         var cutoff = timeProvider.GetUtcNow() - maxAge;
         bool IsFresh(KnowledgeHit h) => h.PublishedAt is not { } publishedAt || publishedAt >= cutoff;
@@ -96,7 +110,7 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
                 FallbackTopK(topK),
                 AttributeFilters: null,
                 KnowledgeSearchSorts.Updated);
-            var fallbackHits = await search.SearchAsync(fallbackQuery, cancellationToken).ConfigureAwait(false);
+            var fallbackHits = await SearchTrackedAsync(fallbackQuery).ConfigureAwait(false);
             candidates += fallbackHits.Count;
 
             // 重複の鍵はチャンク（文書 ID ＋ 本文）。同じ文書の別のチャンクは従来どおり別に数える。
@@ -109,21 +123,37 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
             .Concat(market.Take(topK))
             .ToList();
 
+        var status = StatusOf(outcomes);
         var dropped = candidates - hits.Count;
         if (hits.Count == 0)
         {
             if (dropped > 0)
                 logger.LogDebug("RAG 取得: {Symbol} の候補 {Dropped} 件はすべて足切り（銘柄違い・古い・重複）で除外した。", trigger.Symbol, dropped);
-            return [];
+            return status with { Contexts = [] };
         }
 
         logger.LogDebug("RAG 取得: {Symbol} に対し {Count} 件の参考情報を判断文脈へ注入する（除外 {Dropped} 件。銘柄違い・古い・重複・上限）。", trigger.Symbol, hits.Count, dropped);
-        return hits
-            // FR-04, #252, IADR-0169 決定2: **出所タグをそのまま運ぶ**（出典限定の判定に使う）。
-            // ここで絞り込まないのは、守る対象が「注入点」であって特定の provider ではないためである
-            // （絞り込みは TradeDecisionService 側で行う）。
-            .Select(h => new RetrievedContext(h.DocumentTitle, h.Text, h.SourceUri, h.Score, h.Tags, h.PublishedAt))
-            .ToList();
+        return status with
+        {
+            Contexts = hits
+                // FR-04, #252, IADR-0169 決定2: **出所タグをそのまま運ぶ**（出典限定の判定に使う）。
+                // ここで絞り込まないのは、守る対象が「注入点」であって特定の provider ではないためである
+                // （絞り込みは TradeDecisionService 側で行う）。
+                .Select(h => new RetrievedContext(h.DocumentTitle, h.Text, h.SourceUri, h.Score, h.Tags, h.PublishedAt))
+                .ToList(),
+        };
+    }
+
+    // FR-08, FR-11, #1283: 検索の状態を 1 つに畳む（1 本でも失敗なら Failed・全部が未構成なら NotConfigured・他は Succeeded）。
+    private static RetrievalResult StatusOf(IReadOnlyList<KnowledgeSearchResult> outcomes)
+    {
+        var failed = outcomes.Where(o => o.Outcome == KnowledgeSearchOutcome.Failed).ToList();
+        if (failed.Count > 0)
+            return new RetrievalResult([], RetrievalStatus.Failed, failed[0].FailureCause, failed.Count);
+
+        return outcomes.All(o => o.Outcome == KnowledgeSearchOutcome.NotConfigured)
+            ? new RetrievalResult([], RetrievalStatus.NotConfigured)
+            : new RetrievalResult([], RetrievalStatus.Succeeded);
     }
 
     // FR-08, #1138, IADR-0474 決定3: 補充の検索の件数の倍率（基盤が関連度の候補を取る倍率 4×TopK と同じ値）。
