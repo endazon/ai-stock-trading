@@ -174,22 +174,26 @@ public static class TradeDecisionPromptBuilder
     // 🔴 **「不明」と「0 件」は別の文言である**（IADR-0351 決定 2 と同じ作法）。読めないときに空の一覧を渡すと、
     // 「この銘柄は対象外」と読ませることになり、実測の誤読をシステムが作る。
     // テストがこれらの const を直接参照する（IADR-0297 決定1 と同じ規律）。
-    public const string WatchlistSectionTitle = "# 監視銘柄（判断時点・市場監視の登録）";
+    // 🔴 FR-04, #1290, IADR-0525 決定 1（利用者裁定 2026-10-10）: 固定文では「監視銘柄」と書かず「ウォッチリスト」と書く。
+    // 実測（PoC 2026-10-06〜09）: 一次スクリーニング（軽量モデル）の根拠文で「監視銘柄」の「柄」だけが別の字・置換文字・
+    // 無関係な英字列（監視銘牌・監視銘HeaderItem 等）へ化けた（モデル側のサンプリング）。固定文から語を外して出現を減らす。
+    // 「監視対象」は採らない（プロンプトの「判断対象」「対象外」と紛れる）。利用者が書いた方針の本文は書き換えない。
+    public const string WatchlistSectionTitle = "# ウォッチリスト（判断時点・市場監視の登録）";
 
     public const string WatchlistIsNotPolicyRule =
-        "方針の本文とは別に、判断時点で市場監視に登録されている監視銘柄をシステムが構造化して渡します。この一覧は方針を書き換えません（取引してよいかは、引き続き方針・リスク制約・保有状況で判断します）。";
+        "方針の本文とは別に、判断時点で市場監視に登録されている銘柄の一覧（ウォッチリスト）をシステムが構造化して渡します。この一覧は方針を書き換えません（取引してよいかは、引き続き方針・リスク制約・保有状況で判断します）。";
 
     public const string WatchlistUnknownLine =
-        "監視銘柄: 不明（市場監視から一覧を取得できませんでした。「監視銘柄なし」とも「この銘柄は対象外」とも扱いません）";
+        "ウォッチリスト: 不明（市場監視から一覧を取得できませんでした。「ウォッチリストなし」とも「この銘柄は対象外」とも扱いません）";
 
-    public const string WatchlistContainsSuffix = "は、この監視銘柄に含まれます。";
+    public const string WatchlistContainsSuffix = "は、このウォッチリストに含まれます。";
 
-    public const string WatchlistNotContainsSuffix = "は、この監視銘柄に含まれません。";
+    public const string WatchlistNotContainsSuffix = "は、このウォッチリストに含まれません。";
 
     // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 2: 監視銘柄の外の保有銘柄（保有のみ）を出口専用で判断するときだけ、監視銘柄節の末尾に足す行。
     // 選べるのは決済（保有の手仕舞い）か Hold だけであり、新規建て（買い増し・売り増し）を返してもシステムは発注しない。
     public const string ExitOnlyLine =
-        "判断対象は監視銘柄の外にある保有銘柄です。この判断で選べるのは、保有の手仕舞い（ロング保有なら Sell、ショート保有なら Buy）か Hold だけです。買い増し・売り増し（新規建て）を返してもシステムは発注しません。手仕舞うかどうかは、方針の利確・撤退の基準と保有状況に従って判断してください。";
+        "判断対象はウォッチリストの外にある保有銘柄です。この判断で選べるのは、保有の手仕舞い（ロング保有なら Sell、ショート保有なら Buy）か Hold だけです。買い増し・売り増し（新規建て）を返してもシステムは発注しません。手仕舞うかどうかは、方針の利確・撤退の基準と保有状況に従って判断してください。";
 
     // #1034, IADR-0440 決定 4: 表示する件数の上限と、1 銘柄の文字列の上限。監視銘柄は ADR-0043 の統制で実際には数件
     // （既定の組で 1 巡回に収まるのは 12 要求）だが、供給元（市場監視）は件数を拘束しないため、プロンプトの長さを上から抑える。
@@ -606,8 +610,8 @@ public static class TradeDecisionPromptBuilder
         }
 
         sb.AppendLine(total > shown
-            ? $"- 監視銘柄: {total.ToString(ci)} 件（表示は先頭 {shown.ToString(ci)} 件。残り {(total - shown).ToString(ci)} 件は表示の上限を超えたため省略しました。判断対象が含まれるかは次の行が全件から判定しています）"
-            : $"- 監視銘柄: {total.ToString(ci)} 件");
+            ? $"- ウォッチリスト: {total.ToString(ci)} 件（表示は先頭 {shown.ToString(ci)} 件。残り {(total - shown).ToString(ci)} 件は表示の上限を超えたため省略しました。判断対象が含まれるかは次の行が全件から判定しています）"
+            : $"- ウォッチリスト: {total.ToString(ci)} 件");
 
         var target = trigger.Symbol.Trim();
         var contained = watchlist.Any(w =>
