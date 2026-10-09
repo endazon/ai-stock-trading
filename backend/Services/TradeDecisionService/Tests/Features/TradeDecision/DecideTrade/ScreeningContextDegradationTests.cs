@@ -135,6 +135,8 @@ public class ScreeningContextDegradationTests
             budget: 1_510 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.PriceContextReserveChars
                 // #1081, IADR-0455: 銘柄行はニュースの状態の行の予約ぶん 700→900 へ底上げ（予算も同幅シフト）。
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.NewsStatusReserveChars
+                // #1292, IADR-0523 決定 2: 銘柄行は保有の手仕舞いの固定文の行の予約ぶん底上げ（予算も同幅シフト）。
+                + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.HeldExitRuleReserveChars
                 + watchlistUnknownChars);
 
         await service.DecideAsync(Trigger());

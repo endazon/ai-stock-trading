@@ -158,6 +158,15 @@ public static class TradeDecisionPromptBuilder
 
     public const string ScreeningStopLineCandidateRule = "現在値が記録上の損切りラインに達している建玉は手仕舞いの候補です。";
 
+    // 🔴 FR-04, FR-10, ADR-0003, #1292, IADR-0523 決定 1（オーナー裁定 2026-10-10）: 保有中の銘柄の手仕舞いは、方針の銘柄の列挙に関係なく判断する。
+    // 実測（PoC 2026-10-09 US）: 一次スクリーニングの LLM が「確定済み方針の監視銘柄 8 銘柄に含まれていない…取引対象外」「売却検討も本方針に
+    // 基づかないため本判断対象外」として、保有中の AMZN・GOOGL を 3 サイクルとも Hold にした（保有状況は渡していた）。LLM は方針の銘柄の列挙を
+    // 「保有の手仕舞いも含めた取引対象の限定」と読んだ。方針の文の書き方（運用）には頼らず、保有状況節（本判断・一次の両方）に固定文で置く。
+    // 保有あり（IsHeld）のときだけ出す（保有なし・不明では手仕舞いが成立しない）。方針（PolicySummary）は書き換えない（IADR-0351 決定 3）。
+    // 試験がこの const を直接参照する。一次の縮退の保護分は ScreeningContextAssembler.HeldExitRuleReserveChars。
+    public const string HeldExitAlwaysJudgedRule =
+        "確定済み方針の銘柄の列挙は、新規建ての対象を定めます。保有中の銘柄の手仕舞い（利確・損切り）は、列挙に関係なく常に判断します（方針の銘柄の列挙に含まれないことは、方針の範囲外として手仕舞いを見送る理由になりません）。";
+
     // FR-04, FR-02, ADR-0003, #1034, IADR-0440 決定 1/3: 監視銘柄節の文言。実測（2026-09-26）: 監視銘柄 6 件で方針を確定した日に、
     // META の判断で LLM が「META は対象の 6 銘柄に含まれていない」と方針を誤読した（方針の本文には明記されていた）。
     // プロンプトには自由文の方針と判断対象の 1 銘柄しか無く、LLM は所属を自由文から推測していた。
@@ -675,6 +684,8 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine($"- 記録上の損切りライン: {view.StopLossLine}");
         sb.AppendLine($"- {StopLossLineScopeNote}");
         sb.AppendLine($"- 保護の状態: {DescribeProtection(stopLossMethod)}");
+        // #1292, IADR-0523 決定 1: 保有の手仕舞いは方針の銘柄の列挙に関係なく判断する（固定文。保有ありのとき無条件）。
+        sb.AppendLine($"- {HeldExitAlwaysJudgedRule}");
         var addOnBlocked = addOnBlockers is { Count: > 0 };
         sb.AppendLine(addOnBlocked
             ? $"- この銘柄は保有中です。{AddOnBlockedLine(view, addOnBlockers!)}保有継続（Hold）・手仕舞い（{view.CloseAction}）のいずれかを判断します。{AddOnBlockedConversionNote}{CloseQuantityIsWholeRule}"
@@ -776,6 +787,8 @@ public static class TradeDecisionPromptBuilder
             var view = HeldPositionView.Of(held, markPrice, priceUnit, takeProfit?.Note);
             sb.AppendLine(
                 $"- 保有: {view.Direction} {view.Quantity} 株 / 平均取得単価: {view.EntryPrice} / 含み損益率: {view.UnrealizedPnlRatio} / 記録上の損切りライン: {view.StopLossLine}");
+            // #1292, IADR-0523 決定 1: 一次は門である（Hold で本判断が走らない）。方針の列挙を理由に保有の出口を落とさないよう、本判断と同じ固定文を置く。
+            sb.AppendLine($"- {HeldExitAlwaysJudgedRule}");
             var stopLineCandidate = UsesStopLineExitGuidance(stopLossMethod) ? ScreeningStopLineCandidateRule : string.Empty;
             // #1130, IADR-0471 決定 2: 一次（門）でも買い増し・売り増しを候補にしない（本判断へ進めるのは手仕舞いの検討だけ）。
             sb.AppendLine(addOnBlockers is { Count: > 0 }

@@ -261,8 +261,9 @@ public class WatchlistInDecisionPromptTests
 
         // #1035, IADR-0451: 銘柄行は値動きの行の予約（PriceContextReserveChars）ぶん 400→700 へ底上げした。
         // #1081, IADR-0455: ニュースの状態の行の予約（NewsStatusReserveChars）ぶん 700→900 へ底上げした。
+        // #1292, IADR-0523 決定 2: 保有の手仕舞いの固定文の行の予約（HeldExitRuleReserveChars）ぶん底上げした。
         var exactBudget = 750 + Policy.Summary.Length + unknownChars + 400 + ScreeningContextAssembler.PriceContextReserveChars
-            + ScreeningContextAssembler.NewsStatusReserveChars
+            + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars
             + ("記事".Length + 100 + 60);
         ScreeningContextAssembler.Assemble(trigger, Policy, [news], null, exactBudget, watchlist: null)
             .Plan.DroppedNewsCount.Should().Be(0, "不明の形では予算ちょうどに収まる");

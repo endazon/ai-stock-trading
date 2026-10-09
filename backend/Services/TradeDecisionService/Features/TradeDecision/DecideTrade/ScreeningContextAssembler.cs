@@ -57,7 +57,12 @@ public static class ScreeningContextAssembler
     // この予約で守る（どちらも条件があるときだけ出る＝予約を掛ける条件と同じ）。到達・未到達の行の最悪長に注記を足しても予約に収まることを試験で固定する。
     public const int TakeProfitReachedReserveChars = 400;
 
-    private const int PerSymbolLineChars = 400 + PriceContextReserveChars + NewsStatusReserveChars;
+    // FR-04, #1292, IADR-0523 決定 2: 保有の手仕舞いは方針の銘柄の列挙に関係なく判断する固定文の行（TradeDecisionPromptBuilder.HeldExitAlwaysJudgedRule。
+    // 保有ありのときだけ保有状況の短縮版に出る）は**保護分**である（削ると、方針の列挙の外の保有を一次が「取引対象外」で落とす＝実測の事故）。
+    // 見積りは保有の有無を知らないため無条件に予約する（過大に見積もるほど安全側）。行の長さが予約を超えないことを試験で固定する。
+    public const int HeldExitRuleReserveChars = 150;
+
+    private const int PerSymbolLineChars = 400 + PriceContextReserveChars + NewsStatusReserveChars + HeldExitRuleReserveChars;
 
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;
