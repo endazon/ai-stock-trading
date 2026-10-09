@@ -516,7 +516,7 @@ services:
       # 前提（同じ変更で揃える。無ければ描画で止まる）: 呼び先の services.<name> に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。メタデータのトークンは REST と同じ Notifications__Discord__OwnerAuth__*（ボットの機密クライアント。
       # 呼び先の gRPC 面は Auth__GrpcOwnerClients__0 で azp を確かめる）。deadline は <上記>__GrpcTimeoutSeconds（既定 5 / 5 / 10 秒）、
-      # 方針の改訂と適用の内訳の記録は Reports__GrpcPolicyRevisionTimeoutSeconds（既定 90 秒＝REST と同値。これも既定では置かない）。
+      # 方針の改訂と適用の内訳の記録は Reports__GrpcPolicyRevisionTimeoutSeconds（既定 120 秒＝REST と同値。これも既定では置かない）。
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc

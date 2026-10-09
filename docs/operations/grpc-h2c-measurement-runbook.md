@@ -4,14 +4,14 @@ type: runbook
 status: draft
 author: claude (Claude Code)
 created: 2026-10-04
-updated: 2026-10-06
+updated: 2026-10-10
 ---
 <!-- trace:
 ids: [NFR]
 adrs: [MSP:ADR-0029, MSP:ADR-0075, ADR-0047]
-iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493]
-specs: [20261004_753_grpc-h2c-measurement-runbook]
-issues: [#753, #626, #1178, #1181]
+iadrs: [IADR-0489, IADR-0284, IADR-0328, IADR-0331, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0439, IADR-0283, IADR-0493, IADR-0522]
+specs: [20261004_753_grpc-h2c-measurement-runbook, 20261010_243_policy-revision-max-tokens]
+issues: [#753, #626, #1178, #1181, #243]
 -->
 <!-- 起点 ID・関連 ADR/IADR・仕様書名・修飾付き issue 参照は本文へ書かず、上の trace ブロックへ入れる（scripts/check-trace-blocks.js が検査する） -->
 
@@ -78,7 +78,7 @@ CI（`.github/workflows/helm.yml` の「Assert gRPC measurement overlay keeps ev
 | 9 | information-collection | `MarketMonitor__Grpc` | market-monitor | `marketmonitor.v1.WatchlistRead/GetWatchlist` | 4 | 収集の巡回（Finnhub を使う構成のとき） | 5 秒 |
 | 10 | information-collection | `CostControl__Grpc` | cost-control | `costcontrol.v1.CostStateRead/GetCostState` | 4 | 収集の巡回 | 5 秒 |
 | 11 | notification | `RiskManagement__Grpc` | risk-management | 読み: `riskmanagement.v1.RiskControlsOwnerRead/GetRiskStatus`・`RiskControlsRead/GetStageGate`／書き: `RiskControlsOwnerWrite/*`（8 本） | 5 | Discord の `/status`・`/stage`・`/pause`・`/resume`・`/gfv`・`/drift`・`/killswitch` | 5 秒 |
-| 12 | notification | `Reports__Grpc` | report | 読み: `report.v1.ReportOwnerRead/*`（3 本）／書き: `ReportOwnerWrite/*`（4 本） | 5 | Discord の `/report`・`/policy` | 5 秒（方針の改訂と適用の記録は 90 秒） |
+| 12 | notification | `Reports__Grpc` | report | 読み: `report.v1.ReportOwnerRead/*`（3 本）／書き: `ReportOwnerWrite/*`（4 本） | 5 | Discord の `/report`・`/policy` | 5 秒（方針の改訂と適用の記録は 120 秒） |
 | 13 | notification | `MarketMonitor__Grpc` | market-monitor | 読み: `marketmonitor.v1.WatchlistRead/GetWatchlist`／書き: `WatchlistOwnerWrite/ApplyWatchlistProposal` | 5 | `/policy` の入れ替え案の適用 | 10 秒 |
 
 基盤のテキスト生成（呼び出し側の宣言 `LlmGateway__Grpc`）はこの表に入らない。呼び先がこのチャートの外にあり、段 1〜5 とは別の系列である。

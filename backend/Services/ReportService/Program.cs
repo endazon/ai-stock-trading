@@ -169,20 +169,21 @@ builder.Services.AddSingleton<IReportNarrativeDrafter>(sp =>
 });
 // FR-07, FR-14, UC-03〜05, ADR-0003, #1016, IADR-0431: 利用者の自由文の指示から方針の改訂案を作る（Discord `/policy`）。
 // 輸送は散文ドラフトと共用（ResolveReportLlmTransport）。**未構成なら「案なし」を返す実装**に倒す（定型の方針文を作らない）。
-// 上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒。REST では HttpClient.Timeout〔散文の上限の最大〕も効く）。
+// 上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 95 秒。REST では HttpClient.Timeout〔散文の上限の最大〕も効く）。
+// FR-14, #243, IADR-0522 の 2026-10-10 追記: 出力上限を 8192 へ上げたため、既定を 60 → 95 秒へ上げた（基盤のゲートウェイが
+// 上流の LLM を待つ 100 秒〔固定。MSP#1872〕の直前。外側の通知サービスの上限〔120 秒〕はこれより長い）。
 builder.Services.AddSingleton<IReportPolicyReviser>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     if (ResolveReportLlmTransport(sp, cfg, NarrativeTimeouts(cfg)) is not { } transport)
         return new UnavailableReportPolicyReviser();
 
-    var timeoutSeconds = int.TryParse(cfg[PolicyRevisionTimeoutKey], out var parsed) && parsed > 0 ? parsed : 60;
     return new LlmReportPolicyReviser(
         transport,
         sp.GetRequiredService<ILogger<LlmReportPolicyReviser>>(),
         cfg["LlmGateway:Confidentiality"] ?? "internal",
         cfg["LlmGateway:Purpose"],
-        TimeSpan.FromSeconds(timeoutSeconds),
+        PolicyRevisionTimeout(cfg),
         sp.GetRequiredService<ILlmUsageReporter>(),
         sp.GetRequiredService<ILlmGovernanceReporter>(),
         logPrompts: bool.TryParse(cfg["LlmGateway:LogPrompts"], out var logPrompts) && logPrompts,
@@ -742,4 +743,15 @@ public partial class Program
 
     // #1016, IADR-0431: 方針の改訂の LLM 上限（秒）。
     internal const string PolicyRevisionTimeoutKey = "Reports:PolicyRevision:TimeoutSeconds";
+
+    // FR-14, #243, IADR-0522 の 2026-10-10 追記: 方針の改訂の LLM 上限の既定（秒）。出力上限 8192 の余裕を使えるよう 60 → 95 秒。
+    // 🔴 **基盤のゲートウェイが上流の LLM を待つ 100 秒（固定・構成できない。MSP#1872）より短く**置く——それより長く待っても
+    // ゲートウェイの側で切れる。外側（通知サービスの `report-policy-revision` の HttpClient と gRPC の deadline・既定 120 秒）は
+    // これより長くする（内側が先に切れて「案なし」を確定的に返す）。不変条件は T-10-2506・T-10-2507 が固定する。
+    public const int DefaultPolicyRevisionTimeoutSeconds = 95;
+
+    /// <summary>方針の改訂の LLM 上限。未設定・非数値・非正値は既定（<see cref="DefaultPolicyRevisionTimeoutSeconds"/>）。</summary>
+    public static TimeSpan PolicyRevisionTimeout(IConfiguration cfg) =>
+        TimeSpan.FromSeconds(
+            int.TryParse(cfg[PolicyRevisionTimeoutKey], out var parsed) && parsed > 0 ? parsed : DefaultPolicyRevisionTimeoutSeconds);
 }

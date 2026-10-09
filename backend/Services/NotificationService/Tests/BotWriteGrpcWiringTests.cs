@@ -143,9 +143,10 @@ public class BotWriteGrpcWiringTests
         restCalls.Should().HaveCount(13, "13 本の書き込みがすべて REST を呼ぶ（空どうしの一致は何も証明しない）");
     }
 
-    // 方針の改訂・適用の内訳の記録の deadline は REST の 90 秒のクライアントと同値（未設定）。宣言すれば従う。照会・確定の deadline とは別。
+    // 方針の改訂・適用の内訳の記録の deadline は REST の 120 秒のクライアントと同値（未設定）。宣言すれば従う。照会・確定の deadline とは別。
+    // ［2026-10-10 / #243・IADR-0522 の追記］既定を 90 → 120 秒（報告書サービス側の上限を 60 → 95 秒へ上げたため。外側＞内側は T-10-2507）。
     [Theory]
-    [InlineData(null, 90)]
+    [InlineData(null, 120)]
     [InlineData("7", 7)]
     public void T_10_1736_方針の改訂の_deadline_は_REST_と同じ既定で構成に従う(string? seconds, int expected)
     {

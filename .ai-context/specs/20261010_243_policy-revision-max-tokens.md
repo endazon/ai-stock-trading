@@ -98,3 +98,39 @@ plan_refs:
 - `dotnet test` を ReportService・TradeDecisionService の試験プロジェクトへ。
 - `node scripts/check-test-traceability.js`・`check-trace-blocks.js`・`check-adr-index-sync.js`・`gen-knowledge-graph.js --check`・`check-commit-messages.js`・`check-cross-repo-refs.js`。
 - 変異: M1（`MaxTokens` を 4096 へ戻す）→ T-10-2503・T-10-2504（警告が運ぶ上限の値）が赤。M2（上限到達の警告を外す）→ T-10-2504 が赤。いずれも戻して緑。
+
+## ［2026-10-10 追記 / #243・PR #1289 の監査］上限時間の連なりと可観測性仕様書の検索キー
+
+監査（判定 GO・🟡 3 件）の指摘を受けて追記する。本文（上の各節）は書き換えない。
+
+### 指摘と対応
+
+1. **上限時間で出力上限の余裕が使えない。** 連なりは ゲートウェイ→上流の 100 秒（固定）／報告書サービス 60 秒／通知サービス 90 秒（REST・gRPC）。
+   毎秒 50〜80 トークンなら 8192 トークンには 100〜165 秒かかり、60 秒では約 3,000〜4,800 トークンで切れる。
+   - 報告書サービスの既定を 60 → **95 秒**（ゲートウェイの 100 秒の直前）。`Program.DefaultPolicyRevisionTimeoutSeconds`・`Program.PolicyRevisionTimeout(cfg)` へ切り出した。
+   - 通知サービスの外側を 90 → **120 秒**（REST の名前付き HttpClient と gRPC の deadline の既定。REST は gRPC の既定の定数を共有）。
+     内側 95 秒＋建玉の照会 10 秒＝105 秒より長い。
+   - Discord の経路: `/policy` は Defer の後に追送で返す（追送の期限 15 分）。変更不要。
+   - 上書きの母集合（規則 9）: `git grep` で `PolicyRevision:TimeoutSeconds`・`GrpcPolicyRevisionTimeoutSeconds`・`report-policy-revision`・`90 秒`・`既定 60 秒` を引いた。
+     appsettings*.json・helm（values.yaml・values-local.yaml）・compose に値の上書きは無い（helm の values.yaml にコメントだけ）。
+     是正: 通知サービスの `Program.cs`・`NotificationGrpcTransports.cs`・`GrpcPolicyRevisionController.cs` の注記、helm values.yaml の注記、
+     `docs/api/east-west-grpc.md`・`docs/data/reports.md`・`docs/operations/grpc-h2c-measurement-runbook.md`・`docs/blocked-tasks.md`・テスト仕様書（T-10-1736 の行・本件の節）。
+     除外: TradeDecisionService の「90 秒」（判断の締め切りで別物）・`.ai-context/` の凍結記録（IADR-0431・IADR-0449 等の当時の値）。
+2. **時間切れの費用の欠落**（応答の後にしか計上しない）: IADR-0522 の追記 2 へ残余として記録した（1 日 10 回で抑えられる）。コードは変えない。
+3. **可観測性仕様書の検索キー**: 「出力上限に到達」では、取引判断・報告書の散文の本文が空の分岐（「応答本文が空です（stopReason=max_tokens）」）が漏れる。
+   検索キーを `stopReason=max_tokens` に改め、漏れる分岐と 1 回で複数行に当たる場合を注記した。
+
+### 試験の採番（追加）
+
+全リモートブランチ（`git for-each-ref refs/remotes/origin`）の `docs/tests`・`backend` で `T-10-25NN` の最大を引いた。最大は T-10-2505（本 PR）。
+**T-10-2506**（報告書サービスの上限の既定と構成）・**T-10-2507**（通知サービスの外側＞内側）を使う。既存の T-10-1736 の期待値を 90 → 120 秒へ改めた。
+
+### この変更で新たに誤りになる自分の記述（規則 10）
+
+- 本文「範囲外」の「上限時間 60 秒の見直し」は本追記で行った（本文は凍結のため残す）。
+- テスト仕様書の本件の節の残余「上限時間（既定 60 秒）」は 95 秒へ是正した（`docs/` は生きた文書）。
+- IADR-0522「結果」の「既定 60 秒」は凍結のまま残し、追記 1 で後継の値を示した。
+
+### 検証（追加）
+
+- 変異: M3（通知サービスの外側の既定を 100 秒へ）→ T-10-2507・T-10-1736 が赤。M4（報告書サービスの既定を 100 秒へ）→ T-10-2506・T-10-2507 が赤。いずれも戻して緑。

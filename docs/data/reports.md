@@ -3,15 +3,15 @@ title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-08
+updated: 2026-10-10
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052, ADR-0053]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, planning#711, planning#746, planning#724]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, planning#711, planning#746, planning#724]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -81,7 +81,7 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
   報告書が**その版で確定されていなければ 409**（確定済みかつ現在の版＝要求の版＋1 のときだけ返す）。
 - `POST /reports/policy-revisions/{attemptId}/watchlist-apply-result`（OwnerOnly）: 入れ替え案の適用の内訳の記録（`{outcome, items[], message, onBehalfOf}`）。
   **1 回だけ**（2 回目は 409）。確定された案の試行（Proposed かつ報告書がその版で確定済み）以外も 409。適用そのものは市場監視サービスが行う（`/policy` 専用の確認ボタンで確定できたときだけ）。
-  改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 60 秒）。
+  改訂者は確定と同じ規則（信頼クライアントのトークンに限り `onBehalfOf`）。LLM の上限は `Reports:PolicyRevision:TimeoutSeconds`（既定 95 秒。基盤のゲートウェイが上流の LLM を待つ 100 秒〔固定〕より短く、呼び出し側の通知サービスの上限〔120 秒〕より短く置く）。
   **1 日（JST の暦日）の回数上限**は `Reports:PolicyRevision:DailyLimit`（既定 10 回）。上限に達した要求は LLM を呼ばず **429** で断る。
   数えるのは LLM を呼んだ試行（失敗も含む）で、入力の検証・対象の決定で断った要求は数えない。
 - `POST /reports/{periodKey}/regenerate`（**未確定の下書きを、その期間の入力で作り直す**。OwnerOnly。Discord の `/report regenerate <periodKey>`・gRPC `ReportOwnerWrite/RegenerateReport` も同じ処理）:

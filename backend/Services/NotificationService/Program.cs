@@ -181,8 +181,11 @@ builder.Services.AddSingleton<ReportCommandHandler>();
 
 // FR-07, FR-14, UC-03〜05, ADR-0003, #1016, IADR-0431: 方針の改訂（`/policy`）。報告書サービスの OwnerOnly エンドポイントを
 // owner マップ機密クライアントのトークンで呼ぶ（報告書レビューと同じ資格情報）。LLM の所要時間（報告書サービス側の上限は
-// 既定 60 秒）を見込み、**専用の名前付き HttpClient** で上限を 90 秒に取る（既存の `report-review` の 5 秒は変えない）。
-builder.Services.AddHttpClient("report-policy-revision", c => c.Timeout = TimeSpan.FromSeconds(90))
+// 既定 95 秒）を見込み、**専用の名前付き HttpClient** で上限を 120 秒に取る（既存の `report-review` の 5 秒は変えない）。
+// FR-14, #243, IADR-0522 の 2026-10-10 追記: 出力上限 8192 に合わせて報告書サービス側を 60 → 95 秒へ上げたため 90 → 120 秒。
+// 🔴 **外側（ここ）は内側（報告書サービスの LLM 上限＋建玉の照会 10 秒）より長く**置く。gRPC の deadline と同じ値を共有する。
+// Discord の応答は Defer の後の追送で、追送の期限（15 分）に収まる。
+builder.Services.AddHttpClient("report-policy-revision", c => c.Timeout = ReportsGrpcTransport.DefaultPolicyRevisionTimeout)
     .AddDiscordOwnerToken(builder.Configuration);
 builder.Services.AddSingleton<IPolicyRevisionController>(sp =>
 {
@@ -199,7 +202,7 @@ builder.Services.AddSingleton<PolicyRevisionCommandHandler>();
 
 // FR-06, FR-14, UC-03〜05, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 1: 報告書の作り直し（`/report regenerate`）。報告書レビューと同じ
 // 資格情報（owner マップ機密クライアント）。期間の入力の取得（依存先ごとに最長 10 秒前後）と散文の LLM（週報・月報は既定 120 秒）を見込み、
-// **専用の名前付き HttpClient** で上限を 300 秒に取る（`report-review` の 5 秒・`report-policy-revision` の 90 秒は変えない）。
+// **専用の名前付き HttpClient** で上限を 300 秒に取る（`report-review` の 5 秒・`report-policy-revision` の 120 秒は変えない）。
 // Discord の応答は Defer の後の追送で、追送の期限（15 分）に収まる。
 builder.Services.AddHttpClient("report-regeneration", c => c.Timeout = TimeSpan.FromSeconds(300))
     .AddDiscordOwnerToken(builder.Configuration);
