@@ -30,7 +30,10 @@ public sealed class LlmReportPolicyReviser(
     // FR-07, ADR-0048 決定 4, #1118, IADR-0467 決定 7: decisionVolumeProvided は判断へ出来高が渡る構成か（判断サービスと同じ
     // DecisionVolume:Enabled。既定 false＝「出来高: 未提供」を方針の改訂 LLM へ示す）。
     // 方針 2000 文字＋入れ替え案＋説明の JSON に、思考トークンの余裕を足した合算上限（IADR-0101）。
-    private const int MaxTokens = 4096;
+    // FR-14, FR-07, #243, IADR-0522 決定 1: 方針の改訂だけ 4096 → 8192。PoC の実測で出力の最大が 3,805（4096 の 93%）と
+    // 3,378 に達し、他の用途（最大 1,017）と違って上限に余裕が無かった。🔴 上げるのはこの呼び出しだけ
+    // （判断・一次スクリーニング・報告書の散文は 4096 のまま＝実測で十分な余裕がある）。
+    private const int MaxTokens = 8192;
 
     public async Task<PolicyRevisionOutcome> ReviseAsync(
         PolicyRevisionContext context, CancellationToken cancellationToken = default)
@@ -134,7 +137,15 @@ public sealed class LlmReportPolicyReviser(
                 return PolicyRevisionOutcome.Failed(PolicyRevisionFailure.Refused, "AI が要求を拒否しました", modelUsage);
             }
 
-            // 上限到達は途中で切れた JSON になり得る——下の検証が捨てる（部分採用しない）。
+            // FR-14, NFR, #243, IADR-0522 決定 2・IADR-0104 決定 5: 上限到達は**案の成否と独立に**警告として残す。
+            // 途中で切れた JSON は下の検証が捨てる（部分採用しない）が、閉じた JSON の直後で切れた場合は案として通り得るため、
+            // 形式違反の警告だけでは打ち切りを観測できない（判断・報告書の散文の呼び出しと同じ作法に揃える）。
+            if (LlmStopReasons.IsMaxTokens(dto.StopReason))
+                logger.LogWarning(
+                    "方針の改訂 LLM の応答が出力上限に到達しました（stopReason={StopReason} maxTokens={MaxTokens} "
+                    + "outputTokens={OutputTokens} model={Model}）。案が途中で切れている可能性があります。",
+                    dto.StopReason, MaxTokens, dto.OutputTokens, dto.Model);
+
             var parsed = PolicyRevisionProposalParser.Parse(dto.Text);
             if (!parsed.IsValid)
             {

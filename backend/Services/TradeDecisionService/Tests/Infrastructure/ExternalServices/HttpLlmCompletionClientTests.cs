@@ -231,6 +231,25 @@ public class HttpLlmCompletionClientTests
         reporter.Last!.Value.Purpose.Should().Be(purpose);
     }
 
+    // T-10-2505（FR-04, #243, IADR-0522 決定 1）: 一次スクリーニングと本判断の出力上限は 4096 のまま
+    // （PoC の実測で出力の最大は 1,017。上限を上げたのは方針の改訂だけ）。
+    [Theory]
+    [InlineData(LlmPurposes.TradeDecisionScreening)]
+    [InlineData(LlmPurposes.TradeDecision)]
+    public async Task 判断の出力上限は4096のまま(string purpose)
+    {
+        var handler = new CapturingHandler(
+            """{"text":"{}","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""");
+        var client = new HttpLlmCompletionClient(
+            new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
+            NullLogger<HttpLlmCompletionClient>.Instance, "internal", purposeOverride: null, new NoOpLlmUsageReporter());
+
+        await client.CompleteAsync("p", model: null, purpose);
+
+        using var doc = JsonDocument.Parse(handler.LastBody!);
+        doc.RootElement.GetProperty("maxTokens").GetInt32().Should().Be(4096);
+    }
+
     // 否定形: 構成 LlmGateway:Purpose を明示したデプロイでは**全呼び出しへ上書き適用**する（既存デプロイの非破壊）。
     [Fact]
     public async Task 構成の明示上書きがあるときは呼び出し側の用途より優先する()

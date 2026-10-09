@@ -1,5 +1,6 @@
 using AiStockTrading.Shared.Contracts.Llm;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ReportService.Domain;
 using ReportService.Features.Reports;
@@ -9,6 +10,7 @@ using Xunit;
 namespace ReportService.Tests;
 
 // FR-07, FR-14, ADR-0003, #1016, IADR-0431 決定 2・3: 方針の改訂の LLM 呼び出し（T-10-1306〜1310）。
+// #243, IADR-0522: 出力上限（8192）と上限到達の警告（T-10-2503・T-10-2504）。
 // 🔴 失敗は**プレースホルダへ倒さず「案なし」**で返すこと、費用は本文の扱いと独立に計上すること、
 // 指示はプロンプトの節を偽装できない形（1 行 JSON）で渡すことを固定する。
 public class LlmReportPolicyReviserTests
@@ -139,6 +141,60 @@ public class LlmReportPolicyReviserTests
         transport.Calls.Should().ContainSingle().Which.Prompt.Should().Contain(provided
             ? PolicyRevisionPromptBuilder.VolumeProvidedMaterial
             : PolicyRevisionPromptBuilder.VolumeNotProvidedMaterial);
+    }
+
+    // T-10-2503（#243, IADR-0522 決定 1）: 方針の改訂だけ出力上限を 8192 にし、報告書の散文は 4096 のまま（用途別の上限）。
+    [Fact]
+    public async Task 方針の改訂だけ出力上限は8192で報告書の散文は4096のまま()
+    {
+        var revision = new FakeTransport(Completed(ValidJson));
+        await Reviser(revision).ReviseAsync(Context());
+
+        var narrative = new FakeTransport(Completed("本日は堅調でした。"));
+        await new HttpReportNarrativeDrafter(narrative, NullLogger<HttpReportNarrativeDrafter>.Instance, "internal", null)
+            .DraftNarrativeAsync(new ReportNarrativeContext(
+                ReportKind.Daily, "daily-2026-10-09", "2026-10-09", ["US"],
+                new PnlSummary(1m, 0m, 0m, 1m, 0m, 1, 1, 1), "翌日は継続"));
+
+        revision.Calls.Should().ContainSingle().Which.MaxTokens.Should().Be(8192);
+        narrative.Calls.Should().ContainSingle().Which.MaxTokens.Should().Be(4096, "実測の最大 1,001 前後で 4096 に余裕がある");
+    }
+
+    // T-10-2504（#243, IADR-0522 決定 2）: stopReason=max_tokens は案の成否と独立に警告ログへ残り、上限と出力トークンを運ぶ。
+    // 閉じた JSON の直後で切れて案として通った場合も観測できる（形式違反の警告だけに頼らない）。終了理由が他なら出さない。
+    [Theory]
+    [InlineData(ValidJson, "max_tokens", true, true)]
+    [InlineData("{\"policySummary\": \"途中で切れ", "max_tokens", false, true)]
+    [InlineData(ValidJson, "end_turn", true, false)]
+    [InlineData(ValidJson, null, true, false)]
+    public async Task 出力上限到達は案の成否と独立に警告ログへ残る(string text, string? stopReason, bool proposed, bool warned)
+    {
+        var logger = new RecordingLogger();
+        var reviser = new LlmReportPolicyReviser(
+            new FakeTransport(LlmCompletionExchange.Completed(new LlmCompletionPayload(text, true, null, stopReason, 100, 8192))),
+            logger, "internal", purposeOverride: null, TimeSpan.FromSeconds(5), new RecordingUsage(), new NoOpGovernance());
+
+        var outcome = await reviser.ReviseAsync(Context());
+
+        outcome.Succeeded.Should().Be(proposed);
+        var truncation = logger.Entries.Where(e => e.Level == LogLevel.Warning && e.Message.Contains("出力上限に到達")).ToList();
+        if (warned)
+            truncation.Should().ContainSingle().Which.Message
+                .Should().Contain("max_tokens").And.Contain("maxTokens=8192").And.Contain("outputTokens=8192");
+        else
+            truncation.Should().BeEmpty();
+    }
+
+    private sealed class RecordingLogger : ILogger<LlmReportPolicyReviser>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
     }
 
     internal sealed class FakeTransport(LlmCompletionExchange exchange) : ILlmCompletionTransport
