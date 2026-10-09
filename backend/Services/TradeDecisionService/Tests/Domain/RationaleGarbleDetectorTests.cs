@@ -51,6 +51,23 @@ public class RationaleGarbleDetectorTests
         RationaleGarbleDetector.IsSuspected(rationale).Should().BeFalse();
     }
 
+    // T-10-2524: 既知の誤検出（限界として固定する。監査 2026-10-10・PR #1298。実在の固有名・略語・業界の言い回しを含む 30 文中 5 文に目印が付いた）。
+    // 🔴 規則を締める案は採らなかった（IADR-0525 決定 2 の追記）:
+    //   - 「大文字を含む並びは疑わない」は、実測の化け「監視銘HeaderItem」（T-10-2512）を取りこぼし、しかも小文字だけの「gapup」は残る。
+    //   - 「先頭だけ大文字（Apple・Microsoft）を除く」は 2/5 しか減らず、1 語の化け（例「監視銘Header」）を新たに取りこぼす。
+    //   - 「gapup」「YoY」は実測の「gl」「he」「HeaderItem」と字の形で区別できない（辞書が要る）。
+    // 目印が付くだけで action は変わらない。規則を締めたら、この試験は赤になる（そのときは誤検出の減少として意図して直す）。
+    [Theory]
+    [InlineData("米国Apple社の新製品発表を控えて様子見")]
+    [InlineData("同社iPhone需要の鈍化が懸念され見送り")]
+    [InlineData("売上高は前年比YoYで12%増と好調")]
+    [InlineData("米Microsoft社のAzure部門が伸びている")]
+    [InlineData("決算後gapupしたため追随の買いは控える")]
+    public void T_10_2524_英語の固有名と略語は既知の誤検出として目印が付く(string rationale)
+    {
+        RationaleGarbleDetector.IsSuspected(rationale).Should().BeTrue("既知の誤検出（限界）。目印が付くだけで action は変わらない");
+    }
+
     // T-10-2514: 目印は前置するだけで原文を書き換えない。疑いなしは原文のまま。二重に付けない。
     [Fact]
     public void T_10_2514_目印は原文の前に1回だけ付ける()
