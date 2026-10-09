@@ -18,7 +18,7 @@
 #   削除せず有効のまま残す（失敗時に @claude メンションで切り戻すフォールバック経路になる）。
 #
 # モデル:
-#   既定は claude-sonnet-5（レビュー側と同じ既定。高コストモデルは明示指定に限る）。
+#   既定は claude-sonnet-5-5（レビュー側と同じ既定。高コストモデルは明示指定に限る）。
 #   メンションで「@claude opus / fable / sonnet / haiku」と書くと、そのモデルで起動する
 #   （"Select model from mention" ステップが解析）。
 #   既定値を変えたい場合は同ステップの MODEL="..." を書き換える。
@@ -85,7 +85,7 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # @claude メンションでモデルを選択する。既定は claude-sonnet-5（品質基準を満たす最安モデルを
+      # @claude メンションでモデルを選択する。既定は claude-sonnet-5-5（品質基準を満たす最安モデルを
       # 既定にし、高コストモデルは明示指定に限る。レビュー側 claude-code-review と同じ方針）。
       # 複雑な実装には「@claude opus / fable」と書くと上位モデルで起動する。
       # 本文はコマンドインジェクション防止のため env 経由で受け取り、run へ直接展開しない。
@@ -101,11 +101,11 @@ jobs:
           ${REVIEW_BODY}
           ${ISSUE_BODY}
           ${ISSUE_TITLE}"
-          MODEL="claude-sonnet-5"
-          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-4-5-20251001"
+          MODEL="claude-sonnet-5-5"
+          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5-1"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5-5"
+          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-5-5"
           fi
           echo "model=$MODEL" >> "$GITHUB_OUTPUT"
           echo "Selected model: $MODEL"
@@ -123,7 +123,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # GitHub API アクセス用トークン（MCP GitHub ツール・スティッキーコメント投稿に必要）
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # 既定モデル: 変更可（レビュー用途は claude-sonnet-5 も可）
+          # 既定モデル: 変更可（レビュー用途は claude-sonnet-5-5 も可）
           #
           # --allowedTools: CI での権限はここ（claude_args）で決まる。アクションは
           #   リポジトリの .claude/settings.json を自動では読み込まないため、ローカル用
