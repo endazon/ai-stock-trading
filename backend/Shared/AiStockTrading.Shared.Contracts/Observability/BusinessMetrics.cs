@@ -280,7 +280,7 @@ public sealed class BusinessMetrics : IDisposable
         // FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 市場監視の 1 巡回の所要（秒）。境界は View で明示する（ObservabilityExtensions）。
         _marketMonitorCycleDurationSeconds = _meter.CreateHistogram<double>(
             BusinessMetricNames.MarketMonitorCycleDurationSeconds,
-            description: "市場監視の 1 巡回の所要秒数（開場して評価した巡回のみ。巡回間隔に達すると価格の確認の周期が延びる。FR-03/NFR-01）");
+            description: "市場監視の 1 巡回の所要秒数（開場して評価した巡回のみ。巡回間隔を超えると価格の確認の周期が延びる。FR-03/NFR-01）");
 
         // FR-01, FR-13, #1015, IADR-0435: 情報収集の Finnhub の対象銘柄の出所（watchlist 以外は変更が収集に届いていない印）。
         _finnhubSymbolSetResolutions = _meter.CreateCounter<long>(
