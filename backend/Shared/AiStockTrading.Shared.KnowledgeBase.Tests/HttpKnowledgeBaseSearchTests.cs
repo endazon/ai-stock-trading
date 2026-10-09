@@ -263,4 +263,60 @@ public class HttpKnowledgeBaseSearchTests
 
         hits.Should().BeEmpty();
     }
+
+    // T-10-2472, FR-08, FR-11, #1283: 失敗は従来どおり空の結果に倒すが、状態（Failed）と原因の符号を添える。
+    // 成功の 0 件は Succeeded（失敗と区別できる）。原因に本文・URL・例外のメッセージを入れない。
+    [Theory]
+    [InlineData("http-500")]
+    [InlineData("exception")]
+    [InlineData("timeout")]
+    [InlineData("empty")]
+    public async Task T_10_2472_失敗は空に倒したうえで状態と原因の符号を返し成功の0件と区別する(string kind)
+    {
+        var handler = kind switch
+        {
+            "http-500" => StubHttpMessageHandler.Status(HttpStatusCode.InternalServerError),
+            "exception" => StubHttpMessageHandler.Throws(),
+            "timeout" => StubHttpMessageHandler.TimesOut(),
+            _ => StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[],"totalHits":0,"elapsedMs":1}"""),
+        };
+
+        var result = await CreateSearch(handler).SearchWithOutcomeAsync(new KnowledgeQuery("q"));
+
+        result.Hits.Should().BeEmpty("縮退（空に倒す）は変えない");
+        if (kind == "empty")
+        {
+            result.Outcome.Should().Be(KnowledgeSearchOutcome.Succeeded);
+            result.FailureCause.Should().BeNull();
+        }
+        else
+        {
+            result.Outcome.Should().Be(KnowledgeSearchOutcome.Failed);
+            result.FailureCause.Should().Be(kind == "exception" ? "exception:HttpRequestException" : kind);
+        }
+    }
+
+    // T-10-2478, #1283（PR #1287 の監査 🟡4）: 呼び出し元の取り消しは打ち切り（timeout）・失敗に分類せず、OperationCanceledException を伝播する。
+    [Fact]
+    public async Task T_10_2478_呼び出し元の取り消しは失敗に分類せず伝播する()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[],"totalHits":0,"elapsedMs":1}""");
+
+        var act = () => CreateSearch(handler).SearchWithOutcomeAsync(new KnowledgeQuery("q"), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // T-10-2472: 未構成（no-op）は NotConfigured（検索して 0 件と区別する）。
+    [Fact]
+    public async Task T_10_2472_未構成のKB検索は状態をNotConfiguredで返す()
+    {
+        var result = await new NoOpKnowledgeBaseSearch(NullLogger<NoOpKnowledgeBaseSearch>.Instance)
+            .SearchWithOutcomeAsync(new KnowledgeQuery("q"));
+
+        result.Outcome.Should().Be(KnowledgeSearchOutcome.NotConfigured);
+        result.Hits.Should().BeEmpty();
+    }
 }

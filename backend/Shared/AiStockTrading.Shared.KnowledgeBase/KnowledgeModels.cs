@@ -128,3 +128,32 @@ public sealed record KnowledgeHit(
     // 収集状態）は null**。判断側は目印（coverage）を持たない旧文書の補充（フィルタなしの検索。#1138, IADR-0474 決定3）から
     // 「銘柄を持たない文書」だけを残すのに使う。
     string? Symbol = null);
+
+// FR-08, FR-11, #1283, IADR-0072 / IADR-0069: KB 検索の結果の状態。失敗は従来どおり空の結果に倒す（縮退は不変）が、
+// 「失敗で空」と「検索は成功して 0 件」を呼び出し側が区別できるよう、状態を添えて返す。
+public enum KnowledgeSearchOutcome
+{
+    /// <summary>検索は成功した（0 件を含む）。</summary>
+    Succeeded,
+
+    /// <summary>検索に失敗し、空の結果に倒した（非 2xx・例外・タイムアウト）。</summary>
+    Failed,
+
+    /// <summary>KB 検索が未構成（`KnowledgeBase:Search:BaseUrl` 未設定）で、検索していない。</summary>
+    NotConfigured,
+}
+
+// FR-08, FR-11, #1283: KB 検索の結果と状態。
+//   FailureCause — 失敗の原因の短い符号（`http-<状態コード>` / `timeout` / `exception:<型名>`）。
+//                  🔴 本文・クエリ・URL・資格情報・例外のメッセージを入れない（ログへそのまま出すため）。
+public sealed record KnowledgeSearchResult(
+    IReadOnlyList<KnowledgeHit> Hits,
+    KnowledgeSearchOutcome Outcome,
+    string? FailureCause = null)
+{
+    public static KnowledgeSearchResult Succeeded(IReadOnlyList<KnowledgeHit> hits) => new(hits, KnowledgeSearchOutcome.Succeeded);
+
+    public static KnowledgeSearchResult Failed(string cause) => new([], KnowledgeSearchOutcome.Failed, cause);
+
+    public static KnowledgeSearchResult NotConfigured { get; } = new([], KnowledgeSearchOutcome.NotConfigured);
+}
