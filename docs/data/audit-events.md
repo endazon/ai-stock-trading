@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-07
+updated: 2026-10-09
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR]
+ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
 adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286]
 -->
 
 
@@ -138,6 +138,8 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   その方向を塞いでいると答えていたときに出る（発注しない）。🔴 **従来はその買い増しが審査で拒否され `OrderRejected` として残っていた**
   （保有建玉数の上限など）。その一部がこちらへ移る（審査は変わらない）。決済の判断はこの理由で見送らない。
   理由 `SizedBelowMinimumNotional` は、新規建てのサイジングの名目額（数量 × 参照価格）が最小の名目額（equity の 1%）に満たないときに出る（発注しない）。
+  理由 `ExitOnlyOpenOutsideWatchlist` は、定時サイクルで監視銘柄の外の保有銘柄を出口専用で判断したのに、LLM が新規建て（買い増し・売り増し）を返したときに出る
+  （発注しない。決済の判断はこの理由で見送らない）。
   判断由来の決済（利確）の後の同日・同方向の新規建ては、審査の拒否（`OrderRejected`）の理由 `DecisionExitSameDay` として残る
   （保有 0・未約定なしの銘柄では LLM を呼ぶ前の見送り `EntryBlockedByRiskControls` へ移る）。
 - 建玉照会・保有照会の**状態の変化**（`PositionQueryStatusChanged`）を、発生源ごとに成功⇄失敗が変わったときだけ記録する

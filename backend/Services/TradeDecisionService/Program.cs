@@ -279,6 +279,11 @@ builder.Services.AddScoped<IHeldPositionProvider>(sp =>
     http.BaseAddress = uri;
     return new HttpHeldPositionProvider(http, sp.GetRequiredService<ILogger<HttpHeldPositionProvider>>());
 });
+// 🔴 FR-02, FR-04, #1286, IADR-0521 決定 1: 定時サイクルの判断対象へ足す保有中の銘柄。保有照会と**同じ実装**（同じ口・同じ選び方）を使う
+// （3 実装とも IHeldSymbolsProvider を実装する。NoOp は常に不明＝監視銘柄だけを判断する）。定時の購読（InformationCollectedHandler）の必須依存。
+builder.Services.AddScoped<IHeldSymbolsProvider>(sp =>
+    sp.GetRequiredService<IHeldPositionProvider>() as IHeldSymbolsProvider
+    ?? sp.GetRequiredService<NoOpHeldPositionProvider>());
 // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 銘柄単位の新規建ての可否（リスク管理の GET /risk-controls/entry-blockers・
 // gRPC GetEntryBlockers。審査と同じ述語）。保有照会と同じ選び方（gRPC の宣言 → Grpc、BaseUrl → Http、どちらも無ければ NoOp）。
 // NoOp は常に不明＝判断は LLM を呼ぶ（従来どおり）。照会の失敗も同じ（見送らない。審査が止める）。

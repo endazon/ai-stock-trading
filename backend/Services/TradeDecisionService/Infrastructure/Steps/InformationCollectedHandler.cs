@@ -9,7 +9,7 @@ using AppSvc = TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDeci
 
 namespace TradeDecisionService.Infrastructure.Steps;
 
-// FR-02, UC-01, IADR-0023: 定時系統の合流点。情報収集の完了（InformationCollected）を購読し、監視銘柄（watchlist）を巡回して
+// FR-02, UC-01, IADR-0023: 定時系統の合流点。情報収集の完了（InformationCollected）を購読し、監視銘柄（watchlist）と監視銘柄の外の保有銘柄（#1286, IADR-0521）を巡回して
 // 市場開場中のもののみ AI 判断を実行する。判断が成立（発注意図あり）した銘柄について TradeDecisionMade を発行する。
 // 休場日（市場カレンダー閉場）の銘柄はサイクルを起動しない。
 //
@@ -30,9 +30,14 @@ namespace TradeDecisionService.Infrastructure.Steps;
 //          （サイクル全体の打ち切り→再配送にしない）。予算も**必須依存**（上と同じ理由）。
 //   決定2: 判断の DecisionId は (起点イベント, 市場, 銘柄) から決定的に導く（ScheduledDecisionIds）。サイクルが打ち切られても
 //          落ちても、再配送で出た判断は同じ DecisionId になり、下流の DecisionId の冪等が重複発注を止める。
+//
+// 🔴 FR-02, FR-04, UC-01, ADR-0051, #1286, IADR-0521: 判断対象は「監視銘柄 ∪ 保有中の銘柄」である（利用者裁定 2026-10-09
+//   「保有銘柄も判断対象に」）。監視銘柄の外の保有銘柄（保有のみ）は出口専用で判断する（DecisionTrigger.ExitOnly）。
+//   保有銘柄が読めなければ（null＝不明）監視銘柄だけを判断する（従来の巡回と同じ）。保有の供給口も**必須依存**（上と同じ理由）。
 public sealed class InformationCollectedHandler(
     AppSvc decisionService,
     IWatchlistProvider watchlist,
+    IHeldSymbolsProvider heldSymbols,
     IMarketCalendar calendar,
     IClock clock,
     BusinessMetrics metrics,
@@ -72,17 +77,27 @@ public sealed class InformationCollectedHandler(
         if (watchlistSymbols is null)
             return;
 
-        // #1169, IADR-0490 決定1: 上限は監視銘柄数の前提から導いてある。前提を超えたらサイクルが上限に達し得ることを告げる
-        // （打ち切り→再配送になっても決定2 で重複はしないが、LLM の費用が二重になり判断の時刻がずれる）。
-        if (watchlistSymbols.Count > budget.MaxWatchedSymbols)
+        // 🔴 #1286, IADR-0521 決定 1・2: 保有中の銘柄を足す。監視銘柄に在る保有銘柄は従来どおり（新規建ても可）、
+        // 外に在るものだけを出口専用として末尾に足す。監視銘柄の判断の順と DecisionId（起点・市場・銘柄から導く）は変わらない。
+        var held = await heldSymbols.GetHeldSymbolsAsync(cancellationToken).ConfigureAwait(false);
+        var targets = ScheduledJudgmentTargets.Build(watchlistSymbols, held);
+        if (held is null)
         {
-            logger.LogWarning(
-                "監視銘柄 {Count} 件が定時サイクルの上限の前提 {Max} 件を超えています。サイクルが実行時間の上限 {Timeout} に"
-                + "達すると打ち切られて再配送されます（判断は DecisionId で冪等）。TradeCycle__MaxWatchedSymbols を見直してください。",
-                watchlistSymbols.Count, budget.MaxWatchedSymbols, budget.HandlerTimeout);
+            logger.LogInformation("保有銘柄が不明のため、このサイクルは監視銘柄だけを判断します（監視銘柄の外の保有銘柄の出口判断は次の巡回）。");
         }
 
-        foreach (var watched in watchlistSymbols)
+        // #1169, IADR-0490 決定1: 上限は監視銘柄数の前提から導いてある。前提を超えたらサイクルが上限に達し得ることを告げる
+        // （打ち切り→再配送になっても決定2 で重複はしないが、LLM の費用が二重になり判断の時刻がずれる）。
+        // #1286, IADR-0521 決定 3: 前提と比べるのは判断する銘柄の数（監視銘柄 ＋ 保有のみ）である。
+        if (targets.Count > budget.MaxWatchedSymbols)
+        {
+            logger.LogWarning(
+                "判断対象 {Count} 件（監視銘柄 ＋ 監視銘柄の外の保有銘柄）が定時サイクルの上限の前提 {Max} 件を超えています。サイクルが実行時間の上限 {Timeout} に"
+                + "達すると打ち切られて再配送されます（判断は DecisionId で冪等）。TradeCycle__MaxWatchedSymbols を見直してください。",
+                targets.Count, budget.MaxWatchedSymbols, budget.HandlerTimeout);
+        }
+
+        foreach (var (watched, exitOnly) in targets)
         {
             // #1169 監査 🟡2: 開場の判定は銘柄ごとに今の時刻で行う（長いサイクルの途中で引けを越えたら、残りの銘柄は判断しない）。
             if (!calendar.IsOpen(watched.Market, clock.UtcNow))
@@ -108,7 +123,7 @@ public sealed class InformationCollectedHandler(
                     // NFR-02, #689, IADR-0307: 定時サイクルの起点は**収集の完了時刻**である。
                     // ここで渡さないと、下流（発注完了・記録完了）が区間を閉じられず未観測になる。
                     .DecideAsync(
-                        DecisionTrigger.Scheduled(watched.Symbol, watched.Market, message.CollectedAt),
+                        DecisionTrigger.Scheduled(watched.Symbol, watched.Market, message.CollectedAt, exitOnly),
                         symbolDeadline.Token)
                     .ConfigureAwait(false);
                 metrics.RecordTradeDecisionDuration(

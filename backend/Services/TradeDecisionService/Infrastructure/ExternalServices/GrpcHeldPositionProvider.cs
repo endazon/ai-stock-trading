@@ -19,7 +19,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 public sealed class GrpcHeldPositionProvider(
     RiskManagementGrpcTransport transport,
     ILogger<GrpcHeldPositionProvider> logger)
-    : IHeldPositionProvider
+    : IHeldPositionProvider, IHeldSymbolsProvider
 {
     // #865, IADR-0358: 実結線（RiskManagement:Grpc が宣言されたときだけ生成される）。REST 実装と同じく常に true。
     public bool IsEnabled => true;
@@ -51,6 +51,31 @@ public sealed class GrpcHeldPositionProvider(
         }
 
         return HttpHeldPositionProvider.InterpretPositions(rows, symbol, market, logger);
+    }
+
+    // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 1: 定時サイクルの判断対象へ足す保有中の銘柄。解釈は REST と同じ 1 つ。
+    public async Task<IReadOnlyList<WatchedSymbol>?> GetHeldSymbolsAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await transport.CallAsync(
+            "保有銘柄",
+            "このサイクルは監視銘柄だけを判断します。",
+            (client, options) => client.GetOpenPositionsAsync(new Proto.GetOpenPositionsRequest(), options),
+            cancellationToken).ConfigureAwait(false);
+        if (response is null)
+            return null;
+
+        List<HttpHeldPositionProvider.OpenPositionDto> rows;
+        try
+        {
+            rows = [.. response.Positions.Select(ToRow)];
+        }
+        catch (FormatException ex)
+        {
+            logger.LogWarning(ex, "保有銘柄の gRPC 応答を読めません（10 進の書式）。このサイクルは監視銘柄だけを判断します。");
+            return null;
+        }
+
+        return HttpHeldPositionProvider.InterpretHeldSymbols(rows, logger);
     }
 
     public async Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(

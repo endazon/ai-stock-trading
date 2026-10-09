@@ -6,7 +6,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // FR-04, #292, IADR-0119: 建玉照会の安全既定。常に null（不明）を返す。
 // 不明のもとでは売り判断が見送りへ倒れる（＝裸の新規売りを出さない）。実照会は Worker が
 // RiskManagement:BaseUrl 設定時に HttpHeldPositionProvider を配線したときのみ有効。
-public sealed class NoOpHeldPositionProvider : IHeldPositionProvider
+public sealed class NoOpHeldPositionProvider : IHeldPositionProvider, IHeldSymbolsProvider
 {
     // #865, IADR-0358: 未結線。「照会したが分からなかった」ではなく「照会していない」であるため、
     // 不明を理由に新規建てを止めない（既定構成の挙動を変えない）。
@@ -25,4 +25,8 @@ public sealed class NoOpHeldPositionProvider : IHeldPositionProvider
     public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
         string symbol, Market market, CancellationToken cancellationToken = default) =>
         Task.FromResult<WorkingEntryOrders?>(null);
+
+    // #1286, IADR-0521 決定 1: 保有銘柄も常に不明。定時サイクルは監視銘柄だけを判断する（従来どおり）。
+    public Task<IReadOnlyList<WatchedSymbol>?> GetHeldSymbolsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<WatchedSymbol>?>(null);
 }

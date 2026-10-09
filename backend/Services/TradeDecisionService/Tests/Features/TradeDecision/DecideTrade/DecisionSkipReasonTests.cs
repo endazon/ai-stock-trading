@@ -280,25 +280,28 @@ public class DecisionSkipReasonTests
         observed.Should().OnlyHaveUniqueItems("理由が重なると内訳が読めなくなる");
     }
 
-    // 🔴 #891 やること 1（語彙の網羅）: **語彙は 18 値で、洗い出しの結果そのものである**
+    // 🔴 #891 やること 1（語彙の網羅）: **語彙は 19 値で、洗い出しの結果そのものである**
     // （#934 / IADR-0390 決定5 が末尾に WorkingEntriesUnknownOpen を足して 12 → 13。#1113 / IADR-0463 決定 4 が
     // 末尾に EntryBlockedByRiskControls を足して 13 → 14。LLM を呼ぶ前の見送りで、振る舞いは EntryBlockersBeforeLlmTests が固定する。
     // T-10-1907, #1130 / IADR-0471 決定 3 が末尾に AddOnBlockedByRiskControls を足して 14 → 15。LLM の後の見送りで、振る舞いは
     // HeldAddOnBlockersTests が固定する。T-10-2322, #1176 / IADR-0495 決定1・2 が末尾に EntryCapacityBelowMinimumNotional と
     // SizedBelowMinimumNotional を足して 15 → 17。振る舞いは上の表〔11・12 番〕と MinimumEntryNotionalDecisionTests が固定する。
-    // T-10-2386, #1174 / IADR-0500 が末尾に EntryCapacityBelowOneShare〔LLM の前〕を足して 17 → 18。振る舞いは上の表〔13 番〕と OneShareCapacityDecisionTests が固定する）。
+    // T-10-2386, #1174 / IADR-0500 が末尾に EntryCapacityBelowOneShare〔LLM の前〕を足して 17 → 18。振る舞いは上の表〔13 番〕と OneShareCapacityDecisionTests が固定する。
+    // T-10-2486, #1286 / IADR-0521 決定 2 が末尾に ExitOnlyOpenOutsideWatchlist〔LLM の後〕を足して 18 → 19。振る舞いは HeldOutsideWatchlistExitOnlyTests が固定する）。
     // 値を足したのに報告点を足さない／報告点を消したのに値を残す、を気付けるようにする。
     // 上のテストが 13 値を**振る舞いで**固定し（EntryBlockedByRiskControls・AddOnBlockedByRiskControls の 2 値は上記の別の試験が固定する）、残る 3 値は到達に LLM 出力の不正（参照価格 0・損切り幅の異常）か
     // 採算ゲートの構成が要るため、ここでは語彙の側だけを固定する（IADR-0374 §結果 に明記）。
     [Fact]
-    public void 見送り理由の語彙は洗い出した18値である()
+    public void 見送り理由の語彙は洗い出した19値である()
     {
+        // T-10-2486, #1286 / IADR-0521 決定 2 が末尾に ExitOnlyOpenOutsideWatchlist（LLM の後）を足して 18 → 19。
         // T-10-2386, #1174 / IADR-0500 決定2 が末尾に EntryCapacityBelowOneShare（LLM の前）を足して 17 → 18。
         // T-10-2322, #1176 / IADR-0495 決定1・2 が末尾に EntryCapacityBelowMinimumNotional（LLM の前）と SizedBelowMinimumNotional
         // （LLM の後）を足して 15 → 17。振る舞いは上の表（11・12 番）と MinimumEntryNotionalDecisionTests が固定する。
-        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(18);
-        Enum.GetValues<DecisionSkipReason>()[^1].Should().Be(DecisionSkipReason.EntryCapacityBelowOneShare, "値は末尾へ足す");
-        Enum.GetValues<DecisionSkipReason>()[^2].Should().Be(DecisionSkipReason.SizedBelowMinimumNotional, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionSkipReason>().Should().HaveCount(19);
+        Enum.GetValues<DecisionSkipReason>()[^1].Should().Be(DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, "値は末尾へ足す");
+        Enum.GetValues<DecisionSkipReason>()[^2].Should().Be(DecisionSkipReason.EntryCapacityBelowOneShare, "既存の値の位置を変えない");
+        Enum.GetValues<DecisionSkipReason>()[^3].Should().Be(DecisionSkipReason.SizedBelowMinimumNotional, "既存の値の位置を変えない");
         Enum.GetValues<DecisionSkipReason>().Should().Contain(
         [
             DecisionSkipReason.ReferencePriceInvalid,

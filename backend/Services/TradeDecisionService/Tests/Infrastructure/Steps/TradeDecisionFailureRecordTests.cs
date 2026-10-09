@@ -326,6 +326,8 @@ public class TradeDecisionFailureRecordTests
                 opts.Services.AddSingleton<BusinessMetrics>();
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
                 // FR-02, #1169, IADR-0490: 同じアセンブリの定時の購読の必須依存（本番は Program.cs の singleton。値は本番の既定と同じ導出）。
+                // 🔴 FR-02, FR-04, #1286, IADR-0521: 定時の購読の必須依存（保有銘柄の供給口）。NoOp＝常に不明＝監視銘柄だけを判断する（従来の巡回と同じ）。
+                opts.Services.AddSingleton<IHeldSymbolsProvider>(new NoOpHeldPositionProvider());
                 opts.Services.AddSingleton(ScheduledCycleBudget.Derive(TimeSpan.FromSeconds(30), 2, ScheduledCycleBudget.DefaultMaxWatchedSymbols));
                 if (reporter is not null)
                     opts.Services.AddSingleton(reporter);

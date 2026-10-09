@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using RiskManagementWorker::RiskManagementService.Domain;
 using TradeDecisionService.Common.Abstractions;
 using TradeDecisionService.Features.TradeDecision;
+using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Infrastructure.Steps;
 using Wolverine;
 using Wolverine.Configuration;
@@ -201,6 +202,8 @@ public class ScheduledCycleRedeliveryTests
                 opts.Services.AddSingleton<NewsCollectionStatusStore>();
                 opts.Services.AddSingleton<ITradeDecisionFailureReporter>(failures);
                 opts.Services.AddSingleton(budget);
+                // 🔴 FR-02, FR-04, #1286, IADR-0521: 定時の購読の必須依存（保有銘柄の供給口）。NoOp＝常に不明＝監視銘柄だけを判断する（従来の巡回と同じ）。
+                opts.Services.AddSingleton<IHeldSymbolsProvider>(new NoOpHeldPositionProvider());
 
                 opts.UseAiStockTradingRabbitMq(
                     ServiceName, "amqp://guest:guest@localhost:5672",

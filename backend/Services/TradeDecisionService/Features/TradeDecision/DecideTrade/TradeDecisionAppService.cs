@@ -587,6 +587,18 @@ public sealed class TradeDecisionAppService(
                 .ConfigureAwait(false);
         }
 
+        // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 2: 監視銘柄の外の保有銘柄（保有のみ）は**出口専用**で判断している。
+        // LLM が新規建て（買い増し・売り増し、または判断の間に保有が 0 になった後の新規建て）を返しても発注意図を作らず Hold に倒す。
+        // 🔴 決済（Close）は対象外（!effect.IsClose）。監視銘柄の外への新規建ての可否は計画に定めが無いため、出口に限る。
+        if (trigger.ExitOnly && !effect.IsClose)
+        {
+            logger.LogInformation(
+                "監視銘柄の外の保有銘柄への新規建ては出さない（出口専用の判断・決済は対象外・IADR-0521）: {Symbol} side={Side} effect={Effect}",
+                trigger.Symbol, side, effect.Effect);
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, judgedPrice, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // 🔴 FR-04, FR-10, ADR-0003, #934, IADR-0390 決定5: 実結線のもとで未約定の新規建て注文が**不明**なら新規建てを見送る
         // （#865 / IADR-0358 と同じ形）。不明を「無い」と読めば、板に残った指値を知らないまま同じ銘柄を重ねて買う。
         // 手仕舞い（Close）は止めない —— 決済の数量は約定済みの保有だけで決まり、未約定の照会とは独立である。

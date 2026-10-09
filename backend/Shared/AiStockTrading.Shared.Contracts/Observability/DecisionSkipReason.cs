@@ -120,4 +120,11 @@ public enum DecisionSkipReason
     /// </para>
     /// </summary>
     EntryCapacityBelowOneShare,
+
+    /// <summary>
+    /// FR-02, FR-04, #1286, IADR-0521 決定 2: <b>LLM を呼んだ後</b>の見送り。定時サイクルで監視銘柄の外の保有銘柄（保有のみ）を出口専用で
+    /// 判断したのに、LLM の結論が新規建て（買い増し・売り増し、または保有が 0 になった後の新規建て）だった。発注意図を作らず Hold に倒す
+    /// （決済は対象外）。<c>TradeDecisionHeld</c> の理由にもこの名前が載る。監視銘柄の外への新規建ての可否は計画に定めが無いため、出口に限る。
+    /// </summary>
+    ExitOnlyOpenOutsideWatchlist,
 }
