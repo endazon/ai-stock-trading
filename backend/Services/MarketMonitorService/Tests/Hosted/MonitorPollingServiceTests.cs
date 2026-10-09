@@ -706,8 +706,8 @@ public class MonitorPollingServiceTests
         (await RunCycleAsync(host, service)).Should().BeEmpty("前回の発行より有利な価格は新しい行に届かない");
     }
 
-    // 🔴 T-10-2480（#1285 監査 F2, IADR-0520 決定2）: 同じ到達の出し直しの間隔は、巡回の周期（既定の巡回間隔 × 2 まで）を
-    // 足しても発注執行の到達の窓（SoftwareStopExecutor.TriggerEpisodeGap）を超えない。超えると出し直しのたびに
+    // 🔴 T-10-2480（#1285 監査 F2・再監査 F5, IADR-0520 決定2）: 同じ到達の出し直しの間隔に巡回の周期（既定の巡回間隔）を
+    // 足しても発注執行の到達の窓（SoftwareStopExecutor.TriggerEpisodeGap）に届かない（厳密に小さい）。超えると出し直しのたびに
     // 決済の連続失敗の数えと待ち時間が 0 へ戻る（#833 の拒否連発の再発）。発注執行はこの試験から参照できないので、
     // 値は宣言の行（ソース）から読む（宣言を変えたらこの試験が気付く）。
     [Fact]
@@ -725,8 +725,12 @@ public class MonitorPollingServiceTests
         match.Success.Should().BeTrue("発注執行の到達の窓の宣言を読める");
         var triggerEpisodeGap = TimeSpan.FromMinutes(int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
 
+        // #1285 再監査 F5: 発注執行は「前回から TriggerEpisodeGap **以上**」を新しい窓とする（等号で窓がやり直しになる）ので、厳密な < で比べる。
+        // 出し直しは前回の発行から RepublishAfter を過ぎた最初の巡回で起きるので、同じ到達どうしの間隔の最大は
+        // RepublishAfter ＋ 巡回の周期 P 未満（既定 P＝巡回間隔 60 秒で 4 分未満）。許せる P は TriggerEpisodeGap − RepublishAfter（2 分）未満。
         var patrolPeriod = TimeSpan.FromSeconds(new MonitorOptions().PollIntervalSeconds);
-        (StopLossArrivalGate.RepublishAfter + (2 * patrolPeriod)).Should().BeLessThanOrEqualTo(triggerEpisodeGap);
+        (StopLossArrivalGate.RepublishAfter + patrolPeriod).Should().BeLessThan(triggerEpisodeGap);
+        (triggerEpisodeGap - StopLossArrivalGate.RepublishAfter).Should().BeGreaterThan(patrolPeriod, "既定の巡回間隔に余裕がある");
     }
 
     // 🔴 T-10-2477（#1282）: 到達の検知時刻（DetectedAt）は巡回の開始ではなく、その建玉の価格を照会し終えた時刻である。
