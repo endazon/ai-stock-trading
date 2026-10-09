@@ -444,6 +444,148 @@ public class TradeDecisionServiceTests
         llm.LastPrompt.Should().NotContain("参考情報（ナレッジベース）");
     }
 
+    // --- FR-08, FR-11, #1283, IADR-0072 決定4: RAG の取得の失敗を「文脈なし」と区別して見えるようにする（縮退は不変） ---
+
+    // 状態つきの取得を返す偽物（GetContextWithStatusAsync を実装する。GetContextAsync は同じ文脈を返す）。
+    private sealed class StatusRetrieval(RetrievalResult result) : IRetrievalContextProvider
+    {
+        public Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken ct = default) =>
+            Task.FromResult(result.Contexts);
+
+        public Task<RetrievalResult> GetContextWithStatusAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken ct = default) =>
+            Task.FromResult(result);
+    }
+
+    private sealed record LogEntry(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> Values);
+
+    private sealed class StateLogger : ILogger<AppSvc>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var values = state is IEnumerable<KeyValuePair<string, object?>> pairs
+                ? pairs.ToDictionary(p => p.Key, p => p.Value)
+                : new Dictionary<string, object?>();
+            Entries.Add(new LogEntry(logLevel, formatter(state, exception), values));
+        }
+    }
+
+    private const string RagFailureMessage = "RAG の参考情報の取得に失敗";
+    private const string KnowledgeText = "直近の調整は一時的との見立て。";
+
+    private static LogEntry DecisionRecord(StateLogger log) =>
+        log.Entries.Should().ContainSingle(e => e.Message.StartsWith("LLM 判断:", StringComparison.Ordinal)).Which;
+
+    // 🔴 T-10-2474: 取得の失敗（検索の失敗で空）と、検索は成功して 0 件（本当に参考情報が無い）を区別する。
+    // 失敗: 判断は止まらず文脈なしで続き、Warning が 1 行（銘柄・原因・失敗の本数。本文なし）、判断の記録は ragContext=failed。
+    // 空: Warning は出さず ragContext=empty。参照できた: retrieved（件数つき）。未構成: not-configured。
+    [Theory]
+    [InlineData("failed")]
+    [InlineData("empty")]
+    [InlineData("retrieved")]
+    [InlineData("not-configured")]
+    public async Task T_10_2474_RAGの取得の失敗は文脈なしと区別してWarningと判断の記録に残す(string state)
+    {
+        var context = new RetrievedContext("押し目の根拠メモ", KnowledgeText, "kb://doc/9", 0.88d, ["finnhub"]);
+        var result = state switch
+        {
+            "failed" => new RetrievalResult([], RetrievalStatus.Failed, "http-503", FailedSearches: 2),
+            "empty" => new RetrievalResult([], RetrievalStatus.Succeeded),
+            "retrieved" => new RetrievalResult([context], RetrievalStatus.Succeeded),
+            _ => new RetrievalResult([], RetrievalStatus.NotConfigured),
+        };
+        var llm = new CapturingLlm(BuyJson);
+        var log = new StateLogger();
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), log, new StatusRetrieval(result));
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().NotBeNull("取得の失敗で判断を止めない（IADR-0072 決定4）");
+        decision!.Intent.Side.Should().Be(TradeSide.Buy);
+        var record = DecisionRecord(log);
+        record.Values["RagContext"].Should().Be(state);
+        record.Values["RagReferences"].Should().Be(state == "retrieved" ? 1 : 0);
+
+        var failures = log.Entries.Where(e => e.Message.Contains(RagFailureMessage, StringComparison.Ordinal)).ToList();
+        if (state == "failed")
+        {
+            var warning = failures.Should().ContainSingle().Which;
+            warning.Level.Should().Be(LogLevel.Warning);
+            warning.Values["Symbol"].Should().Be("AAPL");
+            warning.Values["Cause"].Should().Be("http-503");
+            warning.Values["FailedSearches"].Should().Be(2);
+            warning.Values.Should().ContainKey("Trigger");
+            warning.Message.Should().NotContain(KnowledgeText);
+            llm.LastPrompt.Should().NotContain("参考情報（ナレッジベース）");
+        }
+        else
+        {
+            failures.Should().BeEmpty("空・未構成・参照できたは失敗ではない");
+        }
+    }
+
+    // T-10-2475: 取得ポートの例外も ragContext=failed（原因は例外の型名。メッセージは出さない）で記録し、従来どおり文脈なしで続ける。
+    [Fact]
+    public async Task T_10_2475_取得ポートの例外もfailedとして判断の記録に残す()
+    {
+        var llm = new CapturingLlm(BuyJson);
+        var log = new StateLogger();
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), log, new ThrowingRetrieval());
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        DecisionRecord(log).Values["RagContext"].Should().Be("failed");
+        var warning = log.Entries.Should().ContainSingle(e => e.Message.Contains(RagFailureMessage, StringComparison.Ordinal)).Which;
+        warning.Level.Should().Be(LogLevel.Warning);
+        warning.Values["Cause"].Should().Be("exception:InvalidOperationException");
+        warning.Values.Values.OfType<string>().Should().NotContain(v => v.Contains("擬似障害", StringComparison.Ordinal),
+            "構造化の値には例外のメッセージを載せない（原因は型名だけ）");
+    }
+
+    // 取得の最中に呼び出し元が取り消す取得ポート（T-10-2478）。取り消しまで判断が進んだことを Calls で確かめる。
+    private sealed class CancelingRetrieval(CancellationTokenSource cts) : IRetrievalContextProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken ct = default)
+        {
+            Calls++;
+            cts.Cancel();
+            ct.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("取り消しが取得ポートへ渡っていない");
+        }
+    }
+
+    // T-10-2478, FR-08, #1283（PR #1287 の監査 🟡4）: 呼び出し元の取り消しは失敗に分類せず握りつぶさない
+    // （OperationCanceledException が判断から伝播し、取得の失敗の Warning も出ない）。
+    [Fact]
+    public async Task T_10_2478_呼び出し元の取り消しは取得の失敗に分類せず伝播する()
+    {
+        using var cts = new CancellationTokenSource();
+        var log = new StateLogger();
+        var retrieval = new CancelingRetrieval(cts);
+        var service = new AppSvc(new CapturingLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), log, retrieval);
+
+        var act = () => service.DecideAsync(Trigger(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        retrieval.Calls.Should().Be(1, "取得まで進んでから取り消された");
+        log.Entries.Should().NotContain(e => e.Message.Contains(RagFailureMessage, StringComparison.Ordinal));
+    }
+
     // --- FR-17, IADR-0076: 採算評価ゲート（opt-in・fail-safe）の検証 ---
 
     private sealed class FakeProfitability(TradeCostAssessment? assessment) : IProfitabilityAssumptionsProvider

@@ -11,4 +11,9 @@ public sealed class NoOpRetrievalContextProvider : IRetrievalContextProvider
     public Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default) =>
         Task.FromResult(Empty);
+
+    // FR-08, FR-11, #1283: 未構成であることを状態で返す（判断の記録は ragContext=not-configured）。
+    public Task<RetrievalResult> GetContextWithStatusAsync(
+        DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new RetrievalResult(Empty, RetrievalStatus.NotConfigured));
 }

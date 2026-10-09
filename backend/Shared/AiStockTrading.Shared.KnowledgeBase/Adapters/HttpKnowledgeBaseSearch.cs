@@ -9,6 +9,11 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // 当リポ DTO（KnowledgeQuery/KnowledgeHit）を platform 契約（SearchRequest/SearchResponse 形状）へ HTTP 境界の内側で写像する。
 //
 // fail-safe（決定 3）: 非 2xx・例外・タイムアウトはすべて空結果に倒す（RAG 文脈なしへ縮退し、判断側の可用性を守る）。
+// FR-08, FR-11, #1283: 倒すときは状態（Failed）と原因の符号を添える（SearchWithOutcomeAsync）。呼び出し側が「失敗で空」と
+// 「成功して 0 件」を区別できないと、失敗が判断の側で黙って「参考情報なし」に見える（PoC で全判断が参照できず、記録が無かった）。
+// #1283（PR #1287 の監査 🟡2）: 検索 1 本ごとの失敗の行は Debug に下げた。原因は状態で返り、判断境界が 1 判断 1 行の Warning で
+// 銘柄・起点とともに出す（1 判断で最大 3 本の検索が各々 Warning を出すと重複する）。本番でこのアダプタを呼ぶのは取引判断の取得だけである
+// （情報収集は配線するが検索を呼ばない）。
 //
 // FR-08, #1083, IADR-0454 決定1: **本文の Scope を必ず送る。** 基盤の POST /search は Scope が `GrantsAccess:true` で
 // なければ 200＋空で返す（deny-by-default）。本文の Scope は権限の根拠ではなく**絞り込みの主張**であり、基盤は自分で
@@ -59,7 +64,10 @@ internal sealed class HttpKnowledgeBaseSearch(
 
     private sealed record SearchResponseBody(List<SearchResultBody>? Results);
 
-    public async Task<IReadOnlyList<KnowledgeHit>> SearchAsync(KnowledgeQuery query, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<KnowledgeHit>> SearchAsync(KnowledgeQuery query, CancellationToken cancellationToken = default) =>
+        (await SearchWithOutcomeAsync(query, cancellationToken).ConfigureAwait(false)).Hits;
+
+    public async Task<KnowledgeSearchResult> SearchWithOutcomeAsync(KnowledgeQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
 
@@ -78,8 +86,8 @@ internal sealed class HttpKnowledgeBaseSearch(
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("KB 検索に失敗（{Status}）。空結果に倒します。", (int)response.StatusCode);
-                return Empty;
+                logger.LogDebug("KB 検索に失敗（{Status}）。空結果に倒します。", (int)response.StatusCode);
+                return KnowledgeSearchResult.Failed($"http-{(int)response.StatusCode}");
             }
 
             var dto = await response.Content
@@ -87,9 +95,9 @@ internal sealed class HttpKnowledgeBaseSearch(
                 .ConfigureAwait(false);
 
             if (dto?.Results is null || dto.Results.Count == 0)
-                return Empty;
+                return KnowledgeSearchResult.Succeeded(Empty);
 
-            return dto.Results
+            return KnowledgeSearchResult.Succeeded(dto.Results
                 .Select(r => new KnowledgeHit(
                     r.DocumentId,
                     r.DocumentTitle,
@@ -99,17 +107,17 @@ internal sealed class HttpKnowledgeBaseSearch(
                     r.Tags ?? [],
                     ExtractPublishedAt(r.Attributes),
                     ExtractAttribute(r.Attributes, KnowledgeSearchAttributes.Symbol)))
-                .ToList();
+                .ToList());
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning("KB 検索がタイムアウト。空結果に倒します。");
-            return Empty;
+            logger.LogDebug("KB 検索がタイムアウト。空結果に倒します。");
+            return KnowledgeSearchResult.Failed("timeout");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "KB 検索で例外。空結果に倒します。");
-            return Empty;
+            logger.LogDebug(ex, "KB 検索で例外。空結果に倒します。");
+            return KnowledgeSearchResult.Failed($"exception:{ex.GetType().Name}");
         }
     }
 

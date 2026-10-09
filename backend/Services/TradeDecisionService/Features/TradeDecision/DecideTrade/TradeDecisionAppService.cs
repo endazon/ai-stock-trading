@@ -456,7 +456,8 @@ public sealed class TradeDecisionAppService(
         // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。
         // fail-safe: 取得は判断のクリティカルパス外。例外・遅延で判断を止めないよう、失敗は「文脈なし」に縮退する
         //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
-        var retrieved = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+        // FR-08, FR-11, #1283: 取得の状態（成功・失敗・未構成）も受け取り、失敗は Warning、状態は判断の記録（下の「LLM 判断」）へ残す。
+        var (retrieved, ragContext) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
 
         // 🔴 FR-04, FR-02, #1034, IADR-0440 決定 2/6: 判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。null＝不明
         // （プロンプトは「不明」と明示し、「監視銘柄なし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
@@ -530,12 +531,15 @@ public sealed class TradeDecisionAppService(
 
         // FR-11: プロンプト・LLM 出力・根拠・票数・スクリーニング可否を記録する（永続監査は #17 連携）。
         // #337（#290 吸収）, IADR-0248: 解析不能（unparseableVotes / screeningUnparseable）は見送りと区別して残す。
+        // FR-08, FR-11, #1283, IADR-0072: 参考情報（RAG）の取得の状態と注入した件数も残す（取得の失敗と「本当に無い」を後から区別する）。
         logger.LogInformation(
             "LLM 判断: {Symbol} action={Action} rationale={Rationale} votes={Agreement}/{Total} screenedOut={ScreenedOut} "
-                + "unparseableVotes={UnparseableVotes} screeningUnparseable={ScreeningUnparseable}",
+                + "unparseableVotes={UnparseableVotes} screeningUnparseable={ScreeningUnparseable} "
+                + "ragContext={RagContext} ragReferences={RagReferences}",
             trigger.Symbol, decision.Action, decision.Rationale,
             orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut,
-            orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable);
+            orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable,
+            ragContext, retrieved.Count);
 
         // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1: ここから先の見送りは AI 判断の後である（基準点になる）。
         var judgedPrice = JudgedPriceOf(orchestrated, currentPrice, trigger);
@@ -1188,22 +1192,47 @@ public sealed class TradeDecisionAppService(
         }
     }
 
-    private async Task<IReadOnlyList<RetrievedContext>> RetrieveContextSafeAsync(
+    // FR-08, FR-11, #1283, IADR-0072 決定4: 縮退（失敗でも判断を止めず、取得できた分だけ／文脈なしで続ける）は変えない。
+    // **失敗を黙って「文脈なし」に見せない**: 取得の失敗は 1 判断 1 行の Warning（銘柄・市場・起点・原因・失敗の本数。本文は出さない）、
+    // 状態は判断の記録へ ragContext として返す（retrieved / empty / failed / not-configured）。空（検索は成功して 0 件）は Warning を出さない。
+    private async Task<(IReadOnlyList<RetrievedContext> Contexts, string RagContext)> RetrieveContextSafeAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken)
     {
-        IReadOnlyList<RetrievedContext> retrieved;
+        RetrievalResult result;
         try
         {
-            retrieved = await _retrieval.GetContextAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+            result = await _retrieval.GetContextWithStatusAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "RAG 文脈の取得に失敗しました（文脈なしで判断を継続）: {Symbol}", trigger.Symbol);
-            return [];
+            // 例外のメッセージは構造化の値へ載せない（原因は型名だけ）。スタックは従来どおり例外として添える。
+            result = new RetrievalResult([], RetrievalStatus.Failed, $"exception:{ex.GetType().Name}");
+            LogRetrievalFailure(trigger, result, ex);
+            return ([], RagContextFailed);
         }
 
-        return FilterBySource(retrieved, trigger);
+        if (result.Status == RetrievalStatus.Failed)
+            LogRetrievalFailure(trigger, result, exception: null);
+
+        var contexts = FilterBySource(result.Contexts, trigger);
+        var ragContext = result.Status switch
+        {
+            RetrievalStatus.Failed => RagContextFailed,
+            RetrievalStatus.NotConfigured => "not-configured",
+            _ => contexts.Count > 0 ? "retrieved" : "empty",
+        };
+        return (contexts, ragContext);
     }
+
+    private const string RagContextFailed = "failed";
+
+    private void LogRetrievalFailure(DecisionTrigger trigger, RetrievalResult result, Exception? exception) =>
+        logger.LogWarning(
+            exception,
+            "RAG の参考情報の取得に失敗しました（取得できた分だけで判断を継続。文脈なしとは区別して記録する）: "
+                + "{Symbol} market={Market} trigger={Trigger} cause={Cause} failedSearches={FailedSearches} retrieved={Retrieved}",
+            trigger.Symbol, trigger.Market, trigger.MetricTrigger, result.FailureCause ?? "unknown",
+            result.FailedSearches, result.Contexts.Count);
 
     // FR-04, ADR-0003, #252, IADR-0169 決定2/決定3: 出典限定と、その**可視化**。
     //

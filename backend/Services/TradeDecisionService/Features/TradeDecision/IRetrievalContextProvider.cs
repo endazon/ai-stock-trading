@@ -11,7 +11,40 @@ public interface IRetrievalContextProvider
 {
     Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-08, FR-11, #1283: 取得し、結果に状態（成功・失敗・未構成）を添えて返す。失敗しても取得できた分（無ければ空）を返す
+    /// （縮退は不変）。判断側は状態で「取得の失敗」と「参考情報が本当に無い」を区別して記録する。
+    /// 既定は <see cref="GetContextAsync"/> を包んで成功とする（失敗を区別できない実装の既定）。
+    /// 🔴 失敗を空に倒す実装・包む実装（デコレータ）は本メソッドも実装すること。<see cref="GetContextAsync"/> だけを実装すると、
+    /// 失敗が既定の「成功」に見える（判断の記録が failed ではなく empty になる）。
+    /// </summary>
+    async Task<RetrievalResult> GetContextWithStatusAsync(
+        DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken = default) =>
+        new(await GetContextAsync(trigger, policy, cancellationToken).ConfigureAwait(false), RetrievalStatus.Succeeded);
 }
+
+// FR-08, FR-11, #1283: 判断文脈の取得の状態。
+public enum RetrievalStatus
+{
+    /// <summary>取得は成功した（0 件を含む）。</summary>
+    Succeeded,
+
+    /// <summary>取得に失敗した（検索の 1 本以上が失敗・取得ポートの例外）。取得できた分だけで判断する。</summary>
+    Failed,
+
+    /// <summary>KB 検索が未構成で、取得していない。</summary>
+    NotConfigured,
+}
+
+// FR-08, FR-11, #1283: 判断文脈の取得の結果と状態。
+//   FailureCause   — 最初の失敗の原因の短い符号（`http-<状態コード>` / `timeout` / `exception:<型名>`）。本文・資格情報を入れない。
+//   FailedSearches — 失敗した検索の本数（取得ポートの例外は 0）。
+public sealed record RetrievalResult(
+    IReadOnlyList<RetrievedContext> Contexts,
+    RetrievalStatus Status,
+    string? FailureCause = null,
+    int FailedSearches = 0);
 
 // FR-08, IADR-0072: RAG で引いた参考情報 1 件（KnowledgeHit の Application 側写像）。
 //   Title       — 出典文書のタイトル。
