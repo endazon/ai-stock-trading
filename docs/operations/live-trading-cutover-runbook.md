@@ -114,7 +114,7 @@ OpenD 本番化の実装 ADR 決定 6 に定義される。詳細な状態表（
 | 2 | **秘匿情報の Vault / External Secrets 化** | 実アダプタ実装の実装 ADR §3 / OpenD 本番化の実装 ADR 決定 4 | `externalSecrets.enabled=true` で実 Vault/ESO から同期されていること。**受け口の存在は充足ではない**（ストアは #24 管掌） |
 | 3 | **発注予約 `Reserved` 滞留の監視＋自動リコンサイル** | [#141](https://github.com/endazon/ai-stock-trading/issues/141) / 自動リコンサイルの実装 ADR | `Reconciliation__Enabled=true` かつ**実照会プローブが配線済み**であること（配備の values は充足済み）。🔴 **さらに実弾では、実弾の解放の門（`Reconciliation__ReleaseOnNotPlaced__Real`）を開けてよいかを、実弾の実機の記録で判定すること**（運用仕様書「解放の門を開けるときの記録」の (a)(b)。SIMULATE の記録では開けない。門は取引環境ごとに分かれ、SIMULATE の門を開けても実弾の予約は解放されない）——閉じたままなら「未発注」の滞留は人手解決のままである。突合が「発注済み」と確定したエントリーには承認時の手法で保護レグを張る（2026-09-25 のオーナー裁定。旧: 張らなかった）——**このとき突合を起点にブローカーへ逆指値・取消・成行が送られ得る**ことを、実弾前に確認しておくこと。滞留＝「発注済みか不明な建玉」で実弾では実損リスク |
 | 4 | **無人 OpenD 常駐の成立** | [#132](https://github.com/endazon/ai-stock-trading/issues/132) / OpenD 本番化の実装 ADR | 安定ノード固定（egress IP 安定）・デバイス信頼の永続化で無人再ログインが成立。`securityContext`（非 root）実動作確認。**readiness 通過≠ログイン完了**に注意 |
-| 5 | **Hetzner（海外 IP）接続・ToS の確認** | 証券会社連携の計画 ADR の未決事項 / OpenD 本番化の実装 ADR | 人手の接続確認・契約判断 |
+| 5 | **Hetzner（海外 IP）接続・ToS の確認** | 証券会社連携の計画 ADR の未決事項 / OpenD 本番化の実装 ADR | ToS は判断済み（2026-10-09・#342。固定 IP から直接接続する構成に限る）。残るのは契約後の人手の接続確認 |
 | 6 | **`TradingDefaults`（リスク統制・上限）の実弾向け再確認** | 実アダプタ実装の実装 ADR §3 | 全体前提条件 §5 と一致し、実弾向けに保守的であることを再確認。少額上限から始めること |
 | 7 | **発注の冪等化（at-most-once）** | [#131](https://github.com/endazon/ai-stock-trading/issues/131) / 発注の冪等化の実装 ADR | **充足済み**（発注前 `DecisionId` 予約の 3 相化）。ただし #3 の滞留リコンサイルと併せて運用すること |
 | 8 | **監査サインオフ** | [#204](https://github.com/endazon/ai-stock-trading/issues/204)（go-live 前実装監査） | 実環境構築前の実装監査（要求・非機能要件・ユースケース・画面・意思決定のトレースと安全性）で Conditional-Go 以上。指摘の未解消がないこと |
