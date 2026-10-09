@@ -76,7 +76,8 @@ public sealed class SoftwareStopExecutor(
 
     /// <summary>
     /// #833 項目2, IADR-0344 追記(15): 前回の到達からこれ以上空いた到達は<b>新しい窓</b>として扱い、数えと待ち時間を 0 へ戻す。
-    /// 市場監視は開場中・ラインを越えている間は 60 秒ごとに到達を出す（IADR-0380）ため、これより長い空白は
+    /// 市場監視は開場中・ラインを越えている間は同じ到達を出し続ける（IADR-0380。#1280, IADR-0520 以降は同じ到達を
+    /// 3 分〔StopLossArrivalGate.RepublishAfter〕に 1 回。以前は巡回ごとの 60 秒）ため、これより長い空白は
     /// 閉場を挟んだか価格が一度戻ったことを意味する。60 秒間隔の到達で戻すと待ち時間が毎分消え、拒否連発が再発する。
     /// </summary>
     public static readonly TimeSpan TriggerEpisodeGap = TimeSpan.FromMinutes(5);

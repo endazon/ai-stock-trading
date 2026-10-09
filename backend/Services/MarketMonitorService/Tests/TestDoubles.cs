@@ -48,6 +48,13 @@ internal sealed class FakeMarketDataSource : IMarketDataSource
         return this;
     }
 
+    /// <summary>#1280, IADR-0520: 銘柄の価格を消す（以後の照会は null＝取得失敗）。</summary>
+    public FakeMarketDataSource Remove(string symbol, Market market)
+    {
+        _prices.Remove((symbol, market));
+        return this;
+    }
+
     /// <summary>#1251, IADR-0513: 照会のたびに呼ぶ（偽の時計を進めて巡回の所要を作るため）。</summary>
     public Action? OnRequest { get; set; }
 

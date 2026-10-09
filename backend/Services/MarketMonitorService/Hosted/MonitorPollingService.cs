@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Observability;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.Adapters.MarketData;
@@ -31,6 +32,9 @@ public sealed class MonitorPollingService(
     TimeProvider? timeProvider = null) : BackgroundService
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+
+    // FR-10, #1280, IADR-0520: 発行した到達の記憶（巡回をまたぐ。本サービスは singleton で巡回は直列）。
+    private readonly StopLossArrivalGate _arrivals = new();
 
     // 巡回間隔（ExecuteAsync の PeriodicTimer と同じ値。1 未満は 1 秒）。
     private TimeSpan Interval => TimeSpan.FromSeconds(Math.Max(1, options.Value.PollIntervalSeconds));
@@ -107,13 +111,12 @@ public sealed class MonitorPollingService(
         // （Wolverine の PublishAsync は CancellationToken を取らない。巡回の中断は上位のループが見る）。
         var publish = scope.ServiceProvider.GetRequiredService<IMessageBus>();
 
-        var result = await monitor.EvaluateRoundAsync(cancellationToken).ConfigureAwait(false);
-
         // 損切りを先に発行する（フェイルセーフ・損切り優先。IADR-0014）。
-        foreach (var stopLoss in result.StopLosses)
-        {
-            await publish.PublishAsync(stopLoss).ConfigureAwait(false);
-        }
+        // 🔴 FR-10, #1282, IADR-0520: 到達は検知した時点で発行する（巡回の末尾までためない）。
+        // 🔴 FR-10, #1280, IADR-0520: 同じ到達は 1 回だけ発行する（決済が台帳へ反映されるまでの巡回で再発行しない）。
+        var result = await monitor.EvaluateRoundAsync(
+            (stopLoss, ct) => PublishStopLossAsync(publish, stopLoss, ct), cancellationToken).ConfigureAwait(false);
+        _arrivals.Settle(result);
 
         foreach (var movement in result.PriceMovements)
         {
@@ -153,6 +156,37 @@ public sealed class MonitorPollingService(
                 logger.LogWarning(ex, "損切り評価の生存要約の記録に失敗しました（監視・発行には影響しません）。");
             }
         }
+    }
+
+    // FR-10, FR-03, #1280, #1282, IADR-0520: 検知した到達を 1 件発行する。同じ到達を発行済みなら抑止する（INF で残す）。
+    // 発行の失敗は他の保有の評価を止めない（LogError して記憶しない＝次の巡回で発行し直す）。停止要求だけは伝える。
+    private async Task PublishStopLossAsync(IMessageBus publish, StopLossTriggered stopLoss, CancellationToken cancellationToken)
+    {
+        if (!_arrivals.ShouldPublish(stopLoss))
+        {
+            logger.LogInformation(
+                "損切りライン到達の再発行を抑止しました（同じ到達を発行済み・{RepublishAfter} 以内）: {Symbol}/{Market} ライン={StopLoss} 検知価格={Price} 検知時刻={DetectedAt:O}",
+                StopLossArrivalGate.RepublishAfter, stopLoss.Symbol, stopLoss.Market, stopLoss.StopLossPrice, stopLoss.Price, stopLoss.DetectedAt);
+            return;
+        }
+
+        try
+        {
+            await publish.PublishAsync(stopLoss).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(
+                ex,
+                "損切りライン到達の発行に失敗しました（次の巡回で発行し直します）: {Symbol}/{Market} ライン={StopLoss} 検知価格={Price}",
+                stopLoss.Symbol, stopLoss.Market, stopLoss.StopLossPrice, stopLoss.Price);
+            return;
+        }
+
+        _arrivals.MarkPublished(stopLoss);
+        logger.LogInformation(
+            "損切りライン到達を発行しました: {Symbol}/{Market} ライン={StopLoss} 検知価格={Price} 検知時刻={DetectedAt:O} EventId={EventId}",
+            stopLoss.Symbol, stopLoss.Market, stopLoss.StopLossPrice, stopLoss.Price, stopLoss.DetectedAt, stopLoss.EventId);
     }
 
     // FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 1 巡回の所要を計量し、巡回間隔に達したら Warning を出す。

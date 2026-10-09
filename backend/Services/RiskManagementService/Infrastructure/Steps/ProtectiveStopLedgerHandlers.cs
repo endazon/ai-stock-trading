@@ -112,7 +112,7 @@ public sealed class ProtectiveStopCoverageLostLedgerHandler(
 
 // 🔴 FR-10, ADR-0049, #1136, IADR-0472 決定6: 発注執行が S1 の損切りラインを下限まで遡及して広げた事実を、取引台帳の承認行のラインへ追随させる。
 // 市場監視は台帳のライン（保有中のエントリーのうち最も保護的な 1 本。IADR-0393）で到達を出す。追随しないと、旧ラインと新ラインの間の価格で
-// 決済しない到達（Critical の通知）が毎巡回出続ける。書くのは広げる向きのときだけで、再配送・順序の入れ替わりでも広い方に収束する。
+// 決済しない到達（Critical の通知）が出続ける（#1280, IADR-0520 以降は同じ到達を 3 分に 1 回）。書くのは広げる向きのときだけで、再配送・順序の入れ替わりでも広い方に収束する。
 public sealed class SoftwareStopLineWidenedLedgerHandler(
     IPortfolioLedgerStore ledger,
     ILogger<SoftwareStopLineWidenedLedgerHandler> logger)

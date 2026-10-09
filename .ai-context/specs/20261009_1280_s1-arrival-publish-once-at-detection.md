@@ -1,0 +1,112 @@
+---
+title: 損切りライン到達（S1）を検知した時点で、同じ到達につき 1 回だけ発行する（#1280・#1282）
+type: spec
+status: accepted
+related_ids: [FR-10, FR-03, FR-09, FR-11, UC-02, ADR-0003, ADR-0040, ADR-0043, IADR-0520, IADR-0344, IADR-0380, IADR-0014, IADR-0494, IADR-0513]
+author: claude (Claude Code)
+created: 2026-10-09
+updated: 2026-10-09
+plan_refs:
+  - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 システム側の価格監視は損切りラインへの到達を検知・記録・通知する・FR-03 市場監視)
+  - planning:projects/ai-stock-trading/04_workflows/02_event-driven-trading.md (損切りライン到達〔保有銘柄〕)
+  - planning:projects/ai-stock-trading/07_adr/ADR-0040 (決定 1 S1 ソフトウェア逆指値)
+---
+
+# 損切りライン到達（S1）を検知した時点で、同じ到達につき 1 回だけ発行する（#1280・#1282）
+
+## 起点
+
+- [#1280](https://github.com/endazon/ai-stock-trading/issues/1280): S1 の到達が決済の後にもう 1 回発行され、Discord に重複して通知される
+  （PoC 2026-10-08 US・META 16:52:27／16:53:27、NVDA 16:57:28／16:58:28。監査台帳の StopLossTriggered も 4 件）。
+- [#1282](https://github.com/endazon/ai-stock-trading/issues/1282): 到達の発行が巡回の末尾まで遅れ（保有の k 番目は約 60 − 5k 秒）、`DetectedAt` が巡回の開始時刻になっている。
+- 計画: FR-10（システム側の価格監視は到達を検知・記録・通知する）・FR-03（市場監視）・UC-02・ADR-0040 決定 1（S1）。計画の裁定は要らない
+  （検知・通知の正確さの是正であり、到達の意味・決済の機構は変えない）。
+- 2 件は同じ 2 ファイル（`MarketMonitorAppService` / `MonitorPollingService`）の同じ経路を触るため 1 PR に束ねる。
+
+## 現況（origin/develop 586902eb）
+
+| # | 事実 | 場所 |
+| --- | --- | --- |
+| 1 | `EvaluateRoundAsync` は全保有・全監視銘柄を評価してから結果を返し、到達の `DetectedAt` は巡回の開始時刻 `now` | `MarketMonitorAppService.cs:44, 89-94` |
+| 2 | `RunOpenCycleAsync` が評価の後に `result.StopLosses` をまとめて発行する（容量 1・5 秒/照会の限流器で k 番目は約 60 − 5k 秒遅れ） | `MonitorPollingService.cs:110-116` |
+| 3 | 到達の重複の抑止は市場監視にも通知にも無い。発注執行は固定 DecisionId・予約で冪等（二重決済は無い） | `NotificationHandlers.cs:36-40`・`OrderExecutionService/.../StopLossTriggeredHandler.cs` |
+| 4 | リスク管理は OrderExecuted を受けてから建玉を閉じる。その前に始まった巡回は同じ建玉を保有として読み直す | `MarketMonitorAppService.cs:56`（`/risk-controls/open-positions`） |
+| 5 | 発注執行は「前回の到達から 5 分（`TriggerEpisodeGap`）以上空いた到達」を新しい窓として決済の待ち時間を 0 へ戻す | `SoftwareStopExecutor.cs:82` |
+| 6 | 保護記録の到達は永続化され、据え置き・拒否の再試行は常駐ガードが担う（到達の再発行を待たない） | `SoftwareStopExecutor.cs:162` |
+
+## 母集合（規則 9・10）
+
+誤りの側の文字列で走査した（`.ai-context/specs`・`CHANGELOG.md` を除く）:
+`git grep -nE "毎巡回（既定 60 秒）同じ到達|価格が戻るまで毎巡回|60 秒ごとに到達を出す|StopLosses を先に|DetectedAt.*巡回|巡回の開始時刻|毎巡回発火|毎巡回.*到達を(発行|出す)|到達.*毎巡回"`。
+
+| 箇所 | 扱い |
+| --- | --- |
+| `OrderExecutionService/.../StopLossTriggeredHandler.cs:12`（毎巡回〔既定 60 秒〕同じ到達を発行） | **是正**（3 分に 1 回） |
+| `SoftwareStopExecutor.cs:79`（60 秒ごとに到達を出す） | **是正**（同上。5 分の窓の根拠は変わらない） |
+| `RiskManagementService/.../ProtectiveStopLedgerHandlers.cs:115`（到達が毎巡回出続ける） | **是正** |
+| `MonitorPollingServiceTests.cs:165`（StopLosses を先に Publish） | **是正**（注記だけ） |
+| `docs/tests/FR-10_risk-controls-tests.md:1626`（到達の通知は毎巡回出る） | **是正**（日付つきで 3 分に 1 回） |
+| IADR-0344:42・IADR-0393:117/157（毎巡回再発火・毎巡回出る） | 対象外（凍結記録。当時の記述として正しい。IADR-0520 が上書きを記録する） |
+| `HttpPositionStore` / `GrpcPositionStore` / `RiskManagementGrpcTests` / `HttpPositionStoreTests` / IADR-0399（ライン 0 のショートが毎巡回発火） | 対象外（ライン 0 の誤評価の話。到達の発行の間隔ではない） |
+| `docs/tests` T-10-376・T-10-431・1704 行 | 対象外（ガードの巡回・ライン 0 の話） |
+
+規則 10: 本件で新たに書いた「3 分」は `StopLossArrivalGate.RepublishAfter` から引いた（3 箇所のコメントと docs）。5 分（`TriggerEpisodeGap`）・60 秒（既定の巡回間隔）は現物から引き直した。
+
+規則 11（窓）: 抑止の窓を「後の端だけ見る（前回発行から 3 分経てば出す）」「前の端だけ見る（建玉が消える・戻るまで出さない）」「両端（戻るまで出さない、ただし 3 分経てば出す）」の 3 形で
+プローブ（増える側＝同じ到達の再発行／減る側＝必要な到達の欠落）に当てた。
+
+| 形 \ プローブ | 決済の反映待ちの 2 巡回目（出さない） | 建玉が閉じて建て直した到達（出す） | 価格が戻って再び割った到達（出す） | 決済が進まず残る到達（いずれ出す） |
+| --- | --- | --- | --- | --- |
+| 後の端だけ（時間だけ） | ○ | ✕（3 分以内なら出ない） | ✕（同） | ○ |
+| 前の端だけ（戻るまで） | ○ | ○ | ○ | ✕（永久に出ない） |
+| **両端（採用）** | ○ | ○ | ○ | ○ |
+
+## 設計（IADR-0520）
+
+1. **検知した時点で発行する（#1282）**: `EvaluateRoundAsync(onStopLoss, ct)` を足し、保有のループで到達を検知したら即座に `onStopLoss` を呼ぶ。
+   `MonitorPollingService` はそこで発行し、巡回の後にまとめて発行しない。結果の `StopLosses` には同じ到達を残す（記録・試験用）。
+   変動（`PriceMovementDetected`）は従来どおり評価の後に発行する（損切り優先の順序は保たれる）。
+2. **検知時刻は照会し終えた時刻（#1282）**: `DetectedAt = clock.UtcNow`（その建玉の価格を照会し終えた直後）。生存要約の評価時刻（`StopLossEvaluation.EvaluatedAt`）は巡回の時刻のまま（範囲外）。
+3. **同じ到達は 1 回だけ発行する（#1280）**: `StopLossArrivalGate`（`MonitorPollingService` が 1 つ持つ・プロセス内）。
+   - 到達の同一性は（銘柄・市場・建玉方向・ライン）。数量は入れない。
+   - 記憶を解くのは、建玉が保有の照会から消えた巡回か、価格を取ってラインの内側だった巡回だけ。価格の欠落・閉場は解かない。
+   - 同じ到達が 3 分（`RepublishAfter`）を過ぎて残れば出し直す。3 分は巡回間隔（60 秒）＋決済の反映より長く、発注執行の到達の窓（5 分）より短い。
+   - 発行に失敗した到達は記憶しない。発行の失敗は LogError して他の保有の評価を続ける（是正前は巡回ごと落ちていた）。停止要求は伝える。
+4. **INF ログ**: 発行時に「損切りライン到達を発行しました」、抑止時に「損切りライン到達の再発行を抑止しました」を市場監視の INF で出す。
+5. 通知側（EntryDecisionId 単位の抑止）は採らない: 到達に EntryDecisionId が無く、監査台帳の重複も残るため。発生源で止める。
+
+## 受け入れ基準
+
+- [x] 決済の反映待ちの巡回で同じ到達を再発行しない（T-10-2470）。発行・抑止の INF が出る。
+- [x] 建玉が閉じた後・価格が戻った後・ラインが変わった後・3 分を過ぎて残る到達は発行する（T-10-2470 解除）。
+- [x] 価格の欠落・閉場の巡回では記憶を解かない（T-10-2470 不明）。
+- [x] 到達は検知した時点で発行し、`DetectedAt` は照会し終えた時刻（T-10-2471）。
+- [x] ビルド警告 0・`dotnet format --verify-no-changes`・影響プロジェクトの試験が緑・文書系の検査器が緑。
+
+## 試験（T-10-2470〜2471）
+
+| ID | 内容 | ファイル |
+| --- | --- | --- |
+| T-10-2470 | 同じ到達の再発行の抑止／解除の 4 条件／価格の欠落・閉場では解かない | `MarketMonitorService/Tests/Hosted/MonitorPollingServiceTests.cs` |
+| T-10-2471 | 発行される `DetectedAt` が照会し終えた時刻／到達は次の保有の照会の前に渡る | 同上・`Tests/Features/MarketMonitor/MarketMonitorServiceTests.cs` |
+
+### 変異の実測（変えて赤を確かめ、戻した）
+
+| 変異 | 赤になった試験 |
+| --- | --- |
+| D1 記憶を見ずに毎回発行（是正前の形） | T-10-2470 の 3 件 |
+| D2 `DetectedAt` を巡回の開始時刻へ戻す（是正前の形） | T-10-2471 の 2 件 |
+| D3 到達を保有のループの後にまとめて渡す | T-10-2471（MarketMonitorServiceTests） |
+| D4 価格の欠落・閉場も「戻った」として記憶を消す | T-10-2470（不明） |
+
+## 範囲外
+
+- 通知サービス・監査サービス側の重複抑止（発生源で止めるため）。
+- リスク管理が建玉を閉じる時点（OrderExecuted の受信）の前倒し。
+- 生存要約の評価時刻（巡回の時刻のまま）。
+
+## 残余
+
+- 記憶はプロセス内だけ。市場監視の再起動の直後は同じ到達が 1 回重なり得る。
+- 決済の反映が 3 分を超えて遅れると、同じ到達がもう 1 回出る。
+- 到達の後に作られた S1 の行（建てた直後にラインを割っていた建玉）には、出し直しまで最大 3 分到達が届かない（是正前は 60 秒）。
