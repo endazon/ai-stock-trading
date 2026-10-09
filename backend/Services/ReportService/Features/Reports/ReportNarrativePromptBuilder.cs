@@ -120,10 +120,68 @@ public static class ReportNarrativePromptBuilder
             sb.AppendLine($"上位方針（{parentLabel}）は未確定のため参照していません。上位方針との差異評価は行わず、その旨を散文に明記してください。");
         }
 
+        // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 4: 週次目標の照合（日報 §6・週報 §4）。照合はコードで済ませた事実として渡す。
+        AppendWeeklyGoal(sb, context);
+
         sb.AppendLine();
-        sb.AppendLine("上記を踏まえ、市況所感・当期の振り返り・翌期間の見通しを簡潔な散文で述べてください。数値の羅列や再計算はしないこと。");
+        if (context.Kind == ReportKind.Daily)
+        {
+            // 計画 ADR-0059 フォローアップ 4, IADR-0291 決定 4: 日報は §5 市況・特記事項と §6 振り返りを分けて書かせる（1 回の呼び出しで区切り行で割る）。
+            sb.AppendLine("上記を踏まえ、次の 2 部を簡潔な散文で書いてください。数値の羅列や再計算はしないこと。");
+            sb.AppendLine("1 部目: 市況所感と特記事項（判断に影響したニュース・開示など）。");
+            sb.AppendLine($"1 部目の後に、次の区切り行を 1 行だけ書いてください（前後に他の文字を付けない）: {DailyNarrativeSections.Marker}");
+            sb.AppendLine("2 部目: 振り返り。週次目標の照合の事実に対する進捗・乖離の評価の文章と、良かった判断・改善すべき判断（各 1〜3 点）。");
+        }
+        else
+        {
+            sb.AppendLine("上記を踏まえ、市況所感・当期の振り返り・翌期間の見通しを簡潔な散文で述べてください。数値の羅列や再計算はしないこと。");
+        }
 
         return sb.ToString();
+    }
+
+    /// <summary>FR-06, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 4: 照合の事実について散文が守る規則。</summary>
+    public const string WeeklyGoalRule =
+        "照合（位置と差）はコードで確定済みです。範囲との比較・差の再計算・新たな数値の創作はせず、上記の事実に基づいて評価の文章だけを書いてください。"
+        + "「達成」「未達」とは書かないでください（範囲のどこで分けるかは決まっていません）。";
+
+    /// <summary>FR-06, 計画 ADR-0059 決定 2・4, #1218, IADR-0519 決定 4: 照合できないときに散文が守る規則。</summary>
+    public const string WeeklyGoalUnavailableRule =
+        "週次目標との照合はできていません。目標に対する進捗・達成度を推測で書かず、照合できていない旨だけを書いてください。"
+        + "前週の週報の方針の文から目標の数値を読み取らないでください。";
+
+    // 週次目標の照合の事実（コードが作った文。外部の自由文を含まない＝週報の方針の本文は渡さない）。日報・週報だけ。
+    private static void AppendWeeklyGoal(StringBuilder sb, ReportNarrativeContext context)
+    {
+        if (context.Kind == ReportKind.Monthly)
+            return;
+
+        sb.AppendLine();
+        if (context.WeeklyGoal is not { } goal)
+        {
+            sb.AppendLine("週次目標との照合: 照会していません。");
+            sb.AppendLine(WeeklyGoalUnavailableRule);
+            return;
+        }
+
+        var subject = context.Kind == ReportKind.Daily ? "週初来の実現損益(税引後・費用込み)" : "週間実現損益(税引後・費用込み)";
+        switch (goal.Outcome)
+        {
+            case WeeklyGoalOutcome.Compared:
+                sb.AppendLine($"週次目標との照合（コードで確定済み）: 目標 {goal.GoalText}に対し、{subject}は {ReportAmountFormat.Base(goal.Actual.Amount!.Value)} で {goal.PositionText}。");
+                if (goal.FallbackNote is { } note)
+                    sb.AppendLine($"注記: {note}");
+                sb.AppendLine(WeeklyGoalRule);
+                break;
+            case WeeklyGoalOutcome.NotComputable:
+                sb.AppendLine($"週次目標との照合: 目標 {goal.GoalText}に対し、{subject}は算出不能（{goal.Actual.NotComputableReason}）。");
+                sb.AppendLine(WeeklyGoalUnavailableRule);
+                break;
+            default:
+                sb.AppendLine($"週次目標との照合: {goal.UnavailableText!.Replace("**", string.Empty, StringComparison.Ordinal)}。");
+                sb.AppendLine(WeeklyGoalUnavailableRule);
+                break;
+        }
     }
 
     /// <summary>FR-06, #1156, IADR-0480 決定 1: 未供給の値を表す文言（0・「—」・空欄で表さない）。</summary>

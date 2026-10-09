@@ -227,11 +227,14 @@ public sealed class ReportAutoGenerator(
         // 提示の通知を Warning へ上げる（未供給の警告と同じ経路。本クラスはロガーを持たない）。
         // ADR-0051 フォローアップ 1, #1223, IADR-0470（2026-10-08 追記）: 本文の §3 と同じ建玉で、行の掛からない保有中の銘柄を名指しする。
         // 建玉が未供給なら方針全体の判定へ戻る（未供給は要約の「建玉」の警告で見える）。
-        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(due.Kind, policy, inputs.Positions);
+        // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の初稿（直近の確定済み週報の方針の継続）に書式どおりの「数値目標:」行が無ければ、
+        // 同じ経路で確定の前に警告する（確定は止めない）。2 つの検査は種別が重ならない（利確は日報・数値目標は週報）。
+        var policyWarning = PolicyTakeProfitCheck.WarningFor(due.Kind, policy, inputs.Positions)
+            ?? WeeklyGoalLineCheck.WarningFor(due.Kind, policy);
 
         var summary = ReportSummary.Build(
             due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative, unsuppliedInputs,
-            takeProfitWarning);
+            policyWarning);
 
         // FR-09, IADR-0116 決定2: 提示まで到達したものだけ通知する（承認待ちに無いものを「確認してください」と言わない）。
         var notificationFailed = presented
@@ -362,6 +365,17 @@ public sealed class ReportAutoGenerator(
                 unsupplied.Add(ReportInput.OpeningInventory);
         }
 
+        // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報 §6 の週初来の実現損益の入力（週報 §1 と同じ供給元・同じ窓の規則）。
+        // 🔴 照会の失敗を見送りの判定・未供給の記録へ混ぜない（どの入力でもない観測にする）。失敗は §6 に「算出不能」と書く。
+        WeekToDateInputs? weekToDate = null;
+        if (due.Kind == ReportKind.Daily)
+        {
+            observation.Leave();
+            weekToDate = await CollectWeekToDateAsync(
+                due, fills, fillsFailed || unsupplied.Contains(ReportInput.Fills), driftAdoptions, openingInventory,
+                unsupplied.Contains(ReportInput.OpeningInventory), cancellationToken).ConfigureAwait(false);
+        }
+
         // この種別が使わない入力の欠落は数えない（週報は建玉を描かない。警告にも見送りの判定にも混ぜない）。
         // Stage 0 の見積り承認額は構成値であり、未設定（承認が無い）が通常の状態のため、そもそも数えない。
         unsupplied.RemoveWhere(input => !ReportInputs.AppliesTo(input, due.Kind));
@@ -383,6 +397,7 @@ public sealed class ReportAutoGenerator(
             CurrentStage = currentStage,
             PeriodEndFxRate = periodEndFxRate,
             OpeningInventory = openingInventory,
+            WeekToDate = weekToDate,
             Unsupplied = ReportInputs.Parse(ReportInputs.Serialize(unsupplied)),
             NotRestorable = ReportInputs.Parse(ReportInputs.Serialize(
                 notRestorable.Where(input => ReportInputs.AppliesTo(input, due.Kind)))),
@@ -448,7 +463,10 @@ public sealed class ReportAutoGenerator(
                     ? new ReportCalendarDays(due.PeriodStart, due.PeriodEnd)
                     : null,
                 // FR-06, FR-16, #1181, IADR-0493 決定 3: 期間開始時点の在庫（null＝受け取っていない）。
-                OpeningInventory: inputs.OpeningInventory),
+                OpeningInventory: inputs.OpeningInventory,
+                // FR-06, FR-16, 計画 ADR-0059 決定 3・4, #1218, IADR-0519 決定 3〜5: 週次目標（前週の週報）と日報の週初来の入力。
+                WeeklyGoal: ResolveWeeklyGoal(due),
+                WeekToDate: inputs.WeekToDate),
             cancellationToken).ConfigureAwait(false);
 
         // FR-06, FR-16, #892, IADR-0381: 取得原価で賄えない決済を実際に検出したら、**期間開始時点の在庫**を未供給として記録する
@@ -465,6 +483,41 @@ public sealed class ReportAutoGenerator(
             unsupplied.Add(ReportInput.Narrative);
 
         return draft;
+    }
+
+    // FR-06, FR-07, 計画 ADR-0059 決定 4, #1218, IADR-0519 決定 4・5: 週次目標の参照値（日報・週報）。月報は照合しない（null）。
+    private WeeklyGoalReference? ResolveWeeklyGoal(DueReport due) =>
+        due.Kind is ReportKind.Daily or ReportKind.Weekly
+            ? WeeklyGoalReferenceResolver.Resolve(store, ReportSchedule.IsoWeekStart(due.PeriodStart))
+            : null;
+
+    // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報の週初来の窓（ReportSchedule.WeekToDateOf）の入力を、週報 §1 と
+    // **同じ供給元・同じ関数**（SafeFillsAsync・SafeDriftAdoptionsAsync・SafeOpeningInventoryAsync）で引く。窓が日報の窓と同じ（週の最初の営業日）なら
+    // 日報の入力を使い回す（同じ照会を 2 回出さない）。
+    private async Task<WeekToDateInputs> CollectWeekToDateAsync(
+        DueReport daily,
+        IReadOnlyList<PeriodTradeFill> dailyFills,
+        bool dailyFillsFailed,
+        IReadOnlyList<PeriodDriftAdoption>? dailyAdoptions,
+        OpeningInventorySnapshot? dailyOpening,
+        bool dailyOpeningUnknown,
+        CancellationToken cancellationToken)
+    {
+        var weekToDate = ReportSchedule.WeekToDateOf(daily);
+        if (ReportSchedule.SessionWindowOf(weekToDate, settings.Schedule) == ReportSchedule.SessionWindowOf(daily, settings.Schedule))
+            return new WeekToDateInputs(dailyFills, dailyFillsFailed, dailyAdoptions, dailyOpening, dailyOpeningUnknown);
+
+        var (fills, fillsFailed) = await SafeFillsAsync(weekToDate, cancellationToken).ConfigureAwait(false);
+        var adoptions = await SafeDriftAdoptionsAsync(weekToDate, cancellationToken).ConfigureAwait(false);
+        OpeningInventorySnapshot? opening = null;
+        var openingUnknown = false;
+        if (openingInventorySource is not null)
+        {
+            opening = await SafeOpeningInventoryAsync(weekToDate, cancellationToken).ConfigureAwait(false);
+            openingUnknown = opening is null;
+        }
+
+        return new WeekToDateInputs(fills, fillsFailed, adoptions, opening, openingUnknown);
     }
 
     // FR-06, 計画 ADR-0053 決定 3, #1172, IADR-0492 決定 6: 「集計したセッション」に書く市場。構成の対象市場（"US"/"JP"。
@@ -1176,6 +1229,12 @@ public sealed record ReportInputSnapshot
 
     /// <summary>FR-06, #1181, IADR-0493: 期間開始時点の在庫。<c>null</c>＝供給元が未注入、または照会できていない（後者は Unsupplied に入る）。</summary>
     public OpeningInventorySnapshot? OpeningInventory { get; init; }
+
+    /// <summary>
+    /// FR-06, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報の週初来の窓の入力（日報だけ。<c>null</c>＝日報以外）。
+    /// 照会の失敗は <see cref="Unsupplied"/> に入れない（§6 に算出不能と書く）。
+    /// </summary>
+    public WeekToDateInputs? WeekToDate { get; init; }
 
     /// <summary>この種別が使う入力のうち、取得できなかった（または期間の時点に復元できないため取りに行かなかった）もの。</summary>
     public required IReadOnlyList<ReportInput> Unsupplied { get; init; }

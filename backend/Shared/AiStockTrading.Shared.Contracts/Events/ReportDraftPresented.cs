@@ -38,4 +38,11 @@ public static class ReportSummaryMarkers
     /// （通知サービスは承認待ちにできた案でも、この印で始まる行だけは確認ボタンの前に見せる）。確定は止めない。
     /// </summary>
     public const string PolicyTakeProfitMissingPrefix = "⚠ 方針に書式どおりの「利確:」行がありません";
+
+    /// <summary>
+    /// FR-06, FR-07, 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の方針に書式どおりの「数値目標:」行（週次目標の書式行）が無い
+    /// （行なし・書式外・単位が基準通貨でない）ときに、確定の前に見せる警告行の先頭。出しどころと扱い（提示の通知は Warning・
+    /// <c>/policy</c> の承認待ちの案でも確認ボタンの前に見せる）は <see cref="PolicyTakeProfitMissingPrefix"/> と同じ。確定は止めない。
+    /// </summary>
+    public const string WeeklyGoalLineMissingPrefix = "⚠ 方針に書式どおりの「数値目標:」行がありません";
 }

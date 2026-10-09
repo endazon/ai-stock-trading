@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-06, FR-07, FR-16, UC-05, ADR-0030, IADR-0032, IADR-0269, IADR-0272]
 author: endazon (with Claude Code)
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-10-09
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0030_report-section-numbering-is-plan-canonical.md
   - planning:projects/ai-stock-trading/06_technical/04_report-templates.md
@@ -171,3 +171,13 @@ ADR-0030 決定5 の実装である。**統合した合成語「市況・振り�
   （「見出し語は計画から採る」は維持）／**[IADR-0272](IADR-0272_report-section-structure-arbitration.md) 決定1**
   （IADR-0272 の決定2・決定3・決定4 は覆っていない）
 - Superseded by: なし
+
+## ［2026-10-09 追記 / #1218］日報 §6 振り返りを実装した（決定 2 の表の日報 §6 の行・フォローアップ 3 の解消）
+
+本文は書き換えない（凍結）。計画 ADR-0059（利用者裁定 2026-10-09・planning#748）が日報 §6 の参照値の形・比較の定義・参照する週報を決めたため、
+[IADR-0519](IADR-0519_weekly-goal-line-grammar-and-week-to-date-comparison.md) で日報 §6 を実体の描画へ置き換えた。
+
+- 決定 2 の表の「日報 §6 振り返り」の行（理由「週次目標の参照値を日報が取得できる経路がまだありません」）は使われなくなり、理由定数 `DailyReviewReason` を削除した。
+  未実装の節は月報 §3 税金レビューだけになった。
+- 決定 4（散文を §6 へ流し込まない）は維持する。日報の散文は区切り行で §5 と §6 に分け、両節へ複製しない（IADR-0519 決定 4）。
+- フォローアップ 3 は解消した（起票は #1218）。

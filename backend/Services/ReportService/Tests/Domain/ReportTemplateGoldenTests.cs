@@ -83,6 +83,12 @@ public class ReportTemplateGoldenTests
 
     private static ReportView Supplied(ReportKind kind) => Bare(kind) with
     {
+        // T-06-081, T-06-087, FR-06, 計画 ADR-0059 決定 3・4, #1218, IADR-0519 決定 4・5: 週次目標の照合（日報 §6・週報 §1／§4）。
+        // 日報は週初来の実現損益が範囲内、週報は §1 の値（+1,520.00）が上限を上回る形を固定する（月報は描かない）。
+        WeeklyGoal = WeeklyGoalComparison.Evaluate(
+            new WeeklyGoalReference("weekly-2026-W34", "weekly-2026-W34", WeeklyGoalLine.Parse("数値目標: -200 〜 +500 USD")),
+            WeeklyGoalActual.Of(kind == ReportKind.Weekly ? 1_520m : 320.5m)),
+        ReviewNarrative = kind == ReportKind.Daily ? "週初来の損益は目標の範囲内で推移している。" : null,
         MarginReductions =
         [
             new MaintenanceMarginReductionExecuted(
