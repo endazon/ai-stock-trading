@@ -80,6 +80,8 @@ public static class MoomooPriceRounding
     }
 
     /// <summary>早く発火する側へ丸める（ロングの保護＝売りの発火は切り上げ・ショートの保護は切り下げ）。</summary>
+    // FR-10, ADR-0058 決定1・2（ADR-0049 決定3 の 1 句の部分改定）, #1228: 「下限を割らない」と「保護を緩めない」がぶつかるときは
+    // 保護を緩めない側を取る。ラインは最大 1 刻み未満だけ内側へ寄り、実効の幅は下限を 1 刻み未満だけ割り得る（計画が許す誤差）。
     public static decimal RoundTrigger(Market market, TradeSide closeSide, decimal price)
     {
         // 発火価格そのものが基準価格である。

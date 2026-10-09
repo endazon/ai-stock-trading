@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-10, FR-11, FR-12, UC-02, UC-06, SC-02, SC-03, ADR-0003, ADR-0016, ADR-0040, IADR-0016, IADR-0111, IADR-0134, IADR-0141, IADR-0161, IADR-0210, IADR-0211, IADR-0344, IADR-0413]
 author: claude (Claude Code)
 created: 2026-09-17
-updated: 2026-10-02
+updated: 2026-10-09
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0040_simulate-stop-loss-method-is-selectable.md (決定1・決定2・決定3・決定6)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-10 の 3 文〔口座種別の軸〕)
@@ -61,6 +61,17 @@ plan_refs:
 > 差し引きの規則は変えず、**併存を作らない**ことにした——同じ銘柄・同じ向きに別の手法の有効な保護記録がある新規建ては見送り
 > （`StopLossMethodConflict`）、moomoo SIMULATE の S0・S3 の新規建ては記録の無い建玉（S2）がある銘柄で見送る（`UnattributedPosition`）。
 > 決済は止めない。[IADR-0481](IADR-0481_same-symbol-method-coexistence-fill-tracking-abandonment-provider-alignment.md) 決定 1・2。
+
+> **［2026-10-09 追記 / #1228］決定 5 の「起動時の停止」は、実弾解禁の IADR の受入条件になった（planning#741 項目 2・利用者裁定 2026-10-09）。**
+> - 計画 ADR-0040 決定 1（「S1〜S3 が選ばれた状態で実弾へ切り替わったら起動時に停止する」）は**維持**され、2026-10-09 付の補完が
+>   「起動時の検査は実弾解禁の IADR の受入条件として実装に足させる。**閂 0（`LiveTradingGate`）を外す変更と同じ時点で揃える**」と定めた
+>   （同 ADR §結果 フォローアップ 8）。本決定 5 末尾の「実弾解禁の IADR は本決定の見直しを含めること」は、**見直しの中身が
+>   「起動時の照会と停止を足す」に定まった**と読む。
+> - **いまは実装しない。** それまでは (i) 設定側の 2 方向の拒否・(ii) 承認ごとの拒否・閂 0 の 3 つが担う（同補完の「配備までの暫定手段」。
+>   閂 0 が実弾の経路そのものを起動させないため、資金の危険は無い）。
+> - 受入条件の中身（実弾の階層で起動したら risk-management の手法の設定を照会し、S0 以外・照会不能なら停止する。SIMULATE・内蔵 paper では
+>   照会しない。(i)(ii) は外さない）と追跡は [#1275](https://github.com/endazon/ai-stock-trading/issues/1275)。
+>   実弾解禁 Runbook の解禁前チェックリストと運用仕様書の前提条件の表に行を足した（いずれも未充足）。
 
 ## コンテキストと課題
 

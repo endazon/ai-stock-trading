@@ -193,7 +193,9 @@ public sealed partial class ReportRegenerationService(
             var summary = ReportSummary.Build(
                 kind, label, draft.Pnl, draft.Narrative, unsuppliedInputs,
                 // ADR-0051 フォローアップ 1, #1223: 引けた建玉（期間の時点に復元できれば）で保有中の銘柄ごとにも見る。引けなければ方針全体の判定。
-                PolicyTakeProfitCheck.WarningFor(kind, existing.Report.PolicySummary, inputs.Positions));
+                PolicyTakeProfitCheck.WarningFor(kind, existing.Report.PolicySummary, inputs.Positions)
+                    // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 保った週報の方針に書式どおりの「数値目標:」行が無ければ同じく警告する。
+                    ?? WeeklyGoalLineCheck.WarningFor(kind, existing.Report.PolicySummary));
             notified = await NotifyPresentedBestEffortAsync(new PresentedReportNotice(key, kind, label, summary, version))
                 .ConfigureAwait(false)
                 ? PresentedNotice.Sent

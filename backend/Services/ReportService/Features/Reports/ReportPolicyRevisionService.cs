@@ -135,7 +135,9 @@ public sealed partial class ReportPolicyRevisionService(
         // 警告は方針（PolicySummary）へ入れず、改訂の記録・案内文・ログにだけ出す（方針はそのまま判断へ渡る）。
         var heldPositions = await HeldPositionsForTakeProfitCheckAsync(target.Kind, proposal.PolicySummary, key, cancellationToken)
             .ConfigureAwait(false);
-        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary, heldPositions);
+        // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の案に書式どおりの「数値目標:」行が無ければ、同じ経路で警告する（確定は止めない）。
+        var weeklyGoalWarning = WeeklyGoalLineCheck.WarningFor(target.Kind, proposal.PolicySummary);
+        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary, heldPositions) ?? weeklyGoalWarning;
         var body = AppendRevisionRecord(
             target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal, takeProfitWarning);
         var report = target.Base with
@@ -187,7 +189,13 @@ public sealed partial class ReportPolicyRevisionService(
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Add),
             proposal.WatchlistChanges.Count(c => c.Action == WatchlistChangeAction.Remove));
 
-        if (takeProfitWarning is not null)
+        if (weeklyGoalWarning is not null)
+        {
+            logger.LogWarning(
+                "週報の方針の改訂案に書式どおりの「数値目標:」行がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
+                LogSanitizer.Sanitize(key), version);
+        }
+        else if (takeProfitWarning is not null)
         {
             // 建玉を得たときの警告は銘柄ごとの名指しである（建玉は案に読める行があるときだけ照会するため）。#1257 監査 F5。
             if (heldPositions is not null)
