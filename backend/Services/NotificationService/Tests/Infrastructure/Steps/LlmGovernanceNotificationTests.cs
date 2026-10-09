@@ -46,14 +46,14 @@ public class LlmGovernanceNotificationTests
         using var _ = host;
 
         var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
-            new LlmFallbackFired(LlmPurposes.ReportMonthly, LlmAssignments.Opus5, "claude-sonnet-5",
+            new LlmFallbackFired(LlmPurposes.ReportMonthly, LlmAssignments.Opus55, "claude-sonnet-5-5",
                 nameof(LlmAssignmentOutcome.FallbackFired), OccurredAt));
         session.Executed.MessagesOf<LlmFallbackFired>().Should().NotBeEmpty();
 
         var sent = sender.Sent.Should().ContainSingle().Subject;
         sent.Title.Should().Contain(LlmPurposes.ReportMonthly);
-        sent.Content.Should().Contain(LlmAssignments.Opus5);
-        sent.Content.Should().Contain("claude-sonnet-5");
+        sent.Content.Should().Contain(LlmAssignments.Opus55);
+        sent.Content.Should().Contain("claude-sonnet-5-5");
         // 設定の見直しへ誘導する文言まで含めて「埋もれない通知」である。
         sent.Content.Should().Contain("割当設定を確認");
         sent.Severity.Should().Be(NotificationSeverity.Warning, "Info では埋もれる（決定4-(2)）");
@@ -71,12 +71,12 @@ public class LlmGovernanceNotificationTests
 
         var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
             new TradeDecisionSkipped(LlmPurposes.TradeDecision, nameof(LlmAssignmentOutcome.Unassigned),
-                LlmAssignments.Sonnet5, "claude-haiku-4-5", OccurredAt));
+                LlmAssignments.Sonnet55, "claude-haiku-5-5", OccurredAt));
         session.Executed.MessagesOf<TradeDecisionSkipped>().Should().NotBeEmpty();
 
         var sent = sender.Sent.Should().ContainSingle().Subject;
         sent.Title.Should().Contain("見送り");
-        sent.Content.Should().Contain(LlmAssignments.Sonnet5);
+        sent.Content.Should().Contain(LlmAssignments.Sonnet55);
         // 発注していないことと、それが設計上の正常な結果であることの両方が読めること。
         sent.Content.Should().Contain("発注も行いませんでした");
         sent.Content.Should().Contain("正常な結果");

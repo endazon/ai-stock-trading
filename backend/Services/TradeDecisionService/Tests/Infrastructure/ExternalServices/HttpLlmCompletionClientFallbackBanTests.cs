@@ -14,7 +14,7 @@ namespace TradeDecisionService.Tests;
 // **取引判断のフォールバック禁止**の退行防止（統制系 3 点セット: 境界値・プロパティベース・否定形）。
 //
 // 🔴 計画の明文（ADR-0017 決定2）:
-//   「取引判断は `claude-sonnet-5` に固定し、**いかなる理由でもフォールバックしない**。
+//   「取引判断は `claude-sonnet-5-5` に固定し、**いかなる理由でもフォールバックしない**。
 //    指定モデルが利用できない場合、取引判断は実行されず、その結果として発注も行われない。
 //    **この振る舞いは障害ではなく、設計上の正常な結果である。**」
 //
@@ -22,7 +22,7 @@ namespace TradeDecisionService.Tests;
 // 返す JSON が Hold であることが**発注ゼロの構造的な根拠**である（判断パーサは Hold を発注へ写像しない）。
 public class HttpLlmCompletionClientFallbackBanTests
 {
-    private const string Pin = "claude-sonnet-5";
+    private const string Pin = "claude-sonnet-5-5";
 
     private static HttpLlmCompletionClient Client(
         HttpMessageHandler handler,
@@ -62,8 +62,8 @@ public class HttpLlmCompletionClientFallbackBanTests
     // 「発注ゼロ」の機械的な表明: 判断は Hold であり、**フォールバック候補への再呼び出しも 0 回**である
     // （AST 側で別モデルを試す経路が生えていないことの直接の証拠）。
     [Theory]
-    [InlineData("claude-opus-5")]        // 基盤の DefaultModel へ無音で落ちた形（platform IADR-0102 の罠）
-    [InlineData("claude-haiku-4-5")]     // 他用途の第 2 候補
+    [InlineData("claude-opus-5-5")]        // 基盤の DefaultModel へ無音で落ちた形（platform IADR-0102 の罠）
+    [InlineData("claude-haiku-5-5")]     // 他用途の第 2 候補
     [InlineData("claude-opus-4-8")]      // 旧ピン（ADR-0014 が改定した値）
     [InlineData(null)]                   // モデル名を名乗らない応答
     public async Task 実効モデルがピンと違えば発注へ進まず_呼び出しも増やさない(string? effectiveModel)
@@ -159,7 +159,7 @@ public class HttpLlmCompletionClientFallbackBanTests
         var governance = new RecordingGovernanceReporter();
 
         var output = await Client(
-            new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5")), governance,
+            new StubHandler(HttpStatusCode.OK, Body("claude-sonnet-5-5")), governance,
             LlmPurposes.TradeDecisionScreening).CompleteAsync("p");
 
         TradeDecisionParser.Parse(output).Action.Should().Be(TradeAction.Hold);
@@ -170,7 +170,7 @@ public class HttpLlmCompletionClientFallbackBanTests
     public async Task スクリーニング層はピン_haiku_なら通す()
     {
         var output = await Client(
-            new StubHandler(HttpStatusCode.OK, Body(LlmAssignments.Haiku45)), governance: null,
+            new StubHandler(HttpStatusCode.OK, Body(LlmAssignments.Haiku55)), governance: null,
             LlmPurposes.TradeDecisionScreening).CompleteAsync("p");
 
         TradeDecisionParser.Parse(output).Action.Should().Be(TradeAction.Buy);
@@ -183,7 +183,7 @@ public class HttpLlmCompletionClientFallbackBanTests
     public async Task 見送りの記録に失敗しても発注へ進まない()
     {
         var client = new HttpLlmCompletionClient(
-            new HttpClient(new StubHandler(HttpStatusCode.OK, Body("claude-opus-5")))
+            new HttpClient(new StubHandler(HttpStatusCode.OK, Body("claude-opus-5-5")))
             {
                 BaseAddress = new Uri("http://llm-gateway"),
             },

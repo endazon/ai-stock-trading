@@ -14,20 +14,60 @@ namespace AiStockTrading.Shared.Contracts.Llm;
 //   01_architecture-overview §判断の二段化（スクリーニング層の割当）
 public static class LlmAssignments
 {
-    /// <summary>取引判断の第 1 候補（ピン留め・ADR-0011 / ADR-0014 §決定1）。</summary>
-    public const string Sonnet5 = "claude-sonnet-5";
+    // FR-04, FR-15, ADR-0014, ADR-0011, #1295, IADR-0524: 利用者裁定 2026-10-10（planning#783）で全用途を 5.5 系へ切り替えた
+    // （opus-5 → opus-5-5・sonnet-5 → sonnet-5-5・haiku-4-5 → haiku-5-5）。取引判断の 2 層も含む。
+
+    /// <summary>取引判断の第 1 候補（ピン留め・ADR-0011 / ADR-0014 §決定1）。日報の第 1 候補と週報・月報の第 2 候補。</summary>
+    public const string Sonnet55 = "claude-sonnet-5-5";
 
     /// <summary>月報・週報の第 1 候補（ADR-0015 / ADR-0014）。</summary>
-    public const string Opus5 = "claude-opus-5";
+    public const string Opus55 = "claude-opus-5-5";
 
     /// <summary>スクリーニング層の割当と、日報の第 2 候補（ADR-0017 決定1）。</summary>
+    public const string Haiku55 = "claude-haiku-5-5";
+
+    // ---- 移行期間に限り受ける直前世代（#1295, IADR-0524。外すのは #1296） --------------------------------
+    // 🔴 **一時措置である。** 基盤（MSP）の LLM ゲートウェイは**構成したモデル名**を応答に名乗り、本表はそれを完全一致で照合する。
+    // AST と MSP のどちらかが先に切り替わると、取引判断が `Unassigned`（Allowed=false）で止まる。そこで MSP の切り替えと
+    // PoC の確認が済むまで、各 5.5 系 ID の直前世代を**同じ位置**（第 1 候補・フォールバック先）として受ける。
+    // 受けた評価には `LlmAssignmentEvaluation.PreviousGenerationAccepted` の印が付く。
+    // 🔴 **Stage 0 の両層の組の判定（`Stage0TwoTierModels`）は直前世代を受けない**（旧組での合格は 5.5 系の組の合格にならない。
+    // ADR-0011 / ADR-0014 決定3 / ADR-0054 決定3）。
+
+    /// <summary>直前世代（移行期間のみ受ける）: <see cref="Sonnet55"/> の前。</summary>
+    public const string Sonnet5 = "claude-sonnet-5";
+
+    /// <summary>直前世代（移行期間のみ受ける）: <see cref="Opus55"/> の前。</summary>
+    public const string Opus5 = "claude-opus-5";
+
+    /// <summary>直前世代（移行期間のみ受ける）: <see cref="Haiku55"/> の前。</summary>
     public const string Haiku45 = "claude-haiku-4-5";
 
     /// <summary>
+    /// 移行期間に限り、5.5 系 ID（キー）と同じ位置で受ける直前世代の ID（値）。#1296 で撤去する。
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> PreviousGenerationAccepted { get; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Sonnet55] = Sonnet5,
+            [Opus55] = Opus5,
+            [Haiku55] = Haiku45,
+        };
+
+    /// <summary>
     /// **本システムでは使用しないモデル**（ADR-0015 / ADR-0017 決定1）。ZDR（ゼロデータ保持）非対応であり、
-    /// 基盤の `NonZdrModels` に載る唯一のモデルである。どの用途の第 1・第 2 候補にも現れてはならない。
+    /// 基盤の `NonZdrModels` に載るモデルである。どの用途の第 1・第 2 候補にも現れてはならない。
     /// </summary>
     public const string ForbiddenModel = "claude-fable-5";
+
+    /// <summary>
+    /// <see cref="ForbiddenModel"/> の後継。利用者裁定 2026-10-10（planning#783）で同じ扱い（使用しない）とした（#1295, IADR-0524）。
+    /// </summary>
+    public const string ForbiddenModelSuccessor = "claude-fable-5-1";
+
+    /// <summary>使用しないモデルの全体（大小無視）。</summary>
+    public static IReadOnlySet<string> ForbiddenModels { get; } =
+        new HashSet<string>([ForbiddenModel, ForbiddenModelSuccessor], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// 用途別の割当（順序つき）。**この並びと値が計画の確定値であり、スナップショットテストで固定する。**
@@ -36,14 +76,14 @@ public static class LlmAssignments
     [
         // ADR-0017 決定2: 取引判断はいかなる理由でもフォールバックしない。
         // モデルが利用できない場合、取引判断は実行されず発注も行われない（障害ではなく設計上の正常な結果）。
-        new(LlmPurposes.TradeDecision, Sonnet5, [], FallbackAllowed: false),
+        new(LlmPurposes.TradeDecision, Sonnet55, [], FallbackAllowed: false),
         // 01_architecture-overview: スクリーニングは軽量モデル。取引判断の一部なのでフォールバックは禁止。
         // 入力がコンテキスト上限に当たったときは**入力を切り詰める**（上位モデルへ退避しない。利用者裁定 2026-08-02）。
-        new(LlmPurposes.TradeDecisionScreening, Haiku45, [], FallbackAllowed: false),
+        new(LlmPurposes.TradeDecisionScreening, Haiku55, [], FallbackAllowed: false),
         // ADR-0015 §決定（第 1 候補）＋ ADR-0017 決定1（第 2 候補）。
-        new(LlmPurposes.ReportMonthly, Opus5, [Sonnet5], FallbackAllowed: true),
-        new(LlmPurposes.ReportWeekly, Opus5, [Sonnet5], FallbackAllowed: true),
-        new(LlmPurposes.ReportDaily, Sonnet5, [Haiku45], FallbackAllowed: true),
+        new(LlmPurposes.ReportMonthly, Opus55, [Sonnet55], FallbackAllowed: true),
+        new(LlmPurposes.ReportWeekly, Opus55, [Sonnet55], FallbackAllowed: true),
+        new(LlmPurposes.ReportDaily, Sonnet55, [Haiku55], FallbackAllowed: true),
     ];
 
     /// <summary>用途の割当を引く（未登録は null）。用途キーの大小は無視する。</summary>
@@ -54,7 +94,14 @@ public static class LlmAssignments
 
     /// <summary>禁止モデルか（大小無視）。</summary>
     public static bool IsForbidden(string? model) =>
-        string.Equals(model?.Trim(), ForbiddenModel, StringComparison.OrdinalIgnoreCase);
+        model?.Trim() is { Length: > 0 } trimmed && ForbiddenModels.Contains(trimmed);
+
+    /// <summary>
+    /// 移行期間に限り <paramref name="assignedModel"/>（5.5 系 ID）と同じ位置で受ける直前世代か（大小無視）。#1295 / #1296。
+    /// </summary>
+    public static bool IsPreviousGenerationOf(string assignedModel, string? model) =>
+        PreviousGenerationAccepted.TryGetValue(assignedModel, out var previous)
+        && string.Equals(model, previous, StringComparison.OrdinalIgnoreCase);
 }
 
 // 1 用途分の割当。FallbackModels は**第 1 候補より後ろ**だけを順序どおりに持つ（空＝鎖なし）。
@@ -112,6 +159,22 @@ public static class LlmAssignmentEvaluator
             return new LlmAssignmentEvaluation(
                 LlmAssignmentOutcome.FallbackFired, assignment.PrimaryModel, model, assignment.FallbackAllowed);
 
+        // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代は 5.5 系 ID と同じ位置として受け、印を付ける。
+        // 位置は変えない —— 第 1 候補の直前世代は Primary、フォールバック先の直前世代は FallbackFired（取引判断系は
+        // 鎖が空なのでフォールバック先の直前世代も存在しない＝フォールバック禁止の意味は変わらない）。
+        if (LlmAssignments.IsPreviousGenerationOf(assignment.PrimaryModel, model))
+            return new LlmAssignmentEvaluation(LlmAssignmentOutcome.Primary, assignment.PrimaryModel, model, Allowed: true)
+            {
+                PreviousGenerationAccepted = true,
+            };
+
+        if (assignment.FallbackModels.Any(m => LlmAssignments.IsPreviousGenerationOf(m, model)))
+            return new LlmAssignmentEvaluation(
+                LlmAssignmentOutcome.FallbackFired, assignment.PrimaryModel, model, assignment.FallbackAllowed)
+            {
+                PreviousGenerationAccepted = true,
+            };
+
         return new LlmAssignmentEvaluation(LlmAssignmentOutcome.Unassigned, assignment.PrimaryModel, model, Allowed: false);
     }
 }
@@ -121,4 +184,16 @@ public readonly record struct LlmAssignmentEvaluation(
     LlmAssignmentOutcome Outcome,
     string? ExpectedModel,
     string? EffectiveModel,
-    bool Allowed);
+    bool Allowed)
+{
+    /// <summary>
+    /// #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 実効モデルが 5.5 系 ID ではなく、その直前世代として受けたものか。
+    /// </summary>
+    public bool PreviousGenerationAccepted { get; init; }
+
+    /// <summary>
+    /// 第 1 候補（ピン）の**現行 ID そのもの**に答えられたか（直前世代の受け入れを含めない）。
+    /// Stage 0 の両層の組の判定（ADR-0011 / ADR-0014 決定3 / ADR-0054 決定3）はこちらを使う。
+    /// </summary>
+    public bool MatchesCurrentPin => Outcome == LlmAssignmentOutcome.Primary && !PreviousGenerationAccepted;
+}

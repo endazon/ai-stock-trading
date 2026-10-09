@@ -41,13 +41,13 @@ public class Stage0ReplayEvaluationTests
         string symbol,
         int signedQuantity,
         IReadOnlyList<Stage0AsOfInputStatus>? asOfInputs = null) =>
-        new(symbol, Market.UnitedStates, asOf, "fp", "claude-sonnet-5", VoteCount: 3,
-            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false, "claude-sonnet-5")],
+        new(symbol, Market.UnitedStates, asOf, "fp", "claude-sonnet-5-5", VoteCount: 3,
+            RawDecisions: [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false, "claude-sonnet-5-5")],
             MajorityAction: signedQuantity > 0 ? Stage0DecisionAction.Buy : Stage0DecisionAction.Hold,
             MajorityRationale: "根拠", SignedQuantity: signedQuantity, CostJpy: 1m,
             InputTokens: 300, OutputTokens: 60, AsOfInputs: asOfInputs ?? AllReconstructed,
             // FR-15, ADR-0054 決定3, #1196, IADR-0498: 二段で記録した記録（一次・本判断ともピンが応答）。一次の無い記録は評価不能になる。
-            Screening: new Stage0ScreeningDecision(Stage0DecisionAction.Buy, false, "関心あり", 50, 10, "claude-haiku-4-5"));
+            Screening: new Stage0ScreeningDecision(Stage0DecisionAction.Buy, false, "関心あり", 50, 10, "claude-haiku-5-5"));
 
     private static Stage0DecisionRecordSet SetOf(
         DateOnly? from = null,
@@ -56,7 +56,7 @@ public class Stage0ReplayEvaluationTests
         string symbol = "AAPL",
         params Stage0DecisionRecord[] records) =>
         new(from ?? From, to ?? To, [new Stage0RecordedSymbol(symbol, Market.UnitedStates)],
-            cutoff ?? Cutoff, DateTimeOffset.UnixEpoch, "claude-sonnet-5", "ai-decision-replay/m/h",
+            cutoff ?? Cutoff, DateTimeOffset.UnixEpoch, "claude-sonnet-5-5", "ai-decision-replay/m/h",
             records.Length == 0 ? [Record(From.AddDays(1), symbol, 10)] : records);
 
     // configuredCutoff は「構成の LLM 学習カットオフ日」。null は**未構成**を表す（既定値へ倒さない）。
@@ -98,7 +98,7 @@ public class Stage0ReplayEvaluationTests
     {
         var empty = new Stage0DecisionRecordSet(
             From, To, [new Stage0RecordedSymbol("AAPL", Market.UnitedStates)], Cutoff,
-            DateTimeOffset.UnixEpoch, "claude-sonnet-5", "sid", []);
+            DateTimeOffset.UnixEpoch, "claude-sonnet-5-5", "sid", []);
 
         var preparation = Stage0ReplayEvaluation.Prepare(Request(empty));
 
@@ -589,10 +589,14 @@ public class Stage0ReplayEvaluationTests
     // 🔴 T-15-118（受け入れ基準 2）: 一次か本判断のどちらかの実効モデルがピン（LlmAssignments）と違う判断は判定母集団から外れ、
     // 件数が「実効モデル不一致」として verdict まで載る（見送りなら残りで判定器へ到達する）。不明（名乗らない）も一致と読まない。
     [Theory]
-    [InlineData("claude-sonnet-5", "claude-sonnet-5")]   // 一次がピン（haiku）以外
-    [InlineData("claude-haiku-4-5", "claude-haiku-4-5")] // 本判断がピン（sonnet）以外
-    [InlineData(null, "claude-sonnet-5")]                // 一次が名乗らない
-    [InlineData("claude-haiku-4-5", null)]               // 本判断が名乗らない
+    [InlineData("claude-sonnet-5-5", "claude-sonnet-5-5")]   // 一次がピン（haiku）以外
+    [InlineData("claude-haiku-5-5", "claude-haiku-5-5")] // 本判断がピン（sonnet）以外
+    [InlineData(null, "claude-sonnet-5-5")]                // 一次が名乗らない
+    [InlineData("claude-haiku-5-5", null)]               // 本判断が名乗らない
+    // 🔴 T-15-124, #1295, IADR-0524: 割当表が移行期間に受ける直前世代（旧組）も一致と読まない（旧組の合格を 5.5 系の組の合格にしない）。
+    [InlineData("claude-haiku-4-5", "claude-sonnet-5")]  // 旧組そのもの
+    [InlineData("claude-haiku-5-5", "claude-sonnet-5")]  // 本判断だけ旧世代
+    [InlineData("claude-haiku-4-5", "claude-sonnet-5-5")] // 一次だけ旧世代
     public void 実効モデルがピンと違う判断は母集団から外れ件数が載る(string? screeningModel, string? decisionModel)
     {
         var records = Daily(3).Concat([WithModels(From.AddDays(4), 0, screeningModel, decisionModel)]).ToArray();
@@ -615,7 +619,7 @@ public class Stage0ReplayEvaluationTests
     [Fact]
     public void 実効モデルがピンと違う判断が数量を持てば判定を組まない_failclosed()
     {
-        var records = Daily(3).Concat([WithModels(From.AddDays(4), 10, "claude-sonnet-5", "claude-sonnet-5")]).ToArray();
+        var records = Daily(3).Concat([WithModels(From.AddDays(4), 10, "claude-sonnet-5-5", "claude-sonnet-5-5")]).ToArray();
 
         var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
 
@@ -628,7 +632,21 @@ public class Stage0ReplayEvaluationTests
     public void 全件の実効モデルがピンと違えば判定を組まない_failclosed()
     {
         var records = Enumerable.Range(1, 3)
-            .Select(i => WithModels(From.AddDays(i), 0, "claude-haiku-4-5", "claude-opus-5"))
+            .Select(i => WithModels(From.AddDays(i), 0, "claude-haiku-5-5", "claude-opus-5-5"))
+            .ToArray();
+
+        var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));
+
+        preparation.BlockingChecks.Should().Equal(Stage0GateCheck.AllDecisionsExcluded);
+    }
+
+    // 🔴 T-15-124, #1295, IADR-0524（ADR-0011 / ADR-0014 決定3 / ADR-0054 決定3）: 全件が旧組（haiku-4-5 ＋ sonnet-5）で記録された記録集合は、
+    // 割当表が移行期間に直前世代を受けていても母集団が残らず判定を組まない（Stage 0 は 5.5 系の組で再実施する）。
+    [Fact]
+    public void 全件が旧組の記録なら判定を組まない_5_5系の組で再実施が要る()
+    {
+        var records = Enumerable.Range(1, 3)
+            .Select(i => WithModels(From.AddDays(i), 0, "claude-haiku-4-5", "claude-sonnet-5"))
             .ToArray();
 
         var preparation = Stage0ReplayEvaluation.Prepare(Request(SetOf(records: records)));

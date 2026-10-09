@@ -59,8 +59,8 @@ public class LlmPricingStartupWarningTests(ReportWorkerWebApplicationFactory fac
         StartAndCaptureWarnings(new Dictionary<string, string?>
         {
             ["LlmGateway:BaseUrl"] = "http://llm-gateway",
-            ["LlmPricing:PerModel:claude_opus_5:InputPer1kTokens"] = "0.819",
-            ["LlmPricing:PerModel:claude_opus_5:OutputPer1kTokens"] = "4.093",
+            ["LlmPricing:PerModel:claude_opus_5_5:InputPer1kTokens"] = "0.819",
+            ["LlmPricing:PerModel:claude_opus_5_5:OutputPer1kTokens"] = "4.093",
         }).Should().NotContain(m => m.Contains(Marker));
     }
 
@@ -95,8 +95,8 @@ public class LlmPricingStartupWarningTests(ReportWorkerWebApplicationFactory fac
             ? new Dictionary<string, string?>
             {
                 ["LlmGateway:BaseUrl"] = "http://llm-gateway",
-                ["LlmPricing:PerModel:claude_opus_5:InputPer1kTokens"] = "0.819",
-                ["LlmPricing:PerModel:claude_opus_5:OutputPer1kTokens"] = "4.093",
+                ["LlmPricing:PerModel:claude_opus_5_5:InputPer1kTokens"] = "0.819",
+                ["LlmPricing:PerModel:claude_opus_5_5:OutputPer1kTokens"] = "4.093",
             }
             : new Dictionary<string, string?>();
 

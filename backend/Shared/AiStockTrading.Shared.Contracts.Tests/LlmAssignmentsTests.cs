@@ -14,6 +14,7 @@ public class LlmAssignmentsTests
 {
     // ADR-0014 §決定1 の 2026-08-01 改訂表 ＋ ADR-0015 §決定（月報）＋ ADR-0017 決定1・決定2 ＋
     // 01_architecture-overview §判断の二段化（スクリーニング層）。
+    // #1295, IADR-0524: 利用者裁定 2026-10-10（planning#783）で全用途を 5.5 系へ（並び・フォールバックの許否は不変）。
     [Fact]
     public void 割当表は計画の確定値と一致する()
     {
@@ -22,11 +23,31 @@ public class LlmAssignmentsTests
             .ToArray();
 
         snapshot.Should().Equal(
-            "trade-decision | claude-sonnet-5 | [] | fallback=False",
-            "trade-decision-screening | claude-haiku-4-5 | [] | fallback=False",
-            "report-monthly | claude-opus-5 | [claude-sonnet-5] | fallback=True",
-            "report-weekly | claude-opus-5 | [claude-sonnet-5] | fallback=True",
-            "report-daily | claude-sonnet-5 | [claude-haiku-4-5] | fallback=True");
+            "trade-decision | claude-sonnet-5-5 | [] | fallback=False",
+            "trade-decision-screening | claude-haiku-5-5 | [] | fallback=False",
+            "report-monthly | claude-opus-5-5 | [claude-sonnet-5-5] | fallback=True",
+            "report-weekly | claude-opus-5-5 | [claude-sonnet-5-5] | fallback=True",
+            "report-daily | claude-sonnet-5-5 | [claude-haiku-5-5] | fallback=True");
+    }
+
+    // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代の対応は 5.5 系 ID ごとに 1 つだけで、計画の裁定表
+    // （planning#783: opus-5 → opus-5-5・sonnet-5 → sonnet-5-5・haiku-4-5 → haiku-5-5）と一致する。
+    [Fact]
+    public void 移行期間に受ける直前世代は裁定の対応表と一致する()
+    {
+        LlmAssignments.PreviousGenerationAccepted
+            .OrderBy(p => p.Key, StringComparer.Ordinal)
+            .Select(p => $"{p.Key} <- {p.Value}")
+            .Should().Equal(
+                "claude-haiku-5-5 <- claude-haiku-4-5",
+                "claude-opus-5-5 <- claude-opus-5",
+                "claude-sonnet-5-5 <- claude-sonnet-5");
+
+        // 直前世代は割当表のどの位置にも直接は載らない（載れば移行段の撤去で消し忘れる）。
+        var everyAssigned = LlmAssignments.All.SelectMany(a => a.FallbackModels.Prepend(a.PrimaryModel)).ToArray();
+        everyAssigned.Should().NotContain(LlmAssignments.PreviousGenerationAccepted.Values);
+        // 直前世代に禁止モデルを紛れ込ませない。
+        LlmAssignments.PreviousGenerationAccepted.Values.Should().NotContain(m => LlmAssignments.IsForbidden(m));
     }
 
     // ADR-0017 決定1 の明文: 「**すべての用途でフォールバックが安価側へ向かう表である。**
@@ -40,8 +61,9 @@ public class LlmAssignmentsTests
 
     // 🔴 **否定形**（#335 の受け入れ基準）: ADR-0015 / ADR-0017 決定1 により
     // `claude-fable-5` は本システムで使用しない。第 1 候補にも第 2 候補にも現れてはならない。
+    // #1295, IADR-0524: 後継の `claude-fable-5-1` も同じ扱い（利用者裁定 2026-10-10・planning#783）。
     [Fact]
-    public void claude_fable_5_はどの用途の第1候補にも第2候補にも現れない()
+    public void claude_fable_5_と後継_5_1_はどの用途の第1候補にも第2候補にも現れない()
     {
         var everyModel = LlmAssignments.All
             .SelectMany(a => a.FallbackModels.Prepend(a.PrimaryModel))
@@ -49,6 +71,8 @@ public class LlmAssignmentsTests
 
         everyModel.Should().NotBeEmpty();
         everyModel.Should().NotContain(LlmAssignments.ForbiddenModel);
+        everyModel.Should().NotContain(LlmAssignments.ForbiddenModelSuccessor);
+        LlmAssignments.ForbiddenModels.Should().BeEquivalentTo(["claude-fable-5", "claude-fable-5-1"]);
     }
 
     // ADR-0017 決定2: 取引判断（本判断・スクリーニング）は**いかなる理由でもフォールバックしない**。
@@ -74,7 +98,7 @@ public class LlmAssignmentsTests
 
     [Fact]
     public void 用途キーの大小は無視する() =>
-        LlmAssignments.For("TRADE-DECISION")!.PrimaryModel.Should().Be("claude-sonnet-5");
+        LlmAssignments.For("TRADE-DECISION")!.PrimaryModel.Should().Be("claude-sonnet-5-5");
 
     [Theory]
     [InlineData(null)]
@@ -87,25 +111,34 @@ public class LlmAssignmentsTests
     // ---- 実効モデルの評価（境界値テーブル） -------------------------------------------------
 
     // 取引判断: ピンのみ Allowed。フォールバック先（表に無い）・DefaultModel 落ち・禁止モデルはすべて不可。
+    // #1295, IADR-0524: 移行期間は直前世代も同じ位置で受ける（印付き。下の別テストで固定）。
     [Theory]
     // 用途 / 実効モデル / 期待 Outcome / 期待 Allowed
-    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.TradeDecision, "CLAUDE-SONNET-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.TradeDecision, " claude-sonnet-5 ", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecision, "CLAUDE-SONNET-5-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecision, " claude-sonnet-5-5 ", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecision, "claude-opus-5-5", LlmAssignmentOutcome.Unassigned, false)]
+    [InlineData(LlmPurposes.TradeDecision, "claude-haiku-5-5", LlmAssignmentOutcome.Unassigned, false)]
     [InlineData(LlmPurposes.TradeDecision, "claude-opus-5", LlmAssignmentOutcome.Unassigned, false)]
     [InlineData(LlmPurposes.TradeDecision, "claude-haiku-4-5", LlmAssignmentOutcome.Unassigned, false)]
     [InlineData(LlmPurposes.TradeDecision, "claude-fable-5", LlmAssignmentOutcome.Forbidden, false)]
+    [InlineData(LlmPurposes.TradeDecision, "claude-fable-5-1", LlmAssignmentOutcome.Forbidden, false)]
     [InlineData(LlmPurposes.TradeDecision, null, LlmAssignmentOutcome.Unassigned, false)]
-    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-4-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-5-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-sonnet-5-5", LlmAssignmentOutcome.Unassigned, false)]
     [InlineData(LlmPurposes.TradeDecisionScreening, "claude-sonnet-5", LlmAssignmentOutcome.Unassigned, false)]
     // 報告書: 第 2 候補も Allowed（FallbackFired として記録はする）。
-    [InlineData(LlmPurposes.ReportMonthly, "claude-opus-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.ReportMonthly, "claude-sonnet-5", LlmAssignmentOutcome.FallbackFired, true)]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-opus-5-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-sonnet-5-5", LlmAssignmentOutcome.FallbackFired, true)]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-haiku-5-5", LlmAssignmentOutcome.Unassigned, false)]
     [InlineData(LlmPurposes.ReportMonthly, "claude-haiku-4-5", LlmAssignmentOutcome.Unassigned, false)]
     [InlineData(LlmPurposes.ReportMonthly, "claude-fable-5", LlmAssignmentOutcome.Forbidden, false)]
-    [InlineData(LlmPurposes.ReportDaily, "claude-sonnet-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.ReportDaily, "claude-haiku-4-5", LlmAssignmentOutcome.FallbackFired, true)]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-fable-5-1", LlmAssignmentOutcome.Forbidden, false)]
+    [InlineData(LlmPurposes.ReportDaily, "claude-sonnet-5-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.ReportDaily, "claude-haiku-5-5", LlmAssignmentOutcome.FallbackFired, true)]
+    [InlineData(LlmPurposes.ReportDaily, "claude-opus-5", LlmAssignmentOutcome.Unassigned, false)]
     // 未登録の用途（基盤で DefaultModel へ落ちた形）はモデルによらず不可。
+    [InlineData("unknown-purpose", "claude-opus-5-5", LlmAssignmentOutcome.Unassigned, false)]
     [InlineData("unknown-purpose", "claude-opus-5", LlmAssignmentOutcome.Unassigned, false)]
     public void 実効モデルの評価は用途ごとの許否を返す(
         string purpose, string? effectiveModel, LlmAssignmentOutcome expectedOutcome, bool expectedAllowed)
@@ -114,16 +147,52 @@ public class LlmAssignmentsTests
 
         evaluation.Outcome.Should().Be(expectedOutcome);
         evaluation.Allowed.Should().Be(expectedAllowed);
+        evaluation.PreviousGenerationAccepted.Should().BeFalse();
     }
+
+    // 🔴 #1295, IADR-0524（移行期間のみ・#1296 で撤去）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗る。
+    // 直前世代は 5.5 系 ID と**同じ位置**で受ける（第 1 候補の直前世代は Primary、フォールバック先の直前世代は FallbackFired）。
+    // 受けた評価には印が付き、Stage 0 の組の判定に使う `MatchesCurrentPin` は偽になる（旧組の合格を新組の合格にしない）。
+    [Theory]
+    // 用途 / 実効モデル（直前世代） / 期待 Outcome / 期待 Allowed
+    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecision, "CLAUDE-SONNET-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-4-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-opus-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-sonnet-5", LlmAssignmentOutcome.FallbackFired, true)]
+    [InlineData(LlmPurposes.ReportWeekly, "claude-opus-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.ReportDaily, "claude-sonnet-5", LlmAssignmentOutcome.Primary, true)]
+    [InlineData(LlmPurposes.ReportDaily, "claude-haiku-4-5", LlmAssignmentOutcome.FallbackFired, true)]
+    public void 移行期間は直前世代を同じ位置で受け_印を付ける(
+        string purpose, string effectiveModel, LlmAssignmentOutcome expectedOutcome, bool expectedAllowed)
+    {
+        var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, effectiveModel);
+
+        evaluation.Outcome.Should().Be(expectedOutcome);
+        evaluation.Allowed.Should().Be(expectedAllowed);
+        evaluation.PreviousGenerationAccepted.Should().BeTrue();
+        evaluation.ExpectedModel.Should().Be(LlmAssignments.For(purpose)!.PrimaryModel, "期待値は 5.5 系のピンのまま");
+        evaluation.EffectiveModel.Should().Be(effectiveModel.Trim(), "実効モデルは名乗った値をそのまま運ぶ");
+        evaluation.MatchesCurrentPin.Should().BeFalse("直前世代は現行のピンと一致しない");
+    }
+
+    [Theory]
+    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5-5")]
+    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-5-5")]
+    public void 現行のピンそのものだけが_MatchesCurrentPin_になる(string purpose, string pin) =>
+        LlmAssignmentEvaluator.Evaluate(purpose, pin).MatchesCurrentPin.Should().BeTrue();
 
     // 🔴 **プロパティベース**（統制系 3 点セット）: 表に載るどのモデルを取っても、
     // 取引判断系で Allowed になるのは第 1 候補ただ 1 つである（ADR-0017 決定2）。
+    // #1295, IADR-0524: 移行期間は第 1 候補の直前世代も Allowed（印付き）。それ以外（他用途のピン・フォールバック先・
+    // その直前世代・禁止モデル）は増えない＝フォールバック禁止の意味は変わらない。
     [Fact]
-    public void 取引判断系で許可される実効モデルは第1候補ただ1つである()
+    public void 取引判断系で許可される実効モデルは第1候補とその直前世代だけである()
     {
         var everyKnownModel = LlmAssignments.All
             .SelectMany(a => a.FallbackModels.Prepend(a.PrimaryModel))
-            .Append(LlmAssignments.ForbiddenModel)
+            .Concat(LlmAssignments.PreviousGenerationAccepted.Values)
+            .Concat(LlmAssignments.ForbiddenModels)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -133,8 +202,12 @@ public class LlmAssignmentsTests
             var allowed = everyKnownModel
                 .Where(m => LlmAssignmentEvaluator.Evaluate(purpose, m).Allowed)
                 .ToArray();
+            var currentPin = everyKnownModel
+                .Where(m => LlmAssignmentEvaluator.Evaluate(purpose, m).MatchesCurrentPin)
+                .ToArray();
 
-            allowed.Should().Equal(pin);
+            allowed.Should().BeEquivalentTo([pin, LlmAssignments.PreviousGenerationAccepted[pin]]);
+            currentPin.Should().Equal(pin);
         }
     }
 
@@ -144,7 +217,12 @@ public class LlmAssignmentsTests
     [InlineData(LlmPurposes.TradeDecision)]
     [InlineData(LlmPurposes.ReportMonthly)]
     [InlineData("unknown-purpose")]
-    public void 禁止モデルは用途によらず_Forbidden_になる(string purpose) =>
+    public void 禁止モデルは用途によらず_Forbidden_になる(string purpose)
+    {
         LlmAssignmentEvaluator.Evaluate(purpose, "claude-fable-5").Outcome
             .Should().Be(LlmAssignmentOutcome.Forbidden);
+        // #1295, IADR-0524: 後継も同じ。
+        LlmAssignmentEvaluator.Evaluate(purpose, "claude-fable-5-1").Outcome
+            .Should().Be(LlmAssignmentOutcome.Forbidden);
+    }
 }

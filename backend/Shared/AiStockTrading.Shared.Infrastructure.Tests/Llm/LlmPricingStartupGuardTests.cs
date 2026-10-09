@@ -11,7 +11,7 @@ public class LlmPricingStartupGuardTests
     private static readonly LlmPriceTable Empty = LlmPriceTable.From([]);
 
     private static readonly LlmPriceTable PerModel =
-        LlmPriceTable.From([("claude_sonnet_5", "0.327", "1.637")]);
+        LlmPriceTable.From([("claude_sonnet_5_5", "0.327", "1.637")]);
 
     // T-10-2366: 判定の全組み合わせ（ゲートウェイ × 単価 × 環境）。
     [Theory]
@@ -42,7 +42,7 @@ public class LlmPricingStartupGuardTests
     [Fact]
     public void 不正な単価だけなら配備では止める()
     {
-        var table = LlmPriceTable.From([("claude_sonnet_5", "abc", "0")], "-1", "");
+        var table = LlmPriceTable.From([("claude_sonnet_5_5", "abc", "0")], "-1", "");
 
         LlmPricingStartupGuard.Evaluate(table, true, true).Should().Be(LlmPricingStartupVerdict.Refuse);
     }

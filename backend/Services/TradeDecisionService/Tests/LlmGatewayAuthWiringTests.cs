@@ -115,7 +115,7 @@ public class LlmGatewayAuthWiringTests
         bool astServiceAuth = false) : WebApplicationFactory<Program>
     {
         public RecordingHandler Gateway { get; } = new(HttpStatusCode.OK,
-            """{"text":"{\"action\":\"Hold\"}","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""");
+            """{"text":"{\"action\":\"Hold\"}","model":"claude-sonnet-5-5","inputTokens":1,"outputTokens":1,"sent":true}""");
 
         public RecordingHandler Token { get; } = new(HttpStatusCode.OK, TokenJson);
 

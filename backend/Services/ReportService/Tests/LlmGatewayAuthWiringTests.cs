@@ -26,7 +26,7 @@ public class LlmGatewayAuthWiringTests(ReportWorkerWebApplicationFactory factory
         ReportWorkerWebApplicationFactory factory, IReadOnlyDictionary<string, string?> settings)
     {
         var gateway = new RecordingHandler(HttpStatusCode.OK,
-            """{"text":"所感","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""");
+            """{"text":"所感","model":"claude-sonnet-5-5","inputTokens":1,"outputTokens":1,"sent":true}""");
         var token = new RecordingHandler(HttpStatusCode.OK, TokenJson);
 
         using var configured = factory.WithWebHostBuilder(b =>

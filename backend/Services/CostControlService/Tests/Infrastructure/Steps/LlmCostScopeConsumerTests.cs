@@ -72,7 +72,7 @@ public class LlmCostScopeConsumerTests
         var ledger = new InMemoryCostLedger();
         using var host = await BuildHostAsync(ledger);
 
-        await DeliverAsync(host, new LlmCostIncurred(9_999m, DateTimeOffset.UtcNow, purpose, "claude-opus-5"));
+        await DeliverAsync(host, new LlmCostIncurred(9_999m, DateTimeOffset.UtcNow, purpose, "claude-opus-5-5"));
 
         var month = CurrentMonth();
         // 上限の対象（Llm）は 1 円も動かない。
@@ -91,7 +91,7 @@ public class LlmCostScopeConsumerTests
         var ledger = new InMemoryCostLedger();
         using var host = await BuildHostAsync(ledger);
 
-        await DeliverAsync(host, new LlmCostIncurred(250m, DateTimeOffset.UtcNow, purpose, "claude-sonnet-5"));
+        await DeliverAsync(host, new LlmCostIncurred(250m, DateTimeOffset.UtcNow, purpose, "claude-sonnet-5-5"));
 
         ledger.GetMonthlyTotal(CurrentMonth(), CostCategory.Llm).Should().Be(250m);
         ledger.GetMonthlyTotal(CurrentMonth(), CostCategory.LlmUncapped).Should().Be(0m);
@@ -123,7 +123,7 @@ public class LlmCostScopeConsumerTests
         using var host = await BuildHostAsync(ledger);
 
         var session = await DeliverAsync(
-            host, new LlmCostIncurred(30_000m, DateTimeOffset.UtcNow, LlmPurposes.ReportMonthly, "claude-opus-5"));
+            host, new LlmCostIncurred(30_000m, DateTimeOffset.UtcNow, LlmPurposes.ReportMonthly, "claude-opus-5-5"));
 
         session.Sent.MessagesOf<CostThresholdReached>().Should().BeEmpty();
         ledger.GetMonthlyTotal(CurrentMonth(), CostCategory.Llm).Should().Be(0m);
@@ -140,7 +140,7 @@ public class LlmCostScopeConsumerTests
         using var host = await BuildHostAsync(ledger);
 
         var session = await DeliverAsync(
-            host, new LlmCostIncurred(12_000m, DateTimeOffset.UtcNow, LlmPurposes.TradeDecision, "claude-sonnet-5"));
+            host, new LlmCostIncurred(12_000m, DateTimeOffset.UtcNow, LlmPurposes.TradeDecision, "claude-sonnet-5-5"));
 
         var reached = session.Sent.MessagesOf<CostThresholdReached>().Should().ContainSingle().Subject;
         reached.State.Should().Be("Throttled");

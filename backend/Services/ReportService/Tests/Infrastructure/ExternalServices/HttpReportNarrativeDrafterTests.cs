@@ -267,7 +267,7 @@ public class HttpReportNarrativeDrafterTests
     public async Task 作り直しは費用の計上区分だけを付け替えゲートウェイへ送る用途は変えない()
     {
         var handler = new CapturingHandler(
-            """{"text":"散文","model":"claude-sonnet-5","sent":true,"inputTokens":120,"outputTokens":30}""");
+            """{"text":"散文","model":"claude-sonnet-5-5","sent":true,"inputTokens":120,"outputTokens":30}""");
         var usage = new RecordingUsageReporter();
         var drafter = new HttpReportNarrativeDrafter(
             new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },

@@ -101,18 +101,18 @@ public class ReportTemplateGoldenTests
             [], [], [], ["日本銀行「外国為替市況（日次）」"], [],
             [new FxRateSourceUsed("USD", "boj", 1, 2, T0)]),
         LlmModelUsage = new LlmModelUsage(
-            ReportNarrativePurposeOf(kind), "claude-opus-5", "claude-opus-5", "Primary"),
+            ReportNarrativePurposeOf(kind), "claude-opus-5-5", "claude-opus-5-5", "Primary"),
         LlmUsage = new LlmUsageRecord(
         [
-            new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5"),
-            new LlmCostIncurred(450m, T0, LlmPurposes.ReportMonthly, "claude-opus-5"),
+            new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5-5"),
+            new LlmCostIncurred(450m, T0, LlmPurposes.ReportMonthly, "claude-opus-5-5"),
             // FR-15, ADR-0037 決定3, #750: Stage 0 記録実行の計上（**上限の対象外の独立区分**）。
-            new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5"),
+            new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5-5"),
             // T-10-2266, FR-06, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 6: 作り直しの計上（上限の対象外の独立区分）。
-            new LlmCostIncurred(12m, T0, LlmPurposes.ReportRegeneration, "claude-opus-5"),
+            new LlmCostIncurred(12m, T0, LlmPurposes.ReportRegeneration, "claude-opus-5-5"),
         ],
-        [new LlmFallbackFired("report-daily", "claude-sonnet-5", "claude-haiku-4-5", "FallbackFired", T0)],
-        [new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "claude-sonnet-5", null, T0)],
+        [new LlmFallbackFired("report-daily", "claude-sonnet-5-5", "claude-haiku-5-5", "FallbackFired", T0)],
+        [new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "claude-sonnet-5-5", null, T0)],
         new ScreeningDegradationCounts(4, 2, new Dictionary<string, int> { ["RAG"] = 1, ["ニュース"] = 1 })),
         // FR-15, ADR-0033 決定5.3, ADR-0037 決定3, #750: 見積り承認額（対比の分母）。
         Stage0RecordingApprovedEstimateJpy = 2_000m,

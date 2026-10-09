@@ -66,7 +66,7 @@ public class AuditLedgerReadContractTests
     public async Task LLM使用量は送り手の本物の型を直列化した応答から読める()
     {
         var source = new HttpLlmUsageRecordSource(Ledger(
-            AuditEntryFactory.From(new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5"), Guid.NewGuid(), T0),
+            AuditEntryFactory.From(new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5-5"), Guid.NewGuid(), T0),
             AuditEntryFactory.From(new LlmFallbackFired("report-daily", "a", "b", "FallbackFired", T0), Guid.NewGuid(), T0),
             AuditEntryFactory.From(
                 new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "a", null, T0), Guid.NewGuid(), T0)),
