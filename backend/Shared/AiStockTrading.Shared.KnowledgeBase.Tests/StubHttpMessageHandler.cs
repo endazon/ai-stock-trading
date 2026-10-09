@@ -33,6 +33,10 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
     public static StubHttpMessageHandler Throws()
         => new((_, _) => throw new HttpRequestException("接続失敗（テスト）"));
 
+    // HttpClient の打ち切り（呼び出し元の取り消しではない TaskCanceledException）を模すハンドラ（#1283）。
+    public static StubHttpMessageHandler TimesOut()
+        => new((_, _) => throw new TaskCanceledException("打ち切り（テスト）"));
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {

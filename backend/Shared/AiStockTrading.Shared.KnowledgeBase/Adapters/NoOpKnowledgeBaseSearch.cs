@@ -15,4 +15,11 @@ internal sealed class NoOpKnowledgeBaseSearch(ILogger<NoOpKnowledgeBaseSearch> l
         logger.LogDebug("KB 検索（no-op）: 空を返す（実 platform 検索は KnowledgeBase:Search:BaseUrl 設定で opt-in・#18）。");
         return Task.FromResult(Empty);
     }
+
+    // FR-08, FR-11, #1283: 未構成であることを状態で返す（判断の記録で「検索して 0 件」と区別する）。
+    public async Task<KnowledgeSearchResult> SearchWithOutcomeAsync(KnowledgeQuery query, CancellationToken cancellationToken = default)
+    {
+        await SearchAsync(query, cancellationToken).ConfigureAwait(false);
+        return KnowledgeSearchResult.NotConfigured;
+    }
 }
