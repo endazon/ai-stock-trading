@@ -69,7 +69,7 @@ public sealed class ReportsGrpcTransport : IDisposable
     internal const string TimeoutKey = "Reports:GrpcTimeoutSeconds";
 
     /// <summary>
-    /// 方針の改訂と入れ替えの適用の内訳の記録の deadline（秒）。未設定は REST の "report-policy-revision" の HttpClient.Timeout（90 秒）と同値
+    /// 方針の改訂と入れ替えの適用の内訳の記録の deadline（秒）。未設定は REST の "report-policy-revision" の HttpClient.Timeout（120 秒）と同値
     /// （LLM の所要時間を見込む。REST では 2 つの書き込みがこのクライアントを共用している）。
     /// </summary>
     internal const string PolicyRevisionTimeoutKey = "Reports:GrpcPolicyRevisionTimeoutSeconds";
@@ -83,11 +83,13 @@ public sealed class ReportsGrpcTransport : IDisposable
     /// <summary>試行回数（**読み取りだけ**に効く。書き込みは再試行しない）。</summary>
     internal const string MaxAttemptsKey = "Reports:GrpcMaxAttempts";
 
-    // 🔴 入れ替え案の照会は REST では方針の改訂用の 90 秒のクライアントを共用していたが、照会そのものは台帳の読み取りであり
+    // 🔴 入れ替え案の照会は REST では方針の改訂用の 120 秒のクライアントを共用していたが、照会そのものは台帳の読み取りであり
     // LLM を待たない。gRPC ではレビューの照会と同じ 5 秒にする（IADR-0449 決定 4）。
     internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
 
-    internal static readonly TimeSpan DefaultPolicyRevisionTimeout = TimeSpan.FromSeconds(90);
+    // FR-14, #243, IADR-0522 の 2026-10-10 追記: 90 → 120 秒。報告書サービスの方針の改訂の LLM 上限（既定 95 秒）＋建玉の照会（10 秒）
+    // より長く置く（外側＞内側。内側が先に切れて「案なし」を確定的に返す）。REST の名前付き HttpClient も同じ値を使う。
+    internal static readonly TimeSpan DefaultPolicyRevisionTimeout = TimeSpan.FromSeconds(120);
 
     internal static readonly TimeSpan DefaultRegenerationTimeout = TimeSpan.FromSeconds(300);
 

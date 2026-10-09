@@ -8,7 +8,7 @@ namespace NotificationService.Infrastructure.ExternalServices;
 // NFR, FR-07, FR-13, FR-14, MSP:ADR-0029, ADR-0047 決定 1・2, IADR-0284 決定 5（段 5）, IADR-0449 決定 4, IADR-0450 決定 4, #753:
 // 方針の改訂の 2 つ目の実装。入れ替え案の照会は `ReportOwnerRead/GetWatchlistProposal`（段 5 の前半）、方針の改訂と適用の内訳の記録は
 // `ReportOwnerWrite/RevisePolicy`・`RecordWatchlistApplyResult`（段 5 の後半）。`Reports:Grpc` を宣言したときだけ選ばれる。
-// 🔴 方針の改訂は**冪等でない**（LLM を呼び新しい版を作り、1 日の回数を消費する）。**再試行しない**。deadline は REST と同じ 90 秒
+// 🔴 方針の改訂は**冪等でない**（LLM を呼び新しい版を作り、1 日の回数を消費する）。**再試行しない**。deadline は REST と同じ 120 秒
 // （`Reports:GrpcPolicyRevisionTimeoutSeconds`）。届いたか分からない失敗（時間切れ・不達）は「不明」（案が保存されたかもしれない）、
 // 提供側が明確に拒否した失敗は「案なし」（REST の非 2xx と同じ＝提供側は 200 以外で何も保存しない契約）。REST へ落とさない。
 // 🔴 REST の 404 ＝ NOT_FOUND（案ではない）、409 ＝ FAILED_PRECONDITION（その版で確定されていない＝適用しない。PR #1027 の監査 H1）。

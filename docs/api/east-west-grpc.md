@@ -3,15 +3,15 @@ title: east-west gRPC（サービス間の同期呼び出し）通信仕様書
 type: api-spec
 status: draft
 created: 2026-09-11
-updated: 2026-10-09
+updated: 2026-10-10
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment]
-issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -379,7 +379,7 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 | `Reports:Grpc` | 未設定（＝REST） | レビュー局面・会話キーの一覧・入れ替え案・確定・差し戻し・方針の改訂・適用の内訳の記録の gRPC の宛先 |
 | `MarketMonitor:Grpc` | 未設定（＝REST） | 監視銘柄・入れ替え案の適用の gRPC の宛先 |
 | `<上記>:GrpcTimeoutSeconds` | 5 / 5 / 10 | **試行ごとの** deadline。REST の `HttpClient.Timeout` と同値（入れ替え案の照会は台帳の読み取りなのでレビューと同じ 5 秒） |
-| `Reports:GrpcPolicyRevisionTimeoutSeconds` | 90 | 方針の改訂と適用の内訳の記録の deadline（REST で 2 つが共用する 90 秒のクライアントと同値。LLM を待つ） |
+| `Reports:GrpcPolicyRevisionTimeoutSeconds` | 120 | 方針の改訂と適用の内訳の記録の deadline（REST で 2 つが共用する 120 秒のクライアントと同値。LLM を待つ。報告書サービスの方針の改訂の上限〔既定 95 秒〕＋建玉の照会〔10 秒〕より長く置く） |
 | `Reports:GrpcRegenerationTimeoutSeconds` | 300 | 報告書の作り直しの deadline（REST の 300 秒のクライアントと同値。期間の入力の取得と散文の LLM を待つ） |
 | `<上記>:GrpcMaxAttempts` | 1 | 試行回数。**読み取りだけに効く**（書き込みは再試行しない）。既定は再試行しない |
 
