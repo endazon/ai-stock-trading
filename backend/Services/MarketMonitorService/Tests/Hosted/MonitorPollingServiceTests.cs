@@ -640,13 +640,13 @@ public class MonitorPollingServiceTests
         (await RunCycleAsync(host, service)).Should().BeEmpty("価格が取れなかった・評価しなかった巡回は、価格が戻った証拠ではない");
     }
 
-    // 🔴 T-10-2478（#1285 監査 F1, IADR-0520 決定2）: 市場監視が見るラインは台帳の最も保護的な 1 本だけで（IADR-0393）、
+    // 🔴 T-10-2479（#1285 監査 F1, IADR-0520 決定2）: 市場監視が見るラインは台帳の最も保護的な 1 本だけで（IADR-0393）、
     // 発注執行は到達の価格が行自身のラインに達した S1 の行だけを武装する。同じ鍵でも価格がさらに不利へ進んだ到達は
     // 次の巡回で出し直す（低いラインの行 B＝330.88 を 3 分待たせない）。前回の発行と同じか有利な価格は抑止する。
     [Theory]
     [InlineData(TradeSide.Buy, 331.67, 331.50, 330.50, 330.90)]
     [InlineData(TradeSide.Sell, 100.00, 101.00, 102.00, 101.50)]
-    public async Task T_10_2478_同じ鍵でも前回の発行より不利な価格の到達は次の巡回で出し直す(
+    public async Task T_10_2479_同じ鍵でも前回の発行より不利な価格の到達は次の巡回で出し直す(
         TradeSide side, double line, double first, double deeper, double backInside)
     {
         await using var h = new Harness(Settings());
@@ -668,12 +668,12 @@ public class MonitorPollingServiceTests
         (await RunCycleAsync(host, service)).Should().BeEmpty("前回の発行より有利な価格は新しい行に届かない");
     }
 
-    // 🔴 T-10-2479（#1285 監査 F2, IADR-0520 決定2）: 同じ到達の出し直しの間隔は、巡回の周期（既定の巡回間隔 × 2 まで）を
+    // 🔴 T-10-2480（#1285 監査 F2, IADR-0520 決定2）: 同じ到達の出し直しの間隔は、巡回の周期（既定の巡回間隔 × 2 まで）を
     // 足しても発注執行の到達の窓（SoftwareStopExecutor.TriggerEpisodeGap）を超えない。超えると出し直しのたびに
     // 決済の連続失敗の数えと待ち時間が 0 へ戻る（#833 の拒否連発の再発）。発注執行はこの試験から参照できないので、
     // 値は宣言の行（ソース）から読む（宣言を変えたらこの試験が気付く）。
     [Fact]
-    public void T_10_2479_出し直しの間隔と巡回の周期の和は発注執行の到達の窓を超えない()
+    public void T_10_2480_出し直しの間隔と巡回の周期の和は発注執行の到達の窓を超えない()
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "backend", "backend.slnx")))
