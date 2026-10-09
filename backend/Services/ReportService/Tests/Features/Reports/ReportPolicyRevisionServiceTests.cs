@@ -47,14 +47,15 @@ public class ReportPolicyRevisionServiceTests
 
     private static (ReportPolicyRevisionService Service, InMemoryReportStore Store, FakeReviser Reviser) Create(
         PolicyRevisionOutcome? outcome = null, DateTimeOffset? now = null, PolicyRevisionSchedule? schedule = null,
-        IReportStore? storeOverride = null, IPolicyRevisionLedger? ledger = null, int dailyLimit = 10)
+        IReportStore? storeOverride = null, IPolicyRevisionLedger? ledger = null, int dailyLimit = 10,
+        IReportDraftKnowledgeCopy? draftCopy = null)
     {
         var store = new InMemoryReportStore();
         var reviser = new FakeReviser(outcome ?? PolicyRevisionOutcome.Proposed(Proposal, null));
         var service = new ReportPolicyRevisionService(
             storeOverride ?? store, new FixedClock(now ?? SundayMorning), reviser, schedule ?? AutoDailyOn,
             ledger ?? new InMemoryPolicyRevisionLedger(), new PolicyRevisionLimit(dailyLimit),
-            NullLogger<ReportPolicyRevisionService>.Instance);
+            NullLogger<ReportPolicyRevisionService>.Instance, draftKnowledgeCopy: draftCopy);
         return (service, store, reviser);
     }
 
@@ -144,6 +145,30 @@ public class ReportPolicyRevisionServiceTests
     }
 
     // T-10-1313: AI の案が作れなければ**何も保存しない**（新規も既存も）。
+    // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: `/policy` は提示の通知を出さないが、承認待ちの版が変わるので写しの本文を差し替える。
+    // AI が失敗して何も保存しないときは写しへ渡さない。
+    [Fact]
+    public async Task 改訂案を承認待ちにしたら写しへ新しい版を渡し失敗したら渡さない()
+    {
+        var draftCopy = new RecordingDraftKnowledgeCopy();
+        var (service, store, _) = Create(draftCopy: draftCopy);
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+
+        var result = await service.ReviseAsync(null, "もっと積極的に", "developer");
+
+        var published = draftCopy.Published.Should().ContainSingle().Which;
+        published.Version.Should().Be(result.Version);
+        published.Report.PeriodKey.Should().Be(result.PeriodKey);
+        published.Report.Body.Should().Be(store.Get(result.PeriodKey!)!.Report.Body);
+
+        var failedCopy = new RecordingDraftKnowledgeCopy();
+        var (failing, failingStore, _) = Create(
+            PolicyRevisionOutcome.Failed(PolicyRevisionFailure.TimedOut, "AI の応答が 60 秒以内に返りませんでした"), draftCopy: failedCopy);
+        SeedConfirmedDaily(failingStore, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+        await failing.ReviseAsync(null, "積極的に", "developer");
+        failedCopy.Published.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task AIが失敗したら何も保存しない()
     {

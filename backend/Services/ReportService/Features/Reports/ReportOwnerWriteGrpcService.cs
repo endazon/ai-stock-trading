@@ -38,7 +38,9 @@ public sealed class ReportOwnerWriteGrpcService(
     IClock clock,
     DelegatedActorOptions delegated,
     ILoggerFactory loggerFactory,
-    ReportRegenerationService regenerations)
+    ReportRegenerationService regenerations,
+    // FR-06, FR-08, #1300, IADR-0526 決定 3: 確定で承認待ちの写し（ドラフト）を消す（REST の確定と同じ処理を共有する）。
+    IReportDraftKnowledgeCopy? draftCopy = null)
     : Proto.ReportOwnerWrite.ReportOwnerWriteBase
 {
     // NFR-06, IADR-0503, #1206: 例外の写しが固定文言に置き換えたときの元の例外の出し先。
@@ -50,7 +52,7 @@ public sealed class ReportOwnerWriteGrpcService(
         var reply = await ReportWriteGrpcReplies.RunAsync(Logger, () => ConfirmReportEndpoint.HandleAsync(
             PeriodKeyOf(request.PeriodKey),
             new ConfirmReportRequest(request.ExpectedVersion, request.HasOnBehalfOf ? request.OnBehalfOf : null),
-            reports, bus, kb, loggerFactory, delegated, ledger, context.GetHttpContext()));
+            reports, bus, kb, loggerFactory, delegated, ledger, context.GetHttpContext(), draftCopy));
         var confirmed = reply.ValueOrThrow<ConfirmReportResponse>();
         return new Proto.ReportConfirmationResponse { Transitioned = confirmed.Transitioned, Version = confirmed.Version };
     }

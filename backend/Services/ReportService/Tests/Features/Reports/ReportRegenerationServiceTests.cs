@@ -139,6 +139,7 @@ public class ReportRegenerationServiceTests
         public RecordingNotifier Notifier { get; init; } = new();
         public int Limit { get; init; } = ReportRegenerationLimit.DefaultDailyLimit;
         public bool FailPresent { get; init; }
+        public RecordingDraftKnowledgeCopy DraftCopy { get; } = new();
 
         // 自動生成（初版）と作り直しが同じ供給元・同じ通知の発行口を使う生成器。
         public ReportAutoGenerator Generator(ReportAutoGenerationSettings settings) =>
@@ -147,7 +148,8 @@ public class ReportRegenerationServiceTests
                 notifier: Notifier,
                 openPositionSource: Positions,
                 driftAdoptionSource: Drift,
-                regenerationLedger: Ledger);
+                regenerationLedger: Ledger,
+                draftKnowledgeCopy: DraftCopy);
 
         public ReportRegenerationService Service()
         {
@@ -155,7 +157,7 @@ public class ReportRegenerationServiceTests
             IReportStore store = FailPresent ? new PresentFailingStore(Store) : Store;
             return new ReportRegenerationService(
                 store, Clock, Generator(settings), settings, Ledger, new ReportRegenerationLimit(Limit), Audit, Notifier,
-                NullLogger<ReportRegenerationService>.Instance);
+                NullLogger<ReportRegenerationService>.Instance, DraftCopy);
         }
 
         // 縮退した下書き（版 1）＋利用者の /policy の改訂（版 2）を置く。改訂の記録は本文の末尾にある。
@@ -589,6 +591,41 @@ public class ReportRegenerationServiceTests
         foreach (var input in h.Store.Get(CurrentDaily)!.Report.UnsuppliedInputs)
             notice.Summary.Should().Contain(ReportInputs.Label(input));
         result.Message.Should().Contain($"版 {result.Version} の要約は提示の通知（報告書ドラフト（承認待ち））で届きます");
+    }
+
+    // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 自動生成で承認待ちにした版と、作り直して承認待ちにした版のそれぞれで、
+    // 写し（ドラフト）へ**その版の本文**を渡す（提示の通知と同じ版）。
+    [Fact]
+    public async Task 自動生成と作り直しで承認待ちにした版の本文を写しへ渡す()
+    {
+        var h = new Harness();
+        await h.Generator(new ReportAutoGenerationSettings()).RunOnceAsync();
+        var initial = h.DraftCopy.Published.Should().ContainSingle(p => p.Report.PeriodKey == CurrentDaily).Which;
+        initial.Version.Should().Be(h.Notifier.Notices.Single(n => n.PeriodKey == CurrentDaily).Version);
+        h.DraftCopy.Published.Clear();
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        var published = h.DraftCopy.Published.Should().ContainSingle().Which;
+        published.Version.Should().Be(result.Version);
+        published.Report.Body.Should().Be(h.Store.Get(CurrentDaily)!.Report.Body).And.Contain(NewNarrative);
+        h.DraftCopy.Removed.Should().BeEmpty();
+    }
+
+    // FR-06, #1300, IADR-0526 決定 2（否定形）: 承認待ちにできなかった版・断った作り直しは写しへ渡さない。
+    [Fact]
+    public async Task 承認待ちにできなかった版や断った作り直しは写しへ渡さない()
+    {
+        var failing = new Harness { FailPresent = true };
+        failing.SeedDegradedDraft(PastDaily, new DateOnly(2026, 10, 2));
+        await failing.Service().RegenerateAsync(PastDaily, "owner");
+        failing.DraftCopy.Published.Should().BeEmpty();
+
+        var confirmed = new Harness();
+        confirmed.SeedDegradedDraft(PastDaily, new DateOnly(2026, 10, 2), confirmed: true);
+        await confirmed.Service().RegenerateAsync(PastDaily, "owner");
+        confirmed.DraftCopy.Published.Should().BeEmpty();
     }
 
     // T-10-2279（否定形）, #1182: 断った作り直し（確定済み・上限・中核の入力の取得失敗）と保存できなかった作り直しは、下書きを変えていないので

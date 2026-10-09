@@ -36,7 +36,9 @@ public sealed partial class ReportRegenerationService(
     ReportRegenerationLimit limit,
     IReportRegenerationAuditPublisher audit,
     IReportDraftPresentedNotifier notifier,
-    ILogger<ReportRegenerationService> logger)
+    ILogger<ReportRegenerationService> logger,
+    // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 作り直して承認待ちにした版で写し（ドラフト）の本文を差し替える。未注入は持たない。
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
 {
     /// <summary>作り直しの記録の見出しの先頭（版番号の前まで）。次の作り直しはこの見出しから後ろも保つ。</summary>
     public const string RegenerationRecordHeadingPrefix = "## 報告書の作り直しの記録（版 ";
@@ -181,6 +183,11 @@ public sealed partial class ReportRegenerationService(
 
         // FR-06, FR-09, 計画 ADR-0052 決定 3（再提示）・決定 5（要約の警告は作り直した版の記録に従う）, #1182: 再提示の通知。初版（ReportAutoGenerator）と同じ要約（数値はコード集計値・散文はサニタイズ済み・
         // この版の未供給の警告・保った方針の利確の書式の警告）を、新しい版で出す。承認待ちにできなかった版は通知しない（IADR-0116 決定 2）。
+        // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 承認待ちにできた版の本文を写し（ドラフト）へ。保存の後の段なので取り消しを渡さない
+        // （通知・監査と同じ規律）。best-effort（ポートは例外を投げない）。
+        if (presented && draftKnowledgeCopy is not null)
+            await draftKnowledgeCopy.PublishAsync(report, version, CancellationToken.None).ConfigureAwait(false);
+
         var notified = PresentedNotice.NotPresented;
         if (presented && !notifier.Enabled)
         {

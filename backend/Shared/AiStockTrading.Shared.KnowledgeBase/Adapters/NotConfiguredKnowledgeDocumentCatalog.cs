@@ -15,4 +15,7 @@ internal sealed class NotConfiguredKnowledgeDocumentCatalog : IKnowledgeDocument
 
     public Task<KnowledgeCatalogWriteResult> PutBodyAsync(Guid documentId, string body, CancellationToken cancellationToken = default) =>
         Task.FromResult(KnowledgeCatalogWriteResult.NotConfigured);
+
+    public Task<KnowledgeCatalogWriteResult> DeleteAsync(Guid documentId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(KnowledgeCatalogWriteResult.NotConfigured);
 }

@@ -61,4 +61,91 @@ public static class ReportKnowledgeMapper
             ContentType: hasBody ? "text/markdown" : null,
             Attributes: attributes);
     }
+
+    // ===== 承認待ちの報告書の写し（ドラフト）。FR-06, FR-08, UC-03, #1300, IADR-0526 決定 1 =====
+
+    // 表題。確定版（TitleOf）と必ず分ける —— 入れ直しと MSP の写しの棚卸しは確定版の表題との完全一致を目印に使う。
+    public static string DraftTitleOf(ReportKind kind, string periodKey) =>
+        $"{KnowledgeReportDraftCopy.TitlePrefix}{kind} {periodKey}";
+
+    /// <summary>
+    /// ドラフトの写しの属性。<b>露出の 3 キーを必ず <c>excluded</c> で持つ</b>（欠けると基盤がその用途で索引する）。
+    /// <c>coverage=market</c> は付けない（取引判断の 2 本目の検索の目印。ドラフトを判断へ渡さない）。
+    /// <para>
+    /// 🔴 ドラフトの写しの属性はこの関数だけが組み立てる。基盤の属性の更新（PATCH）は全置換のため、別の場所で組み立てると
+    /// 露出のキーが落ちて検索に出る。本変更は PATCH を使わない（本文の差し替えだけ）。
+    /// </para>
+    /// </summary>
+    public static Dictionary<string, string> DraftAttributesOf(ReportKind kind, string periodKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(periodKey);
+
+        var attributes = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [PeriodKeyAttribute] = periodKey,
+            [KindAttribute] = kind.ToString(),
+            [KnowledgeReportDraftCopy.StateKey] = KnowledgeReportDraftCopy.DraftState,
+        };
+        foreach (var key in KnowledgeExposureAttributes.Keys)
+            attributes[key] = KnowledgeExposureAttributes.Excluded;
+        return attributes;
+    }
+
+    /// <summary>
+    /// ドラフトの写しの本文。先頭に「承認待ち・版・確定で置き換わる」を書く（基盤の表題は変えられないので、版は本文が運ぶ）。
+    /// 本文が空（月報の初回のブートストラップ・手動の PUT）なら方針を載せる。
+    /// </summary>
+    public static string DraftBodyOf(TradingReport report, int version)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        var header = $"> 承認待ちの報告書（ドラフト・版 {version.ToString(CultureInfo.InvariantCulture)}）。"
+            + "確定前の本文であり、検索・取引判断には使われない。確定すると確定版に置き換わる。";
+
+        string content;
+        if (!string.IsNullOrEmpty(report.Body))
+            content = report.Body;
+        else if (!string.IsNullOrWhiteSpace(report.PolicySummary))
+            content = $"## 翌期間の方針\n\n{report.PolicySummary}";
+        else
+            content = "（本文はありません）";
+
+        return $"{header}\n\n{content}";
+    }
+
+    public static KnowledgeDocument ToDraftDocument(TradingReport report, int version)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        return new KnowledgeDocument(
+            Title: DraftTitleOf(report.Kind, report.PeriodKey),
+            Content: DraftBodyOf(report, version),
+            Confidentiality: KnowledgeConfidentiality.Internal,
+            // タグは確定版と同じ登録済みの語彙だけ（基盤のタグ辞書は未登録のタグを 400 で拒否する）。
+            Tags: ["report", report.Kind.ToString().ToLowerInvariant()],
+            SourceUri: null,
+            ContentType: "text/markdown",
+            Attributes: DraftAttributesOf(report.Kind, report.PeriodKey));
+    }
+
+    /// <summary>
+    /// KB の文書がドラフトの写し（どの報告書のものかを問わない）か。<c>reportState=draft</c> を持つか、
+    /// 露出の 3 キーが全部 <c>excluded</c>（基盤が索引しない＝確定版の写しの役を果たさない）なら真。
+    /// </summary>
+    public static bool IsDraftCopy(KnowledgeCatalogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return (entry.Attributes.TryGetValue(KnowledgeReportDraftCopy.StateKey, out var state)
+                && string.Equals(state, KnowledgeReportDraftCopy.DraftState, StringComparison.Ordinal))
+            || KnowledgeExposureAttributes.IsAllExcluded(entry.Attributes);
+    }
+
+    /// <summary>この報告書（期間キー・種別）の、AST が作ったドラフトの写しか（project=ai-stock-trading を持つものだけ）。</summary>
+    public static bool IsDraftCopyOf(KnowledgeCatalogEntry entry, ReportKind kind, string periodKey) =>
+        IsDraftCopy(entry)
+        && entry.Attributes.TryGetValue(PeriodKeyAttribute, out var pk) && string.Equals(pk, periodKey, StringComparison.Ordinal)
+        && entry.Attributes.TryGetValue(KindAttribute, out var k) && string.Equals(k, kind.ToString(), StringComparison.Ordinal)
+        && entry.Attributes.TryGetValue(KnowledgeAttributeDefaults.ProjectKey, out var project)
+        && string.Equals(project, KnowledgeAttributeDefaults.RequiredProject, StringComparison.Ordinal);
 }

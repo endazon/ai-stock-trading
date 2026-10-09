@@ -110,11 +110,14 @@ public sealed class ReportKnowledgeReingestService(
 
             index.TryGetValue((report.PeriodKey, report.Kind.ToString()), out var sameKey);
             var matches = sameKey?.Where(e => IsCopyOf(e, report)).ToList() ?? [];
+            // FR-06, FR-08, #1300, IADR-0526 決定 4: 確定済みの報告書に残った承認待ちの写し（確定の後の削除が失敗した・確定版を作れなかった）。
+            var leftoverDrafts = sameKey?.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, report.Kind, report.PeriodKey)).ToList() ?? [];
 
             try
             {
                 var item = await ReingestOneAsync(report, matches, refreshExisting, cancellationToken).ConfigureAwait(false);
-                items.Add(item with { MatchedCopies = matches.Count });
+                var removed = await RemoveLeftoverDraftsAsync(item, leftoverDrafts, cancellationToken).ConfigureAwait(false);
+                items.Add(item with { MatchedCopies = matches.Count, DraftCopiesRemoved = removed });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -136,8 +139,15 @@ public sealed class ReportKnowledgeReingestService(
     //   - `project` を持たず、表題が確定時の写像の表題（ReportKnowledgeMapper.TitleOf）と完全に一致する（#665 より前の保存。
     //     #665 より前の本文なしの写しはこちら。以降の手動確定の本文なしの写しは project を持つ）。🔴 これを外すと旧い写しの隣に 2 つ目を作る。
     // 別のプロジェクトの値を持つ文書は写しに数えない。
+    //
+    // FR-06, FR-08, #1300, IADR-0526 決定 4: **承認待ちの報告書の写し（ドラフト）は写しに数えない**（`reportState=draft` か、露出の 3 キーが
+    // 全部 `excluded`＝基盤が索引しない文書）。ドラフトは project・periodKey・kind を持ち、本文もあるので、数えると「本文つきの写しが在る」と
+    // 読んで確定版を作らない（確定版が検索・RAG に出ないまま残る）。
     internal static bool IsCopyOf(KnowledgeCatalogEntry entry, TradingReport report)
     {
+        if (ReportKnowledgeMapper.IsDraftCopy(entry))
+            return false;
+
         if (entry.Attributes.TryGetValue(KnowledgeAttributeDefaults.ProjectKey, out var project) && !string.IsNullOrEmpty(project))
             return string.Equals(project, KnowledgeAttributeDefaults.RequiredProject, StringComparison.Ordinal);
 
@@ -191,6 +201,32 @@ public sealed class ReportKnowledgeReingestService(
         return Item(report, ReportKnowledgeReingestOutcome.Failed, first.DocumentId, NotOwnedReason);
     }
 
+    // FR-06, FR-08, #1300, IADR-0526 決定 4: 確定版の写しが KB に在る（作った・在った・本文を入れた）ときだけ、残ったドラフトの写しを消す。
+    // 確定版が無いまま消すと、確定した本文を読める写しが 1 つも無くなる。削除は best-effort で、消せた数を返す（404＝既に無い・別の主体のもの）。
+    private async Task<int> RemoveLeftoverDraftsAsync(
+        ReportKnowledgeReingestItem item, List<KnowledgeCatalogEntry> drafts, CancellationToken cancellationToken)
+    {
+        if (drafts.Count == 0
+            || item.Outcome is not (ReportKnowledgeReingestOutcome.Created
+                or ReportKnowledgeReingestOutcome.BodyAttached
+                or ReportKnowledgeReingestOutcome.BodyRefreshed
+                or ReportKnowledgeReingestOutcome.AlreadyPresent))
+            return 0;
+
+        var removed = 0;
+        foreach (var draft in drafts)
+        {
+            var deleted = await catalog.DeleteAsync(draft.DocumentId, cancellationToken).ConfigureAwait(false);
+            if (deleted.Outcome == KnowledgeCatalogOutcome.Succeeded)
+                removed++;
+            else
+                logger.LogWarning("確定済みの報告書 {PeriodKey} に残った承認待ちの写し {DocumentId} を消せませんでした（結果={Outcome}）: {Reason}",
+                    LogSanitizer.Sanitize(item.PeriodKey), draft.DocumentId, deleted.Outcome, deleted.Reason);
+        }
+
+        return removed;
+    }
+
     private static ReportKnowledgeReingestItem FromWrite(
         TradingReport report, KnowledgeCatalogWriteResult write, ReportKnowledgeReingestOutcome success, Guid? knownDocumentId) =>
         write.Outcome switch
@@ -232,7 +268,8 @@ public sealed class ReportKnowledgeReingestService(
             NotAttempted: Count(ReportKnowledgeReingestOutcome.NotAttempted),
             DuplicatesInKb: items.Count(i => i.MatchedCopies > 1),
             Items: items,
-            AuditPublished: false);
+            AuditPublished: false,
+            DraftCopiesRemoved: items.Sum(i => i.DraftCopiesRemoved));
     }
 
     // FR-11: 実行の結果を監査台帳へ（誰が・範囲・件数・内訳）。発行の失敗は実行を巻き戻さないが、応答で分かるようにする。

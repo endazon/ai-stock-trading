@@ -3,15 +3,15 @@ title: 取引ドメインの通信契約（イベント・ポート）通信仕�
 type: api-spec
 status: draft
 created: 2026-07-09
-updated: 2026-10-09
+updated: 2026-10-10
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-08, FR-09, FR-10, FR-11, FR-12, FR-14, UC-02, UC-06, NFR, NFR-02]
 adrs: [ADR-0001, ADR-0002, ADR-0003, ADR-0013, ADR-0020, ADR-0040, ADR-0041, ADR-0049, ADR-0050]
-iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, IADR-0455, MSP:IADR-0049, IADR-0461, IADR-0462, IADR-0463, IADR-0465, IADR-0472, IADR-0483, IADR-0486, IADR-0487, IADR-0490, IADR-0495, IADR-0500, IADR-0515, IADR-0521]
-specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold, 20260929_1081_news-status-in-decision-prompt, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20261001_1136_retro-stop-floor, 20261002_1111_decision-final-failure-record, 20261003_1122_atr14-stop-floor, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261008_1222_order-approval-origin, 20261009_1286_held-positions-in-judgment]
-issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077, #1081, #1105, #1092, #1113, #1120, #1136, #1111, #1122, #1164, #1169, #1176, #1174, #1222]
+iadrs: [IADR-0007, IADR-0009, IADR-0014, IADR-0020, IADR-0021, IADR-0022, IADR-0023, IADR-0024, IADR-0027, IADR-0037, IADR-0063, IADR-0077, IADR-0078, IADR-0079, IADR-0129, IADR-0240, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0413, IADR-0423, IADR-0429, IADR-0436, IADR-0452, IADR-0455, MSP:IADR-0049, IADR-0461, IADR-0462, IADR-0463, IADR-0465, IADR-0472, IADR-0483, IADR-0486, IADR-0487, IADR-0490, IADR-0495, IADR-0500, IADR-0515, IADR-0521, IADR-0526]
+specs: [20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_774_report-confirmed-actor-on-behalf-of, 20260925_871_discord-drift-adopt, 20260925_1002_applied-stop-loss-method-report, 20260926_1028_report-kb-reingest, 20260929_1077_baseline-advances-on-hold, 20260929_1081_news-status-in-decision-prompt, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20261001_1136_retro-stop-floor, 20261002_1111_decision-final-failure-record, 20261003_1122_atr14-stop-floor, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261008_1222_order-approval-origin, 20261009_1286_held-positions-in-judgment, 20261010_1300_report-draft-knowledge-copy]
+issues: [#9, #10, #11, #12, #13, #14, #19, #21, #22, #23, #253, #354, #774, #809, #819, #820, #821, #826, #849, #871, #1002, #1028, #1077, #1081, #1105, #1092, #1113, #1120, #1136, #1111, #1122, #1164, #1169, #1176, #1174, #1222, #1300, planning#784]
 -->
 
 
@@ -111,7 +111,7 @@ sequenceDiagram
 | `IProtectiveOrderBroker` | PaperBrokerAdapter / moomoo | PlaceStopOrderAsync / PlaceMarketOrderAsync | 保護レグ（逆指値）の同時発注と、成立しない場合の成行手仕舞い。実装しないブローカーでは新規建てを見送る |
 | `IAlternativeProtectiveOrderBroker` | moomoo のみ | AlternativeProtectiveOrderType / PlaceAlternativeStopOrderAsync | 保護レグを代替注文種別で発注する（手法 S3）。戻り値が**注文種別と拒否理由（`retType` / `retMsg`）**を持ち帰る。接続確立の失敗は丸めずに伝播（#821） |
 | `IMarketDataSource` | 各情報源 | GetLatestQuoteAsync(symbol, market) | 現在値取得。取得不可は null |
-| `IKnowledgeDocumentCatalog` | 基盤の文書管理（HTTP）／未構成 | ListAsync / CreateAsync / PutBodyAsync | 基盤の文書台帳を**保守の操作**（確定報告書の入れ直し）から使う。一覧（全件）・本文つきの作成・既存文書への本文の投入。結果は成功／未構成／失敗（拒否・未送信）／**不明**（送った後のタイムアウト・5xx・切断）の 4 つに分け、例外を投げない。業務経路の保存ポート（結果を 1 値に潰す）とは別。宛先・資格は保存と同じ構成で、タイムアウトは 30 秒 |
+| `IKnowledgeDocumentCatalog` | 基盤の文書管理（HTTP）／未構成 | ListAsync / CreateAsync / PutBodyAsync / DeleteAsync | 基盤の文書台帳を**保守の操作**（確定報告書の入れ直し）と承認待ちの報告書の写しから使う。一覧（全件）・本文つきの作成・既存文書への本文の投入・削除（自分が所有する組織文書だけ。不在・所有者でなければ 404）。結果は成功／未構成／失敗（拒否・未送信）／**不明**（送った後のタイムアウト・5xx・切断）の 4 つに分け、例外を投げない。業務経路の保存ポート（結果を 1 値に潰す）とは別。宛先・資格は保存と同じ構成で、タイムアウトは 30 秒 |
 
 ## 同期 API（未実装・追記予定）
 

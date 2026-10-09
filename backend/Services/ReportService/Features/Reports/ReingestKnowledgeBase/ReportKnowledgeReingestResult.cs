@@ -34,13 +34,16 @@ public enum ReportKnowledgeReingestOutcome
 }
 
 // FR-08, #1028: 報告書 1 件の行。MatchedCopies は KB 上で一致した写しの数（2 以上＝重複があり、どれを使ったかは DocumentId）。
+// 承認待ちの写し（ドラフト）は数えない（#1300）。
 public sealed record ReportKnowledgeReingestItem(
     string PeriodKey,
     ReportKind Kind,
     ReportKnowledgeReingestOutcome Outcome,
     Guid? DocumentId,
     string? Reason,
-    int MatchedCopies = 0);
+    int MatchedCopies = 0,
+    // FR-06, FR-08, #1300, IADR-0526 決定 4: 消した承認待ちの写し（ドラフト）の数。確定版の写しが KB に在るときだけ消す。
+    int DraftCopiesRemoved = 0);
 
 // FR-08, #1028, IADR-0436 決定 3: 入れ直しの応答。Status は "Completed" / "Aborted" / "Cancelled"。
 // Sent = Created + BodyAttached + BodyRefreshed、Skipped = SkippedEmptyBody + SkippedBodyTooLarge。
@@ -65,7 +68,10 @@ public sealed record ReportKnowledgeReingestResult(
     int NotAttempted,
     int DuplicatesInKb,
     IReadOnlyList<ReportKnowledgeReingestItem> Items,
-    bool AuditPublished);
+    bool AuditPublished,
+    // FR-06, FR-08, #1300, IADR-0526 決定 4: 消した承認待ちの写し（ドラフト）の合計。監査の事象（ReportKnowledgeReingested）には載せない
+    // （契約を変えない。消したのは索引されない写しで、確定版の件数の内訳ではない）。
+    int DraftCopiesRemoved = 0);
 
 // FR-08, #1028: 入れ直しの要求。全件は All=true で明示する。RefreshExisting は本文のある写しにも本文を入れ直す（既定 false）。
 public sealed record ReportKnowledgeReingestRequest(

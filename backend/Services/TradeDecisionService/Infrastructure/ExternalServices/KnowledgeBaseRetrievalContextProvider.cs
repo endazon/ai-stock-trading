@@ -91,8 +91,12 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
             return outcome.Hits;
         }
 
-        var symbolHits = await SearchTrackedAsync(symbolQuery).ConfigureAwait(false);
-        var marketHits = await SearchTrackedAsync(marketQuery).ConfigureAwait(false);
+        // FR-06, FR-08, #1300, IADR-0526 決定 6: 承認待ちの報告書の写し（ドラフト）は判断へ渡さない。基盤が索引しないので通常は来ないが、
+        // ③ はフィルタなしで引くため、表題の目印で防御として落とす（基盤の露出の門が働かない構成〔MSP#1886 より前〕への保険）。
+        static bool IsNotReportDraft(KnowledgeHit h) => !KnowledgeReportDraftCopy.IsDraftTitle(h.DocumentTitle);
+
+        var symbolHits = (await SearchTrackedAsync(symbolQuery).ConfigureAwait(false)).Where(IsNotReportDraft).ToList();
+        var marketHits = (await SearchTrackedAsync(marketQuery).ConfigureAwait(false)).Where(IsNotReportDraft).ToList();
 
         var cutoff = timeProvider.GetUtcNow() - maxAge;
         bool IsFresh(KnowledgeHit h) => h.PublishedAt is not { } publishedAt || publishedAt >= cutoff;
@@ -115,7 +119,7 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
 
             // 重複の鍵はチャンク（文書 ID ＋ 本文）。同じ文書の別のチャンクは従来どおり別に数える。
             var seen = market.Select(ChunkKey).ToHashSet();
-            market.AddRange(fallbackHits.Where(h => HasNoSymbol(h) && IsFresh(h) && seen.Add(ChunkKey(h))));
+            market.AddRange(fallbackHits.Where(h => IsNotReportDraft(h) && HasNoSymbol(h) && IsFresh(h) && seen.Add(ChunkKey(h))));
         }
 
         var hits = symbolHits
