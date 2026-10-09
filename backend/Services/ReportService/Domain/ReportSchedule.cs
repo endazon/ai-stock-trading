@@ -44,7 +44,7 @@ public static class ReportSchedule
 
         // 週報: 当 ISO 週（月曜〜日曜）の最終営業日。today は必ず当週内にあるため、境界超過の判定は
         // 「最終営業日より後の日にいる」または「最終営業日当日で境界時刻に達している」。
-        var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+        var weekStart = IsoWeekStart(today);
         if (LastBusinessDay(weekStart, weekStart.AddDays(6), options) is { } weekEnd
             && HasPassed(today, timeOfDay, weekEnd, options.WeeklyAt))
         {
@@ -97,6 +97,22 @@ public static class ReportSchedule
         return new ReportSessionWindow(
             DailyBoundaryOnOrBefore(due.PeriodStart.AddDays(-1), options),
             DailyBoundaryOnOrBefore(due.PeriodEnd, options));
+    }
+
+    /// <summary>日付を含む ISO 週（月曜〜日曜）の月曜。週報の期間の始まり（<see cref="Due"/>）と同じ規則。</summary>
+    public static DateOnly IsoWeekStart(DateOnly date) => date.AddDays(-(((int)date.DayOfWeek + 6) % 7));
+
+    /// <summary>
+    /// FR-06, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報 <paramref name="daily"/> の<b>週初来</b>の期間。日報の日を含む ISO 週の週報の期間を
+    /// 日報の日で打ち切ったもの（種別は週報。窓は <see cref="SessionWindowOf"/> で求める＝当週のその日までの日報の窓の和）。
+    /// 週の最終営業日の日報では週報の期間と同じ窓になり、週報 §1 と同じ値を数える。
+    /// </summary>
+    public static DueReport WeekToDateOf(DueReport daily)
+    {
+        ArgumentNullException.ThrowIfNull(daily);
+
+        var weekStart = IsoWeekStart(daily.PeriodStart);
+        return Build(ReportKind.Weekly, weekStart, daily.PeriodEnd);
     }
 
     /// <summary>

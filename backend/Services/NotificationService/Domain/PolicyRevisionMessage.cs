@@ -119,7 +119,9 @@ public static class PolicyRevisionMessage
         string.IsNullOrEmpty(serviceMessage)
             ? []
             : serviceMessage.ReplaceLineEndings("\n").Split('\n')
-                .Where(l => l.StartsWith(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, StringComparison.Ordinal));
+                .Where(l => l.StartsWith(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, StringComparison.Ordinal)
+                    // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の方針の「数値目標:」行の警告も確認ボタンの前に見せる。
+                    || l.StartsWith(ReportSummaryMarkers.WeeklyGoalLineMissingPrefix, StringComparison.Ordinal));
 
     // 上限の長さごとに割る。割り目がサロゲートペアの上位にかかるなら 1 文字手前で割る（文字を壊さない）。
     internal static IReadOnlyList<string> Split(string text, int size)

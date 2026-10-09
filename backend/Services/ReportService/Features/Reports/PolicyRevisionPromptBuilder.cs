@@ -84,6 +84,20 @@ public static class PolicyRevisionPromptBuilder
     public const string VagueTakeProfitRule =
         "- 「十分に」「適切に」「ある程度」「目安で」のような数値の無い語だけで利確の条件を書かない。取引判断は条件に達したかを確かめられず、利確されないまま保有を続ける。書式どおりの「利確:」行が無い方針は、確定の前に利用者へ警告される。";
 
+    /// <summary>
+    /// FR-06, FR-07, 計画 ADR-0059 決定 1・フォローアップ 1, #1218, IADR-0519 決定 1: 週報の方針の数値目標を週次目標の書式行で書く案内（週報の改訂にだけ出す）。
+    /// 翌週の日報 §6・週報 §1／§4 はこの行だけを読み、週初来の実現損益とコードで照合する（自由文は読まない）。
+    /// </summary>
+    public const string WeeklyGoalLineHeading = "数値目標の書き方（週報の方針。翌週の日報と週報が目標と実績をシステムで照合できるようにする）:";
+
+    /// <summary>週次目標の書式行の案内（例は <see cref="WeeklyGoalLine.Examples"/>。試験が本文法で読めることを固定する）。</summary>
+    public static readonly string WeeklyGoalLineRule =
+        "- 方針（policySummary）の中に、翌週の実現損益（税引後・費用込み）の目標の範囲を「数値目標: <下限> 〜 <上限> USD」の書式の行で 1 行だけ書く"
+        + $"（例「{string.Join("」「", WeeklyGoalLine.Examples)}」。JSON 文字列の中では行を \\n で区切る）。"
+        + "金額は符号つきでよく、3 桁ごとのカンマと小数 2 桁まで書ける。単位は USD（基準通貨）だけを書く（円で書くと照合できない）。"
+        + "「数値目標」という語はこの行の中でだけ使う（説明の文・見出しに使うと行が 2 つあるとみなされ、目標が読まれない）。"
+        + "書式どおりの行が無い週報は、確定の前に利用者へ警告される。";
+
     public static string Build(PolicyRevisionContext context, bool decisionVolumeProvided = false)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -126,6 +140,14 @@ public static class PolicyRevisionPromptBuilder
             sb.AppendLine(TakeProfitWordOnlyInLineRule);
             sb.AppendLine(TakeProfitExceptionRule);
             sb.AppendLine(VagueTakeProfitRule);
+            sb.AppendLine();
+        }
+
+        // 計画 ADR-0059 フォローアップ 1, #1218, IADR-0519 決定 1: 週報の方針だけ（日報・月報は週次目標の書式行を持たない）。
+        if (context.Kind == ReportKind.Weekly)
+        {
+            sb.AppendLine(WeeklyGoalLineHeading);
+            sb.AppendLine(WeeklyGoalLineRule);
             sb.AppendLine();
         }
 

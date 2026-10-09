@@ -54,6 +54,16 @@ public sealed class ReportDependencyObservation : IDisposable
             _currentInput = input;
     }
 
+    /// <summary>
+    /// FR-06, #1218, IADR-0519 決定 3: どの入力でもない取得に移る。以後の失敗は入力を持たない観測として残り、
+    /// 見送りの判定（<see cref="HasTransientFailure"/>）・未供給の判定（<see cref="HasFailure"/>）に掛からない。
+    /// </summary>
+    public void Leave()
+    {
+        lock (_gate)
+            _currentInput = null;
+    }
+
     /// <summary>記録された失敗（記録順）。</summary>
     public IReadOnlyList<ReportDependencyFailure> Failures
     {

@@ -58,7 +58,8 @@ public static class ReportRenderer
             case ReportKind.Weekly:
                 AppendDailyProgression(sb, view);
                 AppendTradeHighlights(sb, view);
-                AppendNarrative(sb, view, narrativeHeading);
+                // 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 5: §4 は散文の前にコードの照合の行を置く（LLM は要因分析の文章だけ）。
+                AppendWeeklyReview(sb, view, narrativeHeading);
                 AppendRiskCostReview(sb, view);
                 AppendPolicy(sb, view, policyHeading);
                 // 週報のリスク統制の記録は「散文生成に使用した LLM」だけを出す（他の子節は計画が週報に求めていない）。
@@ -92,7 +93,8 @@ public static class ReportRenderer
                 AppendNarrative(sb, view, narrativeHeading);
                 // ADR-0030 決定5: **§5 市況・特記事項と §6 振り返りを統合しない。**
                 // §6 が求めるのは「週次目標 <参照値> に対する進捗・乖離の評価」であり市況の要約とは関心が違う。
-                AppendNotImplemented(sb, "## 6. 振り返り（週次目標との照合）", DailyReviewReason);
+                // 計画 ADR-0059 フォローアップ 4, #1218, IADR-0519 決定 4: 照合はコード、評価の文章は散文の §6 の部分（§5 を流し込まない）。
+                AppendDailyReview(sb, view);
                 AppendPolicy(sb, view, policyHeading);
                 break;
         }
@@ -122,8 +124,8 @@ public static class ReportRenderer
     /// <summary>前提整備（年初来累積の権威源・口座区分・配当）が無く着手できない節（IADR-0272 決定3）。</summary>
     private const string TaxReviewReason = "年初来累積の権威源・口座区分・配当がいずれも未実装のため着手できていません";
 
-    /// <summary>週次目標の参照値を日報が取得できないため出せない節（ADR-0030 結果「日報が 1 節増える」）。</summary>
-    private const string DailyReviewReason = "週次目標の参照値を日報が取得できる経路がまだありません";
+    // 🔴 #1218, IADR-0519 決定 4: 日報 §6 の理由定数（「週次目標の参照値を日報が取得できる経路がまだありません」）は**削除した**
+    // （§6 を実装し、使う節が無くなったため。#615 の理由定数と同じく、使わない理由定数を残さない）。
 
     private static void AppendNotImplemented(StringBuilder sb, string heading, string reason)
     {
@@ -535,6 +537,74 @@ public static class ReportRenderer
             : string.Format(CultureInfo.InvariantCulture, "{0}（うち借株料 {1}・明細は §6.1）",
                 Amount(row.Cost + summary.TotalUsd), Amount(summary.TotalUsd));
     }
+
+    // FR-06, FR-16, 計画 ADR-0059 決定 2〜4, #1218, IADR-0519 決定 4: 日報 §6 振り返り（週次目標との照合）。
+    // 照合（参照値・週初来の実現損益・位置と差）は**コードの値**であり、散文（LLM）は評価の文章だけを書く（04_report-templates §採用方針）。
+    // 🔴 照会していない（null）・週次目標なし・照合不能・算出不能を、それぞれ別の語で書く（互いに潰さない）。
+    private static void AppendDailyReview(StringBuilder sb, ReportView view)
+    {
+        sb.Append("## 6. 振り返り（週次目標との照合）\n\n");
+        sb.Append("- 週次目標: ").Append(GoalResultText(view.WeeklyGoal, "週初来の実現損益（税引後・費用込み）")).Append('\n');
+        AppendGoalNotes(sb, view.WeeklyGoal,
+            "週初来の実現損益は、週報 §1 の「週間実現損益（税引後・費用込み）」と同じ定義（同じ集計・基準通貨 USD）で、"
+            + "当週のこの日報までの日報の窓（セッション）の和を数えています。週の最終営業日の日報の値は週報 §1 の値と一致します。");
+        sb.Append('\n');
+        sb.Append(string.IsNullOrWhiteSpace(view.ReviewNarrative) ? "（散文ドラフトなし）" : view.ReviewNarrative.Trim());
+        sb.Append("\n\n");
+    }
+
+    // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 5: 週報 §4 の照合の行（散文の前）。LLM は要因分析の文章だけを書く。
+    private static void AppendWeeklyReview(StringBuilder sb, ReportView view, string heading)
+    {
+        sb.Append(CultureInfo.InvariantCulture, $"{heading}\n\n");
+        sb.Append("- 週次目標に対する結果: ").Append(GoalResultText(view.WeeklyGoal, "週間実現損益（税引後・費用込み）")).Append('\n');
+        AppendGoalNotes(sb, view.WeeklyGoal, null);
+        sb.Append('\n');
+        sb.Append(string.IsNullOrWhiteSpace(view.Narrative) ? "（散文ドラフトなし）" : view.Narrative.Trim());
+        sb.Append("\n\n");
+    }
+
+    // 照合の 1 文（日報 §6・週報 §4 で共通。主語だけ違う）。🔴 達成・未達は書かない（計画 ADR-0059 §結果）。
+    private static string GoalResultText(WeeklyGoalComparison? goal, string subject) => goal switch
+    {
+        null => "**照会していません**（この生成経路は週次目標の参照値を引きません）。「週次目標なし」ではありません。",
+        { Outcome: WeeklyGoalOutcome.Compared } => string.Format(CultureInfo.InvariantCulture,
+            "{0}に対し、{1}は {2} で **{3}**です。",
+            goal.GoalText, subject, Amount(goal.Actual.Amount!.Value), goal.PositionText),
+        { Outcome: WeeklyGoalOutcome.NotComputable } => string.Format(CultureInfo.InvariantCulture,
+            "{0}に対し、{1}は **算出不能**（{2}）。照合していません。**0 ではありません。**",
+            goal.GoalText, subject, goal.Actual.NotComputableReason),
+        _ => goal.UnavailableText + "。照合していません。",
+    };
+
+    // 照合の注記（前週の週報が未確定のときの注記・定義の注記）。照会していないときは何も足さない。
+    private static void AppendGoalNotes(StringBuilder sb, WeeklyGoalComparison? goal, string? definition)
+    {
+        if (goal is null)
+            return;
+
+        if (goal.FallbackNote is { } fallback)
+            sb.Append("- 注記: ").Append(fallback).Append('\n');
+
+        if (definition is not null && goal.Outcome is WeeklyGoalOutcome.Compared or WeeklyGoalOutcome.NotComputable)
+            sb.Append("- ").Append(definition).Append('\n');
+
+        if (goal.Outcome == WeeklyGoalOutcome.Compared)
+            sb.Append("- 照合はコードで行っています（範囲の両端ちょうどは範囲内）。**達成・未達は判定していません**（範囲のどこで分けるかが計画で未決です）。\n");
+    }
+
+    // FR-06, FR-16, 計画 ADR-0059 決定 3・§結果, #1218, IADR-0519 決定 5: 週報 §1「週次目標に対する達成」のセル。
+    // 🔴 **達成・未達を書かない**（範囲のどこで分けるかが計画で未決。フォローアップ 6）。位置を事実として示し「判定保留」と明記する（ADR-0030 決定 3 の作法を値に当てる）。
+    private static string WeeklyGoalCell(ReportView view) => view.WeeklyGoal switch
+    {
+        null => "**照会していません**（この生成経路は週次目標を引きません）",
+        { Outcome: WeeklyGoalOutcome.Compared } goal => string.Format(CultureInfo.InvariantCulture,
+            "**判定保留**（達成・未達を範囲のどこで分けるかが計画で未決です）— 週間実現損益は目標 {0}の **{1}**（詳細は §4）",
+            goal.GoalText, goal.PositionText),
+        { Outcome: WeeklyGoalOutcome.NotComputable } goal => string.Format(CultureInfo.InvariantCulture,
+            "**判定保留** — 週間実現損益が算出不能のため照合していません（目標 {0}）", goal.GoalText),
+        var goal => goal.UnavailableText!,
+    };
 
     // 散文（LLM ドラフト）。数値は含めない。
     private static void AppendNarrative(StringBuilder sb, ReportView view, string heading)
@@ -1674,7 +1744,7 @@ public static class ReportRenderer
     private static (string Kanji, string Summary, string Narrative, string Policy) Labels(ReportKind kind) => kind switch
     {
         // 🔴 ADR-0030 決定1・決定2, IADR-0291: **番号は計画 04_report-templates のものであり、実装の出力順の
-        // 連番ではない。** 未実装の節（月報 §2・§3 / 日報 §6）があっても**詰めない**。
+        // 連番ではない。** 未実装の節（月報 §3）があっても**詰めない**（月報 §2 は #615、日報 §6 は #1218 で実装した）。
         ReportKind.Weekly => ("週報", "## 1. 週間サマリ", "## 4. 振り返りと評価", "## 6. 翌週の方針"),
         ReportKind.Monthly => ("月報", "## 1. 月間サマリ", "## 4. 総括と評価", "## 8. 翌月の方針・投資方針"),
         // 🔴 #563, IADR-0269: 日報は §2・§3 を取引履歴・ポジション一覧へ譲る。
@@ -1702,7 +1772,8 @@ public static class ReportRenderer
                 yield return ("取引回数（買/売/決済）", counts);
                 // 計画 ADR-0035 決定 3, #1201, IADR-0501: 計画の 4 区分のラベル。借株料を含め、未供給は過小である旨を書く。
                 yield return ("費用合計（手数料・諸費用・為替スプレッド・借株料）", CostTotalCell(CostTotalOf(view)));
-                yield return ("週次目標に対する達成", Pending);
+                // 計画 ADR-0059 決定 3・§結果, #1218, IADR-0519 決定 5: 位置を事実として示し、達成・未達は判定しない（分け方が計画で未決）。
+                yield return ("週次目標に対する達成", WeeklyGoalCell(view));
                 break;
 
             case ReportKind.Monthly:

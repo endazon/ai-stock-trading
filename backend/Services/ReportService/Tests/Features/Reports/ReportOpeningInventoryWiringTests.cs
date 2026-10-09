@@ -91,7 +91,10 @@ public class ReportOpeningInventoryWiringTests
         await Generator(store, new FixedClock(TueAfterBoundary), new Fills(IssueFills), opening).RunOnceAsync();
 
         // daily-2026-10-06 の窓: 米国 ET 10-05・東証 JST 10-06。下端より前（排他）を引く。
-        opening.Requested.Should().BeEquivalentTo([(Market.Japan, new DateOnly(2026, 10, 6)), (Market.UnitedStates, new DateOnly(2026, 10, 5))]);
+        opening.Requested.Take(2).Should().BeEquivalentTo([(Market.Japan, new DateOnly(2026, 10, 6)), (Market.UnitedStates, new DateOnly(2026, 10, 5))]);
+        // T-06-082, FR-06, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 続けて日報 §6 の週初来の窓（W41 の週報の窓を 10-06 で打ち切ったもの）の
+        // 下端で引く。週報と同じく前週金曜の生成境界（10-02 16:00 JST）の後＝米国 ET 10-02・東証 10-03 から。
+        opening.Requested.Skip(2).Should().BeEquivalentTo([(Market.Japan, new DateOnly(2026, 10, 3)), (Market.UnitedStates, new DateOnly(2026, 10, 2))]);
 
         var report = store.Get("daily-2026-10-06")!.Report;
         report.UnsuppliedInputs.Should().NotContain(ReportInput.OpeningInventory);

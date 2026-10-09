@@ -55,8 +55,23 @@ public sealed record ReportView
     /// <summary>翌期間の方針（確定で有効化される方針テキスト）。</summary>
     public string PolicySummary { get; init; } = string.Empty;
 
-    /// <summary>LLM ドラフトの散文（市況・振り返り・評価等）。数値は含めない。</summary>
+    /// <summary>
+    /// LLM ドラフトの散文（数値は含めない）。日報では §5 市況・特記事項の部分（#1218, IADR-0519 決定 4: §6 の部分は <see cref="ReviewNarrative"/>）、
+    /// 週報・月報では振り返り・評価の散文。
+    /// </summary>
     public string Narrative { get; init; } = string.Empty;
+
+    /// <summary>
+    /// FR-06, 計画 ADR-0059 フォローアップ 4, #1218, IADR-0519 決定 4: 日報 §6 振り返りの散文（LLM が書く評価の文章）。
+    /// <c>null</c>＝散文が §6 の部分を持たない（区切り行が無い・LLM 未接続）。§5 の散文を流し込まない（IADR-0291 決定 4）。
+    /// </summary>
+    public string? ReviewNarrative { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-16, 計画 ADR-0059 決定 2〜4, #1218, IADR-0519 決定 4〜6: 週次目標の照合（日報 §6・週報 §1／§4）。数値はコードの値。
+    /// <c>null</c>＝<b>照会していない</b>（窓を持たない手動の生成 API・月報）であり、「週次目標なし」「照合不能」とは区別して描く。
+    /// </summary>
+    public WeeklyGoalComparison? WeeklyGoal { get; init; }
 
     /// <summary>
     /// FR-10, UC-06, #330, IADR-0133 決定7: 当期間に発動した「維持率割れによる自動縮小」（04_report-templates

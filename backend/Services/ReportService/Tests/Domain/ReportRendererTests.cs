@@ -48,7 +48,7 @@ public class ReportRendererTests
         md.Should().Contain("取引回数（買/売/決済） | 2 / 1 / 4");
         md.Should().Contain("源泉徴収税額 | +380.00 USD");
         // #563, IADR-0269, ADR-0030 決定1・決定5: 日報の §2 / §3 は取引履歴・ポジション一覧が占め、
-        // 散文は §5（市況・特記事項）・方針は計画どおり §7 へ置く（§6 振り返りは未実装の見出しとして出る）。
+        // 散文は §5（市況・特記事項）・方針は計画どおり §7 へ置く（§6 振り返りは週次目標の照合。#1218）。
         md.Should().Contain("## 2. 取引履歴（全明細）");
         md.Should().Contain("## 3. ポジション一覧（当日終了時点）");
         md.Should().Contain("## 5. 市況・特記事項");
@@ -71,7 +71,8 @@ public class ReportRendererTests
         md.Should().Contain("## 1. 週間サマリ");
         md.Should().Contain("週間実現損益（税引後・費用込み） | +1,520.00 USD");
         md.Should().Contain("勝率（勝ち取引/全決済取引） | 75%（3/4）"); // 04_report-templates の <n%（n/n）> 形式
-        md.Should().Contain("週次目標に対する達成 | （データ連携後）"); // 目標データ連携は後続
+        // T-06-089, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 6: 週次目標を受け取らない経路は「照会していません」（「週次目標なし」と混ぜない）。
+        md.Should().Contain("週次目標に対する達成 | **照会していません**");
         md.Should().Contain("## 4. 振り返りと評価");
         md.Should().Contain("## 6. 翌週の方針");
     }
@@ -369,10 +370,10 @@ public class ReportRendererTests
     // 月報 §2（c）は実体化したので行から外した。**外し忘れても赤くならなかった**——本文の切り出しが
     // 「見出し以降の全文」だったため、§2・§3 の行は**まだ未実装だった §5 の文言を拾って緑になっていた**（実測）。
     // 下の切り出しは**次の `## ` 見出しまで**に閉じ、同じ形の空振りを起こさないようにしている。
-    // **残る 2 行は #615 の対象外**（月報 §3＝前提整備不足／日報 §6＝週次目標の参照値が無い）。
+    // **残る 1 行は #615 の対象外**（月報 §3＝前提整備不足。日報 §6 は #1218 で実装した）。
     [Theory]
+    // #1218, IADR-0519 決定 4: 日報 §6 は実装したので行から外した（実体の試験は ReportRendererWeeklyGoalTests）。
     [InlineData(ReportKind.Monthly, "2026-08", "## 3. 税金レビュー", "年初来累積の権威源")]
-    [InlineData(ReportKind.Daily, "2026-07-10", "## 6. 振り返り（週次目標との照合）", "週次目標の参照値")]
     public void 未実装の節は見出しごと出して未実装であることを本文に書く(
         ReportKind kind, string periodLabel, string heading, string reasonFragment)
     {

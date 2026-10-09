@@ -39,11 +39,14 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
 
         // 数値はコード集計（FR-16）。前提条件は暫定で既定値（#19 バージョン付き取得・#63 台帳連携は #22 後続）。
         var assumptions = TradingAssumptionsDefaults.Create();
-        var pnl = PnlAggregator.Aggregate(fills, assumptions, currentPrices, adoptions, opening);
         // FR-06, FR-16, #1181, IADR-0493 決定 4: 期間開始時点の在庫を照会できなかった（生成器が未供給と判定した）なら、
         // 取得原価を要する値は部分値である（🔴 fail-closed: 数字として出さない）。
-        if (request.UnsuppliedInputs?.Contains(ReportInput.OpeningInventory) == true)
-            pnl = pnl with { OpeningInventoryUnknown = true };
+        // 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: §1 の集計は日報 §6 の週初来の実現損益と**同じ入口**（PeriodPnl）を通す。
+        var pnl = PeriodPnl.Aggregate(
+            fills, currentPrices, adoptions, opening, request.UnsuppliedInputs?.Contains(ReportInput.OpeningInventory) == true);
+
+        // FR-06, FR-16, 計画 ADR-0059 決定 2〜4, #1218, IADR-0519 決定 4・5: 週次目標の照合（日報 §6・週報 §1／§4）。数値はコードで比べる。
+        var weeklyGoal = WeeklyGoalOf(request, pnl);
 
         // FR-06, FR-16, #611, IADR-0286 決定3・決定4: 為替差損益は**ここで集計する**（三者比較・取引履歴と同じ形。
         // 数値はコード集計であり LLM に渡さない）。集計の単一情報源は FxTranslationBuilder（純関数）。
@@ -84,10 +87,16 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                     Positions = request.Kind == ReportKind.Daily ? request.Positions : null,
                     // FR-06, FR-14, 計画 ADR-0052 決定 1, IADR-0491 決定 2: 作り直しの費用の計上区分（null＝用途キーのまま）。
                     UsagePurpose = request.UsagePurpose,
+                    // 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 4: 照合の事実（コードの値）。LLM は評価の文章だけを書く。
+                    WeeklyGoal = weeklyGoal,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
-        var narrative = draft.Text;
+
+        // 計画 ADR-0059 フォローアップ 4, #1218, IADR-0519 決定 4: 日報の散文は §5（市況）と §6（振り返り）に分ける（複製しない）。
+        var (narrative, reviewNarrative) = request.Kind == ReportKind.Daily
+            ? DailyNarrativeSections.Split(draft.Text)
+            : (draft.Text, null);
 
         var view = new ReportView
         {
@@ -107,6 +116,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             SellCount = sellCount,
             PolicySummary = request.PolicySummary,
             Narrative = narrative,
+            ReviewNarrative = reviewNarrative,
+            WeeklyGoal = weeklyGoal,
             // FR-10, UC-06, #330: 自動縮小の記録はコード集計値であり LLM に語らせない（散文と分ける）。
             MarginReductions = request.MarginReductions,
             // FR-10, UC-06, ADR-0016 決定4/決定15, #419: 強制買戻し（推定）も同様にコード集計値である。
@@ -166,6 +177,37 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
         };
 
         return new ReportDraft(ReportRenderer.RenderMarkdown(view), pnl, narrative);
+    }
+
+    // FR-06, FR-16, 計画 ADR-0059 決定 3・4, #1218, IADR-0519 決定 3〜6: 週次目標の照合。参照値を受け取っていない（窓を持たない手動の API・月報）なら null
+    //（「照会していない」）。実績は週報なら §1 と同じ値、日報なら週初来の窓の入力を §1 と同じ関数（PeriodPnl）で集計した値。
+    private static WeeklyGoalComparison? WeeklyGoalOf(DraftRequest request, PnlSummary periodPnl)
+    {
+        if (request.WeeklyGoal is not { } reference)
+            return null;
+
+        var actual = request.Kind switch
+        {
+            ReportKind.Weekly => request.UnsuppliedInputs?.Contains(ReportInput.Fills) == true
+                ? WeeklyGoalActual.NotComputable("期間の約定を照会できませんでした")
+                : WeeklyGoalActual.From(periodPnl),
+            ReportKind.Daily => WeekToDateActual(request.WeekToDate),
+            // 月報は照合しない（呼び出し側は月報へ参照値を渡さない契約。渡されても照合せず null＝「照会していない」）。
+            _ => null,
+        };
+        return actual is null ? null : WeeklyGoalComparison.Evaluate(reference, actual);
+    }
+
+    // 日報 §6 の週初来の実現損益（計画 ADR-0059 決定 3）。🔴 照会できなかった約定を空列（損益 0）として数えない。
+    private static WeeklyGoalActual WeekToDateActual(WeekToDateInputs? weekToDate)
+    {
+        if (weekToDate is null)
+            return WeeklyGoalActual.NotComputable("週初来の約定を受け取っていません");
+        if (weekToDate.FillsFailed)
+            return WeeklyGoalActual.NotComputable("週初来の約定を照会できませんでした");
+
+        return WeeklyGoalActual.From(PeriodPnl.Aggregate(
+            weekToDate.Fills, currentPrices: null, weekToDate.DriftAdoptions, weekToDate.OpeningInventory, weekToDate.OpeningInventoryUnknown));
     }
 
     // FR-06, FR-16, #563, IADR-0269: 建玉へ現在値と評価損益を載せる。
@@ -351,7 +393,22 @@ public sealed record DraftRequest(
     OpeningInventorySnapshot? OpeningInventory = null,
     // FR-06, #1224, IADR-0516 決定 5: セッションの窓に揃えない入力（LLM 利用実績）を引いた JST の暦日の範囲。「集計したセッション」の行に書き足す。
     // **null＝書かない**（LLM 利用実績を使わない種別〔週報〕・窓を持たない経路）。
-    ReportCalendarDays? LlmUsageCalendarDays = null);
+    ReportCalendarDays? LlmUsageCalendarDays = null,
+    // FR-06, FR-16, 計画 ADR-0059 決定 4, #1218, IADR-0519 決定 4・5: 照合する週次目標（前週の週報。日報・週報）。**null＝照会していない**
+    //（手動の API・月報。報告書に「照会していません」と書く）。
+    WeeklyGoalReference? WeeklyGoal = null,
+    // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報の週初来の窓の入力（週報 §1 と同じ供給元・同じ窓の規則）。
+    // **null＝受け取っていない**（§6 は算出不能と書く）。日報以外は使わない。
+    WeekToDateInputs? WeekToDate = null);
+
+// FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報 D の週初来の窓（D の ISO 週の週報の窓を D で打ち切ったもの）の入力。
+// FillsFailed は約定の照会に失敗した（空列へ倒れている）こと、OpeningInventoryUnknown は期間開始時点の在庫を照会できなかったこと。
+public sealed record WeekToDateInputs(
+    IReadOnlyList<PeriodTradeFill> Fills,
+    bool FillsFailed,
+    IReadOnlyList<PeriodDriftAdoption>? DriftAdoptions,
+    OpeningInventorySnapshot? OpeningInventory,
+    bool OpeningInventoryUnknown);
 
 // 生成結果（Markdown 本文＋集計した数値サマリ＋LLM ドラフトの散文）。永続化はしない。
 // Narrative を分けて返すのは、Discord 提示の要約（IADR-0116）が散文を Markdown から再抽出せずに済むようにするため。

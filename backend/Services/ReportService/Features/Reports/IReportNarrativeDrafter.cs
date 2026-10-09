@@ -65,6 +65,12 @@ public sealed record ReportNarrativeContext(
     /// 所有者の作り直し（<c>/report regenerate</c>）は <c>report-regeneration</c> を渡す。🔴 ゲートウェイへ送る用途キー（モデル割当）は変えない。
     /// </summary>
     public string? UsagePurpose { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 4: 週次目標の照合（コードの値。日報 §6・週報 §4）。<c>null</c>＝照会していない。
+    /// プロンプトは事実として示し、LLM に比較・再計算・達成・未達の判定をさせない。
+    /// </summary>
+    public WeeklyGoalComparison? WeeklyGoal { get; init; }
 }
 
 // FR-07, IADR-0120 決定3: 上位方針の参照（期間キーと本文）。
