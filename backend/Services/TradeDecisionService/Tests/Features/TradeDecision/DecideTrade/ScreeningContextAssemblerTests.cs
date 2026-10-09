@@ -52,7 +52,8 @@ public class ScreeningContextAssemblerTests
         // #854, IADR-0351 決定4: 銘柄行は保有状況の短縮版ぶん 120→400 へ底上げ（予算も同幅 +280 シフト）。
         // #1035, IADR-0451: 銘柄行は値動きの行の予約ぶん 400→700 へ底上げ（予算も同幅 +PriceContextReserveChars シフト）。
         // #1081, IADR-0455: ニュースの状態の行の予約ぶん 700→900 へ底上げ（予算も同幅 +NewsStatusReserveChars シフト）。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + WatchlistUnknownChars, watchlist: null);
+        // #1292, IADR-0523 決定 2: 保有の手仕舞いの固定文の行の予約ぶん底上げ（予算も同幅 +HeldExitRuleReserveChars シフト）。
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars + WatchlistUnknownChars, watchlist: null);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1, "予算内に収まらない 1 件が削られる");
         var retainedTitles = assembled.RetainedReferences.Select(r => r.Title).ToList();
@@ -74,7 +75,8 @@ public class ScreeningContextAssemblerTests
         // #854, IADR-0351 決定4: 銘柄行 120→400 の底上げぶん、保護分と予算を同幅（+280）でずらした（上のテストと同じ）。
         // #1035, IADR-0451: 400→700（値動きの行の予約）も同幅でずらした（上のテストと同じ）。
         // #1081, IADR-0455: 700→900（ニュースの状態の行の予約）も同幅でずらした。
-        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + WatchlistUnknownChars, watchlist: null);
+        // #1292, IADR-0523 決定 2: 保有の手仕舞いの固定文の行の予約も同幅でずらした。
+        var assembled = ScreeningContextAssembler.Assemble(Trigger, Policy, retrieved, currentPrice: null, budgetChars: 1_330 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars + WatchlistUnknownChars, watchlist: null);
 
         assembled.Plan.DroppedNewsCount.Should().Be(1);
         var retainedTitles = assembled.RetainedReferences.Select(r => r.Title).ToList();
