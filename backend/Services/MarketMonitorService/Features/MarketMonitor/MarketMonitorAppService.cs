@@ -38,7 +38,17 @@ public sealed class MarketMonitorAppService(
 {
     private readonly ILogger _logger = logger ?? NullLogger<MarketMonitorAppService>.Instance;
 
-    public async Task<MonitorRoundResult> EvaluateRoundAsync(CancellationToken cancellationToken = default)
+    public Task<MonitorRoundResult> EvaluateRoundAsync(CancellationToken cancellationToken = default) =>
+        EvaluateRoundAsync(onStopLoss: null, cancellationToken);
+
+    /// <summary>
+    /// 1 巡回を評価する。🔴 FR-10, FR-03, #1282, IADR-0520: <paramref name="onStopLoss"/> を渡すと、損切りライン到達は
+    /// <b>保有のループの中で検知した時点で</b>渡す（巡回の末尾までためない。容量 1 の限流器では保有の k 番目の到達が
+    /// 約 60 − 5k 秒遅れていた）。結果の <see cref="MonitorRoundResult.StopLosses"/> にも同じ到達を入れる（記録用。
+    /// 渡した側は発行し直さない）。<paramref name="onStopLoss"/> の例外は巡回の例外として伝わる（握るかは渡す側が決める）。
+    /// </summary>
+    public async Task<MonitorRoundResult> EvaluateRoundAsync(
+        Func<StopLossTriggered, CancellationToken, Task>? onStopLoss, CancellationToken cancellationToken = default)
     {
         var settings = settingsStore.GetSettings();
         var now = clock.UtcNow;
@@ -88,9 +98,13 @@ public sealed class MarketMonitorAppService(
 
             if (StopLossEvaluator.IsTriggered(position, quote.Price))
             {
-                stopLosses.Add(new StopLossTriggered(
+                // 🔴 #1282, IADR-0520: 検知時刻はこの建玉の価格を照会し終えた時刻（巡回の開始時刻 now ではない）。
+                var stopLoss = new StopLossTriggered(
                     Guid.NewGuid(), position.Symbol, position.Market, position.Side,
-                    position.Quantity, quote.Price, position.StopLossPrice, now));
+                    position.Quantity, quote.Price, position.StopLossPrice, clock.UtcNow);
+                stopLosses.Add(stopLoss);
+                if (onStopLoss is not null)
+                    await onStopLoss(stopLoss, cancellationToken).ConfigureAwait(false);
             }
         }
 

@@ -259,6 +259,9 @@ builder.Services.AddHostedService<DiscordBotHostedService>();
 // **数を固定するテストも存在しなかった**（#381 停止側で判明）。**維持されない数は、あるだけ有害である**
 // ——読み手は「10 種で網羅されている」と信じてしまう。数は上記テストが母集合ごと面倒を見る。
 // 送信失敗を含む一時的失敗の再試行と <queue>_error への退避は共通ヘルパに閉じている（IADR-0129 決定 5）。
+// FR-09, FR-10, #1280, IADR-0520 決定4: 損切りライン到達の通知の抑止（巡回をまたぐ記憶なので singleton）。
+builder.Services.AddSingleton<StopLossNotificationSuppressor>();
+
 builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
     ServiceName,
     builder.Configuration["RabbitMq:ConnectionString"],

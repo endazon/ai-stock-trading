@@ -9,7 +9,8 @@ namespace OrderExecutionService.Infrastructure.Steps;
 // **ソフトウェア逆指値（S1）の建玉だけを**成行で決済する。S0（ブローカー側逆指値）・S2（免除）の建玉には何もしない
 // ——保護記録（手法）を持つのは発注執行だけであり、突き合わせは Active な S1 の行に限る（SoftwareStopExecutor）。
 //
-// 市場監視は価格が戻るまで毎巡回（既定 60 秒）同じ到達を発行し、メッセージは再配送され得る。二重決済の防止は
+// 市場監視は価格が戻るまで同じ到達を出し続け（#1280, IADR-0520 以降は同じ到達を 3 分に 1 回。以前は毎巡回＝既定 60 秒）、
+// メッセージは再配送され得る。二重決済の防止は
 // SoftwareStopExecutor の固定 DecisionId・予約・行の完了が担い、本ハンドラは発行だけを行う。
 //
 // キューは ai-stock-trading.order-execution-service.StopLossTriggered（IADR-0129 の共通ヘルパ。durable）。

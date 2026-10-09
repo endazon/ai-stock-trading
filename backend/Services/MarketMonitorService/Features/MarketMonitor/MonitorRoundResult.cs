@@ -11,7 +11,9 @@ public record MonitorRoundResult(
 {
     /// <summary>
     /// FR-10, #902, IADR-0365 決定1: この巡回で評価した保有ポジションごとの記録（価格が取れなかった保有も含む）。
-    /// 生存要約（StopLossLivenessReporter）だけが読む。到達の判定・発行には使わない。
+    /// 生存要約（StopLossLivenessReporter）が読む。到達の判定には使わない。
+    /// #1280, IADR-0520: 到達の再発行の抑止（<see cref="StopLossArrivalGate.Settle"/>）も読む —— 価格を取ってラインの内側だった
+    /// 保有は「戻った」として発行済みの記憶を解き、価格が取れなかった保有（Price=null）は記憶を残す（戻ったかどうか分からないため）。
     /// </summary>
     public IReadOnlyList<StopLossEvaluation> StopLossEvaluations { get; init; } = [];
 
@@ -19,7 +21,9 @@ public record MonitorRoundResult(
     /// FR-03, FR-10, #909, IADR-0380 決定2・決定3: この巡回で**市場が閉場していたため評価しなかった**保有ポジション。
     /// <see cref="StopLossEvaluation.Price"/> は常に <c>null</c> である（価格照会そのものを行っていない。
     /// 「照会したが取れなかった」＝<see cref="StopLossEvaluations"/> 側の欠落とは別の事実）。
-    /// 保護の空白を声に出すため（StopLossLivenessReporter）だけに使う。到達の判定・発行には使わない。
+    /// 保護の空白を声に出すため（StopLossLivenessReporter）に使う。到達の判定には使わない。
+    /// #1280, IADR-0520: <see cref="StopLossArrivalGate.Settle"/> も読み、ここにある保有の発行済みの記憶は残す
+    /// （評価していない巡回は価格が戻った証拠ではないため）。
     /// </summary>
     public IReadOnlyList<StopLossEvaluation> ClosedMarketPositions { get; init; } = [];
 
