@@ -55,6 +55,11 @@ plan_refs:
 | AC3 | 余裕は Finnhub のときだけ ⌈60 秒 ÷ r⌉（12 → 5 秒・7 → 8.5714286 秒〔ティック切り上げ〕・0 → 60 秒）、他の提供元・未設定は 0。提供元の大小文字と前後の空白を無視する | `CycleOverrunToleranceTests` T-10-2471 |
 | AC4 | 既存の T-10-2461 の「ちょうど 60 秒で Warning」の行を「出さない」へ改める（64 秒の行は余裕 0 で出る） | T-10-2461 |
 
+**［2026-10-09 追記 / #1284 監査］**
+- AC2 の「🔴 是正前は 60・61・64・65 の行が赤」は誤り。是正前（間隔以上で警告・余裕なし）で赤になるのは **60・64・65 の行**である（61 秒・66 秒の行は是正前も警告するので緑）。本表の文言は残し、ここで訂正する。
+- 監査 🟡1 を受けて AC5 を足す: **本番の組み立て（Program.cs）が構成（`MarketData:Provider`＝finnhub・`MarketData:Finnhub:RequestsPerMinute`＝12）から余裕 5 秒を組み、巡回へ渡す**（65 秒は出さず 66 秒は出す）。試験は `CycleOverrunToleranceCompositionTests`（T-10-2471 の参照行「本番の組み立て」。新しい ID は採らない）。変異: 登録を消すと同試験と `CompositionWiringGuardTests`（W1）が赤、提供元のキーを取り違えると同試験だけが赤。
+- 監査 🟡2 を受けて、`BusinessMetricsWiringTests`（T-10-2464）の境界の表明へ 65 を足した（ダッシュボードの超過件数が 65 秒の境界に依るため）。下の「T-10-2464 は不変」は、境界の値は不変・表明は 65 を足した、と読み替える。変異: 境界の配列から 65 を消すと T-10-2464 が赤。
+
 ## 検証
 
 - `dotnet build backend/backend.slnx`（警告 0）・`dotnet format --verify-no-changes`（MarketMonitorService と試験）・`dotnet test`（MarketMonitorService.Tests）

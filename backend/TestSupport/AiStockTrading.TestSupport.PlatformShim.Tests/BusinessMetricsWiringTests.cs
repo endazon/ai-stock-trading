@@ -148,10 +148,11 @@ public class BusinessMetricsWiringTests
 
     // T-10-2464, FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 市場監視の 1 巡回の所要は、既定の巡回間隔 60 秒と
     // 1 要求ぶん手前の 55 秒を**境界そのもの**に持つ明示の境界で出ていく（既定の境界では 60 秒が 50〜75 のバケットに埋もれる）。
+    // #1281, IADR-0513: ダッシュボードの超過件数（巡回間隔 ＋ 1 要求ぶんの余裕＝既定構成の 65 秒）も境界そのものに依る。
     [Fact]
     public void T_10_2464_市場監視の巡回の所要のヒストグラムは60秒を境界に持つ明示の境界で出ていく()
     {
-        ObservabilityExtensions.MarketMonitorCycleDurationBucketsSeconds.Should().ContainInOrder(55d, 60d);
+        ObservabilityExtensions.MarketMonitorCycleDurationBucketsSeconds.Should().ContainInOrder(55d, 60d, 65d);
         ObservabilityExtensions.MarketMonitorCycleDurationBucketsSeconds.Should().BeInAscendingOrder();
 
         var bounds = new List<(string Name, double[] Bounds)>();
