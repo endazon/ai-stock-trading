@@ -95,3 +95,13 @@ plan_refs:
 - `dotnet build backend/backend.slnx`・`dotnet test`（TradeDecisionService.Tests）・`dotnet format backend/backend.slnx --verify-no-changes`。
 - node 検査（`check-trace-blocks`・`gen-knowledge-graph --check`・`check-commit-messages`・`check-test-traceability`・`check-adr-index-sync`・`check-cross-repo-refs`）。
 - 変異 M1（一次から固定文を外す）→ T-10-2508・T-10-2509 が赤。M2（本判断から外す）→ T-10-2508・T-10-2509・全文の固定が赤。いずれも戻して緑。
+
+## ［2026-10-10 追記 / #1292］独立監査（PR #1293・条件付き GO）の F1 への対応
+
+- 指摘 F1: 予約 `HeldExitRuleReserveChars` が銘柄ごとの保護分（`PerSymbolLineChars`）に入っていることを固定する試験が無かった。
+  変異 M3（保護分から予約を外す）で全件緑だった。上の母集合の表で「是正（予約の分だけ予算を同幅ずらした）」とした境界試験 4 本は、
+  余裕が予約（150 文字）を超える（`ScreeningContextAssemblerTests` は 165 文字）か、予算ちょうどで削られないこと（Dropped=0）しか見ない
+  （`WatchlistInDecisionPromptTests`）ため、予約を固定しない。**同幅ずらしたことは事実だが、予約の固定はこれらの試験では成り立たない。**
+- 対応: T-10-2511（`HeldExitAlwaysJudgedInPromptTests`）を足した。保護分（予約を含む）と材料 1 件でちょうどの予算では削らず、1 文字少ない予算では 1 件削る。
+- 変異 M3 → T-10-2511 だけが赤（1704 件中 1 件）。戻して緑。
+

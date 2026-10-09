@@ -74,6 +74,7 @@ PoC（2026-10-09 US）で、保有中の AAPL・MSFT・AMZN・GOOGL を監視銘
 | T-10-2508 | 保有ありなら本判断・一次の両方の保有状況節に固定文が 1 回（位置つき）。保有なし・不明・未約定だけなら出ない | `HeldExitAlwaysJudgedInPromptTests` |
 | T-10-2509 | 方針の列挙にも監視銘柄にも無い保有を出口専用で判断すると、一次・本判断の両方に保有状況節と固定文が出て、Sell は保有全量の決済になる | `HeldExitAlwaysJudgedInPromptTests` |
 | T-10-2510 | 固定文の行は一次の縮退の予約に収まる | `HeldExitAlwaysJudgedInPromptTests` |
+| T-10-2511 | 予約は銘柄ごとの保護分に入る（ちょうどの予算で削らず、1 文字少ない予算で削る。PR #1293 の監査 F1 で追加） | `HeldExitAlwaysJudgedInPromptTests` |
 
 ## 関連
 

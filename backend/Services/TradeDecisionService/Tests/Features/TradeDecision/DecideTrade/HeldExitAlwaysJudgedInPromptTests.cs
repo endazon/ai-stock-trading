@@ -18,7 +18,7 @@ namespace TradeDecisionService.Tests;
 // 「確定済み方針の銘柄の列挙は新規建ての対象を定める。保有中の銘柄の手仕舞い（利確・損切り）は、列挙に関係なく常に判断する」を固定文で置く。
 // 実測（PoC 2026-10-09 US）: 一次の LLM が「確定済み方針の監視銘柄 8 銘柄に含まれていない…取引対象外」として保有中の AMZN・GOOGL を
 // 3 サイクルとも Hold にした。#1286（IADR-0521。監視銘柄の外の保有は出口専用で判断に回す）と合わせて、保有の出口が方針の列挙で放棄されないことを固定する。
-// T-10-2508〜T-10-2510。
+// T-10-2508〜T-10-2511。
 public class HeldExitAlwaysJudgedInPromptTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 10, 15, 0, 0, TimeSpan.Zero);
@@ -155,11 +155,31 @@ public class HeldExitAlwaysJudgedInPromptTests
     }
 
     // T-10-2510: 固定文の行（行頭の「- 」と改行を含む）は一次の縮退の保護分（HeldExitRuleReserveChars）に収まる。
-    // 予約が銘柄ごとの保護分に入っていることは ScreeningContextAssemblerTests・ScreeningContextDegradationTests の予算の境界が固定する。
+    // 予約が銘柄ごとの保護分に入っていることは T-10-2511 が予算の境界で固定する（既存の境界試験は余裕が予約を超えており固定しない）。
     [Fact]
     public void T_10_2510_固定文の行は一次の縮退の保護分に収まる()
     {
         (RuleLine.Length + Environment.NewLine.Length).Should().BeLessThanOrEqualTo(ScreeningContextAssembler.HeldExitRuleReserveChars);
+    }
+
+    // 🔴 T-10-2511（#1293 の監査 F1）: 予約は銘柄ごとの保護分（PerSymbolLineChars）に入っている。保護分（予約を含む）と材料 1 件で
+    // ちょうどの予算では材料を削らず、1 文字少ない予算では 1 件削る。予約を保護分から外すと、1 文字少ない予算でも削られず赤になる。
+    // 方針は「利確:」行を持たない（利確の予約 TakeProfitReachedReserveChars を掛けない）。監視銘柄は不明の形。
+    [Fact]
+    public void T_10_2511_固定文の行の予約は銘柄ごとの保護分に入り予算の境界で材料の削減が切り替わる_境界値()
+    {
+        var policy = new DailyPolicy(new DateOnly(2026, 10, 10), "押し目で買う");
+        var trigger = Trigger("GOOGL", exitOnly: true);
+        var news = new RetrievedContext("記事", new string('あ', 100), SourceUri: null, 0.5, ["google-news"], Now);
+        var exactBudget = 750 + policy.Summary.Length + TradeDecisionPromptBuilder.WatchlistSection(trigger, null).Length
+            + 400 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars
+            + ScreeningContextAssembler.HeldExitRuleReserveChars
+            + ("記事".Length + 100 + 60);
+
+        ScreeningContextAssembler.Assemble(trigger, policy, [news], currentPrice: null, budgetChars: exactBudget, watchlist: null)
+            .Plan.DroppedNewsCount.Should().Be(0, "保護分（予約を含む）と材料 1 件で予算ちょうど");
+        ScreeningContextAssembler.Assemble(trigger, policy, [news], currentPrice: null, budgetChars: exactBudget - 1, watchlist: null)
+            .Plan.DroppedNewsCount.Should().Be(1, "予約が保護分に入っていれば 1 文字の不足で材料が削られる");
     }
 
     private sealed class FakeClock : IClock { public DateTimeOffset UtcNow => Now; }
