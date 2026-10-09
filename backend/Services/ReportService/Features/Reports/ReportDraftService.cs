@@ -192,6 +192,7 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                 ? WeeklyGoalActual.NotComputable("期間の約定を照会できませんでした")
                 : WeeklyGoalActual.From(periodPnl),
             ReportKind.Daily => WeekToDateActual(request.WeekToDate),
+            // 月報は照合しない（呼び出し側は月報へ参照値を渡さない契約。渡されても照合せず null＝「照会していない」）。
             _ => null,
         };
         return actual is null ? null : WeeklyGoalComparison.Evaluate(reference, actual);

@@ -117,7 +117,7 @@ plan_refs:
 | T-06-082 | Given 当週の月〜金の約定（持ち越しの在庫を含む）When 金曜の日報と週報を生成する Then 日報 §6 の週初来の値と週報 §1 の週間実現損益が一致する。火曜の日報の値は月〜火の窓の集計 | `ReportAutoGeneratorWeeklyGoalTests` |
 | T-06-083 | Given 前週の週報が未確定で、より前の週報が確定済み When 日報を生成する Then その週報の目標と照らし、どの週の目標かを注記する。Given 確定済みが 1 件も無い Then 「週次目標なし」 | `ReportAutoGeneratorWeeklyGoalTests` |
 | T-06-084 | Given 参照する週報に行が無い・書式外・単位違い When 日報を生成する Then §6 は「照合不能」と理由を書き、範囲・位置を書かない | `ReportRendererWeeklyGoalTests` |
-| T-06-085 | Given 週初来の値が部分値（在庫の照会失敗・算定できない決済）・約定の照会失敗 When 日報を生成する Then §6 は「算出不能」と理由を書き、位置を書かない | `WeeklyGoalComparisonTests`・`ReportRendererWeeklyGoalTests` |
+| T-06-085 | Given 週初来の値が部分値（在庫の照会失敗・算定できない決済）・約定の照会失敗 When 日報を生成する Then §6 は「算出不能」と理由を書き、位置を書かない | `WeeklyGoalComparisonTests`・`ReportRendererWeeklyGoalTests`・`ReportAutoGeneratorWeeklyGoalTests`（黙った照会失敗） |
 | T-06-086 | （否定形）日報の §5 と §6 を統合しない。散文は区切り行で分け、両節へ複製しない。区切りが無ければ §6 の散文は「（散文ドラフトなし）」。`DailyReviewReason`（未実装の文言）は出ない | `DailyNarrativeSectionsTests`・`ReportRendererWeeklyGoalTests` |
 | T-06-087 | Given 前週の週報の目標 When 週報を生成する Then §1 のセルは位置を事実として示し「判定保留」と書き、達成・未達を書かない。§4 は散文の前に照合の行 | `ReportRendererWeeklyGoalTests`・`ReportAutoGeneratorWeeklyGoalTests` |
 | T-06-088 | 散文のプロンプトには照合の事実（コードの値）を渡し、日報には区切り行の指示、照合できないときは推測させない指示を出す。週報の改訂のプロンプトに書式を案内する（例は文法で読める） | `ReportAutoGeneratorWeeklyGoalTests`（散文の文脈とプロンプト）・`WeeklyGoalLineCheckTests`（改訂のプロンプト） |
@@ -148,3 +148,15 @@ plan_refs:
 | 週初来の窓の始まりを日報の日にする | `ReportAutoGeneratorWeeklyGoalTests` の火曜・金曜の 2 件・`ReportOpeningInventoryWiringTests.T06_050` |
 | 参照する週報に当週の週報を許す | `ReportAutoGeneratorWeeklyGoalTests.当週以後の確定済み週報は参照値にせず…` |
 | 週初来の集計から期間開始時点の在庫を落とす | `ReportAutoGeneratorWeeklyGoalTests.金曜の日報の週初来の値は週報の週間実現損益と一致する` |
+
+［2026-10-09 追記 / #1218］ 独立監査（フェーズ末監査）の指摘を同じ PR で是正した。
+
+- R1（要是正）: 週初来の約定の照会は `Leave()` の後に行うが、実在の供給元（HTTP・gRPC）は失敗を空列＋観測だけで返すため、`SafeFillsAsync` の
+  失敗の印だけを見ると黙った失敗が「0.00 USD で範囲内」になっていた。照会の前後で観測の失敗件数が増えたら照会の失敗とみなすよう
+  `ReportAutoGenerator.CollectWeekToDateAsync` を直した（IADR-0519 決定 3 の追記）。試験
+  `ReportAutoGeneratorWeeklyGoalTests.週初来の約定の照会が空列と観測だけで失敗したら算出不能と書く`（T-06-085）を足し、是正前のコードで
+  赤（§6 が「0.00 USD で **範囲内**」）になることを確かめた。
+- Y1: `WeeklyGoalLine` の金額が `\d` で他の文字体系の数字（`٣`・`१२`）に一致し、`decimal.Parse` の例外で生成が落ちていた。
+  `[0-9]` に限り `decimal.TryParse` で書式外へ倒した（IADR-0519 決定 1 の追記）。試験 `WeeklyGoalLineTests.ASCII以外の数字は書式外として読まない`
+  （T-06-078）を足し、是正前は `FormatException` で赤になることを確かめた。
+- 任意（bot の指摘）: `ReportDraftService.WeeklyGoalOf` が日報・週報以外で null を返す契約（月報へは参照値を渡さない）をコメントで明記した。

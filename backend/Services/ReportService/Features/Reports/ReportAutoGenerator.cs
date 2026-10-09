@@ -372,7 +372,7 @@ public sealed class ReportAutoGenerator(
         {
             observation.Leave();
             weekToDate = await CollectWeekToDateAsync(
-                due, fills, fillsFailed || unsupplied.Contains(ReportInput.Fills), driftAdoptions, openingInventory,
+                due, observation, fills, fillsFailed || unsupplied.Contains(ReportInput.Fills), driftAdoptions, openingInventory,
                 unsupplied.Contains(ReportInput.OpeningInventory), cancellationToken).ConfigureAwait(false);
         }
 
@@ -496,6 +496,7 @@ public sealed class ReportAutoGenerator(
     // 日報の入力を使い回す（同じ照会を 2 回出さない）。
     private async Task<WeekToDateInputs> CollectWeekToDateAsync(
         DueReport daily,
+        ReportDependencyObservation observation,
         IReadOnlyList<PeriodTradeFill> dailyFills,
         bool dailyFillsFailed,
         IReadOnlyList<PeriodDriftAdoption>? dailyAdoptions,
@@ -507,7 +508,13 @@ public sealed class ReportAutoGenerator(
         if (ReportSchedule.SessionWindowOf(weekToDate, settings.Schedule) == ReportSchedule.SessionWindowOf(daily, settings.Schedule))
             return new WeekToDateInputs(dailyFills, dailyFillsFailed, dailyAdoptions, dailyOpening, dailyOpeningUnknown);
 
+        // 🔴 #1218, IADR-0519 決定 3 の 2026-10-09 追記: 実在の約定の供給元（HTTP・gRPC）は非 2xx・タイムアウト・例外を空列へ倒し、
+        // 失敗を観測（observation）にだけ残す。Leave() の後なので失敗は入力を持たない観測になる（見送り・未供給へ混ぜない）が、
+        // それを見ずに空列を数えると「0.00 USD で範囲内」と書いてしまう。照会の前後で観測の件数が増えたら照会の失敗とみなす（fail-closed）。
+        var failuresBefore = observation.Failures.Count;
         var (fills, fillsFailed) = await SafeFillsAsync(weekToDate, cancellationToken).ConfigureAwait(false);
+        fillsFailed |= observation.Failures.Count > failuresBefore;
+        // 採用記録・期間開始時点の在庫は供給元が失敗を null（照会できていない）で返す契約のため、値から判定できる（観測を見る必要は無い）。
         var adoptions = await SafeDriftAdoptionsAsync(weekToDate, cancellationToken).ConfigureAwait(false);
         OpeningInventorySnapshot? opening = null;
         var openingUnknown = false;

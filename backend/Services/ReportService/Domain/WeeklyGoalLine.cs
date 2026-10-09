@@ -25,7 +25,9 @@ public static class WeeklyGoalLine
     /// <summary>案内・警告に載せる例（試験が、この例を本文法で読めることを固定する）。</summary>
     public static readonly IReadOnlyList<string> Examples = ["数値目標: -200 〜 +500 USD", "数値目標: 0 〜 1,000 USD"];
 
-    private const string AmountPattern = @"[+\-]?(?:\d{1,3}(?:,\d{3}){1,3}|\d{1,12})(?:\.\d{1,2})?";
+    // 🔴 #1218（監査 Y1）: 数字は ASCII の [0-9] に限る。\d は他の文字体系の数字（٣・१२ など。NFKC でも ASCII へ寄らない）にも一致し、
+    // decimal.Parse が例外を投げて生成が週の間ずっと落ちる。書式外の行として読まない（Malformed）。
+    private const string AmountPattern = @"[+\-]?(?:[0-9]{1,3}(?:,[0-9]{3}){1,3}|[0-9]{1,12})(?:\.[0-9]{1,2})?";
 
     private static readonly Regex Grammar = new(
         @"\A(?:[\-*・]\s*)?" + Label + @"\s*:\s*(?<lo>" + AmountPattern + @")\s*[〜~]\s*(?<hi>" + AmountPattern + @")\s*(?<unit>[A-Z]{3}|円)\z",
@@ -56,9 +58,10 @@ public static class WeeklyGoalLine
         if (!match.Success)
             return new WeeklyGoalLineReading(WeeklyGoalLineStatus.Malformed, null, null, null, 1);
 
-        var lower = ParseAmount(match.Groups["lo"].Value);
-        var upper = ParseAmount(match.Groups["hi"].Value);
-        if (lower > upper)
+        // 文法が ASCII の数字に限るので解釈は失敗しないが、失敗しても例外にせず書式外へ倒す（生成を落とさない）。
+        if (ParseAmount(match.Groups["lo"].Value) is not { } lower
+            || ParseAmount(match.Groups["hi"].Value) is not { } upper
+            || lower > upper)
             return new WeeklyGoalLineReading(WeeklyGoalLineStatus.Malformed, null, null, null, 1);
 
         var unit = match.Groups["unit"].Value;
@@ -68,9 +71,11 @@ public static class WeeklyGoalLine
         return new WeeklyGoalLineReading(status, lower, upper, unit, 1);
     }
 
-    private static decimal ParseAmount(string text) =>
-        decimal.Parse(text.Replace(",", string.Empty, StringComparison.Ordinal), NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-            CultureInfo.InvariantCulture);
+    private static decimal? ParseAmount(string text) =>
+        decimal.TryParse(text.Replace(",", string.Empty, StringComparison.Ordinal), NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+            CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
 }
 
 /// <summary>週次目標の書式行の読み取りの結果。</summary>

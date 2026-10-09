@@ -84,11 +84,23 @@ public class ReportAutoGeneratorWeeklyGoalTests
         }
     }
 
+    // 実在の供給元（HttpPeriodFillSource・GrpcPeriodFillSource）を写す: 非 2xx・タイムアウトを空列へ倒し、失敗は観測点にだけ残す。
+    // 週初来の窓（日報の窓より前の取引日から引く照会）だけが失敗する。
+    private sealed class SilentlyFailingWeekRangeFills(ReportDependencyProbe probe, DateOnly dailyFrom) : IPeriodFillSource
+    {
+        public Task<IReadOnlyList<PeriodTradeFill>> GetFillsAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+        {
+            if (from < dailyFrom)
+                probe.Record("trading", ReportDependencyFailureKind.HttpStatus, transient: true, "503 Service Unavailable");
+            return Task.FromResult<IReadOnlyList<PeriodTradeFill>>([]);
+        }
+    }
+
     private static ReportAutoGenerator Generator(
         IReportStore store, DateTimeOffset now, IPeriodFillSource fills, IReportNarrativeDrafter drafter,
-        IOpeningInventorySource? opening = null, IReportDraftPresentedNotifier? notifier = null) =>
+        IOpeningInventorySource? opening = null, IReportDraftPresentedNotifier? notifier = null, ReportDependencyProbe? probe = null) =>
         new(store, new ReportDraftService(drafter), fills, new FixedClock(now), new ReportAutoGenerationSettings(), notifier,
-            openPositionSource: new NoPositions(), driftAdoptionSource: new NoDrift(), openingInventorySource: opening);
+            openPositionSource: new NoPositions(), driftAdoptionSource: new NoDrift(), openingInventorySource: opening, dependencyProbe: probe);
 
     private static void SeedWeekly(InMemoryReportStore store, string key, DateOnly start, string policy, bool confirm)
     {
@@ -179,6 +191,28 @@ public class ReportAutoGeneratorWeeklyGoalTests
         var weekly = store.Get("weekly-2026-W41")!.Report.Body;
         weekly.Should().Contain("| 週次目標に対する達成 | **判定保留**").And.Contain($"の **上限を上回る（上限との差 {ReportAmountFormat.Base(expected - 500m)}）**（詳細は §4） |");
         Section(weekly, "## 4. 振り返りと評価").Should().Contain($"週間実現損益（税引後・費用込み）は {amount} で **上限を上回る");
+    }
+
+    // ---- T-06-085: 週初来の約定の照会が黙って失敗した（空列＋観測だけ）なら 0 として数えず「算出不能」と書く ----
+
+    // #1218（監査 R1）, IADR-0519 決定 3 の 2026-10-09 追記: 実在の供給元は失敗を空列で返し観測点にだけ残す。週初来の照会は Leave() の後で
+    // 行うため入力を持たない観測になるが、それでも照会の失敗として扱う（fail-closed）。見送り・未供給の記録には混ぜない。
+    [Fact]
+    public async Task 週初来の約定の照会が空列と観測だけで失敗したら算出不能と書く()
+    {
+        var store = new InMemoryReportStore();
+        SeedWeekly(store, "weekly-2026-W40", new DateOnly(2026, 9, 28), GoalPolicy, confirm: true);
+        var probe = new ReportDependencyProbe();
+
+        // 火曜の日報の窓は ET 10-05 から（週初来の窓は ET 10-02 から）。
+        var result = await Generator(
+            store, TueAfterBoundary, new SilentlyFailingWeekRangeFills(probe, new DateOnly(2026, 10, 5)), new RecordingDrafter(), probe: probe)
+            .RunOnceAsync();
+
+        var body = Section(store.Get("daily-2026-10-06")!.Report.Body, DailyReview);
+        body.Should().Contain("**算出不能**（週初来の約定を照会できませんでした）").And.NotContain("範囲内");
+        result.Deferred.Should().BeEmpty("週初来の照会の失敗は見送りの判定へ混ぜない");
+        result.Degraded.Should().AllSatisfy(d => d.UnsuppliedInputs.Should().NotContain(ReportInput.Fills, "週初来の照会の失敗は日報の入力の未供給へ混ぜない"));
     }
 
     // ---- T-06-083: 前週の週報が未確定なら最新の確定済みを注記つきで・当週以後は使わない・確定済みが無ければ週次目標なし ----

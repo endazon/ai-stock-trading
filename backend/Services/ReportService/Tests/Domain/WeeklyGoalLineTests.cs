@@ -69,6 +69,20 @@ public class WeeklyGoalLineTests
         reading.IsConforming.Should().BeFalse();
     }
 
+    // T-06-078（否定形）, FR-06, FR-16, #1218（監査 Y1）, IADR-0519 決定 1: ASCII 以外の数字（アラビア・インド数字。NFKC でも ASCII へ寄らない）は
+    // 数字として読まない。例外で生成を落とさず書式外にする。
+    [Theory]
+    [InlineData("数値目標: ٣ 〜 5 USD")]
+    [InlineData("数値目標: १२ 〜 50 USD")]
+    public void ASCII以外の数字は書式外として読まない(string policy)
+    {
+        var reading = WeeklyGoalLine.Parse(policy);
+
+        reading.Status.Should().Be(WeeklyGoalLineStatus.Malformed);
+        reading.Lower.Should().BeNull();
+        reading.Upper.Should().BeNull();
+    }
+
     [Fact]
     public void 候補が2行以上なら行数を返す()
     {
