@@ -19,7 +19,14 @@ public interface IEntryBlockersProvider
 /// FR-10, #1113, IADR-0463 決定 3: 新規建ての方向ごとの、状態から確定する拒否理由（リスク管理の審査と同じ述語の結果）。
 /// <see cref="LongSide"/> は買いの新規建て（ロングを建てる）、<see cref="ShortSide"/> は売りの新規建て（ショートを建てる）。
 /// </summary>
-public sealed record EntryBlockers(IReadOnlyList<RejectionReason> LongSide, IReadOnlyList<RejectionReason> ShortSide)
+/// <para>
+/// 🔴 #1286, IADR-0521 決定 4: <see cref="AnyOrder"/> は新規建て・決済を問わず全注文を拒否する理由（市場の無効・禁止銘柄。審査と同じ述語）。
+/// null は不明（旧い送り手が項目を持たない）であり、空（全注文の拒否は無い）と取り違えない。
+/// </para>
+public sealed record EntryBlockers(
+    IReadOnlyList<RejectionReason> LongSide,
+    IReadOnlyList<RejectionReason> ShortSide,
+    IReadOnlyList<RejectionReason>? AnyOrder = null)
 {
     /// <summary>確定する拒否は無い（照会は成功し、両方向とも空）。</summary>
     public static EntryBlockers None { get; } = new([], []);

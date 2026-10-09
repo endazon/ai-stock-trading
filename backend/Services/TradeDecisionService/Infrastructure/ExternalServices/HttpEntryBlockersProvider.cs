@@ -76,13 +76,21 @@ public sealed class HttpEntryBlockersProvider(
             return null;
         }
 
+        // 🔴 #1286, IADR-0521 決定 4: 全注文の拒否。項目の欠落（旧い送り手）は不明（null）。未知の理由を含めば全注文の側だけを不明にする
+        // （新規建ての方向の答えは使える。全注文の拒否を読み違えて保有のみの銘柄を判断対象から外す向きの誤りを避ける）。
+        IReadOnlyList<RejectionReason>? anyOrder = dto.AnyOrder is null || dto.AnyOrder.Any(r => r is not { } v || !Enum.IsDefined(v))
+            ? null
+            : [.. dto.AnyOrder.Select(r => r!.Value)];
+
         return new EntryBlockers(
             [.. dto.LongSide.Select(r => r!.Value)],
-            [.. dto.ShortSide.Select(r => r!.Value)]);
+            [.. dto.ShortSide.Select(r => r!.Value)],
+            anyOrder);
     }
 
     // EntryBlockersView（RiskManagement・#1113）。camelCase・列挙は数値で往復する。
     // 🔴 全項目を nullable で受ける（項目の欠落を既定値〔市場 0＝日本・空の一覧〕と区別する。#943 と同じ規律）。
     internal sealed record EntryBlockersDto(
-        string? Symbol, Market? Market, IReadOnlyList<RejectionReason?>? LongSide, IReadOnlyList<RejectionReason?>? ShortSide);
+        string? Symbol, Market? Market, IReadOnlyList<RejectionReason?>? LongSide, IReadOnlyList<RejectionReason?>? ShortSide,
+        IReadOnlyList<RejectionReason?>? AnyOrder = null);
 }

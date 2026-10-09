@@ -62,7 +62,7 @@ public class EntryBlockersProviderTests
     {
         var handler = new StubHandler(HttpStatusCode.OK, Body(new EntryBlockersView(
             "BRK.B", Market.UnitedStates,
-            [RejectionReason.KillSwitchActive, RejectionReason.StoppedOutSameDay], [RejectionReason.KillSwitchActive])));
+            [RejectionReason.KillSwitchActive, RejectionReason.StoppedOutSameDay], [RejectionReason.KillSwitchActive], [])));
 
         var read = await Http(handler).GetAsync("BRK.B", Market.UnitedStates);
 
@@ -78,7 +78,7 @@ public class EntryBlockersProviderTests
     [Fact]
     public async Task T_10_1788_空の一覧は確定する拒否は無い()
     {
-        var read = await Http(new StubHandler(HttpStatusCode.OK, Body(new EntryBlockersView("AAPL", Market.UnitedStates, [], []))))
+        var read = await Http(new StubHandler(HttpStatusCode.OK, Body(new EntryBlockersView("AAPL", Market.UnitedStates, [], [], []))))
             .GetAsync("AAPL", Market.UnitedStates);
 
         read.Should().NotBeNull();
@@ -140,7 +140,7 @@ public class EntryBlockersProviderTests
     public async Task T_10_1789_送り手の写しを方向別に読み_銘柄と市場を線に載せる()
     {
         var view = new EntryBlockersView(
-            "7203", Market.Japan, [RejectionReason.MaxPositionsExceeded, RejectionReason.DailyLossLimitReached], []);
+            "7203", Market.Japan, [RejectionReason.MaxPositionsExceeded, RejectionReason.DailyLossLimitReached], [], [RejectionReason.MarketDisabled]);
         var behavior = new RiskReadStubBehavior { EntryBlockers = (_, _) => Task.FromResult(RiskReadWireMapping.ToProto(view)) };
         await using var host = await RiskReadStubHost.StartAsync(behavior);
         var (sp, provider) = await GrpcAsync(host.Address);
@@ -151,6 +151,8 @@ public class EntryBlockersProviderTests
             read.Should().NotBeNull();
             read!.LongSide.Should().Equal(view.LongSide);
             read.ShortSide.Should().BeEmpty();
+            // T-10-2497, #1286, IADR-0521 決定 4: 全注文の拒否（市場の無効）も gRPC で往復する。
+            read.AnyOrder.Should().Equal(RejectionReason.MarketDisabled);
             behavior.LastEntryBlockersRequest!.Symbol.Should().Be("7203");
             behavior.LastEntryBlockersRequest.Market.Should().Be(Proto.Market.Japan, "日本は線上で 1（未指定の 0 ではない）");
         }
@@ -167,7 +169,7 @@ public class EntryBlockersProviderTests
     public async Task T_10_1789_欠落と失敗は不明(string how)
     {
         var response = RiskReadWireMapping.ToProto(
-            new EntryBlockersView("AAPL", Market.UnitedStates, [RejectionReason.KillSwitchActive], []));
+            new EntryBlockersView("AAPL", Market.UnitedStates, [RejectionReason.KillSwitchActive], [], []));
         switch (how)
         {
             case "買いの入れ物の欠落": response.LongSide = null; break;
@@ -226,7 +228,7 @@ public class EntryBlockersProviderTests
     public async Task T_10_1790_新規建ての可否は送り手の本物の型を直列化した応答から本番の配線のアダプタで読める()
     {
         var view = new EntryBlockersView(
-            "AAPL", Market.UnitedStates, [RejectionReason.StoppedOutSameDay], [RejectionReason.TradingPaused]);
+            "AAPL", Market.UnitedStates, [RejectionReason.StoppedOutSameDay], [RejectionReason.TradingPaused], [RejectionReason.BannedSymbol]);
         var handler = new RouteStub("/risk-controls/entry-blockers", Body(view));
         using var factory = new Factory(grpc: null, riskBaseUrl: "http://risk", riskHandler: handler);
 
@@ -239,6 +241,8 @@ public class EntryBlockersProviderTests
         read.Should().NotBeNull();
         read!.LongSide.Should().Equal(RejectionReason.StoppedOutSameDay);
         read.ShortSide.Should().Equal(RejectionReason.TradingPaused);
+        // T-10-2497, #1286, IADR-0521 決定 4: 送り手の本物の型の全注文の拒否（禁止銘柄）が REST でも読める。
+        read.AnyOrder.Should().Equal(RejectionReason.BannedSymbol);
         handler.Paths.Should().OnlyContain(p => p == "/risk-controls/entry-blockers");
     }
 
@@ -287,5 +291,22 @@ public class EntryBlockersProviderTests
                 builder.ConfigureTestServices(services =>
                     services.AddHttpClient("risk").ConfigurePrimaryHttpMessageHandler(() => riskHandler));
         }
+    }
+
+    // T-10-2497, #1286, IADR-0521 決定 4: 全注文の拒否の項目が無い（旧い送り手）・未知の理由を含む応答では、全注文の側だけを不明（null）にする。
+    // 新規建ての方向の答えはそのまま使える。空の一覧は「全注文の拒否は無い」（不明と取り違えない）。
+    [Theory]
+    [InlineData("""{"symbol":"AAPL","market":1,"longSide":[],"shortSide":[]}""", null)]
+    [InlineData("""{"symbol":"AAPL","market":1,"longSide":[],"shortSide":[],"anyOrder":[999]}""", null)]
+    [InlineData("""{"symbol":"AAPL","market":1,"longSide":[],"shortSide":[],"anyOrder":[]}""", 0)]
+    public async Task T_10_2497_全注文の拒否の欠落や未知の理由は全注文の側だけ不明(string body, int? expectedCount)
+    {
+        var read = await Http(new StubHandler(HttpStatusCode.OK, body)).GetAsync("AAPL", Market.UnitedStates);
+
+        read.Should().NotBeNull("新規建ての方向の答えは使える");
+        if (expectedCount is null)
+            read!.AnyOrder.Should().BeNull();
+        else
+            read!.AnyOrder.Should().NotBeNull().And.HaveCount(expectedCount.Value);
     }
 }

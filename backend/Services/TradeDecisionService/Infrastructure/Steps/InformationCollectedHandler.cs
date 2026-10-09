@@ -38,6 +38,7 @@ public sealed class InformationCollectedHandler(
     AppSvc decisionService,
     IWatchlistProvider watchlist,
     IHeldSymbolsProvider heldSymbols,
+    IEntryBlockersProvider entryBlockers,
     IMarketCalendar calendar,
     IClock clock,
     BusinessMetrics metrics,
@@ -79,22 +80,28 @@ public sealed class InformationCollectedHandler(
 
         // 🔴 #1286, IADR-0521 決定 1・2: 保有中の銘柄を足す。監視銘柄に在る保有銘柄は従来どおり（新規建ても可）、
         // 外に在るものだけを出口専用として末尾に足す。監視銘柄の判断の順と DecisionId（起点・市場・銘柄から導く）は変わらない。
-        var held = await heldSymbols.GetHeldSymbolsAsync(cancellationToken).ConfigureAwait(false);
-        var targets = ScheduledJudgmentTargets.Build(watchlistSymbols, held);
+        // 🔴 IADR-0521 決定 1: 保有の照会がどう失敗しても（供給口の例外を含む）監視銘柄だけの判断へ縮退する（キャンセルは伝播する）。
+        var held = await GetHeldSymbolsSafeAsync(cancellationToken).ConfigureAwait(false);
         if (held is null)
         {
             logger.LogInformation("保有銘柄が不明のため、このサイクルは監視銘柄だけを判断します（監視銘柄の外の保有銘柄の出口判断は次の巡回）。");
         }
 
-        // #1169, IADR-0490 決定1: 上限は監視銘柄数の前提から導いてある。前提を超えたらサイクルが上限に達し得ることを告げる
+        // 🔴 IADR-0521 決定 4: 保有のみの銘柄のうち、全注文が審査で必ず拒否されるもの（市場の無効〔ADR-0062〕・禁止銘柄）は判断対象に足さない。
+        var excluded = await BlockedHeldOnlyAsync(watchlistSymbols, held, cancellationToken).ConfigureAwait(false);
+        var targets = ScheduledJudgmentTargets.Build(watchlistSymbols, held, excluded);
+
+        // #1169, IADR-0490 決定1: 上限は判断する銘柄の数の前提から導いてある。前提を超えたらサイクルが上限に達し得ることを告げる
         // （打ち切り→再配送になっても決定2 で重複はしないが、LLM の費用が二重になり判断の時刻がずれる）。
-        // #1286, IADR-0521 決定 3: 前提と比べるのは判断する銘柄の数（監視銘柄 ＋ 保有のみ）である。
+        // 🔴 #1286, IADR-0521 決定 3: 前提と比べるのは**判断対象の総数（監視銘柄 ＋ 監視銘柄の外の保有銘柄）**である。前提は consumer_timeout に
+        // 縛られて上げられない（Helm の README: 経路B は 12 が上限で 13 は consumer_timeout を超える）ため、構成の値を上げることは勧めない。
         if (targets.Count > budget.MaxWatchedSymbols)
         {
             logger.LogWarning(
-                "判断対象 {Count} 件（監視銘柄 ＋ 監視銘柄の外の保有銘柄）が定時サイクルの上限の前提 {Max} 件を超えています。サイクルが実行時間の上限 {Timeout} に"
-                + "達すると打ち切られて再配送されます（判断は DecisionId で冪等）。TradeCycle__MaxWatchedSymbols を見直してください。",
-                targets.Count, budget.MaxWatchedSymbols, budget.HandlerTimeout);
+                "定時サイクルの判断対象 {Count} 件（監視銘柄 {Watched} 件 ＋ 監視銘柄の外の保有銘柄 {HeldOnly} 件）が、実行時間の上限の前提 {Max} 件"
+                + "（上限 {Timeout} の導出に使った判断対象の数）を超えています。上限に達するとサイクルは打ち切られて再配送され（判断は DecisionId で冪等）、末尾の保有のみの銘柄から判断されなくなります。"
+                + "前提は RabbitMQ の consumer_timeout に縛られて上げられないため、監視銘柄を減らしてください（運用手順書「定時サイクルの実行時間の上限」）。",
+                targets.Count, watchlistSymbols.Count, targets.Count(t => t.ExitOnly), budget.MaxWatchedSymbols, budget.HandlerTimeout);
         }
 
         foreach (var (watched, exitOnly) in targets)
@@ -146,9 +153,11 @@ public sealed class InformationCollectedHandler(
                         watched.Symbol);
                 }
 
+                // #1286, IADR-0521 決定 2: 出口専用の判断（監視銘柄の外の保有銘柄）の決済は、TradeDecisionMade に印を持たない（契約を変えない）ため、
+                // ログに exitOnly を残す（残余リスクは IADR-0521）。
                 logger.LogInformation(
-                    "定時判断: DecisionId={DecisionId} {Symbol} {Side} 数量={Quantity}",
-                    decision.DecisionId, decision.Intent.Symbol, decision.Intent.Side, decision.Intent.Quantity);
+                    "定時判断: DecisionId={DecisionId} {Symbol} {Side} 数量={Quantity} exitOnly={ExitOnly}",
+                    decision.DecisionId, decision.Intent.Symbol, decision.Intent.Side, decision.Intent.Quantity, exitOnly);
                 await bus.PublishAsync(decision).ConfigureAwait(false);
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -160,5 +169,56 @@ public sealed class InformationCollectedHandler(
                     .ConfigureAwait(false);
             }
         }
+    }
+
+    // 🔴 #1286, IADR-0521 決定 1: 保有銘柄の照会。供給口の例外も不明（null）へ倒す（監視銘柄の判断を止めない）。キャンセルは伝播する。
+    private async Task<IReadOnlyList<WatchedSymbol>?> GetHeldSymbolsSafeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await heldSymbols.GetHeldSymbolsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "保有銘柄の照会で例外。このサイクルは監視銘柄だけを判断します。");
+            return null;
+        }
+    }
+
+    // 🔴 #1286, IADR-0521 決定 4: 保有のみの銘柄のうち、リスク管理の口が「全注文を拒否する」（AnyOrder。審査と同じ述語＝市場の無効・禁止銘柄）と
+    // 答えたもの。照会の失敗・不明（null）は外さない（判断する側へ倒す。審査が止める）。キャンセルは伝播する。
+    private async Task<IReadOnlySet<WatchedSymbol>> BlockedHeldOnlyAsync(
+        IReadOnlyList<WatchedSymbol> watchlistSymbols, IReadOnlyList<WatchedSymbol>? held, CancellationToken cancellationToken)
+    {
+        var blocked = new HashSet<WatchedSymbol>();
+        if (held is null)
+            return blocked;
+
+        foreach (var (candidate, exitOnly) in ScheduledJudgmentTargets.Build(watchlistSymbols, held))
+        {
+            if (!exitOnly)
+                continue;
+
+            EntryBlockers? answer;
+            try
+            {
+                answer = await entryBlockers.GetAsync(candidate.Symbol, candidate.Market, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "保有のみの銘柄の全注文の可否の照会で例外。判断対象に残します: {Symbol}", candidate.Symbol);
+                continue;
+            }
+
+            if (answer?.AnyOrder is { Count: > 0 } reasons)
+            {
+                logger.LogInformation(
+                    "監視銘柄の外の保有銘柄は全注文が審査で必ず拒否されるため判断しません（決済も拒否される・IADR-0521）: {Symbol} market={Market} reasons={Reasons}",
+                    candidate.Symbol, candidate.Market, string.Join(",", reasons));
+                blocked.Add(candidate);
+            }
+        }
+
+        return blocked;
     }
 }

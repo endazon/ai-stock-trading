@@ -239,6 +239,9 @@ public static class RiskReadWireMapping
         RejectionReason.MaxPositionsExceeded => Proto.EntryBlocker.MaxPositionsExceeded,
         RejectionReason.DailyLossLimitReached => Proto.EntryBlocker.DailyLossLimitReached,
         RejectionReason.MaxDrawdownReached => Proto.EntryBlocker.MaxDrawdownReached,
+        // #1286, IADR-0521 決定 4: 全注文の拒否（any_order）の理由（OrderStateBlockers）。
+        RejectionReason.MarketDisabled => Proto.EntryBlocker.MarketDisabled,
+        RejectionReason.BannedSymbol => Proto.EntryBlocker.BannedSymbol,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "新規建ての可否の口が返す理由ではない"),
     };
 
@@ -249,12 +252,15 @@ public static class RiskReadWireMapping
         longSide.Reasons.AddRange(view.LongSide.Select(ToProto));
         var shortSide = new Proto.EntryBlockerReasons();
         shortSide.Reasons.AddRange(view.ShortSide.Select(ToProto));
+        var anyOrder = new Proto.EntryBlockerReasons();
+        anyOrder.Reasons.AddRange(view.AnyOrder.Select(ToProto));
         return new Proto.GetEntryBlockersResponse
         {
             Symbol = view.Symbol,
             Market = ToProto(view.Market),
             LongSide = longSide,
             ShortSide = shortSide,
+            AnyOrder = anyOrder,
         };
     }
 

@@ -87,6 +87,41 @@ public class InformationCollectedConsumerTests
             Task.FromResult<IReadOnlyList<WatchedSymbol>?>(symbols);
     }
 
+    // #1286, IADR-0521 決定 1: 供給口そのものが例外を投げる（実装の不具合・未捕捉の失敗の代役）。
+    private sealed class ThrowingHeldSymbols : IHeldSymbolsProvider
+    {
+        public Task<IReadOnlyList<WatchedSymbol>?> GetHeldSymbolsAsync(CancellationToken ct = default) =>
+            throw new InvalidOperationException("保有の供給口の不具合");
+    }
+
+    // #1286, IADR-0521 決定 4: 銘柄ごとに全注文の拒否を返す口（指定の無い銘柄は「拒否なし」）。
+    private sealed class AnyOrderBlockers(Dictionary<string, RejectionReason[]> blocked) : IEntryBlockersProvider
+    {
+        public List<string> Calls { get; } = [];
+
+        public Task<EntryBlockers?> GetAsync(string symbol, Market market, CancellationToken cancellationToken = default)
+        {
+            lock (Calls)
+                Calls.Add(symbol);
+            return Task.FromResult<EntryBlockers?>(new EntryBlockers([], [], blocked.TryGetValue(symbol, out var r) ? r : []));
+        }
+    }
+
+    // #1286, IADR-0521: どの銘柄もロング 10 株を保有している（実結線・未約定の新規建ては無い）。
+    private sealed class HeldTenEverywhere : IHeldPositionProvider
+    {
+        public bool IsEnabled => true;
+
+        public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<int?>(10);
+
+        public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<HeldPosition?>(new HeldPosition(10, 1_000m, 900m));
+
+        public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(string symbol, Market market, CancellationToken ct = default) =>
+            Task.FromResult<WorkingEntryOrders?>(WorkingEntryOrders.None);
+    }
+
     private sealed class CalendarStub(bool open) : IMarketCalendar
     {
         public bool IsOpen(Market market, DateTimeOffset instant) => open;
@@ -109,7 +144,8 @@ public class InformationCollectedConsumerTests
 
     private static Task<IHost> BuildAsync(
         IWatchlistProvider watchlist, IMarketCalendar calendar, ILlmCompletionClient? llm = null,
-        IHeldSymbolsProvider? heldSymbols = null) =>
+        IHeldSymbolsProvider? heldSymbols = null, IEntryBlockersProvider? entryBlockers = null,
+        IHeldPositionProvider? heldPositions = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
@@ -118,6 +154,11 @@ public class InformationCollectedConsumerTests
                 opts.Services.AddSingleton(watchlist);
                 // 🔴 FR-02, FR-04, #1286, IADR-0521: 保有銘柄の供給口（定時の購読の必須依存）。既定は NoOp＝不明＝監視銘柄だけを判断する。
                 opts.Services.AddSingleton<IHeldSymbolsProvider>(heldSymbols ?? new NoOpHeldPositionProvider());
+                // #1286, IADR-0521 決定 4: 保有のみの銘柄の全注文の可否（必須依存）。既定は NoOp＝不明＝外さない。
+                opts.Services.AddSingleton<IEntryBlockersProvider>(entryBlockers ?? new NoOpEntryBlockersProvider());
+                // #1286, IADR-0521 決定 2: 出口専用の判断は保有が分かっていなければ LLM を呼ばない。保有を与える試験だけが登録する。
+                if (heldPositions is not null)
+                    opts.Services.AddSingleton(heldPositions);
                 opts.Services.AddSingleton(llm ?? new FakeLlm(BuyJson));
                 opts.Services.AddSingleton<IDailyPolicyProvider, FakePolicy>();
                 opts.Services.AddSingleton<ISizingContextProvider, FakeSizing>();
@@ -338,7 +379,8 @@ public class InformationCollectedConsumerTests
             llm,
             new FakeHeldSymbols(heldKnown
                 ? new[] { new WatchedSymbol("AAPL", Market.UnitedStates), new WatchedSymbol("MSFT", Market.UnitedStates) }
-                : null));
+                : null),
+            heldPositions: new HeldTenEverywhere());
 
         var session = await host.TrackActivityForTest()
             .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
@@ -360,6 +402,56 @@ public class InformationCollectedConsumerTests
         {
             msftPrompts.Should().BeEmpty("保有が不明なら監視銘柄だけを判断する");
         }
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-2500, #1286, IADR-0521 決定 1: 保有の供給口が例外を投げても、このサイクルは監視銘柄だけで判断する（サイクルを落とさない）。
+    [Fact]
+    public async Task T_10_2500_保有の供給口が例外を投げても監視銘柄は判断する()
+    {
+        using var host = await BuildAsync(
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)), new CalendarStub(open: true),
+            heldSymbols: new ThrowingHeldSymbols());
+
+        var session = await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+
+        session.Sent.MessagesOf<TradeDecisionMade>().Select(d => d.Intent.Symbol).Should().Equal(["AAPL"]);
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-2501, FR-19, ADR-0062, #1286, IADR-0521 決定 4: 保有のみの銘柄のうち、全注文が審査で必ず拒否されるもの（市場の無効・禁止銘柄）は
+    // 判断しない（LLM を呼ばない）。監視銘柄は口に問い合わせない（従来どおり判断する）。拒否の無い保有のみの銘柄は判断する。
+    [Fact]
+    public async Task T_10_2501_全注文が拒否される保有のみの銘柄は判断しない_否定形()
+    {
+        var llm = new RecordingLlm("""{"action":"Hold","rationale":"様子見"}""");
+        var blockers = new AnyOrderBlockers(new()
+        {
+            ["7203"] = [RejectionReason.MarketDisabled],
+            ["TSLA"] = [RejectionReason.BannedSymbol],
+        });
+        using var host = await BuildAsync(
+            new FakeWatchlist(new WatchedSymbol("AAPL", Market.UnitedStates)), new CalendarStub(open: true), llm,
+            new FakeHeldSymbols(
+                new WatchedSymbol("7203", Market.Japan), new WatchedSymbol("TSLA", Market.UnitedStates),
+                new WatchedSymbol("MSFT", Market.UnitedStates)),
+            blockers,
+            new HeldTenEverywhere());
+
+        await host.TrackActivityForTest()
+            .InvokeMessageAndWaitAsync(new InformationCollected(Guid.NewGuid(), 3, DateTimeOffset.UtcNow));
+
+        var prompts = llm.Prompts.ToArray();
+        prompts.Should().Contain(p => p.Contains("MSFT", StringComparison.Ordinal), "拒否の無い保有のみの銘柄は判断する");
+        prompts.Should().NotContain(p => p.Contains("7203", StringComparison.Ordinal), "市場の無効");
+        prompts.Should().NotContain(p => p.Contains("TSLA", StringComparison.Ordinal), "禁止銘柄");
+        // 巡回の前に問い合わせるのは保有のみの銘柄だけ（その後の判断の中の照会〔IADR-0471〕は別）。外した銘柄は判断の中でも照会されない。
+        blockers.Calls.Take(3).Should().Equal(["7203", "TSLA", "MSFT"], "巡回の前に問い合わせるのは保有のみの銘柄だけ");
+        blockers.Calls.Count(c => c == "7203").Should().Be(1);
+        blockers.Calls.Count(c => c == "TSLA").Should().Be(1);
 
         await host.StopAsync();
     }

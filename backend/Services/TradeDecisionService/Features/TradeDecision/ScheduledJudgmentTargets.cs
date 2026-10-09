@@ -8,10 +8,15 @@ namespace TradeDecisionService.Features.TradeDecision;
 //   - 照合は監視銘柄の所属の判定（TradeDecisionPromptBuilder.WatchlistSection）と同じく、市場が一致し、銘柄は前後の空白を除いて
 //     大文字小文字を区別しない。保有のみの銘柄の重複は 1 件にまとめる。
 //   - held が null（不明）なら監視銘柄だけを返す（従来の巡回と同じ）。
+//   - 🔴 IADR-0521 決定 4: excludedHeldOnly（全注文が審査で必ず拒否される保有のみの銘柄＝市場の無効・禁止銘柄）は足さない。
+//     決済も必ず拒否されるため、判断しても LLM の費用と拒否・通知の繰り返しにしかならない。監視銘柄からは外さない（従来どおり）。
+//   - 保有のみの銘柄は末尾に並ぶため、サイクルが実行時間の上限で打ち切られたときに最初に落ちる（IADR-0521 決定 3）。
 public static class ScheduledJudgmentTargets
 {
     public static IReadOnlyList<(WatchedSymbol Symbol, bool ExitOnly)> Build(
-        IReadOnlyList<WatchedSymbol> watchlist, IReadOnlyList<WatchedSymbol>? held)
+        IReadOnlyList<WatchedSymbol> watchlist,
+        IReadOnlyList<WatchedSymbol>? held,
+        IReadOnlySet<WatchedSymbol>? excludedHeldOnly = null)
     {
         ArgumentNullException.ThrowIfNull(watchlist);
 
@@ -28,6 +33,8 @@ public static class ScheduledJudgmentTargets
 
         foreach (var h in held)
         {
+            if (excludedHeldOnly?.Contains(h) == true)
+                continue;
             if (seen.Add(Key(h)))
                 targets.Add((h, true));
         }

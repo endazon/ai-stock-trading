@@ -1859,6 +1859,11 @@
         },
         "GetEntryBlockersResponse": {
           "fields": {
+            "any_order": {
+              "number": 5,
+              "type": "EntryBlockerReasons",
+              "label": "singular"
+            },
             "long_side": {
               "number": 3,
               "type": "EntryBlockerReasons",
@@ -2545,10 +2550,12 @@
         },
         "EntryBlocker": {
           "values": {
+            "ENTRY_BLOCKER_BANNED_SYMBOL": 10,
             "ENTRY_BLOCKER_DAILY_LOSS_LIMIT_REACHED": 6,
             "ENTRY_BLOCKER_DECISION_EXIT_SAME_DAY": 8,
             "ENTRY_BLOCKER_GOOD_FAITH_VIOLATION_LIMIT_REACHED": 4,
             "ENTRY_BLOCKER_KILL_SWITCH_ACTIVE": 1,
+            "ENTRY_BLOCKER_MARKET_DISABLED": 9,
             "ENTRY_BLOCKER_MAX_DRAWDOWN_REACHED": 7,
             "ENTRY_BLOCKER_MAX_POSITIONS_EXCEEDED": 5,
             "ENTRY_BLOCKER_STOPPED_OUT_SAME_DAY": 3,

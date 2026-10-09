@@ -27,6 +27,8 @@ public class HeldOutsideWatchlistExitOnlyTests
     private const string SellJson =
         """{"action":"Sell","rationale":"利確","referencePrice":1000,"stopLossDistancePerShare":30}""";
 
+    private const string HoldJson = """{"action":"Hold","rationale":"様子見"}""";
+
     private sealed class FakeClock : IClock { public DateTimeOffset UtcNow => Now; }
 
     private sealed class RecordingLlm(string output) : ILlmCompletionClient
@@ -53,16 +55,21 @@ public class HeldOutsideWatchlistExitOnlyTests
                 BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()));
     }
 
-    // 保有照会（実結線）。未約定の新規建ては「無い」。
-    private sealed class FakeHeld(int held) : IHeldPositionProvider
+    // 保有照会（実結線）。held が null なら不明。未約定の新規建ては「無い」。
+    private sealed class FakeHeld(int? held) : IHeldPositionProvider
     {
         public bool IsEnabled => true;
 
         public Task<int?> GetSignedQuantityAsync(string symbol, Market market, CancellationToken ct = default) =>
-            Task.FromResult<int?>(held);
+            Task.FromResult(held);
 
         public Task<HeldPosition?> GetPositionAsync(string symbol, Market market, CancellationToken ct = default) =>
-            Task.FromResult<HeldPosition?>(held == 0 ? HeldPosition.None : new HeldPosition(held, 1_000m, held > 0 ? 900m : 1_100m));
+            Task.FromResult<HeldPosition?>(held switch
+            {
+                null => null,
+                0 => HeldPosition.None,
+                { } q => new HeldPosition(q, 1_000m, q > 0 ? 900m : 1_100m),
+            });
 
         public Task<WorkingEntryOrders?> GetWorkingEntryOrdersAsync(
             string symbol, Market market, CancellationToken ct = default) =>
@@ -87,17 +94,30 @@ public class HeldOutsideWatchlistExitOnlyTests
         public void Report(string trigger, DecisionSkipReason reason) => Reasons.Add(reason);
     }
 
-    private sealed record Probe(AppSvc Service, RecordingLlm Llm, RecordingHeldReporter Held, RecordingSkips Skips);
+    private sealed class RecordingForgone : IDecisionForgoneBeforeLlmReporter
+    {
+        public List<TradeDecisionForgoneBeforeLlm> Reports { get; } = [];
 
-    private static Probe Create(int held, string llmOutput)
+        public Task ReportAsync(TradeDecisionForgoneBeforeLlm forgone, CancellationToken cancellationToken = default)
+        {
+            Reports.Add(forgone);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed record Probe(
+        AppSvc Service, RecordingLlm Llm, RecordingHeldReporter Held, RecordingSkips Skips, RecordingForgone Forgone);
+
+    private static Probe Create(int? held, string llmOutput)
     {
         var llm = new RecordingLlm(llmOutput);
         var heldReporter = new RecordingHeldReporter();
         var skips = new RecordingSkips();
+        var forgone = new RecordingForgone();
         var service = new AppSvc(
             llm, new FakePolicy(), new FakeSizing(), new FakeClock(), NullLogger<AppSvc>.Instance,
-            heldPosition: new FakeHeld(held), skipReporter: skips, heldReporter: heldReporter);
-        return new Probe(service, llm, heldReporter, skips);
+            heldPosition: new FakeHeld(held), skipReporter: skips, heldReporter: heldReporter, forgoneReporter: forgone);
+        return new Probe(service, llm, heldReporter, skips, forgone);
     }
 
     private static DecisionTrigger Trigger(bool exitOnly) =>
@@ -136,16 +156,27 @@ public class HeldOutsideWatchlistExitOnlyTests
             .Which.Reason.Should().Be(nameof(DecisionSkipReason.ExitOnlyOpenOutsideWatchlist), "判断後の見送りとして基準値を進める");
     }
 
-    // T-10-2494（判断の間に保有が 0）: 保有が 0 になった出口専用の判断で LLM が買いを返しても、新規建てにしない。
-    [Fact]
-    public async Task T_10_2494_保有が0になった出口専用の判断で買いを返しても新規建てにしない_否定形()
+    // 🔴 T-10-2502, #1286, IADR-0521 決定 2: 出口専用の判断で、判断の前に引いた保有が 0 または不明なら LLM を呼ばずに見送る
+    // （決済は成立せず、新規建ては出口専用で出さない）。LLM を呼ぶ前の見送りとして台帳と計上へ 1 件ずつ残す。出口専用でない判断は呼ぶ。
+    [Theory]
+    [InlineData(0)]
+    [InlineData(null)]
+    public async Task T_10_2502_出口専用の判断で保有が0または不明ならLLMを呼ばずに見送る_否定形(int? held)
     {
-        var probe = Create(0, BuyJson);
+        var probe = Create(held, BuyJson);
 
         var decision = await probe.Service.DecideAsync(Trigger(exitOnly: true), TestContext.Current.CancellationToken);
 
         decision.Should().BeNull();
-        probe.Skips.Reasons.Should().Equal(DecisionSkipReason.ExitOnlyOpenOutsideWatchlist);
+        probe.Llm.Prompts.Should().BeEmpty("LLM を呼ばない");
+        probe.Skips.Reasons.Should().Equal(DecisionSkipReason.ExitOnlyWithoutHolding);
+        probe.Forgone.Reports.Should().ContainSingle()
+            .Which.Reason.Should().Be(DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding);
+        probe.Held.Reports.Should().BeEmpty("判断をしていない見送りで急変の基準値を進めない");
+
+        var watched = Create(held, HoldJson);
+        await watched.Service.DecideAsync(Trigger(exitOnly: false), TestContext.Current.CancellationToken);
+        watched.Llm.Prompts.Should().NotBeEmpty("出口専用でない判断は従来どおり LLM を呼ぶ");
     }
 
     // T-10-2495: 監視銘柄の判断（ExitOnly=false）は変えない —— 保有中の買い増しは従来どおり新規建ての発注意図になり、

@@ -92,3 +92,17 @@ project-planning `origin/main` の `projects/ai-stock-trading/` を読んだ。
 - `dotnet build backend/backend.slnx`・`dotnet test backend/backend.slnx`・`dotnet format backend/backend.slnx --verify-no-changes`。
 - repo の node 検査（`scripts/`）。
 - 変異 H1（出口専用の見送りを外す）→ T-10-2494・T-10-2492 が赤。H2（保有を足さない）→ T-10-2492 が赤。いずれも戻して緑。
+
+## ［2026-10-09 追記 / #1286］独立監査（8e955b21・条件付き GO）の 🟡 への対応
+
+| 指摘 | 対応 | 試験 |
+| --- | --- | --- |
+| 🟡1 市場の無効（ADR-0062）・禁止銘柄の保有のみの銘柄を毎巡回判断する | 審査と同じ述語 `OrderStateBlockers` を切り出し、新規建ての可否の口に `AnyOrder` を追加。定時の購読が保有のみの銘柄だけ照会して外す（IADR-0521 決定 4） | T-10-2497・T-10-2498・T-10-2501 |
+| 🟡2 予算の警告が `TradeCycle__MaxWatchedSymbols` の見直しを勧める（Helm の README と矛盾） | 判断対象の総数と内訳・consumer_timeout の制約を名指す文言へ。比べる数の試験を追加（変異 M4 が赤） | T-10-2499 |
+| 🟡3 保有の照会が例外の捕捉の外 | 例外も監視銘柄だけの判断へ縮退（IADR-0521 決定 5） | T-10-2500 |
+| 🟡4 出口専用の決済の印が記録に無い | 契約を変えず、ログ行に `exitOnly` を残す。残余リスクとして IADR-0521 に記録 | （ログのみ） |
+| 🟡5 保有 0 でも LLM を呼ぶ | 保有 0・不明なら LLM を呼ぶ前に見送る（`ExitOnlyWithoutHolding`。語彙 20 値・LLM 前 8 値） | T-10-2502 |
+
+追随した文書（見送りの語彙・口の応答を列挙するもの。`git grep -n "EntryCapacityBelowOneShare" -- docs` と `git grep -n "entry-blockers" -- docs` で引いた）:
+`docs/observability/observability.md`・`docs/data/audit-events.md`・`docs/api/events-and-ports.md`・`docs/operations/nightly-ledger-summary-runbook.md`・
+`docs/api/east-west-grpc.md`・`docs/functional/FR-10_risk-controls.md`・`docs/tests/FR-10_risk-controls-tests.md`。proto の baseline（`scripts/proto-contract-baseline.json`）を更新した。

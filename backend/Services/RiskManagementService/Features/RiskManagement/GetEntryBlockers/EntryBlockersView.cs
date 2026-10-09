@@ -10,4 +10,7 @@ public sealed record EntryBlockersView(
     string Symbol,
     Market Market,
     IReadOnlyList<RejectionReason> LongSide,
-    IReadOnlyList<RejectionReason> ShortSide);
+    IReadOnlyList<RejectionReason> ShortSide,
+    // 🔴 #1286, IADR-0521 決定 4: 新規建て・決済を問わず全注文を拒否する理由（MarketDisabled・BannedSymbol。OrderStateBlockers）。
+    // 追加の項目（非破壊）。旧い受け手は読まない。
+    IReadOnlyList<RejectionReason> AnyOrder);

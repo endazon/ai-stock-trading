@@ -127,4 +127,11 @@ public enum DecisionSkipReason
     /// （決済は対象外）。<c>TradeDecisionHeld</c> の理由にもこの名前が載る。監視銘柄の外への新規建ての可否は計画に定めが無いため、出口に限る。
     /// </summary>
     ExitOnlyOpenOutsideWatchlist,
+
+    /// <summary>
+    /// FR-02, FR-04, #1286, IADR-0521 決定 2: <b>LLM を呼ぶ前</b>の見送り。監視銘柄の外の保有銘柄（保有のみ）を出口専用で判断しようとしたが、
+    /// 判断の前に引いた保有が 0 または不明だった（決済は保有が分かっていなければ成立せず、新規建ては出口専用で出さないため、LLM の結論に依らず
+    /// 発注意図は作られない）。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </summary>
+    ExitOnlyWithoutHolding,
 }

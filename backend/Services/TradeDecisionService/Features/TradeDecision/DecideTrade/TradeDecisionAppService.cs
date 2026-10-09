@@ -244,6 +244,7 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.EntryBlockedByRiskControls => DecisionSkipReason.EntryBlockedByRiskControls,
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional => DecisionSkipReason.EntryCapacityBelowMinimumNotional,
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare => DecisionSkipReason.EntryCapacityBelowOneShare,
+        DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding => DecisionSkipReason.ExitOnlyWithoutHolding,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -355,6 +356,17 @@ public sealed class TradeDecisionAppService(
         // 実測: 指値 715 株が板に残っている間に、判断は「保有なし」を前提に同じ銘柄を重ねて買った。null＝不明
         // （プロンプトは「保有なし」と書かない。実結線なら下で新規建てを見送る）。
         var workingEntries = await GetWorkingEntryOrdersSafeAsync(trigger, cancellationToken).ConfigureAwait(false);
+
+        // 🔴 FR-02, FR-04, #1286, IADR-0521 決定 2: 監視銘柄の外の保有銘柄（出口専用）で、保有が 0 または不明なら LLM を呼ばずに見送る。
+        // 決済は保有が分かっていなければ成立せず（IADR-0119）、新規建ては出口専用で出さないため、LLM の結論に依らず発注意図は作られない。
+        if (trigger.ExitOnly && heldPosition is not { IsHeld: true })
+        {
+            logger.LogInformation(
+                "出口専用の判断で保有が 0 または不明のため LLM を呼ばずに見送り（IADR-0521）: {Symbol} held={Held}",
+                trigger.Symbol, heldPosition is null ? "不明" : heldPosition.SignedQuantity);
+            return await SkipBeforeLlmAsync(trigger, DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         int? preFetchedHeldQuantity = null;
         if (!fxReading.UsableForEntry)
