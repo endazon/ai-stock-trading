@@ -5,6 +5,8 @@ using TradeDecisionService.Infrastructure.ExternalServices;
 using TradeDecisionService.Features.TradeDecision;
 using TradeDecisionService.Domain;
 using AwesomeAssertions;
+using AiStockTrading.Shared.Infrastructure.Composable.Llm;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -27,9 +29,10 @@ public class HttpLlmCompletionClientFallbackBanTests
     private static HttpLlmCompletionClient Client(
         HttpMessageHandler handler,
         RecordingGovernanceReporter? governance = null,
-        string purpose = LlmPurposes.TradeDecision) =>
+        string purpose = LlmPurposes.TradeDecision,
+        ILogger<HttpLlmCompletionClient>? logger = null) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://llm-gateway") },
-            NullLogger<HttpLlmCompletionClient>.Instance, "internal", purpose,
+            logger ?? NullLogger<HttpLlmCompletionClient>.Instance, "internal", purpose,
             new NoOpLlmUsageReporter(), logPrompts: false,
             governanceReporter: governance ?? new RecordingGovernanceReporter());
 
@@ -55,6 +58,48 @@ public class HttpLlmCompletionClientFallbackBanTests
         TradeDecisionParser.Parse(output).Action.Should().Be(TradeAction.Buy);
         governance.Skips.Should().BeEmpty();
         governance.Fallbacks.Should().BeEmpty();
+    }
+
+    // ---- #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代は受けて警告を出す ----------------
+
+    // 基盤の切り替え前は応答が直前世代（claude-sonnet-5）を名乗る。取引判断は止めずに本文を判断へ渡し、
+    // 直前世代で受けたことを Warning で 1 回だけ知らせる（#1296 の外す条件の観測手段）。
+    // 🔴 警告の門はプロセス共有（`LlmPreviousGenerationWarning.Shared`）。本テスト群で直前世代を返すのは本テストだけである。
+    [Fact]
+    public async Task 直前世代が応答したら本文を判断へ渡し_移行期間の警告を1回だけ出す()
+    {
+        var governance = new RecordingGovernanceReporter();
+        var logger = new WarningCapture();
+
+        var first = await Client(new StubHandler(HttpStatusCode.OK, Body(LlmAssignments.Sonnet5)), governance, logger: logger)
+            .CompleteAsync("p");
+        var second = await Client(new StubHandler(HttpStatusCode.OK, Body(LlmAssignments.Sonnet5)), governance, logger: logger)
+            .CompleteAsync("p");
+
+        TradeDecisionParser.Parse(first).Action.Should().Be(TradeAction.Buy);
+        TradeDecisionParser.Parse(second).Action.Should().Be(TradeAction.Buy);
+        governance.Skips.Should().BeEmpty();
+        governance.Fallbacks.Should().BeEmpty();
+        logger.Warnings.Where(m => m.Contains(LlmPreviousGenerationWarning.Marker)).Should().ContainSingle()
+            .Which.Should().Contain(LlmAssignments.Sonnet5).And.Contain(LlmPurposes.TradeDecision).And.Contain("#1296");
+    }
+
+    private sealed class WarningCapture : ILogger<HttpLlmCompletionClient>
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _warnings = new();
+
+        public IReadOnlyCollection<string> Warnings => _warnings.ToArray();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+                _warnings.Enqueue(formatter(state, exception));
+        }
     }
 
     // ---- 🔴 否定形: ピン以外が応答したら発注へ進まない ----------------------------------------

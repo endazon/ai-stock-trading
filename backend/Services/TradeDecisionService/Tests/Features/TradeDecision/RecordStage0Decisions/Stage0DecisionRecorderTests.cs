@@ -70,7 +70,8 @@ public class Stage0DecisionRecorderTests
             Func<IAsOfDecisionInputProvider, IAsOfDecisionInputProvider>? wrapInputs = null,
             IReadOnlyList<string>? screening = null,
             Func<string?, string?>? effectiveModel = null,
-            DecisionOrchestrationOptions? production = null)
+            DecisionOrchestrationOptions? production = null,
+            LlmPriceTable? prices = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
@@ -82,10 +83,19 @@ public class Stage0DecisionRecorderTests
             wrapInputs is null
                 ? new StubInputProvider(notReconstructable, asOfWatchlist)
                 : wrapInputs(new StubInputProvider(notReconstructable, asOfWatchlist)),
-            sink, collector, Prices(),
+            sink, collector, prices ?? Prices(),
             new FixedTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink, reporter);
     }
+
+    // #1295, IADR-0524: プロンプト長の 2 段を持つ単価表。閾値は claude-haiku-5-5 の実際の境界（入力 100,000 トークン
+    // **超**で第 2 段）。単価は計算しやすい任意値（第 1 段 1 円・第 2 段 10 円 / 1k）。
+    private static LlmPriceTable TieredPrices() =>
+        LlmPriceTable.FromRows(
+        [
+            new LlmPriceRow("claude-sonnet-5-5", "1", "1", "100000", "10", "10"),
+            new LlmPriceRow("claude-haiku-5-5", "1", "1", "100000", "10", "10"),
+        ]);
 
     private static string Decision(string action) =>
         $$"""{"action":"{{action}}","rationale":"根拠","referencePrice":100,"stopLossDistancePerShare":2}""";
@@ -164,6 +174,38 @@ public class Stage0DecisionRecorderTests
         estimate.CallCount.Should().Be(8);
         estimate.TotalJpy.Should().Be(16m);
         llm.CallCount.Should().Be(0);
+    }
+
+    // #1295, IADR-0524: 見積りの単価は層ごとの **1 回あたりの入力トークン量**で段を引く（閾値を超えれば第 2 段）。
+    // 本判断と一次（claude-haiku-5-5）の両方の層で、入力トークン量が段の判定へ渡っていることを固定する
+    // （片方を落とすと片方の行が赤）。境界ちょうど 100,000 は第 1 段（「100,000 超」で第 2 段）。
+    // 銘柄 1 × 平日 2 × 1 日 1 回 → 本判断 2 回（多数決 1）・一次 2 回。出力は 1,000 トークン。
+    [Theory]
+    // 本判断の入力 / 一次の入力 / 期待額
+    [InlineData(100_000, 100_000, 404.0)]     // 両層とも第 1 段（境界ちょうど）: 2×(100+1) + 2×(100+1)
+    [InlineData(100_001, 100_000, 2222.02)]   // 本判断だけ第 2 段: 2×(100.001×10 + 1×10) + 2×(100+1)
+    [InlineData(100_000, 100_001, 2222.02)]   // 一次だけ第 2 段:   2×(100+1) + 2×(100.001×10 + 1×10)
+    public void 見積りは層ごとの入力トークン量でプロンプト長の段を引く(int decisionInput, int screeningInput, double expected)
+    {
+        var (recorder, _, _, _) = Build([], prices: TieredPrices());
+        var options = Options();
+        options.InputTokensPerDecision = decisionInput;
+        options.ScreeningInputTokensPerDecision = screeningInput;
+
+        recorder.Estimate(options).TotalJpy.Should().Be((decimal)expected);
+    }
+
+    // #1295, IADR-0524: 実費（`CostOf`）は**計測ごとの入力トークン数**で段を引く（要求ごとに決まる）。
+    [Fact]
+    public void 実費は計測ごとの入力トークン数でプロンプト長の段を引く()
+    {
+        LlmUsage[] usages =
+        [
+            new(LlmPurposes.TradeDecisionScreening, 100_000, 1_000, "claude-haiku-5-5"), // 境界ちょうど＝第 1 段: 100 + 1
+            new(LlmPurposes.TradeDecisionScreening, 100_001, 1_000, "claude-haiku-5-5"), // 100,000 超＝第 2 段: 1000.01 + 10
+        ];
+
+        Stage0RecordingUsageCollector.CostOf(usages, TieredPrices()).Should().Be(1111.01m);
     }
 
     // 肯定形（承認ゲートの対）: 承認が一致すれば実行され、記録が保存される。

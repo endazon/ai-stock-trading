@@ -106,15 +106,10 @@ public sealed class LlmPriceTable
     public bool IsEffectivelyZero => _perModel.Count == 0 && _fallback == LlmPrice.Zero;
 
     /// <summary>
-    /// 実効モデル名から単価を引く。未知・null・空は安全側（過小計上を避ける側）へ倒す。
-    /// 第 2 段を持つ行は**第 1 段**（閾値以下）を返す —— 入力トークン数が分かる計上では
-    /// <see cref="Resolve(string?, int)"/> を使う。
-    /// </summary>
-    public LlmPrice Resolve(string? model) => Resolve(model, inputTokens: 0);
-
-    /// <summary>
-    /// 実効モデル名と**その要求の入力トークン数**から単価を引く（#1295, IADR-0524）。入力トークン数が行の閾値を
-    /// 超えれば第 2 段、それ以外は第 1 段。第 2 段を持たない行・未知モデル・表が空のときは入力トークン数に依らない。
+    /// 実効モデル名と**その要求の入力トークン数**から単価を引く（#1295, IADR-0524）。未知・null・空は安全側
+    /// （過小計上を避ける側）へ倒す。入力トークン数が行の閾値を超えれば第 2 段、それ以外は第 1 段。
+    /// 第 2 段を持たない行・未知モデル・表が空のときは入力トークン数に依らない。
+    /// 🔴 入力トークン数を取らない多重定義は置かない（呼び出し側が段の判定を黙って落とせないようにする）。
     /// </summary>
     public LlmPrice Resolve(string? model, int inputTokens)
     {

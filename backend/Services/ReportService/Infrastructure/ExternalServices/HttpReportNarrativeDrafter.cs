@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.Shared.Contracts.Logging;
 using ReportService.Features.Reports;
 using ReportService.Domain;
@@ -184,6 +185,8 @@ public sealed class HttpReportNarrativeDrafter(
             // ピン以外が答えたなら②警告通知・③月報集計の供給元へ流す。
             // **沈黙のフォールバックを作らないことが決定 4 の目的である。**
             var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, dto.Model);
+            // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代を受けたことを用途とモデルの組ごとに 1 回だけ警告する。
+            LlmPreviousGenerationWarning.Shared.WarnOnce(logger, purpose, evaluation);
             modelUsage = new LlmModelUsage(
                 purpose, evaluation.ExpectedModel, evaluation.EffectiveModel, evaluation.Outcome.ToString());
 
