@@ -114,6 +114,23 @@ public class TradeHistoryViewBuilderTests
             .Should().Be("始値が支持線で反発。出来高増。");
     }
 
+    // 🔴 T-10-2522（FR-06, FR-11, #1290, IADR-0525 決定 4）: 判断の根拠文に付いた化けの目印（先頭に前置）は、日報の明細の
+    // 「判断根拠（要約）」の列へそのまま出る（明細は記録の転記であり、目印を落とさない）。
+    [Fact]
+    public void T_10_2522_判断根拠の化けの目印は日報の明細へそのまま出る()
+    {
+        const string marked = "⚠ 判断理由に文字化けの疑い: 監視銘HeaderItemの押し目で反発。";
+        var decisionId = Guid.NewGuid();
+
+        var view = TradeHistoryViewBuilder.Build(
+            [Fill(TradeSide.Buy, 100, 2_500m, 0, decisionId)], Assumptions(),
+            new Dictionary<Guid, string> { [decisionId] = marked });
+        var md = TradeHistoryRenderer.RenderMarkdown(view);
+
+        view.Lines.Should().ContainSingle().Which.RationaleSummary.Should().Be(marked);
+        md.Should().Contain($"| {marked} |");
+    }
+
     // 🔴 **否定形（上の肯定形と対）**: 相関できない約定へ、別の記録を当てはめない。
     [Fact]
     public void 相関できない約定の判断根拠は未供給にする()

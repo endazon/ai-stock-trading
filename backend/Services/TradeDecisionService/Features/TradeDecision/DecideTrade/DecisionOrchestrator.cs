@@ -48,7 +48,7 @@ public sealed class DecisionOrchestrator(
             // 打ち切られ、関心ありの銘柄が本判断に届かない（2026-09-16 開場中の実測）。価格・損切り幅は二次が改めて出す。
             var screen = TradeDecisionParser.ParseScreening(screenOutput);
 
-            // 🔴 FR-04, FR-11, #1290, IADR-0524 決定 2/3: 一次の根拠文の文字化けの疑いを**受け取った地点で 1 回だけ**検出し、
+            // 🔴 FR-04, FR-11, #1290, IADR-0525 決定 2/3: 一次の根拠文の文字化けの疑いを**受け取った地点で 1 回だけ**検出し、
             // 印（ScreeningRationaleGarbleSuspected）として運ぶ（転記先ごとに検出し直さない）。🔴 action は変えない（Hold に倒さない）。
             // 解析不能の根拠は安全既定の定型文でありモデルの文ではないため検出しない。
             screeningGarbleSuspected = !screen.IsUnparseable && RationaleGarbleDetector.IsSuspected(screen.Rationale);
@@ -66,7 +66,7 @@ public sealed class DecisionOrchestrator(
                 // #337（#290 吸収）, IADR-0248: **解析不能と見送りを区別して記録する。** どちらも打ち切り
                 // （安全側・取引しない）だが、解析不能は出力の形の退行を示す信号であり、見送りに混ぜると
                 // 監査から見えなくなる。
-                // #1290, IADR-0524 決定 3: 見送りの根拠は一次の根拠文そのものが下流（FR-11 の判断の記録・Stage 0 の記録）へ渡る。
+                // #1290, IADR-0525 決定 3: 見送りの根拠は一次の根拠文そのものが下流（FR-11 の判断の記録・Stage 0 の記録）へ渡る。
                 // 疑いがあれば、ここで 1 回だけ目印を前置する（原文は書き換えない）。
                 var held = screen.AsHold with
                 {
@@ -81,9 +81,10 @@ public sealed class DecisionOrchestrator(
                 }
                 else
                 {
+                    // #1290（PR #1298 のレビュー）: 根拠文はモデル出力のため、化けの警告ログと同じく 1 行へ正規化する。
                     logger.LogInformation(
                         "一次スクリーニングで見送り（二次判断をスキップ・費用統制）: rationale={Rationale}",
-                        held.Rationale);
+                        LogSanitizer.Sanitize(held.Rationale));
                 }
 
                 return new OrchestratedDecision(
@@ -128,10 +129,25 @@ public sealed class DecisionOrchestrator(
             "二次多数決: total={Total} agreement={Agreement} action={Action} unparseable={Unparseable}",
             aggregated.TotalVotes, aggregated.AgreementVotes, aggregated.Decision.Action, unparseableVotes);
 
+        // 🔴 FR-04, FR-11, #1290, IADR-0525 決定 4（利用者裁定 (c) の趣旨・2026-10-10 追記）: 本判断の根拠文は TradeDecisionMade.Rationale として
+        // 監査台帳・報告書へ載る。多数決で採った根拠文（下流へ渡る 1 本）に**ここで 1 回だけ**検出を当て、疑いがあれば Warning を出し、
+        // 根拠文の先頭に目印を付ける（原文は書き換えない・転記先では検出し直さない）。🔴 action は変えない。各票の根拠文（Stage 0 の生の票）は対象外。
+        // 全票が解析不能のときの根拠は安全既定の定型文であり、検出しても疑いは出ない。
+        var decision = aggregated.Decision;
+        var decisionGarbleSuspected = RationaleGarbleDetector.IsSuspected(decision.Rationale);
+        if (decisionGarbleSuspected)
+        {
+            logger.LogWarning(
+                "本判断の判断理由に文字化けの疑い（action は変えない・転記に目印を付ける・#1290）: action={Action} rationale={Rationale}",
+                decision.Action, LogSanitizer.Sanitize(decision.Rationale));
+            decision = decision with { Rationale = RationaleGarbleDetector.Mark(decision.Rationale, suspected: true) };
+        }
+
         return new OrchestratedDecision(
-            aggregated.Decision, aggregated.TotalVotes, aggregated.AgreementVotes, ScreenedOut: false,
+            decision, aggregated.TotalVotes, aggregated.AgreementVotes, ScreenedOut: false,
             UnparseableVotes: unparseableVotes, ScreeningUnparseable: false,
-            ScreeningRationaleGarbleSuspected: screeningGarbleSuspected);
+            ScreeningRationaleGarbleSuspected: screeningGarbleSuspected,
+            DecisionRationaleGarbleSuspected: decisionGarbleSuspected);
     }
 }
 
@@ -139,9 +155,12 @@ public sealed class DecisionOrchestrator(
 // ScreenedOut=true は一次スクリーニングで打ち切ったこと（TotalVotes=0）を表す。
 // #337（#290 吸収）, IADR-0248: UnparseableVotes は二次本判断のうち構造化出力を解析できなかった票数、
 // ScreeningUnparseable は一次の打ち切りが「解析不能」由来だったこと（見送りとの区別・FR-11 記録用）。
-// 🔴 FR-04, FR-11, #1290, IADR-0524 決定 2/3: ScreeningRationaleGarbleSuspected は一次の根拠文に文字化けの疑いがあったこと
+// 🔴 FR-04, FR-11, #1290, IADR-0525 決定 2/3: ScreeningRationaleGarbleSuspected は一次の根拠文に文字化けの疑いがあったこと
 // （一次を走らせなかった・解析不能なら false）。見送り（ScreenedOut）のときは Decision.Rationale に目印を前置済み。
 // 本判断へ進んだときは Decision.Rationale は本判断の根拠であり、印は一次の根拠文についての記録に留まる。
+// 🔴 #1290, IADR-0525 決定 4: DecisionRationaleGarbleSuspected は本判断（多数決で採った根拠文）に疑いがあったこと。true のとき
+// Decision.Rationale に目印を前置済みで、TradeDecisionMade.Rationale を通じて監査台帳・報告書へそのまま載る。
 public sealed record OrchestratedDecision(
     LlmDecision Decision, int TotalVotes, int AgreementVotes, bool ScreenedOut,
-    int UnparseableVotes = 0, bool ScreeningUnparseable = false, bool ScreeningRationaleGarbleSuspected = false);
+    int UnparseableVotes = 0, bool ScreeningUnparseable = false, bool ScreeningRationaleGarbleSuspected = false,
+    bool DecisionRationaleGarbleSuspected = false);

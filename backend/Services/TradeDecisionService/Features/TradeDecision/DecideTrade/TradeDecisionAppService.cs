@@ -544,16 +544,20 @@ public sealed class TradeDecisionAppService(
         // FR-11: プロンプト・LLM 出力・根拠・票数・スクリーニング可否を記録する（永続監査は #17 連携）。
         // #337（#290 吸収）, IADR-0248: 解析不能（unparseableVotes / screeningUnparseable）は見送りと区別して残す。
         // FR-08, FR-11, #1283, IADR-0072: 参考情報（RAG）の取得の状態と注入した件数も残す（取得の失敗と「本当に無い」を後から区別する）。
-        // 🔴 FR-11, #1290, IADR-0524 決定 3: 一次の根拠文の文字化けの疑い（オーケストレータが受け取った地点で 1 回だけ検出した印）を残す。
+        // 🔴 FR-11, #1290, IADR-0525 決定 3: 一次の根拠文の文字化けの疑い（オーケストレータが受け取った地点で 1 回だけ検出した印）を残す。
         // 見送り（screenedOut=true）の rationale は一次の根拠文で、疑いがあれば目印が前置済み（ここで検出し直さない）。
+        // #1290, IADR-0525 決定 4: 本判断の根拠文の疑い（decisionRationaleGarble）も同じく残す。本判断の根拠文は目印が前置済みのまま
+        // TradeDecisionMade.Rationale（監査台帳・報告書の唯一の供給元）へ渡る。
         logger.LogInformation(
             "LLM 判断: {Symbol} action={Action} rationale={Rationale} votes={Agreement}/{Total} screenedOut={ScreenedOut} "
                 + "unparseableVotes={UnparseableVotes} screeningUnparseable={ScreeningUnparseable} "
-                + "ragContext={RagContext} ragReferences={RagReferences} screeningRationaleGarble={ScreeningRationaleGarble}",
+                + "ragContext={RagContext} ragReferences={RagReferences} screeningRationaleGarble={ScreeningRationaleGarble} "
+                + "decisionRationaleGarble={DecisionRationaleGarble}",
             trigger.Symbol, decision.Action, decision.Rationale,
             orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut,
             orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable,
-            ragContext, retrieved.Count, orchestrated.ScreeningRationaleGarbleSuspected);
+            ragContext, retrieved.Count, orchestrated.ScreeningRationaleGarbleSuspected,
+            orchestrated.DecisionRationaleGarbleSuspected);
 
         // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1: ここから先の見送りは AI 判断の後である（基準点になる）。
         var judgedPrice = JudgedPriceOf(orchestrated, currentPrice, trigger);

@@ -361,7 +361,7 @@ public class DecisionOrchestratorTests
         result.UnparseableVotes.Should().Be(unparseable);
     }
 
-    // 🔴 T-10-2515（#1290, IADR-0524 決定 2/3）: 一次の根拠文に文字化けの疑いがあれば、受け取った地点で 1 回だけ検出して
+    // 🔴 T-10-2515（#1290, IADR-0525 決定 2/3）: 一次の根拠文に文字化けの疑いがあれば、受け取った地点で 1 回だけ検出して
     // Warning を 1 行出し、印を運ぶ。見送りなら根拠に目印を前置する（原文は残す）。🔴 action は変えない（関心ありなら本判断へ進む）。
     [Theory]
     [InlineData("Hold")]
@@ -414,6 +414,37 @@ public class DecisionOrchestratorTests
         result.ScreeningRationaleGarbleSuspected.Should().BeFalse();
         result.Decision.Rationale.Should().NotContain(RationaleGarbleDetector.Marker);
         logger.Entries.Should().NotContain(e => e.Message.Contains("文字化けの疑い", StringComparison.Ordinal));
+    }
+
+    // 🔴 T-10-2519（#1290, IADR-0525 決定 4）: 本判断の多数決で採った根拠文に化けの疑いがあれば、1 回だけ検出して Warning を 1 行出し、
+    // 印を立てて根拠文に目印を前置する（TradeDecisionMade.Rationale へそのまま渡る）。🔴 action・票数は変えない。化けていなければ何も出ない。
+    [Theory]
+    [InlineData("監視銘HeaderItemの押し目で反発", true)]
+    [InlineData("AAPL はウォッチリストの押し目で反発（RSI 低位）", false)]
+    public async Task T_10_2519_本判断の根拠文の化けは警告と目印を出しactionは変えない(string rationale, bool suspected)
+    {
+        var vote = $$"""{"action":"Buy","rationale":"{{rationale}}","referencePrice":1000,"stopLossDistancePerShare":30}""";
+        var llm = new SequencedLlm(vote, vote, vote);
+        var logger = new CapturingLogger();
+        var orchestrator = new DecisionOrchestrator(llm, DecisionOrchestrationOptions.Default with { VoteCount = 3 }, logger);
+
+        var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: null);
+
+        result.Decision.Action.Should().Be(TradeAction.Buy, "化けを理由に action を変えない");
+        result.AgreementVotes.Should().Be(3);
+        result.DecisionRationaleGarbleSuspected.Should().Be(suspected);
+        result.ScreeningRationaleGarbleSuspected.Should().BeFalse();
+        var warnings = logger.Entries.Where(e => e.Message.Contains("文字化けの疑い", StringComparison.Ordinal)).ToList();
+        if (suspected)
+        {
+            result.Decision.Rationale.Should().Be($"{RationaleGarbleDetector.Marker}: {rationale}");
+            warnings.Should().ContainSingle("検出は多数決の後に 1 回だけ").Which.Level.Should().Be(LogLevel.Warning);
+        }
+        else
+        {
+            result.Decision.Rationale.Should().Be(rationale);
+            warnings.Should().BeEmpty();
+        }
     }
 
     private sealed record LogEntry(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> Values);

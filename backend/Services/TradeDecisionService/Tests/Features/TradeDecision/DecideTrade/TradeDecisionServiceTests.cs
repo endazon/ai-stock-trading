@@ -553,7 +553,7 @@ public class TradeDecisionServiceTests
             "構造化の値には例外のメッセージを載せない（原因は型名だけ）");
     }
 
-    // 🔴 T-10-2516（#1290, IADR-0524 決定 3）: 一次の見送りの根拠文に化けの疑いがあれば、判断の記録（FR-11。Hold の唯一の監査記録）の
+    // 🔴 T-10-2516（#1290, IADR-0525 決定 3）: 一次の見送りの根拠文に化けの疑いがあれば、判断の記録（FR-11。Hold の唯一の監査記録）の
     // rationale に目印が付き、screeningRationaleGarble=True が載る。見送り自体は変えない（LLM の Hold のとおり）。疑いが無ければ False。
     [Theory]
     [InlineData("監視銘HeaderItemに含まれるが材料なし", true)]
@@ -572,6 +572,31 @@ public class TradeDecisionServiceTests
         record.Values["ScreenedOut"].Should().Be(true);
         record.Values["ScreeningRationaleGarble"].Should().Be(suspected);
         record.Values["Rationale"].Should().Be(suspected ? $"{RationaleGarbleDetector.Marker}: {rationale}" : rationale);
+    }
+
+    // 🔴 T-10-2520（#1290, IADR-0525 決定 4）: 本判断の根拠文に化けの疑いがあれば、TradeDecisionMade.Rationale（監査台帳・報告書の唯一の供給元）の
+    // 先頭に目印が付き、判断の記録に decisionRationaleGarble=True が載る。🔴 発注意図（売買・数量）は変えない。化けていなければ原文のまま。
+    [Theory]
+    [InlineData("監視銘HeaderItemの押し目で反発", true)]
+    [InlineData("押し目で反発", false)]
+    public async Task T_10_2520_本判断の根拠文の化けはTradeDecisionMadeの根拠に目印を付け発注意図は変えない(string rationale, bool suspected)
+    {
+        var llm = new CapturingLlm(
+            $$"""{"action":"Buy","rationale":"{{rationale}}","referencePrice":1000,"stopLossDistancePerShare":30}""");
+        var log = new StateLogger();
+        var baseline = await new AppSvc(new CapturingLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), NullLogger<AppSvc>.Instance).DecideAsync(Trigger());
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()), new FakeClock(), log);
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().NotBeNull();
+        decision!.Intent.Side.Should().Be(baseline!.Intent.Side);
+        decision.Intent.Quantity.Should().Be(baseline.Intent.Quantity, "化けを理由に数量を変えない");
+        decision.Rationale.Should().Be(suspected ? $"{RationaleGarbleDetector.Marker}: {rationale}" : rationale);
+        var record = DecisionRecord(log);
+        record.Values["DecisionRationaleGarble"].Should().Be(suspected);
+        record.Values["ScreeningRationaleGarble"].Should().Be(false);
     }
 
     // 取得の最中に呼び出し元が取り消す取得ポート（T-10-2478）。取り消しまで判断が進んだことを Calls で確かめる。

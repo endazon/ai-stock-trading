@@ -4,7 +4,7 @@ using Xunit;
 
 namespace TradeDecisionService.Tests;
 
-// 🔴 FR-04, FR-11, #1290, IADR-0524 決定 2: 根拠文の文字化けの疑いの検出（純関数）。
+// 🔴 FR-04, FR-11, #1290, IADR-0525 決定 2: 根拠文の文字化けの疑いの検出（純関数）。
 // 陽性は PoC（2026-10-06〜09）の一次スクリーニングの実測の形。陰性は正当な英字（銘柄・略語・出力形式の語・URL・数値・全角英数字）を含む日本語。
 public class RationaleGarbleDetectorTests
 {

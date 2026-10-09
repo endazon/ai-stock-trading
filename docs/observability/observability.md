@@ -7,11 +7,11 @@ updated: 2026-10-10
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06]
-adrs: [ADR-0006, ADR-0045]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens]
-issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06, FR-11]
+adrs: [ADR-0006, ADR-0045, ADR-0003]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble]
+issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290]
 -->
 
 
@@ -113,6 +113,23 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
   方針の改訂の上限時間は既定 95 秒で、基盤のゲートウェイが上流の LLM を待つ 100 秒（固定）が実効の天井になる。出力の速さを毎秒 50〜80 トークンとすると
   約 4,700〜7,600 トークンで時間切れ（案なし・警告「方針の改訂 LLM がタイムアウトしました」）になり、8192 の全量には届かない。
   🔴 打ち切りの頻度の閾値やアラートは置いていない（実測してから決める。下の注記と同じ理由）。
+- **判断理由（根拠文）の文字化けの疑い**: 取引判断の LLM の根拠文に化けの疑い（置換文字 U+FFFD、漢字・かなに接するキリル文字、漢字に挟まれた小文字を含む英字列）が
+  あると、根拠文を受け取った地点で 1 回だけ判定し、警告ログを 1 行出す。🔴 判断（action・数量）は変えない。疑いのある根拠文は、先頭に目印
+  「⚠ 判断理由に文字化けの疑い: 」を付けて転記する（原文は残す）。Loki での引き方:
+  - 件数を数える（1 件の化けにつき 1 行）: `{namespace="ai-stock-trading"} |= "判断理由に文字化けの疑い（action は変えない"`。
+    一次スクリーニングは「一次スクリーニングの判断理由に文字化けの疑い」、本判断は「本判断の判断理由に文字化けの疑い」で始まる。
+  - 判断の記録（「LLM 判断:」の行）で引く: `|= "screeningRationaleGarble=True"`（一次の根拠文）・`|= "decisionRationaleGarble=True"`（本判断の根拠文）。
+    構造化の属性名は `ScreeningRationaleGarble`・`DecisionRationaleGarble`（真偽値）。
+  - 🔴 目印の文字列「判断理由に文字化けの疑い」だけで引くと、1 件の化けが警告・判断の記録・見送りの行など複数行に当たる（数えるのには使わない）。
+
+  | 化けた根拠文 | 警告ログ | 判断の記録（LLM 判断:）の目印 | 判断の記録の属性 | Stage 0 の記録 | 監査台帳・日報 | Discord |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | 一次スクリーニング・見送り（Hold） | 出る | 根拠文に付く | `screeningRationaleGarble=True` | 一次の根拠と多数決の根拠に付く | 届かない（見送りは判断の事象を出さない） | 届かない |
+  | 一次スクリーニング・本判断へ進んだ | 出る | 付かない（記録される根拠文は本判断のもの） | `screeningRationaleGarble=True` | 一次の根拠に付く（多数決の根拠は本判断のもの） | 届かない | 届かない |
+  | 本判断（多数決で採った根拠文） | 出る | 根拠文に付く | `decisionRationaleGarble=True` | 多数決の根拠に付く（各票の生の根拠には付けない） | 付く（判断の事象の根拠文に前置済み。台帳の要約・日報の明細「判断根拠（要約）」にそのまま出る） | 届かない（通知は判断の根拠文を運ばない。日報は閲覧リンクから読む） |
+
+  一次が本判断へ進んだときの一次の根拠文の化けは、警告ログと `screeningRationaleGarble` にしか残らない。運用ではこの 2 つで拾う。
+  判定の限界: 別の有効な漢字への化け（例「監視銘牌」）と、句読点・文末の直前の化けた英字列は判定しない。漢字に挟まれた英語の固有名は誤って目印が付く。
 - **トレース**: サービス間（s2s）呼び出しは Tempo で追跡する。Grafana の Trace→Logs 相関を有効化済み（MSP datasource）。
 - **URI 自体が資格情報である送信先は、トレースでも宛先を伏せる。** HTTP クライアントのスパンが持つフル URL は、
   出ていく直前に**スキーム＋ホストだけ**へ落とす（パスにトークンを載せる送信先——通知の Webhook——が対象）。

@@ -599,7 +599,7 @@ public class Stage0DecisionRecorderTests
             && r.MajorityRationale == "関心なし");
     }
 
-    // 🔴 T-10-2518（#1290, IADR-0524 決定 3）: 一次の根拠文に化けの疑いがあれば、Stage 0 の記録（一次の根拠・見送りの多数決の根拠）に
+    // 🔴 T-10-2518（#1290, IADR-0525 決定 3）: 一次の根拠文に化けの疑いがあれば、Stage 0 の記録（一次の根拠・見送りの多数決の根拠）に
     // 目印が付く。見送り（Hold）・本判断を呼ばないことは変えない。化けの無い根拠文（上の試験の「関心なし」）には付かない。
     [Fact]
     public async Task T_10_2518_一次の根拠文の化けはStage0の記録に目印を付ける()
@@ -616,6 +616,32 @@ public class Stage0DecisionRecorderTests
             r.MajorityAction == Stage0DecisionAction.Hold
             && r.Screening!.Rationale == expected
             && r.MajorityRationale == expected);
+    }
+
+    // T-10-2523（#1290, IADR-0525 決定 3/4）: 一次が関心あり（本判断へ進む）で一次の根拠文が化けたら、一次の根拠にだけ目印が付き、
+    // 多数決の根拠（本判断の根拠文。化けていない）には付かない。本判断の根拠文が化けたら多数決の根拠に付き、各票の生の根拠には付けない。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_2523_Stage0の記録は化けた層の根拠にだけ目印を付ける(bool screeningGarbled)
+    {
+        const string garbled = "監視銘HeaderItemの押し目";
+        var screening = screeningGarbled
+            ? $$"""{"action":"Buy","rationale":"{{garbled}}"}"""
+            : """{"action":"Buy","rationale":"関心あり"}""";
+        var main = screeningGarbled
+            ? Decision("Buy")
+            : $$"""{"action":"Buy","rationale":"{{garbled}}","referencePrice":100,"stopLossDistancePerShare":2}""";
+        var (recorder, _, sink, _) = Build([main], screening: [screening]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        var marked = $"{RationaleGarbleDetector.Marker}: {garbled}";
+        var record = sink.Saved!.Records[0];
+        record.MajorityAction.Should().Be(Stage0DecisionAction.Buy, "化けで action を変えない");
+        record.Screening!.Rationale.Should().Be(screeningGarbled ? marked : "関心あり");
+        record.MajorityRationale.Should().Be(screeningGarbled ? "根拠" : marked);
+        record.RawDecisions.Should().OnlyContain(r => !r.Rationale.Contains(RationaleGarbleDetector.Marker));
     }
 
     // 🔴 T-15-115: 一次の**解析不能も打ち切る**（本番の `ParseScreening` と同じ。見送りとは区別して記録する・IADR-0248）。

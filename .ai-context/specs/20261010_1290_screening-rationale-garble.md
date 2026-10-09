@@ -2,7 +2,7 @@
 title: 一次スクリーニングの根拠文の文字化け（「監視銘柄」の「柄」）を、固定文の言い換えと化けの検出・目印で抑える（#1290）
 type: spec
 status: accepted
-related_ids: [FR-04, FR-11, FR-15, ADR-0003, IADR-0524, IADR-0440, IADR-0521, IADR-0523, IADR-0498, IADR-0248, IADR-0104]
+related_ids: [FR-04, FR-11, FR-15, FR-06, ADR-0003, IADR-0525, IADR-0440, IADR-0521, IADR-0523, IADR-0498, IADR-0248, IADR-0104]
 author: claude (Claude Code)
 created: 2026-10-10
 updated: 2026-10-10
@@ -92,7 +92,7 @@ plan_refs:
 | ログからの Discord・台帳への転記（helm・ops の設定） | **無い**（`git grep 'LLM 判断\|一次スクリーニングで見送り' -- docs ops deploy helm` が 0 件） | 対象外 |
 
 issue の「台帳・日報・Discord にそのまま載る」は、コード上は一次の根拠文の経路ではない（上表）。一次の根拠文が残るのは判断の記録（ログ）と
-Stage 0 の記録であり、そこへ目印を付けた。本判断の根拠文（`TradeDecisionMade`）への検出の拡張は裁定の範囲外として扱わない（残余リスク）。
+Stage 0 の記録であり、そこへ目印を付けた。本判断の根拠文（`TradeDecisionMade`）への検出の拡張は裁定の範囲外として扱わない（残余リスク）。［2026-10-10 追記］この拡張は追記の指示で範囲に入れた（末尾の追記の節）。
 
 ### プロンプトの文言を固定する試験
 
@@ -111,6 +111,37 @@ Stage 0 の記録であり、そこへ目印を付けた。本判断の根拠文
 
 文字数の差（UTF-16）: 見出し +3・`WatchlistIsNotPolicyRule` +10・不明の行 +6・含まれる／含まれない +3・件数の行 +3・`ExitOnlyLine` +3。
 
+## ［2026-10-10 追記 / #1290］本判断の根拠文への拡張と PR #1298 のレビューへの対応
+
+指示（コーディネータ・2026-10-10）: 裁定 (c) の趣旨は「台帳・日報・Discord に化けた根拠文が載ったら目印を付ける」である。そこへ届くのは本判断の根拠文
+（`TradeDecisionMade.Rationale`）であるため、同じ検出器を本判断の解析の直後に 1 回だけ当て、Warning と目印を付ける。action は変えない。
+
+- 検出の地点: `DecisionOrchestrator` の多数決の直後。採った根拠文（下流へ渡る 1 本）だけに当てる。各票の生の根拠文は対象外。
+- 運び方: `OrchestratedDecision.DecisionRationaleGarbleSuspected`（印）と、根拠文の先頭に前置した目印。判断の記録に `decisionRationaleGarble` を足す。
+- **契約は変えず、前置を採る**（`TradeDecisionMade` に真偽の項目を足さない）。消費者はどれも根拠文をそのまま転記するため、改修なしで目印が表示される。
+  監査台帳の要約の切り詰め（200 文字）でも先頭の目印は消えない。理由の詳細は IADR-0525 決定 4。
+- レビュー（AI レビュー・head 2dac1fd8）の 🟡: 一次が本判断へ進んだときの一次の根拠文の化けは警告ログと `screeningRationaleGarble` にしか残らない。
+  Loki の検索語（警告ログの固定文言・構造化の属性名）と「どの化けがどこに印として出るか」の表を IADR-0525 とログ・可観測性仕様書に置いた。
+- レビューの 🟢: 「一次スクリーニングで見送り」の Info の根拠文も `LogSanitizer.Sanitize` を通す（新しい警告ログと揃える）。
+- レビュー: 判定の外にある化けの量を PoC の再計測で数えてもらう旨を IADR-0525 の残余に足した。
+- 採番: 初版（head 2dac1fd8）の IADR-0524 は、並行の PR #1299 が同じ番号を取ったため IADR-0525 へ改番した（ファイル名・本文・索引・trace ブロック・コードのコメントをすべて追随。`git grep IADR-0524` は改番の記録の 2 行だけ）。
+
+### `TradeDecisionMade.Rationale` の消費者（規則 9）
+
+走査: `git grep -ln "TradeDecisionMade" -- 'backend/**/*.cs' ':!backend/**/Tests/**'`（イベントの受け手）と、
+`git grep -n "\.Rationale\b\|rationales" -- 'backend/**/*.cs' ':!backend/**/Tests/**'`（根拠文の読み手）を突き合わせた。
+
+| 消費者 | 根拠文の扱い | 目印の表示 | 固定する試験 |
+| --- | --- | --- | --- |
+| 監査台帳 `AuditEntryFactory.From(TradeDecisionMade)` | 要約の末尾に転記（全体を 200 文字で切り詰め）・本文（JSON）に全量 | 要約・本文とも出る（先頭にあるため切り詰めで消えない） | T-10-2521（AuditService） |
+| 報告書 `HttpTradeRationaleSource`・`GrpcTradeRationaleSource`（監査台帳から `TradeDecisionMade` を引く） → `TradeHistoryViewBuilder` → `TradeHistoryRenderer` | 日報の明細「判断根拠（要約）」へそのまま転記（パイプのエスケープ・改行の畳みだけ） | 出る | T-10-2522（ReportService） |
+| 報告書 `FillPnlAttributionBuilder` → `ReportRenderer`（最良／最悪の行） | そのまま転記（改行の畳みだけ） | 出る | （同じ転記の経路。T-10-2522 と同形のため試験は足さない） |
+| 判断の記録 `LLM 判断:`（TradeDecisionService） | rationale にそのまま | 出る＋ `decisionRationaleGarble` | T-10-2520 |
+| Stage 0 の記録 `MajorityRationale` | 多数決の根拠にそのまま（各票の生の根拠は別に持つ） | 多数決の根拠に出る・生の票には出ない | T-10-2523 |
+| リスク管理（`TradeDecisionMadeHandler`・`OrderScreeningService` ほか）・市場監視（基準値） | 根拠文を読まない（発注意図・価格だけ） | — | 対象外 |
+| 通知（Discord） | 判断の根拠文を受け取らない（`NotificationGrpcWire` の `Rationale` は方針の改訂の説明。日報の通知は集計値と散文の要約だけで、本文は閲覧リンク） | — | 対象外（契約を変えないため直す所が無い） |
+| 数量の突合 `RationaleQuantityReconciler` | 末尾へ注記を追記 | 前置の目印と衝突しない（目印は数字を含まない） | 既存の試験（変更なしで緑） |
+
 ## 受け入れ基準
 
 - [x] 本判断・一次の固定文に「監視銘柄」が出ない（ウォッチリストの全形 × 出口専用の有無）。方針の本文は書き換えない（T-10-2517）。
@@ -120,13 +151,17 @@ Stage 0 の記録であり、そこへ目印を付けた。本判断の根拠文
 - [x] 一次の根拠文の化けで Warning が 1 行・印が立ち、見送りなら根拠に目印が付く。🔴 action は変えない（関心ありなら本判断へ進む）（T-10-2515）。
 - [x] 判断の記録（`LLM 判断:`）の rationale に目印、`screeningRationaleGarble` に印が載る（T-10-2516）。
 - [x] Stage 0 の記録の一次の根拠・多数決の根拠に目印が付く（T-10-2518）。
+- [x] 本判断の根拠文の化けで Warning が 1 行・印が立ち、根拠文に目印が付く。action・票数は変えない（T-10-2519）。
+- [x] `TradeDecisionMade.Rationale` に目印が付き、判断の記録に `decisionRationaleGarble` が載る。発注意図（売買・数量）は変えない（T-10-2520）。
+- [x] 監査台帳の要約（切り詰め後）と本文に目印が残る（T-10-2521）。日報の明細に目印がそのまま出る（T-10-2522）。
+- [x] Stage 0 の記録は化けた層の根拠にだけ目印を付け、生の票には付けない（T-10-2523）。
 - [x] `dotnet build`（警告 0）・試験・`dotnet format --verify-no-changes`・repo の node 検査が通る。
 
 ## 範囲外
 
 - 用途別の temperature（裁定 (b) は採らない）。
 - 方針の改訂のプロンプト・初回月報の方針文の語（上の母集合の表）。
-- 本判断の根拠文（`TradeDecisionMade`）の化けの検出（観測されておらず、裁定は一次の根拠文を指定した）。
+- ~~本判断の根拠文（`TradeDecisionMade`）の化けの検出~~ → 追記の指示で範囲に入れた。
 
 ## 検証
 
