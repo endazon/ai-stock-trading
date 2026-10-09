@@ -2,10 +2,10 @@
 title: IADR-0465 新規建ての損切り幅に下限（ATR が得られない間は参照価格の 2%）を掛け、割った幅は下限まで広げ、結果を判断の記録（TradeDecisionMade）に載せて監査に残す
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-04, FR-11, FR-15, ADR-0003, ADR-0018, ADR-0040, ADR-0048, ADR-0049, IADR-0460, IADR-0003, IADR-0030, IADR-0035, IADR-0099, IADR-0107, IADR-0318, IADR-0397]
+related_ids: [FR-10, FR-04, FR-11, FR-15, ADR-0003, ADR-0018, ADR-0040, ADR-0048, ADR-0049, ADR-0058, IADR-0460, IADR-0003, IADR-0030, IADR-0035, IADR-0099, IADR-0107, IADR-0318, IADR-0397]
 author: claude (Claude Code)
 created: 2026-09-30
-updated: 2026-10-03
+updated: 2026-10-09
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0049_stop-width-floor-atr14-widen-no-ceiling.md
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md
@@ -105,3 +105,19 @@ plan_refs:
 - **決定5（Stage 0 は 2%）を改める**: Stage 0 も判断時点の前営業日までの確定足から本番と同じ ATR を求めて下限にする（無効なら 2% のまま）。
 - 残余の「ATR(14) は未供給」は、供給の実装が入った（既定は無効のまま。有効化は取得枠の回復周期の記録の後に利用者が行う）。
 
+## ［2026-10-09 追記 / #1228］残余の「発火価格の丸めで最大 1 刻み未満だけ内側へ寄る」は、計画が実装へ揃った（計画 ADR-0058）
+
+本文は当時の決定として残す。planning#741 項目 1（利用者裁定 2026-10-09）で、計画 ADR-0049 決定 3 の 1 句「幅を呼値へ丸める場合も、
+下限を割らない向きに丸める」を**計画 ADR-0058 が部分改定した**（計画を実装に揃える案 a）。
+
+- **ADR-0058 決定 1**: 呼値へ丸めるときは保護を緩めない向き（早く発火する側。ロングの保護＝売りの発火価格は切り上げ・ショートの保護は切り下げ）を優先する。
+  ⇒ `MoomooPriceRounding.RoundTrigger`（S0・S3。[IADR-0210](IADR-0210_broker-side-stop-loss-unification.md) の 2026-09-19 追記・[IADR-0347](IADR-0347_alternative-broker-order-types-for-simulate.md)）がそのとおり。
+- **ADR-0058 決定 2**: 損切り幅の下限は 1 刻み未満の誤差を許し、下限の判定は丸める前の値で行う。1 刻み以上割るのは下限の強制の欠陥とする。
+  ⇒ 本 IADR の下限（`StopWidthFloorPolicy`）は端数を丸めず、丸めは発注執行で発火価格に 1 回だけ掛かる。遡及（IADR-0472・`StopWidthFloorRetrofitPolicy`）も
+  台帳の丸める前の値で比べる。丸めの後の値で下限を判定し直す箇所は無い（`origin/develop` `d6f720e3` で `MoomooPriceRounding.` の呼び出しを全数確認。作業仕様書
+  [20261009_1228_planning741-ruling-records](../specs/20261009_1228_planning741-ruling-records.md)）。
+- **実装の変更は無い。** 誤差の上限（寄る量が 1 刻み未満・実効の幅が下限を 1 刻み以上割らない）は試験で固定していなかったため、T-10-2469
+  （`MoomooPriceRoundingTests`。米国 2 桁・サブペニー 4 桁・日本円、ロング／ショート）を足した。
+- 「採らなかった案」の「下限を呼値へ切り上げる」は、ADR-0058 の選択肢 b（実装を下限側へ丸め直す）とは別の案だが、いずれも採らないことが計画の側からも定まった。
+- 残余は**受容された制約**として読む（解消ではない）: 下限ちょうどの幅（AI の幅を下限まで広げた場合）では、実効の幅は下限を 1 刻み未満だけ割る。
+- 日本株の価格帯別の呼値（ADR-0058 フォローアップ 2）は本追記の範囲外（`MoomooPriceRounding` の残る制約のまま）。
