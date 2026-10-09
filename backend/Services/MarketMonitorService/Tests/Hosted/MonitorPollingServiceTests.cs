@@ -165,7 +165,7 @@ public class MonitorPollingServiceTests
     public async Task 同一巡回で損切りと変動が両方成立したとき両方を発行する()
     {
         // IADR-0014・損切り優先: 保有 MSFT が損切り到達、監視 AAPL が閾値超過を同一巡回で成立させる。
-        // 発行順（損切り→変動）は RunOnceAsync の構造で保証される（StopLosses を先に Publish）。
+        // 発行順（損切り→変動）は RunOnceAsync の構造で保証される（到達は保有のループの中で検知した時点で発行し、変動は評価の後。#1282）。
         var msft = new MonitoredSymbol("MSFT", Market.UnitedStates);
         await using var h = new Harness(Settings(Aapl, msft));
         h.Positions.Set([new HeldPosition("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m)]);
@@ -584,6 +584,171 @@ public class MonitorPollingServiceTests
             capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
                 .Should().ContainSingle().Which.Value.Should().Be(20d);
         }
+    }
+
+    // ---- FR-10, FR-03, UC-02, #1280, #1282, IADR-0520: 損切りライン到達（S1）の発行は検知の時点で 1 回だけ ----
+
+    private static HeldPosition HeldAapl() => new("AAPL", Market.UnitedStates, TradeSide.Buy, 10, 1_000m, 970m);
+
+    private static async Task<IReadOnlyList<StopLossTriggered>> RunCycleAsync(IHost host, MonitorPollingService service)
+    {
+        var session = await host.TrackActivityForTest()
+            .ExecuteAndWaitAsync(_ => service.RunOnceAsync(CancellationToken.None));
+        return [.. session.Sent.MessagesOf<StopLossTriggered>()];
+    }
+
+    // 🔴 T-10-2476（#1280）: 決済が台帳へ反映されるまでの巡回は、同じ建玉を保有として読み直して同じ到達を再評価する。
+    // 発行は 1 回だけにし（通知・監査に「再到達」を作らない）、抑止したことは INF で残す。
+    [Fact]
+    public async Task T_10_2476_同じ到達は次の巡回で再発行しない()
+    {
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        await using var h = new Harness(Settings()) { Logger = log };
+        h.Positions.Set([HeldAapl()]);
+        h.Market.Set("AAPL", Market.UnitedStates, 960m);
+        var (service, host) = await h.StartAsync();
+
+        (await RunCycleAsync(host, service)).Should().ContainSingle();
+
+        h.Clock.UtcNow = Now.AddSeconds(60); // 決済はまだ台帳へ反映されていない（保有の照会が同じ建玉を返す）
+        h.Market.Set("AAPL", Market.UnitedStates, 961m);
+        (await RunCycleAsync(host, service)).Should().BeEmpty("同じ建玉・同じラインの到達はすでに発行した");
+
+        log.Informations.Should().ContainSingle(m => m.Contains("損切りライン到達を発行", StringComparison.Ordinal));
+        log.Informations.Should().ContainSingle(m => m.Contains("再発行を抑止", StringComparison.Ordinal));
+    }
+
+    // T-10-2476（解除の条件）: 建玉が閉じた・価格がラインの内側へ戻った後の到達は新しい到達として発行する。
+    // ラインが変わった（別の到達）ときも発行する。抑止は到達を黙らせ続けない（3 分経っても残っていれば出し直す）。
+    [Fact]
+    public async Task T_10_2476_建玉が閉じた後_価格が戻った後_ラインが変わったとき_抑止の期限を過ぎたときは発行する()
+    {
+        await using var h = new Harness(Settings());
+        h.Positions.Set([HeldAapl()]);
+        h.Market.Set("AAPL", Market.UnitedStates, 960m);
+        var (service, host) = await h.StartAsync();
+        (await RunCycleAsync(host, service)).Should().ContainSingle();
+
+        // 建玉が閉じた巡回 → 同じ銘柄・同じラインで建て直した建玉の到達は発行する。
+        h.Positions.Set([]);
+        h.Clock.UtcNow = Now.AddSeconds(60);
+        (await RunCycleAsync(host, service)).Should().BeEmpty();
+        h.Positions.Set([HeldAapl()]);
+        h.Clock.UtcNow = Now.AddSeconds(120);
+        (await RunCycleAsync(host, service)).Should().ContainSingle("閉じた建玉の到達の記憶を持ち越さない");
+
+        // 価格がラインの内側へ戻った巡回 → 再び割った到達は発行する。
+        h.Market.Set("AAPL", Market.UnitedStates, 980m);
+        h.Clock.UtcNow = Now.AddSeconds(180);
+        (await RunCycleAsync(host, service)).Should().BeEmpty();
+        h.Market.Set("AAPL", Market.UnitedStates, 965m);
+        h.Clock.UtcNow = Now.AddSeconds(240);
+        (await RunCycleAsync(host, service)).Should().ContainSingle("価格が戻った後の到達は新しい到達");
+
+        // ラインが変わった → 別の到達。
+        h.Positions.Set([HeldAapl() with { StopLossPrice = 975m }]);
+        h.Clock.UtcNow = Now.AddSeconds(300);
+        (await RunCycleAsync(host, service)).Should().ContainSingle("ラインが変われば別の到達");
+
+        // 同じ到達が抑止の期限（3 分）を過ぎても残っていれば出し直す（決済が進まないことを黙らせない）。
+        h.Clock.UtcNow = Now.AddSeconds(360);
+        (await RunCycleAsync(host, service)).Should().BeEmpty();
+        h.Clock.UtcNow = Now.AddSeconds(300) + StopLossArrivalGate.RepublishAfter;
+        (await RunCycleAsync(host, service)).Should().ContainSingle("抑止の期限を過ぎた到達は出し直す");
+    }
+
+    // T-10-2476（否定形）: 価格が取れなかった巡回・閉場で評価しなかった巡回は「戻った」ではない（記憶を消して次の巡回で再発行しない）。
+    [Fact]
+    public async Task T_10_2476_価格が取れない巡回と閉場の巡回は抑止を解かない()
+    {
+        await using var h = new Harness(Settings());
+        h.Positions.Set([HeldAapl(), new HeldPosition("7203", Market.Japan, TradeSide.Buy, 100, 3_000m, 2_900m)]);
+        h.Market.Set("AAPL", Market.UnitedStates, 960m).Set("7203", Market.Japan, 2_850m);
+        var (service, host) = await h.StartAsync();
+        (await RunCycleAsync(host, service)).Should().HaveCount(2);
+
+        h.Market.Remove("AAPL", Market.UnitedStates); // 米国は開場・AAPL の価格が取れない
+        h.Schedule.ClosedMarkets.Add(Market.Japan);   // 東証は閉場（照会も判定もしない）
+        h.Clock.UtcNow = Now.AddSeconds(60);
+        (await RunCycleAsync(host, service)).Should().BeEmpty();
+
+        h.Market.Set("AAPL", Market.UnitedStates, 960m);
+        h.Schedule.ClosedMarkets.Clear();
+        h.Clock.UtcNow = Now.AddSeconds(120);
+        (await RunCycleAsync(host, service)).Should().BeEmpty("価格が取れなかった・評価しなかった巡回は、価格が戻った証拠ではない");
+    }
+
+    // 🔴 T-10-2479（#1285 監査 F1, IADR-0520 決定2）: 市場監視が見るラインは台帳の最も保護的な 1 本だけで（IADR-0393）、
+    // 発注執行は到達の価格が行自身のラインに達した S1 の行だけを武装する。同じ鍵でも価格がさらに不利へ進んだ到達は
+    // 次の巡回で出し直す（低いラインの行 B＝330.88 を 3 分待たせない）。前回の発行と同じか有利な価格は抑止する。
+    [Theory]
+    [InlineData(TradeSide.Buy, 331.67, 331.50, 330.50, 330.90)]
+    [InlineData(TradeSide.Sell, 100.00, 101.00, 102.00, 101.50)]
+    public async Task T_10_2479_同じ鍵でも前回の発行より不利な価格の到達は次の巡回で出し直す(
+        TradeSide side, double line, double first, double deeper, double backInside)
+    {
+        await using var h = new Harness(Settings());
+        h.Positions.Set([new HeldPosition("AAPL", Market.UnitedStates, side, 1_428, null, (decimal)line)]);
+        h.Market.Set("AAPL", Market.UnitedStates, (decimal)first);
+        var (service, host) = await h.StartAsync();
+        (await RunCycleAsync(host, service)).Should().ContainSingle().Which.Price.Should().Be((decimal)first);
+
+        h.Clock.UtcNow = Now.AddSeconds(60);
+        (await RunCycleAsync(host, service)).Should().BeEmpty("同じ価格（決済の反映待ちの巡回）は抑止する");
+
+        h.Market.Set("AAPL", Market.UnitedStates, (decimal)deeper); // 台帳のラインは同じまま、別の行のラインを割る
+        h.Clock.UtcNow = Now.AddSeconds(120);
+        (await RunCycleAsync(host, service)).Should().ContainSingle("より不利な価格はより低いラインの行に届き得る")
+            .Which.Price.Should().Be((decimal)deeper);
+
+        h.Market.Set("AAPL", Market.UnitedStates, (decimal)backInside); // 前回の発行より有利（台帳のラインは越えたまま）
+        h.Clock.UtcNow = Now.AddSeconds(180);
+        (await RunCycleAsync(host, service)).Should().BeEmpty("前回の発行より有利な価格は新しい行に届かない");
+    }
+
+    // 🔴 T-10-2480（#1285 監査 F2・再監査 F5, IADR-0520 決定2）: 同じ到達の出し直しの間隔に巡回の周期（既定の巡回間隔）を
+    // 足しても発注執行の到達の窓（SoftwareStopExecutor.TriggerEpisodeGap）に届かない（厳密に小さい）。超えると出し直しのたびに
+    // 決済の連続失敗の数えと待ち時間が 0 へ戻る（#833 の拒否連発の再発）。発注執行はこの試験から参照できないので、
+    // 値は宣言の行（ソース）から読む（宣言を変えたらこの試験が気付く）。
+    [Fact]
+    public void T_10_2480_出し直しの間隔と巡回の周期の和は発注執行の到達の窓を超えない()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "backend", "backend.slnx")))
+            root = root.Parent;
+        root.Should().NotBeNull("リポジトリの最上位が見つかる");
+        var source = File.ReadAllText(Path.Combine(
+            root!.FullName, "backend", "Services", "OrderExecutionService", "Features", "OrderExecution",
+            "ExecuteSoftwareStops", "SoftwareStopExecutor.cs"));
+        var match = System.Text.RegularExpressions.Regex.Match(
+            source, @"TimeSpan TriggerEpisodeGap = TimeSpan\.FromMinutes\((\d+)\);");
+        match.Success.Should().BeTrue("発注執行の到達の窓の宣言を読める");
+        var triggerEpisodeGap = TimeSpan.FromMinutes(int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+
+        // #1285 再監査 F5: 発注執行は「前回から TriggerEpisodeGap **以上**」を新しい窓とする（等号で窓がやり直しになる）ので、厳密な < で比べる。
+        // 出し直しは前回の発行から RepublishAfter を過ぎた最初の巡回で起きるので、同じ到達どうしの間隔の最大は
+        // RepublishAfter ＋ 巡回の周期 P 未満（既定 P＝巡回間隔 60 秒で 4 分未満）。許せる P は TriggerEpisodeGap − RepublishAfter（2 分）未満。
+        var patrolPeriod = TimeSpan.FromSeconds(new MonitorOptions().PollIntervalSeconds);
+        (StopLossArrivalGate.RepublishAfter + patrolPeriod).Should().BeLessThan(triggerEpisodeGap);
+        (triggerEpisodeGap - StopLossArrivalGate.RepublishAfter).Should().BeGreaterThan(patrolPeriod, "既定の巡回間隔に余裕がある");
+    }
+
+    // 🔴 T-10-2477（#1282）: 到達の検知時刻（DetectedAt）は巡回の開始ではなく、その建玉の価格を照会し終えた時刻である。
+    // 照会は 1 件 5 秒（容量 1 の限流器）。保有の 2 番目の到達は巡回の開始から 10 秒後に検知される。
+    [Fact]
+    public async Task T_10_2477_到達の検知時刻は照会し終えた時刻であり巡回の開始ではない()
+    {
+        await using var h = new Harness(Settings());
+        h.Positions.Set([HeldAapl(), new HeldPosition("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m)]);
+        h.Market.Set("AAPL", Market.UnitedStates, 960m).Set("MSFT", Market.UnitedStates, 1_850m);
+        h.Market.OnRequest = () => h.Clock.UtcNow += TimeSpan.FromSeconds(5);
+        var (service, host) = await h.StartAsync();
+
+        var sent = await RunCycleAsync(host, service);
+
+        // 送出の記録の並びは追跡の都合で入れ替わり得るので、順序は見ない（検知した時点で渡すことは MarketMonitorServiceTests が固定する）。
+        sent.Select(s => (s.Symbol, s.DetectedAt)).Should().BeEquivalentTo(
+            [("AAPL", Now.AddSeconds(5)), ("MSFT", Now.AddSeconds(10))]);
     }
 
     // T-10-2467: 保有の照会に時間がかかってから失敗する（巡回を例外で抜けさせる）。

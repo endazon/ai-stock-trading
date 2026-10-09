@@ -1,5 +1,6 @@
 using NotificationService.Features.Notifications;
 using AiStockTrading.Shared.Contracts.Events;
+using Microsoft.Extensions.Logging;
 
 namespace NotificationService.Infrastructure.Steps;
 
@@ -33,10 +34,35 @@ public sealed class OrderRejectedNotificationHandler(INotificationSender sender)
         sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
 }
 
-public sealed class StopLossTriggeredNotificationHandler(INotificationSender sender)
+// 🔴 FR-09, FR-10, #1280, IADR-0520 決定4: 同じ到達（銘柄・市場・建玉方向・ライン）の通知は 3 分に 1 回へ絞る
+// （市場監視はより不利な価格の到達を巡回ごとに出し直すため。発注執行・監査は別のキューで全部を受け取る）。
+// 送信に失敗したら記憶を戻し、例外をそのまま伝える（メッセージングの再試行で送り直す）。
+public sealed class StopLossTriggeredNotificationHandler(
+    INotificationSender sender,
+    StopLossNotificationSuppressor suppressor,
+    ILogger<StopLossTriggeredNotificationHandler> logger)
 {
-    public Task Handle(StopLossTriggered message, CancellationToken cancellationToken) =>
-        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+    public async Task Handle(StopLossTriggered message, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (!suppressor.TryAcquire(message))
+        {
+            logger.LogInformation(
+                "損切りライン到達の通知を抑止しました（同じ到達を {RenotifyAfter} 以内に通知済み）: {Symbol}/{Market} ライン={StopLoss} 検知価格={Price} 検知時刻={DetectedAt:O}",
+                StopLossNotificationSuppressor.RenotifyAfter, message.Symbol, message.Market, message.StopLossPrice, message.Price, message.DetectedAt);
+            return;
+        }
+
+        try
+        {
+            await sender.SendAsync(NotificationFormatter.From(message), cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            suppressor.Release(message);
+            throw;
+        }
+    }
 }
 
 // FR-17, UC-06: 全体前提条件の変更（設定管理サービス #19）を購読して通知する。
