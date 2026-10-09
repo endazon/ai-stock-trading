@@ -449,10 +449,10 @@ public class MarketMonitorServiceTests
             throw failure ?? new InvalidOperationException("到達しない");
         }
     }
-    // 🔴 T-10-2471（#1282, IADR-0520）: 到達は保有のループの中で検知した時点で渡す（巡回の末尾までためない）。
+    // 🔴 T-10-2477（#1282, IADR-0520）: 到達は保有のループの中で検知した時点で渡す（巡回の末尾までためない）。
     // 1 番目の保有の到達は 2 番目の保有を照会する前に渡り、検知時刻はそれぞれの照会を終えた時刻である。
     [Fact]
-    public async Task T_10_2471_到達は検知した時点で渡し_次の保有の照会を待たない()
+    public async Task T_10_2477_到達は検知した時点で渡し_次の保有の照会を待たない()
     {
         var h = new Harness(Settings());
         h.Positions.Set(

@@ -559,10 +559,10 @@ public class MonitorPollingServiceTests
         return [.. session.Sent.MessagesOf<StopLossTriggered>()];
     }
 
-    // 🔴 T-10-2470（#1280）: 決済が台帳へ反映されるまでの巡回は、同じ建玉を保有として読み直して同じ到達を再評価する。
+    // 🔴 T-10-2476（#1280）: 決済が台帳へ反映されるまでの巡回は、同じ建玉を保有として読み直して同じ到達を再評価する。
     // 発行は 1 回だけにし（通知・監査に「再到達」を作らない）、抑止したことは INF で残す。
     [Fact]
-    public async Task T_10_2470_同じ到達は次の巡回で再発行しない()
+    public async Task T_10_2476_同じ到達は次の巡回で再発行しない()
     {
         var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
         await using var h = new Harness(Settings()) { Logger = log };
@@ -580,10 +580,10 @@ public class MonitorPollingServiceTests
         log.Informations.Should().ContainSingle(m => m.Contains("再発行を抑止", StringComparison.Ordinal));
     }
 
-    // T-10-2470（解除の条件）: 建玉が閉じた・価格がラインの内側へ戻った後の到達は新しい到達として発行する。
+    // T-10-2476（解除の条件）: 建玉が閉じた・価格がラインの内側へ戻った後の到達は新しい到達として発行する。
     // ラインが変わった（別の到達）ときも発行する。抑止は到達を黙らせ続けない（3 分経っても残っていれば出し直す）。
     [Fact]
-    public async Task T_10_2470_建玉が閉じた後_価格が戻った後_ラインが変わったとき_抑止の期限を過ぎたときは発行する()
+    public async Task T_10_2476_建玉が閉じた後_価格が戻った後_ラインが変わったとき_抑止の期限を過ぎたときは発行する()
     {
         await using var h = new Harness(Settings());
         h.Positions.Set([HeldAapl()]);
@@ -619,9 +619,9 @@ public class MonitorPollingServiceTests
         (await RunCycleAsync(host, service)).Should().ContainSingle("抑止の期限を過ぎた到達は出し直す");
     }
 
-    // T-10-2470（否定形）: 価格が取れなかった巡回・閉場で評価しなかった巡回は「戻った」ではない（記憶を消して次の巡回で再発行しない）。
+    // T-10-2476（否定形）: 価格が取れなかった巡回・閉場で評価しなかった巡回は「戻った」ではない（記憶を消して次の巡回で再発行しない）。
     [Fact]
-    public async Task T_10_2470_価格が取れない巡回と閉場の巡回は抑止を解かない()
+    public async Task T_10_2476_価格が取れない巡回と閉場の巡回は抑止を解かない()
     {
         await using var h = new Harness(Settings());
         h.Positions.Set([HeldAapl(), new HeldPosition("7203", Market.Japan, TradeSide.Buy, 100, 3_000m, 2_900m)]);
@@ -640,10 +640,61 @@ public class MonitorPollingServiceTests
         (await RunCycleAsync(host, service)).Should().BeEmpty("価格が取れなかった・評価しなかった巡回は、価格が戻った証拠ではない");
     }
 
-    // 🔴 T-10-2471（#1282）: 到達の検知時刻（DetectedAt）は巡回の開始ではなく、その建玉の価格を照会し終えた時刻である。
+    // 🔴 T-10-2478（#1285 監査 F1, IADR-0520 決定2）: 市場監視が見るラインは台帳の最も保護的な 1 本だけで（IADR-0393）、
+    // 発注執行は到達の価格が行自身のラインに達した S1 の行だけを武装する。同じ鍵でも価格がさらに不利へ進んだ到達は
+    // 次の巡回で出し直す（低いラインの行 B＝330.88 を 3 分待たせない）。前回の発行と同じか有利な価格は抑止する。
+    [Theory]
+    [InlineData(TradeSide.Buy, 331.67, 331.50, 330.50, 330.90)]
+    [InlineData(TradeSide.Sell, 100.00, 101.00, 102.00, 101.50)]
+    public async Task T_10_2478_同じ鍵でも前回の発行より不利な価格の到達は次の巡回で出し直す(
+        TradeSide side, double line, double first, double deeper, double backInside)
+    {
+        await using var h = new Harness(Settings());
+        h.Positions.Set([new HeldPosition("AAPL", Market.UnitedStates, side, 1_428, null, (decimal)line)]);
+        h.Market.Set("AAPL", Market.UnitedStates, (decimal)first);
+        var (service, host) = await h.StartAsync();
+        (await RunCycleAsync(host, service)).Should().ContainSingle().Which.Price.Should().Be((decimal)first);
+
+        h.Clock.UtcNow = Now.AddSeconds(60);
+        (await RunCycleAsync(host, service)).Should().BeEmpty("同じ価格（決済の反映待ちの巡回）は抑止する");
+
+        h.Market.Set("AAPL", Market.UnitedStates, (decimal)deeper); // 台帳のラインは同じまま、別の行のラインを割る
+        h.Clock.UtcNow = Now.AddSeconds(120);
+        (await RunCycleAsync(host, service)).Should().ContainSingle("より不利な価格はより低いラインの行に届き得る")
+            .Which.Price.Should().Be((decimal)deeper);
+
+        h.Market.Set("AAPL", Market.UnitedStates, (decimal)backInside); // 前回の発行より有利（台帳のラインは越えたまま）
+        h.Clock.UtcNow = Now.AddSeconds(180);
+        (await RunCycleAsync(host, service)).Should().BeEmpty("前回の発行より有利な価格は新しい行に届かない");
+    }
+
+    // 🔴 T-10-2479（#1285 監査 F2, IADR-0520 決定2）: 同じ到達の出し直しの間隔は、巡回の周期（既定の巡回間隔 × 2 まで）を
+    // 足しても発注執行の到達の窓（SoftwareStopExecutor.TriggerEpisodeGap）を超えない。超えると出し直しのたびに
+    // 決済の連続失敗の数えと待ち時間が 0 へ戻る（#833 の拒否連発の再発）。発注執行はこの試験から参照できないので、
+    // 値は宣言の行（ソース）から読む（宣言を変えたらこの試験が気付く）。
+    [Fact]
+    public void T_10_2479_出し直しの間隔と巡回の周期の和は発注執行の到達の窓を超えない()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "backend", "backend.slnx")))
+            root = root.Parent;
+        root.Should().NotBeNull("リポジトリの最上位が見つかる");
+        var source = File.ReadAllText(Path.Combine(
+            root!.FullName, "backend", "Services", "OrderExecutionService", "Features", "OrderExecution",
+            "ExecuteSoftwareStops", "SoftwareStopExecutor.cs"));
+        var match = System.Text.RegularExpressions.Regex.Match(
+            source, @"TimeSpan TriggerEpisodeGap = TimeSpan\.FromMinutes\((\d+)\);");
+        match.Success.Should().BeTrue("発注執行の到達の窓の宣言を読める");
+        var triggerEpisodeGap = TimeSpan.FromMinutes(int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+
+        var patrolPeriod = TimeSpan.FromSeconds(new MonitorOptions().PollIntervalSeconds);
+        (StopLossArrivalGate.RepublishAfter + (2 * patrolPeriod)).Should().BeLessThanOrEqualTo(triggerEpisodeGap);
+    }
+
+    // 🔴 T-10-2477（#1282）: 到達の検知時刻（DetectedAt）は巡回の開始ではなく、その建玉の価格を照会し終えた時刻である。
     // 照会は 1 件 5 秒（容量 1 の限流器）。保有の 2 番目の到達は巡回の開始から 10 秒後に検知される。
     [Fact]
-    public async Task T_10_2471_到達の検知時刻は照会し終えた時刻であり巡回の開始ではない()
+    public async Task T_10_2477_到達の検知時刻は照会し終えた時刻であり巡回の開始ではない()
     {
         await using var h = new Harness(Settings());
         h.Positions.Set([HeldAapl(), new HeldPosition("MSFT", Market.UnitedStates, TradeSide.Buy, 5, 2_000m, 1_900m)]);

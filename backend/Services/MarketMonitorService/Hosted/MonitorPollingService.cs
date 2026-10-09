@@ -165,7 +165,7 @@ public sealed class MonitorPollingService(
         if (!_arrivals.ShouldPublish(stopLoss))
         {
             logger.LogInformation(
-                "損切りライン到達の再発行を抑止しました（同じ到達を発行済み・{RepublishAfter} 以内）: {Symbol}/{Market} ライン={StopLoss} 検知価格={Price} 検知時刻={DetectedAt:O}",
+                "損切りライン到達の再発行を抑止しました（同じ到達を発行済み・価格は前回の発行と同じか有利・{RepublishAfter} 以内）: {Symbol}/{Market} ライン={StopLoss} 検知価格={Price} 検知時刻={DetectedAt:O}",
                 StopLossArrivalGate.RepublishAfter, stopLoss.Symbol, stopLoss.Market, stopLoss.StopLossPrice, stopLoss.Price, stopLoss.DetectedAt);
             return;
         }

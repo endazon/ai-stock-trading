@@ -15,6 +15,11 @@ namespace MarketMonitorService.Features.MarketMonitor;
 // - 🔴 **黙らせ続けない**: 同じ到達が <see cref="RepublishAfter"/> を過ぎても残っていれば出し直す（決済が進まない・
 //   保護記録の行が到達の後に作られた等を、発注執行・通知へ再び届ける）。間隔は発注執行の到達の窓
 //   （SoftwareStopExecutor.TriggerEpisodeGap＝5 分）より短くし、出し直しで決済の待ち時間がやり直しにならないようにする。
+// - 🔴 **より不利な価格の到達は出し直す**（#1285 監査 F1）: 市場監視が見るラインは台帳が公開する最も保護的な 1 本だけで
+//   （IADR-0393）、発注執行は到達の価格が**行自身のライン**に達した S1 の行だけを武装する。同じ鍵でも価格がさらに不利へ
+//   進めば（ロング: 前回の発行より安い／ショート: 高い）、より低いラインの行に届いたかもしれないので出し直す
+//   （そうしないと、その行の武装が最大 3 分遅れる＝IADR-0393 の「行を自分のラインより遅らせない」を破る）。
+//   前回の発行と同じか有利な価格（決済の反映待ちの巡回で多い形）だけを抑止する。
 // - 発行に失敗した到達は記憶しない（次の巡回で発行し直す）。記憶はプロセス内だけ（再起動の直後は 1 回重なり得る）。
 //
 // MonitorPollingService（singleton）が 1 つ持ち、巡回は直列に回るので排他は持たない。
@@ -26,21 +31,30 @@ public sealed class StopLossArrivalGate
     /// </summary>
     public static readonly TimeSpan RepublishAfter = TimeSpan.FromMinutes(3);
 
-    private readonly Dictionary<ArrivalKey, DateTimeOffset> _published = [];
+    private readonly Dictionary<ArrivalKey, (DateTimeOffset At, decimal Price)> _published = [];
 
-    /// <summary>この到達を発行すべきか（初めての到達か、前回の発行から <see cref="RepublishAfter"/> 以上経った）。</summary>
+    /// <summary>
+    /// この到達を発行すべきか（初めての到達か、前回の発行より不利な価格か、前回の発行から <see cref="RepublishAfter"/> 以上経った）。
+    /// </summary>
     public bool ShouldPublish(StopLossTriggered arrival)
     {
         ArgumentNullException.ThrowIfNull(arrival);
-        return !_published.TryGetValue(ArrivalKey.Of(arrival), out var last)
-            || arrival.DetectedAt - last >= RepublishAfter;
+        if (!_published.TryGetValue(ArrivalKey.Of(arrival), out var last))
+            return true;
+
+        return IsMoreAdverse(arrival.PositionSide, arrival.Price, last.Price)
+            || arrival.DetectedAt - last.At >= RepublishAfter;
     }
+
+    // ロング（買い建て）は安いほど、ショート（売り建て）は高いほど不利（より多くの行のラインに届き得る）。
+    private static bool IsMoreAdverse(TradeSide side, decimal price, decimal lastPublished) =>
+        side == TradeSide.Buy ? price < lastPublished : price > lastPublished;
 
     /// <summary>発行できた到達を記憶する（発行に失敗した到達は呼ばない）。</summary>
     public void MarkPublished(StopLossTriggered arrival)
     {
         ArgumentNullException.ThrowIfNull(arrival);
-        _published[ArrivalKey.Of(arrival)] = arrival.DetectedAt;
+        _published[ArrivalKey.Of(arrival)] = (arrival.DetectedAt, arrival.Price);
     }
 
     /// <summary>
