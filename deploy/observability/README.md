@@ -35,7 +35,7 @@ AST サービス（10 Worker）は OTLP（`Otlp__Endpoint`→otel-collector）�
 | `ast_llm_cost_jpy_total` | `category` | LLM 費用（上限対象 `Llm` / 対象外 `LlmUncapped`） |
 | `ast_llm_cost_limit_ratio_percent` | — | 月次上限に対する比率（80 で間隔延長・100 で停止） |
 | `ast_market_monitor_position_rows_degraded_total` | `reason` | 市場監視が保有照会の応答を**そのまま損切り判定へ渡せなかった行**（#957）。🔴 平常時 0 件。`identity-missing` / `stop-line-unknown` はその建玉の損切りを検知していない、`stop-line-approximated` は近似のラインで評価している、`response-unreadable` はその巡回で 1 件も評価していない |
-| `ast_market_monitor_cycle_duration_seconds_*` | — | 市場監視の**開場して評価した 1 巡回の所要**（秒・ヒストグラム。境界に 55・60 を置く）。Finnhub の限流器は 12 回/分の等間隔なので 1 巡回 12 要求は送出だけで 55 秒を使う。🔴 **所要が巡回間隔（既定 60 秒）に達すると次の巡回は待たずに始まり、1 銘柄あたりの価格の確認の周期が延びる**（損切りの検知が遅れる）。達した巡回は Warning ログも出す。アラートは置かない（鳴らす基準は未決） |
+| `ast_market_monitor_cycle_duration_seconds_*` | — | 市場監視の**開場して評価した 1 巡回の所要**（秒・ヒストグラム。境界に 55・60 を置く）。Finnhub の限流器は 12 回/分の等間隔なので 1 巡回 12 要求は送出だけで 55 秒を使う。🔴 **所要が巡回間隔（既定 60 秒）に達すると次の巡回は待たずに始まり、1 銘柄あたりの価格の確認の周期が延びる**（損切りの検知が遅れる）。Warning ログは**巡回間隔 ＋ 1 要求ぶんの送出間隔（12 回/分で 5 秒。既定構成で 65 秒）を超えた巡回**だけに出す（自制レートいっぱいの構成は所要 ≒ 巡回間隔で回るのが仕様どおりで、間隔ちょうどでは鳴らさない）。アラートは置かない（鳴らす基準は未決） |
 | `ast_information_collection_finnhub_symbol_set_resolutions_total` | `outcome` | 情報収集が Finnhub の対象銘柄を**どこから決めたか**（#1015。市場監視に結線したときだけ、巡回ごとに 1 件）。`watchlist` 以外（`last-known`＝直前に読めた対象 / `configured-fallback`＝構成の固定リスト）は**監視銘柄の変更が収集に届いていない**印である |
 | `ast_information_collection_finnhub_symbols_deferred` | — | 1 巡回の要求が巡回間隔に収まらず**後回しにした Finnhub の対象銘柄数**（#1015）。🔴 平常時 0。出ていれば自制レートか巡回間隔の見直しが要る |
 | `ast_kline_daily_requests_total` | `outcome` | 発注執行が OpenD へ撃った**日足 K 線の要求**（判断へ渡す出来高の取得・前復権。#1118）。`succeeded` / `non-success` / `failed`。🔴 **判断の出来高が無効（既定）なら 0 のまま**である。有効化の後は、取引日ごとに監視銘柄の数程度（判断側が銘柄 × 取引日でキャッシュする）。大きく超えていればキャッシュが効いていない |
