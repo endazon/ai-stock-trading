@@ -549,7 +549,41 @@ public class TradeDecisionServiceTests
         var warning = log.Entries.Should().ContainSingle(e => e.Message.Contains(RagFailureMessage, StringComparison.Ordinal)).Which;
         warning.Level.Should().Be(LogLevel.Warning);
         warning.Values["Cause"].Should().Be("exception:InvalidOperationException");
-        warning.Message.Should().NotContain("擬似障害");
+        warning.Values.Values.OfType<string>().Should().NotContain(v => v.Contains("擬似障害", StringComparison.Ordinal),
+            "構造化の値には例外のメッセージを載せない（原因は型名だけ）");
+    }
+
+    // 取得の最中に呼び出し元が取り消す取得ポート（T-10-2478）。取り消しまで判断が進んだことを Calls で確かめる。
+    private sealed class CancelingRetrieval(CancellationTokenSource cts) : IRetrievalContextProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<RetrievedContext>> GetContextAsync(
+            DecisionTrigger trigger, DailyPolicy policy, CancellationToken ct = default)
+        {
+            Calls++;
+            cts.Cancel();
+            ct.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("取り消しが取得ポートへ渡っていない");
+        }
+    }
+
+    // T-10-2478, FR-08, #1283（PR #1287 の監査 🟡4）: 呼び出し元の取り消しは失敗に分類せず握りつぶさない
+    // （OperationCanceledException が判断から伝播し、取得の失敗の Warning も出ない）。
+    [Fact]
+    public async Task T_10_2478_呼び出し元の取り消しは取得の失敗に分類せず伝播する()
+    {
+        using var cts = new CancellationTokenSource();
+        var log = new StateLogger();
+        var retrieval = new CancelingRetrieval(cts);
+        var service = new AppSvc(new CapturingLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), log, retrieval);
+
+        var act = () => service.DecideAsync(Trigger(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        retrieval.Calls.Should().Be(1, "取得まで進んでから取り消された");
+        log.Entries.Should().NotContain(e => e.Message.Contains(RagFailureMessage, StringComparison.Ordinal));
     }
 
     // --- FR-17, IADR-0076: 採算評価ゲート（opt-in・fail-safe）の検証 ---

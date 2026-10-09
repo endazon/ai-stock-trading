@@ -76,7 +76,16 @@ plan_refs:
 - 規則 9（誤りの側の文字列で走査）: `git grep -n "文脈なし\|空結果に倒\|空に倒す\|RAG 文脈の取得に失敗"`（CHANGELOG・`.ai-context/specs/` を除く）。
   該当: `HttpKnowledgeBaseSearch.cs`・`NoOpKnowledgeBaseSearch.cs`・`IKnowledgeBaseSearch.cs`（縮退の注記。縮退は不変で、状態を返すことを足す）・
   `IRetrievalContextProvider.cs`・`KnowledgeBaseRetrievalContextProvider.cs`・`TradeDecisionAppService.cs`・IADR-0072 / IADR-0069（凍結記録。日付つき追記）。
+  ［2026-10-09 追記 / #1283］日付つき追記は IADR-0072 だけに置いた（IADR-0069 決定3「失敗は空に倒す」は不変で、状態を添えることは IADR-0072 の追記が IADR-0069 を引いて記録する。PR #1287 の監査 🟡5）。
   `docs/` に RAG の取得の失敗を「ログに出ない」等と述べる記述は無い。
 - 規則 10（この変更で新たに誤りになる自分の記述）: `LLM 判断:` の行の項目が増えるので、その行を文字列で検査する試験・文書を探した（`git grep -n "LLM 判断"`）。試験・文書に該当なし。
   ポートへの既定実装の追加で、`IKnowledgeBaseSearch` / `IRetrievalContextProvider` の他の実装（試験の偽物 4 つ）は無改修で動く。
 - 除外: `.ai-context/specs/`（凍結）・CHANGELOG（生成物）。
+
+## ［2026-10-09 追記 / #1283］PR #1287 の独立監査の是正
+
+- 🟡1: PoC の事象（基盤の埋め込みの失敗）は `empty` として記録される（基盤はキーワードのみへ縮退して 200 を印なしで返す）。縮退の印は MSP#1871 で基盤に足し、取り込みは別 issue。
+- 🟡2: `HttpKnowledgeBaseSearch` の検索 1 本ごとの失敗の行を Debug に下げた（判断境界の Warning が原因を運ぶ。本番の呼び出し元は取引判断の取得だけ）。
+- 🟡3: テスト仕様書の trace ブロックへ #1283・IADR-0072 / IADR-0069 / IADR-0169・本仕様書を足した。
+- 🟡4: 呼び出し元の取り消しの伝播を T-10-2478 で固定した（T-10-2476〜2477 は並行の PR の改番に予約されている）。
+- 🟢: ポートの注記と IADR-0072 に「状態つきのメソッドも実装すること」を足した。T-10-2475 の表明を構造化の値へ改めた。

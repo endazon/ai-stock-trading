@@ -296,6 +296,19 @@ public class HttpKnowledgeBaseSearchTests
         }
     }
 
+    // T-10-2478, #1283（PR #1287 の監査 🟡4）: 呼び出し元の取り消しは打ち切り（timeout）・失敗に分類せず、OperationCanceledException を伝播する。
+    [Fact]
+    public async Task T_10_2478_呼び出し元の取り消しは失敗に分類せず伝播する()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, """{"results":[],"totalHits":0,"elapsedMs":1}""");
+
+        var act = () => CreateSearch(handler).SearchWithOutcomeAsync(new KnowledgeQuery("q"), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     // T-10-2472: 未構成（no-op）は NotConfigured（検索して 0 件と区別する）。
     [Fact]
     public async Task T_10_2472_未構成のKB検索は状態をNotConfiguredで返す()
