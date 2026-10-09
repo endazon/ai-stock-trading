@@ -30,7 +30,8 @@ public sealed class PublishingLlmUsageReporter(
 {
     public async Task ReportAsync(LlmUsage usage, CancellationToken cancellationToken = default)
     {
-        var price = priceTable.Resolve(usage.Model);
+        // #1295, IADR-0524: 入力トークン数で 2 段の単価（プロンプト長）を引き分ける。
+        var price = priceTable.Resolve(usage.Model, usage.InputTokens);
         var amount = LlmPricing.Compute(usage.InputTokens, usage.OutputTokens, price);
 
         await new MessageBus(runtime)

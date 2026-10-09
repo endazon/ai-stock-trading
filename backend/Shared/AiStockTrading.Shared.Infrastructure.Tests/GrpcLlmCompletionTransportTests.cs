@@ -150,7 +150,7 @@ public class GrpcLlmCompletionTransportTests
         {
             Text = "買い",
             Sent = true,
-            Model = "claude-opus-5",
+            Model = "claude-opus-5-5",
             StopReason = "end_turn",
             InputTokens = 12,
             OutputTokens = 34,
@@ -159,7 +159,7 @@ public class GrpcLlmCompletionTransportTests
         var exchange = await new GrpcLlmCompletionTransport(client).CompleteAsync(Call);
 
         exchange.Outcome.Should().Be(LlmTransportOutcome.Completed);
-        exchange.Payload.Should().Be(new LlmCompletionPayload("買い", true, "claude-opus-5", "end_turn", 12, 34));
+        exchange.Payload.Should().Be(new LlmCompletionPayload("買い", true, "claude-opus-5-5", "end_turn", 12, 34));
         // 要求も 1 対 1 で載る（proto3 に null は無いので未指定は空文字）。
         client.LastRequest!.Prompt.Should().Be("prompt");
         client.LastRequest.MaxTokens.Should().Be(4096);

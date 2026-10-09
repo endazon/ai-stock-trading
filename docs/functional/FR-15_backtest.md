@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-10-08
+updated: 2026-10-10
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, planning#783]
 -->
 
 
@@ -140,6 +140,8 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 
 **［2026-09-09 登録］取引判断の割当モデルの学習カットオフ日は計画の全体前提条件へ登録済みであり、実装は `2026-01-31` を構成（Helm values・開発用 appsettings）へ入れている。**
 
+**［2026-10-10 改定］割当モデルを 5.5 系（一次スクリーニング＝`claude-haiku-5-5`・本判断＝`claude-sonnet-5-5`）へ切り替える利用者裁定を受け、構成の値を `2026-06-30` へ引き直した**（提供元の training data cutoff は 3 モデルとも Jun 2026。月末へ写す同じ規則）。汚染対策の窓は 2026-07-01 以降になり、旧値より約 5 か月短い。🔴 **旧割当の組（`claude-haiku-4-5` ＋ `claude-sonnet-5`）で採った記録は、新しい組の合否に使えない**——両層の照合は現行のピンそのものだけを一致と読み、割当表が移行期間に受ける直前世代は一致と読まない（下の「両層の組での評価」）。Stage 0 は 5.5 系の組で採り直す。
+
 - **値は構成に置き、コード既定にはしない。** 未設定と登録済みが区別できなくなるためである。**割当モデルのピンを変えたら本値を引き直し、Stage 0 を再実施する**（計画がモデルのピン変更に求める再検証と同じ扱い）。
 - 🔴 **駆動側（`Backtest:Stage0:LlmTrainingCutoff`）と記録側（`Stage0Recording:LlmTrainingCutoff`）は同値にする。**食い違うと記録・再生の評価は「記録が構成と食い違う」で止まり、原因が構成の不一致だと読み取りにくい。
 
@@ -177,7 +179,7 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 
 #### 🔴 両層の組での評価（一次スクリーニングと本判断の実効モデル）
 
-計画は 2026-10-07 の裁定で、取引判断の割当モデルを層別（一次スクリーニング＝`claude-haiku-4-5`・本判断＝`claude-sonnet-5`）とし、
+計画は 2026-10-07 の裁定で、取引判断の割当モデルを層別（一次スクリーニング＝`claude-haiku-4-5`・本判断＝`claude-sonnet-5`。2026-10-10 の利用者裁定で `claude-haiku-5-5`・`claude-sonnet-5-5` へ改めた）とし、
 **Stage 0 は本番と同じ二段を通した判断を評価する**、**実弾解禁の必須ゲートは両層の組での Stage 0 の通過である**と定めた。
 
 | 記録の状態 | 扱い |

@@ -12,7 +12,7 @@ namespace TradeDecisionService.Features.TradeDecision.DecideTrade;
 // モデル選択（一次=軽量／二次=高性能）はポート引数でゲートウェイへ渡すのみ（実解決は後続・L34）。
 //
 // 🔴 FR-04, ADR-0014, ADR-0017 決定2, #335, IADR-0212: **用途（purpose）も層ごとに分ける。**
-// 割当（一次=claude-haiku-4-5／二次=claude-sonnet-5・LlmAssignments）も費用の計上区分も purpose で引かれるため、
+// 割当（一次=claude-haiku-5-5／二次=claude-sonnet-5-5・LlmAssignments。#1295）も費用の計上区分も purpose で引かれるため、
 // 両層が同じ purpose を名乗ると**一次の応答が二次の割当と照合されて必ず「割当外」になり、全サイクルが見送りへ倒れる**。
 // モデルの希望値（options.PrimaryModel / SecondaryModel）だけを変えても、判定に使われるのは purpose の側である。
 // 用途キーは計画（ADR-0017 決定1・01_architecture-overview §判断の二段化）が確定させた統制値であり、
@@ -99,7 +99,7 @@ public sealed class DecisionOrchestrator(
         var unparseableVotes = 0;
         for (var i = 0; i < options.VoteCount; i++)
         {
-            // IADR-0212: 用途は本判断（claude-sonnet-5 ピン留め・フォールバック禁止・ADR-0017 決定2）。
+            // IADR-0212: 用途は本判断（claude-sonnet-5-5 ピン留め・フォールバック禁止・ADR-0017 決定2）。
             var output = await llm
                 .CompleteAsync(decisionPrompt, options.SecondaryModel, LlmPurposes.TradeDecision, cancellationToken)
                 .ConfigureAwait(false);

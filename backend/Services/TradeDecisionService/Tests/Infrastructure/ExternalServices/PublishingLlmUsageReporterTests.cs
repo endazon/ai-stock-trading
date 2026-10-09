@@ -17,7 +17,7 @@ using Xunit;
 namespace TradeDecisionService.Tests;
 
 // NFR（費用）, FR-04, IADR-0055 決定2/3, IADR-0122: 応答が名乗った実効モデルの単価で計上額を決める。
-// 用途別モデル割当（ADR-0014 / MSP/IADR-0112）で trade-decision=claude-sonnet-5 になったため、
+// 用途別モデル割当（ADR-0014 / MSP/IADR-0112）で trade-decision=claude-sonnet-5-5 になったため、
 // opus 単価（¥0.819/¥4.093）のままでは約 2.5 倍の過大計上になる（#303）。
 //
 // ADR-0013, IADR-0129, #354: MassTransit のテストハーネス（harness.Bus + harness.Published）から
@@ -37,10 +37,10 @@ public class PublishingLlmUsageReporterTests
     private static LlmPriceTable Prices() => LlmPriceTable.From(
     [
         ("claude-fable-5", "1.637", "8.186"),
-        ("claude-opus-5", "0.819", "4.093"),
+        ("claude-opus-5-5", "0.655", "3.274"),  // #1295: 5.5 系の公表値（$4/$20）
         ("claude-opus-4-8", "0.819", "4.093"),
-        ("claude-sonnet-5", "0.327", "1.637"),
-        ("claude-haiku-4-5", "0.164", "0.819"),
+        ("claude-sonnet-5-5", "0.327", "1.637"),
+        ("claude-haiku-5-5", "0.0164", "0.0819"),
     ]);
 
     private static async Task<decimal> ReportAsync(LlmUsage usage, LlmPriceTable prices) =>
@@ -75,12 +75,12 @@ public class PublishingLlmUsageReporterTests
         return published;
     }
 
-    // 基準2（#303）: trade-decision は claude-sonnet-5。入力 1000 × 0.327 + 出力 2000 × 1.637 = 3.601 円。
+    // 基準2（#303）: trade-decision は claude-sonnet-5-5。入力 1000 × 0.327 + 出力 2000 × 1.637 = 3.601 円。
     // 従来の opus 単価なら 0.819 + 8.186 = 9.005 円で、約 2.5 倍の過大計上だった。
     [Fact]
     public async Task trade_decision_は_sonnet_5_の単価で計上する()
     {
-        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, "claude-sonnet-5"), Prices());
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, "claude-sonnet-5-5"), Prices());
 
         amount.Should().Be(3.601m);
     }
@@ -88,8 +88,8 @@ public class PublishingLlmUsageReporterTests
     // 基準3（#303）: 報告書 3 種別が別モデルへ解決されても、それぞれの単価で計上できる（#282 で経路を足す）。
     [Theory]
     [InlineData("claude-fable-5", 18.009)]   // report-monthly: 1.637 + 2×8.186
-    [InlineData("claude-opus-5", 9.005)]     // report-weekly:  0.819 + 2×4.093
-    [InlineData("claude-sonnet-5", 3.601)]   // report-daily:   0.327 + 2×1.637
+    [InlineData("claude-opus-5-5", 7.203)]     // report-weekly:  0.655 + 2×3.274
+    [InlineData("claude-sonnet-5-5", 3.601)]   // report-daily:   0.327 + 2×1.637
     public async Task 報告書の種別ごとのモデルでも実効単価で計上する(string model, double expected)
     {
         var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, model), Prices());
@@ -117,7 +117,7 @@ public class PublishingLlmUsageReporterTests
     [InlineData(LlmPurposes.TradeDecisionScreening)]
     public async Task 計上イベントには計測ごとの用途がそのまま載る(string purpose)
     {
-        var published = await PublishAsync(new LlmUsage(purpose, 1000, 2000, "claude-sonnet-5"), Prices());
+        var published = await PublishAsync(new LlmUsage(purpose, 1000, 2000, "claude-sonnet-5-5"), Prices());
 
         published.Purpose.Should().Be(purpose);
     }
@@ -126,7 +126,7 @@ public class PublishingLlmUsageReporterTests
     [Fact]
     public async Task 単価未設定でも金額_0_で発行する()
     {
-        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, "claude-sonnet-5"), LlmPriceTable.From([]));
+        var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, "claude-sonnet-5-5"), LlmPriceTable.From([]));
 
         amount.Should().Be(0m);
     }

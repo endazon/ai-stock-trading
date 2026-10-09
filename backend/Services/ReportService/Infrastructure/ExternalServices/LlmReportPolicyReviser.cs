@@ -1,4 +1,5 @@
 using AiStockTrading.Shared.Contracts.Llm;
+using AiStockTrading.Shared.Infrastructure.Composable.Llm;
 using AiStockTrading.Shared.Contracts.Logging;
 using Microsoft.Extensions.Logging;
 using ReportService.Domain;
@@ -109,6 +110,8 @@ public sealed class LlmReportPolicyReviser(
             }
 
             var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, dto.Model);
+            // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代を受けたことを用途とモデルの組ごとに 1 回だけ警告する。
+            LlmPreviousGenerationWarning.Shared.WarnOnce(logger, purpose, evaluation);
             modelUsage = new LlmModelUsage(purpose, evaluation.ExpectedModel, evaluation.EffectiveModel, evaluation.Outcome.ToString());
 
             if (evaluation.Outcome != LlmAssignmentOutcome.Primary)

@@ -27,12 +27,12 @@ public class AuditEntryFactoryLlmGovernanceTests
     public void LLM費用発生は用途とモデルを要約に残す()
     {
         var entry = AuditEntryFactory.From(
-            new LlmCostIncurred(12.34m, July, LlmPurposes.ReportMonthly, "claude-opus-5"), Id, RecordedAt);
+            new LlmCostIncurred(12.34m, July, LlmPurposes.ReportMonthly, "claude-opus-5-5"), Id, RecordedAt);
 
         entry.EventType.Should().Be(nameof(LlmCostIncurred));
         entry.Summary.Should().Contain("12.34");
         entry.Summary.Should().Contain(LlmPurposes.ReportMonthly);
-        entry.Summary.Should().Contain("claude-opus-5");
+        entry.Summary.Should().Contain("claude-opus-5-5");
         entry.OccurredAt.Should().Be(July);
         entry.RecordedAt.Should().Be(RecordedAt);
     }
@@ -66,14 +66,14 @@ public class AuditEntryFactoryLlmGovernanceTests
     {
         var entry = AuditEntryFactory.From(
             new LlmFallbackFired(
-                LlmPurposes.ReportMonthly, LlmAssignments.Opus5, "claude-sonnet-5",
+                LlmPurposes.ReportMonthly, LlmAssignments.Opus55, "claude-sonnet-5-5",
                 nameof(LlmAssignmentOutcome.FallbackFired), July),
             Id, RecordedAt);
 
         entry.EventType.Should().Be(nameof(LlmFallbackFired));
         entry.Summary.Should().Contain(LlmPurposes.ReportMonthly);
-        entry.Summary.Should().Contain(LlmAssignments.Opus5);
-        entry.Summary.Should().Contain("claude-sonnet-5");
+        entry.Summary.Should().Contain(LlmAssignments.Opus55);
+        entry.Summary.Should().Contain("claude-sonnet-5-5");
         entry.Summary.Should().Contain(nameof(LlmAssignmentOutcome.FallbackFired));
         entry.OccurredAt.Should().Be(July);
         // 全量 JSON は台帳の権威源（FR-11）。要約の切り詰めで原因が失われても Detail から復元できる。
@@ -85,10 +85,10 @@ public class AuditEntryFactoryLlmGovernanceTests
     public void フォールバック発火の相関は発生月ごとに分かれる()
     {
         var july = AuditEntryFactory.From(
-            new LlmFallbackFired(LlmPurposes.ReportDaily, LlmAssignments.Sonnet5, LlmAssignments.Haiku45,
+            new LlmFallbackFired(LlmPurposes.ReportDaily, LlmAssignments.Sonnet55, LlmAssignments.Haiku55,
                 nameof(LlmAssignmentOutcome.FallbackFired), July), Id, RecordedAt);
         var august = AuditEntryFactory.From(
-            new LlmFallbackFired(LlmPurposes.ReportDaily, LlmAssignments.Sonnet5, LlmAssignments.Haiku45,
+            new LlmFallbackFired(LlmPurposes.ReportDaily, LlmAssignments.Sonnet55, LlmAssignments.Haiku55,
                 nameof(LlmAssignmentOutcome.FallbackFired), August), Id, RecordedAt);
 
         august.CorrelationId.Should().NotBe(july.CorrelationId);
@@ -116,13 +116,13 @@ public class AuditEntryFactoryLlmGovernanceTests
         var entry = AuditEntryFactory.From(
             new TradeDecisionSkipped(
                 LlmPurposes.TradeDecision, nameof(LlmAssignmentOutcome.Unassigned),
-                LlmAssignments.Sonnet5, "claude-haiku-4-5", July),
+                LlmAssignments.Sonnet55, "claude-haiku-5-5", July),
             Id, RecordedAt);
 
         entry.EventType.Should().Be(nameof(TradeDecisionSkipped));
         entry.Summary.Should().Contain("見送り");
         entry.Summary.Should().Contain(LlmPurposes.TradeDecision);
-        entry.Summary.Should().Contain(LlmAssignments.Sonnet5);
+        entry.Summary.Should().Contain(LlmAssignments.Sonnet55);
         entry.Summary.Should().Contain(nameof(LlmAssignmentOutcome.Unassigned));
         entry.OccurredAt.Should().Be(July);
     }
@@ -132,10 +132,10 @@ public class AuditEntryFactoryLlmGovernanceTests
     public void 取引判断の見送りの相関は発生月ごとに分かれる()
     {
         var july = AuditEntryFactory.From(
-            new TradeDecisionSkipped(LlmPurposes.TradeDecision, "Unassigned", LlmAssignments.Sonnet5, null, July),
+            new TradeDecisionSkipped(LlmPurposes.TradeDecision, "Unassigned", LlmAssignments.Sonnet55, null, July),
             Id, RecordedAt);
         var august = AuditEntryFactory.From(
-            new TradeDecisionSkipped(LlmPurposes.TradeDecision, "Unassigned", LlmAssignments.Sonnet5, null, August),
+            new TradeDecisionSkipped(LlmPurposes.TradeDecision, "Unassigned", LlmAssignments.Sonnet55, null, August),
             Id, RecordedAt);
 
         august.CorrelationId.Should().NotBe(july.CorrelationId);
@@ -146,10 +146,10 @@ public class AuditEntryFactoryLlmGovernanceTests
     public void 見送りとフォールバック発火は同月でも別の相関になる()
     {
         var skipped = AuditEntryFactory.From(
-            new TradeDecisionSkipped(LlmPurposes.TradeDecision, "Unassigned", LlmAssignments.Sonnet5, null, July),
+            new TradeDecisionSkipped(LlmPurposes.TradeDecision, "Unassigned", LlmAssignments.Sonnet55, null, July),
             Id, RecordedAt);
         var fired = AuditEntryFactory.From(
-            new LlmFallbackFired(LlmPurposes.ReportDaily, LlmAssignments.Sonnet5, LlmAssignments.Haiku45,
+            new LlmFallbackFired(LlmPurposes.ReportDaily, LlmAssignments.Sonnet55, LlmAssignments.Haiku55,
                 nameof(LlmAssignmentOutcome.FallbackFired), July), Id, RecordedAt);
 
         skipped.CorrelationId.Should().NotBe(fired.CorrelationId);

@@ -31,9 +31,9 @@ public class FileStage0DecisionRecordSourceTests : IDisposable
     private static Stage0DecisionRecordSet Sample() =>
         new(new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30),
             [new Stage0RecordedSymbol("AAPL", Market.UnitedStates)],
-            new DateOnly(2026, 3, 31), DateTimeOffset.UnixEpoch, "claude-sonnet-5", "sid",
+            new DateOnly(2026, 3, 31), DateTimeOffset.UnixEpoch, "claude-sonnet-5-5", "sid",
             [new Stage0DecisionRecord("AAPL", Market.UnitedStates, new DateOnly(2026, 6, 2), "fp",
-                "claude-sonnet-5", 3,
+                "claude-sonnet-5-5", 3,
                 [new Stage0RawDecision(1, Stage0DecisionAction.Buy, "根拠", 100m, 2m, 100, 20, false)],
                 Stage0DecisionAction.Buy, "根拠", 10, 1m, 300, 60)]);
 

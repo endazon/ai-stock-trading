@@ -12,7 +12,7 @@ namespace BacktestService.Hosted;
 //   - 評価対象に本番戦略（`Strategy=recorded-replay`）を選び、**その記録が在る**こと
 //     （戦略そのものは #632 / IADR-0318 で**載っている**。未了なのは記録の取得であり、ADR-0033 決定5 の
 //      見積り提示→利用者承認を要する）
-//   - 学習カットオフ日（LlmTrainingCutoff）が構成されていること（**ADR-0037 決定2 で `2026-01-31` が登録済み**）
+//   - 学習カットオフ日（LlmTrainingCutoff）が構成されていること（**ADR-0037 決定2 の写し方で、5.5 系の割当の `2026-06-30` を構成する**。#1295）
 // **過去データと記録が揃うまでは、有効化しても verdict は必ず不合格になる**（fail-closed。経路の確認にはなる）。
 public sealed class Stage0EvaluationOptions
 {
@@ -29,7 +29,8 @@ public sealed class Stage0EvaluationOptions
 
     /// <summary>
     /// LLM 学習カットオフ日（`YYYY-MM-DD`）。**未設定・解釈不能は「未充足」として扱う**
-    /// （ADR-0033 決定3。未設定を充足へ倒さない）。値は ADR-0037 決定2 が計画へ登録した `2026-01-31` であり、
+    /// （ADR-0033 決定3。未設定を充足へ倒さない）。値は ADR-0037 決定2 の写し方（training data cutoff を月末へ）で
+    /// 5.5 系の割当（Jun 2026）を写した `2026-06-30` であり（#1295・旧割当は `2026-01-31`）、
     /// **構成から受け取る**（コード既定にしない —— 未設定と登録済みが区別できなくなるため）。
     /// </summary>
     public string? LlmTrainingCutoff { get; set; }

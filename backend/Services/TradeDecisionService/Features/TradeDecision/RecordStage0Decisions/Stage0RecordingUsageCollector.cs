@@ -66,6 +66,6 @@ public sealed class Stage0RecordingUsageCollector(ILlmUsageReporter inner) : ILl
         ArgumentNullException.ThrowIfNull(usages);
         ArgumentNullException.ThrowIfNull(priceTable);
 
-        return usages.Sum(u => LlmPricing.Compute(u.InputTokens, u.OutputTokens, priceTable.Resolve(u.Model)));
+        return usages.Sum(u => LlmPricing.Compute(u.InputTokens, u.OutputTokens, priceTable.Resolve(u.Model, u.InputTokens)));
     }
 }

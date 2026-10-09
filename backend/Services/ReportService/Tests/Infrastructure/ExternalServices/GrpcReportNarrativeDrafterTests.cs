@@ -128,7 +128,7 @@ public class GrpcReportNarrativeDrafterTests
         {
             Text = "本日は堅調な地合いでした。",
             Sent = true,
-            Model = "claude-sonnet-5",
+            Model = "claude-sonnet-5-5",
             StopReason = "end_turn",
         });
 

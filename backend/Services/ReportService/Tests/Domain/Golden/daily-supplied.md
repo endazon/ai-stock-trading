@@ -114,8 +114,8 @@ confidentiality: internal
 ### 散文生成に使用した LLM
 
 - 用途: report-daily
-- 割当（第 1 候補）: claude-opus-5
-- 実際に使用したモデル: claude-opus-5
+- 割当（第 1 候補）: claude-opus-5-5
+- 実際に使用したモデル: claude-opus-5-5
 - フォールバック: 発火なし（第 1 候補で生成）
 
 ## 5. 市況・特記事項

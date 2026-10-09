@@ -98,7 +98,7 @@ public class LlmGatewayUnsentReasonTests
 
     private static LlmCompletionExchange SentOk() =>
         LlmCompletionExchange.Completed(new LlmCompletionPayload(
-            """{"action":"Hold","rationale":"様子見"}""", Sent: true, "claude-haiku-4-5", "end_turn", 10, 5));
+            """{"action":"Hold","rationale":"様子見"}""", Sent: true, "claude-haiku-5-5", "end_turn", 10, 5));
 
     private static string RationaleOf(string output) => TradeDecisionParser.Parse(output).Rationale;
 

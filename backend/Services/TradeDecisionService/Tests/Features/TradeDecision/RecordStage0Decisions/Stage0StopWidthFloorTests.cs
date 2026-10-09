@@ -192,7 +192,7 @@ public class Stage0StopWidthFloorTests
         ApprovedVoteCount = 1,
         ApprovedEstimateJpy = 4m,
         OutputPath = "records.json",
-        Model = "claude-sonnet-5",
+        Model = "claude-sonnet-5-5",
     };
 
     private static (Stage0DecisionRecorder Recorder, FakeLlm Llm, CapturingSink Sink) Build(
@@ -203,7 +203,7 @@ public class Stage0StopWidthFloorTests
         var sink = new CapturingSink();
         var recorder = new Stage0DecisionRecorder(
             llm, DecisionOrchestrationOptions.Default, wrap(new StubInputs()), sink, collector,
-            LlmPriceTable.From([("claude-sonnet-5", "1", "1")], "1", "1"),
+            LlmPriceTable.From([("claude-sonnet-5-5", "1", "1")], "1", "1"),
             new ManualTimeProvider(FarFuture), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink);
     }

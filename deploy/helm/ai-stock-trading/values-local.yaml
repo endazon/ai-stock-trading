@@ -275,8 +275,8 @@ services:
       - name: LlmGateway__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
-      # #308 / IADR-0123: 種別ごとに別モデルが割り当たる（日報=sonnet-5 / 週報=opus-5 / 月報=opus-5・
-      # ADR-0015・MSP#429 で fable-5 から改定済み）ため所要時間も違う。共通 30 秒では週報・月報が
+      # #308 / IADR-0123: 種別ごとに別モデルが割り当たる（日報=sonnet / 週報=opus / 月報=opus・
+      # ADR-0015・MSP#429 で fable-5 から改定済み。#1295 で 5.5 系へ）ため所要時間も違う。共通 30 秒では週報・月報が
       # 構造的に間に合わず所感がプレースホルダへ縮退していた。組込既定（日報 30 秒 / 週報・月報 120 秒）
       # と同じ値を経路B では**明示**する＝live で効いている上限をマニフェスト上で読めるようにする。
       # 空/不正/非正値は組込既定へ倒す（fail-safe）。
@@ -295,13 +295,24 @@ services:
       #   詳細は trade-decision.extraEnv の同名コメント）。
       - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
       - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
-      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
+      # #1295, IADR-0524: 5.5 系（利用者裁定 2026-10-10・planning#783。提供元の公表値 確認日 2026-10-10）。
+      - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }   # $4/1M（report-monthly・report-weekly）
+      - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }  # $20/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__InputPer1kTokens, value: "0.327" } # $2/1M（report-daily・週報/月報のフォールバック先）
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__OutputPer1kTokens, value: "1.637" } # $10/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__InputPer1kTokens, value: "0.0164" }  # $0.10/1M（report-daily フォールバック先・入力 100,000 トークン以下）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__OutputPer1kTokens, value: "0.0819" } # $0.50/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
+      # 🔴 移行期間のみ（#1295・撤去は #1296）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗るため、旧世代の行を残す。
+      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（旧 report-monthly・report-weekly）
       - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
       - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（フォールバック先には含まれないが表の一貫性のため保持）
       - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（report-daily・フォールバック先）
+      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（旧 report-daily・フォールバック先）
       - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（report-daily フォールバック先）
+      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（旧 report-daily フォールバック先）
       - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - name: ServiceAuth__ClientId
@@ -357,8 +368,9 @@ services:
       # 構成へ倒さず、直前に読めた一覧か、一度も読めていなければその巡回を見送る）。
       - { name: MarketMonitor__BaseUrl, value: "http://market-monitor-service:8080" }
       # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日（本番既定と同値の写し）。
+      # #1295, IADR-0524: 5.5 系の割当（training data cutoff Jun 2026）を月末へ写した 2026-06-30（旧割当は 2026-01-31）。
       # 🔴 backtest 側の Backtest__Stage0__LlmTrainingCutoff と必ず同値にする（食い違うと RecordingMismatch）。
-      - { name: Stage0Recording__LlmTrainingCutoff, value: "2026-01-31" }
+      - { name: Stage0Recording__LlmTrainingCutoff, value: "2026-06-30" }
       - { name: LlmGateway__BaseUrl, value: "http://llmgateway-service.microservices-platform:8080" }  # ← ②
       # NFR-05, #724, IADR-0323: ②の s2s（report と同じ設定点・同じ client）。匿名では 401 になり、
       # **その 401 は「割当モデル不可」ではなく「認可の失敗」として記録される**（IADR-0323 決定3）。
@@ -376,8 +388,8 @@ services:
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
       - { name: LlmGateway__LogPrompts, value: "" }
-      # FR-04, ADR-0014/0017, IADR-0212/0276, #571: 二段判断（一次スクリーニング=claude-haiku-4-5→二次本判断=
-      # claude-sonnet-5）を経路B で確認する。前提: 基盤 LlmGateway へ trade-decision-screening が登録済み
+      # FR-04, ADR-0014/0017, IADR-0212/0276, #571: 二段判断（一次スクリーニング=claude-haiku-5-5→二次本判断=
+      # claude-sonnet-5-5。#1295）を経路B で確認する。前提: 基盤 LlmGateway へ trade-decision-screening が登録済み
       # （microservices-platform 側 PR。#571）。未登録のままだと一次が本判断の割当と照合され「割当外」と
       # 判定され全サイクルが見送りへ倒れる（IADR-0212）。コード既定も true（#571）だが本表でも明示する。
       - { name: Decision__EnableScreening, value: "true" }
@@ -390,8 +402,9 @@ services:
       #
       # 単位: **円 / 1,000 トークン**（LlmPricing.Compute は「いずれも円」）。
       # 粒度: **モデル別**（IADR-0122 決定1）。用途別モデル割当（計画 ADR-0014 / ADR-0015 / MSP/IADR-0112）で
-      #   trade-decision=sonnet-5 / report-monthly=opus-5（フォールバック sonnet-5・MSP#429・計画 ADR-0015 で
-      #   fable-5 から改定済み）/ report-weekly=opus-5 / report-daily=sonnet-5 とモデルが混在するため、
+      #   trade-decision=sonnet-5-5 / trade-decision-screening=haiku-5-5 / report-monthly=opus-5-5（フォールバック
+      #   sonnet-5-5・MSP#429・計画 ADR-0015 で fable-5 から改定済み）/ report-weekly=opus-5-5 / report-daily=sonnet-5-5
+      #   （フォールバック haiku-5-5）とモデルが混在するため（#1295 で 5.5 系へ）、
       #   global 単一ペアでは実態と乖離する（従来の opus 基準は trade-decision で約 2.5 倍の過大計上だった）。
       #   単価は**応答が名乗った実効モデル**（CompletionApiResponse.Model）で引く。要求側の
       #   希望モデルではない（ゲートウェイは越境ルーティング〈ADR-0010〉で別モデルへ着地し得る）。
@@ -407,7 +420,13 @@ services:
       # 出典・前提（2026-07 時点・**恒久値ではない**）:
       #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50、opus-5 / opus-4-8 = 5/25、
       #     sonnet-5 = 2/10、haiku-4-5 = 1/5
+      #   #1295, IADR-0524（確認日 2026-10-10・planning#783）: opus-5-5 = 4/20、sonnet-5-5 = 2/10、
+      #     haiku-5-5 = **プロンプト長で 2 段**（入力 100,000 トークン以下 0.10/0.50・超 0.50/2.50。キャッシュ読み書きを含む
+      #     入力トークンの合計で要求ごとに決まる）。第 2 段は LongContextThresholdTokens / LongContextInputPer1kTokens /
+      #     LongContextOutputPer1kTokens で与え、LlmPriceTable が計上時の入力トークン数で引き分ける。haiku-5-5 の第 1 段は
+      #     小数第 3 位で丸めると 0.016 になり過小側へ寄るため、小数第 4 位（0.0164 / 0.0819）で持つ。
       #   USD→JPY 換算 163.71（システムの為替源 FRED DEXJPUS と同一系列・IADR-0107）／小数第 3 位で四捨五入
+      #   （1 円/1k を下回る単価は有効数字 3 桁）
       #   例: 0.002 × 163.71 = 0.32742 ≒ 0.327、0.010 × 163.71 = 1.6371 ≒ 1.637（sonnet-5）
       #   ✅ **sonnet-5 の $2/$10 は恒久化を確認済み**（#243・確認日 2026-08-28。出典:
       #   https://platform.claude.com/docs/en/about-claude/pricing の Model pricing 表・注記
@@ -417,20 +436,31 @@ services:
       #   ※ 為替・他モデルの公開単価はいずれも変動する。乖離が出たら本値と実測値を更新する。
       #   ※ 報告書散文（report-service）は #282 で計上経路（自前の ILlmUsageReporter）を実装済み
       #     （PR f1b26d4b・IADR-0121）。本表は trade-decision・report-service の両方に効く。
-      # 🔴 env 名ではモデル ID の `-` を `_` で書く（claude-sonnet-5 → claude_sonnet_5。#817）。イメージの
+      # 🔴 env 名ではモデル ID の `-` を `_` で書く（claude-sonnet-5-5 → claude_sonnet_5_5。#817）。イメージの
       #   ENTRYPOINT `sh -c "exec dotnet …"` のシェル（dash）は、シェル識別子でない（`-` を含む）env 名を exec 先へ
       #   渡さない。ハイフン形のままだと Pod 定義には在るのに dotnet へ 0 件しか届かず、表が空＝全呼び出し ¥0 計上に
       #   なっていた（稼働実測 2026-09-17: Pod env 10 件 → /proc/1/environ 0 件）。LlmPriceTable は `-` と `_` を
-      #   同一視して応答の実効モデル名（claude-sonnet-5）と照合する。helm.yml が描画後の全 env 名を識別子形で検査する。
+      #   同一視して応答の実効モデル名（claude-sonnet-5-5）と照合する。helm.yml が描画後の全 env 名を識別子形で検査する。
       - { name: LlmPricing__PerModel__claude_fable_5__InputPer1kTokens, value: "1.637" }    # $10/1M（fail-safe 上限値・用途未割当）
       - { name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens, value: "8.186" }   # $50/1M
-      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（report-monthly・report-weekly）
+      # #1295, IADR-0524: 5.5 系（利用者裁定 2026-10-10・planning#783。提供元の公表値 確認日 2026-10-10）。
+      - { name: LlmPricing__PerModel__claude_opus_5_5__InputPer1kTokens, value: "0.655" }   # $4/1M（report-monthly・report-weekly）
+      - { name: LlmPricing__PerModel__claude_opus_5_5__OutputPer1kTokens, value: "3.274" }  # $20/1M
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__InputPer1kTokens, value: "0.327" } # $2/1M（trade-decision・report-daily）
+      - { name: LlmPricing__PerModel__claude_sonnet_5_5__OutputPer1kTokens, value: "1.637" } # $10/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__InputPer1kTokens, value: "0.0164" }  # $0.10/1M（trade-decision-screening・入力 100,000 トークン以下）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__OutputPer1kTokens, value: "0.0819" } # $0.50/1M
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
+      - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
+      # 🔴 移行期間のみ（#1295・撤去は #1296）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗るため、旧世代の行を残す。
+      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（旧 report-monthly・report-weekly）
       - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
       - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
       - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（trade-decision・report-daily）
+      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（旧 trade-decision・report-daily）
       - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M
+      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（旧 trade-decision-screening）
       - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -500,8 +530,8 @@ services:
       - { name: Backtest__BarData__Provider, value: "" }
       # ← 経路B で有効化（本番既定は "false"）。日次 1 巡回で verdict を publish する。
       - { name: Backtest__Stage0__Enabled, value: "true" }
-      # 本番既定と同値の写し（ADR-0037 決定2 が登録した `claude-sonnet-5` の学習カットオフ日）。
-      - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-01-31" }
+      # 本番既定と同値の写し（ADR-0037 決定2 の写し方で 5.5 系の割当〈Jun 2026〉を月末へ写した学習カットオフ日。#1295）。
+      - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-06-30" }
       # ← 経路B で**本番戦略**を選ぶ（本番既定は空＝placeholder）。記録（Recording__Path）が空である間は
       #    `NoDecisionRecords` で fail-closed する。記録の取得は ADR-0033 決定5 の見積り提示→利用者承認が要る
       #    （docs/blocked-tasks.md B-7）。実効値は GET /internal/introspection の port `stage0-strategy` で見える。

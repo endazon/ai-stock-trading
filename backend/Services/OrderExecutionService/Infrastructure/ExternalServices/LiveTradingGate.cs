@@ -22,9 +22,11 @@ namespace OrderExecutionService.Infrastructure.ExternalServices;
 //   2. 秘匿情報の Vault 化（IADR-0056 §3）
 //   3. 発注予約 Reserved 滞留の自動リコンサイル（#141・IADR-0056 §3）
 //   4. 🔴 FR-15, FR-20, ADR-0014 決定3, ADR-0054 決定3, #204 C-8, #1196, IADR-0498: **両層の組での Stage 0 合格**
-//      （一次スクリーニング trade-decision-screening = claude-haiku-4-5 ＋ 本判断 trade-decision = claude-sonnet-5 の二段を
+//      （一次スクリーニング trade-decision-screening = claude-haiku-5-5 ＋ 本判断 trade-decision = claude-sonnet-5-5 の二段を
 //      通した記録で、両層の実効モデルがピンと一致した判断による合格）。一次を記録していない旧記録の評価は評価不能であり合格ではない。
 //      どちらの層のモデルを変えても再実施する。**これが満たされるまで本定数を true にしない**（ADR-0054 決定4 の暫定手段）。
+//      #1295, IADR-0524: 利用者裁定 2026-10-10（planning#783）で組を 5.5 系へ改めた。旧組（claude-haiku-4-5 ＋ claude-sonnet-5）での
+//      合格は本前提を満たさない（割当表が移行期間に直前世代を受けても、Stage 0 の組の判定は受けない）。
 public static class LiveTradingGate
 {
     // 実弾は未解禁。この定数を true にすることが「解禁」そのものであり、別 IADR の承認を要する。
@@ -35,7 +37,7 @@ public static class LiveTradingGate
     /// （閂 0 の例外文と閂 3 の例外文が同じ文を使う。列挙が面ごとに食い違わないようにする）。
     /// </summary>
     public const string StageZeroTwoTierPrerequisite =
-        "両層の組（一次スクリーニング claude-haiku-4-5 ＋ 本判断 claude-sonnet-5）での Stage 0 合格"
+        "両層の組（一次スクリーニング claude-haiku-5-5 ＋ 本判断 claude-sonnet-5-5）での Stage 0 合格"
         + "（本番と同じ二段で記録し、両層の実効モデルがピンと一致した判断で合格すること。どちらの層のモデルを変えても再実施）";
 
     // live 階層が選ばれていれば停止する。sim / paper は素通し（現行のペーパー・SIMULATE 運用を妨げない）。
