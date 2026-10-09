@@ -108,5 +108,5 @@ IADR-0490 決定 1 の前提（`TradeCycle__MaxWatchedSymbols`）を超えたと
 
 ## 試験
 
-T-10-2480〜T-10-2486（`docs/tests/FR-10_risk-controls-tests.md`）。`ScheduledJudgmentTargetsTests`・`HttpHeldPositionProviderTests`（配線）・`RiskManagementReadContractTests`（送り手の型の契約）・
+T-10-2490〜T-10-2496（`docs/tests/FR-10_risk-controls-tests.md`）。`ScheduledJudgmentTargetsTests`・`HttpHeldPositionProviderTests`（配線）・`RiskManagementReadContractTests`（送り手の型の契約）・
 `InformationCollectedConsumerTests`・`HeldOutsideWatchlistExitOnlyTests`・`DecisionSkipReasonTests`・`DecisionHeldReportTests`。

@@ -103,11 +103,11 @@ public class HeldOutsideWatchlistExitOnlyTests
     private static DecisionTrigger Trigger(bool exitOnly) =>
         DecisionTrigger.Scheduled("MSFT", Market.UnitedStates, Now, exitOnly);
 
-    // T-10-2483: 出口専用の判断で LLM が決済を返したら、保有全量の決済として発注意図にする（出口は止めない）。
+    // T-10-2493: 出口専用の判断で LLM が決済を返したら、保有全量の決済として発注意図にする（出口は止めない）。
     [Theory]
     [InlineData(10, SellJson, TradeSide.Sell)]
     [InlineData(-10, BuyJson, TradeSide.Buy)]
-    public async Task T_10_2483_出口専用の判断でも決済は保有全量で発注意図になる(int held, string output, TradeSide side)
+    public async Task T_10_2493_出口専用の判断でも決済は保有全量で発注意図になる(int held, string output, TradeSide side)
     {
         var probe = Create(held, output);
 
@@ -120,11 +120,11 @@ public class HeldOutsideWatchlistExitOnlyTests
         probe.Skips.Reasons.Should().BeEmpty();
     }
 
-    // T-10-2484: 出口専用の判断で LLM が新規建て（買い増し・売り増し）を返したら、発注意図を作らず判断後の見送りにする。
+    // T-10-2494: 出口専用の判断で LLM が新規建て（買い増し・売り増し）を返したら、発注意図を作らず判断後の見送りにする。
     [Theory]
     [InlineData(10, BuyJson)]
     [InlineData(-10, SellJson)]
-    public async Task T_10_2484_出口専用の判断で新規建てを返しても発注意図を作らない_否定形(int held, string output)
+    public async Task T_10_2494_出口専用の判断で新規建てを返しても発注意図を作らない_否定形(int held, string output)
     {
         var probe = Create(held, output);
 
@@ -136,9 +136,9 @@ public class HeldOutsideWatchlistExitOnlyTests
             .Which.Reason.Should().Be(nameof(DecisionSkipReason.ExitOnlyOpenOutsideWatchlist), "判断後の見送りとして基準値を進める");
     }
 
-    // T-10-2484（判断の間に保有が 0）: 保有が 0 になった出口専用の判断で LLM が買いを返しても、新規建てにしない。
+    // T-10-2494（判断の間に保有が 0）: 保有が 0 になった出口専用の判断で LLM が買いを返しても、新規建てにしない。
     [Fact]
-    public async Task T_10_2484_保有が0になった出口専用の判断で買いを返しても新規建てにしない_否定形()
+    public async Task T_10_2494_保有が0になった出口専用の判断で買いを返しても新規建てにしない_否定形()
     {
         var probe = Create(0, BuyJson);
 
@@ -148,10 +148,10 @@ public class HeldOutsideWatchlistExitOnlyTests
         probe.Skips.Reasons.Should().Equal(DecisionSkipReason.ExitOnlyOpenOutsideWatchlist);
     }
 
-    // T-10-2485: 監視銘柄の判断（ExitOnly=false）は変えない —— 保有中の買い増しは従来どおり新規建ての発注意図になり、
+    // T-10-2495: 監視銘柄の判断（ExitOnly=false）は変えない —— 保有中の買い増しは従来どおり新規建ての発注意図になり、
     // プロンプトに出口専用の行は出ない。出口専用の判断のプロンプトにだけ出口専用の行が出る。
     [Fact]
-    public async Task T_10_2485_監視銘柄の判断は買い増しを従来どおり通しプロンプトに出口専用の行を出さない()
+    public async Task T_10_2495_監視銘柄の判断は買い増しを従来どおり通しプロンプトに出口専用の行を出さない()
     {
         var watched = Create(10, BuyJson);
         var decision = await watched.Service.DecideAsync(Trigger(exitOnly: false), TestContext.Current.CancellationToken);
@@ -166,9 +166,9 @@ public class HeldOutsideWatchlistExitOnlyTests
             .And.OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.ExitOnlyLine, StringComparison.Ordinal));
     }
 
-    // T-10-2485（監視銘柄が不明）: 監視銘柄節が「不明」の判断でも、出口専用の行は出る。
+    // T-10-2495（監視銘柄が不明）: 監視銘柄節が「不明」の判断でも、出口専用の行は出る。
     [Fact]
-    public void T_10_2485_監視銘柄が不明でも出口専用の行は出る()
+    public void T_10_2495_監視銘柄が不明でも出口専用の行は出る()
     {
         TradeDecisionPromptBuilder.WatchlistSection(Trigger(exitOnly: true), null)
             .Should().Contain(TradeDecisionPromptBuilder.ExitOnlyLine);

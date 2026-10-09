@@ -59,10 +59,10 @@ project-planning `origin/main` の `projects/ai-stock-trading/` を読んだ。
 
 ## 受け入れ基準
 
-- [x] 定時サイクルは監視銘柄に加え、監視銘柄の外の保有銘柄も判断する（T-10-2480・T-10-2482）。
-- [x] 保有が不明（照会失敗・解釈不能・未結線）なら監視銘柄だけを判断する。不明を空へ倒さない（T-10-2481・T-10-2482）。
-- [x] 保有のみの銘柄の判断で LLM が決済を返せば保有全量の決済になる（T-10-2483）。新規建てを返せば発注せず見送る（T-10-2484）。
-- [x] 監視銘柄の判断・プロンプトは変えない（T-10-2485）。見送り理由の語彙は 19 値で末尾へ足す（T-10-2486）。
+- [x] 定時サイクルは監視銘柄に加え、監視銘柄の外の保有銘柄も判断する（T-10-2490・T-10-2492）。
+- [x] 保有が不明（照会失敗・解釈不能・未結線）なら監視銘柄だけを判断する。不明を空へ倒さない（T-10-2491・T-10-2492）。
+- [x] 保有のみの銘柄の判断で LLM が決済を返せば保有全量の決済になる（T-10-2493）。新規建てを返せば発注せず見送る（T-10-2494）。
+- [x] 監視銘柄の判断・プロンプトは変えない（T-10-2495）。見送り理由の語彙は 19 値で末尾へ足す（T-10-2496）。
 - [x] リスク統制・取引ガードの既存試験は変更なしで緑（`TradingDefaults` の試験を含む）。
 - [x] `dotnet build` / `dotnet test` / `dotnet format --verify-no-changes` と repo の node 検査が通る。
 
@@ -77,8 +77,8 @@ project-planning `origin/main` の `projects/ai-stock-trading/` を読んだ。
 | `InformationCollectedHandler.cs` 冒頭の注記（監視銘柄を巡回） | **是正**（保有銘柄を足した） |
 | `docs/observability/observability.md`（見送りの理由「ほか 18 種」） | **是正**（19 種・新しい理由を列挙） |
 | `docs/data/audit-events.md`（判断後の見送りの理由の説明） | **追記**（新しい理由） |
-| `docs/tests/FR-10_risk-controls-tests.md` T-10-2322・T-10-2386 の行（17 値・18 値） | **除外**（その時点の試験の記述。T-10-2486 の行を足した。既存の版の行を書き換えない慣行に従う） |
-| `InformationCollectedConsumerTests.cs` 冒頭の注記（watchlist 巡回） | **除外**（試験の筋書きの要約。T-10-2482 が保有を足した形を固定する） |
+| `docs/tests/FR-10_risk-controls-tests.md` T-10-2322・T-10-2386 の行（17 値・18 値） | **除外**（その時点の試験の記述。T-10-2496 の行を足した。既存の版の行を書き換えない慣行に従う） |
+| `InformationCollectedConsumerTests.cs` 冒頭の注記（watchlist 巡回） | **除外**（試験の筋書きの要約。T-10-2492 が保有を足した形を固定する） |
 | `deploy/observability/README.md`・ダッシュボードの説明 | **除外**（`AddOnBlockedByRiskControls` を個別に説明する行であり、語彙の総数・全列挙を持たない） |
 
 ## 範囲外
@@ -91,4 +91,4 @@ project-planning `origin/main` の `projects/ai-stock-trading/` を読んだ。
 
 - `dotnet build backend/backend.slnx`・`dotnet test backend/backend.slnx`・`dotnet format backend/backend.slnx --verify-no-changes`。
 - repo の node 検査（`scripts/`）。
-- 変異 H1（出口専用の見送りを外す）→ T-10-2484・T-10-2482 が赤。H2（保有を足さない）→ T-10-2482 が赤。いずれも戻して緑。
+- 変異 H1（出口専用の見送りを外す）→ T-10-2494・T-10-2492 が赤。H2（保有を足さない）→ T-10-2492 が赤。いずれも戻して緑。

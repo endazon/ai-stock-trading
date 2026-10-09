@@ -57,7 +57,7 @@ public class RiskManagementReadContractTests
         var toyota = await provider.GetPositionAsync("7203", Market.Japan);
         var none = await provider.GetPositionAsync("MSFT", Market.UnitedStates);
         var signed = await provider.GetSignedQuantityAsync("AAPL", Market.UnitedStates);
-        // T-10-2481（契約）, #1286, IADR-0521 決定 1: 定時サイクルの保有銘柄も同じ口・同じ送り手の型から読める。
+        // T-10-2491（契約）, #1286, IADR-0521 決定 1: 定時サイクルの保有銘柄も同じ口・同じ送り手の型から読める。
         var heldSymbols = await ((IHeldSymbolsProvider)provider).GetHeldSymbolsAsync();
 
         aapl.Should().Be(new HeldPosition(3_378, 337.63m, 320.75m));

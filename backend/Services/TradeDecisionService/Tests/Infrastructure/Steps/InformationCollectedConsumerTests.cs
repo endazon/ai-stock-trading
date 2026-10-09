@@ -323,13 +323,13 @@ public class InformationCollectedConsumerTests
 
         await host.StopAsync();
     }
-    // T-10-2482, FR-02, FR-04, UC-01, #1286, IADR-0521 決定 1・2: 定時サイクルは監視銘柄の外の保有銘柄も判断する（出口専用）。
+    // T-10-2492, FR-02, FR-04, UC-01, #1286, IADR-0521 決定 1・2: 定時サイクルは監視銘柄の外の保有銘柄も判断する（出口専用）。
     // 監視銘柄 AAPL は従来どおり判断して発行し、保有のみの MSFT は出口専用の行つきで LLM に掛ける。LLM が買い（新規建て）を返しても
     // MSFT は発行しない。保有が不明（null）なら MSFT は判断しない（監視銘柄だけ＝従来の巡回）。
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task T_10_2482_監視銘柄の外の保有銘柄も出口専用で判断する(bool heldKnown)
+    public async Task T_10_2492_監視銘柄の外の保有銘柄も出口専用で判断する(bool heldKnown)
     {
         var llm = new RecordingLlm(BuyJson);
         using var host = await BuildAsync(
