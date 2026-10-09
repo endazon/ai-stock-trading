@@ -62,6 +62,9 @@ public class MonitorPollingServiceTests
         // #1251, IADR-0513: 巡回の所要の計量・Warning（null なら配線しない＝従来の構成）。
         public BusinessMetrics? Metrics { get; init; }
 
+        // #1281, IADR-0513: 巡回の所要の Warning に足す余裕（null なら配線しない＝余裕 0）。
+        public CycleOverrunTolerance? OverrunTolerance { get; init; }
+
         public SteppedTimeProvider Time { get; } = new();
 
         public ILogger<MonitorPollingService> Logger { get; init; } = NullLogger<MonitorPollingService>.Instance;
@@ -93,7 +96,7 @@ public class MonitorPollingServiceTests
             var service = new MonitorPollingService(
                 _host.Services.GetRequiredService<IServiceScopeFactory>(),
                 Schedule, Clock, Options.Create(MonitorOptions),
-                Logger, Liveness, DailyVolume, Metrics, Time);
+                Logger, Liveness, DailyVolume, Metrics, Time, OverrunTolerance);
 
             return (service, _host);
         }
@@ -386,12 +389,11 @@ public class MonitorPollingServiceTests
             MonitorOptions = new MonitorOptions { PollIntervalSeconds = pollIntervalSeconds },
         };
 
-    // 🔴 T-10-2461: 巡回の所要が巡回間隔（60 秒）に達する・超えると、所要の秒数が計量に 1 件入り、Warning が 1 行出る。
-    // 4 銘柄 × 15 秒 ＝ 60 秒（ちょうど達する）・4 銘柄 × 16 秒 ＝ 64 秒（超える）。
+    // 🔴 T-10-2461: 巡回の所要が巡回間隔（60 秒）を超えると、所要の秒数が計量に 1 件入り、Warning が 1 行出る。
+    // 4 銘柄 × 16 秒 ＝ 64 秒（超える。余裕 0）。#1281: ちょうど 60 秒の行は Warning を出さない側へ移した（T-10-2470）。
     [Theory]
-    [InlineData(15, 60d)]
     [InlineData(16, 64d)]
-    public async Task T_10_2461_巡回の所要が巡回間隔に達すると秒数を計量しWarningを出す(int secondsPerQuote, double expectedSeconds)
+    public async Task T_10_2461_巡回の所要が巡回間隔を超えると秒数を計量しWarningを出す(int secondsPerQuote, double expectedSeconds)
     {
         var meterName = MeterCapture.NewIsolatedMeterName();
         using var capture = new MeterCapture(meterName);
@@ -431,6 +433,42 @@ public class MonitorPollingServiceTests
         capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
             .Should().ContainSingle().Which.Value.Should().Be(expectedSeconds);
         log.Warnings.Should().NotContain(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
+    }
+
+    // 🔴 T-10-2470, FR-04, NFR-01, ADR-0043 決定 2 (b), #1281, IADR-0513: Warning は「巡回間隔 ＋ 余裕」を**厳密に超えた**巡回だけに出す。
+    // (b) の判定（n × 60 ≤ r × 間隔）が「収まる」とした境界の構成は、容量 1・等間隔の限流器のもとで所要 ≒ 間隔で回る（PoC: 全巡回で鳴った）。
+    // 余裕 0（Finnhub 以外）は 59／60／61 秒、余裕 5 秒（Finnhub 12 回/分）は 64／65／66 秒で、直前・ちょうど・直後を固定する。
+    [Theory]
+    [InlineData(0d, 59d, false)]
+    [InlineData(0d, 60d, false)]
+    [InlineData(0d, 61d, true)]
+    [InlineData(5d, 64d, false)]
+    [InlineData(5d, 65d, false)]
+    [InlineData(5d, 66d, true)]
+    public async Task T_10_2470_巡回の所要が巡回間隔と余裕の和を超えたときだけWarningを出す(
+        double toleranceSeconds, double elapsedSeconds, bool warns)
+    {
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        using var metrics = BusinessMetrics.WithMeterName(meterName);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<MonitorPollingService>();
+        await using var h = new Harness(Settings(Aapl))
+        {
+            Metrics = metrics,
+            Logger = log,
+            OverrunTolerance = toleranceSeconds == 0 ? null : new CycleOverrunTolerance(TimeSpan.FromSeconds(toleranceSeconds)),
+        };
+        h.Market.OnRequest = () => h.Time.Advance(TimeSpan.FromSeconds(elapsedSeconds));
+        var (service, _) = await h.StartAsync();
+
+        await service.RunOnceAsync(CancellationToken.None);
+
+        capture.ValuesOf(BusinessMetricNames.MarketMonitorCycleDurationSeconds)
+            .Should().ContainSingle().Which.Value.Should().Be(elapsedSeconds);
+        if (warns)
+            log.Warnings.Should().ContainSingle(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
+        else
+            log.Warnings.Should().NotContain(m => m.Contains(CycleOverrunMessage, StringComparison.Ordinal));
     }
 
     // T-10-2463: 全市場が閉場の巡回は評価しないので所要を記録しない（0 秒でヒストグラムを薄めない）。
