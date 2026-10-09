@@ -179,6 +179,14 @@ builder.Services.AddSingleton(sp => new FinnhubDailyVolumeRecorder(
     sp.GetRequiredService<BusinessMetrics>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<FinnhubDailyVolumeRecorder>(),
     MarketSessions.RegularSessionMinutes));
+// FR-04, NFR-01, ADR-0043 決定 2 (b), #1281, IADR-0513: 巡回の所要の Warning に足す余裕（Finnhub の 1 要求ぶんの送出間隔。他の提供元は 0）。
+builder.Services.AddSingleton(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    return CycleOverrunTolerance.For(
+        cfg["MarketData:Provider"],
+        (cfg.GetSection(MarketDataOptions.SectionName).Get<MarketDataOptions>() ?? new()).Finnhub.RequestsPerMinute);
+});
 // FR-03: 監視間隔ごとのポーリング（市場開場時に評価・発行）。
 builder.Services.AddHostedService<MonitorPollingService>();
 

@@ -18,7 +18,8 @@ namespace MarketMonitorService.Hosted;
 // EvaluateRoundAsync は scoped な EF ストアに依存するため、巡回ごとに DI スコープを作る。
 //
 // FR-04, NFR-01, ADR-0043, #1251, IADR-0513: 開場して評価した巡回の所要を計量（ast.market_monitor.cycle_duration_seconds）し、
-// 巡回間隔に達したら Warning を出す（観測のみ。巡回の挙動は変えない）。経過は TimeProvider で測る（試験は偽の時計で進める）。
+// 巡回間隔 ＋ 余裕（Finnhub の 1 要求ぶんの送出間隔。#1281）を超えたら Warning を出す（観測のみ。巡回の挙動は変えない）。
+// 経過は TimeProvider で測る（試験は偽の時計で進める）。
 public sealed class MonitorPollingService(
     IServiceScopeFactory scopeFactory,
     IMarketSchedule schedule,
@@ -28,7 +29,8 @@ public sealed class MonitorPollingService(
     StopLossLivenessReporter? liveness = null,
     FinnhubDailyVolumeRecorder? dailyVolume = null,
     BusinessMetrics? metrics = null,
-    TimeProvider? timeProvider = null) : BackgroundService
+    TimeProvider? timeProvider = null,
+    CycleOverrunTolerance? overrunTolerance = null) : BackgroundService
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
@@ -155,7 +157,8 @@ public sealed class MonitorPollingService(
         }
     }
 
-    // FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 1 巡回の所要を計量し、巡回間隔に達したら Warning を出す。
+    // FR-04, NFR-01, ADR-0043 決定 2 (b), #1251, IADR-0513: 1 巡回の所要を計量し、巡回間隔 ＋ 余裕を超えたら Warning を出す。
+    // #1281: 間隔「以上」で鳴らすと、(b) が「収まる」とした境界の構成（所要 ≒ 間隔で回る）で毎巡回鳴る。厳密な超過で、余裕を足して判定する。
     // PeriodicTimer は逃した刻みを 1 つに畳むため、達した巡回の次は待たずに始まり、1 銘柄あたりの価格の確認の周期が間隔を超える。
     // 観測のみ。失敗しても巡回を失敗させない（生存の報告と同じ作法）。
     private void ObserveCycleDuration(TimeSpan elapsed)
@@ -165,13 +168,14 @@ public sealed class MonitorPollingService(
             metrics?.RecordMarketMonitorCycleDuration(elapsed.TotalSeconds);
 
             var interval = Interval;
-            if (elapsed >= interval)
+            var tolerance = (overrunTolerance ?? CycleOverrunTolerance.None).Value;
+            if (elapsed > interval + tolerance)
             {
                 logger.LogWarning(
-                    "市場監視の 1 巡回の所要 {ElapsedSeconds:F1} 秒が巡回間隔 {IntervalSeconds} 秒に達しました。"
+                    "市場監視の 1 巡回の所要 {ElapsedSeconds:F1} 秒が巡回間隔 {IntervalSeconds} 秒と余裕 {ToleranceSeconds:0.###} 秒の和を超えました。"
                         + "次の巡回は待たずに始まり、1 銘柄あたりの価格の確認の周期が巡回間隔を超えます（損切りの検知が遅れます）。"
                         + "保有の照会・Finnhub の往復・発行の所要と、1 巡回の照会の数（自制レート × 巡回間隔の内側か）を確認してください。",
-                    elapsed.TotalSeconds, interval.TotalSeconds);
+                    elapsed.TotalSeconds, interval.TotalSeconds, tolerance.TotalSeconds);
             }
         }
         catch (Exception ex)
