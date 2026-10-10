@@ -69,6 +69,20 @@ export interface RiskManagementSettings {
   // （StopLossExecutionMethod enum・数値。0=S0 ブローカー側逆指値〔既定〕/ 1=S1 / 2=S2 逆指値なしの建玉を許容 / 3=S3）。
   // 変更は `PUT /risk-controls/settings/stop-loss-method`（利用者のみ）。SC-02 の入力は `StopLossMethodForm`（#823・IADR-0422）。
   stopLossMethod: number;
+  // FR-10, UC-06, ADR-0063, #1291: **高ボラティリティ銘柄の統制値**（区分の 1 注文上限＝equity 比・既定 0.05 と、利用者の明示指定）。
+  // 変更は `PUT /risk-controls/settings/high-volatility`（利用者のみ）。🔴 SC-02 の表示・入力はまだ無い（計画のフォローアップ・人間）。
+  highVolatility: HighVolatilitySettings;
+}
+
+// FR-10, ADR-0063, #1291: 明示指定の銘柄（market は Market enum・数値）。
+export interface HighVolatilitySymbol {
+  symbol: string;
+  market: number;
+}
+
+export interface HighVolatilitySettings {
+  maxOrderAmountRatio: number;
+  designatedSymbols: HighVolatilitySymbol[];
 }
 
 export interface SettingsChangeEntry {
@@ -393,6 +407,8 @@ const CHANGE_TYPE_LABELS: Record<number, string> = {
   // FR-10, SC-02, #823: 9 は #819 で末尾追加された（StopLossMethodChanged）が写像が追随しておらず、
   // 手法の変更が履歴に「不明(9)」と出ていた。
   9: '損切りの実行機構',
+  // FR-10, ADR-0063, #1291: 10 は高ボラティリティ銘柄の統制値（HighVolatilityChanged）。
+  10: '高ボラティリティ銘柄',
 };
 
 // FR-13, SC-03, #334: 発注先の変更履歴を絞り込むための種別値（SettingsChangeType.BrokerProviderChanged）。

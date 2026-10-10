@@ -33,6 +33,8 @@ public sealed class SizingContextService(PortfolioSnapshotBuilder snapshotBuilde
             Mode: settings.Stage.Mode,
             Limits: settings.Limits,
             // #854, IADR-0351 決定1: 損切りの実行機構の設定を判断プロンプトの「保護の状態」へ供給する。
-            StopLossMethod: settings.StopLossMethod);
+            StopLossMethod: settings.StopLossMethod,
+            // #1291, IADR-0527 決定3: 審査と同じ区分・上限をサイジングと LLM の前の見送りへ渡す。
+            HighVolatility: settings.HighVolatility);
     }
 }

@@ -298,6 +298,18 @@ public static class RiskReadWireMapping
             };
         }
 
+        // #1291, IADR-0527 決定3: 高ボラティリティ銘柄の統制値（区分の上限・明示指定）。
+        if (view.HighVolatility is { } highVolatility)
+        {
+            var controls = new Proto.HighVolatilityControls
+            {
+                MaxOrderAmountRatio = ToWire(highVolatility.MaxOrderAmountRatio),
+            };
+            controls.DesignatedSymbols.AddRange(highVolatility.DesignatedSymbols.Select(s =>
+                new Proto.HighVolatilitySymbolRow { Symbol = s.Symbol, Market = ToProto(s.Market) }));
+            response.HighVolatility = controls;
+        }
+
         return response;
     }
 

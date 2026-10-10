@@ -198,6 +198,19 @@ message RiskLimits {
   optional string losing_streak_size_factor = 8;
 }
 
+// FR-10, ADR-0063, #1291 / IADR-0527: REST の HighVolatilitySymbol と同じ形（利用者の明示指定）。
+message HighVolatilitySymbolRow {
+  optional string symbol = 1;
+  Market market = 2;
+}
+
+// FR-10, ADR-0063, #1291 / IADR-0527: REST の HighVolatilitySettings と同じ形（区分の上限〔比率は 10 進文字列〕・明示指定）。
+// 🔴 メッセージ自体の欠落は「送り手が本項目を知らない」であり、受け手は既定（上限 5%・明示指定なし）で読む（区分の上限を外さない）。
+message HighVolatilityControls {
+  optional string max_order_amount_ratio = 1;
+  repeated HighVolatilitySymbolRow designated_symbols = 2;
+}
+
 // REST の SizingContextView と同じ形。
 message GetSizingContextResponse {
   // 🔴 欠落は「口座を照会できていない」（残枠も解決できない）。0 ではない。
@@ -209,6 +222,7 @@ message GetSizingContextResponse {
   BrokerProvider mode = 6;
   RiskLimits limits = 7;
   StopLossExecutionMethod stop_loss_method = 8;
+  HighVolatilityControls high_volatility = 9;
 }
 
 // ---- 新規建ての可否（#1113 / IADR-0463） ----

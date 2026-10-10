@@ -279,10 +279,12 @@ public class Atr14StopWidthFloorTests
     }
 
     // T-10-2196, ADR-0049 決定3・決定4, IADR-0486 決定3: 🔴 1 注文上限（equity の 25%）は緩めない。ATR の下限でもサイジングは同じ規則。
-    // equity 3,000・価格 100（上限 750）: ATR 1.2（≦ 4%）→ 7 株（上限が決める）、ATR 5（> 4%）→ 6 株（30 ÷ 5）、ATR 100・150（≧ 価格）→ 見送り。
+    // equity 3,000・価格 100（上限 750）: ATR 1.2（≦ 4%）→ 7 株（上限が決める）、ATR 100・150（≧ 価格）→ 見送り。
+    // #1291, ADR-0063 決定1・決定2, IADR-0527: ATR 5（ATR ÷ 価格 5% ≥ 4%）は高ボラティリティ銘柄の区分に入り、上限は equity の 5%（150）→ 1 株
+    // （旧 6 株＝リスク基準 30 ÷ 5 は区分の上限で抑えられる）。
     [Theory]
     [InlineData(1.2, 7)]
-    [InlineData(5, 6)]
+    [InlineData(5, 1)]
     [InlineData(100, 0)]
     [InlineData(150, 0)]
     public async Task T_10_2196_一注文上限は緩めずATRが価格以上なら見送る(double atr, int expected)

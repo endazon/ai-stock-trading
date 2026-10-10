@@ -82,6 +82,36 @@ public sealed class RiskSettingsService(
         Save(current with { Limits = limits }, current.Limits, limits, SettingsChangeType.Limits, actor, reason);
     }
 
+    /// <summary>
+    /// 🔴 FR-10, UC-06, ADR-0063 決定1・決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定）を変更する。
+    /// <para>
+    /// 値域は <see cref="HighVolatilityOrderCap.Validate"/> が単独で決める（上限は最小の名目額の比率 以上 〜 25% 以下）。範囲外なら
+    /// <see cref="ArgumentException"/> を投げ、<b>設定を一切変更せず履歴も残さない</b>（<see cref="UpdateLimits"/> と同じ規律）。
+    /// 明示指定は利用者だけが変える（エンドポイントは OwnerOnly。生成 AI・AI の監視銘柄の入れ替え案〔ADR-0042〕の経路は本メソッドへ届かない）。
+    /// 外した明示指定は区分から出るが、自動判定（ATR 比 ≥ 4%）で入る銘柄はこの操作では外せない（自動判定は設定に持たない）。
+    /// </para>
+    /// </summary>
+    public void UpdateHighVolatility(HighVolatilitySettings highVolatility, string actor, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(highVolatility);
+        RequireActorAndReason(actor, reason);
+        HighVolatilityOrderCap.ThrowIfInvalid(highVolatility);
+
+        // 前後の空白は保存の前に落とす（照合は空白を無視するが、履歴と画面に残る値を揃える）。
+        var normalized = highVolatility with
+        {
+            DesignatedSymbols = [.. highVolatility.DesignatedSymbols.Select(s => s with { Symbol = s.Symbol.Trim() })],
+        };
+        var current = store.GetCurrent();
+        Save(
+            current with { HighVolatility = normalized },
+            current.HighVolatility,
+            normalized,
+            SettingsChangeType.HighVolatilityChanged,
+            actor,
+            reason);
+    }
+
     public void UpdateStage(StageSettings stage, string actor, string reason)
     {
         ArgumentNullException.ThrowIfNull(stage);

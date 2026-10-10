@@ -28,4 +28,12 @@ public record SizingContext(
     // FR-04, FR-10, ADR-0040 決定1, #854, IADR-0351 決定1: 損切りの実行機構の**設定**（S0〜S3）。判断プロンプトの
     // 「保護の状態」の供給元。🔴 **null＝未供給（不明）**であり S0 と読まない——項目を持たない旧応答・照会失敗の
     // 安全既定（SafeDefault）・プレースホルダはいずれも null になり、プロンプトは「不明」と明示する。
-    StopLossExecutionMethod? StopLossMethod = null);
+    StopLossExecutionMethod? StopLossMethod = null,
+    // 🔴 FR-10, ADR-0063 決定1・決定2, #1291, IADR-0527 決定3: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定。リスク管理の設定）。
+    // **null＝未供給**（項目を持たない旧応答・照会失敗の安全既定）。読む側は既定（上限 5%・明示指定なし）で効かせる（EffectiveHighVolatility）
+    // ——不在を「区分の上限なし」にしない。明示指定が分からない間も審査は自分の設定で判定する（ここがずれても審査が止める）。
+    HighVolatilitySettings? HighVolatility = null)
+{
+    /// <summary>FR-10, #1291, IADR-0527 決定3: 効かせる高ボラティリティ銘柄の統制値（未供給は既定＝上限 5%・明示指定なし）。</summary>
+    public HighVolatilitySettings EffectiveHighVolatility => HighVolatility ?? TradingDefaults.CreateHighVolatilitySettings();
+}

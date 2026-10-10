@@ -41,7 +41,8 @@ public static class RiskSettingsSerialization
             settings.BrokerProvider,
             settings.Stage1MinimumTradeCount,
             settings.StopLossMethod,
-            productTypesRevision);
+            productTypesRevision,
+            new HighVolatilityDto(settings.HighVolatility.MaxOrderAmountRatio, [.. settings.HighVolatility.DesignatedSymbols]));
         return JsonSerializer.Serialize(dto, Options);
     }
 
@@ -105,6 +106,26 @@ public static class RiskSettingsSerialization
             // 本項目を持たない旧行（null）も未知の序数も S0 である。**倒す先は「逆指値を置く」側**——
             // 読めない行が S2（免除）へ倒れると、利用者が選んでいない無防備な建玉が黙って生まれる。
             StopLossMethod = StopLossMethodChange.Resolve(dto.StopLossMethod),
+            // 🔴 FR-10, ADR-0063 決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値を持たない旧行は**既定（上限 5%・明示指定なし）**で読む。
+            // 不在を「区分の上限なし」に倒さない。比率が値域外（手編集など）の行も既定の 5% で読む（値域は書き込みの経路が守る）。
+            HighVolatility = ResolveHighVolatility(dto.HighVolatility),
+        };
+    }
+
+    private static HighVolatilitySettings ResolveHighVolatility(HighVolatilityDto? dto)
+    {
+        var defaults = TradingDefaults.CreateHighVolatilitySettings();
+        if (dto is null)
+            return defaults;
+
+        var ratio = dto.MaxOrderAmountRatio is { } r
+            && r >= HighVolatilityOrderCap.MinRatioLowerBound && r <= HighVolatilityOrderCap.MaxRatioUpperBound
+                ? r
+                : defaults.MaxOrderAmountRatio;
+        return new HighVolatilitySettings
+        {
+            MaxOrderAmountRatio = ratio,
+            DesignatedSymbols = [.. (dto.DesignatedSymbols ?? []).Where(s => s is not null && !string.IsNullOrWhiteSpace(s.Symbol))],
         };
     }
 
@@ -133,7 +154,15 @@ public static class RiskSettingsSerialization
         // FR-19, FR-20, ADR-0034 決定5 契機2, #1220, IADR-0511: 商品種別設定の改訂番号。nullable＝番号を知らない版が
         // 書いた行（`ReadProductTypesRevision` は null を返し、判定は無効へ倒れる。固定値にしない）。**ドメインの設定には載せない**
         // ——載せると `with` で運ばれ、呼び出し側が番号を作れてしまう。番号を進めるのは設定ストアの保存だけである。
-        long? ProductTypesRevision = null);
+        long? ProductTypesRevision = null,
+        // FR-10, ADR-0063, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値。nullable＝本プロパティの追加前に書かれた行
+        // （旧行はキーを持たないため null のまま入り、既定〔上限 5%・明示指定なし〕で読む）。**マイグレーションで既存行を書き換えない**（IADR-0161 決定2）。
+        HighVolatilityDto? HighVolatility = null);
+
+    // FR-10, ADR-0063, #1291: 高ボラティリティ銘柄の統制値の永続 DTO（具象コレクション・nullable で旧行と値域外を読み分ける）。
+    private sealed record HighVolatilityDto(
+        decimal? MaxOrderAmountRatio,
+        List<HighVolatilitySymbol>? DesignatedSymbols);
 
     private sealed record GuardDto(
         List<ProductType> EnabledProductTypes,

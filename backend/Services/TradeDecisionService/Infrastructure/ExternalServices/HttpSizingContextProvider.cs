@@ -66,7 +66,9 @@ public sealed class HttpSizingContextProvider(
         // 損切りの実行機構の未定義値は「不明」（null）として読む（S0 と読まない。IADR-0351 決定1）。
         var stopLossMethod = dto.StopLossMethod is { } method && Enum.IsDefined(method) ? method : (StopLossExecutionMethod?)null;
         return new SizingContext(
-            dto.Capital, dto.StageCapitalRemaining, dto.DailyOrderRemaining, losses, drawdown, mode, limits, stopLossMethod);
+            dto.Capital, dto.StageCapitalRemaining, dto.DailyOrderRemaining, losses, drawdown, mode, limits, stopLossMethod,
+            // #1291, IADR-0527 決定3: 項目を持たない旧応答は null（読む側が既定の 5%・明示指定なしで効かせる）。
+            dto.HighVolatility);
     }
 
     // フェイルセーフ既定: 段階/日次残枠 0 → availableCapital 0 → 数量 0 → 見送り（取引しない）。Limits は PositionSizer を動かせる既定値。
@@ -90,5 +92,6 @@ public sealed class HttpSizingContextProvider(
         decimal? DrawdownRatio,
         BrokerProvider? Mode,
         RiskLimitSettings? Limits,
-        StopLossExecutionMethod? StopLossMethod);
+        StopLossExecutionMethod? StopLossMethod,
+        HighVolatilitySettings? HighVolatility = null);
 }

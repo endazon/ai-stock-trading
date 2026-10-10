@@ -60,6 +60,13 @@ public record RiskManagementSettings(
     public ShortSellSettings ShortSell { get; init; } = TradingDefaults.CreateShortSellSettings();
 
     /// <summary>
+    /// 🔴 FR-10, UC-06, ADR-0063 決定1・決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限 equity の 5%・利用者の明示指定）。
+    /// 位置指定の引数にせず本体のプロパティに置くのは <see cref="ShortSell"/> と同じ理由である——既定が計画の確定値（5%）に固定され、
+    /// 明示しない呼び出しや本項目を持たない旧い永続行でも区分の上限が<b>効く</b>（不在を「統制なし」にしない）。
+    /// </summary>
+    public HighVolatilitySettings HighVolatility { get; init; } = TradingDefaults.CreateHighVolatilitySettings();
+
+    /// <summary>
     /// FR-10, FR-12, ADR-0040 決定1・決定3, #819, IADR-0342 決定2: <b>損切りの実行機構</b>（S0〜S3）。既定は
     /// <b>S0（ブローカー側逆指値）</b>。
     /// <para>
