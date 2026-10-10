@@ -331,9 +331,10 @@ services:
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-id, optional: true }
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
-      # FR-06, FR-08, UC-03, #1300, IADR-0526: 承認待ちの報告書の写し（ドラフト）を KB に置く（本番 values.yaml と同じ既定 false。配列の置換で消さないための写し）。
-      # 🔴 MSP#1886（ccbc4a3b 以降）を配備してから true にする。それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js へ載せ、一覧にも返す。
-      - { name: ReportDraftKnowledge__Enabled, value: "false" }
+      # FR-06, FR-08, UC-03, #1300, IADR-0526: 承認待ちの報告書の写し（ドラフト）を KB に置く。本番 values.yaml の既定は false のまま。
+      # 経路 B（values-local）は、MSP#1886 を含む MSP eac572ca の配備を PoC が確かめたので true にする（2026-10-10）。
+      # 🔴 MSP#1886（ccbc4a3b 以降）より前の基盤へ当てる構成では true にしない。それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js へ載せ、一覧にも返す。
+      - { name: ReportDraftKnowledge__Enabled, value: "true" }
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を
       # 信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントのトークンで確定を呼ぶため、
