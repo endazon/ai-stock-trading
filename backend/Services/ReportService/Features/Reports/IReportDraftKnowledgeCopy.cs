@@ -19,7 +19,7 @@ public interface IReportDraftKnowledgeCopy
 }
 
 // FR-08, #1300, IADR-0526 決定 5: 機能の門（構成 `ReportDraftKnowledge:Enabled`・既定 false）。
-// 🔴 MSP#1886（`ccbc4a3b` 以降）の配備の前に有効にしない —— それより前の基盤は Wiki 同期が露出を見ず、ドラフトを Wiki.js に載せる。
+// 🔴 MSP#1886（`ccbc4a3b` 以降）の配備の前に有効にしない —— それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js に載せ、一覧にも返す。
 public sealed record ReportDraftKnowledgeOptions(bool Enabled)
 {
     public const string EnabledKey = "ReportDraftKnowledge:Enabled";

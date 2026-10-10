@@ -254,7 +254,7 @@ builder.Services.AddScoped<ReportService.Features.Reports.ReingestKnowledgeBase.
 // FR-06, FR-08, UC-03, #1300, IADR-0526（planning#784 の利用者裁定 2026-10-10）: 承認待ちの報告書の写し（ドラフト）を KB に 1 件だけ持ち、
 // 確定で消す（露出の 3 属性を全部 excluded＝SC-03 で読めるが検索・RAG・グラフ・Wiki・外部 AI エージェント向けの文書一覧・取引判断の検索には出ない）。
 // 宛先・資格は上の台帳と同じ構成。🔴 既定は無効（`ReportDraftKnowledge:Enabled`）—— MSP#1886（ccbc4a3b 以降）を配備してから有効にする
-// （それより前の基盤は Wiki 同期がドラフトを Wiki.js へ載せる）。無効なら何も送らない＝従来の挙動。
+// （それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js へ載せ、一覧にも返す）。無効なら何も送らない＝従来の挙動。
 builder.Services.AddSingleton(sp =>
     ReportDraftKnowledgeOptions.Read(sp.GetRequiredService<IConfiguration>()[ReportDraftKnowledgeOptions.EnabledKey]));
 builder.Services.AddSingleton<IReportDraftKnowledgeCopy, CatalogReportDraftKnowledgeCopy>();

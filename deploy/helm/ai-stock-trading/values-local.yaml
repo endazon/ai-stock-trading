@@ -332,7 +332,7 @@ services:
       - name: KnowledgeBase__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: kb-auth-client-secret, optional: true }
       # FR-06, FR-08, UC-03, #1300, IADR-0526: 承認待ちの報告書の写し（ドラフト）を KB に置く（本番 values.yaml と同じ既定 false。配列の置換で消さないための写し）。
-      # 🔴 MSP#1886（ccbc4a3b 以降）を配備してから true にする。それより前の基盤は Wiki 同期が露出を見ず、ドラフトを Wiki.js へ載せる。
+      # 🔴 MSP#1886（ccbc4a3b 以降）を配備してから true にする。それより前の基盤は Wiki 同期と外部 AI エージェント向けの文書一覧が露出を見ず、ドラフトを Wiki.js へ載せ、一覧にも返す。
       - { name: ReportDraftKnowledge__Enabled, value: "false" }
       - { name: Reports__NoResponseBehavior, value: "" }
       # FR-09, UC-03, ADR-0003, #774, IADR-0240 決定11: 確定要求の本文で運ばれる「代理される利用者」（onBehalfOf）を

@@ -129,3 +129,15 @@ plan_refs:
 - `dotnet build backend/backend.slnx`（警告 0）・`dotnet test`（ReportService.Tests 1840＋・Shared.KnowledgeBase.Tests・TradeDecisionService.Tests・Architecture.Tests）・`dotnet format backend/backend.slnx --verify-no-changes`。
 - node 検査（`check-trace-blocks`・`gen-knowledge-graph --check`・`check-commit-messages`・`check-test-traceability`・`check-adr-index-sync`・`check-cross-repo-refs`・`check-plan-id-qualification`）。
 - 変異 M1（`DraftAttributesOf` から `ai_input` を外す）→ `ReportDraftKnowledgeCopyTests` の 5 件が赤。M2（`IsCopyOf` から写しの除外を外す）→ 同 3 件が赤。いずれも戻して緑。
+
+## ［2026-10-10 追記 / #1300］独立監査（PR #1301・条件付き GO）への対応
+
+- 🔴 F1: `IsDraftCopy` が「露出 3 キーが全部 excluded」だけでも写しと判定していた。管理者が隠した確定版の写しを入れ直しが消し、検索に出る写しを作り直す。
+  → `reportState=draft` **かつ**表題 `報告書ドラフト ` の AND に改めた。試験を反転し（隠した確定版は写しではない）、入れ直しの試験（隠した確定版は AlreadyPresent・削除 0・作成 0）を足した。
+  IADR-0526 決定 4・`docs/data/reports.md`・`docs/operations/operations.md` の記述も改めた。
+- F2: gRPC の確定が写しを消すことを固定する試験が無かった（写しのポートに null を渡す変異が生き残った）→ `ReportOwnerWriteGrpcServiceTests` に足した。
+- F3: `IsDraftCopyOf` の project の限定を外す変異が生き残った → 試験を足した。
+- F4: MSP#1886 より前の基盤では MCP の文書一覧も写しを返していた → IADR-0526 決定 5・コメント・helm・運用仕様書のリスクの記述を改めた。
+- F5: 提示と確定の競合で孤立した写しが残り得る → IADR-0526 の残余リスクと運用仕様書に書いた（影響は小さい・入れ直しが消す）。
+- 変異: M3（gRPC で写しのポートに null）→ 1 件赤。M4（`IsDraftCopyOf` から project を外す）→ 2 件赤。M5（`IsDraftCopy` に露出 3 キーの OR を戻す）→ 2 件赤。いずれも戻して緑。
+- 前提: origin/develop（#1298・#1299 のマージ後）をマージコミットで取り込んだ。

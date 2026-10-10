@@ -68,13 +68,14 @@ MSP#1886 で、露出の 3 属性（`search_exposure` / `graph_exposure` / `ai_i
 
 ### 決定 4: 入れ直しは写しを確定版の写しに数えず、残った写しを消す
 
-- `IsCopyOf` は `reportState=draft` か露出 3 キーが全部 `excluded` の文書を写しに数えない。数えると「本文つきの写しが在る」と読んで確定版を作らない。
+- `IsCopyOf` は写し（`reportState=draft` **かつ**表題が `報告書ドラフト ` で始まる文書）を確定版の写しに数えない。数えると「本文つきの写しが在る」と読んで確定版を作らない。
+- 🔴 **露出 3 キーが全部 `excluded` であることは写しの目印にしない**（PR #1301 の監査）。基盤では露出を全部除外にするのが文書を隠す通常の操作であり、管理者が隠した確定版の写しを「残った写し」と読むと、入れ直しがそれを消し、検索に出る確定版の写しを作り直す（隠す操作を覆し、「確定版の写しは消さない」を破る）。2 つの条件を AND で求め、確定版の写し（表題 `確定報告書 …`・`reportState` なし）がどちらでも一致しないようにする。
 - 確定版の写しが KB に在る（作った・在った・本文を入れた）ときだけ、同じ報告書の写しを消す。消した数を応答（`draftCopiesRemoved`）に載せる。監査の事象の契約は変えない。
 
 ### 決定 5: 機能の門と best-effort
 
 - 構成 `ReportDraftKnowledge:Enabled`（既定 false。helm の既定も false）。無効なら一覧・作成・差し替え・削除のどれも送らない＝従来の挙動。
-- 🔴 **MSP#1886（`ccbc4a3b` 以降）を配備してから有効にする。** それより前の基盤は Wiki 同期が露出を見ず、写しを Wiki.js へ載せる。
+- 🔴 **MSP#1886（`ccbc4a3b` 以降）を配備してから有効にする。** それより前の基盤は Wiki 同期と MCP の文書一覧（`document.list_documents`）が露出を見ず、写しを Wiki.js へ載せ、一覧にも返す（PR #1301 の監査で一覧を足した）。
 - ポートは例外を投げない（呼び出し元の取り消しだけは伝播する）。KB の失敗で報告書の生成・提示・確定を止めない。保存の後の段では取り消しを渡さない。
 
 ### 決定 6: 取引判断の KB 検索に防御の絞り込みを置く
@@ -97,6 +98,7 @@ MSP#1886 で、露出の 3 属性（`search_exposure` / `graph_exposure` / `ai_i
   - MSP の写しの棚卸し（`AstStaleCopyRules.IsReport`）は kind・periodKey・project で報告書と判定するため、写しも報告書の写しに数える。確定の後の削除が失敗した期間は「同じ kind・periodKey が 2 件」に出る。棚卸しは削除しないので害は表示だけ。MSP 側の是正は別件。
   - 確定されないまま残る写しは消さない（期限による削除は置かない。planning#784 の「裁定を求める点」の実装の推奨）。
   - 写しの ID はプロセス内の記憶。複製が 2 つ以上あると同時に初回を作り得る。次の回の一覧で重複を 1 件に戻す。
+  - 提示と確定の競合で孤立した写しが残り得る（PR #1301 の監査）。確定が一覧を引いた後に提示の側が写しを作ると、確定済みの報告書の写しが 1 件残る。影響は小さい: 索引されない・本文は確定版と同じ・報告書サービスは通常 1 レプリカ（重なるのはローリング更新の間だけ）・入れ直しが消す（決定 4）。
 
 ## 試験
 
@@ -106,6 +108,8 @@ MSP#1886 で、露出の 3 属性（`search_exposure` / `graph_exposure` / `ai_i
 | 作成・差し替え・一覧からの探索・重複の整理・一覧失敗で作らない・不明の後・404 の後 | `ReportDraftKnowledgeCopyTests` |
 | 確定で消す・確定版を作れなければ消さない・既定で何も送らない・例外を伝えない・手の提示 | `ReportDraftKnowledgeCopyTests` |
 | 入れ直しが写しを数えず残りを消す・確定版を作れなければ消さない | `ReportDraftKnowledgeCopyTests` |
+| 写しの判定は状態と表題の AND・管理者が隠した確定版の写しは写しではない・入れ直しが隠した確定版を消さず作らない・project の限定（PR #1301 の監査） | `ReportDraftKnowledgeCopyTests` |
+| gRPC の確定も写しを消す（PR #1301 の監査） | `ReportOwnerWriteGrpcServiceTests` |
 | 自動生成・作り直しの経路 | `ReportRegenerationServiceTests` |
 | `/policy` の経路 | `ReportPolicyRevisionServiceTests` |
 | 削除の HTTP の結果の分け方 | `HttpKnowledgeDocumentCatalogTests` |

@@ -140,8 +140,8 @@ public sealed class ReportKnowledgeReingestService(
     //     #665 より前の本文なしの写しはこちら。以降の手動確定の本文なしの写しは project を持つ）。🔴 これを外すと旧い写しの隣に 2 つ目を作る。
     // 別のプロジェクトの値を持つ文書は写しに数えない。
     //
-    // FR-06, FR-08, #1300, IADR-0526 決定 4: **承認待ちの報告書の写し（ドラフト）は写しに数えない**（`reportState=draft` か、露出の 3 キーが
-    // 全部 `excluded`＝基盤が索引しない文書）。ドラフトは project・periodKey・kind を持ち、本文もあるので、数えると「本文つきの写しが在る」と
+    // FR-06, FR-08, #1300, IADR-0526 決定 4: **承認待ちの報告書の写し（ドラフト）は写しに数えない**（`reportState=draft` かつ表題が
+    // `報告書ドラフト ` で始まる文書）。露出の 3 キーだけでは判定しない（管理者が隠した確定版の写しを消さない）。ドラフトは project・periodKey・kind を持ち、本文もあるので、数えると「本文つきの写しが在る」と
     // 読んで確定版を作らない（確定版が検索・RAG に出ないまま残る）。
     internal static bool IsCopyOf(KnowledgeCatalogEntry entry, TradingReport report)
     {

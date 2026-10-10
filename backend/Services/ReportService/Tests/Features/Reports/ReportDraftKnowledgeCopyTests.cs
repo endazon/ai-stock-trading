@@ -340,40 +340,94 @@ public class ReportDraftKnowledgeCopyTests
 
     // ---- 入れ直し ----
 
-    // 🔴 FR-08, #1300, IADR-0526 決定 4: 写し（ドラフト）の判定。`reportState=draft` か、露出の 3 キーが全部 excluded（基盤が索引しない）なら写し。
-    // 入れ直しはこの判定で写しを確定版の写しに数えない（数えると「本文つきの写しが在る」と読んで確定版を作らない。下の経路の試験が固定する）。
+    // 🔴 FR-08, #1300, IADR-0526 決定 4（PR #1301 の監査で改めた）: 写し（ドラフト）は `reportState=draft` **かつ** 表題 `報告書ドラフト …` の文書だけ。
+    // 露出の 3 キーが全部 excluded でも、それだけでは写しにしない —— 基盤では露出を全部除外にするのが文書を隠す通常の操作であり、
+    // 管理者が隠した確定版の写しを「残った写し」と読むと、入れ直しが消して検索に出る写しを作り直す。
     [Fact]
-    public void 写しの判定は状態の属性か露出の3キーで見て確定版の写しは写しとしない()
+    public void 写しの判定は状態の属性と表題の両方で見て管理者が隠した確定版の写しは写しとしない()
     {
         var draft = Entry(ReportKnowledgeMapper.DraftTitleOf(ReportKind.Daily, PeriodKey),
             new(ReportKnowledgeMapper.DraftAttributesOf(ReportKind.Daily, PeriodKey), StringComparer.Ordinal) { ["project"] = "ai-stock-trading" });
         var confirmedCopy = Entry(ReportKnowledgeMapper.TitleOf(ReportKind.Daily, PeriodKey),
             new(StringComparer.Ordinal) { ["periodKey"] = PeriodKey, ["kind"] = "Daily", ["project"] = "ai-stock-trading" });
-        var hidden = Entry("任意の表題", new(StringComparer.Ordinal)
+        var hiddenConfirmed = Entry(ReportKnowledgeMapper.TitleOf(ReportKind.Daily, PeriodKey), HiddenConfirmedAttributes());
+        var stateOnly = Entry(ReportKnowledgeMapper.TitleOf(ReportKind.Daily, PeriodKey), new(StringComparer.Ordinal)
         {
             ["periodKey"] = PeriodKey,
             ["kind"] = "Daily",
             ["project"] = "ai-stock-trading",
-            ["search_exposure"] = "excluded",
-            ["graph_exposure"] = "excluded",
-            ["ai_input"] = "excluded",
+            ["reportState"] = "draft",
         });
-        var partlyHidden = Entry("任意の表題", new(StringComparer.Ordinal)
+        var titleOnly = Entry(ReportKnowledgeMapper.DraftTitleOf(ReportKind.Daily, PeriodKey), new(StringComparer.Ordinal)
         {
             ["periodKey"] = PeriodKey,
             ["kind"] = "Daily",
-            ["search_exposure"] = "excluded",
-            ["graph_exposure"] = "excluded",
+            ["project"] = "ai-stock-trading",
         });
 
         ReportKnowledgeMapper.IsDraftCopy(draft).Should().BeTrue();
-        ReportKnowledgeMapper.IsDraftCopy(hidden).Should().BeTrue();
         ReportKnowledgeMapper.IsDraftCopy(confirmedCopy).Should().BeFalse();
-        ReportKnowledgeMapper.IsDraftCopy(partlyHidden).Should().BeFalse("1 つでも含めるなら基盤は索引する");
+        ReportKnowledgeMapper.IsDraftCopy(hiddenConfirmed).Should().BeFalse("管理者が露出を全部除外にして隠した確定版の写しは写しではない");
+        ReportKnowledgeMapper.IsDraftCopy(stateOnly).Should().BeFalse("表題が確定版なら写しではない");
+        ReportKnowledgeMapper.IsDraftCopy(titleOnly).Should().BeFalse("reportState=draft が無ければ写しではない");
         ReportKnowledgeMapper.IsDraftCopyOf(draft, ReportKind.Daily, PeriodKey).Should().BeTrue();
         ReportKnowledgeMapper.IsDraftCopyOf(draft, ReportKind.Weekly, PeriodKey).Should().BeFalse();
         ReportKnowledgeMapper.IsDraftCopyOf(draft, ReportKind.Daily, "daily-2026-10-08").Should().BeFalse();
     }
+
+    // FR-08, #1300, IADR-0526 決定 2・4（PR #1301 の監査）: 本システムが作った写しだけを扱う —— project が ai-stock-trading でない・無い写しは
+    // 差し替えも削除もしない（別のユニットの文書・#665 より前の形を取り違えない）。
+    [Theory]
+    [InlineData(null)]
+    [InlineData("other-project")]
+    public void 写しはプロジェクトが本システムのものだけを対象にする(string? project)
+    {
+        var attributes = new Dictionary<string, string>(ReportKnowledgeMapper.DraftAttributesOf(ReportKind.Daily, PeriodKey), StringComparer.Ordinal);
+        if (project is not null)
+            attributes["project"] = project;
+        var entry = Entry(ReportKnowledgeMapper.DraftTitleOf(ReportKind.Daily, PeriodKey), attributes);
+
+        ReportKnowledgeMapper.IsDraftCopy(entry).Should().BeTrue("形は写し");
+        ReportKnowledgeMapper.IsDraftCopyOf(entry, ReportKind.Daily, PeriodKey).Should().BeFalse("本システムの project ではない");
+    }
+
+    // 🔴 FR-08, #1300, IADR-0526 決定 4（PR #1301 の監査）: 管理者が露出を全部除外にして隠した確定版の写しは、入れ直しで確定版の写しとして数え
+    // （AlreadyPresent）、消さず、新しく作らない（隠した操作を入れ直しが覆さない）。
+    [Fact]
+    public async Task 入れ直しは管理者が隠した確定版の写しを消さず作り直さない()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        var catalog = new FakeKnowledgeCatalog();
+        var hidden = new FakeKnowledgeCatalog.Doc
+        {
+            Title = ReportKnowledgeMapper.TitleOf(ReportKind.Daily, PeriodKey),
+            Attributes = HiddenConfirmedAttributes(),
+            Body = "確定版",
+        };
+        catalog.Docs.Add(hidden);
+        await using var factory = ReportKnowledgeReingestTestKit.WithCatalog(baseFactory, catalog);
+        ReportKnowledgeReingestTestKit.Seed(factory.Services, PeriodKey, ReportKind.Daily, new DateOnly(2026, 10, 9), "確定した本文");
+
+        var (_, result, _) = await ReportKnowledgeReingestTestKit.RunAsync(factory, new { all = true });
+
+        var item = result!.Items.Should().ContainSingle().Which;
+        item.Outcome.Should().Be(ReportKnowledgeReingestOutcome.AlreadyPresent);
+        item.DocumentId.Should().Be(hidden.Id);
+        item.DraftCopiesRemoved.Should().Be(0);
+        (catalog.CreateCalls, catalog.DeleteCalls).Should().Be((0, 0));
+        catalog.Docs.Should().ContainSingle().Which.Should().BeSameAs(hidden);
+    }
+
+    private static Dictionary<string, string> HiddenConfirmedAttributes() => new(StringComparer.Ordinal)
+    {
+        ["periodKey"] = PeriodKey,
+        ["kind"] = "Daily",
+        ["project"] = "ai-stock-trading",
+        ["coverage"] = "market",
+        ["search_exposure"] = "excluded",
+        ["graph_exposure"] = "excluded",
+        ["ai_input"] = "excluded",
+    };
 
     // 🔴 FR-08, #1300, IADR-0526 決定 4: 確定済みの報告書に確定版の写しとドラフトの写しが両方あれば、確定版の写しだけを数え（重複にしない）、写しは消す。
     [Fact]

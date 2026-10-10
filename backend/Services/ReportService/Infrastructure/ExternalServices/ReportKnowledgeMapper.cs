@@ -129,16 +129,21 @@ public static class ReportKnowledgeMapper
     }
 
     /// <summary>
-    /// KB の文書がドラフトの写し（どの報告書のものかを問わない）か。<c>reportState=draft</c> を持つか、
-    /// 露出の 3 キーが全部 <c>excluded</c>（基盤が索引しない＝確定版の写しの役を果たさない）なら真。
+    /// KB の文書がドラフトの写し（どの報告書のものかを問わない）か。<c>reportState=draft</c> を持ち、<b>かつ</b>表題が
+    /// <c>報告書ドラフト </c> で始まるときだけ真。
+    /// <para>
+    /// 🔴 露出の 3 キーが全部 <c>excluded</c> であることは写しの目印にしない（#1300 の監査）。基盤では露出を全部除外にするのが
+    /// 文書を隠す通常の操作であり、管理者が確定版の写しを隠しただけで「残った写し」と読んで消し、検索に出る写しを作り直してしまう。
+    /// 2 つの条件を両方求めるのは、確定版の写し（表題 <c>確定報告書 …</c>・<c>reportState</c> なし）がどちらの条件でも一致しないようにするため。
+    /// </para>
     /// </summary>
     public static bool IsDraftCopy(KnowledgeCatalogEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        return (entry.Attributes.TryGetValue(KnowledgeReportDraftCopy.StateKey, out var state)
-                && string.Equals(state, KnowledgeReportDraftCopy.DraftState, StringComparison.Ordinal))
-            || KnowledgeExposureAttributes.IsAllExcluded(entry.Attributes);
+        return entry.Attributes.TryGetValue(KnowledgeReportDraftCopy.StateKey, out var state)
+            && string.Equals(state, KnowledgeReportDraftCopy.DraftState, StringComparison.Ordinal)
+            && KnowledgeReportDraftCopy.IsDraftTitle(entry.Title);
     }
 
     /// <summary>この報告書（期間キー・種別）の、AST が作ったドラフトの写しか（project=ai-stock-trading を持つものだけ）。</summary>

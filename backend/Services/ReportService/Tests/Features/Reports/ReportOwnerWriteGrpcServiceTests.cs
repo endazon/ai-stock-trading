@@ -6,7 +6,10 @@ using Grpc.Core;
 using Grpc.Net.Client;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using AiStockTrading.Shared.KnowledgeBase;
+using AiStockTrading.Shared.KnowledgeBase.Ports;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ReportService.Domain;
 using ReportService.Features.Reports;
 using ReportService.Features.Reports.ConfirmReport;
@@ -142,6 +145,34 @@ public class ReportOwnerWriteGrpcServiceTests
         }
 
         StateOf(grpcHost).Should().Be(StateOf(restHost)).And.Be(ReportState.Confirmed);
+    }
+
+    // FR-06, FR-08, #1300, IADR-0526 決定 3（PR #1301 の監査）: gRPC の確定も REST と同じく、確定版を KB へ保存できたら承認待ちの写しを消す
+    // （gRPC 面が写しのポートを渡し忘れると、Discord の確定で写しが残り続ける）。
+    [Fact]
+    public async Task gRPCの確定も確定版を保存したら承認待ちの写しを消す()
+    {
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        var draftCopy = new RecordingDraftKnowledgeCopy();
+        await using var factory = Trusted(baseFactory).WithWebHostBuilder(b => b.ConfigureServices(s =>
+        {
+            s.RemoveAll<IKnowledgeBaseWriter>();
+            s.AddSingleton<IKnowledgeBaseWriter>(new SavingWriter());
+            s.RemoveAll<IReportDraftKnowledgeCopy>();
+            s.AddSingleton<IReportDraftKnowledgeCopy>(draftCopy);
+        }));
+        SeedReport(factory);
+
+        var reply = await Grpc(factory).ConfirmReportAsync(new Proto.ReportConfirmationRequest { PeriodKey = Key, ExpectedVersion = 1, OnBehalfOf = "owner-a" });
+
+        reply.Transitioned.Should().BeTrue();
+        draftCopy.Removed.Should().ContainSingle().Which.Should().Be((ReportKind.Daily, Key));
+    }
+
+    private sealed class SavingWriter : IKnowledgeBaseWriter
+    {
+        public Task<KnowledgeWriteResult> SaveAsync(KnowledgeDocument document, CancellationToken cancellationToken = default) =>
+            Task.FromResult(KnowledgeWriteResult.Ok(Guid.NewGuid()));
     }
 
     [Theory]
