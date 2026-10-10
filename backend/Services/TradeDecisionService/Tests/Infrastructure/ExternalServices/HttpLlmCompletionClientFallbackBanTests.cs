@@ -65,19 +65,20 @@ public class HttpLlmCompletionClientFallbackBanTests
     // 「発注ゼロ」の機械的な表明: 判断は Hold であり、**フォールバック候補への再呼び出しも 0 回**である
     // （AST 側で別モデルを試す経路が生えていないことの直接の証拠）。
     [Theory]
-    [InlineData("claude-opus-5-5")]        // 基盤の DefaultModel へ無音で落ちた形（platform IADR-0102 の罠）
-    [InlineData("claude-haiku-5-5")]     // 他用途の第 2 候補
-    [InlineData("claude-opus-4-8")]      // 旧ピン（ADR-0014 が改定した値）
+    [InlineData(LlmPurposes.TradeDecision, "claude-opus-5-5")]        // 基盤の DefaultModel へ無音で落ちた形（platform IADR-0102 の罠）
+    [InlineData(LlmPurposes.TradeDecision, "claude-haiku-5-5")]       // 他用途の第 2 候補
+    [InlineData(LlmPurposes.TradeDecision, "claude-opus-4-8")]        // 旧ピン（ADR-0014 が改定した値）
     // 🔴 #1296, ADR-0064 決定 8: 5.5 系への切替の直前世代も受けない（移行段は撤去した）。基盤が切り替わる前の応答はここで見送りへ倒れる。
-    [InlineData("claude-sonnet-5")]      // 本判断のピン（sonnet-5-5）の直前世代
-    [InlineData("claude-haiku-4-5")]     // 一次スクリーニングのピン（haiku-5-5）の直前世代
-    [InlineData(null)]                   // モデル名を名乗らない応答
-    public async Task 実効モデルがピンと違えば発注へ進まず_呼び出しも増やさない(string? effectiveModel)
+    // 直前世代は**その用途のピンの直前世代**で試す（他用途の直前世代は移行段があっても Unassigned で、移行段の再混入を捕まえない）。
+    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5")]        // 本判断のピン（sonnet-5-5）の直前世代
+    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-4-5")] // 一次スクリーニングのピン（haiku-5-5）の直前世代
+    [InlineData(LlmPurposes.TradeDecision, null)]                     // モデル名を名乗らない応答
+    public async Task 実効モデルがピンと違えば発注へ進まず_呼び出しも増やさない(string purpose, string? effectiveModel)
     {
         var handler = new StubHandler(HttpStatusCode.OK, Body(effectiveModel));
         var governance = new RecordingGovernanceReporter();
 
-        var output = await Client(handler, governance).CompleteAsync("p");
+        var output = await Client(handler, governance, purpose).CompleteAsync("p");
 
         // ① 発注ゼロ: 判断は Hold（本文の "Buy" は破棄されている）。
         TradeDecisionParser.Parse(output).Action.Should().Be(TradeAction.Hold);

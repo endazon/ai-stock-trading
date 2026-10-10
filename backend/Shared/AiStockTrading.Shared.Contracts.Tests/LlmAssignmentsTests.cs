@@ -173,7 +173,7 @@ public class LlmAssignmentsTests
     {
         var everyKnownModel = LlmAssignments.All
             .SelectMany(a => a.FallbackModels.Prepend(a.PrimaryModel))
-            .Concat(["claude-sonnet-5", "claude-haiku-4-5", "claude-opus-5", "claude-opus-4-8"])
+            .Concat(["claude-sonnet-5", "claude-haiku-4-5", "claude-opus-5", "claude-opus-4-8", "claude-sonnet-4-6"])
             .Concat(LlmAssignments.ForbiddenModels)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
