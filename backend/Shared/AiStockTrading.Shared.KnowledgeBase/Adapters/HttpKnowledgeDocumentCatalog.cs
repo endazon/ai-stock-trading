@@ -12,7 +12,7 @@ namespace AiStockTrading.Shared.KnowledgeBase.Adapters;
 // （Knowledge.Contracts に依存しない。IADR-0069 と同じ境界）。
 //
 // 結果の分け方（原則 A・IADR-0436 決定 3）:
-//   - 書き込み（作成・本文の投入）: 2xx＝成功／4xx＝失敗（入力段で拒否され、書き込みは起きていない）／
+//   - 書き込み（作成・本文の投入・削除〔#1300〕）: 2xx＝成功／4xx＝失敗（入力段で拒否され、書き込みは起きていない）／
 //     5xx・タイムアウト・送った後の切断＝**不明**（基盤は保存の後にイベントの発行で落ちても 5xx を返し得る）。
 //     接続を張れなかった（名前解決・接続・TLS・プロキシ）＝失敗（届いていない）。
 //   - 一覧（読み取り）: 2xx＝成功／非 2xx・解釈できない応答＝失敗／タイムアウト＝不明（読み取りなので副作用は無いが、
@@ -123,12 +123,23 @@ internal sealed class HttpKnowledgeDocumentCatalog(
             cancellationToken).ConfigureAwait(false);
     }
 
+    // FR-08, #1300, IADR-0526 決定 3: 文書の削除。結果の分け方は作成・本文の投入と同じ（2xx＝成功・4xx＝失敗・5xx/タイムアウト＝不明）。
+    public async Task<KnowledgeCatalogWriteResult> DeleteAsync(Guid documentId, CancellationToken cancellationToken = default) =>
+        await WriteAsync(
+            "KB の文書の削除",
+            ct => httpClient.DeleteAsync($"/documents/{documentId}", ct),
+            readId: false,
+            knownId: documentId,
+            cancellationToken,
+            notFoundHint: "既に削除されたか、別の主体が作った文書です").ConfigureAwait(false);
+
     private async Task<KnowledgeCatalogWriteResult> WriteAsync(
         string operation,
         Func<CancellationToken, Task<HttpResponseMessage>> send,
         bool readId,
         Guid? knownId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string notFoundHint = "所有者でない本文なしの文書は管理者が削除してから入れ直してください")
     {
         try
         {
@@ -145,7 +156,7 @@ internal sealed class HttpKnowledgeDocumentCatalog(
             if (!response.IsSuccessStatusCode)
             {
                 var prefix = response.StatusCode == HttpStatusCode.NotFound && knownId is not null
-                    ? $"{operation}を拒否されました（文書が無いか、AST の KB 用クライアントが所有者ではありません。所有者でない本文なしの文書は管理者が削除してから入れ直してください）"
+                    ? $"{operation}を拒否されました（文書が無いか、AST の KB 用クライアントが所有者ではありません。{notFoundHint}）"
                     : $"{operation}を拒否されました";
                 var reason = await DescribeStatusAsync(prefix, response, cancellationToken).ConfigureAwait(false);
                 logger.LogWarning("{Operation}: {Reason}", operation, reason);

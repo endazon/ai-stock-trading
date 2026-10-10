@@ -172,6 +172,29 @@ public class KnowledgeBaseRetrievalContextProviderTests
         result.Select(r => r.Title).Should().Equal("目印つきの市場ニュース", "確定報告書 Daily 2026-07-09", "配備前の市場ニュース");
     }
 
+    // FR-06, FR-08, #1300, IADR-0526 決定 6: 承認待ちの報告書の写し（ドラフト）は、どの検索に混じっても判断文脈へ渡さない
+    // （基盤が索引しないので通常は来ない。③ はフィルタなしのため表題の目印で防御として落とす）。確定版の報告書は従来どおり通す。
+    [Fact]
+    public async Task 承認待ちの報告書の写しはどの検索に混じっても判断文脈へ渡さない()
+    {
+        static KnowledgeHit Draft(string periodKey) =>
+            new(Guid.NewGuid(), $"報告書ドラフト Daily {periodKey}", "承認待ちの本文。", 0.9d, null, ["report"], null, null);
+
+        var search = new FakeSearch(
+            symbolHits: [Hit("AAPL の決算", Fresh, "AAPL"), Draft("daily-2026-07-10")],
+            marketHits: [Draft("daily-2026-07-09")],
+            fallbackHits:
+            [
+                Draft("daily-2026-07-08"),
+                new KnowledgeHit(Guid.NewGuid(), "確定報告書 Daily 2026-07-07", "前日の振り返り。", 0.7d, null, ["report"], null, null),
+            ]);
+
+        var result = await GetAsync(Create(search, topK: 5));
+
+        search.FallbackQuery.Should().NotBeNull("目印つきが足りないので補充を引く");
+        result.Select(r => r.Title).Should().Equal("AAPL の決算", "確定報告書 Daily 2026-07-07");
+    }
+
     // T-10-1982, #1138, IADR-0474 決定3: 補充の件数は構成の TopK が大きくても int の上限で頭打ちにする（あふれて負にしない）。
     [Theory]
     [InlineData(1, 4)]

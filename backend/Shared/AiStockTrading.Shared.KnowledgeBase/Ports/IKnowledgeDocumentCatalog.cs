@@ -3,7 +3,7 @@ namespace AiStockTrading.Shared.KnowledgeBase.Ports;
 // FR-08, #1028, IADR-0436 決定 2: 基盤の文書台帳を**保守の操作**（確定報告書の入れ直し）から使うポート。
 //
 // 基盤（DocumentService）には外部 ID での照会・upsert が無い（ADR-0001: 基盤は改修しない）。そこで呼び出し側が
-// 「一覧から属性で探す → 無ければ作る・本文が無ければ入れる」を組み立てられるよう、口を 3 つだけ出す。
+// 「一覧から属性で探す → 無ければ作る・本文が無ければ入れる」を組み立てられるよう、口を 3 つだけ出す（#1300 で承認待ちの写しの置き換えのため削除を足し 4 つ）。
 // 業務経路の保存（IKnowledgeBaseWriter）とは別のポートにする —— あちらは fail-safe で結果を 1 値に潰す契約であり、
 // 変えると情報収集・確定の保存の意味が変わる。
 //
@@ -18,4 +18,11 @@ public interface IKnowledgeDocumentCatalog
 
     /// <summary>既存文書への本文の投入（PUT /documents/{id}/body）。基盤は所有者にしか許さない（拒否は 404）。</summary>
     Task<KnowledgeCatalogWriteResult> PutBodyAsync(Guid documentId, string body, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-08, #1300, IADR-0526 決定 3: 文書の削除（DELETE /documents/{id}）。基盤は機械クライアントに、自分が owner の組織文書だけを
+    /// 許す（拒否・不在は 404。<see cref="KnowledgeCatalogWriteResult.IsNotFoundOrNotOwner"/>）。承認待ちの報告書の写し（ドラフト）を
+    /// 確定で置き換えるときに使う。成功の DocumentId は削除した文書。
+    /// </summary>
+    Task<KnowledgeCatalogWriteResult> DeleteAsync(Guid documentId, CancellationToken cancellationToken = default);
 }

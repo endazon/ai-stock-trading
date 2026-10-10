@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052, ADR-0053]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, planning#711, planning#746, planning#724]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, planning#711, planning#746, planning#724, planning#784]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -112,6 +112,17 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
   応答は 200＝実行した（個別の失敗・不明を含み得る）／503＝KB が構成されていない／502＝KB の文書一覧を引けなかった（**503・502 では 1 件も書いていない**）／
   409＝実行中（同時に 1 本だけ）。200・503・502 は監査台帳へ `ReportKnowledgeReingested`（操作者・範囲・件数・内訳）を残す。
   宛先・資格は確定時の保存と同じ構成（`KnowledgeBase:Documents:BaseUrl`・`KnowledgeBase:Auth`）で、1 回の呼び出しのタイムアウトは 30 秒。
+  **承認待ちの写し（下の「承認待ちの報告書の写し」）は写しに数えない**（`reportState=draft` を持ち、**かつ**表題が `報告書ドラフト ` で始まる文書）。露出の 3 属性が全部 `excluded` なだけの文書は写しとみなさない（管理者が隠した確定版の写しを消さない・作り直さない）。
+  確定版の写しが KB に在る（作った・在った・本文を入れた）ときだけ、同じ報告書に残った承認待ちの写しを消し、消した数を行の `draftCopiesRemoved` と合計の `draftCopiesRemoved` で返す（監査の事象には載せない）。
+- **承認待ちの報告書の写し（ドラフト）**: 承認待ちへ移すたび（自動生成・月報の初回・作り直し・`/policy` の改訂・手の提示）に、
+  その版の本文を KB の文書に 1 件だけ持つ。利用者は確定の前に知識ユニットの文書画面で本文を読める（機密区分 internal・ABAC に従う）。
+  表題は `報告書ドラフト <種別> <期間キー>`（確定版の表題と分ける）。属性は期間キー・種別・`reportState=draft`・`project=ai-stock-trading` と、
+  露出の 3 属性（`search_exposure` / `graph_exposure` / `ai_input`）を全部 `excluded` にする（基盤の索引・検索・RAG・グラフ・Wiki・外部 AI エージェント向けの一覧に載らない）。
+  `coverage=market` は付けない（取引判断の検索に乗らない。取引判断の側でも表題で落とす）。本文の先頭に「承認待ち・版」を書き、本文が空なら方針を載せる。
+  初回は作成し、以後は同じ文書の本文を差し替える（属性は作成のときだけ送る。基盤の属性の更新は全置換のため使わない）。
+  **確定で、確定版を KB へ保存できたら写しを消す**（保存できなければ残し、入れ直しが確定版を作るときに消す）。差し戻しでは何もしない。
+  Discord の提示通知は変えない（閲覧リンクは足さない）。KB の失敗で生成・提示・確定は止まらない。構成 `ReportDraftKnowledge:Enabled`（既定 false）で有効にする。
+  **基盤の Wiki 同期が露出を見るようになった版の配備の後に有効にする**（それより前の基盤は写しを Wiki へ載せ、外部 AI エージェント向けの文書一覧にも返す）。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
   応答は報告書の項目に `transitioned`（この要求で確定したか）と `version`（確定後の版）を足したもの。確定は版を 1 進めるため、

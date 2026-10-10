@@ -29,7 +29,10 @@ public sealed partial class ReportPolicyRevisionService(
     ILogger<ReportPolicyRevisionService> logger,
     // FR-04, FR-07, ADR-0051 フォローアップ 1, #1223, IADR-0470（2026-10-08 追記）: 利確の行が掛からない保有中の銘柄を名指しするための建玉
     // （日報 §3 と同じ供給元）。未注入・照会の失敗は方針全体の判定へ戻る。
-    IOpenPositionSource? openPositionSource = null)
+    IOpenPositionSource? openPositionSource = null,
+    // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 改訂案を承認待ちにした版で写し（ドラフト）の本文を差し替える
+    // （`/policy` は提示の通知を出さないが、承認待ちの版は変わる）。未注入は持たない。
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
 {
     /// <summary>指示の最大長（文字数）。Discord のスラッシュコマンドの上限と揃える。</summary>
     public const int MaxInstructionLength = 1000;
@@ -181,6 +184,10 @@ public sealed partial class ReportPolicyRevisionService(
                 "方針の改訂案は保存しましたが、提示に失敗しました（PeriodKey={PeriodKey}・版={Version}）。", key, version);
             presented = false;
         }
+
+        // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 承認待ちにできた案の版の本文を写し（ドラフト）へ。保存の後の段なので取り消しを渡さない。
+        if (presented && draftKnowledgeCopy is not null)
+            await draftKnowledgeCopy.PublishAsync(report, version, CancellationToken.None).ConfigureAwait(false);
 
         logger.LogInformation(
             "方針の改訂案を保存し提示しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}・新規={Created}・提示={Presented}・"

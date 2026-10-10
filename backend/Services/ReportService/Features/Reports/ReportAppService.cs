@@ -11,7 +11,9 @@ namespace ReportService.Features.Reports;
 public sealed class ReportAppService(
     IReportStore store,
     IClock clock,
-    IReportDraftPresentedNotifier? bootstrapNotifier = null)
+    IReportDraftPresentedNotifier? bootstrapNotifier = null,
+    // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 月報の初回を承認待ちにしたら写し（ドラフト）を KB に持つ。未注入は持たない。
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
 {
     public VersionedReport? Get(string periodKey) => store.Get(periodKey);
 
@@ -130,6 +132,11 @@ public sealed class ReportAppService(
         // 提示（Drafting→PendingApproval）。自動生成と同じく**提示までで止める**（ADR-0003・IADR-0115 決定1）。
         var decision = store.ApplyReview(draft.PeriodKey, new ReviewCommand(ReviewAction.Present, actor, version));
         var presented = decision is { Accepted: true } && decision.Review.State == ReviewState.PendingApproval;
+
+        // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 承認待ちにできた版の写し（本文が空なので方針を載せる）。best-effort。
+        if (presented && draftKnowledgeCopy is not null)
+            await draftKnowledgeCopy.PublishAsync(
+                draft with { State = ReportState.Draft, ConfirmedAt = null }, version, cancellationToken).ConfigureAwait(false);
 
         // FR-09, IADR-0116: 提示まで到達したものだけ通知する（承認待ちに無いものを「確認してください」と言わない）。
         var notificationFailed = false;

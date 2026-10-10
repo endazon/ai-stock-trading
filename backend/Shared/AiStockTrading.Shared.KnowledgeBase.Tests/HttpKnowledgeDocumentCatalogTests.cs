@@ -129,6 +129,7 @@ public class HttpKnowledgeDocumentCatalogTests
         (await notConfigured.ListAsync()).Outcome.Should().Be(KnowledgeCatalogOutcome.NotConfigured);
         (await notConfigured.CreateAsync(new KnowledgeDocument("t"))).Outcome.Should().Be(KnowledgeCatalogOutcome.NotConfigured);
         (await notConfigured.PutBodyAsync(Guid.NewGuid(), "b")).Outcome.Should().Be(KnowledgeCatalogOutcome.NotConfigured);
+        (await notConfigured.DeleteAsync(Guid.NewGuid())).Outcome.Should().Be(KnowledgeCatalogOutcome.NotConfigured);
         Resolve("not a uri").Should().BeOfType<NotConfiguredKnowledgeDocumentCatalog>();
         Resolve("http://documents").Should().BeOfType<HttpKnowledgeDocumentCatalog>();
         KnowledgeDocumentCatalogExtensions.CatalogTimeout.Should().Be(TimeSpan.FromSeconds(30));
@@ -251,6 +252,30 @@ public class HttpKnowledgeDocumentCatalogTests
         (await Catalog(new Handler((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))).PutBodyAsync(id, "b"))
             .Outcome.Should().Be(KnowledgeCatalogOutcome.Unknown);
         (await Catalog(Throwing(new TaskCanceledException("timeout"))).PutBodyAsync(id, "b"))
+            .Outcome.Should().Be(KnowledgeCatalogOutcome.Unknown);
+    }
+
+    // ── 削除（FR-06, FR-08, #1300, IADR-0526 決定 3。承認待ちの写しを確定で消す） ──
+
+    // FR-08, #1300: DELETE /documents/{id} を送り、204 は成功。404（不在・所有者でない）は失敗で IsNotFoundOrNotOwner。5xx・タイムアウトは不明。
+    [Fact]
+    public async Task 削除はDELETEを送り_204は成功_404は不在_5xxとタイムアウトは不明()
+    {
+        var id = Guid.NewGuid();
+        var handler = new Handler((_, _) => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var ok = await Catalog(handler).DeleteAsync(id);
+
+        ok.Outcome.Should().Be(KnowledgeCatalogOutcome.Succeeded);
+        ok.DocumentId.Should().Be(id);
+        handler.Requests.Should().ContainSingle().Which.Should().Be((HttpMethod.Delete, $"/documents/{id}", (string?)null));
+
+        var notFound = await Catalog(new Handler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound))).DeleteAsync(id);
+        notFound.IsNotFoundOrNotOwner.Should().BeTrue();
+        notFound.Reason.Should().Contain("KB の文書の削除を拒否されました");
+
+        (await Catalog(new Handler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError))).DeleteAsync(id))
+            .Outcome.Should().Be(KnowledgeCatalogOutcome.Unknown);
+        (await Catalog(Throwing(new TaskCanceledException("timeout"))).DeleteAsync(id))
             .Outcome.Should().Be(KnowledgeCatalogOutcome.Unknown);
     }
 }

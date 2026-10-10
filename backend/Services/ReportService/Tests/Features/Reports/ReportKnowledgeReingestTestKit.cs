@@ -101,6 +101,14 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
     public List<Doc> Docs { get; } = [];
     public int CreateCalls { get; private set; }
     public int PutCalls { get; private set; }
+    public int DeleteCalls { get; private set; }
+    public int ListCalls { get; private set; }
+
+    // #1300: 文書ごとの削除の結果の差し込み（失敗・不明）。
+    public Dictionary<Guid, KnowledgeCatalogWriteResult> DeleteOverride { get; } = [];
+
+    // #1300: 作成に渡された文書（属性・表題の検査用）。
+    public List<KnowledgeDocument> CreatedDocuments { get; } = [];
 
     public KnowledgeCatalogListResult? ListOverride { get; set; }
 
@@ -131,8 +139,27 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
         return doc;
     }
 
+    // FR-06, FR-08, #1300: 承認待ちの報告書の写し（ドラフト）を置く（本番の写像と同じ属性・表題に project を足した形）。
+    public Doc AddDraft(string periodKey, ReportService.Domain.ReportKind kind, string body = "下書き", bool ownedByAst = true,
+        DateTimeOffset? updatedAt = null)
+    {
+        var doc = new Doc
+        {
+            Title = ReportService.Infrastructure.ExternalServices.ReportKnowledgeMapper.DraftTitleOf(kind, periodKey),
+            Attributes = new(ReportService.Infrastructure.ExternalServices.ReportKnowledgeMapper.DraftAttributesOf(kind, periodKey),
+                StringComparer.Ordinal)
+            { ["project"] = "ai-stock-trading" },
+            Body = body,
+            OwnedByAst = ownedByAst,
+            UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow,
+        };
+        Docs.Add(doc);
+        return doc;
+    }
+
     public async Task<KnowledgeCatalogListResult> ListAsync(CancellationToken cancellationToken = default)
     {
+        ListCalls++;
         if (BeforeList is not null)
             await BeforeList();
         return ListOverride ?? KnowledgeCatalogListResult.Ok([.. Docs.Select(d => new KnowledgeCatalogEntry(
@@ -142,6 +169,7 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
     public Task<KnowledgeCatalogWriteResult> CreateAsync(KnowledgeDocument document, CancellationToken cancellationToken = default)
     {
         CreateCalls++;
+        CreatedDocuments.Add(document);
         var periodKey = document.Attributes!["periodKey"];
         CreateBehavior.TryGetValue(periodKey, out var behavior);
         if (behavior == "failed")
@@ -170,6 +198,18 @@ internal sealed class FakeKnowledgeCatalog : IKnowledgeDocumentCatalog
                 "KB の文書への本文の投入を拒否されました（文書が無いか、AST の KB 用クライアントが所有者ではありません）（HTTP 404）。", 404));
         doc.Body = body;
         doc.UpdatedAt = DateTimeOffset.UtcNow;
+        return Task.FromResult(KnowledgeCatalogWriteResult.Ok(documentId));
+    }
+
+    public Task<KnowledgeCatalogWriteResult> DeleteAsync(Guid documentId, CancellationToken cancellationToken = default)
+    {
+        DeleteCalls++;
+        if (DeleteOverride.TryGetValue(documentId, out var injected))
+            return Task.FromResult(injected);
+        var doc = Docs.SingleOrDefault(d => d.Id == documentId);
+        if (doc is null || !doc.OwnedByAst)
+            return Task.FromResult(KnowledgeCatalogWriteResult.Failed("KB の文書の削除を拒否されました（HTTP 404）。", 404));
+        Docs.Remove(doc);
         return Task.FromResult(KnowledgeCatalogWriteResult.Ok(documentId));
     }
 }

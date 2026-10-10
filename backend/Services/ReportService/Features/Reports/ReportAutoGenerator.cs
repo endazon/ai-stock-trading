@@ -58,7 +58,9 @@ public sealed class ReportAutoGenerator(
     // FR-06, FR-16, #1181, IADR-0493 決定 1・4: 期間開始時点の在庫（取引台帳が窓の市場ごとの下端まで畳んだもの）。
     // 未注入（単体テスト・旧構成）は取りに行かない＝従来どおり期間で切った在庫（IADR-0381。算定できない決済を検出した回だけ未供給）。
     // 本番は必ず注入する（所在が未構成なら UnsuppliedOpeningInventorySource ＝常に未供給）。
-    IOpeningInventorySource? openingInventorySource = null)
+    IOpeningInventorySource? openingInventorySource = null,
+    // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 承認待ちにした版の写し（ドラフト）を KB に持つ。未注入は持たない＝従来の挙動。
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
 {
     // 観測点が未注入（単体テスト・旧構成）なら誰も記録しない観測になり、見送りは起きない＝従来挙動。
     private readonly ReportDependencyProbe _probe = dependencyProbe ?? new ReportDependencyProbe();
@@ -235,6 +237,11 @@ public sealed class ReportAutoGenerator(
         var summary = ReportSummary.Build(
             due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative, unsuppliedInputs,
             policyWarning);
+
+        // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 承認待ちにできた版の本文を KB の写し（ドラフト・索引されない）へ。通知より先に置く
+        // （通知を見た利用者が SC-03 で開いたときに新しい版が載っているように）。best-effort（ポートは例外を投げない）。
+        if (presented && draftKnowledgeCopy is not null)
+            await draftKnowledgeCopy.PublishAsync(report, version, cancellationToken).ConfigureAwait(false);
 
         // FR-09, IADR-0116 決定2: 提示まで到達したものだけ通知する（承認待ちに無いものを「確認してください」と言わない）。
         var notificationFailed = presented

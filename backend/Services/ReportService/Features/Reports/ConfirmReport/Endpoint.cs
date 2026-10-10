@@ -18,14 +18,14 @@ internal static class ConfirmReportEndpoint
     public static void MapConfirmReport(this IEndpointRouteBuilder owner) =>
         owner.MapPost("/{periodKey}/confirm", (string periodKey, ConfirmReportRequest req, AppSvc svc,
             IMessageBus bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, DelegatedActorOptions delegated,
-            IPolicyRevisionLedger policyLedger, HttpContext http) =>
-                HandleAsync(periodKey, req, svc, bus, kb, loggerFactory, delegated, policyLedger, http));
+            IPolicyRevisionLedger policyLedger, IReportDraftKnowledgeCopy draftCopy, HttpContext http) =>
+                HandleAsync(periodKey, req, svc, bus, kb, loggerFactory, delegated, policyLedger, http, draftCopy));
 
     // NFR, IADR-0450, #753（段 5）: REST と gRPC 面（ReportOwnerWriteGrpcService）が共有する処理（確定者の解決・版番号付きの冪等・監査の発行・
     // KB への保存・台帳の確定時刻を 2 箇所に書かない）。
     internal static async Task<IResult> HandleAsync(string periodKey, ConfirmReportRequest req, AppSvc svc,
         IMessageBus bus, IKnowledgeBaseWriter kb, ILoggerFactory loggerFactory, DelegatedActorOptions delegated,
-        IPolicyRevisionLedger policyLedger, HttpContext http)
+        IPolicyRevisionLedger policyLedger, HttpContext http, IReportDraftKnowledgeCopy? draftCopy = null)
     {
         var confirming = ConfirmingActorResolver.Resolve(http.User, req.OnBehalfOf, delegated.TrustedClientIds);
         var actorLogger = loggerFactory.CreateLogger("ReportConfirmingActor");
@@ -64,14 +64,22 @@ internal static class ConfirmReportEndpoint
             // FR-08, IADR-0069/0071 決定3, #565, IADR-0274: 確定報告書を KB へ保存（本文つき。既定 no-op）。
             // 保存の失敗・例外は握りつぶし確定を壊さない（KB は best-effort・保存ポート自体も fail-safe）。
             var kbLogger = loggerFactory.CreateLogger("ReportKnowledgeBase");
+            var savedToKb = false;
             try
             {
-                await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r, kbLogger), http.RequestAborted);
+                savedToKb = (await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r, kbLogger), http.RequestAborted)).Saved;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 kbLogger.LogWarning(ex, "確定報告書 {PeriodKey} の KB 保存に失敗しました（確定は継続）。", r.PeriodKey);
             }
+
+            // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 3: 確定版の写しを作れたら、承認待ちの写し（ドラフト）を消す（確定版で置き換える）。
+            // 確定版を作れなかったときは消さない —— ドラフトは索引されないので検索には出ず、SC-03 で本文を読める状態が残る。
+            // 入れ直し（ReportKnowledgeReingestService）が確定版を作るときに残ったドラフトを消す。best-effort（ポートは例外を投げない）。
+            // 要求の取り消しを渡さない（確定は済んでいる。取り消しで後始末を飛ばさない）。
+            if (savedToKb && draftCopy is not null)
+                await draftCopy.RemoveAsync(r.Kind, r.PeriodKey, CancellationToken.None);
 
             // FR-13, ADR-0042 決定 1, #1025, IADR-0433 決定 7（PR #1027 の監査 M1）: 確定された版が `/policy` の案なら、
             // 台帳に「この版で確定された」時刻を残す（適用の内訳が無いままなら「確定されたが適用を試みていない」が台帳で見える）。

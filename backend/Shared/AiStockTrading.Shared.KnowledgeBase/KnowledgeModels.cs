@@ -110,6 +110,41 @@ public static class KnowledgeSearchAttributes
     public const string MarketCoverage = "market";
 }
 
+// FR-08, #1300, IADR-0526 決定 1: 基盤の露出の 3 属性（MSP の FR-19・計画 ADR-0061。MSP の Knowledge.Contracts `DocumentExposure` と同じ文字列）。
+// 3 つとも `excluded` の組織文書は、基盤の索引・検索・RAG・グラフ・Wiki・外部 AI エージェント向けの文書一覧に載らない（MSP#1886・MSP の IADR-0529）。
+// SC-03 の閲覧（ABAC）は残る。AST は承認待ちの報告書の写し（ドラフト）にだけ付ける。
+// 🔴 3 つのうち 1 つでも欠けると、その用途で検索・RAG に出る（基盤の判定は「1 つでも含めるなら索引する」）。
+public static class KnowledgeExposureAttributes
+{
+    public const string SearchKey = "search_exposure";
+    public const string GraphKey = "graph_exposure";
+    public const string AiInputKey = "ai_input";
+    public const string Excluded = "excluded";
+
+    public static readonly IReadOnlyList<string> Keys = [SearchKey, GraphKey, AiInputKey];
+
+    /// <summary>3 つとも <c>excluded</c> の属性か（基盤が索引しない文書か）。</summary>
+    public static bool IsAllExcluded(IReadOnlyDictionary<string, string> attributes)
+    {
+        ArgumentNullException.ThrowIfNull(attributes);
+        return Keys.All(k => attributes.TryGetValue(k, out var v) && string.Equals(v, Excluded, StringComparison.Ordinal));
+    }
+}
+
+// FR-06, FR-08, UC-03, #1300, IADR-0526 決定 1: 承認待ちの報告書の写し（ドラフト）の目印。書き手は報告書サービス、
+// 読み手は報告書の入れ直し（確定版の写しと取り違えない）と取引判断の KB 検索（防御の絞り込み）。
+// 表題は確定版（`確定報告書 {kind} {periodKey}`）と必ず分ける —— 入れ直しと MSP の写しの棚卸しは確定版の表題との完全一致を目印に使う。
+public static class KnowledgeReportDraftCopy
+{
+    public const string TitlePrefix = "報告書ドラフト ";
+
+    public const string StateKey = "reportState";
+    public const string DraftState = "draft";
+
+    public static bool IsDraftTitle(string? title) =>
+        title is not null && title.StartsWith(TitlePrefix, StringComparison.Ordinal);
+}
+
 // FR-08, FR-02, FR-04, #568: RAG 検索ヒット 1 件（チャンク単位。platform SearchResultDto に対応）。
 //   PublishedAt — 元記事・開示の発行時刻（ScreeningContextPlanner 段③「古い順」の並び替え鍵。
 //   IADR-0247 残余リスクの解消・IADR-0270）。platform 契約の `SearchResultDto.UpdatedAt`（索引の
