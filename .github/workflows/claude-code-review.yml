@@ -199,8 +199,8 @@ jobs:
           BODY="${PR_BODY}
           ${PR_TITLE}"
           MODEL="claude-sonnet-5-5"
-          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+fable';  then MODEL="claude-fable-5-1"
-          elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5-5"
+          # fable は CI でも使わない（利用者裁定 2026-10-10・planning#783）。「@claude fable」と書いても既定モデルで起動する。
+          if   printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+opus';   then MODEL="claude-opus-5-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+sonnet'; then MODEL="claude-sonnet-5-5"
           elif printf '%s' "$BODY" | grep -qiE '@claude[[:space:]]+haiku';  then MODEL="claude-haiku-5-5"
           fi
