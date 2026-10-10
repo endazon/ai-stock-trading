@@ -269,9 +269,20 @@ public static class RiskEvaluator
         // FR-10, #329, IADR-0130 決定1/2: 金額上限は equity 比で保持されており、判定時に equity から解決する。
         // equity は snapshot.Capital（＝前営業日終値時点の評価額・当日中は不変。計画 §5 注記）であり、
         // 日次損失上限・最大 DD と同一の基準を用いる（基準がばらけると「厳しい方が効く」の比較が成り立たない）。
+        //
+        // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定1・決定3: **高ボラティリティ銘柄の区分には equity の 5%（区分外の上限との小さい方）を掛ける。**
+        // 区分は明示指定（本サービスの設定）または自動判定（発注意図が運ぶ ATR(14) ÷ 参照価格 ≥ 4%）。ATR が運ばれない（得られない・無効）
+        // ときは明示指定だけで判定する。判定と上限はサイジング・LLM の前の見送りと**同じ関数**（HighVolatilityOrderCap）で求める。
+        // 注文単位で判定し、既存建玉は数えない（決定4。空売りの銘柄ごとの累計 10% は下の空売り統制が別に掛ける）。理由は区分外と同じ
+        // PerOrderAmountExceeded（同じ「1 注文あたりの発注金額上限」の統制である）。
         if (isEntry
             && equity is { } perOrderEquity
-            && intent.NotionalInBase > settings.Limits.MaxOrderAmountFor(perOrderEquity))
+            && intent.NotionalInBase > HighVolatilityOrderCap.MaxOrderAmountFor(
+                settings.Limits,
+                settings.HighVolatility,
+                perOrderEquity,
+                HighVolatilityOrderCap.IsHighVolatility(
+                    settings.HighVolatility, intent.Symbol, intent.Market, intent.Atr14, intent.Price)))
         {
             reasons.Add(RejectionReason.PerOrderAmountExceeded);
         }

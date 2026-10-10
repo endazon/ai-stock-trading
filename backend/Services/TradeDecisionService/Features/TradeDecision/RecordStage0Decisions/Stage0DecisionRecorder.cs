@@ -357,7 +357,7 @@ public sealed class Stage0DecisionRecorder(
 
         // ADR-0033 決定4: 多数決は本番と同じ規則（同数・空は安全側 Hold）。一次で見送れば一次の Hold（根拠つき）。
         var decision = orchestrated.Decision;
-        var (signedQuantity, belowMinimumNotional) = SignedQuantity(decision, input);
+        var (signedQuantity, belowMinimumNotional) = SignedQuantity(decision, input, symbol, market);
         if (belowMinimumNotional == true)
         {
             // FR-10, #1209, IADR-0507: 本番ならサイジングの直後に SizedBelowMinimumNotional で見送る判断。数量は消さずに判定を記録へ残し、
@@ -438,7 +438,10 @@ public sealed class Stage0DecisionRecorder(
     // 🔴 FR-10, #1176, IADR-0495 決定1, #1209, IADR-0507: **最小の名目額は本番と同じ関数・同じしきい値で判定する**（数量 > 0 のとき）。
     // 記録器が評価するのは保有なしの枝だけ（IADR-0351 決定7）なので、Buy / Sell はすべて新規建てとして判定する。
     // 数量は 0 にしない —— 再生ではこの注文が建玉の決済として働くことがあり、本番は決済に名目額を掛けない（適用は再生側が新規建てにだけ行う）。
-    private (int SignedQuantity, bool? BelowMinimumNotional) SignedQuantity(LlmDecision decision, AsOfDecisionInput input)
+    // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定3: 高ボラティリティ銘柄の 1 注文上限も本番と同じ関数で掛ける（明示指定は記録時のサイジング文脈、
+    // 自動判定は input.StopFloor の ATR(14) ÷ 記録の参照価格。ATR が無効・得られないときは明示指定だけ）。
+    private (int SignedQuantity, bool? BelowMinimumNotional) SignedQuantity(
+        LlmDecision decision, AsOfDecisionInput input, string symbol, Market market)
     {
         if (decision.Action == TradeAction.Hold)
             return (0, null);
@@ -468,7 +471,12 @@ public sealed class Stage0DecisionRecorder(
             context.Limits.PerTradeRiskRatio,
             stopLossDistanceBase,
             referencePriceBase,
-            context.Limits.MaxOrderAmountFor(capital),
+            HighVolatilityOrderCap.MaxOrderAmountFor(
+                context.Limits,
+                context.EffectiveHighVolatility,
+                capital,
+                HighVolatilityOrderCap.IsHighVolatility(
+                    context.EffectiveHighVolatility, symbol, market, input.StopFloor?.Atr14?.Atr, decision.ReferencePrice)),
             availableCapital,
             sizeFactor);
 

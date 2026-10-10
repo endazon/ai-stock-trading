@@ -28,6 +28,7 @@ using RiskManagementService.Features.RiskManagement.PauseTrading;
 using RiskManagementService.Features.RiskManagement.RequestStageTransition;
 using RiskManagementService.Features.RiskManagement.ResumeTrading;
 using RiskManagementService.Features.RiskManagement.UpdateBrokerProvider;
+using RiskManagementService.Features.RiskManagement.UpdateHighVolatility;
 using RiskManagementService.Features.RiskManagement.UpdateRiskLimits;
 using RiskManagementService.Features.RiskManagement.UpdateStage1MinimumTradeCount;
 using RiskManagementService.Features.RiskManagement.UpdateStageSettings;
@@ -122,6 +123,8 @@ internal static class RiskControlEndpoints
         owner.MapUpdateStage1MinimumTradeCount();
         // FR-10, FR-12, ADR-0040 決定1・決定3, #819, IADR-0342 決定2: 損切りの実行機構（利用者のみ）。
         owner.MapUpdateStopLossMethod();
+        // FR-10, UC-06, ADR-0063, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定）。
+        owner.MapUpdateHighVolatility();
 
         // ---- 段階ゲート（FR-20, UC-06, ADR-0008, IADR-0041/0070） ----
         read.MapGetStageGate();

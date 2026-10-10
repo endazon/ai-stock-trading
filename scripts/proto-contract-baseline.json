@@ -2037,6 +2037,11 @@
               "type": "string",
               "label": "optional"
             },
+            "high_volatility": {
+              "number": 9,
+              "type": "HighVolatilityControls",
+              "label": "singular"
+            },
             "limits": {
               "number": 7,
               "type": "RiskLimits",
@@ -2121,6 +2126,42 @@
               "number": 1,
               "type": "WorkingEntryOrderRow",
               "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "HighVolatilityControls": {
+          "fields": {
+            "designated_symbols": {
+              "number": 2,
+              "type": "HighVolatilitySymbolRow",
+              "label": "repeated"
+            },
+            "max_order_amount_ratio": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "HighVolatilitySymbolRow": {
+          "fields": {
+            "market": {
+              "number": 2,
+              "type": "Market",
+              "label": "singular"
+            },
+            "symbol": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
             }
           },
           "reserved": {

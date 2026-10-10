@@ -56,7 +56,7 @@ public class TradingDefaultsTests
     }
 
     // T-10-2311, FR-10, #1176, IADR-0495 決定1: 新規建ての最小の名目額は equity の 1%（オーナー裁定 2026-10-07）。
-    // 🔴 計画の 05_trading-assumptions §5 にはまだ行が無い（実装側の裁定値。計画への記録は planning への issue で求める）。
+    // 計画の 05_trading-assumptions §5「新規建ての最小の名目額」の行（2026-10-09 追加）と一致する（#1291 で旧注記を改めた）。
     // 1 注文上限（25%）より小さい（上限より大きいと新規建てが構造的に成立しない）。
     [Fact]
     public void 新規建ての最小の名目額はequityの1パーセント()
@@ -66,6 +66,27 @@ public class TradingDefaultsTests
         TradingDefaults.MinEntryNotionalRatio.Should().BeLessThan(limits.MaxOrderAmountRatio);
         MinimumEntryNotional.Validate(TradingDefaults.MinEntryNotionalRatio).Should().Be(0.01m);
         MinimumEntryNotional.MaxRatio.Should().Be(limits.MaxOrderAmountRatio, "しきい値の上限は 1 注文上限の既定（25%）");
+    }
+
+    // T-10-2552, FR-10, ADR-0063 決定1・決定2, #1291, IADR-0527 決定1: 高ボラティリティ銘柄の統制値の既定（05_trading-assumptions §5 の 2 行・
+    // 利用者裁定 2026-10-10）。区分の 1 注文上限は equity の 5%（$3,000 で $150）、自動判定は ATR(14) ÷ 参照価格 ≥ 4%、明示指定は既定で無い。
+    // 4% は「1 取引リスク 1% ÷ 区分外の 1 注文上限 25%」の境目であり、区分外の 25% は据え置く（決定3）。
+    [Fact]
+    public void 高ボラティリティ銘柄の統制値の既定は全体前提条件と一致する()
+    {
+        TradingDefaults.HighVolatilityMaxOrderAmountRatio.Should().Be(0.05m);
+        TradingDefaults.HighVolatilityAtrRatioThreshold.Should().Be(0.04m);
+
+        var highVolatility = TradingDefaults.CreateHighVolatilitySettings();
+        highVolatility.MaxOrderAmountRatio.Should().Be(0.05m);
+        highVolatility.DesignatedSymbols.Should().BeEmpty();
+        TradingDefaults.CreateSettings().HighVolatility.Should().Be(highVolatility, "設定の集約の既定も同じ値で効く（不在を統制なしにしない）");
+        (TradingDefaults.InitialEquityUsd * highVolatility.MaxOrderAmountRatio).Should().Be(150m, "§5: 自己資金 $3,000 で $150");
+
+        var limits = TradingDefaults.CreateRiskLimits();
+        limits.MaxOrderAmountRatio.Should().Be(0.25m, "区分外の 25% は据え置く（ADR-0063 決定3）");
+        TradingDefaults.HighVolatilityAtrRatioThreshold.Should().Be(limits.PerTradeRiskRatio / limits.MaxOrderAmountRatio);
+        HighVolatilityOrderCap.Validate(highVolatility).Should().BeEmpty("既定値は構成範囲（最小の名目額の比率〜25%）に入る");
     }
 
     // FR-10, FR-17, #329, #364, IADR-0130 決定3 / IADR-0152 決定3: 初期投入資金は USD 3,000

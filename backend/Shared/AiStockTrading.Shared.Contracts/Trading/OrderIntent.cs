@@ -26,6 +26,10 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 // （#1122 より前の判断・決済・保護レグ・利用者の手仕舞い等）。発注執行は発注結果の記録と予約の行に残し、既存の S1 への下限の遡及
 // （IADR-0472）が「サイジングの時点で下限を掛けて建てた行」を広げないために読む（ATR の下限は参照価格の 2% より狭いことがある）。
 // 発注には使わない（ブローカーへ送る内容は変わらない）。取引台帳は本値を持たない（明示写像）。
+// 🔴 FR-10, ADR-0063 決定1, #1291, IADR-0527 決定3: Atr14 は取引判断がこの新規建ての判断で読んだ ATR(14, 日足)（Price と同じローカル通貨・1 株あたり）。
+// 審査は Atr14 ÷ Price ≥ 4% を高ボラティリティ銘柄の自動判定に使い、サイジングと同じ関数で 1 注文上限（区分は equity の 5%）を求める。
+// **null＝ATR が得られない・無効**（既定の構成・決済・保護レグ・利用者の手仕舞い）であり、審査は明示指定だけで判定する（決定1）。
+// 発注には使わない。取引台帳は本値を持たない（明示写像）。
 public record OrderIntent(
     string Symbol,
     Market Market,
@@ -38,7 +42,8 @@ public record OrderIntent(
     decimal? StopLossPrice = null,
     decimal FxRateToBase = 1m,
     bool MarketOrder = false,
-    StopWidthFloorSource? StopFloorSource = null)
+    StopWidthFloorSource? StopFloorSource = null,
+    decimal? Atr14 = null)
 {
     /// <summary>ローカル通貨建ての概算約定金額（執行・スリッページ評価用）。</summary>
     public decimal Notional => Quantity * Price;

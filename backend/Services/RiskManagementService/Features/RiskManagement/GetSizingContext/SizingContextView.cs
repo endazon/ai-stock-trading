@@ -20,4 +20,7 @@ public sealed record SizingContextView(
     // 「保護の状態」に用いる（保有中の建玉に自動の損切りが効く前提に立ってよいかを LLM へ偽らずに伝えるため）。
     // 末尾の既定値つき項目として足し、既存の生成箇所を変えない（RiskStatusView と同じ足し方・IADR-0342 決定2）。
     // 🔴 これは**設定**であり、個々の建玉の逆指値が現在有効かどうかではない（その射影は無い）。
-    StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder);
+    StopLossExecutionMethod StopLossMethod = StopLossExecutionMethod.BrokerStopOrder,
+    // 🔴 FR-10, ADR-0063 決定1・決定2, #1291, IADR-0527 決定3: 高ボラティリティ銘柄の統制値（区分の上限・利用者の明示指定）。取引判断が
+    // サイジングと LLM の前の見送りで審査と同じ上限を求めるために使う。null は作らない（送り手は常に設定の現在値を載せる）。
+    HighVolatilitySettings? HighVolatility = null);

@@ -77,9 +77,31 @@ public static class TradingDefaults
     /// FR-10, #1176, IADR-0495 決定1: <b>新規建ての最小の名目額＝equity の 1%</b>（オーナー裁定 2026-10-07）。サイジングの結果
     /// （数量 × 参照価格・基準通貨）がこれに満たない新規建ては見送る（建玉枠・承認・LLM 費用を消費しない）。ちょうど等しいときは通す。
     /// 判定は <see cref="MinimumEntryNotional"/>、構成は取引判断サービスの <c>Sizing:MinEntryNotionalRatio</c>（未設定は本値）。
-    /// 🔴 <b>計画の 05_trading-assumptions §5 にはまだ行が無い</b>（実装側の裁定値。計画への記録は planning への issue で行う）。
+    /// 計画の 05_trading-assumptions §5「新規建ての最小の名目額」の行（2026-10-09 追加・planning#739）と一致する（#1291 で旧注記「§5 にはまだ行が無い」を改めた）。
     /// </summary>
     public const decimal MinEntryNotionalRatio = 0.01m;
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0063 決定2, #1291, IADR-0527 決定1: <b>高ボラティリティ銘柄の 1 注文あたりの発注金額上限＝equity の 5%</b>
+    /// （$3,000 で $150。05_trading-assumptions §5「高ボラティリティ銘柄の 1 注文あたりの発注金額上限」・利用者裁定 2026-10-10）。
+    /// 根拠は裁定であり、算定から導いた値ではない。区分外の <c>MaxOrderAmountRatio</c>（25%）は据え置く（決定3）。
+    /// 構成で変えられる（範囲は <see cref="HighVolatilityOrderCap.Validate"/>: 最小の名目額の比率 以上 〜 25% 以下）。
+    /// </summary>
+    public const decimal HighVolatilityMaxOrderAmountRatio = 0.05m;
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0063 決定1, #1291, IADR-0527 決定1: <b>高ボラティリティ銘柄の自動判定のしきい値＝ATR(14, 日足) ÷ 参照価格 ≥ 4%</b>
+    /// （05_trading-assumptions §5「高ボラティリティ銘柄の区分」。ちょうど 4% は区分に入る）。4% は「1 取引リスク 1% ÷ 1 注文上限 25%」の境目
+    /// （ADR-0049 決定3）。確定単一値であり構成では変えない（計画は構成可と定めていない）。
+    /// </summary>
+    public const decimal HighVolatilityAtrRatioThreshold = 0.04m;
+
+    /// <summary>FR-10, ADR-0063 決定1・決定2, #1291: 高ボラティリティ銘柄の統制値の既定（上限 5%・明示指定なし）。</summary>
+    public static HighVolatilitySettings CreateHighVolatilitySettings() => new()
+    {
+        MaxOrderAmountRatio = HighVolatilityMaxOrderAmountRatio,
+        DesignatedSymbols = [],
+    };
 
     // FR-10, #329, ADR-0018, IADR-0130: 既定値はすべて計画の**確定単一値**である（レンジ表記は用いない）。
     // 金額系 3 値は equity 比で保持し、固定額では持たない（05_trading-assumptions §5 注記）。
@@ -87,6 +109,7 @@ public static class TradingDefaults
     {
         // 1 注文あたりの発注金額上限: equity の 25%（$3,000 で $750）。単一建玉への集中上限。
         // 1 取引リスク 1% と併用し厳しい方が効く（本上限が効くのはストップ幅が 4% より狭い場合）。
+        // #1291, ADR-0063 決定3: これは高ボラティリティ銘柄の区分外の上限である（区分の銘柄は CreateHighVolatilitySettings の 5% との小さい方）。
         MaxOrderAmountRatio = 0.25m,
         // 1 日あたりの発注金額上限: equity の 150%/日（$3,000 で $4,500）。目的は暴走の遮断であり、
         // 損失の統制は日次損失上限（2%）が担う。新規建てのみ算入し決済は算入しない（#302 の裁定）。

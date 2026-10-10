@@ -396,24 +396,49 @@ public sealed class TradeDecisionAppService(
         // LLM の結論に依らず新規建ては必ず見送られる（下のサイジングの後の判定）。省くのは #1113 と同じ線引き（保有が既知で 0・未約定が既知で空。
         // この銘柄では LLM の結論は新規の買い〔必ず見送り〕・売り〔裸の新規売りとして必ず見送り〕・Hold しか無い）。資金・残枠が未供給（null）なら
         // 省かない（「分からない」を「届かない」と読まない。従来どおり LLM の後に数量 0 で見送る）。手元の値だけで決まるので照会より先に置く。
+        //
+        // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定3・決定4: 1 注文上限は**サイジング・審査と同じ関数**（HighVolatilityOrderCap）で求める。
+        // 高ボラティリティ銘柄（明示指定、または ATR(14) ÷ 現在値 ≥ 4%）は equity の 5%（区分外の上限との小さい方）。ATR は「区分外の上限なら届くが
+        // 区分の上限では届かない」ときだけ、この場で 1 回読む（判断ごとに 1 回の規律は保つ。下のプロンプト・下限の適用は同じ値を使う）。現在値が無い
+        // （LLM の参照価格を使う構成）・ATR が得られない・無効なら自動判定は働かず、明示指定だけで判定する（見送らないだけで、サイジングが同じ上限を掛ける）。
+        StopWidthFloorContext? stopFloor = null;
+        var stopFloorRead = false;
+        var highVolatility = context.EffectiveHighVolatility;
         if (heldPosition is { SignedQuantity: 0 } && workingEntries is { Any: false }
-            && context is { Capital: { } entryEquity, StageCapitalRemaining: { } stageRemaining, DailyOrderRemaining: { } dailyRemaining }
-            && MinimumEntryNotional.CapacityCannotReach(
-                entryEquity,
-                context.Limits.MaxOrderAmountFor(entryEquity),
-                Math.Max(0m, Math.Min(stageRemaining, dailyRemaining)),
-                _minimumEntryNotional.Ratio))
+            && context is { Capital: { } entryEquity, StageCapitalRemaining: { } stageRemaining, DailyOrderRemaining: { } dailyRemaining })
         {
-            logger.LogInformation(
-                "新規建てに使える金額の上限が最小の名目額に届かないため LLM を呼ばずに見送り（保有 0・未約定なし・IADR-0495）: " +
-                "{Symbol} capacity={Capacity} minimum={Minimum} ratio={Ratio}",
-                trigger.Symbol,
-                Math.Min(context.Limits.MaxOrderAmountFor(entryEquity), Math.Max(0m, Math.Min(stageRemaining, dailyRemaining))),
-                MinimumEntryNotional.MinimumFor(entryEquity, _minimumEntryNotional.Ratio),
+            var entryAvailable = Math.Max(0m, Math.Min(stageRemaining, dailyRemaining));
+            bool CannotReach(bool isHighVolatility) => MinimumEntryNotional.CapacityCannotReach(
+                entryEquity,
+                HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, highVolatility, entryEquity, isHighVolatility),
+                entryAvailable,
                 _minimumEntryNotional.Ratio);
-            return await SkipBeforeLlmAsync(
-                    trigger, DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, cancellationToken)
-                .ConfigureAwait(false);
+
+            var isHighVolatility = highVolatility.IsDesignated(trigger.Symbol, trigger.Market);
+            if (!isHighVolatility && !CannotReach(false) && CannotReach(true)
+                && _stopWidthFloor.IsEnabled && currentPrice is > 0m)
+            {
+                stopFloor = new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false));
+                stopFloorRead = true;
+                isHighVolatility = HighVolatilityOrderCap.IsAutoClassified(stopFloor.Atr14?.Atr, currentPrice.Value);
+            }
+
+            if (CannotReach(isHighVolatility))
+            {
+                logger.LogInformation(
+                    "新規建てに使える金額の上限が最小の名目額に届かないため LLM を呼ばずに見送り（保有 0・未約定なし・IADR-0495・IADR-0527）: " +
+                    "{Symbol} capacity={Capacity} minimum={Minimum} ratio={Ratio} highVolatility={HighVolatility}",
+                    trigger.Symbol,
+                    Math.Min(
+                        HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, highVolatility, entryEquity, isHighVolatility),
+                        entryAvailable),
+                    MinimumEntryNotional.MinimumFor(entryEquity, _minimumEntryNotional.Ratio),
+                    _minimumEntryNotional.Ratio,
+                    isHighVolatility);
+                return await SkipBeforeLlmAsync(
+                        trigger, DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         // 🔴 FR-10, #1174, IADR-0500 決定1・2: **段階残枠と日次残枠の小さい方が現在値 × 1 株（基準通貨）に満たない銘柄は、LLM を呼ぶ前に見送る。**
@@ -495,9 +520,11 @@ public sealed class TradeDecisionAppService(
         // 同じ値をプロンプト（ATR と下限の行）・下限の適用・発注意図の印・監査へ使う（プロンプトと適用で値が食い違わない）。
         // **無効（既定）なら読まない**（要求 0 回・プロンプトは従来のまま・下限は参照価格の 2%）。見送りの判定の後に読む（出来高と同じ位置。
         // 日足は出来高と同じ口・同じキャッシュ）。**得られないことで判断を止めない**（2% へ退避する）。
-        var stopFloor = _stopWidthFloor.IsEnabled
-            ? new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false))
-            : null;
+        // #1291, IADR-0527 決定4: LLM の前の見送りの判定で既に読んだときは読み直さない（判断ごとに 1 回）。
+        if (_stopWidthFloor.IsEnabled && !stopFloorRead)
+        {
+            stopFloor = new StopWidthFloorContext(await GetStopWidthFloorSafeAsync(trigger, cancellationToken).ConfigureAwait(false));
+        }
 
         var decisionPrompt = TradeDecisionPromptBuilder.Build(
             trigger, policy, context, retrieved, includeProfitability: _profitabilityOptions.Enabled,
@@ -757,20 +784,27 @@ public sealed class TradeDecisionAppService(
         var capital = context.Capital ?? 0m;
         var availableCapital = Math.Max(
             0m, Math.Min(context.StageCapitalRemaining ?? 0m, context.DailyOrderRemaining ?? 0m));
+        // 🔴 FR-10, ADR-0063 決定1〜5, #1291, IADR-0527 決定1・決定3: 高ボラティリティ銘柄の区分（明示指定、または ATR(14) ÷ 参照価格 ≥ 4%）。
+        // ATR と参照価格はどちらもローカル通貨（比は通貨に依らない）。ATR はプロンプトの前に読んだ値（無効・得られないときは null＝明示指定だけ）。
+        // 同じ ATR を発注意図に載せ、審査が同じ関数で同じ区分・同じ上限を求める。
+        var atr14 = stopFloor?.Atr14?.Atr;
+        var isHighVolatilityEntry = HighVolatilityOrderCap.IsHighVolatility(
+            highVolatility, trigger.Symbol, trigger.Market, atr14, referencePrice);
         var quantity = PositionSizer.CalculateCappedQuantity(
             capital,
             context.Limits.PerTradeRiskRatio,
             stopLossDistanceBase,
             referencePriceBase,
             // FR-10, #329, IADR-0130 決定1: 1 注文金額上限は equity 比のため equity（context.Capital）から解決する。
-            // 「1 取引リスク 1%」と「1 注文 25%」のどちらが厳しいかは CalculateCappedQuantity が min で採る。
-            context.Limits.MaxOrderAmountFor(capital),
+            // 「1 取引リスク 1%」と「1 注文 25%（区分の銘柄は 5% との小さい方。#1291）」のどちらが厳しいかは CalculateCappedQuantity が min で採る。
+            HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, highVolatility, capital, isHighVolatilityEntry),
             availableCapital,
             sizeFactor);
 
         if (quantity <= 0)
         {
-            logger.LogInformation("サイジングで数量 0 のため見送り: {Symbol}", trigger.Symbol);
+            logger.LogInformation(
+                "サイジングで数量 0 のため見送り: {Symbol} highVolatility={HighVolatility}", trigger.Symbol, isHighVolatilityEntry);
             return await SkipJudgedAsync(trigger, DecisionSkipReason.SizingZeroQuantity, judgedPrice, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -830,7 +864,10 @@ public sealed class TradeDecisionAppService(
             rateToBase,
             // 🔴 FR-10, ADR-0049 決定1, #1122, IADR-0486 決定5: このラインを下限を掛けてから引いた印（出所）。発注執行が発注結果の記録と
             // 予約の行に残し、既存の S1 への下限の遡及（IADR-0472）がこの行を広げない（ATR の下限は参照価格の 2% より狭いことがある）。
-            StopFloorSource: stopWidth.FloorSource);
+            StopFloorSource: stopWidth.FloorSource,
+            // 🔴 FR-10, ADR-0063 決定1, #1291, IADR-0527 決定3: 区分の自動判定に使った ATR(14)（ローカル通貨）。審査が同じ関数で同じ区分を求める。
+            // null＝ATR が得られない・無効（審査は明示指定だけで判定する）。
+            Atr14: atr14);
 
         // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
         // FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: 下限を掛けた結果を監査台帳へ残す（判断の記録に載せる）。

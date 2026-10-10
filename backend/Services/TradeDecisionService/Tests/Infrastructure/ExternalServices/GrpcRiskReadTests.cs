@@ -373,4 +373,31 @@ public class GrpcRiskReadTests
         context.Limits.Should().Be(limits);
         context.StopLossMethod.Should().Be(StopLossExecutionMethod.BrokerStopOrder, "C# の 0（S0）が不明に化けない");
     }
+
+    // T-10-2564, FR-10, ADR-0063, #1291, IADR-0527 決定3: 高ボラティリティ銘柄の統制値（区分の上限・明示指定）は送り手の型から受け手へ同じ値で届く。
+    // 項目を持たない応答（旧い送り手）は null（読む側が既定 5%・明示指定なしで効かせる）。市場が未指定の行は照合できないため落とす。
+    [Fact]
+    public async Task T_10_2564_高ボラティリティ銘柄の統制値を受け手が同じ値で読む()
+    {
+        var highVolatility = new HighVolatilitySettings
+        {
+            MaxOrderAmountRatio = 0.04m,
+            DesignatedSymbols = [new HighVolatilitySymbol("TSLA", Market.UnitedStates), new HighVolatilitySymbol("7203", Market.Japan)],
+        };
+
+        var context = await ReadSizingAsync(RiskReadWireMapping.ToProto(new SizingContextView(
+            10000m, 2000m, 3000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits(),
+            StopLossExecutionMethod.BrokerStopOrder, highVolatility)));
+        var legacy = await ReadSizingAsync(SizingProto());
+        var unknownMarket = await ReadSizingAsync(SizingProto(r => r.HighVolatility = new Proto.HighVolatilityControls
+        {
+            DesignatedSymbols = { new Proto.HighVolatilitySymbolRow { Symbol = "TSLA" } },
+        }));
+
+        context.HighVolatility.Should().Be(highVolatility);
+        legacy.HighVolatility.Should().BeNull();
+        legacy.EffectiveHighVolatility.Should().Be(TradingDefaults.CreateHighVolatilitySettings());
+        unknownMarket.HighVolatility!.DesignatedSymbols.Should().BeEmpty();
+        unknownMarket.HighVolatility.MaxOrderAmountRatio.Should().Be(0.05m, "比率の欠落は既定（区分の上限を外さない）");
+    }
 }
