@@ -196,6 +196,53 @@ public class HttpSizingContextProviderTests
             StopLossExecutionMethod.NoProtectiveStop),
         new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
 
+    // T-10-2565, FR-10, ADR-0063 決定1・決定2, #1291, IADR-0527 決定3: 既定の経路（REST）で、送り手の型（SizingContextView）の
+    // 高ボラティリティ銘柄の統制値（比率・明示指定）を同じ値で読む。列挙（市場）は数値で往復する。項目の無い旧応答は null（既定で効く）。
+    [Fact]
+    public async Task T_10_2565_RESTで高ボラティリティ銘柄の統制値を同じ値で読む()
+    {
+        var highVolatility = new HighVolatilitySettings
+        {
+            MaxOrderAmountRatio = 0.04m,
+            DesignatedSymbols = [new HighVolatilitySymbol("TSLA", Market.UnitedStates), new HighVolatilitySymbol("7203", Market.Japan)],
+        };
+        var view = new SizingContextView(
+            120_000m, 45_000m, 22_000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits(),
+            StopLossExecutionMethod.BrokerStopOrder, highVolatility);
+        var body = JsonSerializer.Serialize(view, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        body.Should().Contain("\"highVolatility\":{").And.Contain("\"market\":1").And.Contain("\"market\":0");
+        var legacyBody = body[..body.IndexOf(",\"highVolatility\"", StringComparison.Ordinal)] + "}";
+
+        var context = await Provider(new StubHandler(HttpStatusCode.OK, body)).GetContextAsync();
+        var legacy = await Provider(new StubHandler(HttpStatusCode.OK, legacyBody)).GetContextAsync();
+
+        context.HighVolatility.Should().Be(highVolatility);
+        legacy.Capital.Should().Be(120_000m, "旧応答の他の項目は読める");
+        legacy.HighVolatility.Should().BeNull();
+        legacy.EffectiveHighVolatility.Should().Be(TradingDefaults.CreateHighVolatilitySettings());
+    }
+
+    // T-10-2566, IADR-0527 決定3: 統制値を逆シリアル化できない応答（型の食い違い）は、統制値だけを落とすのではなく応答全体を
+    // 安全既定（残枠 0・資金は未供給）へ倒す。統制値が緩い形で読まれて新規建てへ進むことはない。
+    [Theory]
+    [InlineData("{\"maxOrderAmountRatio\":\"abc\",\"designatedSymbols\":[]}")]
+    [InlineData("{\"maxOrderAmountRatio\":0.05,\"designatedSymbols\":\"TSLA\"}")]
+    [InlineData("{\"maxOrderAmountRatio\":0.05,\"designatedSymbols\":[{\"symbol\":\"TSLA\",\"market\":\"US\"}]}")]
+    public async Task T_10_2566_統制値を逆シリアル化できない応答は安全既定へ倒す(string highVolatilityJson)
+    {
+        var view = new SizingContextView(
+            120_000m, 45_000m, 22_000m, 0, 0m, BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits(),
+            StopLossExecutionMethod.BrokerStopOrder, TradingDefaults.CreateHighVolatilitySettings());
+        var json = JsonNode.Parse(JsonSerializer.Serialize(view, new JsonSerializerOptions(JsonSerializerDefaults.Web)))!.AsObject();
+        json["highVolatility"] = JsonNode.Parse(highVolatilityJson);
+
+        var context = await Provider(new StubHandler(HttpStatusCode.OK, json.ToJsonString())).GetContextAsync();
+
+        context.Should().Be(HttpSizingContextProvider.SafeDefault());
+        context.StageCapitalRemaining.Should().Be(0m);
+        context.Capital.Should().BeNull();
+    }
+
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         public string? LastPath { get; private set; }

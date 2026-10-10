@@ -107,7 +107,8 @@ public static class RiskSettingsSerialization
             // 読めない行が S2（免除）へ倒れると、利用者が選んでいない無防備な建玉が黙って生まれる。
             StopLossMethod = StopLossMethodChange.Resolve(dto.StopLossMethod),
             // 🔴 FR-10, ADR-0063 決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値を持たない旧行は**既定（上限 5%・明示指定なし）**で読む。
-            // 不在を「区分の上限なし」に倒さない。比率が値域外（手編集など）の行も既定の 5% で読む（値域は書き込みの経路が守る）。
+            // 不在を「区分の上限なし」に倒さない。比率が値域の下端を割る行（手編集など）は**下端へ丸めて**読み（保存値より緩くしない）、
+            // 上端を超える行・比率の欠けた行は既定の 5% で読む（値域は書き込みの経路が守る）。
             HighVolatility = ResolveHighVolatility(dto.HighVolatility),
         };
     }
@@ -118,10 +119,13 @@ public static class RiskSettingsSerialization
         if (dto is null)
             return defaults;
 
-        var ratio = dto.MaxOrderAmountRatio is { } r
-            && r >= HighVolatilityOrderCap.MinRatioLowerBound && r <= HighVolatilityOrderCap.MaxRatioUpperBound
-                ? r
-                : defaults.MaxOrderAmountRatio;
+        var ratio = dto.MaxOrderAmountRatio switch
+        {
+            null => defaults.MaxOrderAmountRatio,
+            { } r when r < HighVolatilityOrderCap.MinRatioLowerBound => HighVolatilityOrderCap.MinRatioLowerBound, // 厳しい側へ丸める
+            { } r when r > HighVolatilityOrderCap.MaxRatioUpperBound => defaults.MaxOrderAmountRatio,
+            { } r => r,
+        };
         return new HighVolatilitySettings
         {
             MaxOrderAmountRatio = ratio,

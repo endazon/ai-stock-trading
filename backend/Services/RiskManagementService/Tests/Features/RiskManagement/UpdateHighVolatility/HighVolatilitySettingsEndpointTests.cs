@@ -42,11 +42,16 @@ public class HighVolatilitySettingsEndpointTests(RiskWorkerWebApplicationFactory
         RiskSettingsSerialization.Deserialize(legacy).HighVolatility.Should().Be(TradingDefaults.CreateHighVolatilitySettings());
     }
 
-    // T-10-2560, ADR-0063 決定1・決定2: 明示指定と上限は往復する。値域外の永続値は既定の 5% で読む（明示指定は残す）。
+    // T-10-2560, ADR-0063 決定1・決定2: 明示指定と上限は往復する。下端（0.01）未満の永続値は**下端へ丸め**（保存値より緩くしない）、
+    // 上端（0.25）超は既定の 5% で読む（明示指定は残す）。
     [Theory]
     [InlineData(0.03, 0.03)]
-    [InlineData(0.5, 0.05)]
-    [InlineData(0.001, 0.05)]
+    [InlineData(0.01, 0.01)]   // 下端ちょうど
+    [InlineData(0.25, 0.25)]   // 上端ちょうど
+    [InlineData(0.5, 0.05)]    // 上端超 → 既定
+    [InlineData(0.001, 0.01)]  // 下端未満 → 下端
+    [InlineData(0, 0.01)]
+    [InlineData(-0.1, 0.01)]
     public void T_10_2560_統制値は往復し値域外の比率は既定で読む(double persisted, double expected)
     {
         var settings = TradingDefaults.CreateSettings() with
