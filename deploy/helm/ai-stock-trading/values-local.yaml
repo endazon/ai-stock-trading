@@ -305,15 +305,6 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
-      # 🔴 移行期間のみ（#1295・撤去は #1296）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗るため、旧世代の行を残す。
-      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（旧 report-monthly・report-weekly）
-      - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
-      - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（フォールバック先には含まれないが表の一貫性のため保持）
-      - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（旧 report-daily・フォールバック先）
-      - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（旧 report-daily フォールバック先）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - { name: KnowledgeBase__Documents__BaseUrl, value: "http://document-service.microservices-platform:8080" }  # ← ③
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
@@ -449,8 +440,10 @@ services:
       #   （#1197 / IADR-0499。0 円計上で月次上限が黙って無効になる経路を塞ぐ）。
       #
       # 出典・前提（2026-07 時点・**恒久値ではない**）:
-      #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50、opus-5 / opus-4-8 = 5/25、
-      #     sonnet-5 = 2/10、haiku-4-5 = 1/5
+      #   Anthropic 公開単価（$/1M トークン・入力/出力）: fable-5 = 10/50（禁止モデル。表に無いモデルの上限値として残す。
+      #     外すのは未知モデルの計上単価の専用設定値と同時＝計画 ADR-0064 決定 9）。
+      #   #1296: 旧世代（opus-5 / opus-4-8 = 5/25、sonnet-5 = 2/10、haiku-4-5 = 1/5）の行は撤去した（5.5 系だけを受け付ける。
+      #     旧 ID の応答は表に無いモデルとして fable-5 の上限で多めに計上される）。
       #   #1295, IADR-0524（確認日 2026-10-10・planning#783）: opus-5-5 = 4/20、sonnet-5-5 = 2/10、
       #     haiku-5-5 = **プロンプト長で 2 段**（入力 100,000 トークン以下 0.10/0.50・超 0.50/2.50。キャッシュ読み書きを含む
       #     入力トークンの合計で要求ごとに決まる）。第 2 段は LongContextThresholdTokens / LongContextInputPer1kTokens /
@@ -484,15 +477,6 @@ services:
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextThresholdTokens, value: "100000" }   # 入力がこれを超える要求は第 2 段
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextInputPer1kTokens, value: "0.0819" }  # $0.50/1M（100,000 トークン超）
       - { name: LlmPricing__PerModel__claude_haiku_5_5__LongContextOutputPer1kTokens, value: "0.409" }  # $2.50/1M
-      # 🔴 移行期間のみ（#1295・撤去は #1296）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗るため、旧世代の行を残す。
-      - { name: LlmPricing__PerModel__claude_opus_5__InputPer1kTokens, value: "0.819" }     # $5/1M（旧 report-monthly・report-weekly）
-      - { name: LlmPricing__PerModel__claude_opus_5__OutputPer1kTokens, value: "4.093" }    # $25/1M
-      - { name: LlmPricing__PerModel__claude_opus_4_8__InputPer1kTokens, value: "0.819" }   # $5/1M（ADR-0011 の固定先）
-      - { name: LlmPricing__PerModel__claude_opus_4_8__OutputPer1kTokens, value: "4.093" }  # $25/1M
-      - { name: LlmPricing__PerModel__claude_sonnet_5__InputPer1kTokens, value: "0.327" }   # $2/1M（旧 trade-decision・report-daily）
-      - { name: LlmPricing__PerModel__claude_sonnet_5__OutputPer1kTokens, value: "1.637" }  # $10/1M（恒久化確認済み 2026-08-28・#243）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__InputPer1kTokens, value: "0.164" }  # $1/1M（旧 trade-decision-screening）
-      - { name: LlmPricing__PerModel__claude_haiku_4_5__OutputPer1kTokens, value: "0.819" } # $5/1M
       - name: ServiceAuth__ClientId
         secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
       - name: ServiceAuth__ClientSecret

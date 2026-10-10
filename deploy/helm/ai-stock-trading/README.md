@@ -616,14 +616,13 @@ watchlist。結線時は照会に失敗しても使わない＝IADR-0475）と�
 | `claude-sonnet-5-5` | 2 / 10 | `0.327` / `1.637` | **`trade-decision`**・`report-daily`（週報・月報の第 2 候補） |
 | `claude-haiku-5-5`（入力 100,000 トークン以下） | 0.10 / 0.50 | `0.0164` / `0.0819` | **`trade-decision-screening`**（日報の第 2 候補） |
 | `claude-haiku-5-5`（入力 100,000 トークン超） | 0.50 / 2.50 | `0.0819` / `0.409` | 同上（第 2 段） |
-| `claude-opus-4-8` | 5 / 25 | `0.819` / `4.093` | ADR-0011 が意図する固定先 |
-| `claude-opus-5`（移行期間のみ） | 5 / 25 | `0.819` / `4.093` | 旧 `report-monthly`・`report-weekly` |
-| `claude-sonnet-5`（移行期間のみ） | 2 / 10（恒久化確認済み・2026-08-28。#243） | `0.327` / `1.637` | 旧 `trade-decision`・`report-daily` |
-| `claude-haiku-4-5`（移行期間のみ） | 1 / 5 | `0.164` / `0.819` | 旧 `trade-decision-screening` |
 
 5.5 系の単価は提供元の公表値（確認日 2026-10-10。#1295 / IADR-0524。利用者裁定は planning#783）。
-**移行期間のみ**の 3 行は、MSP ゲートウェイが 5.5 系へ切り替わるまで応答が直前世代を名乗るために残す（割当表も同じ期間だけ
-直前世代を受ける）。MSP の切り替えと PoC の確認の後に外す（[#1296](https://github.com/endazon/ai-stock-trading/issues/1296)）。
+**旧世代の行（`claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5` / `claude-haiku-4-5`）は撤去した**
+（[#1296](https://github.com/endazon/ai-stock-trading/issues/1296)。5.5 系の ID だけを受け付け、切替の間だけ旧 ID を受ける移行段は設けない。
+計画 ADR-0064 決定 7・8）。基盤が旧 ID で答えた応答は割当表で不一致（取引判断は見送り）になり、費用は表に無いモデルとして
+最大単価（`claude-fable-5` の行）で計上される。CI（`helm.yml`）は旧世代の行が描画されないことも検査する。
+`claude-fable-5` の行は未知モデルの上限値として残す（専用の設定値「未知モデルの計上単価」の配備と同時に外す。ADR-0064 決定 9）。
 
 **プロンプト長の 2 段（`claude-haiku-5-5`）**: 入力トークン（キャッシュ読み書きを含む合計）が 100,000 を超える要求は単価が 5 倍になる。
 行に `__LongContextThresholdTokens`（`100000`）・`__LongContextInputPer1kTokens`・`__LongContextOutputPer1kTokens` を足すと、

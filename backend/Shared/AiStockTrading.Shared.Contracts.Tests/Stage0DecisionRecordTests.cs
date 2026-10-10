@@ -336,7 +336,7 @@ public class Stage0DecisionRecordTests
     [InlineData("claude-haiku-5-5", "claude-opus-5-5", false)]     // 本判断だけピン外
     [InlineData(null, "claude-sonnet-5-5", false)]                 // 一次が不明
     [InlineData("claude-haiku-5-5", null, false)]                // 本判断が不明
-    // 🔴 T-15-124, #1295, IADR-0524: 割当表が移行期間に受ける直前世代は、Stage 0 の組の一致と読まない（旧組の合格を新組の合格にしない）。
+    // 🔴 T-15-124, #1295, #1296, IADR-0524: 直前世代（旧組）は Stage 0 の組の一致と読まない（旧組の合格を新組の合格にしない）。
     [InlineData("claude-haiku-4-5", "claude-sonnet-5", false)]       // 旧組そのもの
     [InlineData("claude-haiku-5-5", "claude-sonnet-5", false)]       // 本判断だけ旧世代
     [InlineData("claude-haiku-4-5", "claude-sonnet-5-5", false)]     // 一次だけ旧世代
