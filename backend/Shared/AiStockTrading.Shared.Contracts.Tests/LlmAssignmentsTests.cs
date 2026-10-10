@@ -30,24 +30,40 @@ public class LlmAssignmentsTests
             "report-daily | claude-sonnet-5-5 | [claude-haiku-5-5] | fallback=True");
     }
 
-    // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代の対応は 5.5 系 ID ごとに 1 つだけで、計画の裁定表
-    // （planning#783: opus-5 → opus-5-5・sonnet-5 → sonnet-5-5・haiku-4-5 → haiku-5-5）と一致する。
-    [Fact]
-    public void 移行期間に受ける直前世代は裁定の対応表と一致する()
+    // 🔴 #1296, ADR-0064 決定 7・決定 8: 移行段は撤去した。旧世代（#1295 で切り替えた直前世代 3 つと、ADR-0014 が改定した旧ピン）は
+    // **どの用途でも**割当表に無いモデルであり、第 1 候補の位置にもフォールバック先の位置にも受けない。期待値は planning#783 の裁定表から
+    // リテラルで書き写す（表から組み立てると、移行段を戻しても緑のまま通る）。
+    [Theory]
+    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5")]
+    [InlineData(LlmPurposes.TradeDecision, "CLAUDE-SONNET-5")]
+    [InlineData(LlmPurposes.TradeDecision, " claude-sonnet-5 ")]
+    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-4-5")]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-opus-5")]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-sonnet-5")]     // 第 2 候補（sonnet-5-5）の直前世代
+    [InlineData(LlmPurposes.ReportWeekly, "claude-opus-5")]
+    [InlineData(LlmPurposes.ReportWeekly, "claude-sonnet-5")]
+    [InlineData(LlmPurposes.ReportDaily, "claude-sonnet-5")]
+    [InlineData(LlmPurposes.ReportDaily, "claude-haiku-4-5")]      // 第 2 候補（haiku-5-5）の直前世代
+    [InlineData(LlmPurposes.TradeDecision, "claude-opus-4-8")]
+    [InlineData(LlmPurposes.ReportMonthly, "claude-opus-4-8")]
+    public void 旧世代のモデルはどの用途でも未割当として受けない(string purpose, string effectiveModel)
     {
-        LlmAssignments.PreviousGenerationAccepted
-            .OrderBy(p => p.Key, StringComparer.Ordinal)
-            .Select(p => $"{p.Key} <- {p.Value}")
-            .Should().Equal(
-                "claude-haiku-5-5 <- claude-haiku-4-5",
-                "claude-opus-5-5 <- claude-opus-5",
-                "claude-sonnet-5-5 <- claude-sonnet-5");
+        var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, effectiveModel);
 
-        // 直前世代は割当表のどの位置にも直接は載らない（載れば移行段の撤去で消し忘れる）。
-        var everyAssigned = LlmAssignments.All.SelectMany(a => a.FallbackModels.Prepend(a.PrimaryModel)).ToArray();
-        everyAssigned.Should().NotContain(LlmAssignments.PreviousGenerationAccepted.Values);
-        // 直前世代に禁止モデルを紛れ込ませない。
-        LlmAssignments.PreviousGenerationAccepted.Values.Should().NotContain(m => LlmAssignments.IsForbidden(m));
+        evaluation.Outcome.Should().Be(LlmAssignmentOutcome.Unassigned);
+        evaluation.Allowed.Should().BeFalse("5.5 系の ID だけを受け付ける（移行段は設けない）");
+        evaluation.ExpectedModel.Should().Be(LlmAssignments.For(purpose)!.PrimaryModel, "期待値は 5.5 系のピン");
+        evaluation.EffectiveModel.Should().Be(effectiveModel.Trim(), "実効モデルは名乗った値をそのまま運ぶ");
+    }
+
+    // #1296: 割当表のどの位置にも 5.5 系以外の Claude モデルは載らない（ADR-0064 決定 7）。
+    [Fact]
+    public void 割当表に載るモデルは5_5系だけである()
+    {
+        LlmAssignments.All
+            .SelectMany(a => a.FallbackModels.Prepend(a.PrimaryModel))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Should().BeSubsetOf(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
     }
 
     // ADR-0017 決定1 の明文: 「**すべての用途でフォールバックが安価側へ向かう表である。**
@@ -111,7 +127,7 @@ public class LlmAssignmentsTests
     // ---- 実効モデルの評価（境界値テーブル） -------------------------------------------------
 
     // 取引判断: ピンのみ Allowed。フォールバック先（表に無い）・DefaultModel 落ち・禁止モデルはすべて不可。
-    // #1295, IADR-0524: 移行期間は直前世代も同じ位置で受ける（印付き。下の別テストで固定）。
+    // #1296: 旧世代（直前世代）も表に無いモデルとして不可（上の別テストで全用途を固定）。
     [Theory]
     // 用途 / 実効モデル / 期待 Outcome / 期待 Allowed
     [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5-5", LlmAssignmentOutcome.Primary, true)]
@@ -147,51 +163,17 @@ public class LlmAssignmentsTests
 
         evaluation.Outcome.Should().Be(expectedOutcome);
         evaluation.Allowed.Should().Be(expectedAllowed);
-        evaluation.PreviousGenerationAccepted.Should().BeFalse();
     }
-
-    // 🔴 #1295, IADR-0524（移行期間のみ・#1296 で撤去）: MSP ゲートウェイの切り替え前は応答が直前世代を名乗る。
-    // 直前世代は 5.5 系 ID と**同じ位置**で受ける（第 1 候補の直前世代は Primary、フォールバック先の直前世代は FallbackFired）。
-    // 受けた評価には印が付き、Stage 0 の組の判定に使う `MatchesCurrentPin` は偽になる（旧組の合格を新組の合格にしない）。
-    [Theory]
-    // 用途 / 実効モデル（直前世代） / 期待 Outcome / 期待 Allowed
-    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.TradeDecision, "CLAUDE-SONNET-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-4-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.ReportMonthly, "claude-opus-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.ReportMonthly, "claude-sonnet-5", LlmAssignmentOutcome.FallbackFired, true)]
-    [InlineData(LlmPurposes.ReportWeekly, "claude-opus-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.ReportDaily, "claude-sonnet-5", LlmAssignmentOutcome.Primary, true)]
-    [InlineData(LlmPurposes.ReportDaily, "claude-haiku-4-5", LlmAssignmentOutcome.FallbackFired, true)]
-    public void 移行期間は直前世代を同じ位置で受け_印を付ける(
-        string purpose, string effectiveModel, LlmAssignmentOutcome expectedOutcome, bool expectedAllowed)
-    {
-        var evaluation = LlmAssignmentEvaluator.Evaluate(purpose, effectiveModel);
-
-        evaluation.Outcome.Should().Be(expectedOutcome);
-        evaluation.Allowed.Should().Be(expectedAllowed);
-        evaluation.PreviousGenerationAccepted.Should().BeTrue();
-        evaluation.ExpectedModel.Should().Be(LlmAssignments.For(purpose)!.PrimaryModel, "期待値は 5.5 系のピンのまま");
-        evaluation.EffectiveModel.Should().Be(effectiveModel.Trim(), "実効モデルは名乗った値をそのまま運ぶ");
-        evaluation.MatchesCurrentPin.Should().BeFalse("直前世代は現行のピンと一致しない");
-    }
-
-    [Theory]
-    [InlineData(LlmPurposes.TradeDecision, "claude-sonnet-5-5")]
-    [InlineData(LlmPurposes.TradeDecisionScreening, "claude-haiku-5-5")]
-    public void 現行のピンそのものだけが_MatchesCurrentPin_になる(string purpose, string pin) =>
-        LlmAssignmentEvaluator.Evaluate(purpose, pin).MatchesCurrentPin.Should().BeTrue();
 
     // 🔴 **プロパティベース**（統制系 3 点セット）: 表に載るどのモデルを取っても、
     // 取引判断系で Allowed になるのは第 1 候補ただ 1 つである（ADR-0017 決定2）。
-    // #1295, IADR-0524: 移行期間は第 1 候補の直前世代も Allowed（印付き）。それ以外（他用途のピン・フォールバック先・
-    // その直前世代・禁止モデル）は増えない＝フォールバック禁止の意味は変わらない。
+    // #1296: 旧世代（直前世代・旧ピン）を母集合に含めても、許可は第 1 候補から増えない（移行段の再混入を捕まえる）。
     [Fact]
-    public void 取引判断系で許可される実効モデルは第1候補とその直前世代だけである()
+    public void 取引判断系で許可される実効モデルは第1候補だけである()
     {
         var everyKnownModel = LlmAssignments.All
             .SelectMany(a => a.FallbackModels.Prepend(a.PrimaryModel))
-            .Concat(LlmAssignments.PreviousGenerationAccepted.Values)
+            .Concat(["claude-sonnet-5", "claude-haiku-4-5", "claude-opus-5", "claude-opus-4-8"])
             .Concat(LlmAssignments.ForbiddenModels)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -202,12 +184,8 @@ public class LlmAssignmentsTests
             var allowed = everyKnownModel
                 .Where(m => LlmAssignmentEvaluator.Evaluate(purpose, m).Allowed)
                 .ToArray();
-            var currentPin = everyKnownModel
-                .Where(m => LlmAssignmentEvaluator.Evaluate(purpose, m).MatchesCurrentPin)
-                .ToArray();
 
-            allowed.Should().BeEquivalentTo([pin, LlmAssignments.PreviousGenerationAccepted[pin]]);
-            currentPin.Should().Equal(pin);
+            allowed.Should().Equal(pin);
         }
     }
 

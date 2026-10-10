@@ -593,7 +593,7 @@ public class Stage0ReplayEvaluationTests
     [InlineData("claude-haiku-5-5", "claude-haiku-5-5")] // 本判断がピン（sonnet）以外
     [InlineData(null, "claude-sonnet-5-5")]                // 一次が名乗らない
     [InlineData("claude-haiku-5-5", null)]               // 本判断が名乗らない
-    // 🔴 T-15-124, #1295, IADR-0524: 割当表が移行期間に受ける直前世代（旧組）も一致と読まない（旧組の合格を 5.5 系の組の合格にしない）。
+    // 🔴 T-15-124, #1295, #1296, IADR-0524: 旧組（直前世代）も一致と読まない（旧組の合格を 5.5 系の組の合格にしない）。
     [InlineData("claude-haiku-4-5", "claude-sonnet-5")]  // 旧組そのもの
     [InlineData("claude-haiku-5-5", "claude-sonnet-5")]  // 本判断だけ旧世代
     [InlineData("claude-haiku-4-5", "claude-sonnet-5-5")] // 一次だけ旧世代
@@ -641,7 +641,7 @@ public class Stage0ReplayEvaluationTests
     }
 
     // 🔴 T-15-124, #1295, IADR-0524（ADR-0011 / ADR-0014 決定3 / ADR-0054 決定3）: 全件が旧組（haiku-4-5 ＋ sonnet-5）で記録された記録集合は、
-    // 割当表が移行期間に直前世代を受けていても母集団が残らず判定を組まない（Stage 0 は 5.5 系の組で再実施する）。
+    // 母集団が残らず判定を組まない（Stage 0 は 5.5 系の組で再実施する。割当表は #1296 で旧世代を受けなくなった）。
     [Fact]
     public void 全件が旧組の記録なら判定を組まない_5_5系の組で再実施が要る()
     {

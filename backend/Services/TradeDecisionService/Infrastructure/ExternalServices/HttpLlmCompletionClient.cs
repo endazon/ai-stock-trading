@@ -236,8 +236,6 @@ public sealed class HttpLlmCompletionClient(
             // 鎖（フォールバック先）を持たない用途で別モデルが答えるのは、基盤の用途エントリが未登録・ZDR 除外・
             // 提供終了で `DefaultModel` へ無音に落ちたときであり、**まさに検知したい事象**である。
             var evaluation = LlmAssignmentEvaluator.Evaluate(effectivePurpose, dto.Model);
-            // #1295, IADR-0524（移行期間のみ・#1296 で撤去）: 直前世代を受けたことを用途とモデルの組ごとに 1 回だけ警告する。
-            LlmPreviousGenerationWarning.Shared.WarnOnce(logger, effectivePurpose, evaluation);
             if (!evaluation.Allowed)
             {
                 var reason = evaluation.Outcome switch

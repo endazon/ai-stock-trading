@@ -700,8 +700,8 @@ jobs:
           # #279 / IADR-0114 決定6: LLM 単価。未設定（0）だと毎回 ¥0 計上で月次費用上限が構造的に発火しない。
           # #303 / IADR-0122: 単価は**モデル別**。用途別モデル割当（ADR-0014）に追随できないと計上が実態とずれる
           # （global 単一ペアの opus 基準では trade-decision＝sonnet が約 2.5 倍の過大計上だった）。
-          # #1295 / IADR-0524: 割当は 5.5 系（opus-5-5 / sonnet-5-5 / haiku-5-5）。旧世代の行は移行期間だけ残す（#1296 で撤去）ため、
-          # 検査は 5.5 系の行に向ける（旧行だけ残って新行が落ちると、割当どおりの応答が未知モデル＝最大単価で過大計上になる）。
+          # #1295 / IADR-0524: 割当は 5.5 系（opus-5-5 / sonnet-5-5 / haiku-5-5）。検査は 5.5 系の行に向ける
+          # （新行が落ちると、割当どおりの応答が未知モデル＝最大単価で過大計上になる）。旧世代の行は #1296 で撤去した（下の否定の検査）。
           # 単価表はサービスごとに独立して構成される（IADR-0296）ため、report-service と trade-decision-service の
           # **両方の Deployment** で 5.5 系の全行を検査する（片方の表だけ欠けても全体 grep では緑になる）。
           # haiku-5-5 はプロンプト長で 2 段。第 2 段の閾値・入力・出力の 3 行が落ちると 100,000 トークン超の要求が
@@ -724,6 +724,11 @@ jobs:
                 || { echo "::error::values-local の $svc で LlmPricing__PerModel__${key}=${val} が描画されない（5.5 系の計上が未知モデル＝最大単価か第 1 段へずれる）。"; exit 1; }
             done
           done
+          # #1296 / ADR-0064 決定 7: 単価表の現行値は 5.5 系だけ（旧世代 opus-5 / opus-4-8 / sonnet-5 / haiku-4-5 の行を描画しない）。
+          # 旧行が戻ると、移行段の撤去後も旧 ID の応答が安い旧単価で計上され、割当不一致が費用の上で見えにくくなる。
+          if printf '%s' "$out" | grep -Eq 'name: LlmPricing__PerModel__claude_(opus_5|opus_4_8|sonnet_5|haiku_4_5)__'; then
+            echo "::error::values-local に旧世代の単価行が描画された（#1296 で撤去済み。5.5 系だけを受け付ける）。"; exit 1
+          fi
           # 未知モデルの倒し先＝表の最大単価（fable-5）。これが消えると未知モデルが過小計上になる（IADR-0122 決定3）。
           printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens' | grep -q 'value: "8.186"' \
             || { echo "::error::values-local で claude-fable-5 の出力単価 8.186 が描画されない（未知モデルの倒し先が下がる）。"; exit 1; }
