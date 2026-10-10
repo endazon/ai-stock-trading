@@ -134,7 +134,7 @@ public class ReportAutoGeneratorReportingCycleTests
     {
         var store = new InMemoryReportStore();
         var usage = new LlmUsageRecord(
-            [new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5")],
+            [new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5-5")],
             [],
             [new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "a", null, T0)]);
         var fees = new BorrowFeeRecord(
@@ -187,7 +187,7 @@ public class ReportAutoGeneratorReportingCycleTests
     public async Task 見積り承認額は未注入なら未供給として描き供給されれば載る()
     {
         var usage = new LlmUsageRecord(
-            [new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5")], [], []);
+            [new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5-5")], [], []);
 
         var unsupplied = new InMemoryReportStore();
         await NewGenerator(unsupplied, new StubLlmUsageSource(usage), now: MonthEndAfterClose).RunOnceAsync();
@@ -209,7 +209,7 @@ public class ReportAutoGeneratorReportingCycleTests
     {
         var store = new InMemoryReportStore();
         var usage = new LlmUsageRecord(
-            [new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5")], [], []);
+            [new LlmCostIncurred(1_800m, T0, LlmPurposes.Stage0Recording, "claude-sonnet-5-5")], [], []);
 
         await NewGenerator(store, new StubLlmUsageSource(usage),
             stage0EstimateSource: new ThrowingStage0EstimateSource(), now: MonthEndAfterClose).RunOnceAsync();

@@ -287,7 +287,7 @@ public class Stage0DecisionRecordTests
     // ---- T-15-120 FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次スクリーニングと両層の実効モデル ----
 
     private static Stage0DecisionRecord TwoTier(
-        string? screeningModel = "claude-haiku-4-5", string? decisionModel = "claude-sonnet-5") =>
+        string? screeningModel = "claude-haiku-5-5", string? decisionModel = "claude-sonnet-5-5") =>
         RecordWith(
             new DateOnly(2026, 6, 2), Stage0DecisionAction.Buy, 10, Declared(),
             Raw(1, Stage0DecisionAction.Buy) with { EffectiveModelId = decisionModel }) with
@@ -304,8 +304,8 @@ public class Stage0DecisionRecordTests
 
         var record = restored.Records.Should().ContainSingle().Subject;
         record.Screening.Should().Be(new Stage0ScreeningDecision(
-            Stage0DecisionAction.Buy, false, "関心あり", 300, 40, "claude-haiku-4-5"));
-        record.RawDecisions.Should().ContainSingle().Which.EffectiveModelId.Should().Be("claude-sonnet-5");
+            Stage0DecisionAction.Buy, false, "関心あり", 300, 40, "claude-haiku-5-5"));
+        record.RawDecisions.Should().ContainSingle().Which.EffectiveModelId.Should().Be("claude-sonnet-5-5");
         Stage0TwoTierModels.IsScreeningRecorded(record).Should().BeTrue();
         Stage0TwoTierModels.MatchesPinnedAssignments(record).Should().BeTrue();
     }
@@ -329,13 +329,17 @@ public class Stage0DecisionRecordTests
 
     // 🔴 T-15-120: ピンとの照合は用途ごと（一次＝haiku・本判断＝sonnet）で、層を取り違えた・名乗らない記録は一致にならない。
     [Theory]
-    [InlineData("claude-haiku-4-5", "claude-sonnet-5", true)]
-    [InlineData("CLAUDE-HAIKU-4-5", " claude-sonnet-5 ", true)]  // 大小・前後空白は照合器の規則どおり
-    [InlineData("claude-sonnet-5", "claude-haiku-4-5", false)]   // 層の取り違え
-    [InlineData("claude-sonnet-5", "claude-sonnet-5", false)]    // 一次だけピン外
-    [InlineData("claude-haiku-4-5", "claude-opus-5", false)]     // 本判断だけピン外
-    [InlineData(null, "claude-sonnet-5", false)]                 // 一次が不明
-    [InlineData("claude-haiku-4-5", null, false)]                // 本判断が不明
+    [InlineData("claude-haiku-5-5", "claude-sonnet-5-5", true)]
+    [InlineData("CLAUDE-HAIKU-5-5", " claude-sonnet-5-5 ", true)]  // 大小・前後空白は照合器の規則どおり
+    [InlineData("claude-sonnet-5-5", "claude-haiku-5-5", false)]   // 層の取り違え
+    [InlineData("claude-sonnet-5-5", "claude-sonnet-5-5", false)]    // 一次だけピン外
+    [InlineData("claude-haiku-5-5", "claude-opus-5-5", false)]     // 本判断だけピン外
+    [InlineData(null, "claude-sonnet-5-5", false)]                 // 一次が不明
+    [InlineData("claude-haiku-5-5", null, false)]                // 本判断が不明
+    // 🔴 T-15-124, #1295, IADR-0524: 割当表が移行期間に受ける直前世代は、Stage 0 の組の一致と読まない（旧組の合格を新組の合格にしない）。
+    [InlineData("claude-haiku-4-5", "claude-sonnet-5", false)]       // 旧組そのもの
+    [InlineData("claude-haiku-5-5", "claude-sonnet-5", false)]       // 本判断だけ旧世代
+    [InlineData("claude-haiku-4-5", "claude-sonnet-5-5", false)]     // 一次だけ旧世代
     public void 両層の実効モデルは用途ごとのピンと照合される(string? screeningModel, string? decisionModel, bool expected) =>
         Stage0TwoTierModels.MatchesPinnedAssignments(TwoTier(screeningModel, decisionModel)).Should().Be(expected);
 
@@ -346,13 +350,13 @@ public class Stage0DecisionRecordTests
         var screenedOut = TwoTier() with
         {
             RawDecisions = [],
-            Screening = new Stage0ScreeningDecision(Stage0DecisionAction.Hold, false, "関心なし", 300, 40, "claude-haiku-4-5"),
+            Screening = new Stage0ScreeningDecision(Stage0DecisionAction.Hold, false, "関心なし", 300, 40, "claude-haiku-5-5"),
         };
 
         screenedOut.Screening!.Interested.Should().BeFalse();
         Stage0TwoTierModels.MatchesPinnedAssignments(screenedOut).Should().BeTrue();
         Stage0TwoTierModels.MatchesPinnedAssignments(
-            screenedOut with { Screening = screenedOut.Screening with { EffectiveModelId = "claude-sonnet-5" } })
+            screenedOut with { Screening = screenedOut.Screening with { EffectiveModelId = "claude-sonnet-5-5" } })
             .Should().BeFalse();
     }
 
@@ -373,8 +377,8 @@ public class Stage0DecisionRecordTests
         {
             HashOf(legacy),
             HashOf(TwoTier()),
-            HashOf(TwoTier(screeningModel: "claude-sonnet-5")),
-            HashOf(TwoTier(decisionModel: "claude-opus-5")),
+            HashOf(TwoTier(screeningModel: "claude-sonnet-5-5")),
+            HashOf(TwoTier(decisionModel: "claude-opus-5-5")),
             HashOf(screenedHold),
         }.Distinct().Should().HaveCount(5);
     }

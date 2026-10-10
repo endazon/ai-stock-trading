@@ -68,8 +68,8 @@ public class HttpLlmUsageRecordSourceTests
     public async Task 台帳の記録を種別ごとに復元する()
     {
         var handler = new StubHandler(HttpStatusCode.OK, Ledger(
-            new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5"),
-            new LlmCostIncurred(450m, T0, LlmPurposes.ReportMonthly, "claude-opus-5"),
+            new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5-5"),
+            new LlmCostIncurred(450m, T0, LlmPurposes.ReportMonthly, "claude-opus-5-5"),
             new LlmFallbackFired("report-daily", "a", "b", "FallbackFired", T0),
             new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "a", null, T0)));
 

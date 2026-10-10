@@ -3,7 +3,7 @@ using System.Globalization;
 namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 
 // NFR（費用）, FR-04, IADR-0122 決定2/3: モデル別の単価表。**応答が名乗った実効モデル**から単価を引く。
-// 用途別モデル割当（計画 ADR-0014 / MSP/IADR-0112）で trade-decision=sonnet-5・report-*=fable-5/opus-5/sonnet-5 と
+// 用途別モデル割当（計画 ADR-0014 / MSP/IADR-0112）で trade-decision=sonnet・report-*=opus/sonnet/haiku と
 // モデルが混在したため、global 単一ペアでは実態と乖離する（#303）。ゲートウェイは越境ルーティング（ADR-0010）で
 // 要求と異なるモデルを選び得るので、用途→単価の静的対応では追随できない。
 //
@@ -20,14 +20,19 @@ namespace AiStockTrading.Shared.Infrastructure.Composable.Llm;
 //
 // #817（IADR-0122 2026-09-17 追記）: 単価は env 名 `LlmPricing__PerModel__<model>__*` で注入されるが、イメージの
 // `sh -c` 起動（dash）は `-` を含む（シェル識別子でない）env 名を exec 先へ渡さない。稼働では表が空のまま全呼び出しが
-// 0 円計上になっていた。env 名はモデル ID の `-` を `_` で書き（`claude_sonnet_5`）、照合は双方を正規化して同一視する。
+// 0 円計上になっていた。env 名はモデル ID の `-` を `_` で書き（`claude_sonnet_5_5`）、照合は双方を正規化して同一視する。
+//
+// FR-04, NFR（費用）, #1295, IADR-0524: **プロンプト長による 2 段の単価**（`claude-haiku-5-5` は入力 100,000 トークン以下と超で
+// 単価が違う。提供元の公表値 2026-10-10・planning#783）。行に任意の第 2 段（`LongContextThresholdTokens` と第 2 の単価ペア）を
+// 持たせ、**計上時の入力トークン数**が閾値を超えた要求だけ第 2 段で引く（要求ごとに決まる）。上限側へ寄せた 1 段にしないのは、
+// 常時の過大計上が月次上限を実態より早く効かせ続けるため（ADR-0037 決定1 の趣旨）。第 2 段を持たない行・未知モデルの扱いは従来どおり。
 public sealed class LlmPriceTable
 {
-    private readonly IReadOnlyDictionary<string, LlmPrice> _perModel;
+    private readonly IReadOnlyDictionary<string, LlmPriceEntry> _perModel;
     private readonly LlmPrice _unknownModel;
     private readonly LlmPrice _fallback;
 
-    private LlmPriceTable(IReadOnlyDictionary<string, LlmPrice> perModel, LlmPrice unknownModel, LlmPrice fallback)
+    private LlmPriceTable(IReadOnlyDictionary<string, LlmPriceEntry> perModel, LlmPrice unknownModel, LlmPrice fallback)
     {
         _perModel = perModel;
         _unknownModel = unknownModel;
@@ -46,20 +51,44 @@ public sealed class LlmPriceTable
         string? defaultInputPer1kTokens = null,
         string? defaultOutputPer1kTokens = null)
     {
-        var table = new Dictionary<string, LlmPrice>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (model, input, output) in perModel)
+        ArgumentNullException.ThrowIfNull(perModel);
+        return FromRows(
+            perModel.Select(row => new LlmPriceRow(row.Model, row.Input, row.Output)),
+            defaultInputPer1kTokens,
+            defaultOutputPer1kTokens);
+    }
+
+    /// <summary>
+    /// モデル別単価表を組み立てる（第 2 段＝プロンプト長の上位段を持てる形。#1295, IADR-0524）。
+    /// 第 2 段のキーが 1 つでも書かれていて 3 つ揃って解析できない行は**表に載せない**（→ 未知モデル扱い＝最大単価。
+    /// 第 2 段の誤設定で長いプロンプトを第 1 段の安い単価で通さない）。
+    /// </summary>
+    public static LlmPriceTable FromRows(
+        IEnumerable<LlmPriceRow> perModel,
+        string? defaultInputPer1kTokens = null,
+        string? defaultOutputPer1kTokens = null)
+    {
+        ArgumentNullException.ThrowIfNull(perModel);
+        var table = new Dictionary<string, LlmPriceEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in perModel)
         {
-            if (string.IsNullOrWhiteSpace(model))
+            if (string.IsNullOrWhiteSpace(row.Model))
                 continue;
-            if (ParsePricePer1k(input) is not { } inputPrice || ParsePricePer1k(output) is not { } outputPrice)
+            if (ParsePricePer1k(row.Input) is not { } inputPrice || ParsePricePer1k(row.Output) is not { } outputPrice)
                 continue;
-            table[Normalize(model)] = new LlmPrice(inputPrice, outputPrice);
+            if (!TryParseLongContext(row, out var longContext))
+                continue;
+            table[Normalize(row.Model)] = new LlmPriceEntry(new LlmPrice(inputPrice, outputPrice), longContext);
         }
 
         // 未知モデルは成分ごとの最大へ倒す（入力が最大の行と出力が最大の行が別でも過小にしない）。
-        var unknown = table.Count == 0
+        // 第 2 段も母集合に含める（第 2 段だけが最大でも過小にしない）。
+        var every = table.Values
+            .SelectMany(e => e.LongContext is { } tier ? new[] { e.Base, tier.Price } : [e.Base])
+            .ToArray();
+        var unknown = every.Length == 0
             ? LlmPrice.Zero
-            : new LlmPrice(table.Values.Max(p => p.InputPer1kTokens), table.Values.Max(p => p.OutputPer1kTokens));
+            : new LlmPrice(every.Max(p => p.InputPer1kTokens), every.Max(p => p.OutputPer1kTokens));
 
         // 既定ペアは入出力を独立に解析する（従来の ParsePricePer1k と同じ挙動＝片側だけの設定を壊さない）。
         var fallback = new LlmPrice(
@@ -76,19 +105,46 @@ public sealed class LlmPriceTable
     /// </summary>
     public bool IsEffectivelyZero => _perModel.Count == 0 && _fallback == LlmPrice.Zero;
 
-    /// <summary>実効モデル名から単価を引く。未知・null・空は安全側（過小計上を避ける側）へ倒す。</summary>
-    public LlmPrice Resolve(string? model)
+    /// <summary>
+    /// 実効モデル名と**その要求の入力トークン数**から単価を引く（#1295, IADR-0524）。未知・null・空は安全側
+    /// （過小計上を避ける側）へ倒す。入力トークン数が行の閾値を超えれば第 2 段、それ以外は第 1 段。
+    /// 第 2 段を持たない行・未知モデル・表が空のときは入力トークン数に依らない。
+    /// 🔴 入力トークン数を取らない多重定義は置かない（呼び出し側が段の判定を黙って落とせないようにする）。
+    /// </summary>
+    public LlmPrice Resolve(string? model, int inputTokens)
     {
         if (_perModel.Count == 0)
             return _fallback;
 
-        return !string.IsNullOrWhiteSpace(model) && _perModel.TryGetValue(Normalize(model), out var price)
-            ? price
-            : _unknownModel;
+        if (string.IsNullOrWhiteSpace(model) || !_perModel.TryGetValue(Normalize(model), out var entry))
+            return _unknownModel;
+
+        return entry.LongContext is { } tier && inputTokens > tier.ThresholdTokens
+            ? tier.Price
+            : entry.Base;
     }
 
     // #817: モデル ID の `_` と `-` を同一視する（env 名はシェル識別子に `-` を書けない）。大小は辞書の比較器が無視する。
     private static string Normalize(string model) => model.Trim().Replace('_', '-');
+
+    // 第 2 段の読み取り。3 キーとも空＝第 2 段なし（true・null）。1 つでも書かれていれば 3 つとも解析できるときだけ true。
+    private static bool TryParseLongContext(LlmPriceRow row, out LlmLongContextPrice? longContext)
+    {
+        longContext = null;
+        if (string.IsNullOrWhiteSpace(row.LongContextThresholdTokens)
+            && string.IsNullOrWhiteSpace(row.LongContextInput)
+            && string.IsNullOrWhiteSpace(row.LongContextOutput))
+            return true;
+
+        if (!int.TryParse(row.LongContextThresholdTokens, NumberStyles.Integer, CultureInfo.InvariantCulture, out var threshold)
+            || threshold <= 0
+            || ParsePricePer1k(row.LongContextInput) is not { } input
+            || ParsePricePer1k(row.LongContextOutput) is not { } output)
+            return false;
+
+        longContext = new LlmLongContextPrice(threshold, new LlmPrice(input, output));
+        return true;
+    }
 
     // 単価の構成読み取り（円/1k トークン）。解析不能・非正値は null＝「設定されていない」として扱う。
     private static decimal? ParsePricePer1k(string? value) =>
@@ -96,3 +152,27 @@ public sealed class LlmPriceTable
             ? price
             : null;
 }
+
+/// <summary>
+/// 単価表の 1 行の構成値（文字列のまま。解析は <see cref="LlmPriceTable"/> が行う）。
+/// 第 2 段（<paramref name="LongContextThresholdTokens"/> ほか）は任意で、入力トークン数が閾値を**超える**要求に効く（#1295, IADR-0524）。
+/// </summary>
+/// <param name="Model">モデル ID（`-` と `_` は同一視）。</param>
+/// <param name="Input">第 1 段の入力単価（円/1k トークン）。</param>
+/// <param name="Output">第 1 段の出力単価（円/1k トークン）。</param>
+/// <param name="LongContextThresholdTokens">第 2 段に切り替わる入力トークン数の閾値（この値を超えると第 2 段）。</param>
+/// <param name="LongContextInput">第 2 段の入力単価（円/1k トークン）。</param>
+/// <param name="LongContextOutput">第 2 段の出力単価（円/1k トークン）。</param>
+public readonly record struct LlmPriceRow(
+    string Model,
+    string? Input,
+    string? Output,
+    string? LongContextThresholdTokens = null,
+    string? LongContextInput = null,
+    string? LongContextOutput = null);
+
+// 解析済みの 1 行（第 1 段と任意の第 2 段）。
+internal sealed record LlmPriceEntry(LlmPrice Base, LlmLongContextPrice? LongContext);
+
+// 第 2 段: 入力トークン数が ThresholdTokens を超える要求の単価。
+internal sealed record LlmLongContextPrice(int ThresholdTokens, LlmPrice Price);

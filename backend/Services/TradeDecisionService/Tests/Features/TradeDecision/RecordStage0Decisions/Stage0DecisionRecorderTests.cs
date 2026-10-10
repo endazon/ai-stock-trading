@@ -29,7 +29,7 @@ public class Stage0DecisionRecorderTests
 
     // 単価: 入力 1 円 / 1k・出力 1 円 / 1k（計算を読みやすくするための任意値。計画の確定値ではない）。
     private static LlmPriceTable Prices() =>
-        LlmPriceTable.From([("claude-sonnet-5", "1", "1"), ("claude-haiku-4-5", "1", "1")], "1", "1");
+        LlmPriceTable.From([("claude-sonnet-5-5", "1", "1"), ("claude-haiku-5-5", "1", "1")], "1", "1");
 
     private static Stage0RecordingOptions Options(
         bool enabled = true,
@@ -58,7 +58,7 @@ public class Stage0DecisionRecorderTests
             // 見積り = 銘柄1 × 平日2 × 1 ×（一次 1 ＋ votes）× (1000/1000×1 + 1000/1000×1) = 4 ×（1 ＋ votes）円
             ApprovedEstimateJpy = approvedJpy ?? 4m * (voteCount + 1),
             OutputPath = outputPath,
-            Model = "claude-sonnet-5",
+            Model = "claude-sonnet-5-5",
         };
 
     private static (Stage0DecisionRecorder Recorder, FakeLlmClient Llm, CapturingSink Sink, RecordingReporter Reporter)
@@ -70,7 +70,8 @@ public class Stage0DecisionRecorderTests
             Func<IAsOfDecisionInputProvider, IAsOfDecisionInputProvider>? wrapInputs = null,
             IReadOnlyList<string>? screening = null,
             Func<string?, string?>? effectiveModel = null,
-            DecisionOrchestrationOptions? production = null)
+            DecisionOrchestrationOptions? production = null,
+            LlmPriceTable? prices = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
@@ -82,10 +83,19 @@ public class Stage0DecisionRecorderTests
             wrapInputs is null
                 ? new StubInputProvider(notReconstructable, asOfWatchlist)
                 : wrapInputs(new StubInputProvider(notReconstructable, asOfWatchlist)),
-            sink, collector, Prices(),
+            sink, collector, prices ?? Prices(),
             new FixedTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink, reporter);
     }
+
+    // #1295, IADR-0524: プロンプト長の 2 段を持つ単価表。閾値は claude-haiku-5-5 の実際の境界（入力 100,000 トークン
+    // **超**で第 2 段）。単価は計算しやすい任意値（第 1 段 1 円・第 2 段 10 円 / 1k）。
+    private static LlmPriceTable TieredPrices() =>
+        LlmPriceTable.FromRows(
+        [
+            new LlmPriceRow("claude-sonnet-5-5", "1", "1", "100000", "10", "10"),
+            new LlmPriceRow("claude-haiku-5-5", "1", "1", "100000", "10", "10"),
+        ]);
 
     private static string Decision(string action) =>
         $$"""{"action":"{{action}}","rationale":"根拠","referencePrice":100,"stopLossDistancePerShare":2}""";
@@ -166,6 +176,38 @@ public class Stage0DecisionRecorderTests
         llm.CallCount.Should().Be(0);
     }
 
+    // #1295, IADR-0524: 見積りの単価は層ごとの **1 回あたりの入力トークン量**で段を引く（閾値を超えれば第 2 段）。
+    // 本判断と一次（claude-haiku-5-5）の両方の層で、入力トークン量が段の判定へ渡っていることを固定する
+    // （片方を落とすと片方の行が赤）。境界ちょうど 100,000 は第 1 段（「100,000 超」で第 2 段）。
+    // 銘柄 1 × 平日 2 × 1 日 1 回 → 本判断 2 回（多数決 1）・一次 2 回。出力は 1,000 トークン。
+    [Theory]
+    // 本判断の入力 / 一次の入力 / 期待額
+    [InlineData(100_000, 100_000, 404.0)]     // 両層とも第 1 段（境界ちょうど）: 2×(100+1) + 2×(100+1)
+    [InlineData(100_001, 100_000, 2222.02)]   // 本判断だけ第 2 段: 2×(100.001×10 + 1×10) + 2×(100+1)
+    [InlineData(100_000, 100_001, 2222.02)]   // 一次だけ第 2 段:   2×(100+1) + 2×(100.001×10 + 1×10)
+    public void 見積りは層ごとの入力トークン量でプロンプト長の段を引く(int decisionInput, int screeningInput, double expected)
+    {
+        var (recorder, _, _, _) = Build([], prices: TieredPrices());
+        var options = Options();
+        options.InputTokensPerDecision = decisionInput;
+        options.ScreeningInputTokensPerDecision = screeningInput;
+
+        recorder.Estimate(options).TotalJpy.Should().Be((decimal)expected);
+    }
+
+    // #1295, IADR-0524: 実費（`CostOf`）は**計測ごとの入力トークン数**で段を引く（要求ごとに決まる）。
+    [Fact]
+    public void 実費は計測ごとの入力トークン数でプロンプト長の段を引く()
+    {
+        LlmUsage[] usages =
+        [
+            new(LlmPurposes.TradeDecisionScreening, 100_000, 1_000, "claude-haiku-5-5"), // 境界ちょうど＝第 1 段: 100 + 1
+            new(LlmPurposes.TradeDecisionScreening, 100_001, 1_000, "claude-haiku-5-5"), // 100,000 超＝第 2 段: 1000.01 + 10
+        ];
+
+        Stage0RecordingUsageCollector.CostOf(usages, TieredPrices()).Should().Be(1111.01m);
+    }
+
     // 肯定形（承認ゲートの対）: 承認が一致すれば実行され、記録が保存される。
     [Fact]
     public async Task 承認が一致すれば記録して保存する()
@@ -178,7 +220,7 @@ public class Stage0DecisionRecorderTests
         llm.CallCount.Should().Be(4); // 平日 2 日 × 1 銘柄 ×（一次 1 ＋ 多数決 1 回）
         sink.Saved.Should().NotBeNull();
         sink.Saved!.Records.Should().HaveCount(2);
-        sink.Saved.StrategyId.Should().StartWith($"{Stage0StrategyIdentity.Prefix}/claude-sonnet-5/");
+        sink.Saved.StrategyId.Should().StartWith($"{Stage0StrategyIdentity.Prefix}/claude-sonnet-5-5/");
         sink.Saved.LlmTrainingCutoff.Should().Be(new DateOnly(2026, 3, 31));
     }
 
@@ -402,7 +444,7 @@ public class Stage0DecisionRecorderTests
             LlmPurposes.TradeDecisionScreening, LlmPurposes.TradeDecision,
             LlmPurposes.TradeDecisionScreening, LlmPurposes.TradeDecision);
         llm.Models.Where((_, i) => llm.Purposes[i] == LlmPurposes.TradeDecision)
-            .Should().OnlyContain(m => m == "claude-sonnet-5");
+            .Should().OnlyContain(m => m == "claude-sonnet-5-5");
     }
 
     // 🔴 #854, IADR-0351 決定7: 記録器は**保有なしを明示して**プロンプトを組む。記録は銘柄 × 判断時点で独立であり、
@@ -463,7 +505,7 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().OnlyContain(p => p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
         // 記録の対象銘柄（AAPL・MSFT）が一覧の行・件数・所属の行として出ない。
         llm.Prompts.Should().OnlyContain(p => !p.Contains("""{"symbol":"""));
-        llm.Prompts.Should().OnlyContain(p => !p.Contains("- 監視銘柄: 2 件") && !p.Contains("- 監視銘柄: 1 件"));
+        llm.Prompts.Should().OnlyContain(p => !p.Contains("- ウォッチリスト: 2 件") && !p.Contains("- ウォッチリスト: 1 件"));
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistContainsSuffix));
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistNotContainsSuffix));
 
@@ -487,7 +529,7 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().OnlyContain(p => p.Contains("""{"symbol":"META","market":"UnitedStates"}"""));
         llm.Prompts.Should().OnlyContain(p => p.Contains("""{"symbol":"NVDA","market":"UnitedStates"}"""));
         llm.Prompts.Should().OnlyContain(p => !p.Contains("""{"symbol":"AAPL","""));
-        llm.Prompts.Should().OnlyContain(p => p.Contains("- 監視銘柄: 2 件"));
+        llm.Prompts.Should().OnlyContain(p => p.Contains("- ウォッチリスト: 2 件"));
         llm.Prompts.Should().OnlyContain(p =>
             p.Contains($"判断対象の AAPL（市場: UnitedStates）{TradeDecisionPromptBuilder.WatchlistNotContainsSuffix}"));
         llm.Prompts.Should().OnlyContain(p => !p.Contains(TradeDecisionPromptBuilder.WatchlistUnknownLine));
@@ -565,7 +607,7 @@ public class Stage0DecisionRecorderTests
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
 
-        await collector.ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 100, 20, "claude-sonnet-5"));
+        await collector.ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 100, 20, "claude-sonnet-5-5"));
 
         reporter.Reported.Should().ContainSingle()
             .Which.Purpose.Should().Be(LlmPurposes.TradeDecision);
@@ -597,6 +639,51 @@ public class Stage0DecisionRecorderTests
             && r.Screening.Action == Stage0DecisionAction.Hold
             && !r.Screening.Interested
             && r.MajorityRationale == "関心なし");
+    }
+
+    // 🔴 T-10-2518（#1290, IADR-0525 決定 3）: 一次の根拠文に化けの疑いがあれば、Stage 0 の記録（一次の根拠・見送りの多数決の根拠）に
+    // 目印が付く。見送り（Hold）・本判断を呼ばないことは変えない。化けの無い根拠文（上の試験の「関心なし」）には付かない。
+    [Fact]
+    public async Task T_10_2518_一次の根拠文の化けはStage0の記録に目印を付ける()
+    {
+        const string garbled = "監視銘româ内の銘柄だが方向感が無い";
+        var (recorder, llm, sink, _) = Build(
+            [Decision("Buy")], screening: [$$"""{"action":"Hold","rationale":"{{garbled}}"}"""]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        llm.Prompts.Should().BeEmpty("見送りは変えない（本判断を呼ばない）");
+        var expected = $"{RationaleGarbleDetector.Marker}: {garbled}";
+        sink.Saved!.Records.Should().OnlyContain(r =>
+            r.MajorityAction == Stage0DecisionAction.Hold
+            && r.Screening!.Rationale == expected
+            && r.MajorityRationale == expected);
+    }
+
+    // T-10-2523（#1290, IADR-0525 決定 3/4）: 一次が関心あり（本判断へ進む）で一次の根拠文が化けたら、一次の根拠にだけ目印が付き、
+    // 多数決の根拠（本判断の根拠文。化けていない）には付かない。本判断の根拠文が化けたら多数決の根拠に付き、各票の生の根拠には付けない。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task T_10_2523_Stage0の記録は化けた層の根拠にだけ目印を付ける(bool screeningGarbled)
+    {
+        const string garbled = "監視銘HeaderItemの押し目";
+        var screening = screeningGarbled
+            ? $$"""{"action":"Buy","rationale":"{{garbled}}"}"""
+            : """{"action":"Buy","rationale":"関心あり"}""";
+        var main = screeningGarbled
+            ? Decision("Buy")
+            : $$"""{"action":"Buy","rationale":"{{garbled}}","referencePrice":100,"stopLossDistancePerShare":2}""";
+        var (recorder, _, sink, _) = Build([main], screening: [screening]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        var marked = $"{RationaleGarbleDetector.Marker}: {garbled}";
+        var record = sink.Saved!.Records[0];
+        record.MajorityAction.Should().Be(Stage0DecisionAction.Buy, "化けで action を変えない");
+        record.Screening!.Rationale.Should().Be(screeningGarbled ? marked : "関心あり");
+        record.MajorityRationale.Should().Be(screeningGarbled ? "根拠" : marked);
+        record.RawDecisions.Should().OnlyContain(r => !r.Rationale.Contains(RationaleGarbleDetector.Marker));
     }
 
     // 🔴 T-15-115: 一次の**解析不能も打ち切る**（本番の `ParseScreening` と同じ。見送りとは区別して記録する・IADR-0248）。
@@ -690,29 +777,29 @@ public class Stage0DecisionRecorderTests
         await recorder.RunAsync(options, CancellationToken.None);
 
         var record = sink.Saved!.Records[0];
-        record.Screening!.EffectiveModelId.Should().Be("claude-haiku-4-5");
-        record.RawDecisions.Should().HaveCount(2).And.OnlyContain(r => r.EffectiveModelId == "claude-sonnet-5");
+        record.Screening!.EffectiveModelId.Should().Be("claude-haiku-5-5");
+        record.RawDecisions.Should().HaveCount(2).And.OnlyContain(r => r.EffectiveModelId == "claude-sonnet-5-5");
         Stage0TwoTierModels.MatchesPinnedAssignments(record).Should().BeTrue();
     }
 
     // 🔴 T-15-117: 希望値と違うモデルが答えたら、記録に残るのは**答えたモデル**である（希望値で上書きしない）。
     // 名乗らなかった応答（計測にモデルが無い）は null ＝不明。どちらもピンとの照合で一致にならない。
     [Theory]
-    [InlineData("claude-sonnet-5", "claude-sonnet-5")]  // 一次がピン（haiku）以外
+    [InlineData("claude-sonnet-5-5", "claude-sonnet-5-5")]  // 一次がピン（haiku）以外
     [InlineData(null, null)]                            // 一次が名乗らない
     public async Task 記録の実効モデルは応答が名乗った値で希望値ではない(string? screeningEffective, string? expected)
     {
         var (recorder, _, sink, _) = Build(
             [Decision("Buy")],
-            effectiveModel: p => p == LlmPurposes.TradeDecisionScreening ? screeningEffective : "claude-sonnet-5");
+            effectiveModel: p => p == LlmPurposes.TradeDecisionScreening ? screeningEffective : "claude-sonnet-5-5");
         var options = Options();
-        options.ScreeningModel = "claude-haiku-4-5"; // 希望値
+        options.ScreeningModel = "claude-haiku-5-5"; // 希望値
 
         await recorder.RunAsync(options, CancellationToken.None);
 
         var record = sink.Saved!.Records[0];
         record.Screening!.EffectiveModelId.Should().Be(expected);
-        record.RawDecisions[0].EffectiveModelId.Should().Be("claude-sonnet-5");
+        record.RawDecisions[0].EffectiveModelId.Should().Be("claude-sonnet-5-5");
         Stage0TwoTierModels.MatchesPinnedAssignments(record).Should().BeFalse();
     }
 
@@ -722,11 +809,11 @@ public class Stage0DecisionRecorderTests
     {
         var (recorder, llm, _, _) = Build([Decision("Buy")]);
         var options = Options();
-        options.ScreeningModel = "claude-haiku-4-5";
+        options.ScreeningModel = "claude-haiku-5-5";
 
         await recorder.RunAsync(options, CancellationToken.None);
 
-        llm.Models.Should().Equal("claude-haiku-4-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-sonnet-5");
+        llm.Models.Should().Equal("claude-haiku-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-sonnet-5-5");
     }
 
     // ------------------------------------------------------------------------------------------------

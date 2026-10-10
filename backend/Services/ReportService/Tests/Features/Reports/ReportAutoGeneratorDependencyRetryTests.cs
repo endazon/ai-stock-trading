@@ -45,7 +45,7 @@ public class ReportAutoGeneratorDependencyRetryTests
         """[{"symbol":"AAPL","market":1,"side":0,"quantity":1,"entryPrice":190.5,"stopLossPrice":180.0}]""";
 
     private const string LlmJson =
-        """{"text":"市況は落ち着いていた。","model":"claude-sonnet-5","inputTokens":1,"outputTokens":1,"sent":true}""";
+        """{"text":"市況は落ち着いていた。","model":"claude-sonnet-5-5","inputTokens":1,"outputTokens":1,"sent":true}""";
 
     private sealed class FixedClock(DateTimeOffset now) : IClock
     {

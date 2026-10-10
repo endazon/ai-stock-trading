@@ -99,9 +99,12 @@ public sealed class Stage0DecisionRecorder(
                 OutputTokensPerDecision: options.OutputTokensPerDecision,
                 ScreeningInputTokensPerDecision: options.ScreeningInputTokensPerDecision,
                 ScreeningOutputTokensPerDecision: options.ScreeningOutputTokensPerDecision),
-            priceTable.Resolve(options.Model),
+            // #1295, IADR-0524: 単価は 1 回あたりの入力トークン量で段を引き分ける（claude-haiku-5-5 はプロンプト長で 2 段）。
+            priceTable.Resolve(options.Model, options.InputTokensPerDecision),
             // FR-15, ADR-0054 決定1・決定3, #1196: 一次の層の単価。希望値が無ければ一次のピン（応答するはずのモデル）で引く。
-            priceTable.Resolve(options.ScreeningModel ?? LlmAssignments.For(LlmPurposes.TradeDecisionScreening)?.PrimaryModel));
+            priceTable.Resolve(
+                options.ScreeningModel ?? LlmAssignments.For(LlmPurposes.TradeDecisionScreening)?.PrimaryModel,
+                options.ScreeningInputTokensPerDecision));
     }
 
     public async Task<Stage0RecordingOutcome> RunAsync(
@@ -320,7 +323,9 @@ public sealed class Stage0DecisionRecorder(
         var screening = new Stage0ScreeningDecision(
             ToRecordAction(screen.Action),
             screen.IsUnparseable,
-            screen.Rationale,
+            // 🔴 FR-04, FR-11, #1290, IADR-0525 決定 3: 一次の根拠文に文字化けの疑いがあれば記録にも目印を付ける。
+            // 検出はオーケストレータが受け取った地点で 1 回だけ行い、その印を使う（ここで検出し直さない）。
+            RationaleGarbleDetector.Mark(screen.Rationale, orchestrated.ScreeningRationaleGarbleSuspected),
             screeningCall.Usages.Sum(u => u.InputTokens),
             screeningCall.Usages.Sum(u => u.OutputTokens),
             EffectiveModelOf(screeningCall.Usages));

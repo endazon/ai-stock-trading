@@ -49,7 +49,7 @@ public class LlmGovernanceAuditHandlersTests
         using var host = await BuildHostAsync(store);
 
         var evt = new LlmFallbackFired(
-            LlmPurposes.ReportMonthly, LlmAssignments.Opus5, "claude-sonnet-5",
+            LlmPurposes.ReportMonthly, LlmAssignments.Opus55, "claude-sonnet-5-5",
             nameof(LlmAssignmentOutcome.FallbackFired), OccurredAt);
 
         var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(evt);
@@ -58,8 +58,8 @@ public class LlmGovernanceAuditHandlersTests
         var correlation = AuditEntryFactory.From(evt, Guid.NewGuid(), OccurredAt).CorrelationId;
         var entry = store.GetByCorrelation(correlation)
             .Should().ContainSingle(e => e.EventType == nameof(LlmFallbackFired)).Subject;
-        entry.Summary.Should().Contain(LlmAssignments.Opus5);
-        entry.Summary.Should().Contain("claude-sonnet-5");
+        entry.Summary.Should().Contain(LlmAssignments.Opus55);
+        entry.Summary.Should().Contain("claude-sonnet-5-5");
 
         await host.StopAsync();
     }
@@ -73,7 +73,7 @@ public class LlmGovernanceAuditHandlersTests
         using var host = await BuildHostAsync(store);
 
         var first = new LlmFallbackFired(
-            LlmPurposes.ReportDaily, LlmAssignments.Sonnet5, LlmAssignments.Haiku45,
+            LlmPurposes.ReportDaily, LlmAssignments.Sonnet55, LlmAssignments.Haiku55,
             nameof(LlmAssignmentOutcome.FallbackFired), OccurredAt);
         var second = first with { OccurredAt = OccurredAt.AddDays(4) };
 
@@ -95,7 +95,7 @@ public class LlmGovernanceAuditHandlersTests
 
         var evt = new TradeDecisionSkipped(
             LlmPurposes.TradeDecision, nameof(LlmAssignmentOutcome.Unassigned),
-            LlmAssignments.Sonnet5, "claude-haiku-4-5", OccurredAt);
+            LlmAssignments.Sonnet55, "claude-haiku-5-5", OccurredAt);
 
         var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(evt);
         session.Executed.MessagesOf<TradeDecisionSkipped>().Should().NotBeEmpty();
@@ -116,7 +116,7 @@ public class LlmGovernanceAuditHandlersTests
         var store = new InMemoryAuditEventStore();
         using var host = await BuildHostAsync(store);
 
-        var evt = new LlmCostIncurred(9.005m, OccurredAt, LlmPurposes.ReportMonthly, "claude-opus-5");
+        var evt = new LlmCostIncurred(9.005m, OccurredAt, LlmPurposes.ReportMonthly, "claude-opus-5-5");
         LlmCostScope.IsGoverned(evt.Purpose).Should().BeFalse("前提: 報告書生成は月次上限の対象外である");
 
         var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(evt);

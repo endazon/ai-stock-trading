@@ -68,6 +68,23 @@ public class AuditEntryFactoryTests
         entry.Detail.Should().Contain("\"StopWidth\":null");
     }
 
+    // 🔴 T-10-2521（FR-11, #1290, IADR-0525 決定 4）: 本判断の根拠文に付いた化けの目印（先頭に前置）は、監査台帳の要約に残る。
+    // 根拠文が長く要約が切り詰められても、目印は根拠文の先頭にあるため消えない。本文（Detail の JSON）は根拠文を目印ごと全量で持つ。
+    [Fact]
+    public void T_10_2521_TradeDecisionMade_の根拠文の化けの目印は要約の切り詰めでも残る()
+    {
+        var rationale = "⚠ 判断理由に文字化けの疑い: 監視銘HeaderItemの押し目で反発" + new string('長', 400);
+        var width = new StopWidthFloorApplication(0.5m, 2m, StopWidthFloorSource.Fallback2Pct, 2m, Widened: true);
+        var e = new TradeDecisionMade(Guid.NewGuid(), Intent(), rationale, DateTimeOffset.UtcNow, StopWidth: width);
+
+        var entry = AuditEntryFactory.From(e, Id, RecordedAt);
+
+        entry.Summary.Should().Contain(": ⚠ 判断理由に文字化けの疑い: 監視銘HeaderItem");
+        entry.Summary.Length.Should().BeLessThan(rationale.Length, "要約は切り詰められている");
+        System.Text.Json.JsonDocument.Parse(entry.Detail).RootElement.GetProperty("Rationale").GetString()
+            .Should().Be(rationale, "本文（JSON）は根拠文を目印ごと全量で持つ");
+    }
+
     [Fact]
     public void OrderApproved_は_承認数量を要約に含める()
     {

@@ -704,9 +704,12 @@ return await app.RunAiStockTradingAsync(args);
 // #303, IADR-0122 決定2: モデル別単価表を構成から組み立てる（LlmPricing:PerModel:<model-id>:*・円/1k）。
 // 解析と fail-safe は LlmPriceTable に閉じている。#817: 起動時警告の判定にも同じ組み立てを使う。
 static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
-    LlmPriceTable.From(
+    LlmPriceTable.FromRows(
         cfg.GetSection("LlmPricing:PerModel").GetChildren()
-            .Select(s => (Model: s.Key, Input: s["InputPer1kTokens"], Output: s["OutputPer1kTokens"])),
+            // #1295, IADR-0524: 任意の第 2 段（プロンプト長。claude-haiku-5-5 の 100,000 トークン超）も同じ行から読む。
+            .Select(s => new LlmPriceRow(
+                s.Key, s["InputPer1kTokens"], s["OutputPer1kTokens"],
+                s["LongContextThresholdTokens"], s["LongContextInputPer1kTokens"], s["LongContextOutputPer1kTokens"])),
         cfg["LlmPricing:InputPer1kTokens"],
         cfg["LlmPricing:OutputPer1kTokens"]);
 

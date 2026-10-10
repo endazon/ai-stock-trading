@@ -174,7 +174,7 @@ public class GrpcAuditLedgerSourcesTests
         {
             AuditEntryFactory.From(new FxRateSourceFellBack("USD", "fred", 2, 2, T0), Guid.NewGuid(), T0),
             AuditEntryFactory.From(new FxRateSourceUsed("USD", "fred", 2, 2, T0), Guid.NewGuid(), T0),
-            AuditEntryFactory.From(new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5"), Guid.NewGuid(), T0),
+            AuditEntryFactory.From(new LlmCostIncurred(3_000m, T0, LlmPurposes.TradeDecision, "claude-sonnet-5-5"), Guid.NewGuid(), T0),
             AuditEntryFactory.From(new LlmFallbackFired("report-daily", "a", "b", "FallbackFired", T0), Guid.NewGuid(), T0),
             AuditEntryFactory.From(new TradeDecisionSkipped("trade-decision", TradeDecisionSkipReasons.ModelUnavailable, "a", null, T0), Guid.NewGuid(), T0),
             AuditEntryFactory.From(new BorrowFeeAccrued("AAPL", Market.UnitedStates, From, 0.06m, 10_000m, 1.64m, T0), Guid.NewGuid(), T0),

@@ -246,7 +246,7 @@ public class AuditCycleCompletenessTests
             new InformationSourceRecovered("news", t.AddHours(-2), 4, t),
             new InformationSourceStateObserved(["news"], TimeSpan.FromHours(1), t),
             new LlmCostIncurred(12.5m, t),
-            new LlmFallbackFired("report-monthly", "claude-opus-5", "claude-sonnet-5", "FallbackFired", t),
+            new LlmFallbackFired("report-monthly", "claude-opus-5-5", "claude-sonnet-5-5", "FallbackFired", t),
             new LlmGatewayUnsentDetected(
                 "trade-decision-screening", 5, "UpstreamError", 429, "routing", "呼び出し先が現在利用できません。", t.AddMinutes(-10), t),
             new LlmGatewayUnsentRecovered(132, t.AddMinutes(-109), t),
@@ -334,7 +334,7 @@ public class AuditCycleCompletenessTests
             new TradeDecisionMade(decisionId, Intent(), "上昇トレンドのため買い", t),
             // UC-02, FR-03, #1077, IADR-0452 決定5: AI 判断後の見送り（急変の基準値の契機）。
             new TradeDecisionHeld(Guid.NewGuid(), "AAPL", Market.UnitedStates, 1_000m, "LlmHold", t, "scheduled"),
-            new TradeDecisionSkipped("trade-decision", "model-mismatch", "claude-opus-5", "claude-haiku-4-5", t),
+            new TradeDecisionSkipped("trade-decision", "model-mismatch", "claude-opus-5-5", "claude-haiku-5-5", t),
             // T-10-1773, NFR, FR-04, FR-10, #1092, IADR-0462: LLM を呼ぶ前の見送りと、建玉照会・保有照会の状態の変化。
             new TradeDecisionForgoneBeforeLlm(
                 Guid.NewGuid(), "AAPL", Market.UnitedStates, DecisionForgoneBeforeLlmReason.CurrentPriceUnavailable, t, "scheduled"),

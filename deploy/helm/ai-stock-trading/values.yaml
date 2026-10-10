@@ -306,12 +306,12 @@ services:
       # 有効化は経路B（values-local.yaml）で行う（#632 / IADR-0329 決定4）。**本番既定は無効のまま**であり、
       # 過去データ源（上の Provider・ADR-0023 決定5 の未確認 2 点）と記録が揃うまで覆さない。
       - { name: Backtest__Stage0__Enabled, value: "false" }
-      # FR-15, FR-04, ADR-0033 決定3, ADR-0037 決定2, #632: `claude-sonnet-5` の学習カットオフ日。
-      # 提供元 Models overview の training data cutoff（Jan 2026）を**その月の月末へ写した**値
-      # （月末は窓を狭く取る＝保守側。確認日 2026-09-09・計画 05_trading-assumptions §6.1 に登録済み）。
+      # FR-15, FR-04, ADR-0033 決定3, ADR-0037 決定2, #632, #1295, IADR-0524: 割当モデル（`claude-sonnet-5-5` /
+      # `claude-haiku-5-5`）の学習カットオフ日。提供元 Models overview の training data cutoff（Jun 2026）を
+      # **その月の月末へ写した**値（月末は窓を狭く取る＝保守側。確認日 2026-10-10・planning#783。旧割当 `claude-sonnet-5` は `2026-01-31`）。
       # fail-safe: 空・解釈不能は**検証条件①を未充足**として扱う（未設定を充足へ倒さない）。
       # 🔴 モデルのピン（ADR-0011）を変えたら本値も引き直し、Stage 0 を再実施すること。
-      - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-01-31" }
+      - { name: Backtest__Stage0__LlmTrainingCutoff, value: "2026-06-30" }
       # FR-04, FR-15, ADR-0033 決定2, #632, IADR-0318: 評価対象の戦略。
       # 空・未知の綴りは既定（placeholder＝不合格固定）へ倒す。本番戦略は "recorded-replay"。
       # **本番既定は空のまま**（有効化と同じく経路B で選ぶ）。実効値は GET /internal/introspection の
@@ -764,11 +764,11 @@ services:
       #   grpcClients: { MarketMonitor: true }   # → MarketMonitor__Grpc=http://market-monitor-service:<grpcPort>（宛先は描画が導出する）
       # 前提（同じ変更で揃える。無ければ描画で止まる）: services.market-monitor に `grpcPort: 8081` を宣言すること。
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。当時の監視銘柄（Stage 0 の記録）も同じ宛先で gRPC になる。
-      # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632: 記録側の学習カットオフ日。
+      # FR-04, FR-15, ADR-0033 決定3, ADR-0037 決定2, #632, #1295: 記録側の学習カットオフ日（5.5 系の割当・Jun 2026 → 2026-06-30）。
       # 🔴 **バックテスト側（Backtest__Stage0__LlmTrainingCutoff）と必ず同値にする** —— 食い違うと
       # 記録再生の評価は `RecordingMismatch` で fail-closed し、原因が構成の不一致だと読み取りにくい。
       # 記録の実行そのものは既定無効（Stage0Recording:Enabled）＋見積り承認ゲート（ADR-0033 決定5）で止まる。
-      - { name: Stage0Recording__LlmTrainingCutoff, value: "2026-01-31" }
+      - { name: Stage0Recording__LlmTrainingCutoff, value: "2026-06-30" }
       # FR-06, FR-15, ADR-0033 決定5, ADR-0037 決定3, #750: 承認額（既定 null＝未承認＝記録は実行されない）。
       # 🔴 **報告サービス側（report の Stage0Recording__ApprovedEstimateJpy）と必ず同値にする** ——
       # 月報 §7 の対比はこの値を分母に取る。片方だけ書き換えると対比が黙って誤る。
@@ -792,12 +792,14 @@ services:
       # gRPC へ切り替えるなら、先に MSP 側で穴の形（REST だけ）を改めて判断してもらう（MSP/IADR-0513）。
       # FR-04, ADR-0014/0017, IADR-0212/0276, #571: 二段判断（一次スクリーニング=軽量モデル→二次本判断）の有効化。
       # コード側の構成既定も true（#571 で反転。明示行はここでの可視化が目的で挙動を変えない）。
-      # ⚠️ 前提: 基盤 LlmGateway に用途 trade-decision-screening（claude-haiku-4-5）が登録されていること
+      # ⚠️ 前提: 基盤 LlmGateway に用途 trade-decision-screening（claude-haiku-5-5。#1295）が登録されていること
       # （microservices-platform 側 PR。未登録のまま true でも安全側（見送り）に倒れるだけで発注はされないが、
       # スクリーニングによる費用統制は機能しない＝IADR-0212 が挙げた帰結）。無効化する場合は "false" にする。
       - { name: Decision__EnableScreening, value: "true" }
       # FR-02, FR-04, IADR-0247/0313, #567: スクリーニング入力のコンテキスト予算（文字数プロキシ）。
-      # 既定 150,000 文字＝200,000 トークン（claude-haiku-4-5）× 1.0 文字/トークン × 安全率 0.75。
+      # 既定 150,000 文字＝200,000 トークン（導出時の割当 claude-haiku-4-5 のコンテキスト）× 1.0 文字/トークン × 安全率 0.75。
+      # #1295, IADR-0524: 現割当 claude-haiku-5-5 のコンテキストは 1M トークンで上の制約は効かない。値は据え置き、根拠は
+      # 費用の段へ移る（入力 100,000 トークン超は単価が 5 倍。150,000 文字は最悪側〈1.0 文字/トークン〉で高単価の段に入り得る）。
       # 超過時は ① 銘柄分割 → ② RAG 削減 → ③ ニュース・開示削除 の順で縮退し、日報の方針と当日の市況は削らない。
       # 空=コード側の既定（150,000）。正の整数で上書き。**無効化する場合だけ "0" か "off" を明示する**
       # （無効化すると参考情報がスクリーニングへ載らない従来プロンプトへ戻る＝IADR-0072 決定2）。
