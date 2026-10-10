@@ -388,6 +388,33 @@ services:
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
       # #750 / ADR-0033 決定5: 承認額（空＝未承認＝記録は実行されない）。report と同値にすること。
       - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
+      # ---- Stage 0 の記録の再実施（FR-15, ADR-0033 決定5, ADR-0054 決定3, ADR-0064 決定3, #1219）----
+      # PoC が埋める欄。手順（見積りの式・承認額の入れ方・起動と停止・確かめ方）は #1219 のコメントにある。
+      # 🔴 既定は記録しない（Enabled=false。未承認・期間なし・出力先なしのいずれでも LLM を 1 回も呼ばない）。
+      # 🔴 記録器は trade-decision の起動時に 1 回だけ走る（Hosted/Stage0RecordingService）。Enabled=true のまま
+      #    Pod を再起動すると、承認額の範囲でもう一度 LLM を呼ぶ。記録を取り出したら必ず false へ戻す。
+      # 🔴 as-of 入力の基底の供給は未実装（Program.cs の NoAsOfDecisionInputProvider）であり、今の構成では
+      #    全判断時点が「入力なし」で飛ばされ、記録は 0 件・LLM 呼び出しは 0 回になる（#1308）。
+      # int / bool の欄は "" にしない（コードの既定と同じ値を書く）。空を許すのは文字列と承認値（null＝未承認）だけ。
+      - { name: Stage0Recording__Enabled, value: "false" }
+      - { name: Stage0Recording__From, value: "" }        # YYYY-MM-DD。2026-07-01（カットオフ 2026-06-30 の翌日）以降
+      - { name: Stage0Recording__To, value: "" }          # YYYY-MM-DD。backtest の評価日以降を覆う（#1219 の手順）
+      # 記録の対象銘柄。backtest の Backtest__Stage0__Symbols と同じ集合にする（ずれると RecordingMismatch）。
+      - { name: Stage0Recording__Symbols__0__Symbol, value: "AAPL" }
+      - { name: Stage0Recording__Symbols__0__Market, value: "UnitedStates" }
+      # 本判断の層のモデル（ADR-0011 のピン・ADR-0064 決定1）。空だと見積りが未知モデルの単価で引かれ過大になる。
+      # 一次の層（Stage0Recording__ScreeningModel）は書かない＝割当表の一次のピン（claude-haiku-5-5）で見積る（本番と同じ扱い）。
+      - { name: Stage0Recording__Model, value: "claude-sonnet-5-5" }
+      - { name: Stage0Recording__VoteCount, value: "1" }  # 多数決回数（ADR-0033 決定4）。承認回数と同時に決める
+      - { name: Stage0Recording__ApprovedVoteCount, value: "" }  # 空＝未承認。VoteCount と同じ値を入れて承認する
+      # 1 判断あたりのトークン量（実測値。既定 0＝見積り 0 円＝実行されない）。月曜の取引の費用計上ログから採る。
+      - { name: Stage0Recording__InputTokensPerDecision, value: "0" }            # 本判断（purpose=trade-decision）の入力
+      - { name: Stage0Recording__OutputTokensPerDecision, value: "0" }           # 同 出力
+      - { name: Stage0Recording__ScreeningInputTokensPerDecision, value: "0" }   # 一次（purpose=trade-decision-screening）の入力
+      - { name: Stage0Recording__ScreeningOutputTokensPerDecision, value: "0" }  # 同 出力
+      # 記録の書き出し先（コンテナ内のパス。例 /tmp/stage0/records.json）。空＝書き出さない＝実行しない。
+      # 🔴 Pod を再起動すると消える。false へ戻す前に kubectl cp で取り出す。
+      - { name: Stage0Recording__OutputPath, value: "" }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
@@ -542,6 +569,12 @@ services:
       - { name: Backtest__Stage0__Strategy, value: "recorded-replay" }
       # 記録集合（JSON）のパス。**空＝記録なし**（ファイルも読まない）。値を入れるのは記録の取得後である。
       - { name: Backtest__Stage0__Recording__Path, value: "" }
+      # #1219: 評価の窓は [今日 − LookbackDays, 今日]。記録はこの窓を覆い（記録の From ≤ 窓の起点・記録の To ≥ 今日）、
+      # 窓の起点はカットオフ（2026-06-30）より後でなければならない（DataCutoff）。既定 365 のままでは 5.5 系の窓に収まらない。
+      # PoC が記録を差し込む日に合わせて縮める（#1219 の手順）。値はコードの既定と同じ（＝今の挙動は変わらない）。
+      - { name: Backtest__Stage0__LookbackDays, value: "365" }
+      # 巡回間隔（秒・60 未満は 60）。記録を Pod へ差し込んだ後の評価を待つ時間。既定 86,400（コードの既定と同じ）。
+      - { name: Backtest__Stage0__IntervalSeconds, value: "86400" }
       # 評価銘柄（経路B は AAPL 1 銘柄。市場は Market 列挙名でバインドされる）。空なら取得対象が無い。
       - { name: Backtest__Stage0__Symbols__0__Symbol, value: "AAPL" }
       - { name: Backtest__Stage0__Symbols__0__Market, value: "UnitedStates" }
