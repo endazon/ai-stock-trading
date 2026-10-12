@@ -3,15 +3,15 @@ title: 報告書（reports）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-10
+updated: 2026-10-13
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-16, FR-17, UC-03, UC-04, UC-05]
+ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-15, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0042, ADR-0052, ADR-0053]
 iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526]
 specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy]
-issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, planning#711, planning#746, planning#724, planning#784]
+issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, #1308, planning#711, planning#746, planning#724, planning#784]
 -->
 
 # データ仕様書: 報告書（reports）
@@ -60,6 +60,7 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 ## 照会・操作
 
 - `GET /reports`、`GET /reports/{periodKey}`、`GET /reports/daily-policy`（確定済み日報方針＝Date/Summary/AssumptionsVersion・未確定は 404）。
+- `GET /reports/daily-policy/as-of?at=<時刻>`（**その時刻までに確定していた**日報のうち期間の始まりが最も新しいものの方針＝Date/Summary/AssumptionsVersion/ConfirmedAt。無ければ 404。`at` はオフセット付きの ISO 8601 で、無い・オフセットが無い・読めないときは 400）。確定済みの報告書は不変なので、答えはその時刻に `GET /reports/daily-policy` が返した値と一致する。Stage 0 の記録器が判断時点の方針を組むために読む。認可は `daily-policy` と同じく OwnerOrService。
 - `GET /reports/period-keys`（会話キーと開始日だけの軽い一覧＝`[{periodKey, periodStart}]`・開始日の降順、同日は会話キーの降順・ページングなし）。Discord の `/report` の入力補完が打鍵ごとに読むため、本文・要約・状態を載せない。OwnerOnly。`/{periodKey}` より優先される（`daily-policy` と同じくリテラル一致）。
 - `PUT /reports/{periodKey}`（ドラフト upsert・楽観排他）、`POST /reports/{periodKey}/confirm`（版番号付き冪等確定）。すべて OwnerOnly。
 - `POST /reports/policy-revisions`（方針の改訂案。OwnerOnly）: 要求は `{instruction, periodKey?, onBehalfOf?}`。利用者の自由文の指示（1000 文字まで）から

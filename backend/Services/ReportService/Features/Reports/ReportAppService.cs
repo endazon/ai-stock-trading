@@ -84,6 +84,21 @@ public sealed class ReportAppService(
     }
 
     /// <summary>
+    /// FR-15, FR-07, ADR-0033 決定2, #1308, IADR-0528 決定3: <paramref name="at"/> の時点で確定していた日報の方針
+    /// （<see cref="GetConfirmedDailyPolicy"/> が時刻 <paramref name="at"/> に返した値）。無ければ null。
+    /// Stage 0 の記録器が判断時点の方針を組むために読む。
+    /// </summary>
+    public ConfirmedDailyPolicyAsOf? GetConfirmedDailyPolicyAsOf(DateTimeOffset at)
+    {
+        var latest = store.GetLatestConfirmedAsOf(ReportKind.Daily, at);
+        return latest is null
+            ? null
+            : new ConfirmedDailyPolicyAsOf(
+                latest.Report.PeriodStart, latest.Report.PolicySummary, latest.Report.AssumptionsVersion,
+                latest.Report.ConfirmedAt!.Value);
+    }
+
+    /// <summary>
     /// FR-06, UC-03, IADR-0071 決定4: 初回月報ブートストラップ。確定済み月報がまだ無いとき（＝運用開始直後）に、当月の初期監視銘柄を
     /// 選定した月報ドラフトを返す。既に確定済み月報があればブートストラップ不要として null を返す。生成のみ（永続化しない）。
     /// </summary>

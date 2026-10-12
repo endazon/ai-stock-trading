@@ -53,6 +53,8 @@ internal static class ReportEndpoints
         var read = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOrService);
 
         read.MapGetConfirmedDailyPolicy();
+        // FR-15, #1308, IADR-0528 決定3: ある時点で確定していた日報の方針（Stage 0 の記録器の as-of 入力 (c)）。
+        read.MapGetConfirmedDailyPolicyAsOf();
 
         // ---- 利用者のみ（ADR-0003・OwnerOnly）: 一覧・集計・ドラフト・確定。サービスには許可しない ----
         var owner = g.MapGroup("").RequireAuthorization(AiStockTradingAuthPolicies.OwnerOnly);
