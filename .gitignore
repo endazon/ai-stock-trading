@@ -494,3 +494,9 @@ coverage/
 
 # backlog-audit.yml が Claude ステップの前に書く一時 JSON（#717）。コミットしない
 .backlog-audit/
+
+# NFR, #1314 / IADR-0257 決定 6: CI の backend-test「Plan shard」が直下へ書く分配の出力（ローカルで再現したときに混入させない）
+/shard.txt
+/publish.txt
+/shard.slnx
+/build.slnx
