@@ -321,7 +321,36 @@ jobs:
               （`&` での起動・「後で回収する」形）の完了を待ったまま**終了してはならない
               （判定ゼロのまま success になり「レビュー済み・指摘なし」と読まれる。
               **判定を欠いたまま終了すると `check-review-verdict.js` がジョブを落とす**）。
-              時間が足りなければ「未検証（理由）」と書いて投稿すること。
+              検証を打ち切って投稿を優先してよいのは、**ジョブの上限（20 分）に近づいた場合だけ**である
+              （ターン数の上限は無い）。そのときは「未検証（20 分の上限）」と書いて投稿すること。
+
+            【検証の下限・最重要】（#1315。下限は省略できない。省くなら下の「理由に使えない語」以外の理由が要る）
+            まず `git diff --name-only origin/develop...HEAD` で変更ファイルの一覧を取り、次を**すべて**行う
+            （merge base が取れなければ `git fetch origin develop` を先に実行する）。
+            - **変更ファイルは全部読む。** 差分（`git diff origin/develop...HEAD -- <パス>`）か全文を、
+              1 ファイルずつ読む。除外してよいのは生成物（`CHANGELOG.md`・`package-lock.json`・
+              `docs/api/openapi.yaml` の自動生成分）だけで、除外したら本文の冒頭にその一覧を書く。
+              本文の冒頭には「変更 N ファイル中 M ファイルを読んだ」と書く。
+            - **`backend/` の差分があれば**、`dotnet build backend/backend.slnx` と、変更したサービス
+              （共有物なら `backend/Shared/**`）のテストプロジェクトの `dotnet test <…Tests.csproj>` を走らせる。
+              `--filter` は付けず、プロジェクト単位で全件を回す。あわせて
+              `dotnet format backend/backend.slnx --verify-no-changes` も走らせる。
+            - **`scripts/` か `.github/` の差分があれば**、`scripts.test.js` を全件走らせる。
+              `REQUIRE_REPO_TESTS=1` が要るので、次の子プロセス形の 1 コマンドで呼ぶ:
+              `node -e "const r=require('child_process').spawnSync('node',['scripts/scripts.test.js'],{env:Object.assign({},process.env,{REQUIRE_REPO_TESTS:'1'}),stdio:'inherit'});process.exit(r.status===null?1:r.status);"`
+            - **`scripts/` / `.github/` / `docs/` / `.ai-context/` のどれかに差分があれば**、文書系の検査器を走らせる:
+              `node scripts/check-trace-blocks.js` / `node scripts/gen-knowledge-graph.js --check` /
+              `node scripts/check-doc-links.js` / `node scripts/check-adr-index-sync.js` /
+              `node scripts/check-commit-messages.js` / `node scripts/check-plan-id-qualification.js`。
+            - **`deploy/helm/**` の差分があれば**、下の Helm の節（chart を変える PR）に従い
+              `helm lint` と `helm template` を走らせる。
+            - **理由に使えない語**: 「時間」「時間配分」「時間の都合」「時間優先」「差分が大きい」
+              「ファイル数が多い」「静的な読み取りに絞った」は、下限を省く理由として**認めない**。
+              ジョブの上限は 20 分で、ターン数の上限は無い。下限の検証を走らせても上限には遠く届かない。
+            - **ワークスペースへ書き込まない。** ファイルを作るコマンドは走らせない。出力ファイルを取る
+              引数（`--out` / `--publish-out` 等）がどうしても要るときは `/tmp/` 配下を指定し、
+              結果は標準出力で読む（#1317 で `publish.txt` をワークスペースへ書いた事故の対策）。
+            - 下限の各項目の結果（コマンドと件数・exit）は、本文の「確認できたこと」に列挙する。
 
             【検証の誠実性・最重要】
             - 「実測」「確認済み」「✅」と書けるのは、**このセッション内で実際にコマンドを実行し、
@@ -418,14 +447,16 @@ jobs:
             主張している場合は、可能な限り**自分で実走して確認**し、結果を報告に含めること。
 
             **ただし変更範囲に応じて絞ること（#490 / IADR-0190 決定4）。まず差分の範囲を見る。**
+            **絞ってよいのは、上の【検証の下限】に含まれない検証だけである（#1315）。**
             - **`backend/` の差分が空なら `dotnet build` / `dotnet test` を実行しない。**
               コードが 1 行も変わっていない PR で全テストスイートを回す意味は無く、
               **その待ちで判定を投稿できなくなる方が有害である**（PR #489 で実際に起きた）。
             - 同様に **`frontend/` の差分が空なら frontend の検証を実行しない。**
             - **実行しなかったことは「実行できなかったこと」節へ理由付きで書く**
               （「コード差分が無いため対象外と判断した」等）。**黙って省略しない。**
-            - 差分がある場合も、**まず対象プロジェクトだけを絞って実行する**ことを検討する
-              （`dotnet test <対象の .csproj>`）。**全スイートは最後の手段である。**
+            - 差分がある場合は、**変更したサービスのテストプロジェクトに絞って実行する**
+              （`dotnet test <対象の .csproj>`。`--filter` は付けない）。`backend.slnx` 全体の
+              `dotnet test` は要らない。
 
             **frontend と EF マイグレーションと E2E も実走できる**（#391 で許可とセットアップを
             揃えた）。ジョブ側で `npm ci`（`frontend/`）・Playwright の chromium・`dotnet-ef` を
