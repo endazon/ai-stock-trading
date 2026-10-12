@@ -90,6 +90,30 @@ public class BaseAsOfDecisionInputProviderTests
         set.Contexts.Select(c => c.Title).Should().Equal("時刻なし");
     }
 
+    // 🔴 #1323 の AI レビュー: 時刻つきの文書が K 件を超えても、時刻なしの文書は枠の外で必ず渡す。
+    // 押し出されると「時点に置けない資料が在った」ことが消え、(b) が再構成できたと誤って申告される。
+    [Fact]
+    public async Task 時刻つきの文書がK件を超えても時刻なしの文書は枠の外で渡り再構成不可と申告される()
+    {
+        var provider = Provider(feeds:
+        [
+            Feed("finnhub-news", AsOfReferenceCoverage.Symbol,
+                Doc("n1", At.AddHours(-1), "finnhub-news"),
+                Doc("n2", At.AddHours(-2), "finnhub-news"),
+                Doc("n3", At.AddHours(-3), "finnhub-news"),
+                Doc("時刻なし", null, "finnhub-news")),
+            Feed("sec-edgar", AsOfReferenceCoverage.Symbol),
+            Feed("fred", AsOfReferenceCoverage.Market),
+        ], topK: 2);
+
+        var input = await provider.GetAsync("AAPL", Market.UnitedStates, AsOf, TestContext.Current.CancellationToken);
+
+        input!.DroppedUndatedReferenceCount.Should().Be(1);
+        input.References.Select(r => r.Title).Should().Equal("n1", "n2");
+        input.AsOfInputs.Single(s => s.Kind == Stage0AsOfInputKind.NewsAndDisclosures).Availability
+            .Should().Be(Stage0AsOfInputAvailability.NotReconstructable);
+    }
+
     // ------------------------------------------------------------------------------------------------
     // 3. (b) の申告と欠けた源
     // ------------------------------------------------------------------------------------------------
@@ -233,11 +257,11 @@ public class BaseAsOfDecisionInputProviderTests
     // ------------------------------------------------------------------------------------------------
 
     internal static BaseAsOfDecisionInputProvider Provider(
-        FakePrices? prices = null, FakePolicies? policies = null, IAsOfReferenceFeed[]? feeds = null) =>
+        FakePrices? prices = null, FakePolicies? policies = null, IAsOfReferenceFeed[]? feeds = null, int topK = 5) =>
         new(
             prices ?? new FakePrices(new AsOfPriceReading(new DatedPrice(AsOf, 101m), new DatedPrice(AsOf.AddDays(-1), 100m))),
             policies ?? new FakePolicies(new DailyPolicy(AsOf.AddDays(-1), "方針")),
-            Assembler(5, feeds ?? AllFeeds()),
+            Assembler(topK, feeds ?? AllFeeds()),
             NullLogger<BaseAsOfDecisionInputProvider>.Instance);
 
     private static AsOfReferenceAssembler Assembler(int topK, params IAsOfReferenceFeed[] feeds) =>

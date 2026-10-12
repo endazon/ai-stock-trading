@@ -37,6 +37,8 @@ public sealed record AsOfReferenceSet(
 //   後の端だけでは古い記事が残り（本番は落とす）、前の端だけでは未来の記事が残る（先読み）。
 // 🔴 **発行時刻の無い文書は落とさずに渡す**（`AsOfDecisionInput` が「時点に置けない」として (b) を再構成不可にする）。
 //   ここで黙って捨てると、時点に置けなかった資料が在った事実が記録から消える。
+//   **上位 K 件の枠の外で必ず渡す**（#1323 の AI レビュー）: 新しい順に並べてから K 件で切ると、時刻つきの文書が K 件以上ある日に
+//   時刻なしの文書が枠から押し出され、(b) が「再構成できた」と誤って申告される。
 //
 // 利用者裁定 2026-10-13（#1219 のコメント）: 3 源（finnhub-news・sec-edgar・fred）の過去分をこの規則で組めば再構成できたとみなす。
 // 必須の源が 1 つでも取れない・構成されていなければ、(b) は再構成できない（`FailedSources`）。
@@ -109,10 +111,14 @@ public sealed class AsOfReferenceAssembler
         return new AsOfReferenceSet(_sourcePolicy.Filter(contexts), failed, MissingSourcesInProduction);
     }
 
-    // 窓の両端で切り、新しい順に上位 TopK 件。発行時刻の無い文書は残す（最古扱いで後ろへ。`AsOfDecisionInput` が申告に反映する）。
-    private IEnumerable<RetrievedContext> Select(IEnumerable<RetrievedContext> docs, DateTimeOffset from, DateTimeOffset at) =>
-        docs
-            .Where(d => d.PublishedAt is not { } p || (p >= from && p <= at))
-            .OrderByDescending(d => d.PublishedAt ?? DateTimeOffset.MinValue)
+    // 窓の両端で切り、新しい順に上位 TopK 件。発行時刻の無い文書は枠の外で後ろへ全部足す（`AsOfDecisionInput` が申告に反映する）。
+    private IEnumerable<RetrievedContext> Select(IEnumerable<RetrievedContext> docs, DateTimeOffset from, DateTimeOffset at)
+    {
+        var list = docs.ToList();
+        var dated = list
+            .Where(d => d.PublishedAt is { } p && p >= from && p <= at)
+            .OrderByDescending(d => d.PublishedAt!.Value)
             .Take(_topK);
+        return dated.Concat(list.Where(d => d.PublishedAt is null));
+    }
 }
