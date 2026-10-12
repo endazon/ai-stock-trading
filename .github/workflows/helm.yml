@@ -766,8 +766,13 @@ jobs:
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Enabled' | grep -q 'value: "true"'             || { echo "::error::values-local で backtest の Backtest__Stage0__Enabled=true が描画されない（verdict が 1 通も出ない）。"; exit 1; }
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Strategy' | grep -q 'value: "recorded-replay"'             || { echo "::error::values-local で backtest の Strategy=recorded-replay が描画されない（本番戦略が選ばれていない）。"; exit 1; }
           need "Stage 0 評価銘柄（AAPL）" 'name: Backtest__Stage0__Symbols__0__Symbol'
-          # 🔴 過去データ源は空のまま（ADR-0023 決定5 の未確認 2 点・blocked A-3）。実データ源を開けていないこと。
-          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__Provider' | grep -q 'value: ""'             || { echo "::error::values-local の Backtest__BarData__Provider が空でない（ADR-0023 決定5 の確認前に実データ源を開けた）。"; exit 1; }
+          # #1308 / IADR-0528 決定8（利用者裁定 2026-10-13）: 過去データ源は発注執行の日足の照会（order-execution）だけ。
+          # 🔴 moomoo（直結）は開けない（backtest の Pod に OpenD は配線しない）。Stage 0 に限った ADR-0023 決定5 の逸脱の受容は IADR-0528。
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__Provider' | grep -q 'value: "order-execution"'             || { echo "::error::values-local の Backtest__BarData__Provider が order-execution でない（moomoo 直結を開けたか、源を空に戻した）。"; exit 1; }
+          printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__OrderExecution__BaseUrl' | grep -q 'value: "http://order-execution-service:8080"'             || { echo "::error::values-local の Backtest__BarData__OrderExecution__BaseUrl が発注執行を指していない（order-execution が no-op へ倒れる）。"; exit 1; }
+          if printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/' | grep -q 'name: Backtest__BarData__Moomoo__'; then
+            echo "::error::values-local の backtest に moomoo 直結の構成がある（backtest の Pod に OpenD は配線しない。IADR-0528 決定8）。"; exit 1
+          fi
           # カットオフ日（ADR-0037 決定2 の写し方。#1295 で 5.5 系の 2026-06-30）は駆動側・記録側で同値であること（食い違うと RecordingMismatch）。
           cutoffs="$(printf '%s' "$out" | grep -A1 'LlmTrainingCutoff' | grep -c 'value: "2026-06-30"')"
           if [ "$cutoffs" -ne 2 ]; then

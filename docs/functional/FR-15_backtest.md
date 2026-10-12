@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-10-11
+updated: 2026-10-13
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014, ADR-0064]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, planning#783]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, planning#783]
 -->
 
 
@@ -50,6 +50,7 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
 | 取得（実データ源） | `IHistoricalBarSource`（Application のポート） | 非同期。戻り値 `HistoricalBarLoad(Bars, Gaps)` で欠測を銘柄と理由つきで残す |
 | 実アダプタ（採用） | `MoomooHistoricalBarSource`（Infrastructure） | **米国株日足 OHLC 履歴源を確定させた計画 ADR の決定 5 が採用した moomoo OpenAPI の履歴 K 線**（`QotRequestHistoryKL`・`KLType_Day`・`RehabType_Forward`）。1 リクエスト 1,000 件・`NextReqKey` でページング。米国株のみ（日本株は写像せず欠測）。SDK 依存は `MMApiMoomooHistoryKLineClient` に閉じる。送信前に `IRateLimiter` で自制。**ただし決定 5 の未確認 2 点が済むまで本番のバックテストへ流さない**（下記「米国株日足 OHLC 履歴の現況」） |
 | 実アダプタ（候補・取得不能） | `StooqHistoricalBarSource`（Infrastructure） | 情報源の計画 ADR が検証・学習用に採用した Stooq（日足 EOD・登録不要・日米両市場）。**現在は取得不能**（ボット検知チャレンジ。回避実装は履歴源の計画 ADR の決定 1 が禁止）。**削除しない**（決定 5 でも決定 1 の扱いは不変） |
+| 実アダプタ（Stage 0 用・2026-10-13） | `HttpOrderExecutionHistoricalBarSource`（Infrastructure） | 発注執行の日足の照会（`GET /order-execution/daily-bars`。前復権）から銘柄ごとに取る（`Backtest:BarData:Provider=order-execution`・`Backtest:BarData:OrderExecution:BaseUrl`・サービスの資格）。照会の上限（400 暦日）を超える期間は分けて呼ぶ。`Available` 以外・非 2xx・要求と別の銘柄の答え・欄の欠けた足は**その銘柄を丸ごと欠測**（半端に取れた分も捨てる）。backtest の Pod に OpenD は配線しない（下記「2026-10-13 の利用者裁定」） |
 | 安全既定 | `NoOpHistoricalBarSource`（Infrastructure） | `Backtest:BarData:Provider` 既定 `none`＝**外部へ 1 リクエストも出さない**。未知 provider・構成不備も警告して no-op（**allow-list**: 既知の provider が構成の妥当性を満たしたときだけ実アダプタを返す） |
 | 合成・自己申告・駆動 | `BacktestService`（ホスト） | 構成から過去データ源を解決し、`GET /internal/introspection` で選択中の実装と**定時駆動の有効・無効**を申告する。**定時駆動と verdict の発行を持つ**（下記「Stage 0 判定の定時駆動と verdict の発行」。実 RabbitMQ を介した疎通は #82） |
 | 評価（本番経路） | `MaterializedBarDataSource` | 取得済みバーの `IBarDataSource` 実装。正規化（同一 (Symbol, Market, Date) の重複排除・安定ソート）の単一情報源 |
@@ -87,6 +88,18 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
    バーが 1 本も取れなければ Stage 0 は不合格へ倒れる（fail-safe は壊れていない）。
    発火させるには `Backtest:BarData:Provider=moomoo` を**明示的に構成する**必要があり、それは 3 の確認が済んでから行う。
    Stage 0 の最大 DD 許容値を 0.15 から 0.10 へ厳格化した決定も、同じ理由で未発火のままである。
+
+#### 2026-10-13 の利用者裁定（Stage 0 に限った受け入れ）
+
+**Stage 0 では、前復権と費用モデルの不整合を受け入れ、足は発注執行の日足の照会から取る**（backtest の Pod に OpenD は配線しない）。
+上の 3 の確認 2 点のうち、費用モデルの整合は「費用モデルに配当・借株料の項が無い。前復権の値動きは配当を暗に含むので二重計上は起きないが、
+**空売りの借株料が抜ける**」と確かめ、Stage 0 の記録と評価に限ってこれを受け入れた。取得枠は**銘柄単位・総量 300** と実測済みで、
+**回復周期は未測定のまま**である。どちらも残余リスクとして残る（Stage 0 以外の扱いは変えない）。
+
+- 経路 B の構成は `Backtest:BarData:Provider=order-execution`。**本番の既定は `none` のまま**。
+- 発注執行が moomoo 構成でないと照会は「発注先が OpenD を持たない」で取れず、銘柄ごとの欠測になる（合格へは倒れない）。
+- 評価の窓の終端は構成 `Backtest:Stage0:EvaluationEnd`（`YYYY-MM-DD`）で固定できる。空は今日（従来どおり）、今日より後は今日、読めない値は今日へ倒して警告する。
+  記録の窓が過去の日で終わるとき（2026-09-15〜10-09）、終端を記録の終わりに揃えないと翌日以降の評価は「記録の期間の不一致」で判定を組まない。
 
 > **「使える履歴源が無い」と書かないこと**（2 の裁定と実装を否定する）。
 > **「moomoo で解決した」とも書かないこと**（3 を落とすと、未確認のまま本番へ流す経路そのものになる）。

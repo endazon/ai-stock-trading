@@ -2,6 +2,7 @@ using BacktestService.Features.Backtest;
 using BacktestService.Features.Backtest.EvaluateStage0Gate;
 using BacktestService.Hosted;
 using BacktestService.Infrastructure.ExternalServices;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using Microsoft.Extensions.Options;
@@ -69,6 +70,14 @@ if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<MMApiMoomooHistoryKLineClient>()));
 }
 
+// FR-15, #1308, IADR-0528 決定8: provider=order-execution のときだけ、発注執行へのサービスの資格つきの HttpClient を作る
+// （照会口は OwnerOrService）。それ以外では登録しない（トークンを取りに行かない）。
+if (barDataProvider == HistoricalBarSourceFactory.OrderExecution)
+{
+    builder.Services.AddHttpClient(OrderExecutionBarsHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
+        .AddAiStockTradingServiceToken(builder.Configuration);
+}
+
 builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
 {
     var options = sp.GetRequiredService<IOptions<BarDataOptions>>().Value;
@@ -78,7 +87,10 @@ builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
         httpClient,
         TimeProvider.System,
         sp.GetRequiredService<ILoggerFactory>(),
-        sp.GetService<IMoomooHistoryKLineClient>()); // moomoo 時のみ登録済み
+        sp.GetService<IMoomooHistoryKLineClient>(), // moomoo 時のみ登録済み
+        barDataProvider == HistoricalBarSourceFactory.OrderExecution
+            ? sp.GetRequiredService<IHttpClientFactory>().CreateClient(OrderExecutionBarsHttpClientName)
+            : null);
 });
 
 // FR-15, FR-20, ADR-0008, ADR-0033, #688, IADR-0310 決定1: Stage 0 判定の定時駆動（**既定は無効**）。
@@ -144,4 +156,7 @@ return await app.RunAiStockTradingAsync(args);
 public partial class Program
 {
     public const string BarDataHttpClientName = "backtest-bar-data";
+
+    // FR-15, #1308, IADR-0528 決定8: 発注執行の日足の照会へ、サービスの資格つきで出る HttpClient。
+    public const string OrderExecutionBarsHttpClientName = "backtest-order-execution-bars";
 }

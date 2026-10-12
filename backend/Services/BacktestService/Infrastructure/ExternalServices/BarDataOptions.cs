@@ -17,6 +17,10 @@ public sealed class BarDataOptions
     /// いずれも実 OpenD でしか確認できず未了である**（詳細は <see cref="MoomooBarDataOptions"/> と IADR-0157）。
     /// </para>
     /// <para>
+    /// ［2026-10-13 追記 / #1308・IADR-0528 決定8］3 つ目の実装 "order-execution"（発注執行の日足の照会）を足した。
+    /// 利用者裁定 2026-10-13 が Stage 0 の足の源に決めたもの（前復権と費用モデルの不整合・借株料の欠落を Stage 0 に限って受け入れた）。
+    /// </para>
+    /// <para>
     /// **既定値をここで変更しないこと**（既定が none であることは HistoricalBarSourceFactoryTests が固定する）。
     /// 既定を "moomoo" にすると、構成していない環境が起動しただけで実 OpenD を叩き始める。
     /// </para>
@@ -28,6 +32,24 @@ public sealed class BarDataOptions
 
     /// <summary>moomoo（Provider="moomoo"）の構成。ADR-0023 決定5。</summary>
     public MoomooBarDataOptions Moomoo { get; set; } = new();
+
+    /// <summary>発注執行の日足の照会（Provider="order-execution"）の構成。#1308, IADR-0528 決定8。</summary>
+    public OrderExecutionBarDataOptions OrderExecution { get; set; } = new();
+}
+
+// FR-15, ADR-0023 決定5, #1308, IADR-0528 決定8: 発注執行の日足の照会（`GET /order-execution/daily-bars`）から取る構成。
+// 利用者裁定 2026-10-13 で Stage 0 の足の源に決めた（backtest の Pod に OpenD は配線しない）。
+// 呼び出しはサービスの資格（ServiceAuth）で行う（照会口は OwnerOrService）。
+public sealed class OrderExecutionBarDataOptions
+{
+    /// <summary>発注執行のベース URL（例 http://order-execution-service:8080）。空・不正なら no-op へ倒す。</summary>
+    public string? BaseUrl { get; set; }
+
+    /// <summary>
+    /// 照会の自制（回/分）。既定 10。発注執行は 60 秒に 25 回の自制を持ち、取引判断の出来高・Stage 0 の記録と同じ予算を
+    /// 共有するため、それより十分小さくする。0 以下は 1 回/分へクランプする。
+    /// </summary>
+    public int RequestsPerMinute { get; set; } = 10;
 }
 
 // #208, IADR-0105: Stooq は登録不要（API キーが無い）ため、opt-in の閂は Provider の明示指定そのものである。
