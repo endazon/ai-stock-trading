@@ -31,6 +31,16 @@ public interface IReportStore
     /// <summary>指定種別の最新の確定済み報告書（PeriodStart 最大）。無ければ null。</summary>
     VersionedReport? GetLatestConfirmed(ReportKind kind);
 
+    /// <summary>
+    /// FR-15, FR-07, ADR-0033 決定2, #1308, IADR-0528 決定3: <paramref name="at"/> の時点で<b>確定していた</b>報告書のうち
+    /// 最新のもの（<c>ConfirmedAt ≤ at</c> の中で PeriodStart 最大）。無ければ null。
+    /// <para>
+    /// 確定済みの報告書は不変である（<see cref="UpsertDraft"/> が拒否する）ため、答えは時刻 <paramref name="at"/> に
+    /// <see cref="GetLatestConfirmed"/> が返した値と一致する（Stage 0 の記録が当時の方針を組むために使う）。
+    /// </para>
+    /// </summary>
+    VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at);
+
     /// <summary>FR-07, IADR-0042/0071: 対話的確定のレビュー局面を取得する。対象が無ければ null。</summary>
     ReportReview? GetReview(string periodKey);
 

@@ -628,6 +628,8 @@ public class ReportPolicyRevisionServiceTests
 
         public VersionedReport? GetLatestConfirmed(ReportKind kind) => inner.GetLatestConfirmed(kind);
 
+        public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at) => inner.GetLatestConfirmedAsOf(kind, at);
+
         public ReportReview? GetReview(string periodKey) => inner.GetReview(periodKey);
 
         public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) =>

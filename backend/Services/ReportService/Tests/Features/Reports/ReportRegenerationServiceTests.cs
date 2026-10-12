@@ -114,6 +114,7 @@ public class ReportRegenerationServiceTests
         public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
             inner.Confirm(periodKey, expectedVersion, confirmedAt);
         public VersionedReport? GetLatestConfirmed(ReportKind kind) => inner.GetLatestConfirmed(kind);
+        public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at) => inner.GetLatestConfirmedAsOf(kind, at);
         public ReportReview? GetReview(string periodKey) => inner.GetReview(periodKey);
         public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) =>
             command.Action == ReviewAction.Present

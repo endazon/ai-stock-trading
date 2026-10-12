@@ -110,6 +110,7 @@ public class ReportAutoGenerationServiceLoggingTests
         public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt) =>
             _inner.Confirm(periodKey, expectedVersion, confirmedAt);
         public VersionedReport? GetLatestConfirmed(ReportKind kind) => _inner.GetLatestConfirmed(kind);
+        public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at) => _inner.GetLatestConfirmedAsOf(kind, at);
         public ReportReview? GetReview(string periodKey) => _inner.GetReview(periodKey);
     }
 
