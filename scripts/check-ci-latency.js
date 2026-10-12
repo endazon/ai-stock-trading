@@ -153,6 +153,7 @@ function min(xs) {
  * 引数:
  *   targetDurations     現在の窓（窓 0）のうち、現在の CI 構成で測られた監視対象の値
  *   pastWindowMedians   過去の窓（窓 1〜）の中央値。新しい順。N 本揃った窓だけ
+ *                       （N 本に満たない窓は含めない。`pastWindowMediansOf` 参照）
  *   baselineDurations   現在の窓の claude-review の値。**参考値にだけ使う**
  *
  * 🔴 **定常性の門（実データで踏んだ罠）。** 中央値は「現在の窓が同じ CI 構成で走った」と
