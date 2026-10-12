@@ -110,7 +110,9 @@ plan_refs:
    - 🔴 **被覆の検査（fail-loud）**: `backend.slnx` の全プロジェクトと `Services/*/*.csproj` が、
      どれかの脚の閉包に入ることを毎回確かめる。入らないものがあれば、名前を挙げて exit 1 にする。
      **「どの脚でもビルドされない」（＝コンパイルエラーが入っても赤くならない）形を黙って作らない。**
-   - 自己試験を 31 件から 42 件へ増やす。
+   - 自己試験を 31 件から 43 件へ増やす。
+   - `$(` を含む Include と Update= 形式の ProjectReference は解決できないので、exit 1 にする（fail-loud。コーディネーターの指摘 2026-10-12）。
+   - Plan shard の出力（`shard.txt` / `publish.txt` / `shard.slnx` / `build.slnx`）は、リポジトリ直下に限って `.gitignore` に入れる。
 2. `.github/workflows/ci.yml`（`backend-test`）
    - 新しい step「Plan shard」で、Restore の前に分配を決める。
    - Restore と Build は `build.slnx` に対して行う。Test は従来どおり `shard.slnx` に対して行う。
@@ -132,7 +134,7 @@ plan_refs:
 
 ## 受け入れ基準
 
-- [x] `node scripts/list-test-projects.js --self-test` が 42 件とも緑になる。変異 5 種（publish の重複排除を外す・
+- [x] `node scripts/list-test-projects.js --self-test` が 43 件とも緑になる。変異 5 種（publish の重複排除を外す・
   コメントを剥がさない・閉包を推移させない・被覆の検査を空にする・`\` 区切りを正規化しない）がすべて赤になる。
 - [x] 実データで 4 脚の閉包の和が `backend.slnx` の 45 本すべてを覆う。publish の担当は 12 サービスの各々にちょうど 1 脚である。
 - [x] ローカルで 1 脚の手順（restore → build → publish → test → Verify report count）が通る。

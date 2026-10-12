@@ -232,8 +232,17 @@ function projectRefs(rel, root = REPO_ROOT) {
     return [];
   }
   text = text.replace(/<!--[\s\S]*?-->/g, '');
+  // 🔴 **解決できない形は fail-loud に落とす。** `$(...)` を含む Include や Update= 形式は、
+  // MSBuild の評価なしには参照先が決まらない。黙って飛ばすと閉包が欠け、
+  // 欠けた先が「どの脚でもビルドされない」か、publish の担当が誤って決まる。
+  if (/<ProjectReference\b[^>]*\bUpdate\s*=/.test(text)) {
+    throw new Error(`${rel}: ProjectReference の Update= 形式は解決できない（Include= の相対パスで書くこと）`);
+  }
   const out = [];
   for (const m of text.matchAll(/<ProjectReference\s+Include="([^"]+)"/g)) {
+    if (m[1].includes('$(')) {
+      throw new Error(`${rel}: ProjectReference の Include に MSBuild プロパティ（${m[1]}）を含むものは解決できない`);
+    }
     const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1].replace(/\\/g, '/')));
     out.push(target);
   }
@@ -534,6 +543,19 @@ function selfTest() {
     ok('projectRefs: 相対パス（\\ 区切りも）をリポジトリ相対へ正規化する', () =>
       eq(projectRefs('backend/Services/A/A.csproj', t2), ['backend/Shared/S/S.csproj']));
     ok('projectRefs: XML コメント中の参照は数えない', () => eq(projectRefs('backend/Services/B/B.csproj', t2), []));
+    ok('projectRefs: $( を含む Include と Update= 形式は例外（fail-loud。黙って閉包を欠かせない）', () => {
+      put('backend/X/Prop.csproj', '<Project><ProjectReference Include="$(RepoRoot)/a/A.csproj" /></Project>');
+      put('backend/X/Upd.csproj', '<Project><ProjectReference Update="../a/A.csproj" /></Project>');
+      for (const f of ['backend/X/Prop.csproj', 'backend/X/Upd.csproj']) {
+        let threw = false;
+        try {
+          projectRefs(f, t2);
+        } catch {
+          threw = true;
+        }
+        if (!threw) throw new Error(`${f} が通ってしまった`);
+      }
+    });
     ok('projectRefs: 読めなければ空（被覆検査が落とす側へ倒す）', () => eq(projectRefs('nope/X.csproj', t2), []));
     ok('closure: 推移的に辿り、自身を含む', () =>
       eq(closure([tests[0]], t2), ['backend/Services/A/A.csproj', tests[0], 'backend/Shared/S/S.csproj']));
@@ -633,7 +655,14 @@ function main() {
   const shard = get('--shard');
   const of = get('--of');
   if (!Number.isNaN(shard) || !Number.isNaN(of)) {
-    const plans = planShards(projects, of, weights);
+    let plans;
+    try {
+      plans = planShards(projects, of, weights);
+    } catch (e) {
+      console.error(`[list-test-projects] 参照閉包を求められない: ${e.message}`);
+      process.exitCode = 1;
+      return;
+    }
     const picked = plans[shard - 1].tests;
     // 🔴 **被覆の検査（#1314）。** 脚は `backend.slnx` 全体ではなく担当テストの参照閉包だけをビルドする。
     // したがって「どのテストからも参照されないプロジェクト」は**どの脚でもビルドされない**
