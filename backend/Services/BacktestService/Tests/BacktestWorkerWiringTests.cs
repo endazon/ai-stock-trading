@@ -52,6 +52,24 @@ public class BacktestWorkerWiringTests
             .Should().BeOfType<MoomooHistoricalBarSource>();
     }
 
+    // FR-15, #1308, IADR-0528 決定8: provider=order-execution の指定で発注執行の日足の照会の源が解決され、自己申告も一致する。
+    // 解決の時点では照会もトークンの取得も起きない（初回の取得まで外部へ出ない）。
+    [Fact]
+    public async Task provider_order_execution_の指定で発注執行の日足の照会の源が解決される()
+    {
+        using var factory = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "order-execution",
+            ["Backtest:BarData:OrderExecution:BaseUrl"] = "http://order-execution-service:8080",
+        });
+
+        factory.Services.GetRequiredService<IHistoricalBarSource>()
+            .Should().BeOfType<OrderExecutionHistoricalBarSource>();
+        var dto = await factory.CreateClient()
+            .GetFromJsonAsync<ServiceIntrospectionDto>(IntrospectionExtensions.IntrospectionPath);
+        dto!.Ports.Should().ContainSingle(p => p.Port == "historical-bar-data" && p.Implementation == "order-execution");
+    }
+
     // ADR-0023 決定5, IADR-0157 決定2: OpenD の接続先が不正なら moomoo でも no-op へ倒し、自己申告も一致させる。
     [Fact]
     public async Task moomooのOpenD接続先が不正なら自己申告もno_opを示す()

@@ -85,6 +85,14 @@ public sealed class Stage0EvaluationService(
     public async Task RunOnceAsync(CancellationToken cancellationToken)
     {
         var settings = options.Value;
+        // #1308, IADR-0528 決定9: 終端の構成が読めなければ今日へ倒す（評価は続ける）。綴り違いに気づけるよう警告する。
+        if (settings.HasUnparseableEvaluationEnd())
+        {
+            logger.LogWarning(
+                "Backtest:Stage0:EvaluationEnd = '{EvaluationEnd}' を日付（YYYY-MM-DD）として読めません。評価の窓の終端は今日にします。",
+                settings.EvaluationEnd);
+        }
+
         var (from, to) = settings.EvaluationWindow(DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime));
 
         using var scope = scopeFactory.CreateScope();
