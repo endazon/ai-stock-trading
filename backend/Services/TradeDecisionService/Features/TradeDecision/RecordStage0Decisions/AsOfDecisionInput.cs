@@ -73,6 +73,11 @@ public sealed class AsOfDecisionInput
     /// 有効で得られない日は <see cref="StopWidthFloorContext.Unavailable"/>（2% へ退避・プロンプトは「未提供」の行）。
     /// 足は <c>GetConfirmedBarsAsOfAsync</c> が AsOf 以降を捨てて返すため、値そのものは先読みにならない。
     /// </param>
+    /// <param name="newsAndDisclosuresNote">
+    /// FR-15, ADR-0036 決定1, #1308, IADR-0528 決定4: (b) の申告の<b>理由欄へ添える注記</b>（例: 過去分を取れない「欠けた源」）。
+    /// 利用者裁定 2026-10-13 は、欠けた源を「記録に残す」ことを (b) を再構成済みとみなす条件とした。
+    /// 可否そのもの（再構成できた・当時無し・再構成できない）は変えない。null・空なら従来どおり（理由欄は既定のまま）。
+    /// </param>
     public AsOfDecisionInput(
         DateOnly asOf,
         DailyPolicy policy,
@@ -85,7 +90,8 @@ public sealed class AsOfDecisionInput
         string? watchlistUnavailableReason = null,
         DatedPrice? previousClose = null,
         DailyVolumeContext? volume = null,
-        StopWidthFloorContext? stopFloor = null)
+        StopWidthFloorContext? stopFloor = null,
+        string? newsAndDisclosuresNote = null)
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(sizing);
@@ -150,13 +156,15 @@ public sealed class AsOfDecisionInput
         DroppedUndatedReferenceCount = droppedUndated;
         Watchlist = watchlist;
         AsOfInputs = DeriveAvailability(
-            notReconstructable, kept.Count, droppedUndated, watchlist is not null, watchlistUnavailableReason);
+            notReconstructable, kept.Count, droppedUndated, watchlist is not null, watchlistUnavailableReason,
+            newsAndDisclosuresNote);
 
         // #1049, IADR-0442 決定 4: WithWatchlist で同じ入力を組み直すために、構築時の引数を持つ（切る前の参考情報を含む）。
         _price = price;
         _references = references is null ? [] : [.. references];
         _notReconstructable = notReconstructable is null ? [] : [.. notReconstructable];
         _watchlistUnavailableReason = watchlistUnavailableReason;
+        _newsAndDisclosuresNote = newsAndDisclosuresNote;
     }
 
     private readonly DatedPrice? _price;
@@ -164,6 +172,7 @@ public sealed class AsOfDecisionInput
     private readonly IReadOnlyList<RetrievedContext> _references;
     private readonly IReadOnlyList<Stage0AsOfInputKind> _notReconstructable;
     private readonly string? _watchlistUnavailableReason;
+    private readonly string? _newsAndDisclosuresNote;
 
     /// <summary>
     /// FR-04, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 当時の監視銘柄（(e)）だけを差し替えた入力を返す。
@@ -172,7 +181,7 @@ public sealed class AsOfDecisionInput
     /// </summary>
     public AsOfDecisionInput WithWatchlist(IReadOnlyList<WatchedSymbol>? watchlist, string? unavailableReason) =>
         new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, watchlist, unavailableReason, _previousClose, Volume,
-            StopFloor);
+            StopFloor, _newsAndDisclosuresNote);
 
     /// <summary>
     /// FR-04, FR-15, ADR-0048 決定 2, #1139, IADR-0479 決定 2: 出来高だけを差し替えた入力を返す。
@@ -180,7 +189,7 @@ public sealed class AsOfDecisionInput
     /// </summary>
     public AsOfDecisionInput WithVolume(DailyVolumeContext? volume) =>
         new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, Watchlist, _watchlistUnavailableReason,
-            _previousClose, volume, StopFloor);
+            _previousClose, volume, StopFloor, _newsAndDisclosuresNote);
 
     /// <summary>
     /// FR-10, FR-15, ADR-0049 決定2, #1122, IADR-0486 決定4: 損切り幅の下限（ATR）だけを差し替えた入力を返す。
@@ -188,7 +197,7 @@ public sealed class AsOfDecisionInput
     /// </summary>
     public AsOfDecisionInput WithStopFloor(StopWidthFloorContext? stopFloor) =>
         new(AsOf, Policy, Sizing, _price, _references, RateToBase, _notReconstructable, Watchlist, _watchlistUnavailableReason,
-            _previousClose, Volume, stopFloor);
+            _previousClose, Volume, stopFloor, _newsAndDisclosuresNote);
 
     // FR-15, ADR-0036 決定1, #749, IADR-0387: 4 種（ADR-0044 決定 3 の (e) を含む）すべての再構成可否を導出する（**部分申告を作らない**）。
     //
@@ -206,8 +215,14 @@ public sealed class AsOfDecisionInput
     //     供給側が一覧を渡さない限り記録は合格根拠にならない（ADR-0044 決定 4 の暫定手段）。
     private static IReadOnlyList<Stage0AsOfInputStatus> DeriveAvailability(
         IEnumerable<Stage0AsOfInputKind>? notReconstructable, int keptReferenceCount, int droppedUndatedCount,
-        bool watchlistReconstructed, string? watchlistUnavailableReason)
+        bool watchlistReconstructed, string? watchlistUnavailableReason, string? newsAndDisclosuresNote)
     {
+        // #1308, IADR-0528 決定4: (b) の理由欄へ注記を添える（可否は変えない）。
+        string NewsReason(string reason) =>
+            string.IsNullOrWhiteSpace(newsAndDisclosuresNote)
+                ? reason
+                : string.IsNullOrEmpty(reason) ? newsAndDisclosuresNote.Trim() : $"{reason}（{newsAndDisclosuresNote.Trim()}）";
+
         var declared = notReconstructable is null
             ? new HashSet<Stage0AsOfInputKind>()
             : [.. notReconstructable];
@@ -217,8 +232,11 @@ public sealed class AsOfDecisionInput
         {
             if (declared.Contains(kind))
             {
+                const string declaredReason = "供給側が再構成不可と申告した";
                 statuses.Add(new Stage0AsOfInputStatus(
-                    kind, Stage0AsOfInputAvailability.NotReconstructable, "供給側が再構成不可と申告した"));
+                    kind,
+                    Stage0AsOfInputAvailability.NotReconstructable,
+                    kind == Stage0AsOfInputKind.NewsAndDisclosures ? NewsReason(declaredReason) : declaredReason));
                 continue;
             }
 
@@ -240,14 +258,16 @@ public sealed class AsOfDecisionInput
                 statuses.Add(new Stage0AsOfInputStatus(
                     kind,
                     Stage0AsOfInputAvailability.NotReconstructable,
-                    $"発行時刻が不明な参考情報 {droppedUndatedCount} 件を時点に置けなかった"));
+                    NewsReason($"発行時刻が不明な参考情報 {droppedUndatedCount} 件を時点に置けなかった")));
                 continue;
             }
 
             var availability = kind == Stage0AsOfInputKind.NewsAndDisclosures && keptReferenceCount == 0
                 ? Stage0AsOfInputAvailability.AbsentAtAsOf
                 : Stage0AsOfInputAvailability.Reconstructed;
-            statuses.Add(new Stage0AsOfInputStatus(kind, availability));
+            statuses.Add(kind == Stage0AsOfInputKind.NewsAndDisclosures
+                ? new Stage0AsOfInputStatus(kind, availability, NewsReason(""))
+                : new Stage0AsOfInputStatus(kind, availability));
         }
 
         return statuses;
