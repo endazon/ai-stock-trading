@@ -47,4 +47,19 @@ public record ScreeningOutcome
     /// <summary>FR-10, #832, IADR-0407: 承認済みの判断の再配送を再審査せずに終える結果。</summary>
     public static ScreeningOutcome ApprovedReplay(OrderScreeningObservation observation) =>
         new() { IsApproved = false, IsApprovedReplay = true, Observation = observation };
+
+    /// <summary>
+    /// 🔴 FR-10, #1319, IADR-0528 決定4: <b>予約はあるが承認行がまだ無い</b>新規建ての判断の再配送であり、再審査せずに
+    /// 予約から<b>最初と同じ承認</b>を組み直した（第 4 の形）。<see cref="IsApproved"/> は真で <see cref="Approved"/> を持つ。
+    /// <para>
+    /// 最初の承認の発行が失敗した（またはプロセスが落ちた）再配送では、これを発行しないと発注が永久に出ない。
+    /// 発行が届いていた場合の重複は発注執行が DecisionId で止める（IADR-0057）。
+    /// 呼び出し側は観測を記録し（DecisionId で冪等・IADR-0148）、審査メトリクスは刻まない（新しい審査ではない）。
+    /// </para>
+    /// </summary>
+    public bool IsApprovedRepublish { get; init; }
+
+    /// <summary>FR-10, #1319, IADR-0528 決定4: 予約から同じ承認を組み直して発行し直す結果。</summary>
+    public static ScreeningOutcome ApprovedRepublish(OrderApproved approved, OrderScreeningObservation observation) =>
+        new() { IsApproved = true, IsApprovedRepublish = true, Approved = approved, Observation = observation };
 }

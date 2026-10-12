@@ -670,3 +670,34 @@ public sealed class PositionDriftAdoptionRow
 
     public DateTimeOffset AdoptedAtUtc { get; set; }
 }
+
+// 🔴 FR-10, #1319, IADR-0528: 審査が承認した新規建ての予約（DecisionId で 1 件 1 行）。審査のトランザクションの中で書く。
+// 承認行（ApprovedOrderRow）とは別の表にする——承認行は「発行済み」の印（IADR-0407）であり、発行の前には書けない。
+// 承認数量・承認時刻・損切りの実行機構は、発行に失敗して判断が再配送されたときに**同じ承認**を組み直すために持つ。
+public sealed class EntryReservationRow
+{
+    public Guid DecisionId { get; set; }
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public AiStockTrading.Shared.Contracts.Trading.Market Market { get; set; }
+
+    public AiStockTrading.Shared.Contracts.Trading.TradeSide Side { get; set; }
+
+    /// <summary>算入する数量（承認行と同じく Intent の数量）。</summary>
+    public int Quantity { get; set; }
+
+    public decimal Price { get; set; }
+
+    /// <summary>基準通貨（USD）への換算レート（Intent が運ぶ値。承認行と同じ・IADR-0107）。</summary>
+    public decimal FxRateToBase { get; set; }
+
+    /// <summary>OrderApproved.ApprovedQuantity（組み直し用）。</summary>
+    public int ApprovedQuantity { get; set; }
+
+    /// <summary>OrderApproved.ApprovedAt（当日の判定と組み直しに使う）。</summary>
+    public DateTimeOffset ApprovedAt { get; set; }
+
+    /// <summary>承認時点の損切りの実行機構（OrderApproved.StopLossMethod。IADR-0342 決定3。組み直し用）。</summary>
+    public AiStockTrading.Shared.Contracts.Trading.StopLossExecutionMethod StopLossMethod { get; set; }
+}

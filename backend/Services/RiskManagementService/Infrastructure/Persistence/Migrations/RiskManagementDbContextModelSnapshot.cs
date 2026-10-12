@@ -226,6 +226,47 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.ToTable("buy_in_inferences", (string)null);
                 });
 
+            modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.EntryReservationRow", b =>
+                {
+                    b.Property<Guid>("DecisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ApprovedQuantity")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("FxRateToBase")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("Market")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Side")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StopLossMethod")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("DecisionId");
+
+                    b.HasIndex("ApprovedAt");
+
+                    b.ToTable("entry_reservations", (string)null);
+                });
+
             modelBuilder.Entity("RiskManagementService.Infrastructure.Persistence.GoodFaithViolationClearanceRow", b =>
                 {
                     b.Property<string>("OrderId")

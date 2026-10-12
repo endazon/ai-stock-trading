@@ -32,7 +32,8 @@ public class TradeDecisionMadeConsumerTests
     // 明示登録（AddConsumer<T>）は「規約発見を止めて対象型だけを含める」形へ写す
     // （テストの対象範囲を旧テストと同一に保つ）。実ブローカへは接続しない。
     private static Task<IHost> BuildHostAsync(
-        IKillSwitchStore killSwitch, InMemoryPortfolioLedgerStore? ledger = null) =>
+        IKillSwitchStore killSwitch, InMemoryPortfolioLedgerStore? ledger = null,
+        InMemoryEntryReservationStore? reservations = null) =>
         Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
@@ -77,6 +78,8 @@ public class TradeDecisionMadeConsumerTests
                     ledger ?? new InMemoryPortfolioLedgerStore(),
                     // #967, IADR-0425: 空売り文脈の供給も必須依存。本テストは空売りを関心に持たない（借株可否は常に分からない）。
                     TestShortSellContexts.Unavailable(sp.GetRequiredService<IClock>()),
+                    // #1319, IADR-0528: 新規建ての審査の直列化と予約も必須依存。
+                    reservations ?? new InMemoryEntryReservationStore(),
                     null));
 
                 // 本番と同じ配線（キュー名・fan-out・再試行・DLQ）を用い、送信先だけ stub へ倒す。
@@ -205,6 +208,41 @@ public class TradeDecisionMadeConsumerTests
         session.Sent.MessagesOf<OrderApproved>().Should().BeEmpty("承認を発行し直さない");
         session.Sent.MessagesOf<OrderRejected>().Should().BeEmpty("承認済みの判断を拒否へ反転させない");
         violations.GetTally().Should().BeNull("再配送は新しい審査ではないので観測を書かない");
+
+        await host.StopAsync();
+    }
+
+    // 🔴 T-10-2574, FR-10, #1319, IADR-0528 決定4: 審査は承認して予約を書いたが、OrderApproved の発行が失敗した（承認行が無い）
+    // まま判断が再配送された。本番と同じ配線のハンドラは**再審査せず、予約から組み直した最初と同じ承認を発行する**
+    // （発注が永久に出ない状態にしない）。拒否は出さない・観測は記録する（DecisionId で冪等）。
+    // kill switch を起動した状態で流す——再審査していれば KillSwitchActive で OrderRejected が出る形であり、
+    // 承認が予約からの組み直しであることを示す。
+    [Fact]
+    public async Task 予約済みで承認行が無い判断の再配送では同じ承認を発行し直す()
+    {
+        var killSwitch = new InMemoryKillSwitchStore();
+        killSwitch.SetState(new KillSwitchState(true, "user", "停止", DateTimeOffset.UtcNow));
+        var reservations = new InMemoryEntryReservationStore();
+        var decisionId = Guid.NewGuid();
+        var approvedAt = DateTimeOffset.UtcNow.AddSeconds(-30);
+        var simulateEntry = Entry() with { Mode = BrokerProvider.MoomooSimulate };
+        reservations.Reserve(new EntryReservation(
+            decisionId, simulateEntry.Symbol, simulateEntry.Market, simulateEntry.Side, simulateEntry.Quantity,
+            simulateEntry.Price, simulateEntry.FxRateToBase, simulateEntry.Quantity, approvedAt,
+            StopLossExecutionMethod.SoftwareStop));
+        using var host = await BuildHostAsync(killSwitch, reservations: reservations);
+        var violations = host.Services.GetRequiredService<IControlViolationObservationStore>();
+
+        var session = await host.TrackActivityForTest().InvokeMessageAndWaitAsync(
+            new TradeDecisionMade(decisionId, simulateEntry, "再配送", DateTimeOffset.UtcNow));
+
+        var republished = session.Sent.MessagesOf<OrderApproved>().Should().ContainSingle("最初の承認の発行が届いていないので発行し直す").Subject;
+        republished.DecisionId.Should().Be(decisionId);
+        republished.ApprovedAt.Should().Be(approvedAt, "承認時刻は予約（最初の承認）のまま");
+        republished.StopLossMethod.Should().Be(StopLossExecutionMethod.SoftwareStop, "損切りの実行機構は承認時点の値（現在の設定で埋めない）");
+        republished.FromTradeDecision.Should().BeTrue();
+        session.Sent.MessagesOf<OrderRejected>().Should().BeEmpty("再審査しない（kill switch で拒否へ反転しない）");
+        violations.GetTally().Should().NotBeNull("観測は記録する（最初の記録の前に落ちた場合を埋める。DecisionId で冪等）");
 
         await host.StopAsync();
     }

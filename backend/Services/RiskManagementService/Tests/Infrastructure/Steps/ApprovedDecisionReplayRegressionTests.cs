@@ -84,7 +84,7 @@ public class ApprovedDecisionReplayRegressionTests
         return new OrderScreeningService(
             new InMemoryRiskSettingsStore(OnePosition()), snapshotBuilder, lockout, clock,
             new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
-            TestShortSellContexts.Unavailable(clock, stores.Ledger));
+            TestShortSellContexts.Unavailable(clock, stores.Ledger), new InMemoryEntryReservationStore());
     }
 
     // 審査 → 承認の発行 → 自分の射影（本番の順序）。承認された判断を返す。
@@ -159,8 +159,10 @@ public class ApprovedDecisionReplayRegressionTests
         await host.StopAsync();
     }
 
-    // T-10-873（減る側 c・窓の手前）: 射影の前（台帳に承認行が無い）に届いた再配送は通常の審査を受ける。
-    // 自分はまだ枠に数えられていないので、最初と同じく承認される（発注執行の予約が DecisionId で 2 本目を止める）。
+    // T-10-873（減る側 c・窓の手前）: 射影の前（台帳に承認行が無い）に届いた再配送は承認される（承認済みと推測して抑止しない）。
+    // ［2026-10-13 追記 / #1319］IADR-0528 決定4 により、最初の審査が書いた**予約**があるので再審査はせず、予約から
+    // 最初と同じ承認を組み直して発行し直す（第 4 の形）。承認される・同じ DecisionId である点は従来と同じ
+    // （発注執行の予約が DecisionId で 2 本目を止める）。
     [Fact]
     public async Task 射影の前に届いた再配送は通常の審査を受ける()
     {
@@ -172,6 +174,7 @@ public class ApprovedDecisionReplayRegressionTests
         var replay = await screening.ScreenAsync(decision);
 
         replay.IsApprovedReplay.Should().BeFalse("承認行が無ければ承認済みとは言えない（推測で抑止しない）");
+        replay.IsApprovedRepublish.Should().BeTrue("#1319: 予約から最初と同じ承認を組み直す");
         replay.IsApproved.Should().BeTrue();
         replay.Approved!.DecisionId.Should().Be(decision.DecisionId);
     }

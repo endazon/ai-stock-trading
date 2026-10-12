@@ -39,6 +39,20 @@ public sealed class TradeDecisionMadeHandler(
             return;
         }
 
+        // 🔴 FR-10, #1319, IADR-0528 決定4: 予約はあるが承認行がまだ無い新規建ての再配送。予約から組み直した**最初と同じ承認**を
+        // 発行し直す（最初の発行が失敗していれば、これを出さないと発注が永久に出ない。届いていた場合の重複は発注執行が
+        // DecisionId で止める・IADR-0057）。観測は記録する（DecisionId で冪等。最初の記録の後・発行の前に落ちた場合を埋める）。
+        // 審査メトリクスは刻まない（新しい審査ではない）。
+        if (outcome.IsApprovedRepublish)
+        {
+            violationStore.Record(outcome.Observation);
+            logger.LogWarning(
+                "予約済みで承認行が無い判断の再配送のため、再審査せず同じ承認を発行し直します: DecisionId={DecisionId} 数量={Quantity}",
+                message.DecisionId, outcome.Approved!.ApprovedQuantity);
+            await bus.PublishAsync(outcome.Approved!).ConfigureAwait(false);
+            return;
+        }
+
         // FR-20, FR-11, #387, IADR-0148: 審査結果を段階ゲートの観測ログへ記録する（承認・拒否のいずれも）。
         // **イベント発行より先に記録する**——発行が失敗して再送されても DecisionId で冪等であり、
         // 逆順にすると「発行できたが観測が落ちた」拒否が生まれ、違反件数が過小になる（緩い側）。
