@@ -765,7 +765,7 @@ jobs:
           # 🔴 **合格は出ない** —— 過去データ源が空（バー 0 本）で fail-closed するため、開くのは経路であって門ではない。
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Enabled' | grep -q 'value: "true"'             || { echo "::error::values-local で backtest の Backtest__Stage0__Enabled=true が描画されない（verdict が 1 通も出ない）。"; exit 1; }
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__Stage0__Strategy' | grep -q 'value: "recorded-replay"'             || { echo "::error::values-local で backtest の Strategy=recorded-replay が描画されない（本番戦略が選ばれていない）。"; exit 1; }
-          need "Stage 0 評価銘柄（AAPL）" 'name: Backtest__Stage0__Symbols__0__Symbol'
+          need "Stage 0 評価銘柄" 'name: Backtest__Stage0__Symbols__0__Symbol'
           # 🔴 過去データ源は空のまま（ADR-0023 決定5 の未確認 2 点・blocked A-3）。実データ源を開けていないこと。
           printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: backtest-service/'             | grep -A1 'name: Backtest__BarData__Provider' | grep -q 'value: ""'             || { echo "::error::values-local の Backtest__BarData__Provider が空でない（ADR-0023 決定5 の確認前に実データ源を開けた）。"; exit 1; }
           # カットオフ日（ADR-0037 決定2 の写し方。#1295 で 5.5 系の 2026-06-30）は駆動側・記録側で同値であること（食い違うと RecordingMismatch）。
