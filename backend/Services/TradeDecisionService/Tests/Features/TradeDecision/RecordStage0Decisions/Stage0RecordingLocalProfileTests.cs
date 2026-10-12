@@ -43,11 +43,12 @@ public class Stage0RecordingLocalProfileTests
         var options = Bind(Env(LocalValues, "trade-decision"));
 
         options.Enabled.Should().BeTrue();
-        options.ParsePeriod().Should().Be((new DateOnly(2026, 7, 1), new DateOnly(2026, 10, 9)));
+        // 窓はオーナーの裁定（2026-10-13）で 2026-07-01 起点から 2026-09-15 起点へ縮めた（〜09-14 は as-of 入力を再構成できない）。
+        options.ParsePeriod().Should().Be((new DateOnly(2026, 9, 15), new DateOnly(2026, 10, 9)));
         options.ResolveSymbols().Should().Equal(ApprovedSymbols.Select(s => (s, Market.UnitedStates)));
         options.VoteCount.Should().Be(1);
         options.ApprovedVoteCount.Should().Be(1);
-        options.ApprovedEstimateJpy.Should().Be(1680.09m);
+        options.ApprovedEstimateJpy.Should().Be(437.28m);
         options.InputTokensPerDecision.Should().Be(3478);
         options.OutputTokensPerDecision.Should().Be(425);
         options.ScreeningInputTokensPerDecision.Should().Be(2269);
@@ -58,10 +59,10 @@ public class Stage0RecordingLocalProfileTests
         options.ScreeningModel.Should().BeNull("一次は割当表のピンに委ねる（本番と同じ扱い）");
         options.ParseLlmTrainingCutoff().Should().Be(new DateOnly(2026, 6, 30));
         // 月報 §7 の分母は取引判断側と同値（ADR-0037 決定3）。
-        Env(LocalValues, "report").Should().Contain("Stage0Recording__ApprovedEstimateJpy", "1680.09");
+        Env(LocalValues, "report").Should().Contain("Stage0Recording__ApprovedEstimateJpy", "437.28");
     }
 
-    // ADR-0033 決定5, #1219: 12 銘柄 × 平日 73 日 × (一次 1 ＋ 多数決 1)。実績は見積りを最大 1 判断ぶん上回り得るため、
+    // ADR-0033 決定5, #1219: 12 銘柄 × 平日 19 日 × (一次 1 ＋ 多数決 1)。実績は見積りを最大 1 判断ぶん上回り得るため、
     // その上限を足してもオーナーの承認額に収まることを見る。書いた承認額は見積りを円未満 2 桁で写した値である。
     [Fact]
     public void 承認値の組の見積りはオーナーの承認額_1700_円に収まる()
@@ -71,10 +72,10 @@ public class Stage0RecordingLocalProfileTests
 
         var estimate = recorder.Estimate(options);
 
-        Stage0RecordingBudget.WeekdayCount(new DateOnly(2026, 7, 1), new DateOnly(2026, 10, 9)).Should().Be(73);
-        estimate.CallCount.Should().Be(1752, "12 銘柄 × 平日 73 日 ×（一次 1 ＋ 多数決 1）");
-        estimate.TotalJpy.Should().Be(1680.0877584m);
-        var perDecisionJpy = estimate.TotalJpy / (12 * 73);
+        Stage0RecordingBudget.WeekdayCount(new DateOnly(2026, 9, 15), new DateOnly(2026, 10, 9)).Should().Be(19);
+        estimate.CallCount.Should().Be(456, "12 銘柄 × 平日 19 日 ×（一次 1 ＋ 多数決 1）");
+        estimate.TotalJpy.Should().Be(437.2831152m);
+        var perDecisionJpy = estimate.TotalJpy / (12 * 19);
         (estimate.TotalJpy + perDecisionJpy).Should().BeLessThanOrEqualTo(OwnerApprovedBudgetJpy);
         decimal.Round(options.ApprovedEstimateJpy!.Value, 2).Should().Be(decimal.Round(estimate.TotalJpy, 2));
     }
@@ -99,7 +100,7 @@ public class Stage0RecordingLocalProfileTests
     }
 
     // 🔴 否定形: 承認ゲートは「承認額 ≥ 見積り」ではなく一致で見る。オーナーの承認額 1,700 円をそのまま書くと
-    // NotApproved で LLM を 1 回も呼ばない（values-local に 1680.09 を写した理由）。
+    // NotApproved で LLM を 1 回も呼ばない（values-local に見積り 437.28 を写した理由）。
     [Fact]
     public async Task 承認額に_1700_をそのまま入れると承認ゲートを通らない()
     {
