@@ -25,5 +25,7 @@
          `public partial class Program` を持つため、`Program` の曖昧（CS0433）を避けて extern alias で参照する
          （IADR-0050 決定1 と同じ機構。別名は AiStockTrading.IntegrationTests と同一にそろえる）。 -->
     <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
+    <!-- FR-15, #1308, IADR-0528 決定8: 発注執行の日足の照会の契約テスト（送り手の本物の型 DailyBarsView を直列化して読ませる。IADR-0420）。 -->
+    <ProjectReference Include="..\..\OrderExecutionService\OrderExecutionService.csproj" Aliases="OrderExecutionWorker" />
   </ItemGroup>
 </Project>

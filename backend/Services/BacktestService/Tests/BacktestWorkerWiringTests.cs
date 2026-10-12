@@ -64,7 +64,7 @@ public class BacktestWorkerWiringTests
         });
 
         factory.Services.GetRequiredService<IHistoricalBarSource>()
-            .Should().BeOfType<OrderExecutionHistoricalBarSource>();
+            .Should().BeOfType<HttpOrderExecutionHistoricalBarSource>();
         var dto = await factory.CreateClient()
             .GetFromJsonAsync<ServiceIntrospectionDto>(IntrospectionExtensions.IntrospectionPath);
         dto!.Ports.Should().ContainSingle(p => p.Port == "historical-bar-data" && p.Implementation == "order-execution");

@@ -22,10 +22,10 @@ namespace BacktestService.Infrastructure.ExternalServices;
 //   🔴 半端に取れた分は捨てる（分けた照会の一部だけ取れた銘柄を、部分の履歴で評価しない）。
 // - 受け手の DTO は全項目 nullable（送り手の項目名が変わっても既定値で読まない。取引判断の `HttpDailyBarsSource` と同じ規律）。
 // - 通信例外・キャンセルは握りつぶさず送出する（Stooq・moomoo の源と同じ方針）。
-public sealed class OrderExecutionHistoricalBarSource(
+public sealed class HttpOrderExecutionHistoricalBarSource(
     HttpClient httpClient,
     IRateLimiter rateLimiter,
-    ILogger<OrderExecutionHistoricalBarSource> logger) : IHistoricalBarSource
+    ILogger<HttpOrderExecutionHistoricalBarSource> logger) : IHistoricalBarSource
 {
     /// <summary>1 回の照会で求められる期間の上限（暦日。両端を含む。発注執行の `DailyBarsEndpoint.MaxRangeDays`）。</summary>
     public const int MaxRangeDays = 400;
@@ -60,7 +60,31 @@ public sealed class OrderExecutionHistoricalBarSource(
             foreach (var (chunkFrom, chunkTo) in Chunks(from, to))
             {
                 await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
-                failure = await FetchChunkAsync(trimmed, market, chunkFrom, chunkTo, fetched, cancellationToken).ConfigureAwait(false);
+
+                using var response = await httpClient
+                    .GetAsync(
+                        $"/order-execution/daily-bars?symbol={Uri.EscapeDataString(trimmed)}&market={(int)market}"
+                            + $"&from={Format(chunkFrom)}&to={Format(chunkTo)}",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    failure = $"発注執行の日足の照会が {(int)response.StatusCode} を返した（{Format(chunkFrom)}〜{Format(chunkTo)}）";
+                    break;
+                }
+
+                DailyBarsDto? dto;
+                try
+                {
+                    dto = await response.Content.ReadFromJsonAsync<DailyBarsDto>(cancellationToken).ConfigureAwait(false);
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    failure = $"発注執行の日足の応答を読めない: {ex.Message}";
+                    break;
+                }
+
+                failure = Interpret(dto, trimmed, market, chunkFrom, chunkTo, fetched);
                 if (failure is not null)
                     break;
             }
@@ -99,30 +123,10 @@ public sealed class OrderExecutionHistoricalBarSource(
         }
     }
 
-    // 1 回の照会。取れた足を bars へ足して null を返す。取れなければ理由を返す（足は足さない）。
-    private async Task<string?> FetchChunkAsync(
-        string symbol, Market market, DateOnly from, DateOnly to, List<PriceBar> bars, CancellationToken cancellationToken)
+    // 1 回の照会の応答を読む。取れた足を bars へ足して null を返す。取れなければ理由を返す（足は足さない）。
+    private static string? Interpret(
+        DailyBarsDto? dto, string symbol, Market market, DateOnly from, DateOnly to, List<PriceBar> bars)
     {
-        using var response = await httpClient
-            .GetAsync(
-                $"/order-execution/daily-bars?symbol={Uri.EscapeDataString(symbol)}&market={(int)market}"
-                    + $"&from={Format(from)}&to={Format(to)}",
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-            return $"発注執行の日足の照会が {(int)response.StatusCode} を返した（{Format(from)}〜{Format(to)}）";
-
-        DailyBarsDto? dto;
-        try
-        {
-            dto = await response.Content.ReadFromJsonAsync<DailyBarsDto>(cancellationToken).ConfigureAwait(false);
-        }
-        catch (System.Text.Json.JsonException ex)
-        {
-            return $"発注執行の日足の応答を読めない: {ex.Message}";
-        }
-
         if (dto is not { Symbol: { } answeredSymbol, Market: { } answeredMarket, Status: { } status })
             return "発注執行の日足の応答に銘柄・市場・状態のいずれかが無い（送り手との契約の食い違い）";
         if (!string.Equals(answeredSymbol, symbol, StringComparison.Ordinal) || answeredMarket != (int)market)
@@ -133,11 +137,12 @@ public sealed class OrderExecutionHistoricalBarSource(
         var chunk = new List<PriceBar>();
         foreach (var bar in dto.Bars ?? [])
         {
+            // 期間指定を無視した応答（データ源の揺れ）を素通しさせない。期間外の足は欄を検査せずに捨てる
+            // （使わない足が壊れていても銘柄ごと欠測にしない。#1324 の AI レビュー）。日付の無い足は期間の内外を決められないので次で落とす。
+            if (bar?.Date is { } barDate && (barDate < from || barDate > to))
+                continue;
             if (bar is not { Date: { } date, Open: { } open, High: { } high, Low: { } low, Close: { } close, Volume: { } volume })
                 return "発注執行の日足に欄の欠けた足がある（1 本でも欠けたら銘柄ごと欠測にする）";
-            // 期間指定を無視した応答（データ源の揺れ）を素通しさせない。
-            if (date < from || date > to)
-                continue;
             chunk.Add(new PriceBar(symbol, market, date, open, high, low, close, volume));
         }
 

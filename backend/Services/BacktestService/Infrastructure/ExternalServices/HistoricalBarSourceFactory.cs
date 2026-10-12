@@ -28,7 +28,7 @@ namespace BacktestService.Infrastructure.ExternalServices;
 //
 // ［2026-10-13 追記 / #1308・IADR-0528 決定8］上の 3・4 は Stage 0 について変わった。利用者裁定 2026-10-13
 // （#1219 のコメント）は **Stage 0 では前復権と費用モデルの不整合を受け入れ、足は発注執行の `/daily-bars` 経由で取る**
-// （backtest の Pod に OpenD は配線しない）と決めた。そのため provider `order-execution`（OrderExecutionHistoricalBarSource）を足した。
+// （backtest の Pod に OpenD は配線しない）と決めた。そのため provider `order-execution`（HttpOrderExecutionHistoricalBarSource）を足した。
 // **既定は今も none**（明示構成したときだけ使う）。ADR-0023 決定5 の確認 2 点（回復周期・借株料）は未了のままで、
 // Stage 0 の記録と評価に限ってそれを受け入れたこと（逸脱の受容）は IADR-0528 にある。moomoo（直結）は残すが、values では選ばない。
 //
@@ -117,10 +117,10 @@ public static class HistoricalBarSourceFactory
             }
 
             orderExecutionClient.BaseAddress ??= new Uri(NormalizeOrderExecutionBaseUrl(options.OrderExecution.BaseUrl)!);
-            return new OrderExecutionHistoricalBarSource(
+            return new HttpOrderExecutionHistoricalBarSource(
                 orderExecutionClient,
                 Limiter(options.OrderExecution.RequestsPerMinute, timeProvider),
-                loggerFactory.CreateLogger<OrderExecutionHistoricalBarSource>());
+                loggerFactory.CreateLogger<HttpOrderExecutionHistoricalBarSource>());
         }
 
         // 以降は no-op。既定（空・none）の警告は NoOpHistoricalBarSource 自身が出すため、

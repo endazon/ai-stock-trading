@@ -1,3 +1,5 @@
+extern alias OrderExecutionWorker;
+
 using System.Net;
 using System.Text;
 using BacktestService.Features.Backtest;
@@ -6,6 +8,8 @@ using BacktestService.Infrastructure.ExternalServices;
 using AiStockTrading.Shared.Contracts.Trading;
 using AiStockTrading.Shared.Infrastructure.Composable.RateLimiting;
 using AwesomeAssertions;
+using System.Text.Json;
+using OrderExecutionWorker::OrderExecutionService.Features.OrderExecution.QueryDailyBars;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -18,7 +22,7 @@ namespace BacktestService.Tests;
 //   1. 取れた足だけを使い、取れなかった銘柄は欠測に残す（半端に取れた分も捨てる）。🔴 欠測を無音にしない。
 //   2. 選択は allow-list のまま（ベース URL が無い・不正なら no-op）。既定は none のまま。
 //   3. 評価の窓の終端を構成で固定できる（空は今日・未来は今日・読めない値は今日）。
-public class OrderExecutionHistoricalBarSourceTests
+public class HttpOrderExecutionHistoricalBarSourceTests
 {
     private static readonly DateOnly From = new(2026, 9, 15);
     private static readonly DateOnly To = new(2026, 10, 9);
@@ -39,6 +43,31 @@ public class OrderExecutionHistoricalBarSourceTests
         handler.Requests.Should().Equal(
             "/order-execution/daily-bars?symbol=AAPL&market=1&from=2026-09-15&to=2026-10-09",
             "/order-execution/daily-bars?symbol=MSFT&market=1&from=2026-09-15&to=2026-10-09");
+    }
+
+    // 🔴 契約（IADR-0420）: **送り手（発注執行）の本物の型** `DailyBarsView` を送り手の web 既定（camelCase・列挙は数値・日付は yyyy-MM-dd）で
+    // 直列化した本文を読ませる。手書きの JSON だけだと、送り手の項目名を変えても両サービスの試験が緑のまま、実行時は欠測へ倒れる（#940 / #943）。
+    // 送り手がその設定で出していることは発注執行側の DailyBarsReadContractTests が本物の Program.cs で固定する。
+    [Fact]
+    public async Task 送り手の本物の型を直列化した応答から足を読む()
+    {
+        var view = new DailyBarsView(
+            "AAPL", Market.UnitedStates, DailyBarsStatus.Available, null, From, To,
+            [
+                new DailyBarView(new DateOnly(2026, 9, 15), 250.5m, 252m, 249.25m, 251.75m, 41_234_567),
+                new DailyBarView(new DateOnly(2026, 9, 16), 251.75m, 255.5m, 250m, 254.125m, 52_345_678),
+            ]);
+        var handler = new ScriptedHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(view, new JsonSerializerOptions(JsonSerializerDefaults.Web)), Encoding.UTF8, "application/json"),
+        });
+
+        var load = await Source(handler).LoadBarsAsync([("AAPL", Market.UnitedStates)], From, To, TestContext.Current.CancellationToken);
+
+        load.Gaps.Should().BeEmpty();
+        load.Bars.Select(b => (b.Date, b.Open, b.High, b.Low, b.Close, b.Volume)).Should().Equal(
+            (new DateOnly(2026, 9, 15), 250.5m, 252m, 249.25m, 251.75m, 41_234_567L),
+            (new DateOnly(2026, 9, 16), 251.75m, 255.5m, 250m, 254.125m, 52_345_678L));
     }
 
     [Theory]
@@ -69,6 +98,29 @@ public class OrderExecutionHistoricalBarSourceTests
         load.Bars.Should().ContainSingle().Which.Symbol.Should().Be("MSFT");
     }
 
+    // 期間外の足は欄を検査せずに捨てる（使わない足が壊れていても銘柄ごと欠測にしない）。期間内の壊れた足は従来どおり欠測。
+    [Theory]
+    [InlineData("2026-08-01", true)]
+    [InlineData("2026-09-16", false)]
+    public async Task 期間外の壊れた足では銘柄が落ちない(string brokenDate, bool kept)
+    {
+        var json = $$"""{"symbol":"AAPL","market":1,"status":1,"bars":[{"date":"{{brokenDate}}","open":1,"high":1,"low":1,"volume":1},{"date":"2026-09-15","open":2,"high":2,"low":2,"close":2,"volume":2}]}""";
+        var handler = new ScriptedHandler(_ => Ok("AAPL", json));
+
+        var load = await Source(handler).LoadBarsAsync([("AAPL", Market.UnitedStates)], From, To, TestContext.Current.CancellationToken);
+
+        if (kept)
+        {
+            load.Gaps.Should().BeEmpty();
+            load.Bars.Should().ContainSingle().Which.Close.Should().Be(2m);
+        }
+        else
+        {
+            load.Gaps.Should().ContainSingle();
+            load.Bars.Should().BeEmpty();
+        }
+    }
+
     [Fact]
     public async Task 照会の上限を超える期間は分けて呼び_一部でも取れなければ銘柄ごと欠測にする()
     {
@@ -94,13 +146,13 @@ public class OrderExecutionHistoricalBarSourceTests
     [Fact]
     public void 期間の分割は両端を含み隙間も重なりも無い()
     {
-        var chunks = OrderExecutionHistoricalBarSource.Chunks(new DateOnly(2024, 1, 1), new DateOnly(2026, 12, 31)).ToList();
+        var chunks = HttpOrderExecutionHistoricalBarSource.Chunks(new DateOnly(2024, 1, 1), new DateOnly(2026, 12, 31)).ToList();
 
         chunks[0].From.Should().Be(new DateOnly(2024, 1, 1));
         chunks[^1].To.Should().Be(new DateOnly(2026, 12, 31));
-        chunks.Should().OnlyContain(c => c.To.DayNumber - c.From.DayNumber + 1 <= OrderExecutionHistoricalBarSource.MaxRangeDays);
+        chunks.Should().OnlyContain(c => c.To.DayNumber - c.From.DayNumber + 1 <= HttpOrderExecutionHistoricalBarSource.MaxRangeDays);
         chunks.Zip(chunks.Skip(1)).Should().OnlyContain(p => p.Second.From == p.First.To.AddDays(1));
-        OrderExecutionHistoricalBarSource.Chunks(From, From).Should().Equal((From, From));
+        HttpOrderExecutionHistoricalBarSource.Chunks(From, From).Should().Equal((From, From));
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -119,7 +171,7 @@ public class OrderExecutionHistoricalBarSourceTests
         HistoricalBarSourceFactory.ResolveProvider(options).Should().Be(HistoricalBarSourceFactory.OrderExecution);
         HistoricalBarSourceFactory.Create(
                 options, new HttpClient(), TimeProvider.System, NullLoggerFactory.Instance, orderExecutionClient: new HttpClient())
-            .Should().BeOfType<OrderExecutionHistoricalBarSource>();
+            .Should().BeOfType<HttpOrderExecutionHistoricalBarSource>();
     }
 
     [Theory]
@@ -179,11 +231,11 @@ public class OrderExecutionHistoricalBarSourceTests
     // 補助
     // ------------------------------------------------------------------------------------------------
 
-    private static OrderExecutionHistoricalBarSource Source(ScriptedHandler handler) =>
+    private static HttpOrderExecutionHistoricalBarSource Source(ScriptedHandler handler) =>
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://order-execution-service:8080") },
             new NoWaitLimiter(),
-            NullLogger<OrderExecutionHistoricalBarSource>.Instance);
+            NullLogger<HttpOrderExecutionHistoricalBarSource>.Instance);
 
     private static string Symbol(HttpRequestMessage request) =>
         System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)["symbol"]!;
