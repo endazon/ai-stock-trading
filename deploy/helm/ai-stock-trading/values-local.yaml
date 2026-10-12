@@ -358,6 +358,24 @@ services:
     extraEnv:
       - { name: Reports__BaseUrl, value: "http://report-service:8080" }               # G4（確定済み日報方針の照会先）
       - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }# サイジング文脈(残枠/DD)
+      # ---- Stage 0 の記録の as-of 入力の基底の配線（FR-15, #1308, IADR-0528 決定7。利用者裁定 2026-10-13）----
+      # 🔴 Reports__BaseUrl（上）と OrderExecution__BaseUrl がそろうと、記録器の as-of 入力の基底の供給が有効になる。
+      #    記録を走らせるかは Stage0Recording（下）が決める。Enabled=true・承認済みのまま配備すると、その起動で記録が LLM を呼ぶ。
+      # OrderExecution__BaseUrl は判断の出来高・ATR を有効にしない（DecisionVolume__Enabled / StopWidthFloor__Atr14__Enabled は既定 false のまま）。
+      # 日足は発注執行が moomoo 構成のときだけ取れる（paper では broker-not-supported → 撃ち直した後に記録が止まる）。
+      - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # (b) の 3 源（Finnhub の company-news・SEC EDGAR・FRED の ALFRED）。鍵は収集と同じ secret を使う（新しい資格情報は要らない）。
+      # Finnhub の自制は 3 回/分（同じ鍵の他の用途〔情報収集 30・市場監視 12・市況 5 × 3〕と足して 60 回/分）。
+      - name: Stage0AsOf__Finnhub__ApiKey
+        secretKeyRef: { name: ast-secrets, key: finnhub-api-key, optional: true }
+      - { name: Stage0AsOf__Finnhub__RequestsPerMinute, value: "3" }
+      - name: Stage0AsOf__SecEdgar__UserAgent
+        secretKeyRef: { name: ast-secrets, key: sec-edgar-user-agent, optional: true }
+      - { name: Stage0AsOf__SecEdgar__Ciks__0, value: "0000320193" }   # 収集と同じ（AAPL）。本番の KB に無い開示は記録にも渡さない
+      - name: Stage0AsOf__Fred__ApiKey
+        secretKeyRef: { name: ast-secrets, key: fred-api-key, optional: true }
+      - { name: Stage0AsOf__Fred__SeriesIds__0, value: "DEXJPUS" }      # 収集と同じ系列
+      - { name: Stage0AsOf__Fred__SeriesIds__1, value: "DGS10" }
       # #286/IADR-0282: market-monitor の watchlist を初回シード（上の market-monitor.Monitor__SeedSymbols__0）
       # したうえで結線する。下の TradeCycle__Watchlist__0__* は結線を外したときの対象（#1134 / IADR-0475: 結線時は照会不達でも
       # 構成へ倒さず、直前に読めた一覧か、一度も読めていなければその巡回を見送る）。

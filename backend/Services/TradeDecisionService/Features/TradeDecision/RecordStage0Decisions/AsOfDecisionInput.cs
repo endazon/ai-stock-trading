@@ -337,6 +337,8 @@ public sealed class AsOfDecisionInput
 // **実供給は残件である**（過去のニュース・開示・価格を「その時点までに得られていた分だけ」再構成できるかは
 // 情報源の提供範囲に依存する。ADR-0033 §残るもの が「実装が記録器を作る過程で判明する」とした点）。
 // 既定実装は常に null を返し、記録は 1 件も作られない（＝LLM も呼ばれない）。
+// ［2026-10-13 追記 / #1308・IADR-0528］実供給は `BaseAsOfDecisionInputProvider`（基底）として入った。上の「残件」「既定実装は常に null」は、
+// 方針と日足の接続先がそろわない構成（`NoAsOfDecisionInputProvider` へ倒れる）だけに当てはまる（組み立ては Stage0AsOfComposition）。
 public interface IAsOfDecisionInputProvider
 {
     /// <summary>

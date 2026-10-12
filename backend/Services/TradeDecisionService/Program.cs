@@ -570,11 +570,16 @@ builder.Services.AddScoped<TradeDecisionAppService>();
 //
 // 🔴 **既定では走らない**（Stage0Recording:Enabled 既定 false ＋ 承認値が見積りと一致しない限り実行しない）。
 // as-of 入力の供給は既定「入力なし」であり、実供給を構成するまで記録は 1 件も作られない（LLM も呼ばれない）。
+// ［2026-10-13 追記 / #1308・IADR-0528 決定7］基底の供給を足した。`Reports:BaseUrl` と `OrderExecution:BaseUrl` がそろうと、
+// 連鎖の最も内側が基底の供給になる（Stage0AsOfComposition）。そろわなければ従来どおり「入力なし」。記録を走らせるかは Stage0Recording が決める。
+builder.Services.AddHttpClient(Stage0AsOfComposition.ExternalHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.Configure<Stage0RecordingOptions>(
     builder.Configuration.GetSection(Stage0RecordingOptions.SectionName));
 // FR-04, FR-15, ADR-0044 決定 3, ADR-0046 決定 1, #1049, IADR-0442 決定 4: 当時の監視銘柄（as-of の (e)）は市場監視の
 // GET /monitor/watchlist/as-of から読み、供給をデコレータで包んで埋める。MarketMonitor:BaseUrl が空・不正なら常に「再構成できない」
 // （その記録は合否から外れる）。記録の対象銘柄（Stage0Recording:Symbols）では代えない。as-of の他の入力の実供給は無いまま。
+// ［2026-10-13 追記 / #1308・IADR-0528］↑の「他の入力の実供給は無いまま」は古い。価格・方針・参考情報・為替・サイジングは
+// 連鎖の最も内側の基底の供給（Stage0AsOfComposition.CreateBase）が組む。
 builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
 {
     if (sp.GetService<MarketMonitorGrpcTransport>() is { } monitorGrpc)
@@ -595,7 +600,8 @@ builder.Services.AddScoped<IAsOfWatchlistSource>(sp =>
 builder.Services.AddScoped<IAsOfDecisionInputProvider>(sp => new WatchlistAsOfDecisionInputProvider(
     new StopWidthFloorAsOfDecisionInputProvider(
         new DailyVolumeAsOfDecisionInputProvider(
-            new NoAsOfDecisionInputProvider(),
+            // FR-15, #1308, IADR-0528 決定7: 基底の供給（口がそろわなければ NoAsOfDecisionInputProvider）。
+            Stage0AsOfComposition.CreateBase(sp),
             sp.GetRequiredService<IDailyBarsProvider>(),
             sp.GetRequiredService<ILogger<DailyVolumeAsOfDecisionInputProvider>>()),
         sp.GetRequiredService<IStopWidthFloorSource>(),

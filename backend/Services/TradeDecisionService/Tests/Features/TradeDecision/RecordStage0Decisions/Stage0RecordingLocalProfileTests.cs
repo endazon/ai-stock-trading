@@ -18,7 +18,8 @@ namespace TradeDecisionService.Tests.Features.TradeDecision.RecordStage0Decision
 // 見るのは 4 点である。
 //   1. 欄は束縛できる（int / bool の欄を "" にすると束縛で例外になり、常駐が落ちる。それを作らない）。
 //   2. 🔴 否定形: 書いたままの構成では記録しない（Enabled=false・未承認。LLM を 1 回も呼ばない）。
-//   3. 🔴 PoC が欄を埋めて承認しても、as-of 入力の基底の供給（#1308）が無いあいだは記録 0 件・LLM 0 回で終わる。
+//   3. 🔴 ［2026-10-13 改 / #1308］経路B の配線の欄で as-of 入力の基底の供給が選ばれ、欄を埋めて承認すれば記録が作られる
+//      （#1308 より前は「基底が無いので記録 0 件・LLM 0 回」を固定していた。基底が入ったので記録が作られる側へ書き換えた）。
 //   4. 🔴 本番（values.yaml）の取引判断には記録の欄を足していない（本番の挙動を変えない）。
 public class Stage0RecordingLocalProfileTests
 {
@@ -66,36 +67,51 @@ public class Stage0RecordingLocalProfileTests
         sink.Saved.Should().BeNull("記録しないなら書き出しもしない");
     }
 
-    // 🔴 #1308: PoC の読み「今の構成では記録が 1 件も作られない」を固定する。承認ゲートは通る（NotApproved ではない）のに、
-    // 本番の組み立て（Program.cs）の最も内側が NoAsOfDecisionInputProvider であるため、全判断時点が飛ばされる。
-    // #1308 が基底の供給を入れたら、この試験は記録が作られる側へ書き換える。
+    // 🔴 #1308, IADR-0528 決定7: 経路B の trade-decision の配線の欄（Reports__BaseUrl・OrderExecution__BaseUrl）で基底の供給が選ばれる。
+    // 欄を埋めて承認すれば、基底の供給が組んだ入力で記録が作られ、LLM が呼ばれる（#1308 より前は 0 件・0 回だった）。
+    // 🔴 配備の注意: Stage0Recording__Enabled=true・承認済みの values のまま #1308 の入った版を配備すると、起動した時点で記録が LLM を呼ぶ。
     [Fact]
-    public async Task 欄を埋めて承認しても_as_of_の基底の供給が無ければ記録は_0_件で_LLM_は_0_回()
+    public async Task 経路Bの配線の欄で基底の供給が選ばれ_欄を埋めて承認すれば記録が作られる()
     {
         var env = Env(LocalValues, "trade-decision");
+        TradeDecisionService.Infrastructure.ExternalServices.Stage0AsOfComposition
+            .HasBaseEndpoints(Configuration(env)).Should().BeTrue("経路B は方針と日足の接続先を両方持つ");
+
         env["Stage0Recording__Enabled"] = "true";
-        env["Stage0Recording__From"] = "2026-07-01";
-        env["Stage0Recording__To"] = "2026-07-31";
+        env["Stage0Recording__From"] = "2026-09-15";
+        env["Stage0Recording__To"] = "2026-09-16";
         env["Stage0Recording__OutputPath"] = "/tmp/stage0/records.json";
         env["Stage0Recording__InputTokensPerDecision"] = "6000";
         env["Stage0Recording__OutputTokensPerDecision"] = "800";
         env["Stage0Recording__ScreeningInputTokensPerDecision"] = "4000";
         env["Stage0Recording__ScreeningOutputTokensPerDecision"] = "300";
         env["Stage0Recording__ApprovedVoteCount"] = "1";
+        foreach (var key in env.Keys.Where(k => k.StartsWith("Stage0Recording__Symbols__", StringComparison.Ordinal)).ToList())
+            env.Remove(key);
+        env["Stage0Recording__Symbols__0__Symbol"] = "AAPL";
+        env["Stage0Recording__Symbols__0__Market"] = "UnitedStates";
         var llm = new CountingLlm();
         var sink = new CapturingSink();
-        var recorder = Recorder(llm, sink);
+        var recorder = Recorder(llm, sink, new BaseAsOfDecisionInputProvider(
+            BaseAsOfDecisionInputProviderTests.FakePrices.FollowingAsOf(close: 110m, previousClose: 100m),
+            BaseAsOfDecisionInputProviderTests.FakePolicies.PreviousDay("前日に確定した方針"),
+            new AsOfReferenceAssembler(BaseAsOfDecisionInputProviderTests.AllFeeds(), topK: 5, TimeSpan.FromHours(168)),
+            NullLogger<BaseAsOfDecisionInputProvider>.Instance));
         var estimate = recorder.Estimate(Bind(env));
-        estimate.CallCount.Should().Be(46, "AAPL 1 銘柄 × 2026-07 の平日 23 日 ×（一次 1 ＋ 多数決 1）");
         env["Stage0Recording__ApprovedEstimateJpy"] = estimate.TotalJpy.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         var outcome = await recorder.RunAsync(Bind(env), TestContext.Current.CancellationToken);
 
-        outcome.Status.Should().Be(Stage0RecordingStatus.Completed, "承認ゲートは通っている");
-        outcome.RecordSet!.Records.Should().BeEmpty();
-        outcome.ActualCostJpy.Should().Be(0m);
-        llm.Calls.Should().Be(0);
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        outcome.RecordSet!.Records.Should().HaveCount(2, "AAPL × 2026-09-15・09-16");
+        llm.Calls.Should().Be(2, "一次が Hold なので本判断は呼ばない（判断時点ごとに 1 回）");
     }
+
+    private static IConfiguration Configuration(Dictionary<string, string> env) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(env.Select(kv =>
+                new KeyValuePair<string, string?>(kv.Key.Replace("__", ":", StringComparison.Ordinal), kv.Value)))
+            .Build();
 
     // 記録の対象銘柄と backtest の評価銘柄がずれると、再生側が RecordingMismatch で判定を組まない。
     [Fact]
@@ -135,12 +151,12 @@ public class Stage0RecordingLocalProfileTests
         Bind(env).Enabled.Should().BeFalse();
     }
 
-    private static Stage0DecisionRecorder Recorder(CountingLlm llm, CapturingSink sink) =>
+    private static Stage0DecisionRecorder Recorder(CountingLlm llm, CapturingSink sink, IAsOfDecisionInputProvider? inputs = null) =>
         new(
             llm,
             DecisionOrchestrationOptions.Default,
-            // Program.cs の組み立ての最も内側と同じ（#1308 が入るまでの基底の供給）。
-            new NoAsOfDecisionInputProvider(),
+            // 既定は「入力なし」（基底の供給の口がそろわない構成と同じ）。#1308 の試験は基底の供給を渡す。
+            inputs ?? new NoAsOfDecisionInputProvider(),
             sink,
             new Stage0RecordingUsageCollector(new NullReporter()),
             Prices(),
