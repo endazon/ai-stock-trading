@@ -5043,4 +5043,48 @@ module.exports = ({ ok, skip = (name, reason) => process.stdout.write(`  SKIP ${
       assert.match(helmBlockProblems1248(oldPlace).join('\n'), /旧【計画書の場所】/);
     });
   }
+  // --- NFR, #1315, IADR-0208 決定 1 / IADR-0190 決定 4: AI レビューの prompt の【検証の下限】節を固定する ---
+  // 5.5 系への切替後、レビューが下限の検証（scripts.test.js 全件・文書系の検査器・全ファイルの読了）を
+  // 自分で省くようになった（#1315 の点検）。節が黙って消える・要の語が抜ける・案内するコマンドが
+  // 許可から外れる・旧文言（下限を省く口実になった語）が戻る、の 4 つを止める（文言の全文は固定しない）。
+  {
+    const fs1315 = require('fs');
+    const path1315 = require('path');
+    const wf1315 = fs1315.readFileSync(path1315.resolve(__dirname, '../.github/workflows/claude-code-review.yml'), 'utf8');
+    const floorProblems1315 = (text) => {
+      const start = text.indexOf('          prompt: |\n');
+      const end = text.indexOf('- name: Check permission denials', start);
+      assert.ok(start >= 0 && end > start, 'claude-code-review.yml から prompt: | の範囲を切り出せない（書式が変わったら本試験を直す）');
+      const prompt = text.slice(start, end);
+      const m = text.match(/^ +--allowedTools "([^"]+)"/m); // 行頭のもの（YAML コメント内の記法例を拾わない）
+      assert.ok(m, 'claude-code-review.yml に --allowedTools "…" が無い');
+      const tools = m[1].split(',');
+      const i = prompt.indexOf('【検証の下限・最重要】');
+      if (i < 0) return ['prompt に【検証の下限・最重要】節が無い'];
+      const j = prompt.indexOf('\n\n', i); // 節は次の空行で終わる
+      const block = prompt.slice(i, j < 0 ? undefined : j);
+      const problems = [];
+      for (const word of ['全部読む', 'scripts.test.js', "REQUIRE_REPO_TESTS:'1'", 'dotnet test', 'dotnet format', '--verify-no-changes',
+        'check-trace-blocks', 'helm lint', 'helm template', '時間配分', '差分が大きい', '/tmp/', 'ワークスペースへ書き込まない']) {
+        if (!block.includes(word)) problems.push(`【検証の下限】節に「${word}」が無い`);
+      }
+      for (const t of ['Bash(helm lint:*)', 'Bash(helm template:*)', 'Bash(node:*)', 'Bash(dotnet test:*)', 'Bash(dotnet format:*)', 'Bash(git fetch:*)']) {
+        if (!tools.includes(t)) problems.push(`【検証の下限】節が案内する ${t} が --allowedTools に無い`);
+      }
+      // 旧文言は下限を省く口実になった（#1315）
+      for (const old of ['時間が足りなければ', '全スイートは最後の手段']) {
+        if (prompt.includes(old)) problems.push(`prompt に旧文言「${old}」が戻っている`);
+      }
+      return problems;
+    };
+    ok('claude-code-review.yml[#1315]: prompt に【検証の下限】節があり、案内するコマンドが許可にある', () => {
+      assert.deepStrictEqual(floorProblems1315(wf1315), []);
+    });
+    ok('claude-code-review.yml[#1315]: 陰性対照（節を消す・helm lint の許可を外す・語を抜く・旧文言を戻す）はそれぞれ赤になる', () => {
+      assert.match(floorProblems1315(wf1315.replaceAll('【検証の下限・最重要】', '【削除】')).join('\n'), /節が無い/);
+      assert.match(floorProblems1315(wf1315.replace('Bash(helm lint:*),', '')).join('\n'), /helm lint:\*\) が --allowedTools に無い/);
+      assert.match(floorProblems1315(wf1315.replace('「時間配分」', '「」')).join('\n'), /時間配分/);
+      assert.match(floorProblems1315(wf1315.replace('【実行制約・最重要】', '【実行制約・最重要】全スイートは最後の手段')).join('\n'), /旧文言/);
+    });
+  }
 };
