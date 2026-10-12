@@ -612,6 +612,9 @@ jobs:
         # 脚を増やしても makespan は理想分配より下がらない一方、
         # **`dotnet build backend.slnx` は脚ごとに丸ごと重複する**（`--no-build` はテスト時のみ）。
         # 脚を減らした分だけ runner 時間が直接減る。
+        # [2026-10-12 追記 / #1314] 脚は担当テストの参照閉包だけをビルドするようになった（下の Plan shard）。
+        # ビルドの重複は「丸ごと」ではなく閉包の重なりの分だけになったが、RiskManagementService など
+        # 共有されるサービスは依然として複数の脚でビルドされる。脚を増やすと重なりの分だけ runner 時間が増える。
         shard: [1, 2, 3, 4]
     steps:
       # 変更領域の判定（決定 12）。`--git` が HEAD^1..HEAD の差分を自分で取る。
@@ -643,23 +646,47 @@ jobs:
       - name: Self-test (分配ロジック)
         if: ${{ steps.gate.outputs.backend == 'true' }}
         run: node scripts/list-test-projects.js --self-test
-      - name: Restore
+      # 🔴 **分配を Build より前に決める**（NFR, #1314 / IADR-0257 追記 2026-10-12）。
+      # 脚は `backend.slnx` 全体ではなく**担当テストの参照閉包だけ**を restore / build する。
+      # build.slnx＝閉包を solution の直下へ並べたもの（従来と同じ「solution の項目」としてビルドする。
+      # 担当テストだけの shard.slnx をビルドすると Web SDK の静的 Web 資産マニフェストが作られず
+      # publish --no-build が落ちる＝実測）。shard.slnx＝担当テストだけ（Test 用。従来どおり）。
+      # 実測（#1314）: build-and-test の伸びの半分は Build（中央値 45 → 90 秒）であり、
+      # それが**4 脚で丸ごと重複していた**。閉包ビルドは 1 脚あたり 17〜23 / 45 プロジェクトで済む。
+      # 🔴 **「どの脚でもビルドされないプロジェクト」は分配器が fail-loud に落とす**
+      # （`backend.slnx` の全プロジェクトと Services/*/*.csproj が、どれかの脚の閉包に入ること）。
+      # 重みは JSON へ持たず**毎 run 走査で導く**（IADR-0257 決定 2）——
+      # コミットした重みは必ず実体とずれ、**ずれても誰も気付かない**。
+      - name: Plan shard
         if: ${{ steps.gate.outputs.backend == 'true' }}
-        run: dotnet restore backend/backend.slnx
-      - name: Build
-        if: ${{ steps.gate.outputs.backend == 'true' }}
-        run: dotnet build backend/backend.slnx --no-restore --configuration Release
-      # NFR, #616: 11 Worker の publish を乾式実行する（shard 1 のみ・--no-build＝ファイルコピーだけ）。
-      # VSA 移送でサービス本体（Web SDK）同士の参照ができ、参照先の appsettings*.json が publish 出力へ
-      # 流れ込んで NETSDK1152 で落ちる退行を、build/test だけの CI が見逃していた。対象は
-      # scripts/k8s-local-images.sh の MAPPING と同じ 11 本（Dockerfile と同じ publish を行う）。
-      - name: Publish (dry run)
-        if: ${{ steps.gate.outputs.backend == 'true' && matrix.shard == 1 }}
         run: |
           set -euo pipefail
-          for csproj in backend/Services/*/*.csproj; do
-            dotnet publish "$csproj" --no-build --no-restore --configuration Release               -o "${RUNNER_TEMP}/publish/$(basename "$csproj" .csproj)"
-          done
+          node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 4 --slnx shard.slnx --build-slnx build.slnx --publish-out publish.txt > shard.txt
+          echo "--- このシャードの担当 $(wc -l < shard.txt) 件 ---"
+          cat shard.txt
+          echo "--- このシャードが publish 乾式実行を担うサービス $(wc -l < publish.txt) 件 ---"
+          cat publish.txt
+      - name: Restore
+        if: ${{ steps.gate.outputs.backend == 'true' }}
+        run: dotnet restore build.slnx
+      - name: Build
+        if: ${{ steps.gate.outputs.backend == 'true' }}
+        run: dotnet build build.slnx --no-restore --configuration Release
+      # NFR, #616: Worker の publish を乾式実行する（--no-build＝ファイルコピーだけ）。
+      # VSA 移送でサービス本体（Web SDK）同士の参照ができ、参照先の appsettings*.json が publish 出力へ
+      # 流れ込んで NETSDK1152 で落ちる退行を、build/test だけの CI が見逃していた。対象は
+      # Services/*/*.csproj（scripts/k8s-local-images.sh の MAPPING と同じ。Dockerfile と同じ publish を行う）。
+      # 🔴 #1314 で shard 1 の一括実行から**各脚への分担**へ変えた。脚は自分の閉包しかビルドしないため、
+      # 各サービスは「閉包に含む最も添字の小さい脚」がちょうど 1 回 publish する（分配器が決める）。
+      - name: Publish (dry run)
+        if: ${{ steps.gate.outputs.backend == 'true' }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r csproj; do
+            [ -n "$csproj" ] || continue
+            dotnet publish "$csproj" --no-build --no-restore --configuration Release \
+              -o "${RUNNER_TEMP}/publish/$(basename "$csproj" .csproj)"
+          done < publish.txt
       - name: Test (shard ${{ matrix.shard }} / 4)
         id: test
         if: ${{ steps.gate.outputs.backend == 'true' }}
@@ -671,11 +698,7 @@ jobs:
         run: |
           set -euo pipefail
           # 🔴 分配は **LPT 貪欲**（重み＝走査で数えた `[Fact` / `[Theory` の件数）。
-          # 重みは JSON へ持たず**毎 run 走査で導く**（IADR-0257 決定 2）——
-          # コミットした重みは必ず実体とずれ、**ずれても誰も気付かない**。
-          node scripts/list-test-projects.js --shard ${{ matrix.shard }} --of 4 --slnx shard.slnx > shard.txt
-          echo "--- このシャードの担当 $(wc -l < shard.txt) 件 ---"
-          cat shard.txt
+          # shard.slnx / shard.txt は上の「Plan shard」が作った（build.slnx でビルド済みの部分集合）。
           # NFR, #596: 実行の前後で空きメモリと並列度を記録する。
           # 🔴 「メモリ枯渇でテストホストが落ちた」という仮説は実測で棄却済みだが（IADR-0277）、
           # **次に同じ疑いが出たとき推定ではなく実測で棄却できるようにする**。出力は数行で費用が無い。

@@ -28,6 +28,9 @@
  *
  * 使い方:
  *   node scripts/list-test-projects.js --shard 1 --of 4   # シャード 1 の担当を 1 行 1 件で出す
+ *     [--slnx shard.slnx]        担当テストだけの solution（dotnet test 用）
+ *     [--build-slnx build.slnx]  担当テストの参照閉包を直下へ並べた solution（restore / build 用。#1314）
+ *     [--publish-out publish.txt] この脚が publish 乾式実行を担うサービス本体（各サービスちょうど 1 脚）
  *   node scripts/list-test-projects.js --count            # 全体の件数
  *   node scripts/list-test-projects.js --weights          # 走査で導いた重み（重い順）
  *   node scripts/list-test-projects.js --self-test
@@ -40,6 +43,9 @@ const path = require('path');
 const REPO_ROOT = process.env.TEST_PROJECTS_ROOT
   ? path.resolve(process.env.TEST_PROJECTS_ROOT)
   : path.resolve(__dirname, '..');
+
+/** 被覆の検査で「全プロジェクト」とみなす solution（リポジトリ相対）。 */
+const SOLUTION = 'backend/backend.slnx';
 
 /** テストプロジェクトと見なす参照。どれか 1 つでも含めばテストプロジェクトである。 */
 const TEST_MARKERS = ['Microsoft.NET.Test.Sdk', 'xunit'];
@@ -210,6 +216,99 @@ function assign(projects, shard, of, weights = null) {
     loads[best] += weightOf(weights, p);
   }
   return buckets[shard - 1];
+}
+
+/**
+ * 1 つの `.csproj` が直接参照する `.csproj` をリポジトリ相対パスで返す（#1314 / IADR-0257 追記 2026-10-12）。
+ *
+ * XML コメントは先に剥がす（コメント中の例示を参照と取り違えないため）。
+ * 読めなければ空を返す —— その場合は下の被覆検査が「どの脚でもビルドされない」として fail-loud に落とす。
+ */
+function projectRefs(rel, root = REPO_ROOT) {
+  let text;
+  try {
+    text = fs.readFileSync(path.join(root, rel), 'utf8');
+  } catch {
+    return [];
+  }
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  const out = [];
+  for (const m of text.matchAll(/<ProjectReference\s+Include="([^"]+)"/g)) {
+    const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1].replace(/\\/g, '/')));
+    out.push(target);
+  }
+  return out;
+}
+
+/**
+ * 与えたプロジェクト群の**推移的な参照閉包**（自身を含む）をパス昇順で返す。
+ *
+ * 🔴 **脚は `backend.slnx` 全体ではなくこの閉包だけをビルドする**（#1314）。
+ * `dotnet build shard.slnx` は ProjectReference を辿って閉包をビルドするので、
+ * ここで求める集合は MSBuild が実際にビルドする集合と一致する。
+ * ここで使うのは**被覆の検査**（全プロジェクトがどれかの脚でビルドされるか）と
+ * **publish の担当決め**だけであり、ビルドそのものは MSBuild に任せる。
+ */
+function closure(projects, root = REPO_ROOT) {
+  const seen = new Set();
+  const stack = [...projects];
+  while (stack.length) {
+    const p = stack.pop();
+    if (seen.has(p)) continue;
+    seen.add(p);
+    stack.push(...projectRefs(p, root));
+  }
+  return [...seen].sort();
+}
+
+/** サービス本体（`backend/Services/<Name>/<Name>.csproj`）か。CI の publish 乾式実行の対象と同じ形。 */
+function isServiceProject(rel) {
+  return /^backend\/Services\/[^/]+\/[^/]+\.csproj$/.test(rel);
+}
+
+/** `.slnx` に載っているプロジェクトをリポジトリ相対パスで返す。読めなければ null。 */
+function solutionProjects(slnxRel, root = REPO_ROOT) {
+  let text;
+  try {
+    text = fs.readFileSync(path.join(root, slnxRel), 'utf8');
+  } catch {
+    return null;
+  }
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  const base = path.posix.dirname(slnxRel);
+  return [...text.matchAll(/<Project\s+Path="([^"]+)"/g)]
+    .map((m) => path.posix.normalize(path.posix.join(base, m[1].replace(/\\/g, '/'))))
+    .sort();
+}
+
+/**
+ * 全シャードの「担当テスト」と「ビルド閉包」を求める（#1314）。
+ * 各脚は自分の分だけを使うが、**被覆と publish の重複排除は全シャードを見ないと決まらない**ため、
+ * 毎回全シャード分を計算する（20 本で数 ms）。
+ */
+function planShards(projects, of, weights, root = REPO_ROOT) {
+  const plans = [];
+  for (let s = 1; s <= of; s += 1) {
+    const tests = assign(projects, s, of, weights);
+    plans.push({ tests, closure: closure(tests, root) });
+  }
+  return plans;
+}
+
+/**
+ * シャード `shard` が publish 乾式実行を担うサービス本体。
+ * 自分の閉包にあり、**添字の小さいシャードの閉包に無い**ものだけを返す
+ * —— 各サービスはちょうど 1 本の脚で publish される（重複も取りこぼしも作らない）。
+ */
+function publishTargets(plans, shard) {
+  const earlier = new Set(plans.slice(0, shard - 1).flatMap((p) => p.closure));
+  return plans[shard - 1].closure.filter((p) => isServiceProject(p) && !earlier.has(p));
+}
+
+/** `required` のうち、どのシャードの閉包にも入らないもの（＝どの脚でもビルドされないもの）。 */
+function uncovered(required, plans) {
+  const built = new Set(plans.flatMap((p) => p.closure));
+  return required.filter((p) => !built.has(p));
 }
 
 /**
@@ -404,6 +503,72 @@ function selfTest() {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
+  // ---- ビルド閉包・被覆・publish の担当（#1314 / IADR-0257 追記 2026-10-12） ----
+  // 🔴 脚は担当テストの参照閉包だけをビルドする。壊れる形は 2 つ:
+  // ①どの脚でもビルドされないプロジェクトが出る（コンパイルエラーが赤くならない）
+  // ②publish が 0 回 / 2 回になる。両方を固定する。
+  const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'ltp-closure-'));
+  try {
+    const put = (rel, body) => {
+      fs.mkdirSync(path.join(t2, path.dirname(rel)), { recursive: true });
+      fs.writeFileSync(path.join(t2, rel), body);
+    };
+    const ref = (...xs) => `<Project>${xs.map((x) => `<ProjectReference Include="${x}" />`).join('')}</Project>`;
+    put(
+      'backend/backend.slnx',
+      '<Solution>' +
+        ['Services/A/A.csproj', 'Services/A/Tests/A.Tests.csproj', 'Services/B/B.csproj',
+          'Services/B/Tests/B.Tests.csproj', 'Shared/S/S.csproj', 'Lib/Orphan/Orphan.csproj']
+          .map((x) => `<Project Path="${x}" />`).join('') +
+        '<!-- <Project Path="Commented/Out.csproj" /> --></Solution>',
+    );
+    put('backend/Services/A/A.csproj', ref('..\\..\\Shared\\S\\S.csproj'));
+    put('backend/Services/A/Tests/A.Tests.csproj', ref('../A.csproj'));
+    // コメント中の参照は参照ではない（剥がさないと Orphan が閉包へ紛れ込み、①を見逃す）。
+    put('backend/Services/B/B.csproj', '<Project><!-- <ProjectReference Include="../../Lib/Orphan/Orphan.csproj" /> --></Project>');
+    put('backend/Services/B/Tests/B.Tests.csproj', ref('../B.csproj', '../../A/A.csproj'));
+    put('backend/Shared/S/S.csproj', '<Project />');
+    put('backend/Lib/Orphan/Orphan.csproj', '<Project />');
+    const tests = ['backend/Services/A/Tests/A.Tests.csproj', 'backend/Services/B/Tests/B.Tests.csproj'];
+
+    ok('projectRefs: 相対パス（\\ 区切りも）をリポジトリ相対へ正規化する', () =>
+      eq(projectRefs('backend/Services/A/A.csproj', t2), ['backend/Shared/S/S.csproj']));
+    ok('projectRefs: XML コメント中の参照は数えない', () => eq(projectRefs('backend/Services/B/B.csproj', t2), []));
+    ok('projectRefs: 読めなければ空（被覆検査が落とす側へ倒す）', () => eq(projectRefs('nope/X.csproj', t2), []));
+    ok('closure: 推移的に辿り、自身を含む', () =>
+      eq(closure([tests[0]], t2), ['backend/Services/A/A.csproj', tests[0], 'backend/Shared/S/S.csproj']));
+    ok('solutionProjects: solution の位置から解決し、コメントを除く', () => {
+      const got = solutionProjects('backend/backend.slnx', t2);
+      eq(got.length, 6);
+      if (!got.includes('backend/Lib/Orphan/Orphan.csproj')) throw new Error('解決先が違う');
+      if (got.some((x) => x.includes('Commented'))) throw new Error('コメントを拾った');
+    });
+    ok('solutionProjects: 読めなければ null（空配列で緑にしない）', () =>
+      eq(solutionProjects('missing.slnx', t2), null));
+    ok('isServiceProject: サービス本体だけを拾う（Tests は拾わない）', () => {
+      eq(isServiceProject('backend/Services/A/A.csproj'), true);
+      eq(isServiceProject('backend/Services/A/Tests/A.Tests.csproj'), false);
+      eq(isServiceProject('backend/Shared/S/S.csproj'), false);
+    });
+    const plans = planShards(tests, 2, null, t2);
+    ok('uncovered: どのテストからも参照されないプロジェクトを名指しする', () =>
+      eq(uncovered(solutionProjects('backend/backend.slnx', t2), plans), ['backend/Lib/Orphan/Orphan.csproj']));
+    ok('uncovered: 全部被覆されていれば空', () =>
+      eq(uncovered(['backend/Services/A/A.csproj', 'backend/Shared/S/S.csproj'], plans), []));
+    ok('publishTargets: 各サービスをちょうど 1 本の脚が担う（添字の小さい側が優先）', () => {
+      // A は両方の閉包に入る（B.Tests が A を参照）。shard 1 が担い、shard 2 は担わない。
+      eq(publishTargets(plans, 1), ['backend/Services/A/A.csproj']);
+      eq(publishTargets(plans, 2), ['backend/Services/B/B.csproj']);
+    });
+    ok('publishTargets: 和は閉包に現れる全サービスと一致し、重複が無い', () => {
+      const all = [1, 2].flatMap((s) => publishTargets(plans, s));
+      eq(all.length, new Set(all).size, '重複');
+      eq([...all].sort(), ['backend/Services/A/A.csproj', 'backend/Services/B/B.csproj'], '和');
+    });
+  } finally {
+    fs.rmSync(t2, { recursive: true, force: true });
+  }
+
   ok('buildSlnx: Solution 要素で包む', () => {
     const x = buildSlnx(['a/b.csproj']);
     if (!x.startsWith('<Solution>')) throw new Error('ルート要素が違う');
@@ -468,7 +633,32 @@ function main() {
   const shard = get('--shard');
   const of = get('--of');
   if (!Number.isNaN(shard) || !Number.isNaN(of)) {
-    const picked = assign(projects, shard, of, weights);
+    const plans = planShards(projects, of, weights);
+    const picked = plans[shard - 1].tests;
+    // 🔴 **被覆の検査（#1314）。** 脚は `backend.slnx` 全体ではなく担当テストの参照閉包だけをビルドする。
+    // したがって「どのテストからも参照されないプロジェクト」は**どの脚でもビルドされない**
+    // —— コンパイルエラーが入っても CI が赤くならない形である。黙って許さず、ここで落とす。
+    // 対象は `backend.slnx` の全プロジェクトと、publish 乾式実行の対象（Services/*/*.csproj）。
+    const inSlnx = solutionProjects(SOLUTION);
+    if (inSlnx === null || inSlnx.length === 0) {
+      console.error(`[list-test-projects] ${SOLUTION} を読めない（被覆を検査できない）。走査ルートを疑うこと。`);
+      process.exitCode = 1;
+      return;
+    }
+    const services = findCsproj(path.join(REPO_ROOT, 'backend', 'Services'))
+      .map((p) => path.relative(REPO_ROOT, p).split(path.sep).join('/'))
+      .filter(isServiceProject);
+    const missing = uncovered([...new Set([...inSlnx, ...services])].sort(), plans);
+    if (missing.length > 0) {
+      console.error(
+        `[list-test-projects] 次の ${missing.length} 件はどのシャードのビルド閉包にも入らない` +
+          '（＝どの脚でもビルドされない）。テストプロジェクトから参照するか、' +
+          'テストプロジェクトを足すこと（IADR-0257 追記 2026-10-12）:\n  ' +
+          missing.join('\n  '),
+      );
+      process.exitCode = 1;
+      return;
+    }
     // シャードが空になるのは「プロジェクト数 < シャード数」のときだけで、CI では起こらない。
     // 起きたら分配かシャード数の指定が誤っているので、黙って 0 件を返さない。
     if (picked.length === 0) {
@@ -488,8 +678,24 @@ function main() {
       // 分配の偏りは「遅い」以外の症状を出さないため、**毎 run で数字を残す**。
       console.error(
         `[list-test-projects] ${out} へ ${picked.length} 件（重み ${load} / 全体 ${total}` +
-          ` = ${((100 * load) / total).toFixed(1)}%、理想 ${(100 / of).toFixed(1)}%）を書いた。`,
+          ` = ${((100 * load) / total).toFixed(1)}%、理想 ${(100 / of).toFixed(1)}%）を書いた。` +
+          `ビルド閉包 ${plans[shard - 1].closure.length} / ${inSlnx.length} プロジェクト。`,
       );
+    }
+    // 🔴 **ビルドは閉包を solution の直下へ並べた別の `.slnx` で行う**（#1314）。
+    // テスト用の `.slnx`（担当テストだけ）をビルドすると、参照先は ProjectReference 経由の
+    // 「参照としてのビルド」になり、Web SDK のサービス本体で静的 Web 資産のマニフェスト
+    // （obj/.../staticwebassets.build.json）が作られず、`dotnet publish --no-build` が落ちる（実測）。
+    // 閉包を直下へ並べれば、各プロジェクトは従来の `backend.slnx` と同じ「solution の項目」としてビルドされる。
+    const buildAt = argv.indexOf('--build-slnx');
+    if (buildAt >= 0) {
+      fs.writeFileSync(argv[buildAt + 1], buildSlnx(plans[shard - 1].closure));
+    }
+    const pubAt = argv.indexOf('--publish-out');
+    if (pubAt >= 0) {
+      const targets = publishTargets(plans, shard);
+      fs.writeFileSync(argv[pubAt + 1], targets.map((x) => `${x}\n`).join(''));
+      console.error(`[list-test-projects] publish 乾式実行の担当 ${targets.length} / ${services.length} 件。`);
     }
     console.log(picked.join('\n'));
     return;
@@ -497,6 +703,21 @@ function main() {
   console.log(projects.join('\n'));
 }
 
-module.exports = { discover, assign, isTestProject, buildSlnx, weigh, countTests, weightOf };
+module.exports = {
+  discover,
+  assign,
+  isTestProject,
+  buildSlnx,
+  weigh,
+  countTests,
+  weightOf,
+  projectRefs,
+  closure,
+  isServiceProject,
+  solutionProjects,
+  planShards,
+  publishTargets,
+  uncovered,
+};
 
 if (require.main === module) main();
