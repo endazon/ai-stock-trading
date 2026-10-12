@@ -9,7 +9,7 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0528]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0529]
 specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1173_before-send-reservation-hold]
 issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, #1173, planning#676]
 -->

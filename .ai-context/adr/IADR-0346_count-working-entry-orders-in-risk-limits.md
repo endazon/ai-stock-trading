@@ -2,7 +2,7 @@
 title: IADR-0346 1 日あたりの発注金額上限・段階資金・保有建玉数は、約定に加えて当日承認した未終端の新規建て注文の残数量を算入する。見送りは注文アクティビティの終端として射影する
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, FR-19, FR-20, ADR-0009, ADR-0016, ADR-0040, IADR-0528, IADR-0005, IADR-0008, IADR-0018, IADR-0067, IADR-0113, IADR-0117, IADR-0130, IADR-0136, IADR-0163, IADR-0211, IADR-0246]
+related_ids: [FR-05, FR-10, FR-19, FR-20, ADR-0009, ADR-0016, ADR-0040, IADR-0529, IADR-0005, IADR-0008, IADR-0018, IADR-0067, IADR-0113, IADR-0117, IADR-0130, IADR-0136, IADR-0163, IADR-0211, IADR-0246]
 author: endazon (with Claude Code)
 created: 2026-09-18
 updated: 2026-10-13
@@ -113,9 +113,9 @@ related_specs:
 
 定時サイクルの判断は監視銘柄の数だけ出る。Wolverine はそれらを判断ハンドラの成功後にまとめて発行するため、**次の判断は 5 分後ではなく同じ瞬間に届く**。したがって「並行審査」は例外ではなく常態であり、同じサイクルの N 件はすべて同じ古い snapshot で保有建玉数・日次発注累計・段階資金を通る。PoC 2026-10-12 の米国セッションでは、上限 3 に対して 6 建玉まで新規建てが承認された疑いがある（#1319）。
 
-**置き換え先は [IADR-0528](IADR-0528_serialize-entry-screening-with-reservations.md) である。**
+**置き換え先は [IADR-0529](IADR-0529_serialize-entry-screening-with-reservations.md) である。**
 - 新規建ての審査を DB の advisory lock で直列化する。
 - 承認した新規建ては、同じトランザクションの中で承認行とは別の予約行に記録する。
 - 予約は、承認行が届くまで本決定の注文源（決定 1）が返す（算入の規則＝決定 2〜5 は変えない）。
 
-本 IADR の本文（決定・棄却案）は凍結のまま変えない。棄却案「予約テーブル」との関係は IADR-0528 の「棄却した案」の後の段落に書いた。
+本 IADR の本文（決定・棄却案）は凍結のまま変えない。棄却案「予約テーブル」との関係は IADR-0529 の「棄却した案」の後の段落に書いた。

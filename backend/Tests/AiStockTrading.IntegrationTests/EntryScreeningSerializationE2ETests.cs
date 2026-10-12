@@ -15,7 +15,7 @@ using Xunit;
 
 namespace AiStockTrading.IntegrationTests;
 
-// 🔴 T-10-2579, FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0528 決定1・2:
+// 🔴 T-10-2579, FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0529 決定1・2:
 // 新規建ての審査の直列化（`pg_advisory_xact_lock`）と予約を**実 PostgreSQL で**検証する。
 //
 // ユニット試験（`EntryScreeningSerializationTests`）は InMemory のストアで回しており、直列化はプロセス内のセマフォである。

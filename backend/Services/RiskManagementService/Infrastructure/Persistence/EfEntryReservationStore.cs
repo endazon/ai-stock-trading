@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace RiskManagementService.Infrastructure.Persistence;
 
-// 🔴 FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0528 決定1・2: 新規建ての審査の直列化と予約の EF 実装（Risk 専有 DB）。
+// 🔴 FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0529 決定1・2: 新規建ての審査の直列化と予約の EF 実装（Risk 専有 DB）。
 //
 // 直列化は **DB のトランザクション境界の advisory lock**（`pg_advisory_xact_lock`）で行う。単一レプリカの前提に頼らない
 // ——ロックは DB が持つので、プロセス・レプリカをまたいで新規建ての審査が 1 本ずつになる。ロックはコミット・ロールバックで

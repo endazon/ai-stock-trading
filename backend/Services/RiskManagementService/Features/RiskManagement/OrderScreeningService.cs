@@ -28,7 +28,7 @@ namespace RiskManagementService.Features.RiskManagement;
 // 供給元（借株可否の照会）はネットワークを渡るため審査は非同期（ScreenAsync）であり、**同期の入口は持たない**
 // （供給元を通らない審査の経路を作らない）。
 //
-// 🔴 FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0528: **新規建ての審査は直列化し、承認したら同じ臨界区間で予約を書く**
+// 🔴 FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0529: **新規建ての審査は直列化し、承認したら同じ臨界区間で予約を書く**
 // （entryReservations。必須依存——不在は「定時サイクルの同時到着で上限をすり抜ける」穴そのものであり、IADR-0163 決定2）。
 // 定時サイクルの判断 N 件は同時に届き、承認行は OrderApproved の往復の後にしか書かれないため、予約が無いと N 件すべてが
 // 同じ古い snapshot で保有建玉数・日次発注累計・段階資金を通る（PoC 2026-10-12 に 6 建玉の疑い）。
@@ -49,13 +49,13 @@ public sealed class OrderScreeningService(
     {
         ArgumentNullException.ThrowIfNull(decision);
 
-        // FR-10, ADR-0009, #1319, IADR-0528 決定5: 手仕舞い（Close）は直列化の待ちに入れない（遅延も拒否もさせない）。
+        // FR-10, ADR-0009, #1319, IADR-0529 決定5: 手仕舞い（Close）は直列化の待ちに入れない（遅延も拒否もさせない）。
         if (decision.Intent.PositionEffect != PositionEffect.Open)
         {
             return ScreenCoreAsync(decision, cancellationToken);
         }
 
-        // 🔴 #1319, IADR-0528 決定1: 新規建ては「再配送の判定 → 読み取り → 判定 → 予約」を 1 つの臨界区間で行う。
+        // 🔴 #1319, IADR-0529 決定1: 新規建ては「再配送の判定 → 読み取り → 判定 → 予約」を 1 つの臨界区間で行う。
         // 再配送の判定も中に入れる——外に置くと、同じ判断の並行な 2 配送が両方とも予約なしと読み、2 本目が自分の予約で
         // 自分を拒否する（IADR-0407 の反転が並行で戻る）。
         return entryReservations.RunSerializedAsync(c => ScreenEntryAsync(decision, c), cancellationToken);
@@ -78,7 +78,7 @@ public sealed class OrderScreeningService(
                 new OrderScreeningObservation(decision.DecisionId, intent.Mode, []));
         }
 
-        // 🔴 FR-10, #1319, IADR-0528 決定4: **予約はあるが承認行がまだ無い**——最初の審査は承認して予約を書いたが、
+        // 🔴 FR-10, #1319, IADR-0529 決定4: **予約はあるが承認行がまだ無い**——最初の審査は承認して予約を書いたが、
         // 承認の発行が失敗した（プロセスが落ちた）か、発行がまだ自分の射影へ届いていない。**再審査しない**（自分の予約で
         // 自分を拒否する反転を作らない）。**承認を発行し直す**——最初の発行が失敗していれば、これを出さないと発注が永久に出ない。
         // 承認は予約が持つ値（承認数量・承認時刻・損切りの実行機構）で組み直す＝最初の承認と同じ（現在の設定で埋めない）。
@@ -92,7 +92,7 @@ public sealed class OrderScreeningService(
 
         var outcome = await ScreenCoreAsync(decision, cancellationToken).ConfigureAwait(false);
 
-        // 🔴 FR-10, #1319, IADR-0528 決定2: 承認したら**同じ臨界区間（トランザクション）の中で**予約を書く。次の審査は
+        // 🔴 FR-10, #1319, IADR-0529 決定2: 承認したら**同じ臨界区間（トランザクション）の中で**予約を書く。次の審査は
         // ロックを取った後にこの予約を注文源から読む（保有建玉数・日次発注累計・段階資金へ算入される）。
         // 数量・価格・レートは承認行と同じ値（Intent）にする——承認行へ引き継がれたとき算入の額が変わらない。
         if (outcome.IsApproved)
@@ -196,7 +196,7 @@ public sealed class OrderScreeningService(
     private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>
         value.AddTicks(-(value.Ticks % TimeSpan.TicksPerMicrosecond));
 
-    // 判断の承認（OrderApproved）を組む。審査の承認と、予約からの組み直し（#1319, IADR-0528 決定4）が同じ形を使う。
+    // 判断の承認（OrderApproved）を組む。審査の承認と、予約からの組み直し（#1319, IADR-0529 決定4）が同じ形を使う。
     private static OrderApproved BuildApproved(
         TradeDecisionMade decision, int approvedQuantity, DateTimeOffset approvedAt, StopLossExecutionMethod stopLossMethod) =>
         new(

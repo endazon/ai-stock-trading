@@ -202,7 +202,7 @@ public class WorkingEntryOrderSourceTests
         read(id).Should().Be((OrderStatus.Cancelled, (DateTimeOffset?)Base.AddSeconds(1), 848));
     }
 
-    // ---- FR-10, #1319, IADR-0528 決定3: 予約（承認行がまだ無い承認）を同じ規則で返す ----
+    // ---- FR-10, #1319, IADR-0529 決定3: 予約（承認行がまだ無い承認）を同じ規則で返す ----
 
     private sealed record ReservationIds(Guid ReservedOnly, Guid Projected, Guid ForgoneBeforeProjection, Guid BeforeBound);
 

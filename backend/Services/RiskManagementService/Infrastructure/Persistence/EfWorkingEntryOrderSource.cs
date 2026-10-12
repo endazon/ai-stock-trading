@@ -11,7 +11,7 @@ namespace RiskManagementService.Infrastructure.Persistence;
 //   遅着の非終端イベントで Status は巻き戻り得るが、TerminalAt は一度立つと消えない（単調）。
 // - **order_activity の行が無い承認は未終端として返す**（射影の到着前＝生きている側へ倒す）。
 // - 当日の判定はしない（PortfolioProjection.Project が市場の現地取引日で行う）。
-// - #1319, IADR-0528: 承認行がまだ無い予約（entry_reservations）も同じ規則で返す（下）。
+// - #1319, IADR-0529: 承認行がまだ無い予約（entry_reservations）も同じ規則で返す（下）。
 public sealed class EfWorkingEntryOrderSource(RiskManagementDbContext db) : IWorkingEntryOrderSource
 {
     public IReadOnlyList<WorkingEntryOrder> GetWorkingEntryOrders(DateTimeOffset approvedAtOrAfter)
@@ -42,7 +42,7 @@ public sealed class EfWorkingEntryOrderSource(RiskManagementDbContext db) : IWor
                 r.DecisionId, r.Symbol, r.Market, r.Side, r.Quantity, r.Price, r.ApprovedAt, r.FxRateToBase ?? 1m))
             .ToList();
 
-        // 🔴 FR-10, #1319, IADR-0528 決定3: 審査が承認したが**承認行がまだ無い**新規建て（予約）も生きている注文として返す。
+        // 🔴 FR-10, #1319, IADR-0529 決定3: 審査が承認したが**承認行がまだ無い**新規建て（予約）も生きている注文として返す。
         // - 承認行がある予約は返さない（承認行の側で数える＝**二重に数えない**。終端・約定は承認行の側の規則に従う）。
         // - 承認行より先に注文アクティビティが終端になった予約（見送り・取消が承認の射影より先に届いた）も返さない。
         var reserved =

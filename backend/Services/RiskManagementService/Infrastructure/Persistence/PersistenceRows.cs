@@ -671,7 +671,7 @@ public sealed class PositionDriftAdoptionRow
     public DateTimeOffset AdoptedAtUtc { get; set; }
 }
 
-// 🔴 FR-10, #1319, IADR-0528: 審査が承認した新規建ての予約（DecisionId で 1 件 1 行）。審査のトランザクションの中で書く。
+// 🔴 FR-10, #1319, IADR-0529: 審査が承認した新規建ての予約（DecisionId で 1 件 1 行）。審査のトランザクションの中で書く。
 // 承認行（ApprovedOrderRow）とは別の表にする——承認行は「発行済み」の印（IADR-0407）であり、発行の前には書けない。
 // 承認数量・承認時刻・損切りの実行機構は、発行に失敗して判断が再配送されたときに**同じ承認**を組み直すために持つ。
 public sealed class EntryReservationRow

@@ -49,7 +49,7 @@ public record ScreeningOutcome
         new() { IsApproved = false, IsApprovedReplay = true, Observation = observation };
 
     /// <summary>
-    /// 🔴 FR-10, #1319, IADR-0528 決定4: <b>予約はあるが承認行がまだ無い</b>新規建ての判断の再配送であり、再審査せずに
+    /// 🔴 FR-10, #1319, IADR-0529 決定4: <b>予約はあるが承認行がまだ無い</b>新規建ての判断の再配送であり、再審査せずに
     /// 予約から<b>最初と同じ承認</b>を組み直した（第 4 の形）。<see cref="IsApproved"/> は真で <see cref="Approved"/> を持つ。
     /// <para>
     /// 最初の承認の発行が失敗した（またはプロセスが落ちた）再配送では、これを発行しないと発注が永久に出ない。
@@ -59,7 +59,7 @@ public record ScreeningOutcome
     /// </summary>
     public bool IsApprovedRepublish { get; init; }
 
-    /// <summary>FR-10, #1319, IADR-0528 決定4: 予約から同じ承認を組み直して発行し直す結果。</summary>
+    /// <summary>FR-10, #1319, IADR-0529 決定4: 予約から同じ承認を組み直して発行し直す結果。</summary>
     public static ScreeningOutcome ApprovedRepublish(OrderApproved approved, OrderScreeningObservation observation) =>
         new() { IsApproved = true, IsApprovedRepublish = true, Approved = approved, Observation = observation };
 }

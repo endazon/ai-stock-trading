@@ -151,9 +151,9 @@ builder.Services.AddScoped<IPortfolioStateProvider>(sp =>
         : new LedgerPortfolioStateProvider(ledger, workingEntryOrders, clock, currentPrices: null, initialCapital);
 });
 // FR-10, #829, IADR-0346 決定1: 未終端の承認済み新規建て注文（approved_orders 左結合 order_activity）。DbContext が scoped のため scoped。
-// #1319, IADR-0528 決定3: 承認行がまだ無い予約（entry_reservations）も同じ規則で返す。
+// #1319, IADR-0529 決定3: 承認行がまだ無い予約（entry_reservations）も同じ規則で返す。
 builder.Services.AddScoped<IWorkingEntryOrderSource, EfWorkingEntryOrderSource>();
-// 🔴 FR-10, #1319, IADR-0528 決定1・2: 新規建ての審査の直列化（pg_advisory_xact_lock）と予約。審査と同じ DbContext（scoped）に
+// 🔴 FR-10, #1319, IADR-0529 決定1・2: 新規建ての審査の直列化（pg_advisory_xact_lock）と予約。審査と同じ DbContext（scoped）に
 // 載せる——読み取り・判定・予約の書き込みが 1 つのトランザクションに入るのはこのためである。
 builder.Services.AddScoped<IEntryReservationStore, EfEntryReservationStore>();
 builder.Services.AddScoped<ICurrentPriceSource, CachedCurrentPriceSource>();
@@ -321,7 +321,7 @@ builder.Services.AddScoped(sp => new OrderScreeningService(
     sp.GetRequiredService<IPortfolioLedgerStore>(),
     // FR-10, #967, IADR-0425 決定5: 空売り文脈の供給（必須引数）。配線の実効は ShortSellContextWiringTests（T-10-1027〜1029）が固定する。
     sp.GetRequiredService<ShortSellContextSupplier>(),
-    // 🔴 FR-10, #1319, IADR-0528 決定1・2: 新規建ての審査の直列化と予約（必須引数）。
+    // 🔴 FR-10, #1319, IADR-0529 決定1・2: 新規建ての審査の直列化と予約（必須引数）。
     sp.GetRequiredService<IEntryReservationStore>(),
     sp.GetService<RiskManagementService.Domain.IManipulativeOrderPatternDetector>()));
 // FR-10, #331, IADR-0210 決定5: 損切りの機械執行（旧 StopLossExecutionService・IADR-0015）は撤去した。

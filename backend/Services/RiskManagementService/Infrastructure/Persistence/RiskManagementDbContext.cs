@@ -25,7 +25,7 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
     // FR-19, #154, IADR-0067: 相場操縦検知の入力＝注文アクティビティの射影。
     public DbSet<OrderActivityRow> OrderActivities => Set<OrderActivityRow>();
 
-    // FR-10, #1319, IADR-0528: 審査が承認した新規建ての予約（承認行が届くまでの間も統制へ算入する）。
+    // FR-10, #1319, IADR-0529: 審査が承認した新規建ての予約（承認行が届くまでの間も統制へ算入する）。
     public DbSet<EntryReservationRow> EntryReservations => Set<EntryReservationRow>();
 
     // FR-20, UC-06, IADR-0070: 段階ゲートの遷移履歴（追記専用）と段階別実績（単一行）。
@@ -194,7 +194,7 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.HasIndex(r => new { r.Symbol, r.Market, r.PlacedAt });
         });
 
-        // 🔴 FR-10, #1319, IADR-0528: 新規建ての予約。**承認行（approved_orders）とは別の表である。**
+        // 🔴 FR-10, #1319, IADR-0529: 新規建ての予約。**承認行（approved_orders）とは別の表である。**
         // 承認行は IADR-0407 の「発行済み」の印であり、審査の中（発行の前）に書くと、発行に失敗したときに
         // 再配送が「発行済み」とみなして発注が永久に出ない。予約は審査のトランザクションの中で書き、
         // 承認行が来たら注文源は承認行だけを数える（予約は数えない）。

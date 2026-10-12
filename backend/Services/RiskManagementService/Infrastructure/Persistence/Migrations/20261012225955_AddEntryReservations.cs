@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace RiskManagementService.Infrastructure.Migrations
 {
     /// <summary>
-    /// FR-10, #1319, IADR-0528 決定2: 新規建ての予約 <c>entry_reservations</c> を作る（審査が承認した新規建てを、承認行が
+    /// FR-10, #1319, IADR-0529 決定2: 新規建ての予約 <c>entry_reservations</c> を作る（審査が承認した新規建てを、承認行が
     /// 届くまでの間も保有建玉数・日次発注累計・段階資金へ算入するため）。既存の表は変えない。起動時の自動移行で適用される。
     /// </summary>
     public partial class AddEntryReservations : Migration

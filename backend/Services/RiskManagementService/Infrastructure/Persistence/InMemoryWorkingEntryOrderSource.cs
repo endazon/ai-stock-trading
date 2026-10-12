@@ -23,7 +23,7 @@ public sealed class InMemoryWorkingEntryOrderSource(
                 a.ApprovedAt, a.Intent.FxRateToBase))
             .ToList();
 
-        // FR-10, #1319, IADR-0528 決定3: 承認行がまだ無い予約（EF 実装と同じ規則）。
+        // FR-10, #1319, IADR-0529 決定3: 承認行がまだ無い予約（EF 実装と同じ規則）。
         // 予約の供給を渡さない構成（予約を使わないテスト）では従来どおり承認行だけを返す。
         if (reservations is not null)
         {

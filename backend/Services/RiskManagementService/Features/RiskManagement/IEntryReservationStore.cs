@@ -2,7 +2,7 @@ using AiStockTrading.Shared.Contracts.Trading;
 
 namespace RiskManagementService.Features.RiskManagement;
 
-// 🔴 FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0528: 新規建ての審査の直列化と、承認した新規建ての**予約**。
+// 🔴 FR-10, FR-20, ADR-0016 決定9, #1319, IADR-0529: 新規建ての審査の直列化と、承認した新規建ての**予約**。
 //
 // 定時サイクルの判断 N 件はリスク管理へ同時に届く（Wolverine はハンドラの成功後に発行をまとめて送る）。承認行
 // （approved_orders）は OrderApproved が RabbitMQ を往復した後にしか書かれないため、審査が台帳だけを読むと
@@ -28,7 +28,7 @@ public interface IEntryReservationStore
 }
 
 /// <summary>
-/// FR-10, #1319, IADR-0528: 審査が承認した新規建ての予約。注文源へ載せる値（承認行と同じ数量・価格・レート・承認時刻）と、
+/// FR-10, #1319, IADR-0529: 審査が承認した新規建ての予約。注文源へ載せる値（承認行と同じ数量・価格・レート・承認時刻）と、
 /// 発行に失敗して判断が再配送されたときに<b>同じ承認</b>を組み直すための値（承認数量・承認時刻・損切りの実行機構）を持つ。
 /// </summary>
 public sealed record EntryReservation(

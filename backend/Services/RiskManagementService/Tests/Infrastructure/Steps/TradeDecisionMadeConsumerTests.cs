@@ -78,7 +78,7 @@ public class TradeDecisionMadeConsumerTests
                     ledger ?? new InMemoryPortfolioLedgerStore(),
                     // #967, IADR-0425: 空売り文脈の供給も必須依存。本テストは空売りを関心に持たない（借株可否は常に分からない）。
                     TestShortSellContexts.Unavailable(sp.GetRequiredService<IClock>()),
-                    // #1319, IADR-0528: 新規建ての審査の直列化と予約も必須依存。
+                    // #1319, IADR-0529: 新規建ての審査の直列化と予約も必須依存。
                     reservations ?? new InMemoryEntryReservationStore(),
                     null));
 
@@ -212,7 +212,7 @@ public class TradeDecisionMadeConsumerTests
         await host.StopAsync();
     }
 
-    // 🔴 T-10-2574, FR-10, #1319, IADR-0528 決定4: 審査は承認して予約を書いたが、OrderApproved の発行が失敗した（承認行が無い）
+    // 🔴 T-10-2574, FR-10, #1319, IADR-0529 決定4: 審査は承認して予約を書いたが、OrderApproved の発行が失敗した（承認行が無い）
     // まま判断が再配送された。本番と同じ配線のハンドラは**再審査せず、予約から組み直した最初と同じ承認を発行する**
     // （発注が永久に出ない状態にしない）。拒否は出さない・観測は記録する（DecisionId で冪等）。
     // kill switch を起動した状態で流す——再審査していれば KillSwitchActive で OrderRejected が出る形であり、
