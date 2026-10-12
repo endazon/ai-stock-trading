@@ -115,6 +115,22 @@ public sealed class InMemoryReportStore : IReportStore
         }
     }
 
+    // FR-15, FR-07, #1308, IADR-0528 決定3: at の時点で確定していた最新（ConfirmedAt ≤ at の中で PeriodStart 最大）。
+    public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at)
+    {
+        lock (_gate)
+        {
+            return _rows.Values
+                .Where(r => r.Report.Kind == kind
+                    && r.Report.State == ReportState.Confirmed
+                    && r.Report.ConfirmedAt is { } confirmedAt
+                    && confirmedAt <= at)
+                .OrderByDescending(r => r.Report.PeriodStart)
+                .Select(r => new VersionedReport(r.Report, r.Version))
+                .FirstOrDefault();
+        }
+    }
+
     public ReportReview? GetReview(string periodKey)
     {
         lock (_gate)

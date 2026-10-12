@@ -181,6 +181,18 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         return row is null ? null : new VersionedReport(ToReport(row), row.Version);
     }
 
+    // FR-15, FR-07, #1308, IADR-0528 決定3: at の時点で確定していた最新（ConfirmedAt ≤ at の中で PeriodStart 最大）。
+    // 🔴 Npgsql の timestamptz は UTC の値しか受けないため、比較の値を UTC へ寄せる（時刻そのものは変わらない）。
+    public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at)
+    {
+        var atUtc = at.ToUniversalTime();
+        var row = db.Reports
+            .Where(r => r.Kind == kind && r.State == ReportState.Confirmed && r.ConfirmedAt != null && r.ConfirmedAt <= atUtc)
+            .OrderByDescending(r => r.PeriodStart)
+            .FirstOrDefault();
+        return row is null ? null : new VersionedReport(ToReport(row), row.Version);
+    }
+
     private static TradingReport ToReport(ReportRow r) => new()
     {
         PeriodKey = r.PeriodKey,
