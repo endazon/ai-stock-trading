@@ -60,22 +60,24 @@ public sealed class CachingFxRateSource(
 
         var now = timeProvider.GetUtcNow();
         if (_cache.TryGetValue(quote, out var cached) && now - cached.FetchedAt < ttl)
-            return new FxRateReading(cached.Rate, Classify(now - cached.Rate.AsOf));
+            return new FxRateReading(cached.Rate, Classify(cached.Rate.AsOf, now));
 
         var rate = await inner.GetRateToBaseAsync(quote, cancellationToken).ConfigureAwait(false);
         if (rate is null)
             return null;
 
         // 齢は停止（maxRateAge）と警告（staleRateWarning）の両方が同じ観測を見て判断する。
+        // 判定は**暦日差**（ElapsedCalendarDays）で行い、経過時間（age）は報告・表示にだけ使う（#1331・IADR-0531）。
         var age = now - rate.AsOf;
-        var freshness = Classify(age);
+        var calendarDays = ElapsedCalendarDays(rate.AsOf, now);
+        var freshness = Classify(rate.AsOf, now);
 
         if (freshness == FxRateFreshness.Expired)
         {
             logger.LogWarning(
-                "為替レートの観測が古いため新規建てには採用しません（{Quote}: 観測日 {AsOf} / 上限 {MaxAgeDays} 日）。" +
-                "**手仕舞いは止めません**（ADR-0022 決定5・#506）。",
-                quote, rate.AsOf, maxRateAge.TotalDays);
+                "為替レートの観測が古いため新規建てには採用しません（{Quote}: 観測日 {AsOf} / 暦日差 {CalendarDays} 日 / " +
+                "上限 {MaxAgeDays} 日）。**手仕舞いは止めません**（ADR-0022 決定5・#506）。",
+                quote, rate.AsOf, calendarDays, maxRateAge.TotalDays);
 
             // #381 停止側 / IADR-0198 決定1: **停止側も可視化する。** 従来はここで return しており、
             // **統制が発動した事実がログ以外どこにも出ていなかった**（ADR-0022 決定2「黙って劣化させない」）。
@@ -89,10 +91,10 @@ public sealed class CachingFxRateSource(
         if (freshness == FxRateFreshness.Warning)
         {
             logger.LogWarning(
-                "為替レートの観測が古くなっています（{Quote}: 観測日 {AsOf} / 経過 {AgeDays:0.#} 日 / " +
-                "警告 {WarnDays} 日 / 停止 {MaxDays} 日）。**直近レートで続行します**（新規建ては止めません）。" +
-                "上限を超えると非基準通貨の新規建てが見送られます（ADR-0022 決定4・IADR-0174）。",
-                quote, rate.AsOf, age.TotalDays, staleRateWarning.TotalDays, maxRateAge.TotalDays);
+                "為替レートの観測が古くなっています（{Quote}: 観測日 {AsOf} / 暦日差 {CalendarDays} 日 / " +
+                "経過 {AgeDays:0.#} 日 / 警告 {WarnDays} 日 / 停止 {MaxDays} 日）。**直近レートで続行します**" +
+                "（新規建ては止めません）。上限を超えると非基準通貨の新規建てが見送られます（ADR-0022 決定4・IADR-0174）。",
+                quote, rate.AsOf, calendarDays, age.TotalDays, staleRateWarning.TotalDays, maxRateAge.TotalDays);
 
             // ADR-0022 決定5 / #381 第 2 層: 警告の宛先はログだけではない。監査・Discord・日報へ広げる
             // （IADR-0196）。暦日単位の抑止は通知側が持つため、**警告域にいる間は毎回呼んでよい**。
@@ -103,11 +105,34 @@ public sealed class CachingFxRateSource(
         return new FxRateReading(rate, freshness);
     }
 
-    /// <summary>齢を 3 段の判定へ写す。**判定規則をここ 1 箇所に置く**（決定3）。</summary>
-    private FxRateFreshness Classify(TimeSpan age) =>
-        age > maxRateAge ? FxRateFreshness.Expired
-        : age > staleRateWarning ? FxRateFreshness.Warning
-        : FxRateFreshness.Fresh;
+    /// <summary>
+    /// 齢を 3 段の判定へ写す。**判定規則をここ 1 箇所に置く**（決定3）。
+    /// <para>
+    /// 🔴 <b>齢は経過時間ではなく暦日差で数える</b>（#1331・IADR-0531）。計画 ADR-0022 決定4 は
+    /// 「取得できている最新レートの<b>日付</b>が 5 日を超えて古い」と定め、曜日ごとの古さ（月・火＝4 日、
+    /// 3 連休明けの火曜＝5 日）も日付の差で数えている。経過時間（観測日の 0 時からの時間）で数えると、
+    /// 同じ日付の差 5 日が夜には 5.9 日になり、<b>計画が「通常運用」とした 5 日で警告が鳴る</b>
+    /// （PoC 2026-10-12・スポーツの日: 観測 10/07 に対し暦日差 5 日・経過 5.9 日）。
+    /// </para>
+    /// </summary>
+    private FxRateFreshness Classify(DateTimeOffset asOf, DateTimeOffset now)
+    {
+        var days = ElapsedCalendarDays(asOf, now);
+        return days > maxRateAge.TotalDays ? FxRateFreshness.Expired
+            : days > staleRateWarning.TotalDays ? FxRateFreshness.Warning
+            : FxRateFreshness.Fresh;
+    }
+
+    /// <summary>
+    /// 観測日から現在までの<b>暦日差</b>を返す。日付は<b>観測の時差（<see cref="DateTimeOffset.Offset"/>）の暦</b>で読む
+    /// ——日銀は日本時間（+09:00）、FRED は UTC で観測日を表しており、源の暦で数えれば日付の差が源の公表の暦と一致する。
+    /// <para>
+    /// 営業日カレンダーは持たない（ADR-0022 決定3）。土日・祝日も 1 日として数える。
+    /// </para>
+    /// </summary>
+    public static int ElapsedCalendarDays(DateTimeOffset asOf, DateTimeOffset now) =>
+        DateOnly.FromDateTime(now.ToOffset(asOf.Offset).DateTime).DayNumber
+        - DateOnly.FromDateTime(asOf.DateTime).DayNumber;
 
     /// <summary>
     /// 鮮度警告を可視化経路へ報告する。

@@ -86,6 +86,13 @@ public sealed class FredFxRateSource(
             logger.LogWarning(ex, "FRED FX の取得に失敗しました（系列 {SeriesId}）。レート無しとして扱います。", seriesId);
             return null;
         }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // #1331, IADR-0531 決定3: タイムアウトは取り消しではない。日銀側と同じくレート無しへ縮退する。
+            logger.LogWarning(
+                ex, "FRED FX の取得がタイムアウトしました（系列 {SeriesId}）。レート無しとして扱います。", seriesId);
+            return null;
+        }
 
         return Map(quote, payload);
     }
@@ -116,6 +123,10 @@ public sealed class FredFxRateSource(
                 continue;
             }
 
+            // #1331, IADR-0531 決定2: 取得の成功を残す（日銀側と同じ。TTL ごとにしか呼ばれない）。
+            logger.LogInformation(
+                "FRED FX を取得しました（系列 {SeriesId}: 観測日 {ObservationDate:yyyy-MM-dd} / 値 {JpyPerUsd} 円）。",
+                seriesId, date, jpyPerUsd);
             return new FxRate(quote, MarketCurrency.Base, 1m / jpyPerUsd, new DateTimeOffset(date, TimeSpan.Zero));
         }
 
