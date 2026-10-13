@@ -614,6 +614,25 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     }
   });
 
+  // #1337 の再レビュー 🟡: 節の中の小見出し（より深い見出し）で節を閉じない。同じ深さ以浅では閉じる。
+  ok('下限[#1315]: 確認できたことの節の中の #### 小見出しでは閉じず、同じ深さ以浅の見出しで閉じる', () => {
+    assert.match(confirmedSections('### 確認できたこと\n#### 検査器\n- scripts.test.js: ok\n'), /scripts\.test\.js: ok/);
+    const t =
+      '### 確認できたこと\n#### 検査器\n- scripts.test.js: ok\n#### Helm\n- helm template: ok\n' +
+      '### 🔍 実行できなかったこと\n- helm lint は未実行\n## 付記\n- helm lint\n';
+    const c = confirmedSections(t);
+    assert.match(c, /scripts\.test\.js/);
+    assert.match(c, /helm template/);
+    assert.doesNotMatch(c, /helm lint/);
+    // 同じ深さの別の見出しで閉じる
+    assert.doesNotMatch(confirmedSections('### 確認できたこと\n- a\n### 🟢 軽微\n- helm lint\n'), /helm lint/);
+    // 浅い見出しでも閉じる
+    assert.doesNotMatch(confirmedSections('### 確認できたこと\n- a\n## 次\n- helm lint\n'), /helm lint/);
+    // 実行形の判定でも緑になる
+    const body = review('変更 1 ファイル中 1 ファイルを読んだ。') + '\n### 確認できたこと\n#### 検査器\n- scripts.test.js: ok\n';
+    assert.deepStrictEqual(findFloorViolations(body, ['scripts/a.js']), []);
+  });
+
   ok('下限[#1315]: #1337 の実文（本 PR 自身の AI レビュー。scripts/・.github/ の差分）は緑', () => {
     const PR1337 = fixture('pr1337-review.txt');
     assert.deepStrictEqual(findFloorViolations(PR1337, ['scripts/check-review-verdict.js', '.github/workflows/claude-code-review.yml']), []);

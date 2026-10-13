@@ -278,16 +278,25 @@ function findFloorAdmissions(text) {
 const CONFIRMED_HEADING = /確認できたこと/;
 const NOT_RUN_HEADING = /🔍|できなかった/;
 
-/** 本文を見出し（`##`〜`####`）で節に分け、「確認できたこと」の節の本文だけをつないで返す。 */
+/**
+ * 本文を見出し（`##`〜`####`）で節に分け、「確認できたこと」の節の本文だけをつないで返す。
+ *
+ * **節を開いた見出しより深い見出し（`### 確認できたこと` の下の `#### 検査器` 等）では閉じない。**
+ * 同じ深さ以浅の見出し（`### 🔍 実行できなかったこと` 等）で閉じる（#1337 の再レビュー 🟡。
+ * 小見出しで閉じると、その下の実行記載を読まずに偽陽性になる）。
+ */
 function confirmedSections(text) {
   const out = [];
-  let inside = false;
+  let depth = 0; // 開いている「確認できたこと」の見出しの深さ（0 = 節の外）
   for (const line of String(text || '').split('\n')) {
-    if (/^\s{0,3}#{2,4}\s/.test(line)) {
-      inside = CONFIRMED_HEADING.test(line) && !NOT_RUN_HEADING.test(line);
+    const h = /^\s{0,3}(#{2,4})\s/.exec(line);
+    if (h) {
+      const level = h[1].length;
+      if (depth && level > depth) continue; // 節の中の小見出し
+      depth = CONFIRMED_HEADING.test(line) && !NOT_RUN_HEADING.test(line) ? level : 0;
       continue;
     }
-    if (inside) out.push(line);
+    if (depth) out.push(line);
   }
   return out.join('\n');
 }
