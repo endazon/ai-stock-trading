@@ -156,6 +156,11 @@ public class ReportEndpointsTests
 
         (await service.GetAsync("/reports/daily-policy/as-of?at=2000-01-01T00:00:00%2B09:00"))
             .StatusCode.Should().Be(HttpStatusCode.NotFound, "その時点ではまだ確定していない");
+        // #1322 の AI レビュー: コロン無しの時差（+0900）も時差として受ける（400 にしない）。
+        (await service.GetAsync("/reports/daily-policy/as-of?at=2000-01-01T00:00:00%2B0900"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await service.GetFromJsonAsync<DailyPolicyAsOfDto>("/reports/daily-policy/as-of?at=2999-01-01T09:00:00%2B0900"))!
+            .Summary.Should().Be("翌営業日は押し目買い");
     }
 
     [Theory]
