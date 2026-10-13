@@ -103,6 +103,8 @@ export function HighVolatilityForm({
   const watchlistQuery = useWatchlist();
   // 監視銘柄が取れていなければ null（照合できない）。0 件は「取れて空」であり null と区別する。
   const watchlist = watchlistQuery.isSuccess ? watchlistQuery.data : null;
+  // 取得中は照合の結果を出さない（「照合中」と出す）。取得前に「照合できません」の警告を点滅させない（AI レビュー指摘）。
+  const watchlistPending = watchlistQuery.isPending;
 
   const [ratio, setRatio] = useState(() => wireToHighVolatilityRatioInput(current.maxOrderAmountRatio));
   const [designated, setDesignated] = useState<HighVolatilitySymbol[]>(() => [...current.designatedSymbols]);
@@ -143,8 +145,10 @@ export function HighVolatilityForm({
   const manualError = manualSymbol.trim() === '' ? null : validateDesignatedSymbolInput(manualSymbol);
   const manualMatch = manualNormalized === '' ? null : watchlistMatchOf(manualNormalized, manualMarket, watchlist);
   const manualDuplicate = manualNormalized !== '' && designatedKeys.has(`${manualNormalized}|${manualMarket}`);
-  const manualNeedsConfirm = manualMatch !== null && manualMatch !== 'listed';
+  const manualNeedsConfirm = !watchlistPending && manualMatch !== null && manualMatch !== 'listed';
+  // 取得中は照合の結果が出るまで追加させない（確認なしで通る窓を作らない）。
   const canAddManual =
+    !watchlistPending &&
     manualNormalized !== '' &&
     manualError === null &&
     !manualDuplicate &&
@@ -273,7 +277,9 @@ export function HighVolatilityForm({
                     <TableCell>{s.symbol}</TableCell>
                     <TableCell>{marketLabel(s.market)}</TableCell>
                     <TableCell>
-                      {note === null ? (
+                      {watchlistPending ? (
+                        <StatusBadge tone="neutral">{i18n._(msg`照合中`)}</StatusBadge>
+                      ) : note === null ? (
                         <StatusBadge tone="success">{i18n._(msg`監視銘柄にあります`)}</StatusBadge>
                       ) : (
                         <StatusBadge tone="warning">{note}</StatusBadge>

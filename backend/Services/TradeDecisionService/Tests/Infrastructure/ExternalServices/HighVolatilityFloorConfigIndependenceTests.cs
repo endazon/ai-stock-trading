@@ -64,5 +64,8 @@ public class HighVolatilityFloorConfigIndependenceTests
 
         warning.Should().NotBeNull();
         warning.Should().Contain("Sizing:MinEntryNotionalRatio").And.Contain("ADR-0066").And.Contain(direction).And.Contain(effect);
+        // 上回る向きは、運用者がログで見送りを探せるよう記録の理由名を添える。
+        if (direction == "上回って")
+            warning.Should().Contain("EntryCapacityBelowMinimumNotional");
     }
 }

@@ -34,7 +34,7 @@ const WATCHLIST = [
 function mockBff(
   options: {
     highVolatility?: HighVolatilitySettings;
-    watchlist?: 'ok' | 'error';
+    watchlist?: 'ok' | 'error' | 'pending';
     put?: 'ok' | 'validation';
   } = {},
 ) {
@@ -46,6 +46,7 @@ function mockBff(
     if (path === '/risk-controls/status') return STATUS;
     if (path === '/monitor/watchlist') {
       if (watchlist === 'error') throw new ApiError('server', '監視銘柄を取得できません。', 502, []);
+      if (watchlist === 'pending') return new Promise(() => {}); // 取得中のまま返らない
       return WATCHLIST;
     }
     if (path === '/monitor/watchlist/history') return [];
@@ -303,6 +304,28 @@ describe('SC-02 高ボラティリティ銘柄の明示指定と区分の上限�
     expect(await within(form).findByText(/監視銘柄を取得できないため/)).toBeInTheDocument();
     await user.type(within(form).getByLabelText('銘柄コード（手入力）'), 'TSLA');
     expect(within(form).getByText(/TSLA（日本）: 監視銘柄と照合できません/)).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: '手入力の銘柄を追加' })).toBeDisabled();
+  });
+
+  // 🔴 T-10-2604（否定形）: 監視銘柄の取得中は、保存済みの行に照合の結果（警告）を出さず「照合中」と出す。
+  // 手入力は照合の結果が出るまで追加できず、警告も出さない（取得前に「照合できません」を点滅させない・確認なしで通る窓を作らない）。
+  it('T-10-2604 監視銘柄の取得中は「照合中」と出し、警告を点滅させず手入力も足させない', async () => {
+    mockBff({
+      watchlist: 'pending',
+      highVolatility: { maxOrderAmountRatio: 0.05, designatedSymbols: [{ symbol: 'TSL', market: 1 }] },
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<RiskSettingsPage />);
+    const form = await hvForm();
+
+    const table = within(form).getByRole('table', { name: '明示指定の銘柄の一覧' });
+    expect(within(table).getByText('照合中')).toBeInTheDocument();
+    expect(within(table).queryByText('監視銘柄にありません')).toBeNull();
+    expect(within(table).queryByText('監視銘柄と照合できません')).toBeNull();
+    expect(within(form).queryByText(/監視銘柄を取得できないため/)).toBeNull();
+
+    await user.type(within(form).getByLabelText('銘柄コード（手入力）'), 'TSLA');
+    expect(within(form).queryByText(/監視銘柄と照合できません/)).toBeNull();
     expect(within(form).getByRole('button', { name: '手入力の銘柄を追加' })).toBeDisabled();
   });
 });

@@ -1414,6 +1414,10 @@ msgstr "決済後の維持率"
 msgid "無効"
 msgstr "無効"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "照合中"
+msgstr "照合中"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "状態"
