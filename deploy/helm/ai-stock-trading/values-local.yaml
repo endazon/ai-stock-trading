@@ -539,10 +539,18 @@ services:
   # したがって `BacktestPassed` は false のままで、Stage 0→1 の昇格は従来どおり止まる。**開けるのは経路であって門ではない。**
   backtest:
     extraEnv:
-      # 🔴 **過去データ源は空のまま**（本番既定と同値の写し）。ADR-0023 決定5 の「実装側で確認を要する 2 点」
-      # （取得枠の単位と回復周期／前復権と ADR-0016 決定14 の費用モデルの整合）が実 OpenD 待ちで未了であり、
-      # docs/blocked-tasks.md A-3 に残る。**確認が済むまで moomoo を入れない**（Stooq は ADR-0023 決定1 により取得不能）。
-      - { name: Backtest__BarData__Provider, value: "" }
+      # ［2026-10-13 / #1308・IADR-0528 決定8］過去データ源は発注執行の日足の照会（order-execution）。
+      # 利用者裁定 2026-10-13（#1219 のコメント）: Stage 0 では前復権と費用モデルの不整合を受け入れ、足は発注執行の /daily-bars 経由で取る
+      # （backtest の Pod に OpenD は配線しない）。ADR-0023 決定5 の確認 2 点（回復周期・借株料）は未了のまま、Stage 0 に限って受け入れた
+      # （逸脱の受容は IADR-0528）。本番の values.yaml は空（none）のまま。発注執行が moomoo 構成でないと broker-not-supported で欠測になる。
+      # 旧: 「過去データ源は空のまま（確認が済むまで moomoo を入れない）」。moomoo（直結）は今も入れない。
+      - { name: Backtest__BarData__Provider, value: "order-execution" }
+      - { name: Backtest__BarData__OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # 照会口は OwnerOrService。サービスの資格（trading-service）で呼ぶ（token エンドポイントは template が導出する）。
+      - name: ServiceAuth__ClientId
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-id, optional: true }
+      - name: ServiceAuth__ClientSecret
+        secretKeyRef: { name: ast-secrets, key: service-auth-client-secret, optional: true }
       # ← 経路B で有効化（本番既定は "false"）。日次 1 巡回で verdict を publish する。
       - { name: Backtest__Stage0__Enabled, value: "true" }
       # 本番既定と同値の写し（ADR-0037 決定2 の写し方で 5.5 系の割当〈Jun 2026〉を月末へ写した学習カットオフ日。#1295）。
@@ -559,6 +567,10 @@ services:
       - { name: Backtest__Stage0__LookbackDays, value: "365" }
       # 巡回間隔（秒・60 未満は 60）。記録を Pod へ差し込んだ後の評価を待つ時間。既定 86,400（コードの既定と同じ）。
       - { name: Backtest__Stage0__IntervalSeconds, value: "86400" }
+      # #1308, IADR-0528 決定9: 評価の窓の終端を固定する日（YYYY-MM-DD）。空＝今日（コードの既定と同じ）。
+      # 記録の To（利用者裁定 2026-10-13 の窓は 2026-10-09 まで）に揃えないと、翌日以降の評価は RecordingMismatch になる。
+      # 記録を差し込むとき PoC が LookbackDays（2026-09-15〜10-09 なら 24）と一緒に入れる（#1219 の手順 5）。
+      - { name: Backtest__Stage0__EvaluationEnd, value: "" }
       # 評価銘柄（経路B は AAPL 1 銘柄。市場は Market 列挙名でバインドされる）。空なら取得対象が無い。
       - { name: Backtest__Stage0__Symbols__0__Symbol, value: "AAPL" }
       - { name: Backtest__Stage0__Symbols__0__Market, value: "UnitedStates" }

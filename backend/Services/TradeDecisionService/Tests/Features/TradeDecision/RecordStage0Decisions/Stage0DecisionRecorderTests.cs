@@ -963,6 +963,39 @@ public class Stage0DecisionRecorderTests
         input.WithWatchlist([], unavailableReason: null).Intraday.Should().Be(input.Intraday);
     }
 
+    // ------------------------------------------------------------------------------------------------
+    // FR-04, FR-15, ADR-0011, ADR-0033 決定2, #1308, IADR-0528: 基底の供給の出力を記録器に通す
+    // ------------------------------------------------------------------------------------------------
+
+    // #1308 受け入れ基準 4: 基底の供給が組んだ入力は、本番と同じ組み立て（TradeDecisionPromptBuilder）を通って記録になる。
+    // 方針・参考情報・前日比がプロンプトに載り、記録の (b) の申告の理由欄に欠けた源が残る。
+    [Fact]
+    public async Task 基底の供給の出力を記録器に通すと本番と同じ組み立てで記録が作られる()
+    {
+        var newsAt = new DateTimeOffset(2026, 6, 1, 15, 0, 0, TimeSpan.Zero);
+        var provider = new BaseAsOfDecisionInputProvider(
+            BaseAsOfDecisionInputProviderTests.FakePrices.FollowingAsOf(close: 110m, previousClose: 100m),
+            BaseAsOfDecisionInputProviderTests.FakePolicies.PreviousDay("前日に確定した押し目買いの方針"),
+            new AsOfReferenceAssembler(
+                BaseAsOfDecisionInputProviderTests.AllFeeds(
+                    new RetrievedContext("6 月 1 日の記事", "記事の本文", Tags: ["News", "finnhub-news"], PublishedAt: newsAt)),
+                topK: 5,
+                TimeSpan.FromHours(168)),
+            NullLogger<BaseAsOfDecisionInputProvider>.Instance);
+        var (recorder, llm, sink, _) = Build([Decision("Hold"), Decision("Hold")], wrapInputs: _ => provider);
+
+        var outcome = await recorder.RunAsync(Options(), CancellationToken.None);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        sink.Saved!.Records.Should().HaveCount(2, "2026-06-01・06-02 の平日 2 日");
+        llm.Prompts.Should().OnlyContain(p =>
+            p.Contains("前日に確定した押し目買いの方針") && p.Contains("- 前日終値: 100 / 前日比: +10.00%"));
+        llm.Prompts[0].Should().Contain("6 月 1 日の記事");
+        var news = sink.Saved.Records[0].AsOfInputs!.Single(a => a.Kind == Stage0AsOfInputKind.NewsAndDisclosures);
+        news.Availability.Should().Be(Stage0AsOfInputAvailability.Reconstructed);
+        news.Reason.Should().Contain("欠けた源: google-news");
+    }
+
     private sealed class CapturingSink : IStage0DecisionRecordSink
     {
         public Stage0DecisionRecordSet? Saved { get; private set; }

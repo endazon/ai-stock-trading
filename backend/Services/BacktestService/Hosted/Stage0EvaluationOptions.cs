@@ -75,9 +75,36 @@ public sealed class Stage0EvaluationOptions
     /// <summary>実効の巡回間隔。</summary>
     public TimeSpan EffectiveInterval() => TimeSpan.FromSeconds(Math.Max(60, IntervalSeconds));
 
-    /// <summary>評価期間 [from, to]（to は当日）。</summary>
-    public (DateOnly From, DateOnly To) EvaluationWindow(DateOnly today) =>
-        (today.AddDays(-Math.Max(1, LookbackDays)), today);
+    /// <summary>
+    /// FR-15, ADR-0033 決定2, #1308, IADR-0528 決定9: 評価の窓の終端を固定する日（`YYYY-MM-DD`）。**空は「今日」**（従来どおり）。
+    /// <para>
+    /// 再生は「記録の `To` ≥ 窓の終端」を求める。記録の窓が過去の日で終わる（利用者裁定 2026-10-13 の窓は 2026-10-09 まで）と、
+    /// 終端が今日のままでは翌日以降のどの評価も <c>RecordingMismatch</c> になる。終端を記録の `To` に固定すれば再生できる。
+    /// 今日より後の日は今日へ寄せる（未来の足は無い）。解釈できない値は今日へ倒す（<see cref="HasUnparseableEvaluationEnd"/> で警告）。
+    /// 終端を過去に固定しても先読みにはならない（記録も足も窓の中だけを使う）。
+    /// </para>
+    /// </summary>
+    public string? EvaluationEnd { get; set; }
+
+    /// <summary>評価の窓の終端を固定する日。空・解釈不能は null（＝今日）。</summary>
+    public DateOnly? ParseEvaluationEnd() =>
+        DateOnly.TryParseExact(EvaluationEnd?.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end)
+            ? end
+            : null;
+
+    /// <summary>終端の構成が書かれているが解釈できないか（＝綴り違いの疑い。警告の材料）。</summary>
+    public bool HasUnparseableEvaluationEnd() =>
+        !string.IsNullOrWhiteSpace(EvaluationEnd) && ParseEvaluationEnd() is null;
+
+    /// <summary>
+    /// 評価期間 [from, to]。to は <see cref="EvaluationEnd"/>（今日より後なら今日）、無ければ当日。
+    /// from は to から <see cref="LookbackDays"/> 遡った日。
+    /// </summary>
+    public (DateOnly From, DateOnly To) EvaluationWindow(DateOnly today)
+    {
+        var end = ParseEvaluationEnd() is { } fixedEnd && fixedEnd < today ? fixedEnd : today;
+        return (end.AddDays(-Math.Max(1, LookbackDays)), end);
+    }
 
     /// <summary>
     /// LLM 学習カットオフ日。未設定・解釈不能は null（＝未充足へ倒す）。
