@@ -643,6 +643,10 @@ public static class AuditEntryFactory
                 // #820 の 5 巡目監査, IADR-0344 追記(5): 外部要因による減少の確定。決済は出していない。
                 SoftwareStopOutcome.ProtectionReduced =>
                     "——外部要因で建玉が減ったぶんを保護記録の主張から差し引いた（決済は出していない）",
+                // 🔴 #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた縮小（外部要因ではない）。決済は出していない。
+                SoftwareStopOutcome.ApprovedCloseReleased =>
+                    $"——外部要因ではない: 承認済みの決済の約定ぶんを差し引いた（出どころ={e.CloseOrigin?.ToString() ?? "不明"}"
+                        + $"・OrderId={e.CloseOrderId}・CloseDecisionId={e.CloseDecisionId}・決済は出していない）",
                 // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
                 SoftwareStopOutcome.ProtectionSuspended =>
                     "——**帳簿では守っているのに 1 株も決済できない状態が猶予を過ぎても続いている（到達の有無に依らない・要人手対応）**",

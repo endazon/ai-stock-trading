@@ -46,4 +46,8 @@ public sealed class ExecutedOrderRow
     // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定2: 承認の出どころ（序数。1＝TradeDecision / 2＝OwnerClose / 3＝MaintenanceMarginReduction）。
     // null＝分からない。**列の追加だけ**（既存行は null＝S1 は判断の手仕舞いと同じく取り消す側。是正前と同じ挙動）。
     public OrderApprovalOrigin? ApprovalOrigin { get; set; }
+
+    // 🔴 FR-10, #1330, IADR-0534 決定2: 承認経路の決済の約定のうち、保護記録の縮小へ既に帰属させた株数（0..FilledQuantity・単調）。
+    // 既定 0。**移行で既存の決済行は FilledQuantity へ揃える**（過去の約定を、これからの縮小の証拠にしない）。
+    public int ProtectionReleasedQuantity { get; set; }
 }

@@ -393,7 +393,9 @@ if (brokerSelection.IsMoomoo)
         sp.GetRequiredService<IProtectiveStopOrderStore>(),
         sp.GetRequiredService<IExecutedOrderStore>(),
         sp.GetRequiredService<IClock>(),
-        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value.BatchSize));
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value.BatchSize,
+        // 🔴 FR-10, #1330, IADR-0534 決定4: 検知の outcome を INF で残す。
+        sp.GetService<ILogger<UnattributedPositionDetector>>()));
     builder.Services.AddHostedService<BrokerPositionSnapshotService>();
 }
 

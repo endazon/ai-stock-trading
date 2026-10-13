@@ -3,15 +3,15 @@ title: 監査イベント（audit_events）データ仕様書
 type: data-spec
 status: review
 created: 2026-07-10
-updated: 2026-10-09
+updated: 2026-10-13
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-04, FR-06, FR-08, FR-10, FR-11, FR-12, FR-19, UC-07, NFR, FR-02]
 adrs: [ADR-0001, ADR-0003, ADR-0040, ADR-0049]
-iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521]
-specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment]
-issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286]
+iadrs: [IADR-0015, IADR-0019, IADR-0117, IADR-0342, IADR-0344, IADR-0347, IADR-0350, IADR-0429, IADR-0428, IADR-0436, IADR-0461, IADR-0462, IADR-0463, IADR-0472, IADR-0471, IADR-0476, IADR-0483, IADR-0487, IADR-0495, IADR-0500, IADR-0521, IADR-0534]
+specs: [20260710_audit-log, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_821_s3-alternative-order-types, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260926_1028_report-kb-reingest, 20260930_1105_close-qty-inflight, 20260930_1092_ledger-gap-events, 20260930_1113_entry-blockers-before-llm, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261001_1148_redact-retmsg-account-id, 20261002_1111_decision-final-failure-record, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261013_1330_approved-close-not-external-reduction]
+issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028, #1105, #1092, #1113, #1136, #1130, #1148, #1111, #1164, #1176, #1174, #1286, #1330]
 -->
 
 
@@ -82,12 +82,14 @@ issues: [#17, #18, #809, #819, #820, #821, #848, #849, #1002, #853, #1013, #1028
   （システムは決済しない）」を書く——「建玉あり ⇒ 有効な逆指値あり（または解消済み）」の読みの例外を台帳上で明示するため。
 - 損切りの実行機構 S1（ソフトウェア逆指値）が選ばれていた新規建ては、**配置（`SoftwareStopArmed`）**と
   **発動の結果（`SoftwareStopExecuted`：成行決済の発注／未約定エントリーの取消／決済拒否の打ち切り／エントリー記録が見つからない／
-  到達後も決済できないまま猶予を過ぎた／外部要因で保護対象を減らした／帳簿では守っているのに 1 株も決済できない状態が続いている／どの保護記録も主張していない建玉がある）**を記録する。
+  到達後も決済できないまま猶予を過ぎた／外部要因で保護対象を減らした／承認済みの決済の約定に合わせて保護対象を減らした／帳簿では守っているのに 1 株も決済できない状態が続いている／どの保護記録も主張していない建玉がある）**を記録する。
   相関はいずれもエントリーの `DecisionId` である。配置の要約には「ブローカーへの逆指値なし・システム停止中は決済されない」を、
   決済拒否の要約には「建玉が無保護で残っている（要人手対応）」を書く——利用者の承認なしに決済注文・取消が起きた理由の一次証跡になるため。
   **据え置きが猶予を過ぎた記録は 1 件につき 1 回だけ残す**（毎巡回書くと台帳が同じ事実で埋まる）。
   **外部要因による保護対象の縮小も 1 件につき 1 回だけ残す**（決済は出していない旨を要約へ書く。
   ブローカー側の逆指値を取り消す場合はこの記録が唯一の痕跡になる）。
+  **取引判断の決済（利確・損切りの判断）・利用者の手仕舞い・維持率割れの自動縮小の約定で減った分は「外部要因」と書かず**、
+  承認済みの決済に合わせた縮小として、出どころと決済の識別子（判断・注文）を要約へ書く（減った理由を取り違えて読ませないため）。
   🔴 **「帳簿では守っているのに 1 株も決済できない」状態も 1 件につき 1 回だけ残す**（到達の有無に依らない）——
   この状態の記録は有効・帳簿も無傷であり、**台帳の状態欄や数量欄をいくら見ても異常が分からない**。
   違いは「到達しても 1 株も決済しない」ことだけなので、この記録が無ければ保護が失われたことを後から誰も説明できない。

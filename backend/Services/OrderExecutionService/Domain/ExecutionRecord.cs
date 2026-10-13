@@ -10,6 +10,9 @@ namespace OrderExecutionService.Domain;
 // 🔴 FR-10, UC-06, ADR-0050 決定1, #1222, IADR-0515 決定2: ApprovalOrigin は承認の経路の発注が承認から写した出どころ（判断・利用者の手仕舞い・
 // 維持率割れの自動縮小）。null＝分からない（#1222 より前の記録・保護の機構の記録・突合で確定した記録・出どころを持たない旧い承認）。
 // S1 の決済の前の取消（SoftwareStopExecutor）が、利用者・自動縮小の決済を取り消さず差し引くために読む。null は判断の手仕舞いと同じく取り消す側。
+// 🔴 FR-10, #1330, IADR-0534 決定2: ProtectionReleasedQuantity は承認経路の決済（ApprovalOrigin あり）の約定のうち、保護記録の縮小へ
+// **既に帰属させた**株数（0..FilledQuantity・単調）。同じ約定を 2 回「承認済みの決済で減った」の証拠に使わないための吸収の印である。
+// 書くのは保護の突き合わせ（ProtectiveStopNetting）だけで、IExecutedOrderStore.MarkProtectionReleased の 1 列だけを書く。
 public record ExecutionRecord(
     Guid DecisionId,
     string OrderId,
@@ -26,4 +29,5 @@ public record ExecutionRecord(
     decimal SlippageRatio,
     DateTimeOffset ExecutedAt,
     StopWidthFloorSource? StopFloorSource = null,
-    OrderApprovalOrigin? ApprovalOrigin = null);
+    OrderApprovalOrigin? ApprovalOrigin = null,
+    int ProtectionReleasedQuantity = 0);

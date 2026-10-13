@@ -705,6 +705,46 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain(expected).And.Contain("950");
     }
 
+    // 🔴 T-10-2617, FR-10, #1330, IADR-0534 決定3: 承認済みの決済（取引判断の利確・損切り等）の約定に合わせた縮小は「外部要因」と書かない。
+    // 設計どおりの帰結なので Info。出どころと決済（DecisionId・OrderId）を名指しする。#1330 の事象では、利確の約定が
+    // 「外部要因（手動決済・強制決済…）」と通知され、所有者には誰かが手動で決済したと読めた。
+    [Theory]
+    [InlineData(OrderApprovalOrigin.TradeDecision, "取引判断の決済（利確・損切りの判断）が約定して")]
+    [InlineData(OrderApprovalOrigin.OwnerClose, "利用者の手仕舞いが約定して")]
+    [InlineData(OrderApprovalOrigin.MaintenanceMarginReduction, "維持率割れの自動縮小が約定して")]
+    [InlineData(null, "承認済みの決済が約定して")]
+    public void 承認済みの決済の約定に合わせた保護の縮小は外部要因と書かず出どころを名指しする(
+        OrderApprovalOrigin? origin, string expected)
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var msg = NotificationFormatter.From(new SoftwareStopExecuted(
+            Guid.NewGuid(), "MSFT", Market.UnitedStates, SoftwareStopOutcome.ApprovedCloseReleased, 456, 500m, 500m, 0,
+            closeDecisionId, "close-msft", null, StopT0, CloseOrigin: origin));
+
+        msg.Severity.Should().Be(NotificationSeverity.Info);
+        msg.Title.Should().Be("リスク統制: 承認済みの決済の約定に合わせて保護対象を減らしました");
+        msg.Title.Should().NotContain("外部要因");
+        msg.Content.Should().Contain(expected)
+            .And.Contain("**外部要因ではありません**")
+            .And.Contain(closeDecisionId.ToString())
+            .And.Contain("close-msft")
+            .And.Contain("数量456");
+        msg.Content.Should().NotContain("手動決済").And.NotContain("強制決済");
+    }
+
+    // T-10-2617: 外部要因の文面は従来どおり（承認済みの決済で説明できない分だけに出る）。
+    [Fact]
+    public void 外部要因による保護の縮小の文面は従来どおり()
+    {
+        var msg = NotificationFormatter.From(new SoftwareStopExecuted(
+            Guid.NewGuid(), "MSFT", Market.UnitedStates, SoftwareStopOutcome.ProtectionReduced, 44, 500m, 500m, 0,
+            null, null, null, StopT0));
+
+        msg.Severity.Should().Be(NotificationSeverity.Warning);
+        msg.Title.Should().Be("リスク統制: 外部要因により保護対象を減らしました");
+        msg.Content.Should().Contain("外部要因（手動決済・強制決済・ブローカー側逆指値の約定など）");
+    }
+
     // ---- FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 報告書確定の確定者の表示 ----
 
     private static readonly DateTimeOffset ConfirmedAt = new(2026, 9, 11, 4, 36, 0, TimeSpan.Zero);

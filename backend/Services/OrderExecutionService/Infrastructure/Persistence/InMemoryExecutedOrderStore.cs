@@ -98,6 +98,45 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
+    // 🔴 FR-10, #1330, IADR-0534 決定2: 承認経路の決済のうち、まだ保護の縮小へ帰属させていない約定を持つ記録（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindApprovedClosesWithUnreleasedFills(
+        string symbol, Market market, TradeSide closeSide, int limit)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        lock (_gate)
+        {
+            return _records
+                .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin is not null
+                    && r.FilledQuantity > r.ProtectionReleasedQuantity
+                    && r.Symbol == symbol && r.Market == market && r.Side == closeSide)
+                .OrderBy(r => r.ExecutedAt)
+                .Take(limit)
+                .ToList();
+        }
+    }
+
+    // 🔴 FR-10, #1330, IADR-0534 決定2: 帰属させた株数を進める（その値だけを書く。単調・約定数量以下）。
+    public bool MarkProtectionReleased(string orderId, int releasedQuantity)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        lock (_gate)
+        {
+            var index = _records.FindIndex(r => r.OrderId == orderId);
+            if (index < 0)
+                return false;
+
+            var record = _records[index];
+            var next = Math.Min(releasedQuantity, record.FilledQuantity);
+            if (next <= record.ProtectionReleasedQuantity)
+                return false;
+
+            _records[index] = record with { ProtectionReleasedQuantity = next };
+            return true;
+        }
+    }
+
     // FR-10, #958, IADR-0406 決定3: 非終端の記録の追跡の起点を進める（時刻だけを書く）。
     public bool RenewTracking(string orderId, DateTimeOffset trackedFrom)
     {

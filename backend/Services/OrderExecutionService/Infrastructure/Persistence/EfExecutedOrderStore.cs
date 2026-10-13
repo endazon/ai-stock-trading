@@ -32,6 +32,8 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             StopFloorSource = record.StopFloorSource,
             // #1222, IADR-0515 決定2: 承認の出どころ（S1 の決済の前の取消が読む）。
             ApprovalOrigin = record.ApprovalOrigin,
+            // #1330, IADR-0534 決定2: 保存の時点では帰属させた株数は無い（呼び出し側が渡す値をそのまま書く。既定 0）。
+            ProtectionReleasedQuantity = record.ProtectionReleasedQuantity,
         });
         db.SaveChanges();
     }
@@ -101,6 +103,41 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             .OrderByDescending(r => r.ExecutedAt)
             .Take(limit)
             .Select(r => ToRecord(r))];
+    }
+
+    // 🔴 FR-10, #1330, IADR-0534 決定2: 承認経路の決済（出どころあり）のうち、まだ保護の縮小へ帰属させていない約定を持つ行（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindApprovedClosesWithUnreleasedFills(
+        string symbol, Market market, TradeSide closeSide, int limit)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        return [.. db.ExecutedOrders
+            .Where(r => r.PositionEffect == PositionEffect.Close
+                && r.ApprovalOrigin != null
+                && r.FilledQuantity > r.ProtectionReleasedQuantity
+                && r.Symbol == symbol && r.Market == market && r.Side == closeSide)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .Select(r => ToRecord(r))];
+    }
+
+    // 🔴 FR-10, #1330, IADR-0534 決定2: 帰属させた株数を進める（**この 1 列だけ**を書く。単調・約定数量以下）。
+    // 変更追跡により UPDATE は 1 列だけになり、並行に約定追跡が書いた状態・数量を古い値で上書きしない。
+    public bool MarkProtectionReleased(string orderId, int releasedQuantity)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        var row = db.ExecutedOrders.Find(orderId);
+        if (row is null)
+            return false;
+
+        var next = Math.Min(releasedQuantity, row.FilledQuantity);
+        if (next <= row.ProtectionReleasedQuantity)
+            return false;
+
+        row.ProtectionReleasedQuantity = next;
+        db.SaveChanges();
+        return true;
     }
 
     // FR-10, #958, IADR-0406 決定3: 非終端の行の追跡の起点を進める。変更追跡により UPDATE は executed_at の 1 列だけになり、
@@ -180,5 +217,5 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     private static ExecutionRecord ToRecord(ExecutedOrderRow r) => new(
         r.DecisionId, r.OrderId, r.Symbol, r.Market, r.Side, r.ProductType, r.PositionEffect,
         r.Quantity, r.PlannedPrice, r.FilledQuantity, r.AveragePrice, r.Status, r.SlippageRatio, r.ExecutedAt,
-        r.StopFloorSource, r.ApprovalOrigin);
+        r.StopFloorSource, r.ApprovalOrigin, r.ProtectionReleasedQuantity);
 }

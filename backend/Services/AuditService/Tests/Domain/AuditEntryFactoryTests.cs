@@ -1452,6 +1452,25 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain(expected).And.Contain("950").And.Contain("940");
     }
 
+    // 🔴 T-10-2620, FR-10, FR-11, #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた縮小は、出どころと決済が要約から読め、
+    // 「外部要因」とは書かない（「なぜ建玉が消えたか」の一次証跡）。
+    [Fact]
+    public void 承認済みの決済の約定に合わせた保護の縮小は出どころと決済が要約から読める()
+    {
+        var closeDecisionId = Guid.NewGuid();
+        var entry = AuditEntryFactory.From(
+            new SoftwareStopExecuted(Guid.NewGuid(), "MSFT", Market.UnitedStates, SoftwareStopOutcome.ApprovedCloseReleased,
+                456, 500m, 500m, 0, closeDecisionId, "close-msft", null, StopT0, CloseOrigin: OrderApprovalOrigin.TradeDecision),
+            Id, RecordedAt);
+
+        entry.Summary.Should().Contain("ApprovedCloseReleased")
+            .And.Contain("出どころ=TradeDecision")
+            .And.Contain($"CloseDecisionId={closeDecisionId}")
+            .And.Contain("OrderId=close-msft")
+            .And.Contain("外部要因ではない");
+        entry.Summary.Should().NotContain("外部要因で建玉が減った");
+    }
+
     // FR-10, FR-11, ADR-0040 決定1（S3）, #821, IADR-0347: 🔴 **拒否理由（retType / retMsg）が要約から読めること**
     // ——これが残らないと「なぜ S3 が使えないのか」を台帳から説明できない（#821 の目的そのもの）。
     [Fact]

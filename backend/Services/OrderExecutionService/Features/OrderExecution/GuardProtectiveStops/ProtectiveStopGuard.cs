@@ -186,9 +186,11 @@ public sealed class ProtectiveStopGuard(
             .Select(s => (s.Symbol, s.Market, s.EntrySide))
             .Distinct())
         {
+            // 🔴 FR-10, #1330, IADR-0534: 予約ストアを渡して、確定した減少のうち承認済みの決済（取引判断の利確・損切り等）の
+            // 約定で説明できる分を外部要因と分ける。outcome は INF で残す。
             ProtectiveStopNetting.ReconcileShares(
                 symbol, market, entrySide, snapshot, active, stops, store, clock.UtcNow,
-                observing: true, events: events);
+                observing: true, events: events, reservations: reservations, logger: _logger);
         }
 
         active = stops.FindActive(batchSize);
@@ -252,7 +254,7 @@ public sealed class ProtectiveStopGuard(
         // 「ガードと同じ順序だから安全」という類比は**片手落ちである**——発注側は照会の前と後の両方で主張を読み、
         // **小さい方**を採ることで両方向の窓を閉じている（IADR-0344 追記(11) 決定1）。
         ProtectiveStopNetting.DetectUnattributedPositions(
-            snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events);
+            snapshot, stops.FindActive(batchSize), stops, store, clock.UtcNow, events, _logger);
 
         return new ProtectiveStopGuardResult(
             active.Count, stillActive, completed, replaced, closedOut, unknown, failed, events, closeRejected, closeFailed);
