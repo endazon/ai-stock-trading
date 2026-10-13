@@ -78,6 +78,7 @@ public sealed class DecisionOrchestrator(
                     logger.LogWarning(
                         "一次スクリーニングの構造化出力が解析不能（見送りとは区別して記録・#290）: kind={Kind} detail={Detail}",
                         screen.Failure!.Kind, LogSanitizer.Sanitize(screen.Failure.Detail));
+                    LogUnparseableRaw(ScreeningLayer, screen.Failure, screenOutput);
                 }
                 else
                 {
@@ -119,6 +120,7 @@ public sealed class DecisionOrchestrator(
                     i + 1, options.VoteCount, parsed.Failure!.Kind, parsed.Failure.Action?.ToString() ?? "不明",
                     signedHeldQuantity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "不明",
                     LogSanitizer.Sanitize(parsed.Failure.Detail));
+                LogUnparseableRaw(DecisionLayer, parsed.Failure, output);
             }
 
             votes.Add(parsed.Decision);
@@ -148,6 +150,35 @@ public sealed class DecisionOrchestrator(
             UnparseableVotes: unparseableVotes, ScreeningUnparseable: false,
             ScreeningRationaleGarbleSuspected: screeningGarbleSuspected,
             DecisionRationaleGarbleSuspected: decisionGarbleSuspected);
+    }
+
+    /// <summary>#1332, IADR-0531: 原本の行の層の名前（一次スクリーニング）。PoC の抽出が grep で使う。</summary>
+    internal const string ScreeningLayer = "screening";
+
+    /// <summary>#1332, IADR-0531: 原本の行の層の名前（二次本判断）。</summary>
+    internal const string DecisionLayer = "decision";
+
+    /// <summary>#1332, IADR-0531: 原本の行の目印（PoC の抽出が grep で使う。文言を変えるなら IADR-0531 の手順も直す）。</summary>
+    internal const string RawExcerptMarker = "解析不能の応答の原本";
+
+    // 🔴 FR-04, FR-11, #1332, IADR-0531 決定 1: **解析不能のときだけ**、応答の原本の抜粋（先頭 1,000 字＋末尾 500 字）と形の指紋を
+    // WRN 1 行で残す。従来は種別と定型の詳細しか残らず、原因を確定できなかった（PoC 2026-10-12: NoJsonObject 2/682）。
+    // - 全量の記録（LogPrompts・IADR-0061 決定 1）は既定オフのまま変えない。プロンプトは書かない（保有・資金残枠を含む）。
+    // - 本文はモデルの出力であり、見送りの根拠文（上の LogInformation）と同じ種類の情報である。秘密（資格情報）は入らない。
+    // - 空応答（EmptyOutput）は残す本文が無いので出さない。解析できた応答（見送りを含む）も出さない（肥大化を避ける）。
+    // - 1 行化（LogSanitizer）は 1 回だけ掛ける。改行は '_' に置き換わるため、元の改行数は指紋の newlines に残す。
+    private void LogUnparseableRaw(string layer, TradeDecisionParseFailure failure, string? raw)
+    {
+        if (failure.Kind == TradeDecisionParseFailureKind.EmptyOutput)
+        {
+            return;
+        }
+
+        var shape = TradeDecisionParser.DescribeShape(raw);
+        logger.LogWarning(
+            RawExcerptMarker + "（解析不能のときだけ・先頭 {HeadChars} 字と末尾 {TailChars} 字・#1332）: layer={Layer} kind={Kind} {Shape} excerpt={Excerpt}",
+            UnparseableOutputExcerpt.HeadChars, UnparseableOutputExcerpt.TailChars, layer, failure.Kind, shape.Describe(),
+            LogSanitizer.Sanitize(UnparseableOutputExcerpt.Of(raw)));
     }
 }
 

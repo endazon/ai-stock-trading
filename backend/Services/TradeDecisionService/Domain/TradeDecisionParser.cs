@@ -228,12 +228,23 @@ public static class TradeDecisionParser
 
     // 最初の '{' に対応する閉じ '}' までを、括弧の深さを数えて取り出す（前後の散文を除去）。
     // 文字列リテラル内の括弧・エスケープは無視するため、JSON の後ろに '}' を含む散文が続いても壊れない。
+    // #1332, IADR-0531: 走査は ScanFromFirstBrace に 1 つだけ置き、形の指紋（DescribeShape）と共有する（2 か所に書かない）。
     private static string? ExtractJsonObject(string text)
+    {
+        var scan = ScanFromFirstBrace(text);
+        return scan.CloseIndex is { } close ? text[scan.Start..(close + 1)] : null; // null＝'{' が無い・閉じない
+    }
+
+    // 最初の '{' から走査した結果。CloseIndex が null のとき、末尾まで深さ 0 に戻らなかった
+    // （EndedInString＝末尾で文字列の内側／DepthAtEnd＝残った深さ）。Start が -1 なら '{' が無い。
+    private readonly record struct BraceScan(int Start, int? CloseIndex, bool EndedInString, int DepthAtEnd);
+
+    private static BraceScan ScanFromFirstBrace(string text)
     {
         var start = text.IndexOf('{');
         if (start < 0)
         {
-            return null;
+            return new BraceScan(-1, null, false, 0);
         }
 
         var depth = 0;
@@ -258,14 +269,54 @@ public static class TradeDecisionParser
                     depth--;
                     if (depth == 0)
                     {
-                        return text[start..(i + 1)];
+                        return new BraceScan(start, i, false, 0);
                     }
 
                     break;
             }
         }
 
-        return null; // 対応する閉じ括弧が見つからない
+        return new BraceScan(start, null, inString, depth); // 対応する閉じ括弧が見つからない
+    }
+
+    /// <summary>
+    /// FR-04, FR-11, #1332, IADR-0531: 応答の**形の指紋**。解析不能の原本を保全するとき、本文の抜粋と併せて残し、
+    /// <c>NoJsonObject</c> の原因の候補（散文だけ・全角の括弧・閉じない文字列・閉じない括弧）を本文を読まずに分ける。
+    /// 走査は抽出（<c>ExtractJsonObject</c>）と同じ関数であり、抽出の挙動は変えない。
+    /// </summary>
+    public static UnparseableOutputShape DescribeShape(string? llmOutput)
+    {
+        var text = llmOutput ?? string.Empty;
+        int open = 0, close = 0, fullWidth = 0, quotes = 0, newlines = 0;
+        foreach (var c in text)
+        {
+            switch (c)
+            {
+                case '{': open++; break;
+                case '}': close++; break;
+                case '｛' or '｝': fullWidth++; break;
+                case '"': quotes++; break;
+                case '\n': newlines++; break;
+            }
+        }
+
+        var fences = CountOccurrences(text, "```");
+        var scan = ScanFromFirstBrace(text);
+        return new UnparseableOutputShape(
+            text.Length, open, close, fullWidth, quotes, fences, newlines,
+            scan.Start, scan.CloseIndex is not null, scan.EndedInString, scan.DepthAtEnd);
+    }
+
+    private static int CountOccurrences(string text, string token)
+    {
+        var count = 0;
+        for (var i = text.IndexOf(token, StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf(token, i + token.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     // #785: 数値は null 許容（Hold のときモデルは null を返してよい）。
@@ -322,7 +373,11 @@ public enum TradeDecisionParseFailureKind
     /// <summary>出力が空・空白のみ。</summary>
     EmptyOutput,
 
-    /// <summary>JSON オブジェクトを抽出できない（散文のみ・括弧が閉じない）。</summary>
+    /// <summary>
+    /// JSON オブジェクトを抽出できない。ASCII の '{' が無い（散文のみ・全角の括弧）か、最初の '{' からの走査が末尾まで
+    /// 深さ 0 に戻らない（括弧が閉じない・#1332: エスケープされない '"' が奇数個で文字列が閉じない）。
+    /// 切り分けは <see cref="TradeDecisionParser.DescribeShape"/>（IADR-0531）。
+    /// </summary>
     NoJsonObject,
 
     /// <summary>JSON として不正（構文エラー・null）。</summary>
