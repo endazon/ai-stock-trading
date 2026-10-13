@@ -96,8 +96,9 @@ public class Stage0RecordingLocalProfileTests
         var sink = new CapturingSink();
         var recorder = Recorder(llm, sink, StubBaseInputs());
 
-        recorder.Estimate(options).TotalJpy.Should().Be(437.2831152m);
-        decimal.Round(recorder.Estimate(options).TotalJpy, 2).Should().Be(options.ApprovedEstimateJpy);
+        var estimate = recorder.Estimate(options);
+        estimate.TotalJpy.Should().Be(437.2831152m);
+        decimal.Round(estimate.TotalJpy, 2).Should().Be(options.ApprovedEstimateJpy);
 
         var outcome = await recorder.RunAsync(options, TestContext.Current.CancellationToken);
 

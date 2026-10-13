@@ -70,6 +70,23 @@ plan_refs:
   3. この承認値の組で一度だけ `true`。
   4. 取り出したら `false` へ戻し、`ApprovedEstimateJpy`（trade-decision）を空へ戻す。
 
+## SEC EDGAR の CIK が AAPL の 1 件だけであることの影響（coordinator の確認依頼 2026-10-13）
+
+結論: **AAPL 以外の 11 銘柄の (b) は「再構成不可」にならない。CIK は足さない。** 根拠はコードの次の箇所である（`6977ff8e` 時点）。
+
+| 箇所 | 挙動 |
+| --- | --- |
+| `Stage0AsOfComposition.cs:93-99` | SEC の源は「UserAgent があり、CIK が 1 件以上ある」ときに 1 つだけ組む。銘柄ごとには組まない。AAPL の CIK 1 件で組まれる。 |
+| `AsOfReferenceFeeds.cs:126-143`（`SecEdgarAsOfFilingFeed.FetchAsync`） | 構成した全 CIK の提出一覧を引き、`Ticker` が判断の銘柄と一致する文書だけを返す（`:139`）。CIK の無い銘柄（例 TSLA）には**空の一覧**を返し、`null` は返さない。`null` になるのは取得の失敗だけである（`:133-136`）。 |
+| `AsOfReferenceAssembler.cs:84-87, 101-104` | `FailedSources` に入るのは、必須の源が未構成のとき（`:86`）と、取得が `null` のとき（`:103`）だけである。空の一覧は失敗に数えない。 |
+| `AsOfReferenceAssembler.cs:15`・`BaseAsOfDecisionInputProvider.cs:69` | `IsComplete`（`FailedSources` が空）なら、(b) を再構成不可と申告しない。 |
+| `Stage0AsOfExternalSourcesTests.cs:199` | 既存試験が「構成した CIK の銘柄ではない MSFT は空」を固定している。 |
+
+- したがって 11 銘柄の判断は「SEC の開示が無かった」として記録され、Stage 0 の判定母集団に残る。
+- 本番の KB も、収集の CIK は AAPL の 1 件だけである（`values-local.yaml` の `Collection__Source__SecEdgar__Ciks__0`）。11 銘柄の開示は本番の判断にも渡っていない。記録へだけ 11 銘柄の CIK を足すと、記録の入力が本番より厚くなり、本番と同じ入力で再現するという前提から外れる。そのため足さない（values-local の注記「本番の KB に無い開示は記録にも渡さない」と同じ判断）。
+- 付記: AAPL の CIK の取得が失敗すると、その判断時点では銘柄によらず `null` が返り（`:133-136`）、12 銘柄すべての (b) が「取れなかった源」になる。失敗は覚えず、次の判断時点で撃ち直す。
+- CIK を足さないので、SEC の対応表（company_tickers.json）は取得していない。
+
 ## 母集合（規則 6・9）
 
 - `Stage0Recording__` を values 2 本で引いた: values-local は trade-decision と report（`ApprovedEstimateJpy`）。values.yaml（本番）は触らない。
