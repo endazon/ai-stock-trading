@@ -668,6 +668,11 @@ switch (LlmPricingStartupGuard.Evaluate(
         break;
 }
 
+// 🔴 FR-10, ADR-0066 決定1, #1291, IADR-0527 決定2（2026-10-13 追記）: Sizing:MinEntryNotionalRatio を既定（1%）から変えた構成では、
+// 高ボラティリティ銘柄の区分の上限の下端（1% の固定値。構成値に連動しない）とのずれを起動時に知らせる（統制は緩まないので起動は止めない）。
+if (HighVolatilityFloorStartupNotice.WarningFor(app.Services.GetRequiredService<MinimumEntryNotionalOptions>()) is { } hvFloorWarning)
+    app.Logger.LogWarning("{HighVolatilityFloorWarning}", hvFloorWarning);
+
 // FR-02, #1169, IADR-0490: 導いた上限を起動時に 1 行出す（運用者が監視銘柄数・LLM の timeout と突き合わせられるように）。
 var cycleBudget = app.Services.GetRequiredService<ScheduledCycleBudget>();
 app.Logger.LogInformation(

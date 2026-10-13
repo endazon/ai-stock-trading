@@ -73,8 +73,10 @@ public static class HighVolatilityOrderCap
     public const decimal MaxRatioUpperBound = 0.25m;
 
     /// <summary>
-    /// 区分の上限の構成範囲の下端（新規建ての最小の名目額の比率の既定＝equity の 1%。ADR-0063 決定2）。これ未満では区分の銘柄の数量は
+    /// 区分の上限の構成範囲の下端（新規建ての最小の名目額の比率の<b>既定値</b>＝equity の 1%。ADR-0063 決定2・ADR-0066 決定1）。これ未満では区分の銘柄の数量は
     /// 必ず 0 になり、設定として意味を持たない。🔴 下端ちょうどでも端数切り捨てでほぼ常に見送りになる（禁じない。利用者が選ぶ余地）。
+    /// 🔴 <b>取引判断の構成値 <c>Sizing:MinEntryNotionalRatio</c> に連動しない固定値である</b>（ADR-0066 決定1 が計画の決定とした。構成値はリスク管理から見えない）。
+    /// 構成値を既定から変えた構成では、取引判断が起動時に警告する（<c>HighVolatilityFloorStartupNotice</c>）。
     /// </summary>
     public const decimal MinRatioLowerBound = TradingDefaults.MinEntryNotionalRatio;
 
@@ -110,7 +112,7 @@ public static class HighVolatilityOrderCap
     }
 
     /// <summary>
-    /// FR-10, UC-06, ADR-0063 決定2: 設定値の妥当性（空なら受理してよい）。比率は <see cref="MinRatioLowerBound"/> 以上 <see cref="MaxRatioUpperBound"/> 以下。
+    /// FR-10, UC-06, ADR-0063 決定2, ADR-0066 決定1: 設定値の妥当性（空なら受理してよい）。比率は <see cref="MinRatioLowerBound"/> 以上 <see cref="MaxRatioUpperBound"/> 以下。
     /// 明示指定の銘柄コードは空でないこと・市場は既知の値であること。
     /// </summary>
     public static IReadOnlyList<string> Validate(HighVolatilitySettings settings)
