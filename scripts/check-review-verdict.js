@@ -37,13 +37,25 @@
  * **本検査器がまさに止めようとしている形**（緑だが検査されていない）そのものである。
  * 実測（planning#355）: 「2 本セット」を「配線も 2 本」と読んだ誤配線が 1 件起きた。
  *
+ * **検証の下限（#1315 / IADR-0190 決定 7）も同じ本文から読む。** プロンプトの【検証の下限】は
+ * 「変更ファイルを全部読む」「helm の差分なら helm lint / helm template」「scripts/ .github/ の差分なら
+ * scripts.test.js」等を求めるが、マージ後の抜き取りで 2 本の違反が出た（#1324: helm と .github の差分で
+ * どちらも未実行 / #1336: 32 ファイル中 18 ファイルしか読まず「下限は満たしていません」と自己申告）。
+ * 判定が揃っていても**下限を欠いたレビューは「緑だが検査されていない」と同型**なので、ここで落とす。
+ *   (a) 本文の「変更 N ファイル中 M ファイルを読んだ」の申告が無い、または M + K < N（K は生成物の除外数）
+ *   (b) 同じ行に「下限」と「満たして(い)ない / 満たさない」がある（自己申告の違反）
+ *   (c) 変更ファイル（env CHANGED_FILES）に deploy/helm/** があるのに本文に helm lint / helm template を
+ *       実行した記載が無い、scripts/** か .github/** があるのに scripts.test.js を実行した記載が無い
+ *       （語を含む行が「実行していない」等だけなら、記載が無いとみなす。#1324 の実文がその形だった）
+ *
  * 使い方:
  *   node scripts/check-review-verdict.js <execution-file> [--self-test]
  *
  * 環境変数:
- *   ALLOW_MISSING_VERDICT=1   判定が無くても失敗させない（警告のみ。緊急避難用）
+ *   ALLOW_MISSING_VERDICT=1   判定が無くても失敗させない（警告のみ。緊急避難用。**下限の判定には効かない**）
+ *   CHANGED_FILES             PR の変更ファイル（改行区切り）。未設定・空なら (c) だけを skip する（warn で明示）
  *
- * 終了コード: 判定が揃っていない=1 / 揃っている=0 / 実行ログを読めない=0（fail-open）。
+ * 終了コード: 判定が揃っていない・下限に反した=1 / 揃っている=0 / 実行ログを読めない=0（fail-open）。
  */
 'use strict';
 const fs = require('fs');
@@ -143,6 +155,169 @@ function findVerdicts(text) {
   return { found, missing };
 }
 
+/**
+ * 下限の判定に使う「レビュー本文」を選ぶ（#1315）。
+ *
+ * **集めた全文では判定しない。** 途中の独り言（「下限を満たしていないので読み足す」）や、進行中の
+ * プレースホルダの更新で赤くなる。候補（コメント投稿ツールの入力・assistant の text・result）のうち
+ * **判定の見出しを 1 つでも含む最後のもの**を本文とする。無ければ集めた全文で代える（その場合は
+ * 判定の見出しの検査がすでに落ちている）。
+ */
+function selectReviewBody(events) {
+  const candidates = [];
+  for (const e of events) {
+    if (!e) continue;
+    if (e.type === 'assistant') {
+      const content = e.message && e.message.content;
+      if (!Array.isArray(content)) continue;
+      for (const b of content) {
+        if (b && b.type === 'text' && typeof b.text === 'string') candidates.push(b.text);
+        else if (b && b.type === 'tool_use') {
+          const body = commentBodyOf(b);
+          if (body) candidates.push(body);
+        }
+      }
+    } else if (e.type === 'result' && typeof e.result === 'string') {
+      candidates.push(e.result);
+    }
+  }
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    if (findVerdicts(candidates[i]).found.length > 0) return candidates[i];
+  }
+  return candidates.join('\n');
+}
+
+/** 全角数字・全角括弧・全角空白を半角へ寄せる（「９ ファイル中 ９ ファイル」を同じに読む）。 */
+function normalize(text) {
+  return String(text || '').normalize('NFKC');
+}
+
+const UNIT = '(?:ファイル|件)';
+
+/**
+ * 「変更 N ファイル中 M ファイルを読んだ」の申告を読む。
+ *
+ * 母集合は #1318〜#1336 のレビューコメントで実在した書式（作業仕様書 20261013_1315_review-floor-check の表）:
+ *   - `変更 9 ファイル中 9 ファイルを読んだ` / `… 14 ファイルの差分を読んだ` / `… 15 ファイルの差分を確認した`
+ *   - `変更 32 ファイル中、…。**全文または差分を読んだのは 18 ファイル**です。`
+ *   - `変更 38 ファイル中、実装 15 ファイル（…）の差分を読みました` / `… 15 ファイルは差分を読みました`
+ * N を見つけたら、**同じ段落（次の空行まで）**から M と生成物の除外数 K を探す。
+ * M が無い（「主要ファイルは読んだ」「19 ファイルを対象にした」等）は**申告なし**として扱う。
+ *
+ * @returns {{ n: number, m: number|null, k: number } | null} N も無ければ null
+ */
+function parseReadDeclaration(text) {
+  const t = normalize(text);
+  const head = new RegExp(`変更\\s*(\\d+)\\s*${UNIT}`).exec(t);
+  if (!head) return null;
+  const n = Number(head[1]);
+  const rest = t.slice(head.index + head[0].length);
+  const blank = rest.search(/\n\s*\n/);
+  const seg = blank < 0 ? rest : rest.slice(0, blank);
+
+  let m = null;
+  const byWho = new RegExp(`読んだ(?:の|ファイル)は\\s*\\**\\s*(\\d+)\\s*${UNIT}`).exec(seg);
+  const byCount = new RegExp(
+    `(\\d+)\\s*${UNIT}\\s*(?:\\([^)\\n]*\\))?\\s*[のはを]?\\s*(?:すべて|全て|全部)?\\s*` +
+      '(?:(?:全文|差分|本文|内容)(?:(?:または|か|と)(?:全文|差分))?\\s*[をでの]?\\s*)?' +
+      '(?:読|精読|確認|目視)'
+  ).exec(seg);
+  // 先に現れた方を採る（「18 ファイルは確認、読んだのは 10 ファイル」のような併記で後ろを拾わない）
+  const hits = [byWho, byCount].filter(Boolean).sort((a, b) => a.index - b.index);
+  if (hits.length) m = Number(hits[0][1]);
+
+  const ex = new RegExp(`生成物\\s*(\\d+)\\s*${UNIT}\\s*(?:\\([^)\\n]*\\))?\\s*を?\\s*(?:除外|除く|除い)`).exec(seg);
+  const k = ex ? Number(ex[1]) : 0;
+  return { n, m, k };
+}
+
+/**
+ * 「満たしていない」の活用形（常体・敬体・可能形）。#1336 の実文は「満たしていません」（敬体）である。
+ * 満たして(い)ない / 満たして(い)ません / 満たさない / 満たしません / 満たせ(てい)ない / 満たせ(てい)ません
+ */
+const NOT_MET = '(?:満たし(?:て(?:い)?)?(?:ない|ません)|満たさない|満たせ(?:て(?:い)?)?(?:ない|ません))';
+
+/** (b) 下限を満たしていないという自己申告の行を返す。 */
+function findFloorAdmissions(text) {
+  return normalize(text)
+    .split('\n')
+    // 引用（インラインコード・「」・『』）の中は数えない。検査器そのものを論じるレビュー（本検査器の PR 等）が
+    // 「下限…満たしていない」を引用しただけで自己発火する（planning#319 知見 3 と同型）のを防ぐ。
+    .map((line) => line.replace(/`[^`]*`/g, '').replace(/「[^」]*」/g, '').replace(/『[^』]*』/g, ''))
+    .filter((line) => line.includes('下限'))
+    .filter((line) => new RegExp(NOT_MET).test(line))
+    // 「満たしていない項目は無い」は否定の否定（違反ではない）
+    .filter((line) => !new RegExp(`${NOT_MET}(?:もの|項目|点|検証)は(?:無|な)(?:い|し)`).test(line))
+    .map((line) => line.trim());
+}
+
+/**
+ * 「実行していない」と書いた行（#1324 の実文: 「`helm lint` / `helm template`: 実行していない」）。
+ * **語の有無だけで見ると、#1324 のように「実行していない」と書いた本文でも緑になる。**
+ * 「未検証」は入れない —— 実行した行に「CI 側は未検証」と添える書き方が実在し、偽陽性になる。
+ */
+const NOT_RUN =
+  /実行して(?:い)?(?:ない|ません)|走らせて(?:い)?(?:ない|ません)|実行しな(?:かった|い)|走らせな(?:かった|い)|実行しませんでした|未実行|拒否|できなかった|できていない|省いた|省略/;
+
+/** 本文に、そのコマンドを「実行した」と読める行（語を含み、未実行の語を含まない行）があるか。 */
+function mentionsRun(text, cmd) {
+  return text.split('\n').some((line) => line.includes(cmd) && !NOT_RUN.test(line));
+}
+
+/** CHANGED_FILES（改行区切り）を配列にする。空行は捨てる。 */
+function parseChangedFiles(raw) {
+  return String(raw || '')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 下限の違反を列挙する（#1315 / IADR-0190 決定 7）。
+ *
+ * @param {string} body  レビュー本文（selectReviewBody の結果）
+ * @param {string[]|null} changedFiles  変更ファイル。null なら (c) を判定しない
+ * @returns {string[]} 違反ごとの 1 行
+ */
+function findFloorViolations(body, changedFiles) {
+  const problems = [];
+  const text = normalize(body);
+
+  const decl = parseReadDeclaration(text);
+  if (!decl || decl.m === null) {
+    problems.push(
+      '下限「変更ファイルは全部読む」: 本文に「変更 N ファイル中 M ファイルを読んだ」の申告が無い' +
+        (decl ? `（N=${decl.n} は在るが、読んだ件数 M が数字で書かれていない）` : '')
+    );
+  } else if (decl.m + decl.k < decl.n) {
+    problems.push(
+      `下限「変更ファイルは全部読む」: 変更 ${decl.n} ファイル中 ${decl.m} ファイルしか読んでいない` +
+        (decl.k ? `（生成物の除外 ${decl.k} を足しても ${decl.m + decl.k}）` : '')
+    );
+  }
+
+  for (const line of findFloorAdmissions(text)) {
+    problems.push(`下限の自己申告: 本文が下限を満たしていないと書いている —— 「${line.slice(0, 120)}」`);
+  }
+
+  if (changedFiles) {
+    if (changedFiles.some((f) => f.startsWith('deploy/helm/'))) {
+      for (const cmd of ['helm lint', 'helm template']) {
+        if (!mentionsRun(text, cmd)) {
+          problems.push(`下限「deploy/helm/** の差分があれば ${cmd}」: 本文に「${cmd}」を実行した記載が無い`);
+        }
+      }
+    }
+    const touchedScripts = changedFiles.filter((f) => f.startsWith('scripts/') || f.startsWith('.github/'));
+    if (touchedScripts.length && !mentionsRun(text, 'scripts.test.js')) {
+      problems.push(
+        `下限「scripts/ か .github/ の差分があれば scripts.test.js 全件」: 本文に「scripts.test.js」を実行した記載が無い（該当 ${touchedScripts.length} ファイル）`
+      );
+    }
+  }
+  return problems;
+}
+
 function selfTest() {
   const assert = require('assert');
   const ok = (name, fn) => {
@@ -226,6 +401,46 @@ function selfTest() {
     assert.strictEqual(findVerdicts(collectAssistantText(events)).missing.length, 3);
   });
 
+  const review = (head) => `## AI コードレビュー結果\n\n${head}\n\n### 🔴 重大\n- なし\n\n### 🟡 推奨\n- なし\n\n### 🟢 軽微\n- なし\n`;
+
+  T('下限: N 中 N を読んだ申告は緑', () => {
+    assert.deepStrictEqual(findFloorViolations(review('変更 9 ファイル中 9 ファイルを読んだ(生成物の除外なし)。'), []), []);
+  });
+
+  T('下限: 読んだのは M ファイル（M < N）は赤', () => {
+    const v = findFloorViolations(review('変更 32 ファイル中、生成物の除外なし。**全文または差分を読んだのは 18 ファイル**です。'), []);
+    assert.strictEqual(v.length, 1);
+    assert.match(v[0], /32 ファイル中 18/);
+  });
+
+  T('下限: 申告が無いのは赤', () => {
+    assert.strictEqual(findFloorViolations(review('差分を読んだ。'), []).length, 1);
+  });
+
+  T('下限: 「下限は満たしていません」は赤', () => {
+    const v = findFloorViolations(review('変更 2 ファイル中 2 ファイルを読んだ。\n\n下限（全ファイルを読む）は満たしていません。'), []);
+    assert.strictEqual(v.length, 1);
+  });
+
+  T('下限: helm 差分で helm lint / helm template が無ければ赤', () => {
+    const body = review('変更 1 ファイル中 1 ファイルを読んだ。');
+    assert.strictEqual(findFloorViolations(body, ['deploy/helm/ast/values.yaml']).length, 2);
+    assert.deepStrictEqual(findFloorViolations(`${body}\n- helm lint: OK\n- helm template: OK`, ['deploy/helm/ast/values.yaml']), []);
+  });
+
+  T('下限: 「helm lint: 実行していない」は実行した記載とみなさない（#1324 の形）', () => {
+    const body = review('変更 2 ファイル中 2 ファイルを読んだ。') + '\n- `helm lint` / `helm template`: 実行していない。\n- `scripts.test.js`: 実行していない。\n';
+    assert.strictEqual(findFloorViolations(body, ['deploy/helm/a/values.yaml', '.github/workflows/helm.yml']).length, 3);
+  });
+
+  T('下限: 判定の見出しを含む最後の候補を本文に選ぶ（独り言で赤くしない）', () => {
+    const events = [
+      { type: 'assistant', message: { content: [{ type: 'text', text: '下限を満たしていないので読み足す。' }] } },
+      { type: 'result', result: review('変更 3 ファイル中 3 ファイルを読んだ。') },
+    ];
+    assert.deepStrictEqual(findFloorViolations(selectReviewBody(events), []), []);
+  });
+
   console.log(`[check-review-verdict] self-test OK（${n} 件）`);
 }
 
@@ -254,9 +469,34 @@ function main(argv) {
   const events = parseEvents(text);
   const { missing } = findVerdicts(collectAssistantText(events));
 
+  // 検証の下限（#1315 / IADR-0190 決定 7）。判定の有無とは独立に見て、違反は 1 行ずつ ::error で出す。
+  // **ALLOW_MISSING_VERDICT は下限には効かない**（判定の未投稿の緊急避難であり、下限を省く口実にしない）。
+  let floorFailed = false;
+  if (events.length > 0) {
+    const changed = parseChangedFiles(process.env.CHANGED_FILES);
+    if (changed.length === 0) {
+      warn(
+        '[check-review-verdict] CHANGED_FILES が未設定または空のため、差分の種類に応じた下限' +
+          '（helm lint / helm template / scripts.test.js）の判定だけを skip する（fail-open）。'
+      );
+    }
+    const floor = findFloorViolations(selectReviewBody(events), changed.length ? changed : null);
+    for (const p of floor) emit('error', `[check-review-verdict] 検証の下限に反している —— ${p}`);
+    if (floor.length) {
+      floorFailed = true;
+      emit(
+        'error',
+        `[check-review-verdict] AI レビューが検証の下限（#1315）を ${floor.length} 件満たしていない。` +
+          '判定が揃っていても下限を欠いたレビューは検査済みと読めないため、レビューを再実行してください。'
+      );
+    } else {
+      console.log('[check-review-verdict] OK: 検証の下限（全ファイルの読了・差分に応じた検証の記載）を満たしています。');
+    }
+  }
+
   if (missing.length === 0) {
     console.log('[check-review-verdict] OK: 判定（🔴 重大 / 🟡 推奨 / 🟢 軽微）が投稿されています。');
-    process.exit(0);
+    process.exit(floorFailed ? 1 : 0);
   }
 
   const list = missing.map((v) => `${v.emoji} ${v.word}`).join(' / ');
@@ -268,7 +508,7 @@ function main(argv) {
 
   if (process.env.ALLOW_MISSING_VERDICT === '1') {
     warn(`${message}（ALLOW_MISSING_VERDICT=1 のため失敗としない）`);
-    process.exit(0);
+    process.exit(floorFailed ? 1 : 0);
   }
   emit('error', message);
   process.exit(1);
@@ -278,4 +518,16 @@ if (require.main === module) {
   main(process.argv);
 }
 
-module.exports = { collectAssistantText, commentBodyOf, findVerdicts, selfTest, VERDICTS, COMMENT_TOOLS };
+module.exports = {
+  collectAssistantText,
+  commentBodyOf,
+  findVerdicts,
+  selectReviewBody,
+  parseReadDeclaration,
+  findFloorAdmissions,
+  findFloorViolations,
+  parseChangedFiles,
+  selfTest,
+  VERDICTS,
+  COMMENT_TOOLS,
+};
