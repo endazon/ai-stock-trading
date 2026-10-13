@@ -1,3 +1,4 @@
+using AiStockTrading.Shared.Contracts.Logging;
 using AiStockTrading.Shared.Contracts.Ports;
 using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ namespace OrderExecutionService.Features.OrderExecution.QueryInFlightCloses;
 //   3. 候補があれば、ブローカーの建玉を照会し（不明 → Unknown）、🔴 **照会の後に候補を読み直して**（IADR-0461 決定4。照会の最中に保存された
 //      決済を取りこぼさない）、1 件ごとに生死を確かめて数える。決済方向の建玉が 0 なら NotCovered（ゲートは別の理由で扱う）。
 //
+// 銘柄コードは要求の値（利用者も呼べる口）なので、ログへは LogSanitizer を通して書く（CodeQL: Log entries created from user input）。
 // どの失敗も Unknown か NotCovered（受け手は LLM を呼ぶ）へ倒す。Covered へ倒れる経路は「数えた処理中の決済が建玉を覆う」だけである。
 public sealed class InFlightClosesQueryService(
     IExecutedOrderStore store,
@@ -43,7 +45,7 @@ public sealed class InFlightClosesQueryService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "処理中の決済の照会で、ブローカーの建玉照会が例外で失敗しました（不明として答えます）: {Symbol}", symbol);
+            logger.LogWarning(ex, "処理中の決済の照会で、ブローカーの建玉照会が例外で失敗しました（不明として答えます）: {Symbol}", LogSanitizer.Sanitize(symbol));
             snapshot = null;
         }
 
@@ -64,7 +66,8 @@ public sealed class InFlightClosesQueryService(
 
         logger.LogInformation(
             "処理中の決済の照会: {Symbol}/{Market} 決済の方向={CloseSide} 結果={Status} 決済方向の建玉={Closable} 処理中={InFlight} 株・{Count} 件 注文={OrderIds}",
-            symbol, market, closeSide, status, closable, inFlight.Quantity, inFlight.OrderIds.Count, string.Join(",", inFlight.OrderIds));
+            LogSanitizer.Sanitize(symbol), market, closeSide, status, closable, inFlight.Quantity, inFlight.OrderIds.Count,
+            string.Join(",", inFlight.OrderIds));
         return View(symbol, market, closeSide, status, closable, inFlight);
     }
 
@@ -76,7 +79,7 @@ public sealed class InFlightClosesQueryService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "処理中の決済の記録を読めませんでした（不明として答えます）: {Symbol}", symbol);
+            logger.LogWarning(ex, "処理中の決済の記録を読めませんでした（不明として答えます）: {Symbol}", LogSanitizer.Sanitize(symbol));
             return null;
         }
     }
