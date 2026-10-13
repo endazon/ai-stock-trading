@@ -340,8 +340,9 @@ services:
       # **確定は従来どおり利用者のみ**（OwnerOnly・Discord `/report action:approve`・ADR-0003）。本番既定は不変。
       - { name: Reports__AutoGeneration__Enabled, value: "true" }
       - { name: Reports__AutoGeneration__Markets__0, value: "US" }
-      # #750 / ADR-0037 決定3: 月報 §7 の見積り承認額（分母）。経路B でも未供給（空）＝「供給されていません」。trade-decision と同値にすること。
-      - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
+      # #750 / ADR-0037 決定3: 月報 §7 の見積り承認額（分母）。trade-decision と同値にすること。
+      # #1219: オーナー承認（2026-10-13・承認額 1,700 円）の範囲の見積り 437.2831152 円を円未満 2 桁で写した値。
+      - { name: Stage0Recording__ApprovedEstimateJpy, value: "437.28" }
       # ============ 為替差損益の期末レート（#611/IADR-0286 決定2）============
       # 期末日以前の直近の日次観測（1 USD あたりの円）。trade-decision と同じ源・同じ鍵を再利用する。
       # 空だと期末に建玉が残る期間の為替差損益が「供給されていません」のままになる。
@@ -396,34 +397,68 @@ services:
       - name: LlmGateway__Auth__ClientSecret
         secretKeyRef: { name: ast-secrets, key: llm-auth-client-secret, optional: true }
       # #750 / ADR-0033 決定5: 承認額（空＝未承認＝記録は実行されない）。report と同値にすること。
-      - { name: Stage0Recording__ApprovedEstimateJpy, value: "" }
+      # #1219: オーナー承認（2026-10-13）。🔴 承認ゲートは「承認額 ≥ 見積り」ではなく**円未満 2 桁での一致**で見る
+      # （Stage0DecisionRecorder.ValidateApproval）。承認額 1,700 円をそのまま書くと NotApproved になるため、
+      # 承認の範囲内の見積り（12 銘柄 × 平日 19 日 × (一次 1 ＋ 多数決 1)・437.2831152 円）を写す。
+      # 期間・銘柄・トークン量・多数決回数のどれかを変えたら見積りが変わる＝承認し直す。
+      - { name: Stage0Recording__ApprovedEstimateJpy, value: "437.28" }
       # ---- Stage 0 の記録の再実施（FR-15, ADR-0033 決定5, ADR-0054 決定3, ADR-0064 決定3, #1219）----
-      # PoC が埋める欄。手順（見積りの式・承認額の入れ方・起動と停止・確かめ方）は #1219 のコメントにある。
-      # 🔴 既定は記録しない（Enabled=false。未承認・期間なし・出力先なしのいずれでも LLM を 1 回も呼ばない）。
-      # 🔴 記録器は trade-decision の起動時に 1 回だけ走る（Hosted/Stage0RecordingService）。Enabled=true のまま
-      #    Pod を再起動すると、承認額の範囲でもう一度 LLM を呼ぶ。記録を取り出したら必ず false へ戻す。
-      # 🔴 as-of 入力の基底の供給は未実装（Program.cs の NoAsOfDecisionInputProvider）であり、今の構成では
-      #    全判断時点が「入力なし」で飛ばされ、記録は 0 件・LLM 呼び出しは 0 回になる（#1308）。
+      # 手順（見積りの式・承認額の入れ方・起動と停止・確かめ方）は #1219 のコメントにある。
+      # #1219: オーナー承認（2026-10-13）の値を入れた（12 銘柄・2026-09-15〜2026-10-09・多数決 1 回・実測トークン量）。
+      # 窓は承認時の 2026-07-01 起点から、オーナーの裁定（2026-10-13）で 2026-09-15 起点へ縮めた（〜09-14 は当時の
+      # 監視銘柄と確定日報が無く、as-of 入力を再構成できないため）。
+      # as-of 入力の基底の供給は実装済みである（#1308 / IADR-0528。上の「as-of 入力の基底の配線」の節）。
+      # 🔴 **Enabled は false で置く（承認値は入れてあるが、記録は走らない）。** 有効化は PoC が手順に沿って行う。
+      #    Enabled=true の版を配備すると、その起動で記録が走り承認額の範囲で LLM を呼ぶ。記録器は trade-decision の
+      #    起動時に 1 回だけ走り（Hosted/Stage0RecordingService）、Pod が再起動するたびにもう一度呼んで OutputPath の
+      #    記録を上書きする。
+      # 🔴 **順序: ① 少額の通し試験 → ② 結果の確認 → ③ この承認値の組で一度だけ true → ④ 取り出したら false へ戻す。**
+      #    ① は AAPL 1 銘柄 × 2026-09-15〜09-19（火〜金の平日 4 日・見積り 7.6716336 円＝7.67）へ縮めた組で、その見積りを承認値に写して回す。
+      #    ② は記録の件数・一次と本判断の実効モデル・費用計上（purpose=stage0-recording）を見る。
+      #    ④ では ApprovedEstimateJpy（trade-decision）も空へ戻す（#1219 の手順 4）。
       # int / bool の欄は "" にしない（コードの既定と同じ値を書く）。空を許すのは文字列と承認値（null＝未承認）だけ。
-      - { name: Stage0Recording__Enabled, value: "false" }
-      - { name: Stage0Recording__From, value: "" }        # YYYY-MM-DD。2026-07-01（カットオフ 2026-06-30 の翌日）以降
-      - { name: Stage0Recording__To, value: "" }          # YYYY-MM-DD。backtest の評価日以降を覆う（#1219 の手順）
-      # 記録の対象銘柄。backtest の Backtest__Stage0__Symbols と同じ集合にする（ずれると RecordingMismatch）。
-      - { name: Stage0Recording__Symbols__0__Symbol, value: "AAPL" }
+      - { name: Stage0Recording__Enabled, value: "false" }  # PoC が上の順序で一度だけ true にする
+      - { name: Stage0Recording__From, value: "2026-09-15" }  # 裁定（2026-10-13）。カットオフ 2026-06-30 より後であること
+      - { name: Stage0Recording__To, value: "2026-10-09" }    # 承認された窓の終端（平日 19 日）
+      # 記録の対象銘柄（2026-10-12 のウォッチリスト 12 銘柄・承認どおり）。backtest の Backtest__Stage0__Symbols と
+      # 同じ集合にする（ずれると RecordingMismatch）。
+      - { name: Stage0Recording__Symbols__0__Symbol, value: "TSLA" }
       - { name: Stage0Recording__Symbols__0__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__1__Symbol, value: "META" }
+      - { name: Stage0Recording__Symbols__1__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__2__Symbol, value: "GOOGL" }
+      - { name: Stage0Recording__Symbols__2__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__3__Symbol, value: "AMZN" }
+      - { name: Stage0Recording__Symbols__3__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__4__Symbol, value: "AAPL" }
+      - { name: Stage0Recording__Symbols__4__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__5__Symbol, value: "SMCI" }
+      - { name: Stage0Recording__Symbols__5__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__6__Symbol, value: "PLTR" }
+      - { name: Stage0Recording__Symbols__6__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__7__Symbol, value: "NVDA" }
+      - { name: Stage0Recording__Symbols__7__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__8__Symbol, value: "COIN" }
+      - { name: Stage0Recording__Symbols__8__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__9__Symbol, value: "MSTR" }
+      - { name: Stage0Recording__Symbols__9__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__10__Symbol, value: "MARA" }
+      - { name: Stage0Recording__Symbols__10__Market, value: "UnitedStates" }
+      - { name: Stage0Recording__Symbols__11__Symbol, value: "MSFT" }
+      - { name: Stage0Recording__Symbols__11__Market, value: "UnitedStates" }
       # 本判断の層のモデル（ADR-0011 のピン・ADR-0064 決定1）。空だと見積りが未知モデルの単価で引かれ過大になる。
       # 一次の層（Stage0Recording__ScreeningModel）は書かない＝割当表の一次のピン（claude-haiku-5-5）で見積る（本番と同じ扱い）。
       - { name: Stage0Recording__Model, value: "claude-sonnet-5-5" }
       - { name: Stage0Recording__VoteCount, value: "1" }  # 多数決回数（ADR-0033 決定4）。承認回数と同時に決める
-      - { name: Stage0Recording__ApprovedVoteCount, value: "" }  # 空＝未承認。VoteCount と同じ値を入れて承認する
-      # 1 判断あたりのトークン量（実測値。既定 0＝見積り 0 円＝実行されない）。月曜の取引の費用計上ログから採る。
-      - { name: Stage0Recording__InputTokensPerDecision, value: "0" }            # 本判断（purpose=trade-decision）の入力
-      - { name: Stage0Recording__OutputTokensPerDecision, value: "0" }           # 同 出力
-      - { name: Stage0Recording__ScreeningInputTokensPerDecision, value: "0" }   # 一次（purpose=trade-decision-screening）の入力
-      - { name: Stage0Recording__ScreeningOutputTokensPerDecision, value: "0" }  # 同 出力
-      # 記録の書き出し先（コンテナ内のパス。例 /tmp/stage0/records.json）。空＝書き出さない＝実行しない。
+      - { name: Stage0Recording__ApprovedVoteCount, value: "1" }  # 空＝未承認。VoteCount と同じ値（承認 2026-10-13）
+      # 1 判断あたりのトークン量（2026-10-12 の米国セッションの実測・1 回あたり。#1219 のコメント）。
+      - { name: Stage0Recording__InputTokensPerDecision, value: "3478" }            # 本判断（purpose=trade-decision）の入力
+      - { name: Stage0Recording__OutputTokensPerDecision, value: "425" }            # 同 出力
+      - { name: Stage0Recording__ScreeningInputTokensPerDecision, value: "2269" }   # 一次（purpose=trade-decision-screening）の入力
+      - { name: Stage0Recording__ScreeningOutputTokensPerDecision, value: "582" }   # 同 出力
+      # 記録の書き出し先（コンテナ内のパス。#1219 の手順の既定）。空＝書き出さない＝実行しない。
       # 🔴 Pod を再起動すると消える。false へ戻す前に kubectl cp で取り出す。
-      - { name: Stage0Recording__OutputPath, value: "" }
+      - { name: Stage0Recording__OutputPath, value: "/tmp/stage0/records.json" }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。
@@ -579,19 +614,43 @@ services:
       - { name: Backtest__Stage0__Strategy, value: "recorded-replay" }
       # 記録集合（JSON）のパス。**空＝記録なし**（ファイルも読まない）。値を入れるのは記録の取得後である。
       - { name: Backtest__Stage0__Recording__Path, value: "" }
-      # #1219: 評価の窓は [今日 − LookbackDays, 今日]。記録はこの窓を覆い（記録の From ≤ 窓の起点・記録の To ≥ 今日）、
-      # 窓の起点はカットオフ（2026-06-30）より後でなければならない（DataCutoff）。既定 365 のままでは 5.5 系の窓に収まらない。
-      # PoC が記録を差し込む日に合わせて縮める（#1219 の手順）。値はコードの既定と同じ（＝今の挙動は変わらない）。
-      - { name: Backtest__Stage0__LookbackDays, value: "365" }
+      # #1219: 評価の窓は [終端 − LookbackDays, 終端]（終端は下の EvaluationEnd。空なら今日）。記録はこの窓を覆い
+      # （記録の From ≤ 窓の起点・記録の To ≥ 終端）、窓の起点はカットオフ（2026-06-30）より後でなければならない（DataCutoff）。
+      # 記録の窓 2026-09-15〜2026-10-09（利用者裁定 2026-10-13）に合わせ、終端 2026-10-09 − 24 日 ＝ 2026-09-15 とする。
+      - { name: Backtest__Stage0__LookbackDays, value: "24" }
       # 巡回間隔（秒・60 未満は 60）。記録を Pod へ差し込んだ後の評価を待つ時間。既定 86,400（コードの既定と同じ）。
       - { name: Backtest__Stage0__IntervalSeconds, value: "86400" }
       # #1308, IADR-0528 決定9: 評価の窓の終端を固定する日（YYYY-MM-DD）。空＝今日（コードの既定と同じ）。
-      # 記録の To（利用者裁定 2026-10-13 の窓は 2026-10-09 まで）に揃えないと、翌日以降の評価は RecordingMismatch になる。
-      # 記録を差し込むとき PoC が LookbackDays（2026-09-15〜10-09 なら 24）と一緒に入れる（#1219 の手順 5）。
-      - { name: Backtest__Stage0__EvaluationEnd, value: "" }
-      # 評価銘柄（経路B は AAPL 1 銘柄。市場は Market 列挙名でバインドされる）。空なら取得対象が無い。
-      - { name: Backtest__Stage0__Symbols__0__Symbol, value: "AAPL" }
+      # #1219: 記録の To（利用者裁定 2026-10-13 の窓は 2026-10-09 まで）に揃える。空（今日）のままだと、
+      # 2026-10-10 以降のどの評価も「記録の To < 窓の終端」で RecordingMismatch になる。
+      - { name: Backtest__Stage0__EvaluationEnd, value: "2026-10-09" }
+      # 評価銘柄（市場は Market 列挙名でバインドされる）。空なら取得対象が無い。
+      # #1219: 記録の対象銘柄（trade-decision の Stage0Recording__Symbols）と同じ 12 銘柄。再生は集合の一致を
+      # 要求する（Stage0ReplayEvaluation.SameSymbols。ずれると RecordingMismatch）。
+      - { name: Backtest__Stage0__Symbols__0__Symbol, value: "TSLA" }
       - { name: Backtest__Stage0__Symbols__0__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__1__Symbol, value: "META" }
+      - { name: Backtest__Stage0__Symbols__1__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__2__Symbol, value: "GOOGL" }
+      - { name: Backtest__Stage0__Symbols__2__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__3__Symbol, value: "AMZN" }
+      - { name: Backtest__Stage0__Symbols__3__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__4__Symbol, value: "AAPL" }
+      - { name: Backtest__Stage0__Symbols__4__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__5__Symbol, value: "SMCI" }
+      - { name: Backtest__Stage0__Symbols__5__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__6__Symbol, value: "PLTR" }
+      - { name: Backtest__Stage0__Symbols__6__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__7__Symbol, value: "NVDA" }
+      - { name: Backtest__Stage0__Symbols__7__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__8__Symbol, value: "COIN" }
+      - { name: Backtest__Stage0__Symbols__8__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__9__Symbol, value: "MSTR" }
+      - { name: Backtest__Stage0__Symbols__9__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__10__Symbol, value: "MARA" }
+      - { name: Backtest__Stage0__Symbols__10__Market, value: "UnitedStates" }
+      - { name: Backtest__Stage0__Symbols__11__Symbol, value: "MSFT" }
+      - { name: Backtest__Stage0__Symbols__11__Market, value: "UnitedStates" }
 
   notification:
     extraEnv:

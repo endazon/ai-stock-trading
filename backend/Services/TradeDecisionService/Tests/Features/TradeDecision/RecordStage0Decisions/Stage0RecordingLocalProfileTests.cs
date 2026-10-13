@@ -15,57 +15,139 @@ namespace TradeDecisionService.Tests.Features.TradeDecision.RecordStage0Decision
 // FR-15, FR-04, NFR（費用）, ADR-0033 決定5, ADR-0054 決定3, ADR-0064 決定3, #1219, #1308:
 // 経路B（values-local.yaml）の Stage 0 の記録の欄を、**配備で実際に読まれる env の形のまま**束縛して検査する。
 //
-// 見るのは 4 点である。
-//   1. 欄は束縛できる（int / bool の欄を "" にすると束縛で例外になり、常駐が落ちる。それを作らない）。
-//   2. 🔴 否定形: 書いたままの構成では記録しない（Enabled=false・未承認。LLM を 1 回も呼ばない）。
-//   3. 🔴 ［2026-10-13 改 / #1308］経路B の配線の欄で as-of 入力の基底の供給が選ばれ、欄を埋めて承認すれば記録が作られる
-//      （#1308 より前は「基底が無いので記録 0 件・LLM 0 回」を固定していた。基底が入ったので記録が作られる側へ書き換えた）。
-//   4. 🔴 本番（values.yaml）の取引判断には記録の欄を足していない（本番の挙動を変えない）。
+// 見るのは 6 点である。
+//   1. 欄は束縛でき、オーナー承認（2026-10-13・#1219）の値で埋まっている（int / bool の欄を "" にすると束縛で例外になる）。
+//      🔴 Enabled は false（承認値は入れてあるが、配備しただけでは記録は走らない。有効化は PoC が手順に沿って行う）。
+//   2. 承認値の組の見積りはオーナーの承認額 1,700 円に（超過の上限込みで）収まり、書いた承認額は見積りと一致する。
+//   3. 🔴 承認値の組で Enabled だけを true にし、as-of 入力の基底の供給（#1308。外部の口は試験用のスタブ）の下で走らせると
+//      承認ゲートを通る。手順の通し試験の組（AAPL × 2026-09-15〜09-19）の見積りは 7.67 円である。
+//   4. 🔴 承認ゲートは「≥」ではなく一致で見る。1,700 をそのまま書けば NotApproved で LLM を呼ばない。
+//   5. 🔴 ［#1308］経路B の配線の欄で as-of 入力の基底の供給が選ばれ、欄を埋めて承認すれば記録が作られる。
+//   6. 🔴 本番（values.yaml）の取引判断には記録の欄を足していない（本番の挙動を変えない）。
 public class Stage0RecordingLocalProfileTests
 {
     private const string LocalValues = "deploy/helm/ai-stock-trading/values-local.yaml";
     private const string ProductionValues = "deploy/helm/ai-stock-trading/values.yaml";
 
+    // #1219: オーナー承認（2026-10-13）の承認額。見積りはこれ以下でなければならない。
+    private const decimal OwnerApprovedBudgetJpy = 1700m;
+
     // 単価は values-local の 5.5 系の行と同じ値（円/1k）。
     private static LlmPriceTable Prices() =>
         LlmPriceTable.From([("claude-sonnet-5-5", "0.327", "1.637"), ("claude-haiku-5-5", "0.0164", "0.0819")]);
 
+    private static readonly string[] ApprovedSymbols =
+        ["TSLA", "META", "GOOGL", "AMZN", "AAPL", "SMCI", "PLTR", "NVDA", "COIN", "MSTR", "MARA", "MSFT"];
+
+    // FR-15, ADR-0033 決定5, #1219: オーナー承認（2026-10-13）の値。
     [Fact]
-    public void 経路Bの記録の欄は束縛でき_書いたままでは記録しない構成である()
+    public void 経路Bの記録の欄は承認値で埋まっている()
     {
         var options = Bind(Env(LocalValues, "trade-decision"));
 
-        options.Enabled.Should().BeFalse("既定は記録しない（PoC が承認後に true にする）");
-        options.ApprovedVoteCount.Should().BeNull("承認回数は空＝未承認");
-        options.ApprovedEstimateJpy.Should().BeNull("承認額は空＝未承認");
-        options.ParsePeriod().Should().BeNull("期間は PoC が埋める");
-        options.OutputPath.Should().BeNullOrEmpty("書き出し先は PoC が埋める");
-        options.InputTokensPerDecision.Should().Be(0);
-        options.OutputTokensPerDecision.Should().Be(0);
-        options.ScreeningInputTokensPerDecision.Should().Be(0);
-        options.ScreeningOutputTokensPerDecision.Should().Be(0);
+        options.Enabled.Should().BeFalse("有効化は PoC が手順（通し試験 → 確認 → 一度だけ true → false へ戻す）に沿って行う");
+        // 窓はオーナーの裁定（2026-10-13）で 2026-07-01 起点から 2026-09-15 起点へ縮めた（〜09-14 は as-of 入力を再構成できない）。
+        options.ParsePeriod().Should().Be((new DateOnly(2026, 9, 15), new DateOnly(2026, 10, 9)));
+        options.ResolveSymbols().Should().Equal(ApprovedSymbols.Select(s => (s, Market.UnitedStates)));
         options.VoteCount.Should().Be(1);
+        options.ApprovedVoteCount.Should().Be(1);
+        options.ApprovedEstimateJpy.Should().Be(437.28m);
+        options.InputTokensPerDecision.Should().Be(3478);
+        options.OutputTokensPerDecision.Should().Be(425);
+        options.ScreeningInputTokensPerDecision.Should().Be(2269);
+        options.ScreeningOutputTokensPerDecision.Should().Be(582);
+        options.OutputPath.Should().Be("/tmp/stage0/records.json");
         // ADR-0064 決定1・決定3: 本判断の層は 5.5 系のピン。カットオフは 5.5 系の 2026-06-30。
         options.Model.Should().Be("claude-sonnet-5-5");
         options.ScreeningModel.Should().BeNull("一次は割当表のピンに委ねる（本番と同じ扱い）");
         options.ParseLlmTrainingCutoff().Should().Be(new DateOnly(2026, 6, 30));
-        options.ResolveSymbols().Should().Equal([("AAPL", Market.UnitedStates)]);
+        // 月報 §7 の分母は取引判断側と同値（ADR-0037 決定3）。
+        Env(LocalValues, "report").Should().Contain("Stage0Recording__ApprovedEstimateJpy", "437.28");
     }
 
+    // ADR-0033 決定5, #1219: 12 銘柄 × 平日 19 日 × (一次 1 ＋ 多数決 1)。実績は見積りを最大 1 判断ぶん上回り得るため、
+    // その上限を足してもオーナーの承認額に収まることを見る。書いた承認額は見積りを円未満 2 桁で写した値である。
     [Fact]
-    public async Task 経路Bの構成のまま走らせても_LLM_を_1_回も呼ばない()
+    public void 承認値の組の見積りはオーナーの承認額_1700_円に収まる()
     {
+        var options = Bind(Env(LocalValues, "trade-decision"));
+        var recorder = Recorder(new CountingLlm(), new CapturingSink());
+
+        var estimate = recorder.Estimate(options);
+
+        Stage0RecordingBudget.WeekdayCount(new DateOnly(2026, 9, 15), new DateOnly(2026, 10, 9)).Should().Be(19);
+        estimate.CallCount.Should().Be(456, "12 銘柄 × 平日 19 日 ×（一次 1 ＋ 多数決 1）");
+        estimate.TotalJpy.Should().Be(437.2831152m);
+        var perDecisionJpy = estimate.TotalJpy / (12 * 19);
+        (estimate.TotalJpy + perDecisionJpy).Should().BeLessThanOrEqualTo(OwnerApprovedBudgetJpy);
+        decimal.Round(options.ApprovedEstimateJpy!.Value, 2).Should().Be(decimal.Round(estimate.TotalJpy, 2));
+    }
+
+    // 🔴 #1219, #1308: 経路B の承認値の組で Enabled だけを true にして（銘柄・期間・トークン量・承認値は書き換えずに）走らせると、承認ゲートを通る。
+    // 基底の供給（#1308）の外部の口（日足・確定日報の方針・参考情報の源）は試験用のスタブである。見るのはゲートを通ることと、
+    // 見積りが書いた承認額 437.28 円と一致することだけ（記録の中身は #1308 の試験が見る）。
+    [Fact]
+    public async Task 経路Bの承認値の組で有効にすると承認ゲートを通る()
+    {
+        var env = Env(LocalValues, "trade-decision");
+        env["Stage0Recording__Enabled"] = "true";
+        var options = Bind(env);
         var llm = new CountingLlm();
         var sink = new CapturingSink();
-        var recorder = Recorder(llm, sink);
+        var recorder = Recorder(llm, sink, StubBaseInputs());
 
-        var outcome = await recorder.RunAsync(Bind(Env(LocalValues, "trade-decision")), TestContext.Current.CancellationToken);
+        var estimate = recorder.Estimate(options);
+        estimate.TotalJpy.Should().Be(437.2831152m);
+        decimal.Round(estimate.TotalJpy, 2).Should().Be(options.ApprovedEstimateJpy);
 
-        outcome.Status.Should().Be(Stage0RecordingStatus.Disabled);
-        outcome.CalledLlm.Should().BeFalse();
-        llm.Calls.Should().Be(0);
-        sink.Saved.Should().BeNull("記録しないなら書き出しもしない");
+        var outcome = await recorder.RunAsync(options, TestContext.Current.CancellationToken);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed, "承認値は見積りと一致し、ゲートを通る");
     }
+
+    // 🔴 否定形: 承認ゲートは「承認額 ≥ 見積り」ではなく一致で見る。オーナーの承認額 1,700 円をそのまま書くと
+    // NotApproved で LLM を 1 回も呼ばない（values-local に見積り 437.28 を写した理由）。
+    [Fact]
+    public async Task 承認額に_1700_をそのまま入れると承認ゲートを通らない()
+    {
+        var env = Env(LocalValues, "trade-decision");
+        env["Stage0Recording__Enabled"] = "true";
+        env["Stage0Recording__ApprovedEstimateJpy"] = "1700";
+        var llm = new CountingLlm();
+        var sink = new CapturingSink();
+
+        var outcome = await Recorder(llm, sink, StubBaseInputs()).RunAsync(Bind(env), TestContext.Current.CancellationToken);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.NotApproved);
+        llm.Calls.Should().Be(0);
+        sink.Saved.Should().BeNull();
+    }
+
+    // #1219: 手順の少額の通し試験の組（AAPL 1 銘柄 × 2026-09-15〜09-19）の見積り。2026-09-15 は火曜で、09-19 は土曜であるため
+    // 平日は 4 日、見積りは 7.6716336 円（values-local の注記に書いた額。トークン量・単価は承認値の組と同じ）。
+    [Fact]
+    public void 通し試験の組の見積りは_7_67_円である()
+    {
+        var env = Env(LocalValues, "trade-decision");
+        foreach (var key in env.Keys.Where(k => k.StartsWith("Stage0Recording__Symbols__", StringComparison.Ordinal)).ToList())
+            env.Remove(key);
+        env["Stage0Recording__Symbols__0__Symbol"] = "AAPL";
+        env["Stage0Recording__Symbols__0__Market"] = "UnitedStates";
+        env["Stage0Recording__To"] = "2026-09-19";
+
+        var estimate = Recorder(new CountingLlm(), new CapturingSink()).Estimate(Bind(env));
+
+        estimate.CallCount.Should().Be(8, "AAPL × 平日 4 日（火〜金）×（一次 1 ＋ 多数決 1）");
+        estimate.TotalJpy.Should().Be(7.6716336m);
+    }
+
+    // 基底の供給（#1308）。外部の口は試験用のスタブ（BaseAsOfDecisionInputProviderTests の部品）。
+    private static BaseAsOfDecisionInputProvider StubBaseInputs() =>
+        new(
+            BaseAsOfDecisionInputProviderTests.FakePrices.FollowingAsOf(close: 110m, previousClose: 100m),
+            BaseAsOfDecisionInputProviderTests.FakePolicies.PreviousDay("前日に確定した方針"),
+            new AsOfReferenceAssembler(BaseAsOfDecisionInputProviderTests.AllFeeds(), topK: 5, TimeSpan.FromHours(168)),
+            NullLogger<BaseAsOfDecisionInputProvider>.Instance);
 
     // 🔴 #1308, IADR-0528 決定7: 経路B の trade-decision の配線の欄（Reports__BaseUrl・OrderExecution__BaseUrl）で基底の供給が選ばれる。
     // 欄を埋めて承認すれば、基底の供給が組んだ入力で記録が作られ、LLM が呼ばれる（#1308 より前は 0 件・0 回だった）。
@@ -129,15 +211,19 @@ public class Stage0RecordingLocalProfileTests
         recording.Should().Equal(evaluation);
     }
 
-    // backtest に足した 2 欄は、コードの既定（Stage0EvaluationOptions: LookbackDays 365・IntervalSeconds 86,400）と同値である
-    // （＝PoC が値を変えるまで評価の挙動は変わらない）。
+    // #1219, #1308 / IADR-0528 決定9: backtest の評価の窓 [EvaluationEnd − LookbackDays, EvaluationEnd] は記録の窓と一致する
+    // （記録の From ≤ 窓の起点・記録の To ≥ 窓の終端。ずれると RecordingMismatch）。巡回間隔はコードの既定のまま。
     [Fact]
-    public void 経路Bの_backtest_の窓と巡回間隔はコードの既定と同値である()
+    public void 経路Bの_backtest_の評価の窓は記録の窓と一致する()
     {
-        var env = Env(LocalValues, "backtest");
+        var backtest = Env(LocalValues, "backtest");
+        var recording = Bind(Env(LocalValues, "trade-decision")).ParsePeriod()!.Value;
 
-        env.Should().Contain("Backtest__Stage0__LookbackDays", "365");
-        env.Should().Contain("Backtest__Stage0__IntervalSeconds", "86400");
+        var end = DateOnly.ParseExact(backtest["Backtest__Stage0__EvaluationEnd"], "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var from = end.AddDays(-int.Parse(backtest["Backtest__Stage0__LookbackDays"], System.Globalization.CultureInfo.InvariantCulture));
+
+        (from, end).Should().Be(recording);
+        backtest.Should().Contain("Backtest__Stage0__IntervalSeconds", "86400");
     }
 
     // 🔴 本番の取引判断には記録の欄を足していない（カットオフと承認額の 2 つだけ。いずれも従来から在る）。
