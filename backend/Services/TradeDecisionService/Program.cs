@@ -344,6 +344,19 @@ builder.Services.AddKeyedSingleton<IDailyBarsProvider>(DailyBarsComposition.Shar
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<CachedDailyBarsProvider>>());
 });
+// 🔴 FR-04, FR-10, #1338, IADR-0535 決定2・3: 処理中の決済が建玉を覆うかの照会口（発注執行の GET /order-execution/in-flight-closes。
+// 決済のゲートと同じ判定）。OrderExecution:BaseUrl が絶対 URL のときだけ Http（名前付きクライアント "order-execution"・s2s トークン・8 秒）、
+// 無ければ NoOp（常に不明＝LLM を呼ぶ＝従来どおり）。照会の失敗・不明も LLM を呼ぶ（決済の判断を止めない）。明示的に登録する（IADR-0397）。
+builder.Services.AddScoped<IInFlightCloseProvider>(sp =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["OrderExecution:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new NoOpInFlightCloseProvider();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
+    http.BaseAddress = uri;
+    return new HttpInFlightCloseProvider(http, sp.GetRequiredService<ILogger<HttpInFlightCloseProvider>>());
+});
 // FR-04, #1118, IADR-0467 決定 6: 判断の出来高の口（判断サービス・Stage 0 の出来高のデコレータが読む）。出来高が無効なら NoOp
 // （ATR だけが有効でも出来高は従来の「未提供」の行のまま）。有効なら共有の口（Cached または接続先が無ければ NoOp）。
 builder.Services.AddSingleton<IDailyBarsProvider>(sp =>

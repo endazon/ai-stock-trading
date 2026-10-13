@@ -9,9 +9,9 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // （IADR-0358 決定4: 流用は誤帰属。TradeDecisionHeld は市場監視が急変の基準値を進める事実であり、判断をしていない見送りで
 // 基準値を動かしてはならない〔IADR-0452 決定1〕）。
 //
-//   - Reason: 8 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
+//   - Reason: 9 値（`DecisionSkipReason` のうち LLM より前の全部。名前は同じ）。#1113 / IADR-0463 で EntryBlockedByRiskControls を、
 //     #1176 / IADR-0495 で EntryCapacityBelowMinimumNotional を、#1174 / IADR-0500 で EntryCapacityBelowOneShare を、
-//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を末尾へ足した。
+//     #1286 / IADR-0521 で ExitOnlyWithoutHolding を、#1338 / IADR-0535 で InFlightCloseCoversPosition を末尾へ足した。
 //   - CycleTrigger: `BusinessMetrics.TriggerScheduled` / `TriggerPriceMovement` の語彙（TradeDecisionHeld と同じ）。
 //   - 監査台帳だけが購読する（通知しない。日報の未確定の通知は DailyPolicyUnconfirmed が営業日ごとに出す）。
 public record TradeDecisionForgoneBeforeLlm(
@@ -66,4 +66,11 @@ public enum DecisionForgoneBeforeLlmReason
     /// 0 または不明だった（決済は成立せず、新規建ては出口専用で出さないため、LLM の結論に依らず発注意図は作られない）。
     /// </summary>
     ExitOnlyWithoutHolding,
+
+    /// <summary>
+    /// FR-04, FR-10, #1338, IADR-0535 決定1: 保有中の銘柄で、判断由来の決済が処理中（未約定）のまま決済方向の建玉を<b>すべて覆い</b>
+    /// （発注執行が決済のゲートと同じ判定で答えた）、かつ買い増し・売り増しが LLM の後で必ず見送られると分かっている。決済の結論は
+    /// 発注執行が <c>InFlightCloseCoversPosition</c> で見送り、新規建ての結論も見送られるため、LLM の結論に依らず発注にならない。
+    /// </summary>
+    InFlightCloseCoversPosition,
 }

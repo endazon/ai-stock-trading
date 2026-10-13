@@ -179,10 +179,35 @@ public sealed class PositionClosedWithStaleFxRateNotificationHandler(INotificati
 
 // FR-05, FR-09, ADR-0002（SPOF）, #331, IADR-0211: 発注の見送り（OpenD 切断・逆指値を張れない Open）。
 // 「キューイングせず見送り＋通知」の通知面——再試行されないことを利用者へ知らせる。
-public sealed class OrderDispatchForgoneNotificationHandler(INotificationSender sender)
+// 🔴 FR-09, #1338, IADR-0535 決定4: 理由 InFlightCloseCoversPosition は、同じ建玉・同じ処理中の決済（注文 ID）につき 1 回へ畳む
+// （判断が約定しない指値の決済を毎サイクル出し直しても通知を連打しない）。ほかの理由は従来どおり毎回通知する。送信に失敗したら記憶を戻す。
+public sealed class OrderDispatchForgoneNotificationHandler(
+    INotificationSender sender,
+    InFlightCloseForgoneNotificationSuppressor suppressor,
+    ILogger<OrderDispatchForgoneNotificationHandler> logger)
 {
-    public Task Handle(OrderDispatchForgone message, CancellationToken cancellationToken) =>
-        sender.SendAsync(NotificationFormatter.From(message), cancellationToken);
+    public async Task Handle(OrderDispatchForgone message, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (!suppressor.TryAcquire(message))
+        {
+            logger.LogInformation(
+                "見送りの通知を畳みました（同じ処理中の決済について通知済み）: {Symbol}/{Market} 方向={Side} 処理中の決済={OrderIds} DecisionId={DecisionId}",
+                message.Intent.Symbol, message.Intent.Market, message.Intent.Side,
+                string.Join(",", message.InFlightCloseOrderIds ?? []), message.DecisionId);
+            return;
+        }
+
+        try
+        {
+            await sender.SendAsync(NotificationFormatter.From(message), cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            suppressor.Release(message);
+            throw;
+        }
+    }
 }
 
 // FR-10, FR-09, UC-02, #331, IADR-0210: 保護逆指値の発注（エントリー同時・失効後の再発注）。

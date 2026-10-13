@@ -364,6 +364,8 @@ services:
       #    記録を走らせるかは Stage0Recording（下）が決める。Enabled=true・承認済みのまま配備すると、その起動で記録が LLM を呼ぶ。
       # OrderExecution__BaseUrl は判断の出来高・ATR を有効にしない（DecisionVolume__Enabled / StopWidthFloor__Atr14__Enabled は既定 false のまま）。
       # 日足は発注執行が moomoo 構成のときだけ取れる（paper では broker-not-supported → 撃ち直した後に記録が止まる）。
+      # FR-04, #1338, IADR-0535: 同じ OrderExecution__BaseUrl で、処理中の決済の照会（GET /order-execution/in-flight-closes）も有効になる
+      # （判断由来の決済が処理中のまま建玉を覆い、どの結論も発注にならない保有銘柄は LLM を呼ばずに見送る。照会の失敗・不明は LLM を呼ぶ）。
       - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
       # (b) の 3 源（Finnhub の company-news・SEC EDGAR・FRED の ALFRED）。鍵は収集と同じ secret を使う（新しい資格情報は要らない）。
       # Finnhub の自制は 3 回/分（同じ鍵の他の用途〔情報収集 30・市場監視 12・市況 5 × 3〕と足して 60 回/分）。
