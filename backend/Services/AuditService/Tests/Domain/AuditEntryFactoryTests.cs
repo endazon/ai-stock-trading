@@ -1452,7 +1452,7 @@ public class AuditEntryFactoryTests
         entry.Summary.Should().Contain(expected).And.Contain("950").And.Contain("940");
     }
 
-    // 🔴 T-10-2620, FR-10, FR-11, #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた縮小は、出どころと決済が要約から読め、
+    // 🔴 T-10-2640, FR-10, FR-11, #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた縮小は、出どころと決済が要約から読め、
     // 「外部要因」とは書かない（「なぜ建玉が消えたか」の一次証跡）。
     [Fact]
     public void 承認済みの決済の約定に合わせた保護の縮小は出どころと決済が要約から読める()

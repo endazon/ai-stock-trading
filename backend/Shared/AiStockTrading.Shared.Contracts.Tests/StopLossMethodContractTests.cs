@@ -90,7 +90,7 @@ public class StopLossMethodContractTests
         var restored = JsonSerializer.Deserialize<SoftwareStopExecuted>(JsonSerializer.Serialize(executed))!;
         restored.Should().BeEquivalentTo(executed);
 
-        // 🔴 T-10-2610, #1330, IADR-0534 決定3: 末尾の省略可能な欄（出どころ）も往復で失われない。旧いメッセージ（欄なし）は null で読める。
+        // 🔴 T-10-2630, #1330, IADR-0534 決定3: 末尾の省略可能な欄（出どころ）も往復で失われない。旧いメッセージ（欄なし）は null で読める。
         var released = executed with
         {
             Outcome = SoftwareStopOutcome.ApprovedCloseReleased,
@@ -123,7 +123,7 @@ public class StopLossMethodContractTests
         ((int)SoftwareStopOutcome.StopCancelUnconfirmed).Should().Be(8);
         // #833 項目1, IADR-0389 決定7: 受理だけで完了させた決済が未約定のまま終端した（末尾へ追加）。
         ((int)SoftwareStopOutcome.CloseUnfilled).Should().Be(9);
-        // 🔴 T-10-2610, #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた保護対象の縮小（末尾へ追加）。
+        // 🔴 T-10-2630, #1330, IADR-0534 決定3: 承認済みの決済の約定に合わせた保護対象の縮小（末尾へ追加）。
         ((int)SoftwareStopOutcome.ApprovedCloseReleased).Should().Be(10);
         // 🔴 序数だけでなく**値の総数**も固定する（末尾追加なら 1 つ増える。既存値の削除・並べ替えを捕まえる）。
         Enum.GetValues<SoftwareStopOutcome>().Should().HaveCount(11);

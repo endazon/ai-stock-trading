@@ -105,7 +105,7 @@ S1 の帳簿（`RemainingProtected`）を動かすのは、エントリーの確
 ## 帰結
 
 - 取引判断の利確・損切り、利用者の手仕舞い、維持率割れの自動縮小で減った分は「外部要因」と知らせない（Info・出どころつき）。
-- 保護の数量（帳簿・実効数量・発動時の決済数量）は是正前と 1 株も変わらない（T-10-2615 が分類の有無で同一を固定）。
+- 保護の数量（帳簿・実効数量・発動時の決済数量）は是正前と 1 株も変わらない（T-10-2635 が分類の有無で同一を固定）。
 - 列が 2 つ増える（`protective_stop_orders.ExternalReductionObservedAt`・`executed_orders.ProtectionReleasedQuantity`）。
 
 ## 残余リスク

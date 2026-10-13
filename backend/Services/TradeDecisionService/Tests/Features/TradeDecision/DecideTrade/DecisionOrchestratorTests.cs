@@ -331,7 +331,11 @@ public class DecisionOrchestratorTests
         var result = await orchestrator.DecideAsync(() => "screen", "decision", signedHeldQuantity: 970);
 
         result.UnparseableVotes.Should().Be(2);
-        var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
+        // #1332, IADR-0531: 解析不能の票ごとに原本の行（別の WRN）も出る。ここでは種別・向きの行だけを見る。
+        var warnings = logger.Entries
+            .Where(e => e.Level == LogLevel.Warning
+                && !e.Message.StartsWith(DecisionOrchestrator.RawExcerptMarker, StringComparison.Ordinal))
+            .ToList();
         warnings.Should().HaveCount(2);
 
         // 1 票目: ロング保有中の Buy（買い増し＝新規建て）で損切り幅なし → InvalidValues。action=Buy が載る。

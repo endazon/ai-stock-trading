@@ -142,7 +142,7 @@ public class ApprovedCloseNettingTests
 
     private static BrokerPositionSnapshot Long(int quantity) => new("MSFT", Market.UnitedStates, quantity, 520m);
 
-    // T-10-2610（受け入れ基準 1）: #1330 の事象そのもの。取引判断の利確 456 株の約定で減った分は「外部要因」と呼ばない。
+    // T-10-2630（受け入れ基準 1）: #1330 の事象そのもの。取引判断の利確 456 株の約定で減った分は「外部要因」と呼ばない。
     [Fact]
     public async Task 取引判断の利確の約定で減った保護対象は外部要因ではなく承認済みの決済として知らせる()
     {
@@ -174,7 +174,7 @@ public class ApprovedCloseNettingTests
         f.Store.FindByDecisionId(close.DecisionId)!.ProtectionReleasedQuantity.Should().Be(456, "帰属させた約定に印を付ける");
     }
 
-    // T-10-2611（受け入れ基準 2・窓 P+＝増える側）: moomoo では建玉照会が先に約定を映し、約定追跡が記録を Filled へ直すのは
+    // T-10-2631（受け入れ基準 2・窓 P+＝増える側）: moomoo では建玉照会が先に約定を映し、約定追跡が記録を Filled へ直すのは
     // 最初の観測の**後**になり得る（記録の時刻は照会した時刻）。前の端だけで判定する形 (b) はここで外部要因と誤る。
     [Fact]
     public async Task 約定追跡が最初の観測の後に記録を直しても承認済みの決済として知らせる()
@@ -200,7 +200,7 @@ public class ApprovedCloseNettingTests
         f.Row(stop).RemainingProtected.Should().Be(544);
     }
 
-    // T-10-2612（受け入れ基準 3・窓 P−＝減る側）: 外部要因で減った分を最初に観測した**後**に送った決済の約定は、その減少の原因ではない。
+    // T-10-2632（受け入れ基準 3・窓 P−＝減る側）: 外部要因で減った分を最初に観測した**後**に送った決済の約定は、その減少の原因ではない。
     // 約定が記録へ先に載り、建玉照会にはまだ映らないまま確定しても、その確定は外部要因である（後の端だけで判定する形 (a) はここで誤る）。
     // 後から建玉照会に映った決済の分は、次の確定で承認済みとして知らせる。
     [Fact]
@@ -235,7 +235,7 @@ public class ApprovedCloseNettingTests
         f.Row(stop).RemainingProtected.Should().Be(500);
     }
 
-    // T-10-2613（受け入れ基準 4・P0＝吸収）: 帰属させた利確の約定を、後の人手の決済の説明に 2 回使わない。
+    // T-10-2633（受け入れ基準 4・P0＝吸収）: 帰属させた利確の約定を、後の人手の決済の説明に 2 回使わない。
     [Fact]
     public async Task 帰属させた利確の約定は後の外部要因の減少の説明に使わない()
     {
@@ -259,7 +259,7 @@ public class ApprovedCloseNettingTests
         f.Row(stop).RemainingProtected.Should().Be(444);
     }
 
-    // T-10-2614（受け入れ基準 5）: 1 回の確定に承認済みの決済と外部要因が混ざれば 1 件ずつ出し、合計が減少量に一致する。
+    // T-10-2634（受け入れ基準 5）: 1 回の確定に承認済みの決済と外部要因が混ざれば 1 件ずつ出し、合計が減少量に一致する。
     [Fact]
     public async Task 一度の確定に承認済みの決済と外部要因が混ざれば内訳を分けて合計を減少量に一致させる()
     {
@@ -282,7 +282,7 @@ public class ApprovedCloseNettingTests
         f.Row(stop).RemainingProtected.Should().Be(500);
     }
 
-    // T-10-2615（受け入れ基準 6）: 🔴 統制。分類を足しても保護は過小にも過大にもならない。
+    // T-10-2635（受け入れ基準 6）: 🔴 統制。分類を足しても保護は過小にも過大にもならない。
     // 承認済みと分類される配置（出どころあり）と、外部要因と分類される配置（出どころなし）で、各巡回の帳簿・実効数量が一致し、
     // 確定後は純額に一致する。到達で出す S1 の決済は残りの建玉（544 株）ちょうどで、利確した分を売り直さない。
     [Theory]
@@ -337,7 +337,7 @@ public class ApprovedCloseNettingTests
             f.Store.FindByDecisionId(close.DecisionId)!.ProtectionReleasedQuantity);
     }
 
-    // T-10-2616（受け入れ基準 7）: 判定の材料が無いときは外部要因に倒す（承認済みと誤って呼ばない）。
+    // T-10-2636（受け入れ基準 7）: 判定の材料が無いときは外部要因に倒す（承認済みと誤って呼ばない）。
     [Fact]
     public async Task 出どころの無い決済は外部要因のまま知らせる()
     {
@@ -405,7 +405,7 @@ public class ApprovedCloseNettingTests
             .Which.Outcome.Should().Be(SoftwareStopOutcome.ProtectionReduced, "判定の材料が無ければ従来どおり外部要因へ倒す");
     }
 
-    // T-10-2618（受け入れ基準 9）: outcome を INF で残す（判断 ID・注文 ID・数量の前後・分類の理由）。
+    // T-10-2638（受け入れ基準 9）: outcome を INF で残す（判断 ID・注文 ID・数量の前後・分類の理由）。
     [Fact]
     public async Task 確定した縮小の分類を判断IDと注文IDと数量の前後と理由つきでINFに残す()
     {
@@ -470,7 +470,7 @@ public class ApprovedCloseNettingTests
             inner.UpdateOutcome(orderId, status, filledQuantity, averagePrice, slippageRatio, executedAt);
     }
 
-    // T-10-2621（受け入れ基準 12・PR #1336 のレビュー）: 🔴 帰属の印を書けなかった約定は承認済みと呼ばず、以後の説明にも使わない。
+    // T-10-2641（受け入れ基準 12・PR #1336 のレビュー）: 🔴 帰属の印を書けなかった約定は承認済みと呼ばず、以後の説明にも使わない。
     // 印を書けないまま承認済みと知らせると、次の確定が同じ約定でもう一度「承認済み」と説明し、外部要因の減少を隠す（迷ったら外部要因へ倒す）。
     // 印を帳簿より先に書くので、どちらが失敗しても倒れる先は外部要因だけになる。数量（帳簿）は分類の成否に依らない。
     [Theory]

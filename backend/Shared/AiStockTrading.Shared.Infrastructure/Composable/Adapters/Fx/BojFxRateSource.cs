@@ -106,6 +106,16 @@ public sealed class BojFxRateSource(
             logger.LogWarning(ex, "日銀 FX の取得に失敗しました（系列 {SeriesCode}）。レート無しとして扱います。", seriesCode);
             return null;
         }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // #1331, IADR-0533 決定3: HttpClient の**タイムアウト**は OperationCanceledException（TaskCanceledException）で
+            // 届く。呼び出し側が取り消していないのに伝播させると、FallbackFxRateSource が「取り消し」と読んで
+            // **FRED を試さないまま**上位へ例外が抜ける。取り消しではないので、通信の失敗と同じくレート無しへ縮退する。
+            // 呼び出し側の取り消し（cancellationToken が立っている）は従来どおり伝播させる。
+            logger.LogWarning(
+                ex, "日銀 FX の取得がタイムアウトしました（系列 {SeriesCode}）。レート無しとして扱います。", seriesCode);
+            return null;
+        }
 
         return Map(quote, payload);
     }
@@ -116,7 +126,12 @@ public sealed class BojFxRateSource(
     {
         if (payload?.ResultSet is not { Count: > 0 } series)
         {
-            logger.LogWarning("日銀 FX 応答に系列がありません（系列 {SeriesCode}）。レート無しとして扱います。", seriesCode);
+            // #1331: API は HTTP 200 のまま本文の STATUS / MESSAGEID でエラーを返すことがある（パラメータ誤り・
+            // 該当なし等）。理由を残さないと「形式が変わったのか、要求が誤っているのか」をログから切り分けられない。
+            logger.LogWarning(
+                "日銀 FX 応答に系列がありません（系列 {SeriesCode} / STATUS {Status} / {MessageId} {Message}）。" +
+                "レート無しとして扱います。",
+                seriesCode, payload?.Status, payload?.MessageId, payload?.Message);
             return null;
         }
 
@@ -135,6 +150,15 @@ public sealed class BojFxRateSource(
         }
 
         var (surveyDate, jpyPerUsd) = latest;
+
+        // #1331, IADR-0533 決定2: **取得の成功を残す。** 従来は成功時に何も出さず、鮮度の警告しか見えなかった——
+        // 「日銀から取れているが最新の観測が古い（収録待ち）」と「取れていない」をログから区別できなかった。
+        // LAST_UPDATE（日銀が系列を最後に更新した日）を並べれば、収録の遅れか取得の失敗かを 1 行で判別できる。
+        // 呼ばれるのはキャッシュ TTL（既定 6 時間）ごとであり、判断サイクルごとには出ない。
+        logger.LogInformation(
+            "日銀 FX を取得しました（系列 {SeriesCode}: 観測日 {SurveyDate:yyyy-MM-dd} / 値 {JpyPerUsd} 円 / " +
+            "系列の最終更新 {LastUpdate}）。",
+            seriesCode, surveyDate, jpyPerUsd, matched.LastUpdate);
 
         // #364, IADR-0152 決定2: ポート契約は「quote 通貨 1 単位あたりの基準通貨額」である。
         // 本系列は「1 USD あたりの円」のため、JPY → USD の換算には**逆数**が要る。
@@ -185,6 +209,10 @@ public sealed class BojFxRateSource(
     // **共通化しない**（契約もサービスも違い、抽出は Shared.Infrastructure への移動を伴って本 issue の
     // 受け入れ基準と 1 対 1 で対応しない diff になる）。3 つ目の利用者が現れたら抽出する。
     private sealed record BojResponse(
+        // STATUS は数値で返るが、型の違いで解析ごと失敗させないため JsonElement で受ける（ログに出すだけ）。
+        [property: JsonPropertyName("STATUS")] JsonElement? Status,
+        [property: JsonPropertyName("MESSAGEID")] string? MessageId,
+        [property: JsonPropertyName("MESSAGE")] string? Message,
         [property: JsonPropertyName("RESULTSET")] IReadOnlyList<BojSeries>? ResultSet);
 
     private sealed record BojSeries(

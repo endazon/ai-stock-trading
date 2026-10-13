@@ -705,7 +705,7 @@ public class NotificationFormatterTests
         msg.Content.Should().Contain(expected).And.Contain("950");
     }
 
-    // 🔴 T-10-2617, FR-10, #1330, IADR-0534 決定3: 承認済みの決済（取引判断の利確・損切り等）の約定に合わせた縮小は「外部要因」と書かない。
+    // 🔴 T-10-2637, FR-10, #1330, IADR-0534 決定3: 承認済みの決済（取引判断の利確・損切り等）の約定に合わせた縮小は「外部要因」と書かない。
     // 設計どおりの帰結なので Info。出どころと決済（DecisionId・OrderId）を名指しする。#1330 の事象では、利確の約定が
     // 「外部要因（手動決済・強制決済…）」と通知され、所有者には誰かが手動で決済したと読めた。
     [Theory]
@@ -732,7 +732,7 @@ public class NotificationFormatterTests
         msg.Content.Should().NotContain("手動決済").And.NotContain("強制決済");
     }
 
-    // T-10-2617: 外部要因の文面は従来どおり（承認済みの決済で説明できない分だけに出る）。
+    // T-10-2637: 外部要因の文面は従来どおり（承認済みの決済で説明できない分だけに出る）。
     [Fact]
     public void 外部要因による保護の縮小の文面は従来どおり()
     {

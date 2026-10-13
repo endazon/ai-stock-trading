@@ -11,7 +11,7 @@ using Xunit;
 namespace OrderExecutionService.Tests;
 
 // FR-10, #1330, IADR-0534 決定1・決定2: 確定した保護の縮小を「承認済みの決済」と「外部要因」に分けるための 2 列の永続化。
-// T-10-2619（受け入れ基準 10）。
+// T-10-2639（受け入れ基準 10）。
 public class ApprovedCloseReleasePersistenceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 12, 15, 19, 18, TimeSpan.Zero);
