@@ -201,4 +201,135 @@ public class WorkingEntryOrderSourceTests
 
         read(id).Should().Be((OrderStatus.Cancelled, (DateTimeOffset?)Base.AddSeconds(1), 848));
     }
+
+    // ---- FR-10, #1319, IADR-0529 決定3: 予約（承認行がまだ無い承認）を同じ規則で返す ----
+
+    private sealed record ReservationIds(Guid ReservedOnly, Guid Projected, Guid ForgoneBeforeProjection, Guid BeforeBound);
+
+    private static EntryReservation Reservation(Guid id, DateTimeOffset approvedAt, string symbol = "NVDA") =>
+        new(id, symbol, Market.UnitedStates, TradeSide.Buy, 10, 100m, 1m, 10, approvedAt, StopLossExecutionMethod.BrokerStopOrder);
+
+    // 予約は審査が書き、承認行・注文アクティビティは OrderApproved の射影が書く（本番と同じ 3 つの書き手）。
+    private static ReservationIds SeedReservations(
+        IEntryReservationStore reservations, IPortfolioLedgerStore ledger, IOrderActivityStore activity)
+    {
+        var ids = new ReservationIds(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var at = Base.AddMinutes(1);
+
+        // 承認行がまだ無い（OrderApproved の往復の途中）＝予約で数える。
+        reservations.Reserve(Reservation(ids.ReservedOnly, at));
+
+        // 承認行へ引き継がれた＝承認行の側で 1 回だけ数える。
+        reservations.Reserve(Reservation(ids.Projected, at, "AMZN"));
+        var intent = new OrderIntent("AMZN", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.MoomooSimulate, 10, 100m);
+        ledger.AppendApproval(ids.Projected, intent, at);
+        activity.RecordPlacement(ids.Projected, "AMZN", Market.UnitedStates, TradeSide.Buy, 10, at);
+
+        // 承認行より先に見送り（終端）が届いた。
+        reservations.Reserve(Reservation(ids.ForgoneBeforeProjection, at, "META"));
+        activity.RecordForgone(ids.ForgoneBeforeProjection, "META", Market.UnitedStates, TradeSide.Buy, 10, at.AddSeconds(1));
+
+        // 窓の下限より前。
+        reservations.Reserve(Reservation(ids.BeforeBound, Base.AddMinutes(-1), "GOOG"));
+
+        // 無効にした予約（再配送で再発行しなかった。IADR-0529 決定6）。
+        var voided = Guid.NewGuid();
+        reservations.Reserve(Reservation(voided, at, "TSLA"));
+        reservations.Void(voided, at.AddMinutes(1), [RejectionReason.KillSwitchActive]);
+        return ids;
+    }
+
+    private static void AssertReservations(IReadOnlyList<WorkingEntryOrder> result, ReservationIds ids)
+    {
+        result.Select(o => o.DecisionId).Should().BeEquivalentTo(
+            new[] { ids.ReservedOnly, ids.Projected },
+            "承認行の無い予約は返し、承認行のある予約は承認行として 1 回だけ返し、終端・下限より前・無効は返さない");
+        result.Should().ContainSingle(o => o.DecisionId == ids.Projected, "予約と承認行の両方で数えない");
+        result.Single(o => o.DecisionId == ids.ReservedOnly).Should().Be(
+            new WorkingEntryOrder(ids.ReservedOnly, "NVDA", Market.UnitedStates, TradeSide.Buy, 10, 100m, Base.AddMinutes(1), 1m));
+    }
+
+    // 🔴 T-10-2577: 注文源（EF / InMemory）は承認行の無い予約を未終端の新規建てとして返し、承認行へ引き継がれた予約は
+    // 承認行として 1 回だけ返す（二重計上しない）。
+    [Fact]
+    public void EF実装は承認行の無い予約を返し承認行がある予約を二重に返さない()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        ReservationIds ids;
+        using (var db = NewContext(dbName))
+        {
+            ids = SeedReservations(new EfEntryReservationStore(db), new EfPortfolioLedgerStore(db), new EfOrderActivityStore(db));
+        }
+
+        using var db2 = NewContext(dbName);
+        AssertReservations(new EfWorkingEntryOrderSource(db2).GetWorkingEntryOrders(Base), ids);
+    }
+
+    [Fact]
+    public void InMemory実装も予約をEF実装と同じ規則で返す()
+    {
+        var ledger = new InMemoryPortfolioLedgerStore();
+        var activity = new InMemoryOrderActivityStore();
+        var reservations = new InMemoryEntryReservationStore();
+        var ids = SeedReservations(reservations, ledger, activity);
+
+        AssertReservations(
+            new InMemoryWorkingEntryOrderSource(ledger, activity, reservations).GetWorkingEntryOrders(Base), ids);
+    }
+
+    // T-10-2580: 予約は判断 ID で冪等（同じ判断を二度書いても 1 行・最初の値のまま）で、引けば同じ値が返る。
+    [Fact]
+    public void EF実装の予約は判断IDで冪等で引けば同じ値が返る()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfEntryReservationStore(db);
+            store.Reserve(Reservation(id, Base));
+            store.Reserve(Reservation(id, Base.AddMinutes(5), "OTHER"));
+        }
+
+        using var db2 = NewContext(dbName);
+        db2.EntryReservations.Count().Should().Be(1);
+        new EfEntryReservationStore(db2).Find(id).Should().Be(Reservation(id, Base));
+        new EfEntryReservationStore(db2).Find(Guid.NewGuid()).Should().BeNull();
+    }
+
+    // T-10-2587: 無効の印は理由ごと読み戻せ、単調である（2 回目の無効化で時刻も理由も変えない）。
+    [Fact]
+    public void EF実装の予約の無効は理由ごと読み戻せ単調である()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfEntryReservationStore(db);
+            store.Reserve(Reservation(id, Base));
+            store.Void(id, Base.AddMinutes(1), [RejectionReason.KillSwitchActive, RejectionReason.TradingPaused]);
+            store.Void(id, Base.AddMinutes(2), []);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfEntryReservationStore(db2).Find(id)!;
+        found.VoidedAt.Should().Be(Base.AddMinutes(1));
+        found.VoidReasons.Should().Equal(RejectionReason.KillSwitchActive, RejectionReason.TradingPaused);
+    }
+
+    // T-10-2581: InMemory 実装は例外で終わった臨界区間の予約を残さない（EF 実装のロールバックと同じ意味論）。
+    [Fact]
+    public async Task InMemory実装は例外で終わった臨界区間の予約を残さない()
+    {
+        var store = new InMemoryEntryReservationStore();
+        var id = Guid.NewGuid();
+
+        var act = () => store.RunSerializedAsync<int>(_ =>
+        {
+            store.Reserve(Reservation(id, Base));
+            throw new InvalidOperationException("発行前に落ちた");
+        }, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        store.Find(id).Should().BeNull();
+    }
 }

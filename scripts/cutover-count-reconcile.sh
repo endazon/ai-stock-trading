@@ -62,6 +62,7 @@ risk_management_svc	borrow_fee_accruals	ledger	AccruedAtUtc	-
 risk_management_svc	borrow_fee_unavailable_days	ledger	ObservedAtUtc	-
 risk_management_svc	broker_position_observation	state	UpdatedAt	-
 risk_management_svc	buy_in_inferences	ledger	InferredAtUtc	-
+risk_management_svc	entry_reservations	state	ApprovedAt	-
 risk_management_svc	good_faith_violation_clearances	ledger	ClearedAtUtc	-
 risk_management_svc	good_faith_violations	ledger	RecordedAtUtc	-
 risk_management_svc	kill_switch	state	ChangedAt	-

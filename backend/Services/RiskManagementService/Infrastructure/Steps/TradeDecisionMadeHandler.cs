@@ -39,6 +39,31 @@ public sealed class TradeDecisionMadeHandler(
             return;
         }
 
+        // 🔴 FR-10, #1319 の監査, IADR-0529 決定6: 予約はあるが承認行が無い判断の再配送で、承認時刻の取引日が過ぎていた。
+        // 何も発行しない（前の取引日の判断を今日の新規建てにしない）・観測も記録しない（拒否に当たる状態は無い）。
+        // 新規建てを止める状態（kill switch・ロックアウト・一時停止）のときは拒否の形で返り、下の通常の拒否の経路を通る。
+        if (outcome.IsReservationExpired)
+        {
+            logger.LogWarning(
+                "予約済みの判断の再配送ですが、承認時刻の取引日が過ぎたため承認を発行し直しません: DecisionId={DecisionId}",
+                message.DecisionId);
+            return;
+        }
+
+        // 🔴 FR-10, #1319, IADR-0529 決定4: 予約はあるが承認行がまだ無い新規建ての再配送。予約から組み直した**最初と同じ承認**を
+        // 発行し直す（最初の発行が失敗していれば、これを出さないと発注が永久に出ない。届いていた場合の重複は発注執行が
+        // DecisionId で止める・IADR-0057）。観測は記録する（DecisionId で冪等。最初の記録の後・発行の前に落ちた場合を埋める）。
+        // 審査メトリクスは刻まない（新しい審査ではない）。
+        if (outcome.IsApprovedRepublish)
+        {
+            violationStore.Record(outcome.Observation);
+            logger.LogWarning(
+                "予約済みで承認行が無い判断の再配送のため、再審査せず同じ承認を発行し直します: DecisionId={DecisionId} 数量={Quantity}",
+                message.DecisionId, outcome.Approved!.ApprovedQuantity);
+            await bus.PublishAsync(outcome.Approved!).ConfigureAwait(false);
+            return;
+        }
+
         // FR-20, FR-11, #387, IADR-0148: 審査結果を段階ゲートの観測ログへ記録する（承認・拒否のいずれも）。
         // **イベント発行より先に記録する**——発行が失敗して再送されても DecisionId で冪等であり、
         // 逆順にすると「発行できたが観測が落ちた」拒否が生まれ、違反件数が過小になる（緩い側）。

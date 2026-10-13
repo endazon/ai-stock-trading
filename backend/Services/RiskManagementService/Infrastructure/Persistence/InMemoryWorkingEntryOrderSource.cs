@@ -8,10 +8,13 @@ namespace RiskManagementService.Infrastructure.Persistence;
 // ／行が無い）を 2 つのインメモリストアの合成で再現する（WorkingEntryOrderSourceTests が同じシナリオで両者を検査する）。
 public sealed class InMemoryWorkingEntryOrderSource(
     InMemoryPortfolioLedgerStore ledger,
-    InMemoryOrderActivityStore activity) : IWorkingEntryOrderSource
+    InMemoryOrderActivityStore activity,
+    InMemoryEntryReservationStore? reservations = null) : IWorkingEntryOrderSource
 {
-    public IReadOnlyList<WorkingEntryOrder> GetWorkingEntryOrders(DateTimeOffset approvedAtOrAfter) =>
-        ledger.SnapshotApprovals()
+    public IReadOnlyList<WorkingEntryOrder> GetWorkingEntryOrders(DateTimeOffset approvedAtOrAfter)
+    {
+        var approvals = ledger.SnapshotApprovals();
+        var result = approvals
             .Where(a => a.Intent.PositionEffect == PositionEffect.Open
                      && a.ApprovedAt >= approvedAtOrAfter
                      && activity.TerminalAtOf(a.DecisionId) is null)
@@ -19,4 +22,20 @@ public sealed class InMemoryWorkingEntryOrderSource(
                 a.DecisionId, a.Intent.Symbol, a.Intent.Market, a.Intent.Side, a.Intent.Quantity, a.Intent.Price,
                 a.ApprovedAt, a.Intent.FxRateToBase))
             .ToList();
+
+        // FR-10, #1319, IADR-0529 決定3: 承認行がまだ無い予約（EF 実装と同じ規則）。
+        // 予約の供給を渡さない構成（予約を使わないテスト）では従来どおり承認行だけを返す。
+        if (reservations is not null)
+        {
+            var approvedIds = approvals.Select(a => a.DecisionId).ToHashSet();
+            result.AddRange(reservations.Snapshot()
+                .Where(r => r.ApprovedAt >= approvedAtOrAfter
+                         && !r.IsVoided
+                         && !approvedIds.Contains(r.DecisionId)
+                         && activity.TerminalAtOf(r.DecisionId) is null)
+                .Select(r => r.ToWorkingEntryOrder()));
+        }
+
+        return result;
+    }
 }
