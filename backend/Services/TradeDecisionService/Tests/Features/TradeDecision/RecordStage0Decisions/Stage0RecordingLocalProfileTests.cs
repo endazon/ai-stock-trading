@@ -17,8 +17,10 @@ namespace TradeDecisionService.Tests.Features.TradeDecision.RecordStage0Decision
 //
 // 見るのは 6 点である。
 //   1. 欄は束縛でき、オーナー承認（2026-10-13・#1219）の値で埋まっている（int / bool の欄を "" にすると束縛で例外になる）。
+//      🔴 Enabled は false（承認値は入れてあるが、配備しただけでは記録は走らない。有効化は PoC が手順に沿って行う）。
 //   2. 承認値の組の見積りはオーナーの承認額 1,700 円に（超過の上限込みで）収まり、書いた承認額は見積りと一致する。
-//   3. 🔴 承認値の組のまま、as-of 入力の基底の供給（#1308。外部の口は試験用のスタブ）の下で走らせると承認ゲートを通る。
+//   3. 🔴 承認値の組で Enabled だけを true にし、as-of 入力の基底の供給（#1308。外部の口は試験用のスタブ）の下で走らせると
+//      承認ゲートを通る。手順の通し試験の組（AAPL × 2026-09-15〜09-19）の見積りは 7.67 円である。
 //   4. 🔴 承認ゲートは「≥」ではなく一致で見る。1,700 をそのまま書けば NotApproved で LLM を呼ばない。
 //   5. 🔴 ［#1308］経路B の配線の欄で as-of 入力の基底の供給が選ばれ、欄を埋めて承認すれば記録が作られる。
 //   6. 🔴 本番（values.yaml）の取引判断には記録の欄を足していない（本番の挙動を変えない）。
@@ -43,7 +45,7 @@ public class Stage0RecordingLocalProfileTests
     {
         var options = Bind(Env(LocalValues, "trade-decision"));
 
-        options.Enabled.Should().BeTrue();
+        options.Enabled.Should().BeFalse("有効化は PoC が手順（通し試験 → 確認 → 一度だけ true → false へ戻す）に沿って行う");
         // 窓はオーナーの裁定（2026-10-13）で 2026-07-01 起点から 2026-09-15 起点へ縮めた（〜09-14 は as-of 入力を再構成できない）。
         options.ParsePeriod().Should().Be((new DateOnly(2026, 9, 15), new DateOnly(2026, 10, 9)));
         options.ResolveSymbols().Should().Equal(ApprovedSymbols.Select(s => (s, Market.UnitedStates)));
@@ -81,13 +83,15 @@ public class Stage0RecordingLocalProfileTests
         decimal.Round(options.ApprovedEstimateJpy!.Value, 2).Should().Be(decimal.Round(estimate.TotalJpy, 2));
     }
 
-    // 🔴 #1219, #1308: 経路B の承認値の組のまま（銘柄・期間・トークン量・承認値を書き換えずに）走らせると、承認ゲートを通る。
+    // 🔴 #1219, #1308: 経路B の承認値の組で Enabled だけを true にして（銘柄・期間・トークン量・承認値は書き換えずに）走らせると、承認ゲートを通る。
     // 基底の供給（#1308）の外部の口（日足・確定日報の方針・参考情報の源）は試験用のスタブである。見るのはゲートを通ることと、
     // 見積りが書いた承認額 437.28 円と一致することだけ（記録の中身は #1308 の試験が見る）。
     [Fact]
-    public async Task 経路Bの承認値の組のまま走らせると承認ゲートを通る()
+    public async Task 経路Bの承認値の組で有効にすると承認ゲートを通る()
     {
-        var options = Bind(Env(LocalValues, "trade-decision"));
+        var env = Env(LocalValues, "trade-decision");
+        env["Stage0Recording__Enabled"] = "true";
+        var options = Bind(env);
         var llm = new CountingLlm();
         var sink = new CapturingSink();
         var recorder = Recorder(llm, sink, StubBaseInputs());
@@ -106,6 +110,7 @@ public class Stage0RecordingLocalProfileTests
     public async Task 承認額に_1700_をそのまま入れると承認ゲートを通らない()
     {
         var env = Env(LocalValues, "trade-decision");
+        env["Stage0Recording__Enabled"] = "true";
         env["Stage0Recording__ApprovedEstimateJpy"] = "1700";
         var llm = new CountingLlm();
         var sink = new CapturingSink();
@@ -115,6 +120,24 @@ public class Stage0RecordingLocalProfileTests
         outcome.Status.Should().Be(Stage0RecordingStatus.NotApproved);
         llm.Calls.Should().Be(0);
         sink.Saved.Should().BeNull();
+    }
+
+    // #1219: 手順の少額の通し試験の組（AAPL 1 銘柄 × 2026-09-15〜09-19）の見積り。2026-09-15 は火曜で、09-19 は土曜であるため
+    // 平日は 4 日、見積りは 7.6716336 円（values-local の注記に書いた額。トークン量・単価は承認値の組と同じ）。
+    [Fact]
+    public void 通し試験の組の見積りは_7_67_円である()
+    {
+        var env = Env(LocalValues, "trade-decision");
+        foreach (var key in env.Keys.Where(k => k.StartsWith("Stage0Recording__Symbols__", StringComparison.Ordinal)).ToList())
+            env.Remove(key);
+        env["Stage0Recording__Symbols__0__Symbol"] = "AAPL";
+        env["Stage0Recording__Symbols__0__Market"] = "UnitedStates";
+        env["Stage0Recording__To"] = "2026-09-19";
+
+        var estimate = Recorder(new CountingLlm(), new CapturingSink()).Estimate(Bind(env));
+
+        estimate.CallCount.Should().Be(8, "AAPL × 平日 4 日（火〜金）×（一次 1 ＋ 多数決 1）");
+        estimate.TotalJpy.Should().Be(7.6716336m);
     }
 
     // 基底の供給（#1308）。外部の口は試験用のスタブ（BaseAsOfDecisionInputProviderTests の部品）。

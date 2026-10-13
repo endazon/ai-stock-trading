@@ -408,15 +408,16 @@ services:
       # 窓は承認時の 2026-07-01 起点から、オーナーの裁定（2026-10-13）で 2026-09-15 起点へ縮めた（〜09-14 は当時の
       # 監視銘柄と確定日報が無く、as-of 入力を再構成できないため）。
       # as-of 入力の基底の供給は実装済みである（#1308 / IADR-0528。上の「as-of 入力の基底の配線」の節）。
-      # 🔴 **この Enabled=true の版を配備すると、その起動で記録が走り、承認額の範囲で LLM を呼ぶ。** 記録器は
-      #    trade-decision の起動時に 1 回だけ走る（Hosted/Stage0RecordingService）。Pod が再起動するたびに
-      #    もう一度 LLM を呼び、OutputPath の記録を上書きする。記録を取り出したら必ず Enabled を false へ戻し、
-      #    ApprovedEstimateJpy（trade-decision）を空へ戻す（#1219 の手順 4）。
-      # 🔴 **最初は少額の通し試験から始める。** いきなりこの組（437.28 円）で回さない。銘柄と期間を縮めた組
-      #    （例: 1 銘柄・2〜3 営業日）で Enabled=false のまま見積りを出し、その額を承認値に写して 1 回回し、
-      #    記録の件数・一次と本判断の実効モデル・費用計上（purpose=stage0-recording）を確かめてから、この組へ戻す。
+      # 🔴 **Enabled は false で置く（承認値は入れてあるが、記録は走らない）。** 有効化は PoC が手順に沿って行う。
+      #    Enabled=true の版を配備すると、その起動で記録が走り承認額の範囲で LLM を呼ぶ。記録器は trade-decision の
+      #    起動時に 1 回だけ走り（Hosted/Stage0RecordingService）、Pod が再起動するたびにもう一度呼んで OutputPath の
+      #    記録を上書きする。
+      # 🔴 **順序: ① 少額の通し試験 → ② 結果の確認 → ③ この承認値の組で一度だけ true → ④ 取り出したら false へ戻す。**
+      #    ① は AAPL 1 銘柄 × 2026-09-15〜09-19（火〜金の平日 4 日・見積り 7.6716336 円＝7.67）へ縮めた組で、その見積りを承認値に写して回す。
+      #    ② は記録の件数・一次と本判断の実効モデル・費用計上（purpose=stage0-recording）を見る。
+      #    ④ では ApprovedEstimateJpy（trade-decision）も空へ戻す（#1219 の手順 4）。
       # int / bool の欄は "" にしない（コードの既定と同じ値を書く）。空を許すのは文字列と承認値（null＝未承認）だけ。
-      - { name: Stage0Recording__Enabled, value: "true" }
+      - { name: Stage0Recording__Enabled, value: "false" }  # PoC が上の順序で一度だけ true にする
       - { name: Stage0Recording__From, value: "2026-09-15" }  # 裁定（2026-10-13）。カットオフ 2026-06-30 より後であること
       - { name: Stage0Recording__To, value: "2026-10-09" }    # 承認された窓の終端（平日 19 日）
       # 記録の対象銘柄（2026-10-12 のウォッチリスト 12 銘柄・承認どおり）。backtest の Backtest__Stage0__Symbols と

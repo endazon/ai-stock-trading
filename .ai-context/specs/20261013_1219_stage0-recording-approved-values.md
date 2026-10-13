@@ -23,7 +23,7 @@ plan_refs:
 
 | サービス | 欄 | 値 |
 | --- | --- | --- |
-| trade-decision | `Stage0Recording__Enabled` | `true` |
+| trade-decision | `Stage0Recording__Enabled` | **`false`**（承認値は入れるが、配備しただけでは記録は走らない。有効化は PoC が手順に沿って一度だけ行う。下の「現状」） |
 | trade-decision | `Stage0Recording__From` / `To` | `2026-09-15` / `2026-10-09`（平日 19 日。裁定で 07-01 起点から縮めた） |
 | trade-decision | `Stage0Recording__Symbols__0..11` | TSLA・META・GOOGL・AMZN・AAPL・SMCI・PLTR・NVDA・COIN・MSTR・MARA・MSFT（すべて `UnitedStates`） |
 | trade-decision | `VoteCount` / `ApprovedVoteCount` | `1` / `1` |
@@ -49,15 +49,26 @@ plan_refs:
 | --- | --- | --- |
 | `Strategy=recorded-replay` | 既に入っている（変更なし） | `values-local.yaml` backtest 節 |
 | `Symbols` | **要る（12 銘柄へ揃える）** | 再生は記録の銘柄集合と評価ユニバースの**集合一致**を要求する（`Stage0ReplayEvaluation.SameSymbols`）。AAPL 1 銘柄のままだと `RecordingMismatch`。既存試験 `経路Bの記録の対象銘柄と_backtest_の評価銘柄は同じ集合である` も赤になる |
-| `LookbackDays` / `IntervalSeconds` / `Recording__Path` | 入れない | #1219 の手順 5 のとおり「記録を渡すとき」に PoC が決める。今は記録 0 件（#1308）・日足なし（A-3）で評価に進まない |
+| `EvaluationEnd` | **要る（`2026-10-09`）** | 窓の終端は既定で「今日」、再生は `記録の To ≥ 窓の終端` を要求する（`Stage0ReplayEvaluation.Validate`）。空のままでは 2026-10-10 以降のどの評価も `RecordingMismatch`。#1324（IADR-0528 決定9）で終端を構成できるようになった |
+| `LookbackDays` | **要る（`365` → `24`）** | 窓は `[終端 − LookbackDays, 終端]`。365 のままだと起点 2025-10-09 が記録の From より前で `RecordingMismatch`、カットオフ以前の足で `DataCutoff` も未充足。2026-10-09 − 24 日 ＝ 2026-09-15 ＝ 記録の From |
+| `IntervalSeconds` | 入れない（86400） | 記録を差し込んだ後に早めたいときだけ PoC が一時的に縮める（#1219 の手順 5） |
+| `Recording__Path` | 入れない（空） | 記録を取り出して backtest の Pod へ差し込むときに入れる（#1219 の手順 5） |
 
-🔴 **発見（本 PR では直さない）**: 評価の窓の終端は常に「今日（UTC）」であり（`Stage0EvaluationOptions.EvaluationWindow`）、再生は `記録の To ≥ 窓の終端` を要求する（`Stage0ReplayEvaluation.Validate`）。承認された `To=2026-10-09` は 2026-10-10 以降のどの評価日でも満たせず、**記録が揃っても `RecordingMismatch` で判定を組まない**。窓を変えるには再見積り・再承認（`To` を評価日まで延ばす）か、評価の終端を構成で与えるコード変更が要る。PR 本文と報告に書いて判断を仰ぐ。
+記録の窓は承認で決まり、渡す日に依存しないため、`EvaluationEnd` と `LookbackDays` は今入れる。
 
-## 前提（本 PR では直さない）
+（経緯: 最初の版では「評価の窓の終端は常に今日で、`To=2026-10-09` の記録は再生できない」を発見として残していた。#1324 で終端が構成できるようになり、上の 2 欄で解消した。）
 
-- as-of 入力の基底の供給が未実装（#1308。`Program.cs` の `NoAsOfDecisionInputProvider`）→ 欄を埋めても**記録 0 件・LLM 0 回・0 円で `Completed`**。
-- 日足の供給が空（`Backtest__BarData__Provider=""`・blocked-tasks A-3）→ backtest は `NoHistoricalBars`。
-- 🔴 `Enabled=true` は trade-decision の**起動のたびに** 1 回走る。今は 0 件で無害だが、#1308 が入った後にこの値のまま Pod が再起動すると、そのたびに見積りの範囲で LLM を呼ぶ。#1308 のマージ後の配備と記録の取り出し後に `false` へ戻す運用（#1219 の手順 4）を PR 本文に明記する。
+## 現状（#1308 は実装済み。develop `6977ff8e` をマージした）
+
+- as-of 入力の基底の供給は実装済みである（#1308 / IADR-0528。values-local の trade-decision の `OrderExecution__BaseUrl`・`Stage0AsOf__*`）。日足は `Backtest__BarData__Provider=order-execution`（#1326）。
+- 🔴 #1308 がそろった今は、`Enabled=true` の版を配備するとその起動で記録が LLM を呼び（承認額の範囲）、Pod が再起動するたびに上書きする。**そのため `Enabled=false` で入れる**（coordinator 指示 2026-10-13。AI レビューの 🟡 を受けて）。
+- 有効化は PoC が次の順序で行う（values-local の注記に書いた）。
+  1. 少額の通し試験: AAPL 1 銘柄 × 2026-09-15〜09-19 に縮めた組で、見積りを承認値に写して回す。
+     - 2026-09-15 は火曜、09-19 は土曜なので、平日は 4 日・8 回・**7.6716336 円**（7.67）である。
+     - 指示は「9.59 円の組」だったが、9.59 円は平日 5 日（例 09-15〜09-21）の額である。窓を正として 7.67 円と書き、報告で確認を仰ぐ。
+  2. 結果の確認（記録の件数・実効モデル・費用計上 `purpose=stage0-recording`）。
+  3. この承認値の組で一度だけ `true`。
+  4. 取り出したら `false` へ戻し、`ApprovedEstimateJpy`（trade-decision）を空へ戻す。
 
 ## 母集合（規則 6・9）
 
@@ -70,17 +81,21 @@ plan_refs:
 
 | # | 基準 | 試験 |
 | --- | --- | --- |
-| 1 | values-local の欄が承認値で束縛される（12 銘柄・期間・トークン量・承認値・出力先） | `経路Bの記録の欄は承認値で埋まっている` |
+| 1 | values-local の欄が承認値で束縛される（12 銘柄・期間・トークン量・承認値・出力先）。🔴 `Enabled` は `false` | `経路Bの記録の欄は承認値で埋まっている` |
 | 2 | 承認値の組の見積りは 437.2831152 円・456 回（平日 19 日）で、オーナーの承認額 1,700 円を超過上限込みで超えない | `承認値の組の見積りはオーナーの承認額_1700_円に収まる` |
-| 3 | 🔴 経路B の構成のまま走らせると承認ゲートを通る（`NotApproved` でない）。#1308 が無いので記録 0 件・LLM 0 回 | `経路Bの承認値のまま走らせると承認ゲートを通り_as_of_の基底が無ければ記録は_0_件` |
+| 3 | 🔴 承認値の組で `Enabled` だけを試験側で `true` にし、基底の供給（外部の口はスタブ）の下で走らせると承認ゲートを通る（`Completed`）。見積り 437.2831152 円が承認値 437.28 と一致する | `経路Bの承認値の組で有効にすると承認ゲートを通る` |
+| 3b | 通し試験の組（AAPL × 2026-09-15〜09-19）の見積りは 8 回・7.6716336 円 | `通し試験の組の見積りは_7_67_円である` |
 | 4 | 🔴 否定形: 承認額に 1,700 をそのまま入れると `NotApproved` で LLM を呼ばない | `承認額に_1700_をそのまま入れると承認ゲートを通らない` |
 | 5 | 記録の対象銘柄と backtest の評価銘柄が同じ集合（既存） | `経路Bの記録の対象銘柄と_backtest_の評価銘柄は同じ集合である` |
 | 6 | 本番 values.yaml は不変（既存） | `本番の取引判断の記録の欄は従来のままで_記録は無効である` |
-| 7 | values-local の描画が通り、helm.yml の検査が緑 | `helm template -f values-local.yaml` |
+| 7 | backtest の評価の窓 [2026-09-15, 2026-10-09] が記録の窓と一致する | `経路Bの_backtest_の評価の窓は記録の窓と一致する` |
+| 8 | #1326 の配線の試験は残る | `経路Bの配線の欄で基底の供給が選ばれ_欄を埋めて承認すれば記録が作られる` |
+| 9 | values-local の描画が通り、helm.yml の検査が緑 | `helm template -f values-local.yaml` |
 
 ## 範囲外
 
-- #1308（as-of の基底の供給）・A-3（日足）・評価の窓の終端の問題（上の発見）。
+- 記録の実行・取り出し・backtest への受け渡し（PoC が行う）。
+- `Stage0AsOf__SecEdgar__Ciks` は収集と同じ AAPL の 1 件のまま（#1326 の範囲）。
 
 ## ［2026-10-13 追記］#1308 の develop 反映（`6977ff8e` まで）に合わせた仕上げ
 
@@ -92,7 +107,8 @@ plan_refs:
   - 基底の供給は実装済みである。
   - `Enabled=true` の版を配備すると、その起動で記録が LLM を呼び、記録を上書きする。
   - 最初は少額の通し試験から始める。
-- 試験「承認値のまま走らせると…記録は 0 件」は前提が崩れたので、`経路Bの承認値の組のまま走らせると承認ゲートを通る` へ置き換えた。
+  - その後の指示で `Enabled` を `false` にし、有効化の順序を注記した（上の「現状」）。
+- 試験「承認値のまま走らせると…記録は 0 件」は前提が崩れたので、`経路Bの承認値の組のまま走らせると承認ゲートを通る` へ置き換え、その後 `経路Bの承認値の組で有効にすると承認ゲートを通る`（`Enabled` を試験側で `true`）へ改めた。
   - 基底の供給の外部の口は試験用のスタブにした。
   - 見るのは `Completed` になることと、見積り 437.2831152 円（437.28）が承認値と一致することだけである。
 - **評価の窓の終端（#1324 / IADR-0528 決定9）を固定した。**
