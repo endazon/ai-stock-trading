@@ -700,4 +700,13 @@ public sealed class EntryReservationRow
 
     /// <summary>承認時点の損切りの実行機構（OrderApproved.StopLossMethod。IADR-0342 決定3。組み直し用）。</summary>
     public AiStockTrading.Shared.Contracts.Trading.StopLossExecutionMethod StopLossMethod { get; set; }
+
+    /// <summary>
+    /// 🔴 #1319, IADR-0529 決定6: 無効にした時刻（null＝有効）。承認行が無いまま再配送された判断を、新規建てを止める状態か
+    /// 取引日の経過のために再発行しなかった印。立ったら注文源は数えず、再配送でも再発行しない（単調。戻さない）。
+    /// </summary>
+    public DateTimeOffset? VoidedAt { get; set; }
+
+    /// <summary>無効にしたときの拒否の理由（列挙名のカンマ区切り。取引日の経過だけなら空文字）。</summary>
+    public string? VoidReasons { get; set; }
 }

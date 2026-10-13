@@ -1,4 +1,5 @@
 using RiskManagementService.Features.RiskManagement;
+using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.EntityFrameworkCore;
 
 namespace RiskManagementService.Infrastructure.Persistence;
@@ -80,7 +81,31 @@ public sealed class EfEntryReservationStore(RiskManagementDbContext db) : IEntry
         db.SaveChanges();
     }
 
+    public void Void(Guid decisionId, DateTimeOffset voidedAt, IReadOnlyList<RejectionReason> reasons)
+    {
+        ArgumentNullException.ThrowIfNull(reasons);
+
+        // 単調（一度無効にした予約は戻さない・時刻も理由も上書きしない）。直列化の中で呼ばれるため並行の書き手は無い。
+        var row = db.EntryReservations.FirstOrDefault(r => r.DecisionId == decisionId);
+        if (row is null || row.VoidedAt is not null)
+            return;
+
+        row.VoidedAt = voidedAt;
+        row.VoidReasons = string.Join(",", reasons);
+        db.SaveChanges();
+    }
+
     internal static EntryReservation ToReservation(EntryReservationRow r) =>
         new(r.DecisionId, r.Symbol, r.Market, r.Side, r.Quantity, r.Price, r.FxRateToBase,
-            r.ApprovedQuantity, r.ApprovedAt, r.StopLossMethod);
+            r.ApprovedQuantity, r.ApprovedAt, r.StopLossMethod, r.VoidedAt,
+            r.VoidedAt is null ? null : ParseReasons(r.VoidReasons));
+
+    // 読めない名前は捨てずに例外にしない——無効の印（VoidedAt）が判定の権威であり、理由は拒否の再発行の説明にすぎない。
+    private static IReadOnlyList<RejectionReason> ParseReasons(string? csv) =>
+        string.IsNullOrEmpty(csv)
+            ? []
+            : csv.Split(',')
+                .Select(n => Enum.TryParse<RejectionReason>(n, out var reason) ? reason : (RejectionReason?)null)
+                .OfType<RejectionReason>()
+                .ToList();
 }

@@ -43,20 +43,30 @@ public class EntryScreeningSerializationTests
         }
     }
 
-    private static OrderScreeningService Screening(
-        Stores stores, RiskManagementSettings settings, TimeSpan? readDelay = null, IRiskSettingsStore? settingsStore = null)
+    // 新規建てを止める状態（kill switch・一時停止・ロックアウト）と時計は、再配送の検査（IADR-0529 決定6）のために差し替えられる。
+    private sealed record Controls(
+        InMemoryKillSwitchStore KillSwitch, InMemoryPauseStore Pause, InMemoryLockoutStore Lockout, FakeClock Clock)
     {
-        var clock = new FakeClock(Now, Today);
+        public static Controls New() =>
+            new(new InMemoryKillSwitchStore(), new InMemoryPauseStore(), new InMemoryLockoutStore(), new FakeClock(Now, Today));
+    }
+
+    private static OrderScreeningService Screening(
+        Stores stores, RiskManagementSettings settings, TimeSpan? readDelay = null, IRiskSettingsStore? settingsStore = null,
+        Controls? controls = null)
+    {
+        controls ??= Controls.New();
+        var clock = controls.Clock;
         IPortfolioStateProvider provider = new LedgerPortfolioStateProvider(
             stores.Ledger, new InMemoryWorkingEntryOrderSource(stores.Ledger, stores.Activity, stores.Reservations), clock);
         if (readDelay is { } delay)
             provider = new SlowStateProvider(provider, delay);
         var snapshots = new PortfolioSnapshotBuilder(
-            provider, new InMemoryKillSwitchStore(), new InMemoryPauseStore(),
+            provider, controls.KillSwitch, controls.Pause,
             new InMemoryBrokerAccountObservationStore(TimeProvider.System),
             FakeInformationDegradation.Affirmed(), capitalBaseline: FakeCapitalBaseline.Of(Equity));
         return new OrderScreeningService(
-            settingsStore ?? new InMemoryRiskSettingsStore(settings), snapshots, new InMemoryLockoutStore(), clock,
+            settingsStore ?? new InMemoryRiskSettingsStore(settings), snapshots, controls.Lockout, clock,
             new WeekendBusinessCalendar(), new InMemoryBuyInInferenceStore(), stores.Ledger,
             TestShortSellContexts.Unavailable(clock, stores.Ledger), stores.Reservations);
     }
@@ -179,6 +189,7 @@ public class EntryScreeningSerializationTests
 
     // 🔴 T-10-2573: 承認して予約を書いた後に OrderApproved の発行が失敗した（承認行が無い）まま判断が再配送されたら、
     // **再審査せず、予約から最初と同じ承認を組み直す**（発注が永久に出ない状態にしない）。
+    // ［#1319 の監査］組み直すのは**新規建てを止める状態が無く、承認時刻の取引日が今日のとき**だけ（止める場合は T-10-2583・T-10-2584）。
     // 上限 1 で自分の予約が枠を埋めている（再審査すれば自分の予約で自分を拒否する）。設定（損切りの実行機構）も
     // 途中で変える——組み直しは**承認時点の値**を使い、現在の設定で埋めない（IADR-0342 決定3）。
     [Fact]
@@ -295,5 +306,86 @@ public class EntryScreeningSerializationTests
         await held;
         (await entry).IsApproved.Should().BeTrue();
         stores.Reservations.Snapshot().Should().ContainSingle(r => r.Symbol == "MSFT", "予約は新規建てだけ");
+    }
+
+    public enum Blocker
+    {
+        KillSwitch,
+        Pause,
+        Lockout,
+    }
+
+    private static RejectionReason Engage(Controls controls, Blocker blocker)
+    {
+        switch (blocker)
+        {
+            case Blocker.KillSwitch:
+                controls.KillSwitch.SetState(new KillSwitchState(true, "owner", "緊急停止", Now));
+                return RejectionReason.KillSwitchActive;
+            case Blocker.Pause:
+                controls.Pause.SetState(new PauseState(true, "owner", "一時停止", Now));
+                return RejectionReason.TradingPaused;
+            default:
+                controls.Lockout.Set(new LockoutState(Today.AddDays(1), "日次損失上限", Now));
+                return RejectionReason.DailyLossLimitReached;
+        }
+    }
+
+    // 🔴 T-10-2583（#1319 の監査・指摘 2）: 承認して予約を書いた後に発行が失敗し、**その後に新規建てを止める状態になった**
+    // （kill switch・一時停止・ロックアウト）。再配送は承認を組み直さず、その理由で拒否する。予約は無効になり、
+    // 以後は数えず、状態を解いた後の再配送でも再発行しない（止める側へ倒す）。
+    // 是正前は緊急停止の後に新規建ての承認が発行された（発注執行は kill switch を見ない）。
+    [Theory]
+    [InlineData(Blocker.KillSwitch)]
+    [InlineData(Blocker.Pause)]
+    [InlineData(Blocker.Lockout)]
+    public async Task 発行に失敗した後に新規建てを止める状態になったら再配送は拒否され予約は無効になる(Blocker blocker)
+    {
+        var stores = NewStores();
+        var controls = Controls.New();
+        var screening = Screening(stores, TradingDefaults.CreateSettings(), controls: controls);
+        var decision = Decision(Entry("AAPL"));
+        (await screening.ScreenAsync(decision)).IsApproved.Should().BeTrue("前提: 最初の審査は承認して予約を書く");
+        var reason = Engage(controls, blocker);
+
+        var redelivered = await screening.ScreenAsync(decision);
+
+        redelivered.IsApproved.Should().BeFalse("止める状態の後に新規建ての承認を発行しない");
+        redelivered.IsApprovedRepublish.Should().BeFalse();
+        redelivered.Rejected!.Reasons.Should().Equal(reason);
+        stores.Reservations.Find(decision.DecisionId)!.IsVoided.Should().BeTrue("予約は無効になる");
+        new InMemoryWorkingEntryOrderSource(stores.Ledger, stores.Activity, stores.Reservations)
+            .GetWorkingEntryOrders(Now.AddDays(-2)).Should().BeEmpty("無効の予約は数えない");
+
+        // 状態を解いても、同じ判断は再発行しない（無効は戻さない）。
+        controls.KillSwitch.SetState(KillSwitchState.Disengaged);
+        controls.Pause.SetState(new PauseState(false));
+        controls.Lockout.Clear();
+        var again = await screening.ScreenAsync(decision);
+        again.IsApproved.Should().BeFalse("無効にした予約は状態を解いた後も再発行しない");
+        again.Rejected!.Reasons.Should().Equal(reason);
+    }
+
+    // 🔴 T-10-2584（#1319 の監査・指摘 2）: 承認時刻の取引日が過ぎた予約の再配送は、何も発行しない（前の取引日の判断を
+    // 今日の新規建てにしない）。拒否に当たる状態は無いので拒否もしない。予約は無効になり、再度の再配送でも発行しない。
+    [Fact]
+    public async Task 承認時刻の取引日が過ぎた予約の再配送は承認を発行し直さない()
+    {
+        var stores = NewStores();
+        var controls = Controls.New();
+        var screening = Screening(stores, TradingDefaults.CreateSettings(), controls: controls);
+        var decision = Decision(Entry("AAPL"));
+        (await screening.ScreenAsync(decision)).IsApproved.Should().BeTrue();
+        controls.Clock.UtcNow = Now.AddDays(1);
+        controls.Clock.Today = Today.AddDays(1);
+
+        var redelivered = await screening.ScreenAsync(decision);
+        var again = await screening.ScreenAsync(decision);
+
+        redelivered.IsReservationExpired.Should().BeTrue();
+        redelivered.Approved.Should().BeNull("前の取引日の判断を今日の新規建てにしない");
+        redelivered.Rejected.Should().BeNull("拒否に当たる状態は無い");
+        stores.Reservations.Find(decision.DecisionId)!.IsVoided.Should().BeTrue();
+        again.IsReservationExpired.Should().BeTrue("無効にした予約は再発行しない");
     }
 }

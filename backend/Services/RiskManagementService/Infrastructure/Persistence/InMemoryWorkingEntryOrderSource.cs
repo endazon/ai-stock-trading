@@ -30,6 +30,7 @@ public sealed class InMemoryWorkingEntryOrderSource(
             var approvedIds = approvals.Select(a => a.DecisionId).ToHashSet();
             result.AddRange(reservations.Snapshot()
                 .Where(r => r.ApprovedAt >= approvedAtOrAfter
+                         && !r.IsVoided
                          && !approvedIds.Contains(r.DecisionId)
                          && activity.TerminalAtOf(r.DecisionId) is null)
                 .Select(r => r.ToWorkingEntryOrder()));

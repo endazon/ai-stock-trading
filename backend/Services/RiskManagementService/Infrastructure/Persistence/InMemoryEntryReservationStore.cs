@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using RiskManagementService.Features.RiskManagement;
+using AiStockTrading.Shared.Contracts.Trading;
 
 namespace RiskManagementService.Infrastructure.Persistence;
 
@@ -43,6 +44,13 @@ public sealed class InMemoryEntryReservationStore : IEntryReservationStore
         ArgumentNullException.ThrowIfNull(reservation);
         if (_reservations.TryAdd(reservation.DecisionId, reservation))
             _pending.Value?.Add(reservation.DecisionId);
+    }
+
+    public void Void(Guid decisionId, DateTimeOffset voidedAt, IReadOnlyList<RejectionReason> reasons)
+    {
+        ArgumentNullException.ThrowIfNull(reasons);
+        if (_reservations.TryGetValue(decisionId, out var r) && !r.IsVoided)
+            _reservations[decisionId] = r with { VoidedAt = voidedAt, VoidReasons = reasons.ToList() };
     }
 
     public IReadOnlyList<EntryReservation> Snapshot() => _reservations.Values.ToList();

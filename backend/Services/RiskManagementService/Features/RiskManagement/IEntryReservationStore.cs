@@ -25,6 +25,14 @@ public interface IEntryReservationStore
 
     /// <summary>予約を書く。<see cref="RunSerializedAsync{T}"/> の中から呼ぶ。同じ判断 ID が既にあれば何もしない（冪等）。</summary>
     void Reserve(EntryReservation reservation);
+
+    /// <summary>
+    /// 🔴 FR-10, #1319, IADR-0529 決定6: 予約を<b>無効</b>にする（以後、注文源は数えず、再配送でも再発行しない）。
+    /// 承認行が無いまま再配送された判断を、新規建てを止める状態（kill switch・ロックアウト・一時停止）または
+    /// 取引日の経過のために再発行しなかったときに、<see cref="RunSerializedAsync{T}"/> の中から呼ぶ。
+    /// <paramref name="reasons"/> は拒否の理由（取引日の経過だけなら空）。既に無効なら何もしない。
+    /// </summary>
+    void Void(Guid decisionId, DateTimeOffset voidedAt, IReadOnlyList<RejectionReason> reasons);
 }
 
 /// <summary>
@@ -41,8 +49,13 @@ public sealed record EntryReservation(
     decimal FxRateToBase,
     int ApprovedQuantity,
     DateTimeOffset ApprovedAt,
-    StopLossExecutionMethod StopLossMethod)
+    StopLossExecutionMethod StopLossMethod,
+    DateTimeOffset? VoidedAt = null,
+    IReadOnlyList<RejectionReason>? VoidReasons = null)
 {
+    /// <summary>無効にした予約か（IADR-0529 決定6。注文源は数えない・再発行しない）。</summary>
+    public bool IsVoided => VoidedAt is not null;
+
     /// <summary>注文源へ載せる形（承認行の <see cref="WorkingEntryOrder"/> と同じ定義）。</summary>
     public WorkingEntryOrder ToWorkingEntryOrder() =>
         new(DecisionId, Symbol, Market, Side, Quantity, Price, ApprovedAt, FxRateToBase);

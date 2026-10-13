@@ -8,7 +8,9 @@ using RiskManagementWorker::RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Events;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -252,5 +254,58 @@ public sealed class EntryScreeningSerializationE2ETests : IAsyncLifetime
 
         await using var verify = NewContext();
         new EfEntryReservationStore(verify).Find(id).Should().BeNull();
+    }
+
+    // 注文源の最初の SQL 文を実行した直後に 1 回だけ割り込む（別の接続でコミットさせる）。
+    private sealed class AfterFirstReaderInterceptor(Action inject) : DbCommandInterceptor
+    {
+        private int _fired;
+
+        public int Readers { get; private set; }
+
+        public override DbDataReader ReaderExecuted(
+            DbCommand command, CommandExecutedEventData eventData, DbDataReader result)
+        {
+            Readers++;
+            if (Interlocked.Exchange(ref _fired, 1) == 0)
+                inject();
+            return result;
+        }
+    }
+
+    // 🔴 T-10-2582（監査の指摘 1・実 DB で再現）: 予約から承認行へ引き継がれる瞬間に、注文源が 0 件と数えない。
+    // 注文源の SQL 文の実行の直後に、別の接続から承認行（OrderApprovedLedgerHandler と同じ書き込み）をコミットさせる。
+    // 承認行と予約を 2 つの文で読んでいた形では、READ COMMITTED の文ごとのスナップショットにより、
+    // 1 文目（承認行）は承認行を見ず、2 文目（承認行の無い予約）は承認行を見て予約を外し、どちらにも現れなかった（1 件余分に承認される）。
+    [Fact]
+    public async Task 実DBで予約が承認行へ引き継がれる瞬間も注文源は1件と数える()
+    {
+        var decisionId = Guid.NewGuid();
+        var approvedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
+        var intent = new OrderIntent(
+            "AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 10, 10m);
+        await using (var db = NewContext())
+        {
+            new EfEntryReservationStore(db).Reserve(new EntryReservation(
+                decisionId, "AAPL", Market.UnitedStates, TradeSide.Buy, 10, 10m, 1m, 10, approvedAt,
+                StopLossExecutionMethod.BrokerStopOrder));
+        }
+
+        var interceptor = new AfterFirstReaderInterceptor(() =>
+        {
+            using var other = NewContext();
+            new EfPortfolioLedgerStore(other).AppendApproval(decisionId, intent, approvedAt);
+        });
+        await using var reading = new RiskManagementDbContext(
+            new DbContextOptionsBuilder<RiskManagementDbContext>()
+                .UseNpgsql(_connectionString)
+                .AddInterceptors(interceptor)
+                .Options);
+
+        var working = new EfWorkingEntryOrderSource(reading).GetWorkingEntryOrders(approvedAt.AddDays(-1));
+
+        interceptor.Readers.Should().BeGreaterThan(0, "前提: 割り込みは注文源の SQL 文の実行の直後に起きた");
+        working.Where(o => o.DecisionId == decisionId).Should().ContainSingle(
+            "引き継ぎの瞬間も 0 件にしない（是正前は 2 文の間のコミットで 0 件になった）");
     }
 }

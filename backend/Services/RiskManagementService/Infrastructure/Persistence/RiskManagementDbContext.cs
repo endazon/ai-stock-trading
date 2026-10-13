@@ -204,6 +204,7 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             e.HasKey(r => r.DecisionId);
             e.Property(r => r.DecisionId).ValueGeneratedNever();
             e.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            e.Property(r => r.VoidReasons).HasMaxLength(512);
             // 注文源は承認時刻の下限で切り出す（走査量の上限。当日の判定は純関数）。
             e.HasIndex(r => r.ApprovedAt);
         });

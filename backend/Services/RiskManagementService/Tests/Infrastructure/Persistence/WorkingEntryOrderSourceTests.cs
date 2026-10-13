@@ -231,6 +231,11 @@ public class WorkingEntryOrderSourceTests
 
         // 窓の下限より前。
         reservations.Reserve(Reservation(ids.BeforeBound, Base.AddMinutes(-1), "GOOG"));
+
+        // 無効にした予約（再配送で再発行しなかった。IADR-0529 決定6）。
+        var voided = Guid.NewGuid();
+        reservations.Reserve(Reservation(voided, at, "TSLA"));
+        reservations.Void(voided, at.AddMinutes(1), [RejectionReason.KillSwitchActive]);
         return ids;
     }
 
@@ -238,7 +243,7 @@ public class WorkingEntryOrderSourceTests
     {
         result.Select(o => o.DecisionId).Should().BeEquivalentTo(
             new[] { ids.ReservedOnly, ids.Projected },
-            "承認行の無い予約は返し、承認行のある予約は承認行として 1 回だけ返し、終端・下限より前は返さない");
+            "承認行の無い予約は返し、承認行のある予約は承認行として 1 回だけ返し、終端・下限より前・無効は返さない");
         result.Should().ContainSingle(o => o.DecisionId == ids.Projected, "予約と承認行の両方で数えない");
         result.Single(o => o.DecisionId == ids.ReservedOnly).Should().Be(
             new WorkingEntryOrder(ids.ReservedOnly, "NVDA", Market.UnitedStates, TradeSide.Buy, 10, 100m, Base.AddMinutes(1), 1m));
@@ -289,6 +294,26 @@ public class WorkingEntryOrderSourceTests
         db2.EntryReservations.Count().Should().Be(1);
         new EfEntryReservationStore(db2).Find(id).Should().Be(Reservation(id, Base));
         new EfEntryReservationStore(db2).Find(Guid.NewGuid()).Should().BeNull();
+    }
+
+    // T-10-2587: 無効の印は理由ごと読み戻せ、単調である（2 回目の無効化で時刻も理由も変えない）。
+    [Fact]
+    public void EF実装の予約の無効は理由ごと読み戻せ単調である()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var id = Guid.NewGuid();
+        using (var db = NewContext(dbName))
+        {
+            var store = new EfEntryReservationStore(db);
+            store.Reserve(Reservation(id, Base));
+            store.Void(id, Base.AddMinutes(1), [RejectionReason.KillSwitchActive, RejectionReason.TradingPaused]);
+            store.Void(id, Base.AddMinutes(2), []);
+        }
+
+        using var db2 = NewContext(dbName);
+        var found = new EfEntryReservationStore(db2).Find(id)!;
+        found.VoidedAt.Should().Be(Base.AddMinutes(1));
+        found.VoidReasons.Should().Equal(RejectionReason.KillSwitchActive, RejectionReason.TradingPaused);
     }
 
     // T-10-2581: InMemory 実装は例外で終わった臨界区間の予約を残さない（EF 実装のロールバックと同じ意味論）。

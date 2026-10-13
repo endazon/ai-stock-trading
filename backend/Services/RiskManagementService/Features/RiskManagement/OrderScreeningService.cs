@@ -85,9 +85,7 @@ public sealed class OrderScreeningService(
         // 発行が届いていた場合の 2 本目は発注執行が DecisionId で止める（IADR-0057）。
         if (entryReservations.Find(decision.DecisionId) is { } reserved)
         {
-            return ScreeningOutcome.ApprovedRepublish(
-                BuildApproved(decision, reserved.ApprovedQuantity, reserved.ApprovedAt, reserved.StopLossMethod),
-                new OrderScreeningObservation(decision.DecisionId, intent.Mode, []));
+            return ResolveReservedRedelivery(decision, reserved);
         }
 
         var outcome = await ScreenCoreAsync(decision, cancellationToken).ConfigureAwait(false);
@@ -107,6 +105,60 @@ public sealed class OrderScreeningService(
         }
 
         return outcome;
+    }
+
+    // 🔴 FR-10, ADR-0003, ADR-0009, #1319 の監査, IADR-0529 決定6: 予約から最初の承認を組み直す前に、**いま新規建てを出してよいか**を確かめる。
+    // 発注執行は kill switch・ロックアウト・一時停止を見ない。発行の失敗の後に緊急停止を起動し、そこへ再配送が来たときに
+    // 組み直して発行すると、**緊急停止の後に新規建てが出る**。止めるべきなら再発行せず拒否として返し、予約を無効にする
+    // （以後、注文源は数えず、再配送でも再発行しない＝止める側へ倒す）。承認時刻の取引日が過ぎた予約も再発行しない
+    // （前の取引日の判断を今日の新規建てにしない。拒否の理由に当たる状態は無いので、何も発行せずに予約を無効にする）。
+    private ScreeningOutcome ResolveReservedRedelivery(TradeDecisionMade decision, EntryReservation reserved)
+    {
+        var intent = decision.Intent;
+        var noReasons = new OrderScreeningObservation(decision.DecisionId, intent.Mode, []);
+
+        // 既に無効にした予約の再配送: 判断は同じ。最初に無効にしたときの結論を繰り返す（状態が戻っていても発行しない）。
+        if (reserved.IsVoided)
+        {
+            var voidReasons = reserved.VoidReasons ?? [];
+            return voidReasons.Count == 0
+                ? ScreeningOutcome.ReservationExpired(noReasons)
+                : ScreeningOutcome.Reject(
+                    new OrderRejected(decision.DecisionId, intent, voidReasons, clock.UtcNow),
+                    new OrderScreeningObservation(decision.DecisionId, intent.Mode, voidReasons));
+        }
+
+        var now = clock.UtcNow;
+        var tradingDay = TradingDay.Of(now, intent.Market);
+        var snapshot = snapshotBuilder.Build();
+
+        // 新規建てを状態だけで止める理由のうち、承認の後に立ち得る 3 つ（述語は審査と同じ EntryStateBlockers・ロックアウトの判定）。
+        // 並びは審査の到達順（kill switch → 一時停止 → 日次損失）。
+        var reasons = new List<RejectionReason>();
+        if (EntryStateBlockers.KillSwitch(snapshot))
+            reasons.Add(RejectionReason.KillSwitchActive);
+        if (EntryStateBlockers.Paused(snapshot))
+            reasons.Add(RejectionReason.TradingPaused);
+        if (IsLockedOut(tradingDay))
+            reasons.Add(RejectionReason.DailyLossLimitReached);
+
+        if (reasons.Count > 0)
+        {
+            entryReservations.Void(decision.DecisionId, now, reasons);
+            return ScreeningOutcome.Reject(
+                new OrderRejected(decision.DecisionId, intent, reasons, now),
+                new OrderScreeningObservation(decision.DecisionId, intent.Mode, reasons));
+        }
+
+        if (TradingDay.Of(reserved.ApprovedAt, intent.Market) != tradingDay)
+        {
+            entryReservations.Void(decision.DecisionId, now, []);
+            return ScreeningOutcome.ReservationExpired(noReasons);
+        }
+
+        return ScreeningOutcome.ApprovedRepublish(
+            BuildApproved(decision, reserved.ApprovedQuantity, reserved.ApprovedAt, reserved.StopLossMethod),
+            noReasons);
     }
 
     private async Task<ScreeningOutcome> ScreenCoreAsync(TradeDecisionMade decision, CancellationToken cancellationToken)

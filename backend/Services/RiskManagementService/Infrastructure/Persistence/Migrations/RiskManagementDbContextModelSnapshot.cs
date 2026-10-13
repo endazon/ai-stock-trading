@@ -260,6 +260,13 @@ namespace RiskManagementService.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("VoidReasons")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset?>("VoidedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("DecisionId");
 
                     b.HasIndex("ApprovedAt");

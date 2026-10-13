@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace RiskManagementService.Infrastructure.Migrations
 {
     /// <summary>
-    /// FR-10, #1319, IADR-0529 決定2: 新規建ての予約 <c>entry_reservations</c> を作る（審査が承認した新規建てを、承認行が
-    /// 届くまでの間も保有建玉数・日次発注累計・段階資金へ算入するため）。既存の表は変えない。起動時の自動移行で適用される。
+    /// FR-10, #1319, IADR-0529 決定2・決定6: 新規建ての予約 <c>entry_reservations</c> を作る（審査が承認した新規建てを、承認行が
+    /// 届くまでの間も保有建玉数・日次発注累計・段階資金へ算入するため。<c>VoidedAt</c> は再発行しなかった予約の無効の印）。
+    /// 既存の表は変えない。起動時の自動移行で適用される。
     /// </summary>
     public partial class AddEntryReservations : Migration
     {
@@ -27,7 +28,9 @@ namespace RiskManagementService.Infrastructure.Migrations
                     FxRateToBase = table.Column<decimal>(type: "numeric", nullable: false),
                     ApprovedQuantity = table.Column<int>(type: "integer", nullable: false),
                     ApprovedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    StopLossMethod = table.Column<int>(type: "integer", nullable: false)
+                    StopLossMethod = table.Column<int>(type: "integer", nullable: false),
+                    VoidedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    VoidReasons = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true)
                 },
                 constraints: table =>
                 {

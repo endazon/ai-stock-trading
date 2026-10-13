@@ -59,6 +59,17 @@ public record ScreeningOutcome
     /// </summary>
     public bool IsApprovedRepublish { get; init; }
 
+    /// <summary>
+    /// 🔴 FR-10, #1319 の監査, IADR-0529 決定6: 予約はあるが承認行が無い判断の再配送で、<b>承認時刻の取引日が過ぎていた</b>ため
+    /// 再発行せず予約を無効にした（第 5 の形）。<see cref="Approved"/> も <see cref="Rejected"/> も <c>null</c> である。
+    /// 呼び出し側は何も発行せず、観測も記録しない（拒否に当たる状態は無い。前の取引日の判断を今日の新規建てにしないだけ）。
+    /// </summary>
+    public bool IsReservationExpired { get; init; }
+
+    /// <summary>FR-10, #1319 の監査, IADR-0529 決定6: 取引日が過ぎた予約を再発行せずに終える結果。</summary>
+    public static ScreeningOutcome ReservationExpired(OrderScreeningObservation observation) =>
+        new() { IsApproved = false, IsReservationExpired = true, Observation = observation };
+
     /// <summary>FR-10, #1319, IADR-0529 決定4: 予約から同じ承認を組み直して発行し直す結果。</summary>
     public static ScreeningOutcome ApprovedRepublish(OrderApproved approved, OrderScreeningObservation observation) =>
         new() { IsApproved = true, IsApprovedRepublish = true, Approved = approved, Observation = observation };

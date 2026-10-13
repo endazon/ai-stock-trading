@@ -12,7 +12,7 @@ using RiskManagementService.Infrastructure.Persistence;
 namespace RiskManagementService.Infrastructure.Migrations
 {
     [DbContext(typeof(RiskManagementDbContext))]
-    [Migration("20261012225955_AddEntryReservations")]
+    [Migration("20261012235551_AddEntryReservations")]
     partial class AddEntryReservations
     {
         /// <inheritdoc />
@@ -262,6 +262,13 @@ namespace RiskManagementService.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("VoidReasons")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset?>("VoidedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("DecisionId");
 
