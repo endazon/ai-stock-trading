@@ -44,8 +44,13 @@ public sealed class TradeDecisionAppService(
     IEntryBlockersProvider? entryBlockers = null,
     IStopWidthFloorSource? stopWidthFloor = null,
     IDailyBarsProvider? dailyBars = null,
-    MinimumEntryNotionalOptions? minimumEntryNotional = null)
+    MinimumEntryNotionalOptions? minimumEntryNotional = null,
+    IInFlightCloseProvider? inFlightCloses = null)
 {
+    // 🔴 FR-04, FR-10, #1338, IADR-0535 決定2・3: 処理中の決済が建玉を覆うかの照会口（発注執行が決済のゲートと同じ判定で答える）。
+    // 未指定＝NoOp（常に不明＝LLM を呼ぶ＝従来どおり）。本番は Program.cs が OrderExecution:BaseUrl のときだけ Http を明示的に渡す。
+    private readonly IInFlightCloseProvider _inFlightCloses = inFlightCloses ?? new NoOpInFlightCloseProvider();
+
     // 🔴 FR-10, #1176, IADR-0495 決定1・2: 新規建ての最小の名目額（equity 比）。未指定＝既定（1%）で**効く**（不在を「統制なし」に
     // しない。IADR-0163 決定2 の規律）。本番は Program.cs が Sizing:MinEntryNotionalRatio から読んで明示的に渡す（範囲外は起動を止める）。
     private readonly MinimumEntryNotionalOptions _minimumEntryNotional =
@@ -234,7 +239,7 @@ public sealed class TradeDecisionAppService(
         return Skip(trigger, ToSkipReason(reason));
     }
 
-    // #1092, IADR-0462 決定4: 台帳の語彙（7 値。#1113・#1176・#1174 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
+    // #1092, IADR-0462 決定4: 台帳の語彙（#1113・#1176・#1174・#1286・#1338 で 1 値ずつ足した）→ 観測の語彙（DecisionSkipReason）。名前は同じ（試験が固定する）。
     internal static DecisionSkipReason ToSkipReason(DecisionForgoneBeforeLlmReason reason) => reason switch
     {
         DecisionForgoneBeforeLlmReason.DailyPolicyUnconfirmed => DecisionSkipReason.DailyPolicyUnconfirmed,
@@ -245,6 +250,7 @@ public sealed class TradeDecisionAppService(
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowMinimumNotional => DecisionSkipReason.EntryCapacityBelowMinimumNotional,
         DecisionForgoneBeforeLlmReason.EntryCapacityBelowOneShare => DecisionSkipReason.EntryCapacityBelowOneShare,
         DecisionForgoneBeforeLlmReason.ExitOnlyWithoutHolding => DecisionSkipReason.ExitOnlyWithoutHolding,
+        DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition => DecisionSkipReason.InFlightCloseCoversPosition,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "LLM を呼ぶ前の見送りの理由ではない"),
     };
 
@@ -466,6 +472,7 @@ public sealed class TradeDecisionAppService(
         // 省けるのは「保有が既知で 0、かつ未約定の新規建てが既知で空」のときだけである —— この銘柄では LLM の結論は
         // 買いの新規建て（審査で必ず落ちる）か、売り（裸の新規ショートとして NakedShortOpen で必ず見送る）か、Hold しか無い。
         // 保有中・未約定あり・不明の銘柄では照会もしない（決済の判断は必ず残す。IADR-0358 決定 2 と同じ線引き）。
+        // ［#1338, IADR-0535］保有中の銘柄は、処理中の決済が建玉を覆い、どの結論も発注にならないときだけ下で省く（決済の判断を消すのではない）。
         // 可否はリスク管理が審査と同じ述語で答える（規則を判断側に持たない）。照会の失敗・未結線（不明）は LLM を呼ぶ側へ倒す。
         // 🔴 **審査は残す**（両端で止める）。ここで省くのは費用の最適化であって統制ではない。
         // ShortSide は見ない（保有 0 の売りは上のとおり必ず見送られる）。
@@ -489,6 +496,28 @@ public sealed class TradeDecisionAppService(
             ? await GetEntryBlockersSafeAsync(trigger, cancellationToken).ConfigureAwait(false)
             : null;
         var addOnBlockers = heldEntryBlockers?.ForEntry(heldPosition!.IsLong ? TradeSide.Buy : TradeSide.Sell);
+
+        // 🔴 FR-04, FR-10, ADR-0050 決定1, #1338, IADR-0535 決定1〜3: **判断由来の決済が処理中のまま建玉を覆い、どの結論も発注にならない銘柄は、
+        // LLM（一次スクリーニングを含む）を呼ぶ前に見送る。** 保有中の銘柄の結論は Hold・決済・買い増し（売り増し）の 3 つしか無い。
+        //   - 決済: 発注執行が「処理中の決済が決済方向の建玉を覆う」と答えた（ゲートと同じ関数。送れば InFlightCloseCoversPosition で見送る）。
+        //   - 買い増し（処理中の決済と**逆方向**の判断）: LLM の後で必ず見送られると分かっているときだけ（AddOnKnownForgone）。分からなければ
+        //     LLM を呼ぶ（逆方向の判断を塞がない）。覆わない（部分。建玉を超える残りの決済が出せる）・不明・照会の失敗も LLM を呼ぶ。
+        // 照会はブローカーへの往復を伴い得るので、手元の値で決まる買い増しの判定を先に置く（成り立たなければ照会しない）。
+        // 🔴 **ゲートは残す**（両端で止める）。ここで省くのは費用の最適化であって統制ではない。
+        if (heldPosition is { SignedQuantity: not 0 } inFlightHeld
+            && AddOnKnownForgone(trigger, fxReading, workingEntries, addOnBlockers, context, currentPrice, rateToBase)
+            && await GetInFlightCloseSafeAsync(
+                    trigger, inFlightHeld.IsLong ? TradeSide.Sell : TradeSide.Buy, cancellationToken).ConfigureAwait(false)
+                is { Covered: true } coverage)
+        {
+            logger.LogInformation(
+                "判断由来の決済が処理中のまま建玉を覆い、買い増しも必ず見送られるため LLM を呼ばずに見送り（ゲートは不変・IADR-0535）: " +
+                "{Symbol} held={Held} inFlight={InFlight} orders={OrderIds}",
+                trigger.Symbol, inFlightHeld.SignedQuantity, coverage.InFlightQuantity, string.Join(",", coverage.OrderIds));
+            return await SkipBeforeLlmAsync(
+                    trigger, DecisionForgoneBeforeLlmReason.InFlightCloseCoversPosition, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         // FR-08, IADR-0072: 収集情報・判断根拠を KB から RAG 取得して判断文脈に加える（既定＝空＝文脈なし＝現行動作）。
         // fail-safe: 取得は判断のクリティカルパス外。例外・遅延で判断を止めないよう、失敗は「文脈なし」に縮退する
@@ -1013,6 +1042,55 @@ public sealed class TradeDecisionAppService(
         await ReportHoldingsQueryAsync(PositionQuerySource.TradeDecisionWorkingEntries, working is not null)
             .ConfigureAwait(false);
         return working;
+    }
+
+    // 🔴 FR-04, FR-10, #1338, IADR-0535 決定1: 保有中の銘柄の**買い増し・売り増し**（保有の方向の新規建て）が、LLM の後で**必ず**見送られると
+    // LLM の前に分かるか。どれも LLM の後の見送りと同じ条件・同じ関数であり、ここで新しい規則を作らない（成り立たなければ false＝LLM を呼ぶ）。
+    //   - 出口専用（ExitOnlyOpenOutsideWatchlist）／換算レートが新規建てに使えない（FxRateStaleOpen）／実結線で未約定の新規建てが不明
+    //     （WorkingEntriesUnknownOpen）／その方向の新規建てが審査で必ず拒否される（AddOnBlockedByRiskControls。IADR-0471）
+    //   - 段階残枠・日次残枠の小さい方が現在値 × 1 株に満たない（サイジングは必ず数量 0。IADR-0500 と同じ PositionSizer.CannotAffordOneShare）
+    //   - 新規建てに使える金額の上限が最小の名目額に届かない（IADR-0495 と同じ MinimumEntryNotional.CapacityCannotReach）。1 注文上限は
+    //     区分外（大きい方）で比べる——区分外でも届かなければ区分の銘柄でも届かない（IADR-0527。ATR を読まずに済む）。
+    private bool AddOnKnownForgone(
+        DecisionTrigger trigger, FxRateReading fxReading, WorkingEntryOrders? workingEntries,
+        IReadOnlyList<RejectionReason>? addOnBlockers, SizingContext context, decimal? currentPrice, decimal rateToBase)
+    {
+        if (trigger.ExitOnly || !fxReading.UsableForEntry
+            || (_heldPosition.IsEnabled && workingEntries is null)
+            || addOnBlockers is { Count: > 0 })
+        {
+            return true;
+        }
+
+        if (context is not { StageCapitalRemaining: { } stageRemaining, DailyOrderRemaining: { } dailyRemaining })
+            return false;
+
+        var available = Math.Max(0m, Math.Min(stageRemaining, dailyRemaining));
+        if (currentPrice is > 0m && PositionSizer.CannotAffordOneShare(available, currentPrice.Value * rateToBase))
+            return true;
+
+        return context.Capital is { } equity
+            && MinimumEntryNotional.CapacityCannotReach(
+                equity,
+                HighVolatilityOrderCap.MaxOrderAmountFor(context.Limits, context.EffectiveHighVolatility, equity, false),
+                available,
+                _minimumEntryNotional.Ratio);
+    }
+
+    // 🔴 FR-04, FR-10, #1338, IADR-0535 決定3: 処理中の決済の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は **null（不明）**に縮退する
+    // （＝LLM を呼ぶ。見送らない）。不明を「覆う」と読むと、照会が落ちている間すべての保有銘柄の決済（損切り）の判断を止める。キャンセルは伝える。
+    private async Task<InFlightCloseCoverage?> GetInFlightCloseSafeAsync(
+        DecisionTrigger trigger, TradeSide closeSide, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _inFlightCloses.GetAsync(trigger.Symbol, trigger.Market, closeSide, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "処理中の決済の照会に失敗しました（不明として扱い LLM を呼びます）: {Symbol}", trigger.Symbol);
+            return null;
+        }
     }
 
     // 🔴 FR-10, FR-04, #1113, IADR-0463 決定 4: 新規建ての可否の照会（fail-safe ラッパ）。例外・キャンセル以外の失敗は

@@ -249,6 +249,7 @@
   },
   "OrderDispatchForgone": {
     "DecisionId": "Guid",
+    "InFlightCloseOrderIds": "IReadOnlyList\u003CString\u003E",
     "Intent": "OrderIntent",
     "OccurredAt": "DateTimeOffset",
     "Protection": "ForgoneCloseProtection",
