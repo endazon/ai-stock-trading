@@ -197,6 +197,91 @@ public class CachingFxRateSourceTests
         notifier.Stales.Should().ContainSingle().Which.EntryBlocked.Should().BeFalse();
     }
 
+    // --- #1331, ADR-0022 決定4・5, IADR-0533: 齢は経過時間ではなく暦日差（観測の時差の暦）で数える ---------------
+    //
+    // 計画は「最新レートの**日付**が 5 日を超えて古い」で数え、3 連休明けの火曜（5 日）までを通常運用とした。
+    // 経過時間で数えていた実装は、同じ暦日差 5 日でも夜には 5.9 日となり**計画が通常とした日に警告を鳴らした**
+    // （PoC 2026-10-12 13:34Z・スポーツの日: 観測 10/07 JST → 経過 5.9 日で警告）。
+    // 境界は **JST の 0 時**で切り替わる（UTC の 0 時ではない）ことも両側で固定する。
+
+    private static readonly TimeSpan Jst = TimeSpan.FromHours(9);
+
+    [Theory]
+    [InlineData("2026-10-07", "2026-10-12T13:34:21Z", false, "PoC の事象: 祝日の月曜の夜（暦日差 5 日・経過 5.9 日）")]
+    [InlineData("2026-10-08", "2026-10-13T13:30:00Z", false, "3 連休明けの火曜の夜（暦日差 5 日。計画が通常運用と明記）")]
+    [InlineData("2026-10-02", "2026-10-06T18:00:00Z", false, "平常週の水曜 03:00 JST・収録前（前週金曜・暦日差 5 日）")]
+    [InlineData("2026-10-07", "2026-10-12T14:59:59Z", false, "境界の直前: 10/12 23:59:59 JST（暦日差 5 日）")]
+    [InlineData("2026-10-07", "2026-10-12T15:00:00Z", true, "境界: 10/13 00:00 JST（暦日差 6 日。UTC ではまだ 10/12）")]
+    [InlineData("2026-10-07", "2026-10-14T01:00:00Z", true, "4 連休明け相当（暦日差 7 日）")]
+    public async Task 警告は日本時間の暦日差が5日を超えたときだけ出る(
+        string observedOn, string evaluatedAt, bool warned, string scenario)
+    {
+        var log = new RecordingFxLogger();
+        var notifier = new RecordingNotifier();
+        var source = new CachingFxRateSource(
+            new CountingSource(Rate(JstDate(observedOn))), TimeSpan.FromHours(6),
+            FxRateSourceFactory.ResolveMaxRateAge(new FxOptions()),
+            FxRateSourceFactory.ResolveStaleRateWarning(new FxOptions()),
+            new TestTimeProvider(Instant(evaluatedAt)), log, notifier);
+
+        var reading = await source.GetReadingAsync(Currency.Jpy);
+
+        reading!.UsableForEntry.Should().BeTrue(scenario);
+        reading.Freshness.Should().Be(warned ? FxRateFreshness.Warning : FxRateFreshness.Fresh, scenario);
+        log.Warnings.Should().HaveCount(warned ? 1 : 0, scenario);
+        notifier.Stales.Should().HaveCount(warned ? 1 : 0, scenario);
+    }
+
+    // 停止（30 日超）も同じ暦日差で数える（判定規則は 1 箇所）。🔴 緩む方向の境界なので両側で固定する。
+    [Theory]
+    [InlineData("2026-10-31T14:59:59Z", true, "暦日差 30 日の最後の瞬間（11/01 は JST で 23:59:59 = 10/31 14:59:59Z）")]
+    [InlineData("2026-10-31T15:00:00Z", false, "暦日差 31 日（11/01 00:00 JST）")]
+    public async Task 停止は日本時間の暦日差が30日を超えたときに働く(string evaluatedAt, bool usable, string scenario)
+    {
+        var source = new CachingFxRateSource(
+            new CountingSource(Rate(JstDate("2026-10-01"))), TimeSpan.FromHours(6),
+            FxRateSourceFactory.ResolveMaxRateAge(new FxOptions()),
+            FxRateSourceFactory.ResolveStaleRateWarning(new FxOptions()),
+            new TestTimeProvider(Instant(evaluatedAt)), NullLogger<CachingFxRateSource>.Instance);
+
+        var reading = await source.GetReadingAsync(Currency.Jpy);
+
+        reading!.UsableForEntry.Should().Be(usable, scenario);
+    }
+
+    // キャッシュから返す経路も同じ規則で判定し直す（TTL の間に日付が変われば警告域へ入る）。
+    [Fact]
+    public async Task キャッシュから返すときも暦日差で判定し直す()
+    {
+        var inner = new CountingSource(Rate(JstDate("2026-10-07")));
+        var time = new TestTimeProvider(Instant("2026-10-12T13:00:00Z"));   // 10/12 22:00 JST・暦日差 5
+        var source = new CachingFxRateSource(
+            inner, TimeSpan.FromHours(6), TimeSpan.FromDays(30), TimeSpan.FromDays(5),
+            time, NullLogger<CachingFxRateSource>.Instance);
+
+        (await source.GetReadingAsync(Currency.Jpy))!.Freshness.Should().Be(FxRateFreshness.Fresh);
+        time.Advance(TimeSpan.FromHours(3));                                   // 10/13 01:00 JST・暦日差 6
+        (await source.GetReadingAsync(Currency.Jpy))!.Freshness.Should().Be(FxRateFreshness.Warning);
+        inner.Calls.Should().Be(1, "TTL 内なので再取得はしていない");
+    }
+
+    // 暦日差は観測の時差の暦で数える。FRED（UTC 0 時）なら UTC の日付で切り替わる。
+    [Theory]
+    [InlineData("2026-10-07T00:00:00+09:00", "2026-10-12T14:59:59Z", 5)]
+    [InlineData("2026-10-07T00:00:00+09:00", "2026-10-12T15:00:00Z", 6)]
+    [InlineData("2026-10-02T00:00:00+00:00", "2026-10-07T23:59:59Z", 5)]
+    [InlineData("2026-10-02T00:00:00+00:00", "2026-10-08T00:00:00Z", 6)]
+    [InlineData("2026-10-07T00:00:00+09:00", "2026-10-06T15:00:00Z", 0)]
+    public void 暦日差は観測の時差の暦で数える(string asOf, string now, int expected)
+    {
+        CachingFxRateSource.ElapsedCalendarDays(
+                DateTimeOffset.Parse(asOf, CultureInfo.InvariantCulture), Instant(now))
+            .Should().Be(expected);
+    }
+
+    private static DateTimeOffset JstDate(string date) =>
+        new(DateTime.ParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture), Jst);
+
     // #364, IADR-0152 決定1/2: 基準通貨は USD であり、解決対象は JPY（レートは USD per JPY）。
     private static FxRate Rate(DateTimeOffset asOf) => new(Currency.Jpy, Currency.Usd, 1m / 152.35m, asOf);
 
