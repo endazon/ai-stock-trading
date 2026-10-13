@@ -15,12 +15,13 @@ namespace TradeDecisionService.Tests.Features.TradeDecision.RecordStage0Decision
 // FR-15, FR-04, NFR（費用）, ADR-0033 決定5, ADR-0054 決定3, ADR-0064 決定3, #1219, #1308:
 // 経路B（values-local.yaml）の Stage 0 の記録の欄を、**配備で実際に読まれる env の形のまま**束縛して検査する。
 //
-// 見るのは 5 点である。
+// 見るのは 6 点である。
 //   1. 欄は束縛でき、オーナー承認（2026-10-13・#1219）の値で埋まっている（int / bool の欄を "" にすると束縛で例外になる）。
 //   2. 承認値の組の見積りはオーナーの承認額 1,700 円に（超過の上限込みで）収まり、書いた承認額は見積りと一致する。
-//   3. 🔴 承認ゲートは「≥」ではなく一致で見る。1,700 をそのまま書けば NotApproved で LLM を呼ばない。
-//   4. 🔴 経路B の構成のまま走らせると承認ゲートは通るが、as-of 入力の基底の供給（#1308）が無いあいだは記録 0 件・LLM 0 回で終わる。
-//   5. 🔴 本番（values.yaml）の取引判断には記録の欄を足していない（本番の挙動を変えない）。
+//   3. 🔴 承認値の組のまま、as-of 入力の基底の供給（#1308。外部の口は試験用のスタブ）の下で走らせると承認ゲートを通る。
+//   4. 🔴 承認ゲートは「≥」ではなく一致で見る。1,700 をそのまま書けば NotApproved で LLM を呼ばない。
+//   5. 🔴 ［#1308］経路B の配線の欄で as-of 入力の基底の供給が選ばれ、欄を埋めて承認すれば記録が作られる。
+//   6. 🔴 本番（values.yaml）の取引判断には記録の欄を足していない（本番の挙動を変えない）。
 public class Stage0RecordingLocalProfileTests
 {
     private const string LocalValues = "deploy/helm/ai-stock-trading/values-local.yaml";
@@ -80,23 +81,23 @@ public class Stage0RecordingLocalProfileTests
         decimal.Round(options.ApprovedEstimateJpy!.Value, 2).Should().Be(decimal.Round(estimate.TotalJpy, 2));
     }
 
-    // 🔴 #1308: 経路B の構成のまま（承認値入り）走らせると、承認ゲートは通る（NotApproved ではない）のに、
-    // 本番の組み立て（Program.cs）の最も内側が NoAsOfDecisionInputProvider であるため、全判断時点が飛ばされる。
-    // #1308 が基底の供給を入れたら、この試験は記録が作られる側へ書き換える。
+    // 🔴 #1219, #1308: 経路B の承認値の組のまま（銘柄・期間・トークン量・承認値を書き換えずに）走らせると、承認ゲートを通る。
+    // 基底の供給（#1308）の外部の口（日足・確定日報の方針・参考情報の源）は試験用のスタブである。見るのはゲートを通ることと、
+    // 見積りが書いた承認額 437.28 円と一致することだけ（記録の中身は #1308 の試験が見る）。
     [Fact]
-    public async Task 経路Bの承認値のまま走らせると承認ゲートを通り_as_of_の基底が無ければ記録は_0_件()
+    public async Task 経路Bの承認値の組のまま走らせると承認ゲートを通る()
     {
+        var options = Bind(Env(LocalValues, "trade-decision"));
         var llm = new CountingLlm();
         var sink = new CapturingSink();
-        var recorder = Recorder(llm, sink);
+        var recorder = Recorder(llm, sink, StubBaseInputs());
 
-        var outcome = await recorder.RunAsync(Bind(Env(LocalValues, "trade-decision")), TestContext.Current.CancellationToken);
+        recorder.Estimate(options).TotalJpy.Should().Be(437.2831152m);
+        decimal.Round(recorder.Estimate(options).TotalJpy, 2).Should().Be(options.ApprovedEstimateJpy);
 
-        outcome.Status.Should().Be(Stage0RecordingStatus.Completed, "承認ゲートは通っている");
-        outcome.RecordSet!.Records.Should().BeEmpty();
-        outcome.ActualCostJpy.Should().Be(0m);
-        llm.Calls.Should().Be(0);
-        sink.Saved.Should().NotBeNull("0 件でも記録集合は書き出す");
+        var outcome = await recorder.RunAsync(options, TestContext.Current.CancellationToken);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed, "承認値は見積りと一致し、ゲートを通る");
     }
 
     // 🔴 否定形: 承認ゲートは「承認額 ≥ 見積り」ではなく一致で見る。オーナーの承認額 1,700 円をそのまま書くと
@@ -109,12 +110,66 @@ public class Stage0RecordingLocalProfileTests
         var llm = new CountingLlm();
         var sink = new CapturingSink();
 
-        var outcome = await Recorder(llm, sink).RunAsync(Bind(env), TestContext.Current.CancellationToken);
+        var outcome = await Recorder(llm, sink, StubBaseInputs()).RunAsync(Bind(env), TestContext.Current.CancellationToken);
 
         outcome.Status.Should().Be(Stage0RecordingStatus.NotApproved);
         llm.Calls.Should().Be(0);
         sink.Saved.Should().BeNull();
     }
+
+    // 基底の供給（#1308）。外部の口は試験用のスタブ（BaseAsOfDecisionInputProviderTests の部品）。
+    private static BaseAsOfDecisionInputProvider StubBaseInputs() =>
+        new(
+            BaseAsOfDecisionInputProviderTests.FakePrices.FollowingAsOf(close: 110m, previousClose: 100m),
+            BaseAsOfDecisionInputProviderTests.FakePolicies.PreviousDay("前日に確定した方針"),
+            new AsOfReferenceAssembler(BaseAsOfDecisionInputProviderTests.AllFeeds(), topK: 5, TimeSpan.FromHours(168)),
+            NullLogger<BaseAsOfDecisionInputProvider>.Instance);
+
+    // 🔴 #1308, IADR-0528 決定7: 経路B の trade-decision の配線の欄（Reports__BaseUrl・OrderExecution__BaseUrl）で基底の供給が選ばれる。
+    // 欄を埋めて承認すれば、基底の供給が組んだ入力で記録が作られ、LLM が呼ばれる（#1308 より前は 0 件・0 回だった）。
+    // 🔴 配備の注意: Stage0Recording__Enabled=true・承認済みの values のまま #1308 の入った版を配備すると、起動した時点で記録が LLM を呼ぶ。
+    [Fact]
+    public async Task 経路Bの配線の欄で基底の供給が選ばれ_欄を埋めて承認すれば記録が作られる()
+    {
+        var env = Env(LocalValues, "trade-decision");
+        TradeDecisionService.Infrastructure.ExternalServices.Stage0AsOfComposition
+            .HasBaseEndpoints(Configuration(env)).Should().BeTrue("経路B は方針と日足の接続先を両方持つ");
+
+        env["Stage0Recording__Enabled"] = "true";
+        env["Stage0Recording__From"] = "2026-09-15";
+        env["Stage0Recording__To"] = "2026-09-16";
+        env["Stage0Recording__OutputPath"] = "/tmp/stage0/records.json";
+        env["Stage0Recording__InputTokensPerDecision"] = "6000";
+        env["Stage0Recording__OutputTokensPerDecision"] = "800";
+        env["Stage0Recording__ScreeningInputTokensPerDecision"] = "4000";
+        env["Stage0Recording__ScreeningOutputTokensPerDecision"] = "300";
+        env["Stage0Recording__ApprovedVoteCount"] = "1";
+        foreach (var key in env.Keys.Where(k => k.StartsWith("Stage0Recording__Symbols__", StringComparison.Ordinal)).ToList())
+            env.Remove(key);
+        env["Stage0Recording__Symbols__0__Symbol"] = "AAPL";
+        env["Stage0Recording__Symbols__0__Market"] = "UnitedStates";
+        var llm = new CountingLlm();
+        var sink = new CapturingSink();
+        var recorder = Recorder(llm, sink, new BaseAsOfDecisionInputProvider(
+            BaseAsOfDecisionInputProviderTests.FakePrices.FollowingAsOf(close: 110m, previousClose: 100m),
+            BaseAsOfDecisionInputProviderTests.FakePolicies.PreviousDay("前日に確定した方針"),
+            new AsOfReferenceAssembler(BaseAsOfDecisionInputProviderTests.AllFeeds(), topK: 5, TimeSpan.FromHours(168)),
+            NullLogger<BaseAsOfDecisionInputProvider>.Instance));
+        var estimate = recorder.Estimate(Bind(env));
+        env["Stage0Recording__ApprovedEstimateJpy"] = estimate.TotalJpy.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var outcome = await recorder.RunAsync(Bind(env), TestContext.Current.CancellationToken);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.Completed);
+        outcome.RecordSet!.Records.Should().HaveCount(2, "AAPL × 2026-09-15・09-16");
+        llm.Calls.Should().Be(2, "一次が Hold なので本判断は呼ばない（判断時点ごとに 1 回）");
+    }
+
+    private static IConfiguration Configuration(Dictionary<string, string> env) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(env.Select(kv =>
+                new KeyValuePair<string, string?>(kv.Key.Replace("__", ":", StringComparison.Ordinal), kv.Value)))
+            .Build();
 
     // 記録の対象銘柄と backtest の評価銘柄がずれると、再生側が RecordingMismatch で判定を組まない。
     [Fact]
@@ -132,15 +187,19 @@ public class Stage0RecordingLocalProfileTests
         recording.Should().Equal(evaluation);
     }
 
-    // backtest に足した 2 欄は、コードの既定（Stage0EvaluationOptions: LookbackDays 365・IntervalSeconds 86,400）と同値である
-    // （＝PoC が値を変えるまで評価の挙動は変わらない）。
+    // #1219, #1308 / IADR-0528 決定9: backtest の評価の窓 [EvaluationEnd − LookbackDays, EvaluationEnd] は記録の窓と一致する
+    // （記録の From ≤ 窓の起点・記録の To ≥ 窓の終端。ずれると RecordingMismatch）。巡回間隔はコードの既定のまま。
     [Fact]
-    public void 経路Bの_backtest_の窓と巡回間隔はコードの既定と同値である()
+    public void 経路Bの_backtest_の評価の窓は記録の窓と一致する()
     {
-        var env = Env(LocalValues, "backtest");
+        var backtest = Env(LocalValues, "backtest");
+        var recording = Bind(Env(LocalValues, "trade-decision")).ParsePeriod()!.Value;
 
-        env.Should().Contain("Backtest__Stage0__LookbackDays", "365");
-        env.Should().Contain("Backtest__Stage0__IntervalSeconds", "86400");
+        var end = DateOnly.ParseExact(backtest["Backtest__Stage0__EvaluationEnd"], "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var from = end.AddDays(-int.Parse(backtest["Backtest__Stage0__LookbackDays"], System.Globalization.CultureInfo.InvariantCulture));
+
+        (from, end).Should().Be(recording);
+        backtest.Should().Contain("Backtest__Stage0__IntervalSeconds", "86400");
     }
 
     // 🔴 本番の取引判断には記録の欄を足していない（カットオフと承認額の 2 つだけ。いずれも従来から在る）。
@@ -154,12 +213,12 @@ public class Stage0RecordingLocalProfileTests
         Bind(env).Enabled.Should().BeFalse();
     }
 
-    private static Stage0DecisionRecorder Recorder(CountingLlm llm, CapturingSink sink) =>
+    private static Stage0DecisionRecorder Recorder(CountingLlm llm, CapturingSink sink, IAsOfDecisionInputProvider? inputs = null) =>
         new(
             llm,
             DecisionOrchestrationOptions.Default,
-            // Program.cs の組み立ての最も内側と同じ（#1308 が入るまでの基底の供給）。
-            new NoAsOfDecisionInputProvider(),
+            // 既定は「入力なし」（基底の供給の口がそろわない構成と同じ）。#1308 の試験は基底の供給を渡す。
+            inputs ?? new NoAsOfDecisionInputProvider(),
             sink,
             new Stage0RecordingUsageCollector(new NullReporter()),
             Prices(),

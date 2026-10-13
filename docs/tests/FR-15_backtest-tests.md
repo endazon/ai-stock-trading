@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-10-11
+updated: 2026-10-13
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04, FR-05]
 adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014, ADR-0035, ADR-0064]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, planning#783]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524, IADR-0528]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, #1308, planning#783]
 -->
 
 
@@ -362,6 +362,24 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | 戦略識別子が一次を含まない／旧記録の戦略識別子を変える | **1 件／2 件が赤**（T-15-120。後者は既存の固定値の試験を含む） |
 | 起動時の停止の告知から Stage 0 を外す／取引環境の告知から外す | **1 件／5 件が赤**（T-15-122） |
 | 見積りが一次を数えない | **62 件が赤**（T-15-121 ほか、見積りと一致させた承認値で回る記録器の試験） |
+
+### as-of 入力の基底の供給と日足の源（2026-10-13 の利用者裁定・#1308）
+
+> 記録器の as-of 入力の基底（価格・確定日報の方針・ニュース開示・為替・サイジング）を、判断日の通常取引の終値の時刻で切った
+> 内部の記録と過去の API で組む。バックテストの日足は発注執行の日足の照会から取る。
+> 🔴 **本節の核心は 2 つ** —— 判断時点より後の情報（足・方針・記事）を 1 件も入れないこと、
+> および **取れなかったことを「当時無かった」と読まない**こと（照会の失敗は記録を止めるか、再構成不可と申告する）。
+> テストメソッドは各実装の PR の試験名である（ID はテストコードへ書かない。実装の PR が本表より先に CI を通れるようにするため）。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-125 | 報告書サービスは、指定の時刻までに確定していた日報のうち期間の始まりが最も新しいものの方針を返す。その時刻より後に確定した日報・ドラフトは返さない。無ければ 404、時刻が無い・オフセットの無い時刻は 400。認可は確定済みの方針の照会と同じ | `EfReportStoreTests.時点で確定していた最新の日報を返し_後で確定した日報とドラフトは返さない`（EF・InMemory） / `時刻のオフセットが違っても同じ瞬間なら同じ答えになる`（同） / `ReportEndpointsTests.サービスロールは時点を指定して確定済みの方針を照会でき_確定より前は_404` / `時点が無い_またはオフセットの無い時刻なら_400`（5 ケース） / `時点を指定した方針の照会も未認証は_401` | 自動 |
+| T-15-126 | 判断時点は判断日の通常取引の終値の時刻（米国は 16:00 ET。夏時間の切り替えをまたいでも正しい） | `BaseAsOfDecisionInputProviderTests.判断時点は判断日の通常取引の終値の時刻である`（夏時間・標準時・切り替えの前後 5 ケース） | 自動 |
+| T-15-127 | 🔴 参考情報は `[判断時点 − 168h, 判断時点]` を両端で切り（未来の記事・古い記事を落とし、境界ちょうどは残す）、新しい順に上位 K 件、銘柄と市場を別々に数え、出所タグで限定する | `BaseAsOfDecisionInputProviderTests.参考情報は窓の両端で切り_境界ちょうどは残す` / `参考情報は新しい順に上位K件を銘柄と市場で別々に数える` / `出所タグの無い文書は渡さない_発行時刻の無い文書は落とさない` / `時刻つきの文書がK件を超えても時刻なしの文書は枠の外で渡り再構成不可と申告される` | 自動 |
+| T-15-128 | 🔴 3 源（企業ニュース・開示・マクロ指標）がそろえばニュース開示は再構成済み（または当時無し）と申告し、理由欄に欠けた源を残す。どれかが失敗・未構成なら再構成不可と申告する | `BaseAsOfDecisionInputProviderTests.三つの源がそろえばニュース開示は再構成済みで理由欄に欠けた源が残る` / `三つの源がそろって記事が無ければ当時無しと申告する` / `必須の源が一つでも取れなければニュース開示は再構成不可と申告する`（失敗・例外・未構成の 3 ケース） | 自動 |
+| T-15-129 | 🔴 休場・確定日報なし・方針の日付が判断日より後・基準通貨でない市場は判断しない（null）。価格・方針の照会の失敗は記録を止める（例外）。サイジングは固定値で、出力を記録器に通すと本番と同じ組み立てで記録が作られる | `BaseAsOfDecisionInputProviderTests.価格と方針と参考情報を判断時点で組みサイジングは固定値である` / `判断日の足が無い日は判断しない_休場` / `判断時点までに確定した日報が無ければ判断しない` / `方針の日付が判断日より後なら判断しない` / `基準通貨でない市場は判断しない` / `価格の口が判断日と違う日の足を返したら記録を止める` / `価格と方針の照会の失敗は例外のまま伝わる` / `Stage0DecisionRecorderTests.基底の供給の出力を記録器に通すと本番と同じ組み立てで記録が作られる` | 自動 |
+| T-15-130 | 外部の口は判断時点で切った要求を出す（日足の期間・方針の時刻・企業ニュースの日付・開示の受理時刻・マクロ指標の前日の版）。基底の供給は方針と日足の接続先がそろったときだけ選ばれる | `Stage0AsOfExternalSourcesTests.価格は判断日の足の終値と前日の終値を返し期間は判断日で切る` / `判断日の足が無ければ参照価格は無い_休場` / `日足が取れなければ撃ち直してから記録を止める` / `判断日が今日の取引日以降なら足を取らずに止める` / `方針は送り手の本物の型を直列化した応答から読み_時刻はUTCで渡す`（契約） / `確定日報が無ければ方針は無い_404` / `方針が取れなければ撃ち直してから記録を止める` / `判断時点より後に確定した方針は撃ち直さずにすぐ記録を止める` / `企業ニュースは判断時点の日付で区切って引き_収集と同じ形の文書にする` / `企業ニュースは429なら1回だけ撃ち直し_失敗はnull_米国株以外は無い` / `開示はCIKごとに1回だけ引き_銘柄で絞り_受理時刻を発行時刻にする` / `開示の取得に失敗すればnullで_失敗は覚えない` / `マクロ指標はALFREDの前日の版で引き_判断日ごとに1回だけ取る` / `マクロ指標は窓幅の違う呼び出しで狭い窓の観測を使い回さない` / `構成の無い源は組み立てに入れない`（3 ケース） / `Stage0DecisionVolumeWiringTests.連鎖の最も内側は方針と日足の接続先がそろったときだけ基底の供給になる`（5 ケース） / `Stage0RecordingLocalProfileTests.経路Bの配線の欄で基底の供給が選ばれ_欄を埋めて承認すれば記録が作られる` | 自動 |
+| T-15-131 | バックテストの過去データ源 `order-execution` は銘柄ごとに日足の照会を呼び、取れた足だけを使い、取れなかった銘柄を欠測に残す。評価の窓の終端を構成で固定できる（空は今日） | `HttpOrderExecutionHistoricalBarSourceTests.送り手の本物の型を直列化した応答から足を読む`（契約） / `銘柄ごとに日足の照会を呼び取れた足を使う` / `期間外の壊れた足では銘柄が落ちない`（2 ケース） / `取れなかった銘柄は欠測に残し他の銘柄は続ける`（6 ケース） / `照会の上限を超える期間は分けて呼び_一部でも取れなければ銘柄ごと欠測にする` / `期間の分割は両端を含み隙間も重なりも無い` / `provider_order_execution_はベースURLがあれば選ばれる` / `ベースURLが無い_不正なら_no_op_へ倒す`（4 ケース） / `provider_order_execution_なのにHttpClientが無ければ配線の誤りとして止める` / `評価の窓の終端を構成で固定できる`（5 ケース） / `経路Bの想定値では窓は記録の窓と一致する` / `BacktestWorkerWiringTests.provider_order_execution_の指定で発注執行の日足の照会の源が解決される` | 自動 |
 
 ### 合格基準の閾値較正（#208。Stage 0 の最小試行数を 1 → 20 へ較正する）
 
