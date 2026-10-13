@@ -152,7 +152,15 @@ public sealed class MoomooBrokerAdapter(
             ? MoomooPriceRounding.RoundTrigger(intent.Market, intent.Side, trigger)
             : triggerPrice;
 
-        return (await PlaceWithRejectionDetailAsync(sentIntent, remark, cancellationToken, kind, sentTrigger)
+        // 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: **承認経路の指値の決済**（判断の利確・損切り、利用者・自動縮小の指値の手仕舞い）だけ
+        // 有効期限 DAY を明示する。保護逆指値（Stop。#1214 の対象）・成行・新規建ての指値には載せない（従来どおりブローカーの既定）。
+        // S3（StopLimit / TrailingStop）はこの口を通らない（PlaceAlternativeStopOrderAsync が直接呼ぶ）。
+        var timeInForce = kind == MoomooOrderKind.Limit && intent.PositionEffect == PositionEffect.Close
+            ? MoomooTimeInForce.Day
+            : (MoomooTimeInForce?)null;
+
+        return (await PlaceWithRejectionDetailAsync(
+                sentIntent, remark, cancellationToken, kind, sentTrigger, timeInForce: timeInForce)
             .ConfigureAwait(false)).Order;
     }
 
@@ -167,7 +175,8 @@ public sealed class MoomooBrokerAdapter(
             CancellationToken cancellationToken,
             MoomooOrderKind kind,
             decimal? triggerPrice,
-            decimal? trailValue = null)
+            decimal? trailValue = null,
+            MoomooTimeInForce? timeInForce = null)
     {
         var now = _time.GetUtcNow();
 
@@ -190,7 +199,8 @@ public sealed class MoomooBrokerAdapter(
             // Mode=Live でも SIMULATE を用いる（本 PR は実弾を撃たない・IADR-0016）。実弾解禁は別 IADR＋明示 config。
             var request = new MoomooOrderRequest(intent.Symbol, MapMarket(intent.Market), MapSide(intent.Side),
                 intent.Quantity, intent.Price, remark, kind, triggerPrice, trailValue,
-                PositionEffect: intent.PositionEffect); // #856, IADR-0488: OpenD へは送らない（故障注入の対象の見分けにだけ使う）
+                PositionEffect: intent.PositionEffect, // #856, IADR-0488: OpenD へは送らない（故障注入の対象の見分けにだけ使う）
+                TimeInForce: timeInForce); // #1339, IADR-0536 決定1: null は欄を送らない（ブローカーの既定）
             var result = await client.PlaceOrderAsync(request, cancellationToken).ConfigureAwait(false);
             return (ToBrokerOrder(intent, result, now), null, null, result.OrderId);
         }

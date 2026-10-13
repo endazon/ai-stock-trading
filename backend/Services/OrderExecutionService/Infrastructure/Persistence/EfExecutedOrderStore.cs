@@ -189,6 +189,32 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
         return true;
     }
 
+    // 🔴 FR-10, FR-05, #1339, IADR-0536 決定2: 追跡を打ち切った（今の起点で印がある）非終端の承認経路の決済（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindAbandonedApprovedCloses(int batchSize)
+    {
+        return [.. db.ExecutedOrders
+            .Where(r => r.PositionEffect == PositionEffect.Close
+                && r.ApprovalOrigin != null
+                && (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
+                && r.TrackingAbandonedFrom != null && r.TrackingAbandonedFrom == r.ExecutedAt)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(batchSize)
+            .Select(r => ToRecord(r))];
+    }
+
+    // FR-10, FR-11, #1339, IADR-0536 決定4: 発注から一定時間たった非終端の承認経路の決済（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindStaleApprovedCloses(DateTimeOffset placedBefore, int limit)
+    {
+        return [.. db.ExecutedOrders
+            .Where(r => r.PositionEffect == PositionEffect.Close
+                && r.ApprovalOrigin != null
+                && (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
+                && r.ExecutedAt < placedBefore)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .Select(r => ToRecord(r))];
+    }
+
     // #270, IADR-0113: 観測した最新のブローカ状態を既存行へ反映する。行が無ければ何もしない
     // （新規に作らない＝DecisionId 1:1 の不変を壊さない）。
     public bool UpdateOutcome(
