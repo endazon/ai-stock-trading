@@ -117,7 +117,8 @@ export function HighVolatilityForm({
   // 手入力の下書き。
   const [manualSymbol, setManualSymbol] = useState('');
   const [manualMarket, setManualMarket] = useState<number>(MARKET_OPTIONS[0]?.value ?? 0);
-  const [confirmUnlisted, setConfirmUnlisted] = useState(false);
+  // 手入力の確認の印は「確かめた銘柄・市場の組」に紐づける（印を付けた後に別の銘柄・市場へ書き換えたら印は外れる。AI レビュー指摘）。
+  const [confirmedUnlistedKey, setConfirmedUnlistedKey] = useState<string | null>(null);
 
   // 現在値が実際に変わったときだけ初期化する（#498 / #539: useEffect で行わない。描画中に同期的に調整する）。
   const currentSignature = JSON.stringify(current);
@@ -145,6 +146,8 @@ export function HighVolatilityForm({
   const manualError = manualSymbol.trim() === '' ? null : validateDesignatedSymbolInput(manualSymbol);
   const manualMatch = manualNormalized === '' ? null : watchlistMatchOf(manualNormalized, manualMarket, watchlist);
   const manualDuplicate = manualNormalized !== '' && designatedKeys.has(`${manualNormalized}|${manualMarket}`);
+  const manualKey = `${manualNormalized}|${manualMarket}`;
+  const confirmUnlisted = confirmedUnlistedKey !== null && confirmedUnlistedKey === manualKey;
   const manualNeedsConfirm = !watchlistPending && manualMatch !== null && manualMatch !== 'listed';
   // 取得中は照合の結果が出るまで追加させない（確認なしで通る窓を作らない）。
   const canAddManual =
@@ -175,7 +178,7 @@ export function HighVolatilityForm({
     if (!canAddManual) return;
     setDesignated([...designated, { symbol: manualNormalized, market: manualMarket }]);
     setManualSymbol('');
-    setConfirmUnlisted(false);
+    setConfirmedUnlistedKey(null);
   }
 
   function remove(index: number): void {
@@ -368,7 +371,7 @@ export function HighVolatilityForm({
                 <input
                   type="checkbox"
                   checked={confirmUnlisted}
-                  onChange={() => setConfirmUnlisted(!confirmUnlisted)}
+                  onChange={() => setConfirmedUnlistedKey(confirmUnlisted ? null : manualKey)}
                 />
                 {i18n._(msg`綴りと市場を確かめた（監視銘柄に無い銘柄として指定する）`)}
               </label>

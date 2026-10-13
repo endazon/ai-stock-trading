@@ -328,4 +328,32 @@ describe('SC-02 高ボラティリティ銘柄の明示指定と区分の上限�
     expect(within(form).queryByText(/監視銘柄と照合できません/)).toBeNull();
     expect(within(form).getByRole('button', { name: '手入力の銘柄を追加' })).toBeDisabled();
   });
+
+  // 🔴 T-10-2605（否定形）: 手入力の確認の印は「確かめた銘柄・市場」に紐づく。印を付けた後に銘柄コードや市場を書き換えたら
+  // 印は外れ、書き換えた先の誤記を確認なしで足せない。
+  it('T-10-2605 確認の印を付けた後に銘柄や市場を書き換えると印が外れて追加できない', async () => {
+    mockBff();
+    const user = userEvent.setup();
+    renderWithProviders(<RiskSettingsPage />);
+    const form = await hvForm();
+    await within(form).findByRole('option', { name: 'TSLA（米国）' });
+
+    await user.selectOptions(within(form).getByLabelText('市場（手入力）'), '1');
+    await user.type(within(form).getByLabelText('銘柄コード（手入力）'), 'TSL');
+    await user.click(within(form).getByRole('checkbox', { name: /綴りと市場を確かめた/ }));
+    const add = within(form).getByRole('button', { name: '手入力の銘柄を追加' });
+    expect(add).toBeEnabled();
+
+    // 銘柄コードを書き換える → 印が外れる。
+    await user.type(within(form).getByLabelText('銘柄コード（手入力）'), 'X');
+    expect(within(form).getByRole('checkbox', { name: /綴りと市場を確かめた/ })).not.toBeChecked();
+    expect(add).toBeDisabled();
+
+    // 印を付け直してから市場を書き換える → 印が外れる。
+    await user.click(within(form).getByRole('checkbox', { name: /綴りと市場を確かめた/ }));
+    expect(add).toBeEnabled();
+    await user.selectOptions(within(form).getByLabelText('市場（手入力）'), '0');
+    expect(within(form).getByRole('checkbox', { name: /綴りと市場を確かめた/ })).not.toBeChecked();
+    expect(add).toBeDisabled();
+  });
 });
