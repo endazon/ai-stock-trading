@@ -9,7 +9,7 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-01, FR-02, FR-03, FR-06, FR-09, FR-10, FR-11, FR-14, FR-15, FR-17, FR-19, FR-20, FR-21, UC-01, UC-02, UC-06, SC-02, SC-03, FR-04, FR-05]
 adrs: [ADR-0003, ADR-0008, ADR-0009, ADR-0016, ADR-0018, ADR-0019, ADR-0020, ADR-0021, ADR-0022, ADR-0026, ADR-0027, ADR-0028, ADR-0040, ADR-0041, ADR-0049, ADR-0050, ADR-0048, ADR-0054, ADR-0063, ADR-0066]
-iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471, IADR-0481, IADR-0482, IADR-0486, IADR-0467, IADR-0479, IADR-0495, IADR-0500, IADR-0507, IADR-0521, IADR-0527, IADR-0529, IADR-0534, IADR-0536]
+iadrs: [IADR-0004, IADR-0008, IADR-0015, IADR-0107, IADR-0108, IADR-0113, IADR-0117, IADR-0118, IADR-0119, IADR-0127, IADR-0130, IADR-0131, IADR-0133, IADR-0144, IADR-0152, IADR-0153, IADR-0158, IADR-0159, IADR-0160, IADR-0163, IADR-0181, IADR-0182, IADR-0183, IADR-0194, IADR-0210, IADR-0211, IADR-0249, IADR-0267, IADR-0298, IADR-0308, IADR-0342, IADR-0344, IADR-0346, IADR-0350, IADR-0355, IADR-0357, IADR-0365, IADR-0380, IADR-0389, IADR-0369, IADR-0393, IADR-0394, IADR-0412, IADR-0406, IADR-0413, IADR-0383, IADR-0423, IADR-0422, IADR-0424, IADR-0429, IADR-0428, IADR-0425, IADR-0460, IADR-0461, IADR-0463, IADR-0465, IADR-0466, IADR-0472, IADR-0471, IADR-0481, IADR-0482, IADR-0486, IADR-0467, IADR-0479, IADR-0495, IADR-0500, IADR-0507, IADR-0521, IADR-0527, IADR-0529, IADR-0534, IADR-0535, IADR-0536]
 specs: [20260709_risk-eval-core-fixes, 20260804_329_risk-control-core, 20260804_329_short-selling-controls, 20260804_330_maintenance-margin-auto-reduce, 20260805_364_usd-base-currency, 20260807_417_short-sell-borrow-permit-gate, 20260807_419_buy-in-post-hoc-inference, 20260807_420_maintenance-margin-threshold-account-wide, 20260828_331_order-execution-stop-loss-and-rejection, 20260829_564_information-degradation-durability, 20260904_634_maintenance-margin-driver, 20260905_686_fx-provider-boj-first, 20260917_819_stop-loss-method-selection, 20260918_820_s1-software-stop, 20260918_829_count-working-entry-orders, 20260919_849_ledger-drift-adoption, 20260919_848_terminal-close-approvals-release-inventory, 20260919_864_close-vs-broker-positions, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260923_909_us-market-session-schedule, 20260925_833_software-stop-close-backoff, 20260925_941_entry-indeterminate-close-no-repeat-promise, 20260925_936_most-protective-stop-line, 20260925_935_stop-out-same-day-reentry, 20260925_948_coverage-lost-cause-aware-descriptions, 20260925_880_unattributed-position-detection-on-snapshot, 20260925_958_s0-fill-tracking-window, 20260925_826_stop-method-audit-followups, 20260926_826_stop-method-audit-residuals, 20260925_871_discord-drift-adopt, 20260925_823_stop-method-ui-and-daily-report, 20260925_879_forgone-close-protection-and-adopted-positions, 20260925_937_host-liveness-monitor, 20260925_1002_applied-stop-loss-method-report, 20260925_853_protective-leg-indeterminate-hold, 20260925_967_short-sell-context-supplier, 20260925_1006_stop-loss-report-template-s0-s3, 20260926_1013_guard-entry-state-before-position-gone, 20260930_1104_stop-width-observability, 20260930_1105_close-qty-inflight, 20260930_1114_unattributed-entry-fill-window, 20260930_1113_entry-blockers-before-llm, 20260930_1120_stop-width-floor, 20260930_1121_s1-vs-decision-close, 20261001_1136_retro-stop-floor, 20261001_1130_held-add-on-before-llm, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261002_1000_real-account-readonly-margin-query, 20261003_1122_atr14-stop-floor, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261009_1228_planning741-ruling-records, 20261009_1286_held-positions-in-judgment, 20261011_1291_high-volatility-order-cap, 20261013_1291_hv-cap-floor-adr0066, 20261013_1291_sc02-high-volatility-settings, 20261013_1319_serialize-entry-screening, 20261013_1330_approved-close-not-external-reduction, 20261014_1339_close-limit-tif-and-release]
 issues: [#1339, #1291, #1319, #12, #31, #33, #204, #257, #270, #292, #302, #329, #330, #331, #332, #333, #338, #340, #342, #346, #362, #364, #374, #407, #417, #419, #420, #428, #463, #465, #564, #634, #686, #768, #809, #819, #820, #826, #829, #847, #848, #849, #864, #879, #833, #909, #941, #936, #935, #948, #880, #958, #871, #823, #937, #1002, #853, #967, #1000, #1006, #1013, #1104, #1105, #1114, #1113, #1120, #1121, #1136, #1130, #1048, #1122, #1176, #1174, #1209, #1228, #1275, #1330, planning#292, planning#644, planning#646, planning#703, planning#704, planning#741]
 -->
@@ -968,6 +968,25 @@ EF マイグレーション `AssertLedgerSafeForUsdBaseCurrency` が「移行後
 
 逆向き（判断の決済が先に処理中のところへソフトウェア逆指値が発動する）は、下の「S1 の動作」の「同じ建玉を売る判断の手仕舞いが処理中」の行が扱う
 （ソフトウェア逆指値の決済が判断の決済を取り消してから送る）。
+
+#### 処理中の決済が建玉を覆う間は、判断の LLM を呼ばない（#1338）
+
+判断の指値の決済が約定しない間、取引判断は定時サイクル（5.5 分ごと）で同じ決済を判断し直し、上の表の「0 以下」で毎回見送られていた
+（2026-10-13 の模擬取引で実測。AAPL の売り 13 株の指値に対し、一次・二次の LLM を 34 回呼び、33 回が見送り、見送りの通知が 33 件出た）。
+
+そこで取引判断は、保有中の銘柄で LLM（一次スクリーニングを含む）を呼ぶ前に、発注執行へ「今この方向の決済を送れば、処理中の決済が建玉を覆うため見送るか」を
+問い合わせる（`GET /order-execution/in-flight-closes`）。発注執行は**上の段と同じ数え方・同じ判定**で答える（2 か所に書かない）。
+
+| 条件 | 判断 |
+| --- | --- |
+| 処理中の決済が決済方向の建玉を覆う、**かつ** 買い増し・売り増しが LLM の後で必ず見送られる（出口専用・為替の鮮度切れ・未約定の新規建てが不明・その方向の新規建てが審査で必ず拒否される・残枠が 1 株に届かない・使える金額が最小の名目額に届かない） | **LLM を呼ばずに見送る**（どの結論も発注にならない）。記録は LLM を呼ぶ前の見送り（理由 `InFlightCloseCoversPosition`） |
+| 買い増し・売り増しが発注になり得る（処理中の決済と逆方向の判断） | LLM を呼ぶ（照会もしない） |
+| 覆わない（建玉が処理中の決済より多い）・照会の失敗・発注執行が「分からない」と答えた・接続先が構成されていない | LLM を呼ぶ（決済〔損切りを含む〕の判断を止めない） |
+
+処理中かどうかは、記録がまだ終わっていない**かつ**ブローカーが生きていると答えた注文だけで決める（約定・失効の直後や、約定追跡を打ち切った記録を処理中と読まない）。
+処理中の決済が終わった後の最初のサイクルから、判断は従来どおり LLM を呼ぶ。上の段（送る前の判定）は変えない（両端で止める）。
+
+見送りの通知（上の表の「0 以下」）は、同じ建玉・同じ処理中の決済（注文 ID）について 1 回だけ届く（監査の記録は毎回残る）。
 
 ### 損切りした銘柄は、その取引日のうちは同じ方向の新規建てをしない（#935）
 

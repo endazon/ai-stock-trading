@@ -134,4 +134,14 @@ public enum DecisionSkipReason
     /// 発注意図は作られない）。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
     /// </summary>
     ExitOnlyWithoutHolding,
+
+    /// <summary>
+    /// FR-04, FR-10, #1338, IADR-0535 決定1: <b>LLM を呼ぶ前</b>の見送り。保有中の銘柄で、判断由来の決済が処理中のまま決済方向の建玉を
+    /// すべて覆い（発注執行が決済のゲートと同じ判定で答えた）、買い増し・売り増しも LLM の後で必ず見送られると分かっている。
+    /// <para>
+    /// 🔴 計器の移動: 是正前は同じ判断が LLM を呼び、決済の結論が発注執行で <c>OrderDispatchForgone(InFlightCloseCoversPosition)</c> に、
+    /// Hold が <see cref="LlmHold"/> になっていた（AAPL で 1 セッション 33 回）。その一部がこの値へ移る。<c>TradeDecisionForgoneBeforeLlm</c> の同名の値と一致させる。
+    /// </para>
+    /// </summary>
+    InFlightCloseCoversPosition,
 }

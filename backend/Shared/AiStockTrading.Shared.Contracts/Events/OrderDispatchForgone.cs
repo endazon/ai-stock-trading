@@ -15,12 +15,17 @@ namespace AiStockTrading.Shared.Contracts.Events;
 // 可能性」と断定を書き分けるため）。null＝発注執行が判別を試みていない（ほかの理由・旧い送り手）であり、
 // 受け手は Unknown と同じく「分からない」と読む。追加は末尾・任意（既定 null）。旧形式の JSON はそのまま読める
 // （IADR-0079 / IADR-0134 決定2）。
+//
+// 🔴 FR-09, FR-04, #1338, IADR-0535 決定4: InFlightCloseOrderIds は理由 InFlightCloseCoversPosition のときにだけ発注執行が載せる、
+// 建玉を覆っている処理中の決済の注文 ID（ブローカーが生きていると答えた分）。通知はこの集合と銘柄・市場・方向を鍵に、同じ処理中の決済の
+// 見送りを 1 回へ畳む。null＝載せていない（ほかの理由・旧い送り手）であり、受け手は畳まない。追加は末尾・任意（既定 null）。
 public record OrderDispatchForgone(
     Guid DecisionId,
     OrderIntent Intent,
     OrderDispatchForgoneReason Reason,
     DateTimeOffset OccurredAt,
-    ForgoneCloseProtection? Protection = null);
+    ForgoneCloseProtection? Protection = null,
+    IReadOnlyList<string>? InFlightCloseOrderIds = null);
 
 // #331, IADR-0210 決定1 / IADR-0211: 見送りの理由。いずれも**発注前**に確定する。
 public enum OrderDispatchForgoneReason

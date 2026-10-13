@@ -216,7 +216,8 @@ public sealed class OrderExecutionAppService(
             var sendable = verdict.ClosableQuantity - inFlight.Quantity;
             if (inFlight.Quantity > 0 && sendable < intent.Quantity)
             {
-                if (sendable <= 0)
+                // 🔴 #1338, IADR-0535 決定2: 「覆う」の判定は照会の口（取引判断が LLM の前に読む）と同じ関数で行う。
+                if (InFlightCloses.Covers(verdict.ClosableQuantity, inFlight.Quantity))
                 {
                     // IADR-0461 決定2: 処理中の決済が決済方向の建玉をすべて覆っている。送れば拒否されるだけなので送らない。
                     // 拒否の後の自動の出し直しは足さない（IADR-0211 決定3）。台帳の乖離（drift）を見つけていればそれも残す。
@@ -227,8 +228,10 @@ public sealed class OrderExecutionAppService(
                         + "処理中の決済={InFlightDecisionIds}",
                         verdict.ClosableQuantity, inFlight.Quantity, inFlight.DecisionIds.Count,
                         approved.DecisionId, intent.Symbol, approved.Intent.Quantity, string.Join(",", inFlight.DecisionIds));
+                    // 🔴 FR-09, #1338, IADR-0535 決定4: 覆っている処理中の決済の注文 ID を載せる（通知が同じ決済の見送りを 1 回へ畳む鍵）。
                     return RecordForgoneBeforeReservation(
-                        approved, OrderDispatchForgoneReason.InFlightCloseCoversPosition, drift);
+                        approved, OrderDispatchForgoneReason.InFlightCloseCoversPosition, drift,
+                        inFlightCloseOrderIds: inFlight.OrderIds);
                 }
 
                 // IADR-0461 決定3: 縮めて送る。**乖離イベントは出さない**（台帳の乖離ではない）。縮めた事実は別に残す（黙って数量を変えない）。
@@ -586,22 +589,24 @@ public sealed class OrderExecutionAppService(
     // （下の Forgone を直接呼ぶと記録が抜け、この穴が戻る。T-10-826 が理由ごとに固定する）。
     private OrderDispatchResult RecordForgoneBeforeReservation(
         OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null,
-        ForgoneCloseProtection? protection = null) =>
+        ForgoneCloseProtection? protection = null, IReadOnlyList<string>? inFlightCloseOrderIds = null) =>
         ForgoneIfRecorded(
-            approved, reason, reservations.TryRecordForgone(approved.DecisionId, clock.UtcNow), drift, protection);
+            approved, reason, reservations.TryRecordForgone(approved.DecisionId, clock.UtcNow), drift, protection,
+            inFlightCloseOrderIds);
 
     // 🔴 FR-05, #876, IADR-0398: **見送りを主張してよいのは、この DecisionId を Forgone として記録できたときだけである。**
     // 予約（Reserved）や確定（Completed）がある DecisionId は、別の配送が送った・送ったかもしれない——
     // ここで見送りを発行すると台帳が生きている注文の在庫の押さえを解く（「確実に未発注」と「送ったか不明」を混ぜない）。
     private OrderDispatchResult ForgoneIfRecorded(
         OrderApproved approved, OrderDispatchForgoneReason reason, ForgoneRecordOutcome recorded,
-        PositionReconciliationDrift? drift = null, ForgoneCloseProtection? protection = null)
+        PositionReconciliationDrift? drift = null, ForgoneCloseProtection? protection = null,
+        IReadOnlyList<string>? inFlightCloseOrderIds = null)
     {
         switch (recorded)
         {
             case ForgoneRecordOutcome.Recorded:
             case ForgoneRecordOutcome.AlreadyForgone:
-                return Forgone(approved, reason, drift, protection);
+                return Forgone(approved, reason, drift, protection, inFlightCloseOrderIds);
 
             case ForgoneRecordOutcome.HeldByReservation:
                 // 並行した配送が発注に着手している（送ったか不明）。従来の予約競合と同じ扱いで再発注も見送りもしない
@@ -744,9 +749,11 @@ public sealed class OrderExecutionAppService(
 
     private OrderDispatchResult Forgone(
         OrderApproved approved, OrderDispatchForgoneReason reason, PositionReconciliationDrift? drift = null,
-        ForgoneCloseProtection? protection = null) =>
+        ForgoneCloseProtection? protection = null, IReadOnlyList<string>? inFlightCloseOrderIds = null) =>
         OrderDispatchResult.FromForgone(
-            new OrderDispatchForgone(approved.DecisionId, approved.Intent, reason, clock.UtcNow, protection), drift);
+            new OrderDispatchForgone(
+                approved.DecisionId, approved.Intent, reason, clock.UtcNow, protection, inFlightCloseOrderIds),
+            drift);
 
     // 🔴 FR-10, FR-09, UC-06, #879, IADR-0424 決定1: 決済を見送る建玉の**保護の記録**を読む（不明・無し・有りを混ぜない）。
     // 対象は決済の反対方向（＝エントリー方向）・同一銘柄・同一市場の Active な行。数量は実効数量（EffectiveProtectedQuantity。下記）であり、
@@ -811,31 +818,19 @@ public sealed class OrderExecutionAppService(
     //     書くまで古い——既に約定した決済を処理中と数えると、建玉照会が映した約定と二重に引き、判断の決済を取り残す。
     //     確かめられない（null・例外）・終端なら数えない＝**是正前と同じ側**（拒否され得る）へ倒す。取り残す側へは倒さない。
     //   - 保護記録ストアが無い／読めないときは保護レグを見分けられないので、**何も引かない**（是正前と同じ）。
-    private async Task<(int Quantity, IReadOnlyList<Guid> DecisionIds)> CountInFlightClosesAsync(
+    // 🔴 FR-04, #1338, IADR-0535 決定2: 数え方の本体は InFlightCloses（照会の口 QueryInFlightCloses と共有する）。ここは倒し方だけを持つ。
+    private async Task<InFlightCloseCount> CountInFlightClosesAsync(
         OrderApproved approved, CancellationToken cancellationToken)
     {
         var intent = approved.Intent;
         if (protectiveStops is null)
-            return (0, []);
+            return InFlightCloseCount.None;
 
-        List<ExecutionRecord> candidates;
+        IReadOnlyList<ExecutionRecord> candidates;
         try
         {
-            var entrySide = intent.Side == TradeSide.Sell ? TradeSide.Buy : TradeSide.Sell;
-            var protectiveLegs = protectiveStops.FindActiveFor(intent.Symbol, intent.Market, entrySide)
-                .Where(s => s.State == ProtectiveStopState.Active && !s.IsSoftwareStop)
-                .ToList();
-            var legOrderIds = protectiveLegs
-                .Select(s => s.StopOrderId)
-                .Where(id => !string.IsNullOrEmpty(id))
-                .ToHashSet(StringComparer.Ordinal);
-            var legDecisionIds = protectiveLegs.Select(s => s.StopDecisionId).ToHashSet();
-
-            candidates = store.FindPendingCloses(intent.Symbol, intent.Market, intent.Side)
-                .Where(r => r.DecisionId != approved.DecisionId
-                    && !legOrderIds.Contains(r.OrderId)
-                    && !legDecisionIds.Contains(r.DecisionId))
-                .ToList();
+            candidates = InFlightCloses.FindCandidates(
+                store, protectiveStops, intent.Symbol, intent.Market, intent.Side, approved.DecisionId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -843,26 +838,10 @@ public sealed class OrderExecutionAppService(
                 "処理中の決済を読めませんでした（引かずに送ります。是正前と同じく、証券会社に拒否され得ます）: "
                 + "DecisionId={DecisionId} 銘柄={Symbol}",
                 approved.DecisionId, intent.Symbol);
-            return (0, []);
+            return InFlightCloseCount.None;
         }
 
-        var quantity = 0;
-        var decisionIds = new List<Guid>();
-        foreach (var record in candidates)
-        {
-            var live = await TryGetOrderAsync(record.OrderId, cancellationToken).ConfigureAwait(false);
-            if (live is null || OrderStatusLifecycle.IsTerminal(live.Status))
-                continue;
-
-            var remaining = record.Quantity - Math.Max(record.FilledQuantity, live.FilledQuantity);
-            if (remaining <= 0)
-                continue;
-
-            quantity += remaining;
-            decisionIds.Add(record.DecisionId);
-        }
-
-        return (quantity, decisionIds);
+        return await InFlightCloses.CountLiveAsync(candidates, broker, cancellationToken).ConfigureAwait(false);
     }
 
     // #864, IADR-0355 決定5: 乖離は**既存の検知（IADR-0118）と同じイベント**で人へ知らせる（新しい経路を作らない）。

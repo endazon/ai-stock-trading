@@ -11,6 +11,7 @@ using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.ProbeKLineQuota;
 using OrderExecutionService.Features.OrderExecution.ProbeOrderFee;
 using OrderExecutionService.Features.OrderExecution.QueryDailyBars;
+using OrderExecutionService.Features.OrderExecution.QueryInFlightCloses;
 using OrderExecutionService.Features.OrderExecution.QueryShortPermit;
 using OrderExecutionService.Features.OrderExecution.ReconcileOrderReservations;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
@@ -303,6 +304,16 @@ builder.Services.AddSingleton(sp => new DailyBarsQueryService(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<DailyBarsQueryService>(),
     sp.GetService<IDailyKLineSource>()));
 
+// 🔴 FR-04, FR-10, #1338, IADR-0535 決定2: 処理中の決済の照会（取引判断が保有中の銘柄で LLM を呼ぶ前に読む）。判定は決済のゲートと同じ
+// InFlightCloses。建玉照会（IBrokerPositionSource）は moomoo 構成でだけ登録されており、内蔵 paper では null ＝ 常に Unknown
+// （ゲートもその構成では処理中の決済を引かない）。記録・保護記録ストアが scoped のため scoped。明示的に組む（省略可能な引数へ黙って落とさない）。
+builder.Services.AddScoped(sp => new InFlightClosesQueryService(
+    sp.GetRequiredService<IExecutedOrderStore>(),
+    sp.GetRequiredService<IBrokerAdapter>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<InFlightClosesQueryService>(),
+    sp.GetRequiredService<IProtectiveStopOrderStore>(),
+    sp.GetService<IBrokerPositionSource>()));
+
 // NFR（運用）, #137, IADR-0059: 予約表の終端行（Completed）の保持期間パージ（既定無効。Retention:Enabled=true で有効化）。
 // Reserved（＝発注済みか不明）はどれだけ古くても対象外。滞留の解消は #141 か人手であって時間経過ではない。
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
@@ -536,6 +547,9 @@ app.MapShortPermitEndpoint();
 
 // FR-04, FR-15, #1118, IADR-0467 決定 2: 日足の照会（判断へ渡す出来高。判断側で有効化したときだけ呼ばれる）。
 app.MapDailyBarsEndpoint();
+
+// FR-04, FR-10, #1338, IADR-0535 決定2: 処理中の決済の照会（取引判断が LLM の前に読む）。
+app.MapInFlightClosesEndpoint();
 
 // #811 / IADR-0129 追記: 全サービス共通の終端（shim）。JasperFx のコマンドライン（`dotnet <dll> codegen write` 等）を受け、引数なしは従来の app.Run と同じ稼働。
 return await app.RunAiStockTradingAsync(args);

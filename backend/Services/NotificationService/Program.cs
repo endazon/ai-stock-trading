@@ -264,6 +264,8 @@ builder.Services.AddHostedService<DiscordBotHostedService>();
 // 送信失敗を含む一時的失敗の再試行と <queue>_error への退避は共通ヘルパに閉じている（IADR-0129 決定 5）。
 // FR-09, FR-10, #1280, IADR-0520 決定4: 損切りライン到達の通知の抑止（巡回をまたぐ記憶なので singleton）。
 builder.Services.AddSingleton<StopLossNotificationSuppressor>();
+// FR-09, FR-04, #1338, IADR-0535 決定4: 「処理中の決済が建玉を覆う」見送りの通知の畳み込み（サイクルをまたぐ記憶なので singleton）。
+builder.Services.AddSingleton<InFlightCloseForgoneNotificationSuppressor>();
 
 builder.Host.UseWolverine(opts => opts.UseAiStockTradingRabbitMq(
     ServiceName,
