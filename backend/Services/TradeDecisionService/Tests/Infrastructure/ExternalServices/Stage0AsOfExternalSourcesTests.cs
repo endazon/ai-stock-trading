@@ -113,19 +113,28 @@ public class Stage0AsOfExternalSourcesTests
         handler.Requests.Should().HaveCount(1);
     }
 
-    [Theory]
-    [InlineData("500")]
-    [InlineData("future")]
-    public async Task 方針が取れない_判断時点より後に確定した方針は撃ち直してから記録を止める(string mode)
+    [Fact]
+    public async Task 方針が取れなければ撃ち直してから記録を止める()
     {
-        var handler = new Scripted(_ => mode == "500"
-            ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
-            : Json(HttpStatusCode.OK, JsonSerializer.Serialize(new ConfirmedDailyPolicyAsOf(AsOf, "未来に確定", 1, At.AddSeconds(1)), ReportWire)));
+        var handler = new Scripted(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
 
         var act = () => Policies(handler).GetAsync(At, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<AsOfInputUnavailableException>();
         handler.Requests.Should().HaveCount(3);
+    }
+
+    // 🔴 判断時点より後に確定した方針は送り手の契約違反であり、撃ち直しても変わらない。撃ち直さずにすぐ記録を止める（#1326 の AI レビュー）。
+    [Fact]
+    public async Task 判断時点より後に確定した方針は撃ち直さずにすぐ記録を止める()
+    {
+        var handler = new Scripted(_ => Json(HttpStatusCode.OK,
+            JsonSerializer.Serialize(new ConfirmedDailyPolicyAsOf(AsOf, "未来に確定", 1, At.AddSeconds(1)), ReportWire)));
+
+        var act = () => Policies(handler).GetAsync(At, TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<AsOfInputUnavailableException>()).Which.Message.Should().Contain("契約違反");
+        handler.Requests.Should().HaveCount(1);
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -224,6 +233,24 @@ public class Stage0AsOfExternalSourcesTests
         doc.PublishedAt.Should().Be(new DateTimeOffset(2026, 9, 10, 0, 0, 0, TimeSpan.Zero));
         doc.Tags.Should().Equal("MacroIndicator", "fred");
         second.Should().BeEquivalentTo(first);
+    }
+
+    // #1326 の AI レビュー: キャッシュの鍵に観測の開始日を含める。窓幅の違う呼び出しで、先に取った狭い窓の観測を使い回さない
+    // （使い回すと、広い窓に入るはずの古い観測が欠ける）。
+    [Fact]
+    public async Task マクロ指標は窓幅の違う呼び出しで狭い窓の観測を使い回さない()
+    {
+        var handler = new Scripted(req => Json(HttpStatusCode.OK, req.RequestUri!.Query.Contains("observation_start=2026-09-01", StringComparison.Ordinal)
+            ? """{"observations":[{"date":"2026-09-02","value":"145.0"},{"date":"2026-09-10","value":"146.5"}]}"""
+            : """{"observations":[{"date":"2026-09-10","value":"146.5"}]}"""));
+        var feed = new FredAsOfObservationFeed(new HttpClient(handler), "key", ["DEXJPUS"], NullLogger<FredAsOfObservationFeed>.Instance);
+
+        var narrow = await feed.FetchAsync("AAPL", Market.UnitedStates, At.AddHours(-168), At, TestContext.Current.CancellationToken);
+        var wide = await feed.FetchAsync("AAPL", Market.UnitedStates, At.AddDays(-13), At, TestContext.Current.CancellationToken);
+
+        handler.Requests.Should().HaveCount(2);
+        narrow.Should().ContainSingle();
+        wide!.Select(d => d.Text).Should().Contain("seriesId=DEXJPUS;value=145.0;date=2026-09-02");
     }
 
     // ------------------------------------------------------------------------------------------------

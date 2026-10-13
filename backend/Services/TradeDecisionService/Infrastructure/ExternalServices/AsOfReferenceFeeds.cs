@@ -125,6 +125,8 @@ public sealed class SecEdgarAsOfFilingFeed(
         var docs = new List<RetrievedContext>();
         foreach (var cik in ciks.Select(NormalizeCik).OfType<string>().Distinct(StringComparer.Ordinal))
         {
+            // 共有の Lazy には CancellationToken.None を渡す: 提出一覧は全銘柄・全判断時点で共有するため、最初に呼んだ 1 件の取り消しで
+            // 共有の結果を取り消された状態に固定しない。待ちの上限は HttpClient のタイムアウト（Stage0AsOfComposition の外部の口は 30 秒）。
             var filings = await _byCik.GetOrAdd(cik, c => new Lazy<Task<IReadOnlyList<(string?, RetrievedContext)>?>>(
                 () => LoadAsync(c, CancellationToken.None))).Value.ConfigureAwait(false);
             if (filings is null)
@@ -238,7 +240,8 @@ public sealed class FredAsOfObservationFeed(
 {
     public const string Name = "fred";
 
-    private readonly ConcurrentDictionary<(string Series, DateOnly AsOf), Lazy<Task<IReadOnlyList<RetrievedContext>?>>> _cache = new();
+    // 鍵は 系列 × 判断日 × 観測の開始日（#1326 の AI レビュー: 窓幅の違う呼び出しで、先に取った狭い窓の観測を使い回して古い観測を欠かさない）。
+    private readonly ConcurrentDictionary<(string Series, DateOnly AsOf, DateOnly ObservationStart), Lazy<Task<IReadOnlyList<RetrievedContext>?>>> _cache = new();
 
     public string SourceName => Name;
 
@@ -253,9 +256,11 @@ public sealed class FredAsOfObservationFeed(
         var docs = new List<RetrievedContext>();
         foreach (var series in seriesIds.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.Ordinal))
         {
-            var key = (series, asOf);
+            var key = (series, asOf, observationStart);
+            // 共有の Lazy には CancellationToken.None を渡す: 取得は同じ判断日の他の銘柄と共有するため、最初に呼んだ 1 件の取り消しで
+            // 共有の結果を取り消された状態に固定しない。待ちの上限は HttpClient のタイムアウト（Stage0AsOfComposition の外部の口は 30 秒）。
             var observations = await _cache.GetOrAdd(key, k => new Lazy<Task<IReadOnlyList<RetrievedContext>?>>(
-                () => LoadAsync(k.Series, k.AsOf, observationStart, CancellationToken.None))).Value.ConfigureAwait(false);
+                () => LoadAsync(k.Series, k.AsOf, k.ObservationStart, CancellationToken.None))).Value.ConfigureAwait(false);
             if (observations is null)
             {
                 _cache.TryRemove(key, out _);

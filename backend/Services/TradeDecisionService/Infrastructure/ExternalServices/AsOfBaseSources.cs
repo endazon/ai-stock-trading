@@ -34,7 +34,9 @@ internal static class AsOfRetry
                 if (ok)
                     return value;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            // 送り手の契約違反など、撃ち直しても変わらない失敗（AsOfInputUnavailableException）はそのまま伝える。
+            catch (Exception ex) when (ex is not AsOfInputUnavailableException
+                && (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested))
             {
                 last = ex;
             }

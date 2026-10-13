@@ -45,6 +45,14 @@ public static class Stage0AsOfComposition
 
         var factory = sp.GetRequiredService<IHttpClientFactory>();
         var time = sp.GetRequiredService<TimeProvider>();
+        var feeds = Feeds(configuration, factory, time, loggers);
+        // 🟢 #1326 の AI レビュー: 構成された源と未構成の源を出す（鍵が欠けて黙って (b) が再構成不可になるのを、通し試験のログで追えるように）。
+        // 基底の供給は記録の実行の scope ごとに組まれる（記録器は起動時に 1 回だけ走る）。
+        var configured = feeds.Select(f => f.SourceName).ToList();
+        loggers.CreateLogger(typeof(Stage0AsOfComposition).FullName!).LogInformation(
+            "Stage 0 の as-of 入力の基底を組みました。参考情報の源: 構成あり [{Configured}] / 未構成 [{Unconfigured}]（未構成の源があると (b) は再構成不可）。",
+            string.Join(", ", configured),
+            string.Join(", ", AsOfReferenceAssembler.RequiredSources.Where(r => !configured.Contains(r))));
 
         var orderExecution = factory.CreateClient("order-execution");
         orderExecution.BaseAddress = new Uri(configuration["OrderExecution:BaseUrl"]!);
@@ -58,7 +66,7 @@ public static class Stage0AsOfComposition
                 loggers.CreateLogger<DailyBarsAsOfPriceSource>()),
             new HttpAsOfDailyPolicySource(reports, time, loggers.CreateLogger<HttpAsOfDailyPolicySource>()),
             new AsOfReferenceAssembler(
-                Feeds(configuration, factory, time, loggers),
+                feeds,
                 ParsePositiveInt(configuration["Retrieval:TopK"], 5),
                 KnowledgeBaseRetrievalContextProvider.ParseMaxAge(configuration["Retrieval:MaxAgeHours"])),
             loggers.CreateLogger<BaseAsOfDecisionInputProvider>());

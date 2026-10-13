@@ -29,9 +29,16 @@ public sealed class HttpAsOfDailyPolicySource(
                     return (false, null);
 
                 var dto = await response.Content.ReadFromJsonAsync<PolicyDto>(ct).ConfigureAwait(false);
-                // 🔴 受け手でも確かめる: 照会の時刻より後に確定した方針は受け取らない（送り手の取り違えで未来の方針を入れない）。
-                if (dto is not { Date: { } date, Summary: { } summary, ConfirmedAt: { } confirmedAt } || confirmedAt > at)
+                if (dto is not { Date: { } date, Summary: { } summary, ConfirmedAt: { } confirmedAt })
                     return (false, null);
+                // 🔴 受け手でも確かめる: 照会の時刻より後に確定した方針は受け取らない（送り手の取り違えで未来の方針を入れない）。
+                // 送り手の契約違反であり撃ち直しても変わらないので、撃ち直さずにすぐ記録を止める（#1326 の AI レビュー）。
+                if (confirmedAt > at)
+                {
+                    throw new AsOfInputUnavailableException(
+                        $"報告書サービスが照会の時刻 {at:O} より後（{confirmedAt:O}）に確定した方針を返しました（契約違反）。記録を止めます。");
+                }
+
                 return (true, new DailyPolicy(date, summary));
             },
             $"{at:O} の確定日報の方針",
