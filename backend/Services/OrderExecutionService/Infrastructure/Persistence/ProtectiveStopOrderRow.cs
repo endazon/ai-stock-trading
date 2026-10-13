@@ -82,4 +82,8 @@ public sealed class ProtectiveStopOrderRow
     // 更新は「WHERE Version = 読んだ時点の版」で行われ、0 行なら並行更新と衝突した（古い写しでは上書きしない）。
     // 既存行は 0 で始まる。
     public int Version { get; set; }
+
+    // 🔴 FR-10, #1330, IADR-0534 決定1: 今の未確定の観測値を最初に観測した巡回の時刻（窓の前の端）。**列の追加だけ**（既存行は null
+    // ＝確定の時刻で代える）。確定・失効で null へ戻る。
+    public DateTimeOffset? ExternalReductionObservedAt { get; set; }
 }

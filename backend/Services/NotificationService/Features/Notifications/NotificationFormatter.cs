@@ -341,6 +341,16 @@ public static class NotificationFormatter
                 + "ブローカー側の逆指値を持つ記録が 0 になった場合は、その逆指値を取り消します。"
                 + $"建玉と保護の対応をご確認ください（損切りライン {Invariant(e.StopLossPrice)}・EntryDecisionId={e.EntryDecisionId}）。",
             NotificationSeverity.Warning),
+        // 🔴 FR-10, #1330, IADR-0534 決定3: 承認済みの決済（取引判断の利確・損切り等）の約定に合わせて保護対象を減らした。
+        // **外部要因ではない**——設計どおりの帰結なので Info。出どころと決済を名指しし、「外部要因」「手動決済」とは書かない。
+        SoftwareStopOutcome.ApprovedCloseReleased => new(
+            "リスク統制: 承認済みの決済の約定に合わせて保護対象を減らしました",
+            $"{e.Symbol}/{e.Market} 数量{e.Quantity}: {ApprovedCloseOriginLabel(e.CloseOrigin)}が約定して建玉が減ったため、"
+                + "保護記録が守る株数をその分だけ減らしました（**外部要因ではありません**。保護の決済は出していません）。"
+                + "ブローカー側の逆指値を持つ記録が 0 になった場合は、その逆指値を取り消します"
+                + $"（決済の DecisionId={e.CloseDecisionId}・OrderId={e.CloseOrderId}・損切りライン {Invariant(e.StopLossPrice)}"
+                + $"・EntryDecisionId={e.EntryDecisionId}）。",
+            NotificationSeverity.Info),
         // #820 の 8 巡目監査, IADR-0344 追記(8) 決定3: 帳簿では守っているのに 1 株も動かせない状態が猶予を過ぎた。
         // 行は Active・帳簿も無傷なので、知らせなければ無音のまま保護が失われる（到達の有無に依らない）。
         SoftwareStopOutcome.ProtectionSuspended => new(
@@ -395,6 +405,16 @@ public static class NotificationFormatter
     };
 
     private static string Invariant(decimal value) => value.ToString(CultureInfo.InvariantCulture);
+
+    // 🔴 FR-10, #1330, IADR-0534 決定3: 承認済みの決済の出どころ（通知の主語）。分からない（null・Unknown）ときも「外部要因」とは書かない
+    // ——発行元は出どころを持つ承認経路の決済にしか帰属させない（IADR-0534 決定1）。
+    private static string ApprovedCloseOriginLabel(OrderApprovalOrigin? origin) => origin switch
+    {
+        OrderApprovalOrigin.TradeDecision => "取引判断の決済（利確・損切りの判断）",
+        OrderApprovalOrigin.OwnerClose => "利用者の手仕舞い",
+        OrderApprovalOrigin.MaintenanceMarginReduction => "維持率割れの自動縮小",
+        _ => "承認済みの決済",
+    };
 
     // #819, IADR-0342: 計画の手法 ID（S0〜S3）。enum 名だけでは計画の表と突き合わせにくい。
     private static string StopLossMethodLabel(StopLossExecutionMethod method) => method switch

@@ -493,6 +493,7 @@
     "CloseDecisionId": "Guid?",
     "CloseIntent": "OrderIntent",
     "CloseOrderId": "String",
+    "CloseOrigin": "OrderApprovalOrigin?",
     "EntryDecisionId": "Guid",
     "Market": "Market",
     "OccurredAt": "DateTimeOffset",

@@ -62,7 +62,11 @@ public record ProtectiveStopOrder(
     // 🔴 FR-10, #833 項目3, IADR-0396: 楽観並行の版番号（アプリ側で加算）。**この写しを読んだ時点の版**であり、
     // IProtectiveStopOrderStore.TrySave は保存先の版がこの値と一致するときだけ書き、版を 1 進める。
     // 古い写しから全列を書き戻して、並行に進んだ状態（完了・再武装・試行番号）を巻き戻さないための印である。
-    int Version = 0)
+    int Version = 0,
+    // 🔴 FR-10, #1330, IADR-0534 決定1: 今の未確定の観測値（PendingExternalReduction）を**最初に**観測した巡回の時刻（窓の前の端）。
+    // 観測値が増えた巡回で書き直し、確定・失効で null へ戻す。確定の分類（承認済みの決済で説明できるか）が
+    // 「その減少の観測より前に送った決済か」を判定するために読む。null＝分からない（列を足す前の行）→ 確定の時刻で代える。
+    DateTimeOffset? ExternalReductionObservedAt = null)
 {
     /// <summary>#820, IADR-0344: S1（ソフトウェア逆指値）の行か。ブローカーに注文を持たない。</summary>
     public bool IsSoftwareStop => Mechanism == StopLossExecutionMethod.SoftwareStop;

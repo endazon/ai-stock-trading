@@ -55,6 +55,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                     b.Property<int>("ProductType")
                         .HasColumnType("integer");
 
+                    b.Property<int>("ProtectionReleasedQuantity")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
 
@@ -193,6 +196,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
 
                     b.Property<int>("ExternalReductionObservations")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ExternalReductionObservedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("FxRateToBase")
                         .HasColumnType("numeric");

@@ -15,6 +15,8 @@ namespace AiStockTrading.Shared.Contracts.Events;
 //   無音のまま損切りが出ない状態を残さないため 1 件につき 1 回だけ知らせる（人手対応・Critical）。
 //
 // StopLossPrice はソフトウェア逆指値の損切りライン、TriggeredPrice は到達を検知した時点の価格、Attempt は決済の試行番号。
+// 🔴 FR-10, #1330, IADR-0534 決定3: CloseOrigin は Outcome=ApprovedCloseReleased のときだけ載る、帰属させた決済の承認の出どころ
+// （取引判断・利用者の手仕舞い・維持率割れの自動縮小）。末尾の省略可能な欄であり、旧い発行元・旧いメッセージは null。
 public record SoftwareStopExecuted(
     Guid EntryDecisionId,
     string Symbol,
@@ -27,7 +29,8 @@ public record SoftwareStopExecuted(
     Guid? CloseDecisionId,
     string? CloseOrderId,
     OrderIntent? CloseIntent,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    OrderApprovalOrigin? CloseOrigin = null);
 
 // #820, IADR-0344 決定8: ソフトウェア逆指値の発動結果。序数は動かさず末尾へ足す（IADR-0134 決定2）。
 public enum SoftwareStopOutcome
@@ -62,6 +65,8 @@ public enum SoftwareStopOutcome
     /// <summary>
     /// #820 の 5 巡目監査, IADR-0344 追記(5): <b>外部要因（人手決済・強制決済・ブローカー側逆指値の約定）で
     /// 建玉が減ったぶんを、この保護記録の主張から差し引いた</b>（2 巡回連続で観測して確定した）。
+    /// 🔴 #1330, IADR-0534: <b>承認済みの決済（取引判断・利用者の手仕舞い・自動縮小）の約定で説明できる分は含まない</b>
+    /// （その分は <see cref="ApprovedCloseReleased"/>）。
     /// <para>
     /// <b>決済は出していない。</b><see cref="SoftwareStopExecuted.Quantity"/> は差し引いた株数である。
     /// 差し引きは帳簿だけの記録（S1）から先に行うが、S1 で吸収しきれなければブローカー側逆指値（S0）の記録も
@@ -126,4 +131,15 @@ public enum SoftwareStopOutcome
     /// </para>
     /// </summary>
     CloseUnfilled = 9,
+
+    /// <summary>
+    /// 🔴 FR-10, #1330, IADR-0534 決定3: <b>承認済みの決済（取引判断の利確・損切り、利用者の手仕舞い、維持率割れの自動縮小）が
+    /// 約定して建玉が減ったぶんを、この保護記録の主張から差し引いた</b>（外部要因と同じく 2 巡回連続で観測して確定した）。
+    /// <para>
+    /// <b>外部要因ではない。保護の決済も出していない。</b><see cref="SoftwareStopExecuted.Quantity"/> は差し引いた株数、
+    /// <see cref="SoftwareStopExecuted.CloseDecisionId"/> / <see cref="SoftwareStopExecuted.CloseOrderId"/> は帰属させた決済、
+    /// <see cref="SoftwareStopExecuted.CloseOrigin"/> はその承認の出どころである。設計どおりの帰結として知らせる（Info）。
+    /// </para>
+    /// </summary>
+    ApprovedCloseReleased = 10,
 }

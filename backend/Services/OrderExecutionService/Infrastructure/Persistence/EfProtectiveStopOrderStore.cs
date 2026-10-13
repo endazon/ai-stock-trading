@@ -103,6 +103,7 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
         row.CloseFailures = stop.CloseFailures;
         row.NextCloseAttemptAt = stop.NextCloseAttemptAt;
         row.LastTriggerSeenAt = stop.LastTriggerSeenAt;
+        row.ExternalReductionObservedAt = stop.ExternalReductionObservedAt;
     }
 
     public ProtectiveStopOrder? Find(Guid entryDecisionId)
@@ -203,5 +204,5 @@ public sealed class EfProtectiveStopOrderStore(OrderExecutionDbContext db) : IPr
             r.PendingExternalReduction, r.ExternalReductionObservations,
             r.ExternalReductionAbsences, r.ProtectionSuspendedSince, r.ProtectionSuspendedNotifiedAt,
             r.UnattributedNotifiedQuantity, r.UnattributedNotifiedAt,
-            r.CloseFailures, r.NextCloseAttemptAt, r.LastTriggerSeenAt, r.Version);
+            r.CloseFailures, r.NextCloseAttemptAt, r.LastTriggerSeenAt, r.Version, r.ExternalReductionObservedAt);
 }
