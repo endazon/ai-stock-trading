@@ -334,8 +334,9 @@ jobs:
               「変更 N ファイル中 M ファイルを読んだ（生成物 K ファイルを除外: …）」と K も数字で書く。
               **この申告と下の各項目の実行の記載は `check-review-verdict.js` が読み、欠ければジョブを落とす**
               （M + K が N に満たない・申告が無い・「下限を満たしていない」と書いた・`deploy/helm/**` の差分で
-              `helm lint` / `helm template` を実行した記載が無い・`scripts/` `.github/` の差分で `scripts.test.js` を
-              実行した記載が無い）。
+              `helm lint` / `helm template` が「確認できたこと」の節に無い・`scripts/` `.github/` の差分で `scripts.test.js` が
+              「確認できたこと」の節に無い）。**実行したコマンドは「確認できたこと」の節に、実行しなかったものは
+              「🔍 実行できなかったこと」の節に書く**（検査器は節で読み分ける）。
             - **`backend/` の差分があれば**、`dotnet build backend/backend.slnx` と、変更したサービス
               （共有物なら `backend/Shared/**`）のテストプロジェクトの `dotnet test <…Tests.csproj>` を走らせる。
               `--filter` は付けず、プロジェクト単位で全件を回す。あわせて

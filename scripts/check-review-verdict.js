@@ -46,7 +46,8 @@
  *   (b) 同じ行に「下限」と「満たして(い)ない / 満たさない」がある（自己申告の違反）
  *   (c) 変更ファイル（env CHANGED_FILES）に deploy/helm/** があるのに本文に helm lint / helm template を
  *       実行した記載が無い、scripts/** か .github/** があるのに scripts.test.js を実行した記載が無い
- *       （語を含む行が「実行していない」等だけなら、記載が無いとみなす。#1324 の実文がその形だった）
+ *       （「実行した記載」は「確認できたこと」の節に在ること。🔍 実行できなかったこと の節に在るだけなら
+ *       記載が無いとみなす。#1324 の実文がその形だった）
  *
  * 使い方:
  *   node scripts/check-review-verdict.js <execution-file> [--self-test]
@@ -207,8 +208,16 @@ const UNIT = '(?:ファイル|件)';
  * @returns {{ n: number, m: number|null, k: number } | null} N も無ければ null
  */
 function parseReadDeclaration(text) {
-  const t = normalize(text);
-  const head = new RegExp(`変更\\s*(\\d+)\\s*${UNIT}`).exec(t);
+  // **冒頭（最初の判定の見出しより前）だけを見る。** 申告は本文の冒頭に書く決まりであり、
+  // 指摘の本文に現れる「変更 1 件」等の別の数を N と取り違えない（#1337 の AI レビュー 🟢）。
+  const all = normalize(text);
+  const firstVerdict = all.search(/^\s{0,3}#{2,4}\s.*(?:🔴|🟡|🟢)/mu);
+  const t = firstVerdict < 0 ? all : all.slice(0, firstVerdict);
+  // 「変更 N ファイル中 / のうち」の形を優先し、無ければ「変更 N ファイル」で代える（#1329 の
+  // 「変更 21 ファイル（`git diff …`）中」のように、間に括弧が挟まる実文も前者で拾う）。
+  const head =
+    new RegExp(`変更\\s*(\\d+)\\s*${UNIT}\\s*(?:\\([^)\\n]*\\))?\\s*(?:中|のうち)`).exec(t) ||
+    new RegExp(`変更\\s*(\\d+)\\s*${UNIT}`).exec(t);
   if (!head) return null;
   const n = Number(head[1]);
   const rest = t.slice(head.index + head[0].length);
@@ -252,16 +261,40 @@ function findFloorAdmissions(text) {
 }
 
 /**
- * 「実行していない」と書いた行（#1324 の実文: 「`helm lint` / `helm template`: 実行していない」）。
- * **語の有無だけで見ると、#1324 のように「実行していない」と書いた本文でも緑になる。**
- * 「未検証」は入れない —— 実行した行に「CI 側は未検証」と添える書き方が実在し、偽陽性になる。
+ * 「実行した」を**本文の節で**読む（#1337 の AI レビュー 🟡 による是正）。
+ *
+ * 初版は行内の否定語（「拒否」「省略」等）で「実行していない」行を除いていたが、語が広く、
+ * 「`scripts.test.js` 全件成功（権限拒否なし）」のような**実行した行まで未実行と読む偽陽性**が出た。
+ * **行内の否定語には頼らない。** プロンプトは下限の結果を「確認できたこと」に、実行しなかったものを
+ * 「🔍 実行できなかったこと」に書かせているので、**前者の節にコマンド名があれば実行した**とみなす。
+ * 後者の節（#1324 の「`helm lint` / `helm template`: 実行していない」はここに在った）や指摘の節に
+ * 在るだけでは、実行した記載とみなさない。
+ *
+ * 見出しの母集合（#1318〜#1336 の 32 本。全本に 1 つずつ在った）:
+ *   `### 確認できたこと` / `### ✅ 確認できたこと（このセッションで実行）` /
+ *   `### 確認できたこと（実行した）` / `### ✅ 確認できたこと(このセッションで実走)` ほか括弧内の揺れ。
+ *   未実行の節は 32 本とも `### 🔍 実行できなかったこと`。
  */
-const NOT_RUN =
-  /実行して(?:い)?(?:ない|ません)|走らせて(?:い)?(?:ない|ません)|実行しな(?:かった|い)|走らせな(?:かった|い)|実行しませんでした|未実行|拒否|できなかった|できていない|省いた|省略/;
+const CONFIRMED_HEADING = /確認できたこと/;
+const NOT_RUN_HEADING = /🔍|できなかった/;
 
-/** 本文に、そのコマンドを「実行した」と読める行（語を含み、未実行の語を含まない行）があるか。 */
+/** 本文を見出し（`##`〜`####`）で節に分け、「確認できたこと」の節の本文だけをつないで返す。 */
+function confirmedSections(text) {
+  const out = [];
+  let inside = false;
+  for (const line of String(text || '').split('\n')) {
+    if (/^\s{0,3}#{2,4}\s/.test(line)) {
+      inside = CONFIRMED_HEADING.test(line) && !NOT_RUN_HEADING.test(line);
+      continue;
+    }
+    if (inside) out.push(line);
+  }
+  return out.join('\n');
+}
+
+/** 「確認できたこと」の節に、そのコマンド名が在るか。 */
 function mentionsRun(text, cmd) {
-  return text.split('\n').some((line) => line.includes(cmd) && !NOT_RUN.test(line));
+  return confirmedSections(text).includes(cmd);
 }
 
 /** CHANGED_FILES（改行区切り）を配列にする。空行は捨てる。 */
@@ -425,11 +458,12 @@ function selfTest() {
   T('下限: helm 差分で helm lint / helm template が無ければ赤', () => {
     const body = review('変更 1 ファイル中 1 ファイルを読んだ。');
     assert.strictEqual(findFloorViolations(body, ['deploy/helm/ast/values.yaml']).length, 2);
-    assert.deepStrictEqual(findFloorViolations(`${body}\n- helm lint: OK\n- helm template: OK`, ['deploy/helm/ast/values.yaml']), []);
+    const ok = `${body}\n### 確認できたこと\n- helm lint: OK\n- helm template: OK`;
+    assert.deepStrictEqual(findFloorViolations(ok, ['deploy/helm/ast/values.yaml']), []);
   });
 
-  T('下限: 「helm lint: 実行していない」は実行した記載とみなさない（#1324 の形）', () => {
-    const body = review('変更 2 ファイル中 2 ファイルを読んだ。') + '\n- `helm lint` / `helm template`: 実行していない。\n- `scripts.test.js`: 実行していない。\n';
+  T('下限: 🔍 の節に在るだけでは実行した記載とみなさない（#1324 の形）', () => {
+    const body = review('変更 2 ファイル中 2 ファイルを読んだ。') + '\n### 🔍 実行できなかったこと\n- `helm lint` / `helm template`: 実行していない。\n- `scripts.test.js`: 実行していない。\n';
     assert.strictEqual(findFloorViolations(body, ['deploy/helm/a/values.yaml', '.github/workflows/helm.yml']).length, 3);
   });
 
@@ -527,6 +561,7 @@ module.exports = {
   findFloorAdmissions,
   findFloorViolations,
   parseChangedFiles,
+  confirmedSections,
   selfTest,
   VERDICTS,
   COMMENT_TOOLS,
