@@ -67,7 +67,7 @@ public sealed class CachingFxRateSource(
             return null;
 
         // 齢は停止（maxRateAge）と警告（staleRateWarning）の両方が同じ観測を見て判断する。
-        // 判定は**暦日差**（ElapsedCalendarDays）で行い、経過時間（age）は報告・表示にだけ使う（#1331・IADR-0531）。
+        // 判定は**暦日差**（ElapsedCalendarDays）で行い、経過時間（age）は報告・表示にだけ使う（#1331・IADR-0533）。
         var age = now - rate.AsOf;
         var calendarDays = ElapsedCalendarDays(rate.AsOf, now);
         var freshness = Classify(rate.AsOf, now);
@@ -108,7 +108,7 @@ public sealed class CachingFxRateSource(
     /// <summary>
     /// 齢を 3 段の判定へ写す。**判定規則をここ 1 箇所に置く**（決定3）。
     /// <para>
-    /// 🔴 <b>齢は経過時間ではなく暦日差で数える</b>（#1331・IADR-0531）。計画 ADR-0022 決定4 は
+    /// 🔴 <b>齢は経過時間ではなく暦日差で数える</b>（#1331・IADR-0533）。計画 ADR-0022 決定4 は
     /// 「取得できている最新レートの<b>日付</b>が 5 日を超えて古い」と定め、曜日ごとの古さ（月・火＝4 日、
     /// 3 連休明けの火曜＝5 日）も日付の差で数えている。経過時間（観測日の 0 時からの時間）で数えると、
     /// 同じ日付の差 5 日が夜には 5.9 日になり、<b>計画が「通常運用」とした 5 日で警告が鳴る</b>

@@ -108,7 +108,7 @@ public sealed class BojFxRateSource(
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // #1331, IADR-0531 決定3: HttpClient の**タイムアウト**は OperationCanceledException（TaskCanceledException）で
+            // #1331, IADR-0533 決定3: HttpClient の**タイムアウト**は OperationCanceledException（TaskCanceledException）で
             // 届く。呼び出し側が取り消していないのに伝播させると、FallbackFxRateSource が「取り消し」と読んで
             // **FRED を試さないまま**上位へ例外が抜ける。取り消しではないので、通信の失敗と同じくレート無しへ縮退する。
             // 呼び出し側の取り消し（cancellationToken が立っている）は従来どおり伝播させる。
@@ -151,7 +151,7 @@ public sealed class BojFxRateSource(
 
         var (surveyDate, jpyPerUsd) = latest;
 
-        // #1331, IADR-0531 決定2: **取得の成功を残す。** 従来は成功時に何も出さず、鮮度の警告しか見えなかった——
+        // #1331, IADR-0533 決定2: **取得の成功を残す。** 従来は成功時に何も出さず、鮮度の警告しか見えなかった——
         // 「日銀から取れているが最新の観測が古い（収録待ち）」と「取れていない」をログから区別できなかった。
         // LAST_UPDATE（日銀が系列を最後に更新した日）を並べれば、収録の遅れか取得の失敗かを 1 行で判別できる。
         // 呼ばれるのはキャッシュ TTL（既定 6 時間）ごとであり、判断サイクルごとには出ない。

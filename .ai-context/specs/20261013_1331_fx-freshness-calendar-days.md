@@ -2,7 +2,7 @@
 title: JPY の為替レートの鮮度警告（5.9 日）を調べ、齢を暦日差で数え直し、取得の成否をログで読み分けられるようにする（#1331）
 type: spec
 status: done
-related_ids: [FR-11, FR-10, FR-17, ADR-0022, IADR-0174, IADR-0194, IADR-0196, IADR-0308, IADR-0531]
+related_ids: [FR-11, FR-10, FR-17, ADR-0022, IADR-0174, IADR-0194, IADR-0196, IADR-0308, IADR-0533]
 author: claude (Claude Code)
 created: 2026-10-13
 updated: 2026-10-13
@@ -20,7 +20,7 @@ plan_refs:
 - 計画 ADR: **ADR-0022**（決定 1 追補: 収録は翌々営業日 8:50 頃／決定 3: 営業日カレンダーを持たない／決定 4: 警告 5 日／決定 5: 停止 30 日）。
 - 起票: #1331（PoC 2026-10-12 の監査。risk-management 13:34:21Z・report 09:38Z に「Jpy: 観測日 10/07 / 経過 5.9 日 / 警告 5 日」）。
 - 関連 IADR: IADR-0174（3 段の縮退）・IADR-0194（日銀アダプタ・順位つきフォールバック）・IADR-0196（可視化）・IADR-0308（`Fx__Provider=boj`）。
-- 新規 IADR: **IADR-0531**。
+- 新規 IADR: **IADR-0533**。
 
 ## 調査（依頼の 4 点）
 
@@ -62,7 +62,7 @@ plan_refs:
 - 規則 9（誤りの側の語で走査）: `grep -rn "now - rate.AsOf\|now - cached.Rate.AsOf\|経過時間で\|観測日の 0 時\|齢は.*経過"` → 実装 `CachingFxRateSource.cs` の 2 箇所のみ（判定）。`TradeDecisionAppService`（`clock.UtcNow - reading.Rate.AsOf`）は決済の報告に経過を載せるだけで判定に使わない（**変えない**）。`.ai-context/specs/20260729_271_…` は凍結記録（対象外）。
 - 鮮度を判定する箇所: `grep -rn "FxRateFreshness\.\|StaleRateWarning"`（テスト除く）→ `CachingFxRateSource.Classify` の 1 箇所に集約済み（IADR-0197 決定 3）。
 - 規則 10（この変更で新たに誤りになる自分の記述）: 文書の「平常時は 2〜4 日」「月・火は 4 日」「警告しきい値ちょうどでは警告を出さない」（`docs/tests/FR-10_risk-controls-tests.md` T-10-198・chart README・`docs/operations/operations.md`）は**暦日差の数え方でそのまま正しい**（むしろ一致する）。chart README の鮮度警告の行に数え方を追記する。IADR-0174 の本文は「齢」の数え方を定めていないため誤りにならない。
-- 停止（30 日）の境界も同じ規則で数える（判定 1 箇所）。是正前は経過 30 日超（暦日差 30 日の当日の時刻次第で停止）、是正後は暦日差 31 日から停止＝**最大 1 日遅く停止する**。計画の「30 日超」は日付の差で読むのが決定 4 と整合する。IADR-0531 に記録。
+- 停止（30 日）の境界も同じ規則で数える（判定 1 箇所）。是正前は経過 30 日超（暦日差 30 日の当日の時刻次第で停止）、是正後は暦日差 31 日から停止＝**最大 1 日遅く停止する**。計画の「30 日超」は日付の差で読むのが決定 4 と整合する。IADR-0533 に記録。
 - 並行作業（#1330・#1332・#1291）と同じファイル: `.ai-context/adr/README.md`（索引の追記のみ）以外は触らない。`docs/tests/FR-10_risk-controls-tests.md` には触らない（新しいテスト ID は採番しない。テスト名と本仕様書で写像する）。
 
 ## やること
@@ -71,7 +71,7 @@ plan_refs:
 2. `BojFxRateSource`: 成功時に INF（観測日・値・`LAST_UPDATE`）。タイムアウト（呼び出し側が取り消していない OCE）を WRN＋null へ。系列なしの WRN に `STATUS`・`MESSAGEID`・`MESSAGE` を載せる。
 3. `FredFxRateSource`: 成功時の INF とタイムアウトの扱いを日銀側と揃える。
 4. chart README「為替換算」に数え方と PoC の確認手順（ログ・API の叩き方）を追記。
-5. IADR-0531 と索引。
+5. IADR-0533 と索引。
 
 ## 受け入れ基準 → テスト
 
