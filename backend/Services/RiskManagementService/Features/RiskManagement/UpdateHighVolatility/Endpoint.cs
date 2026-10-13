@@ -6,7 +6,8 @@ namespace RiskManagementService.Features.RiskManagement.UpdateHighVolatility;
 // 区分の 1 注文あたりの発注金額上限（equity 比。既定 0.05）と、利用者の明示指定（銘柄・市場の一覧）を置き換える。
 // **変更は利用者のみ**（OwnerOnly。生成 AI・サービス間呼び出し・AI の監視銘柄の入れ替え案〔ADR-0042〕は変更できない）・**理由必須**・
 // 前後値つきで履歴に残す（SettingsChangeType.HighVolatilityChanged）。値域外は 400（設定も履歴も変えない）。
-// 現在値は `GET /settings` の `highVolatility`。🔴 画面（SC-02）からの変更と BFF の経路はまだ無い（ADR-0063 フォローアップ 5・人間）。
+// 現在値は `GET /settings` の `highVolatility`。SC-02 からの変更は BFF `PUT /bff/risk-controls/settings/high-volatility` が本口へ素通しする
+// （ADR-0066 決定2・IADR-0530。画面の誤記防止は画面の親切であり、値域・理由・認可の実効は本口が持つ）。
 internal static class UpdateHighVolatilityEndpoint
 {
     public static void MapUpdateHighVolatility(this IEndpointRouteBuilder owner) =>

@@ -498,3 +498,50 @@ test.describe('SC-02 Stage 1 の最小取引件数（#423）', () => {
     await expect(form.getByText(/統計的な根拠/)).toHaveCount(0);
   });
 });
+
+// T-10-2603, SC-02, FR-10, UC-06, ADR-0066 決定2, #1291, IADR-0530: 高ボラティリティ銘柄の明示指定と区分の上限。
+// 実ブラウザで「監視銘柄から選ぶ → 手入力の誤記は確認なしでは足せない → 保存は BFF の `/bff/risk-controls/settings/high-volatility` を
+// 全置換の本文で叩く」を固定する（BFF の経路の追認）。
+test.describe('SC-02 高ボラティリティ銘柄（#1291）', () => {
+  test('監視銘柄から指定して保存し、監視銘柄に無い手入力は確認するまで足せない', async ({ page }) => {
+    let putPath: string | null = null;
+    let putBody: unknown = null;
+    await installBff(page, {
+      ...defaultBff(),
+      'PUT /risk-controls/settings/high-volatility': (route) => {
+        putPath = new URL(route.request().url()).pathname;
+        putBody = route.request().postDataJSON();
+        return { status: 200, body: RISK_SETTINGS };
+      },
+    });
+    await page.goto(pathWithRoles('/settings/risk', ['trading-owner']));
+    const form = page.getByRole('form', { name: '高ボラティリティ銘柄の設定の変更' });
+    await expect(form.getByLabel('区分の 1 注文あたりの発注金額上限 %')).toHaveValue(
+      String(RISK_SETTINGS.highVolatility.maxOrderAmountRatio * 100),
+    );
+
+    // 監視銘柄（AAPL・米国）から選ぶ。
+    await form.getByLabel('監視銘柄').selectOption({ label: 'AAPL（米国）' });
+    await form.getByRole('button', { name: '選んだ監視銘柄を追加' }).click();
+
+    // 監視銘柄に無い手入力（誤記の例 AAPLE）は警告され、確認するまで足せない。
+    await form.getByLabel('市場（手入力）').selectOption({ label: '米国' });
+    await form.getByLabel('銘柄コード（手入力）').fill('aaple');
+    await expect(form.getByText(/AAPLE（米国）: 監視銘柄にありません/)).toBeVisible();
+    await expect(form.getByRole('button', { name: '手入力の銘柄を追加' })).toBeDisabled();
+    await form.getByLabel('銘柄コード（手入力）').fill('');
+
+    await form.getByLabel('高ボラティリティ銘柄の変更理由').fill('値動きの大きい銘柄を区分に入れる');
+    const save = form.getByRole('button', { name: '高ボラティリティ銘柄の設定を保存' });
+    await expect(save).toBeEnabled();
+    await save.click();
+
+    await expect(form.getByText('高ボラティリティ銘柄の設定を保存しました。')).toBeVisible();
+    expect(putPath).toBe('/bff/risk-controls/settings/high-volatility');
+    expect(putBody).toEqual({
+      maxOrderAmountRatio: RISK_SETTINGS.highVolatility.maxOrderAmountRatio,
+      designatedSymbols: [{ symbol: 'AAPL', market: 1 }],
+      reason: '値動きの大きい銘柄を区分に入れる',
+    });
+  });
+});

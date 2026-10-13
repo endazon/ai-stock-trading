@@ -69,8 +69,8 @@ export interface RiskManagementSettings {
   // （StopLossExecutionMethod enum・数値。0=S0 ブローカー側逆指値〔既定〕/ 1=S1 / 2=S2 逆指値なしの建玉を許容 / 3=S3）。
   // 変更は `PUT /risk-controls/settings/stop-loss-method`（利用者のみ）。SC-02 の入力は `StopLossMethodForm`（#823・IADR-0422）。
   stopLossMethod: number;
-  // FR-10, UC-06, ADR-0063, #1291: **高ボラティリティ銘柄の統制値**（区分の 1 注文上限＝equity 比・既定 0.05 と、利用者の明示指定）。
-  // 変更は `PUT /risk-controls/settings/high-volatility`（利用者のみ）。🔴 SC-02 の表示・入力はまだ無い（計画のフォローアップ・人間）。
+  // FR-10, UC-06, ADR-0063, ADR-0066 決定2, #1291: **高ボラティリティ銘柄の統制値**（区分の 1 注文上限＝equity 比・既定 0.05 と、利用者の明示指定）。
+  // 変更は `PUT /risk-controls/settings/high-volatility`（利用者のみ）。SC-02 の表示・入力は `HighVolatilityForm`（IADR-0530）。
   highVolatility: HighVolatilitySettings;
 }
 
@@ -943,4 +943,109 @@ export function validateStage1TradeCountInput(text: string): string | null {
 export function inputBelowStatisticalBasis(text: string): boolean {
   if (validateStage1TradeCountInput(text) !== null) return false;
   return Number(text) < STAGE1_TRADE_COUNT_DEFAULT;
+}
+
+// ---- 🔴 FR-10, SC-02, UC-06, ADR-0066 決定1・決定2, ADR-0063 決定2, #1291, IADR-0530: 高ボラティリティ銘柄の統制値（画面側の即時提示） ----
+//
+// **実効はサーバ側（`HighVolatilityOrderCap.Validate`）である。** ここに同じ値域を持つのは利用者へ即時に提示する
+// ためであり、画面が統制の実効を担うためではない。**値はサーバ側と一致していなければならない**
+// （下端 0.01＝最小の名目額の比率の既定値・構成値に連動しない〔ADR-0066 決定1〕、上端 0.25＝区分外の上限の既定）。
+
+/** 区分の上限の下端（equity 比・**含む**）。 */
+export const HIGH_VOLATILITY_RATIO_MIN = 0.01;
+/** 区分の上限の上端（equity 比・**含む**）。 */
+export const HIGH_VOLATILITY_RATIO_MAX = 0.25;
+/** 値域の表示（百分率）。 */
+export const HIGH_VOLATILITY_RATIO_RANGE_TEXT = '1% 以上 25% 以下';
+
+/** 区分の上限の入力（百分率の文字列）を検証する。空欄・非数値・値域外は文言、妥当なら null。 */
+export function validateHighVolatilityRatioInput(text: string): string | null {
+  if (text.trim() === '') return '区分の 1 注文あたりの発注金額上限を入力してください。';
+  const ratio = percentTextToRatio(text);
+  if (ratio === null) return '区分の 1 注文あたりの発注金額上限は数値（%）で入力してください。';
+  if (ratio < HIGH_VOLATILITY_RATIO_MIN || ratio > HIGH_VOLATILITY_RATIO_MAX) {
+    return `区分の 1 注文あたりの発注金額上限は ${HIGH_VOLATILITY_RATIO_RANGE_TEXT} の範囲で入力してください。`;
+  }
+  return null;
+}
+
+/** 百分率の入力を比率へ（読めなければ null。黙って既定値を送らない）。 */
+export function highVolatilityRatioInputToWire(text: string): number | null {
+  return percentTextToRatio(text);
+}
+
+/** 比率を百分率の入力へ。 */
+export function wireToHighVolatilityRatioInput(ratio: number): string {
+  return ratioToPercentText(ratio);
+}
+
+/**
+ * 明示指定の銘柄コードを正規化する（前後の空白を落とし大文字にする）。サーバの照合は空白と大小文字を
+ * 無視するが、画面の照合（監視銘柄・重複）と履歴に残る値を揃えるため、送る前にも揃える。
+ */
+export function normalizeDesignatedSymbol(text: string): string {
+  return text.trim().toUpperCase();
+}
+
+/** 銘柄コードに使える文字（英大文字・数字・`.`・`-`。先頭は英数字）。最大 12 文字。 */
+const DESIGNATED_SYMBOL_PATTERN = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
+
+/**
+ * 手入力の銘柄コードの書式を検証する（誤記の防止のうち、書式で分かる分）。妥当なら null。
+ * 🔴 **書式が正しくても実在するとは限らない。** 実在の確からしさは監視銘柄との照合（`watchlistMatchOf`）で示す。
+ */
+export function validateDesignatedSymbolInput(text: string): string | null {
+  const symbol = normalizeDesignatedSymbol(text);
+  if (symbol === '') return '銘柄コードを入力してください。';
+  if (!DESIGNATED_SYMBOL_PATTERN.test(symbol)) {
+    return '銘柄コードは英数字（と「.」「-」）の 12 文字以内で入力してください（空白や記号は使えません）。';
+  }
+  return null;
+}
+
+/**
+ * 明示指定の銘柄と監視銘柄の照合の結果。
+ * - `listed`: 監視銘柄に同じ銘柄・同じ市場がある
+ * - `otherMarket`: 同じ銘柄コードが別の市場でだけ監視銘柄にある（市場の取り違えの疑い）
+ * - `notListed`: 監視銘柄に無い（誤記の疑い、または先回りの指定）
+ * - `unknown`: 監視銘柄を取得できておらず照合できない
+ */
+export type WatchlistMatch = 'listed' | 'otherMarket' | 'notListed' | 'unknown';
+
+/** 正規化済みの銘柄コードと市場を監視銘柄と照合する（監視銘柄が null＝取得できていなければ `unknown`）。 */
+export function watchlistMatchOf(
+  symbol: string,
+  market: number,
+  watchlist: readonly { symbol: string; market: number }[] | null,
+): WatchlistMatch {
+  if (watchlist === null) return 'unknown';
+  const same = watchlist.filter((w) => normalizeDesignatedSymbol(w.symbol) === symbol);
+  if (same.some((w) => w.market === market)) return 'listed';
+  return same.length > 0 ? 'otherMarket' : 'notListed';
+}
+
+/**
+ * 現在値に対して統制を**緩める**変更を列挙する（区分の上限を上げる・明示指定を外す）。空なら緩める変更なし。
+ * 取引ガードの危険な緩和と同じく、保存の前に確認を求めるために使う（IADR-0086 決定3 と同じ規律）。
+ */
+export function highVolatilityLoosenings(
+  current: HighVolatilitySettings,
+  nextRatio: number | null,
+  nextSymbols: readonly HighVolatilitySymbol[],
+): string[] {
+  const loosenings: string[] = [];
+  if (nextRatio !== null && nextRatio > current.maxOrderAmountRatio) {
+    loosenings.push(
+      `区分の上限を ${ratioToPercentText(current.maxOrderAmountRatio)}% から ${ratioToPercentText(nextRatio)}% へ引き上げ`,
+    );
+  }
+  const keyOf = (s: HighVolatilitySymbol) => `${normalizeDesignatedSymbol(s.symbol)}|${s.market}`;
+  const remaining = new Set(nextSymbols.map(keyOf));
+  const removed = current.designatedSymbols.filter((s) => !remaining.has(keyOf(s)));
+  if (removed.length > 0) {
+    loosenings.push(
+      `明示指定を外す（${removed.map((s) => `${s.symbol}（${marketLabel(s.market)}）`).join('、')}）`,
+    );
+  }
+  return loosenings;
 }

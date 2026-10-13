@@ -73,6 +73,10 @@ msgstr "（6 桁の数字）"
 msgid "（API は未稼働 — 発注・照会は届きません）"
 msgstr "（API は未稼働 — 発注・照会は届きません）"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "（ATR で区分に入る銘柄は、ここで外しても区分から出ません）。"
+msgstr "（ATR で区分に入る銘柄は、ここで外しても区分から出ません）。"
+
 #: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
 msgid "（サーバ側が宣言します。画面は種別を選べません）"
 msgstr "（サーバ側が宣言します。画面は種別を選べません）"
@@ -100,6 +104,10 @@ msgstr "（正常値の見た目）"
 #: src/features/sc01-settings/components/SettingsPage.tsx
 msgid "（設定サービスの値を一度も解決できていません）。"
 msgstr "（設定サービスの値を一度も解決できていません）。"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "（選択してください）"
+msgstr "（選択してください）"
 
 #: src/features/sc04-opend-auth/components/VerificationCodeForm.tsx
 msgid "）。間隔はサーバ側が課します。"
@@ -397,6 +405,10 @@ msgstr "この組み合わせは段階ゲート（統制違反 0 件・60 営業
 msgid "この統制は現在まったく働いていません。"
 msgstr "この統制は現在まったく働いていません。"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "この銘柄と市場は既に明示指定されています。"
+msgstr "この銘柄と市場は既に明示指定されています。"
+
 #: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
 msgid "コマンド"
 msgstr "コマンド"
@@ -501,6 +513,10 @@ msgstr "のため、実弾（moomoo REAL）へ切り替えられません。先�
 msgid "の使用率"
 msgstr "の使用率"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "の明示指定を外す"
+msgstr "の明示指定を外す"
+
 #: src/features/sc01-settings/components/SettingsPage.tsx
 msgid "は「リスク設定」画面（SC-02）で扱います。"
 msgstr "は「リスク設定」画面（SC-02）で扱います。"
@@ -565,6 +581,10 @@ msgstr "一時停止"
 msgid "上記の危険な変更を確認しました"
 msgstr "上記の危険な変更を確認しました"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "上記の緩める変更を確認しました"
+msgstr "上記の緩める変更を確認しました"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "上限"
 msgstr "上限"
@@ -572,6 +592,10 @@ msgstr "上限"
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "上限使用率"
 msgstr "上限使用率"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "下端（1%）ちょうどでも、数量の端数切り捨てでほぼ常に見送りになります。"
+msgstr "下端（1%）ちょうどでも、数量の端数切り捨てでほぼ常に見送りになります。"
 
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "不可"
@@ -625,6 +649,7 @@ msgid "保存しました。"
 msgstr "保存しました。"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
@@ -694,6 +719,7 @@ msgid "入力できない値があります:"
 msgstr "入力できない値があります:"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
@@ -782,6 +808,14 @@ msgstr "削除理由"
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 msgid "前回判断時点の価格に対する変動率です。許容範囲:"
 msgstr "前回判断時点の価格に対する変動率です。許容範囲:"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "区分の 1 注文あたりの発注金額上限 %"
+msgstr "区分の 1 注文あたりの発注金額上限 %"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "区分の銘柄（ATR(14) ÷ 参照価格が 4% 以上、または下の一覧で明示指定した銘柄）の新規建ては、1 注文あたり equity の次の比率までに抑えます（区分外の 1 注文上限との小さい方）。"
+msgstr "区分の銘柄（ATR(14) ÷ 参照価格が 4% 以上、または下の一覧で明示指定した銘柄）の新規建ては、1 注文あたり equity の次の比率までに抑えます（区分外の 1 注文上限との小さい方）。"
 
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "厳しい方"
@@ -904,6 +938,7 @@ msgid "変動閾値を保存中…"
 msgstr "変動閾値を保存中…"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
@@ -960,6 +995,10 @@ msgstr "変更理由"
 msgid "変更者"
 msgstr "変更者"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "外す"
+msgstr "外す"
+
 #: src/features/sc04-opend-auth/components/GatewayStateSection.tsx
 msgid "安定（固定 NAT）"
 msgstr "安定（固定 NAT）"
@@ -1006,11 +1045,16 @@ msgstr "対象なし"
 msgid "履歴を確認中…"
 msgstr "履歴を確認中…"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "市場"
 msgstr "市場"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "市場（手入力）"
+msgstr "市場（手入力）"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
@@ -1089,6 +1133,10 @@ msgstr "必要証拠金が最も大きい建玉から"
 msgid "成立中で最優先の統制:"
 msgstr "成立中で最優先の統制:"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "手入力の銘柄を追加"
+msgstr "手入力の銘柄を追加"
+
 #: src/features/sc02-risk-settings/components/StopLossMethodForm.tsx
 msgid "手法の変更理由"
 msgstr "手法の変更理由"
@@ -1146,6 +1194,7 @@ msgstr "撤退基準への到達はありません。"
 msgid "撤退評価"
 msgstr "撤退評価"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "操作"
@@ -1202,6 +1251,22 @@ msgstr "昇格可"
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "昇格評価"
 msgstr "昇格評価"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "明示指定の銘柄"
+msgstr "明示指定の銘柄"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "明示指定の銘柄の一覧"
+msgstr "明示指定の銘柄の一覧"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "明示指定はありません。"
+msgstr "明示指定はありません。"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "明示指定は厳しい側へだけ効きます"
+msgstr "明示指定は厳しい側へだけ効きます"
 
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "時価"
@@ -1295,6 +1360,10 @@ msgstr "楽観排他: 表示中の版と現行版が一致する場合のみ保�
 msgid "次の変更は取引ガードを緩めます。内容を確認してください:"
 msgstr "次の変更は取引ガードを緩めます。内容を確認してください:"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "次の変更は高ボラティリティ銘柄の統制を緩めます。内容を確認してください:"
+msgstr "次の変更は高ボラティリティ銘柄の統制を緩めます。内容を確認してください:"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "段階ゲート 現況・評価・遷移履歴（FR-20）"
 msgstr "段階ゲート 現況・評価・遷移履歴（FR-20）"
@@ -1358,6 +1427,7 @@ msgstr "現 Stage ／ 発注先"
 msgid "現在"
 msgstr "現在"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 msgid "現在の equity での実額:"
 msgstr "現在の equity での実額:"
@@ -1531,13 +1601,42 @@ msgstr "監視から削除"
 msgid "監視対象の銘柄を一覧・追加・削除します（FR-03/FR-13）。追加・削除は理由必須です。削除は監視から外す破壊的操作のため、確認のうえ実行します。市場ごとに管理します。"
 msgstr "監視対象の銘柄を一覧・追加・削除します（FR-03/FR-13）。追加・削除は理由必須です。削除は監視から外す破壊的操作のため、確認のうえ実行します。市場ごとに管理します。"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "監視銘柄"
 msgstr "監視銘柄"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄から追加"
+msgstr "監視銘柄から追加"
+
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "監視銘柄コード"
 msgstr "監視銘柄コード"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄では市場が違います"
+msgstr "監視銘柄では市場が違います"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄との照合"
+msgstr "監視銘柄との照合"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄と照合できません"
+msgstr "監視銘柄と照合できません"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄にあります"
+msgstr "監視銘柄にあります"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄にありません"
+msgstr "監視銘柄にありません"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄に無い銘柄を追加（先回りの指定）"
+msgstr "監視銘柄に無い銘柄を追加（先回りの指定）"
 
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "監視銘柄の削除確認"
@@ -1566,6 +1665,10 @@ msgstr "監視銘柄はありません。"
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 msgid "監視銘柄をどれだけ動いたら判断へ回すか（変動閾値）と、同一銘柄の再トリガーをどれだけ抑制するか（クールダウン）を設定します（FR-03/FR-13）。変更は利用者のみが行え、理由が必須です。"
 msgstr "監視銘柄をどれだけ動いたら判断へ回すか（変動閾値）と、同一銘柄の再トリガーをどれだけ抑制するか（クールダウン）を設定します（FR-03/FR-13）。変更は利用者のみが行え、理由が必須です。"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "監視銘柄を取得できないため、銘柄コードを監視銘柄と照合できません。手入力の追加には確認が要ります。"
+msgstr "監視銘柄を取得できないため、銘柄コードを監視銘柄と照合できません。手入力の追加には確認が要ります。"
 
 #: src/features/sc02-risk-settings/components/WatchlistForm.tsx
 msgid "監視銘柄を追加"
@@ -1651,6 +1754,7 @@ msgid "空欄/非数値は保存無効化（黙って 0 を送らない）。競
 msgstr "空欄/非数値は保存無効化（黙って 0 を送らない）。競合 409 は再読込を促す"
 
 #: src/features/sc01-settings/components/SettingsPage.tsx
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/MonitorParametersForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
@@ -1732,6 +1836,10 @@ msgstr "維持率割れによる自動縮小（動かす統制）"
 msgid "維持率割れ自動縮小の発動履歴"
 msgstr "維持率割れ自動縮小の発動履歴"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "綴りと市場を確かめた（監視銘柄に無い銘柄として指定する）"
+msgstr "綴りと市場を確かめた（監視銘柄に無い銘柄として指定する）"
+
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "緊急停止（kill switch）"
 msgstr "緊急停止（kill switch）"
@@ -1796,6 +1904,7 @@ msgstr "許可・禁止コマンドの一覧"
 msgid "許可リストは"
 msgstr "許可リストは"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
 #: src/features/sc02-risk-settings/components/RiskSettingsPage.tsx
 #: src/features/sc02-risk-settings/components/Stage1TradeCountForm.tsx
 msgid "許容範囲:"
@@ -1898,6 +2007,10 @@ msgstr "遷移履歴"
 msgid "遷移履歴はありません。"
 msgstr "遷移履歴はありません。"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "選んだ監視銘柄を追加"
+msgstr "選んだ監視銘柄を追加"
+
 #: src/features/sc04-opend-auth/components/OpendAuthPage.tsx
 msgid "配備までの唯一の経路である "
 msgstr "配備までの唯一の経路である "
@@ -1908,6 +2021,18 @@ msgstr "配備までの唯一の経路である "
 msgid "銘柄"
 msgstr "銘柄"
 
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "銘柄コード"
+msgstr "銘柄コード"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "銘柄コード（手入力）"
+msgstr "銘柄コード（手入力）"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "銘柄コードを誤記すると、指定はどの注文にも一致せず黙って効きません。綴りと市場を確かめてください。"
+msgstr "銘柄コードを誤記すると、指定はどの注文にも一致せず黙って効きません。綴りと市場を確かめてください。"
+
 #: src/features/sc03-controls/components/ShortSellingStatusSection.tsx
 msgid "閾値"
 msgstr "閾値"
@@ -1915,3 +2040,27 @@ msgstr "閾値"
 #: src/features/sc03-controls/components/ControlStatusPage.tsx
 msgid "項目"
 msgstr "項目"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "高ボラティリティ銘柄（変更）"
+msgstr "高ボラティリティ銘柄（変更）"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "高ボラティリティ銘柄の変更理由"
+msgstr "高ボラティリティ銘柄の変更理由"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "高ボラティリティ銘柄の設定の変更"
+msgstr "高ボラティリティ銘柄の設定の変更"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "高ボラティリティ銘柄の設定を保存"
+msgstr "高ボラティリティ銘柄の設定を保存"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "高ボラティリティ銘柄の設定を保存しました。"
+msgstr "高ボラティリティ銘柄の設定を保存しました。"
+
+#: src/features/sc02-risk-settings/components/HighVolatilityForm.tsx
+msgid "高ボラティリティ銘柄の設定を保存中…"
+msgstr "高ボラティリティ銘柄の設定を保存中…"

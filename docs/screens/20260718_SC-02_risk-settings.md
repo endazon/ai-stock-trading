@@ -3,15 +3,15 @@ title: 画面仕様書（素案） — SC-02 リスク設定画面（リスク�
 type: screen
 status: Draft
 created: 2026-07-18
-updated: 2026-10-01
+updated: 2026-10-13
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-03, FR-10, FR-11, FR-12, FR-13, FR-19, FR-20, SC-02, UC-06]
-adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040, ADR-0042, ADR-0043]
-iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437, IADR-0475]
+adrs: [ADR-0003, ADR-0007, ADR-0008, ADR-0016, ADR-0040, ADR-0042, ADR-0043, ADR-0063, ADR-0066]
+iadrs: [IADR-0084, IADR-0086, IADR-0090, IADR-0095, IADR-0130, IADR-0140, IADR-0141, IADR-0151, IADR-0152, IADR-0155, IADR-0161, IADR-0162, IADR-0164, IADR-0338, IADR-0339, IADR-0342, IADR-0422, IADR-0433, IADR-0437, IADR-0475, IADR-0527, IADR-0530]
 specs: [20260718_106_frontend-risk-settings-and-controls, 20260718_196_frontend-watchlist-ui, 20260718_SC-01_settings, 20260805_334_broker-provider-axis, 20260805_362_sc02-ratio-input, 20260806_340_screens-reimplementation, 20260807_422_broker-provider-default-paper, 20260807_423_sc01-section2-removal-and-sc02-relocation, 20260807_424_unsupplied-metric-display-convention, 20260912_frontend-platform-ui-and-lingui, IADR-0084_frontend-risk-settings-and-control-status, IADR-0086_frontend-guard-edit-ui, IADR-0090_frontend-watchlist-ui, IADR-0130_equity-ratio-risk-limits, IADR-0140_broker-provider-axis, IADR-0141_live-switch-explicit-confirmation, IADR-0151_risk-limit-percent-input-and-bounds, IADR-0155_sc01-collection-parameters-supply, IADR-0161_broker-provider-allow-list-resolution, IADR-0162_unsupplied-metric-display-convention-all-screens, IADR-0164_stage1-trade-count-setting-and-monitor-parameter-relocation, 20260925_823_stop-method-ui-and-daily-report, 20260926_1025_policy-watchlist-apply, 20260926_1030_finnhub-cycle-fit-control, 20261001_1134_watchlist-no-fallback]
-issues: [#20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, #1134, planning#31, planning#33]
+issues: [#1291, #20, #165, #188, #196, #209, #329, #334, #340, #362, #364, #389, #408, #409, #410, #422, #423, #424, #819, #823, #1025, #1030, #1134, planning#31, planning#33]
 -->
 
 
@@ -198,6 +198,26 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
    - **計上単位（「約定が成立した新規建て注文 1 件」・分割約定は 1 件・手仕舞いは計上しない）も画面に明記する。**
      「件」の意味が読み手によって変わると、件数の設定そのものが意味を失う。
 
+8. **高ボラティリティ銘柄の明示指定と区分の上限（変更可・2026-10-13 追加・#1291）**:
+   区分の銘柄（ATR(14) ÷ 参照価格 ≥ 4%、または明示指定）の 1 注文あたりの発注金額上限（equity 比・既定 5%）と、
+   明示指定（銘柄と市場の一覧）を表示し、設定する。**手続きは他の統制値と同じ**（利用者のみ・理由必須・値域外は拒否・履歴）。
+
+   - **置き場はリスク上限の直後**（区分の上限は「1 注文あたりの発注金額上限」の区分版である）。**保存単位は分ける**
+     （サーバの口が別であり、1 つの保存ボタンに混ぜると片方だけの失敗が読めなくなる）。
+   - **区分の上限は百分率で入力し、値域は 1% 以上 25% 以下**（下端は最小の名目額の比率の既定値の固定で、構成値に連動しない）。
+     現在 equity での実額を併記する。空欄・非数値・値域外は保存を無効化する（拒否の実効はサーバ）。
+     下端ちょうどでも端数切り捨てでほぼ常に見送りになることを注記する。
+   - 🔴 **銘柄コードの誤記を防ぐ**（サーバは書式も実在も検証せず、誤記は黙って効かないため）:
+     1. **主の経路は監視銘柄からの選択**（銘柄と市場を組で選ぶ。指定済みの組は選択肢から外す）。
+     2. **監視銘柄に無い銘柄の手入力も許す**（監視銘柄へ入れる前の先回りの指定を残す）。入力は大文字に揃え、
+        英数字と「.」「-」の 12 文字以内でなければ足せない。監視銘柄に無い・同じ銘柄コードが別の市場にだけある・
+        監視銘柄を取得できず照合できない、のいずれかなら**警告を出し、確認の印を付けるまで足せない**。重複は足せない。
+     3. **保存済みの指定の各行に、監視銘柄との照合の印**（ある／無い／市場が違う／照合できない）を出す
+        （API で直接入れた誤記を画面で見つけられる）。
+   - **統制を緩める変更**（区分の上限を上げる・明示指定を外す）は、内容を列挙して確認を求める（取引ガードの危険な緩和と同じ規律。
+     確認後に緩める変更が増えたら確認を外す）。締める変更（上限を下げる・指定を足す）は確認を求めない。
+   - **明示指定は厳しい側へだけ効く**（ATR で区分に入る銘柄は、指定を外しても区分から出ない）ことを画面に明記する。
+
 ## データ取得・更新（BFF `/bff/*` 経由・`apiFetch`）
 
 | 操作 | 呼び出し | 応答/エラー |
@@ -207,6 +227,7 @@ platform SPA 認証済みレイアウト配下に feature `sc02-risk-settings` �
 | 上限保存 | `PUT /risk-controls/settings/limits`（`{limits, reason}`。`limits` は **`*Ratio` キー＝比率**。画面の % を送信時に比率へ変換する・#362） | 成功=再取得。**400=値域違反（`{error, details}`。サーバの `RiskLimitBounds` が実効させる）または検証**、409=競合（DbUpdateConcurrency）＋再取得を促す |
 | 発注先の変更 | `PUT /risk-controls/settings/broker-provider`（`{provider, reason, acknowledgedLiveTrading, acknowledgement}`） | 成功=再取得＋段階ゲート飛ばしの警告。**実弾は同意と「REAL」の入力の両方が無ければ 400**（サーバ側も同じ関門）。理由が空も 400 |
 | 損切りの実行機構の変更 | `PUT /risk-controls/settings/stop-loss-method`（`{method, reason}`。`method` は 0〜3） | 成功=再取得。**400=発注先が実弾の間の S0 以外／未知の手法／理由欠如**（`details` を表示）。自動再試行しない |
+| 高ボラティリティ銘柄の変更 | `PUT /risk-controls/settings/high-volatility`（`{maxOrderAmountRatio, designatedSymbols: [{symbol, market}], reason}`・全置換。比率は equity 比） | 成功=再取得。**400=値域外（0.01 未満・0.25 超）／空の銘柄コード／未知の市場／理由欠如／項目の省略**（`details` を表示）、403=所有者以外、409=競合。自動再試行しない。照合に使う監視銘柄は下の `GET /monitor/watchlist`（失敗しても本フォームは描き、照合できないことを示す） |
 | equity・統制値の実額（モーダル③） | `GET /risk-controls/status` | `RiskStatusView`（`capital` / `maxOrderAmount` / `maxDailyOrderAmount` / `maxOpenPositions`）。失敗時は**実弾への切替を許さない** |
 | ガード保存 | `PUT /risk-controls/settings/guard`（`{enabledProductTypes, enabledMarkets, bannedSymbols, preventSameDayReentry, prohibitManipulativeOrderPatterns, reason}`・全置換） | 成功=再取得。危険な緩和は確認必須。400=検証、409=競合＋再取得を促す |
 | 監視銘柄 一覧 | `GET /monitor/watchlist`（別サービス MarketMonitor・OwnerOrService） | `MonitoredSymbol[]`。404/失敗=独立縮退（「監視銘柄設定は利用できません。」） |

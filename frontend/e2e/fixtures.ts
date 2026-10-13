@@ -143,6 +143,8 @@ export function defaultBff(): BffConfig {
     'PUT /risk-controls/settings/limits': { status: 200, body: RISK_SETTINGS },
     // FR-20, #334: 発注先の変更（SC-02 のみが持つ操作）。
     'PUT /risk-controls/settings/broker-provider': { status: 200, body: { settings: RISK_SETTINGS } },
+    // FR-10, SC-02, ADR-0066 決定2, #1291: 高ボラティリティ銘柄の統制値（区分の上限・明示指定）の変更（全置換）。
+    'PUT /risk-controls/settings/high-volatility': { status: 200, body: RISK_SETTINGS },
     'GET /risk-controls/status': { status: 200, body: RISK_STATUS },
     'GET /risk-controls/stage-gate': { status: 200, body: STAGE_GATE },
     // FR-10, SC-03, #340: 空売りの現況（維持率・空売り比率・建玉方向・借株料累計）。

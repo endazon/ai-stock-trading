@@ -33,7 +33,7 @@ public static class HighVolatilityFloorStartupNotice
         var head = $"Sizing:MinEntryNotionalRatio（{ratio}）が、高ボラティリティ銘柄の区分の上限の下端（{floorText}・既定値の固定。ADR-0066 決定1）を";
         return options.Ratio > floor
             ? head + $"上回っている。区分の上限を {ratio} 未満に設定すると、区分の銘柄の新規建ては LLM の前に必ず見送られる（拒否はされない）。"
-                + "GET /risk-controls/settings の highVolatility で区分の上限との関係を確かめること。"
+                + "SC-02（リスク設定画面の高ボラティリティ銘柄）または GET /risk-controls/settings の highVolatility で区分の上限との関係を確かめること。"
             : head + $"下回っている。区分の上限は {floorText} より下げられない（下端は構成値に連動しない）。";
     }
 }
