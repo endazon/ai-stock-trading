@@ -70,6 +70,7 @@ import {
 import { PaperModeBanner } from '@ai-stock-trading/components/PaperModeBanner';
 import { QueryPhase } from '@ai-stock-trading/components/QueryPhase';
 import { ScreenHeader, ScreenLink } from '@ai-stock-trading/components/ScreenHeader';
+import { HighVolatilityForm } from './HighVolatilityForm';
 import { MonitorParametersForm } from './MonitorParametersForm';
 import { Stage1TradeCountForm } from './Stage1TradeCountForm';
 import { StopLossMethodForm } from './StopLossMethodForm';
@@ -322,6 +323,10 @@ export function RiskSettingsPage() {
                   )}
                 </form>
               </Panel>
+
+              {/* 🔴 SC-02, FR-10, UC-06, ADR-0066 決定2, #1291, IADR-0530: 高ボラティリティ銘柄の明示指定と区分の上限。
+                  区分の上限は「1 注文あたりの発注金額上限」の区分版であるため、リスク上限の直後に置く（保存単位は分ける）。 */}
+              <HighVolatilityForm current={loaded.highVolatility} equity={riskStatus?.capital ?? null} />
 
               {/* hi-fi モック `.g2`: 取引ガードと「運用段階／発注先」を 2 列に並べる。 */}
               <div className="grid gap-3 lg:grid-cols-2">

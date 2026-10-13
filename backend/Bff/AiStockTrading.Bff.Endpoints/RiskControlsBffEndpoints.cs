@@ -24,6 +24,7 @@ namespace AiStockTrading.Bff.Endpoints;
 // AST #334 で発注先の変更（PUT /settings/broker-provider）を追加した（SC-02 が実消費する）。
 // AST #640 で空売りの現況（GET /short-selling）を追加した（SC-03 が実消費するが登録が漏れていた）。
 // AST #823 で損切りの実行機構の変更（PUT /settings/stop-loss-method）を追加した（SC-02 が実消費する）。
+// AST #1291 で高ボラティリティ銘柄の統制値の変更（PUT /settings/high-volatility）を追加した（SC-02 が実消費する。AST/ADR-0066 決定2）。
 public static class RiskControlsBffEndpoints
 {
     // 後段の名前付き HTTP クライアント（BaseAddress は Program.cs で Services:RiskManagementService から設定）。
@@ -76,6 +77,13 @@ public static class RiskControlsBffEndpoints
         g.MapPut("/settings/stop-loss-method", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
             ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/stop-loss-method", ct))
             .WithName("BffRiskControlsSettingsStopLossMethodPut");
+
+        // AST #1291, FR-10, SC-02, UC-06, AST/ADR-0066 決定2, AST/ADR-0063 決定1・決定2, AST/IADR-0527, AST/IADR-0530:
+        // 高ボラティリティ銘柄の統制値（区分の上限〔equity 比〕と明示指定の一覧。全置換）の変更。SC-02 だけが持つ操作である。
+        // **利用者のみ・理由必須・値域（1% 以上 25% 以下）の外は 400・履歴は後段が実効する**（BFF は素通し。統制を BFF へ持たせない）。
+        g.MapPut("/settings/high-volatility", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>
+            ProxyAsync(httpFactory, http, HttpMethod.Put, "/risk-controls/settings/high-volatility", ct))
+            .WithName("BffRiskControlsSettingsHighVolatilityPut");
 
         // SC-03 統制状態参照（表示専用）: 稼働状態の集約・段階ゲートの現況。いずれも後段 OwnerOnly。
         g.MapGet("/status", (IHttpClientFactory httpFactory, HttpContext http, CancellationToken ct) =>

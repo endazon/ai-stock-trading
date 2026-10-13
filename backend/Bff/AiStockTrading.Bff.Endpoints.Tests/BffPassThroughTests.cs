@@ -40,6 +40,8 @@ public class BffPassThroughTests
         ["PUT", "/bff/risk-controls/settings/stage1-minimum-trade-count"],
         // T-10-990, AST #823, FR-10, SC-02, ADR-0040 決定1: 損切りの実行機構の変更（SC-02 だけが持つ操作）。
         ["PUT", "/bff/risk-controls/settings/stop-loss-method"],
+        // T-10-2591, AST #1291, FR-10, SC-02, AST/ADR-0066 決定2: 高ボラティリティ銘柄の統制値の変更（SC-02 だけが持つ操作）。
+        ["PUT", "/bff/risk-controls/settings/high-volatility"],
         ["GET", "/bff/risk-controls/status"],
         ["GET", "/bff/risk-controls/stage-gate"],
         // AST #640, SC-03, FR-10, FR-19: 空売りの現況（維持率等）。後段は実装済みだが BFF 登録が漏れていた。
@@ -304,6 +306,29 @@ public class BffPassThroughTests
         host.Downstream.LastRequestBody.Should().Be(body);
         host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Put);
         host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls/settings/stop-loss-method");
+    }
+
+    // T-10-2592, AST #1291, FR-10, SC-02, UC-06, AST/ADR-0066 決定2, AST/IADR-0530:
+    // 高ボラティリティ銘柄の統制値の変更は本文（比率・明示指定・理由）を後段へそのまま転送し、後段の拒否
+    // （値域外・理由なし＝400、サービスロール＝403）を書き換えずに透過する。**統制は後段が実効する**（BFF は判定しない）。
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task 高ボラティリティ銘柄の統制値の変更は_本文を後段へ転送し_後段の応答を透過する(HttpStatusCode downstreamStatus)
+    {
+        await using var host = await BffTestHost.StartAsync();
+        const string body = """{"maxOrderAmountRatio":0.05,"designatedSymbols":[{"symbol":"TSLA","market":1}],"reason":"値動きの大きい銘柄を区分に入れる"}""";
+        host.Downstream.Status = downstreamStatus;
+        host.Downstream.ResponseBody = """{"error":"x"}""";
+
+        var resp = await host.SendAuthed(HttpMethod.Put, "/bff/risk-controls/settings/high-volatility", body);
+
+        resp.StatusCode.Should().Be(downstreamStatus);
+        (await resp.Content.ReadAsStringAsync()).Should().Be("""{"error":"x"}""");
+        host.Downstream.LastRequestBody.Should().Be(body);
+        host.Downstream.LastRequest!.Method.Should().Be(HttpMethod.Put);
+        host.Downstream.LastRequest!.RequestUri!.AbsolutePath.Should().Be("/risk-controls/settings/high-volatility");
     }
 }
 

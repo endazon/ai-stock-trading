@@ -153,3 +153,15 @@ export function useSaveStage1MinimumTradeCount() {
     '/risk-controls/settings/stage1-minimum-trade-count',
   );
 }
+
+/**
+ * 🔴 FR-10, SC-02, UC-06, ADR-0066 決定2, ADR-0063 決定1・決定2, #1291, IADR-0530: 高ボラティリティ銘柄の統制値の変更
+ * （区分の上限〔equity 比〕と明示指定の一覧を**全置換**。利用者のみ・理由必須・値域外は 400）。
+ */
+export function useSaveHighVolatility() {
+  return useRiskSettingsMutation<{
+    maxOrderAmountRatio: number;
+    designatedSymbols: { symbol: string; market: number }[];
+    reason: string;
+  }>('/risk-controls/settings/high-volatility');
+}
