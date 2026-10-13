@@ -393,8 +393,13 @@ public static class ProtectiveStopNetting
             // 窓の前の端＝この観測値を最初に観測した時刻（列を足す前の行は今で代える）。数量の扱い（帳簿の減らし方）は変えない。
             var classification = attribution.Classify(row, reduction, row.ExternalReductionObservedAt ?? now);
 
+            // 🔴 #1330, IADR-0534 決定2（PR #1336 のレビューで改めた）: 帳簿を書く**前に**記録へ帰属の印を付ける。印を書けなかった約定は
+            // この確定でも以後の確定でも承認済みと呼ばず、外部要因の側へ移す（二重に帰属させない）。帳簿の書き込みが下で衝突しても、
+            // 付けた印は戻さない——その約定は以後「説明に使えない」側に残り、次の確定は外部要因と知らせる（迷ったら外部要因へ倒す）。
+            classification = attribution.Reserve(classification);
+
             // 🔴 #833 項目3, IADR-0396: 並行更新と衝突して書けなかったら、通知も出さない（書いていない減少を「減らした」と言わない）。
-            // 行は保存先の最新へ差し替わり、次の巡回が観測からやり直す。帰属も確定しない（印を付けない）。
+            // 行は保存先の最新へ差し替わり、次の巡回が観測からやり直す。
             if (!Replace(
                 group,
                 row with
@@ -410,9 +415,6 @@ public static class ProtectiveStopNetting
             {
                 continue;
             }
-
-            // 🔴 #1330, IADR-0534 決定2: 帳簿を書けたので帰属を確定する（記録へ印を付け、同じ約定を 2 回数えない）。
-            attribution.Commit(classification);
 
             // 🔴 #1330, IADR-0534 決定3: 承認済みの決済で説明できる分は「外部要因」と呼ばない（取引判断の利確・損切り等の約定）。
             foreach (var part in classification.Parts)
@@ -470,8 +472,6 @@ public static class ProtectiveStopNetting
                 : row with { ExternalReductionObservations = 0, ExternalReductionAbsences = 0, UpdatedAt = now };
         }
 
-        // #1330, IADR-0534 決定1: 観測を捨てたら、その観測の前の端（最初に観測した時刻）も捨てる。
-
         var absences = row.ExternalReductionAbsences + 1;
         return absences < ExternalReductionConfirmations
             ? row with { ExternalReductionObservations = 0, ExternalReductionAbsences = absences, UpdatedAt = now }
@@ -480,6 +480,7 @@ public static class ProtectiveStopNetting
                 PendingExternalReduction = 0,
                 ExternalReductionObservations = 0,
                 ExternalReductionAbsences = 0,
+                // #1330, IADR-0534 決定1: 観測を捨てたら、その観測の前の端（最初に観測した時刻）も捨てる。
                 ExternalReductionObservedAt = null,
                 UpdatedAt = now,
             };

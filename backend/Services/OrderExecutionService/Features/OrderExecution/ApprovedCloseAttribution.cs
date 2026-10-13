@@ -28,12 +28,19 @@ internal sealed class ApprovedCloseAttribution(
     /// <summary>1 回の確定で読む承認済みの決済の上限（古い順）。同じ銘柄・方向に未帰属の約定がこれほど溜まることは想定しない。</summary>
     public const int CandidateScanLimit = 50;
 
+    // 🔴 #1330, IADR-0534 決定2（PR #1336 のレビュー）: 印の書き込みが**例外**で失敗した約定の注文 ID（プロセスの寿命）。
+    // 記録へ印を残せていないので、次の確定（別の呼び出し）が同じ約定を承認済みの説明に使い得る。ここで覚えて以後の説明から外す
+    // （外部要因の側へ倒す）。「記録が無い」「並行に進んでいた」の失敗は記録自体が以後の問い合わせに正しく映るので覚えない。
+    // 再起動で忘れる（残余リスク。IADR-0534 §残余リスク）。
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> MarkFailedOrderIds =
+        new(StringComparer.Ordinal);
+
     private List<Candidate>? _candidates;
     private string? _unavailableReason;
 
     /// <summary>
     /// 確定する減少 <paramref name="reduction"/> 株のうち、承認済みの決済で説明できる分を<b>見積もる</b>（まだ帰属させない）。
-    /// 帳簿を書けたら <see cref="Commit"/> で確定する。<paramref name="observedAt"/> はその減少を最初に観測した時刻（前の端）。
+    /// 帳簿を書く前に <see cref="Reserve"/> で印を書く。<paramref name="observedAt"/> はその減少を最初に観測した時刻（前の端）。
     /// </summary>
     public ApprovedCloseClassification Classify(ProtectiveStopOrder row, int reduction, DateTimeOffset observedAt)
     {
@@ -88,36 +95,66 @@ internal sealed class ApprovedCloseAttribution(
     }
 
     /// <summary>
-    /// 帳簿を書けた確定の帰属を確定する: 同じ呼び出しの中の残りを減らし、記録へ印（帰属させた株数）を付ける。
-    /// 印を書けなくても帳簿は既に正しい（次の確定が同じ約定を証拠に使い得る＝文面だけの誤り）。
+    /// 🔴 #1330, IADR-0534 決定2: 見積もった帰属を<b>帳簿を書く前に</b>記録へ印として書き、書けた分だけを承認済みとして返す。
+    /// 印を書けなかった約定（記録が無い・並行に進んでいた・例外）は<b>外部要因の側へ移し</b>、この呼び出しの中でも以後の説明に使わない。
+    /// <para>
+    /// 印と帳簿は別のストアであり同じトランザクションにできない。印を後に書くと、帳簿だけ書けて印が書けなかったときに
+    /// 次の確定が同じ約定を再び承認済みと呼ぶ（外部要因を承認済みと読む向き）。印を先に書けば、どちらが失敗しても
+    /// 倒れる先は「その約定を説明に使わない＝外部要因と知らせる」側だけになる。
+    /// </para>
     /// </summary>
-    public void Commit(ApprovedCloseClassification classification)
+    public ApprovedCloseClassification Reserve(ApprovedCloseClassification classification)
     {
-        if (_candidates is null)
-            return;
+        if (_candidates is null || classification.Parts.Count == 0)
+            return classification;
 
+        var kept = new List<ApprovedClosePart>();
+        var external = classification.External;
         foreach (var part in classification.Parts)
         {
             var candidate = _candidates.First(c => c.Record.OrderId == part.Close.OrderId);
-            candidate.Released += part.Quantity;
+            var next = candidate.Released + part.Quantity;
+            bool written;
             try
             {
-                if (!store.MarkProtectionReleased(candidate.Record.OrderId, candidate.Released))
-                {
-                    logger?.LogWarning(
-                        "承認済みの決済の約定を保護記録の縮小へ帰属させた印を書けませんでした（記録が無い・既に進んでいる）。"
-                        + "保護の数量は正しく、通知の分類だけが次の確定で誤り得ます: DecisionId={DecisionId} OrderId={OrderId} 帰属させた株数={Released}",
-                        candidate.Record.DecisionId, candidate.Record.OrderId, candidate.Released);
-                }
+                written = store.MarkProtectionReleased(candidate.Record.OrderId, next);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger?.LogWarning(ex,
-                    "承認済みの決済の約定を保護記録の縮小へ帰属させた印を書けませんでした。保護の数量は正しく、通知の分類だけが次の確定で誤り得ます: "
+                logger?.LogError(ex,
+                    "承認済みの決済の約定に帰属の印を書けませんでした（例外）。この約定は承認済みの説明に使わず、{Quantity} 株を外部要因として知らせます: "
                     + "DecisionId={DecisionId} OrderId={OrderId}",
-                    candidate.Record.DecisionId, candidate.Record.OrderId);
+                    part.Quantity, candidate.Record.DecisionId, candidate.Record.OrderId);
+                MarkFailedOrderIds.TryAdd(candidate.Record.OrderId, 0);
+                candidate.Excluded = true; // ログは上の 1 行だけ（下の分岐で重ねて出さない）
+                written = false;
             }
+
+            if (!written)
+            {
+                if (!candidate.Excluded)
+                {
+                    logger?.LogError(
+                        "承認済みの決済の約定に帰属の印を書けませんでした（記録が無い・並行に進んでいた）。二重に帰属させないため、この約定は"
+                        + "承認済みの説明に使わず、{Quantity} 株を外部要因として知らせます: DecisionId={DecisionId} OrderId={OrderId} 書こうとした値={Released}",
+                        part.Quantity, candidate.Record.DecisionId, candidate.Record.OrderId, next);
+                }
+
+                candidate.Excluded = true;
+                external += part.Quantity;
+                continue;
+            }
+
+            candidate.Released = next;
+            kept.Add(part);
         }
+
+        if (kept.Count == classification.Parts.Count)
+            return classification;
+
+        return new ApprovedCloseClassification(
+            kept, external,
+            classification.Reason + $"（ただし帰属の印を書けなかった決済の {external - classification.External} 株は外部要因とした）");
     }
 
     // 承認済みの決済（決済の方向）を 1 回だけ読む。読めなければ null（理由を残す）。
@@ -136,7 +173,10 @@ internal sealed class ApprovedCloseAttribution(
         try
         {
             _candidates = store.FindApprovedClosesWithUnreleasedFills(symbol, market, closeSide, CandidateScanLimit)
-                .Select(r => new Candidate(r, reservations.Find(r.DecisionId)?.ReservedAt))
+                .Select(r => new Candidate(r, reservations.Find(r.DecisionId)?.ReservedAt)
+                {
+                    Excluded = MarkFailedOrderIds.ContainsKey(r.OrderId),
+                })
                 .ToList();
             return _candidates;
         }
@@ -159,7 +199,10 @@ internal sealed class ApprovedCloseAttribution(
         // 帰属させた株数（記録の印 ＋ この呼び出しで帰属させた分）。
         public int Released { get; set; } = Math.Max(0, record.ProtectionReleasedQuantity);
 
-        public int Available => Math.Max(0, Record.FilledQuantity - Released);
+        // 🔴 #1330, IADR-0534 決定2: 印を書けなかった約定はこの呼び出しの中でも説明に使わない。
+        public bool Excluded { get; set; }
+
+        public int Available => Excluded ? 0 : Math.Max(0, Record.FilledQuantity - Released);
     }
 }
 

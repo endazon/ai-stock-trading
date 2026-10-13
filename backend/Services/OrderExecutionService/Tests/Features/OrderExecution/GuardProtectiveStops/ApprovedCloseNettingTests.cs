@@ -85,11 +85,12 @@ public class ApprovedCloseNettingTests
         public RecordingLogger Logger { get; } = new();
         public ProtectiveStopGuard Guard { get; }
 
-        public Fixture()
+        public Fixture(Func<InMemoryExecutedOrderStore, IExecutedOrderStore>? wrap = null)
         {
-            var executor = new SoftwareStopExecutor(Broker, Broker, Stops, Store, Reservations, Clock);
+            var store = wrap is null ? (IExecutedOrderStore)Store : wrap(Store);
+            var executor = new SoftwareStopExecutor(Broker, Broker, Stops, store, Reservations, Clock);
             Guard = new ProtectiveStopGuard(
-                Broker, Broker, Stops, Store, Reservations, Clock, Logger, softwareStops: executor);
+                Broker, Broker, Stops, store, Reservations, Clock, Logger, softwareStops: executor);
         }
 
         public ProtectiveStopOrder ArmS1(int quantity)
@@ -432,5 +433,78 @@ public class ApprovedCloseNettingTests
             .And.Contain("理由=一部が承認済みの決済");
         lines.Should().ContainSingle(l => l.Contains("outcome=ProtectionReduced"))
             .Which.Should().Contain("主張 1000 株 → 500 株（うち 44 株）").And.Contain("残り 44 株は説明できない");
+    }
+
+    // 帰属の印の書き込みだけを失敗させる包み型（他はインメモリへそのまま渡す）。
+    private sealed class MarkFailingStore(InMemoryExecutedOrderStore inner, bool throwOnMark) : IExecutedOrderStore
+    {
+        public int MarkCalls { get; private set; }
+
+        public void Save(ExecutionRecord record) => inner.Save(record);
+
+        public IReadOnlyList<ExecutionRecord> GetAll() => inner.GetAll();
+
+        public ExecutionRecord? FindByDecisionId(Guid decisionId) => inner.FindByDecisionId(decisionId);
+
+        public IReadOnlyList<ExecutionRecord> FindPendingSince(DateTimeOffset since, int batchSize) =>
+            inner.FindPendingSince(since, batchSize);
+
+        public IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds) =>
+            inner.FindPendingByOrderIds(orderIds);
+
+        public IReadOnlyList<ExecutionRecord> FindApprovedClosesWithUnreleasedFills(
+            string symbol, Market market, TradeSide closeSide, int limit) =>
+            inner.FindApprovedClosesWithUnreleasedFills(symbol, market, closeSide, limit);
+
+        public bool MarkProtectionReleased(string orderId, int releasedQuantity)
+        {
+            MarkCalls++;
+            return throwOnMark ? throw new InvalidOperationException("印の書き込みに失敗（試験）") : false;
+        }
+
+        public bool RenewTracking(string orderId, DateTimeOffset trackedFrom) => inner.RenewTracking(orderId, trackedFrom);
+
+        public bool UpdateOutcome(
+            string orderId, OrderStatus status, int filledQuantity, decimal averagePrice, decimal slippageRatio,
+            DateTimeOffset executedAt) =>
+            inner.UpdateOutcome(orderId, status, filledQuantity, averagePrice, slippageRatio, executedAt);
+    }
+
+    // T-10-2621（受け入れ基準 12・PR #1336 のレビュー）: 🔴 帰属の印を書けなかった約定は承認済みと呼ばず、以後の説明にも使わない。
+    // 印を書けないまま承認済みと知らせると、次の確定が同じ約定でもう一度「承認済み」と説明し、外部要因の減少を隠す（迷ったら外部要因へ倒す）。
+    // 印を帳簿より先に書くので、どちらが失敗しても倒れる先は外部要因だけになる。数量（帳簿）は分類の成否に依らない。
+    [Theory]
+    [InlineData(true)]  // 例外（DB の一時的な失敗など）
+    [InlineData(false)] // 書けなかった（記録が無い・並行に進んでいた）
+    public async Task 帰属の印を書けなかった約定は承認済みと呼ばず以後の説明にも使わない(bool throwOnMark)
+    {
+        MarkFailingStore? failing = null;
+        var f = new Fixture(inner => failing = new MarkFailingStore(inner, throwOnMark));
+        var stop = f.ArmS1(1_000);
+        var sentAt = T0.AddMinutes(19).AddSeconds(18);
+        var close = f.SendApprovedClose(456, sentAt);
+        f.Broker.Positions = [Long(544)];
+        f.TrackFill(close, sentAt.AddSeconds(12));
+
+        await f.RunAt(sentAt.AddSeconds(31));
+        var confirmed = await f.RunAt(sentAt.AddSeconds(61));
+
+        failing!.MarkCalls.Should().Be(1);
+        confirmed.Should().ContainSingle().Which.Should().Match<SoftwareStopExecuted>(e =>
+            e.Outcome == SoftwareStopOutcome.ProtectionReduced && e.Quantity == 456);
+        f.Row(stop).RemainingProtected.Should().Be(544, "帳簿は分類の成否に依らず減る（過小にも過大にもならない）");
+        f.Logger.Entries.Should().Contain(e => e.Level == LogLevel.Error && e.Message.Contains(close.OrderId));
+
+        if (!throwOnMark)
+            return; // 「書けなかった」は記録自体が以後の問い合わせに映る（記録が無い・印が進んでいる）。包み型では再現しない。
+
+        // 印を残せなかった約定は、同じプロセスの以後の確定でも説明に使わない（人手の決済 100 株は外部要因）。
+        f.Broker.Positions = [Long(444)];
+        await f.RunAt(sentAt.AddMinutes(5));
+        var later = await f.RunAt(sentAt.AddMinutes(5).Add(Cycle));
+
+        later.Should().ContainSingle().Which.Should().Match<SoftwareStopExecuted>(e =>
+            e.Outcome == SoftwareStopOutcome.ProtectionReduced && e.Quantity == 100);
+        failing.MarkCalls.Should().Be(1, "外した約定に印を書きにいかない");
     }
 }

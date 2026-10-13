@@ -31,6 +31,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                 defaultValue: 0);
 
             // 既存の行の約定は既に吸収済みとして扱う（上の注記）。新規建ての行は使わないが、揃えても害は無い（決済の行だけを対象にする）。
+            // 🔴 "PositionEffect" = 1 は、列 executed_orders.PositionEffect が enum の序数（integer）で保存され、
+            // PositionEffect.Close の序数が 1（Open=0 / Close=1。Shared.Contracts/Trading/PositionEffect.cs）であることを前提にしている。
+            // 序数が変われば対象を取り違える（ApprovedCloseReleasePersistenceTests が序数を固定している）。
             migrationBuilder.Sql(
                 "UPDATE executed_orders SET \"ProtectionReleasedQuantity\" = \"FilledQuantity\" "
                 + "WHERE \"PositionEffect\" = 1 AND \"FilledQuantity\" > 0;");
