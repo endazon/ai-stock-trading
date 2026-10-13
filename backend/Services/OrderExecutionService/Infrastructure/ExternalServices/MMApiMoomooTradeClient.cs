@@ -144,6 +144,10 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
             c2sBuilder.SetTrailValue((double)trail);
             c2sBuilder.SetTrailSpread(0d); // 発火後は成行（TrailingStopLimit ではない）ため価差は置かない。
         }
+        // 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: 有効期限は**指定されたときだけ**送る（null は欄を立てない＝ブローカーの既定）。
+        // 指定するのはアダプタが承認経路の指値の決済に載せる Day だけで、保護逆指値（Stop）の要求は従来どおり欄を持たない。
+        if (request.TimeInForce is { } timeInForce)
+            c2sBuilder.SetTimeInForce(ToOpenDTimeInForce(timeInForce));
         // #141, IADR-0092: DecisionId を remark（client order id相当）として紐づける。滞留 Reserved を後から
         // DecisionId で照合し、実照会リコンサイルで発注済みを終端化・未発注を解放できるようにする。
         if (!string.IsNullOrEmpty(request.Remark))
@@ -1021,6 +1025,14 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     {
         MoomooMarket.Japan => ((int)TrdCommon.TrdMarket.TrdMarket_JP, (int)TrdCommon.TrdSecMarket.TrdSecMarket_JP),
         _ => ((int)TrdCommon.TrdMarket.TrdMarket_US, (int)TrdCommon.TrdSecMarket.TrdSecMarket_US),
+    };
+
+    // 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: 有効期限の写像（SDK の TrdCommon.TimeInForce）。知らない値は送らずに落とす
+    // （黙って既定へ倒すと、指定したつもりの有効期限が効かない）。
+    public static int ToOpenDTimeInForce(MoomooTimeInForce timeInForce) => timeInForce switch
+    {
+        MoomooTimeInForce.Day => (int)TrdCommon.TimeInForce.TimeInForce_DAY,
+        _ => throw new ArgumentOutOfRangeException(nameof(timeInForce), timeInForce, "未対応の有効期限です。"),
     };
 
     // OpenD OrderStatus（TrdCommon.OrderStatus）を moomoo アダプタの状態へ写像する（SDK 非依存・単体テスト対象）。

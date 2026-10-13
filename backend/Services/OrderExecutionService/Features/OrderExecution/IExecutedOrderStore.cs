@@ -120,6 +120,29 @@ public interface IExecutedOrderStore
     /// </summary>
     bool MarkTrackingAbandoned(string orderId, DateTimeOffset trackedFrom) => false;
 
+    /// <summary>
+    /// 🔴 FR-10, FR-05, #1339, IADR-0536 決定2: <b>追跡を打ち切った</b>（今の追跡の起点で打ち切りの印がある）非終端の
+    /// <b>承認経路の決済</b>（<see cref="PositionEffect.Close"/> かつ <see cref="ExecutionRecord.ApprovalOrigin"/> が null でない）を
+    /// 古い順に最大 <paramref name="batchSize"/> 件返す（ブローカーの終端を確かめて解放するための照会し直しの対象）。
+    /// 保護の機構の決済レグ（S0 / S3 の逆指値・S1 の決済・成行手仕舞い）は出どころを持たないので入らない。
+    /// 既定の実装（試験用の包み型のためのもの）は何も返さない。本番のストア（EF・インメモリ）は印つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindAbandonedApprovedCloses(int batchSize) => [];
+
+    /// <summary>
+    /// FR-10, FR-11, #1339, IADR-0536 決定4: 発注（<see cref="ExecutionRecord.ExecutedAt"/>。非終端では発注時刻のまま）が
+    /// <paramref name="placedBefore"/> より古い、非終端の<b>承認経路の決済</b>を古い順に最大 <paramref name="limit"/> 件返す
+    /// （未約定の決済の定期ログの対象。窓の両端＝発注から一定時間 かつ まだ非終端）。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindStaleApprovedCloses(DateTimeOffset placedBefore, int limit) =>
+        GetAll()
+            .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin is not null
+                && OrderStatusLifecycle.IsPending(r.Status) && r.ExecutedAt < placedBefore)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .ToList();
+
     // #820 の 4 巡目監査, IADR-0344 追記(4): FindClosesSince（建玉照会がまだ映していない決済の走査）は撤去した。
     // 持ち分を毎巡回引き直す方式そのものをやめ、保護記録が残保護数量を状態として持つ形へ作り直したため、
     // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。

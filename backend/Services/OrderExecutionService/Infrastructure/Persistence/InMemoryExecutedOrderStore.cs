@@ -191,6 +191,35 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
+    // 🔴 FR-10, FR-05, #1339, IADR-0536 決定2: 追跡を打ち切った（今の起点で印がある）非終端の承認経路の決済（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindAbandonedApprovedCloses(int batchSize)
+    {
+        lock (_gate)
+        {
+            return _records
+                .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin is not null
+                    && OrderStatusLifecycle.IsPending(r.Status)
+                    && _abandonedFrom.TryGetValue(r.OrderId, out var from) && from == r.ExecutedAt)
+                .OrderBy(r => r.ExecutedAt)
+                .Take(batchSize)
+                .ToList();
+        }
+    }
+
+    // FR-10, FR-11, #1339, IADR-0536 決定4: 発注から一定時間たった非終端の承認経路の決済（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindStaleApprovedCloses(DateTimeOffset placedBefore, int limit)
+    {
+        lock (_gate)
+        {
+            return _records
+                .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin is not null
+                    && OrderStatusLifecycle.IsPending(r.Status) && r.ExecutedAt < placedBefore)
+                .OrderBy(r => r.ExecutedAt)
+                .Take(limit)
+                .ToList();
+        }
+    }
+
     // #270, IADR-0113: 観測した最新状態を既存記録へ反映する（無ければ何もしない＝新規に作らない）。
     public bool UpdateOutcome(
         string orderId,

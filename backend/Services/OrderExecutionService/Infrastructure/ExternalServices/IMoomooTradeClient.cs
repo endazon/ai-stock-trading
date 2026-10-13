@@ -90,6 +90,8 @@ public sealed record MoomooPositionRow(
 // Kind=TrailingStop は S3 のトレーリングストップ（TrailValue=トレール幅の絶対額・TrailType_Amount）。
 // FR-10, #856, IADR-0488 決定3: PositionEffect は発注意図の効果（新規建て／手仕舞い）。**OpenD へは送らない**
 // （MMApiMoomooTradeClient は読まない）。故障注入のデコレータが新規建てだけを見分けるために載せる。null は不明（従来の生成元）。
+// 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: TimeInForce は注文の有効期限。null は**欄を送らない**（ブローカーの既定。従来どおり）。
+// 載せるのは承認経路の指値の決済（Kind=Limit・Close）の Day だけである。保護逆指値（Stop。#1214 の対象）には載せない。
 public sealed record MoomooOrderRequest(
     string Symbol,
     MoomooMarket Market,
@@ -100,7 +102,12 @@ public sealed record MoomooOrderRequest(
     MoomooOrderKind Kind = MoomooOrderKind.Limit,
     decimal? TriggerPrice = null,
     decimal? TrailValue = null,
-    PositionEffect? PositionEffect = null);
+    PositionEffect? PositionEffect = null,
+    MoomooTimeInForce? TimeInForce = null);
+
+// 🔴 FR-05, FR-10, #1339, IADR-0536 決定1: 注文の有効期限（SDK 非依存）。Day=TimeInForce_DAY（当日限り）。
+// GTC 等は足さない（保護逆指値の有効期限は #1214 の実弾確認の後に決める。推測で GTC を指定しない）。
+public enum MoomooTimeInForce { Day }
 
 // FR-10, #331, IADR-0210: 注文種別（SDK 非依存）。Limit=OrderType_Normal / Stop=OrderType_Stop / Market=OrderType_Market。
 // FR-10, #821, IADR-0347: S3 の代替種別を末尾へ足す。StopLimit=OrderType_StopLimit / TrailingStop=OrderType_TrailingStop。

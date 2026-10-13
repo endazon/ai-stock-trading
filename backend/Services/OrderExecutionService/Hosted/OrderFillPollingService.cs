@@ -1,3 +1,5 @@
+using OrderExecutionService.Common.Abstractions;
+using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
@@ -29,6 +31,10 @@ public sealed class OrderFillPollingService(
     IOptions<FillPollingOptions> options,
     ILogger<OrderFillPollingService> logger) : BackgroundService
 {
+    // 🔴 #1339, IADR-0536 決定2・4: 照会し直しと定期ログの次の実行時刻（プロセス内だけ。再起動の直後の巡回で 1 回ずつ走る）。
+    private DateTimeOffset _nextAbandonedCloseRecheckAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _nextPendingCloseReportAt = DateTimeOffset.MinValue;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled)
@@ -125,6 +131,10 @@ public sealed class OrderFillPollingService(
             }
         }
 
+        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        await RecheckAbandonedClosesAsync(poller, tradeExpenses, bus, clock.UtcNow, cancellationToken).ConfigureAwait(false);
+        ReportPendingCloses(scope.ServiceProvider.GetRequiredService<IExecutedOrderStore>(), clock.UtcNow);
+
         if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogInformation(
                 "約定追跡: 非終端 {Scanned} 件を照会（更新 {Updated} / 終端化 {Terminalized} / 変化なし {Unchanged}"
@@ -132,6 +142,93 @@ public sealed class OrderFillPollingService(
                 result.Scanned, result.Updated, result.Terminalized, result.Unchanged, result.Unknown, result.Failed);
 
         return result;
+    }
+
+    // 🔴 FR-10, FR-05, #1339, IADR-0536 決定2・3: 追跡を打ち切った承認経路の決済を間隔ごとに照会し直し、ブローカーが終端と
+    // 答えたものだけを解放する（OrderExecuted の発行は通常の追跡と同じ。リスク管理の台帳の終端・手仕舞いの未約定残の通知が届く）。
+    // 失敗で巡回を止めない（次の間隔で再試行する）。
+    private async Task RecheckAbandonedClosesAsync(
+        OrderFillPoller poller,
+        TradeExpenseRecordingService tradeExpenses,
+        MessageBus bus,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (now < _nextAbandonedCloseRecheckAt)
+            return;
+        _nextAbandonedCloseRecheckAt = now + options.Value.AbandonedCloseRecheckInterval;
+
+        AbandonedCloseRecheckResult recheck;
+        try
+        {
+            recheck = await poller.RecheckAbandonedClosesAsync(options.Value.EffectiveBatchSize, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "追跡を打ち切った決済の照会し直しに失敗しました。次の間隔で再試行します。");
+            return;
+        }
+
+        foreach (var executed in recheck.Executed)
+        {
+            await bus.PublishAsync(executed).ConfigureAwait(false);
+            await RecordTradeExpensesAsync(tradeExpenses, bus, executed, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var reArmed in recheck.SoftwareStopEvents)
+            await bus.PublishAsync(reArmed).ConfigureAwait(false);
+
+        foreach (var released in recheck.Released)
+        {
+            var r = released.Record;
+            logger.LogInformation(
+                "処理中の決済を解放しました（追跡を打ち切った後、証券会社が終端 {Status} と答えました。約定 {Filled}/{Quantity}）: "
+                    + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} 発注={PlacedAt}",
+                released.TerminalStatus, released.FilledQuantity, r.Quantity, r.DecisionId, r.OrderId, r.Symbol, r.Side,
+                r.ExecutedAt);
+        }
+
+        if (recheck.Scanned > 0)
+        {
+            logger.LogInformation(
+                "追跡を打ち切った決済の照会し直し: {Scanned} 件（解放 {Released} / 非終端 {StillPending} / 照会不能 {Unknown}。"
+                    + "非終端・照会不能は解放しません）。",
+                recheck.Scanned, recheck.Released.Count, recheck.StillPending, recheck.Unknown);
+        }
+    }
+
+    // FR-10, FR-11, #1339, IADR-0536 決定4: 発注から一定時間たっても非終端の承認経路の決済を、間隔ごとに 1 件ずつ WRN で出す。
+    // 窓の両端（発注からの経過＝前の端・まだ非終端＝後の端）で選ぶ。0 件なら何も出さない。通知は送らない（ログだけ）。
+    private void ReportPendingCloses(IExecutedOrderStore store, DateTimeOffset now)
+    {
+        if (now < _nextPendingCloseReportAt)
+            return;
+        var interval = options.Value.PendingCloseReportInterval;
+        _nextPendingCloseReportAt = now + interval;
+
+        IReadOnlyList<ExecutionRecord> stale;
+        try
+        {
+            stale = store.FindStaleApprovedCloses(now - interval, options.Value.EffectiveBatchSize);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "未約定の決済の洗い出しに失敗しました。次の間隔で再試行します。");
+            return;
+        }
+
+        var maxTracking = options.Value.MaxTracking;
+        foreach (var r in stale)
+        {
+            var age = now - r.ExecutedAt;
+            logger.LogWarning(
+                "未約定の決済が残っています: DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} "
+                    + "約定 {Filled}/{Quantity} 状態={Status} 発注から {AgeMinutes} 分 追跡={Tracking}。"
+                    + "約定しないまま残ると、この建玉の次の決済は見送られ得ます。証券会社の画面で注文を確認してください。",
+                r.DecisionId, r.OrderId, r.Symbol, r.Side, r.FilledQuantity, r.Quantity, r.Status,
+                (int)age.TotalMinutes, age >= maxTracking ? "打ち切り済み" : "追跡中");
+        }
     }
 
     // FR-11, #633, IADR-0300: 経費の記録は約定の追跡を止めない（1 件の失敗で巡回全体を落とさない＝既存の流儀）。

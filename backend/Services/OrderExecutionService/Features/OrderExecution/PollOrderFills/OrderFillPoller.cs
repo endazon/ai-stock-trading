@@ -37,6 +37,12 @@ namespace OrderExecutionService.Features.OrderExecution.PollOrderFills;
 // 追跡の打ち切りを監査へ残す**（OrderFillTrackingAbandoned）。打ち切る直前に 1 回だけ照会し直し、終端していれば通常どおり
 // 記録して打ち切らない。打ち切りの印は「打ち切った追跡の起点」で、発行の後に Worker が書く（少なくとも 1 回の発行）。
 //
+// 🔴 FR-10, FR-05, #1339（利用者裁定 2026-10-14・最小是正）, IADR-0536 決定2・3: **追跡を打ち切った承認経路の決済だけは、
+// 打ち切りの後も低頻度で照会し直し（RecheckAbandonedClosesAsync）、ブローカーが終端と答えたときだけ解放する**
+// （通常の追跡と同じ ApplyAsync で記録を終端化し OrderExecuted を出す）。非終端・不明（null）・例外は**解放しない**
+// ——解放した注文がブローカーで生きていれば、台帳が在庫を返したうえ後の約定を誰も追わず、同じ建玉へ 2 本目の決済が並び得る。
+// 間隔は Worker が決める（FillPollingOptions.AbandonedCloseRecheckMinutes）。
+//
 // 発行（OrderExecuted の Publish）は Worker 層が担う（Application はメッセージ基盤に非依存の既存レイヤリングを維持）。
 public sealed class OrderFillPoller(
     IBrokerAdapter broker,
@@ -255,6 +261,68 @@ public sealed class OrderFillPoller(
         return abandoned;
     }
 
+    /// <summary>
+    /// 🔴 FR-10, FR-05, #1339, IADR-0536 決定2・3: 追跡を打ち切った承認経路の決済を照会し直し、ブローカーが<b>終端</b>と答えたものだけを
+    /// 通常の追跡と同じ処理で終端化する（解放。発行すべき <see cref="OrderExecuted"/> を結果に載せる）。
+    /// 非終端は進捗（約定数の増加）だけを記録して解放しない。照会が null・例外なら何も書かない（迷ったら解放しない）。
+    /// </summary>
+    public async Task<AbandonedCloseRecheckResult> RecheckAbandonedClosesAsync(
+        int batchSize, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyList<ExecutionRecord> abandoned;
+        try
+        {
+            abandoned = store.FindAbandonedApprovedCloses(batchSize);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 読み取りの失敗は次の間隔で再試行する（解放しない側＝何もしない）。
+            _logger.LogError(ex, "追跡を打ち切った決済の洗い出しに失敗しました。この間隔では解放を確かめません。");
+            return new AbandonedCloseRecheckResult(0, [], 0, 0, [], []);
+        }
+
+        var now = clock.UtcNow;
+        var executed = new List<OrderExecuted>();
+        var softwareStopEvents = new List<SoftwareStopExecuted>();
+        var released = new List<ReleasedClose>();
+        var stillPending = 0;
+        var unknown = 0;
+
+        foreach (var record in abandoned)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var applied = await ApplyAsync(record, now, executed, softwareStopEvents, cancellationToken)
+                    .ConfigureAwait(false);
+                switch (applied.Outcome)
+                {
+                    case ApplyOutcome.Terminalized:
+                        released.Add(new ReleasedClose(record, applied.Status, applied.FilledQuantity));
+                        break;
+                    case ApplyOutcome.Unknown:
+                        unknown++;
+                        break;
+                    default:
+                        stillPending++;
+                        break;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 例外は「不明」と同じ側（解放しない）。
+                unknown++;
+                _logger.LogWarning(ex,
+                    "追跡を打ち切った決済の照会し直しに失敗しました（解放しません）: OrderId={OrderId}", record.OrderId);
+            }
+        }
+
+        return new AbandonedCloseRecheckResult(abandoned.Count, released, stillPending, unknown, executed, softwareStopEvents);
+    }
+
     // 🔴 FR-10, #958, IADR-0406 決定2: 追跡上限内の記録へ、Active な S0 の保護記録の現試行の逆指値レグ（非終端）を足す。
     // S1（ソフトウェア逆指値）の行はブローカーに逆指値を持たない（StopOrderId が空）ので足さない。
     // 保護記録が完了したレグは足さない——ガードは S0 のレグの終端（約定・失効）を観測した・取り消したとき、保護記録を
@@ -309,3 +377,17 @@ public sealed record OrderFillPollResult(
     IReadOnlyList<OrderExecuted> Executed,
     IReadOnlyList<SoftwareStopExecuted>? SoftwareStopEvents = null,
     IReadOnlyList<OrderFillTrackingAbandoned>? Abandoned = null);
+
+// 🔴 FR-10, FR-05, #1339, IADR-0536 決定2: 追跡を打ち切った承認経路の決済の照会し直しの結果。
+// Released はブローカーが終端と答えて解放した決済（記録・終端の状態・約定数）。StillPending は非終端（進捗のみ記録）、
+// Unknown は照会が null・例外（解放しない）。Executed / SoftwareStopEvents は発行すべきもの（発行は Worker）。
+public sealed record AbandonedCloseRecheckResult(
+    int Scanned,
+    IReadOnlyList<ReleasedClose> Released,
+    int StillPending,
+    int Unknown,
+    IReadOnlyList<OrderExecuted> Executed,
+    IReadOnlyList<SoftwareStopExecuted> SoftwareStopEvents);
+
+// #1339, IADR-0536 決定2: 解放した決済 1 件（ログ用）。
+public sealed record ReleasedClose(ExecutionRecord Record, OrderStatus TerminalStatus, int FilledQuantity);
