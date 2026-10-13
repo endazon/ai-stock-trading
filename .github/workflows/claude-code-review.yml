@@ -330,7 +330,13 @@ jobs:
             - **変更ファイルは全部読む。** 差分（`git diff origin/develop...HEAD -- <パス>`）か全文を、
               1 ファイルずつ読む。除外してよいのは生成物（`CHANGELOG.md`・`package-lock.json`・
               `docs/api/openapi.yaml` の自動生成分）だけで、除外したら本文の冒頭にその一覧を書く。
-              本文の冒頭には「変更 N ファイル中 M ファイルを読んだ」と書く。
+              本文の冒頭には「変更 N ファイル中 M ファイルを読んだ」と書く（N と M は数字で書く）。生成物を除外したときは
+              「変更 N ファイル中 M ファイルを読んだ（生成物 K ファイルを除外: …）」と K も数字で書く。
+              **この申告と下の各項目の実行の記載は `check-review-verdict.js` が読み、欠ければジョブを落とす**
+              （M + K が N に満たない・申告が無い・「下限を満たしていない」と書いた・`deploy/helm/**` の差分で
+              `helm lint` / `helm template` が「確認できたこと」の節に無い・`scripts/` `.github/` の差分で `scripts.test.js` が
+              「確認できたこと」の節に無い）。**実行したコマンドは「確認できたこと」の節に、実行しなかったものは
+              「🔍 実行できなかったこと」の節に書く**（検査器は節で読み分ける）。
             - **`backend/` の差分があれば**、`dotnet build backend/backend.slnx` と、変更したサービス
               （共有物なら `backend/Shared/**`）のテストプロジェクトの `dotnet test <…Tests.csproj>` を走らせる。
               `--filter` は付けず、プロジェクト単位で全件を回す。あわせて
@@ -539,8 +545,19 @@ jobs:
       #
       # if: always() が必須である（上の step が落ちた場合こそ判定の有無を知りたい）。
       # 実行ログを読めない構成では warn ＋ exit 0（fail-open）——その形は上の検査が捕まえる。
+      #
+      # 検証の下限（#1315 / IADR-0190 決定 7）も同じステップで読む。差分の種類に応じた下限
+      # （deploy/helm/** → helm lint / helm template、scripts/ .github/ → scripts.test.js）を判定するため、
+      # PR の変更ファイルを CHANGED_FILES で渡す（上の「Detect whether this PR is docs-only」と同じ取り方）。
+      # 差分を引けなければ空で渡し、検査器はその判定だけを warn 付きで skip する（fail-open）。
       - name: Check review verdict
         if: always()
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: node scripts/check-review-verdict.js "$EXECUTION_FILE"
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA" 2>/dev/null \
+                           || git diff --name-only "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true)"
+          export CHANGED_FILES
+          node scripts/check-review-verdict.js "$EXECUTION_FILE"

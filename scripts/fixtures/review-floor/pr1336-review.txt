@@ -1,0 +1,66 @@
+## AI コードレビュー結果
+
+変更 32 ファイル中、生成物の除外なし。**全文または差分を読んだのは 18 ファイル**です。
+
+読んだもの:
+- `ApprovedCloseAttribution`
+- `ProtectiveStopNetting`
+- `IExecutedOrderStore`
+- `EfExecutedOrderStore`
+- `InMemoryExecutedOrderStore`
+- 移行 `.cs`
+- `SoftwareStopExecuted`
+- `NotificationFormatter`
+- `AuditEntryFactory`
+- ほか数ファイル
+
+**未読のもの:**
+- 仕様書・IADR-0534・`docs/` 4 件の本文
+- テスト 6 ファイル
+- `Designer.cs`
+- ModelSnapshot
+- `Program.cs`
+- `ProtectiveStopGuard.cs` と `UnattributedPositionDetector.cs` の差分
+
+下限（全ファイルを読む）は満たしていません。
+
+### 🔴 重大
+- 指摘なし
+
+### 🟡 推奨
+- 指摘なし
+
+### 🟢 軽微
+- `ProtectiveStopNetting.cs` の観測を捨てる経路（差分の「観測を捨てたら、その観測の前の端も捨てる」のコメント）が、その直後に続くコードのない孤立コメントになっています。実際に `ExternalReductionObservedAt = null` を書いているのは、その後の `absences` 分岐の `with` 式です。コメントを該当の `with` 式の近くへ移すと読みやすくなります。
+- `Classify` の `withFills.Count == 0` と `eligible.Count == 0` で理由文を作っていますが、数量は同じ（全量が外部要因）です。この分岐は仕様どおりで、問題ではありません。
+
+### 確認できたこと（このセッションで実行して出力を確認）
+- `dotnet build backend/backend.slnx` は成功しました（警告 0・エラー 0）。
+- `dotnet test` をプロジェクト単位で全件実行し、すべて通りました（`--filter` なし）:
+  - OrderExecutionService.Tests: 1745 件
+  - Shared.Contracts.Tests: 582 件
+  - NotificationService.Tests: 891 件
+  - AuditService.Tests: 263 件
+- `dotnet format backend/backend.slnx --verify-no-changes` は差分なしです。
+- `dotnet ef migrations has-pending-model-changes`（OrderExecutionService）は「モデルの変更なし」でした。
+- 文書系の検査器はすべて OK でした:
+  - `check-trace-blocks`
+  - `gen-knowledge-graph --check`
+  - `check-doc-links`
+  - `check-adr-index-sync`
+  - `check-plan-id-qualification`
+  - `check-commit-messages`（1 件）
+- 移行 SQL の `PositionEffect = 1` は、ドメインの `PositionEffect.Close`（Open=0, Close=1）と一致します。
+- 設計判断（読んだ範囲）:
+  - 迷ったら外部要因へ倒す方針がコードに実装されています（予約ストアなし・読込例外・予約欠落）。
+  - 帳簿を書けた後にだけ `Commit` します。楽観並行で衝突したときは帰属させません。
+  - 数量の経路は変えていません。
+
+### 🔍 実行できなかったこと
+- 計画書（FR-10 / ADR-0040 / ADR-0050 等）との照合は、計画リポを参照できないため**未検証**です。PR 本文と IADR の記述のみで判断しました。
+- `scripts/` と `.github/` の差分はないため、`scripts.test.js` は実行していません。
+- PR 本文の「窓の 3 形の変異実測」は書き換えを伴うため追試していません（**未検証**）。
+- 上記の未読ファイルの内容に関する主張は、**未検証**です。
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*

@@ -1,0 +1,46 @@
+## AI コードレビュー結果
+
+変更 9 ファイル中 9 ファイルを読んだ(生成物の除外なし)。
+
+### 🔴 重大
+- (指摘なし)
+
+### 🟡 推奨
+- (指摘なし)
+
+### 🟢 軽微
+- **IADR-0531 決定 1「秘密の扱い」の根拠が少し言い過ぎ。** 「プロンプトに資格情報は入らないので、出力にも入らない」と書いてある。資格情報が入らないことは確かだが、モデルの散文(拒否・説明)がプロンプト中の保有数量や資金残枠を引用することはあり得る。結論(見送りの根拠文を既に全文出しているので同種の情報)は成立する。ただし根拠は「資格情報は入らない」と「保有・資金残枠が出力に引用され得るが、根拠文と同じ扱い」の 2 点に分けた方が正確。
+- `DescribeShape` は本文を最大 3 回走査する(カウント、フェンス、`ScanFromFirstBrace`)。解析不能のときだけ呼ばれ、頻度は 2/682 程度なので問題ない。直す必要はない。
+- 抽出の挙動は変わっていない。`ExtractJsonObject` は `ScanFromFirstBrace` を呼ぶだけで、元の「閉じなければ null」と同じ結果になる。既存の抽出試験と、除外側の特性試験でも確かめた。
+
+### ✅ 確認できたこと(このセッションで実行)
+- 計画書の照合は未検証(計画リポ参照不可)。IADR-0531 と作業仕様書の記述に対して照合した。
+- `dotnet build backend/backend.slnx --no-restore`: 警告 0・エラー 0。
+- `dotnet test backend/Services/TradeDecisionService/Tests/TradeDecisionService.Tests.csproj --no-build`(フィルタなし): 1,870 件中 1,870 件成功、失敗 0、スキップ 0。PR 本文の件数と一致した。
+- `dotnet format backend/backend.slnx --verify-no-changes --no-restore`: 出力なし(差分なし)。
+- 文書系の検査器はすべて OK だった。
+  - `check-trace-blocks.js`: 56 件に違反なし。
+  - `gen-knowledge-graph.js --check`: OK。
+  - `check-doc-links.js`: 1,202 件に破損なし。
+  - `check-adr-index-sync.js`: OK。
+  - `check-commit-messages.js`: 1 件が規約に適合。
+  - `check-plan-id-qualification.js`: 3,444 件に違反なし。
+- トレーサビリティ: ブランチ名、コミット件名、コード内コメント(FR-04, FR-11, #1332, IADR-0531)、仕様書、IADR 索引行がそろっている。IADR-0531 は最大番号+1 の採番で、IADR-0280 の方針に沿っている。
+- 受け入れ基準 1〜5 は次のテストに対応している。
+  - 解析不能のときだけ出力: `DecisionOrchestratorUnparseableRawTests`。
+  - 解析できた応答と空応答では出さない: 同上。
+  - 候補 A〜E と除外の形: `UnparseableOutputShapeTests`。
+  - 既存の Hold・打ち切りの挙動: 既存試験が全緑。
+- 既存の解析不能の WRN 行は変えていない。`DecisionOrchestratorTests` の変更は、新しい原本の行を除外して件数を数えるようにしただけで、検証の意図は保たれている。
+- `LogSanitizer.Sanitize` の既定上限は 4,000 字で、抜粋は最大約 1,500 字+注記なので途中で切れない。切れないことはテストでも確かめている(`NotContain("truncated")`)。
+- 過剰実装・幻覚: 計画外の機能追加はない。抽出の頑健化と再試行は、ADR で意図的に見送っている。
+
+### 🔍 実行できなかったこと
+- 計画書(FR-04 / FR-11 / ADR-0003 の原文)との照合は、計画リポを参照できないため未検証。
+- `scripts.test.js` は走らせていない。`scripts/` と `.github/` に差分がないため対象外と判断した。
+- PoC 実機でのログ出力(`grep '解析不能の応答の原本'` の手順)は未検証。PoC の実行環境がない。
+- 他リポジトリ(MSP `ClaudeProvider` が 1 個目の text ブロックしか返さない、という記述)の確認は、本セッションの対象外。
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
+ / ブランチ: `fix/FR-04-1332-screening-unparseable-raw`
