@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using RiskManagementService.Domain;
 using RiskManagementService.Features.RiskManagement;
@@ -108,6 +109,41 @@ public class HighVolatilitySettingsEndpointTests(RiskWorkerWebApplicationFactory
 
         await RestoreAsync(client);
     }
+
+    // 🔴 T-10-2611, FR-11, UC-06, #1291, IADR-0531: PUT 1 回で履歴は**ちょうど 1 行**増え、応答の changeType は**整数 10**である
+    // （名前の文字列は応答に出ない）。PoC が 11・名前の一致で集計して 0 件と読んだ報告（#1291 2026-10-13）の切り分けの拠り所。
+    // 履歴の GET は絞り込み（期間・種別・ページング・件数の上限）を持たないので、書いた行は必ず全件の中にある。
+    [Fact]
+    public async Task T_10_2611_PUTで履歴はちょうど1行増え種別は整数10で返る()
+    {
+        var client = OwnerClient();
+        var before = await HistoryJsonAsync(client);
+
+        (await client.PutAsJsonAsync(Path, new
+        {
+            maxOrderAmountRatio = 0.05m,
+            designatedSymbols = new[] { new { symbol = "TSLA", market = (int)Market.UnitedStates } },
+            reason = "PoC 2026-10-09 TSLA incident remediation (AST#1291)",
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var after = await HistoryJsonAsync(client);
+        after.GetArrayLength().Should().Be(before.GetArrayLength() + 1);
+
+        // 新しい順。先頭が今の変更である。
+        var newest = after[0];
+        newest.GetProperty("changeType").ValueKind.Should().Be(JsonValueKind.Number, "種別は名前ではなく整数で往来する");
+        newest.GetProperty("changeType").GetInt32().Should().Be(10);
+        newest.GetProperty("reason").GetString().Should().Be("PoC 2026-10-09 TSLA incident remediation (AST#1291)");
+        newest.GetProperty("after").GetString().Should().Contain("TSLA(UnitedStates)");
+        after.EnumerateArray().Count(e => e.GetProperty("changeType").GetInt32() == 10)
+            .Should().Be(before.EnumerateArray().Count(e => e.GetProperty("changeType").GetInt32() == 10) + 1);
+        after.EnumerateArray().Should().NotContain(e => e.GetProperty("changeType").GetInt32() == 11, "種別 11 は存在しない");
+
+        await RestoreAsync(client);
+    }
+
+    private static async Task<JsonElement> HistoryJsonAsync(HttpClient client) =>
+        JsonDocument.Parse(await client.GetStringAsync("/risk-controls/settings/history")).RootElement;
 
     // T-10-2563, ADR-0063 決定2: 値域外（最小の名目額の比率未満・25% 超）・理由なし・項目の省略は 400 で、設定も履歴も変わらない。
     [Theory]

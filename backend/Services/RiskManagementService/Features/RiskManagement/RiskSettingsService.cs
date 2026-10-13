@@ -12,8 +12,13 @@ public sealed class RiskSettingsService(
     IRiskSettingsStore store,
     ISettingsChangeLog changeLog,
     IClock clock,
-    IBrokerAccountObservationStore accountObservations)
+    IBrokerAccountObservationStore accountObservations,
+    ISettingsWriteTransaction? writeTransaction = null)
 {
+    // 🔴 FR-11, #1291, IADR-0531 決定1: 設定の保存と履歴の記録を 1 つのトランザクションにする（本番の配線は EF 実装）。
+    // 省略時（ストアを直接組み立てる単体試験）は本体をそのまま走らせる。本番で省略されないことは T-10-2613 が固定する。
+    private readonly ISettingsWriteTransaction _writeTransaction = writeTransaction ?? DirectWrite.Instance;
+
     public RiskManagementSettings GetCurrent() => store.GetCurrent();
 
     /// <summary>
@@ -254,10 +259,22 @@ public sealed class RiskSettingsService(
         string reason)
     {
         var now = clock.UtcNow;
-        store.Save(updated);
-        changeLog.Record(new SettingsChangeEntry(
-            actor, changeType, reason, now,
-            Before: before.ToString(), After: after.ToString()));
+        // 🔴 FR-11, #1291, IADR-0531 決定1: 履歴が書けなければ設定も変えない（「設定は変わったが履歴が無い」を残さない）。
+        _writeTransaction.Execute(() =>
+        {
+            store.Save(updated);
+            changeLog.Record(new SettingsChangeEntry(
+                actor, changeType, reason, now,
+                Before: before.ToString(), After: after.ToString()));
+        });
+    }
+
+    // トランザクションを持たない縮退（単体試験の直接組み立て用）。
+    private sealed class DirectWrite : ISettingsWriteTransaction
+    {
+        public static readonly DirectWrite Instance = new();
+
+        public void Execute(Action body) => body();
     }
 
     private static void RequireActorAndReason(string actor, string reason)
