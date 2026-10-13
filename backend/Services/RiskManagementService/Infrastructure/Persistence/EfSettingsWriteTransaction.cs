@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace RiskManagementService.Infrastructure.Persistence;
 
-// 🔴 FR-11, FR-10, ADR-0007, #1291, IADR-0531 決定1: 設定の保存と変更履歴の記録を 1 つの DB トランザクションにまとめる EF 実装。
+// 🔴 FR-11, FR-10, ADR-0007, #1291, IADR-0532 決定1: 設定の保存と変更履歴の記録を 1 つの DB トランザクションにまとめる EF 実装。
 //
 // 設定のストア（EfRiskSettingsStore）と履歴（EfSettingsChangeLog）は同じ scoped の DbContext を使い、それぞれ SaveChanges を呼ぶ。
 // 明示のトランザクションが無いと 2 つの暗黙のトランザクションに割れ、履歴だけが失敗すると設定の変更だけが残る（応答は 500）。

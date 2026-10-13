@@ -1,5 +1,5 @@
 ---
-title: IADR-0531 リスク管理の設定の保存と変更履歴の記録を 1 つの DB トランザクションにする（履歴が書けなければ設定も変えない）。kill switch と pause は対象外
+title: IADR-0532 リスク管理の設定の保存と変更履歴の記録を 1 つの DB トランザクションにする（履歴が書けなければ設定も変えない）。kill switch と pause は対象外
 type: impl-adr
 status: Accepted
 related_ids: [FR-10, FR-11, UC-06, ADR-0007, ADR-0063, ADR-0003, ADR-0009, IADR-0527, IADR-0529, IADR-0012, IADR-0134]
@@ -13,7 +13,7 @@ related_specs:
   - ../specs/20261013_1291_hv-history-atomic-and-pinned.md
 ---
 
-# IADR-0531: 設定の保存と変更履歴の記録を 1 つのトランザクションにする（#1291）
+# IADR-0532: 設定の保存と変更履歴の記録を 1 つのトランザクションにする（#1291）
 
 > 実装リポジトリ内の意思決定記録（Implementation ADR）。1 ファイル = 1 意思決定。
 > 計画リポジトリの ADR（`ADR-XXXX`）とは別系統（`IADR-XXXX`）とし、実装に閉じた決定を記録する。

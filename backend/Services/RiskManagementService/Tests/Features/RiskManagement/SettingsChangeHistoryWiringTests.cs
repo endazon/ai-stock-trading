@@ -6,7 +6,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// FR-11, UC-06, #1291, IADR-0531, IADR-0134 決定2: 設定の変更履歴の種別の応答上の整数値と、設定の保存と履歴の記録を
+// FR-11, UC-06, #1291, IADR-0532, IADR-0134 決定2: 設定の変更履歴の種別の応答上の整数値と、設定の保存と履歴の記録を
 // 1 つのトランザクションにする配線（ロールバックそのものは実 DB の統合試験 T-10-2615 が固定する）。
 public class SettingsChangeHistoryWiringTests(RiskWorkerWebApplicationFactory factory)
     : IClassFixture<RiskWorkerWebApplicationFactory>
@@ -37,7 +37,7 @@ public class SettingsChangeHistoryWiringTests(RiskWorkerWebApplicationFactory fa
             ((int)type).Should().Be(value, $"{type} の値");
     }
 
-    // 🔴 T-10-2613, FR-11, #1291, IADR-0531 決定1: 本番の配線で、設定の保存と履歴の記録のトランザクションは EF 実装に解決される。
+    // 🔴 T-10-2613, FR-11, #1291, IADR-0532 決定1: 本番の配線で、設定の保存と履歴の記録のトランザクションは EF 実装に解決される。
     // RiskSettingsService は省略時に本体をそのまま走らせる（単体試験の直接組み立て用）ため、登録が抜けると黙って原子性を失う。
     [Fact]
     public void T_10_2613_設定の書き込みのトランザクションはEF実装に解決される()

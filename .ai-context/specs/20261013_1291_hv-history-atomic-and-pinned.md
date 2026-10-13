@@ -2,7 +2,7 @@
 title: 高ボラティリティ銘柄の設定変更の履歴を固定し、設定の保存と履歴の記録を同じトランザクションにする（#1291 の PoC 報告の切り分け）
 type: spec
 status: accepted
-related_ids: [FR-10, FR-11, UC-06, ADR-0063, ADR-0066, ADR-0007, IADR-0531, IADR-0527, IADR-0134, IADR-0012]
+related_ids: [FR-10, FR-11, UC-06, ADR-0063, ADR-0066, ADR-0007, IADR-0532, IADR-0527, IADR-0134, IADR-0012]
 author: claude (Claude Code)
 created: 2026-10-13
 updated: 2026-10-13
@@ -34,7 +34,7 @@ PUT は 200 を返し、GET にも反映され、再起動後も残っている�
 ただし、**設定の保存と履歴の記録が別トランザクション**なので、履歴の書き込みだけが失敗すると「設定は変わったが履歴が無い」状態が残り得る（応答は 500）。
 FR-11 / ADR-0007 の「変更は履歴に残す」に対する潜在的な欠陥として、本 PR で塞ぐ。
 
-## 設計（IADR-0531）
+## 設計（IADR-0532）
 
 - 設定の保存と履歴の記録を `ISettingsWriteTransaction`（Features のポート）の 1 単位で実行する。EF 実装 `EfSettingsWriteTransaction` は
   関係 DB なら `BeginTransaction` → 本体 → `Commit`、失敗なら破棄（ロールバック）と変更追跡の破棄。関係 DB でないプロバイダ（テストの InMemory）は本体をそのまま走らせる（`EfEntryReservationStore` と同じ縮退）。
@@ -68,7 +68,7 @@ FR-11 / ADR-0007 の「変更は履歴に残す」に対する潜在的な欠陥
 ## 検証
 
 - `dotnet test`（RiskManagementService.Tests 全件）・`dotnet format --verify-no-changes`・警告 0 のビルド。
-- 統合試験は Docker の無い手元では skip になるため、`integration.yml` を本ブランチで `workflow_dispatch` して実走を確かめる。
+- 統合試験は Docker の無い手元では skip になるため、手元の実 PostgreSQL 16 を `E2E_POSTGRES_CONNECTION` で与えて実走し、あわせて `integration.yml` を本ブランチで `workflow_dispatch` して実走を確かめる。
 - `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`・文書系の検査器。
 
 ## PoC への手順（集計し直し）

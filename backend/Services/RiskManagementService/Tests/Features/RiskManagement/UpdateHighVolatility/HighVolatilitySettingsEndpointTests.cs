@@ -110,7 +110,7 @@ public class HighVolatilitySettingsEndpointTests(RiskWorkerWebApplicationFactory
         await RestoreAsync(client);
     }
 
-    // 🔴 T-10-2611, FR-11, UC-06, #1291, IADR-0531: PUT 1 回で履歴は**ちょうど 1 行**増え、応答の changeType は**整数 10**である
+    // 🔴 T-10-2611, FR-11, UC-06, #1291, IADR-0532: PUT 1 回で履歴は**ちょうど 1 行**増え、応答の changeType は**整数 10**である
     // （名前の文字列は応答に出ない）。PoC が 11・名前の一致で集計して 0 件と読んだ報告（#1291 2026-10-13）の切り分けの拠り所。
     // 履歴の GET は絞り込み（期間・種別・ページング・件数の上限）を持たないので、書いた行は必ず全件の中にある。
     [Fact]

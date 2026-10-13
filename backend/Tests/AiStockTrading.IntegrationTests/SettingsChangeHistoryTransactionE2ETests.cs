@@ -20,7 +20,7 @@ using SystemClock = RiskManagementWorker::RiskManagementService.Common.Abstracti
 
 namespace AiStockTrading.IntegrationTests;
 
-// 🔴 FR-11, FR-10, UC-06, ADR-0063 決定2, ADR-0007, #1291, IADR-0531:
+// 🔴 FR-11, FR-10, UC-06, ADR-0063 決定2, ADR-0007, #1291, IADR-0532:
 // 高ボラティリティ銘柄の設定変更が、**実 PostgreSQL で**変更履歴に 1 行書かれ（列は名前・序数は 10）、
 // 履歴の書き込みが失敗したら設定の変更も取り消されること（設定の保存と履歴の記録が同じトランザクション）。
 //

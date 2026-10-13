@@ -80,7 +80,7 @@ builder.Services.AddScoped<IKillSwitchStore, EfKillSwitchStore>();
 builder.Services.AddScoped<IPauseStore, EfPauseStore>();
 builder.Services.AddScoped<ILockoutStore, EfLockoutStore>();
 builder.Services.AddScoped<ISettingsChangeLog, EfSettingsChangeLog>();
-// 🔴 FR-11, #1291, IADR-0531 決定1: 設定の保存と変更履歴の記録を同じ DB トランザクションにする（RiskSettingsService が使う）。
+// 🔴 FR-11, #1291, IADR-0532 決定1: 設定の保存と変更履歴の記録を同じ DB トランザクションにする（RiskSettingsService が使う）。
 builder.Services.AddScoped<ISettingsWriteTransaction, EfSettingsWriteTransaction>();
 // FR-20, UC-06, IADR-0041/0070: 段階ゲートの遷移台帳（追記専用）と段階別実績（単一行・fail-safe 既定）。
 builder.Services.AddScoped<IStageGateStore, EfStageGateStore>();
