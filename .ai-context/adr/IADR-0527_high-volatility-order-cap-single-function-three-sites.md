@@ -2,15 +2,16 @@
 title: IADR-0527 高ボラティリティ銘柄の区分と 1 注文上限（equity の 5%）を 1 つの純関数に置き、統制値（上限・明示指定）はリスク管理の設定に持ち、審査は発注意図が運ぶ ATR(14) で同じ区分を判定する
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-04, FR-11, UC-06, ADR-0063, ADR-0049, ADR-0042, ADR-0018, IADR-0130, IADR-0486, IADR-0495, IADR-0500, IADR-0003, IADR-0151, IADR-0161, IADR-0134]
+related_ids: [FR-10, FR-04, FR-11, UC-06, ADR-0063, ADR-0066, ADR-0049, ADR-0042, ADR-0018, IADR-0130, IADR-0486, IADR-0495, IADR-0500, IADR-0003, IADR-0151, IADR-0161, IADR-0134]
 author: claude (Claude Code)
 created: 2026-10-11
-updated: 2026-10-11
+updated: 2026-10-13
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0063_high-volatility-symbol-order-cap.md (決定 1〜6・フォローアップ 1〜4)
   - planning:projects/ai-stock-trading/06_technical/05_trading-assumptions.md (§5 の 2 行)
 related_specs:
   - ../specs/20261011_1291_high-volatility-order-cap.md
+  - ../specs/20261013_1291_hv-cap-floor-adr0066.md
 ---
 
 # IADR-0527: 高ボラティリティ銘柄の 1 注文上限を 3 か所で同じ関数にする（#1291）
@@ -64,6 +65,14 @@ ADR-0063 は区分（ATR(14) ÷ 参照価格 ≥ 4% と利用者の明示指定�
 - `OwnerOnly` は、サービスロール（`trading-service`）からの呼び出しを 403 で止める。しかし owner に対応付けた機密クライアントは止めない。
 - Discord Bot はその機密クライアントであり、owner 用の口を呼べる（IADR-0423 の取り込みの窓口と同じ形）。
 - したがって、将来 Bot や AI の経路にこの API を呼ぶコードを足せば、AI 由来の指定が通ってしまう。足すときは ADR-0063 決定 1（AI の入れ替え案からは指定させない）に照らして判断すること。
+
+**［2026-10-13 追記 / #1291（計画 ADR-0066 決定 1 の裁定）］値域の下端は ADR-0066 決定 1 に適合する**
+
+- 計画 ADR-0066 決定 1（planning#793 / planning#794・利用者裁定 2026-10-13）は、区分の上限の構成範囲を「最小の名目額の比率の**既定値（1%）**以上 〜 25% 以下」とし、下端は構成値 `Sizing:MinEntryNotionalRatio` に連動しないと定めた。本決定の形（`MinRatioLowerBound = TradingDefaults.MinEntryNotionalRatio`＝0.01 の固定値）がそのまま計画の決定になった。**実装の変更は要らない。**
+- 確かめた 3 点（AST `bd815bc`）: (1) 下端は `TradingDefaults.MinEntryNotionalRatio`（0.01）の固定値で、構成値を読まない。(2) 書き込みの経路は `RiskSettingsService.UpdateHighVolatility` の 1 経路で、`ThrowIfInvalid`（API は同じ `Validate` で 400）が値域の外を拒む。(3) 読み込みは下端未満を 0.01 へ、上端超を既定 5% へ丸める。
+- 試験で固定した: 構成値を 0 / 0.5% / 1% / 2% / 6% にしても下端は 1%（T-10-2588）。
+- 🔴 **上の「保存値より緩い 5% に倒さず、厳しい側へ倒す」は、既定の 5% と比べた場合に限って正しい。保存値と比べると、丸めは上限を緩める**（例: 0.5% → 1%。ADR-0066 決定 1 の指摘）。下端未満の行は書き込みの経路では作れず、DB の手での編集などでだけ生じる。ADR-0066 はこの丸めを改めない（残る制約）。コードの注記（`RiskSettingsSerialization`）を同じ趣旨に改めた。
+- **構成値を変えるときの確認（ADR-0066 決定 1「区分の下限との関係を確かめる」）**: 取引判断は起動時に、構成値が下端（1%）と一致しなければ警告を 1 行出す（`HighVolatilityFloorStartupNotice`。T-10-2589・T-10-2590）。**起動は止めない** —— どちらへずれても統制は緩まない（上げれば区分の銘柄が必ず見送られる＝厳しい側、下げれば区分の上限を 1% より下げられないだけ）。区分の上限の現在値はリスク管理にあり、起動時には照会しない（照会の失敗で起動を左右しない）。helm の values の該当キーの注記にも同じ確認を書いた。
 
 ### 決定 3: 審査は発注意図が運ぶ ATR(14) で同じ区分を判定する
 

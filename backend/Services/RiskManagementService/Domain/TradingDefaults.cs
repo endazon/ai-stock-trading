@@ -85,7 +85,7 @@ public static class TradingDefaults
     /// 🔴 FR-10, ADR-0063 決定2, #1291, IADR-0527 決定1: <b>高ボラティリティ銘柄の 1 注文あたりの発注金額上限＝equity の 5%</b>
     /// （$3,000 で $150。05_trading-assumptions §5「高ボラティリティ銘柄の 1 注文あたりの発注金額上限」・利用者裁定 2026-10-10）。
     /// 根拠は裁定であり、算定から導いた値ではない。区分外の <c>MaxOrderAmountRatio</c>（25%）は据え置く（決定3）。
-    /// 構成で変えられる（範囲は <see cref="HighVolatilityOrderCap.Validate"/>: 最小の名目額の比率 以上 〜 25% 以下）。
+    /// 構成で変えられる（範囲は <see cref="HighVolatilityOrderCap.Validate"/>: 最小の名目額の比率の既定値〔1%〕以上 〜 25% 以下。下端は構成値に連動しない。ADR-0066 決定1）。
     /// </summary>
     public const decimal HighVolatilityMaxOrderAmountRatio = 0.05m;
 

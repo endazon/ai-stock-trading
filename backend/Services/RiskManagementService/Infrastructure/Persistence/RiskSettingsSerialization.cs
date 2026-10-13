@@ -107,8 +107,11 @@ public static class RiskSettingsSerialization
             // 読めない行が S2（免除）へ倒れると、利用者が選んでいない無防備な建玉が黙って生まれる。
             StopLossMethod = StopLossMethodChange.Resolve(dto.StopLossMethod),
             // 🔴 FR-10, ADR-0063 決定2, #1291, IADR-0527 決定2: 高ボラティリティ銘柄の統制値を持たない旧行は**既定（上限 5%・明示指定なし）**で読む。
-            // 不在を「区分の上限なし」に倒さない。比率が値域の下端を割る行（手編集など）は**下端へ丸めて**読み（保存値より緩くしない）、
+            // 不在を「区分の上限なし」に倒さない。比率が値域の下端を割る行（手編集など）は**下端へ丸めて**読み（既定の 5% へ倒すよりは厳しい）、
             // 上端を超える行・比率の欠けた行は既定の 5% で読む（値域は書き込みの経路が守る）。
+            // 🔴 ［2026-10-13 訂正 / ADR-0066 決定1・#1291］旧注記の「保存値より緩くしない」は数値の上で誤り。**保存値と比べると丸めは上限を緩める**
+            // （例: 0.5% → 1%）。下端未満の行は書き込みの経路（ThrowIfInvalid・API の 400）では作れず、DB の手での編集などでだけ生じる。
+            // ADR-0066 はこの丸めを改めず、残る制約として記録した（IADR-0527 決定2 の 2026-10-13 追記）。
             HighVolatility = ResolveHighVolatility(dto.HighVolatility),
         };
     }
@@ -122,7 +125,7 @@ public static class RiskSettingsSerialization
         var ratio = dto.MaxOrderAmountRatio switch
         {
             null => defaults.MaxOrderAmountRatio,
-            { } r when r < HighVolatilityOrderCap.MinRatioLowerBound => HighVolatilityOrderCap.MinRatioLowerBound, // 厳しい側へ丸める
+            { } r when r < HighVolatilityOrderCap.MinRatioLowerBound => HighVolatilityOrderCap.MinRatioLowerBound, // 既定 5% より厳しい側へ丸める（保存値よりは緩む。上の注記）
             { } r when r > HighVolatilityOrderCap.MaxRatioUpperBound => defaults.MaxOrderAmountRatio,
             { } r => r,
         };
