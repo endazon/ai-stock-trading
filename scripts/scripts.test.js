@@ -717,6 +717,8 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     ]) {
       assert.deepStrictEqual(notRead(findFloorViolations(review(`${head}${line}`), [])), [], line);
     }
+    // 計画書とテストを並べた文は数える（#1346 の AI レビュー 🟢。計画書の除外でテストの自認ごと素通りさせない）
+    assert.strictEqual(notRead(findFloorViolations(review(`${head}計画書とテスト 2 本は精読していない。`), [])).length, 1);
     // 🔍 実行できなかったこと・指摘の節に在るだけなら数えない（#1340 の 3 回目の 🔍 は「本体以外の差分の行単位の精読」）
     const tail =
       '\n### 🔍 実行できなかったこと\n- 計画書との照合は未検証（計画リポ参照不可）。\n- テストは全行を読んでいない。\n- 本体以外の差分の行単位の精読は行っていない。\n';

@@ -296,7 +296,7 @@ const GENERATED_WORD = /生成物|自動生成|Designer|ModelSnapshot/;
 /** 生成物の名前を除いた後に残っていれば「生成物以外も並べた文」と読む語（テスト・文書・本体など）。 */
 const NON_GENERATED_TARGET = /テスト|Tests?\b|docs|文書|仕様|IADR|ADR|本体|README|helm|workflow|ワークフロー|\.(?:cs|tsx?|jsx?|ya?ml|md|json|sh)\b/i;
 /** 計画書（読む対象のファイルではない）についての文。 */
-const PLAN_DOC = /計画書|計画\s*ADR|計画リポ|planning/;
+const PLAN_DOC = /計画書|計画\s*ADR|計画リポ(?:ジトリ)?/g;
 
 /** 引用（インラインコード・「」・『』）を外す。検査器そのものを論じるレビューで自己発火しないため。 */
 function stripQuotes(s) {
@@ -330,7 +330,9 @@ function findNotReadAdmissions(text, decl) {
       return m && !NOT_READ_NEGATED.test(bare.slice(m.index + m[0].length));
     });
     if (!hit) continue;
-    if (PLAN_DOC.test(bare)) continue; // 計画書は読む対象のファイルではない（🔍 の「計画書は未検証」と同じ扱い）
+    // 計画書は読む対象のファイルではない（🔍 の「計画書は未検証」と同じ扱い）。ただし計画書とテスト等を並べた文は数える
+    // （生成物と同じ規則。#1346 の AI レビュー 🟢）
+    if (new RegExp(PLAN_DOC.source).test(bare) && !NON_GENERATED_TARGET.test(bare.replace(PLAN_DOC, ''))) continue;
     const generated = GENERATED_WORD.test(sentence) || new RegExp(GENERATED_TOKENS.source).test(sentence);
     if (generated && k > 0) {
       const rest = sentence.replace(GENERATED_TOKENS, '').replace(/生成物|自動生成/g, '');
