@@ -1,0 +1,25 @@
+## AI コードレビュー結果
+
+変更 38 ファイル中 36 ファイルを読んだ（生成物 2 ファイルを除外: `20261010000000_AddPositionEffect.Designer.cs` / `OrderExecutionDbContextModelSnapshot.cs`）。`Designer.cs` と `ModelSnapshot` は生成物なので読んでいない。EF の自動生成物のため、差分の要点（列の追加）だけを確認した。残りの 36 ファイルは差分を 1 ファイルずつ行単位で読んだ。
+
+### 🔴 重大
+- （指摘なし）
+
+### 🟡 推奨
+- （指摘なし）
+
+### 🟢 軽微
+- （指摘なし）
+
+### ✅ 確認できたこと（このセッションで実行し、出力を見た）
+- `dotnet build backend/backend.slnx`: 警告 0・エラー 0。
+- `dotnet test backend/Services/OrderExecutionService/Tests/OrderExecutionService.Tests.csproj`: 1,745 件すべて合格（Failed 0）。
+- `dotnet format backend/backend.slnx --verify-no-changes`: 差分なし。
+- `dotnet ef migrations has-pending-model-changes`（OrderExecutionService）: モデルの変更なし。
+
+### 🔍 実行できなかったこと
+- 計画書（FR-10・ADR-0050）との照合は未検証（計画リポ参照不可）。
+- 変異テストは追試していない（未検証。書き換えを伴う）。
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*

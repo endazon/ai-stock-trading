@@ -1,0 +1,60 @@
+## AI コードレビュー結果
+
+変更 31 ファイル中 31 ファイルを読んだ（生成物の除外なし）。`.cs` の本体・helm・workflow・gitleaks・docs・IADR は差分を読んだ。テスト 11 ファイルは、追加した 2 本のテストの名前を一覧し、本体と照らして読んだ。全行は読んでいない。前回レビュー（最初の 2 コミット時点）からは 74fdfecd と 51c77e5c が加わっている。
+
+### 🔴 重大
+- （指摘なし）
+
+### 🟡 推奨
+- （指摘なし）前回の推奨 2 件は解消している。
+  - **0 件で止まった実行が既存の `records.json` を上書きする件**: 解消した。
+    - `Stage0DecisionRecorder.cs:263-264` で、`(stopped || stateFailed) && records.Count == 0` のときは書き出さず、終わりの印も付けない。
+    - `FileStage0DecisionRecordSink.cs:541-551` で、既存より件数が減る上書きを拒む。書き出しは一時ファイルから `File.Move` で置き換える。
+    - テスト `印の鍵だけが変わって上限で止まっても既存の記録を上書きしない` と、`FileStage0DecisionRecordSinkTests` の件数が減る上書きを拒むテストが加わった。
+  - **README の退避手順**: 解消した。「先に `records.json` を退避する」手順が chart README に入った。
+
+### 🟢 軽微
+- **件数が減る上書きをシンクが拒むと、止まった実行は終わりの印が付かない。**
+  - 場所: `Stage0DecisionRecorder.cs:264`、`:275`。
+  - 内容: 既存より少ない件数のチェックポイントがあると、`saved=false` になる。
+  - 影響: 理由文は「承認額を超えるため停止」のままで、書き出しの拒否が出ない（ログには出る）。LLM は台帳で呼ぶ前に止まるので、課金はない。
+  - 提案: 理由文に「書き出しを拒まれた」を足すと、運用者が気づきやすい。
+- **README の退避手順（`deploy/helm/ai-stock-trading/README.md`）**
+  - `date` を 2 回呼ぶので、手元の退避ファイルと PVC 内の退避ファイルで時刻がずれる。変数に取ると揃う。
+  - 最後の取り出しで、`$POD` を再計算している。冒頭の `$POD` を使い回せる。
+- 台帳は予約と実績の 2 回、チェックポイントは全件を毎回書き直す（O(n²)）。この規模では問題ない。
+- 計画との整合: ブランチ名・コミットは FR-15 で統一されている。`docs/` の新しい記述に計画 ID の表示テキストはない。FR-20 ではなく FR-15 を使った理由は PR 本文に書かれている。
+
+### ✅ 確認できたこと（このセッションで実行し、出力を見た）
+- `dotnet build backend/backend.slnx`: 警告 0・エラー 0。
+- `dotnet test backend/Services/TradeDecisionService/Tests/TradeDecisionService.Tests.csproj`: 1,954 件すべて合格（Failed 0）。PR 本文の 1,947 件より 7 件多い。74fdfecd で追加されたテストだと読んだ。
+- `dotnet format backend/backend.slnx --verify-no-changes`: 差分なし（出力なし）。
+- `helm lint --strict deploy/helm/ai-stock-trading`（既定）: 失敗 0。
+- `helm lint --strict deploy/helm/ai-stock-trading -f …/values-local.yaml`: 失敗 0。
+- `helm template ast … -f values-local.yaml -s templates/pvc-stage0-recording.yaml`: PVC `trade-decision-stage0` と `helm.sh/resource-policy: keep` が描画された。
+- `helm template ast … --set stage0Recording.persistence.enabled=true --set stage0Recording.persistence.mountPath=relative`: 「絶対パスで指定してください」で止まった（意図どおり）。
+- `node -e …spawnSync(scripts.test.js, REQUIRE_REPO_TESTS=1)`: 546 件すべて合格。
+- 文書系の検査器:
+  - `check-trace-blocks.js`: OK。
+  - `gen-knowledge-graph.js --check`: OK。
+  - `check-doc-links.js`: OK。
+  - `check-adr-index-sync.js`: OK。
+  - `check-commit-messages.js`: 3 件すべて適合。
+  - `check-plan-id-qualification.js`: OK。
+- コードの読み取りで確かめたこと:
+  - 窓の両端（開始の印を LLM の前に書く／終わりの印は書き出せたときだけ付ける）。
+  - 台帳の予約から実績への置き換え順。
+  - 状態が読めないときと、ロックが取れないときは LLM を呼ばない。
+  - 前回の指摘の是正。
+  - `.gitleaks.toml` の許可は型名 2 つ（`Stage0DecisionRecordSet` / `Stage0RunPhase`）だけに限られ、広すぎない。
+
+### 🔍 実行できなかったこと
+- 計画書（FR-15・ADR-0033 決定 5）との照合は未検証（計画リポ参照不可）。PR 内の IADR と作業仕様書でレビューした。
+- 変異テスト M1〜M8 と「Recreate を外すと CI が赤」は未検証（書き換えを伴う）。PR 本文と仕様書の主張として読んだだけである。
+- `helm.yml` の新しい検査「Assert stage0 recorder persistence」は全体を再現していない。`/tmp/vl-outside.yaml` を作る陰性対照は、一時ファイルを使うため再現しない方針である。mountPath が相対のときの停止だけを確かめた。この PR の `Helm` ワークフローの結論は参照していない。
+- 実機の PVC・flock の排他・Pod 再起動の挙動（PoC での確認手順 1〜6）は未検証。
+- テスト 11 ファイルは全行を読んでいない（前述）。
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
+ · branch `fix/FR-15-1342-stage0-recorder-idempotent`

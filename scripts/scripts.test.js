@@ -454,6 +454,7 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     findFloorViolations,
     parseReadDeclaration,
     findFloorAdmissions,
+    findNotReadAdmissions,
     selectReviewBody,
     parseChangedFiles,
     confirmedSections,
@@ -638,6 +639,113 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
     assert.deepStrictEqual(findFloorViolations(PR1337, ['scripts/check-review-verdict.js', '.github/workflows/claude-code-review.yml']), []);
   });
 
+  // --- #1315 の追加の是正: N/N を申告しつつ、本文で精読していないと認める形（#1340 / #1344 の同型 2 回） ---
+  // 母集合と期待の表は作業仕様書 20261014_1315_review-floor-not-read-declaration。判定は冒頭と「確認できたこと」の節で行う。
+  const notRead = (v) => v.filter((x) => /精読していないと書いている/.test(x));
+
+  ok('下限[#1315]: #1340 の 3 回目の実文（37/37 だが「行単位では読んでいない」）は赤', () => {
+    const v = findFloorViolations(fixture('pr1340-review3.txt'), ['backend/A.cs', 'deploy/helm/ai-stock-trading/values-local.yaml']);
+    assert.strictEqual(v.length, 1, v.join('\n'));
+    assert.match(v[0], /37 ファイルを読んだと申告したが/);
+    assert.match(v[0], /行単位では読んでいない/);
+  });
+
+  ok('下限[#1315]: #1344 の最終の実文（31/31 だが「名前を一覧し」「全行は読んでいない」）は赤', () => {
+    const v = findFloorViolations(fixture('pr1344-review2.txt'), [
+      'backend/A.cs',
+      'deploy/helm/ai-stock-trading/values.yaml',
+      '.github/workflows/helm.yml',
+    ]);
+    assert.strictEqual(notRead(v).length, 2, v.join('\n'));
+    assert.strictEqual(v.length, 2, v.join('\n')); // helm / scripts.test.js の記載は満たしている
+    assert.ok(v.some((x) => /全行は読んでいない/.test(x)), v.join('\n'));
+  });
+
+  ok('下限[#1315]: #1336 の 2 回目の実文（32/32 だが「本文を精読せず」「要点だけを確認」）は赤、K の申告なしの生成物には案内を添える', () => {
+    const v = findFloorViolations(fixture('pr1336-review2.txt'), ['backend/A.cs']);
+    assert.strictEqual(notRead(v).length, 2, v.join('\n'));
+    assert.match(v.join('\n'), /本文を精読せず/);
+    assert.match(v.join('\n'), /生成物 K ファイルを除外/); // Designer.cs の文は K を申告していないので赤＋案内
+  });
+
+  ok('下限[#1315]: #1333・#1337 の実文と、生成物 2 ファイルを申告して除外したレビュー（合成）は緑のまま', () => {
+    assert.deepStrictEqual(notRead(findFloorViolations(PR1333, PR1333_FILES)), []);
+    assert.deepStrictEqual(findFloorViolations(fixture('pr1337-review.txt'), ['scripts/a.js']), []);
+    const gen = fixture('synthetic-generated-excluded-review.txt');
+    assert.deepStrictEqual(findFloorViolations(gen, ['backend/A.cs']), []);
+    // 対照: 同じ本文で K の申告を外す（M=N にそろえる）と赤になる —— 申告と整合しない生成物の除外は数える
+    const noK = gen.replace(/36 ファイルを読んだ（生成物 2 ファイルを除外: [^）]*）/, '38 ファイルを読んだ（生成物の除外なし）');
+    assert.notStrictEqual(noK, gen);
+    assert.ok(notRead(findFloorViolations(noK, ['backend/A.cs'])).length >= 1);
+  });
+
+  ok('下限[#1315]: 実在した「精読していない」の表記揺れを冒頭で読む（陽性）', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    for (const line of [
+      'テストは名前と範囲の確認にとどまり、行単位では読んでいない。', // #1340
+      'テスト 2 本は、テストの名前を一覧し、本体と照らして読んだ。', // #1344
+      '全行は読んでいない。', // #1344
+      'docs の差分は先頭部分を中心に確認し、全行は精読していない。', // #1328
+      '`docs/` と `.ai-context/` の各文書は、本文を精読せず存在と検査器の結果で確認した。', // #1336
+      'テスト 2 本は差分の存在を確認しただけで、中身は精読していない。', // #1326
+      'テストは差分の存在と PR 本文の記述の確認までである。', // #1326
+      '`docs/` 3 ファイルは差分の精読までは行っていない（未検証）。', // #1324
+      '- **要点だけ確認**: IADR-0534 は残余リスク節のみ。', // #1336
+      '- **要点または検査器の結果だけで確認したもの**: テスト 6 ファイル', // #1336
+      '索引行は出力が切り詰められたため、先頭部分しか目視していない。', // #1318
+      '追記した 2 行の全文は読めていない。', // #1318
+      'テスト 3 本は流し読みした。',
+    ]) {
+      const v = findFloorViolations(review(`${head}${line}`), []);
+      assert.strictEqual(notRead(v).length, 1, line);
+    }
+  });
+
+  ok('下限[#1315]: 差分を読んだ・否定の否定・引用・計画書・節の外は数えない（陰性）', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    for (const line of [
+      '全文ではなく差分を読んだ。', // #1340 の 1 回目（差分を読むのは定義どおり）
+      '長い列挙は、末尾に足した値だけを確認した。', // #1341（差分そのもの）
+      '`.cs` は全文か差分、docs・helm・workflow は差分で読んだ。', // #1344 の 1 回目
+      '残りは差分を 1 ファイルずつ行単位で読んだ。',
+      '未読のファイルは無い。',
+      '精読していないファイルはない。',
+      '検査器は「行単位では読んでいない」と書いた本文を落とす。', // 引用（この PR 自身のレビューで自己発火しない）
+      '`全行は読んでいない` を検出する正規表現を足した。',
+      '計画書（FR-10）は読んでいない（計画リポ参照不可）。', // 計画書は読む対象のファイルではない
+      '計画 ADR の本文は精読していない。',
+    ]) {
+      assert.deepStrictEqual(notRead(findFloorViolations(review(`${head}${line}`), [])), [], line);
+    }
+    // 🔍 実行できなかったこと・指摘の節に在るだけなら数えない（#1340 の 3 回目の 🔍 は「本体以外の差分の行単位の精読」）
+    const tail =
+      '\n### 🔍 実行できなかったこと\n- 計画書との照合は未検証（計画リポ参照不可）。\n- テストは全行を読んでいない。\n- 本体以外の差分の行単位の精読は行っていない。\n';
+    assert.deepStrictEqual(findFloorViolations(review(head) + tail, []), []);
+    assert.deepStrictEqual(
+      findFloorViolations(review(head).replace('### 🟢 軽微\n- なし', '### 🟢 軽微\n- テストの一部は精読していないが問題ない'), []),
+      []
+    );
+  });
+
+  ok('下限[#1315]: 「確認できたこと」の節の自認は数え、M < N のときは (a) と重ねない', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    assert.strictEqual(notRead(findFloorViolations(review(head) + confirmed('テスト 2 本は要点だけ確認した'), [])).length, 1);
+    // M < N なら (a) の 1 行だけ（#1336 の初回・#1340 の 2 回目の「未読」を 2 度数えない）
+    const v = findFloorViolations(review('変更 3 ファイル中 2 ファイルを読んだ。テスト 1 本は未読。'), []);
+    assert.strictEqual(v.length, 1, v.join('\n'));
+    assert.match(v[0], /3 ファイル中 2/);
+  });
+
+  ok('下限[#1315]: 生成物だけの文は K>0 を申告していれば数えず、生成物以外も並べた文は数える', () => {
+    const k2 = '変更 5 ファイル中 3 ファイルを読んだ（生成物 2 ファイルを除外: `X.Designer.cs` / `ModelSnapshot.cs`）。';
+    assert.deepStrictEqual(findFloorViolations(review(`${k2}\`Designer.cs\` と ModelSnapshot は自動生成物のため、要点だけ確認した。`), []), []);
+    assert.strictEqual(
+      notRead(findFloorViolations(review(`${k2}要点または検査器の結果だけで確認したもの: Designer・ModelSnapshot（自動生成）、テスト 6 ファイル`), [])).length,
+      1
+    );
+    assert.deepStrictEqual(findNotReadAdmissions('前文。', null), []);
+  });
+
   // #1337 の AI レビュー 🟢: 申告は冒頭（最初の判定の見出しより前）だけから読む。
   ok('下限[#1315]: 申告は冒頭だけから読み、指摘の本文の「変更 N 件」を拾わない', () => {
     const body = review('変更 3 ファイル中 3 ファイルを読んだ。').replace('### 🟢 軽微\n- なし', '### 🟢 軽微\n- 変更 1 件中 0 件を読んだ旨の記述は無い');
@@ -694,6 +802,10 @@ ok('空スコープは違反', () => assert.strictEqual(validateSubject('feat():
       assert.strictEqual(errors.length, 3, bad.stdout); // 違反 2 行 + 総括 1 行
       assert.match(errors[0], /32 ファイル中 18/);
       assert.match(errors[1], /自己申告/);
+      // #1340 の 3 回目（37/37 だが「行単位では読んでいない」）も exit 1 で ::error を出す
+      const notReadRun = run(fixture('pr1340-review3.txt'), ['backend/A.cs']);
+      assert.strictEqual(notReadRun.status, 1, notReadRun.stdout + notReadRun.stderr);
+      assert.match(notReadRun.stdout, /::error::.*精読していないと書いている/);
       const good = run(PR1333, PR1333_FILES);
       assert.strictEqual(good.status, 0, good.stdout + good.stderr);
       assert.ok(!/::error::/.test(good.stdout), good.stdout);

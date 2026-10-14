@@ -1,0 +1,58 @@
+## AI コードレビュー結果
+
+変更 37 ファイル中 37 ファイルを読んだ（生成物 0 ファイルを除外）。ただし、全文ではなく差分を読んだのは次のものである。
+- 本体: `TradeDecisionAppService.cs`・`InFlightCloses.cs`・`InFlightCloseForgoneNotificationSuppressor.cs`・`InFlightClosesQueryService.cs`（後者は全文）
+- そのほかのファイル（テスト・docs・IADR・仕様書など）は差分または名前と範囲の確認にとどまり、行単位では読んでいない。
+
+### 🔴 重大
+- （指摘なし）
+
+### 🟡 推奨
+- （指摘なし）
+
+### 🟢 軽微
+- CodeQL（Log entries created from user input）の 3 件は、HEAD（42509c25）で対応済みである。`InFlightClosesQueryService.cs` の `symbol` は `LogSanitizer.Sanitize` を通してログへ出している（L48・L69・L82）。
+  - 指摘時点の差分に対する指摘であり、現在の HEAD には当たらない。
+  - CodeQL の再走査で閉じることを確認すればよい。
+  - 注文 ID（`string.Join(",", inFlight.OrderIds)`）はブローカーが返す値で、利用者入力ではない。このためそのまま出していて問題ない。
+- `TradeDecisionAppService` の新しいログ 2 か所は `trigger.Symbol` をそのまま出している。これは内部イベント由来で、利用者が直接入力する値ではない。既存コードと同じ扱いであり、対応は不要である。
+- 通知の抑止の記憶はプロセス内だけである。再起動の直後は同じ決済の通知が 1 回重なり得る。`InFlightCloseForgoneNotificationSuppressor` のコメントに明記済みで、許容範囲である。
+
+### 確認できたこと（このセッションで実行し、出力を見た）
+- **判定の一元化。** `InFlightCloses.Covers` / `CountLiveAsync` を、決済のゲートと照会の口が共有している。
+- **窓の両端。** 記録が非終端、かつブローカーが生きていると答えた注文だけを数える。照会の後に候補を読み直す。
+- **失敗の倒し方。** 照会の例外・不明・未結線は、すべて null か「覆わない」になり、LLM を呼ぶ側へ倒れる。`Covered` へ倒れる経路は「数えた処理中の決済が建玉を覆う」だけである。
+- **買い増しの判定。** `AddOnKnownForgone` が手元の値で先に判定し、成り立たなければ照会しない。
+- **ビルド。** `dotnet build backend/backend.slnx --no-restore -warnaserror`: 0 警告・0 エラー。
+- **テスト**（`--filter` なし・プロジェクト単位）:
+
+  | プロジェクト | 通過 |
+  | --- | --- |
+  | OrderExecutionService.Tests | 1776 |
+  | TradeDecisionService.Tests | 1898 |
+  | NotificationService.Tests | 896 |
+  | Shared.Contracts.Tests | 583 |
+
+  いずれも失敗 0。
+- **フォーマット。** `dotnet format backend/backend.slnx --verify-no-changes`: 差分なし。
+- **文書系の検査器。** すべて OK。
+  - `check-trace-blocks`: 56 件
+  - `gen-knowledge-graph --check`
+  - `check-doc-links`: 1211 件
+  - `check-adr-index-sync`
+  - `check-plan-id-qualification`
+  - `check-commit-messages`: 2 件
+- **Helm。** `helm lint deploy/helm/ai-stock-trading -f values-local.yaml` は 0 failed（icon 推奨の INFO のみ）。`helm template` も成功し、`OrderExecution__BaseUrl` が 3 箇所に出力された。
+
+### 🔍 実行できなかったこと
+- 計画書（計画 ADR-0003・ADR-0050 など）との照合は未検証（計画リポ参照不可）。
+- PR 本文の変異テスト M1〜M6 は追試していない（未検証。書き換えを伴う）。
+- `scripts.test.js` は実行していない。`scripts/` と `.github/` に差分が無いため。
+- Helm ワークフローの CI 結果の引用は未実施。
+- 次の検証は行っていない。
+  - `NotificationService` の `NotificationHandlers.cs` を含む、本体以外の差分の行単位の精読
+  - CodeQL の再走査結果の確認
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
+ · branch `fix/FR-04-1338-skip-llm-while-close-in-flight`

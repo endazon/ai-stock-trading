@@ -1,0 +1,46 @@
+## AI コードレビュー結果
+
+変更 32 ファイル中 32 ファイルを読んだ（生成物の除外なし）。ただし `*.Designer.cs`（292 行）と `OrderExecutionDbContextModelSnapshot.cs` は EF の自動生成物のため、全文ではなく差分の要点（列の追加）だけを確認した。`ApprovedCloseNettingTests.cs`（436 行）、`ApprovedCloseReleasePersistenceTests.cs`、`docs/` と `.ai-context/` の各文書は、本文を精読せず存在と検査器の結果で確認した。
+
+### 🔴 重大
+- （指摘なし）
+
+### 🟡 推奨
+- **`Commit` の印の書き込み失敗は、次の確定で同じ約定を二重に帰属させ得る。** `ApprovedCloseAttribution.Commit`（`ApprovedCloseAttribution.cs:138-165`）は、帳簿を書いた後に `MarkProtectionReleased` を呼ぶ。この書き込みが失敗すると警告ログだけで続行する。IADR-0534 の残余リスクに「分類の誤りは文面だけ」と書かれており、数量は壊れない。ただ、外部要因を承認済みと呼ぶ側に倒れる点は、本文の「迷ったら外部要因へ倒す」と向きが逆。失敗時は WARN ではなく ERR で残す。または、この向きの倒れ方を IADR-0534 に明記する。どちらかを検討してほしい。
+- **`PositionEffect = 1` の直書きは、列が int 保存である前提に依存する。** 移行 `20261013123535_AddApprovedCloseProtectionRelease.cs` の `UPDATE` は `"PositionEffect" = 1` と書いている。スナップショットは `int` で、`Close` は 2 番目の値（Close=1）なので現状は正しい。enum の並びを変えると静かに壊れるため、移行内のコメントでこの前提を示すとよい（任意）。
+
+### 🟢 軽微
+- `ProtectiveStopNetting.cs` の観測を捨てる分岐に、`// #1330 … 観測を捨てたら、その観測の前の端も捨てる。` というコメントがある。この位置から実際の `ExternalReductionObservedAt = null` までの間に `var absences = …` などが挟まる。コメントを `null` 代入の直前へ移すと読みやすい。
+- 乖離の取り込み `ProtectiveStopDriftAdopter.Reduced` は従来どおり `ProtectionReduced` を出す。利用者がシステム外で売買した外部要因なので、この PR の意図と整合している。
+
+### ✅ 確認できたこと
+- `dotnet build backend/backend.slnx`: 警告 0・エラー 0。
+- `dotnet format backend/backend.slnx --verify-no-changes`: 出力なし（差分なし）。
+- `dotnet test` はプロジェクト単位で全件、`--filter` なし。結果はすべて失敗 0。
+  - OrderExecutionService.Tests: 1745 件 pass
+  - Shared.Contracts.Tests: 582 件 pass
+  - NotificationService.Tests: 891 件 pass
+  - AuditService.Tests: 263 件 pass
+- `dotnet ef migrations has-pending-model-changes`（OrderExecutionService）: 「No changes have been made to the model」。モデルと移行は一致している。
+- 文書系の検査器はすべて OK。
+  - `check-trace-blocks`（56 件）
+  - `gen-knowledge-graph --check`
+  - `check-doc-links`（1202 件）
+  - `check-adr-index-sync`
+  - `check-commit-messages`（1 件）
+  - `check-plan-id-qualification`（3446 件）
+- 設計の確認:
+  - 前の端（`ReservedAt <= observedAt`）と後の端（未帰属の約定 = `FilledQuantity − ProtectionReleasedQuantity`）の両端判定が、コードで実装されている。
+  - 数量の経路（`Replace`）は変更されておらず、帳簿を書けたときだけ `Commit` で帰属を確定する。
+  - 予約・出どころ・記録が欠ける場合は外部要因へ倒れる。
+  - 新しい enum 値（序数 10）は末尾追加で、event-schemas のベースラインも更新されている。
+  - 通知（Info）と監査の文面で、外部要因という語を避けている。
+
+### 🔍 実行できなかったこと
+- 計画書（FR-10 / ADR-0040 / ADR-0050）との照合は、計画リポ参照不可のため未検証。PR 本文・IADR-0534・作業仕様書の記述との整合だけを見た。
+- PR 本文の「窓の形の実測（変異）」は、書き換えを伴うため追試していない（未検証）。
+- `scripts/` と `.github/` の差分は無いため、`scripts.test.js` は対象外と判断した。
+- `frontend/` の差分は無いため、frontend の検証は対象外と判断した。
+
+---
+*レビュー観点: トレーサビリティ / 受け入れ基準 / ADR 制約 / 品質 / AI 固有リスク*
