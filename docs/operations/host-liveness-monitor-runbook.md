@@ -190,11 +190,13 @@ Rancher Desktop の「Preferences」→「Application」→「Behavior」で次�
    **「スケジュールされた自動更新のインストールで、ログオンしているユーザーがいる場合には自動的に再起動しない」** を有効にする
    （配下のフォルダ名は版により異なる。見つからなければ 1・2 だけでよい）。
 4. 「設定」→「システム」→「電源」で、電源接続時の **スリープ・休止状態を「なし」** にする（スリープ中もクラスタは止まり、S1 は働かない）。
-   コマンドで行う場合は次の 2 行（管理者でなくてよい）。ノート PC なら、カバーを閉じたときの動作（電源接続時）も「何もしない」にする。
+   コマンドで行う場合は次の 2 行（管理者でなくてよい）。ノート PC なら、カバーを閉じたときの動作（電源接続時）も「何もしない」にする（下の 3・4 行目）。
 
    ```powershell
    powercfg /change standby-timeout-ac 0     # 電源接続時のスリープ: なし
    powercfg /change hibernate-timeout-ac 0   # 電源接続時の休止: なし
+   powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0   # 電源接続時にカバーを閉じたとき: 何もしない（ノート PC のみ）
+   powercfg /setactive SCHEME_CURRENT                                  # 上の変更を有効にする
    ```
 
 **予期しない再起動の原因を確かめる**（再起動のたびに行う）:
@@ -226,6 +228,10 @@ swap=8GB
 | キー | 推奨 | 理由 |
 | --- | --- | --- |
 | `memory` | `24GB` | 基盤と AST の常用構成の limits の合計（約 24 GiB）にほぼ等しい。残り（物理 31 GB なら約 7 GB）で Windows を動かす（推測） |
+
+`memory` の根拠の内訳（コンテナ単位・replicas を掛けた limits の合計。2026-10-14 の `helm template` / `kubectl kustomize` の描画から）:
+**基盤のアプリ（18 コンテナ）10,368 Mi ＋ 基盤の共有インフラ（13 コンテナ）6,944 Mi ＋ AST（11 サービス・OpenD とサイドカー。13 コンテナ）6,784 Mi ＝ 24,096 Mi**、
+秘密情報の経路（OpenBao）を足して 24,608 Mi（約 24 GiB）。requests の合計は同じ範囲で約 6.0 GiB で、実測の使用量（13.3 GiB）の半分に満たない。
 | `swap` | `8GB` | Pod の外のプロセス（イメージのビルド・k3s）の山を逃がす（推測）。Pod は既定で swap を使わないので、Pod の OOM はこれでは防げない |
 | `processors` | 指定しない | CPU は各 Pod の limits で抑える。絞る場合も 4 以上（推測） |
 
@@ -237,7 +243,7 @@ swap=8GB
 notepad "$env:USERPROFILE\.wslconfig"
 # 3. WSL の VM を止める（全ディストリビューションが止まる）
 wsl --shutdown
-wsl --list --running        # 「実行中のディストリビューションはありません」になるまで待つ
+wsl --list --running        # 一覧にディストリビューションが 1 つも出なくなるまで待つ（表示の文言は Windows の言語設定で変わる）
 # 4. （任意）WSL を更新する
 wsl --version
 wsl --update
@@ -248,6 +254,7 @@ kubectl --context rancher-desktop get nodes
 確認:
 
 ```powershell
+wsl -l -v                                                              # ディストリビューション名を確かめる（Rancher Desktop の既定は rancher-desktop）
 wsl -d rancher-desktop -- grep -E 'MemTotal|SwapTotal' /proc/meminfo   # MemTotal が約 24 GB、SwapTotal が約 8 GB
 kubectl --context rancher-desktop describe node | Select-String -Pattern 'memory:'   # Allocatable の memory が約 24 GiB
 kubectl --context rancher-desktop top node                                           # 使用率が下がっている
