@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-10-13
+updated: 2026-10-14
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014, ADR-0064]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, planning#783]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528, IADR-0537]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, #1342, planning#783]
 -->
 
 
@@ -257,6 +257,26 @@ LLM 学習カットオフ日（`Backtest:Stage0:LlmTrainingCutoff`）は、ど�
 **残る制約**: as-of 入力の**実供給はまだ無い**（既定は「入力なし」）。ここで定めたのは
 「**復元できなかったらどうするか**」であって、復元可能性を確かめたのではない。
 日報方針と為替レートの申告は**供給側の正直さ**に依存する（値の有無から痩せを観測できない）。
+
+#### 🔴 記録器は同じ承認値の組を二度課金しない（完了の印・途中からの再開・費用の累計の上限）
+
+記録器は取引判断サービスの起動ごとに走る。ホストの停止や一斉再起動が続くと、同じ承認値の記録がもう一度走り、もう一度課金されうる。
+そのため、記録器は実行の状態を永続領域に置き、同じ承認値の組（期間・銘柄・承認額・承認回数・モデル・トークン量）を次のように扱う。
+
+| 状態 | 扱い |
+| --- | --- |
+| 状態の置き場（永続ボリューム）が構成されていない | **記録しない**（LLM を呼ばない） |
+| 完了済み、または上限で停止済み | **LLM を呼ばずに終える**。記録は書き出さない（上書きしない） |
+| 途中で落ちた | 記録済みの判断時点を飛ばして**途中から再開**する |
+| 印・途中の記録・費用の累計が読めない、またはほかの実行が走っている | **LLM を呼ばない**（人が状態を確かめて消すまで） |
+
+- 費用の累計は、印とは別の鍵（承認額・承認回数・期間・銘柄）と別のファイルで持つ。印が消えても、累計が承認額に届いていれば呼ばない。
+- 判断時点ごとに、**呼ぶ前に**「累計＋1 判断時点の見積り」を円未満 2 桁に丸めて承認額を超えるなら止める。呼んだ後に累計が承認額を超えても止める。
+- 呼ぶ前に見込みを累計へ積み、呼んだ後に実績へ置き換える。応答の直後に落ちても、その費用は累計に入る。
+- 二重に課金されうるのは、応答を受けてから途中の記録を書くまでに落ちた 1 判断時点（一次 1 回＋多数決回数）だけである。
+- 🔴 **課金済みの記録を空の集合で消さない。** 止まった実行（上限・状態の失敗）の記録が 0 件なら、書き出しも終わりの印も行わない。
+  書き出し先は、既存の記録より判断の件数が少ない集合での上書きを拒み、一時ファイルを経て置き換える。
+- 同じ組でもう一度記録するには、人が記録を退避してから、状態の置き場の印と累計を消す。累計を消すと、承認額の上限も最初から数え直しになる。
 
 ### シミュレーション（Slice A）
 

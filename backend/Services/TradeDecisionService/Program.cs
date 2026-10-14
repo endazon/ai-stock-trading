@@ -628,12 +628,26 @@ builder.Services.AddScoped<IStage0DecisionRecordSink>(sp =>
         : new FileStage0DecisionRecordSink(
             outputPath, sp.GetRequiredService<ILogger<FileStage0DecisionRecordSink>>());
 });
+// FR-15, ADR-0033 決定5, #1342, IADR-0537: 実行の状態（完了の印・チェックポイント・費用の累計・ロック）の置き場。
+// 🔴 Stage0Recording:StateDirectory（永続ボリューム）が無ければ「読めない・書けない」と答える既定（記録は走らない）。
+// 台帳は同じ置き場の別のファイル・別の鍵（両方の実装が 2 つのポートを持つ）。
+builder.Services.AddSingleton<IStage0RecordingStateStore>(sp =>
+{
+    var stateDirectory = sp.GetRequiredService<IConfiguration>()[$"{Stage0RecordingOptions.SectionName}:StateDirectory"];
+    return string.IsNullOrWhiteSpace(stateDirectory)
+        ? new NoStage0RecordingStateStore()
+        : new FileStage0RecordingStateStore(
+            stateDirectory, sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<FileStage0RecordingStateStore>>());
+});
+builder.Services.AddSingleton(sp => (IStage0RecordingCostLedger)sp.GetRequiredService<IStage0RecordingStateStore>());
 builder.Services.AddScoped(sp => new Stage0DecisionRecorder(
     sp.GetRequiredService<ILlmCompletionClient>(),
     // FR-15, ADR-0054 決定3, #1196, IADR-0498: 本番の二段の構成（一次プロンプトの形を本番に合わせる。二段は記録側で必ず有効にする）。
     sp.GetRequiredService<DecisionOrchestrationOptions>(),
     sp.GetRequiredService<IAsOfDecisionInputProvider>(),
     sp.GetRequiredService<IStage0DecisionRecordSink>(),
+    sp.GetRequiredService<IStage0RecordingStateStore>(),
+    sp.GetRequiredService<IStage0RecordingCostLedger>(),
     sp.GetRequiredService<Stage0RecordingUsageCollector>(),
     BuildLlmPriceTable(sp.GetRequiredService<IConfiguration>()),
     sp.GetRequiredService<TimeProvider>(),

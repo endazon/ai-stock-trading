@@ -1318,3 +1318,39 @@ jobs:
           assert_fail "externalSecrets.enabled=true / secretStoreRef.name 空" --set externalSecrets.enabled=true --set externalSecrets.secretStoreRef.name=""
           # #24 / IADR-0094: appSecrets 有効化でストア名が空なら描画時に止まる（誤有効化の防止）。
           assert_fail "appSecrets.enabled=true / secretStoreRef.name 空" --set externalSecrets.enabled=true --set externalSecrets.appSecrets.enabled=true --set externalSecrets.secretStoreRef.name=""
+      # FR-15, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム。本番の既定では何も描かず、
+      # 経路B では PVC・mount・状態の置き場の env・Recreate を描き、書き出し先が mount の下にあること。
+      # 状態の置き場を extraEnv で与える・書き出し先が mount の外・mountPath が相対のときは、**その理由で**描画が止まる。
+      - name: Assert stage0 recorder persistence (#1342)
+        run: |
+          fail() { echo "::error::Stage 0 の記録器の永続ボリューム: $1"; exit 1; }
+          def="$(helm template ast "$CHART")"
+          if grep -qE 'trade-decision-stage0|Stage0Recording__StateDirectory|type: Recreate' <<<"$def"; then
+            fail "本番の既定で PVC・状態の置き場・Recreate のどれかが描かれた（既定は無効）"
+          fi
+          loc="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"
+          grep -q 'name: trade-decision-stage0' <<<"$loc" || fail "経路B で PVC が描かれない"
+          grep -q 'helm.sh/resource-policy: keep' <<<"$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/pvc-stage0-recording.yaml)" \
+            || fail "PVC に keep が付いていない（uninstall で印と累計が消える）"
+          td="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
+            | awk 'BEGIN{RS="---"} /\n  name: trade-decision-service\n/ {print}')"
+          grep -q 'value: "/var/lib/ai-stock-trading/stage0/state"' <<<"$td" || fail "trade-decision に状態の置き場が注入されない"
+          grep -q 'value: "/var/lib/ai-stock-trading/stage0/records.json"' <<<"$td" || fail "書き出し先が mount の下にない"
+          grep -q 'mountPath: /var/lib/ai-stock-trading/stage0' <<<"$td" || fail "trade-decision に mount が無い"
+          grep -q 'claimName: trade-decision-stage0' <<<"$td" || fail "trade-decision の volume が PVC を指していない"
+          grep -q 'type: Recreate' <<<"$td" || fail "trade-decision の更新方式が Recreate でない"
+          others="$(helm template ast "$CHART" -f "$CHART/values-local.yaml" -s templates/deployment.yaml \
+            | awk 'BEGIN{RS="---"} /kind: Deployment/ && !/\n  name: trade-decision-service\n/ {print}')"
+          if grep -qE 'stage0-recording|type: Recreate' <<<"$others"; then fail "trade-decision 以外に mount か Recreate が描かれた"; fi
+          must_fail() {
+            local label="$1" want="$2"; shift 2
+            local out
+            if out="$(helm template ast "$CHART" "$@" 2>&1)"; then fail "描画が通ってしまった: $label"; fi
+            grep -qF "$want" <<<"$out" || { echo "::error::$label: 期待した理由（$want）で止まっていない:"; printf '%s\n' "$out" | tail -3; exit 1; }
+          }
+          sed 's#"/var/lib/ai-stock-trading/stage0/records.json"#"/tmp/stage0/records.json"#' "$CHART/values-local.yaml" > /tmp/vl-outside.yaml
+          must_fail "書き出し先が mount の外" "の外です" -f /tmp/vl-outside.yaml
+          must_fail "mountPath が相対" "は絶対パスで指定してください" -f "$CHART/values-local.yaml" --set stage0Recording.persistence.mountPath=relative
+          must_fail "extraEnv に状態の置き場" "の extraEnv に Stage0Recording__StateDirectory は書けません" \
+            --set 'services.trade-decision.extraEnv[0].name=Stage0Recording__StateDirectory' --set 'services.trade-decision.extraEnv[0].value=/tmp/x'
+          echo "ok: 記録器の永続ボリュームは経路B だけで描かれ、誤配備は描画で止まる"

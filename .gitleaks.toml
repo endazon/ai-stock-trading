@@ -21,4 +21,8 @@ regexes = [
   # （`Finnhub:` に続く英数 20 字）に一致する。キー名であり値ではない。squash 後は SHA が変わり
   # .gitleaksignore の fingerprint では develop の push 走査を通せないため、秘密値そのものを許可する。
   '''^EstimatedSymbolCount$''',
+  # #1342 / IADR-0537: 引数名 `runKey` / `ledgerKey` の直後に C# の型名（`Stage0DecisionRecordSet` / `Stage0RunPhase`）が並ぶ形を
+  # generic-api-key 規則が鍵と値の組と読んだ（値は型名であり認証情報ではない）。引数名は runId / ledgerId へ改めて再発を止めたが、
+  # PR の走査は改名前のコミットも見るため、型名そのものを許可する（.gitleaksignore の fingerprint は squash で SHA が変わり効かない）。
+  '''^Stage0(DecisionRecordSet|RunPhase)$''',
 ]

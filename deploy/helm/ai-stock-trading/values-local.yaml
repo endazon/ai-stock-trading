@@ -68,6 +68,14 @@ externalSecrets:
 reloader:
   enabled: true
 
+# FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の書き出し先と実行の状態（完了の印・途中の記録・
+# 費用の累計）を永続ボリュームへ置く。PoC のホストは停止・一斉再起動を繰り返す（MSP#1919）ため、揮発領域では
+# 再起動のたびに同じ承認値の記録が二重に課金される。mountPath は values.yaml の既定（/var/lib/ai-stock-trading/stage0）。
+# 有効にしても記録は走らない（走らせるかは trade-decision の Stage0Recording__Enabled と承認値が決める）。
+stage0Recording:
+  persistence:
+    enabled: true
+
 services:
 
   # ============ ① 時価評価（mark-to-market）============
@@ -412,9 +420,16 @@ services:
       # as-of 入力の基底の供給は実装済みである（#1308 / IADR-0528。上の「as-of 入力の基底の配線」の節）。
       # 🔴 **Enabled は false で置く（承認値は入れてあるが、記録は走らない）。** 有効化は PoC が手順に沿って行う。
       #    Enabled=true の版を配備すると、その起動で記録が走り承認額の範囲で LLM を呼ぶ。記録器は trade-decision の
-      #    起動時に 1 回だけ走り（Hosted/Stage0RecordingService）、Pod が再起動するたびにもう一度呼んで OutputPath の
-      #    記録を上書きする。
-      # 🔴 **順序: ① 少額の通し試験 → ② 結果の確認 → ③ この承認値の組で一度だけ true → ④ 取り出したら false へ戻す。**
+      #    起動ごとに走る（Hosted/Stage0RecordingService）。
+      # 🔴 #1342, IADR-0537: 再起動しても二重には課金しない。永続ボリューム（上の stage0Recording.persistence）に
+      #    完了の印・途中の記録・費用の累計を置き、同じ承認値の組（期間・銘柄・承認額・承認回数・モデル・トークン量）は
+      #    - 完了していれば LLM を呼ばずに終える（AlreadyFinished）。書き出さない（記録を上書きしない）。
+      #    - 途中で落ちていれば、記録済みの判断時点を飛ばして途中から再開する。
+      #    - 費用の累計が承認額に届く見込みなら、呼ぶ前に止める（StoppedOverBudget）。
+      #    - 止まった実行の記録が 0 件なら書き出さない。書き出し先は件数が減る上書きを拒む（課金済みの記録を守る）。
+      #    同じ組でもう一度記録するには、records.json を退避してから、PVC の state/ の下の印（runs/）と台帳（ledger/）を
+      #    人が消す（chart README の手順）。
+      # 🔴 **順序: ① 少額の通し試験 → ② 結果の確認 → ③ この承認値の組で true → ④ 取り出したら false へ戻す。**
       #    ① は AAPL 1 銘柄 × 2026-09-15〜09-19（火〜金の平日 4 日・見積り 7.6716336 円＝7.67）へ縮めた組で、その見積りを承認値に写して回す。
       #    ② は記録の件数・一次と本判断の実効モデル・費用計上（purpose=stage0-recording）を見る。
       #    ④ では ApprovedEstimateJpy（trade-decision）も空へ戻す（#1219 の手順 4）。
@@ -458,9 +473,10 @@ services:
       - { name: Stage0Recording__OutputTokensPerDecision, value: "425" }            # 同 出力
       - { name: Stage0Recording__ScreeningInputTokensPerDecision, value: "2269" }   # 一次（purpose=trade-decision-screening）の入力
       - { name: Stage0Recording__ScreeningOutputTokensPerDecision, value: "582" }   # 同 出力
-      # 記録の書き出し先（コンテナ内のパス。#1219 の手順の既定）。空＝書き出さない＝実行しない。
-      # 🔴 Pod を再起動すると消える。false へ戻す前に kubectl cp で取り出す。
-      - { name: Stage0Recording__OutputPath, value: "/tmp/stage0/records.json" }
+      # 記録の書き出し先（コンテナ内のパス）。空＝書き出さない＝実行しない。
+      # #1342, IADR-0537: 永続ボリューム（stage0Recording.persistence.mountPath）の下。Pod を再起動しても消えない。
+      # backtest へは従来どおり kubectl cp で取り出して渡す。mountPath の外を指すと描画で止まる。
+      - { name: Stage0Recording__OutputPath, value: "/var/lib/ai-stock-trading/stage0/records.json" }
       - { name: LlmGateway__TimeoutSeconds, value: "" }
       # 安全既定 "" ＝判断の要求/応答を記録しない（機微を既定でログ基盤へ流さない・IADR-0061 決定1）。
       # プロンプトレベルの検証時のみ "true" へ（README 参照）。

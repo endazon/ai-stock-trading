@@ -124,7 +124,8 @@ public class Stage0MinimumEntryNotionalTests
         var sink = new CapturingSink();
         var input = new AsOfDecisionInput(AsOf, new DailyPolicy(AsOf, "当日の方針"), sizing, new DatedPrice(AsOf, D(price)));
         var recorder = new Stage0DecisionRecorder(
-            new RecorderLlm(collector, decisionJson), DecisionOrchestrationOptions.Default, new FixedInputs(input), sink, collector,
+            new RecorderLlm(collector, decisionJson), DecisionOrchestrationOptions.Default, new FixedInputs(input), sink,
+            new InMemoryStage0RecordingState(), new InMemoryStage0RecordingState(), collector,
             LlmPriceTable.From([(TestModel, "1", "1")], "1", "1"),
             new ManualTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance, options);
 
@@ -150,6 +151,7 @@ public class Stage0MinimumEntryNotionalTests
         ApprovedVoteCount = 1,
         ApprovedEstimateJpy = 4m,
         OutputPath = "records.json",
+        StateDirectory = "state",
         Model = TestModel,
     };
 

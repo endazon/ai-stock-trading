@@ -81,6 +81,28 @@
 {{- range $e := $svc.extraEnv }}{{- if $e.secretKeyRef }}{{- $reloadSecrets = append $reloadSecrets $e.secretKeyRef.name -}}{{- end }}{{- end -}}
 {{- if $envSecretRefs }}{{- $reloadSecrets = append $reloadSecrets $es.appSecrets.targetName -}}{{- end -}}
 {{- if and (eq $name "order-execution") (eq $broker.provider "moomoo") }}{{- $reloadSecrets = append $reloadSecrets $.Values.moomoo.opend.rsaSecretName -}}{{- end }}
+{{- /* FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器の永続ボリューム（trade-decision だけ）。
+       有効なら PVC（templates/pvc-stage0-recording.yaml）を mount し、状態の置き場 Stage0Recording__StateDirectory を
+       <mountPath>/state として注入し、更新方式を Recreate にする。既定（無効）では何も描かない＝既定描画はバイト等価。
+       🔴 状態の置き場は描画が単独で持つ（extraEnv に書けば止める。/tmp などの揮発領域へ向けられる抜け道を作らない）。
+       🔴 書き出し先（extraEnv の Stage0Recording__OutputPath）が mount の外なら止める（記録が再起動で消える）。 */ -}}
+{{- $s0 := (($.Values.stage0Recording | default dict).persistence) | default dict -}}
+{{- $stage0Persist := and (eq $name "trade-decision") $s0.enabled -}}
+{{- range $e := $svc.extraEnv }}
+{{- if eq ($e.name | toString) "Stage0Recording__StateDirectory" }}
+{{- fail (printf "services.%s の extraEnv に Stage0Recording__StateDirectory は書けません。状態の置き場は stage0Recording.persistence.enabled=true で描画が注入します（永続ボリュームの外へ向けない。#1342 / IADR-0537）。" $name) }}
+{{- end }}
+{{- end }}
+{{- if $stage0Persist }}
+{{- if not (hasPrefix "/" ($s0.mountPath | default "" | toString)) }}
+{{- fail "stage0Recording.persistence.mountPath は絶対パスで指定してください（#1342 / IADR-0537）。" }}
+{{- end }}
+{{- with (index $baseUrls "Stage0Recording__OutputPath") }}
+{{- if not (hasPrefix (printf "%s/" (trimSuffix "/" $s0.mountPath)) .) }}
+{{- fail (printf "services.trade-decision の Stage0Recording__OutputPath=%q は stage0Recording.persistence.mountPath（%s）の外です。記録が Pod の再起動で消えるため、mount の下を指してください（#1342 / IADR-0537）。" . $s0.mountPath) }}
+{{- end }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -98,6 +120,11 @@ metadata:
   {{- end }}
 spec:
   replicas: 1
+  {{- if $stage0Persist }}
+  {{- /* #1342, IADR-0537: 入れ替えで旧 Pod と新 Pod の記録器が同じ状態を同時に進めない（ReadWriteOnce の PVC も Recreate が要る）。 */}}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       app: {{ $name }}-service
@@ -314,6 +341,11 @@ spec:
             - name: Collection__Trigger
               value: "External"
             {{- end }}
+            {{- if $stage0Persist }}
+            {{- /* #1342, IADR-0537: 記録器の状態の置き場（完了の印・途中の記録・費用の累計・ロック）。永続ボリュームの下。 */}}
+            - name: Stage0Recording__StateDirectory
+              value: {{ printf "%s/state" (trimSuffix "/" $s0.mountPath) | quote }}
+            {{- end }}
             {{- /* #13, IADR-0111: 発注先。既定 paper（fail-safe・実弾なし）。broker.tier=moomoo-sim で OpenD 経由
                    SIMULATE 発注へ。cross-network trade は RSA 必須のため RsaPrivateKeyPath（マウント鍵）を注入する。 */}}
             {{- if eq $name "order-execution" }}
@@ -392,6 +424,11 @@ spec:
               mountPath: {{ $.Values.moomoo.opend.rsaMountPath }}
               readOnly: true
             {{- end }}
+            {{- if $stage0Persist }}
+            {{- /* #1342, IADR-0537: Stage 0 の記録の書き出し先と実行の状態（PVC trade-decision-stage0）。 */}}
+            - name: stage0-recording
+              mountPath: {{ $s0.mountPath }}
+            {{- end }}
       volumes:
         {{- /* ADR-0001, IADR-0077, #22: 宣言的バインディングの ConfigMap（configmap-pipeline.yaml）。全 Worker 共通。 */}}
         - name: pipeline-config
@@ -408,5 +445,10 @@ spec:
             items:
               - key: {{ $.Values.moomoo.opend.rsaSecretKey }}
                 path: {{ $.Values.moomoo.opend.rsaSecretKey }}
+      {{- end }}
+      {{- if $stage0Persist }}
+        - name: stage0-recording
+          persistentVolumeClaim:
+            claimName: trade-decision-stage0
       {{- end }}
 {{- end }}

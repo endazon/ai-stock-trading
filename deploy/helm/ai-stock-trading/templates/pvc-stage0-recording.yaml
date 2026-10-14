@@ -1,0 +1,30 @@
+{{- /*
+  FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器（trade-decision）の永続ボリューム。
+  記録の書き出し先と実行の状態（完了の印・途中の記録・費用の累計の台帳・実行のロック）を置く。
+  既定 stage0Recording.persistence.enabled=false ＝ 本ファイルは何も描画しない（本番の描画は不変）。
+  mount と env（Stage0Recording__StateDirectory）と Recreate は templates/deployment.yaml が同じ値から描く。
+*/ -}}
+{{- $p := ((.Values.stage0Recording | default dict).persistence) | default dict }}
+{{- if $p.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trade-decision-stage0
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: trade-decision-service
+    app.kubernetes.io/part-of: ai-stock-trading
+  annotations:
+    # 無効化（helm upgrade の再描画）や helm uninstall で PVC ごと消えると、完了の印と費用の累計が失われ、
+    # 同じ承認値の記録がもう一度走る（二重の課金）。keep で削除対象から外す。消すときは
+    # `kubectl delete pvc trade-decision-stage0 -n <namespace>` を人が実行する（chart README 参照）。
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if $p.storageClassName }}
+  storageClassName: {{ $p.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $p.size | quote }}
+{{- end }}
