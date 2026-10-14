@@ -271,6 +271,24 @@ discord:
     # "discordUserId:keycloak利用者名" のカンマ区切り（同上のエスケープが要る）。対応が無いユーザーは操作できない。
     userMapping: ""
 
+# FR-15, NFR（費用）, ADR-0033 決定5, #1342, IADR-0537 決定5: Stage 0 の記録器（trade-decision）の永続ボリューム。
+# 記録の書き出し先（Stage0Recording__OutputPath）と実行の状態（完了の印・途中の記録・費用の累計の台帳・実行のロック）を置く。
+# 🔴 既定は無効（PVC も mount も env も描画しない＝本番の描画は本設定点の追加前とバイト等価）。記録器は状態の置き場
+#    （Stage0Recording:StateDirectory）が無ければ走らないため、無効のままでは記録は 1 回も走らない（fail-safe）。
+# 有効にすると、PVC `trade-decision-stage0` を作り、trade-decision の mountPath へ mount し、
+# Stage0Recording__StateDirectory=<mountPath>/state を注入し、trade-decision の更新方式を Recreate にする
+# （入れ替えで旧 Pod と新 Pod の記録器が重ならない。重なってもロックで片方は LLM を呼ばない）。
+# 🔴 Stage0Recording__StateDirectory を extraEnv に書かない（描画が単独で持つ。書けば描画で止まる）。
+#    Stage0Recording__OutputPath（extraEnv）は mountPath の下を指すこと（外を指せば描画で止まる）。
+# PVC は helm.sh/resource-policy: keep（uninstall・無効化でも消さない。費用の累計と完了の印を失うと、同じ承認値の記録がもう一度走る）。
+stage0Recording:
+  persistence:
+    enabled: false
+    size: 1Gi
+    # 空=クラスタ既定の StorageClass（k3d/Rancher Desktop の local-path で足りる）。
+    storageClassName: ""
+    mountPath: /var/lib/ai-stock-trading/stage0
+
 # 10 Worker。全て Web SDK :8080（/health/live・/health/ready）。
 # db を持つものは ConnectionStrings を注入、auth=true は Auth__Authority を注入する。
 services:

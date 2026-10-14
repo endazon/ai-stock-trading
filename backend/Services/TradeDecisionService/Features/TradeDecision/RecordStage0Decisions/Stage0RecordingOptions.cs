@@ -56,8 +56,18 @@ public sealed class Stage0RecordingOptions
     /// <summary>利用者が承認した多数決回数。<see cref="VoteCount"/> と一致しなければ実行しない。既定 null＝未承認。</summary>
     public int? ApprovedVoteCount { get; set; }
 
-    /// <summary>記録の書き出し先（JSON）。未設定なら書き出さない（＝記録が残らないので実行しない）。</summary>
+    /// <summary>
+    /// 記録の書き出し先（JSON）。未設定なら書き出さない（＝記録が残らないので実行しない）。
+    /// #1342, IADR-0537: 永続ボリューム（<see cref="StateDirectory"/> と同じ PVC）の下を指す。
+    /// </summary>
     public string? OutputPath { get; set; }
+
+    /// <summary>
+    /// FR-15, ADR-0033 決定5, #1342, IADR-0537: 実行の状態（完了の印・途中の記録・費用の累計の台帳・実行のロック）の置き場（ディレクトリ）。
+    /// 🔴 **永続ボリュームを指す。未設定なら記録しない** —— 揮発領域の状態では、再起動のたびに同じ承認値の記録が走って二重に課金される。
+    /// helm では `stage0Recording.persistence.enabled` を有効にすると描画が注入する（値を手で書かない）。
+    /// </summary>
+    public string? StateDirectory { get; set; }
 
     /// <summary>記録に用いるモデル識別子（ADR-0011 のピン留めモデル）。未設定ならゲートウェイの用途別割当に委ねる。</summary>
     /// <remarks>FR-15, ADR-0054 決定3, #1196, IADR-0498: 本判断（`trade-decision`）の層の希望値。一次は <see cref="ScreeningModel"/>。</remarks>

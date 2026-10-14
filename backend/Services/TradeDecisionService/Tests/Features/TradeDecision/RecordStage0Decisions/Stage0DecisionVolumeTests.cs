@@ -358,6 +358,7 @@ public class Stage0DecisionVolumeTests
         ApprovedVoteCount = 1,
         ApprovedEstimateJpy = 4m, // 銘柄 1 × 平日 1 × 1 ×（一次 1 ＋ 多数決 1）×（1 + 1）円
         OutputPath = "records.json",
+        StateDirectory = "state",
         Model = "claude-sonnet-5-5",
     };
 
@@ -368,7 +369,9 @@ public class Stage0DecisionVolumeTests
         var llm = new FakeLlm(collector);
         var sink = new CapturingSink();
         var recorder = new Stage0DecisionRecorder(
-            llm, DecisionOrchestrationOptions.Default, wrap(new StubInputs()), sink, collector,
+            llm, DecisionOrchestrationOptions.Default, wrap(new StubInputs()), sink,
+            // #1342, IADR-0537: 実行の状態（印・台帳）はメモリ上の置き場。
+            new InMemoryStage0RecordingState(), new InMemoryStage0RecordingState(), collector,
             LlmPriceTable.From([("claude-sonnet-5-5", "1", "1")], "1", "1"),
             new ManualTimeProvider(FarFuture), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink);

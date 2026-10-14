@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-10-13
+updated: 2026-10-14
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04, FR-05]
 adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014, ADR-0035, ADR-0064]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524, IADR-0528]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, #1308, planning#783]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524, IADR-0528, IADR-0537]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, #1308, #1342, planning#783]
 -->
 
 
@@ -380,6 +380,31 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | T-15-129 | 🔴 休場・確定日報なし・方針の日付が判断日より後・基準通貨でない市場は判断しない（null）。価格・方針の照会の失敗は記録を止める（例外）。サイジングは固定値で、出力を記録器に通すと本番と同じ組み立てで記録が作られる | `BaseAsOfDecisionInputProviderTests.価格と方針と参考情報を判断時点で組みサイジングは固定値である` / `判断日の足が無い日は判断しない_休場` / `判断時点までに確定した日報が無ければ判断しない` / `方針の日付が判断日より後なら判断しない` / `基準通貨でない市場は判断しない` / `価格の口が判断日と違う日の足を返したら記録を止める` / `価格と方針の照会の失敗は例外のまま伝わる` / `Stage0DecisionRecorderTests.基底の供給の出力を記録器に通すと本番と同じ組み立てで記録が作られる` | 自動 |
 | T-15-130 | 外部の口は判断時点で切った要求を出す（日足の期間・方針の時刻・企業ニュースの日付・開示の受理時刻・マクロ指標の前日の版）。基底の供給は方針と日足の接続先がそろったときだけ選ばれる | `Stage0AsOfExternalSourcesTests.価格は判断日の足の終値と前日の終値を返し期間は判断日で切る` / `判断日の足が無ければ参照価格は無い_休場` / `日足が取れなければ撃ち直してから記録を止める` / `判断日が今日の取引日以降なら足を取らずに止める` / `方針は送り手の本物の型を直列化した応答から読み_時刻はUTCで渡す`（契約） / `確定日報が無ければ方針は無い_404` / `方針が取れなければ撃ち直してから記録を止める` / `判断時点より後に確定した方針は撃ち直さずにすぐ記録を止める` / `企業ニュースは判断時点の日付で区切って引き_収集と同じ形の文書にする` / `企業ニュースは429なら1回だけ撃ち直し_失敗はnull_米国株以外は無い` / `開示はCIKごとに1回だけ引き_銘柄で絞り_受理時刻を発行時刻にする` / `開示の取得に失敗すればnullで_失敗は覚えない` / `マクロ指標はALFREDの前日の版で引き_判断日ごとに1回だけ取る` / `マクロ指標は窓幅の違う呼び出しで狭い窓の観測を使い回さない` / `構成の無い源は組み立てに入れない`（3 ケース） / `Stage0DecisionVolumeWiringTests.連鎖の最も内側は方針と日足の接続先がそろったときだけ基底の供給になる`（5 ケース） / `Stage0RecordingLocalProfileTests.経路Bの配線の欄で基底の供給が選ばれ_欄を埋めて承認すれば記録が作られる` | 自動 |
 | T-15-131 | バックテストの過去データ源 `order-execution` は銘柄ごとに日足の照会を呼び、取れた足だけを使い、取れなかった銘柄を欠測に残す。評価の窓の終端を構成で固定できる（空は今日） | `HttpOrderExecutionHistoricalBarSourceTests.送り手の本物の型を直列化した応答から足を読む`（契約） / `銘柄ごとに日足の照会を呼び取れた足を使う` / `期間外の壊れた足では銘柄が落ちない`（2 ケース） / `取れなかった銘柄は欠測に残し他の銘柄は続ける`（6 ケース） / `照会の上限を超える期間は分けて呼び_一部でも取れなければ銘柄ごと欠測にする` / `期間の分割は両端を含み隙間も重なりも無い` / `provider_order_execution_はベースURLがあれば選ばれる` / `ベースURLが無い_不正なら_no_op_へ倒す`（4 ケース） / `provider_order_execution_なのにHttpClientが無ければ配線の誤りとして止める` / `評価の窓の終端を構成で固定できる`（5 ケース） / `経路Bの想定値では窓は記録の窓と一致する` / `BacktestWorkerWiringTests.provider_order_execution_の指定で発注執行の日足の照会の源が解決される` | 自動 |
+
+### 記録器の冪等化と費用の累計の上限（#1342）
+
+> 記録器は起動ごとに走る。同じ承認値の組を二度課金しないことを、「再起動」（同じ状態の置き場を新しい記録器へ渡す）で確かめる。
+> 🔴 **本節の核心は 2 つ** —— 完了した組は LLM を 1 回も呼ばないこと、および途中で落ちた組は記録済みの判断時点を呼ばずに最後までそろうこと。
+
+| ID | 受け入れ基準 | テストメソッド | 区分 |
+| --- | --- | --- | --- |
+| T-15-132 | 🔴 完了した後の起動では LLM を 1 回も呼ばず、記録を上書きしない。書き出し先を変えても同じ | `Stage0RecordingIdempotencyTests.完了した後の2回目の起動ではLLMを1回も呼ばない` / `書き出し先を変えても完了済みの記録はもう一度走らない` | 自動 |
+| T-15-133 | 🔴 途中で落ちた後の起動は、記録済みの判断時点を呼ばずに途中から再開して完了の印を付け、記録は落ちなかった実行と同じ戦略識別子になる。書き出しに失敗した組は LLM を呼ばずに書き出し直す | `Stage0RecordingIdempotencyTests.途中で落ちた後は記録済みの判断時点を呼ばずに途中から再開する` / `途中から再開した記録は落ちなかった記録と同じ戦略IDになる` / `書き出しに失敗したら次の起動はLLMを呼ばずに書き出し直す` | 自動 |
+| T-15-134 | 🔴 費用の累計の上限: 印が無くても累計が承認額に届いていれば呼ばない／呼ぶ前に「累計＋1 判断時点の見積り」が承認額を超えるなら止める／応答の後に落ちた判断時点の費用も累計に入り上限で止まる／累計は呼ぶ前に見込みを積み呼んだ後に実績へ置き換える／承認額が見積りを円未満 2 桁へ丸めた値でも最後の判断時点まで呼ぶ／上限に届かない通常の完走は全件を記録する | `Stage0RecordingIdempotencyTests.印が無くても累計が承認額に届いていればLLMを呼ばない` / `累計と次の判断時点の見込みが承認額を超えるなら呼ぶ前に止める` / `応答の後チェックポイントの前に落ちたらその費用も累計に入り上限で止まる` / `台帳は呼ぶ前に見込みを積み呼んだ後に実績へ置き換える` / `承認額が見積りを2桁へ丸めた値でも最後の判断時点まで呼ぶ` / `上限に届かない通常の完走は全件を記録して完了の印を付ける` / `Stage0DecisionRecorderTests.見積り額を超えたら停止し途中までの記録を保存する`（既存） | 自動 |
+| T-15-135 | 🔴 状態の置き場が未構成・印やチェックポイントや累計が読めない・開始の印が書けない・ほかの実行がロックを持つときは LLM を 1 回も呼ばない。本番の組み立ては置き場の構成があるときだけファイルを選ぶ | `Stage0RecordingIdempotencyTests.状態が読めず書けずロックも取れなければLLMを1回も呼ばない`（4 ケース） / `状態の置き場が未構成ならLLMを1回も呼ばない` / `Stage0RecordingStateWiringTests.状態の置き場は構成があるときだけファイルになる`（3 ケース） / `置き場なしの既定は読めず書けずロックも取れない` | 自動 |
+| T-15-136 | 印の鍵は置き場・有効化・銘柄の並びで変わらず、承認の単位で変わる。記録の中身の欄だけが変われば印は別で累計は同じ。ファイルの状態は再起動をまたいで読め、壊れたファイルを「無い」と読まず、ロックは排他で、累計は印と別のファイルにある | `Stage0RecordingIdentityTests`（4 試験） / `FileStage0RecordingStateStoreTests`（8 試験） | 自動 |
+| T-15-137 | 経路B は記録の永続ボリュームを有効にし、書き出し先はその中にある。本番の既定は無効。描画は、本番で何も描かず、経路B で PVC・mount・状態の置き場・Recreate を描き、置き場を extraEnv に書く・書き出し先が mount の外・mountPath が相対のときに止まる | `Stage0RecordingLocalProfileTests.記録の永続ボリュームは本番で無効_経路Bで有効で書き出し先はその中にある` / `経路Bの記録の欄は承認値で埋まっている`（改） / CI `helm.yml` の「Assert stage0 recorder persistence」 | 自動 |
+
+**変異で赤になることの確認**:
+
+| 変異 | 結果 |
+| --- | --- |
+| 途中で落ちた組を最初からやり直す（完了の印だけを見る） | **4 件が赤**（T-15-133・T-15-134） |
+| 開始の印があれば走らない（開始の印だけを見る） | **4 件が赤**（同上） |
+| 呼ぶ前の見込みの判定を外す／丸めない | **3 件／1 件が赤**（T-15-134） |
+| 完了の印を見ない／累計を読まない | **3 件／5 件が赤**（T-15-132／T-15-134） |
+| 状態の置き場の未設定を通す／ロックを見ない | **1 件／1 件が赤**（T-15-135） |
+| 描画の Recreate を外す | CI の検査が赤（T-15-137） |
 
 ### 合格基準の閾値較正（#208。Stage 0 の最小試行数を 1 → 20 へ較正する）
 

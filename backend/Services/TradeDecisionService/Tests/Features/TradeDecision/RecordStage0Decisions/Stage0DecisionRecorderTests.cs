@@ -40,6 +40,7 @@ public class Stage0DecisionRecorderTests
         string to = "2026-06-02",
         string? cutoff = "2026-03-31",
         string? outputPath = "records.json",
+        string? stateDirectory = "state",
         IReadOnlyList<Stage0RecordingOptions.SymbolEntry>? symbols = null) => new()
         {
             Enabled = enabled,
@@ -58,6 +59,7 @@ public class Stage0DecisionRecorderTests
             // 見積り = 銘柄1 × 平日2 × 1 ×（一次 1 ＋ votes）× (1000/1000×1 + 1000/1000×1) = 4 ×（1 ＋ votes）円
             ApprovedEstimateJpy = approvedJpy ?? 4m * (voteCount + 1),
             OutputPath = outputPath,
+            StateDirectory = stateDirectory,
             Model = "claude-sonnet-5-5",
         };
 
@@ -71,7 +73,8 @@ public class Stage0DecisionRecorderTests
             IReadOnlyList<string>? screening = null,
             Func<string?, string?>? effectiveModel = null,
             DecisionOrchestrationOptions? production = null,
-            LlmPriceTable? prices = null)
+            LlmPriceTable? prices = null,
+            InMemoryStage0RecordingState? state = null)
     {
         var reporter = new RecordingReporter();
         var collector = new Stage0RecordingUsageCollector(reporter);
@@ -83,7 +86,7 @@ public class Stage0DecisionRecorderTests
             wrapInputs is null
                 ? new StubInputProvider(notReconstructable, asOfWatchlist)
                 : wrapInputs(new StubInputProvider(notReconstructable, asOfWatchlist)),
-            sink, collector, prices ?? Prices(),
+            sink, state ?? new InMemoryStage0RecordingState(), state ?? new InMemoryStage0RecordingState(), collector, prices ?? Prices(),
             new FixedTimeProvider(Now), NullLogger<Stage0DecisionRecorder>.Instance);
         return (recorder, llm, sink, reporter);
     }

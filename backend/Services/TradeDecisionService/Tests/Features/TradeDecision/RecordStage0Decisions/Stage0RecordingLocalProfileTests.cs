@@ -29,6 +29,10 @@ public class Stage0RecordingLocalProfileTests
     private const string LocalValues = "deploy/helm/ai-stock-trading/values-local.yaml";
     private const string ProductionValues = "deploy/helm/ai-stock-trading/values.yaml";
 
+    // #1342, IADR-0537: 永続ボリュームの mount 先（values.yaml の stage0Recording.persistence.mountPath）と、描画が注入する状態の置き場。
+    private const string PersistentMount = "/var/lib/ai-stock-trading/stage0";
+    private const string InjectedStateDirectory = PersistentMount + "/state";
+
     // #1219: オーナー承認（2026-10-13）の承認額。見積りはこれ以下でなければならない。
     private const decimal OwnerApprovedBudgetJpy = 1700m;
 
@@ -56,7 +60,9 @@ public class Stage0RecordingLocalProfileTests
         options.OutputTokensPerDecision.Should().Be(425);
         options.ScreeningInputTokensPerDecision.Should().Be(2269);
         options.ScreeningOutputTokensPerDecision.Should().Be(582);
-        options.OutputPath.Should().Be("/tmp/stage0/records.json");
+        // 🔴 #1342, IADR-0537: 書き出し先は永続ボリューム（stage0Recording.persistence の mount）の中。/tmp（揮発領域）へ戻さない。
+        options.OutputPath.Should().Be(PersistentMount + "/records.json");
+        options.StateDirectory.Should().BeNull("状態の置き場は描画が stage0Recording.persistence から注入する（extraEnv に書かない）");
         // ADR-0064 決定1・決定3: 本判断の層は 5.5 系のピン。カットオフは 5.5 系の 2026-06-30。
         options.Model.Should().Be("claude-sonnet-5-5");
         options.ScreeningModel.Should().BeNull("一次は割当表のピンに委ねる（本番と同じ扱い）");
@@ -91,6 +97,7 @@ public class Stage0RecordingLocalProfileTests
     {
         var env = Env(LocalValues, "trade-decision");
         env["Stage0Recording__Enabled"] = "true";
+        env["Stage0Recording__StateDirectory"] = InjectedStateDirectory; // 描画が注入する値（#1342）
         var options = Bind(env);
         var llm = new CountingLlm();
         var sink = new CapturingSink();
@@ -112,6 +119,7 @@ public class Stage0RecordingLocalProfileTests
     {
         var env = Env(LocalValues, "trade-decision");
         env["Stage0Recording__Enabled"] = "true";
+        env["Stage0Recording__StateDirectory"] = InjectedStateDirectory; // 描画が注入する値（#1342）
         env["Stage0Recording__ApprovedEstimateJpy"] = "1700";
         var llm = new CountingLlm();
         var sink = new CapturingSink();
@@ -160,9 +168,10 @@ public class Stage0RecordingLocalProfileTests
             .HasBaseEndpoints(Configuration(env)).Should().BeTrue("経路B は方針と日足の接続先を両方持つ");
 
         env["Stage0Recording__Enabled"] = "true";
+        env["Stage0Recording__StateDirectory"] = InjectedStateDirectory; // 描画が注入する値（#1342）
         env["Stage0Recording__From"] = "2026-09-15";
         env["Stage0Recording__To"] = "2026-09-16";
-        env["Stage0Recording__OutputPath"] = "/tmp/stage0/records.json";
+        env["Stage0Recording__OutputPath"] = PersistentMount + "/records.json";
         env["Stage0Recording__InputTokensPerDecision"] = "6000";
         env["Stage0Recording__OutputTokensPerDecision"] = "800";
         env["Stage0Recording__ScreeningInputTokensPerDecision"] = "4000";
@@ -237,6 +246,29 @@ public class Stage0RecordingLocalProfileTests
         Bind(env).Enabled.Should().BeFalse();
     }
 
+    // 🔴 FR-15, ADR-0033 決定5, #1342, IADR-0537 決定5: 書き出し先と状態の永続ボリュームは本番（values.yaml）では無効、
+    // 経路B（values-local）では有効で、mount 先は書き出し先の親である（描画が状態の置き場を mount 先の下へ注入する）。
+    [Fact]
+    public void 記録の永続ボリュームは本番で無効_経路Bで有効で書き出し先はその中にある()
+    {
+        static string Persistence(string path)
+        {
+            var text = File.ReadAllText(Path.Combine([RepoRoot(), .. path.Split('/')])).Replace("\r\n", "\n");
+            var block = Regex.Match(text, @"(?ms)^stage0Recording:\n(.*?)(?=^[A-Za-z])");
+            block.Success.Should().BeTrue($"{path} に stage0Recording の節がある");
+            return block.Groups[1].Value;
+        }
+
+        var production = Persistence(ProductionValues);
+        Regex.IsMatch(production, @"(?m)^    enabled:\s*false\s*(#.*)?$").Should().BeTrue("本番の既定は無効（PVC も mount も作らない）");
+        Regex.Match(production, @"(?m)^    mountPath:\s*(\S+)").Groups[1].Value.Should().Be(PersistentMount);
+
+        var local = Persistence(LocalValues);
+        Regex.IsMatch(local, @"(?m)^    enabled:\s*true\s*(#.*)?$").Should().BeTrue("経路B は記録の状態を永続ボリュームへ置く");
+
+        Bind(Env(LocalValues, "trade-decision")).OutputPath.Should().StartWith(PersistentMount + "/");
+    }
+
     private static Stage0DecisionRecorder Recorder(CountingLlm llm, CapturingSink sink, IAsOfDecisionInputProvider? inputs = null) =>
         new(
             llm,
@@ -244,6 +276,9 @@ public class Stage0RecordingLocalProfileTests
             // 既定は「入力なし」（基底の供給の口がそろわない構成と同じ）。#1308 の試験は基底の供給を渡す。
             inputs ?? new NoAsOfDecisionInputProvider(),
             sink,
+            // #1342, IADR-0537: 実行の状態（印・台帳）はメモリ上の置き場。
+            new InMemoryStage0RecordingState(),
+            new InMemoryStage0RecordingState(),
             new Stage0RecordingUsageCollector(new NullReporter()),
             Prices(),
             new FixedTimeProvider(new DateTimeOffset(2026, 10, 12, 0, 0, 0, TimeSpan.Zero)),

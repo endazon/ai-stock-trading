@@ -747,6 +747,25 @@ scripts/k8s-local-deploy.sh
 > `helm upgrade -f overlay-cycle.yaml` で手当てする従来運用は、本プロファイルの committed 化により**不要**になった
 > （overlay には #236 の価格文脈が欠けていた点も本プロファイルで解消済み）。overlay ファイルの物理削除は任意。
 
+### Stage 0 の記録器の永続ボリューム（`stage0Recording.persistence`。#1342 / [IADR-0537](../../../.ai-context/adr/IADR-0537_stage0-recorder-idempotent-completion-mark-and-cumulative-cap.md)）
+
+- 記録器（trade-decision の起動ごとに走る）の書き出し先と実行の状態（完了の印・途中の記録・費用の累計・ロック）を PVC `trade-decision-stage0` に置く。
+  **本番の既定は無効**（PVC・mount・env を描かない）。`values-local.yaml` は有効。
+- 有効にすると、描画が `Stage0Recording__StateDirectory=<mountPath>/state` を注入し、trade-decision の更新方式を `Recreate` にする。
+  `Stage0Recording__StateDirectory` を extraEnv に書くと描画で止まる。`Stage0Recording__OutputPath` が mount の外でも止まる。
+- 記録器は、状態の置き場が無ければ走らない。同じ承認値の組は、完了していれば LLM を呼ばずに終え、途中で落ちていれば途中から再開し、費用の累計が承認額に届く見込みなら呼ぶ前に止まる。
+- 同じ組でもう一度記録するとき（人の明示）:
+
+```bash
+kubectl -n ai-stock-trading exec deploy/trade-decision-service -- ls -R /var/lib/ai-stock-trading/stage0/state
+# 印（runs/）と台帳（ledger/）を消す。台帳を消すと承認額の上限も最初から数え直しになる。
+kubectl -n ai-stock-trading exec deploy/trade-decision-service -- rm -rf /var/lib/ai-stock-trading/stage0/state/runs /var/lib/ai-stock-trading/stage0/state/ledger
+# 記録の取り出し（backtest へ渡す）
+kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=trade-decision-service -o name | head -1 | cut -d/ -f2)":/var/lib/ai-stock-trading/stage0/records.json ./records.json
+```
+
+- PVC は `helm.sh/resource-policy: keep`（無効化・uninstall でも消えない）。消すときは `kubectl delete pvc trade-decision-stage0 -n <namespace>` を人が実行する。
+
 ## 実行環境名（`ASPNETCORE_ENVIRONMENT`）は Production（#1192 / [IADR-0496](../../../.ai-context/adr/IADR-0496_aspnetcore-environment-production-and-problem-details.md)）
 
 - 全 Worker の `ASPNETCORE_ENVIRONMENT` は `services.<name>.aspnetcoreEnvironment` ＞ `global.aspnetcoreEnvironment`（既定 `Production`）の順で決まる。
