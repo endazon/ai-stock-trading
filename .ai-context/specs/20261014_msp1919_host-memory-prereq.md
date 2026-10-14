@@ -25,7 +25,7 @@ plan_refs:
 
 | 対象 | 変更 |
 | --- | --- |
-| `docs/operations/host-liveness-monitor-runbook.md`・`docs/operations/operations.md`（索引の 1 行） | 手順 7「WSL2 の VM のメモリ上限を上げる」（`.wslconfig` の推奨値・反映手順・確認）を足す。手順 6 の電源の項目へ `powercfg` のコマンドを併記する。「この手順を実行する条件」の表・確認の節も追随する |
+| `docs/operations/host-liveness-monitor-runbook.md`・`docs/operations/operations.md`（索引の 1 行） | 手順 7「WSL2 の VM のメモリ上限を上げる」（`.wslconfig` の推奨値・根拠の内訳〔limits 24,608 Mi＝必須 24,096 Mi＋OpenBao 512 Mi。基盤側の README と同じ値〕・反映手順・確認）を足す。手順 6 の電源の項目へ `powercfg` のコマンドを併記する。「この手順を実行する条件」の表・確認の節も追随する |
 | values / templates | **変えない**。AST の 11 サービスは共通の `resources`（50m / 128Mi・500m / 512Mi）と GC の env（`DOTNET_gcServer=0`・`GCConserveMemory=5`・`GCHeapHardLimitPercent=60`）を持ち、静的な設定漏れ・矛盾は無い。requests（128Mi）が過去の実測 RSS（#782・#811 の記録で 360〜470Mi）より小さいことは、PoC の `kubectl top pod` の実測が来てから値を決める |
 
 ## 走査した母集合（規則 2・9・10）
