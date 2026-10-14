@@ -5,7 +5,7 @@ status: done
 related_ids: [NFR-01, ADR-0006]
 author: endazon (with Claude Code)
 created: 2026-09-16
-updated: 2026-09-17
+updated: 2026-10-14
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0006_infrastructure-and-deployment.md
 ---
@@ -58,3 +58,13 @@ README・values・Dockerfile に GC 設定の記述は無い（追随なし）�
 - 是正の経緯: #808（`MALLOC_ARENA_MAX=2`）→ #812（固定 mmap / trim 閾値）はいずれも保持量を減らさず、**#811（PR #814。
   `codegen write`＋`TypeLoadMode.Static`）で伸びが止まった**（2026-09-16 16:49Z の実測で 11 サービスとも再起動 0。#811 のコメント）。
 - 本 env は GC ヒープの上限として無害なので据え置く。`deployment.yaml` の #782 コメントにも同日付の注記を置いた。
+
+## ［2026-10-14 追記 / #1348］値 `"60"` は 16 進数として読まれ、上限は 60% でなく 96% だった
+
+- .NET は GC 設定の環境変数の値を 16 進数として読む（Microsoft Learn「Garbage collector config settings」の
+  「Ways to specify the configuration」の表。`GCHeapHardLimitPercent` は *hexadecimal value*・例は 30% → `0x1E`）。
+  本仕様書の `DOTNET_GCHeapHardLimitPercent=60` は 0x60＝**96%**（512Mi で ≈491Mi）として効いていた。上の「上限（≈307Mi）」・
+  受け入れ基準 1 の「`=60` が在る」は、意図（60%）としては正しく、実効値としては誤りだった。
+- #1348 で値を `"0x3C"` に直し、`helm.yml` の fail-safe 検査に「16 進数として読んで 60」と「GC 設定の env に 0x の無い 10 以上の値が無い」
+  を足した。作業仕様書は `20261014_1348_gc-heap-limit-hex.md`。
+- 上の #811 追記の結論（GC ヒープは ≈64Mi で上限から遠く、伸びはヒープ外）は変わらない。

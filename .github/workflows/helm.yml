@@ -384,6 +384,24 @@ jobs:
           # RSS が limit へ戻って OOMKilled になる（実測）。1 つでも欠ければ赤。
           missing_heap="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: DOTNET_GCHeapHardLimitPercent/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"
           if [ -n "$missing_heap" ]; then echo "::error::DOTNET_GCHeapHardLimitPercent が無い .NET Deployment がある（#782）: $missing_heap"; exit 1; fi
+          # #1348 / ADR-0006: .NET は GC 設定の環境変数を 16 進数として読む（Microsoft Learn「Garbage collector config settings」の
+          # 「Ways to specify the configuration」）。"60" は 0x60＝96% になる。ヒープ上限は 0x 付きで、16 進数として読んで 60（%）であること。
+          # gc_env: 描画から GC 設定の env（名前が DOTNET_GC / DOTNET_gc / COMPlus_GC / COMPlus_gc で始まる）を「名前=値」で全件出す。
+          gc_env() { printf '%s\n' "$1" | awk '/^ *- name: (DOTNET|COMPlus)_[Gg][Cc]/ { n = $3; next } n != "" { if ($1 == "value:") { v = $2; gsub(/"/, "", v); print n "=" v } n = "" }'; }
+          heap_vals="$(gc_env "$out" | sed -n 's/^DOTNET_GCHeapHardLimitPercent=//p')"
+          heap_n="$(printf '%s\n' "$heap_vals" | grep -c . || true)"
+          if [ "$heap_n" -ne 11 ]; then echo "::error::DOTNET_GCHeapHardLimitPercent の値が 11 件でない（$heap_n 件。#1348）"; exit 1; fi
+          for v in $heap_vals; do
+            case "$v" in 0x[0-9A-Fa-f]*|0X[0-9A-Fa-f]*) ;; *) echo "::error::DOTNET_GCHeapHardLimitPercent=$v は 0x の無い値。環境変数は 16 進数で読まれる（60% は 0x3C。#1348）"; exit 1 ;; esac
+            if [ "$((16#${v#0[xX]}))" -ne 60 ]; then echo "::error::DOTNET_GCHeapHardLimitPercent=$v は 16 進数で $((16#${v#0[xX]}))%（60% であるべき・0x3C。#1348）"; exit 1; fi
+          done
+          # #1348: 既定と values-local の両描画で、GC 設定の env（DOTNET_GC* / DOTNET_gc* / COMPlus_GC* / COMPlus_gc*）に 0x の無い
+          # 10 以上の 10 進数が無い（一桁は 16 進数でも同じ値なので許す）。extraEnv での追加も拾う。
+          for prof in default values-local; do
+            if [ "$prof" = default ]; then r="$out"; else r="$(helm template ast "$CHART" -f "$CHART/values-local.yaml")"; fi
+            bad_gc="$(gc_env "$r" | grep -E '=0*[1-9][0-9]+$' || true)"
+            if [ -n "$bad_gc" ]; then echo "::error::$prof: GC 設定の env に 0x の無い 10 以上の値がある（16 進数で読まれる。#1348）: $bad_gc"; exit 1; fi
+          done
           # #808 / ADR-0006: 同じ母集合に glibc のアリーナ上限（MALLOC_ARENA_MAX）が入っている。GC 設定 3 つでも
           # ヒープ外（Wolverine の実行時コンパイルの作業メモリが per-thread アリーナに残る）で RSS が limit を超える（実測）。1 つでも欠ければ赤。
           missing_arena="$(printf '%s' "$out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /ASPNETCORE_URLS/ && !/name: MALLOC_ARENA_MAX/ { if (match($0, /  name: [a-z-]+/)) print substr($0, RSTART+8, RLENGTH-8) }')"

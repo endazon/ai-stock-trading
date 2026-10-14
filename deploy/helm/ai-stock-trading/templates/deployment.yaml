@@ -195,9 +195,16 @@ spec:
                    ［2026-09-17 追記 / #811］上の「512Mi の内側で止める」「472Mi 頭打ち」の読みは #808 で誤りと判明した。
                    保持されていたのは GC ヒープの外（Wolverine の実行時 Roslyn コンパイルの作業メモリ）で、新しい型の
                    メッセージが来なくなって止まって見えただけである（GC ヒープ側は audit で ≈64Mi）。是正は #811（PR #814。
-                   codegen write＋TypeLoadMode.Static）。本 env は GC ヒープの上限として無害なので据え置く。 */}}
+                   codegen write＋TypeLoadMode.Static）。本 env は GC ヒープの上限として無害なので据え置く。
+                   ［2026-10-14 追記 / #1348］上の「ヒープ上限を limit の 60%（≈307Mi）に固定し」は #782 から本追記まで
+                   事実でなかった。値を "60" と書いていたため 0x60＝96%（≈491Mi）として効いていた。本追記で "0x3C" に直した。 */}}
+            {{- /* NFR, ADR-0006, #1348: .NET は GC 設定の環境変数の値を**16 進数として読む**（"0x3C" も "3C" も 0x3C）。
+                   出典: Microsoft Learn「Garbage collector config settings」の「Ways to specify the configuration」の表
+                   （https://learn.microsoft.com/en-us/dotnet/core/runtime-config/garbage-collector。GCHeapHardLimitPercent は
+                   hexadecimal value・例は 30% → 0x1E）。60% は "0x3C"。10 進数で "60" と書くと 96% になる。
+                   10 以上の値は必ず 0x を付けて書く（helm.yml の fail-safe 検査が 16 進数で読んで 60 であることを固定する）。 */}}
             - name: DOTNET_GCHeapHardLimitPercent
-              value: "60"
+              value: "0x3C"
             {{- /* NFR-01, ADR-0006, IADR-0129 決定 6 追記, #808: 3 つの GC 設定を入れても audit-service は 10 分で RSS 476Mi
                    → OOMKilled（実測）。伸びているのは GC ヒープ（実測 ≈64Mi）ではなく glibc malloc の per-thread アリーナで、
                    Wolverine がメッセージ型ごとに 1 通目の受信時に Roslyn でハンドラをコンパイルするたび（別スレッド＝別
