@@ -49,16 +49,16 @@ public interface IStage0RecordingStateStore
     /// <summary>実行のロックを取る。取れなければ null（ほかの実行が走っている）。</summary>
     IDisposable? TryAcquireRunLock();
 
-    Task<Stage0RunState> LoadAsync(string runKey, CancellationToken cancellationToken = default);
+    Task<Stage0RunState> LoadAsync(string runId, CancellationToken cancellationToken = default);
 
     /// <summary>開始の印を書く（窓の前の端）。LLM を呼ぶ前に必ず書く。</summary>
-    Task<bool> MarkStartedAsync(string runKey, CancellationToken cancellationToken = default);
+    Task<bool> MarkStartedAsync(string runId, CancellationToken cancellationToken = default);
 
     /// <summary>ここまでの記録を書く（判断時点ごと）。</summary>
-    Task<bool> SaveCheckpointAsync(string runKey, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default);
+    Task<bool> SaveCheckpointAsync(string runId, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default);
 
     /// <summary>終わりの印を書く（窓の後の端）。<paramref name="phase"/> は Completed か Stopped。</summary>
-    Task<bool> MarkFinishedAsync(string runKey, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default);
+    Task<bool> MarkFinishedAsync(string runId, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -67,10 +67,10 @@ public interface IStage0RecordingStateStore
 public interface IStage0RecordingCostLedger
 {
     /// <summary>累計を読む。無ければ 0。🔴 **読めなければ null**（記録器は走らせない）。</summary>
-    Task<decimal?> ReadAsync(string ledgerKey, CancellationToken cancellationToken = default);
+    Task<decimal?> ReadAsync(string ledgerId, CancellationToken cancellationToken = default);
 
     /// <summary>累計を書く。失敗は false。</summary>
-    Task<bool> WriteAsync(string ledgerKey, decimal cumulativeJpy, CancellationToken cancellationToken = default);
+    Task<bool> WriteAsync(string ledgerId, decimal cumulativeJpy, CancellationToken cancellationToken = default);
 }
 
 /// <summary>安全既定: 状態の置き場が無い（`Stage0Recording:StateDirectory` 未設定）。読めない・書けないと答え、記録は走らない。</summary>
@@ -80,21 +80,21 @@ public sealed class NoStage0RecordingStateStore : IStage0RecordingStateStore, IS
 
     public IDisposable? TryAcquireRunLock() => null;
 
-    public Task<Stage0RunState> LoadAsync(string runKey, CancellationToken cancellationToken = default) =>
+    public Task<Stage0RunState> LoadAsync(string runId, CancellationToken cancellationToken = default) =>
         Task.FromResult(new Stage0RunState(Stage0RunPhase.Unreadable, Detail: Reason));
 
-    public Task<bool> MarkStartedAsync(string runKey, CancellationToken cancellationToken = default) => Task.FromResult(false);
+    public Task<bool> MarkStartedAsync(string runId, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
     public Task<bool> SaveCheckpointAsync(
-        string runKey, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        string runId, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
     public Task<bool> MarkFinishedAsync(
-        string runKey, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        string runId, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
-    public Task<decimal?> ReadAsync(string ledgerKey, CancellationToken cancellationToken = default) =>
+    public Task<decimal?> ReadAsync(string ledgerId, CancellationToken cancellationToken = default) =>
         Task.FromResult<decimal?>(null);
 
-    public Task<bool> WriteAsync(string ledgerKey, decimal cumulativeJpy, CancellationToken cancellationToken = default) =>
+    public Task<bool> WriteAsync(string ledgerId, decimal cumulativeJpy, CancellationToken cancellationToken = default) =>
         Task.FromResult(false);
 }
 
@@ -105,7 +105,7 @@ public sealed class NoStage0RecordingStateStore : IStage0RecordingStateStore, IS
 public static class Stage0RecordingIdentity
 {
     /// <summary>印の鍵。記録の中身を決める値と承認値のすべて。</summary>
-    public static string RunKey(Stage0RecordingOptions options)
+    public static string RunId(Stage0RecordingOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         return Hash(
@@ -126,7 +126,7 @@ public static class Stage0RecordingIdentity
     /// 台帳の鍵。**承認の単位**（承認額・承認回数・期間・銘柄集合）だけで作る —— 印の鍵と別に計算する。
     /// 同じ承認のまま、モデルやトークン量の欄だけを動かしても累計は引き継がれる（上限は承認額のまま）。
     /// </summary>
-    public static string LedgerKey(Stage0RecordingOptions options)
+    public static string LedgerId(Stage0RecordingOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         return Hash("ledger/v1", ApprovalUnit(options));

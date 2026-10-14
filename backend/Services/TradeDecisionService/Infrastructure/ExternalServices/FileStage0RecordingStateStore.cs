@@ -23,11 +23,11 @@ public sealed class FileStage0RecordingStateStore(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private string RunPath(string runKey) => Path.Combine(directory, "runs", $"{runKey}.json");
+    private string RunPath(string runId) => Path.Combine(directory, "runs", $"{runId}.json");
 
-    private string CheckpointPath(string runKey) => Path.Combine(directory, "runs", $"{runKey}.checkpoint.json");
+    private string CheckpointPath(string runId) => Path.Combine(directory, "runs", $"{runId}.checkpoint.json");
 
-    private string LedgerPath(string ledgerKey) => Path.Combine(directory, "ledger", $"{ledgerKey}.json");
+    private string LedgerPath(string ledgerId) => Path.Combine(directory, "ledger", $"{ledgerId}.json");
 
     public IDisposable? TryAcquireRunLock()
     {
@@ -45,9 +45,9 @@ public sealed class FileStage0RecordingStateStore(
         }
     }
 
-    public async Task<Stage0RunState> LoadAsync(string runKey, CancellationToken cancellationToken = default)
+    public async Task<Stage0RunState> LoadAsync(string runId, CancellationToken cancellationToken = default)
     {
-        var path = RunPath(runKey);
+        var path = RunPath(runId);
         if (!File.Exists(path))
             return new Stage0RunState(Stage0RunPhase.NotStarted);
 
@@ -75,7 +75,7 @@ public sealed class FileStage0RecordingStateStore(
                 return new Stage0RunState(Stage0RunPhase.Unreadable, Detail: $"印の段階が不明: {path}");
         }
 
-        var checkpointPath = CheckpointPath(runKey);
+        var checkpointPath = CheckpointPath(runId);
         if (!File.Exists(checkpointPath))
             return new Stage0RunState(Stage0RunPhase.InProgress); // 1 件目の前に落ちた
 
@@ -95,28 +95,28 @@ public sealed class FileStage0RecordingStateStore(
             : new Stage0RunState(Stage0RunPhase.Unreadable, Detail: $"チェックポイントが読めない: {checkpointPath}");
     }
 
-    public Task<bool> MarkStartedAsync(string runKey, CancellationToken cancellationToken = default) =>
-        WriteMarkAsync(runKey, new RunMark(nameof(Stage0RunPhase.InProgress), timeProvider.GetUtcNow(), null, null), cancellationToken);
+    public Task<bool> MarkStartedAsync(string runId, CancellationToken cancellationToken = default) =>
+        WriteMarkAsync(runId, new RunMark(nameof(Stage0RunPhase.InProgress), timeProvider.GetUtcNow(), null, null), cancellationToken);
 
     public Task<bool> SaveCheckpointAsync(
-        string runKey, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default)
+        string runId, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
-        return WriteAtomicAsync(CheckpointPath(runKey), Stage0DecisionRecordJson.Serialize(checkpoint), cancellationToken);
+        return WriteAtomicAsync(CheckpointPath(runId), Stage0DecisionRecordJson.Serialize(checkpoint), cancellationToken);
     }
 
     public Task<bool> MarkFinishedAsync(
-        string runKey, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default)
+        string runId, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default)
     {
         if (phase is not (Stage0RunPhase.Completed or Stage0RunPhase.Stopped))
             throw new ArgumentOutOfRangeException(nameof(phase), phase, "終わりの印は Completed か Stopped だけです。");
 
-        return WriteMarkAsync(runKey, new RunMark(phase.ToString(), null, timeProvider.GetUtcNow(), detail), cancellationToken);
+        return WriteMarkAsync(runId, new RunMark(phase.ToString(), null, timeProvider.GetUtcNow(), detail), cancellationToken);
     }
 
-    public async Task<decimal?> ReadAsync(string ledgerKey, CancellationToken cancellationToken = default)
+    public async Task<decimal?> ReadAsync(string ledgerId, CancellationToken cancellationToken = default)
     {
-        var path = LedgerPath(ledgerKey);
+        var path = LedgerPath(ledgerId);
         if (!File.Exists(path))
             return 0m;
 
@@ -137,21 +137,21 @@ public sealed class FileStage0RecordingStateStore(
         return null;
     }
 
-    public Task<bool> WriteAsync(string ledgerKey, decimal cumulativeJpy, CancellationToken cancellationToken = default) =>
+    public Task<bool> WriteAsync(string ledgerId, decimal cumulativeJpy, CancellationToken cancellationToken = default) =>
         WriteAtomicAsync(
-            LedgerPath(ledgerKey),
+            LedgerPath(ledgerId),
             JsonSerializer.Serialize(new LedgerEntry(cumulativeJpy, timeProvider.GetUtcNow()), JsonOptions),
             cancellationToken);
 
-    private async Task<bool> WriteMarkAsync(string runKey, RunMark mark, CancellationToken cancellationToken)
+    private async Task<bool> WriteMarkAsync(string runId, RunMark mark, CancellationToken cancellationToken)
     {
         // 開始の時刻は終わりの印にも引き継ぐ（読み戻せたときだけ）。
-        if (mark.StartedAt is null && File.Exists(RunPath(runKey)))
+        if (mark.StartedAt is null && File.Exists(RunPath(runId)))
         {
             try
             {
                 var previous = JsonSerializer.Deserialize<RunMark>(
-                    await File.ReadAllTextAsync(RunPath(runKey), cancellationToken).ConfigureAwait(false), JsonOptions);
+                    await File.ReadAllTextAsync(RunPath(runId), cancellationToken).ConfigureAwait(false), JsonOptions);
                 mark = mark with { StartedAt = previous?.StartedAt };
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -160,7 +160,7 @@ public sealed class FileStage0RecordingStateStore(
             }
         }
 
-        return await WriteAtomicAsync(RunPath(runKey), JsonSerializer.Serialize(mark, JsonOptions), cancellationToken)
+        return await WriteAtomicAsync(RunPath(runId), JsonSerializer.Serialize(mark, JsonOptions), cancellationToken)
             .ConfigureAwait(false);
     }
 

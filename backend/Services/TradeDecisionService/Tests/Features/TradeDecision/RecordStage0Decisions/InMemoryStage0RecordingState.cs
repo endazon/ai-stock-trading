@@ -37,26 +37,26 @@ internal sealed class InMemoryStage0RecordingState : IStage0RecordingStateStore,
         return new Release(this);
     }
 
-    public Task<Stage0RunState> LoadAsync(string runKey, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Runs.TryGetValue(runKey, out var run) ? run : new Stage0RunState(Stage0RunPhase.NotStarted));
+    public Task<Stage0RunState> LoadAsync(string runId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Runs.TryGetValue(runId, out var run) ? run : new Stage0RunState(Stage0RunPhase.NotStarted));
 
-    public Task<bool> MarkStartedAsync(string runKey, CancellationToken cancellationToken = default)
+    public Task<bool> MarkStartedAsync(string runId, CancellationToken cancellationToken = default)
     {
         if (FailMarkStarted)
             return Task.FromResult(false);
-        Runs[runKey] = new Stage0RunState(Stage0RunPhase.InProgress);
+        Runs[runId] = new Stage0RunState(Stage0RunPhase.InProgress);
         return Task.FromResult(true);
     }
 
     public Task<bool> SaveCheckpointAsync(
-        string runKey, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default)
+        string runId, Stage0DecisionRecordSet checkpoint, CancellationToken cancellationToken = default)
     {
         _checkpoints++;
         if (CrashBeforeCheckpoint == _checkpoints)
             throw new SimulatedCrashException();
 
         // 永続領域の往復（直列化）を通す。
-        Runs[runKey] = new Stage0RunState(
+        Runs[runId] = new Stage0RunState(
             Stage0RunPhase.InProgress, Stage0DecisionRecordJson.TryDeserialize(Stage0DecisionRecordJson.Serialize(checkpoint)));
         if (CrashAfterCheckpoint == _checkpoints)
             throw new SimulatedCrashException();
@@ -64,18 +64,18 @@ internal sealed class InMemoryStage0RecordingState : IStage0RecordingStateStore,
     }
 
     public Task<bool> MarkFinishedAsync(
-        string runKey, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default)
+        string runId, Stage0RunPhase phase, string detail, CancellationToken cancellationToken = default)
     {
-        Runs[runKey] = new Stage0RunState(phase, Detail: detail);
+        Runs[runId] = new Stage0RunState(phase, Detail: detail);
         return Task.FromResult(true);
     }
 
-    public Task<decimal?> ReadAsync(string ledgerKey, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Ledger.TryGetValue(ledgerKey, out var value) ? value : 0m);
+    public Task<decimal?> ReadAsync(string ledgerId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Ledger.TryGetValue(ledgerId, out var value) ? value : 0m);
 
-    public Task<bool> WriteAsync(string ledgerKey, decimal cumulativeJpy, CancellationToken cancellationToken = default)
+    public Task<bool> WriteAsync(string ledgerId, decimal cumulativeJpy, CancellationToken cancellationToken = default)
     {
-        Ledger[ledgerKey] = cumulativeJpy;
+        Ledger[ledgerId] = cumulativeJpy;
         LedgerWrites.Add(cumulativeJpy);
         return Task.FromResult(true);
     }

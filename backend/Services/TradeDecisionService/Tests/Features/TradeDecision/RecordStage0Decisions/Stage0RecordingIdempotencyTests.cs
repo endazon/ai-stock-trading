@@ -202,10 +202,10 @@ public class Stage0RecordingIdempotencyTests
         switch (broken)
         {
             case "mark":
-                state.Runs[Stage0RecordingIdentity.RunKey(options)] = new Stage0RunState(Stage0RunPhase.Unreadable, Detail: "壊れた JSON");
+                state.Runs[Stage0RecordingIdentity.RunId(options)] = new Stage0RunState(Stage0RunPhase.Unreadable, Detail: "壊れた JSON");
                 break;
             case "ledger":
-                state.Ledger[Stage0RecordingIdentity.LedgerKey(options)] = null;
+                state.Ledger[Stage0RecordingIdentity.LedgerId(options)] = null;
                 break;
             case "start":
                 state.FailMarkStarted = true;
@@ -248,12 +248,36 @@ public class Stage0RecordingIdempotencyTests
         await Build(state).Recorder.RunAsync(Options(), TestContext.Current.CancellationToken);
         state.Runs.Clear(); // 印とチェックポイントが消えた
 
-        var (recorder, llm, _) = Build(state);
+        var (recorder, llm, sink) = Build(state);
         var outcome = await recorder.RunAsync(Options(), TestContext.Current.CancellationToken);
 
         outcome.Status.Should().Be(Stage0RecordingStatus.StoppedOverBudget);
         llm.Calls.Should().Be(0);
         outcome.CumulativeCostJpy.Should().Be(12m);
+        // 🔴 0 件で止まった実行は、既存の記録（課金済み）を空の集合で上書きせず、終わりの印でも固めない。
+        sink.Saved.Should().BeNull("0 件の集合で既存の記録を上書きしない");
+        outcome.RecordSet.Should().BeNull();
+        state.Runs.Values.Should().NotContain(r => r.Phase == Stage0RunPhase.Stopped, "0 件で止めた実行に終わりの印を付けない");
+    }
+
+    // 🔴 記録の中身の欄（モデル）を変えると印の鍵は変わるが台帳の鍵は同じ。1 件目より前で上限に当たり、
+    // 既存の記録を 0 件で上書きしない（LLM も呼ばない）。
+    [Fact]
+    public async Task 印の鍵だけが変わって上限で止まっても既存の記録を上書きしない()
+    {
+        var state = new InMemoryStage0RecordingState();
+        await Build(state).Recorder.RunAsync(Options(), TestContext.Current.CancellationToken);
+
+        var changed = Options();
+        changed.Model = "claude-opus-5-5"; // 同じ単価表の既定（1/1）で見積りは同じ＝承認値は一致する
+        var (recorder, llm, sink) = Build(state);
+        var outcome = await recorder.RunAsync(changed, TestContext.Current.CancellationToken);
+
+        outcome.Status.Should().Be(Stage0RecordingStatus.StoppedOverBudget);
+        llm.Calls.Should().Be(0);
+        sink.Saved.Should().BeNull();
+        state.Runs[Stage0RecordingIdentity.RunId(changed)].Phase
+            .Should().Be(Stage0RunPhase.InProgress, "開始の印は付くが、0 件で止めた実行に終わりの印は付けない");
     }
 
     // 🔴 呼ぶ前の判定: 累計＋1 判断時点の見積り（4 円）が承認額を超える見込みなら、その判断時点を呼ばない。
@@ -262,7 +286,7 @@ public class Stage0RecordingIdempotencyTests
     {
         var state = new InMemoryStage0RecordingState();
         var options = Options();
-        state.Ledger[Stage0RecordingIdentity.LedgerKey(options)] = 5m; // 承認額 12 円・残り 7 円 → 1 判断時点（4 円）だけ呼べる
+        state.Ledger[Stage0RecordingIdentity.LedgerId(options)] = 5m; // 承認額 12 円・残り 7 円 → 1 判断時点（4 円）だけ呼べる
 
         var (recorder, llm, sink) = Build(state);
         var outcome = await recorder.RunAsync(options, TestContext.Current.CancellationToken);
@@ -310,7 +334,7 @@ public class Stage0RecordingIdempotencyTests
         outcome.ActualCostJpy.Should().Be(12m);
         outcome.CumulativeCostJpy.Should().Be(12m);
         sink.Saved!.Records.Should().HaveCount(3);
-        state.Runs[Stage0RecordingIdentity.RunKey(Options())].Phase.Should().Be(Stage0RunPhase.Completed);
+        state.Runs[Stage0RecordingIdentity.RunId(Options())].Phase.Should().Be(Stage0RunPhase.Completed);
         state.Locked.Should().BeFalse("実行の後はロックを外す");
     }
 

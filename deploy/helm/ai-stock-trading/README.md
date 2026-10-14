@@ -754,9 +754,14 @@ scripts/k8s-local-deploy.sh
 - 有効にすると、描画が `Stage0Recording__StateDirectory=<mountPath>/state` を注入し、trade-decision の更新方式を `Recreate` にする。
   `Stage0Recording__StateDirectory` を extraEnv に書くと描画で止まる。`Stage0Recording__OutputPath` が mount の外でも止まる。
 - 記録器は、状態の置き場が無ければ走らない。同じ承認値の組は、完了していれば LLM を呼ばずに終え、途中で落ちていれば途中から再開し、費用の累計が承認額に届く見込みなら呼ぶ前に止まる。
-- 同じ組でもう一度記録するとき（人の明示）:
+- 書き出し先は、既存の記録より判断の件数が少ない集合での上書きを拒む（課金済みの記録を守る）。止まった実行の記録が 0 件なら書き出さない。
+- 同じ組でもう一度記録するとき（人の明示）。**先に `records.json` を退避する**（退避しないと、件数が減る記録は書き出しを拒まれる。消した記録は戻らない）:
 
 ```bash
+# 0) 既存の記録を手元と PVC の中の両方へ退避する
+POD="$(kubectl -n ai-stock-trading get pod -l app=trade-decision-service -o name | head -1 | cut -d/ -f2)"
+kubectl -n ai-stock-trading cp "$POD":/var/lib/ai-stock-trading/stage0/records.json ./records-$(date +%Y%m%d%H%M%S).json
+kubectl -n ai-stock-trading exec deploy/trade-decision-service -- mv /var/lib/ai-stock-trading/stage0/records.json /var/lib/ai-stock-trading/stage0/records-$(date +%Y%m%d%H%M%S).json
 kubectl -n ai-stock-trading exec deploy/trade-decision-service -- ls -R /var/lib/ai-stock-trading/stage0/state
 # 印（runs/）と台帳（ledger/）を消す。台帳を消すと承認額の上限も最初から数え直しになる。
 kubectl -n ai-stock-trading exec deploy/trade-decision-service -- rm -rf /var/lib/ai-stock-trading/stage0/state/runs /var/lib/ai-stock-trading/stage0/state/ledger

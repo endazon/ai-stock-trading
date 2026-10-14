@@ -72,8 +72,8 @@ public class Stage0RecordingIdentityTests
                 break;
         }
 
-        Stage0RecordingIdentity.RunKey(changed).Should().Be(Stage0RecordingIdentity.RunKey(Options()));
-        Stage0RecordingIdentity.LedgerKey(changed).Should().Be(Stage0RecordingIdentity.LedgerKey(Options()));
+        Stage0RecordingIdentity.RunId(changed).Should().Be(Stage0RecordingIdentity.RunId(Options()));
+        Stage0RecordingIdentity.LedgerId(changed).Should().Be(Stage0RecordingIdentity.LedgerId(Options()));
     }
 
     // 承認の単位（承認額・承認回数・期間・銘柄）が変われば、印も台帳も別になる（通し試験の組と本番の組は互いを止めない）。
@@ -112,8 +112,8 @@ public class Stage0RecordingIdentityTests
                 break;
         }
 
-        Stage0RecordingIdentity.RunKey(changed).Should().NotBe(Stage0RecordingIdentity.RunKey(Options()));
-        Stage0RecordingIdentity.LedgerKey(changed).Should().NotBe(Stage0RecordingIdentity.LedgerKey(Options()));
+        Stage0RecordingIdentity.RunId(changed).Should().NotBe(Stage0RecordingIdentity.RunId(Options()));
+        Stage0RecordingIdentity.LedgerId(changed).Should().NotBe(Stage0RecordingIdentity.LedgerId(Options()));
     }
 
     // 記録の中身を決める欄（モデル・カットオフ・トークン量・多数決回数）が変われば別の実行になるが、
@@ -136,14 +136,14 @@ public class Stage0RecordingIdentityTests
             default: changed.VoteCount = 3; break;
         }
 
-        Stage0RecordingIdentity.RunKey(changed).Should().NotBe(Stage0RecordingIdentity.RunKey(Options()));
-        Stage0RecordingIdentity.LedgerKey(changed).Should().Be(Stage0RecordingIdentity.LedgerKey(Options()));
+        Stage0RecordingIdentity.RunId(changed).Should().NotBe(Stage0RecordingIdentity.RunId(Options()));
+        Stage0RecordingIdentity.LedgerId(changed).Should().Be(Stage0RecordingIdentity.LedgerId(Options()));
     }
 
     [Fact]
     public void 印の鍵と台帳の鍵は別の値である()
     {
-        Stage0RecordingIdentity.RunKey(Options()).Should().NotBe(Stage0RecordingIdentity.LedgerKey(Options()));
-        Stage0RecordingIdentity.RunKey(Options()).Should().MatchRegex("^[0-9a-f]{64}$");
+        Stage0RecordingIdentity.RunId(Options()).Should().NotBe(Stage0RecordingIdentity.LedgerId(Options()));
+        Stage0RecordingIdentity.RunId(Options()).Should().MatchRegex("^[0-9a-f]{64}$");
     }
 }

@@ -225,14 +225,14 @@ public sealed class Stage0DecisionRecorder(
         var (from, to) = options.ParsePeriod()!.Value;
         var cutoff = options.ParseLlmTrainingCutoff()!.Value;
         var symbols = options.ResolveSymbols();
-        var runKey = Stage0RecordingIdentity.RunKey(options);
-        var ledgerKey = Stage0RecordingIdentity.LedgerKey(options);
+        var runId = Stage0RecordingIdentity.RunId(options);
+        var ledgerId = Stage0RecordingIdentity.LedgerId(options);
         // ValidateApproval を通った（承認額は見積りと円未満 2 桁で一致する）。上限は承認額そのもの。
         var approvedJpy = options.ApprovedEstimateJpy!.Value;
         var perDecision = EstimatePerDecision(options).TotalJpy;
 
         // ---- 窓の後の端: 終わりの印 ----
-        var run = await state.LoadAsync(runKey, cancellationToken).ConfigureAwait(false);
+        var run = await state.LoadAsync(runId, cancellationToken).ConfigureAwait(false);
         switch (run.Phase)
         {
             case Stage0RunPhase.Completed or Stage0RunPhase.Stopped:
@@ -249,7 +249,7 @@ public sealed class Stage0DecisionRecorder(
         }
 
         // ---- 費用の累計（印とは独立）----
-        if (await ledger.ReadAsync(ledgerKey, cancellationToken).ConfigureAwait(false) is not { } cumulative)
+        if (await ledger.ReadAsync(ledgerId, cancellationToken).ConfigureAwait(false) is not { } cumulative)
         {
             return Outcome(
                 Stage0RecordingStatus.StateUnavailable,
@@ -268,7 +268,7 @@ public sealed class Stage0DecisionRecorder(
 
         // ---- 窓の前の端: 開始の印（LLM を呼ぶ前に必ず書く）----
         if (run.Phase == Stage0RunPhase.NotStarted
-            && !await state.MarkStartedAsync(runKey, cancellationToken).ConfigureAwait(false))
+            && !await state.MarkStartedAsync(runId, cancellationToken).ConfigureAwait(false))
         {
             return Outcome(
                 Stage0RecordingStatus.StateUnavailable,
@@ -312,7 +312,7 @@ public sealed class Stage0DecisionRecorder(
                     }
 
                     // 🔴 #1342: 呼ぶ前に見込みを台帳へ積む（予約）。呼んだ直後に落ちても、その費用は累計に入っている。
-                    if (!await ledger.WriteAsync(ledgerKey, cumulative + perDecision, cancellationToken).ConfigureAwait(false))
+                    if (!await ledger.WriteAsync(ledgerId, cumulative + perDecision, cancellationToken).ConfigureAwait(false))
                     {
                         stateFailed = true;
                         break;
@@ -326,9 +326,9 @@ public sealed class Stage0DecisionRecorder(
                     cumulative += cost;
 
                     // 予約を実績へ置き換え、ここまでの記録をチェックポイントへ書く（この順。台帳を先に確定させる）。
-                    if (!await ledger.WriteAsync(ledgerKey, cumulative, cancellationToken).ConfigureAwait(false)
+                    if (!await ledger.WriteAsync(ledgerId, cumulative, cancellationToken).ConfigureAwait(false)
                         || !await state.SaveCheckpointAsync(
-                            runKey, BuildRecordSet(options, from, to, cutoff, symbols, records), cancellationToken)
+                            runId, BuildRecordSet(options, from, to, cutoff, symbols, records), cancellationToken)
                             .ConfigureAwait(false))
                     {
                         stateFailed = true;
@@ -356,7 +356,12 @@ public sealed class Stage0DecisionRecorder(
         }
 
         var recordSet = BuildRecordSet(options, from, to, cutoff, symbols, records);
-        var saved = await sink.SaveAsync(recordSet, cancellationToken).ConfigureAwait(false);
+
+        // 🔴 #1342, IADR-0537 決定3: 止まった実行（上限・状態の失敗）で記録が 0 件なら、**書き出しも終わりの印も行わない。**
+        // 印だけが消えた・印の鍵だけが変わった（台帳の鍵は同じ）組は、1 件目より前で上限に当たる。空の集合で書き出すと、
+        // 課金済みの既存の記録（書き出し先）を 0 件で上書きし、さらに Stopped の印で固めてしまう。
+        var nothingToWrite = (stopped || stateFailed) && records.Count == 0;
+        var saved = !nothingToWrite && await sink.SaveAsync(recordSet, cancellationToken).ConfigureAwait(false);
 
         var status = stateFailed
             ? Stage0RecordingStatus.StateUnavailable
@@ -367,11 +372,11 @@ public sealed class Stage0DecisionRecorder(
         // ---- 窓の後の端: 終わりの印。書き出せたときだけ付ける ----
         // 書き出しに失敗したときは付けない —— 次の起動はチェックポイントから LLM を呼ばずに書き出し直す
         // （上限で止めた実行も、台帳の累計で呼ぶ前に止まり、書き出し直してから印が付く）。
-        if (saved && status is Stage0RecordingStatus.Completed or Stage0RecordingStatus.StoppedOverBudget)
+        if (saved && (status is Stage0RecordingStatus.Completed or Stage0RecordingStatus.StoppedOverBudget))
         {
             var phase = status == Stage0RecordingStatus.Completed ? Stage0RunPhase.Completed : Stage0RunPhase.Stopped;
             if (!await state.MarkFinishedAsync(
-                    runKey, phase, $"判断 {records.Count} 件・累計 {cumulative} 円", cancellationToken)
+                    runId, phase, $"判断 {records.Count} 件・累計 {cumulative} 円", cancellationToken)
                 .ConfigureAwait(false))
             {
                 // 印が書けなくても、次の起動はチェックポイントの全件を飛ばし（LLM 0 回）、台帳の累計でも止まる。
@@ -382,9 +387,12 @@ public sealed class Stage0DecisionRecorder(
         var reason = status switch
         {
             Stage0RecordingStatus.StoppedOverBudget =>
-                $"費用の累計が承認額 {approvedJpy} 円を超える（見込みを含む）ため停止しました（この実行の実績 {actualCost} 円・累計 {cumulative} 円）。",
+                $"費用の累計が承認額 {approvedJpy} 円を超える（見込みを含む）ため停止しました（この実行の実績 {actualCost} 円・累計 {cumulative} 円）。"
+                + (nothingToWrite ? "記録は 0 件のため書き出していません（既存の記録はそのまま）。" : string.Empty),
             Stage0RecordingStatus.StateUnavailable =>
-                "実行の状態（台帳かチェックポイント）を書けなくなったため停止しました（ここまでの記録は書き出しました）。",
+                nothingToWrite
+                    ? "実行の状態（台帳かチェックポイント）を書けなくなったため停止しました（記録は 0 件のため書き出していません）。"
+                    : "実行の状態（台帳かチェックポイント）を書けなくなったため停止しました（ここまでの記録は書き出しました）。",
             Stage0RecordingStatus.SaveFailed => "記録の書き出しに失敗しました。",
             _ => $"記録しました（判断 {records.Count} 件・この実行の実績 {actualCost} 円・累計 {cumulative} 円）。",
         };
@@ -393,7 +401,8 @@ public sealed class Stage0DecisionRecorder(
             "Stage 0 記録の結末: {Status}（判断 {Records} 件・LLM 呼び出し {Calls} 回・この実行の実績 {Actual} 円・累計 {Cumulative} 円 / 承認額 {Approved} 円）。",
             status, records.Count, callCount, actualCost, cumulative, approvedJpy);
 
-        return new Stage0RecordingOutcome(status, reason, estimate, actualCost, callCount, recordSet, cumulative);
+        return new Stage0RecordingOutcome(
+            status, reason, estimate, actualCost, callCount, nothingToWrite ? null : recordSet, cumulative);
     }
 
     // 1 判断時点の記録。**本番と同じ経路**でプロンプトを組み、多数決回数だけ LLM を呼び、本番と同じ規則で集約する。
