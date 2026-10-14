@@ -43,7 +43,10 @@
  * どちらも未実行 / #1336: 32 ファイル中 18 ファイルしか読まず「下限は満たしていません」と自己申告）。
  * 判定が揃っていても**下限を欠いたレビューは「緑だが検査されていない」と同型**なので、ここで落とす。
  *   (a) 本文の「変更 N ファイル中 M ファイルを読んだ」の申告が無い、または M + K < N（K は生成物の除外数）
- *   (b) 同じ行に「下限」と「満たして(い)ない / 満たさない」がある（自己申告の違反）
+ *   (b) 同じ行に「下限」と「満たして(い)ない / 満たさない」がある（自己申告の違反）。
+ *       あわせて、(a) の申告を満たしながら、冒頭か「確認できたこと」の節で「全行は読んでいない」「行単位では読んでいない」
+ *       「名前と範囲の確認にとどまる」「本文を精読せず」「要点だけ確認」等と書いている（読んだと申告したファイルを精読して
+ *       いない自認。#1340 / #1344 の同型 2 回。生成物 K>0 の除外を申告した生成物だけの文と、計画書についての文は数えない）
  *   (c) 変更ファイル（env CHANGED_FILES）に deploy/helm/** があるのに本文に helm lint / helm template を
  *       実行した記載が無い、scripts/** か .github/** があるのに scripts.test.js を実行した記載が無い
  *       （「実行した記載」は「確認できたこと」の節に在ること。🔍 実行できなかったこと の節に在るだけなら
@@ -261,6 +264,84 @@ function findFloorAdmissions(text) {
 }
 
 /**
+ * (b) の続き: 読んだと申告したファイルを**精読していない**自認の表記揺れ（#1315 の追加の是正）。
+ *
+ * #1340（3 回目）と #1344（最終）は冒頭で N/N を申告しながら、本文で「行単位では読んでいない」「全行は読んでいない」と
+ * 認めていた。(a) の数は満たすので緑だった。母集合は #1318〜#1345 の AI レビューの実文
+ * （作業仕様書 20261014_1315_review-floor-not-read-declaration の表）。
+ * 「全文ではなく差分を読んだ」は**数えない** —— 「読んだ」の定義は差分を行単位で読むことである。
+ */
+const NOT_READ_PATTERNS = [
+  /全行(?:は|を|まで)?(?:読|精読|目視)[^。\n]{0,6}?(?:ない|ません|おらず|せず)/, // #1344「全行は読んでいない」/ #1328「全行は精読していない」
+  /行単位(?:で|では|の)?は?(?:読|精読)[^。\n]{0,6}?(?:ない|ません|おらず|せず)/, // #1340「行単位では読んでいない」
+  /精読[^。\n]{0,10}?(?:せず|しておらず|して(?:い)?(?:ない|ません)|行って(?:い)?(?:ない|ません)|未実施)/, // #1336「本文を精読せず」/ #1324「精読までは行っていない」
+  /名前と範囲の確認|名前(?:を|の)一覧|名前だけ/, // #1340「名前と範囲の確認にとどまり」/ #1344「名前を一覧し」
+  /要点[^。\n]{0,12}?(?:だけ|のみ)/, // #1336「要点だけ確認」「差分の要点（列の追加）だけを確認」
+  /検査器の(?:結果|出力)(?:だけ|のみ)/, // #1336「検査器の結果だけで確認」/ #1340「検査器の出力だけで見た」
+  /確認(?:に(?:とどま|留ま)|まで(?:で|である|だ|にとどま))/, // #1340「確認にとどまり」/ #1326「確認までである」
+  /未読/, // #1336 / #1340（2 回目）
+  /差分を読ま(?:ず|ない)|差分を読んで(?:い)?(?:ない|ません)/, // #1340（2 回目）
+  /読めて(?:い)?(?:ない|ません)/, // #1318「全文は読めていない」（出力が切り詰められた）
+  /しか(?:目視|読|確認|見)[^。\n]{0,6}?(?:ない|ません)/, // #1318「先頭部分しか目視していない」
+  /流し読み|斜め読み|拾い読み|ざっと(?:読|目を通|見)/,
+];
+
+/** 否定の否定（「未読のファイルは無い」「精読していないものはない」）。一致の直後に続く形で読む。 */
+const NOT_READ_NEGATED = /^(?:の)?(?:ファイル|もの|箇所|部分|項目)?(?:は|も)?(?:無|な)(?:い|し|く)/;
+
+/** 生成物の名前（除外してよいもの）。プロンプトの【検証の下限】の例と対にして直す。 */
+const GENERATED_TOKENS =
+  /[\w.*/-]*Designer\.cs|[\w.*/-]*ModelSnapshot(?:\.cs)?|messages\.(?:ts|po)|CHANGELOG\.md|package-lock\.json|openapi\.yaml/g;
+const GENERATED_WORD = /生成物|自動生成|Designer|ModelSnapshot/;
+/** 生成物の名前を除いた後に残っていれば「生成物以外も並べた文」と読む語（テスト・文書・本体など）。 */
+const NON_GENERATED_TARGET = /テスト|Tests?\b|docs|文書|仕様|IADR|ADR|本体|README|helm|workflow|ワークフロー|\.(?:cs|tsx?|jsx?|ya?ml|md|json|sh)\b/i;
+/** 計画書（読む対象のファイルではない）についての文。 */
+const PLAN_DOC = /計画書|計画\s*ADR|計画リポ|planning/;
+
+/** 引用（インラインコード・「」・『』）を外す。検査器そのものを論じるレビューで自己発火しないため。 */
+function stripQuotes(s) {
+  return s.replace(/`[^`]*`/g, '').replace(/「[^」]*」/g, '').replace(/『[^』]*』/g, '');
+}
+
+/** 冒頭（最初の判定の見出しより前）。parseReadDeclaration と同じ切り方。 */
+function preambleOf(text) {
+  const all = normalize(text);
+  const firstVerdict = all.search(/^\s{0,3}#{2,4}\s.*(?:🔴|🟡|🟢)/mu);
+  return firstVerdict < 0 ? all : all.slice(0, firstVerdict);
+}
+
+/**
+ * (b) の続き: 冒頭と「確認できたこと」の節から、精読していない自認の文を返す。
+ *
+ * @param {string} text  レビュー本文
+ * @param {{ k: number }|null} decl  冒頭の申告（生成物の除外数 K を使う）
+ * @returns {{ sentence: string, generated: boolean }[]}
+ */
+function findNotReadAdmissions(text, decl) {
+  const k = decl ? decl.k : 0;
+  const scope = `${preambleOf(text)}\n${confirmedSections(normalize(text))}`;
+  const out = [];
+  for (const raw of scope.split(/\n|(?<=。)/)) {
+    const sentence = raw.trim();
+    if (!sentence) continue;
+    const bare = stripQuotes(sentence);
+    const hit = NOT_READ_PATTERNS.some((re) => {
+      const m = re.exec(bare);
+      return m && !NOT_READ_NEGATED.test(bare.slice(m.index + m[0].length));
+    });
+    if (!hit) continue;
+    if (PLAN_DOC.test(bare)) continue; // 計画書は読む対象のファイルではない（🔍 の「計画書は未検証」と同じ扱い）
+    const generated = GENERATED_WORD.test(sentence) || new RegExp(GENERATED_TOKENS.source).test(sentence);
+    if (generated && k > 0) {
+      const rest = sentence.replace(GENERATED_TOKENS, '').replace(/生成物|自動生成/g, '');
+      if (!NON_GENERATED_TARGET.test(rest)) continue; // 生成物だけの文で、冒頭に K>0 の除外を申告している
+    }
+    out.push({ sentence, generated });
+  }
+  return out;
+}
+
+/**
  * 「実行した」を**本文の節で**読む（#1337 の AI レビュー 🟡 による是正）。
  *
  * 初版は行内の否定語（「拒否」「省略」等）で「実行していない」行を除いていたが、語が広く、
@@ -340,6 +421,16 @@ function findFloorViolations(body, changedFiles) {
 
   for (const line of findFloorAdmissions(text)) {
     problems.push(`下限の自己申告: 本文が下限を満たしていないと書いている —— 「${line.slice(0, 120)}」`);
+  }
+
+  // 申告の数を満たすときだけ見る（満たさなければ上の (a) がすでに赤。同じ欠落を 2 度数えない）
+  if (decl && decl.m !== null && decl.m + decl.k >= decl.n) {
+    for (const { sentence, generated } of findNotReadAdmissions(text, decl)) {
+      problems.push(
+        `下限「変更ファイルは全部読む」の自己申告: ${decl.m} ファイルを読んだと申告したが、本文が精読していないと書いている —— 「${sentence.slice(0, 120)}」` +
+          (generated && !decl.k ? '（生成物なら、冒頭で「生成物 K ファイルを除外」と申告して M から外す）' : '')
+      );
+    }
   }
 
   if (changedFiles) {
@@ -476,6 +567,21 @@ function selfTest() {
     assert.strictEqual(findFloorViolations(body, ['deploy/helm/a/values.yaml', '.github/workflows/helm.yml']).length, 3);
   });
 
+  T('下限: N/N を申告しつつ「行単位では読んでいない」と書けば赤、🔍 の節や「差分を読んだ」は緑（#1340 / #1344）', () => {
+    const head = '変更 3 ファイル中 3 ファイルを読んだ（生成物の除外なし）。';
+    assert.strictEqual(findFloorViolations(review(`${head}テストは名前と範囲の確認にとどまり、行単位では読んでいない。`), []).length, 1);
+    assert.strictEqual(findFloorViolations(review(`${head}\n- テスト 2 本は全行は読んでいない。`), []).length, 1);
+    assert.deepStrictEqual(findFloorViolations(review(`${head}全文ではなく差分を読んだ。`), []), []);
+    const tail = '\n### 🔍 実行できなかったこと\n- 計画書との照合は未検証。\n- 本体以外の行単位の精読は行っていない。\n';
+    assert.deepStrictEqual(findFloorViolations(review(head) + tail, []), []);
+  });
+
+  T('下限: 生成物だけを精読しない文は K>0 の申告があれば緑、K の申告が無ければ赤', () => {
+    const line = '`Designer.cs` と `ModelSnapshot` は生成物なので読んでいない。要点だけ確認した `Designer.cs` もある。';
+    assert.deepStrictEqual(findFloorViolations(review(`変更 5 ファイル中 3 ファイルを読んだ（生成物 2 ファイルを除外）。${line}`), []), []);
+    assert.strictEqual(findFloorViolations(review(`変更 5 ファイル中 5 ファイルを読んだ（生成物の除外なし）。${line}`), []).length, 1);
+  });
+
   T('下限: 判定の見出しを含む最後の候補を本文に選ぶ（独り言で赤くしない）', () => {
     const events = [
       { type: 'assistant', message: { content: [{ type: 'text', text: '下限を満たしていないので読み足す。' }] } },
@@ -568,6 +674,7 @@ module.exports = {
   selectReviewBody,
   parseReadDeclaration,
   findFloorAdmissions,
+  findNotReadAdmissions,
   findFloorViolations,
   parseChangedFiles,
   confirmedSections,
