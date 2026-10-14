@@ -18,7 +18,7 @@ related_ids:
   - IADR-0505
 author: claude
 created: 2026-08-03
-updated: 2026-10-08
+updated: 2026-10-14
 plan_refs:
   - planning:projects/ai-stock-trading/07_adr/ADR-0013_messaging-follow-wolverine-kafka.md
   - planning:projects/microservices-platform/07_adr/ADR-0027_messaging-wolverine.md
@@ -431,6 +431,16 @@ E2E から見える姿は「発注が一件も執行されない」であり、�
 - [IADR-0505](./IADR-0505_scheduled-cycle-retry-chain-within-consumer-timeout.md) が、連鎖全体が `consumer_timeout` に収まる試行の上限を起動時に導き、
   `ScheduledCycleRetryPolicy` で定時サイクルのチェーンにだけ載せる（既定・経路B は 1 回＝再試行せず `_error` へ）。**共通の配線（本決定）は変えない**——
   他のハンドラの再試行は 2s/10s/30s のまま。共通の間隔は `WolverineExtensions.RetryCooldowns`（読み取り専用の公開）から読み、2 箇所に持たない。
+
+## ［2026-10-14 追記 / #1348］上の #808 追記の「#778 / #782 の GC 設定」—— ヒープ上限は 60% でなく 96% として効いていた
+
+- .NET は GC 設定の環境変数の値を 16 進数として読む（Microsoft Learn「Garbage collector config settings」の
+  「Ways to specify the configuration」）。#782 の `DOTNET_GCHeapHardLimitPercent: "60"` は 0x60＝**96%**（512Mi で ≈491Mi）として
+  効いており、上限 ≈307Mi（60%）は #782 から #1348 まで事実でなかった。#1348 で `"0x3C"` に直し、`helm.yml` の fail-safe 検査が
+  16 進数として読んで 60 であることを固定した。作業仕様書は `../specs/20261014_1348_gc-heap-limit-hex.md`。
+- #808 追記の結論（GC ヒープは ≈64Mi で、GC 設定はヒープ外の伸びに効かない）は変わらない。実測の GC ヒープは 60% でも 96% でも
+  上限から遠い。
+- `DOTNET_gcServer=0`・`DOTNET_GCConserveMemory=5` は一桁なので 16 進数でも同じ値で、影響は無い。
 
 ## 関連
 

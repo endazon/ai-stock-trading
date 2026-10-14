@@ -42,3 +42,8 @@ plan_refs:
 | 1 | Runbook に `.wslconfig` の推奨値（memory・swap・processors）と反映手順・確認がある。推測の値は「推測」と書く | 目視（diff） |
 | 2 | docs の表示テキストに計画 ID・IADR・修飾付き issue 参照が無い（trace ブロックへ入れる） | `node scripts/check-trace-blocks.js` ほか文書系の検査器 |
 | 3 | values / templates を変えていない | `git diff --stat` に `deploy/helm` が無い |
+
+## ［2026-10-14 追記 / #1348］棚卸しの「GC の env に矛盾は無い」の訂正
+
+- 上の設計の表で「静的な設定漏れ・矛盾は無い」とした `GCHeapHardLimitPercent=60` は、16 進数として読まれて 96% になっていた
+  （.NET は GC 設定の環境変数を 16 進数で読む）。#1348 で `"0x3C"`（60%）に直した。作業仕様書は `20261014_1348_gc-heap-limit-hex.md`。
