@@ -68,7 +68,7 @@ plan_refs:
      - 生成物（Designer.cs・ModelSnapshot・messages.ts/po・CHANGELOG.md 等）だけを対象にした文は、冒頭に「生成物 K ファイルを除外」（K>0）
        の申告があるときに限り数えない。生成物以外（テスト・docs・IADR 等）も並べた文は数える。K の申告が無ければ数え、
        「生成物なら冒頭で K を申告する」と案内する（申告との整合）。
-     - 計画書（計画 ADR・計画リポ）についての文は数えない。
+     - 計画書（計画 ADR・計画リポ）についての文は数えない。計画書とテスト等を並べた文は数える（生成物と同じ規則。#1346 の AI レビュー 🟢）。
 2. `.github/workflows/claude-code-review.yml` の【検証の下限】に「読んだ」の定義を書く: 差分を行単位で読んだこと。
    名前の一覧・検査器の結果・要点だけの確認は「読んだ」に数えない。生成物は除外を申告してよく、EF マイグレーションの
    `*.Designer.cs` / `*ModelSnapshot.cs` と Lingui の `messages.ts` / `messages.po` を生成物の例に足す。
