@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-10-10
+updated: 2026-10-15
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06, FR-11]
+ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06, FR-11, FR-08]
 adrs: [ADR-0006, ADR-0045, ADR-0003]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble]
-issues: [#24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525, IADR-0072]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble, 20261015_1311_rag-search-degraded-mark]
+issues: [#1311, #24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290]
 -->
 
 
@@ -113,6 +113,11 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
   方針の改訂の上限時間は既定 95 秒で、基盤のゲートウェイが上流の LLM を待つ 100 秒（固定）が実効の天井になる。出力の速さを毎秒 50〜80 トークンとすると
   約 4,700〜7,600 トークンで時間切れ（案なし・警告「方針の改訂 LLM がタイムアウトしました」）になり、8192 の全量には届かない。
   🔴 打ち切りの頻度の閾値やアラートは置いていない（実測してから決める。下の注記と同じ理由）。
+- **判断の参考情報（RAG）の取得の状態と検索の縮退**: 判断の記録（「LLM 判断:」の行）に `ragContext` と `ragDegraded` が載る。
+  `ragContext` は `retrieved` / `empty` / `failed` / `not-configured`、基盤の検索が縮退して返ったときは `retrieved-degraded` / `empty-degraded`。
+  `ragDegraded` は縮退の理由の符号（`embed-failed` / `fused-embed-failed` / `graph-expand-failed` / `rerank-failed` のカンマ区切り）、縮退なしは `none`、
+  縮退の印を返さない旧い基盤・取得していないときは `unknown`。縮退のときは警告ログ「RAG の参考情報の検索が縮退しました」が 1 判断 1 行出る（取得の失敗の判断では出さず、失敗の警告 1 行だけ）。
+  Loki では `|= "ragContext=empty-degraded"`（縮退した 0 件。該当なしとは限らない）・`|= "-degraded"`（縮退した判断）で引く。`ragDegraded` は取得の失敗（`ragContext=failed`）の行にも成功した検索の理由が載るため、`ragDegraded=` だけで引くと失敗の判断も混ざる（縮退だけを数えるなら `-degraded` で引く）。🔴 頻度の閾値・アラートは置いていない。
 - **判断理由（根拠文）の文字化けの疑い**: 取引判断の LLM の根拠文に化けの疑い（置換文字 U+FFFD、漢字・かなに接するキリル文字、漢字に挟まれた小文字を含む英字列）が
   あると、根拠文を受け取った地点で 1 回だけ判定し、警告ログを 1 行出す。🔴 判断（action・数量）は変えない。疑いのある根拠文は、先頭に目印
   「⚠ 判断理由に文字化けの疑い: 」を付けて転記する（原文は残す）。Loki での引き方:

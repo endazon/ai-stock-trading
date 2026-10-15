@@ -523,7 +523,7 @@ public sealed class TradeDecisionAppService(
         // fail-safe: 取得は判断のクリティカルパス外。例外・遅延で判断を止めないよう、失敗は「文脈なし」に縮退する
         //（#18 アダプタ自体も fail-safe だが、独自アダプタ差し替え時の保険として判断境界でも握る）。
         // FR-08, FR-11, #1283: 取得の状態（成功・失敗・未構成）も受け取り、失敗は Warning、状態は判断の記録（下の「LLM 判断」）へ残す。
-        var (retrieved, ragContext) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
+        var (retrieved, ragContext, ragDegraded) = await RetrieveContextSafeAsync(trigger, policy, cancellationToken).ConfigureAwait(false);
 
         // 🔴 FR-04, FR-02, #1034, IADR-0440 決定 2/6: 判断時点の監視銘柄（権威源＝市場監視から読めた一覧）。null＝不明
         // （プロンプトは「不明」と明示し、「ウォッチリストなし」「この銘柄は対象外」とは書かない）。**読めないことでは見送らない**
@@ -600,6 +600,7 @@ public sealed class TradeDecisionAppService(
         // FR-11: プロンプト・LLM 出力・根拠・票数・スクリーニング可否を記録する（永続監査は #17 連携）。
         // #337（#290 吸収）, IADR-0248: 解析不能（unparseableVotes / screeningUnparseable）は見送りと区別して残す。
         // FR-08, FR-11, #1283, IADR-0072: 参考情報（RAG）の取得の状態と注入した件数も残す（取得の失敗と「本当に無い」を後から区別する）。
+        // FR-08, FR-11, #1311: 基盤の検索の縮退の印（ragDegraded）も残す（縮退した検索に基づく判断を見分ける）。
         // 🔴 FR-11, #1290, IADR-0525 決定 3: 一次の根拠文の文字化けの疑い（オーケストレータが受け取った地点で 1 回だけ検出した印）を残す。
         // 見送り（screenedOut=true）の rationale は一次の根拠文で、疑いがあれば目印が前置済み（ここで検出し直さない）。
         // #1290, IADR-0525 決定 4: 本判断の根拠文の疑い（decisionRationaleGarble）も同じく残す。本判断の根拠文は目印が前置済みのまま
@@ -607,12 +608,12 @@ public sealed class TradeDecisionAppService(
         logger.LogInformation(
             "LLM 判断: {Symbol} action={Action} rationale={Rationale} votes={Agreement}/{Total} screenedOut={ScreenedOut} "
                 + "unparseableVotes={UnparseableVotes} screeningUnparseable={ScreeningUnparseable} "
-                + "ragContext={RagContext} ragReferences={RagReferences} screeningRationaleGarble={ScreeningRationaleGarble} "
+                + "ragContext={RagContext} ragReferences={RagReferences} ragDegraded={RagDegraded} screeningRationaleGarble={ScreeningRationaleGarble} "
                 + "decisionRationaleGarble={DecisionRationaleGarble}",
             trigger.Symbol, decision.Action, decision.Rationale,
             orchestrated.AgreementVotes, orchestrated.TotalVotes, orchestrated.ScreenedOut,
             orchestrated.UnparseableVotes, orchestrated.ScreeningUnparseable,
-            ragContext, retrieved.Count, orchestrated.ScreeningRationaleGarbleSuspected,
+            ragContext, retrieved.Count, ragDegraded, orchestrated.ScreeningRationaleGarbleSuspected,
             orchestrated.DecisionRationaleGarbleSuspected);
 
         // 🔴 UC-02, FR-03, #1077, IADR-0452 決定1: ここから先の見送りは AI 判断の後である（基準点になる）。
@@ -1328,7 +1329,11 @@ public sealed class TradeDecisionAppService(
     // FR-08, FR-11, #1283, IADR-0072 決定4: 縮退（失敗でも判断を止めず、取得できた分だけ／文脈なしで続ける）は変えない。
     // **失敗を黙って「文脈なし」に見せない**: 取得の失敗は 1 判断 1 行の Warning（銘柄・市場・起点・原因・失敗の本数。本文は出さない）、
     // 状態は判断の記録へ ragContext として返す（retrieved / empty / failed / not-configured）。空（検索は成功して 0 件）は Warning を出さない。
-    private async Task<(IReadOnlyList<RetrievedContext> Contexts, string RagContext)> RetrieveContextSafeAsync(
+    // FR-08, FR-11, #1311, IADR-0072（2026-10-15 追記）: 基盤の検索の縮退の印（MSP#1871）を判断の記録へ残す。成功で縮退なら
+    // ragContext を retrieved-degraded / empty-degraded にし、ragDegraded（unknown / none / 理由の符号）を添え、1 判断 1 行の Warning を出す。
+    // 🔴 empty-degraded（特に embed-failed の 0 件）は「該当なし」ではない可能性が高い（基盤は鍵が無い間 internal の報告書を索引しない。MSP#1908）。
+    // 失敗は縮退より優先する（failed の Warning が 1 行出るので、縮退の Warning は重ねない）。印の無い旧い基盤は従来の値＋ragDegraded=unknown。
+    private async Task<(IReadOnlyList<RetrievedContext> Contexts, string RagContext, string RagDegraded)> RetrieveContextSafeAsync(
         DecisionTrigger trigger, DailyPolicy policy, CancellationToken cancellationToken)
     {
         RetrievalResult result;
@@ -1341,23 +1346,45 @@ public sealed class TradeDecisionAppService(
             // 例外のメッセージは構造化の値へ載せない（原因は型名だけ）。スタックは従来どおり例外として添える。
             result = new RetrievalResult([], RetrievalStatus.Failed, $"exception:{ex.GetType().Name}");
             LogRetrievalFailure(trigger, result, ex);
-            return ([], RagContextFailed);
+            return ([], RagContextFailed, RagDegradedUnknown);
         }
 
         if (result.Status == RetrievalStatus.Failed)
             LogRetrievalFailure(trigger, result, exception: null);
 
         var contexts = FilterBySource(result.Contexts, trigger);
+        var degraded = result.Status == RetrievalStatus.Succeeded && result.Degraded == true;
         var ragContext = result.Status switch
         {
             RetrievalStatus.Failed => RagContextFailed,
             RetrievalStatus.NotConfigured => "not-configured",
-            _ => contexts.Count > 0 ? "retrieved" : "empty",
+            _ => (contexts.Count > 0 ? "retrieved" : "empty") + (degraded ? RagContextDegradedSuffix : string.Empty),
         };
-        return (contexts, ragContext);
+        var ragDegraded = RagDegradedOf(result);
+
+        if (degraded)
+        {
+            logger.LogWarning(
+                "RAG の参考情報の検索が縮退しました（劣化した検索結果で判断を継続。0 件は該当なしとは限らない）: "
+                    + "{Symbol} market={Market} trigger={Trigger} reasons={Reasons} retrieved={Retrieved}",
+                trigger.Symbol, trigger.Market, trigger.MetricTrigger, ragDegraded, contexts.Count);
+        }
+
+        return (contexts, ragContext, ragDegraded);
     }
 
     private const string RagContextFailed = "failed";
+    private const string RagContextDegradedSuffix = "-degraded";
+    private const string RagDegradedUnknown = "unknown";
+
+    // FR-08, FR-11, #1311: 判断の記録の ragDegraded。null＝unknown（印が無い・取得していない）、false＝none、true＝理由のカンマ区切り
+    // （理由が無ければ unspecified）。理由は検索アダプタで符号の形を確かめた語だけ（本文・例外メッセージを含まない）。
+    private static string RagDegradedOf(RetrievalResult result) => result.Degraded switch
+    {
+        null => RagDegradedUnknown,
+        false => "none",
+        true => result.DegradedReasons.Count > 0 ? string.Join(',', result.DegradedReasons) : "unspecified",
+    };
 
     private void LogRetrievalFailure(DecisionTrigger trigger, RetrievalResult result, Exception? exception) =>
         logger.LogWarning(
