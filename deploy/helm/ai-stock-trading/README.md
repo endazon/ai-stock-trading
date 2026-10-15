@@ -771,6 +771,31 @@ kubectl -n ai-stock-trading cp "$(kubectl -n ai-stock-trading get pod -l app=tra
 
 - PVC は `helm.sh/resource-policy: keep`（無効化・uninstall でも消えない）。消すときは `kubectl delete pvc trade-decision-stage0 -n <namespace>` を人が実行する。
 
+#### Recreate へ移る最初の upgrade（#1351）
+
+- **既存の環境**（trade-decision が RollingUpdate で作られている）で初めて有効にすると、`helm upgrade` が次で失敗する。新しく作る環境では起きない。
+
+  ```
+  Deployment.apps "trade-decision-service" is invalid: spec.strategy.rollingUpdate: Forbidden: may not be specified when strategy `type` is 'Recreate'
+  ```
+
+- **原因は helm 4 の server-side apply（SSA）である。** RollingUpdate で作った Deployment には、API サーバが既定で補った
+  `rollingUpdate`（maxSurge / maxUnavailable 25%）が残る。補った値には field manager が付かず、SSA は自分の所有でないフィールドを消さない。
+  描画が `type: Recreate` だけになると、残った `rollingUpdate` と並んで拒否される。
+  描画に `rollingUpdate: null` を書いても SSA は消さない（実測）。helm 3 の client-side のパッチでは起きない。
+- **`scripts/k8s-local-deploy.sh` が upgrade の前に自動で直す。** 描画が Recreate になる Deployment のうち、稼働中が Recreate でなく
+  `rollingUpdate` を持つものだけを `kubectl patch --type=json` で `{"type":"Recreate"}` へ置き換え、`strategy 移行（#1351）: ...` を 1 行出す。
+  すでに Recreate・未作成なら何もしない。描画・取得・置き換えのどれかが失敗したら upgrade へ進まずに止まる。
+- ⚠️ **Recreate では Pod が作り直される。** 以後のロールアウト（直後の upgrade・起動器の rollout restart）は、旧 Pod をすべて止めてから新 Pod を作る。入れ替えの間、その Deployment は止まる。
+- 起動器を使わずに手で upgrade するときは、先に次を実行する（`opend` も同じ形。`opend` は最初から Recreate なので通常は要らない）。
+
+  ```bash
+  kubectl -n ai-stock-trading patch deployment trade-decision-service --type=json \
+    -p '[{"op":"replace","path":"/spec/strategy","value":{"type":"Recreate"}}]'
+  ```
+
+  `helm upgrade --server-side=false`（client-side のパッチ）でも通る。すでに失敗した revision があっても、上の patch の後に upgrade をやり直せば通る。
+
 ## 実行環境名（`ASPNETCORE_ENVIRONMENT`）は Production（#1192 / [IADR-0496](../../../.ai-context/adr/IADR-0496_aspnetcore-environment-production-and-problem-details.md)）
 
 - 全 Worker の `ASPNETCORE_ENVIRONMENT` は `services.<name>.aspnetcoreEnvironment` ＞ `global.aspnetcoreEnvironment`（既定 `Production`）の順で決まる。
