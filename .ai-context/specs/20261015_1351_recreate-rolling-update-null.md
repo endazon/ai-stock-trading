@@ -66,6 +66,7 @@ plan_refs:
 | --- | --- |
 | `scripts/k8s-local-deploy.sh` | `ast_recreate_deployments`（描画から Recreate の Deployment 名を挙げる）と `ast_migrate_recreate_strategy` を足す。upgrade と同じ値（`AST_HELM_VALUE_ARGS`）で `helm template` し、稼働中が `type != Recreate` かつ `rollingUpdate` を持つものだけ `kubectl patch --type=json` で `/spec/strategy` を `{"type":"Recreate"}` に置き換え、1 行出す。描画・取得・置き換えの失敗は止める（fail-closed）。helm upgrade の直前で呼ぶ |
 | `scripts/k8s-local-deploy.test.sh` | kubectl / helm のスタブに `get deployment <name>`・`patch deployment`・`template` を足し、T-1351-01〜07 |
+| `helm.yml` | 「Assert launcher detects Recreate deployments from the real render (#1351)」: `ast_recreate_deployments` を実際の描画へ当て、既定＝なし／values-local＝trade-decision／values-local＋opend＝opend と trade-decision を固定する（AI レビュー 🟡。描画の形が変わったとき、移行の段が黙って「対象なし」に倒れるのを防ぐ）。起動の paths に `scripts/k8s-local-deploy.sh` を足す |
 | chart `README.md` | 「Recreate へ移る最初の upgrade」: 症状・原因（SSA）・起動器の自動の直し・Pod の作り直し・手での `kubectl patch` |
 | `docs/tests/FR-15_backtest-tests.md` | T-15-139 と変異の行 |
 
@@ -93,3 +94,6 @@ plan_refs:
 | 起動器本体から呼び出しを外す | 1 件が赤（T-1351-07） |
 | 描画の判定を盲目にする | 7 件が赤 |
 | `/spec/strategy/type` だけを置き換える（rollingUpdate が残る） | 1 件が赤（T-1351-01） |
+
+`helm.yml` の新しい step（ローカルで helm v4.2.1）に対し、awk を壊す変異 5 種（strategy の字下げ・type の字下げ・kind を拾わない・
+name を拾わない・文書の区切りを見ない）はいずれも「values-local: 期待 [trade-decision-service] に対し []」で赤。

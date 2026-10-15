@@ -395,7 +395,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | T-15-136 | 印の鍵は置き場・有効化・銘柄の並びで変わらず、承認の単位で変わる。記録の中身の欄だけが変われば印は別で累計は同じ。ファイルの状態は再起動をまたいで読め、壊れたファイルを「無い」と読まず、ロックは排他で、累計は印と別のファイルにある | `Stage0RecordingIdentityTests`（4 試験） / `FileStage0RecordingStateStoreTests`（8 試験） | 自動 |
 | T-15-138 | 🔴 課金済みの記録を空の集合で消さない: 印だけが消えた・印の鍵だけが変わった組が 1 件目より前で上限に当たっても、書き出しも終わりの印も行わない。書き出し先は件数が減る上書き（0 件を含む）を拒み、同じか多い件数・読めない既存のファイルは置き換え、一時ファイルを残さない | `Stage0RecordingIdempotencyTests.印が無くても累計が承認額に届いていればLLMを呼ばない`（改） / `印の鍵だけが変わって上限で止まっても既存の記録を上書きしない` / `FileStage0DecisionRecordSinkTests`（4 試験） | 自動 |
 | T-15-137 | 経路B は記録の永続ボリュームを有効にし、書き出し先はその中にある。本番の既定は無効。描画は、本番で何も描かず、経路B で PVC・mount・状態の置き場・Recreate を描き、置き場を extraEnv に書く・書き出し先が mount の外・mountPath が相対のときに止まる | `Stage0RecordingLocalProfileTests.記録の永続ボリュームは本番で無効_経路Bで有効で書き出し先はその中にある` / `経路Bの記録の欄は承認値で埋まっている`（改） / CI `helm.yml` の「Assert stage0 recorder persistence」 | 自動 |
-| T-15-139 | 🔴 既存の環境（RollingUpdate で作られた trade-decision）を経路B へ移す最初の配備が止まらない: 起動器は helm upgrade の前に、描画が Recreate になる Deployment のうち稼働中が Recreate でなく rollingUpdate を持つものだけを Recreate へ置き換え（1 行出力）、すでに Recreate・未作成・描画が Recreate でないものは触らない。描画・取得・置き換えのどれかが失敗したら止まる | `scripts/k8s-local-deploy.test.sh` の T-1351-01〜T-1351-07（CI `ci.yml`） | 自動 |
+| T-15-139 | 🔴 既存の環境（RollingUpdate で作られた trade-decision）を経路B へ移す最初の配備が止まらない: 起動器は helm upgrade の前に、描画が Recreate になる Deployment のうち稼働中が Recreate でなく rollingUpdate を持つものだけを Recreate へ置き換え（1 行出力）、すでに Recreate・未作成・描画が Recreate でないものは触らない。描画・取得・置き換えのどれかが失敗したら止まる | `scripts/k8s-local-deploy.test.sh` の T-1351-01〜T-1351-07（CI `ci.yml`） / 描画からの判定は CI `helm.yml` の「Assert launcher detects Recreate deployments from the real render」 | 自動 |
 
 **変異で赤になることの確認**:
 
@@ -408,6 +408,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | 状態の置き場の未設定を通す／ロックを見ない | **1 件／1 件が赤**（T-15-135） |
 | 描画の Recreate を外す | CI の検査が赤（T-15-137） |
 | 移行の段で常に置き換える／置き換え・取得・描画の失敗を無視する／描画の判定を外す／呼び出しを外す／`/spec/strategy/type` だけを置き換える | **2〜7 件が赤**（T-15-139） |
+| 描画からの判定（awk）を壊す（字下げ・kind・name・文書の区切り） | CI の検査が赤（T-15-139） |
 | 0 件で止まった実行でも書き出す／書き出し先の件数の比較を外す | 結果は作業仕様書の「実測（変異）」の表（T-15-138） |
 
 ### 合格基準の閾値較正（#208。Stage 0 の最小試行数を 1 → 20 へ較正する）

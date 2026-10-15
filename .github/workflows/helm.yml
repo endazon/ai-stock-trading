@@ -21,6 +21,8 @@ on:
       # #1225, IADR-0512: Finnhub の予算の検査器と母集合・既定値を変えたら描画検査を回す。
       - "scripts/check-finnhub-key-budget.js"
       - "scripts/finnhub-key-budget.json"
+      # #1351: 起動器の Recreate 判定（ast_recreate_deployments）を実際の描画に当てる検査がある。
+      - "scripts/k8s-local-deploy.sh"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -29,6 +31,8 @@ on:
       # #1225, IADR-0512: Finnhub の予算の検査器と母集合・既定値を変えたら描画検査を回す。
       - "scripts/check-finnhub-key-budget.js"
       - "scripts/finnhub-key-budget.json"
+      # #1351: 起動器の Recreate 判定（ast_recreate_deployments）を実際の描画に当てる検査がある。
+      - "scripts/k8s-local-deploy.sh"
 
 # NFR / IADR-0208 決定 1: 連続 push で古い実行を捨てる（PR のみ）。
 # 本ワークフローは約 40 回の `helm template` を直列に回すため、重複実行の無駄が大きい。
@@ -1372,3 +1376,23 @@ jobs:
           must_fail "extraEnv に状態の置き場" "の extraEnv に Stage0Recording__StateDirectory は書けません" \
             --set 'services.trade-decision.extraEnv[0].name=Stage0Recording__StateDirectory' --set 'services.trade-decision.extraEnv[0].value=/tmp/x'
           echo "ok: 記録器の永続ボリュームは経路B だけで描かれ、誤配備は描画で止まる"
+      # FR-15, #1351: 起動器（scripts/k8s-local-deploy.sh）の移行の段は、描画から Recreate の Deployment を挙げる
+      # （ast_recreate_deployments）。描画の形が変わって awk が何も拾えなくなると、移行の段は黙って「対象なし」に倒れ、
+      # 既存の環境の upgrade が Forbidden で止まる。実際の描画に当てて、挙がる名前を固定する。
+      - name: Assert launcher detects Recreate deployments from the real render (#1351)
+        run: |
+          fail() { echo "::error::起動器の Recreate 判定（#1351）: $1"; exit 1; }
+          # 関数だけを取り出して読む（起動器の本体は実行しない）。
+          fn="$(sed -n '/^ast_recreate_deployments() {/,/^}/p' scripts/k8s-local-deploy.sh)"
+          [ -n "$fn" ] || fail "scripts/k8s-local-deploy.sh に ast_recreate_deployments が無い"
+          eval "$fn"
+          got() { helm template ast "$CHART" "$@" | ast_recreate_deployments | sort | paste -sd, -; }
+          check() {
+            local label="$1" want="$2"; shift 2
+            local out; out="$(got "$@")"
+            [ "$out" = "$want" ] || fail "$label: 期待 [$want] に対し [$out]"
+            echo "ok: $label → [$out]"
+          }
+          check "既定" ""
+          check "values-local" "trade-decision-service" -f "$CHART/values-local.yaml"
+          check "values-local + opend.enabled=true" "opend,trade-decision-service" -f "$CHART/values-local.yaml" --set opend.enabled=true
