@@ -432,6 +432,46 @@ public class OrderReservationReconciliationServiceTests
         await host.StopAsync();
     }
 
+    [Fact]
+    public async Task T_10_2666_同じ予約の据え置きが続く2巡回目はWarningではなくDecisionIdつきのInformationで残す()
+    {
+        // 🔴 T-10-2666, FR-05, NFR-09, #856, IADR-0538: 本番の合成（常駐 → scope → リコンサイラ）で 2 巡回回す。
+        // 門が閉じた配備では同じ予約が毎時載り直し、Warning が永久に続いていた。Warning は初回だけにし、
+        // 継続は DecisionId つきの Information に残す（観測 (b) と後始末の確認が grep する）。計器は 2 回とも数える。
+        var meterName = MeterCapture.NewIsolatedMeterName();
+        using var capture = new MeterCapture(meterName);
+        var reservations = new InMemoryOrderReservationStore();
+        var decisionId = Guid.NewGuid();
+        reservations.TryReserve(decisionId, StalledAt);
+        using var host = await BuildHostAsync(new StubProbe(ReservationProbeResult.NotPlaced), reservations);
+
+        var logger = new RecordingLogger();
+        var service = new OrderReservationReconciliationService(
+            host.Services.GetRequiredService<IServiceScopeFactory>(),
+            host.Services.GetRequiredService<IWolverineRuntime>(),
+            host.Services.GetRequiredService<IClock>(),
+            Options.Create(new ReconciliationOptions { Enabled = true }),
+            BusinessMetrics.WithMeterName(meterName),
+            logger);
+
+        (await service.ReconcileOnceAsync(CancellationToken.None)).HeldNotPlaced.Should().ContainSingle();
+        (await service.ReconcileOnceAsync(CancellationToken.None)).HeldNotPlaced.Should().ContainSingle();
+
+        var aboutHeld = logger.Entries
+            .Where(e => e.Message.Contains(decisionId.ToString(), StringComparison.Ordinal))
+            .ToList();
+        aboutHeld.Where(e => e.Level == LogLevel.Warning).Should().ContainSingle()
+            .Which.Message.Should().Contain("照会は「未発注」と答えましたが")
+            .And.Contain("滞留した予約を人が解決する", "後始末の手順へ案内する");
+        aboutHeld.Where(e => e.Level == LogLevel.Information).Should().ContainSingle()
+            .Which.Message.Should().Contain("据え置きが続いています");
+        SumByOutcome(capture)[BusinessMetrics.ReservationReconciliationHeldNotPlaced]
+            .Should().Be(2, "計器は畳まない（判定の回数を数える）");
+        reservations.Find(decisionId)!.State.Should().Be(OrderDispatchState.Reserved, "観測だけで予約には触れない");
+
+        await host.StopAsync();
+    }
+
     // ---- 🔴 T-10-1078, FR-10, #853, IADR-0428 決定4: 保護の結果を種類ごとに記録し、イベントを発行する ----
 
     private sealed class StubProtection(Func<Guid, ReconciledEntryProtectionOutcome> fn) : IReconciledEntryProtection

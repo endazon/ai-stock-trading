@@ -38,6 +38,10 @@ public sealed class OrderReservationReconciliationService(
     ILogger<OrderReservationReconciliationService> logger)
     : BackgroundService, IReservationReconciliationSink
 {
+    // FR-05, #856, IADR-0538: 据え置き警告の畳み込み（同じ予約で状態が変わらない限り、Warning は初回と再通知の間隔ごと）。
+    // 主コンストラクタの引数を初期化子と本体の両方で捕まえない（CS9124）ため、最初の巡回で作る（巡回は 1 本のループからだけ呼ばれる）。
+    private HeldNotPlacedWarningThrottle? _heldWarnings;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled)
@@ -113,7 +117,8 @@ public sealed class OrderReservationReconciliationService(
             .ReconcileAsync(cutoff, options.Value.EffectiveBatchSize, this, cancellationToken).ConfigureAwait(false);
 
         // 巡回全体の要約（件数）。🔴 **1 件ごとの明細はここでは出さない**——出すと EmitAsync と二重になる。
-        ReportRoundSummary(result);
+        // #856, IADR-0538: バッチが満杯でなければ滞留の全件を走査した（載らなかった予約はもう滞留していない）。
+        ReportRoundSummary(result, scanComplete: result.Scanned < options.Value.EffectiveBatchSize);
 
         return result;
     }
@@ -268,7 +273,7 @@ public sealed class OrderReservationReconciliationService(
     // #856, IADR-0362: 1 巡回の要約を記録に落とす。
     // 🔴 #890, IADR-0371: ここには**巡回が最後まで回りきって初めて言えること**しか置かない
     // （件数・失敗数・据え置き）。確定済み 1 件の事実は EmitAsync が既に出している。
-    private void ReportRoundSummary(ReservationReconciliationResult result)
+    private void ReportRoundSummary(ReservationReconciliationResult result, bool scanComplete)
     {
         // FR-05, NFR-09, #856, IADR-0441: 確定しなかった判定を件数で計上する（確定した分は EmitAsync が 1 件ずつ数え済み）。
         // これらの予約は Reserved のまま次の巡回に載るため、巡回が中断されて計上されなくても次の巡回で数え直される。
@@ -299,20 +304,38 @@ public sealed class OrderReservationReconciliationService(
                 "発注予約リコンサイルで {Failed} 件が例外により未処理でした（据え置き＝次回巡回で再試行）。", result.Failed);
 
         // #856, IADR-0362: 解放の門が閉じているため据え置いた「未発注」判定。据え置き自体は安全側だが、
-        // 滞留は解消していない。門を開ける（＝実機検証を行う）判断の入力として毎巡回で出す。
+        // 滞留は解消していない。門を開ける（＝実機検証を行う）判断の入力として毎巡回で残す。
         //
         // 🔴 #890, IADR-0371: これは巡回の末尾のままでよい。据え置いた予約は **Reserved のまま**であり
         // 次回巡回の FindStalledReserved に載るため、巡回が中断されても警告は失われない
         // （永久に失われるのは「確定済みで再走査されない」ものだけである）。
         // 🔴 #1051, IADR-0444: 予約の取引環境も出す（どちらの門の判断材料かを取り違えないため。不明は不明と出す）。
-        foreach (var held in result.Verdicts.Where(v => v.Kind == ReservationReconciliationVerdictKind.HeldNotPlaced))
-            logger.LogWarning(
-                "発注予約リコンサイル: 照会は「未発注」と答えましたが、この予約の取引環境の解放の門が閉じているため据え置きます"
-                    + "（DecisionId={DecisionId} 取引環境={ReservationProvider}）。門を開けてよいのは、その取引環境の実機の記録で"
-                    + "誤判定が無いことを示した後だけです（#856 / #1051。取引環境が不明な予約はどちらの門でも解放しません）。"
-                    + "それまでは人が証券会社の画面で確認してください。",
-                held.DecisionId,
-                held.ReservationProvider?.ToString() ?? BusinessMetrics.ReservationReconciliationProviderUnknown);
+        // 🔴 #856, IADR-0538: **Warning は同じ予約について初回と再通知の間隔（既定 24 時間）ごとだけ**にする。
+        // 門が閉じている限り同じ予約は人が片付けるまで永久に載り直し、毎時の Warning が続いていた（2026-10-05 の故障注入の AAPL）。
+        // 間の巡回も **DecisionId つきの Information で必ず残す**（門を開ける判断の記録 (b) と後始末の確認が grep する）。計器は上で毎巡回数えている。
+        _heldWarnings ??= new HeldNotPlacedWarningThrottle(options.Value.HeldNotPlacedReminder);
+        foreach (var notice in _heldWarnings.Classify(result.Verdicts, scanComplete, clock.UtcNow))
+        {
+            var provider = notice.ReservationProvider?.ToString() ?? BusinessMetrics.ReservationReconciliationProviderUnknown;
+            if (notice.Warn)
+            {
+                logger.LogWarning(
+                    "発注予約リコンサイル: 照会は「未発注」と答えましたが、この予約の取引環境の解放の門が閉じているため据え置きます"
+                        + "（DecisionId={DecisionId} 取引環境={ReservationProvider}）。門を開けてよいのは、その取引環境の実機の記録で"
+                        + "誤判定が無いことを示した後だけです（#856 / #1051。取引環境が不明な予約はどちらの門でも解放しません）。"
+                        + "それまでは人が証券会社の画面で確認してください。片付けは発注経路の Runbook「滞留した予約を人が解決する」"
+                        + "（S1 の記録が残っていれば「発注の記録が無いまま残った S1 の記録を閉じる」も）に従います。"
+                        + "同じ予約が据え置かれ続ける間、この警告は {NextWarnAt:O} まで繰り返しません（毎巡回の継続は Information に残します。初回 {FirstWarnedAt:O}）。",
+                    notice.DecisionId, provider, notice.NextWarnAt, notice.FirstWarnedAt);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "発注予約リコンサイル: 据え置きが続いています（照会は「未発注」・解放の門は閉。DecisionId={DecisionId} 取引環境={ReservationProvider}）。"
+                        + "警告は初回 {FirstWarnedAt:O} に出しました。次の警告は {NextWarnAt:O} 以降です。",
+                    notice.DecisionId, provider, notice.FirstWarnedAt, notice.NextWarnAt);
+            }
+        }
     }
 
     // #1051, IADR-0444 決定6: 確定しなかった判定の種類 → 計器の outcome の値。

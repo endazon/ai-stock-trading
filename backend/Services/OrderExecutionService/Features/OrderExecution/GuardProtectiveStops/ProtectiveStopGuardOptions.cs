@@ -21,6 +21,16 @@ public sealed class ProtectiveStopGuardOptions
     public TimeSpan SoftwareStopSummaryInterval { get; init; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// FR-10, #856, IADR-0538: エントリーの発注記録が無いまま「残保護=未確定」で残る S1 を、要約で「幽霊の疑い」とし
+    /// Warning で後始末の手順へ案内するまでの経過（作成から。既定 24 時間）。0 以下は既定。観測のみで、行は閉じない。
+    /// </summary>
+    public TimeSpan UnrecordedSoftwareStopAge { get; init; } = SoftwareStopLivenessReporter.DefaultUnrecordedEntryAge;
+
+    /// <summary>FR-10, #856, IADR-0538: 幽霊の疑いの Warning を同じ行について再び出すまでの間隔（既定 24 時間）。0 以下は既定。</summary>
+    public TimeSpan UnrecordedSoftwareStopReminderInterval { get; init; } =
+        SoftwareStopLivenessReporter.DefaultUnrecordedReminderInterval;
+
+    /// <summary>
     /// FR-10, #1093, IADR-0458: 建玉照会が分類できた一時的な失敗のとき、巡回の中で照会し直す最大回数（既定 1・0〜1 に収める）。
     /// 0 で無効（従来どおり 1 回の失敗で巡回ごと据え置く）。失敗も頻度制限の枠を消費するため 2 回以上は許さない（IADR-0144 決定 5）。
     /// </summary>

@@ -461,12 +461,17 @@ if (brokerSelection.IsMoomoo)
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger<
                     OrderExecutionService.Features.OrderExecution.RetrofitStopWidthFloor.SoftwareStopFloorRetrofitter>())));
     // FR-10, #902, IADR-0365 決定5: Active な S1 行の低頻度の要約（観測のみ。間隔をまたいで状態を持つため singleton）。
+    // #856, IADR-0538: 発注記録の無いまま未確定で残る S1（幽霊の疑い）の経過と再通知の間隔も同じ構成から渡す。
     builder.Services.AddSingleton(sp =>
-        new SoftwareStopLivenessReporter(
+    {
+        var guardOptions = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>().Value;
+        return new SoftwareStopLivenessReporter(
             sp.GetRequiredService<IClock>(),
             sp.GetRequiredService<ILoggerFactory>().CreateLogger<SoftwareStopLivenessReporter>(),
-            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProtectiveStopGuardOptions>>()
-                .Value.SoftwareStopSummaryInterval));
+            guardOptions.SoftwareStopSummaryInterval,
+            guardOptions.UnrecordedSoftwareStopAge,
+            guardOptions.UnrecordedSoftwareStopReminderInterval);
+    });
     builder.Services.AddHostedService<
         OrderExecutionService.Hosted.ProtectiveStopGuardService>();
 }
