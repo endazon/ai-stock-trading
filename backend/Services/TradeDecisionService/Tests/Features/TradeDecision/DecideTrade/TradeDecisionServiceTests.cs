@@ -533,6 +533,81 @@ public class TradeDecisionServiceTests
         }
     }
 
+    private const string RagDegradedMessage = "RAG の参考情報の検索が縮退";
+
+    // 🔴 T-10-2662, FR-08, FR-11, #1311: 基盤の検索の縮退の印を判断の記録へ残す。縮退なら ragContext に -degraded が付き、
+    // ragDegraded に理由の符号が載り、Warning が 1 行（銘柄・理由。本文なし）出る。縮退なしは従来の値と ragDegraded=none、
+    // 印の無い旧い基盤は従来の値と ragDegraded=unknown（Warning なし）。判断はどれも止まらない。
+    [Theory]
+    [InlineData("empty", true, "empty-degraded", "embed-failed")]
+    [InlineData("retrieved", true, "retrieved-degraded", "embed-failed,rerank-failed")]
+    [InlineData("empty", false, "empty", "none")]
+    [InlineData("retrieved", false, "retrieved", "none")]
+    [InlineData("empty", null, "empty", "unknown")]
+    [InlineData("retrieved", null, "retrieved", "unknown")]
+    public async Task T_10_2662_基盤の検索の縮退の印を判断の記録とWarningに残し印が無ければ従来の記録にする(
+        string hits, bool? degraded, string expectedRagContext, string expectedRagDegraded)
+    {
+        var context = new RetrievedContext("押し目の根拠メモ", KnowledgeText, "kb://doc/9", 0.88d, ["finnhub"]);
+        IReadOnlyList<string> reasons = expectedRagDegraded.Contains("rerank", StringComparison.Ordinal)
+            ? ["embed-failed", "rerank-failed"]
+            : ["embed-failed"];
+        var result = new RetrievalResult(
+            hits == "retrieved" ? [context] : [], RetrievalStatus.Succeeded,
+            Degraded: degraded, DegradedReasons: degraded == true ? reasons : null);
+        var llm = new CapturingLlm(BuyJson);
+        var log = new StateLogger();
+        var service = new AppSvc(llm, new FakePolicy(Policy), new FakeSizing(Context()),
+            new FakeClock(), log, new StatusRetrieval(result));
+
+        var decision = await service.DecideAsync(Trigger());
+
+        decision.Should().NotBeNull("縮退した検索でも判断を止めない（IADR-0072 決定4）");
+        var record = DecisionRecord(log);
+        record.Values["RagContext"].Should().Be(expectedRagContext);
+        record.Values["RagDegraded"].Should().Be(expectedRagDegraded);
+        record.Values["RagReferences"].Should().Be(hits == "retrieved" ? 1 : 0);
+
+        var warnings = log.Entries.Where(e => e.Message.Contains(RagDegradedMessage, StringComparison.Ordinal)).ToList();
+        if (degraded == true)
+        {
+            var warning = warnings.Should().ContainSingle().Which;
+            warning.Level.Should().Be(LogLevel.Warning);
+            warning.Values["Symbol"].Should().Be("AAPL");
+            warning.Values["Reasons"].Should().Be(expectedRagDegraded);
+            warning.Values["Retrieved"].Should().Be(hits == "retrieved" ? 1 : 0);
+            warning.Message.Should().NotContain(KnowledgeText);
+        }
+        else
+        {
+            warnings.Should().BeEmpty("縮退なし・印なしは警告しない");
+        }
+
+        log.Entries.Should().NotContain(e => e.Message.Contains(RagFailureMessage, StringComparison.Ordinal));
+    }
+
+    // T-10-2663, #1311: 取得の失敗は縮退より優先して ragContext=failed（Warning は失敗の 1 行だけ）。縮退の理由は ragDegraded に残る。
+    // 取得ポートの例外は ragDegraded=unknown。
+    [Fact]
+    public async Task T_10_2663_取得の失敗は縮退より優先し例外のときは縮退を不明とする()
+    {
+        var failedLog = new StateLogger();
+        await new AppSvc(new CapturingLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()), new FakeClock(), failedLog,
+                new StatusRetrieval(new RetrievalResult([], RetrievalStatus.Failed, "http-503", 1, Degraded: true, DegradedReasons: ["embed-failed"])))
+            .DecideAsync(Trigger());
+        var throwingLog = new StateLogger();
+        await new AppSvc(new CapturingLlm(BuyJson), new FakePolicy(Policy), new FakeSizing(Context()), new FakeClock(), throwingLog,
+                new ThrowingRetrieval())
+            .DecideAsync(Trigger());
+
+        DecisionRecord(failedLog).Values["RagContext"].Should().Be("failed");
+        DecisionRecord(failedLog).Values["RagDegraded"].Should().Be("embed-failed");
+        failedLog.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.StartsWith("RAG の", StringComparison.Ordinal))
+            .Which.Message.Should().Contain(RagFailureMessage);
+        DecisionRecord(throwingLog).Values["RagContext"].Should().Be("failed");
+        DecisionRecord(throwingLog).Values["RagDegraded"].Should().Be("unknown");
+    }
+
     // T-10-2475: 取得ポートの例外も ragContext=failed（原因は例外の型名。メッセージは出さない）で記録し、従来どおり文脈なしで続ける。
     [Fact]
     public async Task T_10_2475_取得ポートの例外もfailedとして判断の記録に残す()

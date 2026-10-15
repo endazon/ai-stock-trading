@@ -12,6 +12,7 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 // fail-safe: IKnowledgeBaseSearch は非 2xx・例外・タイムアウトを空へ倒す（IADR-0069）。判断側でも例外を握るため二重に安全。
 // FR-08, FR-11, #1283: 各検索の状態（SearchWithOutcomeAsync）を集め、1 本でも失敗なら Failed（最初の原因・失敗の本数）で返す。
 // 取得できた分はそのまま運ぶ（縮退は不変）。全部が未構成なら NotConfigured。判断側は状態で「失敗」と「本当に無い」を区別して記録する。
+// FR-08, FR-11, #1311: 基盤の検索の縮退の印（MSP#1871 の degraded / degradedReasons）も畳んで運ぶ（StatusOf・DegradationOf）。
 //
 // FR-08, #1083, IADR-0454（IADR-0072 決定5 の「Scope は送らない」を置き換える）:
 //   - Scope（project = ai-stock-trading）はアダプタ（HttpKnowledgeBaseSearch）が全検索に載せる（決定1）。
@@ -149,15 +150,34 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
     }
 
     // FR-08, FR-11, #1283: 検索の状態を 1 つに畳む（1 本でも失敗なら Failed・全部が未構成なら NotConfigured・他は Succeeded）。
+    // FR-08, FR-11, #1311: 基盤の縮退の印も畳んで添える（DegradationOf）。
     private static RetrievalResult StatusOf(IReadOnlyList<KnowledgeSearchResult> outcomes)
     {
+        var (degraded, reasons) = DegradationOf(outcomes);
         var failed = outcomes.Where(o => o.Outcome == KnowledgeSearchOutcome.Failed).ToList();
         if (failed.Count > 0)
-            return new RetrievalResult([], RetrievalStatus.Failed, failed[0].FailureCause, failed.Count);
+            return new RetrievalResult([], RetrievalStatus.Failed, failed[0].FailureCause, failed.Count, degraded, reasons);
 
         return outcomes.All(o => o.Outcome == KnowledgeSearchOutcome.NotConfigured)
             ? new RetrievalResult([], RetrievalStatus.NotConfigured)
-            : new RetrievalResult([], RetrievalStatus.Succeeded);
+            : new RetrievalResult([], RetrievalStatus.Succeeded, Degraded: degraded, DegradedReasons: reasons);
+    }
+
+    // FR-08, FR-11, #1311: 成功した検索の縮退の印を畳む。1 本でも縮退なら true（理由は和集合・語彙の順）、
+    // 縮退が無く印の無い応答（旧い基盤）が 1 本でもあれば null（不明）、全部が印つきで縮退なしなら false、成功した検索が無ければ null。
+    // 🔴 印の無い応答を false に数えない（旧い基盤で「縮退なし」と記録すると、縮退していても見分けられない）。
+    private static (bool? Degraded, IReadOnlyList<string> Reasons) DegradationOf(IReadOnlyList<KnowledgeSearchResult> outcomes)
+    {
+        var succeeded = outcomes.Where(o => o.Outcome == KnowledgeSearchOutcome.Succeeded).ToList();
+        if (succeeded.Any(o => o.Degraded == true))
+        {
+            return (true, KnowledgeSearchDegradedReasons.Normalize(
+                succeeded.Where(o => o.Degraded == true).SelectMany(o => o.DegradedReasons)));
+        }
+
+        return succeeded.Count > 0 && succeeded.All(o => o.Degraded == false)
+            ? (false, [])
+            : (null, []);
     }
 
     // FR-08, #1138, IADR-0474 決定3: 補充の検索の件数の倍率（基盤が関連度の候補を取る倍率 4×TopK と同じ値）。

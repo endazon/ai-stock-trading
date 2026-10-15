@@ -62,7 +62,12 @@ internal sealed class HttpKnowledgeBaseSearch(
         List<string>? Tags,
         Dictionary<string, string>? Attributes);
 
-    private sealed record SearchResponseBody(List<SearchResultBody>? Results);
+    // FR-08, FR-11, #1311: Degraded / DegradedReasons は基盤の縮退の印（MSP#1871。追加のみ・後方互換）。
+    // 旧い基盤は持たない → null（不明）。🔴 null を false に倒さない（「縮退なし」と「印が無い」を混ぜない）。
+    private sealed record SearchResponseBody(
+        List<SearchResultBody>? Results,
+        bool? Degraded = null,
+        List<string?>? DegradedReasons = null);
 
     public async Task<IReadOnlyList<KnowledgeHit>> SearchAsync(KnowledgeQuery query, CancellationToken cancellationToken = default) =>
         (await SearchWithOutcomeAsync(query, cancellationToken).ConfigureAwait(false)).Hits;
@@ -94,8 +99,10 @@ internal sealed class HttpKnowledgeBaseSearch(
                 .ReadFromJsonAsync<SearchResponseBody>(cancellationToken)
                 .ConfigureAwait(false);
 
+            var (degraded, reasons) = DegradationOf(dto);
+
             if (dto?.Results is null || dto.Results.Count == 0)
-                return KnowledgeSearchResult.Succeeded(Empty);
+                return KnowledgeSearchResult.Succeeded(Empty, degraded, reasons);
 
             return KnowledgeSearchResult.Succeeded(dto.Results
                 .Select(r => new KnowledgeHit(
@@ -107,7 +114,7 @@ internal sealed class HttpKnowledgeBaseSearch(
                     r.Tags ?? [],
                     ExtractPublishedAt(r.Attributes),
                     ExtractAttribute(r.Attributes, KnowledgeSearchAttributes.Symbol)))
-                .ToList());
+                .ToList(), degraded, reasons);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -119,6 +126,17 @@ internal sealed class HttpKnowledgeBaseSearch(
             logger.LogDebug(ex, "KB 検索で例外。空結果に倒します。");
             return KnowledgeSearchResult.Failed($"exception:{ex.GetType().Name}");
         }
+    }
+
+    // FR-08, FR-11, #1311: 応答の縮退の印を読む。理由が 1 つでもあれば縮退（基盤は「degraded ⇔ 理由が空でない」を保つ）、
+    // degraded=false かつ理由なしは縮退なし、degraded が無い（旧い基盤）は null＝不明。
+    private static (bool? Degraded, IReadOnlyList<string> Reasons) DegradationOf(SearchResponseBody? dto)
+    {
+        var reasons = KnowledgeSearchDegradedReasons.Normalize(dto?.DegradedReasons);
+        if (dto?.Degraded == true || reasons.Count > 0)
+            return (true, reasons);
+
+        return (dto?.Degraded, reasons);
     }
 
     // FR-08, #568: ABAC 属性 `publishedAt`（KnowledgeBaseWriterSink が書き込み時に "O" 形式で載せ、

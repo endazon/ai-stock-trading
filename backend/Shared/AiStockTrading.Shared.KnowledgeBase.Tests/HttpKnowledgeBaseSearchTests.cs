@@ -319,4 +319,42 @@ public class HttpKnowledgeBaseSearchTests
         result.Outcome.Should().Be(KnowledgeSearchOutcome.NotConfigured);
         result.Hits.Should().BeEmpty();
     }
+
+    // 🔴 T-10-2660, FR-08, FR-11, #1311: 基盤の検索応答の縮退の印（MSP#1871）を読む。理由は語彙の順・重複なしで運び、形の合わない文字列は落とす。
+    // degraded=false は false（縮退なし）、印の無い旧い応答は null（不明。false に倒さない）。ヒットの写像は印の有無で変わらない。
+    [Theory]
+    [InlineData("""{"results":[],"totalHits":0,"elapsedMs":1,"degraded":true,"degradedReasons":["rerank-failed","embed-failed","embed-failed","Bad Reason!","new-stage-failed"]}""", true, "embed-failed,rerank-failed,new-stage-failed", 0)]
+    [InlineData("""{"results":[HIT],"totalHits":1,"elapsedMs":1,"degraded":true,"degradedReasons":["embed-failed"]}""", true, "embed-failed", 1)]
+    [InlineData("""{"results":[HIT],"totalHits":1,"elapsedMs":1,"degraded":false,"degradedReasons":[]}""", false, "", 1)]
+    [InlineData("""{"results":[HIT],"totalHits":1,"elapsedMs":1}""", null, "", 1)]
+    [InlineData("""{"results":[],"totalHits":0,"elapsedMs":1,"degraded":null,"degradedReasons":null}""", null, "", 0)]
+    [InlineData("""{"results":[],"totalHits":0,"elapsedMs":1,"degradedReasons":["graph-expand-failed"]}""", true, "graph-expand-failed", 0)]
+    public async Task T_10_2660_検索応答の縮退の印を読み印の無い旧い応答は不明として扱う(
+        string template, bool? expectedDegraded, string expectedReasons, int expectedHits)
+    {
+        const string hit = """{"chunkId":"5f0c7a52-3a9a-4a0a-9e1e-6f7b3c1d2e40","documentId":"0b6f2a3c-1d4e-4f5a-8b6c-7d8e9f0a1b2c","documentTitle":"AAPL 決算","text":"増収","score":0.5,"attributes":{},"tags":["finnhub"]}""";
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.OK, template.Replace("HIT", hit, StringComparison.Ordinal));
+
+        var result = await CreateSearch(handler).SearchWithOutcomeAsync(new KnowledgeQuery("q"));
+
+        result.Outcome.Should().Be(KnowledgeSearchOutcome.Succeeded);
+        result.Degraded.Should().Be(expectedDegraded);
+        string.Join(',', result.DegradedReasons).Should().Be(expectedReasons);
+        result.Hits.Should().HaveCount(expectedHits);
+        if (expectedHits > 0)
+            result.Hits[0].DocumentTitle.Should().Be("AAPL 決算");
+    }
+
+    // T-10-2660: 失敗（非 2xx）は応答の印を持たない＝不明（null）。
+    [Fact]
+    public async Task T_10_2660_失敗の結果は縮退の印を持たない()
+    {
+        var handler = StubHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, """{"degraded":true,"degradedReasons":["embed-failed"]}""");
+
+        var result = await CreateSearch(handler).SearchWithOutcomeAsync(new KnowledgeQuery("q"));
+
+        result.Outcome.Should().Be(KnowledgeSearchOutcome.Failed);
+        result.Degraded.Should().BeNull();
+        result.DegradedReasons.Should().BeEmpty();
+    }
 }

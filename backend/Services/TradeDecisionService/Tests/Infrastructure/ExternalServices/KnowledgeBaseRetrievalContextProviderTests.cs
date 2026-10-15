@@ -491,4 +491,32 @@ public class KnowledgeBaseRetrievalContextProviderTests
         notConfigured.Status.Should().Be(RetrievalStatus.NotConfigured);
         notConfigured.Contexts.Should().BeEmpty();
     }
+
+    // 🔴 T-10-2661, FR-08, FR-11, #1311: 成功した検索の縮退の印を畳む。1 本でも縮退なら縮退（理由は和集合・語彙の順）。
+    // 全部が印つきで縮退なしなら false。印の無い応答（旧い基盤）が混ざれば不明（null）。失敗した検索の印は数えない。
+    [Theory]
+    [InlineData("rerank", "embed", "none", true, "embed-failed,rerank-failed")]
+    [InlineData("none", "none", "none", false, "")]
+    [InlineData("none", "legacy", "none", null, "")]
+    [InlineData("legacy", "legacy", "legacy", null, "")]
+    [InlineData("embed", "legacy", "failed", true, "embed-failed")]
+    [InlineData("failed", "none", "none", false, "")]
+    public async Task T_10_2661_成功した検索の縮退の印を畳み印の無い応答が混ざれば不明とする(
+        string symbol, string market, string fallback, bool? expectedDegraded, string expectedReasons)
+    {
+        static KnowledgeSearchResult Of(string kind) => kind switch
+        {
+            "embed" => KnowledgeSearchResult.Succeeded([], true, [KnowledgeSearchDegradedReasons.EmbedFailed]),
+            "rerank" => KnowledgeSearchResult.Succeeded([], true, [KnowledgeSearchDegradedReasons.RerankFailed, KnowledgeSearchDegradedReasons.EmbedFailed]),
+            "none" => KnowledgeSearchResult.Succeeded([], false, []),
+            "failed" => KnowledgeSearchResult.Failed("http-503"),
+            _ => KnowledgeSearchResult.Succeeded([]),
+        };
+
+        var result = await Create(new OutcomeSearch(Of(symbol), Of(market), Of(fallback)))
+            .GetContextWithStatusAsync(DecisionTrigger.Scheduled("AAPL", Market.UnitedStates), Policy);
+
+        result.Degraded.Should().Be(expectedDegraded);
+        string.Join(',', result.DegradedReasons).Should().Be(expectedReasons);
+    }
 }

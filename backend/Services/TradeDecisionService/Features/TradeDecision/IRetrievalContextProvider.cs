@@ -40,11 +40,19 @@ public enum RetrievalStatus
 // FR-08, FR-11, #1283: 判断文脈の取得の結果と状態。
 //   FailureCause   — 最初の失敗の原因の短い符号（`http-<状態コード>` / `timeout` / `exception:<型名>`）。本文・資格情報を入れない。
 //   FailedSearches — 失敗した検索の本数（取得ポートの例外は 0）。
+//   Degraded / DegradedReasons — FR-08, FR-11, #1311: 基盤の検索の縮退の印を畳んだもの（成功した検索の 1 本でも縮退なら true・理由は和集合）。
+//                  **null は不明**（印の無い旧い基盤・成功した検索が無い・取得ポートが状態を返さない）。false は印があって縮退なし。
 public sealed record RetrievalResult(
     IReadOnlyList<RetrievedContext> Contexts,
     RetrievalStatus Status,
     string? FailureCause = null,
-    int FailedSearches = 0);
+    int FailedSearches = 0,
+    bool? Degraded = null,
+    IReadOnlyList<string>? DegradedReasons = null)
+{
+    /// <summary>縮退の理由（null は空として扱う）。</summary>
+    public IReadOnlyList<string> DegradedReasons { get; init; } = DegradedReasons ?? [];
+}
 
 // FR-08, IADR-0072: RAG で引いた参考情報 1 件（KnowledgeHit の Application 側写像）。
 //   Title       — 出典文書のタイトル。

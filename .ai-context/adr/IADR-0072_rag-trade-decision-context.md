@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-08, FR-11, UC-01, UC-02, ADR-0003, ADR-0001]
 author: endazon (with Claude Code)
 created: 2026-07-18
-updated: 2026-10-09
+updated: 2026-10-15
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md
@@ -157,3 +157,17 @@ Application 層に `IRetrievalContextProvider`（`GetContextAsync(trigger, polic
   そうした実装は `SearchWithOutcomeAsync` / `GetContextWithStatusAsync` も実装すること（ポートの注記に同じ）。
 - 残余: 🔴 **PoC の事象（基盤の埋め込みの失敗）は `empty` として記録される**（参照できる文書があれば `retrieved`）。基盤の検索はキーワードのみへ縮退して 200 を印なしで返すため、AST からは成功に見える。
   縮退の印は MSP#1871 で基盤に足し、取り込みは別 issue で行う。計量・イベント契約は足していない。試験 T-10-2472〜T-10-2475・T-10-2478。
+
+［2026-10-15 追記 / #1311］ **#1283 の追記の残余（基盤の埋め込みの失敗が `empty` に見える）を、基盤の検索応答の縮退の印で解く。決定4 の縮退は変えない。**
+起票: [#1311](https://github.com/endazon/ai-stock-trading/issues/1311)（MSP#1871 / MSP#1909 の取り込み）。作業仕様書 [`20261015_1311_rag-search-degraded-mark`](../specs/20261015_1311_rag-search-degraded-mark.md)。
+
+- 基盤の `POST /search` の応答に `degraded`（bool）と `degradedReasons`（固定語彙 `embed-failed` / `fused-embed-failed` / `graph-expand-failed` / `rerank-failed`）が加わった（追加のみ）。
+- 決定: `KnowledgeSearchResult` / `RetrievalResult` に `Degraded`（`bool?`）と `DegradedReasons` を足す。**`null` は「印が無い（旧い基盤）・応答が無い」＝不明であり、「縮退なし」に倒さない**
+  （倒すと旧い基盤で縮退していても `none` と記録され、見分けられない）。理由は符号の形（英小文字・数字・ハイフン、40 文字以内）だけを通し、語彙の順・重複なしに整える（ログへ出すため。未知の符号は語彙の後ろ）。
+  判断の取得は成功した検索の 1 本でも縮退なら縮退（理由は和集合）、印の無い応答が混ざれば不明。
+- 判断の記録: 取得が成功で縮退なら `ragContext` を `retrieved-degraded` / `empty-degraded` とし（`failed` / `not-configured` は従来どおりで縮退より優先）、
+  新しい項目 `ragDegraded`（`unknown` / `none` / 理由のカンマ区切り。縮退で理由が無ければ `unspecified`）を足す。縮退のとき 1 判断 1 行の Warning
+  （銘柄・市場・起点・理由・注入した件数。本文なし）を出す。取得の失敗の判断では重ねない（失敗の Warning 1 行）。
+  🔴 `empty-degraded`（特に `embed-failed` の 0 件）は「該当なし」とは限らない（基盤は鍵が無い間 `internal` の報告書を索引へ書かない。MSP#1908）。
+- 新規 IADR にしなかった理由: `ragContext` の値域は本 IADR の #1283 の追記が定めており、その値域を広げる決定である（ポート・縮退の方針は不変）。
+- 残余: 縮退の Warning は判断ごとに出る（閾値・アラート・計量なし）。イベント契約・画面には載せない。試験 T-10-2660〜T-10-2663。
