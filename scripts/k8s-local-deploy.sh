@@ -632,6 +632,64 @@ ast_restart_step() {
   fi
 }
 
+# #1351, FR-15: 描画で strategy.type が Recreate になる Deployment の名前を、helm template の出力（標準入力）から挙げる。
+# 名前は決め打ちしない（trade-decision は stage0Recording.persistence.enabled、OpenD は opend.enabled のときだけ Recreate）。
+ast_recreate_deployments() {
+  awk '
+    function flush() { if (kind == "Deployment" && recreate && name != "") print name; kind = ""; name = ""; recreate = 0; inmeta = 0; instrat = 0 }
+    /^---/ { flush(); next }
+    /^kind:/ { kind = $2; next }
+    /^metadata:/ { inmeta = 1; instrat = 0; next }
+    /^spec:/ { inmeta = 0; next }
+    /^  strategy:/ { instrat = 1; next }
+    /^  [^ ]/ { if (inmeta && name == "" && $1 == "name:") { name = $2; gsub(/"/, "", name) } instrat = 0; next }
+    instrat && /^    type:/ { if ($2 == "Recreate") recreate = 1; next }
+    END { flush() }
+  '
+}
+
+# #1351, FR-15: Recreate へ移る最初の helm upgrade の前に、稼働中の Deployment に残る rollingUpdate を外す。
+# 🔴 原因は helm 4 の server-side apply（SSA）: 既存の Deployment は RollingUpdate で作られ、API サーバが既定で補った
+#   rollingUpdate（maxSurge / maxUnavailable 25%）には field manager が付かない。SSA は自分の所有でないフィールドを
+#   消さないため、描画が type: Recreate になると rollingUpdate が残り、upgrade が
+#   「spec.strategy.rollingUpdate: Forbidden: may not be specified when strategy `type` is 'Recreate'」で拒否される。
+#   描画に rollingUpdate: null を書いても SSA は消さない（envtest の kube-apiserver v1.31 ＋ helm v4.2.1 で実測）。
+#   helm 3 の client-side 3-way パッチでは起きない（strategy の retainKeys で消える）。
+# 対象は「描画が Recreate」かつ「稼働中が Recreate でなく rollingUpdate を持つ」Deployment だけ。すでに Recreate・
+# 未作成（初回は helm が作る）なら何もしない（冪等）。kubectl が失敗したら止める（fail-closed。upgrade も同じ理由で失敗する）。
+# ⚠️ Recreate へ切り替えると、以後のロールアウト（この直後の helm upgrade・手順 5 の restart）は旧 Pod をすべて
+#   止めてから新 Pod を作る＝その Deployment の Pod は作り直され、入れ替えの間は止まる。
+# 引数: helm upgrade と同じ chart の値（--set / -f）。
+ast_migrate_recreate_strategy() {
+  local rendered names dep cur ctype croll n=0
+  if ! rendered="$(helm template "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" "$@")"; then
+    echo "  ERROR: strategy の移行（#1351）: helm template が失敗した。中断する。" >&2
+    return 1
+  fi
+  names="$(printf '%s\n' "$rendered" | ast_recreate_deployments)"
+  while IFS= read -r dep; do
+    [ -z "$dep" ] && continue
+    if ! cur="$(kubectl get deployment "$dep" -n "$NS" --ignore-not-found \
+        -o jsonpath='{.spec.strategy.type}{"|"}{.spec.strategy.rollingUpdate}')"; then
+      echo "  ERROR: strategy の移行（#1351）: deploy/$dep の取得に失敗した。中断する（このまま upgrade すると Forbidden で失敗し得る）。" >&2
+      return 1
+    fi
+    [ -z "$cur" ] && continue                     # 未作成: helm が Recreate で作る
+    ctype="${cur%%|*}"; croll="${cur#*|}"
+    [ "$ctype" = "Recreate" ] && continue         # 移行済み
+    [ -z "$croll" ] && continue                   # rollingUpdate が無ければ SSA の upgrade で足りる
+    if ! kubectl patch deployment "$dep" -n "$NS" --type=json \
+        -p '[{"op":"replace","path":"/spec/strategy","value":{"type":"Recreate"}}]' >/dev/null; then
+      echo "  ERROR: strategy の移行（#1351）: deploy/$dep の patch に失敗した。中断する。" >&2
+      return 1
+    fi
+    echo "  strategy 移行（#1351）: deploy/$dep ${ctype} → Recreate（rollingUpdate を外した。以後のロールアウトで Pod は全数を止めてから作り直される）"
+    n=$((n + 1))
+  done <<< "$names"
+  [ "$n" -eq 0 ] && echo "  strategy 移行（#1351）: 対象なし"
+  return 0
+}
+
 # scripts/k8s-local-deploy.test.sh から関数だけを読み込むための入口（デプロイ手順は実行しない）。
 if [ "${AST_DEPLOY_LIB:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
@@ -659,11 +717,16 @@ echo "==> [4/5] helm upgrade --install (local/SIMULATE プロファイル)"
 # （引き継ぎ機構の外にあり、export し忘れで前回値を無条件に空へ戻していたため）。
 # #795, IADR-0341: AST_ESO_OVERRIDES は externalSecrets.enabled / appSecrets.enabled を経路どおりに明示する
 # （--set は -f より優先されるため、AST_ESO=0 ならプロファイルの true を false で上書きする）。
-helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" \
-  --set namespace.create=false \
-  "${AST_VALUE_OVERRIDES[@]}" \
-  "${AST_ESO_OVERRIDES[@]}" \
+# #1351: 移行の段（下の ast_migrate_recreate_strategy）が upgrade と同じ値で描画するため、chart の値は 1 か所で組む。
+AST_HELM_VALUE_ARGS=(
+  --set namespace.create=false
+  "${AST_VALUE_OVERRIDES[@]}"
+  "${AST_ESO_OVERRIDES[@]}"
   -f deploy/helm/ai-stock-trading/values-local.yaml
+)
+# #1351: Recreate へ移る Deployment に残る rollingUpdate を、upgrade の前に外す（SSA は消さない。関数の注記）。
+ast_migrate_recreate_strategy "${AST_HELM_VALUE_ARGS[@]}"
+helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" "${AST_HELM_VALUE_ARGS[@]}"
 
 echo "==> [5/5] rollout restart (イメージ更新を Pod へ反映。OpenD は除外=SMS/画像認証セッションを維持・#673。絞り込み時は作り直した分だけ・#1094)"
 ast_restart_step "$AST_BUILT_DIR/built"

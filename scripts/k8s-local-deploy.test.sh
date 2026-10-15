@@ -88,7 +88,28 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   "get deployment")
+    # #1351: 名前つき（get deployment <name> ...）は稼働中の strategy を "<type>|<rollingUpdate>" で返す。
+    # $S/strategy-<name> が無ければ未作成（--ignore-not-found の空出力）、$S/get-deploy-fail があれば失敗する。
+    case "${3:-}" in
+      ""|-*) ;;
+      *)
+        [ -f "$S/get-deploy-fail" ] && { echo 'Error from server (Forbidden): deployments.apps is forbidden' >&2; exit 1; }
+        [ -f "$S/strategy-$3" ] && cat "$S/strategy-$3"
+        exit 0
+        ;;
+    esac
     [ -f "$S/deployments" ] && cat "$S/deployments"
+    exit 0
+    ;;
+  "patch deployment")
+    # #1351: 適用した Deployment 名とパッチ（-p の値）を記録する。$S/patch-deploy-fail があれば失敗する。
+    [ -f "$S/patch-deploy-fail" ] && { echo 'Error from server: patch failed' >&2; exit 1; }
+    prev="" body=""
+    for a in "$@"; do
+      [ "$prev" = "-p" ] && body="$a"
+      prev="$a"
+    done
+    printf '%s %s\n' "${3:-}" "$body" >> "$S/patched-deploy.log"
     exit 0
     ;;
   "rollout restart")
@@ -116,6 +137,12 @@ case "${1:-} ${2:-}" in
   "get values")
     [ -f "$S/prev-values.yaml" ] || { echo 'Error: release: not found' >&2; exit 1; }
     cat "$S/prev-values.yaml"
+    exit 0
+    ;;
+  "template "*)
+    # #1351: 描画（ast_migrate_recreate_strategy が使う）。$S/rendered.yaml を返し、無ければ失敗する。
+    [ -f "$S/rendered.yaml" ] || { echo 'Error: render failed' >&2; exit 1; }
+    cat "$S/rendered.yaml"
     exit 0
     ;;
 esac
@@ -939,6 +966,125 @@ given_release_values 'discord:
     guildId: "111111111111111111"'
 run_resolve_with_mode
 assert_contains 'T-795-10 非 ESO: discord.bot.guildId を引き継ぐ' "$OVERRIDES" 'discord.bot.guildId=111111111111111111'
+
+# ---- #1351: Recreate へ移る Deployment に残る rollingUpdate を upgrade の前に外す ----------
+printf '\nk8s-local-deploy.sh: Recreate への移行（#1351）\n'
+
+# 描画の疑似。trade-decision と opend が Recreate、audit は既定（strategy 無し）。
+RENDERED_RECREATE='---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service
+  namespace: ai-stock-trading
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trade-decision-service
+  namespace: ai-stock-trading
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: trade-decision-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opend-svc
+spec:
+  type: Recreate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opend
+  labels:
+    app: opend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: opend }'
+ROLLING='RollingUpdate|{"maxSurge":"25%","maxUnavailable":"25%"}'
+
+# $1 = 描画（"absent" で helm template を失敗させる）。続く引数は "<name>=<type|rollingUpdate>"（稼働中の strategy）
+given_strategy() {
+  local kv
+  rm -f "$STATE"/strategy-* "$STATE/patched-deploy.log" "$STATE/get-deploy-fail" "$STATE/patch-deploy-fail" "$STATE/rendered.yaml"
+  [ "$1" != "absent" ] && printf '%s\n' "$1" > "$STATE/rendered.yaml"
+  shift
+  for kv in "$@"; do printf '%s' "${kv#*=}" > "$STATE/strategy-${kv%%=*}"; done
+  return 0
+}
+run_migrate() {
+  ( ast_migrate_recreate_strategy --set namespace.create=false -f values-local.yaml ) > "$STATE/out" 2> "$STATE/err"
+  RC=$?
+  OUT="$(cat "$STATE/out")"
+  ERR="$(cat "$STATE/err")"
+  PATCHED="$(cat "$STATE/patched-deploy.log" 2>/dev/null || true)"
+}
+
+# T-1351-01: 描画が Recreate で、稼働中が RollingUpdate＋rollingUpdate → その Deployment だけを Recreate へ置き換える
+given_secret ""
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=$ROLLING" "opend=Recreate|" "audit-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-01 要る: 正常終了する' "$RC" "0"
+assert_eq   'T-1351-01 要る: trade-decision だけを /spec/strategy ごと Recreate へ置き換える' "$PATCHED" \
+  'trade-decision-service [{"op":"replace","path":"/spec/strategy","value":{"type":"Recreate"}}]'
+assert_contains 'T-1351-01 要る: 操作を 1 行出す' "$OUT" 'deploy/trade-decision-service RollingUpdate → Recreate'
+assert_contains 'T-1351-01 要る: Pod が作り直されることを出す' "$OUT" 'Pod は全数を止めてから作り直される'
+assert_eq   'T-1351-01 要る: 操作の行は 1 件' "$(printf '%s\n' "$OUT" | grep -c 'strategy 移行' || true)" "1"
+
+# T-1351-02: すでに Recreate・未作成・描画が Recreate でない → 何もしない（冪等）
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=Recreate|" "audit-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-02 不要: 正常終了する' "$RC" "0"
+assert_eq   'T-1351-02 不要: patch しない' "$PATCHED" ''
+assert_contains 'T-1351-02 不要: 対象なしと出す' "$OUT" '対象なし'
+
+# T-1351-03: 描画に Recreate が無い（本番既定）→ 稼働中が RollingUpdate でも何もしない
+given_strategy '---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trade-decision-service
+spec:
+  replicas: 1' "trade-decision-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-03 描画が既定: patch しない' "$PATCHED" ''
+
+# T-1351-04: 🔴 稼働中の取得に失敗 → 止まる（fail-closed）
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=$ROLLING"
+: > "$STATE/get-deploy-fail"
+run_migrate
+assert_eq   'T-1351-04 取得失敗: 非 0 で止まる' "$RC" "1"
+assert_contains 'T-1351-04 取得失敗: 理由を出す' "$ERR" 'deploy/trade-decision-service の取得に失敗'
+assert_eq   'T-1351-04 取得失敗: patch しない' "$PATCHED" ''
+
+# T-1351-05: 🔴 patch に失敗 → 止まる（fail-closed）
+given_strategy "$RENDERED_RECREATE" "trade-decision-service=$ROLLING"
+: > "$STATE/patch-deploy-fail"
+run_migrate
+assert_eq   'T-1351-05 patch 失敗: 非 0 で止まる' "$RC" "1"
+assert_contains 'T-1351-05 patch 失敗: 理由を出す' "$ERR" 'deploy/trade-decision-service の patch に失敗'
+
+# T-1351-06: 🔴 描画に失敗 → 止まる（対象を判定できないまま upgrade へ進まない）
+given_strategy absent "trade-decision-service=$ROLLING"
+run_migrate
+assert_eq   'T-1351-06 描画失敗: 非 0 で止まる' "$RC" "1"
+assert_contains 'T-1351-06 描画失敗: 理由を出す' "$ERR" 'helm template が失敗'
+
+# T-1351-07: 起動器の本体は upgrade と同じ値で移行の段を呼び、その後に helm upgrade する（順序の固定）
+main_body="$(sed -n '/^AST_HELM_VALUE_ARGS=(/,/^helm upgrade --install/p' "$ROOT_DIR/scripts/k8s-local-deploy.sh")"
+assert_contains 'T-1351-07 順序: 移行の段を upgrade と同じ値で呼ぶ' "$main_body" 'ast_migrate_recreate_strategy "${AST_HELM_VALUE_ARGS[@]}"'
+assert_contains 'T-1351-07 順序: その後に upgrade する' "$main_body" 'helm upgrade --install "$RELEASE" deploy/helm/ai-stock-trading -n "$NS" "${AST_HELM_VALUE_ARGS[@]}"'
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 [ "$FAILED" -eq 0 ] || exit 1
