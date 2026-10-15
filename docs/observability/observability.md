@@ -117,7 +117,7 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
   `ragContext` は `retrieved` / `empty` / `failed` / `not-configured`、基盤の検索が縮退して返ったときは `retrieved-degraded` / `empty-degraded`。
   `ragDegraded` は縮退の理由の符号（`embed-failed` / `fused-embed-failed` / `graph-expand-failed` / `rerank-failed` のカンマ区切り）、縮退なしは `none`、
   縮退の印を返さない旧い基盤・取得していないときは `unknown`。縮退のときは警告ログ「RAG の参考情報の検索が縮退しました」が 1 判断 1 行出る（取得の失敗の判断では出さず、失敗の警告 1 行だけ）。
-  Loki では `|= "ragContext=empty-degraded"`（縮退した 0 件。該当なしとは限らない）・`|= "-degraded"`（縮退した判断）で引く。🔴 頻度の閾値・アラートは置いていない。
+  Loki では `|= "ragContext=empty-degraded"`（縮退した 0 件。該当なしとは限らない）・`|= "-degraded"`（縮退した判断）で引く。`ragDegraded` は取得の失敗（`ragContext=failed`）の行にも成功した検索の理由が載るため、`ragDegraded=` だけで引くと失敗の判断も混ざる（縮退だけを数えるなら `-degraded` で引く）。🔴 頻度の閾値・アラートは置いていない。
 - **判断理由（根拠文）の文字化けの疑い**: 取引判断の LLM の根拠文に化けの疑い（置換文字 U+FFFD、漢字・かなに接するキリル文字、漢字に挟まれた小文字を含む英字列）が
   あると、根拠文を受け取った地点で 1 回だけ判定し、警告ログを 1 行出す。🔴 判断（action・数量）は変えない。疑いのある根拠文は、先頭に目印
   「⚠ 判断理由に文字化けの疑い: 」を付けて転記する（原文は残す）。Loki での引き方:
