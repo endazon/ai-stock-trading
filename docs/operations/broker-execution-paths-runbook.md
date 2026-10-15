@@ -3,14 +3,14 @@ title: 発注経路の区別と識別 Runbook（paper 内蔵擬似約定 / moomo
 type: runbook
 status: draft
 created: 2026-07-29
-updated: 2026-10-13
+updated: 2026-10-15
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0529]
-specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1173_before-send-reservation-hold]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0529, IADR-0538]
+specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1173_before-send-reservation-hold, 20261015_856_held-warning-throttle-and-ghost-s1]
 issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, #1173, planning#676]
 -->
 
@@ -200,7 +200,136 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
      -- 未発注と確認できた予約だけを消す（State = 0 の行に限る。Completed は決して消さない）
      DELETE FROM order_dispatch_reservations WHERE "DecisionId" = '<確認した DecisionId>' AND "State" = 0;
      ```
+
+     **新規建てで、送り直す意図が無いとき**（故障注入の `BeforeSend` の後始末など）は、削除の代わりに予約を Forgone へ移す案もある
+     （再投入されても発注しない）。損切りの手法が S1 だった新規建ては、予約を片付けても S1 の記録が残る。
+     どちらも下の「発注の記録が無いまま残った S1 の記録を閉じる」の手順で 1 つのトランザクションにまとめて行う（どちらの案にするかは利用者が選ぶ）。
    - **判断できない**: 据え置く（何もしない）。建玉は証券会社の画面から人が管理する。
+     据え置いている間、突合は巡回ごとに Information `…据え置きが続いています…` を残し、Warning `…据え置きます…` は同じ予約について
+     初回と 24 時間ごとにだけ出す（構成 `Reconciliation__HeldNotPlacedReminderHours`。既定 24・1〜168）。
+
+#### 発注の記録が無いまま残った S1 の記録を閉じる（送られていない新規建ての後始末）
+
+**対象**: 送る前に結果が不明になった新規建て（故障注入の `BeforeSend`、または「注文が存在しない」と確かめられた滞留予約）で、
+損切りの手法が S1（ソフトウェア逆指値）だったもの。S1 の記録は**発注前に武装**されるので、エントリーが送られなくても
+`protective_stop_orders` に `Active`・`残保護=未確定（エントリー約定待ち）` の行が残る。
+
+- **この行は自然には閉じない。** 常駐ガードは発注記録の無い未確定の S1 を「これから約定し得る」とみなして据え置き、
+  閉じるのは損切りラインに到達したときだけである。予約行を消しても（Forgone へ移しても）、この行は残る。
+- **残っている間に効いていること**: S1 の要約（5 分ごと・Information）に載り続ける。作成から 24 時間を過ぎると要約の該当行に
+  `発注記録なし（幽霊の疑い）` が付き、Warning `ソフトウェア逆指値（S1）の記録が、エントリーの発注記録の無いまま…（幽霊の疑い…）` が
+  **1 日 1 回**出る（構成 `ProtectiveStopGuard__UnrecordedSoftwareStopAge` / `__UnrecordedSoftwareStopReminderInterval`。既定はどちらも 24 時間）。
+  さらに、**同じ銘柄・同じ方向の新規建てを S0・S2・S3 で出すと「別の損切りの実行機構の建玉が残っている」で見送る**（S1 で出す場合は見送らない）。
+- **システムは自動で閉じない。** 閉じるのは利用者の判断で、下の SQL で行う。
+
+🔴 **順序は「予約が先、S1 が後」である。** 予約が `Reserved` のまま S1 を先に閉じると、万一あとで突合が「発注済み」と確定したとき、
+保護の無い建玉が残る。下の手順は 1 つのトランザクションで両方を行う。
+
+接続（名前は配備の values から。発注執行の DB は `order_execution_svc`、リスク管理の DB は `risk_management_svc`）:
+
+```bash
+kubectl -n platform-infra exec -it deploy/postgres -- psql -U ai -d order_execution_svc
+```
+
+列挙値: 予約の `State` 0=Reserved / 1=Completed / 2=Forgone。保護の `State` 0=Active / 1=Completed / 2=AwaitingEntry。
+`Mechanism` 0=S0 / 1=S1 / 2=S2 / 3=S3。`BrokerProvider` 0=内蔵 paper / 1=moomoo REAL / 2=moomoo SIMULATE。
+
+1. **読み取りで確かめる**（`order_execution_svc`。どれか 1 つでも期待と違えば止める）:
+
+   ```sql
+   -- (1) 予約: 1 行・State=0・BrokerOrderId と CompletedAt は NULL。全列を控える（DELETE を選んだときの戻しに使う）
+   SELECT * FROM order_dispatch_reservations WHERE "DecisionId" = '<DecisionId>';
+
+   -- (2) 発注の記録: 0 行であること（1 行でもあれば送られている。止める）
+   SELECT "OrderId", "Status", "FilledQuantity", "ExecutedAt" FROM executed_orders WHERE "DecisionId" = '<DecisionId>';
+
+   -- (3) S1 の記録: 1 行・Mechanism=1・State=0・RemainingProtected と TriggeredAt は NULL。Version を控える
+   --     （TriggeredAt が NULL でなければ決済の経路に入っている。止める）
+   SELECT "EntryDecisionId", "Symbol", "Market", "EntrySide", "Mechanism", "State", "Quantity", "TriggerPrice",
+          "RemainingProtected", "TriggeredAt", "Attempt", "Version", "CreatedAt", "UpdatedAt"
+   FROM protective_stop_orders WHERE "EntryDecisionId" = '<DecisionId>';
+
+   -- (4) 同じ形の行がほかに無いか（ほかの行は別件であり、この手順では触らない）
+   SELECT p."EntryDecisionId", p."Symbol", p."Mechanism", p."State", p."CreatedAt"
+   FROM protective_stop_orders p LEFT JOIN executed_orders e ON e."DecisionId" = p."EntryDecisionId"
+   WHERE p."State" IN (0, 2) AND e."OrderId" IS NULL;
+   ```
+
+2. **証券会社の画面で、注文が無いことを確かめる**（上の「滞留した予約を人が解決する」の 2.。当日と履歴の両方の一覧で、
+   備考に `DecisionId` のハイフン無し 32 桁が入った注文が**無い**こと。その銘柄の建玉にその数量の増加が無いこと）。
+   🔴 **有った・判断できない（履歴を遡れない）ときは、以降を行わない**（据え置く。警告は 1 日 1 回続く）。
+
+3. **予約の扱いを選ぶ（利用者の判断）。** 2 案あり、どちらを選ぶかは利用者が決める。
+
+   | 案 | すること | 帰結 |
+   | --- | --- | --- |
+   | **A. Forgone へ移す（推奨）** | `State` を 2・`CompletedAt` を現在時刻にする（コードの見送りの記録と同じ 2 列） | 「送っていないと確定した」終端。`_error` に残った承認が再投入されても発注しない（Warning `見送り済みの承認が再配送されました。発注しません…`） |
+   | B. DELETE（上の「滞留した予約を人が解決する」の手順） | 予約行を消す | 同じ `DecisionId` で送り直せる状態になる。🔴 `_error` に残った承認を再投入すると、**古い承認の指値がそのまま送られる**（承認の古さを確かめる仕組みは無い）。選ぶなら、その承認のメッセージを `_error` から取り除くか、決して再投入しない |
+
+   どちらの案でも、リスク管理の承認の記録（`approved_orders`）は解かれない（統制への算入は承認した ET 日の終わりに外れる）。
+   🔴 リスク管理の DB は**読むだけ**にして、書き換えない。
+
+4. **1 つのトランザクションで閉じる**（件数を見てから `COMMIT`。期待と違えば `ROLLBACK`）:
+
+   ```sql
+   BEGIN;
+
+   -- 案 A（Forgone）: 予約を「送っていないと確定」へ移す
+   UPDATE order_dispatch_reservations
+   SET "State" = 2, "CompletedAt" = now()
+   WHERE "DecisionId" = '<DecisionId>' AND "State" = 0 AND "BrokerOrderId" IS NULL;
+   -- 期待: UPDATE 1（0 なら ROLLBACK して止める）
+
+   -- 案 B（DELETE）を選んだ場合は、上の UPDATE の代わりに次を実行する
+   -- DELETE FROM order_dispatch_reservations WHERE "DecisionId" = '<DecisionId>' AND "State" = 0;
+   -- 期待: DELETE 1
+
+   -- S1 の記録を閉じる（両案とも必要）。Version を進めて、並行しているガードの古い写しが上書きできないようにする
+   UPDATE protective_stop_orders
+   SET "State" = 1, "UpdatedAt" = now(), "Version" = "Version" + 1
+   WHERE "EntryDecisionId" = '<DecisionId>'
+     AND "State" = 0 AND "Mechanism" = 1
+     AND "RemainingProtected" IS NULL AND "TriggeredAt" IS NULL
+     AND NOT EXISTS (SELECT 1 FROM executed_orders e WHERE e."DecisionId" = '<DecisionId>');
+   -- 期待: UPDATE 1（0 なら ROLLBACK して止める）
+
+   -- 確かめる
+   SELECT "DecisionId", "State", "CompletedAt" FROM order_dispatch_reservations WHERE "DecisionId" = '<DecisionId>';
+   -- 案 A: State=2（案 B: 0 行）
+   SELECT "EntryDecisionId", "State", "Version" FROM protective_stop_orders WHERE "EntryDecisionId" = '<DecisionId>';
+   -- State=1・Version＝1. で控えた値＋1
+
+   COMMIT;   -- 期待どおりのときだけ。違えば ROLLBACK;
+   ```
+
+5. **警告が止まったことを確かめる**:
+   - S1 の要約（5 分以内）に `EntryDecisionId=<DecisionId>` が載らない。S1 の `Active` な行がほかに無ければ要約の行そのものが出なくなる。
+     幽霊の疑いの Warning も出なくなる。
+
+     ```bash
+     kubectl -n ai-stock-trading logs deploy/order-execution-service --since=10m | grep "ソフトウェア逆指値（S1）"
+     ```
+   - 突合の巡回（最大 1 時間後。`kubectl -n ai-stock-trading rollout restart deploy/order-execution-service` で早めてよい）の後、
+     `DecisionId=<DecisionId>` を含む `発注予約リコンサイル` の行（Warning `…据え置きます…`・Information `…据え置きが続いています…`）が出ない。
+
+     ```bash
+     kubectl -n ai-stock-trading logs deploy/order-execution-service --since=2h | grep "発注予約リコンサイル" | grep "<DecisionId>"
+     ```
+   - 計器 `sum by (outcome) (increase(ast_order_reservation_reconciliations_total{provider="MoomooSimulate"}[1h]))` の
+     `held-not-placed` が、後始末の 1〜2 時間後に 0 になる（ほかに据え置きが無いとき）。
+   - 結果（画面での確認・日時・選んだ案）を #856 へ記録する。
+
+6. **戻し方**（同じ DB で `BEGIN` … 件数確認 … `COMMIT`。予約を先に戻してから S1 を戻す。戻すと警告も戻る）:
+
+   ```sql
+   -- 案 A を戻す
+   UPDATE order_dispatch_reservations SET "State" = 0, "CompletedAt" = NULL
+   WHERE "DecisionId" = '<DecisionId>' AND "State" = 2;                        -- UPDATE 1
+   -- 案 B を戻す: 1. の (1) で控えた全列で INSERT する
+   -- S1 の記録を Active へ戻す
+   UPDATE protective_stop_orders SET "State" = 0, "UpdatedAt" = now(), "Version" = "Version" + 1
+   WHERE "EntryDecisionId" = '<DecisionId>' AND "State" = 1;                   -- UPDATE 1
+   ```
 
 #### 突合の判定を実機で確かめる（送信結果が不明な発注を SIMULATE で意図的に作る）
 
@@ -307,16 +436,16 @@ ET の日付が変わる（**ET 0 時**）まで次の 3 つへ算入する:
    | 形 | 期待どおり | 食い違い（🔴 門を開けない） |
    | --- | --- | --- |
    | `AfterSend` | Critical `…突合で「発注済み」と確定しました（DecisionId=<控えた値> 注文ID=…）` と、直後の保護レグの結果の行 | 同じ `DecisionId` について Warning `…照会は「未発注」と答えましたが…`（備考が往復していない） |
-   | `BeforeSend` | Warning `…照会は「未発注」と答えましたが…据え置きます（DecisionId=<控えた値> 取引環境=MoomooSimulate）` が巡回ごとに出る | 「発注済み」と確定した（存在しない注文を見つけた） |
+   | `BeforeSend` | Warning `…照会は「未発注」と答えましたが…据え置きます（DecisionId=<控えた値> 取引環境=MoomooSimulate）` が初回の巡回に出て、以後の巡回は Information `…据え置きが続いています（…DecisionId=<控えた値>…）`（Warning は 24 時間ごと） | 「発注済み」と確定した（存在しない注文を見つけた） |
 
    計器では `ast_order_reservation_reconciliations_total{provider="MoomooSimulate"}` の `outcome="probe-placed"`（`AfterSend`）・
    `outcome="held-not-placed"`（`BeforeSend`）が増える。`indeterminate` が続くなら照会が届いていない（OpenD の状態を確かめる）。
 9. **記録する。** 運用仕様書「解放の門を開けるときの記録」の 1 件ごとの項目（`DecisionId`・判定・画面での確認結果・日時・取引環境・
    一致を得た市場・列挙の経路）を #856 へ表で残す。故障注入で作った事例であることと形も書く。
 10. **後始末する。**
-    - `BeforeSend`: 予約は門が閉じている限り Reserved のまま残る。手順 7 で注文が無いことを確かめてあるので、上の「滞留した予約を人が解決する」の
-      「注文が存在しない」の手順で予約行を消す（承認は再投入しない）。保護の記録（承認時の文脈・S1 の行）が残っていたら、
-      建玉が無いことを確かめたうえで、上の「エントリー注文の状態が不明なとき」の扱いに従う。
+    - `BeforeSend`: 予約は門が閉じている限り Reserved のまま残る（Warning は 1 日 1 回・継続は毎時の Information）。
+      手順 7 で注文が無いことを確かめてあるので、上の「発注の記録が無いまま残った S1 の記録を閉じる」で予約と S1 の記録を 1 つのトランザクションで片付ける
+      （予約は Forgone へ移すか DELETE するかを利用者が選ぶ。承認は再投入しない）。損切りの手法が S1 でなければ、予約の扱いだけを行う。
       予約行を消しても**その ET 日の新規建ての枠は戻らない**（上の「`BeforeSend` で作った新規建ては…枠を占有する」。ET 0 時に戻る）。
     - `AfterSend`: 突合が確定した時点で、承認時の損切り手法で保護レグが張られる（確定の Critical の直後の行）。建玉は以降、通常どおり管理される。
       確定までの最悪 3 時間は、その建玉に保護レグが無い（SIMULATE なので実損は出ない）。数量の小さい新規建てで行う。

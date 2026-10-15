@@ -110,6 +110,22 @@ public sealed class ReconciliationOptions
     public int BatchSize { get; set; } = 200;
 
     /// <summary>
+    /// FR-05, #856, IADR-0538: 据え置いた「未発注」判定の Warning を、同じ予約について再び出すまでの間隔（時間）。既定 24。
+    /// 間の巡回は DecisionId つきの Information で残す（計器は毎巡回数える）。<see cref="HeldNotPlacedReminder"/> で 1〜168 に収める。
+    /// </summary>
+    public int HeldNotPlacedReminderHours { get; set; } = DefaultHeldNotPlacedReminderHours;
+
+    /// <summary>据え置き警告の再通知の間隔の既定（時間）。</summary>
+    public const int DefaultHeldNotPlacedReminderHours = 24;
+
+    /// <summary>据え置き警告の再通知の間隔の上限（時間）。1 週間より長く黙らせない。</summary>
+    public const int MaximumHeldNotPlacedReminderHours = 24 * 7;
+
+    /// <summary>据え置き警告の再通知の間隔（下限 1 時間・上限 1 週間）。</summary>
+    public TimeSpan HeldNotPlacedReminder =>
+        TimeSpan.FromHours(Math.Clamp(HeldNotPlacedReminderHours, 1, MaximumHeldNotPlacedReminderHours));
+
+    /// <summary>
     /// 巡回間隔。下限 1 時間（設定ミスで高頻度に回らないため）／上限 1 年（<see cref="TimeSpan.FromHours(double)"/> の
     /// オーバーフローで BackgroundService 起動時に落ちるのを防ぐため）。
     /// </summary>

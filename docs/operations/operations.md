@@ -3,14 +3,14 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-14
+updated: 2026-10-15
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1]
 issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
 -->
 
@@ -467,6 +467,15 @@ Reconciliation:
     （Critical）や直後の行が無いときは、証券会社の画面で保護レグの有無を確認する（詳細は発注経路の Runbook）。
   - **Warning** `…照会は「未発注」と答えましたが、この予約の取引環境の解放の門が閉じているため据え置きます（DecisionId=… 取引環境=…）…`。
     滞留は解消していない。Runbook の人手手順で解決する。`取引環境=Unknown` は取引環境を覚える前に取られた予約であり、どちらの門でも解放されない。
+    **同じ予約が据え置かれ続ける間、この Warning は初回と再通知の間隔（`Reconciliation__HeldNotPlacedReminderHours`。既定 24 時間・1〜168）ごとにだけ出る。**
+    間の巡回は Information `…据え置きが続いています（照会は「未発注」・解放の門は閉。DecisionId=… 取引環境=…）…` に残る。
+    取引環境が変わった・不確定など別の判定を挟んだ・全件を走査した巡回に載らなかった予約は、次に据え置かれたとき改めて Warning になる。
+    発注執行の再起動後の最初の巡回でも改めて出る（記憶はプロセス内）。
+    🔴 **門を開ける判断の記録 (b) で `DecisionId` を集めるときは、Warning だけでなく Information の継続の行も含めて grep する**（下の計器は毎巡回数える）。
+  - **Warning** `ソフトウェア逆指値（S1）の記録が、エントリーの発注記録の無いまま…「残保護=未確定」で残っています（幽霊の疑い…）`。
+    送られていない新規建ての S1 の記録が残っている。システムは閉じない。発注経路の Runbook「発注の記録が無いまま残った S1 の記録を閉じる」に従う。
+    作成から `ProtectiveStopGuard__UnrecordedSoftwareStopAge`（既定 24 時間）後に初めて出て、以後は同じ行について
+    `ProtectiveStopGuard__UnrecordedSoftwareStopReminderInterval`（既定 24 時間）ごとに出る。
   - **業務メトリクス** `ast_order_reservation_reconciliations_total{outcome,provider}`（#856 / #1051）。上の 6 分岐を件数で数える
     （①＝`self-healed`・②＝`probe-placed`・③＝`released`・④＝`held-not-placed`・⑤＝`indeterminate`・⑥＝`failed`）。
     `provider` は**予約の取引環境**（`MoomooSimulate` / `MoomooReal` / `InternalPaper`、不明は `Unknown`）であり、照会先ではない。

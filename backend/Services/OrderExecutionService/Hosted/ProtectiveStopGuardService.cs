@@ -110,7 +110,11 @@ public sealed class ProtectiveStopGuardService(
             try
             {
                 var stops = scope.ServiceProvider.GetRequiredService<IProtectiveStopOrderStore>();
-                softwareStopLiveness.ReportIfDue(() => stops.FindActive(options.Value.BatchSize));
+                // #856, IADR-0538: 発注記録の有無を渡し、記録の無いまま未確定で残る S1（幽霊の疑い）を識別させる（観測のみ）。
+                var executed = scope.ServiceProvider.GetService<IExecutedOrderStore>();
+                softwareStopLiveness.ReportIfDue(
+                    () => stops.FindActive(options.Value.BatchSize),
+                    executed is null ? null : id => executed.FindByDecisionId(id) is not null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
