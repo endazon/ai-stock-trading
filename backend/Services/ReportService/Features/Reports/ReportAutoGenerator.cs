@@ -60,7 +60,10 @@ public sealed class ReportAutoGenerator(
     // 本番は必ず注入する（所在が未構成なら UnsuppliedOpeningInventorySource ＝常に未供給）。
     IOpeningInventorySource? openingInventorySource = null,
     // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 2: 承認待ちにした版の写し（ドラフト）を KB に持つ。未注入は持たない＝従来の挙動。
-    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null)
+    IReportDraftKnowledgeCopy? draftKnowledgeCopy = null,
+    // FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の判断が参照したニュース・開示。未注入（単体テスト・旧構成）は取りに行かない＝§5 は「照会していません」。
+    // 本番は必ず注入する（所在が未構成なら UnsuppliedDecisionReferenceSource ＝常に未供給）。
+    IDecisionReferenceSource? decisionReferenceSource = null)
 {
     // 観測点が未注入（単体テスト・旧構成）なら誰も記録しない観測になり、見送りは起きない＝従来挙動。
     private readonly ReportDependencyProbe _probe = dependencyProbe ?? new ReportDependencyProbe();
@@ -318,6 +321,16 @@ public sealed class ReportAutoGenerator(
         if (rationales is null)
             unsupplied.Add(ReportInput.TradeRationales);
 
+        // FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の判断が参照したニュース・開示（判断の記録。期間の時点の値なので作り直しでも引ける）。
+        DecisionReferenceFeed? decisionReferences = null;
+        if (decisionReferenceSource is not null && due.Kind == ReportKind.Daily)
+        {
+            observation.Enter(ReportInput.DecisionReferences);
+            decisionReferences = await SafeDecisionReferencesAsync(due, cancellationToken).ConfigureAwait(false);
+            if (decisionReferences is null)
+                unsupplied.Add(ReportInput.DecisionReferences);
+        }
+
         // FR-06, 計画 ADR-0052 決定 2, IADR-0491 決定 4: 建玉は「今の台帳」しか引けない。期間の時点に復元できないなら取りに行かない
         // （今の建玉を「当日終了時点」と書く誤りを作らない）。
         IReadOnlyList<ReportPosition>? positions = null;
@@ -397,6 +410,7 @@ public sealed class ReportAutoGenerator(
             LlmUsage = llmUsage,
             BorrowFees = borrowFees,
             TradeRationales = rationales,
+            DecisionReferences = decisionReferences,
             Positions = positions,
             Uptime = uptime,
             StopLossMethods = stopLossMethods,
@@ -449,6 +463,8 @@ public sealed class ReportAutoGenerator(
                 Stage0RecordingApprovedEstimateJpy: SafeStage0RecordingEstimate(),
                 BorrowFees: inputs.BorrowFees,
                 TradeRationales: inputs.TradeRationales,
+                // FR-06, FR-08, #1356, IADR-0541 決定 2・3: 日報 §5 の出典（コードで描く）と散文の入力。
+                DecisionReferences: inputs.DecisionReferences,
                 Positions: inputs.Positions,
                 Uptime: inputs.Uptime,
                 CurrentStage: inputs.CurrentStage,
@@ -861,6 +877,30 @@ public sealed class ReportAutoGenerator(
     // セッションに属するため、その判断の記録は下端以降にある。
     // #1224, IADR-0516 決定 3: 監査台帳の他の入力と同じ外包（ReportSessionWindow.JstLedgerRange。上端は期間の終わりと ClosedUntil の
     // JST 日付の最大＝期間の終わり）を使う。値は従来と同じ。
+    // FR-06, FR-08, #1356, IADR-0541 決定 2: 判断の記録を JST の暦日で引き、**判断の時刻で窓に絞ってから**畳む（前の日報の窓の判断を数えない）。
+    // 例外・不達は null（未供給）。キャンセルは伝える。
+    private async Task<DecisionReferenceFeed?> SafeDecisionReferencesAsync(DueReport due, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (window, from, to) = LedgerScope(due);
+            var decisions = await decisionReferenceSource!
+                .GetDecisionsAsync(from, to, cancellationToken)
+                .ConfigureAwait(false);
+            return decisions is null
+                ? null
+                : DecisionReferenceFeedBuilder.Build([.. decisions.Where(d => window.Contains(d.DecidedAt))]);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private (DateOnly From, DateOnly To) RationaleRange(DueReport due)
     {
         var (_, from, to) = LedgerScope(due);
@@ -1228,6 +1268,9 @@ public sealed record ReportInputSnapshot
     public BorrowFeeRecord? BorrowFees { get; init; }
 
     public IReadOnlyDictionary<Guid, string>? TradeRationales { get; init; }
+
+    /// <summary>FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の判断が参照したニュース・開示（窓で絞って畳んだもの。<c>null</c>＝照会していない・できていない）。</summary>
+    public DecisionReferenceFeed? DecisionReferences { get; init; }
 
     public IReadOnlyList<ReportPosition>? Positions { get; init; }
 

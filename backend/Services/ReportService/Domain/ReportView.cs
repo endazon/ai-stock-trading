@@ -68,6 +68,12 @@ public sealed record ReportView
     public string? ReviewNarrative { get; init; }
 
     /// <summary>
+    /// FR-06, FR-08, 04_report-templates 日報 §5, #1356, IADR-0541 決定 3: 当日の判断が参照したニュース・開示（出典はコードで描く）。
+    /// <b>null＝照会していない・できていない</b>（「参照なし」と書かない）。日報以外は使わない。
+    /// </summary>
+    public DecisionReferenceFeed? DecisionReferences { get; init; }
+
+    /// <summary>
     /// FR-06, FR-16, 計画 ADR-0059 決定 2〜4, #1218, IADR-0519 決定 4〜6: 週次目標の照合（日報 §6・週報 §1／§4）。数値はコードの値。
     /// <c>null</c>＝<b>照会していない</b>（窓を持たない手動の生成 API・月報）であり、「週次目標なし」「照合不能」とは区別して描く。
     /// </summary>

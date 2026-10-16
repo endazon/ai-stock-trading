@@ -197,6 +197,9 @@ public class DecisionHeldReportTests
         report.Reason.Should().Be(nameof(DecisionSkipReason.LlmHold));
         report.DecidedAt.Should().Be(Now);
         report.CycleTrigger.Should().Be(BusinessMetrics.TriggerPriceMovement);
+        // FR-06, FR-08, #1356, IADR-0541 決定 1: 見送った判断も参照の記録を持つ（取得ポート未指定＝0 件。null＝記録なし と区別する）。
+        report.References.Should().NotBeNull();
+        report.References!.Items.Should().BeEmpty();
     }
 
     // IADR-0452 決定3: 権威ある現在値（有効時）を起点の価格より優先する（TradeDecisionMade の参照価格と同じ向き）。

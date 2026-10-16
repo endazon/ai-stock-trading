@@ -90,7 +90,8 @@ public static class ReportRenderer
                 // リスク統制の記録の各節は末尾に空行を残さない（次節が "\n" を前置する契約）。
                 // 散文はその契約を持たない見出しのため、ここで 1 行空ける。
                 sb.Append('\n');
-                AppendNarrative(sb, view, narrativeHeading);
+                // FR-06, FR-08, #1356, IADR-0541 決定 3: §5 の出典（判断が参照したニュース・開示）はコードで描き、散文の前に置く。
+                AppendNarrative(sb, view, narrativeHeading, AppendDecisionReferences);
                 // ADR-0030 決定5: **§5 市況・特記事項と §6 振り返りを統合しない。**
                 // §6 が求めるのは「週次目標 <参照値> に対する進捗・乖離の評価」であり市況の要約とは関心が違う。
                 // 計画 ADR-0059 フォローアップ 4, #1218, IADR-0519 決定 4: 照合はコード、評価の文章は散文の §6 の部分（§5 を流し込まない）。
@@ -607,11 +608,82 @@ public static class ReportRenderer
     };
 
     // 散文（LLM ドラフト）。数値は含めない。
-    private static void AppendNarrative(StringBuilder sb, ReportView view, string heading)
+    private static void AppendNarrative(
+        StringBuilder sb, ReportView view, string heading, Action<StringBuilder, ReportView>? beforeNarrative = null)
     {
         sb.Append(CultureInfo.InvariantCulture, $"{heading}\n\n");
+        beforeNarrative?.Invoke(sb, view);
         sb.Append(string.IsNullOrWhiteSpace(view.Narrative) ? "（散文ドラフトなし）" : view.Narrative.Trim());
         sb.Append("\n\n");
+    }
+
+    /// <summary>FR-06, #1356, IADR-0541 決定 3: §5 に描く出典の上限件数（超えた分は件数だけ）。</summary>
+    internal const int DecisionReferenceListLimit = 10;
+
+    /// <summary>FR-06, #1356, IADR-0541 決定 3: §5 に描く表題の上限（書記素）。</summary>
+    internal const int DecisionReferenceTitleMaxLength = 120;
+
+    // FR-06, FR-08, 04_report-templates 日報 §5「判断に影響したニュース・開示（出典リンク）」, #1356, IADR-0541 決定 3:
+    // 当日の判断が参照したニュース・開示。🔴 **状態を描き分ける**（照会していない／判断なし／参照の記録なし／参照 0 件／N 件）。
+    // 🔴 外部由来の表題・URL は無害化して描く（URL は http/https の絶対 URI だけをリンクにし、表題の Markdown 記号を逆斜線で殺す）。
+    private static void AppendDecisionReferences(StringBuilder sb, ReportView view)
+    {
+        const string label = "- **判断が参照したニュース・開示（出典）**: ";
+        if (view.DecisionReferences is not { } feed)
+        {
+            sb.Append(label).Append("**照会していません（または照会できませんでした）**。「参照なし」ではありません。\n\n");
+            return;
+        }
+
+        if (feed.NoDecisions)
+        {
+            sb.Append(label).Append("当日の取引判断（AI 判断）がありません。\n\n");
+            return;
+        }
+
+        if (feed.Items.Count == 0)
+        {
+            sb.Append(label).Append(feed.Recorded == 0
+                ? string.Format(CultureInfo.InvariantCulture,
+                    "当日の判断 {0} 件はいずれも参照の記録を持ちません（記録の追加前の判断）。**「参照なし」ではありません。**", feed.Decisions)
+                : string.Format(CultureInfo.InvariantCulture,
+                    "当日の判断 {0} 件が参照したニュース・開示は 0 件です。", feed.Decisions));
+            sb.Append('\n');
+            AppendDecisionReferenceNotes(sb, feed);
+            sb.Append('\n');
+            return;
+        }
+
+        sb.Append(label).Append(string.Format(CultureInfo.InvariantCulture,
+            "当日の判断 {0} 件が参照した {1} 件（参照した判断の件数の多い順", feed.Decisions, feed.Items.Count));
+        sb.Append(feed.Items.Count > DecisionReferenceListLimit
+            ? string.Format(CultureInfo.InvariantCulture, "。上位 {0} 件）\n", DecisionReferenceListLimit)
+            : "）\n");
+        foreach (var item in feed.Items.Take(DecisionReferenceListLimit))
+        {
+            var title = ReportLinkSafety.MarkdownTitle(item.Title, DecisionReferenceTitleMaxLength);
+            sb.Append("  - ").Append(item.SafeUrl is { } url ? $"[{title}]({url})" : $"{title}（出典 URL なし）");
+            if (item.PublishedAt is { } published)
+                sb.Append(CultureInfo.InvariantCulture, $" — 発行 {published.ToOffset(ReportSchedule.JstOffset):yyyy-MM-dd HH:mm} JST");
+            sb.Append(CultureInfo.InvariantCulture,
+                $" — 参照した判断 {item.DecisionCount} 件（銘柄: {ReportLinkSafety.MarkdownTitle(string.Join(", ", item.Symbols), 80)}）\n");
+        }
+
+        if (feed.Items.Count > DecisionReferenceListLimit)
+            sb.Append(CultureInfo.InvariantCulture, $"  - ほか {feed.Items.Count - DecisionReferenceListLimit} 件（省略）\n");
+        AppendDecisionReferenceNotes(sb, feed);
+        sb.Append("- 出典は取引判断の記録をそのまま転記しています（報告書生成時に検索し直していません）。表題は外部の文であり、本文の主張ではありません。\n\n");
+    }
+
+    // 参照の記録を持たない判断・取得に失敗した判断・KB 未構成の判断を件数で明記する（黙って 0 件に混ぜない）。
+    private static void AppendDecisionReferenceNotes(StringBuilder sb, DecisionReferenceFeed feed)
+    {
+        if (feed.Unrecorded > 0 && feed.Recorded > 0)
+            sb.Append(CultureInfo.InvariantCulture, $"- 参照の記録を持たない判断が {feed.Unrecorded} 件あります（記録の追加前の判断。数えていません）。\n");
+        if (feed.RetrievalFailed > 0)
+            sb.Append(CultureInfo.InvariantCulture, $"- 参考情報の取得に失敗した判断が {feed.RetrievalFailed} 件あります（その判断は参考情報なしで判断しています。「参照なし」とは区別しています）。\n");
+        if (feed.NotConfigured > 0)
+            sb.Append(CultureInfo.InvariantCulture, $"- ナレッジベースが未構成で参考情報を取得していない判断が {feed.NotConfigured} 件あります。\n");
     }
 
     // 翌期間の方針（確定で取引方針として有効化される）＋ INDEX 決定29, #338, IADR-0252 の **YAML ブロック併記**。

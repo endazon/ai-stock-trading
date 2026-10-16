@@ -92,6 +92,12 @@ public enum ReportInput
     /// 🔴 未供給を「記録なし」「食い違いなし」へ倒さない。
     /// </summary>
     StopLossMethodResolutions,
+
+    /// <summary>
+    /// FR-06, FR-08, #1356, IADR-0541 決定 2: <b>判断が参照したニュース・開示</b>（監査台帳の判断の記録の References）。
+    /// 日報 §5 の出典の供給元。🔴 未供給を「参照なし」へ倒さない。
+    /// </summary>
+    DecisionReferences,
 }
 
 // FR-06, #840, IADR-0352 決定 5: 入力の表示名・種別ごとの適用・永続化形式（純関数）。
@@ -117,8 +123,8 @@ public static class ReportInputs
         ReportInput.ParentPolicy or ReportInput.PreviousPolicy => true,
         // 日報 §2 の明細・週報 §3 のハイライトが根拠を転記する。月報の内訳は根拠を描かない。
         ReportInput.TradeRationales => kind is ReportKind.Daily or ReportKind.Weekly,
-        // 日報 §3 だけが建玉を持つ。
-        ReportInput.OpenPositions => kind == ReportKind.Daily,
+        // 日報 §3 だけが建玉を持つ。#1356: 日報 §5 だけが判断の参照（出典）を描く。
+        ReportInput.OpenPositions or ReportInput.DecisionReferences => kind == ReportKind.Daily,
         // #823, #1002: 日報 §4「損切りの実行機構（当日）」と月報 §6「損切りの実行機構（当月）」が使う
         // （計画 04_report-templates。週報には出さない＝planning#644 の裁定 2）。
         ReportInput.StopLossMethods or ReportInput.StopLossMethodResolutions =>
@@ -181,6 +187,7 @@ public static class ReportInputs
         ReportInput.PreviousPolicy => "前期の確定済み方針",
         ReportInput.StopLossMethods => "損切りの実行機構（承認の記録）",
         ReportInput.StopLossMethodResolutions => "損切りの実行機構（発注執行の解決結果）",
+        ReportInput.DecisionReferences => "判断が参照したニュース・開示",
         _ => input.ToString(),
     };
 

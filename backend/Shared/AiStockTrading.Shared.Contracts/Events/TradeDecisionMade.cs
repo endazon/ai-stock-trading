@@ -26,4 +26,7 @@ public record TradeDecisionMade(
     DateTimeOffset DecidedAt,
     string? CycleTrigger = null,
     DateTimeOffset? CycleStartedAt = null,
-    StopWidthFloorApplication? StopWidth = null);
+    StopWidthFloorApplication? StopWidth = null,
+    // FR-06, FR-08, FR-11, #1356, IADR-0541 決定 1: この判断のプロンプトが見た参考情報（RAG）と取得の状態。
+    // 🔴 **既定は null＝記録されていない**（本列の追加前の判断・判断を経ない経路）。空の参照（取得して 0 件）と混ぜない。
+    DecisionReferences? References = null);

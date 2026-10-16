@@ -24,4 +24,7 @@ public record TradeDecisionHeld(
     decimal Price,
     string Reason,
     DateTimeOffset DecidedAt,
-    string? CycleTrigger = null);
+    string? CycleTrigger = null,
+    // FR-06, FR-08, FR-11, #1356, IADR-0541 決定 1: 見送った判断のプロンプトが見た参考情報（RAG）と取得の状態（TradeDecisionMade と同じ）。
+    // 🔴 **既定は null＝記録されていない**。
+    DecisionReferences? References = null);

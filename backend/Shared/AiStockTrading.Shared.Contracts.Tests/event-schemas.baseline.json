@@ -572,6 +572,7 @@
     "Market": "Market",
     "Price": "Decimal",
     "Reason": "String",
+    "References": "DecisionReferences",
     "Symbol": "String"
   },
   "TradeDecisionMade": {
@@ -581,6 +582,7 @@
     "DecisionId": "Guid",
     "Intent": "OrderIntent",
     "Rationale": "String",
+    "References": "DecisionReferences",
     "StopWidth": "StopWidthFloorApplication"
   },
   "TradeDecisionSkipped": {
