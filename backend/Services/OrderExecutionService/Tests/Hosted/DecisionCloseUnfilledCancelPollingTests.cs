@@ -172,6 +172,42 @@ public class DecisionCloseUnfilledCancelPollingTests
         }
     }
 
+    // T-10-2682: 回数の上限で取り消さなかった注文の記憶は、その注文の市場の現地取引日が替わったら消える（上限は日ごとに数え直す）。
+    [Fact]
+    public async Task T_10_2682_上限で取り消さなかった注文の記憶は取引日が替わると消える()
+    {
+        var store = new InMemoryExecutedOrderStore();
+        var broker = new Broker();
+        var clock = new MutableClock();
+        foreach (var (id, minutes) in new[] { ("A-1", -40), ("A-2", -30) })
+        {
+            store.Save(new ExecutionRecord(Guid.NewGuid(), id, "AAPL", Market.UnitedStates, TradeSide.Sell, ProductType.Cash,
+                PositionEffect.Close, 13, 347.93m, 0, 0m, OrderStatus.Accepted, 0m, Now.AddMinutes(minutes),
+                ApprovalOrigin: OrderApprovalOrigin.TradeDecision));
+            broker.Orders[id] = new BrokerOrder(id, CloseIntent, OrderStatus.Accepted, 0, 0m, default, null);
+        }
+
+        using var host = await BuildHostAsync(broker, store, clock, new DecisionCloseUnfilledCancelOptions { Enabled = true });
+        var service = BuildService(host);
+
+        await service.PollOnceAsync(CancellationToken.None); // A-1 を取り消し、A-2 は上限で取り消さない
+        broker.Cancelled.Should().Equal(["A-1"]);
+        service.CappedOrderIds.Should().Equal(["A-2"]);
+
+        // 同じ取引日（米国東部 10-14 23:59 = 10-15 03:59Z）のうちは覚えている。
+        clock.UtcNow = new DateTimeOffset(2026, 10, 15, 3, 59, 0, TimeSpan.Zero);
+        await service.PollOnceAsync(CancellationToken.None);
+        service.CappedOrderIds.Should().Equal(["A-2"]);
+
+        // 取引日が替わる（10-15 04:00Z = 米国東部 10-15 00:00）と消える。
+        clock.UtcNow = new DateTimeOffset(2026, 10, 15, 4, 0, 0, TimeSpan.Zero);
+        await service.PollOnceAsync(CancellationToken.None);
+        service.CappedOrderIds.Should().BeEmpty();
+        broker.Cancelled.Should().Equal(["A-1"], "前の取引日の A-2 は候補外（取り消さない）");
+
+        await host.StopAsync();
+    }
+
     // T-10-2675（起動）: 本番の組み立て（Program.cs）で、有効時の N ≦ 検知の窓は起動で止まる。無効なら同じ値でも起動する。
     [Theory]
     [InlineData("true", "5", false)]

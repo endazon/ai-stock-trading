@@ -37,6 +37,8 @@ public sealed class DecisionCloseUnfilledCanceller(
     /// <summary>ライフサイクル台帳・OrderCancelled に残す取消の理由（系による取消であることを識別できる固定の接頭辞）。</summary>
     public const string ReasonPrefix = "判断由来の決済の指値が未約定のため系が取消（ADR-0067）";
 
+    private static readonly Market[] SupportedMarkets = Enum.GetValues<Market>();
+
     private readonly ILogger _logger = logger ?? NullLogger<DecisionCloseUnfilledCanceller>.Instance;
 
     /// <summary>
@@ -52,7 +54,11 @@ public sealed class DecisionCloseUnfilledCanceller(
 
         cancellationToken.ThrowIfCancellationRequested();
         var now = clock.UtcNow;
-        var candidates = store.FindUnfilledDecisionCloses(now - settings.Unfilled, settings.EffectiveBatchSize, cappedOrderIds);
+        // 🔴 対象は今の市場の現地取引日に発注した決済だけ（前日以前の非終端は当日の一覧に無く、取消を送れない記録＝IADR-0536 残余 1。
+        // 回数の枠を消費させない）。問い合わせの下限は全市場の日の始まりの早いほう、市場ごとの厳密な下限は下で見る。
+        var earliestDayStart = SupportedMarkets.Min(m => TradingDayRange(m, now).Start);
+        var candidates = store.FindUnfilledDecisionCloses(
+            now - settings.Unfilled, settings.EffectiveBatchSize, cappedOrderIds, earliestDayStart);
         if (candidates.Count == 0)
             return DecisionCloseUnfilledCancelResult.Empty;
 
@@ -67,6 +73,8 @@ public sealed class DecisionCloseUnfilledCanceller(
 
             // 決定2: 回数の上限は市場の現地取引日で数える（米国株は米国東部の暦日。UTC の暦日では数えない）。
             var (dayStart, dayEnd) = TradingDayRange(record.Market, now);
+            if (record.ExecutedAt < dayStart)
+                continue; // 前の取引日に発注した決済（上の注記）。
             var used = store.CountUnfilledCancelRequests(record.Symbol, record.Market, record.Side, dayStart, dayEnd);
             if (used >= settings.MaxCancelsPerPositionPerDay)
             {

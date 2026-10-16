@@ -37,8 +37,12 @@ public sealed class OrderFillPollingService(
     private DateTimeOffset _nextAbandonedCloseRecheckAt = DateTimeOffset.MinValue;
     private DateTimeOffset _nextPendingCloseReportAt = DateTimeOffset.MinValue;
 
-    // 🔴 #1339, IADR-0539: 回数の上限で取り消さなかった決済を INF で残した注文（プロセス内だけ。巡回ごとに繰り返さない）。
-    private readonly HashSet<string> _cappedLogged = new(StringComparer.Ordinal);
+    // 🔴 #1339, IADR-0539: 回数の上限で取り消さなかった決済（注文 → その注文の市場の現地取引日の終わり）。プロセス内だけ。
+    // 巡回ごとに INF を繰り返さず、次の巡回から候補に戻さない。**取引日が替わったら消す**（上限は日ごとに数え直す）。
+    private readonly Dictionary<string, DateTimeOffset> _cappedUntil = new(StringComparer.Ordinal);
+
+    /// <summary>試験用: いま覚えている「上限で取り消さなかった注文」（取引日が替わると消える）。</summary>
+    internal IReadOnlyCollection<string> CappedOrderIds => _cappedUntil.Keys;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -250,7 +254,10 @@ public sealed class OrderFillPollingService(
         try
         {
             // 回数の上限で取り消さないと決めた注文は問い合わせの段で除く（件数の上限を占めない。DAY で失効するので再起動で忘れてよい）。
-            result = await canceller.RunOnceAsync(_cappedLogged, cancellationToken).ConfigureAwait(false);
+            var now = services.GetRequiredService<IClock>().UtcNow;
+            foreach (var expired in _cappedUntil.Where(kv => kv.Value <= now).Select(kv => kv.Key).ToList())
+                _cappedUntil.Remove(expired);
+            result = await canceller.RunOnceAsync(_cappedUntil.Keys, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -274,7 +281,7 @@ public sealed class OrderFillPollingService(
 
         foreach (var r in result.Capped)
         {
-            if (!_cappedLogged.Add(r.OrderId))
+            if (!_cappedUntil.TryAdd(r.OrderId, DecisionCloseUnfilledCanceller.TradingDayRange(r.Market, r.ExecutedAt).End))
                 continue;
             logger.LogInformation(
                 "判断由来の決済の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません（当日限り〔DAY〕の失効に任せます）: "

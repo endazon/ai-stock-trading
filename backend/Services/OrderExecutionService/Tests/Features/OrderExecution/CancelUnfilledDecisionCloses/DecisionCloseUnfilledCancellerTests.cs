@@ -182,11 +182,15 @@ public class DecisionCloseUnfilledCancellerTests
         (await f.Canceller.RunOnceAsync()).Capped.Select(r => r.OrderId)
             .Should().Equal(["ORD-2"], "Dz: UTC の暦日ではなく市場の現地取引日で数える");
 
-        // D−: 10-15 14:00Z（米国東部 10-15 10:00）は翌取引日。1 本目から 24 時間たっていないが取り消せる。
+        // D−: 10-15 14:00Z（米国東部 10-15 10:00）は翌取引日。1 本目から 24 時間たっていないが、当日発注の決済を取り消せる。
+        // 前の取引日に発注した ORD-2 は候補に入らず（当日の一覧に無い古い非終端）、回数の枠も使わない。
+        Save(f, Close("ORD-3", new DateTimeOffset(2026, 10, 15, 13, 40, 0, TimeSpan.Zero)));
         f.Clock.UtcNow = new DateTimeOffset(2026, 10, 15, 14, 0, 0, TimeSpan.Zero);
-        (await f.Canceller.RunOnceAsync()).Requested.Select(r => r.OrderId)
-            .Should().Equal(["ORD-2"], "D−: 翌現地取引日は改めて 1 回まで（過去 24 時間では数えない）");
-        f.Broker.Cancelled.Should().Equal(["ORD-1", "ORD-MSFT", "ORD-2"]);
+        var next = await f.Canceller.RunOnceAsync();
+        next.Requested.Select(r => r.OrderId)
+            .Should().Equal(["ORD-3"], "D−: 翌現地取引日は改めて 1 回まで（過去 24 時間では数えない）");
+        next.Capped.Should().BeEmpty("前の取引日の決済は候補外");
+        f.Broker.Cancelled.Should().Equal(["ORD-1", "ORD-MSFT", "ORD-3"]);
 
         // 上限を 2 にすると同じ日の 2 本目も取り消す（構成の上限が効く）。
         var g = Build(Enabled(max: 2), records:
@@ -311,6 +315,25 @@ public class DecisionCloseUnfilledCancellerTests
         f.Broker.Cancelled.Should().Equal(["A-1", "M-1"]);
     }
 
+    // T-10-2681: 前の現地取引日に発注した非終端の決済（当日の一覧に無く取消を送れない古い記録）は候補に入れず、回数の枠を消費しない。
+    // 当日（米国東部の日の始まり以降）に発注した決済は候補に入る。
+    [Fact]
+    public async Task T_10_2681_前の取引日に発注した非終端の決済は候補外で回数の枠を消費しない()
+    {
+        // Now = 10-14 14:00Z = 米国東部 10-14 10:00。日の始まりは 10-14 04:00Z。
+        var f = Build(Enabled(), records:
+        [
+            Close("YESTERDAY", new DateTimeOffset(2026, 10, 14, 3, 59, 0, TimeSpan.Zero)), // 米国東部 10-13 23:59
+            Close("TODAY", new DateTimeOffset(2026, 10, 14, 4, 0, 0, TimeSpan.Zero)),      // 米国東部 10-14 00:00
+        ]);
+
+        var result = await f.Canceller.RunOnceAsync();
+
+        result.Requested.Select(r => r.OrderId).Should().Equal(["TODAY"], "前の取引日の非終端が枠を使うと当日の決済を取り消せない");
+        result.Capped.Should().BeEmpty();
+        f.Store.GetAll().Single(r => r.OrderId == "YESTERDAY").UnfilledCancelRequestedAt.Should().BeNull();
+    }
+
     // T-10-2677: 対象の問い合わせ・印・回数の数え方を DB とインメモリで同一に固定する（片側だけの乖離を検知する）。
     public static TheoryData<string> Implementations() => ["ef", "inmemory"];
 
@@ -332,6 +355,9 @@ public class DecisionCloseUnfilledCancellerTests
         store().FindUnfilledDecisionCloses(Now.AddMinutes(-15), 100).Select(r => r.OrderId)
             .Should().Equal(["old", "partial", "boundary"]);
         store().FindUnfilledDecisionCloses(Now.AddMinutes(-15), 1).Select(r => r.OrderId).Should().Equal(["old"]);
+        // 下限（当日の始まり）より前の発注は除く。境界ちょうどは含む（T-10-2681）。
+        store().FindUnfilledDecisionCloses(Now.AddMinutes(-15), 100, placedOnOrAfter: Now.AddMinutes(-30)).Select(r => r.OrderId)
+            .Should().Equal(["partial", "boundary"]);
         // 除外は件数の上限の前に効く（T-10-2680）。
         store().FindUnfilledDecisionCloses(Now.AddMinutes(-15), 1, ["old"]).Select(r => r.OrderId).Should().Equal(["partial"]);
 
@@ -398,10 +424,11 @@ public class DecisionCloseUnfilledCancellerTests
             _inner.FindPendingByOrderIds(orderIds);
 
         public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
-            DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null)
+            DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
+            DateTimeOffset? placedOnOrAfter = null)
         {
             Reads++;
-            return _inner.FindUnfilledDecisionCloses(placedAtOrBefore, limit, excludedOrderIds);
+            return _inner.FindUnfilledDecisionCloses(placedAtOrBefore, limit, excludedOrderIds, placedOnOrAfter);
         }
 
         public bool RenewTracking(string orderId, DateTimeOffset trackedFrom) => _inner.RenewTracking(orderId, trackedFrom);
