@@ -557,7 +557,9 @@ public static class NotificationFormatter
     // FR-06, FR-07, 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の方針に書式どおりの「数値目標:」行が無い（同じ扱い）。
     private static bool LacksNumericTakeProfit(ReportDraftPresented e) =>
         e.Summary?.Contains(ReportSummaryMarkers.PolicyTakeProfitMissingPrefix, StringComparison.Ordinal) == true
-        || e.Summary?.Contains(ReportSummaryMarkers.WeeklyGoalLineMissingPrefix, StringComparison.Ordinal) == true;
+        || e.Summary?.Contains(ReportSummaryMarkers.WeeklyGoalLineMissingPrefix, StringComparison.Ordinal) == true
+        // FR-04, FR-07, #1365, IADR-0544 決定 4: 日報の方針が他の報告書を参照で済ませている（同じ扱い）。
+        || e.Summary?.Contains(ReportSummaryMarkers.PolicyExternalReferencePrefix, StringComparison.Ordinal) == true;
 
     // NFR（費用）, FR-09: 費用しきい値到達（間隔延長/停止）。停止（Halted）は Critical、間隔延長（Throttled）は Warning。
     public static NotificationMessage From(CostThresholdReached e) => new(

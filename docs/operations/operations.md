@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-15
+updated: 2026-10-16
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-01, FR-04, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
-adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
+ids: [FR-01, FR-04, FR-07, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
+adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
 -->
 
 
@@ -263,6 +263,47 @@ done
 無効に戻すと、以後は写しを作らず消しもしない。残った写しは入れ直しが（確定版が在れば）消す。
 
 **孤立した写しが残り得る。** 提示（写しの作成・差し替え）と確定（写しの削除）がほぼ同時に走ると、確定が一覧を引いた後に写しが作られ、確定済みの報告書の写しが 1 件残ることがある。影響は小さい（索引されないので検索・取引判断には出ない。本文は確定版と同じ。報告書サービスは通常 1 レプリカで、重なるのはローリング更新の間だけ）。入れ直しを実行すると消える。
+
+## 日報の方針のしきい値を自己完結にする（移行と再発の確認）
+
+取引判断が読むのは**確定済みの日報の方針だけ**である。週報・月報・前日の日報の本文は判断へ渡らない。
+方針が買い条件・売り条件のしきい値を「週次方針のしきい値に従う」「weekly-2026-W41 の条件」のように参照で済ませると、判断は条件の成立を確かめられず、見送り続ける。
+報告書サービスは、日報の方針が期間キーか他の報告書を指す語（週報・月報・日報・上位方針・週次方針など）を含むと、確定の前に「⚠ 方針が他の報告書を参照しています」と警告する（確定は止めない）。
+
+### 移行（配備の直後に 1 回だけ）
+
+🔴 **系は確定済みの方針を書き換えない。** 配備の前に確定した、参照を含む方針は、そのまま判断に使われ続ける（見送りが続く）。配備の後に、利用者が次の手順で直す。
+
+確定済みの日報は改訂できない。そこで、次の日報（承認待ちの下書き）の方針を改訂して確定し直す。下書きの方針は、確定済みの方針をそのまま継いでいる。
+
+1. 配備の後に最初に来る日報の提示の通知（報告書ドラフト〔承認待ち〕）を読む。要約に「⚠ 方針が他の報告書を参照しています」の行があれば、確定済みの方針は参照で書かれている（下書きはそれを継いでいる）。行が無ければ、この移行は要らない。
+2. 承認待ちの日報（通常は直近の自動生成の下書き）に対して `/policy`（引数 `instruction` に「週報のしきい値を参照で済ませず、数値で方針へ書き写してください」、`period` に `daily-YYYY-MM-DD`）を実行する。`period` を省くと当日（JST）の日報が対象になる。
+3. 返ってきた案の方針に、買い条件・売り条件のしきい値が数値で書かれていること、期間キーと報告書の名前が残っていないことを読んで確かめる。**確認ボタンの前に「⚠ 方針が他の報告書を参照しています」の行が出ていないこと**も確かめる。出ていれば、指示を足して `/policy` をやり直す。
+4. 確定する（確認ボタン）。翌営業日の判断から、書き写したしきい値が使われる。
+
+### 再発の確認（夜間の振り返りのたび）
+
+検出は語と期間キーの照合であり、**言い換え（「先週決めた水準」「前に決めた条件」など）は拾えない。** 判断の理由に「しきい値が材料に無い」の類が出ていないかを、日ごとに数える。
+
+- LLM の応答は取引判断サービスのログの `LLM 応答: … text=…` に残る。ログ基盤（Loki）があれば、次のように日ごとに数える（期間は JST の 1 日。ラベル名は収集の構成に合わせて読み替える）。
+
+  ```logql
+  sum(count_over_time({namespace="ai-stock-trading", service_name="trade-decision-service"}
+    |= "LLM 応答"
+    |~ "(しきい値|閾値|水準|条件)[^。]{0,40}(含まれていない|含まれておらず|分からない|わからない|不明|確認できない|読めない)" [1d]))
+  ```
+
+- 🔴 稼働クラスタにはいま Loki が無く、ログは Pod の再起動で消える。そのため、再起動の前に同じ語で直接数える。
+  **全レプリカの Pod を数える。** `deploy/…` の指定は Pod を 1 つしか読まず、複数レプリカやローリング更新の間は少なく数える。Helm chart が Pod に付けるラベル `app=trade-decision-service` で全 Pod を読む。`--tail=-1` は外さない（ラベルセレクタを付けたときの既定は各 Pod の末尾 10 行だけである）。
+
+  ```bash
+  kubectl -n ai-stock-trading logs -l app=trade-decision-service --since=24h --tail=-1 --max-log-requests=10 --prefix \
+    | grep "LLM 応答" \
+    | grep -cE "(しきい値|閾値|水準|条件)[^。]{0,40}(含まれていない|含まれておらず|分からない|わからない|不明|確認できない|読めない)"
+  ```
+
+- **0 件でなければ**、その日に確定していた日報の方針を読む（知識ユニットの文書画面の `確定報告書 Daily daily-YYYY-MM-DD`）。しきい値が参照や言い換えで書かれていれば、上の「移行」の 2〜4 で次の日報の方針を改訂して確定し直す。
+- **同じ型の言い換えが 2 回見つかったら**、その語を報告書サービスの検出語（日報の方針の参照の検査）へ足す。1 回目は記録に留める（検査を足すのは同型の事故が 2 回起きてから）。
 
 ## メッセージング（RabbitMQ のキュー）
 
