@@ -9,9 +9,10 @@ namespace NotificationService.Features.Notifications;
 public static class NotificationFormatter
 {
     // 取引実行（約定）。全量約定は Info、それ以外（拒否・取消等）は注意喚起の Warning。
+    // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: 状態は列挙名に日本語の区別を添える（失注〔失効〕と拒否を取り違えさせない）。
     public static NotificationMessage From(OrderExecuted e) => new(
         "取引実行",
-        $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}・DecisionId={e.DecisionId}）",
+        $"約定 {OrderStatusDisplay.Describe(e.Status)} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}・DecisionId={e.DecisionId}）",
         e.Status == OrderStatus.Filled ? NotificationSeverity.Info : NotificationSeverity.Warning);
 
     // 🔴 FR-09, FR-10, UC-06, #847, IADR-0357: 手仕舞いが未約定残を残して終わった（失効・取消・拒否）。
@@ -24,7 +25,7 @@ public static class NotificationFormatter
     // ただし Info にもしない: **手仕舞えなかった建玉が実在し、無保護なら翌日へ持ち越される**。
     public static NotificationMessage From(PositionCloseAbandoned e) => new(
         "手仕舞いが約定せず終了",
-        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.ApprovedQuantity} の手仕舞いが {e.TerminalStatus} で終了しました"
+        $"{e.Symbol}/{e.Market} {e.Side} 数量{e.ApprovedQuantity} の手仕舞いが {OrderStatusDisplay.Describe(e.TerminalStatus)} で終了しました"
             + $"（約定 {e.FilledQuantity}・**未決済 {e.RemainingQuantity}**）。"
             + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
             + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"

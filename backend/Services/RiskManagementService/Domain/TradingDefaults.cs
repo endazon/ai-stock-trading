@@ -239,6 +239,18 @@ public static class TradingDefaults
         WithdrawalDrawdownMultiple = WithdrawalDrawdownMultiple,
     };
 
+    /// <summary>
+    /// 🔴 FR-10, FR-19, ADR-0067 決定2, #1339, IADR-0539: 判断由来の決済の指値の未約定時の取消は<b>既定で無効</b>（§5）。
+    /// 実行するのは発注執行（<c>DecisionCloseUnfilledCancelOptions</c>）で、値の単一情報源は Shared.Kernel の定数である。
+    /// </summary>
+    public const bool DecisionCloseUnfilledCancelEnabled = DecisionCloseUnfilledCancelDefaults.Enabled;
+
+    /// <summary>ADR-0067 決定2, IADR-0539: 取消までの未約定の時間 N（分。§5 の既定 15 分・暫定値）。</summary>
+    public const int DecisionCloseUnfilledCancelMinutes = DecisionCloseUnfilledCancelDefaults.UnfilledMinutes;
+
+    /// <summary>ADR-0067 決定2, IADR-0539: 取消の回数の上限（1 建玉・1 市場の現地取引日あたり 1 回。§5）。</summary>
+    public const int DecisionCloseUnfilledCancelMaxPerPositionPerDay = DecisionCloseUnfilledCancelDefaults.MaxCancelsPerPositionPerDay;
+
     public static RiskManagementSettings CreateSettings() =>
         new(CreateGuardSettings(), CreateRiskLimits(), CreateStageSettings())
         {
@@ -251,7 +263,9 @@ public static class TradingDefaults
     public static ManipulationDetectionSettings CreateManipulationDetectionSettings() => new()
     {
         // 見せ玉・レイヤリングは短時間の連続発注に現れる。判断サイクル（30 分）より十分短い突発窓。
-        LookbackWindow = TimeSpan.FromMinutes(5),
+        // 🔴 ADR-0067 決定2・3, #1339, IADR-0539: 値は Shared.Kernel の定数から取る（発注執行が判断由来の決済の取消の N の下端に使う）。
+        // **窓を変えると、有効時の N の下端も一緒に動く**（N ≦ 窓の構成は発注執行の起動で止まる）。
+        LookbackWindow = TimeSpan.FromMinutes(DecisionCloseUnfilledCancelDefaults.ManipulationLookbackWindowMinutes),
         // これ未満は統計的に濫用と正常を区別できない（数件の取消は正常運用でも起こり得る）。
         MinimumSampleSize = 5,
         // 窓内の約定なし取消が発注の 7 割超は約定志向の運用として過剰。

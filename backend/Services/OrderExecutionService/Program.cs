@@ -2,6 +2,7 @@ using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Features.OrderExecution;
 using OrderExecutionService.Features.OrderExecution.AdoptPositionDrift;
 using OrderExecutionService.Features.OrderExecution.AmendOrder;
+using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionCloses;
 using OrderExecutionService.Features.OrderExecution.DispatchApprovedOrder;
 using OrderExecutionService.Features.OrderExecution.ExecuteSoftwareStops;
 using OrderExecutionService.Features.OrderExecution.GuardProtectiveStops;
@@ -364,6 +365,13 @@ builder.Services.AddHostedService<OrderReservationReconciliationService>();
 // 返すため、これが無いと約定が取引台帳へ届かず統制上限（SameDayReentry・日次発注上限・段階資金上限）が実効しない。
 // paper は即時終端で非終端の記録が生まれないため、配線を moomoo 選択時に限定する（構造的な非干渉）。
 builder.Services.Configure<FillPollingOptions>(builder.Configuration.GetSection(FillPollingOptions.SectionName));
+// 🔴 FR-10, FR-19, ADR-0067 決定2・6, #1339, IADR-0539: 判断由来の決済の指値の未約定時の取消（**既定は無効**）。構成を問わず検証を起動で
+// 走らせる（有効時の N ≦ 相場操縦の検知の窓・上端超え・回数の範囲外は起動で止める）。有効化は #1214 の実弾確認と PoC の後に利用者が決める。
+builder.Services.AddOptions<DecisionCloseUnfilledCancelOptions>()
+    .Bind(builder.Configuration.GetSection(DecisionCloseUnfilledCancelOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IValidateOptions<DecisionCloseUnfilledCancelOptions>, DecisionCloseUnfilledCancelOptionsValidator>();
 if (brokerSelection.IsMoomoo)
 {
     // 🔴 FR-10, #833 項目1, IADR-0389: 受理だけで完了させた S1 の保護記録の再武装。約定追跡が「確認できた
@@ -384,6 +392,8 @@ if (brokerSelection.IsMoomoo)
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<OrderFillPoller>(),
         // 🔴 FR-10, #958, IADR-0406 決定2: Active な S0 の逆指値レグを追跡上限の対象外にする（保護記録は読むだけ）。
         sp.GetRequiredService<IProtectiveStopOrderStore>()));
+    // 🔴 #1339, IADR-0539: 約定追跡の常駐が巡回ごとに呼ぶ（新しい常駐は足さない）。無効なら何もしない。
+    builder.Services.AddScoped<DecisionCloseUnfilledCanceller>();
     builder.Services.AddHostedService<OrderFillPollingService>();
 }
 

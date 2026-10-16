@@ -13,6 +13,9 @@ namespace OrderExecutionService.Domain;
 // 🔴 FR-10, #1330, IADR-0534 決定2: ProtectionReleasedQuantity は承認経路の決済（ApprovalOrigin あり）の約定のうち、保護記録の縮小へ
 // **既に帰属させた**株数（0..FilledQuantity・単調）。同じ約定を 2 回「承認済みの決済で減った」の証拠に使わないための吸収の印である。
 // 書くのは保護の突き合わせ（ProtectiveStopNetting）だけで、IExecutedOrderStore.MarkProtectionReleased の 1 列だけを書く。
+// 🔴 FR-10, FR-19, ADR-0067 決定1・2, #1339, IADR-0539: UnfilledCancelRequestedAt は判断由来の決済の指値を「N 分未約定なので系が取り消す」と
+// 決めて**取消を送る前に**書いた時刻。null＝系はこの注文の取消を求めていない。同じ注文を二度取り消さない印であり、
+// 1 建玉 1 日の回数の上限の数え（市場の現地取引日）にも使う。書くのは DecisionCloseUnfilledCanceller だけ（MarkUnfilledCancelRequested）。
 public record ExecutionRecord(
     Guid DecisionId,
     string OrderId,
@@ -30,4 +33,5 @@ public record ExecutionRecord(
     DateTimeOffset ExecutedAt,
     StopWidthFloorSource? StopFloorSource = null,
     OrderApprovalOrigin? ApprovalOrigin = null,
-    int ProtectionReleasedQuantity = 0);
+    int ProtectionReleasedQuantity = 0,
+    DateTimeOffset? UnfilledCancelRequestedAt = null);

@@ -50,4 +50,8 @@ public sealed class ExecutedOrderRow
     // 🔴 FR-10, #1330, IADR-0534 決定2: 承認経路の決済の約定のうち、保護記録の縮小へ既に帰属させた株数（0..FilledQuantity・単調）。
     // 既定 0。**移行で既存の決済行は FilledQuantity へ揃える**（過去の約定を、これからの縮小の証拠にしない）。
     public int ProtectionReleasedQuantity { get; set; }
+
+    // 🔴 FR-10, FR-19, ADR-0067 決定1・2, #1339, IADR-0539: 判断由来の決済の指値の取消を系が求めた時刻（取消を送る前に書く）。
+    // null＝求めていない。**列の追加だけ**（既存行は null＝取消を求めたことが無い）。
+    public DateTimeOffset? UnfilledCancelRequestedAt { get; set; }
 }

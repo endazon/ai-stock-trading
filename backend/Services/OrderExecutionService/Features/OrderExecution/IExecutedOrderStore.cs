@@ -143,6 +143,49 @@ public interface IExecutedOrderStore
             .Take(limit)
             .ToList();
 
+    /// <summary>
+    /// 🔴 FR-10, ADR-0067 決定1・4, #1339, IADR-0539: 発注（<see cref="ExecutionRecord.ExecutedAt"/>。非終端では発注時刻のまま）が
+    /// <paramref name="placedAtOrBefore"/> 以前で、まだ非終端の<b>判断由来の決済</b>（<see cref="PositionEffect.Close"/> かつ
+    /// <see cref="ExecutionRecord.ApprovalOrigin"/> が <see cref="OrderApprovalOrigin.TradeDecision"/>）のうち、系がまだ取消を求めていない
+    /// （<see cref="ExecutionRecord.UnfilledCancelRequestedAt"/> が null）ものを古い順に最大 <paramref name="limit"/> 件返す（N 分未約定の取消の対象）。
+    /// 利用者の手仕舞い・維持率割れの自動縮小・出どころ不明（<see cref="OrderApprovalOrigin.Unknown"/>）・出どころなしは入らない。
+    /// <paramref name="placedOnOrAfter"/> より前に発注した記録は除く（当日の一覧に無い古い非終端の記録＝IADR-0536 残余 1 が、
+    /// 取消を送れないまま回数の枠と件数の上限を占めないように。呼び出し側が市場の現地取引日の始まりから作る）。
+    /// <paramref name="excludedOrderIds"/> の注文（回数の上限で取り消さないと決めたもの）は件数の上限の前に除く
+    /// （古い側に溜まっても上限を占めず、後から来た対象を締め出さない）。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
+    /// </summary>
+    IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
+        DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null,
+        DateTimeOffset? placedOnOrAfter = null) =>
+        GetAll()
+            .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+                && OrderStatusLifecycle.IsPending(r.Status) && r.UnfilledCancelRequestedAt is null
+                && r.ExecutedAt <= placedAtOrBefore && (placedOnOrAfter == null || r.ExecutedAt >= placedOnOrAfter)
+                && (excludedOrderIds == null || !excludedOrderIds.Contains(r.OrderId)))
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .ToList();
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0067 決定2, #1339, IADR-0539: 同じ建玉（銘柄・市場・決済の方向）の判断由来の決済のうち、系が取消を求めた時刻
+    /// （<see cref="ExecutionRecord.UnfilledCancelRequestedAt"/>）が [<paramref name="fromInclusive"/>, <paramref name="toExclusive"/>) にある件数
+    /// （1 建玉 1 日の回数の上限の数え。範囲は呼び出し側が<b>市場の現地取引日</b>から作る）。状態は問わない（取り消した後に終端した記録も数える）。
+    /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから数える。
+    /// </summary>
+    int CountUnfilledCancelRequests(
+        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive) =>
+        GetAll().Count(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+            && r.Symbol == symbol && r.Market == market && r.Side == closeSide
+            && r.UnfilledCancelRequestedAt is { } at && at >= fromInclusive && at < toExclusive);
+
+    /// <summary>
+    /// 🔴 FR-10, ADR-0067 決定1, #1339, IADR-0539: 記録に「系が取消を求めた」印（<paramref name="requestedAt"/>）を書く（<b>その 1 列だけ</b>）。
+    /// <b>取消を送る前に呼ぶ</b>——送った後に落ちても、同じ注文を二度取り消さず、回数にも数えられる（少ない側へ倒す）。
+    /// 記録が無い・既に印がある・終端なら何もせず false。既定の実装（試験用の包み型のためのもの）は何もしない（＝取り消さない側）。
+    /// </summary>
+    bool MarkUnfilledCancelRequested(string orderId, DateTimeOffset requestedAt) => false;
+
     // #820 の 4 巡目監査, IADR-0344 追記(4): FindClosesSince（建玉照会がまだ映していない決済の走査）は撤去した。
     // 持ち分を毎巡回引き直す方式そのものをやめ、保護記録が残保護数量を状態として持つ形へ作り直したため、
     // 決済レグの記録を持ち分の計算に使わない（完了済み S0 行の取消済みレグで持ち分が食われる事故も構造的に消える）。

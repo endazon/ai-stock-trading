@@ -58,7 +58,8 @@ public static class AuditEntryFactory
     public static AuditEntry From(OrderExecuted e, Guid id, DateTimeOffset recordedAt) => new(
         // OrderExecuted は銘柄を持たない（DecisionId で相関して補完する系）。Symbol は null。
         id, nameof(OrderExecuted), e.DecisionId, Symbol: null,
-        $"約定 {e.Status} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}）",
+        // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: 失注（失効）と拒否を要約で区別する（列挙名に日本語を添える）。
+        $"約定 {OrderStatusDisplay.Describe(e.Status)} 数量{e.FilledQuantity}@{e.AveragePrice}（OrderId={e.OrderId}）",
         AuditSerialization.Serialize(e), e.ExecutedAt, recordedAt);
 
     // 🔴 FR-10, FR-11, #1048（利用者裁定 2026-10-02・Q3）, IADR-0481 決定3: 約定追跡の打ち切り。相関は注文の DecisionId
