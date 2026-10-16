@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using AiStockTrading.Shared.Contracts.Llm;
 using ReportService.Domain;
 
 namespace ReportService.Features.Reports;
@@ -20,9 +21,9 @@ public static class NarrativePromptText
     /// <summary>切り詰めたことを示す末尾。</summary>
     public const string Ellipsis = "…（以下略）";
 
-    // 収集情報の境界語（IADR-0022 の PromptSafetySanitizer・IADR-0116 の ReportSummarySanitizer と同値。型は共有しない）。
-    private const string UntrustedOpenDelimiter = "<<<UNTRUSTED_DATA";
-    private const string UntrustedCloseDelimiter = "UNTRUSTED_DATA>>>";
+    // 収集情報の境界語（IADR-0542 の UntrustedDataBoundary を単一の定義として使う）。
+    private const string UntrustedOpenDelimiter = UntrustedDataBoundary.OpenMarker;
+    private const string UntrustedCloseDelimiter = UntrustedDataBoundary.CloseMarker;
 
     /// <summary>1 行の引用へ整形する。null・空白のみは null（呼び出し側が未供給として描く）。</summary>
     public static string? Inline(string? text, int maxLength)

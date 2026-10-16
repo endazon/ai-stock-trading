@@ -98,6 +98,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                     WeeklyGoal = weeklyGoal,
                     // FR-06, FR-16, #1357, IADR-0540 決定 3: 決済の帰属（本文 §2/§3 と同じ値）と種別。LLM は事実として読むだけ。
                     Settlements = narrativeSettlements,
+                    // FR-06, FR-08, #1356, IADR-0541 決定 4: 判断が参照したニュース・開示（表題だけ。URL は渡さない）。日報だけ。
+                    DecisionReferences = request.Kind == ReportKind.Daily ? request.DecisionReferences : null,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -126,6 +128,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             PolicySummary = request.PolicySummary,
             Narrative = narrative,
             ReviewNarrative = reviewNarrative,
+            // FR-06, FR-08, #1356, IADR-0541 決定 3: 日報 §5 の出典（コードで描く。LLM に URL を書かせない）。
+            DecisionReferences = request.Kind == ReportKind.Daily ? request.DecisionReferences : null,
             WeeklyGoal = weeklyGoal,
             // FR-10, UC-06, #330: 自動縮小の記録はコード集計値であり LLM に語らせない（散文と分ける）。
             MarginReductions = request.MarginReductions,
@@ -408,7 +412,10 @@ public sealed record DraftRequest(
     WeeklyGoalReference? WeeklyGoal = null,
     // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報の週初来の窓の入力（週報 §1 と同じ供給元・同じ窓の規則）。
     // **null＝受け取っていない**（§6 は算出不能と書く）。日報以外は使わない。
-    WeekToDateInputs? WeekToDate = null);
+    WeekToDateInputs? WeekToDate = null,
+    // FR-06, FR-08, #1356, IADR-0541 決定 2・3: 日報 §5 の判断が参照したニュース・開示（窓で絞って畳んだもの）。
+    // **null＝照会していない・できていない**（§5 は「参照なし」と書かない）。日報以外は使わない。
+    DecisionReferenceFeed? DecisionReferences = null);
 
 // FR-06, FR-16, 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 3: 日報 D の週初来の窓（D の ISO 週の週報の窓を D で打ち切ったもの）の入力。
 // FillsFailed は約定の照会に失敗した（空列へ倒れている）こと、OpeningInventoryUnknown は期間開始時点の在庫を照会できなかったこと。

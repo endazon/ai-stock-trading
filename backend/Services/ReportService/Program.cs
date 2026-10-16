@@ -525,6 +525,22 @@ builder.Services.AddSingleton<ITradeRationaleSource>(sp =>
         http, sp.GetRequiredService<ILogger<HttpTradeRationaleSource>>());
 });
 
+// FR-06, FR-08, #1356, IADR-0541 決定 2: 日報 §5 の「判断が参照したニュース・開示」。判断根拠と同じ監査台帳・同じ所在から引く。
+// **Audit:BaseUrl 未設定/不正 URI は Unsupplied（常に null）**＝§5 は「照会できませんでした」と描く（「参照なし」へ倒さない）。
+builder.Services.AddSingleton<IDecisionReferenceSource>(sp =>
+{
+    if (sp.GetService<AuditGrpcTransport>() is { } auditGrpc)
+        return new GrpcDecisionReferenceSource(auditGrpc, sp.GetRequiredService<ILogger<GrpcDecisionReferenceSource>>());
+
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Audit:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        return new UnsuppliedDecisionReferenceSource();
+
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("audit-ledger");
+    http.BaseAddress = uri;
+    return new HttpDecisionReferenceSource(http, sp.GetRequiredService<ILogger<HttpDecisionReferenceSource>>());
+});
+
 // FR-06, FR-16, #563, IADR-0269, 04_report-templates 日報 §3: ポジション一覧（当日終了時点）。
 // 権威源はリスク管理サービスの取引台帳の射影であり、GET /risk-controls/open-positions（OwnerOrService・
 // IADR-0051）へ s2s 同期照会する。

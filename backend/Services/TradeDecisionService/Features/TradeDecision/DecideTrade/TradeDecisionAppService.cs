@@ -192,7 +192,8 @@ public sealed class TradeDecisionAppService(
     // （PR #1080 監査, IADR-0452 決定4）。判定は例外の型ではなく本判断のトークンで行う —— 発行先の内部の打ち切り
     // （無関係な TaskCanceledException 等）まで伝えると、見送りが「判断の失敗」へ化け、見送りの計上が欠ける。
     private async Task<TradeDecisionMade?> SkipJudgedAsync(
-        DecisionTrigger trigger, DecisionSkipReason reason, decimal? judgedPrice, CancellationToken cancellationToken)
+        DecisionTrigger trigger, DecisionSkipReason reason, decimal? judgedPrice, CancellationToken cancellationToken,
+        DecisionReferences? references = null)
     {
         if (judgedPrice is { } price)
         {
@@ -201,7 +202,9 @@ public sealed class TradeDecisionAppService(
                 await _heldReporter.ReportAsync(
                     new TradeDecisionHeld(
                         Guid.NewGuid(), trigger.Symbol, trigger.Market, price, reason.ToString(), clock.UtcNow,
-                        trigger.MetricTrigger),
+                        trigger.MetricTrigger,
+                        // FR-06, FR-08, #1356, IADR-0541 決定 1: 見送った判断が見た参考情報（日報 §5 の供給元）。
+                        References: references),
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -590,6 +593,11 @@ public sealed class TradeDecisionAppService(
             .ConfigureAwait(false);
         var decision = orchestrated.Decision;
 
+        // FR-06, FR-08, FR-11, #1356, IADR-0541 決定 1: この判断のプロンプトが**実際に見た**参考情報を判断の記録（Made・Held）へ残す。
+        // 本判断が走ったなら注入した全件、一次で見送ったなら一次に渡した分（縮退制御が無ければ一次は参考情報を持たない＝空）。
+        var seenReferences = DecisionReferenceRecord.From(
+            ragContext, orchestrated.ScreenedOut ? screening?.RetainedReferences ?? [] : retrieved);
+
         // #337, IADR-0247: 縮退（分割・切り詰め・解消不能な超過）が発生したら記録する（planning#53 の裁定・
         // 月報の件数記載）。fail-safe: 記録は判断のクリティカルパス外。発行失敗で判断を壊さない。キャンセルは伝播。
         if (screening is { Plan.ReductionOccurred: true })
@@ -621,7 +629,7 @@ public sealed class TradeDecisionAppService(
 
         if (decision.Action == TradeAction.Hold)
         {
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.LlmHold, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.LlmHold, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false); // 見送り
         }
 
@@ -653,7 +661,7 @@ public sealed class TradeDecisionAppService(
                     "保有状況が不明なため新規建てを見送る（照会先は結線済み・手仕舞いは止めない・IADR-0358）: " +
                     "{Symbol} side={Side}",
                     trigger.Symbol, side);
-                return await SkipJudgedAsync(trigger, DecisionSkipReason.HoldingsUnknownOpen, judgedPrice, cancellationToken)
+                return await SkipJudgedAsync(trigger, DecisionSkipReason.HoldingsUnknownOpen, judgedPrice, cancellationToken, seenReferences)
                     .ConfigureAwait(false);
             }
 
@@ -662,7 +670,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "保有建玉が無い、または不明な売り判断のため見送り（裸の新規売りを出さない・IADR-0119）: {Symbol} held={Held}",
                 trigger.Symbol, heldQuantity.HasValue ? heldQuantity.Value : "不明");
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.NakedShortOpen, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.NakedShortOpen, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -674,7 +682,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "監視銘柄の外の保有銘柄への新規建ては出さない（出口専用の判断・決済は対象外・IADR-0521）: {Symbol} side={Side} effect={Effect}",
                 trigger.Symbol, side, effect.Effect);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ExitOnlyOpenOutsideWatchlist, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -688,7 +696,7 @@ public sealed class TradeDecisionAppService(
                 "{Symbol} side={Side}",
                 trigger.Symbol, side);
             // 🔴 PR #940 監査, IADR-0374: 見送りは唯一の出口 Skip を通す（素の null は decision_skips にもアラートにも出ない）。
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.WorkingEntriesUnknownOpen, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.WorkingEntriesUnknownOpen, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -702,7 +710,7 @@ public sealed class TradeDecisionAppService(
                 "買い増し・売り増しが審査で必ず拒否されるため Hold に倒す（LLM の結論を発注しない・決済は対象外・審査は不変・IADR-0471）: " +
                 "{Symbol} side={Side} reasons={Reasons}",
                 trigger.Symbol, side, string.Join(",", addOnReasons));
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.AddOnBlockedByRiskControls, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.AddOnBlockedByRiskControls, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -715,7 +723,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "参照価格が不正のため見送り: {Symbol} referencePrice={ReferencePrice}",
                 trigger.Symbol, referencePrice);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.ReferencePriceInvalid, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ReferencePriceInvalid, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -734,7 +742,7 @@ public sealed class TradeDecisionAppService(
                 "換算レートが鮮度切れのため新規建てを見送る（手仕舞いは止めない・ADR-0022 決定5）: " +
                 "{Symbol} effect={Effect} asOf={AsOf}",
                 trigger.Symbol, effect.Effect, fxReading.Rate.AsOf);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.FxRateStaleOpen, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.FxRateStaleOpen, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -768,7 +776,9 @@ public sealed class TradeDecisionAppService(
             // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
             return new TradeDecisionMade(
                 Guid.NewGuid(), closeIntent, ReconcileRationale(trigger, decision.Rationale, effect.CloseQuantity), clock.UtcNow,
-                trigger.MetricTrigger, trigger.CycleStartedAt);
+                trigger.MetricTrigger, trigger.CycleStartedAt,
+                // FR-06, FR-08, #1356, IADR-0541 決定 1: この判断が見た参考情報（日報 §5 の供給元）。
+                References: seenReferences);
         }
 
         // 以降は新規建て（Open）の従来経路。IADR-0035 の不変量（損切り幅は参照価格より小さく正）を権威価格に対して
@@ -779,7 +789,7 @@ public sealed class TradeDecisionAppService(
             logger.LogInformation(
                 "損切り幅が不正、または現在値以上のため見送り: {Symbol} referencePrice={ReferencePrice} stopLossDistance={StopLossDistance}",
                 trigger.Symbol, referencePrice, decision.StopLossDistancePerShare);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -797,7 +807,7 @@ public sealed class TradeDecisionAppService(
                 "損切り幅の下限が現在値以上のため見送り（下限を割って縮めない・IADR-0465）: {Symbol} referencePrice={ReferencePrice} "
                     + "stopWidthFloor={StopWidthFloor} floorSource={FloorSource}",
                 trigger.Symbol, referencePrice, stopWidth.FloorPerShare, stopWidth.FloorSource);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.StopLossDistanceInvalid, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -835,7 +845,7 @@ public sealed class TradeDecisionAppService(
         {
             logger.LogInformation(
                 "サイジングで数量 0 のため見送り: {Symbol} highVolatility={HighVolatility}", trigger.Symbol, isHighVolatilityEntry);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizingZeroQuantity, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizingZeroQuantity, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -850,7 +860,7 @@ public sealed class TradeDecisionAppService(
                 "minimum={Minimum} ratio={Ratio}",
                 trigger.Symbol, quantity, notionalBase,
                 MinimumEntryNotional.MinimumFor(capital, _minimumEntryNotional.Ratio), _minimumEntryNotional.Ratio);
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizedBelowMinimumNotional, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.SizedBelowMinimumNotional, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false);
         }
 
@@ -862,7 +872,7 @@ public sealed class TradeDecisionAppService(
             !await IsProfitableAsync(
                 trigger, decision, referencePriceBase, rateToBase, quantity, cancellationToken).ConfigureAwait(false))
         {
-            return await SkipJudgedAsync(trigger, DecisionSkipReason.ProfitabilityNotViable, judgedPrice, cancellationToken)
+            return await SkipJudgedAsync(trigger, DecisionSkipReason.ProfitabilityNotViable, judgedPrice, cancellationToken, seenReferences)
                 .ConfigureAwait(false); // 採算不成立・見積り不能（安全側で見送り）
         }
 
@@ -903,7 +913,9 @@ public sealed class TradeDecisionAppService(
         // FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: 下限を掛けた結果を監査台帳へ残す（判断の記録に載せる）。
         return new TradeDecisionMade(
             Guid.NewGuid(), intent, ReconcileRationale(trigger, decision.Rationale, quantity), clock.UtcNow,
-            trigger.MetricTrigger, trigger.CycleStartedAt, stopWidth);
+            trigger.MetricTrigger, trigger.CycleStartedAt, stopWidth,
+            // FR-06, FR-08, #1356, IADR-0541 決定 1: この判断が見た参考情報（日報 §5 の供給元）。
+            References: seenReferences);
     }
 
     // FR-10, ADR-0049 決定2, #1120, IADR-0465 決定1, #1122, IADR-0486 決定2: 下限の供給口を読む（fail-safe）。例外（キャンセルを除く）は

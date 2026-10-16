@@ -190,7 +190,9 @@ public class GrpcAuditLedgerSourcesTests
                 decisionId,
                 new OrderIntent("7203", Market.Japan, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 100, 2_500m),
                 "始値が支持線で反発。",
-                T0), Guid.NewGuid(), T0),
+                T0,
+                // #1356, IADR-0541: 判断が見た参照（REST と gRPC で同じに読めること）。
+                References: new DecisionReferences("retrieved", [new DecisionReference("決算短信", "https://example.com/r", T0)])), Guid.NewGuid(), T0),
         };
         using (var scope = audit.Services.CreateScope())
         {
@@ -236,6 +238,11 @@ public class GrpcAuditLedgerSourcesTests
         var grpcRationale = await new GrpcTradeRationaleSource(grpc, Log<GrpcTradeRationaleSource>()).GetRationalesAsync(From, To);
         restRationale.Should().ContainKey(decisionId);
         grpcRationale.Should().BeEquivalentTo(restRationale);
+
+        var restRefs = await new HttpDecisionReferenceSource(rest, Log<HttpDecisionReferenceSource>()).GetDecisionsAsync(From, To);
+        var grpcRefs = await new GrpcDecisionReferenceSource(grpc, Log<GrpcDecisionReferenceSource>()).GetDecisionsAsync(From, To);
+        restRefs!.Should().ContainSingle().Which.References!.Items.Should().ContainSingle().Which.Title.Should().Be("決算短信");
+        grpcRefs.Should().BeEquivalentTo(restRefs);
     }
 
     // ---- T-06-073: 発生時刻（OccurredAt）を両経路で運ぶ（#1255 / IADR-0516 の 2026-10-08 追記） ----

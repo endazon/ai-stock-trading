@@ -98,6 +98,31 @@ public class AuditLedgerReadContractTests
         rationales!.Should().ContainKey(decisionId).WhoseValue.Should().Be("始値が支持線で反発。");
     }
 
+    // FR-06, FR-08, #1356, IADR-0541 決定 2: 判断が参照したニュース・開示（TradeDecisionMade・TradeDecisionHeld の References）。
+    // 送り手の本物の記録の組み立てで作る——送り手で EventType・References を改名すると「参照の記録なし」と区別できなくなる。
+    [Fact]
+    public async Task 判断の参照は送り手の本物の型を直列化した応答から読める()
+    {
+        var made = new TradeDecisionMade(
+            Guid.NewGuid(),
+            new OrderIntent("AAPL", Market.UnitedStates, TradeSide.Buy, ProductType.Cash, BrokerProvider.InternalPaper, 1, 200m),
+            "決算を受けて買う。", T0,
+            References: new DecisionReferences("retrieved", [new DecisionReference("Apple 決算", "https://example.com/a", T0, ["finnhub"])]));
+        var held = new TradeDecisionHeld(Guid.NewGuid(), "MSFT", Market.UnitedStates, 400m, "LlmHold", T0.AddMinutes(1));
+        var source = new HttpDecisionReferenceSource(
+            Ledger(AuditEntryFactory.From(made, Guid.NewGuid(), T0), AuditEntryFactory.From(held, Guid.NewGuid(), T0)),
+            NullLogger<HttpDecisionReferenceSource>.Instance);
+
+        var decisions = await source.GetDecisionsAsync(From, To);
+
+        decisions.Should().HaveCount(2);
+        var first = decisions!.Single(d => d.Symbol == "AAPL");
+        first.DecidedAt.Should().Be(T0);
+        first.References!.Items.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new DecisionReference("Apple 決算", "https://example.com/a", T0, ["finnhub"]));
+        decisions.Single(d => d.Symbol == "MSFT").References.Should().BeNull("記録の追加前の見送りは参照の記録を持たない");
+    }
+
     // 🔴 T-10-998, FR-06, FR-10, #823, IADR-0422 決定3: 承認（損切りの実行機構の集計）。送り手の本物の記録の組み立てで作る
     // ——送り手で EventType を改名すると、全行が種別不一致で捨てられ「承認なし」と区別できなくなる。
     [Fact]

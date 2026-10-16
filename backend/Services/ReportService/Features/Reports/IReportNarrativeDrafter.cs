@@ -78,6 +78,12 @@ public sealed record ReportNarrativeContext(
     /// プロンプトは本文と同じ純関数（<see cref="FillPnlAttributionBuilder"/>）で日別・最良・最悪を引き、確定済みの事実として示す。
     /// </summary>
     public IReadOnlyList<FillPnlAttribution>? Settlements { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-08, #1356, IADR-0541 決定 4: 日報 §5 の判断が参照したニュース・開示（日報だけ）。<b>null＝照会していない・できていない</b>。
+    /// 🔴 外部の自由文（表題）を含む。プロンプトは境界語で囲み、データとして扱わせ、URL を渡さない。
+    /// </summary>
+    public DecisionReferenceFeed? DecisionReferences { get; init; }
 }
 
 // FR-07, IADR-0120 決定3: 上位方針の参照（期間キーと本文）。
