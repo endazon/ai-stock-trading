@@ -34,6 +34,8 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             ApprovalOrigin = record.ApprovalOrigin,
             // #1330, IADR-0534 決定2: 保存の時点では帰属させた株数は無い（呼び出し側が渡す値をそのまま書く。既定 0）。
             ProtectionReleasedQuantity = record.ProtectionReleasedQuantity,
+            // #1339, IADR-0539: 保存の時点では系は取消を求めていない（呼び出し側が渡す値をそのまま書く。既定 null）。
+            UnfilledCancelRequestedAt = record.UnfilledCancelRequestedAt,
         });
         db.SaveChanges();
     }
@@ -215,6 +217,52 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
             .Select(r => ToRecord(r))];
     }
 
+    // 🔴 FR-10, ADR-0067 決定1・4, #1339, IADR-0539: 発注から N 分以上たって非終端の<b>判断由来の</b>決済で、系がまだ取消を求めていないもの（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(DateTimeOffset placedAtOrBefore, int limit)
+    {
+        return [.. db.ExecutedOrders
+            .Where(r => r.PositionEffect == PositionEffect.Close
+                && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+                && (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
+                && r.UnfilledCancelRequestedAt == null
+                && r.ExecutedAt <= placedAtOrBefore)
+            .OrderBy(r => r.ExecutedAt)
+            .Take(limit)
+            .Select(r => ToRecord(r))];
+    }
+
+    // 🔴 FR-10, ADR-0067 決定2, #1339, IADR-0539: 同じ建玉（銘柄・市場・決済の方向）の判断由来の決済で、系が取消を求めた時刻が
+    // [from, to) にある件数（1 建玉 1 日の回数の上限。範囲は呼び出し側が市場の現地取引日から作る）。
+    public int CountUnfilledCancelRequests(
+        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        return db.ExecutedOrders.Count(r => r.PositionEffect == PositionEffect.Close
+            && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+            && r.Symbol == symbol && r.Market == market && r.Side == closeSide
+            && r.UnfilledCancelRequestedAt != null
+            && r.UnfilledCancelRequestedAt >= fromInclusive && r.UnfilledCancelRequestedAt < toExclusive);
+    }
+
+    // 🔴 FR-10, ADR-0067 決定1, #1339, IADR-0539: 取消を求めた印を書く（**この 1 列だけ**。非終端かつ未印のときだけ）。
+    public bool MarkUnfilledCancelRequested(string orderId, DateTimeOffset requestedAt)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        var row = db.ExecutedOrders.Find(orderId);
+        if (row is null
+            || row.UnfilledCancelRequestedAt is not null
+            || !(row.Status == OrderStatus.Accepted || row.Status == OrderStatus.PartiallyFilled))
+        {
+            return false;
+        }
+
+        row.UnfilledCancelRequestedAt = requestedAt;
+        db.SaveChanges();
+        return true;
+    }
+
     // #270, IADR-0113: 観測した最新のブローカ状態を既存行へ反映する。行が無ければ何もしない
     // （新規に作らない＝DecisionId 1:1 の不変を壊さない）。
     public bool UpdateOutcome(
@@ -243,5 +291,5 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     private static ExecutionRecord ToRecord(ExecutedOrderRow r) => new(
         r.DecisionId, r.OrderId, r.Symbol, r.Market, r.Side, r.ProductType, r.PositionEffect,
         r.Quantity, r.PlannedPrice, r.FilledQuantity, r.AveragePrice, r.Status, r.SlippageRatio, r.ExecutedAt,
-        r.StopFloorSource, r.ApprovalOrigin, r.ProtectionReleasedQuantity);
+        r.StopFloorSource, r.ApprovalOrigin, r.ProtectionReleasedQuantity, r.UnfilledCancelRequestedAt);
 }

@@ -212,8 +212,9 @@ public enum MoomooOrderState
     Cancelled,
 
     /// <summary>
-    /// <b>確認できた失敗</b>（OpenD の SubmitFailed / Failed / Disabled / Deleted）。証券会社が受理しなかった
+    /// <b>確認できた失敗</b>（OpenD の SubmitFailed / Failed / Deleted）。証券会社が受理しなかった
     /// ことが分かっている状態であり、<c>OrderStatus.Rejected</c> へ写る。
+    /// 🔴 #1339, ADR-0067 決定5, IADR-0539: <b>Disabled（失効）はここに入れない</b>（<see cref="Expired"/>）。
     /// </summary>
     Failed,
 
@@ -229,4 +230,12 @@ public enum MoomooOrderState
     /// </para>
     /// </summary>
     Unknown,
+
+    /// <summary>
+    /// 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: <b>失効</b>（OpenD の Disabled〈22〉。期限〔DAY〕の満了などで、
+    /// 証券会社が未約定のまま失効させた注文）。FR-05 の<b>失注</b>であり、<c>OrderStatus.Expired</c> へ写る。
+    /// 拒否（<see cref="Failed"/>）と区別する——拒否は発注の内容を見直す事象であり、失注は時間切れである。
+    /// 終端の扱い（在庫の解放・未約定残の通知）は拒否と同じ（<c>OrderStatusLifecycle</c> はどちらも未約定の終端とする）。
+    /// </summary>
+    Expired,
 }

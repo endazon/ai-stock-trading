@@ -1,9 +1,11 @@
 using OrderExecutionService.Common.Abstractions;
 using OrderExecutionService.Domain;
 using OrderExecutionService.Features.OrderExecution;
+using OrderExecutionService.Features.OrderExecution.CancelUnfilledDecisionCloses;
 using OrderExecutionService.Features.OrderExecution.PollOrderFills;
 using OrderExecutionService.Features.OrderExecution.RecordTradeExpenses;
 using AiStockTrading.Shared.Contracts.Events;
+using AiStockTrading.Shared.Contracts.Trading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -34,6 +36,9 @@ public sealed class OrderFillPollingService(
     // 🔴 #1339, IADR-0536 決定2・4: 照会し直しと定期ログの次の実行時刻（プロセス内だけ。再起動の直後の巡回で 1 回ずつ走る）。
     private DateTimeOffset _nextAbandonedCloseRecheckAt = DateTimeOffset.MinValue;
     private DateTimeOffset _nextPendingCloseReportAt = DateTimeOffset.MinValue;
+
+    // 🔴 #1339, IADR-0539: 回数の上限で取り消さなかった決済を INF で残した注文（プロセス内だけ。巡回ごとに繰り返さない）。
+    private readonly HashSet<string> _cappedLogged = new(StringComparer.Ordinal);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -134,6 +139,7 @@ public sealed class OrderFillPollingService(
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
         await RecheckAbandonedClosesAsync(poller, tradeExpenses, bus, clock.UtcNow, cancellationToken).ConfigureAwait(false);
         ReportPendingCloses(scope.ServiceProvider.GetRequiredService<IExecutedOrderStore>(), clock.UtcNow);
+        await CancelUnfilledDecisionClosesAsync(scope.ServiceProvider, bus, cancellationToken).ConfigureAwait(false);
 
         if (result.Updated > 0 || result.Unknown > 0 || result.Failed > 0)
             logger.LogInformation(
@@ -185,7 +191,7 @@ public sealed class OrderFillPollingService(
             logger.LogInformation(
                 "処理中の決済を解放しました（追跡を打ち切った後、証券会社が終端 {Status} と答えました。約定 {Filled}/{Quantity}）: "
                     + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} 発注={PlacedAt}",
-                released.TerminalStatus, released.FilledQuantity, r.Quantity, r.DecisionId, r.OrderId, r.Symbol, r.Side,
+                OrderStatusDisplay.Describe(released.TerminalStatus), released.FilledQuantity, r.Quantity, r.DecisionId, r.OrderId, r.Symbol, r.Side,
                 r.ExecutedAt);
         }
 
@@ -226,8 +232,42 @@ public sealed class OrderFillPollingService(
                 "未約定の決済が残っています: DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} "
                     + "約定 {Filled}/{Quantity} 状態={Status} 発注から {AgeMinutes} 分 追跡={Tracking}。"
                     + "約定しないまま残ると、この建玉の次の決済は見送られ得ます。証券会社の画面で注文を確認してください。",
-                r.DecisionId, r.OrderId, r.Symbol, r.Side, r.FilledQuantity, r.Quantity, r.Status,
+                r.DecisionId, r.OrderId, r.Symbol, r.Side, r.FilledQuantity, r.Quantity, OrderStatusDisplay.Describe(r.Status),
                 (int)age.TotalMinutes, age >= maxTracking ? "打ち切り済み" : "追跡中");
+        }
+    }
+
+    // 🔴 FR-10, FR-19, ADR-0067 決定1〜4, #1339, IADR-0539: 判断由来の決済の指値が N 分未約定なら系が取り消すだけにする（既定は無効）。
+    // 確認できた取消（OrderCancelled）を発行する（リスク管理の台帳・注文アクティビティ射影＝相場操縦の検知の母集団へ届く）。
+    // 置き直し・成行は送らない。部品が登録されていない構成（試験の最小ホスト）では何もしない。失敗で巡回を止めない。
+    private async Task CancelUnfilledDecisionClosesAsync(
+        IServiceProvider services, MessageBus bus, CancellationToken cancellationToken)
+    {
+        if (services.GetService<DecisionCloseUnfilledCanceller>() is not { } canceller)
+            return;
+
+        DecisionCloseUnfilledCancelResult result;
+        try
+        {
+            result = await canceller.RunOnceAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "判断由来の決済の指値の未約定時の取消に失敗しました。次の巡回で再試行します。");
+            return;
+        }
+
+        foreach (var cancelled in result.Confirmed)
+            await bus.PublishAsync(cancelled).ConfigureAwait(false);
+
+        foreach (var r in result.Capped)
+        {
+            if (!_cappedLogged.Add(r.OrderId))
+                continue;
+            logger.LogInformation(
+                "判断由来の決済の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません（当日限り〔DAY〕の失効に任せます）: "
+                    + "DecisionId={DecisionId} OrderId={OrderId} 銘柄={Symbol} 方向={Side} 発注={PlacedAt}",
+                r.DecisionId, r.OrderId, r.Symbol, r.Side, r.ExecutedAt);
         }
     }
 

@@ -3,15 +3,15 @@ title: 取引ガード（FR-19・再実装）テスト仕様書
 type: test-spec
 status: approved
 created: 2026-08-04
-updated: 2026-08-21
+updated: 2026-10-16
 author: endazon (with Claude Code)
 ---
 <!-- trace:
-ids: [FR-10, FR-11, FR-14, FR-19, FR-20, SC-02, SC-03, UC-06]
-adrs: [ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, ADR-0028]
-iadrs: [IADR-0051, IADR-0127, IADR-0131, IADR-0132, IADR-0152, IADR-0153, IADR-0165, IADR-0182]
-specs: [20260804_332_trading-guards, 20260806_375_cash-account-support, 20260807_425_gfv-self-counting, FR-10_risk-controls-tests, FR-19_manipulation-detection-tests, FR-19_trading-guard, IADR-0132_product-type-tri-state-and-guard-scope, IADR-0153_broker-account-type-supply-and-fail-closed, IADR-0165_gfv-self-counting-and-settled-cash-source-ban, README]
-issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425, #464]
+ids: [FR-10, FR-11, FR-14, FR-19, FR-20, SC-02, SC-03, UC-06, FR-05]
+adrs: [ADR-0007, ADR-0009, ADR-0016, ADR-0021, ADR-0025, ADR-0028, ADR-0067]
+iadrs: [IADR-0051, IADR-0127, IADR-0131, IADR-0132, IADR-0152, IADR-0153, IADR-0165, IADR-0182, IADR-0539, IADR-0040]
+specs: [20260804_332_trading-guards, 20260806_375_cash-account-support, 20260807_425_gfv-self-counting, FR-10_risk-controls-tests, FR-19_manipulation-detection-tests, FR-19_trading-guard, IADR-0132_product-type-tri-state-and-guard-scope, IADR-0153_broker-account-type-supply-and-fail-closed, IADR-0165_gfv-self-counting-and-settled-cash-source-ban, README, 20261016_1339_decision-close-unfilled-cancel]
+issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425, #464, #1339, planning#797]
 -->
 
 
@@ -27,6 +27,7 @@ issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425,
 - [6. 現金口座対応 — GFV 回避ガードと GFV 回数（境界値）](#6-現金口座対応--gfv-回避ガードと-gfv-回数境界値)
 - [7. 現金口座対応 — 否定形（**本 issue の主眼**）](#7-現金口座対応--否定形本-issue-の主眼)
 - [8. GFV 発生回数の自前計数（#425。GFV 計数の計画 ADR の決定 2）](#8-gfv-発生回数の自前計数425gfv-計数の計画-adr-の決定-2)
+- [9. 系による判断由来の決済の取消と相場操縦の検知（#1339）](#9-系による判断由来の決済の取消と相場操縦の検知1339)
 - [テストデータ](#テストデータ)
 - [未カバー・実施予定](#未カバー実施予定)
 - [関連仕様](#関連仕様)
@@ -297,6 +298,20 @@ issues: [#251, #270, #332, #333, #334, #342, #344, #364, #375, #380, #424, #425,
 | c1 | `AccountTypePolicy.BlocksForGoodFaithViolations` | `violationCount is null ||` を削除 | **2 件**（T-19-253 / T-19-254） |
 | c2 | `RiskEvaluator`（GFV 回避ガード） | 未供給なら通す **＋** 当日累計を無視する（＝未決済資金を買付余力へ算入する向き） | **2 件**（T-19-263 / T-19-251） |
 | d | `AccountTypePolicy.Supports` | 現金口座でも信用系を成立させる | **10 件**（Domain 5 / Application 3 / Api 2。3 層すべてで検出） |
+
+## 9. 系による判断由来の決済の取消と相場操縦の検知（#1339）
+
+系が判断由来の決済の指値を N 分未約定で取り消す統制（**既定は無効**）は、取消も検知の適用範囲に含めたうえで、
+「有効時の N は検知の窓より長い」を構成の検証で強制する。試験の本体は
+[リスク統制のテスト仕様書](./FR-10_risk-controls-tests.md)「判断由来の決済の指値の未約定時の取消」にあり、ここでは取引ガードの側の不変条件だけを写す。
+
+| 不変条件 | 試験 | 変異（赤になること） |
+| --- | --- | --- |
+| 有効時の N ≦ 検知の窓（5 分）は構成の誤りで、本番の組み立ては起動で止まる。無効なら検証しない | T-10-2675 | N の下端を窓と同じ値まで許す |
+| 検知の窓とその既定の N は共有の定数から作り、既定の N は窓より長い | 全体前提条件の既定値の試験 | — |
+| 系の取消は利用者の取消と同じ口を通り、取り消せたと確かめられた取消だけが取消の事実（検知の注文履歴の入力）になる | T-10-2671・T-10-2674・T-10-2676 | 有効・無効を見ない／印を書かずに取り消す |
+| 取消の反復を作らない（印を先に書く・失敗しても再試行しない・1 建玉 1 日 1 回） | T-10-2672・T-10-2674 | 回数の上限を見ない |
+| 失効は失注（`Expired`）であり、検知の母集団では約定なしの失効として数える（拒否は数えない） | T-10-2678 | 失効を拒否のまま |
 
 ## テストデータ
 

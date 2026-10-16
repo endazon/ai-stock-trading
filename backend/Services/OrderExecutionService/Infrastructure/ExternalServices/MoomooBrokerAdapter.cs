@@ -424,6 +424,9 @@ public sealed class MoomooBrokerAdapter(
         // 証券会社が受理しなかったことが**分かっている**状態。在庫解放の対象のままにする
         //（発注拒否で押さえが解けるのは #848 の射程内であり、外すと 2 つ目の恒久ロックを作る）。
         MoomooOrderState.Failed => OrderStatus.Rejected,
+        // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: 失効（Disabled）は**失注**（Expired）。拒否と区別して表示する。
+        // 未約定の終端としての扱い（在庫の解放・未約定残の通知・S1 の再武装）は拒否と同じ（OrderStatusLifecycle）。
+        MoomooOrderState.Expired => OrderStatus.Expired,
         // 🔴 この既定アームは **Unknown 専用ではない**。いま到達するのは MoomooOrderState.Unknown だけだが、
         // 将来 MoomooOrderState へ値を足して上のアームへ写し忘れた場合も**ここへ落ちる**（＝非終端）。
         // 向きは意図どおり（名前を付けられない状態で在庫を解放しない）。ただし新しい値が**終端**を意味するなら
@@ -433,7 +436,8 @@ public sealed class MoomooBrokerAdapter(
 
     // #848: Unknown は**終端に入れない**（CompletedAt を立てない・約定追跡が引き直す）。
     private static bool IsTerminal(MoomooOrderState state) =>
-        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed;
+        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed
+            or MoomooOrderState.Expired;
 
     // GetOrderAsync でブローカ照会結果に Intent が無い場合の最小プレースホルダ（状態照会用途）。
     private static OrderIntent MinimalIntent() =>

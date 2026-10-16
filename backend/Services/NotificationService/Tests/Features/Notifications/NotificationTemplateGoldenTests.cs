@@ -44,14 +44,22 @@ public class NotificationTemplateGoldenTests
             new OrderExecuted(Id, "ORD-1", OrderStatus.Filled, 10, 1050m, T, BrokerProvider.MoomooSimulate),
             new NotificationMessage(
                 "取引実行",
-                "約定 Filled 数量10@1050（OrderId=ORD-1・DecisionId=11111111-1111-1111-1111-111111111111）",
+                "約定 Filled（全量約定） 数量10@1050（OrderId=ORD-1・DecisionId=11111111-1111-1111-1111-111111111111）",
                 NotificationSeverity.Info)),
 
         ["OrderExecuted/Rejected"] = (
             new OrderExecuted(Id, "ORD-2", OrderStatus.Rejected, 0, 0m, T, BrokerProvider.MoomooSimulate),
             new NotificationMessage(
                 "取引実行",
-                "約定 Rejected 数量0@0（OrderId=ORD-2・DecisionId=11111111-1111-1111-1111-111111111111）",
+                "約定 Rejected（拒否: 証券会社が受理せず） 数量0@0（OrderId=ORD-2・DecisionId=11111111-1111-1111-1111-111111111111）",
+                NotificationSeverity.Warning)),
+
+        // 🔴 T-10-2679, FR-05, ADR-0067 決定5, #1339, IADR-0539: 失効（moomoo の Disabled）は**失注**であり、拒否と区別して表示する。
+        ["OrderExecuted/Expired"] = (
+            new OrderExecuted(Id, "ORD-3", OrderStatus.Expired, 0, 0m, T, BrokerProvider.MoomooSimulate),
+            new NotificationMessage(
+                "取引実行",
+                "約定 Expired（失注: 期限切れで失効） 数量0@0（OrderId=ORD-3・DecisionId=11111111-1111-1111-1111-111111111111）",
                 NotificationSeverity.Warning)),
 
         ["OrderRejected"] = (
@@ -371,7 +379,7 @@ public class NotificationTemplateGoldenTests
                 Id, "AAPL", Market.UnitedStates, TradeSide.Sell, 3381, 0, 3381, OrderStatus.Expired, T),
             new NotificationMessage(
                 "手仕舞いが約定せず終了",
-                "AAPL/UnitedStates Sell 数量3381 の手仕舞いが Expired で終了しました"
+                "AAPL/UnitedStates Sell 数量3381 の手仕舞いが Expired（失注: 期限切れで失効） で終了しました"
                     + "（約定 0・**未決済 3381**）。"
                     + "建玉はこの数量ぶん残っています（当日注文は引け後に失効します）。"
                     + "**逆指値なしの建玉はこのまま翌日へ持ち越されます。**"

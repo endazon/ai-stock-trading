@@ -81,6 +81,9 @@ namespace OrderExecutionService.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("TrackingAbandonedFrom")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("UnfilledCancelRequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("OrderId");
 
                     b.HasIndex("DecisionId");

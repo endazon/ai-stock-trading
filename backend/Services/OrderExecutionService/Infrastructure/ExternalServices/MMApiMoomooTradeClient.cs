@@ -388,7 +388,8 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
     }
 
     private static bool IsTerminal(MoomooOrderState state) =>
-        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed;
+        state is MoomooOrderState.FilledAll or MoomooOrderState.Cancelled or MoomooOrderState.Failed
+            or MoomooOrderState.Expired;
 
     private static DateTimeOffset? FromUnixTimestamp(double? seconds) =>
         seconds is > 0 ? DateTimeOffset.FromUnixTimeMilliseconds((long)(seconds.Value * 1000)) : null;
@@ -1050,7 +1051,9 @@ public sealed class MMApiMoomooTradeClient : MMSPI_Trd, MMSPI_Conn, IMoomooTrade
         11 => MoomooOrderState.FilledAll,                // Filled_All
         12 or 13 => MoomooOrderState.Submitted,          // Cancelling_*（取消進行中・まだ有効）
         14 or 15 or 24 => MoomooOrderState.Cancelled,    // Cancelled_Part / Cancelled_All / FillCancelled
-        3 or 21 or 22 or 23 => MoomooOrderState.Failed,  // SubmitFailed / Failed / Disabled / Deleted（**確認できた失敗**）
+        3 or 21 or 23 => MoomooOrderState.Failed,        // SubmitFailed / Failed / Deleted（**確認できた失敗**）
+        // 🔴 FR-05, ADR-0067 決定5, #1339, IADR-0539: Disabled（失効）は**失注**であり拒否と区別する（Failed へ畳まない）。
+        22 => MoomooOrderState.Expired,                  // Disabled
         _ => MoomooOrderState.Unknown,                   // NONE(-1) / TimeOut(4) / 未知の新コード（**結果が分からない**）
     };
 

@@ -220,6 +220,56 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
         }
     }
 
+    // 🔴 FR-10, ADR-0067 決定1・4, #1339, IADR-0539: 発注から N 分以上たって非終端の判断由来の決済で、系がまだ取消を求めていないもの（古い順・上限つき）。
+    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(DateTimeOffset placedAtOrBefore, int limit)
+    {
+        lock (_gate)
+        {
+            return _records
+                .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+                    && OrderStatusLifecycle.IsPending(r.Status) && r.UnfilledCancelRequestedAt is null
+                    && r.ExecutedAt <= placedAtOrBefore)
+                .OrderBy(r => r.ExecutedAt)
+                .Take(limit)
+                .ToList();
+        }
+    }
+
+    // 🔴 FR-10, ADR-0067 決定2, #1339, IADR-0539: 同じ建玉の判断由来の決済で、系が取消を求めた時刻が [from, to) にある件数。
+    public int CountUnfilledCancelRequests(
+        string symbol, Market market, TradeSide closeSide, DateTimeOffset fromInclusive, DateTimeOffset toExclusive)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        lock (_gate)
+        {
+            return _records.Count(r => r.PositionEffect == PositionEffect.Close
+                && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
+                && r.Symbol == symbol && r.Market == market && r.Side == closeSide
+                && r.UnfilledCancelRequestedAt is { } at && at >= fromInclusive && at < toExclusive);
+        }
+    }
+
+    // 🔴 FR-10, ADR-0067 決定1, #1339, IADR-0539: 取消を求めた印を書く（その値だけ。非終端かつ未印のときだけ）。
+    public bool MarkUnfilledCancelRequested(string orderId, DateTimeOffset requestedAt)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderId);
+
+        lock (_gate)
+        {
+            var index = _records.FindIndex(r => r.OrderId == orderId);
+            if (index < 0
+                || _records[index].UnfilledCancelRequestedAt is not null
+                || !OrderStatusLifecycle.IsPending(_records[index].Status))
+            {
+                return false;
+            }
+
+            _records[index] = _records[index] with { UnfilledCancelRequestedAt = requestedAt };
+            return true;
+        }
+    }
+
     // #270, IADR-0113: 観測した最新状態を既存記録へ反映する（無ければ何もしない＝新規に作らない）。
     public bool UpdateOutcome(
         string orderId,

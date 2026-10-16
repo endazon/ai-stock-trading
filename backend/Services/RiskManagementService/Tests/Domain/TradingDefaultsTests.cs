@@ -207,6 +207,22 @@ public class TradingDefaultsTests
         settings.LayeringOrderCount.Should().Be(3);
     }
 
+    // 🔴 FR-10, FR-19, ADR-0067 決定2・3, 05_trading-assumptions §5, #1339, IADR-0539: 判断由来の決済の指値の未約定時の取消の既定値。
+    // 既定は無効・N＝15 分・1 建玉 1 日 1 回。既定の N は検知の窓（5 分）より長い（有効にしてもそのまま構成の検証を通る）。
+    // 検知の窓は Shared.Kernel の定数と同じ値でなければならない（発注執行が N の下端に使う。片方だけ変えると下端がずれる）。
+    [Fact]
+    public void 判断由来の決済の未約定時の取消の既定値は全体前提条件と一致する()
+    {
+        TradingDefaults.DecisionCloseUnfilledCancelEnabled.Should().BeFalse("ADR-0067 決定2: 既定は無効");
+        TradingDefaults.DecisionCloseUnfilledCancelMinutes.Should().Be(15);
+        TradingDefaults.DecisionCloseUnfilledCancelMaxPerPositionPerDay.Should().Be(1);
+
+        var window = TradingDefaults.CreateManipulationDetectionSettings().LookbackWindow;
+        window.Should().Be(TimeSpan.FromMinutes(DecisionCloseUnfilledCancelDefaults.ManipulationLookbackWindowMinutes));
+        TimeSpan.FromMinutes(TradingDefaults.DecisionCloseUnfilledCancelMinutes).Should().BeGreaterThan(window,
+            "ADR-0067 決定2: 有効時の N は相場操縦の検知の窓より長い");
+    }
+
     // FR-20, #333, 06_daytrading-review §4: Stage 1 は moomoo `SIMULATE`（OpenD 経由のデモ環境）であり、
     // 内蔵 `paper`（擬似約定）とは別物である。**呼称を Paper へ戻す退行を検知する**退行防止テスト。
     // 数値 1 は不変である（永続化された遷移履歴の意味を変えないため）。
