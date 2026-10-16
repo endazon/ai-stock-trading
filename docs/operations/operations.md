@@ -294,10 +294,10 @@ done
   ```
 
 - 🔴 稼働クラスタにはいま Loki が無く、ログは Pod の再起動で消える。そのため、再起動の前に同じ語で直接数える。
-  **全レプリカの Pod を数える。** `deploy/…` の指定は Pod を 1 つしか読まず、複数レプリカやローリング更新の間は少なく数える。Helm chart が Pod に付けるラベル `app=trade-decision-service` で全 Pod を読む。
+  **全レプリカの Pod を数える。** `deploy/…` の指定は Pod を 1 つしか読まず、複数レプリカやローリング更新の間は少なく数える。Helm chart が Pod に付けるラベル `app=trade-decision-service` で全 Pod を読む。`--tail=-1` は外さない（ラベルセレクタを付けたときの既定は各 Pod の末尾 10 行だけである）。
 
   ```bash
-  kubectl -n ai-stock-trading logs -l app=trade-decision-service --since=24h --max-log-requests=10 --prefix \
+  kubectl -n ai-stock-trading logs -l app=trade-decision-service --since=24h --tail=-1 --max-log-requests=10 --prefix \
     | grep "LLM 応答" \
     | grep -cE "(しきい値|閾値|水準|条件)[^。]{0,40}(含まれていない|含まれておらず|分からない|わからない|不明|確認できない|読めない)"
   ```
