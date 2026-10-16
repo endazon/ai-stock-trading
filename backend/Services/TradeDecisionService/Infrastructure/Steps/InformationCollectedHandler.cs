@@ -79,7 +79,8 @@ public sealed class InformationCollectedHandler(
             return;
 
         // 🔴 #1286, IADR-0521 決定 1・2: 保有中の銘柄を足す。監視銘柄に在る保有銘柄は従来どおり（新規建ても可）、
-        // 外に在るものだけを出口専用として末尾に足す。監視銘柄の判断の順と DecisionId（起点・市場・銘柄から導く）は変わらない。
+        // 外に在るものだけを出口専用として足す。DecisionId（起点・市場・銘柄から導く）は並びに依らない。
+        // 🔴 #1367, IADR-0546: 保有中の銘柄（監視銘柄に在るものも含む）を先頭に並べ、出口判断を監視銘柄の判断の後ろに回さない。
         // 🔴 IADR-0521 決定 1: 保有の照会がどう失敗しても（供給口の例外を含む）監視銘柄だけの判断へ縮退する（キャンセルは伝播する）。
         var held = await GetHeldSymbolsSafeAsync(cancellationToken).ConfigureAwait(false);
         if (held is null)
@@ -95,11 +96,12 @@ public sealed class InformationCollectedHandler(
         // （打ち切り→再配送になっても決定2 で重複はしないが、LLM の費用が二重になり判断の時刻がずれる）。
         // 🔴 #1286, IADR-0521 決定 3: 前提と比べるのは**判断対象の総数（監視銘柄 ＋ 監視銘柄の外の保有銘柄）**である。前提は consumer_timeout に
         // 縛られて上げられない（Helm の README: 経路B は 12 が上限で 13 は consumer_timeout を超える）ため、構成の値を上げることは勧めない。
+        // 🔴 #1367, IADR-0546 決定 3: 打ち切りで落ちるのは末尾＝保有していない監視銘柄である（保有中の銘柄は先頭）。文言はこの並びに合わせる。
         if (targets.Count > budget.MaxWatchedSymbols)
         {
             logger.LogWarning(
                 "定時サイクルの判断対象 {Count} 件（監視銘柄 {Watched} 件 ＋ 監視銘柄の外の保有銘柄 {HeldOnly} 件）が、実行時間の上限の前提 {Max} 件"
-                + "（上限 {Timeout} の導出に使った判断対象の数）を超えています。上限に達するとサイクルは打ち切られて再配送され（判断は DecisionId で冪等）、末尾の保有のみの銘柄から判断されなくなります。"
+                + "（上限 {Timeout} の導出に使った判断対象の数）を超えています。上限に達するとサイクルは打ち切られて再配送され（判断は DecisionId で冪等）、末尾の保有していない監視銘柄から判断されなくなります（保有中の銘柄は先頭で判断する）。"
                 + "前提は RabbitMQ の consumer_timeout に縛られて上げられないため、監視銘柄を減らしてください（運用手順書「定時サイクルの実行時間の上限」）。",
                 targets.Count, watchlistSymbols.Count, targets.Count(t => t.ExitOnly), budget.MaxWatchedSymbols, budget.HandlerTimeout);
         }

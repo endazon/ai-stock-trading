@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-02, FR-04, FR-03, FR-10, FR-19, UC-01, ADR-0003, ADR-0041, IADR-0132, IADR-0463, ADR-0044, ADR-0051, ADR-0050, IADR-0023, IADR-0095, IADR-0119, IADR-0351, IADR-0358, IADR-0374, IADR-0440, IADR-0471, IADR-0475, IADR-0490]
 author: claude (Claude Code)
 created: 2026-10-09
-updated: 2026-10-09
+updated: 2026-10-16
 plan_refs:
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md (UC-01 基本フロー 3)
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-02・FR-03・FR-04)
@@ -81,6 +81,10 @@ PoC（2026-10-09）で、監視銘柄（NVDA・META・TSLA・COIN・MARA・MSTR�
 - 上限そのもの・1 銘柄の締め切りは変えない。
 - 🔴 保有のみの銘柄は**末尾**に並ぶ。サイクルが実行時間の上限で打ち切られたとき、**最初に判断されなくなるのは保有のみの銘柄**である（監視銘柄の判断を優先する）。
 - 🔴 保有のみの銘柄の数に**上限は無い**。保有建玉数の上限（既定 3）は系が建てる建玉を抑えるが、系の外の建玉（ADR-0041 の採用）はそれを超えて在り得る（PoC は 4 件）。
+
+> **［2026-10-16 追記 / #1367］** 決定 1 の組み立ての並び（監視銘柄が先・保有のみが末尾）と、決定 3 の「保有のみの銘柄は末尾に並び、打ち切りで最初に判断されなくなる」は、
+> [IADR-0546](IADR-0546_held-first-scheduled-judgment-order.md) が改めた。保有中の銘柄（監視銘柄に在るものも含む）を保有の応答の順で先頭に並べ、
+> 打ち切りで落ちるのは末尾の保有していない監視銘柄になる。出口専用・除外・縮退（決定 1 の他の項・決定 2・4・5）は変えない。
 
 ### 決定 4: 全注文が審査で必ず拒否される保有のみの銘柄は判断しない（監査 🟡1）
 
