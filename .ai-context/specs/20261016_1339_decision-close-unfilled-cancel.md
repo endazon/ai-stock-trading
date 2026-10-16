@@ -61,7 +61,7 @@ plan_refs:
 | --- | --- | --- |
 | `OrderStatusLifecycle`（発注執行・リスク管理）の `IsTerminal` / `AbandonsUnfilledRemainder` | どちらも含む | 無し（在庫解放・再武装・手仕舞いの未約定残の通知は同じに動く） |
 | `PaperBrokerAdapter.IsTerminal`・`ProtectiveStopWaiverSettlement.IsTerminal` | どちらも含む | 無し |
-| `OrderActivityRecord.IsCancelledWithoutFill`（検知の母集団） | `Expired` を含み `Rejected` を含まない | **変わる**: 失効が母集団に入る。ADR-0067 決定 5 が想定どおりとする（閉場時の失効は窓の外。下の窓） |
+| `OrderActivityRecord.IsCancelledWithoutFill`（検知の母集団） | `Expired` を含み `Rejected` を含まない | **そのままだと変わる**（失効が母集団に入る）。PR のレビュー（🟡）を受け、`Expired` を外して `Cancelled` だけを数える形へ直した（失効は取消ではない。写し替えの前と同じ母集団。IADR-0539 決定 6・T-19-324） |
 | `EfOrderActivityStore` / `InMemoryOrderActivityStore` の `Rejected` | 見送り・拒否の記録 | 無し（`Disabled` の経路ではない） |
 | `MoomooBrokerAdapter`:192・218、`OrderExecutionAppService`:935 | 発注時の拒否 | 無し（発注の応答。`Disabled` は来ない） |
 | `MMApiMoomooTradeClient.IsTerminal`・`MoomooBrokerAdapter.IsTerminal` | `Failed` を含む | **新しい `Expired` を足す**（足さないと終端が届かない） |
@@ -141,6 +141,8 @@ plan_refs:
 | A8 | DB・インメモリのストアで、対象の問い合わせ・印・回数の数え方が一致する | T-10-2677 |
 | A9 | moomoo の `Disabled`（22）は `Expired`（失注）へ写り、拒否（`Rejected`）と区別される。`SubmitFailed`・`Failed`・`Deleted` は拒否のまま | T-10-2678 |
 | A10 | 通知・監査の要約で、失注と拒否が日本語で区別して表示される | T-10-2679 |
+| A12 | 失注は検知の「約定なしの取消」に数えない（母集団を変えない）。系の取消（Cancelled）は数える | T-19-324 |
+| A13 | 回数の上限で取り消さなかった決済は次の巡回から候補に戻さず、件数の上限を占めない | T-10-2680 |
 | A11 | 既定値（無効・15 分・1 回）と検知の窓（5 分）を `TradingDefaults` で固定し、既定の N は窓より長い | `TradingDefaultsTests` |
 
 ## 変異（実測: 赤になった試験）
@@ -158,6 +160,8 @@ plan_refs:
 | MT-C7 | 印を書かずに取り消す | T-10-2671・T-10-2672・T-10-2674 |
 | MT-C8 | N の下端を窓と同じ値まで許す（`<=` を `<` に） | T-10-2675（検証・起動の 2 件） |
 | MT-C9 | `Disabled` を `Failed` のまま | T-10-2678 |
+| MT-C10 | 上限で取り消さなかった注文を問い合わせで除かない（インメモリ） | T-10-2677（インメモリ）・T-10-2680 |
+| MT-C11 | 失注も検知の約定なしの取消に数える | T-19-324 |
 
 ## 影響範囲
 

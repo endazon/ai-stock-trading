@@ -149,13 +149,17 @@ public interface IExecutedOrderStore
     /// <see cref="ExecutionRecord.ApprovalOrigin"/> が <see cref="OrderApprovalOrigin.TradeDecision"/>）のうち、系がまだ取消を求めていない
     /// （<see cref="ExecutionRecord.UnfilledCancelRequestedAt"/> が null）ものを古い順に最大 <paramref name="limit"/> 件返す（N 分未約定の取消の対象）。
     /// 利用者の手仕舞い・維持率割れの自動縮小・出どころ不明（<see cref="OrderApprovalOrigin.Unknown"/>）・出どころなしは入らない。
+    /// <paramref name="excludedOrderIds"/> の注文（回数の上限で取り消さないと決めたもの）は件数の上限の前に除く
+    /// （古い側に溜まっても上限を占めず、後から来た対象を締め出さない）。
     /// 既定の実装（試験用の包み型のためのもの）は全件を読んでから絞る。本番のストア（EF・インメモリ）は条件つきの問い合わせで上書きする。
     /// </summary>
-    IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(DateTimeOffset placedAtOrBefore, int limit) =>
+    IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
+        DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null) =>
         GetAll()
             .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
                 && OrderStatusLifecycle.IsPending(r.Status) && r.UnfilledCancelRequestedAt is null
-                && r.ExecutedAt <= placedAtOrBefore)
+                && r.ExecutedAt <= placedAtOrBefore
+                && (excludedOrderIds == null || !excludedOrderIds.Contains(r.OrderId)))
             .OrderBy(r => r.ExecutedAt)
             .Take(limit)
             .ToList();

@@ -39,8 +39,12 @@ public sealed class DecisionCloseUnfilledCanceller(
 
     private readonly ILogger _logger = logger ?? NullLogger<DecisionCloseUnfilledCanceller>.Instance;
 
-    /// <summary>1 巡回。無効なら何もせず空を返す。</summary>
-    public async Task<DecisionCloseUnfilledCancelResult> RunOnceAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 1 巡回。無効なら何もせず空を返す。<paramref name="cappedOrderIds"/> は前の巡回までに回数の上限で取り消さないと決めた注文で、
+    /// 問い合わせの段で除く（印を書かずに毎巡回候補へ戻って件数の上限を占めないように。呼び出し側＝常駐がプロセス内で持つ）。
+    /// </summary>
+    public async Task<DecisionCloseUnfilledCancelResult> RunOnceAsync(
+        IReadOnlyCollection<string>? cappedOrderIds = null, CancellationToken cancellationToken = default)
     {
         var settings = options.Value;
         if (!settings.Enabled)
@@ -48,7 +52,7 @@ public sealed class DecisionCloseUnfilledCanceller(
 
         cancellationToken.ThrowIfCancellationRequested();
         var now = clock.UtcNow;
-        var candidates = store.FindUnfilledDecisionCloses(now - settings.Unfilled, settings.EffectiveBatchSize);
+        var candidates = store.FindUnfilledDecisionCloses(now - settings.Unfilled, settings.EffectiveBatchSize, cappedOrderIds);
         if (candidates.Count == 0)
             return DecisionCloseUnfilledCancelResult.Empty;
 

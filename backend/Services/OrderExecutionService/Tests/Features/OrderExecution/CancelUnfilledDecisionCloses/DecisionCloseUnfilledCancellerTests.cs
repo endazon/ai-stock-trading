@@ -284,6 +284,33 @@ public class DecisionCloseUnfilledCancellerTests
         DecisionCloseUnfilledCancelDefaults.ManipulationLookbackWindowMinutes.Should().Be(5, "IADR-0040 の検知の窓");
     }
 
+    // T-10-2680: 回数の上限で取り消さなかった決済は、次の巡回から問い合わせの段で除く（件数の上限を占めて、
+    // 後から来た取消の対象を締め出さない）。上限 1 件の窓で、上限に達した古い決済が新しい建玉の決済を塞がないこと。
+    [Fact]
+    public async Task T_10_2680_上限で取り消さなかった決済は候補から外し後の対象を塞がない()
+    {
+        var options = Enabled();
+        options.BatchSize = 1;
+        var f = Build(options, records:
+        [
+            Close("A-1", Now.AddMinutes(-50)),
+            Close("A-2", Now.AddMinutes(-40)),
+            Close("M-1", Now.AddMinutes(-30), symbol: "MSFT"),
+        ]);
+
+        (await f.Canceller.RunOnceAsync()).Requested.Select(r => r.OrderId).Should().Equal(["A-1"]);
+        var capped = new HashSet<string>(StringComparer.Ordinal);
+        var second = await f.Canceller.RunOnceAsync(capped);
+        second.Capped.Select(r => r.OrderId).Should().Equal(["A-2"]);
+        foreach (var r in second.Capped)
+            capped.Add(r.OrderId);
+
+        var third = await f.Canceller.RunOnceAsync(capped);
+        third.Capped.Should().BeEmpty("上限に達した決済は候補に戻らない");
+        third.Requested.Select(r => r.OrderId).Should().Equal(["M-1"], "後から来た別の建玉の決済を塞がない");
+        f.Broker.Cancelled.Should().Equal(["A-1", "M-1"]);
+    }
+
     // T-10-2677: 対象の問い合わせ・印・回数の数え方を DB とインメモリで同一に固定する（片側だけの乖離を検知する）。
     public static TheoryData<string> Implementations() => ["ef", "inmemory"];
 
@@ -305,6 +332,8 @@ public class DecisionCloseUnfilledCancellerTests
         store().FindUnfilledDecisionCloses(Now.AddMinutes(-15), 100).Select(r => r.OrderId)
             .Should().Equal(["old", "partial", "boundary"]);
         store().FindUnfilledDecisionCloses(Now.AddMinutes(-15), 1).Select(r => r.OrderId).Should().Equal(["old"]);
+        // 除外は件数の上限の前に効く（T-10-2680）。
+        store().FindUnfilledDecisionCloses(Now.AddMinutes(-15), 1, ["old"]).Select(r => r.OrderId).Should().Equal(["partial"]);
 
         // 印: 非終端・未印だけに書ける。書いたら対象から消える。
         store().MarkUnfilledCancelRequested("old", Now).Should().BeTrue();
@@ -368,10 +397,11 @@ public class DecisionCloseUnfilledCancellerTests
         public IReadOnlyList<ExecutionRecord> FindPendingByOrderIds(IReadOnlyCollection<string> orderIds) =>
             _inner.FindPendingByOrderIds(orderIds);
 
-        public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(DateTimeOffset placedAtOrBefore, int limit)
+        public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
+            DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null)
         {
             Reads++;
-            return _inner.FindUnfilledDecisionCloses(placedAtOrBefore, limit);
+            return _inner.FindUnfilledDecisionCloses(placedAtOrBefore, limit, excludedOrderIds);
         }
 
         public bool RenewTracking(string orderId, DateTimeOffset trackedFrom) => _inner.RenewTracking(orderId, trackedFrom);

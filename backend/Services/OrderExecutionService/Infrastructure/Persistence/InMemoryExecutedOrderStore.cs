@@ -221,14 +221,16 @@ public sealed class InMemoryExecutedOrderStore : IExecutedOrderStore
     }
 
     // 🔴 FR-10, ADR-0067 決定1・4, #1339, IADR-0539: 発注から N 分以上たって非終端の判断由来の決済で、系がまだ取消を求めていないもの（古い順・上限つき）。
-    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(DateTimeOffset placedAtOrBefore, int limit)
+    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
+        DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null)
     {
+        var excluded = excludedOrderIds is null ? [] : new HashSet<string>(excludedOrderIds, StringComparer.Ordinal);
         lock (_gate)
         {
             return _records
                 .Where(r => r.PositionEffect == PositionEffect.Close && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
                     && OrderStatusLifecycle.IsPending(r.Status) && r.UnfilledCancelRequestedAt is null
-                    && r.ExecutedAt <= placedAtOrBefore)
+                    && r.ExecutedAt <= placedAtOrBefore && !excluded.Contains(r.OrderId))
                 .OrderBy(r => r.ExecutedAt)
                 .Take(limit)
                 .ToList();

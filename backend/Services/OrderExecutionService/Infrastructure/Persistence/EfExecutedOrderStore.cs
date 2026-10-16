@@ -218,14 +218,18 @@ public sealed class EfExecutedOrderStore(OrderExecutionDbContext db) : IExecuted
     }
 
     // 🔴 FR-10, ADR-0067 決定1・4, #1339, IADR-0539: 発注から N 分以上たって非終端の<b>判断由来の</b>決済で、系がまだ取消を求めていないもの（古い順・上限つき）。
-    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(DateTimeOffset placedAtOrBefore, int limit)
+    // 除外（回数の上限で取り消さないと決めた注文）は件数の上限の前に問い合わせの段で行う。
+    public IReadOnlyList<ExecutionRecord> FindUnfilledDecisionCloses(
+        DateTimeOffset placedAtOrBefore, int limit, IReadOnlyCollection<string>? excludedOrderIds = null)
     {
+        string[] excluded = [.. excludedOrderIds ?? []];
         return [.. db.ExecutedOrders
             .Where(r => r.PositionEffect == PositionEffect.Close
                 && r.ApprovalOrigin == OrderApprovalOrigin.TradeDecision
                 && (r.Status == OrderStatus.Accepted || r.Status == OrderStatus.PartiallyFilled)
                 && r.UnfilledCancelRequestedAt == null
-                && r.ExecutedAt <= placedAtOrBefore)
+                && r.ExecutedAt <= placedAtOrBefore
+                && !excluded.Contains(r.OrderId))
             .OrderBy(r => r.ExecutedAt)
             .Take(limit)
             .Select(r => ToRecord(r))];

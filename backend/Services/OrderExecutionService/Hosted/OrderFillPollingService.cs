@@ -249,7 +249,8 @@ public sealed class OrderFillPollingService(
         DecisionCloseUnfilledCancelResult result;
         try
         {
-            result = await canceller.RunOnceAsync(cancellationToken).ConfigureAwait(false);
+            // 回数の上限で取り消さないと決めた注文は問い合わせの段で除く（件数の上限を占めない。DAY で失効するので再起動で忘れてよい）。
+            result = await canceller.RunOnceAsync(_cappedLogged, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -258,7 +259,18 @@ public sealed class OrderFillPollingService(
         }
 
         foreach (var cancelled in result.Confirmed)
-            await bus.PublishAsync(cancelled).ConfigureAwait(false);
+        {
+            try
+            {
+                await bus.PublishAsync(cancelled).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 失っても解放は担保される（約定追跡が終端を確かめて OrderExecuted を出す）。残りの発行と上限の記録を止めない。
+                logger.LogError(ex, "取消の事実（OrderCancelled）の発行に失敗しました。解放は約定追跡が終端を確かめてから行います。OrderId={OrderId}",
+                    cancelled.OrderId);
+            }
+        }
 
         foreach (var r in result.Capped)
         {
