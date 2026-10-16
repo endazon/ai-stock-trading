@@ -772,7 +772,8 @@ public static class ReportRenderer
     /// <summary>表のセルで「記録源が無い」ことを表す標識（TradeHistoryRenderer と同一）。</summary>
     private const string UnsuppliedCell = "**未供給**";
 
-    private static string MarketLabel(Market market) => market switch
+    // #1357, IADR-0540 決定 3: 散文のプロンプトも同じ市場の語を使う（本文と同じ表記）。
+    internal static string MarketLabel(Market market) => market switch
     {
         Market.Japan => "JP",
         Market.UnitedStates => "US",

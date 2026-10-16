@@ -50,7 +50,11 @@ public sealed record LedgerFill(
     // （＝承認を受けて発注した時刻）の古い順に割り当てるため、台帳も約定時刻ではなく発注の順でロットを並べる。
     // 🔴 **既定 null＝承認時刻が分からない**（乖離の取り込み行など承認を持たない行）。射影は約定時刻で代える。
     // **wire へは出さない**（射影の内部の鍵であり、報告書の入力ではない）。
-    [property: System.Text.Json.Serialization.JsonIgnore] DateTimeOffset? EntryOrderedAt = null)
+    [property: System.Text.Json.Serialization.JsonIgnore] DateTimeOffset? EntryOrderedAt = null,
+    // FR-06, FR-16, FR-10, #1357, IADR-0540 決定 1: この約定が属する**承認行の由来**（approved_orders.Source。IADR-0394・IADR-0495）。
+    // 報告書が決済の種別（損切り・判断由来の決済・判断を経ない決済）を散文へ渡すために **wire へ出す**（数値で往復する）。
+    // 🔴 **既定 null＝由来が記録されていない（列追加前の行・取り込み行）**。受け手は「種別未供給」と読み、推定で埋めない。
+    ApprovalSource? ApprovalSource = null)
 {
     /// <summary>基準通貨（USD）建ての約定単価。金額集計・実現損益・エクイティはこの単価で積む。**永続化しない計算値**である。</summary>
     public decimal PriceInBase => Price * FxRateToBase;

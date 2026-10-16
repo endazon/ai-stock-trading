@@ -66,6 +66,13 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
             ? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening)
             : null;
 
+        // FR-06, FR-16, #1357, IADR-0540 決定 3: 散文へ渡す帰属。週報・月報は本文と**同じ値**（上の fillAttributions）を渡し、
+        // 日報も同じ純関数で組み立てる（取引履歴 TradeHistoryViewBuilder と同じ畳み込み）。🔴 約定を取得できなかったら渡さない
+        //（空列＝約定 0 件と読ませない。IADR-0480 決定 1）。
+        var narrativeSettlements = request.UnsuppliedInputs?.Contains(ReportInput.Fills) == true
+            ? null
+            : fillAttributions ?? FillPnlAttributionBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening);
+
         // FR-07, IADR-0120 決定3, #293: 上位方針（BasedOn の期間キー＋本文）を散文の文脈として渡す。
         // 期間キーと本文の**両方が揃ったときだけ**参照とする。片方だけでは差異評価も出典提示もできないため、
         // 欠損は「上位未確定」の 1 通りに閉じる（プロンプト側がその旨を明記する＝捏造しない）。
@@ -89,6 +96,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                     UsagePurpose = request.UsagePurpose,
                     // 計画 ADR-0059 決定 3, #1218, IADR-0519 決定 4: 照合の事実（コードの値）。LLM は評価の文章だけを書く。
                     WeeklyGoal = weeklyGoal,
+                    // FR-06, FR-16, #1357, IADR-0540 決定 3: 決済の帰属（本文 §2/§3 と同じ値）と種別。LLM は事実として読むだけ。
+                    Settlements = narrativeSettlements,
                 },
                 cancellationToken)
             .ConfigureAwait(false);

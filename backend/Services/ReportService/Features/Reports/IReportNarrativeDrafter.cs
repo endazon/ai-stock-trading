@@ -71,6 +71,13 @@ public sealed record ReportNarrativeContext(
     /// プロンプトは事実として示し、LLM に比較・再計算・達成・未達の判定をさせない。
     /// </summary>
     public WeeklyGoalComparison? WeeklyGoal { get; init; }
+
+    /// <summary>
+    /// FR-06, FR-16, #1357, IADR-0540 決定 3: 期間の約定単位の損益帰属（本文の週報 §2「主な要因」・§3「ハイライト取引」と<b>同じ畳み込み</b>）。
+    /// <b>null＝渡していない（約定を取得できなかった・手動の API の既定）／空列＝期間の約定 0 件。</b>
+    /// プロンプトは本文と同じ純関数（<see cref="FillPnlAttributionBuilder"/>）で日別・最良・最悪を引き、確定済みの事実として示す。
+    /// </summary>
+    public IReadOnlyList<FillPnlAttribution>? Settlements { get; init; }
 }
 
 // FR-07, IADR-0120 決定3: 上位方針の参照（期間キーと本文）。

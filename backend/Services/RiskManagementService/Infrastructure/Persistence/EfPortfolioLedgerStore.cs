@@ -356,7 +356,9 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 TradeOrigin.System,
                 // #936, IADR-0393（2026-09-25 追記）: 射影がロットを発注の順に並べる鍵（承認時刻）。
                 // 🔴 **ここで明示して射影する**——省くと既定 null になり、射影は約定時刻の順へ黙って戻る。
-                a.ApprovedAt);
+                a.ApprovedAt,
+                // FR-06, #1357, IADR-0540 決定 1: 承認行の由来（null＝記録されていない）。報告書が決済の種別を引く。
+                a.Source);
 
         var fills = query.ToList();
 

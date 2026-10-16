@@ -58,6 +58,17 @@ public static class RiskReadWireMapping
         _ => Proto.BrokerProvider.Unspecified,
     };
 
+    // FR-06, #1357, IADR-0540 決定 1: 承認行の由来。null・未知は未指定（推定で埋めない）。
+    public static Proto.FillApprovalSource ToProto(ApprovalSource? value) => value switch
+    {
+        ApprovalSource.OrderApproved => Proto.FillApprovalSource.OrderApproved,
+        ApprovalSource.ProtectiveStopS0 => Proto.FillApprovalSource.ProtectiveStopS0,
+        ApprovalSource.SoftwareStopS1 => Proto.FillApprovalSource.SoftwareStopS1,
+        ApprovalSource.ProtectionLostClose => Proto.FillApprovalSource.ProtectionLostClose,
+        ApprovalSource.TradeDecision => Proto.FillApprovalSource.TradeDecision,
+        _ => Proto.FillApprovalSource.Unspecified,
+    };
+
     public static Proto.StopLossExecutionMethod ToProto(StopLossExecutionMethod value) => value switch
     {
         StopLossExecutionMethod.BrokerStopOrder => Proto.StopLossExecutionMethod.BrokerStopOrder,
@@ -328,6 +339,8 @@ public static class RiskReadWireMapping
             DecisionId = fill.DecisionId.ToString("D", CultureInfo.InvariantCulture),
             // 🔴 null（旧版の行・列追加前の行）は未指定＝受け手は「不明」と読む（どちらの段にも算入しない）。
             Provider = ToProto(fill.Provider),
+            // FR-06, #1357, IADR-0540 決定 1: 🔴 null（記録されていない）は未指定＝受け手は「種別未供給」と読む。
+            ApprovalSource = ToProto(fill.ApprovalSource),
         };
         if (fill.Symbol is not null)
             row.Symbol = fill.Symbol;

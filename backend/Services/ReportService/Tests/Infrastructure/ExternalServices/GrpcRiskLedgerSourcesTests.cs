@@ -17,6 +17,7 @@ using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetDri
 using RiskManagementWorker::RiskManagementService.Features.RiskManagement.GetOpenPositions;
 using Xunit;
 using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
+using RiskApprovalSource = RiskManagementWorker::RiskManagementService.Features.RiskManagement.ApprovalSource;
 using RiskBuyInInferenceRecord = RiskManagementWorker::RiskManagementService.Features.RiskManagement.BuyInInferenceRecord;
 using RiskLedgerFill = RiskManagementWorker::RiskManagementService.Features.RiskManagement.LedgerFill;
 using RiskReadWireMapping = RiskManagementWorker::RiskManagementService.Features.RiskManagement.RiskReadWireMapping;
@@ -307,7 +308,7 @@ public class GrpcRiskLedgerSourcesTests
         var senderFill = new RiskLedgerFill(
             "7203", Market.Japan, TradeSide.Buy, PositionEffect.Open, 100, 2500.5m, executedAt,
             StopLossPrice: 2400m, FxRateToBase: 0.0068m, DecisionId: decisionId, Provider: BrokerProvider.InternalPaper,
-            FxRateBaseToDisplay: 147.25m);
+            FxRateBaseToDisplay: 147.25m, ApprovalSource: RiskApprovalSource.TradeDecision);
         var adoptionId = Guid.NewGuid();
         var senderDrift = new DriftAdoptionView(
             adoptionId, "NVDA", Market.UnitedStates, TradeSide.Sell, 5, 5, 0,
@@ -340,7 +341,7 @@ public class GrpcRiskLedgerSourcesTests
             var fill = (await new GrpcPeriodFillSource(t, Log<GrpcPeriodFillSource>()).GetFillsAsync(From, To)).Single();
             fill.Should().Be(new PeriodTradeFill(
                 "7203", Market.Japan, TradeSide.Buy, PositionEffect.Open, 100, 2500.5m * 0.0068m, executedAt,
-                decisionId, BrokerProvider.InternalPaper, 147.25m));
+                decisionId, BrokerProvider.InternalPaper, 147.25m, FillApprovalSource.TradeDecision));
             fill.ExecutedAt.Offset.Should().Be(TimeSpan.FromHours(9), "時刻はオフセットごと運ぶ");
 
             var drift = (await new GrpcPeriodDriftAdoptionSource(t, Log<GrpcPeriodDriftAdoptionSource>())

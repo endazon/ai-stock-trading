@@ -29,4 +29,7 @@ public sealed record PeriodTradeFill(
     // ＝1 USD あたりの円）。為替差損益（FxTranslationBuilder）が USD 建て約定を円へ再測定する起点。
     // 既定 `null`＝**未記録**（供給元が運ばない・列追加前の行・承認時に為替レート源が解決できなかった行）。
     // 🔴 **推定で埋めない**——未記録の対象約定を含む期間は節ごと未供給とし、件数を明記する。
-    decimal? FxRateBaseToDisplay = null);
+    decimal? FxRateBaseToDisplay = null,
+    // FR-06, FR-16, #1357, IADR-0540 決定 1: 約定が属する承認行の由来（決済の種別の記録源）。
+    // 既定 `null`＝**記録されていない**（供給元が運ばない・列追加前の行）＝散文へは「種別未供給」と渡す。🔴 推定で埋めない。
+    FillApprovalSource? ApprovalSource = null);
