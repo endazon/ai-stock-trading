@@ -80,7 +80,7 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
 
     internal static PeriodTradeFill ToFill(LedgerFillDto r) => new(
         r.Symbol, r.Market, r.Side, r.PositionEffect, r.Quantity, r.Price * r.FxRateToBase, r.ExecutedAt,
-        r.DecisionId, r.Provider, r.FxRateBaseToDisplay);
+        r.DecisionId, r.Provider, r.FxRateBaseToDisplay, r.ApprovalSource);
 
     // 権威源の LedgerFill と同形（camelCase・列挙は数値で往復する）。StopLossPrice は報告書の集計に不要のため持たない。
     internal sealed record LedgerFillDto(
@@ -94,5 +94,7 @@ public sealed class HttpPeriodFillSource(HttpClient httpClient, ILogger<HttpPeri
         decimal FxRateToBase = 1m,
         Guid DecisionId = default,
         BrokerProvider? Provider = null,
-        decimal? FxRateBaseToDisplay = null);
+        decimal? FxRateBaseToDisplay = null,
+        // #1357, IADR-0540 決定 1: 承認行の由来。**欠落した応答（旧版 Risk・列追加前の行）は null のまま**（種別未供給）。
+        FillApprovalSource? ApprovalSource = null);
 }

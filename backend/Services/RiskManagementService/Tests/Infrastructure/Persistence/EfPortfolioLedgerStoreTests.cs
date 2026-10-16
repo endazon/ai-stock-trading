@@ -1,3 +1,4 @@
+using RiskManagementService.Features.RiskManagement;
 using RiskManagementService.Infrastructure.Persistence;
 using AiStockTrading.Shared.Contracts.Trading;
 using AwesomeAssertions;
@@ -254,6 +255,48 @@ public class EfPortfolioLedgerStoreTests
 
         using var db2 = NewContext(dbName);
         new EfPortfolioLedgerStore(db2).GetFills().Single().FxRateBaseToDisplay.Should().Be(159.38m);
+    }
+
+    // FR-06, FR-16, #1357, IADR-0540 決定 1: 承認行の由来を約定（LedgerFill）へ載せる（報告書が決済の種別を引く）。
+    // 由来が記録されていない承認は null のまま（種別未供給）。EF・InMemory の 2 実装で同じ意味論である。
+    [Fact]
+    public void 承認行の由来を約定に載せ_記録されていない由来はnullのまま返す()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var stop = Guid.NewGuid();
+        var legacy = Guid.NewGuid();
+        var t0 = new DateTimeOffset(2026, 10, 13, 13, 30, 0, TimeSpan.Zero);
+        var inMemory = new InMemoryPortfolioLedgerStore();
+
+        using (var db = NewContext(dbName))
+        {
+            foreach (var store in new IPortfolioLedgerStore[] { new EfPortfolioLedgerStore(db), inMemory })
+            {
+                store.AppendApproval(stop, BuyIntent(10, 1_000m), t0, source: ApprovalSource.ProtectiveStopS0);
+                store.AppendFill(stop, "ORD-S0", 10, 990m, t0.AddMinutes(1));
+                store.AppendApproval(legacy, BuyIntent(5, 1_000m), t0);
+                store.AppendFill(legacy, "ORD-LEGACY", 5, 1_010m, t0.AddMinutes(2));
+            }
+        }
+
+        using var db2 = NewContext(dbName);
+        foreach (var fills in new[]
+        {
+            new EfPortfolioLedgerStore(db2).GetFills(),
+            new EfPortfolioLedgerStore(db2).GetFillsExecutedBetween(null, t0, t0.AddHours(1)),
+            inMemory.GetFills(),
+        })
+        {
+            fills.Single(f => f.DecisionId == stop).ApprovalSource.Should().Be(ApprovalSource.ProtectiveStopS0);
+            fills.Single(f => f.DecisionId == legacy).ApprovalSource.Should().BeNull("由来が記録されていない行を推定で埋めない");
+        }
+
+        // gRPC の写し: 記録された由来は名前で写り、null は未指定（受け手は種別未供給と読む）。
+        RiskReadWireMapping.ToProto(new LedgerFill("AAPL", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, 1, 1m, t0,
+            ApprovalSource: ApprovalSource.TradeDecision)).ApprovalSource
+            .Should().Be(AiStockTrading.Shared.Grpc.RiskManagement.V1.FillApprovalSource.TradeDecision);
+        RiskReadWireMapping.ToProto(new LedgerFill("AAPL", Market.UnitedStates, TradeSide.Sell, PositionEffect.Close, 1, 1m, t0))
+            .ApprovalSource.Should().Be(AiStockTrading.Shared.Grpc.RiskManagement.V1.FillApprovalSource.Unspecified);
     }
 
     // 🔴 否定形: 列追加前の行・承認時に解決できなかった行は **null のまま**返す（FxRateToBase の `?? 1m` とは違い、

@@ -85,6 +85,7 @@ public sealed class GrpcPeriodFillSource(RiskManagementGrpcTransport transport, 
             FxRateToBase: RiskManagementWire.Decimal(f.HasFxRateToBase, f.FxRateToBase) ?? 1m,
             DecisionId: RiskManagementWire.Id(f.HasDecisionId, f.DecisionId) ?? Guid.Empty,
             Provider: RiskManagementWire.Provider(f.Provider),
-            FxRateBaseToDisplay: RiskManagementWire.Decimal(f.HasFxRateBaseToDisplay, f.FxRateBaseToDisplay));
+            FxRateBaseToDisplay: RiskManagementWire.Decimal(f.HasFxRateBaseToDisplay, f.FxRateBaseToDisplay),
+            ApprovalSource: RiskManagementWire.ApprovalSource(f.ApprovalSource));
     }
 }
