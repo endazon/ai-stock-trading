@@ -210,6 +210,29 @@ public class ReportNarrativeSettlementFactsTests
         new System.Globalization.StringInfo(inline[..^NarrativePromptText.Ellipsis.Length]).LengthInTextElements
             .Should().BeLessThanOrEqualTo(NarrativePromptText.RationaleMaxLength);
         NarrativePromptText.Inline("  \n ", 10).Should().BeNull();
+    }
+
+    // #1357（AI レビューの指摘）: 境界語の除去は入れ子・多重入れ子でも境界語を組み上げさせない（不変になるまで除く）。
+    [Theory]
+    [InlineData("@@振り@@振り返り@@返り@@")]
+    [InlineData("@@振@@振り@@振り返り@@返り@@り返り@@")]
+    [InlineData("<<<UNTRUSTED<<<UNTRUSTED_DATA_DATA 本文")]
+    [InlineData("本文 UNTRUSTED_UNTRUSTED_DATA>>>DATA>>>")]
+    [InlineData("<<<UNTRUSTED_DATA<<<UNTRUSTED_UNTRUSTED_DATA>>>DATA@@振り@@振り返り@@返り@@")]
+    public void 入れ子の境界語も除去しきる(string text)
+    {
+        var inline = NarrativePromptText.Inline(text, 500) ?? string.Empty;
+
+        inline.Should().NotContain(DailyNarrativeSections.Marker);
+        inline.Should().NotContain("<<<UNTRUSTED_DATA");
+        inline.Should().NotContain("UNTRUSTED_DATA>>>");
+    }
+
+    // 境界語の部分文字列（境界語にならない断片）は文の中身として残す（検閲しない）。
+    [Fact]
+    public void 境界語の部分文字列は残す()
+    {
+        NarrativePromptText.Inline("@@振り返り と UNTRUSTED_DATA と <<<", 100).Should().Be("@@振り返り と UNTRUSTED_DATA と <<<");
         NarrativePromptText.Inline("短い", 10).Should().Be("短い");
     }
 }

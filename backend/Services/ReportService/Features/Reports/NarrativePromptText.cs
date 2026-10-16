@@ -49,14 +49,22 @@ public static class NarrativePromptText
             lastWasSpace = false;
         }
 
-        var result = sb.ToString()
-            .Replace(DailyNarrativeSections.Marker, string.Empty, StringComparison.Ordinal)
-            .Replace(UntrustedOpenDelimiter, string.Empty, StringComparison.Ordinal)
-            .Replace(UntrustedCloseDelimiter, string.Empty, StringComparison.Ordinal)
-            // 引用の括り（「」）を内側から閉じさせない。
-            .Replace('「', '『')
-            .Replace('」', '』')
-            .Trim();
+        // 🔴 境界語の除去は**不変になるまで繰り返す**（1 回だけだと入れ子 `@@振り@@振り返り@@返り@@` の除去後に境界語が組み上がる）。
+        // 除去は文字列を必ず短くするので、繰り返しは有限回で止まる。事後条件: 出力に境界語が残らない。
+        var result = sb.ToString();
+        string previous;
+        do
+        {
+            previous = result;
+            result = result
+                .Replace(DailyNarrativeSections.Marker, string.Empty, StringComparison.Ordinal)
+                .Replace(UntrustedOpenDelimiter, string.Empty, StringComparison.Ordinal)
+                .Replace(UntrustedCloseDelimiter, string.Empty, StringComparison.Ordinal);
+        }
+        while (!string.Equals(previous, result, StringComparison.Ordinal));
+
+        // 引用の括り（「」）を内側から閉じさせない。
+        result = result.Replace('「', '『').Replace('」', '』').Trim();
 
         if (result.Length == 0)
             return null;
