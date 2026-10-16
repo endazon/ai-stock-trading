@@ -174,7 +174,9 @@ public class HeldExitAlwaysJudgedInPromptTests
         var exactBudget = 750 + policy.Summary.Length + TradeDecisionPromptBuilder.WatchlistSection(trigger, null).Length
             + 400 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars
             + ScreeningContextAssembler.HeldExitRuleReserveChars
-            + ("記事".Length + 100 + 60);
+            + ("記事".Length + 100 + 60)
+            // #1359, IADR-0542 決定 5: 境界語はプロンプト側で足すため、見積りに 1 件あたりの境界語の文字数が加わる（残す 1 件ぶん同幅ずらす）。
+            + TradeDecisionPromptBuilder.ReferenceBoundaryChars;
 
         ScreeningContextAssembler.Assemble(trigger, policy, [news], currentPrice: null, budgetChars: exactBudget, watchlist: null)
             .Plan.DroppedNewsCount.Should().Be(0, "保護分（予約を含む）と材料 1 件で予算ちょうど");

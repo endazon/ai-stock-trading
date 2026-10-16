@@ -2,7 +2,7 @@
 title: IADR-0541 日報 §5 へ、取引判断が参照したニュース・開示を渡す。判断の記録（TradeDecisionMade・TradeDecisionHeld）にプロンプトが見た参照（表題・出典 URI・発行時刻・出所タグ。本文抜粋は残さない）を残し、報告書が監査台帳から引いて出典リンクはコードで描き、散文には表題だけを境界語で囲んだデータとして渡す（プロンプト注入への扱い）
 type: impl-adr
 status: Accepted
-related_ids: [FR-04, FR-06, FR-08, FR-11, FR-16, NFR-18, UC-01, UC-03, ADR-0003, ADR-0030, IADR-0022, IADR-0072, IADR-0169, IADR-0269, IADR-0291, IADR-0397, IADR-0420, IADR-0454, IADR-0480, IADR-0516, IADR-0519, IADR-0540]
+related_ids: [FR-04, FR-06, FR-08, FR-11, FR-16, NFR-18, UC-01, UC-03, ADR-0003, ADR-0030, IADR-0022, IADR-0072, IADR-0169, IADR-0269, IADR-0291, IADR-0397, IADR-0420, IADR-0454, IADR-0480, IADR-0516, IADR-0519, IADR-0540, IADR-0542]
 author: claude (Claude Code)
 created: 2026-10-16
 updated: 2026-10-16
@@ -62,7 +62,7 @@ PoC（2026-10-16）で、日報・週報の散文が「ニュースや開示は�
 | 創作の禁止 | 一覧に無いニュースを創作しない・表題から読み取れない本文の内容を補わない |
 | 状態 | 照会していない／判断なし／記録なし／0 件で文言を変え、「ニュースは無かった」と書かせない |
 
-- 境界の無害化部品は本 IADR では共通化しない（取引判断側の境界の扱いは別の変更〔IADR-0542 の予定〕が改める）。報告書側の `NarrativePromptText` と、ここで足した `ReportLinkSafety` に閉じる。
+- 境界語の値は IADR-0542 の `UntrustedDataBoundary`（Shared.Contracts/Llm）を単一の定義として使う（develop へ入った後に合わせた）。整形・切り詰め・リンクの検査は報告書側の `NarrativePromptText`・`ReportLinkSafety` に閉じる（取引判断・情報収集の部品とは共有しない）。
 
 ## 却下した案
 

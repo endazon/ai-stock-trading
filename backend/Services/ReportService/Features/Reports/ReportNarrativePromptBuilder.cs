@@ -200,11 +200,11 @@ public static class ReportNarrativePromptBuilder
     /// <summary>FR-06, #1356, IADR-0541 決定 4: 散文へ渡す銘柄の列の上限（書記素）。</summary>
     public const int DecisionReferenceSymbolsMaxLength = 80;
 
-    /// <summary>FR-06, #1356, IADR-0541 決定 4: 外部の表題を囲む境界語（IADR-0022 と同じ語。囲む中身からは同じ語を除いてある）。</summary>
-    public const string UntrustedOpen = "<<<UNTRUSTED_DATA";
+    /// <summary>FR-06, #1356, IADR-0541 決定 4: 外部の表題を囲む境界語（IADR-0542 の UntrustedDataBoundary と同じ定義。囲む中身からは同じ語を除いてある）。</summary>
+    public const string UntrustedOpen = AiStockTrading.Shared.Contracts.Llm.UntrustedDataBoundary.OpenMarker;
 
     /// <summary>FR-06, #1356, IADR-0541 決定 4: 同上（閉じ）。</summary>
-    public const string UntrustedClose = "UNTRUSTED_DATA>>>";
+    public const string UntrustedClose = AiStockTrading.Shared.Contracts.Llm.UntrustedDataBoundary.CloseMarker;
 
     /// <summary>FR-06, FR-08, #1356, IADR-0541 決定 4: 参照の一覧について散文が守る規則。</summary>
     public const string DecisionReferenceRule =
