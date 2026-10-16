@@ -396,6 +396,11 @@ services:
       # 宣言があれば上の BaseUrl より優先する。s2s は REST と同じ ServiceAuth__*（trading-service）。deadline は MarketMonitor__GrpcTimeoutSeconds（既定 5 秒）。
       # 構成の固定リスト。上の MarketMonitor__BaseUrl を結線している（本番既定）ので**フォールバック専用**（一度も読めていないときだけ使う）。
       - { name: Collection__Source__Finnhub__Symbols__0, value: "" }
+      # FR-01, FR-02, #1363, IADR-0547 決定 1: 収集の対象へ保有銘柄（リスク管理の GET /risk-controls/open-positions・OwnerOrService・
+      # 下の ServiceAuth__* の s2s）を合流させる宛先。取引判断は監視銘柄 ∪ 保有銘柄を判断する（IADR-0521）ため、結線すると監視銘柄の外の
+      # 保有銘柄のニュース・開示も集める（上限を超えるときは保有を先に採る）。読めない巡回は監視銘柄だけ（警告）。
+      # 空=保有を足さない（従来の挙動。取引判断の RiskManagement__BaseUrl と同じく本番既定は空）。
+      - { name: RiskManagement__BaseUrl, value: "" }
       # ADR-0020 §結果 / IADR-0224 / IADR-0275: 日次上限は空=未実測（銘柄数上限を逆算しない）のまま。
       # 分次は実測済みだが、日次は実測セッションでも確定できなかった（継続観察が要る）。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }
@@ -405,6 +410,8 @@ services:
       # Google News RSS（ニュース系の代替・キー不要。ADR-0020 決定2）。空=本ソース無効。
       - { name: Collection__Source__GoogleNews__Queries__0, value: "" }
       # SEC EDGAR（米国の開示・キー不要）。連絡先入り User-Agent は SEC 規約で必須（空=本ソース無効）。
+      # FR-01, #1363, IADR-0547 決定 2・3: 上の MarketMonitor__BaseUrl を結線しているとき、CIK は収集の対象の銘柄（保有が先、続いて監視銘柄）から
+      # SEC の対応表（www.sec.gov/files/company_tickers.json。1 日 1 回・同じ User-Agent と自制）で導く。下の固定 CIK は「常に足す分」（併用）。
       - { name: Collection__Source__SecEdgar__UserAgent, value: "" }
       - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
       # EDINET API v2（日本の開示・要 API キー）。

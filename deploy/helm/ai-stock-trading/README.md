@@ -362,6 +362,17 @@ Finnhub の 429 のうち、`X-Ratelimit-Remaining` が残っているのに拒�
   `RateLimitPerMinute × 巡回間隔（分） ÷ 1 銘柄あたりの要求数（finnhub / finnhub-news の有効数）` まで。超えた分は監視銘柄の順の
   後ろから後回しにして警告し、`ast.information_collection.finnhub_symbols_deferred` に数を出す。`values-local`（30 回/分・300 秒・
   finnhub と finnhub-news の 2 要求）なら 75 銘柄まで収まる（**［2026-09-29 / #1082］** 以前は finnhub だけで 150 銘柄）。
+- **保有銘柄の合流（［2026-10-16 / #1363］ / IADR-0547）**: `RiskManagement__BaseUrl`（`information-collection`。本番既定は空、
+  `values-local` は `http://risk-management-service:8080`）を結線すると、巡回ごとにリスク管理の `GET /risk-controls/open-positions` を
+  同じ `trading-service` のトークンで読み、**保有中の米国の銘柄を監視銘柄より先に**対象へ足す（取引判断は監視銘柄 ∪ 保有銘柄を判断する。
+  IADR-0521）。上の「1 巡回を巡回間隔に収める」で後回しになるのは監視銘柄の末尾である。保有を読めない巡回は監視銘柄だけから決め、
+  警告ログ「保有銘柄を読めなかったため…」を出す（直前の保有を使い続けない）。巡回ごとの情報ログ
+  「監視銘柄から Finnhub の対象を決めました: 米国の銘柄 N 件（監視銘柄 M 件・監視銘柄の外の保有 K 件・…）」で内訳を確かめられる。
+- **SEC EDGAR の CIK（［2026-10-16 / #1363］ / IADR-0547）**: `MarketMonitor__BaseUrl` を結線しているとき、CIK は上の対象の銘柄
+  （保有が先、続いて監視銘柄。Finnhub の上限を掛ける前の全件）から SEC の対応表 `https://www.sec.gov/files/company_tickers.json` で導く
+  （読めてから 24 時間は読み直さない。同じ User-Agent・同じ自制）。`Collection__Source__SecEdgar__Ciks__*` は「常に足す分」として併用する。
+  対応表を一度も読めず固定 CIK も空なら、SEC EDGAR はその巡回の欠測として記録される（記録・通知のみ。ADR-0020 決定 3）。
+  対応表に無い銘柄（ETF など）は情報ログ「収集の対象の銘柄から SEC EDGAR の CIK を決めました: …対応表に無い N 件」に出る。
 - `finnhub` と `finnhub-news` は**1 つの自制レート（`Collection__Source__Finnhub__RateLimitPerMinute`）を共有する**（同じ鍵。
   以前はソースごとに別のバケットで、両方を有効にすると同じ鍵へ自制値の 2 倍を送り得た）。
 - **経路 B のニュース源（［2026-09-29 / #1082］ / IADR-0453）**: `values-local` は `finnhub-news` と `google-news` も列挙する。
