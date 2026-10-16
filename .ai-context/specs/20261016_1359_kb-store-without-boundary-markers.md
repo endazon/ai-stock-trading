@@ -38,7 +38,7 @@ plan_refs:
 | 1 | 取引判断の本判断（`DecisionOrchestrator` → `TradeDecisionPromptBuilder.Build`） | `AppendRetrievalSection` → `ToDataLine` | RAG（`KnowledgeBaseRetrievalContextProvider`）の表題・本文・出典 | 保存分の境界語が `<…` に符号化されて入る（境界として読めない）。長文は閉じが欠ける | **`ToDataLine` で表題・本文を `UntrustedDataBoundary.Wrap`**。符号化は緩いエンコーダで `<<<` をそのまま出す |
 | 2 | 取引判断の一次スクリーニング（`BuildScreening`） | 同じ `AppendRetrievalSection` | 縮退後の残余の参考情報 | 同上 | 同上（同じ関数） |
 | 3 | Stage 0 の as-of 記録（`Stage0DecisionRecorder` → `Build` / `BuildScreening`） | 同じ `AppendRetrievalSection` | `AsOfReferenceFeeds`（Finnhub・SEC EDGAR・FRED の**生の**外部テキスト。KB を通らない） | **境界語なし**（保存を通らないため、旧方式では一度も囲まれていなかった） | 同上（同じ関数で囲まれる。旧方式の穴も塞がる） |
-| 4 | 報告書の散文（`HttpReportNarrativeDrafter` → `ReportNarrativePromptBuilder`） | `ReportNarrativeContext` | **現状は無い**（集計値・建玉・方針要旨・上位方針・週次目標の照合。外部の自由文を含まない） | — | 本件では変えない。**#1356 がニュース・開示を足す**。足すときは本件の `UntrustedDataBoundary.Wrap` を使う（下の API 節） |
+| 4 | 報告書の散文（`HttpReportNarrativeDrafter` → `ReportNarrativePromptBuilder`） | `ReportNarrativeContext` | **現状は無い**（集計値・建玉・方針要旨・上位方針・週次目標の照合。#1358〔develop へ merge 済み〕が足した決済の帰属もコードの事実で、`NarrativePromptText` が境界語を除去する。KB の文書は含まない） | — | 本件では変えない。**#1356 がニュース・開示を足す**。足すときは本件の `UntrustedDataBoundary.Wrap` を使う（下の API 節） |
 | 5 | 方針の改訂案（`LlmReportPolicyReviser` → `PolicyRevisionPromptBuilder`） | 1 行 JSON | 利用者の指示・現在の方針・上位方針（KB の文書ではない） | 境界語なし（IADR-0431。認証済みの利用者の文） | 変えない（KB の文書を入れない） |
 | 6 | 欠測の告知（`InformationCollected.NewsStatus` → 判断のニュースの状態の行） | `NewsStatusLine` | 収集サービスが書き起こした固定文（外部テキストではない） | 境界語なし（IADR-0455） | 変えない |
 
