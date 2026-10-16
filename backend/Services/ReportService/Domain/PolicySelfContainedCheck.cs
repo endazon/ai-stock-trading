@@ -39,8 +39,8 @@ public static class PolicySelfContainedCheck
     public static string? WarningFor(ReportKind kind, string? policy) =>
         kind == ReportKind.Daily && ReferencesOtherReport(policy) ? Warning : null;
 
-    /// <summary>方針の実体（生成器の注記行を除く）が、他の報告書を指す語か期間キーを含むか。</summary>
-    public static bool ReferencesOtherReport(string? policy)
+    // 方針の実体（生成器の注記行を除く）が、他の報告書を指す語か期間キーを含むか。
+    private static bool ReferencesOtherReport(string? policy)
     {
         var substance = ReportPolicyDraft.Substance(policy).Normalize(System.Text.NormalizationForm.FormKC);
         return substance.Length > 0 && (PeriodKey.IsMatch(substance) || ReportWord.IsMatch(substance));
