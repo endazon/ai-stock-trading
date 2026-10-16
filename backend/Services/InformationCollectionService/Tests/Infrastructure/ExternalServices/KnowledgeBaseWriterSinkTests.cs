@@ -159,6 +159,30 @@ public class KnowledgeBaseWriterSinkTests
         return new string(chars);
     }
 
+    // FR-01, FR-08, #1366, IADR-0545 決定 1・2: 相場スナップショット（Quote）は KB へ送らない。
+    // 他の種別（ニュース・開示・需給・マクロ・収集状態）は従来どおり送る。
+    [Fact]
+    public async Task 相場スナップショットは保存せず他の種別は保存する()
+    {
+        var writer = new CapturingWriter();
+        var sink = NewSink(writer);
+        var at = DateTimeOffset.Parse("2026-10-15T13:30:00Z");
+
+        await sink.SaveAsync(
+        [
+            new(InformationKind.Quote, "finnhub", "MARA", "MARA 現在値", "current=8.34;high=9;low=8;prevClose=9.11", at, null),
+            new(InformationKind.News, "finnhub-news", "MARA", "MARA のニュース", "本文", at, "https://example.com/n"),
+            new(InformationKind.Disclosure, "sec-edgar", "MARA", "MARA の 8-K", "本文", at, "https://example.com/d"),
+            new(InformationKind.SupplyDemand, "finra-short", "MARA", "MARA の空売り出来高", "本文", at, null),
+            new(InformationKind.MacroIndicator, "fred", null, "FRED 指標", "本文", at, null),
+            new(InformationKind.Quote, "finnhub", "SMCI", "SMCI 現在値", "current=36.89", at, null),
+        ]);
+
+        writer.Saved.Select(d => d.Title).Should().Equal(
+            "MARA のニュース", "MARA の 8-K", "MARA の空売り出来高", "FRED 指標");
+        writer.Saved.Should().NotContain(d => d.Attributes!["kind"] == nameof(InformationKind.Quote));
+    }
+
     [Fact]
     public async Task 空入力でも例外を投げない()
     {

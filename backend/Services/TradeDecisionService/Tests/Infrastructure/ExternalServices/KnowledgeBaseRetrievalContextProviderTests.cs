@@ -519,4 +519,51 @@ public class KnowledgeBaseRetrievalContextProviderTests
         result.Degraded.Should().Be(expectedDegraded);
         string.Join(',', result.DegradedReasons).Should().Be(expectedReasons);
     }
+
+    // FR-01, FR-08, #1366, IADR-0545 決定 3: 相場スナップショット（タグ Quote・本文 current=…）は、銘柄の検索・市場の検索・補充の
+    // どこから来ても参考情報に入れない。ニュース・開示は従来どおり、従来の並びで入る。
+    private static KnowledgeHit QuoteHit(string symbol, DateTimeOffset publishedAt, params string[] tags) =>
+        new(Guid.NewGuid(), $"{symbol} 現在値", "current=8.34;high=9;low=8;prevClose=9.11", 0.9d, null,
+            tags.Length > 0 ? tags : ["Quote", "finnhub"], publishedAt, symbol);
+
+    private static KnowledgeHit Tagged(string title, DateTimeOffset publishedAt, string? symbol, params string[] tags) =>
+        new(Guid.NewGuid(), title, "本文。", 0.5d, "https://example.com/" + Uri.EscapeDataString(title), tags, publishedAt, symbol);
+
+    [Fact]
+    public async Task 相場スナップショットはどの検索から来ても参考情報に入れない()
+    {
+        var search = new FakeSearch(
+            symbolHits:
+            [
+                QuoteHit("AAPL", Fresh),
+                Tagged("AAPL の決算ニュース", Fresh, "AAPL", "News", "finnhub-news"),
+                QuoteHit("AAPL", Fresh.AddMinutes(-5)),
+                Tagged("AAPL の 8-K", Fresh.AddHours(-2), "AAPL", "Disclosure", "sec-edgar"),
+            ],
+            marketHits: [Tagged("FOMC の結果", Fresh, null, "News", "google-news"), QuoteHit("SPY", Fresh) with { Symbol = null }],
+            fallbackHits: [QuoteHit("QQQ", Fresh) with { Symbol = null }, Tagged("BoJ の指標", Fresh, null, "MacroIndicator", "boj")]);
+
+        var result = await GetAsync(Create(search, topK: 5));
+
+        result.Select(r => r.Title).Should().Equal("AAPL の決算ニュース", "AAPL の 8-K", "FOMC の結果", "BoJ の指標");
+        result.Should().NotContain(r => r.Tags.Contains("Quote"));
+        result.Should().NotContain(r => r.Text.StartsWith("current=", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task 相場スナップショットのタグは大小を無視して除く()
+    {
+        var search = new FakeSearch(
+            symbolHits: [QuoteHit("AAPL", Fresh, "quote", "finnhub"), QuoteHit("AAPL", Fresh, "QUOTE"), Tagged("AAPL のニュース", Fresh, "AAPL", "News", "finnhub-news")]);
+
+        var result = await GetAsync(Create(search));
+
+        result.Select(r => r.Title).Should().Equal("AAPL のニュース");
+    }
+
+    // 除外の語は KB のタグ語彙（KnowledgeTagVocabulary.CollectionKinds。列挙体 InformationKind との一致は
+    // KnowledgeTagVocabularyTests が固定する）の Quote と一致する。片方だけ改名すると除外が黙って効かなくなる。
+    [Fact]
+    public void 除外の語は収集の種別の語彙と一致する() =>
+        KnowledgeTagVocabulary.CollectionKinds.Should().Contain(KnowledgeBaseRetrievalContextProvider.QuoteKindTag);
 }
