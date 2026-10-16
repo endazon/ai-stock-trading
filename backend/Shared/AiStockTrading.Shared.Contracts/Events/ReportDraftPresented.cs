@@ -45,4 +45,11 @@ public static class ReportSummaryMarkers
     /// <c>/policy</c> の承認待ちの案でも確認ボタンの前に見せる）は <see cref="PolicyTakeProfitMissingPrefix"/> と同じ。確定は止めない。
     /// </summary>
     public const string WeeklyGoalLineMissingPrefix = "⚠ 方針に書式どおりの「数値目標:」行がありません";
+
+    /// <summary>
+    /// FR-04, FR-07, ADR-0048 決定 4, #1365, IADR-0544 決定 2: 日報の方針が他の報告書（週報・月報・前日の日報）や期間キーを
+    /// 参照で済ませている（取引判断は日報の方針しか読まないため、参照先のしきい値を確かめられない）ときに、確定の前に見せる警告行の先頭。
+    /// 出しどころと扱いは <see cref="PolicyTakeProfitMissingPrefix"/> と同じ。確定は止めない。
+    /// </summary>
+    public const string PolicyExternalReferencePrefix = "⚠ 方針が他の報告書を参照しています";
 }

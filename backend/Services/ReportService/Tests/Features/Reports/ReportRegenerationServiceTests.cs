@@ -562,6 +562,22 @@ public class ReportRegenerationServiceTests
             .And.NotContain(PolicyTakeProfitCheck.Warning);
     }
 
+    // FR-04, FR-07, #1365, IADR-0544 決定 2・3（受け入れ基準 A5）: 保った日報の方針が他の報告書を参照で済ませていれば、
+    // 作り直しの再提示の要約でも警告する。利確の警告と並べる（片方に絞らない）。
+    [Fact]
+    public async Task 作り直しの再提示は保った方針が他の報告書を参照していれば利確の警告と並べて警告する()
+    {
+        var h = new Harness();
+        h.SeedDegradedDraft(CurrentDaily, new DateOnly(2026, 10, 5), policy: "週次方針 weekly-2026-W40 のしきい値に従う。");
+
+        var result = await h.Service().RegenerateAsync(CurrentDaily, "owner");
+
+        result.Status.Should().Be(ReportRegenerationStatus.Regenerated);
+        h.Notifier.Notices.Should().ContainSingle().Which.Summary
+            .Should().Contain(PolicySelfContainedCheck.Warning)
+            .And.Contain(PolicyTakeProfitCheck.Warning);
+    }
+
     // T-10-2279, FR-06, FR-09, 計画 ADR-0052 決定 3・5, #1182, IADR-0491 決定 5（2026-10-06 追記）: 作り直して承認待ちにした版は、
     // **初版の自動生成と同じ要約**で提示の通知を**ちょうど 1 件**・**新しい版**で出す（`/report show` は本文を返さないので、
     // 通知が作り直した版の中身を見る唯一の経路）。同じ入力で作った初版の通知の要約と一字一句一致し、未供給の警告と利確の書式の警告を含む。
