@@ -11,20 +11,34 @@ namespace InformationCollectionService.Infrastructure.ExternalServices;
 // 規約上 User-Agent に連絡先が必須のため、未設定なら本ソースは有効化しない（InformationSourceFactory で除外）。
 // レート上限は 10 回/秒/IP のため送信前に自制する（IRateLimiter）。取得失敗（レート制限・一時エラー）は当該 CIK を
 // スキップしてログする（1 巡回を止めない）。実 API 前提の E2E は CI 対象外。
+// FR-01, #1363, IADR-0547 決定 2: CIK は巡回ごとに決める（ISecEdgarCikSet）。監視銘柄に結線した組み立てでは、収集の対象の銘柄
+// （保有が先、続いて監視銘柄）から対応表で導き、構成の固定リストは常に足す分として併用する。
 public sealed class SecEdgarInformationSource(
     HttpClient httpClient,
     string userAgent,
-    IReadOnlyList<string> ciks,
+    ISecEdgarCikSet cikSet,
     IRateLimiter rateLimiter,
     ILogger<SecEdgarInformationSource> logger)
     : IInformationSource
 {
+    /// <summary>構成の固定リストだけを読む（従来の形）。</summary>
+    public SecEdgarInformationSource(
+        HttpClient httpClient,
+        string userAgent,
+        IReadOnlyList<string> ciks,
+        IRateLimiter rateLimiter,
+        ILogger<SecEdgarInformationSource> logger)
+        : this(httpClient, userAgent, new FixedSecEdgarCikSet(ciks), rateLimiter, logger)
+    {
+    }
+
     // 1 CIK あたり読み取る直近の提出件数（1 巡回で LLM 文脈に載せられる量に抑える）。
     private const int RecentLimit = 10;
 
     public async Task<IReadOnlyList<RawInformationItem>> FetchAsync(CancellationToken cancellationToken = default)
     {
         var items = new List<RawInformationItem>();
+        var ciks = await cikSet.ResolveAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var cik in ciks)
         {
@@ -113,7 +127,7 @@ public sealed class SecEdgarInformationSource(
         values is not null && index < values.Count ? values[index] : null;
 
     // "320193" / "CIK0000320193" のどちらでも 10 桁ゼロ埋めへ正規化する。数字が無ければ null（スキップ）。
-    private static string? NormalizeCik(string cik)
+    internal static string? NormalizeCik(string cik)
     {
         var digits = new string(cik.Where(char.IsAsciiDigit).ToArray());
         return digits.Length is 0 or > 10 ? null : digits.PadLeft(10, '0');

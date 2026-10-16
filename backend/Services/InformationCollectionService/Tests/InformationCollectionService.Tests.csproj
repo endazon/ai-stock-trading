@@ -19,6 +19,9 @@
     <!-- FR-01, FR-13, #1015, IADR-0435, IADR-0420: 市場監視の監視銘柄（GET /monitor/watchlist）の契約テスト（T-10-1468）が
          送り手の本物の型（MonitoredSymbol）を直列化するためのテスト専用参照（取引判断・通知と同じ別名）。 -->
     <ProjectReference Include="..\..\MarketMonitorService\MarketMonitorService.csproj" Aliases="MarketMonitorWorker" />
+    <!-- FR-01, FR-02, #1363, IADR-0547 決定 1: リスク管理の保有（GET /risk-controls/open-positions）の契約テストが
+         送り手の本物の型（OpenPositionView）を直列化するためのテスト専用参照（取引判断と同じ別名）。 -->
+    <ProjectReference Include="..\..\RiskManagementService\RiskManagementService.csproj" Aliases="RiskManagementWorker" />
     <!-- NFR, #947, IADR-0397: 本番の組み立て（Program.cs）を組んで配線の抜けを検査する共有ガード。 -->
     <ProjectReference Include="..\..\..\TestSupport\AiStockTrading.TestSupport.Composition\AiStockTrading.TestSupport.Composition.csproj" />
     <!-- ADR-0013, IADR-0129, #354: 本番と同じ Wolverine 配線（UseAiStockTradingRabbitMq）でホストを起こして検証するため、

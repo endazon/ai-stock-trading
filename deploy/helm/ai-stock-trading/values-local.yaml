@@ -197,6 +197,9 @@ services:
       # **フォールバック専用**: 監視銘柄を一度も読めていない（起動直後から市場監視に届かない）ときだけ使う。
       # 一度読めた後に読めなくなったら、直前に読めた対象を使い続ける（不明を空と扱わない）。
       - { name: Collection__Source__Finnhub__Symbols__0, value: "AAPL" }
+      # FR-01, FR-02, #1363, IADR-0547 決定 1: 保有銘柄（リスク管理の open-positions）も収集の対象へ合流させる（保有が先。上の監視銘柄と同じ s2s）。
+      # 取引判断は監視銘柄 ∪ 保有銘柄を判断する（IADR-0521）。結線前は監視銘柄の外の保有（PoC の AAPL・AMZN・GOOGL）のニュースを集めていなかった。
+      - { name: RiskManagement__BaseUrl, value: "http://risk-management-service:8080" }
       # 日次上限は**未実測**のため空にする（IADR-0224）。空＝逆算しない＝監視銘柄数の上限を返さない。
       # IADR-0275: 分次（60回/60秒固定ウィンドウ）は実クラスタで実測確認済みだが、日次は実測セッションでも
       # 確定できなかった（持続的ブロックを観測できず）。推測値を焼き込まないこと。
@@ -217,7 +220,9 @@ services:
       # fail-safe: 未設定/空 → SEC EDGAR **だけ**が収集対象から外れる（finnhub/fred は有効なまま）。
       - name: Collection__Source__SecEdgar__UserAgent
         secretKeyRef: { name: ast-secrets, key: sec-edgar-user-agent, optional: true }
-      - { name: Collection__Source__SecEdgar__Ciks__0, value: "0000320193" }     # ← Apple Inc.（収集銘柄 AAPL と揃える）
+      # FR-01, #1363, IADR-0547 決定 2・3: CIK は収集の対象の銘柄（保有が先、続いて監視銘柄）から SEC の対応表で導く（以前は AAPL 1 社に固定）。
+      # 固定 CIK は「常に足す分」として残すが、ここでは足さない（空）。対応表を一度も読めず固定 CIK も空なら SEC EDGAR は欠測として記録される。
+      - { name: Collection__Source__SecEdgar__Ciks__0, value: "" }
       - name: Collection__Source__Edinet__SubscriptionKey
         secretKeyRef: { name: ast-secrets, key: edinet-subscription-key, optional: true }
       - { name: Collection__Source__Boj__Db, value: "" }

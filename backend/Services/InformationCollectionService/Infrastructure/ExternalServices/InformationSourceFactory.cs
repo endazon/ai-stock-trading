@@ -35,13 +35,19 @@ public static class InformationSourceFactory
     /// （<c>Finnhub:Symbols</c>）をそのまま使い、固定リストが空なら Finnhub 系を有効化しない（従来どおり）。与えたときは
     /// 固定リストが空でも有効化する（集合は市場監視の監視銘柄から決まる）。
     /// </param>
+    /// <param name="collectionTargets">
+    /// #1363, IADR-0547 決定 2: 巡回ごとの収集の対象の銘柄（保有が先、続いて監視銘柄）。与えたときは SEC EDGAR の CIK をこの銘柄から
+    /// SEC の対応表で導き、構成の固定 CIK（<c>SecEdgar:Ciks</c>）は常に足す分として併用する（固定 CIK が空でも有効化する）。
+    /// <c>null</c> なら従来どおり固定 CIK だけ（空なら SEC EDGAR を有効化しない）。
+    /// </param>
     public static IReadOnlyList<NamedInformationSource> Create(
         CollectionSourceOptions options,
         HttpClient httpClient,
         IClock clock,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
-        IFinnhubSymbolSet? finnhubSymbols = null)
+        IFinnhubSymbolSet? finnhubSymbols = null,
+        ICollectionTargetSymbols? collectionTargets = null)
     {
         // 環境変数の空指定（例: Collection__Source__SecEdgar__Ciks__0=""）は「未設定」として扱う。
         // 空要素を持つ配列を「設定あり」と見なすと、実体のない構成でソースが有効化されてしまう（安全既定に反する）。
@@ -61,7 +67,8 @@ public static class InformationSourceFactory
 
         foreach (var provider in ParseProviders(options.Provider))
         {
-            var source = CreateSingle(provider, options, httpClient, clock, timeProvider, loggerFactory, logger, finnhub);
+            var source = CreateSingle(
+                provider, options, httpClient, clock, timeProvider, loggerFactory, logger, finnhub, collectionTargets);
             if (source is not null)
                 sources.Add(new NamedInformationSource(provider, source));
         }
@@ -338,7 +345,8 @@ public static class InformationSourceFactory
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
         ILogger logger,
-        FinnhubFamily finnhub)
+        FinnhubFamily finnhub,
+        ICollectionTargetSymbols? collectionTargets)
     {
         switch (provider)
         {
@@ -383,13 +391,30 @@ public static class InformationSourceFactory
                     options.GoogleNews.MaxItemsPerQuery);
 
             case SecEdgar:
-                if (string.IsNullOrWhiteSpace(options.SecEdgar.UserAgent) || options.SecEdgar.Ciks.Length == 0)
-                    return Skip(logger, provider, "連絡先入り User-Agent（SecEdgar:UserAgent）と CIK（SecEdgar:Ciks）");
+            {
+                if (string.IsNullOrWhiteSpace(options.SecEdgar.UserAgent)
+                    || (collectionTargets is null && options.SecEdgar.Ciks.Length == 0))
+                {
+                    return Skip(logger, provider,
+                        "連絡先入り User-Agent（SecEdgar:UserAgent）と CIK（SecEdgar:Ciks または市場監視の監視銘柄・保有銘柄）");
+                }
+
+                // #1363, IADR-0547 決定 2: 対応表の取得も提出書類の取得と同じバケット・同じ User-Agent で送る（SEC の 10 回/秒/IP の内側）。
+                var limiter = Limiter(options.SecEdgar.RateLimitPerSecond, TimeSpan.FromSeconds(1), timeProvider);
+                ISecEdgarCikSet cikSet = collectionTargets is null
+                    ? new FixedSecEdgarCikSet(options.SecEdgar.Ciks)
+                    : new DerivedSecEdgarCikSet(
+                        collectionTargets,
+                        new SecEdgarTickerCikDirectory(
+                            httpClient, options.SecEdgar.UserAgent, limiter, timeProvider,
+                            loggerFactory.CreateLogger<SecEdgarTickerCikDirectory>()),
+                        options.SecEdgar.Ciks,
+                        loggerFactory.CreateLogger<DerivedSecEdgarCikSet>());
 
                 return new SecEdgarInformationSource(
-                    httpClient, options.SecEdgar.UserAgent, options.SecEdgar.Ciks,
-                    Limiter(options.SecEdgar.RateLimitPerSecond, TimeSpan.FromSeconds(1), timeProvider),
+                    httpClient, options.SecEdgar.UserAgent, cikSet, limiter,
                     loggerFactory.CreateLogger<SecEdgarInformationSource>());
+            }
 
             case Edinet:
                 if (string.IsNullOrWhiteSpace(options.Edinet.SubscriptionKey))
