@@ -139,7 +139,10 @@ public class ScreeningContextDegradationTests
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.HeldExitRuleReserveChars
                 + watchlistUnknownChars
                 // #1359, IADR-0542 決定 5: 残す参考情報（市況・重要ニュースの 2 件）ぶんの境界語の文字数を同幅ずらす。
-                + (2 * TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder.ReferenceBoundaryChars));
+                + (2 * TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder.ReferenceBoundaryChars)
+                // #1364: 急変が起点の一次は価格変動トリガーの節（保護分・実際の文字数）を出すため、予算も同幅ずらす。
+                + TradeDecisionService.Features.TradeDecision.DecideTrade.TradeDecisionPromptBuilder
+                    .PriceMovementTriggerSection(DecisionTrigger.FromPriceMovement(Trigger())).Length);
 
         await service.DecideAsync(Trigger());
 
