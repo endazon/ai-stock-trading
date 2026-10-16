@@ -140,9 +140,12 @@ public sealed partial class ReportPolicyRevisionService(
             .ConfigureAwait(false);
         // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の案に書式どおりの「数値目標:」行が無ければ、同じ経路で警告する（確定は止めない）。
         var weeklyGoalWarning = WeeklyGoalLineCheck.WarningFor(target.Kind, proposal.PolicySummary);
-        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary, heldPositions) ?? weeklyGoalWarning;
+        var takeProfitWarning = PolicyTakeProfitCheck.WarningFor(target.Kind, proposal.PolicySummary, heldPositions);
+        // FR-04, FR-07, #1365, IADR-0544 決定 2・3: 日報の案が他の報告書・期間キーを参照で済ませていれば、同じ経路で警告する（確定は止めない）。
+        var selfContainedWarning = PolicySelfContainedCheck.WarningFor(target.Kind, proposal.PolicySummary);
+        var policyWarning = PolicyDraftWarnings.Join(takeProfitWarning, weeklyGoalWarning, selfContainedWarning);
         var body = AppendRevisionRecord(
-            target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal, takeProfitWarning);
+            target.Body, nextVersion, actor, clock.UtcNow, cleanedInstruction, proposal, policyWarning);
         var report = target.Base with
         {
             PolicySummary = proposal.PolicySummary,
@@ -202,7 +205,7 @@ public sealed partial class ReportPolicyRevisionService(
                 "週報の方針の改訂案に書式どおりの「数値目標:」行がありません（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
                 LogSanitizer.Sanitize(key), version);
         }
-        else if (takeProfitWarning is not null)
+        if (takeProfitWarning is not null)
         {
             // 建玉を得たときの警告は銘柄ごとの名指しである（建玉は案に読める行があるときだけ照会するため）。#1257 監査 F5。
             if (heldPositions is not null)
@@ -215,9 +218,16 @@ public sealed partial class ReportPolicyRevisionService(
                     LogSanitizer.Sanitize(key), version);
         }
 
+        if (selfContainedWarning is not null)
+        {
+            logger.LogWarning(
+                "日報の方針の改訂案が他の報告書を参照しています（PeriodKey={PeriodKey}・版={Version}）。確定の前に利用者へ警告します（確定は止めません）。",
+                LogSanitizer.Sanitize(key), version);
+        }
+
         var usage = $"（本日の /policy: {attemptNumber}/{limit.DailyLimit} 回目）";
         // 案内文の末尾の行に警告を置く（通知サービスは承認待ちにできた案でも、印で始まるこの行を確認ボタンの前に見せる）。
-        var warningSuffix = takeProfitWarning is null ? string.Empty : "\n" + takeProfitWarning;
+        var warningSuffix = policyWarning is null ? string.Empty : "\n" + policyWarning;
         return new PolicyRevisionResult(
             PolicyRevisionStatus.Proposed,
             presented
@@ -384,7 +394,7 @@ public sealed partial class ReportPolicyRevisionService(
     // 本文の末尾へ改訂の記録を追記する（誰が・いつ・何を指示し・AI が何を案として返したか）。確定時に KB へ保存される。
     internal static string AppendRevisionRecord(
         string existingBody, int version, string actor, DateTimeOffset at, string instruction, PolicyRevisionProposal proposal,
-        string? takeProfitWarning = null)
+        string? policyWarning = null)
     {
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(existingBody))
@@ -401,8 +411,9 @@ public sealed partial class ReportPolicyRevisionService(
             sb.Append("> ").Append(line).Append('\n');
 
         // FR-04, FR-07, #1129, IADR-0470 決定 4: 案の方針の直前に警告を置く（/report show・承認の画面で本文を読む利用者へ）。
-        if (takeProfitWarning is not null)
-            sb.Append('\n').Append(takeProfitWarning).Append('\n');
+        // #1365, IADR-0544 決定 3: 利確・数値目標・他の報告書の参照の警告を並べたもの（PolicyDraftWarnings.Join）。
+        if (policyWarning is not null)
+            sb.Append('\n').Append(policyWarning).Append('\n');
 
         sb.Append("\n### 改訂後の方針（AI の案）\n\n");
         sb.Append(proposal.PolicySummary).Append('\n');

@@ -233,9 +233,13 @@ public sealed class ReportAutoGenerator(
         // ADR-0051 フォローアップ 1, #1223, IADR-0470（2026-10-08 追記）: 本文の §3 と同じ建玉で、行の掛からない保有中の銘柄を名指しする。
         // 建玉が未供給なら方針全体の判定へ戻る（未供給は要約の「建玉」の警告で見える）。
         // 計画 ADR-0059 決定 2, #1218, IADR-0519 決定 2: 週報の初稿（直近の確定済み週報の方針の継続）に書式どおりの「数値目標:」行が無ければ、
-        // 同じ経路で確定の前に警告する（確定は止めない）。2 つの検査は種別が重ならない（利確は日報・数値目標は週報）。
-        var policyWarning = PolicyTakeProfitCheck.WarningFor(due.Kind, policy, inputs.Positions)
-            ?? WeeklyGoalLineCheck.WarningFor(due.Kind, policy);
+        // 同じ経路で確定の前に警告する（確定は止めない）。利確と数値目標は種別が重ならない（利確は日報・数値目標は週報）。
+        // FR-04, FR-07, #1365, IADR-0544 決定 2・3: 日報の初稿（継続）が他の報告書を参照で済ませていれば同じ経路で警告する。
+        // 日報では利確の警告と重なり得るため、`??` で片方に絞らず行を並べる。
+        var policyWarning = PolicyDraftWarnings.Join(
+            PolicyTakeProfitCheck.WarningFor(due.Kind, policy, inputs.Positions),
+            WeeklyGoalLineCheck.WarningFor(due.Kind, policy),
+            PolicySelfContainedCheck.WarningFor(due.Kind, policy));
 
         var summary = ReportSummary.Build(
             due.Kind, ReportPeriod.Label(due.Kind, due.PeriodStart), draft.Pnl, draft.Narrative, unsuppliedInputs,

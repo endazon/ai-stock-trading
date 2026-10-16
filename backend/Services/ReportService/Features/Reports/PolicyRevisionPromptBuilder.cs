@@ -85,6 +85,23 @@ public static class PolicyRevisionPromptBuilder
         "- 「十分に」「適切に」「ある程度」「目安で」のような数値の無い語だけで利確の条件を書かない。取引判断は条件に達したかを確かめられず、利確されないまま保有を続ける。書式どおりの「利確:」行が無い方針は、確定の前に利用者へ警告される。";
 
     /// <summary>
+    /// FR-04, FR-07, ADR-0048 決定 4, #1365, IADR-0544 決定 1: 日報の方針を自己完結で書く案内（日報の改訂にだけ出す）。
+    /// 取引判断は日報の方針だけを読み、週報・月報の本文は渡らない。参照で済ませた方針（「週次方針 weekly-2026-W41 のしきい値」）では
+    /// 判断が条件の成立を確かめられず見送り続けた（PoC の実測 2026-10-15）。判断へ渡る材料の節と同じ考え方（判断が確かめられない条件を書かない）。
+    /// </summary>
+    public const string SelfContainedHeading = "方針の書き方（日報の方針。取引判断の AI が読むのはこの方針だけである）:";
+
+    /// <summary>他の報告書・期間キーを参照で済ませない案内。</summary>
+    public const string SelfContainedRule =
+        "- 取引判断の AI へ渡るのは日報の方針（policySummary）だけで、週報・月報・前日の日報の本文は渡らない。"
+        + "「週次方針のしきい値に従う」「weekly-2026-W41 の条件」「上位方針のとおり」のように他の報告書や期間キー（daily-… / weekly-… / monthly-…）を参照で済ませない（判断は条件の成立を確かめられず、すべて見送りになる）。";
+
+    /// <summary>上位方針の条件・しきい値を数値で書き写す案内。</summary>
+    public const string CopyThresholdsRule =
+        "- 上位方針（parentPolicy）の条件・しきい値・重点銘柄を使うときは、数値と銘柄を方針の中へ書き写し、方針だけを読めば買い条件・売り条件が成り立つかを確かめられるようにする（例「AAPL: 前日比 -3% 以下で買い」）。"
+        + "説明の文でも、報告書の名前（週報・月報・日報・上位方針など）と期間キーを使わない。書き写さずに参照した方針は、確定の前に利用者へ警告される。";
+
+    /// <summary>
     /// FR-06, FR-07, 計画 ADR-0059 決定 1・フォローアップ 1, #1218, IADR-0519 決定 1: 週報の方針の数値目標を週次目標の書式行で書く案内（週報の改訂にだけ出す）。
     /// 翌週の日報 §6・週報 §1／§4 はこの行だけを読み、週初来の実現損益とコードで照合する（自由文は読まない）。
     /// </summary>
@@ -97,6 +114,10 @@ public static class PolicyRevisionPromptBuilder
         + "金額は符号つきでよく、3 桁ごとのカンマと小数 2 桁まで書ける。単位は USD（基準通貨）だけを書く（円で書くと照合できない）。"
         + "「数値目標」という語はこの行の中でだけ使う（説明の文・見出しに使うと行が 2 つあるとみなされ、目標が読まれない）。"
         + "書式どおりの行が無い週報は、確定の前に利用者へ警告される。";
+
+    /// <summary>日報の改訂で上位方針があるときの末尾の指示（#1365, IADR-0544 決定 1）。</summary>
+    public const string DailyParentPolicyInstruction =
+        "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。上位方針の条件やしきい値を使うときは、参照で済ませず方針の中へ数値を書き写してください。矛盾する場合は rationale にその旨を書いてください。";
 
     public static string Build(PolicyRevisionContext context, bool decisionVolumeProvided = false)
     {
@@ -141,6 +162,11 @@ public static class PolicyRevisionPromptBuilder
             sb.AppendLine(TakeProfitExceptionRule);
             sb.AppendLine(VagueTakeProfitRule);
             sb.AppendLine();
+            // FR-04, FR-07, #1365, IADR-0544 決定 1: 他の報告書を参照で済ませず、しきい値を書き写す。
+            sb.AppendLine(SelfContainedHeading);
+            sb.AppendLine(SelfContainedRule);
+            sb.AppendLine(CopyThresholdsRule);
+            sb.AppendLine();
         }
 
         // 計画 ADR-0059 フォローアップ 1, #1218, IADR-0519 決定 1: 週報の方針だけ（日報・月報は週次目標の書式行を持たない）。
@@ -166,7 +192,10 @@ public static class PolicyRevisionPromptBuilder
         sb.AppendLine();
         sb.AppendLine(context.ParentPolicy is null
             ? "上位方針は未確定です。上位方針への言及はせず、現在の方針と利用者の指示から改訂してください。"
-            : "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。矛盾する場合は rationale にその旨を書いてください。");
+            : context.Kind == ReportKind.Daily
+                // #1365, IADR-0544 決定 1: 日報では上位方針を参照で済ませず、使う条件を書き写す。
+                ? DailyParentPolicyInstruction
+                : "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。矛盾する場合は rationale にその旨を書いてください。");
 
         return sb.ToString();
     }
