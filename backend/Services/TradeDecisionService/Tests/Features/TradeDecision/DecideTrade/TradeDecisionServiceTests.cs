@@ -372,6 +372,9 @@ public class TradeDecisionServiceTests
         retrieval.Calls.Should().Be(1);
         llm.LastPrompt.Should().Contain("参考情報（ナレッジベース）");
         llm.LastPrompt.Should().Contain("押し目の根拠メモ");
+        // FR-01, FR-08, ADR-0003, IADR-0542 決定 4, #1359: 本番の経路で、KB の表題・本文が境界語で囲まれてプロンプトに入る。
+        llm.LastPrompt.Should().Contain("\"title\":\"<<<UNTRUSTED_DATA\\n押し目の根拠メモ\\nUNTRUSTED_DATA>>>\"");
+        llm.LastPrompt.Should().Contain("\"text\":\"<<<UNTRUSTED_DATA\\n直近の調整は一時的との見立て。\\nUNTRUSTED_DATA>>>\"");
     }
 
     // FR-04, ADR-0003, #252, IADR-0169 決定2: **出典限定の否定形。** 許可出所のタグを持たない文書は注入されない。

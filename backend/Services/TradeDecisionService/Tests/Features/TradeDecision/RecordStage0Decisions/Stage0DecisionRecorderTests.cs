@@ -994,6 +994,9 @@ public class Stage0DecisionRecorderTests
         llm.Prompts.Should().OnlyContain(p =>
             p.Contains("前日に確定した押し目買いの方針") && p.Contains("- 前日終値: 100 / 前日比: +10.00%"));
         llm.Prompts[0].Should().Contain("6 月 1 日の記事");
+        // FR-01, FR-08, ADR-0003, IADR-0542 決定 4, #1359: as-of の記録の経路でも、外部の表題・本文が境界語で囲まれる。
+        llm.Prompts[0].Should().Contain("\"title\":\"<<<UNTRUSTED_DATA\\n6 月 1 日の記事\\nUNTRUSTED_DATA>>>\"");
+        llm.Prompts[0].Should().Contain("\"text\":\"<<<UNTRUSTED_DATA\\n記事の本文\\nUNTRUSTED_DATA>>>\"");
         var news = sink.Saved.Records[0].AsOfInputs!.Single(a => a.Kind == Stage0AsOfInputKind.NewsAndDisclosures);
         news.Availability.Should().Be(Stage0AsOfInputAvailability.Reconstructed);
         news.Reason.Should().Contain("欠けた源: google-news");

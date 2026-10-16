@@ -132,11 +132,13 @@ public static class ScreeningContextAssembler
     }
 
     // 概算サイズ。プロンプト側の上限（タイトル 200 / 本文 400 / 出典 500）と JSON 化のオーバーヘッドで見積もる。
+    // FR-08, IADR-0542 決定 5, #1359: 境界語はプロンプト側で足すため（保存分は素）、その分を見積りへ足す。
     private static int EstimateChars(RetrievedContext reference) =>
         Math.Min(reference.Title.Length, 200)
         + Math.Min(reference.Text.Length, 400)
         + Math.Min(reference.SourceUri?.Length ?? 0, 500)
-        + PerReferenceOverheadChars;
+        + PerReferenceOverheadChars
+        + TradeDecisionPromptBuilder.ReferenceBoundaryChars;
 
     /// <summary>縮退計画と、スクリーニングプロンプトへ残す参考情報（保護＋残余）。</summary>
     public sealed record AssembledScreeningContext(

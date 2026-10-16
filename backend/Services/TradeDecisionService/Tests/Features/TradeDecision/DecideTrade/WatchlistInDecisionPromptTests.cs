@@ -291,7 +291,9 @@ public class WatchlistInDecisionPromptTests
         // #1292, IADR-0523 決定 2: 保有の手仕舞いの固定文の行の予約（HeldExitRuleReserveChars）ぶん底上げした。
         var exactBudget = 750 + Policy.Summary.Length + unknownChars + 400 + ScreeningContextAssembler.PriceContextReserveChars
             + ScreeningContextAssembler.NewsStatusReserveChars + ScreeningContextAssembler.HeldExitRuleReserveChars
-            + ("記事".Length + 100 + 60);
+            + ("記事".Length + 100 + 60)
+            // #1359, IADR-0542 決定 5: 境界語はプロンプト側で足すため、見積りに 1 件あたりの境界語の文字数が加わる（残す 1 件ぶん同幅ずらす）。
+            + TradeDecisionPromptBuilder.ReferenceBoundaryChars;
         ScreeningContextAssembler.Assemble(trigger, Policy, [news], null, exactBudget, watchlist: null)
             .Plan.DroppedNewsCount.Should().Be(0, "不明の形では予算ちょうどに収まる");
         ScreeningContextAssembler.Assemble(trigger, Policy, [news], null, exactBudget, watchlist: longest)

@@ -73,3 +73,4 @@ FR-01 は市況・ニュース・開示の収集・正規化・KB 保存を要�
 - Supersedes: なし
 - Superseded by: なし
 - 関連: [IADR-0016](IADR-0016_safe-broker-execution.md)・[IADR-0020](IADR-0020_notification-safe-outbound.md)（安全既定ゲート）
+- ［2026-10-16 追記 / #1359］「取得テキストのデータ分離」の一項は [IADR-0542](IADR-0542_untrusted-boundary-at-prompt-not-at-storage.md) が部分改定した（境界語は KB の保存に掛けず、プロンプトを組む側で掛ける。`PromptSafetySanitizer` は共有部品 `UntrustedDataBoundary` に置き換えた）。他の項は本 IADR のまま。
