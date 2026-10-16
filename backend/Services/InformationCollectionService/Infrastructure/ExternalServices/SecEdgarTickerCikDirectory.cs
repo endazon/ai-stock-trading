@@ -9,7 +9,8 @@ namespace InformationCollectionService.Infrastructure.ExternalServices;
 //
 // - 送信の規律は提出書類の取得と同じ: 連絡先入りの User-Agent（SEC 規約・sec-edgar-user-agent）、同じ自制のバケット（10 回/秒/IP の内側）。
 // - 🔴 **原則 A: 不明は空ではない。** 読めなければ直前に読めた表を使い続け（警告し、1 時間後に読み直す）、一度も読めていなければ
-//   null（不明）を返す（次の巡回で読み直す）。0 件の表・解釈できない本文も「読めなかった」とする（直前の表を空で上書きしない）。
+//   null（不明）を返す（一度も読めていないときも 1 時間待ってから読み直す）。0 件の表・解釈できない本文も「読めなかった」とする
+//   （直前の表を空で上書きしない）。403・429（拒否）は User-Agent・自制の見直しを促す警告にする。
 public sealed class SecEdgarTickerCikDirectory(
     HttpClient httpClient,
     string userAgent,
@@ -22,7 +23,7 @@ public sealed class SecEdgarTickerCikDirectory(
     /// <summary>読めた表を読み直すまでの間隔（SEC は表を日次で更新する）。</summary>
     public static readonly TimeSpan RefreshInterval = TimeSpan.FromHours(24);
 
-    /// <summary>直前の表があるときに、読めなかった後で読み直すまでの間隔（失敗のたびに巡回ごとに叩かない）。</summary>
+    /// <summary>読めなかった後で読み直すまでの間隔（直前の表の有無に依らない。失敗のたびに巡回ごとに叩かない）。</summary>
     public static readonly TimeSpan RetryInterval = TimeSpan.FromHours(1);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -46,12 +47,24 @@ public sealed class SecEdgarTickerCikDirectory(
                 _nextAttemptAt = now + RefreshInterval;
                 logger.LogInformation("SEC の ticker→CIK の対応表を読みました: {Count} 件。", loaded.Count);
             }
-            else if (_table is not null)
+            else
             {
+                // 🔴 #1363 レビュー 🟡: 一度も読めていないときも待つ。待たないと、恒常的に拒まれる（User-Agent の不備など）間も
+                // 巡回ごとに約 1 MB を取りに行き、SEC 側のブロックを招く。待ちの間は CIK を導けず、固定 CIK への縮退で動く（IADR-0547 決定 2）。
                 _nextAttemptAt = now + RetryInterval;
-                logger.LogWarning(
-                    "SEC の ticker→CIK の対応表を読み直せなかったため、直前に読めた表（{Count} 件）を使い続けます"
-                    + "（{Retry} 後に読み直します）。", _table.Count, RetryInterval);
+                if (_table is not null)
+                {
+                    logger.LogWarning(
+                        "SEC の ticker→CIK の対応表を読み直せなかったため、直前に読めた表（{Count} 件）を使い続けます"
+                        + "（{Retry} 後に読み直します）。", _table.Count, RetryInterval);
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "SEC の ticker→CIK の対応表を一度も読めていません。{Retry} 後に読み直すまで、銘柄から CIK を導かず"
+                        + "構成の固定 CIK（Collection:Source:SecEdgar:Ciks）だけで収集します（固定 CIK が空なら SEC EDGAR は欠測）。",
+                        RetryInterval);
+                }
             }
 
             return _table;
@@ -85,6 +98,15 @@ public sealed class SecEdgarTickerCikDirectory(
             request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
 
             using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests)
+            {
+                // SEC は User-Agent の不備・過剰な要求を 403/429 で拒む。恒常的に続くなら sec-edgar-user-agent と自制レートを見直す。
+                logger.LogWarning(
+                    "SEC の ticker→CIK の対応表の取得が拒まれました（{Status}）。User-Agent（sec-edgar-user-agent）の連絡先と"
+                    + "自制レート（Collection:Source:SecEdgar:RateLimitPerSecond）を確かめてください。", (int)response.StatusCode);
+                return null;
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("SEC の ticker→CIK の対応表の取得に失敗しました（{Status}）。", (int)response.StatusCode);

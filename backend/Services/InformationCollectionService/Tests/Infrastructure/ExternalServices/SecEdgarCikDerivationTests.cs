@@ -113,6 +113,31 @@ public class SecEdgarCikDerivationTests
         ciks.Should().Equal("0001018724");
     }
 
+    // #1363 レビュー 🟡: 一度も読めていないときも、失敗の直後の巡回では取りに行かない（拒まれ続ける間に巡回ごとに約 1 MB を叩かない）。
+    // 待ちの間は固定 CIK への縮退で動き、待ちの後には読み直す（読めれば銘柄から導く）。
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task 一度も読めていなくても失敗の後は待ってから読み直す(HttpStatusCode status)
+    {
+        var time = new ManualTimeProvider(Start);
+        var handler = new CountingHandler(status, "");
+        var set = NewSet(handler, ["AAPL"], configured: ["1018724"], time: time);
+
+        (await set.ResolveAsync()).Should().Equal("0001018724");
+        time.Advance(TimeSpan.FromMinutes(5));
+        (await set.ResolveAsync()).Should().Equal("0001018724");
+        handler.Urls.Should().HaveCount(1, "失敗の直後の巡回では取りに行かない");
+
+        handler.Respond(HttpStatusCode.OK, CompanyTickers);
+        time.Advance(SecEdgarTickerCikDirectory.RetryInterval);
+        var ciks = await set.ResolveAsync();
+
+        handler.Urls.Should().HaveCount(2, "待ちの後には読み直す");
+        ciks.Should().Equal("0000320193", "0001018724");
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.ServiceUnavailable, "")]
     [InlineData(HttpStatusCode.OK, "not json")]

@@ -391,30 +391,30 @@ public static class InformationSourceFactory
                     options.GoogleNews.MaxItemsPerQuery);
 
             case SecEdgar:
-            {
-                if (string.IsNullOrWhiteSpace(options.SecEdgar.UserAgent)
-                    || (collectionTargets is null && options.SecEdgar.Ciks.Length == 0))
                 {
-                    return Skip(logger, provider,
-                        "連絡先入り User-Agent（SecEdgar:UserAgent）と CIK（SecEdgar:Ciks または市場監視の監視銘柄・保有銘柄）");
+                    if (string.IsNullOrWhiteSpace(options.SecEdgar.UserAgent)
+                        || (collectionTargets is null && options.SecEdgar.Ciks.Length == 0))
+                    {
+                        return Skip(logger, provider,
+                            "連絡先入り User-Agent（SecEdgar:UserAgent）と CIK（SecEdgar:Ciks または市場監視の監視銘柄・保有銘柄）");
+                    }
+
+                    // #1363, IADR-0547 決定 2: 対応表の取得も提出書類の取得と同じバケット・同じ User-Agent で送る（SEC の 10 回/秒/IP の内側）。
+                    var limiter = Limiter(options.SecEdgar.RateLimitPerSecond, TimeSpan.FromSeconds(1), timeProvider);
+                    ISecEdgarCikSet cikSet = collectionTargets is null
+                        ? new FixedSecEdgarCikSet(options.SecEdgar.Ciks)
+                        : new DerivedSecEdgarCikSet(
+                            collectionTargets,
+                            new SecEdgarTickerCikDirectory(
+                                httpClient, options.SecEdgar.UserAgent, limiter, timeProvider,
+                                loggerFactory.CreateLogger<SecEdgarTickerCikDirectory>()),
+                            options.SecEdgar.Ciks,
+                            loggerFactory.CreateLogger<DerivedSecEdgarCikSet>());
+
+                    return new SecEdgarInformationSource(
+                        httpClient, options.SecEdgar.UserAgent, cikSet, limiter,
+                        loggerFactory.CreateLogger<SecEdgarInformationSource>());
                 }
-
-                // #1363, IADR-0547 決定 2: 対応表の取得も提出書類の取得と同じバケット・同じ User-Agent で送る（SEC の 10 回/秒/IP の内側）。
-                var limiter = Limiter(options.SecEdgar.RateLimitPerSecond, TimeSpan.FromSeconds(1), timeProvider);
-                ISecEdgarCikSet cikSet = collectionTargets is null
-                    ? new FixedSecEdgarCikSet(options.SecEdgar.Ciks)
-                    : new DerivedSecEdgarCikSet(
-                        collectionTargets,
-                        new SecEdgarTickerCikDirectory(
-                            httpClient, options.SecEdgar.UserAgent, limiter, timeProvider,
-                            loggerFactory.CreateLogger<SecEdgarTickerCikDirectory>()),
-                        options.SecEdgar.Ciks,
-                        loggerFactory.CreateLogger<DerivedSecEdgarCikSet>());
-
-                return new SecEdgarInformationSource(
-                    httpClient, options.SecEdgar.UserAgent, cikSet, limiter,
-                    loggerFactory.CreateLogger<SecEdgarInformationSource>());
-            }
 
             case Edinet:
                 if (string.IsNullOrWhiteSpace(options.Edinet.SubscriptionKey))

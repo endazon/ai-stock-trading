@@ -95,6 +95,7 @@ project-planning `origin/main`（`fc61ca3`）を読んだ。
 | CIK が銘柄から導かれる | `SecEdgarCikDerivationTests.CIKは収集の対象の銘柄から導かれる`・`…クラス株の表記の違いを吸収して引ける`・`…情報源は導いたCIKの提出書類を取りに行く` |
 | 固定 CIK の併用 | `…構成の固定CIKは導いたCIKに足す`・`…対応表を一度も読めていなければ固定CIKだけで収集する` |
 | 対応表の取得の規律（24 時間・失敗時は直前の表・1 時間後に再試行・User-Agent） | `…対応表は24時間ごとにだけ読み直す`・`…読み直せなければ直前の表を使い続ける`・`…CIKは収集の対象の銘柄から導かれる`（UA） |
+| 一度も読めていなくても失敗の後は 1 時間待つ（403・429・503。待ちの間は固定 CIK へ縮退、待ちの後に読み直す） | `…一度も読めていなくても失敗の後は待ってから読み直す`（［2026-10-16 追記 / #1363 レビュー 🟡］） |
 | 対応表が不明で固定 CIK も空なら欠測 | `…対応表が不明で固定CIKも空なら欠測にする` |
 | 本番の組み立てで届く（トークン付き・保有が先・SEC の CIK） | `WatchlistFollowingCompositionTests.結線時は保有銘柄も対象に合流しSECのCIKも銘柄から導く`・`…未結線で固定CIKが空ならSECは有効化されない`・`CompositionWiringGuardTests` |
 
@@ -107,9 +108,17 @@ project-planning `origin/main`（`fc61ca3`）を読んだ。
 
 ## 検証結果
 
-- `dotnet build backend/Services/InformationCollectionService/InformationCollectionService.csproj`: 警告 0・エラー 0。
-- `dotnet test backend/Services/InformationCollectionService/Tests/InformationCollectionService.Tests.csproj`: 全件合格（PR 本文に件数）。
+［2026-10-16 追記 / #1363 レビュー 🟡］初回の記録は `dotnet format` を Tests の csproj だけに掛けており、本体の `InformationSourceFactory.cs` の
+字下げの差分を見落としていた（CI の lint が赤）。整形し直した後の結果を次に記す（develop `89b74a46` を merge 済み）。
+
+- `dotnet format backend/backend.slnx --verify-no-changes --include <変更した .cs 13 件>`: 差分なし（終了コード 0）。
+- `dotnet build`（情報収集サービス）: 警告 0・エラー 0。
+- `dotnet test backend/Services/InformationCollectionService/Tests/InformationCollectionService.Tests.csproj`: 全件合格（件数は PR 本文）。
+- `dotnet test backend/Tests/AiStockTrading.Architecture.Tests`: 212 件合格（1 件 skip は既存）。
 - `helm lint`（既定・`values-local`）合格。`helm template … | node scripts/check-finnhub-key-budget.js` は既定・local とも ok（Finnhub の予算は不変）。
+- 文書系: `check-trace-blocks`・`gen-knowledge-graph --check`・`check-cross-repo-refs`・`check-plan-id-qualification`・`check-adr-index-sync`・
+  `check-adr-index-addendum-loss`・`check-doc-links`・`check-test-traceability`・`check-commit-messages` が OK。
+- テスト ID は使っていないため、develop の T-10-2683・T-10-2684（#1371）とは衝突しない。IADR は develop の最大 0546 の次の 0547。
 
 ## PoC での確かめ方
 
