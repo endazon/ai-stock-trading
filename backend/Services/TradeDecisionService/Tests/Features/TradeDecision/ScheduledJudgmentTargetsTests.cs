@@ -9,14 +9,16 @@ using Xunit;
 namespace TradeDecisionService.Tests;
 
 // 🔴 FR-02, FR-04, UC-01, #1286, IADR-0521 決定 1: 定時サイクルの判断対象は「監視銘柄 ∪ 保有中の銘柄」である。
-// 監視銘柄はそのままの順で出口専用にせず、監視銘柄に無い保有銘柄だけを末尾に出口専用で足す。保有が不明なら監視銘柄だけ。
+// 監視銘柄は出口専用にせず、監視銘柄に無い保有銘柄だけを出口専用で足す。保有が不明なら監視銘柄だけ。
+// 🔴 #1367, IADR-0546: 保有中の銘柄（監視銘柄に在るものも含む）を保有の応答の順で先頭に、保有していない監視銘柄を監視銘柄の順で後ろに並べる。
 public class ScheduledJudgmentTargetsTests
 {
     private static WatchedSymbol Us(string symbol) => new(symbol, Market.UnitedStates);
 
     // T-10-2490: PoC（2026-10-09）の形 —— 監視銘柄 8 件と、その外の保有 4 件。
+    // ［2026-10-16 改定 / #1367・IADR-0546］保有のみの銘柄は末尾ではなく先頭に並ぶ（監視銘柄はその後ろに順もそのまま）。
     [Fact]
-    public void T_10_2490_監視銘柄の外の保有銘柄を末尾に出口専用で足す()
+    public void T_10_2490_監視銘柄の外の保有銘柄を先頭に出口専用で足す()
     {
         WatchedSymbol[] watchlist = [Us("NVDA"), Us("META"), Us("TSLA"), Us("COIN"), Us("MARA"), Us("MSTR"), Us("SMCI"), Us("PLTR")];
         WatchedSymbol[] held = [Us("AAPL"), Us("MSFT"), Us("AMZN"), Us("GOOGL")];
@@ -24,12 +26,13 @@ public class ScheduledJudgmentTargetsTests
         var targets = ScheduledJudgmentTargets.Build(watchlist, held);
 
         targets.Should().HaveCount(12);
-        targets.Take(8).Should().Equal(watchlist.Select(w => (w, false)), "監視銘柄は順もそのまま・出口専用にしない");
-        targets.Skip(8).Should().Equal(held.Select(h => (h, true)), "保有のみの銘柄は保有の応答の順で出口専用");
+        targets.Take(4).Should().Equal(held.Select(h => (h, true)), "保有のみの銘柄は保有の応答の順で先頭に出口専用");
+        targets.Skip(4).Should().Equal(watchlist.Select(w => (w, false)), "監視銘柄は順もそのまま・出口専用にしない");
     }
 
     // T-10-2490（重なり）: 監視銘柄に在る保有銘柄は 1 回だけ、出口専用にせずに判断する（新規建ても従来どおり判断できる）。
-    // 照合は前後の空白を除き大文字小文字を区別しない。市場が違えば別の銘柄。
+    // 照合は前後の空白を除き大文字小文字を区別しない（表記は監視銘柄の側）。市場が違えば別の銘柄。
+    // ［2026-10-16 改定 / #1367・IADR-0546］保有中の銘柄が保有の応答の順で先頭、保有していない監視銘柄（NVDA の米国）が後ろ。
     [Fact]
     public void T_10_2490_監視銘柄に在る保有銘柄は重ねず出口専用にしない()
     {
@@ -39,7 +42,37 @@ public class ScheduledJudgmentTargetsTests
         var targets = ScheduledJudgmentTargets.Build(watchlist, held);
 
         targets.Should().Equal(
-            (Us("AAPL"), false), (Us("NVDA"), false), (new WatchedSymbol("NVDA", Market.Japan), true), (Us("MSFT"), true));
+            (Us("AAPL"), false), (new WatchedSymbol("NVDA", Market.Japan), true), (Us("MSFT"), true), (Us("NVDA"), false));
+    }
+
+    // 🔴 T-10-2683（最重要）: 保有中の銘柄（監視銘柄に在るものも含む）が、監視銘柄の並びのどこに在っても判断対象の先頭に来る。
+    // 10-15 の形 —— 監視銘柄 10 件の末尾近くに保有 AMZN、監視銘柄の外に保有 GOOGL。保有の中は保有の応答の順（GOOGL→AMZN）。
+    [Fact]
+    public void T_10_2683_保有中の銘柄は監視銘柄に在っても判断対象の先頭に来る()
+    {
+        WatchedSymbol[] watchlist =
+            [Us("NVDA"), Us("META"), Us("TSLA"), Us("COIN"), Us("MARA"), Us("MSTR"), Us("SMCI"), Us("PLTR"), Us("AMZN"), Us("AMD")];
+        WatchedSymbol[] held = [Us("GOOGL"), Us("amzn")];
+
+        var targets = ScheduledJudgmentTargets.Build(watchlist, held);
+
+        targets.Should().HaveCount(11);
+        targets.Take(2).Should().Equal(
+            [(Us("GOOGL"), true), (Us("AMZN"), false)], "保有中の銘柄が先頭（監視銘柄に在る AMZN は出口専用にしない・監視銘柄の表記）");
+        targets.Skip(2).Should().Equal(
+            watchlist.Where(w => w.Symbol != "AMZN").Select(w => (w, false)), "保有していない監視銘柄は監視銘柄の順で後ろ");
+    }
+
+    // T-10-2683（除外）: 全注文が必ず拒否される保有のみの銘柄（IADR-0521 決定 4）は先頭にも置かない。監視銘柄に在る保有銘柄は除外の対象外。
+    [Fact]
+    public void T_10_2683_除外した保有のみの銘柄は先頭にも置かない()
+    {
+        WatchedSymbol[] watchlist = [Us("NVDA"), Us("TSLA")];
+        WatchedSymbol[] held = [new("7203", Market.Japan), Us("TSLA"), Us("MSFT")];
+        var excluded = new HashSet<WatchedSymbol> { new("7203", Market.Japan), Us("TSLA") };
+
+        ScheduledJudgmentTargets.Build(watchlist, held, excluded).Should().Equal(
+            (Us("TSLA"), false), (Us("MSFT"), true), (Us("NVDA"), false));
     }
 
     // T-10-2490（不明・空）: 保有が不明（null）なら監視銘柄だけ（従来の巡回）。空なら監視銘柄だけ。監視銘柄が空でも保有は判断する。
