@@ -13,6 +13,11 @@ namespace InformationCollectionService.Infrastructure.ExternalServices;
 // FR-01, FR-08, #1084, IADR-0456: 同じ内容を巡回ごとに保存し直さない。保存に**成功した**内容の指紋を覚え、次の巡回で
 // 同じ内容が来たら送らない（基盤に upsert が無いため保存側で止める）。失敗・未保存は覚えないので、次の巡回で再送される。
 // シンクは singleton で登録するため、指紋は巡回をまたいで残る。
+//
+// FR-01, FR-08, #1366, IADR-0545 決定 1・2: 相場スナップショット（InformationKind.Quote）は KB へ保存しない。
+// 5 分ごとに値が変わって保存され、判断の RAG で古い現在値として注入され、LLM が入力の現在値との「矛盾」として見送っていた。
+// 判断の現在値は ICurrentPriceProvider が別に渡す（IADR-0099・IADR-0451）。取得・正規化件数（定時の起点）・欠測判定は変えない
+// （ここで送らないだけ。InformationCollectionAppService の件数は保存前に数える）。
 public sealed class KnowledgeBaseWriterSink(
     IKnowledgeBaseWriter writer,
     SavedContentFingerprints fingerprints,
@@ -28,8 +33,16 @@ public sealed class KnowledgeBaseWriterSink(
         // 後続 #9 で検討する（本 PR は基盤整備でスコープ内）。fail-safe（未保存縮退）は writer が担う。
         var saved = 0;
         var skipped = 0;
+        var notStored = 0;
         foreach (var item in items)
         {
+            // #1366, IADR-0545: 相場スナップショットは送らない（送った件数＝ログの分母にも数えない）。
+            if (!IsStored(item))
+            {
+                notStored++;
+                continue;
+            }
+
             // #1084, IADR-0456: 保存済みと同じ内容は送らない（同じ巡回内の重複も、先の 1 件が保存できていれば止まる）。
             var fingerprint = SavedContentFingerprints.Of(item);
             if (fingerprints.Contains(fingerprint))
@@ -49,9 +62,12 @@ public sealed class KnowledgeBaseWriterSink(
         // 分母は**送った件数**（保存済みと同じで送らなかった分を除く）。運用は「0/N（N>0）が続く＝保存失敗」で
         // 異常を見分けるため（operations.md）、送らなかった分を分母へ混ぜると正常な巡回が失敗に見える。
         logger.LogInformation(
-            "KB 保存: {Saved}/{Sent} 件を platform 文書管理へ登録（保存済みと同じ内容 {Skipped} 件は送らない。未保存は fail-safe 縮退）。",
-            saved, items.Count - skipped, skipped);
+            "KB 保存: {Saved}/{Sent} 件を platform 文書管理へ登録（保存済みと同じ内容 {Skipped} 件・相場スナップショット {NotStored} 件は送らない。未保存は fail-safe 縮退）。",
+            saved, items.Count - skipped - notStored, skipped, notStored);
     }
+
+    // FR-01, FR-08, #1366, IADR-0545 決定 2: KB へ保存する種別か。相場スナップショット（Quote）だけを外す。
+    private static bool IsStored(CollectedInformation item) => item.Kind != InformationKind.Quote;
 
     // CollectedInformation → KnowledgeDocument。ABAC/検索の絞り込みに使える属性・タグを付与する。
     // 機密区分は既定 internal（取引の収集情報は社外秘扱い。IADR-0069 決定 3）。

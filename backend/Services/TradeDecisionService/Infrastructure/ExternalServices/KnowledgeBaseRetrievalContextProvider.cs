@@ -31,6 +31,10 @@ namespace TradeDecisionService.Infrastructure.ExternalServices;
 //     🔴 PublishedAt を持たない文書（確定報告書〔tag report〕など）は**通す**。報告書は publishedAt を書かない
 //     （ReportKnowledgeMapper）ため、落とすと UC-01 手順 3「過去の判断（RAG）」が構造的に届かなくなる。
 //     null のまま下流へ運び、ScreeningContextPlanner・AsOfDecisionInput の「発行時刻不明＝最古扱い」に委ねる。
+//
+// FR-01, FR-08, #1366, IADR-0545 決定 1・3: 相場スナップショット（タグ Quote＝InformationKind.Quote）は参考情報に入れない。
+//   5 分ごとに書かれた古い現在値が ① の上位を占め、LLM が入力の現在値（ICurrentPriceProvider）との「矛盾」として見送っていた。
+//   収集側は保存をやめた（KnowledgeBaseWriterSink）。ここは足切りの内側に残る旧文書への防御で、3 本の検索の結果すべてに掛ける。
 public sealed class KnowledgeBaseRetrievalContextProvider(
     IKnowledgeBaseSearch search,
     int topK,
@@ -96,8 +100,11 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
         // ③ はフィルタなしで引くため、表題の目印で防御として落とす（基盤の露出の門が働かない構成〔MSP#1886 より前〕への保険）。
         static bool IsNotReportDraft(KnowledgeHit h) => !KnowledgeReportDraftCopy.IsDraftTitle(h.DocumentTitle);
 
-        var symbolHits = (await SearchTrackedAsync(symbolQuery).ConfigureAwait(false)).Where(IsNotReportDraft).ToList();
-        var marketHits = (await SearchTrackedAsync(marketQuery).ConfigureAwait(false)).Where(IsNotReportDraft).ToList();
+        // #1366, IADR-0545 決定 3: 相場スナップショットは落とす（ドラフトと同じく取り出した直後に）。
+        static bool IsReference(KnowledgeHit h) => IsNotReportDraft(h) && !IsQuoteSnapshot(h);
+
+        var symbolHits = (await SearchTrackedAsync(symbolQuery).ConfigureAwait(false)).Where(IsReference).ToList();
+        var marketHits = (await SearchTrackedAsync(marketQuery).ConfigureAwait(false)).Where(IsReference).ToList();
 
         var cutoff = timeProvider.GetUtcNow() - maxAge;
         bool IsFresh(KnowledgeHit h) => h.PublishedAt is not { } publishedAt || publishedAt >= cutoff;
@@ -120,7 +127,7 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
 
             // 重複の鍵はチャンク（文書 ID ＋ 本文）。同じ文書の別のチャンクは従来どおり別に数える。
             var seen = market.Select(ChunkKey).ToHashSet();
-            market.AddRange(fallbackHits.Where(h => IsNotReportDraft(h) && HasNoSymbol(h) && IsFresh(h) && seen.Add(ChunkKey(h))));
+            market.AddRange(fallbackHits.Where(h => IsReference(h) && HasNoSymbol(h) && IsFresh(h) && seen.Add(ChunkKey(h))));
         }
 
         var hits = symbolHits
@@ -179,6 +186,14 @@ public sealed class KnowledgeBaseRetrievalContextProvider(
             ? (false, [])
             : (null, []);
     }
+
+    // FR-01, FR-08, #1366, IADR-0545 決定 3: 相場スナップショットの種別タグ（KnowledgeBaseWriterSink が Tags へ載せる
+    // InformationKind.Quote の名前。KnowledgeTagVocabulary.CollectionKinds の語）。判断サービスは収集サービスの型を参照しない。
+    internal const string QuoteKindTag = "Quote";
+
+    // 大小は無視する（RetrievalSourcePolicy・ScreeningContextAssembler のタグの比較と同じ）。
+    internal static bool IsQuoteSnapshot(KnowledgeHit h) =>
+        h.Tags.Any(t => string.Equals(t, QuoteKindTag, StringComparison.OrdinalIgnoreCase));
 
     // FR-08, #1138, IADR-0474 決定3: 補充の検索の件数の倍率（基盤が関連度の候補を取る倍率 4×TopK と同じ値）。
     internal const int FallbackWidening = 4;

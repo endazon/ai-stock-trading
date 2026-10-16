@@ -41,8 +41,54 @@ public class MarketMonitorServiceTests
             Settings = new InMemoryMonitoredSymbolStore(settings);
         }
 
-        public AppSvc Service() =>
-            new(Settings, Positions, Baselines, Cooldowns, Market, Schedule, Clock);
+        public AppSvc Service(ILogger<AppSvc>? logger = null) =>
+            new(Settings, Positions, Baselines, Cooldowns, Market, Schedule, Clock, logger);
+    }
+
+    // FR-03, ADR-0003, #1364: 急変の検知は銘柄・現在値・基準値・変動率を INFO で 1 行残す（従来は発行だけで監査で追えなかった）。
+    [Fact]
+    public async Task 急変を検知したら銘柄と現在値と基準値と変動率をINFOで1行残す()
+    {
+        var h = new Harness(Settings(Aapl));
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
+        h.Market.Set("AAPL", Market.UnitedStates, 1_040m); // +4%
+        var log = new StopLossLivenessReporterTests.RecordingLogger<AppSvc>();
+
+        await h.Service(log).EvaluateRoundAsync();
+
+        var line = log.Informations.Should().ContainSingle().Which;
+        line.Should().Contain("AAPL").And.Contain("1040").And.Contain("1000").And.Contain("4.00 %");
+        line.Should().NotContain("\n");
+    }
+
+    // 否定形: 検知しない巡回（閾値未満）では急変の行を出さない。
+    [Fact]
+    public async Task 急変を検知しない巡回では急変の行を出さない_否定形()
+    {
+        var h = new Harness(Settings(Aapl));
+        h.Baselines.SetBaseline("AAPL", Market.UnitedStates, 1_000m);
+        h.Market.Set("AAPL", Market.UnitedStates, 1_020m); // +2%
+        var log = new StopLossLivenessReporterTests.RecordingLogger<AppSvc>();
+
+        await h.Service(log).EvaluateRoundAsync();
+
+        log.Informations.Should().BeEmpty();
+    }
+
+    // LogSanitizer の規律（NFR, IADR-0316）: 銘柄に改行が混じっても 1 行のまま残す。
+    [Fact]
+    public async Task 急変の行は銘柄の改行を無害化して1行に保つ()
+    {
+        var forged = new MonitoredSymbol("EVIL\n[INF] 取引ガードを解除しました", Market.UnitedStates);
+        var h = new Harness(Settings(forged));
+        h.Baselines.SetBaseline(forged.Symbol, Market.UnitedStates, 1_000m);
+        h.Market.Set(forged.Symbol, Market.UnitedStates, 1_040m);
+        var log = new StopLossLivenessReporterTests.RecordingLogger<AppSvc>();
+
+        await h.Service(log).EvaluateRoundAsync();
+
+        var line = log.Informations.Should().ContainSingle().Which;
+        line.Should().NotContain("\n").And.Contain("EVIL_[INF]");
     }
 
     [Fact]
