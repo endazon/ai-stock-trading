@@ -105,7 +105,10 @@ public static class ScreeningContextAssembler
         // （表示の上限 50 件で頭打ちになるため、予算 150,000 文字〔IADR-0313〕に対して数千文字以内に収まる）。
         var sharedProtected = PromptScaffoldChars + policy.Summary.Length
             + TradeDecisionPromptBuilder.WatchlistSection(trigger, watchlist).Length;
+        // FR-03, FR-04, #1364: 急変が起点なら一次へ出す価格変動トリガーの節も保護分（削ると急変追随の条件を判定できない）。
+        // 概算ではなく**プロンプトへ出す文字列そのものの長さ**を数える（定時は空文字列＝0 で従来の見積りと同じ）。
         var symbolProtected = PerSymbolLineChars + protectedRefs.Sum(EstimateChars)
+            + TradeDecisionPromptBuilder.PriceMovementTriggerSection(trigger).Length
             + (PolicyTakeProfitConditions.ForSymbol(policy.Summary, trigger.Symbol).Count > 0 ? TakeProfitReachedReserveChars : 0);
 
         var plan = ScreeningContextPlanner.Plan(
