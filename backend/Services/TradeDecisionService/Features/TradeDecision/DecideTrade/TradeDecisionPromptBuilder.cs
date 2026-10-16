@@ -301,9 +301,8 @@ public static class TradeDecisionPromptBuilder
         sb.Append(WatchlistSection(trigger, watchlist));
         if (trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } price)
         {
-            sb.AppendLine("# 価格変動トリガー");
-            sb.AppendLine($"- 銘柄: {SymbolText(trigger)} / 市場: {trigger.Market}");
-            sb.AppendLine($"- 現在値: {price.ToString(ci)}{priceUnit} / 基準値: {trigger.BaselinePrice?.ToString(ci)}{priceUnit} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
+            // FR-03, FR-04, ADR-0003, #1364: 節の見出し・銘柄・現在値／基準値／変動率は一次と同じ関数で出す。
+            sb.Append(PriceMovementTriggerSection(trigger));
             // FR-02, FR-04, #1035, IADR-0451: 急変の節にも日中文脈を載せる。変化率はこの節の現在値（trigger.Price）から計算する。
             sb.Append(PriceContextLines(price, intraday, priceUnit, volume));
         }
@@ -463,6 +462,16 @@ public static class TradeDecisionPromptBuilder
         // FR-04, ADR-0020 決定2, #1081, IADR-0455: 本判断と同じニュースの状態の行（現在値の有無に依らず無条件・縮退の保護分）。
         sb.Append(NewsStatusLine(news));
         sb.AppendLine();
+        // 🔴 FR-03, FR-04, ADR-0003, #1364: 急変が起点なら、本判断と同じ「# 価格変動トリガー」節（現在値・基準値・変動率）を出す。
+        // 一次は門（Hold で本判断が走らない）であり、これが無いと方針の急変追随の条件を一次が判定できず全件を落とす（実測 2026-10-15）。
+        // 定時が起点なら空文字列（従来のプロンプトと一字一句同じ）。縮退の保護分は ScreeningContextAssembler が同じ文字列の長さで数える。
+        var triggerSection = PriceMovementTriggerSection(trigger);
+        if (triggerSection.Length > 0)
+        {
+            sb.Append(triggerSection);
+            sb.AppendLine();
+        }
+
         // FR-04, FR-10, ADR-0003, #854, IADR-0351 決定4: 保有状況の短縮版。縮退の**保護対象**（削ると、保有中の銘柄の
         // 出口を一次が落とす）。評価価格は本判断と同じ規則で選ぶ（価格変動トリガーの価格があればそれ、無ければ現在値）。
         var markPrice = trigger.Kind == DecisionTriggerKind.PriceMovement && trigger.Price is { } triggerPrice
@@ -479,6 +488,28 @@ public static class TradeDecisionPromptBuilder
         // #806, IADR-0248: 一次は方向だけを読む（ParseScreening）。数値は本判断が決めるため Buy/Sell でも必須にしない
         // （「必ず数値を入れる」と要求しても LLM 出力は揺れ、数値欠損の Buy を見送りにすると関心ありの銘柄が本判断に届かない）。
         sb.AppendLine("""Hold のときは referencePrice と stopLossDistancePerShare を null にしてよい（数値を作らない）。Buy/Sell でも referencePrice と stopLossDistancePerShare は null でよい（価格・損切り幅は本判断で決める）。""");
+        return sb.ToString();
+    }
+
+    // FR-03, FR-04, ADR-0003, #1364: 価格変動トリガーの節（見出し・銘柄／市場・現在値／基準値／変動率）。本判断（Build）と
+    // 一次（BuildScreening）で共用する。急変が起点で価格があるときだけ節を返し、それ以外（定時・価格なし）は空文字列を返す。
+    // 価格の単位は Build と同じ規則（基準通貨の市場では注記なし）。縮退の見積り（ScreeningContextAssembler）が同じ文字列の
+    // 長さを測るため公開する。基準値・変動率が欠けた急変は従来どおり空欄になる（Build の既存の文言を変えない）。
+    public static string PriceMovementTriggerSection(DecisionTrigger trigger)
+    {
+        ArgumentNullException.ThrowIfNull(trigger);
+        if (trigger.Kind != DecisionTriggerKind.PriceMovement || trigger.Price is not { } price)
+        {
+            return string.Empty;
+        }
+
+        var ci = CultureInfo.InvariantCulture;
+        var currency = MarketCurrency.Of(trigger.Market);
+        var priceUnit = currency == MarketCurrency.Base ? string.Empty : $" {CurrencyFormat.CodeOf(currency)}";
+        var sb = new StringBuilder();
+        sb.AppendLine("# 価格変動トリガー");
+        sb.AppendLine($"- 銘柄: {SymbolText(trigger)} / 市場: {trigger.Market}");
+        sb.AppendLine($"- 現在値: {price.ToString(ci)}{priceUnit} / 基準値: {trigger.BaselinePrice?.ToString(ci)}{priceUnit} / 変動率: {trigger.ChangeRatio?.ToString("P2", ci)}");
         return sb.ToString();
     }
 
