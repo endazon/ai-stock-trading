@@ -17,8 +17,9 @@ public enum InformationKind
     SourceStatus,
 }
 
-// FR-01, ADR-0004: 正規化済みの収集情報。KB 保存・取引判断文脈の共通形。Content は PromptSafetySanitizer で
-// データとして分離済み（命令ではなくデータ）である前提（ニュース入力の防御）。
+// FR-01, ADR-0004: 正規化済みの収集情報。KB 保存・取引判断文脈の共通形。
+// IADR-0542（IADR-0022 の改定）, #1359: Title・Content は UntrustedDataBoundary.Neutralize 済みの**素の文字列**である
+// （境界語・制御文字を含まない。境界語では囲わない）。プロンプトへ入れる側が UntrustedDataBoundary.Wrap で囲う。
 public sealed record CollectedInformation(
     InformationKind Kind,
     string Source,

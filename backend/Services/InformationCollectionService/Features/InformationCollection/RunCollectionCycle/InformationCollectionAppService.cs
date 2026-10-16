@@ -1,11 +1,13 @@
+using AiStockTrading.Shared.Contracts.Llm;
 using InformationCollectionService.Common.Abstractions;
 using InformationCollectionService.Domain;
 
 namespace InformationCollectionService.Features.InformationCollection.RunCollectionCycle;
 
 // FR-01, ADR-0003, ADR-0004, ADR-0020: 1 巡回の収集オーケストレーション。
-// 取得（ソース単位の成否つき）→ 欠測判定 → 検証用途の排除 → 許可リストで選別 → 正規化 → サニタイズ → KB 保存。
-// 取得テキストは「命令ではなくデータ」として分離してから保存する（ニュース入力の防御・IADR-0022）。
+// 取得（ソース単位の成否つき）→ 欠測判定 → 検証用途の排除 → 許可リストで選別 → 正規化 → 無害化 → KB 保存。
+// FR-01, ADR-0003, IADR-0542（IADR-0022 の改定）, #1359: 保存するのは**無害化済みの素の文字列**である（境界語で囲わない）。
+// 「命令ではなくデータ」としての境界（spotlighting）は、プロンプトを組む側が UntrustedDataBoundary.Wrap で掛ける。
 public sealed class InformationCollectionAppService(
     ISourceFetcher fetcher,
     IKnowledgeBaseSink sink,
@@ -36,9 +38,10 @@ public sealed class InformationCollectionAppService(
                 item.Kind,
                 item.Source,
                 item.Symbol,
-                // タイトル・本文ともデータとして分離（spotlighting）してから保存する。
-                PromptSafetySanitizer.Sanitize(item.Title),
-                PromptSafetySanitizer.Sanitize(item.Content),
+                // IADR-0542 決定 1・2: 表題・本文とも、境界語の衝突と制御文字だけを除いて素で保存する。
+                // 🔴 ここで境界語で囲わない（囲うと MSP の画面・Wiki・検索へ境界語が漏れ、表題が 255 字を超える。MSP#1966）。
+                UntrustedDataBoundary.Neutralize(item.Title),
+                UntrustedDataBoundary.Neutralize(item.Content),
                 item.PublishedAt,
                 item.Url));
         }
