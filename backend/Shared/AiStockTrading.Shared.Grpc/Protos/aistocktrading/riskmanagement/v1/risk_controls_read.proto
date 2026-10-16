@@ -359,6 +359,19 @@ message PeriodFill {
   BrokerProvider provider = 10;
   // 承認時点の認識時レート（1 USD あたりの円・10 進文字列）。欠落は「未記録」（REST の null）。
   optional string fx_rate_base_to_display = 11;
+  // FR-06, #1357, IADR-0540 決定 1: 約定が属する承認行の由来。未指定は「記録されていない」（REST の null）。
+  FillApprovalSource approval_source = 12;
+}
+
+// FR-06, #1357, IADR-0540 決定 1: 承認行の由来（送り手の ApprovalSource。型名は冒頭の 🔴 のとおり変えてある）。
+// C# の序数とは 1 ずれる（0 は未指定）。両端で名前で写す。
+enum FillApprovalSource {
+  FILL_APPROVAL_SOURCE_UNSPECIFIED = 0;
+  FILL_APPROVAL_SOURCE_ORDER_APPROVED = 1;
+  FILL_APPROVAL_SOURCE_PROTECTIVE_STOP_S0 = 2;
+  FILL_APPROVAL_SOURCE_SOFTWARE_STOP_S1 = 3;
+  FILL_APPROVAL_SOURCE_PROTECTION_LOST_CLOSE = 4;
+  FILL_APPROVAL_SOURCE_TRADE_DECISION = 5;
 }
 
 message GetFillsResponse {

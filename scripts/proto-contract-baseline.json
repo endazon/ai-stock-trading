@@ -2252,6 +2252,11 @@
         },
         "PeriodFill": {
           "fields": {
+            "approval_source": {
+              "number": 12,
+              "type": "FillApprovalSource",
+              "label": "singular"
+            },
             "decision_id": {
               "number": 9,
               "type": "string",
@@ -2602,6 +2607,20 @@
             "ENTRY_BLOCKER_STOPPED_OUT_SAME_DAY": 3,
             "ENTRY_BLOCKER_TRADING_PAUSED": 2,
             "ENTRY_BLOCKER_UNSPECIFIED": 0
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "FillApprovalSource": {
+          "values": {
+            "FILL_APPROVAL_SOURCE_ORDER_APPROVED": 1,
+            "FILL_APPROVAL_SOURCE_PROTECTION_LOST_CLOSE": 4,
+            "FILL_APPROVAL_SOURCE_PROTECTIVE_STOP_S0": 2,
+            "FILL_APPROVAL_SOURCE_SOFTWARE_STOP_S1": 3,
+            "FILL_APPROVAL_SOURCE_TRADE_DECISION": 5,
+            "FILL_APPROVAL_SOURCE_UNSPECIFIED": 0
           },
           "reserved": {
             "numbers": [],
