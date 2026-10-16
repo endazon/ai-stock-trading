@@ -877,8 +877,17 @@ public sealed class ReportAutoGenerator(
     // セッションに属するため、その判断の記録は下端以降にある。
     // #1224, IADR-0516 決定 3: 監査台帳の他の入力と同じ外包（ReportSessionWindow.JstLedgerRange。上端は期間の終わりと ClosedUntil の
     // JST 日付の最大＝期間の終わり）を使う。値は従来と同じ。
+    private (DateOnly From, DateOnly To) RationaleRange(DueReport due)
+    {
+        var (_, from, to) = LedgerScope(due);
+        return (from, to);
+    }
+
     // FR-06, FR-08, #1356, IADR-0541 決定 2: 判断の記録を JST の暦日で引き、**判断の時刻で窓に絞ってから**畳む（前の日報の窓の判断を数えない）。
     // 例外・不達は null（未供給）。キャンセルは伝える。
+    // 🔴 本クラスは ILogger を持たない（兄弟の Safe* と同じ）。照会の失敗の警告ログ（例外つき）は供給元
+    // （Http/GrpcDecisionReferenceSource・AuditGrpcTransport）が出し、ここへ届く例外はそれらが握らない想定外のものだけである。
+    // その場合も未供給として報告書の UnsuppliedInputs に残り、常駐（ReportAutoGenerationService）が縮退として警告ログに出す。
     private async Task<DecisionReferenceFeed?> SafeDecisionReferencesAsync(DueReport due, CancellationToken cancellationToken)
     {
         try
@@ -899,12 +908,6 @@ public sealed class ReportAutoGenerator(
         {
             return null;
         }
-    }
-
-    private (DateOnly From, DateOnly To) RationaleRange(DueReport due)
-    {
-        var (_, from, to) = LedgerScope(due);
-        return (from, to);
     }
 
     // FR-06, UC-03〜05, 計画 ADR-0053 決定 2, #1224, IADR-0516 決定 3: 監査台帳ほか JST の暦日で引く供給元へ渡す照会の範囲と、

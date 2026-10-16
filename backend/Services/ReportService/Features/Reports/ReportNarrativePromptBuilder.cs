@@ -197,6 +197,9 @@ public static class ReportNarrativePromptBuilder
     /// <summary>FR-06, #1356, IADR-0541 決定 4: 散文へ渡す表題の上限（書記素）。</summary>
     public const int DecisionReferenceTitleMaxLength = 120;
 
+    /// <summary>FR-06, #1356, IADR-0541 決定 4: 散文へ渡す銘柄の列の上限（書記素）。</summary>
+    public const int DecisionReferenceSymbolsMaxLength = 80;
+
     /// <summary>FR-06, #1356, IADR-0541 決定 4: 外部の表題を囲む境界語（IADR-0022 と同じ語。囲む中身からは同じ語を除いてある）。</summary>
     public const string UntrustedOpen = "<<<UNTRUSTED_DATA";
 
@@ -254,7 +257,9 @@ public static class ReportNarrativePromptBuilder
                 ? p.ToOffset(ReportSchedule.JstOffset).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : "発行日不明";
             sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "{0}. {1}（{2}・参照した判断 {3} 件・銘柄: {4}）",
-                ++n, title, published, item.DecisionCount, string.Join(", ", item.Symbols)));
+                ++n, title, published, item.DecisionCount,
+                // 銘柄も境界語の内側に入るので表題と同じく無害化する（判断の記録の値。境界語・区切り行・改行を持ち込ませない）。
+                NarrativePromptText.Inline(string.Join(", ", item.Symbols), DecisionReferenceSymbolsMaxLength) ?? "不明"));
         }
         sb.AppendLine(UntrustedClose);
         if (feed.RetrievalFailed > 0 || feed.Unrecorded > 0)
