@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）機能仕様書
 type: functional-spec
 status: draft
 created: 2026-07-11
-updated: 2026-10-14
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-15, FR-17, FR-20, UC-06, FR-04, FR-13, FR-10]
 adrs: [ADR-0004, ADR-0005, ADR-0008, ADR-0011, ADR-0016, ADR-0018, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0054, ADR-0014, ADR-0064]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528, IADR-0537]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent]
-issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, #1342, planning#783]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0089, IADR-0105, IADR-0110, IADR-0138, IADR-0156, IADR-0157, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0442, IADR-0498, IADR-0507, IADR-0495, IADR-0524, IADR-0528, IADR-0537, IADR-0554]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260726_backtest-historical-bar-source, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, 20260911_632_stage0-production-strategy-enablement, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20260927_1049_stage0-asof-watchlist, 20261007_1196_stage0-two-tier-recording, 20261008_1209_stage0-replay-min-notional-and-decision-exit, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent, 20261017_1381_trial-ledger-per-period-sharpe]
+issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1034, #1049, #1196, #1209, #1295, #1296, #1308, #1342, #1381, planning#783]
 -->
 
 
@@ -35,7 +35,7 @@ issues: [#20, #82, #99, #100, #208, #382, #388, #632, #688, #748, #749, #777, #1
 | ① | LLM 学習カットオフ後データ（または銘柄匿名化） | `DataCutoffPolicy`（全バー日付 > カットオフ）／`SymbolAnonymizer`（決定的匿名化） | B |
 | ② | 現実的コスト計上＋コスト 2 倍の感度分析 | `BacktestCostModel`（全体前提条件の `CostCalculator` ＋スリッページ ＋ `CostSensitivity` 1x/2x） | A |
 | ③ | ウォークフォワード検証 | `WalkForwardSplitter`（IS→OOS 窓分割） | B |
-| ④ | 試行数記録と過剰適合補正（DSR/PBO） | `TrialLedger`＋`DeflatedSharpeRatio`＋`ProbabilityOfBacktestOverfitting`（CSCV）。**PBO は探索がある場合にだけ評価する**（2026-09-11 の計画裁定。下記「探索を持たない戦略の PBO」）。**試行数の記録は免除されない** | B |
+| ④ | 試行数記録と過剰適合補正（DSR/PBO） | `TrialLedger`＋`DeflatedSharpeRatio`＋`ProbabilityOfBacktestOverfitting`（CSCV）。**PBO は探索がある場合にだけ評価する**（2026-09-11 の計画裁定。下記「探索を持たない戦略の PBO」）。**試行数の記録は免除されない**。**台帳の IS Sharpe は 1 期間（日次）で記録する**——DSR の観測値と期待最大 Sharpe を同じ単位で比べるため（年率で記録すると期待最大 Sharpe が膨らみ、試行 2 本以上で事実上必ず不合格になる） | B |
 | ⑤ | 生存者バイアスのない銘柄ユニバース | `SecurityUniverse`（Point-in-Time メンバーシップ・廃止銘柄含む） | A |
 
 ## 機能詳細

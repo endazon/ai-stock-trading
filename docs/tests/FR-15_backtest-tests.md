@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04, FR-05]
 adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014, ADR-0035, ADR-0064, ADR-0068]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524, IADR-0528, IADR-0537, IADR-0549]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent, 20261017_1373_daily-policy-reconfirm]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, #1308, #1342, #1373, planning#783, planning#803]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524, IADR-0528, IADR-0537, IADR-0549, IADR-0554]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent, 20261017_1373_daily-policy-reconfirm, 20261017_1381_trial-ledger-per-period-sharpe]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, #1308, #1342, #1373, #1381, planning#783, planning#803]
 -->
 
 
@@ -118,6 +118,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | T-15-13 | 標本長不足・試行 2 未満は保守側（0）に倒す | `分散0や試行2未満の期待最大Sharpeは0` / `標本長2未満は0_保守側` | 自動 |
 | T-15-14 | PBO（CSCV）は過剰適合を確率化・決定的・入力検証 | `支配戦略はPBO0_IS最良がOOSでも最良` / `交互に優劣が入れ替わる構成はPBO1_過剰適合` / `決定的_同じ入力は同じPBO` / `分割数が偶数かつ2以上でなければ例外` / `戦略が2未満なら例外` | 自動 |
 | T-15-15 | 標本モーメント・標準正規分布の数値基盤（DSR/PBO の下支え） | `一期間Sharpeは平均を標本標準偏差で割る` / `右に裾を引くデータは歪度が正` / `標準正規CDF` / `CDFと逆CDFは往復する` | 自動 |
+| T-15-141 | 試行台帳の IS Sharpe は DSR の観測値と同じ 1 期間（日次）の単位で記録する。年率で記録すると期待最大 Sharpe が約 15.9 倍（252 の平方根）に膨らむ。試行 1 本の判定結果は単位に依らず変わらない | `FromMetricsは判定器の観測値と同じ1期間Sharpeを記録する` / `試行2本の台帳のSR0は日次Sharpeの分散から求まる` / `年率で記録した台帳ではSR0がルート252倍に膨らむ_単位の食い違いの対照` / `試行台帳には判定器の観測値と同じ日次Sharpeを記録する` / `試行1本の判定結果は台帳の単位に依らず不変である` | 自動 |
 
 ### 検証条件⑤: 生存者バイアスのない銘柄ユニバース（SecurityUniverseTests）
 
