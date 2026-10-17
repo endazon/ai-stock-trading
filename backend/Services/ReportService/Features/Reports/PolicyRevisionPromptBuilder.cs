@@ -115,6 +115,29 @@ public static class PolicyRevisionPromptBuilder
         + "「数値目標」という語はこの行の中でだけ使う（説明の文・見出しに使うと行が 2 つあるとみなされ、目標が読まれない）。"
         + "書式どおりの行が無い週報は、確定の前に利用者へ警告される。";
 
+    /// <summary>
+    /// FR-04, FR-07, ADR-0003, #1384, IADR-0558 決定 8: 判断へ渡る材料の行（保有）。保有中の建玉は、建てたときの判断が記録した
+    /// <b>条件の記号と基準価格がロットごとに</b>渡る。改訂の AI が「記録に依存する出口は動くか分からない」と注記するしかなかった（PoC 2026-10-17）ため、
+    /// 渡ることと、記録が無い建玉は「不明」として既定の出口で扱われることを示す。
+    /// </summary>
+    public const string HeldPositionMaterial =
+        "- 確定済みの方針・監視銘柄の一覧・その銘柄の保有状況と未約定の新規建て注文・リスク制約（上限はコードが強制する）。"
+        + "保有状況には、建玉（ロット）ごとに、建てたときの判断が記録した条件の記号（方針の「条件 X:」行の記号）と基準価格（その条件の判定に使った価格。例: 日中安値）が含まれる"
+        + "（記録の無い建玉〔この記録の導入前に建てた建玉・取り込み・手動〕は「不明」と渡り、方針の既定の出口で扱われる）";
+
+    /// <summary>FR-04, FR-07, #1384, IADR-0558 決定 8: 新規建ての条件の記号の書き方の節の見出し（日報の改訂にだけ出す）。</summary>
+    public const string EntryConditionHeading = "新規建ての条件の記号の書き方（日報の方針。建てた条件で出口を分けるとき）:";
+
+    /// <summary>「条件 X:」行の書式の案内（試験が共有カーネルの読み取りで記号として読めることを固定する）。</summary>
+    public const string EntryConditionLineRule =
+        "- 新規建ての条件に記号を付けるときは、方針の中に「条件 <記号>: <条件>」の書式の行で 1 行ずつ書く（例「条件 A: AAPL 前日比 -3% 以下で買い」「買い条件 B（急落反発）: 日中安値から +1% 戻したら買い」。JSON 文字列の中では行を \\n で区切る）。"
+        + "記号は英大文字 1 字（A〜Z）にする。取引判断は新規建てのとき、成立した条件の記号とその条件の判定に使った価格を建玉ごとに記録し、保有中の判断へ渡す（この書式の行に無い記号は記録されない）。";
+
+    /// <summary>建てた条件で出口を分けるときの案内（記録が不明の建玉の既定の出口を書かせる）。</summary>
+    public const string EntryConditionExitRule =
+        "- 建てた条件ごとに出口を分けてよい（例「条件 B で建てた建玉は、B の判定に使った日中安値を現在値が下回ったら撤退」）。"
+        + "ただし記録が不明の建玉もあるため、建てた条件を限定しない既定の出口も必ず書く。建て増しで条件の異なる建玉が混ざると、いずれかの建玉の出口に達した時点で保有の全量の手仕舞いが検討される。";
+
     /// <summary>日報の改訂で上位方針があるときの末尾の指示（#1365, IADR-0544 決定 1）。</summary>
     public const string DailyParentPolicyInstruction =
         "上位方針の目標と矛盾しない範囲で、利用者の指示を反映してください。上位方針の条件やしきい値を使うときは、参照で済ませず方針の中へ数値を書き写してください。矛盾する場合は rationale にその旨を書いてください。";
@@ -145,7 +168,8 @@ public static class PolicyRevisionPromptBuilder
         sb.AppendLine();
         // FR-07, FR-04, ADR-0048 決定 4, #1118, IADR-0467 決定 7: 判断へ渡る材料と「未提供」の材料。
         sb.AppendLine(DecisionMaterialsHeading);
-        sb.AppendLine("- 確定済みの方針・監視銘柄の一覧・その銘柄の保有状況と未約定の新規建て注文・リスク制約（上限はコードが強制する）");
+        // FR-04, FR-07, #1384, IADR-0558 決定 8: 保有状況には建玉ごとの建てた条件の記号と基準価格が含まれる。
+        sb.AppendLine(HeldPositionMaterial);
         sb.AppendLine("- 現在値・前日終値と前日比・当日始値と当日始値比・日中の高値と安値（米国株。系が計算した値）");
         sb.AppendLine("- 急変の検知（基準値と変動率）・ニュースの収集の状態・検索で拾えた参考情報（拾えないこともある）");
         sb.AppendLine(decisionVolumeProvided ? VolumeProvidedMaterial : VolumeNotProvidedMaterial);
@@ -166,6 +190,11 @@ public static class PolicyRevisionPromptBuilder
             sb.AppendLine(SelfContainedHeading);
             sb.AppendLine(SelfContainedRule);
             sb.AppendLine(CopyThresholdsRule);
+            sb.AppendLine();
+            // FR-04, FR-07, #1384, IADR-0558 決定 8: 新規建ての条件の記号（「条件 X:」行）と、建てた条件で出口を分けるときの案内。
+            sb.AppendLine(EntryConditionHeading);
+            sb.AppendLine(EntryConditionLineRule);
+            sb.AppendLine(EntryConditionExitRule);
             sb.AppendLine();
         }
 

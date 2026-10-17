@@ -30,6 +30,9 @@ namespace AiStockTrading.Shared.Contracts.Trading;
 // 審査は Atr14 ÷ Price ≥ 4% を高ボラティリティ銘柄の自動判定に使い、サイジングと同じ関数で 1 注文上限（区分は equity の 5%）を求める。
 // **null＝ATR が得られない・無効**（既定の構成・決済・保護レグ・利用者の手仕舞い）であり、審査は明示指定だけで判定する（決定1）。
 // 発注には使わない。取引台帳は本値を持たない（明示写像）。
+// FR-04, FR-10, #1384, IADR-0558 決定 2: EntryBasis は新規建ての判断が建てた条件の記号と基準価格（取引判断が新規建てにだけ載せる）。
+// **null＝記録なし**（条件が不明・決済・保護レグ・利用者の手仕舞い・本項目の追加前の判断）。取引台帳は本値を承認行へ写す（保有中の判断へ渡すため）。
+// 発注には使わない（ブローカーへ送る内容は変わらない）。
 public record OrderIntent(
     string Symbol,
     Market Market,
@@ -43,7 +46,8 @@ public record OrderIntent(
     decimal FxRateToBase = 1m,
     bool MarketOrder = false,
     StopWidthFloorSource? StopFloorSource = null,
-    decimal? Atr14 = null)
+    decimal? Atr14 = null,
+    EntryBasis? EntryBasis = null)
 {
     /// <summary>ローカル通貨建ての概算約定金額（執行・スリッページ評価用）。</summary>
     public decimal Notional => Quantity * Price;

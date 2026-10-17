@@ -2533,8 +2533,59 @@
             "names": []
           }
         },
+        "OpenPositionEntries": {
+          "fields": {
+            "rows": {
+              "number": 1,
+              "type": "OpenPositionEntryRow",
+              "label": "repeated"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
+        "OpenPositionEntryRow": {
+          "fields": {
+            "decision_id": {
+              "number": 1,
+              "type": "string",
+              "label": "optional"
+            },
+            "entry_condition": {
+              "number": 4,
+              "type": "string",
+              "label": "optional"
+            },
+            "entry_reference_price": {
+              "number": 5,
+              "type": "string",
+              "label": "optional"
+            },
+            "ordered_at": {
+              "number": 3,
+              "type": "string",
+              "label": "optional"
+            },
+            "quantity": {
+              "number": 2,
+              "type": "int32",
+              "label": "optional"
+            }
+          },
+          "reserved": {
+            "numbers": [],
+            "names": []
+          }
+        },
         "OpenPositionRow": {
           "fields": {
+            "entries": {
+              "number": 7,
+              "type": "OpenPositionEntries",
+              "label": "singular"
+            },
             "entry_price": {
               "number": 5,
               "type": "string",

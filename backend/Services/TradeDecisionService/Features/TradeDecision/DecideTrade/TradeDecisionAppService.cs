@@ -891,6 +891,18 @@ public sealed class TradeDecisionAppService(
         // AI の幅の傾向（比率・日中の値幅に対する倍率）と、下限・出所・適用した幅・広げたかを並べて出す。
         LogStopWidth(trigger, side, quantity, decision, referencePrice, intraday, stopWidth, stopLossPrice, stopFloor);
 
+        // FR-04, FR-10, FR-11, #1384, IADR-0558 決定 3: 建てた条件の記号と基準価格を検証して発注意図に載せる（台帳の承認行へ永続化され、
+        // 保有中の判断へ建玉ごとに渡る）。🔴 記録だけであり、通らない値は「不明」として記録する（見送りにしない）。
+        var entryBasis = EntryBasisValidator.Validate(
+            policy.Summary, decision.EntryConditionAnswer, decision.EntryReferencePriceAnswer, intraday, currentPrice, trigger);
+        if (entryBasis.Reason is { } entryBasisReason)
+        {
+            logger.LogInformation(
+                "建てた条件の記録の一部または全部を不明として記録（見送りにしない・IADR-0558）: {Symbol} reason={Reason} "
+                    + "entryCondition={EntryCondition} entryReferencePrice={EntryReferencePrice}",
+                trigger.Symbol, entryBasisReason, decision.EntryConditionAnswer, decision.EntryReferencePriceAnswer);
+        }
+
         // IADR-0004: 発注意図には PositionEffect を必ず設定する。ここへ到達するのは新規建て（Open）のみで、
         // 決済（Close）は上で確定済み（#292, IADR-0119）。
         // IADR-0107 決定1: 価格・損切り価格はローカル通貨のまま載せ（発注執行がそのまま注文価格に用いる）、
@@ -911,7 +923,8 @@ public sealed class TradeDecisionAppService(
             StopFloorSource: stopWidth.FloorSource,
             // 🔴 FR-10, ADR-0063 決定1, #1291, IADR-0527 決定3: 区分の自動判定に使った ATR(14)（ローカル通貨）。審査が同じ関数で同じ区分を求める。
             // null＝ATR が得られない・無効（審査は明示指定だけで判定する）。
-            Atr14: atr14);
+            Atr14: atr14,
+            EntryBasis: entryBasis.Basis);
 
         // NFR-01, NFR-02, #689, IADR-0307: 取引サイクルの起点を下流（承認・発注・記録）へ運ぶ。
         // FR-10, FR-11, ADR-0049 決定3, #1120, IADR-0465 決定2: 下限を掛けた結果を監査台帳へ残す（判断の記録に載せる）。
