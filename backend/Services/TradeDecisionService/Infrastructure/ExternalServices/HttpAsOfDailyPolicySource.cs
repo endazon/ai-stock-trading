@@ -40,7 +40,7 @@ public sealed class HttpAsOfDailyPolicySource(
                 }
 
                 // ADR-0068 決定3・4, #1373, IADR-0548: 判断時点までに確定した版の出所（欠けていれば null）。
-                return (true, new DailyPolicy(date, summary, DailyPolicyReferences.From(dto.PeriodKey, dto.Version)));
+                return (true, new DailyPolicy(date, summary, DailyPolicyReferences.From(dto.PeriodKey, dto.Version, logger, "as-of")));
             },
             $"{at:O} の確定日報の方針",
             retryDelay ?? AsOfRetry.DefaultDelay,

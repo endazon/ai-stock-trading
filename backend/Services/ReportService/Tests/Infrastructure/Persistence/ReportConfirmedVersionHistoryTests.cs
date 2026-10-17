@@ -4,6 +4,7 @@ using ReportService.Infrastructure.Persistence;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Npgsql;
 using Xunit;
 
 namespace ReportService.Tests;
@@ -171,6 +172,77 @@ public class ReportConfirmedVersionHistoryTests
         new EfReportStore(check).GetLatestConfirmed(ReportKind.Daily)!.Report.PeriodKey.Should().Be("daily-2026-10-17");
     }
 
+    // PR #1374 の AI レビュー 🟡: 衝突でない保存の失敗（接続断など）は読み直さず、1 回目でそのまま投げる。行は確定されない。
+    [Fact]
+    public void 衝突でない保存の失敗は再試行せずにそのまま投げる()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = NewContext(dbName))
+            new EfReportStore(seed).UpsertDraft(Daily("daily-2026-10-17", Oct17, "17日の方針"), 0);
+
+        var failing = new FailingSave(() => new DbUpdateException("接続が切れた（模擬）"));
+        using var db = NewContext(dbName, failing);
+
+        var act = () => new EfReportStore(db).Confirm("daily-2026-10-17", 1, FirstConfirmed);
+
+        act.Should().Throw<DbUpdateException>().WithMessage("接続が切れた（模擬）");
+        failing.Calls.Should().Be(1, "衝突でない失敗は読み直さない");
+        using var check = NewContext(dbName);
+        check.ReportConfirmedVersions.Should().BeEmpty();
+        new EfReportStore(check).Get("daily-2026-10-17")!.Report.State.Should().Be(ReportState.Draft);
+    }
+
+    // 衝突（同じ行の確定の並行＝行の版の並行トークン）なら読み直す。読み直した行が確定済みなら冪等の答えになる。
+    [Fact]
+    public void 衝突なら読み直して決め直す_同じ行の並行した確定は冪等の答えになる()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = NewContext(dbName))
+            new EfReportStore(seed).UpsertDraft(Daily("daily-2026-10-17", Oct17, "17日の方針"), 0);
+
+        var interleave = new BeforeFirstSave(() =>
+        {
+            using var other = NewContext(dbName);
+            new EfReportStore(other).Confirm("daily-2026-10-17", 1, FirstConfirmed.AddSeconds(-1))!.Transitioned.Should().BeTrue();
+        });
+        using var db = NewContext(dbName, interleave);
+
+        var result = new EfReportStore(db).Confirm("daily-2026-10-17", 1, FirstConfirmed)!;
+
+        result.Transitioned.Should().BeFalse("相手が先に確定した（読み直した行は確定済み）");
+        result.Version.Should().Be(2);
+        using var check = NewContext(dbName);
+        check.ReportConfirmedVersions.AsNoTracking().Should().ContainSingle().Which.ConfirmedAt.Should().Be(FirstConfirmed.AddSeconds(-1));
+    }
+
+    // 衝突の見分け方（本番の Npgsql の形）。一意制約違反でも、写しの鍵・(会話キー, 版) 以外の制約は衝突ではない。
+    [Theory]
+    [InlineData(PostgresErrorCodes.UniqueViolation, ReportConfirmConflict.SequenceKeyName, true)]
+    [InlineData(PostgresErrorCodes.UniqueViolation, ReportConfirmConflict.VersionIndexName, true)]
+    [InlineData(PostgresErrorCodes.UniqueViolation, "PK_reports", false)]
+    [InlineData(PostgresErrorCodes.ForeignKeyViolation, ReportConfirmConflict.SequenceKeyName, false)]
+    [InlineData(PostgresErrorCodes.ConnectionFailure, null, false)]
+    public void 衝突は写しの鍵と版の一意制約違反だけ(string sqlState, string? constraint, bool expected)
+    {
+        var pg = new PostgresException("模擬", "ERROR", "ERROR", sqlState, constraintName: constraint);
+
+        ReportConfirmConflict.IsConflict(new DbUpdateException("保存に失敗", pg), "Npgsql.EntityFrameworkCore.PostgreSQL")
+            .Should().Be(expected);
+    }
+
+    [Fact]
+    public void ArgumentExceptionはInMemoryのときだけ衝突とみなす_並行トークンの衝突は常に衝突()
+    {
+        var duplicate = new ArgumentException("An item with the same key has already been added.");
+
+        ReportConfirmConflict.IsConflict(duplicate, "Microsoft.EntityFrameworkCore.InMemory").Should().BeTrue();
+        ReportConfirmConflict.IsConflict(duplicate, "Npgsql.EntityFrameworkCore.PostgreSQL").Should().BeFalse();
+        ReportConfirmConflict.IsConflict(new DbUpdateException("接続断", new TimeoutException()), "Npgsql.EntityFrameworkCore.PostgreSQL")
+            .Should().BeFalse();
+        ReportConfirmConflict.IsConflict(new DbUpdateConcurrencyException("並行更新"), "Npgsql.EntityFrameworkCore.PostgreSQL")
+            .Should().BeTrue();
+    }
+
     [Fact]
     public void 種別ごとに通し番号を振る()
     {
@@ -200,6 +272,18 @@ public class ReportConfirmedVersionHistoryTests
         latest.Report.PeriodKey.Should().Be("daily-2026-10-17");
         latest.Version.Should().Be(2);
         store.GetLatestConfirmedAsOf(ReportKind.Daily, FirstConfirmed.AddTicks(-1))!.Report.PeriodKey.Should().Be("daily-2026-10-16");
+    }
+
+    // 保存のたびに例外を投げる（呼ばれた回数を数える）。
+    private sealed class FailingSave(Func<Exception> error) : SaveChangesInterceptor
+    {
+        public int Calls { get; private set; }
+
+        public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+        {
+            Calls++;
+            throw error();
+        }
     }
 
     // 最初の SaveChanges の直前に 1 度だけ割り込みを実行する。

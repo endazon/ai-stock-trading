@@ -32,7 +32,7 @@ public sealed class HttpDailyPolicyProvider(
             var dto = await response.Content.ReadFromJsonAsync<ConfirmedDailyPolicyDto>(cancellationToken).ConfigureAwait(false);
             return dto is null
                 ? null
-                : new DailyPolicy(dto.Date, dto.Summary, DailyPolicyReferences.From(dto.PeriodKey, dto.Version));
+                : new DailyPolicy(dto.Date, dto.Summary, DailyPolicyReferences.From(dto.PeriodKey, dto.Version, logger, "rest"));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

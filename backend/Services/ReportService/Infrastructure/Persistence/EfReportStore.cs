@@ -127,6 +127,8 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
     // FR-07, FR-15, ADR-0068 決定2, #1373, IADR-0548 決定2: 確定は「行の確定」と「確定した版の写しの追加」を
     // **1 回の SaveChanges（1 トランザクション）**で行う。写しの鍵（種別・通し番号）が衝突したら＝同じ種別の確定が並行したら、
     // 追跡を外して読み直し、決め直す（読み直した行が確定済みなら冪等の答えになる）。
+    // 🔴 PR #1374 の AI レビュー 🟡: 読み直すのは**衝突（通し番号・版）だけ**である（ReportConfirmConflict）。それ以外の保存の失敗は
+    // 再試行せずにそのまま投げる（接続断などを 3 回やり直して原因を見えにくくしない）。
     public ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt)
     {
         for (var attempt = 1; ; attempt++)
@@ -137,10 +139,9 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
             }
             catch (Exception ex) when (ex is DbUpdateException or ArgumentException)
             {
-                // 保存に失敗した変更を追跡したまま残さない（UpsertDraft と同じ規律）。InMemory は鍵の衝突を
-                // ArgumentException で、relational は DbUpdateException（並行更新は DbUpdateConcurrencyException）で返す。
+                // 保存に失敗した変更を、衝突かどうかを問わず追跡したまま残さない（UpsertDraft と同じ規律）。
                 db.ChangeTracker.Clear();
-                if (attempt >= MaxConfirmAttempts)
+                if (!ReportConfirmConflict.IsConflict(ex, db.Database.ProviderName) || attempt >= MaxConfirmAttempts)
                     throw;
             }
         }

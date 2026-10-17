@@ -55,6 +55,9 @@ Stage 0 が判断時点の版を組み直せること（決定 3・配備の条�
 - `EfReportStore.Confirm` は、行の更新（状態・確定時刻・本文の状態表記・版 +1）と写しの追加を **1 回の `SaveChanges`（1 トランザクション）**で保存する。片方だけが残ることは無い。
 - 通し番号は「同じ種別の写しの最大＋1」。**同じ種別の確定が並行すると鍵が衝突する**（後の保存が一意制約違反で負ける）。負けた側は追跡を外して読み直し、決め直す（最大 3 回。`MaxConfirmAttempts`）。読み直した行が確定済みなら冪等の答え（`Transitioned=false`）になる。
   - 同じ行の確定の並行（行の版の並行トークンの衝突）も同じ読み直しに入る。従来は例外のまま上がっていたが、読み直すと冪等の答えになる。
+  - **読み直すのは衝突だけである**（`ReportConfirmConflict.IsConflict`。PR #1374 の AI レビュー 🟡）。衝突とは、行の版の並行トークンの衝突（`DbUpdateConcurrencyException`）と、Postgres の一意制約違反（23505）のうち制約名が写しの鍵（`PK_report_confirmed_versions`）か `(PeriodKey, Version)` の一意（`IX_report_confirmed_versions_PeriodKey_Version`）のものである。
+    それ以外の保存の失敗（接続断・他の制約・他の SQLSTATE）は再試行せず、1 回目でそのまま投げる。`ArgumentException` は InMemory プロバイダのときだけ衝突とみなす（InMemory は鍵の重複を制約名なしの `ArgumentException` で返す。本番の Npgsql ではこの形にならない）。
+    段 B の「なお効いている」の判定はこの衝突の上に載るため、衝突でない失敗を読み直しへ混ぜない。作業用の Postgres で、写しの鍵の衝突が 23505・制約名つきで返り、衝突と判定されることを確かめた。
 - `InMemoryReportStore` は行の確定と写しの追加を同じ排他の中で行う。
 
 ### 決定 3: 最新の確定済み報告書は写しから二段で選ぶ
@@ -75,6 +78,7 @@ Stage 0 が判断時点の版を組み直せること（決定 3・配備の条�
 - 報告書: `ConfirmedDailyPolicy` と `ConfirmedDailyPolicyAsOf` の末尾に `PeriodKey`・`Version`（REST の JSON は `periodKey`・`version`）。gRPC の `DailyPolicyRecord` に `optional string period_key = 3`・`optional int32 version = 4`（非破壊の追加。proto の baseline を更新）。
 - 取引判断: `DailyPolicy` の末尾に `DailyPolicyReference? Reference`（共有契約 `DailyPolicyReference(PeriodKey, Version)`）。REST・gRPC・as-of の 3 つの読み手が、期間キーが空でなく版が正のときだけ作る（`DailyPolicyReferences.From`）。
   🔴 **欠けていても方針は使う**（並走中の古い送り手。判断を止める理由にしない）。欠けた値を 0 や空で埋めて「記録された」ふりをしない（原則 A）。
+  欠けたときは固定の文言「確定済み日報方針の応答に期間キーまたは版番号がありません」（`DailyPolicyReferences.MissingReferenceMessage`）で警告を 1 件出す（`source=rest|grpc|as-of`。送り手の値は `LogSanitizer` で無害化。PR #1374 の AI レビュー 🟡）。**並走の解消は、取引判断のログでこの文言の警告が 0 件であることで確かめる。**
 - 判断の記録: `TradeDecisionMade`・`TradeDecisionHeld` の末尾に `DailyPolicyReference? Policy = null`（`event-schemas.baseline.json` を更新）。AI 判断の結論を得た経路（発注意図・判断後の見送り）のすべてで載せる。監査台帳は payload を丸ごと保存するので、台帳の側の変更は要らない。
   - `TradeDecisionForgoneBeforeLlm`（LLM を呼ぶ前の見送り）には足さない。AI 判断をしていないので「判断が参照した方針」が無い（日報未確定の見送りもここに入る）。
 
