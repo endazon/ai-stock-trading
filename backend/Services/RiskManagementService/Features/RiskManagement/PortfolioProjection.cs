@@ -297,7 +297,7 @@ public static class PortfolioProjection
             {
                 // 🔴 ロットが無い（≠ 0 の建玉に対して起こらないはずの状態）も「不明」に倒す。無いと読むと近似も入らない。
                 StopLossUnknown = held.Count == 0 || held.Any(l => l.StopLossPrice is null),
-                // FR-04, FR-10, #1384, IADR-0557 決定 5: 保有中のロット（古い順）。同じ判断の分割約定は 1 つに畳む。
+                // FR-04, FR-10, #1384, IADR-0558 決定 5: 保有中のロット（古い順）。同じ判断の分割約定は 1 つに畳む。
                 Lots = ToOpenPositionLots(held),
             });
         }
@@ -323,7 +323,7 @@ public static class PortfolioProjection
         return best;
     }
 
-    // FR-04, FR-10, #1384, IADR-0557 決定 5: 公開するロットの列。隣り合う同じ判断（分割約定）は数量を足して 1 つにする
+    // FR-04, FR-10, #1384, IADR-0558 決定 5: 公開するロットの列。隣り合う同じ判断（分割約定）は数量を足して 1 つにする
     // （相関できないロット＝Guid.Empty は畳まない。別々の行が同じ判断だとは言えない）。
     private static IReadOnlyList<OpenPositionLot> ToOpenPositionLots(List<StopLossLot> held)
     {
@@ -344,7 +344,7 @@ public static class PortfolioProjection
 
     // #936, IADR-0393: 保有中の建玉を構成するエントリー 1 件ぶん（数量・その約定の損切り価格。null＝記録なし）。
     // OrderedAt・DecisionId はロットの並び（発注の順）の鍵である（2026-09-25 追記）。
-    // FR-04, FR-10, #1384, IADR-0557 決定 5: 建てた条件の記号と基準価格も同じロットに持つ（ロットの削り方は損切りラインと同じ）。
+    // FR-04, FR-10, #1384, IADR-0558 決定 5: 建てた条件の記号と基準価格も同じロットに持つ（ロットの削り方は損切りラインと同じ）。
     private sealed class StopLossLot(
         int quantity, decimal? stopLossPrice, DateTimeOffset orderedAt, Guid decisionId,
         string? entryCondition, decimal? entryReferencePrice)

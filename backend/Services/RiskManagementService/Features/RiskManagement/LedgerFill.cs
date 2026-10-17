@@ -55,7 +55,7 @@ public sealed record LedgerFill(
     // 報告書が決済の種別（損切り・判断由来の決済・判断を経ない決済）を散文へ渡すために **wire へ出す**（数値で往復する）。
     // 🔴 **既定 null＝由来が記録されていない（列追加前の行・取り込み行）**。受け手は「種別未供給」と読み、推定で埋めない。
     ApprovalSource? ApprovalSource = null,
-    // FR-04, FR-10, #1384, IADR-0557 決定 4: この約定が属する承認行の**建てた条件の記号と基準価格**（新規建ての判断が記録したもの）。
+    // FR-04, FR-10, #1384, IADR-0558 決定 4: この約定が属する承認行の**建てた条件の記号と基準価格**（新規建ての判断が記録したもの）。
     // 射影が保有中のロットへ運び、保有中の判断へ渡す。🔴 **既定 null＝記録なし**（列追加前の行・決済・取り込み行・判断が答えなかった）。
     // **wire へは出さない**（射影の内部の値であり、報告書の入力ではない。保有中のロットは GET /risk-controls/open-positions が出す）。
     [property: System.Text.Json.Serialization.JsonIgnore] string? EntryCondition = null,

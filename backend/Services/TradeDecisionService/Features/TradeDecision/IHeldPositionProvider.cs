@@ -88,7 +88,7 @@ public sealed record HeldPosition(int SignedQuantity, decimal? AverageEntryPrice
     public bool IsLong => SignedQuantity > 0;
 
     /// <summary>
-    /// FR-04, FR-10, #1384, IADR-0557 決定 6: 保有中のエントリー（ロット）を古い順に並べたもの（建てた判断の条件の記号と基準価格）。
+    /// FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット）を古い順に並べたもの（建てた判断の条件の記号と基準価格）。
     /// 🔴 <b>null＝記録の供給なし</b>（照会先が本項目を返さない・数量の合わない列を受けた）。空の列とは別であり、
     /// プロンプトはすべての保有を「建てた条件: 不明」として扱う。
     /// </summary>
@@ -96,7 +96,7 @@ public sealed record HeldPosition(int SignedQuantity, decimal? AverageEntryPrice
 }
 
 /// <summary>
-/// FR-04, FR-10, #1384, IADR-0557 決定 6: 保有中のエントリー（ロット）1 件。<paramref name="EntryCondition"/>・<paramref name="EntryReferencePrice"/>
+/// FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット）1 件。<paramref name="EntryCondition"/>・<paramref name="EntryReferencePrice"/>
 /// は建てた判断が記録した条件の記号と基準価格（ローカル通貨。null＝記録なし・不明＝旧い建玉・取り込み・手動）。
 /// </summary>
 public sealed record HeldPositionLot(

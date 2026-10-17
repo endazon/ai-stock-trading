@@ -15,7 +15,7 @@ using Proto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
 namespace TradeDecisionService.Tests;
 
-// 🔴 FR-04, FR-10, FR-11, ADR-0003, #1384, IADR-0557: 新規建ての判断に「成立した条件の記号」と「基準価格」を構造化して記録し、
+// 🔴 FR-04, FR-10, FR-11, ADR-0003, #1384, IADR-0558: 新規建ての判断に「成立した条件の記号」と「基準価格」を構造化して記録し、
 // 保有中の判断（本判断・一次の両方）へ建玉（ロット）ごとに渡す。記録の無いロット・供給なしは「不明」と渡し、方針の既定の出口で扱わせる。
 // 実測（PoC 2026-10-17）: 方針に「条件 B で建てた建玉は日中安値割れで撤退」を書いても、判断は保有をどの条件で建てたかを知らず動かなかった。
 public class EntryBasisRecordAndHandOffTests

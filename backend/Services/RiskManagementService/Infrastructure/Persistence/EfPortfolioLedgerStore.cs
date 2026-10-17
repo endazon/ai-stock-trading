@@ -41,7 +41,7 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
             ApprovedAt = approvedAt,
             // #935, IADR-0394 決定6: 由来。null＝記録されていない（不明）のまま書く（推定で埋めない）。
             Source = source,
-            // FR-04, FR-10, #1384, IADR-0557 決定 4: 建てた条件の記号と基準価格（新規建ての判断だけが載せる。null＝記録なし）。
+            // FR-04, FR-10, #1384, IADR-0558 決定 4: 建てた条件の記号と基準価格（新規建ての判断だけが載せる。null＝記録なし）。
             EntryCondition = intent.EntryBasis?.Condition,
             EntryReferencePrice = intent.EntryBasis?.ReferencePrice,
         });
@@ -362,7 +362,7 @@ public sealed class EfPortfolioLedgerStore(RiskManagementDbContext db) : IPortfo
                 a.ApprovedAt,
                 // FR-06, #1357, IADR-0540 決定 1: 承認行の由来（null＝記録されていない）。報告書が決済の種別を引く。
                 a.Source,
-                // FR-04, FR-10, #1384, IADR-0557 決定 4: 建てた条件の記号と基準価格（射影のロットへ運ぶ。null＝記録なし）。
+                // FR-04, FR-10, #1384, IADR-0558 決定 4: 建てた条件の記号と基準価格（射影のロットへ運ぶ。null＝記録なし）。
                 a.EntryCondition,
                 a.EntryReferencePrice);
 

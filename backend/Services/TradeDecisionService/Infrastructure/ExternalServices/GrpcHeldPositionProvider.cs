@@ -111,7 +111,7 @@ public sealed class GrpcHeldPositionProvider(
         p.HasQuantity ? p.Quantity : null,
         RiskManagementWire.Decimal(p.HasEntryPrice, p.EntryPrice),
         RiskManagementWire.Decimal(p.HasStopLossPrice, p.StopLossPrice),
-        // FR-04, FR-10, #1384, IADR-0557 決定 6: ロットの列。未設定（旧い送り手）は null＝記録の供給なし。
+        // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列。未設定（旧い送り手）は null＝記録の供給なし。
         p.Entries is null ? null : [.. p.Entries.Rows.Select(ToRow)]);
 
     // 🔴 DecisionId が UUID として読めない行は null（解釈 InterpretLots が列全体を「供給なし」にする）。10 進・時刻の書式違反は FormatException。

@@ -154,17 +154,17 @@ message OpenPositionRow {
   optional string entry_price = 5;
   // 保有中のエントリーのうち最も保護的な損切りライン（10 進文字列）。
   optional string stop_loss_price = 6;
-  // FR-04, FR-10, #1384, IADR-0557 決定 6: 保有中のエントリー（ロット。古い順）。
+  // FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット。古い順）。
   // 🔴 未設定（本項目の追加前の送り手）は「ロットが無い」ではなく「記録の供給なし（不明）」。存在を区別するため包む。
   OpenPositionEntries entries = 7;
 }
 
-// FR-04, FR-10, #1384, IADR-0557 決定 6: 保有中のエントリー（ロット）の列。
+// FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット）の列。
 message OpenPositionEntries {
   repeated OpenPositionEntryRow rows = 1;
 }
 
-// FR-04, FR-10, #1384, IADR-0557 決定 6: 保有中のエントリー（ロット）1 件（REST の OpenPositionEntryView と同じ項目）。
+// FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のエントリー（ロット）1 件（REST の OpenPositionEntryView と同じ項目）。
 message OpenPositionEntryRow {
   // 建てた判断の DecisionId（UUID の文字列。相関できない行は 00000000-0000-0000-0000-000000000000）。
   optional string decision_id = 1;

@@ -162,7 +162,7 @@ public class TakeProfitReachedInPromptTests
             + "現在値が記録上の損切りラインに達している建玉は手仕舞いの候補です。（この建玉の手仕舞いは Buy）\n"
             + "- 方針の利確条件に未到達（現在 -4.00% / 基準 +5%）: システムが平均取得単価 100 と現在値 104 から計算し、丸めずに比べた結果です。"
             + "手仕舞い（Buy）を選ぶかは、方針とリスク制約に照らして判断します。\n"
-            // #1384, IADR-0557 決定 7: 建てた条件の要約（ここではロットの供給なし＝不明）と既定の出口の固定文。
+            // #1384, IADR-0558 決定 7: 建てた条件の要約（ここではロットの供給なし＝不明）と既定の出口の固定文。
             + $"- {TradeDecisionPromptBuilder.EntryBasisUnsuppliedLine}\n"
             + $"- {TradeDecisionPromptBuilder.EntryBasisUnknownRule}\n"
             + "\n");

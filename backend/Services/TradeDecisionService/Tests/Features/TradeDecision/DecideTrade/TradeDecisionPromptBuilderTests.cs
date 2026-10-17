@@ -765,7 +765,7 @@ public class TradeDecisionPromptBuilderTests
         var stopWidthRuleLine = $"- {TradeDecisionPromptBuilder.StopWidthBeyondDailyRangeRule}{Environment.NewLine}";
         prompt.Should().Contain(stopWidthRuleLine);
 
-        // #1384, IADR-0557 決定 3: 出力形式の建てた条件の 2 項目と、その入れ方の 1 行も後から足したものである。
+        // #1384, IADR-0558 決定 3: 出力形式の建てた条件の 2 項目と、その入れ方の 1 行も後から足したものである。
         var entryBasisFields = "," + TradeDecisionPromptBuilder.EntryBasisOutputFields;
         var entryBasisRuleLine = $"{TradeDecisionPromptBuilder.OutputEntryBasisRule}{Environment.NewLine}";
         prompt.Should().Contain(entryBasisFields).And.Contain(entryBasisRuleLine);

@@ -219,7 +219,7 @@ public static class RiskReadWireMapping
         };
         if (view.Symbol is not null)
             row.Symbol = view.Symbol;
-        // FR-04, FR-10, #1384, IADR-0557 決定 6: 保有中のロット。null（供給なし）は未設定のまま（空の列と区別する）。
+        // FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のロット。null（供給なし）は未設定のまま（空の列と区別する）。
         if (view.Entries is { } entries)
         {
             row.Entries = new Proto.OpenPositionEntries();

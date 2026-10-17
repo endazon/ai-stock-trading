@@ -4,12 +4,12 @@ using AiStockTrading.Shared.Kernel.Trading;
 namespace TradeDecisionService.Features.TradeDecision.DecideTrade;
 
 /// <summary>
-/// FR-04, FR-10, FR-11, #1384, IADR-0557 決定 3: 新規建ての判断が答えた「成立した条件の記号」と「基準価格」の検証の結果。
+/// FR-04, FR-10, FR-11, #1384, IADR-0558 決定 3: 新規建ての判断が答えた「成立した条件の記号」と「基準価格」の検証の結果。
 /// <see cref="Basis"/> が null のとき記録は「不明」であり、<see cref="Reason"/> にその理由（ログ用）が入る。
 /// </summary>
 public sealed record EntryBasisValidation(EntryBasis? Basis, string? Reason);
 
-// FR-04, FR-10, FR-11, #1384, IADR-0557 決定 3: 新規建ての判断の「建てた条件」の記録を検証する純関数。
+// FR-04, FR-10, FR-11, #1384, IADR-0558 決定 3: 新規建ての判断の「建てた条件」の記録を検証する純関数。
 // 🔴 **判断・数量・損切りには一切効かせない**（記録だけ）。通らない値は「不明」として記録し、見送りにしない ——
 // 記録のための項目の欠落で新規建てを捨てれば、方針どおりの売買を記録の都合で止めることになる（#1187 と同じ形の事故）。
 //

@@ -116,7 +116,7 @@ public static class PolicyRevisionPromptBuilder
         + "書式どおりの行が無い週報は、確定の前に利用者へ警告される。";
 
     /// <summary>
-    /// FR-04, FR-07, ADR-0003, #1384, IADR-0557 決定 8: 判断へ渡る材料の行（保有）。保有中の建玉は、建てたときの判断が記録した
+    /// FR-04, FR-07, ADR-0003, #1384, IADR-0558 決定 8: 判断へ渡る材料の行（保有）。保有中の建玉は、建てたときの判断が記録した
     /// <b>条件の記号と基準価格がロットごとに</b>渡る。改訂の AI が「記録に依存する出口は動くか分からない」と注記するしかなかった（PoC 2026-10-17）ため、
     /// 渡ることと、記録が無い建玉は「不明」として既定の出口で扱われることを示す。
     /// </summary>
@@ -125,7 +125,7 @@ public static class PolicyRevisionPromptBuilder
         + "保有状況には、建玉（ロット）ごとに、建てたときの判断が記録した条件の記号（方針の「条件 X:」行の記号）と基準価格（その条件の判定に使った価格。例: 日中安値）が含まれる"
         + "（記録の無い建玉〔この記録の導入前に建てた建玉・取り込み・手動〕は「不明」と渡り、方針の既定の出口で扱われる）";
 
-    /// <summary>FR-04, FR-07, #1384, IADR-0557 決定 8: 新規建ての条件の記号の書き方の節の見出し（日報の改訂にだけ出す）。</summary>
+    /// <summary>FR-04, FR-07, #1384, IADR-0558 決定 8: 新規建ての条件の記号の書き方の節の見出し（日報の改訂にだけ出す）。</summary>
     public const string EntryConditionHeading = "新規建ての条件の記号の書き方（日報の方針。建てた条件で出口を分けるとき）:";
 
     /// <summary>「条件 X:」行の書式の案内（試験が共有カーネルの読み取りで記号として読めることを固定する）。</summary>
@@ -168,7 +168,7 @@ public static class PolicyRevisionPromptBuilder
         sb.AppendLine();
         // FR-07, FR-04, ADR-0048 決定 4, #1118, IADR-0467 決定 7: 判断へ渡る材料と「未提供」の材料。
         sb.AppendLine(DecisionMaterialsHeading);
-        // FR-04, FR-07, #1384, IADR-0557 決定 8: 保有状況には建玉ごとの建てた条件の記号と基準価格が含まれる。
+        // FR-04, FR-07, #1384, IADR-0558 決定 8: 保有状況には建玉ごとの建てた条件の記号と基準価格が含まれる。
         sb.AppendLine(HeldPositionMaterial);
         sb.AppendLine("- 現在値・前日終値と前日比・当日始値と当日始値比・日中の高値と安値（米国株。系が計算した値）");
         sb.AppendLine("- 急変の検知（基準値と変動率）・ニュースの収集の状態・検索で拾えた参考情報（拾えないこともある）");
@@ -191,7 +191,7 @@ public static class PolicyRevisionPromptBuilder
             sb.AppendLine(SelfContainedRule);
             sb.AppendLine(CopyThresholdsRule);
             sb.AppendLine();
-            // FR-04, FR-07, #1384, IADR-0557 決定 8: 新規建ての条件の記号（「条件 X:」行）と、建てた条件で出口を分けるときの案内。
+            // FR-04, FR-07, #1384, IADR-0558 決定 8: 新規建ての条件の記号（「条件 X:」行）と、建てた条件で出口を分けるときの案内。
             sb.AppendLine(EntryConditionHeading);
             sb.AppendLine(EntryConditionLineRule);
             sb.AppendLine(EntryConditionExitRule);

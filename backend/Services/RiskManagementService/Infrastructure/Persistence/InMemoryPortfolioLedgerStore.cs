@@ -116,7 +116,7 @@ public sealed class InMemoryPortfolioLedgerStore : IPortfolioLedgerStore
                 EntryOrderedAt: approval.ApprovedAt,
                 // FR-06, #1357, IADR-0540 決定 1: 承認行の由来（EfPortfolioLedgerStore と同一の意味論。null＝記録されていない）。
                 ApprovalSource: approval.Source,
-                // FR-04, FR-10, #1384, IADR-0557 決定 4: 建てた条件の記号と基準価格（EfPortfolioLedgerStore と同一の意味論。null＝記録なし）。
+                // FR-04, FR-10, #1384, IADR-0558 決定 4: 建てた条件の記号と基準価格（EfPortfolioLedgerStore と同一の意味論。null＝記録なし）。
                 EntryCondition: intent.EntryBasis?.Condition,
                 EntryReferencePrice: intent.EntryBasis?.ReferencePrice));
         }

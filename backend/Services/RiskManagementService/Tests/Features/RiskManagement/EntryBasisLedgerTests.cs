@@ -10,7 +10,7 @@ using Xunit;
 
 namespace RiskManagementService.Tests;
 
-// 🔴 FR-04, FR-10, #1384, IADR-0557 決定 4〜6: 新規建ての判断が建てた条件の記号と基準価格（OrderIntent.EntryBasis）を取引台帳の承認行へ永続化し、
+// 🔴 FR-04, FR-10, #1384, IADR-0558 決定 4〜6: 新規建ての判断が建てた条件の記号と基準価格（OrderIntent.EntryBasis）を取引台帳の承認行へ永続化し、
 // 射影のロットへ運び、GET /risk-controls/open-positions（REST・gRPC）でロットごとに出す。記録の無い行（列追加前・決済・取り込み）は null。
 public class EntryBasisLedgerTests
 {

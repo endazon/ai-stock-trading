@@ -4,7 +4,7 @@ using Xunit;
 
 namespace AiStockTrading.Shared.Kernel.Tests.Trading;
 
-// FR-04, FR-07, #1384, IADR-0557 決定 1: 方針の「条件 X:」書式行だけから新規建ての条件の記号を読む（自由文は読まない）。
+// FR-04, FR-07, #1384, IADR-0558 決定 1: 方針の「条件 X:」書式行だけから新規建ての条件の記号を読む（自由文は読まない）。
 public class PolicyEntryConditionsTests
 {
     // #1384 AC-04-20: 書式行（箇条書きの印・売買の向きの語・名前の括弧・全角）から記号を集める。

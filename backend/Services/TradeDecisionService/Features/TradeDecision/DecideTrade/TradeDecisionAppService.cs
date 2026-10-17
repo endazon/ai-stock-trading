@@ -891,14 +891,14 @@ public sealed class TradeDecisionAppService(
         // AI の幅の傾向（比率・日中の値幅に対する倍率）と、下限・出所・適用した幅・広げたかを並べて出す。
         LogStopWidth(trigger, side, quantity, decision, referencePrice, intraday, stopWidth, stopLossPrice, stopFloor);
 
-        // FR-04, FR-10, FR-11, #1384, IADR-0557 決定 3: 建てた条件の記号と基準価格を検証して発注意図に載せる（台帳の承認行へ永続化され、
+        // FR-04, FR-10, FR-11, #1384, IADR-0558 決定 3: 建てた条件の記号と基準価格を検証して発注意図に載せる（台帳の承認行へ永続化され、
         // 保有中の判断へ建玉ごとに渡る）。🔴 記録だけであり、通らない値は「不明」として記録する（見送りにしない）。
         var entryBasis = EntryBasisValidator.Validate(
             policy.Summary, decision.EntryConditionAnswer, decision.EntryReferencePriceAnswer, intraday, currentPrice, trigger);
         if (entryBasis.Reason is { } entryBasisReason)
         {
             logger.LogInformation(
-                "建てた条件の記録の一部または全部を不明として記録（見送りにしない・IADR-0557）: {Symbol} reason={Reason} "
+                "建てた条件の記録の一部または全部を不明として記録（見送りにしない・IADR-0558）: {Symbol} reason={Reason} "
                     + "entryCondition={EntryCondition} entryReferencePrice={EntryReferencePrice}",
                 trigger.Symbol, entryBasisReason, decision.EntryConditionAnswer, decision.EntryReferencePriceAnswer);
         }

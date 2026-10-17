@@ -137,7 +137,7 @@ public class ScreeningContextDegradationTests
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.NewsStatusReserveChars
                 // #1292, IADR-0523 決定 2: 銘柄行は保有の手仕舞いの固定文の行の予約ぶん底上げ（予算も同幅シフト）。
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.HeldExitRuleReserveChars
-                // #1384, IADR-0557 決定 7: 銘柄行は建てた条件の要約の行の予約ぶん底上げ（予算も同幅シフト）。
+                // #1384, IADR-0558 決定 7: 銘柄行は建てた条件の要約の行の予約ぶん底上げ（予算も同幅シフト）。
                 + TradeDecisionService.Features.TradeDecision.DecideTrade.ScreeningContextAssembler.HeldEntryBasisReserveChars
                 + watchlistUnknownChars
                 // #1359, IADR-0542 決定 5: 残す参考情報（市況・重要ニュースの 2 件）ぶんの境界語の文字数を同幅ずらす。

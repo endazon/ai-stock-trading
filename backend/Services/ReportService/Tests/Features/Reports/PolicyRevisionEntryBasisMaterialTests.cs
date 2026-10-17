@@ -6,7 +6,7 @@ using Xunit;
 
 namespace ReportService.Tests;
 
-// FR-04, FR-07, ADR-0003, #1384, IADR-0557 決定 8: 方針の改訂の AI へ、保有中の建玉には建てた判断の記録（条件の記号と基準価格）が
+// FR-04, FR-07, ADR-0003, #1384, IADR-0558 決定 8: 方針の改訂の AI へ、保有中の建玉には建てた判断の記録（条件の記号と基準価格）が
 // ロットごとに渡ることと、「条件 X:」書式の行の書き方を示す。PoC（2026-10-17）では改訂の AI が「記録に依存する」と注記するしかなかった。
 public class PolicyRevisionEntryBasisMaterialTests
 {

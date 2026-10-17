@@ -29,7 +29,7 @@ public sealed class OpenPositionsService(IPortfolioLedgerStore ledger)
                     ? PortfolioProjection.MostProtective(p.Side, [known, approximated])!.Value
                     : known;
 
-            // FR-04, FR-10, #1384, IADR-0557 決定 6: 保有中のロット（建てた判断の条件と基準価格）を古い順に添える。
+            // FR-04, FR-10, #1384, IADR-0558 決定 6: 保有中のロット（建てた判断の条件と基準価格）を古い順に添える。
             result.Add(new OpenPositionView(
                 p.Symbol, p.Market, p.Side, p.Quantity, p.AverageEntryPrice, stopLoss,
                 [.. p.Lots.Select(l => new OpenPositionEntryView(

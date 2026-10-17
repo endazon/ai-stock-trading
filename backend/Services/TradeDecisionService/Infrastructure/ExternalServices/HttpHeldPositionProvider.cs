@@ -177,12 +177,12 @@ public sealed class HttpHeldPositionProvider(
             entryPrice is > 0m ? entryPrice : null,
             stopLossPrice is > 0m ? stopLossPrice : null)
         {
-            // FR-04, FR-10, #1384, IADR-0557 決定 6: ロットの列（射影は (銘柄, 市場) ごとに 1 行。複数行の応答はロットを渡さない）。
+            // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列（射影は (銘柄, 市場) ごとに 1 行。複数行の応答はロットを渡さない）。
             Lots = matched.Count == 1 ? InterpretLots(entries, Math.Abs(signed), logger) : null,
         };
     }
 
-    // FR-04, FR-10, #1384, IADR-0557 決定 6: ロットの列の解釈。🔴 **列が無い（旧い送り手）・行が欠けている・数量の合計が建玉と合わない列は
+    // FR-04, FR-10, #1384, IADR-0558 決定 6: ロットの列の解釈。🔴 **列が無い（旧い送り手）・行が欠けている・数量の合計が建玉と合わない列は
     // null（記録の供給なし）** にする —— 取り違えた列を渡すと、保有中の判断が別のロットの条件で出口を探す。保有状況そのものは落とさない
     // （ロットが読めないことを理由に、保有を「不明」へ倒して手仕舞いを止めない）。
     internal static IReadOnlyList<HeldPositionLot>? InterpretLots(
@@ -290,7 +290,7 @@ public sealed class HttpHeldPositionProvider(
     // 価格 2 項目は nullable（項目を持たない応答を 0 と読まない）。
     // 🔴 #943, IADR-0390: 識別・数量の 4 項目も nullable で受ける —— 非 nullable だと項目の欠落（送り手の改名）が既定値
     // （銘柄 null・市場 0＝日本・方向 0＝買い・数量 0）に化けて「保有なし」と区別できない。契約は T-10-800 が本物の型で固定する。
-    // FR-04, FR-10, #1384, IADR-0557 決定 6: Entries（保有中のロット）。項目が無い応答（旧い送り手）は null＝記録の供給なし。
+    // FR-04, FR-10, #1384, IADR-0558 決定 6: Entries（保有中のロット）。項目が無い応答（旧い送り手）は null＝記録の供給なし。
     internal sealed record OpenPositionDto(
         string? Symbol, Market? Market, TradeSide? Side, int? Quantity, decimal? EntryPrice, decimal? StopLossPrice,
         List<OpenPositionEntryDto>? Entries = null);

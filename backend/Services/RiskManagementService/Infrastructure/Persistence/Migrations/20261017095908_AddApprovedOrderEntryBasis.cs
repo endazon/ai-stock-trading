@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace RiskManagementService.Infrastructure.Migrations
 {
     /// <summary>
-    /// FR-04, FR-10, #1384, IADR-0557 決定 4: 取引台帳の承認行 <c>approved_orders</c> に、新規建ての判断が建てた条件の記号
+    /// FR-04, FR-10, #1384, IADR-0558 決定 4: 取引台帳の承認行 <c>approved_orders</c> に、新規建ての判断が建てた条件の記号
     /// （<c>EntryCondition</c>）と基準価格（<c>EntryReferencePrice</c>）の 2 列を足す。**追加のみ・既存行は NULL（記録なし）**。
     /// 起動時の自動移行で適用される。
     /// </summary>
