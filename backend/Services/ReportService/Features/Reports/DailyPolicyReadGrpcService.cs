@@ -2,6 +2,7 @@ using System.Globalization;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Extensions;
 using Grpc.Core;
 using Microsoft.AspNetCore.Authorization;
+using ReportService.Features.Reports.GetConfirmedDailyPolicy;
 using Proto = AiStockTrading.Shared.Grpc.Report.V1;
 
 namespace ReportService.Features.Reports;
@@ -31,6 +32,26 @@ public sealed class DailyPolicyReadGrpcService(ReportAppService reports) : Proto
             response.Policy = DailyPolicyWireMapping.ToProto(policy);
         return Task.FromResult(response);
     }
+
+    // FR-15, FR-07, #1308, #1388, IADR-0528 決定 3, IADR-0557 決定 3: ある時点で確定していた方針（REST `GET /reports/daily-policy/as-of`）。
+    // 同じサービス（GetConfirmedDailyPolicyAsOf）・同じ入力の検証（TryParseInstant。オフセット必須）。欠落・書式違いは INVALID_ARGUMENT（REST の 400）、
+    // 無かったときは `policy` の無い応答（REST の 404。NOT_FOUND にしない —— 「無かった」は受け手の正常な答えであり、撃ち直しの対象ではない）。
+    public override Task<Proto.GetConfirmedDailyPolicyAsOfResponse> GetConfirmedDailyPolicyAsOf(
+        Proto.GetConfirmedDailyPolicyAsOfRequest request, ServerCallContext context)
+    {
+        if (!GetConfirmedDailyPolicyAsOfEndpoint.TryParseInstant(request.At, out var instant))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, GetConfirmedDailyPolicyAsOfEndpoint.InvalidAtError));
+
+        var policy = reports.GetConfirmedDailyPolicyAsOf(instant);
+        var response = new Proto.GetConfirmedDailyPolicyAsOfResponse();
+        if (policy is not null)
+        {
+            response.Policy = DailyPolicyWireMapping.ToProto(policy);
+            response.ConfirmedAt = DailyPolicyWireMapping.Instant(policy.ConfirmedAt);
+        }
+
+        return Task.FromResult(response);
+    }
 }
 
 // NFR, IADR-0446 決定 3: 送り手の型 → 線上表現（提供側の写し）。C# の null は設定しない。運ぶのは取引判断が読む項目だけ
@@ -40,13 +61,27 @@ public static class DailyPolicyWireMapping
     public static Proto.DailyPolicyRecord ToProto(ConfirmedDailyPolicy policy)
     {
         ArgumentNullException.ThrowIfNull(policy);
+        return Record(policy.Date, policy.Summary, policy.PeriodKey, policy.Version);
+    }
 
-        var record = new Proto.DailyPolicyRecord { Date = policy.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
-        if (policy.Summary is not null)
-            record.Summary = policy.Summary;
-        if (!string.IsNullOrEmpty(policy.PeriodKey))
-            record.PeriodKey = policy.PeriodKey;
-        record.Version = policy.Version;
+    // FR-15, #1388, IADR-0557 決定 3: 当時の方針（as-of）。運ぶ項目は確定の方針と同じ（日付・要約・期間キー・版）。確定の時刻は応答の別の項目。
+    public static Proto.DailyPolicyRecord ToProto(ConfirmedDailyPolicyAsOf policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        return Record(policy.Date, policy.Summary, policy.PeriodKey, policy.Version);
+    }
+
+    private static Proto.DailyPolicyRecord Record(DateOnly date, string? summary, string? periodKey, int version)
+    {
+        var record = new Proto.DailyPolicyRecord { Date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
+        if (summary is not null)
+            record.Summary = summary;
+        if (!string.IsNullOrEmpty(periodKey))
+            record.PeriodKey = periodKey;
+        record.Version = version;
         return record;
     }
+
+    // 🔴 時刻は往復書式でオフセットごと運ぶ（REST の JSON の DateTimeOffset と同じ。UTC へ丸めて情報を落とさない）。
+    public static string Instant(DateTimeOffset value) => value.ToString("O", CultureInfo.InvariantCulture);
 }

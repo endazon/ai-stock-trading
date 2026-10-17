@@ -401,6 +401,9 @@ services:
       # 保有銘柄のニュース・開示も集める（上限を超えるときは保有を先に採る）。読めない巡回は監視銘柄だけ（警告）。
       # 空=保有を足さない（従来の挙動。取引判断の RiskManagement__BaseUrl と同じく本番既定は空）。
       - { name: RiskManagement__BaseUrl, value: "" }
+      # NFR, MSP:ADR-0029, IADR-0557, #1388: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。🔴 **既定は REST であり、このキーは意図的に置いていない**。
+      # 有効化するときだけ、このサービスの `grpcClients` へ `RiskManagement: true` を足す（前提: services.risk-management に `grpcPort: 8081`。
+      # 宣言があれば上の BaseUrl より優先し、空でも保有を読む）。s2s は REST と同じ ServiceAuth__*。deadline は RiskManagement__GrpcTimeoutSeconds（既定 5 秒）。
       # ADR-0020 §結果 / IADR-0224 / IADR-0275: 日次上限は空=未実測（銘柄数上限を逆算しない）のまま。
       # 分次は実測済みだが、日次は実測セッションでも確定できなかった（継続観察が要る）。
       - { name: Collection__Source__Finnhub__DailyRequestLimit, value: "" }

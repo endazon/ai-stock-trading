@@ -103,6 +103,10 @@ builder.Services.AddAiStockTradingMarketMonitorGrpc(builder.Configuration);
 // 短いタイムアウト。RiskManagement:BaseUrl 未設定/不正 URI は保有を足さない（従来どおり）。読めない巡回は監視銘柄だけから決める。
 builder.Services.AddHttpClient("risk", c => c.Timeout = TimeSpan.FromSeconds(5))
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5, IADR-0557 決定 2, #1388 (#753): east-west gRPC（`RiskControlsRead/GetOpenPositions`）。
+// **`RiskManagement:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば保有銘柄の読み手が
+// gRPC 実装を選ぶ（BaseUrl より優先）。不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingRiskManagementGrpc(builder.Configuration);
 builder.Services.AddSingleton(sp =>
 {
     var sourceOptions =
@@ -127,7 +131,12 @@ builder.Services.AddSingleton(sp =>
 
     IHeldSymbolsProvider? held = null;
     var riskBaseUrl = builder.Configuration["RiskManagement:BaseUrl"];
-    if (!string.IsNullOrWhiteSpace(riskBaseUrl) && Uri.TryCreate(riskBaseUrl, UriKind.Absolute, out var riskUri))
+    if (sp.GetService<RiskManagementGrpcTransport>() is { } riskGrpc)
+    {
+        held = new GrpcRiskManagementHeldSymbolsProvider(
+            riskGrpc, sp.GetRequiredService<ILogger<GrpcRiskManagementHeldSymbolsProvider>>());
+    }
+    else if (!string.IsNullOrWhiteSpace(riskBaseUrl) && Uri.TryCreate(riskBaseUrl, UriKind.Absolute, out var riskUri))
     {
         var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("risk");
         http.BaseAddress = riskUri;

@@ -9,11 +9,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using CostProto = AiStockTrading.Shared.Grpc.CostControl.V1;
 using MonitorProto = AiStockTrading.Shared.Grpc.MarketMonitor.V1;
+using RiskProto = AiStockTrading.Shared.Grpc.RiskManagement.V1;
 
 namespace InformationCollectionService.Tests;
 
 // NFR, IADR-0446, #1061 (#753): 段 4 で情報収集が読む 2 つの提供側（市場監視の `WatchlistRead`・費用統制の `CostStateRead`）を
 // **実 Kestrel の h2c 専用ポート**（127.0.0.1 のみ）で立てる偽の提供側（取引判断の同名の型と同じ形。テストプロジェクトごとに置く）。
+// #1388, IADR-0557: 段 5 の追補でリスク管理の保有（`RiskControlsRead/GetOpenPositions`）も同じ偽の提供側に載せた。
 internal sealed class Stage4ReadStubHost : IAsyncDisposable
 {
     private readonly WebApplication _app;
@@ -40,6 +42,7 @@ internal sealed class Stage4ReadStubHost : IAsyncDisposable
         var app = builder.Build();
         app.MapGrpcService<WatchlistStubService>();
         app.MapGrpcService<CostStateStubService>();
+        app.MapGrpcService<RiskOpenPositionsStubService>();
         await app.StartAsync();
 
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
@@ -57,10 +60,13 @@ internal sealed class Stage4ReadStubBehavior
 {
     private int _watchlistCalls;
     private int _costCalls;
+    private int _openPositionsCalls;
 
     internal int WatchlistCalls => Volatile.Read(ref _watchlistCalls);
 
     internal int CostCalls => Volatile.Read(ref _costCalls);
+
+    internal int OpenPositionsCalls => Volatile.Read(ref _openPositionsCalls);
 
     internal Func<int, CancellationToken, Task<MonitorProto.GetWatchlistResponse>> Watchlist { get; init; } =
         (_, _) => Task.FromResult(new MonitorProto.GetWatchlistResponse());
@@ -68,11 +74,17 @@ internal sealed class Stage4ReadStubBehavior
     internal Func<int, CancellationToken, Task<CostProto.GetCostStateResponse>> Cost { get; init; } =
         (_, _) => Task.FromResult(new CostProto.GetCostStateResponse { IsHalted = false, IntervalMultiplier = "1" });
 
+    internal Func<int, CancellationToken, Task<RiskProto.GetOpenPositionsResponse>> OpenPositions { get; init; } =
+        (_, _) => Task.FromResult(new RiskProto.GetOpenPositionsResponse());
+
     internal Task<MonitorProto.GetWatchlistResponse> HandleWatchlist(ServerCallContext context) =>
         Watchlist(Interlocked.Increment(ref _watchlistCalls), context.CancellationToken);
 
     internal Task<CostProto.GetCostStateResponse> HandleCost(ServerCallContext context) =>
         Cost(Interlocked.Increment(ref _costCalls), context.CancellationToken);
+
+    internal Task<RiskProto.GetOpenPositionsResponse> HandleOpenPositions(ServerCallContext context) =>
+        OpenPositions(Interlocked.Increment(ref _openPositionsCalls), context.CancellationToken);
 
     internal static Func<int, CancellationToken, Task<T>> Returns<T>(T response) => (_, _) => Task.FromResult(response);
 
@@ -105,4 +117,11 @@ internal sealed class CostStateStubService(Stage4ReadStubBehavior behavior) : Co
     public override Task<CostProto.GetCostStateResponse> GetCostState(
         CostProto.GetCostStateRequest request, ServerCallContext context) =>
         behavior.HandleCost(context);
+}
+
+internal sealed class RiskOpenPositionsStubService(Stage4ReadStubBehavior behavior) : RiskProto.RiskControlsRead.RiskControlsReadBase
+{
+    public override Task<RiskProto.GetOpenPositionsResponse> GetOpenPositions(
+        RiskProto.GetOpenPositionsRequest request, ServerCallContext context) =>
+        behavior.HandleOpenPositions(context);
 }

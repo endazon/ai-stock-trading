@@ -588,6 +588,7 @@ builder.Services.AddScoped<TradeDecisionAppService>();
 // as-of 入力の供給は既定「入力なし」であり、実供給を構成するまで記録は 1 件も作られない（LLM も呼ばれない）。
 // ［2026-10-13 追記 / #1308・IADR-0528 決定7］基底の供給を足した。`Reports:BaseUrl` と `OrderExecution:BaseUrl` がそろうと、
 // 連鎖の最も内側が基底の供給になる（Stage0AsOfComposition）。そろわなければ従来どおり「入力なし」。記録を走らせるかは Stage0Recording が決める。
+// ［2026-10-17 追記 / #1388・IADR-0557 決定 2］報告書の口は `Reports:Grpc`（上の AddAiStockTradingReportsGrpc）でも満たし、宣言があれば当時の方針も gRPC で読む。
 builder.Services.AddHttpClient(Stage0AsOfComposition.ExternalHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.Configure<Stage0RecordingOptions>(
     builder.Configuration.GetSection(Stage0RecordingOptions.SectionName));
