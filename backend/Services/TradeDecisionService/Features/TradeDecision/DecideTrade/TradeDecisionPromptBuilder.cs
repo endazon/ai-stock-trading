@@ -147,7 +147,7 @@ public static class TradeDecisionPromptBuilder
         "建てた条件が不明のロットは、方針の既定の出口（建てた条件を限定しない出口の基準）で扱います。建てた条件ごとの出口は当てはめません。";
 
     public const string EntryBasisMixedRule =
-        "建て増しで建てた条件の異なるロットが混ざっています。ロットごとに出口を当てはめ、いずれかのロットが出口の基準に達したら手仕舞いを検討します（手仕舞いは保有の全量です）。";
+        "建て増しで建てた条件か基準価格の異なるロットが混ざっています。ロットごとに出口を当てはめ、いずれかのロットが出口の基準に達したら手仕舞いを検討します（手仕舞いは保有の全量です）。";
 
     // 一次（短縮版）でロットを並べる上限（縮退の保護分 ScreeningContextAssembler.HeldEntryBasisReserveChars に収める）。超えた分は件数だけ書く。
     public const int ScreeningMaxLots = 5;
@@ -811,7 +811,11 @@ public static class TradeDecisionPromptBuilder
     }
 
     // FR-04, FR-10, #1384, IADR-0558 決定 7: 本判断の保有状況節の「建てた判断の記録」。数値はコードが渡す（LLM にロットを数えさせない）。
-    // 供給なし（Lots が null）は 1 行で不明と書き、既定の出口の規則を出す。混在（2 ロット以上で条件が異なる・不明を含む）のときだけ混在の規則を出す。
+    // 供給なし（Lots が null）は 1 行で不明と書き、既定の出口の規則を出す。混在（2 ロット以上で条件か基準価格が異なる・不明を含む）のときだけ
+    // 混在の規則を出す（同じ B でも基準価格が違えば出口の価格がロットごとに違う）。
+    // 🔴 空の列（Lots=[]）は供給なしと同じ文面にする。保有中の建玉には必ず 1 ロット以上あり（射影はロットの無い建玉を返さない）、
+    // 数量の合計が建玉と合わない列は受け手（HttpHeldPositionProvider.InterpretLots）が null にするため、保有ありで空の列は届かない。
+    // 届いたとしても「ロットが分からない」以上のことは言えないので、不明として既定の出口で扱わせる。
     private static void AppendEntryBasisLines(StringBuilder sb, HeldPosition held, string priceUnit)
     {
         if (held.Lots is not { Count: > 0 } lots)
@@ -832,11 +836,12 @@ public static class TradeDecisionPromptBuilder
         sb.AppendLine($"- {EntryBasisByLotRule}");
         if (lots.Any(l => l.EntryCondition is null))
             sb.AppendLine($"- {EntryBasisUnknownRule}");
-        if (lots.Count > 1 && lots.Select(l => l.EntryCondition).Distinct().Count() > 1)
+        if (lots.Count > 1 && lots.Select(l => (l.EntryCondition, l.EntryReferencePrice)).Distinct().Count() > 1)
             sb.AppendLine($"- {EntryBasisMixedRule}");
     }
 
     // FR-04, FR-10, #1384, IADR-0558 決定 7: 一次の短縮版（1 行の要約＋不明があるときの既定の出口の規則）。並べるのは ScreeningMaxLots まで。
+    // 空の列（Lots=[]）を供給なしと同じ文面にする理由は AppendEntryBasisLines と同じ（保有ありで空の列は届かない）。
     private static void AppendEntryBasisSummary(StringBuilder sb, HeldPosition held, string priceUnit)
     {
         if (held.Lots is not { Count: > 0 } lots)

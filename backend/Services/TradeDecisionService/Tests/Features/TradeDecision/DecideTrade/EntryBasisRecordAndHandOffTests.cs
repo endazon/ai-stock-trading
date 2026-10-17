@@ -207,15 +207,27 @@ public class EntryBasisRecordAndHandOffTests
         section.IndexOf("30 株", StringComparison.Ordinal).Should().BeLessThan(section.IndexOf("20 株", StringComparison.Ordinal), "古い順");
     }
 
-    // #1384 AC-04-11（否定形）: 同じ条件のロットだけなら混在の規則は出さない。
+    // #1384 AC-04-11（否定形）: 同じ条件・同じ基準価格のロットだけなら混在の規則は出さない。
     [Fact]
-    public void 同じ条件のロットだけなら混在の規則は出さない()
+    public void 同じ条件と基準価格のロットだけなら混在の規則は出さない()
+    {
+        var held = HeldWith(new HeldPositionLot(Guid.NewGuid(), 30, T1, "B", 95m), new HeldPositionLot(Guid.NewGuid(), 20, T2, "B", 95m));
+
+        var section = HeldSection(TradeDecisionPromptBuilder.Build(Scheduled(), Policy, Context(), currentPrice: 96m, held: held, working: WorkingEntryOrders.None));
+
+        section.Should().NotContain(TradeDecisionPromptBuilder.EntryBasisMixedRule);
+    }
+
+    // #1384 AC-04-17（AI レビューの指摘）: 同じ条件でも基準価格が違うロット（B / 95 と B / 94.5）は出口の価格が違うので、混在の規則を出す。
+    [Fact]
+    public void 同じ条件でも基準価格が違うロットは混在の規則を出す()
     {
         var held = HeldWith(new HeldPositionLot(Guid.NewGuid(), 30, T1, "B", 95m), new HeldPositionLot(Guid.NewGuid(), 20, T2, "B", 94.5m));
 
         var section = HeldSection(TradeDecisionPromptBuilder.Build(Scheduled(), Policy, Context(), currentPrice: 96m, held: held, working: WorkingEntryOrders.None));
 
-        section.Should().NotContain(TradeDecisionPromptBuilder.EntryBasisMixedRule);
+        section.Should().Contain(TradeDecisionPromptBuilder.EntryBasisMixedRule);
+        TradeDecisionPromptBuilder.EntryBasisMixedRule.Should().Contain("条件か基準価格の異なる");
     }
 
     // #1384 AC-04-12: 供給なし（Lots が null）は本判断・一次の両方で不明と書き、既定の出口の固定文を出す。固定文は方針の値（-1.5%）を書かない。
