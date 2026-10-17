@@ -45,22 +45,26 @@ public class PolicyRevisionProposalParserTests
     }
 
     // T-10-1302: 空・JSON でない・方針が無い・方針が空は案なし（理由を返す）。
+    // T-10-2718（#1383, IADR-0555 決定 2）: JSON として読めなかった（空・`{…}` が無い・構文違反）ものだけ NotParsable。
+    // 読めた JSON の検証違反は NotParsable にしない（出力上限で切れたと案内しない）。
     [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("方針はこうです")]
-    [InlineData("{\"policySummary\": ")]
-    [InlineData("[1,2]")]
-    [InlineData("{\"watchlistChanges\": []}")]
-    [InlineData("{\"policySummary\": 1}")]
-    [InlineData("{\"policySummary\": \"  \"}")]
-    public void 方針が読めなければ案なし(string text)
+    [InlineData("", true)]
+    [InlineData("   ", true)]
+    [InlineData("方針はこうです", true)]
+    [InlineData("{\"policySummary\": ", true)]
+    [InlineData("{\"policySummary\": \"a\", \"watchlistChanges\": [{\"action\": \"Add\"}, {\"act", true)]
+    [InlineData("[1,2]", true)]
+    [InlineData("{\"watchlistChanges\": []}", false)]
+    [InlineData("{\"policySummary\": 1}", false)]
+    [InlineData("{\"policySummary\": \"  \"}", false)]
+    public void 方針が読めなければ案なし(string text, bool notParsable)
     {
         var result = PolicyRevisionProposalParser.Parse(text);
 
         result.IsValid.Should().BeFalse();
         result.Proposal.Should().BeNull();
         result.Reason.Should().NotBeNullOrWhiteSpace();
+        result.NotParsable.Should().Be(notParsable);
     }
 
     // T-10-1303: 入れ替え案の 1 件でも形式違反なら**案全体を捨てる**（部分採用しない）。

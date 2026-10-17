@@ -211,6 +211,10 @@ public class LlmReportPolicyReviserTests
     [InlineData(null, "max_tokens", PolicyRevisionFailure.Truncated)]
     [InlineData("{\"policySummary\": \"途中で切れ", "end_turn", PolicyRevisionFailure.InvalidOutput)]
     [InlineData("{\"policySummary\": \"途中で切れ", null, PolicyRevisionFailure.InvalidOutput)]
+    // (b) 入れ子の閉じた括弧の後で切れた（最初の { から最後の } は JSON の構文違反）→ Truncated
+    [InlineData("{\"policySummary\": \"押し目買い\", \"watchlistChanges\": [{\"action\": \"Add\", \"symbol\": \"AAPL\"}, {\"act", "max_tokens", PolicyRevisionFailure.Truncated)]
+    // (a) 閉じた JSON の検証違反（方針が無い）は max_tokens でも従来の形式違反の理由
+    [InlineData("{\"rationale\": \"説明だけ\"}", "max_tokens", PolicyRevisionFailure.InvalidOutput)]
     public async Task 出力上限で切れたJSONは途中で切れたと区別して返す(string? text, string? stopReason, PolicyRevisionFailure expected)
     {
         var outcome = await Reviser(new FakeTransport(Completed(text, stopReason))).ReviseAsync(Context());
@@ -227,6 +231,19 @@ public class LlmReportPolicyReviserTests
         {
             outcome.Message.Should().NotBe(LlmReportPolicyReviser.TruncatedMessage, "上限で切れていない形式違反を『途中で切れた』と言わない");
         }
+    }
+
+    // (a) T-10-2718: 閉じた JSON の検証違反（方針が 2,000 文字超）は max_tokens でも Truncated にせず、パーサの理由を返す。
+    [Fact]
+    public async Task 閉じたJSONの検証違反は出力上限に到達しても形式違反の理由を返す()
+    {
+        var tooLong = new string('長', PolicyRevisionProposalParser.MaxPolicySummaryLength + 1);
+        var json = $$"""{"policySummary": "{{tooLong}}", "watchlistChanges": [], "rationale": "指示どおり"}""";
+
+        var outcome = await Reviser(new FakeTransport(Completed(json, "max_tokens"))).ReviseAsync(Context());
+
+        outcome.Failure.Should().Be(PolicyRevisionFailure.InvalidOutput);
+        outcome.Message.Should().Contain("方針が長すぎます").And.NotBe(LlmReportPolicyReviser.TruncatedMessage);
     }
 
     [Fact]

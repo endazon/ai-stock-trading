@@ -36,7 +36,7 @@ plan_refs:
 ## 判断（IADR-0555）
 
 1. **`MaxTokens` を 8192 → 16384 に上げる。effort は下げない。** 理由は IADR-0555（effort は purpose 単位で報告書の散文と共有・基盤側の設定・計画は既定から変えるなら実測を求める）。
-2. **`stopReason=max_tokens` で案が形式違反になったら、失敗の種別を `Truncated` とし、利用者には「出力上限で途中で切れた。再試行で通ることがある。通らなければ指示を短く」と返す。** 閉じた JSON で通った場合は従来どおり案として返す。
+2. **`stopReason=max_tokens` で出力が JSON として読めなかったら（空・`{…}` が無い・構文違反）、失敗の種別を `Truncated` とし、利用者には「出力上限で途中で切れた。再試行で通ることがある。通らなければ指示を短く」と返す。** 閉じた JSON の検証違反（方針が長すぎる等）は `max_tokens` でも従来の形式違反の理由を返す（［2026-10-17 追記 / #1386 の AI レビュー 🟡］で絞った）。閉じた JSON で通った場合は従来どおり案として返す。
 3. **応答を受け取った時点で所要時間と出力トークンを情報ログへ 1 行出す**（PoC で出力の速さ＝上限時間の内に出せる出力の天井を測るため）。
 4. **報告書の散文は上限 4096 と扱い（本文を捨てない・空ならプレースホルダ）を変えない。** 上限到達の警告に `maxTokens`・`outputTokens`・`model` を足し、5.5 系での実測を取れるようにする。理由は IADR-0555 決定 4。
 
@@ -52,7 +52,7 @@ plan_refs:
 | ID | 基準 | 試験 |
 | --- | --- | --- |
 | T-10-2717 | 方針の改訂の要求の上限は 16384、報告書の散文は 4096 | `LlmReportPolicyReviserTests`（T-10-2503 を改める） |
-| T-10-2718 | `max_tokens` で JSON が壊れた（途中で切れた・空）なら `Truncated` で、理由は出力上限・再試行・指示を短くの 3 点を含み「JSON ではありませんでした」を含まない。`end_turn` の形式違反は `InvalidOutput` のまま。閉じた JSON は `max_tokens` でも案になる | `LlmReportPolicyReviserTests` |
+| T-10-2718 | `max_tokens` で JSON として読めなかった（途中で切れた・空）なら `Truncated` で、理由は出力上限・再試行・指示を短くの 3 点を含み「JSON ではありませんでした」を含まない。`end_turn` の形式違反と、`max_tokens` でも閉じた JSON の検証違反は `InvalidOutput` のまま。閉じた有効な JSON は `max_tokens` でも案になる | `LlmReportPolicyReviserTests` |
 | T-10-2719 | 改訂のサービスは `Truncated` の理由をそのまま利用者への応答に載せる（「AI の案を作れませんでした（…）。方針は変わっていません。」） | `ReportPolicyRevisionServiceTests` |
 | T-10-2720 | 応答を受け取ったら所要時間（ms）と出力トークンを運ぶ情報ログが 1 行出る | `LlmReportPolicyReviserTests` |
 | T-10-2721 | 報告書の散文の上限到達の警告は `maxTokens=4096`・`outputTokens` を運び、本文は捨てない | `HttpReportNarrativeDrafterTests` |

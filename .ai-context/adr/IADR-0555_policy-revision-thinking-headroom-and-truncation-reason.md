@@ -86,10 +86,13 @@ PoC 2026-10-17 18:11 JST（AST rev 49 `31b1a087`）の `/policy`（日報・指�
 
 ### 決定 2: 出力上限で JSON が壊れたら、失敗の種別を `Truncated` とし、利用者へ「途中で切れた」と返す
 
-- 案の検証が通らず、かつ終了理由が `max_tokens` なら、`PolicyRevisionFailure.Truncated` を返す。理由（利用者へ見せる文言）は
+- 終了理由が `max_tokens` で、かつ出力が **JSON として読めなかった**（空・`{…}` が無い・JSON の構文違反。パーサの `NotParsable`）なら、`PolicyRevisionFailure.Truncated` を返す。理由（利用者へ見せる文言）は
   「AI の出力が上限で途中で切れました。再試行で通ることがあります（1 日の回数に数えます）。通らなければ指示を短くしてください」とする（`LlmReportPolicyReviser.TruncatedMessage`）。
   本文が空・無い場合も同じ（思考で上限を使い切った）。
 - 終了理由が `max_tokens` でない形式違反は従来どおり `InvalidOutput`（パーサの理由）とする。
+- **JSON として読めたが検証に違反した**（方針が 2,000 文字を超える・方針が無い等）場合は、終了理由が `max_tokens` でも `InvalidOutput`（パーサの理由）とする。
+  指示を短くしても直らないことがあり、「途中で切れた」は誤った案内になる（PR #1386 の AI レビュー 🟡 を受けて絞った）。
+- 時間切れの警告にも所要時間（`elapsedMs`）を足す（決定 3 の計測の補い）。
 - 閉じた JSON が `max_tokens` で返った場合は従来どおり案として返す（IADR-0522 決定 2・IADR-0104 決定 5）。上限到達の警告ログも従来どおり出る。
 - 応答の経路は変えない。`ReportPolicyRevisionService` は理由を「AI の案を作れませんでした（…）。方針は変わっていません。」に包んで返し、通知サービス・Discord はそれをそのまま出す。
   `Truncated` は報告書サービスの内部の種別で、ワイヤ（REST・gRPC）にも台帳にも載らない（台帳の結果は従来どおり `AiFailed`）。
@@ -152,12 +155,12 @@ PoC 2026-10-17 18:11 JST（AST rev 49 `31b1a087`）の `/policy`（日報・指�
 | ID | 固定する振る舞い | 試験 |
 | --- | --- | --- |
 | T-10-2717 | 方針の改訂の要求の上限は 16384、報告書の散文は 4096 | `LlmReportPolicyReviserTests`（T-10-2503 を改めた） |
-| T-10-2718 | `max_tokens` で JSON が壊れた（途中で切れた・空・無い）なら `Truncated` で、理由は上限・再試行・指示を短くを含み「JSON」を含まない。他の終了理由の形式違反は `InvalidOutput`。閉じた JSON は `max_tokens` でも案になる | `LlmReportPolicyReviserTests` |
+| T-10-2718 | `max_tokens` で JSON として読めなかった（途中で切れた・空・無い）なら `Truncated` で、理由は上限・再試行・指示を短くを含み「JSON」を含まない。他の終了理由の形式違反と、`max_tokens` でも閉じた JSON の検証違反は `InvalidOutput`（パーサの理由）。閉じた有効な JSON は `max_tokens` でも案になる。パーサは読めなかった場合だけ `NotParsable` を立てる | `LlmReportPolicyReviserTests`・`PolicyRevisionProposalParserTests` |
 | T-10-2719 | 改訂のサービスは `Truncated` の理由をそのまま利用者への応答に載せ、何も保存しない | `ReportPolicyRevisionServiceTests` |
 | T-10-2720 | 応答を受け取ったら所要時間・出力トークン・上限・本文の長さ・終了理由・モデルを運ぶ情報ログが 1 行出る（本文は載せない） | `LlmReportPolicyReviserTests` |
 | T-10-2721 | 報告書の散文の上限到達の警告は `maxTokens=4096`・`outputTokens`・`model` を運び、本文は捨てない | `HttpReportNarrativeDrafterTests` |
 
-変異で確かめたこと（1 本ずつ当てて戻した）: 上限を 8192 に戻す → T-10-2717・T-10-2504・T-10-2720 が赤。`Truncated` の分岐を外す → T-10-2718・T-10-1308 が赤。終了理由に関係なく `Truncated` にする → T-10-2718・T-10-1308 が赤。
+変異で確かめたこと（1 本ずつ当てて戻した）: 上限を 8192 に戻す → T-10-2717・T-10-2504・T-10-2720 が赤。`Truncated` の分岐を外す → T-10-2718・T-10-1308 が赤。終了理由に関係なく `Truncated` にする → T-10-2718・T-10-1308 が赤。読めたかどうかに関係なく `max_tokens` なら `Truncated` にする → T-10-2718（閉じた JSON の検証違反の 2 件）が赤。
 
 ## 関連
 
