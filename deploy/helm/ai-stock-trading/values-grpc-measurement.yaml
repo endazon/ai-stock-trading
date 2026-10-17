@@ -26,7 +26,7 @@ services:
     grpcClients:
       # 段 5 の追補 2（#1391）: 借株可否（GetShortPermit）。🔴 **既定は false（この overlay では宣言しない）。** values.yaml・values-local の
       # どちらでも OrderExecution__BaseUrl は空（REST も未結線）で、宣言すると借株可否の照会が新しく始まる（空売りの審査の入力が変わる）。
-      # #6 と同じく、REST を結線した別の窓で --set services.risk-management.grpcClients.OrderExecution=true を足して測る（Runbook「経路 #18 の別窓」）。
+      # #6 と同じく、所有者の同意を得てから別の窓で --set services.risk-management.grpcClients.OrderExecution=true を足して測る（Runbook「経路 #17 の別窓」）。
       OrderExecution: false
   audit:
     grpcPort: 8081            # 段 3: AuditEventsRead
