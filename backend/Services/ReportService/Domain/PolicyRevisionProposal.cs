@@ -37,13 +37,17 @@ public sealed record WatchlistSnapshotItem(string Symbol, string Market)
 }
 
 // 案の検証結果。Proposal が null なら Reason に**なぜ捨てたか**が入る（利用者へそのまま見せる定数文）。
-public sealed record PolicyRevisionParseResult(PolicyRevisionProposal? Proposal, string? Reason)
+// FR-14, #1383, IADR-0555 決定 2: NotParsable は「JSON として読めなかった」（空・`{…}` が無い・JSON の構文違反）。
+// 出力上限で途中で切れた出力はここに当たる。読めた JSON の検証違反（方針が長すぎる等）は false のまま。
+public sealed record PolicyRevisionParseResult(PolicyRevisionProposal? Proposal, string? Reason, bool NotParsable = false)
 {
     public bool IsValid => Proposal is not null;
 
     public static PolicyRevisionParseResult Valid(PolicyRevisionProposal proposal) => new(proposal, null);
 
     public static PolicyRevisionParseResult Invalid(string reason) => new(null, reason);
+
+    public static PolicyRevisionParseResult Unparsable(string reason) => new(null, reason, NotParsable: true);
 }
 
 // FR-07, ADR-0003, #1016, IADR-0431 決定 2: LLM の出力を厳格なスキーマで検証する（純関数・決定的）。
@@ -79,13 +83,13 @@ public static class PolicyRevisionProposalParser
     public static PolicyRevisionParseResult Parse(string? llmText)
     {
         if (string.IsNullOrWhiteSpace(llmText))
-            return PolicyRevisionParseResult.Invalid("AI の出力が空でした");
+            return PolicyRevisionParseResult.Unparsable("AI の出力が空でした");
 
         // フェンス（```json … ```）や前置きの文があっても、最初の `{` から最後の `}` までを JSON として読む。
         var start = llmText.IndexOf('{', StringComparison.Ordinal);
         var end = llmText.LastIndexOf('}');
         if (start < 0 || end <= start)
-            return PolicyRevisionParseResult.Invalid("AI の出力が JSON ではありませんでした");
+            return PolicyRevisionParseResult.Unparsable("AI の出力が JSON ではありませんでした");
 
         JsonDocument document;
         try
@@ -94,7 +98,7 @@ public static class PolicyRevisionProposalParser
         }
         catch (JsonException)
         {
-            return PolicyRevisionParseResult.Invalid("AI の出力が JSON として解釈できませんでした");
+            return PolicyRevisionParseResult.Unparsable("AI の出力が JSON として解釈できませんでした");
         }
 
         using (document)

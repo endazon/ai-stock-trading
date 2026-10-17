@@ -444,12 +444,15 @@ public class HttpReportNarrativeDrafterTests
     {
         var logger = new RecordingLogger();
         var handler = new StubHandler(HttpStatusCode.OK,
-            """{"text":"本日は堅調でした。","model":"claude","sent":true,"stopReason":"max_tokens"}""");
+            """{"text":"本日は堅調でした。","model":"claude","sent":true,"stopReason":"max_tokens","outputTokens":4096}""");
 
         var text = await Drafter(handler, logger, logPrompts: false).DraftNarrativeAsync(Ctx);
 
         text.Should().Be("本日は堅調でした。");
         string.Join("\n", logger.Messages).Should().Contain("max_tokens");
+        // T-10-2721（#1383, IADR-0555 決定 4）: 上限・出力トークン・モデルを運ぶ（5.5 系で思考が上限を食う度合いを測る）。
+        logger.Messages.Should().ContainSingle(m => m.Contains("出力上限に到達")).Which.Should()
+            .Contain("maxTokens=4096").And.Contain("outputTokens=4096").And.Contain("model=claude");
     }
 
     // 非破壊: stopReason 未設定（上流未更新）・未知値・正常終了は現行挙動のまま本文を返す。

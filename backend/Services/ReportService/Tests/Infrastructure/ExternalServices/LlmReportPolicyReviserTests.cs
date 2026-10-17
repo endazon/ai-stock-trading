@@ -11,6 +11,7 @@ namespace ReportService.Tests;
 
 // FR-07, FR-14, ADR-0003, #1016, IADR-0431 決定 2・3: 方針の改訂の LLM 呼び出し（T-10-1306〜1310）。
 // #243, IADR-0522: 出力上限（8192）と上限到達の警告（T-10-2503・T-10-2504）。
+// #1383, IADR-0555: 出力上限 16384・上限で切れた JSON の利用者への理由・所要時間のログ（T-10-2717・T-10-2718・T-10-2720）。
 // 🔴 失敗は**プレースホルダへ倒さず「案なし」**で返すこと、費用は本文の扱いと独立に計上すること、
 // 指示はプロンプトの節を偽装できない形（1 行 JSON）で渡すことを固定する。
 public class LlmReportPolicyReviserTests
@@ -97,7 +98,8 @@ public class LlmReportPolicyReviserTests
         { Completed(ValidJson, sent: false), PolicyRevisionFailure.Refused, false },
         { Completed(ValidJson, stopReason: "refusal"), PolicyRevisionFailure.Refused, true },
         { Completed("方針はこうです"), PolicyRevisionFailure.InvalidOutput, true },
-        { Completed("{\"policySummary\": \"途中で切れ", stopReason: "max_tokens"), PolicyRevisionFailure.InvalidOutput, true },
+        // #1383, IADR-0555 決定 2: 上限で切れた JSON は Truncated（形式の誤りの InvalidOutput と区別する）。
+        { Completed("{\"policySummary\": \"途中で切れ", stopReason: "max_tokens"), PolicyRevisionFailure.Truncated, true },
     };
 
     // T-10-1309: 上限時間内に返らなければ TimedOut（呼び出し側の取り消しは伝播する）。
@@ -157,9 +159,10 @@ public class LlmReportPolicyReviserTests
             : PolicyRevisionPromptBuilder.VolumeNotProvidedMaterial);
     }
 
-    // T-10-2503（#243, IADR-0522 決定 1）: 方針の改訂だけ出力上限を 8192 にし、報告書の散文は 4096 のまま（用途別の上限）。
+    // T-10-2503（#243, IADR-0522 決定 1）: 方針の改訂だけ出力上限を上げ、報告書の散文は 4096 のまま（用途別の上限）。
+    // T-10-2717（#1383, IADR-0555 決定 1）: 方針の改訂の上限は 8192 → 16384（5.5 系の思考の分を見込む）。
     [Fact]
-    public async Task 方針の改訂だけ出力上限は8192で報告書の散文は4096のまま()
+    public async Task 方針の改訂だけ出力上限は16384で報告書の散文は4096のまま()
     {
         var revision = new FakeTransport(Completed(ValidJson));
         await Reviser(revision).ReviseAsync(Context());
@@ -170,7 +173,7 @@ public class LlmReportPolicyReviserTests
                 ReportKind.Daily, "daily-2026-10-09", "2026-10-09", ["US"],
                 new PnlSummary(1m, 0m, 0m, 1m, 0m, 1, 1, 1), "翌日は継続"));
 
-        revision.Calls.Should().ContainSingle().Which.MaxTokens.Should().Be(8192);
+        revision.Calls.Should().ContainSingle().Which.MaxTokens.Should().Be(16384);
         narrative.Calls.Should().ContainSingle().Which.MaxTokens.Should().Be(4096, "実測の最大 1,001 前後で 4096 に余裕がある");
     }
 
@@ -194,9 +197,83 @@ public class LlmReportPolicyReviserTests
         var truncation = logger.Entries.Where(e => e.Level == LogLevel.Warning && e.Message.Contains("出力上限に到達")).ToList();
         if (warned)
             truncation.Should().ContainSingle().Which.Message
-                .Should().Contain("max_tokens").And.Contain("maxTokens=8192").And.Contain("outputTokens=8192");
+                .Should().Contain("max_tokens").And.Contain("maxTokens=16384").And.Contain("outputTokens=8192");
         else
             truncation.Should().BeEmpty();
+    }
+
+    // T-10-2718（#1383, IADR-0555 決定 2）: max_tokens で JSON が壊れた（途中で切れた・空・本文が無い）なら Truncated で、
+    // 理由は「出力上限で切れた・再試行で通り得る・指示を短く」を伝え、形式の誤り（JSON ではありませんでした）と取り違えさせない。
+    // 終了理由が max_tokens でない形式違反は InvalidOutput のまま。閉じた JSON は max_tokens でも案になる（部分採用はしない）。
+    [Theory]
+    [InlineData("{\"policySummary\": \"途中で切れ", "max_tokens", PolicyRevisionFailure.Truncated)]
+    [InlineData("", "max_tokens", PolicyRevisionFailure.Truncated)]
+    [InlineData(null, "max_tokens", PolicyRevisionFailure.Truncated)]
+    [InlineData("{\"policySummary\": \"途中で切れ", "end_turn", PolicyRevisionFailure.InvalidOutput)]
+    [InlineData("{\"policySummary\": \"途中で切れ", null, PolicyRevisionFailure.InvalidOutput)]
+    // (b) 入れ子の閉じた括弧の後で切れた（最初の { から最後の } は JSON の構文違反）→ Truncated
+    [InlineData("{\"policySummary\": \"押し目買い\", \"watchlistChanges\": [{\"action\": \"Add\", \"symbol\": \"AAPL\"}, {\"act", "max_tokens", PolicyRevisionFailure.Truncated)]
+    // (a) 閉じた JSON の検証違反（方針が無い）は max_tokens でも従来の形式違反の理由
+    [InlineData("{\"rationale\": \"説明だけ\"}", "max_tokens", PolicyRevisionFailure.InvalidOutput)]
+    public async Task 出力上限で切れたJSONは途中で切れたと区別して返す(string? text, string? stopReason, PolicyRevisionFailure expected)
+    {
+        var outcome = await Reviser(new FakeTransport(Completed(text, stopReason))).ReviseAsync(Context());
+
+        outcome.Succeeded.Should().BeFalse();
+        outcome.Failure.Should().Be(expected);
+        if (expected == PolicyRevisionFailure.Truncated)
+        {
+            outcome.Message.Should().Be(LlmReportPolicyReviser.TruncatedMessage);
+            outcome.Message.Should().Contain("上限で途中で切れました").And.Contain("再試行").And.Contain("指示を短く");
+            outcome.Message.Should().NotContain("JSON", "形式の誤りと取り違えさせない");
+        }
+        else
+        {
+            outcome.Message.Should().NotBe(LlmReportPolicyReviser.TruncatedMessage, "上限で切れていない形式違反を『途中で切れた』と言わない");
+        }
+    }
+
+    // (a) T-10-2718: 閉じた JSON の検証違反（方針が 2,000 文字超）は max_tokens でも Truncated にせず、パーサの理由を返す。
+    [Fact]
+    public async Task 閉じたJSONの検証違反は出力上限に到達しても形式違反の理由を返す()
+    {
+        var tooLong = new string('長', PolicyRevisionProposalParser.MaxPolicySummaryLength + 1);
+        var json = $$"""{"policySummary": "{{tooLong}}", "watchlistChanges": [], "rationale": "指示どおり"}""";
+
+        var outcome = await Reviser(new FakeTransport(Completed(json, "max_tokens"))).ReviseAsync(Context());
+
+        outcome.Failure.Should().Be(PolicyRevisionFailure.InvalidOutput);
+        outcome.Message.Should().Contain("方針が長すぎます").And.NotBe(LlmReportPolicyReviser.TruncatedMessage);
+    }
+
+    [Fact]
+    public async Task 閉じたJSONは出力上限に到達しても案になる()
+    {
+        var outcome = await Reviser(new FakeTransport(Completed(ValidJson, "max_tokens"))).ReviseAsync(Context());
+
+        outcome.Succeeded.Should().BeTrue();
+        outcome.Failure.Should().BeNull();
+    }
+
+    // T-10-2720（#1383, IADR-0555 決定 3）: 応答を受け取ったら所要時間と出力トークンを情報ログへ 1 行残す（PoC で出力の速さを測る）。
+    // 本文は載せない（全量ログは既定オフのまま）。
+    [Fact]
+    public async Task 応答の所要時間と出力トークンを情報ログに残す()
+    {
+        var logger = new RecordingLogger();
+        var reviser = new LlmReportPolicyReviser(
+            new FakeTransport(LlmCompletionExchange.Completed(
+                new LlmCompletionPayload(ValidJson, true, "claude-sonnet-5-5", "end_turn", 100, 5697))),
+            logger, "internal", purposeOverride: null, TimeSpan.FromSeconds(5), new RecordingUsage(), new NoOpGovernance());
+
+        await reviser.ReviseAsync(Context());
+
+        var received = logger.Entries.Where(e => e.Level == LogLevel.Information && e.Message.Contains("応答を受け取りました")).ToList();
+        received.Should().ContainSingle().Which.Message.Should()
+            .MatchRegex(@"elapsedMs=\d+ ")
+            .And.Contain("outputTokens=5697").And.Contain("maxTokens=16384").And.Contain($"textLength={ValidJson.Length}")
+            .And.Contain("stopReason=end_turn").And.Contain("model=claude-sonnet-5-5")
+            .And.NotContain("押し目買い", "本文は載せない");
     }
 
     private sealed class RecordingLogger : ILogger<LlmReportPolicyReviser>
