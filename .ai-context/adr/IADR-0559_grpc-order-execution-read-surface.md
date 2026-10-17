@@ -72,6 +72,8 @@ plan_refs:
 - 宣言があれば `OrderExecution:BaseUrl`（バックテストは `Backtest:BarData:OrderExecution:BaseUrl`）より優先し、BaseUrl が空でも読む。
   バックテストは過去データ源の明示（`Backtest:BarData:Provider=order-execution`）が今までどおり要る（allow-list を崩さない）。
 - 取引判断の日足は 2 か所が同じ選択（`DailyBarsComposition.Source`）を使う。Stage 0 の基底の「日足の口がある」は `OrderExecution:Grpc` の宣言でも満たす。
+- 宣言があれば REST の資源は使わない。バックテストは宣言時に REST の名前付き HttpClient を作らず、gRPC が載せるサービストークンの供給元だけを
+  REST と同じ規則で登録する（共有の `AddAiStockTradingServiceTokenProvider`。AI レビューの指摘で是正）。
 - deadline の既定は各サービスの REST の `HttpClient.Timeout` と同値（リスク管理 5 秒・取引判断 8 秒・バックテスト 30 秒）。再試行の既定は 1 試行。
 - 呼び出しの規則はサービスごとに複製する（リスク管理は本段が初めての呼び出し側なので `RiskManagementGrpcCalls` を足す。`*.Client` は作らない）。
 

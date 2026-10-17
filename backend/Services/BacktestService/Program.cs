@@ -67,8 +67,8 @@ var barDataOptions = builder.Configuration.GetSection(BarDataOptions.SectionName
 // gRPC 実装を選ぶ（`Backtest:BarData:OrderExecution:BaseUrl` より優先し、BaseUrl が空でも読む。provider の明示は今までどおり要る）。
 // 不正な宛先は起動時に落とす。
 builder.Services.AddAiStockTradingOrderExecutionGrpc(builder.Configuration);
-var barDataProvider = HistoricalBarSourceFactory.ResolveProvider(
-    barDataOptions, OrderExecutionGrpcExtensions.IsDeclared(builder.Configuration));
+var orderExecutionGrpcDeclared = OrderExecutionGrpcExtensions.IsDeclared(builder.Configuration);
+var barDataProvider = HistoricalBarSourceFactory.ResolveProvider(barDataOptions, orderExecutionGrpcDeclared);
 if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
 {
     builder.Services.AddSingleton<IMoomooHistoryKLineClient>(sp => new MMApiMoomooHistoryKLineClient(
@@ -78,10 +78,17 @@ if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
 
 // FR-15, #1308, IADR-0528 決定8: provider=order-execution のときだけ、発注執行へのサービスの資格つきの HttpClient を作る
 // （照会口は OwnerOrService）。それ以外では登録しない（トークンを取りに行かない）。
-if (barDataProvider == HistoricalBarSourceFactory.OrderExecution)
+// ［2026-10-17 追記 / #1391・IADR-0559 決定 3］`OrderExecution:Grpc` を宣言したときは REST の HttpClient を作らない（REST の資源を使わない）。
+// gRPC の輸送が載せるサービストークンの供給元だけを、REST と同じ規則で登録する。
+var orderExecutionRest = barDataProvider == HistoricalBarSourceFactory.OrderExecution && !orderExecutionGrpcDeclared;
+if (orderExecutionRest)
 {
     builder.Services.AddHttpClient(OrderExecutionBarsHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
         .AddAiStockTradingServiceToken(builder.Configuration);
+}
+else if (barDataProvider == HistoricalBarSourceFactory.OrderExecution)
+{
+    builder.Services.AddAiStockTradingServiceTokenProvider(builder.Configuration);
 }
 
 builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
@@ -94,7 +101,7 @@ builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
         TimeProvider.System,
         sp.GetRequiredService<ILoggerFactory>(),
         sp.GetService<IMoomooHistoryKLineClient>(), // moomoo 時のみ登録済み
-        barDataProvider == HistoricalBarSourceFactory.OrderExecution
+        orderExecutionRest
             ? sp.GetRequiredService<IHttpClientFactory>().CreateClient(OrderExecutionBarsHttpClientName)
             : null,
         sp.GetService<OrderExecutionGrpcTransport>()); // `OrderExecution:Grpc` の宣言時のみ登録済み（#1391）

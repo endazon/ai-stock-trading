@@ -1,10 +1,13 @@
 using System.Net.Http.Json;
 using AiStockTrading.Shared.Contracts.Trading;
+using AiStockTrading.TestSupport.PlatformShim.Foundation.Auth;
 using AiStockTrading.TestSupport.PlatformShim.Foundation.Introspection;
 using AwesomeAssertions;
 using BacktestService.Features.Backtest;
 using BacktestService.Infrastructure.ExternalServices;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Options;
 using Xunit;
 using Proto = AiStockTrading.Shared.Grpc.OrderExecution.V1;
 
@@ -61,6 +64,35 @@ public class OrderExecutionGrpcWiringTests
 
         factory.Services.GetRequiredService<IHistoricalBarSource>().Should().BeOfType<GrpcOrderExecutionHistoricalBarSource>();
     }
+
+    // 🔴 宣言があれば REST の資源を使わない: REST の名前付き HttpClient（発注執行の日足・30 秒・サービストークン付き）を登録しない。
+    // gRPC が載せるサービストークンの供給元は REST と同じ規則で登録する（無いと gRPC が資格情報なしで呼ぶ）。
+    [Fact]
+    public void T_10_2911_宣言があれば_REST_の_HttpClient_を作らず_トークンの供給元だけを登録する()
+    {
+        var auth = new Dictionary<string, string?>
+        {
+            ["Backtest:BarData:Provider"] = "order-execution",
+            ["Backtest:BarData:OrderExecution:BaseUrl"] = "http://order-execution-service:8080",
+            ["ServiceAuth:TokenEndpoint"] = "http://keycloak/realms/ast/protocol/openid-connect/token",
+            ["ServiceAuth:ClientId"] = "trading-service",
+            ["ServiceAuth:ClientSecret"] = "test-secret",
+        };
+        using var rest = new BacktestWorkerWebApplicationFactory(auth);
+        RestClientRegistered(rest).Should().BeTrue("陽性対照: 宣言が無ければ REST の名前付きクライアント（30 秒）を登録する");
+
+        using var grpc = new BacktestWorkerWebApplicationFactory(new Dictionary<string, string?>(auth)
+        {
+            ["OrderExecution:Grpc"] = "http://order-execution-service:8081",
+        });
+        RestClientRegistered(grpc).Should().BeFalse("宣言があれば REST の名前付きクライアントを作らない");
+        grpc.Services.GetService<IServiceAccessTokenProvider>().Should().NotBeNull("gRPC の輸送が載せるトークンの供給元は登録する");
+        grpc.Services.GetRequiredService<IHistoricalBarSource>().Should().BeOfType<GrpcOrderExecutionHistoricalBarSource>();
+    }
+
+    private static bool RestClientRegistered(BacktestWorkerWebApplicationFactory factory) =>
+        factory.Services.GetRequiredService<IOptionsMonitor<HttpClientFactoryOptions>>()
+            .Get(Program.OrderExecutionBarsHttpClientName).HttpClientActions.Count > 0;
 
     // 陰性対照 1: 宣言が無ければ輸送そのものが登録されず、従来どおり REST。
     [Fact]
