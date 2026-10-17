@@ -27,10 +27,10 @@ public sealed class GrpcRiskManagementHeldSymbolsProvider(
 
         return response is null
             ? null
-            : HttpRiskManagementHeldSymbolsProvider.Interpret([.. response.Positions.Select(ToRow)], logger);
+            : HttpRiskManagementHeldSymbolsProvider.Interpret([.. response.Positions.Select(p => (HttpRiskManagementHeldSymbolsProvider.OpenPositionRow?)ToRow(p))], logger);
     }
 
-    internal static HttpRiskManagementHeldSymbolsProvider.OpenPositionRow? ToRow(Proto.OpenPositionRow p) =>
+    internal static HttpRiskManagementHeldSymbolsProvider.OpenPositionRow ToRow(Proto.OpenPositionRow p) =>
         new HttpRiskManagementHeldSymbolsProvider.OpenPositionRow(
             p.HasSymbol ? p.Symbol : null,
             RiskManagementWire.Market(p.Market),
