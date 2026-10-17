@@ -82,6 +82,7 @@ public sealed record FillPnlAttribution(
     /// <summary>
     /// FR-06, FR-16, #1357, IADR-0540 決定 2: 決済の種別（<see cref="SettlementKinds.Of"/>）。<c>null</c>＝<b>種別未供給</b>
     /// （承認行の由来が記録されていない・判断の記録が未供給で分けられない）、または決済でない約定。<b>推定で埋めない。</b>
+    /// #1362, IADR-0552 決定 1: <see cref="Unvalued"/> の約定（<see cref="Realizing"/> が false でも決済側）にも付ける。
     /// </summary>
     SettlementKind? Kind = null);
 
@@ -197,7 +198,9 @@ public static class FillPnlAttributionBuilder
                 Rationale(rationales, fill.DecisionId),
                 applied.Unvalued,
                 // #1357, IADR-0540 決定 2: 決済の行だけに種別を付ける（新規建ては種別を持たない）。
-                applied.Reduced ? SettlementKinds.Of(fill.ApprovalSource, HasDecisionRecord(rationales, fill.DecisionId)) : null));
+                // #1362, IADR-0552 決定 1: 損益を算定できなかった決済（期間より前に建てた建玉の決済。Reduced=false でもあり得る）も
+                // 決済であり種別を持つ（損切りが執行された事実は損益の算定と別。本文 §5「損切り執行」が数える）。
+                applied.Reduced || applied.Unvalued ? SettlementKinds.Of(fill.ApprovalSource, HasDecisionRecord(rationales, fill.DecisionId)) : null));
         }
 
         return entries;

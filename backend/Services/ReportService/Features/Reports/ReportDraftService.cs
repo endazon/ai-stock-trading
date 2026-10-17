@@ -174,6 +174,8 @@ public sealed class ReportDraftService(IReportNarrativeDrafter drafter, IMarketD
                 ? TradeHistoryViewBuilder.Build(fills, assumptions, request.TradeRationales, adoptions, opening)
                 : null,
             FillAttributions = fillAttributions,
+            // #1362, IADR-0552 決定 1: 約定を照会できなかったことを本文へ渡す（散文の Settlements＝null と同じ判定）。
+            FillsUnsupplied = request.UnsuppliedInputs?.Contains(ReportInput.Fills) == true,
             // FR-06, FR-07, FR-16, FR-17, #615, IADR-0305, 04_report-templates 週報 §5・月報 §1: 費用の内訳と費用率。
             // 🔴 **同じ帰属から数える**（費用合計が §1 サマリと一致する唯一の形である）。
             // 税は期間合計にのみ課されるため PnlSummary の値をそのまま渡す（約定単位へ按分しない）。
