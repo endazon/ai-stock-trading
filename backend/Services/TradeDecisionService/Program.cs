@@ -317,6 +317,11 @@ builder.Services.AddScoped<IEntryBlockersProvider>(sp =>
 // ［2026-10-01 追記 / #1118］監査 🟡-4: 照会の上限は HttpDailyBarsSource.RequestTimeout（8 秒）。超えたら「未提供」で判断を続ける。
 builder.Services.AddHttpClient("order-execution", c => c.Timeout = HttpDailyBarsSource.RequestTimeout)
     .AddAiStockTradingServiceToken(builder.Configuration);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559 決定 3, #1391 (#753): east-west gRPC（`OrderExecutionRead`）。
+// **`OrderExecution:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば下の日足の口（出来高・ATR(14)）・
+// 処理中の決済の照会口・Stage 0 の当時の価格（Stage0AsOfComposition）が gRPC 実装を選ぶ（`OrderExecution:BaseUrl` より優先し、BaseUrl が空でも読む）。
+// 不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingOrderExecutionGrpc(builder.Configuration);
 // 🔴 FR-10, ADR-0049 決定2, #1122, IADR-0486 決定1: 日足の口は**出来高と損切り幅の下限（ATR(14)）で 1 つの singleton を共有する**
 // （キャッシュを共有＝同じ銘柄の同じ取引日の取得は 1 回。取得枠を増やさない）。どちらかの設定が有効で OrderExecution:BaseUrl が
 // 絶対 URL のときだけ Cached（Http）を作り、どちらも無効なら NoOp（要求 0 回）。各機能はそれぞれの設定が有効なときだけこの口を使う
@@ -330,28 +335,31 @@ builder.Services.AddKeyedSingleton<IDailyBarsProvider>(DailyBarsComposition.Shar
     if (!volumeEnabled && !atrEnabled)
         return new NoOpDailyBarsProvider();
 
-    var baseUrl = configuration["OrderExecution:BaseUrl"];
-    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    // NFR, IADR-0559 決定 3, #1391: 日足の取得元は gRPC の輸送があれば gRPC、無ければ REST（接続先が無ければ NoOp）。キャッシュは同じ 1 つ。
+    var source = DailyBarsComposition.Source(sp, configuration);
+    if (source is null)
     {
         sp.GetRequiredService<ILoggerFactory>().CreateLogger("DecisionVolume").LogWarning(
-            "DecisionVolume:Enabled={VolumeEnabled} / StopWidthFloor:Atr14:Enabled={AtrEnabled} だが OrderExecution:BaseUrl が無い・不正のため、"
+            "DecisionVolume:Enabled={VolumeEnabled} / StopWidthFloor:Atr14:Enabled={AtrEnabled} だが OrderExecution:BaseUrl（または OrderExecution:Grpc）が無い・不正のため、"
                 + "日足を要求しません（出来高は未提供のまま・損切り幅の下限は参照価格の 2%）。",
             volumeEnabled, atrEnabled);
         return new NoOpDailyBarsProvider();
     }
 
-    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
-    http.BaseAddress = uri;
     return new CachedDailyBarsProvider(
-        new HttpDailyBarsSource(http, sp.GetRequiredService<ILogger<HttpDailyBarsSource>>()),
+        source,
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<CachedDailyBarsProvider>>());
 });
 // 🔴 FR-04, FR-10, #1338, IADR-0535 決定2・3: 処理中の決済が建玉を覆うかの照会口（発注執行の GET /order-execution/in-flight-closes。
 // 決済のゲートと同じ判定）。OrderExecution:BaseUrl が絶対 URL のときだけ Http（名前付きクライアント "order-execution"・s2s トークン・8 秒）、
 // 無ければ NoOp（常に不明＝LLM を呼ぶ＝従来どおり）。照会の失敗・不明も LLM を呼ぶ（決済の判断を止めない）。明示的に登録する（IADR-0397）。
+// ［2026-10-17 追記 / #1391・IADR-0559 決定 3］`OrderExecution:Grpc` の宣言があれば gRPC（GrpcInFlightCloseProvider）を BaseUrl より優先する。
 builder.Services.AddScoped<IInFlightCloseProvider>(sp =>
 {
+    if (sp.GetService<OrderExecutionGrpcTransport>() is { } orderExecutionGrpc)
+        return new GrpcInFlightCloseProvider(orderExecutionGrpc, sp.GetRequiredService<ILogger<GrpcInFlightCloseProvider>>());
+
     var baseUrl = sp.GetRequiredService<IConfiguration>()["OrderExecution:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         return new NoOpInFlightCloseProvider();
@@ -589,6 +597,7 @@ builder.Services.AddScoped<TradeDecisionAppService>();
 // ［2026-10-13 追記 / #1308・IADR-0528 決定7］基底の供給を足した。`Reports:BaseUrl` と `OrderExecution:BaseUrl` がそろうと、
 // 連鎖の最も内側が基底の供給になる（Stage0AsOfComposition）。そろわなければ従来どおり「入力なし」。記録を走らせるかは Stage0Recording が決める。
 // ［2026-10-17 追記 / #1388・IADR-0557 決定 2］報告書の口は `Reports:Grpc`（上の AddAiStockTradingReportsGrpc）でも満たし、宣言があれば当時の方針も gRPC で読む。
+// ［2026-10-17 追記 / #1391・IADR-0559 決定 3］日足の口も同じく `OrderExecution:Grpc`（上の AddAiStockTradingOrderExecutionGrpc）で満たし、宣言があれば gRPC で読む。
 builder.Services.AddHttpClient(Stage0AsOfComposition.ExternalHttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.Configure<Stage0RecordingOptions>(
     builder.Configuration.GetSection(Stage0RecordingOptions.SectionName));

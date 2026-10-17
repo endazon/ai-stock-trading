@@ -319,6 +319,9 @@ services:
       # fail-safe: 空/"none"/未知の値/不正な BaseUrl はすべて no-op＝**外部へ 1 リクエストも出さない**。
       # "stooq"（登録不要・鍵なし）を入れると実過去データ取得が有効になる。
       - { name: Backtest__BarData__Provider, value: "" }
+      # NFR, IADR-0559, #1391: Provider=order-execution の日足を east-west gRPC で呼ぶ場合は、このサービスの `grpcClients` へ `OrderExecution: true` を足す
+      # （→ OrderExecution__Grpc。前提: services.order-execution に `grpcPort: 8081`）。宣言があれば Backtest__BarData__OrderExecution__BaseUrl より優先する
+      # （Provider の明示は今までどおり要る）。deadline は OrderExecution__GrpcTimeoutSeconds（既定 30 秒＝REST と同値）。
       # FR-15, FR-20, ADR-0008, #688, IADR-0310: Stage 0 判定の定時駆動。
       # fail-safe: **既定は無効**。無効なら巡回もバー取得も verdict の発行も起きない。
       # 有効化は経路B（values-local.yaml）で行う（#632 / IADR-0329 決定4）。**本番既定は無効のまま**であり、
@@ -552,6 +555,11 @@ services:
     db: order_execution_svc
     # FR-10, #967, IADR-0425: 借株可否の照会の口（GET /order-execution/short-permit・OwnerOrService）を守る認証の Authority を注入する。
     auth: true
+    # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0328 決定 3, IADR-0559, #1391: east-west gRPC（h2c）の提供側ポート
+    # （OrderExecutionRead: 借株可否・日足・処理中の決済。呼び出し元はリスク管理・取引判断・バックテスト）。
+    # 🔴 **既定は REST であり、`grpcPort` は意図的に宣言していない**（宣言すると Service / Deployment の第 2 ポートと
+    # env `Grpc__Port` が描画され、既定描画が変わる）。有効化するときだけ、ここへ 1 行足す（呼び出し元の `grpcClients.OrderExecution` と**同じ変更で**揃える）:
+    #   grpcPort: 8081
     # Broker__Provider / Broker__Environment は template が broker.tier から決定する
     # （既定 paper・moomoo-sim は OpenD 経由 SIMULATE・moomoo-live は描画時 fail＝実弾は未解禁・#13 / IADR-0111）。
     extraEnv:
@@ -606,6 +614,9 @@ services:
       #   - { name: FaultInjection__IndeterminateDispatch__Mode, value: "BeforeSend" }   # None（既定）/ AfterSend / BeforeSend
       #   - { name: FaultInjection__IndeterminateDispatch__Symbols, value: "AAPL" }      # 当てる銘柄（* 単独で全銘柄）。新規建てにだけ・1 回だけ当たる
       #   - { name: FaultInjection__IndeterminateDispatch__ExpiresAtUtc, value: "2026-10-05T20:00:00Z" }  # 時差（Z か +09:00）必須・起動から 24 時間以内。過ぎたら注入しない
+      # NFR-06, IADR-0448, IADR-0559, #1391: gRPC 面の所有者の門が許す azp（書き方・既定・fail-safe は values.yaml の audit の同じ行）。
+      - name: Auth__GrpcOwnerClients__0
+        secretKeyRef: { name: ast-secrets, key: discord-owner-auth-client-id, optional: true }
   report:
     image: ai-stock-trading/report-service
     # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 4）, IADR-0328 決定 3, IADR-0446, #1061: east-west gRPC（h2c）の提供側ポート。
@@ -742,6 +753,11 @@ services:
       # 照会は実弾口座（Real × Margin）のヘッダの読み取り専用の照会に替わり、結線すると借株可否が答えられる（発注は SIMULATE のまま）。
       # 結線するときは order-execution 側の auth（上）と本サービスの ServiceAuth__*（trading-service）が要る。
       - { name: OrderExecution__BaseUrl, value: "" }
+      # NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559, #1391: 上の照会を east-west gRPC（h2c）で呼ぶ場合の宛先。
+      # 🔴 **既定は REST であり、このキーは意図的に置いていない**（置くと既定描画が変わる）。有効化するときだけ、このサービスの `grpcClients`（extraEnv の兄弟のマップ）へ足す。🔴 この env 配列へ `*__Grpc` を足さない（配列は values を重ねると丸ごと置き換わり、既存の env が消える・IADR-0489）:
+      #   grpcClients: { OrderExecution: true }   # → OrderExecution__Grpc=http://order-execution-service:<grpcPort>（宛先は描画が導出する）
+      # 前提（同じ変更で揃える。無ければ描画で止まる）: services.order-execution に `grpcPort: 8081` を宣言すること。
+      # 宣言があれば上の BaseUrl より優先する（BaseUrl が空でも借株可否を照会する＝結線と同じ意味になる）。s2s は REST と同じ ServiceAuth__*。deadline は OrderExecution__GrpcTimeoutSeconds（既定 5 秒）。
       # FR-20, FR-11, UC-06, ADR-0003, #868, IADR-0240 決定11, IADR-0383: 段階遷移の要求の onBehalfOf
       # （代理される利用者）を信じてよいクライアント（カンマ区切り）。Discord Bot は owner マップ機密クライアントの
       # トークンで承認を呼ぶため、トークンからは人を解決できない（実資金ゲートの承認者が unknown になっていた）。
@@ -763,6 +779,9 @@ services:
       # helm.yml の検査が赤にする。#1140, IADR-0478 決定 1）:
       #   - { name: DecisionVolume__Enabled, value: "true" }
       #   - { name: OrderExecution__BaseUrl, value: "http://order-execution-service:8080" }
+      # NFR, IADR-0559, #1391: 日足（と処理中の決済・Stage 0 の当時の価格）を east-west gRPC で呼ぶ場合は、このサービスの `grpcClients` へ
+      # `OrderExecution: true` を足す（→ OrderExecution__Grpc。前提: services.order-execution に `grpcPort: 8081`）。宣言があれば OrderExecution__BaseUrl より優先する。
+      # deadline は OrderExecution__GrpcTimeoutSeconds（既定 8 秒＝REST と同値）。
       # FR-10, ADR-0049 決定2, ADR-0048 決定 3, #1122, IADR-0486 決定 1: 損切り幅の下限を 1.0 × ATR(14, 日足) にする（得られなければ参照価格の 2%）。
       # 🔴 **既定は無効（false）であり、このキーは意図的に置いていない**（置くと既定描画が変わる。無効の間は下限は参照価格の 2%・プロンプトは従来のまま）。
       # 日足の口は上の出来高と 1 つを共有する（同じ銘柄の同じ取引日の取得は 1 回）。有効化の条件は出来高と同じ（取得枠の回復周期を IADR に記録してから利用者が行う）。

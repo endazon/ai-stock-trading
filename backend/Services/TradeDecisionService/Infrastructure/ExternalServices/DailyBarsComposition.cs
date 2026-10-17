@@ -1,4 +1,7 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using TradeDecisionService.Features.TradeDecision;
 
 namespace TradeDecisionService.Infrastructure.ExternalServices;
 
@@ -19,4 +22,23 @@ public static class DailyBarsComposition
     /// <summary>設定が有効か（bool.TryParse で true と読めたときだけ）。</summary>
     public static bool IsOn(IConfiguration configuration, string key) =>
         bool.TryParse(configuration[key], out var enabled) && enabled;
+
+    /// <summary>
+    /// 日足の取得元（1 呼び出し＝1 回の照会）。NFR, IADR-0559 決定 3, #1391 (#753): gRPC の輸送（<c>OrderExecution:Grpc</c> の宣言）があれば
+    /// <see cref="GrpcDailyBarsSource"/>（BaseUrl より優先）、無ければ <c>OrderExecution:BaseUrl</c> が絶対 URL のときだけ REST（名前付きクライアント
+    /// "order-execution"）、どちらも無ければ <c>null</c>（呼び出し元が NoOp・「入力なし」へ倒す）。判断の共有口と Stage 0 の基底が同じ選択を使う。
+    /// </summary>
+    public static IDailyBarsSource? Source(IServiceProvider sp, IConfiguration configuration)
+    {
+        if (sp.GetService<OrderExecutionGrpcTransport>() is { } orderExecutionGrpc)
+            return new GrpcDailyBarsSource(orderExecutionGrpc, sp.GetRequiredService<ILogger<GrpcDailyBarsSource>>());
+
+        var baseUrl = configuration["OrderExecution:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+            return null;
+
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("order-execution");
+        http.BaseAddress = uri;
+        return new HttpDailyBarsSource(http, sp.GetRequiredService<ILogger<HttpDailyBarsSource>>());
+    }
 }

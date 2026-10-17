@@ -19,8 +19,10 @@ public sealed class HttpInFlightCloseProvider(
     : IInFlightCloseProvider
 {
     // 送り手 InFlightClosesStatus の数値（web 既定で列挙は数値）。送り手の型は参照しない（別サービス）。
-    private const int StatusCovered = 1;
-    private const int StatusNotCovered = 2;
+    // NFR, IADR-0559 決定 3, #1391: gRPC の実装（GrpcInFlightCloseProvider）が線上の状態をこの数値へ写す（可視性を広げただけ）。
+    internal const int StatusUnknown = 0;
+    internal const int StatusCovered = 1;
+    internal const int StatusNotCovered = 2;
 
     public async Task<InFlightCloseCoverage?> GetAsync(
         string symbol, Market market, TradeSide closeSide, CancellationToken cancellationToken = default)

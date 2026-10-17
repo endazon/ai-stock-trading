@@ -54,15 +54,26 @@ public static class HistoricalBarSourceFactory
     /// 選択規則の単一情報源であり、<see cref="Create"/> と実効構成の自己申告
     /// （GET /internal/introspection）が同じ答えを返すことを構造で保証する。
     /// </summary>
-    public static string ResolveProvider(BarDataOptions? options) =>
+    /// <param name="options">過去データ源の構成。</param>
+    /// <param name="orderExecutionGrpcDeclared">
+    /// 発注執行の gRPC の宣言（<c>OrderExecution:Grpc</c>）があるか。NFR, IADR-0559 決定 3, #1391: 宣言があれば
+    /// <see cref="OrderExecution"/> は <c>Backtest:BarData:OrderExecution:BaseUrl</c> が空でも構成を満たす（段 1〜5 と同じ「宣言は BaseUrl より優先」）。
+    /// provider の明示（allow-list）は変わらない —— 宣言だけでは <see cref="None"/> のままである。
+    /// </param>
+    public static string ResolveProvider(BarDataOptions? options, bool orderExecutionGrpcDeclared = false) =>
         (options?.Provider ?? "").Trim().ToLowerInvariant() switch
         {
             Stooq when NormalizeBaseUrl(options!.Stooq.BaseUrl) is not null => Stooq,
             Moomoo when IsUsableOpenD(options!.Moomoo) => Moomoo,
-            OrderExecution when NormalizeOrderExecutionBaseUrl(options!.OrderExecution.BaseUrl) is not null => OrderExecution,
+            OrderExecution when orderExecutionGrpcDeclared
+                || NormalizeOrderExecutionBaseUrl(options!.OrderExecution.BaseUrl) is not null => OrderExecution,
             _ => None, // 未知の provider は実アダプタへ落ちない（allow-list）
         };
 
+    /// <param name="orderExecutionGrpc">
+    /// 発注執行の gRPC の輸送（<c>OrderExecution:Grpc</c> を宣言したときだけ composition root が与える。#1391・IADR-0559 決定 3）。
+    /// 与えられ、かつ実効 provider が <see cref="OrderExecution"/> なら REST より優先する。
+    /// </param>
     /// <param name="moomooClient">
     /// OpenD への接続（ADR-0023 決定5）。実効 provider が <see cref="Moomoo"/> のときだけ composition root が与える。
     /// **実効 provider が moomoo なのに未提供なら停止する**（構成不備ではなく配線の誤りであり、黙って no-op へ
@@ -75,14 +86,15 @@ public static class HistoricalBarSourceFactory
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
         IMoomooHistoryKLineClient? moomooClient = null,
-        HttpClient? orderExecutionClient = null)
+        HttpClient? orderExecutionClient = null,
+        OrderExecutionGrpcTransport? orderExecutionGrpc = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         var logger = loggerFactory.CreateLogger(typeof(HistoricalBarSourceFactory).FullName!);
         var configured = (options.Provider ?? "").Trim().ToLowerInvariant();
-        var resolved = ResolveProvider(options);
+        var resolved = ResolveProvider(options, orderExecutionGrpc is not null);
 
         if (resolved == Stooq)
         {
@@ -105,6 +117,15 @@ public static class HistoricalBarSourceFactory
                     + $"（{nameof(IMoomooHistoryKLineClient)}）が必要です。常駐 OpenD と接続構成"
                     + $"（{BarDataOptions.SectionName}:Moomoo:OpenDHost / OpenDPort）を確認してください"
                     + "（ADR-0023 決定5 / IADR-0157）。");
+        }
+
+        if (resolved == OrderExecution && orderExecutionGrpc is not null)
+        {
+            // NFR, #1391, IADR-0559 決定 3: gRPC の輸送（`OrderExecution:Grpc` の宣言）があれば gRPC。BaseUrl より優先する（既定は REST）。
+            return new GrpcOrderExecutionHistoricalBarSource(
+                orderExecutionGrpc,
+                Limiter(options.OrderExecution.RequestsPerMinute, timeProvider),
+                loggerFactory.CreateLogger<GrpcOrderExecutionHistoricalBarSource>());
         }
 
         if (resolved == OrderExecution)

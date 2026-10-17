@@ -9,9 +9,9 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-17, UC-06, NFR, FR-10, FR-03, FR-04, FR-06, FR-20, FR-21, FR-11, FR-16, FR-01, FR-02, FR-07, FR-13, FR-15, FR-14, NFR-06]
 adrs: [ADR-0001, ADR-0047, ADR-0052, MSP:ADR-0029, MSP:ADR-0075]
-iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557]
-specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy]
-issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243, #1388]
+iadrs: [IADR-0013, IADR-0046, IADR-0051, IADR-0063, IADR-0264, IADR-0284, IADR-0328, IADR-0331, IADR-0352, IADR-0420, IADR-0427, IADR-0445, IADR-0446, IADR-0448, IADR-0449, IADR-0450, IADR-0463, IADR-0489, IADR-0491, IADR-0493, IADR-0521, IADR-0522, IADR-0556, IADR-0557, IADR-0559, IADR-0425, IADR-0467, IADR-0528, IADR-0535]
+specs: [20260911_584_east-west-grpc-foundation, 20260911_745_configuration-assumptions-grpc, 20260925_997_grpc-stage2-risk-read, 20260927_1059_grpc-stage3-audit-read, 20260927_1061_grpc-stage4-report-monitor-cost-read, 20260927_753_grpc-stage5-bot-reads, 20260928_753_grpc-stage5-bot-writes, 20260930_1113_entry-blockers-before-llm, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1156_report-regenerate, 20261006_1181_report-opening-inventory, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261017_1388_grpc-late-routes-held-symbols-asof-policy, 20261017_1391_grpc-order-execution-read-surface]
+issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181, #243, #1388, #1391]
 -->
 
 # 通信仕様書: east-west gRPC（サービス間の同期呼び出し）
@@ -26,7 +26,7 @@ issues: [#526, #584, #745, #753, #997, #1059, #1061, #1067, #1113, #1156, #1181,
 - **プロトコル**: gRPC（HTTP/2）+ Protobuf 3。メッシュ内は **h2c（TLS 無し HTTP/2）** で、mTLS はサイドカーが終端する。
 - **対象**: メッシュ内のサービスどうしの**同期**呼び出し。外部 SaaS・IdP・非同期イベントは対象外。
 - **状態**: 本書が書くのは**全体前提条件の照会**（本リポジトリが契約を所有する最初の面・§5）と
-  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）・**Discord ボットの読み取りと書き込み**（§9）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
+  **リスク管理の読み取り**（§6）・**監査台帳の読み取り**（§7）・**日報の方針・監視銘柄・費用統制の判定の読み取り**（§8）・**Discord ボットの読み取りと書き込み**（§9）・**発注執行の読み取り**（§10）である。基盤が所有する契約を消費する面（テキスト生成）は別の実装記録が持つ。
   **並走中の正は REST** であり、gRPC は構成で opt-in する。残りの経路の移行は段ごとに別 issue で展開する。
 - **既定は REST**: 呼び出し元の構成 `Configuration:Grpc` が無ければ 1 バイトも変わらない。
   提供側も `Grpc:Port` が無ければ h2c リスナを立てない。**切り戻しは構成を外すだけ**（コードを変えない）。
@@ -389,6 +389,46 @@ Discord ボット（通知サービス）の**読み取り 6 本と書き込み 
 - メタデータのトークンは REST と同じ `Notifications:Discord:OwnerAuth:*`（ボットの機密クライアント）から取る。3 つの宛先で 1 つの取得器を共有する。資格情報が未構成ならメタデータを付けない（→ `UNAUTHENTICATED` → 失敗）。
 - 宣言してあるのに使えない値は起動時に落とす。宣言があれば同じ提供側の `*:BaseUrl` より優先する（読み取りも書き込みも。失敗しても `*:BaseUrl` の REST へ落とさない）。
 - helm・compose: 既定では置かない（既定の描画は変わらない）。有効化の手順は values.yaml の notification のコメントにある。
+
+## 10. 面: 発注執行の読み取り（`aistocktrading.orderexecution.v1.OrderExecutionRead`）
+
+- 概要: リスク管理・取引判断・バックテストの 3 サービスが、構成 `OrderExecution:Grpc`（例 `http://order-execution-service:8081`）が
+  あるときだけ gRPC で照会し、無ければ REST `GET /order-execution/*` で照会する。**並走中の正は REST。**
+- 認証・認可: §6 と同じ（サービス、または呼び出し元がボットの利用者のロール。§4）。門は service のクラス属性で持ち、資格情報の無い呼び出しは通さない。
+- 照会: REST と**同じ**照会サービスと**同じ入力の検証**を呼ぶ（ブローカーの枠・自制の予算・キャッシュの規則を 2 つにしない）。
+- 提供側の h2c リスナは §3 と同じく `Grpc:Port` があるときだけ立つ。helm の `grpcPort` も既定では宣言しない。
+
+| rpc | 対応する REST | 呼び出し元 | 取得できないときの呼び出し元の扱い |
+| --- | --- | --- | --- |
+| `GetShortPermit` | `GET /order-execution/short-permit?symbol&market` | リスク管理（新規の売り建ての審査） | 借株可否は「分からない」（空売り文脈を組まず拒否。許可へ倒さない） |
+| `GetDailyBars` | `GET /order-execution/daily-bars?symbol&market&from&to` | 取引判断（出来高・ATR(14)・Stage 0 の当時の価格）・バックテスト（過去データ源 `order-execution`） | 取引判断は未提供（判断は止めない）。バックテストは送り手が答えた失敗をその銘柄の欠測にし、届かない・待ちきれない失敗は送出する（REST の通信例外と同じ） |
+| `GetInFlightCloses` | `GET /order-execution/in-flight-closes?symbol&market&closeSide` | 取引判断（保有中の銘柄で LLM を呼ぶ前） | 不明（LLM を呼ぶ。見送らない） |
+
+エラーは §6 と同じ（`UNAUTHENTICATED` / `PERMISSION_DENIED` は再試行しない、`UNAVAILABLE` / `DEADLINE_EXCEEDED` は再試行の対象）。
+必須の引数の欠落・値域外（銘柄の長さ・未指定の市場や方向・読めない日付・逆順・400 暦日を超える期間）は `INVALID_ARGUMENT`（REST の 400 と同じ）。
+
+### 🔴 線上の写し
+
+| 契約 | 線上 | 写し |
+| --- | --- | --- |
+| 状態（借株可否・日足・処理中の決済） | `*_UNSPECIFIED = 0` を持つ列挙。送り手の「分からない」「取れない」は `*_UNKNOWN` / `*_UNAVAILABLE` | **名前で**写す。UNSPECIFIED・未知は「状態の欠落」（REST の本文で状態が無いのと同じく契約の食い違い）であり、送り手が答えた「分からない」とは別 |
+| 市場・決済の方向 | `MARKET_UNSPECIFIED` / `TRADE_SIDE_UNSPECIFIED = 0` を持つ列挙 | 名前で写す。未指定・未知は欠落（要求の写しが問いと一致しなければ「分からない」） |
+| 日足の価格 | `optional string`（不変文化の 10 進） | 欠落・読めない値は欄の欠け。1 本でも欠ければ応答ごと読まない（REST と同じ） |
+| 日足の日付 | `optional string`（`yyyy-MM-dd`） | 同上 |
+| 運ばない項目 | 借株可否の観測時刻・日足の期間・処理中の決済の決済方向の建玉と判断 ID | 受け手が判定に使わない（足すのはフィールド追加＝非破壊） |
+
+受け手は線上の応答を REST と同じ全項目 nullable の受け皿へ写し、REST と**同じ 1 つ**の解釈を通す。
+
+### 呼び出し元の設定
+
+| 構成キー | 呼び出し元 | 既定 | 意味 |
+| --- | --- | --- | --- |
+| `OrderExecution:Grpc` | リスク管理・取引判断・バックテスト | 未設定（＝REST） | gRPC の宛先。**宣言してあるのに使えない値は起動時に落とす**。宣言があれば `OrderExecution:BaseUrl`（バックテストは `Backtest:BarData:OrderExecution:BaseUrl`）より優先し、BaseUrl が空でも読む。バックテストは過去データ源の明示（`Backtest:BarData:Provider=order-execution`）が今までどおり要る |
+| `OrderExecution:GrpcTimeoutSeconds` | 〃 | リスク管理 5・取引判断 8・バックテスト 30 | **試行ごとの** deadline。各サービスの REST の `HttpClient.Timeout` と同値 |
+| `OrderExecution:GrpcMaxAttempts` | 〃 | 1 | 試行回数。**既定は再試行しない** |
+
+- メタデータのトークンは REST と同じサービス間トークン（`ServiceAuth:*`）から取る。
+- helm・compose: 既定では置かない（既定の描画は変わらない）。有効化の手順は values.yaml の order-execution と各呼び出し元のコメントにある。
 
 ## シーケンス
 

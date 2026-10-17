@@ -31,13 +31,54 @@ public sealed class HttpOrderExecutionHistoricalBarSource(
     public const int MaxRangeDays = 400;
 
     // 送り手 DailyBarsStatus の数値（web 既定で列挙は数値）。送り手の型は参照しない（別サービス）。
-    private const int StatusAvailable = 1;
+    internal const int StatusAvailable = 1;
 
-    public async Task<HistoricalBarLoad> LoadBarsAsync(
+    /// <summary>送り手 DailyBarsStatus.Unavailable の数値。</summary>
+    internal const int StatusUnavailable = 0;
+
+    public Task<HistoricalBarLoad> LoadBarsAsync(
         IReadOnlyList<(string Symbol, Market Market)> symbols,
         DateOnly from,
         DateOnly to,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        LoadAsync(symbols, from, to, rateLimiter, FetchChunkAsync, logger, cancellationToken);
+
+    // 1 回の照会（1 銘柄 × 1 期間）。非 2xx・本文の読み違いは失敗の理由を返す（その銘柄の欠測）。通信例外・キャンセルは送出する。
+    private async Task<ChunkAnswer> FetchChunkAsync(
+        string symbol, Market market, DateOnly chunkFrom, DateOnly chunkTo, CancellationToken cancellationToken)
+    {
+        using var response = await httpClient
+            .GetAsync(
+                $"/order-execution/daily-bars?symbol={Uri.EscapeDataString(symbol)}&market={(int)market}"
+                    + $"&from={Format(chunkFrom)}&to={Format(chunkTo)}",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            return ChunkAnswer.Failed($"発注執行の日足の照会が {(int)response.StatusCode} を返した（{Format(chunkFrom)}〜{Format(chunkTo)}）");
+
+        try
+        {
+            return ChunkAnswer.Answered(
+                await response.Content.ReadFromJsonAsync<DailyBarsDto>(cancellationToken).ConfigureAwait(false));
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            return ChunkAnswer.Failed($"発注執行の日足の応答を読めない: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 銘柄ごとに期間を分けて照会し、取れた足と欠測を集める（REST と gRPC の実装が共有する 1 つ。NFR, IADR-0559 決定 4, #1391）。
+    /// 🔴 半端に取れた分は捨てる（分けた照会の一部だけ取れた銘柄を、部分の履歴で評価しない）。照会の例外は握りつぶさず送出する。
+    /// </summary>
+    internal static async Task<HistoricalBarLoad> LoadAsync(
+        IReadOnlyList<(string Symbol, Market Market)> symbols,
+        DateOnly from,
+        DateOnly to,
+        IRateLimiter rateLimiter,
+        Func<string, Market, DateOnly, DateOnly, CancellationToken, Task<ChunkAnswer>> fetchChunk,
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(symbols);
 
@@ -61,30 +102,8 @@ public sealed class HttpOrderExecutionHistoricalBarSource(
             {
                 await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-                using var response = await httpClient
-                    .GetAsync(
-                        $"/order-execution/daily-bars?symbol={Uri.EscapeDataString(trimmed)}&market={(int)market}"
-                            + $"&from={Format(chunkFrom)}&to={Format(chunkTo)}",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
-                {
-                    failure = $"発注執行の日足の照会が {(int)response.StatusCode} を返した（{Format(chunkFrom)}〜{Format(chunkTo)}）";
-                    break;
-                }
-
-                DailyBarsDto? dto;
-                try
-                {
-                    dto = await response.Content.ReadFromJsonAsync<DailyBarsDto>(cancellationToken).ConfigureAwait(false);
-                }
-                catch (System.Text.Json.JsonException ex)
-                {
-                    failure = $"発注執行の日足の応答を読めない: {ex.Message}";
-                    break;
-                }
-
-                failure = Interpret(dto, trimmed, market, chunkFrom, chunkTo, fetched);
+                var answer = await fetchChunk(trimmed, market, chunkFrom, chunkTo, cancellationToken).ConfigureAwait(false);
+                failure = answer.Failure ?? Interpret(answer.Dto, trimmed, market, chunkFrom, chunkTo, fetched);
                 if (failure is not null)
                     break;
             }
@@ -124,7 +143,7 @@ public sealed class HttpOrderExecutionHistoricalBarSource(
     }
 
     // 1 回の照会の応答を読む。取れた足を bars へ足して null を返す。取れなければ理由を返す（足は足さない）。
-    private static string? Interpret(
+    internal static string? Interpret(
         DailyBarsDto? dto, string symbol, Market market, DateOnly from, DateOnly to, List<PriceBar> bars)
     {
         if (dto is not { Symbol: { } answeredSymbol, Market: { } answeredMarket, Status: { } status })
@@ -153,8 +172,17 @@ public sealed class HttpOrderExecutionHistoricalBarSource(
     private static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     // GET /order-execution/daily-bars の応答（全項目 nullable。送り手は DailyBarsView）。
-    private sealed record DailyBarsDto(
+    // gRPC の実装も線上の応答をこの形へ写してから Interpret を通す（状態は送り手 DailyBarsStatus の数値。UNSPECIFIED は null）。
+    internal sealed record DailyBarsDto(
         string? Symbol, int? Market, int? Status, string? UnavailableReason, IReadOnlyList<DailyBarDto?>? Bars);
 
-    private sealed record DailyBarDto(DateOnly? Date, decimal? Open, decimal? High, decimal? Low, decimal? Close, long? Volume);
+    internal sealed record DailyBarDto(DateOnly? Date, decimal? Open, decimal? High, decimal? Low, decimal? Close, long? Volume);
+
+    /// <summary>1 回の照会の答え。<see cref="Failure"/> があればその銘柄の欠測、無ければ <see cref="Dto"/> を <see cref="Interpret"/> へ通す。</summary>
+    internal sealed record ChunkAnswer(DailyBarsDto? Dto, string? Failure)
+    {
+        internal static ChunkAnswer Answered(DailyBarsDto? dto) => new(dto, null);
+
+        internal static ChunkAnswer Failed(string failure) => new(null, failure);
+    }
 }

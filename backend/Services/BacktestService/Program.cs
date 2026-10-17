@@ -62,7 +62,13 @@ builder.Services.AddHttpClient(BarDataHttpClientName);
 
 // ADR-0023 決定5, IADR-0157: OpenD への接続は provider=moomoo のときだけ作る（それ以外では 1 本も張らない）。
 var barDataOptions = builder.Configuration.GetSection(BarDataOptions.SectionName).Get<BarDataOptions>();
-var barDataProvider = HistoricalBarSourceFactory.ResolveProvider(barDataOptions);
+// NFR, MSP:ADR-0029, IADR-0284 決定 5（段 5 の追補 2）, IADR-0559 決定 3, #1391 (#753): east-west gRPC（`OrderExecutionRead/GetDailyBars`）。
+// **`OrderExecution:Grpc` があるときだけ**輸送を登録する＝既定は REST でありこの行は何もしない。宣言があれば過去データ源 order-execution は
+// gRPC 実装を選ぶ（`Backtest:BarData:OrderExecution:BaseUrl` より優先し、BaseUrl が空でも読む。provider の明示は今までどおり要る）。
+// 不正な宛先は起動時に落とす。
+builder.Services.AddAiStockTradingOrderExecutionGrpc(builder.Configuration);
+var barDataProvider = HistoricalBarSourceFactory.ResolveProvider(
+    barDataOptions, OrderExecutionGrpcExtensions.IsDeclared(builder.Configuration));
 if (barDataProvider == HistoricalBarSourceFactory.Moomoo)
 {
     builder.Services.AddSingleton<IMoomooHistoryKLineClient>(sp => new MMApiMoomooHistoryKLineClient(
@@ -90,7 +96,8 @@ builder.Services.AddSingleton<IHistoricalBarSource>(sp =>
         sp.GetService<IMoomooHistoryKLineClient>(), // moomoo 時のみ登録済み
         barDataProvider == HistoricalBarSourceFactory.OrderExecution
             ? sp.GetRequiredService<IHttpClientFactory>().CreateClient(OrderExecutionBarsHttpClientName)
-            : null);
+            : null,
+        sp.GetService<OrderExecutionGrpcTransport>()); // `OrderExecution:Grpc` の宣言時のみ登録済み（#1391）
 });
 
 // FR-15, FR-20, ADR-0008, ADR-0033, #688, IADR-0310 決定1: Stage 0 判定の定時駆動（**既定は無効**）。
