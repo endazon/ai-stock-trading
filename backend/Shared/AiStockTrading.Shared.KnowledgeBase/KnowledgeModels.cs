@@ -141,6 +141,12 @@ public static class KnowledgeReportDraftCopy
     public const string StateKey = "reportState";
     public const string DraftState = "draft";
 
+    // FR-07, FR-08, 計画 ADR-0068 決定6, #1373, IADR-0549 決定5: 効いている日報が移って確定できなくなった版 n+1 のドラフトの写しの印。
+    // 🔴 `reportState` は `draft` のまま保つ（基盤の重複の棚卸しは `reportState=draft` でない写しを確定報告書の写しに数えるため）。
+    // 失効は別のキーで示す。写しは削除しない（ADR-0065 決定5「古いドラフトは期限で消さない」と同じ扱い）。
+    public const string DraftStatusKey = "reportDraftStatus";
+    public const string ExpiredDraftStatus = "expired";
+
     public static bool IsDraftTitle(string? title) =>
         title is not null && title.StartsWith(TitlePrefix, StringComparison.Ordinal);
 }

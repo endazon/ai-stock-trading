@@ -112,4 +112,29 @@ public class ReportBodyStatusTests
         confirmed.Should().NotContain("status: draft");
         confirmed.Should().Contain("status: fixed");
     }
+
+    // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定1: 確定済みの日報に版を足すドラフト（版 n+1）の本文は、状態の行だけ未確定へ戻る
+    // （確定 → 版 n+1 → 再確定で、描画したドラフトと同じ状態の行へ往復する）。散文は変えない。
+    [Fact]
+    public void 版nプラス1の本文は状態の行だけ未確定へ戻り再確定でまた確定になる()
+    {
+        var view = new ReportView
+        {
+            Kind = ReportKind.Daily,
+            PeriodKey = "daily-2026-10-17",
+            PeriodLabel = "2026-10-17",
+            AssumptionsVersion = 1,
+            Pnl = new PnlSummary(0, 0, 0, 0, 0, 0, 0, 0),
+            PolicySummary = "方針",
+        };
+        var draft = ReportRenderer.RenderMarkdown(view);
+        var confirmed = ReportBodyStatus.MarkConfirmed(draft, ConfirmedAt)!;
+
+        var reopened = ReportBodyStatus.MarkDraft(confirmed)!;
+
+        reopened.Should().Be(draft.ReplaceLineEndings("\n"), "描画したドラフトの状態の行へ戻る（散文は 1 バイトも変えない）");
+        ReportBodyStatus.MarkDraft(reopened).Should().Be(reopened, "冪等");
+        ReportBodyStatus.MarkConfirmed(reopened, ConfirmedAt.AddHours(1))!.Should().Contain("status: fixed").And.NotContain("status: draft");
+        ReportBodyStatus.MarkDraft(null).Should().BeNull();
+    }
 }

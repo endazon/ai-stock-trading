@@ -22,9 +22,12 @@ public interface IReportDraftPresentedNotifier
 
 // 提示の通知内容。Summary は投稿可能な形へサニタイズ済み（ReportSummary.Build の内側で適用・IADR-0116 決定4）。
 // Version は提示時点の版番号で、利用者が確定する際の expectedVersion（版番号付き冪等・IADR-0024）になる。
+// FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: ReconfirmingFromVersion は、確定済みの日報に版を足したドラフトのときの確定済みの版 n
+// （通知で「確定するまで版 n が効き続ける」と書く）。それ以外は null（従来の提示）。
 public sealed record PresentedReportNotice(
     string PeriodKey,
     ReportKind Kind,
     string PeriodLabel,
     string Summary,
-    int Version);
+    int Version,
+    int? ReconfirmingFromVersion = null);

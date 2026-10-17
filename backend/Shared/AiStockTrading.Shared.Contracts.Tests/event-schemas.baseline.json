@@ -424,13 +424,16 @@
     "AuthorizedBy": "String",
     "ConfirmedAt": "DateTimeOffset",
     "Kind": "String",
-    "PeriodKey": "String"
+    "PeriodKey": "String",
+    "SupersededVersion": "Int32?",
+    "Version": "Int32?"
   },
   "ReportDraftPresented": {
     "Kind": "String",
     "OccurredAt": "DateTimeOffset",
     "PeriodKey": "String",
     "PeriodLabel": "String",
+    "ReconfirmingFromVersion": "Int32?",
     "Summary": "String",
     "Version": "Int32"
   },

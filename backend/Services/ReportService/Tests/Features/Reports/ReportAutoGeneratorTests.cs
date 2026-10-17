@@ -73,6 +73,9 @@ public class ReportAutoGeneratorTests
             _inner.Confirm(periodKey, expectedVersion, confirmedAt);
         public VersionedReport? GetLatestConfirmed(ReportKind kind) => _inner.GetLatestConfirmed(kind);
         public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at) => _inner.GetLatestConfirmedAsOf(kind, at);
+        public int StartRevisionDraft(TradingReport draft, int expectedVersion) => _inner.StartRevisionDraft(draft, expectedVersion);
+        public VersionedReport? GetLatestConfirmedVersion(string periodKey) => _inner.GetLatestConfirmedVersion(periodKey);
+        public IReadOnlyList<VersionedReport> ListLatestConfirmedVersions() => _inner.ListLatestConfirmedVersions();
         public ReportReview? GetReview(string periodKey) => _inner.GetReview(periodKey);
         public ReviewDecision? ApplyReview(string periodKey, ReviewCommand command) => _inner.ApplyReview(periodKey, command);
     }
@@ -93,6 +96,9 @@ public class ReportAutoGeneratorTests
             _inner.Confirm(periodKey, expectedVersion, confirmedAt);
         public VersionedReport? GetLatestConfirmed(ReportKind kind) => _inner.GetLatestConfirmed(kind);
         public VersionedReport? GetLatestConfirmedAsOf(ReportKind kind, DateTimeOffset at) => _inner.GetLatestConfirmedAsOf(kind, at);
+        public int StartRevisionDraft(TradingReport draft, int expectedVersion) => _inner.StartRevisionDraft(draft, expectedVersion);
+        public VersionedReport? GetLatestConfirmedVersion(string periodKey) => _inner.GetLatestConfirmedVersion(periodKey);
+        public IReadOnlyList<VersionedReport> ListLatestConfirmedVersions() => _inner.ListLatestConfirmedVersions();
         public ReportReview? GetReview(string periodKey) => _inner.GetReview(periodKey);
     }
 

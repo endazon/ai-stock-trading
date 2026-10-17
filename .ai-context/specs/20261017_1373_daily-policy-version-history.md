@@ -93,3 +93,13 @@ plan_refs:
 
 - Stage 0 の記録（`Stage0DecisionRecord`）には参照した方針の版を持たせていない。as-of の答えは判断時点の版そのものなので組み直せる。記録に残すかは段 B 以後に決める。
 - 段 B の要件は IADR-0548「段 B への引き継ぎ」に書く。
+
+［2026-10-17 追記 / #1373］**上の「受け入れ基準 → 試験」の表の試験名は、実装と食い違っていた**（PR #1374 の AI レビュー 🟢）。実際の置き場所は次のとおりである（表の本文は当時の記録として残す）。
+
+| 基準 | 実際の試験 |
+| --- | --- |
+| 確定の履歴・二段の選び方・判断時点・並行した確定の通し番号・種別ごとの通し番号・InMemory の実装 | `backend/Services/ReportService/Tests/Infrastructure/Persistence/ReportConfirmedVersionHistoryTests.cs`（1 ファイル。`EfReportStoreTests` / `InMemoryReportStoreTests` には足していない。`InMemoryReportStoreTests` は作っていない） |
+| 衝突の見分け方（PR #1374 の 2 コミット目） | 同上（`衝突は写しの鍵と版の一意制約違反だけ` ほか） |
+| REST・gRPC の方針の応答 | `ReportEndpointsTests`・`DailyPolicyReadGrpcServiceTests` |
+| 取引判断の読み手と判断の記録 | `ReportReadContractTests`・`GrpcStage4ReadsTests`・`Stage0AsOfExternalSourcesTests`・`TradeDecisionServiceTests`・`DecisionHeldReportTests` |
+| イベントの後方互換 | `DecisionPolicyReferenceContractTests` と `event-schemas.baseline.json` |

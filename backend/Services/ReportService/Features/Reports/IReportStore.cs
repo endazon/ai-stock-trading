@@ -4,6 +4,7 @@ using ReportService.Domain;
 namespace ReportService.Features.Reports;
 
 // FR-06/07, IADR-0012/0024: 報告書ストア（PeriodKey ごとに 1 行＋Version 楽観排他）。確定済みは不変。
+// ［2026-10-17 / #1373・IADR-0549 決定1］確定した版の写しは不変。行は、効いている確定済み日報に限り StartRevisionDraft で版 n+1 のドラフトへ戻せる（UpsertDraft は従来どおり確定済みを拒む）。
 // FR-07, ADR-0068 決定2, #1373, IADR-0548: 確定のたびに確定した版の写しを別に残す（書き換えない）。最新の確定版はそこから選ぶ。
 public interface IReportStore
 {
@@ -30,8 +31,27 @@ public interface IReportStore
     /// ADR-0068 決定2, IADR-0548 決定2: 遷移したときは、確定した版の写し（会話キー・確定後の版・確定時刻・方針・本文）を
     /// 行の確定と<b>同じ 1 回の保存</b>で足す。写しは以後書き換えない。
     /// </para>
+    /// <para>
+    /// 🔴 ADR-0068 決定1, IADR-0549 決定2: 同じ期間キーに確定版が既にある（版 n+1 の確定＝再確定）なら、<b>なお効いている</b>ことを同じ保存の中で確かめ、
+    /// 効いていなければ <see cref="ReportNoLongerEffectiveException"/> で断る（状態は変えない）。判定は写しの通し番号の衝突で
+    /// より新しい日付の日報の確定と直列化される。再確定のときは <see cref="ConfirmResult.SupersededVersion"/> にそれまでの確定版の版を返す。
+    /// </para>
     /// </summary>
     ConfirmResult? Confirm(string periodKey, int expectedVersion, DateTimeOffset confirmedAt);
+
+    /// <summary>
+    /// FR-07, FR-14, ADR-0068 決定1, #1373, IADR-0549 決定1: 効いている確定済み日報に版を足すドラフト（版 n+1）を作り、新しい版を返す。1 回の保存で終える。
+    /// 行が確定済みで版が <paramref name="expectedVersion"/> と一致し、日報で、効いている日報（<see cref="GetLatestConfirmed"/> の期間キー）のときだけ
+    /// 行を Draft・版 +1 にして方針と本文（非空のときだけ）を差し替える。確定した版の写しは残る。
+    /// 効いていなければ <see cref="ReportNoLongerEffectiveException"/>、版不一致・未確定は <see cref="ReportConcurrencyException"/>。
+    /// </summary>
+    int StartRevisionDraft(TradingReport draft, int expectedVersion);
+
+    /// <summary>FR-07, ADR-0068 決定1・6, IADR-0549 決定3: この期間キーの最新の確定版（確定時刻が最新・同時刻は版番号の大きい方）。無ければ null。</summary>
+    VersionedReport? GetLatestConfirmedVersion(string periodKey);
+
+    /// <summary>FR-08, ADR-0068 決定6, IADR-0549 決定5: 期間キーごとの最新の確定版（KB の入れ直しが行の現在の状態ではなく確定版を入れるため）。</summary>
+    IReadOnlyList<VersionedReport> ListLatestConfirmedVersions();
 
     /// <summary>
     /// 指定種別の最新の確定済み報告書。無ければ null。

@@ -15,8 +15,14 @@ public sealed partial record ReportKnowledgeReingestScope(
     string? FromPeriodKey,
     string? ToPeriodKey,
     DateOnly? FromDate,
-    DateOnly? ToDate)
+    DateOnly? ToDate,
+    // FR-08, 計画 ADR-0068 決定6, #1373, IADR-0549 決定5: 1 つの期間キーだけ（再確定で確定版の写しを最新の版で置き換えるとき）。
+    string? OnlyPeriodKey = null)
 {
+    /// <summary>ADR-0068 決定6, IADR-0549 決定5: 1 つの期間キーだけを対象にする範囲（再確定の後の写しの置き換え）。</summary>
+    public static ReportKnowledgeReingestScope Single(string periodKey) =>
+        new(false, periodKey, periodKey, null, null, periodKey);
+
     public const string AllLabel = "all";
 
     [GeneratedRegex(@"\A(?<kind>daily|weekly|monthly)-(?<rest>[0-9W-]{4,10})\z", RegexOptions.CultureInvariant)]
@@ -28,6 +34,9 @@ public sealed partial record ReportKnowledgeReingestScope(
     public bool Includes(TradingReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
+        if (OnlyPeriodKey is not null)
+            return string.Equals(report.PeriodKey, OnlyPeriodKey, StringComparison.Ordinal);
+
         return All
             || ((FromDate is null || report.PeriodStart >= FromDate) && (ToDate is null || report.PeriodStart <= ToDate));
     }

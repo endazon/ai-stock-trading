@@ -9,8 +9,8 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-15, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0033, ADR-0042, ADR-0052, ADR-0053, ADR-0068]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526, IADR-0528, IADR-0548]
-specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy, 20261017_1373_daily-policy-version-history]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526, IADR-0528, IADR-0548, IADR-0549]
+specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy, 20261017_1373_daily-policy-version-history, 20261017_1373_daily-policy-reconfirm]
 issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, #1308, #1373, planning#711, planning#746, planning#724, planning#784, planning#803]
 -->
 
@@ -87,14 +87,20 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 - `PUT /reports/{periodKey}`（ドラフト upsert・楽観排他）、`POST /reports/{periodKey}/confirm`（版番号付き冪等確定）。すべて OwnerOnly。
 - `POST /reports/policy-revisions`（方針の改訂案。OwnerOnly）: 要求は `{instruction, periodKey?, onBehalfOf?}`。利用者の自由文の指示（1000 文字まで）から
   AI が方針の改訂案を作り、対象の報告書へ**新しい版のドラフト**として保存して提示（承認待ち）する。**確定はしない**（確定は上の確定 API）。
-  対象は `periodKey` 省略時に当日（JST）の日報。既存の未確定の報告書は改訂し、確定済みは 409。存在しない会話キーで新しく作れるのは当日の日報だけで、
+  対象は `periodKey` 省略時に当日（JST）の日報。既存の未確定の報告書は改訂する。
+  **効いている確定済み日報（最新の確定済み日報）には版を足す**: 確定済みの版 n の方針を土台に、行を版 n+1 のドラフトへ戻して保存・提示する
+  （本文の状態の行は未確定へ戻し、改訂の記録を末尾へ足す。確定した版 n の写しは残り、**確定するまで版 n が効き続ける**）。当日の日報に限らない
+  （営業日の 0 時から自動生成までは前日付の日報が効いているので、その会話キーを指定する）。版を足したことは提示の通知で知らせる。
+  それ以外の確定済み（より古い日報・週報・月報）は 409 で、再確定できる日報（効いている日報）の会話キーを返答に書く。
+  効いている日報が移った後の版 n+1 のドラフトは改訂しない（409・AI を呼ばない）。存在しない会話キーで新しく作れるのは当日の日報だけで、
   土台は直近の確定済み日報（方針・`BasedOn`・`AssumptionsVersion`）。確定済み日報が無い・より新しい確定済み日報がある場合は 409。
   **営業日にまだ自動生成されていない当日の日報は作らない**（409。作ると数値入りの自動生成の日報が作られなくなるため。自動生成の後に
-  改訂する。休場日と自動生成が無効な構成では作れる。判定は `Reports:AutoGeneration` の境界・休場日・有効化）。
+  改訂する。休場日と自動生成が無効な構成では作れる。判定は `Reports:AutoGeneration` の境界・休場日・有効化）。この 409 の返答には、
+  いま効いている日報の会話キーと、それを指定すれば版を足して再確定できること（承認待ちの版 n+1 があればその版）を書く。
   改訂の記録（指示者・時刻・指示の原文・案・監視銘柄の入れ替え案・説明）は本文（Body）の末尾へ追記する。
   応答は 200＝`{periodKey, version, created, presented, message, policySummary, watchlistChanges[{action, symbol, reason}], rationale}`
   （文字列は投稿向けに無害化済み＝メンション構文とマスクリンクを幅ゼロ空白の挿入だけで崩す。方針は保存される方針と幅ゼロ空白を除いて同一）／400＝指示・会話キー・代理指定の不正／404＝対象なし／
-  409＝確定済み・土台なし・確定しても効かない・営業日で当日の日報が未生成・並行更新（LLM を待つ間の更新）／502＝AI の案を作れなかった。
+  409＝効いていない確定済み・効いている日報が移った後の版 n+1・土台なし・確定しても効かない・営業日で当日の日報が未生成・並行更新（LLM を待つ間の更新）／502＝AI の案を作れなかった。
   **200 以外では何も保存しない。** 保存の後に提示だけ失敗したときは 200・`presented=false`。
   監視銘柄の入れ替え案は、Discord の `/policy` 専用の確認ボタンで確定できたときだけ市場監視サービスで適用される（`/report approve` では適用しない）。
   要求の `currentWatchlist`（`[{symbol, market}]`・market は `UnitedStates` / `Japan`）は Bot が照会した現在の監視銘柄で、米国の銘柄を AI へ渡し、
@@ -186,6 +192,17 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
 ## 整合性・制約ルール
 
 - PeriodKey ごとに 1 行。確定済みは不変（`UpsertDraft` で変更不可）。版番号（Version）で楽観排他しロストアップデートを防ぐ。
+  例外は**効いている確定済み日報への版の追加**だけで、行を版 n+1 のドラフトへ戻す（確定した版の写しは書き換えない）。
+- **版 n+1 の確定は、確定の時点でその日報がなお効いているときだけ通る。** 判定と確定は 1 回の保存で行い（確定した版の履歴の通し番号の最大を先に読み、
+  その時点までの写しで効いている期間キーを確かめ、通し番号 +1 の写しを足す）、より新しい日付の日報の確定と並行したら先に保存を終えた方が勝つ。
+  移った後の確定は 409 で理由を返し、ドラフトは残す。`/report regenerate` も移った後の版 n+1 は作り直さない（409）。
+- レビュー照会（`GET /reports/{periodKey}/review`。gRPC の同じ照会も）は、行が版 n+1 のドラフトのとき `confirmedVersion`（効いている確定版の版）と
+  `noLongerEffective`（効いている日報が移って確定できない）を返す。一覧・取得は行の現在の状態（版 n+1 のドラフト）を返す。
+- 確定の通知（`ReportConfirmed`）は確定した版（`version`）と、再確定ならそれまで効いていた版（`supersededVersion`）を運ぶ。
+- KB: 再確定は確定版の写しを最新の確定版で置き換える（作らない。承認待ちの写しは確定版の後に消す）。入れ直しは期間キーごとの最新の確定版を入れる
+  （行が版 n+1 のドラフトの間も確定版）。効いている日報が移って確定できなくなった版 n+1 のドラフトの写しは、`reportState=draft` のまま
+  `reportDraftStatus=expired` を持つ写しで置き換えて残す（削除しない）。入れ直しは、行が版 n+1 のドラフトのとき、その日報が効いていれば承認待ちの写しを
+  残し、効いていなければ失効の印つきの写しへ置き換える（確定時に印を付けそこねた写しもここで回復する）。
 - 確定は利用者のみ（OwnerOnly・アクター必須）。生成AI・自動処理は確定できない。
 
 ## 約定・手動売買の取り込みの集計範囲（セッションの窓）

@@ -680,6 +680,16 @@
         },
         "GetReportReviewResponse": {
           "fields": {
+            "confirmed_version": {
+              "number": 3,
+              "type": "int32",
+              "label": "optional"
+            },
+            "no_longer_effective": {
+              "number": 4,
+              "type": "bool",
+              "label": "optional"
+            },
             "unsupplied_inputs": {
               "number": 2,
               "type": "UnsuppliedInputList",

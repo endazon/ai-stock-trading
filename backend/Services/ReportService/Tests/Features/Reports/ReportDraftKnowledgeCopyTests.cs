@@ -564,4 +564,12 @@ internal sealed class RecordingDraftKnowledgeCopy : IReportDraftKnowledgeCopy
         Removed.Add((kind, periodKey));
         return Task.CompletedTask;
     }
+
+    public List<(TradingReport Report, int Version)> Expired { get; } = [];
+
+    public Task MarkExpiredAsync(TradingReport report, int version, CancellationToken cancellationToken = default)
+    {
+        Expired.Add((report, version));
+        return Task.CompletedTask;
+    }
 }

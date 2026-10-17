@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ReportService.Infrastructure.Persistence;
 
 // FR-06/07, IADR-0012/0024: 報告書ストアの EF 実装。PeriodKey ごとに 1 行＋Version 楽観排他。確定済みは不変。
+// ［2026-10-17 / #1373・IADR-0549 決定1］確定した版の写しは不変。行は、効いている確定済み日報に限り StartRevisionDraft で版 n+1 のドラフトへ戻せる（UpsertDraft は従来どおり確定済みを拒む）。
 // ADR-0068 決定2, #1373, IADR-0548: 確定した版の写しを別の表（report_confirmed_versions）に確定のたびに足し、最新の確定版はそこから選ぶ。
 public sealed class EfReportStore(ReportDbContext db) : IReportStore
 {
@@ -160,6 +161,24 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         if (expectedVersion != row.Version)
             throw new ReportConcurrencyException(periodKey, expectedVersion, row.Version);
 
+        // ADR-0068 決定1, IADR-0548 決定2, IADR-0549 決定2: 🔴 **通し番号の最大 S を最初に読む。** 「なお効いている」の判定は S までの写しだけで行い、
+        // 写しは S+1 で足す。判定の後に別の確定（同じ種別）が入れば、その確定が S+1 を取るので、こちらの保存は鍵の衝突で負ける
+        // （読み直して判定し直す）。S を判定の後に読むと、その間に入った確定を見落としたまま S+2 で通ってしまう。
+        var sequenceBefore = db.ReportConfirmedVersions.Where(v => v.Kind == row.Kind).Max(v => (int?)v.Sequence) ?? 0;
+
+        // ADR-0068 決定1, IADR-0549 決定2: 同じ期間キーに確定版が既にある＝版 n+1 の確定（再確定）。日報だけが版を足せる。
+        var superseded = db.ReportConfirmedVersions
+            .Where(v => v.PeriodKey == row.PeriodKey && v.Sequence <= sequenceBefore)
+            .OrderByDescending(v => v.ConfirmedAt).ThenByDescending(v => v.Version)
+            .Select(v => (int?)v.Version)
+            .FirstOrDefault();
+        if (superseded is not null)
+        {
+            var effective = SelectLatest(db.ReportConfirmedVersions.Where(v => v.Kind == row.Kind && v.Sequence <= sequenceBefore));
+            if (row.Kind != ReportKind.Daily || effective?.Report.PeriodKey != row.PeriodKey)
+                throw new ReportNoLongerEffectiveException(row.PeriodKey, effective?.Report.PeriodKey);
+        }
+
         row.State = ReportState.Confirmed;
         // 承認（対話的確定の Approve）でレビュー局面は Confirmed（終端）へ（IADR-0071 決定5）。
         row.ReviewState = ReviewState.Confirmed;
@@ -172,11 +191,10 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
         row.Version += 1;
 
         // ADR-0068 決定2, IADR-0548 決定1: 確定した版の写し（書き換えない）。通し番号は種別ごとの最大＋1。
-        var sequence = (db.ReportConfirmedVersions.Where(v => v.Kind == row.Kind).Max(v => (int?)v.Sequence) ?? 0) + 1;
         db.ReportConfirmedVersions.Add(new ReportConfirmedVersionRow
         {
             Kind = row.Kind,
-            Sequence = sequence,
+            Sequence = sequenceBefore + 1,
             PeriodKey = row.PeriodKey,
             PeriodStart = row.PeriodStart,
             Version = row.Version,
@@ -188,7 +206,71 @@ public sealed class EfReportStore(ReportDbContext db) : IReportStore
             UnsuppliedInputs = row.UnsuppliedInputs,
         });
         db.SaveChanges();
-        return new ConfirmResult(ToReport(row), Transitioned: true, row.Version);
+        return new ConfirmResult(ToReport(row), Transitioned: true, row.Version, superseded);
+    }
+
+    // FR-07, FR-14, ADR-0068 決定1, #1373, IADR-0549 決定1: 効いている確定済み日報に版を足すドラフト（版 n+1）を作る。1 回の保存で終える。
+    // 行が確定済みで版が一致し、日報で、かつ効いている日報（二段で選んだ期間キーがこの期間キー）のときだけ、行を Draft・版 +1 にして
+    // 方針と本文を差し替える。確定した版の写し（版 n）は残る＝版 n は確定するまで効き続ける。
+    // 🔴 作成の時点の「効いている」の判定は、より新しい日付の日報の確定と競合し得る。競合して移った後のドラフトは**確定で必ず断られる**
+    // （Confirm の判定は写しの通し番号の衝突で 1 保存操作になる）ので、作成の判定は行き止まりを減らすためのものである。
+    public int StartRevisionDraft(TradingReport draft, int expectedVersion)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+
+        var row = db.Reports.Find(draft.PeriodKey)
+            ?? throw new ReportConcurrencyException(draft.PeriodKey, expectedVersion, 0);
+        if (row.State != ReportState.Confirmed || expectedVersion != row.Version)
+            throw new ReportConcurrencyException(draft.PeriodKey, expectedVersion, row.Version);
+
+        var effective = GetLatestConfirmed(ReportKind.Daily);
+        if (row.Kind != ReportKind.Daily || effective?.Report.PeriodKey != row.PeriodKey)
+            throw new ReportNoLongerEffectiveException(row.PeriodKey, effective?.Report.PeriodKey);
+
+        row.PolicySummary = draft.PolicySummary;
+        if (!string.IsNullOrEmpty(draft.Body))
+        {
+            row.Body = draft.Body;
+            row.UnsuppliedInputs = ReportInputs.Serialize(draft.UnsuppliedInputs);
+        }
+
+        row.State = ReportState.Draft;
+        row.ReviewState = ReviewState.Drafting;
+        row.ConfirmedAt = null;
+        row.Version += 1;
+        try
+        {
+            db.SaveChanges();
+        }
+        catch
+        {
+            // UpsertDraft と同じ規律（失敗した変更を追跡したまま残さない）。並行更新は DbUpdateConcurrencyException（409 へ写る）。
+            db.ChangeTracker.Clear();
+            throw;
+        }
+
+        return row.Version;
+    }
+
+    // FR-07, ADR-0068 決定1・6, #1373, IADR-0549 決定3: この期間キーの最新の確定版（確定時刻が最新、同時刻は版番号の大きい方）。無ければ null。
+    public VersionedReport? GetLatestConfirmedVersion(string periodKey)
+    {
+        var v = db.ReportConfirmedVersions
+            .Where(x => x.PeriodKey == periodKey)
+            .OrderByDescending(x => x.ConfirmedAt)
+            .ThenByDescending(x => x.Version)
+            .FirstOrDefault();
+        return v is null ? null : new VersionedReport(ToReport(v), v.Version);
+    }
+
+    // FR-08, ADR-0068 決定6, #1373, IADR-0549 決定5: 期間キーごとの最新の確定版（KB の入れ直しが、行が版 n+1 のドラフトの間も確定版を入れるため）。
+    public IReadOnlyList<VersionedReport> ListLatestConfirmedVersions()
+    {
+        var all = db.ReportConfirmedVersions.AsNoTracking().ToList();
+        return [.. all
+            .GroupBy(v => v.PeriodKey, StringComparer.Ordinal)
+            .Select(g => g.OrderByDescending(x => x.ConfirmedAt).ThenByDescending(x => x.Version).First())
+            .Select(v => new VersionedReport(ToReport(v), v.Version))];
     }
 
     public ReportReview? GetReview(string periodKey)

@@ -517,10 +517,18 @@ public static class NotificationFormatter
         NotificationSeverity.Info);
 
     // FR-07, FR-09: 報告書の確定（方針が取引に有効化された通知）。
-    public static NotificationMessage From(ReportConfirmed e) => new(
-        "報告書確定",
-        $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。",
-        NotificationSeverity.Info);
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 効いている日報の**再確定**（SupersededVersion あり）は、効いている版が変わったことを書く。
+    public static NotificationMessage From(ReportConfirmed e) => e.SupersededVersion is { } superseded
+        ? new(
+            "日報の再確定（効いている方針の版が変わりました）",
+            $"{e.Kind} 報告書 {e.PeriodKey} を版 {(e.Version is { } v ? v.ToString(System.Globalization.CultureInfo.InvariantCulture) : "?")} で再確定しました"
+                + $"（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。"
+                + $"この時点から、効いている方針は版 {superseded} からこの版に変わりました（版 {superseded} は記録として残ります）。",
+            NotificationSeverity.Info)
+        : new(
+            "報告書確定",
+            $"{e.Kind} 報告書 {e.PeriodKey} が確定しました（{ConfirmerOf(e)}・前提条件 v{e.AssumptionsVersion}）。",
+            NotificationSeverity.Info);
 
     // FR-09, UC-03, ADR-0003, IADR-0240 決定11, #774: 確定者の表示。
     //   代理確定（Discord Bot 経由）: 「<操作した利用者>・<認可の主体のクライアント> 経由」——**両方を見せる**。
@@ -541,11 +549,15 @@ public static class NotificationFormatter
     // 確定され得る（確定された日報の方針は翌日の取引に効く）。「埋もれない経路で出す」は LlmFallbackFired
     // （ADR-0017 決定4-(2)）で既に採っている形である。**未供給が無ければ従来どおり Info**——毎回警告にすると
     // 警告の意味が消える。判定は発行側と共有する印（契約アセンブリの定数）で行い、イベントの形は変えない。
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 確定済みの日報に版を足したドラフト（ReconfirmingFromVersion あり）は、
+    // 効いている版が確定まで変わらないことを書く（ドラフトの作成では効いている版は変わらない）。
     public static NotificationMessage From(ReportDraftPresented e) => new(
-        "報告書ドラフト（承認待ち）",
+        e.ReconfirmingFromVersion is null ? "報告書ドラフト（承認待ち）" : "日報に版を追加（承認待ち）",
         $"{e.Summary}\n\n"
             + $"内容を確認のうえ確定してください（{e.PeriodKey}・版 {e.Version}）。"
-            + "確定するまで取引方針は変わりません。",
+            + (e.ReconfirmingFromVersion is { } from
+                ? $"確定するまでは確定済みの版 {from} の方針が効き続けます。"
+                : "確定するまで取引方針は変わりません。"),
         HasUnsuppliedInputs(e) || LacksNumericTakeProfit(e) ? NotificationSeverity.Warning : NotificationSeverity.Info);
 
     // #866: 要約に未供給の警告行が含まれているか（発行側 ReportSummary.Build が同じ定数で組み立てる）。

@@ -90,7 +90,13 @@ public static class ReportOwnerReadWireMapping
 
         var inputs = new Proto.UnsuppliedInputList();
         inputs.Names.AddRange(review.UnsuppliedInputs);
-        return new Proto.GetReportReviewResponse { Version = review.Version, UnsuppliedInputs = inputs };
+        var response = new Proto.GetReportReviewResponse { Version = review.Version, UnsuppliedInputs = inputs };
+        // ADR-0068 決定1, #1373, IADR-0549 決定3: 版 n+1 のドラフトのときだけ載せる（C# の null・false は設定しない）。
+        if (review.ConfirmedVersion is { } confirmed)
+            response.ConfirmedVersion = confirmed;
+        if (review.NoLongerEffective)
+            response.NoLongerEffective = true;
+        return response;
     }
 
     public static Proto.ReportPeriodKeyRow ToProto(ReportPeriodKeyItem item)

@@ -48,4 +48,27 @@ public static class ReportBodyStatus
 
         return string.Join('\n', lines);
     }
+
+    /// <summary>
+    /// FR-07, ADR-0068 決定1, #1373, IADR-0549 決定1: 確定済みの日報に版を足すドラフト（版 n+1）の本文を「未確定」へ戻す
+    /// （<see cref="MarkConfirmed"/> の逆・<b>状態の行だけ</b>・冪等）。<c>status: fixed</c> の行を <c>status: draft</c> へ、
+    /// <c>confirmed_at:</c> の行を <c>confirmed_at: null</c>（生成時の未確定の表記）へ。散文は変えない。
+    /// 🔴 戻さないと、版 n+1 のドラフトが本文の frontmatter と YAML ブロックで「確定済み」を名乗る（取引判断は YAML を読む）。
+    /// </summary>
+    public static string? MarkDraft(string? body)
+    {
+        if (string.IsNullOrEmpty(body))
+            return body;
+
+        var lines = body.ReplaceLineEndings("\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i] == "status: fixed")
+                lines[i] = "status: draft";
+            else if (lines[i].StartsWith("confirmed_at:", StringComparison.Ordinal))
+                lines[i] = "confirmed_at: null";
+        }
+
+        return string.Join('\n', lines);
+    }
 }

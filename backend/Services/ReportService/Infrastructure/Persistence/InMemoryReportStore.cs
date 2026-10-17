@@ -6,6 +6,7 @@ namespace ReportService.Infrastructure.Persistence;
 
 // FR-06/07, IADR-0024: 報告書ストアのインメモリ実装（テスト・単体実行用）。PostgreSQL 永続化は Worker の EfReportStore で差し替える。
 // PeriodKey ごとに 1 行＋Version。確定済みは不変。
+// ［2026-10-17 / #1373・IADR-0549 決定1］確定した版の写しは不変。行は、効いている確定済み日報に限り StartRevisionDraft で版 n+1 のドラフトへ戻せる（UpsertDraft は従来どおり確定済みを拒む）。
 public sealed class InMemoryReportStore : IReportStore
 {
     private readonly Lock _gate = new();
@@ -90,6 +91,15 @@ public sealed class InMemoryReportStore : IReportStore
             if (expectedVersion != existing.Version)
                 throw new ReportConcurrencyException(periodKey, expectedVersion, existing.Version);
 
+            // ADR-0068 決定1, IADR-0549 決定2: 版 n+1 の確定（再確定）は、なお効いているときだけ（EfReportStore と同じ規則・同じ排他の中）。
+            var superseded = LatestOfKey(periodKey)?.Version;
+            if (superseded is not null)
+            {
+                var effective = SelectLatest(_confirmedVersions.Where(v => v.Report.Kind == existing.Report.Kind));
+                if (existing.Report.Kind != ReportKind.Daily || effective?.Report.PeriodKey != periodKey)
+                    throw new ReportNoLongerEffectiveException(periodKey, effective?.Report.PeriodKey);
+            }
+
             // #338, #310, INDEX 決定29: **本文の状態表記も確定へ揃える**（EfReportStore と同じ規則）。
             // 本文は生成時に一度だけ組み立てられるため、ここで揃えないと確定済みの報告書が
             // frontmatter と YAML ブロックで「未確定」を名乗り続ける（取引判断は YAML を読む）。
@@ -103,9 +113,63 @@ public sealed class InMemoryReportStore : IReportStore
             _rows[periodKey] = (confirmed, existing.Version + 1, ReviewState.Confirmed);
             // ADR-0068 決定2, IADR-0548 決定1: 確定した版の写しを足す（行の確定と同じ排他の中＝1 操作）。
             _confirmedVersions.Add(new VersionedReport(confirmed, existing.Version + 1));
-            return new ConfirmResult(confirmed, Transitioned: true, existing.Version + 1);
+            return new ConfirmResult(confirmed, Transitioned: true, existing.Version + 1, superseded);
         }
     }
+
+    // FR-07, FR-14, ADR-0068 決定1, #1373, IADR-0549 決定1: 効いている確定済み日報に版を足すドラフト（EfReportStore と同じ規則）。
+    public int StartRevisionDraft(TradingReport draft, int expectedVersion)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        lock (_gate)
+        {
+            if (!_rows.TryGetValue(draft.PeriodKey, out var existing))
+                throw new ReportConcurrencyException(draft.PeriodKey, expectedVersion, 0);
+            if (existing.Report.State != ReportState.Confirmed || expectedVersion != existing.Version)
+                throw new ReportConcurrencyException(draft.PeriodKey, expectedVersion, existing.Version);
+
+            var effective = SelectLatest(_confirmedVersions.Where(v => v.Report.Kind == ReportKind.Daily));
+            if (existing.Report.Kind != ReportKind.Daily || effective?.Report.PeriodKey != draft.PeriodKey)
+                throw new ReportNoLongerEffectiveException(draft.PeriodKey, effective?.Report.PeriodKey);
+
+            var reopened = existing.Report with
+            {
+                PolicySummary = draft.PolicySummary,
+                Body = string.IsNullOrEmpty(draft.Body) ? existing.Report.Body : draft.Body,
+                UnsuppliedInputs = string.IsNullOrEmpty(draft.Body) ? existing.Report.UnsuppliedInputs : draft.UnsuppliedInputs,
+                State = ReportState.Draft,
+                ConfirmedAt = null,
+            };
+            _rows[draft.PeriodKey] = (reopened, existing.Version + 1, ReviewState.Drafting);
+            return existing.Version + 1;
+        }
+    }
+
+    public VersionedReport? GetLatestConfirmedVersion(string periodKey)
+    {
+        lock (_gate)
+        {
+            return LatestOfKey(periodKey);
+        }
+    }
+
+    public IReadOnlyList<VersionedReport> ListLatestConfirmedVersions()
+    {
+        lock (_gate)
+        {
+            return [.. _confirmedVersions
+                .GroupBy(v => v.Report.PeriodKey, StringComparer.Ordinal)
+                .Select(g => g.OrderByDescending(v => v.Report.ConfirmedAt).ThenByDescending(v => v.Version).First())];
+        }
+    }
+
+    // 呼び出し側が _gate を持っていること。
+    private VersionedReport? LatestOfKey(string periodKey) =>
+        _confirmedVersions
+            .Where(v => string.Equals(v.Report.PeriodKey, periodKey, StringComparison.Ordinal))
+            .OrderByDescending(v => v.Report.ConfirmedAt)
+            .ThenByDescending(v => v.Version)
+            .FirstOrDefault();
 
     // FR-07, ADR-0068 決定2, #1373, IADR-0548 決定3: 確定した版の写しから二段で選ぶ（EfReportStore と同じ規則）。
     public VersionedReport? GetLatestConfirmed(ReportKind kind)

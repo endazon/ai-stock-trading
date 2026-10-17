@@ -32,6 +32,11 @@ message GetReportReviewResponse {
   optional int32 version = 1;
   // 欠落＝未供給の入力の宣言が無い（REST の旧版と同じく注記を出さない）。
   UnsuppliedInputList unsupplied_inputs = 2;
+  // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: 確定済みの日報に版を足したドラフト（版 n+1）のとき、いま効いている同じ期間キーの
+  // 確定版の版番号。欠落＝版 n+1 ではない（旧版の送り手も同じ）。
+  optional int32 confirmed_version = 3;
+  // 版 n+1 のドラフトで、効いている日報が移って確定できない。欠落・false＝確定できる（旧版の送り手も同じ）。
+  optional bool no_longer_effective = 4;
 }
 
 // 未供給の入力の表示名（報告書サービスのコード定数）。

@@ -809,4 +809,33 @@ public class NotificationFormatterTests
         NotificationFormatter.From(e).Content.Should().Be(
             "Daily 報告書 daily-2026-09-10 が確定しました（client:ai-stock-trading-owner・前提条件 v1）。");
     }
+
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 確定済みの日報に版を足したドラフトの通知は、確定まで版 n が効き続けることを書く。
+    [Fact]
+    public void 版を足したドラフトの通知は確定まで版nが効き続けると書く()
+    {
+        var e = new ReportDraftPresented(
+            "daily-2026-10-17", "Daily", "2026-10-17", "日報 daily-2026-10-17: 確定済みの版 2 に版を足しました", 3, DateTimeOffset.UtcNow,
+            ReconfirmingFromVersion: 2);
+
+        var msg = NotificationFormatter.From(e);
+
+        msg.Title.Should().Be("日報に版を追加（承認待ち）");
+        msg.Content.Should().Contain("版 3").And.Contain("確定するまでは確定済みの版 2 の方針が効き続けます").And.NotContain("確定するまで取引方針は変わりません");
+    }
+
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 再確定の通知は、効いている版が変わったことを書く。初回の確定は従来の文。
+    [Fact]
+    public void 再確定の通知は効いている版が変わったことを書き初回は従来どおり()
+    {
+        var at = new DateTimeOffset(2026, 10, 16, 15, 40, 0, TimeSpan.Zero);
+        var reconfirmed = NotificationFormatter.From(new ReportConfirmed(
+            "daily-2026-10-17", "Daily", "owner", 3, at, Version: 4, SupersededVersion: 2));
+        var first = NotificationFormatter.From(new ReportConfirmed("daily-2026-10-17", "Daily", "owner", 3, at, Version: 2));
+
+        reconfirmed.Title.Should().Be("日報の再確定（効いている方針の版が変わりました）");
+        reconfirmed.Content.Should().Contain("版 4 で再確定しました").And.Contain("効いている方針は版 2 からこの版に変わりました");
+        first.Title.Should().Be("報告書確定");
+        first.Content.Should().NotContain("再確定");
+    }
 }
