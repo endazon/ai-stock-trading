@@ -80,6 +80,12 @@ public sealed class ReportsGrpcTransport : IDisposable
     /// </summary>
     internal const string RegenerationTimeoutKey = "Reports:GrpcRegenerationTimeoutSeconds";
 
+    /// <summary>
+    /// FR-07, FR-14, #1385, IADR-0556 決定 2: 報告書の確定の deadline（秒）。未設定は REST の "report-confirm" の HttpClient.Timeout（30 秒）と同値。
+    /// 確定は KB の後処理を含む（報告書サービスの時間予算・既定 20 秒）ので、照会・差し戻しの 5 秒とは分ける（外側＞内側）。
+    /// </summary>
+    internal const string ConfirmTimeoutKey = "Reports:GrpcConfirmTimeoutSeconds";
+
     /// <summary>試行回数（**読み取りだけ**に効く。書き込みは再試行しない）。</summary>
     internal const string MaxAttemptsKey = "Reports:GrpcMaxAttempts";
 
@@ -93,22 +99,28 @@ public sealed class ReportsGrpcTransport : IDisposable
 
     internal static readonly TimeSpan DefaultRegenerationTimeout = TimeSpan.FromSeconds(300);
 
+    // FR-07, FR-14, #1385, IADR-0556 決定 2: 確定の外側の上限。報告書サービスの KB の後処理の時間予算（既定 20 秒。
+    // `ReportConfirmKnowledgeBudget.DefaultKnowledgeBudgetSeconds`）＋ DB の遷移・通知の発行・台帳の余白（10 秒）。外側＞内側は T-10-2729。
+    // Discord の応答は Defer の後の追送で、追送の期限（15 分）に収まる。REST の名前付き HttpClient も同じ値を使う。
+    internal static readonly TimeSpan DefaultConfirmTimeout = TimeSpan.FromSeconds(30);
+
     private readonly GrpcChannel _channel;
 
     public ReportsGrpcTransport(
         GrpcChannel channel, TimeSpan timeout, int maxAttempts, ILogger<ReportsGrpcTransport> logger, TimeSpan? policyRevisionTimeout = null,
-        TimeSpan? regenerationTimeout = null)
+        TimeSpan? regenerationTimeout = null, TimeSpan? confirmTimeout = null)
     {
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
         ArgumentNullException.ThrowIfNull(logger);
         Calls = new NotificationGrpcCalls(timeout, maxAttempts, logger);
         PolicyRevisionCalls = new NotificationGrpcCalls(policyRevisionTimeout ?? DefaultPolicyRevisionTimeout, 1, logger);
         RegenerationCalls = new NotificationGrpcCalls(regenerationTimeout ?? DefaultRegenerationTimeout, 1, logger);
+        ConfirmCalls = new NotificationGrpcCalls(confirmTimeout ?? DefaultConfirmTimeout, 1, logger);
         OwnerRead = new ReportProto.ReportOwnerRead.ReportOwnerReadClient(channel);
         OwnerWrite = new ReportProto.ReportOwnerWrite.ReportOwnerWriteClient(channel);
     }
 
-    /// <summary>照会・確定・差し戻しの規則（deadline は <see cref="TimeoutKey"/>）。</summary>
+    /// <summary>照会・差し戻し・一覧の規則（deadline は <see cref="TimeoutKey"/>）。確定は <see cref="ConfirmCalls"/>（#1385）。</summary>
     internal NotificationGrpcCalls Calls { get; }
 
     /// <summary>方針の改訂・適用の内訳の記録の規則（deadline は <see cref="PolicyRevisionTimeoutKey"/>。書き込みだけなので再試行しない）。</summary>
@@ -116,6 +128,9 @@ public sealed class ReportsGrpcTransport : IDisposable
 
     /// <summary>報告書の作り直しの規則（deadline は <see cref="RegenerationTimeoutKey"/>。冪等でないので再試行しない）。</summary>
     internal NotificationGrpcCalls RegenerationCalls { get; }
+
+    /// <summary>報告書の確定の規則（deadline は <see cref="ConfirmTimeoutKey"/>。書き込みなので再試行しない）。</summary>
+    internal NotificationGrpcCalls ConfirmCalls { get; }
 
     internal ReportProto.ReportOwnerRead.ReportOwnerReadClient OwnerRead { get; }
 
@@ -189,9 +204,11 @@ public static class NotificationGrpcExtensions
                 config, ReportsGrpcTransport.PolicyRevisionTimeoutKey, ReportsGrpcTransport.DefaultPolicyRevisionTimeout);
             var regenerationTimeout = NotificationGrpcCalls.ReadTimeout(
                 config, ReportsGrpcTransport.RegenerationTimeoutKey, ReportsGrpcTransport.DefaultRegenerationTimeout);
+            var confirmTimeout = NotificationGrpcCalls.ReadTimeout(
+                config, ReportsGrpcTransport.ConfirmTimeoutKey, ReportsGrpcTransport.DefaultConfirmTimeout);
             services.AddSingleton(sp => new ReportsGrpcTransport(
                 Channel(sp, reports), timeout, attempts, sp.GetRequiredService<ILogger<ReportsGrpcTransport>>(), revisionTimeout,
-                regenerationTimeout));
+                regenerationTimeout, confirmTimeout));
         }
 
         if (monitor is not null)
