@@ -18,7 +18,10 @@ public record ReportDraftPresented(
     string PeriodLabel,
     string Summary,
     int Version,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 確定済みの日報に版を足したドラフト（`/policy` の再確定）のときの、
+    // それまでの確定版の版番号。通知は「確定するまで版 n が効き続ける」と書く。🔴 **既定は null＝従来の提示**（末尾・任意＝非破壊）。
+    int? ReconfirmingFromVersion = null);
 
 // FR-06, FR-09, #840, #866, IADR-0352 決定 5: 要約（Summary）に埋め込まれる**印**。
 //

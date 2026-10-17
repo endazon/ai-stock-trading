@@ -8,8 +8,14 @@ namespace ReportService.Features.Reports;
 // UnsuppliedInputs は**表示名**（ReportInputs.Label のコード定数）。列挙名ではなく表示名を返すのは、
 // 読み手（通知サービス）に語彙を二重に持たせないためである（IADR-0240 決定5 が状態 enum の表現へ
 // 結合しないのと同じ理由）。
+//
+// FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: 行が確定済みの日報に版を足したドラフト（版 n+1）のとき、ConfirmedVersion は
+// いま効いている同じ期間キーの確定版の版番号、NoLongerEffective は効いている日報が移って確定できないこと（どちらも非破壊の追加）。
+// 版 n+1 でなければ ConfirmedVersion は null・NoLongerEffective は false。
 public sealed record ReportReviewView(
     string PeriodKey,
     ReviewState State,
     int Version,
-    IReadOnlyList<string> UnsuppliedInputs);
+    IReadOnlyList<string> UnsuppliedInputs,
+    int? ConfirmedVersion = null,
+    bool NoLongerEffective = false);

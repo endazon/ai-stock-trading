@@ -274,6 +274,19 @@ public class Stage0DecisionRecorderTests
         record.VoteCount.Should().Be(voteCount);
     }
 
+    // T-15-140, FR-15, 計画 ADR-0068 決定3・4, #1373, IADR-0549 決定7: 記録は判断時点に組み直した方針の期間キーと版を持つ
+    // （どの版で記録したかを追える）。戦略 ID には含めない（Stage0DecisionRecordTests が固定する）。
+    [Fact]
+    public async Task 記録は判断時点の方針の期間キーと版を持つ()
+    {
+        var (recorder, _, sink, _) = Build([Decision("Buy")]);
+
+        await recorder.RunAsync(Options(), CancellationToken.None);
+
+        sink.Saved!.Records.Should().NotBeEmpty().And.OnlyContain(r =>
+            r.Policy == new DailyPolicyReference($"daily-{r.AsOf:yyyy-MM-dd}", 2));
+    }
+
     // 🔴 **否定形**（#290 / IADR-0248）: 解析不能は Hold へ倒すが、**見送りとは区別して記録される**。
     [Fact]
     public async Task 解析不能な出力は見送りと区別して記録される()
@@ -895,7 +908,8 @@ public class Stage0DecisionRecorderTests
             string symbol, Market market, DateOnly asOf, CancellationToken cancellationToken = default) =>
             Task.FromResult<AsOfDecisionInput?>(new AsOfDecisionInput(
                 asOf,
-                new DailyPolicy(asOf, "当日の方針"),
+                // ADR-0068 決定3・4, #1373, IADR-0549 決定7: 判断時点に組み直した方針の出所（記録に残る）。
+                new DailyPolicy(asOf, "当日の方針", new DailyPolicyReference($"daily-{asOf:yyyy-MM-dd}", 2)),
                 sizing ?? new SizingContext(100_000m, 50_000m, 20_000m, 0, 0m,
                     BrokerProvider.InternalPaper, TradingDefaults.CreateRiskLimits()),
                 new DatedPrice(asOf, 100m),

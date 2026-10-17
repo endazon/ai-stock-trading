@@ -15,4 +15,7 @@ public sealed record ConfirmedDailyPolicyAsOf(
 // FR-07, FR-13, #1025, IADR-0433 決定 7（PR #1027 の監査 H1）: Version は確定後の行の版（確定は版を 1 進める）。
 // 冪等な再確定（Transitioned=false）では、**どの版で確定されたか**を呼び出し側が見分けるために使う
 // （確定された下書きの版＝Version − 1。VersionedReport.IsConfirmedAtDraftVersion）。
-public sealed record ConfirmResult(ReportService.Domain.TradingReport Report, bool Transitioned, int Version = 0);
+// FR-07, ADR-0068 決定1・6, #1373, IADR-0549 決定2: SupersededVersion は、この確定が効いている日報の<b>再確定</b>（版 n+1 の確定）だったとき、
+// それまで効いていた同じ期間キーの確定版の版番号（通知で「効いている版が変わった」と書くため）。初回の確定・冪等な再確定は null。
+public sealed record ConfirmResult(
+    ReportService.Domain.TradingReport Report, bool Transitioned, int Version = 0, int? SupersededVersion = null);

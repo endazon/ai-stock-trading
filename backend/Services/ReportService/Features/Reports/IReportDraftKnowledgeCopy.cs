@@ -16,6 +16,13 @@ public interface IReportDraftKnowledgeCopy
 
     /// <summary>確定版の写しを作った後に、この報告書のドラフトの写しを消す。</summary>
     Task RemoveAsync(ReportKind kind, string periodKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-07, FR-08, 計画 ADR-0068 決定6, #1373, IADR-0549 決定5: 効いている日報が移って確定できなくなった版 n+1 のドラフトの写しを、
+    /// 失効の印（<c>reportDraftStatus=expired</c>）つきの写しへ置き換える（削除しない）。属性は作成の 1 回だけで持つ規律のため、
+    /// 印つきの写しを作れたときだけ元の写しを消す。写しが無ければ何もしない。
+    /// </summary>
+    Task MarkExpiredAsync(TradingReport report, int version, CancellationToken cancellationToken = default);
 }
 
 // FR-08, #1300, IADR-0526 決定 5: 機能の門（構成 `ReportDraftKnowledge:Enabled`・既定 false）。

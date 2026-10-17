@@ -243,6 +243,101 @@ public class ReportConfirmedVersionHistoryTests
             .Should().BeTrue();
     }
 
+    // T-10-2693（FR-07, ADR-0068 決定1・フォローアップ 2, #1373, IADR-0549 決定2）: 版 n+1 の確定と、より新しい日付の日報の確定の競合。
+    // 版 n+1 の確定が「なお効いている」を判定して保存する直前に、別の文脈で翌日の日報が確定する（先に保存を終えた方が勝つ）。
+    // 版 n+1 の保存は通し番号の衝突で負けて読み直し、効いている日報が移ったことを見て断る。版 n+1 の写しは足されず、ドラフトは残る。
+    [Fact]
+    public void 版nプラス1の確定はより新しい日付の確定が先に勝つと断られる()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = NewContext(dbName))
+        {
+            var s = new EfReportStore(seed);
+            s.UpsertDraft(Daily("daily-2026-10-17", Oct17, "版2の方針"), 0);
+            s.Confirm("daily-2026-10-17", 1, FirstConfirmed);
+            s.StartRevisionDraft(Daily("daily-2026-10-17", Oct17, "版3の方針"), 2).Should().Be(3);
+            s.UpsertDraft(Daily("daily-2026-10-18", new DateOnly(2026, 10, 18), "18日の方針"), 0);
+        }
+
+        var interleave = new BeforeFirstSave(() =>
+        {
+            using var other = NewContext(dbName);
+            new EfReportStore(other).Confirm("daily-2026-10-18", 1, Reconfirmed)!.Transitioned.Should().BeTrue();
+        });
+        using var db = NewContext(dbName, interleave);
+
+        var act = () => new EfReportStore(db).Confirm("daily-2026-10-17", 3, Reconfirmed);
+
+        act.Should().Throw<ReportService.Common.Exceptions.ReportNoLongerEffectiveException>()
+            .Which.EffectivePeriodKey.Should().Be("daily-2026-10-18");
+        interleave.Fired.Should().BeTrue();
+        using var check = NewContext(dbName);
+        check.ReportConfirmedVersions.AsNoTracking().Where(v => v.PeriodKey == "daily-2026-10-17").Select(v => v.Version).ToList()
+            .Should().Equal([2], "版 n+1 の写しは足さない");
+        var checkStore = new EfReportStore(check);
+        checkStore.Get("daily-2026-10-17")!.Report.State.Should().Be(ReportState.Draft, "ドラフトは記録として残す");
+        checkStore.GetLatestConfirmed(ReportKind.Daily)!.Report.PeriodKey.Should().Be("daily-2026-10-18");
+    }
+
+    // T-10-2694（ADR-0068 決定1, #1373, IADR-0549 決定2）: 逆に版 n+1 の確定が先に勝てば、翌日の日報の確定は読み直して通る（新しい日付の確定は常に通る）。
+    // 版 n+1 の写しの確定時刻は翌日の日報より前なので、判断時点の組み直しは時刻の順に版 2 → 版 4 → 翌日の日報を選ぶ。
+    [Fact]
+    public void 版nプラス1の確定が先に勝てば新しい日付の確定は読み直して通る()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        using (var seed = NewContext(dbName))
+        {
+            var s = new EfReportStore(seed);
+            s.UpsertDraft(Daily("daily-2026-10-17", Oct17, "版2の方針"), 0);
+            s.Confirm("daily-2026-10-17", 1, FirstConfirmed);
+            s.StartRevisionDraft(Daily("daily-2026-10-17", Oct17, "版3の方針"), 2);
+            s.UpsertDraft(Daily("daily-2026-10-18", new DateOnly(2026, 10, 18), "18日の方針"), 0);
+        }
+
+        var interleave = new BeforeFirstSave(() =>
+        {
+            using var other = NewContext(dbName);
+            new EfReportStore(other).Confirm("daily-2026-10-17", 3, Reconfirmed)!.SupersededVersion.Should().Be(2);
+        });
+        using var db = NewContext(dbName, interleave);
+
+        new EfReportStore(db).Confirm("daily-2026-10-18", 1, Reconfirmed.AddMinutes(1))!.Transitioned.Should().BeTrue();
+
+        using var check = NewContext(dbName);
+        var store = new EfReportStore(check);
+        store.GetLatestConfirmedAsOf(ReportKind.Daily, Reconfirmed.AddTicks(-1))!.Version.Should().Be(2);
+        store.GetLatestConfirmedAsOf(ReportKind.Daily, Reconfirmed)!.Version.Should().Be(4);
+        store.GetLatestConfirmed(ReportKind.Daily)!.Report.PeriodKey.Should().Be("daily-2026-10-18");
+    }
+
+    // T-10-2695（ADR-0068 決定1, IADR-0549 決定1）: 版を足せるのは効いている確定済みの日報だけ。古い日報・週報・未確定は断る。
+    [Fact]
+    public void 版を足すドラフトは効いている確定済み日報にだけ作れる()
+    {
+        var db = NewContext(Guid.NewGuid().ToString());
+        var store = new EfReportStore(db);
+        store.UpsertDraft(Daily("daily-2026-10-16", Oct16, "16日"), 0);
+        store.Confirm("daily-2026-10-16", 1, FirstConfirmed.AddDays(-1));
+        store.UpsertDraft(Daily("daily-2026-10-17", Oct17, "17日"), 0);
+        store.Confirm("daily-2026-10-17", 1, FirstConfirmed);
+        store.UpsertDraft(new TradingReport { PeriodKey = "weekly-2026-W42", Kind = ReportKind.Weekly, PeriodStart = new DateOnly(2026, 10, 12), PolicySummary = "週" }, 0);
+        store.Confirm("weekly-2026-W42", 1, FirstConfirmed);
+
+        var older = () => store.StartRevisionDraft(Daily("daily-2026-10-16", Oct16, "直す"), 2);
+        older.Should().Throw<ReportService.Common.Exceptions.ReportNoLongerEffectiveException>();
+        var weekly = () => store.StartRevisionDraft(new TradingReport { PeriodKey = "weekly-2026-W42", Kind = ReportKind.Weekly, PeriodStart = new DateOnly(2026, 10, 12), PolicySummary = "直す" }, 2);
+        weekly.Should().Throw<ReportService.Common.Exceptions.ReportNoLongerEffectiveException>();
+        var wrongVersion = () => store.StartRevisionDraft(Daily("daily-2026-10-17", Oct17, "直す"), 1);
+        wrongVersion.Should().Throw<ReportService.Common.Exceptions.ReportConcurrencyException>();
+
+        store.StartRevisionDraft(Daily("daily-2026-10-17", Oct17, "直す"), 2).Should().Be(3);
+        store.Get("daily-2026-10-17")!.Report.State.Should().Be(ReportState.Draft);
+        store.GetLatestConfirmed(ReportKind.Daily)!.Version.Should().Be(2, "確定するまで版 n が効く");
+        store.GetLatestConfirmedVersion("daily-2026-10-17")!.Version.Should().Be(2);
+        store.ListLatestConfirmedVersions().Select(v => (v.Report.PeriodKey, v.Version))
+            .Should().BeEquivalentTo([("daily-2026-10-16", 2), ("daily-2026-10-17", 2), ("weekly-2026-W42", 2)]);
+    }
+
     [Fact]
     public void 種別ごとに通し番号を振る()
     {

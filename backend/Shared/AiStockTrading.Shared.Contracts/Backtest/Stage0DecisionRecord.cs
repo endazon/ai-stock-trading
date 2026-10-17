@@ -143,7 +143,11 @@ public sealed record Stage0DecisionRecord(
     int OutputTokens,
     IReadOnlyList<Stage0AsOfInputStatus>? AsOfInputs = null,
     Stage0ScreeningDecision? Screening = null,
-    bool? EntryBelowMinimumNotional = null);
+    bool? EntryBelowMinimumNotional = null,
+    // FR-15, FR-11, 計画 ADR-0068 決定3・4, #1373, IADR-0549 決定7: 判断時点に組み直した確定済み日報の方針の期間キーと版番号（監査で
+    // どの版で記録したかを追う）。🔴 **戦略 ID（Stage0StrategyIdentity）には含めない** —— 方針の本文は入力の指紋（InputFingerprint）に
+    // 既に入っており、版番号を足すと同じ入力の記録の ID が変わる。既定は null＝記録されていない（本項目の追加前の記録・送り手が返さなかった）。
+    DailyPolicyReference? Policy = null);
 
 /// <summary>記録集合が対象とした銘柄。</summary>
 public sealed record Stage0RecordedSymbol(string Symbol, Market Market);

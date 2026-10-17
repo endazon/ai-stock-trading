@@ -21,6 +21,7 @@ public class PolicyRevisionWiringTests
     private const string OwnerRole = "trading-owner";
     private const string OwnerClientId = "ai-stock-trading-owner";
     private const string PeriodKey = "daily-2026-09-10";
+    private const string NextDayKey = "daily-2026-09-11";
 
     private const string ProposalJson =
         """{"policySummary": "AI の改訂案: 押し目買いを優先する", "watchlistChanges": [{"action": "add", "symbol": "NVDA", "reason": "AI 需要 @everyone"}], "rationale": "指示どおり"}""";
@@ -61,12 +62,13 @@ public class PolicyRevisionWiringTests
         return client;
     }
 
-    private static async Task SeedDraftAsync(WebApplicationFactory<Program> factory)
+    private static async Task SeedDraftAsync(
+        WebApplicationFactory<Program> factory, string periodKey = PeriodKey, string periodStart = "2026-09-10")
     {
-        var response = await UserClient(factory).PutAsJsonAsync($"/reports/{PeriodKey}", new
+        var response = await UserClient(factory).PutAsJsonAsync($"/reports/{periodKey}", new
         {
             Kind = "Daily",
-            PeriodStart = "2026-09-10",
+            PeriodStart = periodStart,
             BasedOn = (string?)null,
             AssumptionsVersion = 1,
             PolicySummary = "元の方針",
@@ -159,22 +161,21 @@ public class PolicyRevisionWiringTests
         report.GetProperty("version").GetInt32().Should().Be(3, "値域外の代理指定では保存しない");
     }
 
-    // T-10-1524（FR-14, FR-09, #1039）: 確定済みの報告書への /policy は、本番の組み立てでも 409 のまま（意味は変えない）で、
-    // `error` に改訂の手段（period を省略したときの対象・リスク設定画面）が載る。AI は呼ばれず、版も方針も変わらない。
+    // T-10-1524（FR-14, FR-09, #1039）: 効いていない確定済みの報告書への /policy は、本番の組み立てでも 409 で、`error` に改訂の手段
+    // （再確定できる日報・period を省略したときの対象・リスク設定画面）が載る。AI は呼ばれず、版も方針も変わらない。
+    // ［2026-10-17 改 / #1373・ADR-0068 決定1・IADR-0549］効いている確定済み日報は版を足せる（T-10-2691）。対象を効いていない日報にした。
     [Fact]
-    public async Task 確定済みへの改訂は409のまま改訂の手段を返す()
+    public async Task 効いていない確定済みへの改訂は409のまま改訂の手段を返す()
     {
         var gateway = new RecordingGateway(ProposalJson);
         await using var baseFactory = new ReportWorkerWebApplicationFactory();
         await using var factory = Configure(baseFactory, gateway);
         await SeedDraftAsync(factory);
-        (await BotClient(factory).PostAsJsonAsync(
-            "/reports/policy-revisions", new { instruction = "積極的に", periodKey = PeriodKey, onBehalfOf = "developer" }))
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 1, OnBehalfOf = "developer" }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 2, OnBehalfOf = "developer" }))
+        await SeedDraftAsync(factory, NextDayKey, "2026-09-11");
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{NextDayKey}/confirm", new { ExpectedVersion = 1, OnBehalfOf = "developer" }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        var confirmedVersion = (await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}"))
-            .GetProperty("version").GetInt32();
 
         var response = await BotClient(factory).PostAsJsonAsync(
             "/reports/policy-revisions", new { instruction = "もっと積極的に", periodKey = PeriodKey, onBehalfOf = "developer" });
@@ -182,14 +183,95 @@ public class PolicyRevisionWiringTests
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var error = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
         error.Should().StartWith($"報告書 {PeriodKey} は確定済みのため改訂できません")
+            .And.Contain($"版を足して再確定できるのは効いている日報 {NextDayKey} だけです")
             .And.Contain("period を省略した /policy は当日（JST）の日報")
             .And.Contain("リスク設定画面");
-        gateway.Bodies.Should().ContainSingle("確定済みへの改訂では AI を呼ばない");
+        gateway.Bodies.Should().BeEmpty("確定済みへの改訂では AI を呼ばない");
 
         var report = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}");
-        report.GetProperty("version").GetInt32().Should().Be(confirmedVersion, "確定時の版のまま");
+        report.GetProperty("version").GetInt32().Should().Be(2, "確定時の版のまま");
         report.GetProperty("report").GetProperty("state").GetString().Should().Be("Confirmed");
-        report.GetProperty("report").GetProperty("policySummary").GetString().Should().Be("AI の改訂案: 押し目買いを優先する");
+    }
+
+    // T-10-2691（FR-07, FR-14, FR-15, ADR-0068 決定1・2・3・4, #1373, IADR-0549）: **本番の組み立て**で、効いている確定済み日報に
+    // /policy → 版 n+1 のドラフト（確定まで取引判断が読む方針は版 n）→ 確認ボタンと同じ確定 → 取引判断が読む方針と版が上がる。
+    // 判断時点の組み直し（as-of）は再確定の前後で正しい版を選ぶ。レビューの表示は効いている版を示す。
+    [Fact]
+    public async Task 効いている確定済み日報は版を足して再確定でき取引判断の方針と版が上がる()
+    {
+        var gateway = new RecordingGateway(ProposalJson);
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, gateway);
+        await SeedDraftAsync(factory);
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 1, OnBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var before = await UserClient(factory).GetFromJsonAsync<JsonElement>("/reports/daily-policy");
+        (before.GetProperty("summary").GetString(), before.GetProperty("version").GetInt32()).Should().Be(("元の方針", 2));
+        var beforeAt = DateTimeOffset.UtcNow;
+
+        var revised = await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "条件 B の見送りを外す", periodKey = PeriodKey, onBehalfOf = "developer" });
+
+        revised.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await revised.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("version").GetInt32().Should().Be(3);
+        body.GetProperty("message").GetString().Should().Contain("版を足して、版 3 のドラフトにしました");
+        // 確定するまで、取引判断が読む方針は版 2 のまま（FR-07）。
+        var pending = await UserClient(factory).GetFromJsonAsync<JsonElement>("/reports/daily-policy");
+        (pending.GetProperty("summary").GetString(), pending.GetProperty("version").GetInt32()).Should().Be(("元の方針", 2));
+        var review = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}/review");
+        (review.GetProperty("state").GetString(), review.GetProperty("confirmedVersion").GetInt32(), review.GetProperty("noLongerEffective").GetBoolean())
+            .Should().Be(("PendingApproval", 2, false));
+
+        await Task.Delay(5, TestContext.Current.CancellationToken); // 確定時刻を版 2 の判断時点（beforeAt）より後へ。
+        var confirm = await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 3, OnBehalfOf = "developer" });
+        confirm.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await confirm.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("version").GetInt32().Should().Be(4);
+
+        var after = await UserClient(factory).GetFromJsonAsync<JsonElement>("/reports/daily-policy");
+        (after.GetProperty("summary").GetString(), after.GetProperty("periodKey").GetString(), after.GetProperty("version").GetInt32())
+            .Should().Be(("AI の改訂案: 押し目買いを優先する", PeriodKey, 4));
+
+        // 🔴 ADR-0068 決定3（配備の条件）: 再確定の前の判断時点は版 2、後は版 4。
+        var asOfBefore = await UserClient(factory).GetFromJsonAsync<JsonElement>(
+            $"/reports/daily-policy/as-of?at={Uri.EscapeDataString(beforeAt.ToString("O"))}");
+        (asOfBefore.GetProperty("version").GetInt32(), asOfBefore.GetProperty("summary").GetString()).Should().Be((2, "元の方針"));
+        var asOfAfter = await UserClient(factory).GetFromJsonAsync<JsonElement>("/reports/daily-policy/as-of?at=2999-01-01T00:00:00Z");
+        asOfAfter.GetProperty("version").GetInt32().Should().Be(4);
+    }
+
+    // T-10-2692（ADR-0068 決定1, #1373）: 本番の組み立てで、版 n+1 のドラフトの間により新しい日付の日報が先に確定したら、版 n+1 の確定は 409 で
+    // 理由を返し、`/policy` の改訂も 409（AI は呼ばない）。取引判断が読む方針は新しい日付の日報のまま。
+    [Fact]
+    public async Task より新しい日付の日報が先に確定したら版nプラス1の確定と改訂は409()
+    {
+        var gateway = new RecordingGateway(ProposalJson);
+        await using var baseFactory = new ReportWorkerWebApplicationFactory();
+        await using var factory = Configure(baseFactory, gateway);
+        await SeedDraftAsync(factory);
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 1, OnBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "直す", periodKey = PeriodKey, onBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        await SeedDraftAsync(factory, NextDayKey, "2026-09-11");
+        (await BotClient(factory).PostAsJsonAsync($"/reports/{NextDayKey}/confirm", new { ExpectedVersion = 1, OnBehalfOf = "developer" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var confirm = await BotClient(factory).PostAsJsonAsync($"/reports/{PeriodKey}/confirm", new { ExpectedVersion = 3, OnBehalfOf = "developer" });
+        confirm.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await confirm.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString()
+            .Should().Contain($"いま効いているのは {NextDayKey}");
+
+        var revise = await BotClient(factory).PostAsJsonAsync(
+            "/reports/policy-revisions", new { instruction = "さらに直す", periodKey = PeriodKey, onBehalfOf = "developer" });
+        revise.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        gateway.Bodies.Should().ContainSingle("移った後の改訂では AI を呼ばない");
+
+        var policy = await UserClient(factory).GetFromJsonAsync<JsonElement>("/reports/daily-policy");
+        policy.GetProperty("periodKey").GetString().Should().Be(NextDayKey);
+        var review = await UserClient(factory).GetFromJsonAsync<JsonElement>($"/reports/{PeriodKey}/review");
+        review.GetProperty("noLongerEffective").GetBoolean().Should().BeTrue();
     }
 
     // LLM ゲートウェイの応答を返し、要求本文を記録する一次ハンドラ。

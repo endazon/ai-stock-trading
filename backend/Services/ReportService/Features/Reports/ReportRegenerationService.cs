@@ -68,6 +68,13 @@ public sealed partial class ReportRegenerationService(
                 ReportRegenerationStatus.AlreadyConfirmed,
                 $"報告書 {key} は確定済みのため作り直せません（確定済みの版は変えられません）。", key);
 
+        // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定1: 確定済みの日報に版を足したドラフト（版 n+1）は、効いている日報が移った後は作り直さない
+        // （確定できないものに作り直しの回数を使わせない）。効いている間は従来どおり作り直せる（作り直しの枠に数える。ADR-0052 決定 1）。
+        if (EffectiveDailyReport.IsStaleRevisionDraft(store, existing))
+            return ReportRegenerationResult.Rejected(
+                ReportRegenerationStatus.NoLongerEffective,
+                Common.Exceptions.ReportNoLongerEffectiveException.MessageFor(key, EffectiveDailyReport.EffectivePeriodKey(store)), key);
+
         var period = ReportSchedule.PeriodOf(existing.Report.Kind, existing.Report.PeriodStart, settings.Schedule);
         if (!string.Equals(period.PeriodKey, key, StringComparison.Ordinal))
             return ReportRegenerationResult.Rejected(
@@ -460,6 +467,9 @@ public enum ReportRegenerationStatus
 
     /// <summary>計画 ADR-0052 決定 4: 中核の入力の取得に失敗した（作り直さない・回数は消費しない）。</summary>
     CoreInputsUnsupplied,
+
+    /// <summary>FR-07, 計画 ADR-0068 決定1, #1373, IADR-0549 決定1: 版 n+1 のドラフトで、効いている日報が移った（作り直さない。409）。</summary>
+    NoLongerEffective,
 }
 
 // FR-06, FR-14, 計画 ADR-0052 決定 1, #1156, IADR-0491 決定 3: `/report regenerate` の 1 日（JST）の回数上限。構成 `Reports:Regeneration:DailyLimit`。

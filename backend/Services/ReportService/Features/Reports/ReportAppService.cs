@@ -41,6 +41,19 @@ public sealed class ReportAppService(
         return store.Confirm(periodKey, expectedVersion, clock.UtcNow);
     }
 
+    /// <summary>FR-07, ADR-0068 決定1, #1373, IADR-0549: いま効いている日報の期間キー（確定済み日報が無ければ null）。</summary>
+    public string? EffectiveDailyPeriodKey() => EffectiveDailyReport.EffectivePeriodKey(store);
+
+    /// <summary>
+    /// FR-07, FR-08, ADR-0068 決定1・6, #1373, IADR-0549 決定5: この期間キーの行が、効いている日報が移って確定できなくなった
+    /// 版 n+1 のドラフトなら、その行を返す（写しに失効の印を付けるため）。そうでなければ null。
+    /// </summary>
+    public VersionedReport? StaleRevisionDraft(string periodKey) =>
+        store.Get(periodKey) is { } row && EffectiveDailyReport.IsStaleRevisionDraft(store, row) ? row : null;
+
+    /// <summary>FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: この期間キーの最新の確定版（行が版 n+1 のドラフトでも確定版を読む）。</summary>
+    public VersionedReport? GetLatestConfirmedVersion(string periodKey) => store.GetLatestConfirmedVersion(periodKey);
+
     /// <summary>FR-07, IADR-0042/0071 決定5: 対話的確定のレビュー局面を取得する。対象が無ければ null。</summary>
     public ReportReview? GetReview(string periodKey) => store.GetReview(periodKey);
 
@@ -58,8 +71,14 @@ public sealed class ReportAppService(
         if (review is null)
             return null;
 
-        var unsupplied = store.Get(periodKey)?.Report.UnsuppliedInputs ?? [];
-        return new ReportReviewView(review.PeriodKey, review.State, review.Version, ReportInputs.Labels(unsupplied));
+        var row = store.Get(periodKey);
+        var unsupplied = row?.Report.UnsuppliedInputs ?? [];
+        // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: 版 n+1 のドラフトなら、効いている確定版と、確定できるか（効いている日報が移っていないか）を添える。
+        var confirmedBefore = row is null ? null : EffectiveDailyReport.ConfirmedBeforeRevision(store, row);
+        return new ReportReviewView(
+            review.PeriodKey, review.State, review.Version, ReportInputs.Labels(unsupplied),
+            confirmedBefore?.Version,
+            confirmedBefore is not null && !EffectiveDailyReport.IsEffective(store, periodKey));
     }
 
     /// <summary>

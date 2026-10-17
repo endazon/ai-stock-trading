@@ -43,7 +43,9 @@ public class ReportConfirmedContractTests
             .Single(c => c.GetParameters().Length > 1).GetParameters();
 
         parameters.Select(p => p.Name).Should().Equal(
-            "PeriodKey", "Kind", "Actor", "AssumptionsVersion", "ConfirmedAt", "AuthorizedBy");
+            "PeriodKey", "Kind", "Actor", "AssumptionsVersion", "ConfirmedAt", "AuthorizedBy",
+            // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 再確定の通知のため末尾に足した 2 項目（任意）。
+            "Version", "SupersededVersion");
         parameters[^1].HasDefaultValue.Should().BeTrue();
         parameters[^1].DefaultValue.Should().BeNull();
     }

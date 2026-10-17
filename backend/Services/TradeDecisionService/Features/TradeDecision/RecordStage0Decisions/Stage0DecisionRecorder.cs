@@ -530,7 +530,9 @@ public sealed class Stage0DecisionRecorder(
             // FR-15, ADR-0054 決定3, #1196, IADR-0498: 一次の判断と一次に応答したモデルを本判断と別に残す。
             screening,
             // FR-10, #1209, IADR-0507: 新規建てとして最小の名目額に満たないか（本番と同じ判定。null は判定していない）。
-            belowMinimumNotional), capturing.Calls.Count, cost);
+            belowMinimumNotional,
+            // FR-15, ADR-0068 決定3・4, #1373, IADR-0549 決定7: 判断時点に組み直した方針の期間キーと版（戦略 ID には含めない）。
+            input.Policy.Reference), capturing.Calls.Count, cost);
     }
 
     // FR-15, ADR-0054 決定3, #1196, IADR-0498: 記録の二段の構成。本番の構成（一次プロンプトの予算）を引き継ぎ、

@@ -50,6 +50,9 @@ internal static class ConfirmReportEndpoint
         }
 
         var actor = confirming.Actor;
+        // FR-07, FR-08, ADR-0068 決定6, #1373, IADR-0549 決定5: 確定の前に効いている日報を覚える（日報の確定で移ったら、
+        // 移る前の日報に残った版 n+1 のドラフトの写しへ失効の印を付ける）。
+        var effectiveBefore = svc.EffectiveDailyPeriodKey();
         var result = svc.Confirm(periodKey, req.ExpectedVersion, actor);
         if (result is null)
             return Results.NotFound();
@@ -57,9 +60,10 @@ internal static class ConfirmReportEndpoint
         if (result.Transitioned)
         {
             var r = result.Report;
+            // FR-07, FR-09, ADR-0068 決定6, #1373, IADR-0549 決定6: 確定した版と、再確定ならそれまで効いていた版（通知が「効いている版が変わった」と書く）。
             await bus.PublishAsync(new ReportConfirmed(
                 r.PeriodKey, r.Kind.ToString(), actor, r.AssumptionsVersion, r.ConfirmedAt ?? DateTimeOffset.UtcNow,
-                confirming.AuthorizedBy));
+                confirming.AuthorizedBy, result.Version, result.SupersededVersion));
 
             // FR-08, IADR-0069/0071 決定3, #565, IADR-0274: 確定報告書を KB へ保存（本文つき。既定 no-op）。
             // 保存の失敗・例外は握りつぶし確定を壊さない（KB は best-effort・保存ポート自体も fail-safe）。
@@ -67,12 +71,22 @@ internal static class ConfirmReportEndpoint
             var savedToKb = false;
             try
             {
-                savedToKb = (await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r, kbLogger), http.RequestAborted)).Saved;
+                savedToKb = result.SupersededVersion is null
+                    ? (await kb.SaveAsync(ReportKnowledgeMapper.ToDocument(r, kbLogger), http.RequestAborted)).Saved
+                    // 🔴 ADR-0068 決定6, IADR-0549 決定5: 再確定は確定版の写しを**最新の確定版で置き換える**（作成すると同じ期間の写しが 2 件になる。
+                    // 基盤に外部 ID の upsert が無いので、入れ直しと同じ「一覧で探して本文を差し替える」を 1 つの期間キーだけで行う）。
+                    : await ReplaceConfirmedCopyAsync(r, actor, http, kbLogger);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 kbLogger.LogWarning(ex, "確定報告書 {PeriodKey} の KB 保存に失敗しました（確定は継続）。", r.PeriodKey);
             }
+
+            // ADR-0068 決定6, IADR-0549 決定5: 日報の確定で効いている日報が移ったら、移る前の日報の版 n+1 のドラフトの写しを失効として残す（削除しない）。
+            if (draftCopy is not null && r.Kind == ReportService.Domain.ReportKind.Daily
+                && effectiveBefore is not null && !string.Equals(effectiveBefore, r.PeriodKey, StringComparison.Ordinal)
+                && svc.StaleRevisionDraft(effectiveBefore) is { } stale)
+                await draftCopy.MarkExpiredAsync(stale.Report, stale.Version, CancellationToken.None);
 
             // FR-06, FR-08, UC-03, #1300, IADR-0526 決定 3: 確定版の写しを作れたら、承認待ちの写し（ドラフト）を消す（確定版で置き換える）。
             // 確定版を作れなかったときは消さない —— ドラフトは索引されないので検索には出ず、SC-03 で本文を読める状態が残る。
@@ -100,6 +114,32 @@ internal static class ConfirmReportEndpoint
         // `version`（確定後の版）を足して返す（項目の追加だけ＝既存の読み手は壊れない）。冪等な再確定を「版 N を確定した」と
         // 読み違えないため、呼び出し側は version == expectedVersion + 1 で「この版で確定されている」を見分ける。
         return Results.Ok(ConfirmReportResponse.From(result));
+    }
+
+    // FR-08, ADR-0068 決定6, #1373, IADR-0549 決定5: 再確定の後、確定版の写しを最新の確定版で置き換える（入れ直しを 1 つの期間キーだけで、
+    // 既存の本文も差し替える指定で走らせる。写しが無ければ作る・残った承認待ちの写しは消す）。入れ直しが別に走っていれば今回は置き換えない
+    // （警告。次の入れ直しが最新の確定版で揃える）。取り消しを渡さない（確定は済んでいる）。
+    private static async Task<bool> ReplaceConfirmedCopyAsync(
+        ReportService.Domain.TradingReport report, string actor, HttpContext http, ILogger kbLogger)
+    {
+        var reingest = http.RequestServices.GetService<ReingestKnowledgeBase.ReportKnowledgeReingestService>();
+        if (reingest is null)
+            return false;
+
+        var run = await reingest.RunAsync(
+            ReingestKnowledgeBase.ReportKnowledgeReingestScope.Single(report.PeriodKey), refreshExisting: true, actor, CancellationToken.None);
+        if (run.Result is null)
+        {
+            kbLogger.LogWarning(
+                "再確定した報告書 {PeriodKey} の確定版の写しを置き換えられませんでした（KB の入れ直しが実行中）。次の入れ直しで最新の確定版に揃います。",
+                LogSanitizer.Sanitize(report.PeriodKey));
+            return false;
+        }
+
+        return run.Result.Items.Any(i => i.Outcome is ReingestKnowledgeBase.ReportKnowledgeReingestOutcome.Created
+            or ReingestKnowledgeBase.ReportKnowledgeReingestOutcome.BodyRefreshed
+            or ReingestKnowledgeBase.ReportKnowledgeReingestOutcome.BodyAttached
+            or ReingestKnowledgeBase.ReportKnowledgeReingestOutcome.AlreadyPresent);
     }
 }
 

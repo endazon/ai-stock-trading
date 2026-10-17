@@ -47,7 +47,7 @@ public sealed class HttpReportReviewController(
                 return new ReportReviewResult(false, 0, "レビュー局面の応答を解釈できませんでした");
             }
 
-            return ReviewResult(periodKey, view.Version, view.UnsuppliedInputs, logger);
+            return ReviewResult(periodKey, view.Version, view.UnsuppliedInputs, logger, view.ConfirmedVersion, view.NoLongerEffective == true);
         }
         catch (Exception ex) when (Handled(ex, cancellationToken))
         {
@@ -57,7 +57,8 @@ public sealed class HttpReportReviewController(
 
     // NFR, IADR-0449 決定 4, #753（段 5）: 読めたレビュー局面 → 結果。gRPC 実装（GrpcReportReviewController）と共有する。
     internal static ReportReviewResult ReviewResult(
-        string periodKey, int version, IReadOnlyList<string?>? unsuppliedInputs, ILogger logger)
+        string periodKey, int version, IReadOnlyList<string?>? unsuppliedInputs, ILogger logger,
+        int? confirmedVersion = null, bool noLongerEffective = false)
     {
         // FR-07, FR-14, #840, IADR-0352 決定 5: 入力が未供給のまま生成された報告書なら、**確定の前に**それを見せる。
         // 本メッセージは `/report show` と、版番号なしの `/report approve`（確認ボタンの前段）の両方に出る。
@@ -68,6 +69,14 @@ public sealed class HttpReportReviewController(
                 "報告書 {PeriodKey}（版 {Version}）は入力が未供給のまま生成されています（{Count} 件）。",
                 periodKey, version, unsuppliedInputs?.Count ?? 0);
             message += $"\n{notice}";
+        }
+
+        // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: 確定済みの日報に版を足したドラフト（版 n+1）なら、効いている版と確定の可否を見せる。
+        if (confirmedVersion is { } confirmed)
+        {
+            message += noLongerEffective
+                ? $"\n⚠ 確定済みの版 {confirmed} に版を足したドラフトですが、より新しい日付の日報が確定したため、この版は確定できません（記録として残ります）。"
+                : $"\n確定済みの版 {confirmed} に版を足したドラフトです。確定するまでは版 {confirmed} の方針が効き続けます。";
         }
 
         return new ReportReviewResult(true, version, message);
@@ -325,7 +334,9 @@ public sealed class HttpReportReviewController(
     //
     // #840, IADR-0352 決定 5: UnsuppliedInputs は報告書サービスの**コード定数の表示名**（本文・要約ではない＝
     // IADR-0240 決定4 に反しない）。欠落（旧版の報告書サービス）は null＝警告なし＝従来どおり。
-    private sealed record ReviewView(int Version, IReadOnlyList<string?>? UnsuppliedInputs = null);
+    // FR-07, ADR-0068 決定1, #1373, IADR-0549 決定3: ConfirmedVersion・NoLongerEffective は版 n+1 のドラフトの表示（欠落＝旧版・版 n+1 ではない）。
+    private sealed record ReviewView(
+        int Version, IReadOnlyList<string?>? UnsuppliedInputs = null, int? ConfirmedVersion = null, bool? NoLongerEffective = null);
 
     // 報告書サービス側 ConfirmReportRequest / ReviewCommandRequest と同形（版番号付き）。
     // OnBehalfOf は #774 で末尾に追加（旧版の報告書サービスは未知のプロパティとして読み飛ばす）。

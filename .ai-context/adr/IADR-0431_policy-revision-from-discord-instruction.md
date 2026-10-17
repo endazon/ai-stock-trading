@@ -2,10 +2,10 @@
 title: IADR-0431 Discord の自由文の指示から AI が方針の改訂案を作り、報告書の新しい版として提示する（確定は利用者・監視銘柄は案の表示のみ）
 type: impl-adr
 status: Accepted
-related_ids: [FR-07, FR-14, FR-13, FR-04, UC-03, UC-04, UC-05, ADR-0003, IADR-0240, IADR-0115, IADR-0120, IADR-0116, IADR-0169, IADR-0420, IADR-0062, IADR-0359, IADR-0433, ADR-0042]
+related_ids: [FR-07, FR-14, FR-13, FR-04, UC-03, UC-04, UC-05, ADR-0003, IADR-0240, IADR-0115, IADR-0120, IADR-0116, IADR-0169, IADR-0420, IADR-0062, IADR-0359, IADR-0433, ADR-0042, ADR-0068, IADR-0549]
 author: claude (Claude Code)
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-17
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-07・FR-13・FR-14)
   - planning:projects/ai-stock-trading/03_usecases/01_usecases.md (UC-03 基本フロー 4)
@@ -48,6 +48,9 @@ OnBehalfOf（IADR-0240 決定 11）で残る。**別の保留状態（有効期�
 「1 期間 1 つ・古い版は確定できない・確定は 1 度」を保証し、次の改訂で前の案のボタンは版不一致になる。
 
 - 対象: 会話キー省略時は当日（JST）の日報。既存の未確定の報告書はその方針を土台に改訂する。確定済みは改訂しない（409）。
+  ［2026-10-17 追記 / #1373］「確定済みは改訂しない（409）」は、**効いている確定済み日報**（最新の確定済み日報）について計画 ADR-0068 決定 1 により改められた。
+  効いている確定済み日報への `/policy` は、行を版 n+1 のドラフトへ戻して版を足す（確定した版 n の写しは残り、確定するまで版 n が効く。当日の日報に限らない）。
+  それ以外の確定済み（より古い日報・週報・月報）は従来どおり 409 で、返答に再確定できる日報の会話キーを書く。詳細は IADR-0549。
 - 新規は**当日（JST）の日報だけ**。土台は直近の確定済み日報（方針・`BasedOn`・`AssumptionsVersion` を引き継ぐ。数値を発明しない）。
   確定済み日報が無ければ作らない。**より新しい日付の確定済み日報があれば作らない**（最新の確定済み日報は開始日の最大で決まるため、
   確定しても方針に効かない報告書を作らない）。

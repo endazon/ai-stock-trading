@@ -68,8 +68,11 @@ public sealed class ReportKnowledgeReingestService(
         ReportKnowledgeReingestScope scope, bool refreshExisting, string actor, CancellationToken cancellationToken)
     {
         var runId = Guid.NewGuid();
-        var targets = store.List()
-            .Where(r => r.State == ReportState.Confirmed && scope.Includes(r))
+        // FR-08, ADR-0068 決定6, #1373, IADR-0549 決定5: 対象は期間キーごとの**最新の確定版**（写し）。行の現在の状態は読まない
+        // ——確定済みの日報に版を足したドラフト（版 n+1）の間も、効いている確定版を入れ直す（ドラフトの本文を確定版として入れない）。
+        var targets = store.ListLatestConfirmedVersions()
+            .Select(v => v.Report)
+            .Where(r => scope.Includes(r))
             .OrderBy(r => r.PeriodStart)
             .ThenBy(r => r.PeriodKey, StringComparer.Ordinal)
             .ToList();
@@ -111,7 +114,9 @@ public sealed class ReportKnowledgeReingestService(
             index.TryGetValue((report.PeriodKey, report.Kind.ToString()), out var sameKey);
             var matches = sameKey?.Where(e => IsCopyOf(e, report)).ToList() ?? [];
             // FR-06, FR-08, #1300, IADR-0526 決定 4: 確定済みの報告書に残った承認待ちの写し（確定の後の削除が失敗した・確定版を作れなかった）。
-            var leftoverDrafts = sameKey?.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, report.Kind, report.PeriodKey)).ToList() ?? [];
+            // ADR-0068 決定6, #1373, IADR-0549 決定5: 失効の印つきの写し（確定できなくなった版 n+1）は記録として残す（消さない）。
+            var leftoverDrafts = sameKey?.Where(e => ReportKnowledgeMapper.IsDraftCopyOf(e, report.Kind, report.PeriodKey)
+                && !ReportKnowledgeMapper.IsExpiredDraftCopy(e)).ToList() ?? [];
 
             try
             {

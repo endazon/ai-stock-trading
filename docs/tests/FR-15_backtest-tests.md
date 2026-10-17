@@ -3,15 +3,15 @@ title: バックテスト基盤（FR-15）テスト仕様書
 type: test-spec
 status: review
 created: 2026-07-20
-updated: 2026-10-15
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-10, FR-11, FR-15, FR-17, FR-20, UC-06, FR-04, FR-05]
-adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014, ADR-0035, ADR-0064]
-iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524, IADR-0528, IADR-0537]
-specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent]
-issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, #1308, #1342, planning#783]
+adrs: [ADR-0002, ADR-0008, ADR-0016, ADR-0019, ADR-0023, ADR-0033, ADR-0036, ADR-0037, ADR-0039, ADR-0044, ADR-0054, ADR-0014, ADR-0035, ADR-0064, ADR-0068]
+iadrs: [IADR-0043, IADR-0044, IADR-0045, IADR-0049, IADR-0060, IADR-0089, IADR-0105, IADR-0110, IADR-0128, IADR-0156, IADR-0157, IADR-0158, IADR-0281, IADR-0304, IADR-0310, IADR-0318, IADR-0327, IADR-0329, IADR-0337, IADR-0387, IADR-0440, IADR-0498, IADR-0508, IADR-0524, IADR-0528, IADR-0537, IADR-0549]
+specs: [20260711_backtest-foundation, 20260909_688_stage0-bus-and-driver, 20260909_632_ai-decision-record-and-replay, 20260718_backtest-verdict-supply, 20260720_required-spec-coverage-arbitration, 20260806_382_moomoo-ohlc-adapter, 20260806_382_us-ohlc-source-arbitration, 20260904_388_short-sell-strategy-observation, FR-15_backtest, IADR-0156_us-ohlc-history-source-absence, IADR-0157_moomoo-history-kline-adapter, IADR-0158_short-sell-borrow-permit-primary-gate, 20260911_632_stage0-production-strategy-enablement, 20260911_743_qot-reconnect-after-refused, 20260911_777_pbo-not-evaluable-without-search, 20260923_749_asof-input-reconstructability, 20260926_1034_structured-watchlist-in-decision-prompt, 20261007_1196_stage0-two-tier-recording, 20261008_1217_us-sell-fees-pre-trade-estimate, 20261010_1295_claude-5-5-models, 20261011_1296_remove-llm-migration-stage, 20261013_1308_stage0-asof-base-input, 20261014_1342_stage0-recorder-idempotent, 20261017_1373_daily-policy-reconfirm]
+issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #749, #777, #1034, #1196, #1217, #1295, #1296, #1308, #1342, #1373, planning#783, planning#803]
 -->
 
 
@@ -396,6 +396,7 @@ issues: [#20, #82, #164, #208, #211, #382, #388, #417, #632, #688, #743, #748, #
 | T-15-138 | 🔴 課金済みの記録を空の集合で消さない: 印だけが消えた・印の鍵だけが変わった組が 1 件目より前で上限に当たっても、書き出しも終わりの印も行わない。書き出し先は件数が減る上書き（0 件を含む）を拒み、同じか多い件数・読めない既存のファイルは置き換え、一時ファイルを残さない | `Stage0RecordingIdempotencyTests.印が無くても累計が承認額に届いていればLLMを呼ばない`（改） / `印の鍵だけが変わって上限で止まっても既存の記録を上書きしない` / `FileStage0DecisionRecordSinkTests`（4 試験） | 自動 |
 | T-15-137 | 経路B は記録の永続ボリュームを有効にし、書き出し先はその中にある。本番の既定は無効。描画は、本番で何も描かず、経路B で PVC・mount・状態の置き場・Recreate を描き、置き場を extraEnv に書く・書き出し先が mount の外・mountPath が相対のときに止まる | `Stage0RecordingLocalProfileTests.記録の永続ボリュームは本番で無効_経路Bで有効で書き出し先はその中にある` / `経路Bの記録の欄は承認値で埋まっている`（改） / CI `helm.yml` の「Assert stage0 recorder persistence」 | 自動 |
 | T-15-139 | 🔴 既存の環境（RollingUpdate で作られた trade-decision）を経路B へ移す最初の配備が止まらない: 起動器は helm upgrade の前に、描画が Recreate になる Deployment のうち稼働中が Recreate でなく rollingUpdate を持つものだけを Recreate へ置き換え（1 行出力）、すでに Recreate・未作成・描画が Recreate でないものは触らない。描画・取得・置き換えのどれかが失敗したら止まる | `scripts/k8s-local-deploy.test.sh` の T-1351-01〜T-1351-07（CI `ci.yml`） / 描画からの判定は CI `helm.yml` の「Assert launcher detects Recreate deployments from the real render」 | 自動 |
+| T-15-140 | 記録は判断時点に組み直した確定済み日報の方針の期間キーと版番号を持つ（どの版で記録したかを追える）。戦略 ID には含めない（方針の本文は入力の指紋に入っている。版の有無で同じ入力の記録の ID が変わらない）。JSON で往復し、項目の無い記録は「記録されていない」 | `Stage0DecisionRecorderTests.記録は判断時点の方針の期間キーと版を持つ` / `Stage0DecisionRecordTests.方針の版は記録に残り戦略IDを変えない` | 自動 |
 
 **変異で赤になることの確認**:
 

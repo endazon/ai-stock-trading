@@ -53,7 +53,10 @@ public sealed class GrpcReportReviewController(
             periodKey,
             response.Version,
             response.UnsuppliedInputs is { } inputs ? [.. inputs.Names] : null,
-            logger);
+            logger,
+            // ADR-0068 決定1, #1373, IADR-0549 決定3: 版 n+1 のドラフトの表示（REST と同じ関数）。
+            response.HasConfirmedVersion ? response.ConfirmedVersion : null,
+            response.HasNoLongerEffective && response.NoLongerEffective);
     }
 
     public async Task<ReportConfirmResult> ConfirmAsync(
