@@ -193,7 +193,7 @@ public class LlmTransportUnsentParityTests
           .Append(",\"sent\":").Append(c.Sent ? "true" : "false")
           .Append(",\"routingReason\":").Append(c.RoutingReason is null ? "null" : Json(c.RoutingReason))
           // 基盤の CompletionApiResponse はトークン数を int で常に返す（gRPC の 0 と同じ値）。
-          // 入力トークン数の 0 は両輸送とも「取れない」（null）へ写る（#1306, IADR-0550。突き合わせは LlmReportedInputTokensTests）。
+          // 入力トークン数の 0 は両輸送とも「取れない」（null）へ写る（#1306, IADR-0550。突き合わせは本クラスの 入力トークン数の_0_は両輸送とも取れないと読む）。
           .Append(",\"inputTokens\":0,\"outputTokens\":0");
         // 欠落（旧い基盤）は**フィールドごと出さない**。
         if (c.FailureKind is not null)

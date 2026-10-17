@@ -142,7 +142,7 @@ public class PublishingLlmUsageReporterTests
     // 受け入れ基準 1・3・5: 計上の経路は、取れない（null）要求を第 2 段で、取れた要求を閾値どおりに引く。
     // 金額の式の入力トークン数は 0 のまま（推定しない）＝取れない要求は出力 1k × 第 2 段 0.409 円。
     [Theory]
-    [InlineData(null, "0.409")]            // 取れない → 第 2 段（いまは第 1 段の 0.0819 だった）
+    [InlineData(null, "0.409")]            // 取れない → 第 2 段（修正前は第 1 段の 0.0819 だった）
     [InlineData(100_000, "1.7219")]        // 100 × 0.0164 + 1 × 0.0819（ちょうどは第 1 段）
     [InlineData(100_001, "8.5990819")]     // 100.001 × 0.0819 + 1 × 0.409
     public async Task 取れない要求は第2段で計上し取れた要求は閾値どおりに計上する(int? inputTokens, string expected)
