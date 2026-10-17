@@ -162,6 +162,49 @@ public class ReportReconfirmKnowledgeTests
         catalog.Docs.Should().Contain(expired, "失効の印つきの写しは入れ直しでも消さない");
     }
 
+    // T-10-2701（PR #1375 の AI レビュー 🟡）: 版 n+1 が承認待ち（その日報はまだ効いている）の間の入れ直しは、承認待ちの写しを消さない
+    // （確定済みの報告書に「残った」写しとは扱わない）。確定版の写しは確定版（版 2）で作る。
+    [Fact]
+    public async Task 承認待ちの版nプラス1の写しは入れ直しで消えない()
+    {
+        var catalog = new FakeKnowledgeCatalog();
+        await using var factory = Factory(catalog, new RecordingWriter());
+        SeedConfirmedThenRevision(factory.Services, Key, new DateOnly(2026, 10, 16));
+        var pending = catalog.AddDraft(Key, ReportKind.Daily, "版3の下書き");
+
+        var (response, result, _) = await ReportKnowledgeReingestTestKit.RunAsync(factory, new { all = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        result!.Items.Should().ContainSingle().Which.DraftCopiesRemoved.Should().Be(0);
+        catalog.Docs.Should().Contain(pending, "承認待ちの版 n+1 の写しは残す");
+        catalog.CreatedDocuments.Should().ContainSingle().Which.Content.Should().Contain("版2の本文");
+    }
+
+    // T-10-2702（PR #1375 の AI レビュー 🟡）: 確定時に印を付けそこねた失効のドラフト（効いている日報が移った版 n+1 の印の無い写し）は、
+    // 入れ直しが失効の印つきの写しに置き換える（消さない・2 回目は作らない）。
+    [Fact]
+    public async Task 印の無い失効ドラフトの写しは入れ直しが失効にする()
+    {
+        var catalog = new FakeKnowledgeCatalog();
+        await using var factory = Factory(catalog, new RecordingWriter());
+        SeedConfirmedThenRevision(factory.Services, Key, new DateOnly(2026, 10, 16));
+        ReportKnowledgeReingestTestKit.Seed(factory.Services, NextKey, ReportKind.Daily, new DateOnly(2026, 10, 17), "翌日の本文");
+        var pending = catalog.AddDraft(Key, ReportKind.Daily, "版3の下書き");
+
+        await ReportKnowledgeReingestTestKit.RunAsync(factory, new { all = true });
+
+        catalog.Docs.Should().NotContain(pending);
+        var expired = catalog.Docs.Where(d => ReportKnowledgeMapper.IsExpiredDraftCopy(new KnowledgeCatalogEntry(
+            d.Id, d.Title, d.Attributes, d.Body != null, d.UpdatedAt))).Should().ContainSingle().Subject;
+        expired.Attributes[KnowledgeReportDraftCopy.StateKey].Should().Be(KnowledgeReportDraftCopy.DraftState);
+        expired.Body.Should().StartWith("> 失効した報告書のドラフト（版 3）");
+
+        var createsBefore = catalog.CreateCalls;
+        await ReportKnowledgeReingestTestKit.RunAsync(factory, new { all = true });
+        catalog.CreateCalls.Should().Be(createsBefore, "2 回目は印つきの写しを作らない（承認待ちの写しが無い）");
+        catalog.Docs.Should().Contain(expired);
+    }
+
     private sealed class RecordingWriter : IKnowledgeBaseWriter
     {
         public List<KnowledgeDocument> Documents { get; } = [];
