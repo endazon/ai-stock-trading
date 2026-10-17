@@ -15,8 +15,10 @@ namespace OrderExecutionService.Features.OrderExecution.ReconcileOrderReservatio
 //   2. 記録なし → プローブ照会（IReservationBrokerProbe）:
 //        Placed        → 記録を保存し確定（MarkCompleted）＋ OrderExecuted 発行対象に載せる。
 //        NotPlaced     → 🔴 **その予約の取引環境の解放の門（Reconciliation:ReleaseOnNotPlaced:Simulate / :Real）が開いて
-//                        いるときだけ**予約を解放（Release）。閉じているあいだは据え置き、DecisionId を HeldNotPlaced に載せる
+//                        いるときだけ**予約を解放する。閉じているあいだは据え置き、DecisionId を HeldNotPlaced に載せる
 //                        （#856 / IADR-0362。門の選び方は #1051 / IADR-0444 / ReleaseGatePolicy。不明は据え置く）。
+//                        🔴 #1343, IADR-0551: 解放の形は予約の出どころで分ける。承認の経路（新規建て・利用者の手仕舞い等）は
+//                        見送り（Forgone）へ移して送る前に残した保護の記録を閉じ（再投入でも発注しない）、保護の機構のレグは削除する（機構が撃ち直す）。
 //        Indeterminate → 据え置き（人手/`_error` の現行安全側を壊さない）。門の開閉に依らない。
 //
 // FR-05, #856, IADR-0362: 突合で終端化した予約は ProbeTerminalized に載せて返し、Worker 層が 1 件ずつ Critical でログする
@@ -72,6 +74,7 @@ public sealed class OrderReservationReconciler(
         var heldNotPlaced = new List<Guid>();
         var verdicts = new List<ReservationReconciliationVerdict>();
         var protections = new List<ReconciledEntryProtectionEmission>();
+        var unplacedClosures = new List<UnplacedEntryProtectionClosureResult>();
         var terminalized = 0;
         var released = 0;
         var indeterminate = 0;
@@ -180,9 +183,30 @@ public sealed class OrderReservationReconciler(
                                 break;
                             }
 
-                            // 解放後は元の OrderApproved 再配送が改めて予約→発注できる。
-                            if (reservations.Release(decisionId))
+                            // 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0551 決定1: **承認の経路の予約は削除せず見送り（Forgone）として閉じる。**
+                            // 削除すると同じ承認が再投入（_error の再投入・再配送）されたときに、承認の古さを確かめずに送られる
+                            // （何日も前の指値がそのまま出る）。Forgone は同じ承認を二度と発注しない終端である（IADR-0398。発注執行の相 1 の直後）。
+                            // 承認の経路＝承認の出どころを持つ予約（相 2 で書く）か、送る前に保護の記録を残した新規建て（出どころの列を足す前の行も含む）。
+                            // 保護の機構のレグ（ガードの逆指値・成行手仕舞い・S1 の決済）は従来どおり削除する——同じ DecisionId で
+                            // 撃ち直すのは機構自身であり、撃ち直さないと建玉が無防備のまま残る。
+                            if (IsApprovalPath(reservation))
                             {
+                                var forgone = reservations.MarkReservationForgone(decisionId, clock.UtcNow);
+                                if (forgone is not (ForgoneRecordOutcome.Recorded or ForgoneRecordOutcome.AlreadyForgone))
+                                    break; // 並行に確定した（発注済み）。見送りとしては扱わない。
+
+                                released++;
+                                verdicts.Add(new ReservationReconciliationVerdict(
+                                    decisionId, reservation.BrokerProvider, ReservationReconciliationVerdictKind.Released));
+
+                                // 🔴 #1343, IADR-0551 決定2: 予約を見送りにした**後**に、送る前に残した保護の記録を閉じる
+                                // （順序は予約が先。逆だと、閉じた後に予約の更新が落ちたとき保護の無い Reserved が残る）。
+                                // 失敗しても予約の見送りは巻き戻さない（閉じられなかった行は記録として返し、Worker 層が警告する）。
+                                unplacedClosures.Add(CloseUnplacedEntryProtection(decisionId));
+                            }
+                            else if (reservations.Release(decisionId))
+                            {
+                                // 保護の機構のレグ: 解放後は機構の次の巡回が同じ DecisionId で予約→発注し直せる。
                                 released++;
                                 verdicts.Add(new ReservationReconciliationVerdict(
                                     decisionId, reservation.BrokerProvider, ReservationReconciliationVerdictKind.Released));
@@ -230,7 +254,38 @@ public sealed class OrderReservationReconciler(
 
         return new ReservationReconciliationResult(
             stalled.Count, terminalized, released, indeterminate, failed, executed,
-            probeTerminalized, heldNotPlaced, protections, verdicts);
+            probeTerminalized, heldNotPlaced, protections, verdicts, unplacedClosures);
+    }
+
+    // 🔴 #1343, IADR-0551 決定1: 承認の経路の予約か。出どころは相 2 だけが書く（保護の機構の予約は null）。
+    // 出どころの列を足す前の行は null なので、送る前に保護の記録を残した新規建てかでも判別する（2026-10-05 の AAPL はこちら）。
+    // 判別が例外で落ちたら、その 1 件は失敗として据え置く（Reserved のまま次の巡回で拾い直す。削除も見送りもしない）。
+    private bool IsApprovalPath(OrderDispatchReservation reservation)
+    {
+        if (reservation.ApprovalOrigin is not null)
+            return true;
+
+        if (entryProtection is null)
+            return false;
+
+        return entryProtection.HasEntryProtectionRecord(reservation.DecisionId);
+    }
+
+    // 🔴 #1343, IADR-0551 決定2: 保護の口を 1 件ぶん呼ぶ。口が無い構成は「記録なし」として返す。例外は記録として返す（巡回を止めない）。
+    private UnplacedEntryProtectionClosureResult CloseUnplacedEntryProtection(Guid decisionId)
+    {
+        if (entryProtection is null)
+            return new UnplacedEntryProtectionClosureResult(decisionId, UnplacedEntryProtectionClosure.NoProtectionRecord, Failure: null);
+
+        try
+        {
+            return new UnplacedEntryProtectionClosureResult(
+                decisionId, entryProtection.CloseUnplacedEntryProtection(decisionId), Failure: null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new UnplacedEntryProtectionClosureResult(decisionId, UnplacedEntryProtectionClosure.LeftOpen, ex);
+        }
     }
 
     // #853, IADR-0428 決定4: 保護の口を 1 件ぶん呼ぶ。口が無い構成は「張れない」として返す（黙って飛ばさない）。
@@ -312,7 +367,18 @@ public sealed record ReservationReconciliationResult(
     IReadOnlyList<ReservationReconciliationFinding> ProbeTerminalized,
     IReadOnlyList<Guid> HeldNotPlaced,
     IReadOnlyList<ReconciledEntryProtectionEmission> Protections,
-    IReadOnlyList<ReservationReconciliationVerdict> Verdicts);
+    IReadOnlyList<ReservationReconciliationVerdict> Verdicts,
+    IReadOnlyList<UnplacedEntryProtectionClosureResult>? UnplacedClosures = null)
+{
+    // 🔴 #1343, IADR-0551 決定2: 見送りとして閉じた新規建ての、保護の記録を閉じた結果（1 件ずつ）。
+    public IReadOnlyList<UnplacedEntryProtectionClosureResult> UnplacedClosures { get; init; } = UnplacedClosures ?? [];
+}
+
+// 🔴 #1343, IADR-0551 決定2: 未発注と確定して見送りにした予約 1 件の、保護の記録を閉じた結果。Failure は閉じる処理の例外。
+public sealed record UnplacedEntryProtectionClosureResult(
+    Guid DecisionId,
+    UnplacedEntryProtectionClosure Closure,
+    Exception? Failure);
 
 // #1051, IADR-0444 決定6: 確定しなかった判定の種類（巡回サマリの内訳のうち、確定した 1 件の出口を通らないもの）。
 public enum ReservationReconciliationVerdictKind

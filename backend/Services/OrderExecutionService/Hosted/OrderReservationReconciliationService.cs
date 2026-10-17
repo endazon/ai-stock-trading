@@ -291,6 +291,8 @@ public sealed class OrderReservationReconciliationService(
         // ⚠️ #882 監査 N-5: **内訳名は門を開けても変わらない**（そのときは値が 0 になるだけである）。
         // ⚠️ #882 監査 N-1: **合計が Scanned に一致するのは門が閉じているあいだだけ**である。門を開けると、
         //    解放しようとした行が並行に消えていた場合（`Release()` が false）がどの内訳にも計上されない。
+        //    #1343, IADR-0551: 承認の経路の予約は削除ではなく見送り（Forgone）として閉じ、件数は同じ「解放」に数える
+        //    （並行に確定していて見送りにできなかった行は、同じくどの内訳にも計上されない）。
         //    門を開ける PR は、この 2 つ（内訳名と合計の不変条件）を運用手順ごと見直すこと。
         if (result.Scanned > 0)
             logger.LogInformation(
@@ -302,6 +304,33 @@ public sealed class OrderReservationReconciliationService(
         if (result.Failed > 0)
             logger.LogWarning(
                 "発注予約リコンサイルで {Failed} 件が例外により未処理でした（据え置き＝次回巡回で再試行）。", result.Failed);
+
+        // 🔴 FR-05, FR-10, #1343, IADR-0551 決定2: 解放の門が開いていて見送り（Forgone）として閉じた新規建ての、保護の記録の扱いを 1 件ずつ残す。
+        // 閉じられなかった行は「発注の記録が無いまま残った保護の記録」であり、放置すると同じ銘柄・同じ方向の別の手法の新規建てを見送り続ける。
+        // 予約は既に Forgone で次の巡回に載らないため、ここで出し損ねても S1 の行は幽霊の疑いの警告（IADR-0538）が 1 日 1 回拾う。
+        foreach (var closure in result.UnplacedClosures)
+        {
+            switch (closure.Closure)
+            {
+                case UnplacedEntryProtectionClosure.SoftwareStopClosed:
+                case UnplacedEntryProtectionClosure.AwaitingEntryClosed:
+                    logger.LogInformation(
+                        "発注予約リコンサイル: 未発注と確定した新規建てを見送りとして閉じ、送る前に残した保護の記録を完了にしました"
+                            + "（DecisionId={DecisionId} 記録={Closure}）。同じ承認は再投入されても発注しません。",
+                        closure.DecisionId, closure.Closure);
+                    break;
+
+                case UnplacedEntryProtectionClosure.LeftOpen:
+                    logger.LogWarning(
+                        closure.Failure,
+                        "発注予約リコンサイル: 未発注と確定した新規建てを見送りとして閉じましたが、送る前に残した保護の記録を閉じられませんでした"
+                            + "（DecisionId={DecisionId}。発注の記録がある・到達や決済の経路に入っている・並行に更新された・処理が失敗した のいずれか）。"
+                            + "残った記録は同じ銘柄・同じ方向の別の手法の新規建てを見送らせます。発注経路の Runbook"
+                            + "「発注の記録が無いまま残った S1 の記録を閉じる」に従って確かめてください。",
+                        closure.DecisionId);
+                    break;
+            }
+        }
 
         // #856, IADR-0362: 解放の門が閉じているため据え置いた「未発注」判定。据え置き自体は安全側だが、
         // 滞留は解消していない。門を開ける（＝実機検証を行う）判断の入力として毎巡回で残す。
