@@ -17,7 +17,7 @@ plan_refs:
 
 - issue #1391（受け皿は #753・`Refs`）。射程と段の切り方は [IADR-0284](../adr/IADR-0284_east-west-grpc-scope-and-order-ruling.md) 決定 5。
   直前の追補（#1388・[IADR-0557](../adr/IADR-0557_grpc-late-routes-held-symbols-asof-policy.md) 決定 1）が「面の新設として別段」に分けた 4 本を扱う。
-  本 PR の判断は IADR-0559（採番は push 直前に develop の最大＋1 を取り直す。#1390 が 0558 を使う）。
+  本 PR の判断は [IADR-0559](../adr/IADR-0559_grpc-order-execution-read-surface.md)（push 直前に develop の最大 0558〔#1390〕を確かめて＋1）。
 - 計画 ID: NFR（輸送の差し替え。振る舞いは変えない）。経路の起点は FR-10・UC-06（借株可否・#967）、FR-04・FR-15（日足・#1118・#1308）、
   FR-04・FR-10（処理中の決済・#1338）。
 
@@ -89,3 +89,22 @@ BFF・フロントエンドからの呼び出しは 0 件（走査で確認）�
 - `dotnet format --verify-no-changes`
 - `node scripts/check-proto-contracts.js`（`--update` の後）・helm.yml の overlay 検査の手元再現
 - `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js`・`check-adr-index-sync`・文書系検査（trace ブロック・knowledge graph）
+
+## 検証の結果（2026-10-17・develop `27ccbc0a` を merge した後）
+
+| コマンド | 結果 |
+| --- | --- |
+| `dotnet test`（OrderExecutionService.Tests / RiskManagementService.Tests / BacktestService.Tests / TradeDecisionService.Tests / Architecture.Tests。フィルタなし） | 1885 / 2382 / 435 / 2081 / 212（skip 1）すべて成功 |
+| `dotnet build`（InformationCollection・MarketMonitor・Notification・Report の各テストと IntegrationTests。変更したサービスを参照する残り） | 警告 0・エラー 0 |
+| `dotnet format <各 csproj> --verify-no-changes`（変更した 4 サービスの本体とテスト） | 差分なし |
+| `node scripts/check-proto-contracts.js`（`--update` の後） | OK（13 ファイル。非破壊の追加 1 ファイル） |
+| helm.yml の全ステップを手元の helm v3.16.4 で再現（「Assert gRPC measurement overlay keeps every env」を含む） | すべて成功（呼び出し側 15〔#6・#17 は別窓〕・提供側 7） |
+| `REQUIRE_REPO_TESTS=1 node scripts/scripts.test.js` | 554 件成功 |
+| `check-adr-index-sync` / `check-trace-blocks` / `check-test-traceability` / `gen-knowledge-graph --check` / `check-cross-repo-refs` / `check-plan-id-qualification` / `check-doc-links` / `check-reading-budget` | OK |
+
+途中で見つけたこと: proto の状態の列挙を当初は送り手の C# と同じ名前（`InFlightClosesStatus` 等）にしたところ、アーキテクチャ試験の
+「サービス間の読み取りは送り手の型による契約テストを持つ」が赤になった（受け手の本番コードに送り手の型名が現れ、送り手の型の目印から外れた）。
+`*State` へ改名して解消した（IADR-0559 決定 2）。
+
+変異注入（1 本ずつ入れて戻した）: 発注執行の gRPC 面を登録しない／借株可否の「分からない」を線上の未指定で運ぶ／リスク管理の組み立てで gRPC を選ばない／
+受け手が状態の未指定を「分からない」（送り手の答え）と読む／取引判断の日足の選択で gRPC を選ばない／バックテストが届かない失敗も欠測へ畳む —— いずれも赤（テスト仕様書の表）。
