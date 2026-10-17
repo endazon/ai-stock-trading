@@ -284,6 +284,8 @@ public sealed class OrderExecutionAppService(
             // 🔴 FR-10, ADR-0040 決定1, #1048（利用者裁定 2026-10-02・Q2 案 b）, IADR-0481 決定1:
             // **同じ銘柄・同じ方向に別の手法の有効な保護記録があれば、新しい手法での新規建てを見送る**（決済は止めない）。
             // ここは窓の**前の端**（予約の前）。自分の記録を残した後（送信の直前）にもう一度確かめる（下の後の端）。
+            // 🔴 #1343, IADR-0551 決定4: 判定（読むだけ）の前に、予約が見送り済みの取り残しを閉じる（書き込み）。
+            CloseForgoneEntryLeftovers(approved, disposition);
             if (HasConflictingStopLossMethod(approved, disposition, "予約の前"))
             {
                 return RecordForgoneBeforeReservation(approved, OrderDispatchForgoneReason.StopLossMethodConflict);
@@ -376,6 +378,9 @@ public sealed class OrderExecutionAppService(
         // 🔴 例外は S2: S2 の新規建ては保護の記録を残さないため、S0 / S3 の側の後の端は S2 を見ない。S2 との同時の新規建ては
         // 予約の前の moomoo SIMULATE の「記録の無い建玉」の照合でしか止まらず、建玉照会がまだ S2 の約定を映していない窓では
         // 両方が通り得る（S2 の側の後の端は S0 / S3 の AwaitingEntry を見る。IADR-0481 の残余）。
+        // 🔴 #1343, IADR-0551 決定4: 後の端でも、判定の前に見送り済みの取り残しを閉じる（前の端の後に取り残された行）。
+        if (intent.PositionEffect == PositionEffect.Open)
+            CloseForgoneEntryLeftovers(approved, disposition);
         if (intent.PositionEffect == PositionEffect.Open
             && HasConflictingStopLossMethod(approved, disposition, "送信の直前"))
         {
@@ -639,13 +644,6 @@ public sealed class OrderExecutionAppService(
         if (conflicting.Count == 0)
             return false;
 
-        // 🔴 FR-10, #1343, IADR-0551 決定4: 塞いでいる記録のうち、**そのエントリーの予約が見送り（Forgone）＝送っていないと確定した**ものは
-        // ここで閉じてから数え直す（突合の解放が予約を見送りにした後・記録を閉じる前に止まった取り残し、人手の後始末で予約だけ片付けた行）。
-        // 閉じる条件は突合と同じ CloseUnplacedEntryProtection（発注の記録なし・S1 は未確定・未到達・試行 0）。閉じられなければ塞いだまま。
-        conflicting = conflicting.Where(r => !TryCloseForgoneEntryProtection(r, approved.DecisionId)).ToList();
-        if (conflicting.Count == 0)
-            return false;
-
         _logger.LogWarning(
             "同じ銘柄・同じ方向に別の損切りの実行機構の建玉が残っているため、新規建てを見送ります（{Phase}）: "
                 + "DecisionId={DecisionId} 銘柄={Symbol} 方向={Side} 新しい手法={Mechanism} "
@@ -653,6 +651,23 @@ public sealed class OrderExecutionAppService(
             phase, approved.DecisionId, intent.Symbol, intent.Side, mechanism,
             string.Join(",", conflicting.Select(r => $"{r.Mechanism}:{r.State}:{r.EntryDecisionId}")));
         return true;
+    }
+
+    // 🔴 FR-10, #1343, IADR-0551 決定4: **書き込む。** 同じ銘柄・同じ方向で新しい手法の新規建てを塞ぐ記録のうち、**そのエントリーの予約が
+    // 見送り（Forgone）＝送っていないと確定した**ものを閉じる（突合の解放が予約を見送りにした後・記録を閉じる前に止まった取り残し、
+    // 人手の後始末で予約だけ片付けた行）。閉じる条件は突合と同じ CloseUnplacedEntryProtection（発注の記録なし・S1 は未確定・未到達・試行 0）。
+    // 閉じられない記録は残り、続く HasConflictingStopLossMethod（読むだけ）が塞ぐ。
+    private void CloseForgoneEntryLeftovers(OrderApproved approved, StopLossMethodDisposition disposition)
+    {
+        if (protectiveStops is null || StopLossMethodCoexistenceGate.MechanismOf(disposition) is not { } mechanism)
+            return;
+
+        var intent = approved.Intent;
+        foreach (var row in StopLossMethodCoexistenceGate.Conflicting(
+                     approved.DecisionId, intent, mechanism, protectiveStops.FindOpenFor(intent.Symbol, intent.Market, intent.Side)))
+        {
+            TryCloseForgoneEntryProtection(row, approved.DecisionId);
+        }
     }
 
     // 🔴 FR-10, #1343, IADR-0551 決定4: 予約が Forgone のエントリーの保護の記録を閉じられたら true。例外・閉じられないときは false（塞いだまま＝安全側）。

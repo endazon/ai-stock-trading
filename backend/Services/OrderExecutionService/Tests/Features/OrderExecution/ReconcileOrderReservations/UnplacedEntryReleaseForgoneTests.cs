@@ -362,6 +362,45 @@ public class UnplacedEntryReleaseForgoneTests
         closure.Closure.Should().Be(UnplacedEntryProtectionClosure.LeftOpen);
         closure.Failure.Should().BeOfType<InvalidOperationException>();
     }
+
+    private sealed class ThrowingLookup : IReconciledEntryProtection
+    {
+        public int Closes { get; private set; }
+
+        public Task<ReconciledEntryProtectionOutcome> ProtectAsync(ExecutionRecord confirmed, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public bool HasEntryProtectionRecord(Guid decisionId) => throw new InvalidOperationException("保護記録ストアが落ちた（テスト）");
+
+        public UnplacedEntryProtectionClosure CloseUnplacedEntryProtection(Guid decisionId)
+        {
+            Closes++;
+            return UnplacedEntryProtectionClosure.NoProtectionRecord;
+        }
+    }
+
+    // T-10-2716（否定形）: 承認の経路かの判別（保護の記録の有無）が例外で落ちたら、その 1 件は失敗として据え置く（削除も見送りもしない）。
+    [Fact]
+    public async Task T_10_2716_判別が落ちたら削除も見送りもせず据え置く_否定形()
+    {
+        var h = NewHarness();
+        var entry = Guid.NewGuid();
+        h.Reservations.TryReserve(entry, T0, BrokerProvider.MoomooSimulate).Should().BeTrue();
+        h.Clock.UtcNow = T0.AddHours(3);
+        var lookup = new ThrowingLookup();
+        var reconciler = new OrderReservationReconciler(
+            h.Reservations, h.Executed, new StubProbe(ReservationProbeResult.NotPlaced), h.Broker, h.Clock,
+            Options.Create(new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = new() { Simulate = true } }),
+            lookup);
+
+        var result = await reconciler.ReconcileAsync(h.Clock.UtcNow.AddHours(-2), 50);
+
+        result.Failed.Should().Be(1);
+        result.Released.Should().Be(0);
+        h.Reservations.Find(entry)!.State.Should().Be(OrderDispatchState.Reserved, "削除（再発注の許可）にも見送りにも倒さない");
+        lookup.Closes.Should().Be(0);
+    }
+
     // 予約の見送り（MarkReservationForgone）だけが落ちる予約表。
     private sealed class ForgoneFailingReservations(InMemoryOrderReservationStore inner) : IOrderReservationStore
     {
