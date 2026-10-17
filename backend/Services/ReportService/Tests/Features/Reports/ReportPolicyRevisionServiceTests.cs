@@ -208,6 +208,22 @@ public class ReportPolicyRevisionServiceTests
         store.Get(TodayKey).Should().BeNull("案が無ければ行を作らない");
     }
 
+    // T-10-2719（#1383, IADR-0555 決定 2）: 出力上限で切れた失敗は、その理由（再試行・指示を短く）がそのまま利用者への応答に載る。
+    [Fact]
+    public async Task 出力上限で切れた失敗は理由を利用者への応答に載せる()
+    {
+        var (service, store, _) = Create(PolicyRevisionOutcome.Failed(
+            PolicyRevisionFailure.Truncated, ReportService.Infrastructure.ExternalServices.LlmReportPolicyReviser.TruncatedMessage));
+        SeedConfirmedDaily(store, "daily-2026-09-26", new DateOnly(2026, 9, 26));
+
+        var result = await service.ReviseAsync(null, "積極的に", "developer");
+
+        result.Status.Should().Be(PolicyRevisionStatus.AiFailed);
+        result.Message.Should().Contain("上限で途中で切れました").And.Contain("再試行").And.Contain("指示を短く")
+            .And.Contain("方針は変わっていません").And.NotContain("JSON");
+        store.Get(TodayKey).Should().BeNull("案が無ければ行を作らない");
+    }
+
     // T-10-1314: 効いていない確定済みの報告書（より古い日報・週報）は改訂しない（AI も呼ばない）。
     // ［2026-10-17 改 / #1373・ADR-0068 決定1・IADR-0549］効いている確定済み日報は版を足して再確定できる（T-10-2685）。対象を「効いていない」に絞った。
     [Fact]
