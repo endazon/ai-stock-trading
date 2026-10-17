@@ -2,10 +2,10 @@
 title: IADR-0488 送信結果を確認できない発注を SIMULATE で意図的に作る故障注入は、アダプタへ渡す OpenD クライアントのデコレータで新規建てに 1 プロセス 1 回だけ当て、既定は無効・SIMULATE 以外の構成では起動を止める
 type: impl-adr
 status: Accepted
-related_ids: [FR-10, FR-05, NFR-09, ADR-0045, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0362, IADR-0444, IADR-0111, IADR-0316, IADR-0482, IADR-0346, IADR-0390, IADR-0463]
+related_ids: [FR-10, FR-05, NFR-09, ADR-0045, IADR-0550, IADR-0057, IADR-0074, IADR-0092, IADR-0117, IADR-0362, IADR-0444, IADR-0111, IADR-0316, IADR-0482, IADR-0346, IADR-0390, IADR-0463]
 author: claude (Claude Code)
 created: 2026-10-03
-updated: 2026-10-06
+updated: 2026-10-17
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements (FR-10 リスク統制・FR-05 発注執行)
   - planning:projects/ai-stock-trading/07_adr (ADR-0045 決定1・決定2)
@@ -143,4 +143,5 @@ plan_refs:
 - 新規建ての承認がいつ来るかは取引判断次第である。PoC は許可する銘柄を監視対象（ウォッチリスト）の銘柄にするか `*` にして、最初の新規建てを待つ。
 - AfterSend の新規建ては、突合が「発注済み」と確定するまで（最悪 3 時間）約定追跡にも保護レグにも載らない。確定した時点で承認時の手法で保護レグを張る（IADR-0428）。SIMULATE なので実損は無いが、PoC は数量の小さい承認で流す。
 - BeforeSend の新規建ては、門が閉じているあいだ予約が Reserved のまま残る。S0 / S3 の承認の文脈（AwaitingEntry）・S1 の行も残る。PoC の観測の後、Runbook の「滞留した予約を人が解決する」の手順で解く（証券会社に注文が無いことを確かめてから予約行を消す）。
+  ［2026-10-17 追記 / #1343］予約行を消すだけでは S1 の行・AwaitingEntry は閉じず、消した承認を `_error` から再投入すると古い承認のまま送られる。後始末は Runbook「発注の記録が無いまま残った S1 の記録を閉じる」の手順で、予約を Forgone へ移し、続けて S1 の行（S0 / S3 なら AwaitingEntry）を閉じる（1 つのトランザクション・予約が先）。門を開けた後は、突合が未発注と確定した時点で同じ形に自動で閉じる（[IADR-0550](IADR-0550_release-forgoes-approval-reservations-and-closes-entry-protection.md)）。
 - 1 回の数えはプロセスの中だけ。複数台・再起動をまたぐと台ごと・起動ごとに 1 回ずつ戻る（配備は 1 台）。期限で上限を掛けてある。

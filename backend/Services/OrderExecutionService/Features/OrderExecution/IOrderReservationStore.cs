@@ -115,8 +115,9 @@ public interface IOrderReservationStore
     IReadOnlyList<OrderDispatchReservation> FindStalledReserved(DateTimeOffset reservedBefore, int batchSize);
 
     /// <summary>
-    /// #141, IADR-0074: **未発注と確定した** Reserved 予約を解放（削除）する。解放後は元の OrderApproved 再配送が
-    /// 改めて予約→発注できる。<see cref="OrderDispatchState.Reserved"/> の行**のみ**削除し、削除したら true を返す。
+    /// #141, IADR-0074: **未発注と確定した** Reserved 予約を解放（削除）する。解放後は同じ DecisionId で改めて予約→発注できる。
+    /// 🔴 #1343, IADR-0550 決定1: 突合が使うのは保護の機構のレグ（ガード・S1 の決済）だけである。承認の経路の予約は
+    /// <see cref="MarkReservationForgone"/> で閉じる（削除すると古い承認の再投入がそのまま送られる）。<see cref="OrderDispatchState.Reserved"/> の行**のみ**削除し、削除したら true を返す。
     /// 見つからない／Reserved でない（Completed 等）場合は何もせず false を返す（終端行は決して消さない安全ガード）。
     /// </summary>
     bool Release(Guid decisionId);
@@ -139,6 +140,11 @@ public interface IOrderReservationStore
     /// <see cref="ForgoneRecordOutcome.AlreadyForgone"/>、Completed なら行を変えず
     /// <see cref="ForgoneRecordOutcome.AlreadyCompleted"/>。行が無ければ <see cref="TryRecordForgone"/> と同じく扱う。
     /// <b>送信後の失敗（届いたか不明）に使ってはならない</b>——その予約は Reserved のまま据え置く（IADR-0117 改定 6）。
+    /// <para>
+    /// 🔴 FR-05, FR-10, #1343, IADR-0550 決定1: もう 1 つの呼び出し側は突合（<c>OrderReservationReconciler</c>）である。照会が「未発注」と答え、
+    /// その予約の取引環境の解放の門が開いているとき、<b>承認の経路の予約</b>を削除（<see cref="Release"/>）ではなくこれで閉じる
+    /// （削除すると同じ承認の再投入が古い承認のまま送られる）。保護の機構のレグは従来どおり <see cref="Release"/> で消す。
+    /// </para>
     /// </summary>
     ForgoneRecordOutcome MarkReservationForgone(Guid decisionId, DateTimeOffset forgoneAt);
 

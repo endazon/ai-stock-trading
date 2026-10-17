@@ -1120,6 +1120,50 @@ public sealed class OrderExecutionAppService(
         }
     }
 
+    // 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0550 決定1: 送る前に保護の記録を残した新規建てか（S1 の行・S0 / S3 の AwaitingEntry）。
+    // 行の EntryDecisionId は新規建ての DecisionId であり、保護の機構のレグ（StopDecisionId・CloseDecisionId）とは決して一致しない。
+    public bool HasEntryProtectionRecord(Guid decisionId) => protectiveStops?.Find(decisionId) is not null;
+
+    // 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0550 決定2: **突合が「未発注」と確定して予約を見送り（Forgone）へ移した後に**、
+    // 送る前に残した保護の記録を閉じる。閉じないと、S1 の行は発注の記録が無いまま「これから約定し得る」として永久に据え置かれ
+    // （ProtectiveStopGuard の未確定の分岐）、同じ銘柄・同じ方向の別の手法の新規建てを見送り続ける（StopLossMethodCoexistenceGate）。
+    // 送る前の見送り（接続確立の失敗・送信の直前の併存）が閉じるのと同じ 2 つ（CompleteSoftwareStopWithoutPosition・CompleteAwaitingProtection）を、
+    // 承認を持たない突合のために DecisionId だけで行う。
+    // 🔴 閉じるのは「建玉が生じていないと言える行」だけである: 発注の記録が無い／S1 は未確定（RemainingProtected が null）・未到達・決済の試行 0・
+    // 外部要因の観測なし。どれか 1 つでも外れたら閉じない（LeftOpen）——到達や決済の経路に入った行を古い写しで閉じると、決済の記録を巻き戻す。
+    // 楽観並行（TrySave）で書き、並行に更新されていたら閉じない。
+    public UnplacedEntryProtectionClosure CloseUnplacedEntryProtection(Guid decisionId)
+    {
+        if (protectiveStops?.Find(decisionId) is not { } row)
+            return UnplacedEntryProtectionClosure.NoProtectionRecord;
+
+        if (row.State == ProtectiveStopState.Completed)
+            return UnplacedEntryProtectionClosure.AlreadyCompleted;
+
+        // 発注の記録がある＝送られている。未発注の判定と食い違うので閉じない（人が確かめる）。
+        if (store.FindByDecisionId(decisionId) is not null)
+            return UnplacedEntryProtectionClosure.LeftOpen;
+
+        var closable = row switch
+        {
+            { State: ProtectiveStopState.AwaitingEntry } => true,
+            { State: ProtectiveStopState.Active, IsSoftwareStop: true } => row.RemainingProtected is null
+                && row.TriggeredAt is null
+                && row.Attempt == 0
+                && row.PendingExternalReduction == 0,
+            _ => false,
+        };
+        if (!closable)
+            return UnplacedEntryProtectionClosure.LeftOpen;
+
+        if (!protectiveStops.TrySave(row with { State = ProtectiveStopState.Completed, UpdatedAt = clock.UtcNow }))
+            return UnplacedEntryProtectionClosure.LeftOpen;
+
+        return row.State == ProtectiveStopState.AwaitingEntry
+            ? UnplacedEntryProtectionClosure.AwaitingEntryClosed
+            : UnplacedEntryProtectionClosure.SoftwareStopClosed;
+    }
+
     // 🔴 FR-10, FR-05, FR-12, ADR-0040 決定1, #853, IADR-0210（2026-09-25 追記）, IADR-0428 決定4: **突合で「発注済み」と確定した
     // エントリーに、承認時の手法で保護レグを張る**（オーナー裁定 2: S0 ブローカー側逆指値・S1 ソフトウェア逆指値の記録・S2 なし・S3 代替注文種別）。
     // 手法の解釈は送る前に StopLossMethodPolicy が済ませており、その結果が保護記録の形（AwaitingEntry の Mechanism / S1 の Active 行 /

@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-16
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-07, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
 adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544, IADR-0550]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds, 20261017_1343_release-closes-entry-protection]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, #1343, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
 -->
 
 
@@ -433,7 +433,7 @@ SELECT count(*) FROM order_dispatch_reservations WHERE "State" = 0;
   | --- | --- | --- | --- |
   | ① | `executed_orders` に記録あり | 確定の自己修復（ブローカへ照会しない） | `終端化` |
   | ② | 照会が発注済み（`Placed`） | 記録して確定＋`OrderExecuted` 発行。続けて、エントリーなら承認時の手法で保護レグを張る（下記） | `終端化` |
-  | ③ | 照会が未発注（`NotPlaced`）**かつその予約の取引環境の解放の門が開いている** | 予約を解放（＝再発注を許可） | `解放` |
+  | ③ | 照会が未発注（`NotPlaced`）**かつその予約の取引環境の解放の門が開いている** | 予約を解放する。**承認の経路の予約**（承認の出どころを持つ、または送る前に保護の記録を残した新規建て）は見送り（`Forgone`）として閉じ、送る前に残した保護の記録（S1・`AwaitingEntry`）も完了にする＝同じ承認は再投入されても発注しない。保護の機構のレグは削除する＝機構が撃ち直す（下記） | `解放` |
   | ④ | 照会が未発注（`NotPlaced`）**だがその予約の取引環境の門が閉じている**（取引環境が不明・照会先と食い違うときも） | **据え置き**（解放しない） | `据え置き〔未発注だが門が閉〕` |
   | ⑤ | 照会不達・判定不能（`Indeterminate`） | **据え置き**（人手/`_error`・解放しない） | `不確定` |
   | ⑥ | 当該 1 件の処理で例外 | **据え置き**（次回巡回で再試行。他の件は巻き添えにしない） | `失敗` |
@@ -450,8 +450,15 @@ SELECT count(*) FROM order_dispatch_reservations WHERE "State" = 0;
   承認時の保護の文脈（エントリーを送る前に残した記録）が残っているエントリーに限り、平常の発注と同じ経路で
   逆指値（S0）か代替注文種別（S3）を 1 本送る。その逆指値が拒否されたら、未約定ならエントリーを取り消し、約定済みなら成行で手仕舞う。
   逆指値が届いたか不明なら、取消も成行もせず据え置く（2026-09-25 のオーナー裁定。#853）。
-  🔴 **③〜⑥では何も書かない。** ③の解放も書き込みではない——予約を消して再発注を**許可**するだけで、送り直すのは
-  `_error` キューからの再投入か保護逆指値ガードの次の巡回である（門を閉じているのはこのため）。
+  🔴 **③〜⑥では何も書かない。** ③の解放も書き込みではない。保護の機構のレグは予約を消して撃ち直しを**許可**するだけで、
+  送り直すのは保護逆指値ガード・S1 の次の巡回である（門を閉じているのはこのため）。
+  承認の経路の予約（新規建て・利用者の手仕舞い・維持率割れの自動縮小・判断の手仕舞い）は**送り直さない**——見送り（`Forgone`）として閉じるので、
+  `_error` キューから再投入しても発注しない。再発注は次の取引判断からのみである（承認の古さを確かめる仕組みが無いため、古い承認を送らない側に倒した）。
+  新規建てが送る前に残した保護の記録（S1 の未確定・未到達の行、S0 / S3 の `AwaitingEntry`）も、予約を閉じた後に完了にする。
+  閉じると Information `…未発注と確定した新規建てを見送りとして閉じ、送る前に残した保護の記録を完了にしました…`、
+  閉じられなかったら（到達済み・発注の記録がある・並行に更新された・処理の失敗）Warning `…保護の記録を閉じられませんでした…` が出る。
+  Warning のときは発注経路の Runbook「発注の記録が無いまま残った S1 の記録を閉じる」に従う。
+  リスク管理の承認の記録は解かれない（見送りを発行しない。統制への算入は承認した ET 日の終わりに外れる）。
 - **プローブ**: 既定の照会実装は**常に `Indeterminate`**（`IndeterminateReservationBrokerProbe`）。
   実 OpenD 照会（`DecisionId` を備考〔remark〕として伝播し注文一覧と突合する）は
   `Reconciliation__UseBrokerProbe=true` かつ証券会社が moomoo のときだけ配線される。
@@ -481,8 +488,9 @@ Reconciliation:
   無効のまま起動するとログに「発注予約の自動リコンサイルは無効です（Reconciliation:Enabled=false）」が出る
   ——**配備でこの行が出たら、構成が Pod に届いていない**ということである。values を変えた後に Pod の入れ替えだけで済ませると
   こうなる（values は `helm upgrade` でしか入らない。実際に 8 日間届いていなかった）。配備の前後に上の「リリースとチャートの差」の手順で確かめる。
-- 🔴 **`ReleaseOnNotPlaced`（解放の門）は、どちらも閉じたままにする。** 解放は予約行を消して**再発注を許可する**操作であり、
-  誤判定は二重発注に直結する。「未発注」の根拠は備考の突合であって証券会社が「無い」と答えた事実ではなく、
+- 🔴 **`ReleaseOnNotPlaced`（解放の門）は、どちらも閉じたままにする。** 解放は「未発注」を事実として扱う操作であり
+  （保護の機構のレグは予約行を消して**撃ち直しを許可する**。承認の経路の予約は見送りとして閉じ、保護の記録も閉じる）、
+  誤判定は二重発注か保護の無い建玉に直結する。「未発注」の根拠は備考の突合であって証券会社が「無い」と答えた事実ではなく、
   備考が往復するかは**実機未検証**である（往復していなければ発注済みの注文も「一致ゼロ」に見える）。
   **`true` にしてよいのは、その取引環境の実機の記録で下記「解放の門を開けるときの記録」の (a)(b) を示した後だけである。**
   **`SIMULATE` の記録で `Real` を開けない**（`SIMULATE` で備考が往復しても、実弾で往復する保証は無い）。
@@ -516,7 +524,8 @@ Reconciliation:
     発注執行の再起動後の最初の巡回でも改めて出る（記憶はプロセス内）。
     🔴 **門を開ける判断の記録 (b) で `DecisionId` を集めるときは、Warning だけでなく Information の継続の行も含めて grep する**（下の計器は毎巡回数える）。
   - **Warning** `ソフトウェア逆指値（S1）の記録が、エントリーの発注記録の無いまま…「残保護=未確定」で残っています（幽霊の疑い…）`。
-    送られていない新規建ての S1 の記録が残っている。システムは閉じない。発注経路の Runbook「発注の記録が無いまま残った S1 の記録を閉じる」に従う。
+    送られていない新規建ての S1 の記録が残っている。解放の門が閉じているあいだ、システムは閉じない（門が開いていれば、突合が未発注と確定した時点で閉じる）。
+    発注経路の Runbook「発注の記録が無いまま残った S1 の記録を閉じる」に従う。
     作成から `ProtectiveStopGuard__UnrecordedSoftwareStopAge`（既定 24 時間）後に初めて出て、以後は同じ行について
     `ProtectiveStopGuard__UnrecordedSoftwareStopReminderInterval`（既定 24 時間）ごとに出る。
   - **業務メトリクス** `ast_order_reservation_reconciliations_total{outcome,provider}`（#856 / #1051）。上の 6 分岐を件数で数える

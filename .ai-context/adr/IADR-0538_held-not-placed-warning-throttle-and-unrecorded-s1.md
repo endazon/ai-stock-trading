@@ -2,10 +2,10 @@
 title: IADR-0538 据え置いた「未発注」判定の Warning を同じ予約について初回と 24 時間ごとに畳み（継続は DecisionId つきの Information）、発注の記録が無いまま未確定で残る S1 を「幽霊の疑い」として識別して後始末へ案内する。行は自動で閉じない
 type: impl-adr
 status: Accepted
-related_ids: [FR-05, FR-10, NFR-09, ADR-0040, ADR-0045, IADR-0362, IADR-0365, IADR-0371, IADR-0444, IADR-0488]
+related_ids: [FR-05, FR-10, NFR-09, ADR-0040, ADR-0045, IADR-0362, IADR-0365, IADR-0371, IADR-0444, IADR-0488, IADR-0550]
 author: claude (Claude Code)
 created: 2026-10-15
-updated: 2026-10-15
+updated: 2026-10-17
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-05 発注・FR-10 逆指値なしの建玉を持たない)
   - planning:projects/ai-stock-trading/07_adr/ADR-0045_reservation-release-criterion-per-trading-env.md (決定 1 (b) held-not-placed の観測)
@@ -63,6 +63,7 @@ related_specs:
   （Runbook「発注の記録が無いまま残った S1 の記録を閉じる」への案内つき）。該当しなくなった行は記憶を消す。
 - 発注記録の照会は候補（未確定・未到達・経過済み）にだけ、要約の間隔に 1 回行う。
 - 🔴 **行の状態は一切変えない**。閉じるのは利用者の判断と Runbook の SQL である。
+- ［2026-10-17 追記 / #1343］解放の門が**開いている**取引環境では、突合が未発注と確定した時点で予約を Forgone にし、S1 の行・AwaitingEntry を閉じる（[IADR-0550](IADR-0550_release-forgoes-approval-reservations-and-closes-entry-protection.md)）。本決定（識別だけで閉じない）は門が閉じているあいだと、突合が閉じられなかった行について引き続き効く。決定 3 の予約の扱いは、Runbook では Forgone を標準にし DELETE は取らない形へ改めた（IADR-0550 決定 3）。
 
 ### 決定 3: Runbook に S1 の記録を閉じる手順を置く。予約の扱いは 2 案を並べ、利用者が選ぶ
 
