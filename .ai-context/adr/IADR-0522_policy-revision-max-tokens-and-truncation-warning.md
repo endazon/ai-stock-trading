@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-14, FR-07, FR-04, FR-06, NFR, ADR-0011, ADR-0042, IADR-0101, IADR-0104, IADR-0431, IADR-0432]
 author: claude (Claude Code)
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-17
 plan_refs:
   - planning:projects/ai-stock-trading/02_requirements/01_requirements.md (FR-14・FR-07)
   - planning:projects/ai-stock-trading/07_adr/ADR-0042_discord-apply-ai-watchlist-proposal-and-revision-limit.md (決定 3)
@@ -141,6 +141,13 @@ PoC の実測（費用計上ログのトークン数。#243 のコメント）�
   （Discord.Net は 3 秒を超えると「handler is blocking the gateway task」を警告する）。変更前（90 秒）・`/report regenerate`（300 秒）と同じ既存の性質で、本追記では変えない。
 - 報告書サービスの `LlmGateway:TimeoutSeconds`（全種別）を 95 秒未満に置き、種別別の上限を置かない構成では、REST の輸送の HttpClient.Timeout が方針の改訂を先に切る。
   既定・helm（本番と開発）はこの構成ではない（T-10-2506 が既定と開発構成で確かめる）。
+
+## 追記（2026-10-17 / #1383）
+
+決定 1 の値（8192）と追記 1 の「実効の天井」の仮定（出力の速さ毎秒 50〜80 トークン）を [IADR-0555](./IADR-0555_policy-revision-thinking-headroom-and-truncation-reason.md) が改めた。
+5.5 系（sonnet-5-5 は thinking を無効にできず既定 effort は high）で、PoC の改訂が出力 8,192 のうち本文 1,609 文字で切れた。上限は 16384 になった。
+同じ呼び出しが 95 秒以内に 8,192 トークンを返しており、出力の速さは毎秒 86 トークン以上である（上の仮定と矛盾する）。
+上限で切れた JSON は、利用者へ「途中で切れた」と返すようになった（失敗の種別 `Truncated`）。決定 2 と追記 1 の上限時間の連なりは有効のままである。
 
 ## 関連
 

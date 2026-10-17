@@ -41,6 +41,9 @@ public enum PolicyRevisionFailure
 
     /// <summary>応答はあったが、案のスキーマに合わなかった（空・JSON でない・検証違反）。</summary>
     InvalidOutput,
+
+    /// <summary>出力上限（stop_reason=max_tokens）で途中で切れ、案のスキーマに合わなかった（#1383・IADR-0555 決定 2。再試行で通り得る）。</summary>
+    Truncated,
 }
 
 // 改訂の結果。Proposal が非 null なら案がある。null なら Failure と Message が理由。

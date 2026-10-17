@@ -3,15 +3,15 @@ title: ログ・可観測性仕様書（AST）
 type: observability-spec
 status: draft
 created: 2026-07-19
-updated: 2026-10-15
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [NFR-01, NFR-02, NFR-03, NFR-07, NFR-09, FR-04, FR-09, FR-10, FR-02, FR-14, FR-06, FR-11, FR-08]
-adrs: [ADR-0006, ADR-0045, ADR-0003]
-iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525, IADR-0072]
-specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble, 20261015_1311_rag-search-degraded-mark]
-issues: [#1311, #24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290]
+adrs: [ADR-0006, ADR-0045, ADR-0003, ADR-0064]
+iadrs: [IADR-0052, IADR-0061, IADR-0094, IADR-0121, IADR-0255, IADR-0307, IADR-0333, IADR-0374, MSP:IADR-0077, IADR-0395, IADR-0441, IADR-0444, IADR-0463, IADR-0471, IADR-0495, IADR-0500, IADR-0521, IADR-0104, IADR-0522, IADR-0525, IADR-0072, IADR-0555]
+specs: [20260828_287_business-metrics-and-dashboards, 20260904_689_nfr-01-02-end-to-end-latency-metrics, 20260911_751_trace-uri-redaction, 20260923_891_decision-skip-reasons-and-first-alert, 20260925_942_drift-followup-abandoned-alert, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260930_1113_entry-blockers-before-llm, 20261001_1130_held-add-on-before-llm, 20261007_1176_min-notional-and-decision-exit-reentry, 20261007_1174_pre-llm-one-share-skip, 20261009_1286_held-positions-in-judgment, 20261010_243_policy-revision-max-tokens, 20261010_1290_screening-rationale-garble, 20261015_1311_rag-search-degraded-mark, 20261017_1383_policy-revision-thinking-max-tokens]
+issues: [#1311, #24, #287, #689, #751, #891, #942, #856, #1051, #1113, #1130, #1176, #1174, #1286, #243, #1290, #1383]
 -->
 
 
@@ -109,9 +109,12 @@ exporter 構成が決める**。dev の既定は `debug`（標準出力のみ・
   対象は取引判断（一次スクリーニング・本判断）・報告書の散文・方針の改訂の 3 つで、方針の改訂の行は上限（`maxTokens`）と出力トークン（`outputTokens`）を運ぶ。
   Loki では `stopReason=max_tokens` で引く（3 つとも警告の本文にこの形で載る）。🔴「出力上限に到達」の文言では漏れる——取引判断と報告書の散文は、
   本文が空のまま打ち切られると「応答本文が空です（stopReason=max_tokens）」の行だけを出し、「出力上限に到達」の行を出さない。
-  逆に `stopReason=max_tokens` では 1 回の打ち切りが複数行に当たることがある（方針の改訂の形式違反の警告・全量ログ〔既定オフ〕にも同じ形で載る）。出力上限は方針の改訂だけ 8192、他は 4096 である（稼働 PoC の実測で、方針の改訂の出力の最大が 4096 の 93% に達したため）。
-  方針の改訂の上限時間は既定 95 秒で、基盤のゲートウェイが上流の LLM を待つ 100 秒（固定）が実効の天井になる。出力の速さを毎秒 50〜80 トークンとすると
-  約 4,700〜7,600 トークンで時間切れ（案なし・警告「方針の改訂 LLM がタイムアウトしました」）になり、8192 の全量には届かない。
+  逆に `stopReason=max_tokens` では 1 回の打ち切りが複数行に当たることがある（方針の改訂の形式違反の警告・全量ログ〔既定オフ〕にも同じ形で載る）。出力上限は方針の改訂だけ 16384、他は 4096 である（5.5 系のモデルは思考を無効にできず、方針の改訂が 8192 のうち本文 1,609 文字で切れたため）。
+  報告書の散文の行も上限（`maxTokens`）・出力トークン（`outputTokens`）・モデルを運ぶ。方針の改訂の上限で切れた案は、利用者へ「上限で途中で切れた（再試行で通ることがある）」と返る。
+  方針の改訂の上限時間は既定 95 秒で、基盤のゲートウェイが上流の LLM を待つ 100 秒（既定）が実効の天井になる。稼働 PoC では 95 秒以内に 8,192 トークンが返っており、
+  出力の速さは毎秒 86 トークン以上である。毎秒 172 トークン未満なら 16384 に届く前に時間切れ（案なし・警告「方針の改訂 LLM がタイムアウトしました」）になる。
+- **方針の改訂の所要時間**: 応答を受け取るたびに情報ログ「方針の改訂 LLM の応答を受け取りました」を 1 行出し、`elapsedMs`・`outputTokens`・`maxTokens`・`textLength`・`stopReason`・`model` を運ぶ（本文は載せない）。
+  出力の速さは `outputTokens ÷ elapsedMs`、思考の分は `outputTokens` から本文の長さ（`textLength`）の分を引いて見積もる。
   🔴 打ち切りの頻度の閾値やアラートは置いていない（実測してから決める。下の注記と同じ理由）。
 - **判断の参考情報（RAG）の取得の状態と検索の縮退**: 判断の記録（「LLM 判断:」の行）に `ragContext` と `ragDegraded` が載る。
   `ragContext` は `retrieved` / `empty` / `failed` / `not-configured`、基盤の検索が縮退して返ったときは `retrieved-degraded` / `empty-degraded`。
