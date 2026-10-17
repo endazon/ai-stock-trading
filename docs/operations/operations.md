@@ -3,15 +3,15 @@ title: 運用仕様書
 type: operations-spec
 status: draft
 created: 2026-07-08
-updated: 2026-10-16
+updated: 2026-10-17
 author: endazon (with Claude Code)
 ---
 <!-- trace:
 ids: [FR-01, FR-04, FR-07, FR-05, FR-08, FR-19, FR-20, NFR-03, NFR-07, NFR-08, NFR-09, NFR-10, NFR-11, NFR-13, FR-10, FR-02, FR-13, NFR-02, NFR-06]
-adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051]
-iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544]
-specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds]
-issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
+adrs: [ADR-0002, ADR-0004, ADR-0007, ADR-0013, ADR-0022, ADR-0045, ADR-0040, ADR-0050, ADR-0044, ADR-0064, ADR-0048, ADR-0051, ADR-0067]
+iadrs: [IADR-0016, IADR-0052, IADR-0053, IADR-0054, IADR-0056, IADR-0057, IADR-0059, IADR-0060, IADR-0066, IADR-0074, IADR-0107, IADR-0109, IADR-0111, IADR-0112, IADR-0122, IADR-0129, IADR-0152, IADR-0175, IADR-0187, IADR-0194, IADR-0308, IADR-0315, IADR-0374, IADR-0370, IADR-0395, IADR-0344, IADR-0428, IADR-0436, IADR-0439, IADR-0441, IADR-0444, IADR-0456, IADR-0457, IADR-0461, IADR-0466, IADR-0475, IADR-0488, IADR-0489, IADR-0490, IADR-0496, IADR-0210, IADR-0499, IADR-0505, IADR-0342, IADR-0524, IADR-0526, IADR-0538, IADR-0544, IADR-0357, IADR-0535, IADR-0536, IADR-0539]
+specs: [20260716_132_opend-production-readiness, 20260905_686_fx-provider-boj-first, 20260909_705_kb-tags-static-vocabulary, 20260917_817_llm-pricing-env-names, 20260923_891_decision-skip-reasons-and-first-alert, 20260923_858_drift-adoption-protective-stop-followup, 20260925_942_drift-followup-abandoned-alert, 20260925_937_host-liveness-monitor, 20260925_853_protective-leg-indeterminate-hold, 20260926_346_cutover-plan-decisions, 20260926_1028_report-kb-reingest, 20260926_1022_helm-release-drift, 20260926_856_reconciler-broker-action-map-and-metrics, 20260927_1051_release-gate-per-trading-env, 20260929_1084_kb-save-dedup, 20260929_1092_nightly-ledger-summary, 20260929_1094_deploy-changed-services, 20260930_1121_s1-vs-decision-close, 20261001_1134_watchlist-no-fallback, 20261003_856_indeterminate-dispatch-fault-injection, 20261004_753_grpc-h2c-measurement-runbook, 20261006_1169_scheduled-cycle-timeout-and-deterministic-decision-id, 20261007_1169_max-watched-symbols-local, 20261007_1192_aspnetcore-env-production, 20261007_1202_cutover-runbook-adr0040-checks, 20261007_1197_llm-pricing-unset-guard, 20261008_1194_scheduled-cycle-retry-chain-budget, 20261009_1228_planning741-ruling-records, 20261010_1295_claude-5-5-models, 20261010_1300_report-draft-knowledge-copy, 20261011_1296_remove-llm-migration-stage, 20261014_msp1919_host-memory-prereq, 20261015_856_held-warning-throttle-and-ghost-s1, 20261016_1365_daily-policy-self-contained-thresholds, 20261014_1339_close-limit-tif-and-release, 20261016_1339_decision-close-unfilled-cancel, 20261017_1339_operations-unfilled-decision-close]
+issues: [#13, #24, #121, #131, #132, #137, #141, #243, #262, #263, #267, #268, #303, #364, #380, #407, #627, #686, #705, #817, #891, #858, #942, #937, #853, #346, #1028, #1022, #856, #1051, #1084, #1092, #1094, #1121, #1134, #753, #1169, #1194, #1192, #1202, #1214, #1197, #1228, #1275, #1295, #1296, #1300, #1365, #1339, MSP#266, MSP#635, planning#54, planning#676, planning#704, planning#741, planning#783, planning#784, MSP#1919]
 -->
 
 
@@ -642,6 +642,97 @@ LLM 費用は**応答が名乗った実効モデル**の単価（`LlmPricing__Pe
 「未実装の項目」に見えるため善意で足される危険が最も高い箇所であり、
 構造テスト（`Stage1SessionUptimeTests.カレンダーを内蔵していない__同じ稼働なら曜日だけで結果が決まる`）が
 **3 年ぶんの全日付**で機械的に止める。**このテストを消さないこと。**
+
+## 判断由来の決済の指値が約定しないとき（#1339）
+
+取引判断（LLM）が選んだ決済（利確・判断の手仕舞い）は、判断した時点の現在値の**指値**で、有効期限を**当日限り（DAY）**として出る。
+値が離れて約定しないと、注文は閉場まで証券会社の側で生きている。
+
+- **その間、その建玉の判断は止まる。** 処理中の決済が建玉を覆うので、次の判断は LLM を呼ぶ前に見送られ、発注のゲートも決済を通さない。
+  当日中に現在値で判断し直す経路は、下の「系による取消」を有効にするまで無い。
+- **損切りは止まらない。** ソフトウェア逆指値は発動する前に同じ建玉の判断の決済を取り消してから送り、保護逆指値は別の注文である。
+  失うのは利確・判断の手仕舞いの水準だけである。
+- **失効した後は自動で戻る。** 証券会社が終端（失効・取消）と答えると、処理中の決済から外れ、リスク管理の台帳も在庫の押さえを解く。
+  次の判断の巡回で、その建玉は現在値で判断し直される。
+- 対象は取引判断の決済だけである。利用者の手仕舞い（既定は成行）と、維持率割れの自動縮小は、この節の対象外である。
+
+### ログと通知の読み方
+
+```bash
+kubectl -n ai-stock-trading logs deploy/order-execution-service --since=24h \
+  | grep -E '未約定の決済が残っています|処理中の決済を解放しました|約定追跡: 非終端|判断由来の決済の指値'
+```
+
+| ログ・通知 | 意味 | 人がすること |
+| --- | --- | --- |
+| WRN `未約定の決済が残っています: DecisionId=… 発注から N 分 追跡=…` | 発注から 15 分以上たっても非終端の決済。**15 分ごとに 1 件ずつ**出る（0 件なら出ない。通知は送らない） | 下の「人がすること」 |
+| INF `処理中の決済を解放しました（追跡を打ち切った後、証券会社が終端 … と答えました…）` | 約定追跡の上限（24 時間）を過ぎた決済を 10 分ごとに照会し直し、終端を確かめたので解放した | なし |
+| INF `追跡を打ち切った決済の照会し直し: … 照会不能 …` | 照会し直したが、非終端か照会不能だったので**解放しない**（迷ったら解放しない） | 続くなら証券会社の画面で注文の結果を確かめる |
+| 状態 `Expired（失注: 期限切れで失効）` | DAY の満了などで、証券会社が未約定のまま失効させた。**時間切れであり、発注の内容の誤りではない** | なし（次の巡回で判断し直される） |
+| 状態 `Rejected（拒否: 証券会社が受理せず）` | 証券会社が発注を受理しなかった。失効とは別の事象である | 発注のログの `retType` と `retMsg` で理由を確かめる |
+| Discord「手仕舞いが約定せず終了」 | 未約定の残りを残して終わった決済（出どころを問わない）。状態に上の表示が添えられる | 状態が失注なら上と同じ。拒否なら理由を確かめる |
+
+### 人がすること（系による取消が無効の間の暫定手段）
+
+WRN が出続け、**当日中にその建玉を判断し直させたい**ときは、**証券会社の画面でその注文を手で取り消す**。
+
+- 取り消すと、約定追跡が終端（取消）を観測して処理中の決済から外し、次の巡回で判断し直される。
+- 取り消さなければ、DAY の失効（閉場の後）まで待つ。翌営業日に判断し直される。
+- **取消を繰り返さない。** 取消は相場操縦の検知（約定なしの取消の比率）の母集団に入る。
+  ただし、発注から 5 分（検知の窓）を過ぎた注文の取消は、窓の外なので集計に現れない。
+
+### 系による取消（既定は無効）
+
+発注から N 分たっても約定しない判断由来の決済の指値を、約定追跡の常駐が巡回ごとに**取り消すだけ**の機構である。
+取り消した後は何も出さない（置き直し・訂正・成行への切り替えはしない）。次の巡回の判断に任せる。
+
+🔴 **既定は無効であり、配備（Helm values）にも有効化を書いていない。** 有効にするのは、保護逆指値の有効期限（GTC）の
+実弾確認（#1214。[ブロック中のタスク](../blocked-tasks.md) の A-19）と有効化の PoC が済んだ後で、**利用者が決める**。
+値の変更は他の統制値と同じ手続き（方針確定プロセスまたは利用者の設定変更）であり、**生成 AI と自動処理は変えない**。
+
+```yaml
+DecisionCloseUnfilledCancel:
+  Enabled: false # 既定。true で取消を有効にする
+  UnfilledMinutes: 15 # N。発注からこの分数たっても約定しなければ取り消す（暫定値。有効化のときに PoC の実績で見直す）
+  MaxCancelsPerPositionPerDay: 1 # 1 建玉・1 市場の現地取引日（米国株は米国東部の暦日）あたりの取消の上限
+  BatchSize: 50 # 1 巡回で取り消す最大件数
+```
+
+- **有効なときだけ値を検証し、外れたら起動で止まる**（黙って丸めない）。`UnfilledMinutes` は 6〜390
+  （相場操縦の検知の窓 5 分より長く、通常取引時間以下）、`MaxCancelsPerPositionPerDay` は 1〜3。
+  例: `UnfilledMinutes=5` なら `OptionsValidationException`（「相場操縦の検知の窓」）で起動しない。
+- **一部約定の決済も残りを取り消す。** 印（`executed_orders.UnfilledCancelRequestedAt`）を取消の前に書き、
+  取消が失敗しても**再試行しない**（注文は DAY で失効する）。前の取引日以前に発注した非終端の記録は対象にしない。
+- **入れ方**: order-execution の `extraEnv` の配列（`deploy/helm/ai-stock-trading/values.yaml`）へ
+  `- { name: DecisionCloseUnfilledCancel__Enabled, value: "true" }` を足し、通常の配備（`helm upgrade`）を行う。
+  N・回数を既定から変えるときも同じ配列へ足す。配列は values の上書きで丸ごと置き換わるため、
+  **別の values ファイルや `--set` で足さない**。`kubectl set env` も使わない（次の `helm upgrade` が所有権の競合で落ちる）。
+- **止め方**: 足した行を消して再配備する（既定の無効に戻る）。印を書いた記録はそのまま残るが、無効の間は読まない。
+- **有効化するときは、この節と [ブロック中のタスク](../blocked-tasks.md) §補足 の行を同じ変更で直す**（「既定は無効」が古くなる）。
+
+有効にしたときのログ:
+
+| ログ | 意味 |
+| --- | --- |
+| WRN `判断由来の決済の指値を取り消しました（発注から N 分以上未約定…）: … 取消の確認=… 照会した状態=…` | 取り消した。`取消の確認=False` のときは、約定追跡が終端を確かめてから解放する |
+| WRN `判断由来の決済の指値の取消に失敗しました（再試行はしません…）` | 取消を送れなかった。証券会社の画面で注文を確かめる |
+| INF `判断由来の決済の指値は未約定ですが、取消の上限（1 建玉 1 日あたり）に達したため取り消しません…` | 回数の上限。注文ごとに 1 回だけ出る。DAY の失効に任せる |
+
+取消は注文のライフサイクル台帳（`order_lifecycle_events`）に、理由が `判断由来の決済の指値が未約定のため系が取消` で始まる行として残る。
+
+### 確認クエリ
+
+```sql
+-- 処理中（非終端）の判断由来の決済（order_execution_svc）。
+-- PositionEffect: 1=決済 / ApprovalOrigin: 1=取引判断 / Status: 0=受付・1=一部約定
+SELECT "OrderId", "Symbol", "Side", "Quantity", "FilledQuantity", "Status", "ExecutedAt",
+       "TrackingAbandonedFrom", "UnfilledCancelRequestedAt"
+  FROM executed_orders
+ WHERE "PositionEffect" = 1 AND "ApprovalOrigin" = 1 AND "Status" IN (0, 1)
+ ORDER BY "ExecutedAt" DESC LIMIT 20;
+```
+
+`UnfilledCancelRequestedAt` が入っている行は、系が取消を求めた決済である（無効の間は常に空）。
 
 ## 障害対応（Runbook）
 
