@@ -49,8 +49,14 @@ public interface IReportReviewController
 // **Succeeded=false は報告書サービス呼び出し自体が失敗したこと**（HTTP エラー・タイムアウト・解釈不能）を
 // 意味する。失敗を成功に見せない（kill switch / 段階ゲートと同じ方針）。
 // Version は照会に成功したときのみ意味を持つ（失敗時は 0）。
-public sealed record ReportReviewResult(bool Succeeded, int Version, string Message);
+//
+// FR-07, FR-14, #1385, IADR-0556 決定 3: LatestConfirmedVersion はその期間キーの最新の確定版の版番号（確定版が無い・旧版の報告書サービスは null）。
+// 確定は版を 1 進めるので、`LatestConfirmedVersion == v + 1` は「下書きの版 v が確定された」を意味する（状態 enum を読まない＝IADR-0240 決定5）。
+public sealed record ReportReviewResult(bool Succeeded, int Version, string Message, int? LatestConfirmedVersion = null);
 
 // FR-14, FR-07: 確定要求の結果。Confirmed は報告書サービスが確定を受理したか（版不一致の 409 では false）。
 // Succeeded=false は呼び出し自体の失敗であり、Confirmed とは区別する。
-public sealed record ReportConfirmResult(bool Succeeded, bool Confirmed, string Message);
+//
+// FR-07, FR-14, #1385, IADR-0556 決定 3: OutcomeUnknown は**確定の要求が時間切れになり、確定されたかが分からない**こと（Succeeded=false のときだけ真）。
+// 呼び出し側はこのときレビュー局面を照会して、確定されたかを確かめてから利用者に返す（「結果は不明」で終わらせない）。
+public sealed record ReportConfirmResult(bool Succeeded, bool Confirmed, string Message, bool OutcomeUnknown = false);

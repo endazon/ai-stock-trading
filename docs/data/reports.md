@@ -9,7 +9,7 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-06, FR-07, FR-08, FR-11, FR-14, FR-15, FR-16, FR-17, UC-03, UC-04, UC-05]
 adrs: [ADR-0001, ADR-0003, ADR-0033, ADR-0042, ADR-0052, ADR-0053, ADR-0068]
-iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526, IADR-0528, IADR-0548, IADR-0549]
+iadrs: [IADR-0012, IADR-0024, IADR-0240, IADR-0352, IADR-0381, IADR-0418, IADR-0431, IADR-0432, IADR-0433, IADR-0436, IADR-0480, IADR-0491, IADR-0492, IADR-0493, IADR-0516, IADR-0522, IADR-0526, IADR-0528, IADR-0548, IADR-0549, IADR-0556]
 specs: [20260710_report-confirmation, 20260919_774_report-confirmed-actor-on-behalf-of, 20260919_840_report-transient-dependency-retry, 20260925_843_report-period-keys-projection, 20260926_1016_policy-revision-from-discord, 20260926_1024_policy-daily-limit, 20260926_1025_policy-watchlist-apply, 20260926_1028_report-kb-reingest, 20261006_1156_report-regenerate, 20261006_1172_report-us-session-window, 20261006_1181_report-opening-inventory, 20261006_1182_report-regenerate-present-notice, 20261008_1224_report-ledger-inputs-session-window, 20261008_1255_ledger-entry-occurred-at, 20261010_243_policy-revision-max-tokens, 20261010_1300_report-draft-knowledge-copy, 20261017_1373_daily-policy-version-history, 20261017_1373_daily-policy-reconfirm]
 issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, #1156, #1172, #1181, #1182, #1224, #1255, #243, #1300, #1308, #1373, planning#711, planning#746, planning#724, planning#784, planning#803]
 -->
@@ -154,6 +154,11 @@ issues: [#14, #18, #19, #22, #63, #774, #840, #843, #1016, #1024, #1025, #1028, 
   **基盤の Wiki 同期が露出を見るようになった版の配備の後に有効にする**（それより前の基盤は写しを Wiki へ載せ、外部 AI エージェント向けの文書一覧にも返す）。
 - **版番号付き冪等確定**: Draft→Confirmed の遷移時のみ `ConfirmedAt` 記録＋`ReportConfirmed` 発行（通知サービスが Discord 通知）。
   既に確定済みの再確定は冪等（状態変化なし・イベント重複なし）。版不一致は 409、確定済みの変更は 409、未認証 401/無権限 403。
+  確定の後の KB の後処理（確定版の写しの保存／置き換え・失効の印・ドラフトの写しの削除）は、1 つの時間予算 `Reports:Confirm:KnowledgeBudgetSeconds`
+  （既定 20 秒）で打ち切る。予算は要求の取り消しと結ばない。予算切れでも確定は 200 で返し、置き換えが終わらなければドラフトの写しは消さない（入れ直しが揃える）。
+  呼び出し側（通知サービス）の確定の上限（既定 30 秒）は、この予算より長く置く。
+  レビュー局面（`GET /reports/{periodKey}/review`）は `latestConfirmedVersion`（その期間キーの最新の確定版の版番号。確定版が無ければ null）を返す。
+  確定は版を 1 進めるので、呼び出し側は「最新の確定版 == 押した版 + 1」で、時間切れになった確定がその版で確定されたかを確かめる。
   応答は報告書の項目に `transitioned`（この要求で確定したか）と `version`（確定後の版）を足したもの。確定は版を 1 進めるため、
   冪等な再確定では `version == expectedVersion + 1` のときだけ「その版で確定されている」（別の版で確定済みを取り違えない）。
 - **確定者の解決**: 確定要求の本文は `expectedVersion` と任意の `onBehalfOf`（代理される利用者＝Keycloak 利用者名）。

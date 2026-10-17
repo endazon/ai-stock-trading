@@ -22,7 +22,7 @@ public class BotWriteGrpcWiringTests
     private static readonly string[] RestClients =
     [
         "risk-kill-switch", "risk-pause", "risk-stage-gate", "risk-good-faith-violations", "risk-position-drift",
-        "report-review", "report-policy-revision", "market-monitor-watchlist",
+        "report-review", "report-confirm", "report-policy-revision", "market-monitor-watchlist",
     ];
 
     // REST の名前付きクライアントの最下層を数える（呼ばれたら REST へ落ちた証拠）。
@@ -158,7 +158,9 @@ public class BotWriteGrpcWiringTests
 
         var transport = factory.Services.GetRequiredService<ReportsGrpcTransport>();
         transport.PolicyRevisionCalls.Timeout.Should().Be(TimeSpan.FromSeconds(expected));
-        transport.Calls.Timeout.Should().Be(TimeSpan.FromSeconds(5), "照会・確定・差し戻しは REST の report-review と同じ 5 秒");
+        transport.Calls.Timeout.Should().Be(TimeSpan.FromSeconds(5), "照会・差し戻しは REST の report-review と同じ 5 秒");
+        // #1385, IADR-0556 決定 2: 確定は専用の deadline（REST の report-confirm と同じ 30 秒。外側＞内側は T-10-2729）。
+        transport.ConfirmCalls.Timeout.Should().Be(TimeSpan.FromSeconds(30));
         transport.PolicyRevisionCalls.MaxAttempts.Should().Be(1);
     }
 
