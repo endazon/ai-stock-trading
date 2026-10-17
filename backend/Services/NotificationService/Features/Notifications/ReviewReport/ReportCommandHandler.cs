@@ -180,6 +180,11 @@ public sealed class ReportCommandHandler(
             .ConfirmAsync(periodKey, version, actor, cancellationToken)
             .ConfigureAwait(false);
 
+        // FR-07, FR-14, #1385, IADR-0556 決定 3: 時間切れ（確定されたか分からない）なら、利用者に返す前にレビュー局面を照会して確かめる。
+        // 「結果は不明」で終わらせると、確定できていたのに `/policy` をやり直して版を無駄に進める（PoC 2026-10-17）。
+        if (!result.Succeeded && result.OutcomeUnknown)
+            return await ResolveUnknownConfirmAsync(periodKey, version, actor, result, cancellationToken).ConfigureAwait(false);
+
         // 🔴 IADR-0240 決定3: 呼び出しが失敗したら予約を解放する。解放しないと同じ版を二度と確定できない
         // （Discord は確定の唯一の窓口であり、詰みは Bot の再起動でしか解けない）。
         if (!result.Succeeded)
@@ -206,6 +211,64 @@ public sealed class ReportCommandHandler(
             "報告書を確定しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}）。", actor, periodKey, version);
         return ReportCommandResult.Confirmed(result.Message);
     }
+
+    // FR-07, FR-14, ADR-0003, #1385, IADR-0556 決定 3: 確定の要求が時間切れになったあと、確定されたかを照会して返す。
+    // 判定は「最新の確定版の版番号 == 押した版 + 1」（確定は版を 1 進める。IADR-0433 決定 7 の `InterpretConfirmed` と同じ規則）。
+    //   - この版で確定済み → 確定として返し、**予約を残す**（再押下は窓口で吸収する）。`/policy` の確認ボタンは入れ替え案の適用へ進む。
+    //   - 別の版で確定済み・未確定 → 確定していないと返し、予約を解放する。押し直しても報告書サービスの版番号つき冪等（層 2）が
+    //     二重の確定を防ぐ（先の要求が後から確定していれば、押し直しは「この版で確定されています」になる）。
+    //   - 照会も失敗（旧版の報告書サービスで項目が無い場合を含む）→ 従来の「結果は不明」に確認の案内を添え、予約を解放する（層 2 が守る）。
+    private async Task<ReportCommandResult> ResolveUnknownConfirmAsync(
+        string periodKey, int version, string actor, ReportConfirmResult timedOut, CancellationToken cancellationToken)
+    {
+        var review = await controller.GetReviewAsync(periodKey, cancellationToken).ConfigureAwait(false);
+        var latest = review.Succeeded ? review.LatestConfirmedVersion : null;
+        if (latest == version + 1)
+        {
+            logger.LogWarning(
+                "報告書の確定の応答が時間切れでしたが、照会でこの版での確定を確かめました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}）。",
+                actor, periodKey, version);
+            return ReportCommandResult.Confirmed(ConfirmedAfterTimeoutMessage(periodKey, version));
+        }
+
+        guard.Release(periodKey, version);
+
+        // 別の版で確定済み: 行のいまの版が確定版（最新の確定版 == いまの版）か、押した版より後の版で確定されている。
+        if (latest is { } other && (other > version + 1 || other == review.Version))
+        {
+            logger.LogWarning(
+                "報告書の確定が時間切れになり、照会では別の版で確定済みでした。版番号の予約を解放しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}・確定後の版={Latest}）。",
+                actor, periodKey, version, other);
+            return ReportCommandResult.Failed(
+                $"報告書 {periodKey} は既に別の版で確定済みです（確定後の版 {other}）。版 {version} は確定していません。");
+        }
+
+        // 未確定: 行がまだ押した版のまま（確定すれば版は 1 進む）か、確定版の項目を読めたうえでこの版の確定が無い。
+        // 🔴 項目が無く（旧版の報告書サービス）行の版が進んでいるときは、確定か改訂かを見分けられないので「未確定」と言わない（下へ）。
+        if (review.Succeeded && (review.Version == version || latest is not null))
+        {
+            logger.LogWarning(
+                "報告書の確定が時間切れになり、照会の時点で未確定でした。版番号の予約を解放しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}）。",
+                actor, periodKey, version);
+            return ReportCommandResult.Failed(NotConfirmedAfterTimeoutMessage(periodKey, version));
+        }
+
+        logger.LogWarning(
+            "報告書の確定が時間切れになり、確定の状態も確かめられませんでした。版番号の予約を解放しました（Actor={Actor}・PeriodKey={PeriodKey}・版={Version}）。",
+            actor, periodKey, version);
+        return ReportCommandResult.Failed(UnknownAfterTimeoutMessage(timedOut.Message, periodKey));
+    }
+
+    internal static string ConfirmedAfterTimeoutMessage(string periodKey, int version) =>
+        $"報告書 {periodKey}（版 {version}）を確定しました（確定の応答が時間切れになったため、確定の状態を照会して確かめました）。";
+
+    internal static string NotConfirmedAfterTimeoutMessage(string periodKey, int version) =>
+        $"報告書 {periodKey}（版 {version}）は確定できていません（確定の応答が時間切れになり、照会の時点で未確定でした）。"
+        + $"`/report show {periodKey}` で最新の版を確認して、もう一度確定してください（二重には確定されません）。";
+
+    internal static string UnknownAfterTimeoutMessage(string timedOutMessage, string periodKey) =>
+        $"{timedOutMessage}。確定の状態も照会できませんでした。`/report show {periodKey}` で確認してください"
+        + "（押し直しても二重には確定されません）。";
 
     // FR-06, FR-14, UC-03〜05, 計画 ADR-0052 決定 1・4, #1156, IADR-0491 決定 1: 作り直し。**所有者の門は閂1（多層認証）と報告書サービスの
     // OwnerOnly（owner マップ機密クライアント・代理の利用者は onBehalfOf）の 2 段**である。版番号ガードは掛けない（確定ではない。

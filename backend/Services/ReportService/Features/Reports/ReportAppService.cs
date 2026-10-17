@@ -78,7 +78,9 @@ public sealed class ReportAppService(
         return new ReportReviewView(
             review.PeriodKey, review.State, review.Version, ReportInputs.Labels(unsupplied),
             confirmedBefore?.Version,
-            confirmedBefore is not null && !EffectiveDailyReport.IsEffective(store, periodKey));
+            confirmedBefore is not null && !EffectiveDailyReport.IsEffective(store, periodKey),
+            // FR-07, FR-14, #1385, IADR-0556 決定 3: 行が確定済みならその版（最新の確定版）。下書きなら同じ期間キーの最新の確定版。
+            row?.Report.State == ReportState.Confirmed ? row.Version : store.GetLatestConfirmedVersion(periodKey)?.Version);
     }
 
     /// <summary>

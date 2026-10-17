@@ -545,6 +545,8 @@ services:
       # 宣言があれば上の BaseUrl より優先する。メタデータのトークンは REST と同じ Notifications__Discord__OwnerAuth__*（ボットの機密クライアント。
       # 呼び先の gRPC 面は Auth__GrpcOwnerClients__0 で azp を確かめる）。deadline は <上記>__GrpcTimeoutSeconds（既定 5 / 5 / 10 秒）、
       # 方針の改訂と適用の内訳の記録は Reports__GrpcPolicyRevisionTimeoutSeconds（既定 120 秒＝REST と同値。これも既定では置かない）。
+      # 報告書の確定は Reports__GrpcConfirmTimeoutSeconds（既定 30 秒＝REST の確定専用クライアントと同値。これも既定では置かない）。
+      # 🔴 確定の上限は、報告書サービスの KB の後処理の時間予算 Reports__Confirm__KnowledgeBudgetSeconds（既定 20 秒）＋余白より長く置く（片方だけを変えない）。
   order-execution:
     image: ai-stock-trading/order-execution-service
     db: order_execution_svc

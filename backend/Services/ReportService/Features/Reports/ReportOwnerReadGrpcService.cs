@@ -96,6 +96,9 @@ public static class ReportOwnerReadWireMapping
             response.ConfirmedVersion = confirmed;
         if (review.NoLongerEffective)
             response.NoLongerEffective = true;
+        // #1385, IADR-0556 決定 3: 確定版が無ければ載せない（C# の null は設定しない）。
+        if (review.LatestConfirmedVersion is { } latest)
+            response.LatestConfirmedVersion = latest;
         return response;
     }
 

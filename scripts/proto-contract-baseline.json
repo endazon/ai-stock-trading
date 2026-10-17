@@ -722,6 +722,11 @@
               "type": "int32",
               "label": "optional"
             },
+            "latest_confirmed_version": {
+              "number": 5,
+              "type": "int32",
+              "label": "optional"
+            },
             "no_longer_effective": {
               "number": 4,
               "type": "bool",

@@ -65,7 +65,8 @@ public class GrpcBotWritesTests
         new(Channel(host), timeout ?? TimeSpan.FromSeconds(5), attempts, NullLogger<RiskManagementGrpcTransport>.Instance);
 
     private static ReportsGrpcTransport Reports(BotReadGrpcStubHost host, TimeSpan? timeout = null, int attempts = 1) =>
-        new(Channel(host), timeout ?? TimeSpan.FromSeconds(5), attempts, NullLogger<ReportsGrpcTransport>.Instance, timeout);
+        new(Channel(host), timeout ?? TimeSpan.FromSeconds(5), attempts, NullLogger<ReportsGrpcTransport>.Instance, timeout,
+            confirmTimeout: timeout);
 
     private static MarketMonitorGrpcTransport Monitor(BotReadGrpcStubHost host, TimeSpan? timeout = null, int attempts = 1) =>
         new(Channel(host), timeout ?? TimeSpan.FromSeconds(5), attempts, NullLogger<MarketMonitorGrpcTransport>.Instance);
@@ -419,7 +420,8 @@ public class GrpcBotWritesTests
         transition.Message.Should().Be(HttpStageGateController.TransitionTimedOutMessage);
         withdrawal.Message.Should().Be(HttpStageGateController.WithdrawalTimedOutMessage);
         adopt.Message.Should().Be(HttpPositionDriftAdoptionController.TimedOutMessage);
-        confirm.Should().Be(new ReportConfirmResult(false, false, "報告書の確定がタイムアウトしました（結果は不明です）"));
+        // #1385, IADR-0556 決定 3: 確定の時間切れは「確定されたか分からない」の印つき（ハンドラが照会して確かめる）。
+        confirm.Should().Be(new ReportConfirmResult(false, false, "報告書の確定がタイムアウトしました（結果は不明です）", OutcomeUnknown: true));
         changes.Should().Be(new ReportReviewResult(false, 0, "報告書の差し戻しがタイムアウトしました（結果は不明です）"));
         (revise.Succeeded, revise.Indeterminate, revise.Message).Should().Be((false, true, HttpPolicyRevisionController.RevisionUnknownMessage));
         (apply.Status, apply.Message).Should().Be((WatchlistApplyStatus.Indeterminate, HttpMarketMonitorWatchlistController.ApplyUnknownMessage));
