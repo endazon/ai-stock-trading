@@ -181,16 +181,34 @@ public class HttpLlmCompletionClientTests
         text.Should().NotContain("Hold");
     }
 
-    // 応答にトークンが無い（欠落）場合は 0 として扱う。
+    // 応答にトークンが無い（欠落）場合、出力は 0 として扱い、入力は「取れない」（null）のまま計測へ渡す。
     // #303, IADR-0122: モデル名も欠落し得る（上流未更新・部分写像）。null のまま渡し、単価解決側で安全側へ倒す。
+    // 🔴 NFR-13, ADR-0064 決定4, #1306, IADR-0550（受け入れ基準 1・6）: 入力を 0 へ潰すと 2 段の単価の安い側で引かれる。
     [Fact]
-    public async Task 応答にトークンが無い場合は_0_として計測する()
+    public async Task 応答にトークンが無い場合は入力を取れないまま計測する()
     {
         var reporter = new RecordingReporter();
         // モデル名も欠落させる（本試験の主題）。#335 の割当検証は計測より後段のため、計測の表明はそのまま成立する。
         await Client(new StubHandler(HttpStatusCode.OK, """{"text":"{}","sent":true}"""), reporter).CompleteAsync("p");
 
-        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, 0, 0, null));
+        reporter.Last.Should().Be(new LlmUsage(LlmPurposes.TradeDecision, null, 0, null));
+    }
+
+    // 受け入れ基準 2・6（#1306, IADR-0550）: 入力トークン数の 0 も「取れない」（送った要求の入力が 0 になることは無い）。
+    // 取れている値はそのまま渡す。
+    [Theory]
+    [InlineData(0, null)]
+    [InlineData(100_000, 100_000)]
+    [InlineData(100_001, 100_001)]
+    public async Task 入力トークン数の_0_は取れないとして計測へ渡す(int reported, int? expected)
+    {
+        var reporter = new RecordingReporter();
+        await Client(new StubHandler(HttpStatusCode.OK,
+            $$"""{"text":"{}","sent":true,"model":"claude-haiku-5-5","inputTokens":{{reported}},"outputTokens":7}"""), reporter)
+            .CompleteAsync("p");
+
+        reporter.Last!.Value.InputTokens.Should().Be(expected);
+        reporter.Last!.Value.OutputTokens.Should().Be(7);
     }
 
     // ADR-0010（platform LLM ゲートウェイの越境ルーティング）: 要求に prompt/model/confidentiality/purpose を載せる。

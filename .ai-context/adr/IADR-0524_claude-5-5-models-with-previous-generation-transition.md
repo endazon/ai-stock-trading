@@ -5,7 +5,7 @@ status: Accepted
 related_ids: [FR-04, FR-06, FR-15, FR-20, NFR, ADR-0011, ADR-0014, ADR-0015, ADR-0017, ADR-0033, ADR-0037, ADR-0054, IADR-0122, IADR-0215, IADR-0313, IADR-0498]
 author: claude (Claude Code)
 created: 2026-10-10
-updated: 2026-10-11
+updated: 2026-10-17
 plan_refs:
   - planning#783（利用者裁定 2026-10-10）
   - planning:projects/ai-stock-trading/07_adr/ADR-0014（§決定1・§決定3）
@@ -126,3 +126,9 @@ related_specs:
   CI の `helm.yml` は旧世代の単価行が描画されないことを検査する。
 - 結果・影響の 1 行目（「MSP の切り替え前後どちらでも止まらない」）は成り立たなくなった。配備の順序がずれた間は取引判断が割当不一致で見送られる
   （発注しない側へ倒れる。ADR-0064 決定 8 で利用者が受容した）。
+
+## ［2026-10-17 追記 / #1306］決定 4: 入力トークン数が取れない要求は第 2 段で引く
+
+- 計画 ADR-0064 決定 4（合計が取れないときは高い側へ倒す）を受け、`Resolve(model, inputTokens)` の入力トークン数を `int?` にし、**null（取れない）は第 2 段**で引く。
+  輸送の出口で欠落と 0 以下を null と読み、egress は 0 へ潰さずに計測へ渡す。金額の式の入力トークン数は 0 のまま。詳細は [IADR-0550](IADR-0550_haiku-tier-unknown-input-tokens-high-side.md)。
+- 決定 4 の他の項（閾値を**超える**と第 2 段・第 2 段の誤設定の行は表に載せない・未知モデルの最大に第 2 段を含める）は変えない。

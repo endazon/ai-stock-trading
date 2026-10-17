@@ -100,7 +100,8 @@ public sealed class LlmReportPolicyReviser(
             {
                 await usageReporter
                     .ReportAsync(
-                        new LlmUsage(LlmPurposes.PolicyRevision, dto.InputTokens ?? 0, dto.OutputTokens ?? 0, dto.Model),
+                        // NFR-13, ADR-0064 決定4, #1306, IADR-0550: 入力トークン数は 0 へ潰さない（取れない＝null は高い側の段で引く）。
+                        new LlmUsage(LlmPurposes.PolicyRevision, dto.InputTokens, dto.OutputTokens ?? 0, dto.Model),
                         timeoutCts.Token)
                     .ConfigureAwait(false);
             }

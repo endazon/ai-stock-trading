@@ -265,4 +265,44 @@ public class LlmPriceTableTests
 
         LlmPricing.Compute(120_000, 1_000, price).Should().Be((120m * 0.0819m) + (1m * 0.409m));
     }
+
+    // ---- 入力トークン数が取れない要求（NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550）----
+
+    // 🔴 受け入れ基準 1・2: 取れない（null）要求は第 2 段（高い側）で引く。0 と読むと第 1 段＝過小計上（IADR-0122 の危険側）。
+    [Fact]
+    public void 入力トークン数が取れない要求は第2段の単価で引く() =>
+        TieredTable().Resolve("claude-haiku-5-5", inputTokens: null).Should().Be(new LlmPrice(0.0819m, 0.409m));
+
+    // 受け入れ基準 3: 取れている要求は従来どおり（100,000 ちょうどは第 1 段・100,001 は第 2 段）。取れない要求と並べて固定する。
+    [Theory]
+    [InlineData(100_000, 0.0164, 0.0819)]
+    [InlineData(100_001, 0.0819, 0.409)]
+    public void 取れている要求は従来どおり閾値で引き分ける(int inputTokens, double input, double output) =>
+        TieredTable().Resolve("claude-haiku-5-5", (int?)inputTokens).Should().Be(new LlmPrice((decimal)input, (decimal)output));
+
+    // 受け入れ基準 4: 第 2 段を持たない行・未知モデル・表が空のときは、取れなくても単価は従来と変わらない（段の選択だけを変える）。
+    [Fact]
+    public void 第2段の無い行と未知モデルと空の表は取れなくても従来どおり()
+    {
+        TieredTable().Resolve("claude-sonnet-5-5", inputTokens: null).Should().Be(new LlmPrice(0.327m, 1.637m));
+        TieredTable().Resolve("claude-haiku-4-5", inputTokens: null).Should().Be(new LlmPrice(0.655m, 3.274m));
+        TieredTable().Resolve(null, inputTokens: null).Should().Be(new LlmPrice(0.655m, 3.274m));
+        LlmPriceTable.From([], "0.819", "4.093").Resolve("claude-haiku-5-5", inputTokens: null)
+            .Should().Be(new LlmPrice(0.819m, 4.093m));
+    }
+
+    // 🔴 注意（#1306）: 金額の式の入力トークン数は 0 のまま（推定しない）。変わるのは出力の単価が第 2 段になることだけ。
+    [Fact]
+    public void 取れない要求の費用は入力を足さず出力を第2段の単価で計算する()
+    {
+        var price = TieredTable().Resolve("claude-haiku-5-5", inputTokens: null);
+
+        LlmPricing.Compute(0, 1_000, price).Should().Be(0.409m);
+    }
+
+    // 受け入れ基準 6（形の固定）: 段の判定は「取れない」を表せる型で受ける。int へ戻すと呼び出し側が 0 へ潰すしかなくなる。
+    [Fact]
+    public void 段の判定は取れないを表せる型で入力トークン数を受ける() =>
+        typeof(LlmPriceTable).GetMethod(nameof(LlmPriceTable.Resolve))!.GetParameters()[1].ParameterType
+            .Should().Be(typeof(int?));
 }

@@ -67,9 +67,28 @@ public sealed record LlmCompletionCall(
 /// 未報告・未知の値は <c>null</c>（読み取りで例外にしない）。
 /// </param>
 /// <param name="UpstreamStatusCode">#1267, IADR-0517: 上流（LLM 提供側）の HTTP 状態コード。未報告は <c>null</c>。</param>
+/// <param name="InputTokens">
+/// NFR-13, ADR-0064 決定4, #1306, IADR-0550: その要求の入力トークン数。**取れないときは <c>null</c>**
+/// （輸送は <see cref="LlmReportedInputTokens.From"/> を通して詰める）。単価の段は取れないとき高い側で引く。
+/// </param>
 public sealed record LlmCompletionPayload(
     string? Text, bool Sent, string? Model, string? StopReason, int? InputTokens, int? OutputTokens,
     string? RoutingReason = null, LlmGatewayUnsentKind? FailureKind = null, int? UpstreamStatusCode = null);
+
+/// <summary>
+/// NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550: ゲートウェイが申告した入力トークン数の読み方（REST と gRPC で同じ）。
+/// 欠落（REST の null）と 0 以下は「取れない」＝ <c>null</c>。
+/// </summary>
+/// <remarks>
+/// proto3 の <c>int32</c> は「無い」と 0 を区別できず、基盤の REST（<c>CompletionApiResponse.InputTokens</c> は <c>int</c>）も
+/// 使用量を受け取れなかった応答では 0 を返す。**送った要求の入力が 0 トークンになることは無い**ので、0 は取れないと読む。
+/// 0 のまま渡すと 2 段の単価の安い側（第 1 段）で引かれ、過小計上になる（IADR-0122 の危険側）。
+/// </remarks>
+public static class LlmReportedInputTokens
+{
+    /// <summary>申告値を「取れた入力トークン数」か <c>null</c>（取れない）へ写す。</summary>
+    public static int? From(int? reported) => reported is > 0 ? reported : null;
+}
 
 /// <summary>輸送の結果の種別。**打ち切り・伝送の例外はここに無い**（例外として呼び出し元へ上がる）。</summary>
 public enum LlmTransportOutcome

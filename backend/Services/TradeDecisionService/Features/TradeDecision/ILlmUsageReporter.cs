@@ -16,4 +16,6 @@ public interface ILlmUsageReporter
 // 二段判断は層ごとに用途が分かれる（一次=trade-decision-screening／二次=trade-decision）ため、
 // 計上側の purpose を**アダプタの構築時に固定すると層が混ざる**。省略可にすると載せ忘れが静かに通るので、
 // 位置引数の先頭に置いて**書かなければコンパイルが通らない**形にする（報告書側 ILlmUsageReporter と同型）。
-public readonly record struct LlmUsage(string Purpose, int InputTokens, int OutputTokens, string? Model = null);
+// NFR-13, FR-04, ADR-0064 決定4, #1306, IADR-0550: InputTokens の null は**取れない**（REST の欠落・gRPC の 0）。
+// 0 へ潰さずに渡す —— 単価の段（LlmPriceTable.Resolve）は取れないとき高い側で引く。金額の式へは 0 を渡す（推定しない）。
+public readonly record struct LlmUsage(string Purpose, int? InputTokens, int OutputTokens, string? Model = null);

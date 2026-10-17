@@ -56,7 +56,8 @@ public sealed class RestLlmCompletionTransport(HttpClient httpClient) : ILlmComp
         return dto is null
             ? LlmCompletionExchange.Malformed()
             : LlmCompletionExchange.Completed(new LlmCompletionPayload(
-                dto.Text, dto.Sent, dto.Model, dto.StopReason, dto.InputTokens, dto.OutputTokens,
+                // NFR-13, #1306, IADR-0550: 入力トークン数の欠落・0 は「取れない」（null）。gRPC と同じ読み方を通す。
+                dto.Text, dto.Sent, dto.Model, dto.StopReason, LlmReportedInputTokens.From(dto.InputTokens), dto.OutputTokens,
                 // FR-04, FR-11, #1267, IADR-0517: Sent=false の原因をゲートウェイの申告のまま運ぶ。
                 // 原因の種類 `failureKind`（文字列 "egress_denied" / "provider_missing" / "upstream_error"）と上流の状態コード
                 // `upstreamStatusCode` は MSP#1819（MSP#1824）が足す任意のフィールド。JsonElement で受けて寛容に読む
