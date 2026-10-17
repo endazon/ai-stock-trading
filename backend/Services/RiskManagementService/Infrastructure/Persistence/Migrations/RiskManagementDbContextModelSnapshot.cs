@@ -49,6 +49,13 @@ namespace RiskManagementService.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("EntryCondition")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<decimal?>("EntryReferencePrice")
+                        .HasColumnType("numeric");
+
                     b.Property<decimal?>("FxRateBaseToDisplay")
                         .HasColumnType("numeric");
 

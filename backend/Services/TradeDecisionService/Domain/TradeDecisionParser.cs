@@ -88,8 +88,10 @@ public static class TradeDecisionParser
 
         // FR-17, IADR-0076: 想定利益（任意）。欠損は 0、負値は 0 に正規化する（保守側＝採算ゲート有効時は Hold に倒れる）。
         var expectedProfit = dto.ExpectedProfitPerShare is > 0m ? dto.ExpectedProfitPerShare.Value : 0m;
+        // FR-04, FR-10, #1384, IADR-0557 決定 3: 建てた条件の記号と基準価格（任意・生の値）。欠落・型違いは null のまま通す（見送りにしない）。
         return ParsedTradeDecision.Ok(new LlmDecision(
-            action, dto.Rationale ?? string.Empty, dto.ReferencePrice.Value, stopLossDistance, expectedProfit));
+            action, dto.Rationale ?? string.Empty, dto.ReferencePrice.Value, stopLossDistance, expectedProfit,
+            dto.EntryCondition, dto.EntryReferencePrice));
     }
 
     // #290, #1187: 値の不変量違反。解析できた action を失敗に載せる（ログで「どの売買が捨てられたか」を推定に頼らず読む）。
@@ -179,7 +181,9 @@ public static class TradeDecisionParser
             ReadString(root, "rationale"),
             ReadDecimal(root, "referencePrice"),
             ReadDecimal(root, "stopLossDistancePerShare"),
-            ReadDecimal(root, "expectedProfitPerShare"));
+            ReadDecimal(root, "expectedProfitPerShare"),
+            ReadString(root, "entryCondition"),
+            ReadDecimal(root, "entryReferencePrice"));
     }
 
     private static bool TryGet(JsonElement obj, string name, out JsonElement value)
@@ -327,7 +331,10 @@ public static class TradeDecisionParser
         string? Rationale,
         decimal? ReferencePrice,
         decimal? StopLossDistancePerShare,
-        decimal? ExpectedProfitPerShare);
+        decimal? ExpectedProfitPerShare,
+        // #1384, IADR-0557 決定 3: 任意。新規建ての判断が建てた条件の記号と基準価格（未検証）。
+        string? EntryCondition,
+        decimal? EntryReferencePrice);
 }
 
 /// <summary>

@@ -174,6 +174,8 @@ public class HeldExitAlwaysJudgedInPromptTests
         var exactBudget = 750 + policy.Summary.Length + TradeDecisionPromptBuilder.WatchlistSection(trigger, null).Length
             + 400 + ScreeningContextAssembler.PriceContextReserveChars + ScreeningContextAssembler.NewsStatusReserveChars
             + ScreeningContextAssembler.HeldExitRuleReserveChars
+            // #1384, IADR-0557 決定 7: 建てた条件の要約の行の予約も銘柄ごとの保護分に入る。
+            + ScreeningContextAssembler.HeldEntryBasisReserveChars
             + ("記事".Length + 100 + 60)
             // #1359, IADR-0542 決定 5: 境界語はプロンプト側で足すため、見積りに 1 件あたりの境界語の文字数が加わる（残す 1 件ぶん同幅ずらす）。
             + TradeDecisionPromptBuilder.ReferenceBoundaryChars;

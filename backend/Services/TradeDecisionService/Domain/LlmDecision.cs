@@ -14,12 +14,17 @@ public enum TradeAction
 // Hold の場合は価格・損切り幅・想定利益は用いない。
 // FR-04, FR-10, #1187: 保有を決済する売買（ロング保有中の Sell・ショート保有中の Buy）の損切り幅は任意で、未供給・不正なら 0
 // （未使用の印）。決済は損切り幅を読まず、新規建ての経路は 0 以下を不正として落とす（TradeDecisionAppService の再検証）。
+// FR-04, FR-10, #1384, IADR-0557 決定 3: EntryConditionAnswer・EntryReferencePriceAnswer は新規建ての判断が答えた「成立した条件の記号」と
+// 「その条件の判定に使った価格」の**生の値（未検証）**。欠落・型違いは null。🔴 解析の成否・見送りには一切効かせない —— 検証（方針の条件集合・
+// 当日の価格の範囲）は判断サービスの新規建ての経路（EntryBasisValidator）が 1 回だけ行い、通らなければ「不明」として記録する。
 public record LlmDecision(
     TradeAction Action,
     string Rationale,
     decimal ReferencePrice,
     decimal StopLossDistancePerShare,
-    decimal ExpectedProfitPerShare = 0m)
+    decimal ExpectedProfitPerShare = 0m,
+    string? EntryConditionAnswer = null,
+    decimal? EntryReferencePriceAnswer = null)
 {
     // 安全既定: 取引しない（Hold）。解析不能・不正出力はこれに倒す。
     public static readonly LlmDecision Hold = new(TradeAction.Hold, "解析不能または見送り", 0m, 0m);

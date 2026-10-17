@@ -62,7 +62,13 @@ public static class ScreeningContextAssembler
     // 見積りは保有の有無を知らないため無条件に予約する（過大に見積もるほど安全側）。行の長さが予約を超えないことを試験で固定する。
     public const int HeldExitRuleReserveChars = 150;
 
-    private const int PerSymbolLineChars = 400 + PriceContextReserveChars + NewsStatusReserveChars + HeldExitRuleReserveChars;
+    // FR-04, FR-10, #1384, IADR-0557 決定 7: 建てた条件の要約の行と、不明があるときの既定の出口の固定文（TradeDecisionPromptBuilder の
+    // AppendEntryBasisSummary。保有ありのときだけ出る）は**保護分**である（削ると、条件ごとの出口に達した建玉を一次が落とす）。
+    // 並べるロットは ScreeningMaxLots まで。見積りは保有の有無を知らないため無条件に予約する。最悪長が予約を超えないことを試験で固定する。
+    public const int HeldEntryBasisReserveChars = 450;
+
+    private const int PerSymbolLineChars =
+        400 + PriceContextReserveChars + NewsStatusReserveChars + HeldExitRuleReserveChars + HeldEntryBasisReserveChars;
 
     // 参考情報 1 件の JSON 化オーバーヘッド（キー名・引用符・フェンス）の概算。
     private const int PerReferenceOverheadChars = 60;

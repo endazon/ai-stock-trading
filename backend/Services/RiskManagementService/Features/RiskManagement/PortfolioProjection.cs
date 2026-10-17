@@ -297,6 +297,8 @@ public static class PortfolioProjection
             {
                 // 🔴 ロットが無い（≠ 0 の建玉に対して起こらないはずの状態）も「不明」に倒す。無いと読むと近似も入らない。
                 StopLossUnknown = held.Count == 0 || held.Any(l => l.StopLossPrice is null),
+                // FR-04, FR-10, #1384, IADR-0557 決定 5: 保有中のロット（古い順）。同じ判断の分割約定は 1 つに畳む。
+                Lots = ToOpenPositionLots(held),
             });
         }
 
@@ -321,13 +323,39 @@ public static class PortfolioProjection
         return best;
     }
 
+    // FR-04, FR-10, #1384, IADR-0557 決定 5: 公開するロットの列。隣り合う同じ判断（分割約定）は数量を足して 1 つにする
+    // （相関できないロット＝Guid.Empty は畳まない。別々の行が同じ判断だとは言えない）。
+    private static IReadOnlyList<OpenPositionLot> ToOpenPositionLots(List<StopLossLot> held)
+    {
+        var result = new List<OpenPositionLot>(held.Count);
+        foreach (var lot in held)
+        {
+            if (result.Count > 0 && lot.DecisionId != Guid.Empty && result[^1].DecisionId == lot.DecisionId)
+            {
+                result[^1] = result[^1] with { Quantity = result[^1].Quantity + lot.Quantity };
+                continue;
+            }
+
+            result.Add(new OpenPositionLot(lot.DecisionId, lot.Quantity, lot.OrderedAt, lot.EntryCondition, lot.EntryReferencePrice));
+        }
+
+        return result;
+    }
+
     // #936, IADR-0393: 保有中の建玉を構成するエントリー 1 件ぶん（数量・その約定の損切り価格。null＝記録なし）。
     // OrderedAt・DecisionId はロットの並び（発注の順）の鍵である（2026-09-25 追記）。
-    private sealed class StopLossLot(int quantity, decimal? stopLossPrice, DateTimeOffset orderedAt, Guid decisionId)
+    // FR-04, FR-10, #1384, IADR-0557 決定 5: 建てた条件の記号と基準価格も同じロットに持つ（ロットの削り方は損切りラインと同じ）。
+    private sealed class StopLossLot(
+        int quantity, decimal? stopLossPrice, DateTimeOffset orderedAt, Guid decisionId,
+        string? entryCondition, decimal? entryReferencePrice)
     {
         public int Quantity { get; set; } = quantity;
 
         public decimal? StopLossPrice { get; } = stopLossPrice;
+
+        public string? EntryCondition { get; } = entryCondition;
+
+        public decimal? EntryReferencePrice { get; } = entryReferencePrice;
 
         public DateTimeOffset OrderedAt { get; } = orderedAt;
 
@@ -357,7 +385,8 @@ public static class PortfolioProjection
         if (previousQuantity == 0 || Math.Sign(previousQuantity) != Math.Sign(newQuantity))
         {
             // 新規・反転: 残りはこの約定だけのロットである（反転前の建玉のラインは引き継がない）。
-            lots[key] = [new StopLossLot(Math.Abs(newQuantity), fill.StopLossPrice, orderedAt, fill.DecisionId)];
+            lots[key] = [new StopLossLot(
+                Math.Abs(newQuantity), fill.StopLossPrice, orderedAt, fill.DecisionId, fill.EntryCondition, fill.EntryReferencePrice)];
             return;
         }
 
@@ -366,7 +395,8 @@ public static class PortfolioProjection
         {
             // 建て増し: 発注の順の位置へ差し込む（後から約定した先の発注は、先に約定した後の発注より前に入る）。
             // 同じ鍵（同じ承認の分割約定）は後ろへ付ける。
-            var lot = new StopLossLot(fill.Quantity, fill.StopLossPrice, orderedAt, fill.DecisionId);
+            var lot = new StopLossLot(
+                fill.Quantity, fill.StopLossPrice, orderedAt, fill.DecisionId, fill.EntryCondition, fill.EntryReferencePrice);
             var index = held.Count;
             while (index > 0 && held[index - 1].IsOrderedAfter(lot))
                 index--;

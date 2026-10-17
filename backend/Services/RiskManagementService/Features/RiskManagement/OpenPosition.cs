@@ -26,4 +26,23 @@ public sealed record OpenPosition(
     /// 損切り価格そのものを持たせない＝<see cref="StopLossPrice"/> も null）。
     /// </summary>
     public bool StopLossUnknown { get; init; }
+
+    /// <summary>
+    /// FR-04, FR-10, #1384, IADR-0557 決定 5: 保有中のエントリー（ロット）を<b>発注の順（古い順）</b>に並べたもの。
+    /// 各ロットは建てた判断（DecisionId）・残数量・承認時刻・建てた条件の記号と基準価格を持つ（記録の無いロットは条件・価格が null）。
+    /// 同じ判断の分割約定は 1 つに畳む。<c>ProjectOpenPositions</c> だけが設定する（<c>Project</c> は統制の判定入力であり持たない＝空）。
+    /// </summary>
+    public IReadOnlyList<OpenPositionLot> Lots { get; init; } = [];
 }
+
+/// <summary>
+/// FR-04, FR-10, #1384, IADR-0557 決定 5: 保有中のエントリー（ロット）1 件。<paramref name="DecisionId"/> は建てた判断
+/// （<c>Guid.Empty</c>＝相関できない行・乖離の取り込みで生じたロット）。<paramref name="OrderedAt"/> は承認時刻（分からなければ約定時刻）。
+/// <paramref name="EntryCondition"/>・<paramref name="EntryReferencePrice"/> は建てた条件の記号と基準価格（null＝記録なし・不明）。
+/// </summary>
+public sealed record OpenPositionLot(
+    Guid DecisionId,
+    int Quantity,
+    DateTimeOffset OrderedAt,
+    string? EntryCondition,
+    decimal? EntryReferencePrice);

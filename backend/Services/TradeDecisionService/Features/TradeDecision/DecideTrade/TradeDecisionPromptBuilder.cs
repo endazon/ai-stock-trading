@@ -116,6 +116,42 @@ public static class TradeDecisionPromptBuilder
     public const string OutputNumbersForCloseRule =
         "保有中の建玉を手仕舞う売買（ロング保有中の Sell・ショート保有中の Buy）では stopLossDistancePerShare を null にしてよい（決済は保有全量で、損切り幅を使わない）。referencePrice は数値を入れる。";
 
+    // 🔴 FR-04, FR-10, FR-11, #1384, IADR-0557 決定 3: 本判断の出力の項目「建てた条件の記号」「基準価格」と、その入れ方。
+    // 新規建て（買い増し・売り増しを含む）の判断が答え、システムが方針の「条件 X:」行と当日の価格で確かめてから建玉ごとに記録し、保有中の判断へ渡す。
+    // 🔴 答えない・確かめられない値は「不明」として記録するだけで、見送りにはしない（解釈 TradeDecisionParser・検証 EntryBasisValidator）。
+    // テストがこれらの const を直接参照する。
+    public const string EntryBasisOutputFields = "\"entryCondition\":\"成立した条件の記号\",\"entryReferencePrice\":基準価格";
+
+    public const string OutputEntryBasisRule =
+        "新規建ての Buy/Sell（買い増し・売り増しを含む）では、方針の「条件 X:」行のうち成立した条件の記号（英大文字 1 字）を entryCondition に、"
+        + "その条件の判定に使った価格（例: 日中安値からの反発の条件なら日中安値、前日終値からの変化率の条件なら前日終値）を entryReferencePrice に入れる。"
+        + "システムは建てた建玉ごとにこれを記録し、保有中の判断へ渡す。方針に「条件 X:」行が無いとき・決済・Hold では両方を null にする。";
+
+    // 🔴 FR-04, FR-10, ADR-0003, #1384, IADR-0557 決定 7: 保有中の建玉を**建てた判断の記録**（ロットごとの条件の記号と基準価格）の文言。
+    // 実測（PoC 2026-10-17）: 方針に「条件 B で建てた建玉は B の判定に使った日中安値を割ったら撤退」を書こうとしたが、判断は保有を
+    // どの条件で建てたかを知らず（数量・平均取得単価・含み損益・損切りライン・保護だけ）、当日の安値でも代われない（割れた価格が新しい安値になる）。
+    // 🔴 記録の無いロット（旧い建玉・取り込み・手動）・供給なしは「不明」と書き、方針の既定の出口で扱わせる（条件ごとの出口を当てはめない）。
+    // 「−1.5%」のような方針の値は固定文に書かない（方針が変われば固定文が方針と食い違う）。方針の本文の既定の出口を指す。
+    // 建て増しで混ざるときは各ロットを列挙する（加重平均・直近だけは採らない。記号は平均できず、直近だけでは先のロットの出口が消える）。
+    // テストがこれらの const を直接参照する（IADR-0297 決定1 と同じ規律）。
+    public const string EntryBasisLotsLead = "建てた判断の記録（ロットごと・古い順。条件は方針の「条件 X:」行の記号、基準価格はその条件の判定に使った価格）";
+
+    public const string EntryBasisUnknownText = "不明（記録なし）";
+
+    public const string EntryBasisUnsuppliedLine = "建てた条件: 不明（建玉ごとの記録を取得できませんでした）";
+
+    public const string EntryBasisByLotRule =
+        "方針が建てた条件ごとに出口（撤退・利確）を定めているときは、上の建てた判断の記録（条件の記号と基準価格）に従ってロットごとに当てはめます。";
+
+    public const string EntryBasisUnknownRule =
+        "建てた条件が不明のロットは、方針の既定の出口（建てた条件を限定しない出口の基準）で扱います。建てた条件ごとの出口は当てはめません。";
+
+    public const string EntryBasisMixedRule =
+        "建て増しで建てた条件の異なるロットが混ざっています。ロットごとに出口を当てはめ、いずれかのロットが出口の基準に達したら手仕舞いを検討します（手仕舞いは保有の全量です）。";
+
+    // 一次（短縮版）でロットを並べる上限（縮退の保護分 ScreeningContextAssembler.HeldEntryBasisReserveChars に収める）。超えた分は件数だけ書く。
+    public const int ScreeningMaxLots = 5;
+
     // 🔴 FR-10, FR-04, ADR-0003, #1130, IADR-0471 決定 2: 保有中の銘柄で、リスク管理の新規建ての可否の口（審査と同じ述語）が
     // 保有の方向の新規建て（買い増し・売り増し）を必ず拒否すると答えたときの文言。実測（2026-09-30 MSFT）: 保有中の銘柄で LLM が
     // 買い増しを提案し、審査が MaxPositionsExceeded で拒否した（費用・拒否の通知・根拠文の食い違い）。選択肢を Hold と手仕舞いに絞る。
@@ -383,12 +419,14 @@ public static class TradeDecisionPromptBuilder
         }
 
         sb.AppendLine("# 出力形式（JSON のみ）");
+        // FR-04, FR-10, #1384, IADR-0557 決定 3: 建てた条件の記号と基準価格（新規建てだけ・任意）を出力の項目に足す。
         sb.AppendLine(includeProfitability
-            ? "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅,\"expectedProfitPerShare\":想定利益}"
-            : "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅}");
+            ? "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅,\"expectedProfitPerShare\":想定利益," + EntryBasisOutputFields + "}"
+            : "{\"action\":\"Buy|Sell|Hold\",\"rationale\":\"判断根拠\",\"referencePrice\":参照価格,\"stopLossDistancePerShare\":損切り幅," + EntryBasisOutputFields + "}");
         // FR-04, FR-10, #1187: 新規建て（損切り幅は必須）と決済（損切り幅は任意）で数値の要求を分ける。
         sb.AppendLine(OutputNumbersForEntryRule);
         sb.AppendLine(OutputNumbersForCloseRule);
+        sb.AppendLine(OutputEntryBasisRule);
         return sb.ToString();
     }
 
@@ -731,6 +769,8 @@ public static class TradeDecisionPromptBuilder
         // 比べられない（読める「利確:」行が無い・値が不明・通貨や向きの合わない価格の条件）なら何も足さない＝従来どおり。
         if (takeProfit is { } takeProfitStatus)
             sb.AppendLine($"- {takeProfitStatus.Line}");
+        // FR-04, FR-10, #1384, IADR-0557 決定 7: 建てた判断の記録（ロットごとの条件の記号と基準価格）と、その当てはめ方（出口の規則の直後）。
+        AppendEntryBasisLines(sb, held, priceUnit);
         sb.AppendLine(UsesStopLineExitGuidance(stopLossMethod)
             ? $"- {StopLossLineIsRiskConstraintRule}"
             : $"- {StopLossIsMechanicalRule}");
@@ -769,6 +809,57 @@ public static class TradeDecisionPromptBuilder
                 $"- {WorkingEntryLinePrefix}: {SideWord(order.Side)} {order.RemainingQuantity.ToString(ci)} 株 / 承認価格: {order.Price.ToString(ci)}{priceUnit} / 承認時刻: {order.ApprovedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm", ci)} UTC");
         }
     }
+
+    // FR-04, FR-10, #1384, IADR-0557 決定 7: 本判断の保有状況節の「建てた判断の記録」。数値はコードが渡す（LLM にロットを数えさせない）。
+    // 供給なし（Lots が null）は 1 行で不明と書き、既定の出口の規則を出す。混在（2 ロット以上で条件が異なる・不明を含む）のときだけ混在の規則を出す。
+    private static void AppendEntryBasisLines(StringBuilder sb, HeldPosition held, string priceUnit)
+    {
+        if (held.Lots is not { Count: > 0 } lots)
+        {
+            sb.AppendLine($"- {EntryBasisUnsuppliedLine}");
+            sb.AppendLine($"- {EntryBasisUnknownRule}");
+            return;
+        }
+
+        var ci = CultureInfo.InvariantCulture;
+        sb.AppendLine($"- {EntryBasisLotsLead}:");
+        foreach (var lot in lots)
+        {
+            sb.AppendLine(
+                $"  - {lot.Quantity.ToString(ci)} 株: 条件 {ConditionText(lot)} / 基準価格: {ReferencePriceText(lot, priceUnit)} / 承認: {lot.OrderedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm", ci)} UTC");
+        }
+
+        sb.AppendLine($"- {EntryBasisByLotRule}");
+        if (lots.Any(l => l.EntryCondition is null))
+            sb.AppendLine($"- {EntryBasisUnknownRule}");
+        if (lots.Count > 1 && lots.Select(l => l.EntryCondition).Distinct().Count() > 1)
+            sb.AppendLine($"- {EntryBasisMixedRule}");
+    }
+
+    // FR-04, FR-10, #1384, IADR-0557 決定 7: 一次の短縮版（1 行の要約＋不明があるときの既定の出口の規則）。並べるのは ScreeningMaxLots まで。
+    private static void AppendEntryBasisSummary(StringBuilder sb, HeldPosition held, string priceUnit)
+    {
+        if (held.Lots is not { Count: > 0 } lots)
+        {
+            sb.AppendLine($"- {EntryBasisUnsuppliedLine}");
+            sb.AppendLine($"- {EntryBasisUnknownRule}");
+            return;
+        }
+
+        var ci = CultureInfo.InvariantCulture;
+        var parts = lots.Take(ScreeningMaxLots).Select(l => l.EntryCondition is null
+            ? $"不明（{l.Quantity.ToString(ci)} 株）"
+            : $"{ConditionText(l)} 基準価格 {ReferencePriceText(l, priceUnit)}（{l.Quantity.ToString(ci)} 株）");
+        var rest = lots.Count > ScreeningMaxLots ? $" / ほか {(lots.Count - ScreeningMaxLots).ToString(ci)} ロット" : string.Empty;
+        sb.AppendLine($"- 建てた条件（ロットごと）: {string.Join(" / ", parts)}{rest}");
+        if (lots.Any(l => l.EntryCondition is null))
+            sb.AppendLine($"- {EntryBasisUnknownRule}");
+    }
+
+    private static string ConditionText(HeldPositionLot lot) => lot.EntryCondition is { } c ? Sanitize(c, 8) : EntryBasisUnknownText;
+
+    private static string ReferencePriceText(HeldPositionLot lot, string priceUnit) =>
+        lot.EntryReferencePrice is { } p ? $"{p.ToString(CultureInfo.InvariantCulture)}{priceUnit}" : "不明";
 
     // 一次スクリーニング用の要約（方向ごとの残数量の合計と件数）。
     private static string SummarizeWorkingEntries(WorkingEntryOrders working)
@@ -833,6 +924,9 @@ public static class TradeDecisionPromptBuilder
             // （縮退の保護分 ScreeningContextAssembler.TakeProfitReachedReserveChars）。#1175: 未到達も本判断と同じ行で知らせる（同じ予約に収まる）。
             if (takeProfit is { } takeProfitStatus)
                 sb.AppendLine($"- {takeProfitStatus.Line}");
+            // FR-04, FR-10, #1384, IADR-0557 決定 7: 建てた条件の要約（一次は門。条件ごとの出口に達した建玉を落とさない。縮退の保護分
+            // ScreeningContextAssembler.HeldEntryBasisReserveChars）。
+            AppendEntryBasisSummary(sb, held, priceUnit);
             if (working is null)
                 sb.AppendLine($"- {WorkingUnknownLine}");
             else if (working.Any)

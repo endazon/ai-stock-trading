@@ -170,6 +170,8 @@ public sealed class RiskManagementDbContext(DbContextOptions<RiskManagementDbCon
             // **その終端の記録そのものが落ちる**（見送りなら在庫が解放されない＝#852 の実害の再発）。
             // 新しい書き手を足すときは catch も足すこと。
             e.Property(r => r.TerminalAt).IsConcurrencyToken();
+            // FR-04, FR-10, #1384, IADR-0557 決定 4: 建てた条件の記号（英大文字 1 字）。既存行は NULL（記録なし）。
+            e.Property(r => r.EntryCondition).HasMaxLength(8);
         });
 
         mb.Entity<TradeFillRow>(e =>
