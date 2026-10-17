@@ -11,11 +11,14 @@ internal static partial class GetConfirmedDailyPolicyAsOfEndpoint
         read.MapGet("/daily-policy/as-of", (string? at, AppSvc svc) =>
         {
             if (!TryParseInstant(at, out var instant))
-                return Results.BadRequest(new { error = "at（オフセット付きの ISO 8601 時刻。例 2026-09-15T20:00:00Z）が必要です。" });
+                return Results.BadRequest(new { error = InvalidAtError });
 
             var policy = svc.GetConfirmedDailyPolicyAsOf(instant);
             return policy is null ? Results.NotFound() : Results.Ok(policy);
         });
+
+    // NFR, #1388, IADR-0557 決定 3: gRPC 面（DailyPolicyReadGrpcService）の INVALID_ARGUMENT も同じ文言を返す（検証は 1 つ）。
+    internal const string InvalidAtError = "at（オフセット付きの ISO 8601 時刻。例 2026-09-15T20:00:00Z）が必要です。";
 
     // 🔴 オフセットの無い時刻は受けない（現地時刻と読み違えると判断時点が数時間ずれ、未来の方針を返し得る）。
     internal static bool TryParseInstant(string? value, out DateTimeOffset instant)

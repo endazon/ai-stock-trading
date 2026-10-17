@@ -15,6 +15,9 @@
 //   **運ぶのは呼び出し元（取引判断）が読む項目だけ**（REST の応答は前提条件の版も持つ）。足すのはフィールド追加＝非破壊。
 //
 // ■ 🔴 message 名を送り手（ReportService）の C# の型名（`ConfirmedDailyPolicy`）と同じにしない（IADR-0420 決定 3 の ⑤）。
+//
+// ■ ［2026-10-17 / #1388］IADR-0557 決定 3: ある時点で確定していた方針（REST `GET /reports/daily-policy/as-of`・Stage 0 の記録）の rpc を足した。
+//   時刻はオフセット必須の文字列（`WatchlistRead/GetWatchlistAsOf` と同じ）。確定の時刻は応答の別の項目で運び、`DailyPolicyRecord` へ足さない。
 syntax = "proto3";
 
 package aistocktrading.report.v1;
@@ -27,6 +30,8 @@ option csharp_namespace = "AiStockTrading.Shared.Grpc.Report.V1";
 service DailyPolicyRead {
   // GET /reports/daily-policy（未確定は `policy` を持たない応答）。
   rpc GetConfirmedDailyPolicy(GetConfirmedDailyPolicyRequest) returns (GetConfirmedDailyPolicyResponse);
+  // GET /reports/daily-policy/as-of?at=（無かったときは `policy` を持たない応答。`at` の欠落・オフセットの欠落・書式違いは INVALID_ARGUMENT）。
+  rpc GetConfirmedDailyPolicyAsOf(GetConfirmedDailyPolicyAsOfRequest) returns (GetConfirmedDailyPolicyAsOfResponse);
 }
 
 message GetConfirmedDailyPolicyRequest {}
@@ -45,4 +50,18 @@ message DailyPolicyRecord {
   // （確定後の行の版）。取引判断が判断の記録へ残す。**欠けていても方針は使う**（送り手が古い間の並走。判断を止める理由にしない）。
   optional string period_key = 3;
   optional int32 version = 4;
+}
+
+// FR-15, FR-07, #1308, #1388, IADR-0528 決定 3, IADR-0557 決定 3: ある時点で確定していた日報の方針の照会。
+message GetConfirmedDailyPolicyAsOfRequest {
+  // 時点。ISO 8601 で、オフセット（Z か ±hh:mm）が必須（REST の `at` と同じ）。
+  string at = 1;
+}
+
+message GetConfirmedDailyPolicyAsOfResponse {
+  // その時点で確定していた方針のうち最新。**無ければ「無かった」**（REST の 404）。
+  DailyPolicyRecord policy = 1;
+  // 🔴 選んだ版の確定の時刻（往復書式・オフセットごと）。受け手が「照会の時刻より後の確定」を拒むために使う。
+  // **欠けていれば受け手は「取れなかった」として扱う**（REST の `confirmedAt` の欠落と同じ）。
+  optional string confirmed_at = 2;
 }
