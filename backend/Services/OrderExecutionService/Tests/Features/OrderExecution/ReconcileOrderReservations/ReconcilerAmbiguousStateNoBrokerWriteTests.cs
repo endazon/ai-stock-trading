@@ -211,7 +211,7 @@ public class ReconcilerAmbiguousStateNoBrokerWriteTests
     {
         // 🔴 T-10-1554: 解放は発注そのものではない。リコンサイラはブローカーへ何も書かない。
         // （門を開ける判断は #856 に残る。本試験は開けたときの挙動の境界を固定するだけで、配備の門は閉じたまま。）
-        // 🔴 #1343, IADR-0550: 送る前に保護の記録を残した新規建ては、削除ではなく見送り（Forgone）として閉じ、AwaitingEntry も閉じる
+        // 🔴 #1343, IADR-0551: 送る前に保護の記録を残した新規建ては、削除ではなく見送り（Forgone）として閉じ、AwaitingEntry も閉じる
         // （閉じるのは記録だけで、保護レグを張る口〔ProtectAsync〕は呼ばない）。
         var h = NewHarness(_ => ReservationProbeResult.NotPlaced, Enabled(releaseOnNotPlaced: true));
         var entry = SeedAwaitingEntry(h);

@@ -20,14 +20,14 @@ public interface IReconciledEntryProtection
     Task<ReconciledEntryProtectionOutcome> ProtectAsync(ExecutionRecord confirmed, CancellationToken cancellationToken);
 
     /// <summary>
-    /// 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0550 決定1: <paramref name="decisionId"/> が<b>送る前に保護の記録を残した新規建て</b>
+    /// 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0551 決定1: <paramref name="decisionId"/> が<b>送る前に保護の記録を残した新規建て</b>
     /// （S1 の行・S0 / S3 の AwaitingEntry。<c>EntryDecisionId</c> がこの値の行）かを返す。突合が「未発注」と確定した予約を
     /// 削除（再発注の許可）ではなく見送り（Forgone）として閉じるかの判別に使う。既定は「記録なし」（口を持たない構成・試験の差し替え）。
     /// </summary>
     bool HasEntryProtectionRecord(Guid decisionId) => false;
 
     /// <summary>
-    /// 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0550 決定2: 突合が「未発注」と確定して予約を<b>見送り（Forgone）へ移した後に</b>、
+    /// 🔴 FR-05, FR-10, ADR-0040 決定1, #1343, IADR-0551 決定2: 突合が「未発注」と確定して予約を<b>見送り（Forgone）へ移した後に</b>、
     /// その新規建てが送る前に残した保護の記録（S1 の未確定・未到達の行／S0 / S3 の AwaitingEntry）を完了にする。
     /// 発注の記録があるもの・到達や決済の経路に入ったもの・並行に更新されたものは閉じない（<see cref="UnplacedEntryProtectionClosure.LeftOpen"/>）。
     /// 例外は投げ得る（呼び出し側は予約の見送りを巻き戻さずに受ける）。既定は「記録なし」。
@@ -36,7 +36,7 @@ public interface IReconciledEntryProtection
 }
 
 /// <summary>
-/// 🔴 #1343, IADR-0550 決定2: 未発注と確定した新規建ての保護の記録を閉じた結果。<b>「閉じた」「元から無い・閉じている」「閉じられない」を混ぜない。</b>
+/// 🔴 #1343, IADR-0551 決定2: 未発注と確定した新規建ての保護の記録を閉じた結果。<b>「閉じた」「元から無い・閉じている」「閉じられない」を混ぜない。</b>
 /// </summary>
 public enum UnplacedEntryProtectionClosure
 {

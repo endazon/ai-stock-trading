@@ -13,7 +13,7 @@ using AppSvc = OrderExecutionService.Features.OrderExecution.DispatchApprovedOrd
 
 namespace OrderExecutionService.Tests;
 
-// 🔴 FR-05, FR-10, ADR-0040 決定1, ADR-0045, #1343, IADR-0550: **突合が「未発注」と確定し、解放の門が開いていたとき、
+// 🔴 FR-05, FR-10, ADR-0040 決定1, ADR-0045, #1343, IADR-0551: **突合が「未発注」と確定し、解放の門が開いていたとき、
 // 承認の経路の予約は削除せず見送り（Forgone）として閉じ、送る前に残した保護の記録（S1 の行・S0 / S3 の AwaitingEntry）も閉じる。**
 //
 // 是正前は予約行を消すだけで、S1 の行は発注の記録が無いまま「これから約定し得る」として永久に据え置かれ（ProtectiveStopGuard）、
@@ -25,7 +25,9 @@ namespace OrderExecutionService.Tests;
 //   (1) 門による解放で S1 / AwaitingEntry が閉じ、予約は Forgone になる。
 //   (2) 同じ銘柄・同じ方向の別の手法の新規建てが塞がれなくなる（門が閉じていれば塞がれたまま＝対照）。
 //   (3) 元の承認を再投入しても発注しない（古い承認で送らない）。
-// 殺す変異: 解放を Release（削除）へ戻す／保護の記録を閉じない／閉じる順序を予約の前にする（閉じる条件を緩めて到達済みの行を閉じる）。
+// 殺す変異（UF1〜UF7）: 解放を Release（削除）へ戻す／保護の記録を閉じない／閉じる条件から「未到達」を外す／出どころ・保護の記録で判別しない／
+// 記録を閉じる処理を予約の見送りより前へ動かす（T-10-2714: 見送りが落ちたら記録は閉じていない）／
+// 新規建ての判定の前に、予約が見送り済みの取り残しを閉じない（T-10-2715）。
 public class UnplacedEntryReleaseForgoneTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 5, 13, 44, 0, TimeSpan.Zero);
@@ -327,6 +329,7 @@ public class UnplacedEntryReleaseForgoneTests
         h.Reservations.Find(entry.DecisionId)!.State.Should().Be(OrderDispatchState.Reserved);
         h.Stops.Find(entry.DecisionId)!.State.Should().Be(ProtectiveStopState.Active);
     }
+
     private sealed class ThrowingClose : IReconciledEntryProtection
     {
         public Task<ReconciledEntryProtectionOutcome> ProtectAsync(ExecutionRecord confirmed, CancellationToken cancellationToken) =>
@@ -358,5 +361,86 @@ public class UnplacedEntryReleaseForgoneTests
         var closure = result.UnplacedClosures.Should().ContainSingle().Subject;
         closure.Closure.Should().Be(UnplacedEntryProtectionClosure.LeftOpen);
         closure.Failure.Should().BeOfType<InvalidOperationException>();
+    }
+    // 予約の見送り（MarkReservationForgone）だけが落ちる予約表。
+    private sealed class ForgoneFailingReservations(InMemoryOrderReservationStore inner) : IOrderReservationStore
+    {
+        public bool TryReserve(
+            Guid decisionId, DateTimeOffset reservedAt, BrokerProvider? brokerProvider, StopWidthFloorSource? stopFloorSource = null,
+            OrderApprovalOrigin? approvalOrigin = null, PositionEffect? positionEffect = null) =>
+            inner.TryReserve(decisionId, reservedAt, brokerProvider, stopFloorSource, approvalOrigin, positionEffect);
+
+        public void MarkCompleted(Guid decisionId, string brokerOrderId, DateTimeOffset completedAt) =>
+            inner.MarkCompleted(decisionId, brokerOrderId, completedAt);
+
+        public OrderDispatchReservation? Find(Guid decisionId) => inner.Find(decisionId);
+
+        public IReadOnlyList<OrderDispatchReservation> FindStalledReserved(DateTimeOffset reservedBefore, int batchSize) =>
+            inner.FindStalledReserved(reservedBefore, batchSize);
+
+        public bool Release(Guid decisionId) => inner.Release(decisionId);
+
+        public ForgoneRecordOutcome TryRecordForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
+            inner.TryRecordForgone(decisionId, forgoneAt);
+
+        public ForgoneRecordOutcome MarkReservationForgone(Guid decisionId, DateTimeOffset forgoneAt) =>
+            throw new InvalidOperationException("予約表が落ちた（テスト）");
+
+        public int PurgeCompletedBefore(DateTimeOffset cutoff, int batchSize) => inner.PurgeCompletedBefore(cutoff, batchSize);
+    }
+
+    // T-10-2714（順序・否定形）: 予約の見送りが落ちたら、保護の記録は閉じない（予約が先・記録が後。逆だと Reserved のまま保護の無い建玉になり得る）。
+    [Theory]
+    [InlineData(StopLossExecutionMethod.SoftwareStop, ProtectiveStopState.Active)]
+    [InlineData(StopLossExecutionMethod.BrokerStopOrder, ProtectiveStopState.AwaitingEntry)]
+    public async Task T_10_2714_予約の見送りが落ちたら保護の記録は閉じない_否定形(
+        StopLossExecutionMethod method, ProtectiveStopState before)
+    {
+        var h = NewHarness();
+        var entry = await DispatchIndeterminateAsync(h, method);
+        h.Clock.UtcNow = T0.AddHours(3);
+        var reconciler = new OrderReservationReconciler(
+            new ForgoneFailingReservations(h.Reservations), h.Executed, new StubProbe(ReservationProbeResult.NotPlaced), h.Broker, h.Clock,
+            Options.Create(new ReconciliationOptions { Enabled = true, ReleaseOnNotPlaced = new() { Simulate = true } }),
+            h.Service);
+
+        var result = await reconciler.ReconcileAsync(h.Clock.UtcNow.AddHours(-2), 50);
+
+        result.Failed.Should().Be(1, "その 1 件は失敗として据え置く");
+        h.Reservations.Find(entry.DecisionId)!.State.Should().Be(OrderDispatchState.Reserved);
+        h.Stops.Find(entry.DecisionId)!.State.Should().Be(before, "予約を見送りにできていないので記録を閉じない");
+        result.UnplacedClosures.Should().BeEmpty();
+    }
+
+    // T-10-2715（取り残しの回収）: 予約は見送り済みだが保護の記録が残っている（記録を閉じる前に止まった・人が予約だけ片付けた）。
+    // 同じ銘柄・同じ方向の別の手法の新規建ては、その記録を閉じてから判定し、塞がない。予約が Reserved の記録は閉じず塞いだまま（対照）。
+    [Theory]
+    [InlineData(StopLossExecutionMethod.BrokerStopOrder, StopLossExecutionMethod.SoftwareStop, true)]
+    [InlineData(StopLossExecutionMethod.SoftwareStop, StopLossExecutionMethod.BrokerStopOrder, true)]
+    [InlineData(StopLossExecutionMethod.BrokerStopOrder, StopLossExecutionMethod.SoftwareStop, false)]
+    public async Task T_10_2715_見送り済みの予約の取り残しは新規建ての判定の前に閉じる(
+        StopLossExecutionMethod leftover, StopLossExecutionMethod next, bool reservationForgone)
+    {
+        var h = NewHarness();
+        var stale = await DispatchIndeterminateAsync(h, leftover);
+        if (reservationForgone)
+            h.Reservations.MarkReservationForgone(stale.DecisionId, T0.AddHours(1)).Should().Be(ForgoneRecordOutcome.Recorded);
+        var leftState = h.Stops.Find(stale.DecisionId)!.State;
+        leftState.Should().NotBe(ProtectiveStopState.Completed, "前提: 記録は残っている");
+
+        var result = await h.Service.ExecuteAsync(Entry(next));
+
+        if (reservationForgone)
+        {
+            result.Forgone.Should().BeNull("取り残しを閉じてから判定する");
+            h.Stops.Find(stale.DecisionId)!.State.Should().Be(ProtectiveStopState.Completed);
+            h.Broker.Sent.Should().Be(1);
+        }
+        else
+        {
+            result.Forgone!.Reason.Should().Be(OrderDispatchForgoneReason.StopLossMethodConflict, "対照: 送ったか不明の予約の記録は閉じない");
+            h.Stops.Find(stale.DecisionId)!.State.Should().Be(leftState);
+            h.Broker.Sent.Should().Be(0);
+        }
     }
 }

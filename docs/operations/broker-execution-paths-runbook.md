@@ -9,7 +9,7 @@ author: endazon (with Claude Code)
 <!-- trace:
 ids: [FR-05, FR-10, FR-11, FR-12, FR-20, NFR-09]
 adrs: [ADR-0002, ADR-0045]
-iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0529, IADR-0538, IADR-0550]
+iadrs: [IADR-0016, IADR-0056, IADR-0057, IADR-0060, IADR-0067, IADR-0074, IADR-0092, IADR-0111, IADR-0117, IADR-0210, IADR-0211, IADR-0357, IADR-0428, IADR-0444, IADR-0473, IADR-0476, IADR-0481, IADR-0362, IADR-0488, IADR-0346, IADR-0390, IADR-0463, IADR-0529, IADR-0538, IADR-0551]
 specs: [20260729_268_paper-vs-moomoo-simulate-distinction, 20260919_848_terminal-close-approvals-release-inventory, 20260919_847_exit-market-order-cancel-and-expiry-notice, 20260925_853_protective-leg-indeterminate-hold, 20260926_1013_guard-entry-state-before-position-gone, 20260927_1051_release-gate-per-trading-env, 20261001_1131_1135_quiet-closed-market-and-account-log, 20261001_1148_redact-retmsg-account-id, 20261002_1048_same-symbol-method-coexistence-and-fill-tracking, 20261003_856_indeterminate-dispatch-fault-injection, 20261006_1173_before-send-reservation-hold, 20261015_856_held-warning-throttle-and-ghost-s1, 20261017_1343_release-closes-entry-protection]
 issues: [#132, #268, #269, #270, #768, #847, #848, #853, #856, #1013, #1051, #1135, #1148, #1048, #1173, #1343, planning#676]
 -->
@@ -165,6 +165,8 @@ kubectl -n ai-stock-trading logs deploy/order-execution-service | grep -E "OpenD
 >
 > 保護の記録を閉じられなかったとき（到達済み・発注の記録がある・並行に更新された・処理の失敗）は、発注執行のログに
 > Warning `…保護の記録を閉じられませんでした…` が出る。下の「発注の記録が無いまま残った S1 の記録を閉じる」で確かめる。
+> 予約が Forgone なのに記録だけ残った行は、同じ銘柄・同じ方向の別の手法の新規建てが来た時点で、発注執行が閉じてから判定する
+> （Warning `見送り済み（送っていない）の新規建ての保護の記録が残っていたため閉じました…`。予約が Reserved の記録は閉じない）。
 >
 > 🔴 **突合が「発注済み」と確定したエントリーには、続けて承認時の損切り手法で保護レグを張る**（2026-09-25 改定。旧: 張らなかった）。
 > 確定した時点では保護レグが無いので、発注執行のログに Critical で
