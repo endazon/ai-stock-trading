@@ -193,7 +193,7 @@ static TimeSpan ParseTimeout(string? value) =>
         : TimeSpan.FromSeconds(30);
 
 // #303, IADR-0122 決定2: モデル別単価表を構成から組み立てる。単価の解析（InvariantCulture）と fail-safe
-//（未知モデル＝表の最大単価 / 表が空＝従来キー / 何も無ければ 0）は LlmPriceTable に閉じている。
+//（未知モデル＝未知モデルの計上単価〔#1305〕 / 表が空＝従来キー / 何も無ければ 0）は LlmPriceTable に閉じている。
 static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
     LlmPriceTable.FromRows(
         cfg.GetSection("LlmPricing:PerModel").GetChildren()
@@ -202,7 +202,10 @@ static LlmPriceTable BuildLlmPriceTable(IConfiguration cfg) =>
                 m.Key, m["InputPer1kTokens"], m["OutputPer1kTokens"],
                 m["LongContextThresholdTokens"], m["LongContextInputPer1kTokens"], m["LongContextOutputPer1kTokens"])),
         cfg["LlmPricing:InputPer1kTokens"],
-        cfg["LlmPricing:OutputPer1kTokens"]);
+        cfg["LlmPricing:OutputPer1kTokens"],
+        // NFR-13, ADR-0064 決定9, #1305, IADR-0553: 表に無いモデルの計上単価（単価表の行ではない。未設定は既定 $10 / $50）。
+        cfg["LlmPricing:UnknownModel:InputPer1kTokens"],
+        cfg["LlmPricing:UnknownModel:OutputPer1kTokens"]);
 
 // FR-08, IADR-0072 決定5: RAG 取得件数（TopK）。未設定・不正・非正値は既定 5（fail-safe）。
 static int ParseTopK(string? value) =>
@@ -685,8 +688,8 @@ app.UseAiStockTradingExceptionHandler();
 // 配備でない環境（docker-compose の Development・試験の Testing）は従来どおり警告。計上時の解決は変えない（IADR-0055）。
 var llmGatewayConfigured = llmGrpcAddress is not null
     || Uri.TryCreate(app.Configuration["LlmGateway:BaseUrl"], UriKind.Absolute, out _);
-switch (LlmPricingStartupGuard.Evaluate(
-    BuildLlmPriceTable(app.Configuration), llmGatewayConfigured, app.Environment.IsProduction()))
+var startupPriceTable = BuildLlmPriceTable(app.Configuration);
+switch (LlmPricingStartupGuard.Evaluate(startupPriceTable, llmGatewayConfigured, app.Environment.IsProduction()))
 {
     case LlmPricingStartupVerdict.Refuse:
         throw new InvalidOperationException(LlmPricingStartupGuard.RefusalMessage);
@@ -694,6 +697,10 @@ switch (LlmPricingStartupGuard.Evaluate(
         app.Logger.LogWarning(LlmPricingStartupGuard.WarningMessage);
         break;
 }
+// NFR-13, ADR-0064 決定9, #1305, IADR-0553: 未知モデルの計上単価が書かれているのに解析できない・0 以下なら知らせる
+// （計上は既定値で続く＝0 円にも表の最大にも黙って倒さない。起動は止めない）。
+if (startupPriceTable.UnknownModelSettingRejected)
+    app.Logger.LogWarning(LlmPricingStartupGuard.UnknownModelSettingWarningMessage);
 
 // 🔴 FR-10, ADR-0066 決定1, #1291, IADR-0527 決定2（2026-10-13 追記）: Sizing:MinEntryNotionalRatio を既定（1%）から変えた構成では、
 // 高ボラティリティ銘柄の区分の上限の下端（1% の固定値。構成値に連動しない）とのずれを起動時に知らせる（統制は緩まないので起動は止めない）。

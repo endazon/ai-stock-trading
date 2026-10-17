@@ -723,7 +723,7 @@ jobs:
           # #303 / IADR-0122: 単価は**モデル別**。用途別モデル割当（ADR-0014）に追随できないと計上が実態とずれる
           # （global 単一ペアの opus 基準では trade-decision＝sonnet が約 2.5 倍の過大計上だった）。
           # #1295 / IADR-0524: 割当は 5.5 系（opus-5-5 / sonnet-5-5 / haiku-5-5）。検査は 5.5 系の行に向ける
-          # （新行が落ちると、割当どおりの応答が未知モデル＝最大単価で過大計上になる）。旧世代の行は #1296 で撤去した（下の否定の検査）。
+          # （新行が落ちると、割当どおりの応答が未知モデル＝未知モデルの計上単価で過大計上になる）。旧世代の行は #1296 で撤去した（下の否定の検査）。
           # 単価表はサービスごとに独立して構成される（IADR-0296）ため、report-service と trade-decision-service の
           # **両方の Deployment** で 5.5 系の全行を検査する（片方の表だけ欠けても全体 grep では緑になる）。
           # haiku-5-5 はプロンプト長で 2 段。第 2 段の閾値・入力・出力の 3 行が落ちると 100,000 トークン超の要求が
@@ -743,7 +743,14 @@ jobs:
               'claude_haiku_5_5__LongContextOutputPer1kTokens=0.409'; do
               key="${row%%=*}"; val="${row#*=}"
               printf '%s' "$dep" | grep -A1 -E "^ *- name: LlmPricing__PerModel__${key}\$" | grep -q "value: \"${val}\"" \
-                || { echo "::error::values-local の $svc で LlmPricing__PerModel__${key}=${val} が描画されない（5.5 系の計上が未知モデル＝最大単価か第 1 段へずれる）。"; exit 1; }
+                || { echo "::error::values-local の $svc で LlmPricing__PerModel__${key}=${val} が描画されない（5.5 系の計上が未知モデルの計上単価か第 1 段へずれる）。"; exit 1; }
+            done
+            # NFR-13 / ADR-0064 決定 9 / #1305 / IADR-0553: 未知モデルの計上単価（単価表の行ではない専用の設定値）を両 Deployment で固定する。
+            # 値が下がると、割当の誤りで高いモデルが答えた要求が過小計上になる（IADR-0122 の危険側）。
+            for row in 'InputPer1kTokens=1.637' 'OutputPer1kTokens=8.186'; do
+              key="${row%%=*}"; val="${row#*=}"
+              printf '%s' "$dep" | grep -A1 -E "^ *- name: LlmPricing__UnknownModel__${key}\$" | grep -q "value: \"${val}\"" \
+                || { echo "::error::values-local の $svc で LlmPricing__UnknownModel__${key}=${val} が描画されない（未知モデルの計上単価が \$10 / \$50 で固定されない）。"; exit 1; }
             done
           done
           # #1296 / ADR-0064 決定 7: 単価表の現行値は 5.5 系だけ（旧世代 opus-5 / opus-4-8 / sonnet-5 / haiku-4-5 の行を描画しない）。
@@ -751,9 +758,10 @@ jobs:
           if printf '%s' "$out" | grep -Eq 'name: LlmPricing__PerModel__claude_(opus_5|opus_4_8|sonnet_5|haiku_4_5)__'; then
             echo "::error::values-local に旧世代の単価行が描画された（#1296 で撤去済み。5.5 系だけを受け付ける）。"; exit 1
           fi
-          # 未知モデルの倒し先＝表の最大単価（fable-5）。これが消えると未知モデルが過小計上になる（IADR-0122 決定3）。
-          printf '%s' "$out" | grep -A1 'name: LlmPricing__PerModel__claude_fable_5__OutputPer1kTokens' | grep -q 'value: "8.186"' \
-            || { echo "::error::values-local で claude-fable-5 の出力単価 8.186 が描画されない（未知モデルの倒し先が下がる）。"; exit 1; }
+          # #1305 / ADR-0064 決定 7・9: 単価表に禁止モデル（fable-5）の行を描画しない。上限値は上の未知モデルの計上単価が担う。
+          if printf '%s' "$out" | grep -Eq 'name: LlmPricing__PerModel__claude_fable_5(_1)?__'; then
+            echo "::error::values-local に claude-fable-5 の単価行が描画された（#1305 で撤去済み。表に無いモデルは LlmPricing__UnknownModel__* で計上する）。"; exit 1
+          fi
           # #279 / IADR-0114: 公式情報源（SEC EDGAR / FRED）を収集へ合流させる。provider の列挙漏れは全体の空振りになる。
           printf '%s' "$out" | grep -A1 'name: Collection__Source__Provider' | grep -q 'sec-edgar' \
             || { echo "::error::values-local の Collection__Source__Provider に sec-edgar が無い（SEC EDGAR 未収集）。"; exit 1; }

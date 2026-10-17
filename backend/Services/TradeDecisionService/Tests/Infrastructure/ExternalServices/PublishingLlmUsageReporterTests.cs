@@ -34,11 +34,10 @@ public class PublishingLlmUsageReporterTests
     }
 
     // IADR-0122 決定4 の投入値（換算率 163.71・2026-07 時点）。values-local.yaml と同じ表。
+    // #1305, IADR-0553: `claude-fable-5` の行は外した（未知モデルの上限は専用の設定値。既定 $10 / $50）。
     private static LlmPriceTable Prices() => LlmPriceTable.From(
     [
-        ("claude-fable-5", "1.637", "8.186"),
         ("claude-opus-5-5", "0.655", "3.274"),  // #1295: 5.5 系の公表値（$4/$20）
-        ("claude-opus-4-8", "0.819", "4.093"),
         ("claude-sonnet-5-5", "0.327", "1.637"),
         ("claude-haiku-5-5", "0.0164", "0.0819"),
     ]);
@@ -87,7 +86,6 @@ public class PublishingLlmUsageReporterTests
 
     // 基準3（#303）: 報告書 3 種別が別モデルへ解決されても、それぞれの単価で計上できる（#282 で経路を足す）。
     [Theory]
-    [InlineData("claude-fable-5", 18.009)]   // report-monthly: 1.637 + 2×8.186
     [InlineData("claude-opus-5-5", 7.203)]     // report-weekly:  0.655 + 2×3.274
     [InlineData("claude-sonnet-5-5", 3.601)]   // report-daily:   0.327 + 2×1.637
     public async Task 報告書の種別ごとのモデルでも実効単価で計上する(string model, double expected)
@@ -97,11 +95,13 @@ public class PublishingLlmUsageReporterTests
         amount.Should().Be((decimal)expected);
     }
 
-    // 基準4（#303）: 未知モデル・モデル名なしは最大単価（fable-5）へ倒す。0 に倒すと月次上限が効かなくなる。
+    // 基準4（#303）→ #1305, IADR-0553: 未知モデル・モデル名なしは未知モデルの計上単価（既定 $10 / $50＝1.637 + 2×8.186）。
+    // 0 に倒すと月次上限が効かなくなる。禁止モデル（fable-5）も単価表に無いので同じ単価で計上される。
     [Theory]
     [InlineData("claude-sonnet-4-6")]
+    [InlineData("claude-fable-5")]
     [InlineData(null)]
-    public async Task 未知のモデルは最大単価で計上する(string? model)
+    public async Task 未知のモデルは未知モデルの計上単価で計上する(string? model)
     {
         var amount = await ReportAsync(new LlmUsage(LlmPurposes.TradeDecision, 1000, 2000, model), Prices());
 
